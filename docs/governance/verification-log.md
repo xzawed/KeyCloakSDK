@@ -55,6 +55,26 @@
 
 **✅ Phase 2 (core) 완료.**
 
+## Phase 3 — auth 모듈
+
+### 3a (3.1~3.5: 메타데이터·PKCE·AuthCode·ClientCred·Refresh/Logout)
+- **커밋**: 130518e..d40ea63 (6db7bf3,cb4ce57,2079c59,6c66c8a,623adac + Important fix d40ea63)
+- **G1**: ✅ / **G2**: ✅ (10/10) / **G4**: ✅ Approved / **G5 Codex**: ✅ CONFIRMED / **G6**: ✅
+- **Nimbus**: 전이 nimbus-jose-jwt 10.9→10.9.1 exclusion(enforcer 수렴); logout은 Nimbus LogoutRequest(프론트채널)이 Keycloak과 안 맞아 백채널 POST 수동구성(3자 검증). AuthClient는 G3에서 제외(Phase6 통합).
+- **루프**: 🔁 1회 (Important: 수동 logout 와이어포맷 단위테스트 부재 → buildLogoutRequest 추출 + 4개 테스트, d40ea63, Codex 재확인 CONFIRMED)
+
+### 3b (3.6~3.8: JWT검증·Introspection·TokenProvider) — 보안 핵심
+- **커밋**: d40ea63..8a08a42 (77f71e1,4b139f4,665bc40 + 보안fix 15fcaec + 테스트강화 8a08a42)
+- **G1**: ✅ / **G2**: ✅ (23/23) / **G3**: ✅ 라인 ~97% / 브랜치 90% (AuthClient 제외 기준) / **G4**: ✅ Approved / **G5 Codex**: ✅ CONFIRMED / **G6**: ✅
+- **JOSE**: nimbus-jose-jwt 10.9.1 API가 plan과 정확히 일치(편차 0), 바이트코드 검증.
+- **루프**: 🔁 2회 (보안 게이트) —
+  - **반복1**: Codex가 `alg=none`/PlainJWT 우회 가능성 지적(Critical), Claude 리뷰어는 바이트코드로 "Nimbus가 기본 거부" 확인. **컨트롤러 경험적 재정**: 유효 iss/aud/exp plain JWT로 테스트 → **거부됨 확인**(코드 안전). 그래도 명시적 `SignedJWT` 강제(심층방어) + 비-vacuous 테스트 추가(15fcaec).
+  - **반복2**: Codex가 HS256 회귀테스트 약함 지적(랜덤 시크릿) → **RSA 공개키를 HMAC 시크릿으로 쓴 고전 알고리즘 혼동 공격** 시뮬레이션으로 강화, **거부됨 증명**(8a08a42, Codex CONFIRMED).
+- **Minor(최종리뷰)**: AuthClient.validate() 배선(Set.of(RS256)·audience=clientId) 단위 미테스트 → Phase6 6.2 통합에서 커버; 광범위 catch(plan 지시).
+- **모델**: 구현=sonnet, 리뷰=sonnet, G5=Codex(GPT-5)
+
+**✅ Phase 3 (auth) 완료. 보안 게이트 루프 2회 수렴.**
+
 <!--
 태스크 기록 템플릿 (완료 시 아래 형식으로 추가):
 
