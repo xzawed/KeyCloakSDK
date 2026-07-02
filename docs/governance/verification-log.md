@@ -19,6 +19,14 @@
 - **결과**: ✅ Microsoft OpenJDK 17.0.19 + Apache Maven 3.9.9 설치·검증 (`mvn -v` 확인).
 - **비고**: 하네스 셸이 프로파일을 소싱하지 않아, 표준 빌드 프리픽스(인라인 JAVA_HOME/PATH)를 채택. 프레임워크 §6 참조.
 
+### 0.5 Codex 사전 계획검증 (pre-flight)
+- **결과**: ✅ Codex(GPT-5) 독립 검토 완료 — Critical 3, Important 5, Minor 2 발견, 전부 반영.
+- **Critical**: ① admin 토큰 주입 방식(`authorization(String)`은 자동갱신 불가) → **사람 재정**: 기본=네이티브 client-credentials 그랜트 + 고급=TokenProvider 필터(둘 다 제공). ② 툴체인 프리픽스 PowerShell 변형 추가. ③ `git commit -am` → `git add -A` 규약.
+- **Important**: 4.1 테스트 목 주입(withKeycloak 팩토리), 3.4 `HttpClient` 제거(Nimbus HTTPRequest 타임아웃), 3.6 JWKS API 정밀화(nimbus 10.9.1), JaCoCo 모듈별 skip 명시, enforcer(의존성 수렴) 추가.
+- **Minor**: SDK `AuthorizationRequest`→`AuthorizationUrlRequest`(Nimbus 충돌), 7.4 push→feature 브랜치+PR.
+- **Codex 확인(정상)**: Nimbus 기본 API(AuthenticationRequest.Builder, CodeChallenge.compute, TokenRequest, TokenResponse.parse, ClientSecretBasic, BearerAccessToken.getLifetime), testcontainers-junit-jupiter:2.0.5 좌표.
+- **판정**: 계획 보정 완료 → Task 1.1 실행 승인.
+
 <!--
 태스크 기록 템플릿 (완료 시 아래 형식으로 추가):
 

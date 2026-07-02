@@ -85,9 +85,15 @@ JAVA_HOME='/c/Program Files/Microsoft/jdk-17.0.19.10-hotspot' \
 PATH="/c/Users/dirtc/tools/apache-maven-3.9.9/bin:$PATH" \
 mvn <args>
 ```
+**PowerShell 변형:**
+```powershell
+$env:JAVA_HOME='C:\Program Files\Microsoft\jdk-17.0.19.10-hotspot'; $env:Path='C:\Users\dirtc\tools\apache-maven-3.9.9\bin;' + $env:Path; mvn <args>
+```
 - JDK: Microsoft OpenJDK **17.0.19** (`C:\Program Files\Microsoft\jdk-17.0.19.10-hotspot`)
 - Maven: **3.9.9** (`C:\Users\dirtc\tools\apache-maven-3.9.9`)
 - ⚠️ 위 경로는 이 개발 머신 전용 — 리포지토리에 커밋하지 않는다(포터블 아님). CI는 `setup-java`가 제공하는 JAVA_HOME 사용.
+
+**커밋 규약**: 신규 파일 누락 방지를 위해 커밋은 항상 `git add -A && git commit -m "..."` 형식을 쓴다. `git commit -am`은 untracked 파일을 스테이징하지 못하므로 **금지**. 구현은 `feature/java-sdk-mvp`에만 push하고 main에는 PR로 머지(사람 승인).
 
 ---
 
