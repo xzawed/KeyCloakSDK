@@ -27,7 +27,13 @@ public final class JwtValidator {
   public static JwtValidator forRealm(OidcMetadata md, io.github.xzawed.keycloak.core.KeycloakConfig cfg,
                                       Set<JWSAlgorithm> allowedAlgs, String audience) {
     try {
-      JWKSource<SecurityContext> src = JWKSourceBuilder.create(md.getJwksUri().toURL()).build();
+      // JWKS fetch도 KeycloakConfig의 connect/read 타임아웃을 따른다 (M.7): 기본
+      // DefaultResourceRetriever는 자체 기본 타임아웃을 쓰므로 그대로 두면 설정이 무시된다.
+      com.nimbusds.jose.util.DefaultResourceRetriever retriever =
+          new com.nimbusds.jose.util.DefaultResourceRetriever(
+              (int) cfg.getConnectTimeout().toMillis(), (int) cfg.getReadTimeout().toMillis());
+      JWKSource<SecurityContext> src =
+          JWKSourceBuilder.create(md.getJwksUri().toURL(), retriever).build();
       return new JwtValidator(src, md.getIssuer(), audience, allowedAlgs, cfg.getClockSkew());
     } catch (java.net.MalformedURLException e) {
       throw new TokenValidationException("Invalid JWKS URI", e);

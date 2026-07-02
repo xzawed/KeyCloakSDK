@@ -15,6 +15,8 @@ public final class TokenSet {
   public String getScope() { return scope; }
   public Instant getExpiresAt() { return expiresAt; }
   public boolean isExpired(Clock clock, Duration skew) {
+    // 만료 시각을 알 수 없으면 안전하게 "만료됨" 취급해 강제로 재발급/갱신을 유도한다 (M.6).
+    if (expiresAt == null) return true;
     return !Instant.now(clock).plus(skew).isBefore(expiresAt);
   }
   @Override public String toString() {

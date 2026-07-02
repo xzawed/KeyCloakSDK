@@ -11,6 +11,11 @@ class TokenSetTest {
     assertTrue(t.isExpired(at5, Duration.ofSeconds(30)));   // 5+30 >= 30
     assertFalse(t.isExpired(at5, Duration.ofSeconds(10)));  // 5+10 < 30
   }
+  @Test void isExpired_treatsNullExpiryAsExpired() {
+    // 만료 시각을 알 수 없는 TokenSet은 안전하게 "만료됨"으로 취급해 재발급/갱신을 강제한다 (M.6).
+    TokenSet t = new TokenSet("acc", null, null, "Bearer", null, null);
+    assertTrue(t.isExpired(Clock.systemUTC(), Duration.ZERO));
+  }
   @Test void toString_masksTokens() {
     TokenSet t = new TokenSet("supersecret", "refreshsecret", null, "Bearer", null, Instant.now());
     assertFalse(t.toString().contains("supersecret"));
