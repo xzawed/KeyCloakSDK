@@ -35,6 +35,15 @@
 - **G4 스펙리뷰**: ✅ (diff가 브리프와 일치, 좌표·버전 정확, bom stub) / **G5 Codex**: ✅ CONFIRMED / **G6 보안**: ✅
 - **루프**: 없음 (enforcer 수렴 1회 통과) / **모델**: 구현=sonnet, G5=Codex(GPT-5)
 
+### 1.2 BOM 모듈 · 1.3 CI 골격
+- **커밋**: df25381..a25cdeb (1.2 dece405, 1.3 a25cdeb)
+- **G1 빌드**: ✅ (`mvn install -DskipITs` SUCCESS, 6/6 모듈, enforcer 수렴 통과) / **G2/G3**: — (코드 없음)
+- **G4 스펙리뷰**: ✅ (BOM 좌표·CI 매트릭스 정확) / **G5 Codex**: ✅ CONFIRMED / **G6 보안**: ✅
+- **루프**: 없음 / **모델**: 구현=sonnet, G5=Codex(GPT-5)
+- **비고**: PyYAML이 `on:`을 boolean 키로 강제하는 건 YAML1.1 관례상 표시일 뿐, GitHub Actions 파서는 정상 처리(문제 아님).
+
+**✅ Phase 1 (기반) 완료.**
+
 <!--
 태스크 기록 템플릿 (완료 시 아래 형식으로 추가):
 
