@@ -9,7 +9,7 @@ import org.keycloak.admin.client.KeycloakBuilder;
 /**
  * 관리(admin) API 파사드 진입점. 공식 {@link Keycloak} admin-client를 감싸며 수명주기를
  * 소유한다({@link AutoCloseable}). 리소스 접근자({@code users()/clients()/realms()/roles()/groups()})는
- * WBS 4.3~4.7에서 채워진다.
+ * WBS 4.3~4.7에서 순차적으로 채워진다.
  *
  * <p>결합 규칙: 기본 생성자({@link #AdminClient(KeycloakConfig)})는 auth 모듈에 의존하지 않는다.
  * 이전에 존재하던 {@code TokenProvider} 기반 고급 생성자는 커스텀 RESTEasy
@@ -55,6 +55,11 @@ public final class AdminClient implements AutoCloseable {
   /** 파사드가 감싸지 않은 엔드포인트에 접근하기 위한 탈출구(WBS 4.8). */
   public Keycloak raw() {
     return keycloak;
+  }
+
+  /** 사용자 CRUD 파사드(WBS 4.3). */
+  public UsersResource users() {
+    return new UsersResource(raw().realm(config.getRealm()).users());
   }
 
   @Override
