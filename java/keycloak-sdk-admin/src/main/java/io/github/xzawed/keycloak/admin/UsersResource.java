@@ -25,7 +25,11 @@ public final class UsersResource {
 
   /** 사용자 생성 후 응답 {@code Location} 헤더에서 신규 사용자 id를 추출해 반환한다. */
   public String create(UserRepresentation representation) {
-    return AdminExceptions.call(() -> CreatedResponseUtil.getCreatedId(delegate.create(representation)));
+    return AdminExceptions.call(() -> {
+      try (jakarta.ws.rs.core.Response r = delegate.create(representation)) {
+        return CreatedResponseUtil.getCreatedId(r);
+      }
+    });
   }
 
   public Optional<UserRepresentation> get(String id) {

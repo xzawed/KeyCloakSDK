@@ -26,7 +26,11 @@ public final class GroupsResource {
 
   /** 그룹 생성 후 응답 {@code Location} 헤더에서 신규 그룹 id를 추출해 반환한다. */
   public String create(GroupRepresentation representation) {
-    return AdminExceptions.call(() -> CreatedResponseUtil.getCreatedId(delegate.add(representation)));
+    return AdminExceptions.call(() -> {
+      try (jakarta.ws.rs.core.Response r = delegate.add(representation)) {
+        return CreatedResponseUtil.getCreatedId(r);
+      }
+    });
   }
 
   public Optional<GroupRepresentation> get(String id) {

@@ -23,7 +23,11 @@ public final class ClientsResource {
 
   /** 클라이언트 생성 후 응답 {@code Location} 헤더에서 신규 클라이언트 id를 추출해 반환한다. */
   public String create(ClientRepresentation representation) {
-    return AdminExceptions.call(() -> CreatedResponseUtil.getCreatedId(delegate.create(representation)));
+    return AdminExceptions.call(() -> {
+      try (jakarta.ws.rs.core.Response r = delegate.create(representation)) {
+        return CreatedResponseUtil.getCreatedId(r);
+      }
+    });
   }
 
   public Optional<ClientRepresentation> get(String id) {
