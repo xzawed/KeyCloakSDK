@@ -90,7 +90,7 @@ SDK 자체 SemVer는 Keycloak 서버 버전과 분리되어 있습니다. 지원
 
 ## 현재 상태
 
-**구현 완료** — Java SDK(6개 모듈: bom/core/auth/admin/keycloak-sdk/examples)가 `feature/java-sdk-mvp` 브랜치에서 구현·단위테스트·통합테스트(Testcontainers, 실제 Keycloak 26.6.4)까지 완료됐습니다(GREEN `mvn -f java/pom.xml clean verify`). Maven Central 배포는 사람 승인 후 태그 릴리스로 진행됩니다.
+**Java MVP 완료 · `main` 병합됨(PR #1)** — Java SDK(6개 모듈: bom/core/auth/admin/keycloak-sdk/examples)가 구현·단위테스트·통합테스트(Testcontainers, 실제 Keycloak 26.6.4)까지 완료되어 main에 병합됐습니다(GREEN `mvn -f java/pom.xml clean verify`). Maven Central 배포는 사람 승인 후 태그 릴리스로 진행됩니다. 다음 로드맵: Python SDK.
 
 - 📄 설계 스펙: [docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md](docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)
 - 🗂️ 구현 계획(WBS): [docs/superpowers/plans/](docs/superpowers/plans/)
