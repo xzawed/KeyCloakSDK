@@ -123,6 +123,25 @@
 
 **✅ Phase 6 (통합) 완료. SDK가 실제 Keycloak 26.6.4로 end-to-end 동작. 통합이 프로덕션 aud 버그 1건 발견·수정.**
 
+## Phase 7 — 배포 & 문서
+
+### 7.1 release 프로파일 · 7.2 릴리스 CI · 7.3 examples · 7.4 문서
+- **커밋**: 7.1 c6a9d61, 7.2 74ca1c2, 7.3 03c69ba, 7.4 db82837
+- **G1**: ✅ 최종 `clean verify -DskipITs` BUILD SUCCESS (7 reactor entries) / **G2**: ✅ 단위 94/94 / **G3**: ✅ 전 로직모듈 게이트 통과 / **G6**: ✅ (deploy는 human-gated, 서명키/토큰 CI 시크릿)
+- 7.1 release 프로파일: sources+javadoc(core/auth/admin/keycloak-sdk), gpg, central-publishing 0.11.0. javadoc doclint none(Java17 엄격). `-Prelease package`로 jar 생성 확인(서명·배포 없이).
+- 7.3 examples: QuickStart(컴파일만), deploy/jacoco skip, parent modules에 추가.
+- 7.4: README(설치·QuickStart·호환매트릭스·상태), CLAUDE.md(구현완료·테스트수 100) 갱신.
+- **모델**: 구현=sonnet
+
+**✅ Phase 7 (배포·문서) 완료.**
+
+---
+
+## 종합 (Java MVP 전 Phase 완료)
+- **총 100 테스트** = 단위 94 (core 23·auth 25·admin 43·sdk 3) + 통합 6 (Testcontainers 실제 KC 26.6.4).
+- 커버리지 게이트(로직 라인≥90/브랜치≥85) 전 모듈 통과. 네트워크 경계(AuthClient/AdminClient)는 통합으로 검증.
+- **거버넌스 루프 성과**: Codex 사전검증(Critical 3), admin 고급생성자 제거(사용자 재정), admin delete Response 버그(리뷰어가 Codex 놓친 것 포착), RealmsResource 오탐(javap 재정), JWT 보안 루프 2회, **통합이 다중 aud 프로덕션 버그 발견·수정**. 이중검증 상호보완 실증.
+
 <!--
 태스크 기록 템플릿 (완료 시 아래 형식으로 추가):
 
