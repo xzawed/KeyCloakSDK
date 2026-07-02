@@ -24,6 +24,13 @@
 - **버전 정책**: SDK 자체 SemVer는 Keycloak 버전과 분리. 지원 서버는 호환 매트릭스로 안내.
 - **TDD·DRY·YAGNI·잦은 커밋**. 각 태스크는 독립적으로 테스트 가능한 산출물로 끝난다.
 
+**거버넌스 부록** ([AI 거버넌스 프레임워크](../../governance/ai-governance-framework.md) 적용):
+- **툴체인 프리픽스**: 모든 mvn 명령은 인라인 환경으로 실행 — `JAVA_HOME='/c/Program Files/Microsoft/jdk-17.0.19.10-hotspot' PATH="/c/Users/dirtc/tools/apache-maven-3.9.9/bin:$PATH" mvn ...` (JDK 17.0.19 + Maven 3.9.9). 리포지토리엔 이 경로를 커밋하지 않음.
+- **커버리지 게이트(G3)**: JaCoCo 라인 ≥ 90% / 브랜치 ≥ 85% (로직 모듈). 부모 POM(Task 1.1)에 `jacoco-maven-plugin`(prepare-agent + `check` 규칙) 추가, 통합 전용 클래스는 exclude. 미달 시 빌드 실패.
+- **Codex 교차검증(G5)**: 모든 태스크 diff를 Codex(GPT-5)가 독립 검토 → "confirmed" + 불일치 0 이어야 완료.
+- **루프 엔지니어링**: 게이트 미달 시 RCA→시정→재검증 루프(게이트당 최대 3회, 초과 시 에스컬레이션). 결과는 [검증 로그](../../governance/verification-log.md)에 기록.
+- **브랜치 격리**: `feature/java-sdk-mvp`에서 구현, main에 PR(사람 승인). Maven Central 배포는 사람 승인 필수.
+
 ---
 
 ## WBS 개요 (Work Breakdown Structure)
@@ -193,9 +200,42 @@ spec/                                          # OpenAPI (Python 향후)
         </plugin>
       </plugins>
     </pluginManagement>
+    <plugins>
+      <!-- G3 커버리지 게이트: 라인 90% / 브랜치 85% -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>0.8.12</version>
+        <configuration>
+          <excludes>
+            <exclude>**/*IT.class</exclude>
+            <exclude>**/KeycloakContainerSupport.class</exclude>
+          </excludes>
+        </configuration>
+        <executions>
+          <execution><id>prepare</id><goals><goal>prepare-agent</goal></goals></execution>
+          <execution><id>report</id><phase>verify</phase><goals><goal>report</goal></goals></execution>
+          <execution>
+            <id>check</id><phase>verify</phase><goals><goal>check</goal></goals>
+            <configuration>
+              <rules>
+                <rule>
+                  <element>BUNDLE</element>
+                  <limits>
+                    <limit><counter>LINE</counter><value>COVEREDRATIO</value><minimum>0.90</minimum></limit>
+                    <limit><counter>BRANCH</counter><value>COVEREDRATIO</value><minimum>0.85</minimum></limit>
+                  </limits>
+                </rule>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
   </build>
 </project>
 ```
+> ⚠️ 커버리지 `check`는 `verify` 단계에서 실행된다. 초기 골격(코드 없음)에서는 클래스가 없어 규칙이 vacuously 통과한다. 통합 전용 모듈(`keycloak-sdk`의 IT)·`examples`는 `<jacoco.skip>true</jacoco.skip>` 또는 exclude로 게이트에서 제외하고, 로직 모듈(core/auth/admin)에만 90/85를 강제한다.
 
 - [ ] **Step 2: 각 자식 모듈 POM 작성 (core 예시, 나머지 동일 골격)**
 

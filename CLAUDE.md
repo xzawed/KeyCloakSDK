@@ -14,10 +14,23 @@ Keycloak을 위한 **다국어 SDK**. Keycloak의 두 API 표면 — **인증(OI
 
 ## 현재 상태 ⚠️
 
-**설계 단계 — Java 코드/Maven 모듈은 아직 스캐폴딩되지 않았다.** 빌드/테스트 명령은 `java/` 모듈이 생성된 후 이 문서에 추가한다.
+**구현 단계 — `feature/java-sdk-mvp` 브랜치에서 WBS 계획을 거버넌스 체계로 실행 중.** `java/` 모듈 스캐폴딩 진행.
 
 - 설계 스펙: [docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md](docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md) — **구현 전 반드시 정독**
-- 구현 계획(WBS): [docs/superpowers/plans/](docs/superpowers/plans/)
+- 구현 계획(WBS): [docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md](docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md)
+- 실행 거버넌스: [docs/governance/ai-governance-framework.md](docs/governance/ai-governance-framework.md) (Codex 이중검증·G1~G6 게이트·루프 엔지니어링)
+
+### 툴체인 (빌드 명령)
+
+하네스 셸은 프로파일을 소싱하지 않으므로 mvn 명령마다 환경을 인라인 지정한다:
+```bash
+JAVA_HOME='/c/Program Files/Microsoft/jdk-17.0.19.10-hotspot' PATH="/c/Users/dirtc/tools/apache-maven-3.9.9/bin:$PATH" mvn -f java/pom.xml <goal>
+```
+- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 90/85 포함)
+- 단위테스트만: `mvn -f java/pom.xml test -DskipITs=true`
+- 단일 테스트: `mvn -f java/pom.xml test -pl <module> -Dtest=<ClassName>#<method>`
+- 통합테스트(Docker 필요): `mvn -f java/pom.xml verify`
+- JDK 17.0.19 · Maven 3.9.9 (머신 전용 경로 — 리포지토리에 커밋 안 함, CI는 setup-java 사용)
 
 ## 계획된 아키텍처
 
