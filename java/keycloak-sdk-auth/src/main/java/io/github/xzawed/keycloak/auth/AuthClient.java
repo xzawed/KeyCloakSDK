@@ -64,8 +64,36 @@ public class AuthClient {
           .build();
     return new AuthorizationUrlRequest(ar.toURI(), pkce.getVerifier(), state.getValue(), nonce.getValue());
   }
-  // exchangeCode(...) 는 3.3 확장: TokenRequest(AuthorizationCodeGrant)를 applyTimeouts(tr.toHTTPRequest()).send() 후 toTokenSet 매핑.
-  // 실제 HTTP 성공/실패 경로는 통합 테스트(6.2)에서 검증.
+  // Authorization Code 그랜트로 토큰 교환 (I.2). PKCE code_verifier를 포함해 토큰 엔드포인트에
+  // POST한다. 기밀 클라이언트(clientSecret 설정됨)는 ClientSecretBasic, 퍼블릭 클라이언트는
+  // client_id만 본문에 포함한다(clientAuth() 미사용 — Secret 없이 인증 불가하므로).
+  public TokenSet exchangeCode(String code, URI redirectUri, String codeVerifier) {
+    try {
+      long issuedAt = Instant.now().getEpochSecond();
+      TokenResponse resp = TokenResponse.parse(
+          applyTimeouts(buildExchangeCodeRequest(code, redirectUri, codeVerifier)).send());
+      if (!resp.indicatesSuccess()) {
+        var err = resp.toErrorResponse().getErrorObject();
+        throw new KeycloakAuthException("Authorization code exchange failed: " + err.getDescription(),
+            err.getCode(), null);
+      }
+      return toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
+    } catch (java.io.IOException | com.nimbusds.oauth2.sdk.ParseException e) {
+      throw new KeycloakAuthException("Authorization code exchange request error", null, e);
+    }
+  }
+
+  // exchangeCode()의 send() 이전 요청 구성만 분리: send() 없이 grant_type/code/code_verifier/
+  // 엔드포인트를 빠른 단위 테스트로 검증하기 위한 패키지 가시성 헬퍼 (buildLogoutRequest와 동일 패턴).
+  HTTPRequest buildExchangeCodeRequest(String code, URI redirectUri, String codeVerifier) {
+    AuthorizationCodeGrant grant = new AuthorizationCodeGrant(
+        new AuthorizationCode(code), redirectUri,
+        new com.nimbusds.oauth2.sdk.pkce.CodeVerifier(codeVerifier));
+    TokenRequest tr = config.getClientSecret() != null
+        ? new TokenRequest.Builder(metadata.getTokenEndpoint(), clientAuth(), grant).build()
+        : new TokenRequest.Builder(metadata.getTokenEndpoint(), new ClientID(config.getClientId()), grant).build();
+    return tr.toHTTPRequest();
+  }
 
   public TokenSet clientCredentialsToken() {
     try {
