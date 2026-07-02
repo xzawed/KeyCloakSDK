@@ -75,6 +75,19 @@
 
 **✅ Phase 3 (auth) 완료. 보안 게이트 루프 2회 수렴.**
 
+## Phase 4 — admin 모듈
+
+### 4a (4.1 AdminClient · 4.2 AdminExceptions)
+- **커밋**: 11f82b9..e44a23e (4.1 bfad857, 4.2 9f471b9 + fix e44a23e)
+- **G1**: ✅ / **G2**: ✅ (12/12) / **G3**: ✅ AdminExceptions 100% 라인/100% 브랜치 (AdminClient 제외) / **G4**: ✅(수정후) / **G5 Codex**: ✅ CONFIRMED(수정후) / **G6**: ✅
+- **의존성**: keycloak-admin-client 26.0.10 도입 → enforcer 수렴 위해 부모 POM에 10개 핀(8개는 keycloak-client-parent:26.0.10과 정확히 일치, 2개[commons-io·jakarta.activation]는 상위버전 선택·주석표기). 모두 업그레이드(다운그레이드 0).
+- **루프**: 🔁 1회 (Critical 2건) —
+  - **Critical①**: 고급 생성자 `AdminClient(cfg, TokenProvider)`가 `KeycloakBuilder.build()`의 grantType/자격증명 필수 요구로 **모든 호출 실패**(실제 jar로 경험 확인, Codex+리뷰어 일치). **사용자 재정: MVP에서 제거**. 기본 네이티브 그랜트 생성자만 유지.
+  - **Critical②**: admin `mvn verify` 커버리지 red(AdminExceptions 56%/50%) → 403·default·safeBody 전 분기 테스트로 100%/100% 달성.
+  - +Important: 기본 생성자 null clientSecret 가드(→KeycloakConfigException).
+- **Minor(최종리뷰)**: AdminExceptions가 원인예외로 jakarta.ws.rs 타입을 `getCause()`에 보존(디버깅용, 주 API엔 미노출; plan 지시).
+- **모델**: 구현=sonnet, 리뷰=sonnet, G5=Codex(GPT-5)
+
 <!--
 태스크 기록 템플릿 (완료 시 아래 형식으로 추가):
 

@@ -1298,10 +1298,10 @@ public final class ClientCredentialsTokenProvider implements TokenProvider {
 **Files:** Modify `java/keycloak-sdk-admin/pom.xml` · Create `.../admin/AdminClient.java` · Test `.../admin/AdminClientLifecycleTest.java`
 
 **Interfaces:**
-- Produces: `AdminClient` — 두 생성자 제공. `implements AutoCloseable`(`close()`가 내부 `Keycloak.close()` 호출). `org.keycloak.admin.client.Keycloak raw()`. 리소스 접근자 `users()/clients()/realms()/roles()/groups()`(4.3~4.7에서 반환 타입 추가).
-  - **`AdminClient(KeycloakConfig)` — 기본**: Keycloak admin-client 내장 client-credentials 그랜트 사용. `KeycloakBuilder.builder().serverUrl(cfg.getServerUrl()).realm(cfg.getRealm()).clientId(cfg.getClientId()).clientSecret(new String(cfg.getClientSecret())).grantType(OAuth2Constants.CLIENT_CREDENTIALS).build()` → Keycloak TokenManager가 자동 획득·갱신.
-  - **`AdminClient(KeycloakConfig, TokenProvider)` — 고급**: '내 토큰 소스' 주입. 커스텀 `jakarta.ws.rs.client.ClientRequestFilter`(매 요청 `requestContext.getHeaders().putSingle("Authorization", "Bearer " + tokenProvider.getAccessToken())`)를 등록한 RESTEasy 클라이언트를 `KeycloakBuilder...resteasyClient(client).build()`로 주입. ⚠️ `KeycloakBuilder.authorization(String)`은 고정 토큰 1회 설치라 자동갱신 안 됨 → 사용 금지.
-- Consumes: `TokenProvider`(2.4)는 고급 생성자에서만. 기본 생성자는 auth 모듈·TokenProvider에 의존하지 않음(결합 규칙 유지). 테스트 주입용 패키지 전용 팩토리 `static AdminClient withKeycloak(KeycloakConfig cfg, Keycloak injected)`.
+- Produces: `AdminClient` — 단일 생성자. `implements AutoCloseable`(`close()`가 내부 `Keycloak.close()` 호출). `org.keycloak.admin.client.Keycloak raw()`. 리소스 접근자 `users()/clients()/realms()/roles()/groups()`(4.3~4.7에서 반환 타입 추가).
+  - **`AdminClient(KeycloakConfig)`**: Keycloak admin-client 내장 client-credentials 그랜트 사용. `KeycloakBuilder.builder().serverUrl(cfg.getServerUrl()).realm(cfg.getRealm()).clientId(cfg.getClientId()).clientSecret(new String(cfg.getClientSecret())).grantType(OAuth2Constants.CLIENT_CREDENTIALS).build()` → Keycloak TokenManager가 자동 획득·갱신. `clientSecret`이 null이면 `KeycloakConfigException`.
+  > ⚠️ **설계 변경(Codex 검증 반영)**: 원래 계획한 고급 생성자 `AdminClient(KeycloakConfig, TokenProvider)`(ClientRequestFilter 주입)는 keycloak-admin-client 26.0.10의 `KeycloakBuilder.build()`가 grantType/자격증명을 반드시 요구해(`IllegalStateException: username required`) 구조적으로 성립하지 않음이 **경험적으로 확인**되어 **MVP에서 제거**함. `TokenProvider` SPI(core)와 `ClientCredentialsTokenProvider`(3.8)는 독립 유틸/향후 확장점으로 유지.
+- Consumes: 기본 생성자는 auth 모듈·TokenProvider에 의존하지 않음(결합 규칙 유지). 테스트 주입용 패키지 전용 팩토리 `static AdminClient withKeycloak(KeycloakConfig cfg, Keycloak injected)`.
 
 - [ ] **Step 1: pom 의존 추가**
 
