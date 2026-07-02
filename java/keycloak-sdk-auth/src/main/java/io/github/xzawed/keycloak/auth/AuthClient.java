@@ -89,6 +89,19 @@ public class AuthClient {
   }
 
   public void logout(String refreshToken) {
+    try {
+      HTTPResponse resp = applyTimeouts(buildLogoutRequest(refreshToken)).send();
+      if (!resp.indicatesSuccess()) {
+        throw new KeycloakAuthException("Logout failed (HTTP " + resp.getStatusCode() + ")", null, null);
+      }
+    } catch (java.io.IOException e) {
+      throw new KeycloakAuthException("Logout request error", null, e);
+    }
+  }
+
+  // logout()의 send() 이전 요청 구성만 분리: send() 없이 HTTP method/endpoint/content-type/
+  // Authorization 헤더/body를 빠른 단위 테스트로 검증하기 위한 패키지 가시성 헬퍼 (3a Important fix).
+  HTTPRequest buildLogoutRequest(String refreshToken) {
     if (refreshToken == null) {
       throw new IllegalArgumentException("refreshToken must not be null");
     }
@@ -99,11 +112,8 @@ public class AuthClient {
       Map<String, List<String>> params = new LinkedHashMap<>();
       params.put("refresh_token", Collections.singletonList(refreshToken));
       req.setBody(URLUtils.serializeParameters(params));
-      HTTPResponse resp = applyTimeouts(req).send();
-      if (!resp.indicatesSuccess()) {
-        throw new KeycloakAuthException("Logout failed (HTTP " + resp.getStatusCode() + ")", null, null);
-      }
-    } catch (java.io.IOException e) {
+      return req;
+    } catch (java.net.MalformedURLException e) {
       throw new KeycloakAuthException("Logout request error", null, e);
     }
   }
