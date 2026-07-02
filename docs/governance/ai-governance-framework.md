@@ -33,7 +33,7 @@
 | **G5 Codex 교차검증** | 미해결 불일치 | 0, 판정 "confirmed" | Codex CLI (전 태스크) |
 | **G6 보안** | 토큰/시크릿 로그·내부타입 누출 | 0 | 리뷰어 + Codex |
 
-- **G3 대상**: 로직 모듈(core, auth, admin 파사드의 순수 로직). 통합 전용 코드(Testcontainers 필요)는 Phase 6에서 별도 평가하며 G3 라인 커버리지 계산에서 제외(`jacoco` exclude 또는 통합 리포트 분리).
+- **G3 대상**: 로직 모듈(core, auth, admin 파사드의 순수 로직). **라이브 네트워크 경계 클래스**(`AuthClient` — 토큰 엔드포인트 호출, `AdminClient` — 실제 `Keycloak` 구성)와 통합 전용 코드(`*IT`, Testcontainers)는 단위테스트로 커버 불가하므로 jacoco `<excludes>`로 G3에서 제외하고 **Phase 6 통합테스트로 검증**한다. 나머지 순수 로직(config·tokens·PKCE·metadata·JWT검증·TokenProvider·admin 리소스 파사드[목 기반]·예외변환)은 90/85 강제.
 - **G5 깊이**: **모든 태스크**. Codex가 태스크 diff를 독립 검토하여 정합성·스펙 부합을 판정한다.
 
 ---

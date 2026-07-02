@@ -72,6 +72,9 @@
           <excludes>
             <exclude>**/*IT.class</exclude>
             <exclude>**/KeycloakContainerSupport.class</exclude>
+            <!-- 라이브 네트워크 경계: 단위테스트 불가, Phase 6 통합테스트로 검증 (거버넌스 G3 주석) -->
+            <exclude>**/AuthClient.class</exclude>
+            <exclude>**/AdminClient.class</exclude>
           </excludes>
         </configuration>
         <executions>
