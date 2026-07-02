@@ -8,8 +8,8 @@ import org.keycloak.admin.client.KeycloakBuilder;
 
 /**
  * 관리(admin) API 파사드 진입점. 공식 {@link Keycloak} admin-client를 감싸며 수명주기를
- * 소유한다({@link AutoCloseable}). 리소스 접근자({@code users()/clients()/realms()/roles()/groups()})는
- * WBS 4.3~4.7에서 순차적으로 채워진다.
+ * 소유한다({@link AutoCloseable}). 리소스 접근자 {@code users()/clients()/realms()/roles()/groups()}
+ * (WBS 4.3~4.7)를 통해 각 리소스 파사드를 노출한다.
  *
  * <p>결합 규칙: 기본 생성자({@link #AdminClient(KeycloakConfig)})는 auth 모듈에 의존하지 않는다.
  * 이전에 존재하던 {@code TokenProvider} 기반 고급 생성자는 커스텀 RESTEasy
@@ -75,6 +75,11 @@ public final class AdminClient implements AutoCloseable {
   /** 역할(role) CRUD 파사드(WBS 4.6). */
   public RolesResource roles() {
     return new RolesResource(raw().realm(config.getRealm()).roles());
+  }
+
+  /** 그룹 CRUD 파사드(WBS 4.7). */
+  public GroupsResource groups() {
+    return new GroupsResource(raw().realm(config.getRealm()).groups());
   }
 
   @Override
