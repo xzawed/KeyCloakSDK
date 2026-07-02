@@ -21,8 +21,25 @@ import java.util.Map;
 
 public class AuthClient {
   private final KeycloakConfig config; private final OidcMetadata metadata;
+  private volatile JwtValidator jwtValidator;   // 지연 생성 + 캐시 (WBS 3.6)
   public AuthClient(KeycloakConfig config, OidcMetadata metadata) {
     this.config = config; this.metadata = metadata;
+  }
+
+  // JWKS 기반 서명·issuer·audience·만료 검증. 실패 시 TokenValidationException.
+  public com.nimbusds.jwt.JWTClaimsSet validate(String accessToken) {
+    JwtValidator v = jwtValidator;
+    if (v == null) {
+      synchronized (this) {
+        v = jwtValidator;
+        if (v == null) {
+          v = JwtValidator.forRealm(metadata, config,
+              java.util.Set.of(com.nimbusds.jose.JWSAlgorithm.RS256), config.getClientId());
+          jwtValidator = v;
+        }
+      }
+    }
+    return v.validate(accessToken);
   }
   // Nimbus HTTPRequest에 KeycloakConfig 타임아웃 적용 후 전송 (3.4~3.7 공용 헬퍼)
   HTTPRequest applyTimeouts(HTTPRequest req) {
