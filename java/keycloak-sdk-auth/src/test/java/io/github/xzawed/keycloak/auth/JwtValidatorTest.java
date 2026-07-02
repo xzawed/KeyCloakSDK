@@ -73,4 +73,46 @@ class JwtValidatorTest {
     assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
         () -> v.validate(hs256Jwt.serialize()));
   }
+
+  // 회귀 테스트: 실제 Keycloak client-credentials 액세스 토큰은 aud가 다중값이다
+  // (예: ["it-client", "realm-management"]). 검증기가 exactMatchClaims에 audience를
+  // 넣어 완전일치를 요구하면, 기대 audience를 "포함"하지만 다른 값도 함께 있는 정상
+  // 토큰이 오탐 거부된다(BadJWTException: JWT aud claim value rejected). 수정 전에는
+  // 이 테스트가 실패한다.
+  @Test void validate_acceptsMultiValuedAudienceContainingExpected() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String issuer = "https://kc.example.com/realms/r";
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        new JWTClaimsSet.Builder().issuer(issuer)
+            .audience(List.of("app", "realm-management"))
+            .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
+    jwt.sign(new RSASSASigner(key));
+    JwtValidator v = JwtValidator.withStaticJwks(
+        new JWKSet(key.toPublicJWK()), issuer, "app",
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+
+    JWTClaimsSet claims = v.validate(jwt.serialize());
+    assertEquals(issuer, claims.getIssuer());
+    assertTrue(claims.getAudience().containsAll(List.of("app", "realm-management")));
+  }
+
+  // 보안 회귀 테스트: aud 포함 검사는 여전히 강제되어야 한다 — 기대 audience를
+  // 전혀 포함하지 않는 토큰은 거부된다.
+  @Test void validate_rejectsAudienceNotContainingExpected() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String issuer = "https://kc.example.com/realms/r";
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        new JWTClaimsSet.Builder().issuer(issuer)
+            .audience(List.of("someone-else"))
+            .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
+    jwt.sign(new RSASSASigner(key));
+    JwtValidator v = JwtValidator.withStaticJwks(
+        new JWKSet(key.toPublicJWK()), issuer, "app",
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+
+    assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+        () -> v.validate(jwt.serialize()));
+  }
 }

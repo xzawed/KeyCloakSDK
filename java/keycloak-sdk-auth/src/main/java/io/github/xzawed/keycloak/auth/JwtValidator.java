@@ -14,7 +14,10 @@ public final class JwtValidator {
                        Set<JWSAlgorithm> allowedAlgs, Duration skew) {
     DefaultJWTProcessor<SecurityContext> p = new DefaultJWTProcessor<>();
     p.setJWSKeySelector(new JWSVerificationKeySelector<>(allowedAlgs, jwkSource)); // 허용 alg만 → none/기타 거부
-    JWTClaimsSet exact = new JWTClaimsSet.Builder().issuer(issuer).audience(audience).build();
+    // exactMatchClaims에는 issuer만 둔다: audience까지 넣으면 Nimbus가 aud를 [audience]와
+    // "완전 일치"로 요구하게 되어, 실제 Keycloak처럼 aud가 다중값(예: ["it-client","realm-management"])인
+    // 정상 토큰이 오탐 거부된다. audience는 아래 requiredAudience(첫 인자)로만 넘겨 "포함 검사"로 검증한다.
+    JWTClaimsSet exact = new JWTClaimsSet.Builder().issuer(issuer).build();
     DefaultJWTClaimsVerifier<SecurityContext> v =
         new DefaultJWTClaimsVerifier<>(audience, exact, Set.of("exp"));
     v.setMaxClockSkew((int) skew.getSeconds());
