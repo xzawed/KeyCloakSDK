@@ -10,4 +10,10 @@ class SecretsTest {
   @Test void maskBearer_hidesToken() {
     assertEquals("Bearer ***", Secrets.maskBearer("Bearer eyJraWQ..."));
   }
+  @Test void maskBearer_nullHeader_returnsMask() {
+    assertEquals("***", Secrets.maskBearer(null));
+  }
+  @Test void maskBearer_nonBearerHeader_returnsMask() {
+    assertEquals("***", Secrets.maskBearer("Basic dXNlcjpwYXNz"));
+  }
 }
