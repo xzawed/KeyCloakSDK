@@ -8,6 +8,7 @@ import com.nimbusds.oauth2.sdk.id.*;
 import com.nimbusds.oauth2.sdk.pkce.CodeChallengeMethod;
 import com.nimbusds.oauth2.sdk.token.RefreshToken;
 import com.nimbusds.oauth2.sdk.token.Tokens;
+import com.nimbusds.oauth2.sdk.token.TypelessAccessToken;
 import com.nimbusds.oauth2.sdk.util.URLUtils;
 import com.nimbusds.openid.connect.sdk.*;
 import io.github.xzawed.keycloak.core.*;
@@ -133,6 +134,38 @@ public class AuthClient {
     } catch (java.net.MalformedURLException e) {
       throw new KeycloakAuthException("Logout request error", null, e);
     }
+  }
+
+  // RFC 7662 토큰 introspection: metadata.getIntrospectionEndpoint()에 client 인증 포함 POST (WBS 3.7).
+  public IntrospectionResult introspect(String token) {
+    try {
+      HTTPResponse resp = applyTimeouts(buildIntrospectionRequest(token)).send();
+      TokenIntrospectionResponse tir = TokenIntrospectionResponse.parse(resp);
+      if (!tir.indicatesSuccess()) {
+        var err = tir.toErrorResponse().getErrorObject();
+        throw new KeycloakAuthException("Introspection failed: " + err.getDescription(), err.getCode(), null);
+      }
+      return toIntrospectionResult(tir.toSuccessResponse());
+    } catch (java.io.IOException | com.nimbusds.oauth2.sdk.ParseException e) {
+      throw new KeycloakAuthException("Introspection request error", null, e);
+    }
+  }
+
+  // introspect()의 send() 이전 요청 구성만 분리: send() 없이 HTTP method/endpoint/content-type/
+  // Authorization 헤더/body를 빠른 단위 테스트로 검증하기 위한 패키지 가시성 헬퍼 (buildLogoutRequest와 동일 패턴).
+  HTTPRequest buildIntrospectionRequest(String token) {
+    if (token == null) {
+      throw new IllegalArgumentException("token must not be null");
+    }
+    TokenIntrospectionRequest req = new TokenIntrospectionRequest(
+        metadata.getIntrospectionEndpoint(), clientAuth(), new TypelessAccessToken(token));
+    return req.toHTTPRequest();
+  }
+
+  static IntrospectionResult toIntrospectionResult(TokenIntrospectionSuccessResponse s) {
+    return new IntrospectionResult(s.isActive(),
+        java.util.Optional.ofNullable(s.getUsername()),
+        java.util.Optional.ofNullable(s.getClientID()).map(ClientID::getValue));
   }
 
   private ClientAuthentication clientAuth() {
