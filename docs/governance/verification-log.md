@@ -44,6 +44,17 @@
 
 **✅ Phase 1 (기반) 완료.**
 
+## Phase 2 — core 모듈
+
+### 2.1~2.5 (예외·Config·TokenSet·SPI·마스킹)
+- **커밋**: 4da4ec6..bdd1f9b (2.1 9425934, 2.2 800f1e1, 2.3 8e55933, 2.4 7a7f420, 2.5 0209856, 커버리지보강 bdd1f9b)
+- **G1 빌드**: ✅ / **G2 테스트**: ✅ (23/23) / **G3 커버리지**: ✅ **라인 100% / 브랜치 90.9%** (≥90/85)
+- **G4 스펙리뷰**: ✅ 준수 / **품질**: Approved (Critical/Important 0) / **G5 Codex**: ✅ CONFIRMED / **G6 보안**: ✅ (toString 마스킹 검증)
+- **루프**: 없음 / **모델**: 구현=sonnet, 리뷰=sonnet, G5=Codex(GPT-5)
+- **Minor(최종리뷰 트리아지 대상)**: ① Builder `isBlank()` 분기 미테스트(Builder 분기 66%, 모듈 aggregate는 게이트 통과) ② getClientSecret() 반환배열 변이 미검증 ③ TokenSet equals/hashCode 부재 → InMemoryTokenStoreTest는 참조동일성으로 통과(취약) ④ 짧은 시크릿 약한 마스킹(스펙대로) ⑤ Javadoc 부재·조밀한 스타일.
+
+**✅ Phase 2 (core) 완료.**
+
 <!--
 태스크 기록 템플릿 (완료 시 아래 형식으로 추가):
 
