@@ -37,14 +37,17 @@ public final class JwtValidator {
                                      Set<JWSAlgorithm> allowedAlgs, Duration skew) {
     return new JwtValidator(new ImmutableJWKSet<>(jwks), issuer, audience, allowedAlgs, skew);
   }
-  public JWTClaimsSet validate(String accessToken) {
+  // 반환 타입은 SDK 소유의 ValidatedToken (I.1): 이 SDK의 공개 API는 어떤 시그니처에서도
+  // Nimbus 타입을 노출하지 않는다.
+  public ValidatedToken validate(String accessToken) {
     try {
       // alg=none / 미서명 JWT를 Nimbus의 암묵적 기본 동작에 의존하지 않고 명시적으로 거부한다.
       com.nimbusds.jwt.JWT jwt = com.nimbusds.jwt.JWTParser.parse(accessToken);
       if (!(jwt instanceof com.nimbusds.jwt.SignedJWT)) {
         throw new TokenValidationException("Unsecured or non-signed JWT rejected", null);
       }
-      return processor.process((com.nimbusds.jwt.SignedJWT) jwt, null);
+      JWTClaimsSet claims = processor.process((com.nimbusds.jwt.SignedJWT) jwt, null);
+      return ValidatedToken.from(claims);
     }
     catch (Exception e) { throw new TokenValidationException("JWT validation failed", e); }
   }

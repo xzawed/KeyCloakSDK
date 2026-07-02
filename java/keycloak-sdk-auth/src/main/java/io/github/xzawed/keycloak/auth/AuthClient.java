@@ -28,7 +28,8 @@ public class AuthClient {
   }
 
   // JWKS 기반 서명·issuer·audience·만료 검증. 실패 시 TokenValidationException.
-  public com.nimbusds.jwt.JWTClaimsSet validate(String accessToken) {
+  // 반환 타입은 SDK 소유의 ValidatedToken (I.1) — Nimbus 타입을 공개 API에 노출하지 않는다.
+  public ValidatedToken validate(String accessToken) {
     JwtValidator v = jwtValidator;
     if (v == null) {
       synchronized (this) {

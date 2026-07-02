@@ -2,11 +2,11 @@ package io.github.xzawed.keycloak;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.nimbusds.jwt.JWTClaimsSet;
 import dasniko.testcontainers.keycloak.KeycloakContainer;
 import io.github.xzawed.keycloak.auth.AuthClient;
 import io.github.xzawed.keycloak.auth.IntrospectionResult;
 import io.github.xzawed.keycloak.auth.OidcMetadata;
+import io.github.xzawed.keycloak.auth.ValidatedToken;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
 import io.github.xzawed.keycloak.core.TokenSet;
 import org.junit.jupiter.api.BeforeAll;
@@ -51,7 +51,7 @@ class AuthFlowIT {
   @Test
   void validate_acceptsClientCredentialsToken_withExpectedIssuer() {
     TokenSet tokens = auth.clientCredentialsToken();
-    JWTClaimsSet claims = auth.validate(tokens.getAccessToken());
+    ValidatedToken claims = auth.validate(tokens.getAccessToken());
     assertNotNull(claims);
     assertTrue(claims.getIssuer().endsWith("/realms/it-realm"), "unexpected issuer: " + claims.getIssuer());
   }

@@ -92,7 +92,7 @@ class JwtValidatorTest {
         new JWKSet(key.toPublicJWK()), issuer, "app",
         Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
 
-    JWTClaimsSet claims = v.validate(jwt.serialize());
+    ValidatedToken claims = v.validate(jwt.serialize());
     assertEquals(issuer, claims.getIssuer());
     assertTrue(claims.getAudience().containsAll(List.of("app", "realm-management")));
   }
