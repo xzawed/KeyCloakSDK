@@ -65,7 +65,10 @@
       <dependency><groupId>com.fasterxml.jackson.jakarta.rs</groupId><artifactId>jackson-jakarta-rs-base</artifactId><version>2.21.2</version></dependency>
       <dependency><groupId>com.fasterxml.jackson.module</groupId><artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId><version>2.21.2</version></dependency>
       <dependency><groupId>org.jboss.logging</groupId><artifactId>jboss-logging</artifactId><version>3.6.2.Final</version></dependency>
+      <!-- 위 8개(Jackson x6 + jboss-logging)는 keycloak-client-parent:26.0.10의 관리 버전과 정확히 일치한다. -->
+      <!-- commons-io: 더 높은 버전으로 고정(picked higher) — keycloak-client-parent 등 권위 있는 BOM 출처 없음. -->
       <dependency><groupId>commons-io</groupId><artifactId>commons-io</artifactId><version>2.19.0</version></dependency>
+      <!-- jakarta.activation-api: 더 높은 버전으로 고정(picked higher) — keycloak-client-parent 등 권위 있는 BOM 출처 없음. -->
       <dependency><groupId>jakarta.activation</groupId><artifactId>jakarta.activation-api</artifactId><version>2.1.4</version></dependency>
     </dependencies>
   </dependencyManagement>

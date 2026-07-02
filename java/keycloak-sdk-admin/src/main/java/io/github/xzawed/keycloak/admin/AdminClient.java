@@ -1,11 +1,7 @@
 package io.github.xzawed.keycloak.admin;
 
 import io.github.xzawed.keycloak.core.KeycloakConfig;
-import io.github.xzawed.keycloak.core.TokenProvider;
-import jakarta.ws.rs.client.Client;
-import jakarta.ws.rs.client.ClientBuilder;
-import jakarta.ws.rs.client.ClientRequestContext;
-import jakarta.ws.rs.client.ClientRequestFilter;
+import io.github.xzawed.keycloak.core.exception.KeycloakConfigException;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.KeycloakBuilder;
@@ -15,8 +11,10 @@ import org.keycloak.admin.client.KeycloakBuilder;
  * 소유한다({@link AutoCloseable}). 리소스 접근자({@code users()/clients()/realms()/roles()/groups()})는
  * WBS 4.3~4.7에서 채워진다.
  *
- * <p>결합 규칙: 기본 생성자({@link #AdminClient(KeycloakConfig)})는 auth 모듈·{@link TokenProvider}에
- * 의존하지 않는다. 고급 생성자만 core의 {@code TokenProvider}로 느슨히 결합한다.
+ * <p>결합 규칙: 기본 생성자({@link #AdminClient(KeycloakConfig)})는 auth 모듈에 의존하지 않는다.
+ * 이전에 존재하던 {@code TokenProvider} 기반 고급 생성자는 커스텀 RESTEasy
+ * {@code ClientRequestFilter} 클라이언트를 admin-client 내부 라이브러리와 함께 등록하려 하면서
+ * 라이브러리 충돌을 일으켜 MVP 범위에서 제거했다(사용자 결정, Phase 4a).
  */
 public final class AdminClient implements AutoCloseable {
 
@@ -37,32 +35,19 @@ public final class AdminClient implements AutoCloseable {
         .serverUrl(config.getServerUrl())
         .realm(config.getRealm())
         .clientId(config.getClientId())
-        .clientSecret(new String(config.getClientSecret()))
+        .clientSecret(new String(requireClientSecret(config)))
         .grantType(OAuth2Constants.CLIENT_CREDENTIALS)
         .build());
   }
 
-  /**
-   * 고급 생성자 — 호출자가 제공한 {@link TokenProvider}가 매 요청마다 Authorization 헤더를
-   * 채우도록 커스텀 {@link ClientRequestFilter}를 등록한 RESTEasy {@link Client}를 주입한다.
-   * {@code KeycloakBuilder.authorization(String)}은 고정 토큰을 1회만 설치해 자동 갱신이
-   * 되지 않으므로 의도적으로 사용하지 않는다.
-   */
-  public AdminClient(KeycloakConfig config, TokenProvider tokenProvider) {
-    this(config, KeycloakBuilder.builder()
-        .serverUrl(config.getServerUrl())
-        .realm(config.getRealm())
-        .resteasyClient(tokenInjectingClient(tokenProvider))
-        .build());
+  private static char[] requireClientSecret(KeycloakConfig config) {
+    if (config.getClientSecret() == null) {
+      throw new KeycloakConfigException("clientSecret is required for admin client-credentials", null);
+    }
+    return config.getClientSecret();
   }
 
-  private static Client tokenInjectingClient(TokenProvider tokenProvider) {
-    ClientRequestFilter authHeaderFilter = (ClientRequestContext requestContext) ->
-        requestContext.getHeaders().putSingle("Authorization", "Bearer " + tokenProvider.getAccessToken());
-    return ClientBuilder.newBuilder().register(authHeaderFilter).build();
-  }
-
-  /** 패키지 전용 팩토리 — 주입된 {@link Keycloak}을 보관한다(테스트 주입·양 생성자 공용 경로). */
+  /** 패키지 전용 팩토리 — 주입된 {@link Keycloak}을 보관한다(테스트 주입 경로). */
   static AdminClient withKeycloak(KeycloakConfig config, Keycloak injected) {
     return new AdminClient(config, injected);
   }
