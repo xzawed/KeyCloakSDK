@@ -10,4 +10,15 @@
   <artifactId>keycloak-sdk-bom</artifactId>
   <packaging>pom</packaging>
   <name>Keycloak SDK :: BOM</name>
+  <dependencyManagement>
+    <dependencies>
+      <dependency><groupId>io.github.xzawed</groupId><artifactId>keycloak-sdk-core</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>io.github.xzawed</groupId><artifactId>keycloak-sdk-auth</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>io.github.xzawed</groupId><artifactId>keycloak-sdk-admin</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>io.github.xzawed</groupId><artifactId>keycloak-sdk</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>org.keycloak</groupId><artifactId>keycloak-admin-client</artifactId><version>${keycloak.adminclient.version}</version></dependency>
+      <dependency><groupId>com.nimbusds</groupId><artifactId>oauth2-oidc-sdk</artifactId><version>${nimbus.oidc.version}</version></dependency>
+      <dependency><groupId>com.nimbusds</groupId><artifactId>nimbus-jose-jwt</artifactId><version>${nimbus.jose.version}</version></dependency>
+    </dependencies>
+  </dependencyManagement>
 </project>
