@@ -134,4 +134,70 @@
       </plugin>
     </plugins>
   </build>
+
+  <!-- Maven Central(Central Portal) 배포 프로파일 (WBS 7.1). 로컬 검증:
+       mvn -f java/pom.xml -Prelease -DskipTests -Dgpg.skip=true package
+       실제 배포(mvn ... deploy)는 태그 드리븐 릴리스 CI(.github/workflows/release.yml, WBS 7.2)에서만
+       수행하며 GPG 서명·Central Portal 토큰 시크릿이 필요하다(사람 승인 게이트). -->
+  <profiles>
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <!-- -sources.jar 첨부 -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>3.3.1</version>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals><goal>jar</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- -javadoc.jar 첨부. ⚠️ Java 17 javadoc은 엄격(doclint) — 문서 경고로 빌드가 실패하지
+               않도록 doclint를 끄고 failOnError=false로 완화한다. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <version>3.11.2</version>
+            <configuration>
+              <doclint>none</doclint>
+              <failOnError>false</failOnError>
+            </configuration>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals><goal>jar</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- 배포 아티팩트 GPG 서명 (verify 단계에 바인딩). 로컬/CI 검증 시 -Dgpg.skip=true로 생략. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.7</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals><goal>sign</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- Maven Central Portal 배포(구 OSSRH는 2025-06-30 종료, Central Portal 경로만 유효). -->
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.11.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
