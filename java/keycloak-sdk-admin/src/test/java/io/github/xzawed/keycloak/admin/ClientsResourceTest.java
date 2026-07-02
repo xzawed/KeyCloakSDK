@@ -77,12 +77,22 @@ class ClientsResourceTest {
     verify(cr).update(rep);
   }
 
-  @Test void delete_delegatesToClientsResource() {
+  @Test void delete_success_noThrow() {
     org.keycloak.admin.client.resource.ClientsResource kc =
         mock(org.keycloak.admin.client.resource.ClientsResource.class);
+    when(kc.delete("c1")).thenReturn(Response.noContent().build());
 
     ClientsResource clients = new ClientsResource(kc);
-    clients.delete("c1");
+    assertDoesNotThrow(() -> clients.delete("c1"));
     verify(kc).delete("c1");
+  }
+
+  @Test void delete_notFoundResponse_translatesNotFound() {
+    org.keycloak.admin.client.resource.ClientsResource kc =
+        mock(org.keycloak.admin.client.resource.ClientsResource.class);
+    when(kc.delete("missing")).thenReturn(Response.status(Response.Status.NOT_FOUND).build());
+
+    ClientsResource clients = new ClientsResource(kc);
+    assertThrows(KeycloakNotFoundException.class, () -> clients.delete("missing"));
   }
 }

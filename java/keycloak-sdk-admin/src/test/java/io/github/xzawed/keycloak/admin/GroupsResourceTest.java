@@ -75,4 +75,15 @@ class GroupsResourceTest {
     groups.delete("g1");
     verify(gr).remove();
   }
+
+  @Test void delete_missingGroup_translatesNotFound() {
+    org.keycloak.admin.client.resource.GroupsResource kc =
+        mock(org.keycloak.admin.client.resource.GroupsResource.class);
+    GroupResource gr = mock(GroupResource.class);
+    when(kc.group("missing")).thenReturn(gr);
+    doThrow(new NotFoundException()).when(gr).remove();
+
+    GroupsResource groups = new GroupsResource(kc);
+    assertThrows(KeycloakNotFoundException.class, () -> groups.delete("missing"));
+  }
 }

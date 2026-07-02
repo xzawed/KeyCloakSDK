@@ -38,7 +38,19 @@ public final class ClientsResource {
     AdminExceptions.run(() -> delegate.get(id).update(representation));
   }
 
+  /**
+   * admin-client의 {@code delegate.delete(id)}는 {@link jakarta.ws.rs.core.Response}를 반환하는
+   * JAX-RS 프록시 메서드라 4xx/5xx 응답에서도 예외를 던지지 않는다({@code void} 반환 메서드만 자동으로
+   * throw한다). 따라서 상태 코드를 직접 검사해 실패 시 {@link jakarta.ws.rs.WebApplicationException}을
+   * 던져 {@link AdminExceptions} 경계를 통해 SDK 예외로 변환한다.
+   */
   public void delete(String id) {
-    AdminExceptions.run(() -> delegate.delete(id));
+    AdminExceptions.run(() -> {
+      try (jakarta.ws.rs.core.Response resp = delegate.delete(id)) {
+        if (resp.getStatus() >= 400) {
+          throw new jakarta.ws.rs.WebApplicationException(resp);
+        }
+      }
+    });
   }
 }

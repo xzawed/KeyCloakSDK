@@ -59,4 +59,15 @@ class RealmsResourceTest {
     realms.delete("r1");
     verify(rr).remove();
   }
+
+  @Test void delete_missingRealm_translatesNotFound() {
+    org.keycloak.admin.client.resource.RealmsResource kc =
+        mock(org.keycloak.admin.client.resource.RealmsResource.class);
+    RealmResource rr = mock(RealmResource.class);
+    when(kc.realm("missing")).thenReturn(rr);
+    doThrow(new NotFoundException()).when(rr).remove();
+
+    RealmsResource realms = new RealmsResource(kc);
+    assertThrows(KeycloakNotFoundException.class, () -> realms.delete("missing"));
+  }
 }

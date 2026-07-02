@@ -70,4 +70,13 @@ class RolesResourceTest {
     roles.delete("admin-role");
     verify(kc).deleteRole("admin-role");
   }
+
+  @Test void delete_missingRole_translatesNotFound() {
+    org.keycloak.admin.client.resource.RolesResource kc =
+        mock(org.keycloak.admin.client.resource.RolesResource.class);
+    doThrow(new NotFoundException()).when(kc).deleteRole("missing");
+
+    RolesResource roles = new RolesResource(kc);
+    assertThrows(KeycloakNotFoundException.class, () -> roles.delete("missing"));
+  }
 }
