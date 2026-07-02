@@ -88,6 +88,17 @@
 - **Minor(최종리뷰)**: AdminExceptions가 원인예외로 jakarta.ws.rs 타입을 `getCause()`에 보존(디버깅용, 주 API엔 미노출; plan 지시).
 - **모델**: 구현=sonnet, 리뷰=sonnet, G5=Codex(GPT-5)
 
+### 4b (4.3~4.7: users·clients·realms·roles·groups 파사드)
+- **커밋**: e941133..51b2c47 (4.3 1841ace, 4.4 57e8368, 4.5 c798515, 4.6 ea2d155, 4.7 55719a9 + Critical fix 51b2c47)
+- **G1**: ✅ / **G2**: ✅ (43/43) / **G3**: ✅ 100% 라인/100% 브랜치 (AdminExceptions+5파사드; AdminClient 제외) / **G4**: ✅(수정후) / **G5 Codex**: ✅(재정후) / **G6**: ✅ (jakarta 타입 공개 시그니처 미노출)
+- **admin-client API 편차**(javap 검증, 공개 시그니처 미노출): update는 get(id).update(rep); RealmsResource는 realm(name).toRepresentation()/.remove(); RolesResource.deleteRole; GroupsResource add()/group(id)/groups(first,max); CreatedResponseUtil.getCreatedId.
+- **루프**: 🔁 1회 (Critical) + 재정 1건 —
+  - **재정(Codex 오탐)**: Codex가 `RealmsResource.realm(String)` 부재 주장 → **javap로 존재 확인**, 코드 정상 → 기각.
+  - **Critical(리뷰어가 Codex 놓친 것 포착)**: `UsersResource/ClientsResource.delete`가 `Response` 반환 delegate라 JAX-RS 프록시가 비-2xx에 예외 미발생 → 실패 삭제가 조용히 성공. **수정**: Response status 확인 후 비-2xx면 translate로 던짐 + 5개 파사드 delete 실패 테스트 추가(43 테스트).
+- **모델**: 구현=sonnet, 리뷰=sonnet, G5=Codex(GPT-5)
+
+**✅ Phase 4 (admin) 완료. 루프 2회 + 재정 1회. 이중검증 상호보완 확인.**
+
 <!--
 태스크 기록 템플릿 (완료 시 아래 형식으로 추가):
 
