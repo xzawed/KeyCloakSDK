@@ -24,6 +24,23 @@
 - **버전 정책**: SDK 자체 SemVer는 Keycloak 버전과 분리. 지원 서버는 호환 매트릭스로 안내.
 - **TDD·DRY·YAGNI·잦은 커밋**. 각 태스크는 독립적으로 테스트 가능한 산출물로 끝난다.
 
+**거버넌스 부록** ([AI 거버넌스 프레임워크](../../governance/ai-governance-framework.md) 적용):
+- **툴체인 프리픽스**: 모든 mvn 명령은 인라인 환경으로 실행 (JDK 17.0.19 + Maven 3.9.9). 리포지토리엔 이 경로를 커밋하지 않음.
+  - Bash: `JAVA_HOME='/c/Program Files/Microsoft/jdk-17.0.19.10-hotspot' PATH="/c/Users/dirtc/tools/apache-maven-3.9.9/bin:$PATH" mvn ...`
+  - PowerShell: `$env:JAVA_HOME='C:\Program Files\Microsoft\jdk-17.0.19.10-hotspot'; $env:Path='C:\Users\dirtc\tools\apache-maven-3.9.9\bin;' + $env:Path; mvn ...`
+- **커밋 규약**: 모든 커밋 스텝은 `git add -A && git commit -m "..."` 사용 (`git commit -am`은 신규 파일 누락 → **금지**). 구현 push는 `feature/java-sdk-mvp`에만, main은 PR(사람 승인).
+- **명명 충돌 회피**: SDK의 인증요청 타입은 Nimbus `AuthorizationRequest`와 충돌하므로 **`AuthorizationUrlRequest`** 로 명명(Task 3.3).
+- **커버리지 게이트(G3)**: JaCoCo 라인 ≥ 90% / 브랜치 ≥ 85% (로직 모듈). 부모 POM(Task 1.1)에 `jacoco-maven-plugin`(prepare-agent + `check` 규칙) 추가, 통합 전용 클래스는 exclude. 미달 시 빌드 실패.
+- **Codex 교차검증(G5)**: 모든 태스크 diff를 Codex(GPT-5)가 독립 검토 → "confirmed" + 불일치 0 이어야 완료.
+- **루프 엔지니어링**: 게이트 미달 시 RCA→시정→재검증 루프(게이트당 최대 3회, 초과 시 에스컬레이션). 결과는 [검증 로그](../../governance/verification-log.md)에 기록.
+- **브랜치 격리**: `feature/java-sdk-mvp`에서 구현, main에 PR(사람 승인). Maven Central 배포는 사람 승인 필수.
+
+**최종 리뷰(opus) 반영 변경** (배포 전 Important/Minor 수정 — 아래 태스크 코드보다 이 항목이 우선):
+- **I.1**: `AuthClient.validate()`/`JwtValidator.validate()`는 Nimbus `JWTClaimsSet`가 아니라 SDK 타입 **`ValidatedToken`**(subject/issuer/audience/expiresAt/issuedAt/claims) 반환 — 공개 시그니처에 Nimbus 미노출.
+- **I.2**: Authorization Code 흐름 완성 — `AuthClient.exchangeCode(code, redirectUri, codeVerifier)` 구현(기밀=ClientSecretBasic, 공개=client_id+PKCE). (실 HTTP는 브라우저 로그인 필요라 단위=요청 조립 검증.)
+- **I.3**: `KeycloakConfig`의 no-op **`tlsVerification` 옵션 제거**(저장만 하고 전송에 미연결이라 오해 소지). TLS는 기본 검증 유지.
+- **M.1**: `KeycloakClient`의 `admin()` **지연 초기화**(공개 클라이언트가 secret 없이 `auth()` 사용 가능). **M.2**: users/clients/groups `create` 파사드가 `Response`를 try-with-resources로 닫음(누수). **M.3**: `AdminExceptions` 패키지 전용화(jakarta 타입 공개 미노출). **M.6/M.7**: `TokenSet` null 만료 가드, JWKS fetch가 config 타임아웃 적용.
+
 ---
 
 ## WBS 개요 (Work Breakdown Structure)
@@ -193,9 +210,60 @@ spec/                                          # OpenAPI (Python 향후)
         </plugin>
       </plugins>
     </pluginManagement>
+    <plugins>
+      <!-- G3 커버리지 게이트: 라인 90% / 브랜치 85% -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>0.8.12</version>
+        <configuration>
+          <excludes>
+            <exclude>**/*IT.class</exclude>
+            <exclude>**/KeycloakContainerSupport.class</exclude>
+          </excludes>
+        </configuration>
+        <executions>
+          <execution><id>prepare</id><goals><goal>prepare-agent</goal></goals></execution>
+          <execution><id>report</id><phase>verify</phase><goals><goal>report</goal></goals></execution>
+          <execution>
+            <id>check</id><phase>verify</phase><goals><goal>check</goal></goals>
+            <configuration>
+              <rules>
+                <rule>
+                  <element>BUNDLE</element>
+                  <limits>
+                    <limit><counter>LINE</counter><value>COVEREDRATIO</value><minimum>0.90</minimum></limit>
+                    <limit><counter>BRANCH</counter><value>COVEREDRATIO</value><minimum>0.85</minimum></limit>
+                  </limits>
+                </rule>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- 의존성 수렴 + Java/Maven 버전 강제 (스펙 §7) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>3.5.0</version>
+        <executions>
+          <execution>
+            <id>enforce</id><goals><goal>enforce</goal></goals>
+            <configuration>
+              <rules>
+                <dependencyConvergence/>
+                <requireJavaVersion><version>[17,)</version></requireJavaVersion>
+                <requireMavenVersion><version>[3.9,)</version></requireMavenVersion>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
   </build>
 </project>
 ```
+> ⚠️ 커버리지 `check`는 `verify` 단계에서 실행된다. 초기 골격(코드 없음)에서는 클래스가 없어 규칙이 vacuously 통과한다. 통합 전용 모듈(`keycloak-sdk`의 IT)·`examples`는 `<jacoco.skip>true</jacoco.skip>` 또는 exclude로 게이트에서 제외하고, 로직 모듈(core/auth/admin)에만 90/85를 강제한다.
 
 - [ ] **Step 2: 각 자식 모듈 POM 작성 (core 예시, 나머지 동일 골격)**
 
@@ -841,9 +909,10 @@ public final class Pkce {
 
 **Interfaces:**
 - Produces:
-  - `AuthorizationRequest{ URI getAuthorizationUrl(); String getCodeVerifier(); String getState(); String getNonce(); }`
-  - `AuthClient(KeycloakConfig, OidcMetadata, java.net.http.HttpClient)` 생성자. `AuthorizationRequest createAuthorizationRequest(URI redirectUri)`.
-  - `TokenSet exchangeCode(String code, String codeVerifier, URI redirectUri)` (3.3에서 시그니처 확정; 실제 HTTP는 통합 테스트에서 검증. 단위 테스트는 URL 조립·상태 생성만).
+  - `AuthorizationUrlRequest{ URI getAuthorizationUrl(); String getCodeVerifier(); String getState(); String getNonce(); }` (Nimbus `AuthorizationRequest`와 이름충돌 회피)
+  - `AuthClient(KeycloakConfig, OidcMetadata)` 생성자 (⚠️ `java.net.http.HttpClient`는 받지 않음 — Nimbus는 자체 HTTP 스택 사용). `AuthorizationUrlRequest createAuthorizationRequest(URI redirectUri)`.
+  - `TokenSet exchangeCode(String code, String codeVerifier, URI redirectUri)` (실제 HTTP는 통합 테스트에서 검증. 단위 테스트는 URL 조립·상태 생성만).
+  - 내부: Nimbus `HTTPRequest`에 `config.getConnectTimeout()`/`config.getReadTimeout()`를 밀리초로 설정한 뒤 `send()` — 타임아웃을 `KeycloakConfig`에서 적용.
 - Consumes: `OidcMetadata`(3.1), `Pkce`(3.2), `KeycloakConfig`(2.2), `TokenSet`(2.3), `KeycloakAuthException`(2.1).
 
 - [ ] **Step 1: 실패 테스트 (URL 조립·PKCE·state 검증)**
@@ -852,7 +921,7 @@ public final class Pkce {
 package io.github.xzawed.keycloak.auth;
 import static org.junit.jupiter.api.Assertions.*;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
-import java.net.URI; import java.net.http.HttpClient;
+import java.net.URI;
 import org.junit.jupiter.api.Test;
 
 class AuthClientAuthCodeTest {
@@ -860,10 +929,10 @@ class AuthClientAuthCodeTest {
     KeycloakConfig c = KeycloakConfig.builder()
         .serverUrl("https://kc.example.com").realm("r").clientId("app")
         .scopes("openid","profile").build();
-    return new AuthClient(c, OidcMetadata.forRealm(c), HttpClient.newHttpClient());
+    return new AuthClient(c, OidcMetadata.forRealm(c));
   }
   @Test void authorizationUrl_containsPkceAndState() {
-    AuthorizationRequest req = newClient().createAuthorizationRequest(URI.create("https://app/cb"));
+    AuthorizationUrlRequest req = newClient().createAuthorizationRequest(URI.create("https://app/cb"));
     String url = req.getAuthorizationUrl().toString();
     assertTrue(url.startsWith("https://kc.example.com/realms/r/protocol/openid-connect/auth"));
     assertTrue(url.contains("code_challenge="));
@@ -881,12 +950,12 @@ class AuthClientAuthCodeTest {
 - [ ] **Step 3: 구현** (Nimbus `AuthorizationRequest` 빌더 사용; 코드 교환은 `TokenRequest`+`AuthorizationCodeGrant`)
 
 ```java
-// AuthorizationRequest.java
+// AuthorizationUrlRequest.java
 package io.github.xzawed.keycloak.auth;
 import java.net.URI;
-public final class AuthorizationRequest {
+public final class AuthorizationUrlRequest {
   private final URI authorizationUrl; private final String codeVerifier, state, nonce;
-  AuthorizationRequest(URI url, String verifier, String state, String nonce) {
+  AuthorizationUrlRequest(URI url, String verifier, String state, String nonce) {
     this.authorizationUrl = url; this.codeVerifier = verifier; this.state = state; this.nonce = nonce;
   }
   public URI getAuthorizationUrl() { return authorizationUrl; }
@@ -899,18 +968,25 @@ public final class AuthorizationRequest {
 // AuthClient.java (auth code 부분; 다른 흐름은 3.4~3.7에서 메서드 추가)
 package io.github.xzawed.keycloak.auth;
 import com.nimbusds.oauth2.sdk.*;
+import com.nimbusds.oauth2.sdk.http.HTTPRequest;
 import com.nimbusds.oauth2.sdk.id.*;
 import com.nimbusds.oauth2.sdk.pkce.CodeChallengeMethod;
 import com.nimbusds.openid.connect.sdk.*;
 import io.github.xzawed.keycloak.core.*;
-import java.net.URI; import java.net.http.HttpClient;
+import java.net.URI;
 
 public class AuthClient {
-  private final KeycloakConfig config; private final OidcMetadata metadata; private final HttpClient http;
-  public AuthClient(KeycloakConfig config, OidcMetadata metadata, HttpClient http) {
-    this.config = config; this.metadata = metadata; this.http = http;
+  private final KeycloakConfig config; private final OidcMetadata metadata;
+  public AuthClient(KeycloakConfig config, OidcMetadata metadata) {
+    this.config = config; this.metadata = metadata;
   }
-  public AuthorizationRequest createAuthorizationRequest(URI redirectUri) {
+  // Nimbus HTTPRequest에 KeycloakConfig 타임아웃 적용 후 전송 (3.4~3.7 공용 헬퍼)
+  HTTPRequest applyTimeouts(HTTPRequest req) {
+    req.setConnectTimeout((int) config.getConnectTimeout().toMillis());
+    req.setReadTimeout((int) config.getReadTimeout().toMillis());
+    return req;
+  }
+  public AuthorizationUrlRequest createAuthorizationRequest(URI redirectUri) {
     Pkce pkce = Pkce.generate();
     State state = new State(); Nonce nonce = new Nonce();
     Scope scope = new Scope(config.getScopes().toArray(new String[0]));
@@ -923,9 +999,9 @@ public class AuthClient {
           .state(state).nonce(nonce)
           .codeChallenge(pkce.nimbusVerifier(), CodeChallengeMethod.S256)
           .build();
-    return new AuthorizationRequest(ar.toURI(), pkce.getVerifier(), state.getValue(), nonce.getValue());
+    return new AuthorizationUrlRequest(ar.toURI(), pkce.getVerifier(), state.getValue(), nonce.getValue());
   }
-  // exchangeCode(...) 는 3.3 확장: TokenRequest(AuthorizationCodeGrant) 실행 후 toTokenSet 매핑.
+  // exchangeCode(...) 는 3.3 확장: TokenRequest(AuthorizationCodeGrant)를 applyTimeouts(tr.toHTTPRequest()).send() 후 toTokenSet 매핑.
   // 실제 HTTP 성공/실패 경로는 통합 테스트(6.2)에서 검증.
 }
 ```
@@ -983,7 +1059,7 @@ public io.github.xzawed.keycloak.core.TokenSet clientCredentialsToken() {
         .scope(new com.nimbusds.oauth2.sdk.Scope(config.getScopes().toArray(new String[0])))
         .build();
     long issuedAt = Instant.now().getEpochSecond();
-    TokenResponse resp = TokenResponse.parse(tr.toHTTPRequest().send());
+    TokenResponse resp = TokenResponse.parse(applyTimeouts(tr.toHTTPRequest()).send());
     if (!resp.indicatesSuccess()) {
       var err = resp.toErrorResponse().getErrorObject();
       throw new KeycloakAuthException("Client credentials failed: " + err.getDescription(),
@@ -1025,7 +1101,7 @@ class AuthClientRefreshTest {
   @Test void logout_rejectsNullRefreshToken() {
     io.github.xzawed.keycloak.core.KeycloakConfig c = io.github.xzawed.keycloak.core.KeycloakConfig.builder()
         .serverUrl("https://kc").realm("r").clientId("app").build();
-    AuthClient a = new AuthClient(c, OidcMetadata.forRealm(c), java.net.http.HttpClient.newHttpClient());
+    AuthClient a = new AuthClient(c, OidcMetadata.forRealm(c));
     assertThrows(IllegalArgumentException.class, () -> a.logout(null));
   }
 }
@@ -1081,7 +1157,55 @@ class JwtValidatorTest {
 ```
 
 - [ ] **Step 2: 실패 확인** — Run: `mvn -q -f java/pom.xml test -pl keycloak-sdk-auth -Dtest=JwtValidatorTest` · Expected: 컴파일 실패.
-- [ ] **Step 3: 구현** — `DefaultJWTProcessor` 구성: `JWSKeySelector`에 허용 알고리즘만 전달(그 외/`none` 자동 거부), `JWTClaimsSetVerifier`로 issuer/audience/exp+skew 검증. 원격용 `JWKSourceBuilder.create(jwksUri).cache(true)`, 테스트용 `withStaticJwks(...)` 팩토리. 예외를 `TokenValidationException`으로 감쌈.
+- [ ] **Step 3: 구현** (nimbus-jose-jwt 10.9.1 API 확정)
+
+```java
+package io.github.xzawed.keycloak.auth;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.source.*;
+import com.nimbusds.jose.proc.*;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.proc.*;
+import io.github.xzawed.keycloak.core.exception.TokenValidationException;
+import java.time.Duration; import java.util.*;
+
+public final class JwtValidator {
+  private final ConfigurableJWTProcessor<SecurityContext> processor;   // issuer당 1회 구성(JWKSource 캐시)
+  private JwtValidator(JWKSource<SecurityContext> jwkSource, String issuer, String audience,
+                       Set<JWSAlgorithm> allowedAlgs, Duration skew) {
+    DefaultJWTProcessor<SecurityContext> p = new DefaultJWTProcessor<>();
+    p.setJWSKeySelector(new JWSVerificationKeySelector<>(allowedAlgs, jwkSource)); // 허용 alg만 → none/기타 거부
+    // ⚠️ audience는 exactMatchClaims에 넣지 않는다 — 실제 Keycloak 토큰의 aud는 다중 값
+    // (예: ["client","realm-management"])이라 정확 일치가 아니라 '포함 검사'여야 한다(통합테스트 발견).
+    // requiredAudience 파라미터가 포함 검사를 수행. issuer만 정확 일치.
+    JWTClaimsSet exact = new JWTClaimsSet.Builder().issuer(issuer).build();
+    DefaultJWTClaimsVerifier<SecurityContext> v =
+        new DefaultJWTClaimsVerifier<>(audience, exact, Set.of("exp"));
+    v.setMaxClockSkew((int) skew.getSeconds());
+    p.setJWTClaimsSetVerifier(v);
+    this.processor = p;
+  }
+  public static JwtValidator forRealm(OidcMetadata md, io.github.xzawed.keycloak.core.KeycloakConfig cfg,
+                                      Set<JWSAlgorithm> allowedAlgs, String audience) {
+    try {
+      JWKSource<SecurityContext> src = JWKSourceBuilder.create(md.getJwksUri().toURL()).build();
+      return new JwtValidator(src, md.getIssuer(), audience, allowedAlgs, cfg.getClockSkew());
+    } catch (java.net.MalformedURLException e) {
+      throw new TokenValidationException("Invalid JWKS URI", e);
+    }
+  }
+  static JwtValidator withStaticJwks(JWKSet jwks, String issuer, String audience,
+                                     Set<JWSAlgorithm> allowedAlgs, Duration skew) {
+    return new JwtValidator(new ImmutableJWKSet<>(jwks), issuer, audience, allowedAlgs, skew);
+  }
+  public JWTClaimsSet validate(String accessToken) {
+    try { return processor.process(accessToken, null); }
+    catch (Exception e) { throw new TokenValidationException("JWT validation failed", e); }
+  }
+}
+```
+> `AuthClient.validate(token)`는 `JwtValidator.forRealm(metadata, config, Set.of(JWSAlgorithm.RS256), config.getClientId())`를 지연 생성·캐시해 위임. `none`은 `JWSVerificationKeySelector`가 허용 alg만 받으므로 자동 거부되고, unsecured JWT는 `DefaultJWTProcessor`가 기본 거부.
 - [ ] **Step 4: 통과 확인** · **Step 5: Commit** — `git commit -am "feat(auth): JWKS 기반 JWT 검증 + 알고리즘 핀닝 (WBS 3.6)"`
 
 ---
@@ -1102,7 +1226,7 @@ class JwtValidatorTest {
 **Files:** Create `.../auth/ClientCredentialsTokenProvider.java` · Test `.../auth/ClientCredentialsTokenProviderTest.java`
 
 **Interfaces:**
-- Produces: `ClientCredentialsTokenProvider implements TokenProvider` — 생성자 `(AuthClient, Clock, Duration skew)`. `getAccessToken()`은 캐시된 `TokenSet`이 유효하면 반환, 만료 임박 시 **single-flight**(동시 갱신 1회)로 `authClient.clientCredentialsToken()` 호출 후 캐시. `core`의 `TokenProvider`를 admin이 소비.
+- Produces: `ClientCredentialsTokenProvider implements TokenProvider` — 생성자 `(AuthClient, Clock, Duration skew)`. `getAccessToken()`은 캐시된 `TokenSet`이 유효하면 반환, 만료 임박 시 **single-flight**(동시 갱신 1회)로 `authClient.clientCredentialsToken()` 호출 후 캐시. `core`의 `TokenProvider` 구현으로, **고급 `AdminClient(KeycloakConfig, TokenProvider)` 경로**에서 소비 가능(기본 파사드는 네이티브 그랜트 사용). 독립적으로 테스트·제공되는 유틸.
 - Consumes: `AuthClient.clientCredentialsToken()`(3.4), `TokenSet.isExpired`(2.3), `TokenProvider`(2.4).
 
 - [ ] **Step 1: 실패 테스트 (Mockito로 AuthClient 목)**
@@ -1183,8 +1307,10 @@ public final class ClientCredentialsTokenProvider implements TokenProvider {
 **Files:** Modify `java/keycloak-sdk-admin/pom.xml` · Create `.../admin/AdminClient.java` · Test `.../admin/AdminClientLifecycleTest.java`
 
 **Interfaces:**
-- Produces: `AdminClient` — 생성자 `(KeycloakConfig, TokenProvider)`. 내부에 공식 `org.keycloak.admin.client.Keycloak`를 지연 생성·재사용. `implements AutoCloseable`(`close()`가 내부 `Keycloak.close()` 호출). `org.keycloak.admin.client.Keycloak raw()`. 리소스 접근자 `users()/clients()/realms()/roles()/groups()`(4.3~4.7에서 반환 타입 추가).
-- Consumes: `TokenProvider`(2.4)로 매 요청 bearer 토큰 주입 — admin-client의 `Keycloak.getInstance(...)`에 `authorization` 토큰을 공급(토큰 provider 기반 커스텀 `ResteasyClient` 또는 토큰 갱신 훅).
+- Produces: `AdminClient` — 단일 생성자. `implements AutoCloseable`(`close()`가 내부 `Keycloak.close()` 호출). `org.keycloak.admin.client.Keycloak raw()`. 리소스 접근자 `users()/clients()/realms()/roles()/groups()`(4.3~4.7에서 반환 타입 추가).
+  - **`AdminClient(KeycloakConfig)`**: Keycloak admin-client 내장 client-credentials 그랜트 사용. `KeycloakBuilder.builder().serverUrl(cfg.getServerUrl()).realm(cfg.getRealm()).clientId(cfg.getClientId()).clientSecret(new String(cfg.getClientSecret())).grantType(OAuth2Constants.CLIENT_CREDENTIALS).build()` → Keycloak TokenManager가 자동 획득·갱신. `clientSecret`이 null이면 `KeycloakConfigException`.
+  > ⚠️ **설계 변경(Codex 검증 반영)**: 원래 계획한 고급 생성자 `AdminClient(KeycloakConfig, TokenProvider)`(ClientRequestFilter 주입)는 keycloak-admin-client 26.0.10의 `KeycloakBuilder.build()`가 grantType/자격증명을 반드시 요구해(`IllegalStateException: username required`) 구조적으로 성립하지 않음이 **경험적으로 확인**되어 **MVP에서 제거**함. `TokenProvider` SPI(core)와 `ClientCredentialsTokenProvider`(3.8)는 독립 유틸/향후 확장점으로 유지.
+- Consumes: 기본 생성자는 auth 모듈·TokenProvider에 의존하지 않음(결합 규칙 유지). 테스트 주입용 패키지 전용 팩토리 `static AdminClient withKeycloak(KeycloakConfig cfg, Keycloak injected)`.
 
 - [ ] **Step 1: pom 의존 추가**
 
@@ -1199,25 +1325,33 @@ public final class ClientCredentialsTokenProvider implements TokenProvider {
 ```java
 package io.github.xzawed.keycloak.admin;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 import io.github.xzawed.keycloak.core.*;
 import org.junit.jupiter.api.Test;
+import org.keycloak.admin.client.Keycloak;
 
 class AdminClientLifecycleTest {
-  @Test void implementsAutoCloseable_andExposesRaw() {
+  @Test void close_delegatesToKeycloak_andRawExposesIt() {
     KeycloakConfig c = KeycloakConfig.builder()
         .serverUrl("https://kc.example.com").realm("r").clientId("app").build();
-    TokenProvider tp = () -> "test-token";
-    try (AdminClient admin = new AdminClient(c, tp)) {
-      assertNotNull(admin.raw());          // 공식 Keycloak 인스턴스
-      assertInstanceOf(AutoCloseable.class, admin);
-    }
+    Keycloak kc = mock(Keycloak.class);
+    AdminClient admin = AdminClient.withKeycloak(c, kc);   // 패키지 전용 팩토리(테스트 주입)
+    assertSame(kc, admin.raw());
+    assertInstanceOf(AutoCloseable.class, admin);
+    admin.close();
+    verify(kc).close();                    // 수명주기 위임 검증
   }
 }
 ```
 
 - [ ] **Step 3: 실패 확인** — Run: `mvn -q -f java/pom.xml test -pl keycloak-sdk-admin -Dtest=AdminClientLifecycleTest` · Expected: 컴파일 실패.
 
-- [ ] **Step 4: 구현** — `KeycloakBuilder`로 `Keycloak` 생성(serverUrl/realm/clientId + TokenProvider가 제공하는 access token을 `authorization`으로 사용하도록 구성). `close()`에서 위임. `raw()` 반환. 리소스 접근자는 후속 태스크에서 채움.
+- [ ] **Step 4: 구현** —
+  - **기본 생성자** `AdminClient(KeycloakConfig cfg)`: `KeycloakBuilder.builder().serverUrl(cfg.getServerUrl()).realm(cfg.getRealm()).clientId(cfg.getClientId()).clientSecret(new String(cfg.getClientSecret())).grantType(org.keycloak.OAuth2Constants.CLIENT_CREDENTIALS).build()` → `withKeycloak(cfg, kc)` 위임. (Keycloak TokenManager가 자동 갱신)
+  - **고급 생성자** `AdminClient(KeycloakConfig cfg, TokenProvider tp)`: 커스텀 `ClientRequestFilter`(매 요청 `requestContext.getHeaders().putSingle("Authorization", "Bearer " + tp.getAccessToken())`)를 register한 RESTEasy `Client`를 만들어 `KeycloakBuilder.builder().serverUrl(...).realm(...).resteasyClient(client).build()`로 생성 → `withKeycloak(cfg, kc)` 위임. `KeycloakBuilder.authorization(String)`은 쓰지 않는다.
+  - **패키지 전용 팩토리** `static AdminClient withKeycloak(KeycloakConfig cfg, Keycloak injected)`: 주입된 `Keycloak` 보관(테스트·양 생성자 공용).
+  - `close()`는 `keycloak.close()` 위임. `raw()`는 `keycloak` 반환. 리소스 접근자는 후속 태스크에서 채움.
+  > 결합 규칙: 기본 생성자는 auth 모듈·TokenProvider에 의존하지 않는다. 고급 생성자만 `core`의 `TokenProvider`로 느슨히 결합.
 - [ ] **Step 5: 통과 확인** · **Step 6: Commit** — `git commit -am "feat(admin): AdminClient 골격·수명주기·raw (WBS 4.1)"`
 
 ---
@@ -1392,16 +1526,14 @@ package io.github.xzawed.keycloak;
 import io.github.xzawed.keycloak.admin.AdminClient;
 import io.github.xzawed.keycloak.auth.*;
 import io.github.xzawed.keycloak.core.*;
-import java.net.http.HttpClient; import java.time.Clock;
 
 public final class KeycloakClient implements AutoCloseable {
   private final AuthClient auth; private final AdminClient admin;
   private KeycloakClient(AuthClient auth, AdminClient admin) { this.auth = auth; this.admin = admin; }
   public static KeycloakClient create(KeycloakConfig config) {
     OidcMetadata md = OidcMetadata.forRealm(config);
-    AuthClient auth = new AuthClient(config, md, HttpClient.newHttpClient());
-    TokenProvider tp = new ClientCredentialsTokenProvider(auth, Clock.systemUTC(), config.getClockSkew());
-    AdminClient admin = new AdminClient(config, tp);
+    AuthClient auth = new AuthClient(config, md);
+    AdminClient admin = new AdminClient(config);   // 기본: 네이티브 client-credentials 그랜트 (auth와 독립)
     return new KeycloakClient(auth, admin);
   }
   public AuthClient auth() { return auth; }

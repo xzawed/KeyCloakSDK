@@ -12,16 +12,34 @@ Keycloak을 위한 **다국어 SDK**. Keycloak의 두 API 표면 — **인증(OI
 
 **핵심 전략**: 언어마다 가장 좋은 기반을 사용한다 — 공식 클라이언트가 있으면 감싸고(Java는 `keycloak-admin-client`), 없으면 OpenAPI에서 코드 생성(Python) — 그 위에 **일관된 파사드 + 인증 래퍼**를 언어 공통 설계로 얹는다.
 
-## 현재 상태 ⚠️
+## 현재 상태
 
-**설계 단계 — Java 코드/Maven 모듈은 아직 스캐폴딩되지 않았다.** 빌드/테스트 명령은 `java/` 모듈이 생성된 후 이 문서에 추가한다.
+**구현 완료 (`feature/java-sdk-mvp`)** — WBS Phase 1~7(기반 → core → auth → admin → facade → 통합테스트 → 배포&문서) 전체 구현. 전 모듈 단위테스트 + Testcontainers 기반 통합테스트(실제 Keycloak 26.6.4)까지 GREEN(`mvn -f java/pom.xml clean verify`). Maven Central 배포 프로파일(`-Prelease`)과 태그 드리븐 릴리스 CI는 준비되었으나, 실제 배포는 사람이 `v*` 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다. main 반영은 PR + 사람 승인 대기.
 
 - 설계 스펙: [docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md](docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md) — **구현 전 반드시 정독**
-- 구현 계획(WBS): [docs/superpowers/plans/](docs/superpowers/plans/)
+- 구현 계획(WBS): [docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md](docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md)
+- 실행 거버넌스: [docs/governance/ai-governance-framework.md](docs/governance/ai-governance-framework.md) (Codex 이중검증·G1~G6 게이트·루프 엔지니어링)
+- 검증 로그: [docs/governance/verification-log.md](docs/governance/verification-log.md) — 태스크별 게이트 통과 이력
+- **테스트 수**: 단위테스트 94개(core 23 · auth 25 · admin 43 · keycloak-sdk 3) + 통합테스트(Testcontainers) 6개(SmokeIT 1 · AuthFlowIT 3 · AdminOpsIT 2) = **총 100개**, 커버리지 게이트(로직 모듈 라인 ≥90%/브랜치 ≥85%) 통과.
 
-## 계획된 아키텍처
+### 툴체인 (빌드 명령)
 
-폴리글랏 모노레포. MVP 구현은 `java/`에 집중한다.
+하네스 셸은 프로파일을 소싱하지 않으므로 mvn 명령마다 환경을 인라인 지정한다:
+```bash
+JAVA_HOME='/c/Program Files/Microsoft/jdk-17.0.19.10-hotspot' PATH="/c/Users/dirtc/tools/apache-maven-3.9.9/bin:$PATH" mvn -f java/pom.xml <goal>
+```
+- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 90/85 포함)
+- 단위테스트만: `mvn -f java/pom.xml test -DskipITs=true`
+- 단일 테스트: `mvn -f java/pom.xml test -pl <module> -Dtest=<ClassName>#<method>`
+- 통합테스트(Docker 필요): `mvn -f java/pom.xml verify`
+- examples 모듈만 컴파일: `mvn -f java/pom.xml -pl keycloak-sdk-examples -am compile`
+- 배포(release) 산출물 로컬 검증(서명·배포 없이): `mvn -f java/pom.xml -Prelease -DskipTests -DskipITs=true -Dgpg.skip=true package` — core/auth/admin/keycloak-sdk 각각 `*-sources.jar`/`*-javadoc.jar` 생성 확인
+- 실제 `deploy`(Maven Central 배포)는 로컬에서 실행하지 않는다 — `v*` 태그 push 시 `.github/workflows/release.yml`에서만 시크릿과 함께 실행(사람 승인 게이트)
+- JDK 17.0.19 · Maven 3.9.9 (머신 전용 경로 — 리포지토리에 커밋 안 함, CI는 setup-java 사용)
+
+## 아키텍처
+
+폴리글랏 모노레포. Java MVP 구현이 `java/`에서 완료됐다(6개 모듈, reactor 빌드).
 
 ```
 java/                          # Maven 멀티모듈 reactor
@@ -46,6 +64,7 @@ spec/                          # 버전 고정 Keycloak Admin OpenAPI (Python �
 - ⚠️ **JWT 검증 강화 필수(CVE-2026-11800).** 알고리즘 핀닝(`none` 거부·헤더 신뢰 금지), iss/aud 검증, 클록 스큐 제한. Nimbus는 building block만 제공하고 안전한 기본값은 주지 않는다.
 - ⚠️ **보안**: 토큰/시크릿 로깅 금지·마스킹, TLS 검증 기본 on, 기본 인메모리 토큰 저장 + 교체 가능한 `TokenStore` SPI.
 - ⚠️ **어떤 Java OIDC 라이브러리도 자체 "certified" 아님.** 완성 제품을 필요 시 OIDF에 인증한다.
+- ⚠️ **Java 17 javadoc은 doclint 기본 엄격.** `release` 프로파일의 `maven-javadoc-plugin`에 `<doclint>none</doclint>` + `<failOnError>false</failOnError>`를 주지 않으면 문서 경고로 `-javadoc.jar` 생성이 실패할 수 있다.
 
 ## 확정 의존성 (BOM으로 고정)
 

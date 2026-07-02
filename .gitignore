@@ -32,6 +32,9 @@ secring.*
 .env.*
 settings-security.xml
 
+# ── SDD 진척 원장 (로컬 스크래치) ─────────────────────────────
+.superpowers/
+
 # ── Python (향후 SDK) ─────────────────────────────────────────
 __pycache__/
 *.py[cod]

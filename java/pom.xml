@@ -1,0 +1,204 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>io.github.xzawed</groupId>
+  <artifactId>keycloak-sdk-parent</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>Keycloak SDK (parent)</name>
+  <description>Multi-language Keycloak SDK — Java reference implementation</description>
+  <url>https://github.com/xzawed/KeyCloakSDK</url>
+
+  <licenses>
+    <license>
+      <name>Apache-2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+    </license>
+  </licenses>
+  <developers>
+    <developer><name>xzawed</name><email>xzawed31@gmail.com</email></developer>
+  </developers>
+  <scm>
+    <connection>scm:git:https://github.com/xzawed/KeyCloakSDK.git</connection>
+    <developerConnection>scm:git:https://github.com/xzawed/KeyCloakSDK.git</developerConnection>
+    <url>https://github.com/xzawed/KeyCloakSDK</url>
+  </scm>
+
+  <modules>
+    <module>keycloak-sdk-bom</module>
+    <module>keycloak-sdk-core</module>
+    <module>keycloak-sdk-auth</module>
+    <module>keycloak-sdk-admin</module>
+    <module>keycloak-sdk</module>
+    <module>keycloak-sdk-examples</module>
+  </modules>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <keycloak.adminclient.version>26.0.10</keycloak.adminclient.version>
+    <nimbus.oidc.version>11.37.2</nimbus.oidc.version>
+    <nimbus.jose.version>10.9.1</nimbus.jose.version>
+    <junit.version>6.1.1</junit.version>
+    <mockito.version>5.23.0</mockito.version>
+    <testcontainers.version>2.0.5</testcontainers.version>
+    <testcontainers.keycloak.version>4.2.1</testcontainers.keycloak.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.junit</groupId><artifactId>junit-bom</artifactId>
+        <version>${junit.version}</version><type>pom</type><scope>import</scope>
+      </dependency>
+
+      <!-- ⚠️ WBS 4.1 dependencyConvergence 핀: keycloak-admin-client 26.0.10의 전이 트리는
+           keycloak-admin-client 자신이 직접 선언하는 Jackson 2.21.x 계열과, RESTEasy
+           6.2.15.Final의 jackson2-provider가 재선언하는 구버전(Jackson 2.18.5,
+           jboss-logging 3.5.3.Final 등)이 충돌한다. 각 아티팩트를 더 높은/
+           keycloak-admin-client가 직접 선언한 버전으로 고정해 수렴시킨다. -->
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-core</artifactId><version>2.21.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>2.21.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-annotations</artifactId><version>2.21</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jdk8</artifactId><version>2.21.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId><version>2.21.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.jakarta.rs</groupId><artifactId>jackson-jakarta-rs-base</artifactId><version>2.21.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.module</groupId><artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId><version>2.21.2</version></dependency>
+      <dependency><groupId>org.jboss.logging</groupId><artifactId>jboss-logging</artifactId><version>3.6.2.Final</version></dependency>
+      <!-- 위 8개(Jackson x6 + jboss-logging)는 keycloak-client-parent:26.0.10의 관리 버전과 정확히 일치한다. -->
+      <!-- commons-io: 더 높은 버전으로 고정(picked higher) — keycloak-client-parent 등 권위 있는 BOM 출처 없음. -->
+      <dependency><groupId>commons-io</groupId><artifactId>commons-io</artifactId><version>2.19.0</version></dependency>
+      <!-- jakarta.activation-api: 더 높은 버전으로 고정(picked higher) — keycloak-client-parent 등 권위 있는 BOM 출처 없음. -->
+      <dependency><groupId>jakarta.activation</groupId><artifactId>jakarta.activation-api</artifactId><version>2.1.4</version></dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+    <plugins>
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>0.8.12</version>
+        <configuration>
+          <excludes>
+            <exclude>**/*IT.class</exclude>
+            <exclude>**/KeycloakContainerSupport.class</exclude>
+            <!-- 라이브 네트워크 경계: 단위테스트 불가, Phase 6 통합테스트로 검증 (거버넌스 G3 주석) -->
+            <exclude>**/AuthClient.class</exclude>
+            <exclude>**/AdminClient.class</exclude>
+          </excludes>
+        </configuration>
+        <executions>
+          <execution><id>prepare</id><goals><goal>prepare-agent</goal></goals></execution>
+          <execution><id>report</id><phase>verify</phase><goals><goal>report</goal></goals></execution>
+          <execution>
+            <id>check</id><phase>verify</phase><goals><goal>check</goal></goals>
+            <configuration>
+              <rules>
+                <rule>
+                  <element>BUNDLE</element>
+                  <limits>
+                    <limit><counter>LINE</counter><value>COVEREDRATIO</value><minimum>0.90</minimum></limit>
+                    <limit><counter>BRANCH</counter><value>COVEREDRATIO</value><minimum>0.85</minimum></limit>
+                  </limits>
+                </rule>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>3.5.0</version>
+        <executions>
+          <execution>
+            <id>enforce</id><goals><goal>enforce</goal></goals>
+            <configuration>
+              <rules>
+                <dependencyConvergence/>
+                <requireJavaVersion><version>[17,)</version></requireJavaVersion>
+                <requireMavenVersion><version>[3.9,)</version></requireMavenVersion>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <!-- Maven Central(Central Portal) 배포 프로파일 (WBS 7.1). 로컬 검증:
+       mvn -f java/pom.xml -Prelease -DskipTests -Dgpg.skip=true package
+       실제 배포(mvn ... deploy)는 태그 드리븐 릴리스 CI(.github/workflows/release.yml, WBS 7.2)에서만
+       수행하며 GPG 서명·Central Portal 토큰 시크릿이 필요하다(사람 승인 게이트). -->
+  <profiles>
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <!-- -sources.jar 첨부 -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>3.3.1</version>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals><goal>jar</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- -javadoc.jar 첨부. ⚠️ Java 17 javadoc은 엄격(doclint) — 문서 경고로 빌드가 실패하지
+               않도록 doclint를 끄고 failOnError=false로 완화한다. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <version>3.11.2</version>
+            <configuration>
+              <doclint>none</doclint>
+              <failOnError>false</failOnError>
+            </configuration>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals><goal>jar</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- 배포 아티팩트 GPG 서명 (verify 단계에 바인딩). 로컬/CI 검증 시 -Dgpg.skip=true로 생략. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.7</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals><goal>sign</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- Maven Central Portal 배포(구 OSSRH는 2025-06-30 종료, Central Portal 경로만 유효). -->
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.11.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>
