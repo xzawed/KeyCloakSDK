@@ -17,6 +17,8 @@ public final class KeycloakClient implements AutoCloseable {
     AdminClient admin = new AdminClient(config);   // 기본: 네이티브 client-credentials 그랜트 (auth와 독립)
     return new KeycloakClient(auth, admin);
   }
+  /** 패키지 전용 팩토리 — 주입된 AuthClient/AdminClient를 보관한다(테스트 주입 경로, AdminClient.withKeycloak과 동일 패턴). */
+  static KeycloakClient of(AuthClient auth, AdminClient admin) { return new KeycloakClient(auth, admin); }
   public AuthClient auth() { return auth; }
   public AdminClient admin() { return admin; }
   @Override public void close() { admin.close(); }
