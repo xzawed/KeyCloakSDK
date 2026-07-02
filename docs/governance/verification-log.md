@@ -137,6 +137,17 @@
 
 ---
 
+## 최종 전체 브랜치 리뷰 (opus) + 수정
+
+- **Claude opus 홀리스틱 리뷰**: 판정 **MERGEABLE-WITH-FIXES**, Critical 0. 보안 코어(JWT·TLS·마스킹·스레드안전) 견고 확인. per-task가 놓친 횡단 이슈 3건(Important) 포착.
+- **G5 Codex 최종**: 이 세션 Codex CLI 반복 타임아웃(환경 저하)으로 최종 단독 재검증 미완. Phase 0~5 매 태스크 Codex 교차검증(실제 결함 다수 포착) + 실제 Keycloak E2E로 대체 검증.
+- **사용자 재정**: Important 3건 모두 배포 전 수정.
+- **Wave A** (4760f64,858da01,b9f5df8,0e0a37d): I.1 `validate()`→SDK `ValidatedToken`(Nimbus 미노출) · I.2 `exchangeCode` 구현(Authorization Code 완성) · I.3 no-op `tlsVerification` 제거 · M.6 TokenSet null 가드 · M.7 JWKS 타임아웃. core 100%/91.7%, auth 91.6%/87.5%.
+- **Wave B** (0fd6260,ff6d4ea,2c0aaf6): M.1 KeycloakClient admin 지연초기화(공개 클라이언트 지원) · M.2 create 파사드 Response 누수 수정 · M.3 AdminExceptions 패키지 전용화. admin 100%/100%, keycloak-sdk 100%/100%.
+- **최종 게이트**: `mvn -f java/pom.xml clean verify` (Docker 포함) → **BUILD SUCCESS**, 7모듈, IT 3/3(ValidatedToken 반영 후 AuthFlowIT 재통과), 전 커버리지 게이트 통과.
+
+**✅ 브랜치 병합 준비 완료.**
+
 ## 종합 (Java MVP 전 Phase 완료)
 - **총 100 테스트** = 단위 94 (core 23·auth 25·admin 43·sdk 3) + 통합 6 (Testcontainers 실제 KC 26.6.4).
 - 커버리지 게이트(로직 라인≥90/브랜치≥85) 전 모듈 통과. 네트워크 경계(AuthClient/AdminClient)는 통합으로 검증.

@@ -35,6 +35,12 @@
 - **루프 엔지니어링**: 게이트 미달 시 RCA→시정→재검증 루프(게이트당 최대 3회, 초과 시 에스컬레이션). 결과는 [검증 로그](../../governance/verification-log.md)에 기록.
 - **브랜치 격리**: `feature/java-sdk-mvp`에서 구현, main에 PR(사람 승인). Maven Central 배포는 사람 승인 필수.
 
+**최종 리뷰(opus) 반영 변경** (배포 전 Important/Minor 수정 — 아래 태스크 코드보다 이 항목이 우선):
+- **I.1**: `AuthClient.validate()`/`JwtValidator.validate()`는 Nimbus `JWTClaimsSet`가 아니라 SDK 타입 **`ValidatedToken`**(subject/issuer/audience/expiresAt/issuedAt/claims) 반환 — 공개 시그니처에 Nimbus 미노출.
+- **I.2**: Authorization Code 흐름 완성 — `AuthClient.exchangeCode(code, redirectUri, codeVerifier)` 구현(기밀=ClientSecretBasic, 공개=client_id+PKCE). (실 HTTP는 브라우저 로그인 필요라 단위=요청 조립 검증.)
+- **I.3**: `KeycloakConfig`의 no-op **`tlsVerification` 옵션 제거**(저장만 하고 전송에 미연결이라 오해 소지). TLS는 기본 검증 유지.
+- **M.1**: `KeycloakClient`의 `admin()` **지연 초기화**(공개 클라이언트가 secret 없이 `auth()` 사용 가능). **M.2**: users/clients/groups `create` 파사드가 `Response`를 try-with-resources로 닫음(누수). **M.3**: `AdminExceptions` 패키지 전용화(jakarta 타입 공개 미노출). **M.6/M.7**: `TokenSet` null 만료 가드, JWKS fetch가 config 타임아웃 적용.
+
 ---
 
 ## WBS 개요 (Work Breakdown Structure)
