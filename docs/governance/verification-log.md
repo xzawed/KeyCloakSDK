@@ -109,6 +109,20 @@
 
 **✅ Phase 5 (facade) 완료.**
 
+## Phase 6 — 통합 테스트 (Testcontainers, 실제 Keycloak 26.6.4)
+
+### 6.1 하네스+realm · 6.2 인증 E2E · 6.3 관리 E2E
+- **커밋**: 0a2d3e4..d8e7022 (auth fix b8c0998, 6.1 c0481d6, 6.2 eda01c4, 6.3 d8e7022)
+- **G1**: ✅ (전체 reactor `clean verify` BUILD SUCCESS) / **G2**: ✅ 전 단위 + **IT 3클래스 6검사 통과** (SmokeIT 1, AuthFlowIT 3, AdminOpsIT 2) / **G6**: ✅
+- **인프라 이슈 2건 해결(RCA→수정)**:
+  - Keycloak `--import-realm`은 파일명이 `<realm>-realm.json`이어야 함 → `test-realm.json`이 realm `it-realm`과 불일치해 컨테이너 exit 1 → **`it-realm-realm.json`으로 개명**.
+  - IDE 백그라운드 컴파일러의 stale `AuthFlowIT.class`(필드 descriptor가 default-package `AuthClient`) → `NoClassDefFoundError` → **`mvn clean`으로 해소**.
+- 🔴 **통합테스트가 발견한 실제 SDK 버그(Critical)**: 실제 Keycloak client-credentials 토큰의 `aud`는 **다중 값**(`["it-client","realm-management"]`)인데, `JwtValidator`가 `exactMatchClaims`에 audience를 넣어 **정확 일치**를 요구 → 정상 토큰 거부(`BadJWTException: aud rejected`). 단위테스트는 단일 aud라 은폐됨. **수정**(b8c0998): audience를 requiredAudience(포함검사)로만, issuer만 정확일치. 다중 aud 회귀테스트 2개 추가. **E2E로 수용 확인 + 불일치 aud 거부 확인**.
+- **G5 Codex**: ⚠️ 이 세션에서 Codex CLI 반복 타임아웃(환경 일시 저하)으로 이 픽스 단독 재검증 미완. **대체 검증**: (a) 실제 Keycloak 26.6.4 E2E 통과(가장 강한 증거), (b) 비-vacuous 단위 회귀테스트(다중 aud 수용=yes, 불일치 aud 거부=yes), (c) 변경 의미 명확. Phase 3에서 원본 JwtValidator는 Codex 2회 루프 심층검증 완료.
+- **모델**: 구현/수정=sonnet, RCA=controller(경험적 컨테이너 진단)
+
+**✅ Phase 6 (통합) 완료. SDK가 실제 Keycloak 26.6.4로 end-to-end 동작. 통합이 프로덕션 aud 버그 1건 발견·수정.**
+
 <!--
 태스크 기록 템플릿 (완료 시 아래 형식으로 추가):
 

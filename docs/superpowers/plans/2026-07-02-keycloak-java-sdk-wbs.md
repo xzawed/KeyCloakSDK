@@ -1170,7 +1170,10 @@ public final class JwtValidator {
                        Set<JWSAlgorithm> allowedAlgs, Duration skew) {
     DefaultJWTProcessor<SecurityContext> p = new DefaultJWTProcessor<>();
     p.setJWSKeySelector(new JWSVerificationKeySelector<>(allowedAlgs, jwkSource)); // 허용 alg만 → none/기타 거부
-    JWTClaimsSet exact = new JWTClaimsSet.Builder().issuer(issuer).audience(audience).build();
+    // ⚠️ audience는 exactMatchClaims에 넣지 않는다 — 실제 Keycloak 토큰의 aud는 다중 값
+    // (예: ["client","realm-management"])이라 정확 일치가 아니라 '포함 검사'여야 한다(통합테스트 발견).
+    // requiredAudience 파라미터가 포함 검사를 수행. issuer만 정확 일치.
+    JWTClaimsSet exact = new JWTClaimsSet.Builder().issuer(issuer).build();
     DefaultJWTClaimsVerifier<SecurityContext> v =
         new DefaultJWTClaimsVerifier<>(audience, exact, Set.of("exp"));
     v.setMaxClockSkew((int) skew.getSeconds());
