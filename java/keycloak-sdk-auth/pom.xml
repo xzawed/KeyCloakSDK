@@ -10,6 +10,15 @@
   <artifactId>keycloak-sdk-auth</artifactId>
   <name>Keycloak SDK :: auth</name>
   <dependencies>
+    <dependency><groupId>io.github.xzawed</groupId><artifactId>keycloak-sdk-core</artifactId><version>${project.version}</version></dependency>
+    <dependency>
+      <groupId>com.nimbusds</groupId><artifactId>oauth2-oidc-sdk</artifactId><version>${nimbus.oidc.version}</version>
+      <exclusions>
+        <!-- pin nimbus-jose-jwt to ${nimbus.jose.version} explicitly (transitive brings 10.9) to satisfy enforcer dependencyConvergence -->
+        <exclusion><groupId>com.nimbusds</groupId><artifactId>nimbus-jose-jwt</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency><groupId>com.nimbusds</groupId><artifactId>nimbus-jose-jwt</artifactId><version>${nimbus.jose.version}</version></dependency>
     <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.mockito</groupId><artifactId>mockito-core</artifactId><version>${mockito.version}</version><scope>test</scope></dependency>
     <dependency><groupId>org.mockito</groupId><artifactId>mockito-junit-jupiter</artifactId><version>${mockito.version}</version><scope>test</scope></dependency>
