@@ -1,11 +1,15 @@
 package io.github.xzawed.keycloak.auth;
 import com.nimbusds.oauth2.sdk.*;
+import com.nimbusds.oauth2.sdk.auth.*;
 import com.nimbusds.oauth2.sdk.http.HTTPRequest;
 import com.nimbusds.oauth2.sdk.id.*;
 import com.nimbusds.oauth2.sdk.pkce.CodeChallengeMethod;
+import com.nimbusds.oauth2.sdk.token.Tokens;
 import com.nimbusds.openid.connect.sdk.*;
 import io.github.xzawed.keycloak.core.*;
+import io.github.xzawed.keycloak.core.exception.KeycloakAuthException;
 import java.net.URI;
+import java.time.Instant;
 
 public class AuthClient {
   private final KeycloakConfig config; private final OidcMetadata metadata;
@@ -35,4 +39,34 @@ public class AuthClient {
   }
   // exchangeCode(...) 는 3.3 확장: TokenRequest(AuthorizationCodeGrant)를 applyTimeouts(tr.toHTTPRequest()).send() 후 toTokenSet 매핑.
   // 실제 HTTP 성공/실패 경로는 통합 테스트(6.2)에서 검증.
+
+  public TokenSet clientCredentialsToken() {
+    try {
+      ClientAuthentication auth = new ClientSecretBasic(
+          new ClientID(config.getClientId()),
+          new Secret(new String(config.getClientSecret())));
+      TokenRequest tr = new TokenRequest.Builder(metadata.getTokenEndpoint(), auth,
+          new ClientCredentialsGrant())
+          .scope(new Scope(config.getScopes().toArray(new String[0])))
+          .build();
+      long issuedAt = Instant.now().getEpochSecond();
+      TokenResponse resp = TokenResponse.parse(applyTimeouts(tr.toHTTPRequest()).send());
+      if (!resp.indicatesSuccess()) {
+        var err = resp.toErrorResponse().getErrorObject();
+        throw new KeycloakAuthException("Client credentials failed: " + err.getDescription(),
+            err.getCode(), null);
+      }
+      return toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
+    } catch (java.io.IOException | com.nimbusds.oauth2.sdk.ParseException e) {
+      throw new KeycloakAuthException("Client credentials request error", null, e);
+    }
+  }
+  static TokenSet toTokenSet(Tokens tokens, long issuedAtEpoch) {
+    var at = tokens.getAccessToken();
+    Instant exp = Instant.ofEpochSecond(issuedAtEpoch + at.getLifetime());
+    String refresh = tokens.getRefreshToken() == null ? null : tokens.getRefreshToken().getValue();
+    return new TokenSet(
+        at.getValue(), refresh, null, "Bearer",
+        at.getScope() == null ? null : at.getScope().toString(), exp);
+  }
 }
