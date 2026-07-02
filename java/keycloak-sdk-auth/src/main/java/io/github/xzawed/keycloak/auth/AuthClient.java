@@ -1,15 +1,23 @@
 package io.github.xzawed.keycloak.auth;
+import com.nimbusds.common.contenttype.ContentType;
 import com.nimbusds.oauth2.sdk.*;
 import com.nimbusds.oauth2.sdk.auth.*;
 import com.nimbusds.oauth2.sdk.http.HTTPRequest;
+import com.nimbusds.oauth2.sdk.http.HTTPResponse;
 import com.nimbusds.oauth2.sdk.id.*;
 import com.nimbusds.oauth2.sdk.pkce.CodeChallengeMethod;
+import com.nimbusds.oauth2.sdk.token.RefreshToken;
 import com.nimbusds.oauth2.sdk.token.Tokens;
+import com.nimbusds.oauth2.sdk.util.URLUtils;
 import com.nimbusds.openid.connect.sdk.*;
 import io.github.xzawed.keycloak.core.*;
 import io.github.xzawed.keycloak.core.exception.KeycloakAuthException;
 import java.net.URI;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 public class AuthClient {
   private final KeycloakConfig config; private final OidcMetadata metadata;
@@ -42,10 +50,7 @@ public class AuthClient {
 
   public TokenSet clientCredentialsToken() {
     try {
-      ClientAuthentication auth = new ClientSecretBasic(
-          new ClientID(config.getClientId()),
-          new Secret(new String(config.getClientSecret())));
-      TokenRequest tr = new TokenRequest.Builder(metadata.getTokenEndpoint(), auth,
+      TokenRequest tr = new TokenRequest.Builder(metadata.getTokenEndpoint(), clientAuth(),
           new ClientCredentialsGrant())
           .scope(new Scope(config.getScopes().toArray(new String[0])))
           .build();
@@ -61,6 +66,54 @@ public class AuthClient {
       throw new KeycloakAuthException("Client credentials request error", null, e);
     }
   }
+
+  public TokenSet refresh(String refreshToken) {
+    if (refreshToken == null) {
+      throw new IllegalArgumentException("refreshToken must not be null");
+    }
+    try {
+      TokenRequest tr = new TokenRequest.Builder(metadata.getTokenEndpoint(), clientAuth(),
+          new RefreshTokenGrant(new RefreshToken(refreshToken)))
+          .build();
+      long issuedAt = Instant.now().getEpochSecond();
+      TokenResponse resp = TokenResponse.parse(applyTimeouts(tr.toHTTPRequest()).send());
+      if (!resp.indicatesSuccess()) {
+        var err = resp.toErrorResponse().getErrorObject();
+        throw new KeycloakAuthException("Token refresh failed: " + err.getDescription(),
+            err.getCode(), null);
+      }
+      return toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
+    } catch (java.io.IOException | com.nimbusds.oauth2.sdk.ParseException e) {
+      throw new KeycloakAuthException("Token refresh request error", null, e);
+    }
+  }
+
+  public void logout(String refreshToken) {
+    if (refreshToken == null) {
+      throw new IllegalArgumentException("refreshToken must not be null");
+    }
+    try {
+      HTTPRequest req = new HTTPRequest(HTTPRequest.Method.POST, metadata.getEndSessionEndpoint().toURL());
+      req.setEntityContentType(ContentType.APPLICATION_URLENCODED);
+      clientAuth().applyTo(req);
+      Map<String, List<String>> params = new LinkedHashMap<>();
+      params.put("refresh_token", Collections.singletonList(refreshToken));
+      req.setBody(URLUtils.serializeParameters(params));
+      HTTPResponse resp = applyTimeouts(req).send();
+      if (!resp.indicatesSuccess()) {
+        throw new KeycloakAuthException("Logout failed (HTTP " + resp.getStatusCode() + ")", null, null);
+      }
+    } catch (java.io.IOException e) {
+      throw new KeycloakAuthException("Logout request error", null, e);
+    }
+  }
+
+  private ClientAuthentication clientAuth() {
+    return new ClientSecretBasic(
+        new ClientID(config.getClientId()),
+        new Secret(new String(config.getClientSecret())));
+  }
+
   static TokenSet toTokenSet(Tokens tokens, long issuedAtEpoch) {
     var at = tokens.getAccessToken();
     Instant exp = Instant.ofEpochSecond(issuedAtEpoch + at.getLifetime());
