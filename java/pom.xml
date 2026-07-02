@@ -51,6 +51,22 @@
         <groupId>org.junit</groupId><artifactId>junit-bom</artifactId>
         <version>${junit.version}</version><type>pom</type><scope>import</scope>
       </dependency>
+
+      <!-- ⚠️ WBS 4.1 dependencyConvergence 핀: keycloak-admin-client 26.0.10의 전이 트리는
+           keycloak-admin-client 자신이 직접 선언하는 Jackson 2.21.x 계열과, RESTEasy
+           6.2.15.Final의 jackson2-provider가 재선언하는 구버전(Jackson 2.18.5,
+           jboss-logging 3.5.3.Final 등)이 충돌한다. 각 아티팩트를 더 높은/
+           keycloak-admin-client가 직접 선언한 버전으로 고정해 수렴시킨다. -->
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-core</artifactId><version>2.21.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>2.21.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-annotations</artifactId><version>2.21</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jdk8</artifactId><version>2.21.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId><version>2.21.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.jakarta.rs</groupId><artifactId>jackson-jakarta-rs-base</artifactId><version>2.21.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.module</groupId><artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId><version>2.21.2</version></dependency>
+      <dependency><groupId>org.jboss.logging</groupId><artifactId>jboss-logging</artifactId><version>3.6.2.Final</version></dependency>
+      <dependency><groupId>commons-io</groupId><artifactId>commons-io</artifactId><version>2.19.0</version></dependency>
+      <dependency><groupId>jakarta.activation</groupId><artifactId>jakarta.activation-api</artifactId><version>2.1.4</version></dependency>
     </dependencies>
   </dependencyManagement>
 
