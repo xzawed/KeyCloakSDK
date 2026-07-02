@@ -8,7 +8,7 @@ import java.util.function.Supplier;
  * {@code jakarta.ws.rs.*} 예외를 SDK 공개 예외로 변환하는 경계. 리소스 파사드 메서드는
  * {@link #call(Supplier)} / {@link #run(Runnable)}로 admin-client 호출을 감싼다.
  */
-public final class AdminExceptions {
+final class AdminExceptions {
   private AdminExceptions() {}
 
   public static <T> T call(Supplier<T> action) {
