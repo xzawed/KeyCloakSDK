@@ -62,6 +62,11 @@ public final class AdminClient implements AutoCloseable {
     return new UsersResource(raw().realm(config.getRealm()).users());
   }
 
+  /** 클라이언트 CRUD 파사드(WBS 4.4). */
+  public ClientsResource clients() {
+    return new ClientsResource(raw().realm(config.getRealm()).clients());
+  }
+
   @Override
   public void close() {
     keycloak.close();
