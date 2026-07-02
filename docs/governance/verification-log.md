@@ -27,6 +27,14 @@
 - **Codex 확인(정상)**: Nimbus 기본 API(AuthenticationRequest.Builder, CodeChallenge.compute, TokenRequest, TokenResponse.parse, ClientSecretBasic, BearerAccessToken.getLifetime), testcontainers-junit-jupiter:2.0.5 좌표.
 - **판정**: 계획 보정 완료 → Task 1.1 실행 승인.
 
+## Phase 1 — 기반 (Foundation)
+
+### 1.1 부모 POM & 멀티모듈 reactor
+- **커밋**: 969dc47..aab4a49
+- **G1 빌드**: ✅ (`mvn validate` SUCCESS, 6 모듈) / **G2 테스트**: — (코드 없음) / **G3 커버리지**: — (코드 없음)
+- **G4 스펙리뷰**: ✅ (diff가 브리프와 일치, 좌표·버전 정확, bom stub) / **G5 Codex**: ✅ CONFIRMED / **G6 보안**: ✅
+- **루프**: 없음 (enforcer 수렴 1회 통과) / **모델**: 구현=sonnet, G5=Codex(GPT-5)
+
 <!--
 태스크 기록 템플릿 (완료 시 아래 형식으로 추가):
 
