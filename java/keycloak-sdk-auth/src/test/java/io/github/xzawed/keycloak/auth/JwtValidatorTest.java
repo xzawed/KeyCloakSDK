@@ -3,7 +3,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.nimbusds.jose.*; import com.nimbusds.jose.crypto.*;
 import com.nimbusds.jose.jwk.*; import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.*;
-import java.security.SecureRandom;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 
@@ -50,17 +49,20 @@ class JwtValidatorTest {
   }
 
   // RS256/HS256 alg-confusion 회귀 테스트: 검증기는 RS256만 허용하도록 고정되어 있는데,
-  // 공격자가 (예: 공개된 RSA 공개키를 HMAC 비밀키처럼 사용해) HS256으로 서명한 토큰을 제시하는 경우를 시뮬레이션한다.
-  // claim은 모두 유효하지만 alg가 허용 집합(RS256)에 없으므로 반드시 거부되어야 한다.
-  @Test void hs256Token_rejected_whenValidatorPinnedToRs256() throws Exception {
+  // 공격자가 검증기가 신뢰하는 RSA 공개키 바이트를 그대로 HMAC 비밀키로 재사용해 HS256으로
+  // 서명한 토큰을 제시하는 "고전적" 알고리즘 혼동 공격을 시뮬레이션한다(naive verifier가
+  // RSA 공개키를 HMAC 키로 재사용하는 경우를 노린 공격). claim은 모두 유효하지만 alg가
+  // 허용 집합(RS256)에 없으므로 반드시 거부되어야 한다.
+  @Test void hs256TokenSignedWithRsaPublicKeyBytes_rejected_whenValidatorPinnedToRs256() throws Exception {
     RSAKey rsaKey = new RSAKeyGenerator(2048).keyID("k1").generate();
     String issuer = "https://kc.example.com/realms/r";
     JwtValidator v = JwtValidator.withStaticJwks(
         new JWKSet(rsaKey.toPublicJWK()), issuer, "app",
         Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
 
-    byte[] secret = new byte[32]; // >=256-bit HMAC secret
-    new SecureRandom().nextBytes(secret);
+    // 공격자가 검증기에 배포된 RSA 공개키(X.509 인코딩)를 그대로 HMAC 비밀키로 사용한다.
+    // 2048비트 RSA 공개키 인코딩은 256비트(32바이트)를 훨씬 상회하므로 HS256에 유효한 키다.
+    byte[] secret = rsaKey.toRSAPublicKey().getEncoded();
 
     SignedJWT hs256Jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.HS256).build(),
