@@ -10,7 +10,6 @@ class KeycloakConfigTest {
         .serverUrl("https://kc.example.com").realm("r").clientId("app").build();
     assertEquals("https://kc.example.com", c.getServerUrl());
     assertEquals(Duration.ofSeconds(30), c.getClockSkew());
-    assertTrue(c.isTlsVerification());
   }
   @Test void missingRealm_throwsConfigException() {
     KeycloakConfig.Builder b = KeycloakConfig.builder().serverUrl("x").clientId("app");
@@ -42,7 +41,6 @@ class KeycloakConfigTest {
         .connectTimeout(Duration.ofSeconds(5))
         .readTimeout(Duration.ofSeconds(15))
         .clockSkew(Duration.ofSeconds(60))
-        .tlsVerification(false)
         .build();
     assertEquals("r", c.getRealm());
     assertEquals("app", c.getClientId());
@@ -50,6 +48,5 @@ class KeycloakConfigTest {
     assertEquals(Duration.ofSeconds(5), c.getConnectTimeout());
     assertEquals(Duration.ofSeconds(15), c.getReadTimeout());
     assertEquals(Duration.ofSeconds(60), c.getClockSkew());
-    assertFalse(c.isTlsVerification());
   }
 }
