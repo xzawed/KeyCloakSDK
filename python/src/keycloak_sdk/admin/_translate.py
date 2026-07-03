@@ -6,7 +6,8 @@
 """
 from __future__ import annotations
 
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 from keycloak.exceptions import KeycloakError
 
@@ -31,7 +32,11 @@ def translate(exc: KeycloakError) -> KeycloakAdminError | KeycloakTransportError
     """
     status = getattr(exc, "response_code", None)
     body = getattr(exc, "response_body", None)
-    body_str = body.decode() if isinstance(body, (bytes, bytearray)) else (str(body) if body else None)
+    body_str: str | None
+    if isinstance(body, (bytes, bytearray)):
+        body_str = body.decode()
+    else:
+        body_str = str(body) if body else None
     if status is None:
         return KeycloakTransportError(str(exc))
     if status == 404:

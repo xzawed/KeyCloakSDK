@@ -34,7 +34,7 @@ class KeycloakClient:
         self._admin = admin
 
     @classmethod
-    def create(cls, config: KeycloakConfig) -> "KeycloakClient":
+    def create(cls, config: KeycloakConfig) -> KeycloakClient:
         """`config`로부터 `OidcEndpoints`+`AuthClient`를 즉시 조립한다.
 
         `admin`은 `.admin` 최초 접근 시까지 생성을 미룬다(지연 프로퍼티).
@@ -44,7 +44,7 @@ class KeycloakClient:
         return cls(config, auth)
 
     @classmethod
-    def _of(cls, auth: AuthClient, admin: AdminClient) -> "KeycloakClient":
+    def _of(cls, auth: AuthClient, admin: AdminClient) -> KeycloakClient:
         """패키지 전용 테스트 시드. `auth`/`admin`을 그대로 주입해 지연 admin 생성
         경로를 우회한 인스턴스를 만든다 — `config`는 필요하지 않다(admin이 이미
         준비돼 있으므로 지연 생성이 트리거되지 않는다).
@@ -80,7 +80,7 @@ class KeycloakClient:
             if callable(close):
                 close()
 
-    def __enter__(self) -> "KeycloakClient":
+    def __enter__(self) -> KeycloakClient:
         return self
 
     def __exit__(

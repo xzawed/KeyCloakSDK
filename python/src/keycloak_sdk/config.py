@@ -1,8 +1,11 @@
 """불변 설정."""
 from __future__ import annotations
-from dataclasses import dataclass, field
+
+from dataclasses import dataclass
+
 from ._internal.secrets import mask
 from .exceptions import KeycloakConfigError
+
 
 @dataclass(frozen=True)
 class KeycloakConfig:
