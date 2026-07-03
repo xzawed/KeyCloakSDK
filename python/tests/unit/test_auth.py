@@ -5,6 +5,9 @@
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,6 +18,7 @@ from keycloak_sdk.auth import AuthClient
 from keycloak_sdk.config import KeycloakConfig
 from keycloak_sdk.exceptions import KeycloakAuthError, KeycloakTransportError
 from keycloak_sdk.oidc import OidcEndpoints
+from keycloak_sdk.tokens import TokenSet
 
 
 def _config(**overrides: object) -> KeycloakConfig:
@@ -99,3 +103,92 @@ def test_wrap_passes_through_successful_result():
     client = _client(MagicMock(spec=KeycloakOpenID))
 
     assert client._wrap(lambda: 42) == 42
+
+
+# --- 3.3: client_credentials_token + PKCE authorization_url ---------------------
+
+
+def test_client_credentials_token_maps_response():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.token.return_value = {
+        "access_token": "acc",
+        "refresh_token": "ref",
+        "token_type": "Bearer",
+        "scope": "openid",
+        "expires_in": 300,
+    }
+    client = _client(openid)
+
+    before = time.time()
+    result = client.client_credentials_token()
+    after = time.time()
+
+    openid.token.assert_called_once_with(grant_type="client_credentials")
+    assert isinstance(result, TokenSet)
+    assert result.access_token == "acc"
+    assert result.refresh_token == "ref"
+    assert result.expires_at is not None
+    assert before + 300 <= result.expires_at <= after + 300
+
+
+def test_client_credentials_token_wraps_auth_error():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.token.side_effect = KeycloakAuthenticationError(
+        error_message="bad secret", response_code=401,
+    )
+    client = _client(openid)
+
+    with pytest.raises(KeycloakAuthError):
+        client.client_credentials_token()
+
+
+def test_authorization_url_contains_pkce_state_and_nonce():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.auth_url.return_value = "https://kc.example.com/auth?mocked=1"
+    config = _config(scopes=("openid", "profile"))
+    client = _client(openid, config=config)
+
+    result = client.authorization_url("https://app.example.com/callback")
+
+    assert result.url == "https://kc.example.com/auth?mocked=1"
+    assert result.code_verifier and result.state and result.nonce
+    # PKCE verifier/state/nonce are unpredictable secrets — ensure the client
+    # doesn't degenerate to fixed/empty values.
+    assert len(result.code_verifier) >= 43  # RFC 7636 minimum length
+    assert result.state != result.nonce
+
+    expected_challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(result.code_verifier.encode()).digest())
+        .rstrip(b"=")
+        .decode()
+    )
+    openid.auth_url.assert_called_once_with(
+        "https://app.example.com/callback",
+        scope="openid profile",
+        state=result.state,
+        nonce=result.nonce,
+        code_challenge=expected_challenge,
+        code_challenge_method="S256",
+    )
+
+
+def test_authorization_url_generates_distinct_verifiers_per_call():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.auth_url.return_value = "https://kc.example.com/auth"
+    client = _client(openid)
+
+    first = client.authorization_url("https://app/cb")
+    second = client.authorization_url("https://app/cb")
+
+    assert first.code_verifier != second.code_verifier
+    assert first.state != second.state
+    assert first.nonce != second.nonce
+
+
+def test_authorization_url_wraps_transport_error():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.auth_url.side_effect = KeycloakGetError(error_message="dns failure")
+    client = _client(openid)
+
+    with pytest.raises(KeycloakTransportError):
+        client.authorization_url("https://app/cb")
