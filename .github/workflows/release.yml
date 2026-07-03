@@ -32,6 +32,16 @@ jobs:
           gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
+      # 태그(vX.Y.Z)가 릴리스 버전을 결정한다. POM은 main에서 -SNAPSHOT을 유지하고,
+      # 여기서 태그값으로 버전을 덮어써 Central이 요구하는 릴리스(비-SNAPSHOT) 좌표로 배포한다.
+      # (Maven Central은 SNAPSHOT 좌표를 거부하므로 이 단계가 없으면 배포가 실패한다.)
+      - name: Set release version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Releasing io.github.xzawed:* version $VERSION (from tag $GITHUB_REF_NAME)"
+          mvn -B -f java/pom.xml org.codehaus.mojo:versions-maven-plugin:2.21.0:set \
+            -DnewVersion="$VERSION" -DgenerateBackupPoms=false
+
       - name: Deploy to Maven Central (release profile)
         env:
           CENTRAL_TOKEN_USER: ${{ secrets.CENTRAL_TOKEN_USER }}

@@ -9,6 +9,7 @@ description = "Keycloak SDK for Python — 인증(OIDC) + 관리 API, python-key
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "xzawed", email = "xzawed31@gmail.com" }]
 keywords = ["keycloak", "oidc", "oauth2", "sso", "admin"]
 classifiers = [

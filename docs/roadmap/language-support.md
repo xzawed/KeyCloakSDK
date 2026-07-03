@@ -29,11 +29,11 @@
   mvn -f java/pom.xml -Prelease -DskipTests -Dgpg.skip=true package
   # → core/auth/admin/keycloak-sdk 각 target/에 *-sources.jar / *-javadoc.jar 생성 확인
   ```
-- [ ] **배포 트리거**: `git tag v0.1.0 && git push origin v0.1.0` → `release.yml`이 `-Prelease deploy` 실행 → Central Portal Deployments에서 Publish.
+- [ ] **배포 트리거**: `git tag v0.1.0 && git push origin v0.1.0` → `release.yml`이 **태그값으로 버전 set(`-SNAPSHOT` 제거)** 후 `-Prelease deploy` 실행 → Central Portal Deployments에서 Publish. (main POM은 계속 `-SNAPSHOT`; **태그가 릴리스 버전을 결정** — Central은 SNAPSHOT을 거부하므로 이 자동 치환이 필수.)
 
 ### Python → PyPI (`py-v*` 태그 → `.github/workflows/python-release.yml`)
 
-- [ ] **Trusted Publisher 설정(1회, 시크릿 불필요)**: [pypi.org](https://pypi.org)에서 프로젝트 `keycloak-sdk`에 GitHub Trusted Publisher 등록 — Owner `xzawed` · Repo `KeyCloakSDK` · Workflow `python-release.yml` · Environment 비움. OIDC 인증이라 저장 토큰이 없다.
+- [ ] **Trusted Publisher 설정(1회, 시크릿 불필요)**: [pypi.org Publishing](https://pypi.org/manage/account/publishing/)에서 **Pending Publisher로 반드시 미리 등록**(`keycloak-sdk`가 아직 PyPI에 없으므로 계정 레벨 "Add a pending publisher") — Owner `xzawed` · Repo `KeyCloakSDK` · Workflow `python-release.yml` · Environment 비움. OIDC 인증이라 저장 토큰이 없다.
 - [ ] **로컬 사전 검증(업로드 없이)**:
   ```bash
   cd python && python -m build

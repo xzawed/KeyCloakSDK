@@ -1,6 +1,6 @@
 # keycloak-sdk (Python)
 
-Keycloak SDK for Python — 인증(OIDC/OAuth2) + 관리 API. [`python-keycloak`](https://github.com/marcospereirampj/python-keycloak)의 `KeycloakOpenID`/`KeycloakAdmin`을 감싸고, JWT 검증만 [`joserfc`](https://jose.authlib.org/)로 자체 강화 구현한다. [Java SDK](../java/)와 개념·계층·명명이 동형(isomorphic)이다.
+Keycloak SDK for Python — 인증(OIDC/OAuth2) + 관리 API. [`python-keycloak`](https://github.com/marcospereirampj/python-keycloak)의 `KeycloakOpenID`/`KeycloakAdmin`을 감싸고, JWT 검증만 [`joserfc`](https://jose.authlib.org/)로 자체 강화 구현한다. [Java SDK](https://github.com/xzawed/KeyCloakSDK/tree/main/java/)와 개념·계층·명명이 동형(isomorphic)이다.
 
 ## 설치
 
@@ -31,7 +31,7 @@ with KeycloakClient.create(config) as kc:
     print([u.get("username") for u in users])
 ```
 
-전체 예제: [`examples/quickstart.py`](examples/quickstart.py).
+전체 예제: [`examples/quickstart.py`](https://github.com/xzawed/KeyCloakSDK/blob/main/python/examples/quickstart.py).
 
 ## Async
 
@@ -62,7 +62,7 @@ async def handler() -> None:
 
 `authorization_url`만 네트워크가 필요 없어 동기 메서드로 남아 있다(`await` 불필요).
 나머지 `auth`/`admin` 메서드는 모두 `async def`다. 전체 예제:
-[`examples/async_quickstart.py`](examples/async_quickstart.py).
+[`examples/async_quickstart.py`](https://github.com/xzawed/KeyCloakSDK/blob/main/python/examples/async_quickstart.py).
 
 ## Java ↔ Python API 매핑
 
