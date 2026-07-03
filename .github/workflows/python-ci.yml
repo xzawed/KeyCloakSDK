@@ -1,0 +1,17 @@
+name: Python CI
+on:
+  push: { branches: [main], paths: ['python/**', '.github/workflows/python-ci.yml'] }
+  pull_request: { branches: [main], paths: ['python/**'] }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: { python: ['3.10', '3.11', '3.12', '3.13'] }
+    defaults: { run: { working-directory: python } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '${{ matrix.python }}' }
+      - run: python -m pip install -e ".[dev]"
+      - run: pytest -m "not integration" --cov=keycloak_sdk --cov-fail-under=0
+      - run: mypy src
