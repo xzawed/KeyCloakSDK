@@ -33,6 +33,37 @@ with KeycloakClient.create(config) as kc:
 
 전체 예제: [`examples/quickstart.py`](examples/quickstart.py).
 
+## Async
+
+`keycloak_sdk.aio`는 sync API와 완전히 동형(같은 메서드명·값타입·예외)인 async
+미러다. python-keycloak의 `a_*` 메서드를 감싸 이벤트 루프를 블로킹하지 않는다 —
+FastAPI 등 async 프레임워크 안에서 쓰기에 적합하다.
+
+```python
+from keycloak_sdk.aio import AsyncKeycloakClient
+from keycloak_sdk.config import KeycloakConfig
+from keycloak_sdk._internal.secrets import mask
+
+config = KeycloakConfig(
+    server_url="https://keycloak.example.com",
+    realm="my-realm",
+    client_id="my-client",
+    client_secret="my-client-secret",
+)
+
+async def handler() -> None:
+    async with AsyncKeycloakClient.create(config) as kc:
+        token = await kc.auth.client_credentials_token()
+        print(f"access_token={mask(token.access_token)}")
+
+        users = await kc.admin.users.search(first=0, max=10)
+        print([u.get("username") for u in users])
+```
+
+`authorization_url`만 네트워크가 필요 없어 동기 메서드로 남아 있다(`await` 불필요).
+나머지 `auth`/`admin` 메서드는 모두 `async def`다. 전체 예제:
+[`examples/async_quickstart.py`](examples/async_quickstart.py).
+
 ## Java ↔ Python API 매핑
 
 두 SDK는 언어 중립 계약을 공유한다 — Java `camelCase` ↔ Python `snake_case`, 개념·흐름은 동일하다.
