@@ -24,3 +24,21 @@ jobs:
         with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
       - name: Full verify (단위 + 통합 IT)
         run: mvn -B -f java/pom.xml verify
+
+  # jackson-databind CVE(2026-54512..54518) 무위험 판정은 "SDK가 default/polymorphic typing을
+  # 켜지 않고 커스텀 JAX-RS Jackson provider를 등록하지 않는다"는 불변식에 의존한다(verification-log.md).
+  # 문서로만 두면 미래 기여자가 깨뜨릴 수 있으므로 CI에서 소스 스캔으로 강제한다.
+  invariant:
+    name: Security invariant (Jackson no default/polymorphic typing)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert SDK source keeps Jackson deserialization safe
+        run: |
+          hits=$(find java -path '*/src/main/*' -name '*.java' -exec grep -lnE 'activateDefaultTyping|enableDefaultTyping|@JsonTypeInfo|ContextResolver<' {} + 2>/dev/null || true)
+          if [ -n "$hits" ]; then
+            echo "::error::SDK 소스는 Jackson default/polymorphic typing 활성화나 커스텀 JAX-RS Jackson provider 등록을 금지합니다 — jackson-databind CVE 무위험 불변식 위반(docs/governance/verification-log.md)."
+            echo "$hits"
+            exit 1
+          fi
+          echo "OK: no default/polymorphic Jackson typing in java/*/src/main"

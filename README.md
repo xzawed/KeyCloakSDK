@@ -22,6 +22,7 @@ Keycloak을 위한 **여러 프로그래밍 언어용 SDK**(polyglot). Keycloak�
 ## 설치
 
 ### Java (Maven)
+> ⚠️ **요구 런타임: JDK 21+** — 아티팩트는 `--release 21`로 컴파일되므로 이전 JDK에서는 `UnsupportedClassVersionError`가 발생합니다. (초기 Java 17 기준에서 2026-07-03 21 LTS로 상향.)
 > ⚠️ `0.1.0-SNAPSHOT`은 아직 Maven Central 미배포(human-gated). 배포 전에는 `mvn -f java/pom.xml install`로 로컬 `~/.m2`에 설치해 사용하세요. 배포 절차는 [DEPLOY.md](DEPLOY.md) 참고.
 
 파사드 아티팩트 하나만 추가하면 `core`/`auth`/`admin`이 따라옵니다(전이 버전 정합이 필요하면 BOM 임포트):
