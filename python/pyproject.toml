@@ -57,6 +57,9 @@ omit = [
   "*/aio/auth.py", "*/aio/admin/__init__.py",  # async 네트워크 경계 — 통합으로 검증
 ]
 
+[tool.coverage.report]
+fail_under = 100    # 로직 모듈 라인/브랜치 100% 강제(경계모듈은 위 omit — 통합테스트로 검증)
+
 [tool.mypy]
 python_version = "3.10"
 strict = true
@@ -66,4 +69,10 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+# 보안(S/bandit)·현대화(UP)·버그성(B)·간결화(SIM,C4)·async 정합(ASYNC)·불필요코드(PIE)·ruff 고유(RUF)
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "PIE", "ASYNC", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+# 테스트/예제의 assert(S101)·데모용 하드코딩 자격증명(S105/S106)은 의도된 것이므로 허용
+"tests/**" = ["S101", "S105", "S106"]
+"examples/**" = ["S101", "S105", "S106"]

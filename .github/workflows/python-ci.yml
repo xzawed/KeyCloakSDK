@@ -14,10 +14,12 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '${{ matrix.python }}' }
       - run: python -m pip install -e ".[dev]"
-      - name: ruff (lint)
+      - name: ruff (lint — 보안 S/bandit 포함 확장 룰셋)
         run: ruff check src tests examples
-      - name: pytest (unit)
-        run: pytest -m "not integration" --cov=keycloak_sdk --cov-fail-under=0
+      - name: ruff (format check)
+        run: ruff format --check src tests examples
+      - name: pytest (unit + 커버리지 게이트 100%)
+        run: pytest -m "not integration" --cov=keycloak_sdk   # 임계값은 pyproject [tool.coverage.report] fail_under=100
       - name: mypy (strict)
         run: mypy src
 

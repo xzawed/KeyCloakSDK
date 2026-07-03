@@ -13,7 +13,22 @@ on:
     tags: ['py-v*']
 
 jobs:
+  # 발행 전 게이트: 태그된 커밋이 green이 아니면 PyPI로 나가지 않는다(무회귀 보증).
+  verify:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: python } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: python -m pip install -e ".[dev]"
+      - run: ruff check src tests examples
+      - run: ruff format --check src tests examples
+      - run: mypy src
+      - run: pytest -m "not integration" --cov=keycloak_sdk
+
   release:
+    needs: verify        # verify 통과 시에만 발행
     runs-on: ubuntu-latest
     permissions:
       id-token: write  # PyPI Trusted Publisher(OIDC)에 필요 — 다른 권한 불필요
