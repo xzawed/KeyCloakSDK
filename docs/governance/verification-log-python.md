@@ -61,3 +61,14 @@
 - **설계**: `.admin`은 지연 생성(구성은 저렴, secret 검증은 실제 admin 작업 시). public client는 auth만 secret 없이 사용 가능.
 
 **✅ Phase 5 (facade) 완료.**
+
+## Phase 6 — 통합 테스트 (testcontainers[keycloak], 실제 Keycloak 26.6.4)
+
+### 6.1 하네스 · 6.2 인증 E2E · 6.3 관리 E2E
+- **커밋**: d68e68f..df0347d (6.1 5dff1a4, 6.2 ac2fe9c, 6.3 df0347d)
+- **G1/G2**: ✅ **통합 6 passed / 0 failed** (실제 Keycloak 26.6, 25s), 단위 120 무회귀 / **G6**: ✅
+- **E2E 검증**: client_credentials 토큰·**하드닝 JwtValidator가 실제 다중 aud 토큰 검증 통과**·introspect active·user CRUD·delete후 404(KeycloakNotFoundError)·raw.get_server_info.
+- **SDK 버그 0건 — 전부 첫 시도 통과** (Java 통합이 발견한 다중 aud 버그를 Python 설계에 선반영한 효과). testcontainers `with_realm_import_file`는 고정 경로 마운트.
+- **G4/G5**: 통과한 실제-Keycloak E2E가 최강 검증 + 컨트롤러 리뷰(비-vacuous 단언 확인). Codex ⚠️ 타임아웃.
+
+**✅ Phase 6 (통합) 완료. Python SDK가 실제 Keycloak 26.6.4로 end-to-end 동작. 버그 0.**
