@@ -341,7 +341,7 @@ def mask(value: str | None) -> str:
 **Files:** Create `python/src/keycloak_sdk/config.py` · Test `python/tests/unit/test_config.py`
 
 **Interfaces:**
-- Produces: `@dataclass(frozen=True) KeycloakConfig`: `server_url: str`, `realm: str`, `client_id: str`, `client_secret: str | None = None`, `scopes: tuple[str, ...] = ("openid",)`, `connect_timeout: float = 10.0`, `read_timeout: float = 30.0`, `clock_skew: float = 30.0`. `__post_init__`이 server_url/realm/client_id 공란 → `KeycloakConfigError`. `__repr__`은 client_secret 마스킹.
+- Produces: `@dataclass(frozen=True) KeycloakConfig`: `server_url: str`, `realm: str`, `client_id: str`, `client_secret: str | None = None`, `scopes: tuple[str, ...] = ("openid",)`, `read_timeout: float = 30.0`, `clock_skew: float = 30.0`. `__post_init__`이 server_url/realm/client_id 공란 → `KeycloakConfigError`. `__repr__`은 client_secret 마스킹. (⚠️ 최종리뷰 반영: `connect_timeout` 제거 — python-keycloak은 단일 `timeout`만 지원.)
 
 - [ ] **Step 1: 실패 테스트**
 
@@ -381,7 +381,6 @@ class KeycloakConfig:
     client_id: str
     client_secret: str | None = None
     scopes: tuple[str, ...] = ("openid",)
-    connect_timeout: float = 10.0
     read_timeout: float = 30.0
     clock_skew: float = 30.0
 

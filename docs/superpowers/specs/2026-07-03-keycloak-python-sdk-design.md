@@ -98,7 +98,7 @@ config = KeycloakConfig(
     client_id="my-app",
     client_secret="...",          # Optional (공개 클라이언트는 None)
     scopes=("openid", "profile"),
-    connect_timeout=10.0, read_timeout=30.0, clock_skew=30.0,
+    read_timeout=30.0, clock_skew=30.0,   # python-keycloak은 단일 timeout만 지원(connect_timeout 없음)
 )  # __post_init__에서 server_url/realm/client_id 검증 → KeycloakConfigError
 
 with KeycloakClient.create(config) as kc:   # __enter__/__exit__ → close
@@ -144,7 +144,9 @@ python-keycloak `decode_token`에 의존하지 않고 **자체 검증**:
 - **허용 알고리즘 핀닝**(RS256), 토큰 헤더 `alg` 불신, `none`/미서명 거부.
 - **issuer 정확일치**(`{server_url}/realms/{realm}`), **audience 포함검사**(⚠️ Java 통합에서 발견한 다중 aud `["client","realm-management"]` 대응).
 - `exp`/`nbf` + 설정 가능한 클록 스큐.
-- **JWKS**: realm `certs` 엔드포인트에서 키셋을 issuer당 캐시. 실패 시 `TokenValidationError`. CVE-2026-11800(알고리즘 혼동) 방어 Java와 일관.
+- **JWKS**: realm `certs` 엔드포인트에서 키셋을 `AuthClient` 인스턴스당 캐시. **키 회전 복원력**: 서명 검증 실패(`TokenSignatureError`) 시 `certs()`를 1회 재조회·재시도(클레임 실패는 재조회 안 함). CVE-2026-11800(알고리즘 혼동) 방어 Java와 일관.
+
+> **최종 리뷰(opus) 반영**: ① `connect_timeout` 제거(python-keycloak은 단일 `timeout`만 지원 — read_timeout만 배선). ② JWKS 키 회전 시 서명실패에 한해 재조회·재시도(`TokenSignatureError`). ③ 짧은 시크릿(len<8) 마스킹 강화. JWKS 캐시는 인스턴스당(프로세스 공유 아님).
 
 ### 6.3 보안
 - `TokenSet`/`ValidatedToken`/config의 `__repr__`·로그에서 토큰·시크릿 마스킹.

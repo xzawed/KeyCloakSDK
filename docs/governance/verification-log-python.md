@@ -88,3 +88,12 @@
 - **총 126 테스트** = 단위 120 + 통합 6(실제 Keycloak 26.6.4). 로직 모듈 커버리지 100%, mypy strict.
 - **핵심 성과**: python-keycloak(admin+auth) 래핑 + joserfc 자체 강화 JWT. **Java 최종리뷰 학습을 설계에 선반영**(ValidatedToken·다중 aud·시크릿 마스킹·지연 admin·SignedJWT 강제·alg-confusion 방어) → 통합 E2E 버그 0, JWT 보안 루프 회피.
 - **거버넌스**: Codex는 이번 세션 지속 타임아웃 → Claude 리뷰어(독립 모델, 실제 테스트 실행) + 실제 Keycloak E2E로 대체 검증(정직 기록). 루프: 3.1 JWT 보안 2건, 3b low 3건, 4 테스트조임 1건.
+
+## 최종 전체 브랜치 리뷰 (opus) + 수정
+
+- **opus 홀리스틱 리뷰**: 판정 **MERGEABLE-WITH-FIXES**, Critical 0. 120 단위+mypy 실행 확인. 보안 견고·JWT 정합·누출 0·예외변환 균일·**Java 학습 4개 반영 확인**(ValidatedToken·aud 포함검사·마스킹·auth-code+PKCE).
+- **G5 Codex**: 이 세션 지속 타임아웃 → opus 리뷰 + Claude 리뷰어(전 태스크, 실제 테스트 실행) + 실제 Keycloak E2E로 대체.
+- **수정** (ac172b0, 97a14e8, b8cbf94): I.1 미배선 `connect_timeout` 제거(no-op 옵션, Java tlsVerification과 평행) · I.2 JWKS 키회전 복원력(`TokenSignatureError`, 서명실패만 certs 재조회·재시도) · M.1 짧은 시크릿(len<8) 마스킹 강화. + 문서 동기화(spec/plan connect_timeout·캐시범위).
+- **최종 게이트**: 단위 124 + mypy + 통합(재검증) — 아래 종합 참조.
+
+**✅ Python SDK 병합 준비 완료.**
