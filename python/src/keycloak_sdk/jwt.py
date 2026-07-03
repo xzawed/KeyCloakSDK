@@ -13,7 +13,7 @@ from typing import Any
 from joserfc import jwt as _jwt
 from joserfc.jwk import KeySet
 
-from .exceptions import TokenValidationError
+from .exceptions import TokenSignatureError, TokenValidationError
 from .tokens import ValidatedToken
 
 
@@ -27,7 +27,10 @@ class JwtValidator:
       멤버십(`in`)으로 판단한다(다중 audience를 갖는 실제 Keycloak 토큰 대응).
     - exp: 필수 클레임. `now - clock_skew >= exp`이면 만료로 간주.
     - nbf: 선택 클레임. `now + clock_skew < nbf`이면 아직 유효하지 않음으로 간주.
-    - 모든 실패는 `TokenValidationError`로 래핑되어 전파된다.
+    - 서명/알고리즘/키(kid) 결정 실패는 `TokenSignatureError`(`TokenValidationError`의
+      하위 타입)로, 클레임(issuer/audience/exp/nbf) 실패는 평범한 `TokenValidationError`
+      로 래핑되어 전파된다 — 호출자가 "JWKS 재조회로 복구 가능한 실패"와 "재조회해도
+      소용없는 실패"를 구분할 수 있게 하기 위함이다.
     """
 
     def __init__(
@@ -49,8 +52,8 @@ class JwtValidator:
     def validate(self, token: str, key_set: KeySet) -> ValidatedToken:
         try:
             decoded = _jwt.decode(token, key_set, algorithms=self._algs)
-        except Exception as exc:  # joserfc.errors.* (서명 불일치, 알고리즘 거부 등)를 포괄
-            raise TokenValidationError("JWT signature/algorithm validation failed") from exc
+        except Exception as exc:  # joserfc.errors.* (서명 불일치, 알고리즘 거부, kid 미해결 등)를 포괄
+            raise TokenSignatureError("JWT signature/algorithm validation failed") from exc
 
         claims: dict[str, Any] = dict(decoded.claims)
         try:

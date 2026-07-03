@@ -414,3 +414,47 @@ def test_validate_wraps_certs_transport_error():
 
     with pytest.raises(KeycloakTransportError):
         client.validate("irrelevant-token")
+
+
+# --- FIX I.2: JWKS 키 회전 복원력 — 서명 실패 시 certs() 재조회 + 1회 재시도 -----
+
+
+def test_validate_refetches_jwks_and_retries_once_on_signature_failure():
+    """키 회전 시나리오: 캐시된 JWKS에는 없는 새 kid로 서명된 토큰이 도착하면, 최초
+    검증은 서명 실패(TokenSignatureError)하지만 certs()를 한 번 재조회한 뒤 재시도해
+    성공해야 한다. certs()는 정확히 두 번 호출돼야 한다(최초 로드 + 재조회 1회)."""
+    old_key = RSAKey.generate_key(2048, {"kid": "old-kid", "use": "sig"})
+    new_key = RSAKey.generate_key(2048, {"kid": "new-kid", "use": "sig"})
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.certs.side_effect = [
+        {"keys": [old_key.as_dict(private=False)]},
+        {"keys": [old_key.as_dict(private=False), new_key.as_dict(private=False)]},
+    ]
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    client = _client(openid, config=config)
+    token = _signed_token(new_key, issuer=endpoints.issuer, audience=config.client_id)
+
+    result = client.validate(token)
+
+    assert isinstance(result, ValidatedToken)
+    assert result.subject == "user-1"
+    assert openid.certs.call_count == 2
+
+
+def test_validate_does_not_refetch_jwks_on_claim_failure():
+    """클레임 실패(예: audience 불일치)는 서명 실패가 아니므로 JWKS 재조회를 트리거
+    하면 안 된다 — 그렇지 않으면 무효 토큰 하나마다 certs() 호출이 발생한다.
+    certs()는 정확히 한 번만 호출돼야 한다(최초 로드뿐, 재조회 없음)."""
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.certs.return_value = {"keys": [key.as_dict(private=False)]}
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    client = _client(openid, config=config)
+    token = _signed_token(key, issuer=endpoints.issuer, audience="someone-else")
+
+    with pytest.raises(TokenValidationError):
+        client.validate(token)
+
+    assert openid.certs.call_count == 1

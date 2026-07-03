@@ -13,7 +13,7 @@ import pytest
 from joserfc import jwt as jjwt
 from joserfc.jwk import KeySet, OctKey, RSAKey
 
-from keycloak_sdk.exceptions import TokenValidationError
+from keycloak_sdk.exceptions import TokenSignatureError, TokenValidationError
 from keycloak_sdk.jwt import JwtValidator
 
 ISSUER = "https://kc.example.com/realms/r"
@@ -189,6 +189,36 @@ def test_malformed_exp_raises_token_validation_error():
 
     with pytest.raises(TokenValidationError):
         validator.validate(tok, KeySet([key]))
+
+
+def test_signature_failure_raises_token_signature_error_subtype():
+    """서명/키 결정 실패(예: 검증기 키셋에 없는 kid로 서명됨)는 `TokenSignatureError`
+    (`TokenValidationError`의 하위 타입)를 던져야 한다 — `AuthClient`가 이 타입만
+    근거로 JWKS 재조회 여부를 판단한다(FIX I.2)."""
+    key = _rsa_key()
+    unknown_key = _rsa_key()  # 검증기의 KeySet에는 없는 키로 서명 → kid 미해결/서명 실패
+    tok = _sign(unknown_key, {
+        "iss": ISSUER, "aud": "app", "exp": int(time.time()) + 60,
+    })
+    validator = JwtValidator(issuer=ISSUER, audience="app")
+
+    with pytest.raises(TokenSignatureError):
+        validator.validate(tok, KeySet([key]))
+
+
+def test_claim_failure_is_not_a_token_signature_error():
+    """클레임 실패(예: audience 불일치)는 `TokenValidationError`이지만
+    `TokenSignatureError`는 아니어야 한다 — 그래야 `AuthClient`가 클레임 실패에
+    대해서는 불필요한 JWKS 재조회를 건너뛸 수 있다(FIX I.2)."""
+    key = _rsa_key()
+    tok = _sign(key, {
+        "iss": ISSUER, "aud": ["someone-else"], "exp": int(time.time()) + 60,
+    })
+    validator = JwtValidator(issuer=ISSUER, audience="app")
+
+    with pytest.raises(TokenValidationError) as excinfo:
+        validator.validate(tok, KeySet([key]))
+    assert not isinstance(excinfo.value, TokenSignatureError)
 
 
 def test_empty_allowed_algs_rejected_at_construction():

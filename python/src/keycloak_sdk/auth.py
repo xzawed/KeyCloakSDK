@@ -20,7 +20,7 @@ from keycloak.exceptions import KeycloakError
 
 from ._internal.secrets import mask
 from .config import KeycloakConfig
-from .exceptions import KeycloakAuthError, KeycloakTransportError
+from .exceptions import KeycloakAuthError, KeycloakTransportError, TokenSignatureError
 from .jwt import JwtValidator
 from .oidc import OidcEndpoints
 from .tokens import IntrospectionResult, TokenSet, ValidatedToken
@@ -177,6 +177,12 @@ class AuthClient:
 
         JWKS는 첫 호출 시 `openid.certs()`로 로드해 인스턴스에 캐시한다 — 이후 호출은
         네트워크 왕복 없이 캐시된 `KeySet`을 재사용한다.
+
+        키 회전 복원력: 서명 검증이 `TokenSignatureError`(예: 캐시된 JWKS에 없는 새
+        `kid`)로 실패하면, 캐시를 무효화하고 `certs()`를 한 번 재조회해 재시도한다.
+        재시도 후에도 실패하면 그대로 전파한다. 클레임 실패(`TokenValidationError`,
+        예: audience 불일치)는 재조회를 트리거하지 않는다 — 재조회해도 결과가 달라지지
+        않을뿐더러, 무효 토큰마다 `certs()` 호출이 발생하는 것을 막기 위함이다.
         """
         key_set = self._load_jwks()
         validator = JwtValidator(
@@ -184,10 +190,14 @@ class AuthClient:
             audience=self._config.client_id,
             clock_skew=self._config.clock_skew,
         )
-        return validator.validate(access_token, key_set)
+        try:
+            return validator.validate(access_token, key_set)
+        except TokenSignatureError:
+            key_set = self._load_jwks(force=True)
+            return validator.validate(access_token, key_set)
 
-    def _load_jwks(self) -> KeySet:
-        if self._jwks_cache is None:
+    def _load_jwks(self, *, force: bool = False) -> KeySet:
+        if force or self._jwks_cache is None:
             certs = self._wrap(lambda: self._openid.certs())
             # python-keycloak types certs() as a bare `dict`; the realm JWKS endpoint
             # (RFC 7517) always returns `{"keys": [...]}`, matching joserfc's shape.

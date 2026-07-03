@@ -18,6 +18,7 @@ from .exceptions import (
     KeycloakNotFoundError,
     KeycloakSdkError,
     KeycloakTransportError,
+    TokenSignatureError,
     TokenValidationError,
 )
 from .tokens import IntrospectionResult, TokenSet, ValidatedToken
@@ -35,6 +36,7 @@ __all__ = [
     "KeycloakConfigError",
     "KeycloakAuthError",
     "TokenValidationError",
+    "TokenSignatureError",
     "KeycloakAdminError",
     "KeycloakNotFoundError",
     "KeycloakConflictError",
