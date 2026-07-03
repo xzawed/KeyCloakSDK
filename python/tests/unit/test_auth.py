@@ -11,14 +11,16 @@ import time
 from unittest.mock import MagicMock
 
 import pytest
+from joserfc import jwt as jjwt
+from joserfc.jwk import RSAKey
 from keycloak import KeycloakOpenID
 from keycloak.exceptions import KeycloakAuthenticationError, KeycloakGetError
 
 from keycloak_sdk.auth import AuthClient
 from keycloak_sdk.config import KeycloakConfig
-from keycloak_sdk.exceptions import KeycloakAuthError, KeycloakTransportError
+from keycloak_sdk.exceptions import KeycloakAuthError, KeycloakTransportError, TokenValidationError
 from keycloak_sdk.oidc import OidcEndpoints
-from keycloak_sdk.tokens import IntrospectionResult, TokenSet
+from keycloak_sdk.tokens import IntrospectionResult, TokenSet, ValidatedToken
 
 
 def _config(**overrides: object) -> KeycloakConfig:
@@ -311,3 +313,68 @@ def test_introspect_maps_inactive_token_with_missing_fields():
     result = client.introspect("expired-token")
 
     assert result == IntrospectionResult(active=False, username=None, client_id=None)
+
+
+# --- 3.5: validate() — JWKS 로드(+캐시) 후 JwtValidator에 위임 -------------------
+
+
+def _signed_token(key: RSAKey, issuer: str, audience: str, **extra_claims: object) -> str:
+    claims = {"iss": issuer, "aud": audience, "sub": "user-1", "exp": int(time.time()) + 60}
+    claims.update(extra_claims)
+    return jjwt.encode({"alg": "RS256", "kid": key.kid}, claims, key)
+
+
+def test_validate_loads_jwks_and_delegates_to_jwt_validator():
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.certs.return_value = {"keys": [key.as_dict(private=False)]}
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    client = _client(openid, config=config)
+    token = _signed_token(key, issuer=endpoints.issuer, audience=config.client_id)
+
+    result = client.validate(token)
+
+    openid.certs.assert_called_once_with()
+    assert isinstance(result, ValidatedToken)
+    assert result.issuer == endpoints.issuer
+    assert result.subject == "user-1"
+    assert config.client_id in result.audience
+
+
+def test_validate_caches_jwks_across_calls():
+    """JWKS는 인스턴스에 캐시돼야 한다 — 두 번째 validate()는 certs()를 재호출하지 않는다."""
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.certs.return_value = {"keys": [key.as_dict(private=False)]}
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    client = _client(openid, config=config)
+    token = _signed_token(key, issuer=endpoints.issuer, audience=config.client_id)
+
+    client.validate(token)
+    client.validate(token)
+
+    assert openid.certs.call_count == 1
+
+
+def test_validate_rejects_token_with_wrong_audience():
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.certs.return_value = {"keys": [key.as_dict(private=False)]}
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    client = _client(openid, config=config)
+    token = _signed_token(key, issuer=endpoints.issuer, audience="someone-else")
+
+    with pytest.raises(TokenValidationError):
+        client.validate(token)
+
+
+def test_validate_wraps_certs_transport_error():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.certs.side_effect = KeycloakGetError(error_message="conn reset")
+    client = _client(openid)
+
+    with pytest.raises(KeycloakTransportError):
+        client.validate("irrelevant-token")

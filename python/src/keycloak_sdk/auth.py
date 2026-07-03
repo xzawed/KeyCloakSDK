@@ -12,15 +12,17 @@ import json
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Callable, TypeVar
+from typing import Callable, TypeVar, cast
 
+from joserfc.jwk import KeySet, KeySetSerialization
 from keycloak import KeycloakOpenID
 from keycloak.exceptions import KeycloakError
 
 from .config import KeycloakConfig
 from .exceptions import KeycloakAuthError, KeycloakTransportError
+from .jwt import JwtValidator
 from .oidc import OidcEndpoints
-from .tokens import IntrospectionResult, TokenSet
+from .tokens import IntrospectionResult, TokenSet, ValidatedToken
 
 T = TypeVar("T")
 
@@ -67,6 +69,7 @@ class AuthClient:
             client_secret_key=config.client_secret,
             verify=True,
         )
+        self._jwks_cache: KeySet | None = None
 
     def _wrap(self, fn: Callable[[], T]) -> T:
         """python-keycloak 호출을 실행하고 `KeycloakError`를 SDK 예외로 변환한다.
@@ -152,3 +155,25 @@ class AuthClient:
             username=response.get("username"),
             client_id=response.get("client_id"),
         )
+
+    def validate(self, access_token: str) -> ValidatedToken:
+        """realm JWKS로 서명을 검증하고 issuer/audience/exp/nbf를 강제한다(`JwtValidator`).
+
+        JWKS는 첫 호출 시 `openid.certs()`로 로드해 인스턴스에 캐시한다 — 이후 호출은
+        네트워크 왕복 없이 캐시된 `KeySet`을 재사용한다.
+        """
+        key_set = self._load_jwks()
+        validator = JwtValidator(
+            issuer=self._endpoints.issuer,
+            audience=self._config.client_id,
+            clock_skew=self._config.clock_skew,
+        )
+        return validator.validate(access_token, key_set)
+
+    def _load_jwks(self) -> KeySet:
+        if self._jwks_cache is None:
+            certs = self._wrap(lambda: self._openid.certs())
+            # python-keycloak types certs() as a bare `dict`; the realm JWKS endpoint
+            # (RFC 7517) always returns `{"keys": [...]}`, matching joserfc's shape.
+            self._jwks_cache = KeySet.import_key_set(cast(KeySetSerialization, certs))
+        return self._jwks_cache
