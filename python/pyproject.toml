@@ -33,6 +33,7 @@ Issues = "https://github.com/xzawed/KeyCloakSDK/issues"
 [project.optional-dependencies]
 dev = [
   "pytest>=9.0",
+  "pytest-asyncio>=0.24",
   "pytest-cov>=5.0",
   "mypy>=2.0",
   "ruff>=0.6",
@@ -45,12 +46,16 @@ packages = ["src/keycloak_sdk"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+asyncio_mode = "auto"
 markers = ["integration: 실제 Keycloak 컨테이너 필요(Docker)"]
 
 [tool.coverage.run]
 branch = true
 source = ["keycloak_sdk"]
-omit = ["*/auth.py", "*/admin/__init__.py"]   # 네트워크 경계 — 통합으로 검증
+omit = [
+  "*/auth.py", "*/admin/__init__.py",          # 네트워크 경계 — 통합으로 검증
+  "*/aio/auth.py", "*/aio/admin/__init__.py",  # async 네트워크 경계 — 통합으로 검증
+]
 
 [tool.mypy]
 python_version = "3.10"
