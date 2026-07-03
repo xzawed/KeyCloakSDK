@@ -190,7 +190,7 @@ KeycloakSdkException (RuntimeException, base)
 
 | 의존성 | 좌표 | 버전 | 비고 |
 |---|---|---|---|
-| Keycloak admin-client | `org.keycloak:keycloak-admin-client` | `26.0.10` | Jakarta 네임스페이스. RESTEasy 6.2.15.Final + Jackson 2.21.2 전이 |
+| Keycloak admin-client | `org.keycloak:keycloak-admin-client` | `26.0.10` | Jakarta 네임스페이스. RESTEasy 6.2.15.Final + Jackson 전이(보안 핀 2.21.4, 2026-07-03 CVE 대응; 전이 기본 2.21.2) |
 | OAuth2/OIDC SDK | `com.nimbusds:oauth2-oidc-sdk` | `11.37.2` | PKCE·client credentials·introspection 지원 |
 | JOSE/JWT | `com.nimbusds:nimbus-jose-jwt` | `10.9.1` | JWKS 검증. 명시적 핀닝(전이 버전은 10.9) |
 | 대상 Keycloak 서버 | quay.io/keycloak/keycloak | `26.6.x` | 호환 매트릭스로 관리 |

@@ -16,7 +16,7 @@
 - **groupId**: `io.github.xzawed` · **라이선스**: Apache-2.0 (모든 모듈 POM `<licenses>`).
 - **대상 Keycloak 서버**: 26.6.x. **admin-client**: `26.0.10` (⚠️ 서버 버전과 다른 독립 트랙, "26.6.x admin-client"는 없음).
 - **동기(sync) API만** — 공개 계약은 블로킹.
-- **의존성 버전 고정(BOM)**: `oauth2-oidc-sdk` 11.37.2, `nimbus-jose-jwt` 10.9.1(명시적 핀닝, 전이는 10.9), Jackson 2.21.2/RESTEasy 6.2.15는 admin-client 전이.
+- **의존성 버전 고정(BOM)**: `oauth2-oidc-sdk` 11.37.2, `nimbus-jose-jwt` 10.9.1(명시적 핀닝, 전이는 10.9), Jackson 2.21.4(보안 핀, 2026-07-03 CVE 대응 — 전이 기본은 2.21.2)/RESTEasy 6.2.15는 admin-client 전이.
 - **보안**: 토큰/시크릿을 로그·`toString()`·예외 메시지에 남기지 않음(마스킹). 시크릿은 `char[]`. TLS 검증 기본 on. 토큰 저장 기본 인메모리 + 교체 가능한 `TokenStore` SPI.
 - **JWT 검증**: 허용 알고리즘 핀닝(토큰 헤더 `alg` 불신, `none` 거부), issuer/audience 검증, `exp`/`nbf` + 소량 클록 스큐(기본 30s). JWKS 캐시.
 - **예외**: `jakarta.ws.rs.*`·`com.nimbusds.*` 타입을 공개 API에 노출하지 않음 — 경계에서 SDK 예외로 변환.
