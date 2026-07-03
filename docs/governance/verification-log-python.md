@@ -41,3 +41,14 @@
 - **모델**: 구현=sonnet, 리뷰=sonnet
 
 **✅ Phase 3 (auth) 완료.**
+
+## Phase 4 — admin
+
+### 4.1~4.4 (AdminClient·_translate·users/clients/realms/roles/groups)
+- **커밋**: cba6d01..9ee7578 (4.1 06afd5a, 4.2 26560b0, 4.3 fc1ea6a, 4.4 ef386fa + 테스트조임 9ee7578)
+- **G1/G2**: ✅ 107 단위테스트 / mypy 16파일 strict / **G3**: ✅ **100% 라인/100% 브랜치**(_translate+5파사드+core+jwt; AdminClient/auth omit) / **G4**: ✅ Approved(리뷰어 python-keycloak 7.1.1 라이브 검증, 21개 델리게이트 전부 _translate.call 래핑 grep 확인, NotFound 전파, 시그니처 누출 0) / **G5 Codex**: ⚠️ 타임아웃 → Claude 리뷰 대체 / **G6**: ✅
+- **API**: KeycloakAdmin 직접 kwargs 생성, 메서드명·예외 전부 일치. create_group str|None cast.
+- **루프**: 🔁 1회 (Moderate: 7 오류경로 테스트가 broad `raises(Exception)` → 특정 SDK 예외로 조임, 누출 회귀 방어).
+- **모델**: 구현=sonnet, 리뷰=sonnet
+
+**✅ Phase 4 (admin) 완료.**
