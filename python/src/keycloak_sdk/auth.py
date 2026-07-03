@@ -4,6 +4,7 @@
 (`_wrap`)에서 SDK 예외로 변환한다. 네트워크 경계라 커버리지 게이트에서 제외된다
 (pyproject `[tool.coverage.run].omit`); `test_auth.py`가 목 기반으로 행동을 증명한다.
 """
+
 from __future__ import annotations
 
 import base64
@@ -40,9 +41,11 @@ class AuthorizationUrl:
     nonce: str
 
     def __repr__(self) -> str:
-        return (f"AuthorizationUrl(url={self.url!r}, "
-                f"code_verifier={mask(self.code_verifier)!r}, "
-                f"state={self.state!r}, nonce={self.nonce!r})")
+        return (
+            f"AuthorizationUrl(url={self.url!r}, "
+            f"code_verifier={mask(self.code_verifier)!r}, "
+            f"state={self.state!r}, nonce={self.nonce!r})"
+        )
 
 
 def _generate_pkce_pair() -> tuple[str, str]:
@@ -69,13 +72,17 @@ class AuthClient:
     ) -> None:
         self._config = config
         self._endpoints = endpoints
-        self._openid = openid if openid is not None else KeycloakOpenID(
-            server_url=config.server_url,
-            realm_name=config.realm,
-            client_id=config.client_id,
-            client_secret_key=config.client_secret,
-            verify=True,
-            timeout=int(config.read_timeout),
+        self._openid = (
+            openid
+            if openid is not None
+            else KeycloakOpenID(
+                server_url=config.server_url,
+                realm_name=config.realm,
+                client_id=config.client_id,
+                client_secret_key=config.client_secret,
+                verify=True,
+                timeout=int(config.read_timeout),
+            )
         )
         self._jwks_cache: KeySet | None = None
 

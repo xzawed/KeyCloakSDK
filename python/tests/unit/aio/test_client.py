@@ -5,6 +5,7 @@
 지연 생성·시크릿 없는 public client 경로·수명주기(``aclose``/``__aenter__``/``__aexit__``)
 로직을 목으로 증명한다.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch

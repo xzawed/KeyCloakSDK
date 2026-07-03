@@ -10,6 +10,7 @@ auth만 쓰고 admin은 안 쓰는 경우를 지원). 네트워크 경계라 커
 리소스 접근자(`users`/`clients`/`realms`/`roles`/`groups`)는 WBS 4.2~4.4에서
 단계적으로 추가된다.
 """
+
 from __future__ import annotations
 
 from keycloak import KeycloakAdmin

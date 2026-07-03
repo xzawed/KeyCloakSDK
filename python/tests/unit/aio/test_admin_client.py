@@ -1,6 +1,7 @@
 """`AsyncAdminClient` 골격 단위 테스트. 네트워크 경계라 커버리지 게이트에서 제외되지만
 (pyproject omit), 지연 생성·시크릿 가드·`aclose` "행동"은 목으로 증명한다.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock

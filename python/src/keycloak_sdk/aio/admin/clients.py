@@ -5,6 +5,7 @@ sync `ClientsResource`의 async 미러.
 `id`는 클라이언트의 내부 UUID, `client_id`는 OAuth2 clientId 문자열이다 —
 `find_by_client_id`가 문자열→UUID 조회를 담당한다.
 """
+
 from __future__ import annotations
 
 from typing import Any

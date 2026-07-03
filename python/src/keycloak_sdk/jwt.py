@@ -5,6 +5,7 @@ joserfc의 `jwt.decode(..., algorithms=[...])`는 서명·알고리즘 핀닝을
 호출자 책임이므로, 이 모듈이 issuer 정확일치·audience 포함검사·exp/nbf(+클록 스큐)를
 수동으로 강제한다.
 """
+
 from __future__ import annotations
 
 import time

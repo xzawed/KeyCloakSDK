@@ -3,6 +3,7 @@
 sync `keycloak_sdk.admin._translate.translate`(상태 코드→예외 매핑)를 그대로
 재사용한다(중복 금지) — `acall`은 `await` 후 예외 변환만 담당한다.
 """
+
 from __future__ import annotations
 
 from collections.abc import Awaitable

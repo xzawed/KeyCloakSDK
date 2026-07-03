@@ -1,4 +1,5 @@
 """불변 설정."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -24,6 +25,8 @@ class KeycloakConfig:
                 raise KeycloakConfigError(f"Missing required config: {name}")
 
     def __repr__(self) -> str:
-        return (f"KeycloakConfig(server_url={self.server_url!r}, realm={self.realm!r}, "
-                f"client_id={self.client_id!r}, client_secret={mask(self.client_secret)!r}, "
-                f"scopes={self.scopes!r})")
+        return (
+            f"KeycloakConfig(server_url={self.server_url!r}, realm={self.realm!r}, "
+            f"client_id={self.client_id!r}, client_secret={mask(self.client_secret)!r}, "
+            f"scopes={self.scopes!r})"
+        )

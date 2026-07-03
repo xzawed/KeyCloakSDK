@@ -1,4 +1,5 @@
 """OIDC 엔드포인트."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -19,6 +20,11 @@ class OidcEndpoints:
     def for_realm(config: KeycloakConfig) -> OidcEndpoints:
         base = config.server_url.rstrip("/") + "/realms/" + config.realm
         oc = base + "/protocol/openid-connect"
-        return OidcEndpoints(issuer=base, authorization=oc + "/auth", token=oc + "/token",
-                             introspection=oc + "/token/introspect", end_session=oc + "/logout",
-                             jwks=oc + "/certs")
+        return OidcEndpoints(
+            issuer=base,
+            authorization=oc + "/auth",
+            token=oc + "/token",
+            introspection=oc + "/token/introspect",
+            end_session=oc + "/logout",
+            jwks=oc + "/certs",
+        )

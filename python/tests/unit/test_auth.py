@@ -3,6 +3,7 @@
 `auth.py`는 네트워크 경계라 커버리지 게이트(G3)에서 제외되지만(pyproject omit), 이
 스위트는 커버리지가 아니라 매핑·PKCE·에러 변환·JWKS 배선 "행동"을 증명하기 위한 것이다.
 """
+
 from __future__ import annotations
 
 import base64
@@ -156,7 +157,8 @@ def test_client_credentials_passes_scopes():
 def test_client_credentials_token_wraps_auth_error():
     openid = MagicMock(spec=KeycloakOpenID)
     openid.token.side_effect = KeycloakAuthenticationError(
-        error_message="bad secret", response_code=401,
+        error_message="bad secret",
+        response_code=401,
     )
     client = _client(openid)
 
@@ -317,7 +319,8 @@ def test_logout_delegates_and_returns_none():
 def test_logout_wraps_auth_error():
     openid = MagicMock(spec=KeycloakOpenID)
     openid.logout.side_effect = KeycloakAuthenticationError(
-        error_message="already invalidated", response_code=400,
+        error_message="already invalidated",
+        response_code=400,
     )
     client = _client(openid)
 

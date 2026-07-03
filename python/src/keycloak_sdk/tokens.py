@@ -1,4 +1,5 @@
 """토큰 값 타입."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -22,9 +23,11 @@ class TokenSet:
         return now + skew >= self.expires_at
 
     def __repr__(self) -> str:
-        return (f"TokenSet(token_type={self.token_type!r}, scope={self.scope!r}, "
-                f"access_token={mask(self.access_token)!r}, "
-                f"refresh_token={mask(self.refresh_token)!r}, expires_at={self.expires_at!r})")
+        return (
+            f"TokenSet(token_type={self.token_type!r}, scope={self.scope!r}, "
+            f"access_token={mask(self.access_token)!r}, "
+            f"refresh_token={mask(self.refresh_token)!r}, expires_at={self.expires_at!r})"
+        )
 
     @staticmethod
     def from_response(data: dict[str, Any], issued_at: float) -> TokenSet:
@@ -39,6 +42,7 @@ class TokenSet:
             expires_at=expires_at,
         )
 
+
 @dataclass(frozen=True)
 class ValidatedToken:
     subject: str | None
@@ -47,6 +51,7 @@ class ValidatedToken:
     expires_at: float | None
     issued_at: float | None
     claims: dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass(frozen=True)
 class IntrospectionResult:

@@ -8,6 +8,7 @@ sync `keycloak_sdk.auth.AuthClient`의 async 미러다. 값 타입(`TokenSet`/`V
 (`_awrap`)에서 SDK 예외로 변환한다. 네트워크 경계라 커버리지 게이트에서 제외된다
 (pyproject `[tool.coverage.run].omit`); `test_auth.py`가 목 기반으로 행동을 증명한다.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -48,13 +49,17 @@ class AsyncAuthClient:
     ) -> None:
         self._config = config
         self._endpoints = endpoints
-        self._openid = openid if openid is not None else KeycloakOpenID(
-            server_url=config.server_url,
-            realm_name=config.realm,
-            client_id=config.client_id,
-            client_secret_key=config.client_secret,
-            verify=True,
-            timeout=int(config.read_timeout),
+        self._openid = (
+            openid
+            if openid is not None
+            else KeycloakOpenID(
+                server_url=config.server_url,
+                realm_name=config.realm,
+                client_id=config.client_id,
+                client_secret_key=config.client_secret,
+                verify=True,
+                timeout=int(config.read_timeout),
+            )
         )
         self._jwks_cache: KeySet | None = None
         self._jwks_lock = asyncio.Lock()
@@ -100,16 +105,18 @@ class AsyncAuthClient:
         code_verifier, code_challenge = _generate_pkce_pair()
         state = secrets.token_urlsafe(16)
         nonce = secrets.token_urlsafe(16)
-        params = urlencode({
-            "response_type": "code",
-            "client_id": self._config.client_id,
-            "redirect_uri": redirect_uri,
-            "scope": " ".join(self._config.scopes),
-            "state": state,
-            "nonce": nonce,
-            "code_challenge": code_challenge,
-            "code_challenge_method": "S256",
-        })
+        params = urlencode(
+            {
+                "response_type": "code",
+                "client_id": self._config.client_id,
+                "redirect_uri": redirect_uri,
+                "scope": " ".join(self._config.scopes),
+                "state": state,
+                "nonce": nonce,
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+            }
+        )
         url = f"{self._endpoints.authorization}?{params}"
         return AuthorizationUrl(url=url, code_verifier=code_verifier, state=state, nonce=nonce)
 

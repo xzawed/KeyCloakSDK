@@ -4,6 +4,7 @@
 검증하고, `admin`은 지연 생성/캐시 동작을 `keycloak_sdk.client.AdminClient`를
 패치해 실제 `KeycloakAdmin` 네트워크 호출 없이 증명한다.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

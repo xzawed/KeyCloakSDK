@@ -3,6 +3,7 @@
 sync `keycloak_sdk.admin._translate.translate`(상태 코드→예외 매핑)를 재사용하는지
 증명한다(매핑 중복 금지). sync `tests/unit/test_admin_translate.py`와 동형.
 """
+
 from __future__ import annotations
 
 import pytest

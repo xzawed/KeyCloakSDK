@@ -3,6 +3,7 @@
 `JwtValidator`(WBS 3.1)가 실제 다중 aud(`["it-client", ...]`) 토큰(오디언스
 매퍼가 `it-client`를 추가)에 대해 포함검사를 올바르게 통과시키는지 검증한다.
 """
+
 from __future__ import annotations
 
 import pytest

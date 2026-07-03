@@ -5,6 +5,7 @@ Java SDK의 JwtValidator가 2회의 보안 수정 루프를 거쳐 수렴한 스
 서명/알고리즘 핀닝(none·미서명 거부), issuer 정확일치, audience 포함검사(다중값 대응),
 exp/nbf(+클록 스큐), RSA-공개키를 HMAC 비밀키로 재사용하는 고전적 알고리즘 혼동 공격 방어.
 """
+
 from __future__ import annotations
 
 import time
@@ -29,13 +30,16 @@ def _sign(key: RSAKey, claims: dict) -> str:
 
 def test_valid_single_aud_token_accepted():
     key = _rsa_key()
-    tok = _sign(key, {
-        "iss": ISSUER,
-        "aud": "app",
-        "sub": "user-1",
-        "iat": int(time.time()),
-        "exp": int(time.time()) + 60,
-    })
+    tok = _sign(
+        key,
+        {
+            "iss": ISSUER,
+            "aud": "app",
+            "sub": "user-1",
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 60,
+        },
+    )
     validator = JwtValidator(issuer=ISSUER, audience="app")
 
     result = validator.validate(tok, KeySet([key]))
@@ -48,11 +52,14 @@ def test_valid_single_aud_token_accepted():
 def test_valid_multi_aud_containing_expected_accepted():
     """실제 Keycloak client-credentials 토큰은 aud가 다중값이다 — 포함검사여야 한다."""
     key = _rsa_key()
-    tok = _sign(key, {
-        "iss": ISSUER,
-        "aud": ["app", "realm-management"],
-        "exp": int(time.time()) + 60,
-    })
+    tok = _sign(
+        key,
+        {
+            "iss": ISSUER,
+            "aud": ["app", "realm-management"],
+            "exp": int(time.time()) + 60,
+        },
+    )
     validator = JwtValidator(issuer=ISSUER, audience="app")
 
     result = validator.validate(tok, KeySet([key]))
@@ -63,11 +70,14 @@ def test_valid_multi_aud_containing_expected_accepted():
 
 def test_audience_not_containing_expected_rejected():
     key = _rsa_key()
-    tok = _sign(key, {
-        "iss": ISSUER,
-        "aud": ["someone-else"],
-        "exp": int(time.time()) + 60,
-    })
+    tok = _sign(
+        key,
+        {
+            "iss": ISSUER,
+            "aud": ["someone-else"],
+            "exp": int(time.time()) + 60,
+        },
+    )
     validator = JwtValidator(issuer=ISSUER, audience="app")
 
     with pytest.raises(TokenValidationError):
@@ -94,9 +104,15 @@ def test_plain_jwt_with_valid_claims_still_rejected_for_being_unsigned():
     import json
 
     header = base64.urlsafe_b64encode(json.dumps({"alg": "none"}).encode()).rstrip(b"=")
-    payload = base64.urlsafe_b64encode(json.dumps({
-        "iss": ISSUER, "aud": "app", "exp": int(time.time()) + 60,
-    }).encode()).rstrip(b"=")
+    payload = base64.urlsafe_b64encode(
+        json.dumps(
+            {
+                "iss": ISSUER,
+                "aud": "app",
+                "exp": int(time.time()) + 60,
+            }
+        ).encode()
+    ).rstrip(b"=")
     plain_jwt = header.decode() + "." + payload.decode() + "."
 
     validator = JwtValidator(issuer=ISSUER, audience="app")
@@ -106,11 +122,14 @@ def test_plain_jwt_with_valid_claims_still_rejected_for_being_unsigned():
 
 def test_expired_token_rejected():
     key = _rsa_key()
-    tok = _sign(key, {
-        "iss": ISSUER,
-        "aud": "app",
-        "exp": int(time.time()) - 1000,
-    })
+    tok = _sign(
+        key,
+        {
+            "iss": ISSUER,
+            "aud": "app",
+            "exp": int(time.time()) - 1000,
+        },
+    )
     validator = JwtValidator(issuer=ISSUER, audience="app", clock_skew=5.0)
 
     with pytest.raises(TokenValidationError):
@@ -119,11 +138,14 @@ def test_expired_token_rejected():
 
 def test_wrong_issuer_rejected():
     key = _rsa_key()
-    tok = _sign(key, {
-        "iss": "https://evil.example.com/realms/r",
-        "aud": "app",
-        "exp": int(time.time()) + 60,
-    })
+    tok = _sign(
+        key,
+        {
+            "iss": "https://evil.example.com/realms/r",
+            "aud": "app",
+            "exp": int(time.time()) + 60,
+        },
+    )
     validator = JwtValidator(issuer=ISSUER, audience="app")
 
     with pytest.raises(TokenValidationError):
@@ -132,12 +154,15 @@ def test_wrong_issuer_rejected():
 
 def test_not_yet_valid_nbf_rejected():
     key = _rsa_key()
-    tok = _sign(key, {
-        "iss": ISSUER,
-        "aud": "app",
-        "exp": int(time.time()) + 120,
-        "nbf": int(time.time()) + 60,
-    })
+    tok = _sign(
+        key,
+        {
+            "iss": ISSUER,
+            "aud": "app",
+            "exp": int(time.time()) + 120,
+            "nbf": int(time.time()) + 60,
+        },
+    )
     validator = JwtValidator(issuer=ISSUER, audience="app", clock_skew=5.0)
 
     with pytest.raises(TokenValidationError):
@@ -197,9 +222,14 @@ def test_signature_failure_raises_token_signature_error_subtype():
     근거로 JWKS 재조회 여부를 판단한다(FIX I.2)."""
     key = _rsa_key()
     unknown_key = _rsa_key()  # 검증기의 KeySet에는 없는 키로 서명 → kid 미해결/서명 실패
-    tok = _sign(unknown_key, {
-        "iss": ISSUER, "aud": "app", "exp": int(time.time()) + 60,
-    })
+    tok = _sign(
+        unknown_key,
+        {
+            "iss": ISSUER,
+            "aud": "app",
+            "exp": int(time.time()) + 60,
+        },
+    )
     validator = JwtValidator(issuer=ISSUER, audience="app")
 
     with pytest.raises(TokenSignatureError):
@@ -211,9 +241,14 @@ def test_claim_failure_is_not_a_token_signature_error():
     `TokenSignatureError`는 아니어야 한다 — 그래야 `AuthClient`가 클레임 실패에
     대해서는 불필요한 JWKS 재조회를 건너뛸 수 있다(FIX I.2)."""
     key = _rsa_key()
-    tok = _sign(key, {
-        "iss": ISSUER, "aud": ["someone-else"], "exp": int(time.time()) + 60,
-    })
+    tok = _sign(
+        key,
+        {
+            "iss": ISSUER,
+            "aud": ["someone-else"],
+            "exp": int(time.time()) + 60,
+        },
+    )
     validator = JwtValidator(issuer=ISSUER, audience="app")
 
     with pytest.raises(TokenValidationError) as excinfo:

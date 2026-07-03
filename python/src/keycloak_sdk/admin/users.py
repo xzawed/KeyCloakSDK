@@ -1,5 +1,6 @@
 """`UsersResource` — 사용자 CRUD. `KeycloakAdmin`을 감싸고 `_translate.call`로
 python-keycloak 예외를 SDK 예외로 변환한다."""
+
 from __future__ import annotations
 
 from typing import Any
