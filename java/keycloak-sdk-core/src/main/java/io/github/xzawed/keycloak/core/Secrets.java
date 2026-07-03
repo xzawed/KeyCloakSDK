@@ -2,7 +2,7 @@ package io.github.xzawed.keycloak.core;
 public final class Secrets {
   private Secrets() {}
   public static String mask(String value) {
-    if (value == null || value.length() <= 4) return "***";
+    if (value == null || value.length() < 8) return "***";
     return value.substring(0, 3) + "***";
   }
   public static String maskBearer(String header) {
