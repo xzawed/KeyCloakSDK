@@ -52,3 +52,12 @@
 - **모델**: 구현=sonnet, 리뷰=sonnet
 
 **✅ Phase 4 (admin) 완료.**
+
+## Phase 5 — facade
+
+### 5.1 KeycloakClient
+- **커밋**: 3f9044f..b36eea7 (AdminClient.close a8f3632, KeycloakClient b36eea7)
+- **G1/G2**: ✅ 120 테스트 / mypy 17파일 / **G3**: ✅ client.py 100%/100% (전체 100%) / **G4**: ✅ 컨트롤러 리뷰(create 즉시auth/지연admin 캐시, close 가드, 컨텍스트매니저, _of 시드, 공개 export+__all__) / **G5 Codex**: ⚠️ 타임아웃 / **G6**: ✅
+- **설계**: `.admin`은 지연 생성(구성은 저렴, secret 검증은 실제 admin 작업 시). public client는 auth만 secret 없이 사용 가능.
+
+**✅ Phase 5 (facade) 완료.**
