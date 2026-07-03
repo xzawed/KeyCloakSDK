@@ -17,3 +17,11 @@
 - **G1**: ✅ `pip install -e ".[dev]"` 성공 — python-keycloak 7.1 + joserfc + testcontainers[keycloak] + pytest/mypy 전부 Python 3.13에서 해결(버전 조정 불필요) / **G2**: ✅ pytest 1 통과 / mypy strict 통과
 - **G4**: ✅ 컨트롤러 리뷰(diff가 계획과 일치, hatchling/src레이아웃/커버리지 omit 정확) / **G5 Codex**: ⚠️ 타임아웃(미완) → 실증(install+pytest+mypy) 대체 / **G6**: ✅
 - **모델**: 구현=sonnet
+
+## Phase 2 — core
+
+### 2.1~2.5 (예외·마스킹·Config·토큰·OIDC)
+- **커밋**: 5d8681b..6fbc09c (2.1 dcd2acc, 2.2 a4d6757, 2.3 0dc044e, 2.4 a148c40, 2.5 f8a3000, 커버리지 6fbc09c)
+- **G1/G2**: ✅ 14 테스트, mypy strict / **G3**: ✅ **라인 100% / 브랜치 100%** / **G4**: ✅ Approved(리뷰어가 직접 설치·실행 실증) / **G5 Codex**: ⚠️ 타임아웃 → Claude 리뷰+실증 대체 / **G6**: ✅ (repr/str 마스킹 누출 0 확인)
+- **Minor(최종리뷰)**: from_response None경로 미테스트 · config.py 미사용 `field` import(plan 유래, ruff F401) · server_url/client_id 공란 명시 테스트 부재 · 일부 예외 coverage-by-import.
+- **모델**: 구현=sonnet, 리뷰=sonnet
