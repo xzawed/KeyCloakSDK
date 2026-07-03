@@ -16,6 +16,7 @@ from keycloak import KeycloakAdmin
 
 from ..config import KeycloakConfig
 from ..exceptions import KeycloakConfigError
+from .users import UsersResource
 
 
 class AdminClient:
@@ -43,3 +44,7 @@ class AdminClient:
                 timeout=int(self._config.read_timeout),
             )
         return self._admin
+
+    @property
+    def users(self) -> UsersResource:
+        return UsersResource(self.raw)
