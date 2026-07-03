@@ -2,17 +2,19 @@ package io.github.xzawed.keycloak.core;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 class SecretsTest {
-  @Test void mask_hidesMostOfValue() {
+  @Test void mask_shortPresentValue_isOpaque() {
     assertEquals("***", Secrets.mask("ab"));
-    assertEquals("abc***", Secrets.mask("abcdef123"));
-    assertEquals("***", Secrets.mask(null));
-  }
-  @Test void mask_shortValueUnder8Chars_returnsFullMask() {
-    // Python SDK와의 마스킹 일관성: 8자 미만은 전부 마스킹 (len<8 → "***")
     assertEquals("***", Secrets.mask("abcde"));
   }
-  @Test void mask_valueAtLeast8Chars_returnsFirst3PlusMask() {
-    assertEquals("abc***", Secrets.mask("abcdefgh"));
+  @Test void mask_longPresentValue_hasNoPrefixLeak() {
+    // 과거엔 "abc***"로 접두 3글자를 유출했다 — 이제 길이와 무관하게 완전 불투명
+    assertEquals("***", Secrets.mask("abcdefgh"));
+    assertEquals("***", Secrets.mask("abcdef123"));
+  }
+  @Test void mask_nullOrEmpty_isEmptyString() {
+    // null/빈 값은 부재를 빈 문자열로 표시(존재하지 않는 시크릿을 "***"로 오도하지 않음)
+    assertEquals("", Secrets.mask(null));
+    assertEquals("", Secrets.mask(""));
   }
   @Test void maskBearer_hidesToken() {
     assertEquals("Bearer ***", Secrets.maskBearer("Bearer eyJraWQ..."));
