@@ -8,7 +8,7 @@ from keycloak import KeycloakAdmin
 from keycloak.exceptions import KeycloakGetError
 
 from keycloak_sdk.admin.users import UsersResource
-from keycloak_sdk.exceptions import KeycloakNotFoundError
+from keycloak_sdk.exceptions import KeycloakAdminError, KeycloakNotFoundError
 
 
 def _admin() -> MagicMock:
@@ -66,7 +66,7 @@ def test_search_translates_error():
     kc = _admin()
     kc.get_users.side_effect = KeycloakGetError("boom", response_code=500)
 
-    with pytest.raises(Exception):
+    with pytest.raises(KeycloakAdminError):
         UsersResource(kc).search(None, 0, 10)
 
 

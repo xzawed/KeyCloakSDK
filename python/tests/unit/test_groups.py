@@ -8,7 +8,7 @@ from keycloak import KeycloakAdmin
 from keycloak.exceptions import KeycloakGetError
 
 from keycloak_sdk.admin.groups import GroupsResource
-from keycloak_sdk.exceptions import KeycloakNotFoundError
+from keycloak_sdk.exceptions import KeycloakAdminError, KeycloakConflictError, KeycloakNotFoundError
 
 
 def _admin() -> MagicMock:
@@ -29,7 +29,7 @@ def test_create_translates_conflict():
     kc = _admin()
     kc.create_group.side_effect = KeycloakGetError("dup", response_code=409)
 
-    with pytest.raises(Exception):
+    with pytest.raises(KeycloakConflictError):
         GroupsResource(kc).create({"name": "eng"})
 
 
@@ -65,7 +65,7 @@ def test_list_translates_error():
     kc = _admin()
     kc.get_groups.side_effect = KeycloakGetError("boom", response_code=500)
 
-    with pytest.raises(Exception):
+    with pytest.raises(KeycloakAdminError):
         GroupsResource(kc).list(0, 10)
 
 

@@ -8,7 +8,7 @@ from keycloak import KeycloakAdmin
 from keycloak.exceptions import KeycloakGetError
 
 from keycloak_sdk.admin.realms import RealmsResource
-from keycloak_sdk.exceptions import KeycloakNotFoundError
+from keycloak_sdk.exceptions import KeycloakConflictError, KeycloakNotFoundError
 
 
 def _admin() -> MagicMock:
@@ -28,7 +28,7 @@ def test_create_translates_conflict():
     kc = _admin()
     kc.create_realm.side_effect = KeycloakGetError("dup", response_code=409)
 
-    with pytest.raises(Exception):
+    with pytest.raises(KeycloakConflictError):
         RealmsResource(kc).create({"realm": "r1"})
 
 

@@ -8,7 +8,7 @@ from keycloak import KeycloakAdmin
 from keycloak.exceptions import KeycloakGetError
 
 from keycloak_sdk.admin.clients import ClientsResource
-from keycloak_sdk.exceptions import KeycloakNotFoundError
+from keycloak_sdk.exceptions import KeycloakAdminError, KeycloakNotFoundError
 
 
 def _admin() -> MagicMock:
@@ -66,7 +66,7 @@ def test_find_by_client_id_translates_error():
     kc = _admin()
     kc.get_client_id.side_effect = KeycloakGetError("boom", response_code=500)
 
-    with pytest.raises(Exception):
+    with pytest.raises(KeycloakAdminError):
         ClientsResource(kc).find_by_client_id("my-app")
 
 
