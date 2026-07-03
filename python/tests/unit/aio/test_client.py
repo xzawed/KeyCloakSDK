@@ -49,6 +49,7 @@ async def test_create_with_public_client_no_secret_auth_ok() -> None:
 
 async def test_of_aclose_delegates() -> None:
     auth = MagicMock()
+    auth.aclose = AsyncMock()
     admin = MagicMock()
     admin.aclose = AsyncMock()
 
@@ -57,6 +58,7 @@ async def test_of_aclose_delegates() -> None:
     assert kc.admin is admin
     await kc.aclose()
 
+    auth.aclose.assert_awaited_once()  # auth 세션도 항상 정리(FD 누수 방지)
     admin.aclose.assert_awaited_once()
 
 

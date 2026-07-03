@@ -14,7 +14,7 @@ import pytest
 from joserfc import jwt as jjwt
 from joserfc.jwk import KeySet, OctKey, RSAKey
 
-from keycloak_sdk.exceptions import TokenSignatureError, TokenValidationError
+from keycloak_sdk.exceptions import TokenKeyError, TokenSignatureError, TokenValidationError
 from keycloak_sdk.jwt import JwtValidator
 
 ISSUER = "https://kc.example.com/realms/r"
@@ -261,3 +261,37 @@ def test_empty_allowed_algs_rejected_at_construction():
     알고리즘 혼동 방어가 무력화되므로, 생성 시점에 즉시 거부돼야 한다."""
     with pytest.raises(ValueError):
         JwtValidator(issuer=ISSUER, audience="app", allowed_algs=())
+
+
+def test_unresolved_kid_raises_token_key_error_not_plain_signature_error():
+    """토큰의 kid가 현재 JWKS에 없으면(키 회전 시나리오) `TokenKeyError`를 던진다 —
+    `AuthClient`는 이 타입에 한해서만 JWKS를 재조회한다. 단순 서명 위조
+    (`TokenSignatureError`, kid는 해석되나 서명 불일치)와 구분되어야 미인증 DoS
+    증폭(위조 토큰마다 certs() 재조회)을 막을 수 있다."""
+    signing_key = RSAKey.generate_key(2048, {"kid": "rotated-kid", "use": "sig"})
+    cached_key = RSAKey.generate_key(2048, {"kid": "cached-kid", "use": "sig"})
+    tok = jjwt.encode(
+        {"alg": "RS256", "kid": "rotated-kid"},
+        {"iss": ISSUER, "aud": "app", "exp": int(time.time()) + 60},
+        signing_key,
+    )
+    validator = JwtValidator(issuer=ISSUER, audience="app")
+
+    with pytest.raises(TokenKeyError):
+        validator.validate(tok, KeySet([cached_key]))
+    # TokenKeyError는 TokenSignatureError의 하위 타입이라 기존 소비자와 호환된다
+    assert issubclass(TokenKeyError, TokenSignatureError)
+
+
+def test_validated_token_claims_are_read_only():
+    """ValidatedToken.claims는 읽기전용(MappingProxyType) — 소비자가 내부 클레임 dict를
+    변이할 수 없다(Java ValidatedToken.getClaims()의 unmodifiableMap과 동형)."""
+    key = _rsa_key()
+    tok = _sign(key, {"iss": ISSUER, "aud": "app", "sub": "u", "exp": int(time.time()) + 60})
+    validator = JwtValidator(issuer=ISSUER, audience="app")
+
+    result = validator.validate(tok, KeySet([key]))
+
+    assert result.claims["sub"] == "u"
+    with pytest.raises(TypeError):
+        result.claims["sub"] = "attacker"  # 읽기전용 — 변이 시도는 TypeError

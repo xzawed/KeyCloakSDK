@@ -11,6 +11,7 @@ import base64
 import hashlib
 import json
 import secrets
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -22,7 +23,7 @@ from keycloak.exceptions import KeycloakError
 
 from ._internal.secrets import mask
 from .config import KeycloakConfig
-from .exceptions import KeycloakAuthError, KeycloakTransportError, TokenSignatureError
+from .exceptions import KeycloakAuthError, KeycloakTransportError, TokenKeyError
 from .jwt import JwtValidator
 from .oidc import OidcEndpoints
 from .tokens import IntrospectionResult, TokenSet, ValidatedToken
@@ -81,10 +82,15 @@ class AuthClient:
                 client_id=config.client_id,
                 client_secret_key=config.client_secret,
                 verify=True,
-                timeout=int(config.read_timeout),
+                # python-keycloak의 timeout은 정수 초(int)다. int()로 자르면
+                # sub-second(0.5→0)가 "타임아웃 0"으로 붕괴하므로 round+최소 1초로 가드.
+                timeout=max(1, round(config.read_timeout)),
             )
         )
         self._jwks_cache: KeySet | None = None
+        self._jwks_lock = threading.Lock()
+        self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)
+        self._jwks_min_refetch = 60.0  # 강제 재조회 최소 간격(초) — DoS 증폭 상한
 
     def _wrap(self, fn: Callable[[], T]) -> T:
         """python-keycloak 호출을 실행하고 `KeycloakError`를 SDK 예외로 변환한다.
@@ -186,11 +192,12 @@ class AuthClient:
         JWKS는 첫 호출 시 `openid.certs()`로 로드해 인스턴스에 캐시한다 — 이후 호출은
         네트워크 왕복 없이 캐시된 `KeySet`을 재사용한다.
 
-        키 회전 복원력: 서명 검증이 `TokenSignatureError`(예: 캐시된 JWKS에 없는 새
-        `kid`)로 실패하면, 캐시를 무효화하고 `certs()`를 한 번 재조회해 재시도한다.
-        재시도 후에도 실패하면 그대로 전파한다. 클레임 실패(`TokenValidationError`,
-        예: audience 불일치)는 재조회를 트리거하지 않는다 — 재조회해도 결과가 달라지지
-        않을뿐더러, 무효 토큰마다 `certs()` 호출이 발생하는 것을 막기 위함이다.
+        키 회전 복원력: 서명 키(kid)를 캐시된 JWKS에서 해석하지 못하면
+        (`TokenKeyError`) 캐시를 무효화하고 `certs()`를 한 번 재조회해 재시도한다.
+        **단순 서명 위조(`TokenSignatureError`)는 재조회하지 않는다** — 재조회해도
+        소용없고 위조 토큰마다 `certs()`가 발생하는 미인증 DoS 증폭이 되기 때문이다.
+        재조회 자체도 `_jwks_min_refetch` 간격으로 rate-limit되어 kid 변조 공격에 상한이
+        있다. 클레임 실패(`TokenValidationError`)도 재조회를 트리거하지 않는다.
         """
         key_set = self._load_jwks()
         validator = JwtValidator(
@@ -200,14 +207,40 @@ class AuthClient:
         )
         try:
             return validator.validate(access_token, key_set)
-        except TokenSignatureError:
+        except TokenKeyError:
             key_set = self._load_jwks(force=True)
             return validator.validate(access_token, key_set)
 
     def _load_jwks(self, *, force: bool = False) -> KeySet:
-        if force or self._jwks_cache is None:
+        if not force and self._jwks_cache is not None:
+            return self._jwks_cache
+        with self._jwks_lock:
+            # Double-check: 다른 스레드가 락 대기 중 이미 (재)로드했을 수 있다.
+            if not force and self._jwks_cache is not None:
+                return self._jwks_cache
+            if force and self._jwks_cache is not None:
+                # rate-limit: 최근 강제 재조회 직후면 재사용 — kid를 무작위로 바꾼
+                # 위조 토큰이 certs()를 폭주시키는 것을 막는다(정상 회전은 간격 경과
+                # 후 복원). 최초 강제 재조회는 항상 허용(_jwks_forced_at=-inf).
+                now = time.monotonic()
+                if now - self._jwks_forced_at < self._jwks_min_refetch:
+                    return self._jwks_cache
+                self._jwks_forced_at = now
             certs = self._wrap(lambda: self._openid.certs())
             # python-keycloak types certs() as a bare `dict`; the realm JWKS endpoint
             # (RFC 7517) always returns `{"keys": [...]}`, matching joserfc's shape.
             self._jwks_cache = KeySet.import_key_set(cast(KeySetSerialization, certs))
         return self._jwks_cache
+
+    def close(self) -> None:
+        """하위 `KeycloakOpenID`의 requests 세션을 닫는다.
+
+        python-keycloak은 sync용 공개 close를 제공하지 않으므로 내부 세션
+        (`connection._s`)을 방어적으로(getattr 가드) 닫는다 — 미해제 시 커넥션 풀이
+        GC 파이널라이저까지 잔존한다.
+        """
+        conn = getattr(self._openid, "connection", None)
+        session = getattr(conn, "_s", None) if conn is not None else None
+        close = getattr(session, "close", None) if session is not None else None
+        if callable(close):
+            close()

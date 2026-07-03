@@ -69,13 +69,14 @@ class KeycloakClient:
         return self._admin
 
     def close(self) -> None:
-        """생성된 하위 자원을 정리한다.
+        """생성된 하위 자원을 정리한다 — auth 세션은 항상, admin은 생성된 경우에만.
 
-        `admin`이 한 번도 접근되지 않았다면(지연 생성이 아직 트리거되지 않았다면)
-        아무 것도 하지 않는다 — `close()` 호출 자체가 불필요한 admin 생성/네트워크
-        연결을 유발해서는 안 된다. `AdminClient`에 `close()`가 없는 경우에도(향후
-        구현이 바뀌어도) 안전하도록 `hasattr`(callable 여부)로 가드한다.
+        `auth`는 `create()`에서 항상 생성되므로 requests 세션을 닫는다(미해제 시
+        커넥션 풀 누수). `admin`이 한 번도 접근되지 않았다면 admin 정리는 건너뛴다 —
+        `close()` 호출 자체가 불필요한 admin 생성/네트워크 연결을 유발해서는 안 된다.
+        `AdminClient`에 `close()`가 없어도(향후 구현 변경) 안전하도록 가드한다.
         """
+        self._auth.close()
         if self._admin is not None:
             close = getattr(self._admin, "close", None)
             if callable(close):

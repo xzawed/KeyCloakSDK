@@ -75,12 +75,14 @@ class AsyncKeycloakClient:
         return self._admin
 
     async def aclose(self) -> None:
-        """생성된 하위 자원을 정리한다.
+        """생성된 하위 자원을 정리한다 — auth는 항상, admin은 생성된 경우에만.
 
-        `admin`이 한 번도 접근되지 않았다면(지연 생성이 아직 트리거되지 않았다면)
-        아무 것도 하지 않는다 — `aclose()` 호출 자체가 불필요한 admin 생성/네트워크
-        연결을 유발해서는 안 된다.
+        `auth`는 `create()`에서 항상 생성되므로 httpx 클라이언트를 닫는다(미해제 시
+        async 소켓/FD 누수 → EMFILE). `admin`이 한 번도 접근되지 않았다면 admin 정리는
+        건너뛴다 — `aclose()` 호출 자체가 불필요한 admin 생성/네트워크 연결을 유발해서는
+        안 된다.
         """
+        await self._auth.aclose()
         if self._admin is not None:
             await self._admin.aclose()
 

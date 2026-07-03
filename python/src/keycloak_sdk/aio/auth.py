@@ -25,7 +25,7 @@ from keycloak.exceptions import KeycloakError
 
 from ..auth import AuthorizationUrl, _generate_pkce_pair
 from ..config import KeycloakConfig
-from ..exceptions import KeycloakAuthError, KeycloakTransportError, TokenSignatureError
+from ..exceptions import KeycloakAuthError, KeycloakTransportError, TokenKeyError
 from ..jwt import JwtValidator
 from ..oidc import OidcEndpoints
 from ..tokens import IntrospectionResult, TokenSet, ValidatedToken
@@ -58,11 +58,14 @@ class AsyncAuthClient:
                 client_id=config.client_id,
                 client_secret_key=config.client_secret,
                 verify=True,
-                timeout=int(config.read_timeout),
+                # python-keycloak timeout은 정수 초(int) — sub-second 0-붕괴 방지.
+                timeout=max(1, round(config.read_timeout)),
             )
         )
         self._jwks_cache: KeySet | None = None
         self._jwks_lock = asyncio.Lock()
+        self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)
+        self._jwks_min_refetch = 60.0  # 강제 재조회 최소 간격(초) — DoS 증폭 상한
 
     async def _awrap(self, awaitable: Awaitable[T]) -> T:
         """python-keycloak `a_*` 호출을 await하고 `KeycloakError`를 SDK 예외로 변환한다.
@@ -164,9 +167,10 @@ class AsyncAuthClient:
         """realm JWKS로 서명을 검증하고 issuer/audience/exp/nbf를 강제한다(sync `JwtValidator`).
 
         JWKS는 첫 호출 시 `openid.a_certs()`로 로드해 인스턴스에 캐시한다. 키 회전
-        복원력은 sync `AuthClient.validate`와 동일하다 — 서명 검증이
-        `TokenSignatureError`로 실패하면 캐시를 무효화하고 `a_certs()`를 한 번
-        재조회해 재시도한다.
+        복원력은 sync `AuthClient.validate`와 동일하다 — 서명 키(kid) 미해결
+        (`TokenKeyError`)에 한해 캐시를 무효화하고 `a_certs()`를 한 번 재조회해
+        재시도한다. 단순 서명 위조(`TokenSignatureError`)는 재조회하지 않으며(DoS 증폭
+        차단), 재조회는 `_jwks_min_refetch` 간격으로 rate-limit된다.
         """
         key_set = await self._load_jwks()
         validator = JwtValidator(
@@ -176,7 +180,7 @@ class AsyncAuthClient:
         )
         try:
             return validator.validate(access_token, key_set)
-        except TokenSignatureError:
+        except TokenKeyError:
             key_set = await self._load_jwks(force=True)
             return validator.validate(access_token, key_set)
 
@@ -188,7 +192,26 @@ class AsyncAuthClient:
             # (or refreshed) the cache while we were waiting on the lock.
             if not force and self._jwks_cache is not None:
                 return self._jwks_cache
+            if force and self._jwks_cache is not None:
+                # rate-limit: 최근 강제 재조회 직후면 재사용 — kid 변조 위조 토큰의
+                # a_certs() 폭주 차단(정상 회전은 간격 경과 후 복원).
+                now = time.monotonic()
+                if now - self._jwks_forced_at < self._jwks_min_refetch:
+                    return self._jwks_cache
+                self._jwks_forced_at = now
             certs = await self._awrap(self._openid.a_certs())
             certs_typed = cast(KeySetSerialization, cast(Any, certs))
             self._jwks_cache = KeySet.import_key_set(certs_typed)
         return self._jwks_cache
+
+    async def aclose(self) -> None:
+        """하위 `KeycloakOpenID`의 async httpx 클라이언트(및 sync 세션)를 닫는다.
+
+        python-keycloak `ConnectionManager.aclose()`가 `httpx.AsyncClient`와 requests
+        세션을 함께 정리한다 — 미해제 시 async 소켓/FD가 누수돼 장기 서비스에서
+        EMFILE에 이를 수 있다. 내부 구조 변경에도 안전하도록 가드한다.
+        """
+        conn = getattr(self._openid, "connection", None)
+        aclose = getattr(conn, "aclose", None) if conn is not None else None
+        if callable(aclose):
+            await aclose()

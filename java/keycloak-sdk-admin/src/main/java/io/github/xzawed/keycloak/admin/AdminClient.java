@@ -2,6 +2,9 @@ package io.github.xzawed.keycloak.admin;
 
 import io.github.xzawed.keycloak.core.KeycloakConfig;
 import io.github.xzawed.keycloak.core.exception.KeycloakConfigException;
+import jakarta.ws.rs.client.Client;
+import jakarta.ws.rs.client.ClientBuilder;
+import java.util.concurrent.TimeUnit;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.KeycloakBuilder;
@@ -37,6 +40,7 @@ public final class AdminClient implements AutoCloseable {
         .clientId(config.getClientId())
         .clientSecret(new String(requireClientSecret(config)))
         .grantType(OAuth2Constants.CLIENT_CREDENTIALS)
+        .resteasyClient(buildTimeoutClient(config))
         .build());
   }
 
@@ -45,6 +49,19 @@ public final class AdminClient implements AutoCloseable {
       throw new KeycloakConfigException("clientSecret is required for admin client-credentials", null);
     }
     return config.getClientSecret();
+  }
+
+  /**
+   * {@code config}의 connect/read 타임아웃을 admin-client의 JAX-RS 클라이언트에 주입한다.
+   * 주입하지 않으면 admin 호출에 타임아웃이 적용되지 않아, 응답 없는 백엔드가 호출
+   * 스레드를 무한 점유(스레드풀 고갈 DoS)한다. {@link Keycloak#close()}가 이 클라이언트를
+   * 함께 정리한다.
+   */
+  private static Client buildTimeoutClient(KeycloakConfig config) {
+    return ClientBuilder.newBuilder()
+        .connectTimeout(config.getConnectTimeout().toMillis(), TimeUnit.MILLISECONDS)
+        .readTimeout(config.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS)
+        .build();
   }
 
   /** 패키지 전용 팩토리 — 주입된 {@link Keycloak}을 보관한다(테스트 주입 경로). */
