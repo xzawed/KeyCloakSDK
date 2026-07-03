@@ -16,14 +16,14 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 
 **Java MVP 완료 — `main` 병합됨 (PR #1).** WBS Phase 1~7(기반 → core → auth → admin → facade → 통합테스트 → 배포&문서) 전체 구현. 전 모듈 단위테스트 + Testcontainers 기반 통합테스트(실제 Keycloak 26.6.4)까지 GREEN(`mvn -f java/pom.xml clean verify`). Maven Central 배포 프로파일(`-Prelease`)과 태그 드리븐 릴리스 CI는 준비되었으나, 실제 배포는 사람이 `v*` 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다.
 
-**Python SDK 완료 — `main` 병합됨 (PR #2 sync, PR #4 async).** WBS Phase 1~7 전체 구현 + `keycloak_sdk.aio` 비동기 미러(python-keycloak `a_*` 래핑, sync `JwtValidator` 재사용). 단위테스트 216개(sync 120 + async 96) + Testcontainers 통합테스트(실제 Keycloak 26.6.4) 11개(sync 6 + async 5) GREEN(로직 커버리지 100%, `mypy --strict`, `ruff`). 하드닝(품질·CI 통합잡·ruff·DEPLOY.md)은 PR #3으로 병합됨. PyPI Trusted Publisher(OIDC) 릴리스 CI 준비됨, 실제 배포는 사람이 `py-v*` 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다. **남은 로드맵(사람 게이트)**: Maven Central 실배포(`io.github.xzawed` 네임스페이스 검증 + GPG/Portal 토큰) · PyPI 실배포(`keycloak-sdk` Trusted Publisher 설정). 배포 절차는 [DEPLOY.md](DEPLOY.md) 참고.
+**Python SDK 완료 — `main` 병합됨 (PR #2 sync, PR #4 async).** WBS Phase 1~7 전체 구현 + `keycloak_sdk.aio` 비동기 미러(python-keycloak `a_*` 래핑, sync `JwtValidator` 재사용). 단위테스트 216개(sync 129 + async 87) + Testcontainers 통합테스트(실제 Keycloak 26.6.4) 11개(sync 6 + async 5) GREEN(로직 커버리지 100% 강제, `mypy --strict`, `ruff`). 하드닝(품질·CI 통합잡·ruff·DEPLOY.md)은 PR #3으로 병합됨. PyPI Trusted Publisher(OIDC) 릴리스 CI 준비됨, 실제 배포는 사람이 `py-v*` 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다. **남은 로드맵(사람 게이트)**: Maven Central 실배포(`io.github.xzawed` 네임스페이스 검증 + GPG/Portal 토큰) · PyPI 실배포(`keycloak-sdk` Trusted Publisher 설정). 배포 절차는 [DEPLOY.md](DEPLOY.md) 참고.
 
 - 설계 스펙: [docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md](docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md) — **구현 전 반드시 정독**
 - 구현 계획(WBS): [docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md](docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md)(Java) · [docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md](docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md)(Python)
 - 실행 거버넌스: [docs/governance/ai-governance-framework.md](docs/governance/ai-governance-framework.md) (Codex 이중검증·G1~G6 게이트·루프 엔지니어링)
 - 검증 로그: [docs/governance/verification-log.md](docs/governance/verification-log.md) — 태스크별 게이트 통과 이력
-- **테스트 수(Java)**: 단위테스트 94개(core 23 · auth 25 · admin 43 · keycloak-sdk 3) + 통합테스트(Testcontainers) 6개(SmokeIT 1 · AuthFlowIT 3 · AdminOpsIT 2) = **총 100개**, 커버리지 게이트(로직 모듈 라인 ≥90%/브랜치 ≥85%) 통과.
-- **테스트 수(Python, main)**: 단위테스트 216개(sync 120 + `aio` async 96) + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 11개(sync 6 + async 5) = **총 227개**, 로직 모듈 커버리지 100%(라인/브랜치), `mypy --strict`·`ruff` 통과.
+- **테스트 수(Java)**: 단위테스트 117개(core 34 · auth 34 · admin 43 · keycloak-sdk 6) + 통합테스트(Testcontainers) 6개(SmokeIT 1 · AuthFlowIT 3 · AdminOpsIT 2) = **총 123개**, 커버리지 게이트(로직 모듈 라인 ≥90%/브랜치 ≥85%) 통과. (surefire/failsafe 실측 기준 — Phase 7의 94는 최종리뷰 Wave A/B 이전 수치)
+- **테스트 수(Python, main)**: 단위테스트 216개(sync 129 + `aio` async 87) + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 11개(sync 6 + async 5) = **총 227개**, 로직 모듈 커버리지 **100% 강제**(`--cov-fail-under=100`, 경계모듈 omit), `mypy --strict`·`ruff`(보안 S/bandit 포함 확장 룰셋)·`ruff format` 통과.
 
 ### Java 툴체인 (빌드 명령)
 
@@ -44,8 +44,10 @@ JAVA_HOME='/c/Program Files/Microsoft/jdk-17.0.19.10-hotspot' PATH="/c/Users/dir
 
 가상환경은 `python/.venv`에 있다(리포지토리에 커밋 안 함). 명령은 `python/`에서 실행하거나 절대경로의 venv 인터프리터를 직접 호출한다:
 ```bash
-cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m pytest -m "not integration"   # 단위테스트(main 120개 · feature/python-async 216개)
-cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m pytest -m integration            # 통합테스트(Docker 필요, testcontainers)
+cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m pytest -m "not integration" --cov=keycloak_sdk   # 단위테스트 216개 + 커버리지 게이트 100%
+cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m pytest -m integration            # 통합테스트 11개(Docker 필요, testcontainers)
+cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m ruff check src tests examples     # 린트(보안 S/bandit 포함 확장 룰셋)
+cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m ruff format --check src tests examples  # 포맷 검사
 cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m mypy src                          # 정적 타입 검사(strict)
 ```
 - 로컬 배포 빌드 검증(업로드 없이): `cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m build` → `dist/keycloak_sdk-0.1.0-py3-none-any.whl` + `.tar.gz` 생성 확인
