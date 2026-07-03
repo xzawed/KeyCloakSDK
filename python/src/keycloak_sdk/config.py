@@ -11,7 +11,6 @@ class KeycloakConfig:
     client_id: str
     client_secret: str | None = None
     scopes: tuple[str, ...] = ("openid",)
-    connect_timeout: float = 10.0
     read_timeout: float = 30.0
     clock_skew: float = 30.0
 
