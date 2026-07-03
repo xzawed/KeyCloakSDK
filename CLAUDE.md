@@ -16,7 +16,7 @@ Keycloak을 위한 **다국어 SDK**. Keycloak의 두 API 표면 — **인증(OI
 
 **Java MVP 완료 — `main` 병합됨 (PR #1).** WBS Phase 1~7(기반 → core → auth → admin → facade → 통합테스트 → 배포&문서) 전체 구현. 전 모듈 단위테스트 + Testcontainers 기반 통합테스트(실제 Keycloak 26.6.4)까지 GREEN(`mvn -f java/pom.xml clean verify`). Maven Central 배포 프로파일(`-Prelease`)과 태그 드리븐 릴리스 CI는 준비되었으나, 실제 배포는 사람이 `v*` 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다.
 
-**Python SDK 구현 완료 — `feature/python-sdk` 브랜치(아직 main 미병합).** WBS Phase 1~7 전체 구현(아래 아키텍처·툴체인 섹션 참고). 단위테스트 120개 + Testcontainers 통합테스트(실제 Keycloak 26.6) 6개 GREEN. PyPI Trusted Publisher(OIDC) 릴리스 CI 준비됨, 실제 배포는 사람이 `py-v*` 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다. **다음 로드맵**: PR 리뷰·main 병합 · Maven Central/PyPI 실배포(네임스페이스 검증 + 시크릿/Trusted Publisher 설정 필요).
+**Python SDK 완료 — `main` 병합됨 (PR #2).** WBS Phase 1~7 전체 구현(아래 아키텍처·툴체인 섹션 참고). 단위테스트 124개 + Testcontainers 통합테스트(실제 Keycloak 26.6.4) 6개 GREEN(로직 커버리지 100%, `mypy --strict`). PyPI Trusted Publisher(OIDC) 릴리스 CI 준비됨, 실제 배포는 사람이 `py-v*` 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다. **남은 로드맵(사람 게이트)**: Maven Central 실배포(`io.github.xzawed` 네임스페이스 검증 + GPG/Portal 토큰) · PyPI 실배포(`keycloak-sdk` Trusted Publisher 설정).
 
 - 설계 스펙: [docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md](docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md) — **구현 전 반드시 정독**
 - 구현 계획(WBS): [docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md](docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md)(Java) · [docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md](docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md)(Python)

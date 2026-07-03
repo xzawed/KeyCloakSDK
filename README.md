@@ -2,8 +2,8 @@
 
 Keycloak을 위한 **다국어 SDK**. **인증(OIDC/OAuth2)** 과 **관리 REST API(Admin)** 를 모두 다루며, 언어마다 관용적이면서도 개념·계층·흐름이 동형인 SDK를 제공합니다.
 
-- **기준 언어**: Java 17 · Maven (구현 완료)
-- **향후**: Python
+- **기준 언어**: Java 17 · Maven (완료 · main 병합)
+- **2번째 언어**: Python 3.10+ · `python-keycloak` 래핑 (완료 · main 병합, PyPI `keycloak-sdk`)
 - **라이선스**: Apache-2.0
 
 ## 전략
