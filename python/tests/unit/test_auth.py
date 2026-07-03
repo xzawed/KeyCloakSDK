@@ -125,12 +125,32 @@ def test_client_credentials_token_maps_response():
     result = client.client_credentials_token()
     after = time.time()
 
-    openid.token.assert_called_once_with(grant_type="client_credentials")
+    openid.token.assert_called_once_with(grant_type="client_credentials", scope="openid")
     assert isinstance(result, TokenSet)
     assert result.access_token == "acc"
     assert result.refresh_token == "ref"
     assert result.expires_at is not None
     assert before + 300 <= result.expires_at <= after + 300
+
+
+def test_client_credentials_passes_scopes():
+    """`config.scopes`가 `token()` 호출에 스페이스 조인된 `scope`로 전달돼야 한다 —
+    미전달 시 python-keycloak이 `"openid"`로 고정해 추가 스코프가 무시된다."""
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.token.return_value = {
+        "access_token": "acc",
+        "token_type": "Bearer",
+        "scope": "openid profile",
+        "expires_in": 300,
+    }
+    config = _config(scopes=("openid", "profile"))
+    client = _client(openid, config=config)
+
+    client.client_credentials_token()
+
+    _, kwargs = openid.token.call_args
+    assert "profile" in kwargs["scope"]
+    openid.token.assert_called_once_with(grant_type="client_credentials", scope="openid profile")
 
 
 def test_client_credentials_token_wraps_auth_error():
@@ -172,6 +192,22 @@ def test_authorization_url_contains_pkce_state_and_nonce():
         code_challenge=expected_challenge,
         code_challenge_method="S256",
     )
+
+
+def test_authorization_url_repr_masks_verifier():
+    """`AuthorizationUrl.__repr__`은 PKCE `code_verifier`를 마스킹해야 한다 — 기본
+    dataclass repr은 평문 verifier를 로그/예외 트레이스에 노출시킨다(보안 결함)."""
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.auth_url.return_value = "https://kc.example.com/auth?mocked=1"
+    client = _client(openid)
+
+    result = client.authorization_url("https://app.example.com/callback")
+
+    rendered = repr(result)
+    assert result.code_verifier not in rendered
+    assert result.url in rendered
+    assert result.state in rendered
+    assert result.nonce in rendered
 
 
 def test_authorization_url_generates_distinct_verifiers_per_call():

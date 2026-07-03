@@ -18,6 +18,7 @@ from joserfc.jwk import KeySet, KeySetSerialization
 from keycloak import KeycloakOpenID
 from keycloak.exceptions import KeycloakError
 
+from ._internal.secrets import mask
 from .config import KeycloakConfig
 from .exceptions import KeycloakAuthError, KeycloakTransportError
 from .jwt import JwtValidator
@@ -36,6 +37,11 @@ class AuthorizationUrl:
     code_verifier: str
     state: str
     nonce: str
+
+    def __repr__(self) -> str:
+        return (f"AuthorizationUrl(url={self.url!r}, "
+                f"code_verifier={mask(self.code_verifier)!r}, "
+                f"state={self.state!r}, nonce={self.nonce!r})")
 
 
 def _generate_pkce_pair() -> tuple[str, str]:
@@ -68,6 +74,7 @@ class AuthClient:
             client_id=config.client_id,
             client_secret_key=config.client_secret,
             verify=True,
+            timeout=int(config.read_timeout),
         )
         self._jwks_cache: KeySet | None = None
 
@@ -101,8 +108,17 @@ class AuthClient:
         return str(error) if error is not None else None
 
     def client_credentials_token(self) -> TokenSet:
-        """`client_credentials` grant로 서비스 계정 토큰을 발급받는다."""
-        response = self._wrap(lambda: self._openid.token(grant_type="client_credentials"))
+        """`client_credentials` grant로 서비스 계정 토큰을 발급받는다.
+
+        `config.scopes`를 명시적으로 전달한다 — 미전달 시 python-keycloak이
+        `"openid"`로 고정하므로, 설정된 추가 스코프(예: 커스텀 audience)가 무시된다.
+        """
+        response = self._wrap(
+            lambda: self._openid.token(
+                grant_type="client_credentials",
+                scope=" ".join(self._config.scopes),
+            )
+        )
         return TokenSet.from_response(response, issued_at=time.time())
 
     def authorization_url(self, redirect_uri: str) -> AuthorizationUrl:
