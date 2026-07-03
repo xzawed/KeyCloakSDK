@@ -23,11 +23,28 @@ class KeycloakConfigTest {
     KeycloakConfig.Builder b = KeycloakConfig.builder().serverUrl("x").realm("r");
     assertThrows(KeycloakConfigException.class, b::build);
   }
+  @Test void blankServerUrl_throwsConfigException() {
+    // null 분기뿐 아니라 isBlank() 분기(공백만 있는 값)도 커버한다.
+    KeycloakConfig.Builder b = KeycloakConfig.builder().serverUrl("   ").realm("r").clientId("app");
+    assertThrows(KeycloakConfigException.class, b::build);
+  }
+  @Test void blankClientId_throwsConfigException() {
+    KeycloakConfig.Builder b = KeycloakConfig.builder().serverUrl("x").realm("r").clientId("   ");
+    assertThrows(KeycloakConfigException.class, b::build);
+  }
   @Test void clientSecret_isDefensivelyCopied() {
     char[] secret = "s3cr3t".toCharArray();
     KeycloakConfig c = KeycloakConfig.builder().serverUrl("x").realm("r").clientId("app")
         .clientSecret(secret).build();
     secret[0] = 'X';
+    assertArrayEquals("s3cr3t".toCharArray(), c.getClientSecret());
+  }
+  @Test void getClientSecret_returnedArrayMutation_doesNotAffectInternalCopy() {
+    // getClientSecret()이 매번 방어적 복사본을 반환하는지 검증: 반환값을 변조해도 내부 상태는 불변.
+    KeycloakConfig c = KeycloakConfig.builder().serverUrl("x").realm("r").clientId("app")
+        .clientSecret("s3cr3t".toCharArray()).build();
+    char[] returned = c.getClientSecret();
+    returned[0] = 'X';
     assertArrayEquals("s3cr3t".toCharArray(), c.getClientSecret());
   }
   @Test void clientSecret_defaultsToNull() {
