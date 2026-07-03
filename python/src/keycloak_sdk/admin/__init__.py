@@ -68,3 +68,10 @@ class AdminClient:
     @property
     def groups(self) -> GroupsResource:
         return GroupsResource(self.raw)
+
+    def close(self) -> None:
+        """자원 정리 훅(현재 no-op). `KeycloakAdmin`(python-keycloak)은 명시적
+        close가 필요 없으나, `KeycloakClient`(WBS 5.1)의 컨텍스트 매니저 프로토콜과
+        대칭을 이루기 위해 인터페이스를 유지한다(향후 커넥션 풀 등에 대비).
+        """
+        return None

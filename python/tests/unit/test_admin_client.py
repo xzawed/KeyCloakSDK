@@ -58,3 +58,14 @@ def test_construction_without_secret_does_not_raise_until_raw_accessed():
     client = AdminClient(config)  # no raise
 
     assert client is not None
+
+
+def test_close_is_noop():
+    """`close()`는 `KeycloakClient`(WBS 5.1)의 컨텍스트 매니저 프로토콜과 대칭을
+    맞추기 위한 no-op — 호출해도 예외가 없고 `raw` 캐시를 건드리지 않는다."""
+    admin = MagicMock(spec=KeycloakAdmin)
+    client = AdminClient(_config(), admin=admin)
+
+    client.close()
+
+    assert client.raw is admin
