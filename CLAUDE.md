@@ -108,6 +108,7 @@ python/
 - ⚠️ **어떤 Java OIDC 라이브러리도 자체 "certified" 아님.** 완성 제품을 필요 시 OIDF에 인증한다.
 - ⚠️ **Java 17+ javadoc은 doclint 기본 엄격.** `release` 프로파일의 `maven-javadoc-plugin`에 `<doclint>none</doclint>` + `<failOnError>false</failOnError>`를 주지 않으면 문서 경고로 `-javadoc.jar` 생성이 실패할 수 있다.
 - ⚠️ **Java 런타임 타깃은 21 LTS(2026-07-03 업그레이드).** `maven.compiler.release=21` + enforcer `requireJavaVersion=[21,)`로 JDK 21 미만 빌드를 fail-fast. `maven-compiler-plugin`은 pluginManagement에서 `3.11.0`으로 명시 고정(기본값 드리프트 방지). CI(`ci.yml` build matrix·integration, `release.yml`)는 모두 JDK 21 단일 사용.
+- ⚠️ **jackson-databind는 2.21.4 고정(CVE 대응, 2026-07-03).** Dependabot 7건(HIGH 2·MEDIUM 5) 대응으로 jackson-databind 계열 6종을 2.21.2→2.21.4로 상향(관리값보다 picked-higher, 수렴 유지). `jackson-annotations`는 별도 트랙·비취약이라 2.21 유지. CVE-2026-54515는 fix(2.21.5) 미출시 — 이 SDK에서 악용 불가로 문서화, 2.21.5 출시 시 상향. **보안 불변식(위반 시 노출 재개)**: SDK는 자체 `ObjectMapper`/default·polymorphic typing을 쓰지 않고 신뢰된 Keycloak 응답만 고정 representation POJO로 역직렬화한다 — default typing 활성화·커스텀 JAX-RS Jackson provider 등록·미신뢰 JSON의 다형성 역직렬화를 도입하지 말 것. 상세: [verification-log.md](docs/governance/verification-log.md).
 
 ## 확정 의존성 (BOM으로 고정)
 

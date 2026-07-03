@@ -166,6 +166,27 @@
   - **G3/최종 (Temurin 21.0.8, Docker/Testcontainers 실제 KC 26.6)**: `mvn -f java/pom.xml clean verify` → **BUILD SUCCESS**, 7모듈 전부 SUCCESS. 단위 117 + **IT 6**(AdminOpsIT 2·AuthFlowIT 3·KeycloakContainerSmokeIT 1) = **총 123 GREEN**. JaCoCo 라인≥90/브랜치≥85 전 모듈 통과, DependencyConvergence 통과.
 - **브랜치**: `appmod/java-upgrade-20260703110900`. **회귀 0** — 업그레이드 전후 테스트 수·통과 상태 동일(123/123).
 
+## jackson-databind CVE 대응 (2026-07-03, Dependabot 7건)
+
+- **트리거**: PR #7 push 시 Dependabot이 `java/pom.xml`의 `com.fasterxml.jackson.core:jackson-databind`(당시 2.21.2)에 대해 **7건** 경보(HIGH 2 · MEDIUM 5). 전부 동일 아티팩트.
+- **조치**: jackson-databind 계열 **6종**(jackson-core·jackson-databind·jackson-datatype-jdk8·jackson-datatype-jsr310·jackson-jakarta-rs-base·jackson-module-jakarta-xmlbind-annotations) `2.21.2` → **`2.21.4`**. keycloak-client-parent:26.0.10 관리값(2.21.2)보다 상향("picked higher", 2.21.x 시리즈 내 유지). `jackson-annotations`는 별도 버전 트랙·CVE 대상 아님이라 **2.21 유지**. **소스(.java) 무변경**.
+- **CVE별 결과** (다중에이전트 트리아지: CVE별 analyst + 적대적 skeptic 반증 검증, 만장일치 "악용불가"):
+
+| CVE | Sev | 2.21.4로 패치 | 이 SDK 악용가능성 |
+|---|---|---|---|
+| CVE-2026-54512 (PolymorphicTypeValidator 우회) | HIGH | ✅ | 불가 |
+| CVE-2026-54513 (BasicPTV `allowIfSubTypeIsArray` 우회) | HIGH | ✅ | 불가 |
+| CVE-2026-54514 (InetSocketAddress 역직렬화 eager DNS·SSRF) | MEDIUM | ✅ | 불가 |
+| CVE-2026-54516 (renamed `@JsonIgnore` setter → private field 기입) | MEDIUM | ✅ | 불가 |
+| CVE-2026-54517 (`@JsonView` 우회 — setterless creator) | MEDIUM | ✅ | 불가 |
+| CVE-2026-54518 (`@JsonView` 우회 — `@JsonUnwrapped` creator) | MEDIUM | ✅ | 불가 |
+| CVE-2026-54515 (case-insensitive → per-property `@JsonIgnoreProperties` 우회) | MEDIUM | ❌ (fix=2.21.5 미출시) | 불가 |
+
+- **악용불가 공통 근거**: SDK는 자체 `ObjectMapper`를 만들지 않고, default/polymorphic typing을 켜지 않으며(`activateDefaultTyping`/`@JsonTypeInfo` 부재), `@JsonView`/`@JsonIgnore`를 보안 경계로 사용하지 않는다. Jackson은 keycloak-admin-client/RESTEasy `jackson2-provider`가 **신뢰된 first-party Keycloak 응답**을 고정 concrete `org.keycloak.representations.idm.*` POJO로 역직렬화할 때만 전이적으로 쓰인다(미신뢰 JSON·다형성 베이스 타입 역직렬화 없음). JWT 검증은 Nimbus JOSE(비-Jackson). 손상/멀티테넌트 IdP·MITM(TLS 미검증)·에코된 공격자 필드값 등 엣지케이스도 추가 권한을 주지 못함(적대적 반증 전부 실패). → 2.21.4 bump은 **심층방어(defense-in-depth)**이며 활성 취약점 차단이 아님.
+- **CVE-2026-54515 처리**: 릴리스된 fix 없음(2.21.4도 여전히 취약범위, 2.21.x fix=2.21.5 미출시; 타 라인 fix는 2.18.9/2.22.1/3.1.4). 이 SDK에서 악용 불가하므로 "vulnerable code path not reachable(우리 사용맥락에서 미도달)"로 문서화·처리. **2.21.5가 Maven Central에 올라오면 6종 일괄 상향**(annotations는 자체 트랙 유지). 2.22+/3.x로의 강제 상향은 keycloak-admin-client 26.0.10/RESTEasy 6.2.15 호환성 확인 전까지 지양.
+- **유지 불변식(향후 위반 시 노출 재개)**: default/polymorphic typing 활성화 금지, 커스텀 JAX-RS Jackson provider/`ContextResolver` 등록 금지, 미신뢰 JSON을 `Object`/다형성 베이스로 역직렬화 금지, TLS 검증 on 유지.
+- **검증**: `mvn -f java/pom.xml clean verify`(JDK 21, Docker/Testcontainers) → **BUILD SUCCESS**, enforcer **DependencyConvergence 통과**, **123 GREEN**(회귀 0), `dependency:tree`로 resolved `jackson-databind 2.21.4`·`jackson-core 2.21.4`·`jackson-annotations 2.21` 확인.
+
 <!--
 태스크 기록 템플릿 (완료 시 아래 형식으로 추가):
 
