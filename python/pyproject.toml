@@ -10,6 +10,16 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 authors = [{ name = "xzawed", email = "xzawed31@gmail.com" }]
+keywords = ["keycloak", "oidc", "oauth2", "sso", "admin"]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+]
 dependencies = [
   "python-keycloak>=7.1,<8",
   "joserfc>=1.7",
@@ -17,6 +27,8 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/xzawed/KeyCloakSDK"
+Repository = "https://github.com/xzawed/KeyCloakSDK"
+Issues = "https://github.com/xzawed/KeyCloakSDK/issues"
 
 [project.optional-dependencies]
 dev = [
