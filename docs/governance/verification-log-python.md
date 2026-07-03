@@ -72,3 +72,19 @@
 - **G4/G5**: 통과한 실제-Keycloak E2E가 최강 검증 + 컨트롤러 리뷰(비-vacuous 단언 확인). Codex ⚠️ 타임아웃.
 
 **✅ Phase 6 (통합) 완료. Python SDK가 실제 Keycloak 26.6.4로 end-to-end 동작. 버그 0.**
+
+## Phase 7 — 배포 · 문서
+
+### 7.1 pyproject 메타+릴리스 CI · 7.2 examples+문서
+- **커밋**: dce0f34..6f3aeb1 (7.1 677b8b0, 7.2 6f3aeb1)
+- **G1**: ✅ `python -m build` → wheel+sdist / **G2**: ✅ 120 단위 / mypy(src+examples) / **G6**: ✅ (deploy human-gated, Trusted Publisher OIDC 무시크릿)
+- PEP 561 `py.typed` 추가(소비자 mypy 지원). CLAUDE.md Python 섹션(구조·명령·python-keycloak 래핑·자체 JWT).
+
+**✅ Phase 7 완료.**
+
+---
+
+## 종합 (Python SDK 전 Phase 완료)
+- **총 126 테스트** = 단위 120 + 통합 6(실제 Keycloak 26.6.4). 로직 모듈 커버리지 100%, mypy strict.
+- **핵심 성과**: python-keycloak(admin+auth) 래핑 + joserfc 자체 강화 JWT. **Java 최종리뷰 학습을 설계에 선반영**(ValidatedToken·다중 aud·시크릿 마스킹·지연 admin·SignedJWT 강제·alg-confusion 방어) → 통합 E2E 버그 0, JWT 보안 루프 회피.
+- **거버넌스**: Codex는 이번 세션 지속 타임아웃 → Claude 리뷰어(독립 모델, 실제 테스트 실행) + 실제 Keycloak E2E로 대체 검증(정직 기록). 루프: 3.1 JWT 보안 2건, 3b low 3건, 4 테스트조임 1건.
