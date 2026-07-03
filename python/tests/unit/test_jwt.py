@@ -178,3 +178,21 @@ def test_missing_exp_claim_rejected():
 
     with pytest.raises(TokenValidationError):
         validator.validate(tok, KeySet([key]))
+
+
+def test_malformed_exp_raises_token_validation_error():
+    """exp가 숫자가 아니면 float() 변환이 raw ValueError를 던지지 않고
+    TokenValidationError로 래핑되어야 한다."""
+    key = _rsa_key()
+    tok = _sign(key, {"iss": ISSUER, "aud": "app", "exp": "soon"})
+    validator = JwtValidator(issuer=ISSUER, audience="app")
+
+    with pytest.raises(TokenValidationError):
+        validator.validate(tok, KeySet([key]))
+
+
+def test_empty_allowed_algs_rejected_at_construction():
+    """allowed_algs=()이면 joserfc가 권장 알고리즘 집합(HS256 포함)으로 폴백해
+    알고리즘 혼동 방어가 무력화되므로, 생성 시점에 즉시 거부돼야 한다."""
+    with pytest.raises(ValueError):
+        JwtValidator(issuer=ISSUER, audience="app", allowed_algs=())

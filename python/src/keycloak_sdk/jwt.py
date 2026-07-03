@@ -37,6 +37,10 @@ class JwtValidator:
         allowed_algs: tuple[str, ...] = ("RS256",),
         clock_skew: float = 30.0,
     ) -> None:
+        if not allowed_algs:
+            # joserfc는 algorithms=[]/None이면 권장 알고리즘 집합(HS256 포함)으로
+            # 폴백한다 — 빈 튜플을 허용하면 알고리즘 혼동 방어가 조용히 무력화된다.
+            raise ValueError("allowed_algs must be non-empty")
         self._issuer = issuer
         self._audience = audience
         self._algs: list[str] = list(allowed_algs)
@@ -49,7 +53,13 @@ class JwtValidator:
             raise TokenValidationError("JWT signature/algorithm validation failed") from exc
 
         claims: dict[str, Any] = dict(decoded.claims)
-        self._check_claims(claims)
+        try:
+            self._check_claims(claims)
+        except TokenValidationError:
+            raise
+        except Exception as exc:  # 잘못된 타입의 클레임(예: exp/nbf가 숫자가 아님)이
+            # float() 변환 등에서 raw ValueError/TypeError를 던지는 것을 방지한다.
+            raise TokenValidationError("Malformed claim value") from exc
 
         aud = claims.get("aud")
         audiences: tuple[str, ...] = tuple(aud) if isinstance(aud, list) else ((aud,) if aud else ())
