@@ -25,3 +25,19 @@
 - **G1/G2**: ✅ 14 테스트, mypy strict / **G3**: ✅ **라인 100% / 브랜치 100%** / **G4**: ✅ Approved(리뷰어가 직접 설치·실행 실증) / **G5 Codex**: ⚠️ 타임아웃 → Claude 리뷰+실증 대체 / **G6**: ✅ (repr/str 마스킹 누출 0 확인)
 - **Minor(최종리뷰)**: from_response None경로 미테스트 · config.py 미사용 `field` import(plan 유래, ruff F401) · server_url/client_id 공란 명시 테스트 부재 · 일부 예외 coverage-by-import.
 - **모델**: 구현=sonnet, 리뷰=sonnet
+
+## Phase 3 — auth
+
+### 3.1 JwtValidator (joserfc 자체 강화) — 보안 핵심
+- **커밋**: 3e184a9..08e5a92 (ff97475 + 보안fix 08e5a92)
+- **G2**: ✅ 12 jwt 테스트 / **G3**: ✅ 100%/100% / **G4/보안**: ✅ (보안 리뷰어가 실제 joserfc 1.7.2로 검증 — RS256 핀닝이 none/HS256혼동을 UnsupportedAlgorithmError로 차단, 다중aud 포함검사, jwk/jku/x5u 헤더 우회 없음) / **G5 Codex**: ⚠️ 타임아웃 → Claude 보안리뷰어 대체 / **G6**: ✅
+- **루프**: 🔁 1회 (Important 2: 잘못된 클레임 타입 raw ValueError 누출 → TokenValidationError 래핑; 빈 allowed_algs → HS256 폴백 footgun → ValueError 가드). Java 학습 선반영으로 alg-confusion 루프 회피.
+
+### 3.2~3.5 AuthClient (KeycloakOpenID 래핑)
+- **커밋**: 08e5a92..9ee7588 (3.2 53c0a7b, 3.3 8e05db0, 3.4 559f4eb, 3.5 2657176 + low fix 9ee7588)
+- **G2**: ✅ 25 auth 테스트(51 총) / **G3**: ✅ core+jwt 100%(auth.py omit) / mypy strict / **G4**: ✅ Approved(리뷰어 실제 테스트 실행 + python-keycloak 7.1.11 라이브 API 검증, PKCE 파생·validate 배선 실증) / **G5 Codex**: ⚠️ 타임아웃 → Claude 리뷰 대체 / **G6**: ✅
+- **PKCE 자체구현**(stdlib), validate는 certs()→joserfc KeySet→하드닝 JwtValidator 위임(client_id=aud). 리뷰어가 "raw 전송오류 미변환" 구현자 concern을 오탐으로 정정(_wrap이 KeycloakConnectionError 처리).
+- **루프**: 🔁 1회 (low 3: AuthorizationUrl verifier 마스킹[보안]·timeout 배선·client_credentials scope).
+- **모델**: 구현=sonnet, 리뷰=sonnet
+
+**✅ Phase 3 (auth) 완료.**
