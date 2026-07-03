@@ -187,6 +187,23 @@
 - **유지 불변식(향후 위반 시 노출 재개)**: default/polymorphic typing 활성화 금지, 커스텀 JAX-RS Jackson provider/`ContextResolver` 등록 금지, 미신뢰 JSON을 `Object`/다형성 베이스로 역직렬화 금지, TLS 검증 on 유지.
 - **검증**: `mvn -f java/pom.xml clean verify`(JDK 21, Docker/Testcontainers) → **BUILD SUCCESS**, enforcer **DependencyConvergence 통과**, **123 GREEN**(회귀 0), `dependency:tree`로 resolved `jackson-databind 2.21.4`·`jackson-core 2.21.4`·`jackson-annotations 2.21` 확인.
 
+## 문서 & 언어 확장 (설치 가이드·로드맵·플레이북) (2026-07-03, WBS·Workflow·거버넌스)
+
+- **산출물**: `docs/guides/getting-started.md`(설치·최소 사용 예) · `docs/roadmap/language-support.md`(전략·step-0 실배포·우선순위(딥리서치)·현황 매트릭스) · `docs/guides/add-a-language-playbook.md`(6단계 표준 절차 + G1~G6 매핑) · README front door 재구성. spec `aef3b1f` → WBS plan `7d45d99`.
+- **실행 방식**: 브레인스토밍 → writing-plans → feature 브랜치 `docs/install-guide-and-language-expansion`. Task 1~3 문서 내용은 다중에이전트 Workflow(6개 언어 딥리서치 → 초안 → 적대적 검증 → 확정, 15 에이전트)로 생성, 권위 연산(파일 적용·설치 실측·링크·커밋)은 인라인(ground truth).
+- **Ground-truth 검증(G1/G2/G4)**:
+  - **API 정합**: getting-started의 Java/Python 예제 메서드를 실제 소스·examples와 grep 대조 — 전부 존재(`clientCredentialsToken`·`validate`·`users().create(UserRepresentation)→String`·`search(String,int,int)`·`Secrets.mask`·Python `client_credentials_token`·`users.create(dict)->str`·`search(first,max)`·`mask(str|None)`).
+  - **로컬 설치 실측**: `mvn -f java/pom.xml install -DskipITs=true` → `~/.m2`에 `keycloak-sdk-0.1.0-SNAPSHOT.jar` 설치·커버리지 게이트 통과 확인.
+  - **링크**: 신규 3개 문서 32링크 + README 20링크 전부 유효.
+- **Loops(발견→시정→재측정)**:
+  1. 워크플로 스크립트 `(await parallel()).filter` 파싱 버그(Promise에 `.filter`) → await 분리 후 재실행.
+  2. finalize 에이전트가 getting-started 앞에 잡담(preamble) 부착 → 추출 시 첫 H1 이전 스트립.
+  3. 문서의 `mvn install`이 Docker ITs를 요구(설치 마찰) → `-DskipITs=true`로 정정(getting-started·roadmap·playbook·README 일괄, 실측으로 확인).
+  4. roadmap §6.3/§10 인용이 2026-07-02 스펙을 가리킴(파일은 존재하나 섹션 귀속 오류) → 2026-07-03 스펙으로 정정.
+  5. README 리팩터 중 `### Python (pip)` 중복 → 병합.
+- **딥리서치**: 6개 언어 클라이언트(유지보수·OIDF 인증·라이선스) 검증 — `keycloak-connect` deprecated·단일 유지자 리스크·Duende 패키지 ID 전환·`fschmtt` pre-1.0 등 반영, "작성시점 스냅샷(illustrative-as-of-drafting)" 경고로 하드넘버 과인용 방지(착수 시 재검증 원칙).
+- **커밋**(브랜치 `docs/install-guide-and-language-expansion`): getting-started `e36dac8` · roadmap `1da50a6` · playbook `929a886` · README `abd34ee` · 정합/로그(본 커밋) → PR(사람 승인 머지).
+
 <!--
 태스크 기록 템플릿 (완료 시 아래 형식으로 추가):
 

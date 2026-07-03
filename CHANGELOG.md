@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Added
+- **(Docs) 설치/시작 가이드·언어 확장 로드맵·add-a-language 플레이북 신설 + README front door 재구성.** `docs/guides/getting-started.md`(언어별 요구 런타임·로컬/배포후 설치·최소 사용 예), `docs/roadmap/language-support.md`(depth-first 전략·step-0 실배포 체크리스트·우선순위 TS/Node→Go→C#→PHP→Rust→Ruby·현황 매트릭스), `docs/guides/add-a-language-playbook.md`(새 언어를 Java/Python 품질로 추가하는 6단계 표준 절차 + G1~G6 매핑). README는 상세 QuickStart를 시작 가이드로 이관하고 요약+딥링크만 남김. (2026-07-03)
+
 ### Changed
 - **(Java) ⚠️ BREAKING — 요구 런타임을 JDK 17 → 21 LTS로 상향.** `maven.compiler.release=21` + enforcer `requireJavaVersion=[21,)`. 아티팩트는 `--release 21`로 컴파일되므로 **소비자도 JDK 21+에서 실행**해야 하며, 이전 JDK에서는 `UnsupportedClassVersionError`가 발생합니다. `maven-compiler-plugin`을 `3.11.0`으로 명시 고정(기본값 드리프트 방지). CI·릴리스 워크플로도 JDK 21 단일 사용. 소스·공개 API 무변경. (2026-07-03)
 

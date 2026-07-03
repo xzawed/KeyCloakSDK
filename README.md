@@ -19,11 +19,14 @@ Keycloak을 위한 **여러 프로그래밍 언어용 SDK**(polyglot). Keycloak�
 - **Python**: 성숙한 `python-keycloak`의 `KeycloakAdmin`(Admin) + `KeycloakOpenID`(인증) 래핑. sync + **async(`keycloak_sdk.aio`)** 모두 제공.
 - **JWT 검증은 두 언어 모두 자체 강화 구현** — 알고리즘 핀닝(`none`/미서명 거부·헤더 불신), `iss` 정확일치, **`aud` 포함검사**(실제 Keycloak 토큰의 다중 aud 대응), 클록 스큐, JWKS 키 회전 복원력. (Java: Nimbus JOSE, Python: joserfc)
 
-## 설치
+## 설치 & 시작
+
+> 🚀 **전체 설치·시작 가이드 → [docs/guides/getting-started.md](docs/guides/getting-started.md)** — 언어별 요구 런타임 · 로컬/배포후 설치 · 최소 사용 예(토큰 발급 → JWT 검증 → admin CRUD)를 한곳에 정리했습니다. 아래는 요약입니다.
+
+**요구 런타임**: Java **JDK 21+**(`--release 21` 컴파일 — 이전 JDK는 `UnsupportedClassVersionError`) · Python **3.10+**.
 
 ### Java (Maven)
-> ⚠️ **요구 런타임: JDK 21+** — 아티팩트는 `--release 21`로 컴파일되므로 이전 JDK에서는 `UnsupportedClassVersionError`가 발생합니다. (초기 Java 17 기준에서 2026-07-03 21 LTS로 상향.)
-> ⚠️ `0.1.0-SNAPSHOT`은 아직 Maven Central 미배포(human-gated). 배포 전에는 `mvn -f java/pom.xml install`로 로컬 `~/.m2`에 설치해 사용하세요. 배포 절차는 [DEPLOY.md](DEPLOY.md) 참고.
+> ⚠️ `0.1.0-SNAPSHOT`은 아직 Maven Central 미배포(human-gated). 배포 전에는 `mvn -f java/pom.xml install -DskipITs=true`로 로컬 `~/.m2`에 설치해 사용하세요(Docker 불필요). 배포 절차는 [DEPLOY.md](DEPLOY.md) 참고.
 
 파사드 아티팩트 하나만 추가하면 `core`/`auth`/`admin`이 따라옵니다(전이 버전 정합이 필요하면 BOM 임포트):
 ```xml
@@ -35,52 +38,15 @@ Keycloak을 위한 **여러 프로그래밍 언어용 SDK**(polyglot). Keycloak�
 ```
 
 ### Python (pip)
-> ⚠️ `keycloak-sdk` `0.1.0`은 아직 PyPI 미배포(human-gated, PyPI Trusted Publisher). 배포 전에는 로컬 설치(`pip install -e python`)로 사용하세요. 배포 절차는 [DEPLOY.md](DEPLOY.md) 참고.
+> ⚠️ `keycloak-sdk` `0.1.0`은 아직 PyPI 미배포(human-gated, PyPI Trusted Publisher). 배포 절차는 [DEPLOY.md](DEPLOY.md) 참고.
 ```bash
-pip install keycloak-sdk   # 배포 후
+pip install -e python        # 현재(미배포) — 로컬 editable 설치
+# pip install keycloak-sdk   # 배포 후
 ```
 
-## QuickStart
+### 최소 사용 예
 
-### Java
-전체 예제: [`java/keycloak-sdk-examples/.../QuickStart.java`](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java)
-```java
-KeycloakConfig config = KeycloakConfig.builder()
-    .serverUrl("https://kc.example.com").realm("myrealm")
-    .clientId("admin-cli").clientSecret("changeme".toCharArray()).build();
-
-try (KeycloakClient client = KeycloakClient.create(config)) {
-  TokenSet tokens = client.auth().clientCredentialsToken();
-  System.out.println("Access token: " + Secrets.mask(tokens.getAccessToken()));  // 마스킹
-  var users = client.admin().users().search(null, 0, 20);
-  users.forEach(u -> System.out.println(" - " + u.getUsername()));
-}
-```
-
-### Python (sync)
-전체 예제: [`python/examples/quickstart.py`](python/examples/quickstart.py) · async 예제: [`python/examples/async_quickstart.py`](python/examples/async_quickstart.py)
-```python
-from keycloak_sdk import KeycloakConfig, KeycloakClient
-from keycloak_sdk._internal.secrets import mask
-
-config = KeycloakConfig(server_url="https://kc.example.com", realm="myrealm",
-                        client_id="admin-cli", client_secret="changeme")
-with KeycloakClient.create(config) as kc:
-    tokens = kc.auth.client_credentials_token()
-    print("Access token:", mask(tokens.access_token))          # 마스킹
-    for u in kc.admin.users.search(None, 0, 20):
-        print(" -", u["username"])
-```
-
-### Python (async)
-```python
-from keycloak_sdk import KeycloakConfig
-from keycloak_sdk.aio import AsyncKeycloakClient
-
-async with AsyncKeycloakClient.create(config) as kc:      # FastAPI 등 이벤트 루프 안전
-    tokens = await kc.auth.client_credentials_token()
-    vt = await kc.auth.validate(tokens.access_token)
-```
+토큰 발급 → JWT 검증 → admin CRUD의 **언어별 최소 예제와 async 사용법**은 시작 가이드에 있습니다: **[getting-started](docs/guides/getting-started.md)**. 실행 예제는 [`java/keycloak-sdk-examples`](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) · [`python/examples/quickstart.py`](python/examples/quickstart.py)(+[async](python/examples/async_quickstart.py)) 참고.
 
 ## 호환성
 
@@ -102,3 +68,7 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 ## 개발자 안내
 
 기여·테스트·검증 게이트(머지 전 통과 항목·로컬 명령·PR 체크리스트)는 [CONTRIBUTING.md](CONTRIBUTING.md), 프로젝트 구조·아키텍처·빌드 명령·게차(gotchas)는 [CLAUDE.md](CLAUDE.md), 배포 절차는 [DEPLOY.md](DEPLOY.md)를 참고하세요.
+
+- 🚀 **설치·시작**: [docs/guides/getting-started.md](docs/guides/getting-started.md)
+- 🗺️ **지원 언어·확장 로드맵**(depth-first · TS/Node → Go → C# → PHP → Rust → Ruby): [docs/roadmap/language-support.md](docs/roadmap/language-support.md)
+- 🧩 **새 언어 추가 플레이북**(Java/Python 품질로 반복): [docs/guides/add-a-language-playbook.md](docs/guides/add-a-language-playbook.md)
