@@ -105,5 +105,19 @@
 - **배치1 (Task1 기반 + Task2 AsyncAuthClient)**: 874be96,a623c53 + fix ff89265. 리뷰어 SPEC✅/Approved(실제 RSA 키회전 라운드트립으로 validate 검증). 루프🔁1: sync 패리티(issued 타임스탬프) + JWKS 동시성 단일화(asyncio.Lock, 동시 1회/강제 2회 증명) + 문서.
 - **배치2 (Task3 admin)**: 13ca1c5. 78 async admin 테스트, 커버리지 100%/100%(acall+5파사드; AsyncAdminClient omit), 오류경로 특정 예외 단언. acall이 sync translate 재사용. 컨트롤러 리뷰 CONFIRMED.
 - **배치3 (Task4 AsyncKeycloakClient + Task5 async E2E + Task6 문서)**: f60eb1e,ff3ccee,e654685. aio/client.py 100%/100%, **통합 11/11(async 5 첫 시도 통과)**.
-- **종합**: 단위 216(sync 129 + async 87) + 통합 11(sync 6 + async 5) = **227**(pytest --collect-only 실측). 로직 커버리지 100%(`--cov-fail-under=100` 강제), mypy strict(27파일), ruff clean(보안 S 포함 확장 룰셋)·ruff format. **sync API 무회귀**. sync `JwtValidator`·값타입·예외·config 재사용 → 보안 하드닝 자동 일관. async E2E 버그 0.
+- **종합**: 단위 216(sync 129 + async 87) + 통합 11(sync 6 + async 5) = **227**(pytest --collect-only 실측). 로직 커버리지 100%(`--cov-fail-under=100` 강제), mypy strict(27파일), ruff clean(보안 S 포함 확장 룰셋)·ruff format. **sync API 무회귀**. (이후 보안 감사 후속으로 단위 +8 → **224 / 총 235**, 아래 참조.) sync `JwtValidator`·값타입·예외·config 재사용 → 보안 하드닝 자동 일관. async E2E 버그 0.
 - **G5 Codex**: 세션 지속 타임아웃 → Claude 리뷰어 + 실제 Keycloak async E2E 대체.
+
+---
+
+## 보안·캡슐화 정밀 감사 후속 (2026-07-03) — 레드팀 다중에이전트 + 적대적 검증
+
+- **방법**: 5개 관점(시크릿·JWT우회·은닉성/캡슐화·TLS/SSRF/DoS·동시성/의존성) 병렬 finder가 실제 Java+Python 코드를 읽고, 각 발견을 적대적 검증(반증 시도)으로 필터. 17건 생존(반박 0, critical/high 보안결함 0 — 인증우회·시크릿 로깅·alg 혼동 없음). HIGH 2건은 컨트롤러가 코드로 직접 재확인.
+- **조치(전체 + 은닉성 문서 정합)**:
+  - 🔴 **HIGH 자원누수(async)**: `AsyncAuthClient.aclose()` 신설(httpx AsyncClient 정리) + `AsyncKeycloakClient.aclose()`가 auth도 정리. sync도 `AuthClient.close()`/`KeycloakClient.close()` 동형 추가.
+  - 🔴 **HIGH 타임아웃 무력화(Java admin)**: `AdminClient`가 `config`의 connect/read 타임아웃을 `KeycloakBuilder.resteasyClient(ClientBuilder…)`로 주입 — 무한대기·스레드고갈 차단. **AdminOpsIT 2/2로 E2E 재검증**.
+  - 🟠 **Medium DoS 증폭(Python JWKS)**: `jwt.py`가 kid미해결(`InvalidKeyIdError`→신규 `TokenKeyError`)과 서명위조(`BadSignatureError`→`TokenSignatureError`)를 구분 — 위조 토큰은 재조회 안 함. `_load_jwks(force)`에 최소재조회간격 rate-limit(kid 변조 공격 상한). sync `_load_jwks`에 `threading.Lock` 추가.
+  - 🟡 하드닝: mask 완전 불투명(접두 유출 제거, 양 언어), `ValidatedToken.claims` 읽기전용(`MappingProxyType`, Java unmodifiableMap 동형), `read_timeout` 0-붕괴 가드(`max(1,round)`), `joserfc>=1.7,<2` 상한.
+  - 🟢 은닉성 문서 정합: CLAUDE.md §4에 "문서화된 은닉성 예외"(Java admin representation 타입·저수준 주입 지점) 명문화 + char[] 위생 경계 정직화(재래핑 대신 문서화 — 재설계 비용 과다).
+- **게이트**: Python ruff(확장)·ruff format·mypy strict·pytest **224 단위(+8 보안 회귀테스트: kid미해결→TokenKeyError, 위조 무재조회, 재조회 rate-limit, 세션 close, 읽기전용 claims, opaque mask) 커버리지 100%**. Java `mvn verify` **BUILD SUCCESS**(단위 117 + IT 6, JaCoCo 90/85 통과, AdminOpsIT E2E). PR #6.
+- **G5 Codex**: 세션 지속 타임아웃 → 다중에이전트 적대적 검증(반박 라운드) + 컨트롤러 코드 재확인 + 실제 Keycloak E2E로 대체.
