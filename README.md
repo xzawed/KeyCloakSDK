@@ -6,7 +6,7 @@ Keycloak을 위한 **여러 프로그래밍 언어용 SDK**(polyglot). Keycloak�
 
 | 언어 | 상태 | 기반 | 배포 |
 |---|---|---|---|
-| **Java 17** (Maven) | ✅ 완료 · `main` 병합 (PR #1) | 공식 `keycloak-admin-client` + Nimbus OAuth2/OIDC SDK 래핑 | Maven Central `io.github.xzawed:keycloak-sdk` (human-gated) |
+| **Java 21** (Maven) | ✅ 완료 · `main` 병합 (PR #1) | 공식 `keycloak-admin-client` + Nimbus OAuth2/OIDC SDK 래핑 | Maven Central `io.github.xzawed:keycloak-sdk` (human-gated) |
 | **Python 3.10+** | ✅ 완료 · `main` 병합 (PR #2 sync, PR #4 async) | `python-keycloak`(admin+OIDC) 래핑 + `joserfc` 자체 JWT 검증 | PyPI `keycloak-sdk` (human-gated) |
 
 - **라이선스**: Apache-2.0

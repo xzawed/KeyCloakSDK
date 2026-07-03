@@ -41,7 +41,7 @@ Central Portal의 Deployments에서 검증 후 **Publish**(또는 autoPublish �
 
 ### A-6. dry-run (배포 없이 산출물 검증)
 ```bash
-JAVA_HOME='/c/Program Files/Microsoft/jdk-17.0.19.10-hotspot' PATH="/c/Users/dirtc/tools/apache-maven-3.9.9/bin:$PATH" \
+JAVA_HOME='/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot' PATH="/c/Users/dirtc/tools/apache-maven-3.9.9/bin:$PATH" \
   mvn -f java/pom.xml -Prelease -DskipTests -DskipITs=true -Dgpg.skip=true package
 # → core/auth/admin/keycloak-sdk 각 target/에 *-sources.jar / *-javadoc.jar 생성 확인
 ```

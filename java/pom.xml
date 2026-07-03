@@ -35,7 +35,7 @@
   </modules>
 
   <properties>
-    <maven.compiler.release>17</maven.compiler.release>
+    <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <keycloak.adminclient.version>26.0.10</keycloak.adminclient.version>
     <nimbus.oidc.version>11.37.2</nimbus.oidc.version>
@@ -57,16 +57,21 @@
            keycloak-admin-client 자신이 직접 선언하는 Jackson 2.21.x 계열과, RESTEasy
            6.2.15.Final의 jackson2-provider가 재선언하는 구버전(Jackson 2.18.5,
            jboss-logging 3.5.3.Final 등)이 충돌한다. 각 아티팩트를 더 높은/
-           keycloak-admin-client가 직접 선언한 버전으로 고정해 수렴시킨다. -->
-      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-core</artifactId><version>2.21.2</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>2.21.2</version></dependency>
+           keycloak-admin-client가 직접 선언한 버전으로 고정해 수렴시킨다.
+           🔒 보안(2026-07-03): jackson-databind 계열을 2.21.2 → 2.21.4로 상향해
+           CVE-2026-54512/54513/54514/54516/54517/54518(다형성 검증 우회·SSRF·@JsonView/
+           @JsonIgnore 우회) 6건을 해소한다. keycloak-client-parent:26.0.10 관리값(2.21.2)보다
+           높게 고정하는 "picked higher" 전략(수렴 유지). CVE-2026-54515는 fix(2.21.5) 미출시. -->
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-core</artifactId><version>2.21.4</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>2.21.4</version></dependency>
       <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-annotations</artifactId><version>2.21</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jdk8</artifactId><version>2.21.2</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId><version>2.21.2</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.jakarta.rs</groupId><artifactId>jackson-jakarta-rs-base</artifactId><version>2.21.2</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.module</groupId><artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId><version>2.21.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jdk8</artifactId><version>2.21.4</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId><version>2.21.4</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.jakarta.rs</groupId><artifactId>jackson-jakarta-rs-base</artifactId><version>2.21.4</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.module</groupId><artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId><version>2.21.4</version></dependency>
       <dependency><groupId>org.jboss.logging</groupId><artifactId>jboss-logging</artifactId><version>3.6.2.Final</version></dependency>
-      <!-- 위 8개(Jackson x6 + jboss-logging)는 keycloak-client-parent:26.0.10의 관리 버전과 정확히 일치한다. -->
+      <!-- jackson-databind 계열 6종은 CVE 대응으로 2.21.4(관리값 2.21.2보다 상향), jackson-annotations는
+           별도 버전 트랙이라 2.21 유지(비취약), jboss-logging은 keycloak-client-parent:26.0.10 관리값과 일치. -->
       <!-- commons-io: 더 높은 버전으로 고정(picked higher) — keycloak-client-parent 등 권위 있는 BOM 출처 없음. -->
       <dependency><groupId>commons-io</groupId><artifactId>commons-io</artifactId><version>2.19.0</version></dependency>
       <!-- jakarta.activation-api: 더 높은 버전으로 고정(picked higher) — keycloak-client-parent 등 권위 있는 BOM 출처 없음. -->
@@ -77,6 +82,11 @@
   <build>
     <pluginManagement>
       <plugins>
+        <!-- Java 21 컴파일 재현성: 컴파일러 플러그인 버전을 명시 고정(Maven 기본값 드리프트 방지). -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId><version>3.11.0</version>
+        </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version>
@@ -126,7 +136,7 @@
             <configuration>
               <rules>
                 <dependencyConvergence/>
-                <requireJavaVersion><version>[17,)</version></requireJavaVersion>
+                <requireJavaVersion><version>[21,)</version></requireJavaVersion>
                 <requireMavenVersion><version>[3.9,)</version></requireMavenVersion>
               </rules>
             </configuration>
@@ -157,7 +167,7 @@
               </execution>
             </executions>
           </plugin>
-          <!-- -javadoc.jar 첨부. ⚠️ Java 17 javadoc은 엄격(doclint) — 문서 경고로 빌드가 실패하지
+          <!-- -javadoc.jar 첨부. ⚠️ Java 17+ javadoc은 엄격(doclint) — 문서 경고로 빌드가 실패하지
                않도록 doclint를 끄고 failOnError=false로 완화한다. -->
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>

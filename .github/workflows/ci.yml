@@ -7,7 +7,7 @@ jobs:
     name: Build & unit test (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
     strategy:
-      matrix: { java: ['17', '21'] }
+      matrix: { java: ['21'] }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -21,6 +21,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
-        with: { distribution: 'temurin', java-version: '17', cache: 'maven' }
+        with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
       - name: Full verify (단위 + 통합 IT)
         run: mvn -B -f java/pom.xml verify

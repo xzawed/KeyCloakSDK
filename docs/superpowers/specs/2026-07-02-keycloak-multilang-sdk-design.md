@@ -194,7 +194,7 @@ KeycloakSdkException (RuntimeException, base)
 | OAuth2/OIDC SDK | `com.nimbusds:oauth2-oidc-sdk` | `11.37.2` | PKCE·client credentials·introspection 지원 |
 | JOSE/JWT | `com.nimbusds:nimbus-jose-jwt` | `10.9.1` | JWKS 검증. 명시적 핀닝(전이 버전은 10.9) |
 | 대상 Keycloak 서버 | quay.io/keycloak/keycloak | `26.6.x` | 호환 매트릭스로 관리 |
-| Java 베이스라인 | — | **17** | `maven.compiler.release=17`. record/sealed 사용 |
+| Java 베이스라인 | — | **17 → 21** | 최초 `maven.compiler.release=17`; **2026-07-03 Java 21 LTS로 런타임 타깃 업그레이드**(`release=21`, enforcer `[21,)`, `maven-compiler-plugin` 3.11.0 고정). record/sealed 사용. 아래 본문의 `17` 표기는 최초 스펙 시점의 역사적 기록 |
 
 **의존성 충돌 관리**: BOM(`keycloak-sdk-bom`)으로 admin-client/Nimbus/Jackson/RESTEasy 버전 고정. 전체 의존성 트리 문서화. `maven-enforcer-plugin`으로 CI에서 dependency convergence 검사. (shade는 Jakarta JAX-RS provider 리스크로 MVP에서는 보류, 문서화 우선.)
 

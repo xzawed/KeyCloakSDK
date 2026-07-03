@@ -34,7 +34,7 @@ CI(`.github/workflows/ci.yml`, `python-ci.yml`)가 push/PR마다 자동 실행�
 
 ## 2. 로컬 실행 (이식성 명령)
 
-### Java (JDK 17+ · Maven 3.9+ 필요)
+### Java (JDK 21+ · Maven 3.9+ 필요)
 ```bash
 mvn -f java/pom.xml verify                                   # 전체: 단위+커버리지 게이트 (Docker 있으면 통합까지)
 mvn -f java/pom.xml test -DskipITs=true                      # 단위테스트만 (커버리지 게이트 포함)
