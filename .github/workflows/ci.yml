@@ -1,9 +1,10 @@
 name: CI
 on:
-  push: { branches: [main] }
-  pull_request: { branches: [main] }
+  push: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml'] }
+  pull_request: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml'] }
 jobs:
   build:
+    name: Build & unit test (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
     strategy:
       matrix: { java: ['17', '21'] }
@@ -11,5 +12,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: { distribution: 'temurin', java-version: '${{ matrix.java }}', cache: 'maven' }
-      - name: Build & unit test
+      - name: Build & unit test (커버리지 게이트 90/85 포함)
         run: mvn -B -f java/pom.xml verify -DskipITs=true
+
+  integration:
+    name: Integration tests (Testcontainers, 실제 Keycloak)
+    runs-on: ubuntu-latest   # ubuntu 러너는 Docker 내장 → Testcontainers 동작
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '17', cache: 'maven' }
+      - name: Full verify (단위 + 통합 IT)
+        run: mvn -B -f java/pom.xml verify
