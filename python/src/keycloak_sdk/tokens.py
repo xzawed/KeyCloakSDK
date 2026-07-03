@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any
 
 from ._internal.secrets import mask
@@ -50,7 +52,13 @@ class ValidatedToken:
     audience: tuple[str, ...]
     expires_at: float | None
     issued_at: float | None
-    claims: dict[str, Any] = field(default_factory=dict)
+    claims: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # frozen dataclass가 claims 필드 자체 재바인딩은 막지만 dict 내부 변이는 막지
+        # 못한다 — 읽기전용 MappingProxyType으로 감싸 소비자의 내부 변이를 차단한다
+        # (Java ValidatedToken.getClaims()의 unmodifiableMap과 동형).
+        object.__setattr__(self, "claims", MappingProxyType(dict(self.claims)))
 
 
 @dataclass(frozen=True)

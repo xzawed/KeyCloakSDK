@@ -360,3 +360,36 @@ async def test_validate_wraps_certs_transport_error():
 
     with pytest.raises(KeycloakTransportError):
         await client.validate("irrelevant-token")
+
+
+# --- 보안: JWKS 강제 재조회 DoS 증폭 방지 + 자원 정리 (감사 후속) -------------------
+
+
+async def test_signature_forgery_does_not_refetch_jwks():
+    """서명 위조(kid는 캐시에 있으나 서명 불일치)는 a_certs() 재조회를 유발하지 않는다 —
+    sync와 동형의 미인증 DoS 증폭 방어."""
+    cached_key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    forger_key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    openid = MagicMock()
+    openid.a_certs = AsyncMock(return_value={"keys": [cached_key.as_dict(private=False)]})
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    client = _client(openid, config=config)
+    token = _signed_token(forger_key, issuer=endpoints.issuer, audience=config.client_id)
+
+    with pytest.raises(TokenValidationError):
+        await client.validate(token)
+
+    assert openid.a_certs.await_count == 1
+
+
+async def test_aclose_closes_underlying_connection():
+    """aclose()는 ConnectionManager.aclose()를 호출해 httpx AsyncClient를 닫는다 —
+    미해제 시 async 소켓/FD 누수(EMFILE)."""
+    openid = MagicMock()
+    openid.connection.aclose = AsyncMock()
+    client = _client(openid)
+
+    await client.aclose()
+
+    openid.connection.aclose.assert_awaited_once_with()

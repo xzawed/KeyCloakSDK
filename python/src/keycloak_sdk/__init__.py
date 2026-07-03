@@ -19,6 +19,7 @@ from .exceptions import (
     KeycloakNotFoundError,
     KeycloakSdkError,
     KeycloakTransportError,
+    TokenKeyError,
     TokenSignatureError,
     TokenValidationError,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "KeycloakNotFoundError",
     "KeycloakSdkError",
     "KeycloakTransportError",
+    "TokenKeyError",
     "TokenSet",
     "TokenSignatureError",
     "TokenValidationError",

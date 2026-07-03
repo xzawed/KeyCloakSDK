@@ -12,9 +12,10 @@ import time
 from typing import Any
 
 from joserfc import jwt as _jwt
+from joserfc.errors import InvalidKeyIdError, MissingKeyError
 from joserfc.jwk import KeySet
 
-from .exceptions import TokenSignatureError, TokenValidationError
+from .exceptions import TokenKeyError, TokenSignatureError, TokenValidationError
 from .tokens import ValidatedToken
 
 
@@ -53,8 +54,13 @@ class JwtValidator:
     def validate(self, token: str, key_set: KeySet) -> ValidatedToken:
         try:
             decoded = _jwt.decode(token, key_set, algorithms=self._algs)
+        except (InvalidKeyIdError, MissingKeyError) as exc:
+            # 현재 JWKS로 서명 키(kid)를 해석 불가 — 키 회전 가능성(재조회 가치 있음).
+            # 서명 위조(BadSignatureError)와 구분해, 위조 토큰이 certs() 재조회를
+            # 유발하는 미인증 DoS 증폭을 막는다.
+            raise TokenKeyError("JWT signing key (kid) not found in JWKS") from exc
         except Exception as exc:
-            # joserfc.errors.* (서명 불일치, 알고리즘 거부, kid 미해결 등)를 포괄
+            # 서명 불일치·알고리즘 거부·미서명 등 — 재조회해도 소용없는 실패
             raise TokenSignatureError("JWT signature/algorithm validation failed") from exc
 
         claims: dict[str, Any] = dict(decoded.claims)

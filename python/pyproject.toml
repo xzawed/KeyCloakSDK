@@ -22,7 +22,7 @@ classifiers = [
 ]
 dependencies = [
   "python-keycloak>=7.1,<8",
-  "joserfc>=1.7",
+  "joserfc>=1.7,<2",   # 보안 핵심(JWT 검증) — major 상한 고정으로 예기치 않은 파괴적 변경 차단
 ]
 
 [project.urls]

@@ -461,3 +461,64 @@ def test_validate_does_not_refetch_jwks_on_claim_failure():
         client.validate(token)
 
     assert openid.certs.call_count == 1
+
+
+# --- 보안: JWKS 강제 재조회 DoS 증폭 방지 (감사 후속) ----------------------------
+
+
+def test_signature_forgery_does_not_refetch_jwks():
+    """서명 위조(kid는 캐시에 있으나 서명 불일치)는 JWKS 재조회를 유발하지 않는다 —
+    위조 Bearer 토큰마다 certs() 왕복이 강제되는 미인증 DoS 증폭을 막는다."""
+    cached_key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    forger_key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})  # 동일 kid, 다른 키
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.certs.return_value = {"keys": [cached_key.as_dict(private=False)]}
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    client = _client(openid, config=config)
+    token = _signed_token(forger_key, issuer=endpoints.issuer, audience=config.client_id)
+
+    with pytest.raises(TokenValidationError):
+        client.validate(token)
+
+    assert openid.certs.call_count == 1  # 재조회 없음(서명 위조는 TokenKeyError가 아님)
+
+
+def test_forced_jwks_refetch_is_rate_limited():
+    """kid를 무작위로 바꾼 위조 토큰이 연속 도착해도 강제 재조회는 rate-limit되어
+    certs() 호출이 상한(최초 로드 1 + 최초 강제 재조회 1 = 2)을 넘지 않는다."""
+    cached_key = RSAKey.generate_key(2048, {"kid": "cached", "use": "sig"})
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.certs.return_value = {"keys": [cached_key.as_dict(private=False)]}  # 항상 'cached'만
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    client = _client(openid, config=config)
+    tok1 = _signed_token(
+        RSAKey.generate_key(2048, {"kid": "x1", "use": "sig"}),
+        issuer=endpoints.issuer,
+        audience=config.client_id,
+    )
+    tok2 = _signed_token(
+        RSAKey.generate_key(2048, {"kid": "x2", "use": "sig"}),
+        issuer=endpoints.issuer,
+        audience=config.client_id,
+    )
+
+    for tok in (tok1, tok2):
+        with pytest.raises(TokenValidationError):
+            client.validate(tok)
+
+    # tok1이 1회 강제 재조회, tok2의 강제 재조회는 rate-limit되어 발생하지 않음
+    assert openid.certs.call_count == 2
+
+
+def test_close_closes_underlying_requests_session():
+    """close()는 python-keycloak 내부 requests 세션을 닫아 커넥션 풀 누수를 막는다."""
+    openid = MagicMock()
+    session = MagicMock()
+    openid.connection._s = session
+    client = _client(openid)
+
+    client.close()
+
+    session.close.assert_called_once_with()
