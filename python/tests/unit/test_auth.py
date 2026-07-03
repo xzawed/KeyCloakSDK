@@ -18,7 +18,7 @@ from keycloak_sdk.auth import AuthClient
 from keycloak_sdk.config import KeycloakConfig
 from keycloak_sdk.exceptions import KeycloakAuthError, KeycloakTransportError
 from keycloak_sdk.oidc import OidcEndpoints
-from keycloak_sdk.tokens import TokenSet
+from keycloak_sdk.tokens import IntrospectionResult, TokenSet
 
 
 def _config(**overrides: object) -> KeycloakConfig:
@@ -192,3 +192,122 @@ def test_authorization_url_wraps_transport_error():
 
     with pytest.raises(KeycloakTransportError):
         client.authorization_url("https://app/cb")
+
+
+# --- 3.4: exchange_code / refresh / logout / introspect --------------------------
+
+
+def test_exchange_code_maps_response_and_delegates_pkce_args():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.token.return_value = {
+        "access_token": "acc2",
+        "refresh_token": "ref2",
+        "id_token": "id2",
+        "token_type": "Bearer",
+        "scope": "openid profile",
+        "expires_in": 60,
+    }
+    client = _client(openid)
+
+    result = client.exchange_code("auth-code", "https://app/cb", "verifier-xyz")
+
+    openid.token.assert_called_once_with(
+        grant_type="authorization_code",
+        code="auth-code",
+        redirect_uri="https://app/cb",
+        code_verifier="verifier-xyz",
+    )
+    assert isinstance(result, TokenSet)
+    assert result.access_token == "acc2"
+    assert result.id_token == "id2"
+
+
+def test_exchange_code_wraps_auth_error_on_invalid_grant():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.token.side_effect = KeycloakAuthenticationError(
+        error_message='{"error": "invalid_grant"}',
+        response_code=400,
+        response_body=b'{"error": "invalid_grant"}',
+    )
+    client = _client(openid)
+
+    with pytest.raises(KeycloakAuthError) as excinfo:
+        client.exchange_code("bad-code", "https://app/cb", "verifier")
+
+    assert excinfo.value.error == "invalid_grant"
+
+
+def test_refresh_maps_response_and_delegates():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.refresh_token.return_value = {
+        "access_token": "acc3",
+        "refresh_token": "ref3",
+        "token_type": "Bearer",
+        "scope": "openid",
+        "expires_in": 120,
+    }
+    client = _client(openid)
+
+    result = client.refresh("old-refresh")
+
+    openid.refresh_token.assert_called_once_with("old-refresh")
+    assert isinstance(result, TokenSet)
+    assert result.access_token == "acc3"
+    assert result.refresh_token == "ref3"
+
+
+def test_refresh_wraps_transport_error():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.refresh_token.side_effect = KeycloakGetError(error_message="conn reset")
+    client = _client(openid)
+
+    with pytest.raises(KeycloakTransportError):
+        client.refresh("old-refresh")
+
+
+def test_logout_delegates_and_returns_none():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.logout.return_value = {}
+    client = _client(openid)
+
+    result = client.logout("some-refresh")
+
+    openid.logout.assert_called_once_with("some-refresh")
+    assert result is None
+
+
+def test_logout_wraps_auth_error():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.logout.side_effect = KeycloakAuthenticationError(
+        error_message="already invalidated", response_code=400,
+    )
+    client = _client(openid)
+
+    with pytest.raises(KeycloakAuthError):
+        client.logout("some-refresh")
+
+
+def test_introspect_maps_active_token():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.introspect.return_value = {
+        "active": True,
+        "username": "alice",
+        "client_id": "app",
+    }
+    client = _client(openid)
+
+    result = client.introspect("some-token")
+
+    openid.introspect.assert_called_once_with("some-token")
+    assert result == IntrospectionResult(active=True, username="alice", client_id="app")
+
+
+def test_introspect_maps_inactive_token_with_missing_fields():
+    """비활성 토큰은 RFC 7662상 `active` 외 필드가 생략될 수 있다."""
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.introspect.return_value = {"active": False}
+    client = _client(openid)
+
+    result = client.introspect("expired-token")
+
+    assert result == IntrospectionResult(active=False, username=None, client_id=None)

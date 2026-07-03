@@ -20,7 +20,7 @@ from keycloak.exceptions import KeycloakError
 from .config import KeycloakConfig
 from .exceptions import KeycloakAuthError, KeycloakTransportError
 from .oidc import OidcEndpoints
-from .tokens import TokenSet
+from .tokens import IntrospectionResult, TokenSet
 
 T = TypeVar("T")
 
@@ -122,3 +122,33 @@ class AuthClient:
             )
         )
         return AuthorizationUrl(url=url, code_verifier=code_verifier, state=state, nonce=nonce)
+
+    def exchange_code(self, code: str, redirect_uri: str, code_verifier: str) -> TokenSet:
+        """인가 코드 + PKCE verifier를 토큰으로 교환한다(`authorization_code` grant)."""
+        response = self._wrap(
+            lambda: self._openid.token(
+                grant_type="authorization_code",
+                code=code,
+                redirect_uri=redirect_uri,
+                code_verifier=code_verifier,
+            )
+        )
+        return TokenSet.from_response(response, issued_at=time.time())
+
+    def refresh(self, refresh_token: str) -> TokenSet:
+        """`refresh_token` grant로 접근 토큰을 갱신한다."""
+        response = self._wrap(lambda: self._openid.refresh_token(refresh_token))
+        return TokenSet.from_response(response, issued_at=time.time())
+
+    def logout(self, refresh_token: str) -> None:
+        """세션을 무효화한다(refresh token revoke)."""
+        self._wrap(lambda: self._openid.logout(refresh_token))
+
+    def introspect(self, token: str) -> IntrospectionResult:
+        """RFC 7662 토큰 인트로스펙션. 비활성 토큰은 `active` 외 필드가 생략될 수 있다."""
+        response = self._wrap(lambda: self._openid.introspect(token))
+        return IntrospectionResult(
+            active=bool(response.get("active", False)),
+            username=response.get("username"),
+            client_id=response.get("client_id"),
+        )
