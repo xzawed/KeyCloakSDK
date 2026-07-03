@@ -6,6 +6,7 @@ sync `tests/unit/test_auth.py`와 동형(same coverage) — python-keycloak `a_*
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock
 from urllib.parse import parse_qs, urlparse
@@ -285,6 +286,33 @@ async def test_validate_caches_jwks_across_calls():
     await client.validate(token)
 
     assert openid.a_certs.await_count == 1
+
+
+async def test_validate_concurrent_cold_cache_single_flights_a_certs():
+    """동시성 하드닝: 콜드 캐시에서 두 `validate()`가 동시에 실행돼도 `a_certs()`는
+    한 번만 호출돼야 한다(`asyncio.Lock` 단일화). `a_certs` side_effect에 진짜
+    `await asyncio.sleep(0)` 지점을 둬 실제 컨텍스트 스위치를 강제한다 — 그렇지 않으면
+    목이 동기적으로 완료돼 두 번째 호출이 이미 채워진 캐시를 보게 되어(잠금 유무와
+    무관하게) 테스트가 아무것도 증명하지 못한다."""
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    openid = MagicMock()
+
+    async def _certs_with_yield() -> dict[str, object]:
+        await asyncio.sleep(0)
+        return {"keys": [key.as_dict(private=False)]}
+
+    openid.a_certs = AsyncMock(side_effect=_certs_with_yield)
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    client = _client(openid, config=config)
+    token = _signed_token(key, issuer=endpoints.issuer, audience=config.client_id)
+
+    results = await asyncio.gather(client.validate(token), client.validate(token))
+
+    assert openid.a_certs.await_count == 1
+    for result in results:
+        assert isinstance(result, ValidatedToken)
+        assert result.subject == "user-1"
 
 
 async def test_validate_rejects_token_with_wrong_audience():

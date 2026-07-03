@@ -10,6 +10,7 @@ sync `keycloak_sdk.auth.AuthClient`의 async 미러다. 값 타입(`TokenSet`/`V
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import secrets
 import time
@@ -56,6 +57,7 @@ class AsyncAuthClient:
             timeout=int(config.read_timeout),
         )
         self._jwks_cache: KeySet | None = None
+        self._jwks_lock = asyncio.Lock()
 
     async def _awrap(self, awaitable: Awaitable[T]) -> T:
         """python-keycloak `a_*` 호출을 await하고 `KeycloakError`를 SDK 예외로 변환한다.
@@ -88,10 +90,12 @@ class AsyncAuthClient:
     def authorization_url(self, redirect_uri: str) -> AuthorizationUrl:
         """PKCE(S256) 인가 코드 흐름의 시작 URL을 만든다.
 
-        ⚠️ sync는 `openid.auth_url()`을 쓰지만, python-keycloak의 `auth_url`/`a_auth_url`
-        모두 첫 호출 시 `well_known()`(서버 discovery 문서)을 지연 로드할 수 있어 async
-        이벤트 루프를 블로킹할 위험이 있다. 이 메서드는 네트워크 없이 `OidcEndpoints`에서
-        URL을 직접 조립한다 — 그래서 sync와 달리 `async def`가 아니다.
+        sync는 `openid.auth_url()`을 쓰지만, python-keycloak의 `auth_url`/`a_auth_url`
+        모두 첫 호출 시 `well_known()`(서버 discovery 문서)을 지연 로드할 수 있다
+        (`a_auth_url`은 정상적으로 await하므로 이벤트 루프를 블로킹하지는 않는다 — 문제는
+        불필요한 discovery 네트워크 왕복 1회가 추가된다는 점이다). 이 메서드는 네트워크
+        없이 `OidcEndpoints`에서 URL을 직접 조립해 그 왕복을 없앤다 — 그래서 sync와 달리
+        `async def`가 아니다.
         """
         code_verifier, code_challenge = _generate_pkce_pair()
         state = secrets.token_urlsafe(16)
@@ -111,18 +115,16 @@ class AsyncAuthClient:
 
     async def client_credentials_token(self) -> TokenSet:
         """`client_credentials` grant로 서비스 계정 토큰을 발급받는다."""
-        issued = time.time()
         response = await self._awrap(
             self._openid.a_token(
                 grant_type="client_credentials",
                 scope=" ".join(self._config.scopes),
             )
         )
-        return TokenSet.from_response(response, issued_at=issued)
+        return TokenSet.from_response(response, issued_at=time.time())
 
     async def exchange_code(self, code: str, redirect_uri: str, code_verifier: str) -> TokenSet:
         """인가 코드 + PKCE verifier를 토큰으로 교환한다(`authorization_code` grant)."""
-        issued = time.time()
         response = await self._awrap(
             self._openid.a_token(
                 grant_type="authorization_code",
@@ -131,13 +133,12 @@ class AsyncAuthClient:
                 code_verifier=code_verifier,
             )
         )
-        return TokenSet.from_response(response, issued_at=issued)
+        return TokenSet.from_response(response, issued_at=time.time())
 
     async def refresh(self, refresh_token: str) -> TokenSet:
         """`refresh_token` grant로 접근 토큰을 갱신한다."""
-        issued = time.time()
         response = await self._awrap(self._openid.a_refresh_token(refresh_token))
-        return TokenSet.from_response(response, issued_at=issued)
+        return TokenSet.from_response(response, issued_at=time.time())
 
     async def logout(self, refresh_token: str) -> None:
         """세션을 무효화한다(refresh token revoke)."""
@@ -173,7 +174,13 @@ class AsyncAuthClient:
             return validator.validate(access_token, key_set)
 
     async def _load_jwks(self, *, force: bool = False) -> KeySet:
-        if force or self._jwks_cache is None:
+        if not force and self._jwks_cache is not None:
+            return self._jwks_cache
+        async with self._jwks_lock:
+            # Double-checked: another concurrent caller may have already populated
+            # (or refreshed) the cache while we were waiting on the lock.
+            if not force and self._jwks_cache is not None:
+                return self._jwks_cache
             certs = await self._awrap(self._openid.a_certs())
             certs_typed = cast(KeySetSerialization, cast(Any, certs))
             self._jwks_cache = KeySet.import_key_set(certs_typed)
