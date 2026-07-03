@@ -12,7 +12,7 @@
 
 모든 태스크의 요구사항은 아래를 암묵적으로 포함한다. 값은 스펙에서 그대로 옮긴 것이다.
 
-- **Java 베이스라인**: 17 (`maven.compiler.release=17`). record/sealed 사용 가능.
+- **Java 베이스라인**: 17 (`maven.compiler.release=17`). record/sealed 사용 가능. ⚠️ **2026-07-03 Java 21 LTS로 업그레이드됨**(`release=21`, enforcer `[21,)`, `maven-compiler-plugin` 3.11.0 명시 고정, CI 전부 JDK 21) — 이 문서 본문의 `17`·JDK 17 경로 표기는 **최초 계획 시점의 역사적 기록**이며, 현행 베이스라인은 [CLAUDE.md](../../../CLAUDE.md)를 진실 원천으로 한다.
 - **groupId**: `io.github.xzawed` · **라이선스**: Apache-2.0 (모든 모듈 POM `<licenses>`).
 - **대상 Keycloak 서버**: 26.6.x. **admin-client**: `26.0.10` (⚠️ 서버 버전과 다른 독립 트랙, "26.6.x admin-client"는 없음).
 - **동기(sync) API만** — 공개 계약은 블로킹.

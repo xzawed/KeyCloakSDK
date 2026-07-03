@@ -35,7 +35,7 @@
   </modules>
 
   <properties>
-    <maven.compiler.release>17</maven.compiler.release>
+    <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <keycloak.adminclient.version>26.0.10</keycloak.adminclient.version>
     <nimbus.oidc.version>11.37.2</nimbus.oidc.version>
@@ -77,6 +77,11 @@
   <build>
     <pluginManagement>
       <plugins>
+        <!-- Java 21 컴파일 재현성: 컴파일러 플러그인 버전을 명시 고정(Maven 기본값 드리프트 방지). -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId><version>3.11.0</version>
+        </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version>
@@ -126,7 +131,7 @@
             <configuration>
               <rules>
                 <dependencyConvergence/>
-                <requireJavaVersion><version>[17,)</version></requireJavaVersion>
+                <requireJavaVersion><version>[21,)</version></requireJavaVersion>
                 <requireMavenVersion><version>[3.9,)</version></requireMavenVersion>
               </rules>
             </configuration>
@@ -157,7 +162,7 @@
               </execution>
             </executions>
           </plugin>
-          <!-- -javadoc.jar 첨부. ⚠️ Java 17 javadoc은 엄격(doclint) — 문서 경고로 빌드가 실패하지
+          <!-- -javadoc.jar 첨부. ⚠️ Java 17+ javadoc은 엄격(doclint) — 문서 경고로 빌드가 실패하지
                않도록 doclint를 끄고 failOnError=false로 완화한다. -->
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>

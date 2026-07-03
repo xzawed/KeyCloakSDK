@@ -61,7 +61,7 @@
 - **진척 원장**: `.superpowers/sdd/progress.md` (gitignore) — 태스크 완료·커밋 해시. 컴팩션 복구용.
 - **검증 로그**: [`verification-log.md`](verification-log.md) (커밋) — 태스크별 지표(커버리지·테스트 수·통과율), Codex 판정, 루프 이력, RCA. **WBS → 커밋 → 검증기록** 완전 추적.
 - **커밋 규약**: 각 커밋 메시지에 WBS id 포함 (계획서에 이미 반영).
-- **재현성**: 의존성 버전 BOM 고정, Keycloak 컨테이너 태그 고정(`quay.io/keycloak/keycloak:26.6`), 툴체인 버전 고정(JDK 17.0.19, Maven 3.9.9).
+- **재현성**: 의존성 버전 BOM 고정, Keycloak 컨테이너 태그 고정(`quay.io/keycloak/keycloak:26.6`), 툴체인 버전 고정(JDK 21.0.8, Maven 3.9.9).
 
 ---
 
@@ -81,15 +81,15 @@
 
 **표준 빌드 프리픽스 (Bash):**
 ```bash
-JAVA_HOME='/c/Program Files/Microsoft/jdk-17.0.19.10-hotspot' \
+JAVA_HOME='/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot' \
 PATH="/c/Users/dirtc/tools/apache-maven-3.9.9/bin:$PATH" \
 mvn <args>
 ```
 **PowerShell 변형:**
 ```powershell
-$env:JAVA_HOME='C:\Program Files\Microsoft\jdk-17.0.19.10-hotspot'; $env:Path='C:\Users\dirtc\tools\apache-maven-3.9.9\bin;' + $env:Path; mvn <args>
+$env:JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot'; $env:Path='C:\Users\dirtc\tools\apache-maven-3.9.9\bin;' + $env:Path; mvn <args>
 ```
-- JDK: Microsoft OpenJDK **17.0.19** (`C:\Program Files\Microsoft\jdk-17.0.19.10-hotspot`)
+- JDK: Eclipse Temurin **21.0.8** (`C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot`)
 - Maven: **3.9.9** (`C:\Users\dirtc\tools\apache-maven-3.9.9`)
 - ⚠️ 위 경로는 이 개발 머신 전용 — 리포지토리에 커밋하지 않는다(포터블 아님). CI는 `setup-java`가 제공하는 JAVA_HOME 사용.
 

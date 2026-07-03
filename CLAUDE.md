@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프로그래밍 언어**(Java·Python·향후 확장)를 뜻하며 자연어 현지화(i18n)와 무관하다. Keycloak의 두 API 표면 — **인증(OIDC/OAuth2)** 과 **관리 REST API(Admin)** — 을 모두 다룬다. 언어마다 관용적이되 개념·계층·흐름은 **동형(isomorphic)** 이도록 설계한다.
 
-- **기준 언어**: Java 17 · Maven (첫 구현)
+- **기준 언어**: Java 21 · Maven (첫 구현; 초기 Java 17 → 21 LTS 런타임 업그레이드 반영)
 - **2번째 언어**: Python 3.10+ · `python-keycloak` 래핑 + `joserfc` 자체 JWT 검증 (`feature/python-sdk`)
 - **라이선스**: Apache-2.0 · **groupId**: `io.github.xzawed` · Python 배포명: `keycloak-sdk`
 
@@ -29,7 +29,7 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 
 하네스 셸은 프로파일을 소싱하지 않으므로 mvn 명령마다 환경을 인라인 지정한다:
 ```bash
-JAVA_HOME='/c/Program Files/Microsoft/jdk-17.0.19.10-hotspot' PATH="/c/Users/dirtc/tools/apache-maven-3.9.9/bin:$PATH" mvn -f java/pom.xml <goal>
+JAVA_HOME='/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot' PATH="/c/Users/dirtc/tools/apache-maven-3.9.9/bin:$PATH" mvn -f java/pom.xml <goal>
 ```
 - 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 90/85 포함)
 - 단위테스트만: `mvn -f java/pom.xml test -DskipITs=true`
@@ -38,7 +38,7 @@ JAVA_HOME='/c/Program Files/Microsoft/jdk-17.0.19.10-hotspot' PATH="/c/Users/dir
 - examples 모듈만 컴파일: `mvn -f java/pom.xml -pl keycloak-sdk-examples -am compile`
 - 배포(release) 산출물 로컬 검증(서명·배포 없이): `mvn -f java/pom.xml -Prelease -DskipTests -DskipITs=true -Dgpg.skip=true package` — core/auth/admin/keycloak-sdk 각각 `*-sources.jar`/`*-javadoc.jar` 생성 확인
 - 실제 `deploy`(Maven Central 배포)는 로컬에서 실행하지 않는다 — `v*` 태그 push 시 `.github/workflows/release.yml`에서만 시크릿과 함께 실행(사람 승인 게이트)
-- JDK 17.0.19 · Maven 3.9.9 (머신 전용 경로 — 리포지토리에 커밋 안 함, CI는 setup-java 사용)
+- JDK 21.0.8 (Eclipse Temurin) · Maven 3.9.9 (머신 전용 경로 — 리포지토리에 커밋 안 함, CI는 setup-java 사용)
 
 ### Python 툴체인 (빌드 명령)
 
@@ -106,7 +106,8 @@ python/
 - ⚠️ **JWKS 재조회는 DoS-안전해야 한다(Python, 2026-07-03 감사).** 서명 위조(`BadSignatureError`)는 certs 재조회를 유발하지 않고, 키(kid) 미해결(`InvalidKeyIdError`→`TokenKeyError`)에만 재조회하며, 재조회 자체도 최소 간격(`_jwks_min_refetch`)으로 rate-limit한다 — 위조 Bearer 토큰마다 IdP를 때리는 미인증 DoS 증폭 차단. Java(Nimbus `JWKSourceBuilder`)는 캐시+RateLimited로 이미 안전.
 - ⚠️ **admin 타임아웃·자원 정리.** Java `AdminClient`는 `config`의 connect/read 타임아웃을 `KeycloakBuilder.resteasyClient(...)`로 반드시 주입해야 admin 호출이 무한 대기하지 않는다(미주입=스레드 고갈 DoS). 파사드 `close()`/`aclose()`는 admin뿐 아니라 **auth 세션(requests/httpx)까지** 정리한다(미정리=FD/커넥션 풀 누수).
 - ⚠️ **어떤 Java OIDC 라이브러리도 자체 "certified" 아님.** 완성 제품을 필요 시 OIDF에 인증한다.
-- ⚠️ **Java 17 javadoc은 doclint 기본 엄격.** `release` 프로파일의 `maven-javadoc-plugin`에 `<doclint>none</doclint>` + `<failOnError>false</failOnError>`를 주지 않으면 문서 경고로 `-javadoc.jar` 생성이 실패할 수 있다.
+- ⚠️ **Java 17+ javadoc은 doclint 기본 엄격.** `release` 프로파일의 `maven-javadoc-plugin`에 `<doclint>none</doclint>` + `<failOnError>false</failOnError>`를 주지 않으면 문서 경고로 `-javadoc.jar` 생성이 실패할 수 있다.
+- ⚠️ **Java 런타임 타깃은 21 LTS(2026-07-03 업그레이드).** `maven.compiler.release=21` + enforcer `requireJavaVersion=[21,)`로 JDK 21 미만 빌드를 fail-fast. `maven-compiler-plugin`은 pluginManagement에서 `3.11.0`으로 명시 고정(기본값 드리프트 방지). CI(`ci.yml` build matrix·integration, `release.yml`)는 모두 JDK 21 단일 사용.
 
 ## 확정 의존성 (BOM으로 고정)
 

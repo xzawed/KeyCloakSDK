@@ -153,6 +153,19 @@
 - 커버리지 게이트(로직 라인≥90/브랜치≥85) 전 모듈 통과. 네트워크 경계(AuthClient/AdminClient)는 통합으로 검증.
 - **거버넌스 루프 성과**: Codex 사전검증(Critical 3), admin 고급생성자 제거(사용자 재정), admin delete Response 버그(리뷰어가 Codex 놓친 것 포착), RealmsResource 오탐(javap 재정), JWT 보안 루프 2회, **통합이 다중 aud 프로덕션 버그 발견·수정**. 이중검증 상호보완 실증.
 
+## Java 런타임 업그레이드 17 → 21 LTS (2026-07-03, App Modernization)
+
+- **범위**: Java 런타임 타깃을 17 → 21 LTS로 상향. 빌드/CI/문서에 한정하며 **SDK 동작·공개 API·소스는 불변**. GitHub App Modernization 세션 `20260703110900`의 승인된 4-스텝 계획(`.github/modernize/java-upgrade/20260703110900/plan.md`) 실행.
+- **변경**:
+  - `java/pom.xml`: `maven.compiler.release` 17→21 · enforcer `requireJavaVersion` `[17,)`→`[21,)` · `maven-compiler-plugin` `3.11.0` pluginManagement 명시 고정(기본값 드리프트 방지).
+  - CI: `.github/workflows/ci.yml` build matrix `['17','21']`→`['21']` + integration 잡 `17`→`21`; `.github/workflows/release.yml` `17`→`21`.
+  - 문서: CLAUDE/README/DEPLOY/CONTRIBUTING/거버넌스 프레임워크 베이스라인 21 반영. 2026-07-02 스펙·WBS는 최초 계획의 역사적 기록으로 보존하되 상단에 21 업그레이드 note 추가.
+- **검증** (before/after, run tests before-and-after 옵션 true):
+  - **G0 사전 baseline (Microsoft OpenJDK 17.0.19)**: `mvn -f java/pom.xml clean test` → 단위 **117 GREEN**(0 실패/0 에러) — 변경 전 기준선 확보.
+  - **G1 업그레이드 후 단위 (Eclipse Temurin 21.0.8)**: `mvn -f java/pom.xml clean test` → **BUILD SUCCESS**, 단위 **117 GREEN**(core 34·auth 34·admin 43·sdk 6). `release=21` 컴파일·enforcer `[21,)` 통과.
+  - **G3/최종 (Temurin 21.0.8, Docker/Testcontainers 실제 KC 26.6)**: `mvn -f java/pom.xml clean verify` → **BUILD SUCCESS**, 7모듈 전부 SUCCESS. 단위 117 + **IT 6**(AdminOpsIT 2·AuthFlowIT 3·KeycloakContainerSmokeIT 1) = **총 123 GREEN**. JaCoCo 라인≥90/브랜치≥85 전 모듈 통과, DependencyConvergence 통과.
+- **브랜치**: `appmod/java-upgrade-20260703110900`. **회귀 0** — 업그레이드 전후 테스트 수·통과 상태 동일(123/123).
+
 <!--
 태스크 기록 템플릿 (완료 시 아래 형식으로 추가):
 
