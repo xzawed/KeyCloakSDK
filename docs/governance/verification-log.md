@@ -149,7 +149,7 @@
 **✅ 브랜치 병합 준비 완료.**
 
 ## 종합 (Java MVP 전 Phase 완료)
-- **총 100 테스트** = 단위 94 (core 23·auth 25·admin 43·sdk 3) + 통합 6 (Testcontainers 실제 KC 26.6.4).
+- **총 123 테스트** = 단위 117 (core 34·auth 34·admin 43·sdk 6) + 통합 6 (Testcontainers 실제 KC 26.6.4). — Phase 7 시점 94에서 최종리뷰 Wave A/B가 테스트를 추가해 117로 증가(위 각 Phase의 per-task 수치는 그 시점의 역사적 기록이며 여기 종합이 최종 실측).
 - 커버리지 게이트(로직 라인≥90/브랜치≥85) 전 모듈 통과. 네트워크 경계(AuthClient/AdminClient)는 통합으로 검증.
 - **거버넌스 루프 성과**: Codex 사전검증(Critical 3), admin 고급생성자 제거(사용자 재정), admin delete Response 버그(리뷰어가 Codex 놓친 것 포착), RealmsResource 오탐(javap 재정), JWT 보안 루프 2회, **통합이 다중 aud 프로덕션 버그 발견·수정**. 이중검증 상호보완 실증.
 

@@ -93,9 +93,11 @@ async def handler() -> None:
 ```bash
 cd python
 python -m pip install -e ".[dev]"
-pytest -m "not integration"   # 단위 테스트
-pytest -m integration          # 통합 테스트 (Docker 필요, testcontainers)
-mypy src                       # 정적 타입 검사 (strict)
+pytest -m "not integration" --cov=keycloak_sdk   # 단위 테스트 + 커버리지 게이트 100%
+pytest -m integration                             # 통합 테스트 (Docker 필요, testcontainers)
+ruff check src tests examples                      # 린트 (보안 S/bandit 포함 확장 룰셋)
+ruff format --check src tests examples             # 포맷 검사
+mypy src                                           # 정적 타입 검사 (strict)
 ```
 
 ## 라이선스

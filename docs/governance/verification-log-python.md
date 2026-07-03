@@ -105,5 +105,5 @@
 - **배치1 (Task1 기반 + Task2 AsyncAuthClient)**: 874be96,a623c53 + fix ff89265. 리뷰어 SPEC✅/Approved(실제 RSA 키회전 라운드트립으로 validate 검증). 루프🔁1: sync 패리티(issued 타임스탬프) + JWKS 동시성 단일화(asyncio.Lock, 동시 1회/강제 2회 증명) + 문서.
 - **배치2 (Task3 admin)**: 13ca1c5. 78 async admin 테스트, 커버리지 100%/100%(acall+5파사드; AsyncAdminClient omit), 오류경로 특정 예외 단언. acall이 sync translate 재사용. 컨트롤러 리뷰 CONFIRMED.
 - **배치3 (Task4 AsyncKeycloakClient + Task5 async E2E + Task6 문서)**: f60eb1e,ff3ccee,e654685. aio/client.py 100%/100%, **통합 11/11(async 5 첫 시도 통과)**.
-- **종합**: 단위 216(sync 120 + async 96) + 통합 11(sync 6 + async 5) = **227**. 로직 커버리지 100%, mypy strict(27파일), ruff clean. **sync API 무회귀**. sync `JwtValidator`·값타입·예외·config 재사용 → 보안 하드닝 자동 일관. async E2E 버그 0.
+- **종합**: 단위 216(sync 129 + async 87) + 통합 11(sync 6 + async 5) = **227**(pytest --collect-only 실측). 로직 커버리지 100%(`--cov-fail-under=100` 강제), mypy strict(27파일), ruff clean(보안 S 포함 확장 룰셋)·ruff format. **sync API 무회귀**. sync `JwtValidator`·값타입·예외·config 재사용 → 보안 하드닝 자동 일관. async E2E 버그 0.
 - **G5 Codex**: 세션 지속 타임아웃 → Claude 리뷰어 + 실제 Keycloak async E2E 대체.

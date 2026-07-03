@@ -5,6 +5,7 @@ python-keycloak 예외를 SDK 예외로 변환한다.
 실제로는 UUID), `client_id`는 OAuth2 clientId 문자열이다 —
 `find_by_client_id`가 문자열→UUID 조회를 담당한다.
 """
+
 from __future__ import annotations
 
 from typing import Any

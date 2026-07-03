@@ -4,6 +4,7 @@
 스위트는 커버리지가 아니라 매핑·PKCE·에러 변환·JWKS 배선 "행동"을 증명하기 위한 것이다.
 sync `tests/unit/test_auth.py`와 동형(same coverage) — python-keycloak `a_*` 메서드만 다르다.
 """
+
 from __future__ import annotations
 
 import asyncio

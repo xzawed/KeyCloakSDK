@@ -1,4 +1,5 @@
 """시크릿 마스킹."""
+
 from __future__ import annotations
 
 

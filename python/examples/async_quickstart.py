@@ -11,6 +11,7 @@ sync `examples/quickstart.py`의 async 미러다. FastAPI 같은 async 프레임
 실행하려면 실제 Keycloak 서버 정보로 아래 `KeycloakConfig` 값을 채우고
 `python examples/async_quickstart.py`를 실행한다(서비스 계정에 필요한 권한 role 필요).
 """
+
 from __future__ import annotations
 
 import asyncio

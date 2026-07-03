@@ -9,6 +9,7 @@ secret 검증을 트리거하지 않으므로, 시크릿 없는 public client �
 컨텍스트 매니저(`with KeycloakClient.create(config) as kc:`)로 사용하면 `__exit__`이
 `close()`를 호출한다 — `admin`이 실제로 생성된 경우에만 정리 훅을 위임한다.
 """
+
 from __future__ import annotations
 
 from types import TracebackType

@@ -8,6 +8,7 @@
 실행하려면 실제 Keycloak 서버 정보로 아래 `KeycloakConfig` 값을 채우고
 `python examples/quickstart.py`를 실행한다(서비스 계정에 필요한 권한 role 필요).
 """
+
 from __future__ import annotations
 
 from keycloak_sdk import KeycloakClient, KeycloakConfig

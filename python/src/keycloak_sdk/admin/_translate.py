@@ -4,6 +4,7 @@
 `keycloak.exceptions.*`(python-keycloak) 타입이 공개 API에 노출되지 않도록 여기서
 `KeycloakAdminError` 계층(및 하위 `KeycloakTransportError`)으로 변환한다.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable

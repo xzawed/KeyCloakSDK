@@ -8,6 +8,7 @@ sync `test_admin_it.py`의 async 미러다. `it-client`의 서비스 계정이 r
 블로킹하지 않으려면 async 경계에서는 `a_get_server_info()`를 써야 한다(동기
 `get_server_info()`가 아님, `inspect.iscoroutinefunction`로 확인됨).
 """
+
 from __future__ import annotations
 
 import pytest

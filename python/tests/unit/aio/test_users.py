@@ -2,6 +2,7 @@
 클래스에서 async로 정의돼 있어 spec을 통해 자동으로 AsyncMock이 된다). sync
 `tests/unit/test_users.py`와 동형.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock

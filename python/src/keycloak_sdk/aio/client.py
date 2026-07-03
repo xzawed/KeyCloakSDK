@@ -12,6 +12,7 @@ async 컨텍스트 매니저(`async with AsyncKeycloakClient.create(config) as k
 정리 훅을 위임한다. 네트워크 경계가 아니므로(하위 `AsyncAuthClient`/`AsyncAdminClient`
 생성 자체만 하고 여기서 직접 I/O하지 않는다) 커버리지 게이트에서 제외되지 않는다.
 """
+
 from __future__ import annotations
 
 from types import TracebackType

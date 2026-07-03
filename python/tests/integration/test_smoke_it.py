@@ -1,4 +1,5 @@
 """컨테이너 부팅 스모크 테스트 (WBS 6.1)."""
+
 from __future__ import annotations
 
 import pytest

@@ -1,6 +1,7 @@
 """`AsyncRolesResource` 단위 테스트. `KeycloakAdmin`을 목으로 주입한다. sync
 `tests/unit/test_roles.py`와 동형.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock

@@ -9,6 +9,7 @@ credentials grant로 인증하므로 `config.client_secret`이 필요하고, 실
 파사드(`users`/`clients`/`realms`/`roles`/`groups`)가 로직을 담당하고 목 기반으로
 단위 검증된다.
 """
+
 from __future__ import annotations
 
 from keycloak import KeycloakAdmin
