@@ -2,6 +2,6 @@
 from __future__ import annotations
 
 def mask(value: str | None) -> str:
-    if value is None or len(value) <= 4:
+    if value is None or len(value) < 8:
         return "***"
     return value[:3] + "***"
