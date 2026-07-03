@@ -35,8 +35,10 @@ gpg --armor --export-secret-keys <KEYID> > private.asc     # 개인키 armored �
 
 ### A-5. 배포 트리거
 ```bash
-git tag v0.1.0 && git push origin v0.1.0     # release.yml이 -Prelease deploy 실행
+git tag v0.1.0 && git push origin v0.1.0     # release.yml이 태그값으로 버전 set 후 -Prelease deploy
 ```
+> ℹ️ 태그 `vX.Y.Z`가 **릴리스 버전을 결정**한다 — 워크플로가 POM의 `-SNAPSHOT`을 태그값(`X.Y.Z`)으로 덮어써 배포하므로 main POM은 계속 `-SNAPSHOT`이다(Maven Central은 SNAPSHOT 좌표를 거부하므로 이 자동 치환이 필수). 태그를 원하는 릴리스 버전과 일치시킬 것.
+
 Central Portal의 Deployments에서 검증 후 **Publish**(또는 autoPublish 설정 시 자동).
 
 ### A-6. dry-run (배포 없이 산출물 검증)
@@ -51,7 +53,7 @@ JAVA_HOME='/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot' PATH="/c/User
 ## B. Python → PyPI
 
 ### B-1. Trusted Publisher 설정 (1회, 시크릿 불필요)
-1. https://pypi.org 로그인 → (선택) 프로젝트 `keycloak-sdk`가 없으면 **Pending Publisher**로 미리 등록.
+1. https://pypi.org 로그인 → [Publishing 설정](https://pypi.org/manage/account/publishing/)에서 **Pending Publisher로 반드시 미리 등록**한다. `keycloak-sdk`는 아직 PyPI에 없어 프로젝트별 등록 화면이 없으므로, 계정 레벨의 **"Add a pending publisher"** 로 등록해야 한다(첫 배포 성공 시 자동으로 일반 Trusted Publisher로 전환).
 2. **Trusted Publisher 추가** (Publishing → GitHub):
    - Owner: `xzawed` · Repository: `KeyCloakSDK` · Workflow: `python-release.yml` · Environment: (비움)
    - OIDC로 인증하므로 저장 토큰/시크릿 불필요.
