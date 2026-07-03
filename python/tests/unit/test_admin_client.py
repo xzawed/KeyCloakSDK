@@ -47,7 +47,7 @@ def test_raw_raises_config_error_when_secret_missing_and_not_injected():
     client = AdminClient(config)
 
     with pytest.raises(KeycloakConfigError):
-        client.raw
+        _ = client.raw
 
 
 def test_construction_without_secret_does_not_raise_until_raw_accessed():

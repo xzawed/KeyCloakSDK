@@ -1,6 +1,7 @@
 """SDK 예외 계층. 공개 API에 python-keycloak 예외 타입을 노출하지 않는다."""
 from __future__ import annotations
 
+
 class KeycloakSdkError(Exception):
     """모든 SDK 예외의 기반."""
 

@@ -52,7 +52,8 @@ class JwtValidator:
     def validate(self, token: str, key_set: KeySet) -> ValidatedToken:
         try:
             decoded = _jwt.decode(token, key_set, algorithms=self._algs)
-        except Exception as exc:  # joserfc.errors.* (서명 불일치, 알고리즘 거부, kid 미해결 등)를 포괄
+        except Exception as exc:
+            # joserfc.errors.* (서명 불일치, 알고리즘 거부, kid 미해결 등)를 포괄
             raise TokenSignatureError("JWT signature/algorithm validation failed") from exc
 
         claims: dict[str, Any] = dict(decoded.claims)
@@ -65,7 +66,10 @@ class JwtValidator:
             raise TokenValidationError("Malformed claim value") from exc
 
         aud = claims.get("aud")
-        audiences: tuple[str, ...] = tuple(aud) if isinstance(aud, list) else ((aud,) if aud else ())
+        if isinstance(aud, list):
+            audiences: tuple[str, ...] = tuple(aud)
+        else:
+            audiences = (aud,) if aud else ()
 
         return ValidatedToken(
             subject=claims.get("sub"),

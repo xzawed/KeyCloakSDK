@@ -153,7 +153,7 @@ def test_admin_lazy_construction_succeeds_without_secret_until_raw_used():
 
     assert isinstance(admin_facade, AdminClient)
     with pytest.raises(KeycloakConfigError):
-        admin_facade.raw
+        _ = admin_facade.raw
 
 
 def test_admin_without_config_raises_config_error():
@@ -163,4 +163,4 @@ def test_admin_without_config_raises_config_error():
     kc = KeycloakClient(None, auth)
 
     with pytest.raises(KeycloakConfigError):
-        kc.admin
+        _ = kc.admin

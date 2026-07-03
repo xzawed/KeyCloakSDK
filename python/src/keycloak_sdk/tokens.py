@@ -1,8 +1,11 @@
 """토큰 값 타입."""
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Any
+
 from ._internal.secrets import mask
+
 
 @dataclass(frozen=True)
 class TokenSet:
@@ -24,7 +27,7 @@ class TokenSet:
                 f"refresh_token={mask(self.refresh_token)!r}, expires_at={self.expires_at!r})")
 
     @staticmethod
-    def from_response(data: dict[str, Any], issued_at: float) -> "TokenSet":
+    def from_response(data: dict[str, Any], issued_at: float) -> TokenSet:
         expires_in = data.get("expires_in")
         expires_at = issued_at + float(expires_in) if expires_in is not None else None
         return TokenSet(

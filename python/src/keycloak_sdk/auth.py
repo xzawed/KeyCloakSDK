@@ -11,8 +11,9 @@ import hashlib
 import json
 import secrets
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, TypeVar, cast
+from typing import TypeVar, cast
 
 from joserfc.jwk import KeySet, KeySetSerialization
 from keycloak import KeycloakOpenID

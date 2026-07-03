@@ -79,7 +79,9 @@ def test_delete_error_translates_too():
 
 def test_response_body_bytes_decoded_and_preserved():
     def boom() -> None:
-        raise KeycloakGetError("nope", response_code=404, response_body=b'{"error":"User not found"}')
+        raise KeycloakGetError(
+            "nope", response_code=404, response_body=b'{"error":"User not found"}'
+        )
 
     with pytest.raises(KeycloakNotFoundError) as excinfo:
         call(boom)

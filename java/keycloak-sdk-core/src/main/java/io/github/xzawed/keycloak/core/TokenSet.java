@@ -1,5 +1,6 @@
 package io.github.xzawed.keycloak.core;
 import java.time.*;
+import java.util.Objects;
 public final class TokenSet {
   private final String accessToken, refreshToken, idToken, tokenType, scope;
   private final Instant expiresAt;
@@ -23,5 +24,18 @@ public final class TokenSet {
     return "TokenSet{tokenType=" + tokenType + ", scope=" + scope
         + ", accessToken=***, refreshToken=" + (refreshToken == null ? "null" : "***")
         + ", expiresAt=" + expiresAt + "}";
+  }
+  @Override public boolean equals(Object o) {
+    if (this == o) return true;
+    if (!(o instanceof TokenSet other)) return false;
+    return Objects.equals(accessToken, other.accessToken)
+        && Objects.equals(refreshToken, other.refreshToken)
+        && Objects.equals(idToken, other.idToken)
+        && Objects.equals(tokenType, other.tokenType)
+        && Objects.equals(scope, other.scope)
+        && Objects.equals(expiresAt, other.expiresAt);
+  }
+  @Override public int hashCode() {
+    return Objects.hash(accessToken, refreshToken, idToken, tokenType, scope, expiresAt);
   }
 }
