@@ -17,6 +17,9 @@ from keycloak import KeycloakAdmin
 from ..config import KeycloakConfig
 from ..exceptions import KeycloakConfigError
 from .clients import ClientsResource
+from .groups import GroupsResource
+from .realms import RealmsResource
+from .roles import RolesResource
 from .users import UsersResource
 
 
@@ -53,3 +56,15 @@ class AdminClient:
     @property
     def clients(self) -> ClientsResource:
         return ClientsResource(self.raw)
+
+    @property
+    def realms(self) -> RealmsResource:
+        return RealmsResource(self.raw)
+
+    @property
+    def roles(self) -> RolesResource:
+        return RolesResource(self.raw)
+
+    @property
+    def groups(self) -> GroupsResource:
+        return GroupsResource(self.raw)
