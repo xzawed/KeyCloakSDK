@@ -23,7 +23,7 @@ Keycloak을 위한 **다국어 SDK**. Keycloak의 두 API 표면 — **인증(OI
 - 실행 거버넌스: [docs/governance/ai-governance-framework.md](docs/governance/ai-governance-framework.md) (Codex 이중검증·G1~G6 게이트·루프 엔지니어링)
 - 검증 로그: [docs/governance/verification-log.md](docs/governance/verification-log.md) — 태스크별 게이트 통과 이력
 - **테스트 수(Java)**: 단위테스트 94개(core 23 · auth 25 · admin 43 · keycloak-sdk 3) + 통합테스트(Testcontainers) 6개(SmokeIT 1 · AuthFlowIT 3 · AdminOpsIT 2) = **총 100개**, 커버리지 게이트(로직 모듈 라인 ≥90%/브랜치 ≥85%) 통과.
-- **테스트 수(Python)**: 단위테스트 120개 + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 6개 = **총 126개**, 커버리지 게이트(로직 모듈 라인 ≥90%/브랜치 ≥85%) 통과.
+- **테스트 수(Python)**: `main`(PR #2, sync만) 단위테스트 120개 + 통합테스트 6개 = 126개. `feature/python-async` 브랜치(미병합)에서 `keycloak_sdk.aio` async 미러 추가 — 단위테스트 216개(sync 120 + async 96) + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 11개(sync 6 + async 5) = **총 227개**, 커버리지 게이트(로직 모듈 라인 ≥90%/브랜치 ≥85%) 통과.
 
 ### Java 툴체인 (빌드 명령)
 
@@ -44,7 +44,7 @@ JAVA_HOME='/c/Program Files/Microsoft/jdk-17.0.19.10-hotspot' PATH="/c/Users/dir
 
 가상환경은 `python/.venv`에 있다(리포지토리에 커밋 안 함). 명령은 `python/`에서 실행하거나 절대경로의 venv 인터프리터를 직접 호출한다:
 ```bash
-cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m pytest -m "not integration"   # 단위테스트 120개
+cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m pytest -m "not integration"   # 단위테스트(main 120개 · feature/python-async 216개)
 cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m pytest -m integration            # 통합테스트(Docker 필요, testcontainers)
 cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m mypy src                          # 정적 타입 검사(strict)
 ```
@@ -81,9 +81,10 @@ python/
 │  ├─ jwt.py                   # JwtValidator — joserfc 자체 강화 검증
 │  ├─ admin/                   # AdminClient + users/clients/realms/roles/groups
 │  ├─ client.py                # KeycloakClient 통합 진입점 (auth 즉시·admin 지연)
+│  ├─ aio/                     # async 미러(AsyncKeycloakClient/AsyncAuthClient/AsyncAdminClient) — `feature/python-async`, python-keycloak `a_*` 래핑
 │  └─ py.typed                 # PEP 561 마커
-├─ examples/quickstart.py
-└─ tests/{unit,integration}/
+├─ examples/quickstart.py, async_quickstart.py
+└─ tests/{unit,integration}/  # tests/unit/aio/, tests/integration/*_async_it.py 포함
 ```
 
 **결합 규칙(Python)**: `admin`은 `auth`에 의존하지 않는다(각자 독립적으로 client-credentials 인증). `python-keycloak`(`KeycloakOpenID`/`KeycloakAdmin`)을 래핑하고, 예외는 경계에서 `keycloak_sdk.exceptions.*`로 변환되어 `keycloak.exceptions.*` 타입이 공개 API에 노출되지 않는다. JWT 검증만 `python-keycloak`에 의존하지 않고 `joserfc`로 자체 강화 구현(algorithm pinning·`none`/미서명 거부·iss 정확일치·aud 포함검사·클록 스큐).
