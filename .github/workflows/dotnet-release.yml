@@ -2,16 +2,16 @@ name: dotnet-release
 on:
   push:
     tags: ['dotnet-v*']
+permissions:
+  contents: write
 jobs:
   release:
     runs-on: ubuntu-latest
-    # job-level env so the push step's own `if:` can see it (a step-level env is NOT in scope for that step's if)
-    env:
-      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
@@ -21,10 +21,13 @@ jobs:
           dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category!=Integration"
       - name: Pack
         run: dotnet pack dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release -o artifacts /p:ContinuousIntegrationBuild=true
-      - name: Push to NuGet (human-gated; requires NUGET_API_KEY secret)
-        if: ${{ env.NUGET_API_KEY != '' }}
-        run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+      - name: Publish to NuGet (human-gated; requires NUGET_API_KEY secret)
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then echo "NUGET_API_KEY not set — skipping NuGet publish (human-gated)"; exit 0; fi
+          dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
       - name: GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/*.nupkg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${GITHUB_REF_NAME}" artifacts/*.nupkg --title "${GITHUB_REF_NAME}" --generate-notes

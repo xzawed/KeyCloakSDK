@@ -4,6 +4,8 @@ on:
     paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml']
   pull_request:
     paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml']
+permissions:
+  contents: read
 jobs:
   build-test:
     runs-on: ubuntu-latest
