@@ -498,7 +498,9 @@ using System.Text.Json.Serialization;
 namespace Xzawed.Keycloak;
 
 /// <summary>Immutable SDK configuration. Build with an object initializer, then pass to
-/// <see cref="KeycloakClient.Create"/> which validates and normalizes it.</summary>
+/// <c>KeycloakClient.Create</c> which validates and normalizes it.</summary>
+// (use <c>…</c> not <see cref="KeycloakClient.Create"/> — KeycloakClient lands in Task 9;
+//  an unresolved cref is CS1574 → error under TreatWarningsAsErrors + GenerateDocumentationFile.)
 [JsonConverter(typeof(KeycloakConfigJsonConverter))]   // mask clientSecret in JSON/structured logging too
 public sealed record KeycloakConfig
 {
