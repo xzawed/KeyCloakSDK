@@ -9,7 +9,7 @@ Keycloak을 위한 **여러 프로그래밍 언어용 SDK**(polyglot). Keycloak�
 | **Java 21** (Maven) | ✅ 완료 · `main` 병합 (PR #1) | 공식 `keycloak-admin-client` + Nimbus OAuth2/OIDC SDK 래핑 | Maven Central `io.github.xzawed:keycloak-sdk` (human-gated) |
 | **Python 3.10+** | ✅ 완료 · `main` 병합 (PR #2 sync, PR #4 async) | `python-keycloak`(admin+OIDC) 래핑 + `joserfc` 자체 JWT 검증 | PyPI `keycloak-sdk` (human-gated) |
 | **Node.js 20+** (ESM) | ✅ 완료 · `main` 병합 (PR #12) | 공식 `@keycloak/keycloak-admin-client` + `openid-client` v6 래핑 + `jose` 자체 JWT 검증 | npm `@xzawed/keycloak-sdk` (human-gated) |
-| **Go 1.25+** | ✅ 완료 · `feature/go-sdk` | `Nerzal/gocloak` v13 + `golang.org/x/oauth2` 래핑 + `go-jose/v4` 자체 JWT 검증 | Go 모듈 `github.com/xzawed/KeyCloakSDK/go` (태그=릴리스, human-gated) |
+| **Go 1.25+** | ✅ 완료 · `main` 병합 (PR #13) | `Nerzal/gocloak` v13 + `golang.org/x/oauth2` 래핑 + `go-jose/v4` 자체 JWT 검증 | Go 모듈 `github.com/xzawed/KeyCloakSDK/go` (태그=릴리스, human-gated) |
 
 - **라이선스**: Apache-2.0
 
@@ -79,7 +79,7 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 
 ## 현재 상태
 
-**Java · Python · Node.js SDK 완료 · `main` 병합**(Node PR #12). **Go SDK 완료 · `feature/go-sdk`(PR 예정).** 각 언어 전 Phase(기반→core→auth→admin→facade→통합테스트→배포&문서) 구현, **실제 Keycloak 26.6(.4) Testcontainers 통합테스트 GREEN**, 로직 커버리지 게이트(라인 ≥90%/브랜치 ≥85%) 통과. Python은 sync + async(`keycloak_sdk.aio`) 모두 제공. Node는 ESM·async-only, Go는 sync + `context.Context`. **남은 것은 실배포뿐**(Maven Central·PyPI·npm·Go 모듈 태그, 사람 계정/키/토큰 필요 — [DEPLOY.md](DEPLOY.md)).
+**Java · Python · Node.js · Go SDK 모두 완료 · `main` 병합**(Node PR #12, Go PR #13). 각 언어 전 Phase(기반→core→auth→admin→facade→통합테스트→배포&문서) 구현, **실제 Keycloak 26.6(.4) Testcontainers 통합테스트 GREEN**, 로직 커버리지 게이트(라인 ≥90%/브랜치 ≥85%) 통과. Python은 sync + async(`keycloak_sdk.aio`) 모두 제공. Node는 ESM·async-only, Go는 sync + `context.Context`. **남은 것은 실배포뿐**(Maven Central·PyPI·npm·Go 모듈 태그, 사람 계정/키/토큰 필요 — [DEPLOY.md](DEPLOY.md)).
 
 - 📄 설계 스펙: [Java·Python 멀티랭 설계](docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md) · [Python](docs/superpowers/specs/2026-07-03-keycloak-python-sdk-design.md) · [Python async](docs/superpowers/specs/2026-07-03-keycloak-python-async-design.md)
 - 🗂️ 구현 계획(WBS): [docs/superpowers/plans/](docs/superpowers/plans/)
