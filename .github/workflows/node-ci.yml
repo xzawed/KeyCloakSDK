@@ -17,10 +17,10 @@ jobs:
           cache: npm
           cache-dependency-path: node/package-lock.json
       - run: npm ci
-      - name: ESLint
-        run: npm run lint
       - name: Prettier (format check)
         run: npm run format:check
+      - name: ESLint
+        run: npm run lint
       - name: Typecheck (tsc --noEmit)
         run: npm run typecheck
       - name: Unit tests + 커버리지 게이트(로직 라인≥90 / 브랜치≥85)
