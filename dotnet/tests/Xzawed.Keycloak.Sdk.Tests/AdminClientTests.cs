@@ -64,4 +64,15 @@ public class AdminClientTests : IDisposable
         var role = await admin.Roles.GetAsync("app-admin");
         Assert.Equal("app-admin", role.Name);
     }
+
+    [Fact]
+    public async Task Timeout_maps_to_TransportException()
+    {
+        var cfg = new KeycloakConfig { ServerUrl = _mock.Urls[0], Realm = "r", ClientId = "c", ClientSecret = "s", ReadTimeoutMs = 200 }.Normalized();
+        await using var admin = await AdminClient.CreateAsync(cfg, new FixedToken());
+        _mock.Given(Request.Create().WithPath("/admin/realms/r/roles/slow").UsingGet())
+             .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                 .WithBodyAsJson(new { name = "slow" }).WithDelay(TimeSpan.FromMilliseconds(1500)));
+        await Assert.ThrowsAsync<KeycloakTransportException>(() => admin.Roles.GetAsync("slow"));
+    }
 }
