@@ -20,4 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="testdata/it-realm-realm.json"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
+  </ItemGroup>
 </Project>
