@@ -2,7 +2,9 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    include: ['test/**/*.test.ts'],
+    // 단위테스트만 — 통합(Docker 필요)은 vitest.integration.config.ts로 분리해, 기본 커버리지
+    // 실행(`npm test`)이 testcontainers를 기동하지 않게 한다.
+    include: ['test/unit/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],

@@ -43,6 +43,7 @@ function base64url(buffer: Buffer): string {
  */
 export class AuthClient {
   #configuration?: oidc.Configuration
+  #discovering?: Promise<oidc.Configuration>
   readonly #cfg: KeycloakConfig
   readonly #endpoints: OidcEndpoints
   readonly #validator: JwtValidator
@@ -99,15 +100,30 @@ export class AuthClient {
   /**
    * 인가 코드 + PKCE verifier를 토큰으로 교환한다(`authorization_code` grant).
    * openid-client는 콜백 URL에서 code를 추출하므로 `redirectUri`에 code(+iss)를 붙여 넘긴다.
+   *
+   * `createAuthorizationRequest`는 항상 `nonce`를 인가 URL에 실으므로 Keycloak은 발급 id_token에
+   * 그 nonce를 담아 돌려준다. openid-client v6는 id_token의 nonce를 자동 검증하며, 기대 nonce를
+   * 주지 않으면 "unexpected nonce"로 **거부**한다 — 따라서 `createAuthorizationRequest`가 돌려준
+   * `nonce`를 여기로 넘겨야 한다(재생 공격 방어이자 정상 흐름의 필수 조건). nonce 없이 시작한
+   * 커스텀 흐름을 위해 인자는 선택적이다.
    */
-  async exchangeCode(code: string, redirectUri: string, codeVerifier: string): Promise<TokenSet> {
+  async exchangeCode(
+    code: string,
+    redirectUri: string,
+    codeVerifier: string,
+    nonce?: string,
+  ): Promise<TokenSet> {
     const config = await this.#discover()
     const currentUrl = new URL(redirectUri)
     currentUrl.searchParams.set('code', code)
-    // RFC 9207: Keycloak은 인가 응답에 iss를 포함하며 openid-client가 이를 검증할 수 있다.
+    // RFC 9207: Keycloak은 인가 응답에 iss를 포함하며 openid-client가 이를 검증한다.
     currentUrl.searchParams.set('iss', this.#endpoints.issuer)
+    const checks: oidc.AuthorizationCodeGrantChecks = { pkceCodeVerifier: codeVerifier }
+    if (nonce !== undefined) {
+      checks.expectedNonce = nonce
+    }
     return this.#grant(
-      () => oidc.authorizationCodeGrant(config, currentUrl, { pkceCodeVerifier: codeVerifier }),
+      () => oidc.authorizationCodeGrant(config, currentUrl, checks),
       'Authorization code exchange failed',
     )
   }
@@ -123,7 +139,12 @@ export class AuthClient {
     const config = await this.#discover()
     try {
       const response = await oidc.tokenIntrospection(config, token)
-      return { active: response.active === true, claims: response as Record<string, unknown> }
+      return {
+        active: response.active === true,
+        username: typeof response.username === 'string' ? response.username : undefined,
+        clientId: typeof response.client_id === 'string' ? response.client_id : undefined,
+        claims: response as Record<string, unknown>,
+      }
     } catch (e) {
       throw new KeycloakAuthError(`Token introspection failed: ${(e as Error).message}`, {
         cause: e,
@@ -172,11 +193,27 @@ export class AuthClient {
     return undefined
   }
 
-  /** discovery로 `Configuration`을 한 번 조립해 캐시한다. read 타임아웃(초)을 주입한다. */
+  /**
+   * discovery로 `Configuration`을 한 번 조립해 캐시한다. read 타임아웃(초)을 주입한다.
+   * single-flight: 동시 최초 호출이 discovery를 중복 요청하지 않도록 진행중 Promise를 공유하고,
+   * 실패는 캐시하지 않는다(재시도 가능) — `ClientCredentialsTokenProvider`와 동일 패턴.
+   */
   async #discover(): Promise<oidc.Configuration> {
     if (this.#configuration !== undefined) {
       return this.#configuration
     }
+    if (this.#discovering !== undefined) {
+      return this.#discovering
+    }
+    this.#discovering = this.#runDiscovery()
+    try {
+      return await this.#discovering
+    } finally {
+      this.#discovering = undefined
+    }
+  }
+
+  async #runDiscovery(): Promise<oidc.Configuration> {
     const execute: Array<(config: oidc.Configuration) => void> = this.#cfg.serverUrl.startsWith(
       'http://',
     )

@@ -64,6 +64,13 @@ describe('admin() — 지연 생성 + 캐시', () => {
     expect(h.adminCreate).toHaveBeenCalledTimes(1)
   })
 
+  it('동시 최초 호출은 single-flight로 한 번만 생성한다', async () => {
+    const client = KeycloakClient.create(input)
+    const [a, b] = await Promise.all([client.admin(), client.admin()])
+    expect(a).toBe(b)
+    expect(h.adminCreate).toHaveBeenCalledTimes(1)
+  })
+
   it('clientSecret이 없으면 KeycloakConfigError(네트워크 접근 없음)', async () => {
     const client = KeycloakClient.create({ serverUrl: 'https://kc', realm: 'r', clientId: 'c' })
     await expect(client.admin()).rejects.toBeInstanceOf(KeycloakConfigError)

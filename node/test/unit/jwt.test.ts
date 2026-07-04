@@ -37,12 +37,16 @@ describe('JwtValidator (강화 검증)', () => {
       .setExpirationTime(expMinutes)
       .sign(priv)
 
-  it('정상 RS256 토큰 통과 + subject/audience/issuer 반환', async () => {
+  it('정상 RS256 토큰 통과 + subject/audience/issuer/expiresAt/issuedAt 반환', async () => {
     const t = await sign({ sub: 'user1', aud: 'my-client' })
     const v = await new JwtValidator(keys, OPTS).validate(t)
     expect(v.subject).toBe('user1')
     expect(v.audience).toEqual(['my-client'])
     expect(v.issuer).toBe(ISS)
+    // exp/iat 클레임(epoch 초)을 첫급 필드로 노출한다(Java/Python 동형).
+    expect(typeof v.expiresAt).toBe('number')
+    expect(typeof v.issuedAt).toBe('number')
+    expect(v.expiresAt ?? 0).toBeGreaterThan(v.issuedAt ?? 0)
   })
 
   it('다중 aud 배열 — 포함검사로 통과', async () => {

@@ -18,7 +18,7 @@
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "test": "vitest run --coverage",
     "test:unit": "vitest run --coverage test/unit",
-    "test:it": "vitest run test/integration"
+    "test:it": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@keycloak/keycloak-admin-client": "^26",

@@ -44,6 +44,8 @@ export class JwtValidator {
         subject: typeof payload.sub === 'string' ? payload.sub : '',
         audience: Array.isArray(aud) ? aud.map(String) : typeof aud === 'string' ? [aud] : [],
         issuer: typeof payload.iss === 'string' ? payload.iss : '',
+        expiresAt: typeof payload.exp === 'number' ? payload.exp : undefined,
+        issuedAt: typeof payload.iat === 'number' ? payload.iat : undefined,
         claims: payload as Record<string, unknown>,
       }
     } catch (e) {

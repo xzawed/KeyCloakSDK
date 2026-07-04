@@ -14,6 +14,7 @@ import { KeycloakConfigError } from './errors.js'
  */
 export class KeycloakClient implements AsyncDisposable {
   #admin?: AdminClient
+  #adminInflight?: Promise<AdminClient>
   readonly auth: AuthClient
   readonly #config: KeycloakConfig
 
@@ -37,10 +38,21 @@ export class KeycloakClient implements AsyncDisposable {
     if (this.#config.clientSecret === undefined) {
       throw new KeycloakConfigError('admin API requires clientSecret (client-credentials grant)')
     }
-    if (this.#admin === undefined) {
-      this.#admin = await AdminClient.create(this.#config)
+    if (this.#admin !== undefined) {
+      return this.#admin
     }
-    return this.#admin
+    // single-flight: 동시 최초 호출이 admin 생성(client-credentials 인증)을 중복하지 않도록
+    // 진행중 Promise를 공유하고, 실패는 캐시하지 않는다(재시도 가능).
+    if (this.#adminInflight !== undefined) {
+      return this.#adminInflight
+    }
+    this.#adminInflight = AdminClient.create(this.#config)
+    try {
+      this.#admin = await this.#adminInflight
+      return this.#admin
+    } finally {
+      this.#adminInflight = undefined
+    }
   }
 
   /** 생성된 하위 자원을 정리한다 — auth는 항상, admin은 생성된 경우에만. */

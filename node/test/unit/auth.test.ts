@@ -114,7 +114,7 @@ describe('clientCredentialsToken', () => {
 })
 
 describe('exchangeCode', () => {
-  it('code+verifier로 토큰을 교환하고 TokenSet을 반환한다', async () => {
+  it('code+verifier로 토큰을 교환하고, 콜백 URL에 code+iss를 붙여 넘긴다', async () => {
     vi.mocked(oidc.authorizationCodeGrant).mockResolvedValue({
       access_token: 'AT2',
       expires_in: 60,
@@ -123,7 +123,20 @@ describe('exchangeCode', () => {
     expect(ts.accessToken).toBe('AT2')
     const [, currentUrl, checks] = vi.mocked(oidc.authorizationCodeGrant).mock.calls.at(-1)!
     expect((currentUrl as URL).searchParams.get('code')).toBe('the-code')
+    expect((currentUrl as URL).searchParams.get('iss')).toBe(
+      'https://kc.example.com/realms/demo',
+    )
     expect(checks).toEqual({ pkceCodeVerifier: 'verifier' })
+  })
+
+  it('nonce를 넘기면 expectedNonce로 전달한다(openid-client가 id_token nonce를 검증하도록)', async () => {
+    vi.mocked(oidc.authorizationCodeGrant).mockResolvedValue({
+      access_token: 'AT2',
+      expires_in: 60,
+    } as never)
+    await new AuthClient(cfg).exchangeCode('c', 'https://app/cb', 'verifier', 'the-nonce')
+    const [, , checks] = vi.mocked(oidc.authorizationCodeGrant).mock.calls.at(-1)!
+    expect(checks).toEqual({ pkceCodeVerifier: 'verifier', expectedNonce: 'the-nonce' })
   })
 
   it('실패를 KeycloakAuthError로 변환한다', async () => {
@@ -149,14 +162,17 @@ describe('refresh', () => {
 })
 
 describe('introspect', () => {
-  it('introspection 응답을 {active, claims}로 매핑한다', async () => {
+  it('introspection 응답을 {active, username, clientId, claims}로 매핑한다', async () => {
     vi.mocked(oidc.tokenIntrospection).mockResolvedValue({
       active: true,
       sub: 'u1',
       username: 'bob',
+      client_id: 'it-client',
     } as never)
     const r = await new AuthClient(cfg).introspect('tok')
     expect(r.active).toBe(true)
+    expect(r.username).toBe('bob')
+    expect(r.clientId).toBe('it-client')
     expect(r.claims['username']).toBe('bob')
   })
 
