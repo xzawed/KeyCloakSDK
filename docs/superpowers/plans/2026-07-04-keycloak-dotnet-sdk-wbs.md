@@ -669,12 +669,14 @@ public class TokenProviderTests
     {
         public int Calls;
         public long ExpiresIn = 300;
+        public int DelayMs = 20;   // hold the flight so concurrent callers pile up on the gate (real contention)
         private int _n;
-        public Task<TokenSet> ClientCredentialsTokenAsync(CancellationToken ct = default)
+        public async Task<TokenSet> ClientCredentialsTokenAsync(CancellationToken ct = default)
         {
             Interlocked.Increment(ref Calls);
+            if (DelayMs > 0) await Task.Delay(DelayMs, ct).ConfigureAwait(false);
             var tok = $"tok-{Interlocked.Increment(ref _n)}";
-            return Task.FromResult(TokenSet.Create(tok, "Bearer", ExpiresIn, null, null, null, 0));
+            return TokenSet.Create(tok, "Bearer", ExpiresIn, null, null, null, 0);
         }
     }
 
@@ -735,12 +737,15 @@ public interface ITokenSource
 /// <summary>Caches a token and refreshes it before expiry, collapsing concurrent callers into one fetch.</summary>
 public sealed class ClientCredentialsTokenProvider : ITokenProvider
 {
+    // token + absolute expiry as one immutable snapshot so the fast-path read is a single atomic
+    // reference read (no tearing of the multi-word DateTimeOffset on weakly-ordered CPUs like ARM64).
+    private sealed record Cached(string Token, DateTimeOffset ExpiresAt);
+
     private readonly ITokenSource _source;
     private readonly int _skewSeconds;
     private readonly TimeProvider _clock;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private string? _token;
-    private DateTimeOffset _expiresAt = DateTimeOffset.MinValue;
+    private volatile Cached? _cache;   // volatile: atomic + visible reference read/write across threads
 
     public ClientCredentialsTokenProvider(ITokenSource source, int skewSeconds = 30, TimeProvider? clock = null)
     {
@@ -751,22 +756,23 @@ public sealed class ClientCredentialsTokenProvider : ITokenProvider
 
     public async Task<string> GetAccessTokenAsync(CancellationToken ct = default)
     {
-        if (!IsExpired() && _token is { } cached) return cached;      // fast path, no gate
+        if (Fresh(_cache) is { } fast) return fast;                  // fast path, no gate (volatile snapshot)
 
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (!IsExpired() && _token is { } fresh) return fresh;    // double-check under gate
+            if (Fresh(_cache) is { } fresh) return fresh;            // double-check under gate
 
             var ts = await _source.ClientCredentialsTokenAsync(ct).ConfigureAwait(false); // failure => not cached
-            _token = ts.AccessToken;
-            _expiresAt = _clock.GetUtcNow().AddSeconds(Math.Max(0, ts.ExpiresIn - _skewSeconds));
+            var expiresAt = _clock.GetUtcNow().AddSeconds(Math.Max(0, ts.ExpiresIn - _skewSeconds));
+            _cache = new Cached(ts.AccessToken, expiresAt);
             return ts.AccessToken;
         }
         finally { _gate.Release(); }
     }
 
-    private bool IsExpired() => _clock.GetUtcNow() >= _expiresAt;
+    // Returns the cached token if the snapshot is still valid, else null. An unknown/absent cache is expired.
+    private string? Fresh(Cached? c) => c is not null && _clock.GetUtcNow() < c.ExpiresAt ? c.Token : null;
 }
 ```
 
