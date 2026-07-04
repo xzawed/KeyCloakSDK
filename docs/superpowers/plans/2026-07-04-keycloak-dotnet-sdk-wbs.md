@@ -69,10 +69,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- Pin the analyzer band to 8.0 so a newer local SDK (10.x) and CI SDK (8.x) agree under warnaserror -->
+    <AnalysisLevel>8.0</AnalysisLevel>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
-  <PropertyGroup>
+  <!-- Packaging/doc props apply only to packable (src) projects, NOT test projects.
+       (GenerateDocumentationFile + TreatWarningsAsErrors would make CS1591 a build error on every public test member.) -->
+  <PropertyGroup Condition="'$(IsTestProject)' != 'true'">
     <Authors>xzawed</Authors>
     <Product>Keycloak SDK for .NET</Product>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
@@ -87,6 +91,7 @@
   </PropertyGroup>
 </Project>
 ```
+> **⚠️ 리뷰 반영(HIGH)**: 문서생성/패키징 props를 `IsTestProject != true`로 게이트하지 않으면 테스트 프로젝트가 `GenerateDocumentationFile=true`+`TreatWarningsAsErrors`를 상속해 **모든 public 테스트 멤버에 CS1591이 오류로 승격** → Task 1부터 빌드 실패. `AnalysisLevel=8.0`으로 로컬(SDK 10)·CI(SDK 8) 애널라이저 밴드 일치(warnaserror 재현성).
 
 - [ ] **Step 3: 라이브러리 `.csproj` 작성**
 
@@ -108,7 +113,8 @@
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.19.1" />
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.1" />
     <PackageReference Include="Keycloak.AuthServices.Sdk" Version="2.7.0" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
+    <!-- AddKeycloak DI extension needs IServiceCollection/AddSingleton (DI.Abstractions), NOT IHttpClientFactory. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
   </ItemGroup>
   <ItemGroup>
@@ -131,6 +137,9 @@
     <AssemblyName>Xzawed.Keycloak.Sdk.Tests</AssemblyName>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- belt-and-suspenders: no XML docs required for test members (CS1591 would be an error under warnaserror) -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
@@ -391,6 +400,14 @@ public class ConfigTests
     {
         Assert.DoesNotContain("***", Base().ToString());
     }
+
+    [Fact]
+    public void JsonSerialize_masks_client_secret()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(Base() with { ClientSecret = "supersecret" });
+        Assert.Contains("***", json);
+        Assert.DoesNotContain("supersecret", json);
+    }
 }
 ```
 `TokensTests.cs`:
@@ -444,6 +461,16 @@ public class TokensTests
         Assert.DoesNotContain("SECRETat", s);
         Assert.DoesNotContain("SECRETrt", s);
     }
+
+    [Fact]
+    public void JsonSerialize_masks_tokens()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            TokenSet.Create("SECRETat", "Bearer", 60, "SECRETrt", null, null, 0));
+        Assert.Contains("***", json);
+        Assert.DoesNotContain("SECRETat", json);
+        Assert.DoesNotContain("SECRETrt", json);
+    }
 }
 ```
 
@@ -452,10 +479,14 @@ public class TokensTests
 
 `KeycloakConfig.cs`:
 ```csharp
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace Xzawed.Keycloak;
 
 /// <summary>Immutable SDK configuration. Build with an object initializer, then pass to
 /// <see cref="KeycloakClient.Create"/> which validates and normalizes it.</summary>
+[JsonConverter(typeof(KeycloakConfigJsonConverter))]   // mask clientSecret in JSON/structured logging too
 public sealed record KeycloakConfig
 {
     public required string ServerUrl { get; init; }
@@ -487,13 +518,38 @@ public sealed record KeycloakConfig
         $"ClientSecret = {(ClientSecret is null ? "(none)" : Masking.Mask(ClientSecret))}, " +
         $"Scopes = [{string.Join(", ", Scopes)}] }}";
 }
+
+/// <summary>Masks clientSecret when a KeycloakConfig is JSON-serialized (e.g. Serilog destructuring).</summary>
+internal sealed class KeycloakConfigJsonConverter : JsonConverter<KeycloakConfig>
+{
+    public override KeycloakConfig Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => throw new NotSupportedException("KeycloakConfig is not deserializable from JSON.");
+
+    public override void Write(Utf8JsonWriter writer, KeycloakConfig value, JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("serverUrl", value.ServerUrl);
+        writer.WriteString("realm", value.Realm);
+        writer.WriteString("clientId", value.ClientId);
+        if (value.ClientSecret is null) writer.WriteNull("clientSecret");
+        else writer.WriteString("clientSecret", Masking.Mask(value.ClientSecret));
+        writer.WriteStartArray("scopes");
+        foreach (var s in value.Scopes) writer.WriteStringValue(s);
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+    }
+}
 ```
 `Tokens.cs`:
 ```csharp
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace Xzawed.Keycloak;
 
 /// <summary>Token-endpoint response. AccessToken/RefreshToken are masked by ToString.
 /// Isomorphic with the Java/Python/Node/Go TokenSet (absolute ExpiresAt in epoch seconds, IsExpired).</summary>
+[JsonConverter(typeof(TokenSetJsonConverter))]   // mask access/refresh tokens in JSON/structured logging too
 public sealed record TokenSet
 {
     public required string AccessToken { get; init; }
@@ -550,6 +606,24 @@ public sealed record IntrospectionResult(
 /// <summary>Returned by CreateAuthorizationRequest to start a PKCE authorization-code flow.
 /// The caller stores CodeVerifier/State/Nonce until the callback (the SDK is stateless).</summary>
 public sealed record AuthorizationRequest(string Url, string CodeVerifier, string State, string Nonce);
+
+/// <summary>Masks access/refresh tokens when a TokenSet is JSON-serialized (e.g. Serilog destructuring).</summary>
+internal sealed class TokenSetJsonConverter : JsonConverter<TokenSet>
+{
+    public override TokenSet Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => throw new NotSupportedException("TokenSet is not deserializable from JSON.");
+
+    public override void Write(Utf8JsonWriter writer, TokenSet value, JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("tokenType", value.TokenType);
+        writer.WriteNumber("expiresIn", value.ExpiresIn);
+        if (value.ExpiresAt is { } ea) writer.WriteNumber("expiresAt", ea); else writer.WriteNull("expiresAt");
+        writer.WriteString("accessToken", Masking.Mask(value.AccessToken));
+        writer.WriteString("refreshToken", Masking.Mask(value.RefreshToken));
+        writer.WriteEndObject();
+    }
+}
 ```
 
 - [ ] **Step 4: 통과 확인** → PASS.
@@ -770,7 +844,9 @@ public class JwtValidatorTests
 
     private static string Sign(string payloadJson, SecurityKey? key = null)
     {
-        var handler = new JsonWebTokenHandler();
+        // ⚠️ SetDefaultTimesOnTokenCreation defaults TRUE and would auto-inject exp/iat/nbf,
+        // invalidating the Missing_exp test. Disable it so the payload is emitted verbatim.
+        var handler = new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false };
         if (key is null) return handler.CreateToken(payloadJson); // unsigned => alg none
         var creds = new SigningCredentials(key, SecurityAlgorithms.RsaSha256);
         return handler.CreateToken(payloadJson, creds);
@@ -854,6 +930,19 @@ public class JwtValidatorTests
         await Assert.ThrowsAsync<KeycloakTokenValidationException>(
             () => v.ValidateAsync(Sign(PayloadJson("\"it-client\""), Key)));
     }
+
+    // Covers the PRODUCTION ctor (ConfigurationManager/HttpDocumentRetriever wiring) + §6 TLS/JWKS regression guard.
+    // ConfigurationManager is lazy, so construction performs NO network call (parity with Node's "forJwksUri constructs lazily").
+    [Theory]
+    [InlineData("https://kc.example.com/realms/it-realm")]
+    [InlineData("http://localhost:8080/realms/it-realm")]
+    public void Production_ctor_builds_without_network(string issuer)
+    {
+        using var http = new HttpClient();
+        var opts = new JwtValidatorOptions { Issuer = issuer, Audiences = new[] { "it-client" }, RefreshIntervalSeconds = 15 };
+        var validator = new JwtValidator(issuer, opts, http); // no exception, no network (lazy ConfigurationManager)
+        Assert.NotNull(validator);
+    }
 }
 ```
 
@@ -936,7 +1025,7 @@ public sealed class JwtValidator
             throw new KeycloakTokenValidationException(result.Exception?.Message ?? "invalid token", result.Exception);
 
         var jwt = (JsonWebToken)result.SecurityToken;
-        var claims = new Dictionary<string, object?>(result.Claims!);
+        var claims = result.Claims.ToDictionary(kv => kv.Key, kv => (object?)kv.Value); // matches IntrospectAsync projection; no CS8620
         return new ValidatedToken(
             Subject: jwt.Subject,
             Audience: jwt.Audiences.ToArray(),
@@ -1143,11 +1232,16 @@ public sealed class AuthClient : ITokenSource
         }, ct).ConfigureAwait(false);
         var tokens = ToTokenSet(resp, "Authorization code exchange failed", issuedAt);
 
-        // NONCE: Duende does not auto-validate the id_token — verify the nonce claim ourselves.
+        // NONCE: Duende does not auto-validate the id_token (unlike openid-client). Fully validate it
+        // (signature/iss/aud/exp via the hardened validator — Keycloak id_token aud == clientId, which
+        // the validator is already configured for) and then check the nonce claim. Fails CLOSED when a
+        // nonce was supplied (CreateAuthorizationRequest always issues one), matching the Node posture.
         if (nonce is not null && tokens.IdToken is { } idToken)
         {
-            var probe = new Microsoft.IdentityModel.JsonWebTokens.JsonWebToken(idToken);
-            if (!probe.TryGetPayloadValue<string>("nonce", out var n) || n != nonce)
+            ValidatedToken idt;
+            try { idt = await _validator.ValidateAsync(idToken, ct).ConfigureAwait(false); }
+            catch (KeycloakTokenValidationException ex) { throw new KeycloakAuthException("id_token validation failed", ex); }
+            if (!idt.Claims.TryGetValue("nonce", out var n) || n as string != nonce)
                 throw new KeycloakAuthException("id_token nonce mismatch");
         }
         return tokens;
@@ -1345,14 +1439,18 @@ internal sealed class BearerHandler : DelegatingHandler
 ```csharp
 using System.Net.Http.Json;
 using Keycloak.AuthServices.Sdk;              // KeycloakHttpClientException
-using Keycloak.AuthServices.Sdk.Admin;         // KeycloakClient (concrete), IKeycloakClient
+using Keycloak.AuthServices.Sdk.Admin;         // IKeycloakClient
+// ⚠️ Alias REQUIRED: inside namespace Xzawed.Keycloak.Admin, the bare name `KeycloakClient` binds to the
+// enclosing-namespace facade Xzawed.Keycloak.KeycloakClient (private ctor) — an enclosing-namespace type
+// wins over an inner `using`. `new KeycloakClient(http)` would be CS1729. Alias to the library type.
+using KcAdminClient = Keycloak.AuthServices.Sdk.Admin.KeycloakClient;
 
 namespace Xzawed.Keycloak.Admin;
 
 /// <summary>Admin REST facade. users/groups/realm-get go through the typed Keycloak.AuthServices client;
 /// clients/roles/realm-CRUD use raw REST on the same bearer-authed HttpClient. Lower-library errors are
 /// converted to the KeycloakException hierarchy at the boundary.</summary>
-public sealed class AdminClient : IAsyncDisposable
+public sealed class AdminClient : IAsyncDisposable, IDisposable
 {
     private readonly HttpClient _http;          // bearer-authed via BearerHandler; owned
     private readonly IKeycloakClient _typed;     // typed as interface => default interface methods callable
@@ -1367,7 +1465,7 @@ public sealed class AdminClient : IAsyncDisposable
     private AdminClient(HttpClient http, string realm)
     {
         _http = http;
-        _typed = new KeycloakClient(http);       // Keycloak.AuthServices concrete, held as interface
+        _typed = new KcAdminClient(http);        // Keycloak.AuthServices concrete, held as IKeycloakClient
         Realm = realm;
         Users = new UsersResource(this);
         Clients = new ClientsResource(this);
@@ -1376,8 +1474,9 @@ public sealed class AdminClient : IAsyncDisposable
         Groups = new GroupsResource(this);
     }
 
-    /// <summary>Builds a bearer-authed admin client. Throws before any network if clientSecret is absent.</summary>
-    public static Task<AdminClient> CreateAsync(KeycloakConfig cfg, ITokenProvider tokenProvider, CancellationToken ct = default)
+    /// <summary>Builds a bearer-authed admin client and authenticates eagerly (client-credentials).
+    /// Faults before any network if clientSecret is absent.</summary>
+    public static async Task<AdminClient> CreateAsync(KeycloakConfig cfg, ITokenProvider tokenProvider, CancellationToken ct = default)
     {
         if (cfg.ClientSecret is null)
             throw new KeycloakConfigException("clientSecret is required for the admin client (client-credentials).");
@@ -1386,7 +1485,9 @@ public sealed class AdminClient : IAsyncDisposable
             BaseAddress = new Uri(cfg.ServerUrl.TrimEnd('/') + "/"),   // must end with '/'
             Timeout = TimeSpan.FromMilliseconds(cfg.ReadTimeoutMs),
         };
-        return Task.FromResult(new AdminClient(http, cfg.Realm));
+        try { await tokenProvider.GetAccessTokenAsync(ct).ConfigureAwait(false); } // authenticate on first admin build (§5.1)
+        catch { http.Dispose(); throw; }                                            // don't leak the client on failed warm-up
+        return new AdminClient(http, cfg.Realm);
     }
 
     /// <summary>Escape hatch: the underlying typed admin client (documented hiding-exception).</summary>
@@ -1450,9 +1551,11 @@ public sealed class AdminClient : IAsyncDisposable
             : id;
     }
 
+    public void Dispose() => _http.Dispose();
+
     public ValueTask DisposeAsync()
     {
-        _http.Dispose();
+        Dispose();
         return ValueTask.CompletedTask;
     }
 }
@@ -1680,8 +1783,8 @@ using Xzawed.Keycloak.Admin;
 namespace Xzawed.Keycloak;
 
 /// <summary>Unified entry point. Auth is built eagerly; the admin facade is built lazily on first
-/// AdminAsync, cached, and single-flighted. Dispose (await using) releases owned resources.</summary>
-public sealed class KeycloakClient : IAsyncDisposable
+/// AdminAsync, cached, and single-flighted. Dispose (await using / using) releases owned resources.</summary>
+public sealed class KeycloakClient : IAsyncDisposable, IDisposable
 {
     private readonly KeycloakConfig _config;
     private readonly HttpClient _httpClient;      // owned; used by Auth + JwtValidator
@@ -1699,7 +1802,12 @@ public sealed class KeycloakClient : IAsyncDisposable
     public static KeycloakClient Create(KeycloakConfig config)
     {
         var cfg = config.Normalized();                 // validates + strips trailing slash
-        var http = new HttpClient { Timeout = TimeSpan.FromMilliseconds(cfg.ReadTimeoutMs) };
+        // Single long-lived HttpClient (idiomatic for a one-server SDK client); PooledConnectionLifetime
+        // recycles connections so a captured client still picks up DNS changes (the IHttpClientFactory concern).
+        var http = new HttpClient(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) })
+        {
+            Timeout = TimeSpan.FromMilliseconds(cfg.ReadTimeoutMs),
+        };
         var ep = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm);
         var validator = new JwtValidator(ep.Issuer,
             new JwtValidatorOptions { Issuer = ep.Issuer, Audiences = new[] { cfg.ClientId }, ClockSkewSeconds = cfg.ClockSkewSeconds },
@@ -1730,6 +1838,16 @@ public sealed class KeycloakClient : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (_admin is { } admin) await admin.DisposeAsync().ConfigureAwait(false);
+        _httpClient.Dispose();
+        _adminGate.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    // Sync dispose so a DI container (ServiceProvider.Dispose) — which cannot sync-dispose an
+    // async-only-disposable tracked singleton — can release this client without throwing.
+    public void Dispose()
+    {
+        _admin?.Dispose();
         _httpClient.Dispose();
         _adminGate.Dispose();
         GC.SuppressFinalize(this);
@@ -1972,6 +2090,9 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # job-level env so the push step's own `if:` can see it (a step-level env is NOT in scope for that step's if)
+    env:
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1987,8 +2108,6 @@ jobs:
         run: dotnet pack dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release -o artifacts /p:ContinuousIntegrationBuild=true
       - name: Push to NuGet (human-gated; requires NUGET_API_KEY secret)
         if: ${{ env.NUGET_API_KEY != '' }}
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
       - name: GitHub Release
         uses: softprops/action-gh-release@v2
@@ -2022,6 +2141,22 @@ jobs:
 - **타입/명칭 일관**(전 태스크 대조): `KeycloakConfig`(`Normalized()`·`ToString` 마스킹)·`TokenSet`(`Create`·`IsExpired`·`ExpiresAt` long?)·`ValidatedToken`/`IntrospectionResult`/`AuthorizationRequest`·예외 계급(`KeycloakException`→`Config`/`Auth`(`OAuthError`)/`TokenValidation`/`Admin`(`StatusCode`)→`NotFound`/`Conflict`/`Forbidden`/`Transport`)·`KeycloakErrorMapping.MapHttpError`·`Masking.Mask`·`ITokenProvider.GetAccessTokenAsync`/`ITokenSource.ClientCredentialsTokenAsync`·`ClientCredentialsTokenProvider`·`OidcEndpoints.For`·`JwtValidatorOptions`/`JwtValidator`(`BuildParameters`·`ValidateAsync`)·`AuthClient : ITokenSource`(7 메서드)·`AdminClient`(`CreateAsync`·`Raw`·`Realm`·경계 헬퍼)·5 리소스(`Users`/`Clients`/`Realms`/`Roles`/`Groups`)·`KeycloakClient`(`Create`·`Auth`·`AdminAsync`·`DisposeAsync`)·`AddKeycloak`가 전 태스크·스펙·Global Constraints와 일치.
 - **동형성 확인**(§4): 계층(config→errors→tokens→tokenprovider→oidc→jwt→auth→admin→client)·값타입·결합(`ITokenProvider` 유일 접착제, `AuthClient`가 기본 소스)·예외 경계 변환·테스트 시나리오가 Java/Python/Node/Go와 동형. C# 관용 적용(예외·async `Task<T>`+`CancellationToken`·record ToString override·DI 확장).
 - **딥리서치 반영 확인**: (1) Keycloak.AuthServices.Sdk **2.7.0**(net8) · (2) admin 타입드 users/groups/realm-get + clients/roles/realm-CRUD raw · (3) `CreateUserAsync` void → Location 파싱 · (4) `IKeycloakClient` 타입 캐스팅(default interface method) · (5) `ValidateTokenAsync` throw 안 함 → `IsValid` · (6) `TVP.ConfigurationManager` JWKS · (7) `RequireExpirationTime`/`ValidAlgorithms` 명시 · (8) Duende 예외 미던짐/401 body에서 error · (9) 수동 PKCE/logout · (10) record ToString 마스킹 함정 — 전부 태스크 코드에 반영.
+
+## 다중에이전트 어드버서리얼 검증 반영 (2026-07-04, 6-에이전트 — 1 실제 컴파일 검증 포함)
+
+WBS 작성 후 5개 렌즈(Duende/JWT API·AuthServices admin API·테스트/빌드 툴링·타입일관+컴파일가능성·스펙커버리지+동형성+보안)로 어드버서리얼 검증. **확정 결함 전부 계획에 보정 완료**:
+
+- **HIGH — Task 8 네임스페이스 셰도잉**(실제 컴파일로 포착): `namespace Xzawed.Keycloak.Admin` 안에서 `new KeycloakClient(http)`가 enclosing 파사드 `Xzawed.Keycloak.KeycloakClient`(private ctor)에 바인딩 → CS1729. `using KcAdminClient = Keycloak.AuthServices.Sdk.Admin.KeycloakClient;` 별칭으로 해결.
+- **HIGH — Task 1 테스트 프로젝트 CS1591**: `GenerateDocumentationFile`+`TreatWarningsAsErrors` 상속으로 모든 public 테스트 멤버가 빌드 오류. Directory.Build.props에서 `IsTestProject != true` 게이트 + 테스트 csproj `GenerateDocumentationFile=false`. `AnalysisLevel=8.0`으로 SDK 밴드 일치.
+- **HIGH — Task 6 exp-필수 테스트 무효**: `JsonWebTokenHandler.CreateToken`이 exp를 자동 주입해 no-exp 테스트가 실제로 exp 있는 토큰을 만들어 통과 실패 + 불변식 미검증. `SetDefaultTimesOnTokenCreation=false`로 수정.
+- **MEDIUM — Task 3 JSON 마스킹 누락**: ToString만으로는 `JsonSerializer.Serialize`/Serilog destructuring이 시크릿/토큰 평문 노출. `JsonConverter<TokenSet>`·`JsonConverter<KeycloakConfig>` 추가 + 회귀 테스트.
+- **MEDIUM — Task 7 nonce 파스온리·fail-open**: `ExchangeCodeAsync`가 id_token을 파싱만 하고 nonce 없으면 무검증 통과. `_validator.ValidateAsync`로 완전 검증(서명/iss/aud/exp) 후 nonce 대조(fail-closed)로 강화.
+- **MEDIUM — Task 6 프로덕션 ctor 미커버**: JWKS/TLS 배선 ctor가 단위 미커버 → 커버리지 게이트 위협 + §6 TLS 회귀가드 부재. http/https ctor 스모크 테스트 추가(lazy ConfigurationManager, 네트워크 없음).
+- **MEDIUM — Task 9 DI 동기 dispose 예외**: async-only-disposable 싱글턴을 `ServiceProvider.Dispose()`가 동기 처분하면 예외. `KeycloakClient`/`AdminClient`에 `IDisposable` 추가. `PooledConnectionLifetime`로 단일 HttpClient DNS 갱신(IHttpClientFactory 관심사 대응).
+- **MEDIUM — Task 11 release `if` env 스코프**: step-level env는 같은 step의 `if:`에 안 보임 → NuGet push 항상 스킵. job-level env로 승격.
+- **LOW/폴리시**: Task 8 `CreateAsync` async화 + 토큰 워밍(§5.1 "최초 호출 시 인증" 정합) · Task 6 claims dict `.ToDictionary((object?))` 투영(IntrospectAsync와 일관) · Task 1 의존성 `Microsoft.Extensions.Http`→`DependencyInjection.Abstractions`(IHttpClientFactory 미사용) · xUnit 2.9.3 deprecated(v2 의도적 유지).
+- **컴파일로 반증된 오탐(수정 안 함)**: `new Dictionary<string,object?>(result.Claims!)`는 CS8620 아님(Claims 비널) — 그래도 일관성 위해 투영형으로 통일. `(JsonWebToken)result.SecurityToken` deref·`ReadFromJsonAsync<T>` null-throw·record `required`+ToString override — 전부 실제 컴파일 통과 확인.
+- **CLEAN 판정**: 타입 일관성(전 크로스태스크 참조 일치), 플레이스홀더(없음), Keycloak.AuthServices.Sdk 2.7.0 admin API(전부 소스 검증), Testcontainers/WireMock/coverlet 툴링 — 결함 없음.
 
 
 

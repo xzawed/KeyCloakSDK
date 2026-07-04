@@ -20,7 +20,7 @@ Keycloak을 위한 **C#/.NET용 SDK**를 만든다. Java(`keycloak-admin-client`
 - **TFM**: **`net8.0` 단일 타깃**(LTS — .NET 8/9/10 런타임에서 실행). 미래 멀티타깃은 열어두되 MVP는 net8.0 하나.
 - **오류**: **예외 기반**(Java와 유사) — `KeycloakException` 계급, 경계에서 하위 라이브러리 예외를 SDK 예외로 변환.
 - **동시성**: **async-first** — 모든 네트워크 메서드가 `async Task<T>` + `CancellationToken`(취소·데드라인). `CreateAuthorizationRequest`만 순수 동기. 별도 sync 표면 없음.
-- **DI**: 코어는 DI에 비의존(POCO 생성 `KeycloakClient.Create(config)`)이되, `Microsoft.Extensions.DependencyInjection`용 `services.AddKeycloak(...)` 확장을 **같은 패키지에 포함**(`IHttpClientFactory` 통합).
+- **DI**: 코어는 DI에 비의존(POCO 생성 `KeycloakClient.Create(config)`)이되, `Microsoft.Extensions.DependencyInjection`용 `services.AddKeycloak(config)` 확장을 **같은 패키지에 포함**(`KeycloakClient` 싱글턴 등록 — 단일 장수명 HttpClient + `PooledConnectionLifetime`, §6 참조).
 
 ---
 
@@ -47,7 +47,7 @@ Keycloak을 위한 **C#/.NET용 SDK**를 만든다. Java(`keycloak-admin-client`
 | **auth 흐름** | `Duende.IdentityModel` | 8.1.0 | Apache-2.0 | OAuth2/OIDC 프로토콜 메시지(token/introspection/PKCE 헬퍼). 순수 프로토콜 라이브러리(무료·상용 IdentityServer와 별개). `HttpClient` 확장(`RequestClientCredentialsTokenAsync` 등). |
 | **jwt** | `Microsoft.IdentityModel.JsonWebTokens` + `Microsoft.IdentityModel.Protocols.OpenIdConnect` | 8.19.1 | MIT | `JsonWebTokenHandler.ValidateTokenAsync` + `TokenValidationParameters`(우리가 강화). JWKS는 `ConfigurationManager<OpenIdConnectConfiguration>`(내장 캐시 + `AutomaticRefreshInterval`/`RefreshInterval` rate-limit → DoS-safe). MS 유지·ASP.NET Core와 동일 스택. |
 | **admin** | `Keycloak.AuthServices.Sdk` | **2.7.0** | MIT | Keycloak Admin REST 타입드 클라이언트. **⚠️ 3.0.0은 net10.0 전용(net8.0 소비 불가) → net8.0 최종 빌드 2.7.0으로 핀**(API 동일: 같은 `Keycloak.AuthServices.Sdk.Admin` 네임스페이스·`KeycloakClient(HttpClient)` ctor·`KeycloakHttpClientException{int StatusCode}`). **타입드 인터페이스는 users/groups/realm-get 3종만**(`IKeycloakUserClient`/`IKeycloakGroupClient`/`IKeycloakRealmClient`) — clients/roles/realm-CRUD는 같은 bearer-authed `HttpClient`로 **raw REST**(대표타입 `Models.*Representation` 재사용). Refit/Kiota 아님(수제 HttpClient 래퍼). **단일 유지보수자(NikiforovAll) — 키맨 리스크, 버전 핀**. `KeycloakHttpClientException.StatusCode`→경계 변환. |
-| **DI/HTTP** | `Microsoft.Extensions.Http` + `Microsoft.Extensions.DependencyInjection.Abstractions` | 8.0.x | MIT | `AddKeycloak` 확장·`IHttpClientFactory`(소켓 고갈 회피·타임아웃). net8.0 정렬(8.0.x). 싱글턴은 `HttpClient`를 캡처하지 않고 `IHttpClientFactory.CreateClient(name)` per-call. |
+| **DI** | `Microsoft.Extensions.DependencyInjection.Abstractions` | 8.0.2 | MIT | `AddKeycloak` 확장(`IServiceCollection`·`AddSingleton`). net8.0 정렬. HttpClient 전략은 §6(단일 장수명 + `PooledConnectionLifetime`) — `IHttpClientFactory` 미사용(스테이트풀 재사용 클라이언트에 부적합, 리뷰 확정). |
 | **통합테스트** | `Testcontainers.Keycloak` | 4.13.0 | MIT | **공식 .NET Testcontainers Keycloak 모듈**. `new KeycloakBuilder("quay.io/keycloak/keycloak:26.6")`(명시 이미지 필수 — 기본 21.1은 obsolete)·`.WithResourceMapping(realm.json, "/opt/keycloak/data/import/")`·`.WithCommand("--import-realm")`(start-dev에 append). Java/Python/Node/Go `it-realm-realm.json` 재사용. |
 | **단위테스트** | `xUnit 2.9.3` (+ `xunit.runner.visualstudio 3.1.5`) · `WireMock.Net 2.11.0` · `coverlet.msbuild 10.0.1`(임계값 강제) · `Microsoft.NET.Test.Sdk 18.7.0` | (핀) | Apache-2.0/MIT | xUnit(.NET 관용 러너·`IAsyncLifetime`). 토큰/JWKS 엔드포인트 스텁은 `WireMock.Net`(HTTP 목). 커버리지 임계값은 `coverlet.msbuild`(`coverlet.collector`는 임계값 강제 불가)로 `[*]…Auth.*`/`…Admin.*` 제외 후 강제. |
 
@@ -140,20 +140,21 @@ public sealed record TokenSet
     public required string AccessToken { get; init; }
     public required string TokenType   { get; init; }
     public long ExpiresIn  { get; init; }   // 상대(초)
-    public long ExpiresAt  { get; init; }   // 절대(epoch 초) — 0이면 미상
+    public long? ExpiresAt { get; init; }   // 절대(epoch 초) — null이면 미상(Node number|undefined 동형)
     public string? RefreshToken { get; init; }
     public string? IdToken      { get; init; }   // OIDC id_token(auth-code/refresh)
     public string? Scope        { get; init; }
     public bool IsExpired(long nowSec, long skewSec);
     public override string ToString();       // ⚠️ access/refresh 마스킹 — record 기본 ToString override 필수
+    // + JsonConverter로 JSON 직렬화(로그/Serilog destructuring)에서도 마스킹
 }
 
 public sealed record ValidatedToken(
     string Subject, IReadOnlyList<string> Audience, string Issuer,
-    long ExpiresAt /*exp*/, long IssuedAt /*iat*/, IReadOnlyDictionary<string, object> Claims);
+    long? ExpiresAt /*exp*/, long? IssuedAt /*iat*/, IReadOnlyDictionary<string, object?> Claims);
 
 public sealed record IntrospectionResult(
-    bool Active, string? Username, string? ClientId, IReadOnlyDictionary<string, object> Claims);
+    bool Active, string? Username, string? ClientId, IReadOnlyDictionary<string, object?> Claims);
 
 public sealed record AuthorizationRequest(   // CreateAuthorizationRequest 반환
     string Url, string CodeVerifier, string State, string Nonce);
@@ -161,16 +162,16 @@ public sealed record AuthorizationRequest(   // CreateAuthorizationRequest 반�
 
 값 타입은 Java/Python/Node/Go와 동형(`ExpiresAt`/`IdToken`/`IsExpired`·`Username`/`ClientId`·`exp`/`iat` 포함).
 
-> **⚠️ record 마스킹 함정(핵심 보안 불변식)**: C# `record`는 컴파일러가 **모든 프로퍼티를 그대로 찍는 `ToString()`을 자동 생성**한다 — `TokenSet`을 로그에 넣으면 access/refresh 토큰 전체가 평문 노출된다. `TokenSet`과 `KeycloakConfig`는 반드시 `ToString()`을 override해 토큰/시크릿을 `***`로 마스킹한다(Go `Stringer` 필수와 동일 이유). 단위 테스트로 회귀 가드.
+> **⚠️ record 마스킹 함정(핵심 보안 불변식)**: C# `record`는 컴파일러가 **모든 프로퍼티를 그대로 찍는 `ToString()`을 자동 생성**한다 — `TokenSet`을 로그에 넣으면 access/refresh 토큰 전체가 평문 노출된다. `TokenSet`과 `KeycloakConfig`는 반드시 `ToString()`을 override해 토큰/시크릿을 `***`로 마스킹한다(Go `Stringer` 필수와 동일 이유). **추가로 `JsonConverter<T>`로 JSON 직렬화 경로(구조적 로깅·Serilog `{@x}` destructuring)에서도 마스킹**(Node `toJSON` 동형 — ToString만으로는 STJ가 프로퍼티를 그대로 직렬화해 누출). 단위 테스트로 회귀 가드(`ToString`·`JsonSerializer.Serialize` 둘 다).
 
 ### 5.3 결합 규칙
 
-`admin`은 `auth`를 직접 모른다 — `ITokenProvider` 인터페이스로만 연결.
+`admin`은 `auth`를 직접 모른다 — `ITokenProvider` 인터페이스로만 연결(기본 소스는 `AuthClient : ITokenSource`).
 
 ```csharp
 public interface ITokenProvider
 {
-    Task<string> GetTokenAsync(CancellationToken ct = default);
+    Task<string> GetAccessTokenAsync(CancellationToken ct = default);   // Node getAccessToken() 동형
 }
 ```
 
@@ -202,14 +203,14 @@ public sealed class KeycloakTransportException : KeycloakException { }          
 
 ## 6. 보안 불변식 (§4 · 게차 준수)
 
-- **마스킹**: 토큰/시크릿은 `ToString()`/로그·예외 메시지에 **완전 불투명 `***`**(접두 노출 없음). **`record` 자동 `ToString()`이 전체 노출하므로 `TokenSet`·`KeycloakConfig`는 override 필수**(§5.2 함정). `ClientSecret`은 `string`(SecureString은 .NET에서 비권장 — 하위 라이브러리가 `string` 요구, Java char[]와 같은 심층방어 경계 한계 문서화).
+- **마스킹**: 토큰/시크릿은 `ToString()`/로그·예외 메시지에 **완전 불투명 `***`**(접두 노출 없음). **`record` 자동 `ToString()`이 전체 노출하므로 `TokenSet`·`KeycloakConfig`는 `ToString()` override + `JsonConverter<T>` 둘 다 필수**(§5.2 함정 — JSON 직렬화/Serilog destructuring 경로도 차단). `ClientSecret`은 `string`(SecureString은 .NET에서 비권장 — 하위 라이브러리가 `string` 요구, Java char[]와 같은 심층방어 경계 한계 문서화).
 - **TLS 검증 기본 on**: `HttpClient`/`HttpClientHandler` 기본값이 https 인증서 검증. `ServerUrl`이 `http://`일 때만 완화(로컬/테스트). 커스텀 핸들러로 검증 비활성화하지 않는다.
 - **JWT 강화(`JwtValidator.cs`)**: `JsonWebTokenHandler.ValidateTokenAsync` + 명시적 `TokenValidationParameters` —
   - `ValidAlgorithms = ["RS256"]`(알고리즘 핀, 헤더 `alg` 불신) · `RequireSignedTokens = true`(none/미서명 거부)
   - `ValidateIssuer = true` + `ValidIssuer`(정확일치) · `ValidateAudience = true` + `ValidAudiences`(clientId 포함검사, 다중 aud 수용)
   - `RequireExpirationTime = true`(exp 필수) · `ValidateLifetime = true` · `ClockSkew`(기본 30s)
   - **JWKS DoS-안전**: `ConfigurationManager<OpenIdConnectConfiguration>`의 내장 캐시 + `AutomaticRefreshInterval`/최소 `RefreshInterval`로 rate-limit(서명 위조 토큰마다 IdP를 때리지 않음). issuer(realm)당 `ConfigurationManager` 캐시.
-- **admin 타임아웃 주입**: `KeycloakConfig`의 connect/read 타임아웃을 `HttpClient.Timeout`에 주입 + 모든 호출에 `CancellationToken` 전달(무한대기 방지). `IHttpClientFactory`로 소켓 고갈 회피.
+- **admin 타임아웃 주입**: `KeycloakConfig`의 connect/read 타임아웃을 `HttpClient.Timeout`에 주입 + 모든 호출에 `CancellationToken` 전달(무한대기 방지). **HttpClient 전략(딥리서치·리뷰 확정)**: 단일 서버를 가리키는 SDK 클라이언트는 **장수명 `HttpClient` 1개 재사용**이 관용 — `SocketsHttpHandler.PooledConnectionLifetime`(예: 5분)로 커넥션을 주기 재활용해 DNS 변경도 반영(캡처 싱글턴의 `IHttpClientFactory` 관심사 대응). `AddKeycloak`은 `IServiceCollection`에 `KeycloakClient` 싱글턴만 등록(`IHttpClientFactory` 강제 안 함 — 스테이트풀 재사용 클라이언트에 부적합). 팩토리 관리를 원하면 소비자가 `KeycloakClient.Create`를 직접 사용.
 - **single-flight**: 만료 시점 토큰 갱신을 `SemaphoreSlim`으로 중복 제거.
 - **CI 회귀 가드**: 마스킹(record ToString)·TLS·JWT 강화·JWKS rate-limit 단위 테스트를 머지 차단 잡으로.
 
