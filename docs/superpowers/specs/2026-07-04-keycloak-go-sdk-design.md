@@ -67,15 +67,14 @@ go/
 ├─ oidc.go                  # 엔드포인트 조립(네트워크 없음)
 ├─ jwt.go                   # Validator — go-jose 자체 강화 + DoS-safe JWKS 캐시
 ├─ auth.go                  # AuthClient — x/oauth2 래핑 + 수동 introspect/logout
-├─ admin/
-│  ├─ admin.go              # AdminClient + Raw() + call(경계변환)
-│  └─ users.go clients.go realms.go roles.go groups.go
+├─ admin.go                 # AdminClient + Raw() + call(경계변환)
+├─ admin_users.go admin_clients.go admin_realms.go admin_roles.go admin_groups.go
 ├─ client.go                # Client 통합 진입점(Auth 즉시·Admin 지연·Close)
 ├─ example_test.go          # 실행 가능한 godoc 예제
 └─ internal/testsupport/    # it-realm-realm.json(Java/Python/Node 재사용) + 컨테이너 하네스
 ```
 
-각 파일은 단일 책임. 파사드(`client.go`·`admin/admin.go`) 뒤에 하위 타입 은닉. 단위테스트는 각 파일 옆 `*_test.go`(Go 관용, 화이트박스 `package keycloak` + 블랙박스 `package keycloak_test` 병용).
+각 파일은 단일 책임. 파사드(`client.go`·`admin.go`) 뒤에 하위 타입 은닉. **전체가 단일 `package keycloak`**(admin을 서브패키지로 두면 `Client.Admin`이 `*AdminClient`를 반환하며 admin이 root 타입을 참조해 **import 순환** — Go 금지 — 이 발생하므로 `admin_*.go` 파일로 같은 패키지에 둔다). 단위테스트는 각 파일 옆 `*_test.go`(Go 관용, 화이트박스 `package keycloak` + 블랙박스 `package keycloak_test` 병용).
 
 ---
 
