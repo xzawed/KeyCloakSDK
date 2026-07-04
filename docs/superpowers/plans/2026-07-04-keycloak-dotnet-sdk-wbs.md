@@ -273,12 +273,14 @@ public class ErrorsTests
 ```csharp
 namespace Xzawed.Keycloak;
 
-/// <summary>Opaque masking for secrets and tokens — never exposes length or prefix.</summary>
-public static class Masking
+/// <summary>Opaque masking for secrets and tokens — never exposes length or prefix.
+/// Internal: an implementation detail (consumed by config/tokens/errors), not public API (Node barrel hides it).</summary>
+internal static class Masking
 {
     public static string Mask(string? value) => "***";
 }
 ```
+(테스트는 별도 어셈블리지만 `InternalsVisibleTo`(Task 1)로 접근 가능.)
 `KeycloakException.cs`:
 ```csharp
 namespace Xzawed.Keycloak;
