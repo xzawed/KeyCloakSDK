@@ -9,7 +9,7 @@ public sealed class KeycloakClient : IAsyncDisposable, IDisposable
     private readonly KeycloakConfig _config;
     private readonly HttpClient _httpClient;      // owned; used by Auth + JwtValidator
     private readonly SemaphoreSlim _adminGate = new(1, 1);
-    private AdminClient? _admin;
+    private volatile AdminClient? _admin;
     private ITokenProvider? _adminTokenProvider;
 
     public AuthClient Auth { get; }
