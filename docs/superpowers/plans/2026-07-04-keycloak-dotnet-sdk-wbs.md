@@ -1797,8 +1797,30 @@ public class KeycloakClientTests
         Assert.NotNull(kc.Auth);
         Assert.Same(kc, sp.GetRequiredService<KeycloakClient>()); // singleton
     }
+
+    // AdminAsync single-flight: 20 concurrent first-calls build ONE admin (one client-credentials warm).
+    [Fact]
+    public async Task AdminAsync_single_flight_and_caches()
+    {
+        using var mock = WireMock.Server.WireMockServer.Start();
+        mock.Given(WireMock.RequestBuilders.Request.Create()
+                .WithPath("/realms/r/protocol/openid-connect/token").UsingPost())
+            .RespondWith(WireMock.ResponseBuilders.Response.Create().WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBodyAsJson(new { access_token = "AT", token_type = "Bearer", expires_in = 300 })
+                .WithDelay(TimeSpan.FromMilliseconds(50)));   // hold the warm so callers pile up on the gate
+        await using var kc = KeycloakClient.Create(new KeycloakConfig
+        { ServerUrl = mock.Urls[0], Realm = "r", ClientId = "c", ClientSecret = "s" });
+
+        var admins = await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => kc.AdminAsync()));
+
+        Assert.All(admins, a => Assert.Same(admins[0], a));   // all callers get the same cached AdminClient
+        var tokenReqs = mock.LogEntries.Count(e => e.RequestMessage.Path == "/realms/r/protocol/openid-connect/token");
+        Assert.Equal(1, tokenReqs);                            // single-flight: exactly one client-credentials request
+    }
 }
 ```
+(`using System.Linq;`·`using System.Threading.Tasks;`가 필요. `AdminClient.CreateAsync`가 토큰을 워밍하므로 single-flight면 토큰 엔드포인트가 정확히 1회 호출됨.)
 
 - [ ] **Step 2: 실패 확인** → FAIL.
 - [ ] **Step 3: 구현**
@@ -1816,7 +1838,7 @@ public sealed class KeycloakClient : IAsyncDisposable, IDisposable
     private readonly KeycloakConfig _config;
     private readonly HttpClient _httpClient;      // owned; used by Auth + JwtValidator
     private readonly SemaphoreSlim _adminGate = new(1, 1);
-    private AdminClient? _admin;
+    private volatile AdminClient? _admin;   // volatile: fast-path read outside the gate (matches ClientCredentialsTokenProvider._cache)
     private ITokenProvider? _adminTokenProvider;
 
     public AuthClient Auth { get; }
