@@ -17,8 +17,14 @@ public class AuthClientTests : IDisposable
 
     private AuthClient Build(out KeycloakConfig cfg)
     {
-        cfg = new KeycloakConfig { ServerUrl = _mock.Urls[0], Realm = "r", ClientId = "c", ClientSecret = "s",
-                                   Scopes = new[] { "openid", "profile" } }.Normalized();
+        cfg = new KeycloakConfig
+        {
+            ServerUrl = _mock.Urls[0],
+            Realm = "r",
+            ClientId = "c",
+            ClientSecret = "s",
+            Scopes = new[] { "openid", "profile" }
+        }.Normalized();
         var ep = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm);
         var validator = new JwtValidator(JwtValidator.BuildParameters(ep.Issuer,
             new JwtValidatorOptions { Issuer = ep.Issuer, Audiences = new[] { "c" } }));

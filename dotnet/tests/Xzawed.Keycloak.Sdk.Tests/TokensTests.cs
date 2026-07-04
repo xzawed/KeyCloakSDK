@@ -57,4 +57,14 @@ public class TokensTests
         Assert.DoesNotContain("SECRETat", json);
         Assert.DoesNotContain("SECRETrt", json);
     }
+
+    // Covers the converter's null-ExpiresAt branch (WriteNull) — expiresIn 0 => ExpiresAt null,
+    // complementing the numeric branch exercised by JsonSerialize_masks_tokens (expiresIn 60).
+    [Fact]
+    public void JsonSerialize_null_expiresAt_writes_null()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            TokenSet.Create("AT", "Bearer", 0, null, null, null, 0));
+        Assert.Contains("\"expiresAt\":null", json);
+    }
 }

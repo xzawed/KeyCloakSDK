@@ -53,4 +53,16 @@ public class TokenProviderTests
         Assert.NotEqual(a, b);
         Assert.Equal(2, src.Calls);
     }
+
+    // Covers the non-null side of `clock ?? TimeProvider.System` (ctor injects the caller's clock).
+    [Fact]
+    public async Task Explicit_clock_injected_and_used()
+    {
+        var src = new CountingSource();
+        var p = new ClientCredentialsTokenProvider(src, skewSeconds: 0, clock: TimeProvider.System);
+        var a = await p.GetAccessTokenAsync();
+        var b = await p.GetAccessTokenAsync();
+        Assert.Equal(a, b);
+        Assert.Equal(1, src.Calls); // injected clock still drives the fresh-cache path
+    }
 }

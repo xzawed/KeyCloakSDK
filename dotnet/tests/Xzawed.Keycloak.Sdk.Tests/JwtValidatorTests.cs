@@ -84,6 +84,18 @@ public class JwtValidatorTests
         await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => v.ValidateAsync(Sign(noExp, Key)));
     }
 
+    // Covers the false side of `IssuedAt = TryGetPayloadValue<long>("iat", ...) ? iat : null`
+    // — a valid token that carries exp but omits iat.
+    [Fact]
+    public async Task Missing_iat_yields_null_issued_at()
+    {
+        var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        var noIat = $$"""{"iss":"{{Issuer}}","sub":"u","aud":"it-client","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""";
+        var vt = await v.ValidateAsync(Sign(noIat, Key));
+        Assert.NotNull(vt.ExpiresAt);
+        Assert.Null(vt.IssuedAt);
+    }
+
     [Fact]
     public async Task Unsigned_none_rejected()
     {

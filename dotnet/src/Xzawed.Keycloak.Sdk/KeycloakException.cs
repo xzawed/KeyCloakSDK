@@ -62,6 +62,6 @@ internal static class KeycloakErrorMapping
         404 => new KeycloakNotFoundException(message, cause),
         409 => new KeycloakConflictException(message, cause),
         403 => new KeycloakForbiddenException(message, cause),
-        _   => new KeycloakAdminException(status, $"HTTP {status}: {message}", cause),
+        _ => new KeycloakAdminException(status, $"HTTP {status}: {message}", cause),
     };
 }

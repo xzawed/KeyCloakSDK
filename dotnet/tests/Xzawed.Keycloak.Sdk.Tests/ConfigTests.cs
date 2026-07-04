@@ -52,4 +52,21 @@ public class ConfigTests
         Assert.Contains("***", json);
         Assert.DoesNotContain("supersecret", json);
     }
+
+    // Covers the converter's null-secret branch (WriteNull) — Base() has no ClientSecret.
+    [Fact]
+    public void JsonSerialize_null_secret_writes_null()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(Base());
+        Assert.Contains("\"clientSecret\":null", json);
+    }
+
+    // Covers the converter's foreach body branch (non-empty Scopes) vs the empty-Scopes skip above.
+    [Fact]
+    public void JsonSerialize_writes_scopes()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(Base() with { Scopes = new[] { "openid", "profile" } });
+        Assert.Contains("openid", json);
+        Assert.Contains("profile", json);
+    }
 }
