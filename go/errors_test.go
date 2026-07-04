@@ -28,10 +28,31 @@ func TestAdminErrorAs(t *testing.T) {
 	}
 }
 
-func TestErrorUnwrap(t *testing.T) {
+func TestErrorMessagesAndUnwrap(t *testing.T) {
 	cause := errors.New("boom")
-	err := &AuthError{Msg: "x", Cause: cause}
-	if !errors.Is(err, cause) {
-		t.Fatal("Unwrap must expose the cause chain")
+	msgs := []error{
+		&ConfigError{Msg: "c"},
+		&AuthError{Msg: "a", Cause: cause},
+		&TokenValidationError{Msg: "t", Cause: cause},
+		&AdminError{StatusCode: 500, Msg: "m", Cause: cause},
+		&TransportError{Msg: "x", Cause: cause},
+	}
+	for _, e := range msgs {
+		if e.Error() == "" {
+			t.Errorf("%T: Error() must be non-empty", e)
+		}
+	}
+	// Unwrap exposes the cause chain for the wrapping error types.
+	for _, e := range []error{
+		&AuthError{Cause: cause}, &TokenValidationError{Cause: cause},
+		&AdminError{Cause: cause}, &TransportError{Cause: cause},
+	} {
+		if !errors.Is(e, cause) {
+			t.Errorf("%T: Unwrap must expose the cause", e)
+		}
+	}
+	// AdminError.Is returns false for a non-sentinel target.
+	if errors.Is(&AdminError{StatusCode: 404}, errors.New("other")) {
+		t.Error("AdminError.Is must not match an arbitrary target")
 	}
 }

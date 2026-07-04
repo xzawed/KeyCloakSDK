@@ -1,0 +1,47 @@
+name: Go Release
+
+# Go 모듈은 레지스트리 배포가 없다 — git 태그가 곧 릴리스(proxy.golang.org가 VCS에서 자동 캐시).
+# 모노레포 서브모듈이라 태그 형식은 `go/vX.Y.Z`이고, 모듈 버전은 `vX.Y.Z`로 해석된다.
+# ⚠️ 거버넌스: 실제 릴리스는 사람이 `go/v*` 태그를 push해야만 실행된다(human-gated).
+# 저장 시크릿 불필요(레지스트리 인증 없음). 소비자: `go get github.com/xzawed/KeyCloakSDK/go@vX.Y.Z`.
+on:
+  push:
+    tags: ['go/v*']
+
+jobs:
+  # 발행 전 게이트: 태그된 커밋이 green이 아니면 릴리스하지 않는다.
+  verify:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: go } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: go/go.sum
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # GitHub Release 생성에 필요
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#go/}"   # go/v0.1.0 → v0.1.0
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Go SDK ${version}" \
+            --notes "Keycloak Go SDK ${version} — \`go get github.com/xzawed/KeyCloakSDK/go@${version}\`"
+      - name: Warm the Go module proxy
+        run: |
+          version="${GITHUB_REF_NAME#go/}"
+          GOPROXY=proxy.golang.org GOFLAGS=-mod=mod go list -m "github.com/xzawed/KeyCloakSDK/go@${version}" || true
