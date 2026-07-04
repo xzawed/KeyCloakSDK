@@ -31,6 +31,7 @@ secring.*
 .env
 .env.*
 settings-security.xml
+.scamanager/token   # SCAManager 인증 토큰 — 로컬 전용(mode 600), 환경변수 SCAMANAGER_TOKEN 대안
 
 # ── SDD 진척 원장 (로컬 스크래치) ─────────────────────────────
 .superpowers/

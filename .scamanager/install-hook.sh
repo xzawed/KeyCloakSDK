@@ -14,12 +14,19 @@ CONFIG="${ROOT}/.scamanager/config.json"
 [ -f "${CONFIG}" ] || exit 0
 command -v python3 &>/dev/null || exit 0
 
-# config.json에서 값 추출 — python3 -c 에 CONFIG를 argv로 전달해 경로 주입 방지
+# config.json에서 server/repo 추출(비밀 아님) — python3 -c 에 CONFIG를 argv로 전달해 경로 주입 방지
 SERVER=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['server'])" "${CONFIG}" 2>/dev/null)
-TOKEN=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['token'])" "${CONFIG}" 2>/dev/null)
 REPO=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['repo'])" "${CONFIG}" 2>/dev/null)
 
+# 토큰(비밀)은 커밋된 config.json에 두지 않는다. 환경변수 SCAMANAGER_TOKEN 우선,
+# 없으면 gitignore된 로컬 파일 .scamanager/token(mode 600)에서 읽는다.
+TOKEN="${SCAMANAGER_TOKEN:-}"
+if [ -z "${TOKEN}" ] && [ -f "${ROOT}/.scamanager/token" ]; then
+    TOKEN=$(tr -d '\r\n' < "${ROOT}/.scamanager/token" 2>/dev/null || true)
+fi
+
 [ -n "${SERVER}" ] || exit 0
+[ -n "${TOKEN}" ] || { echo "⚠️  [SCAManager] 토큰 미설정(SCAMANAGER_TOKEN 또는 .scamanager/token) — 코드리뷰를 건너뜁니다." >&2; exit 0; }
 
 REPO_ENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "${REPO}")
 STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${TOKEN}" "${SERVER}/api/hook/verify?repo=${REPO_ENC}" 2>/dev/null)
