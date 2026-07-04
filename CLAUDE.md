@@ -251,6 +251,7 @@ dotnet/
 - ⚠️ **(C#) `POST /admin/realms`(신규 realm 생성)는 master realm 전용이다.** 어떤 realm의 service account(가장 넓은 realm-management 롤 포함)로도 403 — 기존 realm에 대한 연산이 아니라 전역 부트스트랩 권한이기 때문이다(E2E는 master realm bootstrap admin으로 검증).
 - ⚠️ **(C#) Duende.IdentityModel 확장 메서드는 예외를 던지지 않는다**(`resp.IsError` 검사 필요). Keycloak은 잘못된 client 자격증명에 **401**을 반환하므로(`ErrorType=Http`) OAuth 에러 코드는 `resp.Json["error"]`에서 읽어야 한다. PKCE 헬퍼는 라이브러리에 없어 수동 생성, introspection은 `IntrospectTokenAsync`, logout은 수동 POST다.
 - ⚠️ **(C#) SDK 10 기본 솔루션 포맷은 `.slnx`다** — `dotnet new sln --format sln`으로 구 포맷 `.sln`을 명시 생성해야 한다. `AnalysisLevel=8.0`으로 로컬(SDK 10)·CI(SDK 8) 애널라이저 밴드를 일치시킨다. `GenerateDocumentationFile`은 `IsTestProject != true`로 게이트해야 테스트 프로젝트의 public 멤버가 CS1591로 빌드 실패하지 않는다.
+- ⚠️ **(C#) `AddKeycloak(config)`는 `KeycloakClient`뿐 아니라 `KeycloakConfig`도 싱글턴으로 등록한다.** 소비자가 `IServiceCollection`에 자기 `KeycloakConfig`를 별도로 `AddSingleton`하면 등록이 중복돼 해석이 모호해질 수 있다 — `AddKeycloak` 호출 후에는 별도로 `KeycloakConfig`를 등록하지 말 것.
 
 ## 확정 의존성 (BOM으로 고정)
 
