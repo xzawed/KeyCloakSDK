@@ -20,8 +20,11 @@ public sealed class ClientCredentialsTokenProvider : ITokenProvider
     private readonly int _skewSeconds;
     private readonly TimeProvider _clock;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private string? _token;
-    private DateTimeOffset _expiresAt = DateTimeOffset.MinValue;
+    // token+expiry published as one immutable snapshot so the fast-path read is a single atomic
+    // reference read — no tearing of the multi-word DateTimeOffset on weak memory models (ARM64).
+    private volatile Cached? _cache;
+
+    private sealed record Cached(string Token, DateTimeOffset ExpiresAt);
 
     public ClientCredentialsTokenProvider(ITokenSource source, int skewSeconds = 30, TimeProvider? clock = null)
     {
@@ -32,20 +35,20 @@ public sealed class ClientCredentialsTokenProvider : ITokenProvider
 
     public async Task<string> GetAccessTokenAsync(CancellationToken ct = default)
     {
-        if (!IsExpired() && _token is { } cached) return cached;      // fast path, no gate
+        if (Fresh(_cache) is { } fast) return fast;                   // fast path, no gate
 
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (!IsExpired() && _token is { } fresh) return fresh;    // double-check under gate
+            if (Fresh(_cache) is { } fresh) return fresh;            // double-check under gate
 
             var ts = await _source.ClientCredentialsTokenAsync(ct).ConfigureAwait(false); // failure => not cached
-            _token = ts.AccessToken;
-            _expiresAt = _clock.GetUtcNow().AddSeconds(Math.Max(0, ts.ExpiresIn - _skewSeconds));
+            var expiresAt = _clock.GetUtcNow().AddSeconds(Math.Max(0, ts.ExpiresIn - _skewSeconds));
+            _cache = new Cached(ts.AccessToken, expiresAt);
             return ts.AccessToken;
         }
         finally { _gate.Release(); }
     }
 
-    private bool IsExpired() => _clock.GetUtcNow() >= _expiresAt;
+    private string? Fresh(Cached? c) => c is not null && _clock.GetUtcNow() < c.ExpiresAt ? c.Token : null;
 }

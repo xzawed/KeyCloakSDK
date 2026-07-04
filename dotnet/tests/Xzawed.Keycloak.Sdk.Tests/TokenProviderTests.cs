@@ -11,12 +11,14 @@ public class TokenProviderTests
     {
         public int Calls;
         public long ExpiresIn = 300;
+        public int DelayMs = 20;   // hold the flight so concurrent callers pile up on the gate
         private int _n;
-        public Task<TokenSet> ClientCredentialsTokenAsync(CancellationToken ct = default)
+        public async Task<TokenSet> ClientCredentialsTokenAsync(CancellationToken ct = default)
         {
             Interlocked.Increment(ref Calls);
+            if (DelayMs > 0) await Task.Delay(DelayMs, ct).ConfigureAwait(false);
             var tok = $"tok-{Interlocked.Increment(ref _n)}";
-            return Task.FromResult(TokenSet.Create(tok, "Bearer", ExpiresIn, null, null, null, 0));
+            return TokenSet.Create(tok, "Bearer", ExpiresIn, null, null, null, 0);
         }
     }
 
