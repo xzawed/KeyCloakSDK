@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>Xzawed.Keycloak.Sdk</PackageId>
+    <RootNamespace>Xzawed.Keycloak</RootNamespace>
+    <AssemblyName>Xzawed.Keycloak.Sdk</AssemblyName>
+    <Version>0.1.0</Version>
+    <Description>Keycloak OIDC authentication + Admin REST SDK for .NET.</Description>
+    <PackageTags>keycloak;oidc;oauth2;admin;jwt</PackageTags>
+    <!-- 공개 멤버 XML 문서 미작성 경고를 오류로 승격하지 않음(문서는 점진적으로) -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Duende.IdentityModel" Version="8.1.0" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.19.1" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.1" />
+    <PackageReference Include="Keycloak.AuthServices.Sdk" Version="2.7.0" />
+    <!-- AddKeycloak DI extension needs IServiceCollection/AddSingleton (DI.Abstractions), NOT IHttpClientFactory.
+         9.0.8 satisfies Keycloak.AuthServices.Sdk 2.7.0's transitive floor (>= 9.0.8); 9.0.x still supports net8.0. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.8" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Xzawed.Keycloak.Sdk.Tests" />
+  </ItemGroup>
+</Project>

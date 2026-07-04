@@ -1,8 +1,8 @@
 # 시작하기 (Getting Started)
 
-Keycloak polyglot SDK를 로컬에서 설치하고, 첫 토큰 발급 · JWT 검증 · 관리 API 호출까지 최소 코드로 실행하는 안내입니다. 이 SDK는 **여러 프로그래밍 언어**(현재 Java · Python)로 제공되며, 언어마다 관용적이되 개념·계층·흐름은 동형(isomorphic)입니다.
+Keycloak polyglot SDK를 로컬에서 설치하고, 첫 토큰 발급 · JWT 검증 · 관리 API 호출까지 최소 코드로 실행하는 안내입니다. 이 SDK는 **여러 프로그래밍 언어**(현재 Java · Python · Node.js · Go · C#/.NET)로 제공되며, 언어마다 관용적이되 개념·계층·흐름은 동형(isomorphic)입니다.
 
-> ⚠️ **두 SDK 모두 아직 미배포입니다(`0.1.0-SNAPSHOT` / `0.1.0`, human-gated 릴리스).** Maven Central·PyPI를 통한 설치는 아직 동작하지 않습니다. 현재는 **로컬 설치가 기본 경로**입니다(아래 각 언어의 "로컬 설치" 참고). 실배포 절차는 [DEPLOY.md](../../DEPLOY.md)를 참고하세요.
+> ⚠️ **다섯 SDK 모두 아직 미배포입니다(human-gated 릴리스).** Maven Central·PyPI·npm·Go 모듈 태그·NuGet을 통한 설치는 아직 동작하지 않습니다. 현재는 **로컬 설치가 기본 경로**입니다(아래 각 언어의 "로컬 설치" 참고). 실배포 절차는 [DEPLOY.md](../../DEPLOY.md)를 참고하세요.
 
 > 🖥️ **먼저 Keycloak *서버*가 필요합니다.** 이 SDK는 클라이언트 라이브러리라 **붙을 Keycloak 서버**가 있어야 동작합니다(서버는 이 SDK에 포함되지 않는 별도 완제품). 로컬 체험은 Docker 한 줄 `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`, **프로덕션 배포**는 [Keycloak 서버 배포 가이드](deploying-keycloak-server.md)를 참고하세요.
 
@@ -14,6 +14,7 @@ Keycloak polyglot SDK를 로컬에서 설치하고, 첫 토큰 발급 · JWT 검
 | **Python** | **3.10+** | `py.typed`(PEP 561) 포함 — 소비자 측 mypy 타입 검사 가능 |
 | **Node.js** | **20+** | ESM 전용 · async-only · `.d.ts` 타입 선언 포함 |
 | **Go** | **1.25+** | sync + `context.Context` · `x/oauth2` v0.36 요구 |
+| **C# / .NET** | **8+** | async-first(`Task<T>`+`CancellationToken`) · `net8.0` 타깃 |
 | (선택) Docker | — | **통합 테스트(Testcontainers)에만 필요**. SDK 사용 자체에는 불필요 |
 
 ---
@@ -311,11 +312,75 @@ func main() {
 
 > 오류 처리: 관리 API 실패는 `errors.Is(err, keycloak.ErrNotFound)`(·`ErrConflict`·`ErrForbidden`)로 분기하거나 `var ae *keycloak.AdminError; errors.As(err, &ae)`로 `ae.StatusCode`를 얻습니다. 네트워크 실패는 `*keycloak.TransportError`입니다.
 
+## C# / .NET
+
+### 1) 요구 런타임 — .NET 8+
+
+.NET **8 이상**(`net8.0`)이 필요합니다. async-first 관용(모든 네트워크 메서드가 `Task<T>` + 끝자리 `CancellationToken ct = default`를 받고, `CreateAuthorizationRequest`만 순수 동기). Docker는 통합 테스트에만 필요합니다.
+
+### 2) 로컬 설치 (현재 — 미배포)
+
+NuGet 미배포 상태이므로, 리포지토리를 클론한 뒤 소비 프로젝트에서 프로젝트 참조로 붙입니다:
+
+```bash
+dotnet add reference ../KeyCloakSDK/dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj
+# 로컬 빌드/테스트만 확인: cd dotnet && dotnet build && dotnet test --filter "Category!=Integration"   # 단위 58 + 커버리지 게이트
+```
+
+패키지 ID는 `Xzawed.Keycloak.Sdk`, 루트 네임스페이스는 `Xzawed.Keycloak`(admin은 `Xzawed.Keycloak.Admin` 서브네임스페이스)입니다.
+
+### 3) 배포 후 설치 (미래)
+
+NuGet 배포가 완료되면:
+
+```bash
+dotnet add package Xzawed.Keycloak.Sdk
+```
+
+> ⚠️ **아직 NuGet에 배포되지 않았습니다(human-gated).** 실제 배포는 사람이 `dotnet-v*` 태그를 push해 [`.github/workflows/dotnet-release.yml`](../../.github/workflows/dotnet-release.yml)를 트리거해야 실행됩니다(`NUGET_API_KEY` 시크릿 필요). 절차는 향후 [언어 지원 로드맵](../roadmap/language-support.md)을 참고하세요.
+
+### 4) 최소 사용 예
+
+```csharp
+using Keycloak.AuthServices.Sdk.Admin.Models;
+using Xzawed.Keycloak;
+
+var config = new KeycloakConfig
+{
+    ServerUrl = "https://kc.example.com",
+    Realm = "myrealm",
+    ClientId = "admin-cli",
+    ClientSecret = "changeme", // 실제 값은 환경변수/시크릿 매니저에서 로드할 것(ToString/JSON 직렬화는 자동 마스킹됨)
+};
+
+// await using: DisposeAsync()가 admin + auth 자원(HttpClient)까지 정리한다. (동기 using도 IDisposable로 지원.)
+await using var kc = KeycloakClient.Create(config);
+
+// 1) client-credentials 그랜트로 토큰 발급. TokenSet의 ToString()/JSON 직렬화는 자동 마스킹된다(AccessToken=***).
+var tokens = await kc.Auth.ClientCredentialsTokenAsync();
+Console.WriteLine(tokens);
+
+// 2) 발급받은 액세스 토큰을 자체 강화 검증(알고리즘 핀닝·iss 정확일치·aud 포함검사·exp 필수·클록 스큐).
+var vt = await kc.Auth.ValidateAsync(tokens.AccessToken);
+Console.WriteLine($"subject={vt.Subject} aud=[{string.Join(",", vt.Audience)}]");
+
+// 3) 관리 API — admin은 최초 접근 시 지연 생성된다(clientSecret 필요). CreateAsync()는 생성된 사용자 id를 반환.
+var admin = await kc.AdminAsync();
+var userId = await admin.Users.CreateAsync(new UserRepresentation { Username = "alice", Enabled = true });
+Console.WriteLine($"created userId={userId}");
+
+// (참고) 목록 조회
+var users = await admin.Users.SearchAsync(username: null, first: 0, max: 20);
+foreach (var u in users) Console.WriteLine($" - {u.Username}");
+```
+
+> 오류 처리: admin 실패는 `KeycloakNotFoundException`/`KeycloakConflictException`/`KeycloakForbiddenException`(모두 `KeycloakAdminException.StatusCode`를 가짐) 또는 네트워크 실패 시 `KeycloakTransportException`으로 분류됩니다. `admin.Raw`가 하위 `Keycloak.AuthServices.Sdk` 타입드 클라이언트로의 탈출구입니다.
+
 ---
 
 ## 다음 단계
 
-- **언어 지원 로드맵** — 현재 지원 언어와 향후 확장(깊이 우선: Java·Python·TypeScript/Node·Go 완료 → C# → PHP → Rust → Ruby, Kotlin은 JVM 재사용으로 선택적): [../roadmap/language-support.md](../roadmap/language-support.md)
-- **새 언어 추가 플레이북** — 기존 Java/Python/Node/Go와 동형의 품질로 언어를 추가하는 절차: [add-a-language-playbook.md](add-a-language-playbook.md)
+- **언어 지원 로드맵** — 현재 지원 언어와 향후 확장(깊이 우선: Java·Python·TypeScript/Node·Go·C#/.NET 완료 → PHP → Rust → Ruby, Kotlin은 JVM 재사용으로 선택적): [../roadmap/language-support.md](../roadmap/language-support.md)
+- **새 언어 추가 플레이북** — 기존 Java/Python/Node/Go/C#과 동형의 품질로 언어를 추가하는 절차: [add-a-language-playbook.md](add-a-language-playbook.md)
 
-> 언어 중립 API 계약(진실 원천)은 [설계 스펙 §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)에 정의되어 있습니다. 모든 언어는 이 계약을 구현하며, JWT 검증 강화(알고리즘 핀닝 · `none` 거부 · `iss` 정확일치 · `aud` 포함검사 · 클록 스큐 · DoS-안전 JWKS 재조회)는 언어 공통 필수 사항입니다. 현재 테스트 수: **Java 123개**(단위 117 + Testcontainers 통합 6) · **Python 235개**(단위 224 + 통합 11) · **Node 76개**(단위 71 + Testcontainers 통합 5) · **Go 41개**(단위 40 + Testcontainers 통합 1 — E2E, 전 흐름·5 admin 리소스).
+> 언어 중립 API 계약(진실 원천)은 [설계 스펙 §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)에 정의되어 있습니다. 모든 언어는 이 계약을 구현하며, JWT 검증 강화(알고리즘 핀닝 · `none` 거부 · `iss` 정확일치 · `aud` 포함검사 · 클록 스큐 · DoS-안전 JWKS 재조회)는 언어 공통 필수 사항입니다. 현재 테스트 수: **Java 123개**(단위 117 + Testcontainers 통합 6) · **Python 235개**(단위 224 + 통합 11) · **Node 76개**(단위 71 + Testcontainers 통합 5) · **Go 41개**(단위 40 + Testcontainers 통합 1 — E2E, 전 흐름·5 admin 리소스) · **C#/.NET 59개**(단위 58 + Testcontainers 통합 1 — E2E `Full_flow`, 전 흐름·5 admin 리소스).

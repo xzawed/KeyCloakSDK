@@ -1,0 +1,38 @@
+name: dotnet-ci
+on:
+  push:
+    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml']
+  pull_request:
+    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml']
+permissions:
+  contents: read
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore
+        run: dotnet restore dotnet/Keycloak.Sdk.sln
+      - name: Build (warnaserror)
+        run: dotnet build dotnet/Keycloak.Sdk.sln --no-restore -c Release
+      - name: Format check
+        run: dotnet format dotnet/Keycloak.Sdk.sln --verify-no-changes
+      - name: Unit tests + coverage gate
+        run: >
+          dotnet test dotnet/Keycloak.Sdk.sln --no-build -c Release
+          --filter "Category!=Integration"
+          /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura
+          /p:Threshold=\"90,85\" /p:ThresholdType=\"line,branch\" /p:ThresholdStat=minimum
+          /p:Exclude=\"[*]Xzawed.Keycloak.AuthClient,[*]Xzawed.Keycloak.Admin.*,[*]Xzawed.Keycloak.KeycloakClient\"
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Integration tests (Docker)
+        run: dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category=Integration"
