@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Added
+- **(Docs) Keycloak *서버* 배포 가이드 신설** — `docs/guides/deploying-keycloak-server.md`(단일 VM + Docker Compose 프로덕션: Keycloak 26.x + PostgreSQL + Caddy 자동 TLS, hostname/proxy-headers/health, 백업·업그레이드·SDK 연결). SDK는 클라이언트 라이브러리라 별도 Keycloak 서버가 필요하다는 흔한 혼란을 해소. getting-started·README에 링크. (2026-07-03)
 - **(Docs) 설치/시작 가이드·언어 확장 로드맵·add-a-language 플레이북 신설 + README front door 재구성.** `docs/guides/getting-started.md`(언어별 요구 런타임·로컬/배포후 설치·최소 사용 예), `docs/roadmap/language-support.md`(depth-first 전략·step-0 실배포 체크리스트·우선순위 TS/Node→Go→C#→PHP→Rust→Ruby·현황 매트릭스), `docs/guides/add-a-language-playbook.md`(새 언어를 Java/Python 품질로 추가하는 6단계 표준 절차 + G1~G6 매핑). README는 상세 QuickStart를 시작 가이드로 이관하고 요약+딥링크만 남김. (2026-07-03)
 
 ### Changed

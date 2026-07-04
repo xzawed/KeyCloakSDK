@@ -4,6 +4,8 @@ Keycloak polyglot SDK를 로컬에서 설치하고, 첫 토큰 발급 · JWT 검
 
 > ⚠️ **두 SDK 모두 아직 미배포입니다(`0.1.0-SNAPSHOT` / `0.1.0`, human-gated 릴리스).** Maven Central·PyPI를 통한 설치는 아직 동작하지 않습니다. 현재는 **로컬 설치가 기본 경로**입니다(아래 각 언어의 "로컬 설치" 참고). 실배포 절차는 [DEPLOY.md](../../DEPLOY.md)를 참고하세요.
 
+> 🖥️ **먼저 Keycloak *서버*가 필요합니다.** 이 SDK는 클라이언트 라이브러리라 **붙을 Keycloak 서버**가 있어야 동작합니다(서버는 이 SDK에 포함되지 않는 별도 완제품). 로컬 체험은 Docker 한 줄 `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`, **프로덕션 배포**는 [Keycloak 서버 배포 가이드](deploying-keycloak-server.md)를 참고하세요.
+
 ## 요구 런타임
 
 | 언어 | 최소 런타임 | 비고 |

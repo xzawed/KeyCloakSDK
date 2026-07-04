@@ -70,5 +70,6 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 기여·테스트·검증 게이트(머지 전 통과 항목·로컬 명령·PR 체크리스트)는 [CONTRIBUTING.md](CONTRIBUTING.md), 프로젝트 구조·아키텍처·빌드 명령·게차(gotchas)는 [CLAUDE.md](CLAUDE.md), 배포 절차는 [DEPLOY.md](DEPLOY.md)를 참고하세요.
 
 - 🚀 **설치·시작**: [docs/guides/getting-started.md](docs/guides/getting-started.md)
+- 🖥️ **Keycloak *서버* 배포**(SDK가 붙을 서버 — 단일 VM + Docker Compose 프로덕션): [docs/guides/deploying-keycloak-server.md](docs/guides/deploying-keycloak-server.md)
 - 🗺️ **지원 언어·확장 로드맵**(depth-first · TS/Node → Go → C# → PHP → Rust → Ruby): [docs/roadmap/language-support.md](docs/roadmap/language-support.md)
 - 🧩 **새 언어 추가 플레이북**(Java/Python 품질로 반복): [docs/guides/add-a-language-playbook.md](docs/guides/add-a-language-playbook.md)
