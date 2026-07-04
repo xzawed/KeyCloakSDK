@@ -9,6 +9,7 @@ Keycloak을 위한 **여러 프로그래밍 언어용 SDK**(polyglot). Keycloak�
 | **Java 21** (Maven) | ✅ 완료 · `main` 병합 (PR #1) | 공식 `keycloak-admin-client` + Nimbus OAuth2/OIDC SDK 래핑 | Maven Central `io.github.xzawed:keycloak-sdk` (human-gated) |
 | **Python 3.10+** | ✅ 완료 · `main` 병합 (PR #2 sync, PR #4 async) | `python-keycloak`(admin+OIDC) 래핑 + `joserfc` 자체 JWT 검증 | PyPI `keycloak-sdk` (human-gated) |
 | **Node.js 20+** (ESM) | ✅ 완료 · `main` 병합 (PR #12) | 공식 `@keycloak/keycloak-admin-client` + `openid-client` v6 래핑 + `jose` 자체 JWT 검증 | npm `@xzawed/keycloak-sdk` (human-gated) |
+| **Go 1.25+** | ✅ 완료 · `feature/go-sdk` | `Nerzal/gocloak` v13 + `golang.org/x/oauth2` 래핑 + `go-jose/v4` 자체 JWT 검증 | Go 모듈 `github.com/xzawed/KeyCloakSDK/go` (태그=릴리스, human-gated) |
 
 - **라이선스**: Apache-2.0
 
@@ -19,13 +20,14 @@ Keycloak을 위한 **여러 프로그래밍 언어용 SDK**(polyglot). Keycloak�
 - **Java**: 공식 `org.keycloak:keycloak-admin-client`(Admin) + Nimbus OAuth2/OIDC SDK(인증) 래핑.
 - **Python**: 성숙한 `python-keycloak`의 `KeycloakAdmin`(Admin) + `KeycloakOpenID`(인증) 래핑. sync + **async(`keycloak_sdk.aio`)** 모두 제공.
 - **Node.js**: 공식 `@keycloak/keycloak-admin-client`(Admin) + `openid-client` v6 함수형 API(인증) 래핑. ESM 전용·async-only.
-- **JWT 검증은 세 언어 모두 자체 강화 구현** — 알고리즘 핀닝(`none`/미서명 거부·헤더 불신), `iss` 정확일치, **`aud` 포함검사**(실제 Keycloak 토큰의 다중 aud 대응), 클록 스큐, DoS-안전 JWKS 재조회. (Java: Nimbus JOSE, Python: joserfc, Node: jose)
+- **Go**: `Nerzal/gocloak` v13(Admin) + `golang.org/x/oauth2`(인증) 래핑. sync + `context.Context`, 오류는 타입드 구조체 + 센티넬(`errors.Is`/`errors.As`).
+- **JWT 검증은 네 언어 모두 자체 강화 구현** — 알고리즘 핀닝(`none`/미서명 거부·헤더 불신), `iss` 정확일치, **`aud` 포함검사**(실제 Keycloak 토큰의 다중 aud 대응), `exp` 필수, 클록 스큐, DoS-안전 JWKS 재조회. (Java: Nimbus JOSE, Python: joserfc, Node: jose, Go: go-jose/v4)
 
 ## 설치 & 시작
 
 > 🚀 **전체 설치·시작 가이드 → [docs/guides/getting-started.md](docs/guides/getting-started.md)** — 언어별 요구 런타임 · 로컬/배포후 설치 · 최소 사용 예(토큰 발급 → JWT 검증 → admin CRUD)를 한곳에 정리했습니다. 아래는 요약입니다.
 
-**요구 런타임**: Java **JDK 21+**(`--release 21` 컴파일 — 이전 JDK는 `UnsupportedClassVersionError`) · Python **3.10+** · Node.js **20+**(ESM).
+**요구 런타임**: Java **JDK 21+**(`--release 21` 컴파일 — 이전 JDK는 `UnsupportedClassVersionError`) · Python **3.10+** · Node.js **20+**(ESM) · Go **1.25+**.
 
 ### Java (Maven)
 > ⚠️ `0.1.0-SNAPSHOT`은 아직 Maven Central 미배포(human-gated). 배포 전에는 `mvn -f java/pom.xml install -DskipITs=true`로 로컬 `~/.m2`에 설치해 사용하세요(Docker 불필요). 배포 절차는 [DEPLOY.md](DEPLOY.md) 참고.
@@ -53,9 +55,16 @@ cd node && npm ci && npm run build   # 현재(미배포) — 로컬 빌드 후 n
 # npm install @xzawed/keycloak-sdk    # 배포 후
 ```
 
+### Go (모듈)
+> ⚠️ 아직 릴리스 태그 없음(human-gated). Go는 레지스트리 없이 **태그=릴리스**(`proxy.golang.org` 자동 캐시).
+```bash
+cd go && go build ./... && go test ./...   # 현재(미배포) — 로컬 빌드/테스트
+# go get github.com/xzawed/KeyCloakSDK/go@v0.1.0   # 태그 push 후
+```
+
 ### 최소 사용 예
 
-토큰 발급 → JWT 검증 → admin CRUD의 **언어별 최소 예제와 async 사용법**은 시작 가이드에 있습니다: **[getting-started](docs/guides/getting-started.md)**. 실행 예제는 [`java/keycloak-sdk-examples`](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) · [`python/examples/quickstart.py`](python/examples/quickstart.py)(+[async](python/examples/async_quickstart.py)) · [`node/examples/quickstart.ts`](node/examples/quickstart.ts) 참고.
+토큰 발급 → JWT 검증 → admin CRUD의 **언어별 최소 예제와 async 사용법**은 시작 가이드에 있습니다: **[getting-started](docs/guides/getting-started.md)**. 실행 예제는 [`java/keycloak-sdk-examples`](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) · [`python/examples/quickstart.py`](python/examples/quickstart.py)(+[async](python/examples/async_quickstart.py)) · [`node/examples/quickstart.ts`](node/examples/quickstart.ts) · [`go/example_test.go`](go/example_test.go) 참고.
 
 ## 호환성
 
@@ -64,16 +73,17 @@ cd node && npm ci && npm run build   # 현재(미배포) — 로컬 빌드 후 n
 | Java `0.1.0-SNAPSHOT` | 26.6.x (통합테스트: 실제 **26.6.4**) | `keycloak-admin-client` **26.0.10** (서버와 독립 버전 트랙 — "26.6.x admin-client"는 없음) · Nimbus `oauth2-oidc-sdk` 11.37.2 |
 | Python `0.1.0` | 26.6.x (통합테스트: 실제 **26.6.4**) | `python-keycloak` **7.1.x** · `joserfc` 1.7.x · Python 3.10+ |
 | Node `0.1.0` | 26.6.x (통합테스트: 실제 **26.6**) | `@keycloak/keycloak-admin-client` **26.6.4** · `openid-client` **6.8.4** · `jose` **5.10.0** · Node 20+ |
+| Go `0.1.0` | 26.6.x (통합테스트: 실제 **26.6**) | `Nerzal/gocloak/v13` **13.9.0** · `golang.org/x/oauth2` **0.36.0** · `go-jose/v4` **4.1.4** · Go 1.25+ |
 
 SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 지원 서버 범위는 이 표로 안내합니다.
 
 ## 현재 상태
 
-**Java · Python · Node.js SDK 모두 완료 · `main` 병합**(Node PR #12). 각 언어 전 Phase(기반→core→auth→admin→facade→통합테스트→배포&문서) 구현, **실제 Keycloak 26.6(.4) Testcontainers 통합테스트 GREEN**, 로직 커버리지 게이트(라인 ≥90%/브랜치 ≥85%) 통과. Python은 sync + async(`keycloak_sdk.aio`) 모두 제공. Node는 ESM·async-only. **남은 것은 실배포뿐**(Maven Central·PyPI·npm, 사람 계정/키/토큰 필요 — [DEPLOY.md](DEPLOY.md)).
+**Java · Python · Node.js SDK 완료 · `main` 병합**(Node PR #12). **Go SDK 완료 · `feature/go-sdk`(PR 예정).** 각 언어 전 Phase(기반→core→auth→admin→facade→통합테스트→배포&문서) 구현, **실제 Keycloak 26.6(.4) Testcontainers 통합테스트 GREEN**, 로직 커버리지 게이트(라인 ≥90%/브랜치 ≥85%) 통과. Python은 sync + async(`keycloak_sdk.aio`) 모두 제공. Node는 ESM·async-only, Go는 sync + `context.Context`. **남은 것은 실배포뿐**(Maven Central·PyPI·npm·Go 모듈 태그, 사람 계정/키/토큰 필요 — [DEPLOY.md](DEPLOY.md)).
 
 - 📄 설계 스펙: [Java·Python 멀티랭 설계](docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md) · [Python](docs/superpowers/specs/2026-07-03-keycloak-python-sdk-design.md) · [Python async](docs/superpowers/specs/2026-07-03-keycloak-python-async-design.md)
 - 🗂️ 구현 계획(WBS): [docs/superpowers/plans/](docs/superpowers/plans/)
-- 📝 검증 로그: [Java](docs/governance/verification-log.md) · [Python](docs/governance/verification-log-python.md) · [Node](docs/governance/verification-log-node.md)
+- 📝 검증 로그: [Java](docs/governance/verification-log.md) · [Python](docs/governance/verification-log-python.md) · [Node](docs/governance/verification-log-node.md) · [Go](docs/governance/verification-log-go.md)
 
 ## 개발자 안내
 
@@ -81,5 +91,5 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 
 - 🚀 **설치·시작**: [docs/guides/getting-started.md](docs/guides/getting-started.md)
 - 🖥️ **Keycloak *서버* 배포**(SDK가 붙을 서버 — 단일 VM + Docker Compose 프로덕션): [docs/guides/deploying-keycloak-server.md](docs/guides/deploying-keycloak-server.md)
-- 🗺️ **지원 언어·확장 로드맵**(depth-first · TS/Node → Go → C# → PHP → Rust → Ruby): [docs/roadmap/language-support.md](docs/roadmap/language-support.md)
-- 🧩 **새 언어 추가 플레이북**(Java/Python 품질로 반복): [docs/guides/add-a-language-playbook.md](docs/guides/add-a-language-playbook.md)
+- 🗺️ **지원 언어·확장 로드맵**(depth-first · Java·Python·Node·Go 완료 → C# → PHP → Rust → Ruby): [docs/roadmap/language-support.md](docs/roadmap/language-support.md)
+- 🧩 **새 언어 추가 플레이북**(Java/Python/Node/Go 품질로 반복): [docs/guides/add-a-language-playbook.md](docs/guides/add-a-language-playbook.md)

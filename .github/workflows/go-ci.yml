@@ -1,0 +1,50 @@
+name: Go CI
+on:
+  push: { branches: [main], paths: ['go/**', '.github/workflows/go-ci.yml'] }
+  pull_request: { branches: [main], paths: ['go/**', '.github/workflows/go-ci.yml'] }
+jobs:
+  build:
+    name: Build + lint + unit (Go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: { go: ['1.25', '1.26'] } # 최소 지원(go.mod) + 최신 마이너
+    defaults: { run: { working-directory: go } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '${{ matrix.go }}'
+          cache-dependency-path: go/go.sum
+      - name: gofmt (format check)
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; echo '::error::gofmt formatting issues'; exit 1; }
+      - name: go vet
+        run: go vet ./...
+      # 린터를 `go run`으로 실행 — 러너의 Go(1.25/1.26)로 빌드되므로 golangci-lint가
+      # "built with lower Go than the module's go directive"로 거부하는 결합 문제를 피한다.
+      # 버전은 핀한다(재현성 + 공급망: @latest는 실행 시점의 임의 코드를 CI에서 실행하는 위험).
+      # Go 체크섬 DB(sum.golang.org)가 핀된 버전의 무결성을 검증한다. (.golangci.yml은 로컬용)
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
+      - name: gosec (보안 린터)
+        run: go run github.com/securego/gosec/v2/cmd/gosec@v2.27.1 -quiet ./...
+      - name: Unit tests + 커버리지 게이트 (로직 ≥90, 네트워크 경계 omit)
+        run: |
+          go test ./... -coverprofile=cover.out
+          # 네트워크 경계(auth/admin/client)는 통합테스트로 검증 → 커버리지 게이트에서 제외
+          grep -vE '/(auth|admin|admin_users|admin_clients|admin_realms|admin_roles|admin_groups|client)\.go:' cover.out > cover.logic.out
+          pct=$(go tool cover -func=cover.logic.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
+          echo "logic coverage: ${pct}%"
+          awk -v p="$pct" 'BEGIN { exit (p+0 < 90) }' || { echo "::error::logic coverage ${pct}% < 90%"; exit 1; }
+
+  integration:
+    name: Integration (testcontainers, 실제 Keycloak)
+    runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → testcontainers 동작
+    defaults: { run: { working-directory: go } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: go/go.sum
+      - name: Integration E2E (Docker, 실제 Keycloak 26.6)
+        run: go test -tags=integration -run TestE2E -count=1 ./...
