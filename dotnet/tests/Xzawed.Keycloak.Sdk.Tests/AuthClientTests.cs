@@ -1,4 +1,7 @@
+using System.Security.Cryptography;
 using System.Threading.Tasks;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 using WireMock.Server;
@@ -93,5 +96,62 @@ public class AuthClientTests : IDisposable
         _mock.Given(Request.Create().WithPath("/realms/r/protocol/openid-connect/logout").UsingPost())
              .RespondWith(Response.Create().WithStatusCode(400));
         await Assert.ThrowsAsync<KeycloakAuthException>(() => auth.LogoutAsync("rt"));
+    }
+
+    private AuthClient BuildWithKey(out KeycloakConfig cfg, SecurityKey signingKey)
+    {
+        cfg = new KeycloakConfig { ServerUrl = _mock.Urls[0], Realm = "r", ClientId = "c", ClientSecret = "s" }.Normalized();
+        var ep = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm);
+        var tvp = JwtValidator.BuildParameters(ep.Issuer, new JwtValidatorOptions { Issuer = ep.Issuer, Audiences = new[] { "c" } });
+        tvp.IssuerSigningKey = signingKey;
+        tvp.ConfigurationManager = null;
+        return new AuthClient(cfg, ep, new JwtValidator(tvp), _http);
+    }
+
+    private static string SignIdToken(string issuer, string audience, string nonce, SecurityKey key)
+    {
+        var handler = new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false };
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var payload = $$"""{"iss":"{{issuer}}","sub":"u","aud":"{{audience}}","nonce":"{{nonce}}","exp":{{now + 300}},"iat":{{now}}}""";
+        return handler.CreateToken(payload, new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
+    }
+
+    private void StubToken(string idToken) =>
+        _mock.Given(Request.Create().WithPath("/realms/r/protocol/openid-connect/token").UsingPost())
+             .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                 .WithBodyAsJson(new { access_token = "AT", token_type = "Bearer", expires_in = 300, id_token = idToken }));
+
+    [Fact]
+    public async Task ExchangeCode_valid_nonce_matches()
+    {
+        var key = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k1" };
+        var auth = BuildWithKey(out var cfg, key);
+        var ep = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm);
+        StubToken(SignIdToken(ep.Issuer, "c", "the-nonce", key));
+        var ts = await auth.ExchangeCodeAsync("code", "https://app/cb", "verifier", nonce: "the-nonce");
+        Assert.Equal("AT", ts.AccessToken);
+    }
+
+    [Fact]
+    public async Task ExchangeCode_nonce_mismatch_throws()
+    {
+        var key = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k1" };
+        var auth = BuildWithKey(out var cfg, key);
+        var ep = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm);
+        StubToken(SignIdToken(ep.Issuer, "c", "server-nonce", key));
+        await Assert.ThrowsAsync<KeycloakAuthException>(
+            () => auth.ExchangeCodeAsync("code", "https://app/cb", "verifier", nonce: "expected-nonce"));
+    }
+
+    [Fact]
+    public async Task ExchangeCode_untrusted_idtoken_throws()
+    {
+        var trusted = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k1" };
+        var attacker = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k1" };
+        var auth = BuildWithKey(out var cfg, trusted);
+        var ep = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm);
+        StubToken(SignIdToken(ep.Issuer, "c", "n", attacker)); // signed by wrong key => validation fails
+        await Assert.ThrowsAsync<KeycloakAuthException>(
+            () => auth.ExchangeCodeAsync("code", "https://app/cb", "verifier", nonce: "n"));
     }
 }

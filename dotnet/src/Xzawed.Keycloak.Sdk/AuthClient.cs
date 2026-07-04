@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -135,8 +134,11 @@ public sealed class AuthClient : ITokenSource
         {
             throw new KeycloakAuthException($"Logout request error: {ex.Message}", ex);
         }
-        if (!resp.IsSuccessStatusCode)
-            throw new KeycloakAuthException($"Logout failed (HTTP {(int)resp.StatusCode})");
+        using (resp)
+        {
+            if (!resp.IsSuccessStatusCode)
+                throw new KeycloakAuthException($"Logout failed (HTTP {(int)resp.StatusCode})");
+        }
     }
 
     public Task<ValidatedToken> ValidateAsync(string accessToken, CancellationToken ct = default)
