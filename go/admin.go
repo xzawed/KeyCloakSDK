@@ -82,12 +82,15 @@ func run(fn func() error) error {
 	return err
 }
 
-// toSDKError converts a *gocloak.APIError (HTTP status) to *AdminError (matching
-// the ErrNotFound/ErrConflict/ErrForbidden sentinels via Is); anything else
-// becomes *TransportError.
+// toSDKError converts a gocloak error to the SDK taxonomy. gocloak wraps every
+// failure — including network/transport failures — into *gocloak.APIError, using
+// Code 0 when there was no HTTP response. So an APIError with a real HTTP status
+// (>0) becomes *AdminError (matching the sentinels via Is), while a Code-0 error
+// or any non-APIError becomes *TransportError (matching Java/Python/Node, where
+// network failures map to a transport-level error).
 func toSDKError(err error) error {
 	var apiErr *gocloak.APIError
-	if errors.As(err, &apiErr) {
+	if errors.As(err, &apiErr) && apiErr.Code != 0 {
 		return &AdminError{StatusCode: apiErr.Code, Msg: apiErr.Message, Cause: err}
 	}
 	return &TransportError{Msg: err.Error(), Cause: err}

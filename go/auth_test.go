@@ -104,13 +104,28 @@ func TestClientCredentialsToken(t *testing.T) {
 
 func TestExchangeCodeAndRefresh(t *testing.T) {
 	f := newAuthFixture(t, "sekret")
+	var form url.Values
+	f.lastFn = func(path string, fm url.Values) {
+		if path == "token" {
+			form = fm
+		}
+	}
+
 	ts, err := f.auth.ExchangeCode(context.Background(), "the-code", "https://app/cb", "verifier")
 	if err != nil || ts.AccessToken != "AT" {
 		t.Fatalf("exchange: %+v %v", ts, err)
 	}
+	if form.Get("grant_type") != "authorization_code" || form.Get("code") != "the-code" ||
+		form.Get("code_verifier") != "verifier" || form.Get("redirect_uri") != "https://app/cb" {
+		t.Fatalf("exchange must send authorization_code + code + PKCE verifier + redirect_uri: %v", form)
+	}
+
 	ts2, err := f.auth.Refresh(context.Background(), "old-rt")
 	if err != nil || ts2.AccessToken != "AT" {
 		t.Fatalf("refresh: %+v %v", ts2, err)
+	}
+	if form.Get("grant_type") != "refresh_token" || form.Get("refresh_token") != "old-rt" {
+		t.Fatalf("refresh must send refresh_token grant: %v", form)
 	}
 }
 

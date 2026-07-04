@@ -140,6 +140,49 @@ func TestE2E(t *testing.T) {
 		t.Fatalf("get after delete must be ErrNotFound, got %v", err)
 	}
 
+	// 4b) clients / realms / roles / groups resources (thin gocloak delegations).
+	if r, err := admin.Realms.Get(ctx, "it-realm"); err != nil || r.Realm == nil || *r.Realm != "it-realm" {
+		t.Fatalf("realms.Get: %+v %v", r, err)
+	}
+	cid, err := admin.Clients.Create(ctx, gocloak.Client{ClientID: gocloak.StringP("e2e-client")})
+	if err != nil {
+		t.Fatalf("clients.Create: %v", err)
+	}
+	if _, err := admin.Clients.Get(ctx, cid); err != nil {
+		t.Fatalf("clients.Get: %v", err)
+	}
+	if fc, err := admin.Clients.FindByClientID(ctx, "e2e-client"); err != nil || len(fc) == 0 {
+		t.Fatalf("clients.FindByClientID: %d %v", len(fc), err)
+	}
+	if err := admin.Clients.Delete(ctx, cid); err != nil {
+		t.Fatalf("clients.Delete: %v", err)
+	}
+	if err := admin.Roles.Create(ctx, gocloak.Role{Name: gocloak.StringP("e2e-role")}); err != nil {
+		t.Fatalf("roles.Create: %v", err)
+	}
+	if _, err := admin.Roles.Get(ctx, "e2e-role"); err != nil {
+		t.Fatalf("roles.Get: %v", err)
+	}
+	if rl, err := admin.Roles.List(ctx); err != nil || len(rl) == 0 {
+		t.Fatalf("roles.List: %d %v", len(rl), err)
+	}
+	if err := admin.Roles.Delete(ctx, "e2e-role"); err != nil {
+		t.Fatalf("roles.Delete: %v", err)
+	}
+	gid, err := admin.Groups.Create(ctx, gocloak.Group{Name: gocloak.StringP("e2e-group")})
+	if err != nil {
+		t.Fatalf("groups.Create: %v", err)
+	}
+	if _, err := admin.Groups.Get(ctx, gid); err != nil {
+		t.Fatalf("groups.Get: %v", err)
+	}
+	if gl, err := admin.Groups.List(ctx, 0, 20); err != nil || len(gl) == 0 {
+		t.Fatalf("groups.List: %d %v", len(gl), err)
+	}
+	if err := admin.Groups.Delete(ctx, gid); err != nil {
+		t.Fatalf("groups.Delete: %v", err)
+	}
+
 	// 5) Raw() escape hatch reaches endpoints the facade does not wrap.
 	realm, err := admin.Raw().GetRealm(ctx, mustToken(t, admin, ctx), "it-realm")
 	if err != nil || realm.Realm == nil || *realm.Realm != "it-realm" {

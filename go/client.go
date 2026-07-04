@@ -2,7 +2,9 @@ package keycloak
 
 import (
 	"context"
+	"net/http"
 	"sync"
+	"time"
 
 	jose "github.com/go-jose/go-jose/v4"
 	"golang.org/x/sync/singleflight"
@@ -31,6 +33,9 @@ func New(cfg Config) (*Client, error) {
 	v := newValidator(validatorOptions{
 		jwksURI: ep.jwks, issuer: ep.issuer, audience: cfg.ClientID,
 		allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: cfg.ClockSkew,
+		// Bound the JWKS fetch by the configured read timeout (a hung IdP must not
+		// block Validate forever — the same invariant as the admin/auth clients).
+		httpClient: &http.Client{Timeout: time.Duration(cfg.ReadTimeout) * time.Millisecond},
 	})
 	return &Client{cfg: cfg, Auth: newAuthClient(cfg, v)}, nil
 }

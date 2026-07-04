@@ -153,18 +153,41 @@ func TestValidateForgedSignatureNoRefetch(t *testing.T) {
 	}
 }
 
-func TestValidateUnknownKidRateLimited(t *testing.T) {
+func TestValidateUnknownKidRefetchOnceThenRateLimited(t *testing.T) {
 	f := newJWTFixture(t)
 	v := f.validator(t, time.Hour) // large window
 	good := f.sign(t, f.priv, "k1", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
-	_, _ = v.Validate(context.Background(), good) // loads JWKS, sets forcedAt (recent)
-	before := atomic.LoadInt32(f.fetches)
-	unknown := f.sign(t, f.priv, "kX", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
-	if _, err := v.Validate(context.Background(), unknown); err == nil {
+	if _, err := v.Validate(context.Background(), good); err != nil {
+		t.Fatalf("initial: %v", err)
+	}
+	base := atomic.LoadInt32(f.fetches) // 1 — initial (non-forced) load; forcedAt not set
+
+	// First unknown kid → forced refetch ALLOWED (key-rotation recovery, like Python/Java).
+	unknown1 := f.sign(t, f.priv, "kX", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
+	if _, err := v.Validate(context.Background(), unknown1); err == nil {
 		t.Fatal("unknown kid must be rejected")
 	}
-	if got := atomic.LoadInt32(f.fetches); got != before {
-		t.Fatalf("unknown kid triggered a refetch within the rate-limit window (%d → %d)", before, got)
+	if got := atomic.LoadInt32(f.fetches); got != base+1 {
+		t.Fatalf("first unknown kid (rotation) must refetch once: %d → %d", base, got)
+	}
+
+	// Second unknown kid within the window → rate-limited (no refetch — DoS bound).
+	unknown2 := f.sign(t, f.priv, "kY", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
+	if _, err := v.Validate(context.Background(), unknown2); err == nil {
+		t.Fatal("unknown kid must be rejected")
+	}
+	if got := atomic.LoadInt32(f.fetches); got != base+1 {
+		t.Fatalf("second unknown kid within window must be rate-limited: got %d, want %d", got, base+1)
+	}
+}
+
+func TestValidateRejectsMissingExp(t *testing.T) {
+	f := newJWTFixture(t)
+	// A validly-signed token with no exp claim must be rejected (not treated as non-expiring).
+	tok := f.sign(t, f.priv, "k1", jwt.Claims{Subject: "u", Issuer: testISS,
+		Audience: jwt.Audience{"my-client"}, IssuedAt: jwt.NewNumericDate(time.Now())})
+	if _, err := f.validator(t, time.Minute).Validate(context.Background(), tok); err == nil {
+		t.Fatal("token without exp must be rejected")
 	}
 }
 

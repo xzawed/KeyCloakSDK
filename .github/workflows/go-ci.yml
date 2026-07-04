@@ -7,7 +7,7 @@ jobs:
     name: Build + lint + unit (Go ${{ matrix.go }})
     runs-on: ubuntu-latest
     strategy:
-      matrix: { go: ['1.24', '1.26'] } # 최소 지원 + 최신 마이너
+      matrix: { go: ['1.25', '1.26'] } # 최소 지원(go.mod) + 최신 마이너
     defaults: { run: { working-directory: go } }
     steps:
       - uses: actions/checkout@v4

@@ -34,6 +34,16 @@ func TestToSDKError(t *testing.T) {
 	if !errors.As(toSDKError(errors.New("boom")), &te) {
 		t.Fatal("non-API error must become *TransportError")
 	}
+	// gocloak wraps network failures in *APIError with Code 0 → *TransportError, not AdminError.
+	err := toSDKError(&gocloak.APIError{Code: 0, Message: "dial tcp: connection refused"})
+	var te2 *TransportError
+	if !errors.As(err, &te2) {
+		t.Fatalf("Code-0 APIError (no HTTP response) must become *TransportError, got %T", err)
+	}
+	var ae *AdminError
+	if errors.As(err, &ae) {
+		t.Fatal("Code-0 APIError must NOT be an *AdminError (HTTP 0 is nonsensical)")
+	}
 }
 
 func TestCallRunWrapErrors(t *testing.T) {
