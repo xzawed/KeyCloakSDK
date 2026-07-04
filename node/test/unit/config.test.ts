@@ -5,9 +5,15 @@ import { KeycloakConfigError } from '../../src/errors.js'
 
 describe('defineConfig', () => {
   it('필수값 누락 → KeycloakConfigError', () => {
-    expect(() => defineConfig({ serverUrl: '', realm: 'r', clientId: 'c' })).toThrow(KeycloakConfigError)
-    expect(() => defineConfig({ serverUrl: 'https://kc', realm: '   ', clientId: 'c' })).toThrow(/realm/)
-    expect(() => defineConfig({ serverUrl: 'https://kc', realm: 'r', clientId: '' })).toThrow(/clientId/)
+    expect(() => defineConfig({ serverUrl: '', realm: 'r', clientId: 'c' })).toThrow(
+      KeycloakConfigError,
+    )
+    expect(() => defineConfig({ serverUrl: 'https://kc', realm: '   ', clientId: 'c' })).toThrow(
+      /realm/,
+    )
+    expect(() => defineConfig({ serverUrl: 'https://kc', realm: 'r', clientId: '' })).toThrow(
+      /clientId/,
+    )
   })
 
   it('기본값 채움 + serverUrl 끝 슬래시 제거', () => {

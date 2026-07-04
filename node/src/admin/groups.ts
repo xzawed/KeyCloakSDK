@@ -13,7 +13,9 @@ export class GroupsResource {
 
   /** 그룹을 생성하고 신규 그룹 id를 반환한다. */
   async create(representation: GroupRepresentation): Promise<string> {
-    const created = await call(() => this.kc.groups.create({ ...representation, realm: this.realm }))
+    const created = await call(() =>
+      this.kc.groups.create({ ...representation, realm: this.realm }),
+    )
     return created.id
   }
 

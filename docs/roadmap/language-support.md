@@ -1,6 +1,6 @@
 # 언어 지원 로드맵 (Language Support Roadmap)
 
-이 문서는 Keycloak 폴리글랏 SDK의 **언어 확장 전략과 우선순위**를 정의한다. 현재 지원 언어는 **Java**와 **Python** 두 가지이며, 두 언어 모두 설계·구현·단위·통합·CI가 완료되고 실배포만 사람 게이트로 남아 있다. 이 로드맵은 (1) 언어 확장의 원칙, (2) 기존 두 SDK를 실제로 배포하기 위한 사전 단계(step-0), (3) 다음 확장 언어의 우선순위와 후보 클라이언트, (4) 언어별 현황 매트릭스를 정리한다.
+이 문서는 Keycloak 폴리글랏 SDK의 **언어 확장 전략과 우선순위**를 정의한다. 현재 지원 언어는 **Java**·**Python**·**TypeScript/Node** 세 가지이며, 세 언어 모두 설계·구현·단위·통합·CI가 완료되고 실배포만 사람 게이트로 남아 있다. 이 로드맵은 (1) 언어 확장의 원칙, (2) 기존 두 SDK를 실제로 배포하기 위한 사전 단계(step-0), (3) 다음 확장 언어의 우선순위와 후보 클라이언트, (4) 언어별 현황 매트릭스를 정리한다.
 
 "다국어(polyglot)"는 **여러 프로그래밍 언어**를 뜻하며 자연어 현지화(i18n)와 무관하다.
 
@@ -51,7 +51,7 @@
 
 | 순위 | 언어 | auth 클라이언트 후보 (감쌈) | admin 클라이언트 후보 (감쌈) | 유지보수 / 라이선스 · 주의점 (착수 시 재검증) |
 |---|---|---|---|---|
-| 1 | **TypeScript / Node.js** | `openid-client`(panva) 함수형 API + `jose`로 강화 검증 계층 | `@keycloak/keycloak-admin-client`(공식) | 작성 시점 활발 · MIT/Apache-2.0 호환. `openid-client`는 OIDF 인증 RP 계열(Basic·FAPI). ⚠️ **`keycloak-connect`(구 공식 Node 어댑터)는 deprecated** — 사용 금지(`nest-keycloak-connect`가 전이 의존). 최신 메이저는 함수형 API·ESM·Node 20+·WebCrypto/Fetch 요구 — 메이저 핀. admin-client는 서버 버전을 npm 트랙으로 추종(과거 postinstall/패키징 이슈 보고 사례) — 착수 시 버전 핀 + CI `npm install` 확인. `keycloak-js`/`oidc-client-ts`는 브라우저/SPA용이라 서버 파사드에 부적합. |
+| ✅ 완료 | **TypeScript / Node.js** | `openid-client`(panva) **6.8.4** 함수형 API + `jose` **5.10.0** 강화 검증 | `@keycloak/keycloak-admin-client`(공식) **26.6.4** | **구현 완료(총 76 테스트, 현황 매트릭스 참조).** 확정 사실(딥리서치·구현 검증): `openid-client` v6는 함수형 API·ESM·Node 20+·`Configuration.timeout`(초) 내장·`allowInsecureRequests`(http 로컬용); `jose` `createRemoteJWKSet`가 쿨다운으로 DoS-safe JWKS 재조회 제공. admin-client는 서버 버전 npm 트랙 추종(26.6.4), `findOne`이 404에서 `null` 반환(선언 타입 `undefined`)이라 경계에서 NotFound로 변환. `keycloak-connect`(구 어댑터)·`keycloak-js`/`oidc-client-ts`(브라우저)는 서버 파사드에 부적합 → 미사용. |
 | 2 | **Go** | `coreos/go-oidc/v3` + `golang.org/x/oauth2`(인증 하드 요구 시 `zitadel/oidc/v3`) + go-jose 자체 강화 | `Nerzal/gocloak` | 작성 시점 보통~활발 · Apache-2.0 호환 계열(Apache-2.0 / BSD-3 / dual). ⚠️ `go-oidc`는 OIDF 미인증·릴리스 저빈도(감싸서 자체 검증 얹기 좋음); 인증이 하드 요구면 활발한 `zitadel/oidc` 선택. `gocloak`은 생성 struct DTO·`gocloak.APIError`를 노출 — 파사드 뒤로 숨기고 경계에서 예외 변환. representation 필드·툴체인/서버 대상 버전은 실서버로 검증. 정체된 포크는 회피. |
 | 3 | **C# / .NET** | `Duende.IdentityModel`(+native는 `Duende.IdentityModel.OidcClient`) + `Microsoft.IdentityModel.JsonWebTokens`로 강화 | `Keycloak.AuthServices.Sdk`(NikiforovAll) | 작성 시점 활발 · Apache-2.0 / MIT. `OidcClient`는 OIDF 인증 RP 계열(native, RFC 8252). ⚠️ 구 `IdentityModel*` 리포는 아카이브 방향 → **`Duende.*` 패키지 ID로 타깃**(클라이언트 라이브러리는 무료 Apache-2.0, 상용 IdentityServer와 별개). 서버측 토큰/introspection 헬퍼는 base `Duende.IdentityModel`에 있음. 공식 Keycloak .NET SDK 없음 — `Keycloak.AuthServices`는 활발하나 단일 유지자(키맨 리스크), 테스트된 서버 버전에 핀. `Keycloak.Net`은 뒤처진 포크로 비권장. |
 | 4 | **PHP** | `jumbojett/openid-connect-php` (ID 토큰 검증은 자체 강화기로 대체) · 순수 OAuth2 폴백: `league/oauth2-client` + `stevenmaguire/oauth2-keycloak` | `fschmtt/keycloak-rest-api-client-php` | 작성 시점 활발 · Apache-2.0 / MIT. ⚠️ `jumbojett`의 역사적 약점은 JWT/ID 토큰 검증(과거 CVE 이력) — **자체 강화기 오버라이드 필수**, OIDF 미인증. admin은 반드시 `fschmtt` 사용(`stevenmaguire`는 auth 전용, Admin REST 없음). `fschmtt`는 pre-1.0 계열 — 파괴적 변경 가능, 버전 핀 + 파사드 경계 변환 유지. representation 필드는 실서버 검증. `jumbojett` 정체 대비 벤더링/폴백(league 경로) 확보. |
@@ -66,11 +66,11 @@
 |---|---|---|---|---|---|---|
 | **Java** | ✅ | ✅ | ✅ (117) | ✅ (6, Testcontainers) | ✅ | 🔒 사람 게이트 (총 123) |
 | **Python** | ✅ | ✅ (+ `aio` async 미러) | ✅ (224) | ✅ (11, Testcontainers) | ✅ | 🔒 사람 게이트 (총 235) |
-| **TypeScript / Node.js** | 계획 | 계획 | 계획 | 계획 | 계획 | 계획 |
+| **TypeScript / Node.js** | ✅ | ✅ (ESM · async-only) | ✅ (71) | ✅ (5, Testcontainers) | ✅ | 🔒 사람 게이트 (총 76) |
 | **Go** | 계획 | 계획 | 계획 | 계획 | 계획 | 계획 |
 | **C# / .NET** | 계획 | 계획 | 계획 | 계획 | 계획 | 계획 |
 | **PHP** | 계획 | 계획 | 계획 | 계획 | 계획 | 계획 |
 | **Rust** | 계획 | 계획 | 계획 | 계획 | 계획 | 계획 |
 | **Ruby** | 계획 | 계획 | 계획 | 계획 | 계획 | 계획 |
 
-**범례**: ✅ 완료 · 🔒 준비됨·사람 게이트(태그 push 대기) · 계획 미착수. Java 총 123개(단위 117 + 통합 6), Python 총 235개(단위 224 + 통합 11)는 실측 기준이며 두 언어 모두 실제 Keycloak 26.6.4에 대한 Testcontainers 통합테스트를 포함한다. 신규 언어는 착수 시 동일한 6개 열을 모두 채운 뒤에만 "완료"로 간주한다(depth-first).
+**범례**: ✅ 완료 · 🔒 준비됨·사람 게이트(태그 push 대기) · 계획 미착수. Java 총 123개(단위 117 + 통합 6), Python 총 235개(단위 224 + 통합 11), Node 총 76개(단위 71 + 통합 5)는 실측 기준이며 세 언어 모두 실제 Keycloak 26.6(.4)에 대한 Testcontainers 통합테스트를 포함한다. 신규 언어는 착수 시 동일한 6개 열을 모두 채운 뒤에만 "완료"로 간주한다(depth-first). Node 배포는 `node-v*` 태그 → `.github/workflows/node-release.yml`(npm Trusted Publishing / OIDC + provenance, human-gated)로 트리거된다.

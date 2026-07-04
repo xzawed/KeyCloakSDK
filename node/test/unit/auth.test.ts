@@ -123,9 +123,7 @@ describe('exchangeCode', () => {
     expect(ts.accessToken).toBe('AT2')
     const [, currentUrl, checks] = vi.mocked(oidc.authorizationCodeGrant).mock.calls.at(-1)!
     expect((currentUrl as URL).searchParams.get('code')).toBe('the-code')
-    expect((currentUrl as URL).searchParams.get('iss')).toBe(
-      'https://kc.example.com/realms/demo',
-    )
+    expect((currentUrl as URL).searchParams.get('iss')).toBe('https://kc.example.com/realms/demo')
     expect(checks).toEqual({ pkceCodeVerifier: 'verifier' })
   })
 

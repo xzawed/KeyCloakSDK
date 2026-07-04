@@ -12,6 +12,7 @@ Keycloak polyglot SDK를 로컬에서 설치하고, 첫 토큰 발급 · JWT 검
 |---|---|---|
 | **Java** | **JDK 21+** | 아티팩트가 `--release 21`로 컴파일되어 이전 JDK에서는 `UnsupportedClassVersionError` 발생 |
 | **Python** | **3.10+** | `py.typed`(PEP 561) 포함 — 소비자 측 mypy 타입 검사 가능 |
+| **Node.js** | **20+** | ESM 전용 · async-only · `.d.ts` 타입 선언 포함 |
 | (선택) Docker | — | **통합 테스트(Testcontainers)에만 필요**. SDK 사용 자체에는 불필요 |
 
 ---
@@ -161,11 +162,72 @@ with KeycloakClient.create(config) as kc:
 
 **async가 필요하면** (FastAPI 등 이벤트 루프 안전) `keycloak_sdk.aio.AsyncKeycloakClient`를 쓰고 각 호출에 `await`를 붙입니다 — 전체 예제: [`python/examples/async_quickstart.py`](../../python/examples/async_quickstart.py).
 
+## Node.js / TypeScript
+
+### 1) 요구 런타임 — Node 20+
+
+Node.js **20 이상**이 필요합니다. 패키지는 **ESM 전용**(`"type":"module"`)이며 모든 공개 메서드가 `async`(Promise)입니다(`createAuthorizationRequest`만 동기). TypeScript 타입 선언(`.d.ts`)을 포함해 소비자 측에서도 타입 검사가 가능합니다.
+
+### 2) 로컬 설치 (현재 — 미배포)
+
+npm 미배포 상태이므로, 리포지토리를 클론한 뒤 `node/`에서 빌드해 참조합니다:
+
+```bash
+cd node && npm ci && npm run build   # dist/ 생성(tsc). npm link 또는 파일 참조로 소비.
+# 배포용 아티팩트 확인(업로드 없이): npm pack --dry-run   # dist만 포함(24kB)
+```
+
+배포명은 `@xzawed/keycloak-sdk`, import 경로도 동일합니다.
+
+### 3) 배포 후 설치 (미래)
+
+npm 배포가 완료되면:
+
+```bash
+npm install @xzawed/keycloak-sdk
+```
+
+> ⚠️ **아직 npm에 배포되지 않았습니다(human-gated, npm Trusted Publishing / OIDC + provenance).** 실제 배포는 사람이 `node-v*` 태그를 push해 [`.github/workflows/node-release.yml`](../../.github/workflows/node-release.yml)를 트리거해야 실행됩니다. 절차는 향후 [언어 지원 로드맵](../roadmap/language-support.md)을 참고하세요.
+
+### 4) 최소 사용 예
+
+전체 예제: [`node/examples/quickstart.ts`](../../node/examples/quickstart.ts)
+
+```ts
+import { KeycloakClient } from '@xzawed/keycloak-sdk'
+
+const client = KeycloakClient.create({
+  serverUrl: 'https://kc.example.com',
+  realm: 'myrealm',
+  clientId: 'admin-cli',
+  clientSecret: 'changeme', // 실제 값은 환경변수/시크릿 매니저에서 로드할 것(config는 로깅 시 마스킹됨)
+})
+
+try {
+  // 1) client-credentials 토큰 발급. TokenSet의 문자열 표현은 자동 마스킹된다(accessToken=***).
+  const token = await client.auth.clientCredentialsToken()
+  console.log(`token=${token}`)
+
+  // 2) 발급받은 토큰을 자체 강화 검증(알고리즘 핀닝·iss 정확일치·aud 포함검사·클록 스큐).
+  const vt = await client.auth.validate(token.accessToken)
+  console.log(`subject=${vt.subject} aud=${vt.audience.join(',')}`)
+
+  // 3) 관리 API — admin은 최초 접근 시 지연 생성된다(client_secret 필요). create()는 신규 id를 반환.
+  const admin = await client.admin()
+  const userId = await admin.users.create({ username: 'alice', enabled: true })
+  console.log(`created user_id=${userId}`)
+} finally {
+  await client.close() // admin + auth 자원 정리. `await using`(Symbol.asyncDispose)로도 가능.
+}
+```
+
+> **인가 코드(PKCE) 흐름**: `const { url, codeVerifier, state, nonce } = client.auth.createAuthorizationRequest(redirectUri)`로 시작하고, 콜백에서 `client.auth.exchangeCode(code, redirectUri, codeVerifier, nonce)`로 교환합니다 — `nonce`를 반드시 함께 넘겨야 id_token 검증을 통과합니다.
+
 ---
 
 ## 다음 단계
 
-- **언어 지원 로드맵** — 현재 지원 언어와 향후 확장(깊이 우선: TypeScript/Node → Go → C# → PHP → Rust → Ruby, Kotlin은 JVM 재사용으로 선택적): [../roadmap/language-support.md](../roadmap/language-support.md)
-- **새 언어 추가 플레이북** — 기존 Java/Python과 동형의 품질로 언어를 추가하는 절차: [add-a-language-playbook.md](add-a-language-playbook.md)
+- **언어 지원 로드맵** — 현재 지원 언어와 향후 확장(깊이 우선: Java·Python·TypeScript/Node 완료 → Go → C# → PHP → Rust → Ruby, Kotlin은 JVM 재사용으로 선택적): [../roadmap/language-support.md](../roadmap/language-support.md)
+- **새 언어 추가 플레이북** — 기존 Java/Python/Node와 동형의 품질로 언어를 추가하는 절차: [add-a-language-playbook.md](add-a-language-playbook.md)
 
-> 언어 중립 API 계약(진실 원천)은 [설계 스펙 §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)에 정의되어 있습니다. 모든 언어는 이 계약을 구현하며, JWT 검증 강화(알고리즘 핀닝 · `none` 거부 · `iss` 정확일치 · `aud` 포함검사 · 클록 스큐 · DoS-안전 JWKS 재조회)는 언어 공통 필수 사항입니다. 현재 테스트 수: **Java 123개**(단위 117 + Testcontainers 통합 6) · **Python 235개**(단위 224 + 통합 11).
+> 언어 중립 API 계약(진실 원천)은 [설계 스펙 §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)에 정의되어 있습니다. 모든 언어는 이 계약을 구현하며, JWT 검증 강화(알고리즘 핀닝 · `none` 거부 · `iss` 정확일치 · `aud` 포함검사 · 클록 스큐 · DoS-안전 JWKS 재조회)는 언어 공통 필수 사항입니다. 현재 테스트 수: **Java 123개**(단위 117 + Testcontainers 통합 6) · **Python 235개**(단위 224 + 통합 11) · **Node 76개**(단위 71 + Testcontainers 통합 5).

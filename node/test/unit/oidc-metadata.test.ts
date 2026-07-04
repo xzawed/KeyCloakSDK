@@ -10,7 +10,11 @@ describe('oidcEndpoints', () => {
     expect(ep.introspection).toBe(
       'https://kc.example.com/realms/myrealm/protocol/openid-connect/token/introspect',
     )
-    expect(ep.endSession).toBe('https://kc.example.com/realms/myrealm/protocol/openid-connect/logout')
-    expect(ep.authorization).toBe('https://kc.example.com/realms/myrealm/protocol/openid-connect/auth')
+    expect(ep.endSession).toBe(
+      'https://kc.example.com/realms/myrealm/protocol/openid-connect/logout',
+    )
+    expect(ep.authorization).toBe(
+      'https://kc.example.com/realms/myrealm/protocol/openid-connect/auth',
+    )
   })
 })

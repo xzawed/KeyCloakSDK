@@ -2,11 +2,12 @@
 
 이 프로젝트의 주요 변경사항을 기록합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 [SemVer](https://semver.org/lang/ko/)를 지향합니다.
 
-> 이 리포지토리는 **폴리글랏 SDK**입니다. Java(`io.github.xzawed:keycloak-sdk`)와 Python(`keycloak-sdk`)이 독립 배포되며, 아래 항목은 언어 태그로 구분합니다. 아직 어떤 언어도 정식 배포(태그 릴리스)되지 않았습니다 — 모든 항목은 `[Unreleased]`입니다.
+> 이 리포지토리는 **폴리글랏 SDK**입니다. Java(`io.github.xzawed:keycloak-sdk`)·Python(`keycloak-sdk`)·Node(`@xzawed/keycloak-sdk`)가 독립 배포되며, 아래 항목은 언어 태그로 구분합니다. 아직 어떤 언어도 정식 배포(태그 릴리스)되지 않았습니다 — 모든 항목은 `[Unreleased]`입니다.
 
 ## [Unreleased]
 
 ### Added
+- **(Node) `@xzawed/keycloak-sdk` 3번째 언어 SDK 추가 — Node.js/TypeScript(ESM·async-only).** 공식 `@keycloak/keycloak-admin-client` 26.6.4(Admin) + `openid-client` v6 6.8.4 함수형 API(인증) 래핑 + `jose` 5.10.0 자체 강화 JWT 검증. Java/Python과 §4 동형: `KeycloakClient`(auth 즉시·admin 지연·`close()`/`Symbol.asyncDispose`), `AuthClient`(PKCE·client-credentials·exchangeCode·refresh·introspect·logout·validate), `AdminClient`(users/clients/realms/roles/groups + `raw()` + 타임아웃 주입 + 예외 경계변환), `TokenSet`/`ValidatedToken`/`IntrospectionResult`·`Keycloak*Error` 계급·`TokenProvider`. JWT 강화(alg 핀·`none` 거부·iss 정확일치·aud 포함검사·클록 스큐·DoS-안전 JWKS). 단위 71 + Testcontainers 통합 5(실제 Keycloak 26.6) = **총 76 GREEN**, `tsc`(strict)·`eslint` 통과. 착수 전 딥리서치로 라이브러리 API 확정, 완료 후 4-차원 다중에이전트 어드버서리얼 리뷰로 7건 확정 결함 수정(HIGH: PKCE `exchangeCode` nonce 미전달로 id_token 거부; 값타입 동형성 `idToken`/`expiresAt`/`username`/`clientId` 보강; config 시크릿 마스킹; single-flight 경합). npm Trusted Publishing(OIDC + provenance) 릴리스 CI 준비(human-gated). (2026-07-04)
 - **(Docs) Keycloak *서버* 배포 가이드 신설** — `docs/guides/deploying-keycloak-server.md`(단일 VM + Docker Compose 프로덕션: Keycloak 26.x + PostgreSQL + Caddy 자동 TLS, hostname/proxy-headers/health, 백업·업그레이드·SDK 연결). SDK는 클라이언트 라이브러리라 별도 Keycloak 서버가 필요하다는 흔한 혼란을 해소. getting-started·README에 링크. (2026-07-03)
 - **(Docs) 설치/시작 가이드·언어 확장 로드맵·add-a-language 플레이북 신설 + README front door 재구성.** `docs/guides/getting-started.md`(언어별 요구 런타임·로컬/배포후 설치·최소 사용 예), `docs/roadmap/language-support.md`(depth-first 전략·step-0 실배포 체크리스트·우선순위 TS/Node→Go→C#→PHP→Rust→Ruby·현황 매트릭스), `docs/guides/add-a-language-playbook.md`(새 언어를 Java/Python 품질로 추가하는 6단계 표준 절차 + G1~G6 매핑). README는 상세 QuickStart를 시작 가이드로 이관하고 요약+딥링크만 남김. (2026-07-03)
 

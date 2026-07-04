@@ -4,7 +4,9 @@ import { TokenSet } from '../../src/tokens.js'
 
 describe('ClientCredentialsTokenProvider', () => {
   it('만료 전에는 캐시 재사용(1회만 발급)', async () => {
-    const source = { clientCredentialsToken: vi.fn().mockResolvedValue(new TokenSet('t1', 'Bearer', 300)) }
+    const source = {
+      clientCredentialsToken: vi.fn().mockResolvedValue(new TokenSet('t1', 'Bearer', 300)),
+    }
     const p = new ClientCredentialsTokenProvider(source, 30)
     expect(await p.getAccessToken()).toBe('t1')
     expect(await p.getAccessToken()).toBe('t1')
