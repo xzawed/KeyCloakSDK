@@ -6,7 +6,7 @@
 
 **Architecture:** `Duende.IdentityModel`(auth 흐름)·`Microsoft.IdentityModel.JsonWebTokens`+`.Protocols.OpenIdConnect`(강화 JWT)·`Keycloak.AuthServices.Sdk`(admin)을 감싸는 파사드. 계층 `config → errors/masking → tokens → tokenprovider → oidc → jwt → auth → admin → client(+DI)`. `admin`은 `auth`를 모르고 `ITokenProvider`로만 결합(기본 소스는 `AuthClient`의 client-credentials). 하위 타입은 파사드 뒤 은닉, 하위 예외는 경계에서 `KeycloakException` 계급으로 변환.
 
-**Tech Stack:** .NET 8(net8.0) · C# 12 · `Duende.IdentityModel` 8.1.0 · `Microsoft.IdentityModel.*` 8.19.1 · `Keycloak.AuthServices.Sdk` **2.7.0**(net8 최종 빌드; 3.0.0은 net10 전용) · `Microsoft.Extensions.Http` 8.0.1 · 테스트 `xUnit` 2.9.3 · `WireMock.Net` 2.11.0 · `Testcontainers.Keycloak` 4.13.0 · `coverlet.msbuild` 10.0.1 · `Microsoft.NET.Test.Sdk` 18.7.0.
+**Tech Stack:** .NET 8(net8.0) · C# 12 · `Duende.IdentityModel` 8.1.0 · `Microsoft.IdentityModel.*` 8.19.1 · `Keycloak.AuthServices.Sdk` **2.7.0**(net8 최종 빌드; 3.0.0은 net10 전용) · `Microsoft.Extensions.DependencyInjection.Abstractions` 9.0.8(AuthServices 2.7.0 요구 하한) · 테스트 `xUnit` 2.9.3 · `WireMock.Net` 2.11.0 · `Testcontainers.Keycloak` 4.13.0 · `coverlet.msbuild` 10.0.1 · `Microsoft.NET.Test.Sdk` 18.7.0.
 
 ## Global Constraints
 
@@ -113,8 +113,10 @@
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.19.1" />
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.1" />
     <PackageReference Include="Keycloak.AuthServices.Sdk" Version="2.7.0" />
-    <!-- AddKeycloak DI extension needs IServiceCollection/AddSingleton (DI.Abstractions), NOT IHttpClientFactory. -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
+    <!-- AddKeycloak DI extension needs IServiceCollection/AddSingleton (DI.Abstractions), NOT IHttpClientFactory.
+         ⚠️ Pinned to 9.0.8: Keycloak.AuthServices.Sdk 2.7.0 (net8.0) requires DI.Abstractions >= 9.0.8, so a
+         lower pin triggers NU1605 (downgrade → hard error under TreatWarningsAsErrors). 9.0.x supports net8.0. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.8" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
   </ItemGroup>
   <ItemGroup>
@@ -156,12 +158,21 @@
 </Project>
 ```
 
-- [ ] **Step 5: 솔루션 생성 + 프로젝트 추가 + smoke 테스트**
+- [ ] **Step 5: 솔루션 생성 + 프로젝트 추가 + smoke 테스트 + .gitignore**
 
 ```bash
-cd dotnet && dotnet new sln -n Keycloak.Sdk
+cd dotnet && dotnet new sln -n Keycloak.Sdk --format sln   # ⚠️ SDK 10은 기본 .slnx → --format sln으로 Keycloak.Sdk.sln 생성
 dotnet sln add src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj
 dotnet sln add tests/Xzawed.Keycloak.Sdk.Tests/Xzawed.Keycloak.Sdk.Tests.csproj
+```
+`dotnet/.gitignore`(빌드 산출물 커밋 방지):
+```gitignore
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+*.user
+TestResults/
 ```
 `dotnet/tests/Xzawed.Keycloak.Sdk.Tests/ScaffoldingSmokeTest.cs`:
 ```csharp
