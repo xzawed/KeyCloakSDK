@@ -1520,6 +1520,7 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
         try { return await fn(_typed).ConfigureAwait(false); }
         catch (KeycloakHttpClientException ex) { throw KeycloakErrorMapping.MapHttpError(ex.StatusCode, ex.Response?.ErrorDescription ?? ex.HttpResponse ?? ex.Message, ex); }
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
+        catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException) { throw new KeycloakTransportException("admin request timed out", ex); } // HttpClient.Timeout → TaskCanceledException(inner=TimeoutException); NOT caller cancellation
     }
 
     internal async Task CallTypedAsync(Func<IKeycloakClient, Task> fn)
@@ -1527,6 +1528,7 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
         try { await fn(_typed).ConfigureAwait(false); }
         catch (KeycloakHttpClientException ex) { throw KeycloakErrorMapping.MapHttpError(ex.StatusCode, ex.Response?.ErrorDescription ?? ex.HttpResponse ?? ex.Message, ex); }
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
+        catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException) { throw new KeycloakTransportException("admin request timed out", ex); } // HttpClient.Timeout → TaskCanceledException(inner=TimeoutException); NOT caller cancellation
     }
 
     internal async Task<string> CreateReturningIdAsync(Func<IKeycloakClient, Task<HttpResponseMessage>> fn, CancellationToken ct)
@@ -1534,6 +1536,7 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
         HttpResponseMessage resp;
         try { resp = await fn(_typed).ConfigureAwait(false); }
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
+        catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException) { throw new KeycloakTransportException("admin request timed out", ex); } // HttpClient.Timeout → TaskCanceledException(inner=TimeoutException); NOT caller cancellation
         return await IdFromLocationAsync(resp, ct).ConfigureAwait(false);
     }
 
@@ -1542,6 +1545,7 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
         HttpResponseMessage resp;
         try { resp = await _http.SendAsync(req, ct).ConfigureAwait(false); }
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
+        catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException) { throw new KeycloakTransportException("admin request timed out", ex); } // HttpClient.Timeout → TaskCanceledException(inner=TimeoutException); NOT caller cancellation
         if (!resp.IsSuccessStatusCode)
             throw KeycloakErrorMapping.MapHttpError((int)resp.StatusCode, await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
         return resp;
@@ -1566,7 +1570,9 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
     {
         if (!resp.IsSuccessStatusCode)
             throw KeycloakErrorMapping.MapHttpError((int)resp.StatusCode, await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
-        var id = resp.Headers.Location?.Segments[^1]?.TrimEnd('/');
+        // guard IsAbsoluteUri: Uri.Segments throws InvalidOperationException on a relative Location (proxy rewrite)
+        var loc = resp.Headers.Location;
+        var id = loc is { IsAbsoluteUri: true } ? loc.Segments[^1].TrimEnd('/') : null;
         return string.IsNullOrEmpty(id)
             ? throw new KeycloakAdminException(500, "resource created but no id returned in Location header")
             : id;
