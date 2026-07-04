@@ -83,6 +83,33 @@ public class AuthClientTests : IDisposable
     }
 
     [Fact]
+    public async Task ClientCredentialsToken_timeout_wrapped_as_transport_exception()
+    {
+        _mock.Given(Request.Create().WithPath("/realms/r/protocol/openid-connect/token").UsingPost())
+             .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                 .WithDelay(TimeSpan.FromMilliseconds(1500))
+                 .WithBodyAsJson(new { access_token = "AT", token_type = "Bearer", expires_in = 300 }));
+
+        var cfg = new KeycloakConfig
+        {
+            ServerUrl = _mock.Urls[0],
+            Realm = "r",
+            ClientId = "c",
+            ClientSecret = "s",
+            ReadTimeoutMs = 200,
+        }.Normalized();
+        var ep = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm);
+        var validator = new JwtValidator(JwtValidator.BuildParameters(ep.Issuer,
+            new JwtValidatorOptions { Issuer = ep.Issuer, Audiences = new[] { "c" } }));
+        // Dedicated short-timeout HttpClient: the shared _http (used by the other tests in this class)
+        // has no Timeout set, so a fresh AuthClient/HttpClient pair is needed to exercise the timeout path.
+        using var shortHttp = new HttpClient { Timeout = TimeSpan.FromMilliseconds(cfg.ReadTimeoutMs) };
+        var auth = new AuthClient(cfg, ep, validator, shortHttp);
+
+        await Assert.ThrowsAsync<KeycloakTransportException>(() => auth.ClientCredentialsTokenAsync());
+    }
+
+    [Fact]
     public async Task Introspect_maps_active_and_fields()
     {
         var auth = Build(out _);

@@ -41,7 +41,10 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
     {
         if (cfg.ClientSecret is null)
             throw new KeycloakConfigException("clientSecret is required for the admin client (client-credentials).");
-        var http = new HttpClient(new BearerHandler(tokenProvider) { InnerHandler = new HttpClientHandler() })
+        var http = new HttpClient(new BearerHandler(tokenProvider)
+        {
+            InnerHandler = new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromMilliseconds(cfg.ConnectTimeoutMs) },
+        })
         {
             BaseAddress = new Uri(cfg.ServerUrl.TrimEnd('/') + "/"),   // must end with '/'
             Timeout = TimeSpan.FromMilliseconds(cfg.ReadTimeoutMs),
@@ -95,7 +98,10 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
     {
         using var req = new HttpRequestMessage(HttpMethod.Get, relativeUrl);
         var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
-        var value = await resp.Content.ReadFromJsonAsync<T>(cancellationToken: ct).ConfigureAwait(false);
+        T? value;
+        try { value = await resp.Content.ReadFromJsonAsync<T>(cancellationToken: ct).ConfigureAwait(false); }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or NotSupportedException)
+        { throw new KeycloakAdminException(500, "admin response body was not valid JSON", ex); }
         return value ?? throw new KeycloakNotFoundException($"empty response body for {relativeUrl}");
     }
 

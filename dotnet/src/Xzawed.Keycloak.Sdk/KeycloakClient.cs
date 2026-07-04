@@ -24,7 +24,11 @@ public sealed class KeycloakClient : IAsyncDisposable, IDisposable
         var cfg = config.Normalized();                 // validates + strips trailing slash
         // Single long-lived HttpClient (idiomatic for a one-server SDK client); PooledConnectionLifetime
         // recycles connections so a captured client still picks up DNS changes (the IHttpClientFactory concern).
-        var http = new HttpClient(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) })
+        var http = new HttpClient(new SocketsHttpHandler
+        {
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            ConnectTimeout = TimeSpan.FromMilliseconds(cfg.ConnectTimeoutMs),
+        })
         {
             Timeout = TimeSpan.FromMilliseconds(cfg.ReadTimeoutMs),
         };

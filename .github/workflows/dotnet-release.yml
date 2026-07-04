@@ -20,7 +20,9 @@ jobs:
           dotnet build dotnet/Keycloak.Sdk.sln -c Release
           dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category!=Integration"
       - name: Pack
-        run: dotnet pack dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release -o artifacts /p:ContinuousIntegrationBuild=true
+        run: |
+          VERSION="${GITHUB_REF_NAME#dotnet-v}"
+          dotnet pack dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release -o artifacts -p:Version="$VERSION" -p:ContinuousIntegrationBuild=true
       - name: Publish to NuGet (human-gated; requires NUGET_API_KEY secret)
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
@@ -30,4 +32,4 @@ jobs:
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${GITHUB_REF_NAME}" artifacts/*.nupkg --title "${GITHUB_REF_NAME}" --generate-notes
+        run: gh release create "${GITHUB_REF_NAME}" artifacts/* --title "${GITHUB_REF_NAME}" --generate-notes

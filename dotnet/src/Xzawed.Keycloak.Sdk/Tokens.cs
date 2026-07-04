@@ -5,7 +5,9 @@ namespace Xzawed.Keycloak;
 
 /// <summary>Token-endpoint response. AccessToken/RefreshToken are masked by ToString.
 /// Isomorphic with the Java/Python/Node/Go TokenSet (absolute ExpiresAt in epoch seconds, IsExpired).</summary>
-[JsonConverter(typeof(TokenSetJsonConverter))]   // mask access/refresh tokens in JSON/structured logging too
+[JsonConverter(typeof(TokenSetJsonConverter))]   // masks access/refresh tokens in ToString() and System.Text.Json serialization.
+                                                 // NOTE: reflection-based destructuring loggers (Serilog {@}) read raw
+                                                 // properties and bypass this — do not @-destructure TokenSet.
 public sealed record TokenSet
 {
     public required string AccessToken { get; init; }
@@ -63,7 +65,9 @@ public sealed record IntrospectionResult(
 /// The caller stores CodeVerifier/State/Nonce until the callback (the SDK is stateless).</summary>
 public sealed record AuthorizationRequest(string Url, string CodeVerifier, string State, string Nonce);
 
-/// <summary>Masks access/refresh tokens when a TokenSet is JSON-serialized (e.g. Serilog destructuring).</summary>
+/// <summary>Masks access/refresh tokens when a TokenSet is JSON-serialized via System.Text.Json.
+/// NOTE: reflection-based destructuring loggers (Serilog {@}) read raw properties and bypass this
+/// converter entirely — do not @-destructure TokenSet.</summary>
 internal sealed class TokenSetJsonConverter : JsonConverter<TokenSet>
 {
     public override TokenSet Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)

@@ -45,13 +45,21 @@ public sealed class AuthClient : ITokenSource
     public async Task<TokenSet> ClientCredentialsTokenAsync(CancellationToken ct = default)
     {
         var issuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var resp = await _http.RequestClientCredentialsTokenAsync(new ClientCredentialsTokenRequest
+        TokenResponse resp;
+        try
         {
-            Address = _ep.Token,
-            ClientId = _cfg.ClientId,
-            ClientSecret = _cfg.ClientSecret,
-            Scope = _cfg.Scopes.Count > 0 ? string.Join(' ', _cfg.Scopes) : null,
-        }, ct).ConfigureAwait(false);
+            resp = await _http.RequestClientCredentialsTokenAsync(new ClientCredentialsTokenRequest
+            {
+                Address = _ep.Token,
+                ClientId = _cfg.ClientId,
+                ClientSecret = _cfg.ClientSecret,
+                Scope = _cfg.Scopes.Count > 0 ? string.Join(' ', _cfg.Scopes) : null,
+            }, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)
+        {
+            throw new KeycloakTransportException("token request timed out", ex);
+        }
         return ToTokenSet(resp, "Client credentials grant failed", issuedAt);
     }
 
@@ -59,15 +67,23 @@ public sealed class AuthClient : ITokenSource
                                                   string? nonce = null, CancellationToken ct = default)
     {
         var issuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var resp = await _http.RequestAuthorizationCodeTokenAsync(new AuthorizationCodeTokenRequest
+        TokenResponse resp;
+        try
         {
-            Address = _ep.Token,
-            ClientId = _cfg.ClientId,
-            ClientSecret = _cfg.ClientSecret,
-            Code = code,
-            RedirectUri = redirectUri,
-            CodeVerifier = codeVerifier,
-        }, ct).ConfigureAwait(false);
+            resp = await _http.RequestAuthorizationCodeTokenAsync(new AuthorizationCodeTokenRequest
+            {
+                Address = _ep.Token,
+                ClientId = _cfg.ClientId,
+                ClientSecret = _cfg.ClientSecret,
+                Code = code,
+                RedirectUri = redirectUri,
+                CodeVerifier = codeVerifier,
+            }, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)
+        {
+            throw new KeycloakTransportException("token request timed out", ex);
+        }
         var tokens = ToTokenSet(resp, "Authorization code exchange failed", issuedAt);
 
         // NONCE: Duende does not auto-validate the id_token (unlike openid-client). Fully validate it
@@ -88,27 +104,43 @@ public sealed class AuthClient : ITokenSource
     public async Task<TokenSet> RefreshAsync(string refreshToken, CancellationToken ct = default)
     {
         var issuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var resp = await _http.RequestRefreshTokenAsync(new RefreshTokenRequest
+        TokenResponse resp;
+        try
         {
-            Address = _ep.Token,
-            ClientId = _cfg.ClientId,
-            ClientSecret = _cfg.ClientSecret,
-            RefreshToken = refreshToken,
-        }, ct).ConfigureAwait(false);
+            resp = await _http.RequestRefreshTokenAsync(new RefreshTokenRequest
+            {
+                Address = _ep.Token,
+                ClientId = _cfg.ClientId,
+                ClientSecret = _cfg.ClientSecret,
+                RefreshToken = refreshToken,
+            }, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)
+        {
+            throw new KeycloakTransportException("token request timed out", ex);
+        }
         return ToTokenSet(resp, "Token refresh failed", issuedAt);
     }
 
     public async Task<IntrospectionResult> IntrospectAsync(string token, CancellationToken ct = default)
     {
-        var resp = await _http.IntrospectTokenAsync(new TokenIntrospectionRequest
+        TokenIntrospectionResponse resp;
+        try
         {
-            Address = _ep.Introspection,
-            ClientId = _cfg.ClientId,
-            ClientSecret = _cfg.ClientSecret,
-            Token = token,
-        }, ct).ConfigureAwait(false);
+            resp = await _http.IntrospectTokenAsync(new TokenIntrospectionRequest
+            {
+                Address = _ep.Introspection,
+                ClientId = _cfg.ClientId,
+                ClientSecret = _cfg.ClientSecret,
+                Token = token,
+            }, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)
+        {
+            throw new KeycloakTransportException("introspection request timed out", ex);
+        }
         if (resp.IsError)
-            throw new KeycloakAuthException($"Token introspection failed: {resp.Error}", resp.Exception);
+            throw new KeycloakAuthException($"Token introspection failed: {resp.Error}", resp.Exception) { OAuthError = OAuthErrorOf(resp.Json, resp.Error) };
 
         var claims = resp.Claims.GroupBy(c => c.Type)
             .ToDictionary(g => g.Key, g => (object?)(g.Count() == 1 ? g.First().Value : g.Select(c => c.Value).ToArray()));
@@ -134,6 +166,10 @@ public sealed class AuthClient : ITokenSource
         {
             throw new KeycloakAuthException($"Logout request error: {ex.Message}", ex);
         }
+        catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)
+        {
+            throw new KeycloakTransportException("logout request timed out", ex);
+        }
         using (resp)
         {
             if (!resp.IsSuccessStatusCode)
@@ -147,19 +183,20 @@ public sealed class AuthClient : ITokenSource
     private static TokenSet ToTokenSet(TokenResponse resp, string failureMessage, long issuedAtSeconds)
     {
         if (resp.IsError)
-            throw new KeycloakAuthException($"{failureMessage}: {resp.Error}", resp.Exception) { OAuthError = OAuthErrorOf(resp) };
+            throw new KeycloakAuthException($"{failureMessage}: {resp.Error}", resp.Exception) { OAuthError = OAuthErrorOf(resp.Json, resp.Error) };
         return TokenSet.Create(resp.AccessToken!, resp.TokenType, resp.ExpiresIn,
                                resp.RefreshToken, resp.IdentityToken, resp.Scope, issuedAtSeconds);
     }
 
     // Keycloak returns 401 for bad client creds => ErrorType=Http (resp.Error = reason phrase),
-    // so read the OAuth code from the JSON body.
-    private static string? OAuthErrorOf(TokenResponse resp)
+    // so read the OAuth code from the JSON body. Shared by the token endpoint (TokenResponse) and the
+    // introspection endpoint (TokenIntrospectionResponse) — both expose Json/Error via ProtocolResponse.
+    private static string? OAuthErrorOf(JsonElement? json, string? fallbackError)
     {
-        if (resp.Json is JsonElement j && j.ValueKind == JsonValueKind.Object
+        if (json is JsonElement j && j.ValueKind == JsonValueKind.Object
             && j.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String)
             return e.GetString();
-        return resp.Error;
+        return fallbackError;
     }
 
     private static string Base64Url(byte[] bytes) =>
