@@ -2,6 +2,7 @@ package keycloak
 
 import (
 	"fmt"
+	"time"
 
 	"golang.org/x/oauth2"
 )
@@ -43,6 +44,13 @@ func tokenSetFromToken(tok *oauth2.Token) *TokenSet {
 	}
 	if !tok.Expiry.IsZero() {
 		ts.ExpiresAt = tok.Expiry.Unix()
+		// x/oauth2 always populates Expiry but not always the public ExpiresIn
+		// field; derive the relative lifetime from the absolute expiry.
+		if ts.ExpiresIn == 0 {
+			if d := ts.ExpiresAt - time.Now().Unix(); d > 0 {
+				ts.ExpiresIn = d
+			}
+		}
 	}
 	if v, ok := tok.Extra("id_token").(string); ok {
 		ts.IDToken = v
