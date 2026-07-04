@@ -1,0 +1,9 @@
+version: "2"
+linters:
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - unused
+    - gosec # 보안 린터(하드코딩 시크릿·약한 crypto 등)
