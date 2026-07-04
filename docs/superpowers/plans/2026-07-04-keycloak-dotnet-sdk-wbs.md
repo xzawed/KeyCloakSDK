@@ -2097,6 +2097,8 @@ on:
     paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml']
   pull_request:
     paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml']
+permissions:
+  contents: read   # least-privilege: CI only reads the repo
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -2136,16 +2138,17 @@ name: dotnet-release
 on:
   push:
     tags: ['dotnet-v*']
+# least-privilege: only the GitHub Release needs contents:write; NuGet uses NUGET_API_KEY (not GITHUB_TOKEN)
+permissions:
+  contents: write
 jobs:
   release:
     runs-on: ubuntu-latest
-    # job-level env so the push step's own `if:` can see it (a step-level env is NOT in scope for that step's if)
-    env:
-      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false   # don't leave GITHUB_TOKEN in git config for later steps
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
@@ -2155,13 +2158,19 @@ jobs:
           dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category!=Integration"
       - name: Pack
         run: dotnet pack dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release -o artifacts /p:ContinuousIntegrationBuild=true
-      - name: Push to NuGet (human-gated; requires NUGET_API_KEY secret)
-        if: ${{ env.NUGET_API_KEY != '' }}
-        run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+      - name: Publish to NuGet (human-gated; requires NUGET_API_KEY secret)
+        # step-scoped secret: only THIS step sees NUGET_API_KEY (not restore/build/test). The empty-check
+        # lives in the run script (a step-level env is not visible to the step's own `if:`).
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then echo "NUGET_API_KEY not set — skipping NuGet publish (human-gated)"; exit 0; fi
+          dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
       - name: GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/*.nupkg
+        # built-in gh CLI (no third-party action → no supply-chain exposure); uses the scoped GITHUB_TOKEN
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${GITHUB_REF_NAME}" artifacts/*.nupkg --title "${GITHUB_REF_NAME}" --generate-notes
 ```
 
 - [ ] **Step 3: 검증** — YAML 파싱 확인 + 로컬 `cd dotnet && dotnet build -c Release && dotnet pack src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release -o /tmp/artifacts`로 `.nupkg`(+`.snupkg`) 생성 확인(업로드 없이).
