@@ -1,7 +1,6 @@
 import type KcAdminClient from '@keycloak/keycloak-admin-client'
 import type ClientRepresentation from '@keycloak/keycloak-admin-client/lib/defs/clientRepresentation.js'
-import { KeycloakNotFoundError } from '../errors.js'
-import { call } from './call.js'
+import { call, requireFound } from './call.js'
 
 /**
  * 클라이언트 CRUD 파사드. 공식 admin-client의 `clients` 리소스를 감싸며 {@link call}로 경계
@@ -21,13 +20,12 @@ export class ClientsResource {
     return created.id
   }
 
-  /** 내부 id(UUID)로 클라이언트를 조회한다. 없으면 {@link KeycloakNotFoundError}. */
+  /** 내부 id(UUID)로 클라이언트를 조회한다. 없으면 `KeycloakNotFoundError`. */
   async get(id: string): Promise<ClientRepresentation> {
-    const client = await call(() => this.kc.clients.findOne({ id, realm: this.realm }))
-    if (client === undefined) {
-      throw new KeycloakNotFoundError(`Client not found: ${id}`)
-    }
-    return client
+    return requireFound(
+      await call(() => this.kc.clients.findOne({ id, realm: this.realm })),
+      `Client not found: ${id}`,
+    )
   }
 
   /** 사람이 지정한 `clientId`로 클라이언트를 검색한다(0..N개). */

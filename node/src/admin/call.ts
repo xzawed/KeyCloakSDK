@@ -1,4 +1,4 @@
-import { mapHttpError } from '../errors.js'
+import { KeycloakNotFoundError, mapHttpError } from '../errors.js'
 
 /**
  * admin-client 호출을 실행하고, 실패 시 HTTP 상태를 SDK 예외로 경계 변환한다(§4 계약).
@@ -17,6 +17,17 @@ export async function call<T>(fn: () => Promise<T>): Promise<T> {
     }
     throw err
   }
+}
+
+/**
+ * admin-client의 `findOne`/`findOneByName`류는 404에서 `null`(또는 `undefined`)을 반환한다
+ * (선언 타입은 `undefined`지만 런타임은 `null`) — 부재를 SDK {@link KeycloakNotFoundError}로 통일한다.
+ */
+export function requireFound<T>(value: T | null | undefined, message: string): T {
+  if (value === null || value === undefined) {
+    throw new KeycloakNotFoundError(message)
+  }
+  return value
 }
 
 function statusOf(err: unknown): number | undefined {

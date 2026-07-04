@@ -1,7 +1,6 @@
 import type KcAdminClient from '@keycloak/keycloak-admin-client'
 import type UserRepresentation from '@keycloak/keycloak-admin-client/lib/defs/userRepresentation.js'
-import { KeycloakNotFoundError } from '../errors.js'
-import { call } from './call.js'
+import { call, requireFound } from './call.js'
 
 /**
  * 사용자 CRUD 파사드. 공식 admin-client의 `users` 리소스를 감싸며 모든 호출을 {@link call}로
@@ -20,13 +19,12 @@ export class UsersResource {
     return created.id
   }
 
-  /** id로 사용자를 조회한다. 없으면 {@link KeycloakNotFoundError}(undefined를 반환하지 않는다). */
+  /** id로 사용자를 조회한다. 없으면 `KeycloakNotFoundError`(null/undefined를 반환하지 않는다). */
   async get(id: string): Promise<UserRepresentation> {
-    const user = await call(() => this.kc.users.findOne({ id, realm: this.realm }))
-    if (user === undefined) {
-      throw new KeycloakNotFoundError(`User not found: ${id}`)
-    }
-    return user
+    return requireFound(
+      await call(() => this.kc.users.findOne({ id, realm: this.realm })),
+      `User not found: ${id}`,
+    )
   }
 
   /** username(선택)으로 사용자를 검색한다(페이지네이션 first/max). */

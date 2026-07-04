@@ -1,7 +1,6 @@
 import type KcAdminClient from '@keycloak/keycloak-admin-client'
 import type GroupRepresentation from '@keycloak/keycloak-admin-client/lib/defs/groupRepresentation.js'
-import { KeycloakNotFoundError } from '../errors.js'
-import { call } from './call.js'
+import { call, requireFound } from './call.js'
 
 /**
  * 그룹 CRUD 파사드. 공식 admin-client의 `groups` 리소스를 감싸며 {@link call}로 경계 변환한다.
@@ -18,13 +17,12 @@ export class GroupsResource {
     return created.id
   }
 
-  /** id로 그룹을 조회한다. 없으면 {@link KeycloakNotFoundError}. */
+  /** id로 그룹을 조회한다. 없으면 `KeycloakNotFoundError`. */
   async get(id: string): Promise<GroupRepresentation> {
-    const group = await call(() => this.kc.groups.findOne({ id, realm: this.realm }))
-    if (group === undefined) {
-      throw new KeycloakNotFoundError(`Group not found: ${id}`)
-    }
-    return group
+    return requireFound(
+      await call(() => this.kc.groups.findOne({ id, realm: this.realm })),
+      `Group not found: ${id}`,
+    )
   }
 
   /** 최상위 그룹을 나열한다(페이지네이션 first/max). */

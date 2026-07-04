@@ -1,7 +1,6 @@
 import type KcAdminClient from '@keycloak/keycloak-admin-client'
 import type RoleRepresentation from '@keycloak/keycloak-admin-client/lib/defs/roleRepresentation.js'
-import { KeycloakNotFoundError } from '../errors.js'
-import { call } from './call.js'
+import { call, requireFound } from './call.js'
 
 /**
  * 렐름 역할(role) CRUD 파사드. 공식 admin-client의 `roles` 리소스를 감싸며 {@link call}로 경계
@@ -17,13 +16,12 @@ export class RolesResource {
     await call(() => this.kc.roles.create({ ...representation, realm: this.realm }))
   }
 
-  /** 역할 이름으로 조회한다. 없으면 {@link KeycloakNotFoundError}. */
+  /** 역할 이름으로 조회한다. 없으면 `KeycloakNotFoundError`. */
   async get(name: string): Promise<RoleRepresentation> {
-    const role = await call(() => this.kc.roles.findOneByName({ name, realm: this.realm }))
-    if (role === undefined) {
-      throw new KeycloakNotFoundError(`Role not found: ${name}`)
-    }
-    return role
+    return requireFound(
+      await call(() => this.kc.roles.findOneByName({ name, realm: this.realm })),
+      `Role not found: ${name}`,
+    )
   }
 
   async list(): Promise<RoleRepresentation[]> {

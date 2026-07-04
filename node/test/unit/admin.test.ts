@@ -130,7 +130,8 @@ describe('UsersResource 위임', () => {
     const admin = await AdminClient.create(cfg)
     h.kc.users.findOne.mockResolvedValue({ id: 'u-1', username: 'bob' })
     expect(await admin.users.get('u-1')).toEqual({ id: 'u-1', username: 'bob' })
-    h.kc.users.findOne.mockResolvedValue(undefined)
+    // admin-client는 404에서 null을 반환한다(선언 타입은 undefined) — 둘 다 NotFound로 처리해야 한다.
+    h.kc.users.findOne.mockResolvedValue(null)
     await expect(admin.users.get('missing')).rejects.toBeInstanceOf(KeycloakNotFoundError)
   })
   it('search는 find에 username/first/max를 전달한다', async () => {
@@ -178,7 +179,7 @@ describe('RealmsResource 위임', () => {
     h.kc.realms.findOne.mockResolvedValue({ realm: 'new-realm' })
     expect(await admin.realms.get('new-realm')).toEqual({ realm: 'new-realm' })
     expect(h.kc.realms.findOne).toHaveBeenCalledWith({ realm: 'new-realm' })
-    h.kc.realms.findOne.mockResolvedValue(undefined)
+    h.kc.realms.findOne.mockResolvedValue(null)
     await expect(admin.realms.get('nope')).rejects.toBeInstanceOf(KeycloakNotFoundError)
     await admin.realms.delete('new-realm')
     expect(h.kc.realms.del).toHaveBeenCalledWith({ realm: 'new-realm' })
@@ -210,7 +211,7 @@ describe('GroupsResource 위임', () => {
     expect(h.kc.groups.create).toHaveBeenCalledWith({ name: 'team', realm: 'demo' })
     h.kc.groups.findOne.mockResolvedValue({ id: 'g-1', name: 'team' })
     expect(await admin.groups.get('g-1')).toEqual({ id: 'g-1', name: 'team' })
-    h.kc.groups.findOne.mockResolvedValue(undefined)
+    h.kc.groups.findOne.mockResolvedValue(null)
     await expect(admin.groups.get('nope')).rejects.toBeInstanceOf(KeycloakNotFoundError)
     h.kc.groups.find.mockResolvedValue([{ id: 'g-1' }])
     await admin.groups.list(2, 20)

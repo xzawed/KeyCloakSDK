@@ -1,7 +1,6 @@
 import type KcAdminClient from '@keycloak/keycloak-admin-client'
 import type RealmRepresentation from '@keycloak/keycloak-admin-client/lib/defs/realmRepresentation.js'
-import { KeycloakNotFoundError } from '../errors.js'
-import { call } from './call.js'
+import { call, requireFound } from './call.js'
 
 /**
  * 렐름 생성/조회/삭제 파사드. `RealmsResource`는 realm 스코프가 아니라 렐름 이름을 인자로
@@ -16,13 +15,12 @@ export class RealmsResource {
     await call(() => this.kc.realms.create(representation))
   }
 
-  /** 렐름 이름으로 조회한다. 없으면 {@link KeycloakNotFoundError}. */
+  /** 렐름 이름으로 조회한다. 없으면 `KeycloakNotFoundError`. */
   async get(realmName: string): Promise<RealmRepresentation> {
-    const realm = await call(() => this.kc.realms.findOne({ realm: realmName }))
-    if (realm === undefined) {
-      throw new KeycloakNotFoundError(`Realm not found: ${realmName}`)
-    }
-    return realm
+    return requireFound(
+      await call(() => this.kc.realms.findOne({ realm: realmName })),
+      `Realm not found: ${realmName}`,
+    )
   }
 
   async delete(realmName: string): Promise<void> {
