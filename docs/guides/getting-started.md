@@ -13,6 +13,7 @@ Keycloak polyglot SDK를 로컬에서 설치하고, 첫 토큰 발급 · JWT 검
 | **Java** | **JDK 21+** | 아티팩트가 `--release 21`로 컴파일되어 이전 JDK에서는 `UnsupportedClassVersionError` 발생 |
 | **Python** | **3.10+** | `py.typed`(PEP 561) 포함 — 소비자 측 mypy 타입 검사 가능 |
 | **Node.js** | **20+** | ESM 전용 · async-only · `.d.ts` 타입 선언 포함 |
+| **Go** | **1.25+** | sync + `context.Context` · `x/oauth2` v0.36 요구 |
 | (선택) Docker | — | **통합 테스트(Testcontainers)에만 필요**. SDK 사용 자체에는 불필요 |
 
 ---
@@ -223,11 +224,98 @@ try {
 
 > **인가 코드(PKCE) 흐름**: `const { url, codeVerifier, state, nonce } = client.auth.createAuthorizationRequest(redirectUri)`로 시작하고, 콜백에서 `client.auth.exchangeCode(code, redirectUri, codeVerifier, nonce)`로 교환합니다 — `nonce`를 반드시 함께 넘겨야 id_token 검증을 통과합니다.
 
+## Go
+
+### 1) 요구 런타임 — Go 1.25+
+
+Go **1.25 이상**이 필요합니다(의존성 `golang.org/x/oauth2` v0.36이 요구). sync + `context.Context` 관용(모든 네트워크 메서드가 `ctx`를 첫 인자로 받고, `CreateAuthorizationRequest`만 동기). Docker는 통합 테스트에만 필요합니다.
+
+### 2) 로컬 설치 (현재 — 미배포)
+
+Go 모듈은 별도 레지스트리 없이 **VCS 태그로 배포**됩니다. 아직 릴리스 태그(`go/vX.Y.Z`)가 없으므로, 모노레포를 클론해 `go/`에서 빌드하거나 `replace` 지시로 참조합니다:
+
+```bash
+cd go && go build ./... && go test ./...   # 단위 40 + 커버리지 게이트(로직 ≥90)
+# 소비 프로젝트에서 로컬 참조: go.mod에 `replace github.com/xzawed/KeyCloakSDK/go => ../KeyCloakSDK/go`
+```
+
+모듈 경로는 `github.com/xzawed/KeyCloakSDK/go`, 패키지명은 `keycloak`입니다.
+
+### 3) 배포 후 설치 (미래)
+
+릴리스 태그가 push되면:
+
+```bash
+go get github.com/xzawed/KeyCloakSDK/go@v0.1.0
+```
+
+> ⚠️ **아직 릴리스 태그가 없습니다(human-gated).** Go는 레지스트리 배포가 없어 **태그가 곧 릴리스**입니다 — 사람이 `go/v*` 태그를 push하면 [`.github/workflows/go-release.yml`](../../.github/workflows/go-release.yml)가 검증 + GitHub Release + 프록시 워밍을 수행하고, `proxy.golang.org`가 태그에서 자동 캐시합니다. 저장 시크릿은 필요 없습니다.
+
+### 4) 최소 사용 예
+
+전체 예제(godoc): [`go/example_test.go`](../../go/example_test.go)
+
+```go
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/Nerzal/gocloak/v13"
+	keycloak "github.com/xzawed/KeyCloakSDK/go"
+)
+
+func main() {
+	client, err := keycloak.New(keycloak.Config{
+		ServerURL:    "https://kc.example.com",
+		Realm:        "myrealm",
+		ClientID:     "admin-cli",
+		ClientSecret: "changeme", // 환경변수/시크릿 매니저에서 로드할 것(Config는 로깅 시 마스킹)
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer client.Close()
+	ctx := context.Background()
+
+	// 1) client-credentials 토큰. TokenSet의 String()은 자동 마스킹된다(AccessToken:***).
+	token, err := client.Auth.ClientCredentialsToken(ctx)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(token)
+
+	// 2) 자체 강화 검증(alg 핀·iss 정확일치·aud 포함검사·exp 필수·클록 스큐).
+	vt, err := client.Auth.Validate(ctx, token.AccessToken)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(vt.Subject, vt.Audience)
+
+	// 3) 관리 API — admin은 최초 접근 시 지연 생성(clientSecret 필요). 오류는 errors.Is 센티넬로 분기.
+	admin, err := client.Admin(ctx)
+	if err != nil {
+		panic(err)
+	}
+	id, err := admin.Users.Create(ctx, gocloak.User{Username: gocloak.StringP("alice"), Enabled: gocloak.BoolP(true)})
+	if err != nil {
+		panic(err)
+	}
+	if _, err := admin.Users.Get(ctx, id); errors.Is(err, keycloak.ErrNotFound) {
+		fmt.Println("not found")
+	}
+}
+```
+
+> 오류 처리: 관리 API 실패는 `errors.Is(err, keycloak.ErrNotFound)`(·`ErrConflict`·`ErrForbidden`)로 분기하거나 `var ae *keycloak.AdminError; errors.As(err, &ae)`로 `ae.StatusCode`를 얻습니다. 네트워크 실패는 `*keycloak.TransportError`입니다.
+
 ---
 
 ## 다음 단계
 
-- **언어 지원 로드맵** — 현재 지원 언어와 향후 확장(깊이 우선: Java·Python·TypeScript/Node 완료 → Go → C# → PHP → Rust → Ruby, Kotlin은 JVM 재사용으로 선택적): [../roadmap/language-support.md](../roadmap/language-support.md)
-- **새 언어 추가 플레이북** — 기존 Java/Python/Node와 동형의 품질로 언어를 추가하는 절차: [add-a-language-playbook.md](add-a-language-playbook.md)
+- **언어 지원 로드맵** — 현재 지원 언어와 향후 확장(깊이 우선: Java·Python·TypeScript/Node·Go 완료 → C# → PHP → Rust → Ruby, Kotlin은 JVM 재사용으로 선택적): [../roadmap/language-support.md](../roadmap/language-support.md)
+- **새 언어 추가 플레이북** — 기존 Java/Python/Node/Go와 동형의 품질로 언어를 추가하는 절차: [add-a-language-playbook.md](add-a-language-playbook.md)
 
-> 언어 중립 API 계약(진실 원천)은 [설계 스펙 §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)에 정의되어 있습니다. 모든 언어는 이 계약을 구현하며, JWT 검증 강화(알고리즘 핀닝 · `none` 거부 · `iss` 정확일치 · `aud` 포함검사 · 클록 스큐 · DoS-안전 JWKS 재조회)는 언어 공통 필수 사항입니다. 현재 테스트 수: **Java 123개**(단위 117 + Testcontainers 통합 6) · **Python 235개**(단위 224 + 통합 11) · **Node 76개**(단위 71 + Testcontainers 통합 5).
+> 언어 중립 API 계약(진실 원천)은 [설계 스펙 §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)에 정의되어 있습니다. 모든 언어는 이 계약을 구현하며, JWT 검증 강화(알고리즘 핀닝 · `none` 거부 · `iss` 정확일치 · `aud` 포함검사 · 클록 스큐 · DoS-안전 JWKS 재조회)는 언어 공통 필수 사항입니다. 현재 테스트 수: **Java 123개**(단위 117 + Testcontainers 통합 6) · **Python 235개**(단위 224 + 통합 11) · **Node 76개**(단위 71 + Testcontainers 통합 5) · **Go 41개**(단위 40 + Testcontainers 통합 1 — E2E, 전 흐름·5 admin 리소스).

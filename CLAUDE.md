@@ -4,14 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 프로젝트 개요
 
-Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프로그래밍 언어**(Java·Python·Node·향후 확장)를 뜻하며 자연어 현지화(i18n)와 무관하다. Keycloak의 두 API 표면 — **인증(OIDC/OAuth2)** 과 **관리 REST API(Admin)** — 을 모두 다룬다. 언어마다 관용적이되 개념·계층·흐름은 **동형(isomorphic)** 이도록 설계한다.
+Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프로그래밍 언어**(Java·Python·Node·Go·향후 확장)를 뜻하며 자연어 현지화(i18n)와 무관하다. Keycloak의 두 API 표면 — **인증(OIDC/OAuth2)** 과 **관리 REST API(Admin)** — 을 모두 다룬다. 언어마다 관용적이되 개념·계층·흐름은 **동형(isomorphic)** 이도록 설계한다.
 
 - **기준 언어**: Java 21 · Maven (첫 구현; 초기 Java 17 → 21 LTS 런타임 업그레이드 반영)
 - **2번째 언어**: Python 3.10+ · `python-keycloak` 래핑 + `joserfc` 자체 JWT 검증 (`feature/python-sdk`)
 - **3번째 언어**: Node.js 20+ · TypeScript(ESM·async-only) · `@keycloak/keycloak-admin-client` + `openid-client` v6 래핑 + `jose` 자체 JWT 검증 (`feature/node-sdk`)
-- **라이선스**: Apache-2.0 · **groupId**: `io.github.xzawed` · Python 배포명: `keycloak-sdk` · npm 배포명: `@xzawed/keycloak-sdk`
+- **4번째 언어**: Go 1.25+ · sync + `context.Context` · `Nerzal/gocloak/v13` + `golang.org/x/oauth2` 래핑 + `go-jose/v4` 자체 JWT 검증 (`feature/go-sdk`)
+- **라이선스**: Apache-2.0 · **groupId**: `io.github.xzawed` · Python 배포명: `keycloak-sdk` · npm 배포명: `@xzawed/keycloak-sdk` · Go 모듈: `github.com/xzawed/KeyCloakSDK/go`
 
-**핵심 전략**: 언어마다 가장 좋은 기반을 사용한다 — 공식/성숙 클라이언트가 있으면 감싼다(Java는 `keycloak-admin-client`, Python은 `python-keycloak`, Node는 공식 `@keycloak/keycloak-admin-client` + `openid-client`) — 그 위에 **일관된 파사드 + 인증 래퍼**를 언어 공통 설계로 얹는다. JWT 검증은 세 언어 모두 자체 강화 구현(algorithm pinning·iss 정확일치·aud 포함검사·클록 스큐·DoS-안전 JWKS 재조회)이다.
+**핵심 전략**: 언어마다 가장 좋은 기반을 사용한다 — 공식/성숙 클라이언트가 있으면 감싼다(Java는 `keycloak-admin-client`, Python은 `python-keycloak`, Node는 공식 `@keycloak/keycloak-admin-client` + `openid-client`, Go는 `gocloak` + `x/oauth2`) — 그 위에 **일관된 파사드 + 인증 래퍼**를 언어 공통 설계로 얹는다. JWT 검증은 네 언어 모두 자체 강화 구현(algorithm pinning·iss 정확일치·aud 포함검사·`exp` 필수·클록 스큐·DoS-안전 JWKS 재조회)이다.
 
 ## 현재 상태
 
@@ -19,16 +20,19 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 
 **Python SDK 완료 — `main` 병합됨 (PR #2 sync, PR #4 async).** WBS Phase 1~7 전체 구현 + `keycloak_sdk.aio` 비동기 미러(python-keycloak `a_*` 래핑, sync `JwtValidator` 재사용). 단위테스트 224개(sync 135 + async 89) + Testcontainers 통합테스트(실제 Keycloak 26.6.4) 11개(sync 6 + async 5) GREEN(로직 커버리지 100% 강제, `mypy --strict`, `ruff`). 하드닝(품질·CI 통합잡·ruff·DEPLOY.md)은 PR #3으로 병합됨. PyPI Trusted Publisher(OIDC) 릴리스 CI 준비됨, 실제 배포는 사람이 `py-v*` 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다.
 
-**Node.js/TypeScript SDK 완료 — `main` 병합됨 (PR #12).** WBS Task 1~12 전체 구현(스캐폴딩 → config → 핵심타입 → token-provider → oidc-metadata → JwtValidator → auth → admin → client+배럴 → 통합테스트 → CI → 문서). ESM 전용·async-only·strict TypeScript. 단위테스트 71개 + Testcontainers 통합테스트(실제 Keycloak 26.6) 5개 = 총 76개 GREEN(로직 모듈 라인 100%/브랜치 94% — 네트워크 경계 `auth.ts`/`admin/**`/`index.ts` omit), `tsc`(strict)·`eslint` 통과. 착수 전 딥리서치로 라이브러리 API 확정, 12태스크 계층별 커밋, 완료 후 4-차원 다중에이전트 어드버서리얼 리뷰(정확성·보안·동형성·테스트)로 7건 확정 결함 수정(HIGH: exchangeCode nonce). npm Trusted Publishing(OIDC + provenance) 릴리스 CI 준비됨, 실제 배포는 사람이 `node-v*` 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다. **남은 로드맵(사람 게이트)**: Maven Central 실배포(`io.github.xzawed` 네임스페이스 검증 + GPG/Portal 토큰) · PyPI 실배포(`keycloak-sdk` Trusted Publisher 설정) · npm 실배포(`@xzawed/keycloak-sdk` Trusted Publisher 설정). 배포 절차는 [DEPLOY.md](DEPLOY.md) 참고.
+**Node.js/TypeScript SDK 완료 — `main` 병합됨 (PR #12).** WBS Task 1~12 전체 구현(스캐폴딩 → config → 핵심타입 → token-provider → oidc-metadata → JwtValidator → auth → admin → client+배럴 → 통합테스트 → CI → 문서). ESM 전용·async-only·strict TypeScript. 단위테스트 71개 + Testcontainers 통합테스트(실제 Keycloak 26.6) 5개 = 총 76개 GREEN(로직 모듈 라인 100%/브랜치 94% — 네트워크 경계 `auth.ts`/`admin/**`/`index.ts` omit), `tsc`(strict)·`eslint` 통과. 착수 전 딥리서치로 라이브러리 API 확정, 12태스크 계층별 커밋, 완료 후 4-차원 다중에이전트 어드버서리얼 리뷰(정확성·보안·동형성·테스트)로 7건 확정 결함 수정(HIGH: exchangeCode nonce). npm Trusted Publishing(OIDC + provenance) 릴리스 CI 준비됨, 실제 배포는 사람이 `node-v*` 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다.
+
+**Go SDK 완료 — `feature/go-sdk`(main PR 예정).** WBS Task 1~12 전체 구현. 단일 `package keycloak`(admin을 서브패키지로 두면 `Client.Admin`이 `*AdminClient` 반환 시 import 순환 → `admin_*.go`로 같은 패키지), sync + `context.Context`(모든 네트워크 메서드 첫 인자). 단위테스트 40개 + Testcontainers 통합테스트(실제 Keycloak 26.6) 1개(E2E — 전 흐름·5 admin 리소스) = 총 41개 GREEN(로직 커버리지 95.2% — 네트워크 경계 `auth.go`/`admin*.go`/`client.go` omit), `go vet`·`gofmt`·`golangci-lint`(gosec 포함) 통과. 착수 전 딥리서치로 라이브러리 API 확정, 완료 후 4-차원 다중에이전트 어드버서리얼 리뷰로 9건 확정 결함 수정(admin 네트워크오류→TransportError·Validator JWKS 타임아웃·`exp` 필수·JWKS rate-limit/single-flight). Go 모듈은 레지스트리 없이 `go/v*` 태그가 곧 릴리스(`proxy.golang.org` 자동 캐시), 실제 배포는 사람이 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다. **남은 로드맵(사람 게이트)**: Maven Central 실배포(`io.github.xzawed` 네임스페이스 검증 + GPG/Portal 토큰) · PyPI 실배포(`keycloak-sdk` Trusted Publisher 설정) · npm 실배포(`@xzawed/keycloak-sdk` Trusted Publisher 설정) · Go 실배포(`go/v*` 태그 push). 배포 절차는 [DEPLOY.md](DEPLOY.md) 참고.
 
 - 설계 스펙: [docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md](docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md) — **구현 전 반드시 정독**
-- 구현 계획(WBS): [docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md](docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md)(Java) · [docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md](docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md)(Python) · [docs/superpowers/plans/2026-07-04-keycloak-node-sdk-wbs.md](docs/superpowers/plans/2026-07-04-keycloak-node-sdk-wbs.md)(Node)
+- 구현 계획(WBS): [docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md](docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md)(Java) · [docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md](docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md)(Python) · [docs/superpowers/plans/2026-07-04-keycloak-node-sdk-wbs.md](docs/superpowers/plans/2026-07-04-keycloak-node-sdk-wbs.md)(Node) · [docs/superpowers/plans/2026-07-04-keycloak-go-sdk-wbs.md](docs/superpowers/plans/2026-07-04-keycloak-go-sdk-wbs.md)(Go)
 - 실행 거버넌스: [docs/governance/ai-governance-framework.md](docs/governance/ai-governance-framework.md) (Codex 이중검증·G1~G6 게이트·루프 엔지니어링)
 - 검증 로그: [docs/governance/verification-log.md](docs/governance/verification-log.md) — 태스크별 게이트 통과 이력
 - 설치·시작: [docs/guides/getting-started.md](docs/guides/getting-started.md) · Keycloak 서버 배포(단일 VM+Compose): [docs/guides/deploying-keycloak-server.md](docs/guides/deploying-keycloak-server.md) · 언어 확장 로드맵: [docs/roadmap/language-support.md](docs/roadmap/language-support.md) · 새 언어 추가 플레이북: [docs/guides/add-a-language-playbook.md](docs/guides/add-a-language-playbook.md)
 - **테스트 수(Java)**: 단위테스트 117개(core 34 · auth 34 · admin 43 · keycloak-sdk 6) + 통합테스트(Testcontainers) 6개(SmokeIT 1 · AuthFlowIT 3 · AdminOpsIT 2) = **총 123개**, 커버리지 게이트(로직 모듈 라인 ≥90%/브랜치 ≥85%) 통과. (surefire/failsafe 실측 기준 — Phase 7의 94는 최종리뷰 Wave A/B 이전 수치)
 - **테스트 수(Python, main)**: 단위테스트 224개(sync 135 + `aio` async 89) + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 11개(sync 6 + async 5) = **총 235개**, 로직 모듈 커버리지 **100% 강제**(`--cov-fail-under=100`, 경계모듈 omit), `mypy --strict`·`ruff`(보안 S/bandit 포함 확장 룰셋)·`ruff format` 통과.
 - **테스트 수(Node, main)**: 단위테스트 71개(config 5 · masking 2 · errors 3 · tokens 6 · oidc-metadata 1 · token-provider 4 · jwt 7 · auth 15 · admin 17 · client 11) + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 5개(E2E) = **총 76개**, 커버리지 게이트(로직 모듈 라인 ≥90%/브랜치 ≥85% — 실측 라인 100%/브랜치 94%, 네트워크 경계 `auth.ts`/`admin/**`/`index.ts` omit) 통과, `tsc`(strict)·`eslint` 통과.
+- **테스트 수(Go, `feature/go-sdk`)**: 단위테스트 40개(config·errors·masking·tokens·tokenprovider·oidc·jwt·auth·admin·client) + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 1개(E2E — client-credentials→validate→introspect→user CRUD→5 리소스 CRUD→Raw) = **총 41개**, 커버리지 게이트(로직 파일 statement ≥90% — 실측 95.2%, 네트워크 경계 `auth.go`/`admin*.go`/`client.go` omit) 통과, `go vet`·`gofmt`·`golangci-lint`(gosec) 통과.
 
 ### Java 툴체인 (빌드 명령)
 
@@ -76,6 +80,22 @@ cd node && npm run build             # tsc → dist/ (배포 산출물)
 - 실제 npm 배포는 로컬에서 실행하지 않는다 — `node-v*` 태그 push 시 `.github/workflows/node-release.yml`에서 npm Trusted Publishing(OIDC + provenance, 저장 토큰 없음)로 실행(사람 승인 게이트)
 - 패키지 `@xzawed/keycloak-sdk`는 ESM 전용(`"type":"module"`)이며 `.d.ts` 타입 선언을 포함 — 소비자 측 TypeScript 타입 검사 가능
 - ⚠️ 커버리지 게이트에서 `src/auth.ts`·`src/admin/**`·`src/index.ts` omit(네트워크 경계) — 통합테스트로 검증. 나머지 로직 모듈은 라인 100%/브랜치 94% 실측
+
+### Go 툴체인 (빌드 명령)
+
+Go는 포터블 설치 `C:\Users\dirtc\tools\go`(1.26.4, 리포지토리 미커밋)를 사용한다. 프리픽스를 인라인 지정하고 `go -C go`로 실행한다(cwd를 go/로 바꾸지 않아 git과 충돌 방지):
+```bash
+export PATH="/c/Users/dirtc/tools/go/bin:$PATH" GOTOOLCHAIN=local
+go -C /d/Source/KeyCloakSDK/go build ./...      # 빌드
+go -C /d/Source/KeyCloakSDK/go test ./...        # 단위테스트 40개(integration 태그 없이 — E2E 제외)
+go -C /d/Source/KeyCloakSDK/go test -tags=integration -run TestE2E -count=1 ./...  # 통합 E2E(Docker 필요)
+go -C /d/Source/KeyCloakSDK/go vet ./...         # 정적 분석
+gofmt -l /d/Source/KeyCloakSDK/go                # 포맷 검사(출력 없으면 OK; -w로 수정)
+```
+- 단일 테스트: `go -C go test -run TestValidateValidToken ./...`
+- 커버리지 게이트(로직 statement ≥90, 네트워크 경계 omit): `go test ./... -coverprofile=cover.out` → `grep -vE '/(auth|admin|admin_users|admin_clients|admin_realms|admin_roles|admin_groups|client)\.go:' cover.out`로 경계 제외 → `go tool cover -func`로 total 확인(실측 95.2%)
+- ⚠️ **최소 Go는 1.25**(`golang.org/x/oauth2` v0.36이 요구 → `go.mod`의 `go 1.25`). CI matrix는 1.25·1.26. `golangci-lint`는 로컬 미설치(CI에서 `golangci/golangci-lint-action@v6`) — 로컬은 `go vet`·`gofmt`로 대체
+- **배포는 레지스트리 없음** — Go 모듈은 `go/v*` 태그가 곧 릴리스(`proxy.golang.org` 자동 캐시). `.github/workflows/go-release.yml`이 태그 push 시 verify + GitHub Release + 프록시 워밍(사람 승인 게이트). 소비자: `go get github.com/xzawed/KeyCloakSDK/go@vX.Y.Z`
 
 ## 아키텍처
 
@@ -137,9 +157,29 @@ node/
 
 **결합 규칙(Node)**: `admin`은 `auth`에 의존하지 않는다(각자 독립 client-credentials 인증) — `core`의 `TokenProvider` 인터페이스가 유일 접착제. `openid-client`(auth)·`@keycloak/keycloak-admin-client`(admin)를 래핑하고, 예외는 경계에서 `KeycloakError` 계급으로 변환되어 하위 라이브러리 에러(`NetworkError` 등)가 공개 API로 새지 않는다. `admin.raw()`가 탈출구. JWT 검증만 `jose`로 자체 강화 구현.
 
-**언어 중립 계약(§4)**: Java(손수 래핑)·Python(`python-keycloak` 래핑)·Node(`openid-client`+admin-client 래핑)의 출발점이 다르므로, 언어 중립 API 계약을 진실 원천으로 두고 각 언어가 구현한다. 세 언어 모두 하위 라이브러리 타입을 **주 소비 경로(파사드) 뒤에 숨긴다**(camelCase ↔ snake_case만 다르고 개념·계층·명명은 동형 — 예: `TokenSet`/`ValidatedToken`/`IntrospectionResult`·`Keycloak*Error`·`KeycloakClient.auth/admin`). **예외/exceptions 계층은 항상 경계에서 SDK 타입으로 변환**되어 `keycloak.exceptions.*`·`jakarta.ws.rs.*`·`NetworkError`가 공개 API로 새지 않는다.
+**Go** — 단일 패키지 `keycloak`(`go/`, 모듈 `github.com/xzawed/KeyCloakSDK/go`):
 
-**문서화된 은닉성 예외(의도적, 2026-07-03 보안감사 반영)**: 완전 은닉이 아니라 아래 지점은 하위 타입을 노출한다 — 재래핑 비용이 과다하거나 보조 표면이기 때문이다. (a) **Java·Node admin 파사드**는 representation 타입을 데이터 모델로 그대로 노출한다(Java `org.keycloak.representations.idm.*`, Node `@keycloak/keycloak-admin-client/lib/defs/*` — 안정적 Keycloak 타입 재사용, SDK 자체 DTO 재래핑은 범위 밖). Python admin은 plain `dict[str, Any]`로 통과(누출 아님). (b) **저수준 주입/구성 지점** — Java `JwtValidator.forRealm`의 Nimbus `JWSAlgorithm`, Python `JwtValidator.validate`의 joserfc `KeySet`, Node `new JwtValidator(keys, opts)`의 jose `JWTVerifyGetKey`·테스트 주입용 생성자 파라미터는 하위 타입을 받는다. 정상 소비 경로(`KeycloakClient.auth/admin`, `client.auth.validate(...)`)는 이들을 노출하지 않는다.
+```
+go/
+├─ go.mod / go.sum          # go 1.25 · 배포 태그 go/vX.Y.Z(레지스트리 없음)
+├─ config.go                # Config(값 구조체) + validate + String 마스킹
+├─ errors.go                # 오류 계급(타입드 구조체) + 센티넬 ErrNotFound/ErrConflict/ErrForbidden
+├─ tokens.go                # TokenSet(IsExpired·String 마스킹)/ValidatedToken/IntrospectionResult
+├─ tokenprovider.go         # TokenProvider + ClientCredentialsTokenProvider(x/sync/singleflight)
+├─ oidc.go                  # 엔드포인트 조립(네트워크 없음)
+├─ jwt.go                   # Validator — go-jose 자체 강화 + DoS-safe JWKS(single-flight·rate-limit)
+├─ auth.go                  # AuthClient — x/oauth2 래핑 + 수동 introspect/logout
+├─ admin.go + admin_*.go    # AdminClient + 5 리소스 + Raw() + toSDKError(경계변환)
+├─ client.go                # Client 통합 진입점(Auth 즉시·Admin(ctx) 지연·Close)
+├─ example_test.go          # godoc 예제 · integration_test.go(//go:build integration)
+└─ testdata/it-realm-realm.json  # Java/Python/Node 재사용(//go:embed)
+```
+
+**결합 규칙(Go)**: **전체가 단일 `package keycloak`**(admin을 서브패키지로 두면 `Client.Admin`이 `*AdminClient` 반환 시 admin↔root import 순환 — Go 금지 — 이 발생하므로 `admin_*.go`로 같은 패키지). `admin`은 `auth`에 의존하지 않고 `TokenProvider`(gocloak client-credentials 기본)가 유일 접착제. `gocloak`(admin)·`x/oauth2`(auth) 래핑, 오류는 경계에서 타입드 구조체(`*AdminError` 등)로 변환. **⚠️ gocloak은 네트워크 실패도 `*APIError{Code:0}`로 감싸므로** `toSDKError`는 `Code==0`→`*TransportError`, `>0`→`*AdminError`로 나눈다(그러지 않으면 전부 `AdminError{HTTP 0}`로 오분류). `admin.Raw()`가 탈출구. JWT 검증만 `go-jose/v4`로 자체 강화.
+
+**언어 중립 계약(§4)**: Java(손수 래핑)·Python(`python-keycloak` 래핑)·Node(`openid-client`+admin-client 래핑)·Go(`gocloak`+`x/oauth2` 래핑)의 출발점이 다르므로, 언어 중립 API 계약을 진실 원천으로 두고 각 언어가 구현한다. 네 언어 모두 하위 라이브러리 타입을 **주 소비 경로(파사드) 뒤에 숨긴다**(camelCase ↔ snake_case ↔ Go PascalCase만 다르고 개념·계층은 동형 — 예: `TokenSet`/`ValidatedToken`/`IntrospectionResult`·오류 계급·`Client.auth/admin`). **예외/오류 계층은 항상 경계에서 SDK 타입으로 변환**되어 `keycloak.exceptions.*`·`jakarta.ws.rs.*`·`NetworkError`·`gocloak.APIError`가 공개 API로 새지 않는다. Go는 예외 대신 **error 값 + 센티넬**(`errors.Is`/`errors.As`) 관용을 쓴다(§4 허용).
+
+**문서화된 은닉성 예외(의도적, 2026-07-03 보안감사 반영)**: 완전 은닉이 아니라 아래 지점은 하위 타입을 노출한다 — 재래핑 비용이 과다하거나 보조 표면이기 때문이다. (a) **Java·Node·Go admin 파사드**는 representation 타입을 데이터 모델로 그대로 노출한다(Java `org.keycloak.representations.idm.*`, Node `@keycloak/keycloak-admin-client/lib/defs/*`, Go `gocloak.User`/`Client`/`Role`/`Group`/`RealmRepresentation` — 안정적 Keycloak 타입 재사용, SDK 자체 DTO 재래핑은 범위 밖). Python admin은 plain `dict[str, Any]`로 통과(누출 아님). (b) **저수준 주입/구성 지점** — Java `JwtValidator.forRealm`의 Nimbus `JWSAlgorithm`, Python `JwtValidator.validate`의 joserfc `KeySet`, Node `new JwtValidator(keys, opts)`의 jose `JWTVerifyGetKey`, Go `admin.Raw()`의 `*gocloak.GoCloak`·테스트 주입용 파라미터는 하위 타입을 받는다. 정상 소비 경로(`Client.auth/admin`, `client.Auth.Validate(...)`)는 이들을 노출하지 않는다.
 
 ## 핵심 게차 (Gotchas) — 2026-07-02 검증
 
@@ -156,6 +196,9 @@ node/
 - ⚠️ **Java 런타임 타깃은 21 LTS(2026-07-03 업그레이드).** `maven.compiler.release=21` + enforcer `requireJavaVersion=[21,)`로 JDK 21 미만 빌드를 fail-fast. `maven-compiler-plugin`은 pluginManagement에서 `3.11.0`으로 명시 고정(기본값 드리프트 방지). CI(`ci.yml` build matrix·integration, `release.yml`)는 모두 JDK 21 단일 사용.
 - ⚠️ **jackson-databind는 2.21.4 고정(CVE 대응, 2026-07-03).** Dependabot 7건(HIGH 2·MEDIUM 5) 대응으로 jackson-databind 계열 6종을 2.21.2→2.21.4로 상향(관리값보다 picked-higher, 수렴 유지). `jackson-annotations`는 별도 트랙·비취약이라 2.21 유지. CVE-2026-54515는 fix(2.21.5) 미출시 — 이 SDK에서 악용 불가로 문서화, 2.21.5 출시 시 상향. **보안 불변식(위반 시 노출 재개)**: SDK는 자체 `ObjectMapper`/default·polymorphic typing을 쓰지 않고 신뢰된 Keycloak 응답만 고정 representation POJO로 역직렬화한다 — default typing 활성화·커스텀 JAX-RS Jackson provider 등록·미신뢰 JSON의 다형성 역직렬화를 도입하지 말 것. 상세: [verification-log.md](docs/governance/verification-log.md).
 - ⚠️ **(Node) admin-client `findOne`/`findOneByName`은 404에서 `null` 반환(선언 타입은 `undefined`).** `get()`류는 `null`/`undefined`를 모두 부재로 보고 `KeycloakNotFoundError`로 변환한다(`admin/call.ts`의 `requireFound`). `=== undefined`만 검사하면 삭제 후 조회가 NotFound 대신 `null`을 반환하는 버그 — 통합테스트가 포착했다.
+- ⚠️ **(Go) gocloak은 네트워크 실패까지 `*gocloak.APIError`로 감싼다(`Code:0`).** `toSDKError`는 `Code==0`이면 `*TransportError`, `>0`이면 `*AdminError`로 나눈다 — 그러지 않으면 연결 거부/DNS 실패가 `AdminError{HTTP 0}`로 오분류되고 `errors.As(err, &TransportError)` 경로가 死코드가 된다(리뷰 포착).
+- ⚠️ **(Go) go-jose는 `exp` 부재 시 만료검사를 건너뛴다.** `jwt.Validate`는 `claims.Expiry == nil`을 명시 거부해야 무만료 토큰 통과를 막는다(Java/Python 동형). `ValidateWithLeeway`만 믿으면 안 됨. JWKS 재조회는 초기(non-forced) 로드에 `forcedAt`를 소모하지 않아야 첫 키회전 재조회가 허용되고(Python `-inf` 동형), 동시 미스는 `singleflight`로 수렴한다(IdP 폭주 상한).
+- ⚠️ **(Go) 최소 런타임 Go 1.25**(`x/oauth2` v0.36 요구). `go.mod`의 `go` 지시자를 1.24로 낮추면 `go mod tidy`가 다시 1.25로 올린다(의존성 요구). Validator의 JWKS `http.Client`는 `Config.ReadTimeout`을 주입해야 한다(미주입 시 `http.DefaultClient` 무한대기 — hung IdP에 영원히 블록). TLS는 Go `http.Client`가 https를 기본 검증하고 http는 투명 처리하므로 `allowInsecure` 로직 불필요(Node와 차이).
 - ⚠️ **(Node) openid-client v6 함수형 API·타임아웃·TLS.** 타임아웃은 `Configuration.timeout`(초, 내장 프로퍼티)로 주입한다. admin-client 타임아웃은 `ConnectionConfig.timeout`(**ms**)로 주입(`requestOptions`는 `Omit<RequestInit,"signal">`이라 signal 주입 불가). TLS는 기본 강제 — `serverUrl`이 `http://`일 때만 `allowInsecureRequests`를 적용한다(로컬/테스트 완화, https는 강제 유지).
 - ⚠️ **(Node) PKCE `exchangeCode`는 `nonce`를 반드시 전달해야 한다.** `createAuthorizationRequest`가 nonce를 실으면 Keycloak이 id_token에 담아 돌려주고, openid-client v6는 이를 자동 검증하므로 기대 nonce를 주지 않으면 "unexpected nonce"로 **전면 거부**한다(리뷰 HIGH 결함). 마스킹: `TokenSet`은 access/refresh 토큰을, `KeycloakConfig`는 `clientSecret`을 `toString`/`toJSON`/`util.inspect`에서 마스킹한다(속성 접근·스프레드는 유지). JWKS는 jose `createRemoteJWKSet`의 `cooldownDuration`으로 DoS-안전(kid 미해결 시에만 재조회).
 
@@ -171,6 +214,8 @@ node/
 | 단위 테스트 | JUnit 6.1.1 · Mockito 5.23.0 | — |
 
 **Node 확정 의존성(package.json으로 고정, major 핀)**: `@keycloak/keycloak-admin-client` **26.6.4**(admin) · `openid-client` **6.8.4**(auth, 함수형 API) · `jose` **5.10.0**(강화 JWT) · dev: `typescript` 5 · `vitest`/`@vitest/coverage-v8` 3 · `testcontainers` 11 · `eslint` 9 + `typescript-eslint` 8 · `prettier` 3 · `@types/node` 20. 런타임 deps(admin-client/openid-client/jose)는 audit clean, devDeps 일부 moderate(dockerode/testcontainers 계열, `files:["dist"]`라 소비자 미배포).
+
+**Go 확정 의존성(go.mod, major 핀)**: `github.com/Nerzal/gocloak/v13` **v13.9.0**(admin) · `golang.org/x/oauth2` **v0.36.0**(auth 흐름) · `github.com/go-jose/go-jose/v4` **v4.1.4**(강화 JWT) · `golang.org/x/sync/singleflight`(single-flight) · test: `github.com/testcontainers/testcontainers-go` **v0.43.0**(base GenericContainer — `modules/keycloak`는 독립 태그 부재로 미사용) · `github.com/stretchr/testify` **v1.11.1**. 전부 Apache-2.0/BSD-3/MIT(호환). `go-oidc`는 제외(discovery는 규약 조립, verifier는 go-jose 자체 강화).
 
 ## 문서 유지 규칙
 

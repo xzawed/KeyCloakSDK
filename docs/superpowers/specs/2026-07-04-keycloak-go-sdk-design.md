@@ -59,7 +59,7 @@ Keycloak을 위한 **Go용 SDK**를 만든다. Java(`keycloak-admin-client`+Nimb
 
 ```
 go/
-├─ go.mod / go.sum          # module github.com/xzawed/KeyCloakSDK/go · go 1.24
+├─ go.mod / go.sum          # module github.com/xzawed/KeyCloakSDK/go · go 1.25
 ├─ config.go                # Config(값 구조체) + 검증(New 내부)
 ├─ errors.go                # Error 계급(타입드 구조체 + 센티넬) + HTTP상태 매핑
 ├─ tokens.go                # TokenSet / ValidatedToken / IntrospectionResult + 마스킹
@@ -219,7 +219,7 @@ var ErrForbidden = errors.New("keycloak: forbidden")   // 403
 ## 8. 빌드 · CI · 배포
 
 - **빌드/품질**: `go build ./...`·`go vet ./...`·`gofmt -l`(포맷)·`golangci-lint`(린트, 보안 린터 포함)·`go test`.
-- **모듈**: `github.com/xzawed/KeyCloakSDK/go`, `go 1.24`(최소). 저장소 대소문자(`KeyCloakSDK`)를 모듈 경로에 그대로 사용(Go 경로는 대소문자 구분·VCS 경로 일치 필수). 소비자: `import "github.com/xzawed/KeyCloakSDK/go"` → `keycloak.New(…)`.
+- **모듈**: `github.com/xzawed/KeyCloakSDK/go`, `go 1.25`(최소, x/oauth2 v0.36이 요구). 저장소 대소문자(`KeyCloakSDK`)를 모듈 경로에 그대로 사용(Go 경로는 대소문자 구분·VCS 경로 일치 필수). 소비자: `import "github.com/xzawed/KeyCloakSDK/go"` → `keycloak.New(…)`.
 - **CI (`.github/workflows/go-ci.yml`)**: matrix Go — **최소 지원(`go 1.24`) + 최신 마이너**(착수 시 확정, 예: `1.24`·`1.26`) — build+vet+gofmt+golangci-lint+unit+coverage 잡, integration 잡(Docker) 별도. paths `go/**`. `actions/setup-go` + 모듈 캐시.
 - **배포 (`.github/workflows/go-release.yml`)**: `go/v*` 태그 → **레지스트리 배포 없음**(Go 모듈은 태그=릴리스, `proxy.golang.org`가 VCS에서 자동 캐시). 워크플로는 (a) verify(vet+test), (b) GitHub Release 생성, (c) `GOPROXY=proxy.golang.org go list -m github.com/xzawed/KeyCloakSDK/go@<태그>`로 프록시 워밍. human-gated(사람이 `go/v*` 태그 push). 저장 시크릿 불필요.
 - **로컬 사전검증**: `go build ./...`·`go vet ./...`·`go test ./... -short`.
@@ -228,7 +228,7 @@ var ErrForbidden = errors.New("keycloak: forbidden")   // 403
 
 ## 9. 문서 · 거버넌스
 
-- getting-started에 **Go 섹션(4블록: 요구 런타임 Go 1.24+·로컬 `go get`·배포후 `go get`·최소 예제)** 추가 · README·CLAUDE 구조 트리·로드맵 현황 매트릭스 Go ✅ 갱신 · CHANGELOG `(Go)` 태그.
+- getting-started에 **Go 섹션(4블록: 요구 런타임 Go 1.25+·로컬 `go get`·배포후 `go get`·최소 예제)** 추가 · README·CLAUDE 구조 트리·로드맵 현황 매트릭스 Go ✅ 갱신 · CHANGELOG `(Go)` 태그.
 - **verification-log-go.md**(게이트 통과·Loops·딥리서치 이력) 기록.
 - **G1~G6 게이트 + 이중검증(다중에이전트 어드버서리얼 리뷰) + Loops** 준수. 실행은 **WBS → Workflow 오케스트레이션**(플레이북 6단계 매핑). 착수 전 딥리서치 재검증.
 - **툴체인**: 이 머신은 Go를 `C:\Users\dirtc\tools\go`(1.26.4, 포터블)에 설치. 명령 프리픽스 `PATH="/c/Users/dirtc/tools/go/bin:$PATH" GOTOOLCHAIN=local go <cmd>` (Java/Maven 방식과 동일, 리포지토리 미커밋 — CI는 setup-go 사용).

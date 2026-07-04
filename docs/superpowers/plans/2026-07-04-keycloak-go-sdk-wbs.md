@@ -6,14 +6,14 @@
 
 **Architecture:** `golang.org/x/oauth2`(auth 흐름)·`go-jose/v4`(강화 JWT)·`github.com/Nerzal/gocloak/v13`(admin)을 감싸는 파사드. 계층 `config → errors/tokens → tokenprovider → oidc → jwt → auth → admin → client`. `admin`은 `auth`를 모르고 `TokenProvider`로만 결합(기본은 gocloak client-credentials). 하위 타입은 파사드 뒤 은닉, 오류는 경계에서 SDK 타입으로 변환.
 
-**Tech Stack:** Go 1.24+ · `x/oauth2` v0.36 · `go-jose/v4` v4.1.4 · `gocloak/v13` v13.9 · `x/sync/singleflight` · `testcontainers-go` v0.43 + `/modules/keycloak` · `testify` v1.11 · gofmt · go vet · golangci-lint.
+**Tech Stack:** Go 1.25+ · `x/oauth2` v0.36 · `go-jose/v4` v4.1.4 · `gocloak/v13` v13.9 · `x/sync/singleflight` · `testcontainers-go` v0.43 + `/modules/keycloak` · `testify` v1.11 · gofmt · go vet · golangci-lint.
 
 ## Global Constraints
 
 [설계 스펙](../specs/2026-07-04-keycloak-go-sdk-design.md)에서 그대로 옮김. 모든 태스크에 암묵 적용.
 
 - **배치**: 모노레포 `go/`(java/·python/·node/와 나란히). 모듈 `github.com/xzawed/KeyCloakSDK/go`, 패키지 `keycloak`, 배포 태그 `go/vX.Y.Z`.
-- **런타임**: Go **1.24+** · sync + `context.Context`(모든 네트워크 메서드 첫 인자 `ctx`; `CreateAuthorizationRequest`만 순수 동기).
+- **런타임**: Go **1.25+** · sync + `context.Context`(모든 네트워크 메서드 첫 인자 `ctx`; `CreateAuthorizationRequest`만 순수 동기).
 - **명명**: **no-stutter**(`keycloak.New`/`keycloak.Client`/`keycloak.Config`/`keycloak.TokenSet`). 값타입 `TokenSet`/`ValidatedToken`/`IntrospectionResult`. 오류 타입드 구조체 + 센티넬.
 - **동형 계약**: [§4 언어중립계약](../specs/2026-07-02-keycloak-multilang-sdk-design.md). 참조: `java/`, `python/src/keycloak_sdk/`, `node/src/`.
 - **보안 불변식**: 토큰/시크릿 **완전 마스킹**(`***`, 접두 노출 없음) · TLS 검증 기본 on(http만 완화) · JWT 강화(alg 핀·`none` 거부·`iss` 정확일치·`aud` 포함검사·클록스큐 기본 30s·**JWKS 재조회 DoS-safe**) · admin 타임아웃 주입.
