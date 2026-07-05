@@ -1,7 +1,10 @@
 # build context = repo root (docker-compose.yml의 context: ..)
-# ⚠️ api.nuget.org의 DNS 해석은 docker-compose.yml의 app-dotnet build.extra_hosts를
-# 참고(로컬 Docker Desktop DNS 프록시 CNAME/glibc 버그 우회 — 상세 사유는 그쪽 주석).
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+# ⚠️ Alpine(musl) SDK 빌드 이미지 사용: Debian/glibc SDK 이미지는 Docker Desktop(Windows)
+# 내장 DNS 프록시가 api.nuget.org의 CNAME 체인 응답을 glibc 리졸버에 실패(NXDOMAIN류)로
+# 돌려줘 `dotnet restore`가 NU1301로 막힌다(musl은 동일 환경에서 정상 해석 — dig/getent
+# 실측 비교로 확인). musl은 CI(Linux 네이티브 Docker)에서도 문제없이 동작하므로 이식성 있는
+# 근본 해결책이다(호스트별 extra_hosts/IP 고정 불필요).
+FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build
 WORKDIR /src
 # ProjectReference 대상(SDK)과 앱 소스를 상대경로 보존해 복사(tests 제외)
 COPY dotnet/Directory.Build.props ./dotnet/

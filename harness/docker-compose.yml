@@ -38,21 +38,7 @@ services:
     profiles: ["apps"]        # 기본 up에는 keycloak만; 앱은 --profile apps 또는 개별 up
 
   app-dotnet:
-    build:
-      context: ..
-      dockerfile: harness/apps/dotnet/Dockerfile
-      # ⚠️ 로컬 워크스테이션 한정 우회: Docker Desktop(Windows) 내장 DNS 프록시가
-      # CNAME 체인 응답(api.nuget.org → Akamai)을 glibc 리졸버에는 실패(getent rc=2,
-      # NXDOMAIN류)로 돌려주는 반면 musl(alpine)에는 정상 응답한다(dig/getent 실측
-      # 비교로 확인 — CNAME 없는 직접-A 응답(google.com 등)은 glibc에서도 정상이라
-      # 리졸버 자체가 아니라 이 프록시의 CNAME 체인 처리 버그로 특정됨). SDK 이미지
-      # (Debian/glibc)의 `dotnet restore`가 NU1301(서비스 인덱스 로드 실패)로 막히므로
-      # musl로 해석한 IP를 빌드에 고정 주입(BuildKit RUN 중 /etc/hosts는 읽기전용이라
-      # extra_hosts로만 주입 가능). 네이티브 Linux Docker(CI)는 이 프록시 버그가 없어
-      # 무해(안전 실패: IP가 stale해지면 TLS 인증서 불일치로 명확히 실패하지 자격증명
-      # 유출 등 조용한 오작동은 없음). 갱신: `docker run --rm alpine getent hosts api.nuget.org`
-      extra_hosts:
-        - "api.nuget.org:23.205.46.151"
+    build: { context: .., dockerfile: harness/apps/dotnet/Dockerfile }
     environment:
       KC_SERVER_URL: http://keycloak:8080
       KC_REALM: it-realm
