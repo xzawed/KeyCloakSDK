@@ -10,7 +10,7 @@ Keycloak을 위한 **여러 프로그래밍 언어용 SDK**(polyglot). Keycloak�
 | **Python 3.10+** | ✅ 완료 · `main` 병합 (PR #2 sync, PR #4 async) | `python-keycloak`(admin+OIDC) 래핑 + `joserfc` 자체 JWT 검증 | PyPI `keycloak-sdk` (human-gated) |
 | **Node.js 20+** (ESM) | ✅ 완료 · `main` 병합 (PR #12) | 공식 `@keycloak/keycloak-admin-client` + `openid-client` v6 래핑 + `jose` 자체 JWT 검증 | npm `@xzawed/keycloak-sdk` (human-gated) |
 | **Go 1.25+** | ✅ 완료 · `main` 병합 (PR #13) | `Nerzal/gocloak` v13 + `golang.org/x/oauth2` 래핑 + `go-jose/v4` 자체 JWT 검증 | Go 모듈 `github.com/xzawed/KeyCloakSDK/go` (태그=릴리스, human-gated) |
-| **C# / .NET 8+** | ✅ 완료 · `feature/dotnet-sdk` | `Duende.IdentityModel` + `Keycloak.AuthServices.Sdk` 2.7.0 래핑 + `Microsoft.IdentityModel.JsonWebTokens` 자체 JWT 검증 | NuGet `Xzawed.Keycloak.Sdk` (human-gated) |
+| **C# / .NET 8+** | ✅ 완료 · `main` 병합 (PR #14) | `Duende.IdentityModel` + `Keycloak.AuthServices.Sdk` 2.7.0 래핑 + `Microsoft.IdentityModel.JsonWebTokens` 자체 JWT 검증 | NuGet `Xzawed.Keycloak.Sdk` (human-gated) |
 
 - **라이선스**: Apache-2.0
 

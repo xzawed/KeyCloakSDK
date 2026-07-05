@@ -74,10 +74,18 @@ Go/Node는 **구현 완료 후**(Task 12 직전) 코드를 리뷰했지만, 이�
 ## 최종 상태 (G1~G6 종합)
 
 - **G1**: ✅ `dotnet build`(`TreatWarningsAsErrors`·`Nullable`·`AnalysisLevel 8.0`) · `dotnet format --verify-no-changes` 통과.
-- **G2**: ✅ 단위 **58** GREEN(config 8 · tokens 7 · errors 4 · masking 3 · tokenprovider 4 · oidc 1 · jwt 11 · auth 9 · admin 5 · client 5 · scaffolding 1 — `[Fact]`+`[InlineData]` 실측).
-- **G3**: ✅ 로직 모듈 라인 **97.64%**/브랜치 **93.18%**(게이트 90/85), 네트워크 경계(`AuthClient`/`Admin.*`/`KeycloakClient`) omit(`coverlet.msbuild`).
+- **G2**: ✅ 단위 **58** GREEN(config 8 · tokens 7 · errors 4 · masking 3 · tokenprovider 4 · oidc 1 · jwt 11 · auth 10 · admin 5 · client 5 — `[Fact]`+`[InlineData]` 실측; 최종리뷰에서 vacuous scaffolding 테스트 제거, auth 타임아웃 회귀 테스트 추가).
+- **G3**: ✅ 로직 모듈 라인 **97.34%**/브랜치 **93.47%**(게이트 90/85), 네트워크 경계(`AuthClient`/`Admin.*`/`KeycloakClient`) omit(`coverlet.msbuild`).
 - **통합**: ✅ Testcontainers E2E **1**(`Full_flow`, 다단계) GREEN(실제 Keycloak 26.6 — client-credentials→validate 다중aud→introspect→user CRUD→삭제 후 `KeycloakNotFoundException`→clients/roles/groups CRUD→realm get(자기 realm) + create/delete(master realm bootstrap admin)→`Raw`).
 - **G4**: ✅ §4 언어중립 계약·Java/Python/Node/Go 참조와 동형(계층·예외계급·값타입·보안불변식). C# 관용 편차(예외 기반·`Task<T>`+`CancellationToken`·record `ToString` override·DI 확장)는 §4 허용.
 - **G5**: ✅ 착수 전 WBS 계획 자체에 대한 5-렌즈+1-실컴파일 다중에이전트 어드버서리얼 리뷰(9건 확정 조치, 위 표) + 태스크별 소규모 리뷰 루프(위 Loops).
 - **G6**: ✅ JWT 강화(alg 핀 `RS256`·`none` 거부·iss 정확일치·aud 포함검사·**`exp` 필수**·클록 스큐 30s·DoS-안전 JWKS `ConfigurationManager.RefreshInterval`) · 완전 마스킹(토큰·시크릿·Config — `ToString()` override + `JsonConverter<T>` 이중) · TLS 기본(`HttpDocumentRetriever.RequireHttps`, http 이슈어만 완화) · admin/JWKS 타임아웃 주입(무한대기 차단) · admin 타임아웃(`TaskCanceledException`)→`KeycloakTransportException` 변환 · release 시크릿 step-스코프 + least-privilege `permissions`.
 - **배포**: 🔒 NuGet(`NUGET_API_KEY` 시크릿 기반, Trusted Publishing 아님), `dotnet-v*` 태그 push 대기(human-gated, 미실행).
+
+## 최종 전체브랜치 리뷰 + 병합 (2026-07-05)
+
+- **최종 리뷰**(3-렌즈 워크플로우 + 어드버서리얼 검증, 8-에이전트): 판정 **MERGEABLE-WITH-FIXES**(CRITICAL 없음). 동형성 렌즈는 C#이 Java/Python/Node/Go와 정확히 동형이며 일부 지점(admin 타임아웃 변환)은 더 강함을 확인. 커버리지 97.34/93.47 독립 재현.
+- **확정 결함 → 1 fix wave**(`af15269`): (IMPORTANT) `AuthClient`의 Duende 호출이 `HttpClient.Timeout`의 `TaskCanceledException`을 미변환 → admin과 동일하게 `KeycloakTransportException`으로 변환 + WireMock 회귀 테스트(Duende 8.1.0 바이너리 디컴파일로 확정). (MINOR ×6) `ConnectTimeoutMs` 배선(`SocketsHttpHandler.ConnectTimeout`)·`IntrospectAsync` OAuthError·`GetJsonAsync` body-parse 변환·release 워크플로 버전-from-tag/`.snupkg`·마스킹 코멘트 정정(Serilog `{@}` destructuring은 `JsonConverter` 우회 — 과대주장 제거)·vacuous 스모크테스트 제거.
+- **NON-ISSUE 확정**: `CreateReturningIdAsync`의 `KeycloakHttpClientException` catch 부재는 upstream `…WithResponseAsync`가 non-2xx에 예외를 던지지 않으므로 무해(실제 소스 확인).
+- **CI GREEN**: GitHub Actions `build-test`·`integration`(실제 Keycloak E2E) 모두 통과.
+- **병합**: PR #14 → `main`(merge commit `1602544`).
