@@ -17,6 +17,9 @@ echo "== Keycloak 기동 =="
 docker compose up -d keycloak
 timeout 240 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" "$(docker compose ps -q keycloak)")" = healthy ]; do sleep 3; done'
 
+# k6 컨테이너(비-root uid 12345)가 호스트 마운트 report/에 handleSummary JSON을 쓸 수 있도록(Linux CI 권한). Windows엔 무해.
+mkdir -p report && chmod -R 777 report 2>/dev/null || true
+
 rc=0
 for SDK_LANG in "${LANGS[@]}"; do
   echo "== [$SDK_LANG] 앱 빌드·기동 =="
