@@ -62,7 +62,7 @@ export default function () {
     check(g, { 'get 200': (r) => r.status === 200, 'get username': (r) => r.json('username') === uname });
     const d = http.del(`${BASE}/admin/users/${id}`);
     check(d, { 'delete 204': (r) => r.status === 204 });
-    const g2 = http.get(`${BASE}/admin/users/${id}`);
+    const g2 = http.get(`${BASE}/admin/users/${id}`, { responseCallback: http.expectedStatuses(404) });
     check(g2, { 'get-after-delete 404': (r) => r.status === 404 });
   }
   adminDur.add(Date.now() - adminStart);

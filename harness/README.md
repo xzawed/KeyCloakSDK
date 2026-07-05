@@ -17,14 +17,25 @@ harness/
 └─ run.sh                 # 원커맨드 실행(Task 4)
 ```
 
-## 사용법 (예정 — Task 4에서 `run.sh` 추가)
+## 사용법
+
+원커맨드 파이프라인 — `run.sh`가 Keycloak 기동(health 대기) → 각 언어 앱 빌드·기동(healthz 대기) → k6 부하(compose 네트워크 내부 컨테이너) → 리포트 취합 → compose down을 순서대로 수행하고, 기능 게이트(checks 100%) 실패 시 비0 종료한다.
 
 ```bash
 cd harness
-docker compose up -d keycloak                 # Keycloak만 기동(realm import 포함)
+./run.sh go                                    # Go 앱 전체 실행 → report/RESULTS.md (기본값도 go)
+./run.sh go node python                        # 여러 언어를 순차 실행·비교(언어 인자 나열)
+cat report/RESULTS.md                          # 기능 정확성 게이트 + 언어간 성능 실측표
+```
+
+결과 `report/RESULTS.md`(및 `report/<lang>.json` k6 요약)는 생성 아티팩트라 커밋하지 않는다(`report/.gitignore`).
+
+수동 단계 실행(디버깅용):
+
+```bash
+docker compose up -d keycloak                  # Keycloak만 기동(realm import 포함)
 docker compose --profile apps up -d --build    # 언어 샘플 앱까지 기동
-./run.sh                                       # keycloak+앱+k6 드라이버 전체 실행 → report/
-docker compose down
+docker compose down -v
 ```
 
 ## 계약

@@ -8,7 +8,9 @@ let anyFail = false;
 for (const lang of langs) {
   const f = new URL(`./${lang}.json`, import.meta.url);
   if (!existsSync(f)) { rows.push({ lang, missing: true }); anyFail = true; continue; }
-  const d = JSON.parse(readFileSync(f, 'utf8'));
+  let d;
+  try { d = JSON.parse(readFileSync(f, 'utf8')); }
+  catch { rows.push({ lang, missing: true }); anyFail = true; continue; }
   const m = d.metrics || {};
   const val = (n, k) => (m[n]?.values?.[k] ?? null);
   const checksRate = val('checks', 'rate');
@@ -25,9 +27,9 @@ for (const lang of langs) {
 
 const n = (x, d = 2) => (x == null ? '—' : Number(x).toFixed(d));
 let md = `# 하네스 실측 결과 (RESULTS)\n\n## 기능 정확성 게이트\n\n| 언어 | checks PASS율 | 게이트 |\n|---|---|---|\n`;
-for (const r of rows) md += `| ${r.lang} | ${r.missing ? 'MISSING' : (100 * r.checksRate).toFixed(0) + '%'} | ${r.pass ? '✅' : '❌'} |\n`;
+for (const r of rows) md += `| ${r.lang} | ${(r.missing || r.checksRate == null) ? 'MISSING' : (100 * r.checksRate).toFixed(0) + '%'} | ${r.pass ? '✅' : '❌'} |\n`;
 md += `\n## 성능 실측 (언어간 비교)\n\n| 언어 | validate p95(ms) | admin CRUD p95(ms) | RPS | 오류율 |\n|---|---|---|---|---|\n`;
-for (const r of rows) if (!r.missing) md += `| ${r.lang} | ${n(r.validateP95)} | ${n(r.adminP95)} | ${n(r.rps)} | ${n(100 * r.errRate)}% |\n`;
+for (const r of rows) if (!r.missing) { const errPct = r.errRate == null ? null : 100 * r.errRate; md += `| ${r.lang} | ${n(r.validateP95)} | ${n(r.adminP95)} | ${n(r.rps)} | ${n(errPct)}% |\n`; }
 md += `\n> 성능은 실측·비교용(임계값 강제 아님). 기능 게이트만 PASS/FAIL.\n`;
 
 writeFileSync(new URL('./RESULTS.md', import.meta.url), md);

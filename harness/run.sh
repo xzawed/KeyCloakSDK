@@ -15,19 +15,19 @@ trap cleanup EXIT
 
 echo "== Keycloak 기동 =="
 docker compose up -d keycloak
-timeout 220 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" "$(docker compose ps -q keycloak)")" = healthy ]; do sleep 3; done'
+timeout 240 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" "$(docker compose ps -q keycloak)")" = healthy ]; do sleep 3; done'
 
 rc=0
-for LANG in "${LANGS[@]}"; do
-  echo "== [$LANG] 앱 빌드·기동 =="
-  docker compose --profile apps up -d --build "app-$LANG"
-  PORT=$(docker compose port "app-$LANG" "$(app_port "$LANG")" 2>/dev/null | sed 's/.*://')
-  timeout 90 bash -c "until curl -fsS http://localhost:$PORT/healthz >/dev/null 2>&1; do sleep 2; done"
-  echo "== [$LANG] k6 실행 =="
+for SDK_LANG in "${LANGS[@]}"; do
+  echo "== [$SDK_LANG] 앱 빌드·기동 =="
+  docker compose --profile apps up -d --build "app-$SDK_LANG" || { rc=1; continue; }
+  PORT=$(docker compose port "app-$SDK_LANG" "$(app_port "$SDK_LANG")" 2>/dev/null | sed 's/.*://')
+  timeout 90 bash -c "until curl -fsS http://localhost:$PORT/healthz >/dev/null 2>&1; do sleep 2; done" || { rc=1; docker compose --profile apps stop "app-$SDK_LANG" >/dev/null 2>&1 || true; continue; }
+  echo "== [$SDK_LANG] k6 실행 =="
   docker run --rm --network "$NET" -v "$PWD/driver:/scripts" -v "$PWD/report:/report" \
-    -e "BASE_URL=http://app-$LANG:$(app_port "$LANG")" -e KC_URL=http://keycloak:8080 -e "LANG=$LANG" \
+    -e "BASE_URL=http://app-$SDK_LANG:$(app_port "$SDK_LANG")" -e KC_URL=http://keycloak:8080 -e "LANG=$SDK_LANG" \
     grafana/k6 run /scripts/scenarios.js || rc=1
-  docker compose --profile apps stop "app-$LANG" >/dev/null
+  docker compose --profile apps stop "app-$SDK_LANG" >/dev/null
 done
 
 echo "== 리포트 취합 =="
