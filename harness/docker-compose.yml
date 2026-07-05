@@ -51,3 +51,18 @@ services:
       keycloak:
         condition: service_healthy
     profiles: ["apps"]
+
+  app-node:
+    build: { context: .., dockerfile: harness/apps/node/Dockerfile }
+    environment:
+      KC_SERVER_URL: http://keycloak:8080
+      KC_REALM: it-realm
+      KC_CLIENT_ID: it-client
+      KC_CLIENT_SECRET: it-secret
+      APP_PORT: "8090"
+    ports:
+      - "8092:8090"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    profiles: ["apps"]

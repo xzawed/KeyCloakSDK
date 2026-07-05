@@ -1,0 +1,11 @@
+{
+  "name": "harness-app-node",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "@xzawed/keycloak-sdk": "file:./xzawed-keycloak-sdk.tgz",
+    "express": "^5"
+  }
+}
