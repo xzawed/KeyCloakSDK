@@ -414,7 +414,8 @@ export default function () {
     check(g, { 'get 200': (r) => r.status === 200, 'get username': (r) => r.json('username') === uname });
     const d = http.del(`${BASE}/admin/users/${id}`);
     check(d, { 'delete 204': (r) => r.status === 204 });
-    const g2 = http.get(`${BASE}/admin/users/${id}`);
+    // 삭제 후 404는 기대된 응답 → expectedStatuses(404)로 http_req_failed(오류율)에 안 세이도록
+    const g2 = http.get(`${BASE}/admin/users/${id}`, { responseCallback: http.expectedStatuses(404) });
     check(g2, { 'get-after-delete 404': (r) => r.status === 404 });
   }
   adminDur.add(Date.now() - adminStart);
