@@ -14,7 +14,7 @@ services:
       - "8080:8080"
     healthcheck:
       # 26.6은 관리 포트 9000의 /health/ready 제공; curl 미포함 이미지라 bash TCP로 대체
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -qi '\"status\"[[:space:]]*:[[:space:]]*\"UP\"'"]
       interval: 5s
       timeout: 5s
       retries: 40

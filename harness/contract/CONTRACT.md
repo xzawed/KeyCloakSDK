@@ -13,4 +13,4 @@ Base: `http://<host>:<APP_PORT>`. 모든 body는 JSON. admin 엔드포인트는 
 | `GET /admin/users?username=<u>` | — | 200 `[{"id":"..","username":".."}]` | 500 |
 | `DELETE /admin/users/{id}` | — | 204 | 404 |
 
-**오류 매핑 규약(동형성)**: SDK NotFound류 → 404 · JWT 검증 실패 → 401 · 기타 → 500 `{"error":"<message>"}`. 토큰/시크릿은 응답·로그에 노출 금지(`/token`은 메타만).
+**오류 매핑 규약(동형성)**: SDK NotFound류 → 404 · SDK Conflict류(중복 username 등) → 409 · JWT 검증 실패 → 401 · 기타 → 500 `{"error":"<message>"}`. 토큰/시크릿은 응답·로그에 노출 금지(`/token`은 메타만).
