@@ -26,7 +26,7 @@ const JSON_H = { headers: { 'Content-Type': 'application/json' } };
 function getToken() {
   const res = http.post(`${KC}/realms/${REALM}/protocol/openid-connect/token`,
     { grant_type: 'client_credentials', client_id: CLIENT, client_secret: SECRET });
-  check(res, { 'kc token 200': (r) => r.status === 200 });
+  check(res, { 'kc token 200': (r) => r.status === 200, 'kc token has access_token': (r) => !!r.json('access_token') });
   return res.json('access_token');
 }
 
@@ -53,8 +53,8 @@ export default function () {
 
   // admin 여정: create → get → delete → get=404
   const uname = `vu-${LANG}-${__VU}-${__ITER}`;
-  const c = http.post(`${BASE}/admin/users`, JSON.stringify({ username: uname, email: `${uname}@e.com` }), JSON_H);
   const adminStart = Date.now();
+  const c = http.post(`${BASE}/admin/users`, JSON.stringify({ username: uname, email: `${uname}@e.com` }), JSON_H);
   const created = check(c, { 'create 201': (r) => r.status === 201, 'create id': (r) => !!r.json('id') });
   if (created) {
     const id = c.json('id');
