@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/Nerzal/gocloak/v13"
@@ -132,4 +131,3 @@ func writeErr(w http.ResponseWriter, err error) {
 }
 
 func strOr(p *string) string { if p != nil { return *p }; return "" }
-var _ = strings.TrimSpace

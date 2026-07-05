@@ -9,7 +9,7 @@ COPY harness/apps/go/main.go ./main.go
 RUN go mod tidy && go build -o /out/app .
 
 FROM alpine:3.20
-RUN adduser -D -u 10001 app
+RUN apk add --no-cache ca-certificates && adduser -D -u 10001 app
 COPY --from=build /out/app /usr/local/bin/app
 USER app
 EXPOSE 8090
