@@ -11,7 +11,7 @@ Keycloak을 위한 **여러 프로그래밍 언어용 SDK**(polyglot). Keycloak�
 | **Node.js 20+** (ESM) | ✅ 완료 · `main` 병합 (PR #12) | 공식 `@keycloak/keycloak-admin-client` + `openid-client` v6 래핑 + `jose` 자체 JWT 검증 | npm `@xzawed/keycloak-sdk` (human-gated) |
 | **Go 1.25+** | ✅ 완료 · `main` 병합 (PR #13) | `Nerzal/gocloak` v13 + `golang.org/x/oauth2` 래핑 + `go-jose/v4` 자체 JWT 검증 | Go 모듈 `github.com/xzawed/KeyCloakSDK/go` (태그=릴리스, human-gated) |
 | **C# / .NET 8+** | ✅ 완료 · `main` 병합 (PR #14) | `Duende.IdentityModel` + `Keycloak.AuthServices.Sdk` 2.7.0 래핑 + `Microsoft.IdentityModel.JsonWebTokens` 자체 JWT 검증 | NuGet `Xzawed.Keycloak.Sdk` (human-gated) |
-| **PHP 8.3+** | ✅ 완료 · `feature/php-sdk`(PR 대기) | `fschmtt/keycloak-rest-api-client-php` 래핑(admin) + `league/oauth2-client`+`stevenmaguire/oauth2-keycloak` 래핑(auth) + `firebase/php-jwt` 자체 JWT 검증 | Packagist `xzawed/keycloak-sdk` (GitHub 웹훅 자동게시, human-gated) |
+| **PHP 8.3+** | ✅ 완료 · `feature/php-sdk`(PR #17) | `fschmtt/keycloak-rest-api-client-php` 래핑(admin) + `league/oauth2-client`+`stevenmaguire/oauth2-keycloak` 래핑(auth) + `firebase/php-jwt` 자체 JWT 검증 | Packagist `xzawed/keycloak-sdk` (GitHub 웹훅 자동게시, human-gated) |
 
 - **라이선스**: Apache-2.0
 
@@ -101,7 +101,7 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 
 **Java · Python · Node.js · Go · C#/.NET SDK 완료 · `main` 병합**(Java PR #1, Python PR #2/#4, Node PR #12, Go PR #13, C#/.NET PR #14). 각 언어 전 Phase(기반→core→auth→admin→facade→통합테스트→배포&문서) 구현, **실제 Keycloak 26.6(.4) Testcontainers 통합테스트 GREEN**, 로직 커버리지 게이트(라인 ≥90%/브랜치 ≥85%) 통과. Python은 sync + async(`keycloak_sdk.aio`) 모두 제공. Node는 ESM·async-only, Go는 sync + `context.Context`, C#/.NET은 async-first(`Task<T>`+`CancellationToken`).
 
-**PHP SDK 완료 · `feature/php-sdk`(PR 대기, main 기준).** WBS Task 1~12 전체 구현(스캐폴딩 → masking/exc → config → tokens/oidc → tokenprovider → jwks → jwt → auth → admin → client → 통합테스트 → CI/문서). 단위테스트 64개 + 통합테스트(docker CLI 셸아웃, 실제 Keycloak 26.6) 3개(`FullFlowIT`) = 총 67개 GREEN, 집계 로직 커버리지 100.00%(게이트 ≥90%), `phpstan analyse`(level max)·`php-cs-fixer` 통과. 6번째 언어로 선행 5개 SDK의 게차가 선반영되어 통합테스트 신규 버그 0건.
+**PHP SDK 완료 · `feature/php-sdk`(PR #17, main 기준).** WBS Task 1~12 전체 구현(스캐폴딩 → masking/exc → config → tokens/oidc → tokenprovider → jwks → jwt → auth → admin → client → 통합테스트 → CI/문서). 단위테스트 64개 + 통합테스트(docker CLI 셸아웃, 실제 Keycloak 26.6) 3개(`FullFlowIT`) = 총 67개 GREEN, 집계 로직 커버리지 100.00%(게이트 ≥90%), `phpstan analyse`(level max)·`php-cs-fixer` 통과. 6번째 언어로 선행 5개 SDK의 게차가 선반영되어 통합테스트 신규 버그 0건.
 
 **남은 것은 실배포와 PHP의 병합뿐**(Maven Central·PyPI·npm·Go 모듈 태그·NuGet·Packagist, 사람 계정/키/토큰 필요 — [DEPLOY.md](DEPLOY.md)).
 
