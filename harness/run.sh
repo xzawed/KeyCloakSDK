@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# 전체 하네스 파이프라인. Usage: ./run.sh [go dotnet node python java]  (기본 go)
+set -euo pipefail
+cd "$(dirname "$0")"
+LANGS=("${@:-go}")
+NET=harness_default
+# Windows Git Bash의 MSYS 경로변환이 -v 컨테이너 경로를 망가뜨리는 것 방지(Linux CI엔 무해).
+export MSYS_NO_PATHCONV=1
+
+# 모든 앱은 컨테이너 내부 8090 사용(계약 단순화). 함수는 첫 사용 전에 정의.
+app_port() { echo 8090; }
+
+cleanup() { docker compose --profile apps down -v >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+
+echo "== Keycloak 기동 =="
+docker compose up -d keycloak
+timeout 240 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" "$(docker compose ps -q keycloak)")" = healthy ]; do sleep 3; done'
+
+# k6 컨테이너(비-root uid 12345)가 호스트 마운트 report/에 handleSummary JSON을 쓸 수 있도록(Linux CI 권한). Windows엔 무해.
+mkdir -p report && chmod -R 777 report 2>/dev/null || true
+
+rc=0
+for SDK_LANG in "${LANGS[@]}"; do
+  echo "== [$SDK_LANG] 앱 빌드·기동 =="
+  docker compose --profile apps up -d --build "app-$SDK_LANG" || { rc=1; continue; }
+  PORT=$(docker compose port "app-$SDK_LANG" "$(app_port "$SDK_LANG")" 2>/dev/null | sed 's/.*://')
+  timeout 90 bash -c "until curl -fsS http://localhost:$PORT/healthz >/dev/null 2>&1; do sleep 2; done" || { rc=1; docker compose --profile apps stop "app-$SDK_LANG" >/dev/null 2>&1 || true; continue; }
+  echo "== [$SDK_LANG] k6 실행 =="
+  docker run --rm --network "$NET" -v "$PWD/driver:/scripts" -v "$PWD/report:/report" \
+    -e "BASE_URL=http://app-$SDK_LANG:$(app_port "$SDK_LANG")" -e KC_URL=http://keycloak:8080 -e "LANG=$SDK_LANG" \
+    grafana/k6 run /scripts/scenarios.js || rc=1
+  docker compose --profile apps stop "app-$SDK_LANG" >/dev/null
+done
+
+echo "== 리포트 취합 =="
+node report/aggregate.mjs "${LANGS[@]}" || rc=1
+echo "== 완료 (rc=$rc) — report/RESULTS.md =="
+exit $rc

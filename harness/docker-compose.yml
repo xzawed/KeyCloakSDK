@@ -1,0 +1,38 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      # 대상 파일명은 Keycloak DirImportProvider의 "<realm>-realm.json" 명명 요구사항 때문에
+      # it-realm-realm.json이어야 한다(호스트 측 파일명 harness-realm.json과는 무관 — 실측 검증됨).
+      - ./keycloak/harness-realm.json:/opt/keycloak/data/import/it-realm-realm.json:ro
+    ports:
+      - "8080:8080"
+    healthcheck:
+      # 26.6은 관리 포트 9000의 /health/ready 제공; curl 미포함 이미지라 bash TCP로 대체
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -qi '\"status\"[[:space:]]*:[[:space:]]*\"UP\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 30s
+
+  app-go:
+    build:
+      context: ..            # 리포지토리 루트(go/ SDK 소스 접근 위해)
+      dockerfile: harness/apps/go/Dockerfile
+    environment:
+      KC_SERVER_URL: http://keycloak:8080
+      KC_REALM: it-realm
+      KC_CLIENT_ID: it-client
+      KC_CLIENT_SECRET: it-secret
+      APP_PORT: "8090"
+    ports:
+      - "8090:8090"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    profiles: ["apps"]        # 기본 up에는 keycloak만; 앱은 --profile apps 또는 개별 up

@@ -1,0 +1,4 @@
+# k6 handleSummary output (generated per run) — not committed
+*.json
+# aggregate.mjs 산출물(생성 아티팩트) — 마찬가지로 커밋 제외
+RESULTS.md

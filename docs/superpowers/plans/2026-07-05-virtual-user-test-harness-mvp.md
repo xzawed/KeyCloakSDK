@@ -70,12 +70,13 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HEALTH_ENABLED: "true"
     volumes:
-      - ./keycloak/harness-realm.json:/opt/keycloak/data/import/harness-realm.json:ro
+      # ⚠️ Keycloak import은 파일명이 <realm>-realm.json이어야 함 → 컨테이너측 destination을 it-realm-realm.json으로
+      - ./keycloak/harness-realm.json:/opt/keycloak/data/import/it-realm-realm.json:ro
     ports:
       - "8080:8080"
     healthcheck:
       # 26.6은 관리 포트 9000의 /health/ready 제공; curl 미포함 이미지라 bash TCP로 대체
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -qi '\"status\"[[:space:]]*:[[:space:]]*\"UP\"'"]
       interval: 5s
       timeout: 5s
       retries: 40
@@ -117,7 +118,7 @@ Base: `http://<host>:<APP_PORT>`. 모든 body는 JSON. admin 엔드포인트는 
 | `GET /admin/users?username=<u>` | — | 200 `[{"id":"..","username":".."}]` | 500 |
 | `DELETE /admin/users/{id}` | — | 204 | 404 |
 
-**오류 매핑 규약(동형성)**: SDK NotFound류 → 404 · JWT 검증 실패 → 401 · 기타 → 500 `{"error":"<message>"}`. 토큰/시크릿은 응답·로그에 노출 금지(`/token`은 메타만).
+**오류 매핑 규약(동형성)**: SDK NotFound류 → 404 · SDK Conflict류(중복 username 등) → 409 · JWT 검증 실패 → 401 · 기타 → 500 `{"error":"<message>"}`. 토큰/시크릿은 응답·로그에 노출 금지(`/token`은 메타만).
 ````
 
 `harness/README.md`: 하네스 목적·`./run.sh` 사용법·계약 링크(간단히).
@@ -171,7 +172,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/Nerzal/gocloak/v13"
@@ -296,7 +296,6 @@ func writeErr(w http.ResponseWriter, err error) {
 }
 
 func strOr(p *string) string { if p != nil { return *p }; return "" }
-var _ = strings.TrimSpace
 ```
 
 - [ ] **Step 3: `harness/apps/go/Dockerfile`**(multistage — SDK 소스 복사 + `replace` 소비 + 빌드)
@@ -313,7 +312,7 @@ COPY harness/apps/go/main.go ./main.go
 RUN go mod tidy && go build -o /out/app .
 
 FROM alpine:3.20
-RUN adduser -D -u 10001 app
+RUN apk add --no-cache ca-certificates && adduser -D -u 10001 app
 COPY --from=build /out/app /usr/local/bin/app
 USER app
 EXPOSE 8090
@@ -379,7 +378,7 @@ const JSON_H = { headers: { 'Content-Type': 'application/json' } };
 function getToken() {
   const res = http.post(`${KC}/realms/${REALM}/protocol/openid-connect/token`,
     { grant_type: 'client_credentials', client_id: CLIENT, client_secret: SECRET });
-  check(res, { 'kc token 200': (r) => r.status === 200 });
+  check(res, { 'kc token 200': (r) => r.status === 200, 'kc token has access_token': (r) => !!r.json('access_token') });
   return res.json('access_token');
 }
 
@@ -404,10 +403,10 @@ export default function () {
   tokenDur.add(t.timings.duration);
   check(t, { 'token 200': (r) => r.status === 200, 'token expiresIn>0': (r) => Number(r.json('expiresIn')) > 0 });
 
-  // admin 여정: create → get → delete → get=404
+  // admin 여정: create → get → delete → get=404 (adminStart는 create 호출 전에 — 전체 여정 측정)
   const uname = `vu-${LANG}-${__VU}-${__ITER}`;
-  const c = http.post(`${BASE}/admin/users`, JSON.stringify({ username: uname, email: `${uname}@e.com` }), JSON_H);
   const adminStart = Date.now();
+  const c = http.post(`${BASE}/admin/users`, JSON.stringify({ username: uname, email: `${uname}@e.com` }), JSON_H);
   const created = check(c, { 'create 201': (r) => r.status === 201, 'create id': (r) => !!r.json('id') });
   if (created) {
     const id = c.json('id');
@@ -415,7 +414,8 @@ export default function () {
     check(g, { 'get 200': (r) => r.status === 200, 'get username': (r) => r.json('username') === uname });
     const d = http.del(`${BASE}/admin/users/${id}`);
     check(d, { 'delete 204': (r) => r.status === 204 });
-    const g2 = http.get(`${BASE}/admin/users/${id}`);
+    // 삭제 후 404는 기대된 응답 → expectedStatuses(404)로 http_req_failed(오류율)에 안 세이도록
+    const g2 = http.get(`${BASE}/admin/users/${id}`, { responseCallback: http.expectedStatuses(404) });
     check(g2, { 'get-after-delete 404': (r) => r.status === 404 });
   }
   adminDur.add(Date.now() - adminStart);
@@ -499,6 +499,11 @@ set -euo pipefail
 cd "$(dirname "$0")"
 LANGS=("${@:-go}")
 NET=harness_default
+# Windows Git Bash의 MSYS 경로변환이 -v 컨테이너 경로를 망가뜨리는 것 방지(Linux CI엔 무해).
+export MSYS_NO_PATHCONV=1
+
+# 모든 앱은 컨테이너 내부 8090 사용(계약 단순화). 함수는 첫 사용 전에 정의.
+app_port() { echo 8090; }
 
 cleanup() { docker compose --profile apps down -v >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -524,11 +529,8 @@ echo "== 리포트 취합 =="
 node report/aggregate.mjs "${LANGS[@]}" || rc=1
 echo "== 완료 (rc=$rc) — report/RESULTS.md =="
 exit $rc
-
-# 앱별 컨테이너 내부 포트(계약: 모두 8090 사용 권장 → 단순화). 언어별 상이하면 여기 매핑.
-app_port() { echo 8090; }
 ```
-> ⚠️ bash 함수 `app_port`는 사용 전 정의돼야 하므로 실제 파일에선 스크립트 상단(첫 사용 전)에 배치한다. 모든 앱이 컨테이너 내부 8090을 쓰도록 통일(계약 단순화) — 호스트 포트는 compose가 매핑.
+> `app_port`는 상단(첫 사용 전)에 정의됨. 모든 앱이 컨테이너 내부 8090 사용(계약 단순화) — 호스트 포트는 compose가 매핑. `MSYS_NO_PATHCONV=1`(상단 export)로 Windows Git Bash 로컬에서도 k6 `-v` 마운트가 동작(Linux CI엔 무해).
 
 - [ ] **Step 3: 검증** — 전체 파이프라인(Go)
 
