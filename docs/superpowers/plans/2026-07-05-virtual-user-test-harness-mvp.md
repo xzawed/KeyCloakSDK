@@ -172,7 +172,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/Nerzal/gocloak/v13"
@@ -297,7 +296,6 @@ func writeErr(w http.ResponseWriter, err error) {
 }
 
 func strOr(p *string) string { if p != nil { return *p }; return "" }
-var _ = strings.TrimSpace
 ```
 
 - [ ] **Step 3: `harness/apps/go/Dockerfile`**(multistage — SDK 소스 복사 + `replace` 소비 + 빌드)
@@ -314,7 +312,7 @@ COPY harness/apps/go/main.go ./main.go
 RUN go mod tidy && go build -o /out/app .
 
 FROM alpine:3.20
-RUN adduser -D -u 10001 app
+RUN apk add --no-cache ca-certificates && adduser -D -u 10001 app
 COPY --from=build /out/app /usr/local/bin/app
 USER app
 EXPOSE 8090
