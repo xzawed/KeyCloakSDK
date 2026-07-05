@@ -37,6 +37,14 @@ public class HarnessController {
         return ResponseEntity.status(code).body(m);
     }
 
+    // id/username이 null이어도(이론상) NPE 대신 JSON null로 저하 — 다른 4언어와 동형.
+    private static Map<String, Object> idUser(UserRepresentation u) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("id", u.getId());
+        m.put("username", u.getUsername());
+        return m;
+    }
+
     @GetMapping("/healthz")
     public Map<String, String> healthz() {
         return Map.of("status", "ok");
@@ -120,7 +128,7 @@ public class HarnessController {
     public ResponseEntity<Object> getUser(@PathVariable String id) {
         try {
             UserRepresentation u = kc.admin().users().get(id).orElseThrow();
-            return ResponseEntity.ok(Map.of("id", u.getId(), "username", u.getUsername()));
+            return ResponseEntity.ok(idUser(u));
         } catch (KeycloakNotFoundException e) {
             return fail(404, e.getMessage());
         } catch (Exception e) {
@@ -132,8 +140,8 @@ public class HarnessController {
     public ResponseEntity<Object> searchUsers(@RequestParam(required = false) String username) {
         try {
             List<UserRepresentation> us = kc.admin().users().search(username, 0, 20);
-            List<Map<String, String>> out = us.stream()
-                .map(u -> Map.of("id", u.getId(), "username", u.getUsername()))
+            List<Map<String, Object>> out = us.stream()
+                .map(HarnessController::idUser)
                 .toList();
             return ResponseEntity.ok(out);
         } catch (Exception e) {
