@@ -4,10 +4,15 @@ on:
     paths: ['harness/**', 'go/**', '.github/workflows/harness.yml']
   pull_request:
     paths: ['harness/**', 'go/**', '.github/workflows/harness.yml']
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'   # 매일 03:00 UTC 야간 5언어 비교
 permissions:
   contents: read
 jobs:
   mvp-go:
+    # 빠른 PR 게이트(Go 스모크) — push/PR 트리거에만
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,5 +24,23 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: harness-results
+          name: harness-results-go
+          path: harness/report/RESULTS.md
+
+  all-langs:
+    # 5언어 전체 비교 — 수동(workflow_dispatch) + 야간(schedule)에만
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: 하네스 실행(5개 언어 비교)
+        run: cd harness && ./run.sh go dotnet node python java
+      - name: 결과 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-results-all
           path: harness/report/RESULTS.md
