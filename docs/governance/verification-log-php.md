@@ -36,7 +36,7 @@
 | 7 | `1df0aff` + `79e853d` | `JwtValidator` 자체강화(RS256 핀·`none` 거부·iss 정확·aud 포함·exp 필수·nbf·클록 스큐) | ✅ | ✅ (16, 커버리지 100%) | ✅ |
 | 8 | `c2bd246` + `4b69e50` | `AuthClient`(league+steven 래핑, PKCE S256 오버라이드) + introspect/logout 손수 | ✅ | ✅ (48, omit — 네트워크 경계) | — |
 | 9 | `a233d0a` + `4544331` | `AdminClient` + 5 리소스(Users/Clients/Realms/Roles/Groups) + `raw()` + `ErrorTranslation` | ✅ | ✅ (56, omit — 네트워크 경계) | — |
-| 10 | `10a4f50` | `KeycloakClient` 통합 진입점(auth 즉시·admin 지연캐시·close) | ✅ | ✅ (57, omit — 네트워크 경계) | — |
+| 10 | `10a4f50` | `KeycloakClient` 통합 진입점(auth 즉시·admin 지연캐시·close) | ✅ | ✅ (64, omit — 네트워크 경계) | — |
 | 11 | `1fb0fd3` | 통합 E2E(docker CLI 셸아웃, 실제 Keycloak 26.6) | ✅ | ✅ IT(3) | — |
 | 12 | (본 커밋) | php-ci(매트릭스·phpstan·audit·커버리지 게이트)·php-release(Packagist human-gated)·문서 | ✅ | ✅ | ✅ |
 
@@ -63,8 +63,8 @@
 ## 최종 상태 (G1~G6 종합)
 
 - **G1**: ✅ `phpstan analyse`(level max, strict-rules + phpunit 확장) 0 error · `php-cs-fixer fix --dry-run --allow-risky=yes` 0 file(변경 없음) — Task 12 시점 재검증.
-- **G2**: ✅ 단위 **57** GREEN(224 assertions) + 통합 **3**(`FullFlowIT`: `testFullFlow`·`testAdminClientCrud`·`testRawEscapeHatch`, 실제 Keycloak 26.6, docker CLI 셸아웃) = **총 60**.
-- **G3**: ✅ 집계 로직 라인 커버리지 **96.94%**(게이트 ≥90%, `phpunit.xml` source exclude로 `AuthClient`/`Admin/**`/`KeycloakClient` 네트워크 경계 omit). 참고: 값타입 3개(`TokenSet` 86.67%·`OidcEndpoints` 85.71%·`IntrospectionResult` 90%/methods 66.67%)는 개별로는 90% 미만이나 **집계 게이트는 통과**(다른 5개 SDK와 동일 관례 — 라인 단위 집계로 게이트).
+- **G2**: ✅ 단위 **64** GREEN(242 assertions) + 통합 **3**(`FullFlowIT`: `testFullFlow`·`testAdminClientCrud`·`testRawEscapeHatch`, 실제 Keycloak 26.6, docker CLI 셸아웃) = **총 67**.
+- **G3**: ✅ 집계 로직 라인 커버리지 **100.00%**(게이트 ≥90%, `phpunit.xml` source exclude로 `AuthClient`/`Admin/**`/`KeycloakClient` 네트워크 경계 omit). 최종리뷰 폴리시(커밋 `367f98b`)에서 값타입 3개(`TokenSet`·`OidcEndpoints`·`IntrospectionResult` — 종전 각 86.67%/85.71%/90%)의 커버리지 갭을 메우는 테스트 7건을 추가해 단위 57→64(224→242 assertions), 집계 라인 96.94%→100.00%로 상향.
 - **통합**: ✅ Testcontainers 대체 경로(docker CLI 셸아웃, `KeycloakContainerTrait`) E2E **3** GREEN(client-credentials→validate[실 JWKS·RS256 강화검증]→introspect→user CRUD→delete→`KeycloakNotFoundError` + client CRUD[import, UUID id] + `raw()` 탈출구). **SDK 버그 0건**(6번째 언어 — 선행 5개 언어의 강화 설계·게차 학습이 선반영됨).
 - **G4**: ✅ 설계 스펙 §4 언어중립 계약과 동형(계층: config→auth/jwt→admin→client, `admin`이 `auth`를 직접 모름·`TokenProvider`만 접착제, 예외 계급, 값타입 필드명 camelCase). PHP 관용 편차(예외 기반·`readonly class`·완전 은닉 admin representation 재노출은 문서화된 예외로 허용)는 §4 허용.
 - **G5**: ✅ 태스크별 소규모 리뷰 루프(위 Loops, Task 1/3/4/5/7/8/9/10/11) + Task 7 OPUS 어드버서리얼 보안리뷰(20+ 공격 프로브, Critical 1건 확정 수정).
