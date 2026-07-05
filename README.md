@@ -89,7 +89,7 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 
 ## 현재 상태
 
-**Java · Python · Node.js · Go · C#/.NET SDK 모두 완료**(Java/Python/Node/Go는 `main` 병합 — Node PR #12, Go PR #13; C#/.NET은 `feature/dotnet-sdk` 완료·PR 대기). 각 언어 전 Phase(기반→core→auth→admin→facade→통합테스트→배포&문서) 구현, **실제 Keycloak 26.6(.4) Testcontainers 통합테스트 GREEN**, 로직 커버리지 게이트(라인 ≥90%/브랜치 ≥85%) 통과. Python은 sync + async(`keycloak_sdk.aio`) 모두 제공. Node는 ESM·async-only, Go는 sync + `context.Context`, C#/.NET은 async-first(`Task<T>`+`CancellationToken`). **남은 것은 실배포뿐**(Maven Central·PyPI·npm·Go 모듈 태그·NuGet, 사람 계정/키/토큰 필요 — [DEPLOY.md](DEPLOY.md)).
+**Java · Python · Node.js · Go · C#/.NET SDK 모두 완료 · `main` 병합**(Java PR #1, Python PR #2/#4, Node PR #12, Go PR #13, C#/.NET PR #14). 각 언어 전 Phase(기반→core→auth→admin→facade→통합테스트→배포&문서) 구현, **실제 Keycloak 26.6(.4) Testcontainers 통합테스트 GREEN**, 로직 커버리지 게이트(라인 ≥90%/브랜치 ≥85%) 통과. Python은 sync + async(`keycloak_sdk.aio`) 모두 제공. Node는 ESM·async-only, Go는 sync + `context.Context`, C#/.NET은 async-first(`Task<T>`+`CancellationToken`). **남은 것은 실배포뿐**(Maven Central·PyPI·npm·Go 모듈 태그·NuGet, 사람 계정/키/토큰 필요 — [DEPLOY.md](DEPLOY.md)).
 
 - 📄 설계 스펙: [Java·Python 멀티랭 설계](docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md) · [Python](docs/superpowers/specs/2026-07-03-keycloak-python-sdk-design.md) · [Python async](docs/superpowers/specs/2026-07-03-keycloak-python-async-design.md) · [C#/.NET](docs/superpowers/specs/2026-07-04-keycloak-dotnet-sdk-design.md)
 - 🗂️ 구현 계획(WBS): [docs/superpowers/plans/](docs/superpowers/plans/)
