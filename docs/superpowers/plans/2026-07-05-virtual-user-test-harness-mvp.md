@@ -70,12 +70,13 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HEALTH_ENABLED: "true"
     volumes:
-      - ./keycloak/harness-realm.json:/opt/keycloak/data/import/harness-realm.json:ro
+      # ⚠️ Keycloak import은 파일명이 <realm>-realm.json이어야 함 → 컨테이너측 destination을 it-realm-realm.json으로
+      - ./keycloak/harness-realm.json:/opt/keycloak/data/import/it-realm-realm.json:ro
     ports:
       - "8080:8080"
     healthcheck:
       # 26.6은 관리 포트 9000의 /health/ready 제공; curl 미포함 이미지라 bash TCP로 대체
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -qi '\"status\"[[:space:]]*:[[:space:]]*\"UP\"'"]
       interval: 5s
       timeout: 5s
       retries: 40
@@ -117,7 +118,7 @@ Base: `http://<host>:<APP_PORT>`. 모든 body는 JSON. admin 엔드포인트는 
 | `GET /admin/users?username=<u>` | — | 200 `[{"id":"..","username":".."}]` | 500 |
 | `DELETE /admin/users/{id}` | — | 204 | 404 |
 
-**오류 매핑 규약(동형성)**: SDK NotFound류 → 404 · JWT 검증 실패 → 401 · 기타 → 500 `{"error":"<message>"}`. 토큰/시크릿은 응답·로그에 노출 금지(`/token`은 메타만).
+**오류 매핑 규약(동형성)**: SDK NotFound류 → 404 · SDK Conflict류(중복 username 등) → 409 · JWT 검증 실패 → 401 · 기타 → 500 `{"error":"<message>"}`. 토큰/시크릿은 응답·로그에 노출 금지(`/token`은 메타만).
 ````
 
 `harness/README.md`: 하네스 목적·`./run.sh` 사용법·계약 링크(간단히).
