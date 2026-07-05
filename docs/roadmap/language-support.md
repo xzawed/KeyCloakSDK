@@ -74,3 +74,5 @@
 | **Ruby** | 계획 | 계획 | 계획 | 계획 | 계획 | 계획 |
 
 **범례**: ✅ 완료 · 🔒 준비됨·사람 게이트(태그 push 대기) · 계획 미착수. Java 총 123개(단위 117 + 통합 6), Python 총 235개(단위 224 + 통합 11), Node 총 76개(단위 71 + 통합 5), Go 총 41개(단위 40 + 통합 1 E2E), C#/.NET 총 59개(단위 58 + 통합 1 E2E `Full_flow`)는 실측 기준이며 다섯 언어 모두 실제 Keycloak 26.6(.4)에 대한 Testcontainers 통합테스트를 포함한다. 신규 언어는 착수 시 동일한 6개 열을 모두 채운 뒤에만 "완료"로 간주한다(depth-first). Node 배포는 `node-v*` 태그 → `.github/workflows/node-release.yml`(npm Trusted Publishing / OIDC + provenance, human-gated)로 트리거된다. **Go 배포는 레지스트리 없이 `go/v*` 태그 자체가 릴리스**(`proxy.golang.org` 자동 캐시) → `.github/workflows/go-release.yml`(검증 + GitHub Release + 프록시 워밍, human-gated). C#/.NET 배포는 `dotnet-v*` 태그 → `.github/workflows/dotnet-release.yml`(NuGet, `NUGET_API_KEY` 시크릿 필요, human-gated).
+
+이 매트릭스와 별개로, 5개 언어 SDK가 동일 HTTP 계약으로 실제 Keycloak에 대해 동형 동작하는지 k6 가상사용자 부하로 실측 비교·검증하는 하네스([`harness/`](../../harness/README.md), CI: [`.github/workflows/harness.yml`](../../.github/workflows/harness.yml))가 별도로 있다 — MVP(Go 샘플 앱)는 완료·CI GREEN, C#/Node/Python/Java 샘플 앱 확장은 계획 단계다.

@@ -103,3 +103,13 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 - 🖥️ **Keycloak *서버* 배포**(SDK가 붙을 서버 — 단일 VM + Docker Compose 프로덕션): [docs/guides/deploying-keycloak-server.md](docs/guides/deploying-keycloak-server.md)
 - 🗺️ **지원 언어·확장 로드맵**(depth-first · Java·Python·Node·Go·C# 완료 → PHP → Rust → Ruby): [docs/roadmap/language-support.md](docs/roadmap/language-support.md)
 - 🧩 **새 언어 추가 플레이북**(Java/Python/Node/Go/C# 품질로 반복): [docs/guides/add-a-language-playbook.md](docs/guides/add-a-language-playbook.md)
+
+## 가상 사용자 테스트 하네스 (Virtual-User Harness)
+
+문서·유닛/통합테스트와 별개로, 폴리글랏 SDK들이 **실제로 동일하게 동작하는지** 언어 간에 실측 비교하기 위한 하네스가 [`harness/`](harness/README.md)에 있다. 실제 Keycloak 26.6(`it-realm` — 언어별 통합테스트와 동일 realm)을 Docker Compose로 띄우고, 각 언어 SDK로 작성된 동일 [HTTP 계약](harness/contract/CONTRACT.md)의 샘플 앱을 k6 가상 사용자 드라이버로 구동해 (1) **기능 정확성 게이트**(checks PASS율 100% 요구, 미달 시 비0 종료)와 (2) **성능 실측**(validate/admin CRUD p95 지연·RPS·오류율의 언어간 비교표)을 함께 산출한다.
+
+```bash
+cd harness && ./run.sh go      # Go 앱 실행 → harness/report/RESULTS.md (기능 게이트 + 성능표)
+```
+
+**현재 MVP는 Go 샘플 앱(`harness/apps/go/`) 하나뿐**이며, 같은 계약을 재사용해 C#/Node/Python/Java 샘플 앱을 추가하는 확장이 계획되어 있다(완료 시 `./run.sh go dotnet node python java`로 5개 언어를 한 번에 비교). CI는 [`.github/workflows/harness.yml`](.github/workflows/harness.yml)에서 `harness/**`·`go/**` 변경 시 Go MVP 게이트를 실행하고 `RESULTS.md`를 아티팩트로 업로드한다.

@@ -1,0 +1,23 @@
+name: harness
+on:
+  push:
+    paths: ['harness/**', 'go/**', '.github/workflows/harness.yml']
+  pull_request:
+    paths: ['harness/**', 'go/**', '.github/workflows/harness.yml']
+permissions:
+  contents: read
+jobs:
+  mvp-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: 하네스 실행(Go MVP)
+        run: cd harness && ./run.sh go
+      - name: 결과 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-results
+          path: harness/report/RESULTS.md
