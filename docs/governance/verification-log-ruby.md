@@ -59,7 +59,7 @@
 ## 최종 상태 (G1~G7 종합)
 
 - **G1**: ✅ `bundle exec rubocop` 무경고(40 files inspected, no offenses — `examples/quickstart.rb` 추가 후 재검증 완료, Task 12 시점).
-- **G2**: ✅ 단위 **71** GREEN(`bundle exec rspec`) + 통합 **1**(`full_flow`, docker-CLI 셸아웃 — 실제 Keycloak 26.6) = **총 72**.
+- **G2**: ✅ 단위 **73** GREEN(`bundle exec rspec`) + 통합 **1**(`full_flow`, docker-CLI 셸아웃 — 실제 Keycloak 26.6) = **총 74**. (전체브랜치 최종리뷰 수정 웨이브에서 단위 2건 추가 — `Faraday::Error` 경계 테스트 + §4 admin-wiring 고정 테스트 — 71→73.)
 - **G3**: ✅ SimpleCov `minimum_coverage(line: 90, branch: 85) unless ENV["RUN_INTEGRATION"]` — **실측 라인 100.0%(210/210)/브랜치 93.48%(43/46)**, 게이트 통과(exit 0). 네트워크 경계(`auth_client.rb`/`admin/**`/`client.rb`)는 통합테스트로 검증하고 커버리지 게이트에서 제외(다른 7개 언어와 동일한 정책). **Task 12에서 확인**: `RUN_INTEGRATION=1 bundle exec rspec spec/integration --tag integration` 단독 실행 시 라인 90.48%/브랜치 39.13%로 게이트 미달치가 나오지만, 가드 덕에 exit 0(통합 CI 잡이 커버리지로 오탐 실패하지 않음) — 단위 게이트 자체는 그대로 90/85로 강제된다.
 - **G7**: ✅ `bundle exec bundler-audit check --update` — 취약 의존성 0건(CI에 `ruby-ci.yml` build-test 잡으로 배선).
 - **통합**: ✅ docker-CLI 셸아웃 E2E **1** GREEN(client-credentials→validate[실 JWKS·RS256 강화검증]→introspect→user/client/role/group CRUD→realm CRUD(master-admin)→`raw()` 탈출구→NotFound). **SDK 코드 결함 0건**(8번째 언어 — 선행 7개 언어의 강화 설계·게차가 선반영됨, PHP·Rust에 이은 세 번째 무결함 사례).

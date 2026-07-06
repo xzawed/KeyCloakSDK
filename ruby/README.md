@@ -130,7 +130,7 @@ KeycloakSdk::Error (StandardError)
 export PATH="/c/Users/dirtc/tools/ruby/bin:$PATH"   # 포터블 설치 사용 시(머신별 경로)
 cd ruby
 bundle install
-bundle exec rspec                 # 단위 71개 + 커버리지 게이트(라인≥90%/브랜치≥85%)
+bundle exec rspec                 # 단위 73개 + 커버리지 게이트(라인≥90%/브랜치≥85%)
 RUN_INTEGRATION=1 bundle exec rspec spec/integration --tag integration   # 통합 1개(docker CLI 셸아웃, 실제 Keycloak 26.6)
 bundle exec rubocop               # 린트
 ```

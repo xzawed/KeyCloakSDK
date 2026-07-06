@@ -94,7 +94,7 @@ cd rust && cargo build && cargo test   # 현재(미배포) — 로컬 빌드/테
 ### Ruby (RubyGems)
 > ⚠️ `keycloak-sdk` `0.1.0`은 아직 RubyGems 미배포(human-gated, Trusted Publishing — 최초 1회는 API 키 수동 게시 또는 Trusted Publisher 사전등록 필요).
 ```bash
-cd ruby && bundle install && bundle exec rspec   # 현재(미배포) — 로컬 설치/테스트(단위 71개)
+cd ruby && bundle install && bundle exec rspec   # 현재(미배포) — 로컬 설치/테스트(단위 73개)
 # gem install keycloak-sdk                        # 배포 후
 ```
 
@@ -125,7 +125,7 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 
 **Rust SDK 완료 · `main` 병합됨 (PR #18).** WBS Task 1~12 전체 구현(스캐폴딩 → error → config → tokens/oidc → token_provider → jwks → jwt → auth → admin → client → 통합테스트 → CI/문서). edition 2024 · async-only(tokio). 단위테스트 34개 + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 1개(E2E `full_flow` — 전 흐름·5 admin 리소스) = 총 35개 GREEN, 로직 모듈 라인 커버리지 94.85%(게이트 ≥90%), `cargo clippy -D warnings`·`cargo fmt --check` 통과. 7번째 언어로 E2E 신규 SDK 버그 0건. 최종리뷰 fix wave(1건)로 admin이 캐싱 `ClientCredentialsTokenProvider`를 쓰도록 수정(§4 캐시 불변식 복원) + `config.scopes` threading.
 
-**Ruby SDK 완료 · PR 예정(`feature/ruby-sdk`).** WBS Task 1~12 전체 구현(스캐폴딩 → errors/masking → config → tokens/oidc/http → token_provider → jwks → jwt → auth → admin → client → 통합테스트 → CI/문서). sync-only · 예외 계급 관용. 단위테스트 71개 + 통합테스트(docker CLI 셸아웃, 실제 Keycloak 26.6) 1개(E2E `full_flow`) = 총 72개 GREEN, 로직 모듈 커버리지 라인 100.0%/브랜치 93.48%(게이트 ≥90/≥85), `rubocop` 무경고·`bundler-audit` 통과. 8번째(마지막) 언어로 E2E 신규 SDK 버그 0건(PHP·Rust에 이은 세 번째 무결함 사례). admin에 성숙한 gem이 없어 `faraday`로 Admin REST를 직접 구현.
+**Ruby SDK 완료 · PR 예정(`feature/ruby-sdk`).** WBS Task 1~12 전체 구현(스캐폴딩 → errors/masking → config → tokens/oidc/http → token_provider → jwks → jwt → auth → admin → client → 통합테스트 → CI/문서). sync-only · 예외 계급 관용. 단위테스트 73개 + 통합테스트(docker CLI 셸아웃, 실제 Keycloak 26.6) 1개(E2E `full_flow`) = 총 74개 GREEN, 로직 모듈 커버리지 라인 100.0%/브랜치 93.48%(게이트 ≥90/≥85), `rubocop` 무경고·`bundler-audit` 통과. 8번째(마지막) 언어로 E2E 신규 SDK 버그 0건(PHP·Rust에 이은 세 번째 무결함 사례). admin에 성숙한 gem이 없어 `faraday`로 Admin REST를 직접 구현.
 
 **남은 것은 실배포뿐**(Maven Central·PyPI·npm·Go 모듈 태그·NuGet·Packagist·crates.io·RubyGems, 사람 계정/키/토큰 필요 — [DEPLOY.md](DEPLOY.md)).
 
