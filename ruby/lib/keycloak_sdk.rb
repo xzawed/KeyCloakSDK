@@ -9,9 +9,10 @@ require_relative "keycloak_sdk/oidc_endpoints"
 require_relative "keycloak_sdk/http"
 require_relative "keycloak_sdk/token_provider"
 require_relative "keycloak_sdk/jwks_store"
+require_relative "keycloak_sdk/jwt_validator"
 
 # Polyglot Keycloak SDK for Ruby.
 # 이후 태스크에서 아래에 require를 추가한다:
-#   ... (jwt_validator, auth_client, admin/*, client)
+#   ... (auth_client, admin/*, client)
 module KeycloakSdk
 end
