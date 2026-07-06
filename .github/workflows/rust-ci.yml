@@ -1,0 +1,52 @@
+name: rust-ci
+on:
+  push:
+    paths: ['rust/**', '.github/workflows/rust-ci.yml']
+  pull_request:
+    paths: ['rust/**', '.github/workflows/rust-ci.yml']
+permissions:
+  contents: read
+jobs:
+  build-test:
+    name: Build + fmt + clippy + test (Rust ${{ matrix.rust }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: ['1.88', 'stable'] # 1.88 = MSRV(Cargo.toml rust-version, edition 2024 + let-chains 요구) · stable = 최신 회귀 확인
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '${{ matrix.rust }}'
+          components: clippy,rustfmt
+      - run: cargo build --all-targets
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  coverage:
+    name: Coverage gate (logic modules ≥90% lines)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      # 네트워크 경계(auth.rs/admin.rs/client.rs)는 통합테스트로 검증 → 커버리지 게이트에서 제외.
+      - run: cargo llvm-cov --ignore-filename-regex '(auth|admin|client)\.rs' --fail-under-lines 90
+
+  integration:
+    name: Integration (testcontainers, 실제 Keycloak 26.6)
+    runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → testcontainers-rs 동작
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --test integration_test -- --ignored

@@ -1,8 +1,8 @@
 # 시작하기 (Getting Started)
 
-Keycloak polyglot SDK를 로컬에서 설치하고, 첫 토큰 발급 · JWT 검증 · 관리 API 호출까지 최소 코드로 실행하는 안내입니다. 이 SDK는 **여러 프로그래밍 언어**(현재 Java · Python · Node.js · Go · C#/.NET · PHP)로 제공되며, 언어마다 관용적이되 개념·계층·흐름은 동형(isomorphic)입니다.
+Keycloak polyglot SDK를 로컬에서 설치하고, 첫 토큰 발급 · JWT 검증 · 관리 API 호출까지 최소 코드로 실행하는 안내입니다. 이 SDK는 **여러 프로그래밍 언어**(현재 Java · Python · Node.js · Go · C#/.NET · PHP · Rust)로 제공되며, 언어마다 관용적이되 개념·계층·흐름은 동형(isomorphic)입니다.
 
-> ⚠️ **여섯 SDK 모두 아직 미배포입니다(human-gated 릴리스).** Maven Central·PyPI·npm·Go 모듈 태그·NuGet·Packagist를 통한 설치는 아직 동작하지 않습니다. 현재는 **로컬 설치가 기본 경로**입니다(아래 각 언어의 "로컬 설치" 참고). 실배포 절차는 [DEPLOY.md](../../DEPLOY.md)를 참고하세요.
+> ⚠️ **일곱 SDK 모두 아직 미배포입니다(human-gated 릴리스).** Maven Central·PyPI·npm·Go 모듈 태그·NuGet·Packagist·crates.io를 통한 설치는 아직 동작하지 않습니다. 현재는 **로컬 설치가 기본 경로**입니다(아래 각 언어의 "로컬 설치" 참고). 실배포 절차는 [DEPLOY.md](../../DEPLOY.md)를 참고하세요.
 
 > 🖥️ **먼저 Keycloak *서버*가 필요합니다.** 이 SDK는 클라이언트 라이브러리라 **붙을 Keycloak 서버**가 있어야 동작합니다(서버는 이 SDK에 포함되지 않는 별도 완제품). 로컬 체험은 Docker 한 줄 `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`, **프로덕션 배포**는 [Keycloak 서버 배포 가이드](deploying-keycloak-server.md)를 참고하세요.
 
@@ -16,6 +16,7 @@ Keycloak polyglot SDK를 로컬에서 설치하고, 첫 토큰 발급 · JWT 검
 | **Go** | **1.25+** | sync + `context.Context` · `x/oauth2` v0.36 요구 |
 | **C# / .NET** | **8+** | async-first(`Task<T>`+`CancellationToken`) · `net8.0` 타깃 |
 | **PHP** | **8.3+** | `final readonly class` 값타입 · 예외 기반(`KeycloakException` 계급) |
+| **Rust** | **1.88+** | edition 2024 + let-chains 요구 MSRV · async-only(tokio) · `thiserror` 기반 `KeycloakError` |
 | (선택) Docker | — | **통합 테스트(Testcontainers/docker CLI)에만 필요**. SDK 사용 자체에는 불필요 |
 
 ---
@@ -441,11 +442,81 @@ echo "created userId={$userId}\n";
 
 > 오류 처리: admin 실패는 `KeycloakNotFoundError`/`KeycloakConflictError`/`KeycloakForbiddenError`(모두 `KeycloakAdminError::getStatusCode()`를 가짐) 또는 네트워크 실패 시 `KeycloakTransportError`로 분류됩니다. `admin()->raw()`가 하위 `Fschmtt\Keycloak\Keycloak` 타입드 클라이언트로의 탈출구입니다.
 
+## Rust
+
+### 1) 요구 런타임 — Rust 1.88+
+
+Rust **1.88 이상**(MSRV — edition 2024 + let-chains 요구)이 필요합니다. async-only(tokio) 관용이며, 예외 대신 `thiserror` 기반 `KeycloakError` enum(`Config`/`Auth`/`Transport`/`Admin`/`TokenValidation`) + `Result<T, KeycloakError>`을 씁니다. Docker는 통합 테스트에만 필요합니다.
+
+### 2) 로컬 설치 (현재 — 미배포)
+
+crates.io 미배포 상태이므로, 리포지토리를 클론한 뒤 소비 프로젝트의 `Cargo.toml`에 path 의존성으로 참조합니다:
+
+```toml
+[dependencies]
+keycloak-sdk = { path = "../KeyCloakSDK/rust" }
+```
+
+```bash
+cd rust && cargo build && cargo test   # 로컬 빌드/테스트만 확인: 단위 32개 + 커버리지 게이트
+```
+
+크레이트명은 `keycloak-sdk`, 루트 모듈은 `keycloak_sdk`(`keycloak_sdk::{KeycloakClient, KeycloakConfig, ...}`)입니다.
+
+### 3) 배포 후 설치 (미래)
+
+crates.io 배포가 완료되면:
+
+```bash
+cargo add keycloak-sdk
+```
+
+> ⚠️ **아직 crates.io에 배포되지 않았습니다(human-gated).** 실제 배포는 사람이 `rust-v*` 태그를 push해 [`.github/workflows/rust-release.yml`](../../.github/workflows/rust-release.yml)를 트리거해야 실행됩니다(`CARGO_REGISTRY_TOKEN` 시크릿 필요). 향후 언어 확장 로드맵은 [언어 지원 로드맵](../roadmap/language-support.md)을 참고하세요.
+
+### 4) 최소 사용 예
+
+전체 예제: [`rust/examples/quickstart.rs`](../../rust/examples/quickstart.rs)
+
+```rust
+use keycloak::types::UserRepresentation;
+use keycloak_sdk::{KeycloakClient, KeycloakConfig};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cfg = KeycloakConfig::new("https://kc.example.com", "myrealm", "admin-cli")?
+        .with_client_secret("changeme"); // 실제 값은 환경변수/시크릿 매니저에서 로드할 것(Debug는 마스킹됨)
+
+    let client = KeycloakClient::new(cfg)?;
+
+    // 1) client-credentials 그랜트로 토큰 발급. TokenSet의 Debug는 access/refresh 토큰을 마스킹한다(***).
+    let token = client.auth().client_credentials_token().await?;
+    println!("token type: {}, expires in: {}s", token.token_type, token.expires_in);
+
+    // 2) 발급받은 액세스 토큰을 자체 강화 검증(RS256 핀·iss 정확일치·aud 포함검사·exp 필수·nbf·클록 스큐).
+    let validated = client.auth().validate(&token.access_token).await?;
+    println!("subject: {}, issuer: {}", validated.subject, validated.issuer);
+
+    // 3) 관리 API — 사용자 생성. 생성된 id는 응답 Location 헤더에서 추출(없으면 None).
+    let user_id = client
+        .admin()
+        .create_user(UserRepresentation {
+            username: Some("alice".into()),
+            enabled: Some(true),
+            ..Default::default()
+        })
+        .await?;
+    println!("created user_id={user_id:?}");
+    Ok(())
+}
+```
+
+> 오류 처리: admin 실패는 `KeycloakError::Admin(AdminError::NotFound | Conflict | Forbidden | Other { status })`로 매칭하거나 네트워크 실패 시 `KeycloakError::Transport(_)`로 분류됩니다. `admin().raw()`가 하위 `keycloak::KeycloakAdmin` 타입드 클라이언트로의 탈출구입니다.
+
 ---
 
 ## 다음 단계
 
-- **언어 지원 로드맵** — 현재 지원 언어와 향후 확장(깊이 우선: Java·Python·TypeScript/Node·Go·C#/.NET·PHP 완료 → Rust → Ruby, Kotlin은 JVM 재사용으로 선택적): [../roadmap/language-support.md](../roadmap/language-support.md)
-- **새 언어 추가 플레이북** — 기존 Java/Python/Node/Go/C#/PHP와 동형의 품질로 언어를 추가하는 절차: [add-a-language-playbook.md](add-a-language-playbook.md)
+- **언어 지원 로드맵** — 현재 지원 언어와 향후 확장(깊이 우선: Java·Python·TypeScript/Node·Go·C#/.NET·PHP·Rust 완료 → Ruby, Kotlin은 JVM 재사용으로 선택적): [../roadmap/language-support.md](../roadmap/language-support.md)
+- **새 언어 추가 플레이북** — 기존 Java/Python/Node/Go/C#/PHP/Rust와 동형의 품질로 언어를 추가하는 절차: [add-a-language-playbook.md](add-a-language-playbook.md)
 
-> 언어 중립 API 계약(진실 원천)은 [설계 스펙 §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)에 정의되어 있습니다. 모든 언어는 이 계약을 구현하며, JWT 검증 강화(알고리즘 핀닝 · `none` 거부 · `iss` 정확일치 · `aud` 포함검사 · 클록 스큐 · DoS-안전 JWKS 재조회)는 언어 공통 필수 사항입니다. 현재 테스트 수: **Java 123개**(단위 117 + Testcontainers 통합 6) · **Python 235개**(단위 224 + 통합 11) · **Node 76개**(단위 71 + Testcontainers 통합 5) · **Go 41개**(단위 40 + Testcontainers 통합 1 — E2E, 전 흐름·5 admin 리소스) · **C#/.NET 59개**(단위 58 + Testcontainers 통합 1 — E2E `Full_flow`, 전 흐름·5 admin 리소스) · **PHP 60개**(단위 57 + 통합 3 — docker CLI 셸아웃, 전 흐름·client CRUD·raw 탈출구).
+> 언어 중립 API 계약(진실 원천)은 [설계 스펙 §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)에 정의되어 있습니다. 모든 언어는 이 계약을 구현하며, JWT 검증 강화(알고리즘 핀닝 · `none` 거부 · `iss` 정확일치 · `aud` 포함검사 · 클록 스큐 · DoS-안전 JWKS 재조회)는 언어 공통 필수 사항입니다. 현재 테스트 수: **Java 123개**(단위 117 + Testcontainers 통합 6) · **Python 235개**(단위 224 + 통합 11) · **Node 76개**(단위 71 + Testcontainers 통합 5) · **Go 41개**(단위 40 + Testcontainers 통합 1 — E2E, 전 흐름·5 admin 리소스) · **C#/.NET 59개**(단위 58 + Testcontainers 통합 1 — E2E `Full_flow`, 전 흐름·5 admin 리소스) · **PHP 67개**(단위 64 + 통합 3 — docker CLI 셸아웃, `FullFlowIT`: 전 흐름·client CRUD·raw 탈출구) · **Rust 33개**(단위 32 + Testcontainers 통합 1 — E2E `full_flow`, 전 흐름·5 admin 리소스).
