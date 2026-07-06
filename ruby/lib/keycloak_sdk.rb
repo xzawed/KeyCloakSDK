@@ -11,10 +11,18 @@ require_relative "keycloak_sdk/token_provider"
 require_relative "keycloak_sdk/jwks_store"
 require_relative "keycloak_sdk/jwt_validator"
 require_relative "keycloak_sdk/auth_client"
+require_relative "keycloak_sdk/admin/call"
+require_relative "keycloak_sdk/admin/bearer_auth"
+require_relative "keycloak_sdk/admin/users"
+require_relative "keycloak_sdk/admin/clients"
+require_relative "keycloak_sdk/admin/realms"
+require_relative "keycloak_sdk/admin/roles"
+require_relative "keycloak_sdk/admin/groups"
+require_relative "keycloak_sdk/admin/admin_client"
 
 # Polyglot Keycloak SDK for Ruby.
 # 이후 태스크에서 아래에 require를 추가한다:
-#   ... (admin/*, client)
+#   ... (client)
 module KeycloakSdk
 end
 
