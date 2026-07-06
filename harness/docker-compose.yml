@@ -36,3 +36,63 @@ services:
       keycloak:
         condition: service_healthy
     profiles: ["apps"]        # 기본 up에는 keycloak만; 앱은 --profile apps 또는 개별 up
+
+  app-dotnet:
+    build: { context: .., dockerfile: harness/apps/dotnet/Dockerfile }
+    environment:
+      KC_SERVER_URL: http://keycloak:8080
+      KC_REALM: it-realm
+      KC_CLIENT_ID: it-client
+      KC_CLIENT_SECRET: it-secret
+      APP_PORT: "8090"
+    ports:
+      - "8091:8090"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    profiles: ["apps"]
+
+  app-node:
+    build: { context: .., dockerfile: harness/apps/node/Dockerfile }
+    environment:
+      KC_SERVER_URL: http://keycloak:8080
+      KC_REALM: it-realm
+      KC_CLIENT_ID: it-client
+      KC_CLIENT_SECRET: it-secret
+      APP_PORT: "8090"
+    ports:
+      - "8092:8090"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    profiles: ["apps"]
+
+  app-python:
+    build: { context: .., dockerfile: harness/apps/python/Dockerfile }
+    environment:
+      KC_SERVER_URL: http://keycloak:8080
+      KC_REALM: it-realm
+      KC_CLIENT_ID: it-client
+      KC_CLIENT_SECRET: it-secret
+      APP_PORT: "8090"
+    ports:
+      - "8093:8090"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    profiles: ["apps"]
+
+  app-java:
+    build: { context: .., dockerfile: harness/apps/java/Dockerfile }
+    environment:
+      KC_SERVER_URL: http://keycloak:8080
+      KC_REALM: it-realm
+      KC_CLIENT_ID: it-client
+      KC_CLIENT_SECRET: it-secret
+      APP_PORT: "8090"
+    ports:
+      - "8094:8090"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    profiles: ["apps"]

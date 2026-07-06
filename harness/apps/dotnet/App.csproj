@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Harness.Dotnet</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 로컬 SDK 소스 참조(Go replace와 동형) — 빌드=배포가능성 스모크 -->
+    <ProjectReference Include="../../../dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj" />
+  </ItemGroup>
+</Project>

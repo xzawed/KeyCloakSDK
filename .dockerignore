@@ -1,0 +1,10 @@
+# 하네스 Docker 빌드(컨텍스트=리포 루트)에서 언어별 로컬 산출물 제외
+**/bin/
+**/obj/
+**/target/
+**/node_modules/
+**/.venv/
+**/__pycache__/
+**/*.pyc
+node/dist/
+.git/
