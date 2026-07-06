@@ -1464,8 +1464,10 @@ Expected: 로직 모듈(config·error·tokens·oidc·token_provider·jwks·jwt) 
 - Create: `rust/tests/testdata/it-realm-realm.json` (다른 언어에서 복사)
 
 **Interfaces:**
-- Consumes: `testcontainers`(GenericImage), `keycloak_sdk::{KeycloakClient, KeycloakConfig}`, `keycloak::types::UserRepresentation`.
-- Produces: E2E `#[ignore]` 테스트 — 실제 KC 26.6: client-credentials → validate(다중 aud) → introspect → user create/search/get/delete → delete 후 get→NotFound → raw() 스모크.
+- Consumes: `testcontainers`(GenericImage), `keycloak_sdk::{KeycloakClient, KeycloakConfig, AdminClient, TokenProvider}`, `keycloak::types::{UserRepresentation, ClientRepresentation, RoleRepresentation, GroupRepresentation, RealmRepresentation}`.
+- Produces: E2E `#[ignore]` 테스트 — 실제 KC 26.6, **5 admin 리소스 전부 커버**(siblings 동형): client-credentials → validate(다중 aud) → introspect → **user CRUD → client CRUD → role CRUD → group CRUD** → delete 후 get→NotFound → raw() 스모크 → **realm CRUD(master-admin)**.
+
+> **⚠️ 5-리소스 E2E(Task 9가 admin을 5리소스로 확장 — §admin 동형). users/clients/roles/groups는 it-client 서비스계정(realm-management 롤)으로 CRUD 가능. 단 realms는 `POST /admin/realms`가 master-realm 전용**(realm 서비스계정 403 — Go/C# 게차 동형). realm CRUD는 **테스트 전용 master-admin 토큰 소스**로 별도 `AdminClient` 구성(C# sibling `MasterPasswordTokenSource` 동형): master realm의 `admin-cli`에 password grant(admin/admin·KC_BOOTSTRAP_ADMIN)로 토큰 발급하는 `impl TokenProvider`를 만들고 `AdminClient::new(master_config, http, Arc::new(master_provider))`로 throwaway realm create→get→delete. it-client 경로로 realm create를 시도하면 403(Forbidden)임을 별도로 검증해도 좋다(문서화된 실서버 동작).
 
 - [ ] **Step 1: realm JSON 복사**
 
@@ -1532,10 +1534,51 @@ async fn full_flow() {
     // 5) delete 후 조회 → NotFound
     let err = client.admin().get_user(&id).await.unwrap_err();
     assert!(matches!(err, keycloak_sdk::KeycloakError::Admin(keycloak_sdk::AdminError::NotFound)));
+
+    // 6) client CRUD (create→get by uuid→delete; create_client의 to_id는 내부 UUID)
+    let cid = format!("rust-it-cli-{}", &id[..8]);
+    let uuid = client.admin().create_client(ClientRepresentation {
+        client_id: Some(cid.clone()), ..Default::default() }).await.unwrap().unwrap();
+    let gc = client.admin().get_client(&uuid).await.unwrap();
+    assert_eq!(gc.client_id.as_deref(), Some(cid.as_str()));
+    client.admin().delete_client(&uuid).await.unwrap();
+
+    // 7) role CRUD (realm role by name)
+    let rname = format!("rust-it-role-{}", &id[..8]);
+    client.admin().create_role(RoleRepresentation { name: Some(rname.clone()), ..Default::default() }).await.unwrap();
+    let gr = client.admin().get_role(&rname).await.unwrap();
+    assert_eq!(gr.name.as_deref(), Some(rname.as_str()));
+    client.admin().delete_role(&rname).await.unwrap();
+
+    // 8) group CRUD (create→get by id→delete)
+    let gname = format!("rust-it-grp-{}", &id[..8]);
+    let gid = client.admin().create_group(GroupRepresentation { name: Some(gname.clone()), ..Default::default() }).await.unwrap().unwrap();
+    let gg = client.admin().get_group(&gid).await.unwrap();
+    assert_eq!(gg.name.as_deref(), Some(gname.as_str()));
+    client.admin().delete_group(&gid).await.unwrap();
+
+    // 9) raw() 스모크 — 내부 KeycloakAdmin 노출(탈출구)
+    let _raw = client.admin().raw();
+
+    // 10) realm CRUD via master-admin(POST /admin/realms는 master 전용)
+    //   test-only master token source(admin/admin·master realm의 admin-cli password grant).
+    //   구현자: 아래 MasterTokenProvider를 실제 KC로 토큰 발급하도록 구성(직접 reqwest POST
+    //   {grant_type:password, client_id:admin-cli, username:admin, password:admin} → master token endpoint).
+    let master_cfg = KeycloakConfig::new(&base, "master", "admin-cli").unwrap();
+    let master_http = /* 공유 reqwest 재사용 또는 신규 */ keycloak::prelude::reqwest::Client::new();
+    let master_admin = AdminClient::new(&master_cfg, master_http, std::sync::Arc::new(MasterTokenProvider::new(&base)));
+    let new_realm = format!("rust-it-realm-{}", &id[..8]);
+    master_admin.create_realm(RealmRepresentation { realm: Some(new_realm.clone()), enabled: Some(true), ..Default::default() }).await.unwrap();
+    // (선택) it-client로 realm 생성 시도 → 403 검증
+    let g_realm = master_admin.get_realm().await; // master realm-get; 또는 새 realm용 별도 AdminClient(realm=new_realm)
+    let _ = g_realm;
+    master_admin.delete_realm(&new_realm).await.unwrap();
 }
 ```
 
 > ⚠️ 구현 주의(통합): testcontainers 0.27.3의 정확한 API(`GenericImage::new`·`with_exposed_port(8080.tcp())`·`with_wait_for`·`with_copy_to`·`start()`·`get_host_port_ipv4`)를 vendor 소스로 확인해 조정(0.27은 pre-1.0). WaitFor는 KC start-dev 준비 로그(예: "Listening on:") 또는 health 엔드포인트 폴링. 첫 실행은 이미지 pull로 수 분(사전 `docker pull quay.io/keycloak/keycloak:26.6` 권장). realm import는 `--import-realm` + `with_copy_to`. **SDK 코드는 수정 금지** — 실 KC로 버그 발견 시 보고.
+>
+> **master-admin realm CRUD 구현 상세**: `MasterTokenProvider`는 테스트 전용 `impl TokenProvider`(`#[async_trait] async fn access_token(&self) -> Result<String>`) — master realm 토큰 엔드포인트(`{base}/realms/master/protocol/openid-connect/token`)에 `grant_type=password&client_id=admin-cli&username=admin&password=admin` form POST → `access_token` 추출(캐시 불필요·매 호출 발급도 무방). `get_realm()`은 config의 realm(여기선 master)을 반환하므로, 새 realm을 GET하려면 `KeycloakConfig::new(base,"master","admin-cli")` 대신 realm별 AdminClient를 쓰거나 `raw()`로 조회. 핵심은 **create_realm→(존재확인)→delete_realm이 master 권한으로 GREEN**임을 증명(5리소스 완주). 만약 master password grant가 admin-cli의 direct-access-grants 설정에 막히면(기본 활성) 실패 시 실 KC 동작을 보고.
 
 - [ ] **Step 3: 통합 실행(Docker 필요) + Commit**
 
