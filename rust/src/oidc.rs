@@ -46,6 +46,10 @@ mod tests {
             "http://kc:8080/realms/it-realm/protocol/openid-connect/token"
         );
         assert_eq!(
+            e.authorization(),
+            "http://kc:8080/realms/it-realm/protocol/openid-connect/auth"
+        );
+        assert_eq!(
             e.introspection(),
             "http://kc:8080/realms/it-realm/protocol/openid-connect/token/introspect"
         );

@@ -99,6 +99,16 @@ impl AuthClient {
         // nonce는 openidconnect가 auth URL에 실어 Keycloak이 id_token에 담아 돌려주지만,
         // 이 SDK는 id_token을 openidconnect 검증기로 검증하지 않고(JwtValidator가 access_token만
         // 강화 검증) exchange_code에서 nonce 검증 단계를 밟지 않으므로 여기서 소비하지 않는다.
+        // config.scopes를 반영(사용자 커스텀 스코프). 비면 "openid" 폴백.
+        let scopes: Vec<Scope> = if self.config.scopes.is_empty() {
+            vec![Scope::new("openid".to_string())]
+        } else {
+            self.config
+                .scopes
+                .iter()
+                .map(|s| Scope::new(s.clone()))
+                .collect()
+        };
         let (url, csrf, _nonce) = self
             .oidc
             .authorize_url(
@@ -106,7 +116,7 @@ impl AuthClient {
                 CsrfToken::new_random,
                 Nonce::new_random,
             )
-            .add_scope(Scope::new("openid".to_string()))
+            .add_scopes(scopes)
             .set_pkce_challenge(challenge)
             .url();
         AuthorizationRequest {

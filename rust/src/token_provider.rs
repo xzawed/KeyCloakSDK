@@ -38,6 +38,12 @@ impl ClientCredentialsTokenProvider {
     }
 
     async fn fetch(&self) -> Result<TokenSet> {
+        // config.scopes를 공백 조인해 그대로 전달(사용자 커스텀 스코프 반영). 비면 "openid" 폴백.
+        let scope = if self.config.scopes.is_empty() {
+            "openid".to_string()
+        } else {
+            self.config.scopes.join(" ")
+        };
         let params = [
             ("grant_type", "client_credentials"),
             ("client_id", self.config.client_id.as_str()),
@@ -45,7 +51,7 @@ impl ClientCredentialsTokenProvider {
                 "client_secret",
                 self.config.client_secret.as_deref().unwrap_or(""),
             ),
-            ("scope", "openid"),
+            ("scope", scope.as_str()),
         ];
         let resp = self
             .http
@@ -122,7 +128,7 @@ impl TokenProvider for ClientCredentialsTokenProvider {
 mod tests {
     use super::*;
     use crate::config::KeycloakConfig;
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn cfg(server: &str) -> KeycloakConfig {
@@ -145,6 +151,26 @@ mod tests {
         let p = ClientCredentialsTokenProvider::new(cfg(&server.uri()), reqwest::Client::new());
         assert_eq!(p.access_token().await.unwrap(), "AT");
         assert_eq!(p.access_token().await.unwrap(), "AT");
+    }
+
+    #[tokio::test]
+    async fn fetches_with_custom_scopes() {
+        // config.scopes가 form body의 scope 파라미터로 실제 전달되는지 검증(no-op 아님을 증명).
+        // application/x-www-form-urlencoded는 공백을 '+'로 인코딩 → "scope=openid+profile".
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/token"))
+            .and(body_string_contains("scope=openid+profile"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "AT2", "token_type": "Bearer", "expires_in": 300
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut config = cfg(&server.uri());
+        config.scopes = vec!["openid".to_string(), "profile".to_string()];
+        let p = ClientCredentialsTokenProvider::new(config, reqwest::Client::new());
+        assert_eq!(p.access_token().await.unwrap(), "AT2");
     }
 
     #[tokio::test]

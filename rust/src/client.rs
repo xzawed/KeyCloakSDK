@@ -6,7 +6,7 @@ use crate::error::{KeycloakError, Result};
 use crate::jwks::JwksStore;
 use crate::jwt::JwtValidator;
 use crate::oidc::OidcEndpoints;
-use crate::token_provider::TokenProvider;
+use crate::token_provider::{ClientCredentialsTokenProvider, TokenProvider};
 use keycloak::prelude::reqwest;
 use std::sync::Arc;
 
@@ -34,11 +34,13 @@ impl KeycloakClient {
             http.clone(),
             validator,
         )?);
-        let admin = AdminClient::new(
-            &config,
-            http.clone(),
-            auth.clone() as Arc<dyn TokenProvider>,
+        // admin은 캐싱 client-credentials TokenProvider를 쓴다(§4 캐시 불변식 — 만료 전 재사용·
+        // single-flight). 우회 없이 AuthClient를 주입하면 admin 호출마다 토큰을 재발급(무캐시)한다.
+        // 공유 `http`를 그대로 써 커넥션 풀은 유지한다.
+        let admin_token_provider: Arc<dyn TokenProvider> = Arc::new(
+            ClientCredentialsTokenProvider::new(config.clone(), http.clone()),
         );
+        let admin = AdminClient::new(&config, http.clone(), admin_token_provider);
         Ok(Self { auth, admin })
     }
 

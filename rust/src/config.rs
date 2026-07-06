@@ -92,6 +92,14 @@ mod tests {
     }
 
     #[test]
+    fn whitespace_only_fields_err() {
+        // .trim().is_empty()가 공백만 있는 입력도 거부하는지 검증.
+        assert!(KeycloakConfig::new("   ", "r", "c").is_err());
+        assert!(KeycloakConfig::new("http://kc:8080", "   ", "c").is_err());
+        assert!(KeycloakConfig::new("http://kc:8080", "r", "   ").is_err());
+    }
+
+    #[test]
     fn debug_masks_secret() {
         let c = KeycloakConfig::new("http://kc:8080", "r", "c")
             .unwrap()
