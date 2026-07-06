@@ -16,6 +16,6 @@ pub mod tokens;
 pub use config::KeycloakConfig;
 pub use error::{AdminError, KeycloakError};
 pub use oidc::OidcEndpoints;
+pub use token_provider::{ClientCredentialsTokenProvider, TokenProvider};
 pub use tokens::{AuthorizationRequest, IntrospectionResult, TokenSet, ValidatedToken};
-// pub use token_provider::{ClientCredentialsTokenProvider, TokenProvider};
 // pub use client::KeycloakClient;
