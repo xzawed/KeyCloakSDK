@@ -19,6 +19,13 @@ RSpec.describe KeycloakSdk::KeycloakClient do
     expect(client.admin).to equal(client.admin)
   end
 
+  it "wires admin with a dedicated caching ClientCredentialsTokenProvider, not the AuthClient (§4)" do
+    allow(KeycloakSdk::ClientCredentialsTokenProvider).to receive(:new).and_call_original
+    client.admin
+    expect(KeycloakSdk::ClientCredentialsTokenProvider).to have_received(:new)
+      .with(config: kind_of(KeycloakSdk::Config), http: anything)
+  end
+
   it "responds to close" do
     expect { client.close }.not_to raise_error
   end

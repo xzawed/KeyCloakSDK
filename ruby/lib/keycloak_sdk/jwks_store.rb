@@ -42,7 +42,7 @@ module KeycloakSdk
       raise TransportError, "JWKS response malformed" unless body.is_a?(Hash) && body["keys"].is_a?(Array)
 
       body
-    rescue Faraday::TimeoutError, Faraday::ConnectionFailed => e
+    rescue Faraday::Error => e
       raise TransportError, "JWKS transport error: #{e.message}"
     end
 

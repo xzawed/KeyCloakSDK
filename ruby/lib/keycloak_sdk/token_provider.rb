@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "uri"
-
 module KeycloakSdk
   # 덕 인터페이스: 구현체는 #access_token → String 을 응답한다.
   # admin은 이 인터페이스로만 토큰을 받는다(auth 비의존, §4 결합 규칙).
@@ -49,7 +47,7 @@ module KeycloakSdk
       end
 
       TokenSet.from_response(resp.body, received_at: Time.now.to_f)
-    rescue Faraday::TimeoutError, Faraday::ConnectionFailed => e
+    rescue Faraday::Error => e
       raise TransportError, "token endpoint transport error: #{e.message}"
     end
   end

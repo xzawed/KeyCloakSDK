@@ -38,7 +38,7 @@ module KeycloakSdk
       to_token_set(client.access_token!(code_verifier: code_verifier))
     rescue Rack::OAuth2::Client::Error => e
       raise AuthError.new("authorization_code exchange failed: #{e.message}", oauth_error: e.response[:error].to_s)
-    rescue Faraday::TimeoutError, Faraday::ConnectionFailed => e
+    rescue Faraday::Error => e
       raise TransportError, "token endpoint transport error: #{e.message}"
     end
 
@@ -48,7 +48,7 @@ module KeycloakSdk
       to_token_set(client.access_token!)
     rescue Rack::OAuth2::Client::Error => e
       raise AuthError.new("refresh failed: #{e.message}", oauth_error: e.response[:error].to_s)
-    rescue Faraday::TimeoutError, Faraday::ConnectionFailed => e
+    rescue Faraday::Error => e
       raise TransportError, "token endpoint transport error: #{e.message}"
     end
 
@@ -56,7 +56,7 @@ module KeycloakSdk
       to_token_set(oauth_client.access_token!(scope: @config.scopes.join(" ")))
     rescue Rack::OAuth2::Client::Error => e
       raise AuthError.new("client-credentials failed: #{e.message}", oauth_error: e.response[:error].to_s)
-    rescue Faraday::TimeoutError, Faraday::ConnectionFailed => e
+    rescue Faraday::Error => e
       raise TransportError, "token endpoint transport error: #{e.message}"
     end
 
@@ -72,7 +72,7 @@ module KeycloakSdk
       raise AuthError, "introspection failed: HTTP #{resp.status}" unless resp.success?
 
       IntrospectionResult.from_response(resp.body)
-    rescue Faraday::TimeoutError, Faraday::ConnectionFailed => e
+    rescue Faraday::Error => e
       raise TransportError, "introspection transport error: #{e.message}"
     end
 
@@ -84,7 +84,7 @@ module KeycloakSdk
       raise AuthError, "logout failed: HTTP #{resp.status}" unless resp.success?
 
       nil
-    rescue Faraday::TimeoutError, Faraday::ConnectionFailed => e
+    rescue Faraday::Error => e
       raise TransportError, "logout transport error: #{e.message}"
     end
 

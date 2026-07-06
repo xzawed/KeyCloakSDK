@@ -43,6 +43,11 @@ RSpec.describe KeycloakSdk::JwksStore do
     expect { store.key_set }.to raise_error(KeycloakSdk::TransportError)
   end
 
+  it "raises TransportError (not a raw Faraday::SSLError) on TLS verification failure" do
+    stub_request(:get, jwks_url).to_raise(Faraday::SSLError.new("cert verify failed"))
+    expect { store.key_set }.to raise_error(KeycloakSdk::TransportError)
+  end
+
   it "keeps the rate-limit gate stamped even when a forced re-fetch fails (bounded flood, nil cache)" do
     stub = stub_request(:get, jwks_url).to_return(status: 500, body: "err")
     # cold-cache forced fetch fails but must stamp the gate at the decision point

@@ -11,12 +11,12 @@ module KeycloakSdk
         return resp if resp.success?
 
         raise AdminError.from_status(resp.status, "admin request failed: HTTP #{resp.status}")
-      rescue Faraday::TimeoutError, Faraday::ConnectionFailed => e
+      rescue Faraday::Error => e
         raise TransportError, "admin transport error: #{e.message}"
       end
 
       def id_from_location(resp)
-        loc = resp.headers["location"] || resp.headers["Location"]
+        loc = resp.headers["location"]
         loc&.split("/")&.last
       end
     end
