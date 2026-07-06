@@ -13,6 +13,7 @@ pub mod token_provider;
 pub mod tokens;
 
 // re-exports 활성화는 각 타입 구현 후(Task 2~10)
+pub use admin::AdminClient;
 pub use auth::AuthClient;
 pub use config::KeycloakConfig;
 pub use error::{AdminError, KeycloakError};
