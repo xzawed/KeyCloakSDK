@@ -9,7 +9,9 @@ SimpleCov.start do
   add_filter "lib/keycloak_sdk/auth_client.rb"
   add_filter %r{lib/keycloak_sdk/admin/}
   add_filter "lib/keycloak_sdk/client.rb"
-  minimum_coverage line: 90, branch: 85
+  # 통합잡(spec/integration만 실행)은 로직 브랜치 대부분을 안 타므로 게이트를 적용하면 안 된다 —
+  # RUN_INTEGRATION 환경변수로 unit 실행만 게이트를 강제한다(단위 게이트는 약화하지 않음).
+  minimum_coverage(line: 90, branch: 85) unless ENV["RUN_INTEGRATION"]
 end
 
 require "webmock/rspec"
