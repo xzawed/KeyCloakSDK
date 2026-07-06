@@ -19,10 +19,9 @@ require_relative "keycloak_sdk/admin/realms"
 require_relative "keycloak_sdk/admin/roles"
 require_relative "keycloak_sdk/admin/groups"
 require_relative "keycloak_sdk/admin/admin_client"
+require_relative "keycloak_sdk/client"
 
 # Polyglot Keycloak SDK for Ruby.
-# 이후 태스크에서 아래에 require를 추가한다:
-#   ... (client)
 module KeycloakSdk
 end
 
