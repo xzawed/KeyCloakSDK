@@ -80,8 +80,10 @@ impl JwksStore {
                 "unknown kid '{kid}' (refetch rate-limited)"
             )));
         }
-        let set = self.fetch().await?;
+        // 재조회 결정 시점에 stamp — fetch 실패해도 rate-limit이 걸리도록(Go/Python 동형).
+        // fetch가 실패해도 gate는 이미 소모되어 IdP 장애창에서 재시도 폭주를 상한한다.
         *gate = Some(now);
+        let set = self.fetch().await?;
         set.find(kid)
             .cloned()
             .ok_or_else(|| KeycloakError::TokenValidation(format!("unknown kid '{kid}'")))
@@ -140,5 +142,69 @@ mod tests {
         store.get_key("k1").await.unwrap(); // fetch #1(초기)
         let _ = store.get_key("k2").await; // 미해결 → refetch #2
         let _ = store.get_key("k3").await; // rate-limit → refetch 없음
+    }
+
+    /// 회귀테스트: IdP 장애창(fetch 실패)에서도 gate가 재조회 "결정 시점"에 stamp되어야
+    /// 다음 미해결 kid 조회가 rate-limit된다(Go `forcedAt`/Python `_jwks_forced_at` 동형).
+    /// 수정 전(스탬프가 fetch *성공 후*에만 찍힘)이라면 GET#2(500)가 실패해 gate가 unset으로
+    /// 남고, get_key("k3")가 다시 재조회를 시도해 certs에 3번째 GET이 발생 → 이 테스트가 실패한다.
+    #[tokio::test]
+    async fn fetch_failure_still_stamps_gate_rate_limiting_next_lookup() {
+        let server = MockServer::start().await;
+        // GET#1: 초기 로드 — 200 + {k1}. up_to_n_times(1)로 1회만 응답하고 이후 소진.
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(jwks_json("k1")))
+            .up_to_n_times(1)
+            .with_priority(1) // 200 mock이 소진되기 전까지 500 fallback보다 우선 매치
+            .expect(1)
+            .mount(&server)
+            .await;
+        // GET#2(그 이후): IdP 장애 — 500. k2의 게이트된 재조회에서 정확히 1회만 맞아야 한다
+        // (k3는 rate-limit로 막혀 여기까지 도달하면 안 됨 — 수정 전이면 2회가 되어 expect(1) 위반).
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let store = JwksStore::new(
+            format!("{}/certs", server.uri()),
+            reqwest::Client::new(),
+            60,
+        );
+
+        // GET#1 → {k1}: 초기 로드가 캐시를 채운다(rate-limit 예산 미소모).
+        store.get_key("k1").await.unwrap();
+
+        // GET#2 → 500: 미해결 kid가 게이트된 재조회를 트리거한다 — fetch는 실패하지만
+        // (수정 후) gate는 이미 stamp되어 있다.
+        let err2 = store.get_key("k2").await.unwrap_err();
+        assert!(
+            matches!(err2, KeycloakError::Transport(_)),
+            "expected Transport error from the failed fetch, got {err2:?}"
+        );
+
+        // GET#3 없어야 함: gate가 stamp되어 min_refetch 창 안이므로 즉시 rate-limited.
+        let err3 = store.get_key("k3").await.unwrap_err();
+        match err3 {
+            KeycloakError::TokenValidation(msg) => assert!(
+                msg.contains("rate-limited"),
+                "expected a rate-limited TokenValidation message, got: {msg}"
+            ),
+            other => panic!("expected TokenValidation(rate-limited), got {other:?}"),
+        }
+
+        // 명시적 이중검증: certs 엔드포인트에 정확히 2건만 도달했는지 직접 카운트
+        // (수정 전이면 k3도 재조회를 시도해 3건이 된다).
+        let received = server
+            .received_requests()
+            .await
+            .expect("request recording is enabled by default");
+        let certs_hits = received.iter().filter(|r| r.url.path() == "/certs").count();
+        assert_eq!(
+            certs_hits, 2,
+            "expected exactly 2 GETs to /certs (initial load + one gated refetch on failure), got {certs_hits}"
+        );
     }
 }
