@@ -1,0 +1,31 @@
+plugins:
+  - rubocop-rspec
+
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - "vendor/**/*"
+    - "examples/**/*"
+
+# 코드베이스 전반이 double-quote·LF(크로스플랫폼·CI Linux 정렬)
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+Layout/EndOfLine:
+  EnforcedStyle: lf
+
+Metrics/MethodLength:
+  Max: 25
+Metrics/AbcSize:
+  Max: 25
+Metrics/BlockLength:
+  Exclude:
+    - "spec/**/*"
+    - "*.gemspec"
+Style/Documentation:
+  Enabled: false
+RSpec/ExampleLength:
+  Max: 20
+RSpec/MultipleExpectations:
+  Max: 8
