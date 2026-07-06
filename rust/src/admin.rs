@@ -11,7 +11,10 @@ use crate::error::{KeycloakError, Result};
 use crate::token_provider::TokenProvider;
 use async_trait::async_trait;
 use keycloak::prelude::reqwest;
-use keycloak::types::{ClientRepresentation, UserRepresentation};
+use keycloak::types::{
+    ClientRepresentation, GroupRepresentation, RealmRepresentation, RoleRepresentation,
+    UserRepresentation,
+};
 use keycloak::{KeycloakAdmin, KeycloakError as KcError, KeycloakTokenSupplier};
 use std::sync::Arc;
 
@@ -144,6 +147,77 @@ impl AdminClient {
     pub async fn delete_client(&self, client_uuid: &str) -> Result<()> {
         self.admin
             .realm_clients_with_client_uuid_delete(&self.realm, client_uuid)
+            .await
+            .map_err(map_admin)?;
+        Ok(())
+    }
+
+    // ── Realms ──
+    /// 설정된 realm의 최상위 representation 조회(중첩 User/Client 미포함).
+    pub async fn get_realm(&self) -> Result<RealmRepresentation> {
+        self.admin.realm_get(&self.realm).await.map_err(map_admin)
+    }
+    /// 신규 realm 생성(`POST /admin/realms`).
+    /// ⚠️ 이 연산은 **master-realm 권한**을 요구한다 — realm 서비스계정으로는 403(Forbidden)이다.
+    /// (realm-scoped 연산이 아니라 전역 부트스트랩 권한이므로 모든 Keycloak에서 master 전용.)
+    /// 타입드 메서드는 런타임 권한과 무관하게 파사드에 존재한다.
+    pub async fn create_realm(&self, realm: RealmRepresentation) -> Result<()> {
+        self.admin.post(realm).await.map_err(map_admin)?;
+        Ok(())
+    }
+    /// realm 삭제(`DELETE /admin/realms/{realm}`).
+    /// ⚠️ `create_realm`과 동일하게 **master-realm 권한**을 요구한다(realm 서비스계정 403).
+    pub async fn delete_realm(&self, name: &str) -> Result<()> {
+        self.admin.realm_delete(name).await.map_err(map_admin)?;
+        Ok(())
+    }
+
+    // ── Roles (realm-level) ──
+    /// realm 롤 생성.
+    pub async fn create_role(&self, role: RoleRepresentation) -> Result<()> {
+        self.admin
+            .realm_roles_post(&self.realm, role)
+            .await
+            .map_err(map_admin)?;
+        Ok(())
+    }
+    /// name으로 realm 롤 단건 조회(부재 시 404→`AdminError::NotFound`).
+    pub async fn get_role(&self, name: &str) -> Result<RoleRepresentation> {
+        self.admin
+            .realm_roles_with_role_name_get(&self.realm, name)
+            .await
+            .map_err(map_admin)
+    }
+    /// name으로 realm 롤 삭제.
+    pub async fn delete_role(&self, name: &str) -> Result<()> {
+        self.admin
+            .realm_roles_with_role_name_delete(&self.realm, name)
+            .await
+            .map_err(map_admin)?;
+        Ok(())
+    }
+
+    // ── Groups ──
+    /// 그룹 생성. 생성된 id는 응답 `Location` 헤더에서 추출(`to_id`) — 없으면 `None`.
+    pub async fn create_group(&self, group: GroupRepresentation) -> Result<Option<String>> {
+        let resp = self
+            .admin
+            .realm_groups_post(&self.realm, group)
+            .await
+            .map_err(map_admin)?;
+        Ok(resp.to_id().map(str::to_string))
+    }
+    /// id로 그룹 단건 조회(부재 시 404→`AdminError::NotFound`).
+    pub async fn get_group(&self, id: &str) -> Result<GroupRepresentation> {
+        self.admin
+            .realm_groups_with_group_id_get(&self.realm, id)
+            .await
+            .map_err(map_admin)
+    }
+    /// id로 그룹 삭제.
+    pub async fn delete_group(&self, id: &str) -> Result<()> {
+        self.admin
+            .realm_groups_with_group_id_delete(&self.realm, id)
             .await
             .map_err(map_admin)?;
         Ok(())
