@@ -53,7 +53,7 @@ module KeycloakSdk
     end
 
     def client_credentials_token
-      to_token_set(oauth_client.access_token!(:client_credentials))
+      to_token_set(oauth_client.access_token!(scope: @config.scopes.join(" ")))
     rescue Rack::OAuth2::Client::Error => e
       raise AuthError.new("client-credentials failed: #{e.message}", oauth_error: e.response[:error].to_s)
     rescue Faraday::TimeoutError, Faraday::ConnectionFailed => e
@@ -112,7 +112,7 @@ module KeycloakSdk
         token_type: "Bearer",
         expires_in: token.expires_in,
         refresh_token: token.refresh_token,
-        id_token: (token.respond_to?(:id_token) ? token.id_token : nil),
+        id_token: raw[:id_token] || raw["id_token"],
         scope: scope,
         expires_at: token.expires_in ? Time.now.to_f + token.expires_in : nil
       )

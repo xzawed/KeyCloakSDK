@@ -19,6 +19,10 @@ RSpec.describe KeycloakSdk::AuthClient do
   let(:introspect_url) { "https://kc.example.com/realms/demo/protocol/openid-connect/token/introspect" }
   let(:logout_url) { "https://kc.example.com/realms/demo/protocol/openid-connect/logout" }
 
+  def token_url
+    "https://kc.example.com/realms/demo/protocol/openid-connect/token"
+  end
+
   describe "#create_authorization_request (offline, PKCE S256)" do
     it "builds an authorization URL with S256 challenge and returns a masked verifier" do
       req = auth.create_authorization_request(redirect_uri: "https://app/cb", state: "st-123")
@@ -61,6 +65,40 @@ RSpec.describe KeycloakSdk::AuthClient do
       vt = instance_double(KeycloakSdk::ValidatedToken)
       allow(jwt_validator).to receive(:validate).with("tok").and_return(vt)
       expect(auth.validate("tok")).to be(vt)
+    end
+  end
+
+  describe "#exchange_code" do
+    it "populates id_token and scope from the token response" do
+      stub_request(:post, token_url)
+        .to_return(status: 200, body: {
+          access_token: "AT", token_type: "Bearer", expires_in: 300,
+          refresh_token: "RT", id_token: "the-id-token", scope: "openid email"
+        }.to_json, headers: { "Content-Type" => "application/json" })
+
+      ts = auth.exchange_code(code: "c", code_verifier: "v", redirect_uri: "https://app/cb")
+      expect(ts.access_token).to eq("AT")
+      expect(ts.id_token).to eq("the-id-token")
+      expect(ts.scope).to eq("openid email")
+    end
+  end
+
+  describe "#client_credentials_token" do
+    it "sends the configured scope to the token endpoint" do
+      cc_config = KeycloakSdk::Config.new(
+        server_url: "https://kc.example.com", realm: "demo",
+        client_id: "app", client_secret: "sekret", scopes: %w[openid custom-scope]
+      )
+      cc_auth = described_class.new(config: cc_config, http: http, jwt_validator: jwt_validator)
+      stub = stub_request(:post, token_url)
+             .with(body: hash_including("scope" => "openid custom-scope"))
+             .to_return(status: 200, body: {
+               access_token: "AT", token_type: "Bearer", expires_in: 300
+             }.to_json, headers: { "Content-Type" => "application/json" })
+
+      ts = cc_auth.client_credentials_token
+      expect(stub).to have_been_requested
+      expect(ts.access_token).to eq("AT")
     end
   end
 end
