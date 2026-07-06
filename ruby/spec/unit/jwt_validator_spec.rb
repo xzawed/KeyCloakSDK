@@ -103,5 +103,34 @@ RSpec.describe KeycloakSdk::JwtValidator do
     expect { validator.validate(sign(base_claims("exp" => Time.now.to_i - 40))) }
       .to raise_error(KeycloakSdk::TokenValidationError)
   end
+
+  describe "constructor guards (defense-in-depth against silent verify_iss/verify_aud no-ops)" do
+    it "raises ConfigError when issuer is nil" do
+      expect do
+        described_class.new(issuer: nil, audience: audience, jwks_store: jwks_store)
+      end.to raise_error(KeycloakSdk::ConfigError, /issuer/)
+    end
+
+    it "raises ConfigError when audience is nil" do
+      expect do
+        described_class.new(issuer: issuer, audience: nil, jwks_store: jwks_store)
+      end.to raise_error(KeycloakSdk::ConfigError, /audience/)
+    end
+  end
+
+  describe "JWKS nil-guard (rate-limited cold-cache forced refetch)" do
+    let(:double_store) { instance_double(KeycloakSdk::JwksStore) }
+    let(:double_validator) do
+      described_class.new(issuer: issuer, audience: audience, jwks_store: double_store)
+    end
+
+    it "raises TokenValidationError (not NoMethodError) when a forced refetch returns nil" do
+      allow(double_store).to receive(:key_set).with(force: false).and_return({ "keys" => [] })
+      allow(double_store).to receive(:key_set).with(force: true).and_return(nil)
+
+      expect { double_validator.validate(sign(base_claims)) }
+        .to raise_error(KeycloakSdk::TokenValidationError)
+    end
+  end
 end
 # rubocop:enable RSpec/MultipleMemoizedHelpers

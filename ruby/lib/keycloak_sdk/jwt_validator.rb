@@ -8,6 +8,11 @@ module KeycloakSdk
   # 키는 DoS-safe JwksStore로 조회한다(위조 서명은 재조회 미유발). 헤더 alg는 검증 알고리즘 선택에 미사용.
   class JwtValidator
     def initialize(issuer:, audience:, jwks_store:, clock_skew: 30)
+      # ruby-jwt의 verify_iss/verify_aud 빌더는 값이 nil이면 조용히 no-op이 되어
+      # verify_iss:true/verify_aud:true를 켜도 검사를 건너뛴다 — fail-closed로 방어.
+      raise ConfigError, "issuer is required" if issuer.nil? || issuer.to_s.strip.empty?
+      raise ConfigError, "audience is required" if audience.nil? || audience.to_s.strip.empty?
+
       @issuer = issuer
       @audience = audience
       @jwks_store = jwks_store
