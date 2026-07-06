@@ -57,7 +57,7 @@ impl JwtValidator {
         // (1) 헤더에서 kid만 추출(alg는 검증 선택에 미사용 — RS256 고정 핀).
         //     Algorithm enum에는 `none` 변형이 없어 alg="none" 헤더는 여기서 구조적으로 거부된다.
         let header = jsonwebtoken::decode_header(token)
-            .map_err(|e| KeycloakError::TokenValidation(format!("malformed JWT header: {e}")))?;
+            .map_err(|_| KeycloakError::TokenValidation("malformed JWT header".into()))?;
         let kid = header
             .kid
             .as_deref()
@@ -66,7 +66,7 @@ impl JwtValidator {
         // (2) JWKS에서 kid로 키 → DecodingKey (미해결 kid만 DoS-safe 재조회).
         let jwk = self.jwks.get_key(kid).await?;
         let key = DecodingKey::from_jwk(&jwk)
-            .map_err(|e| KeycloakError::TokenValidation(format!("bad JWKS key: {e}")))?;
+            .map_err(|_| KeycloakError::TokenValidation("invalid JWKS key".into()))?;
 
         // (3) 강화 Validation: RS256 핀·iss 정확·aud 포함·exp 필수·nbf·스큐.
         let mut v = Validation::new(Algorithm::RS256);
@@ -174,6 +174,22 @@ mod tests {
             .await;
         // server 수명: MockServer는 drop되면 종료되므로, validator의 JWKS fetch가 성립하도록
         // Box::leak로 유지(테스트 전용 — 실제 코드 아님).
+        let cfg = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client").unwrap();
+        let endpoints = OidcEndpoints::new(&cfg);
+        let jwks_uri = format!("{}/certs", Box::leak(Box::new(server)).uri());
+        let store = JwksStore::new(jwks_uri, reqwest::Client::new(), 60);
+        JwtValidator::new(&cfg, &endpoints, store)
+    }
+
+    /// `validator_for`의 변형 — 정상 JWK 대신 호출자가 지정한(악의적/기형) JWKS 바디를
+    /// `/certs`가 그대로 반환하도록 mount한다. 악성 JWKS 프로브 전용.
+    async fn validator_with_raw_jwks(jwks_body: serde_json::Value) -> JwtValidator {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(jwks_body))
+            .mount(&server)
+            .await;
         let cfg = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client").unwrap();
         let endpoints = OidcEndpoints::new(&cfg);
         let jwks_uri = format!("{}/certs", Box::leak(Box::new(server)).uri());
@@ -369,6 +385,65 @@ mod tests {
                 Err(KeycloakError::TokenValidation(_))
             ),
             "future nbf MUST be rejected (validate_nbf=true active)"
+        );
+    }
+
+    // ── 보안 하드닝 리뷰 후속: 악성/기형 JWKS 클래스 + 스큐 경계(리뷰 Important+Minor) ──
+
+    /// 악성 JWKS: RSA `n`이 JSON 배열(문자열이 아님). PHP SDK 자매 구현에서 이 클래스가
+    /// 일반 리뷰를 뚫고 Critical(경계 미변환 예외 누출)로 실제 배포된 전례가 있다.
+    /// Rust는 `JwkSet` serde 역직렬화 단계에서 타입 불일치로 실패하고, `JwksStore::fetch`가
+    /// 이를 `KeycloakError::Transport`로 흡수한다 — 핵심 불변식은 "panic이 아니라 깨끗한 Err".
+    #[tokio::test]
+    async fn rejects_jwks_with_n_as_array() {
+        let fx = make_key();
+        let token = sign(&fx, good_claims(), "test-kid");
+        let malformed = json!({ "keys": [ { "kty":"RSA","kid":"test-kid","use":"sig",
+            "alg":"RS256","n":["not","a","string"],"e":"AQAB" } ] });
+        let v = validator_with_raw_jwks(malformed).await;
+        match v.validate(&token).await {
+            Err(KeycloakError::Transport(_)) => {} // 기대: JWKS 역직렬화 실패 → 깨끗한 Transport 오류(panic 아님)
+            other => panic!(
+                "malformed JWKS (n as JSON array) MUST yield a clean Err(Transport(_)), not panic — got {other:?}"
+            ),
+        }
+    }
+
+    /// 악성 JWKS: RSA `n`이 문법적으로 유효한 JSON 문자열이지만 base64url이 아니다.
+    /// `JwkSet` 역직렬화는 통과(String 타입 일치)하지만 `DecodingKey::from_jwk`의 base64
+    /// 디코드 단계에서 실패한다 — `JwtValidator::validate`가 이를 `KeycloakError::TokenValidation`
+    /// 으로 흡수해야 한다(panic/unwrap 없이).
+    #[tokio::test]
+    async fn rejects_jwks_with_invalid_base64_n() {
+        let fx = make_key();
+        let token = sign(&fx, good_claims(), "test-kid");
+        let malformed = json!({ "keys": [ { "kty":"RSA","kid":"test-kid","use":"sig",
+            "alg":"RS256","n":"!!!not-base64!!!","e":"AQAB" } ] });
+        let v = validator_with_raw_jwks(malformed).await;
+        match v.validate(&token).await {
+            Err(KeycloakError::TokenValidation(_)) => {} // 기대: from_jwk 실패 → 깨끗한 TokenValidation(panic 아님)
+            other => panic!(
+                "malformed JWKS (n not valid base64url) MUST yield a clean Err(TokenValidation(_)), not panic — got {other:?}"
+            ),
+        }
+    }
+
+    /// 클록 스큐 경계: exp가 45초 전(만료). config leeway=30이므로 거부되어야 한다
+    /// (jsonwebtoken 기본 leeway=60이었다면 이 토큰은 통과했을 것 — 강화된 30이 실제로
+    /// 적용되고 있음을 증명, 불변식 6).
+    #[tokio::test]
+    async fn rejects_expired_beyond_config_skew() {
+        let fx = make_key();
+        let v = validator_for(&fx).await;
+        let mut c = good_claims();
+        c["exp"] = json!(now() - 45);
+        assert!(
+            matches!(
+                v.validate(&sign(&fx, c, "test-kid")).await,
+                Err(KeycloakError::TokenValidation(_))
+            ),
+            "exp 45s in the past MUST be rejected under configured leeway=30 \
+             (jsonwebtoken's default leeway=60 would have accepted it)"
         );
     }
 }
