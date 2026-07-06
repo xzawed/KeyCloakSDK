@@ -19,6 +19,10 @@ Metrics/MethodLength:
   Max: 25
 Metrics/AbcSize:
   Max: 25
+# 키워드 인자는 이름이 곧 문서화라 위치 인자 목록과 달리 가독성을 해치지 않는다
+# (예: Config#initialize의 8개 키워드 인자).
+Metrics/ParameterLists:
+  CountKeywordArgs: false
 Metrics/BlockLength:
   Exclude:
     - "spec/**/*"
