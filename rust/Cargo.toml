@@ -1,0 +1,28 @@
+[package]
+name = "keycloak-sdk"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "Apache-2.0"
+description = "Keycloak SDK for Rust — async OIDC auth + Admin REST, isomorphic with the Java/Python/Node/Go/C#/PHP SDKs"
+repository = "https://github.com/xzawed/KeyCloakSDK"
+
+[dependencies]
+# ⚠️ reqwest 0.12 everywhere: openidconnect 4.0.1 pins reqwest 0.12; keycloak uses its reqwest12 feature to match.
+keycloak = { version = "=26.6.2", default-features = false, features = ["tags-all", "resource-builder", "reqwest12"] }
+openidconnect = { version = "=4.0.1", default-features = false, features = ["reqwest"] }
+jsonwebtoken = { version = "=10.4.0", default-features = false, features = ["rust_crypto", "use_pem"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "time", "sync"] }
+thiserror = "2.0"
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+
+[dev-dependencies]
+tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "time", "sync", "test-util"] }
+wiremock = "0.6"
+testcontainers = "0.27.3"
+rsa = "0.9"
+base64 = "0.22"
