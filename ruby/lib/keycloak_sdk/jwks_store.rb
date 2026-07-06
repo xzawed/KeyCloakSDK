@@ -21,7 +21,7 @@ module KeycloakSdk
     def key_set(force: false)
       @mutex.synchronize do
         return @cache if @cache && !force
-        return @cache if @cache && force && !refetch_allowed?
+        return @cache if force && !refetch_allowed?
 
         @last_refetch = monotonic if force # 결정 시점 stamp(cold load는 예산 미소모)
         @cache = fetch

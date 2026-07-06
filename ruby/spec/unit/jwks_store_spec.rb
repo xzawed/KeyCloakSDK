@@ -42,4 +42,28 @@ RSpec.describe KeycloakSdk::JwksStore do
     stub_request(:get, jwks_url).to_raise(Faraday::ConnectionFailed.new("refused"))
     expect { store.key_set }.to raise_error(KeycloakSdk::TransportError)
   end
+
+  it "keeps the rate-limit gate stamped even when a forced re-fetch fails (bounded flood, nil cache)" do
+    stub = stub_request(:get, jwks_url).to_return(status: 500, body: "err")
+    # cold-cache forced fetch fails but must stamp the gate at the decision point
+    expect { store.key_set(force: true) }.to raise_error(KeycloakSdk::TransportError)
+    # a second forced call within the min_refetch window is rate-limited -> NO further network hit
+    store.key_set(force: true)
+    expect(stub).to have_been_requested.once
+  end
+
+  it "allows a forced re-fetch once the cooldown has elapsed" do
+    fast_store = described_class.new(jwks_url: jwks_url, http: http, min_refetch: 0.0)
+    stub = stub_request(:get, jwks_url).to_return(status: 200, body: body,
+                                                  headers: { "Content-Type" => "application/json" })
+    fast_store.key_set(force: true) # cold forced load -> stamp + fetch
+    fast_store.key_set(force: true) # cooldown (0.0) already elapsed -> refetch_allowed? true -> fetch again
+    expect(stub).to have_been_requested.times(2)
+  end
+
+  it "raises TransportError on non-Hash body (array)" do
+    stub_request(:get, jwks_url).to_return(status: 200, body: [1, 2, 3].to_json,
+                                           headers: { "Content-Type" => "application/json" })
+    expect { store.key_set }.to raise_error(KeycloakSdk::TransportError)
+  end
 end
