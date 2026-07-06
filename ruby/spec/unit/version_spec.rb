@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-RSpec.describe "KeycloakSdk::VERSION" do
+RSpec.describe KeycloakSdk do
   it "exposes a semver VERSION" do
     expect(KeycloakSdk::VERSION).to match(/\A\d+\.\d+\.\d+\z/)
   end

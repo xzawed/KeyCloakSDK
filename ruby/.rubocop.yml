@@ -25,6 +25,10 @@ Metrics/BlockLength:
     - "*.gemspec"
 Style/Documentation:
   Enabled: false
+# spec/unit/ 레이아웃(7개 자매 SDK의 tests/unit/ 동형) — describe 클래스명↔파일경로
+# 매칭을 강제하지 않는다(spec/unit/config_spec.rb ↔ describe KeycloakSdk::Config 허용).
+RSpec/SpecFilePathFormat:
+  Enabled: false
 RSpec/ExampleLength:
   Max: 20
 RSpec/MultipleExpectations:
