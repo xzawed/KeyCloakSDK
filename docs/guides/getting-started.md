@@ -458,7 +458,7 @@ keycloak-sdk = { path = "../KeyCloakSDK/rust" }
 ```
 
 ```bash
-cd rust && cargo build && cargo test   # 로컬 빌드/테스트만 확인: 단위 32개 + 커버리지 게이트
+cd rust && cargo build && cargo test   # 로컬 빌드/테스트만 확인: 단위 34개 + 커버리지 게이트
 ```
 
 크레이트명은 `keycloak-sdk`, 루트 모듈은 `keycloak_sdk`(`keycloak_sdk::{KeycloakClient, KeycloakConfig, ...}`)입니다.
@@ -519,4 +519,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **언어 지원 로드맵** — 현재 지원 언어와 향후 확장(깊이 우선: Java·Python·TypeScript/Node·Go·C#/.NET·PHP·Rust 완료 → Ruby, Kotlin은 JVM 재사용으로 선택적): [../roadmap/language-support.md](../roadmap/language-support.md)
 - **새 언어 추가 플레이북** — 기존 Java/Python/Node/Go/C#/PHP/Rust와 동형의 품질로 언어를 추가하는 절차: [add-a-language-playbook.md](add-a-language-playbook.md)
 
-> 언어 중립 API 계약(진실 원천)은 [설계 스펙 §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)에 정의되어 있습니다. 모든 언어는 이 계약을 구현하며, JWT 검증 강화(알고리즘 핀닝 · `none` 거부 · `iss` 정확일치 · `aud` 포함검사 · 클록 스큐 · DoS-안전 JWKS 재조회)는 언어 공통 필수 사항입니다. 현재 테스트 수: **Java 123개**(단위 117 + Testcontainers 통합 6) · **Python 235개**(단위 224 + 통합 11) · **Node 76개**(단위 71 + Testcontainers 통합 5) · **Go 41개**(단위 40 + Testcontainers 통합 1 — E2E, 전 흐름·5 admin 리소스) · **C#/.NET 59개**(단위 58 + Testcontainers 통합 1 — E2E `Full_flow`, 전 흐름·5 admin 리소스) · **PHP 67개**(단위 64 + 통합 3 — docker CLI 셸아웃, `FullFlowIT`: 전 흐름·client CRUD·raw 탈출구) · **Rust 33개**(단위 32 + Testcontainers 통합 1 — E2E `full_flow`, 전 흐름·5 admin 리소스).
+> 언어 중립 API 계약(진실 원천)은 [설계 스펙 §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)에 정의되어 있습니다. 모든 언어는 이 계약을 구현하며, JWT 검증 강화(알고리즘 핀닝 · `none` 거부 · `iss` 정확일치 · `aud` 포함검사 · 클록 스큐 · DoS-안전 JWKS 재조회)는 언어 공통 필수 사항입니다. 현재 테스트 수: **Java 123개**(단위 117 + Testcontainers 통합 6) · **Python 235개**(단위 224 + 통합 11) · **Node 76개**(단위 71 + Testcontainers 통합 5) · **Go 41개**(단위 40 + Testcontainers 통합 1 — E2E, 전 흐름·5 admin 리소스) · **C#/.NET 59개**(단위 58 + Testcontainers 통합 1 — E2E `Full_flow`, 전 흐름·5 admin 리소스) · **PHP 67개**(단위 64 + 통합 3 — docker CLI 셸아웃, `FullFlowIT`: 전 흐름·client CRUD·raw 탈출구) · **Rust 35개**(단위 34 + Testcontainers 통합 1 — E2E `full_flow`, 전 흐름·5 admin 리소스).

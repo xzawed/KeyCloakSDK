@@ -85,7 +85,7 @@ cd php && composer install && vendor/bin/phpunit --testsuite unit   # 현재(미
 ### Rust (Cargo)
 > ⚠️ `keycloak-sdk` `0.1.0`은 아직 crates.io 미배포(human-gated, `CARGO_REGISTRY_TOKEN` 시크릿 필요).
 ```bash
-cd rust && cargo build && cargo test   # 현재(미배포) — 로컬 빌드/테스트(단위 32개)
+cd rust && cargo build && cargo test   # 현재(미배포) — 로컬 빌드/테스트(단위 34개)
 # cargo add keycloak-sdk                # 배포 후
 ```
 
@@ -113,7 +113,7 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 
 **PHP SDK 완료 · `main` 병합 (PR #17).** WBS Task 1~12 전체 구현(스캐폴딩 → masking/exc → config → tokens/oidc → tokenprovider → jwks → jwt → auth → admin → client → 통합테스트 → CI/문서). 단위테스트 64개 + 통합테스트(docker CLI 셸아웃, 실제 Keycloak 26.6) 3개(`FullFlowIT`) = 총 67개 GREEN, 집계 로직 커버리지 100.00%(게이트 ≥90%), `phpstan analyse`(level max)·`php-cs-fixer` 통과. 6번째 언어로 선행 5개 SDK의 게차가 선반영되어 통합테스트 신규 버그 0건.
 
-**Rust SDK 완료 · `feature/rust-sdk`(PR 예정).** WBS Task 1~12 전체 구현(스캐폴딩 → error → config → tokens/oidc → token_provider → jwks → jwt → auth → admin → client → 통합테스트 → CI/문서). edition 2024 · async-only(tokio). 단위테스트 32개 + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 1개(E2E `full_flow` — 전 흐름·5 admin 리소스) = 총 33개 GREEN, 로직 모듈 라인 커버리지 94.80%(게이트 ≥90%), `cargo clippy -D warnings`·`cargo fmt --check` 통과. 7번째 언어로 E2E 신규 SDK 버그 0건.
+**Rust SDK 완료 · `feature/rust-sdk`(PR 예정).** WBS Task 1~12 전체 구현(스캐폴딩 → error → config → tokens/oidc → token_provider → jwks → jwt → auth → admin → client → 통합테스트 → CI/문서). edition 2024 · async-only(tokio). 단위테스트 34개 + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 1개(E2E `full_flow` — 전 흐름·5 admin 리소스) = 총 35개 GREEN, 로직 모듈 라인 커버리지 94.85%(게이트 ≥90%), `cargo clippy -D warnings`·`cargo fmt --check` 통과. 7번째 언어로 E2E 신규 SDK 버그 0건. 최종리뷰 fix wave(1건)로 admin이 캐싱 `ClientCredentialsTokenProvider`를 쓰도록 수정(§4 캐시 불변식 복원) + `config.scopes` threading.
 
 **남은 것은 실배포뿐**(Maven Central·PyPI·npm·Go 모듈 태그·NuGet·Packagist·crates.io, 사람 계정/키/토큰 필요 — [DEPLOY.md](DEPLOY.md)).
 
