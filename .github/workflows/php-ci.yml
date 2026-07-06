@@ -1,0 +1,47 @@
+name: php-ci
+on:
+  push:
+    paths: ['php/**', '.github/workflows/php-ci.yml']
+  pull_request:
+    paths: ['php/**', '.github/workflows/php-ci.yml']
+permissions:
+  contents: read
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: { php: ['8.3', '8.4'] }
+    defaults:
+      run:
+        working-directory: php
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '${{ matrix.php }}'
+          coverage: pcov
+          tools: composer
+      - run: composer install --no-interaction --prefer-dist
+      - run: composer audit
+      - run: vendor/bin/phpstan analyse
+      - run: vendor/bin/php-cs-fixer fix --dry-run --diff --allow-risky=yes
+      - run: vendor/bin/phpunit --testsuite unit --coverage-clover clover.xml
+      # 커버리지 게이트: 로직 라인 ≥90%(경계는 phpunit.xml source exclude — AuthClient/Admin/KeycloakClient)
+      - name: coverage gate
+        run: |
+          php -r '$x=simplexml_load_file("clover.xml");$m=$x->project->metrics;$c=(int)$m["coveredstatements"];$t=(int)$m["statements"];$p=$t? $c/$t*100:100;printf("line coverage: %.2f%%\n",$p);exit($p>=90?0:1);'
+  integration:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: php
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+      - run: composer install --no-interaction --prefer-dist
+      # IT는 `docker` CLI를 exec()로 셸아웃해 실제 Keycloak 26.6 컨테이너를 구동한다(Windows native PHP의
+      # unix:// 스트림 미지원 폴백 — KeycloakContainerTrait). ubuntu-latest는 Docker가 내장되어 그대로 동작한다.
+      - run: vendor/bin/phpunit --testsuite integration

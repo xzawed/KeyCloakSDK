@@ -4,16 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 프로젝트 개요
 
-Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프로그래밍 언어**(Java·Python·Node·Go·C#·향후 확장)를 뜻하며 자연어 현지화(i18n)와 무관하다. Keycloak의 두 API 표면 — **인증(OIDC/OAuth2)** 과 **관리 REST API(Admin)** — 을 모두 다룬다. 언어마다 관용적이되 개념·계층·흐름은 **동형(isomorphic)** 이도록 설계한다.
+Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프로그래밍 언어**(Java·Python·Node·Go·C#·PHP·향후 확장)를 뜻하며 자연어 현지화(i18n)와 무관하다. Keycloak의 두 API 표면 — **인증(OIDC/OAuth2)** 과 **관리 REST API(Admin)** — 을 모두 다룬다. 언어마다 관용적이되 개념·계층·흐름은 **동형(isomorphic)** 이도록 설계한다.
 
 - **기준 언어**: Java 21 · Maven (첫 구현; 초기 Java 17 → 21 LTS 런타임 업그레이드 반영)
 - **2번째 언어**: Python 3.10+ · `python-keycloak` 래핑 + `joserfc` 자체 JWT 검증 (`feature/python-sdk`)
 - **3번째 언어**: Node.js 20+ · TypeScript(ESM·async-only) · `@keycloak/keycloak-admin-client` + `openid-client` v6 래핑 + `jose` 자체 JWT 검증 (`feature/node-sdk`)
 - **4번째 언어**: Go 1.25+ · sync + `context.Context` · `Nerzal/gocloak/v13` + `golang.org/x/oauth2` 래핑 + `go-jose/v4` 자체 JWT 검증 (`feature/go-sdk`)
 - **5번째 언어**: C# / .NET 8+ · async-first(`Task<T>`+`CancellationToken`) · `Keycloak.AuthServices.Sdk` 2.7.0 + `Duende.IdentityModel` 래핑 + `Microsoft.IdentityModel.JsonWebTokens` 자체 JWT 검증 (`main` 병합, PR #14)
-- **라이선스**: Apache-2.0 · **groupId**: `io.github.xzawed` · Python 배포명: `keycloak-sdk` · npm 배포명: `@xzawed/keycloak-sdk` · Go 모듈: `github.com/xzawed/KeyCloakSDK/go` · NuGet 배포명: `Xzawed.Keycloak.Sdk`
+- **6번째 언어**: PHP 8.3+ · `final readonly class` 값타입 · `fschmtt/keycloak-rest-api-client-php` 래핑(admin) + `league/oauth2-client`+`stevenmaguire/oauth2-keycloak` 래핑(auth, PKCE S256 오버라이드) + `firebase/php-jwt` 자체 JWT 검증 (`feature/php-sdk`)
+- **라이선스**: Apache-2.0 · **groupId**: `io.github.xzawed` · Python 배포명: `keycloak-sdk` · npm 배포명: `@xzawed/keycloak-sdk` · Go 모듈: `github.com/xzawed/KeyCloakSDK/go` · NuGet 배포명: `Xzawed.Keycloak.Sdk` · Packagist 배포명: `xzawed/keycloak-sdk`
 
-**핵심 전략**: 언어마다 가장 좋은 기반을 사용한다 — 공식/성숙 클라이언트가 있으면 감싼다(Java는 `keycloak-admin-client`, Python은 `python-keycloak`, Node는 공식 `@keycloak/keycloak-admin-client` + `openid-client`, Go는 `gocloak` + `x/oauth2`, C#은 `Keycloak.AuthServices.Sdk` + `Duende.IdentityModel`) — 그 위에 **일관된 파사드 + 인증 래퍼**를 언어 공통 설계로 얹는다. JWT 검증은 다섯 언어 모두 자체 강화 구현(algorithm pinning·iss 정확일치·aud 포함검사·`exp` 필수·클록 스큐·DoS-안전 JWKS 재조회)이다.
+**핵심 전략**: 언어마다 가장 좋은 기반을 사용한다 — 공식/성숙 클라이언트가 있으면 감싼다(Java는 `keycloak-admin-client`, Python은 `python-keycloak`, Node는 공식 `@keycloak/keycloak-admin-client` + `openid-client`, Go는 `gocloak` + `x/oauth2`, C#은 `Keycloak.AuthServices.Sdk` + `Duende.IdentityModel`, PHP는 `fschmtt/keycloak-rest-api-client-php` + `league/oauth2-client`) — 그 위에 **일관된 파사드 + 인증 래퍼**를 언어 공통 설계로 얹는다. JWT 검증은 여섯 언어 모두 자체 강화 구현(algorithm pinning·iss 정확일치·aud 포함검사·`exp` 필수·클록 스큐·DoS-안전 JWKS 재조회)이다.
 
 ## 현재 상태
 
@@ -25,20 +26,25 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 
 **Go SDK 완료 — `main` 병합됨 (PR #13).** WBS Task 1~12 전체 구현. 단일 `package keycloak`(admin을 서브패키지로 두면 `Client.Admin`이 `*AdminClient` 반환 시 import 순환 → `admin_*.go`로 같은 패키지), sync + `context.Context`(모든 네트워크 메서드 첫 인자). 단위테스트 40개 + Testcontainers 통합테스트(실제 Keycloak 26.6) 1개(E2E — 전 흐름·5 admin 리소스) = 총 41개 GREEN(로직 커버리지 95.2% — 네트워크 경계 `auth.go`/`admin*.go`/`client.go` omit), `go vet`·`gofmt`·CI 린터(`go run staticcheck@v0.7.0`·`gosec@v2.27.1` — golangci-lint은 빌드-Go 결합 문제로 미사용) 통과. 착수 전 딥리서치로 라이브러리 API 확정, 완료 후 4-차원 다중에이전트 어드버서리얼 리뷰로 9건 확정 결함 수정(admin 네트워크오류→TransportError·Validator JWKS 타임아웃·`exp` 필수·JWKS rate-limit/single-flight). Go 모듈은 레지스트리 없이 `go/v*` 태그가 곧 릴리스(`proxy.golang.org` 자동 캐시), 실제 배포는 사람이 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다.
 
-**.NET SDK 완료 — `main` 병합됨 (PR #14).** WBS Task 1~12 전체 구현(스캐폴딩 → errors/masking → config/tokens → tokenprovider → oidc → jwt → auth → admin → client+DI → 통합테스트 → CI/release → 문서). net8.0 · C# 12 · async-first(모든 네트워크 메서드가 `Task<T>` + 끝자리 `CancellationToken`). 단위테스트 58개 + Testcontainers 통합테스트(실제 Keycloak 26.6) 1개(E2E `Full_flow` — 전 흐름·5 admin 리소스) = 총 59개 GREEN(로직 커버리지 라인 97.34%/브랜치 93.47% — 게이트 90/85, 네트워크 경계 `AuthClient`/`Admin.*`/`KeycloakClient` omit), CI의 build-test·integration 잡 모두 GREEN(GitHub Actions에서 실제 Keycloak E2E 통과), `dotnet build`(`TreatWarningsAsErrors`)·`dotnet format` 통과. 착수 전 딥리서치로 `Keycloak.AuthServices.Sdk` 2.7.0(net8 최종 — 3.0.0은 net10 전용)의 admin 타입드 커버리지가 users/groups/realm-get뿐임을 확정(clients/roles/realm-CRUD는 raw REST), 태스크별 리뷰 루프 + 완료 후 실제 컴파일 검증을 포함한 다중에이전트 어드버서리얼 최종리뷰로 확정 결함 보정(HIGH: `Xzawed.Keycloak.Admin` 네임스페이스 안 `KeycloakClient` 셰도잉 → 별칭 `using`, 테스트 프로젝트 CS1591 게이트; MEDIUM: JSON 마스킹 누락·nonce 파스온리 fail-open·release workflow env 스코프·admin/auth 타임아웃(`TaskCanceledException`)→`TransportException` 변환·동시성 테스트 실접전 지연·`_admin`/토큰캐시 volatile). 실서버 발견: `POST /admin/realms`(새 realm 생성)는 master-realm 전용(realm 서비스계정 403). NuGet 릴리스 CI(`NUGET_API_KEY` 시크릿) 준비됨, 실제 배포는 사람이 `dotnet-v*` 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다. **남은 로드맵(사람 게이트)**: Maven Central 실배포(`io.github.xzawed` 네임스페이스 검증 + GPG/Portal 토큰) · PyPI 실배포(`keycloak-sdk` Trusted Publisher 설정) · npm 실배포(`@xzawed/keycloak-sdk` Trusted Publisher 설정) · Go 실배포(`go/v*` 태그 push) · .NET 실배포(`Xzawed.Keycloak.Sdk` NuGet API 키 등록 + `dotnet-v*` 태그 push). 배포 절차는 [DEPLOY.md](DEPLOY.md) 참고.
+**.NET SDK 완료 — `main` 병합됨 (PR #14).** WBS Task 1~12 전체 구현(스캐폴딩 → errors/masking → config/tokens → tokenprovider → oidc → jwt → auth → admin → client+DI → 통합테스트 → CI/release → 문서). net8.0 · C# 12 · async-first(모든 네트워크 메서드가 `Task<T>` + 끝자리 `CancellationToken`). 단위테스트 58개 + Testcontainers 통합테스트(실제 Keycloak 26.6) 1개(E2E `Full_flow` — 전 흐름·5 admin 리소스) = 총 59개 GREEN(로직 커버리지 라인 97.34%/브랜치 93.47% — 게이트 90/85, 네트워크 경계 `AuthClient`/`Admin.*`/`KeycloakClient` omit), CI의 build-test·integration 잡 모두 GREEN(GitHub Actions에서 실제 Keycloak E2E 통과), `dotnet build`(`TreatWarningsAsErrors`)·`dotnet format` 통과. 착수 전 딥리서치로 `Keycloak.AuthServices.Sdk` 2.7.0(net8 최종 — 3.0.0은 net10 전용)의 admin 타입드 커버리지가 users/groups/realm-get뿐임을 확정(clients/roles/realm-CRUD는 raw REST), 태스크별 리뷰 루프 + 완료 후 실제 컴파일 검증을 포함한 다중에이전트 어드버서리얼 최종리뷰로 확정 결함 보정(HIGH: `Xzawed.Keycloak.Admin` 네임스페이스 안 `KeycloakClient` 셰도잉 → 별칭 `using`, 테스트 프로젝트 CS1591 게이트; MEDIUM: JSON 마스킹 누락·nonce 파스온리 fail-open·release workflow env 스코프·admin/auth 타임아웃(`TaskCanceledException`)→`TransportException` 변환·동시성 테스트 실접전 지연·`_admin`/토큰캐시 volatile). 실서버 발견: `POST /admin/realms`(새 realm 생성)는 master-realm 전용(realm 서비스계정 403). NuGet 릴리스 CI(`NUGET_API_KEY` 시크릿) 준비됨, 실제 배포는 사람이 `dotnet-v*` 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다.
+
+**PHP SDK 완료 — `feature/php-sdk`(PR #17, main 기준).** WBS Task 1~12 전체 구현(스캐폴딩 → masking/exc → config → tokens/oidc → tokenprovider → jwks → jwt → auth → admin → client → 통합테스트 → CI/문서). PHP 8.3+ · `final readonly class` 값타입 · 예외 기반 관용. 단위테스트 64개 + 통합테스트(docker CLI 셸아웃, 실제 Keycloak 26.6) 3개(`FullFlowIT`: `testFullFlow`·`testAdminClientCrud`·`testRawEscapeHatch`) = 총 67개 GREEN(집계 로직 라인 커버리지 100.00% — 게이트 ≥90%, `phpunit.xml` source exclude로 네트워크 경계 `AuthClient`/`Admin/**`/`KeycloakClient` omit), `phpstan analyse`(level max)·`php-cs-fixer --dry-run --allow-risky=yes`·`composer audit` 통과. 착수 전 딥리서치로 `fschmtt/keycloak-rest-api-client-php` 0.42.0(admin, `Users::create()`는 void 반환·`Clients`/`Realms`는 `create`가 아니라 `import`) + `league/oauth2-client`+`stevenmaguire/oauth2-keycloak`(auth, `pkceMethod` 옵션 no-op) + `firebase/php-jwt`(jwt, `&$headers`는 성공 디코드 후에만 채워짐) 확정, 태스크별 리뷰 루프(Task 1/3/4/5/8/9/10/11) + Task 7(JwtValidator) OPUS 어드버서리얼 보안리뷰(20+ 공격 프로브)로 Critical 1건(악성 JWKS `\TypeError` 경계 누출) 확정 수정. 6번째 언어로 선행 5개 SDK의 게차가 선반영되어 통합테스트 신규 SDK 버그 0건(첫 사례). Packagist는 레지스트리 업로드가 아니라 GitHub 웹훅으로 태그를 자동감지해 게시하므로 릴리스 CI에 저장 시크릿이 없으며, 실제 배포는 사람이 `php-v*` 태그를 push해야 트리거되는 승인 게이트(human-gated, 미실행) 상태다.
+
+**남은 로드맵(사람 게이트)**: Maven Central 실배포(`io.github.xzawed` 네임스페이스 검증 + GPG/Portal 토큰) · PyPI 실배포(`keycloak-sdk` Trusted Publisher 설정) · npm 실배포(`@xzawed/keycloak-sdk` Trusted Publisher 설정) · Go 실배포(`go/v*` 태그 push) · .NET 실배포(`Xzawed.Keycloak.Sdk` NuGet API 키 등록 + `dotnet-v*` 태그 push) · PHP `main` 병합(PR) + Packagist 실배포(`xzawed/keycloak-sdk` 저장소 등록 + `php-v*` 태그 push). 배포 절차는 [DEPLOY.md](DEPLOY.md) 참고.
 
 **가상 사용자 테스트 하네스 5언어 확장 완료 — `main` 병합됨 (PR #15 MVP + PR #16 5언어 확장).** 5개 언어 SDK가 동일 [HTTP 계약](harness/contract/CONTRACT.md)으로 실제 Keycloak 26.6에 대해 동형 동작하는지 k6 가상사용자 부하로 실측 비교하는 하네스([`harness/`](harness/README.md)). 샘플 앱은 각 언어의 관용 프레임워크로 SDK를 소비한다 — `harness/apps/go`(net/http) · `harness/apps/dotnet`(ASP.NET Core) · `harness/apps/node`(Express 5) · `harness/apps/python`(FastAPI) · `harness/apps/java`(Spring Boot), 호스트 포트 go 8090 / dotnet 8091 / node 8092 / python 8093 / java 8094(컨테이너 내부는 모두 8090). `cd harness && ./run.sh go dotnet node python java`가 Keycloak 1회 기동 → 각 앱 빌드·기동(healthz 대기) → k6(compose 네트워크) → `report/RESULTS.md` 취합을 수행하고, **기능 정확성 게이트**(각 언어 checks==1.00, 미달 시 비0 종료)와 언어간 **성능 실측 비교표**(validate/admin CRUD p95·RPS·오류율)를 산출한다. 5언어 전부 checks 100%(✅) 확인. **⚠️ 앱 빌드 이미지는 Alpine(musl) 베이스**: Debian/glibc 빌드 이미지는 Docker Desktop(Windows) 내장 DNS 프록시가 패키지 레지스트리의 CNAME 체인을 glibc 리졸버에 실패로 돌려줘 `dotnet restore`/`pip install`/Maven·npm 다운로드가 막힌다(musl은 정상, CI 네이티브 Docker도 무해) — 공유 compose 파일엔 하드코딩 IP/`extra_hosts`가 없다. CI([`.github/workflows/harness.yml`](.github/workflows/harness.yml))는 **안 A** — PR/푸시엔 빠른 Go 스모크 게이트(`mvp-go`), 야간(`schedule` 03:00 UTC)·수동(`workflow_dispatch`)엔 5언어 전체 비교(`all-langs`, `timeout-minutes: 40`)를 실행하고 `RESULTS.md`를 아티팩트로 업로드한다.
 
 - 설계 스펙: [docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md](docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md) — **구현 전 반드시 정독**
-- 구현 계획(WBS): [docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md](docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md)(Java) · [docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md](docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md)(Python) · [docs/superpowers/plans/2026-07-04-keycloak-node-sdk-wbs.md](docs/superpowers/plans/2026-07-04-keycloak-node-sdk-wbs.md)(Node) · [docs/superpowers/plans/2026-07-04-keycloak-go-sdk-wbs.md](docs/superpowers/plans/2026-07-04-keycloak-go-sdk-wbs.md)(Go) · [docs/superpowers/plans/2026-07-04-keycloak-dotnet-sdk-wbs.md](docs/superpowers/plans/2026-07-04-keycloak-dotnet-sdk-wbs.md)(C#/.NET)
+- 구현 계획(WBS): [docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md](docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md)(Java) · [docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md](docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md)(Python) · [docs/superpowers/plans/2026-07-04-keycloak-node-sdk-wbs.md](docs/superpowers/plans/2026-07-04-keycloak-node-sdk-wbs.md)(Node) · [docs/superpowers/plans/2026-07-04-keycloak-go-sdk-wbs.md](docs/superpowers/plans/2026-07-04-keycloak-go-sdk-wbs.md)(Go) · [docs/superpowers/plans/2026-07-04-keycloak-dotnet-sdk-wbs.md](docs/superpowers/plans/2026-07-04-keycloak-dotnet-sdk-wbs.md)(C#/.NET) · [docs/superpowers/plans/2026-07-06-keycloak-php-sdk-wbs.md](docs/superpowers/plans/2026-07-06-keycloak-php-sdk-wbs.md)(PHP)
 - 실행 거버넌스: [docs/governance/ai-governance-framework.md](docs/governance/ai-governance-framework.md) (Codex 이중검증·G1~G6 게이트·루프 엔지니어링)
-- 검증 로그: [docs/governance/verification-log.md](docs/governance/verification-log.md)(Java) · [docs/governance/verification-log-python.md](docs/governance/verification-log-python.md)(Python) · [docs/governance/verification-log-node.md](docs/governance/verification-log-node.md)(Node) · [docs/governance/verification-log-go.md](docs/governance/verification-log-go.md)(Go) · [docs/governance/verification-log-dotnet.md](docs/governance/verification-log-dotnet.md)(C#/.NET) — 태스크별 게이트 통과 이력
+- 검증 로그: [docs/governance/verification-log.md](docs/governance/verification-log.md)(Java) · [docs/governance/verification-log-python.md](docs/governance/verification-log-python.md)(Python) · [docs/governance/verification-log-node.md](docs/governance/verification-log-node.md)(Node) · [docs/governance/verification-log-go.md](docs/governance/verification-log-go.md)(Go) · [docs/governance/verification-log-dotnet.md](docs/governance/verification-log-dotnet.md)(C#/.NET) · [docs/governance/verification-log-php.md](docs/governance/verification-log-php.md)(PHP) — 태스크별 게이트 통과 이력
 - 설치·시작: [docs/guides/getting-started.md](docs/guides/getting-started.md) · Keycloak 서버 배포(단일 VM+Compose): [docs/guides/deploying-keycloak-server.md](docs/guides/deploying-keycloak-server.md) · 언어 확장 로드맵: [docs/roadmap/language-support.md](docs/roadmap/language-support.md) · 새 언어 추가 플레이북: [docs/guides/add-a-language-playbook.md](docs/guides/add-a-language-playbook.md)
 - **테스트 수(Java)**: 단위테스트 117개(core 34 · auth 34 · admin 43 · keycloak-sdk 6) + 통합테스트(Testcontainers) 6개(SmokeIT 1 · AuthFlowIT 3 · AdminOpsIT 2) = **총 123개**, 커버리지 게이트(로직 모듈 라인 ≥90%/브랜치 ≥85%) 통과. (surefire/failsafe 실측 기준 — Phase 7의 94는 최종리뷰 Wave A/B 이전 수치)
 - **테스트 수(Python, main)**: 단위테스트 224개(sync 135 + `aio` async 89) + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 11개(sync 6 + async 5) = **총 235개**, 로직 모듈 커버리지 **100% 강제**(`--cov-fail-under=100`, 경계모듈 omit), `mypy --strict`·`ruff`(보안 S/bandit 포함 확장 룰셋)·`ruff format` 통과.
 - **테스트 수(Node, main)**: 단위테스트 71개(config 5 · masking 2 · errors 3 · tokens 6 · oidc-metadata 1 · token-provider 4 · jwt 7 · auth 15 · admin 17 · client 11) + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 5개(E2E) = **총 76개**, 커버리지 게이트(로직 모듈 라인 ≥90%/브랜치 ≥85% — 실측 라인 100%/브랜치 94%, 네트워크 경계 `auth.ts`/`admin/**`/`index.ts` omit) 통과, `tsc`(strict)·`eslint` 통과.
 - **테스트 수(Go, main)**: 단위테스트 40개(config·errors·masking·tokens·tokenprovider·oidc·jwt·auth·admin·client) + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 1개(E2E — client-credentials→validate→introspect→user CRUD→5 리소스 CRUD→Raw) = **총 41개**, 커버리지 게이트(로직 파일 statement ≥90% — 실측 95.2%, 네트워크 경계 `auth.go`/`admin*.go`/`client.go` omit) 통과, `go vet`·`gofmt`·staticcheck·gosec 통과.
 - **테스트 수(C#/.NET, main)**: 단위테스트 58개(config 8 · tokens 7 · errors 4 · masking 3 · tokenprovider 4 · oidc 1 · jwt 11 · auth 10 · admin 5 · client 5 — Fact+InlineData 실측; 최종리뷰에서 vacuous scaffolding 테스트 제거) + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 1개(E2E `Full_flow` — client-credentials→validate→introspect→user CRUD→5 리소스 CRUD→Raw) = **총 59개**, 커버리지 게이트(로직 모듈 라인 ≥90%/브랜치 ≥85% — 실측 라인 97.34%/브랜치 93.47%, 네트워크 경계 `AuthClient`/`Admin.*`/`KeycloakClient` omit) 통과, `dotnet build`(warnaserror·Nullable)·`dotnet format` 통과. GitHub Actions CI(build-test·integration) GREEN.
+- **테스트 수(PHP, feature/php-sdk)**: 단위테스트 64개(242 assertions) + 통합테스트(docker CLI 셸아웃, 실제 Keycloak 26.6) 3개(`FullFlowIT`: `testFullFlow`·`testAdminClientCrud`·`testRawEscapeHatch`) = **총 67개**, 집계 로직 라인 커버리지 **100.00%**(게이트 ≥90%, `phpunit.xml` source exclude로 네트워크 경계 `AuthClient`/`Admin/**`/`KeycloakClient` omit) 통과, `phpstan analyse`(level max)·`php-cs-fixer --dry-run --allow-risky=yes`·`composer audit` 통과.
 
 ### Java 툴체인 (빌드 명령)
 
@@ -119,9 +125,26 @@ cd dotnet && dotnet format Keycloak.Sdk.sln --verify-no-changes    # 포맷 검�
 - 패키지 `Xzawed.Keycloak.Sdk`는 net8.0 타깃·async-first(`Task<T>`+`CancellationToken`)이며 XML 문서(`GenerateDocumentationFile`)를 포함 — 소비자 측 IntelliSense 지원
 - ⚠️ SDK 10 기본 솔루션 포맷은 `.slnx` — 이 리포는 `dotnet new sln --format sln`으로 생성한 `Keycloak.Sdk.sln`(구 포맷) 사용. `AnalysisLevel=8.0`으로 로컬(SDK 10)/CI(SDK 8) 애널라이저 밴드 일치. `GenerateDocumentationFile`/패키징 props는 `Directory.Build.props`에서 `IsTestProject != true`로 게이트(테스트 프로젝트의 CS1591 격상 방지)
 
+### PHP 툴체인 (빌드 명령)
+
+PHP는 포터블 설치 `C:\Users\dirtc\tools\php`(8.3.32 NTS x64 — ext: openssl/curl/mbstring/fileinfo/sodium/zip/json, 리포지토리 미커밋)를 사용한다. Composer(`composer.phar` + bash shim)와 Xdebug 3.5.3(zend_extension, 기본 mode off)도 같은 경로에 있다. 프리픽스를 인라인 지정하고 명령은 `php/`에서 실행한다:
+```bash
+export PATH="/c/Users/dirtc/tools/php:$PATH" OPENSSL_CONF="C:\Users\dirtc\tools\php\extras\ssl\openssl.cnf"
+cd php && composer install                                    # 의존성 설치
+cd php && vendor/bin/phpunit --testsuite unit                  # 단위테스트 64개. Docker 불필요
+cd php && vendor/bin/phpunit --testsuite integration           # 통합테스트 3개(Docker 필요 — docker CLI 셸아웃, 실제 Keycloak 26.6)
+cd php && vendor/bin/phpstan analyse                           # 정적분석(level max + strict-rules + phpunit 확장)
+cd php && vendor/bin/php-cs-fixer fix --dry-run --allow-risky=yes   # 스타일 검사(--allow-risky는 declare_strict_types risky rule에 필요)
+```
+- 단일 테스트: `vendor/bin/phpunit --filter <TestName> tests/Unit/<Path>Test.php`
+- 커버리지 게이트(로직 라인 ≥90%, 네트워크 경계 omit): `XDEBUG_MODE=coverage vendor/bin/phpunit --testsuite unit --coverage-clover clover.xml` → `phpunit.xml`의 `<source><exclude>`가 `AuthClient`/`Admin/**`/`KeycloakClient`를 이미 제외하므로 clover의 `project.metrics`를 그대로 집계(실측 100.00%)
+- ⚠️ `OPENSSL_CONF`는 로컬 RSA 키 생성(`JwtValidatorTest`)에 필요 — 없으면 openssl 확장이 시스템 기본 cnf를 못 찾아 키 생성이 실패한다.
+- PHP 8.3.32 NTS · Composer 2.10 · Xdebug 3.5.3은 머신 전용 경로(리포지토리에 커밋 안 함, CI는 `shivammathur/setup-php` 사용).
+- 배포명 `xzawed/keycloak-sdk`. Packagist는 레지스트리 업로드가 아니라 GitHub 웹훅으로 태그를 자동감지해 게시하므로 실제 배포는 로컬에서 실행하지 않는다 — `php-v*` 태그 push 시 `.github/workflows/php-release.yml`이 verify(`composer audit`+`phpstan`+단위테스트) 후 GitHub Release를 생성한다(사람 승인 게이트; Packagist에 `xzawed/keycloak-sdk` 저장소 등록은 1회 수동 선행).
+
 ## 아키텍처
 
-폴리글랏 모노레포. Java 구현이 `java/`에서, Python 구현이 `python/`에서, Node 구현이 `node/`에서, Go 구현이 `go/`에서, C#/.NET 구현이 `dotnet/`에서 완료됐다(각각 독립 빌드).
+폴리글랏 모노레포. Java 구현이 `java/`에서, Python 구현이 `python/`에서, Node 구현이 `node/`에서, Go 구현이 `go/`에서, C#/.NET 구현이 `dotnet/`에서, PHP 구현이 `php/`에서 완료됐다(각각 독립 빌드).
 
 **Java** — 6개 Maven 모듈(reactor 빌드):
 
@@ -220,9 +243,32 @@ dotnet/
 
 **결합 규칙(C#/.NET)**: `admin`은 `auth`에 의존하지 않는다 — `ITokenProvider`가 유일 접착제(`AuthClient : ITokenSource`가 기본 소스). `Keycloak.AuthServices.Sdk`(admin)·`Duende.IdentityModel`(auth) 래핑, 예외는 경계에서 `KeycloakException` 계급으로 변환. **⚠️ admin 타입드 클라이언트는 users/groups/realm-get만 커버**하므로 clients/roles/realm-CRUD는 같은 bearer-authed `HttpClient`로 raw Admin REST(representation 재사용). `admin.Raw`(`IKeycloakClient`)가 탈출구. JWT 검증만 `Microsoft.IdentityModel.JsonWebTokens`로 자체 강화.
 
-**언어 중립 계약(§4)**: Java(손수 래핑)·Python(`python-keycloak` 래핑)·Node(`openid-client`+admin-client 래핑)·Go(`gocloak`+`x/oauth2` 래핑)·C#(`Keycloak.AuthServices.Sdk`+`Duende.IdentityModel` 래핑)의 출발점이 다르므로, 언어 중립 API 계약을 진실 원천으로 두고 각 언어가 구현한다. 다섯 언어 모두 하위 라이브러리 타입을 **주 소비 경로(파사드) 뒤에 숨긴다**(camelCase ↔ snake_case ↔ Go/C# PascalCase만 다르고 개념·계층은 동형 — 예: `TokenSet`/`ValidatedToken`/`IntrospectionResult`·오류 계급·`Client.auth/admin`). **예외/오류 계층은 항상 경계에서 SDK 타입으로 변환**되어 `keycloak.exceptions.*`·`jakarta.ws.rs.*`·`NetworkError`·`gocloak.APIError`·`KeycloakHttpClientException`이 공개 API로 새지 않는다. Go는 예외 대신 **error 값 + 센티넬**(`errors.Is`/`errors.As`) 관용을 쓴다(§4 허용).
+**PHP** — 단일 패키지 `xzawed/keycloak-sdk`(`php/`, PSR-4 `Xzawed\Keycloak\`):
 
-**문서화된 은닉성 예외(의도적, 2026-07-03 보안감사 반영)**: 완전 은닉이 아니라 아래 지점은 하위 타입을 노출한다 — 재래핑 비용이 과다하거나 보조 표면이기 때문이다. (a) **Java·Node·Go·C# admin 파사드**는 representation 타입을 데이터 모델로 그대로 노출한다(Java `org.keycloak.representations.idm.*`, Node `@keycloak/keycloak-admin-client/lib/defs/*`, Go `gocloak.User`/`Client`/`Role`/`Group`/`RealmRepresentation`, C# `Keycloak.AuthServices.Sdk.Admin.Models.*Representation` — 안정적 Keycloak 타입 재사용, SDK 자체 DTO 재래핑은 범위 밖). Python admin은 plain `dict[str, Any]`로 통과(누출 아님). (b) **저수준 주입/구성 지점** — Java `JwtValidator.forRealm`의 Nimbus `JWSAlgorithm`, Python `JwtValidator.validate`의 joserfc `KeySet`, Node `new JwtValidator(keys, opts)`의 jose `JWTVerifyGetKey`, Go `admin.Raw()`의 `*gocloak.GoCloak`·테스트 주입용 파라미터, C# `AdminClient.Raw`의 `IKeycloakClient`·`JwtValidator`의 내부 `TokenValidationParameters` 시임 ctor는 하위 타입을 받는다. 정상 소비 경로(`Client.auth/admin`, `client.Auth.Validate(...)`)는 이들을 노출하지 않는다.
+```
+php/
+├─ composer.json               # PSR-4 Xzawed\Keycloak\ · 배포명 xzawed/keycloak-sdk · Apache-2.0
+├─ phpunit.xml                 # unit/integration testsuite + source exclude(네트워크 경계)
+├─ phpstan.neon                # level max + strict-rules + phpunit 확장
+├─ src/
+│  ├─ Masking.php · Exception/         # mask() · KeycloakException 계급(Config/Auth/Transport/TokenValidation/Admin→NotFound/Conflict/Forbidden)
+│  ├─ KeycloakConfig.php               # final readonly class(검증·후행슬래시 제거·__toString 마스킹)
+│  ├─ Token/                           # TokenSet/ValidatedToken/IntrospectionResult/AuthorizationRequest(값타입) + OidcEndpoints
+│  ├─ TokenProvider.php · ClientCredentialsTokenProvider.php   # TokenProvider 인터페이스 + 캐시(isomorphic core)
+│  ├─ Jwks/JwksStore.php               # DoS-safe JWKS(kid 캐시·미해결만 재조회·rate-limit)
+│  ├─ JwtValidator.php                 # firebase/php-jwt 자체 강화 검증(보안 핵심)
+│  ├─ AuthClient.php                   # league+stevenmaguire 래핑 + Internal/PkceKeycloakProvider(S256 오버라이드)
+│  ├─ Admin/                           # AdminClient + Users/Clients/Realms/Roles/Groups + ErrorTranslation(경계변환)
+│  └─ KeycloakClient.php               # 통합 진입점(auth 즉시·admin 지연캐시·close)
+├─ examples/quickstart.php
+└─ tests/{Unit,Integration}/           # PHPUnit(unit) + FullFlowIT.php(docker CLI 셸아웃, 실제 Keycloak)
+```
+
+**결합 규칙(PHP)**: `admin`은 `auth`에 의존하지 않는다(각자 독립 client-credentials 인증) — `TokenProvider` 인터페이스가 유일 접착제. `fschmtt/keycloak-rest-api-client-php`(admin)·`league/oauth2-client`+`stevenmaguire/oauth2-keycloak`(auth) 래핑, 예외는 경계에서 `KeycloakException` 계급으로 변환(`ErrorTranslation`이 fschmtt/Guzzle 예외를, `AuthClient`가 league 예외를 흡수). **⚠️ fschmtt `Users::create()`는 void 반환**(생성된 id는 `findIdByUsername()`로 후속 조회), `Clients`/`Realms`는 `create`가 아니라 **`import`**(대상 representation에 id/realm 사전 세팅 필요). `admin()->raw()`가 탈출구. JWT 검증만 `firebase/php-jwt` + 자체 `JwksStore`로 자체 강화.
+
+**언어 중립 계약(§4)**: Java(손수 래핑)·Python(`python-keycloak` 래핑)·Node(`openid-client`+admin-client 래핑)·Go(`gocloak`+`x/oauth2` 래핑)·C#(`Keycloak.AuthServices.Sdk`+`Duende.IdentityModel` 래핑)·PHP(`fschmtt`+`league/oauth2-client` 래핑)의 출발점이 다르므로, 언어 중립 API 계약을 진실 원천으로 두고 각 언어가 구현한다. 여섯 언어 모두 하위 라이브러리 타입을 **주 소비 경로(파사드) 뒤에 숨긴다**(camelCase ↔ snake_case ↔ Go/C# PascalCase만 다르고 개념·계층은 동형 — 예: `TokenSet`/`ValidatedToken`/`IntrospectionResult`·오류 계급·`Client.auth/admin`). **예외/오류 계층은 항상 경계에서 SDK 타입으로 변환**되어 `keycloak.exceptions.*`·`jakarta.ws.rs.*`·`NetworkError`·`gocloak.APIError`·`KeycloakHttpClientException`·Guzzle `RequestException`이 공개 API로 새지 않는다. Go는 예외 대신 **error 값 + 센티넬**(`errors.Is`/`errors.As`) 관용을 쓴다(§4 허용).
+
+**문서화된 은닉성 예외(의도적, 2026-07-03 보안감사 반영)**: 완전 은닉이 아니라 아래 지점은 하위 타입을 노출한다 — 재래핑 비용이 과다하거나 보조 표면이기 때문이다. (a) **Java·Node·Go·C#·PHP admin 파사드**는 representation 타입을 데이터 모델로 그대로 노출한다(Java `org.keycloak.representations.idm.*`, Node `@keycloak/keycloak-admin-client/lib/defs/*`, Go `gocloak.User`/`Client`/`Role`/`Group`/`RealmRepresentation`, C# `Keycloak.AuthServices.Sdk.Admin.Models.*Representation`, PHP `Fschmtt\Keycloak\Representation\*` — 안정적 Keycloak 타입 재사용, SDK 자체 DTO 재래핑은 범위 밖). Python admin은 plain `dict[str, Any]`로 통과(누출 아님). (b) **저수준 주입/구성 지점** — Java `JwtValidator.forRealm`의 Nimbus `JWSAlgorithm`, Python `JwtValidator.validate`의 joserfc `KeySet`, Node `new JwtValidator(keys, opts)`의 jose `JWTVerifyGetKey`, Go `admin.Raw()`의 `*gocloak.GoCloak`·테스트 주입용 파라미터, C# `AdminClient.Raw`의 `IKeycloakClient`·`JwtValidator`의 내부 `TokenValidationParameters` 시임 ctor, PHP `AdminClient::raw()`의 `Fschmtt\Keycloak\Keycloak`은 하위 타입을 받는다/반환한다. 정상 소비 경로(`Client.auth/admin`, `client.Auth.Validate(...)`)는 이들을 노출하지 않는다.
 
 ## 핵심 게차 (Gotchas) — 2026-07-02 검증
 
@@ -254,6 +300,12 @@ dotnet/
 - ⚠️ **(C#) Duende.IdentityModel 확장 메서드는 예외를 던지지 않는다**(`resp.IsError` 검사 필요). Keycloak은 잘못된 client 자격증명에 **401**을 반환하므로(`ErrorType=Http`) OAuth 에러 코드는 `resp.Json["error"]`에서 읽어야 한다. PKCE 헬퍼는 라이브러리에 없어 수동 생성, introspection은 `IntrospectTokenAsync`, logout은 수동 POST다.
 - ⚠️ **(C#) SDK 10 기본 솔루션 포맷은 `.slnx`다** — `dotnet new sln --format sln`으로 구 포맷 `.sln`을 명시 생성해야 한다. `AnalysisLevel=8.0`으로 로컬(SDK 10)·CI(SDK 8) 애널라이저 밴드를 일치시킨다. `GenerateDocumentationFile`은 `IsTestProject != true`로 게이트해야 테스트 프로젝트의 public 멤버가 CS1591로 빌드 실패하지 않는다.
 - ⚠️ **(C#) `AddKeycloak(config)`는 `KeycloakClient`뿐 아니라 `KeycloakConfig`도 싱글턴으로 등록한다.** 소비자가 `IServiceCollection`에 자기 `KeycloakConfig`를 별도로 `AddSingleton`하면 등록이 중복돼 해석이 모호해질 수 있다 — `AddKeycloak` 호출 후에는 별도로 `KeycloakConfig`를 등록하지 말 것.
+- ⚠️ **(PHP) fschmtt `Users::create()`는 void 반환.** 생성된 id는 `findIdByUsername()`(내부적으로 `search()`)로 후속 조회해야 한다. `Clients`/`Realms`는 `create`가 아니라 **`import`**이고, 대상 representation에 `id`/`realm`을 미리 세팅해야 내부 재조회(re-GET)가 성립한다. fschmtt는 Guzzle 예외를 SDK 타입으로 변환하지 않으므로 경계(`ErrorTranslation`)에서 404/409/403뿐 아니라 **base `RequestException`**(TLS 검증 실패·malformed URI 등 non-HTTP 전송 실패)까지 흡수해야 한다.
+- ⚠️ **(PHP) league/stevenmaguire의 `pkceMethod` 생성자 옵션은 no-op이다** — 내부에서 재계산돼 무시된다. `PkceKeycloakProvider::getPkceMethod()`를 오버라이드해야 S256이 실제로 강제된다. `exchangeCode()`는 무상태라 OAuth `state` 파라미터를 검증하지 않는다(호출자가 콜백에서 대조할 책임 — Node/Go/C# SDK와 동형).
+- ⚠️ **(PHP) firebase/php-jwt는 `&$headers` out-파라미터를 성공 디코드 후에만 채운다.** alg를 사전 신뢰해 검증에 쓰면 위조 방지가 안 되므로, 원본 토큰의 **첫 세그먼트를 직접 base64url 디코드**해 alg를 사전 게이트해야 한다. 내장 `CachedKeySet`은 rate-limit 버그(GitHub #543)로 미사용(자체 `JwksStore`). 악성 JWKS 모듈러스(`n`이 배열)에 firebase/php-jwt가 던지는 `\TypeError`(`\Error`의 서브클래스 — `\Exception` 아님)까지 `catch(\Throwable)`로 경계 전면화해야 한다(놓치면 미변환 예외가 공개 API로 누출).
+- ⚠️ **(PHP) `JwksStore`의 rate-limit은 per-instance 메모리 상태다.** 장수명 워커(Swoole/RoadRunner)에서는 요청 간 유효하지만, 클래식 per-request PHP-FPM은 요청마다 fresh store가 생성되어 DoS 보호가 **요청 내에서만** 유효하다 — 배포모델 의존적 한계를 과대광고하지 말 것.
+- ⚠️ **(PHP) 시크릿 메모리 위생은 언어 차원에서 불가능하다** — PHP에는 char[] 같은 소거 가능한 문자열 타입이 없어 `clientSecret`은 항상 일반 `string`이다. 마스킹(`__toString()`의 `***`)은 심층방어일 뿐 end-to-end 소거 보장이 아니다(다른 5개 언어와 동일한 근본 한계).
+- ⚠️ **(PHP) 통합테스트는 Testcontainers가 아니라 docker CLI 셸아웃이다.** Windows native PHP 빌드는 testcontainers-php가 요구하는 `unix://` 스트림 트랜스포트가 컴파일되어 있지 않고, Docker Desktop(Windows)의 기본 컨텍스트도 named pipe(`npipe://`)라 TCP 폴백도 불가 — `KeycloakContainerTrait`가 `docker run`/`docker port`/`docker rm`을 `exec()`로 직접 구동한다(ubuntu CI 러너에서는 동일하게 동작). `phpunit.xml`의 integration testsuite는 `suffix="IT.php"`를 명시해야 한다(누락 시 기본 패턴 `*Test.php`로 IT가 무음 스킵된다 — Task 1 스캐폴딩에서 실제로 발생했던 결함).
 
 ## 확정 의존성 (BOM으로 고정)
 
@@ -283,6 +335,19 @@ dotnet/
 
 전부 Apache-2.0/MIT(호환). `IHttpClientFactory`는 미채택(단일 장수명 `HttpClient` + `SocketsHttpHandler.PooledConnectionLifetime` — 단일서버 SDK 관용).
 
+**PHP 확정 의존성(composer.json, 정확 핀/범위 지정)**:
+
+| 의존성 | 좌표 | 버전 |
+|---|---|---|
+| Admin | `fschmtt/keycloak-rest-api-client-php` | **0.42.0**(정확 핀 — pre-1.0 계열, 파괴적 변경 가능) |
+| 인증(OAuth2) | `league/oauth2-client` + `stevenmaguire/oauth2-keycloak` | `^2.8` / `^6.1` |
+| JWT(강화 검증) | `firebase/php-jwt` | `^7.1` |
+| HTTP(PSR-18/17) | `guzzlehttp/guzzle` + `guzzlehttp/psr7` | `^7.9` / `^2.7` |
+| 단위 테스트 | `phpunit/phpunit` 12 · `phpstan/phpstan` 2.2(+ strict-rules·phpunit 확장) · `friendsofphp/php-cs-fixer` 3.95 | — |
+| 통합 테스트 | (docker CLI 셸아웃 — `testcontainers/testcontainers` ^1.0은 dev 의존이나 Windows native PHP 미지원으로 실사용 안 함) | — |
+
+전부 MIT/BSD-3(Apache-2.0 호환). `jumbojett/openid-connect-php`는 세션 슈퍼글로벌·`header()` 리다이렉트를 자체 소유해 결정적 파사드와 상충 + JWT 검증 이력 우려로 기각.
+
 ## 문서 유지 규칙
 
-작업 완료(머지/main 반영) 후 프로젝트 전체 문서(`CLAUDE.md`, `docs/`, `README.md`)를 최신화·최적화하고 커밋한다. 언어별 빌드/테스트 명령(단일 테스트 실행 포함)을 툴체인 섹션에 유지한다(Java·Python·Node·Go·C#).
+작업 완료(머지/main 반영) 후 프로젝트 전체 문서(`CLAUDE.md`, `docs/`, `README.md`)를 최신화·최적화하고 커밋한다. 언어별 빌드/테스트 명령(단일 테스트 실행 포함)을 툴체인 섹션에 유지한다(Java·Python·Node·Go·C#·PHP).
