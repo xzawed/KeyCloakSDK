@@ -2,7 +2,7 @@
 
 Keycloak을 위한 **여러 프로그래밍 언어용 SDK**(polyglot). Keycloak의 두 API 표면 — **인증(OIDC/OAuth2)** 과 **관리 REST API(Admin)** — 을 모두 다루며, 언어마다 관용적이면서도 개념·계층·흐름이 **동형(isomorphic)** 인 SDK를 제공합니다.
 
-> ℹ️ 여기서 "다국어/polyglot"은 **프로그래밍 언어**(Java·Python·Node·Go·C#·PHP·향후 확장)를 의미합니다. 자연어 현지화(i18n)와는 무관합니다.
+> ℹ️ 여기서 "다국어/polyglot"은 **프로그래밍 언어**(Java·Python·Node·Go·C#·PHP·Rust·Ruby)를 의미합니다. 자연어 현지화(i18n)와는 무관합니다.
 
 | 언어 | 상태 | 기반 | 배포 |
 |---|---|---|---|
@@ -13,6 +13,7 @@ Keycloak을 위한 **여러 프로그래밍 언어용 SDK**(polyglot). Keycloak�
 | **C# / .NET 8+** | ✅ 완료 · `main` 병합 (PR #14) | `Duende.IdentityModel` + `Keycloak.AuthServices.Sdk` 2.7.0 래핑 + `Microsoft.IdentityModel.JsonWebTokens` 자체 JWT 검증 | NuGet `Xzawed.Keycloak.Sdk` (human-gated) |
 | **PHP 8.3+** | ✅ 완료 · `main` 병합 (PR #17) | `fschmtt/keycloak-rest-api-client-php` 래핑(admin) + `league/oauth2-client`+`stevenmaguire/oauth2-keycloak` 래핑(auth) + `firebase/php-jwt` 자체 JWT 검증 | Packagist `xzawed/keycloak-sdk` (GitHub 웹훅 자동게시, human-gated) |
 | **Rust 1.88+**(edition 2024) | ✅ 완료 · `main` 병합 (PR #18) | `keycloak` crate 래핑(admin) + `openidconnect` 래핑(auth) + `jsonwebtoken` 자체 JWT 검증 | crates.io `keycloak-sdk` (human-gated) |
+| **Ruby 3.2+** | ✅ 완료 · PR 예정(`feature/ruby-sdk`) | `faraday` 직접 래핑(admin, 성숙한 gem 부재) + `rack-oauth2` 래핑(auth) + `jwt`(ruby-jwt) 자체 JWT 검증 | RubyGems `keycloak-sdk` (Trusted Publishing, human-gated) |
 
 - **라이선스**: Apache-2.0
 
@@ -27,13 +28,14 @@ Keycloak을 위한 **여러 프로그래밍 언어용 SDK**(polyglot). Keycloak�
 - **C# / .NET**: `Keycloak.AuthServices.Sdk` 2.7.0(Admin, users/groups/realm-get 타입드 + clients/roles/realm-CRUD raw REST) + `Duende.IdentityModel`(인증) 래핑. async-first(`Task<T>`+`CancellationToken`), 예외 계급(`KeycloakException`→`KeycloakAdminException`→`KeycloakNotFoundException` 등).
 - **PHP**: `fschmtt/keycloak-rest-api-client-php` 0.42.0(Admin) + `league/oauth2-client`+`stevenmaguire/oauth2-keycloak`(인증, PKCE S256 오버라이드) 래핑. `final readonly class` 값타입, 예외 계급(`KeycloakException`→`KeycloakAdminError`→`KeycloakNotFoundError` 등).
 - **Rust**: `keycloak` crate =26.6.2(Admin, `reqwest12` feature로 reqwest 0.12 정렬) + `openidconnect` =4.0.1(인증, 수동 EndpointSet typestate) 래핑. async-only(tokio), `thiserror` 기반 `KeycloakError` enum, `admin`↔`auth`는 `TokenProvider` trait로만 접착.
-- **JWT 검증은 일곱 언어 모두 자체 강화 구현** — 알고리즘 핀닝(`none`/미서명 거부·헤더 불신), `iss` 정확일치, **`aud` 포함검사**(실제 Keycloak 토큰의 다중 aud 대응), `exp` 필수, 클록 스큐, DoS-안전 JWKS 재조회. (Java: Nimbus JOSE, Python: joserfc, Node: jose, Go: go-jose/v4, C#: Microsoft.IdentityModel.JsonWebTokens, PHP: firebase/php-jwt + 자체 JwksStore, Rust: jsonwebtoken + 자체 JwksStore)
+- **Ruby**: 성숙한 admin gem이 없어 `faraday`로 Admin REST 직접 래핑(5리소스+raw) + `rack-oauth2`(인증, PKCE S256은 손수 생성) 래핑. sync-only, 예외 계급(`KeycloakSdk::Error`→`AdminError`→`NotFoundError` 등), `admin`↔`auth`는 `TokenProvider` 덕 인터페이스로만 접착.
+- **JWT 검증은 여덟 언어 모두 자체 강화 구현** — 알고리즘 핀닝(`none`/미서명 거부·헤더 불신), `iss` 정확일치, **`aud` 포함검사**(실제 Keycloak 토큰의 다중 aud 대응), `exp` 필수, 클록 스큐, DoS-안전 JWKS 재조회. (Java: Nimbus JOSE, Python: joserfc, Node: jose, Go: go-jose/v4, C#: Microsoft.IdentityModel.JsonWebTokens, PHP: firebase/php-jwt + 자체 JwksStore, Rust: jsonwebtoken + 자체 JwksStore, Ruby: jwt(ruby-jwt) + 자체 JwksStore)
 
 ## 설치 & 시작
 
 > 🚀 **전체 설치·시작 가이드 → [docs/guides/getting-started.md](docs/guides/getting-started.md)** — 언어별 요구 런타임 · 로컬/배포후 설치 · 최소 사용 예(토큰 발급 → JWT 검증 → admin CRUD)를 한곳에 정리했습니다. 아래는 요약입니다.
 
-**요구 런타임**: Java **JDK 21+**(`--release 21` 컴파일 — 이전 JDK는 `UnsupportedClassVersionError`) · Python **3.10+** · Node.js **20+**(ESM) · Go **1.25+** · .NET **8+** · PHP **8.3+** · Rust **1.88+**(edition 2024 + let-chains 요구 MSRV).
+**요구 런타임**: Java **JDK 21+**(`--release 21` 컴파일 — 이전 JDK는 `UnsupportedClassVersionError`) · Python **3.10+** · Node.js **20+**(ESM) · Go **1.25+** · .NET **8+** · PHP **8.3+** · Rust **1.88+**(edition 2024 + let-chains 요구 MSRV) · Ruby **3.2+**.
 
 ### Java (Maven)
 > ⚠️ `0.1.0-SNAPSHOT`은 아직 Maven Central 미배포(human-gated). 배포 전에는 `mvn -f java/pom.xml install -DskipITs=true`로 로컬 `~/.m2`에 설치해 사용하세요(Docker 불필요). 배포 절차는 [DEPLOY.md](DEPLOY.md) 참고.
@@ -89,9 +91,16 @@ cd rust && cargo build && cargo test   # 현재(미배포) — 로컬 빌드/테
 # cargo add keycloak-sdk                # 배포 후
 ```
 
+### Ruby (RubyGems)
+> ⚠️ `keycloak-sdk` `0.1.0`은 아직 RubyGems 미배포(human-gated, Trusted Publishing — 최초 1회는 API 키 수동 게시 또는 Trusted Publisher 사전등록 필요).
+```bash
+cd ruby && bundle install && bundle exec rspec   # 현재(미배포) — 로컬 설치/테스트(단위 73개)
+# gem install keycloak-sdk                        # 배포 후
+```
+
 ### 최소 사용 예
 
-토큰 발급 → JWT 검증 → admin CRUD의 **언어별 최소 예제와 async 사용법**은 시작 가이드에 있습니다: **[getting-started](docs/guides/getting-started.md)**. 실행 예제는 [`java/keycloak-sdk-examples`](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) · [`python/examples/quickstart.py`](python/examples/quickstart.py)(+[async](python/examples/async_quickstart.py)) · [`node/examples/quickstart.ts`](node/examples/quickstart.ts) · [`go/example_test.go`](go/example_test.go) · [`php/examples/quickstart.php`](php/examples/quickstart.php) · [`rust/examples/quickstart.rs`](rust/examples/quickstart.rs) 참고(C#/.NET은 별도 예제 프로젝트 없이 getting-started의 인라인 예제 참고).
+토큰 발급 → JWT 검증 → admin CRUD의 **언어별 최소 예제와 async 사용법**은 시작 가이드에 있습니다: **[getting-started](docs/guides/getting-started.md)**. 실행 예제는 [`java/keycloak-sdk-examples`](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) · [`python/examples/quickstart.py`](python/examples/quickstart.py)(+[async](python/examples/async_quickstart.py)) · [`node/examples/quickstart.ts`](node/examples/quickstart.ts) · [`go/example_test.go`](go/example_test.go) · [`php/examples/quickstart.php`](php/examples/quickstart.php) · [`rust/examples/quickstart.rs`](rust/examples/quickstart.rs) · [`ruby/examples/quickstart.rb`](ruby/examples/quickstart.rb) 참고(C#/.NET은 별도 예제 프로젝트 없이 getting-started의 인라인 예제 참고).
 
 ## 호환성
 
@@ -104,6 +113,7 @@ cd rust && cargo build && cargo test   # 현재(미배포) — 로컬 빌드/테
 | C#/.NET `0.1.0` | 26.6.x (통합테스트: 실제 **26.6**) | `Keycloak.AuthServices.Sdk` **2.7.0** · `Duende.IdentityModel` **8.1.0** · `Microsoft.IdentityModel.JsonWebTokens` **8.19.1** · .NET 8+ |
 | PHP `0.1.0` | 26.6.x (통합테스트: 실제 **26.6**, docker CLI 셸아웃) | `fschmtt/keycloak-rest-api-client-php` **0.42.0** · `league/oauth2-client` **^2.8** · `stevenmaguire/oauth2-keycloak` **^6.1** · `firebase/php-jwt` **^7.1** · PHP 8.3+ |
 | Rust `0.1.0` | 26.6.x (통합테스트: 실제 **26.6**, Testcontainers) | `keycloak` **=26.6.2**(`reqwest12` feature) · `openidconnect` **=4.0.1** · `jsonwebtoken` **=10.4.0** · Rust 1.88+(edition 2024) |
+| Ruby `0.1.0` | 26.6.x (통합테스트: 실제 **26.6**, docker CLI 셸아웃) | `rack-oauth2` **~>2.3** · `faraday` **~>2.0** · `jwt`(ruby-jwt) **~>3.2** · Ruby 3.2+ |
 
 SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 지원 서버 범위는 이 표로 안내합니다.
 
@@ -115,11 +125,13 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 
 **Rust SDK 완료 · `main` 병합됨 (PR #18).** WBS Task 1~12 전체 구현(스캐폴딩 → error → config → tokens/oidc → token_provider → jwks → jwt → auth → admin → client → 통합테스트 → CI/문서). edition 2024 · async-only(tokio). 단위테스트 34개 + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 1개(E2E `full_flow` — 전 흐름·5 admin 리소스) = 총 35개 GREEN, 로직 모듈 라인 커버리지 94.85%(게이트 ≥90%), `cargo clippy -D warnings`·`cargo fmt --check` 통과. 7번째 언어로 E2E 신규 SDK 버그 0건. 최종리뷰 fix wave(1건)로 admin이 캐싱 `ClientCredentialsTokenProvider`를 쓰도록 수정(§4 캐시 불변식 복원) + `config.scopes` threading.
 
-**남은 것은 실배포뿐**(Maven Central·PyPI·npm·Go 모듈 태그·NuGet·Packagist·crates.io, 사람 계정/키/토큰 필요 — [DEPLOY.md](DEPLOY.md)).
+**Ruby SDK 완료 · PR 예정(`feature/ruby-sdk`).** WBS Task 1~12 전체 구현(스캐폴딩 → errors/masking → config → tokens/oidc/http → token_provider → jwks → jwt → auth → admin → client → 통합테스트 → CI/문서). sync-only · 예외 계급 관용. 단위테스트 73개 + 통합테스트(docker CLI 셸아웃, 실제 Keycloak 26.6) 1개(E2E `full_flow`) = 총 74개 GREEN, 로직 모듈 커버리지 라인 100.0%/브랜치 93.48%(게이트 ≥90/≥85), `rubocop` 무경고·`bundler-audit` 통과. 8번째(마지막) 언어로 E2E 신규 SDK 버그 0건(PHP·Rust에 이은 세 번째 무결함 사례). admin에 성숙한 gem이 없어 `faraday`로 Admin REST를 직접 구현.
 
-- 📄 설계 스펙: [Java·Python 멀티랭 설계](docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md) · [Python](docs/superpowers/specs/2026-07-03-keycloak-python-sdk-design.md) · [Python async](docs/superpowers/specs/2026-07-03-keycloak-python-async-design.md) · [C#/.NET](docs/superpowers/specs/2026-07-04-keycloak-dotnet-sdk-design.md) · [PHP](docs/superpowers/specs/2026-07-06-keycloak-php-sdk-design.md) · [Rust](docs/superpowers/specs/2026-07-06-keycloak-rust-sdk-design.md)
+**남은 것은 실배포뿐**(Maven Central·PyPI·npm·Go 모듈 태그·NuGet·Packagist·crates.io·RubyGems, 사람 계정/키/토큰 필요 — [DEPLOY.md](DEPLOY.md)).
+
+- 📄 설계 스펙: [Java·Python 멀티랭 설계](docs/superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md) · [Python](docs/superpowers/specs/2026-07-03-keycloak-python-sdk-design.md) · [Python async](docs/superpowers/specs/2026-07-03-keycloak-python-async-design.md) · [C#/.NET](docs/superpowers/specs/2026-07-04-keycloak-dotnet-sdk-design.md) · [PHP](docs/superpowers/specs/2026-07-06-keycloak-php-sdk-design.md) · [Rust](docs/superpowers/specs/2026-07-06-keycloak-rust-sdk-design.md) · [Ruby](docs/superpowers/specs/2026-07-06-keycloak-ruby-sdk-design.md)
 - 🗂️ 구현 계획(WBS): [docs/superpowers/plans/](docs/superpowers/plans/)
-- 📝 검증 로그: [Java](docs/governance/verification-log.md) · [Python](docs/governance/verification-log-python.md) · [Node](docs/governance/verification-log-node.md) · [Go](docs/governance/verification-log-go.md) · [C#/.NET](docs/governance/verification-log-dotnet.md) · [PHP](docs/governance/verification-log-php.md) · [Rust](docs/governance/verification-log-rust.md)
+- 📝 검증 로그: [Java](docs/governance/verification-log.md) · [Python](docs/governance/verification-log-python.md) · [Node](docs/governance/verification-log-node.md) · [Go](docs/governance/verification-log-go.md) · [C#/.NET](docs/governance/verification-log-dotnet.md) · [PHP](docs/governance/verification-log-php.md) · [Rust](docs/governance/verification-log-rust.md) · [Ruby](docs/governance/verification-log-ruby.md)
 
 ## 개발자 안내
 
@@ -127,8 +139,8 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 
 - 🚀 **설치·시작**: [docs/guides/getting-started.md](docs/guides/getting-started.md)
 - 🖥️ **Keycloak *서버* 배포**(SDK가 붙을 서버 — 단일 VM + Docker Compose 프로덕션): [docs/guides/deploying-keycloak-server.md](docs/guides/deploying-keycloak-server.md)
-- 🗺️ **지원 언어·확장 로드맵**(depth-first · Java·Python·Node·Go·C#·PHP·Rust 완료 → Ruby): [docs/roadmap/language-support.md](docs/roadmap/language-support.md)
-- 🧩 **새 언어 추가 플레이북**(Java/Python/Node/Go/C#/PHP/Rust 품질로 반복): [docs/guides/add-a-language-playbook.md](docs/guides/add-a-language-playbook.md)
+- 🗺️ **지원 언어·확장 로드맵**(depth-first · Java·Python·Node·Go·C#·PHP·Rust·Ruby 완료 — 8개 언어): [docs/roadmap/language-support.md](docs/roadmap/language-support.md)
+- 🧩 **새 언어 추가 플레이북**(Java/Python/Node/Go/C#/PHP/Rust/Ruby 품질로 반복): [docs/guides/add-a-language-playbook.md](docs/guides/add-a-language-playbook.md)
 
 ## 가상 사용자 테스트 하네스 (Virtual-User Harness)
 

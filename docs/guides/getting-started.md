@@ -1,8 +1,8 @@
 # 시작하기 (Getting Started)
 
-Keycloak polyglot SDK를 로컬에서 설치하고, 첫 토큰 발급 · JWT 검증 · 관리 API 호출까지 최소 코드로 실행하는 안내입니다. 이 SDK는 **여러 프로그래밍 언어**(현재 Java · Python · Node.js · Go · C#/.NET · PHP · Rust)로 제공되며, 언어마다 관용적이되 개념·계층·흐름은 동형(isomorphic)입니다.
+Keycloak polyglot SDK를 로컬에서 설치하고, 첫 토큰 발급 · JWT 검증 · 관리 API 호출까지 최소 코드로 실행하는 안내입니다. 이 SDK는 **여러 프로그래밍 언어**(현재 Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby)로 제공되며, 언어마다 관용적이되 개념·계층·흐름은 동형(isomorphic)입니다.
 
-> ⚠️ **일곱 SDK 모두 아직 미배포입니다(human-gated 릴리스).** Maven Central·PyPI·npm·Go 모듈 태그·NuGet·Packagist·crates.io를 통한 설치는 아직 동작하지 않습니다. 현재는 **로컬 설치가 기본 경로**입니다(아래 각 언어의 "로컬 설치" 참고). 실배포 절차는 [DEPLOY.md](../../DEPLOY.md)를 참고하세요.
+> ⚠️ **여덟 SDK 모두 아직 미배포입니다(human-gated 릴리스).** Maven Central·PyPI·npm·Go 모듈 태그·NuGet·Packagist·crates.io·RubyGems를 통한 설치는 아직 동작하지 않습니다. 현재는 **로컬 설치가 기본 경로**입니다(아래 각 언어의 "로컬 설치" 참고). 실배포 절차는 [DEPLOY.md](../../DEPLOY.md)를 참고하세요.
 
 > 🖥️ **먼저 Keycloak *서버*가 필요합니다.** 이 SDK는 클라이언트 라이브러리라 **붙을 Keycloak 서버**가 있어야 동작합니다(서버는 이 SDK에 포함되지 않는 별도 완제품). 로컬 체험은 Docker 한 줄 `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`, **프로덕션 배포**는 [Keycloak 서버 배포 가이드](deploying-keycloak-server.md)를 참고하세요.
 
@@ -17,6 +17,7 @@ Keycloak polyglot SDK를 로컬에서 설치하고, 첫 토큰 발급 · JWT 검
 | **C# / .NET** | **8+** | async-first(`Task<T>`+`CancellationToken`) · `net8.0` 타깃 |
 | **PHP** | **8.3+** | `final readonly class` 값타입 · 예외 기반(`KeycloakException` 계급) |
 | **Rust** | **1.88+** | edition 2024 + let-chains 요구 MSRV · async-only(tokio) · `thiserror` 기반 `KeycloakError` |
+| **Ruby** | **3.2+** | sync-only · 예외 계급(`KeycloakSdk::Error`) · gem `keycloak-sdk` / require `keycloak_sdk` |
 | (선택) Docker | — | **통합 테스트(Testcontainers/docker CLI)에만 필요**. SDK 사용 자체에는 불필요 |
 
 ---
@@ -512,11 +513,71 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 > 오류 처리: admin 실패는 `KeycloakError::Admin(AdminError::NotFound | Conflict | Forbidden | Other { status })`로 매칭하거나 네트워크 실패 시 `KeycloakError::Transport(_)`로 분류됩니다. `admin().raw()`가 하위 `keycloak::KeycloakAdmin` 타입드 클라이언트로의 탈출구입니다.
 
+## Ruby
+
+### 1) 요구 런타임 — Ruby 3.2+
+
+Ruby **3.2 이상**(개발/CI 상단 3.4)이 필요합니다. sync-only 관용(래핑 대상 gem이 전부 동기)이며, 예외 기반 관용(`KeycloakSdk::Error` 계급 — Java/Python/Node/C#/PHP와 동형, Go/Rust의 error-값 관용과 대비)을 씁니다. Docker는 통합 테스트에만 필요합니다.
+
+### 2) 로컬 설치 (현재 — 미배포)
+
+RubyGems 미배포 상태이므로, 리포지토리를 클론한 뒤 `ruby/`에서 의존성을 설치해 확인합니다:
+
+```bash
+cd ruby && bundle install   # 의존성 설치(faraday/jwt/rack-oauth2 등)
+# 소비 프로젝트에서 로컬 참조: Gemfile에 `gem "keycloak-sdk", path: "../KeyCloakSDK/ruby"`
+```
+
+gem명은 `keycloak-sdk`(하이픈), require/모듈명은 `keycloak_sdk`/`KeycloakSdk`(언더스코어 — 기존 `keycloak` gem의 `Keycloak` 모듈과 충돌 회피)입니다.
+
+### 3) 배포 후 설치 (미래)
+
+RubyGems 배포가 완료되면:
+
+```bash
+gem install keycloak-sdk
+```
+
+> ⚠️ **아직 RubyGems에 배포되지 않았습니다(human-gated, RubyGems Trusted Publishing / OIDC).** 실제 배포는 사람이 `ruby-v*` 태그를 push해 [`.github/workflows/ruby-release.yml`](../../.github/workflows/ruby-release.yml)를 트리거해야 실행됩니다(최초 1회는 API 키 수동 게시 또는 rubygems.org UI에서 Trusted Publisher 사전등록 필요 — gem이 존재하기 전에는 등록 불가). 향후 언어 확장 로드맵은 [언어 지원 로드맵](../roadmap/language-support.md)을 참고하세요.
+
+### 4) 최소 사용 예
+
+전체 예제: [`ruby/examples/quickstart.rb`](../../ruby/examples/quickstart.rb)
+
+```ruby
+require "keycloak_sdk"
+
+config = KeycloakSdk::Config.new(
+  server_url: "https://kc.example.com",
+  realm: "myrealm",
+  client_id: "admin-cli",
+  client_secret: "changeme" # 실제 값은 환경변수/시크릿 매니저에서 로드할 것(inspect는 자동 마스킹)
+)
+
+client = KeycloakSdk::KeycloakClient.new(config)
+
+# 1) client-credentials 그랜트로 토큰 발급. TokenSet#inspect는 access/refresh/id 토큰을 마스킹한다.
+token = client.auth.client_credentials_token
+puts token.inspect
+
+# 2) 발급받은 액세스 토큰을 자체 강화 검증(RS256 핀·iss 정확일치·aud 포함검사·exp 필수·nbf·클록 스큐).
+validated = client.auth.validate(token.access_token)
+puts "subject=#{validated.subject} aud=#{validated.audience}"
+
+# 3) 관리 API — admin은 최초 접근 시 지연 생성된다(전용 캐싱 TokenProvider). create()는 생성된 id를 반환.
+user_id = client.admin.users.create({ username: "alice", enabled: true })
+puts "created user_id=#{user_id}"
+
+client.close
+```
+
+> 오류 처리: admin 실패는 `KeycloakSdk::NotFoundError`/`ConflictError`/`ForbiddenError`(모두 `AdminError#status`를 가짐) 또는 네트워크 실패 시 `KeycloakSdk::TransportError`로 분류됩니다. `admin.raw`가 하위 `Faraday::Connection`으로의 탈출구입니다.
+
 ---
 
 ## 다음 단계
 
-- **언어 지원 로드맵** — 현재 지원 언어와 향후 확장(깊이 우선: Java·Python·TypeScript/Node·Go·C#/.NET·PHP·Rust 완료 → Ruby, Kotlin은 JVM 재사용으로 선택적): [../roadmap/language-support.md](../roadmap/language-support.md)
-- **새 언어 추가 플레이북** — 기존 Java/Python/Node/Go/C#/PHP/Rust와 동형의 품질로 언어를 추가하는 절차: [add-a-language-playbook.md](add-a-language-playbook.md)
+- **언어 지원 로드맵** — 현재 지원 언어(깊이 우선: Java·Python·TypeScript/Node·Go·C#/.NET·PHP·Rust·Ruby 완료 — 8개 언어, Kotlin은 JVM 재사용으로 선택적): [../roadmap/language-support.md](../roadmap/language-support.md)
+- **새 언어 추가 플레이북** — 기존 Java/Python/Node/Go/C#/PHP/Rust/Ruby와 동형의 품질로 언어를 추가하는 절차: [add-a-language-playbook.md](add-a-language-playbook.md)
 
-> 언어 중립 API 계약(진실 원천)은 [설계 스펙 §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)에 정의되어 있습니다. 모든 언어는 이 계약을 구현하며, JWT 검증 강화(알고리즘 핀닝 · `none` 거부 · `iss` 정확일치 · `aud` 포함검사 · 클록 스큐 · DoS-안전 JWKS 재조회)는 언어 공통 필수 사항입니다. 현재 테스트 수: **Java 123개**(단위 117 + Testcontainers 통합 6) · **Python 235개**(단위 224 + 통합 11) · **Node 76개**(단위 71 + Testcontainers 통합 5) · **Go 41개**(단위 40 + Testcontainers 통합 1 — E2E, 전 흐름·5 admin 리소스) · **C#/.NET 59개**(단위 58 + Testcontainers 통합 1 — E2E `Full_flow`, 전 흐름·5 admin 리소스) · **PHP 67개**(단위 64 + 통합 3 — docker CLI 셸아웃, `FullFlowIT`: 전 흐름·client CRUD·raw 탈출구) · **Rust 35개**(단위 34 + Testcontainers 통합 1 — E2E `full_flow`, 전 흐름·5 admin 리소스).
+> 언어 중립 API 계약(진실 원천)은 [설계 스펙 §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)에 정의되어 있습니다. 모든 언어는 이 계약을 구현하며, JWT 검증 강화(알고리즘 핀닝 · `none` 거부 · `iss` 정확일치 · `aud` 포함검사 · 클록 스큐 · DoS-안전 JWKS 재조회)는 언어 공통 필수 사항입니다. 현재 테스트 수: **Java 123개**(단위 117 + Testcontainers 통합 6) · **Python 235개**(단위 224 + 통합 11) · **Node 76개**(단위 71 + Testcontainers 통합 5) · **Go 41개**(단위 40 + Testcontainers 통합 1 — E2E, 전 흐름·5 admin 리소스) · **C#/.NET 59개**(단위 58 + Testcontainers 통합 1 — E2E `Full_flow`, 전 흐름·5 admin 리소스) · **PHP 67개**(단위 64 + 통합 3 — docker CLI 셸아웃, `FullFlowIT`: 전 흐름·client CRUD·raw 탈출구) · **Rust 35개**(단위 34 + Testcontainers 통합 1 — E2E `full_flow`, 전 흐름·5 admin 리소스) · **Ruby 74개**(단위 73 + 통합 1 — docker CLI 셸아웃, E2E `full_flow`, 전 흐름·5 admin 리소스).

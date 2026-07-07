@@ -1,0 +1,55 @@
+plugins:
+  - rubocop-rspec
+
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - "vendor/**/*"
+    - "examples/**/*"
+
+# 코드베이스 전반이 double-quote·LF(크로스플랫폼·CI Linux 정렬)
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+Layout/EndOfLine:
+  EnforcedStyle: lf
+
+Metrics/MethodLength:
+  Max: 25
+Metrics/AbcSize:
+  Max: 25
+# 키워드 인자는 이름이 곧 문서화라 위치 인자 목록과 달리 가독성을 해치지 않는다
+# (예: Config#initialize의 8개 키워드 인자).
+Metrics/ParameterLists:
+  CountKeywordArgs: false
+Metrics/BlockLength:
+  Exclude:
+    - "spec/**/*"
+    - "*.gemspec"
+Style/Documentation:
+  Enabled: false
+# spec/unit/ 레이아웃(7개 자매 SDK의 tests/unit/ 동형) — describe 클래스명↔파일경로
+# 매칭을 강제하지 않는다(spec/unit/config_spec.rb ↔ describe KeycloakSdk::Config 허용).
+RSpec/SpecFilePathFormat:
+  Enabled: false
+RSpec/ExampleLength:
+  Max: 20
+  Exclude:
+    - "spec/integration/**/*"
+RSpec/MultipleExpectations:
+  Max: 8
+  Exclude:
+    - "spec/integration/**/*"
+# spec/integration/은 실제 컨테이너 전체수명 E2E 단일 예제(6개 자매 SDK의 단일 E2E 통합테스트와 동형) —
+# 컨테이너 기동/종료를 전 예제가 공유해야 하므로 describe 대상 클래스 없음·before(:all)/after(:all)·
+# 인스턴스 변수 공유가 구조상 불가피하다.
+RSpec/DescribeClass:
+  Exclude:
+    - "spec/integration/**/*"
+RSpec/BeforeAfterAll:
+  Exclude:
+    - "spec/integration/**/*"
+RSpec/InstanceVariable:
+  Exclude:
+    - "spec/integration/**/*"

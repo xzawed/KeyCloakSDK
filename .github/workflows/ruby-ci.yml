@@ -1,0 +1,45 @@
+name: ruby-ci
+on:
+  push:
+    paths: ['ruby/**', '.github/workflows/ruby-ci.yml']
+  pull_request:
+    paths: ['ruby/**', '.github/workflows/ruby-ci.yml']
+permissions:
+  contents: read
+jobs:
+  build-test:
+    name: rubocop + rspec + bundler-audit (Ruby ${{ matrix.ruby }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ruby: ['3.2', '3.3', '3.4']
+    defaults:
+      run:
+        working-directory: ruby
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+          working-directory: ruby
+      - run: bundle exec rubocop
+      - run: bundle exec rspec           # 단위 71개(integration 태그는 spec_helper가 자동 제외) + 커버리지 게이트(라인≥90/브랜치≥85)
+      - run: bundle exec bundler-audit check --update
+
+  integration:
+    name: Integration (docker CLI 셸아웃, 실제 Keycloak 26.6)
+    runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → KeycloakContainer(docker run 셸아웃) 동작
+    defaults:
+      run:
+        working-directory: ruby
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: ruby
+      # RUN_INTEGRATION=1 → spec_helper의 SimpleCov minimum_coverage 게이트를 억제(통합 단독 실행 시
+      # 브랜치 커버리지가 낮게 나와 process-wide 게이트가 오탐 실패하는 것을 방지 — unit 게이트는 불변).
+      - run: RUN_INTEGRATION=1 bundle exec rspec spec/integration --tag integration
