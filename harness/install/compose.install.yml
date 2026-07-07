@@ -1,0 +1,46 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      # 기존 harness/docker-compose.yml과 동일한 realm import 재사용. 대상 파일명은
+      # Keycloak DirImportProvider의 "<realm>-realm.json" 명명 요구사항 때문에 it-realm-realm.json이어야
+      # 한다(호스트 측 파일명 harness-realm.json과는 무관 — harness/docker-compose.yml에서 실측 검증됨).
+      - ../keycloak/harness-realm.json:/opt/keycloak/data/import/it-realm-realm.json:ro
+    ports:
+      - "8080:8080"
+      # 9000(관리 포트)도 호스트에 노출한다 — install-verify.sh의 wait_healthy(curl 폴링)가
+      # 호스트에서 /health/ready에 직접 접근하기 위함(기존 harness/docker-compose.yml은 컨테이너 내부
+      # 헬스체크만 쓰고 9000을 노출하지 않음 — 이 compose는 호스트 오케스트레이터가 추가로 필요).
+      - "9000:9000"
+    healthcheck:
+      # 26.6은 관리 포트 9000의 /health/ready 제공; curl 미포함 이미지라 bash TCP로 대체.
+      # (컨테이너 헬스 상태 — 향후 언어별 consume 컨테이너가 depends_on: condition: service_healthy로 사용)
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -qi '\"status\"[[:space:]]*:[[:space:]]*\"UP\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 30s
+    networks:
+      - install-net
+
+  # ---------------------------------------------------------------------------------------
+  # 언어별 로컬 레지스트리 서비스는 여기에 추가한다(각 언어 태스크가 append 또는
+  # compose.<lang>.yml override로 결정) — 예: verdaccio(node) · pypiserver(python) ·
+  # bagetter(dotnet) · nginx 정적 .m2(java) · 정적 gem repo(ruby) · satis-web(php) ·
+  # cargo-local-registry는 볼륨 마운트라 서비스 불필요(go의 file GOPROXY도 동일 — 서비스가
+  # 아니라 /proxy 디렉터리). 전부 install-net에 연결해 소비자 컨테이너가 서비스명으로
+  # DNS 해석하도록 한다(하드코딩 IP·extra_hosts 금지 — Windows Docker Desktop glibc-DNS 게차 회피).
+  # ---------------------------------------------------------------------------------------
+
+networks:
+  # 명시적 name을 지정해 compose 프로젝트명 프리픽스와 무관하게 항상 "install-net"으로
+  # 고정한다 — 언어별 publish/consume 컨테이너가 `docker run --network install-net`로
+  # 안정적으로 참조할 수 있도록(기존 harness/verify.sh가 프로젝트명 가정이 깨질 수 있어
+  # 동적 조회로 우회했던 것과 달리, 여기서는 애초에 이름을 고정해 그 문제를 없앤다).
+  install-net:
+    name: install-net
