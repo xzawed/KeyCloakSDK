@@ -1,0 +1,8 @@
+root = true
+
+[*.{kt,kts}]
+# 공식 Kotlin 스타일(ktlint_official) 사용. 단 filename 규칙은 비활성화한다 —
+# 이 모노레포는 언어 공통으로 소문자 다중선언 파일(errors.kt·masking.kt·tokens.kt 등)을 쓰므로
+# ktlint의 "단일/다중 선언 파일은 PascalCase" 요구(자동수정 불가)와 충돌한다. 나머지 포매팅은
+# ktlintFormat이 자동정렬하고 ktlintCheck로 게이트한다.
+ktlint_standard_filename = disabled
