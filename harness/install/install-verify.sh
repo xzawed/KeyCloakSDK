@@ -95,7 +95,9 @@ run_lang_go() {
   fi
 
   # 런타임 run.sh가 install→quickstart→boot 수행: install/quickstart는 /status 마커로, boot는 healthz로 판정.
-  wait_healthy "http://localhost:${app_port_host}/healthz" 180 || true
+  # go get이 공개 프록시(proxy.golang.org)로 전이 의존성을 내려받고 이어서 두 번(app+quickstart) 빌드하므로
+  # node(순수 JS npm install)보다 무겁다 — java/dotnet과 같은 이유로 180s→240s로 여유를 둔다.
+  wait_healthy "http://localhost:${app_port_host}/healthz" 240 || true
   if [ ! -f "$status_dir/installed.ok" ]; then
     fail_lang "$lang" install "설치 마커 부재 — file GOPROXY 설치(go get) 실패"
     docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
@@ -365,7 +367,9 @@ run_lang_python() {
   fi
 
   # 런타임 run.sh가 install→quickstart→boot 수행: install/quickstart는 /status 마커로, boot는 healthz로 판정.
-  wait_healthy "http://localhost:${app_port_host}/healthz" 180 || true
+  # pip install(fastapi·uvicorn·python-keycloak·joserfc→cryptography 등 네이티브 휠 포함)이 node의 순수
+  # JS npm install보다 무겁다 — java/dotnet과 같은 이유로 180s→240s로 여유를 둔다.
+  wait_healthy "http://localhost:${app_port_host}/healthz" 240 || true
   if [ ! -f "$status_dir/installed.ok" ]; then
     fail_lang "$lang" install "설치 마커 부재 — 레지스트리 설치(pip install) 실패"
     docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
@@ -733,8 +737,8 @@ run_lang_ruby() {
 
   # 런타임 run.sh가 install→quickstart→boot 수행: install/quickstart는 /status 마커로, boot는 healthz로 판정.
   # ⚠️ gem install은 네이티브 확장(activesupport/rack-oauth2 전이의존 bigdecimal·json·bindata 등) 컴파일이
-  # 필요해 npm install(순수 JS)보다 느리다 — 타임아웃을 node(180s)보다 넉넉히 잡는다.
-  wait_healthy "http://localhost:${app_port_host}/healthz" 240 || true
+  # 필요해 npm install(순수 JS)보다 느리다 — java/dotnet과 같은 이유로 240s→300s로 한 번 더 여유를 둔다.
+  wait_healthy "http://localhost:${app_port_host}/healthz" 300 || true
   if [ ! -f "$status_dir/installed.ok" ]; then
     fail_lang "$lang" install "설치 마커 부재 — 레지스트리 설치(gem install) 실패"
     docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
@@ -807,6 +811,10 @@ for L in "${LANGS[@]}"; do
   log "== [$L] 설치·동작 검증 시작 =="
   # 언어별 신호를 fresh로 리셋 — 이전(실패)실행의 stale error/필드가 누적 신호에 남지 않도록.
   printf '{"lang":"%s"}\n' "$L" > "report/signals/${L}.install.json"
+  # conformance.mjs/probe.mjs가 별도로 쓰는 report/signals/<lang>.{conformance,security}.json도 함께
+  # 리셋한다 — 이번 실행에서 러너가 도중에 실패해 파일을 다시 쓰지 못하면, 이전 실행의 stale
+  # conformance/security 결과가 이번 실행 결과인 것처럼 emit_conformance_security에 섞여 들어갈 수 있다.
+  rm -f "report/signals/${L}.conformance.json" "report/signals/${L}.security.json"
   run_lang "$L"
 done
 

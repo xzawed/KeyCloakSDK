@@ -21,6 +21,9 @@
 #
 # 멱등성: PROXY_DIR을 매회 rm -rf 후 재합성.
 set -uo pipefail
+# SDK+의존성은 전부 순수 Go다 — 명시적으로 꺼둬서 향후 실수로 cgo 의존성이 섞여도 명확하게 실패하게 한다
+# (go-run.sh와 동일한 방어, 여기 호스트 스크립트 자신은 go를 직접 빌드하지 않지만 일관성을 위해 둔다).
+export CGO_ENABLED=0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"       # harness/install

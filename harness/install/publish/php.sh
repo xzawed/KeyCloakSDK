@@ -31,8 +31,11 @@ TAG="v${PKG_VER}"
 WORK_DIR="$INSTALL_DIR/publish/out/php"
 SRC_DIR="$WORK_DIR/php-src"
 OUT_DIR="$WORK_DIR/output"
+# latest 대신 digest 고정(재현성). composer/satis는 버전 태그를 발행하지 않아(Docker Hub에 latest만
+# 존재) 버전 태그 핀이 불가하므로, 8/8 GREEN을 실측한 현재 latest의 index digest로 고정한다
+# (digest는 불변 → 이후 latest가 갱신돼도 이 하네스는 검증된 이미지를 계속 쓴다).
 SATIS_JSON_SRC="$INSTALL_DIR/registries/php-satis.json"
-SATIS_IMAGE="composer/satis:latest"
+SATIS_IMAGE="composer/satis@sha256:f7bfa3c72ce28b64c18e9ed13b2c53f9fe34f53708308790b637a792c2794aa4"
 
 log() { printf '[publish/php] %s\n' "$*" >&2; }
 

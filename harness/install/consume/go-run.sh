@@ -6,6 +6,9 @@
 # 3) app boot: harness/apps/go/main.go를 설치된 모듈 의존으로 기동.
 # 상태는 호스트 마운트 /status의 마커 파일로 회수한다(컨테이너 생존 여부와 무관하게 오케스트레이터가 읽음).
 set -u
+# SDK+의존성(gocloak 등)은 전부 순수 Go다 — 명시적으로 꺼둬서 향후 실수로 cgo 의존성이 섞여도
+# (예: 새 전이 의존성이 cgo를 요구) 여기서 "혼란스러운 링크 실패" 대신 명확하게 실패하게 한다.
+export CGO_ENABLED=0
 STATUS="${STATUS_DIR:-/status}"
 mkdir -p "$STATUS"
 rm -f "$STATUS/installed.ok" "$STATUS/quickstart.ok"

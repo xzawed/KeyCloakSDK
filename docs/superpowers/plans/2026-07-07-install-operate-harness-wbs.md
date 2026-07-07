@@ -220,7 +220,7 @@ console.log("install-matrix.test OK");
 
 **Interfaces:** Consumes `harness/apps/rust`·`rust/`. Produces rust 신호.
 
-- [ ] **Step 1: publish/rust.sh** — `rust:1.88-alpine`(툴 `apk add build-base openssl-dev openssl-libs-static perl cmake pkgconfig git`·`OPENSSL_STATIC=1`)에서 `cargo install cargo-local-registry --version 0.2.12 --locked` → `cargo package --locked`(rust/) → `cargo generate-lockfile` → `cargo local-registry sync --no-delete Cargo.lock /opt/local-registry` → keycloak-sdk **수동 주입**(.crate 복사 + `index/ke/yc/keycloak-sdk` v2 JSON 라인·cksum=sha256, 부록 §rust의 deps 배열 그대로).
+- [ ] **Step 1: publish/rust.sh** — `rust:1.88-alpine`(툴 `apk add build-base openssl-dev openssl-libs-static perl cmake pkgconfig git`·`OPENSSL_STATIC=1`)에서 `cargo install cargo-local-registry --version 0.2.8 --locked`(⚠️ 0.2.12는 내부 cargo crate 0.95.0→rustc 1.92 요구로 rustc 1.88 비호환 — 0.2.8로 고정, 실측) → `cargo package --locked`(rust/) → `cargo generate-lockfile` → `cargo local-registry sync --no-delete Cargo.lock /opt/local-registry` → keycloak-sdk **수동 주입**(.crate 복사 + `index/ke/yc/keycloak-sdk` v2 JSON 라인·cksum=sha256, 부록 §rust의 deps 배열 그대로).
 - [ ] **Step 2: registries/cargo-config.toml** — `[source.crates-io] replace-with="local"` + `[source.local] local-registry="/opt/local-registry"`.
 - [ ] **Step 3: consume/rust.Dockerfile** — `rust:1.88-alpine`에서 /opt/local-registry + cargo-config.toml 배치 → Cargo.toml에 `keycloak-sdk = "0.1.0"` 직접 기입(⚠️ `cargo add`는 #10926로 실패 가능) → `cargo build --offline` → quickstart(`examples/quickstart.rs`) 스모크 → `harness/apps/rust`(axum) 부팅(Cargo.toml의 `path=/src/rust`를 `keycloak-sdk="0.1.0"`+source replace로 교체). APP_PORT 8090.
 - [ ] **Step 4: 오케스트레이터 배선 + 검증(컨트롤러)** — `./install-verify.sh rust` → 신호 green(수동 index 라인·cksum 정합 주의).

@@ -57,7 +57,8 @@ services:
       - install-net
 
   pypiserver:
-    image: pypiserver/pypiserver:latest
+    # latest 대신 구체 버전 고정(재현성 — Docker Hub 확인됨: v2.4.1 태그 존재).
+    image: pypiserver/pypiserver:v2.4.1
     # 리서치 부록 §python: "run -a . -P . /data/packages"(인증 비활성)에 `--overwrite`를 추가했다
     # (원문에 없는 로컬 전용 이탈) — 재게시 기본 거부(부록 게차)를 서버측에서 흡수해 twine upload
     # 커맨드 자체는 그대로 두고도(publish/python.sh) 재실행이 자연히 멱등이 되게 한다. verdaccio처럼
@@ -81,7 +82,9 @@ services:
       - install-net
 
   bagetter:
-    image: bagetter/bagetter:latest
+    # digest 고정(재현성). ⚠️ 버전 태그 1.6.0은 8/8 GREEN을 실측한 latest와 digest가 달라(미검증)
+    # 회귀 위험이 있으므로, 실측한 바로 그 latest 이미지의 digest로 고정한다(digest는 불변).
+    image: bagetter/bagetter@sha256:ed12b9450c7fe97df7d18b0ade1e7737abbfc865807e0ff7d5f3535860266241
     environment:
       ApiKey: "LOCALKEY"
       Storage__Type: FileSystem

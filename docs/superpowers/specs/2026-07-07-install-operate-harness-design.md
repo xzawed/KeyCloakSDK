@@ -45,7 +45,10 @@
 ```
 A. Publish   빌더 컨테이너가 실 배포 산출물을 빌드 → 로컬 레지스트리/피드/프록시에 게시.
              (릴리스 CI의 빌드 스텝을 재현하되 실 시크릿·업로드 없음.)
-B. Install   소스 트리 없는 클린 소비자 컨테이너가 실제 설치 명령으로 패키지를 설치.
+B. Install   소스 트리 없는 클린 소비자 컨테이너가 실제 설치 명령으로 패키지를 설치. consume/<lang>.Dockerfile은
+             파일만 담고(BuildKit이 build-time custom --network을 지원하지 않아 빌드타임 네트워크 없음), 실제
+             install→quickstart→app-boot는 런타임 엔트리포인트 consume/<lang>-run.sh가 install-net에서 수행하며
+             진행 상태는 /status 마커 파일로 오케스트레이터에 노출한다.
              b1) quickstart 예제 실행           = 설치 스모크("신규 사용자 첫 프로그램")
              b2) 하네스 앱을 '설치된 패키지' 소비로 재빌드·부팅
 C. Operate   설치된-패키지 앱에 대해 기존 conformance(계약 26체크) + security(JWT 하드닝 9프로브) 재실행.
@@ -85,7 +88,8 @@ harness/install/
 ├─ compose.install.yml           # Keycloak + 언어별 로컬 레지스트리 서비스
 ├─ registries/                   # 로컬 레지스트리 구성(Verdaccio conf·pypiserver·Satis·cargo config 등)
 ├─ publish/<lang>.sh             # A: 산출물 빌드 → 로컬 레지스트리 게시(언어별)
-├─ consume/<lang>.Dockerfile     # B: 소스 없는 클린 설치 컨테이너(quickstart + 앱 재빌드)
+├─ consume/<lang>.Dockerfile     # B: 파일만 담는 설치 컨테이너 이미지(빌드타임 네트워크 없음)
+├─ consume/<lang>-run.sh         # B: 런타임 엔트리포인트 — install-net에서 install→quickstart→app-boot 수행(/status 마커)
 ├─ quickstart/                   # 누락 예제 보충: dotnet 콘솔 quickstart(+ go 러너블 main)
 └─ report/
    ├─ install-matrix.mjs         # D: signals/*.install.json → INSTALL-MATRIX.md

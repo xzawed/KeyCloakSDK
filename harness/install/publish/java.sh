@@ -25,8 +25,9 @@
 # 3) 산출물 검증: parent POM·BOM POM·core/auth/admin/keycloak-sdk jar(+keycloak-sdk의 sources/javadoc)
 #    8개 경로 존재 확인.
 #
-# 멱등성: staging-m2를 매 실행 rm -rf 후 재빌드하므로(파일 기반 산출물이라 verdaccio류 409 충돌 개념
-# 자체가 없음) 재실행은 그냥 최신 산출물로 덮어써진다.
+# 멱등성: staging-m2를 매 실행 내용만 비우고(rm -rf가 아니라 find -mindepth 1 -delete — 아래 1/4 참고)
+# 재빌드하므로(파일 기반 산출물이라 verdaccio류 409 충돌 개념 자체가 없음) 재실행은 그냥 최신 산출물로
+# 덮어써진다.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -43,18 +44,23 @@ BUILD_IMAGE="maven:3.9-eclipse-temurin-21-alpine"
 STAGING_DIR="$INSTALL_DIR/publish/out/java/staging-m2"
 M2_CACHE_VOLUME="install-java-m2-cache"        # 명명된 도커 볼륨(재실행 시 의존성 재다운로드 절감 — 없으면 자동 생성)
 BUILDER_CONTAINER="install-java-sdk-builder-$$"
+# mvn 빌드(docker run)가 걸려도(느린 Central 미러·네트워크 단절 등) 오케스트레이터 전체가 무기한 블록되지
+# 않도록 상한을 둔다. 환경변수로 조정 가능(느린 CI 러너 대비).
+JAVA_BUILD_TIMEOUT_S="${JAVA_BUILD_TIMEOUT_S:-900}"
 
 log() { printf '[publish/java] %s\n' "$*" >&2; }
 
 cleanup() { docker rm -f "$BUILDER_CONTAINER" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
-log "1/4 이전 산출물 정리(staging-m2 호스트 디렉터리는 추출 직전에 새로 만든다 — 아래 3/4 참고)"
-rm -rf "$STAGING_DIR"
+log "1/4 이전 산출물 정리(staging-m2는 mvn-repo nginx 컨테이너가 bind-mount로 물고 있을 수 있어 디렉터리
+자체를 rm -rf하지 않고 내용만 비운다 — 마운트된 디렉터리를 지우면 그 아래에서 마운트가 끊길 수 있다)"
+mkdir -p "$STAGING_DIR"
+find "$STAGING_DIR" -mindepth 1 -delete
 docker rm -f "$BUILDER_CONTAINER" >/dev/null 2>&1 || true
 
-log "2/4 빌드(컨테이너 로컬 파일시스템) — versions:set 0.1.0 → mvn -Prelease install(인터넷 필요)"
-if ! docker run --name "$BUILDER_CONTAINER" \
+log "2/4 빌드(컨테이너 로컬 파일시스템, ${JAVA_BUILD_TIMEOUT_S}s 타임아웃 가드) — versions:set 0.1.0 → mvn -Prelease install(인터넷 필요)"
+if ! timeout "${JAVA_BUILD_TIMEOUT_S}s" docker run --name "$BUILDER_CONTAINER" \
     -v "$(hostpath "$REPO_ROOT/java"):/src:ro" \
     -v "$M2_CACHE_VOLUME:/root/.m2" \
     "$BUILD_IMAGE" sh -c "
@@ -64,10 +70,10 @@ if ! docker run --name "$BUILDER_CONTAINER" \
       find /work/java -type d -name target -prune -exec rm -rf '{}' +
       cd /work/java
       mvn -q -B versions:set -DnewVersion=$PKG_VER -DgenerateBackupPoms=false
-      mvn -B -Prelease -DskipTests -DskipITs=true -Dgpg.skip=true -Djacoco.skip=true \
+      mvn -B -Prelease -DskipTests -Dmaven.test.skip=true -DskipITs=true -Dgpg.skip=true -Djacoco.skip=true \
         -Dmaven.repo.local=/work/staging-m2 install
     "; then
-  log "빌드 실패(docker run) — 위 mvn 로그 참고"
+  log "빌드 실패(docker run, ${JAVA_BUILD_TIMEOUT_S}s 타임아웃 가드 초과 시에도 여기로 옴) — 위 mvn 로그 참고"
   exit 1
 fi
 

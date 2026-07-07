@@ -41,9 +41,13 @@ WORKDIR /work
 COPY rust/ /work/rust/
 
 # 1) keycloak-sdk 본체 패키징 — cargo publish와 동일 tarball(target/package/keycloak-sdk-0.1.0.crate).
-#    --locked: 커밋된 rust/Cargo.lock을 그대로 사용. verify 빌드가 포함돼 시간이 오래 걸리는 단계.
+#    ⚠️ rust/Cargo.lock은 라이브러리라 rust/.gitignore가 커밋에서 제외한다 — 신선한 CI 체크아웃에는
+#    lockfile이 없으므로 패키징 직전에 새로 생성한다(--locked는 쓰지 않음: 패키징 자체는 lockfile 일치를
+#    요구하지 않고, 없는 lockfile을 --locked로 요구하면 이 단계가 즉시 실패한다). verify 빌드가 포함돼
+#    시간이 오래 걸리는 단계.
 WORKDIR /work/rust
-RUN cargo package --locked
+RUN cargo generate-lockfile
+RUN cargo package
 
 # 2) 트랜지티브 클로저 매니페스트 — harness/apps/rust/Cargo.toml(axum 등 앱 전용 의존성이 추가된
 #    실제 소비 매니페스트)을 그대로 재사용하되 path 의존성만 이 빌드 레이아웃(/work/rust)에 맞게
