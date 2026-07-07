@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # harness/suites/go.sh — Go SDK 자체 단위테스트+커버리지+린트를 golang:1.25-alpine 컨테이너에서
-# 실행한다(CLAUDE.md Go 툴체인: `go test ./... -cover`[단위 40개, integration 태그 없이] +
-# `go vet ./...` + `gofmt -l`). 마지막 줄에 JSON 신호 1줄을 출력한다.
+# 실행한다(CLAUDE.md Go 툴체인: `go test ./... -coverprofile=cover.out`[단위 40개, integration 태그
+# 없이] + 네트워크 경계 파일(auth/admin*/client.go) 제외 게이트 커버리지 + `go vet ./...` +
+# `gofmt -l`). 마지막 줄에 JSON 신호 1줄을 출력한다.
+#
+# ⚠️ 커버리지는 RAW(전체 statement %)가 아니라 GATED(네트워크 경계 파일 제외) 수치를 보고한다 —
+# 다른 7개 언어는 커버리지 도구 설정 자체에 경계 제외를 굽는데(예: dotnet coverlet의 /p:Exclude,
+# PHP phpunit.xml의 source exclude) Go만 raw `go test -cover`를 쓰면 ~59%로 불공정하게 낮게
+# 나온다 — CLAUDE.md Go 툴체인 섹션의 게이트 계산(grep -vE 필터 후 go tool cover -func)과 동일하게
+# 맞춰 실측 ~95.2%가 나오도록 한다.
 set -uo pipefail
 cd "$(dirname "$0")/.."          # -> harness/
 ROOT="$(cd .. && pwd)"           # 리포 루트 (go/ 는 $ROOT/go)
@@ -28,8 +35,10 @@ RAW=$(docker run --rm -v "$ROOT/go:/src-ro:ro" -e GOFLAGS=-mod=mod golang:1.25-a
   gofmt -l . >/tmp/fmt.log 2>&1
   echo "___FMTLINES=$(wc -l < /tmp/fmt.log)"
   cat /tmp/fmt.log
-  go test ./... -cover -v 2>&1
+  go test ./... -coverprofile=/tmp/cover.out -v 2>&1
   echo "___TESTEXIT=$?"
+  grep -vE "/(auth|admin|admin_users|admin_clients|admin_realms|admin_roles|admin_groups|client)\.go:" /tmp/cover.out > /tmp/cover.filtered
+  echo "___COVTOTAL=$(go tool cover -func=/tmp/cover.filtered | tail -1)"
 ' 2>&1)
 DOCKER_RC=$?
 
@@ -41,7 +50,9 @@ if [ "$DOCKER_RC" -ne 0 ] && [ -z "$OUT" ]; then
 fi
 
 UNIT=$(printf '%s\n' "$OUT" | grep -c '^--- PASS:')
-LINE=$(printf '%s\n' "$OUT" | grep -oE 'coverage: [0-9]+(\.[0-9]+)?% of statements' | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+# 게이트(GATED) 커버리지: 네트워크 경계 파일(auth/admin*/client.go) 제외 후 `go tool cover -func`
+# 총계 행("total:  (statements)  95.2%")에서 추출 — CLAUDE.md 문서화 수치(~95.2%)와 정합.
+LINE=$(printf '%s\n' "$OUT" | grep -oE '___COVTOTAL=.*' | tail -1 | grep -oE '[0-9]+(\.[0-9]+)?%' | tail -1 | tr -d '%')
 VETEXIT=$(printf '%s\n' "$OUT" | grep -oE '___VETEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 FMTLINES=$(printf '%s\n' "$OUT" | grep -oE '___FMTLINES=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${VETEXIT:-1}" = "0" ] && [ "${FMTLINES:-1}" = "0" ]; then LINTCLEAN=true; else LINTCLEAN=false; fi

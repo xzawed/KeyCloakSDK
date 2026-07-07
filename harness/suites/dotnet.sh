@@ -38,8 +38,10 @@ if [ "$DOCKER_RC" -ne 0 ] && [ -z "$OUT" ]; then
   exit 1
 fi
 
-# dotnet test 요약: "Passed!  - Failed: 0, Passed: 58, Skipped: 0, Total: 58"
-UNIT=$(printf '%s\n' "$OUT" | grep -oE 'Passed: [0-9]+' | tail -1 | grep -oE '[0-9]+')
+# dotnet test(VSTest) 요약은 카운터를 우측 정렬로 패딩한다:
+#   "Passed!  - Failed:     0, Passed:    58, Skipped:     0, Total:    58"
+# 리터럴 단일 공백(`Passed: `)은 이 패딩과 매치하지 않으므로 공백류를 관용한다.
+UNIT=$(printf '%s\n' "$OUT" | grep -oiE 'Passed:[[:space:]]+[0-9]+' | tail -1 | grep -oE '[0-9]+$')
 # coverlet.msbuild 콘솔 요약 테이블(| Module | Line | Branch | Method |); 첫 % 값을 라인으로 근사.
 LINE=$(printf '%s\n' "$OUT" | grep -E '^\| .*%' | head -1 | grep -oE '[0-9]+(\.[0-9]+)?%' | sed -n '1p' | tr -d '%')
 BRANCH=$(printf '%s\n' "$OUT" | grep -E '^\| .*%' | head -1 | grep -oE '[0-9]+(\.[0-9]+)?%' | sed -n '2p' | tr -d '%')
@@ -56,7 +58,7 @@ if [ "${SUITE_INTEGRATION:-0}" = "1" ]; then
       dotnet test --filter "Category=Integration" 2>&1
     ' 2>&1 || true)
   IOUT=$(printf '%s' "$IRAW" | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g')
-  INTEGRATION=$(printf '%s\n' "$IOUT" | grep -oE 'Passed: [0-9]+' | tail -1 | grep -oE '[0-9]+')
+  INTEGRATION=$(printf '%s\n' "$IOUT" | grep -oiE 'Passed:[[:space:]]+[0-9]+' | tail -1 | grep -oE '[0-9]+$')
 fi
 
 echo "{\"lang\":\"dotnet\",\"unit\":${UNIT:-0},\"integration\":${INTEGRATION:-0},\"coverageLine\":${LINE:-0},\"coverageBranch\":${BRANCH:-0},\"lintClean\":${LINTCLEAN},\"ran\":true}"

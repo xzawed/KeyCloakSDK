@@ -25,6 +25,17 @@ RAW=$(docker run --rm -v "$ROOT/python:/src-ro:ro" python:3.12-alpine sh -c '
   echo "___INSTALLEXIT=$?"
   python -m pytest -m "not integration" --cov=keycloak_sdk --cov-report=term 2>&1
   echo "___TESTEXIT=$?"
+  python -m coverage json -o /tmp/cov.json >/dev/null 2>&1
+  python -c "
+import json
+try:
+    t = json.load(open(\"/tmp/cov.json\"))[\"totals\"]
+    nb = t.get(\"num_branches\", 0)
+    cb = t.get(\"covered_branches\", 0)
+    print(\"___BRANCH=\" + (f\"{cb / nb * 100:.1f}\" if nb else \"0\"))
+except Exception:
+    print(\"___BRANCH=0\")
+"
   python -m ruff check src tests examples >/tmp/ruff.log 2>&1
   echo "___LINTEXIT=$?"
   cat /tmp/ruff.log
@@ -42,6 +53,9 @@ fi
 UNIT=$(printf '%s\n' "$OUT" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+')
 # pytest-cov term 리포트 마지막 TOTAL 행의 커버리지 % (예: "TOTAL   1234   56   93%")
 LINE=$(printf '%s\n' "$OUT" | grep -E '^TOTAL' | tail -1 | grep -oE '[0-9]+(\.[0-9]+)?%' | tail -1 | tr -d '%')
+# pyproject.toml의 `branch = true`로 `coverage json`이 산출한 covered_branches/num_branches에서 계산
+# (term 리포트의 TOTAL 행은 stmt+branch 결합 %만 주고 순수 branch %는 별도 제공하지 않음).
+BRANCH=$(printf '%s\n' "$OUT" | grep -oE '___BRANCH=.*' | tail -1 | cut -d= -f2)
 LINTEXIT=$(printf '%s\n' "$OUT" | grep -oE '___LINTEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${LINTEXIT:-1}" = "0" ]; then LINTCLEAN=true; else LINTCLEAN=false; fi
 
@@ -59,4 +73,4 @@ if [ "${SUITE_INTEGRATION:-0}" = "1" ]; then
   INTEGRATION=$(printf '%s\n' "$IOUT" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+')
 fi
 
-echo "{\"lang\":\"python\",\"unit\":${UNIT:-0},\"integration\":${INTEGRATION:-0},\"coverageLine\":${LINE:-0},\"coverageBranch\":0,\"lintClean\":${LINTCLEAN},\"ran\":true}"
+echo "{\"lang\":\"python\",\"unit\":${UNIT:-0},\"integration\":${INTEGRATION:-0},\"coverageLine\":${LINE:-0},\"coverageBranch\":${BRANCH:-0},\"lintClean\":${LINTCLEAN},\"ran\":true}"
