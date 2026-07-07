@@ -144,10 +144,13 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 
 ## 가상 사용자 테스트 하네스 (Virtual-User Harness)
 
-문서·유닛/통합테스트와 별개로, 폴리글랏 SDK들이 **실제로 동일하게 동작하는지** 언어 간에 실측 비교하기 위한 하네스가 [`harness/`](harness/README.md)에 있다. 실제 Keycloak 26.6(`it-realm` — 언어별 통합테스트와 동일 realm)을 Docker Compose로 띄우고, 각 언어 SDK로 작성된 동일 [HTTP 계약](harness/contract/CONTRACT.md)의 샘플 앱을 k6 가상 사용자 드라이버로 구동해 (1) **기능 정확성 게이트**(checks PASS율 100% 요구, 미달 시 비0 종료)와 (2) **성능 실측**(validate/admin CRUD p95 지연·RPS·오류율의 언어간 비교표)을 함께 산출한다.
+문서·유닛/통합테스트와 별개로, 폴리글랏 SDK들이 **실제로 동일하게 동작하는지** 언어 간에 실측 비교하기 위한 하네스가 [`harness/`](harness/README.md)에 있다. 실제 Keycloak 26.6(`it-realm` — 언어별 통합테스트와 동일 realm)을 Docker Compose로 띄우고, 각 언어 SDK로 작성된 동일 [HTTP 계약](harness/contract/CONTRACT.md)(v2 — auth 확장 4엔드포인트 + admin 5리소스)의 샘플 앱을 구동해 검증한다. **8개 언어(Go·C#·Node·Python·Java·PHP·Rust·Ruby) 샘플 앱이 모두 완료**됐다(`harness/apps/{go,dotnet,node,python,java,php,rust,ruby}` — 각각 net/http·ASP.NET Core·Express 5·FastAPI·Spring Boot·Slim 4·axum·Rack/Puma 관용 프레임워크, 호스트 포트 8090~8097).
+
+두 가지 실행 경로가 있다:
 
 ```bash
-cd harness && ./run.sh go dotnet node python java   # 5개 언어 실행 → harness/report/RESULTS.md (기능 게이트 + 성능표)
+cd harness && ./run.sh go dotnet node python java                          # 레거시 k6 부하 실측·비교만 → harness/report/RESULTS.md
+cd harness && ./verify.sh go dotnet node python java php rust ruby         # 8언어 종합 검증·스코어링 → harness/report/SCORECARD.md
 ```
 
-**5개 언어(Go/C#/Node/Python/Java) 샘플 앱이 모두 완료**됐고(`harness/apps/{go,dotnet,node,python,java}` — 각각 net/http·ASP.NET Core·Express 5·FastAPI·Spring Boot 관용 프레임워크), 같은 계약을 재사용해 `./run.sh go dotnet node python java`로 5개 언어를 한 번에 실측 비교한다(checks==1.00 기능 게이트 + 언어간 성능 비교표). CI는 [`.github/workflows/harness.yml`](.github/workflows/harness.yml)에서 PR/푸시엔 빠른 Go 스모크 게이트를, 야간(schedule)·수동(workflow_dispatch)엔 5개 언어 전체 비교를 실행하고 `RESULTS.md`를 아티팩트로 업로드한다.
+`verify.sh`는 언어별로 Keycloak 기동 → 앱 빌드·기동 → **conformance**(`conformance/conformance.mjs`, 계약 준수 assert) → **security**(`security/probe.mjs`, JWT 하드닝 공격 프로브 — alg=none·HS/RS confusion·미지kid·flood 등) → k6 성능을 실행하고, 전 언어 종료 후 **suites**(`suites/run-suite.sh`, 각 SDK 자체 단위테스트+커버리지+린트를 툴체인 이미지에서 실행)를 집계한 뒤, `report/score.mjs`가 **4차원 가중 스코어카드**(기능 30%·보안 30%·커버리지 20%·성능/동형성 20%, 등급 A≥90/B≥80/C≥70/D<70)를 `report/SCORECARD.md`로 산출한다. 한 언어의 앱 빌드/헬스체크 실패는 격리되고 나머지 언어는 계속 진행한다(⚠️ 성능·동형성 차원은 k6 실측 미연동 — conformance 통과율 근사, 후속 작업). CI는 [`.github/workflows/harness.yml`](.github/workflows/harness.yml)에서 PR/푸시엔 빠른 Go 스모크 게이트(`mvp-go`)를, 야간(schedule 03:00 UTC)·수동(workflow_dispatch)엔 5언어 k6 비교(`all-langs`)와 8언어 종합 검증·스코어링(`score-all`, `SCORECARD.md`+`signals/` 아티팩트)을 실행한다.
