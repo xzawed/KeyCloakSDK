@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Harness.Dotnet</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <!-- Xzawed.Keycloak.Sdk PackageReference는 의도적으로 여기 없다: harness/apps/dotnet/App.csproj
+       (ProjectReference로 소스 트리를 직접 참조하는 원본)와 달리, 이 스캐폴딩은 설치 검증용이라
+       소스 트리에 전혀 접근하지 않는다. 실 소비자 명령 dotnet add package Xzawed.Keycloak.Sdk에
+       버전 옵션(0.1.0)을 붙여 런타임에 실행해(consume/dotnet-run.sh) 이 파일에 참조를 추가한다.
+       주의: XML 주석 안에는 하이픈 두 개 연속을 쓸 수 없어 CLI 플래그 표기를 그대로 옮기지 않았다.
+       Program.cs는 harness/apps/dotnet/Program.cs를 무변경 COPY로 재사용한다(consume/dotnet.Dockerfile). -->
+</Project>

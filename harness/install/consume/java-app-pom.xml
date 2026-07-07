@@ -1,0 +1,57 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <!--
+    설치 검증용 harness 앱 pom(java 참조 구현) — harness/apps/java/pom.xml의 설치판 등가물이다.
+    harness/apps/java/pom.xml은 로컬 reactor를 `mvn install`한 뒤 io.github.xzawed:keycloak-sdk를
+    0.1.0-SNAPSHOT 좌표로 참조하지만(harness/apps/java/Dockerfile의 원래 빌드 방식), 이 pom은 그 대신
+    mvn-repo에서 저장소 해석으로 설치된 릴리스 좌표 0.1.0을 BOM import + 무버전 의존으로 참조한다
+    (node가 harness/apps/node/package.json 대신 최소 신규 package.json을 쓴 것과 동형 — 소스는
+    harness/apps/java/src를 무변경 COPY하되, 빌드 서술자만 "설치된 패키지" 소비 방식으로 교체).
+  -->
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.3.5</version>
+    <relativePath/>
+  </parent>
+  <groupId>io.github.xzawed.harness</groupId>
+  <artifactId>harness-app-java-installed</artifactId>
+  <version>0.0.1</version>
+  <properties>
+    <java.version>21</java.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>io.github.xzawed</groupId>
+        <artifactId>keycloak-sdk-bom</artifactId>
+        <version>0.1.0</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <!-- mvn-repo(nginx 정적 .m2)에서 저장소 해석으로 설치된 릴리스 좌표(무버전 — BOM이 고정). -->
+      <groupId>io.github.xzawed</groupId>
+      <artifactId>keycloak-sdk</artifactId>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>
