@@ -28,7 +28,7 @@ jobs:
           path: harness/report/RESULTS.md
 
   all-langs:
-    # 5언어 전체 비교 — 수동(workflow_dispatch) + 야간(schedule)에만
+    # 5언어 k6 성능비교(레거시 run.sh) — 수동(workflow_dispatch) + 야간(schedule)에만
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -44,3 +44,27 @@ jobs:
         with:
           name: harness-results-all
           path: harness/report/RESULTS.md
+
+  score-all:
+    # 8언어 종합 검증·스코어링(conformance+security+suites+score → SCORECARD.md) — 수동+야간에만
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: 8언어 종합 검증·스코어링
+        run: cd harness && ./verify.sh go dotnet node python java php rust ruby
+      - name: 스코어카드 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scorecard
+          path: harness/report/SCORECARD.md
+      - name: 신호 파일 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: signals
+          path: harness/report/signals/
