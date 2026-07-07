@@ -1,0 +1,10 @@
+# 로컬 빌드 산출물(quickstart/consume 정적검증·에이전트 실행 잔존) — 컨테이너 빌드는 ephemeral이라
+# 정상 경로에선 안 생기나, 호스트에서 dotnet/cargo/go 등을 직접 돌리면 남는다.
+**/obj/
+**/bin/
+**/target/
+**/vendor/
+**/node_modules/
+**/dist/
+**/*.crate
+**/Cargo.lock.bak
