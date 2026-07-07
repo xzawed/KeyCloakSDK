@@ -1,0 +1,42 @@
+# Verdaccio 설정 — node 설치·동작 검증(install-verify.sh) 참조 구현용 로컬 npm 레지스트리.
+#
+# 리서치 부록(docs/superpowers/specs/2026-07-07-install-recipes-research.md) §node:
+#   "레지스트리: verdaccio/verdaccio:6.7.4(node:24-alpine 베이스). config packages.'**'.publish: $all
+#    (익명 게시 허용)."
+#
+# access/unpublish도 함께 $all로 열어둔다(부록엔 publish만 명시돼 있으나, 이 하네스는 소비자의
+# `npm install`(읽기)과 publish/node.sh의 멱등 재실행(`npm unpublish --force`)도 필요하므로
+# 세 권한 모두 익명 허용해야 전체 흐름이 성립한다 — publish만 열면 install이 401로 막힌다).
+#
+# uplinks.npmjs + proxy: npmjs 덕에 소비자는 `npm install @xzawed/keycloak-sdk@0.1.0
+# --registry http://verdaccio:4873` 단 하나의 --registry로 트랜지티브 의존성(express·jose·
+# openid-client·@keycloak/keycloak-admin-client 등)까지 이 uplink을 거쳐 실 npmjs.org로 프록시된다
+# — install-net 안의 소비자 컨테이너는 "verdaccio" 서비스명만 DNS로 해석하면 된다.
+storage: /verdaccio/storage/data
+
+auth:
+  htpasswd:
+    file: /verdaccio/storage/htpasswd
+    max_users: -1
+
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+
+packages:
+  '@*/*':
+    access: $all
+    publish: $all
+    unpublish: $all
+    proxy: npmjs
+
+  '**':
+    access: $all
+    publish: $all
+    unpublish: $all
+    proxy: npmjs
+
+# 게시 명령의 ENEEDAUTH는 npm 클라이언트측 사전검사라 실제 인증 여부와 무관하게 토큰 존재만 확인한다
+# — publish/node.sh가 더미 `_authToken`을 .npmrc에 심어 통과시키고, 위 $all 권한 덕에 Verdaccio는
+# 그 토큰을 검증하지 않고 익명 요청으로 그대로 허용한다.
+listen: 0.0.0.0:4873

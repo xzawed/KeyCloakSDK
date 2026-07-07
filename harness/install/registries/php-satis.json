@@ -1,0 +1,18 @@
+{
+    "name": "harness/php-satis",
+    "homepage": "http://satis-web",
+    "repositories": [
+        { "type": "vcs", "url": "/build/php-src" }
+    ],
+    "require": {
+        "xzawed/keycloak-sdk": "*"
+    },
+    "require-dependencies": false,
+    "require-dev-dependencies": false,
+    "archive": {
+        "directory": "dist",
+        "format": "zip",
+        "skip-dev": true
+    },
+    "output-html": false
+}

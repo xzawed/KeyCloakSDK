@@ -68,3 +68,29 @@ jobs:
         with:
           name: signals
           path: harness/report/signals/
+
+  install-all:
+    # 8언어 설치·동작 검증(로컬 레지스트리에서 게시 패키지 설치 → quickstart+conformance+security)
+    # → INSTALL-MATRIX.md. 수동(workflow_dispatch)+야간(schedule)에만. Docker 빌드 무거워 타임아웃 넉넉히.
+    # 부분실패 격리 — 한 언어 실패는 매트릭스에 격리되고 잡 자체는 GREEN(매트릭스가 결과 담체).
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: 8언어 설치·동작 검증
+        run: cd harness/install && ./install-verify.sh go dotnet node python java php rust ruby
+      - name: 설치 매트릭스 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-matrix
+          path: harness/install/report/INSTALL-MATRIX.md
+      - name: 설치 신호 파일 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-signals
+          path: harness/install/report/signals/

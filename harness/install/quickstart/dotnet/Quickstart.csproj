@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <!-- Xzawed.Keycloak.Sdk PackageReference는 런타임에 dotnet-run.sh가 dotnet add package
+       Xzawed.Keycloak.Sdk에 버전 옵션(0.1.0)을 붙여 추가한다(단일소스 옵션은 쓰지 않는다:
+       nuget.config의 packageSourceMapping이 local/nuget.org를 가른다).
+       주의: XML 주석 안에는 하이픈 두 개 연속을 쓸 수 없어 CLI 플래그 표기를 그대로 옮기지 않았다. -->
+</Project>

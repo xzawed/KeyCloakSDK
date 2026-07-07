@@ -1,0 +1,14 @@
+# .cargo/config.toml 템플릿(rust 참조 구현) — consume 컨테이너가 이 파일을 /app/.cargo/config.toml로
+# 배치해 crates-io 소스를 로컬 cargo-local-registry **디렉터리**로 치환한다(리서치 부록
+# docs/superpowers/specs/2026-07-07-install-recipes-research.md §rust).
+#
+# /opt/local-registry는 docker run 시 publish/rust.sh의 산출물
+# (harness/install/publish/out/rust-local-registry/)을 read-only 볼륨으로 마운트하는 컨테이너 내부
+# 경로다(consume/rust.Dockerfile은 이 파일을 이미지에 담기만 하고, 실제 배치는 런타임에
+# consume/rust-run.sh가 /app/.cargo/config.toml로 복사한다 — Cargo는 현재 작업 디렉터리부터 상위로
+# .cargo/config.toml을 탐색하므로 /app에 두면 /app/quickstart·/app/app 양쪽 빌드에 공통 적용된다).
+[source.crates-io]
+replace-with = "local"
+
+[source.local]
+local-registry = "/opt/local-registry"
