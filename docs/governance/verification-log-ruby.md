@@ -1,6 +1,6 @@
 # 검증 로그 — Ruby SDK
 
-[AI 거버넌스 프레임워크](ai-governance-framework.md)에 따른 Ruby SDK(`keycloak-sdk`, RubyGems) 태스크별 정량 검증 기록. 브랜치 `feature/ruby-sdk`(아직 `main` 미병합, PR 예정). 8번째(마지막) 언어.
+[AI 거버넌스 프레임워크](ai-governance-framework.md)에 따른 Ruby SDK(`keycloak-sdk`, RubyGems) 태스크별 정량 검증 기록. 브랜치 `feature/ruby-sdk` → `main` 병합됨 (PR #19, 2026-07-07). 8번째(마지막) 언어.
 
 **툴체인**: 포터블 Ruby **3.4.10**(`C:\Users\dirtc\tools\ruby`, non-devkit RubyInstaller — 리포지토리 미커밋) + Bundler 2. 명령은 `ruby/`에서: `bundle exec rspec`(단위) / `RUN_INTEGRATION=1 bundle exec rspec spec/integration --tag integration`(통합, Docker 필요) / `bundle exec rubocop`(린트) / `bundle exec bundler-audit check --update`(의존성 감사). ⚠️ **로컬 Windows 빌드는 MSYS2/DevKit이 필요**하다(racc·prism·bigdecimal 등 네이티브 gem — Windows precompiled 없음). MSYS2 pacman의 c-ares 리졸버가 이 네트워크에서 DNS를 못 풀어(mingw curl/MSYS2 wget은 정상) `pacman.conf`의 `XferCommand = /usr/bin/wget --timeout=30 -O %o %u` + origin-pinned mirrorlist + `/etc/hosts` 핀으로 우회(Rust의 VS2019 BuildTools 로컬 셋업과 동류 — CI ubuntu-latest는 무관, `ridk install 3`로 1회 셋업).
 
