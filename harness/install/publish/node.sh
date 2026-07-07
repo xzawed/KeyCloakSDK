@@ -15,6 +15,11 @@ INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"       # harness/install
 HARNESS_DIR="$(cd "$INSTALL_DIR/.." && pwd)"      # harness
 REPO_ROOT="$(cd "$HARNESS_DIR/.." && pwd)"        # 리포지토리 루트
 
+# lib.sh에서 hostpath()를 가져온다(Windows에서 docker에 넘길 호스트 경로를 D:/... 형식으로 변환).
+# lib.sh의 log()는 아래 로컬 log() 정의가 덮어쓰므로 [publish/node] 접두는 유지된다.
+# shellcheck source=../lib.sh
+. "$INSTALL_DIR/lib.sh"
+
 PKG_VER="0.1.0"
 PKG_SPEC="@xzawed/keycloak-sdk@${PKG_VER}"
 TARBALL="xzawed-keycloak-sdk-${PKG_VER}.tgz"
@@ -25,7 +30,7 @@ REGISTRY_URL="http://verdaccio:4873"
 log() { printf '[publish/node] %s\n' "$*" >&2; }
 
 log "1/4 SDK 빌드 — harness/apps/node/Dockerfile의 'sdk' 스테이지 재사용(npm ci && npm run build && npm pack)"
-if ! docker build --target sdk -t "$BUILDER_IMAGE" -f "$HARNESS_DIR/apps/node/Dockerfile" "$REPO_ROOT"; then
+if ! docker build --target sdk -t "$BUILDER_IMAGE" -f "$(hostpath "$HARNESS_DIR/apps/node/Dockerfile")" "$(hostpath "$REPO_ROOT")"; then
   log "SDK 빌드 실패(docker build --target sdk)"
   exit 1
 fi
@@ -39,7 +44,7 @@ if ! docker create --name "$EXTRACT_CONTAINER" "$BUILDER_IMAGE" >/dev/null; then
   log "추출용 컨테이너 생성 실패(docker create)"
   exit 1
 fi
-docker cp "$EXTRACT_CONTAINER:/pack/." "$EXTRACT_DIR/"
+docker cp "$EXTRACT_CONTAINER:/pack/." "$(hostpath "$EXTRACT_DIR")/"
 docker rm -f "$EXTRACT_CONTAINER" >/dev/null 2>&1 || true
 
 if [ ! -f "$EXTRACT_DIR/$TARBALL" ]; then
@@ -57,7 +62,7 @@ log "빌드 산출물 확인됨: $EXTRACT_DIR/$TARBALL"
 # 설정 때문에 필요해진 로컬 전용 오버라이드(CLI 플래그가 publishConfig보다 우선).
 publish_once() {
   docker run --rm --network install-net \
-    -v "$EXTRACT_DIR:/work" \
+    -v "$(hostpath "$EXTRACT_DIR"):/work" \
     node:22-alpine sh -c "
       set -e
       echo '//verdaccio:4873/:_authToken=local-anon' > ~/.npmrc
@@ -81,7 +86,7 @@ if PUBLISH_OUT=$(publish_once 2>&1); then
   log "게시 성공"
 else
   echo "$PUBLISH_OUT"
-  if echo "$PUBLISH_OUT" | grep -qiE "EPUBLISHCONFLICT|cannot publish over"; then
+  if echo "$PUBLISH_OUT" | grep -qiE "EPUBLISHCONFLICT|E409|409 Conflict|already present|cannot publish over"; then
     log "409 EPUBLISHCONFLICT 감지 — 이전 실행의 잔존 게시로 간주, unpublish --force 후 재게시"
     if ! UNPUB_OUT=$(unpublish_once 2>&1); then
       echo "$UNPUB_OUT"

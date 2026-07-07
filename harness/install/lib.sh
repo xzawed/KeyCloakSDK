@@ -63,13 +63,25 @@ emit_signal() {
 
 # wait_healthy <url> [timeout_s=120]
 # curl -fsS 로 url을 폴링한다(2xx 이외 응답 또는 연결 실패는 재시도). 준비되면 0, 타임아웃이면 1.
+# hostpath <msys-path> — 네이티브 Windows docker에 넘길 '호스트 경로'를 Docker가 받는 형식으로 변환한다.
+# install-verify.sh가 컨테이너 경로 보호를 위해 MSYS_NO_PATHCONV=1을 전역 설정하므로 호스트 경로(build
+# 컨텍스트·`-v`의 호스트측·`-f`)는 자동 변환되지 않는다 → docker.exe가 `/d/Source/...`를 못 찾는다.
+# Git Bash(Windows)에선 cygpath -m으로 `D:/Source/...`(forward-slash, docker 허용)로, Linux CI에선 그대로.
+# 컨테이너측 경로(`:/work` 등)는 감싸지 말 것 — 그대로 리터럴이어야 한다.
+hostpath() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
+}
+
 wait_healthy() {
   local url="$1" timeout_s="${2:-120}"
   local start now
   start=$(date +%s)
   log "wait_healthy: waiting for $url (timeout ${timeout_s}s)"
   while true; do
-    if curl -fsS -o /dev/null "$url" 2>/dev/null; then
+    # NOTE: `curl -o /dev/null`는 Windows mingw curl에서 /dev/null을 유효 출력 경로로 못 열어
+    # HTTP 200에도 exit 23(write error)을 내 wait_healthy가 성공을 감지 못 한다(MSYS_NO_PATHCONV=1로
+    # 경로 변환도 안 됨). 셸 리다이렉트 `>/dev/null`은 bash가 처리하므로 Windows/Linux 양쪽 이식.
+    if curl -fsS "$url" >/dev/null 2>&1; then
       log "wait_healthy: $url is up"
       return 0
     fi

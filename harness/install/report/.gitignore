@@ -1,4 +1,3 @@
-# install-matrix.mjs가 읽는 언어별 신호(생성 아티팩트) — 마찬가지로 커밋 제외
 signals/
-# install-matrix.mjs 산출물(생성 아티팩트) — 마찬가지로 커밋 제외
+status/
 INSTALL-MATRIX.md

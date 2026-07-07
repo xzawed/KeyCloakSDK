@@ -89,40 +89,56 @@ run_lang_node() {
   fi
   emit_signal "$lang" "artifactBuilt=true" "published=true"
 
-  log "[$lang] consume 이미지 빌드 (quickstart 설치 스모크가 RUN 단계에 내장 — 실패 시 빌드 자체가 실패)"
-  if ! docker build --network install-net -f "$PWD/consume/node.Dockerfile" -t install-consume-node "$harness_dir/.."; then
-    fail_lang "$lang" install "consume/node.Dockerfile 빌드 실패(설치 또는 quickstart 스모크 실패 가능성)"
+  # consume 이미지는 파일만 담는다(빌드타임 네트워크 의존 없음 — BuildKit이 build-time custom --network을
+  # 지원하지 않으므로). install/quickstart/boot는 런타임 엔트리포인트(node-run.sh)가 install-net에서 수행.
+  log "[$lang] consume 이미지 빌드(빌드타임 네트워크 없음)"
+  if ! docker build -f "$(hostpath "$PWD/consume/node.Dockerfile")" -t install-consume-node "$(hostpath "$harness_dir/..")"; then
+    fail_lang "$lang" install "consume/node.Dockerfile 빌드 실패"
     return
   fi
-  emit_signal "$lang" "installed=true" "quickstartOk=true"
 
-  log "[$lang] 앱 컨테이너 기동(설치된 패키지 소비)"
+  log "[$lang] 앱 컨테이너 기동(install→quickstart→boot @ install-net)"
+  local status_dir="$PWD/report/status/$lang"
+  rm -rf "$status_dir"; mkdir -p "$status_dir"
   docker rm -f "$app_container" >/dev/null 2>&1 || true
   if ! docker run -d --name "$app_container" --network install-net \
+      -v "$(hostpath "$status_dir"):/status" \
+      -e REGISTRY_URL=http://verdaccio:4873 \
       -e KC_SERVER_URL=http://keycloak:8080 -e KC_REALM=it-realm \
       -e KC_CLIENT_ID=it-client -e KC_CLIENT_SECRET=it-secret -e APP_PORT=8090 \
       -p "${app_port_host}:8090" install-consume-node >/dev/null; then
     fail_lang "$lang" install "앱 컨테이너 기동(docker run) 실패"
     return
   fi
-  if ! wait_healthy "http://localhost:${app_port_host}/healthz" 60; then
-    fail_lang "$lang" install "앱 healthz 타임아웃"
-    docker logs "$app_container" 2>&1 | tail -n 100 >&2 || true
+
+  # 런타임 run.sh가 install→quickstart→boot 수행: install/quickstart는 /status 마커로, boot는 healthz로 판정.
+  wait_healthy "http://localhost:${app_port_host}/healthz" 180 || true
+  if [ ! -f "$status_dir/installed.ok" ]; then
+    fail_lang "$lang" install "설치 마커 부재 — 레지스트리 설치(npm install) 실패"
+    docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
     docker rm -f "$app_container" >/dev/null 2>&1 || true
     return
   fi
-  emit_signal "$lang" "appBoot=true"
+  emit_signal "$lang" "installed=true"
+  [ -f "$status_dir/quickstart.ok" ] && emit_signal "$lang" "quickstartOk=true"
+  if curl -fsS "http://localhost:${app_port_host}/healthz" >/dev/null 2>&1; then
+    emit_signal "$lang" "appBoot=true"
+  else
+    fail_lang "$lang" boot "앱 healthz 미응답(부팅 실패)"
+    docker rm -f "$app_container" >/dev/null 2>&1 || true
+    return
+  fi
 
   # conformance/security — harness/verify.sh와 동일한 러너(node:20-alpine + conformance.mjs/probe.mjs)를
   # install-net에서 재사용한다. install-net은 compose.install.yml에 명시 name(install-net)으로 고정돼
   # 있으므로(verify.sh와 달리) 동적 네트워크명 조회가 필요 없다. BASE는 컨테이너명(도커 DNS 별칭)으로 지정.
   log "[$lang] conformance"
-  docker run --rm --network install-net -v "$harness_dir/conformance:/c" -v "$PWD/report/signals:/out" \
+  docker run --rm --network install-net -v "$(hostpath "$harness_dir/conformance"):/c" -v "$(hostpath "$PWD/report/signals"):/out" \
     -e "BASE=http://${app_container}:8090" -e KC_URL=http://keycloak:8080 -e "LANG=$lang" \
     node:20-alpine node /c/conformance.mjs || true
 
   log "[$lang] security"
-  docker run --rm --network install-net -v "$harness_dir/security:/s" -v "$PWD/report/signals:/out" \
+  docker run --rm --network install-net -v "$(hostpath "$harness_dir/security"):/s" -v "$(hostpath "$PWD/report/signals"):/out" \
     -e "BASE=http://${app_container}:8090" -e KC_URL=http://keycloak:8080 -e "LANG=$lang" \
     node:20-alpine node /s/probe.mjs || true
 
@@ -174,6 +190,8 @@ fi
 
 for L in "${LANGS[@]}"; do
   log "== [$L] 설치·동작 검증 시작 =="
+  # 언어별 신호를 fresh로 리셋 — 이전(실패)실행의 stale error/필드가 누적 신호에 남지 않도록.
+  printf '{"lang":"%s"}\n' "$L" > "report/signals/${L}.install.json"
   run_lang "$L"
 done
 
