@@ -6,6 +6,8 @@
 - Python → PyPI (Trusted Publisher/OIDC), 태그 `py-v*`, 워크플로 `.github/workflows/python-release.yml`
 
 > ⚠️ 배포는 되돌릴 수 없다(같은 좌표/버전 재배포 불가). dry-run으로 산출물을 먼저 검증하라(각 절 마지막).
+>
+> ✅ **실배포 전 최종 검증**: [`harness/install/`](harness/install/README.md)의 설치·동작 검증 하네스가 각 SDK를 **게시 패키지처럼 로컬 레지스트리에서 설치**하고 실 Keycloak에 대해 동작(quickstart+conformance+security)까지 검증한다 — 실배포와 동형인 설치 경로를 사전 확인. `cd harness/install && ./install-verify.sh <lang>`(8/8 언어 로컬 실측 GREEN). 실배포 태그를 push하기 전에 해당 언어를 여기서 통과시키는 것을 권장.
 
 ---
 
