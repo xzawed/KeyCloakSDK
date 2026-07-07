@@ -1,0 +1,10 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+# Dockerfile이 리포 ruby/를 /src/ruby로 복사(빌드 컨텍스트 = 리포 루트).
+gem "keycloak-sdk", path: "/src/ruby"
+gem "faraday", "~> 2.0" # ROPC(app-local 헬퍼)용 — keycloak-sdk의 전이 의존성이나 명시 고정
+gem "sinatra", "~> 4.0"
+gem "puma", "~> 6.4"
+gem "rackup", "~> 2.1"
