@@ -331,7 +331,7 @@ run_lang_python() {
     fail_lang "$lang" registry "pypiserver 기동(docker compose up) 실패"
     return
   fi
-  if ! wait_healthy "http://localhost:18092/simple/" 120; then
+  if ! wait_healthy "http://localhost:18892/simple/" 120; then
     fail_lang "$lang" registry "pypiserver가 제한시간 내 healthy 상태가 되지 않았다"
     return
   fi
