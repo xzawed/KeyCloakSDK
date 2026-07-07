@@ -2,5 +2,7 @@
 *.json
 # aggregate.mjs 산출물(생성 아티팩트) — 마찬가지로 커밋 제외
 RESULTS.md
+# score.mjs 산출물(생성 아티팩트) — 마찬가지로 커밋 제외
+SCORECARD.md
 # suites/run-suite.sh의 언어별 원본 로그(마지막 줄만 *.suite.json으로 추출) — 생성 아티팩트, 커밋 제외
 *.raw
