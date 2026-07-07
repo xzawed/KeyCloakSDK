@@ -13,6 +13,7 @@ import com.nimbusds.jwt.PlainJWT
 import com.nimbusds.jwt.SignedJWT
 import kotlinx.coroutines.test.runTest
 import java.time.Duration
+import java.util.Base64
 import java.util.Date
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -34,6 +35,7 @@ internal class JwtValidatorTest {
         aud: List<String> = listOf(audience),
         expiresInMillis: Long? = 60_000,
         subject: String = "user-1",
+        notBeforeInMillis: Long? = null,
     ): JWTClaimsSet {
         val builder =
             JWTClaimsSet
@@ -43,6 +45,9 @@ internal class JwtValidatorTest {
                 .subject(subject)
         if (expiresInMillis != null) {
             builder.expirationTime(Date(System.currentTimeMillis() + expiresInMillis))
+        }
+        if (notBeforeInMillis != null) {
+            builder.notBeforeTime(Date(System.currentTimeMillis() + notBeforeInMillis))
         }
         return builder.build()
     }
@@ -154,6 +159,26 @@ internal class JwtValidatorTest {
         }
 
     @Test
+    fun `tampered payload under a trusted kid is rejected by signature verification`() =
+        runTest {
+            // 위 `unknown kid` 프로브는 키 SELECTION 단계에서 이미 실패해 서명검증 코드에 결코 도달하지
+            // 못한다 — 그래서 RSASSA 서명검증 자체가 일하고 있다는 증거가 되지 못한다. 여기서는 신뢰된
+            // kid로 유효하게 서명(키 선택 성공)한 뒤 payload 세그먼트만 재인코딩해 원본 서명과 불일치시킨다.
+            // 서명이 실제로 페이로드를 바인딩하고 있다면 이 변조 토큰은 반드시 거부되어야 한다.
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, audience)
+            val token = signedRs256(key, claims(subject = "user-1"))
+            val parts = token.split(".")
+            check(parts.size == 3) { "expected header.payload.signature, got ${parts.size} segments" }
+            val decoder = Base64.getUrlDecoder()
+            val encoder = Base64.getUrlEncoder().withoutPadding()
+            val tamperedPayload = String(decoder.decode(parts[1]), Charsets.UTF_8).replace("user-1", "user-2")
+            val tamperedToken = "${parts[0]}.${encoder.encodeToString(tamperedPayload.toByteArray(Charsets.UTF_8))}.${parts[2]}"
+
+            assertFailsWith<TokenValidationException> { validator.validate(tamperedToken) }
+        }
+
+    @Test
     fun `malformed token is rejected`() =
         runTest {
             val validator = JwtValidator.withStaticJwks(JWKSet(), issuer, audience)
@@ -251,6 +276,25 @@ internal class JwtValidatorTest {
                     skew = Duration.ofSeconds(30),
                 )
             val token = signedRs256(key, claims(expiresInMillis = -50_000))
+
+            assertFailsWith<TokenValidationException> { validator.validate(token) }
+        }
+
+    @Test
+    fun `future nbf beyond clock skew is rejected`() =
+        runTest {
+            // Nimbus의 DefaultJWTClaimsVerifier는 nbf가 존재하면 기본적으로 강제한다(클록스큐 내는 허용).
+            // 이 프로브는 그 동작을 명시적으로 회귀-고정한다: nbf가 스큐(30초)를 훌쩍 넘는 미래(2분 뒤)면
+            // 거부되어야 한다.
+            val key = rsaKey()
+            val validator =
+                JwtValidator.withStaticJwks(
+                    JWKSet(key.toPublicJWK()),
+                    issuer,
+                    audience,
+                    skew = Duration.ofSeconds(30),
+                )
+            val token = signedRs256(key, claims(notBeforeInMillis = 120_000))
 
             assertFailsWith<TokenValidationException> { validator.validate(token) }
         }

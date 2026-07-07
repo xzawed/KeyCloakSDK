@@ -88,8 +88,9 @@ public class JwtValidator private constructor(
                 } catch (e: MalformedURLException) {
                     throw TokenValidationException("Invalid JWKS URI", e)
                 }
-            // JWKSourceBuilder 기본값 = cache + rateLimited + refreshAhead + retrying(DoS-safe): 위조 kid를
-            // 연속 주입해도 JWKS 재조회가 무제한으로 증폭되지 않는다.
+            // JWKSourceBuilder 기본값 중 DoS 방지에 실제로 기여하는 것은 cache + rateLimited(둘 다 기본
+            // true)뿐이다 — 위조 kid를 연속 주입해도 JWKS 재조회가 무제한으로 증폭되지 않는다.
+            // retrying/outageTolerant는 기본 false(비활성)이므로 이 체인에 포함되지 않는다.
             val source: JWKSource<SecurityContext> = JWKSourceBuilder.create<SecurityContext>(jwksUrl, retriever).build()
             return JwtValidator(source, endpoints.issuer, audience, allowedAlgs, config.clockSkew)
         }
