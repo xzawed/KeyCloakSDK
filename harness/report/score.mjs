@@ -53,7 +53,9 @@ export function feedback(dims, signals) {
 
 function loadSignals(lang) {
   const rd = (p) => { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; } };
-  const perfRaw = rd(`report/${lang}.summary.json`); // k6 handleSummary(있으면)
+  // k6 handleSummary(scenarios.js)는 `/report/${LANG}.json`에 쓰고 aggregate.mjs도 `./${lang}.json`을
+  // 읽는다 — perf가 아직 연동 전(perf:null)이라도 파일명은 그 두 소비자와 일치시켜 향후 연동 시 어긋나지 않게 한다.
+  const perfRaw = rd(`report/${lang}.json`); // k6 handleSummary(있으면)
   return {
     conformance: rd(`report/signals/${lang}.conformance.json`),
     security: rd(`report/signals/${lang}.security.json`),
@@ -74,7 +76,7 @@ function main() {
   let md = "# 언어별 종합 스코어카드 (SCORECARD)\n\n";
   md += "| 순위 | 언어 | 기능(30%) | 보안(30%) | 커버리지(20%) | 성능·동형(20%) | **종합** | 등급 |\n|---|---|---|---|---|---|---|---|\n";
   rows.forEach((r, i) => { const d = r.dims; md += `| ${i + 1} | ${r.lang} | ${d.functional} | ${d.security} | ${d.coverage} | ${d.perfiso} | **${d.overall}** | ${grade(d.overall)} |\n`; });
-  md += "\n> 가중: 기능30·보안30·커버리지20·성능/동형성20. 등급 A≥90·B≥80·C≥70·D<70. 성능은 언어간 상대(절대 임계 아님), 나머지 절대 기준. 커버리지는 branch coverage가 실측(>0)된 언어만 branch-가중(line60·branch30·lint10), 미측정 언어(go/php/rust/ruby 등)는 line-가중(line90·lint10)으로 폴백해 미측정을 0%로 벌점하지 않는다.\n> **성능·동형(20%)은 현재 100% 계약 완전성(동형성) 근사값이다** — 성능 실측(k6)은 아직 이 스코어카드에 연동되지 않았다(`perf: null` 하드코딩). k6 perf 연동은 후속 작업.\n\n## 언어별 보완 피드백\n\n";
+  md += "\n> 가중: 기능30·보안30·커버리지20·성능/동형성20. 등급 A≥90·B≥80·C≥70·D<70. 성능은 언어간 상대(절대 임계 아님), 나머지 절대 기준. 커버리지는 branch coverage가 실측(>0)된 언어만 branch-가중(line60·branch30·lint10), 미측정 언어(go/php/rust/ruby 등)는 line-가중(line90·lint10)으로 폴백해 미측정을 0%로 벌점하지 않는다.\n> **성능·동형(20%)은 현재 100% 계약 완전성(동형성) 근사값이다** — 성능 실측(k6)은 아직 이 스코어카드에 연동되지 않았다(`perf: null` 하드코딩). k6 perf 연동은 후속 작업.\n> **보안 30%는 HTTP 레벨 적대적 프로브(alg=none·RS/HS confusion·미지/무-kid·malformed·마스킹·flood)를 측정한다** — aud/iss/exp claim-level 검증은 각 SDK 자체 단위테스트(커버리지 차원)가 커버(realm-서명 토큰 필요로 프로브 범위 밖).\n\n## 언어별 보완 피드백\n\n";
   rows.forEach(r => { md += `### ${r.lang} (${grade(r.dims.overall)}, ${r.dims.overall}점)\n`; feedback(r.dims, r.sig).forEach(f => md += `- ${f}\n`); md += "\n"; });
   fs.writeFileSync("report/SCORECARD.md", md);
   console.log("wrote report/SCORECARD.md");

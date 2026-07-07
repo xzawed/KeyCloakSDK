@@ -4,7 +4,6 @@ set -uo pipefail
 cd "$(dirname "$0")"
 LANGS=("${@:-go dotnet node python java php rust ruby}")
 [ "${#LANGS[@]}" -eq 1 ] && read -ra LANGS <<< "${LANGS[0]}"
-NET=harness_default
 export MSYS_NO_PATHCONV=1
 mkdir -p report/signals
 cleanup() { docker compose --profile apps down -v >/dev/null 2>&1 || true; }
@@ -14,6 +13,13 @@ echo "== Keycloak 기동 =="
 docker compose up -d keycloak
 timeout 240 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" "$(docker compose ps -q keycloak)")" = healthy ]; do sleep 3; done'
 chmod -R 777 report 2>/dev/null || true
+
+# NET는 docker-compose 프로젝트명이 디렉토리 basename("harness")과 같다고 가정한 서비스 DNS 네트워크명이다.
+# COMPOSE_PROJECT_NAME을 다른 값으로 설정하거나 이 디렉토리를 리네임하면 이 가정이 깨져 앱 컨테이너가
+# keycloak 서비스를 DNS로 못 찾고 전 언어 fetch-fail → 스코어카드 전체 0점으로 조용히 실패한다.
+# keycloak이 기동된 뒤(위) 실제 compose 네트워크를 동적으로 조회하고, 실패 시에만 기본값으로 폴백한다.
+NET="$(docker compose ps --format '{{.Networks}}' keycloak 2>/dev/null | head -1)"
+[ -z "$NET" ] && NET=harness_default
 
 for L in "${LANGS[@]}"; do
   echo "== [$L] 앱 빌드·기동 =="
