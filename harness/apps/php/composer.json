@@ -1,0 +1,29 @@
+{
+    "name": "xzawed/keycloak-sdk-harness-app-php",
+    "description": "하네스 샘플 앱 — Slim 4 + xzawed/keycloak-sdk(로컬 path repo)",
+    "type": "project",
+    "license": "Apache-2.0",
+    "require": {
+        "php": "^8.3",
+        "xzawed/keycloak-sdk": "*",
+        "slim/slim": "^4",
+        "slim/psr7": "^1"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "/src/php",
+            "options": {
+                "symlink": false
+            }
+        }
+    ],
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "php-http/discovery": false
+        }
+    }
+}

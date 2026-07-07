@@ -1,0 +1,21 @@
+[package]
+name = "app-rust"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "app-rust"
+path = "src/main.rs"
+
+[dependencies]
+# 로컬 path — 빌드 컨텍스트(리포지토리 루트)에서 Dockerfile이 rust/를 /src/rust로 복사한다.
+keycloak-sdk = { path = "/src/rust" }
+# admin representation 타입(UserRepresentation 등)을 직접 구성하려면 keycloak-sdk와 동일한
+# 크레이트/버전/피처를 써야 한다(같은 타입이어야 AdminClient 메서드에 값으로 전달 가능).
+keycloak = { version = "=26.6.2", default-features = false, features = ["tags-all", "resource-builder", "reqwest12"] }
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde_json = "1"
+# ROPC(Resource Owner Password Credentials)는 SDK 표면에 없다 — 앱이 KC 토큰 엔드포인트로 직접 POST.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

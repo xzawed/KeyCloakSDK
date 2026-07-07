@@ -96,3 +96,48 @@ services:
       keycloak:
         condition: service_healthy
     profiles: ["apps"]
+
+  app-php:
+    build: { context: .., dockerfile: harness/apps/php/Dockerfile }
+    environment:
+      KC_SERVER_URL: http://keycloak:8080
+      KC_REALM: it-realm
+      KC_CLIENT_ID: it-client
+      KC_CLIENT_SECRET: it-secret
+      APP_PORT: "8090"
+    ports:
+      - "8095:8090"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    profiles: ["apps"]
+
+  app-rust:
+    build: { context: .., dockerfile: harness/apps/rust/Dockerfile }
+    environment:
+      KC_SERVER_URL: http://keycloak:8080
+      KC_REALM: it-realm
+      KC_CLIENT_ID: it-client
+      KC_CLIENT_SECRET: it-secret
+      APP_PORT: "8090"
+    ports:
+      - "8096:8090"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    profiles: ["apps"]
+
+  app-ruby:
+    build: { context: .., dockerfile: harness/apps/ruby/Dockerfile }
+    environment:
+      KC_SERVER_URL: http://keycloak:8080
+      KC_REALM: it-realm
+      KC_CLIENT_ID: it-client
+      KC_CLIENT_SECRET: it-secret
+      APP_PORT: "8090"
+    ports:
+      - "8097:8090"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    profiles: ["apps"]
