@@ -54,7 +54,86 @@ not_implemented() {
 # ---------------------------------------------------------------------------------------
 run_lang_go()     { not_implemented go; }     # TODO(T2.2): publish/go.sh(file GOPROXY) → consume/go.Dockerfile
 run_lang_dotnet() { not_implemented dotnet; } # TODO(T2.3): publish/dotnet.sh(BaGetter) → consume/dotnet.Dockerfile
-run_lang_node()   { not_implemented node; }   # TODO(T1.1, 참조구현): publish/node.sh(Verdaccio) → consume/node.Dockerfile
+
+# run_lang_node — node 참조 구현(T1.1). 이후 7개 언어가 이 함수 구조(레지스트리 기동→publish→
+# consume 빌드(quickstart 스모크 내장)→앱 기동→conformance/security 재실행→emit)를 복제한다.
+#
+#   A. Publish  publish/node.sh가 harness/apps/node/Dockerfile의 기존 "sdk" 스테이지를 재사용해
+#               tgz를 빌드하고, Verdaccio(레지스트리)에 그대로 게시한다.
+#   B. Install  consume/node.Dockerfile이 harness/node(SDK 소스) 접근 없이 Verdaccio에서
+#               `npm install @xzawed/keycloak-sdk@0.1.0`으로 설치 → quickstart 상당 스모크(RUN 단계,
+#               실패 시 빌드 자체가 실패) → harness/apps/node/server.js(무변경) 기동.
+#   C. Operate  기존 conformance.mjs/security probe.mjs를 설치된-패키지 앱 컨테이너에 대해 재실행.
+#   D. Report   결과를 report/signals/node.install.json(emit_signal)에 기록.
+run_lang_node() {
+  local lang="node"
+  local app_container="install-app-node"
+  local app_port_host="18090"
+  local harness_dir
+  harness_dir="$(cd .. && pwd)"   # harness/ (conformance·security 스크립트 위치)
+
+  log "[$lang] Verdaccio(레지스트리) 기동"
+  if ! docker compose -f compose.install.yml up -d verdaccio; then
+    fail_lang "$lang" registry "verdaccio 기동(docker compose up) 실패"
+    return
+  fi
+  if ! wait_healthy "http://localhost:4873/-/ping" 120; then
+    fail_lang "$lang" registry "verdaccio가 제한시간 내 healthy 상태가 되지 않았다"
+    return
+  fi
+
+  log "[$lang] publish (publish/node.sh)"
+  if ! ./publish/node.sh; then
+    fail_lang "$lang" publish "publish/node.sh 실패(위 로그 참고)"
+    return
+  fi
+  emit_signal "$lang" "artifactBuilt=true" "published=true"
+
+  log "[$lang] consume 이미지 빌드 (quickstart 설치 스모크가 RUN 단계에 내장 — 실패 시 빌드 자체가 실패)"
+  if ! docker build --network install-net -f "$PWD/consume/node.Dockerfile" -t install-consume-node "$harness_dir/.."; then
+    fail_lang "$lang" install "consume/node.Dockerfile 빌드 실패(설치 또는 quickstart 스모크 실패 가능성)"
+    return
+  fi
+  emit_signal "$lang" "installed=true" "quickstartOk=true"
+
+  log "[$lang] 앱 컨테이너 기동(설치된 패키지 소비)"
+  docker rm -f "$app_container" >/dev/null 2>&1 || true
+  if ! docker run -d --name "$app_container" --network install-net \
+      -e KC_SERVER_URL=http://keycloak:8080 -e KC_REALM=it-realm \
+      -e KC_CLIENT_ID=it-client -e KC_CLIENT_SECRET=it-secret -e APP_PORT=8090 \
+      -p "${app_port_host}:8090" install-consume-node >/dev/null; then
+    fail_lang "$lang" install "앱 컨테이너 기동(docker run) 실패"
+    return
+  fi
+  if ! wait_healthy "http://localhost:${app_port_host}/healthz" 60; then
+    fail_lang "$lang" install "앱 healthz 타임아웃"
+    docker logs "$app_container" 2>&1 | tail -n 100 >&2 || true
+    docker rm -f "$app_container" >/dev/null 2>&1 || true
+    return
+  fi
+  emit_signal "$lang" "appBoot=true"
+
+  # conformance/security — harness/verify.sh와 동일한 러너(node:20-alpine + conformance.mjs/probe.mjs)를
+  # install-net에서 재사용한다. install-net은 compose.install.yml에 명시 name(install-net)으로 고정돼
+  # 있으므로(verify.sh와 달리) 동적 네트워크명 조회가 필요 없다. BASE는 컨테이너명(도커 DNS 별칭)으로 지정.
+  log "[$lang] conformance"
+  docker run --rm --network install-net -v "$harness_dir/conformance:/c" -v "$PWD/report/signals:/out" \
+    -e "BASE=http://${app_container}:8090" -e KC_URL=http://keycloak:8080 -e "LANG=$lang" \
+    node:20-alpine node /c/conformance.mjs || true
+
+  log "[$lang] security"
+  docker run --rm --network install-net -v "$harness_dir/security:/s" -v "$PWD/report/signals:/out" \
+    -e "BASE=http://${app_container}:8090" -e KC_URL=http://keycloak:8080 -e "LANG=$lang" \
+    node:20-alpine node /s/probe.mjs || true
+
+  # conformance.mjs/probe.mjs가 report/signals/node.{conformance,security}.json에 쓴 원본 신호를
+  # install.json의 conformance/security 키로 반영(lib.sh 공유 헬퍼 — 8언어 공통 재사용 대상).
+  emit_conformance_security "$lang"
+
+  docker rm -f "$app_container" >/dev/null 2>&1 || true
+  log "[$lang] 완료"
+}
+
 run_lang_python() { not_implemented python; } # TODO(T2.1): publish/python.sh(pypiserver) → consume/python.Dockerfile
 run_lang_java()   { not_implemented java; }   # TODO(T2.4): publish/java.sh(정적 .m2 nginx) → consume/java.Dockerfile
 run_lang_php()    { not_implemented php; }    # TODO(T2.6): publish/php.sh(Satis) → consume/php.Dockerfile

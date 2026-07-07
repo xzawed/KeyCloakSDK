@@ -37,6 +37,25 @@ services:
   # DNS 해석하도록 한다(하드코딩 IP·extra_hosts 금지 — Windows Docker Desktop glibc-DNS 게차 회피).
   # ---------------------------------------------------------------------------------------
 
+  verdaccio:
+    image: verdaccio/verdaccio:6.7.4
+    volumes:
+      - ./registries/verdaccio.yaml:/verdaccio/conf/config.yaml:ro
+    ports:
+      # install-verify.sh의 wait_healthy(호스트 curl 폴링)가 접근하기 위해 노출(keycloak의 9000과 동일 이유).
+      - "4873:4873"
+    healthcheck:
+      # verdaccio 이미지 자체가 node 런타임(자기 자신을 구동하는 언어)이므로 node로 헬스체크한다 —
+      # keycloak의 bash `/dev/tcp` 트릭과 달리 이 이미지(node:*-alpine, busybox ash)는 bash 존재가
+      # 보장되지 않으므로, 대신 확실히 존재하는 node의 http 클라이언트로 `/-/ping`을 확인한다.
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4873/-/ping',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+    networks:
+      - install-net
+
 networks:
   # 명시적 name을 지정해 compose 프로젝트명 프리픽스와 무관하게 항상 "install-net"으로
   # 고정한다 — 언어별 publish/consume 컨테이너가 `docker run --network install-net`로

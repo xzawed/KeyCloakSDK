@@ -91,3 +91,33 @@ fail_lang() {
   emit_signal "$lang" "installed=false" "appBoot=false" "error=${stage}: ${msg}"
   return 1
 }
+
+# emit_conformance_security <lang>
+# harness/verify.sh와 동일한 conformance.mjs/probe.mjs를 설치된-패키지 앱에 대해 재실행한 뒤(호출자
+# 책임 — 이 함수는 실행하지 않는다) 그 결과 파일 $SIGNALS_DIR/<lang>.conformance.json({passed,failed,checks})
+# 및 $SIGNALS_DIR/<lang>.security.json({defended,total,probes})을 읽어, install-matrix.mjs가 기대하는
+# emit_signal 키(conformance={"passed":..,"failed":..} / security={"defended":..,"total":..})로 반영한다.
+# 파일 부재·JSON 파싱 실패 시 0으로 폴백(크래시 방지) — 8개 언어의 run_lang_<lang>이 conformance.mjs/
+# probe.mjs를 동일하게 $SIGNALS_DIR/<lang>.{conformance,security}.json에 쓰도록 두면(LANG=<lang> env로
+# 자연히 그렇게 된다) 이 헬퍼를 그대로 재사용할 수 있다 — node 참조 구현이 확립한 패턴.
+emit_conformance_security() {
+  local lang="$1"
+  local cjson sjson
+  cjson=$(cd "$SIGNALS_DIR" && node -e '
+    const fs = require("node:fs");
+    try {
+      const j = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      console.log(JSON.stringify({ passed: j.passed ?? 0, failed: j.failed ?? 0 }));
+    } catch { console.log(JSON.stringify({ passed: 0, failed: 0 })); }
+  ' "${lang}.conformance.json" 2>/dev/null)
+  [ -z "$cjson" ] && cjson='{"passed":0,"failed":0}'
+  sjson=$(cd "$SIGNALS_DIR" && node -e '
+    const fs = require("node:fs");
+    try {
+      const j = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      console.log(JSON.stringify({ defended: j.defended ?? 0, total: j.total ?? 0 }));
+    } catch { console.log(JSON.stringify({ defended: 0, total: 0 })); }
+  ' "${lang}.security.json" 2>/dev/null)
+  [ -z "$sjson" ] && sjson='{"defended":0,"total":0}'
+  emit_signal "$lang" "conformance=$cjson" "security=$sjson"
+}
