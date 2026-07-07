@@ -26,26 +26,29 @@ const run = async () => {
     const r = await fetch(`${process.env.KC_URL}/realms/it-realm/protocol/openid-connect/token`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: form });
     token = (await r.json()).access_token; rec("obtain access_token", !!token, r.status);
   });
-  await check("validate 200 (multi-aud)", async () => { const r = await req("POST", "/validate", { token }); rec("validate 200 (multi-aud)", r.status === 200 && !!r.j?.issuer && Array.isArray(r.j?.audience), r.status); });
+  await check("validate 200", async () => { const r = await req("POST", "/validate", { token }); rec("validate 200", r.status === 200 && !!r.j?.issuer && Array.isArray(r.j?.audience) && r.j.audience.length >= 1, r.status); });
   await check("validate rejects garbage 401", async () => { const r = await req("POST", "/validate", { token: "not.a.jwt" }); rec("validate rejects garbage 401", r.status === 401, r.status); });
   await check("introspect active", async () => { const r = await req("POST", "/introspect", { token }); rec("introspect active", r.status === 200 && r.j?.active === true, r.status); });
 
-  // authz-url (오프라인 PKCE S256)
+  // authz-url (오프라인 PKCE S256 + state-in-url + code_verifier 비노출)
   await check("authz-url S256", async () => {
     const r = await req("GET", "/authz-url?redirect_uri=http://x/cb");
-    const u = r.j?.url || ""; rec("authz-url S256", r.status === 200 && /code_challenge_method=S256/.test(u) && /code_challenge=/.test(u) && !!r.j?.state, u.slice(0, 120));
+    const u = r.j?.url || "";
+    const okUrl = /code_challenge_method=S256/.test(u) && /code_challenge=/.test(u) && /[?&]state=/.test(u) && !/code_verifier/.test(u);
+    rec("authz-url S256", r.status === 200 && okUrl && !!r.j?.state, u.slice(0, 120));
   });
 
-  // ROPC → refresh → logout (hasRefresh 가드)
-  await check("token/password", async () => { const r = await req("POST", "/token/password", { username: U, password: P }); global.__hasRefresh = r.j?.hasRefresh === true; rec("token/password", r.status === 200 && r.j?.expiresIn > 0, r.status); });
-  await check("refresh", async () => { if (!global.__hasRefresh) return rec("refresh", true, "skipped(no refresh)"); const r = await req("POST", "/refresh", {}); rec("refresh", r.status === 200 && r.j?.expiresIn > 0, r.status); });
-  await check("logout 204", async () => { if (!global.__hasRefresh) return rec("logout 204", true, "skipped"); const r = await req("POST", "/logout", {}); rec("logout 204", r.status === 204, r.status); });
+  // ROPC → refresh → logout (무조건 실행 — hasRefresh 거짓통과 가드 제거)
+  await check("token/password", async () => { const r = await req("POST", "/token/password", { username: U, password: P }); global.__hasRefresh = r.j?.hasRefresh === true; rec("token/password", r.status === 200 && r.j?.expiresIn > 0 && r.j?.hasRefresh === true, r.status); });
+  await check("refresh", async () => { const r = await req("POST", "/refresh", {}); rec("refresh", r.status === 200 && r.j?.expiresIn > 0, r.status); });
+  await check("logout 204", async () => { const r = await req("POST", "/logout", {}); rec("logout 204", r.status === 204, r.status); });
 
   // admin users CRUD + 오류경로
   const uname = `cf-${rnd()}`; let uid;
   await check("user create 201", async () => { const r = await req("POST", "/admin/users", { username: uname, email: `${uname}@e.com` }); uid = r.j?.id; rec("user create 201", r.status === 201 && !!uid, r.status); });
   await check("user duplicate 409", async () => { const r = await req("POST", "/admin/users", { username: uname, email: `${uname}@e.com` }); rec("user duplicate 409", r.status === 409, r.status); });
   await check("user get 200", async () => { const r = await req("GET", `/admin/users/${uid}`); rec("user get 200", r.status === 200 && r.j?.username === uname, r.status); });
+  await check("user list by username", async () => { const r = await req("GET", `/admin/users?username=${uname}`); rec("user list by username", r.status === 200 && Array.isArray(r.j) && r.j.some(u => u.username === uname), r.status); });
   await check("user delete 204", async () => { const r = await req("DELETE", `/admin/users/${uid}`); rec("user delete 204", r.status === 204, r.status); });
   await check("user get-after-delete 404", async () => { const r = await req("GET", `/admin/users/${uid}`); rec("user get-after-delete 404", r.status === 404, r.status); });
 
@@ -55,11 +58,12 @@ const run = async () => {
   await check("client get 200", async () => { const r = await req("GET", `/admin/clients/${cInternal}`); rec("client get 200", r.status === 200 && r.j?.clientId === cid, r.status); });
   await check("client delete 204", async () => { const r = await req("DELETE", `/admin/clients/${cInternal}`); rec("client delete 204", r.status === 204, r.status); });
   const role = `cf-r-${rnd()}`;
-  await check("role create 201", async () => { const r = await req("POST", "/admin/roles", { name: role }); rec("role create 201", r.status === 201, r.status); });
+  await check("role create 201", async () => { const r = await req("POST", "/admin/roles", { name: role }); rec("role create 201", r.status === 201 && r.j?.name === role, r.status); });
   await check("role get 200", async () => { const r = await req("GET", `/admin/roles/${role}`); rec("role get 200", r.status === 200 && r.j?.name === role, r.status); });
   await check("role delete 204", async () => { const r = await req("DELETE", `/admin/roles/${role}`); rec("role delete 204", r.status === 204, r.status); });
   const grp = `cf-g-${rnd()}`; let gid;
   await check("group create 201", async () => { const r = await req("POST", "/admin/groups", { name: grp }); gid = r.j?.id; rec("group create 201", r.status === 201 && !!gid, r.status); });
+  await check("group get 200", async () => { const r = await req("GET", `/admin/groups/${gid}`); rec("group get 200", r.status === 200 && r.j?.name === grp, r.status); });
   await check("group delete 204", async () => { const r = await req("DELETE", `/admin/groups/${gid}`); rec("group delete 204", r.status === 204, r.status); });
 
   // realms — realm SA는 403(마스터 토큰 미보유 앱)
