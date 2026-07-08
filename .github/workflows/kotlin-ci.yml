@@ -1,0 +1,42 @@
+name: kotlin-ci
+on:
+  push:
+    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml']
+  pull_request:
+    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml']
+permissions:
+  contents: read
+jobs:
+  build-test:
+    name: build + unit test + kover + ktlint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kotlin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      # 단위테스트 100개 + 커버리지 게이트(로직 모듈 라인≥90/브랜치≥85 — 네트워크 경계
+      # AuthClient/admin.*/KeycloakClient omit) + ktlint(무경고). Docker 불필요(integrationTest는 별도 잡).
+      - run: ./gradlew build test koverVerify ktlintCheck
+
+  integration:
+    name: Integration (testcontainers, 실제 Keycloak 26.6)
+    needs: build-test
+    runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → testcontainers-keycloak 동작
+    defaults:
+      run:
+        working-directory: kotlin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Integration E2E (Docker, 실제 Keycloak 26.6 — FullFlowIT)
+        run: ./gradlew integrationTest
