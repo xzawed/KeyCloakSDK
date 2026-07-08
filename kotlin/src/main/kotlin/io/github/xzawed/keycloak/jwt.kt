@@ -24,7 +24,8 @@ import java.time.Duration
 // jwt.kt — JwtValidator: Java SDK의 JwtValidator(io.github.xzawed.keycloak.auth.JwtValidator)와 100%
 // 동형인 하드닝 불변식(§jwt)을 지킨다: RS256 alg 핀 · alg=none/미서명 명시 거부 · iss 정확일치
 // (exactMatchClaims엔 issuer만 — aud를 넣으면 다중값 정상 토큰이 오탐 거부된다) · aud 포함검사 ·
-// exp 필수 · 클록스큐 · DoS-safe JWKS(JWKSourceBuilder 기본값 = cache+rateLimited+refreshAhead+retrying).
+// exp 필수 · 클록스큐 · DoS-safe JWKS(JWKSourceBuilder 기본값 = cache+rateLimited만 활성 —
+// refreshAhead/retrying/outageTolerant는 기본 비활성. 위조 서명은 재조회 유발 안 함·미해결 kid만 rate-limited 재조회).
 public class JwtValidator private constructor(
     jwkSource: JWKSource<SecurityContext>,
     issuer: String,
