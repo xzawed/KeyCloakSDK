@@ -2,3 +2,4 @@
 build/
 !gradle/wrapper/gradle-wrapper.jar
 .kotlin/
+bin/
