@@ -44,36 +44,65 @@ tasks.test {
     useJUnitPlatform()
 }
 
-// integrationTest = 별도 소스셋·태스크(T10) — 단위 `test`는 Docker-free로 유지하고, 실 Keycloak
-// Testcontainers E2E(FullFlowIT)만 이 태스크로 분리한다. `check`(→koverVerify)에는 의존시키지 않는다 —
+// integrationTest = 별도 스위트·태스크(T10) — 단위 `test`는 Docker-free로 유지하고, 실 Keycloak
+// Testcontainers E2E(FullFlowIT)만 이 스위트로 분리한다. `check`(→koverVerify)에는 의존시키지 않는다 —
 // integrationTest는 Docker가 필요해 로컬/CI의 매 빌드마다 강제로 돌리면 부적합하다(Kotlin WBS Task 11의
 // 별도 CI 잡에서 명시 실행). Kover는 `test` 태스크만 계측하므로(기본 동작) integrationTest는 커버리지
 // 집계에 섞이지 않는다.
-sourceSets {
-    val integrationTest by creating {
-        kotlin.srcDir("src/integrationTest/kotlin")
-        resources.srcDir("src/integrationTest/resources")
-        compileClasspath += sourceSets.main.get().output + configurations.testRuntimeClasspath.get()
-        runtimeClasspath += output + compileClasspath
+//
+// ⚠️ 수동 `creating` 소스셋 + `compileClasspath +=`/`runtimeClasspath +=` 오버라이드는 Kotlin 컴파일
+// 출력을 소스셋 `output.classesDirs`에 등록하지 못해 Test 태스크가 "no tests discovered"로 실패한다
+// (실측: FullFlowIT.class는 build/classes/kotlin/integrationTest에 컴파일되나 testClassesDirs에 안 잡힘).
+// jvm-test-suite는 소스셋·Kotlin 컴파일·Test 태스크·JUnit Platform·resources를 Gradle이 정합 배선한다.
+@Suppress("UnstableApiUsage")
+testing {
+    suites {
+        val integrationTest by registering(JvmTestSuite::class) {
+            useJUnitJupiter("6.1.1")
+            dependencies {
+                implementation(project())
+                // 스위트 dependencies 블록엔 kotlin("test") 헬퍼가 없어 좌표를 명시한다(플러그인 kotlin 버전과 일치).
+                // `kotlin.test.Test` typealias(→org.junit.jupiter.api.Test)는 plain kotlin-test가 아니라
+                // kotlin-test-junit5 변형이 제공한다 — 단위 test는 Kotlin 플러그인의 variant-aware 해석이 이를
+                // 자동 선택하나 jvm-test-suite 구성엔 그 해석이 없어 junit5 변형을 직접 지정한다(assertions 포함).
+                implementation("org.jetbrains.kotlin:kotlin-test-junit5:2.2.20")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+                implementation("org.testcontainers:testcontainers:2.0.5")
+                implementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
+                implementation("com.github.dasniko:testcontainers-keycloak:4.2.1")
+            }
+            targets {
+                all {
+                    testTask.configure {
+                        description = "Runs integration tests (Testcontainers, real Keycloak)."
+                        shouldRunAfter(tasks.test)
+                    }
+                }
+            }
+        }
     }
 }
-
-val integrationTestImplementation: Configuration by configurations.getting {
-    extendsFrom(configurations.testImplementation.get())
-}
-
-val integrationTest =
-    tasks.register<Test>("integrationTest") {
-        description = "Runs integration tests (Testcontainers, real Keycloak)."
-        group = "verification"
-        testClassesDirs = sourceSets["integrationTest"].output.classesDirs
-        classpath = sourceSets["integrationTest"].runtimeClasspath
-        useJUnitPlatform()
-        shouldRunAfter(tasks.test)
-    }
 
 // Kover 0.9.x DSL — 네트워크 경계(AuthClient/admin.*/KeycloakClient) omit, 라인90%/브랜치85% 게이트.
 kover {
+    // ⚠️ jvm-test-suite로 등록된 integrationTest는 Kover 0.9.x가 자동으로 계측 대상 테스트 태스크에 포함한다
+    // → 테스트 클래스 FullFlowIT가 커버리지 subject로 집계되고(브랜치 하락), koverVerify가 integrationTest를
+    // 태스크 그래프로 끌어들여 Docker 없는 단위 CI 게이트가 깨진다. disabledForTestTasks는 이 태스크의 계측을
+    // 끄고(리포트 미집계) Kover 리포트 생성이 이 태스크를 트리거하는 것도 방지한다(0.9.x 문서 명시). 이전
+    // 수동 소스셋은 Kover가 몰라 이 조정이 불필요했다.
+    currentProject {
+        instrumentation {
+            // koverVerify 태스크 그래프가 integrationTest(Docker)를 끌어들이지 않게 계측 자체를 끈다.
+            disabledForTestTasks.add("integrationTest")
+        }
+        sources {
+            // ⚠️ disabledForTestTasks만으로는 부족하다 — jvm-test-suite가 integrationTest 소스셋 출력을
+            // 커버리지 subject 집합에 넣어 FullFlowIT 클래스가 측정 대상이 되고, 태스크 미실행 시 0% covered로
+            // 집계돼 총계를 붕괴시킨다(실측: 라인 51%/브랜치 69%). 소스셋 자체를 subject에서 제외해야 한다.
+            excludedSourceSets.add("integrationTest")
+        }
+    }
     reports {
         filters {
             excludes {

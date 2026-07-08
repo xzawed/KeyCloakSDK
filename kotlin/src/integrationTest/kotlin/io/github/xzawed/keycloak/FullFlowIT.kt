@@ -57,8 +57,13 @@ internal class FullFlowIT {
             scopes = listOf("openid"),
         )
 
+    // ⚠️ 반환 타입을 `: Unit`로 명시해야 한다 — `runBlocking { … }`은 블록의 결과 타입 T를 반환하므로
+    // 표현식-본문(`= runBlocking { … }`)에서 블록 마지막 식이 non-Unit이면 메서드가 non-void가 되고,
+    // JUnit Jupiter는 non-void 메서드를 @Test로 인식하지 않아 "no tests discovered"로 실패한다(단위테스트가
+    // `= runTest { … }`로 통과하는 건 JVM에서 runTest가 Unit을 반환해 이미 void이기 때문). `: Unit`은 블록을
+    // `-> Unit`으로 만들어 마지막 식의 값을 버리고 메서드를 void 바이트코드로 컴파일한다.
     @Test
-    fun `full flow — client-credentials to validate to introspect to admin CRUD to realm CRUD to raw`() =
+    fun `full flow — client-credentials to validate to introspect to admin CRUD to realm CRUD to raw`(): Unit =
         runBlocking {
             val suffix = UUID.randomUUID().toString()
 
