@@ -44,6 +44,34 @@ tasks.test {
     useJUnitPlatform()
 }
 
+// integrationTest = 별도 소스셋·태스크(T10) — 단위 `test`는 Docker-free로 유지하고, 실 Keycloak
+// Testcontainers E2E(FullFlowIT)만 이 태스크로 분리한다. `check`(→koverVerify)에는 의존시키지 않는다 —
+// integrationTest는 Docker가 필요해 로컬/CI의 매 빌드마다 강제로 돌리면 부적합하다(Kotlin WBS Task 11의
+// 별도 CI 잡에서 명시 실행). Kover는 `test` 태스크만 계측하므로(기본 동작) integrationTest는 커버리지
+// 집계에 섞이지 않는다.
+sourceSets {
+    val integrationTest by creating {
+        kotlin.srcDir("src/integrationTest/kotlin")
+        resources.srcDir("src/integrationTest/resources")
+        compileClasspath += sourceSets.main.get().output + configurations.testRuntimeClasspath.get()
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
+val integrationTestImplementation: Configuration by configurations.getting {
+    extendsFrom(configurations.testImplementation.get())
+}
+
+val integrationTest =
+    tasks.register<Test>("integrationTest") {
+        description = "Runs integration tests (Testcontainers, real Keycloak)."
+        group = "verification"
+        testClassesDirs = sourceSets["integrationTest"].output.classesDirs
+        classpath = sourceSets["integrationTest"].runtimeClasspath
+        useJUnitPlatform()
+        shouldRunAfter(tasks.test)
+    }
+
 // Kover 0.9.x DSL — 네트워크 경계(AuthClient/admin.*/KeycloakClient) omit, 라인90%/브랜치85% 게이트.
 kover {
     reports {
