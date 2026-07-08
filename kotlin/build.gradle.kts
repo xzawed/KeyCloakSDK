@@ -49,10 +49,13 @@ kover {
     reports {
         filters {
             excludes {
+                // ⚠️ Kover 0.9.x는 와일드카드 없는 정확 클래스명 exclude를 적용하지 않는다(실측: "AuthClient"
+                // 정확명은 무시돼 브랜치 집계됨·"admin.*"만 제외됨) → 네트워크 경계 클래스는 전부 `*` 접미로
+                // 지정한다. `AuthClient*`/`KeycloakClient*`는 클래스 본체 + 파일-레벨 top-level 함수 클래스(…Kt)까지 포함.
                 classes(
-                    "io.github.xzawed.keycloak.AuthClient",
+                    "io.github.xzawed.keycloak.AuthClient*",
                     "io.github.xzawed.keycloak.admin.*",
-                    "io.github.xzawed.keycloak.KeycloakClient",
+                    "io.github.xzawed.keycloak.KeycloakClient*",
                 )
             }
         }
