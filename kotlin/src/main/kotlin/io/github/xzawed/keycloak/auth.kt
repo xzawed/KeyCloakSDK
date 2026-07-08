@@ -181,6 +181,7 @@ public class AuthClient internal constructor(
      * `AutoCloseable`을 구현한다(Node `AuthClient.close()` 동형).
      */
     override fun close() {
+        // 의도적 no-op: 소유하는 커넥션 풀/자원이 없다(위 KDoc 참조). AutoCloseable만 대칭을 위해 구현.
     }
 
     private fun ensureValidator(): JwtValidator {
