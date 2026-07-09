@@ -19,9 +19,14 @@ rr_secret_set() { # <name> → 0 if a repo secret with this name exists
   command -v gh >/dev/null 2>&1 || return 2
   gh secret list 2>/dev/null | awk '{print $1}' | grep -qx "$1"
 }
-rr_url_exists() { # <url> → 0 if HTTP 200
+rr_url_exists() { # <url> → exit 0=게시됨(2xx) 1=미게시(4xx/5xx, curl -f rc=22) 2=unknown(curl 부재·네트워크/타임아웃 실패)
   command -v curl >/dev/null 2>&1 || return 2
-  curl -sfI "$1" >/dev/null 2>&1 || curl -sf "$1" >/dev/null 2>&1
+  if curl -sfI "$1" >/dev/null 2>&1; then return 0; fi
+  # HEAD가 일부 레지스트리(405 등)에서 미지원일 수 있어 GET으로 재확인 — 최종 판정은 이 결과 기준.
+  if curl -sf "$1" >/dev/null 2>&1; then return 0; fi
+  rc=$?
+  [ "$rc" -eq 22 ] && return 1
+  return 2
 }
 rr_tag_exists() { # <glob> → 0 if any matching tag
   [ -n "$(git tag -l "$1" 2>/dev/null | head -1)" ]
@@ -47,9 +52,12 @@ rr_secrets_state() { # <lang> → set|unset|na
 rr_registry_state() { # <lang> → published|exists|unknown  (exists = 확인됨·미게시)
   url="$(df_check_url "$1")"
   [ -z "$url" ] && { echo exists; return; }   # go: 프록시 온디맨드 — 미게시로 간주
-  if rr_url_exists "$url"; then echo published; else
-    # curl 자체가 없거나 네트워크 실패면 unknown, 200 아님이면 exists(미게시)
-    command -v curl >/dev/null 2>&1 && echo exists || echo unknown
+  if rr_url_exists "$url"; then
+    echo published
+  else
+    # curl 부재/네트워크·타임아웃 실패(rc≠22)면 unknown, 확인된 4xx/5xx(rc=22)면 exists(미게시)
+    rc=$?
+    if [ "$rc" -eq 1 ]; then echo exists; else echo unknown; fi
   fi
 }
 
@@ -60,14 +68,22 @@ rr_row() { # <lang>
   tagpat="$(printf "$(df_tag "$L")" '*')"
   if rr_tag_exists "$tagpat"; then tag=present; else tag=none; fi
   verdict="$(rr_verdict "$sec" "$reg" "$tag")"
+  # 스펙§4: OIDC 언어(python/node/ruby)는 secrets=na라도 pending-publisher 사전등록이
+  # API로 확인 불가하고 미등록 시 배포가 실패하므로 "준비완료"를 자동표시하지 않는다
+  # (이미 게시됨/태그존재 판정이 우선하면 그대로 둔다).
+  if [ "$(df_auth "$L")" = OIDC ] && [ "$verdict" = "✅ 준비완료" ]; then
+    verdict="ℹ️ 수동 확인: pending-publisher"
+  fi
   printf '%-8s auth=%-10s secrets=%-6s registry=%-10s tag=%-8s %s\n' "$L" "$(df_auth "$L")" "$sec" "$reg" "$tag" "$verdict"
 }
 
 rr_main() {
   langs="$*"; [ -z "$langs" ] && langs="$DEPLOY_LANGS"
-  command -v gh   >/dev/null 2>&1 || echo "ℹ️ gh 미설치/미인증 — secrets는 '?(na)'로 표시" >&2
+  command -v gh   >/dev/null 2>&1 || echo "ℹ️ gh 미설치/미인증 — 시크릿 필요 언어는 'unset'(⚠️ 설정필요)로 표시됨" >&2
   command -v curl >/dev/null 2>&1 || echo "ℹ️ curl 미설치 — registry는 'unknown'으로 표시" >&2
-  for L in $langs; do df_known "$L" && rr_row "$L" || echo "?? unknown lang: $L" >&2; done
+  for L in $langs; do
+    if df_known "$L"; then rr_row "$L"; else echo "?? unknown lang: $L" >&2; fi
+  done
 }
 
 # --lib: 함수만 로드(테스트용). 그 외: main 실행.

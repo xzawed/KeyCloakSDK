@@ -39,7 +39,7 @@ go → php → rust → dotnet → python → node → ruby → java → kotlin
 ## §1. 공통 원칙
 
 - **태그 드리븐**: 9개 release 워크플로 모두 특정 포맷의 태그 push로만 트리거된다(§0 표의 "태그" 열).
-- **`needs: verify` 게이트**: 모든 release 워크플로는 태그가 가리키는 커밋이 lint/test green이 아니면 배포하지 않는다 — 태그 push 전에 해당 언어의 통상 검증(단위테스트·린트)이 통과해 있어야 한다. 단, 이 게이트는 토큰/OIDC/Maven 언어의 **직접 publish 스텝**에만 실효적이다. PHP(웹훅)·Go(프록시)는 태그 push에 레지스트리가 직접 반응하므로 verify 잡은 GitHub Release 생성/프록시 워밍만 게이트한다 — 이 두 언어는 dry-run을 태그 push 전에 반드시 통과시킬 것.
+- **`needs: verify` 게이트**: 대부분의 release 워크플로는 별도 `verify` 잡이 태그가 가리키는 커밋의 lint/test green을 확인한 뒤에야 publish 잡을 실행한다 — 태그 push 전에 해당 언어의 통상 검증(단위테스트·린트)이 통과해 있어야 한다. 단, 이 게이트는 토큰/OIDC/Maven 언어의 **직접 publish 스텝**에만 실효적이다. PHP(웹훅)·Go(프록시)는 태그 push에 레지스트리가 직접 반응하므로 verify 잡은 GitHub Release 생성/프록시 워밍만 게이트한다 — 이 두 언어는 dry-run을 태그 push 전에 반드시 통과시킬 것. **Java는 별도 `verify` 잡 자체가 없다** — 단일 `release` 잡이 `mvn -Prelease deploy`를 직접 실행하며, `-DskipTests`를 지정하지 않으므로 Maven 라이프사이클이 deploy 전 test+integration-test 페이즈를 인라인으로 실행한다(테스트 실패 시 deploy 페이즈에 도달하지 못해 배포도 실패) — 잡 분리는 없지만 "테스트 green이 아니면 배포되지 않는다"는 동일한 운영상 보증은 성립한다.
 - **human-gate**: 실제 배포 트리거(태그 push)는 반드시 **사람이 직접** 실행한다. `release-trigger.sh`는 명령을 출력만 하며 `git tag`/`git push`를 스스로 실행하지 않는다.
 - **되돌릴 수 없음**: 모든 레지스트리는 동일 버전 재배포를 허용하지 않는다 — 잘못된 태그를 push하면 그 버전 번호는 사실상 소각된다.
 - **dry-run 필수**: 태그 push 전에 반드시 로컬 dry-run(배포 없이 산출물만 빌드)으로 산출물이 정상 생성되는지 확인한다(§0 표 각 언어, `release-trigger.sh` 출력에도 포함).
