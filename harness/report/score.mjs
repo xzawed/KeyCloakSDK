@@ -64,19 +64,34 @@ function loadSignals(lang) {
   };
 }
 
+// k6 summary(report/<lang>.json)의 validate_duration p95(낮을수록 우수)를 perf 원천으로 쓴다 — validate는
+// SDK의 핵심 JWT 검증 경로라 "SDK-in-idiomatic-app" 비용을 가장 대표한다. 미측정(파일·메트릭 부재)이면
+// null → perf 미반영(iso만). k6 summary의 백분위 키는 `p(95)`(괄호 포함)다.
+function validateP95(perfRaw) {
+  const v = perfRaw?.metrics?.validate_duration?.values;
+  if (!v) return null;
+  const p = v["p(95)"] ?? v.p95;
+  return (typeof p === "number" && p > 0) ? p : null;
+}
+
 function main() {
   const langs = process.argv.slice(2);
-  const rows = langs.map(lang => {
-    const sig = loadSignals(lang);
-    return { lang, sig, dims: scoreLang({ ...sig, perf: null }) }; // perf 상대백분위는 아래서 재계산
+  const rows = langs.map(lang => ({ lang, sig: loadSignals(lang) }));
+  // 성능 상대 점수(k6 연동): validate p95를 언어간 상대로 환산 — 최우수(최소) p95=100점, k배 느리면 100/k점.
+  // 절대 임계가 아니라 상대이므로 k6 데이터가 있는 언어끼리만 비교하고, 없는 언어는 perf=null(→ iso만,
+  // 미측정 무벌점 — 커버리지 branch 폴백과 동일 철학). 단일 언어만 측정돼도 자기 자신이 최우수라 100점.
+  const p95s = rows.map(r => validateP95(r.sig._perfRaw)).filter(v => v != null);
+  const bestP95 = p95s.length ? Math.min(...p95s) : null;
+  rows.forEach(r => {
+    const p = validateP95(r.sig._perfRaw);
+    const perf = (bestP95 != null && p != null) ? Math.min(100, (bestP95 / p) * 100) : null;
+    r.dims = scoreLang({ ...r.sig, perf });
   });
-  // 성능 상대 백분위(있으면): validate p95 낮을수록 높은 점수 — 여기선 단순화(perf 없으면 iso만)
-  // (k6 summary 연동은 구현자가 report/<lang>.summary.json 파싱으로 채운다.)
   rows.sort((a, b) => b.dims.overall - a.dims.overall);
   let md = "# 언어별 종합 스코어카드 (SCORECARD)\n\n";
   md += "| 순위 | 언어 | 기능(30%) | 보안(30%) | 커버리지(20%) | 성능·동형(20%) | **종합** | 등급 |\n|---|---|---|---|---|---|---|---|\n";
   rows.forEach((r, i) => { const d = r.dims; md += `| ${i + 1} | ${r.lang} | ${d.functional} | ${d.security} | ${d.coverage} | ${d.perfiso} | **${d.overall}** | ${grade(d.overall)} |\n`; });
-  md += "\n> 가중: 기능30·보안30·커버리지20·성능/동형성20. 등급 A≥90·B≥80·C≥70·D<70. 성능은 언어간 상대(절대 임계 아님), 나머지 절대 기준. 커버리지는 branch coverage가 실측(>0)된 언어만 branch-가중(line60·branch30·lint10), 미측정 언어(go/php/rust/ruby 등)는 line-가중(line90·lint10)으로 폴백해 미측정을 0%로 벌점하지 않는다.\n> **성능·동형(20%)은 현재 100% 계약 완전성(동형성) 근사값이다** — 성능 실측(k6)은 아직 이 스코어카드에 연동되지 않았다(`perf: null` 하드코딩). k6 perf 연동은 후속 작업.\n> **보안 30%는 HTTP 레벨 적대적 프로브(alg=none·RS/HS confusion·미지/무-kid·malformed·마스킹·flood)를 측정한다** — aud/iss/exp claim-level 검증은 각 SDK 자체 단위테스트(커버리지 차원)가 커버(realm-서명 토큰 필요로 프로브 범위 밖).\n\n## 언어별 보완 피드백\n\n";
+  md += "\n> 가중: 기능30·보안30·커버리지20·성능/동형성20. 등급 A≥90·B≥80·C≥70·D<70. 성능은 언어간 상대(절대 임계 아님), 나머지 절대 기준. 커버리지는 branch coverage가 실측(>0)된 언어만 branch-가중(line60·branch30·lint10), 미측정 언어(go/php/rust/ruby 등)는 line-가중(line90·lint10)으로 폴백해 미측정을 0%로 벌점하지 않는다.\n> **성능·동형(20%) = perf(validate p95 언어간 상대, 50%) + 동형성(계약 완전성 근사, 50%)**. k6 summary(report/<lang>.json)의 validate_duration p95를 최우수(최소) 대비 상대점수화(최우수=100점·k배 느리면 100/k점)해 반영한다. k6 미측정 언어는 동형성만 반영(무벌점 — 커버리지 branch 폴백과 동일 철학).\n> **보안 30%는 HTTP 레벨 적대적 프로브(alg=none·RS/HS confusion·미지/무-kid·malformed·마스킹·flood)를 측정한다** — aud/iss/exp claim-level 검증은 각 SDK 자체 단위테스트(커버리지 차원)가 커버(realm-서명 토큰 필요로 프로브 범위 밖).\n\n## 언어별 보완 피드백\n\n";
   rows.forEach(r => { md += `### ${r.lang} (${grade(r.dims.overall)}, ${r.dims.overall}점)\n`; feedback(r.dims, r.sig).forEach(f => md += `- ${f}\n`); md += "\n"; });
   fs.writeFileSync("report/SCORECARD.md", md);
   console.log("wrote report/SCORECARD.md");
