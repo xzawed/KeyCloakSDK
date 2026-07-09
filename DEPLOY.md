@@ -39,7 +39,7 @@ go → php → rust → dotnet → python → node → ruby → java → kotlin
 ## §1. 공통 원칙
 
 - **태그 드리븐**: 9개 release 워크플로 모두 특정 포맷의 태그 push로만 트리거된다(§0 표의 "태그" 열).
-- **`needs: verify` 게이트**: 모든 release 워크플로는 태그가 가리키는 커밋이 lint/test green이 아니면 배포하지 않는다 — 태그 push 전에 해당 언어의 통상 검증(단위테스트·린트)이 통과해 있어야 한다.
+- **`needs: verify` 게이트**: 모든 release 워크플로는 태그가 가리키는 커밋이 lint/test green이 아니면 배포하지 않는다 — 태그 push 전에 해당 언어의 통상 검증(단위테스트·린트)이 통과해 있어야 한다. 단, 이 게이트는 토큰/OIDC/Maven 언어의 **직접 publish 스텝**에만 실효적이다. PHP(웹훅)·Go(프록시)는 태그 push에 레지스트리가 직접 반응하므로 verify 잡은 GitHub Release 생성/프록시 워밍만 게이트한다 — 이 두 언어는 dry-run을 태그 push 전에 반드시 통과시킬 것.
 - **human-gate**: 실제 배포 트리거(태그 push)는 반드시 **사람이 직접** 실행한다. `release-trigger.sh`는 명령을 출력만 하며 `git tag`/`git push`를 스스로 실행하지 않는다.
 - **되돌릴 수 없음**: 모든 레지스트리는 동일 버전 재배포를 허용하지 않는다 — 잘못된 태그를 push하면 그 버전 번호는 사실상 소각된다.
 - **dry-run 필수**: 태그 push 전에 반드시 로컬 dry-run(배포 없이 산출물만 빌드)으로 산출물이 정상 생성되는지 확인한다(§0 표 각 언어, `release-trigger.sh` 출력에도 포함).
@@ -77,7 +77,8 @@ go → php → rust → dotnet → python → node → ruby → java → kotlin
    | Portal 토큰 username | `CENTRAL_TOKEN_USER` | `MAVEN_CENTRAL_USERNAME` | 2번의 토큰 username |
    | Portal 토큰 password | `CENTRAL_TOKEN_PW` | `MAVEN_CENTRAL_PASSWORD` | 2번의 토큰 password |
 
-5. **2단계 수동 release**: 워크플로는 Central Portal **스테이징까지만** 자동 업로드한다. 실제 공개(Publish)는 [Central Portal](https://central.sonatype.com) Deployments 화면에서 **사람이 수동으로 Publish**해야 완료된다(autoPublish 미설정 시).
+5. **⚠️ 미설정 시 동작이 언어마다 다르다(사고 방지를 위해 반드시 숙지)**: Java는 4개 시크릿 중 하나라도 없으면 `mvn -Prelease deploy`가 **하드 실패**한다(워크플로 자체가 실패로 끝나므로 놓치기 어렵다). 반면 Kotlin은 §2-C의 .NET과 동형으로, 4개 시크릿 중 하나라도 없으면 publish 잡이 `::warning::` 로그를 남기고 **조용히 스킵(exit 0)**된다 — Actions는 green으로 끝나지만 Central Portal에는 아무것도 업로드되지 않을 수 있다. `kotlin-v*` 태그를 push한 뒤에는 Actions green만으로 안심하지 말고 반드시 Central Portal Deployments를 직접 확인할 것.
+6. **2단계 수동 release**: 워크플로는 Central Portal **스테이징까지만** 자동 업로드한다. 실제 공개(Publish)는 [Central Portal](https://central.sonatype.com) Deployments 화면에서 **사람이 수동으로 Publish**해야 완료된다(autoPublish 미설정 시).
 
 ### B. OIDC / Trusted Publisher (Python · Node · Ruby)
 
@@ -241,7 +242,7 @@ go → php → rust → dotnet → python → node → ruby → java → kotlin
 3. **`./scripts/release-readiness.sh <lang>`** — 시크릿·레지스트리·태그 준비상태 확인.
 4. **`./scripts/release-trigger.sh <lang> <ver>`** — 버전 범프 안내·dry-run 명령·사전 점검·정확한 태그 명령을 출력(실행은 안 함).
 5. **사람이 태그 push** — 출력된 `git tag ... && git push origin ...`를 그대로 복사해 실행.
-6. **GitHub Actions 확인** — 해당 release 워크플로가 green으로 끝났는지 확인(§2-C의 .NET처럼 조용한 스킵에 주의).
+6. **GitHub Actions 확인** — 해당 release 워크플로가 green으로 끝났는지 확인(§2-C의 .NET **및 §2-A의 Kotlin**처럼 조용한 스킵에 주의 — Java는 하드 실패).
 7. **(Maven Central 계열만) Portal 수동 release** — Java·Kotlin은 Central Portal Deployments에서 사람이 Publish를 눌러야 최종 공개된다.
 
 ---
