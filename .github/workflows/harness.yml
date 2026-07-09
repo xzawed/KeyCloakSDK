@@ -81,7 +81,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - name: 8언어 설치·동작 검증
-        run: cd harness/install && ./install-verify.sh go dotnet node python java php rust ruby
+        run: cd harness/install && ./install-verify.sh go dotnet node python java php rust ruby kotlin
       - name: 설치 매트릭스 업로드
         if: always()
         uses: actions/upload-artifact@v4

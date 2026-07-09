@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 설치·동작 검증 오케스트레이터. Usage: ./install-verify.sh [go dotnet node python java php rust ruby]  (기본 전체)
+# 설치·동작 검증 오케스트레이터. Usage: ./install-verify.sh [go dotnet node python java php rust ruby kotlin]  (기본 전체)
 #
 # 언어별 4단계(harness/install/README 설계 §3 — Publish→Install→Operate→Report)를 순차 실행한다:
 #   A. Publish  publish/<lang>.sh 가 실 배포 산출물을 빌드해 로컬 레지스트리에 게시.
@@ -19,7 +19,7 @@ cd "$(dirname "$0")"
 # shellcheck source=lib.sh
 . ./lib.sh
 
-DEFAULT_LANGS="go dotnet node python java php rust ruby"
+DEFAULT_LANGS="go dotnet node python java php rust ruby kotlin"
 LANGS=("${@:-$DEFAULT_LANGS}")
 [ "${#LANGS[@]}" -eq 1 ] && read -ra LANGS <<< "${LANGS[0]}"
 
@@ -775,7 +775,90 @@ run_lang_ruby() {
   log "[$lang] 완료"
 }
 
-# run_lang <lang> — case 디스패치. 알려진 8언어는 각 run_lang_<lang>으로, 그 외(오탈자·미래 언어)는
+# run_lang_kotlin — Kotlin 구현(java 참조 구조 복제 — Kotlin SDK도 Maven 좌표라 nginx 정적 .m2를 재사용,
+# 별도 staging-m2·서비스명 mvn-repo-kotlin). 소비자는 Gradle 프로젝트(consume/kotlin-app)로 게시된
+# keycloak-sdk-kotlin:0.1.0을 레지스트리에서 해석하고 전이 의존성은 Central에서 받는다.
+run_lang_kotlin() {
+  local lang="kotlin"
+  local app_container="install-app-kotlin"
+  local app_port_host="18098"
+  local harness_dir
+  harness_dir="$(cd .. && pwd)"   # harness/ (conformance·security 스크립트 위치)
+
+  log "[$lang] mvn-repo-kotlin(레지스트리, nginx 정적 .m2) 기동"
+  if ! docker compose -f compose.install.yml up -d mvn-repo-kotlin; then
+    fail_lang "$lang" registry "mvn-repo-kotlin 기동(docker compose up) 실패"
+    return
+  fi
+  # autoindex on 덕에 publish 이전(빈 staging-m2)에도 루트 "/"가 200을 낸다(registries/kotlin-nginx.conf).
+  if ! wait_healthy "http://localhost:18081/" 60; then
+    fail_lang "$lang" registry "mvn-repo-kotlin가 제한시간 내 healthy 상태가 되지 않았다"
+    return
+  fi
+
+  log "[$lang] publish (publish/kotlin.sh)"
+  if ! ./publish/kotlin.sh; then
+    fail_lang "$lang" publish "publish/kotlin.sh 실패(위 로그 참고)"
+    return
+  fi
+  emit_signal "$lang" "artifactBuilt=true" "published=true"
+
+  log "[$lang] consume 이미지 빌드(빌드타임 네트워크 없음)"
+  if ! docker build -f "$(hostpath "$PWD/consume/kotlin.Dockerfile")" -t install-consume-kotlin "$(hostpath "$harness_dir/..")"; then
+    fail_lang "$lang" install "consume/kotlin.Dockerfile 빌드 실패"
+    return
+  fi
+
+  log "[$lang] 앱 컨테이너 기동(install→quickstart→boot @ install-net)"
+  local status_dir="$PWD/report/status/$lang"
+  rm -rf "$status_dir"; mkdir -p "$status_dir"
+  docker rm -f "$app_container" >/dev/null 2>&1 || true
+  if ! docker run -d --name "$app_container" --network install-net \
+      -v "$(hostpath "$status_dir"):/status" \
+      -e KC_SERVER_URL=http://keycloak:8080 -e KC_REALM=it-realm \
+      -e KC_CLIENT_ID=it-client -e KC_CLIENT_SECRET=it-secret -e APP_PORT=8090 \
+      -p "${app_port_host}:8090" install-consume-kotlin >/dev/null; then
+    fail_lang "$lang" install "앱 컨테이너 기동(docker run) 실패"
+    return
+  fi
+
+  # 런타임 run.sh가 install(gradle classes — gradle 9.5.0 배포판 + SDK/Ktor/coroutines/nimbus 트리를 빈
+  # 캐시에서 매번 받으므로 mvn 콜드스타트보다 무겁다, 실측 약 3~5분)→quickstart→boot(installDist)를 수행 —
+  # java(300s)보다 넉넉한 420s 타임아웃을 둔다.
+  wait_healthy "http://localhost:${app_port_host}/healthz" 420 || true
+  if [ ! -f "$status_dir/installed.ok" ]; then
+    fail_lang "$lang" install "설치 마커 부재 — 저장소 해석(gradle classes) 실패"
+    docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
+    docker rm -f "$app_container" >/dev/null 2>&1 || true
+    return
+  fi
+  emit_signal "$lang" "installed=true"
+  [ -f "$status_dir/quickstart.ok" ] && emit_signal "$lang" "quickstartOk=true"
+  if curl -fsS "http://localhost:${app_port_host}/healthz" >/dev/null 2>&1; then
+    emit_signal "$lang" "appBoot=true"
+  else
+    fail_lang "$lang" boot "앱 healthz 미응답(부팅 실패)"
+    docker rm -f "$app_container" >/dev/null 2>&1 || true
+    return
+  fi
+
+  log "[$lang] conformance"
+  docker run --rm --network install-net -v "$(hostpath "$harness_dir/conformance"):/c" -v "$(hostpath "$PWD/report/signals"):/out" \
+    -e "BASE=http://${app_container}:8090" -e KC_URL=http://keycloak:8080 -e "LANG=$lang" \
+    node:20-alpine node /c/conformance.mjs || true
+
+  log "[$lang] security"
+  docker run --rm --network install-net -v "$(hostpath "$harness_dir/security"):/s" -v "$(hostpath "$PWD/report/signals"):/out" \
+    -e "BASE=http://${app_container}:8090" -e KC_URL=http://keycloak:8080 -e "LANG=$lang" \
+    node:20-alpine node /s/probe.mjs || true
+
+  emit_conformance_security "$lang"
+
+  docker rm -f "$app_container" >/dev/null 2>&1 || true
+  log "[$lang] 완료"
+}
+
+# run_lang <lang> — case 디스패치. 알려진 9언어는 각 run_lang_<lang>으로, 그 외(오탈자·미래 언어)는
 # 크래시 없이 not_implemented로 수렴한다 — "언어 본문 없음"이 루프를 끊지 않고 신호만 남기고 계속된다.
 run_lang() {
   local lang="$1"
@@ -788,6 +871,7 @@ run_lang() {
     php) run_lang_php ;;
     rust) run_lang_rust ;;
     ruby) run_lang_ruby ;;
+    kotlin) run_lang_kotlin ;;
     *)
       log "[$lang] 알 수 없는 언어 — not implemented로 기록 후 계속"
       not_implemented "$lang"

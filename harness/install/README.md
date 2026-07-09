@@ -9,7 +9,7 @@
 
 ```bash
 cd harness/install
-./install-verify.sh                                  # 전 8개 언어(기본)
+./install-verify.sh                                  # 전 9개 언어(기본)
 ./install-verify.sh go python                        # 일부만
 ```
 
@@ -42,6 +42,7 @@ D. Report    report/install-matrix.mjs 가 signals/*.install.json → INSTALL-MA
 | ruby | 정적 gem repo(generate_index) | `gem install keycloak-sdk --version 0.1.0 --source …` |
 | php | Satis(정적 type:composer) | `composer require xzawed/keycloak-sdk:^0.1` |
 | rust | cargo-local-registry(소스 치환) | `cargo build --offline`(Cargo.toml `keycloak-sdk="0.1.0"`) |
+| kotlin | nginx 정적 staged .m2(mvn-repo-kotlin) | Gradle: `maven { url }` + `keycloak-sdk-kotlin:0.1.0`(전이 deps는 Central) |
 
 호스트 포트: node 18090 · python 18091 · go 18092 · dotnet 18093 · java 18094 · ruby 18095 · php 18096 · rust 18097(앱 healthz 폴링용). go·rust는 레지스트리 서비스 없이 디렉터리 볼륨을 소비 컨테이너에 마운트한다.
 
