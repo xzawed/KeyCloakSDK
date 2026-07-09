@@ -156,23 +156,23 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 
 ## 가상 사용자 테스트 하네스 (Virtual-User Harness)
 
-문서·유닛/통합테스트와 별개로, 폴리글랏 SDK들이 **실제로 동일하게 동작하는지** 언어 간에 실측 비교하기 위한 하네스가 [`harness/`](harness/README.md)에 있다. 실제 Keycloak 26.6(`it-realm` — 언어별 통합테스트와 동일 realm)을 Docker Compose로 띄우고, 각 언어 SDK로 작성된 동일 [HTTP 계약](harness/contract/CONTRACT.md)(v2 — auth 확장 4엔드포인트 + admin 5리소스)의 샘플 앱을 구동해 검증한다. **8개 언어(Go·C#·Node·Python·Java·PHP·Rust·Ruby) 샘플 앱이 모두 완료**됐다(`harness/apps/{go,dotnet,node,python,java,php,rust,ruby}` — 각각 net/http·ASP.NET Core·Express 5·FastAPI·Spring Boot·Slim 4·axum·Rack/Puma 관용 프레임워크, 호스트 포트 8090~8097).
+문서·유닛/통합테스트와 별개로, 폴리글랏 SDK들이 **실제로 동일하게 동작하는지** 언어 간에 실측 비교하기 위한 하네스가 [`harness/`](harness/README.md)에 있다. 실제 Keycloak 26.6(`it-realm` — 언어별 통합테스트와 동일 realm)을 Docker Compose로 띄우고, 각 언어 SDK로 작성된 동일 [HTTP 계약](harness/contract/CONTRACT.md)(v2 — auth 확장 4엔드포인트 + admin 5리소스)의 샘플 앱을 구동해 검증한다. **9개 언어(Go·C#·Node·Python·Java·PHP·Rust·Ruby·Kotlin) 샘플 앱이 모두 완료**됐다(`harness/apps/{go,dotnet,node,python,java,php,rust,ruby,kotlin}` — 각각 net/http·ASP.NET Core·Express 5·FastAPI·Spring Boot·Slim 4·axum·Rack/Puma·Ktor/Netty 관용 프레임워크, 호스트 포트 8090~8098).
 
 두 가지 실행 경로가 있다:
 
 ```bash
 cd harness && ./run.sh go dotnet node python java                          # 레거시 k6 부하 실측·비교만 → harness/report/RESULTS.md
-cd harness && ./verify.sh go dotnet node python java php rust ruby         # 8언어 종합 검증·스코어링 → harness/report/SCORECARD.md
+cd harness && ./verify.sh go dotnet node python java php rust ruby kotlin  # 9언어 종합 검증·스코어링 → harness/report/SCORECARD.md
 ```
 
-`verify.sh`는 언어별로 Keycloak 기동 → 앱 빌드·기동 → **conformance**(`conformance/conformance.mjs`, 계약 준수 assert) → **security**(`security/probe.mjs`, JWT 하드닝 공격 프로브 — alg=none·HS/RS confusion·미지kid·flood 등) → k6 성능을 실행하고, 전 언어 종료 후 **suites**(`suites/run-suite.sh`, 각 SDK 자체 단위테스트+커버리지+린트를 툴체인 이미지에서 실행)를 집계한 뒤, `report/score.mjs`가 **4차원 가중 스코어카드**(기능 30%·보안 30%·커버리지 20%·성능/동형성 20%, 등급 A≥90/B≥80/C≥70/D<70)를 `report/SCORECARD.md`로 산출한다. 한 언어의 앱 빌드/헬스체크 실패는 격리되고 나머지 언어는 계속 진행한다(⚠️ 성능·동형성 차원은 k6 실측 미연동 — conformance 통과율 근사, 후속 작업). CI는 [`.github/workflows/harness.yml`](.github/workflows/harness.yml)에서 PR/푸시엔 빠른 Go 스모크 게이트(`mvp-go`)를, 야간(schedule 03:00 UTC)·수동(workflow_dispatch)엔 5언어 k6 비교(`all-langs`)와 8언어 종합 검증·스코어링(`score-all`, `SCORECARD.md`+`signals/` 아티팩트)을 실행한다.
+`verify.sh`는 언어별로 Keycloak 기동 → 앱 빌드·기동 → **conformance**(`conformance/conformance.mjs`, 계약 준수 assert) → **security**(`security/probe.mjs`, JWT 하드닝 공격 프로브 — alg=none·HS/RS confusion·미지kid·flood 등) → k6 성능을 실행하고, 전 언어 종료 후 **suites**(`suites/run-suite.sh`, 각 SDK 자체 단위테스트+커버리지+린트를 툴체인 이미지에서 실행)를 집계한 뒤, `report/score.mjs`가 **4차원 가중 스코어카드**(기능 30%·보안 30%·커버리지 20%·성능/동형성 20%, 등급 A≥90/B≥80/C≥70/D<70)를 `report/SCORECARD.md`로 산출한다. 한 언어의 앱 빌드/헬스체크 실패는 격리되고 나머지 언어는 계속 진행한다(성능·동형성 차원은 **k6 연동됨** — k6 summary의 validate p95를 언어간 상대점수[최우수=100·k배=100/k]로 반영, k6 미측정 언어는 동형성만 무벌점). CI는 [`.github/workflows/harness.yml`](.github/workflows/harness.yml)에서 PR/푸시엔 빠른 Go 스모크 게이트(`mvp-go`)를, 야간(schedule 03:00 UTC)·수동(workflow_dispatch)엔 5언어 k6 비교(`all-langs`)와 9언어 종합 검증·스코어링(`score-all`, `SCORECARD.md`+`signals/` 아티팩트)을 실행한다.
 
 ### 설치·동작 검증 하네스 (Install-&-Operate)
 
 위 하네스가 SDK를 **소스 경로**로 소비하는 것과 달리, [`harness/install/`](harness/install/README.md)는 실배포 없이 **각 SDK를 "게시된 패키지처럼" Docker 로컬 레지스트리에서 설치**하고 실 Keycloak에 대해 동작(quickstart + conformance + security)까지 검증한다 — 배포 산출물의 설치 경로(매니페스트·메타데이터·의존성 해석)를 실배포 전 최종 확인.
 
 ```bash
-cd harness/install && ./install-verify.sh          # 전 8개 언어 → harness/install/report/INSTALL-MATRIX.md
+cd harness/install && ./install-verify.sh          # 전 9개 언어 → harness/install/report/INSTALL-MATRIX.md
 ```
 
-각 언어의 로컬 레지스트리(node=Verdaccio·python=pypiserver·go=file GOPROXY·dotnet=BaGetter·java=nginx 정적 .m2·ruby=gem-index·php=Satis·rust=cargo-local-registry)에서 **실제 설치 명령과 동일**(소스 URL만 로컬)하게 설치하고, 소스 트리 없는 클린 컨테이너에서 부팅·동작한다. **8/8 언어 로컬 실측 전 셀 GREEN**(conformance 26/26·security 9/9). CI는 `install-all` 잡(야간/수동·`INSTALL-MATRIX.md` 아티팩트)으로 실행한다.
+각 언어의 로컬 레지스트리(node=Verdaccio·python=pypiserver·go=file GOPROXY·dotnet=BaGetter·java=nginx 정적 .m2·ruby=gem-index·php=Satis·rust=cargo-local-registry·kotlin=nginx 정적 .m2(mvn-repo-kotlin, Gradle))에서 **실제 설치 명령과 동일**(소스 URL만 로컬)하게 설치하고, 소스 트리 없는 클린 컨테이너에서 부팅·동작한다. **9/9 언어 로컬 실측 전 셀 GREEN**(conformance 26/26·security 9/9). CI는 `install-all` 잡(야간/수동·`INSTALL-MATRIX.md` 아티팩트)으로 실행한다.
