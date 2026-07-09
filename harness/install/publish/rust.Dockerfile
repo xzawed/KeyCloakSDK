@@ -13,10 +13,12 @@
 # (소비자 격리망)과는 무관하다. rust:1.88-alpine(musl) 베이스라 Windows Docker Desktop의 glibc-DNS
 # 게차도 없다.
 #
-# ⚠️ 소요시간: cargo package --locked의 verify 빌드가 SDK 전체(keycloak/openidconnect/jsonwebtoken/
-# reqwest/tokio 등, ring·rustls 네이티브 컴파일 포함)를 컴파일한다 — harness/apps/rust/Dockerfile의
-# 게차 코멘트와 동일 이유로 첫 빌드는 15~25분 안팎. 이후 rust/ 소스가 바뀌지 않는 한 Docker 레이어
-# 캐시로 재실행은 즉시 끝난다.
+# ⚠️ 소요시간: `cargo package --no-verify`(아래 1단계)는 verify 빌드를 생략하므로 이 publish 이미지는
+# 더 이상 SDK 전체(keycloak/openidconnect/jsonwebtoken/reqwest/tokio, ring·rustls 네이티브 포함)를
+# 컴파일하지 않는다 — .crate tarball 생성 + 트랜지티브 클로저 다운로드(cargo local-registry sync)만
+# 남아 수 분이면 끝난다(cargo-local-registry 설치 레이어는 항상 캐시). SDK의 실제 컴파일·검증은
+# consume 단계(consume/rust-run.sh의 cargo build)가 어차피 수행하므로 여기서의 verify 빌드는
+# 중복이었다 — rust가 install 경로에서 SDK를 두 번 컴파일하던 것을 한 번으로 줄인 최적화.
 FROM rust:1.88-alpine AS registry-builder
 
 RUN apk add --no-cache build-base openssl-dev openssl-libs-static perl cmake pkgconfig git jq
@@ -43,11 +45,13 @@ COPY rust/ /work/rust/
 # 1) keycloak-sdk 본체 패키징 — cargo publish와 동일 tarball(target/package/keycloak-sdk-0.1.0.crate).
 #    ⚠️ rust/Cargo.lock은 라이브러리라 rust/.gitignore가 커밋에서 제외한다 — 신선한 CI 체크아웃에는
 #    lockfile이 없으므로 패키징 직전에 새로 생성한다(--locked는 쓰지 않음: 패키징 자체는 lockfile 일치를
-#    요구하지 않고, 없는 lockfile을 --locked로 요구하면 이 단계가 즉시 실패한다). verify 빌드가 포함돼
-#    시간이 오래 걸리는 단계.
+#    요구하지 않고, 없는 lockfile을 --locked로 요구하면 이 단계가 즉시 실패한다).
+#    ⚠️ --no-verify: 패키징 후 verify 빌드(SDK 전체 재컴파일, 15~25분)를 생략한다. .crate tarball은
+#    그대로 생성되고(4단계가 이 파일을 복사·주입), SDK의 실제 컴파일·검증은 consume 단계(cargo build
+#    --offline)가 어차피 수행하므로 verify 빌드는 중복이었다 — install 경로의 이중 컴파일 제거.
 WORKDIR /work/rust
 RUN cargo generate-lockfile
-RUN cargo package
+RUN cargo package --no-verify
 
 # 2) 트랜지티브 클로저 매니페스트 — harness/apps/rust/Cargo.toml(axum 등 앱 전용 의존성이 추가된
 #    실제 소비 매니페스트)을 그대로 재사용하되 path 의존성만 이 빌드 레이아웃(/work/rust)에 맞게

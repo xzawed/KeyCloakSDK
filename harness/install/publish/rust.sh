@@ -20,8 +20,11 @@
 # Docker 빌드 캐시 덕에 rust/ 소스가 바뀌지 않았다면 cargo package/generate-lockfile/sync 레이어는
 # 재사용된다(툴체인 설치 레이어는 항상 캐시됨).
 #
-# ⚠️ 소요시간: cargo package --locked의 verify 빌드가 SDK 전체를 컴파일한다(harness/apps/rust/
-# Dockerfile 게차 코멘트와 동일 이유 — ring/rustls 등 네이티브 컴파일). 첫 실행은 15~25분 안팎.
+# ⚠️ 소요시간: Dockerfile 1단계가 `cargo package --no-verify`로 verify 빌드(SDK 전체 재컴파일)를
+# 생략하므로, 이 publish는 더 이상 SDK를 컴파일하지 않는다 — .crate 생성 + 트랜지티브 클로저
+# 다운로드(cargo local-registry sync)만 남아 수 분이면 끝난다(cargo-local-registry 설치 레이어는
+# 항상 캐시). SDK의 실제 컴파일은 consume 단계(cargo build --offline)가 수행한다 — 예전엔 publish의
+# verify 빌드 + consume 빌드로 SDK를 두 번 컴파일했으나 이제 한 번이다.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"

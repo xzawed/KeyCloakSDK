@@ -1,0 +1,14 @@
+# Line-ending normalization (repo-root policy).
+#
+# Shell scripts run via `sh`/`bash` — inside Alpine (busybox) containers in the
+# install/verify harnesses and on CI (Linux). They MUST be checked out with LF.
+#
+# Without this, a contributor whose git has `core.autocrlf=true` (the common
+# Windows default) gets the LF-committed blobs materialized as CRLF in the
+# working tree. `docker COPY` then carries the CRLF into the image, where
+# busybox `sh /app/run.sh` rejects the first `set -u` as `set: illegal option -`
+# (the trailing `\r` is parsed as an option) and the entrypoint crashes before
+# any real work runs. `eol=lf` overrides `core.autocrlf`, so the working tree is
+# always LF regardless of the contributor's global git config.
+*.sh    text eol=lf
+gradlew text eol=lf
