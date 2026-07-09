@@ -2,7 +2,7 @@
 
 Keycloak polyglot SDK를 로컬에서 설치하고, 첫 토큰 발급 · JWT 검증 · 관리 API 호출까지 최소 코드로 실행하는 안내입니다. 이 SDK는 **여러 프로그래밍 언어**(현재 Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby)로 제공되며, 언어마다 관용적이되 개념·계층·흐름은 동형(isomorphic)입니다.
 
-> ⚠️ **여덟 SDK 모두 아직 미배포입니다(human-gated 릴리스).** Maven Central·PyPI·npm·Go 모듈 태그·NuGet·Packagist·crates.io·RubyGems를 통한 설치는 아직 동작하지 않습니다. 현재는 **로컬 설치가 기본 경로**입니다(아래 각 언어의 "로컬 설치" 참고). 실배포 절차는 [DEPLOY.md](../../DEPLOY.md)를 참고하세요.
+> ⚠️ **아홉 SDK 모두 아직 미배포입니다(human-gated 릴리스).** Maven Central·PyPI·npm·Go 모듈 태그·NuGet·Packagist·crates.io·RubyGems를 통한 설치는 아직 동작하지 않습니다. 현재는 **로컬 설치가 기본 경로**입니다(아래 각 언어의 "로컬 설치" 참고). 실배포 절차는 9언어 통합 [DEPLOY.md](../../DEPLOY.md)를 참고하세요(준비상태는 `scripts/release-readiness.sh`, 태그 명령은 `scripts/release-trigger.sh <lang> <ver>`로 확인 — 둘 다 태그를 자동 push하지 않는 human-gate).
 
 > 🖥️ **먼저 Keycloak *서버*가 필요합니다.** 이 SDK는 클라이언트 라이브러리라 **붙을 Keycloak 서버**가 있어야 동작합니다(서버는 이 SDK에 포함되지 않는 별도 완제품). 로컬 체험은 Docker 한 줄 `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`, **프로덕션 배포**는 [Keycloak 서버 배포 가이드](deploying-keycloak-server.md)를 참고하세요.
 

@@ -14,7 +14,7 @@
 
 ## step-0 — 기존 SDK 실배포 (사람 게이트)
 
-새 언어로 확장하기 전, **이미 완성된 Java·Python SDK를 실제로 배포**하는 것이 최우선 로드맵 항목이다. 두 SDK는 현재 `0.1.0-SNAPSHOT`(미배포)이며, 배포는 되돌릴 수 없으므로(같은 좌표/버전 재배포 불가) 반드시 dry-run으로 산출물을 먼저 검증한다. 전체 절차는 [DEPLOY.md](../../DEPLOY.md)를 따른다.
+새 언어로 확장하기 전, **이미 완성된 9개 SDK(Java·Python·Node·Go·.NET·PHP·Rust·Ruby·Kotlin)를 실제로 배포**하는 것이 최우선 로드맵 항목이다. 모두 현재 미배포(`0.1.0`, Java는 `-SNAPSHOT`)이며, 배포는 되돌릴 수 없으므로(같은 좌표/버전 재배포 불가) 반드시 dry-run으로 산출물을 먼저 검증한다. 전체 절차는 **9언어 통합 [DEPLOY.md](../../DEPLOY.md)**(준비상태 매트릭스 + 인증 모델별 1회 설정 + 언어별 상세, PR #30)를 따른다 — `scripts/release-readiness.sh [lang…]`로 언어별 준비상태(시크릿·레지스트리·태그·OIDC pending-publisher)를 읽기전용으로 확인하고, `scripts/release-trigger.sh <lang> <ver>`로 정확한 태그 push 명령·dry-run·체크리스트를 **출력만** 받는다(둘 다 태그를 자동 push하지 않는 human-gate). 아래 상세 체크리스트는 Java·Python 예시다(나머지 7개는 DEPLOY.md §3 참고).
 
 > **로컬 설치(미배포 상태)**: 두 SDK 모두 아직 퍼블릭 레지스트리에 없으므로 `pip install keycloak-sdk`/Maven Central 좌표 해석은 **아직 동작하지 않는다**. 로컬 검증은 다음으로 한다 — Java: `mvn -f java/pom.xml install -DskipITs=true`(Docker 불필요 · → 좌표 `io.github.xzawed:keycloak-sdk:0.1.0-SNAPSHOT`), Python: `pip install -e python`(또는 `cd python && python -m build`, 배포명 `keycloak-sdk`).
 
