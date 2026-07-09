@@ -1,0 +1,5 @@
+# Gradle/Kotlin 빌드 산출물 — 하네스 앱은 Dockerfile이 컨테이너에서 빌드한다(소스만 커밋).
+build/
+.gradle/
+.kotlin/
+bin/

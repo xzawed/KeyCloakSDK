@@ -1,6 +1,6 @@
 # Virtual-User Test Harness
 
-폴리글랏 Keycloak SDK(Go/C#/Node/Python/Java/PHP/Rust/Ruby — 8개 언어)를 위한 **가상 사용자(virtual-user) 부하·회귀 테스트 + 종합 검증·스코어링 하네스**. 실제 Keycloak 26.6(`it-realm` — 언어별 통합테스트와 동일 realm)을 Docker Compose로 띄우고, 각 언어 SDK로 작성된 동일 스펙의 샘플 앱(8개 언어 모두 완료, [`contract/CONTRACT.md`](contract/CONTRACT.md) v2)을 공통 HTTP 계약으로 노출시켜 두 축으로 검증한다: (1) k6 기반 드라이버로 동형(isomorphic) 부하 시나리오를 실측·비교(레거시 `run.sh`), (2) 계약 conformance·보안 하드닝 프로브·SDK 자체 스위트(단위+커버리지+린트)를 언어별로 실행해 4차원 점수로 집계(`verify.sh` → `report/SCORECARD.md` — 아래 "검증·스코어링" 절 참고).
+폴리글랏 Keycloak SDK(Go/C#/Node/Python/Java/PHP/Rust/Ruby/Kotlin — 9개 언어)를 위한 **가상 사용자(virtual-user) 부하·회귀 테스트 + 종합 검증·스코어링 하네스**. 실제 Keycloak 26.6(`it-realm` — 언어별 통합테스트와 동일 realm)을 Docker Compose로 띄우고, 각 언어 SDK로 작성된 동일 스펙의 샘플 앱(9개 언어 모두 완료, [`contract/CONTRACT.md`](contract/CONTRACT.md) v2)을 공통 HTTP 계약으로 노출시켜 두 축으로 검증한다: (1) k6 기반 드라이버로 동형(isomorphic) 부하 시나리오를 실측·비교(레거시 `run.sh`), (2) 계약 conformance·보안 하드닝 프로브·SDK 자체 스위트(단위+커버리지+린트)를 언어별로 실행해 4차원 점수로 집계(`verify.sh` → `report/SCORECARD.md` — 아래 "검증·스코어링" 절 참고).
 
 각 앱은 그 언어의 **관용 프레임워크**로 SDK를 소비한다 — 따라서 성능 실측은 순수 SDK 비용이 아니라 "SDK-in-idiomatic-app"(프레임워크 오버헤드 포함) 실측이다.
 
@@ -14,8 +14,9 @@
 | php | Slim 4 | [`apps/php/`](apps/php/) | 8095 |
 | rust | axum | [`apps/rust/`](apps/rust/) | 8096 |
 | ruby | Rack(Puma) | [`apps/ruby/`](apps/ruby/) | 8097 |
+| kotlin | Ktor(Netty) | [`apps/kotlin/`](apps/kotlin/) | 8098 |
 
-모든 앱은 컨테이너 **내부 8090**을 사용하고(계약 단순화), 호스트로만 8090~8097로 다르게 매핑한다.
+모든 앱은 컨테이너 **내부 8090**을 사용하고(계약 단순화), 호스트로만 8090~8098로 다르게 매핑한다.
 
 > ⚠️ **앱 빌드 이미지는 Alpine(musl) 베이스를 쓴다.** Debian/glibc 빌드 이미지는 Docker Desktop(Windows) 내장 DNS 프록시가 패키지 레지스트리(nuget/pypi/maven·npm의 Fastly CNAME 체인)를 glibc 리졸버에 실패로 돌려줘 `dotnet restore`/`pip install`/Maven 다운로드가 DNS 오류로 막힌다. musl 리졸버는 동일 환경에서 정상 동작하고 Linux 네이티브 Docker(CI)에서도 문제없어, 호스트별 `extra_hosts`/IP 고정 없이 이식성 있게 동작하는 근본 해결책이다(공유 compose 파일엔 하드코딩 IP가 없다).
 
@@ -23,7 +24,7 @@
 
 ```
 harness/
-├─ docker-compose.yml     # keycloak(기본) + app-{go,dotnet,node,python,java,php,rust,ruby}(profile: apps)
+├─ docker-compose.yml     # keycloak(기본) + app-{go,dotnet,node,python,java,php,rust,ruby,kotlin}(profile: apps)
 ├─ keycloak/
 │  └─ harness-realm.json  # go/testdata/it-realm-realm.json 재사용(realm import)
 ├─ contract/
@@ -36,7 +37,8 @@ harness/
 │  ├─ java/               # Java 샘플 앱(Spring Boot)
 │  ├─ php/                # PHP 샘플 앱(Slim 4)
 │  ├─ rust/               # Rust 샘플 앱(axum)
-│  └─ ruby/               # Ruby 샘플 앱(Rack/Puma)
+│  ├─ ruby/               # Ruby 샘플 앱(Rack/Puma)
+│  └─ kotlin/             # Kotlin 샘플 앱(Ktor/Netty)
 ├─ driver/                # k6 부하 드라이버(scenarios.js)
 ├─ conformance/
 │  └─ conformance.mjs     # 계약 준수 검사(CONTRACT.md 엔드포인트별 assert) → signals/<lang>.conformance.json
@@ -82,7 +84,7 @@ docker compose down -v
 
 ```bash
 cd harness
-./verify.sh go dotnet node python java php rust ruby   # 8개 언어 전체(기본값도 이 8개)
+./verify.sh go dotnet node python java php rust ruby kotlin   # 9개 언어 전체(기본값도 이 9개)
 ./verify.sh go node                                     # 로컬 스모크용으로 1~2개 언어만
 cat report/SCORECARD.md
 ```

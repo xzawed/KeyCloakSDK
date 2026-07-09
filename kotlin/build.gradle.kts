@@ -139,9 +139,18 @@ tasks.named("check") {
 
 // Central Portal 배포(vanniktech maven.publish) — CI 시크릿(ORG_GRADLE_PROJECT_ 접두):
 // mavenCentralUsername / mavenCentralPassword / signingInMemoryKey / signingInMemoryKeyPassword
+// ⚠️ signAllPublications()는 in-memory 서명 키가 주입됐을 때만 호출한다 — 키 없이 호출하면
+// publication에 .asc 서명 아티팩트가 포함되어 `publishToMavenLocal`(로컬 검증·하네스 소스빌드)이
+// "no configured signatory"로 실패한다. CI 릴리스(kotlin-release.yml)는 ORG_GRADLE_PROJECT_signingInMemoryKey를
+// 주입하므로 서명이 켜지고, 로컬/하네스는 무서명으로 mavenLocal에 게시된다(vanniktech 표준 관용).
+val signingKeyPresent: Boolean =
+    providers.gradleProperty("signingInMemoryKey").isPresent ||
+        providers.environmentVariable("ORG_GRADLE_PROJECT_signingInMemoryKey").isPresent
 mavenPublishing {
     publishToMavenCentral()
-    signAllPublications()
+    if (signingKeyPresent) {
+        signAllPublications()
+    }
 
     coordinates("io.github.xzawed", "keycloak-sdk-kotlin", version.toString())
 

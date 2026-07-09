@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 종합 검증 파이프라인. Usage: ./verify.sh [go dotnet node python java php rust ruby]  (기본 전체)
+# 종합 검증 파이프라인. Usage: ./verify.sh [go dotnet node python java php rust ruby kotlin]  (기본 전체)
 set -uo pipefail
 cd "$(dirname "$0")"
-LANGS=("${@:-go dotnet node python java php rust ruby}")
+LANGS=("${@:-go dotnet node python java php rust ruby kotlin}")
 [ "${#LANGS[@]}" -eq 1 ] && read -ra LANGS <<< "${LANGS[0]}"
 export MSYS_NO_PATHCONV=1
 mkdir -p report/signals
