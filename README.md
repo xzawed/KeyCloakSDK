@@ -129,15 +129,21 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 
 ## 현재 상태
 
-**Java · Python · Node.js · Go · C#/.NET SDK 완료 · `main` 병합**(Java PR #1, Python PR #2/#4, Node PR #12, Go PR #13, C#/.NET PR #14). 각 언어 전 Phase(기반→core→auth→admin→facade→통합테스트→배포&문서) 구현, **실제 Keycloak 26.6(.4) Testcontainers 통합테스트 GREEN**, 로직 커버리지 게이트(라인 ≥90%/브랜치 ≥85%) 통과. Python은 sync + async(`keycloak_sdk.aio`) 모두 제공. Node는 ESM·async-only, Go는 sync + `context.Context`, C#/.NET은 async-first(`Task<T>`+`CancellationToken`).
+**9개 언어 SDK 전부 완료 · `main` 병합.** 각 언어가 전 Phase(기반 → core → auth → admin → facade → 통합테스트 → 배포&문서)를 구현하고, **실제 Keycloak 26.6(.4) 통합테스트가 GREEN**이며, 로직 커버리지 게이트(라인 ≥90% / 브랜치 ≥85%)를 통과합니다. JWT 검증은 아홉 언어 모두 자체 강화 구현입니다([§전략](#전략)).
 
-**PHP SDK 완료 · `main` 병합 (PR #17).** WBS Task 1~12 전체 구현(스캐폴딩 → masking/exc → config → tokens/oidc → tokenprovider → jwks → jwt → auth → admin → client → 통합테스트 → CI/문서). 단위테스트 64개 + 통합테스트(docker CLI 셸아웃, 실제 Keycloak 26.6) 3개(`FullFlowIT`) = 총 67개 GREEN, 집계 로직 커버리지 100.00%(게이트 ≥90%), `phpstan analyse`(level max)·`php-cs-fixer` 통과. 6번째 언어로 선행 5개 SDK의 게차가 선반영되어 통합테스트 신규 버그 0건.
+| SDK | PR | 테스트 (단위 + 통합) | 로직 커버리지 | 특이 |
+|---|---|---|---|---|
+| Java | #1 | 123 (117 + 6) | 게이트 라인 90 / 브랜치 85 | 기준 구현 |
+| Python | #2 · #4 | 235 (224 + 11) | 로직 100% 강제 | sync + async(`aio`) |
+| Node | #12 | 76 (71 + 5) | 라인 100 / 브랜치 94 | ESM · async-only |
+| Go | #13 | 41 (40 + 1) | 95.2% | sync + `context.Context` |
+| C# / .NET | #14 | 59 (58 + 1) | 97.34 / 93.47 | async-first |
+| PHP | #17 | 67 (64 + 3) | 100% | `final readonly class` |
+| Rust | #18 | 35 (34 + 1) | 94.85% | edition 2024 · async |
+| Ruby | #19 | 74 (73 + 1) | 100 / 93.48 | faraday 직접 admin |
+| Kotlin | #23 | 101 (100 + 1) | 99.24 / 85.71 | 코루틴 · JVM 스택 재사용 |
 
-**Rust SDK 완료 · `main` 병합됨 (PR #18).** WBS Task 1~12 전체 구현(스캐폴딩 → error → config → tokens/oidc → token_provider → jwks → jwt → auth → admin → client → 통합테스트 → CI/문서). edition 2024 · async-only(tokio). 단위테스트 34개 + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 1개(E2E `full_flow` — 전 흐름·5 admin 리소스) = 총 35개 GREEN, 로직 모듈 라인 커버리지 94.85%(게이트 ≥90%), `cargo clippy -D warnings`·`cargo fmt --check` 통과. 7번째 언어로 E2E 신규 SDK 버그 0건. 최종리뷰 fix wave(1건)로 admin이 캐싱 `ClientCredentialsTokenProvider`를 쓰도록 수정(§4 캐시 불변식 복원) + `config.scopes` threading.
-
-**Ruby SDK 완료 · `main` 병합됨 (PR #19).** WBS Task 1~12 전체 구현(스캐폴딩 → errors/masking → config → tokens/oidc/http → token_provider → jwks → jwt → auth → admin → client → 통합테스트 → CI/문서). sync-only · 예외 계급 관용. 단위테스트 73개 + 통합테스트(docker CLI 셸아웃, 실제 Keycloak 26.6) 1개(E2E `full_flow`) = 총 74개 GREEN, 로직 모듈 커버리지 라인 100.0%/브랜치 93.48%(게이트 ≥90/≥85), `rubocop` 무경고·`bundler-audit` 통과. 8번째(마지막) 언어로 E2E 신규 SDK 버그 0건(PHP·Rust에 이은 세 번째 무결함 사례). admin에 성숙한 gem이 없어 `faraday`로 Admin REST를 직접 구현.
-
-**Kotlin SDK 완료 · `main` 병합됨 (PR #23).** WBS Task 1~12 전체 구현(스캐폴딩 → errors → config → tokens/oidc → tokenprovider → jwt → auth → admin → client → 통합테스트 → CI/문서). JVM 자매 Java SDK의 검증된 라이브러리 스택(`keycloak-admin-client`+Nimbus `oauth2-oidc-sdk`+`nimbus-jose-jwt`)을 코루틴(`suspend`+`runInterruptible(Dispatchers.IO)`) 관용으로 재래핑 — 신규 라이브러리 리스크 0. 단위테스트 100개 + 통합테스트(Testcontainers, 실제 Keycloak 26.6) 1개(E2E `FullFlowIT`) = 총 101개 GREEN, Kover 커버리지 라인 99.24%/브랜치 85.71%(게이트 ≥90/≥85), `ktlintCheck` 무경고·`explicitApi()` 엄격. Task 6(JwtValidator) opus 어드버서리얼 리뷰 SECURE 판정(19 공격 프로브, 악용 가능 0). 9번째 언어.
+> 통합테스트는 대부분 **Testcontainers**(실제 Keycloak 26.6)이며, PHP·Ruby는 Windows testcontainers 미지원으로 **docker CLI 셸아웃** 폴백입니다(CI ubuntu에선 동일 동작). 각 SDK의 보안 핵심(JwtValidator 등)은 opus 어드버서리얼 리뷰로 검증했습니다(예: Kotlin **SECURE** 판정 — 19 공격 프로브·악용 가능 0).
 
 **남은 것은 실배포뿐**(Maven Central(Java·Kotlin)·PyPI·npm·Go 모듈 태그·NuGet·Packagist·crates.io·RubyGems, 사람 계정/키/토큰 필요 — [DEPLOY.md](DEPLOY.md)).
 
@@ -156,23 +162,23 @@ SDK 자체 SemVer는 Keycloak/하위 라이브러리 버전과 분리됩니다. 
 
 ## 가상 사용자 테스트 하네스 (Virtual-User Harness)
 
-문서·유닛/통합테스트와 별개로, 폴리글랏 SDK들이 **실제로 동일하게 동작하는지** 언어 간에 실측 비교하기 위한 하네스가 [`harness/`](harness/README.md)에 있다. 실제 Keycloak 26.6(`it-realm` — 언어별 통합테스트와 동일 realm)을 Docker Compose로 띄우고, 각 언어 SDK로 작성된 동일 [HTTP 계약](harness/contract/CONTRACT.md)(v2 — auth 확장 4엔드포인트 + admin 5리소스)의 샘플 앱을 구동해 검증한다. **9개 언어(Go·C#·Node·Python·Java·PHP·Rust·Ruby·Kotlin) 샘플 앱이 모두 완료**됐다(`harness/apps/{go,dotnet,node,python,java,php,rust,ruby,kotlin}` — 각각 net/http·ASP.NET Core·Express 5·FastAPI·Spring Boot·Slim 4·axum·Rack/Puma·Ktor/Netty 관용 프레임워크, 호스트 포트 8090~8098).
+문서·유닛/통합테스트와 별개로, 폴리글랏 SDK들이 **실제로 동일하게 동작하는지** 언어 간에 실측 비교하기 위한 하네스가 [`harness/`](harness/README.md)에 있습니다. 실제 Keycloak 26.6(`it-realm` — 언어별 통합테스트와 동일 realm)을 Docker Compose로 띄우고, 각 언어 SDK로 작성된 동일 [HTTP 계약](harness/contract/CONTRACT.md)(v2 — auth 확장 4엔드포인트 + admin 5리소스)의 샘플 앱을 구동해 검증합니다. **9개 언어(Go·C#·Node·Python·Java·PHP·Rust·Ruby·Kotlin) 샘플 앱이 모두 완료**됐습니다(`harness/apps/{go,dotnet,node,python,java,php,rust,ruby,kotlin}` — 각각 net/http·ASP.NET Core·Express 5·FastAPI·Spring Boot·Slim 4·axum·Rack/Puma·Ktor/Netty 관용 프레임워크, 호스트 포트 8090~8098).
 
-두 가지 실행 경로가 있다:
+두 가지 실행 경로가 있습니다:
 
 ```bash
 cd harness && ./run.sh go dotnet node python java                          # 레거시 k6 부하 실측·비교만 → harness/report/RESULTS.md
 cd harness && ./verify.sh go dotnet node python java php rust ruby kotlin  # 9언어 종합 검증·스코어링 → harness/report/SCORECARD.md
 ```
 
-`verify.sh`는 언어별로 Keycloak 기동 → 앱 빌드·기동 → **conformance**(`conformance/conformance.mjs`, 계약 준수 assert) → **security**(`security/probe.mjs`, JWT 하드닝 공격 프로브 — alg=none·HS/RS confusion·미지kid·flood 등) → k6 성능을 실행하고, 전 언어 종료 후 **suites**(`suites/run-suite.sh`, 각 SDK 자체 단위테스트+커버리지+린트를 툴체인 이미지에서 실행)를 집계한 뒤, `report/score.mjs`가 **4차원 가중 스코어카드**(기능 30%·보안 30%·커버리지 20%·성능/동형성 20%, 등급 A≥90/B≥80/C≥70/D<70)를 `report/SCORECARD.md`로 산출한다. 한 언어의 앱 빌드/헬스체크 실패는 격리되고 나머지 언어는 계속 진행한다(성능·동형성 차원은 **k6 연동됨** — k6 summary의 validate p95를 언어간 상대점수[최우수=100·k배=100/k]로 반영, k6 미측정 언어는 동형성만 무벌점). CI는 [`.github/workflows/harness.yml`](.github/workflows/harness.yml)에서 PR/푸시엔 빠른 Go 스모크 게이트(`mvp-go`)를, 야간(schedule 03:00 UTC)·수동(workflow_dispatch)엔 5언어 k6 비교(`all-langs`)와 9언어 종합 검증·스코어링(`score-all`, `SCORECARD.md`+`signals/` 아티팩트)을 실행한다.
+`verify.sh`는 언어별로 Keycloak 기동 → 앱 빌드·기동 → **conformance**(`conformance/conformance.mjs`, 계약 준수 assert) → **security**(`security/probe.mjs`, JWT 하드닝 공격 프로브 — alg=none·HS/RS confusion·미지kid·flood 등) → k6 성능을 실행하고, 전 언어 종료 후 **suites**(`suites/run-suite.sh`, 각 SDK 자체 단위테스트+커버리지+린트를 툴체인 이미지에서 실행)를 집계한 뒤, `report/score.mjs`가 **4차원 가중 스코어카드**(기능 30%·보안 30%·커버리지 20%·성능/동형성 20%, 등급 A≥90/B≥80/C≥70/D<70)를 `report/SCORECARD.md`로 산출합니다. 한 언어의 앱 빌드/헬스체크 실패는 격리되고 나머지 언어는 계속 진행합니다(성능·동형성 차원은 **k6 연동됨** — k6 summary의 validate p95를 언어간 상대점수[최우수=100·k배=100/k]로 반영, k6 미측정 언어는 동형성만 무벌점). CI는 [`.github/workflows/harness.yml`](.github/workflows/harness.yml)에서 PR/푸시엔 빠른 Go 스모크 게이트(`mvp-go`)를, 야간(schedule 03:00 UTC)·수동(workflow_dispatch)엔 5언어 k6 비교(`all-langs`)와 9언어 종합 검증·스코어링(`score-all`, `SCORECARD.md`+`signals/` 아티팩트)을 실행합니다.
 
 ### 설치·동작 검증 하네스 (Install-&-Operate)
 
-위 하네스가 SDK를 **소스 경로**로 소비하는 것과 달리, [`harness/install/`](harness/install/README.md)는 실배포 없이 **각 SDK를 "게시된 패키지처럼" Docker 로컬 레지스트리에서 설치**하고 실 Keycloak에 대해 동작(quickstart + conformance + security)까지 검증한다 — 배포 산출물의 설치 경로(매니페스트·메타데이터·의존성 해석)를 실배포 전 최종 확인.
+위 하네스가 SDK를 **소스 경로**로 소비하는 것과 달리, [`harness/install/`](harness/install/README.md)는 실배포 없이 **각 SDK를 "게시된 패키지처럼" Docker 로컬 레지스트리에서 설치**하고 실 Keycloak에 대해 동작(quickstart + conformance + security)까지 검증합니다 — 배포 산출물의 설치 경로(매니페스트·메타데이터·의존성 해석)를 실배포 전 최종 확인합니다.
 
 ```bash
 cd harness/install && ./install-verify.sh          # 전 9개 언어 → harness/install/report/INSTALL-MATRIX.md
 ```
 
-각 언어의 로컬 레지스트리(node=Verdaccio·python=pypiserver·go=file GOPROXY·dotnet=BaGetter·java=nginx 정적 .m2·ruby=gem-index·php=Satis·rust=cargo-local-registry·kotlin=nginx 정적 .m2(mvn-repo-kotlin, Gradle))에서 **실제 설치 명령과 동일**(소스 URL만 로컬)하게 설치하고, 소스 트리 없는 클린 컨테이너에서 부팅·동작한다. **9/9 언어 로컬 실측 전 셀 GREEN**(conformance 26/26·security 9/9). CI는 `install-all` 잡(야간/수동·`INSTALL-MATRIX.md` 아티팩트)으로 실행한다.
+각 언어의 로컬 레지스트리(node=Verdaccio·python=pypiserver·go=file GOPROXY·dotnet=BaGetter·java=nginx 정적 .m2·ruby=gem-index·php=Satis·rust=cargo-local-registry·kotlin=nginx 정적 .m2(mvn-repo-kotlin, Gradle))에서 **실제 설치 명령과 동일**(소스 URL만 로컬)하게 설치하고, 소스 트리 없는 클린 컨테이너에서 부팅·동작합니다. **9/9 언어 로컬 실측 전 셀 GREEN**(conformance 26/26·security 9/9). CI는 `install-all` 잡(야간/수동·`INSTALL-MATRIX.md` 아티팩트)으로 실행합니다.
