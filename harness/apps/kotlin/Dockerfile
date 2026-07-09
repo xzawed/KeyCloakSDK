@@ -8,13 +8,16 @@ ENV GRADLE_USER_HOME=/root/.gradle
 # 1) Kotlin SDK를 로컬 .m2에 publish(앱이 io.github.xzawed:keycloak-sdk-kotlin:0.1.0 해석) — 테스트 스킵.
 #    서명은 in-memory 키가 없으면 자동 비활성(build.gradle.kts의 signingKeyPresent 가드) → 무서명 게시.
 COPY kotlin/ ./kotlin/
+WORKDIR /build/kotlin
 # ⚠️ gradlew를 `sh`로 호출하고 CRLF를 스트립한다 — Windows 워킹트리 체크아웃의 gradlew는 CRLF라
 # Alpine sh가 `#!/usr/bin/env sh\r` shebang을 못 찾아 exit 127로 죽는다(Docker는 로컬 파일을 COPY).
 # CI(Linux, LF 체크아웃)에선 sed가 no-op이라 무해하고, `sh` 호출로 +x 비트 유무와도 무관해진다.
-RUN cd kotlin && sed -i 's/\r$//' gradlew && sh ./gradlew --no-daemon publishToMavenLocal -x test
+RUN sed -i 's/\r$//' gradlew && sh ./gradlew --no-daemon publishToMavenLocal -x test
 # 2) 하네스 앱 빌드(gradle 내장 application 플러그인 installDist → bin/lib, shadow 버전호환 리스크 회피)
+WORKDIR /build
 COPY harness/apps/kotlin/ ./app/
-RUN cd app && sed -i 's/\r$//' gradlew && sh ./gradlew --no-daemon installDist
+WORKDIR /build/app
+RUN sed -i 's/\r$//' gradlew && sh ./gradlew --no-daemon installDist
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
