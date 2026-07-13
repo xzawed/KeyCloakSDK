@@ -46,6 +46,15 @@ BRANCH=$(printf '%s\n' "$OUT" | grep -oE '___COV_BRANCH=[0-9]+(\.[0-9]+)?' | tai
 BUILDEXIT=$(printf '%s\n' "$OUT" | grep -oE '___BUILDEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${BUILDEXIT:-1}" = "0" ]; then LINTCLEAN=true; else LINTCLEAN=false; fi
 
+# surefire의 모듈별 "Results:" 요약 행에서 Failures/Errors 합계를 센다. mvn verify는
+# 커버리지 게이트 실패로도 0이 아닌 종료코드를 내므로 BUILDEXIT만으로는 "테스트가 통과했는가"를
+# 알 수 없다(테스트 실패와 린트/게이트 실패가 구분되지 않는다).
+# 요약 행이 하나도 없으면(빌드가 테스트 단계 전에 죽음) 실패로 간주한다 — fail-closed.
+SUMMARY_LINES=$(printf '%s\n' "$OUT" | grep -cE 'Tests run: [0-9]+, Failures: [0-9]+, Errors: [0-9]+, Skipped: [0-9]+$')
+FAILCOUNT=$(printf '%s\n' "$OUT" | grep -E 'Tests run: [0-9]+, Failures: [0-9]+, Errors: [0-9]+, Skipped: [0-9]+$' \
+  | grep -oE 'Failures: [0-9]+|Errors: [0-9]+' | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
+if [ "${SUMMARY_LINES:-0}" -gt 0 ] && [ "${FAILCOUNT:-1}" = "0" ]; then TESTSPASSED=true; else TESTSPASSED=false; fi
+
 INTEGRATION=0
 if [ "${SUITE_INTEGRATION:-0}" = "1" ]; then
   # Testcontainers(실제 Keycloak) 통합테스트는 Docker-in-Docker 필요 — best-effort opt-in.
@@ -60,4 +69,4 @@ if [ "${SUITE_INTEGRATION:-0}" = "1" ]; then
     | grep -oE 'Tests run: [0-9]+' | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
 fi
 
-echo "{\"lang\":\"java\",\"unit\":${UNIT:-0},\"integration\":${INTEGRATION:-0},\"coverageLine\":${LINE:-0},\"coverageBranch\":${BRANCH:-0},\"lintClean\":${LINTCLEAN},\"ran\":true}"
+echo "{\"lang\":\"java\",\"unit\":${UNIT:-0},\"integration\":${INTEGRATION:-0},\"coverageLine\":${LINE:-0},\"coverageBranch\":${BRANCH:-0},\"lintClean\":${LINTCLEAN},\"testsPassed\":${TESTSPASSED},\"ran\":true}"
