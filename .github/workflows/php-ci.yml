@@ -28,8 +28,22 @@ jobs:
       - run: vendor/bin/phpunit --testsuite unit --coverage-clover clover.xml
       # 커버리지 게이트: 로직 라인 ≥90%(경계는 phpunit.xml source exclude — AuthClient/Admin/KeycloakClient)
       - name: coverage gate
+        # ⚠️ fail-open 금지: statements가 0이면(clover 리포트가 비었거나 생성 실패) 커버리지를
+        # 100%로 계산해 게이트를 통과시키던 버그가 있었다. 측정 실패는 통과가 아니라 실패다.
         run: |
-          php -r '$x=simplexml_load_file("clover.xml");$m=$x->project->metrics;$c=(int)$m["coveredstatements"];$t=(int)$m["statements"];$p=$t? $c/$t*100:100;printf("line coverage: %.2f%%\n",$p);exit($p>=90?0:1);'
+          php -r '
+            $f = "clover.xml";
+            if (!is_file($f)) { fwrite(STDERR, "clover.xml 없음 — 커버리지 측정 실패\n"); exit(1); }
+            $x = simplexml_load_file($f);
+            if ($x === false || !isset($x->project->metrics)) { fwrite(STDERR, "clover.xml 파싱 실패\n"); exit(1); }
+            $m = $x->project->metrics;
+            $c = (int)$m["coveredstatements"];
+            $t = (int)$m["statements"];
+            if ($t <= 0) { fwrite(STDERR, "statements=0 — 커버리지가 측정되지 않았다(fail-closed)\n"); exit(1); }
+            $p = $c / $t * 100;
+            printf("line coverage: %.2f%% (%d/%d statements)\n", $p, $c, $t);
+            exit($p >= 90 ? 0 : 1);
+          '
   integration:
     runs-on: ubuntu-latest
     defaults:
