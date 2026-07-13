@@ -575,9 +575,27 @@ client.close
 
 ---
 
+## 호환성
+
+각 SDK의 자체 SemVer는 Keycloak 서버·하위 라이브러리 버전과 분리됩니다. 지원 서버 범위와 기반 라이브러리·런타임은 아래 표를 참고하세요.
+
+| SDK | 대상 Keycloak 서버 | 기반 라이브러리 · 런타임 |
+|---|---|---|
+| Java `0.1.0-SNAPSHOT` | 26.6.x (통합테스트: 실제 **26.6.4**) | `keycloak-admin-client` **26.0.10**(서버와 독립 버전 트랙 — "26.6.x admin-client"는 없음) · Nimbus `oauth2-oidc-sdk` **11.37.2** · JDK 21+ |
+| Python `0.1.0` | 26.6.x (통합테스트: 실제 **26.6.4**) | `python-keycloak` **7.1.x** · `joserfc` **1.7.x** · Python 3.10+ |
+| Node `0.1.0` | 26.6.x (통합테스트: 실제 **26.6**) | `@keycloak/keycloak-admin-client` **26.6.4** · `openid-client` **6.8.4** · `jose` **5.10.0** · Node 20+ |
+| Go `0.1.0` | 26.6.x (통합테스트: 실제 **26.6**) | `Nerzal/gocloak/v13` **13.9.0** · `golang.org/x/oauth2` **0.36.0** · `go-jose/v4` **4.1.4** · Go 1.25+ |
+| C#/.NET `0.1.0` | 26.6.x (통합테스트: 실제 **26.6**) | `Keycloak.AuthServices.Sdk` **2.7.0** · `Duende.IdentityModel` **8.1.0** · `Microsoft.IdentityModel.JsonWebTokens` **8.19.1** · .NET 8+ |
+| PHP `0.1.0` | 26.6.x (통합테스트: 실제 **26.6**, docker CLI 셸아웃) | `fschmtt/keycloak-rest-api-client-php` **0.42.0** · `league/oauth2-client` **^2.8** · `stevenmaguire/oauth2-keycloak` **^6.1** · `firebase/php-jwt` **^7.1** · PHP 8.3+ |
+| Rust `0.1.0` | 26.6.x (통합테스트: 실제 **26.6**, Testcontainers) | `keycloak` **=26.6.2**(`reqwest12` feature) · `openidconnect` **=4.0.1** · `jsonwebtoken` **=10.4.0** · Rust 1.88+(edition 2024) |
+| Ruby `0.1.0` | 26.6.x (통합테스트: 실제 **26.6**, docker CLI 셸아웃) | `rack-oauth2` **~>2.3** · `faraday` **~>2.0** · `jwt`(ruby-jwt) **~>3.2** · Ruby 3.2+ |
+| Kotlin `0.1.0` | 26.6.x (통합테스트: 실제 **26.6**, Testcontainers) | `keycloak-admin-client` **26.0.10** · `oauth2-oidc-sdk` **11.37.2** · `nimbus-jose-jwt` **10.9.1**(Java와 동일 JVM 스택) · Kotlin 2.2.20+ / JDK 21+ |
+
+---
+
 ## 다음 단계
 
-- **언어 지원 로드맵** — 현재 지원 언어(깊이 우선: Java·Python·TypeScript/Node·Go·C#/.NET·PHP·Rust·Ruby 완료 — 8개 언어, Kotlin은 JVM 재사용으로 선택적): [../roadmap/language-support.md](../roadmap/language-support.md)
-- **새 언어 추가 플레이북** — 기존 Java/Python/Node/Go/C#/PHP/Rust/Ruby와 동형의 품질로 언어를 추가하는 절차: [add-a-language-playbook.md](add-a-language-playbook.md)
+- **언어 지원 로드맵** — 현재 지원 언어(깊이 우선: Java·Python·TypeScript/Node·Go·C#/.NET·PHP·Rust·Ruby·Kotlin 완료 — 9개 언어): [../roadmap/language-support.md](../roadmap/language-support.md)
+- **새 언어 추가 플레이북** — 기존 Java/Python/Node/Go/C#/PHP/Rust/Ruby/Kotlin과 동형의 품질로 언어를 추가하는 절차: [add-a-language-playbook.md](add-a-language-playbook.md)
 
-> 언어 중립 API 계약(진실 원천)은 [설계 스펙 §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)에 정의되어 있습니다. 모든 언어는 이 계약을 구현하며, JWT 검증 강화(알고리즘 핀닝 · `none` 거부 · `iss` 정확일치 · `aud` 포함검사 · 클록 스큐 · DoS-안전 JWKS 재조회)는 언어 공통 필수 사항입니다. 현재 테스트 수: **Java 123개**(단위 117 + Testcontainers 통합 6) · **Python 235개**(단위 224 + 통합 11) · **Node 76개**(단위 71 + Testcontainers 통합 5) · **Go 41개**(단위 40 + Testcontainers 통합 1 — E2E, 전 흐름·5 admin 리소스) · **C#/.NET 59개**(단위 58 + Testcontainers 통합 1 — E2E `Full_flow`, 전 흐름·5 admin 리소스) · **PHP 67개**(단위 64 + 통합 3 — docker CLI 셸아웃, `FullFlowIT`: 전 흐름·client CRUD·raw 탈출구) · **Rust 35개**(단위 34 + Testcontainers 통합 1 — E2E `full_flow`, 전 흐름·5 admin 리소스) · **Ruby 74개**(단위 73 + 통합 1 — docker CLI 셸아웃, E2E `full_flow`, 전 흐름·5 admin 리소스).
+> 언어 중립 API 계약(진실 원천)은 [설계 스펙 §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md)에 정의되어 있습니다. 모든 언어는 이 계약을 구현하며, JWT 검증 강화(알고리즘 핀닝 · `none` 거부 · `iss` 정확일치 · `aud` 포함검사 · 클록 스큐 · DoS-안전 JWKS 재조회)는 언어 공통 필수 사항입니다. 현재 테스트 수: **Java 123개**(단위 117 + Testcontainers 통합 6) · **Python 235개**(단위 224 + 통합 11) · **Node 76개**(단위 71 + Testcontainers 통합 5) · **Go 41개**(단위 40 + Testcontainers 통합 1 — E2E, 전 흐름·5 admin 리소스) · **C#/.NET 59개**(단위 58 + Testcontainers 통합 1 — E2E `Full_flow`, 전 흐름·5 admin 리소스) · **PHP 67개**(단위 64 + 통합 3 — docker CLI 셸아웃, `FullFlowIT`: 전 흐름·client CRUD·raw 탈출구) · **Rust 35개**(단위 34 + Testcontainers 통합 1 — E2E `full_flow`, 전 흐름·5 admin 리소스) · **Ruby 74개**(단위 73 + 통합 1 — docker CLI 셸아웃, E2E `full_flow`, 전 흐름·5 admin 리소스) · **Kotlin 101개**(단위 100 + Testcontainers 통합 1 — E2E `FullFlowIT`, 전 흐름·5 admin 리소스). 총 **811개**.
