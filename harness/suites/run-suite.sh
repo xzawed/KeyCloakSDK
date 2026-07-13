@@ -40,3 +40,16 @@ for L in "$@"; do
   fi
   echo "   -> report/signals/$L.suite.json : $(cat "report/signals/$L.suite.json")"
 done
+
+# 어떤 언어의 단위테스트라도 실패했거나 suite가 아예 돌지 못했으면 0이 아닌 코드로 끝낸다.
+# verify.sh가 이 코드를 받아 전체 실행의 종료코드에 반영한다.
+FAILED_SUITES=""
+for L in "$@"; do
+  RAN=$(node -e 'const fs=require("fs");try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));console.log(j.ran===true&&j.testsPassed===true?"ok":"bad");}catch(e){console.log("bad");}' "report/signals/$L.suite.json")
+  [ "$RAN" = "ok" ] || FAILED_SUITES="$FAILED_SUITES $L"
+done
+if [ -n "$FAILED_SUITES" ]; then
+  echo "== [suite] 실패:$FAILED_SUITES =="
+  exit 1
+fi
+echo "== [suite] 전 언어 통과 =="
