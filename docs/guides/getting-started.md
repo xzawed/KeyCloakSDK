@@ -1,6 +1,6 @@
 # Getting Started
 
-A guide to installing the Keycloak polyglot SDK locally and running your first token issuance, JWT validation, and Admin API call with minimal code. This SDK is provided in **multiple programming languages** (currently Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby), and while each language is idiomatic, the concepts, layers, and flows are isomorphic.
+A guide to installing the Keycloak polyglot SDK locally and running your first token issuance, JWT validation, and Admin API call with minimal code. This SDK is provided in **multiple programming languages** (currently Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby · Kotlin), and while each language is idiomatic, the concepts, layers, and flows are isomorphic.
 
 > ⚠️ **None of the nine SDKs have been published yet (human-gated release).** Installation via Maven Central, PyPI, npm, Go module tags, NuGet, Packagist, crates.io, or RubyGems does not work yet. For now, **local installation is the default path** (see each language's "Local installation" below). For the real release procedure, see the unified nine-language [DEPLOY.md](../../DEPLOY.md) (check readiness with `scripts/release-readiness.sh` and tag commands with `scripts/release-trigger.sh <lang> <ver>` — both are human-gates that never push tags automatically).
 
@@ -18,6 +18,7 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 | **PHP** | **8.3+** | `final readonly class` value types · exception-based (`KeycloakException` hierarchy) |
 | **Rust** | **1.88+** | MSRV required by edition 2024 + let-chains · async-only (tokio) · `thiserror`-based `KeycloakError` |
 | **Ruby** | **3.2+** | sync-only · exception hierarchy (`KeycloakSdk::Error`) · gem `keycloak-sdk` / require `keycloak_sdk` |
+| **Kotlin** | **2.2+** (JDK 21+) | coroutines (`suspend`) · data-class value types · sealed `KeycloakException` · reuses the JVM Java SDK stack |
 | (optional) Docker | — | **Needed only for integration tests (Testcontainers/docker CLI)**. Not required to use the SDK itself |
 
 ---
@@ -572,6 +573,83 @@ client.close
 ```
 
 > Error handling: admin failures are classified as `KeycloakSdk::NotFoundError`/`ConflictError`/`ForbiddenError` (all of which carry `AdminError#status`), or `KeycloakSdk::TransportError` on a network failure. `admin.raw` is the escape hatch to the underlying `Faraday::Connection`.
+
+---
+
+## Kotlin
+
+### 1) Required runtime — Kotlin 2.2+ / JDK 21+
+
+Kotlin **2.2.20 or newer** on **JDK 21+** (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
+
+### 2) Local installation (current — not yet published)
+
+Since it is not published to Maven Central, clone the repository and publish it to your local `~/.m2` with Gradle:
+
+```bash
+gradle -p kotlin publishToMavenLocal   # installs keycloak-sdk-kotlin-0.1.0.jar (+ sources/javadoc) into ~/.m2
+```
+
+Then reference it from a consuming Gradle project via `mavenLocal()` (Gradle Kotlin DSL):
+
+```kotlin
+repositories { mavenLocal(); mavenCentral() }
+dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0") }
+```
+
+(To just build and test locally without publishing: `gradle -p kotlin build && gradle -p kotlin test` — 100 unit tests + coverage gate, Docker-free.)
+
+### 3) Installation after release (future)
+
+Once publishing to Maven Central is complete, reference the same coordinates from `mavenCentral()` (no local publish needed):
+
+```kotlin
+dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0") }
+```
+
+> ⚠️ **Not yet published to Maven Central (human-gated, Central Portal).** The actual publish runs only when a human pushes a `kotlin-v*` tag to trigger [`.github/workflows/kotlin-release.yml`](../../.github/workflows/kotlin-release.yml) (vanniktech maven.publish → Central Portal staging), after which a human manually releases from the Portal console — a two-step approval gate. For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+
+### 4) Minimal usage example
+
+Full example: [`kotlin/examples/quickstart.kt`](../../kotlin/examples/quickstart.kt)
+
+```kotlin
+import io.github.xzawed.keycloak.KeycloakClient
+import io.github.xzawed.keycloak.KeycloakConfig
+import kotlinx.coroutines.runBlocking
+import org.keycloak.representations.idm.UserRepresentation
+
+fun main() = runBlocking {
+    val config = KeycloakConfig(
+        serverUrl = "https://kc.example.com",
+        realm = "myrealm",
+        clientId = "admin-cli",
+        clientSecret = "changeme".toCharArray(), // load the real value from an env var / secrets manager (toString is auto-masked)
+    )
+
+    // use { }: close() cleans up admin + auth resources too.
+    KeycloakClient.create(config).use { client ->
+        // 1) Issue a token via the client-credentials grant. TokenSet.toString() masks access/refresh tokens as "***".
+        val token = client.auth.clientCredentialsToken()
+        println("token type=${token.tokenType}")
+
+        // 2) Hardened validation of the issued access token (RS256 pin, exact iss match, aud containment check, exp required, clock skew).
+        val validated = client.auth.validate(token.accessToken)
+        println("subject=${validated.subject} issuer=${validated.issuer}")
+
+        // 3) Admin API — create a user. The created id is extracted from the response Location header.
+        val userId = client.admin.users().create(
+            UserRepresentation().apply {
+                username = "alice"
+                isEnabled = true
+            },
+        )
+        println("created userId=$userId")
+    }
+}
+```
+
+> Error handling: admin failures are surfaced as the sealed `KeycloakAdminException` (carrying `status` + `keycloakError`), with leaves `KeycloakAdminException.NotFound`/`Conflict`/`Forbidden`/`Other`, or `KeycloakTransportException` on a network failure. `admin.raw()` is the escape hatch to the underlying `org.keycloak.admin.client.Keycloak`.
 
 ---
 
