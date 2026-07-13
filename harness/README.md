@@ -1,10 +1,10 @@
 # Virtual-User Test Harness
 
-폴리글랏 Keycloak SDK(Go/C#/Node/Python/Java/PHP/Rust/Ruby/Kotlin — 9개 언어)를 위한 **가상 사용자(virtual-user) 부하·회귀 테스트 + 종합 검증·스코어링 하네스**. 실제 Keycloak 26.6(`it-realm` — 언어별 통합테스트와 동일 realm)을 Docker Compose로 띄우고, 각 언어 SDK로 작성된 동일 스펙의 샘플 앱(9개 언어 모두 완료, [`contract/CONTRACT.md`](contract/CONTRACT.md) v2)을 공통 HTTP 계약으로 노출시켜 두 축으로 검증한다: (1) k6 기반 드라이버로 동형(isomorphic) 부하 시나리오를 실측·비교(레거시 `run.sh`), (2) 계약 conformance·보안 하드닝 프로브·SDK 자체 스위트(단위+커버리지+린트)를 언어별로 실행해 4차원 점수로 집계(`verify.sh` → `report/SCORECARD.md` — 아래 "검증·스코어링" 절 참고).
+A **virtual-user load / regression testing + comprehensive verification & scoring harness** for the polyglot Keycloak SDK (Go/C#/Node/Python/Java/PHP/Rust/Ruby/Kotlin — 9 languages). It brings up a real Keycloak 26.6 (`it-realm` — the same realm as the per-language integration tests) via Docker Compose, and exposes sample apps written with each language's SDK to the same spec (all 9 languages complete, [`contract/CONTRACT.md`](contract/CONTRACT.md) v2) over a common HTTP contract, verifying along two axes: (1) a k6-based driver measures and compares isomorphic load scenarios (legacy `run.sh`), and (2) it runs contract conformance, security-hardening probes, and each SDK's own suite (unit + coverage + lint) per language and aggregates them into a 4-dimensional score (`verify.sh` → `report/SCORECARD.md` — see the "Verification & Scoring" section below).
 
-각 앱은 그 언어의 **관용 프레임워크**로 SDK를 소비한다 — 따라서 성능 실측은 순수 SDK 비용이 아니라 "SDK-in-idiomatic-app"(프레임워크 오버헤드 포함) 실측이다.
+Each app consumes the SDK through that language's **idiomatic framework** — so the performance measurements are not pure SDK cost but "SDK-in-idiomatic-app" (framework overhead included) measurements.
 
-| 언어 | 프레임워크 | 앱 디렉터리 | 호스트 포트 |
+| Language | Framework | App directory | Host port |
 |---|---|---|---|
 | go | net/http | [`apps/go/`](apps/go/) | 8090 |
 | dotnet | ASP.NET Core | [`apps/dotnet/`](apps/dotnet/) | 8091 |
@@ -16,107 +16,107 @@
 | ruby | Rack(Puma) | [`apps/ruby/`](apps/ruby/) | 8097 |
 | kotlin | Ktor(Netty) | [`apps/kotlin/`](apps/kotlin/) | 8098 |
 
-모든 앱은 컨테이너 **내부 8090**을 사용하고(계약 단순화), 호스트로만 8090~8098로 다르게 매핑한다.
+Every app uses container-**internal 8090** (to simplify the contract), and only maps differently to the host as 8090–8098.
 
-> ⚠️ **앱 빌드 이미지는 Alpine(musl) 베이스를 쓴다.** Debian/glibc 빌드 이미지는 Docker Desktop(Windows) 내장 DNS 프록시가 패키지 레지스트리(nuget/pypi/maven·npm의 Fastly CNAME 체인)를 glibc 리졸버에 실패로 돌려줘 `dotnet restore`/`pip install`/Maven 다운로드가 DNS 오류로 막힌다. musl 리졸버는 동일 환경에서 정상 동작하고 Linux 네이티브 Docker(CI)에서도 문제없어, 호스트별 `extra_hosts`/IP 고정 없이 이식성 있게 동작하는 근본 해결책이다(공유 compose 파일엔 하드코딩 IP가 없다).
+> ⚠️ **App build images use an Alpine (musl) base.** With Debian/glibc build images, Docker Desktop's (Windows) built-in DNS proxy returns the package registries (nuget/pypi/maven, and npm's Fastly CNAME chain) to the glibc resolver as failures, so `dotnet restore`/`pip install`/Maven downloads get blocked by DNS errors. The musl resolver works fine in the same environment and has no problems on Linux-native Docker (CI) either, making this the fundamental fix that works portably without per-host `extra_hosts`/IP pinning (the shared compose file has no hardcoded IPs).
 
-## 구성
+## Layout
 
 ```
 harness/
-├─ docker-compose.yml     # keycloak(기본) + app-{go,dotnet,node,python,java,php,rust,ruby,kotlin}(profile: apps)
+├─ docker-compose.yml     # keycloak(default) + app-{go,dotnet,node,python,java,php,rust,ruby,kotlin}(profile: apps)
 ├─ keycloak/
-│  └─ harness-realm.json  # go/testdata/it-realm-realm.json 재사용(realm import)
+│  └─ harness-realm.json  # reuses go/testdata/it-realm-realm.json (realm import)
 ├─ contract/
-│  └─ CONTRACT.md         # 공통 HTTP 계약(진실 원천, v2) — 모든 언어 앱이 동일 구현
+│  └─ CONTRACT.md         # common HTTP contract (source of truth, v2) — every language app implements it identically
 ├─ apps/
-│  ├─ go/                 # Go 샘플 앱(net/http)
-│  ├─ dotnet/             # C# 샘플 앱(ASP.NET Core)
-│  ├─ node/               # Node 샘플 앱(Express 5)
-│  ├─ python/             # Python 샘플 앱(FastAPI)
-│  ├─ java/               # Java 샘플 앱(Spring Boot)
-│  ├─ php/                # PHP 샘플 앱(Slim 4)
-│  ├─ rust/               # Rust 샘플 앱(axum)
-│  ├─ ruby/               # Ruby 샘플 앱(Rack/Puma)
-│  └─ kotlin/             # Kotlin 샘플 앱(Ktor/Netty)
-├─ driver/                # k6 부하 드라이버(scenarios.js)
+│  ├─ go/                 # Go sample app (net/http)
+│  ├─ dotnet/             # C# sample app (ASP.NET Core)
+│  ├─ node/               # Node sample app (Express 5)
+│  ├─ python/             # Python sample app (FastAPI)
+│  ├─ java/               # Java sample app (Spring Boot)
+│  ├─ php/                # PHP sample app (Slim 4)
+│  ├─ rust/               # Rust sample app (axum)
+│  ├─ ruby/               # Ruby sample app (Rack/Puma)
+│  └─ kotlin/             # Kotlin sample app (Ktor/Netty)
+├─ driver/                # k6 load driver (scenarios.js)
 ├─ conformance/
-│  └─ conformance.mjs     # 계약 준수 검사(CONTRACT.md 엔드포인트별 assert) → signals/<lang>.conformance.json
+│  └─ conformance.mjs     # contract-conformance checks (per-endpoint asserts from CONTRACT.md) → signals/<lang>.conformance.json
 ├─ security/
-│  └─ probe.mjs           # JWT 검증 하드닝 공격 프로브(alg=none·HS/RS confusion·flood 등) → signals/<lang>.security.json
+│  └─ probe.mjs           # JWT-validation hardening attack probes (alg=none·HS/RS confusion·flood, etc.) → signals/<lang>.security.json
 ├─ suites/
-│  ├─ run-suite.sh        # 언어별 suites/<lang>.sh 실행 오케스트레이터
-│  └─ <lang>.sh           # 각 SDK 자체 단위테스트+커버리지+린트를 툴체인 이미지에서 실행 → signals/<lang>.suite.json
+│  ├─ run-suite.sh        # orchestrator that runs each language's suites/<lang>.sh
+│  └─ <lang>.sh           # runs each SDK's own unit tests + coverage + lint in the toolchain image → signals/<lang>.suite.json
 ├─ report/
-│  ├─ score.mjs           # 4차원 가중 스코어링 → SCORECARD.md
-│  ├─ aggregate.mjs       # (레거시 run.sh용) k6 결과 → RESULTS.md
-│  └─ signals/            # conformance/security/suite 신호 JSON(생성물, 미커밋)
-├─ run.sh                 # 레거시: k6 성능비교만(원커맨드) → report/RESULTS.md
-└─ verify.sh              # 종합 파이프라인: KC→앱→conformance+security+k6→suites→score → report/SCORECARD.md
+│  ├─ score.mjs           # 4-dimensional weighted scoring → SCORECARD.md
+│  ├─ aggregate.mjs       # (for the legacy run.sh) k6 results → RESULTS.md
+│  └─ signals/            # conformance/security/suite signal JSON (generated, not committed)
+├─ run.sh                 # legacy: k6 performance comparison only (one command) → report/RESULTS.md
+└─ verify.sh              # comprehensive pipeline: KC→apps→conformance+security+k6→suites→score → report/SCORECARD.md
 ```
 
-## 사용법 (레거시 — k6 성능비교만)
+## Usage (legacy — k6 performance comparison only)
 
-원커맨드 파이프라인 — `run.sh`가 Keycloak 기동(health 대기) → 각 언어 앱 빌드·기동(healthz 대기) → k6 부하(compose 네트워크 내부 컨테이너) → 리포트 취합 → compose down을 순서대로 수행하고, 기능 게이트(checks 100%) 실패 시 비0 종료한다. **k6 성능 실측·비교만 필요할 때** 쓴다 — conformance/security/suite/스코어링까지 포함한 종합 검증은 아래 `verify.sh`를 쓴다.
+A one-command pipeline — `run.sh` brings up Keycloak (waiting for health) → builds and starts each language app (waiting for healthz) → runs the k6 load (containers inside the compose network) → aggregates the report → runs compose down, in that order, and exits non-zero if the functional gate (checks 100%) fails. Use it **when you only need k6 performance measurement/comparison** — for comprehensive verification that also includes conformance/security/suite/scoring, use `verify.sh` below.
 
 ```bash
 cd harness
-./run.sh go                                    # Go 앱만 실행 → report/RESULTS.md (기본값도 go)
-./run.sh go dotnet node python java            # 5개 언어(레거시 대상)를 순차 실행·비교 — 인자로 8개 아무 언어나 가능
-cat report/RESULTS.md                          # 기능 정확성 게이트 + 언어간 성능 실측표
+./run.sh go                                    # run just the Go app → report/RESULTS.md (go is also the default)
+./run.sh go dotnet node python java            # run and compare 5 languages (legacy targets) sequentially — any of the 8 languages can be passed as args
+cat report/RESULTS.md                          # functional correctness gate + cross-language performance table
 ```
 
-`report/RESULTS.md`는 (1) **기능 정확성 게이트**(각 언어 checks PASS율 — 100% 요구, 미달 시 비0 종료)와 (2) **성능 실측 비교표**(validate p95·admin CRUD p95·RPS·오류율)를 함께 산출한다. 성능 수치는 실측·비교용(임계값 강제 아님)이며 앞서 언급한 대로 프레임워크 오버헤드를 포함한다 — 호스트/부하에 따라 달라지는 상대 비교값이다.
+`report/RESULTS.md` produces both (1) a **functional correctness gate** (each language's checks PASS rate — 100% required, exits non-zero if below) and (2) a **performance comparison table** (validate p95 · admin CRUD p95 · RPS · error rate). The performance numbers are for measurement/comparison (not enforced thresholds) and, as noted above, include framework overhead — they are relative comparison values that vary by host/load.
 
-결과 `report/RESULTS.md`(및 `report/<lang>.json` k6 요약)는 생성 아티팩트라 커밋하지 않는다(`report/.gitignore`).
+The resulting `report/RESULTS.md` (and the `report/<lang>.json` k6 summaries) are generated artifacts and are not committed (`report/.gitignore`).
 
-수동 단계 실행(디버깅용):
+Running the steps manually (for debugging):
 
 ```bash
-docker compose up -d keycloak                  # Keycloak만 기동(realm import 포함)
-docker compose --profile apps up -d --build    # 언어 샘플 앱까지 기동
+docker compose up -d keycloak                  # bring up only Keycloak (including realm import)
+docker compose --profile apps up -d --build    # bring up the language sample apps too
 docker compose down -v
 ```
 
-## 검증·스코어링 (verify.sh)
+## Verification & Scoring (verify.sh)
 
-`verify.sh`는 k6 성능비교를 포함하되 그보다 넓은 **종합 검증·점수책정 파이프라인**이다 — 각 언어 SDK가 계약을 올바르게 구현하는지(기능)·JWT 검증을 안전하게 하는지(보안)·SDK 자체 테스트가 그린인지(커버리지·품질)·계약 표면을 얼마나 완전히 구현했는지(동형성 근사, 성능은 후속)를 언어중립 채점기로 집계해 `report/SCORECARD.md`를 만든다.
+`verify.sh` includes the k6 performance comparison but is a broader **comprehensive verification & scoring pipeline** — it aggregates, with a language-neutral scorer, whether each language SDK implements the contract correctly (functional), validates JWTs safely (security), keeps its own tests green (coverage/quality), and how completely it implements the contract surface (isomorphism approximation, with performance to follow), producing `report/SCORECARD.md`.
 
 ```bash
 cd harness
-./verify.sh go dotnet node python java php rust ruby kotlin   # 9개 언어 전체(기본값도 이 9개)
-./verify.sh go node                                     # 로컬 스모크용으로 1~2개 언어만
+./verify.sh go dotnet node python java php rust ruby kotlin   # all 9 languages (this same 9 is also the default)
+./verify.sh go node                                     # just 1–2 languages for a local smoke test
 cat report/SCORECARD.md
 ```
 
-파이프라인 단계(언어별로 반복): Keycloak 1회 기동(health 대기) → 각 언어 앱 빌드·기동(healthz 대기) → **conformance**([`conformance/conformance.mjs`](conformance/conformance.mjs), CONTRACT.md v2 엔드포인트별 assert) → **security**([`security/probe.mjs`](security/probe.mjs), JWT 검증 하드닝 공격 프로브 — alg=none·HS/RS confusion·미지/누락 kid·malformed·flood 등) → **k6 성능**(`driver/scenarios.js`, compose 네트워크 내부) → 앱 정지 → 전 언어 완료 후 **suites**([`suites/run-suite.sh`](suites/run-suite.sh), 각 SDK 자체 단위테스트+커버리지+린트를 언어 툴체인 이미지에서 실행 — 재구현 아님) → **score**([`report/score.mjs`](report/score.mjs)). 한 언어의 앱 빌드/헬스체크/프로브 실패는 `report/signals/<lang>.error.json`으로 격리되고 나머지 언어는 계속 진행한다(`|| true` 전면 적용).
+Pipeline stages (repeated per language): bring up Keycloak once (wait for health) → build and start each language app (wait for healthz) → **conformance** ([`conformance/conformance.mjs`](conformance/conformance.mjs), per-endpoint asserts from CONTRACT.md v2) → **security** ([`security/probe.mjs`](security/probe.mjs), JWT-validation hardening attack probes — alg=none · HS/RS confusion · unknown/missing kid · malformed · flood, etc.) → **k6 performance** (`driver/scenarios.js`, inside the compose network) → stop the app → after all languages complete, **suites** ([`suites/run-suite.sh`](suites/run-suite.sh), runs each SDK's own unit tests + coverage + lint in the language toolchain image — not a reimplementation) → **score** ([`report/score.mjs`](report/score.mjs)). A single language's app-build/health-check/probe failure is isolated into `report/signals/<lang>.error.json` and the remaining languages continue (`|| true` applied throughout).
 
-### 4차원 스코어카드
+### 4-dimensional Scorecard
 
-| 차원 | 가중치 | 산출 신호 | 산식 |
+| Dimension | Weight | Source signal | Formula |
 |---|---|---|---|
-| 기능(functional) | 30% | `signals/<lang>.conformance.json` `{passed,failed,checks[]}` | `passed / (passed+failed) * 100` |
-| 보안(security) | 30% | `signals/<lang>.security.json` `{defended,total,probes[]}` | `defended / total * 100` |
-| 커버리지·품질(coverage) | 20% | `signals/<lang>.suite.json` `{coverageLine,coverageBranch,lintClean,ran,unit}` | branch가 실측(>0)된 언어만 `line*0.6+branch*0.3+lint*0.1`, 미측정 언어는 `line*0.9+lint*0.1`로 폴백(미측정을 0%로 벌점하지 않기 위함) |
-| 성능·동형성(perfiso) | 20% | conformance 통과율(근사) | 현재는 `functional`과 동일값(§주의 참고) |
+| functional | 30% | `signals/<lang>.conformance.json` `{passed,failed,checks[]}` | `passed / (passed+failed) * 100` |
+| security | 30% | `signals/<lang>.security.json` `{defended,total,probes[]}` | `defended / total * 100` |
+| coverage/quality | 20% | `signals/<lang>.suite.json` `{coverageLine,coverageBranch,lintClean,ran,unit}` | for languages where branch is measured (>0), `line*0.6+branch*0.3+lint*0.1`; for unmeasured languages, fall back to `line*0.9+lint*0.1` (so as not to penalize the unmeasured with 0%) |
+| performance/isomorphism (perfiso) | 20% | conformance pass rate (approximation) | currently the same value as `functional` (see the §caveat) |
 
-종합점수 = 4차원의 가중합, 등급은 `overall≥90 → A`·`≥80 → B`·`≥70 → C`·그 외 `D`. `report/SCORECARD.md`는 언어를 종합점수 내림차순으로 정렬한 표 + 언어별 규칙기반 보완 피드백(어느 프로브가 실패했는지, 어느 커버리지가 부족한지 등)을 담는다.
+The overall score is the weighted sum of the 4 dimensions; grades are `overall≥90 → A` · `≥80 → B` · `≥70 → C` · otherwise `D`. `report/SCORECARD.md` contains a table sorted by overall score descending, plus per-language rule-based remediation feedback (which probe failed, which coverage is lacking, etc.).
 
-> ⚠️ **성능·동형성(20%)은 아직 k6 실측이 연동되지 않았다.** 현재는 계약 엔드포인트 구현 완전성(conformance 통과율)의 근사치로 대체돼 있다(`score.mjs`의 `perf: null` 하드코딩) — k6 `report/<lang>.summary.json`을 상대 백분위로 반영하는 것은 후속 작업이다. 결측 신호(앱 빌드 실패 등)는 크래시하지 않고 0점 처리된다.
+> ⚠️ **Performance/isomorphism (20%) is not yet wired to actual k6 measurements.** It is currently substituted with an approximation of contract-endpoint implementation completeness (conformance pass rate) (the `perf: null` hardcode in `score.mjs`) — reflecting the k6 `report/<lang>.summary.json` as a relative percentile is follow-up work. Missing signals (e.g., app build failure) are scored as 0 without crashing.
 
-### 신호 파일 (`report/signals/`)
+### Signal files (`report/signals/`)
 
-`verify.sh`/`suites/run-suite.sh`가 언어별로 쓰고 `score.mjs`가 읽는 생성 아티팩트(미커밋, `report/.gitignore`):
+Generated artifacts (not committed, `report/.gitignore`) that `verify.sh`/`suites/run-suite.sh` write per language and `score.mjs` reads:
 
-- `<lang>.conformance.json` — conformance.mjs 산출(§기능)
-- `<lang>.security.json` — probe.mjs 산출(§보안)
-- `<lang>.suite.json` — `suites/<lang>.sh` 마지막 줄 JSON(§커버리지·품질). `suites/<lang>.sh`가 없거나 규약(마지막 줄 JSON 한 줄) 위반 시 `{"ran":false}`로 폴백.
-- `<lang>.error.json` — 앱 빌드/기동 실패 시 격리 기록(해당 언어는 conformance/security/k6가 스킵되고 커버리지·품질만 반영될 수 있음).
+- `<lang>.conformance.json` — produced by conformance.mjs (§functional)
+- `<lang>.security.json` — produced by probe.mjs (§security)
+- `<lang>.suite.json` — the last-line JSON from `suites/<lang>.sh` (§coverage/quality). Falls back to `{"ran":false}` if `suites/<lang>.sh` is missing or violates the convention (a single last line of JSON).
+- `<lang>.error.json` — an isolated record written on app-build/startup failure (that language then skips conformance/security/k6 and may only reflect coverage/quality).
 
-### 실행 범위 — CI 1차, 로컬은 스모크
+### Execution scope — CI first, local for smoke
 
-8언어 전체 `verify.sh` 실행은 각 언어 툴체인 이미지 pull+의존성 설치+테스트까지 포함해 무겁다(수십 분). **CI가 1차 실행 주체**다 — `.github/workflows/harness.yml`의 `score-all` 잡이 야간(`schedule` 03:00 UTC)·수동(`workflow_dispatch`)에 8언어 전체를 돌리고 `SCORECARD.md`+`report/signals/`를 아티팩트로 업로드한다(`timeout-minutes: 60`). **로컬(특히 Windows Docker Desktop)은 1~2개 언어 스모크**로 제한하는 것을 권장한다 — Alpine(musl) 베이스(위 경고 참고)가 DNS 게차는 해결하지만, 8언어 전체 빌드+테스트는 로컬 반복개발 루프에 비효율적으로 무겁다.
+Running the full `verify.sh` across 8 languages is heavy (tens of minutes), since it includes pulling each language's toolchain image + installing dependencies + running the tests. **CI is the primary execution vehicle** — the `score-all` job in `.github/workflows/harness.yml` runs the full 8 languages nightly (`schedule` 03:00 UTC) and on demand (`workflow_dispatch`) and uploads `SCORECARD.md` + `report/signals/` as artifacts (`timeout-minutes: 60`). **Locally (especially on Windows Docker Desktop) it is recommended to limit to a 1–2 language smoke** — the Alpine (musl) base (see the warning above) solves the DNS gotcha, but a full 8-language build + test is inefficiently heavy for the local iterative development loop.
 
-## 계약
+## Contract
 
-모든 언어 샘플 앱은 [`contract/CONTRACT.md`](contract/CONTRACT.md)에 정의된 엔드포인트·요청/응답 스키마·오류 매핑을 동일하게 구현한다(포트만 `APP_PORT`로 상이, v2에서 auth 확장·5 admin 리소스·오류 경로 추가). k6 드라이버·conformance·security 프로브 모두 이 계약 하나만 알면 모든 언어 앱을 동일하게 구동·검증할 수 있다.
+Every language sample app implements the endpoints, request/response schemas, and error mappings defined in [`contract/CONTRACT.md`](contract/CONTRACT.md) identically (only the port differs via `APP_PORT`; v2 adds auth extensions, 5 admin resources, and error paths). The k6 driver, conformance, and security probes all need to know only this single contract to drive and verify every language app identically.
