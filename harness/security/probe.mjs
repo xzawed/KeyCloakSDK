@@ -1,6 +1,7 @@
 // 보안 하드닝 프로브. 앱 /validate에 적대적 토큰을 주입해 "거부(401)되어야 함"을 검증 + 마스킹 스캔.
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { classify, isDefended } from "./verdict.mjs";
 const BASE = process.env.BASE, LANG = process.env.LANG || "unknown";
 const KC_URL = process.env.KC_URL;
 const probes = [];
@@ -23,8 +24,13 @@ async function validate(token) {
   let body = ""; try { body = await r.text(); } catch {}
   return { status: r.status, body };
 }
-// "거부되어야 함" = 200이 아니면 방어 성공(정상은 401). 200이면 BYPASS(방어 실패).
-const expectReject = async (name, token) => { const r = await validate(token); rec(name, r.status !== 200, `status=${r.status}`); };
+// "거부되어야 함" = 명시적 거부(400/401)만 방어 성공이다. 200이면 BYPASS(방어 실패),
+// 5xx면 CRASH(프로브가 앱을 죽였다 — 방어가 아니라 더 나쁜 결과), 그 밖은 예상 밖 상태다.
+const expectReject = async (name, token) => {
+  const r = await validate(token);
+  const verdict = classify(r.status);
+  rec(name, isDefended(r.status), `status=${r.status} verdict=${verdict}`);
+};
 
 const run = async () => {
   const now = Math.floor(Date.now() / 1000);
@@ -111,8 +117,11 @@ const run = async () => {
   });
 
   const defended = probes.filter(p => p.defended).length;
-  fs.writeFileSync(`/out/${LANG}.security.json`, JSON.stringify({ lang: LANG, probes, defended, total: probes.length }, null, 2));
-  console.log(`[security ${LANG}] ${defended}/${probes.length} defended`);
+  // detail 문자열에 심어둔 verdict로 크래시 수를 센다. 방어 실패 중에서도 "앱이 죽었다"는
+  // "공격 토큰이 수락됐다"와 성격이 다르므로 신호에 따로 남긴다.
+  const crashes = probes.filter(p => /verdict=crashed/.test(p.detail)).length;
+  fs.writeFileSync(`/out/${LANG}.security.json`, JSON.stringify({ lang: LANG, probes, defended, crashes, total: probes.length }, null, 2));
+  console.log(`[security ${LANG}] ${defended}/${probes.length} defended, ${crashes} crashed`);
   process.exit(defended < probes.length ? 1 : 0);
 };
 run().catch(e => { console.error(e); process.exit(2); });
