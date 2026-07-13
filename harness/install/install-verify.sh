@@ -903,6 +903,10 @@ for L in "${LANGS[@]}"; do
 done
 
 log "== 설치 매트릭스 생성 =="
-node report/install-matrix.mjs || true
-log "== 완료 — report/INSTALL-MATRIX.md =="
-exit 0
+# --strict: 매트릭스에 ✗가 있으면 exit 1. 부분실패 격리(위 루프가 실패 언어를 건너뛰고 계속
+# 진행하는 것)는 유지하고, 최종 종료코드에만 반영한다. 이전에는 여기가 `|| true` + 무조건
+# `exit 0`이라 java/php가 publish 단계에서 죽어도 CI 잡이 초록이었다(2026-07-08·07-09 실측).
+MATRIX_RC=0
+node report/install-matrix.mjs --strict || MATRIX_RC=$?
+log "== 완료 — report/INSTALL-MATRIX.md (exit=${MATRIX_RC}) =="
+exit "$MATRIX_RC"
