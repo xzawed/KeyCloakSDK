@@ -24,6 +24,21 @@ describe('defineConfig', () => {
     expect(c.readTimeoutMs).toBe(30_000)
     expect(c.scopes).toEqual([])
     expect(c.clientSecret).toBeUndefined()
+    expect(c.signatureAlgorithms).toEqual(['RS256'])
+  })
+
+  it('signatureAlgorithms를 설정하면 유지하고, 빈 배열은 거부', () => {
+    expect(
+      defineConfig({
+        serverUrl: 'https://kc',
+        realm: 'r',
+        clientId: 'c',
+        signatureAlgorithms: ['ES256', 'RS256'],
+      }).signatureAlgorithms,
+    ).toEqual(['ES256', 'RS256'])
+    expect(() =>
+      defineConfig({ serverUrl: 'https://kc', realm: 'r', clientId: 'c', signatureAlgorithms: [] }),
+    ).toThrow(KeycloakConfigError)
   })
 
   it('제공한 값은 유지', () => {
