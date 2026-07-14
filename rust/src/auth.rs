@@ -96,9 +96,8 @@ impl AuthClient {
     /// state 검증(콜백 대조)은 무상태이므로 호출자 책임(다른 SDK와 동형).
     pub fn create_authorization_request(&self) -> AuthorizationRequest {
         let (challenge, verifier) = PkceCodeChallenge::new_random_sha256();
-        // nonce는 openidconnect가 auth URL에 실어 Keycloak이 id_token에 담아 돌려주지만,
-        // 이 SDK는 id_token을 openidconnect 검증기로 검증하지 않고(JwtValidator가 access_token만
-        // 강화 검증) exchange_code에서 nonce 검증 단계를 밟지 않으므로 여기서 소비하지 않는다.
+        // nonce는 openidconnect가 auth URL에 실어 Keycloak이 id_token에 담아 돌려준다. 호출자에게
+        // 함께 돌려줘 콜백 후 exchange_code(expected_nonce)로 넘기면 id_token 재생을 막는다.
         // config.scopes를 반영(사용자 커스텀 스코프). 비면 "openid" 폴백.
         let scopes: Vec<Scope> = if self.config.scopes.is_empty() {
             vec![Scope::new("openid".to_string())]
@@ -109,7 +108,7 @@ impl AuthClient {
                 .map(|s| Scope::new(s.clone()))
                 .collect()
         };
-        let (url, csrf, _nonce) = self
+        let (url, csrf, nonce) = self
             .oidc
             .authorize_url(
                 AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
@@ -123,11 +122,21 @@ impl AuthClient {
             url: url.to_string(),
             state: csrf.secret().clone(),
             code_verifier: verifier.into_secret(),
+            nonce: nonce.secret().clone(),
         }
     }
 
     /// Authorization Code → 토큰 교환. PKCE verifier를 반드시 전달(S256 증명).
-    pub async fn exchange_code(&self, code: &str, code_verifier: &str) -> Result<TokenSet> {
+    ///
+    /// `expected_nonce`가 `Some`이면(create_authorization_request가 돌려준 nonce) 응답 id_token을
+    /// 강화 `JwtValidator`로 서명·iss·aud·exp까지 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce
+    /// 재생 방지. 불일치·부재·검증실패는 모두 거부(fail-closed). `None`이면 id_token 검증을 건너뛴다.
+    pub async fn exchange_code(
+        &self,
+        code: &str,
+        code_verifier: &str,
+        expected_nonce: Option<&str>,
+    ) -> Result<TokenSet> {
         let resp = self
             .oidc
             .exchange_code(AuthorizationCode::new(code.to_string()))
@@ -135,7 +144,38 @@ impl AuthClient {
             .request_async(&self.http)
             .await
             .map_err(map_token_err)?;
-        Ok(to_token_set(&resp))
+        let token_set = to_token_set(&resp);
+        if let Some(nonce) = expected_nonce {
+            self.verify_nonce(token_set.id_token.as_deref(), nonce)
+                .await?;
+        }
+        Ok(token_set)
+    }
+
+    // id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다
+    // (액세스 토큰과 id_token 모두 aud=client_id라 검증기를 공유해도 안전).
+    async fn verify_nonce(&self, id_token: Option<&str>, expected_nonce: &str) -> Result<()> {
+        let id_token = id_token.ok_or_else(|| KeycloakError::Auth {
+            message: "authorization code exchange failed: missing id_token for nonce validation"
+                .to_string(),
+            oauth_error: None,
+        })?;
+        let validated =
+            self.validator
+                .validate(id_token)
+                .await
+                .map_err(|e| KeycloakError::Auth {
+                    message: format!("authorization code exchange failed: invalid id_token: {e}"),
+                    oauth_error: None,
+                })?;
+        let actual = validated.claims.get("nonce").and_then(|v| v.as_str());
+        if actual != Some(expected_nonce) {
+            return Err(KeycloakError::Auth {
+                message: "authorization code exchange failed: unexpected nonce".to_string(),
+                oauth_error: None,
+            });
+        }
+        Ok(())
     }
 
     /// Client Credentials 흐름(admin 접착·서비스 계정).
@@ -256,8 +296,115 @@ mod tests {
     // 파싱하고 경계에서 IntrospectionResult로 변환되는지 확인. 전 흐름은 Task 11 통합테스트.
     use super::*;
     use crate::jwks::JwksStore;
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+    use rsa::pkcs1::{EncodeRsaPrivateKey, LineEnding};
+    use rsa::traits::PublicKeyParts;
+    use rsa::{RsaPrivateKey, RsaPublicKey};
+    use serde_json::json;
+    use std::time::{SystemTime, UNIX_EPOCH};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    // (priv_pem, jwk) 픽스처 — jwt.rs 테스트와 동일 패턴. kid="test-kid".
+    fn make_rsa() -> (String, serde_json::Value) {
+        let mut rng = rand::thread_rng();
+        let sk = RsaPrivateKey::new(&mut rng, 2048).unwrap();
+        let pk = RsaPublicKey::from(&sk);
+        let n = URL_SAFE_NO_PAD.encode(pk.n().to_bytes_be());
+        let e = URL_SAFE_NO_PAD.encode(pk.e().to_bytes_be());
+        let priv_pem = sk.to_pkcs1_pem(LineEnding::LF).unwrap().to_string();
+        let jwk = json!({"kty":"RSA","kid":"test-kid","use":"sig","alg":"RS256","n":n,"e":e});
+        (priv_pem, jwk)
+    }
+
+    fn sign_id_token(priv_pem: &str, iss: &str, aud: &str, nonce: &str) -> String {
+        let mut h = Header::new(Algorithm::RS256);
+        h.kid = Some("test-kid".into());
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let claims = json!({"sub":"u","iss":iss,"aud":aud,"exp":now+300,"iat":now,"nonce":nonce});
+        let ek = EncodingKey::from_rsa_pem(priv_pem.as_bytes()).unwrap();
+        encode(&h, &claims, &ek).unwrap()
+    }
+
+    // AuthClient + JWKS(/certs)를 mount한 MockServer + issuer를 돌려준다. jwk를 서명 키의 공개키로
+    // mount하므로 sign_id_token(priv_pem, ...)이 만든 id_token이 검증을 통과한다.
+    async fn nonce_fixture() -> (AuthClient, String, String) {
+        let (priv_pem, jwk) = make_rsa();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/realms/it-realm/protocol/openid-connect/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"keys":[jwk]})))
+            .mount(&server)
+            .await;
+        let uri = Box::leak(Box::new(server)).uri();
+        let config = KeycloakConfig::new(uri, "it-realm", "it-client")
+            .unwrap()
+            .with_client_secret("s");
+        let endpoints = OidcEndpoints::new(&config);
+        let issuer = endpoints.issuer();
+        let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+        let validator = JwtValidator::new(&config, &endpoints, jwks);
+        let auth = AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap();
+        (auth, priv_pem, issuer)
+    }
+
+    #[tokio::test]
+    async fn create_authorization_request_returns_nonce() {
+        let config = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client").unwrap();
+        let endpoints = OidcEndpoints::new(&config);
+        let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+        let validator = JwtValidator::new(&config, &endpoints, jwks);
+        let auth = AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap();
+        let req = auth.create_authorization_request();
+        assert!(
+            !req.nonce.is_empty(),
+            "nonce must be returned to the caller"
+        );
+        assert!(
+            req.url.contains("nonce="),
+            "nonce must be on the authorization URL"
+        );
+    }
+
+    #[tokio::test]
+    async fn verify_nonce_accepts_match_rejects_mismatch_and_missing() {
+        let (auth, priv_pem, issuer) = nonce_fixture().await;
+        let id_token = sign_id_token(&priv_pem, &issuer, "it-client", "server-nonce");
+
+        // Matching nonce → accepted.
+        assert!(
+            auth.verify_nonce(Some(&id_token), "server-nonce")
+                .await
+                .is_ok()
+        );
+        // Mismatched nonce → rejected.
+        assert!(matches!(
+            auth.verify_nonce(Some(&id_token), "attacker-nonce").await,
+            Err(KeycloakError::Auth { .. })
+        ));
+        // Missing id_token while a nonce is expected → rejected (fail-closed).
+        assert!(matches!(
+            auth.verify_nonce(None, "server-nonce").await,
+            Err(KeycloakError::Auth { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn verify_nonce_rejects_untrusted_id_token() {
+        let (auth, _priv_pem, issuer) = nonce_fixture().await;
+        // Signed by a key that is NOT in the served JWKS → signature verification fails.
+        let (other_pem, _) = make_rsa();
+        let forged = sign_id_token(&other_pem, &issuer, "it-client", "server-nonce");
+        assert!(matches!(
+            auth.verify_nonce(Some(&forged), "server-nonce").await,
+            Err(KeycloakError::Auth { .. })
+        ));
+    }
 
     #[tokio::test]
     async fn introspect_maps_active_response() {
