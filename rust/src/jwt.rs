@@ -22,17 +22,37 @@ pub struct JwtValidator {
     issuer: String,
     audience: String,
     clock_skew: u64,
+    algorithms: Vec<Algorithm>,
     jwks: JwksStore,
 }
 
 impl JwtValidator {
-    pub fn new(config: &KeycloakConfig, endpoints: &OidcEndpoints, jwks: JwksStore) -> Self {
-        Self {
+    /// config의 서명 알고리즘 이름을 jsonwebtoken `Algorithm`으로 파싱해 핀을 구성한다.
+    /// 빈 집합(alg 핀 무력화)이나 미지원 알고리즘 이름은 `KeycloakError::Config`로 거부한다.
+    pub fn new(
+        config: &KeycloakConfig,
+        endpoints: &OidcEndpoints,
+        jwks: JwksStore,
+    ) -> Result<Self> {
+        if config.signature_algorithms.is_empty() {
+            return Err(KeycloakError::Config(
+                "signature_algorithms must be non-empty".into(),
+            ));
+        }
+        let mut algorithms = Vec::with_capacity(config.signature_algorithms.len());
+        for name in &config.signature_algorithms {
+            let alg = name.parse::<Algorithm>().map_err(|_| {
+                KeycloakError::Config(format!("unsupported signature algorithm: {name}"))
+            })?;
+            algorithms.push(alg);
+        }
+        Ok(Self {
             issuer: endpoints.issuer(),
             audience: config.client_id.clone(),
             clock_skew: config.clock_skew,
+            algorithms,
             jwks,
-        }
+        })
     }
 
     pub async fn validate(&self, token: &str) -> Result<ValidatedToken> {
@@ -50,9 +70,9 @@ impl JwtValidator {
         let key = DecodingKey::from_jwk(&jwk)
             .map_err(|_| KeycloakError::TokenValidation("invalid JWKS key".into()))?;
 
-        // (3) 강화 Validation: RS256 핀·iss 정확·aud 포함·exp 필수·nbf·스큐.
-        let mut v = Validation::new(Algorithm::RS256);
-        v.algorithms = vec![Algorithm::RS256]; // 헤더 alg 무시하고 RS256만 허용(HS256 confusion·none 차단)
+        // (3) 강화 Validation: config 알고리즘 핀·iss 정확·aud 포함·exp 필수·nbf·스큐.
+        let mut v = Validation::new(self.algorithms[0]); // non-empty 보장(new에서 검증)
+        v.algorithms = self.algorithms.clone(); // 헤더 alg 무시하고 설정된 집합만 허용(confusion·none 차단)
         v.set_issuer(&[self.issuer.as_str()]); // 정확 일치(부분/접두/후행슬래시 변형 거부)
         v.set_audience(&[self.audience.as_str()]); // 집합 정확 포함(부분문자열 아님)
         v.validate_exp = true; // exp 검증
@@ -167,7 +187,7 @@ mod tests {
         let endpoints = OidcEndpoints::new(&cfg);
         let jwks_uri = format!("{}/certs", Box::leak(Box::new(server)).uri());
         let store = JwksStore::new(jwks_uri, reqwest::Client::new(), 60);
-        JwtValidator::new(&cfg, &endpoints, store)
+        JwtValidator::new(&cfg, &endpoints, store).unwrap()
     }
 
     /// `validator_for`의 변형 — 정상 JWK 대신 호출자가 지정한(악의적/기형) JWKS 바디를
@@ -183,7 +203,7 @@ mod tests {
         let endpoints = OidcEndpoints::new(&cfg);
         let jwks_uri = format!("{}/certs", Box::leak(Box::new(server)).uri());
         let store = JwksStore::new(jwks_uri, reqwest::Client::new(), 60);
-        JwtValidator::new(&cfg, &endpoints, store)
+        JwtValidator::new(&cfg, &endpoints, store).unwrap()
     }
 
     fn sign(fx: &Fixture, claims: serde_json::Value, kid: &str) -> String {
@@ -196,6 +216,33 @@ mod tests {
     fn good_claims() -> serde_json::Value {
         json!({ "sub":"s1", "iss":"http://kc:8080/realms/it-realm",
                 "aud":["it-client","account"], "exp": now()+300, "iat": now() })
+    }
+
+    // config.signature_algorithms가 검증기 alg 핀으로 배선되는지(하드코딩 RS256 제거) — 빈/미지원 거부.
+    #[tokio::test]
+    async fn new_rejects_empty_signature_algorithms() {
+        let cfg = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
+            .unwrap()
+            .with_signature_algorithms(vec![]);
+        let endpoints = OidcEndpoints::new(&cfg);
+        let store = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+        assert!(matches!(
+            JwtValidator::new(&cfg, &endpoints, store),
+            Err(KeycloakError::Config(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn new_rejects_unsupported_algorithm_name() {
+        let cfg = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
+            .unwrap()
+            .with_signature_algorithms(vec!["NOPE999".to_string()]);
+        let endpoints = OidcEndpoints::new(&cfg);
+        let store = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+        assert!(matches!(
+            JwtValidator::new(&cfg, &endpoints, store),
+            Err(KeycloakError::Config(_))
+        ));
     }
 
     // ── 브리프 7개: 정상 통과 + 핵심 강화 불변식 거부 ──────────────────────────────
