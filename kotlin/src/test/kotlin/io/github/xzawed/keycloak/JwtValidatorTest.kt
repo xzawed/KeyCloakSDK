@@ -1,5 +1,10 @@
 package io.github.xzawed.keycloak
 
+import com.github.tomakehurst.wiremock.WireMockServer
+import com.github.tomakehurst.wiremock.client.WireMock.aResponse
+import com.github.tomakehurst.wiremock.client.WireMock.get
+import com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo
+import com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig
 import com.nimbusds.jose.JWSAlgorithm
 import com.nimbusds.jose.JWSHeader
 import com.nimbusds.jose.crypto.MACSigner
@@ -327,4 +332,63 @@ internal class JwtValidatorTest {
 
         assertFailsWith<TokenValidationException> { JwtValidator.forRealm(badEndpoints, config, audience) }
     }
+
+    // 부정/실경로 테스트(PR6): 모든 다른 JWKS 테스트는 정적 withStaticJwks(ImmutableJWKSet)를 써
+    // forRealm의 실제 JWKSourceBuilder 네트워크 조회가 전혀 검증되지 않았다. WireMock으로 /certs를
+    // 서빙해 forRealm이 실제로 JWKS를 조회·서명검증하는 경로를 확인한다.
+    @Test
+    fun `forRealm fetches JWKS over the network and validates a token`() =
+        runTest {
+            val server = WireMockServer(wireMockConfig().dynamicPort())
+            server.start()
+            try {
+                val key = rsaKey()
+                server.stubFor(
+                    get(urlPathEqualTo("/realms/r/protocol/openid-connect/certs"))
+                        .willReturn(
+                            aResponse()
+                                .withHeader("Content-Type", "application/json")
+                                .withBody(JWKSet(key.toPublicJWK()).toString()),
+                        ),
+                )
+                val config = KeycloakConfig(serverUrl = server.baseUrl(), realm = "r", clientId = audience)
+                val endpoints = OidcEndpoints.forRealm(config)
+                val validator = JwtValidator.forRealm(endpoints, config, audience)
+                val token = signedRs256(key, claims(iss = endpoints.issuer))
+
+                val validated = validator.validate(token)
+
+                assertEquals(endpoints.issuer, validated.issuer)
+            } finally {
+                server.stop()
+            }
+        }
+
+    // 부정 테스트(PR6): 조회한 JWKS에 서명 키(kid)가 없으면(다른 키로 서명) 실 조회 경로에서도 거부.
+    @Test
+    fun `forRealm rejects a token whose signing key is absent from the fetched JWKS`() =
+        runTest {
+            val server = WireMockServer(wireMockConfig().dynamicPort())
+            server.start()
+            try {
+                val servedKey = rsaKey("k1")
+                val attackerKey = rsaKey("k1") // 같은 kid, 다른 키
+                server.stubFor(
+                    get(urlPathEqualTo("/realms/r/protocol/openid-connect/certs"))
+                        .willReturn(
+                            aResponse()
+                                .withHeader("Content-Type", "application/json")
+                                .withBody(JWKSet(servedKey.toPublicJWK()).toString()),
+                        ),
+                )
+                val config = KeycloakConfig(serverUrl = server.baseUrl(), realm = "r", clientId = audience)
+                val endpoints = OidcEndpoints.forRealm(config)
+                val validator = JwtValidator.forRealm(endpoints, config, audience)
+                val forged = signedRs256(attackerKey, claims(iss = endpoints.issuer))
+
+                assertFailsWith<TokenValidationException> { validator.validate(forged) }
+            } finally {
+                server.stop()
+            }
+        }
 }
