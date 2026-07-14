@@ -115,4 +115,57 @@ class JwtValidatorTest {
     assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
         () -> v.validate(jwt.serialize()));
   }
+
+  // 부정 테스트(PR6): 만료된 토큰은 서명이 유효해도 거부돼야 한다 — 이 테스트가 없으면 exp
+  // 검증(DefaultJWTClaimsVerifier)이 사라져도 나머지 테스트가 전부 통과한다(감사 test-quality).
+  @Test void expiredToken_rejected() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String issuer = "https://kc.example.com/realms/r";
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+            .expirationTime(new Date(System.currentTimeMillis() - 60_000)).build());
+    jwt.sign(new RSASSASigner(key));
+    JwtValidator v = JwtValidator.withStaticJwks(
+        new JWKSet(key.toPublicJWK()), issuer, "app",
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+
+    assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+        () -> v.validate(jwt.serialize()));
+  }
+
+  // 부정 테스트(PR6): 기대 issuer와 다른 issuer의 토큰은 거부돼야 한다(exact match).
+  @Test void wrongIssuer_rejected() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String realIssuer = "https://kc.example.com/realms/r";
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        new JWTClaimsSet.Builder().issuer("https://evil.example.com/realms/r").audience("app")
+            .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
+    jwt.sign(new RSASSASigner(key));
+    JwtValidator v = JwtValidator.withStaticJwks(
+        new JWKSet(key.toPublicJWK()), realIssuer, "app",
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+
+    assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+        () -> v.validate(jwt.serialize()));
+  }
+
+  // 부정 테스트(PR6): JWKS의 키와 다른 키로 서명된 토큰(서명 변조)은 kid가 맞아도 거부돼야 한다.
+  @Test void tamperedSignature_rejected() throws Exception {
+    RSAKey signingKey = new RSAKeyGenerator(2048).keyID("k1").generate();
+    RSAKey jwksKey = new RSAKeyGenerator(2048).keyID("k1").generate(); // 검증기에 배포된 다른 키(같은 kid)
+    String issuer = "https://kc.example.com/realms/r";
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+            .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
+    jwt.sign(new RSASSASigner(signingKey)); // signingKey로 서명
+    JwtValidator v = JwtValidator.withStaticJwks(
+        new JWKSet(jwksKey.toPublicJWK()), issuer, "app", // 검증기는 jwksKey를 신뢰
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+
+    assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+        () -> v.validate(jwt.serialize()));
+  }
 }
