@@ -277,6 +277,91 @@ def test_exchange_code_wraps_auth_error_on_invalid_grant():
     assert excinfo.value.error == "invalid_grant"
 
 
+def _exchange_client_with_id_token(id_token: str | None) -> tuple[AuthClient, RSAKey]:
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config()
+    openid = MagicMock(spec=KeycloakOpenID)
+    response: dict[str, object] = {"access_token": "acc", "token_type": "Bearer", "expires_in": 60}
+    if id_token is not None:
+        response["id_token"] = id_token
+    openid.token.return_value = response
+    openid.certs.return_value = {"keys": [key.as_dict(private=False)]}
+    return _client(openid, config=config), key
+
+
+def test_exchange_code_validates_id_token_and_accepts_matching_nonce():
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    id_token = _signed_token(
+        key, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce"
+    )
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.token.return_value = {
+        "access_token": "acc",
+        "id_token": id_token,
+        "token_type": "Bearer",
+        "expires_in": 60,
+    }
+    openid.certs.return_value = {"keys": [key.as_dict(private=False)]}
+    client = _client(openid, config=config)
+
+    result = client.exchange_code("code", "https://app/cb", "verifier", nonce="server-nonce")
+
+    assert result.access_token == "acc"
+
+
+def test_exchange_code_rejects_mismatched_nonce():
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    id_token = _signed_token(
+        key, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce"
+    )
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.token.return_value = {
+        "access_token": "acc",
+        "id_token": id_token,
+        "token_type": "Bearer",
+        "expires_in": 60,
+    }
+    openid.certs.return_value = {"keys": [key.as_dict(private=False)]}
+    client = _client(openid, config=config)
+
+    with pytest.raises(KeycloakAuthError, match="nonce"):
+        client.exchange_code("code", "https://app/cb", "verifier", nonce="attacker-nonce")
+
+
+def test_exchange_code_rejects_missing_id_token_when_nonce_expected():
+    client, _ = _exchange_client_with_id_token(id_token=None)
+
+    with pytest.raises(KeycloakAuthError, match="id_token"):
+        client.exchange_code("code", "https://app/cb", "verifier", nonce="server-nonce")
+
+
+def test_exchange_code_skips_id_token_validation_without_nonce():
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    id_token = _signed_token(
+        key, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce"
+    )
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.token.return_value = {
+        "access_token": "acc",
+        "id_token": id_token,
+        "token_type": "Bearer",
+        "expires_in": 60,
+    }
+    openid.certs.return_value = {"keys": [key.as_dict(private=False)]}
+    client = _client(openid, config=config)
+
+    result = client.exchange_code("code", "https://app/cb", "verifier")
+
+    assert result.access_token == "acc"
+    openid.certs.assert_not_called()
+
+
 def test_refresh_maps_response_and_delegates():
     openid = MagicMock(spec=KeycloakOpenID)
     openid.refresh_token.return_value = {

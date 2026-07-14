@@ -25,7 +25,12 @@ from keycloak.exceptions import KeycloakError
 
 from ..auth import AuthorizationUrl, _generate_pkce_pair
 from ..config import KeycloakConfig
-from ..exceptions import KeycloakAuthError, KeycloakTransportError, TokenKeyError
+from ..exceptions import (
+    KeycloakAuthError,
+    KeycloakTransportError,
+    TokenKeyError,
+    TokenValidationError,
+)
 from ..jwt import JwtValidator
 from ..oidc import OidcEndpoints
 from ..tokens import IntrospectionResult, TokenSet, ValidatedToken
@@ -133,8 +138,15 @@ class AsyncAuthClient:
         )
         return TokenSet.from_response(response, issued_at=time.time())
 
-    async def exchange_code(self, code: str, redirect_uri: str, code_verifier: str) -> TokenSet:
-        """인가 코드 + PKCE verifier를 토큰으로 교환한다(`authorization_code` grant)."""
+    async def exchange_code(
+        self, code: str, redirect_uri: str, code_verifier: str, nonce: str | None = None
+    ) -> TokenSet:
+        """인가 코드 + PKCE verifier를 토큰으로 교환한다(`authorization_code` grant).
+
+        `nonce`가 주어지면(create_authorization_request가 돌려준 값) 응답 id_token을 강화
+        `JwtValidator`로 서명·iss·aud·exp까지 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce
+        재생 방지(sync `AuthClient.exchange_code` 동형). 불일치·부재·검증실패는 거부(fail-closed).
+        """
         response = await self._awrap(
             self._openid.a_token(
                 grant_type="authorization_code",
@@ -143,7 +155,22 @@ class AsyncAuthClient:
                 code_verifier=code_verifier,
             )
         )
-        return TokenSet.from_response(response, issued_at=time.time())
+        token_set = TokenSet.from_response(response, issued_at=time.time())
+        if nonce is not None:
+            await self._verify_nonce(token_set.id_token, nonce)
+        return token_set
+
+    async def _verify_nonce(self, id_token: str | None, expected_nonce: str) -> None:
+        if id_token is None:
+            raise KeycloakAuthError(
+                "authorization code exchange failed: missing id_token for nonce validation"
+            )
+        try:
+            validated = await self.validate(id_token)
+        except TokenValidationError as exc:
+            raise KeycloakAuthError("authorization code exchange failed: invalid id_token") from exc
+        if validated.claims.get("nonce") != expected_nonce:
+            raise KeycloakAuthError("authorization code exchange failed: unexpected nonce")
 
     async def refresh(self, refresh_token: str) -> TokenSet:
         """`refresh_token` grant로 접근 토큰을 갱신한다."""

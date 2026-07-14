@@ -171,6 +171,51 @@ async def test_exchange_code_wraps_auth_error():
         await client.exchange_code("bad-code", "https://app/cb", "verifier")
 
 
+def _exchange_openid_with_id_token(key: RSAKey, id_token: str | None) -> MagicMock:
+    openid = MagicMock()
+    response: dict[str, object] = {"access_token": "acc", "token_type": "Bearer", "expires_in": 60}
+    if id_token is not None:
+        response["id_token"] = id_token
+    openid.a_token = AsyncMock(return_value=response)
+    openid.a_certs = AsyncMock(return_value={"keys": [key.as_dict(private=False)]})
+    return openid
+
+
+async def test_exchange_code_validates_id_token_and_accepts_matching_nonce():
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    id_token = _signed_token(
+        key, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce"
+    )
+    client = _client(_exchange_openid_with_id_token(key, id_token), config=config)
+
+    result = await client.exchange_code("code", "https://app/cb", "verifier", nonce="server-nonce")
+
+    assert result.access_token == "acc"
+
+
+async def test_exchange_code_rejects_mismatched_nonce():
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    id_token = _signed_token(
+        key, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce"
+    )
+    client = _client(_exchange_openid_with_id_token(key, id_token), config=config)
+
+    with pytest.raises(KeycloakAuthError, match="nonce"):
+        await client.exchange_code("code", "https://app/cb", "verifier", nonce="attacker-nonce")
+
+
+async def test_exchange_code_rejects_missing_id_token_when_nonce_expected():
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    client = _client(_exchange_openid_with_id_token(key, id_token=None))
+
+    with pytest.raises(KeycloakAuthError, match="id_token"):
+        await client.exchange_code("code", "https://app/cb", "verifier", nonce="server-nonce")
+
+
 async def test_refresh_maps_response_and_delegates():
     openid = MagicMock()
     openid.a_refresh_token = AsyncMock(
