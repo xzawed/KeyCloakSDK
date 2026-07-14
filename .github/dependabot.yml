@@ -1,0 +1,64 @@
+# Dependabot — dependency update monitoring for all nine language SDKs plus
+# GitHub Actions. Each ecosystem is scoped to its language directory. Weekly
+# schedule; minor/patch updates grouped to reduce PR noise.
+version: 2
+updates:
+  - package-ecosystem: maven # Java
+    directory: /java
+    schedule: { interval: weekly }
+    groups:
+      java-minor-patch: { update-types: [minor, patch] }
+
+  - package-ecosystem: gradle # Kotlin
+    directory: /kotlin
+    schedule: { interval: weekly }
+    groups:
+      kotlin-minor-patch: { update-types: [minor, patch] }
+
+  - package-ecosystem: pip # Python
+    directory: /python
+    schedule: { interval: weekly }
+    groups:
+      python-minor-patch: { update-types: [minor, patch] }
+
+  - package-ecosystem: npm # Node
+    directory: /node
+    schedule: { interval: weekly }
+    groups:
+      node-minor-patch: { update-types: [minor, patch] }
+
+  - package-ecosystem: gomod # Go
+    directory: /go
+    schedule: { interval: weekly }
+    groups:
+      go-minor-patch: { update-types: [minor, patch] }
+
+  - package-ecosystem: nuget # C#/.NET
+    directory: /dotnet
+    schedule: { interval: weekly }
+    groups:
+      dotnet-minor-patch: { update-types: [minor, patch] }
+
+  - package-ecosystem: composer # PHP
+    directory: /php
+    schedule: { interval: weekly }
+    groups:
+      php-minor-patch: { update-types: [minor, patch] }
+
+  - package-ecosystem: cargo # Rust
+    directory: /rust
+    schedule: { interval: weekly }
+    groups:
+      rust-minor-patch: { update-types: [minor, patch] }
+
+  - package-ecosystem: bundler # Ruby
+    directory: /ruby
+    schedule: { interval: weekly }
+    groups:
+      ruby-minor-patch: { update-types: [minor, patch] }
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions-all: { patterns: ["*"] }

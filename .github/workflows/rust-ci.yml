@@ -40,6 +40,21 @@ jobs:
       # 네트워크 경계(auth.rs/admin.rs/client.rs)는 통합테스트로 검증 → 커버리지 게이트에서 제외.
       - run: cargo llvm-cov --ignore-filename-regex '(auth|admin|client)\.rs' --fail-under-lines 90
 
+  audit:
+    name: cargo audit (의존성 취약점)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-audit
+      # RUSTSEC-2023-0071(rsa "Marvin" 타이밍 사이드채널)은 dev-dependency rsa(테스트 키 생성
+      # 전용)에 대한 것으로, 런타임(jsonwebtoken 공개키 서명검증만)에 영향 경로가 없다 —
+      # 문서화된 예외로 무시한다(게차 참조).
+      - run: cargo audit --ignore RUSTSEC-2023-0071
+
   integration:
     name: Integration (testcontainers, 실제 Keycloak 26.6)
     runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → testcontainers-rs 동작

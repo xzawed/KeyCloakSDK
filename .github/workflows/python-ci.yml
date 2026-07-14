@@ -22,6 +22,14 @@ jobs:
         run: pytest -m "not integration" --cov=keycloak_sdk   # 임계값은 pyproject [tool.coverage.report] fail_under=100
       - name: mypy (strict)
         run: mypy src
+      - name: pip-audit (의존성 취약점 감사)
+        # editable 로컬 패키지(keycloak-sdk, PyPI 미배포)는 감사 불가로 skip되고, pip-audit는
+        # skip이 하나라도 있으면 종료코드 1(불완전 감사 신호)을 낸다(--skip-editable도 라벨만 바꿈).
+        # 환경 대신 editable을 제외한 frozen requirements를 감사해 실 의존성만 커버한다.
+        run: |
+          python -m pip install pip-audit
+          python -m pip freeze --exclude-editable > audit-reqs.txt
+          pip-audit -r audit-reqs.txt
 
   integration:
     name: Integration tests (testcontainers, 실제 Keycloak)

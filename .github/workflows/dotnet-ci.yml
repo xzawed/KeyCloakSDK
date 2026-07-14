@@ -27,6 +27,13 @@ jobs:
           /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura
           /p:Threshold=\"90,85\" /p:ThresholdType=\"line,branch\" /p:ThresholdStat=minimum
           /p:Exclude=\"[*]Xzawed.Keycloak.AuthClient,[*]Xzawed.Keycloak.Admin.*,[*]Xzawed.Keycloak.KeycloakClient\"
+      - name: 취약 패키지 감사 (배포 SDK 프로젝트)
+        # 배포되는 SDK 프로젝트의 (전이 포함) 취약 패키지만 게이트한다 — 테스트 전용 의존성
+        # (예: WireMock 경유 Scriban Moderate)은 배포물이 아니라 감사 대상에서 제외.
+        run: |
+          report=$(dotnet list dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj package --vulnerable --include-transitive 2>&1)
+          echo "$report"
+          echo "$report" | grep -qi "no vulnerable packages" || { echo "::error::vulnerable packages in shipped SDK"; exit 1; }
   integration:
     runs-on: ubuntu-latest
     steps:
