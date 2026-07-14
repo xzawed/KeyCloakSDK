@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	jose "github.com/go-jose/go-jose/v4"
 )
 
 func TestConfigValidateMissing(t *testing.T) {
@@ -19,6 +21,19 @@ func TestConfigValidateMissing(t *testing.T) {
 	}
 	if err := (Config{ServerURL: "https://kc", Realm: "r", ClientID: "c"}).validate(); err != nil {
 		t.Fatalf("valid config must pass: %v", err)
+	}
+}
+
+func TestConfigSignatureAlgorithms(t *testing.T) {
+	def := Config{ServerURL: "https://kc", Realm: "r", ClientID: "c"}.withDefaults()
+	if len(def.SignatureAlgorithms) != 1 || def.SignatureAlgorithms[0] != "RS256" {
+		t.Fatalf("default signature algorithms: %v", def.SignatureAlgorithms)
+	}
+	custom := Config{ServerURL: "https://kc", Realm: "r", ClientID: "c",
+		SignatureAlgorithms: []string{"ES256", "RS256"}}.withDefaults()
+	algs := custom.signatureAlgorithms()
+	if len(algs) != 2 || algs[0] != jose.ES256 || algs[1] != jose.RS256 {
+		t.Fatalf("conversion to jose types: %v", algs)
 	}
 }
 

@@ -3,6 +3,8 @@ package keycloak
 import (
 	"fmt"
 	"strings"
+
+	jose "github.com/go-jose/go-jose/v4"
 )
 
 // Config is immutable SDK configuration. Build it as a struct literal and pass
@@ -13,9 +15,13 @@ type Config struct {
 	ClientID       string
 	ClientSecret   string
 	Scopes         []string
-	ConnectTimeout int64 // ms; default 10000
-	ReadTimeout    int64 // ms; default 30000
-	ClockSkew      int64 // seconds; default 30
+	// SignatureAlgorithms pins the JWT signature algorithms accepted during
+	// validation (default ["RS256"]). Set it for ES256/PS256-signed realms — a
+	// hardcoded RS256 would reject every otherwise-valid token there.
+	SignatureAlgorithms []string
+	ConnectTimeout      int64 // ms; default 10000
+	ReadTimeout         int64 // ms; default 30000
+	ClockSkew           int64 // seconds; default 30
 }
 
 func (c Config) validate() error {
@@ -52,7 +58,20 @@ func (c Config) withDefaults() Config {
 	if c.ClockSkew == 0 {
 		c.ClockSkew = 30
 	}
+	if len(c.SignatureAlgorithms) == 0 {
+		c.SignatureAlgorithms = []string{"RS256"}
+	}
 	return c
+}
+
+// signatureAlgorithms converts the configured algorithm names to go-jose types
+// for the validator's algorithm pin. (jose.SignatureAlgorithm is a string type.)
+func (c Config) signatureAlgorithms() []jose.SignatureAlgorithm {
+	algs := make([]jose.SignatureAlgorithm, len(c.SignatureAlgorithms))
+	for i, name := range c.SignatureAlgorithms {
+		algs[i] = jose.SignatureAlgorithm(name)
+	}
+	return algs
 }
 
 // String masks the client secret so a config is never logged in plaintext.
