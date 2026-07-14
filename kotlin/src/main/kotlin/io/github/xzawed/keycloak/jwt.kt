@@ -74,7 +74,8 @@ public class JwtValidator private constructor(
             endpoints: OidcEndpoints,
             config: KeycloakConfig,
             audience: String,
-            allowedAlgs: Set<JWSAlgorithm> = setOf(JWSAlgorithm.RS256),
+            // §4: config는 String으로 서명 알고리즘을 보유하고(Nimbus 타입 미노출) 경계에서만 변환한다.
+            allowedAlgs: Set<JWSAlgorithm> = config.signatureAlgorithms.map { JWSAlgorithm.parse(it) }.toSet(),
         ): JwtValidator {
             // JWKS fetch도 KeycloakConfig의 connect/read 타임아웃을 따른다: 기본 DefaultResourceRetriever는
             // 자체 기본 타임아웃을 쓰므로 그대로 두면 설정이 무시된다.
