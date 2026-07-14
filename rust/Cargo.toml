@@ -12,7 +12,7 @@ repository = "https://github.com/xzawed/KeyCloakSDK"
 keycloak = { version = "=26.6.2", default-features = false, features = ["tags-all", "resource-builder", "reqwest12"] }
 openidconnect = { version = "=4.0.1", default-features = false, features = ["reqwest"] }
 jsonwebtoken = { version = "=10.4.0", default-features = false, features = ["rust_crypto", "use_pem"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-tls"] }
 tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "time", "sync"] }
 thiserror = "2.0"
 async-trait = "0.1"
