@@ -2,9 +2,7 @@ package keycloak
 
 import (
 	"context"
-	"net/http"
 	"sync"
-	"time"
 
 	"golang.org/x/sync/singleflight"
 )
@@ -34,7 +32,7 @@ func New(cfg Config) (*Client, error) {
 		allowedAlgs: cfg.signatureAlgorithms(), clockSkewSec: cfg.ClockSkew,
 		// Bound the JWKS fetch by the configured read timeout (a hung IdP must not
 		// block Validate forever — the same invariant as the admin/auth clients).
-		httpClient: &http.Client{Timeout: time.Duration(cfg.ReadTimeout) * time.Millisecond},
+		httpClient: cfg.httpClient(),
 	})
 	return &Client{cfg: cfg, Auth: newAuthClient(cfg, v)}, nil
 }

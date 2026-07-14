@@ -35,7 +35,9 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 		return nil, &ConfigError{Msg: "clientSecret is required for admin client-credentials"}
 	}
 	gc := gocloak.NewClient(cfg.ServerURL)
-	gc.RestyClient().SetTimeout(time.Duration(cfg.ReadTimeout) * time.Millisecond)
+	// ReadTimeout = overall deadline; ConnectTimeout = dial/TLS-handshake deadline
+	// (injected via the transport — previously a silent no-op for admin calls).
+	gc.RestyClient().SetTimeout(time.Duration(cfg.ReadTimeout) * time.Millisecond).SetTransport(cfg.transport())
 
 	tp := NewClientCredentialsTokenProvider(func(ctx context.Context) (*TokenSet, error) {
 		jwt, err := gc.LoginClient(ctx, cfg.ClientID, cfg.ClientSecret, cfg.Realm)
