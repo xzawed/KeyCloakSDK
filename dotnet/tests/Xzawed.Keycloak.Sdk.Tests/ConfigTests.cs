@@ -27,6 +27,21 @@ public class ConfigTests
         Assert.Equal(10_000, c.ConnectTimeoutMs);
         Assert.Equal(30_000, c.ReadTimeoutMs);
         Assert.Empty(c.Scopes);
+        Assert.Equal(new[] { "RS256" }, c.SignatureAlgorithms);
+    }
+
+    [Fact]
+    public void SignatureAlgorithms_custom_values_are_preserved()
+    {
+        var c = (Base() with { SignatureAlgorithms = new[] { "ES256", "RS256" } }).Normalized();
+        Assert.Equal(new[] { "ES256", "RS256" }, c.SignatureAlgorithms);
+    }
+
+    [Fact]
+    public void Normalized_rejects_empty_signature_algorithms()
+    {
+        Assert.Throws<KeycloakConfigException>(
+            () => (Base() with { SignatureAlgorithms = System.Array.Empty<string>() }).Normalized());
     }
 
     [Fact]

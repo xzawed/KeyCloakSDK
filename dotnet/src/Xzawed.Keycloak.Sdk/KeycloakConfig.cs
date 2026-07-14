@@ -15,6 +15,10 @@ public sealed record KeycloakConfig
     public required string ClientId { get; init; }
     public string? ClientSecret { get; init; }
     public IReadOnlyList<string> Scopes { get; init; } = Array.Empty<string>();
+
+    /// <summary>JWT signature algorithms accepted during validation (default ["RS256"]). Set for
+    /// ES256/PS256-signed realms — a hardcoded RS256 would reject every otherwise-valid token there.</summary>
+    public IReadOnlyList<string> SignatureAlgorithms { get; init; } = new[] { "RS256" };
     public int ConnectTimeoutMs { get; init; } = 10_000;
     public int ReadTimeoutMs { get; init; } = 30_000;
     public int ClockSkewSeconds { get; init; } = 30;
@@ -25,6 +29,8 @@ public sealed record KeycloakConfig
         Require(ServerUrl, nameof(ServerUrl));
         Require(Realm, nameof(Realm));
         Require(ClientId, nameof(ClientId));
+        if (SignatureAlgorithms.Count == 0)
+            throw new KeycloakConfigException("SignatureAlgorithms must be non-empty");
         return this with { ServerUrl = ServerUrl.TrimEnd('/') };
     }
 

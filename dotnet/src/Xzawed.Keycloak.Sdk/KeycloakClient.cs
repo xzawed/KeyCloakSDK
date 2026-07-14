@@ -34,7 +34,13 @@ public sealed class KeycloakClient : IAsyncDisposable, IDisposable
         };
         var ep = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm);
         var validator = new JwtValidator(ep.Issuer,
-            new JwtValidatorOptions { Issuer = ep.Issuer, Audiences = new[] { cfg.ClientId }, ClockSkewSeconds = cfg.ClockSkewSeconds },
+            new JwtValidatorOptions
+            {
+                Issuer = ep.Issuer,
+                Audiences = new[] { cfg.ClientId },
+                AllowedAlgorithms = cfg.SignatureAlgorithms,
+                ClockSkewSeconds = cfg.ClockSkewSeconds,
+            },
             http);
         var auth = new AuthClient(cfg, ep, validator, http);
         return new KeycloakClient(cfg, http, auth);
