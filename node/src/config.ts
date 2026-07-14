@@ -10,6 +10,13 @@ export interface KeycloakConfig {
   readonly clientId: string
   readonly clientSecret?: string
   readonly scopes: readonly string[]
+  /**
+   * ⚠️ Node의 fetch/undici 스택(openid-client·admin-client)은 요청당 단일 총 타임아웃
+   * ({@link readTimeoutMs})만 표현할 수 있어, 별도의 "연결(connect) 타임아웃"을 강제하지 못한다
+   * (커스텀 undici dispatcher 주입이 필요하나 하위 라이브러리가 이를 노출하지 않음). 이 필드는
+   * 언어 간 config 대칭을 위해 유지되나 fetch 경로에는 별도로 배선되지 않는다(문서화된 한계 —
+   * sync/blocking-HTTP 언어인 Java·Go·PHP 등과 달리). 실효 타임아웃은 readTimeoutMs다.
+   */
   readonly connectTimeoutMs: number
   readonly readTimeoutMs: number
   readonly clockSkewSeconds: number
