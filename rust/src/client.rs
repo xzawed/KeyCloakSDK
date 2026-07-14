@@ -27,7 +27,7 @@ impl KeycloakClient {
             .map_err(|e| KeycloakError::Config(format!("http client: {e}")))?;
 
         let jwks = JwksStore::new(endpoints.jwks(), http.clone(), 60);
-        let validator = JwtValidator::new(&config, &endpoints, jwks);
+        let validator = JwtValidator::new(&config, &endpoints, jwks)?;
         let auth = Arc::new(AuthClient::new(
             config.clone(),
             OidcEndpoints::new(&config),

@@ -47,4 +47,19 @@ RSpec.describe KeycloakSdk::Config do
   it "rejects a non-positive timeout" do
     expect { valid(connect_timeout: 0) }.to raise_error(KeycloakSdk::ConfigError)
   end
+
+  it "defaults signature_algorithms to RS256" do
+    c = described_class.new(server_url: "https://k", realm: "r", client_id: "c")
+    expect(c.signature_algorithms).to eq(["RS256"])
+  end
+
+  it "keeps configured signature_algorithms" do
+    c = described_class.new(server_url: "https://k", realm: "r", client_id: "c",
+                            signature_algorithms: %w[ES256 RS256])
+    expect(c.signature_algorithms).to eq(%w[ES256 RS256])
+  end
+
+  it "rejects empty signature_algorithms" do
+    expect { valid(signature_algorithms: []) }.to raise_error(KeycloakSdk::ConfigError)
+  end
 end

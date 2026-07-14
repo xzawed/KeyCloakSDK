@@ -9,6 +9,9 @@ pub struct KeycloakConfig {
     pub client_id: String,
     pub client_secret: Option<String>,
     pub scopes: Vec<String>,
+    /// JWT 서명 검증 허용 알고리즘 핀(기본 ["RS256"]). ES256/PS256 realm용으로 설정 가능 —
+    /// 하드코딩하면 그런 realm의 정상 토큰이 전부 거부된다. 빈/미지원 값은 JwtValidator에서 거부.
+    pub signature_algorithms: Vec<String>,
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
     pub clock_skew: u64,
@@ -40,6 +43,7 @@ impl KeycloakConfig {
             client_id,
             client_secret: None,
             scopes: vec!["openid".to_string()],
+            signature_algorithms: vec!["RS256".to_string()],
             connect_timeout: Duration::from_secs(5),
             read_timeout: Duration::from_secs(30),
             clock_skew: 30,
@@ -55,6 +59,13 @@ impl KeycloakConfig {
     #[must_use]
     pub fn with_redirect_uri(mut self, uri: impl Into<String>) -> Self {
         self.redirect_uri = Some(uri.into());
+        self
+    }
+    /// JWT 서명 검증 알고리즘 핀을 설정한다(ES256/PS256 realm 등). 비었거나 미지원 알고리즘이면
+    /// JwtValidator 구성 시점(KeycloakClient::new)에 `KeycloakError::Config`로 거부된다.
+    #[must_use]
+    pub fn with_signature_algorithms(mut self, algs: Vec<String>) -> Self {
+        self.signature_algorithms = algs;
         self
     }
 }
@@ -82,6 +93,17 @@ mod tests {
         assert_eq!(c.server_url, "http://kc:8080");
         assert_eq!(c.scopes, vec!["openid".to_string()]);
         assert_eq!(c.clock_skew, 30);
+    }
+
+    #[test]
+    fn signature_algorithms_default_and_custom() {
+        let c = KeycloakConfig::new("http://kc:8080", "r", "c").unwrap();
+        assert_eq!(c.signature_algorithms, vec!["RS256".to_string()]);
+        let c2 = c.with_signature_algorithms(vec!["ES256".to_string(), "RS256".to_string()]);
+        assert_eq!(
+            c2.signature_algorithms,
+            vec!["ES256".to_string(), "RS256".to_string()]
+        );
     }
 
     #[test]

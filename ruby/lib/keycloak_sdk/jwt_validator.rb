@@ -7,7 +7,7 @@ module KeycloakSdk
   # RS256 핀(none/confusion 구조적 거부)·iss 정확·aud 포함·exp 필수·nbf·클록스큐.
   # 키는 DoS-safe JwksStore로 조회한다(위조 서명은 재조회 미유발). 헤더 alg는 검증 알고리즘 선택에 미사용.
   class JwtValidator
-    def initialize(issuer:, audience:, jwks_store:, clock_skew: 30)
+    def initialize(issuer:, audience:, jwks_store:, algorithms: ["RS256"], clock_skew: 30)
       # ruby-jwt의 verify_iss/verify_aud 빌더는 값이 nil이면 조용히 no-op이 되어
       # verify_iss:true/verify_aud:true를 켜도 검사를 건너뛴다 — fail-closed로 방어.
       raise ConfigError, "issuer is required" if issuer.nil? || issuer.to_s.strip.empty?
@@ -16,12 +16,14 @@ module KeycloakSdk
       @issuer = issuer
       @audience = audience
       @jwks_store = jwks_store
+      @algorithms = algorithms
       @clock_skew = clock_skew
     end
 
     def self.from_config(config:, jwks_store:)
       new(issuer: OidcEndpoints.from_config(config).issuer,
-          audience: config.client_id, jwks_store: jwks_store, clock_skew: config.clock_skew)
+          audience: config.client_id, jwks_store: jwks_store,
+          algorithms: config.signature_algorithms, clock_skew: config.clock_skew)
     end
 
     def validate(token)
@@ -35,7 +37,7 @@ module KeycloakSdk
 
     def decode_options
       {
-        algorithms: ["RS256"],
+        algorithms: @algorithms,
         jwks: jwks_loader,
         verify_iss: true, iss: @issuer,
         verify_aud: true, aud: @audience,

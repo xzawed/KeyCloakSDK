@@ -348,7 +348,7 @@ mod tests {
         let endpoints = OidcEndpoints::new(&config);
         let issuer = endpoints.issuer();
         let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
-        let validator = JwtValidator::new(&config, &endpoints, jwks);
+        let validator = JwtValidator::new(&config, &endpoints, jwks).unwrap();
         let auth = AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap();
         (auth, priv_pem, issuer)
     }
@@ -358,7 +358,7 @@ mod tests {
         let config = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client").unwrap();
         let endpoints = OidcEndpoints::new(&config);
         let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
-        let validator = JwtValidator::new(&config, &endpoints, jwks);
+        let validator = JwtValidator::new(&config, &endpoints, jwks).unwrap();
         let auth = AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap();
         let req = auth.create_authorization_request();
         assert!(
@@ -424,7 +424,7 @@ mod tests {
             .with_client_secret("s");
         let endpoints = OidcEndpoints::new(&config);
         let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
-        let validator = JwtValidator::new(&config, &endpoints, jwks);
+        let validator = JwtValidator::new(&config, &endpoints, jwks).unwrap();
         let auth = AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap();
 
         let r = auth.introspect("some-token").await.unwrap();

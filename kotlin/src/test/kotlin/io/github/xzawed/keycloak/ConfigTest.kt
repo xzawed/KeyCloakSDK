@@ -132,4 +132,24 @@ internal class ConfigTest {
         val config = KeycloakConfig(serverUrl = "http://x", realm = "r", clientId = "c")
         assertTrue(config.scopes.isEmpty())
     }
+
+    @Test
+    fun `default signatureAlgorithms is RS256`() {
+        val config = KeycloakConfig(serverUrl = "http://x", realm = "r", clientId = "c")
+        assertEquals(listOf("RS256"), config.signatureAlgorithms)
+    }
+
+    @Test
+    fun `custom signatureAlgorithms are preserved`() {
+        val config =
+            KeycloakConfig(serverUrl = "http://x", realm = "r", clientId = "c", signatureAlgorithms = listOf("ES256", "RS256"))
+        assertEquals(listOf("ES256", "RS256"), config.signatureAlgorithms)
+    }
+
+    @Test
+    fun `empty signatureAlgorithms throws KeycloakConfigException`() {
+        assertFailsWith<KeycloakConfigException> {
+            KeycloakConfig(serverUrl = "http://x", realm = "r", clientId = "c", signatureAlgorithms = emptyList())
+        }
+    }
 }
