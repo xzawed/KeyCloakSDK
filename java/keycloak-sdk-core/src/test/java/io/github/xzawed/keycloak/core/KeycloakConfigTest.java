@@ -51,6 +51,21 @@ class KeycloakConfigTest {
     KeycloakConfig c = KeycloakConfig.builder().serverUrl("x").realm("r").clientId("app").build();
     assertNull(c.getClientSecret());
   }
+  @Test void signatureAlgorithms_defaultsToRs256() {
+    KeycloakConfig c = KeycloakConfig.builder().serverUrl("x").realm("r").clientId("app").build();
+    assertEquals(java.util.List.of("RS256"), c.getSignatureAlgorithms());
+  }
+  @Test void signatureAlgorithms_customValuesReflected() {
+    KeycloakConfig c = KeycloakConfig.builder().serverUrl("x").realm("r").clientId("app")
+        .signatureAlgorithms("ES256", "RS256").build();
+    assertEquals(java.util.List.of("ES256", "RS256"), c.getSignatureAlgorithms());
+  }
+  @Test void emptySignatureAlgorithms_throwsConfigException() {
+    // 빈 집합은 알고리즘 핀을 무력화한다(핀 없이는 alg 혼동에 노출) — 거부한다.
+    KeycloakConfig.Builder b = KeycloakConfig.builder().serverUrl("x").realm("r").clientId("app")
+        .signatureAlgorithms();
+    assertThrows(KeycloakConfigException.class, b::build);
+  }
   @Test void customValues_areReflectedInGetters() {
     KeycloakConfig c = KeycloakConfig.builder()
         .serverUrl("https://kc.example.com").realm("r").clientId("app")

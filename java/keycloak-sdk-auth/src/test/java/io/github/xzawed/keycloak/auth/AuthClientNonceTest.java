@@ -81,6 +81,23 @@ class AuthClientNonceTest {
         () -> client.requireValidNonce(forged, "server-nonce"));
   }
 
+  // config의 서명 알고리즘(문자열)이 Nimbus JWSAlgorithm 집합으로 변환돼 검증기에 전달되는지 검증한다
+  // (기존 RS256 하드코딩 → 설정 가능). ES256/PS256 realm 지원의 핵심 배선.
+  @Test void allowedAlgorithms_mapsConfiguredStringsToNimbusAlgorithms() {
+    KeycloakConfig cfg = KeycloakConfig.builder()
+        .serverUrl("https://kc.example.com").realm("r").clientId("app")
+        .signatureAlgorithms("ES256", "RS256").build();
+    AuthClient client = new AuthClient(cfg, OidcMetadata.forRealm(cfg));
+    assertEquals(Set.of(JWSAlgorithm.ES256, JWSAlgorithm.RS256), client.allowedAlgorithms());
+  }
+
+  @Test void allowedAlgorithms_defaultsToRs256() {
+    KeycloakConfig cfg = KeycloakConfig.builder()
+        .serverUrl("https://kc.example.com").realm("r").clientId("app").build();
+    AuthClient client = new AuthClient(cfg, OidcMetadata.forRealm(cfg));
+    assertEquals(Set.of(JWSAlgorithm.RS256), client.allowedAlgorithms());
+  }
+
   private AuthClient clientWithValidator(RSAKey key) throws Exception {
     KeycloakConfig cfg = config();
     JwtValidator v = JwtValidator.withStaticJwks(new JWKSet(key.toPublicJWK()), ISSUER, "app",
