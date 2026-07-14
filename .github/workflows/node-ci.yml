@@ -25,6 +25,8 @@ jobs:
         run: npm run typecheck
       - name: Unit tests + 커버리지 게이트(로직 라인≥90 / 브랜치≥85)
         run: npm run test:unit
+      - name: npm audit (프로덕션 의존성 취약점 — high 이상)
+        run: npm audit --audit-level=high --omit=dev
 
   integration:
     name: Integration tests (testcontainers, 실제 Keycloak)
