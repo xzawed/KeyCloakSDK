@@ -2,8 +2,10 @@ package keycloak
 
 import (
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	jose "github.com/go-jose/go-jose/v4"
 )
@@ -34,6 +36,24 @@ func TestConfigSignatureAlgorithms(t *testing.T) {
 	algs := custom.signatureAlgorithms()
 	if len(algs) != 2 || algs[0] != jose.ES256 || algs[1] != jose.RS256 {
 		t.Fatalf("conversion to jose types: %v", algs)
+	}
+}
+
+func TestConfigHttpClientWiresConnectAndReadTimeouts(t *testing.T) {
+	cfg := Config{ServerURL: "https://kc", Realm: "r", ClientID: "c",
+		ConnectTimeout: 3000, ReadTimeout: 7000}.withDefaults()
+	c := cfg.httpClient()
+	if c.Timeout != 7000*time.Millisecond {
+		t.Fatalf("total (read) timeout: %v", c.Timeout)
+	}
+	tr, ok := c.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport type: %T", c.Transport)
+	}
+	// ConnectTimeout is wired to the TLS handshake deadline (the dial deadline is
+	// captured in the DialContext closure and not directly inspectable).
+	if tr.TLSHandshakeTimeout != 3000*time.Millisecond {
+		t.Fatalf("connect timeout not wired to TLSHandshakeTimeout: %v", tr.TLSHandshakeTimeout)
 	}
 }
 

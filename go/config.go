@@ -2,7 +2,10 @@ package keycloak
 
 import (
 	"fmt"
+	"net"
+	"net/http"
 	"strings"
+	"time"
 
 	jose "github.com/go-jose/go-jose/v4"
 )
@@ -72,6 +75,32 @@ func (c Config) signatureAlgorithms() []jose.SignatureAlgorithm {
 		algs[i] = jose.SignatureAlgorithm(name)
 	}
 	return algs
+}
+
+// httpClient builds an *http.Client honoring BOTH ConnectTimeout (dial + TLS
+// handshake) and ReadTimeout (the overall request deadline). Previously only
+// ReadTimeout was wired (as http.Client.Timeout) and ConnectTimeout was a silent
+// no-op. Used by auth, the JWKS validator, and (via transport) the admin client.
+func (c Config) httpClient() *http.Client {
+	return &http.Client{
+		Timeout:   time.Duration(c.ReadTimeout) * time.Millisecond,
+		Transport: c.transport(),
+	}
+}
+
+// transport mirrors http.DefaultTransport's defaults but injects ConnectTimeout
+// into the dial and TLS-handshake deadlines.
+func (c Config) transport() *http.Transport {
+	connect := time.Duration(c.ConnectTimeout) * time.Millisecond
+	return &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: connect}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   connect,
+		ExpectContinueTimeout: time.Second,
+	}
 }
 
 // String masks the client secret so a config is never logged in plaintext.

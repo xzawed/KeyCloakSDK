@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
@@ -32,7 +31,7 @@ type AuthClient struct {
 func newAuthClient(cfg Config, v *Validator) *AuthClient {
 	return &AuthClient{
 		cfg: cfg, ep: oidcEndpoints(cfg), val: v,
-		client: &http.Client{Timeout: time.Duration(cfg.ReadTimeout) * time.Millisecond},
+		client: cfg.httpClient(),
 	}
 }
 

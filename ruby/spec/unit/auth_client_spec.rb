@@ -175,4 +175,23 @@ RSpec.describe KeycloakSdk::AuthClient do
       expect(ts.access_token).to eq("AT")
     end
   end
+
+  describe "rack-oauth2 timeout configuration" do
+    it "configures rack-oauth2 timeouts from Config on construction (not a require-time hardcode)" do
+      # http_config를 캡처해 블록을 직접 검증한다 — 전역 Rack::OAuth2.http_client에 의존하면
+      # 테스트 순서/Faraday 버전에 취약(전역 상태). 블록에 가짜 conn을 넘겨 config 값 반영을 확인.
+      captured = nil
+      allow(Rack::OAuth2).to receive(:http_config) { |&blk| captured = blk }
+      described_class.new(
+        config: KeycloakSdk::Config.new(server_url: "https://kc", realm: "r", client_id: "c",
+                                        connect_timeout: 3, read_timeout: 7),
+        http: http, jwt_validator: jwt_validator
+      )
+      options = Struct.new(:open_timeout, :timeout).new
+      conn = Struct.new(:options).new(options)
+      captured.call(conn)
+      expect(options.open_timeout).to eq(3)
+      expect(options.timeout).to eq(7)
+    end
+  end
 end
