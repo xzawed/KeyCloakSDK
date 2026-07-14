@@ -16,6 +16,7 @@ module KeycloakSdk
       @http = http
       @jwt_validator = jwt_validator
       @endpoints = OidcEndpoints.from_config(config)
+      configure_rack_oauth2_timeouts(config)
     end
 
     def create_authorization_request(redirect_uri:, scopes: nil, state: SecureRandom.urlsafe_base64(24), nonce: nil)
@@ -98,6 +99,16 @@ module KeycloakSdk
     end
 
     private
+
+    # rack-oauth2의 프로세스 전역 HTTP 타임아웃을 Config로 설정한다(require 시점 하드코딩 대신).
+    # 타임아웃은 Faraday::Connection이 아니라 그 #options(Faraday::RequestOptions)에 있다
+    # (Connection에 open_timeout=/timeout= 세터가 없어 NoMethodError — 게차 참조).
+    def configure_rack_oauth2_timeouts(config)
+      Rack::OAuth2.http_config do |conn|
+        conn.options.open_timeout = config.connect_timeout
+        conn.options.timeout = config.read_timeout
+      end
+    end
 
     # id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다
     # (액세스 토큰과 id_token 모두 aud=client_id이므로 검증기를 공유해도 안전 — Kotlin/.NET 동형).
