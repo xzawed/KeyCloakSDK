@@ -110,6 +110,26 @@ public class AuthClientTests : IDisposable
     }
 
     [Fact]
+    public async Task ClientCredentialsToken_transportFailure_wrapped_as_transport_exception()
+    {
+        // 연결거부/DNS/TLS는 HttpRequestException으로 나타나고 Duende가 ErrorType=Exception으로 감싼다.
+        // 인증 실패(HTTP 401)가 아니라 전송 실패이므로 KeycloakTransportException이어야 한다(§4 경계).
+        var cfg = new KeycloakConfig { ServerUrl = "http://kc.example", Realm = "r", ClientId = "c", ClientSecret = "s" }.Normalized();
+        var ep = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm);
+        var validator = new JwtValidator(JwtValidator.BuildParameters(ep.Issuer,
+            new JwtValidatorOptions { Issuer = ep.Issuer, Audiences = new[] { "c" } }));
+        using var http = new HttpClient(new ThrowingHandler(new HttpRequestException("connection refused")));
+        var auth = new AuthClient(cfg, ep, validator, http);
+        await Assert.ThrowsAsync<KeycloakTransportException>(() => auth.ClientCredentialsTokenAsync());
+    }
+
+    private sealed class ThrowingHandler(Exception ex) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => throw ex;
+    }
+
+    [Fact]
     public async Task Introspect_maps_active_and_fields()
     {
         var auth = Build(out _);
