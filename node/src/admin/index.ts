@@ -1,6 +1,7 @@
 import KcAdminClient from '@keycloak/keycloak-admin-client'
 import type { KeycloakConfig } from '../config.js'
 import { KeycloakConfigError } from '../errors.js'
+import { call } from './call.js'
 import { ClientsResource } from './clients.js'
 import { GroupsResource } from './groups.js'
 import { RealmsResource } from './realms.js'
@@ -56,11 +57,15 @@ export class AdminClient {
       // ms 단위 — admin-client가 요청마다 AbortSignal.timeout(ms)로 적용한다.
       timeout: config.readTimeoutMs,
     })
-    await kc.auth({
-      grantType: 'client_credentials',
-      clientId: config.clientId,
-      clientSecret: config.clientSecret,
-    })
+    // 초기 client-credentials 인증도 call()로 감싼다 — 401·전송 실패가 raw NetworkError/fetch 오류로
+    // 누출되지 않고 SDK 예외(KeycloakAdminError/KeycloakTransportError)로 변환되도록(§4 경계).
+    await call(() =>
+      kc.auth({
+        grantType: 'client_credentials',
+        clientId: config.clientId,
+        clientSecret: config.clientSecret,
+      }),
+    )
     return new AdminClient(kc, config.realm)
   }
 

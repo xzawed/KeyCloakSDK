@@ -30,6 +30,7 @@ import {
   KeycloakForbiddenError,
   KeycloakAdminError,
   KeycloakConfigError,
+  KeycloakTransportError,
 } from '../../src/errors.js'
 
 const cfg = defineConfig({
@@ -87,6 +88,15 @@ describe('AdminClient.create — 생성/인증/타임아웃 주입', () => {
     const admin = await AdminClient.create(cfg)
     expect(admin.raw()).toBe(h.kc)
   })
+
+  it('초기 인증 전송 실패는 KeycloakTransportError로 변환한다(raw 누출 금지)', async () => {
+    h.kc.auth.mockRejectedValue(
+      new TypeError('fetch failed', {
+        cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+      }),
+    )
+    await expect(AdminClient.create(cfg)).rejects.toBeInstanceOf(KeycloakTransportError)
+  })
 })
 
 describe('예외 경계 변환 (HTTP 상태 → SDK 예외)', () => {
@@ -110,11 +120,25 @@ describe('예외 경계 변환 (HTTP 상태 → SDK 예외)', () => {
     h.kc.users.find.mockRejectedValue(networkError(500))
     await expect(admin.users.search()).rejects.toBeInstanceOf(KeycloakAdminError)
   })
-  it('상태 없는(비-네트워크) 에러는 그대로 전파한다', async () => {
+  it('상태 없는 프로그래밍 오류(cause 없는 TypeError)는 그대로 전파한다', async () => {
     const admin = await AdminClient.create(cfg)
     const raw = new TypeError('bug')
     h.kc.users.find.mockRejectedValue(raw)
     await expect(admin.users.search()).rejects.toBe(raw)
+  })
+  it('전송 실패(undici fetch failed = cause 있는 TypeError)는 KeycloakTransportError로 변환한다', async () => {
+    const admin = await AdminClient.create(cfg)
+    const fetchFailed = new TypeError('fetch failed', {
+      cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:8080'), { code: 'ECONNREFUSED' }),
+    })
+    h.kc.users.find.mockRejectedValue(fetchFailed)
+    await expect(admin.users.search()).rejects.toBeInstanceOf(KeycloakTransportError)
+  })
+  it('타임아웃(AbortError)은 KeycloakTransportError로 변환한다', async () => {
+    const admin = await AdminClient.create(cfg)
+    const timeout = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+    h.kc.users.find.mockRejectedValue(timeout)
+    await expect(admin.users.search()).rejects.toBeInstanceOf(KeycloakTransportError)
   })
 })
 
