@@ -23,9 +23,11 @@ jobs:
       - name: mypy (strict)
         run: mypy src
       - name: pip-audit (의존성 취약점 감사)
+        # --skip-editable: 로컬 editable 패키지(keycloak-sdk, PyPI 미배포)는 감사 불가라
+        # skip되는데, 이 skip이 non-zero 종료를 유발한다 — editable을 건너뛰어 실 의존성만 감사한다.
         run: |
           python -m pip install pip-audit
-          pip-audit
+          pip-audit --skip-editable
 
   integration:
     name: Integration tests (testcontainers, 실제 Keycloak)
