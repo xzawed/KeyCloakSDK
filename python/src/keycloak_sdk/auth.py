@@ -230,6 +230,7 @@ class AuthClient:
         validator = JwtValidator(
             issuer=self._endpoints.issuer,
             audience=self._config.client_id,
+            allowed_algs=self._config.signature_algorithms,
             clock_skew=self._config.clock_skew,
         )
         try:

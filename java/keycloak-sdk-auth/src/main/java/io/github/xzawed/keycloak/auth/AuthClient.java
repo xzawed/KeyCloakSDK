@@ -41,13 +41,23 @@ public class AuthClient {
       synchronized (this) {
         v = jwtValidator;
         if (v == null) {
-          v = JwtValidator.forRealm(metadata, config,
-              java.util.Set.of(com.nimbusds.jose.JWSAlgorithm.RS256), config.getClientId());
+          v = JwtValidator.forRealm(metadata, config, allowedAlgorithms(), config.getClientId());
           jwtValidator = v;
         }
       }
     }
     return v.validate(accessToken);
+  }
+
+  // config의 서명 알고리즘 이름(List<String>)을 Nimbus JWSAlgorithm 집합으로 변환한다 — §4에 따라
+  // Nimbus 타입은 공개 API(config)에 노출하지 않으므로 config는 문자열로 보유하고 경계에서만 변환한다.
+  // 패키지 가시성: 변환 로직을 단위 테스트로 직접 검증하기 위함(AuthClient는 커버리지 게이트 제외).
+  java.util.Set<com.nimbusds.jose.JWSAlgorithm> allowedAlgorithms() {
+    java.util.Set<com.nimbusds.jose.JWSAlgorithm> algs = new java.util.LinkedHashSet<>();
+    for (String name : config.getSignatureAlgorithms()) {
+      algs.add(com.nimbusds.jose.JWSAlgorithm.parse(name));
+    }
+    return algs;
   }
   // Nimbus HTTPRequest에 KeycloakConfig 타임아웃 적용 후 전송 (3.4~3.7 공용 헬퍼)
   HTTPRequest applyTimeouts(HTTPRequest req) {

@@ -57,7 +57,7 @@ export class AuthClient {
       JwtValidator.forJwksUri(this.#endpoints.jwks, {
         issuer: this.#endpoints.issuer,
         audience: cfg.clientId,
-        allowedAlgs: ['RS256'],
+        allowedAlgs: [...cfg.signatureAlgorithms],
         clockSkewSeconds: cfg.clockSkewSeconds,
       })
   }

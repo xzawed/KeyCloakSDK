@@ -46,7 +46,11 @@ class AdminClient:
                 client_secret_key=self._config.client_secret,
                 grant_type="client_credentials",
                 verify=True,
-                timeout=int(self._config.read_timeout),
+                # read_timeout은 초 단위 float — int()로 자르면 0.5초 등이 0이 되어 urllib3가
+                # 매 요청마다 ValueError로 거부한다. requests/urllib3는 float 타임아웃을 지원하나
+                # python-keycloak 스텁이 timeout을 int로 좁게 타이핑해 float 전달에 mypy가 실패한다
+                # (런타임은 requests로 흘러 float 정상 동작 — 스텁 부정확).
+                timeout=self._config.read_timeout,  # type: ignore[arg-type]
             )
         return self._admin
 

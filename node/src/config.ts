@@ -13,6 +13,8 @@ export interface KeycloakConfig {
   readonly connectTimeoutMs: number
   readonly readTimeoutMs: number
   readonly clockSkewSeconds: number
+  /** JWT 서명 검증 시 허용할 알고리즘 핀(기본 ['RS256']). ES256/PS256 realm을 위해 설정 가능. */
+  readonly signatureAlgorithms: readonly string[]
 }
 
 /** `defineConfig` 입력(선택값은 기본값으로 채워진다). */
@@ -25,6 +27,7 @@ export interface KeycloakConfigInput {
   connectTimeoutMs?: number
   readTimeoutMs?: number
   clockSkewSeconds?: number
+  signatureAlgorithms?: string[]
 }
 
 /**
@@ -40,6 +43,10 @@ export function defineConfig(input: KeycloakConfigInput): KeycloakConfig {
       throw new KeycloakConfigError(`Missing required config: ${key}`)
     }
   }
+  if (input.signatureAlgorithms && input.signatureAlgorithms.length === 0) {
+    // 빈 집합은 알고리즘 핀을 무력화한다(핀 없이는 alg 혼동 공격에 노출).
+    throw new KeycloakConfigError('signatureAlgorithms must be non-empty')
+  }
   const config: KeycloakConfig = {
     serverUrl: input.serverUrl.replace(/\/+$/, ''),
     realm: input.realm,
@@ -49,6 +56,7 @@ export function defineConfig(input: KeycloakConfigInput): KeycloakConfig {
     connectTimeoutMs: input.connectTimeoutMs ?? 10_000,
     readTimeoutMs: input.readTimeoutMs ?? 30_000,
     clockSkewSeconds: input.clockSkewSeconds ?? 30,
+    signatureAlgorithms: input.signatureAlgorithms ?? ['RS256'],
   }
   const masked = (): Record<string, unknown> => ({
     ...config,

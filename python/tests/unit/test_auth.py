@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from joserfc import jwt as jjwt
-from joserfc.jwk import RSAKey
+from joserfc.jwk import ECKey, RSAKey
 from keycloak import KeycloakOpenID
 from keycloak.exceptions import KeycloakAuthenticationError, KeycloakGetError
 
@@ -490,6 +490,43 @@ def test_validate_rejects_token_with_wrong_audience():
     endpoints = OidcEndpoints.for_realm(config)
     client = _client(openid, config=config)
     token = _signed_token(key, issuer=endpoints.issuer, audience="someone-else")
+
+    with pytest.raises(TokenValidationError):
+        client.validate(token)
+
+
+def _es256_setup(config: KeycloakConfig):
+    key = ECKey.generate_key("P-256", {"kid": "k1", "use": "sig"})
+    endpoints = OidcEndpoints.for_realm(config)
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.certs.return_value = {"keys": [key.as_dict(private=False)]}
+    client = _client(openid, config=config)
+    token = jjwt.encode(
+        {"alg": "ES256", "kid": key.kid},
+        {
+            "iss": endpoints.issuer,
+            "aud": config.client_id,
+            "sub": "user-1",
+            "exp": int(time.time()) + 60,
+        },
+        key,
+    )
+    return client, token
+
+
+def test_validate_accepts_token_signed_with_configured_algorithm():
+    """signature_algorithms를 ES256으로 설정한 realm의 ES256 토큰이 통과해야 한다
+    (기존 RS256 하드코딩은 ES256/PS256 realm의 정상 토큰을 전부 거부했다)."""
+    client, token = _es256_setup(_config(signature_algorithms=("ES256",)))
+
+    result = client.validate(token)
+
+    assert result.subject == "user-1"
+
+
+def test_validate_rejects_algorithm_not_in_configured_set():
+    """기본(RS256만) 설정에서는 ES256 토큰이 알고리즘 핀에 의해 거부돼야 한다."""
+    client, token = _es256_setup(_config())
 
     with pytest.raises(TokenValidationError):
         client.validate(token)

@@ -22,6 +22,19 @@ func TestConfigValidateMissing(t *testing.T) {
 	}
 }
 
+func TestConfigRejectsNegativeTimeouts(t *testing.T) {
+	for _, c := range []Config{
+		{ServerURL: "https://kc", Realm: "r", ClientID: "c", ConnectTimeout: -1},
+		{ServerURL: "https://kc", Realm: "r", ClientID: "c", ReadTimeout: -1},
+		{ServerURL: "https://kc", Realm: "r", ClientID: "c", ClockSkew: -1},
+	} {
+		var ce *ConfigError
+		if err := c.validate(); !errors.As(err, &ce) {
+			t.Fatalf("expected *ConfigError for negative timeout %+v, got %v", c, err)
+		}
+	}
+}
+
 func TestConfigDefaultsAndTrim(t *testing.T) {
 	c := Config{ServerURL: "https://kc.example.com/", Realm: "r", ClientID: "c"}.withDefaults()
 	if c.ServerURL != "https://kc.example.com" {
