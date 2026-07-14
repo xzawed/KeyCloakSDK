@@ -10,11 +10,11 @@ import (
 // Config is immutable SDK configuration. Build it as a struct literal and pass
 // it to New, which validates it and fills defaults.
 type Config struct {
-	ServerURL      string
-	Realm          string
-	ClientID       string
-	ClientSecret   string
-	Scopes         []string
+	ServerURL    string
+	Realm        string
+	ClientID     string
+	ClientSecret string
+	Scopes       []string
 	// SignatureAlgorithms pins the JWT signature algorithms accepted during
 	// validation (default ["RS256"]). Set it for ES256/PS256-signed realms — a
 	// hardcoded RS256 would reject every otherwise-valid token there.
