@@ -26,6 +26,18 @@ func (c Config) validate() error {
 			return &ConfigError{Msg: "missing required config: " + f.name}
 		}
 	}
+	// Negative timeouts/skew are silently accepted by withDefaults (it only replaces
+	// zero), yielding a client that never dials — reject them up front.
+	for _, f := range []struct {
+		name string
+		val  int64
+	}{
+		{"ConnectTimeout", c.ConnectTimeout}, {"ReadTimeout", c.ReadTimeout}, {"ClockSkew", c.ClockSkew},
+	} {
+		if f.val < 0 {
+			return &ConfigError{Msg: "negative config value: " + f.name}
+		}
+	}
 	return nil
 }
 
