@@ -64,6 +64,16 @@ class AdminExceptionsTest {
     assertTrue(ran.get());
   }
 
+  // --- transport failure (§4 경계) ----------------------------------------
+
+  @Test void processingException_mapsToTransport() {
+    // 전송 실패(연결거부/DNS/TLS/타임아웃)는 HTTP 상태가 없는 ProcessingException으로 온다.
+    // WebApplicationException(상태 있음)만 잡으면 이 예외가 공개 API로 누출된다(§4 위반, Kotlin 동형).
+    KeycloakTransportException e = assertThrows(KeycloakTransportException.class,
+        () -> AdminExceptions.call(() -> { throw new ProcessingException("connection refused"); }));
+    assertNotNull(e.getCause());
+  }
+
   // --- safeBody branches ----------------------------------------------------
 
   @Test void safeBody_noEntity_fallsBackToMessage() {

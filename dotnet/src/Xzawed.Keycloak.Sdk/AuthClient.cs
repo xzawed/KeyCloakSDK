@@ -140,7 +140,11 @@ public sealed class AuthClient : ITokenSource
             throw new KeycloakTransportException("introspection request timed out", ex);
         }
         if (resp.IsError)
+        {
+            if (resp.ErrorType == ResponseErrorType.Exception)
+                throw new KeycloakTransportException("introspection transport failure", resp.Exception);
             throw new KeycloakAuthException($"Token introspection failed: {resp.Error}", resp.Exception) { OAuthError = OAuthErrorOf(resp.Json, resp.Error) };
+        }
 
         var claims = resp.Claims.GroupBy(c => c.Type)
             .ToDictionary(g => g.Key, g => (object?)(g.Count() == 1 ? g.First().Value : g.Select(c => c.Value).ToArray()));
@@ -164,7 +168,8 @@ public sealed class AuthClient : ITokenSource
         }
         catch (HttpRequestException ex)
         {
-            throw new KeycloakAuthException($"Logout request error: {ex.Message}", ex);
+            // HttpClient.PostAsync는 전송 실패(연결거부/DNS/TLS)에 HttpRequestException을 던진다 — 전송 오류.
+            throw new KeycloakTransportException($"Logout request error: {ex.Message}", ex);
         }
         catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)
         {
@@ -183,7 +188,14 @@ public sealed class AuthClient : ITokenSource
     private static TokenSet ToTokenSet(TokenResponse resp, string failureMessage, long issuedAtSeconds)
     {
         if (resp.IsError)
+        {
+            // Duende IsError는 전송 실패(ErrorType=Exception: 연결거부/DNS/TLS, resp.Exception=HttpRequestException)와
+            // 프로토콜/HTTP 오류(잘못된 자격증명 401 등)를 모두 포함한다 — 전송 실패는 KeycloakTransportException으로
+            // 분류해야 §4 경계에서 인증 실패와 구분된다.
+            if (resp.ErrorType == ResponseErrorType.Exception)
+                throw new KeycloakTransportException($"{failureMessage} (transport)", resp.Exception);
             throw new KeycloakAuthException($"{failureMessage}: {resp.Error}", resp.Exception) { OAuthError = OAuthErrorOf(resp.Json, resp.Error) };
+        }
         return TokenSet.Create(resp.AccessToken!, resp.TokenType, resp.ExpiresIn,
                                resp.RefreshToken, resp.IdentityToken, resp.Scope, issuedAtSeconds);
     }

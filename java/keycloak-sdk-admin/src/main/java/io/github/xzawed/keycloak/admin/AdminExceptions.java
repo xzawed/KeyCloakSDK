@@ -1,6 +1,7 @@
 package io.github.xzawed.keycloak.admin;
 
 import io.github.xzawed.keycloak.core.exception.*;
+import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
 import java.util.function.Supplier;
 
@@ -16,6 +17,10 @@ final class AdminExceptions {
       return action.get();
     } catch (WebApplicationException e) {
       throw translate(e);
+    } catch (ProcessingException e) {
+      // 전송 실패(연결거부/DNS/TLS/타임아웃)는 HTTP 상태가 없는 ProcessingException으로 온다.
+      // WebApplicationException(상태 있음)과 달리 SDK 전송 예외로 변환한다(§4 경계, Kotlin 동형).
+      throw new KeycloakTransportException("admin transport failure", e);
     }
   }
 
