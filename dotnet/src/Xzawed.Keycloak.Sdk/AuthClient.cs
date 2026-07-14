@@ -89,9 +89,13 @@ public sealed class AuthClient : ITokenSource
         // NONCE: Duende does not auto-validate the id_token (unlike openid-client). Fully validate it
         // (signature/iss/aud/exp via the hardened validator — Keycloak id_token aud == clientId, which
         // the validator is already configured for) and then check the nonce claim. Fails CLOSED when a
-        // nonce was supplied (CreateAuthorizationRequest always issues one), matching the Node posture.
-        if (nonce is not null && tokens.IdToken is { } idToken)
+        // nonce was supplied (CreateAuthorizationRequest always issues one), matching the Node posture —
+        // a missing id_token must throw, NOT silently skip validation (an attacker could otherwise strip
+        // the id_token to bypass the nonce binding).
+        if (nonce is not null)
         {
+            if (tokens.IdToken is not { } idToken)
+                throw new KeycloakAuthException("id_token missing for nonce validation");
             ValidatedToken idt;
             try { idt = await _validator.ValidateAsync(idToken, ct).ConfigureAwait(false); }
             catch (KeycloakTokenValidationException ex) { throw new KeycloakAuthException("id_token validation failed", ex); }

@@ -2,14 +2,21 @@ package keycloak
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 )
 
 // authFixture spins up an httptest server standing in for a realm's OIDC
@@ -111,7 +118,7 @@ func TestExchangeCodeAndRefresh(t *testing.T) {
 		}
 	}
 
-	ts, err := f.auth.ExchangeCode(context.Background(), "the-code", "https://app/cb", "verifier")
+	ts, err := f.auth.ExchangeCode(context.Background(), "the-code", "https://app/cb", "verifier", "")
 	if err != nil || ts.AccessToken != "AT" {
 		t.Fatalf("exchange: %+v %v", ts, err)
 	}
@@ -126,6 +133,82 @@ func TestExchangeCodeAndRefresh(t *testing.T) {
 	}
 	if form.Get("grant_type") != "refresh_token" || form.Get("refresh_token") != "old-rt" {
 		t.Fatalf("refresh must send refresh_token grant: %v", form)
+	}
+}
+
+// signIDToken produces an RS256-signed id_token carrying a nonce claim, for the
+// ExchangeCode nonce-replay tests.
+func signIDToken(t *testing.T, key *rsa.PrivateKey, kid, iss, aud, nonce string) string {
+	t.Helper()
+	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: key},
+		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", kid))
+	if err != nil {
+		t.Fatalf("signer: %v", err)
+	}
+	std := jwt.Claims{Subject: "user1", Issuer: iss, Audience: jwt.Audience{aud},
+		Expiry: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)), IssuedAt: jwt.NewNumericDate(time.Now())}
+	s, err := jwt.Signed(sig).Claims(std).Claims(map[string]any{"nonce": nonce}).Serialize()
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	return s
+}
+
+// TestExchangeCodeNonceValidation proves that when an expectedNonce is supplied,
+// ExchangeCode fully signature-validates the returned id_token and rejects a
+// mismatched / missing nonce (OIDC nonce replay protection). Empty nonce skips it.
+func TestExchangeCodeNonceValidation(t *testing.T) {
+	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	jwks := jose.JSONWebKeySet{Keys: []jose.JSONWebKey{
+		{Key: &priv.PublicKey, KeyID: "k1", Algorithm: "RS256", Use: "sig"},
+	}}
+	base := "/realms/test/protocol/openid-connect"
+	var issuer string
+	includeIDToken := true
+	mux := http.NewServeMux()
+	mux.HandleFunc(base+"/token", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if includeIDToken {
+			idt := signIDToken(t, priv, "k1", issuer, "app", "server-nonce")
+			_, _ = w.Write([]byte(`{"access_token":"AT","token_type":"Bearer","expires_in":300,"id_token":"` + idt + `"}`))
+		} else {
+			_, _ = w.Write([]byte(`{"access_token":"AT","token_type":"Bearer","expires_in":300}`))
+		}
+	})
+	mux.HandleFunc(base+"/certs", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(jwks)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	issuer = srv.URL + "/realms/test"
+
+	v := newValidator(validatorOptions{
+		jwksURI: srv.URL + base + "/certs", issuer: issuer, audience: "app",
+		allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: 30, minRefetch: time.Minute,
+	})
+	cfg := Config{ServerURL: srv.URL, Realm: "test", ClientID: "app", ClientSecret: "sekret",
+		ReadTimeout: 30000}.withDefaults()
+	auth := newAuthClient(cfg, v)
+	ctx := context.Background()
+
+	// Matching nonce → accepted.
+	ts, err := auth.ExchangeCode(ctx, "code", srv.URL+"/cb", "verifier", "server-nonce")
+	if err != nil || ts.AccessToken != "AT" {
+		t.Fatalf("matching nonce must pass: %+v %v", ts, err)
+	}
+
+	// Mismatched nonce → rejected as *AuthError.
+	_, err = auth.ExchangeCode(ctx, "code", srv.URL+"/cb", "verifier", "attacker-nonce")
+	var ae *AuthError
+	if !errors.As(err, &ae) {
+		t.Fatalf("mismatched nonce must yield *AuthError, got %v", err)
+	}
+
+	// Missing id_token while a nonce is expected → rejected (fail-closed).
+	includeIDToken = false
+	_, err = auth.ExchangeCode(ctx, "code", srv.URL+"/cb", "verifier", "server-nonce")
+	if !errors.As(err, &ae) {
+		t.Fatalf("missing id_token with expected nonce must yield *AuthError, got %v", err)
 	}
 }
 

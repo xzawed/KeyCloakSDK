@@ -88,12 +88,42 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 }
 
 // ExchangeCode exchanges an authorization code + PKCE verifier for tokens.
-func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVerifier string) (*TokenSet, error) {
+//
+// When expectedNonce is non-empty (the nonce returned by
+// CreateAuthorizationRequest), the returned id_token is fully signature-
+// validated (iss/aud/exp via the hardened Validator — Keycloak id_token aud ==
+// clientID, which the Validator is already configured for) and its nonce claim
+// is compared against expectedNonce — OIDC nonce replay protection. A mismatch,
+// a missing id_token, or a validation failure all fail closed. An empty
+// expectedNonce skips id_token validation (custom no-nonce flows).
+func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVerifier, expectedNonce string) (*TokenSet, error) {
 	tok, err := a.codeConfig(redirectURI).Exchange(a.oauthCtx(ctx), code, oauth2.VerifierOption(codeVerifier))
 	if err != nil {
 		return nil, &AuthError{Msg: "authorization code exchange failed", OAuthError: oauthError(err), Cause: err}
 	}
-	return tokenSetFromToken(tok), nil
+	ts := tokenSetFromToken(tok)
+	if expectedNonce != "" {
+		if err := a.verifyNonce(ctx, ts.IDToken, expectedNonce); err != nil {
+			return nil, err
+		}
+	}
+	return ts, nil
+}
+
+// verifyNonce validates the id_token and checks its nonce claim against
+// expectedNonce. Reuses the access-token Validator (aud == clientID).
+func (a *AuthClient) verifyNonce(ctx context.Context, idToken, expectedNonce string) error {
+	if idToken == "" {
+		return &AuthError{Msg: "authorization code exchange failed: missing id_token for nonce validation"}
+	}
+	vt, err := a.val.Validate(ctx, idToken)
+	if err != nil {
+		return &AuthError{Msg: "authorization code exchange failed: invalid id_token", Cause: err}
+	}
+	if n, _ := vt.Claims["nonce"].(string); n != expectedNonce {
+		return &AuthError{Msg: "authorization code exchange failed: unexpected nonce"}
+	}
+	return nil
 }
 
 // Refresh obtains a new access token from a refresh token.

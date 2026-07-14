@@ -5,34 +5,16 @@ use crate::jwks::JwksStore;
 use crate::oidc::OidcEndpoints;
 use crate::tokens::ValidatedToken;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation};
-use serde::Deserialize;
 
-#[derive(Deserialize)]
-struct Claims {
-    sub: Option<String>,
-    iss: Option<String>,
-    #[serde(default)]
-    aud: AudField,
-    exp: Option<u64>,
-    iat: Option<u64>,
-}
-
-// aud는 string 또는 array — jsonwebtoken이 aud 포함검사를 하지만, ValidatedToken 매핑용으로 벡터화.
-#[derive(Deserialize, Default)]
-#[serde(untagged)]
-enum AudField {
-    One(String),
-    Many(Vec<String>),
-    #[default]
-    None,
-}
-impl AudField {
-    fn into_vec(self) -> Vec<String> {
-        match self {
-            AudField::One(s) => vec![s],
-            AudField::Many(v) => v,
-            AudField::None => vec![],
-        }
+// aud(string 또는 array) → Vec<String>. jsonwebtoken이 aud 포함검사를 하지만 ValidatedToken 매핑용으로 벡터화.
+fn aud_to_vec(v: Option<&serde_json::Value>) -> Vec<String> {
+    match v {
+        Some(serde_json::Value::String(s)) => vec![s.clone()],
+        Some(serde_json::Value::Array(a)) => a
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect(),
+        _ => vec![],
     }
 }
 
@@ -78,17 +60,24 @@ impl JwtValidator {
         v.leeway = self.clock_skew; // 기본 60 → config(30)
         v.set_required_spec_claims(&["exp", "iss", "aud"]); // exp/iss/aud 부재 시 거부
 
-        let data = jsonwebtoken::decode::<Claims>(token, &key, &v).map_err(|e| {
+        // 전체 클레임을 serde_json::Value로 역직렬화한다(자매 SDK의 claims 맵과 동형 — nonce 등
+        // 표준 외 클레임 접근용). 서명·exp·aud·iss·nbf 검증은 T와 무관하게 jsonwebtoken이 수행한다.
+        let data = jsonwebtoken::decode::<serde_json::Value>(token, &key, &v).map_err(|e| {
             KeycloakError::TokenValidation(format!("token verification failed: {}", e.kind_str()))
         })?;
 
-        let claims = data.claims;
+        let claims: std::collections::BTreeMap<String, serde_json::Value> = match data.claims {
+            serde_json::Value::Object(m) => m.into_iter().collect(),
+            _ => std::collections::BTreeMap::new(),
+        };
+        let str_claim = |k: &str| claims.get(k).and_then(|x| x.as_str()).map(String::from);
         Ok(ValidatedToken {
-            subject: claims.sub.unwrap_or_default(),
-            audience: claims.aud.into_vec(),
-            issuer: claims.iss.unwrap_or_default(),
-            expires_at: claims.exp,
-            issued_at: claims.iat,
+            subject: str_claim("sub").unwrap_or_default(),
+            audience: aud_to_vec(claims.get("aud")),
+            issuer: str_claim("iss").unwrap_or_default(),
+            expires_at: claims.get("exp").and_then(serde_json::Value::as_u64),
+            issued_at: claims.get("iat").and_then(serde_json::Value::as_u64),
+            claims,
         })
     }
 }

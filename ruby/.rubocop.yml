@@ -19,6 +19,11 @@ Metrics/MethodLength:
   Max: 25
 Metrics/AbcSize:
   Max: 25
+# AuthClient는 8개 인증 흐름(create_authorization_request·exchange_code·refresh·
+# client_credentials·access_token·introspect·logout·validate)에 PKCE·nonce 재생방지까지
+# 한 파사드에 모으는 관용 SDK 진입점이라 기본 100줄을 소폭 넘는다(자매 SDK의 AuthClient 동형).
+Metrics/ClassLength:
+  Max: 115
 # 키워드 인자는 이름이 곧 문서화라 위치 인자 목록과 달리 가독성을 해치지 않는다
 # (예: Config#initialize의 8개 키워드 인자).
 Metrics/ParameterLists:

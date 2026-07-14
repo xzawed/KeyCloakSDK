@@ -32,10 +32,15 @@ module KeycloakSdk
       AuthorizationRequest.new(url: url.to_s, state: state, code_verifier: verifier)
     end
 
-    def exchange_code(code:, code_verifier:, redirect_uri:)
+    # `expected_nonce`가 주어지면(create_authorization_request가 돌려준 nonce) 응답 id_token을
+    # realm JWKS로 서명·iss·aud·exp까지 강화 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce 재생
+    # 방지. 불일치·부재·검증실패는 모두 거부(fail-closed). 생략 시 id_token 검증을 건너뛴다(무-nonce 흐름).
+    def exchange_code(code:, code_verifier:, redirect_uri:, expected_nonce: nil)
       client = oauth_client(redirect_uri: redirect_uri)
       client.authorization_code = code
-      to_token_set(client.access_token!(code_verifier: code_verifier))
+      token_set = to_token_set(client.access_token!(code_verifier: code_verifier))
+      verify_nonce!(token_set.id_token, expected_nonce) unless expected_nonce.nil?
+      token_set
     rescue Rack::OAuth2::Client::Error => e
       raise AuthError.new("authorization_code exchange failed: #{e.message}", oauth_error: e.response[:error].to_s)
     rescue Faraday::Error => e
@@ -93,6 +98,19 @@ module KeycloakSdk
     end
 
     private
+
+    # id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다
+    # (액세스 토큰과 id_token 모두 aud=client_id이므로 검증기를 공유해도 안전 — Kotlin/.NET 동형).
+    def verify_nonce!(id_token, expected_nonce)
+      raise AuthError, "authorization_code exchange failed: missing id_token for nonce validation" if id_token.nil?
+
+      validated = @jwt_validator.validate(id_token)
+      return if validated.claims["nonce"] == expected_nonce
+
+      raise AuthError, "authorization_code exchange failed: unexpected nonce"
+    rescue TokenValidationError => e
+      raise AuthError, "authorization_code exchange failed: invalid id_token: #{e.message}"
+    end
 
     def oauth_client(redirect_uri: nil)
       Rack::OAuth2::Client.new(

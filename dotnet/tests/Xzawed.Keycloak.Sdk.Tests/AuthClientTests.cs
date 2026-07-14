@@ -207,4 +207,22 @@ public class AuthClientTests : IDisposable
         await Assert.ThrowsAsync<KeycloakAuthException>(
             () => auth.ExchangeCodeAsync("code", "https://app/cb", "verifier", nonce: "n"));
     }
+
+    private void StubTokenWithoutIdToken() =>
+        _mock.Given(Request.Create().WithPath("/realms/r/protocol/openid-connect/token").UsingPost())
+             .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                 .WithBodyAsJson(new { access_token = "AT", token_type = "Bearer", expires_in = 300 }));
+
+    // Fail-closed: a nonce was supplied (CreateAuthorizationRequest always issues one) but the
+    // token response carried no id_token — an attacker stripping the id_token must NOT bypass the
+    // nonce binding by silently skipping validation.
+    [Fact]
+    public async Task ExchangeCode_missing_idtoken_with_nonce_throws()
+    {
+        var key = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k1" };
+        var auth = BuildWithKey(out _, key);
+        StubTokenWithoutIdToken();
+        await Assert.ThrowsAsync<KeycloakAuthException>(
+            () => auth.ExchangeCodeAsync("code", "https://app/cb", "verifier", nonce: "the-nonce"));
+    }
 }

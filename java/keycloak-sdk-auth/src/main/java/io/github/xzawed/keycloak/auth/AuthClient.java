@@ -24,7 +24,13 @@ public class AuthClient {
   private final KeycloakConfig config; private final OidcMetadata metadata;
   private volatile JwtValidator jwtValidator;   // 지연 생성 + 캐시 (WBS 3.6)
   public AuthClient(KeycloakConfig config, OidcMetadata metadata) {
-    this.config = config; this.metadata = metadata;
+    this(config, metadata, null);
+  }
+  // 패키지 전용 테스트 시임: 미리 만든 JwtValidator(예: withStaticJwks)를 주입해, 라이브 JWKS
+  // 엔드포인트 없이 exchangeCode의 nonce 검증을 실 서명 id_token으로 검증할 수 있게 한다
+  // (Kotlin AuthClient injectedValidator 동형). null이면 validate() 첫 호출 시 지연 생성된다.
+  AuthClient(KeycloakConfig config, OidcMetadata metadata, JwtValidator injectedValidator) {
+    this.config = config; this.metadata = metadata; this.jwtValidator = injectedValidator;
   }
 
   // JWKS 기반 서명·issuer·audience·만료 검증. 실패 시 TokenValidationException.
@@ -68,18 +74,52 @@ public class AuthClient {
   // POST한다. 기밀 클라이언트(clientSecret 설정됨)는 ClientSecretBasic, 퍼블릭 클라이언트는
   // client_id만 본문에 포함한다(clientAuth() 미사용 — Secret 없이 인증 불가하므로).
   public TokenSet exchangeCode(String code, URI redirectUri, String codeVerifier) {
+    return exchangeCode(code, redirectUri, codeVerifier, null);
+  }
+
+  // OIDC nonce 재생 방지: expectedNonce가 주어지면(createAuthorizationRequest의 getNonce()) 응답
+  // id_token을 강화 JwtValidator로 서명·iss·aud·exp까지 검증한 뒤 nonce 클레임을 대조한다 —
+  // 불일치·부재·검증실패는 모두 거부(fail-closed). null이면 id_token 검증을 건너뛴다(무-nonce 흐름).
+  public TokenSet exchangeCode(String code, URI redirectUri, String codeVerifier, String expectedNonce) {
+    TokenSet tokenSet;
     try {
       long issuedAt = Instant.now().getEpochSecond();
-      TokenResponse resp = TokenResponse.parse(
+      // OIDC 인지 파서로 파싱해야 id_token이 보존된다(플레인 TokenResponse.parse는 Tokens만
+      // 만들고 OIDCTokens/id_token을 인지하지 못한다).
+      TokenResponse resp = OIDCTokenResponseParser.parse(
           applyTimeouts(buildExchangeCodeRequest(code, redirectUri, codeVerifier)).send());
       if (!resp.indicatesSuccess()) {
         var err = resp.toErrorResponse().getErrorObject();
         throw new KeycloakAuthException("Authorization code exchange failed: " + err.getDescription(),
             err.getCode(), null);
       }
-      return toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
+      tokenSet = toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
     } catch (java.io.IOException | com.nimbusds.oauth2.sdk.ParseException e) {
       throw new KeycloakAuthException("Authorization code exchange request error", null, e);
+    }
+    if (expectedNonce != null) {
+      requireValidNonce(tokenSet.getIdToken(), expectedNonce);
+    }
+    return tokenSet;
+  }
+
+  // id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다
+  // (validate() 재사용 — 액세스 토큰과 id_token 모두 aud=clientId라 검증기를 공유해도 안전).
+  // 패키지 가시성: 토큰 엔드포인트 send() 없이 nonce 로직을 단위 테스트로 검증하기 위함
+  // (buildExchangeCodeRequest/buildLogoutRequest와 동일 패턴).
+  void requireValidNonce(String idToken, String expectedNonce) {
+    if (idToken == null) {
+      throw new KeycloakAuthException(
+          "Authorization code exchange failed: missing id_token for nonce validation", null, null);
+    }
+    ValidatedToken claims;
+    try {
+      claims = validate(idToken);
+    } catch (io.github.xzawed.keycloak.core.exception.TokenValidationException e) {
+      throw new KeycloakAuthException("Authorization code exchange failed: invalid id_token", null, e);
+    }
+    if (!expectedNonce.equals(claims.getClaims().get("nonce"))) {
+      throw new KeycloakAuthException("Authorization code exchange failed: unexpected nonce", null, null);
     }
   }
 
@@ -207,8 +247,12 @@ public class AuthClient {
     var at = tokens.getAccessToken();
     Instant exp = Instant.ofEpochSecond(issuedAtEpoch + at.getLifetime());
     String refresh = tokens.getRefreshToken() == null ? null : tokens.getRefreshToken().getValue();
+    // authorization_code 그랜트는 OIDCTokens(=id_token 포함 가능)를 돌려준다 — id_token을 실어
+    // nonce 재생 방지에 쓴다. 비-OIDC 그랜트(client-credentials/refresh)는 플레인 Tokens라 null.
+    String idToken = tokens instanceof com.nimbusds.openid.connect.sdk.token.OIDCTokens oidc
+        ? oidc.getIDTokenString() : null;
     return new TokenSet(
-        at.getValue(), refresh, null, "Bearer",
+        at.getValue(), refresh, idToken, "Bearer",
         at.getScope() == null ? null : at.getScope().toString(), exp);
   }
 }

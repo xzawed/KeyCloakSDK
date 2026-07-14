@@ -38,6 +38,8 @@ pub struct ValidatedToken {
     pub issuer: String,
     pub expires_at: Option<u64>,
     pub issued_at: Option<u64>,
+    /// 검증된 전체 클레임 맵(자매 SDK의 ValidatedToken.claims 동형) — nonce 등 표준 외 클레임 접근용.
+    pub claims: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +54,8 @@ pub struct AuthorizationRequest {
     pub url: String,
     pub state: String,
     pub code_verifier: String,
+    /// OIDC nonce — 콜백까지 보관했다가 exchange_code(expected_nonce)로 넘겨 id_token 재생을 막는다.
+    pub nonce: String,
 }
 
 impl std::fmt::Debug for AuthorizationRequest {
@@ -60,6 +64,7 @@ impl std::fmt::Debug for AuthorizationRequest {
             .field("url", &self.url)
             .field("state", &self.state)
             .field("code_verifier", &"***")
+            .field("nonce", &self.nonce)
             .finish()
     }
 }
