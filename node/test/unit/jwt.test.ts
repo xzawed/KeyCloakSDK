@@ -82,6 +82,20 @@ describe('JwtValidator (강화 검증)', () => {
     )
   })
 
+  it('exp 클레임이 없는 토큰 → 거부(무만료 토큰 방지)', async () => {
+    // setExpirationTime을 호출하지 않아 exp 클레임이 없는 토큰. jose는 exp가 존재할 때만
+    // 만료를 검사하므로, exp 존재를 강제하지 않으면 무만료 토큰이 통과한다(Go/Rust/Python
+    // 동형의 심층방어 — Keycloak은 항상 exp를 발급하므로 부재는 위조/오구성 신호다).
+    const t = await new SignJWT({ sub: 'u', aud: 'my-client' })
+      .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+      .setIssuer(ISS)
+      .setIssuedAt()
+      .sign(priv)
+    await expect(new JwtValidator(keys, OPTS).validate(t)).rejects.toBeInstanceOf(
+      KeycloakTokenValidationError,
+    )
+  })
+
   it('알고리즘 핀 위반(허용 목록 밖) → 거부', async () => {
     const t = await sign({ sub: 'u', aud: 'my-client' })
     const strict = new JwtValidator(keys, { ...OPTS, allowedAlgs: ['ES256'] })

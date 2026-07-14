@@ -38,6 +38,7 @@ export class JwtValidator {
         issuer: this.opts.issuer, // iss 정확일치
         audience: this.opts.audience, // aud 포함검사(배열이면 포함 여부)
         clockTolerance: this.opts.clockSkewSeconds, // exp/nbf ± skew
+        requiredClaims: ['exp'], // exp 존재 강제 — jose는 exp가 있을 때만 만료검사하므로 부재 시 무만료 토큰이 통과한다(Go/Rust/Python 동형 심층방어)
       })
       const aud = payload.aud
       return {
