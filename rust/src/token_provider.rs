@@ -185,9 +185,12 @@ mod tests {
             .mount(&server)
             .await;
         let p = ClientCredentialsTokenProvider::new(cfg(&server.uri()), reqwest::Client::new());
-        assert!(matches!(
-            p.access_token().await,
-            Err(KeycloakError::Auth { .. })
-        ));
+        // 변형만이 아니라 응답의 OAuth error 코드가 실제로 매핑됐는지 검증한다(감사: vacuous 정정).
+        match p.access_token().await {
+            Err(KeycloakError::Auth { oauth_error, .. }) => {
+                assert_eq!(oauth_error.as_deref(), Some("invalid_client"));
+            }
+            other => panic!("expected Auth with mapped oauth_error, got {other:?}"),
+        }
     }
 }

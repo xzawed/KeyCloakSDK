@@ -71,17 +71,17 @@ mod tests {
     }
 
     #[test]
-    fn auth_carries_oauth_error() {
+    fn auth_error_display_omits_secret_and_field_carries_oauth_error() {
         let e = KeycloakError::Auth {
             message: "bad".into(),
             oauth_error: Some("invalid_client".into()),
         };
-        assert!(matches!(
-            e,
-            KeycloakError::Auth {
-                oauth_error: Some(_),
-                ..
-            }
-        ));
+        // Display은 message만 노출(oauth_error는 프로그램 접근용) — thiserror #[error] 형식 검증.
+        assert_eq!(e.to_string(), "authentication error: bad");
+        // 변형만이 아니라 oauth_error의 정확한 값이 보존되는지 검증한다(감사: vacuous 정정).
+        let KeycloakError::Auth { oauth_error, .. } = &e else {
+            panic!("expected Auth variant");
+        };
+        assert_eq!(oauth_error.as_deref(), Some("invalid_client"));
     }
 }

@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "base64"
+require "digest"
+require "cgi"
+require "uri"
 
 RSpec.describe KeycloakSdk::AuthClient do
   subject(:auth) { described_class.new(config: config, http: http, jwt_validator: jwt_validator) }
@@ -32,6 +36,15 @@ RSpec.describe KeycloakSdk::AuthClient do
       expect(req.state).to eq("st-123")
       expect(req.code_verifier).to be_a(String)
       expect(req.inspect).not_to include(req.code_verifier)
+    end
+
+    # 부정/정확성 테스트(PR6): challenge가 "존재"만이 아니라 base64url(sha256(verifier))로
+    # 정확히 파생되는지 검증한다 — 잘못 파생하면 Keycloak이 invalid_grant로 거부한다.
+    it "derives the S256 code_challenge as base64url(sha256(code_verifier))" do
+      req = auth.create_authorization_request(redirect_uri: "https://app/cb")
+      expected = Base64.urlsafe_encode64(Digest::SHA256.digest(req.code_verifier), padding: false)
+      challenge = CGI.parse(URI(req.url).query)["code_challenge"].first
+      expect(challenge).to eq(expected)
     end
   end
 

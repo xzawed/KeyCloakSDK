@@ -26,6 +26,24 @@ func TestTokenSetFromToken(t *testing.T) {
 	}
 }
 
+// 부정/커버리지 테스트(PR6): x/oauth2가 절대 Expiry는 채우되 상대 ExpiresIn은 0으로 두는 경우,
+// tokenSetFromToken이 Expiry에서 ExpiresIn을 파생하는 분기가 어떤 테스트로도 실행되지 않았다.
+func TestTokenSetFromTokenDerivesExpiresInFromExpiry(t *testing.T) {
+	tok := &oauth2.Token{
+		AccessToken: "AT",
+		TokenType:   "Bearer",
+		Expiry:      time.Now().Add(5 * time.Minute), // ExpiresIn 미설정(0)
+	}
+	ts := tokenSetFromToken(tok)
+	if ts.ExpiresAt != tok.Expiry.Unix() {
+		t.Fatalf("ExpiresAt not set from Expiry: %d", ts.ExpiresAt)
+	}
+	// 5분 후 만료 → 파생된 ExpiresIn은 대략 300초(스케줄링 오차 허용).
+	if ts.ExpiresIn < 290 || ts.ExpiresIn > 300 {
+		t.Fatalf("ExpiresIn should be derived (~300) from Expiry, got %d", ts.ExpiresIn)
+	}
+}
+
 func TestTokenSetStringMasks(t *testing.T) {
 	ts := &TokenSet{AccessToken: "SECRETat", RefreshToken: "SECRETrt", TokenType: "Bearer", ExpiresIn: 60}
 	s := ts.String()
