@@ -129,7 +129,9 @@ describe('예외 경계 변환 (HTTP 상태 → SDK 예외)', () => {
   it('전송 실패(undici fetch failed = cause 있는 TypeError)는 KeycloakTransportError로 변환한다', async () => {
     const admin = await AdminClient.create(cfg)
     const fetchFailed = new TypeError('fetch failed', {
-      cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:8080'), { code: 'ECONNREFUSED' }),
+      cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:8080'), {
+        code: 'ECONNREFUSED',
+      }),
     })
     h.kc.users.find.mockRejectedValue(fetchFailed)
     await expect(admin.users.search()).rejects.toBeInstanceOf(KeycloakTransportError)
