@@ -61,6 +61,23 @@ def test_construction_without_secret_does_not_raise_until_raw_accessed():
     assert client is not None
 
 
+def test_raw_passes_subsecond_timeout_without_truncating_to_zero(monkeypatch):
+    """`int(0.5) == 0` → urllib3가 timeout=0을 매 요청마다 ValueError로 거부한다.
+    float 타임아웃(초)이 잘리지 않고 그대로 전달돼야 한다."""
+    captured: dict[str, object] = {}
+
+    def fake_admin(**kwargs: object):
+        captured.update(kwargs)
+        return MagicMock(spec=KeycloakAdmin)
+
+    monkeypatch.setattr("keycloak_sdk.admin.KeycloakAdmin", fake_admin)
+    client = AdminClient(_config(read_timeout=0.5))
+
+    _ = client.raw
+
+    assert captured["timeout"] == 0.5
+
+
 def test_close_is_noop():
     """`close()`는 `KeycloakClient`(WBS 5.1)의 컨텍스트 매니저 프로토콜과 대칭을
     맞추기 위한 no-op — 호출해도 예외가 없고 `raw` 캐시를 건드리지 않는다."""
