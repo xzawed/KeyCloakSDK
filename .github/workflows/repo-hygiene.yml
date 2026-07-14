@@ -1,0 +1,28 @@
+name: repo-hygiene
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  shell-exec-bits:
+    # 추적되는 모든 *.sh는 실행비트(100755)를 가져야 한다.
+    #
+    # 왜 예외 없이 전부인가: `harness/install/lib.sh`와 `scripts/lib/deploy-facts.sh`는
+    # `.`(source)로만 쓰이므로 원칙적으로 실행비트가 필요 없다. 그러나 "source 전용"과
+    # "실행 전용"을 사람이 구분해 유지하는 규칙은 반드시 썩는다 — 실제로 이 리포에서
+    # `harness/verify.sh`(명백한 실행 스크립트)가 100644로 커밋되어 야간 CI가 3개월간
+    # exit 126으로 죽어 있었다. 예외 없는 규칙이 유지 비용이 0이고, source되는 파일에
+    # 실행비트가 붙어도 해롭지 않다.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 추적되는 *.sh 의 실행비트 확인
+        run: |
+          NON_EXEC="$(git ls-files -s -- '*.sh' | awk '$1 == "100644" { print $4 }')"
+          if [ -n "$NON_EXEC" ]; then
+            echo "::error::실행비트가 없는 셸 스크립트가 있습니다. \`git update-index --chmod=+x <file>\` 로 고치세요."
+            echo "$NON_EXEC" | sed 's/^/  /'
+            exit 1
+          fi
+          echo "추적되는 *.sh $(git ls-files -- '*.sh' | wc -l)개 전부 실행비트 있음"

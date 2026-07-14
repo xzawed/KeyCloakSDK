@@ -17,7 +17,10 @@ export function scoreLang(s) {
   // branch coverage는 언어별 suite 스크립트가 실제로 파싱하는 경우에만 신뢰 가능한 신호다(go/php/rust/ruby는
   // 미파싱 → 0). 0을 "실측 0%"로 벌점 처리하면 미측정 언어가 부당하게 불리해지므로, branch가 0/falsy(미측정)일 때는
   // line+lint만으로 가중하고, branch가 실측(>0)된 언어만 branch-가중 공식을 적용한다.
-  const coverage = su.ran
+  // 커버리지 크레딧은 (a) suite가 실제로 돌았고 (b) 그 단위테스트가 통과했을 때만 준다.
+  // testsPassed가 없거나 false면 0점 — fail-closed다. suite 스크립트가 종료코드를 버리던
+  // 시절에는 테스트가 깨져도 coverageLine이 그대로 보고되어 만점이 유지됐다(PR 0, I1).
+  const coverage = (su.ran && su.testsPassed === true)
     ? (branch > 0
         ? Math.min(100, line * 0.6 + branch * 0.3 + lint * 0.1)
         : Math.min(100, line * 0.9 + lint * 0.1))

@@ -67,7 +67,16 @@ log "2/4 satis.json 배치(registries/php-satis.json — homepage=http://satis-w
 cp "$SATIS_JSON_SRC" "$WORK_DIR/satis.json"
 
 log "3/4 satis build — ${SATIS_IMAGE}(git 내장, 네트워크 불요 — 로컬 /build/php-src만 읽음)"
-if ! docker run --rm -v "$(hostpath "$WORK_DIR"):/build" "$SATIS_IMAGE" build satis.json output; then
+# ⚠️ 리눅스 CI 전용 게차: satis는 /build/php-src를 git 저장소로 읽는데, 바인드마운트된 디렉터리의
+# 소유자(호스트 runner uid)와 컨테이너 프로세스 uid가 달라 git이 `detected dubious ownership`으로
+# 거부한다(2026-07-08·07-09 야간 CI 실측). Windows Docker Desktop은 소유권을 마스킹해 로컬에서는
+# 재현되지 않는다. GIT_CONFIG_COUNT/KEY/VALUE 환경변수(git ≥ 2.31)로 safe.directory 예외를 주입한다 —
+# 이미지에 파일을 굽거나 --global 설정을 실행할 필요가 없다.
+if ! docker run --rm \
+    -e GIT_CONFIG_COUNT=1 \
+    -e GIT_CONFIG_KEY_0=safe.directory \
+    -e GIT_CONFIG_VALUE_0='*' \
+    -v "$(hostpath "$WORK_DIR"):/build" "$SATIS_IMAGE" build satis.json output; then
   log "satis build 실패(docker run ${SATIS_IMAGE})"
   exit 1
 fi

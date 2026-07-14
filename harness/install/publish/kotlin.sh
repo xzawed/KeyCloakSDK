@@ -62,9 +62,29 @@ if ! timeout "${KOTLIN_BUILD_TIMEOUT_S}s" docker run --name "$BUILDER_CONTAINER"
   exit 1
 fi
 
-log "3/4 빌드 산출물(staging-m2) 추출(docker cp)"
+log "3/4 빌드 산출물(staging-m2) 추출"
+# ⚠️ 리눅스 CI 전용 게차(java.sh와 동일 클래스): 공유 트리 publish/out은 다른 언어의 publish
+# 스크립트가 루트로 도는 컨테이너에 바인드마운트로 넘긴다. kotlin은 install 순서상 맨 마지막이라
+# out/ 이하가 이미 root 소유가 되어 있고, `docker cp`(호스트 경로에 직접 mkdir)가
+# `mkdir …/kotlin/staging-m2/io: permission denied`로 실패한다(2026-07-14 CI 실측 — java와 동일).
+# Windows Docker Desktop은 소유권을 마스킹하므로 로컬에서는 재현되지 않는다. java.sh와 동일하게
+# (1) 추출 직전 out/ 소유권 정규화(리눅스만) + (2) docker cp를 tar 스트림으로 받아 호스트 tar가
+# 현재 사용자 권한으로 풀게 한다.
+OUT_ROOT="$INSTALL_DIR/publish/out"
+if [ "$(uname -s)" = "Linux" ]; then
+  log "out/ 트리 소유권 정규화 (root 컨테이너 → $(id -u):$(id -g))"
+  docker run --rm -v "$(hostpath "$OUT_ROOT"):/out" alpine:3.20 \
+    chown -R "$(id -u):$(id -g)" /out || log "소유권 정규화 실패(무시하고 계속)"
+fi
+
 mkdir -p "$STAGING_DIR"
-docker cp "$BUILDER_CONTAINER:/work/staging-m2/." "$(hostpath "$STAGING_DIR")/"
+find "$STAGING_DIR" -mindepth 1 -delete
+
+# tar 스트림: 컨테이너 측 소유권(root)이 호스트에 전파되지 않는다. --strip-components=1로 `staging-m2/` 벗김.
+if ! docker cp "$BUILDER_CONTAINER:/work/staging-m2" - | tar -x --strip-components=1 -C "$STAGING_DIR"; then
+  log "산출물 추출 실패(tar 스트림)"
+  exit 1
+fi
 
 log "4/4 산출물 검증 — keycloak-sdk-kotlin-${PKG_VER}.jar + .pom 존재 확인"
 EXPECTED=(

@@ -72,7 +72,9 @@ jobs:
   install-all:
     # 8언어 설치·동작 검증(로컬 레지스트리에서 게시 패키지 설치 → quickstart+conformance+security)
     # → INSTALL-MATRIX.md. 수동(workflow_dispatch)+야간(schedule)에만. Docker 빌드 무거워 타임아웃 넉넉히.
-    # 부분실패 격리 — 한 언어 실패는 매트릭스에 격리되고 잡 자체는 GREEN(매트릭스가 결과 담체).
+    # 부분실패 격리 — 한 언어가 실패해도 나머지 언어는 계속 검증하지만(격리, 매트릭스가 결과 담체),
+    # install-verify.sh --strict가 실패 언어가 있으면 exit 1을 내므로 잡은 RED가 된다(PR 0 Task 8 —
+    # 이전엔 무조건 exit 0이라 java/php가 publish에서 죽어도 조용한 초록이었다).
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 90

@@ -78,13 +78,42 @@ if ! timeout "${JAVA_BUILD_TIMEOUT_S}s" docker run --name "$BUILDER_CONTAINER" \
 fi
 
 log "3/4 빌드 산출물(staging-m2) 추출"
-# mkdir을 빌드 시작 전이 아니라 여기(docker cp 직전)에서 한다: 이 하네스는 harness/install/publish/out/
+# mkdir을 빌드 시작 전이 아니라 여기(추출 직전)에서 한다: 이 하네스는 harness/install/publish/out/
 # 아래를 여러 언어 태스크가 각자의 서브디렉터리(out/java, out/dotnet, out/php ...)에 병행해 쓰는 공유
-# 트리다. mkdir과 docker cp 사이에 90초+ 걸리는 mvn 빌드가 끼어 있으면 그 창 동안 디렉터리가(다른
+# 트리다. mkdir과 추출 사이에 90초+ 걸리는 mvn 빌드가 끼어 있으면 그 창 동안 디렉터리가(다른
 # 작업의 광범위한 정리 등으로) 사라질 여지가 실측으로 확인됐다 — mkdir을 추출 직전으로 옮겨 그 창을 사실상
 # 없앤다.
+#
+# ⚠️ 리눅스 CI 전용 게차: 이 공유 트리(publish/out)는 다른 언어의 publish 스크립트가 루트로 도는
+# 컨테이너에 바인드마운트로 넘긴다(예: dotnet.sh의 `-o /out`). 그 결과 out/ 이하가 root 소유가 되어
+# runner(uid 1001)가 하위 디렉터리를 만들지 못하고, `docker cp`가
+# `mkdir …/staging-m2/com: permission denied`로 실패한다(2026-07-08·07-09 야간 CI 실측).
+# Windows Docker Desktop은 바인드마운트 소유권을 마스킹하므로 로컬에서는 재현되지 않는다.
+#
+# 두 가지로 막는다:
+#  (1) 추출 직전에 out/ 트리의 소유권을 현재 사용자로 정규화한다(리눅스에서만 의미가 있다).
+#  (2) `docker cp`(호스트 경로에 직접 mkdir) 대신 **tar 스트림**으로 받아 호스트 `tar`가 현재 사용자
+#      권한으로 풀게 한다. 이렇게 하면 추출이 컨테이너가 만든 소유권에 의존하지 않는다.
+OUT_ROOT="$INSTALL_DIR/publish/out"
+log "추출 전 소유권 진단 (uid=$(id -u) gid=$(id -g))"
+ls -ld "$OUT_ROOT" "$OUT_ROOT/java" "$STAGING_DIR" 2>&1 | sed 's/^/  /' || true
+
+if [ "$(uname -s)" = "Linux" ]; then
+  log "out/ 트리 소유권 정규화 (root 컨테이너 → $(id -u):$(id -g))"
+  docker run --rm -v "$(hostpath "$OUT_ROOT"):/out" alpine:3.20 \
+    chown -R "$(id -u):$(id -g)" /out || log "소유권 정규화 실패(무시하고 계속)"
+fi
+
 mkdir -p "$STAGING_DIR"
-docker cp "$BUILDER_CONTAINER:/work/staging-m2/." "$(hostpath "$STAGING_DIR")/"
+find "$STAGING_DIR" -mindepth 1 -delete
+
+# `docker cp <container>:<path> -` 는 tar 아카이브를 stdout으로 스트림한다. 호스트 tar가 현재
+# 사용자 권한으로 풀므로 컨테이너 측 소유권(root)이 호스트에 전파되지 않는다.
+# --strip-components=1 은 아카이브 최상위 `staging-m2/` 를 벗긴다.
+if ! docker cp "$BUILDER_CONTAINER:/work/staging-m2" - | tar -x --strip-components=1 -C "$STAGING_DIR"; then
+  log "산출물 추출 실패(tar 스트림)"
+  exit 1
+fi
 
 log "4/4 산출물 검증 — parent+BOM POM 및 core/auth/admin/keycloak-sdk(+sources/javadoc) 존재 확인"
 EXPECTED=(

@@ -28,6 +28,12 @@ RAW=$(docker run --rm -v "$ROOT/kotlin:/src-ro:ro" eclipse-temurin:21-jdk-alpine
   # --continue: ktlintCheck 실패해도 커버리지 리포트는 생성되도록.
   sh ./gradlew --no-daemon --continue test koverXmlReport ktlintCheck 2>&1
   echo "___BUILDEXIT=$?"
+  # 단위테스트만 따로 돌려 그 종료코드로 testsPassed를 판정한다(전체 gradle 종료코드는 lintClean용).
+  # gradlew는 위와 동일하게 sh로 호출한다(bare ./gradlew는 CRLF/exec 게차로 exit 127 — 파일 상단 주석).
+  # 첫 실행이 test를 이미 돌렸으므로 통과 시 up-to-date로 즉시 끝나고, 실패 시 재실행되어 0이 아닌 코드를 낸다.
+  sh ./gradlew --no-daemon test --console=plain >/tmp/test.log 2>&1
+  echo "___TESTEXIT=$?"
+  cat /tmp/test.log
   UNIT=$(find build/test-results/test -name "TEST-*.xml" 2>/dev/null -exec grep -hoE "tests=\"[0-9]+\"" {} + \
     | grep -oE "[0-9]+" | awk "{s+=\$1} END{print s+0}")
   echo "___UNIT=$UNIT"
@@ -58,6 +64,11 @@ BRANCH=$(printf '%s\n' "$OUT" | grep -oE '___COV_BRANCH=[0-9]+(\.[0-9]+)?' | tai
 BUILDEXIT=$(printf '%s\n' "$OUT" | grep -oE '___BUILDEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${BUILDEXIT:-1}" = "0" ]; then LINTCLEAN=true; else LINTCLEAN=false; fi
 
+# gradle 전체(build/koverVerify/ktlintCheck)의 종료코드는 lintClean에 쓰고, 단위테스트만 따로
+# 돌린 종료코드로 testsPassed를 판정한다. 마커가 없으면 실패로 간주한다 — fail-closed.
+TESTEXIT=$(printf '%s\n' "$OUT" | grep -oE '___TESTEXIT=[0-9]+' | tail -1 | cut -d= -f2)
+if [ "${TESTEXIT:-1}" = "0" ]; then TESTSPASSED=true; else TESTSPASSED=false; fi
+
 # 통합테스트(Testcontainers, 실제 Keycloak)는 Docker-in-Docker 필요 — best-effort opt-in.
 INTEGRATION=0
 if [ "${SUITE_INTEGRATION:-0}" = "1" ]; then
@@ -73,4 +84,4 @@ if [ "${SUITE_INTEGRATION:-0}" = "1" ]; then
   INTEGRATION=$(printf '%s\n' "$IOUT" | grep -hoE 'tests="[0-9]+"' 2>/dev/null | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
 fi
 
-echo "{\"lang\":\"kotlin\",\"unit\":${UNIT:-0},\"integration\":${INTEGRATION:-0},\"coverageLine\":${LINE:-0},\"coverageBranch\":${BRANCH:-0},\"lintClean\":${LINTCLEAN},\"ran\":true}"
+echo "{\"lang\":\"kotlin\",\"unit\":${UNIT:-0},\"integration\":${INTEGRATION:-0},\"coverageLine\":${LINE:-0},\"coverageBranch\":${BRANCH:-0},\"lintClean\":${LINTCLEAN},\"testsPassed\":${TESTSPASSED},\"ran\":true}"
