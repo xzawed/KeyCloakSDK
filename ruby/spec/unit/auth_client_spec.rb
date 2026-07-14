@@ -81,6 +81,67 @@ RSpec.describe KeycloakSdk::AuthClient do
       expect(ts.id_token).to eq("the-id-token")
       expect(ts.scope).to eq("openid email")
     end
+
+    context "with expected_nonce (OIDC nonce replay protection)" do
+      def stub_token_with_id_token(id_token: "the-id-token")
+        body = { access_token: "AT", token_type: "Bearer", expires_in: 300 }
+        body[:id_token] = id_token unless id_token.nil?
+        stub_request(:post, token_url)
+          .to_return(status: 200, body: body.to_json,
+                     headers: { "Content-Type" => "application/json" })
+      end
+
+      it "validates the id_token and accepts a matching nonce" do
+        stub_token_with_id_token
+        vt = instance_double(KeycloakSdk::ValidatedToken, claims: { "nonce" => "n-abc" })
+        allow(jwt_validator).to receive(:validate).with("the-id-token").and_return(vt)
+
+        ts = auth.exchange_code(code: "c", code_verifier: "v",
+                                redirect_uri: "https://app/cb", expected_nonce: "n-abc")
+        expect(ts.access_token).to eq("AT")
+        expect(jwt_validator).to have_received(:validate).with("the-id-token")
+      end
+
+      it "rejects a mismatched nonce" do
+        stub_token_with_id_token
+        vt = instance_double(KeycloakSdk::ValidatedToken, claims: { "nonce" => "attacker" })
+        allow(jwt_validator).to receive(:validate).with("the-id-token").and_return(vt)
+
+        expect do
+          auth.exchange_code(code: "c", code_verifier: "v",
+                             redirect_uri: "https://app/cb", expected_nonce: "n-abc")
+        end.to raise_error(KeycloakSdk::AuthError, /nonce/)
+      end
+
+      it "rejects an id_token whose signature/claims fail validation" do
+        stub_token_with_id_token
+        allow(jwt_validator).to receive(:validate) do
+          raise KeycloakSdk::TokenValidationError, "bad signature"
+        end
+
+        expect do
+          auth.exchange_code(code: "c", code_verifier: "v",
+                             redirect_uri: "https://app/cb", expected_nonce: "n-abc")
+        end.to raise_error(KeycloakSdk::AuthError, /id_token/)
+      end
+
+      it "rejects a response missing the id_token when a nonce is expected" do
+        stub_token_with_id_token(id_token: nil)
+
+        expect do
+          auth.exchange_code(code: "c", code_verifier: "v",
+                             redirect_uri: "https://app/cb", expected_nonce: "n-abc")
+        end.to raise_error(KeycloakSdk::AuthError, /id_token/)
+      end
+
+      it "skips id_token validation when no nonce is expected" do
+        stub_token_with_id_token
+        allow(jwt_validator).to receive(:validate)
+        ts = auth.exchange_code(code: "c", code_verifier: "v", redirect_uri: "https://app/cb")
+        expect(ts.access_token).to eq("AT")
+        expect(jwt_validator).not_to have_received(:validate)
+      end
+    end
   end
 
   describe "#client_credentials_token" do
