@@ -52,9 +52,9 @@ class AsyncAdminClient:
                 client_secret_key=self._config.client_secret,
                 grant_type="client_credentials",
                 verify=True,
-                # read_timeout은 초 단위 float — int()로 자르면 0.5초 등이 0이 되어 httpx.Timeout(0)이
-                # 되고 모든 admin 요청이 즉시 타임아웃한다. sync AdminClient와 동형으로 float를 그대로
-                # 전달한다(python-keycloak 스텁이 timeout을 int로 좁게 타이핑 — 런타임은 정상).
+                # read_timeout은 초 단위 float — int()로 자르면 0.5→0이 되어 httpx.Timeout(0)이
+                # 되고 모든 admin 요청이 즉시 타임아웃한다. sync AdminClient와 동형으로 float를
+                # 전달한다(python-keycloak 스텁은 int로 좁게 타이핑하나 런타임은 정상).
                 timeout=self._config.read_timeout,  # type: ignore[arg-type]
             )
         return self._admin
