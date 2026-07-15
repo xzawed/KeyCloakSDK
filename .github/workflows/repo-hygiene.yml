@@ -16,7 +16,7 @@ jobs:
     # 실행비트가 붙어도 해롭지 않다.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: 추적되는 *.sh 의 실행비트 확인
         run: |
           NON_EXEC="$(git ls-files -s -- '*.sh' | awk '$1 == "100644" { print $4 }')"
