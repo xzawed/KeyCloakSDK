@@ -30,6 +30,7 @@ module KeycloakSdk
     end
 
     def close
+      @admin&.close # 지연 생성된 admin의 Faraday 커넥션도 정리(§4 close 계약 — 이전엔 누락)
       [@form_http, @jwks_http].each { |h| h.close if h.respond_to?(:close) }
       nil
     end
