@@ -43,7 +43,13 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
             throw new KeycloakConfigException("clientSecret is required for the admin client (client-credentials).");
         var http = new HttpClient(new BearerHandler(tokenProvider)
         {
-            InnerHandler = new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromMilliseconds(cfg.ConnectTimeoutMs) },
+            // PooledConnectionLifetime은 장수명 프로세스에서 stale DNS/커넥션을 피한다(메인
+            // KeycloakClient HttpClient와 동형 — admin 핸들러에도 배선).
+            InnerHandler = new SocketsHttpHandler
+            {
+                ConnectTimeout = TimeSpan.FromMilliseconds(cfg.ConnectTimeoutMs),
+                PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            },
         })
         {
             BaseAddress = new Uri(cfg.ServerUrl.TrimEnd('/') + "/"),   // must end with '/'
@@ -80,7 +86,8 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
         try { resp = await fn(_typed).ConfigureAwait(false); }
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
         catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException) { throw new KeycloakTransportException("admin request timed out", ex); }
-        return await IdFromLocationAsync(resp, ct).ConfigureAwait(false);
+        using (resp)
+            return await IdFromLocationAsync(resp, ct).ConfigureAwait(false);
     }
 
     internal async Task<HttpResponseMessage> SendRawAsync(HttpRequestMessage req, CancellationToken ct)
@@ -90,14 +97,19 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
         catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException) { throw new KeycloakTransportException("admin request timed out", ex); }
         if (!resp.IsSuccessStatusCode)
-            throw KeycloakErrorMapping.MapHttpError((int)resp.StatusCode, await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        {
+            var status = (int)resp.StatusCode;
+            var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            resp.Dispose(); // 에러 경로에서 호출자가 소유권을 못 받으므로 여기서 폐기(커넥션 반환)
+            throw KeycloakErrorMapping.MapHttpError(status, body);
+        }
         return resp;
     }
 
     internal async Task<T> GetJsonAsync<T>(string relativeUrl, CancellationToken ct)
     {
         using var req = new HttpRequestMessage(HttpMethod.Get, relativeUrl);
-        var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
+        using var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
         T? value;
         try { value = await resp.Content.ReadFromJsonAsync<T>(cancellationToken: ct).ConfigureAwait(false); }
         catch (Exception ex) when (ex is System.Text.Json.JsonException or NotSupportedException)
@@ -108,7 +120,7 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
     internal async Task<string> CreateRawReturningIdAsync(string relativeUrl, object body, CancellationToken ct)
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, relativeUrl) { Content = JsonContent.Create(body) };
-        var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
+        using var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
         return await IdFromLocationAsync(resp, ct).ConfigureAwait(false);
     }
 
