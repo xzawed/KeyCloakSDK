@@ -31,7 +31,7 @@
     "eslint": "^10",
     "prettier": "^3",
     "testcontainers": "^11",
-    "typescript": "^5",
+    "typescript": "^7",
     "typescript-eslint": "^8",
     "vitest": "^3"
   }
