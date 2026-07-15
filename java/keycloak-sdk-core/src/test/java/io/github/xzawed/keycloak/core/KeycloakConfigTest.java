@@ -12,7 +12,7 @@ class KeycloakConfigTest {
     assertEquals(Duration.ofSeconds(30), c.getClockSkew());
     assertEquals(Duration.ofSeconds(30), c.getJwksMinRefetch());
   }
-  @Test void jwksMinRefetch_customValueReflected() {
+  @Test void jwksMinRefetchCustomValueReflected() {
     KeycloakConfig c = KeycloakConfig.builder()
         .serverUrl("x").realm("r").clientId("app").jwksMinRefetch(Duration.ofSeconds(120)).build();
     assertEquals(Duration.ofSeconds(120), c.getJwksMinRefetch());

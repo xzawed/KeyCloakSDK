@@ -20,7 +20,7 @@ class JwtValidatorTest {
         Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
     assertEquals(issuer, v.validate(jwt.serialize()).getIssuer());
   }
-  @Test void forRealm_buildsRemoteValidatorWithConfiguredJwksRefetch() {
+  @Test void forRealmBuildsRemoteValidatorWithConfiguredJwksRefetch() {
     // JWKSourceBuilder는 지연(lazy) — 구성만으로 네트워크 I/O가 없다. forRealm 전체 경로
     // (retriever + rateLimited(jwksMinRefetch) 배선 + JwtValidator 생성)를 네트워크 없이 커버한다.
     io.github.xzawed.keycloak.core.KeycloakConfig cfg =
