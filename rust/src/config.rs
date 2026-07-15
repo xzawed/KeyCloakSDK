@@ -15,6 +15,9 @@ pub struct KeycloakConfig {
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
     pub clock_skew: u64,
+    /// 미해결 kid(키 회전)로 인한 JWKS 재조회의 최소 간격(초, 기본 60) — DoS 증폭 상한.
+    /// 위조 kid를 연속 주입해도 이 간격보다 자주 IdP를 때리지 못한다.
+    pub jwks_min_refetch_secs: u64,
     pub redirect_uri: Option<String>,
 }
 
@@ -47,6 +50,7 @@ impl KeycloakConfig {
             connect_timeout: Duration::from_secs(5),
             read_timeout: Duration::from_secs(30),
             clock_skew: 30,
+            jwks_min_refetch_secs: 60,
             redirect_uri: None,
         })
     }
@@ -66,6 +70,12 @@ impl KeycloakConfig {
     #[must_use]
     pub fn with_signature_algorithms(mut self, algs: Vec<String>) -> Self {
         self.signature_algorithms = algs;
+        self
+    }
+    /// 미해결 kid로 인한 JWKS 재조회의 최소 간격(초)을 설정한다(DoS 증폭 상한, 기본 60).
+    #[must_use]
+    pub fn with_jwks_min_refetch_secs(mut self, secs: u64) -> Self {
+        self.jwks_min_refetch_secs = secs;
         self
     }
 }
@@ -93,6 +103,14 @@ mod tests {
         assert_eq!(c.server_url, "http://kc:8080");
         assert_eq!(c.scopes, vec!["openid".to_string()]);
         assert_eq!(c.clock_skew, 30);
+        assert_eq!(c.jwks_min_refetch_secs, 60);
+    }
+
+    #[test]
+    fn jwks_min_refetch_default_and_custom() {
+        let c = KeycloakConfig::new("http://kc:8080", "r", "c").unwrap();
+        assert_eq!(c.jwks_min_refetch_secs, 60);
+        assert_eq!(c.with_jwks_min_refetch_secs(120).jwks_min_refetch_secs, 120);
     }
 
     #[test]

@@ -8,7 +8,7 @@
 ![Languages](https://img.shields.io/badge/languages-9-brightgreen)
 ![Status](https://img.shields.io/badge/status-pre--release-orange)
 ![Keycloak](https://img.shields.io/badge/Keycloak-26.6-informational)
-![Tests](https://img.shields.io/badge/tests-811%20passing-success)
+![Tests](https://img.shields.io/badge/tests-877%20passing-success)
 
 > 여기서 "다국어/polyglot"은 **프로그래밍 언어**(Java·Python·Node·Go·C#·PHP·Rust·Ruby·Kotlin)를 뜻하며, 자연어 현지화(i18n)와는 무관합니다.
 
@@ -74,17 +74,17 @@ with KeycloakClient.create(config) as kc:
 
 | SDK | 테스트 | 커버리지 | 특이 |
 |---|---|---|---|
-| Java | 123 | 게이트 90 / 85 | 기준 구현 |
-| Python | 235 | 100% 강제 | sync + async(`aio`) |
-| Node | 76 | 라인 100 / 브랜치 94 | ESM · async-only |
-| Go | 41 | 95.2% | sync + `context.Context` |
-| C# / .NET | 59 | 97.3 / 93.5 | async-first |
-| PHP | 67 | 100% | `final readonly class` |
-| Rust | 35 | 94.9% | edition 2024 · async |
-| Ruby | 74 | 100 / 93.5 | Faraday 직접 admin |
-| Kotlin | 101 | 99.2 / 85.7 | 코루틴 · JVM 스택 재사용 |
+| Java | 138 | 게이트 90 / 85 | 기준 구현 |
+| Python | 247 | 100% 강제 | sync + async(`aio`) |
+| Node | 81 | 라인 100 / 브랜치 94 | ESM · async-only |
+| Go | 46 | 95% | sync + `context.Context` |
+| C# / .NET | 63 | 97 / 93 | async-first |
+| PHP | 71 | 100% | `final readonly class` |
+| Rust | 41 | 95% | edition 2024 · async |
+| Ruby | 84 | 100 / 93 | Faraday 직접 admin |
+| Kotlin | 106 | 99 / 86 | 코루틴 · JVM 스택 재사용 |
 
-*통합테스트는 대부분 Testcontainers이며, PHP·Ruby는 Windows에서 docker-CLI 폴백입니다. 각 SDK의 보안 핵심은 어드버서리얼 리뷰로 검증했습니다.*
+*통합테스트는 대부분 Testcontainers이며, PHP·Ruby는 Windows에서 docker-CLI 폴백입니다. 각 SDK의 보안 핵심은 어드버서리얼 리뷰로 검증했습니다 — [SECURITY.md](SECURITY.md) 참고. 배포 전 하드닝(OIDC nonce 재생 방지, 설정 가능한 JWT 서명 알고리즘, 의존성 CVE 감사)이 9개 SDK 전부에 적용됐습니다.*
 
 ---
 

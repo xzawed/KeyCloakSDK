@@ -32,8 +32,12 @@ public final class JwtValidator {
       com.nimbusds.jose.util.DefaultResourceRetriever retriever =
           new com.nimbusds.jose.util.DefaultResourceRetriever(
               (int) cfg.getConnectTimeout().toMillis(), (int) cfg.getReadTimeout().toMillis());
+      // 미해결 kid 재조회 rate-limit 간격을 config로 설정 가능하게 한다(기본 30초 = Nimbus
+      // DEFAULT_RATE_LIMIT_MIN_INTERVAL 동형). 위조 kid 폭주에 대한 DoS 증폭 상한.
       JWKSource<SecurityContext> src =
-          JWKSourceBuilder.create(md.getJwksUri().toURL(), retriever).build();
+          JWKSourceBuilder.create(md.getJwksUri().toURL(), retriever)
+              .rateLimited(cfg.getJwksMinRefetch().toMillis())
+              .build();
       return new JwtValidator(src, md.getIssuer(), audience, allowedAlgs, cfg.getClockSkew());
     } catch (java.net.MalformedURLException e) {
       throw new TokenValidationException("Invalid JWKS URI", e);

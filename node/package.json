@@ -21,7 +21,7 @@
     "test:it": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
-    "@keycloak/keycloak-admin-client": "^26",
+    "@keycloak/keycloak-admin-client": "~26.6.4",
     "jose": "^5",
     "openid-client": "^6"
   },

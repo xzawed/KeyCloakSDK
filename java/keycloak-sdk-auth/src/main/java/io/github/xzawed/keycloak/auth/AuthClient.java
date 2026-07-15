@@ -13,6 +13,7 @@ import com.nimbusds.oauth2.sdk.util.URLUtils;
 import com.nimbusds.openid.connect.sdk.*;
 import io.github.xzawed.keycloak.core.*;
 import io.github.xzawed.keycloak.core.exception.KeycloakAuthException;
+import io.github.xzawed.keycloak.core.exception.KeycloakTransportException;
 import java.net.URI;
 import java.time.Instant;
 import java.util.Collections;
@@ -104,7 +105,9 @@ public class AuthClient {
             err.getCode(), null);
       }
       tokenSet = toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
-    } catch (java.io.IOException | com.nimbusds.oauth2.sdk.ParseException e) {
+    } catch (java.io.IOException e) {
+      throw new KeycloakTransportException("Authorization code exchange transport failure", e);
+    } catch (com.nimbusds.oauth2.sdk.ParseException e) {
       throw new KeycloakAuthException("Authorization code exchange request error", null, e);
     }
     if (expectedNonce != null) {
@@ -159,7 +162,9 @@ public class AuthClient {
             err.getCode(), null);
       }
       return toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
-    } catch (java.io.IOException | com.nimbusds.oauth2.sdk.ParseException e) {
+    } catch (java.io.IOException e) {
+      throw new KeycloakTransportException("Client credentials transport failure", e);
+    } catch (com.nimbusds.oauth2.sdk.ParseException e) {
       throw new KeycloakAuthException("Client credentials request error", null, e);
     }
   }
@@ -180,7 +185,9 @@ public class AuthClient {
             err.getCode(), null);
       }
       return toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
-    } catch (java.io.IOException | com.nimbusds.oauth2.sdk.ParseException e) {
+    } catch (java.io.IOException e) {
+      throw new KeycloakTransportException("Token refresh transport failure", e);
+    } catch (com.nimbusds.oauth2.sdk.ParseException e) {
       throw new KeycloakAuthException("Token refresh request error", null, e);
     }
   }
@@ -192,7 +199,7 @@ public class AuthClient {
         throw new KeycloakAuthException("Logout failed (HTTP " + resp.getStatusCode() + ")", null, null);
       }
     } catch (java.io.IOException e) {
-      throw new KeycloakAuthException("Logout request error", null, e);
+      throw new KeycloakTransportException("Logout transport failure", e);
     }
   }
 
@@ -225,7 +232,9 @@ public class AuthClient {
         throw new KeycloakAuthException("Introspection failed: " + err.getDescription(), err.getCode(), null);
       }
       return toIntrospectionResult(tir.toSuccessResponse());
-    } catch (java.io.IOException | com.nimbusds.oauth2.sdk.ParseException e) {
+    } catch (java.io.IOException e) {
+      throw new KeycloakTransportException("Introspection transport failure", e);
+    } catch (com.nimbusds.oauth2.sdk.ParseException e) {
       throw new KeycloakAuthException("Introspection request error", null, e);
     }
   }

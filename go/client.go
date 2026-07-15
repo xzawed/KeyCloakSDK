@@ -3,6 +3,7 @@ package keycloak
 import (
 	"context"
 	"sync"
+	"time"
 
 	"golang.org/x/sync/singleflight"
 )
@@ -30,6 +31,7 @@ func New(cfg Config) (*Client, error) {
 	v := newValidator(validatorOptions{
 		jwksURI: ep.jwks, issuer: ep.issuer, audience: cfg.ClientID,
 		allowedAlgs: cfg.signatureAlgorithms(), clockSkewSec: cfg.ClockSkew,
+		minRefetch: time.Duration(cfg.JwksMinRefetch) * time.Second,
 		// Bound the JWKS fetch by the configured read timeout (a hung IdP must not
 		// block Validate forever — the same invariant as the admin/auth clients).
 		httpClient: cfg.httpClient(),
@@ -47,15 +49,29 @@ func (c *Client) Admin(ctx context.Context) (*AdminClient, error) {
 	if a != nil {
 		return a, nil
 	}
-	v, err, _ := c.group.Do("admin", func() (any, error) { return newAdminClient(ctx, c.cfg) })
+	// singleflight는 Do가 반환되면 키를 즉시 해제하므로, 첫 배치 완료 직후 c.admin 세팅 전에 도착한
+	// 호출이 두 번째 배치를 시작해 admin 클라이언트를 중복 생성(로그인·커넥션풀 누출)할 수 있다.
+	// 캐시를 플라이트 '안에서' 다시 확인(double-checked)해 중복 생성을 막고 c.admin도 여기서 세팅한다.
+	v, err, _ := c.group.Do("admin", func() (any, error) {
+		c.mu.Lock()
+		existing := c.admin
+		c.mu.Unlock()
+		if existing != nil {
+			return existing, nil
+		}
+		created, cerr := newAdminClient(ctx, c.cfg)
+		if cerr != nil {
+			return nil, cerr
+		}
+		c.mu.Lock()
+		c.admin = created
+		c.mu.Unlock()
+		return created, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	a = v.(*AdminClient)
-	c.mu.Lock()
-	c.admin = a
-	c.mu.Unlock()
-	return a, nil
+	return v.(*AdminClient), nil
 }
 
 // Close releases created sub-resources — admin only if it was created, auth always.

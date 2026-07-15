@@ -99,15 +99,7 @@ impl AuthClient {
         // nonce는 openidconnect가 auth URL에 실어 Keycloak이 id_token에 담아 돌려준다. 호출자에게
         // 함께 돌려줘 콜백 후 exchange_code(expected_nonce)로 넘기면 id_token 재생을 막는다.
         // config.scopes를 반영(사용자 커스텀 스코프). 비면 "openid" 폴백.
-        let scopes: Vec<Scope> = if self.config.scopes.is_empty() {
-            vec![Scope::new("openid".to_string())]
-        } else {
-            self.config
-                .scopes
-                .iter()
-                .map(|s| Scope::new(s.clone()))
-                .collect()
-        };
+        let scopes = self.scopes();
         let (url, csrf, nonce) = self
             .oidc
             .authorize_url(
@@ -178,11 +170,27 @@ impl AuthClient {
         Ok(())
     }
 
-    /// Client Credentials 흐름(admin 접착·서비스 계정).
+    /// config.scopes를 openidconnect `Scope` 벡터로 변환한다(authz-url·client-credentials 공용).
+    /// 비면 "openid" 폴백 — token_provider(admin 경로)와 동형.
+    fn scopes(&self) -> Vec<Scope> {
+        if self.config.scopes.is_empty() {
+            vec![Scope::new("openid".to_string())]
+        } else {
+            self.config
+                .scopes
+                .iter()
+                .map(|s| Scope::new(s.clone()))
+                .collect()
+        }
+    }
+
+    /// Client Credentials 흐름(admin 접착·서비스 계정). config.scopes를 요청에 반영한다
+    /// (누락 시 커스텀 스코프가 무시돼 언더스코프 토큰 발급 — authz-url·token_provider와 동형).
     pub async fn client_credentials_token(&self) -> Result<TokenSet> {
         let resp = self
             .oidc
             .exchange_client_credentials()
+            .add_scopes(self.scopes())
             .request_async(&self.http)
             .await
             .map_err(map_token_err)?;

@@ -41,8 +41,12 @@ fi
 
 # rspec 요약: "64 examples, 0 failures"
 UNIT=$(printf '%s\n' "$OUT" | grep -oE '[0-9]+ examples?' | head -1 | grep -oE '[0-9]+')
-# SimpleCov 콘솔 요약: "Coverage report generated for RSpec to /src/coverage. 123 / 130 LOC (94.62%) covered."
-LINE=$(printf '%s\n' "$OUT" | grep -oE 'LOC \([0-9]+(\.[0-9]+)?%\) covered' | head -1 | grep -oE '[0-9]+(\.[0-9]+)?')
+# SimpleCov 콘솔 요약(신 포맷 ~0.22 — 구 "N / M LOC (X%) covered"에서 변경됨):
+#   "Line Coverage: 100.0% (212 / 212)"  /  "Branch Coverage: 93.75% (45 / 48)"
+# ⚠️ 구 LOC 정규식은 이 포맷과 매치하지 않아 커버리지가 0으로 집계돼 스코어카드에서 ruby가
+# 부당하게 감점됐다(실측 라인 100%/브랜치 93.75%). 신 포맷으로 라인+브랜치를 파싱한다.
+LINE=$(printf '%s\n' "$OUT" | grep -oE 'Line Coverage: [0-9]+(\.[0-9]+)?%' | head -1 | grep -oE '[0-9]+(\.[0-9]+)?')
+BRANCH=$(printf '%s\n' "$OUT" | grep -oE 'Branch Coverage: [0-9]+(\.[0-9]+)?%' | head -1 | grep -oE '[0-9]+(\.[0-9]+)?')
 LINTEXIT=$(printf '%s\n' "$OUT" | grep -oE '___LINTEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${LINTEXIT:-1}" = "0" ]; then LINTCLEAN=true; else LINTCLEAN=false; fi
 
@@ -65,4 +69,4 @@ fi
 TESTEXIT=$(printf '%s\n' "$OUT" | grep -oE '___TESTEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 INSTALLEXIT=$(printf '%s\n' "$OUT" | grep -oE '___INSTALLEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${TESTEXIT:-1}" = "0" ] && [ "${INSTALLEXIT:-1}" = "0" ]; then TESTSPASSED=true; else TESTSPASSED=false; fi
-echo "{\"lang\":\"ruby\",\"unit\":${UNIT:-0},\"integration\":${INTEGRATION:-0},\"coverageLine\":${LINE:-0},\"coverageBranch\":0,\"lintClean\":${LINTCLEAN},\"testsPassed\":${TESTSPASSED},\"ran\":true}"
+echo "{\"lang\":\"ruby\",\"unit\":${UNIT:-0},\"integration\":${INTEGRATION:-0},\"coverageLine\":${LINE:-0},\"coverageBranch\":${BRANCH:-0},\"lintClean\":${LINTCLEAN},\"testsPassed\":${TESTSPASSED},\"ran\":true}"

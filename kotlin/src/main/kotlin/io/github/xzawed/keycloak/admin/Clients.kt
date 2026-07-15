@@ -44,6 +44,8 @@ public class ClientsResource internal constructor(
             val response = delegate.delete(id)
             try {
                 if (response.status >= 400) {
+                    // close 전에 버퍼링해야 경계 변환이 Keycloak 에러 본문을 읽을 수 있다(getCreatedId와 동일 관용).
+                    response.bufferEntity()
                     throw WebApplicationException(response)
                 }
             } finally {

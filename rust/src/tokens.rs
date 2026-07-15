@@ -11,11 +11,13 @@ pub struct TokenSet {
 }
 
 impl TokenSet {
-    /// expires_at(절대 epoch) 기준 만료(스큐 적용). expires_at 없으면 false.
+    /// expires_at(절대 epoch) 기준 만료(스큐 적용). expires_at가 미상이면 보수적으로 true로 본다
+    /// (Go/Python/Node/C#/Kotlin 동형) — 만료 불명 토큰을 provider가 영구 캐시해 만료 후 admin이
+    /// 영구 실패하는 것을 막는다(Keycloak 표준 흐름은 항상 expires_in을 주므로 실경로엔 무영향).
     pub fn is_expired(&self, now: u64, skew: u64) -> bool {
         match self.expires_at {
             Some(at) => now + skew >= at,
-            None => false,
+            None => true,
         }
     }
 }
@@ -89,7 +91,9 @@ mod tests {
     }
 
     #[test]
-    fn no_expiry_never_expired() {
+    fn unknown_expiry_treated_as_expired() {
+        // expires_at=None(만료 불명)은 보수적으로 만료로 판정 — provider가 영구 캐시하지 않도록
+        // (자매 SDK 동형). 이전엔 !is_expired가 항상 true라 만료 불명 토큰이 영구 재사용됐다.
         let ts = TokenSet {
             access_token: "a".into(),
             token_type: "Bearer".into(),
@@ -99,7 +103,7 @@ mod tests {
             scope: None,
             expires_at: None,
         };
-        assert!(!ts.is_expired(9_999_999, 30));
+        assert!(ts.is_expired(9_999_999, 30));
     }
 
     #[test]
