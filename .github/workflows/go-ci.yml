@@ -10,8 +10,8 @@ jobs:
       matrix: { go: ['1.25', '1.26'] } # 최소 지원(go.mod) + 최신 마이너
     defaults: { run: { working-directory: go } }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
         with:
           go-version: '${{ matrix.go }}'
           cache-dependency-path: go/go.sum
@@ -41,8 +41,8 @@ jobs:
     runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → testcontainers 동작
     defaults: { run: { working-directory: go } }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
           cache-dependency-path: go/go.sum

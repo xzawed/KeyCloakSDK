@@ -17,6 +17,18 @@ final class KeycloakConfigTest extends TestCase
         self::assertSame(['openid'], $c->scopes);
         self::assertSame(30, $c->clockSkew);
         self::assertSame(5.0, $c->connectTimeout);
+        self::assertSame(60, $c->jwksMinRefetchSeconds);
+    }
+    public function testJwksMinRefetchCustom(): void
+    {
+        $c = new KeycloakConfig(serverUrl: 'https://kc:8080', realm: 'r', clientId: 'c', jwksMinRefetchSeconds: 120);
+        self::assertSame(120, $c->jwksMinRefetchSeconds);
+    }
+    public function testNegativeJwksMinRefetchThrows(): void
+    {
+        $this->expectException(KeycloakConfigError::class);
+        // 화살표 함수로 감싸 즉시 호출 — bare `new`(S1848) 없이 생성자 예외를 발생시킨다.
+        (static fn (): KeycloakConfig => new KeycloakConfig(serverUrl: 'https://kc:8080', realm: 'r', clientId: 'c', jwksMinRefetchSeconds: -1))();
     }
     public function testMissingServerUrlThrows(): void
     {

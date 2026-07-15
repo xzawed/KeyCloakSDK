@@ -9,6 +9,7 @@ public final class KeycloakConfig {
   private final List<String> scopes;
   private final List<String> signatureAlgorithms;  // JWT 서명 검증 허용 알고리즘 핀
   private final Duration connectTimeout, readTimeout, clockSkew;
+  private final Duration jwksMinRefetch;           // 미해결 kid 재조회 최소 간격(DoS 증폭 상한)
 
   private KeycloakConfig(Builder b) {
     this.serverUrl = b.serverUrl; this.realm = b.realm; this.clientId = b.clientId;
@@ -16,7 +17,7 @@ public final class KeycloakConfig {
     this.scopes = List.copyOf(b.scopes);
     this.signatureAlgorithms = List.copyOf(b.signatureAlgorithms);
     this.connectTimeout = b.connectTimeout; this.readTimeout = b.readTimeout;
-    this.clockSkew = b.clockSkew;
+    this.clockSkew = b.clockSkew; this.jwksMinRefetch = b.jwksMinRefetch;
   }
   public String getServerUrl() { return serverUrl; }
   public String getRealm() { return realm; }
@@ -28,6 +29,8 @@ public final class KeycloakConfig {
   public Duration getConnectTimeout() { return connectTimeout; }
   public Duration getReadTimeout() { return readTimeout; }
   public Duration getClockSkew() { return clockSkew; }
+  /** 미해결 kid(키 회전)로 인한 JWKS 재조회의 최소 간격(기본 30초) — DoS 증폭 상한. */
+  public Duration getJwksMinRefetch() { return jwksMinRefetch; }
 
   public static Builder builder() { return new Builder(); }
 
@@ -39,6 +42,7 @@ public final class KeycloakConfig {
     private Duration connectTimeout = Duration.ofSeconds(10);
     private Duration readTimeout = Duration.ofSeconds(30);
     private Duration clockSkew = Duration.ofSeconds(30);
+    private Duration jwksMinRefetch = Duration.ofSeconds(30);   // Nimbus DEFAULT_RATE_LIMIT_MIN_INTERVAL(30s) 동형
 
     public Builder serverUrl(String v) { this.serverUrl = v; return this; }
     public Builder realm(String v) { this.realm = v; return this; }
@@ -49,6 +53,7 @@ public final class KeycloakConfig {
     public Builder connectTimeout(Duration v) { this.connectTimeout = v; return this; }
     public Builder readTimeout(Duration v) { this.readTimeout = v; return this; }
     public Builder clockSkew(Duration v) { this.clockSkew = v; return this; }
+    public Builder jwksMinRefetch(Duration v) { this.jwksMinRefetch = v; return this; }
 
     public KeycloakConfig build() {
       require(serverUrl, "serverUrl"); require(realm, "realm"); require(clientId, "clientId");

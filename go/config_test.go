@@ -62,6 +62,7 @@ func TestConfigRejectsNegativeTimeouts(t *testing.T) {
 		{ServerURL: "https://kc", Realm: "r", ClientID: "c", ConnectTimeout: -1},
 		{ServerURL: "https://kc", Realm: "r", ClientID: "c", ReadTimeout: -1},
 		{ServerURL: "https://kc", Realm: "r", ClientID: "c", ClockSkew: -1},
+		{ServerURL: "https://kc", Realm: "r", ClientID: "c", JwksMinRefetch: -1},
 	} {
 		var ce *ConfigError
 		if err := c.validate(); !errors.As(err, &ce) {
@@ -77,6 +78,9 @@ func TestConfigDefaultsAndTrim(t *testing.T) {
 	}
 	if c.ConnectTimeout != 10000 || c.ReadTimeout != 30000 || c.ClockSkew != 30 {
 		t.Fatalf("defaults: %+v", c)
+	}
+	if c.JwksMinRefetch != 60 {
+		t.Fatalf("JwksMinRefetch default: %d", c.JwksMinRefetch)
 	}
 }
 
