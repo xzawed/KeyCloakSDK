@@ -58,6 +58,22 @@ describe('discovery 실패 경계 변환 (§4 — 원시 하위 오류 누출 �
     vi.mocked(oidc.discovery).mockRejectedValue(new Error('bad OIDC metadata'))
     await expect(new AuthClient(cfg).introspect('tok')).rejects.toBeInstanceOf(KeycloakAuthError)
   })
+
+  it('readTimeoutMs(초)를 discovery 옵션 timeout으로 전달한다(최초 well-known 페치에 적용)', async () => {
+    const c = defineConfig({
+      serverUrl: 'https://kc',
+      realm: 'r',
+      clientId: 'c',
+      clientSecret: 's',
+      readTimeoutMs: 5000,
+    })
+    vi.mocked(oidc.clientCredentialsGrant).mockResolvedValue({
+      access_token: 'x',
+      expires_in: 1,
+    } as never)
+    await new AuthClient(c).clientCredentialsToken()
+    expect(vi.mocked(oidc.discovery).mock.calls.at(-1)?.[4]).toMatchObject({ timeout: 5 })
+  })
 })
 
 describe('createAuthorizationRequest (동기·네트워크 없음)', () => {
