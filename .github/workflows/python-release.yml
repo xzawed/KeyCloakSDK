@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: python } }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with: { python-version: '3.12' }
       - run: python -m pip install -e ".[dev]"
       - run: ruff check src tests examples
@@ -33,9 +33,9 @@ jobs:
     permissions:
       id-token: write  # PyPI Trusted Publisher(OIDC)에 필요 — 다른 권한 불필요
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 

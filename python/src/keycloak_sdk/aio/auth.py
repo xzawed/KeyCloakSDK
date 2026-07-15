@@ -70,7 +70,8 @@ class AsyncAuthClient:
         self._jwks_cache: KeySet | None = None
         self._jwks_lock = asyncio.Lock()
         self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)
-        self._jwks_min_refetch = 60.0  # 강제 재조회 최소 간격(초) — DoS 증폭 상한
+        # 강제 재조회 최소 간격(초) — DoS 증폭 상한
+        self._jwks_min_refetch = config.jwks_min_refetch_seconds
 
     async def _awrap(self, awaitable: Awaitable[T]) -> T:
         """python-keycloak `a_*` 호출을 await하고 `KeycloakError`를 SDK 예외로 변환한다.

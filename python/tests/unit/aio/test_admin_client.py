@@ -72,19 +72,22 @@ def test_resource_properties_wrap_raw():
     assert client.groups._admin is admin
 
 
-async def test_aclose_delegates_when_admin_has_aclose():
+async def test_aclose_closes_admin_connection():
+    """admin이 생성돼 있으면 하위 `ConnectionManager.aclose()`로 httpx.AsyncClient 풀을
+    닫는다(FD/소켓 누수 방지). `KeycloakAdmin`엔 `aclose`가 없고 실제 자원은 `connection`에
+    있으므로 `admin.connection.aclose()`를 호출해야 한다(async auth 미러와 동형)."""
     admin = MagicMock(spec=KeycloakAdmin)
-    admin.aclose = AsyncMock()
+    admin.connection.aclose = AsyncMock()
     client = AsyncAdminClient(_config(), admin=admin)
 
     await client.aclose()
 
-    admin.aclose.assert_awaited_once()
+    admin.connection.aclose.assert_awaited_once()
 
 
 async def test_aclose_is_noop_when_admin_never_constructed():
     """`raw`에 한 번도 접근하지 않았다면 `aclose()`가 억지로 `KeycloakAdmin`을
-    생성하지 않고 조용히 넘어가야 한다."""
+    생성하지 않고 조용히 넘어가야 한다(`self._admin`이 None → conn None → no-op)."""
     client = AsyncAdminClient(_config())  # raw never accessed
 
     await client.aclose()  # must not raise
@@ -92,8 +95,10 @@ async def test_aclose_is_noop_when_admin_never_constructed():
     assert client._admin is None
 
 
-async def test_aclose_is_noop_when_real_keycloakadmin_has_no_aclose():
+async def test_aclose_is_noop_when_connection_missing():
+    """`connection`이 없으면(내부 구조 변경 대비) 조용히 넘어간다."""
     admin = MagicMock(spec=KeycloakAdmin)
+    admin.connection = None
     client = AsyncAdminClient(_config(), admin=admin)
 
-    await client.aclose()  # must not raise even without aclose attribute
+    await client.aclose()  # must not raise

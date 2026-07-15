@@ -23,12 +23,12 @@ public sealed class ClientsResource
     {
         using var req = new HttpRequestMessage(HttpMethod.Put, $"admin/realms/{_a.Realm}/clients/{id}")
         { Content = JsonContent.Create(client) };
-        await _a.SendRawAsync(req, ct).ConfigureAwait(false);
+        (await _a.SendRawAsync(req, ct).ConfigureAwait(false)).Dispose();
     }
 
     public async Task DeleteAsync(string id, CancellationToken ct = default)
     {
         using var req = new HttpRequestMessage(HttpMethod.Delete, $"admin/realms/{_a.Realm}/clients/{id}");
-        await _a.SendRawAsync(req, ct).ConfigureAwait(false);
+        (await _a.SendRawAsync(req, ct).ConfigureAwait(false)).Dispose();
     }
 }

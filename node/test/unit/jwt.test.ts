@@ -16,6 +16,7 @@ const OPTS: JwtValidatorOptions = {
   audience: 'my-client',
   allowedAlgs: ['RS256'],
   clockSkewSeconds: 30,
+  jwksMinRefetchSeconds: 30,
 }
 
 describe('JwtValidator (강화 검증)', () => {
