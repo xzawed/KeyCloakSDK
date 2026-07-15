@@ -25,6 +25,26 @@ describe('defineConfig', () => {
     expect(c.scopes).toEqual([])
     expect(c.clientSecret).toBeUndefined()
     expect(c.signatureAlgorithms).toEqual(['RS256'])
+    expect(c.jwksMinRefetchSeconds).toBe(30)
+  })
+
+  it('jwksMinRefetchSeconds를 설정하면 유지하고, 음수는 거부', () => {
+    expect(
+      defineConfig({
+        serverUrl: 'https://kc',
+        realm: 'r',
+        clientId: 'c',
+        jwksMinRefetchSeconds: 60,
+      }).jwksMinRefetchSeconds,
+    ).toBe(60)
+    expect(() =>
+      defineConfig({
+        serverUrl: 'https://kc',
+        realm: 'r',
+        clientId: 'c',
+        jwksMinRefetchSeconds: -1,
+      }),
+    ).toThrow(KeycloakConfigError)
   })
 
   it('signatureAlgorithms를 설정하면 유지하고, 빈 배열은 거부', () => {

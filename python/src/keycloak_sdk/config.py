@@ -20,6 +20,9 @@ class KeycloakConfig:
     # JWT 서명 검증 시 허용할 알고리즘(핀). 기본 RS256이나 ES256/PS256 서명 realm을 위해
     # 설정 가능하게 노출한다 — 하드코딩하면 그런 realm의 정상 토큰이 전부 거부된다.
     signature_algorithms: tuple[str, ...] = ("RS256",)
+    # 미해결 kid(키 회전)로 인한 JWKS 강제 재조회의 최소 간격(초, 기본 60) — DoS 증폭 상한.
+    # 위조 kid를 연속 주입해도 이 간격보다 자주 IdP를 때리지 못한다.
+    jwks_min_refetch_seconds: float = 60.0
 
     def __post_init__(self) -> None:
         for name in ("server_url", "realm", "client_id"):
@@ -29,6 +32,8 @@ class KeycloakConfig:
         if not self.signature_algorithms:
             # 빈 집합은 joserfc가 권장 기본(HS256 포함)으로 폴백해 알고리즘 혼동 방어를 무력화한다.
             raise KeycloakConfigError("signature_algorithms must be non-empty")
+        if self.jwks_min_refetch_seconds < 0:
+            raise KeycloakConfigError("jwks_min_refetch_seconds must be >= 0")
 
     def __repr__(self) -> str:
         return (

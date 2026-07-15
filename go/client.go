@@ -3,6 +3,7 @@ package keycloak
 import (
 	"context"
 	"sync"
+	"time"
 
 	"golang.org/x/sync/singleflight"
 )
@@ -30,6 +31,7 @@ func New(cfg Config) (*Client, error) {
 	v := newValidator(validatorOptions{
 		jwksURI: ep.jwks, issuer: ep.issuer, audience: cfg.ClientID,
 		allowedAlgs: cfg.signatureAlgorithms(), clockSkewSec: cfg.ClockSkew,
+		minRefetch: time.Duration(cfg.JwksMinRefetch) * time.Second,
 		// Bound the JWKS fetch by the configured read timeout (a hung IdP must not
 		// block Validate forever — the same invariant as the admin/auth clients).
 		httpClient: cfg.httpClient(),

@@ -13,7 +13,7 @@ module KeycloakSdk
         f.response :json, content_type: /\bjson$/
       end
       @jwks_http = Http.build(config) { |f| f.response :json, content_type: /\bjson$/ }
-      jwks_store = JwksStore.new(jwks_url: endpoints.jwks, http: @jwks_http)
+      jwks_store = JwksStore.new(jwks_url: endpoints.jwks, http: @jwks_http, min_refetch: config.jwks_min_refetch)
       jwt_validator = JwtValidator.from_config(config: config, jwks_store: jwks_store)
       @auth = AuthClient.new(config: config, http: @form_http, jwt_validator: jwt_validator)
       @admin = nil

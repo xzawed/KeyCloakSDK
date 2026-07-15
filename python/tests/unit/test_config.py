@@ -8,6 +8,18 @@ def test_defaults():
     c = KeycloakConfig(server_url="https://kc", realm="r", client_id="app")
     assert c.clock_skew == 30.0
     assert c.scopes == ("openid",)
+    assert c.jwks_min_refetch_seconds == 60.0
+
+
+def test_jwks_min_refetch_custom_and_negative():
+    c = KeycloakConfig(
+        server_url="https://kc", realm="r", client_id="app", jwks_min_refetch_seconds=120.0
+    )
+    assert c.jwks_min_refetch_seconds == 120.0
+    with pytest.raises(KeycloakConfigError):
+        KeycloakConfig(
+            server_url="https://kc", realm="r", client_id="app", jwks_min_refetch_seconds=-1
+        )
 
 
 def test_missing_realm_raises():
