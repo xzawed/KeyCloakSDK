@@ -24,6 +24,14 @@ end
 class App < Sinatra::Base
   set :port, ENV.fetch("APP_PORT", "8090").to_i
   set :bind, "0.0.0.0"
+  # Sinatra 4.x는 Rack::Protection::HostAuthorization를 기본 활성화해, Host 헤더가 기본 허용목록
+  # (localhost 등)에 없으면 모든 요청을 403("Host not permitted")으로 거부한다. 하네스의 conformance·
+  # k6·verify.sh는 전부 compose DNS명(http://app-ruby:8090)으로 접근하므로 Host가 `app-ruby:8090`이 되어
+  # healthz까지 전멸했다(defect C: 2/26 — KC 직접호출 1 + realms-403 우연통과 1만 남음). rack-protection
+  # host_authorization의 accepts?는 permitted_hosts가 비면 true를 반환하므로, 빈 배열로 전체 허용한다
+  # (신뢰된 하네스 네트워크 전용 — 프로덕션 앱이라면 실제 호스트를 명시할 것. 다른 8개 앱 프레임워크는
+  # 호스트 인증을 기본 강제하지 않아 무영향).
+  set :host_authorization, { permitted_hosts: [] }
   before { content_type :json }
 
   helpers do

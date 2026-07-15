@@ -14,12 +14,12 @@ jobs:
       run:
         working-directory: kotlin
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       # 단위테스트 100개 + 커버리지 게이트(로직 모듈 라인≥90/브랜치≥85 — 네트워크 경계
       # AuthClient/admin.*/KeycloakClient omit) + ktlint(무경고). Docker 불필요(integrationTest는 별도 잡).
       - run: ./gradlew build test koverVerify ktlintCheck
@@ -32,11 +32,11 @@ jobs:
       run:
         working-directory: kotlin
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - name: Integration E2E (Docker, 실제 Keycloak 26.6 — FullFlowIT)
         run: ./gradlew integrationTest

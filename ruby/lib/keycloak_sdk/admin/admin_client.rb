@@ -35,6 +35,11 @@ module KeycloakSdk
         @conn
       end
 
+      # 자원 정리: 내부 Faraday 커넥션을 닫는다(§4 close 계약 — KeycloakClient#close가 위임).
+      def close
+        @conn.close if @conn.respond_to?(:close)
+      end
+
       private
 
       def build_conn(config, token_provider)

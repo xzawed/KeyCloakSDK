@@ -4,11 +4,13 @@ module KeycloakSdk
   # 불변 설정. 생성 시 검증하고 freeze한다. client_secret은 inspect에서 마스킹.
   class Config
     attr_reader :server_url, :realm, :client_id, :client_secret,
-                :scopes, :signature_algorithms, :connect_timeout, :read_timeout, :clock_skew
+                :scopes, :signature_algorithms, :connect_timeout, :read_timeout, :clock_skew,
+                :jwks_min_refetch
 
     def initialize(server_url:, realm:, client_id:, client_secret: nil,
                    scopes: ["openid"], signature_algorithms: ["RS256"],
-                   connect_timeout: 10, read_timeout: 10, clock_skew: 30)
+                   connect_timeout: 10, read_timeout: 10, clock_skew: 30,
+                   jwks_min_refetch: 10.0)
       @server_url = normalize_required("server_url", server_url).sub(%r{/+\z}, "")
       @realm = normalize_required("realm", realm)
       @client_id = normalize_required("client_id", client_id)
@@ -20,6 +22,8 @@ module KeycloakSdk
       @connect_timeout = positive("connect_timeout", connect_timeout)
       @read_timeout = positive("read_timeout", read_timeout)
       @clock_skew = non_negative("clock_skew", clock_skew)
+      # 미해결 kid로 인한 JWKS 재조회의 최소 간격(초, 기본 10.0) — DoS 증폭 상한.
+      @jwks_min_refetch = non_negative("jwks_min_refetch", jwks_min_refetch)
       freeze
     end
 

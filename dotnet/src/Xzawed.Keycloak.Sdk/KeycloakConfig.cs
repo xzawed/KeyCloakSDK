@@ -31,6 +31,13 @@ public sealed record KeycloakConfig
         Require(ClientId, nameof(ClientId));
         if (SignatureAlgorithms.Count == 0)
             throw new KeycloakConfigException("SignatureAlgorithms must be non-empty");
+        // 타임아웃은 HttpClient.Timeout / SocketsHttpHandler.ConnectTimeout에 배선되며 ≤0이면
+        // 사용 시점에 raw ArgumentOutOfRangeException을 던진다(Timeout.InfiniteTimeSpan만 예외 허용).
+        // 여기서 KeycloakConfigException으로 fail-fast한다(Go의 음수 타임아웃 거부와 동형).
+        RequirePositive(ConnectTimeoutMs, nameof(ConnectTimeoutMs));
+        RequirePositive(ReadTimeoutMs, nameof(ReadTimeoutMs));
+        if (ClockSkewSeconds < 0)
+            throw new KeycloakConfigException($"{nameof(ClockSkewSeconds)} must be >= 0");
         return this with { ServerUrl = ServerUrl.TrimEnd('/') };
     }
 
@@ -38,6 +45,12 @@ public sealed record KeycloakConfig
     {
         if (string.IsNullOrWhiteSpace(value))
             throw new KeycloakConfigException($"Missing required config: {name}");
+    }
+
+    private static void RequirePositive(int value, string name)
+    {
+        if (value <= 0)
+            throw new KeycloakConfigException($"{name} must be > 0 (was {value})");
     }
 
     public override string ToString() =>

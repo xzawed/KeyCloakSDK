@@ -15,7 +15,7 @@ vi.mock('openid-client', () => ({
 import * as oidc from 'openid-client'
 import { AuthClient } from '../../src/auth.js'
 import { defineConfig } from '../../src/config.js'
-import { KeycloakAuthError } from '../../src/errors.js'
+import { KeycloakAuthError, KeycloakTransportError } from '../../src/errors.js'
 import type { JwtValidator } from '../../src/jwt.js'
 import { TokenSet } from '../../src/tokens.js'
 
@@ -33,6 +33,47 @@ beforeEach(() => {
   vi.clearAllMocks()
   // 대부분의 토큰 연산은 discovery 결과(Configuration)를 필요로 한다. timeout은 setter 가능.
   vi.mocked(oidc.discovery).mockResolvedValue({ timeout: 0 } as never)
+})
+
+describe('discovery 실패 경계 변환 (§4 — 원시 하위 오류 누출 금지)', () => {
+  it('전송 실패(undici fetch failed)는 KeycloakTransportError로 변환한다', async () => {
+    vi.mocked(oidc.discovery).mockRejectedValue(
+      new TypeError('fetch failed', {
+        cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+      }),
+    )
+    await expect(new AuthClient(cfg).clientCredentialsToken()).rejects.toBeInstanceOf(
+      KeycloakTransportError,
+    )
+  })
+
+  it('타임아웃(AbortError)은 KeycloakTransportError로 변환한다', async () => {
+    vi.mocked(oidc.discovery).mockRejectedValue(
+      Object.assign(new Error('aborted'), { name: 'AbortError' }),
+    )
+    await expect(new AuthClient(cfg).refresh('rt')).rejects.toBeInstanceOf(KeycloakTransportError)
+  })
+
+  it('비전송 실패(불량 메타데이터 등)는 KeycloakAuthError로 변환한다', async () => {
+    vi.mocked(oidc.discovery).mockRejectedValue(new Error('bad OIDC metadata'))
+    await expect(new AuthClient(cfg).introspect('tok')).rejects.toBeInstanceOf(KeycloakAuthError)
+  })
+
+  it('readTimeoutMs(초)를 discovery 옵션 timeout으로 전달한다(최초 well-known 페치에 적용)', async () => {
+    const c = defineConfig({
+      serverUrl: 'https://kc',
+      realm: 'r',
+      clientId: 'c',
+      clientSecret: 's',
+      readTimeoutMs: 5000,
+    })
+    vi.mocked(oidc.clientCredentialsGrant).mockResolvedValue({
+      access_token: 'x',
+      expires_in: 1,
+    } as never)
+    await new AuthClient(c).clientCredentialsToken()
+    expect(vi.mocked(oidc.discovery).mock.calls.at(-1)?.[4]).toMatchObject({ timeout: 5 })
+  })
 })
 
 describe('createAuthorizationRequest (동기·네트워크 없음)', () => {

@@ -8,7 +8,7 @@ English · [한국어](README.ko.md)
 ![Languages](https://img.shields.io/badge/languages-9-brightgreen)
 ![Status](https://img.shields.io/badge/status-pre--release-orange)
 ![Keycloak](https://img.shields.io/badge/Keycloak-26.6-informational)
-![Tests](https://img.shields.io/badge/tests-811%20passing-success)
+![Tests](https://img.shields.io/badge/tests-877%20passing-success)
 
 > "Polyglot" here means **programming languages** (Java, Python, Node, Go, C#, PHP, Rust, Ruby, Kotlin) — not natural-language localization (i18n).
 
@@ -74,17 +74,17 @@ Secrets and tokens are masked in logs, TLS verification is on by default, and ev
 
 | SDK | Tests | Coverage | Notes |
 |---|---|---|---|
-| Java | 123 | gate 90 / 85 | reference implementation |
-| Python | 235 | 100% enforced | sync + async (`aio`) |
-| Node | 76 | line 100 / branch 94 | ESM · async-only |
-| Go | 41 | 95.2% | sync + `context.Context` |
-| C# / .NET | 59 | 97.3 / 93.5 | async-first |
-| PHP | 67 | 100% | `final readonly class` |
-| Rust | 35 | 94.9% | edition 2024 · async |
-| Ruby | 74 | 100 / 93.5 | Faraday raw-REST admin |
-| Kotlin | 101 | 99.2 / 85.7 | coroutines · reuses JVM stack |
+| Java | 138 | gate 90 / 85 | reference implementation |
+| Python | 247 | 100% enforced | sync + async (`aio`) |
+| Node | 81 | line 100 / branch 94 | ESM · async-only |
+| Go | 46 | 95% | sync + `context.Context` |
+| C# / .NET | 63 | 97 / 93 | async-first |
+| PHP | 71 | 100% | `final readonly class` |
+| Rust | 41 | 95% | edition 2024 · async |
+| Ruby | 84 | 100 / 93 | Faraday raw-REST admin |
+| Kotlin | 106 | 99 / 86 | coroutines · reuses JVM stack |
 
-*Integration tests run on Testcontainers (PHP & Ruby fall back to docker-CLI on Windows). Each SDK's security core was reviewed adversarially.*
+*Integration tests run on Testcontainers (PHP & Ruby fall back to docker-CLI on Windows). Each SDK's security core was reviewed adversarially — see [SECURITY.md](SECURITY.md). Pre-release hardening (OIDC nonce replay protection, configurable JWT signature algorithms, dependency CVE audits) is applied across all nine SDKs.*
 
 ---
 

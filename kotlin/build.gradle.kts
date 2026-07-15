@@ -2,7 +2,7 @@
 // settings.gradle.kts: plugins { id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0" }
 
 plugins {
-    kotlin("jvm") version "2.2.20"
+    kotlin("jvm") version "2.4.10"
     `java-library`
     id("org.jetbrains.dokka") version "2.2.0"
     id("com.vanniktech.maven.publish") version "0.37.0"
@@ -25,19 +25,19 @@ kotlin {
 dependencies {
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0") // 공개 suspend → api
     api("org.keycloak:keycloak-admin-client:26.0.10") // representation 노출 → api
-    implementation("com.nimbusds:oauth2-oidc-sdk:11.37.2")
+    implementation("com.nimbusds:oauth2-oidc-sdk:11.38.1")
     implementation("com.nimbusds:nimbus-jose-jwt:10.9.1")
 
     testImplementation(kotlin("test"))
-    testImplementation(platform("org.junit:junit-bom:6.1.1"))
+    testImplementation(platform("org.junit:junit-bom:6.1.2"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
-    testImplementation("io.mockk:mockk:1.14.4")
+    testImplementation("io.mockk:mockk:1.14.11")
     testImplementation("org.wiremock:wiremock:3.13.2")
     testImplementation("org.testcontainers:testcontainers:2.0.5")
     testImplementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
-    testImplementation("com.github.dasniko:testcontainers-keycloak:4.2.1")
+    testImplementation("com.github.dasniko:testcontainers-keycloak:4.3.0")
 }
 
 tasks.test {
@@ -65,12 +65,12 @@ testing {
                 // `kotlin.test.Test` typealias(→org.junit.jupiter.api.Test)는 plain kotlin-test가 아니라
                 // kotlin-test-junit5 변형이 제공한다 — 단위 test는 Kotlin 플러그인의 variant-aware 해석이 이를
                 // 자동 선택하나 jvm-test-suite 구성엔 그 해석이 없어 junit5 변형을 직접 지정한다(assertions 포함).
-                implementation("org.jetbrains.kotlin:kotlin-test-junit5:2.2.20")
+                implementation("org.jetbrains.kotlin:kotlin-test-junit5:2.4.10")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
                 implementation("org.testcontainers:testcontainers:2.0.5")
                 implementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
-                implementation("com.github.dasniko:testcontainers-keycloak:4.2.1")
+                implementation("com.github.dasniko:testcontainers-keycloak:4.3.0")
             }
             targets {
                 all {
