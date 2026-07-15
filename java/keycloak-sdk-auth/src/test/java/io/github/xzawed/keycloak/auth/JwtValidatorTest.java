@@ -20,6 +20,17 @@ class JwtValidatorTest {
         Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
     assertEquals(issuer, v.validate(jwt.serialize()).getIssuer());
   }
+  @Test void forRealm_buildsRemoteValidatorWithConfiguredJwksRefetch() {
+    // JWKSourceBuilder는 지연(lazy) — 구성만으로 네트워크 I/O가 없다. forRealm 전체 경로
+    // (retriever + rateLimited(jwksMinRefetch) 배선 + JwtValidator 생성)를 네트워크 없이 커버한다.
+    io.github.xzawed.keycloak.core.KeycloakConfig cfg =
+        io.github.xzawed.keycloak.core.KeycloakConfig.builder()
+            .serverUrl("https://kc.example.com").realm("r").clientId("app")
+            .jwksMinRefetch(java.time.Duration.ofSeconds(45)).build();
+    OidcMetadata md = OidcMetadata.forRealm(cfg);
+    JwtValidator v = JwtValidator.forRealm(md, cfg, Set.of(JWSAlgorithm.RS256), "app");
+    assertNotNull(v);
+  }
   @Test void noneAlg_rejected() {
     JwtValidator v = JwtValidator.withStaticJwks(new JWKSet(), "iss", "app",
         Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
