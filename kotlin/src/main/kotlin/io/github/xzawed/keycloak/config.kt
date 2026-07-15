@@ -15,6 +15,9 @@ public class KeycloakConfig(
     public val connectTimeout: Duration = Duration.ofSeconds(10),
     public val readTimeout: Duration = Duration.ofSeconds(30),
     public val clockSkew: Duration = Duration.ofSeconds(30),
+    // 미해결 kid(키 회전)로 인한 JWKS 재조회의 최소 간격(기본 30초 = Nimbus DEFAULT_RATE_LIMIT_MIN_INTERVAL
+    // 동형) — DoS 증폭 상한. 위조 kid를 연속 주입해도 이 간격보다 자주 IdP를 때리지 못한다.
+    public val jwksMinRefetch: Duration = Duration.ofSeconds(30),
 ) {
     public val serverUrl: String = serverUrl.trimEnd('/')
     private val secret: CharArray? = clientSecret?.copyOf()

@@ -95,7 +95,8 @@ class AuthClient:
         self._jwks_cache: KeySet | None = None
         self._jwks_lock = threading.Lock()
         self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)
-        self._jwks_min_refetch = 60.0  # 강제 재조회 최소 간격(초) — DoS 증폭 상한
+        # 강제 재조회 최소 간격(초) — DoS 증폭 상한
+        self._jwks_min_refetch = config.jwks_min_refetch_seconds
 
     def _wrap(self, fn: Callable[[], T]) -> T:
         """python-keycloak 호출을 실행하고 `KeycloakError`를 SDK 예외로 변환한다.

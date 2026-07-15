@@ -60,6 +60,7 @@ export class AuthClient {
         audience: cfg.clientId,
         allowedAlgs: [...cfg.signatureAlgorithms],
         clockSkewSeconds: cfg.clockSkewSeconds,
+        jwksMinRefetchSeconds: cfg.jwksMinRefetchSeconds,
       })
   }
 

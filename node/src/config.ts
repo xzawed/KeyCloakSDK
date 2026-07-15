@@ -22,6 +22,12 @@ export interface KeycloakConfig {
   readonly clockSkewSeconds: number
   /** JWT 서명 검증 시 허용할 알고리즘 핀(기본 ['RS256']). ES256/PS256 realm을 위해 설정 가능. */
   readonly signatureAlgorithms: readonly string[]
+  /**
+   * 미해결 kid(키 회전)로 인한 JWKS 재조회의 최소 간격(초, 기본 30) — DoS 증폭 상한. 위조 kid를
+   * 연속 주입해도 이 간격보다 자주 IdP를 때리지 못한다(jose `cooldownDuration`에 배선). 0이면 매
+   * 미해결 kid마다 재조회를 허용한다(비권장).
+   */
+  readonly jwksMinRefetchSeconds: number
 }
 
 /** `defineConfig` 입력(선택값은 기본값으로 채워진다). */
@@ -35,6 +41,7 @@ export interface KeycloakConfigInput {
   readTimeoutMs?: number
   clockSkewSeconds?: number
   signatureAlgorithms?: string[]
+  jwksMinRefetchSeconds?: number
 }
 
 /**
@@ -54,6 +61,9 @@ export function defineConfig(input: KeycloakConfigInput): KeycloakConfig {
     // 빈 집합은 알고리즘 핀을 무력화한다(핀 없이는 alg 혼동 공격에 노출).
     throw new KeycloakConfigError('signatureAlgorithms must be non-empty')
   }
+  if (input.jwksMinRefetchSeconds !== undefined && input.jwksMinRefetchSeconds < 0) {
+    throw new KeycloakConfigError('jwksMinRefetchSeconds must be >= 0')
+  }
   const config: KeycloakConfig = {
     serverUrl: input.serverUrl.replace(/\/+$/, ''),
     realm: input.realm,
@@ -64,6 +74,7 @@ export function defineConfig(input: KeycloakConfigInput): KeycloakConfig {
     readTimeoutMs: input.readTimeoutMs ?? 30_000,
     clockSkewSeconds: input.clockSkewSeconds ?? 30,
     signatureAlgorithms: input.signatureAlgorithms ?? ['RS256'],
+    jwksMinRefetchSeconds: input.jwksMinRefetchSeconds ?? 30,
   }
   const masked = (): Record<string, unknown> => ({
     ...config,

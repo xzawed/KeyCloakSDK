@@ -128,6 +128,19 @@ internal class ConfigTest {
     }
 
     @Test
+    fun `default jwksMinRefetch is 30 seconds`() {
+        val config = KeycloakConfig(serverUrl = "http://x", realm = "r", clientId = "c")
+        assertEquals(Duration.ofSeconds(30), config.jwksMinRefetch)
+    }
+
+    @Test
+    fun `custom jwksMinRefetch is preserved`() {
+        val config =
+            KeycloakConfig(serverUrl = "http://x", realm = "r", clientId = "c", jwksMinRefetch = Duration.ofSeconds(120))
+        assertEquals(Duration.ofSeconds(120), config.jwksMinRefetch)
+    }
+
+    @Test
     fun `default scopes is empty list`() {
         val config = KeycloakConfig(serverUrl = "http://x", realm = "r", clientId = "c")
         assertTrue(config.scopes.isEmpty())
