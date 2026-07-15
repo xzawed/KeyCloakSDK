@@ -4,6 +4,7 @@ import type { KeycloakConfig } from './config.js'
 import { KeycloakAuthError, KeycloakTransportError } from './errors.js'
 import { JwtValidator } from './jwt.js'
 import { oidcEndpoints, type OidcEndpoints } from './oidc-metadata.js'
+import { isTransportError } from './transport.js'
 import {
   tokenSetFromResponse,
   type IntrospectionResult,
@@ -28,19 +29,6 @@ type GrantResponse = Awaited<ReturnType<typeof oidc.clientCredentialsGrant>>
 
 function base64url(buffer: Buffer): string {
   return buffer.toString('base64url')
-}
-
-/**
- * discovery(fetch) 전송 실패 판별. undici(Node fetch)는 네트워크 실패를 `TypeError`(message
- * "fetch failed", `cause`에 시스템 오류)로, 타임아웃(AbortController)을 `AbortError`/`TimeoutError`로
- * 던진다 — 이는 전송 오류다. 그 외(불량 메타데이터 등 openid-client 자체 오류)는 인증 오류로 본다.
- * (admin/call.ts의 isTransportError 동형 — auth는 admin에 의존하지 않으므로 경계별로 국소 정의한다.)
- */
-function isDiscoveryTransportError(e: unknown): boolean {
-  if (typeof e !== 'object' || e === null) return false
-  const err = e as { name?: unknown; cause?: unknown }
-  if (err.name === 'AbortError' || err.name === 'TimeoutError') return true
-  return e instanceof TypeError && err.cause !== undefined && err.cause !== null
 }
 
 /**
@@ -246,7 +234,7 @@ export class AuthClient {
         { execute },
       )
     } catch (e) {
-      if (isDiscoveryTransportError(e)) {
+      if (isTransportError(e)) {
         throw new KeycloakTransportError('OIDC discovery transport failure', { cause: e })
       }
       throw new KeycloakAuthError(`OIDC discovery failed: ${(e as Error).message}`, { cause: e })
