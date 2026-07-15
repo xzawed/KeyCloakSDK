@@ -1,9 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto'
 import * as oidc from 'openid-client'
 import type { KeycloakConfig } from './config.js'
-import { KeycloakAuthError } from './errors.js'
+import { KeycloakAuthError, KeycloakTransportError } from './errors.js'
 import { JwtValidator } from './jwt.js'
 import { oidcEndpoints, type OidcEndpoints } from './oidc-metadata.js'
+import { isTransportError } from './transport.js'
 import {
   tokenSetFromResponse,
   type IntrospectionResult,
@@ -59,6 +60,7 @@ export class AuthClient {
         audience: cfg.clientId,
         allowedAlgs: [...cfg.signatureAlgorithms],
         clockSkewSeconds: cfg.clockSkewSeconds,
+        jwksMinRefetchSeconds: cfg.jwksMinRefetchSeconds,
       })
   }
 
@@ -219,14 +221,29 @@ export class AuthClient {
     )
       ? [oidc.allowInsecureRequests]
       : []
-    const config = await oidc.discovery(
-      new URL(this.#endpoints.issuer),
-      this.#cfg.clientId,
-      this.#cfg.clientSecret,
-      undefined,
-      { execute },
-    )
-    config.timeout = Math.max(1, Math.round(this.#cfg.readTimeoutMs / 1000))
+    // read 타임아웃(초)을 discovery 옵션으로 주입한다. openid-client는 이 값을 최초 `.well-known`
+    // 페치와, resolve된 Configuration(이후 모든 HTTP 요청)에 함께 적용한다 — 옵션 미전달 시 최초
+    // 페치는 openid-client 기본 30초를 쓰고 readTimeoutMs를 무시했다(이후 요청만 적용되던 결함).
+    const timeout = Math.max(1, Math.round(this.#cfg.readTimeoutMs / 1000))
+    // openid-client `discovery`는 `{issuer}/.well-known/openid-configuration`를 네트워크 페치하므로
+    // 서버 다운(undici `TypeError: fetch failed` + cause)·타임아웃(AbortError)·불량 메타데이터
+    // (openid-client 자체 오류)를 던진다. 이들이 §4 계약을 뚫고 원시 하위 오류로 누출되지 않도록
+    // 경계에서 SDK 예외로 변환한다(전송 실패는 KeycloakTransportError, 그 외는 KeycloakAuthError).
+    let config: oidc.Configuration
+    try {
+      config = await oidc.discovery(
+        new URL(this.#endpoints.issuer),
+        this.#cfg.clientId,
+        this.#cfg.clientSecret,
+        undefined,
+        { execute, timeout },
+      )
+    } catch (e) {
+      if (isTransportError(e)) {
+        throw new KeycloakTransportError('OIDC discovery transport failure', { cause: e })
+      }
+      throw new KeycloakAuthError(`OIDC discovery failed: ${(e as Error).message}`, { cause: e })
+    }
     this.#configuration = config
     return config
   }

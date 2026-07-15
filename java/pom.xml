@@ -38,12 +38,12 @@
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <keycloak.adminclient.version>26.0.10</keycloak.adminclient.version>
-    <nimbus.oidc.version>11.37.2</nimbus.oidc.version>
+    <nimbus.oidc.version>11.38.1</nimbus.oidc.version>
     <nimbus.jose.version>10.9.1</nimbus.jose.version>
-    <junit.version>6.1.1</junit.version>
+    <junit.version>6.1.2</junit.version>
     <mockito.version>5.23.0</mockito.version>
     <testcontainers.version>2.0.5</testcontainers.version>
-    <testcontainers.keycloak.version>4.2.1</testcontainers.keycloak.version>
+    <testcontainers.keycloak.version>4.3.0</testcontainers.keycloak.version>
   </properties>
 
   <dependencyManagement>
@@ -64,18 +64,18 @@
            per-property @JsonIgnoreProperties 우회, 취약범위 <2.21.5)를 모두 해소한다. keycloak-client-
            parent:26.0.10 관리값(2.21.2)보다 높게 고정하는 "picked higher" 전략(수렴 유지). 2.21.5는
            2.21.x 라인의 CVE-2026-54515 fix로, 2026-07-08 Maven Central 출시 확인 후 상향(issue #8). -->
-      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-core</artifactId><version>2.21.5</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>2.21.5</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-annotations</artifactId><version>2.21</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jdk8</artifactId><version>2.21.5</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId><version>2.21.5</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.jakarta.rs</groupId><artifactId>jackson-jakarta-rs-base</artifactId><version>2.21.5</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.module</groupId><artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId><version>2.21.5</version></dependency>
-      <dependency><groupId>org.jboss.logging</groupId><artifactId>jboss-logging</artifactId><version>3.6.2.Final</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-core</artifactId><version>2.22.1</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>2.22.1</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-annotations</artifactId><version>2.22</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jdk8</artifactId><version>2.22.1</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId><version>2.22.1</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.jakarta.rs</groupId><artifactId>jackson-jakarta-rs-base</artifactId><version>2.22.1</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.module</groupId><artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId><version>2.22.1</version></dependency>
+      <dependency><groupId>org.jboss.logging</groupId><artifactId>jboss-logging</artifactId><version>3.6.3.Final</version></dependency>
       <!-- jackson-databind 계열 6종은 CVE 대응으로 2.21.5(관리값 2.21.2보다 상향), jackson-annotations는
            별도 버전 트랙이라 2.21 유지(비취약), jboss-logging은 keycloak-client-parent:26.0.10 관리값과 일치. -->
       <!-- commons-io: 더 높은 버전으로 고정(picked higher) — keycloak-client-parent 등 권위 있는 BOM 출처 없음. -->
-      <dependency><groupId>commons-io</groupId><artifactId>commons-io</artifactId><version>2.19.0</version></dependency>
+      <dependency><groupId>commons-io</groupId><artifactId>commons-io</artifactId><version>2.22.0</version></dependency>
       <!-- jakarta.activation-api: 더 높은 버전으로 고정(picked higher) — keycloak-client-parent 등 권위 있는 BOM 출처 없음. -->
       <dependency><groupId>jakarta.activation</groupId><artifactId>jakarta.activation-api</artifactId><version>2.1.4</version></dependency>
     </dependencies>
@@ -87,11 +87,11 @@
         <!-- Java 21 컴파일 재현성: 컴파일러 플러그인 버전을 명시 고정(Maven 기본값 드리프트 방지). -->
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-compiler-plugin</artifactId><version>3.11.0</version>
+          <artifactId>maven-compiler-plugin</artifactId><version>3.15.0</version>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version>
+          <artifactId>maven-surefire-plugin</artifactId><version>3.5.6</version>
         </plugin>
       </plugins>
     </pluginManagement>
@@ -99,7 +99,7 @@
       <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
-        <version>0.8.12</version>
+        <version>0.8.15</version>
         <configuration>
           <excludes>
             <exclude>**/*IT.class</exclude>
@@ -131,7 +131,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>
-        <version>3.5.0</version>
+        <version>3.6.3</version>
         <executions>
           <execution>
             <id>enforce</id><goals><goal>enforce</goal></goals>
@@ -161,7 +161,7 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-source-plugin</artifactId>
-            <version>3.3.1</version>
+            <version>3.4.0</version>
             <executions>
               <execution>
                 <id>attach-sources</id>
@@ -174,7 +174,7 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-javadoc-plugin</artifactId>
-            <version>3.11.2</version>
+            <version>3.12.0</version>
             <configuration>
               <doclint>none</doclint>
               <failOnError>false</failOnError>
@@ -190,7 +190,7 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-gpg-plugin</artifactId>
-            <version>3.2.7</version>
+            <version>3.2.8</version>
             <executions>
               <execution>
                 <id>sign-artifacts</id>

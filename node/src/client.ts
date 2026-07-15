@@ -2,6 +2,7 @@ import { AdminClient } from './admin/index.js'
 import { AuthClient } from './auth.js'
 import { defineConfig, type KeycloakConfig, type KeycloakConfigInput } from './config.js'
 import { KeycloakConfigError } from './errors.js'
+import { ClientCredentialsTokenProvider } from './token-provider.js'
 
 /**
  * SDK 통합 진입점(파사드). {@link create}가 인증({@link AuthClient})을 즉시 조립한다. 관리
@@ -46,7 +47,13 @@ export class KeycloakClient implements AsyncDisposable {
     if (this.#adminInflight !== undefined) {
       return this.#adminInflight
     }
-    this.#adminInflight = AdminClient.create(this.#config)
+    // admin 전용 캐싱 TokenProvider를 주입한다(§4 접착제). 토큰 소스는 facade의 AuthClient지만
+    // admin은 TokenProvider 인터페이스만 알 뿐 auth 모듈에 의존하지 않는다. provider가 만료 시
+    // client_credentials로 재인증하므로 장수명 서버에서 admin이 토큰 만료로 영구 실패하지 않는다.
+    this.#adminInflight = AdminClient.create(
+      this.#config,
+      new ClientCredentialsTokenProvider(this.auth),
+    )
     try {
       this.#admin = await this.#adminInflight
       return this.#admin

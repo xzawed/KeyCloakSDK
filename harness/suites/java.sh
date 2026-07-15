@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# harness/suites/java.sh — Java SDK 자체 단위테스트+커버리지(JaCoCo)+빌드를 maven:3.9-eclipse-temurin-21
+# harness/suites/java.sh — Java SDK 자체 단위테스트+커버리지(JaCoCo)+빌드를 maven:3.9-eclipse-temurin-21-alpine
 # 컨테이너에서 실행한다(CLAUDE.md Java 툴체인: `mvn verify -DskipITs=true`, 커버리지 게이트 90/85 —
 # jacoco-maven-plugin이 verify 단계에 report+check로 이미 배선되어 있다). 마지막 줄에 JSON 신호 1줄 출력.
 #
-# ⚠️ 미실행 검증(untested-here) — node/go 2개 언어로 이 스위트 메커니즘을 검증했고, 이 스크립트는
-# CLAUDE.md 커맨드로 작성했으나 실제 컨테이너 실행으로 확인하지 않았다(8언어 전체 실행은 CI 야간/수동
-# 범위). 리액터 전체(bom·core·auth·admin·keycloak-sdk·examples) 첫 실행은 의존성 다운로드로 느리다.
+# ⚠️ Alpine(musl) 이미지 사용: 기존 Debian `maven:3.9-eclipse-temurin-21`은 Docker Desktop(Windows)
+# 내장 DNS가 Maven Central의 CNAME 체인을 glibc 리졸버에 실패로 돌려줘 의존성 다운로드가 막힌다(다른 8개
+# suite/app 이미지와 동일한 Alpine 정책 — CLAUDE.md 하네스 게차). Alpine에서 전 모듈 132 단위테스트 통과
+# 실측(CI Linux는 Debian도 무해하나 정책 일치·로컬 Windows 실행 가능화를 위해 통일). 리액터 전체 첫 실행은
+# 의존성 다운로드로 느리다.
 set -uo pipefail
 cd "$(dirname "$0")/.."          # -> harness/
 ROOT="$(cd .. && pwd)"           # 리포 루트 (java/ 는 $ROOT/java)
@@ -16,7 +18,7 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-RAW=$(docker run --rm -v "$ROOT/java:/src-ro:ro" maven:3.9-eclipse-temurin-21 sh -c '
+RAW=$(docker run --rm -v "$ROOT/java:/src-ro:ro" maven:3.9-eclipse-temurin-21-alpine sh -c '
   cp -r /src-ro /src && cd /src
   find . -name "*.java" -exec sed -i "s/\r$//" {} +
   mvn -B -f pom.xml verify -DskipITs=true 2>&1
@@ -59,7 +61,7 @@ INTEGRATION=0
 if [ "${SUITE_INTEGRATION:-0}" = "1" ]; then
   # Testcontainers(실제 Keycloak) 통합테스트는 Docker-in-Docker 필요 — best-effort opt-in.
   IRAW=$(docker run --rm -v "$ROOT/java:/src-ro:ro" -v /var/run/docker.sock:/var/run/docker.sock \
-    maven:3.9-eclipse-temurin-21 sh -c '
+    maven:3.9-eclipse-temurin-21-alpine sh -c '
       cp -r /src-ro /src && cd /src
       find . -name "*.java" -exec sed -i "s/\r$//" {} +
       mvn -B -f pom.xml verify 2>&1
