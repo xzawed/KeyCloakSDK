@@ -20,7 +20,13 @@ RSpec.describe KeycloakSdk::Config do
     expect(c.connect_timeout).to eq(10)
     expect(c.read_timeout).to eq(10)
     expect(c.clock_skew).to eq(30)
+    expect(c.jwks_min_refetch).to eq(10.0)
     expect(c.client_secret).to be_nil
+  end
+
+  it "keeps a configured jwks_min_refetch and rejects a negative one" do
+    expect(valid(jwks_min_refetch: 60).jwks_min_refetch).to eq(60)
+    expect { valid(jwks_min_refetch: -1) }.to raise_error(KeycloakSdk::ConfigError)
   end
 
   it "is frozen and immutable" do

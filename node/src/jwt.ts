@@ -7,6 +7,8 @@ export interface JwtValidatorOptions {
   readonly audience: string
   readonly allowedAlgs: string[]
   readonly clockSkewSeconds: number
+  /** 미해결 kid로 인한 JWKS 재조회의 최소 간격(초). jose `cooldownDuration`에 배선(기본 30). */
+  readonly jwksMinRefetchSeconds: number
 }
 
 /**
@@ -25,7 +27,7 @@ export class JwtValidator {
   /** 원격 JWKS URI로 검증기를 만든다. `createRemoteJWKSet`은 kid 미해결 시에만 재조회하고 cooldownDuration으로 rate-limit → 서명 위조로 인한 미인증 DoS 증폭을 차단한다. */
   static forJwksUri(jwksUri: string, opts: JwtValidatorOptions): JwtValidator {
     const keys = createRemoteJWKSet(new URL(jwksUri), {
-      cooldownDuration: 30_000,
+      cooldownDuration: opts.jwksMinRefetchSeconds * 1000,
       cacheMaxAge: 600_000,
     })
     return new JwtValidator(keys, opts)

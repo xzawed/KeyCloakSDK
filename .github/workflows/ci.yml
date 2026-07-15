@@ -9,8 +9,8 @@ jobs:
     strategy:
       matrix: { java: ['21'] }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
         with: { distribution: 'temurin', java-version: '${{ matrix.java }}', cache: 'maven' }
       - name: Build & unit test (커버리지 게이트 90/85 포함)
         run: mvn -B -f java/pom.xml verify -DskipITs=true
@@ -19,8 +19,8 @@ jobs:
     name: Integration tests (Testcontainers, 실제 Keycloak)
     runs-on: ubuntu-latest   # ubuntu 러너는 Docker 내장 → Testcontainers 동작
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
         with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
       - name: Full verify (단위 + 통합 IT)
         run: mvn -B -f java/pom.xml verify
@@ -32,7 +32,7 @@ jobs:
     name: Security invariant (Jackson no default/polymorphic typing)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Assert SDK source keeps Jackson deserialization safe
         run: |
           hits=$(find java -path '*/src/main/*' -name '*.java' -exec grep -lnE 'activateDefaultTyping|enableDefaultTyping|@JsonTypeInfo|ContextResolver<' {} + 2>/dev/null || true)
