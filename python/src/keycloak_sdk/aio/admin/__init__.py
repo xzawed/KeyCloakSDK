@@ -52,7 +52,10 @@ class AsyncAdminClient:
                 client_secret_key=self._config.client_secret,
                 grant_type="client_credentials",
                 verify=True,
-                timeout=int(self._config.read_timeout),
+                # read_timeout은 초 단위 float — int()로 자르면 0.5초 등이 0이 되어 httpx.Timeout(0)이
+                # 되고 모든 admin 요청이 즉시 타임아웃한다. sync AdminClient와 동형으로 float를 그대로
+                # 전달한다(python-keycloak 스텁이 timeout을 int로 좁게 타이핑 — 런타임은 정상).
+                timeout=self._config.read_timeout,  # type: ignore[arg-type]
             )
         return self._admin
 
@@ -77,13 +80,15 @@ class AsyncAdminClient:
         return AsyncGroupsResource(self.raw)
 
     async def aclose(self) -> None:
-        """자원 정리 훅. 아직 `raw`가 생성되지 않았다면 no-op(굳이 생성하지 않음).
+        """하위 `KeycloakAdmin`의 async httpx 클라이언트(및 sync 세션)를 닫는다.
 
-        python-keycloak `KeycloakAdmin`에는 현재 async close가 없으므로 사실상
-        항상 no-op이지만, 있다면(향후 커넥션 풀 등이 추가되면) 위임한다.
-        `AsyncKeycloakClient`(WBS 4)의 async 컨텍스트 매니저 프로토콜과 대칭을
-        이루기 위해 인터페이스를 유지한다.
+        `KeycloakAdmin`에는 `aclose`가 없다 — 실제 자원인 `httpx.AsyncClient`는
+        `self._admin.connection`(`ConnectionManager`)에 있고 그 `aclose()`가 정리한다
+        (async auth 미러와 동형). 미해제 시 async 소켓/FD가 누수돼 장기 서비스에서
+        EMFILE에 이를 수 있다. `raw` 미생성이면 `self._admin`이 None이라 no-op이다
+        (굳이 생성하지 않음). 내부 구조 변경에도 안전하도록 가드한다.
         """
-        aclose = getattr(self._admin, "aclose", None)
-        if aclose is not None:
+        conn = getattr(self._admin, "connection", None)
+        aclose = getattr(conn, "aclose", None) if conn is not None else None
+        if callable(aclose):
             await aclose()
