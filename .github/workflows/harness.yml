@@ -15,14 +15,14 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: '20' }
       - name: 하네스 실행(Go MVP)
         run: cd harness && ./run.sh go
       - name: 결과 업로드
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: harness-results-go
           path: harness/report/RESULTS.md
@@ -33,14 +33,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: '20' }
       - name: 하네스 실행(5개 언어 비교)
         run: cd harness && ./run.sh go dotnet node python java
       - name: 결과 업로드
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: harness-results-all
           path: harness/report/RESULTS.md
@@ -51,20 +51,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: '20' }
       - name: 9언어 종합 검증·스코어링
         run: cd harness && ./verify.sh go dotnet node python java php rust ruby kotlin
       - name: 스코어카드 업로드
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: scorecard
           path: harness/report/SCORECARD.md
       - name: 신호 파일 업로드
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: signals
           path: harness/report/signals/
@@ -79,20 +79,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: '20' }
       - name: 8언어 설치·동작 검증
         run: cd harness/install && ./install-verify.sh go dotnet node python java php rust ruby kotlin
       - name: 설치 매트릭스 업로드
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: install-matrix
           path: harness/install/report/INSTALL-MATRIX.md
       - name: 설치 신호 파일 업로드
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: install-signals
           path: harness/install/report/signals/

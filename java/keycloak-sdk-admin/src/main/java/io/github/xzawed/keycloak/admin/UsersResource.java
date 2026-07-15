@@ -54,6 +54,9 @@ public final class UsersResource {
     AdminExceptions.run(() -> {
       try (jakarta.ws.rs.core.Response resp = delegate.delete(id)) {
         if (resp.getStatus() >= 400) {
+          // TWR close 전에 엔티티를 버퍼링해야 경계 safeBody가 Keycloak 에러 본문을 읽을 수 있다
+          // (버퍼링된 스트림은 close 영향을 받지 않음 — create/get/update 경로와 진단 품질 일치).
+          resp.bufferEntity();
           throw new jakarta.ws.rs.WebApplicationException(resp);
         }
       }

@@ -177,10 +177,18 @@ func (a *AuthClient) Validate(ctx context.Context, accessToken string) (*Validat
 	return a.val.Validate(ctx, accessToken)
 }
 
-// Close releases auth resources. The x/oauth2 wrapping is global-fetch based
-// with no retained connections, so this is a no-op; kept for symmetry with the
-// Client lifecycle.
-func (a *AuthClient) Close() error { return nil }
+// Close releases auth resources by draining the idle keep-alive connections held
+// by the auth HTTP client and the JWKS validator's client.
+func (a *AuthClient) Close() error {
+	// auth 클라이언트와 JWKS 검증기 클라이언트(둘 다 MaxIdleConns=100 커스텀 transport)의 유휴
+	// keep-alive 커넥션을 드레인한다. 이전엔 no-op이라 Close 후에도 유휴 소켓/FD가 IdleConnTimeout(90s)
+	// 까지 잔류했다(Java/Python 파사드가 close에서 풀을 정리하는 것과 동형).
+	a.client.CloseIdleConnections()
+	if a.val != nil && a.val.opts.httpClient != nil {
+		a.val.opts.httpClient.CloseIdleConnections()
+	}
+	return nil
+}
 
 func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Values) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
