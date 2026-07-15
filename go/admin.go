@@ -3,6 +3,7 @@ package keycloak
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/Nerzal/gocloak/v13"
@@ -17,6 +18,7 @@ import (
 // integration suite (Task 10).
 type AdminClient struct {
 	gc    *gocloak.GoCloak
+	tr    *http.Transport // 보관: Close에서 유휴 keep-alive 커넥션 드레인
 	realm string
 	tp    TokenProvider
 
@@ -37,7 +39,8 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 	gc := gocloak.NewClient(cfg.ServerURL)
 	// ReadTimeout = overall deadline; ConnectTimeout = dial/TLS-handshake deadline
 	// (injected via the transport — previously a silent no-op for admin calls).
-	gc.RestyClient().SetTimeout(time.Duration(cfg.ReadTimeout) * time.Millisecond).SetTransport(cfg.transport())
+	tr := cfg.transport()
+	gc.RestyClient().SetTimeout(time.Duration(cfg.ReadTimeout) * time.Millisecond).SetTransport(tr)
 
 	tp := NewClientCredentialsTokenProvider(func(ctx context.Context) (*TokenSet, error) {
 		jwt, err := gc.LoginClient(ctx, cfg.ClientID, cfg.ClientSecret, cfg.Realm)
@@ -47,7 +50,7 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 		return &TokenSet{AccessToken: jwt.AccessToken, ExpiresIn: int64(jwt.ExpiresIn)}, nil
 	}, cfg.ClockSkew)
 
-	a := &AdminClient{gc: gc, realm: cfg.Realm, tp: tp}
+	a := &AdminClient{gc: gc, tr: tr, realm: cfg.Realm, tp: tp}
 	a.Users = &UsersResource{a}
 	a.Clients = &ClientsResource{a}
 	a.Realms = &RealmsResource{a}
@@ -64,8 +67,12 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 // Raw exposes the underlying gocloak client for endpoints the facade does not wrap.
 func (a *AdminClient) Raw() *gocloak.GoCloak { return a.gc }
 
-// Close releases admin resources (currently a no-op; kept for lifecycle symmetry).
-func (a *AdminClient) Close() error { return nil }
+// Close releases admin resources by draining the idle keep-alive connections held
+// by the underlying gocloak/resty transport.
+func (a *AdminClient) Close() error {
+	a.tr.CloseIdleConnections()
+	return nil
+}
 
 func (a *AdminClient) token(ctx context.Context) (string, error) { return a.tp.Token(ctx) }
 
