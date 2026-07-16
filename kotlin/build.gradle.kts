@@ -24,7 +24,7 @@ kotlin {
 
 dependencies {
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0") // 공개 suspend → api
-    api("org.keycloak:keycloak-admin-client:26.0.10") // representation 노출 → api
+    api("org.keycloak:keycloak-admin-client:26.0.11") // representation 노출 → api
     implementation("com.nimbusds:oauth2-oidc-sdk:11.38.1")
     implementation("com.nimbusds:nimbus-jose-jwt:10.9.1")
 
