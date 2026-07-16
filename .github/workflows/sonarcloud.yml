@@ -80,18 +80,17 @@ jobs:
           composer install --no-interaction --no-progress
           vendor/bin/phpunit --testsuite unit --coverage-clover clover.xml
 
-      # Ruby(simplecov → LCOV). SF 경로가 `./lib/...`(ruby/ 기준)이라 루트 baseDir 기준으로 정규화한다.
+      # Ruby(simplecov_json_formatter → coverage/coverage.json; Sonar SimpleCovSensor가 파싱).
+      # JSON은 절대경로를 담고 SonarQube가 baseDir 하위로 해석하므로 경로 정규화 불필요(lcov와 차이).
       - name: Set up Ruby 3.4
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
           working-directory: ruby
-      - name: Generate Ruby lcov coverage
+      - name: Generate Ruby JSON coverage
         working-directory: ruby
-        run: |
-          bundle exec rspec
-          sed -i 's|^SF:\./|SF:ruby/|' coverage/lcov.info
+        run: bundle exec rspec
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v8

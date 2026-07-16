@@ -1,16 +1,13 @@
 # frozen_string_literal: true
 
 require "simplecov"
-require "simplecov-lcov"
+require "simplecov_json_formatter"
 
-# SonarCloud 커버리지 임포트용 LCOV + 로컬 확인용 HTML을 함께 출력한다(MultiFormatter).
-# add_filter로 걸러진 네트워크 경계 파일은 LCOV에도 안 실린다(Sonar coverage.exclusions와 동기화).
-SimpleCov::Formatter::LcovFormatter.config do |c|
-  c.report_with_single_file = true
-  c.single_report_path = "coverage/lcov.info"
-end
+# SonarCloud 커버리지 임포트용 JSON(coverage/coverage.json — SimpleCov 표준 JSON 포맷터, Sonar
+# Ruby SimpleCovSensor가 파싱) + 로컬 확인용 HTML을 함께 출력한다(MultiFormatter).
+# add_filter로 걸러진 네트워크 경계 파일은 JSON에도 안 실린다(Sonar coverage.exclusions와 동기화).
 SimpleCov.formatters = SimpleCov::Formatter::MultiFormatter.new(
-  [SimpleCov::Formatter::HTMLFormatter, SimpleCov::Formatter::LcovFormatter]
+  [SimpleCov::Formatter::HTMLFormatter, SimpleCov::Formatter::JSONFormatter]
 )
 
 SimpleCov.start do
