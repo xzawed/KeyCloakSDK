@@ -18,8 +18,8 @@ jobs:
       # --- 언어별 커버리지 리포트를 스캔 전에 생성한다(Docker-free 단위테스트만) ---
       # 스캔 스텝은 반드시 이 뒤에 온다(스캐너가 이미 존재하는 리포트를 읽음). 각 생성 스텝이 실패하면
       # 스캔이 안 돌고 stale 리포트도 안 올라간다(fail-closed, 의도). 경로/제외는 sonar-project.properties.
-      # dotnet(C#)은 전용 SonarScanner for .NET이 필요해 커버리지 미배선(properties에서 소스 제외).
-      # php/ruby는 후속(pcov / simplecov-lcov). rust는 SonarCloud 미지원 언어.
+      # php(phpunit clover, pcov) · ruby(simplecov-lcov)도 배선됨. dotnet(C#)만 전용 SonarScanner
+      # for .NET이 필요해 커버리지 미배선(properties에서 소스 제외). rust는 SonarCloud 미지원 언어.
 
       # Kotlin(Kover→JaCoCo XML) + Java(JaCoCo, 4 리액터 모듈)
       - name: Set up JDK 21
@@ -67,6 +67,30 @@ jobs:
       - name: Generate Go coverage profile
         working-directory: go
         run: go test ./... -coverprofile=cover.out
+
+      # PHP(phpunit → Clover XML, pcov 드라이버). 경계파일은 phpunit.xml source-exclude로 이미 빠짐.
+      - name: Set up PHP 8.3 (pcov)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: pcov
+      - name: Generate PHP clover coverage
+        working-directory: php
+        run: |
+          composer install --no-interaction --no-progress
+          vendor/bin/phpunit --testsuite unit --coverage-clover clover.xml
+
+      # Ruby(simplecov_json_formatter → coverage/coverage.json; Sonar SimpleCovSensor가 파싱).
+      # JSON은 절대경로를 담고 SonarQube가 baseDir 하위로 해석하므로 경로 정규화 불필요(lcov와 차이).
+      - name: Set up Ruby 3.4
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: ruby
+      - name: Generate Ruby JSON coverage
+        working-directory: ruby
+        run: bundle exec rspec
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v8

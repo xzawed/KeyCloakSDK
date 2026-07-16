@@ -11,5 +11,6 @@ group :development, :test do
   gem "rubocop", "~> 1.60"
   gem "rubocop-rspec", "~> 3.0"
   gem "simplecov", "~> 1.0"
+  gem "simplecov_json_formatter", "~> 0.1"
   gem "webmock", "~> 3.23"
 end
