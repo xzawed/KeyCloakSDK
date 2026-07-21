@@ -15,7 +15,7 @@ jobs:
     defaults: { run: { working-directory: go } }
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.26'
           cache-dependency-path: go/go.sum
@@ -30,7 +30,7 @@ jobs:
       contents: write # GitHub Release 생성에 필요
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.26'
       - name: Create GitHub Release
