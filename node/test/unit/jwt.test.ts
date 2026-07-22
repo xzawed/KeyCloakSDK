@@ -1,12 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import {
-  generateKeyPair,
-  exportJWK,
-  SignJWT,
-  createLocalJWKSet,
-  type JWTVerifyGetKey,
-  type KeyLike,
-} from 'jose'
+// jose v6는 `KeyLike` 타입 별칭을 제거했다 — 키 타입은 generateKeyPair의 반환에서 추론한다.
+import { generateKeyPair, exportJWK, SignJWT, createLocalJWKSet, type JWTVerifyGetKey } from 'jose'
 import { JwtValidator, type JwtValidatorOptions } from '../../src/jwt.js'
 import { KeycloakTokenValidationError } from '../../src/errors.js'
 
@@ -20,7 +14,7 @@ const OPTS: JwtValidatorOptions = {
 }
 
 describe('JwtValidator (강화 검증)', () => {
-  let priv: KeyLike
+  let priv: Awaited<ReturnType<typeof generateKeyPair>>['privateKey']
   let keys: JWTVerifyGetKey
 
   beforeAll(async () => {
