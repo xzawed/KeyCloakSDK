@@ -17,7 +17,7 @@
 
 설계 스펙([2026-07-07-keycloak-kotlin-sdk-design.md](../superpowers/specs/2026-07-07-keycloak-kotlin-sdk-design.md))·리서치 부록([2026-07-07-keycloak-kotlin-sdk-research.md](../superpowers/specs/2026-07-07-keycloak-kotlin-sdk-research.md)) 단계에서 6개 병렬 에이전트로 아래를 **확정**(구현 중 재확인 불필요):
 
-- **JVM 라이브러리 재사용**(Java SDK 검증 스택 그대로): `org.keycloak:keycloak-admin-client` **26.0.10**(admin·representation 노출 → `api`) · `com.nimbusds:oauth2-oidc-sdk` **11.37.2**(auth) · `com.nimbusds:nimbus-jose-jwt` **10.9.1**(JWT 검증 프리미티브). Java SDK가 이미 실 Keycloak으로 필드까지 검증한 스택이라 신규 라이브러리 리스크 0 — 차이는 **코루틴 관용 래핑**뿐.
+- **JVM 라이브러리 재사용**(Java SDK 검증 스택 그대로): `org.keycloak:keycloak-admin-client` **26.0.10**(admin·representation 노출 → `api`; 현재 **26.0.11** — PR #84에서 JacksonProvider 등록 정정과 함께 전진) · `com.nimbusds:oauth2-oidc-sdk` **11.37.2**(auth) · `com.nimbusds:nimbus-jose-jwt` **10.9.1**(JWT 검증 프리미티브). Java SDK가 이미 실 Keycloak으로 필드까지 검증한 스택이라 신규 라이브러리 리스크 0 — 차이는 **코루틴 관용 래핑**뿐.
 - **코루틴 경계**: 모든 네트워크 메서드는 `suspend`, 블로킹 라이브러리 호출은 `runInterruptible(Dispatchers.IO) { … }`(= `onIo` 헬퍼)로 옮겨 취소 협조(cancellation)를 보장한다. `kotlinx-coroutines-core` **1.11.0**(공개 `suspend` 노출 → `api`).
 - **⚠️ `fun interface` + `suspend` 컴파일 여부**(KT-40978): 과거 Kotlin은 SAM 변환 함수형 인터페이스의 추상 멤버가 `suspend`면 컴파일 거부했으나 **2.2.20에서 해소됨을 실증** — `TokenProvider`를 `public fun interface TokenProvider { public suspend fun accessToken(): String }`로 선언 가능.
 - **빌드 스택**: Kotlin **2.2.20** · vanniktech maven.publish **0.37.0**(Central Portal 표준 — signing+sources+Dokka javadoc jar·in-memory GPG) · Kover **0.9.8**(커버리지 게이트) · ktlint gradle plugin **14.2.0** · Dokka **2.2.0**. ⚠️ KGP↔Gradle 호환 밴드를 위해 래퍼는 9.5.0 핀(2.2.20 KGP 지원 범위).
