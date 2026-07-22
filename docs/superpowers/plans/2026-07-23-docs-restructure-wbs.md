@@ -186,8 +186,10 @@ cp -r "$FIX/." "$TMP/"
 : > "$TMP/src/build.gradle.kts"
 assert_fails node "$GUARD" "$TMP"
 
-echo "test-check-docs: OK"
+assert_report
 ```
+
+⚠️ **`assert_report`를 반드시 마지막에 호출한다.** `assert.sh`의 어서션들은 실패를 `_A_FAIL`에 누적만 하고 스스로 종료코드를 바꾸지 않는다 — `assert_report`가 없으면 어서션이 전부 실패해도 스크립트는 **exit 0**이 되어 CI 게이트가 조용히 무력화된다(실증: `assert_ok false`만 있는 스크립트의 종료코드는 0). 기존 `scripts/test/test-*.sh` 4개가 모두 이 호출로 끝난다.
 
 - [ ] **Step 3: 테스트가 실패하는지 확인**
 
@@ -345,7 +347,7 @@ console.log(`checked ${facts} facts across ${anchors} anchors`)
 sh scripts/test/test-check-docs.sh
 ```
 
-Expected: `test-check-docs: OK` (변이 3건이 전부 실패로 잡히고 정상 픽스처는 통과)
+Expected: `4 passed, 0 failed` 이후 종료코드 0 (변이 3건이 전부 실패로 잡히고 정상 픽스처는 통과)
 
 - [ ] **Step 6: 커밋**
 
@@ -387,7 +389,7 @@ EOF
 
 - [ ] **Step 1: 실패하는 테스트 추가**
 
-`scripts/test/test-check-docs.sh`의 `echo "test-check-docs: OK"` 직전에 추가:
+`scripts/test/test-check-docs.sh`의 `assert_report` 직전에 추가:
 
 ```sh
 # 검사 2: 같은 좌표가 두 문서에서 다른 값을 말하면 실패해야 한다.
@@ -479,7 +481,7 @@ for (const [coord, hits] of seen) {
 sh scripts/test/test-check-docs.sh
 ```
 
-Expected: `test-check-docs: OK`
+Expected: `N passed, 0 failed` 이후 종료코드 0
 
 - [ ] **Step 5: 커밋**
 
@@ -1003,7 +1005,7 @@ EOF
 
 - [ ] **Step 1: 실패하는 테스트 추가**
 
-`scripts/test/test-check-docs.sh`의 마지막 `echo` 직전에 추가:
+`scripts/test/test-check-docs.sh`의 `assert_report` 직전에 추가:
 
 ```sh
 # 검사 5: 깨진 마크다운 링크는 --strict 에서 실패해야 한다.
@@ -1087,7 +1089,7 @@ for (const w of warnings) console.warn(`::warning::${w}`)
 sh scripts/test/test-check-docs.sh && node scripts/check-docs.mjs .
 ```
 
-Expected: `test-check-docs: OK`, 그리고 본 저장소에서 경고가 출력되되 종료코드 0
+Expected: `N passed, 0 failed`, 그리고 본 저장소에서 `::warning::` 이 출력되되 종료코드 0
 
 - [ ] **Step 5: 손으로 쓴 테스트 수를 제거한다**
 
