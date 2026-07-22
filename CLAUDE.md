@@ -521,7 +521,7 @@ kotlin/
 |---|---|---|
 | Admin | `Keycloak.AuthServices.Sdk` | **2.7.0**(net8 최종 — 3.0.0은 net10 전용) |
 | DI 추상화 | `Microsoft.Extensions.DependencyInjection.Abstractions` | 9.0.18(AuthServices 2.7.0 하한 9.0.8 충족·**net8 유지로 10.x major 보류**[PR #57 close]) |
-| 단위 테스트 | `xUnit` 2.9.3 · `WireMock.Net` 2.11.0 · `coverlet.msbuild` 10.0.1 | — |
+| 단위 테스트 | `xUnit` 2.9.3 · `WireMock.Net` 2.13.0 · `coverlet.msbuild` 10.0.1 | — |
 | 통합 테스트 | `Testcontainers.Keycloak` | 4.13.0 |
 
 전부 Apache-2.0/MIT(호환). `IHttpClientFactory`는 미채택(단일 장수명 `HttpClient` + `SocketsHttpHandler.PooledConnectionLifetime` — 단일서버 SDK 관용).
