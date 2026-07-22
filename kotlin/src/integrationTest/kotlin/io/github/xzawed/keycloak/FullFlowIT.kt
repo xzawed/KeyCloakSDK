@@ -109,10 +109,13 @@ internal class FullFlowIT {
                 kc.admin.users().update(userId, UserRepresentation().apply { firstName = "Kotlin" })
                 val afterUpdate = kc.admin.users().get(userId)
                 assertEquals("Kotlin", afterUpdate.firstName)
-                // ⚠️ 설정하지 않은 필드는 보존되어야 한다. admin-client의 JacksonProvider가 NON_NULL로
-                // 직렬화하므로 미설정 필드는 전송되지 않고, 서버는 그것을 "변경 없음"으로 처리한다.
-                // 프로바이더 등록이 유실되면(AdminClient.buildTimeoutClient 참고) 우리가 null을 실어
-                // 보내게 되는데, 그때 이 단언이 깨진다 — 그것이 이 두 줄의 존재 이유다.
+                // 설정하지 않은 필드는 보존되어야 한다 — sparse 업데이트가 신원 필드를 지우면 안 된다.
+                //
+                // ⚠️ 이 두 줄은 JacksonProvider 등록의 회귀 잠금이 **아니다**. 음성 실험으로 확인했다:
+                // `buildTimeoutClient`에서 `.register(JacksonProvider…)`를 빼고 이 E2E를 돌리면 훨씬
+                // 앞선 **사용자 생성** 단계가 400으로 죽어(CreatedResponseUtil:68) 여기까지 오지도 못한다.
+                // 프로바이더 배선의 실제 잠금은 단위테스트 `AdminJacksonProviderTest`다.
+                // 이 단언이 지키는 것은 그와 별개의 계약 — "부분 업데이트는 미설정 필드를 건드리지 않는다".
                 assertEquals(username, afterUpdate.username, "sparse update must not clobber username")
                 assertEquals("$username@example.com", afterUpdate.email, "sparse update must not clobber email")
                 kc.admin.users().delete(userId)

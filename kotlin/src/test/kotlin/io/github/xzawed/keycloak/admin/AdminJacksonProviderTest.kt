@@ -58,6 +58,7 @@ class AdminJacksonProviderTest {
 
         assertFalse(json.contains("null"), "직렬화 결과에 null 값이 실렸다: $json")
         assertTrue(json.contains("\"username\":\"alice\""), json)
+        assertTrue(json.contains("\"enabled\":true"), json)
         // 설정하지 않은 필드는 키 자체가 없어야 한다 — 이것이 클라이언트/서버 스큐를 견디게 하는 성질이다.
         assertFalse(json.contains("\"email\""), json)
         assertFalse(json.contains("\"firstName\""), json)
