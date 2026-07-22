@@ -11,8 +11,10 @@ import jakarta.ws.rs.client.Client
 import jakarta.ws.rs.client.ClientBuilder
 import kotlinx.coroutines.CancellationException
 import org.keycloak.OAuth2Constants
+import org.keycloak.admin.client.JacksonProvider
 import org.keycloak.admin.client.Keycloak
 import org.keycloak.admin.client.KeycloakBuilder
+import org.keycloak.admin.client.spi.StreamMessageBodyReader
 import java.util.concurrent.TimeUnit
 
 // AdminClient.kt — 관리(admin) API 파사드 진입점. 공식 keycloak-admin-client(Keycloak/KeycloakBuilder)를
@@ -71,11 +73,32 @@ public class AdminClient internal constructor(
                 .build()
         }
 
+        /**
+         * `config`의 connect/read 타임아웃을 admin-client의 JAX-RS 클라이언트에 주입한다.
+         *
+         * **[JacksonProvider]를 반드시 직접 등록해야 한다.** admin-client는 이 프로바이더를
+         * *자기가 만든* 클라이언트에만 등록하므로(`ResteasyClientClassicProvider.newRestEasyClient`
+         * → `register(JacksonProvider.class, 100)`), 타임아웃 주입을 위해 우리 클라이언트를
+         * `resteasyClient(...)`로 넘기면 그 등록이 유실된다. 함께 잃는 두 설정은
+         * `setSerializationInclusion(NON_NULL)`(null 필드 미전송)과
+         * `configure(FAIL_ON_UNKNOWN_PROPERTIES, false)`(서버의 미지 필드 무시)다.
+         *
+         * 유실 시 클라이언트/서버 버전 스큐에서 양방향으로 깨진다 — admin-client가 서버보다 앞선
+         * 필드를 가지면(예: 26.0.11 `UserRepresentation.verifiableCredentials`) `null`을 실어
+         * 보내 구버전 서버가 400을 내고, 반대로 서버가 우리 모델에 없는 필드를 반환하면 응답
+         * 파싱이 깨진다. Java `AdminClient.buildTimeoutClient`와 동형.
+         *
+         * 기반 빌더는 [ClientBuilder.newBuilder]를 유지한다 —
+         * `ResteasyClientClassicProvider.createClientBuilder()`로 바꾸면 커넥션 풀이 기본 50에서
+         * 10으로 조용히 줄어든다.
+         */
         private fun buildTimeoutClient(config: KeycloakConfig): Client =
             ClientBuilder
                 .newBuilder()
                 .connectTimeout(config.connectTimeout.toMillis(), TimeUnit.MILLISECONDS)
                 .readTimeout(config.readTimeout.toMillis(), TimeUnit.MILLISECONDS)
+                .register(JacksonProvider::class.java, 100)
+                .register(StreamMessageBodyReader::class.java)
                 .build()
     }
 }

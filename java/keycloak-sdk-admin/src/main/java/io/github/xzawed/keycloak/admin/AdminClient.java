@@ -6,8 +6,10 @@ import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.ClientBuilder;
 import java.util.concurrent.TimeUnit;
 import org.keycloak.OAuth2Constants;
+import org.keycloak.admin.client.JacksonProvider;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.KeycloakBuilder;
+import org.keycloak.admin.client.spi.StreamMessageBodyReader;
 
 /**
  * 관리(admin) API 파사드 진입점. 공식 {@link Keycloak} admin-client를 감싸며 수명주기를
@@ -56,11 +58,36 @@ public final class AdminClient implements AutoCloseable {
    * 주입하지 않으면 admin 호출에 타임아웃이 적용되지 않아, 응답 없는 백엔드가 호출
    * 스레드를 무한 점유(스레드풀 고갈 DoS)한다. {@link Keycloak#close()}가 이 클라이언트를
    * 함께 정리한다.
+   *
+   * <p><strong>{@link JacksonProvider}를 반드시 직접 등록해야 한다.</strong> admin-client는 이
+   * 프로바이더를 <em>자기가 만든</em> JAX-RS 클라이언트에만 등록한다
+   * ({@code ResteasyClientClassicProvider.newRestEasyClient} → {@code register(JacksonProvider.class, 100)}).
+   * 타임아웃 주입을 위해 우리가 만든 클라이언트를 {@code resteasyClient(...)}로 넘기면
+   * {@code Keycloak} 생성자가 그 경로를 통째로 건너뛰어 등록이 유실되고, 프로바이더가 설정하는
+   * 두 가지를 함께 잃는다 —
+   * {@code setSerializationInclusion(NON_NULL)}(null 필드를 전송하지 않음)와
+   * {@code configure(FAIL_ON_UNKNOWN_PROPERTIES, false)}(서버가 보낸 미지 필드를 무시).
+   *
+   * <p>유실 시 증상은 클라이언트/서버 버전 스큐에서 양방향으로 터진다. 직렬화 쪽: admin-client가
+   * 서버보다 앞선 필드를 갖게 되면(예: 26.0.11의 {@code UserRepresentation.verifiableCredentials})
+   * 우리가 {@code "verifiableCredentials": null}을 실어 보내고 구버전 서버가 <em>Unrecognized
+   * field</em>로 400을 낸다. 역직렬화 쪽: 서버가 우리 모델에 없는 필드를 반환하면 응답 파싱이 깨진다.
+   *
+   * <p>{@link StreamMessageBodyReader}도 함께 등록한다. 26.0.10까지는 {@code JacksonProvider}가
+   * Stream 역직렬화 모듈을 내부에 품고 있었으나 26.0.11에서 분리되어 상류
+   * {@code createClientBuilder()}가 이 리더를 별도 등록한다(26.0.10 프로바이더의 stream 참조 9건 →
+   * 26.0.11 0건). 등록하지 않으면 Stream을 반환하는 admin 엔드포인트가 {@code raw()} 경로에서 깨진다.
+   *
+   * <p>기반 빌더는 {@link ClientBuilder#newBuilder()}를 유지한다 —
+   * {@code ResteasyClientClassicProvider.createClientBuilder()}로 바꾸면 커넥션 풀이
+   * 기본 50에서 10으로 조용히 줄어든다({@code connectionPoolSize(10)}).
    */
-  private static Client buildTimeoutClient(KeycloakConfig config) {
+  static Client buildTimeoutClient(KeycloakConfig config) { // 패키지 전용 — 프로바이더 등록 회귀테스트 시임
     return ClientBuilder.newBuilder()
         .connectTimeout(config.getConnectTimeout().toMillis(), TimeUnit.MILLISECONDS)
         .readTimeout(config.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS)
+        .register(JacksonProvider.class, 100)
+        .register(StreamMessageBodyReader.class)
         .build();
   }
 
