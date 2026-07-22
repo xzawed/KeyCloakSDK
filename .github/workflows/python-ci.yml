@@ -11,7 +11,7 @@ jobs:
     defaults: { run: { working-directory: python } }
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with: { python-version: '${{ matrix.python }}' }
       - run: python -m pip install -e ".[dev]"
       - name: ruff (lint — 보안 S/bandit 포함 확장 룰셋)
@@ -37,7 +37,7 @@ jobs:
     defaults: { run: { working-directory: python } }
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with: { python-version: '3.12' }
       - run: python -m pip install -e ".[dev]"
       - name: pytest (integration, Docker)
