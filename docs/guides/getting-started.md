@@ -18,7 +18,7 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 | **PHP** | **8.3+** | `final readonly class` value types · exception-based (`KeycloakException` hierarchy) |
 | **Rust** | **1.88+** | MSRV required by edition 2024 + let-chains · async-only (tokio) · `thiserror`-based `KeycloakError` |
 | **Ruby** | **3.2+** | sync-only · exception hierarchy (`KeycloakSdk::Error`) · gem `keycloak-sdk` / require `keycloak_sdk` |
-| **Kotlin** | **2.2+** (JDK 21+) | coroutines (`suspend`) · data-class value types · sealed `KeycloakException` · reuses the JVM Java SDK stack |
+| **Kotlin** | **2.4.10+** (JDK 21+) | coroutines (`suspend`) · data-class value types · sealed `KeycloakException` · reuses the JVM Java SDK stack |
 | (optional) Docker | — | **Needed only for integration tests (Testcontainers/docker CLI)**. Not required to use the SDK itself |
 
 ---
@@ -579,7 +579,7 @@ client.close
 
 ## Kotlin
 
-### 1) Required runtime — Kotlin 2.2+ / JDK 21+
+### 1) Required runtime — Kotlin 2.4.10+ / JDK 21+
 
 Kotlin **2.4.10 or newer** on **JDK 21+** (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
 
@@ -662,7 +662,7 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 |---|---|---|
 | Java `0.1.0-SNAPSHOT` | 26.6.x (integration tests: actual **26.6.4**) | `keycloak-admin-client` **26.0.11** (an independent version track from the server — there is no "26.6.x admin-client") · Nimbus `oauth2-oidc-sdk` **11.38.2** · JDK 21+ |
 | Python `0.1.0` | 26.6.x (integration tests: actual **26.6.4**) | `python-keycloak` **7.1.x** · `joserfc` **1.7.x** · Python 3.10+ |
-| Node `0.1.0` | 26.6.x (integration tests: actual **26.6**) | `@keycloak/keycloak-admin-client` **26.6.4** · `openid-client` **6.8.4** · `jose` **6.2.4** · Node 22+ |
+| Node `0.1.0` | 26.6.x (integration tests: actual **26.6**) | `@keycloak/keycloak-admin-client` **26.7.0** · `openid-client` **6.8.4** · `jose` **6.2.4** · Node 22+ |
 | Go `0.1.0` | 26.6.x (integration tests: actual **26.6**) | `Nerzal/gocloak/v13` **13.9.0** · `golang.org/x/oauth2` **0.36.0** · `go-jose/v4` **4.1.4** · Go 1.25+ |
 | C#/.NET `0.1.0` | 26.6.x (integration tests: actual **26.6**) | `Keycloak.AuthServices.Sdk` **2.7.0** · `Duende.IdentityModel` **8.1.0** · `Microsoft.IdentityModel.JsonWebTokens` **8.20.0** · .NET 8+ |
 | PHP `0.1.0` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `fschmtt/keycloak-rest-api-client-php` **0.42.0** · `league/oauth2-client` **^2.8** · `stevenmaguire/oauth2-keycloak` **^6.1** · `firebase/php-jwt` **^7.1** · PHP 8.3+ |
