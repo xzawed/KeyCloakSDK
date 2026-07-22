@@ -20,7 +20,7 @@
 |---|---|---|
 | **Java** 21+ | Maven `io.github.xzawed:keycloak-sdk` | [QuickStart.java](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) |
 | **Python** 3.10+ | `pip install keycloak-sdk` | [quickstart.py](python/examples/quickstart.py) · [async](python/examples/async_quickstart.py) |
-| **Node** 20+ (ESM) | `npm i @xzawed/keycloak-sdk` | [quickstart.ts](node/examples/quickstart.ts) |
+| **Node** 22+ (ESM) | `npm i @xzawed/keycloak-sdk` | [quickstart.ts](node/examples/quickstart.ts) |
 | **Go** 1.25+ | `go get github.com/xzawed/KeyCloakSDK/go` | [example_test.go](go/example_test.go) |
 | **C# / .NET** 8+ | `dotnet add package Xzawed.Keycloak.Sdk` | [getting-started](docs/guides/getting-started.md#c--net) |
 | **PHP** 8.3+ | `composer require xzawed/keycloak-sdk` | [quickstart.php](php/examples/quickstart.php) |

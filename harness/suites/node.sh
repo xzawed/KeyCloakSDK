@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness/suites/node.sh — Node/TypeScript SDK 자체 단위테스트+커버리지+린트를 node:20-alpine
+# harness/suites/node.sh — Node/TypeScript SDK 자체 단위테스트+커버리지+린트를 node:22-alpine
 # 컨테이너에서 실행한다(CLAUDE.md Node 툴체인: `npm ci && npm test`[vitest run --coverage,
 # 게이트 라인90/브랜치85] + `npm run lint`[eslint]). 마지막 줄에 JSON 신호 1줄을 출력한다.
 set -uo pipefail
@@ -15,7 +15,7 @@ fi
 # node/ 는 읽기전용으로 마운트하고 컨테이너 로컬(/src)로 복사해서 작업한다 — npm ci가 쓰는
 # node_modules를 호스트에 남기지 않고(디스크/권한 부작용 없음), 어떤 툴체인 명령도 호스트
 # 소스트리를 변형하지 않는다(go.sh와 동일한 방어 패턴).
-RAW=$(docker run --rm -v "$ROOT/node:/src-ro:ro" node:20-alpine sh -c '
+RAW=$(docker run --rm -v "$ROOT/node:/src-ro:ro" node:22-alpine sh -c '
   cp -r /src-ro /src && cd /src
   npm ci >/dev/null 2>&1
   npm test 2>&1
@@ -46,7 +46,7 @@ INTEGRATION=0
 if [ "${SUITE_INTEGRATION:-0}" = "1" ]; then
   # 통합테스트(Testcontainers)는 Docker-in-Docker 필요 — best-effort opt-in(기본 미실행).
   IRAW=$(docker run --rm -v "$ROOT/node:/src-ro:ro" -v /var/run/docker.sock:/var/run/docker.sock \
-    node:20-alpine sh -c "cp -r /src-ro /src && cd /src && npm ci >/dev/null 2>&1 && npm run test:it 2>&1" 2>&1 || true)
+    node:22-alpine sh -c "cp -r /src-ro /src && cd /src && npm ci >/dev/null 2>&1 && npm run test:it 2>&1" 2>&1 || true)
   IOUT=$(printf '%s' "$IRAW" | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g')
   INTEGRATION=$(printf '%s\n' "$IOUT" | grep -oE 'Tests +[0-9]+ passed' | grep -oE '[0-9]+' | head -1)
 fi

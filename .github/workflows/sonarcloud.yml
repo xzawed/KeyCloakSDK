@@ -46,10 +46,10 @@ jobs:
 
       # Node(vitest v8 → lcov). vitest lcov의 SF 경로는 node/ 기준 상대라 SonarCloud(루트 baseDir)가
       # 못 찾는다 → `node/` 접두를 붙여 루트 기준으로 정규화한다(모노레포 lcov 경로 정합).
-      - name: Set up Node 20
+      - name: Set up Node 22
         uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
       - name: Generate Node lcov coverage
         working-directory: node
         run: |

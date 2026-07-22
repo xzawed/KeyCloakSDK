@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
-        with: { node-version: '20' }
+        with: { node-version: '22' }
       - name: 하네스 실행(Go MVP)
         run: cd harness && ./run.sh go
       - name: 결과 업로드
@@ -35,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
-        with: { node-version: '20' }
+        with: { node-version: '22' }
       - name: 하네스 실행(5개 언어 비교)
         run: cd harness && ./run.sh go dotnet node python java
       - name: 결과 업로드
@@ -53,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
-        with: { node-version: '20' }
+        with: { node-version: '22' }
       - name: 9언어 종합 검증·스코어링
         run: cd harness && ./verify.sh go dotnet node python java php rust ruby kotlin
       - name: 스코어카드 업로드
@@ -81,7 +81,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
-        with: { node-version: '20' }
+        with: { node-version: '22' }
       - name: 8언어 설치·동작 검증
         run: cd harness/install && ./install-verify.sh go dotnet node python java php rust ruby kotlin
       - name: 설치 매트릭스 업로드

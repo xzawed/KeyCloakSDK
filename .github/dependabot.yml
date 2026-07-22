@@ -26,6 +26,12 @@ updates:
     schedule: { interval: weekly }
     groups:
       node-minor-patch: { update-types: [minor, patch] }
+    ignore:
+      # @types/node는 "최신 Node"가 아니라 package.json의 engines 하한을 따라간다. 하한을 올리는 것은
+      # 소비자 가시적 결정이라(CI 매트릭스·하네스 이미지·문서가 함께 움직인다) 사람이 판단해야 하며,
+      # 타입 bump가 그 결정을 대신 끌고 가서는 안 된다. engines를 올릴 때 이 핀도 같이 올린다.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: gomod # Go
     directory: /go
