@@ -7,12 +7,12 @@
 # custom `--network`를 지원하지 않으므로 기본 빌더로 빌드되도록, 그리고 app-boot/conformance와 동일한
 # install-net 서비스명 해석 경로를 재사용하려는 의도). 상태(installed/quickstartOk)는 호스트 마운트
 # `/status`의 마커 파일로 회수한다 — 컨테이너 생존 여부와 무관하게 오케스트레이터가 읽는다.
-FROM node:20-alpine AS app
+FROM node:22-alpine AS app
 WORKDIR /app
 
 # 의존성 없는 최소 package.json(ESM) — SDK/express는 런타임에 실제 소비자 명령
 # `npm install @xzawed/keycloak-sdk@0.1.0 express --registry …`로 설치한다(node-run.sh).
-RUN printf '%s' '{"name":"harness-app-node-installed","private":true,"type":"module","engines":{"node":">=20"}}' > package.json
+RUN printf '%s' '{"name":"harness-app-node-installed","private":true,"type":"module","engines":{"node":">=22"}}' > package.json
 
 COPY harness/install/quickstart/node/quickstart.mjs ./quickstart.mjs
 COPY harness/apps/node/server.js ./server.js

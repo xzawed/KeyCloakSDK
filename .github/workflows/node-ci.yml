@@ -7,7 +7,7 @@ jobs:
     name: Lint + typecheck + unit test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
-      matrix: { node: ['20', '22'] }
+      matrix: { node: ['22', '24'] }
     defaults: { run: { working-directory: node } }
     steps:
       - uses: actions/checkout@v7
