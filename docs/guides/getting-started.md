@@ -659,15 +659,15 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 
 | SDK | Target Keycloak server | Base libraries · runtime |
 |---|---|---|
-| Java `0.1.0-SNAPSHOT` | 26.6.x (integration tests: actual **26.6.4**) | `keycloak-admin-client` **26.0.10** (an independent version track from the server — there is no "26.6.x admin-client") · Nimbus `oauth2-oidc-sdk` **11.37.2** · JDK 21+ |
+| Java `0.1.0-SNAPSHOT` | 26.6.x (integration tests: actual **26.6.4**) | `keycloak-admin-client` **26.0.11** (an independent version track from the server — there is no "26.6.x admin-client") · Nimbus `oauth2-oidc-sdk` **11.37.2** · JDK 21+ |
 | Python `0.1.0` | 26.6.x (integration tests: actual **26.6.4**) | `python-keycloak` **7.1.x** · `joserfc` **1.7.x** · Python 3.10+ |
-| Node `0.1.0` | 26.6.x (integration tests: actual **26.6**) | `@keycloak/keycloak-admin-client` **26.6.4** · `openid-client` **6.8.4** · `jose` **5.10.0** · Node 22+ |
+| Node `0.1.0` | 26.6.x (integration tests: actual **26.6**) | `@keycloak/keycloak-admin-client` **26.6.4** · `openid-client` **6.8.4** · `jose` **6.2.4** · Node 22+ |
 | Go `0.1.0` | 26.6.x (integration tests: actual **26.6**) | `Nerzal/gocloak/v13` **13.9.0** · `golang.org/x/oauth2` **0.36.0** · `go-jose/v4` **4.1.4** · Go 1.25+ |
 | C#/.NET `0.1.0` | 26.6.x (integration tests: actual **26.6**) | `Keycloak.AuthServices.Sdk` **2.7.0** · `Duende.IdentityModel` **8.1.0** · `Microsoft.IdentityModel.JsonWebTokens` **8.19.1** · .NET 8+ |
 | PHP `0.1.0` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `fschmtt/keycloak-rest-api-client-php` **0.42.0** · `league/oauth2-client` **^2.8** · `stevenmaguire/oauth2-keycloak` **^6.1** · `firebase/php-jwt` **^7.1** · PHP 8.3+ |
 | Rust `0.1.0` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak` **=26.6.2** (`reqwest12` feature) · `openidconnect` **=4.0.1** · `jsonwebtoken` **=10.4.0** · Rust 1.88+ (edition 2024) |
 | Ruby `0.1.0` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `rack-oauth2` **~>2.3** · `faraday` **~>2.0** · `jwt` (ruby-jwt) **~>3.2** · Ruby 3.2+ |
-| Kotlin `0.1.0` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak-admin-client` **26.0.10** · `oauth2-oidc-sdk` **11.37.2** · `nimbus-jose-jwt` **10.9.1** (same JVM stack as Java) · Kotlin 2.2.20+ / JDK 21+ |
+| Kotlin `0.1.0` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak-admin-client` **26.0.11** · `oauth2-oidc-sdk` **11.37.2** · `nimbus-jose-jwt` **10.9.1** (same JVM stack as Java) · Kotlin 2.2.20+ / JDK 21+ |
 
 ---
 

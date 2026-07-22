@@ -15,7 +15,7 @@
 공식 타입 정의(`node_modules`)·context7·web으로 현행 버전·시그니처·라이선스를 확인해 아래를 **확정**(구현 중 재확인 불필요):
 
 - **openid-client `6.8.4`**(함수형·ESM): `discovery(url, clientId, secret?, clientAuth?, {execute})` → `Configuration`; `clientCredentialsGrant`/`authorizationCodeGrant(config, currentUrl, checks)`/`refreshTokenGrant`/`tokenIntrospection`/`buildEndSessionUrl`. 타임아웃은 `Configuration.timeout`(**초**) 내장 프로퍼티. http 로컬은 `allowInsecureRequests`를 `execute`에. 토큰 응답은 snake_case(oauth4webapi `TokenEndpointResponse`).
-- **jose `5.10.0`**: `createRemoteJWKSet(url, {cooldownDuration, cacheMaxAge})` → DoS-안전(kid 미해결 시에만 재조회). `jwtVerify(token, keys, {algorithms, issuer, audience, clockTolerance})` — `none` 내장 거부·aud 배열 포함검사.
+- **jose `5.10.0`**(현재 `^6` — PR #80에서 6.2.x로 전진, 7개 API/옵션의 이름·의미가 v6에서 동일함을 published `.d.ts`로 확인하고 cooldown 동작을 히트 수로 실측): `createRemoteJWKSet(url, {cooldownDuration, cacheMaxAge})` → DoS-안전(kid 미해결 시에만 재조회). `jwtVerify(token, keys, {algorithms, issuer, audience, clockTolerance})` — `none` 내장 거부·aud 배열 포함검사.
 - **@keycloak/keycloak-admin-client `26.6.4`**(ESM): `new KcAdminClient({baseUrl, realmName, timeout})`(timeout **ms** — `requestOptions`는 `Omit<RequestInit,"signal">`) → `.auth({grantType:'client_credentials', clientId, clientSecret})` → `.users/clients/realms/roles/groups`(create/find/findOne/update/del, roles는 findOneByName/delByName). 실패는 `NetworkError`(`.response.status`), `findOne`은 404에서 **`null`** 반환(선언 타입 `undefined`).
 
 ## Phase 1~9 — 계층별 구현 (Task 1~12)
