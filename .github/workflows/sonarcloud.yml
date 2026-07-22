@@ -10,6 +10,15 @@ jobs:
   sonarcloud:
     name: SonarCloud
     runs-on: ubuntu-latest
+    # Dependabot이 트리거한 run에는 Actions 시크릿이 노출되지 않는다(별도 Dependabot 시크릿 스토어만
+    # 보이며, 이 저장소의 그 스토어는 비어 있다). SONAR_TOKEN이 빈 문자열로 보간되어 스캐너가
+    # "Not authorized or project not found" + exit 3으로 **반드시** 실패한다 — 코드 신호가 아니라
+    # 환경 산물이므로 Dependabot PR에서는 스캔을 건너뛴다.
+    # 토큰을 Dependabot 시크릿 스토어에 복제하는 방안은 기각했다: 이 잡은 PR head에서 npm ci ·
+    # composer install · bundle install · pip install -e · mvn verify · gradlew를 실행하므로,
+    # 방금 bump된 미검토 패키지의 임의 코드가 토큰과 같은 잡에서 돌게 된다.
+    # push 이벤트는 첫 논리항에서 항상 참이라 main 스캔은 구조적으로 스킵될 수 없다(PR0 fail-closed 유지).
+    if: github.event_name != 'pull_request' || github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v7
         with:
