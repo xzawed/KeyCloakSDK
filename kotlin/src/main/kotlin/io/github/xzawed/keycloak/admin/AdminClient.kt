@@ -14,6 +14,7 @@ import org.keycloak.OAuth2Constants
 import org.keycloak.admin.client.JacksonProvider
 import org.keycloak.admin.client.Keycloak
 import org.keycloak.admin.client.KeycloakBuilder
+import org.keycloak.admin.client.spi.StreamMessageBodyReader
 import java.util.concurrent.TimeUnit
 
 // AdminClient.kt — 관리(admin) API 파사드 진입점. 공식 keycloak-admin-client(Keycloak/KeycloakBuilder)를
@@ -97,6 +98,7 @@ public class AdminClient internal constructor(
                 .connectTimeout(config.connectTimeout.toMillis(), TimeUnit.MILLISECONDS)
                 .readTimeout(config.readTimeout.toMillis(), TimeUnit.MILLISECONDS)
                 .register(JacksonProvider::class.java, 100)
+                .register(StreamMessageBodyReader::class.java)
                 .build()
     }
 }

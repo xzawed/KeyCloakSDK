@@ -9,6 +9,7 @@ import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.JacksonProvider;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.KeycloakBuilder;
+import org.keycloak.admin.client.spi.StreamMessageBodyReader;
 
 /**
  * 관리(admin) API 파사드 진입점. 공식 {@link Keycloak} admin-client를 감싸며 수명주기를
@@ -72,6 +73,11 @@ public final class AdminClient implements AutoCloseable {
    * 우리가 {@code "verifiableCredentials": null}을 실어 보내고 구버전 서버가 <em>Unrecognized
    * field</em>로 400을 낸다. 역직렬화 쪽: 서버가 우리 모델에 없는 필드를 반환하면 응답 파싱이 깨진다.
    *
+   * <p>{@link StreamMessageBodyReader}도 함께 등록한다. 26.0.10까지는 {@code JacksonProvider}가
+   * Stream 역직렬화 모듈을 내부에 품고 있었으나 26.0.11에서 분리되어 상류
+   * {@code createClientBuilder()}가 이 리더를 별도 등록한다(26.0.10 프로바이더의 stream 참조 9건 →
+   * 26.0.11 0건). 등록하지 않으면 Stream을 반환하는 admin 엔드포인트가 {@code raw()} 경로에서 깨진다.
+   *
    * <p>기반 빌더는 {@link ClientBuilder#newBuilder()}를 유지한다 —
    * {@code ResteasyClientClassicProvider.createClientBuilder()}로 바꾸면 커넥션 풀이
    * 기본 50에서 10으로 조용히 줄어든다({@code connectionPoolSize(10)}).
@@ -81,6 +87,7 @@ public final class AdminClient implements AutoCloseable {
         .connectTimeout(config.getConnectTimeout().toMillis(), TimeUnit.MILLISECONDS)
         .readTimeout(config.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS)
         .register(JacksonProvider.class, 100)
+        .register(StreamMessageBodyReader.class)
         .build();
   }
 
