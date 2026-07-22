@@ -1,0 +1,16 @@
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>test.reactor</groupId>
+    <artifactId>reactor-parent</artifactId>
+    <version>0.0.1</version>
+  </parent>
+  <artifactId>reactor-child</artifactId>
+  <dependencies>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>widget</artifactId>
+      <version>${widget.version}</version>
+    </dependency>
+  </dependencies>
+</project>

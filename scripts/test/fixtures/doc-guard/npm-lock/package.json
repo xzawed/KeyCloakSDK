@@ -1,0 +1,7 @@
+{
+  "name": "npm-lock-fixture",
+  "version": "0.0.1",
+  "dependencies": {
+    "widget": "^3.0.0"
+  }
+}
