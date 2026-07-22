@@ -84,4 +84,29 @@ cp -r "$FIX/." "$TMP/"
 sed -i 's/| 3\.2\.1 |/| 9.9.9 |/' "$TMP/npm-lock.md"
 assert_fails node "$GUARD" "$TMP"
 
+# ---- Fix A: 앵커 문법 자체를 설명하는 산문은 앵커로 파싱되면 안 된다 ----
+# 앵커 앞뒤에 다른 텍스트가 함께 있는 줄은 선언이 아니라 설명이다. 구버전은
+# 이런 줄에서도 doc-guard 정규식이 매치해 `source=<경로>`(플레이스홀더 문자
+# 그대로) 추출을 시도하다 ENOENT로 죽는다 — 고친 버전은 trim한 줄 전체가
+# 앵커 문법과 정확히 일치할 때만 선언으로 인정해 이 줄들을 조용히 건너뛴다.
+cp -r "$FIX/." "$TMP/"
+cat > "$TMP/prose.md" <<'EOF'
+# prose fixture
+
+- Produces: 앵커 문법 `<!-- doc-guard: kind=dep source=<경로> min=<정수> -->` + 뒤따르는 마크다운 표.
+- Produces: 앵커 `kind=runtime` — `<!-- doc-guard: kind=runtime lang=<언어> -->` 뒤 인라인 코드로 표기된 버전 1개를 검사
+EOF
+assert_ok node "$GUARD" "$TMP"
+
+# ---- Fix B: 저장소 루트 스캔은 가드 자신의 테스트 픽스처를 문서로 취급하지
+# 않는다 ----
+# scripts/test/fixtures/*.md의 source= 경로는 격리된 임시 디렉터리 기준 상대경로다.
+# 그 픽스처를 실제 저장소와 같은 상대경로(scripts/test/fixtures/)에 두고 그
+# 루트를 스캔하면, 픽스처 제외가 없는 구버전은 source=를 그 루트 기준으로 잘못
+# 해석해 ENOENT로 실패한다 — 고친 버전은 scripts/test/fixtures를 통째로
+# 건너뛰어야 한다.
+rm -rf "$TMP" && mkdir -p "$TMP/scripts/test/fixtures"
+cp -r "$FIX/." "$TMP/scripts/test/fixtures/"
+assert_ok node "$GUARD" "$TMP"
+
 assert_report

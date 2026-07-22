@@ -6,13 +6,21 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve, relative, dirname } from 'node:path'
 
 const ROOT = resolve(process.argv[2] ?? '.')
-const SKIP = new Set(['.git', 'node_modules', 'vendor', 'target', 'build', 'dist', '.gradle'])
+// .superpowers는 gitignore된 작업 스크래치(실제 문서가 아님).
+const SKIP = new Set(['.git', 'node_modules', 'vendor', 'target', 'build', 'dist', '.gradle', '.superpowers'])
+// scripts/test/fixtures/**는 가드 자신의 테스트 입력이다 — 그 안의 source= 경로는
+// 격리된 임시 디렉터리(테스트가 mktemp로 만드는) 기준 상대경로라 저장소 루트를
+// 걸을 때 해석 대상이 아니다. 이름이 아니라 정확한 상대경로로 제외해야
+// ruby/spec/fixtures 같은 무관한 "fixtures" 디렉터리까지 함께 가리지 않는다.
+const SKIP_PATHS = new Set(['scripts/test/fixtures'])
 const MAX_PROP_HOPS = 10 // 순환/장기 속성 체인이 무한루프하지 않도록 하는 반복 상한.
 
 function walkFiles(dir, matches, out = []) {
   for (const name of readdirSync(dir)) {
     if (SKIP.has(name)) continue
     const p = join(dir, name)
+    const rel = relative(ROOT, p).replace(/\\/g, '/')
+    if (SKIP_PATHS.has(rel)) continue
     if (statSync(p).isDirectory()) walkFiles(p, matches, out)
     else if (matches(name)) out.push(p)
   }
@@ -180,7 +188,12 @@ for (const file of walk(ROOT)) {
   for (let i = 0; i < lines.length; i++) {
     if (/^\s*```/.test(lines[i])) { inFence = !inFence; continue }
     if (inFence) continue // 펜스 안의 앵커 문법은 예시일 뿐 실제 앵커가 아니다.
-    const a = /<!--\s*doc-guard:\s*(.*?)\s*-->/.exec(lines[i])
+    // 앵커는 trim한 줄 전체와 정확히 일치해야 한다 — 앵커 문법을 설명하는 산문이
+    // 인라인 백틱으로 같은 줄에 앞뒤 텍스트와 함께 등장하면(예: "- Produces: 앵커
+    // 문법 `<!-- doc-guard: ... -->` + 뒤따르는 표.") 그건 선언이 아니라 설명이므로
+    // 무시해야 한다. 실제 앵커는 언제나 자신만으로 한 줄을 이룬다.
+    const trimmed = lines[i].trim()
+    const a = /^<!--\s*doc-guard:\s*(.*?)\s*-->$/.exec(trimmed)
     if (!a) continue
     anchors++
     const attrs = parseAttrs(a[1])
