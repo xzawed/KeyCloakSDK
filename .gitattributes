@@ -12,3 +12,6 @@
 # always LF regardless of the contributor's global git config.
 *.sh    text eol=lf
 gradlew text eol=lf
+# 마크다운도 LF로 고정한다. 가드(scripts/check-docs.mjs)가 `--fix`로 문서를 고칠 때
+# CRLF 워킹트리에서는 파일 전체가 변경된 것처럼 보여 리뷰가 불가능해진다.
+*.md    text eol=lf
