@@ -38,12 +38,12 @@
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <keycloak.adminclient.version>26.0.11</keycloak.adminclient.version>
-    <nimbus.oidc.version>11.38.1</nimbus.oidc.version>
+    <nimbus.oidc.version>11.38.2</nimbus.oidc.version>
     <nimbus.jose.version>10.9.1</nimbus.jose.version>
     <junit.version>6.1.2</junit.version>
     <mockito.version>5.23.0</mockito.version>
     <testcontainers.version>2.0.5</testcontainers.version>
-    <testcontainers.keycloak.version>4.3.0</testcontainers.keycloak.version>
+    <testcontainers.keycloak.version>4.3.1</testcontainers.keycloak.version>
   </properties>
 
   <dependencyManagement>
