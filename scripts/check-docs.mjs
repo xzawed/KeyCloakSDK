@@ -95,19 +95,38 @@ function findReactorRoot(pomAbsPath) {
 // 그 아래 모든 pom.xml(부모+자식 모듈)에서 프로퍼티와 dependency를 함께 모은다.
 // 부모가 <properties>만 선언하고 자식이 <dependency>만 선언하는 실제 Maven
 // 멀티모듈 레이아웃에서도, 앵커가 어느 모듈의 pom.xml을 가리키든 해석되게 하기 위함이다.
+//
+// 단, 이 reactor-wide 병합은 "같은 좌표를 서로 다른 pom이 서로 다른 값으로
+// 선언"하는 경우까지 조용히 하나를 골라선 안 된다 — 그러면 어느 pom이 이겼는지가
+// 파일시스템 순회 순서에 좌우되는 조용한 오답(거짓 PASS 또는 거짓 FAIL)이 된다.
+// 그래서 병합 도중 같은 좌표에 대해 이미 확정한 버전과 다른 버전을 만나면 그
+// 자리에서 즉시 던진다 — 좌표·양쪽 버전·양쪽 pom 경로를 모두 명시해 호출부
+// (extract()의 try/catch)가 "소스 추출 실패" 에러로 fail-closed 처리하게 한다.
+// 동일한 값을 여러 pom이 반복 선언하는 것은 정상이며 에러가 아니다.
 function fromPomReactor(pomAbsPath) {
   const root = findReactorRoot(pomAbsPath)
   const files = new Set([pomAbsPath, ...walkFiles(root, (name) => name === 'pom.xml')])
-  const texts = [...files].map((f) => readFileSync(f, 'utf8'))
+  const entries = [...files].map((f) => ({ path: f, text: readFileSync(f, 'utf8') }))
   const props = new Map()
-  for (const t of texts) for (const [k, v] of parsePomProps(t)) props.set(k, v)
-  const m = new Map()
-  for (const t of texts) {
-    for (const dep of parsePomDependencies(t)) {
+  for (const { text } of entries) for (const [k, v] of parsePomProps(text)) props.set(k, v)
+  const resolved = new Map() // "groupId:artifactId" -> { version, pomPath } — 충돌 보고용으로 출처 pom도 함께 기억한다.
+  for (const { path, text } of entries) {
+    for (const dep of parsePomDependencies(text)) {
+      const coord = `${dep.groupId}:${dep.artifactId}`
       const ver = resolveProp(dep.version, props)
-      m.set(`${dep.groupId}:${dep.artifactId}`, ver)
+      const prev = resolved.get(coord)
+      if (prev && prev.version !== ver) {
+        const prevRel = relative(ROOT, prev.pomPath).replace(/\\/g, '/')
+        const curRel = relative(ROOT, path).replace(/\\/g, '/')
+        throw new Error(
+          `좌표 '${coord}' 가 리액터 안에서 서로 다른 pom에 의해 다른 버전으로 선언됨: ${prev.version} (${prevRel}) vs ${ver} (${curRel}) — 어느 쪽이 진실인지 가드가 임의로 고를 수 없다`,
+        )
+      }
+      resolved.set(coord, { version: ver, pomPath: path })
     }
   }
+  const m = new Map()
+  for (const [coord, { version }] of resolved) m.set(coord, version)
   return m
 }
 function fromPackageJson(t) {
@@ -193,10 +212,30 @@ for (const file of walk(ROOT)) {
     // 문법 `<!-- doc-guard: ... -->` + 뒤따르는 표.") 그건 선언이 아니라 설명이므로
     // 무시해야 한다. 실제 앵커는 언제나 자신만으로 한 줄을 이룬다.
     const trimmed = lines[i].trim()
-    const a = /^<!--\s*doc-guard:\s*(.*?)\s*-->$/.exec(trimmed)
-    if (!a) continue
+    const exact = /^<!--\s*doc-guard:\s*(.*?)\s*-->$/.exec(trimmed)
+    if (!exact) {
+      // 줄 전체 일치는 아니다. 그래도 앵커 문법이 이 줄 어딘가에 나타난다면 두
+      // 갈래뿐이다 — (a) 그 앵커 텍스트가 인라인 백틱 한 쌍으로 통째로 감싸여
+      // 있으면 문법을 설명하는 산문(무시, 위 사례와 동일 취급), (b) 그 외의
+      // 모든 형태(리스트 불릿 아래 들여쓰기, 후행 텍스트 등 — 백틱 없이 등장)는
+      // 선언처럼 보이지만 이 가드에게는 절대 인식되지 않는다. 후자를 조용히
+      // 넘기면 "선언인데 무효화됨"이 침묵 통과하는 것과 같은 부류의 결함이므로,
+      // 명시 에러로 fail-closed 한다.
+      const loose = /<!--\s*doc-guard:\s*(.*?)\s*-->/.exec(trimmed)
+      if (loose) {
+        const before = trimmed[loose.index - 1]
+        const after = trimmed[loose.index + loose[0].length]
+        const backtickWrapped = before === '`' && after === '`'
+        if (!backtickWrapped) {
+          errors.push(
+            `${rel}:${i + 1} 앵커처럼 보이지만 줄 전체와 정확히 일치하지 않아 인식되지 않는다 — 선언이라면 그 줄 하나만으로 앵커여야 하고(들여쓰기·후행 텍스트 불가), 문법을 설명하는 산문이라면 인라인 백틱으로 전체를 감싸야 한다`,
+          )
+        }
+      }
+      continue
+    }
     anchors++
-    const attrs = parseAttrs(a[1])
+    const attrs = parseAttrs(exact[1])
 
     let min
     if (attrs.min === undefined) {
