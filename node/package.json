@@ -33,6 +33,6 @@
     "testcontainers": "^12",
     "typescript": "^6",
     "typescript-eslint": "^8",
-    "vitest": "^3"
+    "vitest": "^4"
   }
 }
