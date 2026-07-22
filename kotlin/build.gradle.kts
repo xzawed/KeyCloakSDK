@@ -6,7 +6,7 @@ plugins {
     `java-library`
     id("org.jetbrains.dokka") version "2.2.0"
     id("com.vanniktech.maven.publish") version "0.37.0"
-    id("org.jetbrains.kotlinx.kover") version "0.9.8"
+    id("org.jetbrains.kotlinx.kover") version "0.9.9"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
 }
 
@@ -25,7 +25,7 @@ kotlin {
 dependencies {
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0") // 공개 suspend → api
     api("org.keycloak:keycloak-admin-client:26.0.11") // representation 노출 → api
-    implementation("com.nimbusds:oauth2-oidc-sdk:11.38.1")
+    implementation("com.nimbusds:oauth2-oidc-sdk:11.38.2")
     implementation("com.nimbusds:nimbus-jose-jwt:10.9.1")
 
     testImplementation(kotlin("test"))
@@ -37,7 +37,7 @@ dependencies {
     testImplementation("org.wiremock:wiremock:3.13.2")
     testImplementation("org.testcontainers:testcontainers:2.0.5")
     testImplementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
-    testImplementation("com.github.dasniko:testcontainers-keycloak:4.3.0")
+    testImplementation("com.github.dasniko:testcontainers-keycloak:4.3.1")
 }
 
 tasks.test {
@@ -70,7 +70,7 @@ testing {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
                 implementation("org.testcontainers:testcontainers:2.0.5")
                 implementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
-                implementation("com.github.dasniko:testcontainers-keycloak:4.3.0")
+                implementation("com.github.dasniko:testcontainers-keycloak:4.3.1")
             }
             targets {
                 all {
