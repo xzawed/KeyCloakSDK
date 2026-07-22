@@ -202,13 +202,61 @@ assert_contains "$OUT" "near-miss.md:3" "near-miss anchor must be reported at it
 rm -rf "$TMP" && mkdir -p "$TMP"
 
 # 검사 2: 같은 좌표가 두 문서에서 다른 값을 말하면 실패해야 한다.
-cp -r "$FIX/." "$TMP/"
-cp "$TMP/ok.md" "$TMP/other.md"
-sed -i 's/| 1\.2\.3 |/| 1.2.4 |/' "$TMP/other.md"
-assert_fails node "$GUARD" "$TMP"
+#
+# 리뷰 결함(순 증거 0): 과거 버전은 other.md를 ok.md의 사본 + Alpha 값만
+# 1.2.4로 바꿔 만들었다. 그런데 1.2.4는 실제 소스(src/build.gradle.kts의
+# 1.2.3)와도 어긋나므로, 검사 2(문서 간 대조) 코드를 통째로 주석 처리해도
+# 기존 검사 1(문서↔소스)만으로 이미 exit 1이 된다 — 실측: 검사 2 순회
+# 블록을 삭제한 스크래치 사본으로 전체 스위트를 돌려도 "22 passed, 0
+# failed"가 그대로 나왔다. 즉 이 assert_fails는 검사 2가 있든 없든 통과하는
+# 순 증거 0의 어서션이었다.
+#
+# 고친 버전: 서로 다른 소스에 각자 스스로는 완전히 일치하는(검사 1 GREEN)
+# 두 문서를 만들어, 오직 같은 좌표를 서로 다른 값으로 주장하는 것(검사 2)
+# 만으로 실패가 나게 한다. 위 "Finding 1"(리액터 충돌) 블록과 같은 이유로
+# 공유 $FIX 밖에서 조립한다 — 공유 픽스처에 두면 다른 모든 assert_ok
+# 전체스캔이 이 의도된 충돌 때문에 깨진다.
+rm -rf "$TMP" && mkdir -p "$TMP/cross/a" "$TMP/cross/b"
+cat > "$TMP/cross/a/build.gradle.kts" <<'EOF'
+dependencies {
+    api("org.example:shared:1.0.0")
+}
+EOF
+cat > "$TMP/cross/b/build.gradle.kts" <<'EOF'
+dependencies {
+    api("org.example:shared:2.0.0")
+}
+EOF
+cat > "$TMP/cross-a.md" <<'EOF'
+# cross-doc conflict fixture A — 자기 소스와는 일치(검사 1 GREEN)
 
-# 검사 2가 만든 other.md(other.md의 Alpha=1.2.4는 실제 소스 1.2.3과도 어긋난다)는
-# cp -r로 지워지지 않고 남는다 — 검사 3의 assert_ok를 오염시키지 않도록 다시 리셋한다.
+<!-- doc-guard: kind=dep source=cross/a/build.gradle.kts min=1 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| Shared | `org.example:shared` | 1.0.0 |
+EOF
+cat > "$TMP/cross-b.md" <<'EOF'
+# cross-doc conflict fixture B — 자기 소스와는 일치(검사 1 GREEN)
+
+<!-- doc-guard: kind=dep source=cross/b/build.gradle.kts min=1 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| Shared | `org.example:shared` | 2.0.0 |
+EOF
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "cross-a.md=1.0.0" "cross-doc conflict must name doc A's claimed version"
+assert_contains "$OUT" "cross-b.md=2.0.0" "cross-doc conflict must name doc B's claimed version"
+# 두 문서 모두 자기 소스와 정확히 일치하므로(검사 1 GREEN) 에러는 검사 2의
+# 단 1건뿐이어야 한다 — 검사 1의 실제-불일치 에러("실제=")가 섞여 있다면
+# 이 어서션이 다시 검사 1에 얹혀 가는 것이므로 명시적으로 배제한다.
+assert_not_contains "$OUT" "실제=" "cross-doc conflict must be Check-2-only (no Check-1 mismatch noise)"
+assert_contains "$OUT" "문서 드리프트 1건" "cross-doc conflict must produce exactly one error (Check 2 only)"
+
+# 이 블록이 만든 cross-*.md/cross/ 디렉터리는 cp -r로 지워지지 않고 남는다 —
+# 검사 3의 assert_ok를 오염시키지 않도록 다시 리셋한다.
 rm -rf "$TMP" && mkdir -p "$TMP"
 
 # 검사 3: 최소 런타임 주장이 소스와 다르면 실패해야 한다.
@@ -218,5 +266,62 @@ mkdir -p "$TMP/node" && printf '%s\n' '{"engines":{"node":">=22"}}' > "$TMP/node
 assert_ok node "$GUARD" "$TMP"
 sed -i 's/`>=22`/`>=20`/' "$TMP/runtime.md"
 assert_fails node "$GUARD" "$TMP"
+
+# 검사 3의 assert_fails가 만든 runtime.md/node/는 cp -r로 지워지지 않고 남는다 —
+# 아래 정규화 어서션들의 assert_ok를 오염시키지 않도록 다시 리셋한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- Finding 2: 검사 3은 추출기의 원문 선언 형식(">=22"·">= 3.2"[공백
+# 있는 연산자]·"^8.3"·"1.25.0"[3단계]·"net8.0"[언어 접두])과 이 프로젝트
+# 문서 관용("Node 22+"·"Go 1.25+" 등)이 형식만 다를 뿐 같은 값이면 통과해야
+# 한다. 정규화 이전(순수 strict-equality)이었다면 아래 5개 언어 사례 모두
+# 형식 차이만으로 거짓 FAIL이었다 — 값이 아니라 형식만 흡수했음을 언어별로
+# 증명한다. 진짜 불일치(node 20+)는 여전히 실패해야 정규화가 검사를
+# 무력화하지 않았다는 증거가 된다. ----
+cp -r "$FIX/." "$TMP/"
+
+# node: 연산자 접두(">=22") ↔ 문서 관용("22+")
+mkdir -p "$TMP/node" && printf '%s\n' '{"engines":{"node":">=22"}}' > "$TMP/node/package.json"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node -->' 'Node.js `22+` 이상이 필요하다.' > "$TMP/runtime-node.md"
+
+# ruby: 공백 있는 연산자(">= 3.2") ↔ 문서 관용("3.2+")
+mkdir -p "$TMP/ruby"
+printf '%s\n' 'Gem::Specification.new do |spec|' '  spec.required_ruby_version = ">= 3.2"' 'end' > "$TMP/ruby/keycloak-sdk.gemspec"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=ruby -->' 'Ruby `3.2+` 이상이 필요하다.' > "$TMP/runtime-ruby.md"
+
+# php: 캐럿 범위("^8.3") ↔ 문서 관용("8.3+")
+mkdir -p "$TMP/php" && printf '%s\n' '{"require":{"php":"^8.3"}}' > "$TMP/php/composer.json"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=php -->' 'PHP `8.3+` 이상이 필요하다.' > "$TMP/runtime-php.md"
+
+# go: 3단계 버전("1.25.0") ↔ 문서 관용("1.25+")
+mkdir -p "$TMP/go" && printf '%s\n' 'module test' '' 'go 1.25.0' > "$TMP/go/go.mod"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=go -->' 'Go `1.25+` 이상이 필요하다.' > "$TMP/runtime-go.md"
+
+# dotnet: "net" 언어 접두("net8.0") ↔ 문서가 정확한 2부 값을 그대로 쓴 "8.0"
+# (여기서 더 깎아 "8"과 비교하면 안 된다 — 규칙 4의 "구성요소 2개는 보존" 조건).
+mkdir -p "$TMP/dotnet"
+printf '%s\n' '<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>' > "$TMP/dotnet/Directory.Build.props"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=dotnet -->' '.NET `8.0` 이상이 필요하다.' > "$TMP/runtime-dotnet.md"
+
+assert_ok node "$GUARD" "$TMP"
+
+# 진짜 불일치는 여전히 실패해야 한다(정규화가 검사를 무력화하지 않았다는 증거).
+sed -i 's/`22+`/`20+`/' "$TMP/runtime-node.md"
+assert_fails node "$GUARD" "$TMP"
+
+# 이 블록의 runtime-*.md/node|ruby|php|go|dotnet 디렉터리는 cp -r로 지워지지
+# 않고 남는다 — 다음 블록의 assert_ok를 오염시키지 않도록 다시 리셋한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- Finding 3: 앵커 뒤 첫 백틱 스팬이 아니라, 숫자를 포함해 "버전 모양"인
+# 첫 백틱 스팬을 주장으로 삼아야 한다 ----
+# 문서가 버전보다 먼저 다른 백틱 용어(코드명 등)를 언급하면, 구버전(무조건
+# 첫 백틱 스팬)은 디코이(숫자 없음)를 주장으로 오인해 실제 버전과 무관하게
+# 항상 불일치로 실패한다 — 고친 버전은 숫자를 포함한 첫 스팬(진짜 버전)까지
+# 건너뛰어 찾아야 한다.
+mkdir -p "$TMP/node"
+printf '%s\n' '{"engines":{"node":">=22"}}' > "$TMP/node/package.json"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node -->' '코드명 `carbon` 릴리스, Node.js `22+` 이상이 필요하다.' > "$TMP/decoy.md"
+assert_ok node "$GUARD" "$TMP"
 
 assert_report

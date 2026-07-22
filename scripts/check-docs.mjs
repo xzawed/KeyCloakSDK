@@ -196,6 +196,28 @@ function tableAt(lines, startIdx) {
   return rows
 }
 
+// kind=runtime 비교 전 문서 주장과 추출값 양쪽을 "맨숫자" 형태로 정규화한다.
+// 추출기는 원문 선언 문자열을 그대로 돌려주는데(node ">=22"·ruby ">= 3.2"
+// [연산자 뒤 공백 포함]·php "^8.3"·go "1.25.0"·dotnet "net8.0") 이 프로젝트의
+// 문서 관용은 "Node 22+"·"Go 1.25+"처럼 다른 표기다 — 실제 값은 항상 빌드
+// 파일에서 그대로 오므로 이는 포맷 정규화이지 값 하드코딩이 아니다. 규칙:
+//   1) 앞의 범위 연산자(>=, >, ^, ~)와 그 뒤 공백(있다면)을 제거한다.
+//   2) 언어 접두(dotnet TargetFramework의 "net")를 숫자 앞에서 제거한다.
+//   3) 끝의 "+"(문서 관용 "22+"/"1.25+")를 제거한다.
+//   4) 점으로 구분된 구성요소가 3개 이상이고 마지막이 "0"이면 그 구성요소를
+//      버린다("1.25.0" -> "1.25", go의 3부 버전과 문서의 2부 관용을 맞춘다).
+//      단 구성요소가 정확히 2개뿐이면 건드리지 않는다 — dotnet "8.0"이
+//      "8"로 더 깎이면 문서가 "8.0"이라고 정확히 쓴 값과 어긋나 버린다.
+function normalizeVersion(s) {
+  let v = s.trim()
+  v = v.replace(/^(>=|>|\^|~)\s*/, '')
+  v = v.replace(/^net(?=\d)/, '')
+  v = v.replace(/\+$/, '')
+  const parts = v.split('.')
+  if (parts.length >= 3 && parts[parts.length - 1] === '0') parts.pop()
+  return parts.join('.')
+}
+
 // 최소 런타임 — 언어별 고정 추출기(좌표가 없는 단일 값)
 const RUNTIME = {
   java: ['java/pom.xml', (t) => /<maven\.compiler\.release>([^<]+)</.exec(t)?.[1]],
@@ -277,13 +299,17 @@ for (const file of walk(ROOT)) {
         errors.push(`${rel}:${i + 1} ${srcRel} 에서 최소 런타임을 추출하지 못함`)
         continue
       }
-      const claim = /`([^`]+)`/.exec(lines.slice(i + 1, i + 4).join('\n'))
+      // 앵커 뒤 3줄 안의 첫 백틱 스팬이 아니라, 숫자를 포함해 "버전 모양"인
+      // 첫 백틱 스팬을 주장으로 삼는다 — 그래야 버전보다 먼저 등장하는
+      // 디코이 백틱 용어(코드명 등)를 건너뛴다.
+      const claimText = lines.slice(i + 1, i + 4).join('\n')
+      const claim = [...claimText.matchAll(/`([^`]+)`/g)].find((m) => /\d/.test(m[1]))
       if (!claim) {
-        errors.push(`${rel}:${i + 1} 런타임 앵커 뒤에 백틱 버전 표기가 없음`)
+        errors.push(`${rel}:${i + 1} 런타임 앵커 뒤 3줄 안에 숫자를 포함한 백틱 버전 표기가 없음`)
         continue
       }
       facts++
-      if (claim[1] !== actual) {
+      if (normalizeVersion(claim[1]) !== normalizeVersion(actual)) {
         errors.push(`${rel}:${i + 1} ${attrs.lang} 최소 런타임 문서=${claim[1]} 실제=${actual} (${srcRel})`)
       }
       continue
