@@ -195,4 +195,28 @@ assert_fails node "$GUARD" "$TMP"
 OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
 assert_contains "$OUT" "near-miss.md:3" "near-miss anchor must be reported at its own line"
 
+# Finding 2는 $TMP를 near-miss.md 단독 트리로 재구성했다(위 rm -rf) — 그 상태로
+# 남겨두면 이후 블록이 "cp -r "$FIX/." "$TMP/""로만 채워도 near-miss.md가 계속
+# 섞여 있어(cp -r은 대상의 기존 파일을 지우지 않는다) 항상 에러를 유발한다.
+# 검사 2·3은 그 오염 없는 깨끗한 상태에서 시작해야 한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# 검사 2: 같은 좌표가 두 문서에서 다른 값을 말하면 실패해야 한다.
+cp -r "$FIX/." "$TMP/"
+cp "$TMP/ok.md" "$TMP/other.md"
+sed -i 's/| 1\.2\.3 |/| 1.2.4 |/' "$TMP/other.md"
+assert_fails node "$GUARD" "$TMP"
+
+# 검사 2가 만든 other.md(other.md의 Alpha=1.2.4는 실제 소스 1.2.3과도 어긋난다)는
+# cp -r로 지워지지 않고 남는다 — 검사 3의 assert_ok를 오염시키지 않도록 다시 리셋한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# 검사 3: 최소 런타임 주장이 소스와 다르면 실패해야 한다.
+cp -r "$FIX/." "$TMP/"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node -->' 'Node `>=22` 이상이 필요하다.' > "$TMP/runtime.md"
+mkdir -p "$TMP/node" && printf '%s\n' '{"engines":{"node":">=22"}}' > "$TMP/node/package.json"
+assert_ok node "$GUARD" "$TMP"
+sed -i 's/`>=22`/`>=20`/' "$TMP/runtime.md"
+assert_fails node "$GUARD" "$TMP"
+
 assert_report

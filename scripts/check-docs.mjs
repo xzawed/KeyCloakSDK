@@ -196,6 +196,25 @@ function tableAt(lines, startIdx) {
   return rows
 }
 
+// 최소 런타임 — 언어별 고정 추출기(좌표가 없는 단일 값)
+const RUNTIME = {
+  java: ['java/pom.xml', (t) => /<maven\.compiler\.release>([^<]+)</.exec(t)?.[1]],
+  kotlin: ['kotlin/build.gradle.kts', (t) => /jvmToolchain\((\d+)\)/.exec(t)?.[1]],
+  node: ['node/package.json', (t) => JSON.parse(t).engines?.node],
+  go: ['go/go.mod', (t) => /^go\s+([\d.]+)/m.exec(t)?.[1]],
+  dotnet: ['dotnet/Directory.Build.props', (t) => /<TargetFramework>([^<]+)</.exec(t)?.[1]],
+  php: ['php/composer.json', (t) => JSON.parse(t).require?.php],
+  rust: ['rust/Cargo.toml', (t) => /^rust-version\s*=\s*"([^"]+)"/m.exec(t)?.[1]],
+  ruby: ['ruby/keycloak-sdk.gemspec', (t) => /required_ruby_version\s*=\s*["']([^"']+)["']/.exec(t)?.[1]],
+  python: ['python/pyproject.toml', (t) => /^requires-python\s*=\s*"([^"]+)"/m.exec(t)?.[1]],
+}
+// 좌표 -> 그 좌표를 선언한 (문서, 버전) 목록. kind=dep 표에서 파싱된 모든 행을
+// 앵커·파일과 무관하게 모아, 전체 순회가 끝난 뒤 같은 좌표가 문서마다 다른
+// 값을 말하는지 대조한다(검사 2) — 실제 소스와의 대조(검사 1)와 독립적이라,
+// 문서에 버전이 하나도 실제와 다르지 않아도(즉 각자 자기 소스와는 일치해도)
+// 서로 모순되는 주장이면 잡아낸다.
+const seen = new Map()
+
 const errors = []
 let facts = 0
 let anchors = 0
@@ -237,6 +256,39 @@ for (const file of walk(ROOT)) {
     anchors++
     const attrs = parseAttrs(exact[1])
 
+    // kind=runtime은 표가 아니라 앵커 뒤 인라인 코드 한 개(백틱)로 표기된 단일
+    // 최소 런타임 값을 검사한다 — kind=dep의 min/표 처리와 무관하므로 여기서
+    // 갈라져 별도로 완결 처리하고 continue한다.
+    if (attrs.kind === 'runtime') {
+      const spec = RUNTIME[attrs.lang]
+      if (!spec) {
+        errors.push(`${rel}:${i + 1} 알 수 없는 lang=${attrs.lang}`)
+        continue
+      }
+      const [srcRel, pick] = spec
+      let actual
+      try {
+        actual = pick(readFileSync(join(ROOT, srcRel), 'utf8'))
+      } catch (e) {
+        errors.push(`${rel}:${i + 1} ${srcRel} 읽기 실패: ${e.message}`)
+        continue
+      }
+      if (!actual) {
+        errors.push(`${rel}:${i + 1} ${srcRel} 에서 최소 런타임을 추출하지 못함`)
+        continue
+      }
+      const claim = /`([^`]+)`/.exec(lines.slice(i + 1, i + 4).join('\n'))
+      if (!claim) {
+        errors.push(`${rel}:${i + 1} 런타임 앵커 뒤에 백틱 버전 표기가 없음`)
+        continue
+      }
+      facts++
+      if (claim[1] !== actual) {
+        errors.push(`${rel}:${i + 1} ${attrs.lang} 최소 런타임 문서=${claim[1]} 실제=${actual} (${srcRel})`)
+      }
+      continue
+    }
+
     let min
     if (attrs.min === undefined) {
       min = 1
@@ -265,6 +317,11 @@ for (const file of walk(ROOT)) {
 
     let checked = 0
     for (const { coord, ver } of rows) {
+      // 검사 2용 수집 — 실제 소스 대조와 무관하게, 이 좌표를 이 문서가 무엇이라
+      // 주장하는지 전부 기록해 둔다(전체 순회 종료 후 문서 간 대조에 사용).
+      if (!seen.has(coord)) seen.set(coord, [])
+      seen.get(coord).push({ rel, ver })
+
       const actual = source.get(coord)
       if (actual === undefined) {
         errors.push(`${rel}:${i + 1} 좌표 '${coord}' 를 ${attrs.source} 에서 찾지 못함`)
@@ -284,6 +341,16 @@ for (const file of walk(ROOT)) {
       errors.push(`${rel}:${i + 1} 추출 ${checked}건 < min=${min} — 형식이 바뀌어 가드가 무력화됐을 수 있음`)
     }
     facts += checked
+  }
+}
+
+// 검사 2 — 같은 좌표를 여러 문서가 서로 다른 값으로 주장하면 실패한다. 각자
+// 자기 소스와는 일치해도(검사 1 GREEN) 문서끼리 모순되면 그 자체가 결함이다
+// (실제로 Java 표 11.37.2 ↔ Kotlin 표 11.38.1 불일치가 사람 손으로 발견됐다).
+for (const [coord, hits] of seen) {
+  const vers = [...new Set(hits.map((h) => h.ver))]
+  if (vers.length > 1) {
+    errors.push(`좌표 '${coord}' 가 문서마다 다름: ${hits.map((h) => `${h.rel}=${h.ver}`).join(' vs ')}`)
   }
 }
 
