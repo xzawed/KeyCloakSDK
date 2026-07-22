@@ -26,3 +26,20 @@ jobs:
             exit 1
           fi
           echo "추적되는 *.sh $(git ls-files -- '*.sh' | wc -l)개 전부 실행비트 있음"
+
+  doc-facts:
+    # 문서가 주장하는 버전이 빌드 파일과 일치하는지 검사한다.
+    #
+    # 경로 필터를 두지 않는 이유: 드리프트는 문서가 아니라 `pom.xml`에서 시작한다.
+    # 의존성만 올리고 문서를 안 고친 PR이 정확히 이 잡이 잡아야 할 대상인데,
+    # 경로 필터를 `**.md`로 걸면 그 PR에서 잡이 아예 돌지 않는다.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: 가드 자가테스트(변이 3종이 전부 잡히는지)
+        run: sh scripts/test/test-check-docs.sh
+      - name: 문서-소스 대조
+        run: node scripts/check-docs.mjs .

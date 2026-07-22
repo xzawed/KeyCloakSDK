@@ -495,6 +495,7 @@ kotlin/
 
 ## 확정 의존성 (BOM으로 고정)
 
+<!-- doc-guard: kind=dep source=java/pom.xml min=5 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | Keycloak admin-client | `org.keycloak:keycloak-admin-client` | 26.0.11 |
@@ -510,10 +511,14 @@ kotlin/
 
 **C#/.NET 확정 의존성(csproj, major 핀)**:
 
+<!-- doc-guard: kind=dep source=dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj min=2 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | 인증(OIDC/OAuth2) | `Duende.IdentityModel` | 8.1.0 |
-| JWT(강화 검증) | `Microsoft.IdentityModel.JsonWebTokens` + `.Protocols.OpenIdConnect` | 8.19.2 |
+| JWT(강화 검증) | `Microsoft.IdentityModel.JsonWebTokens` + `.Protocols.OpenIdConnect` | 8.20.0 |
+
+| 의존성 | 좌표 | 버전 |
+|---|---|---|
 | Admin | `Keycloak.AuthServices.Sdk` | **2.7.0**(net8 최종 — 3.0.0은 net10 전용) |
 | DI 추상화 | `Microsoft.Extensions.DependencyInjection.Abstractions` | 9.0.18(AuthServices 2.7.0 하한 9.0.8 충족·**net8 유지로 10.x major 보류**[PR #57 close]) |
 | 단위 테스트 | `xUnit` 2.9.3 · `WireMock.Net` 2.11.0 · `coverlet.msbuild` 10.0.1 | — |
@@ -565,14 +570,18 @@ kotlin/
 
 **Kotlin 확정 의존성(build.gradle.kts, JVM 자매 Java SDK 스택 재사용 + 코루틴 경계 신규)**:
 
+<!-- doc-guard: kind=dep source=kotlin/build.gradle.kts min=6 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
-| Admin(재사용, `api`) | `org.keycloak:keycloak-admin-client` | 26.0.11 |
+| Admin(재사용, api) | `org.keycloak:keycloak-admin-client` | 26.0.11 |
 | 인증(재사용) | `com.nimbusds:oauth2-oidc-sdk` | 11.38.2 |
 | JWT(재사용, 강화 검증) | `com.nimbusds:nimbus-jose-jwt` | 10.9.1 |
-| 코루틴(신규, 공개 `suspend` 노출 → `api`) | `org.jetbrains.kotlinx:kotlinx-coroutines-core` | 1.11.0 |
+| 코루틴(신규, 공개 suspend 노출 → api) | `org.jetbrains.kotlinx:kotlinx-coroutines-core` | 1.11.0 |
 | 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 4.3.1 |
 | Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0.5 |
+
+| 의존성 | 좌표 | 버전 |
+|---|---|---|
 | 단위 테스트 | JUnit 6.1.2 · MockK 1.14.11 · WireMock 3.13.2 · `kotlinx-coroutines-test` 1.11.0 · `kotlin-test-junit5` 2.4.10 | — |
 | 빌드/배포 플러그인 | Kotlin 2.4.10 · vanniktech `maven.publish` 0.37.0(Central Portal) · Kover 0.9.9 · ktlint gradle 14.2.0 · Dokka 2.2.0 | — |
 
