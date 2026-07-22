@@ -105,14 +105,16 @@ internal class FullFlowIT {
                 )
                 val found = kc.admin.users().search(username, 0, 10)
                 assertTrue(found.any { it.id == userId }, "search must find the created user")
+                // 부분 업데이트 — firstName만 설정한 sparse representation을 보낸다.
                 kc.admin.users().update(userId, UserRepresentation().apply { firstName = "Kotlin" })
-                assertEquals(
-                    "Kotlin",
-                    kc.admin
-                        .users()
-                        .get(userId)
-                        .firstName,
-                )
+                val afterUpdate = kc.admin.users().get(userId)
+                assertEquals("Kotlin", afterUpdate.firstName)
+                // ⚠️ 설정하지 않은 필드는 보존되어야 한다. admin-client의 JacksonProvider가 NON_NULL로
+                // 직렬화하므로 미설정 필드는 전송되지 않고, 서버는 그것을 "변경 없음"으로 처리한다.
+                // 프로바이더 등록이 유실되면(AdminClient.buildTimeoutClient 참고) 우리가 null을 실어
+                // 보내게 되는데, 그때 이 단언이 깨진다 — 그것이 이 두 줄의 존재 이유다.
+                assertEquals(username, afterUpdate.username, "sparse update must not clobber username")
+                assertEquals("$username@example.com", afterUpdate.email, "sparse update must not clobber email")
                 kc.admin.users().delete(userId)
                 assertFailsWith<KeycloakAdminException.NotFound> { kc.admin.users().get(userId) }
 

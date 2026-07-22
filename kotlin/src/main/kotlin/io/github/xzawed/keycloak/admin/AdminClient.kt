@@ -91,8 +91,10 @@ public class AdminClient internal constructor(
          * 기반 빌더는 [ClientBuilder.newBuilder]를 유지한다 —
          * `ResteasyClientClassicProvider.createClientBuilder()`로 바꾸면 커넥션 풀이 기본 50에서
          * 10으로 조용히 줄어든다.
+         *
+         * `internal` 가시성은 프로바이더 등록 회귀테스트를 위한 시임이다(Java의 패키지 전용 seam과 동형).
          */
-        private fun buildTimeoutClient(config: KeycloakConfig): Client =
+        internal fun buildTimeoutClient(config: KeycloakConfig): Client =
             ClientBuilder
                 .newBuilder()
                 .connectTimeout(config.connectTimeout.toMillis(), TimeUnit.MILLISECONDS)
