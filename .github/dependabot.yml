@@ -32,6 +32,14 @@ updates:
       # 타입 bump가 그 결정을 대신 끌고 가서는 안 된다. engines를 올릴 때 이 핀도 같이 올린다.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
+      # vitest 4는 `vi.mock` 팩토리 시맨틱이 바뀌어(팩토리가 돌려주는 모킹 클래스를 더 이상 생성자로
+      # 취급하지 않는다) client.test.ts·admin.test.ts의 클래스 모킹이 전부 깨진다 — 4.1.10에서 재측정한
+      # 결과 29건 실패(PR #52·#90에서 동일 수치). 받으려면 두 파일의 vi.mock 팩토리를 v4 시맨틱으로
+      # 이관하는 선행 작업이 필요하다. 그때 이 항목을 지운다.
+      - dependency-name: 'vitest'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@vitest/coverage-v8'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: gomod # Go
     directory: /go
