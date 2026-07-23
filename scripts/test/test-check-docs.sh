@@ -484,4 +484,132 @@ assert_contains "$OUT" 'CLAUDE.md "8개 언어" ≠ DEPLOY_LANGS 3개' "CLAUDE.m
 
 rm -rf "$TMP" && mkdir -p "$TMP"
 
+# ---- 회귀 7: fromComposer — require 와 require-dev 를 병합해 "vendor/package" -> 버전
+# 범위 문자열을 추출해야 한다 ----
+# PHP/Rust/Ruby 3개 언어 의존성 표 앵커 확장(check-docs.mjs)의 신규 추출기 중 하나. require에만
+# 있는 좌표(runtime dep)와 require-dev에만 있는 좌표(dev dep) 둘 다 같은 맵에서 해석돼야
+# 앵커가 두 절 어느 쪽을 가리키는 표 행이든 검증할 수 있다. 드리프트(버전 훼손)도 여전히
+# 잡혀야 한다(추출기 추가가 검사 자체를 무력화하지 않았다는 증거).
+mkdir -p "$TMP/php"
+cat > "$TMP/php/composer.json" <<'EOF'
+{
+  "require": { "firebase/php-jwt": "^7.1" },
+  "require-dev": { "phpunit/phpunit": "^12" }
+}
+EOF
+cat > "$TMP/composer.md" <<'EOF'
+# composer fixture
+
+<!-- doc-guard: kind=dep source=php/composer.json min=2 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| JWT | `firebase/php-jwt` | `^7.1` |
+| Test | `phpunit/phpunit` | `^12` |
+EOF
+assert_ok node "$GUARD" "$TMP"
+sed -i 's/\^7\.1/^9.9/' "$TMP/composer.md"
+assert_fails node "$GUARD" "$TMP"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 회귀 8: fromCargo — bare(`name = "..."`)와 inline-table
+# (`name = { version = "...", features = [...] }`) 두 선언 형태 모두에서 "name" -> 버전을
+# 뽑아야 하고, [package] 섹션(크레이트 자신의 name/version)은 의존성이 아니므로 무시해야
+# 한다 ----
+# [package]의 `version = "0.1.0"`을 의존성으로 잘못 주워 담으면(섹션 추적 누락) 이 픽스처의
+# "keycloak" 좌표 검사와는 무관해 보이지만, 섹션 경계를 안 지키는 구현은 실제 Cargo.toml에서
+# 우연히 이름이 겹치는 의존성이 생기면 조용히 틀린 값을 반환할 수 있다 — 그 회귀를 막기 위해
+# [package] 섹션을 표 뒤에 실제로 포함한 픽스처로 검증한다.
+mkdir -p "$TMP/rust"
+cat > "$TMP/rust/Cargo.toml" <<'EOF'
+[package]
+name = "keycloak-sdk"
+version = "0.1.0"
+
+[dependencies]
+keycloak = { version = "=26.6.2", default-features = false, features = ["tags-all"] }
+thiserror = "2.0"
+
+[dev-dependencies]
+testcontainers = "0.27.3"
+EOF
+cat > "$TMP/cargo.md" <<'EOF'
+# cargo fixture
+
+<!-- doc-guard: kind=dep source=rust/Cargo.toml min=3 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| Admin | `keycloak` | `=26.6.2` |
+| Errors | `thiserror` | 2.0 |
+| IT | `testcontainers` | 0.27.3 |
+EOF
+assert_ok node "$GUARD" "$TMP"
+sed -i 's/| 2\.0 |/| 9.9 |/' "$TMP/cargo.md"
+assert_fails node "$GUARD" "$TMP"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 회귀 9: fromGemspec — `add_dependency`와 `add_runtime_dependency` 둘 다 인식해야
+# 한다 ----
+mkdir -p "$TMP/ruby"
+cat > "$TMP/ruby/keycloak-sdk.gemspec" <<'EOF'
+Gem::Specification.new do |spec|
+  spec.add_dependency "faraday", "~> 2.0"
+  spec.add_runtime_dependency "jwt", "~> 3.2"
+end
+EOF
+cat > "$TMP/gemspec.md" <<'EOF'
+# gemspec fixture
+
+<!-- doc-guard: kind=dep source=ruby/keycloak-sdk.gemspec min=2 -->
+
+| 이름 | gem | 버전 |
+|---|---|---|
+| HTTP | `faraday` | `~> 2.0` |
+| JWT | `jwt` | `~> 3.2` |
+EOF
+assert_ok node "$GUARD" "$TMP"
+sed -i 's/~> 3\.2/~> 9.9/' "$TMP/gemspec.md"
+assert_fails node "$GUARD" "$TMP"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 회귀 10: kind=dep 대조(검사 1)도 kind=runtime과 같은 normalizeVersion을 거쳐야
+# 한다 ----
+# Rust는 Cargo.toml에 정확 핀 연산자("=26.6.2")로 선언하고, Ruby는 gemspec에 비관적 연산자
+# ("~> 2.0")로 선언한다 — 문서 표가 그 연산자를 그대로 베끼든 맨숫자로 적든 같은 값이면
+# 통과해야 한다(포맷 차이만 다른 것이지 값이 다른 게 아니므로). 동시에 진짜 다른 값
+# (26.6.2 vs 26.6.3)은 정규화 후에도 여전히 달라야 한다 — 이 어서션이 없으면 정규화가
+# 검사 자체를 무력화(항상 통과)했는지 알 수 없다.
+mkdir -p "$TMP/rust" "$TMP/ruby"
+printf '%s\n' '[dependencies]' 'keycloak = { version = "=26.6.2" }' > "$TMP/rust/Cargo.toml"
+cat > "$TMP/norm-rust.md" <<'EOF'
+# rust pin-operator normalization fixture
+
+<!-- doc-guard: kind=dep source=rust/Cargo.toml min=1 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| Admin | `keycloak` | 26.6.2 |
+EOF
+printf '%s\n' 'Gem::Specification.new do |spec|' '  spec.add_dependency "faraday", "~> 2.0"' 'end' > "$TMP/ruby/keycloak-sdk.gemspec"
+cat > "$TMP/norm-ruby.md" <<'EOF'
+# ruby pessimistic-operator normalization fixture
+
+<!-- doc-guard: kind=dep source=ruby/keycloak-sdk.gemspec min=1 -->
+
+| 이름 | gem | 버전 |
+|---|---|---|
+| HTTP | `faraday` | 2.0 |
+EOF
+assert_ok node "$GUARD" "$TMP"
+
+# 진짜 드리프트는 정규화 후에도 여전히 잡혀야 한다(26.6.2 ≠ 26.6.3 — 값 자체가 다름).
+sed -i 's/26\.6\.2/26.6.3/' "$TMP/norm-rust.md"
+assert_fails node "$GUARD" "$TMP"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
 assert_report

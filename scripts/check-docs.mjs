@@ -202,14 +202,72 @@ function fromCsproj(t) {
   return m
 }
 
+// composer.json의 "vendor/package" -> 버전 범위 문자열(예: "^7.1"·"~2.7"·"0.42.0"). `require`와
+// `require-dev`를 병합한다 — 표의 행이 개발전용 좌표(phpunit 등)를 가리키는 경우도 같은 맵에서
+// 해석되게 하려는 것뿐, 이 맵 자체가 두 절을 구분하지는 않는다(동일 좌표가 양쪽에 동시에
+// 선언되는 경우는 실전에서 없음 — 있다면 뒤 절의 값이 앞을 덮어써 조용히 하나만 남는다).
+// JSON이라 파싱은 안전하고, 파일에 비ASCII 설명 문자열이 섞여 있어 항상 UTF-8로 읽는다.
+function fromComposer(t) {
+  const j = JSON.parse(t)
+  const m = new Map()
+  for (const sec of ['require', 'require-dev']) {
+    for (const [k, v] of Object.entries(j[sec] ?? {})) m.set(k, v)
+  }
+  return m
+}
+
+// Cargo.toml의 [dependencies]/[dev-dependencies](및 그 파생 — 예: target별 조건부 절)
+// 섹션에서만 "name" -> 버전 문자열을 뽑는다. [package] 섹션의 `name`/`version`/`edition` 등은
+// 크레이트 자신의 메타데이터라 의존성이 아니므로 섹션 헤더를 추적해 배제한다. 두 선언 형태를
+// 모두 지원해야 한다 — bare(`name = "=1.2.3"`)와 inline-table
+// (`name = { version = "=1.2.3", features = [...] }`, 버전은 `version = "..."` 키가
+// 어디 있든 한 줄 안에서 찾는다). TOML 라이브러리 없이 한 줄 단위 정규식으로 충분한 것은
+// 이 리포의 Cargo.toml이 각 의존성을 한 줄에 선언하기 때문이다(멀티라인 inline-table은 미지원).
+function fromCargo(t) {
+  const m = new Map()
+  let inDeps = false
+  for (const rawLine of t.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    const section = /^\[([^\]]+)\]$/.exec(line)
+    if (section) {
+      inDeps = /dependencies/i.test(section[1])
+      continue
+    }
+    if (!inDeps) continue
+    const bare = /^([\w-]+)\s*=\s*"([^"]+)"$/.exec(line)
+    if (bare) {
+      m.set(bare[1], bare[2])
+      continue
+    }
+    const table = /^([\w-]+)\s*=\s*\{.*\bversion\s*=\s*"([^"]+)".*\}$/.exec(line)
+    if (table) m.set(table[1], table[2])
+  }
+  return m
+}
+
+// .gemspec의 `spec.add_dependency "name", "range"` / `spec.add_runtime_dependency ...` 행에서
+// "name" -> 버전 범위 문자열(예: "~> 2.0")을 뽑는다. `add_development_dependency`는 의도적으로
+// 제외한다 — gemspec의 런타임 의존성만 게시된 gem의 설치 그래프(따라서 배포 산출물)에 실리고,
+// 개발전용 의존성은 Gemfile 쪽 관심사이기 때문이다.
+function fromGemspec(t) {
+  const m = new Map()
+  for (const x of t.matchAll(/\.add_(?:runtime_)?dependency\s+["']([^"']+)["']\s*,\s*["']([^"']+)["']/g)) {
+    m.set(x[1], x[2])
+  }
+  return m
+}
+
 function extract(sourceRel) {
   const abs = join(ROOT, sourceRel)
   if (sourceRel.endsWith('pom.xml')) return fromPomReactor(abs)
   const text = readFileSync(abs, 'utf8')
   if (sourceRel.endsWith('.gradle.kts')) return fromGradle(text)
   if (sourceRel.endsWith('package-lock.json')) return fromPackageLock(text)
+  if (sourceRel.endsWith('composer.json')) return fromComposer(text)
   if (sourceRel.endsWith('package.json')) return fromPackageJson(text)
   if (sourceRel.endsWith('.csproj')) return fromCsproj(text)
+  if (sourceRel.endsWith('.gemspec')) return fromGemspec(text)
+  if (sourceRel.endsWith('Cargo.toml')) return fromCargo(text)
   throw new Error(`no extractor for ${sourceRel}`)
 }
 
@@ -242,21 +300,27 @@ function tableAt(lines, startIdx) {
   return rows
 }
 
-// kind=runtime 비교 전 문서 주장과 추출값 양쪽을 "맨숫자" 형태로 정규화한다.
-// 추출기는 원문 선언 문자열을 그대로 돌려주는데(node ">=22"·ruby ">= 3.2"
-// [연산자 뒤 공백 포함]·php "^8.3"·go "1.25.0"·dotnet "net8.0") 이 프로젝트의
-// 문서 관용은 "Node 22+"·"Go 1.25+"처럼 다른 표기다 — 실제 값은 항상 빌드
-// 파일에서 그대로 오므로 이는 포맷 정규화이지 값 하드코딩이 아니다. 규칙:
-//   1) 앞의 범위 연산자(>=, >, ^, ~)와 그 뒤 공백(있다면)을 제거한다.
+// kind=runtime 비교, 그리고(아래 kind=dep 확장 이후) kind=dep 표 행의 문서 주장 ↔ 추출값
+// 비교 양쪽 모두, 대조 전에 "맨숫자" 형태로 정규화한다. 추출기는 원문 선언 문자열을 그대로
+// 돌려주는데(node ">=22"·ruby ">= 3.2"[연산자 뒤 공백 포함]·php "^8.3"·go "1.25.0"·dotnet
+// "net8.0"·rust "=26.6.2"[정확 핀]·ruby gemspec "~> 2.0"[비관적 연산자]) 이 프로젝트의 문서는
+// 때로 같은 값을 다른 표기로 쓴다("Node 22+"·"Go 1.25+"처럼 접두 없이, 또는 표에서처럼
+// 연산자를 그대로 베껴 쓰기도 함) — 실제 값은 항상 빌드 파일에서 그대로 오므로 이는 포맷
+// 정규화이지 값 하드코딩이 아니다. 규칙:
+//   1) 앞의 범위 연산자(>=, ~>, =, >, ^, ~)와 그 뒤 공백(있다면)을 제거한다. 순서가 중요하다 —
+//      2글자 연산자(">="·"~>")를 그 부분집합인 1글자 연산자(">"·"~")보다 먼저 시도해야
+//      "~> 2.0"에서 "~"만 잘려 "> 2.0"이 남는 오정규화를 피한다.
 //   2) 언어 접두(dotnet TargetFramework의 "net")를 숫자 앞에서 제거한다.
 //   3) 끝의 "+"(문서 관용 "22+"/"1.25+")를 제거한다.
 //   4) 점으로 구분된 구성요소가 3개 이상이고 마지막이 "0"이면 그 구성요소를
 //      버린다("1.25.0" -> "1.25", go의 3부 버전과 문서의 2부 관용을 맞춘다).
 //      단 구성요소가 정확히 2개뿐이면 건드리지 않는다 — dotnet "8.0"이
 //      "8"로 더 깎이면 문서가 "8.0"이라고 정확히 쓴 값과 어긋나 버린다.
+// 이 정규화는 표기 차이만 흡수한다 — "26.6.2"와 "26.6.3"처럼 실제 값이 다르면 정규화 후에도
+// 여전히 다르다(규칙 1~4 어느 것도 마지막 숫자 구성요소 자체를 바꾸지 않는다).
 function normalizeVersion(s) {
   let v = s.trim()
-  v = v.replace(/^(>=|>|\^|~)\s*/, '')
+  v = v.replace(/^(>=|~>|=|>|\^|~)\s*/, '')
   v = v.replace(/^net(?=\d)/, '')
   v = v.replace(/\+$/, '')
   const parts = v.split('.')
@@ -530,7 +594,12 @@ for (const file of walk(ROOT)) {
         continue
       }
       checked++
-      if (actual !== ver) {
+      // PHP/Rust/Ruby처럼 문서 표가 빌드 파일과 같은 범위 연산자 표기(예: Rust `=26.6.2`,
+      // Ruby `~> 2.0`)를 그대로 베끼기도 하고, 표기를 벗겨 맨숫자로 쓰기도 한다 — 양쪽을
+      // normalizeVersion으로 정규화한 뒤 대조해 표기 차이만 흡수한다(값 자체가 다르면
+      // 정규화 후에도 여전히 다르므로 실제 드리프트를 가리지 않는다 — normalizeVersion의
+      // 불변식 참고).
+      if (normalizeVersion(actual) !== normalizeVersion(ver)) {
         errors.push(`${rel}:${i + 1} '${coord}' 문서=${ver} 실제=${actual} (${attrs.source})`)
       }
     }

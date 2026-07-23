@@ -216,12 +216,18 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 
 **PHP 확정 의존성(composer.json, 정확 핀/범위 지정)**:
 
+<!-- doc-guard: kind=dep source=php/composer.json min=6 -->
 | 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
 |---|---|---|---|
 | Admin | `fschmtt/keycloak-rest-api-client-php` | 유일한 성숙 admin 클라이언트 — pre-1.0 계열이라 정확 핀(파괴적 변경 가능) | **0.42.0** |
-| 인증(OAuth2) | `league/oauth2-client` + `stevenmaguire/oauth2-keycloak` | 성숙한 OAuth2 클라이언트 + Keycloak 프로바이더 확장(대안 `jumbojett/openid-connect-php`는 세션 슈퍼글로벌 결합으로 기각) | `^2.8` / `^6.1` |
+| 인증(OAuth2) | `league/oauth2-client` | 성숙한 OAuth2 클라이언트(대안 `jumbojett/openid-connect-php`는 세션 슈퍼글로벌 결합으로 기각) | `^2.8` |
+| 인증(OAuth2, Keycloak 프로바이더) | `stevenmaguire/oauth2-keycloak` | `league/oauth2-client`용 Keycloak 프로바이더 확장 | `^6.1` |
 | JWT(강화 검증) | `firebase/php-jwt` | 표준 JWT 라이브러리 — 내장 `CachedKeySet`은 rate-limit 버그(#543)가 있어 자체 `JwksStore`로 대체 | `^7.1` |
-| HTTP(PSR-18/17) | `guzzlehttp/guzzle` + `guzzlehttp/psr7` | fschmtt·league 양쪽이 공통으로 요구하는 PSR-18/17 전송 계층 | `^7.9` / `^2.7` |
+| HTTP(PSR-18) | `guzzlehttp/guzzle` | fschmtt·league 양쪽이 공통으로 요구하는 PSR-18 전송 계층 | `^7.9` |
+| HTTP(PSR-17) | `guzzlehttp/psr7` | PSR-17 메시지 팩토리(guzzle과 짝) | `^2.7` |
+
+| 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
+|---|---|---|---|
 | 단위 테스트 | `phpunit/phpunit` 12 · `phpstan/phpstan` 2.2(+ strict-rules·phpunit 확장) · `friendsofphp/php-cs-fixer` 3.95 | 표준 PHP 정적분석(level max)+테스트+스타일 스택 | — |
 | 통합 테스트 | (docker CLI 셸아웃 — `testcontainers/testcontainers` ^1.0은 dev 의존이나 Windows native PHP 미지원으로 실사용 안 함) | Windows native PHP가 `unix://` 스트림 트랜스포트 미지원(Docker Desktop npipe도 불가) | — |
 
@@ -229,6 +235,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 
 **Rust 확정 의존성(Cargo.toml, 정확 핀 `=` 지정)**:
 
+<!-- doc-guard: kind=dep source=rust/Cargo.toml min=5 -->
 | 의존성 | 크레이트 | 왜 이 선택인가 | 버전 |
 |---|---|---|---|
 | Admin | `keycloak`(`default-features = false`, features: `tags-all`·`resource-builder`·`reqwest12`) | `reqwest12` feature로 `openidconnect`와 reqwest 0.12를 정렬(안 맞추면 타입 불일치로 컴파일 실패) | `=26.6.2` |
@@ -236,23 +243,27 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 | JWT(강화 검증) | `jsonwebtoken`(`default-features = false`, features: `rust_crypto`·`use_pem`) | `Validation` 기본값이 안전하지 않아 `validate_nbf`/`leeway`/`required_spec_claims` 전부 재정의 필요 | `=10.4.0` |
 | HTTP | `reqwest`(`default-features = false`, features: `json`·`rustls-tls`) | `keycloak` crate·`openidconnect`가 공유하는 단일 HTTP 클라이언트(SSRF 하드닝을 위해 `redirect::Policy::none()` 적용) | `0.12` |
 | 비동기 런타임 | `tokio`(features: `rt-multi-thread`·`macros`·`time`·`sync`) | `openidconnect`·`keycloak` crate 양쪽이 요구하는 비동기 런타임 | `1.52` |
-| 오류/직렬화 | `thiserror` `2.0` · `async-trait` `0.1` · `serde`+`serde_json` `1` · `url` `2` | 표준 에러 계급·직렬화·URL 유틸 | — |
-| 단위 테스트 | `wiremock` `0.6`(HTTP 목) · `rsa` `0.9`+`rand` `0.8`+`base64` `0.22`(JWKS 공격 프로브 픽스처 생성) | HTTP 목 + 공격 프로브용 테스트 키 생성(RUSTSEC-2023-0071은 서명검증 전용인 런타임에 무영향) | — |
-| 통합 테스트 | `testcontainers` `0.27.3`(pre-1.0, base `GenericImage` — 언어별 편의 모듈 없음) | pre-1.0이라 Keycloak 전용 편의 모듈이 없어 `GenericImage`로 직접 조립 | — |
+
+| 의존성 | 크레이트 | 왜 이 선택인가 | 버전 |
+|---|---|---|---|
+| 오류/직렬화 | thiserror 2.0 · async-trait 0.1 · serde+serde_json 1 · url 2 | 표준 에러 계급·직렬화·URL 유틸 | — |
+| 단위 테스트 | wiremock 0.6(HTTP 목) · rsa 0.9+rand 0.8+base64 0.22(JWKS 공격 프로브 픽스처 생성) | HTTP 목 + 공격 프로브용 테스트 키 생성(RUSTSEC-2023-0071은 서명검증 전용인 런타임에 무영향) | — |
+| 통합 테스트 | testcontainers 0.27.3(pre-1.0, base `GenericImage` — 언어별 편의 모듈 없음) | pre-1.0이라 Keycloak 전용 편의 모듈이 없어 `GenericImage`로 직접 조립 | — |
 
 전부 Apache-2.0/MIT(호환). `keycloak`/`openidconnect`/`jsonwebtoken`은 정확 핀(`=`)으로 고정(reqwest 메이저 정렬·typestate 제네릭·`Validation` 필드가 버전 간 깨지기 쉬운 표면이라 마이너 드리프트 방지). RUSTSEC-2023-0071(rsa Marvin)은 dev-dependency `rsa`(테스트 키 생성 전용)에 대한 것으로 SDK 런타임(공개키 서명검증만 수행)에는 무영향(게차 참조).
 
 **Ruby 확정 의존성(gemspec, 범위 지정)**:
 
+<!-- doc-guard: kind=dep source=ruby/keycloak-sdk.gemspec min=3 -->
 | 의존성 | gem | 왜 이 선택인가 | 버전 |
 |---|---|---|---|
 | 인증(OAuth2/OIDC) | `rack-oauth2`(nov) | OIDF 인증 RP 저자(nov)의 유지 gem — PKCE는 passthrough라 S256을 SDK가 손수 생성 | `~> 2.3` |
-| Admin | (성숙한 gem 부재 — `faraday`로 Admin REST 직접 래핑) | `looorent/keycloak-admin` 등은 전부 공유 `TokenProvider` 주입 미지원(§4 캐싱 불변식 위반)으로 기각 | — |
+| Admin | (성숙한 gem 부재 — faraday로 Admin REST 직접 래핑) | looorent/keycloak-admin 등은 전부 공유 TokenProvider 주입 미지원(§4 캐싱 불변식 위반)으로 기각 | — |
 | HTTP | `faraday` | 직접 구현하는 admin REST + rack-oauth2 전역 타임아웃 설정의 공통 기반 | `~> 2.0` |
 | JWT(강화 검증) | `jwt`(ruby-jwt) | 기본값이 안전하지 않아 `algorithms`/`verify_iss`/`verify_aud`/`leeway` 전부 재정의 필요 | `~> 3.2` |
-| 단위 테스트 | `rspec` 3 · `webmock` · `simplecov` · `rubocop`(+ `rubocop-rspec`) | 표준 RSpec+HTTP목+커버리지+린트 스택 | — |
+| 단위 테스트 | rspec 3 · webmock · simplecov · rubocop(+ rubocop-rspec) | 표준 RSpec+HTTP목+커버리지+린트 스택 | — |
 | 통합 테스트 | (docker CLI 셸아웃 — Windows native Ruby가 testcontainers-ruby 소켓 트랜스포트 미지원, PHP와 동일 패턴) | Windows native Ruby가 testcontainers-ruby 소켓 트랜스포트 미지원 | — |
-| 의존성 감사 | `bundler-audit` | gem 취약점 감사 | — |
+| 의존성 감사 | bundler-audit | gem 취약점 감사 | — |
 
 전부 MIT(Apache-2.0 호환). `rack-oauth2`는 OIDF 인증 RP 저자(nov)의 유지 gem으로 채택. `looorent/keycloak-admin`·`imagov/keycloak`·`keycloak-ruby-client`는 전부 공유 `TokenProvider` 주입 미지원(§4 캐싱 불변식 위반)으로 기각, `openid_connect`(nov)는 런타임 의존성 11개로 무거워 기각, `oauth2`(pboling)는 PKCE 완전 수작업·OIDC 비인식으로 기각.
 
@@ -279,7 +290,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 
 작업 완료(머지/main 반영) 후 프로젝트 전체 문서(`CLAUDE.md`, `docs/`, `README.md`)를 최신화·최적화하고 커밋한다. 언어별 빌드/테스트 명령(단일 테스트 실행 포함)을 툴체인 섹션에 유지한다(Java·Python·Node·Go·C#·PHP·Rust·Ruby·Kotlin).
 
-**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 현재 앵커 스코프는 부분적이다** — `<!-- doc-guard: ... -->` 앵커는 지금 Java·.NET·Kotlin 의존성 표 3종과 .NET 최소 런타임 선언 1건만 기계 검증하며, 나머지 언어들의 의존성 표와 최소 런타임 선언은 여전히 사람이 직접 맞춰야 한다(계획된 후속 확장 — 사람 판단을 완전히 대체하는 것이 아니다).
+**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 현재 앵커 스코프는 부분적이다** — `<!-- doc-guard: ... -->` 앵커는 지금 Java·.NET·Kotlin·PHP·Rust·Ruby 의존성 표 6종(pom.xml/csproj/build.gradle.kts/composer.json/Cargo.toml/gemspec 추출기)과 .NET 최소 런타임 선언 1건만 기계 검증하며, 나머지 언어(Go·Python·Node)의 의존성 표(산문 — 표 형식이 아니라 스코프 밖)와 최소 런타임 선언은 여전히 사람이 직접 맞춰야 한다(계획된 후속 확장 — 사람 판단을 완전히 대체하는 것이 아니다).
 
 ### 문서 언어 규칙 (bilingual README + 영문 사용자 문서, PR #31·#32)
 
