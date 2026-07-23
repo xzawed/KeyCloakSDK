@@ -374,8 +374,10 @@ function checkLinks(file, rel, lines) {
 const RELATIVE_COUNT_MARKERS = ['다른', '그 외', '나머지', '선행', '외']
 
 // 검사 6 — "N개 언어" 기수가 scripts/lib/deploy-facts.sh 의 DEPLOY_LANGS 와 맞는가. 예방적
-// 검사라 기본은 경고. docs/superpowers/** 와 docs/governance/history.md 는 그 시절 언어 수를
-// 정당하게 말하는 이력 문서라 제외한다. 상대 기수(위 RELATIVE_COUNT_MARKERS)도 구조적으로
+// 검사라 기본은 경고. docs/superpowers/** 와 docs/governance/history.md·docs/governance/verification-log*.md
+// 는 그 시절 언어 수를 정당하게 말하는 이력 문서라 제외한다(verification-log.md는 6개 언어
+// 시절 작성된 검증 기록이고, 언어별 분리 로그 verification-log-<lang>.md도 같은 성격이라 함께
+// 패턴으로 묶는다). 상대 기수(위 RELATIVE_COUNT_MARKERS)도 구조적으로
 // 총 언어 수와 무관하므로 제외한다 — "9개 언어" · "8개 언어 폴리글랏"처럼 전체 언어 수를
 // 절대값으로 주장하는 문구만 대조 대상이다.
 // ⚠️ 지역 변수를 `facts`로 짓지 말 것 — 모듈 스코프의 카운터 `let facts`를 섀도잉한다.
@@ -396,6 +398,7 @@ function checkCardinality() {
     const rel = relative(ROOT, f).replace(/\\/g, '/')
     if (rel.startsWith('docs/superpowers/')) continue // 이력 문서는 당시 기준이 맞다
     if (rel === 'docs/governance/history.md') continue // 위와 동일 — 이력 스냅샷
+    if (/^docs\/governance\/verification-log.*\.md$/.test(rel)) continue // 위와 동일 — 검증 시점 스냅샷(verification-log.md·verification-log-<lang>.md)
     const text = readFileSync(f, 'utf8')
     for (const x of text.matchAll(/(\d+)개 언어/g)) {
       if (Number(x[1]) === n) continue

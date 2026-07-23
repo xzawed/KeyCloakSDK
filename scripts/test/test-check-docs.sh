@@ -465,4 +465,23 @@ assert_contains "$OUT" "anchors 3 < --min-anchors=4" "floor failure must name th
 
 rm -rf "$TMP" && mkdir -p "$TMP"
 
+# ---- 회귀 6: 검사 6의 카디널리티 제외는 docs/governance/verification-log*.md 까지
+# 덮어야 한다 — verification-log.md(및 언어별 verification-log-<lang>.md)는 그 시절
+# 언어 수를 정당하게 말하는 이력 검증 기록이라 docs/governance/history.md와 동일하게
+# 대조 대상이 아니지만, 같은 숫자 불일치라도 CLAUDE.md처럼 현재-사실을 주장하는
+# 문서에서는 여전히 잡혀야 한다(제외 패턴이 과도해 진짜 드리프트까지 죽이지 않았다는
+# 증거) ----
+mkdir -p "$TMP/scripts/lib" "$TMP/docs/governance"
+printf '%s\n' 'DEPLOY_LANGS="a b c"' > "$TMP/scripts/lib/deploy-facts.sh"
+printf '%s\n' '# verification log' '6개 언어 시절 검증 기록.' > "$TMP/docs/governance/verification-log.md"
+printf '%s\n' '# verification log (lang-specific)' '6개 언어 시절 검증 기록.' > "$TMP/docs/governance/verification-log-python.md"
+printf '%s\n' '# CLAUDE' '이 SDK는 8개 언어를 지원한다.' > "$TMP/CLAUDE.md"
+assert_ok node "$GUARD" "$TMP" # 기본은 경고(CLAUDE.md의 절대주장만 어긋남 — verification-log*는 제외)
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_not_contains "$OUT" "verification-log.md" "verification-log.md cardinality mismatch must be excluded from Check 6"
+assert_not_contains "$OUT" "verification-log-python.md" "verification-log-<lang>.md cardinality mismatch must be excluded from Check 6"
+assert_contains "$OUT" 'CLAUDE.md "8개 언어" ≠ DEPLOY_LANGS 3개' "CLAUDE.md absolute count mismatch must still be flagged"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
 assert_report
