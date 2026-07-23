@@ -3,6 +3,7 @@ paths:
   - "dotnet/**"
   - "harness/apps/dotnet/**"
   - "harness/install/consume/dotnet*"
+  - "harness/install/consume/dotnet/**"
   - ".github/workflows/dotnet-*.yml"
 ---
 

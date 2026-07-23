@@ -3,6 +3,7 @@ paths:
   - "kotlin/**"
   - "harness/apps/kotlin/**"
   - "harness/install/consume/kotlin*"
+  - "harness/install/consume/kotlin-app/**"
   - ".github/workflows/kotlin-*.yml"
 ---
 
