@@ -368,4 +368,64 @@ printf '%s\n' '# fixture' '9개 언어를 지원한다.' > "$TMP/langs.md"
 assert_ok node "$GUARD" "$TMP"             # 기본은 경고 (DEPLOY_LANGS는 3개, 문서는 9개)
 assert_fails node "$GUARD" "$TMP" --strict # --strict 는 실패
 
+# 이 블록의 scripts/·langs.md는 cp -r로 지워지지 않고 남는다 — 아래 회귀테스트들의
+# assert_ok를 오염시키지 않도록 다시 리셋한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 회귀 1: 검사 5는 펜스(```) 안의 링크를 진짜 링크로 오인하면 안 된다 ----
+# docs/superpowers/plans/2026-07-23-docs-restructure-wbs.md의 실제 사례(펜스 안
+# `./nope.md`가 문법 예시일 뿐인데도 링크 대상 부재로 거짓 경고됐던 것)를 재현한다.
+# 앵커 스캐너는 이미 펜스를 건너뛰므로, checkLinks도 독립적으로 같은 규칙을 지켜야
+# 한다 — 기본 실행뿐 아니라 --strict에서도 전혀 등장하지 않아야 진짜 억제다(기본
+# 실행만 통과하는 건 "경고가 에러로 안 올라갔다"일 뿐일 수도 있어 증거가 약하다).
+cat > "$TMP/fenced-link.md" <<'EOF'
+# fenced link fixture
+
+```
+[문법 예시](./nope.md)
+```
+EOF
+assert_ok node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_not_contains "$OUT" "nope.md" "fenced link must never be flagged (not even a warning)"
+assert_ok node "$GUARD" "$TMP" --strict # 억제됐다면 --strict도 통과해야 한다
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 회귀 2: python/.venv/**(vendored 서드파티 site-packages) 는 문서로 취급하면
+# 안 된다 ----
+# 실제 사례: python/.venv/Lib/site-packages/**/README.md가 상대 링크를 못 찾는 대상을
+# 가리켜 검사 5를 오염시켰다. .venv 디렉터리 자체가 SKIP 대상이어야 그 안의 어떤
+# README도 애초에 스캔되지 않는다 — --strict에서도 등장하지 않아야 진짜 억제다.
+mkdir -p "$TMP/python/.venv/Lib/site-packages/somepkg"
+cat > "$TMP/python/.venv/Lib/site-packages/somepkg/README.md" <<'EOF'
+# vendored package
+See [license](./LICENSE-that-does-not-exist.txt).
+EOF
+assert_ok node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_not_contains "$OUT" "LICENSE-that-does-not-exist" ".venv/site-packages must never be scanned (not even a warning)"
+assert_ok node "$GUARD" "$TMP" --strict # 억제됐다면 --strict도 통과해야 한다
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 회귀 3: 검사 6은 "다른 N개 언어"류 상대 기수를 절대 언어 총수 주장으로 오인하면
+# 안 된다 — 절대 주장(예: "9개 언어")은 여전히 잡아야 한다 ----
+# DEPLOY_LANGS는 3개뿐인 트리에서: "다른 8개 언어"(관계상 늘 전체와 다름 — 상대 기수라
+# 애초에 대조 대상이 아님)는 절대 걸리면 안 되고, "9개 언어"(전체 언어 수에 대한 절대
+# 주장)는 3개와 어긋나므로 여전히 걸려야 한다. 같은 실행 안에서 둘을 함께 확인해야
+# "상대 기수를 억제하려다 절대 주장까지 죽였다"는 회귀를 놓치지 않는다.
+mkdir -p "$TMP/scripts/lib"
+printf '%s\n' 'DEPLOY_LANGS="a b c"' > "$TMP/scripts/lib/deploy-facts.sh"
+printf '%s\n' '# fixture' '이 SDK는 다른 8개 언어와 동일한 근본 한계를 공유한다.' '이 SDK는 9개 언어를 지원한다.' > "$TMP/mixed-langs.md"
+assert_ok node "$GUARD" "$TMP" # 기본은 경고(절대 주장 "9개"만 어긋남)
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_not_contains "$OUT" '"8개 언어"' "relative count (다른 8개 언어) must never be flagged"
+assert_contains "$OUT" '"9개 언어" ≠ DEPLOY_LANGS 3개' "absolute count mismatch (9개 언어) must still be flagged"
+assert_fails node "$GUARD" "$TMP" --strict # 절대 주장 어긋남은 --strict에서 실패해야 한다
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_not_contains "$OUT" '"8개 언어"' "relative count must not surface even under --strict"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
 assert_report

@@ -6,8 +6,22 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve, relative, dirname } from 'node:path'
 
 const ROOT = resolve(process.argv[2] ?? '.')
-// .superpowers는 gitignore된 작업 스크래치(실제 문서가 아님).
-const SKIP = new Set(['.git', 'node_modules', 'vendor', 'target', 'build', 'dist', '.gradle', '.superpowers'])
+// .superpowers는 gitignore된 작업 스크래치(실제 문서가 아님). .venv/venv/site-packages는
+// 파이썬 가상환경(+ 그 안의 vendored 서드파티 패키지)이라 실제 문서가 아니다 — 이게 없으면
+// python/.venv/Lib/site-packages/**의 README/NOTICE가 검사 5(링크)에 걸려 거짓 경고를 낸다.
+const SKIP = new Set([
+  '.git',
+  'node_modules',
+  'vendor',
+  'target',
+  'build',
+  'dist',
+  '.gradle',
+  '.superpowers',
+  '.venv',
+  'venv',
+  'site-packages',
+])
 // scripts/test/fixtures/**는 가드 자신의 테스트 입력이다 — 그 안의 source= 경로는
 // 격리된 임시 디렉터리(테스트가 mktemp로 만드는) 기준 상대경로라 저장소 루트를
 // 걸을 때 해석 대상이 아니다. 이름이 아니라 정확한 상대경로로 제외해야
@@ -306,20 +320,38 @@ function checkCoverageGates() {
 }
 
 // 검사 5 — 상대 링크(`./`·`../`) 대상이 실제로 디스크에 존재하는가. 예방적 검사라 기본은 경고.
-function checkLinks(file, rel, text) {
-  for (const m of text.matchAll(/\[[^\]]*\]\((\.{0,2}\/[^)#\s]+)/g)) {
-    const target = resolve(file, '..', m[1])
-    try {
-      statSync(target)
-    } catch {
-      ;(STRICT ? errors : warnings).push(`${rel} 링크 대상 없음: ${m[1]}`)
+// 펜스(```) 안의 링크 문법은 예시일 뿐 실제 링크가 아니다 — 앵커 스캐너(메인 루프)가 펜스를
+// 건너뛰는 것과 동일한 규칙을 여기서도 독립적으로 추적한다(둘은 별개 순회라 상태를 공유하지 않는다).
+function checkLinks(file, rel, lines) {
+  let inFence = false
+  for (const line of lines) {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence
+      continue
+    }
+    if (inFence) continue
+    for (const m of line.matchAll(/\[[^\]]*\]\((\.{0,2}\/[^)#\s]+)/g)) {
+      const target = resolve(file, '..', m[1])
+      try {
+        statSync(target)
+      } catch {
+        ;(STRICT ? errors : warnings).push(`${rel} 링크 대상 없음: ${m[1]}`)
+      }
     }
   }
 }
 
+// "다른 8개 언어"·"선행 7개 언어"류는 전체 언어 수에 대한 주장이 아니라 "이 언어를 제외한
+// 나머지"·"이 언어보다 먼저 추가된 언어들"을 가리키는 상대 기수다 — 언어가 하나 늘 때마다
+// 이 문구도 전부 갱신해야 하는 건 아니므로(무의미한 수정 부담) 구조적으로 대조 대상이 아니다.
+// 숫자 바로 앞(공백 제외)이 이 마커 중 하나로 끝나면 검사 6에서 건너뛴다.
+const RELATIVE_COUNT_MARKERS = ['다른', '그 외', '나머지', '선행', '외']
+
 // 검사 6 — "N개 언어" 기수가 scripts/lib/deploy-facts.sh 의 DEPLOY_LANGS 와 맞는가. 예방적
 // 검사라 기본은 경고. docs/superpowers/** 와 docs/governance/history.md 는 그 시절 언어 수를
-// 정당하게 말하는 이력 문서라 제외한다.
+// 정당하게 말하는 이력 문서라 제외한다. 상대 기수(위 RELATIVE_COUNT_MARKERS)도 구조적으로
+// 총 언어 수와 무관하므로 제외한다 — "9개 언어" · "8개 언어 폴리글랏"처럼 전체 언어 수를
+// 절대값으로 주장하는 문구만 대조 대상이다.
 // ⚠️ 지역 변수를 `facts`로 짓지 말 것 — 모듈 스코프의 카운터 `let facts`를 섀도잉한다.
 function checkCardinality() {
   let deployFacts
@@ -340,9 +372,12 @@ function checkCardinality() {
     if (rel === 'docs/governance/history.md') continue // 위와 동일 — 이력 스냅샷
     const text = readFileSync(f, 'utf8')
     for (const x of text.matchAll(/(\d+)개 언어/g)) {
-      if (Number(x[1]) !== n) {
-        ;(STRICT ? errors : warnings).push(`${rel} "${x[1]}개 언어" ≠ DEPLOY_LANGS ${n}개`)
-      }
+      if (Number(x[1]) === n) continue
+      // 매치 직전(공백은 무시) 텍스트가 상대 기수 마커로 끝나면 "전체 언어 수" 주장이
+      // 아니므로 건너뛴다("다른 8개 언어"·"선행 7개 언어" 등).
+      const before = text.slice(Math.max(0, x.index - 8), x.index).trimEnd()
+      if (RELATIVE_COUNT_MARKERS.some((mk) => before.endsWith(mk))) continue
+      ;(STRICT ? errors : warnings).push(`${rel} "${x[1]}개 언어" ≠ DEPLOY_LANGS ${n}개`)
     }
   }
 }
@@ -350,7 +385,7 @@ function checkCardinality() {
 for (const file of walk(ROOT)) {
   const rel = relative(ROOT, file).replace(/\\/g, '/')
   const lines = readFileSync(file, 'utf8').split(/\r?\n/)
-  checkLinks(file, rel, lines.join('\n'))
+  checkLinks(file, rel, lines)
   let inFence = false
   for (let i = 0; i < lines.length; i++) {
     if (/^\s*```/.test(lines[i])) { inFence = !inFence; continue }
