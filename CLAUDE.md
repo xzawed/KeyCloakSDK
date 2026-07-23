@@ -194,191 +194,41 @@ gradle -p kotlin ktlintCheck        # 린트(무경고; 수정은 ktlintFormat)
 
 폴리글랏 모노레포. Java 구현이 `java/`에서, Python 구현이 `python/`에서, Node 구현이 `node/`에서, Go 구현이 `go/`에서, C#/.NET 구현이 `dotnet/`에서, PHP 구현이 `php/`에서, Rust 구현이 `rust/`에서, Ruby 구현이 `ruby/`에서, Kotlin 구현이 `kotlin/`에서 완료됐다(각각 독립 빌드).
 
-**Java** — 6개 Maven 모듈(reactor 빌드):
+### 공통 모듈 구조
+
+모든 언어가 같은 모양이다 — 파일명·확장자·모듈 물리 배치만 언어 관용을 따른다.
 
 ```
-java/                          # Maven 멀티모듈 reactor
-├─ keycloak-sdk-bom/           # 의존성 버전 고정 BOM (배포)
-├─ keycloak-sdk-core/          # KeycloakConfig, TokenProvider, 예외 계층, 보안 정책 (외부만 의존)
-├─ keycloak-sdk-auth/          # 인증 래퍼 — Nimbus OAuth2/OIDC SDK 감쌈 (core 의존)
-├─ keycloak-sdk-admin/         # 관리 파사드 — 공식 keycloak-admin-client 감쌈 (core 의존)
-├─ keycloak-sdk/               # 통합 진입점 KeycloakClient (core+auth+admin)
-└─ keycloak-sdk-examples/      # 실행 예제 (배포 제외)
+config · errors/masking · tokens · oidc(엔드포인트 조립, 네트워크 없음)
+token_provider(캐시·single-flight) · jwks(DoS-safe) · jwt(자체 강화 검증)
+auth(하위 OIDC 라이브러리 래핑) · admin/(5리소스: users·clients·realms·roles·groups + raw 탈출구) · client(통합 진입점)
 ```
 
-**결합 규칙(Java)**: `admin`은 `auth`를 직접 알지 못한다. 둘을 잇는 유일한 접착제는 `core`의 `TokenProvider` 인터페이스다 — auth 없이도 admin을 자체 토큰 소스로 쓸 수 있고, 내부 라이브러리 교체가 소비자에게 파급되지 않는다.
+### 언어별 차이
 
-**Python** — 단일 패키지 `keycloak_sdk` + 서브모듈(`python/`, `src/` 레이아웃):
+| 언어 | 차이 |
+|---|---|
+| Java | 6개 Maven 모듈로 물리 분리(`keycloak-sdk-{bom,core,auth,admin}` + `keycloak-sdk` + `-examples`, reactor 빌드) |
+| Python | 단일 패키지 `keycloak_sdk`(`src/` 레이아웃) + `aio/` 비동기 미러 추가(`AsyncKeycloakClient` 등, python-keycloak `a_*` 래핑) |
+| Go | 전체가 단일 `package keycloak` — admin을 서브패키지로 두면 `Client.Admin`이 `*AdminClient`를 반환해 import 순환이 생기므로 `admin_*.go`로 같은 패키지 |
+| Ruby | 단일 gem `keycloak-sdk`(모듈 `KeycloakSdk`) — admin 성숙한 gem 부재로 Faraday raw-REST를 직접 구현 |
+| Kotlin | 단일 Gradle 모듈 `keycloak-sdk-kotlin` — 네트워크 메서드 전부 `suspend`, JVM 자매 Java SDK 스택(`keycloak-admin-client`·`oauth2-oidc-sdk`) 재사용 |
 
-```
-python/
-├─ pyproject.toml              # hatchling · 배포명 keycloak-sdk · Apache-2.0
-├─ src/keycloak_sdk/
-│  ├─ config.py                # KeycloakConfig (불변 dataclass)
-│  ├─ auth.py                  # AuthClient — KeycloakOpenID 래핑
-│  ├─ jwt.py                   # JwtValidator — joserfc 자체 강화 검증
-│  ├─ admin/                   # AdminClient + users/clients/realms/roles/groups
-│  ├─ client.py                # KeycloakClient 통합 진입점 (auth 즉시·admin 지연)
-│  ├─ aio/                     # async 미러(AsyncKeycloakClient/AsyncAuthClient/AsyncAdminClient) — `feature/python-async`, python-keycloak `a_*` 래핑
-│  └─ py.typed                 # PEP 561 마커
-├─ examples/quickstart.py, async_quickstart.py
-└─ tests/{unit,integration}/  # tests/unit/aio/, tests/integration/*_async_it.py 포함
-```
+Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/크레이트·표준 파일 배치 — 표 생략).
 
-**결합 규칙(Python)**: `admin`은 `auth`에 의존하지 않는다(각자 독립적으로 client-credentials 인증). `python-keycloak`(`KeycloakOpenID`/`KeycloakAdmin`)을 래핑하고, 예외는 경계에서 `keycloak_sdk.exceptions.*`로 변환되어 `keycloak.exceptions.*` 타입이 공개 API에 노출되지 않는다. JWT 검증만 `python-keycloak`에 의존하지 않고 `joserfc`로 자체 강화 구현(algorithm pinning·`none`/미서명 거부·iss 정확일치·aud 포함검사·클록 스큐).
+### 언어별 결합 규칙
 
-**Node** — 단일 패키지 `@xzawed/keycloak-sdk`(`node/`, `src/` 레이아웃, ESM):
+`admin`↔`auth` 결합 방식과 경계 변환의 언어별 사실이다(§4 계약·§4(b) 은닉성 예외에 이미 있는 내용은 반복하지 않는다 — 특히 각 언어의 `raw`/`Raw` 탈출구 타입은 아래 §4(b)에 전부 있다).
 
-```
-node/
-├─ package.json                # ESM("type":"module") · 배포명 @xzawed/keycloak-sdk · files:["dist"]
-├─ tsconfig.json               # strict · NodeNext · noUncheckedIndexedAccess · verbatimModuleSyntax
-├─ src/
-│  ├─ config.ts                # KeycloakConfig + defineConfig(검증·clientSecret 마스킹)
-│  ├─ errors.ts                # KeycloakError 계급 + mapHttpError
-│  ├─ masking.ts · tokens.ts   # mask() · TokenSet/ValidatedToken/IntrospectionResult
-│  ├─ token-provider.ts        # TokenProvider + ClientCredentialsTokenProvider(single-flight)
-│  ├─ oidc-metadata.ts         # 엔드포인트 조립(네트워크 없음)
-│  ├─ jwt.ts                   # JwtValidator — jose 자체 강화 검증(보안 핵심)
-│  ├─ auth.ts                  # AuthClient — openid-client v6 함수형 API 래핑
-│  ├─ admin/                   # AdminClient + users/clients/realms/roles/groups + call(경계변환)
-│  ├─ client.ts                # KeycloakClient 통합 진입점(auth 즉시·admin 지연·asyncDispose)
-│  └─ index.ts                 # 공개 배럴
-├─ examples/quickstart.ts
-└─ test/{unit,integration}/    # vitest(unit) + vitest.integration.config.ts(testcontainers)
-```
-
-**결합 규칙(Node)**: `admin`은 `auth`에 의존하지 않는다(각자 독립 client-credentials 인증) — `core`의 `TokenProvider` 인터페이스가 유일 접착제. `openid-client`(auth)·`@keycloak/keycloak-admin-client`(admin)를 래핑하고, 예외는 경계에서 `KeycloakError` 계급으로 변환되어 하위 라이브러리 에러(`NetworkError` 등)가 공개 API로 새지 않는다. `admin.raw()`가 탈출구. JWT 검증만 `jose`로 자체 강화 구현. **admin은 파사드가 주입한 캐싱 `ClientCredentialsTokenProvider`를 admin-client의 `registerTokenProvider`로 배선하고 `kc.auth()`는 호출하지 않는다(PR #63)** — admin-client 내장 TokenManager는 만료 시 refresh만 시도해 client_credentials에서 영구 실패하므로, 자체 provider가 만료 시 재인증하게 한다(Rust `79ecf76`와 동형 결정).
-
-**Go** — 단일 패키지 `keycloak`(`go/`, 모듈 `github.com/xzawed/KeyCloakSDK/go`):
-
-```
-go/
-├─ go.mod / go.sum          # go 1.25 · 배포 태그 go/vX.Y.Z(레지스트리 없음)
-├─ config.go                # Config(값 구조체) + validate + String 마스킹
-├─ errors.go                # 오류 계급(타입드 구조체) + 센티넬 ErrNotFound/ErrConflict/ErrForbidden
-├─ tokens.go                # TokenSet(IsExpired·String 마스킹)/ValidatedToken/IntrospectionResult
-├─ tokenprovider.go         # TokenProvider + ClientCredentialsTokenProvider(x/sync/singleflight)
-├─ oidc.go                  # 엔드포인트 조립(네트워크 없음)
-├─ jwt.go                   # Validator — go-jose 자체 강화 + DoS-safe JWKS(single-flight·rate-limit)
-├─ auth.go                  # AuthClient — x/oauth2 래핑 + 수동 introspect/logout
-├─ admin.go + admin_*.go    # AdminClient + 5 리소스 + Raw() + toSDKError(경계변환)
-├─ client.go                # Client 통합 진입점(Auth 즉시·Admin(ctx) 지연·Close)
-├─ example_test.go          # godoc 예제 · integration_test.go(//go:build integration)
-└─ testdata/it-realm-realm.json  # Java/Python/Node 재사용(//go:embed)
-```
-
-**결합 규칙(Go)**: **전체가 단일 `package keycloak`**(admin을 서브패키지로 두면 `Client.Admin`이 `*AdminClient` 반환 시 admin↔root import 순환 — Go 금지 — 이 발생하므로 `admin_*.go`로 같은 패키지). `admin`은 `auth`에 의존하지 않고 `TokenProvider`(gocloak client-credentials 기본)가 유일 접착제. `gocloak`(admin)·`x/oauth2`(auth) 래핑, 오류는 경계에서 타입드 구조체(`*AdminError` 등)로 변환. **⚠️ gocloak은 네트워크 실패도 `*APIError{Code:0}`로 감싸므로** `toSDKError`는 `Code==0`→`*TransportError`, `>0`→`*AdminError`로 나눈다(그러지 않으면 전부 `AdminError{HTTP 0}`로 오분류). `admin.Raw()`가 탈출구. JWT 검증만 `go-jose/v4`로 자체 강화.
-
-**C# / .NET** — 단일 프로젝트 `Xzawed.Keycloak.Sdk`(`dotnet/`, 솔루션 `Keycloak.Sdk.sln`, net8.0):
-
-```
-dotnet/
-├─ Directory.Build.props          # net8.0·Nullable·TreatWarningsAsErrors·AnalysisLevel 8.0·패키징 props(IsTestProject!=true 게이트)
-├─ Keycloak.Sdk.sln
-├─ src/Xzawed.Keycloak.Sdk/
-│  ├─ Masking.cs · KeycloakException.cs   # Mask() · 예외 계급(KeycloakException→KeycloakAdminException→NotFound/Conflict/Forbidden 등) + MapHttpError
-│  ├─ KeycloakConfig.cs · Tokens.cs        # record + ToString()/JsonConverter<T> 이중 마스킹 · TokenSet/ValidatedToken/IntrospectionResult/AuthorizationRequest
-│  ├─ ITokenProvider.cs                    # ITokenProvider/ITokenSource + ClientCredentialsTokenProvider(SemaphoreSlim single-flight)
-│  ├─ OidcEndpoints.cs                     # 엔드포인트 조립(네트워크 없음)
-│  ├─ JwtValidator.cs                      # Microsoft.IdentityModel 자체 강화 검증(보안 핵심)
-│  ├─ AuthClient.cs                        # AuthClient : ITokenSource — Duende.IdentityModel 래핑
-│  ├─ Admin/                               # AdminClient + Users/Groups/Realms(타입드) + Clients/Roles(raw REST) + BearerHandler
-│  ├─ KeycloakClient.cs                    # 통합 진입점(Auth 즉시·AdminAsync 지연 single-flight·IAsyncDisposable+IDisposable)
-│  └─ ServiceCollectionExtensions.cs       # AddKeycloak DI 확장
-├─ tests/Xzawed.Keycloak.Sdk.Tests/        # xUnit 단위 + integration/(Testcontainers.Keycloak) + testdata/it-realm-realm.json
-```
-
-**결합 규칙(C#/.NET)**: `admin`은 `auth`에 의존하지 않는다 — `ITokenProvider`가 유일 접착제(`AuthClient : ITokenSource`가 기본 소스). `Keycloak.AuthServices.Sdk`(admin)·`Duende.IdentityModel`(auth) 래핑, 예외는 경계에서 `KeycloakException` 계급으로 변환. **⚠️ admin 타입드 클라이언트는 users/groups/realm-get만 커버**하므로 clients/roles/realm-CRUD는 같은 bearer-authed `HttpClient`로 raw Admin REST(representation 재사용). `admin.Raw`(`IKeycloakClient`)가 탈출구. JWT 검증만 `Microsoft.IdentityModel.JsonWebTokens`로 자체 강화.
-
-**PHP** — 단일 패키지 `xzawed/keycloak-sdk`(`php/`, PSR-4 `Xzawed\Keycloak\`):
-
-```
-php/
-├─ composer.json               # PSR-4 Xzawed\Keycloak\ · 배포명 xzawed/keycloak-sdk · Apache-2.0
-├─ phpunit.xml                 # unit/integration testsuite + source exclude(네트워크 경계)
-├─ phpstan.neon                # level max + strict-rules + phpunit 확장
-├─ src/
-│  ├─ Masking.php · Exception/         # mask() · KeycloakException 계급(Config/Auth/Transport/TokenValidation/Admin→NotFound/Conflict/Forbidden)
-│  ├─ KeycloakConfig.php               # final readonly class(검증·후행슬래시 제거·__toString 마스킹)
-│  ├─ Token/                           # TokenSet/ValidatedToken/IntrospectionResult/AuthorizationRequest(값타입) + OidcEndpoints
-│  ├─ TokenProvider.php · ClientCredentialsTokenProvider.php   # TokenProvider 인터페이스 + 캐시(isomorphic core)
-│  ├─ Jwks/JwksStore.php               # DoS-safe JWKS(kid 캐시·미해결만 재조회·rate-limit)
-│  ├─ JwtValidator.php                 # firebase/php-jwt 자체 강화 검증(보안 핵심)
-│  ├─ AuthClient.php                   # league+stevenmaguire 래핑 + Internal/PkceKeycloakProvider(S256 오버라이드)
-│  ├─ Admin/                           # AdminClient + Users/Clients/Realms/Roles/Groups + ErrorTranslation(경계변환)
-│  └─ KeycloakClient.php               # 통합 진입점(auth 즉시·admin 지연캐시·close)
-├─ examples/quickstart.php
-└─ tests/{Unit,Integration}/           # PHPUnit(unit) + FullFlowIT.php(docker CLI 셸아웃, 실제 Keycloak)
-```
-
-**결합 규칙(PHP)**: `admin`은 `auth`에 의존하지 않는다(각자 독립 client-credentials 인증) — `TokenProvider` 인터페이스가 유일 접착제. `fschmtt/keycloak-rest-api-client-php`(admin)·`league/oauth2-client`+`stevenmaguire/oauth2-keycloak`(auth) 래핑, 예외는 경계에서 `KeycloakException` 계급으로 변환(`ErrorTranslation`이 fschmtt/Guzzle 예외를, `AuthClient`가 league 예외를 흡수). **⚠️ fschmtt `Users::create()`는 void 반환**(생성된 id는 `findIdByUsername()`로 후속 조회), `Clients`/`Realms`는 `create`가 아니라 **`import`**(대상 representation에 id/realm 사전 세팅 필요). `admin()->raw()`가 탈출구. JWT 검증만 `firebase/php-jwt` + 자체 `JwksStore`로 자체 강화.
-
-**Rust** — 단일 크레이트 `keycloak-sdk`(`rust/`, edition 2024, 모듈 = 파일):
-
-```
-rust/
-├─ Cargo.toml               # keycloak-sdk · edition 2024 · rust-version 1.88 · reqwest 0.12 전역 정렬
-├─ src/
-│  ├─ error.rs               # KeycloakError enum(thiserror) — Config/Auth/Transport/Admin(NotFound/Conflict/Forbidden/Other)/TokenValidation + from_admin_status
-│  ├─ config.rs              # KeycloakConfig(불변·검증·후행슬래시 제거·수동 Debug 마스킹·기본값)
-│  ├─ tokens.rs · oidc.rs    # TokenSet/ValidatedToken/IntrospectionResult/AuthorizationRequest(수동 Debug 마스킹) · OidcEndpoints(엔드포인트 조립, 네트워크 없음)
-│  ├─ token_provider.rs      # TokenProvider trait(async, #[async_trait]) + ClientCredentialsTokenProvider(캐시·single-flight)
-│  ├─ jwks.rs                # JwksStore — DoS-safe JWKS(kid 캐시·미해결만 재조회·rate-limit·single-flight)
-│  ├─ jwt.rs                 # JwtValidator — jsonwebtoken 자체 강화 검증(보안 핵심)
-│  ├─ auth.rs                # AuthClient — openidconnect 래핑(수동 EndpointSet typestate·PKCE S256) + introspect/logout 손수
-│  ├─ admin.rs               # AdminClient — keycloak crate 래핑 + SdkTokenSupplier 어댑터 + 5 리소스(users/clients/realms/roles/groups) + raw()
-│  ├─ client.rs              # KeycloakClient 통합 진입점(공유 reqwest·SSRF redirect none·auth 즉시·admin 주입)
-│  └─ lib.rs                 # 공개 배럴(re-export)
-├─ examples/quickstart.rs
-└─ tests/integration_test.rs  # testcontainers E2E(#[ignore], 실제 Keycloak 26.6) + testdata/
-```
-
-**결합 규칙(Rust)**: `admin`은 `auth`를 직접 알지 못한다 — `TokenProvider` trait(async)가 유일 접착제(`AuthClient`가 이를 구현, `SdkTokenSupplier`가 이를 `keycloak` crate의 `KeycloakTokenSupplier`로 어댑트). `keycloak` crate(admin)·`openidconnect`(auth) 래핑, 하위 오류(`keycloak::KeycloakError`)는 경계(`map_admin`)에서 SDK `KeycloakError`로 변환. `admin().raw()`가 탈출구. JWT 검증만 `jsonwebtoken` + 자체 `JwksStore`로 자체 강화.
-
-**Ruby** — 단일 gem `keycloak-sdk`(`ruby/`, 모듈 `KeycloakSdk`):
-
-```
-ruby/
-├─ keycloak-sdk.gemspec       # gem명 keycloak-sdk · require명 keycloak_sdk · Apache-2.0
-├─ lib/
-│  ├─ keycloak_sdk.rb          # 공개 배럴(require_relative 전체) + rack-oauth2 전역 http_config(타임아웃)
-│  ├─ keycloak_sdk/
-│  │  ├─ errors.rb · masking.rb          # Error 계급(Config/Auth/Transport/TokenValidation/Admin→NotFound/Conflict/Forbidden) · mask()
-│  │  ├─ config.rb                        # Config(불변 Data 유사·검증·후행슬래시 제거·inspect 마스킹)
-│  │  ├─ tokens.rb · oidc_endpoints.rb    # TokenSet/ValidatedToken/IntrospectionResult/AuthorizationRequest(Data.define, inspect 마스킹) · OidcEndpoints(엔드포인트 조립, 네트워크 없음)
-│  │  ├─ http.rb                          # 공유 Faraday 커넥션 팩토리(타임아웃 주입·follow_redirects 미장착=SSRF)
-│  │  ├─ token_provider.rb                # TokenProvider 덕 인터페이스 + ClientCredentialsTokenProvider(Mutex 캐시·single-flight)
-│  │  ├─ jwks_store.rb                    # JwksStore — DoS-safe JWKS(Mutex 캐시·미해결만 재조회·rate-limit 결정시점 stamp)
-│  │  ├─ jwt_validator.rb                 # JwtValidator — ruby-jwt 자체 강화 검증(보안 핵심)
-│  │  ├─ auth_client.rb                   # AuthClient — rack-oauth2 래핑(그랜트·PKCE S256 손수) + introspect/logout 손수
-│  │  ├─ admin/                           # AdminClient + Users/Clients/Realms/Roles/Groups(Faraday raw-REST) + BearerAuth + Call(경계변환)
-│  │  └─ client.rb                        # KeycloakClient 통합 진입점(auth 즉시·admin 지연+전용 캐싱 provider·close)
-├─ examples/quickstart.rb
-└─ spec/{unit,integration}/               # RSpec(unit) + full_flow_spec.rb(docker CLI 셸아웃, 실제 Keycloak) + support/keycloak_container.rb
-```
-
-**결합 규칙(Ruby)**: `admin`은 `auth`에 의존하지 않는다 — `TokenProvider` 덕 인터페이스가 유일 접착제(admin은 전용 `ClientCredentialsTokenProvider`를 주입받는다, `AuthClient`도 `TokenProvider`를 구현하나 admin에 직접 주입되지 않음 — Rust가 최종리뷰로 배웠던 캐시 불변식을 Ruby는 처음부터 준수). `rack-oauth2`(auth)·자체 Faraday raw-REST(admin, 성숙한 gem 부재) 래핑, 하위 오류(`Faraday::TimeoutError`/`ConnectionFailed`·`Rack::OAuth2::Client::Error`)는 경계에서 `KeycloakSdk::*Error`로 변환. `admin.raw`가 탈출구. JWT 검증만 `jwt`(ruby-jwt) + 자체 `JwksStore`로 자체 강화.
-
-**Kotlin** — 단일 Gradle 모듈 `keycloak-sdk-kotlin`(`kotlin/`, 패키지 `io.github.xzawed.keycloak`):
-
-```
-kotlin/
-├─ build.gradle.kts            # Kotlin 2.4.10 · JDK21 toolchain · explicitApi() · vanniktech maven.publish · Kover · ktlint
-├─ src/main/kotlin/io/github/xzawed/keycloak/
-│  ├─ errors.kt · masking.kt   # sealed KeycloakException 계급 · mask()
-│  ├─ config.kt                # KeycloakConfig(불변·검증·후행슬래시 제거·CharArray 방어복사·toString 마스킹)
-│  ├─ tokens.kt · oidc.kt      # TokenSet/ValidatedToken/IntrospectionResult/AuthorizationRequest(마스킹) · OidcEndpoints(엔드포인트 조립, 네트워크 없음)
-│  ├─ tokenprovider.kt         # TokenProvider(fun interface·suspend) + ClientCredentialsTokenProvider(@Volatile 캐시·Mutex single-flight)
-│  ├─ jwt.kt                   # JwtValidator — nimbus-jose-jwt 자체 강화 검증(보안 핵심, suspend·DoS-safe JWKS)
-│  ├─ auth.kt                  # AuthClient — oauth2-oidc-sdk(Nimbus) 래핑 + PKCE S256
-│  ├─ admin/                   # AdminClient + Users/Clients/Realms/Roles/Groups(keycloak-admin-client 래핑) + adminCall(경계변환) + raw
-│  └─ client.kt                # KeycloakClient 통합 진입점(auth 즉시·admin 지연 Lazy·AutoCloseable)
-├─ examples/quickstart.kt
-└─ src/{test,integrationTest}/kotlin/  # kotlin-test-junit5(unit) + jvm-test-suite FullFlowIT(Testcontainers/dasniko, 실제 Keycloak)
-```
-
-**결합 규칙(Kotlin)**: `admin`은 `auth`를 직접 알지 못한다(§4·Java 동형) — `KeycloakClient`는 admin에 provider를 배선하지 않고, `AdminClient`가 `KeycloakBuilder` 내장 client-credentials 그랜트로 토큰을 자체 소유한다(내부 `TokenManager`가 자동 획득·갱신). `ClientCredentialsTokenProvider`(`fun interface TokenProvider`)는 §4 접착 유틸이자 파사드 레벨 시임일 뿐 admin이 실사용하지는 않는다 — Java SDK가 커스텀 RESTEasy 필터 충돌로 내린 동일 결정을 상속. JVM 자매 Java SDK의 검증된 스택(`org.keycloak:keycloak-admin-client`(admin)·`com.nimbusds:oauth2-oidc-sdk`(auth)) 그대로 재사용하고 코루틴 관용(`suspend`+`runInterruptible(Dispatchers.IO)`)으로만 재래핑, 하위 예외는 경계에서 sealed `KeycloakException` 계급으로 변환. JWT 검증만 `com.nimbusds:nimbus-jose-jwt` + 자체 강화(Java의 `JWKSourceBuilder` 캐시+RateLimited DoS-safe JWKS 상속).
+- **Java**: `admin`은 `auth`를 직접 알지 못한다. 유일한 접착제는 `core`의 `TokenProvider` 인터페이스다 — auth 없이도 admin을 자체 토큰 소스로 쓸 수 있고, 내부 라이브러리 교체가 소비자에게 파급되지 않는다.
+- **Python**: `admin`은 `auth`에 의존하지 않는다(각자 독립적으로 client-credentials 인증). 예외는 경계에서 `keycloak_sdk.exceptions.*`로 변환되어 `keycloak.exceptions.*` 타입이 공개 API에 노출되지 않는다.
+- **Node**: `admin`은 `auth`에 의존하지 않는다(각자 독립 client-credentials 인증) — `TokenProvider` 인터페이스가 유일 접착제. 예외는 경계에서 `KeycloakError` 계급으로 변환되어 하위 라이브러리 에러(`NetworkError` 등)가 새지 않는다. `admin.raw()`가 탈출구. **admin은 파사드가 주입한 캐싱 `ClientCredentialsTokenProvider`를 `registerTokenProvider`로 배선하고 `kc.auth()`는 호출하지 않는다(PR #63)** — admin-client 내장 TokenManager는 만료 시 refresh만 시도해 client_credentials에서 영구 실패하므로, 자체 provider가 만료 시 재인증하게 한다(Rust `79ecf76`와 동형 결정).
+- **Go**: **전체가 단일 `package keycloak`**(admin을 서브패키지로 두면 `Client.Admin`이 `*AdminClient` 반환 시 admin↔root import 순환이 생기므로 `admin_*.go`로 같은 패키지). `admin`은 `auth`에 의존하지 않고 `TokenProvider`(gocloak client-credentials 기본)가 유일 접착제. 오류는 경계에서 타입드 구조체(`*AdminError` 등)로 변환. **⚠️ gocloak은 네트워크 실패도 `*APIError{Code:0}`로 감싸므로** `toSDKError`는 `Code==0`→`*TransportError`, `>0`→`*AdminError`로 나눈다(그러지 않으면 전부 `AdminError{HTTP 0}`로 오분류).
+- **C#/.NET**: `admin`은 `auth`에 의존하지 않는다 — `ITokenProvider`가 유일 접착제(`AuthClient : ITokenSource`가 기본 소스). 예외는 경계에서 `KeycloakException` 계급으로 변환. **⚠️ admin 타입드 클라이언트는 users/groups/realm-get만 커버**하므로 clients/roles/realm-CRUD는 같은 bearer-authed `HttpClient`로 raw Admin REST(representation 재사용).
+- **PHP**: `admin`은 `auth`에 의존하지 않는다(각자 독립 client-credentials 인증) — `TokenProvider` 인터페이스가 유일 접착제. 예외는 경계에서 `KeycloakException` 계급으로 변환(`ErrorTranslation`이 fschmtt/Guzzle 예외를, `AuthClient`가 league 예외를 흡수). **⚠️ fschmtt `Users::create()`는 void 반환**(생성된 id는 `findIdByUsername()`로 후속 조회), `Clients`/`Realms`는 `create`가 아니라 **`import`**(대상 representation에 id/realm 사전 세팅 필요).
+- **Rust**: `admin`은 `auth`를 직접 알지 못한다 — `TokenProvider` trait(async)가 유일 접착제(`AuthClient`가 이를 구현, `SdkTokenSupplier`가 이를 `keycloak` crate의 `KeycloakTokenSupplier`로 어댑트). 하위 오류(`keycloak::KeycloakError`)는 경계(`map_admin`)에서 SDK `KeycloakError`로 변환.
+- **Ruby**: `admin`은 `auth`에 의존하지 않는다 — `TokenProvider` 덕 인터페이스가 유일 접착제(admin은 전용 `ClientCredentialsTokenProvider`를 주입받는다, `AuthClient`도 `TokenProvider`를 구현하나 admin에 직접 주입되지 않음 — Rust가 최종리뷰로 배웠던 캐시 불변식을 Ruby는 처음부터 준수). 하위 오류(`Faraday::TimeoutError`/`ConnectionFailed`·`Rack::OAuth2::Client::Error`)는 경계에서 `KeycloakSdk::*Error`로 변환.
+- **Kotlin**: `admin`은 `auth`를 직접 알지 못한다(§4·Java 동형) — `KeycloakClient`는 admin에 provider를 배선하지 않고, `AdminClient`가 `KeycloakBuilder` 내장 client-credentials 그랜트로 토큰을 자체 소유한다(내부 `TokenManager`가 자동 획득·갱신). `ClientCredentialsTokenProvider`(`fun interface TokenProvider`)는 §4 접착 유틸이자 파사드 레벨 시임일 뿐 admin이 실사용하지는 않는다 — Java SDK가 커스텀 RESTEasy 필터 충돌로 내린 동일 결정을 상속. 하위 예외는 경계에서 sealed `KeycloakException` 계급으로 변환. JWT 검증은 `com.nimbusds:nimbus-jose-jwt` + 자체 강화이며 Java의 `JWKSourceBuilder` 캐시+RateLimited DoS-safe JWKS를 상속한다.
 
 **언어 중립 계약(§4)**: Java(손수 래핑)·Python(`python-keycloak` 래핑)·Node(`openid-client`+admin-client 래핑)·Go(`gocloak`+`x/oauth2` 래핑)·C#(`Keycloak.AuthServices.Sdk`+`Duende.IdentityModel` 래핑)·PHP(`fschmtt`+`league/oauth2-client` 래핑)·Rust(`keycloak` crate+`openidconnect` 래핑)·Ruby(`rack-oauth2` 래핑+`faraday` 손수 admin)·Kotlin(JVM 자매 Java SDK 스택 `keycloak-admin-client`+`oauth2-oidc-sdk` 재사용 래핑)의 출발점이 다르므로, 언어 중립 API 계약을 진실 원천으로 두고 각 언어가 구현한다. 아홉 언어 모두 하위 라이브러리 타입을 **주 소비 경로(파사드) 뒤에 숨긴다**(camelCase ↔ snake_case ↔ Go/C# PascalCase만 다르고 개념·계층은 동형 — 예: `TokenSet`/`ValidatedToken`/`IntrospectionResult`·오류 계급·`Client.auth/admin`). **예외/오류 계층은 항상 경계에서 SDK 타입으로 변환**되어 `keycloak.exceptions.*`·`jakarta.ws.rs.*`·`NetworkError`·`gocloak.APIError`·`KeycloakHttpClientException`·Guzzle `RequestException`·`keycloak::KeycloakError`·`Faraday::Error`가 공개 API로 새지 않는다. Go/Rust는 예외 대신 **error 값**(Go: 센티넬 `errors.Is`/`errors.As`, Rust: `thiserror` 기반 `Result<T, KeycloakError>`) 관용을 쓴다(§4 허용). Ruby·Kotlin은 예외 기반 관용(Java/Python/Node/C#/PHP 동형 — Kotlin은 sealed class로 exhaustive `when` 강제).
 
@@ -469,14 +319,14 @@ kotlin/
 ## 확정 의존성 (BOM으로 고정)
 
 <!-- doc-guard: kind=dep source=java/pom.xml min=5 -->
-| 의존성 | 좌표 | 버전 |
-|---|---|---|
-| Keycloak admin-client | `org.keycloak:keycloak-admin-client` | 26.0.11 |
-| OAuth2/OIDC SDK | `com.nimbusds:oauth2-oidc-sdk` | 11.38.2 |
-| JOSE/JWT | `com.nimbusds:nimbus-jose-jwt` | 10.9.1 |
-| 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 4.3.1 |
-| Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0.5 |
-| 단위 테스트 | JUnit 6.1.2 · Mockito 5.23.0 | — |
+| 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
+|---|---|---|---|
+| Keycloak admin-client | `org.keycloak:keycloak-admin-client` | 서버(26.6.4)와 독립 버전 트랙 — "26.6.x admin-client"는 존재하지 않는다 | 26.0.11 |
+| OAuth2/OIDC SDK | `com.nimbusds:oauth2-oidc-sdk` | 표준 OAuth2/OIDC 흐름의 성숙한 레퍼런스 구현(단, 그 자체가 "certified"는 아님 — 완성 제품 인증은 OIDF에 별도로) | 11.38.2 |
+| JOSE/JWT | `com.nimbusds:nimbus-jose-jwt` | `JWKSourceBuilder`가 캐시+RateLimited로 DoS-safe JWKS 재조회를 기본 제공(CVE-2026-11800 하드닝의 기반) — 단, 안전한 기본값 자체는 SDK가 얹어야 함 | 10.9.1 |
+| 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 실제 Keycloak 26.6 컨테이너로 통합검증(단위 모킹만으론 admin-client 버전 스큐를 못 잡음) | 4.3.1 |
+| Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0 모듈명 변경 반영 — JUnit5 확장은 `-junit-jupiter`(구 `junit-jupiter` 아님) | 2.0.5 |
+| 단위 테스트 | JUnit 6.1.2 · Mockito 5.23.0 | 표준 JVM 단위테스트 스택 | — |
 
 **Node 확정 의존성(package.json으로 고정)**: `@keycloak/keycloak-admin-client` **`~26.7.0`**(admin — 원래 `^26`→26.7.0의 `decodeToken(undefined).split()` 크래시 회귀로 `~26.6.4`로 좁혔다가[PR #62], PR #63의 provider 배선(`kc.auth()` 미호출)이 크래시 경로를 근본 차단함이 통합테스트로 실증되어 dependabot PR #48로 `~26.7.0`으로 전진) · `openid-client` **6.8.4**(auth, 함수형 API) · `jose` **`^6`**(강화 JWT — 5.10.0에서 전진, `openid-client` 6.8.4가 이미 `jose ^6.2.2`를 요구하고 있어 이 bump는 트리를 **dedupe**한다. SDK가 쓰는 7개 API/옵션이 v6에서 이름·의미 모두 동일함을 published `.d.ts`로 확인했고, `cooldownDuration` rate-limit이 실제로 살아있음을 히트 수로 실측했다) · dev: `typescript` **6**(6.0.x는 JS 기반 안정 라인 — 보류 중인 TS 7이 네이티브 포트 preview다. 산출 `dist/**`가 TS 5.9.3과 **바이트 동일**함을 확인) · `vitest`/`@vitest/coverage-v8` 3(v4는 `vi.mock` 시맨틱 변경으로 보류) · `testcontainers` 12 · `eslint` 10 + `typescript-eslint` 8 · `prettier` 3 · `@types/node` **`^22`**(engines 하한과 일치 — 최신을 따라가지 않는다. dependabot.yml에 메이저 ignore). 런타임 deps(admin-client/openid-client/jose)는 audit clean, devDeps 일부 moderate(dockerode/testcontainers 계열, `files:["dist"]`라 소비자 미배포).
 
@@ -485,78 +335,78 @@ kotlin/
 **C#/.NET 확정 의존성(csproj, major 핀)**:
 
 <!-- doc-guard: kind=dep source=dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj min=2 -->
-| 의존성 | 좌표 | 버전 |
-|---|---|---|
-| 인증(OIDC/OAuth2) | `Duende.IdentityModel` | 8.1.0 |
-| JWT(강화 검증) | `Microsoft.IdentityModel.JsonWebTokens` + `.Protocols.OpenIdConnect` | 8.20.0 |
+| 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
+|---|---|---|---|
+| 인증(OIDC/OAuth2) | `Duende.IdentityModel` | 확장 메서드가 예외를 던지지 않아(`resp.IsError` 검사) 결정적 파사드에 맞음 — PKCE 헬퍼는 없어 SDK가 손수 생성 | 8.1.0 |
+| JWT(강화 검증) | `Microsoft.IdentityModel.JsonWebTokens` + `.Protocols.OpenIdConnect` | `ValidateTokenAsync`가 실패해도 던지지 않는 저수준 API라 SDK가 `ValidAlgorithms`/`ClockSkew`/`RequireExpirationTime` 전부 명시 강화해야 함(기본값이 안전하지 않음) | 8.20.0 |
 
-| 의존성 | 좌표 | 버전 |
-|---|---|---|
-| Admin | `Keycloak.AuthServices.Sdk` | **2.7.0**(net8 최종 — 3.0.0은 net10 전용) |
-| DI 추상화 | `Microsoft.Extensions.DependencyInjection.Abstractions` | 9.0.18(AuthServices 2.7.0 하한 9.0.8 충족·**net8 유지로 10.x major 보류**[PR #57 close]) |
-| 단위 테스트 | `xUnit` 2.9.3 · `WireMock.Net` 2.13.0 · `coverlet.msbuild` 10.0.1 | — |
-| 통합 테스트 | `Testcontainers.Keycloak` | 4.13.0 |
+| 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
+|---|---|---|---|
+| Admin | `Keycloak.AuthServices.Sdk` | net8 최종 버전 — 3.0.0은 net10 전용이라 사용 불가 | **2.7.0** |
+| DI 추상화 | `Microsoft.Extensions.DependencyInjection.Abstractions` | AuthServices 2.7.0의 하한(9.0.8) 충족 + net8 유지 정책으로 10.x major는 보류(PR #57 close) | 9.0.18 |
+| 단위 테스트 | `xUnit` 2.9.3 · `WireMock.Net` 2.13.0 · `coverlet.msbuild` 10.0.1 | 표준 .NET 단위테스트+모킹+커버리지 스택 | — |
+| 통합 테스트 | `Testcontainers.Keycloak` | 실제 Keycloak 26.6 컨테이너로 E2E 검증 | 4.13.0 |
 
 전부 Apache-2.0/MIT(호환). `IHttpClientFactory`는 미채택(단일 장수명 `HttpClient` + `SocketsHttpHandler.PooledConnectionLifetime` — 단일서버 SDK 관용).
 
 **PHP 확정 의존성(composer.json, 정확 핀/범위 지정)**:
 
-| 의존성 | 좌표 | 버전 |
-|---|---|---|
-| Admin | `fschmtt/keycloak-rest-api-client-php` | **0.42.0**(정확 핀 — pre-1.0 계열, 파괴적 변경 가능) |
-| 인증(OAuth2) | `league/oauth2-client` + `stevenmaguire/oauth2-keycloak` | `^2.8` / `^6.1` |
-| JWT(강화 검증) | `firebase/php-jwt` | `^7.1` |
-| HTTP(PSR-18/17) | `guzzlehttp/guzzle` + `guzzlehttp/psr7` | `^7.9` / `^2.7` |
-| 단위 테스트 | `phpunit/phpunit` 12 · `phpstan/phpstan` 2.2(+ strict-rules·phpunit 확장) · `friendsofphp/php-cs-fixer` 3.95 | — |
-| 통합 테스트 | (docker CLI 셸아웃 — `testcontainers/testcontainers` ^1.0은 dev 의존이나 Windows native PHP 미지원으로 실사용 안 함) | — |
+| 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
+|---|---|---|---|
+| Admin | `fschmtt/keycloak-rest-api-client-php` | 유일한 성숙 admin 클라이언트 — pre-1.0 계열이라 정확 핀(파괴적 변경 가능) | **0.42.0** |
+| 인증(OAuth2) | `league/oauth2-client` + `stevenmaguire/oauth2-keycloak` | 성숙한 OAuth2 클라이언트 + Keycloak 프로바이더 확장(대안 `jumbojett/openid-connect-php`는 세션 슈퍼글로벌 결합으로 기각) | `^2.8` / `^6.1` |
+| JWT(강화 검증) | `firebase/php-jwt` | 표준 JWT 라이브러리 — 내장 `CachedKeySet`은 rate-limit 버그(#543)가 있어 자체 `JwksStore`로 대체 | `^7.1` |
+| HTTP(PSR-18/17) | `guzzlehttp/guzzle` + `guzzlehttp/psr7` | fschmtt·league 양쪽이 공통으로 요구하는 PSR-18/17 전송 계층 | `^7.9` / `^2.7` |
+| 단위 테스트 | `phpunit/phpunit` 12 · `phpstan/phpstan` 2.2(+ strict-rules·phpunit 확장) · `friendsofphp/php-cs-fixer` 3.95 | 표준 PHP 정적분석(level max)+테스트+스타일 스택 | — |
+| 통합 테스트 | (docker CLI 셸아웃 — `testcontainers/testcontainers` ^1.0은 dev 의존이나 Windows native PHP 미지원으로 실사용 안 함) | Windows native PHP가 `unix://` 스트림 트랜스포트 미지원(Docker Desktop npipe도 불가) | — |
 
 전부 MIT/BSD-3(Apache-2.0 호환). `jumbojett/openid-connect-php`는 세션 슈퍼글로벌·`header()` 리다이렉트를 자체 소유해 결정적 파사드와 상충 + JWT 검증 이력 우려로 기각.
 
 **Rust 확정 의존성(Cargo.toml, 정확 핀 `=` 지정)**:
 
-| 의존성 | 크레이트 | 버전 |
-|---|---|---|
-| Admin | `keycloak`(`default-features = false`, features: `tags-all`·`resource-builder`·`reqwest12`) | `=26.6.2` |
-| 인증(OIDC/OAuth2) | `openidconnect`(`default-features = false`, feature: `reqwest`) | `=4.0.1` |
-| JWT(강화 검증) | `jsonwebtoken`(`default-features = false`, features: `rust_crypto`·`use_pem`) | `=10.4.0` |
-| HTTP | `reqwest`(`default-features = false`, features: `json`·`rustls-tls`) | `0.12` |
-| 비동기 런타임 | `tokio`(features: `rt-multi-thread`·`macros`·`time`·`sync`) | `1.52` |
-| 오류/직렬화 | `thiserror` `2.0` · `async-trait` `0.1` · `serde`+`serde_json` `1` · `url` `2` | — |
-| 단위 테스트 | `wiremock` `0.6`(HTTP 목) · `rsa` `0.9`+`rand` `0.8`+`base64` `0.22`(JWKS 공격 프로브 픽스처 생성) | — |
-| 통합 테스트 | `testcontainers` `0.27.3`(pre-1.0, base `GenericImage` — 언어별 편의 모듈 없음) | — |
+| 의존성 | 크레이트 | 왜 이 선택인가 | 버전 |
+|---|---|---|---|
+| Admin | `keycloak`(`default-features = false`, features: `tags-all`·`resource-builder`·`reqwest12`) | `reqwest12` feature로 `openidconnect`와 reqwest 0.12를 정렬(안 맞추면 타입 불일치로 컴파일 실패) | `=26.6.2` |
+| 인증(OIDC/OAuth2) | `openidconnect`(`default-features = false`, feature: `reqwest`) | `CoreClient`가 6개 엔드포인트 typestate 제네릭 — auth/introspection/token만 `EndpointSet`으로 명시해 무오류 호출 가능 | `=4.0.1` |
+| JWT(강화 검증) | `jsonwebtoken`(`default-features = false`, features: `rust_crypto`·`use_pem`) | `Validation` 기본값이 안전하지 않아 `validate_nbf`/`leeway`/`required_spec_claims` 전부 재정의 필요 | `=10.4.0` |
+| HTTP | `reqwest`(`default-features = false`, features: `json`·`rustls-tls`) | `keycloak` crate·`openidconnect`가 공유하는 단일 HTTP 클라이언트(SSRF 하드닝을 위해 `redirect::Policy::none()` 적용) | `0.12` |
+| 비동기 런타임 | `tokio`(features: `rt-multi-thread`·`macros`·`time`·`sync`) | `openidconnect`·`keycloak` crate 양쪽이 요구하는 비동기 런타임 | `1.52` |
+| 오류/직렬화 | `thiserror` `2.0` · `async-trait` `0.1` · `serde`+`serde_json` `1` · `url` `2` | 표준 에러 계급·직렬화·URL 유틸 | — |
+| 단위 테스트 | `wiremock` `0.6`(HTTP 목) · `rsa` `0.9`+`rand` `0.8`+`base64` `0.22`(JWKS 공격 프로브 픽스처 생성) | HTTP 목 + 공격 프로브용 테스트 키 생성(RUSTSEC-2023-0071은 서명검증 전용인 런타임에 무영향) | — |
+| 통합 테스트 | `testcontainers` `0.27.3`(pre-1.0, base `GenericImage` — 언어별 편의 모듈 없음) | pre-1.0이라 Keycloak 전용 편의 모듈이 없어 `GenericImage`로 직접 조립 | — |
 
 전부 Apache-2.0/MIT(호환). `keycloak`/`openidconnect`/`jsonwebtoken`은 정확 핀(`=`)으로 고정(reqwest 메이저 정렬·typestate 제네릭·`Validation` 필드가 버전 간 깨지기 쉬운 표면이라 마이너 드리프트 방지). RUSTSEC-2023-0071(rsa Marvin)은 dev-dependency `rsa`(테스트 키 생성 전용)에 대한 것으로 SDK 런타임(공개키 서명검증만 수행)에는 무영향(게차 참조).
 
 **Ruby 확정 의존성(gemspec, 범위 지정)**:
 
-| 의존성 | gem | 버전 |
-|---|---|---|
-| 인증(OAuth2/OIDC) | `rack-oauth2`(nov) | `~> 2.3` |
-| Admin | (성숙한 gem 부재 — `faraday`로 Admin REST 직접 래핑) | — |
-| HTTP | `faraday` | `~> 2.0` |
-| JWT(강화 검증) | `jwt`(ruby-jwt) | `~> 3.2` |
-| 단위 테스트 | `rspec` 3 · `webmock` · `simplecov` · `rubocop`(+ `rubocop-rspec`) | — |
-| 통합 테스트 | (docker CLI 셸아웃 — Windows native Ruby가 testcontainers-ruby 소켓 트랜스포트 미지원, PHP와 동일 패턴) | — |
-| 의존성 감사 | `bundler-audit` | — |
+| 의존성 | gem | 왜 이 선택인가 | 버전 |
+|---|---|---|---|
+| 인증(OAuth2/OIDC) | `rack-oauth2`(nov) | OIDF 인증 RP 저자(nov)의 유지 gem — PKCE는 passthrough라 S256을 SDK가 손수 생성 | `~> 2.3` |
+| Admin | (성숙한 gem 부재 — `faraday`로 Admin REST 직접 래핑) | `looorent/keycloak-admin` 등은 전부 공유 `TokenProvider` 주입 미지원(§4 캐싱 불변식 위반)으로 기각 | — |
+| HTTP | `faraday` | 직접 구현하는 admin REST + rack-oauth2 전역 타임아웃 설정의 공통 기반 | `~> 2.0` |
+| JWT(강화 검증) | `jwt`(ruby-jwt) | 기본값이 안전하지 않아 `algorithms`/`verify_iss`/`verify_aud`/`leeway` 전부 재정의 필요 | `~> 3.2` |
+| 단위 테스트 | `rspec` 3 · `webmock` · `simplecov` · `rubocop`(+ `rubocop-rspec`) | 표준 RSpec+HTTP목+커버리지+린트 스택 | — |
+| 통합 테스트 | (docker CLI 셸아웃 — Windows native Ruby가 testcontainers-ruby 소켓 트랜스포트 미지원, PHP와 동일 패턴) | Windows native Ruby가 testcontainers-ruby 소켓 트랜스포트 미지원 | — |
+| 의존성 감사 | `bundler-audit` | gem 취약점 감사 | — |
 
 전부 MIT(Apache-2.0 호환). `rack-oauth2`는 OIDF 인증 RP 저자(nov)의 유지 gem으로 채택. `looorent/keycloak-admin`·`imagov/keycloak`·`keycloak-ruby-client`는 전부 공유 `TokenProvider` 주입 미지원(§4 캐싱 불변식 위반)으로 기각, `openid_connect`(nov)는 런타임 의존성 11개로 무거워 기각, `oauth2`(pboling)는 PKCE 완전 수작업·OIDC 비인식으로 기각.
 
 **Kotlin 확정 의존성(build.gradle.kts, JVM 자매 Java SDK 스택 재사용 + 코루틴 경계 신규)**:
 
 <!-- doc-guard: kind=dep source=kotlin/build.gradle.kts min=6 -->
-| 의존성 | 좌표 | 버전 |
-|---|---|---|
-| Admin(재사용, api) | `org.keycloak:keycloak-admin-client` | 26.0.11 |
-| 인증(재사용) | `com.nimbusds:oauth2-oidc-sdk` | 11.38.2 |
-| JWT(재사용, 강화 검증) | `com.nimbusds:nimbus-jose-jwt` | 10.9.1 |
-| 코루틴(신규, 공개 suspend 노출 → api) | `org.jetbrains.kotlinx:kotlinx-coroutines-core` | 1.11.0 |
-| 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 4.3.1 |
-| Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0.5 |
+| 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
+|---|---|---|---|
+| Admin(재사용, api) | `org.keycloak:keycloak-admin-client` | JVM 자매 Java SDK가 실 Keycloak으로 이미 필드 검증 — 신규 라이브러리 리스크 0 | 26.0.11 |
+| 인증(재사용) | `com.nimbusds:oauth2-oidc-sdk` | 위와 동일 이유(Java SDK 검증 스택 재사용) | 11.38.2 |
+| JWT(재사용, 강화 검증) | `com.nimbusds:nimbus-jose-jwt` | 위와 동일 이유 + Java의 `JWKSourceBuilder` 캐시+RateLimited DoS-safe JWKS를 그대로 상속 | 10.9.1 |
+| 코루틴(신규, 공개 suspend 노출 → api) | `org.jetbrains.kotlinx:kotlinx-coroutines-core` | 유일한 신규 경계 — `suspend`+`runInterruptible(Dispatchers.IO)`로 블로킹 JVM 라이브러리 호출을 코루틴 관용으로 감쌈 | 1.11.0 |
+| 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 실제 Keycloak 26.6 컨테이너로 통합검증(Java와 동일 모듈) | 4.3.1 |
+| Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0 모듈명 변경 반영(Java와 동형) | 2.0.5 |
 
-| 의존성 | 좌표 | 버전 |
-|---|---|---|
-| 단위 테스트 | JUnit 6.1.2 · MockK 1.14.11 · WireMock 3.13.2 · `kotlinx-coroutines-test` 1.11.0 · `kotlin-test-junit5` 2.4.10 | — |
-| 빌드/배포 플러그인 | Kotlin 2.4.10 · vanniktech `maven.publish` 0.37.0(Central Portal) · Kover 0.9.9 · ktlint gradle 14.2.0 · Dokka 2.2.0 | — |
+| 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
+|---|---|---|---|
+| 단위 테스트 | JUnit 6.1.2 · MockK 1.14.11 · WireMock 3.13.2 · `kotlinx-coroutines-test` 1.11.0 · `kotlin-test-junit5` 2.4.10 | JVM 표준 테스트+모킹+HTTP목+코루틴테스트 스택(MockK는 JAX-RS 추상클래스엔 미사용 — 게차 참고) | — |
+| 빌드/배포 플러그인 | Kotlin 2.4.10 · vanniktech `maven.publish` 0.37.0(Central Portal) · Kover 0.9.9 · ktlint gradle 14.2.0 · Dokka 2.2.0 | Central Portal 배포(구 OSSRH 종료)+커버리지 게이트+린트+API 문서 생성 | — |
 
 전부 Apache-2.0/EPL-2.0(호환). Admin·인증·JWT 3개 좌표는 Java SDK가 실 Keycloak으로 이미 검증한 것과 완전히 동일해 신규 라이브러리 리스크 0 — 차이는 코루틴 관용 래핑(`kotlinx-coroutines-core`)뿐이다.
 
