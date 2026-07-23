@@ -428,4 +428,41 @@ assert_not_contains "$OUT" '"8개 언어"' "relative count must not surface even
 
 rm -rf "$TMP" && mkdir -p "$TMP"
 
+# ---- 회귀 4(Fix 1): --strict 는 위치 인자(루트 경로)보다 앞에 오든 뒤에 오든 동일하게
+# 동작해야 한다 ----
+# 고치기 전 버전은 `process.argv[2]`를 무조건 루트로 가정했다 — 검사 4~6을 --strict로
+# 승격하는 문서화된 다음 단계의 가장 자연스러운 실행형인 `check-docs.mjs --strict`(명시적
+# `.` 없이)와 똑같은 패턴인 `node check-docs.mjs --strict "$TMP"`에서 "--strict" 문자열
+# 자체가 존재하지 않는 디렉터리로 resolve되어 ENOENT로 크래시했다(부비트랩). 고친 버전은
+# 두 순서가 완전히 같은 결과(크래시 없이, 같은 종료코드, 같은 "checked N facts" 성공
+# 문구)를 내야 한다.
+cp -r "$FIX/." "$TMP/"
+if node "$GUARD" "$TMP" --strict >/dev/null 2>&1; then RC_PATH_FIRST=0; else RC_PATH_FIRST=$?; fi
+if node "$GUARD" --strict "$TMP" >/dev/null 2>&1; then RC_FLAG_FIRST=0; else RC_FLAG_FIRST=$?; fi
+assert_eq "$RC_PATH_FIRST" "$RC_FLAG_FIRST" "--strict before the root path must exit identically to --strict after it"
+OUT_FLAG_FIRST="$(node "$GUARD" --strict "$TMP" 2>&1)" || true
+assert_not_contains "$OUT_FLAG_FIRST" "ENOENT" "--strict before the root path must not crash with ENOENT (argv booby-trap)"
+assert_contains "$OUT_FLAG_FIRST" "checked" "--strict before the root path must produce the normal 'checked N facts' output, not a crash"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 회귀 5(Fix 2): fact/anchor 최저치(floor)는 --min-facts/--min-anchors로만 켜지고
+# (기본 0=미적용, 픽스처 무영향), 켜지면 앵커/표 삭제처럼 검사 커버리지가 줄어든 트리를
+# 실패시켜야 한다 ----
+# 정상 픽스처(scripts/test/fixtures/doc-guard)는 항상 "checked 4 facts across 3 anchors"다
+# — 그 실측치보다 낮은 하한(--min-facts 미만이 아니라 그 값을 밑도는 경우)은 통과해야
+# 하고, 넘는 하한은 실패해야 한다. 플래그를 전혀 안 주면(기본 0) 같은 픽스처가 여전히
+# 통과해야 한다 — floor가 opt-in이지 항상 켜진 게 아니라는 증거.
+cp -r "$FIX/." "$TMP/"
+assert_ok node "$GUARD" "$TMP" # 플래그 없음 — floor 미적용, 정상 통과
+assert_ok node "$GUARD" "$TMP" --min-facts=4 --min-anchors=3   # 실측치와 정확히 같으면 통과
+assert_fails node "$GUARD" "$TMP" --min-facts=5                # 실측(4) < 요구(5) — 실패
+OUT="$(node "$GUARD" "$TMP" --min-facts=5 2>&1)" || true
+assert_contains "$OUT" "facts 4 < --min-facts=5" "floor failure must name the actual fact count and the requested floor"
+assert_fails node "$GUARD" "$TMP" --min-anchors=4               # 실측(3) < 요구(4) — 실패
+OUT="$(node "$GUARD" "$TMP" --min-anchors=4 2>&1)" || true
+assert_contains "$OUT" "anchors 3 < --min-anchors=4" "floor failure must name the actual anchor count and the requested floor"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
 assert_report

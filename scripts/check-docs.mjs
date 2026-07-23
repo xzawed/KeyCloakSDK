@@ -5,7 +5,6 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve, relative, dirname } from 'node:path'
 
-const ROOT = resolve(process.argv[2] ?? '.')
 // .superpowers는 gitignore된 작업 스크래치(실제 문서가 아님). .venv/venv/site-packages는
 // 파이썬 가상환경(+ 그 안의 vendored 서드파티 패키지)이라 실제 문서가 아니다 — 이게 없으면
 // python/.venv/Lib/site-packages/**의 README/NOTICE가 검사 5(링크)에 걸려 거짓 경고를 낸다.
@@ -29,10 +28,37 @@ const SKIP = new Set([
 const SKIP_PATHS = new Set(['scripts/test/fixtures'])
 const MAX_PROP_HOPS = 10 // 순환/장기 속성 체인이 무한루프하지 않도록 하는 반복 상한.
 
+// argv 파싱: 위치 인자(루트 경로)와 플래그(--strict·--min-facts=N·--min-anchors=M)를
+// 서로 완전히 독립적으로 파싱한다. `process.argv[2]`를 무조건 루트로 가정하면
+// `--strict`가 위치 인자 자리에 오는 가장 자연스러운 호출(`check-docs.mjs --strict`,
+// 명시적 `.` 없이)에서 그 문자열 자체가 존재하지 않는 디렉터리 경로로 오인되어
+// ENOENT로 크래시한다 — 검사 4~6을 --strict로 승격하는 다음 단계의 진입점이 바로 이
+// 호출형이라 반드시 고쳐야 하는 부비트랩이다. 루트는 "--로 시작하지 않는 첫 인자"
+// (기본 '.')이고, 플래그는 등장 위치와 무관하게 인식된다 — 아래 다섯 호출형이 전부
+// 동일하게 동작해야 한다: `check-docs.mjs` · `check-docs.mjs .` · `check-docs.mjs --strict` ·
+// `check-docs.mjs . --strict` · `check-docs.mjs --strict .`
+let rootArg = null
+let STRICT = false
+let MIN_FACTS = 0
+let MIN_ANCHORS = 0
+for (const arg of process.argv.slice(2)) {
+  if (arg === '--strict') {
+    STRICT = true
+  } else if (/^--min-facts=\d+$/.test(arg)) {
+    MIN_FACTS = Number(arg.slice('--min-facts='.length))
+  } else if (/^--min-anchors=\d+$/.test(arg)) {
+    MIN_ANCHORS = Number(arg.slice('--min-anchors='.length))
+  } else if (!arg.startsWith('--') && rootArg === null) {
+    rootArg = arg
+  }
+}
 // --strict 없으면 검사 4~6(예방적 — 아직 실제 드리프트가 관측된 적 없음)은 경고만 남기고
 // 종료코드는 살린다. repo-hygiene.yml은 브랜치 필터 없는 on:push라 즉시 fail-closed로 켜면
 // 모든 Dependabot 브랜치가 동시에 빨개진다 — 한 사이클 관찰 후 CI가 --strict를 붙여 승격한다.
-const STRICT = process.argv.includes('--strict')
+// --min-facts/--min-anchors는 기본 0(=미적용, 픽스처 영향 없음)이라 opt-in이다 — CI(doc-facts
+// 잡)만 저장소 루트의 실측 하한(현재 14/4)을 명시로 전달해, 앵커나 그 표를 통째로 지워도
+// (=검사 자체가 조용히 사라져도) exit 0으로 새지 않게 한다.
+const ROOT = resolve(rootArg ?? '.')
 const warnings = []
 
 function walkFiles(dir, matches, out = []) {
@@ -525,6 +551,21 @@ for (const [coord, hits] of seen) {
 // 검사 4·6 — 파일별 순회와 무관한 전역 대조라 메인 루프 밖에서 한 번만 실행한다.
 checkCoverageGates()
 checkCardinality()
+
+// 검사 7 — fact/anchor 최저치(floor, --min-facts/--min-anchors로 opt-in). 앵커 주석 하나를
+// 지우면서 그 앵커가 소유했던 표까지 함께 남겨두면(=검사 대상 자체가 사라지면) 위의 검사
+// 1~6 어느 것도 이를 잡지 못하고 그냥 exit 0 — 유일한 신호는 사람이 보고 눈치채야 하는
+// "checked N facts across M anchors" 문구뿐이다. 이 검사는 그 자리를 최후 방어선으로
+// 메운다: STRICT 여부와 무관하게 항상 강제한다(경고로 낮추면 이 검사 자체가 무력화된
+// "예방적 검사" 신세가 되어 버그를 반복하므로). 기본값 0은 항상 참(facts/anchors는
+// 음수일 수 없음)이라 플래그를 안 주면 완전 no-op — 픽스처는 영향받지 않는다.
+if (facts < MIN_FACTS) {
+  errors.push(`facts ${facts} < --min-facts=${MIN_FACTS} — 앵커나 그 표가 삭제되어 검사 커버리지가 줄었을 수 있음`)
+}
+if (anchors < MIN_ANCHORS) {
+  errors.push(`anchors ${anchors} < --min-anchors=${MIN_ANCHORS} — 앵커 자체가 삭제되었을 수 있음`)
+}
+
 for (const w of warnings) console.warn(`::warning::${w}`)
 
 if (errors.length) {
