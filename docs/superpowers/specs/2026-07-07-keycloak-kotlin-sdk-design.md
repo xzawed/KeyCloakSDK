@@ -18,7 +18,7 @@
 
 **Kotlin 관용화**: 모든 네트워크 메서드가 **코루틴 `suspend`**(async 계열 — Node/Rust/Python-aio 동형) · **`data class`** 값타입 · **`sealed class`** 예외 계층 · `explicitApi()`. §4 언어중립 계약(config→auth→jwt→admin→client) 동형.
 
-JWT 검증만 자체강화(RS256 핀·`none` 거부·iss 정확일치·aud 포함·exp 필수·클록스큐·DoS-safe JWKS) — 여덟 자매 SDK와 동일하며 하드닝 불변식은 [Java 검증로그](../governance/verification-log.md)에서 상속.
+JWT 검증만 자체강화(RS256 핀·`none` 거부·iss 정확일치·aud 포함·exp 필수·클록스큐·DoS-safe JWKS) — 여덟 자매 SDK와 동일하며 하드닝 불변식은 [Java 검증로그](../../governance/verification-log.md)에서 상속.
 
 ## 2. 빌드 / 구조 / 배포
 

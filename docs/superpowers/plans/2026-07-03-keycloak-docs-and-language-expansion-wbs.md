@@ -54,7 +54,7 @@ Task 1·2·3은 상호 독립(병렬 가능, Workflow 팬아웃 적합). Task 4�
   - `## 요구 런타임` 표: Java=JDK 21+, Python=3.10+ (Docker는 통합테스트에만).
   - `## Java` — 4블록(아래 Step 2).
   - `## Python` — 4블록(아래 Step 3).
-  - `## 다음 단계` — [언어 확장 로드맵](../roadmap/language-support.md), [add-a-language 플레이북](add-a-language-playbook.md) 링크.
+  - `## 다음 단계` — [언어 확장 로드맵](../../roadmap/language-support.md), [add-a-language 플레이북](add-a-language-playbook.md) 링크.
 
 - [ ] **Step 2: Java 섹션 작성** — 4블록:
   - **요구 런타임**: JDK 21+ (`--release 21` 컴파일; 이전 JDK에서 `UnsupportedClassVersionError`).
@@ -66,14 +66,14 @@ Task 1·2·3은 상호 독립(병렬 가능, Workflow 팬아웃 적합). Task 4�
       <version>0.1.0-SNAPSHOT</version>
     </dependency>
     ```
-  - **배포 후 설치(future)**: 동일 좌표를 Maven Central에서. **⚠️ 현재 미배포** — [DEPLOY.md](../../DEPLOY.md)·[로드맵 step-0](../roadmap/language-support.md).
+  - **배포 후 설치(future)**: 동일 좌표를 Maven Central에서. **⚠️ 현재 미배포** — [DEPLOY.md](../../../DEPLOY.md)·[로드맵 step-0](../../roadmap/language-support.md).
   - **최소 사용 예**: `KeycloakClient` 생성 → client-credentials 토큰 → `client.auth().validate(...)` JWT 검증 → admin CRUD 1개(예: `client.admin().users().create(...)`). 코드는 `java/keycloak-sdk-examples`의 실제 API에 맞춰 작성하고 해당 예제 파일을 링크.
 
 - [ ] **Step 3: Python 섹션 작성** — 4블록:
   - **요구 런타임**: Python 3.10+.
   - **로컬 설치(now)**: `pip install -e python` (또는 `cd python && python -m build` 후 wheel 설치).
   - **배포 후 설치(future)**: `pip install keycloak-sdk`. **⚠️ 현재 미배포**.
-  - **최소 사용 예**: `KeycloakClient`(sync) — client-credentials → `validate` → admin CRUD 1개. `keycloak_sdk.aio`(async) 한 줄 언급 + [async_quickstart.py](../../python/examples/async_quickstart.py) 링크. 코드는 `python/examples/quickstart.py` 실제 API 기준.
+  - **최소 사용 예**: `KeycloakClient`(sync) — client-credentials → `validate` → admin CRUD 1개. `keycloak_sdk.aio`(async) 한 줄 언급 + [async_quickstart.py](../../../python/examples/async_quickstart.py) 링크. 코드는 `python/examples/quickstart.py` 실제 API 기준.
 
 - [ ] **Step 4: 검증 — 로컬 설치 명령 실측(G1/G2)** — Java 로컬 설치가 실제 성공하는지 확인:
   Run: `JAVA_HOME='/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot' PATH="/c/Users/dirtc/tools/apache-maven-3.9.9/bin:$PATH" mvn -f java/pom.xml -q -DskipTests -DskipITs=true install`
@@ -113,7 +113,7 @@ Task 1·2·3은 상호 독립(병렬 가능, Workflow 팬아웃 적합). Task 4�
   - `## step-0 — 기존 SDK 실배포(사람 게이트)` — 체크리스트:
     - Java→Maven Central: `io.github.xzawed` 네임스페이스 검증 · GPG 키(공개키 배포) · Central Portal 토큰(4 시크릿) · `v*` 태그 push → `.github/workflows/release.yml`. 사전검증: `mvn -f java/pom.xml -Prelease -DskipTests -Dgpg.skip=true package`.
     - Python→PyPI: Trusted Publisher(OIDC) 등록 · `py-v*` 태그 → `.github/workflows/python-release.yml`. 사전검증: `python -m build`.
-    - 절차 상세는 [DEPLOY.md](../../DEPLOY.md) 링크.
+    - 절차 상세는 [DEPLOY.md](../../../DEPLOY.md) 링크.
 
 - [ ] **Step 3: 문서 작성 — 우선순위표 + 현황 매트릭스** — Step 1 딥리서치 결과 반영:
   - `## 우선순위` 표: 순위·언어·auth 클라이언트·admin 클라이언트·비고(유지보수/라이선스). 기준 문장(생태계 수요 × 성숙 클라이언트) 명시.
@@ -147,7 +147,7 @@ Task 1·2·3은 상호 독립(병렬 가능, Workflow 팬아웃 적합). Task 4�
   3. 보안 불변식: 마스킹(완전 불투명)·TLS on·JWKS 재조회 DoS-safe·admin 타임아웃 주입·(해당 시) default typing 금지 + CI 강제.
   4. 테스트 패리티 매트릭스: 단위(PKCE·설정·토큰파싱·예외매핑) + Testcontainers 통합(실제 Keycloak, Java/Python과 동일 시나리오) + 커버리지 게이트.
   5. CI·배포·문서: 빌드/린트/타입/테스트 CI + 태그 드리븐 배포(human-gated) + getting-started 언어 섹션 + verification-log.
-  6. 거버넌스 게이트 G1~G6([ai-governance-framework](../governance/ai-governance-framework.md)) + Codex 이중검증 + Loops.
+  6. 거버넌스 게이트 G1~G6([ai-governance-framework](../../governance/ai-governance-framework.md)) + Codex 이중검증 + Loops.
 
 - [ ] **Step 2: 문서 작성 — 게이트 매핑 표 + 참조** — 각 단계 → 산출물 → 대응 게이트(G1~G6) 매핑 표. 기존 Java/Python WBS를 "실제 사례" 링크로 제시(신규 언어가 참고).
 

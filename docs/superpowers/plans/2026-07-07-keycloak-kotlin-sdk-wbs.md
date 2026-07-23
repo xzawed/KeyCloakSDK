@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **정확한 코드·설정 권위 소스**: [docs/superpowers/specs/2026-07-07-keycloak-kotlin-sdk-research.md](../specs/2026-07-07-keycloak-kotlin-sdk-research.md)(리서치 부록). 각 태스크는 이 부록의 해당 절을 진실로 삼는다. 설계: [keycloak-kotlin-sdk-design.md](../specs/2026-07-07-keycloak-kotlin-sdk-design.md). 하드닝 불변식은 [Java 검증로그](../governance/verification-log.md) 상속.
+- **정확한 코드·설정 권위 소스**: [docs/superpowers/specs/2026-07-07-keycloak-kotlin-sdk-research.md](../specs/2026-07-07-keycloak-kotlin-sdk-research.md)(리서치 부록). 각 태스크는 이 부록의 해당 절을 진실로 삼는다. 설계: [keycloak-kotlin-sdk-design.md](../specs/2026-07-07-keycloak-kotlin-sdk-design.md). 하드닝 불변식은 [Java 검증로그](../../governance/verification-log.md) 상속.
 - **패키지**: 전 소스 `io.github.xzawed.keycloak`(admin은 `.admin`). `explicitApi()` — 모든 public 선언 가시성·반환타입 명시(Task 1부터).
 - **코루틴 계약**: 네트워크 메서드 = `suspend`, 블로킹 Java 호출은 `runInterruptible(Dispatchers.IO){ }`로 감쌈. **`CancellationException` 최우선 재던지기**. 내부 CoroutineScope·`runBlocking` 금지(호출자/테스트/예제만). single-flight = 코루틴 `Mutex.withLock`. `close()`는 non-suspend.
 - **값 좌표**: version 0.1.0 · groupId io.github.xzawed · artifactId keycloak-sdk-kotlin.
