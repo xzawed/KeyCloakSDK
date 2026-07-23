@@ -39,156 +39,19 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 
 ## 툴체인 (빌드 명령)
 
-### Java 툴체인 (빌드 명령)
+언어별 전체 빌드/테스트/린트/배포 명령(머신 전용 절대경로·단일 테스트 실행 포함)은 `.claude/rules/<lang>.md`에 있다(해당 언어 경로 작업 시 자동 로드). 아래는 언어별 핵심 진입 명령 하나씩만 남긴 표다.
 
-하네스 셸은 프로파일을 소싱하지 않으므로 mvn 명령마다 환경을 인라인 지정한다:
-```bash
-JAVA_HOME='/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot' PATH="/c/Users/dirtc/tools/apache-maven-3.9.9/bin:$PATH" mvn -f java/pom.xml <goal>
-```
-- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 90/85 포함)
-- 단위테스트만: `mvn -f java/pom.xml test -DskipITs=true`
-- 단일 테스트: `mvn -f java/pom.xml test -pl <module> -Dtest=<ClassName>#<method>`
-- 통합테스트(Docker 필요): `mvn -f java/pom.xml verify`
-- examples 모듈만 컴파일: `mvn -f java/pom.xml -pl keycloak-sdk-examples -am compile`
-- 배포(release) 산출물 로컬 검증(서명·배포 없이): `mvn -f java/pom.xml -Prelease -DskipTests -DskipITs=true -Dgpg.skip=true package` — core/auth/admin/keycloak-sdk 각각 `*-sources.jar`/`*-javadoc.jar` 생성 확인
-- 실제 `deploy`(Maven Central 배포)는 로컬에서 실행하지 않는다 — `v*` 태그 push 시 `.github/workflows/release.yml`에서만 시크릿과 함께 실행(사람 승인 게이트)
-- JDK 21.0.8 (Eclipse Temurin) · Maven 3.9.9 (머신 전용 경로 — 리포지토리에 커밋 안 함, CI는 setup-java 사용)
-
-### Python 툴체인 (빌드 명령)
-
-가상환경은 `python/.venv`에 있다(리포지토리에 커밋 안 함). 명령은 `python/`에서 실행하거나 절대경로의 venv 인터프리터를 직접 호출한다:
-```bash
-cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m pytest -m "not integration" --cov=keycloak_sdk   # 단위테스트 224개 + 커버리지 게이트 100%
-cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m pytest -m integration            # 통합테스트 11개(Docker 필요, testcontainers)
-cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m ruff check src tests examples     # 린트(보안 S/bandit 포함 확장 룰셋)
-cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m ruff format --check src tests examples  # 포맷 검사
-cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m mypy src                          # 정적 타입 검사(strict)
-```
-- 로컬 배포 빌드 검증(업로드 없이): `cd python && /d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m build` → `dist/keycloak_sdk-0.1.0-py3-none-any.whl` + `.tar.gz` 생성 확인
-- 실제 PyPI 배포는 로컬에서 실행하지 않는다 — `py-v*` 태그 push 시 `.github/workflows/python-release.yml`에서 PyPI Trusted Publisher(OIDC, 저장 시크릿 없음)로 실행(사람 승인 게이트)
-- 패키지 `keycloak_sdk`(배포명 `keycloak-sdk`)는 PEP 561 `py.typed` 마커를 포함 — 소비자 측 mypy도 타입 검사 가능
-
-### Node 툴체인 (빌드 명령)
-
-Node는 시스템 설치(현재 v22, 요구 20+)를 사용한다. 명령은 `node/`에서 실행한다:
-```bash
-cd node && npm ci                    # 의존성 설치(package-lock.json 기준)
-cd node && npm test                  # 단위테스트 71개 + 커버리지 게이트(라인 90/브랜치 85). Docker 불필요
-cd node && npm run test:unit         # 동일(단위만 명시)
-cd node && npm run test:it           # 통합테스트 5개(Docker 필요 — vitest.integration.config.ts, 실제 Keycloak 26.6)
-cd node && npm run typecheck         # tsc --noEmit (strict)
-cd node && npm run lint              # eslint (typescript-eslint recommended)
-cd node && npm run build             # tsc → dist/ (배포 산출물)
-```
-- 단일 테스트 파일: `cd node && npx vitest run test/unit/<name>.test.ts`
-- 로컬 배포 빌드 검증(업로드 없이): `cd node && npm run build && npm pack --dry-run` → `dist/**` + package.json만 포함(약 24kB, `files:["dist"]`) 확인
-- 실제 npm 배포는 로컬에서 실행하지 않는다 — `node-v*` 태그 push 시 `.github/workflows/node-release.yml`에서 npm Trusted Publishing(OIDC + provenance, 저장 토큰 없음)로 실행(사람 승인 게이트)
-- 패키지 `@xzawed/keycloak-sdk`는 ESM 전용(`"type":"module"`)이며 `.d.ts` 타입 선언을 포함 — 소비자 측 TypeScript 타입 검사 가능
-- ⚠️ 커버리지 게이트에서 `src/auth.ts`·`src/admin/**`·`src/index.ts` omit(네트워크 경계) — 통합테스트로 검증. 나머지 로직 모듈은 라인 100%/브랜치 94% 실측
-
-### Go 툴체인 (빌드 명령)
-
-Go는 포터블 설치 `C:\Users\dirtc\tools\go`(1.26.4, 리포지토리 미커밋)를 사용한다. 프리픽스를 인라인 지정하고 `go -C go`로 실행한다(cwd를 go/로 바꾸지 않아 git과 충돌 방지):
-```bash
-export PATH="/c/Users/dirtc/tools/go/bin:$PATH" GOTOOLCHAIN=local
-go -C /d/Source/KeyCloakSDK/go build ./...      # 빌드
-go -C /d/Source/KeyCloakSDK/go test ./...        # 단위테스트 40개(integration 태그 없이 — E2E 제외)
-go -C /d/Source/KeyCloakSDK/go test -tags=integration -run TestE2E -count=1 ./...  # 통합 E2E(Docker 필요)
-go -C /d/Source/KeyCloakSDK/go vet ./...         # 정적 분석
-gofmt -l /d/Source/KeyCloakSDK/go                # 포맷 검사(출력 없으면 OK; -w로 수정)
-```
-- 단일 테스트: `go -C go test -run TestValidateValidToken ./...`
-- 커버리지 게이트(로직 statement ≥90, 네트워크 경계 omit): `go test ./... -coverprofile=cover.out` → `grep -vE '/(auth|admin|admin_users|admin_clients|admin_realms|admin_roles|admin_groups|client)\.go:' cover.out`로 경계 제외 → `go tool cover -func`로 total 확인(실측 95.2%)
-- ⚠️ **최소 Go는 1.25**(`golang.org/x/oauth2` v0.36이 요구 → `go.mod`의 `go 1.25`). CI matrix는 1.25·1.26. `golangci-lint`는 로컬 미설치(CI에서 `golangci/golangci-lint-action@v6`) — 로컬은 `go vet`·`gofmt`로 대체
-- **배포는 레지스트리 없음** — Go 모듈은 `go/v*` 태그가 곧 릴리스(`proxy.golang.org` 자동 캐시). `.github/workflows/go-release.yml`이 태그 push 시 verify + GitHub Release + 프록시 워밍(사람 승인 게이트). 소비자: `go get github.com/xzawed/KeyCloakSDK/go@vX.Y.Z`
-
-### .NET 툴체인 (빌드 명령)
-
-.NET은 시스템 설치 `C:\Program Files\dotnet`(SDK 10.0.102, net8.0 런타임 8.0.23 네이티브 존재 — 포터블 설치 불필요)을 사용한다. 명령은 `dotnet/`에서 실행한다:
-```bash
-cd dotnet && dotnet build                                          # 빌드(warnaserror·Nullable·AnalysisLevel 8.0)
-cd dotnet && dotnet test --filter "Category!=Integration"          # 단위테스트 58개. Docker 불필요
-cd dotnet && dotnet test --filter "Category=Integration"           # 통합테스트 1개(E2E `Full_flow`, Docker 필요 — 실제 Keycloak 26.6)
-cd dotnet && dotnet format Keycloak.Sdk.sln --verify-no-changes    # 포맷 검사
-```
-- 단일 테스트: `dotnet test --filter "FullyQualifiedName~<TestName>"`
-- 커버리지 게이트(로직 모듈 라인 ≥90%/브랜치 ≥85%, 네트워크 경계 omit): `dotnet test --filter "Category!=Integration" /p:CollectCoverage=true /p:Threshold="90,85" /p:ThresholdType="line,branch" /p:Exclude="[*]Xzawed.Keycloak.AuthClient,[*]Xzawed.Keycloak.Admin.*,[*]Xzawed.Keycloak.KeycloakClient"`(실측 라인 97.34%/브랜치 93.47%)
-- 로컬 배포 빌드 검증(업로드 없이): `dotnet pack src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release` → `Xzawed.Keycloak.Sdk.<version>.nupkg`(+ `.snupkg`) 생성 확인
-- 실제 NuGet 배포는 로컬에서 실행하지 않는다 — `dotnet-v*` 태그 push 시 `.github/workflows/dotnet-release.yml`에서 `NUGET_API_KEY` 시크릿으로 실행(사람 승인 게이트; 시크릿 미설정 시 push 스텝은 스킵)
-- 패키지 `Xzawed.Keycloak.Sdk`는 net8.0 타깃·async-first(`Task<T>`+`CancellationToken`)이며 XML 문서(`GenerateDocumentationFile`)를 포함 — 소비자 측 IntelliSense 지원
-- ⚠️ SDK 10 기본 솔루션 포맷은 `.slnx` — 이 리포는 `dotnet new sln --format sln`으로 생성한 `Keycloak.Sdk.sln`(구 포맷) 사용. `AnalysisLevel=8.0`으로 로컬(SDK 10)/CI(SDK 8) 애널라이저 밴드 일치. `GenerateDocumentationFile`/패키징 props는 `Directory.Build.props`에서 `IsTestProject != true`로 게이트(테스트 프로젝트의 CS1591 격상 방지)
-
-### PHP 툴체인 (빌드 명령)
-
-PHP는 포터블 설치 `C:\Users\dirtc\tools\php`(8.3.32 NTS x64 — ext: openssl/curl/mbstring/fileinfo/sodium/zip/json, 리포지토리 미커밋)를 사용한다. Composer(`composer.phar` + bash shim)와 Xdebug 3.5.3(zend_extension, 기본 mode off)도 같은 경로에 있다. 프리픽스를 인라인 지정하고 명령은 `php/`에서 실행한다:
-```bash
-export PATH="/c/Users/dirtc/tools/php:$PATH" OPENSSL_CONF="C:\Users\dirtc\tools\php\extras\ssl\openssl.cnf"
-cd php && composer install                                    # 의존성 설치
-cd php && vendor/bin/phpunit --testsuite unit                  # 단위테스트 64개. Docker 불필요
-cd php && vendor/bin/phpunit --testsuite integration           # 통합테스트 3개(Docker 필요 — docker CLI 셸아웃, 실제 Keycloak 26.6)
-cd php && vendor/bin/phpstan analyse                           # 정적분석(level max + strict-rules + phpunit 확장)
-cd php && vendor/bin/php-cs-fixer fix --dry-run --allow-risky=yes   # 스타일 검사(--allow-risky는 declare_strict_types risky rule에 필요)
-```
-- 단일 테스트: `vendor/bin/phpunit --filter <TestName> tests/Unit/<Path>Test.php`
-- 커버리지 게이트(로직 라인 ≥90%, 네트워크 경계 omit): `XDEBUG_MODE=coverage vendor/bin/phpunit --testsuite unit --coverage-clover clover.xml` → `phpunit.xml`의 `<source><exclude>`가 `AuthClient`/`Admin/**`/`KeycloakClient`를 이미 제외하므로 clover의 `project.metrics`를 그대로 집계(실측 100.00%)
-- ⚠️ `OPENSSL_CONF`는 로컬 RSA 키 생성(`JwtValidatorTest`)에 필요 — 없으면 openssl 확장이 시스템 기본 cnf를 못 찾아 키 생성이 실패한다.
-- PHP 8.3.32 NTS · Composer 2.10 · Xdebug 3.5.3은 머신 전용 경로(리포지토리에 커밋 안 함, CI는 `shivammathur/setup-php` 사용).
-- 배포명 `xzawed/keycloak-sdk`. Packagist는 레지스트리 업로드가 아니라 GitHub 웹훅으로 태그를 자동감지해 게시하므로 실제 배포는 로컬에서 실행하지 않는다 — `php-v*` 태그 push 시 `.github/workflows/php-release.yml`이 verify(`composer audit`+`phpstan`+단위테스트) 후 GitHub Release를 생성한다(사람 승인 게이트; Packagist에 `xzawed/keycloak-sdk` 저장소 등록은 1회 수동 선행).
-
-### Rust 툴체인 (빌드 명령)
-
-Rust는 시스템 설치(MSRV 1.88, edition 2024)를 사용한다. **Windows 로컬 빌드는 VS2019 BuildTools MSVC 환경(`vcvars64.bat`)이 필요**하다(`ring`/`rsa` 등 네이티브 의존성 컴파일 — CI의 ubuntu-latest는 무관). 명령은 `rust/`에서 실행한다:
-```bash
-cd rust && cargo build --all-targets              # 빌드(examples/tests 포함)
-cd rust && cargo fmt --all --check                # 포맷 검사
-cd rust && cargo clippy --all-targets -- -D warnings  # 린트(0 경고 게이트)
-cd rust && cargo test                              # 단위테스트 34개. Docker 불필요
-cd rust && cargo test --test integration_test -- --ignored  # 통합 E2E 1개(Docker 필요 — testcontainers, 실제 Keycloak 26.6)
-cd rust && cargo run --example quickstart           # QuickStart 예제 실행(Keycloak 필요)
-```
-- 단일 테스트: `cargo test <test_name>` (예: `cargo test rejects_none_alg`)
-- 커버리지 게이트(로직 모듈 라인 ≥90%, 네트워크 경계 omit): `rustup component add llvm-tools-preview` → `cargo install cargo-llvm-cov --locked` → `cargo llvm-cov --ignore-filename-regex '(auth|admin|client)\.rs' --fail-under-lines 90` — **실측 94.85%**(855줄 중 44줄 미실행; 파일별 `error.rs`/`oidc.rs` 100%·`jwks.rs` 96.05%·`token_provider.rs` 95.86%·`jwt.rs` 94.26%·`config.rs` 94.29%·`tokens.rs` 87.93%. 상세는 [verification-log-rust.md](docs/governance/verification-log-rust.md) 참고)
-- ⚠️ **로컬 셸에서 정규식 인자(`(auth|admin|client)\.rs`)에 포함된 `|`가 셸/배치 파서에 파이프로 오인될 수 있다** — PowerShell에서 배치 래퍼를 거칠 때는 `--ignore-filename-regex="(auth|admin|client)\.rs"`처럼 값 전체를 하나의 인자로 묶거나, 정규식을 하드코딩한 전용 스크립트를 쓴다(CI의 YAML `run:` 블록은 셸이 다르므로 이 문제가 없다).
-- ⚠️ **`cargo-llvm-cov`는 `llvm-tools-preview` rustup 컴포넌트 미설치 시 인터랙티브 확인("Proceed? [Y/n]")으로 자동 설치를 시도한다** — 비대화형 셸(CI 잡, 자동화 스크립트)에서는 이 프롬프트가 응답을 받지 못해 **무기한 행(hang)** 된다(자식 프로세스 CPU 시간이 0에 가까운 것으로 진단 가능). `rustup component add llvm-tools-preview`를 먼저 명시 실행해 사전 설치하면 이후 호출이 프롬프트 없이 진행된다. CI의 `taiki-e/install-action@cargo-llvm-cov`는 이 설치를 자체 처리하므로 CI에서는 발생하지 않는다.
-- 실제 crates.io 배포(`cargo publish`)는 로컬에서 실행하지 않는다 — `rust-v*` 태그 push 시 `.github/workflows/rust-release.yml`에서 `CARGO_REGISTRY_TOKEN` 시크릿으로 실행(사람 승인 게이트)
-- 크레이트명 `keycloak-sdk`(루트 모듈 `keycloak_sdk`), MSRV 1.88(edition 2024 + let-chain 문법 요구 — `jwks.rs`의 `if let ... && let ...`). CI 매트릭스는 1.88(MSRV 회귀 방지)·stable.
-
-### Ruby 툴체인 (빌드 명령)
-
-Ruby는 포터블 설치 `C:\Users\dirtc\tools\ruby`(3.4.10, non-devkit RubyInstaller — 리포지토리 미커밋)를 사용한다. 프리픽스를 인라인 지정하고 명령은 `ruby/`에서 실행한다:
-```bash
-export PATH="/c/Users/dirtc/tools/ruby/bin:$PATH"
-cd ruby && bundle install                                     # 의존성 설치
-cd ruby && bundle exec rspec                                   # 단위테스트 73개 + 커버리지 게이트(라인≥90%/브랜치≥85%). Docker 불필요
-cd ruby && RUN_INTEGRATION=1 bundle exec rspec spec/integration --tag integration  # 통합 1개(Docker 필요 — docker CLI 셸아웃, 실제 Keycloak 26.6)
-cd ruby && bundle exec rubocop                                 # 린트
-cd ruby && bundle exec bundler-audit check --update            # 의존성 취약점 감사
-```
-- 단일 테스트: `bundle exec rspec spec/unit/<path>_spec.rb -e "<example name>"`
-- 로컬 배포 빌드 검증(업로드 없이): `gem build keycloak-sdk.gemspec` → `keycloak-sdk-0.1.0.gem` 생성 확인(`gemspec`의 `spec.files`가 `lib/**/*.rb`+`LICENSE`+`README.md`를 포함 — 둘 다 `ruby/`에 로컬 사본 필요)
-- 실제 RubyGems 배포는 로컬에서 실행하지 않는다 — `ruby-v*` 태그 push 시 `.github/workflows/ruby-release.yml`에서 RubyGems Trusted Publishing(OIDC, 저장 시크릿 없음)로 실행(사람 승인 게이트; 최초 1회는 API 키 수동 게시 또는 rubygems.org UI에서 Trusted Publisher 사전등록 필요 — gem이 존재하기 전에는 Trusted Publisher를 붙일 수 없다)
-- ⚠️ **로컬 Windows 빌드는 MSYS2/DevKit이 필요하다.** 네이티브 gem(racc·prism·bigdecimal 등 — Windows precompiled 없음) 컴파일 때문(Rust의 VS2019 BuildTools와 동류, CI ubuntu-latest는 무관). MSYS2 pacman의 c-ares 리졸버가 이 네트워크에서 DNS를 못 풀어(mingw curl/MSYS2 wget은 정상) `msys64/etc/pacman.conf`의 `XferCommand = /usr/bin/wget --timeout=30 -O %o %u`(wget=getaddrinfo=hosts 사용)+origin-pinned mirrorlist+`/etc/hosts` 핀으로 우회 후 `ridk install 3`(mingw dev toolchain, 1회) 필요.
-- ⚠️ `rubocop -a`(자동수정)가 Windows에서 CRLF를 쓸 수 있다 — Write 도구로 직접 덮어써 LF를 유지한다(`.gitattributes`의 `eol=lf`가 커밋 시점 정규화는 하지만 로컬 워킹트리 파일 자체는 CRLF로 남을 수 있음).
-- 배포명 `keycloak-sdk`(gem), require명 `keycloak_sdk`(모듈 `KeycloakSdk` — 기존 `keycloak` gem의 `Keycloak` 모듈과 충돌 회피). Ruby 개발 3.4.10 / `required_ruby_version >= 3.2`(CI 매트릭스 3.2/3.3/3.4).
-
-### Kotlin 툴체인 (빌드 명령)
-
-Kotlin은 JDK 21(Eclipse Temurin `jdk-21.0.8.9-hotspot`) + 포터블 Gradle `9.6.1`(로컬 실행용)을 사용한다(래퍼도 동일하게 `9.6.1` — `kotlin/gradle/wrapper/gradle-wrapper.properties`). 프리픽스를 인라인 지정하고 명령은 `gradle -p kotlin <task>`(또는 `kotlin/`에서 `./gradlew`)로 실행한다:
-```bash
-export JAVA_HOME='/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot' PATH="/c/Users/dirtc/tools/gradle-9.6.1/bin:$PATH" GRADLE_USER_HOME="/c/Users/dirtc/.gradle"
-gradle -p kotlin build              # 빌드
-gradle -p kotlin test               # 단위테스트 100개. Docker 불필요
-gradle -p kotlin integrationTest    # 통합 E2E 1개(Docker 필요 — Testcontainers/dasniko, 실제 Keycloak 26.6)
-gradle -p kotlin koverVerify        # 커버리지 게이트(로직 모듈 라인≥90%/브랜치≥85%, 네트워크 경계 omit)
-gradle -p kotlin ktlintCheck        # 린트(무경고; 수정은 ktlintFormat)
-```
-- 단일 테스트: `gradle -p kotlin test --tests "*<ClassName>"`
-- 커버리지 게이트(Kover, 네트워크 경계 omit): `gradle -p kotlin koverVerify` — **실측 라인 99.24%/브랜치 85.71%**(omit 대상 `AuthClient*`/`admin.*`/`KeycloakClient*` — 통합 E2E로 검증). 상세는 [verification-log-kotlin.md](docs/governance/verification-log-kotlin.md) 참고
-- 로컬 배포 빌드 검증(업로드 없이): `gradle -p kotlin publishToMavenLocal` → 로컬 `~/.m2`에 `keycloak-sdk-kotlin-0.1.0.jar`(+`-sources.jar`/`-javadoc.jar`, Dokka) 생성 확인
-- 실제 Maven Central 배포는 로컬에서 실행하지 않는다 — `kotlin-v*` 태그 push 시 `.github/workflows/kotlin-release.yml`에서 vanniktech maven.publish로 `publishToMavenCentral`(Central Portal 스테이징) 실행(`ORG_GRADLE_PROJECT_` 접두 in-memory GPG 시크릿) 후, 사람이 Portal 콘솔에서 수동 release하는 2단계 승인 게이트(human-gated, 미실행)
-- 좌표 `io.github.xzawed:keycloak-sdk-kotlin`. Kotlin 2.4.10 · JDK 21 타깃(`jvmToolchain(21)`) · `explicitApi()`로 public API 가시성 엄격 강제 — 소비자 측 코틀린 API 문서화 요구가 컴파일 타임에 강제됨
-- ⚠️ **`gradle --stop`을 빌드 인플라이트 중 실행 금지** — `--no-daemon`도 jvmargs 때문에 단일-사용 데몬을 fork하므로 진행 중 빌드를 죽인다(동일 프로젝트에 gradle 2개 동시 실행도 락 경합으로 금지). kill 후 stale 빌드 상태는 `gradle -p kotlin clean`으로 복구
-- ⚠️ ktlint의 소문자 다중선언 파일명(`errors.kt`/`masking.kt`/`tokens.kt`/`client.kt` 등, 모노레포 공통 관용) 규칙은 `kotlin/.editorconfig`의 `ktlint_standard_filename = disabled`로 비활성 — 커밋 전 `ktlintFormat`으로 나머지 포매팅 자동정렬
+| 언어 | 핵심 진입 명령 | 상세 |
+|---|---|---|
+| Java | `mvn -f java/pom.xml verify` | `.claude/rules/java.md` |
+| Python | `cd python && .venv/Scripts/python.exe -m pytest -m "not integration" --cov=keycloak_sdk` | `.claude/rules/python.md` |
+| Node | `cd node && npm test` | `.claude/rules/node.md` |
+| Go | `go -C go test ./...` | `.claude/rules/go.md` |
+| C#/.NET | `cd dotnet && dotnet test --filter "Category!=Integration"` | `.claude/rules/dotnet.md` |
+| PHP | `cd php && vendor/bin/phpunit --testsuite unit` | `.claude/rules/php.md` |
+| Rust | `cd rust && cargo test` | `.claude/rules/rust.md` |
+| Ruby | `cd ruby && bundle exec rspec` | `.claude/rules/ruby.md` |
+| Kotlin | `gradle -p kotlin test` | `.claude/rules/kotlin.md` |
 
 ## 아키텍처
 
@@ -250,67 +113,67 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **Java 17+ javadoc은 doclint 기본 엄격.** `release` 프로파일 `maven-javadoc-plugin`에 `<doclint>none</doclint>`+`<failOnError>false</failOnError>` 없으면 문서경고로 `-javadoc.jar` 생성 실패 가능.
 - ⚠️ **Java 런타임 타깃은 21 LTS.** `maven.compiler.release=21`+enforcer `requireJavaVersion=[21,)`로 JDK21 미만 fail-fast. `maven-compiler-plugin`은 `3.11.0` 명시 고정. CI 전부 JDK21 단일.
 - ⚠️ **jackson-databind는 2.22.1 고정(dependencyManagement, dependabot 유지)** — CVE 대응 이력(2.21.2→2.21.4→2.21.5[CVE-2026-54515]→2.22.1). **보안 불변식**: 자체 `ObjectMapper`/default·polymorphic typing 금지, 신뢰된 Keycloak 응답만 고정 POJO로 역직렬화 — default typing 활성화·커스텀 JAX-RS Jackson provider 등록·미신뢰 JSON 다형 역직렬화 도입 금지. 상세: [verification-log.md](docs/governance/verification-log.md).
-- ⚠️ **(Node) admin-client `findOne`류는 404에서 `null` 반환(선언 타입은 `undefined`)** — `null`/`undefined` 모두 부재로 처리해 `KeycloakNotFoundError`로 변환. `=== undefined`만 검사하면 삭제 후 조회가 버그로 샌다. 근거: `admin/call.ts`의 `requireFound`.
-- ⚠️ **(Go) gocloak은 네트워크 실패까지 `*gocloak.APIError`로 감싼다(`Code:0`).** `toSDKError`는 `Code==0`이면 `*TransportError`, `>0`이면 `*AdminError`로 나눈다 — 그러지 않으면 연결 거부/DNS 실패가 `AdminError{HTTP 0}`로 오분류되고 `errors.As(err, &TransportError)` 경로가 死코드가 된다(리뷰 포착).
-- ⚠️ **(Go) go-jose는 `exp` 부재 시 만료검사를 건너뛴다.** `jwt.Validate`에서 `claims.Expiry == nil`을 명시 거부해야 함(Java/Python 동형) — `ValidateWithLeeway`만으론 불충분. JWKS 초기 로드는 `forcedAt` 미소모로 첫 키회전 재조회 허용(Python `-inf` 동형), 동시미스는 `singleflight`로 수렴.
-- ⚠️ **(Go) 최소 런타임 Go 1.25**(`x/oauth2` v0.36 요구 — `go.mod`를 낮춰도 `go mod tidy`가 재상향). Validator JWKS `http.Client`는 `Config.ReadTimeout` 미주입 시 `http.DefaultClient` 무한대기. TLS는 `http.Client` 기본검증이라 `allowInsecure` 로직 불필요(Node와 차이).
-- ⚠️ **(Node) 타임아웃은 `Configuration.timeout`(초), admin-client는 `ConnectionConfig.timeout`(ms)로 주입** — `requestOptions`는 signal 주입 불가. TLS는 `serverUrl`이 `http://`일 때만 `allowInsecureRequests` 적용(https는 강제 유지).
-- ⚠️ **(Node) PKCE `exchangeCode`는 `nonce` 필수 전달.** authorization request가 실은 nonce를 Keycloak이 id_token에 담아 돌려주고 openid-client v6가 자동검증 — 기대 nonce 누락 시 "unexpected nonce"로 전면 거부(리뷰 HIGH). `TokenSet`/`KeycloakConfig`는 toString/JSON/inspect에서 마스킹. JWKS는 `cooldownDuration`으로 DoS-안전.
-- ⚠️ **(Node) admin은 만료 시 재인증하려면 SDK provider를 `registerTokenProvider`로 배선한다 — `kc.auth()`는 호출하지 않는다(PR #63).** admin-client 내장 TokenManager는 만료 시 refresh_token 그랜트만 시도하고 client_credentials 재인증 폴백이 없어, 위임하면 최초 토큰 만료(~4.5분) 후 모든 admin 호출이 영구 500 실패한다. 파사드가 `ClientCredentialsTokenProvider`를 `AdminClient.create(config, provider)`로 주입해 admin이 만료 시 재인증하게 한다. **⚠️ 9언어 중 node만 취약**: JVM(Java/Kotlin)은 TokenManager가 refresh 부재 시 재인증 폴백 보유, go/dotnet/rust/ruby는 자체 캐싱 provider, python/php는 하위 라이브러리가 재인증 — 전부 SAFE. 재현: realm `accessTokenLifespan`을 낮춰 admin op → 45s 대기 → op 관찰.
-- ⚠️ **(C#) `Keycloak.AuthServices.Sdk` 3.0.0은 net10 전용 → net8.0은 2.7.0 핀.** 2.7.0이 요구하는 `DI.Abstractions >= 9.0.8`보다 낮은 핀은 NU1605(downgrade)로 `TreatWarningsAsErrors` 하드오류.
-- ⚠️ **(C#) admin 타입드 커버리지는 users/groups/realm-get뿐**(`IKeycloakUserClient`/`IKeycloakGroupClient`/`IKeycloakRealmClient`) — clients/roles/realm-CRUD는 같은 bearer `HttpClient`로 raw REST. `…Async` 편의메서드 호출하려면 변수를 `IKeycloakClient`로 타입. `CreateUserAsync`는 void 반환이라 `CreateUserWithResponseAsync`+`Location` 헤더로 id 취득.
-- ⚠️ **(C#) 네임스페이스 셰도잉**: `Xzawed.Keycloak.Admin` 안에서 `new KeycloakClient(http)`는 파사드(private ctor)에 바인딩돼 CS1729 — `using KcAdminClient = Keycloak.AuthServices.Sdk.Admin.KeycloakClient;` 별칭 필요.
-- ⚠️ **(C#) `record` 자동 `ToString()`은 토큰/시크릿을 전체 노출** — `TokenSet`/`KeycloakConfig`는 `ToString()` override+`JsonConverter<T>`로 마스킹. **단 Serilog `{@}` 구조분해는 raw 프로퍼티를 직접 읽어 이 마스킹을 우회** — 두 타입을 `{@}`로 구조분해하지 말 것.
-- ⚠️ **(C#) `HttpClient.Timeout` 만료는 `TaskCanceledException`이지 `HttpRequestException`이 아니다** — admin 경계는 `catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)`로 `KeycloakTransportException` 변환 필요.
-- ⚠️ **(C#) `JsonWebTokenHandler.ValidateTokenAsync`는 실패해도 예외를 안 던진다** — `result.IsValid` 검사 필수. `ValidAlgorithms` 기본 `null`(전체허용)이라 `["RS256"]` 핀, `ClockSkew` 기본 5분→30초, `RequireExpirationTime=true`(다른 4개 언어와 동형). JWKS는 `TokenValidationParameters.ConfigurationManager`(`RefreshInterval`이 DoS 스로틀)로 재조회한다. **테스트 함정**: `CreateToken`이 `exp` 자동주입하므로 no-exp 테스트는 `SetDefaultTimesOnTokenCreation=false` 명시 필요.
-- ⚠️ **(C#) `POST /admin/realms`(신규 realm 생성)는 master realm 전용** — 어떤 realm의 service account도(최광범위 롤 포함) 403. E2E는 master bootstrap admin으로 검증.
-- ⚠️ **(C#) Duende.IdentityModel 확장 메서드는 예외를 안 던진다**(`resp.IsError` 검사 필요) — 잘못된 client 자격증명엔 401(`ErrorType=Http`)이라 에러코드는 `resp.Json["error"]`에서 읽는다. PKCE는 라이브러리 미지원(수동 생성), introspection은 `IntrospectTokenAsync`, logout은 수동 POST.
-- ⚠️ **(C#) SDK10 기본 솔루션 포맷은 `.slnx`** — `dotnet new sln --format sln`으로 구포맷 명시 생성 필요. `AnalysisLevel=8.0`으로 로컬/CI 애널라이저 밴드 일치. `GenerateDocumentationFile`은 `IsTestProject != true`로 게이트(안 하면 테스트 프로젝트 CS1591로 빌드 실패).
-- ⚠️ **(C#) `AddKeycloak(config)`는 `KeycloakConfig`도 싱글턴 등록** — 소비자가 별도로 `AddSingleton<KeycloakConfig>`하면 등록 중복으로 해석 모호. `AddKeycloak` 후 별도 등록 금지.
-- ⚠️ **(PHP) fschmtt `Users::create()`는 void 반환** — 생성 id는 `findIdByUsername()`으로 후속조회. `Clients`/`Realms`는 `create`가 아니라 `import`(대상 representation에 id/realm 사전세팅 필요). fschmtt는 Guzzle 예외를 변환 안 하므로 `ErrorTranslation`이 404/409/403뿐 아니라 base `RequestException`(TLS 실패 등)까지 흡수해야 함.
-- ⚠️ **(PHP) league/stevenmaguire의 `pkceMethod` 생성자 옵션은 no-op**(내부 재계산으로 무시) — `PkceKeycloakProvider::getPkceMethod()` 오버라이드 필요. `exchangeCode()`는 무상태라 OAuth `state` 미검증(호출자 책임 — Node/Go/C#과 동형).
-- ⚠️ **(PHP) firebase/php-jwt의 `&$headers` out-파라미터는 성공 디코드 후에만 채워진다.** alg를 사전 신뢰해 검증에 쓰면 위조방지가 안 되므로 원본 토큰의 **첫 세그먼트를 직접 base64url 디코드**해 alg를 사전 게이트해야 한다. 내장 `CachedKeySet`은 rate-limit 버그(#543)로 미사용(자체 `JwksStore`). 악성 JWKS 모듈러스(`n`이 배열)가 던지는 `\TypeError`(`\Error`의 서브클래스 — `\Exception` 아님)까지 `catch(\Throwable)`로 잡아야 미변환 예외 누출을 막는다.
-- ⚠️ **(PHP) `JwksStore`의 rate-limit은 per-instance 메모리 상태** — 장수명 워커(Swoole/RoadRunner)는 요청간 유효하나 classic PHP-FPM은 요청마다 fresh store라 DoS 보호가 요청 내에서만 유효. 배포모델 의존 한계를 과대광고 금지.
-- ⚠️ **(PHP) 시크릿 메모리 위생은 언어 차원에서 불가능** — char[] 같은 소거가능 타입이 없어 `clientSecret`은 항상 `string`. 마스킹(`__toString()`의 `***`)은 심층방어일 뿐(다른 5개 언어와 동일한 근본 한계).
-- ⚠️ **(PHP) 통합테스트는 Testcontainers 아닌 docker CLI 셸아웃** — Windows native PHP는 `unix://` 트랜스포트 미지원, Docker Desktop 기본도 named pipe. `KeycloakContainerTrait`가 `docker run`/`port`/`rm`을 직접 구동. `phpunit.xml` integration testsuite는 `suffix="IT.php"` 명시 필요(누락 시 기본 패턴 `*Test.php`로 IT가 무음 스킵 — Task 1에서 실제 발현).
-- ⚠️ **(Rust) `keycloak` crate와 `openidconnect`는 reqwest 메이저를 정렬해야 함** — openidconnect 4.0.1이 reqwest 0.12 고정, `keycloak` crate는 `reqwest12` feature(`default-features=false`) 명시해야 같은 `reqwest::Client` 공유(안 맞으면 컴파일 실패, `Cargo.toml` 주석 명문화).
-- ⚠️ **(Rust) `openidconnect`의 `CoreClient`는 6개 엔드포인트 typestate 제네릭** — auth/introspection/token만 `EndpointSet`으로 타입별칭(`KcOidcClient`) 만들어야 빌더가 `?` 없이 호출 가능. id_token은 openidconnect 자체검증 대신 SDK `JwtValidator`가 access_token만 검증(의도된 설계, `CoreClient::new`엔 빈 `JsonWebKeySet`).
-- ⚠️ **(Rust) `jsonwebtoken`의 `Validation` 기본값은 안전하지 않다** — `validate_nbf` 기본 false→true 강화, `leeway` 기본60초→`config.clock_skew`(30초)로 강화(45초-만료 토큰 거부 실증), `set_required_spec_claims(&["exp","iss","aud"])` 명시, `algorithms=[RS256]` 고정(`Algorithm`엔 `none` 변형 자체가 없어 구조적으로 거부).
-- ⚠️ **(Rust) JWKS rate-limit은 재조회 *결정 시점*에 stamp(Go/Python 동형).** `JwksStore::get_key`의 `refetch_gate`는 fetch 성공 후가 아니라 재조회 결정 순간 갱신 — IdP 장애로 fetch 실패해도 gate가 소모돼 장애창의 위조 kid 연속주입도 상한. 근거: `fetch_failure_still_stamps_gate_rate_limiting_next_lookup`.
-- ⚠️ **(Rust) 공유 `reqwest::Client`는 `redirect::Policy::none()`으로 리다이렉트 전면차단(SSRF 하드닝)** — 예상 밖 3xx가 내부망을 가리켜도 자동추적 안 함. auth·admin·JWKS 전부 이 공유 클라이언트(타임아웃 주입됨) 재사용.
-- ⚠️ **(Rust) MSRV 1.88** — `edition="2024"`+let-chain 문법이 요구하는 최소버전. CI 매트릭스는 1.88(회귀방지)·stable 둘 다 검증. 근거: `jwks.rs`의 `get_key`·`token_provider.rs`.
-- ⚠️ **(Rust) dev-dep `testcontainers 0.27.3`은 pre-1.0** — 언어별 편의모듈 없어 `GenericImage` 베이스로 이미지·포트·헬스체크 직접 조립(Go `testcontainers-go`와 동일 이유).
-- ⚠️ **(Rust) RUSTSEC-2023-0071(rsa crate Marvin Attack)은 무영향** — `rsa`는 dev-dep로 테스트 키생성에만 사용, advisory는 개인키 복호화 타이밍 사이드채널이나 SDK 런타임은 서명검증만 수행. `cargo audit`는 CI 미배선(Task12 스코프 밖). 근거: `jwt.rs`의 JWKS 공격 프로브 픽스처.
-- ⚠️ **(Rust) 로컬 Windows 빌드는 VS2019 BuildTools MSVC 환경 필요**(`ring`·`rsa` 네이티브 컴파일 — `vcvars64.bat` 소싱 셸에서 cargo 실행. CI ubuntu-latest는 무관).
-- ⚠️ **(Rust) admin 파사드는 캐싱 `ClientCredentialsTokenProvider`를 쓴다 — 무캐시 `AuthClient` 직접주입 아님(`79ecf76`)** — 직접 주입하면 admin 호출마다 토큰재발급으로 §4 캐시/single-flight 불변식(6개 자매SDK 준수) 위반. 공유 `http`는 재사용하되 admin 전용 provider 인스턴스 별도생성. 같은 커밋에서 `config.scopes`를 token-provider+authorization URL 양쪽에 threading(이전 `"openid"` 하드코딩 버그).
-- ⚠️ **(Ruby) `jwt`(ruby-jwt) 기본값은 안전하지 않다** — `algorithms:` 미지정 시 `none` 포함 광범위 허용→`["RS256"]` 고정. `verify_iss`/`verify_aud`/`verify_expiration`/`verify_not_before` 기본 꺼짐→전부 true, `required_claims: %w[exp iss aud]`, `leeway: config.clock_skew`. **alg 핀은 키조회/서명검증 이전 발동**(PHP `&$headers`와 달리 헤더 사전 base64url 디코드 불필요 — 구조적으로 안전).
-- ⚠️ **(Ruby) `JwtValidator.new`에 nil `issuer`/`audience`를 넘기면 ruby-jwt의 verify_iss/verify_aud가 조용히 no-op** — 생성자에서 nil·공백이면 `ConfigError`로 fail-closed(방어심층, `from_config` 경로는 미발현이나 직접 `new` 호출 대비).
-- ⚠️ **(Ruby) `JwksStore`의 rate-limit 가드는 nil 캐시(콜드스타트 IdP다운)에도 적용돼야 함** — `@cache && force && !refetch_allowed?` 순서면 캐시 없을 때 rate-limit이 완전 우회돼 위조kid 폭주 유발 → `force && !refetch_allowed?`(캐시 무관 게이트 우선)로 정정(Task6 리뷰, Go/Python/Rust와 동일 클래스 결함).
-- ⚠️ **(Ruby) `rack-oauth2`의 PKCE는 passthrough** — S256 verifier/challenge는 SDK가 `SecureRandom`+SHA256+base64url로 손수 생성해 `access_token!(code_verifier:)` 전달(누락시 invalid_grant). `Client::Error`엔 `#error` 없어 `e.response[:error]`로 읽음. scope는 `access_token!(scope:)` 키워드 필수(위치인자는 무음누락). id_token은 `raw_attributes[:id_token]`으로 추출. `http_config` 블록인자는 `#options`에 타임아웃 설정(`conn.options.open_timeout=`).
-- ⚠️ **(Ruby) admin에 성숙한 gem이 없어 `faraday`로 Admin REST 직접구현** — `looorent/keycloak-admin`은 TokenProvider 주입 시임 없어 §4 비호환. **base_url은 `"{server_url}/"` + 리소스별 풀경로**(`"{server_url}/admin/realms/"`+상대경로 조립 시 트레일링슬래시로 실KC 불일치 — Task9 발견·정정). `Users#create` 등은 201+`Location` 헤더에서 id 추출.
-- ⚠️ **(Ruby) SimpleCov `minimum_coverage`는 프로세스 전역 게이트** — `spec/integration` 단독 실행은 브랜치커버리지가 게이트(85%) 미달로 실패 → `unless ENV["RUN_INTEGRATION"]`로 가드(단위전용 게이트는 90/85 그대로). 근거: `spec_helper.rb`.
-- ⚠️ **(Ruby) 로컬 Windows 빌드는 MSYS2/DevKit 필요**(racc/prism/bigdecimal 네이티브 컴파일, Rust VS2019와 동류) — MSYS2 pacman c-ares가 이 네트워크 DNS 해석 실패 → `pacman.conf`의 `XferCommand=wget`+mirrorlist 핀+`/etc/hosts` 핀 후 `ridk install 3`(1회) 필요.
-- ⚠️ **(Ruby) 최소 3.2, CI 상단 3.4**(4.0 존재하나 매트릭스 미포함). gem명 `keycloak-sdk`(하이픈)·require/모듈명 `keycloak_sdk`/`KeycloakSdk`(언더스코어) — 기존 `keycloak` gem의 `Keycloak` 모듈과 충돌 회피 목적.
-- ⚠️ **(Ruby) `Config` 문자열 속성은 인스턴스만 freeze, deep-frozen 아님** — `#server_url`/`#realm` 등이 반환하는 `String` 자체는 미freeze(다른 언어와 동류 근본 한계).
-- ⚠️ **(Ruby) 시크릿 메모리 위생은 언어 차원에서 불가능** — Ruby `String`은 소거불가라 `client_secret`은 항상 `String`. 마스킹(`inspect`의 `***`)은 심층방어일 뿐(다른 7개 언어와 동일한 근본 한계).
-- ⚠️ **(Ruby) `client.auth.validate`는 IdP 장애 시 `TransportError`를 raise할 수 있다(fail-closed, 의도)** — 호출자는 `TokenValidationError`뿐 아니라 `TransportError`도 처리해야 함.
-- ⚠️ **(Ruby) `Faraday::SSLError`/`ParsingError`는 `Faraday::Error`의 직계형제**(ConnectionFailed/TimeoutError의 서브클래스 아님) — 네 경계 모두 `rescue Faraday::Error`로 넓게 잡아야 TLS실패·파싱실패가 `TransportError`로 변환됨. **안전한 이유**: `RaiseError` 미들웨어를 설치하지 않아(리소스가 `resp.success?`를 손수 검사) status 기반 `Faraday::ClientError`는 이 경계에 도달하지 않는다(좁게 잡으면 raw 예외 누출 — §4 위반, 최종리뷰 Important).
-- ⚠️ **(Kotlin) `fun interface`+`suspend`는 컴파일된다(KT-40978 해소)** — 2.2.20에서 실증, 2.4.10에서도 유효. `TokenProvider`를 SAM 변환가능 함수형 인터페이스로 선언.
-- ⚠️ **(Kotlin) ktlint filename 규칙(다중선언 파일 PascalCase)은 이 모노레포와 충돌** — 소문자 공통파일(`errors.kt` 등) 자동수정 불가 → `ktlint_standard_filename = disabled`로 비활성. 나머지는 `ktlintFormat`(커밋전)+`ktlintCheck` 게이트. 근거: `kotlin/.editorconfig`.
-- ⚠️ **(Kotlin) `gradle --stop`을 빌드 인플라이트 중 실행 금지** — `--no-daemon`도 jvmargs로 단일사용 데몬 fork해 `--stop`이 죽임(테스트실패로 오인). 동일 프로젝트 gradle 2개 동시실행도 금지(락 경합). kill 후 stale은 `gradle -p kotlin clean`으로 복구.
-- ⚠️ **(Kotlin) MockK로 JAX-RS 추상클래스(`Response`·`WebApplicationException`)를 모킹하면 JDK21에서 무기한 hang한다** — byte-buddy가 RESTEasy 구현 클래스그래프를 계측하다 멈춤(단일테스트도 2.5분 타임아웃 실측, "non-final이라 안전"은 오판). `AdminBoundaryTest`는 실객체로 재작성: `WebApplicationException(msg,status)`·`Response.status(500).entity("body").build()`·익명서브클래스(`getResponse()=null`). **인터페이스**(`UsersResource` 등)는 MockK 프록시가 가벼워 안전.
-- ⚠️ **(Kotlin) 코루틴 스택트레이스 복구는 예외 identity를 보존 안 함** — suspend 경계를 넘는 예외는 새 인스턴스로 복사되므로 `assertSame` 대신 `assertIs<T>`+message 비교.
-- ⚠️ **(Kotlin) Kover 0.9.x는 와일드카드 없는 정확 클래스명 exclude를 무시한다** — `"AuthClient"` 정확명은 무시되고 브랜치집계에 섞임 → 네트워크경계 클래스는 전부 `*` 접미(`AuthClient*` 등)로 지정해야 top-level 함수클래스(`…Kt`)까지 제외.
-- ⚠️ **(Kotlin) jvm-test-suite 없이 수동 `creating` 소스셋으로 `integrationTest`를 만들면 "no tests discovered"** — Kotlin 컴파일출력이 `output.classesDirs`에 미등록. Gradle 표준 `jvm-test-suite`로 전환 필요, `dependencies`엔 `kotlin("test")` 대신 **`kotlin-test-junit5`** 명시(plain은 assertions만).
-- ⚠️ **(Kotlin) `= runBlocking {…}` 표현식-본문 `@Test`는 Jupiter가 발견 못 함** — 블록 마지막식이 non-Unit이면 메서드가 non-void가 됨 → `: Unit` 반환타입 명시 필요.
-- ⚠️ **(Kotlin) Kover 0.9.x는 jvm-test-suite `integrationTest`를 자동 계측대상에 포함** — `FullFlowIT` 미실행 시 0%로 총계 붕괴 + `koverVerify`가 Docker없는 단위CI를 파손 → `instrumentation.disabledForTestTasks.add("integrationTest")`+`sources.excludedSourceSets.add("integrationTest")` 둘 다 필요.
-- ⚠️ **(Kotlin) exchangeCode는 id_token을 nonce 비교 전에 완전 서명검증한다(Java보다 강함)** — `JwtValidator`로 서명검증 먼저, nonce는 그 다음(Java는 nonce 파스온리였음).
-- ⚠️ **(Kotlin) admin 파사드는 auth를 직접 알지 못한다(§4·Java 동형)** — `AdminClient`가 `KeycloakBuilder` 내장 client-credentials로 토큰 자체소유(TokenManager 자동 획득/갱신) — Java가 RESTEasy 필터충돌로 내린 결정을 상속.
-- ⚠️ **(Kotlin) 로컬 포터블 Gradle과 CI 래퍼 버전을 일치시켜 둔다(현재 둘다 9.6.1)** — 어긋나면 로컬에서 재현 안 되는 CI실패 발생. KGP 상향 시 Gradle 지원밴드 확인(현재 KGP 2.4.10).
-- ⚠️ **(Kotlin) 신규 라이브러리 리스크 0** — Java SDK가 실Keycloak으로 이미 검증한 3개(admin-client 26.0.11·oauth2-oidc-sdk 11.38.2·nimbus-jose-jwt 10.9.1)를 그대로 재사용, Java의 게차를 코루틴 경계만 다르게 상속.
+- ⚠️ **(Node) admin-client `findOne`류는 404에서 `null` 반환(선언 타입은 `undefined`).** 상세: `.claude/rules/node.md`
+- ⚠️ **(Go) gocloak은 네트워크 실패까지 `*gocloak.APIError`로 감싼다(`Code:0`).** 상세: `.claude/rules/go.md`
+- ⚠️ **(Go) go-jose는 `exp` 부재 시 만료검사를 건너뛴다.** 상세: `.claude/rules/go.md`
+- ⚠️ **(Go) 최소 런타임 Go 1.25.** 상세: `.claude/rules/go.md`
+- ⚠️ **(Node) 타임아웃은 `Configuration.timeout`(초), admin-client는 `ConnectionConfig.timeout`(ms)로 주입.** 상세: `.claude/rules/node.md`
+- ⚠️ **(Node) PKCE `exchangeCode`는 `nonce` 필수 전달.** 상세: `.claude/rules/node.md`
+- ⚠️ **(Node) admin은 만료 시 재인증하려면 SDK provider를 `registerTokenProvider`로 배선한다 — `kc.auth()`는 호출하지 않는다(PR #63).** 상세: `.claude/rules/node.md`
+- ⚠️ **(C#) `Keycloak.AuthServices.Sdk` 3.0.0은 net10 전용 → net8.0은 2.7.0 핀.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(C#) admin 타입드 커버리지는 users/groups/realm-get뿐.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(C#) 네임스페이스 셰도잉.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(C#) `record` 자동 `ToString()`은 토큰/시크릿을 전체 노출.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(C#) `HttpClient.Timeout` 만료는 `TaskCanceledException`이지 `HttpRequestException`이 아니다.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(C#) `JsonWebTokenHandler.ValidateTokenAsync`는 실패해도 예외를 안 던진다.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(C#) `POST /admin/realms`(신규 realm 생성)는 master realm 전용.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(C#) Duende.IdentityModel 확장 메서드는 예외를 안 던진다.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(C#) SDK10 기본 솔루션 포맷은 `.slnx`.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(C#) `AddKeycloak(config)`는 `KeycloakConfig`도 싱글턴 등록.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(PHP) fschmtt `Users::create()`는 void 반환.** 상세: `.claude/rules/php.md`
+- ⚠️ **(PHP) league/stevenmaguire의 `pkceMethod` 생성자 옵션은 no-op.** 상세: `.claude/rules/php.md`
+- ⚠️ **(PHP) firebase/php-jwt의 `&$headers` out-파라미터는 성공 디코드 후에만 채워진다.** 상세: `.claude/rules/php.md`
+- ⚠️ **(PHP) `JwksStore`의 rate-limit은 per-instance 메모리 상태.** 상세: `.claude/rules/php.md`
+- ⚠️ **(PHP) 시크릿 메모리 위생은 언어 차원에서 불가능.** 상세: `.claude/rules/php.md`
+- ⚠️ **(PHP) 통합테스트는 Testcontainers 아닌 docker CLI 셸아웃.** 상세: `.claude/rules/php.md`
+- ⚠️ **(Rust) `keycloak` crate와 `openidconnect`는 reqwest 메이저를 정렬해야 함.** 상세: `.claude/rules/rust.md`
+- ⚠️ **(Rust) `openidconnect`의 `CoreClient`는 6개 엔드포인트 typestate 제네릭.** 상세: `.claude/rules/rust.md`
+- ⚠️ **(Rust) `jsonwebtoken`의 `Validation` 기본값은 안전하지 않다.** 상세: `.claude/rules/rust.md`
+- ⚠️ **(Rust) JWKS rate-limit은 재조회 *결정 시점*에 stamp(Go/Python 동형).** 상세: `.claude/rules/rust.md`
+- ⚠️ **(Rust) 공유 `reqwest::Client`는 `redirect::Policy::none()`으로 리다이렉트 전면차단(SSRF 하드닝).** 상세: `.claude/rules/rust.md`
+- ⚠️ **(Rust) MSRV 1.88.** 상세: `.claude/rules/rust.md`
+- ⚠️ **(Rust) dev-dep `testcontainers 0.27.3`은 pre-1.0.** 상세: `.claude/rules/rust.md`
+- ⚠️ **(Rust) RUSTSEC-2023-0071(rsa crate Marvin Attack)은 무영향.** 상세: `.claude/rules/rust.md`
+- ⚠️ **(Rust) 로컬 Windows 빌드는 VS2019 BuildTools MSVC 환경 필요.** 상세: `.claude/rules/rust.md`
+- ⚠️ **(Rust) admin 파사드는 캐싱 `ClientCredentialsTokenProvider`를 쓴다 — 무캐시 `AuthClient` 직접주입 아님(`79ecf76`).** 상세: `.claude/rules/rust.md`
+- ⚠️ **(Ruby) `jwt`(ruby-jwt) 기본값은 안전하지 않다.** 상세: `.claude/rules/ruby.md`
+- ⚠️ **(Ruby) `JwtValidator.new`에 nil `issuer`/`audience`를 넘기면 ruby-jwt의 verify_iss/verify_aud가 조용히 no-op.** 상세: `.claude/rules/ruby.md`
+- ⚠️ **(Ruby) `JwksStore`의 rate-limit 가드는 nil 캐시(콜드스타트 IdP다운)에도 적용돼야 함.** 상세: `.claude/rules/ruby.md`
+- ⚠️ **(Ruby) `rack-oauth2`의 PKCE는 passthrough.** 상세: `.claude/rules/ruby.md`
+- ⚠️ **(Ruby) admin에 성숙한 gem이 없어 `faraday`로 Admin REST 직접구현.** 상세: `.claude/rules/ruby.md`
+- ⚠️ **(Ruby) SimpleCov `minimum_coverage`는 프로세스 전역 게이트.** 상세: `.claude/rules/ruby.md`
+- ⚠️ **(Ruby) 로컬 Windows 빌드는 MSYS2/DevKit 필요.** 상세: `.claude/rules/ruby.md`
+- ⚠️ **(Ruby) 최소 3.2, CI 상단 3.4.** 상세: `.claude/rules/ruby.md`
+- ⚠️ **(Ruby) `Config` 문자열 속성은 인스턴스만 freeze, deep-frozen 아님.** 상세: `.claude/rules/ruby.md`
+- ⚠️ **(Ruby) 시크릿 메모리 위생은 언어 차원에서 불가능.** 상세: `.claude/rules/ruby.md`
+- ⚠️ **(Ruby) `client.auth.validate`는 IdP 장애 시 `TransportError`를 raise할 수 있다(fail-closed, 의도).** 상세: `.claude/rules/ruby.md`
+- ⚠️ **(Ruby) `Faraday::SSLError`/`ParsingError`는 `Faraday::Error`의 직계형제.** 상세: `.claude/rules/ruby.md`
+- ⚠️ **(Kotlin) `fun interface`+`suspend`는 컴파일된다(KT-40978 해소).** 상세: `.claude/rules/kotlin.md`
+- ⚠️ **(Kotlin) ktlint filename 규칙(다중선언 파일 PascalCase)은 이 모노레포와 충돌.** 상세: `.claude/rules/kotlin.md`
+- ⚠️ **(Kotlin) `gradle --stop`을 빌드 인플라이트 중 실행 금지.** 상세: `.claude/rules/kotlin.md`
+- ⚠️ **(Kotlin) MockK로 JAX-RS 추상클래스(`Response`·`WebApplicationException`)를 모킹하면 JDK21에서 무기한 hang한다.** 상세: `.claude/rules/kotlin.md`
+- ⚠️ **(Kotlin) 코루틴 스택트레이스 복구는 예외 identity를 보존 안 함.** 상세: `.claude/rules/kotlin.md`
+- ⚠️ **(Kotlin) Kover 0.9.x는 와일드카드 없는 정확 클래스명 exclude를 무시한다.** 상세: `.claude/rules/kotlin.md`
+- ⚠️ **(Kotlin) jvm-test-suite 없이 수동 `creating` 소스셋으로 `integrationTest`를 만들면 "no tests discovered".** 상세: `.claude/rules/kotlin.md`
+- ⚠️ **(Kotlin) `= runBlocking {…}` 표현식-본문 `@Test`는 Jupiter가 발견 못 함.** 상세: `.claude/rules/kotlin.md`
+- ⚠️ **(Kotlin) Kover 0.9.x는 jvm-test-suite `integrationTest`를 자동 계측대상에 포함.** 상세: `.claude/rules/kotlin.md`
+- ⚠️ **(Kotlin) exchangeCode는 id_token을 nonce 비교 전에 완전 서명검증한다(Java보다 강함).** 상세: `.claude/rules/kotlin.md`
+- ⚠️ **(Kotlin) admin 파사드는 auth를 직접 알지 못한다(§4·Java 동형).** 상세: `.claude/rules/kotlin.md`
+- ⚠️ **(Kotlin) 로컬 포터블 Gradle과 CI 래퍼 버전을 일치시켜 둔다(현재 둘다 9.6.1).** 상세: `.claude/rules/kotlin.md`
+- ⚠️ **(Kotlin) 신규 라이브러리 리스크 0.** 상세: `.claude/rules/kotlin.md`
 - ⚠️ **(Java·Kotlin) `resteasyClient(...)` 주입은 admin-client의 `JacksonProvider` 등록을 통째로 우회한다.** admin-client는 이 프로바이더를 자기가 만든 클라이언트에만 등록하므로, 타임아웃 주입용으로 우리 클라이언트를 넘기면 `NON_NULL`(null필드 미전송)과 `FAIL_ON_UNKNOWN_PROPERTIES=false`(미지필드 무시)를 둘 다 잃는다 — 버전스큐에서 양방향 파손(클라이언트가 앞서면 400 *Unrecognized field*, 서버가 앞서면 역직렬화 깨짐). **26.0.11의 `UserRepresentation.verifiableCredentials`에서 실제 발현(PR #84)**. `buildTimeoutClient`가 `.register(JacksonProvider.class,100)`+`.register(StreamMessageBodyReader.class)`를 직접 수행 — ⚠️ **`StreamMessageBodyReader`는 26.0.11에만 존재**(26.0.10까지는 JacksonProvider 내장, 26.0.11에서 분리 — 프로바이더의 stream 참조 26.0.10 **9건** → 26.0.11 **0건** 실측). `ClientBuilder.newBuilder()` 유지 필수 — `createClientBuilder()`로 바꾸면 커넥션풀이 50→10으로 조용히 축소. ⚠️ **동작 계약**: NON_NULL이 켜지면 부분 업데이트에서 null로 필드를 비우는 것이 불가능해진다(미설정 필드는 전송되지 않아 서버가 '변경 없음'으로 처리) — 공식 admin-client와 동일한 동작이다. 비우려면 빈 문자열/전용 API를 쓴다.
-- ⚠️ **(Node) `tsconfig.json`의 `include: ["src"]`라 테스트 파일은 타입체크 안 됨** — jose v6가 제거한 `KeyLike`를 계속 import해도 typecheck·eslint·vitest 전부 못 잡음(esbuild가 타입 벗김). `include`에 `test`를 추가하면 `token-provider.test.ts`의 선행 `TS2554` 5건이 드러나므로 별도 작업이 필요하다 — 의존성 메이저 bump 검증 시 사각지대. 근거: `test/unit/jwt.test.ts`.
-- ⚠️ **(Node) JWKS rate-limit 회귀는 대조군 없이는 안 잡힌다.** `cooldownDuration`이 개명·제거되면 JS가 조용히 무시해 하드닝이 사라지는데, **jose가 그 경우 자체 기본값 30초로 폴백**하므로 우리 설정값도 30초인 정상 케이스는 그대로 통과한다(변이검증 실측) — `cooldown=0` 대조군만 히트 7→1로 떨어져 실패. `test/unit/jwt-jwks.test.ts`의 두번째 케이스를 지우지 말 것.
+- ⚠️ **(Node) `tsconfig.json`의 `include: ["src"]`라 테스트 파일은 타입체크 안 됨.** 상세: `.claude/rules/node.md`
+- ⚠️ **(Node) JWKS rate-limit 회귀는 대조군 없이는 안 잡힌다.** 상세: `.claude/rules/node.md`
 - ⚠️ **(CI) Dependabot 트리거 run에는 Actions 시크릿이 노출 안 됨**(별도 스토어, 이 저장소는 비어있음) — `SONAR_TOKEN`이 빈 문자열로 보간돼 SonarCloud가 반드시 실패(코드 신호 아님). `sonarcloud.yml`은 Dependabot PR만 skip(push는 항상 통과, main 스캔 스킵 불가 — PR0 fail-closed 불변). 토큰 복제안은 기각(미검토 패키지 코드가 토큰과 같은 잡에서 실행됨 우려).
 - ⚠️ **하드닝 CI 게차(로컬↔CI 차이)**: Go `gofmt`·Node `prettier`·PHP `cs-fixer`는 Windows CRLF 워킹트리를 전부 flag(변경파일 LF-정규화 후 재확인) · 전역상태 테스트(Ruby rack-oauth2)는 flaky라 config 훅 mock 검증 · pip-audit는 editable skip에도 exit1(→ `pip freeze --exclude-editable`+`-r`) · SonarCloud "0% Coverage on New Code"는 Kotlin kover만 피드해 비-Kotlin PR마다 fail(비차단·UNSTABLE).
 - ⚠️ **java jacoco:check는 `verify` 페이즈 바인딩 — 로컬 `mvn test`로는 커버리지 게이트 미검증**(반드시 `mvn -pl … -am verify -DskipITs`). PR #71에서 `forRealm`에 `.rateLimited()` 1줄이 auth번들을 0.90→0.89로 떨어뜨려 CI 3잡 동시실패 — `JWKSourceBuilder` 지연특성 이용한 네트워크-프리 `forRealm` 단위테스트로 복원.

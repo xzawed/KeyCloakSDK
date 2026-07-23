@@ -1,0 +1,40 @@
+---
+paths:
+  - "rust/**"
+  - "harness/apps/rust/**"
+  - "harness/install/consume/rust*"
+  - ".github/workflows/rust-*.yml"
+---
+
+# Rust 규칙
+
+## 툴체인 (빌드 명령)
+
+Rust는 시스템 설치(MSRV 1.88, edition 2024)를 사용한다. **Windows 로컬 빌드는 VS2019 BuildTools MSVC 환경(`vcvars64.bat`)이 필요**하다(`ring`/`rsa` 등 네이티브 의존성 컴파일 — CI의 ubuntu-latest는 무관). 명령은 `rust/`에서 실행한다:
+```bash
+cd rust && cargo build --all-targets              # 빌드(examples/tests 포함)
+cd rust && cargo fmt --all --check                # 포맷 검사
+cd rust && cargo clippy --all-targets -- -D warnings  # 린트(0 경고 게이트)
+cd rust && cargo test                              # 단위테스트 34개. Docker 불필요
+cd rust && cargo test --test integration_test -- --ignored  # 통합 E2E 1개(Docker 필요 — testcontainers, 실제 Keycloak 26.6)
+cd rust && cargo run --example quickstart           # QuickStart 예제 실행(Keycloak 필요)
+```
+- 단일 테스트: `cargo test <test_name>` (예: `cargo test rejects_none_alg`)
+- 커버리지 게이트(로직 모듈 라인 ≥90%, 네트워크 경계 omit): `rustup component add llvm-tools-preview` → `cargo install cargo-llvm-cov --locked` → `cargo llvm-cov --ignore-filename-regex '(auth|admin|client)\.rs' --fail-under-lines 90` — **실측 94.85%**(855줄 중 44줄 미실행; 파일별 `error.rs`/`oidc.rs` 100%·`jwks.rs` 96.05%·`token_provider.rs` 95.86%·`jwt.rs` 94.26%·`config.rs` 94.29%·`tokens.rs` 87.93%. 상세는 [verification-log-rust.md](../../docs/governance/verification-log-rust.md) 참고)
+- ⚠️ **로컬 셸에서 정규식 인자(`(auth|admin|client)\.rs`)에 포함된 `|`가 셸/배치 파서에 파이프로 오인될 수 있다** — PowerShell에서 배치 래퍼를 거칠 때는 `--ignore-filename-regex="(auth|admin|client)\.rs"`처럼 값 전체를 하나의 인자로 묶거나, 정규식을 하드코딩한 전용 스크립트를 쓴다(CI의 YAML `run:` 블록은 셸이 다르므로 이 문제가 없다).
+- ⚠️ **`cargo-llvm-cov`는 `llvm-tools-preview` rustup 컴포넌트 미설치 시 인터랙티브 확인("Proceed? [Y/n]")으로 자동 설치를 시도한다** — 비대화형 셸(CI 잡, 자동화 스크립트)에서는 이 프롬프트가 응답을 받지 못해 **무기한 행(hang)** 된다(자식 프로세스 CPU 시간이 0에 가까운 것으로 진단 가능). `rustup component add llvm-tools-preview`를 먼저 명시 실행해 사전 설치하면 이후 호출이 프롬프트 없이 진행된다. CI의 `taiki-e/install-action@cargo-llvm-cov`는 이 설치를 자체 처리하므로 CI에서는 발생하지 않는다.
+- 실제 crates.io 배포(`cargo publish`)는 로컬에서 실행하지 않는다 — `rust-v*` 태그 push 시 `.github/workflows/rust-release.yml`에서 `CARGO_REGISTRY_TOKEN` 시크릿으로 실행(사람 승인 게이트)
+- 크레이트명 `keycloak-sdk`(루트 모듈 `keycloak_sdk`), MSRV 1.88(edition 2024 + let-chain 문법 요구 — `jwks.rs`의 `if let ... && let ...`). CI 매트릭스는 1.88(MSRV 회귀 방지)·stable.
+
+## 게차
+
+- ⚠️ **(Rust) `keycloak` crate와 `openidconnect`는 reqwest 메이저를 정렬해야 함** — openidconnect 4.0.1이 reqwest 0.12 고정, `keycloak` crate는 `reqwest12` feature(`default-features=false`) 명시해야 같은 `reqwest::Client` 공유(안 맞으면 컴파일 실패, `Cargo.toml` 주석 명문화).
+- ⚠️ **(Rust) `openidconnect`의 `CoreClient`는 6개 엔드포인트 typestate 제네릭** — auth/introspection/token만 `EndpointSet`으로 타입별칭(`KcOidcClient`) 만들어야 빌더가 `?` 없이 호출 가능. id_token은 openidconnect 자체검증 대신 SDK `JwtValidator`가 access_token만 검증(의도된 설계, `CoreClient::new`엔 빈 `JsonWebKeySet`).
+- ⚠️ **(Rust) `jsonwebtoken`의 `Validation` 기본값은 안전하지 않다** — `validate_nbf` 기본 false→true 강화, `leeway` 기본60초→`config.clock_skew`(30초)로 강화(45초-만료 토큰 거부 실증), `set_required_spec_claims(&["exp","iss","aud"])` 명시, `algorithms=[RS256]` 고정(`Algorithm`엔 `none` 변형 자체가 없어 구조적으로 거부).
+- ⚠️ **(Rust) JWKS rate-limit은 재조회 *결정 시점*에 stamp(Go/Python 동형).** `JwksStore::get_key`의 `refetch_gate`는 fetch 성공 후가 아니라 재조회 결정 순간 갱신 — IdP 장애로 fetch 실패해도 gate가 소모돼 장애창의 위조 kid 연속주입도 상한. 근거: `fetch_failure_still_stamps_gate_rate_limiting_next_lookup`.
+- ⚠️ **(Rust) 공유 `reqwest::Client`는 `redirect::Policy::none()`으로 리다이렉트 전면차단(SSRF 하드닝)** — 예상 밖 3xx가 내부망을 가리켜도 자동추적 안 함. auth·admin·JWKS 전부 이 공유 클라이언트(타임아웃 주입됨) 재사용.
+- ⚠️ **(Rust) MSRV 1.88** — `edition="2024"`+let-chain 문법이 요구하는 최소버전. CI 매트릭스는 1.88(회귀방지)·stable 둘 다 검증. 근거: `jwks.rs`의 `get_key`·`token_provider.rs`.
+- ⚠️ **(Rust) dev-dep `testcontainers 0.27.3`은 pre-1.0** — 언어별 편의모듈 없어 `GenericImage` 베이스로 이미지·포트·헬스체크 직접 조립(Go `testcontainers-go`와 동일 이유).
+- ⚠️ **(Rust) RUSTSEC-2023-0071(rsa crate Marvin Attack)은 무영향** — `rsa`는 dev-dep로 테스트 키생성에만 사용, advisory는 개인키 복호화 타이밍 사이드채널이나 SDK 런타임은 서명검증만 수행. `cargo audit`는 CI 미배선(Task12 스코프 밖). 근거: `jwt.rs`의 JWKS 공격 프로브 픽스처.
+- ⚠️ **(Rust) 로컬 Windows 빌드는 VS2019 BuildTools MSVC 환경 필요**(`ring`·`rsa` 네이티브 컴파일 — `vcvars64.bat` 소싱 셸에서 cargo 실행. CI ubuntu-latest는 무관).
+- ⚠️ **(Rust) admin 파사드는 캐싱 `ClientCredentialsTokenProvider`를 쓴다 — 무캐시 `AuthClient` 직접주입 아님(`79ecf76`)** — 직접 주입하면 admin 호출마다 토큰재발급으로 §4 캐시/single-flight 불변식(6개 자매SDK 준수) 위반. 공유 `http`는 재사용하되 admin 전용 provider 인스턴스 별도생성. 같은 커밋에서 `config.scopes`를 token-provider+authorization URL 양쪽에 threading(이전 `"openid"` 하드코딩 버그).
