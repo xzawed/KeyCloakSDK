@@ -26,7 +26,7 @@ English · [한국어](README.ko.md)
 | **PHP** 8.3+ | `composer require xzawed/keycloak-sdk` | [quickstart.php](php/examples/quickstart.php) |
 | **Rust** 1.88+ | `cargo add keycloak-sdk` | [quickstart.rs](rust/examples/quickstart.rs) |
 | **Ruby** 3.2+ | `gem install keycloak-sdk` | [quickstart.rb](ruby/examples/quickstart.rb) |
-| **Kotlin** 2.2+ (JVM) | Gradle `io.github.xzawed:keycloak-sdk-kotlin` | [quickstart.kt](kotlin/examples/quickstart.kt) |
+| **Kotlin** 2.4.10+ (JVM) | Gradle `io.github.xzawed:keycloak-sdk-kotlin` | [quickstart.kt](kotlin/examples/quickstart.kt) |
 
 > ⚠️ **Not published to public registries yet** — every release is human-gated. The commands above show the *post-release* form. Until then, build from source — see the [getting-started guide](docs/guides/getting-started.md).
 

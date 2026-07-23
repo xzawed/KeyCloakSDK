@@ -12,3 +12,11 @@
 # always LF regardless of the contributor's global git config.
 *.sh    text eol=lf
 gradlew text eol=lf
+# 마크다운도 LF로 고정한다. 가드(scripts/check-docs.mjs)가 `--fix`로 문서를 고칠 때
+# CRLF 워킹트리에서는 파일 전체가 변경된 것처럼 보여 리뷰가 불가능해진다.
+*.md    text eol=lf
+# 배치 파일(.bat)은 Windows `cmd.exe`가 직접 실행하며 줄바꿈에 민감하다(괄호
+# 블록 안의 goto/label이 LF 전용에서 오동작할 수 있다) — 그래서 `*.sh`와 반대
+# 방향인 CRLF로 고정한다. 직전 커밋의 `git add --renormalize .`가 이 규칙 없이
+# `kotlin/gradlew.bat`를 조용히 LF로 바꿔버린 것이 이 명시적 규칙을 추가한 계기다.
+*.bat   text eol=crlf

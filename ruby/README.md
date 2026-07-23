@@ -1,6 +1,6 @@
 # keycloak-sdk (Ruby)
 
-Keycloak SDK for Ruby — 인증(OIDC/OAuth2) + 관리(Admin REST) API. Keycloak을 위한 **8개 언어 폴리글랏 SDK**(Java·Python·Node·Go·C#·PHP·Rust·Ruby) 중 Ruby 구현이다. auth는 [`rack-oauth2`](https://github.com/nov/rack-oauth2)를 감싸고(그랜트/PKCE), admin은 성숙한 gem이 없어 [`faraday`](https://lostisland.github.io/faraday/)로 raw REST를 직접 구현한다. JWT 검증만은 [`jwt`](https://github.com/jwt/ruby-jwt)(ruby-jwt) 위에 자체 강화 계층을 얹는다. [Java SDK](https://github.com/xzawed/KeyCloakSDK/tree/main/java/)와 개념·계층·흐름이 동형(isomorphic)이다.
+Keycloak SDK for Ruby — 인증(OIDC/OAuth2) + 관리(Admin REST) API. Keycloak을 위한 **9개 언어 폴리글랏 SDK**(Java·Python·Node·Go·C#·PHP·Rust·Ruby) 중 Ruby 구현이다. auth는 [`rack-oauth2`](https://github.com/nov/rack-oauth2)를 감싸고(그랜트/PKCE), admin은 성숙한 gem이 없어 [`faraday`](https://lostisland.github.io/faraday/)로 raw REST를 직접 구현한다. JWT 검증만은 [`jwt`](https://github.com/jwt/ruby-jwt)(ruby-jwt) 위에 자체 강화 계층을 얹는다. [Java SDK](https://github.com/xzawed/KeyCloakSDK/tree/main/java/)와 개념·계층·흐름이 동형(isomorphic)이다.
 
 ## 설치
 

@@ -1,0 +1,468 @@
+#!/usr/bin/env sh
+set -eu
+DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$DIR/assert.sh"
+FIX="$DIR/fixtures/doc-guard"
+GUARD="$DIR/../check-docs.mjs"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+# 정상 픽스처는 통과해야 한다.
+cp -r "$FIX/." "$TMP/"
+assert_ok node "$GUARD" "$TMP"
+
+# 변이 1: 문서의 값을 훼손하면 실패해야 한다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's/| 1\.2\.3 |/| 9.9.9 |/' "$TMP/ok.md"
+assert_fails node "$GUARD" "$TMP"
+
+# 변이 2: 표를 지우면 min 미달로 실패해야 한다(침묵 금지).
+cp -r "$FIX/." "$TMP/"
+sed -i '/org.example/d' "$TMP/ok.md"
+assert_fails node "$GUARD" "$TMP"
+
+# 변이 3: 소스를 비우면 실패해야 한다.
+cp -r "$FIX/." "$TMP/"
+: > "$TMP/src/build.gradle.kts"
+assert_fails node "$GUARD" "$TMP"
+
+# ---- Defect 1: 앵커는 바로 뒤 표만 소유한다 ----
+# 앵커 바로 다음 줄이 산문이고, 그 뒤에 (min을 충족하는) 디코이 표가 오고,
+# 그보다 더 뒤에 실제로 드리프트된 진짜 표가 있는 문서. 구버전은 산문·디코이
+# 표를 건너뛰어 디코이를 "앵커의 표"로 오인해 통과(0종료)하고 진짜 드리프트
+# (Beta 9.9.9)는 검사하지 않는다 — 고친 버전은 앵커 직후가 표가 아니므로
+# "앵커 뒤에 표가 없다"로 즉시 잡아야 한다(침묵 통과 금지).
+cp -r "$FIX/." "$TMP/"
+cat > "$TMP/ok.md" <<'EOF'
+# fixture
+
+<!-- doc-guard: kind=dep source=src/build.gradle.kts min=2 -->
+앵커 바로 다음 줄에 산문이 온다 — 표가 아니다.
+
+| 무관한 항목 | 좌표 | 버전 |
+|---|---|---|
+| Alpha decoy | `org.example:alpha` | 1.2.3 |
+| Beta decoy | `org.example:beta` | 4.5.6 |
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| Alpha | `org.example:alpha` | 1.2.3 |
+| Beta | `org.example:beta` | 9.9.9 |
+EOF
+assert_fails node "$GUARD" "$TMP"
+
+# ---- Defect 2: min= 은 1 이상의 정수만 허용한다 ----
+# min=0: 표를 완전히 비워도(추출 0건) "0 < 0"은 거짓이라 통과해선 안 된다
+# ("추출이 0건으로 떨어짐" 탐지기를 min=0이 무력화하는 정확한 시나리오).
+cp -r "$FIX/." "$TMP/"
+sed -i 's/min=2/min=0/' "$TMP/ok.md"
+sed -i '/org.example/d' "$TMP/ok.md"
+assert_fails node "$GUARD" "$TMP"
+
+# min=oops: 표가 멀쩡해도 숫자가 아닌 min 값 자체를 거부해야 한다
+# ("checked < NaN"은 항상 거짓이라 구버전은 침묵 통과한다).
+cp -r "$FIX/." "$TMP/"
+sed -i 's/min=2/min=oops/' "$TMP/ok.md"
+assert_fails node "$GUARD" "$TMP"
+
+# ---- Defect 3~5: 확장된 픽스처(pom 리액터·package-lock.json·펜스 앵커)가
+# 전부 통과해야 한다. 구버전은 pom-reactor.md(단일파일 파싱이라 좌표를 못 찾음)와
+# fenced.md(펜스 안 앵커를 진짜로 오인해 존재하지 않는 소스 추출 실패)에서
+# 거짓 FAIL을 낸다. ----
+cp -r "$FIX/." "$TMP/"
+assert_ok node "$GUARD" "$TMP"
+
+# Defect 3 드리프트 확인: 리액터 해석이 비교 자체를 무력화하지 않는다
+# (부모 pom의 property + 자식 pom의 dependency를 정확히 병합해도, 문서 값이
+# 실제와 다르면 여전히 잡혀야 한다).
+cp -r "$FIX/." "$TMP/"
+sed -i 's/| 2\.0\.0 |/| 9.9.9 |/' "$TMP/pom-reactor.md"
+assert_fails node "$GUARD" "$TMP"
+
+# Defect 4 드리프트 확인: package-lock.json에서 뽑은 해석된 버전도 실제로 대조된다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's/| 3\.2\.1 |/| 9.9.9 |/' "$TMP/npm-lock.md"
+assert_fails node "$GUARD" "$TMP"
+
+# ---- Fix A: 앵커 문법 자체를 설명하는 산문은 앵커로 파싱되면 안 된다 ----
+# 앵커 앞뒤에 다른 텍스트가 함께 있는 줄은 선언이 아니라 설명이다. 구버전은
+# 이런 줄에서도 doc-guard 정규식이 매치해 `source=<경로>`(플레이스홀더 문자
+# 그대로) 추출을 시도하다 ENOENT로 죽는다 — 고친 버전은 trim한 줄 전체가
+# 앵커 문법과 정확히 일치할 때만 선언으로 인정해 이 줄들을 조용히 건너뛴다.
+cp -r "$FIX/." "$TMP/"
+cat > "$TMP/prose.md" <<'EOF'
+# prose fixture
+
+- Produces: 앵커 문법 `<!-- doc-guard: kind=dep source=<경로> min=<정수> -->` + 뒤따르는 마크다운 표.
+- Produces: 앵커 `kind=runtime` — `<!-- doc-guard: kind=runtime lang=<언어> -->` 뒤 인라인 코드로 표기된 버전 1개를 검사
+EOF
+assert_ok node "$GUARD" "$TMP"
+
+# ---- Fix B: 저장소 루트 스캔은 가드 자신의 테스트 픽스처를 문서로 취급하지
+# 않는다 ----
+# scripts/test/fixtures/*.md의 source= 경로는 격리된 임시 디렉터리 기준 상대경로다.
+# 그 픽스처를 실제 저장소와 같은 상대경로(scripts/test/fixtures/)에 두고 그
+# 루트를 스캔하면, 픽스처 제외가 없는 구버전은 source=를 그 루트 기준으로 잘못
+# 해석해 ENOENT로 실패한다 — 고친 버전은 scripts/test/fixtures를 통째로
+# 건너뛰어야 한다.
+rm -rf "$TMP" && mkdir -p "$TMP/scripts/test/fixtures"
+cp -r "$FIX/." "$TMP/scripts/test/fixtures/"
+assert_ok node "$GUARD" "$TMP"
+
+# ---- Finding 1: 리액터 안에서 같은 좌표를 서로 다른 pom이 서로 다른 리터럴
+# 버전으로 선언하면 침묵 병합(파일시스템 순회 순서에 좌우되는 거짓 PASS/거짓
+# FAIL)이 아니라, 양쪽 버전·양쪽 pom 경로를 명시한 에러로 fail-closed 해야
+# 한다. 이 픽스처는 공유 $FIX 디렉터리 밖에서(cp -r 없이) 직접 조립한다 —
+# $FIX 안에 두면 다른 모든 assert_ok 시나리오(정상 픽스처 전체 스캔)가 이
+# 의도된 충돌 에러 때문에 깨진다.
+rm -rf "$TMP" && mkdir -p "$TMP/reactor-conflict/module-a" "$TMP/reactor-conflict/module-b"
+cat > "$TMP/reactor-conflict/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>test.conflict</groupId>
+  <artifactId>conflict-parent</artifactId>
+  <version>0.0.1</version>
+  <packaging>pom</packaging>
+  <modules>
+    <module>module-a</module>
+    <module>module-b</module>
+  </modules>
+</project>
+EOF
+cat > "$TMP/reactor-conflict/module-a/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>test.conflict</groupId>
+    <artifactId>conflict-parent</artifactId>
+    <version>0.0.1</version>
+  </parent>
+  <artifactId>module-a</artifactId>
+  <dependencies>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>conflicted</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+  </dependencies>
+</project>
+EOF
+cat > "$TMP/reactor-conflict/module-b/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>test.conflict</groupId>
+    <artifactId>conflict-parent</artifactId>
+    <version>0.0.1</version>
+  </parent>
+  <artifactId>module-b</artifactId>
+  <dependencies>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>conflicted</artifactId>
+      <version>2.0.0</version>
+    </dependency>
+  </dependencies>
+</project>
+EOF
+cat > "$TMP/reactor-conflict.md" <<'EOF'
+# reactor conflict fixture
+
+<!-- doc-guard: kind=dep source=reactor-conflict/pom.xml min=1 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| Conflicted | `org.example:conflicted` | 1.0.0 |
+EOF
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "1.0.0" "reactor conflict error must name module-a's version"
+assert_contains "$OUT" "2.0.0" "reactor conflict error must name module-b's version"
+assert_contains "$OUT" "module-a/pom.xml" "reactor conflict error must name module-a's pom path"
+assert_contains "$OUT" "module-b/pom.xml" "reactor conflict error must name module-b's pom path"
+
+# ---- Finding 2: 자신만으로 한 줄을 이루지 않는(리스트 불릿 아래 들여쓰기 등)
+# "거의 앵커"는 조용히 무시되면 안 된다 — 선언처럼 보이지만 이 가드에게는
+# 절대 인식되지 않으므로 에러다. (인라인 백틱으로 감싼 산문 설명은 여전히
+# 무시돼야 한다 — 그건 위 Fix A의 prose.md가 이미 커버·보존한다.)
+rm -rf "$TMP" && mkdir -p "$TMP"
+cat > "$TMP/near-miss.md" <<'EOF'
+# near-miss anchor fixture
+
+- <!-- doc-guard: kind=dep source=x min=1 -->
+EOF
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "near-miss.md:3" "near-miss anchor must be reported at its own line"
+
+# Finding 2는 $TMP를 near-miss.md 단독 트리로 재구성했다(위 rm -rf) — 그 상태로
+# 남겨두면 이후 블록이 "cp -r "$FIX/." "$TMP/""로만 채워도 near-miss.md가 계속
+# 섞여 있어(cp -r은 대상의 기존 파일을 지우지 않는다) 항상 에러를 유발한다.
+# 검사 2·3은 그 오염 없는 깨끗한 상태에서 시작해야 한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# 검사 2: 같은 좌표가 두 문서에서 다른 값을 말하면 실패해야 한다.
+#
+# 리뷰 결함(순 증거 0): 과거 버전은 other.md를 ok.md의 사본 + Alpha 값만
+# 1.2.4로 바꿔 만들었다. 그런데 1.2.4는 실제 소스(src/build.gradle.kts의
+# 1.2.3)와도 어긋나므로, 검사 2(문서 간 대조) 코드를 통째로 주석 처리해도
+# 기존 검사 1(문서↔소스)만으로 이미 exit 1이 된다 — 실측: 검사 2 순회
+# 블록을 삭제한 스크래치 사본으로 전체 스위트를 돌려도 "22 passed, 0
+# failed"가 그대로 나왔다. 즉 이 assert_fails는 검사 2가 있든 없든 통과하는
+# 순 증거 0의 어서션이었다.
+#
+# 고친 버전: 서로 다른 소스에 각자 스스로는 완전히 일치하는(검사 1 GREEN)
+# 두 문서를 만들어, 오직 같은 좌표를 서로 다른 값으로 주장하는 것(검사 2)
+# 만으로 실패가 나게 한다. 위 "Finding 1"(리액터 충돌) 블록과 같은 이유로
+# 공유 $FIX 밖에서 조립한다 — 공유 픽스처에 두면 다른 모든 assert_ok
+# 전체스캔이 이 의도된 충돌 때문에 깨진다.
+rm -rf "$TMP" && mkdir -p "$TMP/cross/a" "$TMP/cross/b"
+cat > "$TMP/cross/a/build.gradle.kts" <<'EOF'
+dependencies {
+    api("org.example:shared:1.0.0")
+}
+EOF
+cat > "$TMP/cross/b/build.gradle.kts" <<'EOF'
+dependencies {
+    api("org.example:shared:2.0.0")
+}
+EOF
+cat > "$TMP/cross-a.md" <<'EOF'
+# cross-doc conflict fixture A — 자기 소스와는 일치(검사 1 GREEN)
+
+<!-- doc-guard: kind=dep source=cross/a/build.gradle.kts min=1 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| Shared | `org.example:shared` | 1.0.0 |
+EOF
+cat > "$TMP/cross-b.md" <<'EOF'
+# cross-doc conflict fixture B — 자기 소스와는 일치(검사 1 GREEN)
+
+<!-- doc-guard: kind=dep source=cross/b/build.gradle.kts min=1 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| Shared | `org.example:shared` | 2.0.0 |
+EOF
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "cross-a.md=1.0.0" "cross-doc conflict must name doc A's claimed version"
+assert_contains "$OUT" "cross-b.md=2.0.0" "cross-doc conflict must name doc B's claimed version"
+# 두 문서 모두 자기 소스와 정확히 일치하므로(검사 1 GREEN) 에러는 검사 2의
+# 단 1건뿐이어야 한다 — 검사 1의 실제-불일치 에러("실제=")가 섞여 있다면
+# 이 어서션이 다시 검사 1에 얹혀 가는 것이므로 명시적으로 배제한다.
+assert_not_contains "$OUT" "실제=" "cross-doc conflict must be Check-2-only (no Check-1 mismatch noise)"
+assert_contains "$OUT" "문서 드리프트 1건" "cross-doc conflict must produce exactly one error (Check 2 only)"
+
+# 이 블록이 만든 cross-*.md/cross/ 디렉터리는 cp -r로 지워지지 않고 남는다 —
+# 검사 3의 assert_ok를 오염시키지 않도록 다시 리셋한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# 검사 3: 최소 런타임 주장이 소스와 다르면 실패해야 한다.
+cp -r "$FIX/." "$TMP/"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node -->' 'Node `>=22` 이상이 필요하다.' > "$TMP/runtime.md"
+mkdir -p "$TMP/node" && printf '%s\n' '{"engines":{"node":">=22"}}' > "$TMP/node/package.json"
+assert_ok node "$GUARD" "$TMP"
+sed -i 's/`>=22`/`>=20`/' "$TMP/runtime.md"
+assert_fails node "$GUARD" "$TMP"
+
+# 검사 3의 assert_fails가 만든 runtime.md/node/는 cp -r로 지워지지 않고 남는다 —
+# 아래 정규화 어서션들의 assert_ok를 오염시키지 않도록 다시 리셋한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- Finding 2: 검사 3은 추출기의 원문 선언 형식(">=22"·">= 3.2"[공백
+# 있는 연산자]·"^8.3"·"1.25.0"[3단계]·"net8.0"[언어 접두])과 이 프로젝트
+# 문서 관용("Node 22+"·"Go 1.25+" 등)이 형식만 다를 뿐 같은 값이면 통과해야
+# 한다. 정규화 이전(순수 strict-equality)이었다면 아래 5개 언어 사례 모두
+# 형식 차이만으로 거짓 FAIL이었다 — 값이 아니라 형식만 흡수했음을 언어별로
+# 증명한다. 진짜 불일치(node 20+)는 여전히 실패해야 정규화가 검사를
+# 무력화하지 않았다는 증거가 된다. ----
+cp -r "$FIX/." "$TMP/"
+
+# node: 연산자 접두(">=22") ↔ 문서 관용("22+")
+mkdir -p "$TMP/node" && printf '%s\n' '{"engines":{"node":">=22"}}' > "$TMP/node/package.json"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node -->' 'Node.js `22+` 이상이 필요하다.' > "$TMP/runtime-node.md"
+
+# ruby: 공백 있는 연산자(">= 3.2") ↔ 문서 관용("3.2+")
+mkdir -p "$TMP/ruby"
+printf '%s\n' 'Gem::Specification.new do |spec|' '  spec.required_ruby_version = ">= 3.2"' 'end' > "$TMP/ruby/keycloak-sdk.gemspec"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=ruby -->' 'Ruby `3.2+` 이상이 필요하다.' > "$TMP/runtime-ruby.md"
+
+# php: 캐럿 범위("^8.3") ↔ 문서 관용("8.3+")
+mkdir -p "$TMP/php" && printf '%s\n' '{"require":{"php":"^8.3"}}' > "$TMP/php/composer.json"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=php -->' 'PHP `8.3+` 이상이 필요하다.' > "$TMP/runtime-php.md"
+
+# go: 3단계 버전("1.25.0") ↔ 문서 관용("1.25+")
+mkdir -p "$TMP/go" && printf '%s\n' 'module test' '' 'go 1.25.0' > "$TMP/go/go.mod"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=go -->' 'Go `1.25+` 이상이 필요하다.' > "$TMP/runtime-go.md"
+
+# dotnet: "net" 언어 접두("net8.0") ↔ 문서가 정확한 2부 값을 그대로 쓴 "8.0"
+# (여기서 더 깎아 "8"과 비교하면 안 된다 — 규칙 4의 "구성요소 2개는 보존" 조건).
+mkdir -p "$TMP/dotnet"
+printf '%s\n' '<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>' > "$TMP/dotnet/Directory.Build.props"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=dotnet -->' '.NET `8.0` 이상이 필요하다.' > "$TMP/runtime-dotnet.md"
+
+assert_ok node "$GUARD" "$TMP"
+
+# 진짜 불일치는 여전히 실패해야 한다(정규화가 검사를 무력화하지 않았다는 증거).
+sed -i 's/`22+`/`20+`/' "$TMP/runtime-node.md"
+assert_fails node "$GUARD" "$TMP"
+
+# 이 블록의 runtime-*.md/node|ruby|php|go|dotnet 디렉터리는 cp -r로 지워지지
+# 않고 남는다 — 다음 블록의 assert_ok를 오염시키지 않도록 다시 리셋한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- Finding 3: 앵커 뒤 첫 백틱 스팬이 아니라, 숫자를 포함해 "버전 모양"인
+# 첫 백틱 스팬을 주장으로 삼아야 한다 ----
+# 문서가 버전보다 먼저 다른 백틱 용어(코드명 등)를 언급하면, 구버전(무조건
+# 첫 백틱 스팬)은 디코이(숫자 없음)를 주장으로 오인해 실제 버전과 무관하게
+# 항상 불일치로 실패한다 — 고친 버전은 숫자를 포함한 첫 스팬(진짜 버전)까지
+# 건너뛰어 찾아야 한다.
+mkdir -p "$TMP/node"
+printf '%s\n' '{"engines":{"node":">=22"}}' > "$TMP/node/package.json"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node -->' '코드명 `carbon` 릴리스, Node.js `22+` 이상이 필요하다.' > "$TMP/decoy.md"
+assert_ok node "$GUARD" "$TMP"
+
+# 이 블록의 decoy.md/node/는 cp -r로 지워지지 않고 남는다 — 아래 검사 4~6 블록의
+# assert_ok를 오염시키지 않도록 다시 리셋한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 검사 4: 커버리지 게이트 임계값 — 문서 주장이 빌드 설정과 다르면 --strict 에서
+# 실패해야 한다(기본은 경고). .claude/rules/java.md 스타일의 "게이트 NN/MM" 표기 대
+# 실제 java/pom.xml <minimum> 값을 대조한다 — 이 트리엔 그 문서·소스 쌍만 있으면 된다
+# (다른 언어의 문서·소스가 없어도 조용히 스킵되어야 한다 — 부재는 에러가 아니다).
+mkdir -p "$TMP/.claude/rules" "$TMP/java"
+printf '%s\n' '- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 90/85 포함)' > "$TMP/.claude/rules/java.md"
+cat > "$TMP/java/pom.xml" <<'EOF'
+<project>
+  <build><plugins><plugin><configuration><rules><rule><limits>
+    <limit><counter>LINE</counter><value>COVEREDRATIO</value><minimum>0.50</minimum></limit>
+    <limit><counter>BRANCH</counter><value>COVEREDRATIO</value><minimum>0.40</minimum></limit>
+  </limits></rule></rules></configuration></plugin></plugins></build>
+</project>
+EOF
+assert_ok node "$GUARD" "$TMP"             # 기본은 경고
+assert_fails node "$GUARD" "$TMP" --strict # --strict 는 실패(문서 90/85 ≠ 실제 50/40)
+
+# 이 블록의 .claude/·java/는 cp -r로 지워지지 않고 남는다 — 다음 블록을 오염시키지
+# 않도록 다시 리셋한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 검사 5: 깨진 마크다운 링크는 --strict 에서 실패해야 한다(기본은 경고) ----
+cp -r "$FIX/." "$TMP/"
+printf '%s\n' '[없는문서](./nope.md)' >> "$TMP/ok.md"
+assert_ok node "$GUARD" "$TMP"             # 기본은 경고
+assert_fails node "$GUARD" "$TMP" --strict # --strict 는 실패
+
+# 이 블록도 ok.md를 오염시켰다 — 다음 블록을 위해 다시 리셋한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 검사 6: "N개 언어" 기수가 scripts/lib/deploy-facts.sh 의 DEPLOY_LANGS 언어 수와
+# 다르면 --strict 에서 실패해야 한다(기본은 경고). deploy-facts.sh 가 아예 없는 트리
+# (위 다른 모든 블록)에서는 이 검사가 조용히 스킵됨을 그 블록들의 assert_ok가 이미
+# 방증한다 — 여기서는 반대로 파일이 있고 기수가 어긋나는 경우를 확인한다. ----
+mkdir -p "$TMP/scripts/lib"
+printf '%s\n' 'DEPLOY_LANGS="a b c"' > "$TMP/scripts/lib/deploy-facts.sh"
+printf '%s\n' '# fixture' '9개 언어를 지원한다.' > "$TMP/langs.md"
+assert_ok node "$GUARD" "$TMP"             # 기본은 경고 (DEPLOY_LANGS는 3개, 문서는 9개)
+assert_fails node "$GUARD" "$TMP" --strict # --strict 는 실패
+
+# 이 블록의 scripts/·langs.md는 cp -r로 지워지지 않고 남는다 — 아래 회귀테스트들의
+# assert_ok를 오염시키지 않도록 다시 리셋한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 회귀 1: 검사 5는 펜스(```) 안의 링크를 진짜 링크로 오인하면 안 된다 ----
+# docs/superpowers/plans/2026-07-23-docs-restructure-wbs.md의 실제 사례(펜스 안
+# `./nope.md`가 문법 예시일 뿐인데도 링크 대상 부재로 거짓 경고됐던 것)를 재현한다.
+# 앵커 스캐너는 이미 펜스를 건너뛰므로, checkLinks도 독립적으로 같은 규칙을 지켜야
+# 한다 — 기본 실행뿐 아니라 --strict에서도 전혀 등장하지 않아야 진짜 억제다(기본
+# 실행만 통과하는 건 "경고가 에러로 안 올라갔다"일 뿐일 수도 있어 증거가 약하다).
+cat > "$TMP/fenced-link.md" <<'EOF'
+# fenced link fixture
+
+```
+[문법 예시](./nope.md)
+```
+EOF
+assert_ok node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_not_contains "$OUT" "nope.md" "fenced link must never be flagged (not even a warning)"
+assert_ok node "$GUARD" "$TMP" --strict # 억제됐다면 --strict도 통과해야 한다
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 회귀 2: python/.venv/**(vendored 서드파티 site-packages) 는 문서로 취급하면
+# 안 된다 ----
+# 실제 사례: python/.venv/Lib/site-packages/**/README.md가 상대 링크를 못 찾는 대상을
+# 가리켜 검사 5를 오염시켰다. .venv 디렉터리 자체가 SKIP 대상이어야 그 안의 어떤
+# README도 애초에 스캔되지 않는다 — --strict에서도 등장하지 않아야 진짜 억제다.
+mkdir -p "$TMP/python/.venv/Lib/site-packages/somepkg"
+cat > "$TMP/python/.venv/Lib/site-packages/somepkg/README.md" <<'EOF'
+# vendored package
+See [license](./LICENSE-that-does-not-exist.txt).
+EOF
+assert_ok node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_not_contains "$OUT" "LICENSE-that-does-not-exist" ".venv/site-packages must never be scanned (not even a warning)"
+assert_ok node "$GUARD" "$TMP" --strict # 억제됐다면 --strict도 통과해야 한다
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 회귀 3: 검사 6은 "다른 N개 언어"류 상대 기수를 절대 언어 총수 주장으로 오인하면
+# 안 된다 — 절대 주장(예: "9개 언어")은 여전히 잡아야 한다 ----
+# DEPLOY_LANGS는 3개뿐인 트리에서: "다른 8개 언어"(관계상 늘 전체와 다름 — 상대 기수라
+# 애초에 대조 대상이 아님)는 절대 걸리면 안 되고, "9개 언어"(전체 언어 수에 대한 절대
+# 주장)는 3개와 어긋나므로 여전히 걸려야 한다. 같은 실행 안에서 둘을 함께 확인해야
+# "상대 기수를 억제하려다 절대 주장까지 죽였다"는 회귀를 놓치지 않는다.
+mkdir -p "$TMP/scripts/lib"
+printf '%s\n' 'DEPLOY_LANGS="a b c"' > "$TMP/scripts/lib/deploy-facts.sh"
+printf '%s\n' '# fixture' '이 SDK는 다른 8개 언어와 동일한 근본 한계를 공유한다.' '이 SDK는 9개 언어를 지원한다.' > "$TMP/mixed-langs.md"
+assert_ok node "$GUARD" "$TMP" # 기본은 경고(절대 주장 "9개"만 어긋남)
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_not_contains "$OUT" '"8개 언어"' "relative count (다른 8개 언어) must never be flagged"
+assert_contains "$OUT" '"9개 언어" ≠ DEPLOY_LANGS 3개' "absolute count mismatch (9개 언어) must still be flagged"
+assert_fails node "$GUARD" "$TMP" --strict # 절대 주장 어긋남은 --strict에서 실패해야 한다
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_not_contains "$OUT" '"8개 언어"' "relative count must not surface even under --strict"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 회귀 4(Fix 1): --strict 는 위치 인자(루트 경로)보다 앞에 오든 뒤에 오든 동일하게
+# 동작해야 한다 ----
+# 고치기 전 버전은 `process.argv[2]`를 무조건 루트로 가정했다 — 검사 4~6을 --strict로
+# 승격하는 문서화된 다음 단계의 가장 자연스러운 실행형인 `check-docs.mjs --strict`(명시적
+# `.` 없이)와 똑같은 패턴인 `node check-docs.mjs --strict "$TMP"`에서 "--strict" 문자열
+# 자체가 존재하지 않는 디렉터리로 resolve되어 ENOENT로 크래시했다(부비트랩). 고친 버전은
+# 두 순서가 완전히 같은 결과(크래시 없이, 같은 종료코드, 같은 "checked N facts" 성공
+# 문구)를 내야 한다.
+cp -r "$FIX/." "$TMP/"
+if node "$GUARD" "$TMP" --strict >/dev/null 2>&1; then RC_PATH_FIRST=0; else RC_PATH_FIRST=$?; fi
+if node "$GUARD" --strict "$TMP" >/dev/null 2>&1; then RC_FLAG_FIRST=0; else RC_FLAG_FIRST=$?; fi
+assert_eq "$RC_PATH_FIRST" "$RC_FLAG_FIRST" "--strict before the root path must exit identically to --strict after it"
+OUT_FLAG_FIRST="$(node "$GUARD" --strict "$TMP" 2>&1)" || true
+assert_not_contains "$OUT_FLAG_FIRST" "ENOENT" "--strict before the root path must not crash with ENOENT (argv booby-trap)"
+assert_contains "$OUT_FLAG_FIRST" "checked" "--strict before the root path must produce the normal 'checked N facts' output, not a crash"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 회귀 5(Fix 2): fact/anchor 최저치(floor)는 --min-facts/--min-anchors로만 켜지고
+# (기본 0=미적용, 픽스처 무영향), 켜지면 앵커/표 삭제처럼 검사 커버리지가 줄어든 트리를
+# 실패시켜야 한다 ----
+# 정상 픽스처(scripts/test/fixtures/doc-guard)는 항상 "checked 4 facts across 3 anchors"다
+# — 그 실측치보다 낮은 하한(--min-facts 미만이 아니라 그 값을 밑도는 경우)은 통과해야
+# 하고, 넘는 하한은 실패해야 한다. 플래그를 전혀 안 주면(기본 0) 같은 픽스처가 여전히
+# 통과해야 한다 — floor가 opt-in이지 항상 켜진 게 아니라는 증거.
+cp -r "$FIX/." "$TMP/"
+assert_ok node "$GUARD" "$TMP" # 플래그 없음 — floor 미적용, 정상 통과
+assert_ok node "$GUARD" "$TMP" --min-facts=4 --min-anchors=3   # 실측치와 정확히 같으면 통과
+assert_fails node "$GUARD" "$TMP" --min-facts=5                # 실측(4) < 요구(5) — 실패
+OUT="$(node "$GUARD" "$TMP" --min-facts=5 2>&1)" || true
+assert_contains "$OUT" "facts 4 < --min-facts=5" "floor failure must name the actual fact count and the requested floor"
+assert_fails node "$GUARD" "$TMP" --min-anchors=4               # 실측(3) < 요구(4) — 실패
+OUT="$(node "$GUARD" "$TMP" --min-anchors=4 2>&1)" || true
+assert_contains "$OUT" "anchors 3 < --min-anchors=4" "floor failure must name the actual anchor count and the requested floor"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+assert_report
