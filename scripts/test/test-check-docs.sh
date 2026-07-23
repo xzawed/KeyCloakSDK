@@ -324,4 +324,48 @@ printf '%s\n' '{"engines":{"node":">=22"}}' > "$TMP/node/package.json"
 printf '%s\n' '<!-- doc-guard: kind=runtime lang=node -->' '코드명 `carbon` 릴리스, Node.js `22+` 이상이 필요하다.' > "$TMP/decoy.md"
 assert_ok node "$GUARD" "$TMP"
 
+# 이 블록의 decoy.md/node/는 cp -r로 지워지지 않고 남는다 — 아래 검사 4~6 블록의
+# assert_ok를 오염시키지 않도록 다시 리셋한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 검사 4: 커버리지 게이트 임계값 — 문서 주장이 빌드 설정과 다르면 --strict 에서
+# 실패해야 한다(기본은 경고). .claude/rules/java.md 스타일의 "게이트 NN/MM" 표기 대
+# 실제 java/pom.xml <minimum> 값을 대조한다 — 이 트리엔 그 문서·소스 쌍만 있으면 된다
+# (다른 언어의 문서·소스가 없어도 조용히 스킵되어야 한다 — 부재는 에러가 아니다).
+mkdir -p "$TMP/.claude/rules" "$TMP/java"
+printf '%s\n' '- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 90/85 포함)' > "$TMP/.claude/rules/java.md"
+cat > "$TMP/java/pom.xml" <<'EOF'
+<project>
+  <build><plugins><plugin><configuration><rules><rule><limits>
+    <limit><counter>LINE</counter><value>COVEREDRATIO</value><minimum>0.50</minimum></limit>
+    <limit><counter>BRANCH</counter><value>COVEREDRATIO</value><minimum>0.40</minimum></limit>
+  </limits></rule></rules></configuration></plugin></plugins></build>
+</project>
+EOF
+assert_ok node "$GUARD" "$TMP"             # 기본은 경고
+assert_fails node "$GUARD" "$TMP" --strict # --strict 는 실패(문서 90/85 ≠ 실제 50/40)
+
+# 이 블록의 .claude/·java/는 cp -r로 지워지지 않고 남는다 — 다음 블록을 오염시키지
+# 않도록 다시 리셋한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 검사 5: 깨진 마크다운 링크는 --strict 에서 실패해야 한다(기본은 경고) ----
+cp -r "$FIX/." "$TMP/"
+printf '%s\n' '[없는문서](./nope.md)' >> "$TMP/ok.md"
+assert_ok node "$GUARD" "$TMP"             # 기본은 경고
+assert_fails node "$GUARD" "$TMP" --strict # --strict 는 실패
+
+# 이 블록도 ok.md를 오염시켰다 — 다음 블록을 위해 다시 리셋한다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 검사 6: "N개 언어" 기수가 scripts/lib/deploy-facts.sh 의 DEPLOY_LANGS 언어 수와
+# 다르면 --strict 에서 실패해야 한다(기본은 경고). deploy-facts.sh 가 아예 없는 트리
+# (위 다른 모든 블록)에서는 이 검사가 조용히 스킵됨을 그 블록들의 assert_ok가 이미
+# 방증한다 — 여기서는 반대로 파일이 있고 기수가 어긋나는 경우를 확인한다. ----
+mkdir -p "$TMP/scripts/lib"
+printf '%s\n' 'DEPLOY_LANGS="a b c"' > "$TMP/scripts/lib/deploy-facts.sh"
+printf '%s\n' '# fixture' '9개 언어를 지원한다.' > "$TMP/langs.md"
+assert_ok node "$GUARD" "$TMP"             # 기본은 경고 (DEPLOY_LANGS는 3개, 문서는 9개)
+assert_fails node "$GUARD" "$TMP" --strict # --strict 는 실패
+
 assert_report

@@ -15,6 +15,12 @@ const SKIP = new Set(['.git', 'node_modules', 'vendor', 'target', 'build', 'dist
 const SKIP_PATHS = new Set(['scripts/test/fixtures'])
 const MAX_PROP_HOPS = 10 // 순환/장기 속성 체인이 무한루프하지 않도록 하는 반복 상한.
 
+// --strict 없으면 검사 4~6(예방적 — 아직 실제 드리프트가 관측된 적 없음)은 경고만 남기고
+// 종료코드는 살린다. repo-hygiene.yml은 브랜치 필터 없는 on:push라 즉시 fail-closed로 켜면
+// 모든 Dependabot 브랜치가 동시에 빨개진다 — 한 사이클 관찰 후 CI가 --strict를 붙여 승격한다.
+const STRICT = process.argv.includes('--strict')
+const warnings = []
+
 function walkFiles(dir, matches, out = []) {
   for (const name of readdirSync(dir)) {
     if (SKIP.has(name)) continue
@@ -241,9 +247,110 @@ const errors = []
 let facts = 0
 let anchors = 0
 
+// 검사 4 — 커버리지 게이트 임계값(문서가 주장한 값 ↔ 빌드 설정). 예방적 검사라 기본은 경고.
+// kind=dep 좌표표 방식이 아니라, 각 언어의 정본 툴체인 문서(.claude/rules/<lang>.md)에 있는
+// "게이트/gate NN ... NN" 표기 하나를 실제 빌드 설정과 대조하는 좁은 스코프다 — 해당 문서나
+// 소스가 없는 트리(가드 자신의 격리된 테스트 픽스처 등)에서는 조용히 건너뛴다(에러 아님).
+const COVERAGE = {
+  java: [
+    'java/pom.xml',
+    (t) => [...t.matchAll(/<minimum>([\d.]+)<\/minimum>/g)].map((m) => String(Math.round(Number(m[1]) * 100))),
+  ],
+  kotlin: ['kotlin/build.gradle.kts', (t) => [...t.matchAll(/minValue\s*=\s*(\d+)/g)].map((m) => m[1])],
+  node: ['node/vitest.config.ts', (t) => [...t.matchAll(/(?:lines|branches):\s*(\d+)/g)].map((m) => m[1])],
+}
+// 문서 텍스트에서 "게이트"/"gate" 낱말이 등장하는 첫 줄을 찾아, 그 낱말 뒤에 나오는 첫 두
+// 숫자를 [라인%, 브랜치%] 주장으로 삼는다 — 세 소스 모두 라인 임계값을 브랜치보다 먼저
+// 선언하므로(java pom의 LINE limit, kotlin의 LINE rule, node의 `lines:`) 순서가 맞는다.
+function firstGateClaim(text) {
+  for (const line of text.split(/\r?\n/)) {
+    const idx = line.search(/게이트|gate/i)
+    if (idx < 0) continue
+    const nums = [...line.slice(idx).matchAll(/\d{1,3}/g)].map((m) => m[0])
+    if (nums.length >= 2) return [nums[0], nums[1]]
+  }
+  return null
+}
+function checkCoverageGates() {
+  for (const [lang, [srcRel, pick]] of Object.entries(COVERAGE)) {
+    const docRel = `.claude/rules/${lang}.md`
+    let docText
+    try {
+      docText = readFileSync(join(ROOT, docRel), 'utf8')
+    } catch {
+      continue // 이 언어의 정본 문서가 없는 트리 — 검사 대상 아님.
+    }
+    const claim = firstGateClaim(docText)
+    if (!claim) continue // 이 문서는 게이트를 주장하지 않는다 — 대조할 것이 없다.
+    let actual
+    try {
+      actual = pick(readFileSync(join(ROOT, srcRel), 'utf8'))
+    } catch (e) {
+      ;(STRICT ? errors : warnings).push(
+        `${docRel} ${lang} 커버리지 게이트 주장을 대조하려 했으나 ${srcRel} 읽기 실패: ${e.message}`,
+      )
+      continue
+    }
+    if (actual.length < 2) {
+      ;(STRICT ? errors : warnings).push(
+        `${docRel} ${lang} 커버리지 게이트 검증 실패 — ${srcRel} 에서 라인/브랜치 임계값을 2건 추출하지 못함(추출 ${actual.length}건)`,
+      )
+      continue
+    }
+    if (claim[0] !== actual[0] || claim[1] !== actual[1]) {
+      ;(STRICT ? errors : warnings).push(
+        `${docRel} ${lang} 커버리지 게이트 문서=라인${claim[0]}/브랜치${claim[1]} 실제=라인${actual[0]}/브랜치${actual[1]} (${srcRel})`,
+      )
+    }
+  }
+}
+
+// 검사 5 — 상대 링크(`./`·`../`) 대상이 실제로 디스크에 존재하는가. 예방적 검사라 기본은 경고.
+function checkLinks(file, rel, text) {
+  for (const m of text.matchAll(/\[[^\]]*\]\((\.{0,2}\/[^)#\s]+)/g)) {
+    const target = resolve(file, '..', m[1])
+    try {
+      statSync(target)
+    } catch {
+      ;(STRICT ? errors : warnings).push(`${rel} 링크 대상 없음: ${m[1]}`)
+    }
+  }
+}
+
+// 검사 6 — "N개 언어" 기수가 scripts/lib/deploy-facts.sh 의 DEPLOY_LANGS 와 맞는가. 예방적
+// 검사라 기본은 경고. docs/superpowers/** 와 docs/governance/history.md 는 그 시절 언어 수를
+// 정당하게 말하는 이력 문서라 제외한다.
+// ⚠️ 지역 변수를 `facts`로 짓지 말 것 — 모듈 스코프의 카운터 `let facts`를 섀도잉한다.
+function checkCardinality() {
+  let deployFacts
+  try {
+    deployFacts = readFileSync(join(ROOT, 'scripts/lib/deploy-facts.sh'), 'utf8')
+  } catch {
+    return // 이 트리엔 배포사실 SSOT가 없다(가드 자신의 격리된 테스트 픽스처 등) — 스킵.
+  }
+  const m = /DEPLOY_LANGS="([^"]+)"/.exec(deployFacts)
+  if (!m) {
+    ;(STRICT ? errors : warnings).push('scripts/lib/deploy-facts.sh 에서 DEPLOY_LANGS 를 찾지 못함')
+    return
+  }
+  const n = m[1].trim().split(/\s+/).length
+  for (const f of walk(ROOT)) {
+    const rel = relative(ROOT, f).replace(/\\/g, '/')
+    if (rel.startsWith('docs/superpowers/')) continue // 이력 문서는 당시 기준이 맞다
+    if (rel === 'docs/governance/history.md') continue // 위와 동일 — 이력 스냅샷
+    const text = readFileSync(f, 'utf8')
+    for (const x of text.matchAll(/(\d+)개 언어/g)) {
+      if (Number(x[1]) !== n) {
+        ;(STRICT ? errors : warnings).push(`${rel} "${x[1]}개 언어" ≠ DEPLOY_LANGS ${n}개`)
+      }
+    }
+  }
+}
+
 for (const file of walk(ROOT)) {
   const rel = relative(ROOT, file).replace(/\\/g, '/')
   const lines = readFileSync(file, 'utf8').split(/\r?\n/)
+  checkLinks(file, rel, lines.join('\n'))
   let inFence = false
   for (let i = 0; i < lines.length; i++) {
     if (/^\s*```/.test(lines[i])) { inFence = !inFence; continue }
@@ -379,6 +486,11 @@ for (const [coord, hits] of seen) {
     errors.push(`좌표 '${coord}' 가 문서마다 다름: ${hits.map((h) => `${h.rel}=${h.ver}`).join(' vs ')}`)
   }
 }
+
+// 검사 4·6 — 파일별 순회와 무관한 전역 대조라 메인 루프 밖에서 한 번만 실행한다.
+checkCoverageGates()
+checkCardinality()
+for (const w of warnings) console.warn(`::warning::${w}`)
 
 if (errors.length) {
   for (const e of errors) console.error(`::error::${e}`)
