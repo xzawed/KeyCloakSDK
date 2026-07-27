@@ -152,6 +152,17 @@ node scripts/check-docs.mjs .    # docs-vs-build-file drift guard
 sh scripts/test/test-doctor.sh   # doctor's own self-test
 ```
 
+And the repository's own GitHub configuration, which is committed rather than clicked:
+
+```bash
+node scripts/repo-config.mjs check   # does GitHub's branch ruleset match .github/rulesets/*.json?
+```
+
+This needs `gh` installed and authenticated with admin rights on the repository, so it is a
+maintainer command rather than part of a normal build. It exits `1` on drift and `2` when it could
+not read the config at all — the two are deliberately different, so "no token" is never reported as
+"config changed". See [CONTRIBUTING.md §4](../../CONTRIBUTING.md) for what the ruleset enforces.
+
 ## 6. Where the rest lives
 
 | You want | Read |

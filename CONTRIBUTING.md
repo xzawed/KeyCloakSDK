@@ -113,15 +113,63 @@ assertions **non-vacuous** (sign the fixtures for real) so an accidental pass is
 
 ---
 
-## 4. ⚠️ Branch protection (requires action by the repository owner)
+## 4. Branch protection — what actually gates `main`
 
-CI running and **CI blocking a merge** are two different things. `main` currently has no protection
-rule, so a red PR can still be merged by hand. To close that, designate the per-language jobs as
-**required status checks** in GitHub → Settings → Branches (this cannot be configured from a file
-in the repository).
+Branch protection is GitHub server state, not a repository file, so it is easy for it to drift from
+what anyone believes it to be. This repository therefore keeps the intended state **in the repo**
+at [`.github/rulesets/main.json`](.github/rulesets/main.json) and compares it against GitHub:
 
-> Designating a job that a path filter skips (`java/**`, `python/**`, …) as required can leave it
-> pending forever. Either adjust the filters or maintain the required list per language.
+```bash
+node scripts/repo-config.mjs check    # does GitHub match the committed definition?
+node scripts/repo-config.mjs apply    # make GitHub match it (needs admin rights)
+node scripts/repo-config.mjs pull     # accept the live config as the new definition
+```
+
+The live ruleset `PRIMARY` enforces, on `refs/heads/main`:
+
+| Rule | Effect |
+|---|---|
+| `pull_request` (0 approvals) | every change goes through a PR; a solo maintainer can still self-merge |
+| `deletion` · `non_fast_forward` | `main` cannot be deleted or force-pushed |
+| `required_status_checks` | `doc-facts` and `shell-exec-bits` must be green — pinned to the GitHub Actions app so no other app can satisfy them by name |
+| `bypass_actors: []` | **nobody bypasses, including the owner** |
+
+Required checks also block direct pushes, not just merges — `git push origin main` is rejected with
+`2 of 2 required status checks are expected`.
+
+### ⚠️ Why the language CI jobs are *not* required
+
+Only `repo-hygiene.yml` and `sonarcloud.yml` run without a workflow-level `paths:` filter. All nine
+language CI workflows are path-filtered, and a path-filtered workflow **never creates a check run at
+all** for a PR that misses its paths — GitHub's documentation is explicit: *"checks associated with
+that workflow will remain in a 'Pending' state. A pull request that requires those checks to be
+successful will be blocked from merging."* With `bypass_actors: []` nobody could clear it.
+
+This is not theoretical here: the merged docs-only PR #101 produced exactly six check runs
+(`doc-facts` ×2, `shell-exec-bits` ×2, `SonarCloud`, `SonarCloud Code Analysis`) and **zero** language
+CI checks. Requiring any language job would have deadlocked it permanently.
+
+Note the contrast that decides the rule: a job skipped by a **job-level `if:`** does create a check
+run, reports `skipped`, and counts as success (this is why `SonarCloud` is mechanically safe to
+require). A workflow skipped by a **workflow-level `paths:`** filter creates nothing.
+
+**So this protection gates repository hygiene, not code correctness.** A PR that breaks a language's
+unit tests still shows a red check and can still be merged. Treat section 1's gates as binding by
+convention; only these two are binding by machine.
+
+### Making the language CI requireable (follow-up, not done)
+
+Move the filtering from workflow level to job level: a small `changes` job that always runs (e.g.
+`dorny/paths-filter`), with every real job gated by `if: needs.changes.outputs.<lang> == 'true'`.
+Skipped jobs then still report, so they can be required. Three things must be fixed along with it:
+
+- ⚠️ A job skipped because a `needs:` dependency **failed** also reports `skipped` — so the `changes`
+  job itself must be a required check, or a broken detector silently turns everything green.
+- ⚠️ Three check names currently collide across workflows, so requiring them is ambiguous:
+  `integration` (dotnet + php), `Integration (testcontainers, 실제 Keycloak 26.6)` (kotlin + rust),
+  and `Integration tests (testcontainers, 실제 Keycloak)` (node + python).
+- ⚠️ No workflow declares a `merge_group:` trigger. **Do not enable a merge queue** before adding it
+  to at least `repo-hygiene.yml`, or every queued PR will deadlock.
 
 ---
 
