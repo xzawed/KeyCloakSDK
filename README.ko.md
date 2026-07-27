@@ -94,6 +94,7 @@ with KeycloakClient.create(config) as kc:
 - 🖥️ **[Keycloak 서버 배포](docs/guides/deploying-keycloak-server.md)** — SDK가 붙을 서버(단일 VM + Docker Compose)
 - 🗺️ **[언어 지원 로드맵](docs/roadmap/language-support.md)** · 🧩 **[새 언어 추가 플레이북](docs/guides/add-a-language-playbook.md)**
 - 🧪 **[테스트 하네스](harness/README.md)** — 실제 Keycloak 대상 언어 간 계약 준수·보안 프로브·스코어링
+- 🛠️ **[개발 환경 설정](docs/guides/development-setup.md)** — 새 머신에서 9개 SDK 툴체인 준비(`node scripts/doctor.mjs`가 빠진 것을 진단)
 - 🤝 **[기여 안내](CONTRIBUTING.md)** · 📦 **[배포](DEPLOY.md)** · 🏗️ **[아키텍처·빌드(CLAUDE.md)](CLAUDE.md)**
 
 ---

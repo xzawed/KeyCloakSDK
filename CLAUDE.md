@@ -39,7 +39,9 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 
 ## 툴체인 (빌드 명령)
 
-언어별 전체 빌드/테스트/린트/배포 명령(머신 전용 절대경로·단일 테스트 실행 포함)은 `.claude/rules/<lang>.md`에 있다(해당 언어 경로 작업 시 자동 로드). 아래는 언어별 핵심 진입 명령 하나씩만 남긴 표다.
+언어별 전체 빌드/테스트/린트/배포 명령(단일 테스트 실행 포함)은 `.claude/rules/<lang>.md`에 있다(해당 언어 경로 작업 시 자동 로드). 아래는 언어별 핵심 진입 명령 하나씩만 남긴 표다.
+
+**새 머신에서 시작한다면**: `node scripts/doctor.mjs [<lang>…]`이 각 언어의 빌드 파일에서 최소 런타임 선언을 읽어 이 PC에 무엇이 없는지 알려준다. 설치·환경변수 규약(`KCSDK_TOOLS`·`KCSDK_JDK21`·`KCSDK_PY`)은 [docs/guides/development-setup.md](docs/guides/development-setup.md). 툴체인 경로는 `.claude/rules/*.md`에 머신 기본값을 둔 채 이 변수들로 덮어쓸 수 있다(리포지토리에 특정 PC 경로를 못박지 않는다).
 
 | 언어 | 핵심 진입 명령 | 상세 |
 |---|---|---|
@@ -247,7 +249,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 | 의존성 | 크레이트 | 왜 이 선택인가 | 버전 |
 |---|---|---|---|
 | 오류/직렬화 | thiserror 2.0 · async-trait 0.1 · serde+serde_json 1 · url 2 | 표준 에러 계급·직렬화·URL 유틸 | — |
-| 단위 테스트 | wiremock 0.6(HTTP 목) · rsa 0.9+rand 0.8+base64 0.22(JWKS 공격 프로브 픽스처 생성) | HTTP 목 + 공격 프로브용 테스트 키 생성(RUSTSEC-2023-0071은 서명검증 전용인 런타임에 무영향) | — |
+| 단위 테스트 | wiremock 0.6(HTTP 목) · rsa 0.9+rand 0.8+base64 0.23(JWKS 공격 프로브 픽스처 생성) | HTTP 목 + 공격 프로브용 테스트 키 생성(RUSTSEC-2023-0071은 서명검증 전용인 런타임에 무영향) | — |
 | 통합 테스트 | testcontainers 0.27.3(pre-1.0, base `GenericImage` — 언어별 편의 모듈 없음) | pre-1.0이라 Keycloak 전용 편의 모듈이 없어 `GenericImage`로 직접 조립 | — |
 
 전부 Apache-2.0/MIT(호환). `keycloak`/`openidconnect`/`jsonwebtoken`은 정확 핀(`=`)으로 고정(reqwest 메이저 정렬·typestate 제네릭·`Validation` 필드가 버전 간 깨지기 쉬운 표면이라 마이너 드리프트 방지). RUSTSEC-2023-0071(rsa Marvin)은 dev-dependency `rsa`(테스트 키 생성 전용)에 대한 것으로 SDK 런타임(공개키 서명검증만 수행)에는 무영향(게차 참조).

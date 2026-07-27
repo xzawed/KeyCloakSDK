@@ -10,15 +10,16 @@ paths:
 
 ## 툴체인 (빌드 명령)
 
-Go는 포터블 설치 `C:\Users\dirtc\tools\go`(1.26.4, 리포지토리 미커밋)를 사용한다. 프리픽스를 인라인 지정하고 `go -C go`로 실행한다(cwd를 go/로 바꾸지 않아 git과 충돌 방지):
+Go는 포터블 설치 `${KCSDK_TOOLS:-$HOME/tools}/go`(1.26.4, 리포지토리 미커밋)를 사용한다. 프리픽스를 인라인 지정하고 `go -C go`로 실행한다(cwd를 go/로 바꾸지 않아 git과 충돌 방지):
 ```bash
-export PATH="/c/Users/dirtc/tools/go/bin:$PATH" GOTOOLCHAIN=local
-go -C /d/Source/KeyCloakSDK/go build ./...      # 빌드
-go -C /d/Source/KeyCloakSDK/go test ./...        # 단위테스트 40개(integration 태그 없이 — E2E 제외)
-go -C /d/Source/KeyCloakSDK/go test -tags=integration -run TestE2E -count=1 ./...  # 통합 E2E(Docker 필요)
-go -C /d/Source/KeyCloakSDK/go vet ./...         # 정적 분석
-gofmt -l /d/Source/KeyCloakSDK/go                # 포맷 검사(출력 없으면 OK; -w로 수정)
+export PATH="${KCSDK_TOOLS:-$HOME/tools}/go/bin:$PATH" GOTOOLCHAIN=local
+go -C go build ./...      # 빌드
+go -C go test ./...        # 단위테스트 40개(integration 태그 없이 — E2E 제외)
+go -C go test -tags=integration -run TestE2E -count=1 ./...  # 통합 E2E(Docker 필요)
+go -C go vet ./...         # 정적 분석
+gofmt -l go                # 포맷 검사(출력 없으면 OK; -w로 수정)
 ```
+> 다른 PC에서는 `KCSDK_TOOLS`(포터블 툴 상위 디렉터리, 기본 `$HOME/tools`)를 덮어쓰거나, 이미 PATH에 있으면 프리픽스를 생략한다. 설치·진단은 [development-setup.md](../../docs/guides/development-setup.md)(`node scripts/doctor.mjs go`).
 - 단일 테스트: `go -C go test -run TestValidateValidToken ./...`
 - 커버리지 게이트(로직 statement ≥90, 네트워크 경계 omit): `go test ./... -coverprofile=cover.out` → `grep -vE '/(auth|admin|admin_users|admin_clients|admin_realms|admin_roles|admin_groups|client)\.go:' cover.out`로 경계 제외 → `go tool cover -func`로 total 확인(실측 95.2%)
 - ⚠️ **최소 Go는 1.25**(`golang.org/x/oauth2` v0.36이 요구 → `go.mod`의 `go 1.25`). CI matrix는 1.25·1.26. `golangci-lint`는 로컬 미설치(CI에서 `golangci/golangci-lint-action@v6`) — 로컬은 `go vet`·`gofmt`로 대체

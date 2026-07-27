@@ -94,6 +94,7 @@ Secrets and tokens are masked in logs, TLS verification is on by default, and ev
 - 🖥️ **[Deploying a Keycloak server](docs/guides/deploying-keycloak-server.md)** — the server your SDK connects to (single VM + Docker Compose)
 - 🗺️ **[Language roadmap](docs/roadmap/language-support.md)** · 🧩 **[Add-a-language playbook](docs/guides/add-a-language-playbook.md)**
 - 🧪 **[Test harness](harness/README.md)** — cross-language conformance, security probes, and scoring against real Keycloak
+- 🛠️ **[Development setup](docs/guides/development-setup.md)** — toolchains for the nine SDKs on a fresh machine (`node scripts/doctor.mjs` diagnoses what's missing)
 - 🤝 **[Contributing](CONTRIBUTING.md)** · 📦 **[Deploy](DEPLOY.md)** · 🏗️ **[Architecture & build (CLAUDE.md)](CLAUDE.md)**
 
 ---

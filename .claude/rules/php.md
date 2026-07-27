@@ -10,15 +10,16 @@ paths:
 
 ## 툴체인 (빌드 명령)
 
-PHP는 포터블 설치 `C:\Users\dirtc\tools\php`(8.3.32 NTS x64 — ext: openssl/curl/mbstring/fileinfo/sodium/zip/json, 리포지토리 미커밋)를 사용한다. Composer(`composer.phar` + bash shim)와 Xdebug 3.5.3(zend_extension, 기본 mode off)도 같은 경로에 있다. 프리픽스를 인라인 지정하고 명령은 `php/`에서 실행한다:
+PHP는 포터블 설치 `${KCSDK_TOOLS:-$HOME/tools}/php`(8.3.32 NTS x64 — ext: openssl/curl/mbstring/fileinfo/sodium/zip/json, 리포지토리 미커밋)를 사용한다. Composer(`composer.phar` + bash shim)와 Xdebug 3.5.3(zend_extension, 기본 mode off)도 같은 경로에 있다. 프리픽스를 인라인 지정하고 명령은 `php/`에서 실행한다:
 ```bash
-export PATH="/c/Users/dirtc/tools/php:$PATH" OPENSSL_CONF="C:\Users\dirtc\tools\php\extras\ssl\openssl.cnf"
+export PATH="${KCSDK_TOOLS:-$HOME/tools}/php:$PATH" OPENSSL_CONF="${KCSDK_OPENSSL_CNF:-C:\Users\dirtc\tools\php\extras\ssl\openssl.cnf}"
 cd php && composer install                                    # 의존성 설치
 cd php && vendor/bin/phpunit --testsuite unit                  # 단위테스트 64개. Docker 불필요
 cd php && vendor/bin/phpunit --testsuite integration           # 통합테스트 3개(Docker 필요 — docker CLI 셸아웃, 실제 Keycloak 26.6)
 cd php && vendor/bin/phpstan analyse                           # 정적분석(level max + strict-rules + phpunit 확장)
 cd php && vendor/bin/php-cs-fixer fix --dry-run --allow-risky=yes   # 스타일 검사(--allow-risky는 declare_strict_types risky rule에 필요)
 ```
+> 다른 PC에서는 `KCSDK_TOOLS`(포터블 툴 상위 디렉터리, 기본 `$HOME/tools`)·`KCSDK_OPENSSL_CNF`를 덮어쓰거나, 이미 PATH에 있으면 프리픽스를 생략한다. 설치·진단은 [development-setup.md](../../docs/guides/development-setup.md)(`node scripts/doctor.mjs php`).
 - 단일 테스트: `vendor/bin/phpunit --filter <TestName> tests/Unit/<Path>Test.php`
 - 커버리지 게이트(로직 라인 ≥90%, 네트워크 경계 omit): `XDEBUG_MODE=coverage vendor/bin/phpunit --testsuite unit --coverage-clover clover.xml` → `phpunit.xml`의 `<source><exclude>`가 `AuthClient`/`Admin/**`/`KeycloakClient`를 이미 제외하므로 clover의 `project.metrics`를 그대로 집계(실측 100.00%)
 - ⚠️ `OPENSSL_CONF`는 로컬 RSA 키 생성(`JwtValidatorTest`)에 필요 — 없으면 openssl 확장이 시스템 기본 cnf를 못 찾아 키 생성이 실패한다.
