@@ -41,6 +41,12 @@ jobs:
           node-version: '22'
       - name: 가드 자가테스트(변이 3종이 전부 잡히는지)
         run: sh scripts/test/test-check-docs.sh
+      - name: 툴체인 진단기 자가테스트(요구버전을 빌드파일에서 읽는지)
+        # doctor.mjs는 "이 PC에 툴체인이 있는가"를 답하는 도구라 CI에서 그 결과 자체는
+        # 의미가 없다(러너마다 다르다). 여기서 검사하는 것은 진단기가 요구 버전을
+        # 하드코딩하지 않고 빌드 파일에서 읽는가 + 좌표가 깨졌을 때 침묵 통과하지
+        # 않는가다 — check-docs와 같은 종류의 자기기만 방지다.
+        run: sh scripts/test/test-doctor.sh
       - name: 문서-소스 대조
         # --min-facts/--min-anchors는 저장소 루트의 현재 실측치(14 facts / 4 anchors)를
         # 하한으로 강제한다 — 앵커 주석을 지우면서 그 표를 남겨두면(검사 대상 자체가

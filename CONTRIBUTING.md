@@ -1,102 +1,141 @@
 # Contribution Guide (CONTRIBUTING)
 
-This is the **single source of truth for the verification workflow** when contributing to the Keycloak polyglot SDK (Java + Python). It gathers in one place the gates you must pass before merging, the local run commands, how to add tests, and the PR checklist. (For project structure and architecture see [CLAUDE.md](CLAUDE.md), for deployment see [DEPLOY.md](DEPLOY.md), and for verification history see [docs/governance/](docs/governance/).)
+This is the **single source of truth for the verification workflow** across all nine language SDKs
+(Java · Python · Node · Go · C#/.NET · PHP · Rust · Ruby · Kotlin). It covers the gates you must
+pass before merging, where tests go, and the PR checklist.
 
-> The machine-specific absolute-path commands for this repository (this developer's JDK/venv paths) live in [CLAUDE.md](CLAUDE.md). Below are the **portable commands that work on any machine**.
+| You want | Read |
+|---|---|
+| Set up a machine to build this repo | [docs/guides/development-setup.md](docs/guides/development-setup.md) |
+| Full command sheet for one language (single-test, coverage, lint, gotchas) | [`.claude/rules/<lang>.md`](.claude/rules/) |
+| Architecture, cross-language contract, dependency choices | [CLAUDE.md](CLAUDE.md) |
+| Release / publish procedure | [DEPLOY.md](DEPLOY.md) |
+| Verification history | [docs/governance/](docs/governance/) |
+
+---
+
+## 0. Before you start
+
+```bash
+node scripts/doctor.mjs <lang>   # is this machine able to build that language?
+```
+
+`doctor` reads each language's declared minimum runtime from its build file and compares it with
+what is installed. Fix whatever it reports before touching code — see
+[development-setup.md](docs/guides/development-setup.md).
 
 ---
 
 ## 1. Gates you must pass before merging
 
-CI (`.github/workflows/ci.yml`, `python-ci.yml`) runs automatically on every push/PR. **If any of the following is red, do not merge.**
+CI runs per language (`.github/workflows/<lang>-ci.yml`, plus `ci.yml` for Java and
+`repo-hygiene.yml` repo-wide). **If any of them is red, do not merge.**
 
-### Java (`mvn -f java/pom.xml verify`)
-| Gate | Tool | Enforcement |
-|---|---|---|
-| Compile | `maven-compiler` | Build turns red on failure |
-| Unit tests (117) | surefire (`*Test`) | Red if even one fails |
-| Integration tests (6, Docker) | failsafe (`*IT`, Testcontainers real Keycloak 26.6) | Runs in the CI `integration` job |
-| **Coverage line ≥90% / branch ≥85%** | JaCoCo `jacoco:check` (bound to verify) | Build turns red if below threshold |
-| Dependency convergence · Java/Maven version | maven-enforcer | Red on conflicts / version below minimum |
+Every language enforces the same *kinds* of gate. The thresholds themselves are declared in each
+language's build configuration — that is the source of truth, so this table does not repeat them.
 
-### Python (`python/`)
-| Gate | Command | Enforcement |
-|---|---|---|
-| Lint (extended ruleset incl. security S/bandit) | `ruff check src tests examples` | Job turns red on violations |
-| Format | `ruff format --check src tests examples` | Red if unformatted |
-| **Coverage 100% on logic modules** | `pytest -m "not integration" --cov=keycloak_sdk` | `pyproject [tool.coverage.report] fail_under=100` — red if below |
-| Types (strict) | `mypy src` | Red on errors |
-| Integration tests (11, Docker) | `pytest -m integration` | Runs in the CI `integration` job |
+| Language | Runs every local gate | Compile | Unit | Coverage gate | Lint / format | Types | Integration (Docker) |
+|---|---|:--:|:--:|:--:|:--:|:--:|:--:|
+| Java | `mvn -f java/pom.xml verify` | ✓ | ✓ | JaCoCo `jacoco:check` | enforcer | — | failsafe `*IT` |
+| Python | `pytest -m "not integration" --cov=keycloak_sdk` | — | ✓ | `fail_under` | ruff (incl. bandit) | mypy strict | `pytest -m integration` |
+| Node | `npm test` | tsc | ✓ | vitest thresholds | eslint + prettier | `npm run typecheck` | `npm run test:it` |
+| Go | `go -C go test ./...` | ✓ | ✓ | `go tool cover` | `go vet` + `gofmt` | ✓ (compiler) | `-tags=integration` |
+| C#/.NET | `dotnet test --filter "Category!=Integration"` | ✓ | ✓ | coverlet `/p:Threshold` | `dotnet format` | ✓ (compiler) | `Category=Integration` |
+| PHP | `vendor/bin/phpunit --testsuite unit` | — | ✓ | clover + Xdebug | php-cs-fixer | PHPStan level max | `--testsuite integration` |
+| Rust | `cargo test` | ✓ | ✓ | `cargo llvm-cov` | `cargo fmt` + clippy `-D warnings` | ✓ (compiler) | `--test integration_test -- --ignored` |
+| Ruby | `bundle exec rspec` | — | ✓ | SimpleCov `minimum_coverage` | rubocop | — | `RUN_INTEGRATION=1 … --tag integration` |
+| Kotlin | `./gradlew test` | ✓ | ✓ | Kover `koverVerify` | ktlint | ✓ (compiler) | `./gradlew integrationTest` |
 
-> ⚠️ **Network-boundary modules are omitted from coverage** (Java: `AuthClient`/`AdminClient`, Python: `auth.py`/`admin/__init__.py` plus the aio counterparts). These have no unit-coverage floor and are verified **only by integration tests**, so whenever you change boundary code, run the integration tests along with it.
+Repo-wide, on every push and PR (`repo-hygiene.yml`):
 
----
-
-## 2. Running locally (portable commands)
-
-### Java (requires JDK 21+ · Maven 3.9+)
 ```bash
-mvn -f java/pom.xml verify                                   # Full: unit + coverage gate (plus integration if Docker is available)
-mvn -f java/pom.xml test -DskipITs=true                      # Unit tests only (coverage gate included)
-mvn -f java/pom.xml test -pl <module> -Dtest=<Class>#<method>  # Single test
+node scripts/check-docs.mjs .     # docs must not contradict the build files
+sh scripts/test/test-check-docs.sh
+sh scripts/test/test-doctor.sh
 ```
 
-### Python (3.10+ · Docker only needed for integration tests)
-```bash
-cd python
-python -m pip install -e ".[dev]"
-ruff check src tests examples          # ① Lint (security scan included)
-ruff format --check src tests examples # ② Format
-mypy src                               # ③ Types (strict)
-pytest -m "not integration" --cov=keycloak_sdk   # ④ Unit + 100% coverage gate
-pytest -m integration                  # ⑤ Integration (Docker required)
-```
-Run `ruff format` (without ‑‑check) to apply formatting automatically.
+> ⚠️ **Java's coverage gate is bound to the `verify` phase.** `mvn test` alone does *not* run
+> `jacoco:check`, so a change can pass locally and fail CI. Use
+> `mvn -pl <module> -am verify -DskipITs` when you want the gate without integration tests.
+
+> ⚠️ **`gofmt` / `prettier` / `php-cs-fixer` flag every file on a Windows CRLF working tree.**
+> Normalize the files you changed to LF and re-check, rather than reformatting the tree.
+
+### Network-boundary coverage exemption (all nine languages)
+
+The modules that own the actual HTTP boundary — `AuthClient`, the `admin` package/namespace, and
+the composed client entry point — are **omitted from the coverage gate in every language** and are
+verified by integration tests instead. Their exact names per language are in each build config and
+in [`.claude/rules/<lang>.md`](.claude/rules/).
+
+**So whenever you change boundary code, run that language's integration tests too.** The unit
+coverage gate will not protect you there, by design.
 
 ---
 
-## 3. How to add tests
+## 2. Where tests go
 
-| | Java | Python |
-|---|---|---|
-| Unit test location | `java/<module>/src/test/java/...` | `python/tests/unit/` (async under `tests/unit/aio/`) |
-| Integration test location | `java/keycloak-sdk/src/test/java/...` filename `*IT.java` | `python/tests/integration/` (async as `*_async_it.py`) |
-| Naming convention | unit `*Test`, integration `*IT` (the surefire/failsafe split criterion) | `def test_*` / `async def test_*`, integration via `@pytest.mark.integration` |
-| Real Keycloak fixture | `java/keycloak-sdk/src/test/resources/it-realm-realm.json` | Reuses the same file (`tests/integration/conftest.py`) |
+| Language | Unit tests | Integration tests | Convention |
+|---|---|---|---|
+| Java | `java/<module>/src/test/java/` | `java/keycloak-sdk/src/test/java/` | unit `*Test`, integration `*IT` (surefire/failsafe split) |
+| Python | `python/tests/unit/` (async under `unit/aio/`) | `python/tests/integration/` | `test_*`, integration via `@pytest.mark.integration` |
+| Node | `node/test/unit/` | `node/test/integration/` | `*.test.ts` |
+| Go | `go/*_test.go` | same files, `//go:build integration` | `TestXxx` |
+| C#/.NET | `dotnet/tests/Xzawed.Keycloak.Sdk.Tests/` | same project | integration marked `Category=Integration` |
+| PHP | `php/tests/Unit/` | `php/tests/Integration/` | `*Test.php`, suites split in `phpunit.xml` |
+| Rust | `#[cfg(test)]` in `rust/src/` | `rust/tests/integration_test.rs` | integration marked `#[ignore]` |
+| Ruby | `ruby/spec/unit/` | `ruby/spec/integration/` | `*_spec.rb`, integration `:integration` tag |
+| Kotlin | `kotlin/src/test/` | `kotlin/src/integrationTest/` | jvm-test-suite source sets |
 
-- When you change **JWT / security-related code**, add negative tests alongside it (alg=none · unsigned · algorithm confusion · iss/aud · clock skew — follow the existing `JwtValidatorTest` / `test_jwt.py` patterns). Write **non-vacuous** assertions grounded in real signatures so accidental passes are ruled out.
-- Attach tests to new branches so the 100% (Python) / 90·85% (Java) coverage gates stay intact.
+All nine share the same real-Keycloak realm fixture for integration tests (`it-realm`).
 
----
-
-## 4. PR checklist
-
-- [ ] Work on a feature branch (no direct commits to main)
-- [ ] Confirm all of the **section 1 gates** are green locally
-- [ ] Add tests for new code (keep the coverage gate intact); include negative tests for security code
-- [ ] Do not expose underlying library types in the public API (hide them behind the facade — a rule shared by Java/Python)
-- [ ] Keep docs up to date: when structure/commands/test counts change, sync [CLAUDE.md](CLAUDE.md), the relevant `README`, and [docs/](docs/)
-- [ ] (If it's a governance task) record the gate verdict in [docs/governance/verification-log*.md](docs/governance/)
-
----
-
-## 5. ⚠️ Branch protection (requires action by the repository owner)
-
-CI running and **CI blocking a merge** are two different things. In GitHub → Settings → Branches → the `main` protection rule, you must designate the following as **required status checks** for a red PR's merge to actually be blocked (this cannot be configured via a repository file):
-- Java: `build` (matrix), `integration`
-- Python: `test` (matrix), `integration`
-
-> Designating a job skipped by a path filter (`java/**` · `python/**`) as required can leave it pending, so adjust the filters as needed or manage the required list per language.
+**Security-critical code needs negative tests.** When you touch JWT validation, JWKS handling, or
+token masking, add the attack cases alongside the happy path — `alg=none`, unsigned tokens,
+algorithm confusion (HS/RS), wrong `iss` / `aud`, missing `exp`, clock-skew boundaries, unknown
+`kid` flood. Follow the existing `JwtValidatorTest` / `test_jwt.py` patterns, and make the
+assertions **non-vacuous** (sign the fixtures for real) so an accidental pass is ruled out.
 
 ---
 
-## 6. Advisory quality roadmap (optional · not yet enforced in CI)
+## 3. PR checklist
 
-Coverage guarantees only that "the code ran," not that "the tests catch defects." The tools below help close that gap. When adopting them, first run them as **advisory (non-blocking)** and gate them once stabilized.
+- [ ] Work on a feature branch — no direct commits to `main`
+- [ ] `node scripts/doctor.mjs <lang>` is clean for the languages you touched
+- [ ] Every gate in section 1 is green locally for those languages
+- [ ] New code has tests; security code has negative tests; the coverage gate still passes
+- [ ] Boundary code changed → integration tests run as well
+- [ ] No underlying library type leaks into the public API (hide it behind the facade — a rule
+      shared by all nine languages; the documented exceptions are listed in [CLAUDE.md](CLAUDE.md))
+- [ ] Docs updated where the *behaviour* changed. Do **not** hand-copy versions or test counts
+      into prose — the build files and CI output are the source of truth, and
+      `node scripts/check-docs.mjs .` enforces the anchored subset
+- [ ] (Governance tasks) verdict recorded in [docs/governance/](docs/governance/)
 
-- **Mutation testing**
-  - Java: [pitest](https://pitest.org) — `org.pitest:pitest-maven`. ⚠️ This project uses **JUnit 6.1.1**, so you must first confirm `pitest-junit5-plugin`'s JUnit Platform 6 compatibility (currently unverified).
-  - Python: [mutmut](https://github.com/boxed/mutmut) — e.g. `pip install mutmut && mutmut run --paths-to-mutate src/keycloak_sdk/jwt.py`. ⚠️ **No native Windows support (requires WSL)** — run it in CI (ubuntu) or WSL.
-  - Priority targets: **security-critical modules** such as `jwt.py` / `JwtValidator`.
-- **Extended static analysis**: Python `ruff` already enforces security (S/bandit), bugginess (B), and modernization (UP) rules. Java currently only enforces enforcer (dependencies) — evaluate one of [SpotBugs](https://spotbugs.github.io) · Checkstyle · Spotless as an advisory profile.
-- **Expanding mypy scope**: currently only `mypy src` is strict. Extending it to `tests` requires cleaning up test types first.
+---
+
+## 4. ⚠️ Branch protection (requires action by the repository owner)
+
+CI running and **CI blocking a merge** are two different things. `main` currently has no protection
+rule, so a red PR can still be merged by hand. To close that, designate the per-language jobs as
+**required status checks** in GitHub → Settings → Branches (this cannot be configured from a file
+in the repository).
+
+> Designating a job that a path filter skips (`java/**`, `python/**`, …) as required can leave it
+> pending forever. Either adjust the filters or maintain the required list per language.
+
+---
+
+## 5. Advisory quality roadmap (optional · not enforced in CI)
+
+Coverage proves the code *ran*, not that the tests *catch defects*. These close part of that gap;
+adopt them as advisory first, gate them only once stable.
+
+- **Mutation testing** — Java: [pitest](https://pitest.org) (`org.pitest:pitest-maven`; confirm
+  `pitest-junit5-plugin` compatibility with the JUnit Platform version this project pins before
+  relying on it). Python: [mutmut](https://github.com/boxed/mutmut) — no native Windows support,
+  run it in CI or WSL. Priority targets are the security-critical modules (`jwt.*` / `JwtValidator`).
+- **Extended static analysis** — Python's ruff already enforces security (S/bandit), bugginess (B)
+  and modernization (UP). Java enforces only dependency rules today; [SpotBugs](https://spotbugs.github.io),
+  Checkstyle or Spotless would be the advisory addition.
+- **Widening type checking** — `mypy src` is strict; extending it to `tests` needs the test types
+  cleaned up first.

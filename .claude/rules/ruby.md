@@ -10,15 +10,16 @@ paths:
 
 ## 툴체인 (빌드 명령)
 
-Ruby는 포터블 설치 `C:\Users\dirtc\tools\ruby`(3.4.10, non-devkit RubyInstaller — 리포지토리 미커밋)를 사용한다. 프리픽스를 인라인 지정하고 명령은 `ruby/`에서 실행한다:
+Ruby는 포터블 설치 `${KCSDK_TOOLS:-$HOME/tools}/ruby`(3.4.10, non-devkit RubyInstaller — 리포지토리 미커밋)를 사용한다. 프리픽스를 인라인 지정하고 명령은 `ruby/`에서 실행한다:
 ```bash
-export PATH="/c/Users/dirtc/tools/ruby/bin:$PATH"
+export PATH="${KCSDK_TOOLS:-$HOME/tools}/ruby/bin:$PATH"
 cd ruby && bundle install                                     # 의존성 설치
 cd ruby && bundle exec rspec                                   # 단위테스트 73개 + 커버리지 게이트(라인≥90%/브랜치≥85%). Docker 불필요
 cd ruby && RUN_INTEGRATION=1 bundle exec rspec spec/integration --tag integration  # 통합 1개(Docker 필요 — docker CLI 셸아웃, 실제 Keycloak 26.6)
 cd ruby && bundle exec rubocop                                 # 린트
 cd ruby && bundle exec bundler-audit check --update            # 의존성 취약점 감사
 ```
+> 다른 PC에서는 `KCSDK_TOOLS`(포터블 툴 상위 디렉터리, 기본 `$HOME/tools`)를 덮어쓰거나, 이미 PATH에 있으면 프리픽스를 생략한다. 설치·진단은 [development-setup.md](../../docs/guides/development-setup.md)(`node scripts/doctor.mjs ruby`).
 - 단일 테스트: `bundle exec rspec spec/unit/<path>_spec.rb -e "<example name>"`
 - 로컬 배포 빌드 검증(업로드 없이): `gem build keycloak-sdk.gemspec` → `keycloak-sdk-0.1.0.gem` 생성 확인(`gemspec`의 `spec.files`가 `lib/**/*.rb`+`LICENSE`+`README.md`를 포함 — 둘 다 `ruby/`에 로컬 사본 필요)
 - 실제 RubyGems 배포는 로컬에서 실행하지 않는다 — `ruby-v*` 태그 push 시 `.github/workflows/ruby-release.yml`에서 RubyGems Trusted Publishing(OIDC, 저장 시크릿 없음)로 실행(사람 승인 게이트; 최초 1회는 API 키 수동 게시 또는 rubygems.org UI에서 Trusted Publisher 사전등록 필요 — gem이 존재하기 전에는 Trusted Publisher를 붙일 수 없다)

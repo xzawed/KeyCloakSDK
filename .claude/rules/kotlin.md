@@ -13,13 +13,14 @@ paths:
 
 Kotlin은 JDK 21(Eclipse Temurin `jdk-21.0.8.9-hotspot`) + 포터블 Gradle `9.6.1`(로컬 실행용)을 사용한다(래퍼도 동일하게 `9.6.1` — `kotlin/gradle/wrapper/gradle-wrapper.properties`). 프리픽스를 인라인 지정하고 명령은 `gradle -p kotlin <task>`(또는 `kotlin/`에서 `./gradlew`)로 실행한다:
 ```bash
-export JAVA_HOME='/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot' PATH="/c/Users/dirtc/tools/gradle-9.6.1/bin:$PATH" GRADLE_USER_HOME="/c/Users/dirtc/.gradle"
+export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot}" PATH="${KCSDK_TOOLS:-$HOME/tools}/gradle-9.6.1/bin:$PATH" GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
 gradle -p kotlin build              # 빌드
 gradle -p kotlin test               # 단위테스트 100개. Docker 불필요
 gradle -p kotlin integrationTest    # 통합 E2E 1개(Docker 필요 — Testcontainers/dasniko, 실제 Keycloak 26.6)
 gradle -p kotlin koverVerify        # 커버리지 게이트(로직 모듈 라인≥90%/브랜치≥85%, 네트워크 경계 omit)
 gradle -p kotlin ktlintCheck        # 린트(무경고; 수정은 ktlintFormat)
 ```
+> 다른 PC에서는 `KCSDK_TOOLS`(포터블 툴 상위 디렉터리, 기본 `$HOME/tools`)·`KCSDK_JDK21`(JDK 21+ 경로)를 덮어쓰거나, 이미 PATH에 있으면 프리픽스를 생략한다. 설치·진단은 [development-setup.md](../../docs/guides/development-setup.md)(`node scripts/doctor.mjs kotlin`).
 - 단일 테스트: `gradle -p kotlin test --tests "*<ClassName>"`
 - 커버리지 게이트(Kover, 네트워크 경계 omit): `gradle -p kotlin koverVerify` — **실측 라인 99.24%/브랜치 85.71%**(omit 대상 `AuthClient*`/`admin.*`/`KeycloakClient*` — 통합 E2E로 검증). 상세는 [verification-log-kotlin.md](../../docs/governance/verification-log-kotlin.md) 참고
 - 로컬 배포 빌드 검증(업로드 없이): `gradle -p kotlin publishToMavenLocal` → 로컬 `~/.m2`에 `keycloak-sdk-kotlin-0.1.0.jar`(+`-sources.jar`/`-javadoc.jar`, Dokka) 생성 확인
