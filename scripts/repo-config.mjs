@@ -57,9 +57,15 @@ function gh(args, { input } = {}) {
   if (r.error) return { ok: false, code: 2, out: `gh 실행 실패: ${r.error.message} (gh CLI가 설치돼 있고 인증돼 있어야 한다)` }
   const out = `${r.stdout || ''}${r.stderr || ''}`.trim()
   if (r.status !== 0) {
-    // 권한/인증 실패는 드리프트가 아니다 — 종료코드로 구분한다.
-    const denied = /HTTP 40[134]|not found|gh auth login|Bad credentials/i.test(out)
-    return { ok: false, code: denied ? 2 : 1, out }
+    // gh 호출 실패는 **언제나** "설정을 확인하지 못했다"(2)이지 "설정이 어긋났다"(1)가
+    // 아니다. 이 스크립트의 gh 호출은 전부 설정을 읽거나 쓰는 것이고, 비교는 읽어온
+    // 뒤에 로컬에서 한다 — 그러니 실패는 비교에 도달조차 못 했다는 뜻이다.
+    //
+    // 처음엔 메시지를 정규식으로 훑어 401/404만 2로 분류했는데, CI 러너의 gh는
+    // 미인증이라 "set the GH_TOKEN environment variable"라는 다른 문구를 뱉었고
+    // 그게 정규식에 안 걸려 드리프트(1)로 둔갑했다. 원인 문구를 열거하는 방식은
+    // 반드시 이렇게 샌다 — 분류를 없애는 것이 옳다.
+    return { ok: false, code: 2, out }
   }
   return { ok: true, out }
 }
