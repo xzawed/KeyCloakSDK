@@ -52,13 +52,11 @@ jobs:
         with:
           go-version: '1.26'
           cache-dependency-path: go/go.sum
-      # 위 staticcheck/gosec와 동일하게 버전을 고정한다 — `@latest`는 가변 ref라 실행마다 다른 코드가
-      # 러너에서 돌고(서드파티 액션을 SHA로 핀한 것과 같은 이유) 재현도 안 된다. 취약점 DB는 실행
-      # 시점에 받으므로 도구를 핀해도 탐지 결과가 낡지 않는다.
+      # 위 staticcheck/gosec와 동일한 형태(`go run <pkg>@<버전>`)로 실행한다 — 버전을 핀해 재현성과
+      # 공급망을 지키고(무결성은 sum.golang.org가 검증), 별도 설치 단계·GOPATH 조작이 필요없다.
+      # 취약점 DB는 실행 시점에 받으므로 도구를 핀해도 탐지 결과가 낡지 않는다.
       - name: govulncheck
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
-          "$(go env GOPATH)/bin/govulncheck" ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 
   integration:
     name: Integration (testcontainers, 실제 Keycloak)

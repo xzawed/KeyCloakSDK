@@ -155,12 +155,12 @@ jobs:
         with:
           go-version: '1.26'
           cache-dependency-path: go/go.sum
-      # ⚠️ 다른 도구와 달리 버전을 핀하지 않는다 — govulncheck는 Go 팀이 유지하는 공식
-      # golang.org/x 도구이고 모듈 무결성은 Go 체크섬 DB(sum.golang.org)가 검증한다(go-ci.yml 동일).
+      # go-ci.yml의 staticcheck/gosec/govulncheck와 동일한 형태(`go run <pkg>@<버전>`)로 버전을 핀한다
+      # — `@latest`는 실행마다 다른 코드가 러너에서 돌고 무결성 검증(sum.golang.org)만으로는 그걸 막지
+      # 못한다. 취약점 DB는 실행 시점에 받으므로 도구를 핀해도 탐지 결과가 낡지 않는다.
+      # ⚠️ go-ci.yml의 버전과 함께 올린다.
       - name: govulncheck
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          "$(go env GOPATH)/bin/govulncheck" ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 
   dotnet:
     name: Scheduled dependency audit — .NET (dotnet list --vulnerable)
