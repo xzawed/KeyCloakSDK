@@ -77,7 +77,13 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # splitsh-lite가 더 빠르지만 러너에 없는 추가 의존성이라 러너 기본 제공 git subtree를 쓴다.
           git subtree split --prefix=php -b php-split
-          REMOTE="https://x-access-token:${PHP_SPLIT_TOKEN}@github.com/xzawed/keycloak-sdk-php.git"
+          REMOTE="https://github.com/xzawed/keycloak-sdk-php.git"
+          # ⚠️ 토큰을 remote URL(`https://x-access-token:TOKEN@github.com/...`)에 넣지 않는다 — 그 형태는
+          # `git remote -v`·reflog·git 오류 출력에 그대로 남고, URL 안의 자격증명은 정적분석에서도
+          # 취약점으로 잡힌다. credential helper가 push 시점에 환경변수에서 읽게 하면 토큰이 URL에도
+          # 명령행에도 남지 않는다(헬퍼 본문에는 변수명만 있고 값은 셸이 확장하지 않는다 — 작은따옴표).
+          git config --local credential.helper \
+            '!f() { echo username=x-access-token; echo "password=$PHP_SPLIT_TOKEN"; }; f'
           # 미러 브랜치는 이 워크플로가 만드는 생성물이라 강제 갱신한다.
           git push --force "$REMOTE" php-split:refs/heads/main
           # ⚠️ 로컬 `git tag v$VERSION`을 만들지 않는다 — 이 모노레포의 `v*` 태그 네임스페이스는 Java
