@@ -7,6 +7,11 @@ import java.util.*;
 import org.junit.jupiter.api.Test;
 
 class JwtValidatorTest {
+  // Keycloak 서버 베이스 URL(realm 경로 제외) — KeycloakConfig 조립에만 쓴다.
+  private static final String SERVER_URL = "https://kc.example.com";
+  // clientId("app")가 아닌 리소스 서버 audience — expectedAudience 재정의 경로를 exercise한다.
+  private static final String API_AUDIENCE = "my-api";
+
   @Test void validSignedToken_passes() throws Exception {
     RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
     String issuer = "https://kc.example.com/realms/r";
@@ -25,7 +30,7 @@ class JwtValidatorTest {
     // (retriever + rateLimited(jwksMinRefetch) 배선 + JwtValidator 생성)를 네트워크 없이 커버한다.
     io.github.xzawed.keycloak.core.KeycloakConfig cfg =
         io.github.xzawed.keycloak.core.KeycloakConfig.builder()
-            .serverUrl("https://kc.example.com").realm("r").clientId("app")
+            .serverUrl(SERVER_URL).realm("r").clientId("app")
             .jwksMinRefetch(java.time.Duration.ofSeconds(45)).build();
     OidcMetadata md = OidcMetadata.forRealm(cfg);
     JwtValidator v = JwtValidator.forRealm(md, cfg, Set.of(JWSAlgorithm.RS256), "app");
@@ -133,7 +138,7 @@ class JwtValidatorTest {
     String issuer = "https://kc.example.com/realms/r";
     io.github.xzawed.keycloak.core.KeycloakConfig cfg =
         io.github.xzawed.keycloak.core.KeycloakConfig.builder()
-            .serverUrl("https://kc.example.com").realm("r").clientId("app").build();
+            .serverUrl(SERVER_URL).realm("r").clientId("app").build();
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
         new JWTClaimsSet.Builder().issuer(issuer).audience("app")
@@ -152,10 +157,10 @@ class JwtValidatorTest {
     String issuer = "https://kc.example.com/realms/r";
     io.github.xzawed.keycloak.core.KeycloakConfig cfg =
         io.github.xzawed.keycloak.core.KeycloakConfig.builder()
-            .serverUrl("https://kc.example.com").realm("r").clientId("app").build();
+            .serverUrl(SERVER_URL).realm("r").clientId("app").build();
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience("my-api")
+        new JWTClaimsSet.Builder().issuer(issuer).audience(API_AUDIENCE)
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(key));
     JwtValidator v = JwtValidator.withStaticJwks(
@@ -173,18 +178,18 @@ class JwtValidatorTest {
     String issuer = "https://kc.example.com/realms/r";
     io.github.xzawed.keycloak.core.KeycloakConfig cfg =
         io.github.xzawed.keycloak.core.KeycloakConfig.builder()
-            .serverUrl("https://kc.example.com").realm("r").clientId("app")
-            .expectedAudience("my-api").build();
+            .serverUrl(SERVER_URL).realm("r").clientId("app")
+            .expectedAudience(API_AUDIENCE).build();
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience("my-api")
+        new JWTClaimsSet.Builder().issuer(issuer).audience(API_AUDIENCE)
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(key));
     JwtValidator v = JwtValidator.withStaticJwks(
         new JWKSet(key.toPublicJWK()), issuer, cfg.getExpectedAudience(),
         Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
 
-    assertTrue(v.validate(jwt.serialize()).getAudience().contains("my-api"));
+    assertTrue(v.validate(jwt.serialize()).getAudience().contains(API_AUDIENCE));
   }
 
   // 설정 경로의 부정 테스트: expectedAudience를 재정의했으면 clientId만 담은 aud는 더 이상 통과하지
@@ -194,8 +199,8 @@ class JwtValidatorTest {
     String issuer = "https://kc.example.com/realms/r";
     io.github.xzawed.keycloak.core.KeycloakConfig cfg =
         io.github.xzawed.keycloak.core.KeycloakConfig.builder()
-            .serverUrl("https://kc.example.com").realm("r").clientId("app")
-            .expectedAudience("my-api").build();
+            .serverUrl(SERVER_URL).realm("r").clientId("app")
+            .expectedAudience(API_AUDIENCE).build();
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
         new JWTClaimsSet.Builder().issuer(issuer).audience("app")

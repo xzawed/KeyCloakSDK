@@ -27,8 +27,8 @@ jobs:
       # --- 언어별 커버리지 리포트를 스캔 전에 생성한다(Docker-free 단위테스트만) ---
       # 스캔 스텝은 반드시 이 뒤에 온다(스캐너가 이미 존재하는 리포트를 읽음). 각 생성 스텝이 실패하면
       # 스캔이 안 돌고 stale 리포트도 안 올라간다(fail-closed, 의도). 경로/제외는 sonar-project.properties.
-      # php(phpunit clover, pcov) · ruby(simplecov-lcov)도 배선됨. dotnet(C#)만 전용 SonarScanner
-      # for .NET이 필요해 커버리지 미배선(properties에서 소스 제외). rust는 SonarCloud 미지원 언어.
+      # php(phpunit clover, pcov) · ruby(simplecov-lcov) · rust(cargo llvm-cov lcov)도 배선됨.
+      # dotnet(C#)만 전용 SonarScanner for .NET이 필요해 커버리지 미배선(properties에서 소스 제외).
 
       # Kotlin(Kover→JaCoCo XML) + Java(JaCoCo, 4 리액터 모듈)
       - name: Set up JDK 21
@@ -100,6 +100,24 @@ jobs:
       - name: Generate Ruby JSON coverage
         working-directory: ruby
         run: bundle exec rspec
+
+      # Rust(cargo llvm-cov → lcov). rust-ci.yml의 `coverage` 잡과 **동일한 툴·동일한 제외 정규식**을
+      # 쓴다 — 라인 게이트(`--fail-under-lines 90`)는 그 잡이 이미 강제하므로 여기선 리포트 생성만 한다.
+      # ⚠️ dtolnay/rust-toolchain·taiki-e/install-action은 ref 이름이 곧 toolchain/설치대상이라 SHA가
+      # 그 브랜치의 커밋이어야 의미가 보존된다 — rust-ci.yml과 같은 SHA·같은 ref 주석을 유지할 것.
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@face1f3efc4b60bb08e253dcbd8306cbc8487e68 # cargo-llvm-cov
+      - name: Generate Rust lcov coverage
+        working-directory: rust
+        run: |
+          cargo llvm-cov --ignore-filename-regex '(auth|admin|client)\.rs' --lcov --output-path lcov.info
+          # llvm-cov는 SF에 절대경로를 쓰고 그 경로는 baseDir 하위 실파일이라 SonarQube가 그대로
+          # 해석한다(ruby JSON과 동일) → 그 판에서 아래 sed는 no-op다. 크레이트 루트 기준 상대경로
+          # (`src/...`)로 나오는 판이면 Node lcov와 같이 `rust/` 접두를 붙여 루트 기준으로 만든다.
+          # 이미 `/` 또는 `rust/`로 시작하는 SF는 건드리지 않는다(중복 접두 방지 — 멱등).
+          sed -i '/^SF:\(\/\|rust\/\)/!s|^SF:|SF:rust/|' lcov.info
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8

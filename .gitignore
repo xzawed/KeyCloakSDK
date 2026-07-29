@@ -56,6 +56,8 @@ coverage/
 *.tsbuildinfo
 cover.out
 cover.logic.out
+# rust — `cargo llvm-cov --lcov`가 SonarCloud에 먹일 리포트를 여기에 쓴다(CI가 매 실행마다 생성).
+lcov.info
 
 # ── Gradle / Kotlin (빌드 스크래치) ───────────────────────────
 # kotlin/.gitignore가 SDK 모듈은 이미 덮지만, Gradle 스크래치는 build.gradle.kts가

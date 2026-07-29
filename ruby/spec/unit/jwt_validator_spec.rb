@@ -75,10 +75,12 @@ RSpec.describe KeycloakSdk::JwtValidator do
   end
 
   describe "expected_audience (stock realms do not put client_id in a client-credentials aud)" do
+    let(:api_audience) { "my-api" } # resource aud, distinct from client_id
+
     context "when unset" do
       it "keeps client_id as the expected aud" do
         expect(validator.validate(sign(base_claims)).audience).to include(audience)
-        expect { validator.validate(sign(base_claims("aud" => "my-api"))) }
+        expect { validator.validate(sign(base_claims("aud" => api_audience))) }
           .to raise_error(KeycloakSdk::TokenValidationError)
       end
     end
@@ -86,11 +88,12 @@ RSpec.describe KeycloakSdk::JwtValidator do
     context "when set" do
       let(:config) do
         KeycloakSdk::Config.new(server_url: "https://kc.example.com", realm: "demo",
-                                client_id: audience, clock_skew: 30, expected_audience: "my-api")
+                                client_id: audience, clock_skew: 30, expected_audience: api_audience)
       end
 
       it "expects that value instead of client_id" do
-        expect(validator.validate(sign(base_claims("aud" => %w[my-api account]))).audience).to include("my-api")
+        expect(validator.validate(sign(base_claims("aud" => [api_audience, "account"]))).audience)
+          .to include(api_audience)
         expect { validator.validate(sign(base_claims)) } # aud carries client_id only
           .to raise_error(KeycloakSdk::TokenValidationError)
       end
