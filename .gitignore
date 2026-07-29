@@ -63,3 +63,6 @@ cover.logic.out
 # 테스트용 가짜 빌드파일)에서 실제로 .gradle/이 생겨 커밋될 뻔했다. 루트에서 막는다.
 .gradle/
 .kotlin/
+
+# SCAManager 개인 코드리뷰 도구 — 공개 저장소에 포함하지 않는다(개인 저장소/전역 git 템플릿으로 관리)
+.scamanager/

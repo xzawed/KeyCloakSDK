@@ -10,7 +10,7 @@ paths:
 
 ## 툴체인 (빌드 명령)
 
-Node는 시스템 설치(현재 v22, 요구 20+)를 사용한다. 명령은 `node/`에서 실행한다:
+Node는 시스템 설치(현재 v22)를 사용한다 — `package.json`의 `engines`는 `>=22`다(문서에서 "20+"라고 쓰지 말 것). 명령은 `node/`에서 실행한다:
 ```bash
 cd node && npm ci                    # 의존성 설치(package-lock.json 기준)
 cd node && npm test                  # 단위테스트 71개 + 커버리지 게이트(라인 90/브랜치 85). Docker 불필요
@@ -21,8 +21,8 @@ cd node && npm run lint              # eslint (typescript-eslint recommended)
 cd node && npm run build             # tsc → dist/ (배포 산출물)
 ```
 - 단일 테스트 파일: `cd node && npx vitest run test/unit/<name>.test.ts`
-- 로컬 배포 빌드 검증(업로드 없이): `cd node && npm run build && npm pack --dry-run` → `dist/**` + package.json만 포함(약 24kB, `files:["dist"]`) 확인
-- 실제 npm 배포는 로컬에서 실행하지 않는다 — `node-v*` 태그 push 시 `.github/workflows/node-release.yml`에서 npm Trusted Publishing(OIDC + provenance, 저장 토큰 없음)로 실행(사람 승인 게이트)
+- 로컬 배포 빌드 검증(업로드 없이): `cd node && npm run build && npm pack --dry-run` → `dist/**` + `package.json` + `LICENSE` + `README.md` 포함 확인. ⚠️ `files:["dist"]`여도 npm은 `package.json`·`README`·`LICENSE`를 **항상** 담는다 — 두 파일이 `node/`에 없으면 npmjs.com 랜딩 페이지가 빈 채로 게시된다(그래서 `node/LICENSE`·`node/README.md`를 두고, README 링크는 전부 절대 URL로 쓴다 — npm 페이지에서 저장소 상대 링크는 깨진다). 레지스트리 메타데이터(`repository`+`directory`·`homepage`·`bugs`·`keywords`)도 `package.json`에 유지한다
+- 실제 npm 배포는 로컬에서 실행하지 않는다 — `node-v*` 태그 push 시 `.github/workflows/node-release.yml`에서 npm Trusted Publishing(OIDC + provenance, 저장 토큰 없음)로 실행(사람 승인 게이트). 체크아웃 직후 태그↔`node/package.json` `version` 정합성 가드가 돌고(추출 실패도 실패로 취급), 발행 전 게이트로 통합 E2E 잡이 `needs:`에 들어간다
 - 패키지 `@xzawed/keycloak-sdk`는 ESM 전용(`"type":"module"`)이며 `.d.ts` 타입 선언을 포함 — 소비자 측 TypeScript 타입 검사 가능
 - ⚠️ 커버리지 게이트에서 `src/auth.ts`·`src/admin/**`·`src/index.ts` omit(네트워크 경계) — 통합테스트로 검증. 나머지 로직 모듈은 라인 100%/브랜치 94% 실측
 

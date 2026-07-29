@@ -1,9 +1,27 @@
 {
   "name": "@xzawed/keycloak-sdk",
   "version": "0.1.0",
-  "description": "Keycloak SDK for Node.js/TypeScript — OIDC auth + Admin API, isomorphic with the Java/Python SDKs",
+  "description": "Keycloak SDK for Node.js/TypeScript — OIDC/OAuth2 authentication + Admin REST API, part of a nine-language polyglot SDK",
+  "keywords": [
+    "keycloak",
+    "oidc",
+    "oauth2",
+    "openid-connect",
+    "jwt",
+    "authentication",
+    "admin-api",
+    "sdk",
+    "typescript"
+  ],
   "license": "Apache-2.0",
   "author": "xzawed <xzawed31@gmail.com>",
+  "homepage": "https://github.com/xzawed/KeyCloakSDK/tree/main/node#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xzawed/KeyCloakSDK.git",
+    "directory": "node"
+  },
+  "bugs": { "url": "https://github.com/xzawed/KeyCloakSDK/issues" },
   "type": "module",
   "engines": { "node": ">=22" },
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },

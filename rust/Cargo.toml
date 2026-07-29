@@ -4,14 +4,30 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
-description = "Keycloak SDK for Rust — async OIDC auth + Admin REST, isomorphic with the Java/Python/Node/Go/C#/PHP SDKs"
+description = "Keycloak SDK for Rust — async OIDC auth + Admin REST, isomorphic with the Java/Python/Node/Go/C#/PHP/Ruby/Kotlin SDKs"
 repository = "https://github.com/xzawed/KeyCloakSDK"
+homepage = "https://github.com/xzawed/KeyCloakSDK"
+documentation = "https://docs.rs/keycloak-sdk"
+readme = "README.md"
+keywords = ["keycloak", "oidc", "oauth2", "jwt", "sso"]
+categories = ["authentication", "web-programming::http-client", "api-bindings"]
+# .crate 아카이브에는 소비자가 컴파일하거나 읽는 것만 담는다(src/·examples/·README·LICENSE).
+# tests/는 Docker/Testcontainers E2E 스위트와 realm 픽스처라 다운스트림·docs.rs에서 빌드되지 않는다.
+exclude = ["/tests", "/rustfmt.toml"]
 
 [dependencies]
-# ⚠️ reqwest 0.12 everywhere: openidconnect 4.0.1 pins reqwest 0.12; keycloak uses its reqwest12 feature to match.
-keycloak = { version = "=26.6.2", default-features = false, features = ["tags-all", "resource-builder", "reqwest12"] }
-openidconnect = { version = "=4.0.1", default-features = false, features = ["reqwest"] }
-jsonwebtoken = { version = "=10.4.0", default-features = false, features = ["rust_crypto", "use_pem"] }
+# ⚠️ reqwest 0.12 everywhere: openidconnect 4.x pins reqwest 0.12; keycloak uses its reqwest12 feature to match.
+# No exact `=` pins: cargo unifies semver-compatible requirements, so `=` in a *library* hard-fails resolution
+# for any consumer whose tree also wants a newer compatible version, with no workaround on their side.
+# The committed Cargo.lock keeps OUR builds (CI, dev, `--locked`) reproducible — it does NOT reach consumers,
+# because cargo ignores a dependency's lockfile. Range choice is therefore what protects downstreams:
+#   `keycloak` uses `~` (>=26.6.2, <26.7.0) because its version tracks the Keycloak SERVER line, not semver —
+#   a "26.7" is a Keycloak minor upgrade and has previously reshaped the reqwest feature set (the reqwest12
+#   feature this crate depends on is not guaranteed across it). Bump it deliberately, with the gotchas re-checked.
+#   `openidconnect`/`jsonwebtoken` are ordinary semver crates, so caret is correct for them.
+keycloak = { version = "~26.6.2", default-features = false, features = ["tags-all", "resource-builder", "reqwest12"] }
+openidconnect = { version = "4.0.1", default-features = false, features = ["reqwest"] }
+jsonwebtoken = { version = "10.4.0", default-features = false, features = ["rust_crypto", "use_pem"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "time", "sync"] }
 thiserror = "2.0"

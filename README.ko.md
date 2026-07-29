@@ -26,7 +26,7 @@
 | **PHP** 8.3+ | `composer require xzawed/keycloak-sdk` | [quickstart.php](php/examples/quickstart.php) |
 | **Rust** 1.88+ | `cargo add keycloak-sdk` | [quickstart.rs](rust/examples/quickstart.rs) |
 | **Ruby** 3.2+ | `gem install keycloak-sdk` | [quickstart.rb](ruby/examples/quickstart.rb) |
-| **Kotlin** 2.4.10+ (JVM) | Gradle `io.github.xzawed:keycloak-sdk-kotlin` | [quickstart.kt](kotlin/examples/quickstart.kt) |
+| **Kotlin** 2.2+ (JVM · JDK 21+) | Gradle `io.github.xzawed:keycloak-sdk-kotlin` | [quickstart.kt](kotlin/examples/quickstart.kt) |
 
 > ⚠️ **아직 공개 레지스트리에 배포되지 않았습니다** — 모든 배포는 사람 승인 게이트(human-gated)입니다. 위 명령은 *배포 후* 형태이며, 그 전에는 소스에서 빌드해 사용하세요 — [시작 가이드](docs/guides/getting-started.md) 참고.
 

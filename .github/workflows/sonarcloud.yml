@@ -20,7 +20,7 @@ jobs:
     # push 이벤트는 첫 논리항에서 항상 참이라 main 스캔은 구조적으로 스킵될 수 없다(PR0 fail-closed 유지).
     if: github.event_name != 'pull_request' || github.actor != 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0 # full history for accurate new-code / blame attribution
 
@@ -32,12 +32,12 @@ jobs:
 
       # Kotlin(Kover→JaCoCo XML) + Java(JaCoCo, 4 리액터 모듈)
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: '21'
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
       - name: Generate Kotlin Kover XML coverage
         working-directory: kotlin
         run: ./gradlew koverXmlReport
@@ -47,7 +47,7 @@ jobs:
       # Node(vitest v8 → lcov). vitest lcov의 SF 경로는 node/ 기준 상대라 SonarCloud(루트 baseDir)가
       # 못 찾는다 → `node/` 접두를 붙여 루트 기준으로 정규화한다(모노레포 lcov 경로 정합).
       - name: Set up Node 22
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
       - name: Generate Node lcov coverage
@@ -59,7 +59,7 @@ jobs:
 
       # Python(pytest-cov → Cobertura XML)
       - name: Set up Python 3.12
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
       - name: Generate Python coverage XML
@@ -70,7 +70,7 @@ jobs:
 
       # Go(go test -coverprofile)
       - name: Set up Go 1.26
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.26'
       - name: Generate Go coverage profile
@@ -79,7 +79,7 @@ jobs:
 
       # PHP(phpunit → Clover XML, pcov 드라이버). 경계파일은 phpunit.xml source-exclude로 이미 빠짐.
       - name: Set up PHP 8.3 (pcov)
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: '8.3'
           coverage: pcov
@@ -92,7 +92,7 @@ jobs:
       # Ruby(simplecov_json_formatter → coverage/coverage.json; Sonar SimpleCovSensor가 파싱).
       # JSON은 절대경로를 담고 SonarQube가 baseDir 하위로 해석하므로 경로 정규화 불필요(lcov와 차이).
       - name: Set up Ruby 3.4
-        uses: ruby/setup-ruby@v1
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
@@ -102,7 +102,7 @@ jobs:
         run: bundle exec rspec
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@v8
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io

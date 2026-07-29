@@ -4,8 +4,9 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
 . "$DIR/../lib/deploy-facts.sh"
 
-# 9개 언어 존재·순서
-assert_eq "go php rust dotnet python node ruby java kotlin" "$DEPLOY_LANGS" "DEPLOY_LANGS 순서"
+# 9개 언어 존재·순서 — 순서축은 "쉬운 인증"이 아니라 **복구가능성**이다(yank 가능 → Central Portal
+# 2단계 게이트 → 프록시 캐시 후 불변인 go → 미러 저장소 신설이 선행되는 php).
+assert_eq "python dotnet ruby node rust java kotlin go php" "$DEPLOY_LANGS" "DEPLOY_LANGS 순서(복구가능성)"
 assert_ok df_known python; assert_fails df_known perl
 # 태그 포맷(버전 주입)
 assert_eq "py-v0.1.0" "$(printf "$(df_tag python)" 0.1.0)" "python 태그"
@@ -17,11 +18,16 @@ assert_eq "MAVEN_GPG_PRIVATE_KEY MAVEN_GPG_PASSPHRASE CENTRAL_TOKEN_USER CENTRAL
 assert_eq "MAVEN_CENTRAL_USERNAME MAVEN_CENTRAL_PASSWORD SIGNING_IN_MEMORY_KEY SIGNING_IN_MEMORY_KEY_PASSWORD" "$(df_secrets kotlin)" "kotlin 시크릿"
 assert_eq "NUGET_API_KEY" "$(df_secrets dotnet)" "dotnet 시크릿"
 assert_eq "CARGO_REGISTRY_TOKEN" "$(df_secrets rust)" "rust 시크릿"
+# php는 subtree split 미러 push에 write 토큰이 필요하다 — 예전처럼 시크릿 0개가 아니다.
+# (0개면 rr_verdict가 "✅ 준비완료"로 오탐한다 — 미러/토큰 미설정 상태에서 false green.)
+assert_eq "PHP_SPLIT_TOKEN" "$(df_secrets php)" "php 시크릿"
 assert_eq "" "$(df_secrets python)" "python 시크릿 없음"
 assert_eq "" "$(df_secrets go)" "go 시크릿 없음"
 # auth 모델
 assert_eq "none" "$(df_auth go)" "go auth"
-assert_eq "webhook" "$(df_auth php)" "php auth"
+# php는 webhook이 아니다 — Packagist는 이 모노레포를 추적할 수 없어(루트 composer.json 부재)
+# php/ 하위트리를 미러 저장소로 split-push하는 것이 유일한 게시 경로다.
+assert_eq "split-token" "$(df_auth php)" "php auth(split-token)"
 assert_eq "api-token" "$(df_auth rust)" "rust auth"
 assert_eq "OIDC" "$(df_auth python)" "python auth"
 assert_eq "maven-gpg" "$(df_auth java)" "java auth"

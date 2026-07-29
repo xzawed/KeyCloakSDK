@@ -61,6 +61,30 @@ sh scripts/test/test-doctor.sh
 > ⚠️ **`gofmt` / `prettier` / `php-cs-fixer` flag every file on a Windows CRLF working tree.**
 > Normalize the files you changed to LF and re-check, rather than reformatting the tree.
 
+### Dependency CVE gate (all nine languages)
+
+Every language CI workflow also fails on a **known-vulnerable dependency**. It is a hard gate, not a
+report. None of them is part of the "Runs every local gate" command in the table above, so a clean
+local run does not prove this gate green — **when you add or bump a dependency, expect this, not the
+test suite, to be what stops the PR.**
+
+Four run as their own CI job:
+
+| Language | Job | Workflow |
+|---|---|---|
+| Java | `dependency-audit` (OSV.dev query over `mvn dependency:list -DincludeScope=runtime`) | `ci.yml` |
+| Kotlin | `dependency-audit` (OSV.dev query over `runtimeClasspath`) | `kotlin-ci.yml` |
+| Go | `vulncheck` (`govulncheck ./...`) | `go-ci.yml` |
+| Rust | `audit` (`cargo audit`) | `rust-ci.yml` |
+
+The other five run as a step inside the language's existing build job: `pip-audit` (Python) ·
+`npm audit --audit-level=high --omit=dev` (Node) ·
+`dotnet list package --vulnerable --include-transitive` (C#/.NET) · `composer audit` (PHP) ·
+`bundler-audit check --update` (Ruby).
+
+The rationale, the documented scope exceptions, and why the JVM languages query OSV.dev rather than
+running OWASP dependency-check are in [SECURITY.md](SECURITY.md).
+
 ### Network-boundary coverage exemption (all nine languages)
 
 The modules that own the actual HTTP boundary — `AuthClient`, the `admin` package/namespace, and

@@ -7,21 +7,95 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # 검증만 한다 — GitHub Release 생성은 split 잡의 몫
     defaults:
       run:
         working-directory: php
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: shivammathur/setup-php@v2
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: '8.3'
           coverage: pcov
           tools: composer
       - run: composer install --no-interaction --prefer-dist
       - run: composer audit && vendor/bin/phpstan analyse && vendor/bin/phpunit --testsuite unit
+
+  # 발행 전 게이트(2): verify의 `--testsuite unit`은 네트워크 경계(AuthClient/Admin/KeycloakClient)를
+  # 건드리지 않는다 — php-ci.yml의 integration 잡과 동일한 실 Keycloak E2E를 태그 경로에서도 돌린다.
+  # (IT는 Testcontainers가 아니라 `docker` CLI 셸아웃이지만 ubuntu-latest는 Docker가 내장이라 조건 없이
+  #  그대로 동작한다 — php-ci.yml의 같은 잡도 `if:` 가드 없이 ubuntu-latest에서 돈다.)
+  integration:
+    name: Integration (docker CLI 셸아웃, 실제 Keycloak 26.6)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # 검증만 한다 — GitHub Release 생성은 split 잡의 몫
+    defaults:
+      run:
+        working-directory: php
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.3'
+          tools: composer
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit --testsuite integration
+
+  # ⚠️ 왜 subtree split이 필요한가 — Composer의 VCS 드라이버는 저장소 **루트**의 composer.json만
+  # 읽는다. 저장소 안의 하위 디렉터리를 패키지 루트로 지정하는 수단이 없고(Packagist도 서브디렉터리를
+  # 지원하지 않는다), 이 모노레포 루트에는 composer.json이 아예 없다(php/composer.json 하나뿐).
+  # 즉 "태그만 밀면 Packagist가 웹훅으로 알아서 갱신된다"는 성립할 수 없다.
+  # 그래서 Packagist에 등록되는 대상은 이 모노레포가 아니라 php/ 하위트리만 떼어낸 **읽기전용 미러**
+  # `xzawed/keycloak-sdk-php`이고, Composer가 버전으로 파싱할 수 있도록 접두어 없는 `vX.Y.Z` 태그가
+  # 그 저장소에 있어야 한다(`php-vX.Y.Z`는 Composer가 버전으로 파싱하지 못한다).
+  # harness/install/publish/php.sh가 로컬 Satis 검증에서 쓰는 전제와 동일하다.
+  split:
+    name: Split php/ → xzawed/keycloak-sdk-php (Packagist source)
+    needs: [verify, integration] # 미러 push(=Packagist 게시)는 되돌릴 수 없다 — 두 게이트 통과 후에만
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0 # git subtree split은 전체 히스토리가 필요하다(shallow 체크아웃이면 실패)
+          persist-credentials: false
+      - name: Split php/ subtree and push it to the mirror repository
+        env:
+          PHP_SPLIT_TOKEN: ${{ secrets.PHP_SPLIT_TOKEN }}
+        run: |
+          if [ -z "$PHP_SPLIT_TOKEN" ]; then
+            echo "::error::PHP_SPLIT_TOKEN 미설정 — xzawed/keycloak-sdk-php로 subtree를 push할 수 없고, 그러면 Packagist 게시 경로가 없다. 배포를 중단한다."
+            exit 1
+          fi
+          VERSION="${GITHUB_REF_NAME#php-v}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # splitsh-lite가 더 빠르지만 러너에 없는 추가 의존성이라 러너 기본 제공 git subtree를 쓴다.
+          git subtree split --prefix=php -b php-split
+          REMOTE="https://x-access-token:${PHP_SPLIT_TOKEN}@github.com/xzawed/keycloak-sdk-php.git"
+          # 미러 브랜치는 이 워크플로가 만드는 생성물이라 강제 갱신한다.
+          git push --force "$REMOTE" php-split:refs/heads/main
+          # ⚠️ 로컬 `git tag v$VERSION`을 만들지 않는다 — 이 모노레포의 `v*` 태그 네임스페이스는 Java
+          # SDK가 쓰고 있어 같은 이름이 이미 존재하면 태그 생성이 실패한다. 로컬 브랜치 ref를 원격
+          # 태그 ref로 직접 push하면 미러에만 lightweight 태그가 생겨 충돌이 없다.
+          # 태그는 강제 갱신하지 않는다 — 이미 존재하면 push가 실패해야 "태워버린 버전"을 사람이
+          # 알아챈다(NuGet `--skip-duplicate` 제거와 동일한 원칙).
+          git push "$REMOTE" "php-split:refs/tags/v${VERSION}"
+          echo "pushed xzawed/keycloak-sdk-php v${VERSION} ($(git rev-parse --short php-split))"
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes "PHP SDK ${GITHUB_REF_NAME}. Packagist auto-updates via webhook."
+        run: |
+          VERSION="${GITHUB_REF_NAME#php-v}"
+          {
+            printf 'PHP SDK %s — Composer package `xzawed/keycloak-sdk`.\n\n' "${GITHUB_REF_NAME}"
+            printf 'Packagist does not watch this monorepo. Composer'"'"'s VCS driver only reads a `composer.json` at the repository root, and there is none here (only `php/composer.json`), so a subdirectory cannot be published directly.\n\n'
+            printf 'This release therefore splits `php/` into the read-only mirror repository https://github.com/xzawed/keycloak-sdk-php and tags it `v%s` there. That mirror is what is registered on Packagist; it is generated by this workflow and must not be committed to directly.\n\n' "${VERSION}"
+            printf 'Install: `composer require xzawed/keycloak-sdk:^%s`\n' "${VERSION}"
+          } > release-notes.md
+          gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes-file release-notes.md

@@ -12,13 +12,13 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 |---|---|---|
 | **Java** | **JDK 21+** | Artifacts are compiled with `--release 21`, so older JDKs raise `UnsupportedClassVersionError` |
 | **Python** | **3.10+** | Includes `py.typed` (PEP 561) — consumer-side mypy type checking possible |
-| **Node.js** | **20+** | ESM-only · async-only · includes `.d.ts` type declarations |
+| **Node.js** | **22+** | ESM-only · async-only · includes `.d.ts` type declarations |
 | **Go** | **1.25+** | sync + `context.Context` · requires `x/oauth2` v0.36 |
 | **C# / .NET** | **8+** | async-first (`Task<T>` + `CancellationToken`) · targets `net8.0` |
 | **PHP** | **8.3+** | `final readonly class` value types · exception-based (`KeycloakException` hierarchy) |
 | **Rust** | **1.88+** | MSRV required by edition 2024 + let-chains · async-only (tokio) · `thiserror`-based `KeycloakError` |
 | **Ruby** | **3.2+** | sync-only · exception hierarchy (`KeycloakSdk::Error`) · gem `keycloak-sdk` / require `keycloak_sdk` |
-| **Kotlin** | **2.4.10+** (JDK 21+) | coroutines (`suspend`) · data-class value types · sealed `KeycloakException` · reuses the JVM Java SDK stack |
+| **Kotlin** | **2.2+** (JDK 21+) | coroutines (`suspend`) · data-class value types · sealed `KeycloakException` · reuses the JVM Java SDK stack |
 | (optional) Docker | — | **Needed only for integration tests (Testcontainers/docker CLI)**. Not required to use the SDK itself |
 
 ---
@@ -137,8 +137,7 @@ pip install keycloak-sdk
 Full example: [`python/examples/quickstart.py`](../../python/examples/quickstart.py) · async example: [`python/examples/async_quickstart.py`](../../python/examples/async_quickstart.py)
 
 ```python
-from keycloak_sdk import KeycloakClient, KeycloakConfig
-from keycloak_sdk._internal.secrets import mask
+from keycloak_sdk import KeycloakClient, KeycloakConfig, mask
 
 config = KeycloakConfig(
     server_url="https://kc.example.com",
@@ -408,7 +407,7 @@ Once publishing to Packagist is complete:
 composer require xzawed/keycloak-sdk
 ```
 
-> ⚠️ **Not yet published to Packagist (human-gated).** Composer/Packagist is not a registry upload — instead **Packagist detects the tag via a GitHub webhook** and publishes it automatically (no separate secrets). The actual publish runs only when a human pushes a `php-v*` tag to trigger [`.github/workflows/php-release.yml`](../../.github/workflows/php-release.yml), and registering the `xzawed/keycloak-sdk` repository on Packagist requires a one-time manual step first. For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> ⚠️ **Not yet published to Packagist (human-gated).** PHP does not publish from this monorepo, and it never could: Composer's VCS driver reads only a `composer.json` at a repository **root**, and there is none here (only `php/composer.json`). So when a human pushes a `php-v*` tag, [`.github/workflows/php-release.yml`](../../.github/workflows/php-release.yml) verifies, then splits `php/` out with `git subtree split` and pushes it to a separate read-only mirror repository, **`xzawed/keycloak-sdk-php`**, tagging it there with a **bare `vX.Y.Z`** (Composer cannot parse `php-vX.Y.Z` as a version). **That mirror — not this repository — is what gets registered on Packagist**; the package name stays `xzawed/keycloak-sdk`, since it comes from `php/composer.json`, which the split carries along. The split job requires a `PHP_SPLIT_TOKEN` secret with write access to the mirror and **fails closed without it** (nothing is pushed, and no GitHub Release is created). ⚠️ **The mirror repository and its Packagist registration do not exist yet** — for that one-time human setup and the full procedure, see [DEPLOY.md](../../DEPLOY.md) §2-D. For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 
@@ -481,7 +480,9 @@ cargo add keycloak-sdk
 Full example: [`rust/examples/quickstart.rs`](../../rust/examples/quickstart.rs)
 
 ```rust
-use keycloak::types::UserRepresentation;
+// The Admin representation types are re-exported from `keycloak_sdk::types`, so the `keycloak`
+// crate does not need to be a direct dependency of your project.
+use keycloak_sdk::types::UserRepresentation;
 use keycloak_sdk::{KeycloakClient, KeycloakConfig};
 
 #[tokio::main]
@@ -579,9 +580,9 @@ client.close
 
 ## Kotlin
 
-### 1) Required runtime — Kotlin 2.4.10+ / JDK 21+
+### 1) Required runtime — Kotlin 2.2+ / JDK 21+
 
-Kotlin **2.4.10 or newer** on **JDK 21+** (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
+Kotlin **2.2 or newer** on **JDK 21+** (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). The SDK is *built* with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so the published artifact’s binary metadata is readable by any Kotlin 2.2+ compiler — you do not need to be on 2.4 to consume it. All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
 
 ### 2) Local installation (current — not yet published)
 
@@ -666,9 +667,11 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 | Go `0.1.0` | 26.6.x (integration tests: actual **26.6**) | `Nerzal/gocloak/v13` **13.9.0** · `golang.org/x/oauth2` **0.36.0** · `go-jose/v4` **4.1.4** · Go 1.25+ |
 | C#/.NET `0.1.0` | 26.6.x (integration tests: actual **26.6**) | `Keycloak.AuthServices.Sdk` **2.7.0** · `Duende.IdentityModel` **8.1.0** · `Microsoft.IdentityModel.JsonWebTokens` **8.20.0** · .NET 8+ |
 | PHP `0.1.0` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `fschmtt/keycloak-rest-api-client-php` **0.42.0** · `league/oauth2-client` **^2.8** · `stevenmaguire/oauth2-keycloak` **^6.1** · `firebase/php-jwt` **^7.1** · PHP 8.3+ |
-| Rust `0.1.0` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak` **=26.6.2** (`reqwest12` feature) · `openidconnect` **=4.0.1** · `jsonwebtoken` **=10.4.0** · Rust 1.88+ (edition 2024) |
+| Rust `0.1.0` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak` **~26.6.2** (`reqwest12` feature) · `openidconnect` **^4.0.1** · `jsonwebtoken` **^10.4.0** · Rust 1.88+ (edition 2024) |
 | Ruby `0.1.0` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `rack-oauth2` **~>2.3** · `faraday` **~>2.0** · `jwt` (ruby-jwt) **~>3.2** · Ruby 3.2+ |
-| Kotlin `0.1.0` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak-admin-client` **26.0.11** · `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.9.1** (same JVM stack as Java) · Kotlin 2.4.10+ / JDK 21+ |
+| Kotlin `0.1.0` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak-admin-client` **26.0.11** · `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.9.1** (same JVM stack as Java) · Kotlin 2.2+ consumers (built with 2.4.10, metadata pinned to 2.2) · JDK 21+ |
+
+> Note on the Rust row: those are **ranges, not exact `=` pins**. An exact pin in a *library* crate hard-fails dependency resolution for any consumer whose tree also wants a newer compatible version. `openidconnect`/`jsonwebtoken` are ordinary semver crates and take a caret; the `keycloak` crate takes a tilde (`>=26.6.2, <26.7.0`) because its version tracks the Keycloak **server** line rather than semver. Reproducibility of *our* builds comes from the committed [`rust/Cargo.lock`](../../rust/Cargo.lock) — cargo ignores a dependency's lockfile, so as a consumer you pin with your own.
 
 ---
 

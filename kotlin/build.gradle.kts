@@ -1,4 +1,4 @@
-// gradle/wrapper: 9.5.0
+// gradle/wrapper: 9.6.1
 // settings.gradle.kts: plugins { id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0" }
 
 plugins {
@@ -20,9 +20,41 @@ repositories {
 kotlin {
     jvmToolchain(21)
     explicitApi() // JDK21 + public API 엄격
+
+    // ⚠️ 소비자 Kotlin 하한선 — 게시 아티팩트의 바이너리 메타데이터 버전을 결정한다.
+    // KGP 2.4.10로 그냥 빌드하면 @Metadata(mv=[2,4,…])가 박혀 **Kotlin 2.4 미만 소비자는
+    // "compiled with an incompatible version of Kotlin"으로 컴파일 자체가 불가능**하다
+    // (하네스 install 소비자앱이 2.2.20이라 7일 연속 CI RED였던 실제 원인).
+    // languageVersion/apiVersion을 내리면 그만큼 낮은 mv가 방출돼 더 넓은 소비자가 쓸 수 있다
+    // (컨테이너 실측: 미설정 → mv=[2,4], KOTLIN_2_0 → mv=[2,0], 둘 다 test+ktlintCheck BUILD SUCCESSFUL).
+    // 2.0이 아니라 2.2를 고른 이유: KGP 2.4.10이 "Language version 2.0 is deprecated ... Update the
+    // version to 2.2"를 경고한다 — 신규 라이브러리를 폐기예정 버전에 묶으면 다음 KGP 상향에서 빌드가 깨진다.
+    // 2.2는 경고 없이 지원되며 하네스 install 소비자앱(2.2.20)도 충족한다.
+    // ⚠️ 이 하한을 올리면 그만큼 소비자를 잘라내는 것이므로 릴리스 노트에 반드시 명시할 것.
+    compilerOptions {
+        languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2)
+        apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2)
+    }
 }
 
+// 🔒 Jackson 보안 핀 — java/pom.xml의 dependencyManagement와 동일한 불변식을 Kotlin에도 건다.
+// keycloak-admin-client 26.0.11은 Jackson 2.21.2를 끌어오는데, Java SDK는 CVE 대응으로 그 계열을
+// 2.22.1로 올려두었다(CVE-2026-54512~54518 6건 + CVE-2026-54515 — 취약범위 <2.21.5). Kotlin은 같은
+// admin-client를 재사용하면서 이 핀만 미러링하지 않아, runtimeClasspath가 취약한 2.21.2로 해석되고
+// 있었다(kotlin-ci.yml의 OSV `dependency-audit` 잡이 실측으로 검출). 전이 의존성이라 `implementation`
+// 선언이 아니라 constraints로 하한을 걸어야 admin-client의 관리값을 이긴다.
+// ⚠️ java/pom.xml의 Jackson 버전을 올릴 때는 여기도 함께 올린다 — 두 JVM SDK가 같은 트리를 쓴다.
 dependencies {
+    constraints {
+        implementation("com.fasterxml.jackson.core:jackson-core:2.22.1")
+        implementation("com.fasterxml.jackson.core:jackson-databind:2.22.1")
+        implementation("com.fasterxml.jackson.core:jackson-annotations:2.22") // 별도 버전 트랙
+        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.22.1")
+        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.1")
+        implementation("com.fasterxml.jackson.jakarta.rs:jackson-jakarta-rs-base:2.22.1")
+        implementation("com.fasterxml.jackson.module:jackson-module-jakarta-xmlbind-annotations:2.22.1")
+    }
+
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0") // 공개 suspend → api
     api("org.keycloak:keycloak-admin-client:26.0.11") // representation 노출 → api
     implementation("com.nimbusds:oauth2-oidc-sdk:11.38.2")

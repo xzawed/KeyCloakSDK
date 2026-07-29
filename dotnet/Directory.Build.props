@@ -17,6 +17,8 @@
     <Authors>xzawed</Authors>
     <Product>Keycloak SDK for .NET</Product>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <!-- NuGet renders the package landing page from this file; it must also be packed (ItemGroup below). -->
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://github.com/xzawed/KeyCloakSDK</PackageProjectUrl>
     <RepositoryUrl>https://github.com/xzawed/KeyCloakSDK</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -26,4 +28,10 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
+  <!-- Pack the landing page + license text into the package root. $(MSBuildThisFileDirectory) is dotnet/,
+       so these resolve regardless of how deep the packable project sits under it. -->
+  <ItemGroup Condition="'$(IsTestProject)' != 'true'">
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
 </Project>

@@ -83,7 +83,7 @@ public class AuthClient internal constructor(
         val issuedAt = Instant.now().epochSecond
         val tr =
             TokenRequest
-                .Builder(URI(endpoints.token), clientAuth(), ClientCredentialsGrant())
+                .Builder(URI(endpoints.token), clientAuth("the client_credentials grant"), ClientCredentialsGrant())
                 .scope(Scope(*config.scopes.toTypedArray()))
                 .build()
         return mapTokenResponse(authSend(tr.toHTTPRequest()), issuedAt, "Client credentials failed")
@@ -108,7 +108,7 @@ public class AuthClient internal constructor(
         val grant = AuthorizationCodeGrant(AuthorizationCode(code), URI(redirectUri), CodeVerifier(codeVerifier))
         val builder =
             if (config.clientSecret != null) {
-                TokenRequest.Builder(URI(endpoints.token), clientAuth(), grant)
+                TokenRequest.Builder(URI(endpoints.token), clientAuth("authorization code exchange"), grant)
             } else {
                 TokenRequest.Builder(URI(endpoints.token), ClientID(config.clientId), grant)
             }
@@ -131,14 +131,14 @@ public class AuthClient internal constructor(
         val issuedAt = Instant.now().epochSecond
         val tr =
             TokenRequest
-                .Builder(URI(endpoints.token), clientAuth(), RefreshTokenGrant(RefreshToken(refreshToken)))
+                .Builder(URI(endpoints.token), clientAuth("token refresh"), RefreshTokenGrant(RefreshToken(refreshToken)))
                 .build()
         return mapTokenResponse(authSend(tr.toHTTPRequest()), issuedAt, "Token refresh failed")
     }
 
     /** RFC 7662 토큰 introspection. 비활성 토큰은 active 외 클레임이 생략될 수 있다. */
     public suspend fun introspect(token: String): IntrospectionResult {
-        val req = TokenIntrospectionRequest(URI(endpoints.introspection), clientAuth(), TypelessAccessToken(token))
+        val req = TokenIntrospectionRequest(URI(endpoints.introspection), clientAuth("token introspection"), TypelessAccessToken(token))
         val resp =
             try {
                 onIo { TokenIntrospectionResponse.parse(applyTimeouts(req.toHTTPRequest()).send()) }
@@ -271,19 +271,26 @@ public class AuthClient internal constructor(
         }
 
     // 기밀 클라이언트(clientSecret 설정됨)를 요구하는 그랜트(client-credentials/refresh/introspect/logout)의
-    // 공용 클라이언트 인증. Java의 암묵적 NPE(시크릿 없이 new String((char[]) null)) 대신 명시적으로
-    // KeycloakAuthException을 던진다 — 같은 실패 조건을 더 나은 진단으로 대체할 뿐 동작은 동형이다.
-    private fun clientAuth(): ClientAuthentication {
+    // 공용 클라이언트 인증. ⚠️ 타입은 KeycloakAuthException이 아니라 **KeycloakConfigException**이다 —
+    // 이 실패는 IdP가 거절한 것이 아니라 요청이 IdP에 닿기도 전의 로컬 구성 오류이고, 같은 조건을
+    // Java `AuthClient.clientAuth`/`AdminClient.requireClientSecret`·Python `KeycloakConfigError`·
+    // Go `*ConfigError`가 모두 그렇게 분류한다(오류 분류 체계는 첫 배포에서 고정되므로 지금 맞춘다).
+    // operation을 받는 이유도 동형성 — 어떤 흐름이 기밀 클라이언트를 요구하는지 메시지가 지목해야 한다.
+    private fun clientAuth(operation: String): ClientAuthentication {
         val secret =
             config.clientSecret
-                ?: throw KeycloakAuthException("Confidential client required: clientSecret is not configured")
+                ?: throw KeycloakConfigException(
+                    "Confidential client required: $operation needs a configured clientSecret." +
+                        " Public/PKCE clients cannot use this operation — set clientSecret on KeycloakConfig," +
+                        " or use createAuthorizationRequest()/exchangeCode() for the public client flow.",
+                )
         return ClientSecretBasic(ClientID(config.clientId), Secret(String(secret)))
     }
 
     private fun buildLogoutRequest(refreshToken: String): HTTPRequest {
         val req = HTTPRequest(HTTPRequest.Method.POST, URI(endpoints.logout))
         req.setEntityContentType(ContentType.APPLICATION_URLENCODED)
-        clientAuth().applyTo(req)
+        clientAuth("logout").applyTo(req)
         val params = linkedMapOf("refresh_token" to listOf(refreshToken))
         req.setBody(URLUtils.serializeParameters(params))
         return req

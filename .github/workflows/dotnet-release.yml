@@ -5,14 +5,31 @@ on:
 permissions:
   contents: write
 jobs:
+  # 발행 전 게이트(2): 단위테스트는 `Category!=Integration`이라 auth/admin 네트워크 경계를
+  # 건드리지 않는다 — dotnet-ci.yml의 integration 잡과 동일한 실 Keycloak E2E를 태그 경로에서도 돌린다.
+  integration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # 이 잡은 체크아웃만 필요(GitHub Release는 release 잡의 몫)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: '8.0.x'
+      - name: Integration tests (Docker)
+        run: dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category=Integration"
+
   release:
+    needs: integration # 통합 E2E 통과 후에만 pack/push
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: '8.0.x'
       - name: Verify (build + unit tests)
@@ -23,12 +40,19 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#dotnet-v}"
           dotnet pack dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release -o artifacts -p:Version="$VERSION" -p:ContinuousIntegrationBuild=true
+      # ⚠️ 시크릿 미설정은 "건너뛸 상황"이 아니라 실패다 — NUGET_API_KEY 없이 태그가 push되었다는 것은
+      # 사람이 사전등록 전에 태그를 밀었다는 뜻이고, 그때 잡이 green으로 끝나면 게시되지 않은 버전이
+      # 게시된 것처럼 보인다. 또한 `--skip-duplicate`는 이미 존재하는 버전에 대한 push를 성공으로
+      # 위장해 "태워버린 버전"을 숨기므로 쓰지 않는다(중복이면 실패해야 사람이 알아챈다).
       - name: Publish to NuGet (human-gated; requires NUGET_API_KEY secret)
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
-          if [ -z "$NUGET_API_KEY" ]; then echo "NUGET_API_KEY not set — skipping NuGet publish (human-gated)"; exit 0; fi
-          dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "::error::NUGET_API_KEY 미설정 — 시크릿 사전등록 전에 dotnet-v 태그가 push되었다. 배포를 중단한다."
+            exit 1
+          fi
+          dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -8,14 +8,18 @@ on:
   push:
     tags: ['go/v*']
 
+# 최소권한 기본값. GitHub Release를 만드는 release 잡만 `contents: write`로 올린다.
+permissions:
+  contents: read
+
 jobs:
   # 발행 전 게이트: 태그된 커밋이 green이 아니면 릴리스하지 않는다.
   verify:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: go } }
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.26'
           cache-dependency-path: go/go.sum
@@ -23,14 +27,29 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
 
+  # 발행 전 게이트(2): 단위테스트는 `integration` 빌드태그가 없어 auth/admin 네트워크 경계를
+  # 건드리지 않는다 — go-ci.yml의 integration 잡과 동일한 실 Keycloak E2E를 태그 경로에서도 돌린다.
+  integration:
+    name: Integration (testcontainers, 실제 Keycloak)
+    runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → testcontainers 동작
+    defaults: { run: { working-directory: go } }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26'
+          cache-dependency-path: go/go.sum
+      - name: Integration E2E (Docker, 실제 Keycloak 26.6)
+        run: go test -tags=integration -run TestE2E -count=1 ./...
+
   release:
-    needs: verify
+    needs: [verify, integration] # 단위 + 통합 둘 다 통과해야 릴리스
     runs-on: ubuntu-latest
     permissions:
       contents: write # GitHub Release 생성에 필요
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.26'
       - name: Create GitHub Release

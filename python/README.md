@@ -1,105 +1,85 @@
-# keycloak-sdk (Python)
+# Keycloak SDK for Python
 
-Keycloak SDK for Python — 인증(OIDC/OAuth2) + 관리 API. [`python-keycloak`](https://github.com/marcospereirampj/python-keycloak)의 `KeycloakOpenID`/`KeycloakAdmin`을 감싸고, JWT 검증만 [`joserfc`](https://jose.authlib.org/)로 자체 강화 구현한다. [Java SDK](https://github.com/xzawed/KeyCloakSDK/tree/main/java/)와 개념·계층·명명이 동형(isomorphic)이다.
+Authentication (OIDC / OAuth2) and the Admin REST API for [Keycloak](https://www.keycloak.org/) behind one consistent facade, with hardened JWT validation and a full async mirror.
 
-## 설치
+English · [한국어](https://github.com/xzawed/KeyCloakSDK/blob/main/python/README.ko.md)
+
+Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) — one API surface, isomorphic across all of them: [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
+
+> **Pre-release** — not yet published to PyPI.
+
+## Requirements
+
+- Python **3.10+**
+- Ships the PEP 561 `py.typed` marker, so consumers can type-check with `mypy` too
+
+## Install
 
 ```bash
 pip install keycloak-sdk
 ```
 
-## QuickStart
+The distribution name is `keycloak-sdk`; the import package is `keycloak_sdk`.
+
+## Quickstart
 
 ```python
 from keycloak_sdk import KeycloakClient, KeycloakConfig
-from keycloak_sdk._internal.secrets import mask
 
 config = KeycloakConfig(
-    server_url="https://keycloak.example.com",
-    realm="my-realm",
-    client_id="my-client",
-    client_secret="my-client-secret",
+    server_url="https://kc.example.com",
+    realm="myrealm",
+    client_id="admin-cli",
+    client_secret="changeme",  # load the real value from an env var / secrets manager
 )
 
+# The `with` block cleans up the admin and auth sessions on exit.
 with KeycloakClient.create(config) as kc:
-    # 인증(auth)은 즉시 사용 가능
+    # 1) Issue a client-credentials token. repr(TokenSet) masks every token value.
     token = kc.auth.client_credentials_token()
-    print(f"access_token={mask(token.access_token)}")
 
-    # 관리(admin)는 최초 접근 시 지연 생성(client_secret 필요)
-    users = kc.admin.users.search(first=0, max=10)
-    print([u.get("username") for u in users])
+    # 2) Validate it — algorithm pinning, exact iss, aud containment, mandatory exp, clock skew.
+    validated = kc.auth.validate(token.access_token)
+    print(f"subject={validated.subject} aud={validated.audience}")
+
+    # 3) Admin API — admin is created lazily on first access. create() returns the new user id.
+    user_id = kc.admin.users.create({"username": "alice", "enabled": True})
+    users = kc.admin.users.search(first=0, max=20)
 ```
 
-전체 예제: [`examples/quickstart.py`](https://github.com/xzawed/KeyCloakSDK/blob/main/python/examples/quickstart.py).
+### Async
 
-## Async
-
-`keycloak_sdk.aio`는 sync API와 완전히 동형(같은 메서드명·값타입·예외)인 async
-미러다. python-keycloak의 `a_*` 메서드를 감싸 이벤트 루프를 블로킹하지 않는다 —
-FastAPI 등 async 프레임워크 안에서 쓰기에 적합하다.
+`keycloak_sdk.aio` is a complete async mirror — same method names, value types, and exceptions — so it never blocks the event loop (FastAPI and friends):
 
 ```python
+from keycloak_sdk import KeycloakConfig
 from keycloak_sdk.aio import AsyncKeycloakClient
-from keycloak_sdk.config import KeycloakConfig
-from keycloak_sdk._internal.secrets import mask
 
-config = KeycloakConfig(
-    server_url="https://keycloak.example.com",
-    realm="my-realm",
-    client_id="my-client",
-    client_secret="my-client-secret",
-)
-
-async def handler() -> None:
+async def handler(config: KeycloakConfig) -> None:
     async with AsyncKeycloakClient.create(config) as kc:
         token = await kc.auth.client_credentials_token()
-        print(f"access_token={mask(token.access_token)}")
-
-        users = await kc.admin.users.search(first=0, max=10)
-        print([u.get("username") for u in users])
+        validated = await kc.auth.validate(token.access_token)
+        users = await kc.admin.users.search(first=0, max=20)
 ```
 
-`authorization_url`만 네트워크가 필요 없어 동기 메서드로 남아 있다(`await` 불필요).
-나머지 `auth`/`admin` 메서드는 모두 `async def`다. 전체 예제:
-[`examples/async_quickstart.py`](https://github.com/xzawed/KeyCloakSDK/blob/main/python/examples/async_quickstart.py).
+Only `authorization_url` stays synchronous — it assembles a URL and needs no network.
 
-## Java ↔ Python API 매핑
+## Secure by default
 
-두 SDK는 언어 중립 계약을 공유한다 — Java `camelCase` ↔ Python `snake_case`, 개념·흐름은 동일하다.
+The SDK replaces the unsafe library defaults rather than inheriting them:
 
-| 개념 | Java | Python |
-|---|---|---|
-| 설정 | `KeycloakConfig.builder()...build()` | `KeycloakConfig(server_url=..., realm=..., client_id=...)` |
-| 진입점 생성 | `KeycloakClient.create(config)` | `KeycloakClient.create(config)` |
-| client-credentials 토큰 | `client.auth().clientCredentialsToken()` | `kc.auth.client_credentials_token()` |
-| 토큰 검증 | `client.auth().validate(token)` | `kc.auth.validate(token)` |
-| 사용자 생성 | `client.admin().users().create(rep)` | `kc.admin.users.create(rep)` |
-| 사용자 조회 | `client.admin().users().get(id)` | `kc.admin.users.get(id)` |
-| 예외 계층 | `KeycloakSdkException` | `KeycloakSdkError` |
-| 리소스 없음 | `KeycloakNotFoundException` | `KeycloakNotFoundError` |
+- **Algorithm pinning** — the header-supplied `alg` is never trusted, so `alg: none` and HS/RS confusion are rejected structurally.
+- **Strict claim checks** — exact `iss` match, `aud` containment, mandatory `exp`, `nbf`, and a bounded clock skew.
+- **DoS-safe JWKS** — refetch happens only for an unresolved key ID, and is rate-limited, so forged tokens cannot amplify traffic onto your IdP.
+- **Secrets stay out of logs** — config secrets and tokens are fully masked (`***`, no prefix leak) and TLS verification is on by default.
 
-## 호환성
+## Documentation
 
-| 구성요소 | 버전 |
-|---|---|
-| Keycloak 서버 | 26.6.x (통합테스트 검증 대상) |
-| `python-keycloak` | `>=7.1,<8` |
-| `joserfc` | `>=1.7` |
-| Python | `>=3.10` (3.10 / 3.11 / 3.12 / 3.13 CI 매트릭스) |
+- [Getting started](https://github.com/xzawed/KeyCloakSDK/blob/main/docs/guides/getting-started.md#python) — install, quickstart, async, and the compatibility matrix
+- [Deploying a Keycloak server](https://github.com/xzawed/KeyCloakSDK/blob/main/docs/guides/deploying-keycloak-server.md) — the server this SDK talks to
+- [Security policy](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md)
+- Full examples: [`quickstart.py`](https://github.com/xzawed/KeyCloakSDK/blob/main/python/examples/quickstart.py) · [`async_quickstart.py`](https://github.com/xzawed/KeyCloakSDK/blob/main/python/examples/async_quickstart.py)
 
-## 개발
+## License
 
-```bash
-cd python
-python -m pip install -e ".[dev]"
-pytest -m "not integration" --cov=keycloak_sdk   # 단위 테스트 + 커버리지 게이트 100%
-pytest -m integration                             # 통합 테스트 (Docker 필요, testcontainers)
-ruff check src tests examples                      # 린트 (보안 S/bandit 포함 확장 룰셋)
-ruff format --check src tests examples             # 포맷 검사
-mypy src                                           # 정적 타입 검사 (strict)
-```
-
-## 라이선스
-
-Apache-2.0
+[Apache-2.0](https://github.com/xzawed/KeyCloakSDK/blob/main/python/LICENSE)
