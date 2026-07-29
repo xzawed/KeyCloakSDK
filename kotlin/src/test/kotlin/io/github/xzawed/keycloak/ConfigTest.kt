@@ -147,6 +147,21 @@ internal class ConfigTest {
     }
 
     @Test
+    fun `expectedAudience defaults to clientId`() {
+        // 미설정이면 기존 동작 그대로 — 기대 audience는 clientId다(하위 호환).
+        val config = KeycloakConfig(serverUrl = "http://x", realm = "r", clientId = "c")
+        assertEquals("c", config.expectedAudience)
+    }
+
+    @Test
+    fun `custom expectedAudience overrides clientId`() {
+        // 기본 realm은 client-credentials 토큰의 aud에 client id를 넣지 않는다 — 리소스 서버 이름 등
+        // 실제 발급되는 audience로 재정의할 수 있어야 한다.
+        val config = KeycloakConfig(serverUrl = "http://x", realm = "r", clientId = "c", expectedAudience = "my-api")
+        assertEquals("my-api", config.expectedAudience)
+    }
+
+    @Test
     fun `default signatureAlgorithms is RS256`() {
         val config = KeycloakConfig(serverUrl = "http://x", realm = "r", clientId = "c")
         assertEquals(listOf("RS256"), config.signatureAlgorithms)

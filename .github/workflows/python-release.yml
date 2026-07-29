@@ -12,14 +12,18 @@ on:
   push:
     tags: ['py-v*']
 
+# 최소권한 기본값. release 잡만 OIDC용 `id-token: write`를 추가로 선언한다.
+permissions:
+  contents: read
+
 jobs:
   # 발행 전 게이트: 태그된 커밋이 green이 아니면 PyPI로 나가지 않는다(무회귀 보증).
   verify:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: python } }
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with: { python-version: '3.12' }
       - run: python -m pip install -e ".[dev]"
       - run: ruff check src tests examples
@@ -27,15 +31,47 @@ jobs:
       - run: mypy src
       - run: pytest -m "not integration" --cov=keycloak_sdk
 
+  # 발행 전 게이트(2): 단위테스트만으로는 admin/auth 네트워크 경계를 검증할 수 없다 —
+  # python-ci.yml의 integration 잡과 동일한 실 Keycloak 컨테이너 E2E를 태그 경로에서도 돌린다.
+  integration:
+    name: Integration tests (testcontainers, 실제 Keycloak)
+    runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → testcontainers 동작
+    defaults: { run: { working-directory: python } }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with: { python-version: '3.12' }
+      - run: python -m pip install -e ".[dev]"
+      - name: pytest (integration, Docker)
+        run: pytest -m integration
+
   release:
-    needs: verify        # verify 통과 시에만 발행
+    needs: [verify, integration] # 단위 + 통합 둘 다 통과해야 발행
     runs-on: ubuntu-latest
     permissions:
-      id-token: write  # PyPI Trusted Publisher(OIDC)에 필요 — 다른 권한 불필요
+      contents: read # checkout
+      id-token: write # PyPI Trusted Publisher(OIDC)에 필요 — 다른 권한 불필요
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-python@v7
+      # 태그↔소스 정합성(fail-fast): 태그가 함의하는 버전과 pyproject.toml이 선언한 버전이
+      # 다르면 빌드조차 하지 않고 중단한다. 추출 실패(빈 문자열)도 실패로 취급한다 —
+      # 조용히 빈 값이 되면 어떤 값과도 "다르다"고 판정되지 않는 오검증이 생기기 때문이다.
+      - name: Verify tag matches pyproject version
+        run: |
+          EXPECTED="${GITHUB_REF_NAME#py-v}"
+          ACTUAL=$(grep -m1 -E '^version[[:space:]]*=' python/pyproject.toml | sed -E 's/^version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' || true)
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::python/pyproject.toml에서 [project] version을 추출하지 못했다 — 정합성 검증 불가(fail-closed)."
+            exit 1
+          fi
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} implies version ${EXPECTED} but python/pyproject.toml declares ${ACTUAL}"
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} ↔ python/pyproject.toml ${ACTUAL} 일치"
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
 
@@ -47,6 +83,6 @@ jobs:
         run: python -m build
 
       - name: Publish to PyPI (Trusted Publisher / OIDC)
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1
         with:
           packages-dir: python/dist

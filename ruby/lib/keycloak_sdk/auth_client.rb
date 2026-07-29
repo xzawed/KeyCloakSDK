@@ -112,6 +112,8 @@ module KeycloakSdk
 
     # id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다
     # (액세스 토큰과 id_token 모두 aud=client_id이므로 검증기를 공유해도 안전 — Kotlin/.NET 동형).
+    # ⚠️ `config.expected_audience`를 설정하면 이 공유 검증기가 id_token에도 그 값을 요구한다 —
+    # 이 흐름을 쓴다면 해당 오디언스를 id_token에도 매핑해야 한다(audience 매퍼의 "Add to ID token").
     def verify_nonce!(id_token, expected_nonce)
       raise AuthError, "authorization_code exchange failed: missing id_token for nonce validation" if id_token.nil?
 

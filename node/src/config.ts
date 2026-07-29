@@ -28,6 +28,12 @@ export interface KeycloakConfig {
    * 미해결 kid마다 재조회를 허용한다(비권장).
    */
   readonly jwksMinRefetchSeconds: number
+  /**
+   * `validate()`가 토큰 `aud`에서 찾을 값. 미지정이면 {@link clientId}를 기대한다(기존 동작).
+   * 기본 realm은 client-credentials 토큰 `aud`에 client_id를 넣지 않으므로(audience 매퍼를
+   * 추가해야 들어간다), 리소스 서버처럼 API 이름이 aud인 경우 여기에 그 값을 설정한다.
+   */
+  readonly expectedAudience?: string
 }
 
 /** `defineConfig` 입력(선택값은 기본값으로 채워진다). */
@@ -42,6 +48,7 @@ export interface KeycloakConfigInput {
   clockSkewSeconds?: number
   signatureAlgorithms?: string[]
   jwksMinRefetchSeconds?: number
+  expectedAudience?: string
 }
 
 /**
@@ -75,6 +82,7 @@ export function defineConfig(input: KeycloakConfigInput): KeycloakConfig {
     clockSkewSeconds: input.clockSkewSeconds ?? 30,
     signatureAlgorithms: input.signatureAlgorithms ?? ['RS256'],
     jwksMinRefetchSeconds: input.jwksMinRefetchSeconds ?? 30,
+    expectedAudience: input.expectedAudience,
   }
   const masked = (): Record<string, unknown> => ({
     ...config,

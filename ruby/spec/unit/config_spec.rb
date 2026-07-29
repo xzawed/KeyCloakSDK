@@ -29,6 +29,11 @@ RSpec.describe KeycloakSdk::Config do
     expect { valid(jwks_min_refetch: -1) }.to raise_error(KeycloakSdk::ConfigError)
   end
 
+  it "defaults expected_audience to nil (= client_id) and keeps a configured one" do
+    expect(valid.expected_audience).to be_nil
+    expect(valid(expected_audience: "my-api").expected_audience).to eq("my-api")
+  end
+
   it "is frozen and immutable" do
     expect(valid).to be_frozen
   end

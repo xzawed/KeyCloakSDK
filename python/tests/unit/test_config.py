@@ -9,6 +9,14 @@ def test_defaults():
     assert c.clock_skew == 30.0
     assert c.scopes == ("openid",)
     assert c.jwks_min_refetch_seconds == 60.0
+    assert c.expected_audience is None
+
+
+def test_expected_audience_is_kept_when_set():
+    c = KeycloakConfig(
+        server_url="https://kc", realm="r", client_id="app", expected_audience="some-api"
+    )
+    assert c.expected_audience == "some-api"
 
 
 def test_jwks_min_refetch_custom_and_negative():

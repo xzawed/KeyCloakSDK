@@ -20,9 +20,10 @@ module KeycloakSdk
       @clock_skew = clock_skew
     end
 
+    # 기대 aud는 config.expected_audience(설정 시) — 미설정이면 종전대로 client_id.
     def self.from_config(config:, jwks_store:)
       new(issuer: OidcEndpoints.from_config(config).issuer,
-          audience: config.client_id, jwks_store: jwks_store,
+          audience: config.expected_audience || config.client_id, jwks_store: jwks_store,
           algorithms: config.signature_algorithms, clock_skew: config.clock_skew)
     end
 

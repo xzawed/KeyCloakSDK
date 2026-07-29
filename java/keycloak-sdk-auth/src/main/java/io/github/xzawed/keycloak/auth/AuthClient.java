@@ -13,6 +13,7 @@ import com.nimbusds.oauth2.sdk.util.URLUtils;
 import com.nimbusds.openid.connect.sdk.*;
 import io.github.xzawed.keycloak.core.*;
 import io.github.xzawed.keycloak.core.exception.KeycloakAuthException;
+import io.github.xzawed.keycloak.core.exception.KeycloakConfigException;
 import io.github.xzawed.keycloak.core.exception.KeycloakTransportException;
 import java.net.URI;
 import java.time.Instant;
@@ -42,7 +43,7 @@ public class AuthClient {
       synchronized (this) {
         v = jwtValidator;
         if (v == null) {
-          v = JwtValidator.forRealm(metadata, config, allowedAlgorithms(), config.getClientId());
+          v = JwtValidator.forRealm(metadata, config, allowedAlgorithms(), config.getExpectedAudience());
           jwtValidator = v;
         }
       }
@@ -117,7 +118,10 @@ public class AuthClient {
   }
 
   // id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다
-  // (validate() 재사용 — 액세스 토큰과 id_token 모두 aud=clientId라 검증기를 공유해도 안전).
+  // (validate() 재사용 — 액세스 토큰과 id_token 모두 기본값(aud=clientId)에서 검증기를 공유해도 안전).
+  // ⚠️ config.expectedAudience를 clientId가 아닌 값(리소스 서버 이름 등)으로 재정의하면 이 공유 검증기의
+  // 기대 audience도 그 값이 된다 — OIDC id_token의 aud는 항상 client id이므로, 그런 구성에서는
+  // 이 nonce 검증 경로를 쓰는 흐름(expectedNonce를 넘기는 exchangeCode)을 함께 쓰지 않는다.
   // 패키지 가시성: 토큰 엔드포인트 send() 없이 nonce 로직을 단위 테스트로 검증하기 위함
   // (buildExchangeCodeRequest/buildLogoutRequest와 동일 패턴).
   void requireValidNonce(String idToken, String expectedNonce) {
@@ -143,15 +147,16 @@ public class AuthClient {
         new AuthorizationCode(code), redirectUri,
         new com.nimbusds.oauth2.sdk.pkce.CodeVerifier(codeVerifier));
     TokenRequest tr = config.getClientSecret() != null
-        ? new TokenRequest.Builder(metadata.getTokenEndpoint(), clientAuth(), grant).build()
+        ? new TokenRequest.Builder(metadata.getTokenEndpoint(),
+            clientAuth("authorization code exchange"), grant).build()
         : new TokenRequest.Builder(metadata.getTokenEndpoint(), new ClientID(config.getClientId()), grant).build();
     return tr.toHTTPRequest();
   }
 
   public TokenSet clientCredentialsToken() {
     try {
-      TokenRequest tr = new TokenRequest.Builder(metadata.getTokenEndpoint(), clientAuth(),
-          new ClientCredentialsGrant())
+      TokenRequest tr = new TokenRequest.Builder(metadata.getTokenEndpoint(),
+          clientAuth("the client_credentials grant"), new ClientCredentialsGrant())
           .scope(new Scope(config.getScopes().toArray(new String[0])))
           .build();
       long issuedAt = Instant.now().getEpochSecond();
@@ -174,7 +179,7 @@ public class AuthClient {
       throw new IllegalArgumentException("refreshToken must not be null");
     }
     try {
-      TokenRequest tr = new TokenRequest.Builder(metadata.getTokenEndpoint(), clientAuth(),
+      TokenRequest tr = new TokenRequest.Builder(metadata.getTokenEndpoint(), clientAuth("token refresh"),
           new RefreshTokenGrant(new RefreshToken(refreshToken)))
           .build();
       long issuedAt = Instant.now().getEpochSecond();
@@ -212,7 +217,7 @@ public class AuthClient {
     try {
       HTTPRequest req = new HTTPRequest(HTTPRequest.Method.POST, metadata.getEndSessionEndpoint().toURL());
       req.setEntityContentType(ContentType.APPLICATION_URLENCODED);
-      clientAuth().applyTo(req);
+      clientAuth("logout").applyTo(req);
       Map<String, List<String>> params = new LinkedHashMap<>();
       params.put("refresh_token", Collections.singletonList(refreshToken));
       req.setBody(URLUtils.serializeParameters(params));
@@ -246,7 +251,7 @@ public class AuthClient {
       throw new IllegalArgumentException("token must not be null");
     }
     TokenIntrospectionRequest req = new TokenIntrospectionRequest(
-        metadata.getIntrospectionEndpoint(), clientAuth(), new TypelessAccessToken(token));
+        metadata.getIntrospectionEndpoint(), clientAuth("token introspection"), new TypelessAccessToken(token));
     return req.toHTTPRequest();
   }
 
@@ -256,10 +261,22 @@ public class AuthClient {
         java.util.Optional.ofNullable(s.getClientID()).map(ClientID::getValue));
   }
 
-  private ClientAuthentication clientAuth() {
-    return new ClientSecretBasic(
-        new ClientID(config.getClientId()),
-        new Secret(new String(config.getClientSecret())));
+  // 기밀 클라이언트(clientSecret 설정됨)를 요구하는 흐름(client-credentials/refresh/logout/introspect)의
+  // 공용 클라이언트 인증. 퍼블릭/PKCE 클라이언트는 getClientSecret()이 null이라 예전에는
+  // new String((char[]) null)이 맨 NPE로 터졌다 — 어떤 작업이 기밀 클라이언트를 요구하는지 알려주는
+  // SDK 예외로 대체한다(실패 조건은 동일, 진단만 개선).
+  // 타입은 KeycloakConfigException이다 — IdP가 거절한 것이 아니라 요청이 전송조차 되지 않는 로컬 구성
+  // 미비이며, 같은 조건("clientSecret이 없다")을 admin AdminClient.requireClientSecret()이 이미
+  // KeycloakConfigException으로 분류한다(Python KeycloakConfigError·Go *ConfigError 동형).
+  private ClientAuthentication clientAuth(String operation) {
+    char[] secret = config.getClientSecret();
+    if (secret == null) {
+      throw new KeycloakConfigException("Confidential client required: " + operation
+          + " needs a configured clientSecret. Public/PKCE clients cannot use this operation — set"
+          + " clientSecret on KeycloakConfig, or use createAuthorizationRequest()/exchangeCode()"
+          + " for the public client flow.", null);
+    }
+    return new ClientSecretBasic(new ClientID(config.getClientId()), new Secret(new String(secret)));
   }
 
   static TokenSet toTokenSet(Tokens tokens, long issuedAtEpoch) {

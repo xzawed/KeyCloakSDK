@@ -16,6 +16,11 @@ public sealed record KeycloakConfig
     public string? ClientSecret { get; init; }
     public IReadOnlyList<string> Scopes { get; init; } = Array.Empty<string>();
 
+    /// <summary>Value the token's <c>aud</c> must contain (default: <see cref="ClientId"/>). A stock realm
+    /// does not put the client id in a client-credentials token's <c>aud</c> — set the resource/audience your
+    /// realm actually issues, or add an audience mapper to the client in Keycloak.</summary>
+    public string? ExpectedAudience { get; init; }
+
     /// <summary>JWT signature algorithms accepted during validation (default ["RS256"]). Set for
     /// ES256/PS256-signed realms — a hardcoded RS256 would reject every otherwise-valid token there.</summary>
     public IReadOnlyList<string> SignatureAlgorithms { get; init; } = new[] { "RS256" };

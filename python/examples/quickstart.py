@@ -11,8 +11,7 @@
 
 from __future__ import annotations
 
-from keycloak_sdk import KeycloakClient, KeycloakConfig
-from keycloak_sdk._internal.secrets import mask
+from keycloak_sdk import KeycloakClient, KeycloakConfig, mask
 
 
 def main() -> None:
@@ -27,7 +26,7 @@ def main() -> None:
     # `.admin` 접근 시 지연 생성된다(client_secret 필요 — client-credentials grant).
     with KeycloakClient.create(config) as kc:
         # 1) client-credentials 토큰 발급 — 토큰 원문은 절대 로그에 남기지 않는다.
-        #    `mask()`는 앞 3자만 남기고 나머지를 가려 안전하게 출력할 수 있게 한다.
+        #    `mask()`는 접두 노출 없이 "***"(값이 있을 때)만 돌려준다 — 존재 여부만 드러낸다.
         token = kc.auth.client_credentials_token()
         print(f"access_token={mask(token.access_token)} token_type={token.token_type}")
 

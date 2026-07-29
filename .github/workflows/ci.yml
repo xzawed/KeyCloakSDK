@@ -2,6 +2,9 @@ name: CI
 on:
   push: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml'] }
   pull_request: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml'] }
+# 최소권한: 이 워크플로의 잡은 소스를 읽고 빌드/검사만 한다(체크·코멘트·릴리스 쓰기 없음).
+permissions:
+  contents: read
 jobs:
   build:
     name: Build & unit test (JDK ${{ matrix.java }})
@@ -9,8 +12,8 @@ jobs:
     strategy:
       matrix: { java: ['21'] }
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with: { distribution: 'temurin', java-version: '${{ matrix.java }}', cache: 'maven' }
       - name: Build & unit test (커버리지 게이트 90/85 포함)
         run: mvn -B -f java/pom.xml verify -DskipITs=true
@@ -19,8 +22,8 @@ jobs:
     name: Integration tests (Testcontainers, 실제 Keycloak)
     runs-on: ubuntu-latest   # ubuntu 러너는 Docker 내장 → Testcontainers 동작
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
       - name: Full verify (단위 + 통합 IT)
         run: mvn -B -f java/pom.xml verify
@@ -32,7 +35,7 @@ jobs:
     name: Security invariant (Jackson no default/polymorphic typing)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # 금지 대상은 default/polymorphic typing과 **자체 제작** ObjectMapper/Jackson provider다.
       # 상류 `org.keycloak.admin.client.JacksonProvider`를 그대로 등록하는 것은 오히려 필수다 —
       # 우리가 타임아웃 주입을 위해 커스텀 JAX-RS 클라이언트를 넘기면 admin-client의 자동 등록이
@@ -51,3 +54,49 @@ jobs:
             exit 1
           fi
           echo "OK: no default/polymorphic Jackson typing in java/*/src/main or kotlin/src/main"
+
+  # SECURITY.md가 약속하는 "언어별 의존성 취약점 감사"의 Java 구현.
+  #
+  # OWASP dependency-check를 쓰지 않는 이유: NVD API 키 없이는 초기 CVE 데이터 수집이 NVD
+  # 레이트리밋(무키 = 30초당 5요청)에 걸려 수십 분이 걸리거나 503으로 죽는다. 이 저장소에는
+  # Actions 시크릿이 하나도 없으므로(sonarcloud.yml 주석 참조) 그 잡은 "환경 때문에 늘 빨간 잡"이
+  # 되어 신호가 아니라 잡음이 된다. 대신 키가 필요 없는 OSV.dev(OpenSSF) 배치 질의로 **해석된
+  # 런타임 트리 전체**를 대조한다 — cargo audit·npm audit·composer audit과 같은 하드 게이트다.
+  dependency-audit:
+    name: Dependency CVE audit (OSV — Java)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
+      - name: 해석된 런타임 의존성 좌표 수집(리액터 전체)
+        # `compile`을 함께 도는 이유: dependency:list 단독 실행은 리액터 형제 모듈이 아직
+        # target/classes를 갖지 않아 의존성 해석에 실패한다(SNAPSHOT 미설치 상태).
+        run: |
+          set -euo pipefail
+          mvn -B -q -f java/pom.xml compile dependency:list -DincludeScope=runtime \
+            -DoutputFile="$PWD/dep-list.txt" -DappendOutput=true
+          # `g:a:type[:classifier]:version:scope` → `g:a:version`(버전은 항상 끝에서 두 번째 필드)
+          awk '{print $1}' dep-list.txt | awk -F: 'NF>=5 {print $1":"$2":"$(NF-1)}' | sort -u > pkgs.txt
+          echo "수집한 Maven 좌표 $(wc -l < pkgs.txt)개"
+      - name: OSV.dev 대조(알려진 취약점 있으면 실패)
+        # ⚠️ fail-open 금지(php-ci.yml 커버리지 게이트와 같은 원칙): 목록이 비었거나 응답 개수가
+        # 어긋나면 "취약점 없음"이 아니라 **측정 실패**이므로 통과시키지 않는다.
+        run: |
+          set -euo pipefail
+          test -s pkgs.txt || { echo "::error::의존성 좌표 목록이 비었다 — 감사 실패(fail-closed)"; exit 1; }
+          jq -Rn '{queries: [inputs | split(":") | {package: {ecosystem: "Maven", name: (.[0] + ":" + .[1])}, version: .[2]}]}' \
+            < pkgs.txt > osv-query.json
+          curl -sS --fail-with-body -X POST -H 'Content-Type: application/json' \
+            --data @osv-query.json https://api.osv.dev/v1/querybatch > osv-result.json
+          n_q=$(wc -l < pkgs.txt)
+          n_r=$(jq '.results | length' osv-result.json)
+          [ "$n_q" -eq "$n_r" ] || { echo "::error::OSV 응답 수($n_r) != 질의 수($n_q) — 감사 실패(fail-closed)"; exit 1; }
+          hits=$(paste pkgs.txt <(jq -r '.results[] | ((.vulns // []) | map(.id) | join(","))' osv-result.json) \
+            | awk -F'\t' '$2 != ""')
+          if [ -n "$hits" ]; then
+            echo "::error::알려진 취약점이 있는 의존성이 있습니다(좌표 <TAB> OSV/GHSA id):"
+            echo "$hits"
+            exit 1
+          fi
+          echo "OK: Maven 좌표 ${n_q}개에 알려진 OSV 취약점 없음"

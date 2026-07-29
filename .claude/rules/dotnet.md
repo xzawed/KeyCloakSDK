@@ -21,8 +21,8 @@ cd dotnet && dotnet format Keycloak.Sdk.sln --verify-no-changes    # 포맷 검�
 - 단일 테스트: `dotnet test --filter "FullyQualifiedName~<TestName>"`
 - 커버리지 게이트(로직 모듈 라인 ≥90%/브랜치 ≥85%, 네트워크 경계 omit): `dotnet test --filter "Category!=Integration" /p:CollectCoverage=true /p:Threshold="90,85" /p:ThresholdType="line,branch" /p:Exclude="[*]Xzawed.Keycloak.AuthClient,[*]Xzawed.Keycloak.Admin.*,[*]Xzawed.Keycloak.KeycloakClient"`(실측 라인 97.34%/브랜치 93.47%)
 - 로컬 배포 빌드 검증(업로드 없이): `dotnet pack src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release` → `Xzawed.Keycloak.Sdk.<version>.nupkg`(+ `.snupkg`) 생성 확인
-- 실제 NuGet 배포는 로컬에서 실행하지 않는다 — `dotnet-v*` 태그 push 시 `.github/workflows/dotnet-release.yml`에서 `NUGET_API_KEY` 시크릿으로 실행(사람 승인 게이트; 시크릿 미설정 시 push 스텝은 스킵)
-- 패키지 `Xzawed.Keycloak.Sdk`는 net8.0 타깃·async-first(`Task<T>`+`CancellationToken`)이며 XML 문서(`GenerateDocumentationFile`)를 포함 — 소비자 측 IntelliSense 지원
+- 실제 NuGet 배포는 로컬에서 실행하지 않는다 — `dotnet-v*` 태그 push 시 `.github/workflows/dotnet-release.yml`에서 `NUGET_API_KEY` 시크릿으로 실행(사람 승인 게이트). **시크릿 미설정은 스킵이 아니라 실패다**(아래 게차). 발행 전 게이트로 실 Keycloak 통합 E2E `integration` 잡이 `needs:`에 들어간다
+- 패키지 `Xzawed.Keycloak.Sdk`는 net8.0 타깃·async-first(`Task<T>`+`CancellationToken`)이며 XML 문서(`GenerateDocumentationFile`)를 포함 — 소비자 측 IntelliSense 지원. `Directory.Build.props`가 `PackageReadmeFile=README.md`를 설정하고 `dotnet/README.md`·`dotnet/LICENSE`를 `IsTestProject != true` 조건으로 패키지 루트에 pack한다(nuget.org 랜딩 페이지용 — nupkg 안에서는 저장소 상대 링크가 깨지므로 README 링크는 전부 절대 URL)
 - ⚠️ SDK 10 기본 솔루션 포맷은 `.slnx` — 이 리포는 `dotnet new sln --format sln`으로 생성한 `Keycloak.Sdk.sln`(구 포맷) 사용. `AnalysisLevel=8.0`으로 로컬(SDK 10)/CI(SDK 8) 애널라이저 밴드 일치. `GenerateDocumentationFile`/패키징 props는 `Directory.Build.props`에서 `IsTestProject != true`로 게이트(테스트 프로젝트의 CS1591 격상 방지)
 
 ## 게차
@@ -37,3 +37,4 @@ cd dotnet && dotnet format Keycloak.Sdk.sln --verify-no-changes    # 포맷 검�
 - ⚠️ **(C#) Duende.IdentityModel 확장 메서드는 예외를 안 던진다**(`resp.IsError` 검사 필요) — 잘못된 client 자격증명엔 401(`ErrorType=Http`)이라 에러코드는 `resp.Json["error"]`에서 읽는다. PKCE는 라이브러리 미지원(수동 생성), introspection은 `IntrospectTokenAsync`, logout은 수동 POST.
 - ⚠️ **(C#) SDK10 기본 솔루션 포맷은 `.slnx`** — `dotnet new sln --format sln`으로 구포맷 명시 생성 필요. `AnalysisLevel=8.0`으로 로컬/CI 애널라이저 밴드 일치. `GenerateDocumentationFile`은 `IsTestProject != true`로 게이트(안 하면 테스트 프로젝트 CS1591로 빌드 실패).
 - ⚠️ **(C#) `AddKeycloak(config)`는 `KeycloakConfig`도 싱글턴 등록** — 소비자가 별도로 `AddSingleton<KeycloakConfig>`하면 등록 중복으로 해석 모호. `AddKeycloak` 후 별도 등록 금지.
+- ⚠️ **(C#) `NUGET_API_KEY` 미설정은 스킵이 아니라 실패다 — 그리고 `dotnet nuget push --skip-duplicate`는 쓰지 않는다.** 이전에는 시크릿이 없으면 push 스텝이 `exit 0`으로 조용히 넘어가면서 **GitHub Release는 그대로 생성**돼, 게시되지 않은 버전이 게시된 것처럼 보였다(green 실행 = 아무것도 안 한 실행). 지금은 `::error::`+`exit 1`. `--skip-duplicate`도 같은 이유로 제거 — 이미 존재하는(= 태워버린) 버전에 대한 push를 성공으로 위장하므로, 중복이면 실패해서 사람이 알아채야 한다. ⚠️ job-level `if:`는 secrets 컨텍스트를 읽지 못하므로 가드는 스텝 안에서 env-매핑된 값으로 한다.

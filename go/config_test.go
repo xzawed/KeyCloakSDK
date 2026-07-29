@@ -84,6 +84,18 @@ func TestConfigDefaultsAndTrim(t *testing.T) {
 	}
 }
 
+func TestConfigExpectedAudienceDefaultsToClientID(t *testing.T) {
+	def := Config{ServerURL: "https://kc", Realm: "r", ClientID: "c"}.withDefaults()
+	if def.ExpectedAudience != "c" {
+		t.Fatalf("unset ExpectedAudience must default to ClientID, got %q", def.ExpectedAudience)
+	}
+	custom := Config{ServerURL: "https://kc", Realm: "r", ClientID: "c",
+		ExpectedAudience: "api://orders"}.withDefaults()
+	if custom.ExpectedAudience != "api://orders" {
+		t.Fatalf("explicit ExpectedAudience must be kept, got %q", custom.ExpectedAudience)
+	}
+}
+
 func TestConfigStringMasksSecret(t *testing.T) {
 	s := Config{ServerURL: "https://kc", Realm: "r", ClientID: "c", ClientSecret: "supersecret"}.String()
 	if strings.Contains(s, "supersecret") || !strings.Contains(s, "***") {

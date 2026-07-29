@@ -38,7 +38,7 @@ rr_verdict() { # <secrets> <registry> <tag>
   if [ "$2" = published ]; then echo "ℹ️ 이미 게시됨"; return; fi
   case "$1" in
     unset) echo "⚠️ 설정필요: 시크릿" ;;
-    *) echo "✅ 준비완료" ;;   # set 또는 na(OIDC/none/webhook)
+    *) echo "✅ 준비완료" ;;   # set 또는 na(OIDC/none)
   esac
 }
 
@@ -68,13 +68,21 @@ rr_row() { # <lang>
   tagpat="$(printf "$(df_tag "$L")" '*')"
   if rr_tag_exists "$tagpat"; then tag=present; else tag=none; fi
   verdict="$(rr_verdict "$sec" "$reg" "$tag")"
-  # 스펙§4: OIDC 언어(python/node/ruby)는 secrets=na라도 pending-publisher 사전등록이
-  # API로 확인 불가하고 미등록 시 배포가 실패하므로 "준비완료"를 자동표시하지 않는다
+  # 스펙§4: 시크릿 상태만으로는 "준비완료"라 부를 수 없는 auth 모델이 있다 — 남은 사람 작업이
+  # API로 확인 불가한 경우다. auth 값별 case로 두어 새 auth 값이 생기면 여기에 추가하게 한다
   # (이미 게시됨/태그존재 판정이 우선하면 그대로 둔다).
-  if [ "$(df_auth "$L")" = OIDC ] && [ "$verdict" = "✅ 준비완료" ]; then
-    verdict="ℹ️ 수동 확인: pending-publisher"
+  if [ "$verdict" = "✅ 준비완료" ]; then
+    case "$(df_auth "$L")" in
+      # OIDC(python/node/ruby): secrets=na라도 pending-publisher 사전등록은 조회 API가 없고
+      # 미등록이면 배포가 실패한다.
+      OIDC) verdict="ℹ️ 수동 확인: pending-publisher" ;;
+      # split-token(php): PHP_SPLIT_TOKEN이 있어도 실제 게시 주체는 이 저장소가 아니라 미러
+      # xzawed/keycloak-sdk-php다 — 그 저장소 신설과 Packagist 등록이 아직 남아있다(DEPLOY.md §2-D).
+      split-token) verdict="ℹ️ 수동 확인: 미러 xzawed/keycloak-sdk-php + Packagist 등록" ;;
+    esac
   fi
-  printf '%-8s auth=%-10s secrets=%-6s registry=%-10s tag=%-8s %s\n' "$L" "$(df_auth "$L")" "$sec" "$reg" "$tag" "$verdict"
+  # auth 폭 11 = 가장 긴 값 "split-token" 기준(좁히면 php 행만 컬럼이 밀린다).
+  printf '%-8s auth=%-11s secrets=%-6s registry=%-10s tag=%-8s %s\n' "$L" "$(df_auth "$L")" "$sec" "$reg" "$tag" "$verdict"
 }
 
 rr_main() {

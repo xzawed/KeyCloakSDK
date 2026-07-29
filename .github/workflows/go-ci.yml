@@ -2,6 +2,9 @@ name: Go CI
 on:
   push: { branches: [main], paths: ['go/**', '.github/workflows/go-ci.yml'] }
   pull_request: { branches: [main], paths: ['go/**', '.github/workflows/go-ci.yml'] }
+# 최소권한: 이 워크플로의 잡은 소스를 읽고 빌드/검사만 한다(체크·코멘트·릴리스 쓰기 없음).
+permissions:
+  contents: read
 jobs:
   build:
     name: Build + lint + unit (Go ${{ matrix.go }})
@@ -10,8 +13,8 @@ jobs:
       matrix: { go: ['1.25', '1.26'] } # 최소 지원(go.mod) + 최신 마이너
     defaults: { run: { working-directory: go } }
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '${{ matrix.go }}'
           cache-dependency-path: go/go.sum
@@ -36,13 +39,32 @@ jobs:
           echo "logic coverage: ${pct}%"
           awk -v p="$pct" 'BEGIN { exit (p+0 < 90) }' || { echo "::error::logic coverage ${pct}% < 90%"; exit 1; }
 
+  # SECURITY.md가 약속하는 "언어별 의존성 취약점 감사"의 Go 구현(cargo audit·npm audit·composer
+  # audit·bundler-audit·pip-audit와 같은 하드 게이트). govulncheck는 vuln.go.dev의 Go 취약점 DB를
+  # 대조하되 **실제로 도달 가능한 심볼**만 보고하므로 오탐이 적다(표준 라이브러리 취약점도 포함).
+  vulncheck:
+    name: govulncheck (의존성·표준 라이브러리 취약점)
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: go } }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26'
+          cache-dependency-path: go/go.sum
+      # 위 staticcheck/gosec와 동일한 형태(`go run <pkg>@<버전>`)로 실행한다 — 버전을 핀해 재현성과
+      # 공급망을 지키고(무결성은 sum.golang.org가 검증), 별도 설치 단계·GOPATH 조작이 필요없다.
+      # 취약점 DB는 실행 시점에 받으므로 도구를 핀해도 탐지 결과가 낡지 않는다.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
   integration:
     name: Integration (testcontainers, 실제 Keycloak)
     runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → testcontainers 동작
     defaults: { run: { working-directory: go } }
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.26'
           cache-dependency-path: go/go.sum

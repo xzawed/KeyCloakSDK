@@ -60,6 +60,36 @@ public class JwtValidatorTests
             () => v.ValidateAsync(Sign(PayloadJson("\"other-client\""), Key)));
     }
 
+    // Wiring: KeycloakClient.Create feeds the validator through ValidatorOptionsFor, so both branches of
+    // ExpectedAudience are exercised on the options the facade actually builds — not on a hand-made copy.
+    private static KeycloakConfig ConfigWith(string? expectedAudience) => new()
+    {
+        ServerUrl = "https://kc.example.com",
+        Realm = "it-realm",
+        ClientId = "it-client",
+        ExpectedAudience = expectedAudience,
+    };
+
+    [Fact]
+    public async Task Expected_audience_unset_falls_back_to_client_id()
+    {
+        var v = ValidatorWith(KeycloakClient.ValidatorOptionsFor(ConfigWith(null), Issuer));
+        var vt = await v.ValidateAsync(Sign(PayloadJson("\"it-client\""), Key));
+        Assert.Contains("it-client", vt.Audience);
+        await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+            () => v.ValidateAsync(Sign(PayloadJson("\"my-api\""), Key)));
+    }
+
+    [Fact]
+    public async Task Expected_audience_replaces_client_id_when_set()
+    {
+        var v = ValidatorWith(KeycloakClient.ValidatorOptionsFor(ConfigWith("my-api"), Issuer));
+        var vt = await v.ValidateAsync(Sign(PayloadJson("[\"my-api\",\"account\"]"), Key));
+        Assert.Contains("my-api", vt.Audience);
+        await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+            () => v.ValidateAsync(Sign(PayloadJson("\"it-client\""), Key)));
+    }
+
     [Fact]
     public async Task Wrong_issuer_rejected()
     {

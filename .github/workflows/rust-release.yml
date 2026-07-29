@@ -9,19 +9,60 @@ on:
 permissions:
   contents: read
 jobs:
+  # 발행 전 게이트(2): `cargo test`는 `#[ignore]`된 E2E를 돌리지 않아 auth/admin 네트워크 경계를
+  # 건드리지 않는다 — rust-ci.yml의 integration 잡과 동일한 실 Keycloak E2E를 태그 경로에서도 돌린다.
+  integration:
+    name: Integration (testcontainers, 실제 Keycloak 26.6)
+    runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → testcontainers-rs 동작
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - run: cargo test --locked --test integration_test -- --ignored
+
   publish:
+    needs: integration # 통합 E2E 통과 후에만 crates.io로 나간다
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: rust
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
+
+      # 태그↔소스 정합성(fail-fast): 태그가 함의하는 버전과 Cargo.toml의 [package] version이
+      # 다르면 툴체인 설치 전에 중단한다. crates.io는 업로드된 버전을 되돌릴 수 없으므로(yank만
+      # 가능) 이 검증은 빌드보다 앞에 있어야 의미가 있다. 추출 실패(빈 문자열)도 실패로 취급한다 —
+      # 조용히 빈 값이 되면 어떤 값과도 "다르다"고 판정되지 않는 오검증이 생기기 때문이다.
+      # (working-directory: rust → `Cargo.toml`은 rust/Cargo.toml을 가리킨다. 행 앵커 `^version`은
+      #  의존성 테이블의 인라인 `version = "..."`과 겹치지 않는다.)
+      - name: Verify tag matches Cargo.toml version
+        run: |
+          EXPECTED="${GITHUB_REF_NAME#rust-v}"
+          ACTUAL=$(grep -m1 -E '^version[[:space:]]*=' Cargo.toml | sed -E 's/^version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' || true)
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::rust/Cargo.toml에서 [package] version을 추출하지 못했다 — 정합성 검증 불가(fail-closed)."
+            exit 1
+          fi
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} implies version ${EXPECTED} but rust/Cargo.toml declares ${ACTUAL}"
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} ↔ rust/Cargo.toml ${ACTUAL} 일치"
+
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
       # 발행 전 게이트: 태그된 커밋이 green이 아니면 릴리스하지 않는다.
-      - run: cargo build && cargo test
+      # `--locked`는 이 경로에서 특히 중요하다 — 태그가 가리키는 커밋의 rust/Cargo.lock을 그대로
+      # 쓰지 않으면, 게이트가 검증한 의존성 트리와 `cargo publish`의 검증 빌드가 쓰는 트리가
+      # 조용히 달라질 수 있다. crates.io는 되돌릴 수 없으므로(yank만 가능) 락이 갱신되어야 하는
+      # 상태면 실패해야 한다.
+      - run: cargo build --locked && cargo test --locked
       - name: cargo publish (crates.io)
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --token "${CARGO_REGISTRY_TOKEN}"
+        run: cargo publish --locked --token "${CARGO_REGISTRY_TOKEN}"

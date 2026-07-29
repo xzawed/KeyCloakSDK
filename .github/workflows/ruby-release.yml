@@ -23,8 +23,35 @@ name: ruby-release
 on:
   push:
     tags: ['ruby-v*']
+
+# 최소권한 기본값. release 잡만 OIDC용 `id-token: write`를 추가로 선언한다.
+permissions:
+  contents: read
+
 jobs:
+  # 발행 전 게이트: 단위테스트(release 잡 내부 rspec)만으로는 admin/auth 네트워크 경계를 검증할 수
+  # 없다 — ruby-ci.yml의 integration 잡과 동일한 실 Keycloak 컨테이너 E2E를 태그 경로에서도 돌린다.
+  integration:
+    name: Integration (docker CLI 셸아웃, 실제 Keycloak 26.6)
+    runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → KeycloakContainer(docker run 셸아웃) 동작
+    defaults:
+      run:
+        working-directory: ruby
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: ruby
+      # RUN_INTEGRATION=1 → spec_helper의 SimpleCov minimum_coverage 게이트를 억제(통합 단독 실행 시
+      # 브랜치 커버리지가 낮게 나와 process-wide 게이트가 오탐 실패하는 것을 방지 — unit 게이트는 불변).
+      - run: RUN_INTEGRATION=1 bundle exec rspec spec/integration --tag integration
+
   release:
+    needs: integration # 통합 E2E 통과 후에만 rubygems.org로 나간다
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -34,10 +61,30 @@ jobs:
       run:
         working-directory: ruby
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: ruby/setup-ruby@v1
+
+      # 태그↔소스 정합성(fail-fast): 태그가 함의하는 버전과 `KeycloakSdk::VERSION`이 다르면
+      # ruby 셋업 전에 중단한다(gemspec이 이 상수를 그대로 읽어 gem 파일명/버전을 정한다).
+      # 추출 실패(빈 문자열)도 실패로 취급한다 — 조용히 빈 값이 되면 어떤 값과도 "다르다"고
+      # 판정되지 않는 오검증이 생기기 때문이다.
+      # (working-directory: ruby → 아래 경로는 ruby/lib/keycloak_sdk/version.rb를 가리킨다.)
+      - name: Verify tag matches KeycloakSdk::VERSION
+        run: |
+          EXPECTED="${GITHUB_REF_NAME#ruby-v}"
+          ACTUAL=$(grep -m1 -E 'VERSION[[:space:]]*=' lib/keycloak_sdk/version.rb | sed -E 's/.*"([^"]+)".*/\1/' || true)
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::ruby/lib/keycloak_sdk/version.rb에서 VERSION을 추출하지 못했다 — 정합성 검증 불가(fail-closed)."
+            exit 1
+          fi
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} implies version ${EXPECTED} but ruby/lib/keycloak_sdk/version.rb declares ${ACTUAL}"
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} ↔ KeycloakSdk::VERSION ${ACTUAL} 일치"
+
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
@@ -48,7 +95,7 @@ jobs:
       - run: bundle exec bundler-audit check --update
       # OIDC로 rubygems.org Trusted Publisher 자격증명을 구성(저장 시크릿 없음) — `gem push`가
       # 이 자격증명을 사용한다. rake release는 쓰지 않으므로 git 태그 push는 일어나지 않는다.
-      - uses: rubygems/configure-rubygems-credentials@v2.1.0
+      - uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
       - name: Build and push gem
         run: |
           gem build keycloak-sdk.gemspec

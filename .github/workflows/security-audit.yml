@@ -1,0 +1,228 @@
+name: security-audit
+
+# SECURITY.md가 약속하는 "언어별 의존성 취약점 감사"를 **일정으로** 한 번 더 돌린다.
+#
+# 왜 별도 워크플로가 필요한가: 언어별 CI 9종은 전부 워크플로 레벨 `paths:` 필터라 그 언어의
+# 파일이 바뀔 때만 돈다. 그런데 CVE는 우리 커밋이 아니라 상류에서 발생하므로, 아무도 손대지
+# 않는 언어에 내일 공개되는 취약점은 그 언어의 파일이 바뀌기 전까지 무기한 보이지 않는다.
+# 게시 전 저장소라 그 침묵이 특히 비싸다. 이 워크플로는 `paths:` 필터가 없고 일정·수동으로만
+# 도는 감사 사본이며, 언어별 CI의 감사 스텝을 **대체하지 않는다**(PR 게이트는 그대로 유지).
+#
+# ⚠️ 언어마다 잡을 나눈 이유: 한 언어가 실패해도 나머지 여덟 언어의 결과가 가려지면 안 된다
+# (한 잡에 몰면 첫 실패에서 멈춰 나머지가 측정되지 않는다).
+# ⚠️ 이 워크플로의 잡은 룰셋 PRIMARY의 required 상태체크가 되어서는 안 된다 —
+# `.github/rulesets/main.json`이 요구하는 것은 `doc-facts`·`shell-exec-bits` **둘뿐**이고,
+# `bypass_actors: []`라 required가 한 번 막히면 소유자도 못 푼다(CONTRIBUTING §4). 그래서
+# 잡 이름도 그 둘과 겹치지 않게 두고, 룰셋에는 추가하지 않는다.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * 1' # 매주 월요일 04:00 UTC (harness 야간 03:00과 겹치지 않게)
+# 최소권한: 모든 잡이 소스를 읽고 감사만 한다(체크·코멘트·릴리스 쓰기 없음).
+permissions:
+  contents: read
+
+jobs:
+  # 아래 각 잡은 대응하는 `*-ci.yml`의 감사 스텝을 그대로 옮긴 것이다. 명령이 한쪽에서 바뀌면
+  # 다른 쪽도 같이 바꾼다(감사 도구·플래그·문서화된 예외가 어긋나면 두 경로의 신호가 달라진다).
+  java:
+    name: Scheduled dependency audit — Java (OSV)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
+      - name: 해석된 런타임 의존성 좌표 수집(리액터 전체)
+        # `compile`을 함께 도는 이유: dependency:list 단독 실행은 리액터 형제 모듈이 아직
+        # target/classes를 갖지 않아 의존성 해석에 실패한다(SNAPSHOT 미설치 상태).
+        run: |
+          set -euo pipefail
+          mvn -B -q -f java/pom.xml compile dependency:list -DincludeScope=runtime \
+            -DoutputFile="$PWD/dep-list.txt" -DappendOutput=true
+          # `g:a:type[:classifier]:version:scope` → `g:a:version`(버전은 항상 끝에서 두 번째 필드)
+          awk '{print $1}' dep-list.txt | awk -F: 'NF>=5 {print $1":"$2":"$(NF-1)}' | sort -u > pkgs.txt
+          echo "수집한 Maven 좌표 $(wc -l < pkgs.txt)개"
+      - name: OSV.dev 대조(알려진 취약점 있으면 실패)
+        # ⚠️ fail-open 금지: 목록이 비었거나 응답 개수가 어긋나면 "취약점 없음"이 아니라
+        # **측정 실패**이므로 통과시키지 않는다(ci.yml의 같은 스텝과 동일 원칙).
+        run: |
+          set -euo pipefail
+          test -s pkgs.txt || { echo "::error::의존성 좌표 목록이 비었다 — 감사 실패(fail-closed)"; exit 1; }
+          jq -Rn '{queries: [inputs | split(":") | {package: {ecosystem: "Maven", name: (.[0] + ":" + .[1])}, version: .[2]}]}' \
+            < pkgs.txt > osv-query.json
+          curl -sS --fail-with-body -X POST -H 'Content-Type: application/json' \
+            --data @osv-query.json https://api.osv.dev/v1/querybatch > osv-result.json
+          n_q=$(wc -l < pkgs.txt)
+          n_r=$(jq '.results | length' osv-result.json)
+          [ "$n_q" -eq "$n_r" ] || { echo "::error::OSV 응답 수($n_r) != 질의 수($n_q) — 감사 실패(fail-closed)"; exit 1; }
+          hits=$(paste pkgs.txt <(jq -r '.results[] | ((.vulns // []) | map(.id) | join(","))' osv-result.json) \
+            | awk -F'\t' '$2 != ""')
+          if [ -n "$hits" ]; then
+            echo "::error::알려진 취약점이 있는 의존성이 있습니다(좌표 <TAB> OSV/GHSA id):"
+            echo "$hits"
+            exit 1
+          fi
+          echo "OK: Maven 좌표 ${n_q}개에 알려진 OSV 취약점 없음"
+
+  kotlin:
+    name: Scheduled dependency audit — Kotlin (OSV)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kotlin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
+      - name: 해석된 런타임 의존성 좌표 수집(runtimeClasspath)
+        # `dependencies` 리포트의 트리 출력을 파싱한다: `|    +--- g:a:v (*)` 꼴이며 (*)/(c)/(n)
+        # 마커는 버리고, 버전 충돌 표기(`g:a:1.0 -> 1.2`)가 있으면 해석된 오른쪽 버전을 쓴다.
+        run: |
+          set -euo pipefail
+          ./gradlew -q dependencies --configuration runtimeClasspath > dep-tree.txt
+          grep -e '--- ' dep-tree.txt \
+            | sed -e 's/^.*--- //' -e 's/ (\*)$//' -e 's/ (c)$//' -e 's/ (n)$//' \
+            | awk -F' -> ' '{ if (NF == 2) { split($1, b, ":"); print b[1]":"b[2]":"$2 } else { print $0 } }' \
+            | awk -F: 'NF == 3 && $1 != "" && $3 != "" { print $1":"$2":"$3 }' \
+            | sort -u > pkgs.txt
+          echo "수집한 Maven 좌표 $(wc -l < pkgs.txt)개"
+      - name: OSV.dev 대조(알려진 취약점 있으면 실패)
+        # ⚠️ fail-open 금지(위 java 잡과 동일 원칙).
+        run: |
+          set -euo pipefail
+          test -s pkgs.txt || { echo "::error::의존성 좌표 목록이 비었다 — 감사 실패(fail-closed)"; exit 1; }
+          jq -Rn '{queries: [inputs | split(":") | {package: {ecosystem: "Maven", name: (.[0] + ":" + .[1])}, version: .[2]}]}' \
+            < pkgs.txt > osv-query.json
+          curl -sS --fail-with-body -X POST -H 'Content-Type: application/json' \
+            --data @osv-query.json https://api.osv.dev/v1/querybatch > osv-result.json
+          n_q=$(wc -l < pkgs.txt)
+          n_r=$(jq '.results | length' osv-result.json)
+          [ "$n_q" -eq "$n_r" ] || { echo "::error::OSV 응답 수($n_r) != 질의 수($n_q) — 감사 실패(fail-closed)"; exit 1; }
+          hits=$(paste pkgs.txt <(jq -r '.results[] | ((.vulns // []) | map(.id) | join(","))' osv-result.json) \
+            | awk -F'\t' '$2 != ""')
+          if [ -n "$hits" ]; then
+            echo "::error::알려진 취약점이 있는 의존성이 있습니다(좌표 <TAB> OSV/GHSA id):"
+            echo "$hits"
+            exit 1
+          fi
+          echo "OK: Maven 좌표 ${n_q}개에 알려진 OSV 취약점 없음"
+
+  python:
+    name: Scheduled dependency audit — Python (pip-audit)
+    runs-on: ubuntu-latest
+    # 버전 매트릭스를 돌지 않는다 — 감사 대상은 해석된 의존성 트리이고, 3.12는 python-ci.yml의
+    # integration 잡이 쓰는 버전이다(트리가 버전마다 갈리면 그 CI가 먼저 잡는다).
+    defaults: { run: { working-directory: python } }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with: { python-version: '3.12' }
+      - run: python -m pip install -e ".[dev]"
+      - name: pip-audit (의존성 취약점 감사)
+        # editable 로컬 패키지(keycloak-sdk, PyPI 미배포)는 감사 불가로 skip되고, pip-audit는
+        # skip이 하나라도 있으면 종료코드 1(불완전 감사 신호)을 낸다(--skip-editable도 라벨만 바꿈).
+        # 환경 대신 editable을 제외한 frozen requirements를 감사해 실 의존성만 커버한다.
+        run: |
+          python -m pip install pip-audit
+          python -m pip freeze --exclude-editable > audit-reqs.txt
+          pip-audit -r audit-reqs.txt
+
+  node:
+    name: Scheduled dependency audit — Node (npm audit)
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: node } }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22' # engines 하한 — 감사는 package-lock.json 기준이라 매트릭스 불필요
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+      - run: npm ci
+      - name: npm audit (프로덕션 의존성 취약점 — high 이상)
+        run: npm audit --audit-level=high --omit=dev
+
+  go:
+    name: Scheduled dependency audit — Go (govulncheck)
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: go } }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26'
+          cache-dependency-path: go/go.sum
+      # go-ci.yml의 staticcheck/gosec/govulncheck와 동일한 형태(`go run <pkg>@<버전>`)로 버전을 핀한다
+      # — `@latest`는 실행마다 다른 코드가 러너에서 돌고 무결성 검증(sum.golang.org)만으로는 그걸 막지
+      # 못한다. 취약점 DB는 실행 시점에 받으므로 도구를 핀해도 탐지 결과가 낡지 않는다.
+      # ⚠️ go-ci.yml의 버전과 함께 올린다.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
+  dotnet:
+    name: Scheduled dependency audit — .NET (dotnet list --vulnerable)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: '8.0.x'
+      # `dotnet list package --vulnerable`은 복원 산출물(project.assets.json)을 읽으므로 복원이
+      # 선행되어야 한다 — dotnet-ci.yml에서는 앞선 Restore 스텝이 이 역할을 한다.
+      - name: Restore
+        run: dotnet restore dotnet/Keycloak.Sdk.sln
+      - name: 취약 패키지 감사 (배포 SDK 프로젝트)
+        # 배포되는 SDK 프로젝트의 (전이 포함) 취약 패키지만 게이트한다 — 테스트 전용 의존성
+        # (예: WireMock 경유 Scriban Moderate)은 배포물이 아니라 감사 대상에서 제외.
+        run: |
+          report=$(dotnet list dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj package --vulnerable --include-transitive 2>&1)
+          echo "$report"
+          echo "$report" | grep -qi "no vulnerable packages" || { echo "::error::vulnerable packages in shipped SDK"; exit 1; }
+
+  php:
+    name: Scheduled dependency audit — PHP (composer audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: php
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.3' # 감사는 composer.lock 기준이라 8.3/8.4 매트릭스 불필요
+          tools: composer
+      - run: composer install --no-interaction --prefer-dist
+      - run: composer audit
+
+  rust:
+    name: Scheduled dependency audit — Rust (cargo audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - uses: taiki-e/install-action@3e67821ec5b3a2f80d412686dab9e9d496ea6a23 # cargo-audit
+      # RUSTSEC-2023-0071(rsa "Marvin" 타이밍 사이드채널)은 dev-dependency rsa(테스트 키 생성
+      # 전용)에 대한 것으로, 런타임(jsonwebtoken 공개키 서명검증만)에 영향 경로가 없다 —
+      # 문서화된 예외로 무시한다(게차 참조). rust-ci.yml의 audit 잡과 같은 예외여야 한다.
+      - run: cargo audit --ignore RUSTSEC-2023-0071
+
+  ruby:
+    name: Scheduled dependency audit — Ruby (bundler-audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ruby
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: '3.4' # CI 매트릭스 상단 — 감사는 Gemfile.lock 기준이라 매트릭스 불필요
+          bundler-cache: true
+          working-directory: ruby
+      - run: bundle exec bundler-audit check --update

@@ -1,10 +1,12 @@
 # Deployment Guide (DEPLOY)
 
-All nine language SDKs have a **tag-driven release CI** ready to go. Actual deployment is a human-gated approval step that is triggered **only when a human pushes a tag**, and the prerequisites below (accounts, keys, tokens) can only be performed by the repository owner.
+All nine language SDKs have a **tag-driven release CI** wired up — though none of it has ever run: the repository has zero tags and nothing has been published to any public registry (§5 spells out exactly what is and is not proven). Actual deployment is a human-gated approval step triggered **only when a human pushes a tag**, and the prerequisites below (accounts, keys, tokens) can only be performed by the repository owner.
 
-> ⚠️ Deployment is irreversible (you cannot re-publish the same coordinate/version). Verify your artifacts first with a dry-run (at the end of each section).
+> ⚠️ Deployment is irreversible (you cannot re-publish the same coordinate/version). Verify your artifacts first with a dry-run (at the end of each section), and read §6 **before** you need it — what "irreversible" costs you differs enormously per registry.
 >
-> ✅ **Final verification before real deployment**: the install-&-operate verification harness in [`harness/install/`](harness/install/README.md) installs each SDK **like a published package from a local registry** and verifies it works (quickstart + conformance + security) against real Keycloak — a pre-check of the install path, which is isomorphic to real deployment. `cd harness/install && ./install-verify.sh <lang>` (9/9 languages GREEN in local measurements). Before pushing a real deployment tag, it is recommended to pass the relevant language here.
+> ✅ **Pre-check before real deployment**: the install-&-operate verification harness in [`harness/install/`](harness/install/README.md) installs each SDK **from a local registry, as if it were a published package**, and verifies that it actually works (quickstart + conformance + security) against a real Keycloak. `cd harness/install && ./install-verify.sh <lang>`. Passing it for a language is a useful pre-check of the install path before you push that language's tag.
+>
+> ⚠️ **What that harness does not prove.** It swaps only the *dependency-resolution source* — a local Verdaccio / pypiserver / BaGetter / Satis / staged `.m2` / file `GOPROXY` — for the real one. Every failure mode that is unique to a **public** registry is therefore outside its reach: PyPI, npm and RubyGems OIDC trusted publishing; GPG signing and Central Portal staging; Packagist's view of the repository; crates.io name ownership; npm provenance attestation; Go module-proxy immutability. It is **not** "isomorphic to real deployment", and passing it is not a release gate. Note also that the nightly `harness` workflow's `install-all` job had been **RED on Kotlin for seven consecutive nights** — the published jar carried `@Metadata(mv=[2,4,0])`, which the consumer app on Kotlin 2.2.20 cannot read. That cause is fixed on this branch by pinning `languageVersion`/`apiVersion` to 2.2 in `kotlin/build.gradle.kts` (measured in a container: the jar then carries `mv=[2,2,0]`), but **a green nightly run has not been observed yet**.
 >
 > 🛠️ **Helper scripts**: the tables and commands in this document come from `scripts/lib/deploy-facts.sh` (single source of truth). Rather than scanning the tables yourself, use the two helpers below to check status and obtain the commands.
 > - `./scripts/release-readiness.sh [lang ...]` — reports each language's secret/registry/tag readiness read-only (no values exposed; with no arguments, all nine).
@@ -14,32 +16,47 @@ All nine language SDKs have a **tag-driven release CI** ready to go. Actual depl
 
 ## §0. Overview + Readiness Matrix
 
+Rows are in the recommended deployment order explained below.
+
 | Language | Registry | Auth | Tag | Version bump | Secrets (count) | Install after release |
 |---|---|---|---|---|---|---|
-| **Go** | Go module proxy (proxy.golang.org) | none | `go/v*` | none (tag = SSOT) | 0 | `go get github.com/xzawed/KeyCloakSDK/go@vX.Y.Z` |
-| **PHP** | Packagist | webhook | `php-v*` | none (tag = SSOT) | 0 (webhook) | `composer require xzawed/keycloak-sdk` |
-| **Rust** | crates.io | api-token | `rust-v*` | `rust/Cargo.toml` `[package].version` | 1 (`CARGO_REGISTRY_TOKEN`) | `cargo add keycloak-sdk` |
-| **.NET** | NuGet | api-token | `dotnet-v*` | none (tag injected via `-p:Version`) | 1 (`NUGET_API_KEY` · silently skipped if unset) | `dotnet add package Xzawed.Keycloak.Sdk` |
 | **Python** | PyPI | OIDC | `py-v*` | `python/pyproject.toml` `[project].version` | 0 (OIDC) | `pip install keycloak-sdk` |
-| **Node** | npm | OIDC | `node-v*` | `node/package.json` `version` | 0 (OIDC + provenance) | `npm install @xzawed/keycloak-sdk` |
+| **.NET** | NuGet | api-token | `dotnet-v*` | none (tag injected via `-p:Version`) | 1 (`NUGET_API_KEY` · **hard-fails if unset**) | `dotnet add package Xzawed.Keycloak.Sdk` |
 | **Ruby** | RubyGems | OIDC | `ruby-v*` | `ruby/lib/keycloak_sdk/version.rb` `VERSION` | 0 (OIDC + `release` environment) | `gem install keycloak-sdk` |
-| **Java** | Maven Central | maven-gpg | `v*` | automatic (versions-maven-plugin, tag value injected) | 4 (GPG 2 + Portal token 2) | `io.github.xzawed:keycloak-sdk` |
-| **Kotlin** | Maven Central | maven-gpg | `kotlin-v*` | `kotlin/build.gradle.kts` `version` (manual) | 4 (vanniktech names) | `io.github.xzawed:keycloak-sdk-kotlin` |
+| **Node** | npm | OIDC | `node-v*` | `node/package.json` `version` | 0 (OIDC + provenance) | `npm install @xzawed/keycloak-sdk` |
+| **Rust** | crates.io | api-token | `rust-v*` | `rust/Cargo.toml` `[package].version` | 1 (`CARGO_REGISTRY_TOKEN` · hard-fails if unset) | `cargo add keycloak-sdk` |
+| **Java** | Maven Central | maven-gpg | `v*` | automatic (versions-maven-plugin, tag value injected) | 4 (GPG 2 + Portal token 2 · **all four checked, hard-fails if any is unset**) | `io.github.xzawed:keycloak-sdk` |
+| **Kotlin** | Maven Central | maven-gpg | `kotlin-v*` | `kotlin/build.gradle.kts` `version` (manual) | 4 (vanniktech names · **all four checked, hard-fails if any is unset**) | `io.github.xzawed:keycloak-sdk-kotlin` |
+| **Go** | Go module proxy (proxy.golang.org) | none | `go/v*` | none (tag = SSOT) | 0 | `go get github.com/xzawed/KeyCloakSDK/go@vX.Y.Z` |
+| **PHP** | Packagist — **via the mirror repository `xzawed/keycloak-sdk-php`** | split-token | `php-v*` | none (tag = SSOT) | 1 (`PHP_SPLIT_TOKEN` · **hard-fails if unset**) | `composer require xzawed/keycloak-sdk` |
 
-**Recommended deployment order (easy auth → hard auth)**:
+> ⚠️ **PHP does not publish from this repository, and it never could.** Composer's VCS driver only reads a `composer.json` at a repository's **root**; it cannot treat a subdirectory as the package root, and Packagist does not support subdirectories either. This monorepo has no root `composer.json` (only `php/composer.json`), so Packagist was never able to track `xzawed/KeyCloakSDK`. `php-release.yml` therefore runs `git subtree split --prefix=php` and pushes the result to a separate read-only mirror repository, **`xzawed/keycloak-sdk-php`**, tagging it `vX.Y.Z` there (Composer cannot parse `php-vX.Y.Z` as a version). **That mirror is what gets registered on Packagist — and it does not exist yet.** See §2-D for the one-time human setup.
+
+**Recommended deployment order — ordered by recoverability, not by how easy the auth setup is**:
 
 ```
-go → php → rust → dotnet → python → node → ruby → java → kotlin
+python → dotnet → ruby → node → rust → java → kotlin → go → php
 ```
 
-**Check the current status**: `./scripts/release-readiness.sh` (with no arguments, it reports all nine languages at once).
+The first publish of a coordinate is irreversible everywhere, so the axis that actually matters is "if this version turns out to be broken, what can I do about it?" (§6 has the per-registry detail):
+
+1. **python · dotnet · ruby · node · rust** — the registry supports yank / unlist / deprecate, so a bad version can at least be pulled out of resolution.
+2. **java · kotlin** — Maven Central is immutable once released, but the Central Portal puts a human staging step in front of it: a bad upload can be dropped *before* it is published, at zero cost.
+3. **go** — nothing to set up, and the weakest recovery of all nine. Once `proxy.golang.org` has cached the version it is immutable and there is no yank; the only remedy is a `retract` directive in a *later* release.
+4. **php** — last, because it is the only language whose publication path does not exist yet: the mirror repository must be created and registered on Packagist first (§2-D).
+
+> The order this document used to recommend ("easy auth → hard auth", starting with Go) optimised for the wrong axis: Go is the easiest to *set up* and the hardest to *undo*.
+
+**Check the current status**: `./scripts/release-readiness.sh` (with no arguments, it reports all nine languages at once, in this order).
 
 ---
 
 ## §1. Common Principles
 
 - **Tag-driven**: all nine release workflows are triggered only by pushing a tag in a specific format (the "Tag" column of the §0 table).
-- **`needs: verify` gate**: most release workflows run a separate `verify` job that confirms lint/test are green on the commit the tag points to before running the publish job — so before pushing a tag, the language's usual verification (unit tests, lint) must already pass. Note, however, that this gate is only effective for the **direct publish step** of the token/OIDC/Maven languages. For PHP (webhook) and Go (proxy), the registry reacts directly to the tag push, so the verify job only gates GitHub Release creation / proxy warming — for these two languages, be sure to pass the dry-run before pushing the tag. **Java has no separate `verify` job at all** — a single `release` job runs `mvn -Prelease deploy` directly, and since it does not specify `-DskipTests`, the Maven lifecycle runs the test + integration-test phases inline before deploy (if tests fail, it never reaches the deploy phase, so deployment fails too) — there is no job separation, but the same operational guarantee holds: "nothing is deployed unless tests are green."
+- **`needs:` gate**: nothing publishes unless the tagged commit's checks are green. Eight languages (python · node · go · rust · dotnet · ruby · kotlin · php) now run their **integration suite against a real Keycloak** in a dedicated `integration` job that the publishing job lists in `needs:`, so a tag can no longer publish on unit tests alone. PHP was the last exception and no longer is: `php-release.yml` gained an `integration` job (`phpunit --testsuite integration`) that its `split` job lists in `needs:` alongside `verify`. **Java** (`release.yml`) is the only language with no separate job — a single `release` job runs `mvn -Prelease deploy` without `-DskipTests`, so the Maven lifecycle runs the test *and* integration-test phases inline before `deploy` (if tests fail it never reaches deploy). Different structure, same guarantee.
+- **Go's gate is different in kind**: `go-release.yml`'s `verify`/`integration` jobs run before the `release` job, but the module proxy serves whatever the *tag* points at — it does not wait for CI. Once the tag is pushed, the version is effectively public.
+- **PHP's gate is real now**: `verify` + `integration` → `split`, and GitHub Release creation lives inside `split`, **after** the mirror push succeeds — so the release notes can no longer announce a publication that did not happen.
 - **human-gate**: the actual deployment trigger (tag push) must always be performed **by a human directly**. `release-trigger.sh` only prints the commands and does not run `git tag`/`git push` itself.
 - **Irreversible**: no registry allows re-publishing the same version — if you push a wrong tag, that version number is effectively burned.
 - **Dry-run required**: before pushing a tag, always confirm with a local dry-run (building only the artifacts, without deploying) that the artifacts are generated correctly (per-language in the §0 table; also included in the `release-trigger.sh` output).
@@ -50,6 +67,10 @@ go → php → rust → dotnet → python → node → ruby → java → kotlin
 |---|---|---|
 | Automatic (4) | go · php · dotnet · java | The tag itself is the version SSOT — the workflow injects the tag value into the build (no file edits needed). Java is the sole exception: `versions-maven-plugin` replaces the POM's `-SNAPSHOT` with the tag value before deploying (the main POM keeps `-SNAPSHOT`). |
 | Manual (5) | rust · python · node · ruby · kotlin | **Before** pushing the tag, a human must bump the source's version field directly and commit (the exact location is in the "Version bump" column of the §0 table). |
+
+**Tag ↔ version guard (the five manual-bump languages)** — bumping the version file is still a human responsibility, but it is no longer *only* that. `rust-release.yml` · `python-release.yml` · `node-release.yml` · `ruby-release.yml` · `kotlin-release.yml` each begin, as the first step after checkout, by extracting the declared version from the manifest (`Cargo.toml` · `pyproject.toml` · `package.json` · `lib/keycloak_sdk/version.rb` · `build.gradle.kts`) and comparing it with the version implied by the tag. On mismatch the job stops with `::error::` **before any toolchain is installed and before anything is built**. An empty extraction is treated as failure too (fail-closed) — a silently blank value would never compare "different" from anything and would let the check pass vacuously. So this runbook's classic accident — pushing `py-v0.2.0` while `pyproject.toml` still says `0.1.0` — is now caught by CI instead of by PyPI.
+
+The comparison is **literal string equality** against the tag suffix, which matters for prerelease spellings (§7). The four auto-bump languages (go · php · dotnet · java) have no such guard and need none: the tag *is* the version there, so there is no second place for it to disagree with.
 
 ---
 
@@ -77,7 +98,9 @@ Since the same auth model has the same setup procedure, it is explained once per
    | Portal token username | `CENTRAL_TOKEN_USER` | `MAVEN_CENTRAL_USERNAME` | the token username from step 2 |
    | Portal token password | `CENTRAL_TOKEN_PW` | `MAVEN_CENTRAL_PASSWORD` | the token password from step 2 |
 
-5. **⚠️ Behavior when unset differs per language (be sure to understand this to prevent accidents)**: for Java, if any one of the four secrets is missing, `mvn -Prelease deploy` **hard-fails** (the workflow itself ends in failure, so it is hard to miss). Kotlin, on the other hand, is isomorphic to §2-C's .NET: if any one of the four secrets is missing, the publish job leaves a `::warning::` log and **silently skips (exit 0)** — Actions ends green but nothing may have been uploaded to the Central Portal. After pushing a `kotlin-v*` tag, do not rest easy on a green Actions run alone; always check the Central Portal Deployments directly.
+5. **Behavior when a secret is unset — both languages fail closed, and both now name the missing secret**: each job checks **all four** of its own secrets in a step and, if any are missing, emits `::error::` naming exactly which ones and exits 1. Java (`MAVEN_GPG_PRIVATE_KEY` · `MAVEN_GPG_PASSPHRASE` · `CENTRAL_TOKEN_USER` · `CENTRAL_TOKEN_PW`) does this in a preflight right after checkout, before `setup-java` even imports the GPG key; Kotlin (`MAVEN_CENTRAL_USERNAME` · `MAVEN_CENTRAL_PASSWORD` · `SIGNING_IN_MEMORY_KEY` · `SIGNING_IN_MEMORY_KEY_PASSWORD`) does it immediately before the upload. Java previously failed later instead, inside `mvn -Prelease deploy` — fail-closed either way, but a noisier error that never said the cause was an unset secret.
+
+   > ⚠️ **This used to be much worse.** The old Kotlin guard checked only `MAVEN_CENTRAL_USERNAME` and exited 0 when it was missing — a silent skip that ended green — and it did not check the signing key at all, which permitted an **unsigned** Central Portal upload on a green run. That is fixed. (Note that a job-level `if:` cannot read the `secrets` context in GitHub Actions, which is why the guard has to live inside the step, on env-mapped values.)
 6. **Two-step manual release**: the workflow only auto-uploads **as far as Central Portal staging**. The actual public release (Publish) is completed only when **a human manually Publishes** from the Deployments screen in the [Central Portal](https://central.sonatype.com) (when autoPublish is not configured).
 
 ### B. OIDC / Trusted Publisher (Python · Node · Ruby)
@@ -95,14 +118,28 @@ Since the same auth model has the same setup procedure, it is explained once per
 2. Register it in GitHub Secrets:
    - .NET: `NUGET_API_KEY`
    - Rust: `CARGO_REGISTRY_TOKEN`
-3. **Behavior when unset differs** — be sure to understand this to prevent accidents:
-   - .NET: if the secret is missing, the push step is **silently skipped** (the workflow itself succeeds and a GitHub Release is even created, so it is easy to miss whether it actually went up to NuGet — always check the Actions log).
-   - Rust: if the secret is missing, `cargo publish` **hard-fails** (the workflow itself ends in failure).
+3. **Behavior when unset — both fail closed now**:
+   - .NET: if `NUGET_API_KEY` is missing, the publish step emits `::error::` and exits 1. **This changed.** It used to exit 0 (a silent skip) while the workflow went on to create a GitHub Release anyway — a green run and a release page for a version that had never reached NuGet.
+   - Rust: if `CARGO_REGISTRY_TOKEN` is missing, `cargo publish` hard-fails, as it always has.
+4. **`--skip-duplicate` has been removed from `dotnet nuget push`.** It reported a push of an already-published version as success, which is exactly the signal you need when a version has been burned. A duplicate now fails the job.
 
-### D. Webhook (PHP)
+### D. Subtree Split → Mirror Repository (PHP)
 
-1. **Register the Packagist repository once**: log in to https://packagist.org and register the `xzawed/keycloak-sdk` GitHub repository via Submit.
-2. The release workflow itself publishes nowhere — Packagist auto-detects new tags via a GitHub webhook and publishes them. **Before the repository is registered, pushing a tag does nothing on Packagist.**
+**There is no webhook path for PHP, and there never was.** Composer's VCS driver reads only the `composer.json` at a repository's **root**; there is no way to point it at a subdirectory, and Packagist does not support subdirectories either. This monorepo has no root `composer.json` — only `php/composer.json` — so "push a tag and Packagist picks it up" could not have worked here at any point.
+
+What `php-release.yml` does instead: once `verify` passes, the `split` job runs `git subtree split --prefix=php`, force-pushes the resulting history to the `main` branch of a **separate read-only mirror repository**, and pushes a bare `vX.Y.Z` tag there (derived from `php-vX.Y.Z`, because Composer cannot parse the prefixed tag as a version). Packagist watches that mirror.
+
+**One-time human setup — ⚠️ none of this has been done yet:**
+
+1. **Create the mirror repository `xzawed/keycloak-sdk-php`** — public and empty (no README, no license, no initial commit; the split force-pushes over `main`). It is a generated artifact: never commit to it directly.
+2. **Register that repository on Packagist** — https://packagist.org → Submit → `https://github.com/xzawed/keycloak-sdk-php`. Register the **mirror**, not this monorepo.
+3. **Create the `PHP_SPLIT_TOKEN` secret in *this* repository** (Settings → Secrets and variables → Actions) — a token with write access to the mirror (a fine-grained PAT scoped to `xzawed/keycloak-sdk-php` with Contents: read and write suffices). If it is unset, the `split` job emits `::error::` and exits 1; nothing is pushed and no GitHub Release is created.
+
+**Notes:**
+
+- The package name on Packagist is still `xzawed/keycloak-sdk` — it comes from `php/composer.json`, which the split carries along. Only the *source repository* Packagist reads is different.
+- The mirror's `main` is force-pushed on every release; the version tag is **not** forced. If `vX.Y.Z` already exists on the mirror the tag push fails on purpose, so a burned version cannot be silently overwritten — the same principle as removing `--skip-duplicate` from the .NET push.
+- GitHub Release creation lives in the `split` job, after the mirror push. That ordering is deliberate: the notes cannot claim a publication that did not happen.
 
 ### E. No Setup (Go)
 
@@ -110,63 +147,15 @@ Since the same auth model has the same setup procedure, it is explained once per
 
 ---
 
-## §3. Per-Language Details (recommended order)
+## §3. Per-Language Details (in the §0 recommended order)
 
 For each language: one-time setup (see §2) → version-bump location → dry-run → tag/trigger → deployment check → install coordinate.
 
-### 1. Go
-
-- One-time setup: §2-E (none).
-- Version bump: none (the tag is the SSOT).
-- dry-run: `go -C go build ./... && go -C go vet ./... && go -C go test ./...`
-- Tag: `go/vX.Y.Z` — guidance command: `./scripts/release-trigger.sh go 0.1.0`
-  ```bash
-  git tag go/v0.1.0 && git push origin go/v0.1.0
-  ```
-- Deployment check: confirm GitHub Actions `go-release.yml` succeeded. The proxy cache happens on the first `go get` request, so it may not be queryable immediately.
-- Install: `go get github.com/xzawed/KeyCloakSDK/go@v0.1.0`
-
-### 2. PHP
-
-- One-time setup: §2-D (Packagist repository registration).
-- Version bump: none (the tag is the SSOT).
-- dry-run: `cd php && composer install && composer audit && vendor/bin/phpstan analyse && vendor/bin/phpunit --testsuite unit`
-- Tag: `php-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh php 0.1.0`
-  ```bash
-  git tag php-v0.1.0 && git push origin php-v0.1.0
-  ```
-- Deployment check: confirm GitHub Actions `php-release.yml` (verify + GitHub Release creation) succeeded → check that the new version is reflected on the Packagist page (`xzawed/keycloak-sdk`).
-- Install: `composer require xzawed/keycloak-sdk`
-
-### 3. Rust
-
-- One-time setup: §2-C (`CARGO_REGISTRY_TOKEN`).
-- Version bump: `rust/Cargo.toml` `[package].version`.
-- dry-run: `cd rust && cargo build --all-targets && cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt --all --check` (optional: pre-validate the crates.io upload with `cargo publish --dry-run`)
-- Tag: `rust-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh rust 0.1.0`
-  ```bash
-  git tag rust-v0.1.0 && git push origin rust-v0.1.0
-  ```
-- Deployment check: confirm GitHub Actions `rust-release.yml` (`cargo publish`) succeeded. If the secret is unset, it surfaces immediately as a **hard failure**.
-- Install: `cargo add keycloak-sdk`
-
-### 4. .NET
-
-- One-time setup: §2-C (`NUGET_API_KEY`).
-- Version bump: none (the tag is injected via `-p:Version`).
-- dry-run: `dotnet pack dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release`
-- Tag: `dotnet-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh dotnet 0.1.0`
-  ```bash
-  git tag dotnet-v0.1.0 && git push origin dotnet-v0.1.0
-  ```
-- Deployment check: confirm GitHub Actions `dotnet-release.yml` succeeded, **then be sure to check the NuGet page directly** (if the secret is unset, the workflow succeeds but the push is silently skipped — see §2-C).
-- Install: `dotnet add package Xzawed.Keycloak.Sdk`
-
-### 5. Python
+### 1. Python
 
 - One-time setup: §2-B (Pending Publisher, workflow=`python-release.yml`).
-- Version bump: `python/pyproject.toml` `[project].version`.
-- dry-run: `cd python && python -m build` (when using the local venv, `/d/Source/KeyCloakSDK/python/.venv/Scripts/python.exe -m build`)
+- Version bump: `python/pyproject.toml` `[project].version` — the tag↔version guard (§1) stops the job before the build if it disagrees with the tag.
+- dry-run: `cd python && python -m build` (with the repo-local venv on Windows: `cd python && .venv/Scripts/python.exe -m build`)
 - Tag: `py-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh python 0.1.0`
   ```bash
   git tag py-v0.1.0 && git push origin py-v0.1.0
@@ -174,22 +163,22 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 - Deployment check: confirm GitHub Actions `python-release.yml` succeeded → https://pypi.org/project/keycloak-sdk/
 - Install: `pip install keycloak-sdk`
 
-### 6. Node
+### 2. .NET
 
-- One-time setup: §2-B (Pending Publisher, workflow=`node-release.yml`).
-- Version bump: `node/package.json` `version`.
-- dry-run: `cd node && npm run build && npm pack --dry-run`
-- Tag: `node-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh node 0.1.0`
+- One-time setup: §2-C (`NUGET_API_KEY`).
+- Version bump: none (the tag is injected via `-p:Version`).
+- dry-run: `dotnet pack dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release` — confirm the `.nupkg` contains the README and the licence (both are now packed).
+- Tag: `dotnet-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh dotnet 0.1.0`
   ```bash
-  git tag node-v0.1.0 && git push origin node-v0.1.0
+  git tag dotnet-v0.1.0 && git push origin dotnet-v0.1.0
   ```
-- Deployment check: confirm GitHub Actions `node-release.yml` (OIDC + provenance, including `npm install -g npm@latest`) succeeded → https://www.npmjs.com/package/@xzawed/keycloak-sdk
-- Install: `npm install @xzawed/keycloak-sdk`
+- Deployment check: confirm GitHub Actions `dotnet-release.yml` succeeded → https://www.nuget.org/packages/Xzawed.Keycloak.Sdk. A green run now means the push actually happened: a missing `NUGET_API_KEY` fails the job, and `--skip-duplicate` is gone, so an already-published version fails rather than reporting success (§2-C).
+- Install: `dotnet add package Xzawed.Keycloak.Sdk`
 
-### 7. Ruby
+### 3. Ruby
 
 - One-time setup: §2-B (Pending Publisher, workflow=`ruby-release.yml`, environment=`release`, chicken-and-egg caution).
-- Version bump: `ruby/lib/keycloak_sdk/version.rb` `VERSION`.
+- Version bump: `ruby/lib/keycloak_sdk/version.rb` `VERSION` — guarded against the tag (§1).
 - dry-run: `cd ruby && gem build keycloak-sdk.gemspec`
 - Tag: `ruby-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh ruby 0.1.0`
   ```bash
@@ -198,14 +187,40 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 - Deployment check: confirm GitHub Actions `ruby-release.yml` succeeded → https://rubygems.org/gems/keycloak-sdk
 - Install: `gem install keycloak-sdk`
 
-### 8. Java
+### 4. Node
+
+- One-time setup: §2-B (Pending Publisher, workflow=`node-release.yml`).
+- Version bump: `node/package.json` `version` — guarded against the tag (§1).
+- dry-run: `cd node && npm run build && npm pack --dry-run` — check the printed file list, not just the exit code: it must include `LICENSE` and `README.md` alongside `dist/`.
+- Tag: `node-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh node 0.1.0`
+  ```bash
+  git tag node-v0.1.0 && git push origin node-v0.1.0
+  ```
+- Deployment check: confirm GitHub Actions `node-release.yml` (OIDC + provenance, including `npm install -g npm@latest`) succeeded → https://www.npmjs.com/package/@xzawed/keycloak-sdk
+- Install: `npm install @xzawed/keycloak-sdk`
+- ⚠️ The publish step derives the dist-tag from the version: a SemVer prerelease (anything containing a hyphen, e.g. `0.1.0-rc.1`) publishes under `rc`, anything else under `latest`. That matters for a release candidate — see §7.
+
+### 5. Rust
+
+- One-time setup: §2-C (`CARGO_REGISTRY_TOKEN`).
+- Version bump: `rust/Cargo.toml` `[package].version` — guarded against the tag (§1).
+- dry-run: `cd rust && cargo build --locked --all-targets && cargo test --locked && cargo clippy --all-targets -- -D warnings && cargo fmt --all --check && cargo publish --dry-run --locked`
+  > `rust/Cargo.lock` is committed, so `--locked` verifies exactly the dependency graph that will be built. `cargo publish --dry-run` is the only way to see the file list that would actually be uploaded (the crate now declares an `exclude` for `tests/`) and to validate the packaging metadata — a plain `cargo build` does not check any of it.
+- Tag: `rust-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh rust 0.1.0`
+  ```bash
+  git tag rust-v0.1.0 && git push origin rust-v0.1.0
+  ```
+- Deployment check: confirm GitHub Actions `rust-release.yml` (`cargo publish`) succeeded → https://crates.io/crates/keycloak-sdk. A missing secret surfaces immediately as a hard failure.
+- Install: `cargo add keycloak-sdk`
+
+### 6. Java
 
 - One-time setup: §2-A (secrets `MAVEN_GPG_PRIVATE_KEY`/`MAVEN_GPG_PASSPHRASE`/`CENTRAL_TOKEN_USER`/`CENTRAL_TOKEN_PW`).
 - Version bump: automatic (`versions-maven-plugin` injects the tag value — `java/pom.xml` keeps `-SNAPSHOT`, no file edits needed).
 - dry-run:
   ```bash
-  JAVA_HOME='/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot' PATH="/c/Users/dirtc/tools/apache-maven-3.9.9/bin:$PATH" \
-    mvn -f java/pom.xml -Prelease -DskipTests -DskipITs=true -Dgpg.skip=true package
+  export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot}" PATH="${KCSDK_TOOLS:-$HOME/tools}/apache-maven-3.9.9/bin:$PATH"
+  mvn -f java/pom.xml -Prelease -DskipTests -DskipITs=true -Dgpg.skip=true package
   # → confirm *-sources.jar / *-javadoc.jar are generated under each target/ of core/auth/admin/keycloak-sdk
   ```
 - Tag: `vX.Y.Z` — guidance command: `./scripts/release-trigger.sh java 0.1.0`
@@ -213,16 +228,16 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   git tag v0.1.0 && git push origin v0.1.0
   ```
   > ℹ️ The tag value **determines the release version** — match the tag exactly to the desired release version.
-- Deployment check: confirm GitHub Actions `release.yml` succeeded (through the staging upload) → verify in the [Central Portal](https://central.sonatype.com) Deployments, then **a human manually Publishes**.
+- Deployment check: confirm GitHub Actions `release.yml` succeeded (through the staging upload) → verify in the [Central Portal](https://central.sonatype.com) Deployments, then **a human manually Publishes**. This staging step is your last chance to reject the build: once published, Maven Central is immutable (§6).
 - Install: `io.github.xzawed:keycloak-sdk:0.1.0` (+ BOM)
 
-### 9. Kotlin
+### 7. Kotlin
 
 - One-time setup: §2-A (secrets `SIGNING_IN_MEMORY_KEY`/`SIGNING_IN_MEMORY_KEY_PASSWORD`/`MAVEN_CENTRAL_USERNAME`/`MAVEN_CENTRAL_PASSWORD`).
-- Version bump: `kotlin/build.gradle.kts` `version` (**manual** — unlike Java, the tag does not auto-inject it. Commit it matching the tag value exactly).
+- Version bump: `kotlin/build.gradle.kts` `version` (**manual** — unlike Java, the tag does not auto-inject it; commit it matching the tag value exactly). The tag↔version guard (§1) enforces this.
 - dry-run:
   ```bash
-  export JAVA_HOME='/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot' PATH="/c/Users/dirtc/tools/gradle-9.6.1/bin:$PATH" GRADLE_USER_HOME="/c/Users/dirtc/.gradle"
+  export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot}" PATH="${KCSDK_TOOLS:-$HOME/tools}/gradle-9.6.1/bin:$PATH" GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
   gradle -p kotlin publishToMavenLocal
   # → confirm keycloak-sdk-kotlin-0.1.0.jar (+sources/javadoc) is generated in the local ~/.m2
   ```
@@ -230,20 +245,49 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   ```bash
   git tag kotlin-v0.1.0 && git push origin kotlin-v0.1.0
   ```
-- Deployment check: confirm GitHub Actions `kotlin-release.yml` (vanniktech `publishToMavenCentral`, Central Portal staging) succeeded → **a human manually Publishes** in the [Central Portal](https://central.sonatype.com) Deployments (same two steps as Java).
+- Deployment check: confirm GitHub Actions `kotlin-release.yml` (vanniktech `publishToMavenCentral`, Central Portal staging) succeeded → **a human manually Publishes** in the [Central Portal](https://central.sonatype.com) Deployments (same two steps as Java). A green run now also means all four secrets were present (§2-A step 5).
+- ⚠️ **Consumer floor**: the build pins `languageVersion`/`apiVersion` to `KOTLIN_2_2`, so the published jar carries `@Metadata(mv=[2,2,0])` and consumers need **Kotlin 2.2+** — not 2.4.10. Say so in the release notes; raising this floor later cuts consumers off.
 - Install: `io.github.xzawed:keycloak-sdk-kotlin:0.1.0`
+
+### 8. Go
+
+- One-time setup: §2-E (none).
+- Version bump: none (the tag is the SSOT).
+- dry-run: `go -C go build ./... && go -C go vet ./... && go -C go test ./...`
+- Tag: `go/vX.Y.Z` — guidance command: `./scripts/release-trigger.sh go 0.1.0`
+  ```bash
+  git tag go/v0.1.0 && git push origin go/v0.1.0
+  ```
+- Deployment check: confirm GitHub Actions `go-release.yml` succeeded. The proxy caches on the first `go get` request, so the version may not be queryable immediately.
+- Install: `go get github.com/xzawed/KeyCloakSDK/go@v0.1.0`
+- ⚠️ **The weakest recovery of the nine.** The tag alone makes the version fetchable — CI does not gate that — and once the proxy has cached it, it is immutable and cannot be yanked. Your only remedy is a `retract` directive in a later release (§6). Be correspondingly careful with the tag.
+
+### 9. PHP
+
+- One-time setup: §2-D — **three steps that have not been done yet**: create the mirror repository `xzawed/keycloak-sdk-php`, register *that* repository on Packagist, and add the `PHP_SPLIT_TOKEN` secret here.
+- Version bump: none (the tag is the SSOT; the mirror tag `vX.Y.Z` is derived from `php-vX.Y.Z`).
+- dry-run: `cd php && composer install && composer audit && vendor/bin/phpstan analyse && vendor/bin/phpunit --testsuite unit`
+  > This mirrors the tag path's `verify` job exactly. The integration suite that `split` now also requires (§1) needs Docker and runs in CI, not here.
+- Tag: `php-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh php 0.1.0`
+  ```bash
+  git tag php-v0.1.0 && git push origin php-v0.1.0
+  ```
+- Deployment check: confirm the `split` job of GitHub Actions `php-release.yml` succeeded (it prints the pushed mirror commit) → confirm the mirror https://github.com/xzawed/keycloak-sdk-php carries the `v0.1.0` tag → confirm the new version appears on the Packagist page for `xzawed/keycloak-sdk`. The GitHub Release here is created *after* the mirror push, so its existence is evidence the push happened.
+- Install: `composer require xzawed/keycloak-sdk`
 
 ---
 
 ## §4. Release Procedure Summary
 
-1. **Version bump** (if the language is subject to manual bump — see the §1 table) — commit.
+0. **Decide the version** — for a language's *first* release, make it a release candidate (§7), not `0.1.0`.
+1. **Version bump** (if the language is subject to manual bump — see the §1 table) — commit. The tag↔version guard will reject a mismatch, so this must land before the tag.
 2. **dry-run** — locally confirm artifact generation without deploying (the relevant language in §3).
 3. **`./scripts/release-readiness.sh <lang>`** — check the secret/registry/tag readiness.
-4. **`./scripts/release-trigger.sh <lang> <ver>`** — prints the version-bump guidance, dry-run command, pre-checks, and exact tag command (does not execute them).
+4. **`./scripts/release-trigger.sh <lang> <ver>`** — prints the version-bump guidance, dry-run command, pre-checks, and exact tag command (does not execute them). ⚠️ It validates `X.Y.Z` only; for a prerelease version, skip this step and take the tag spelling from §7.
 5. **A human pushes the tag** — copy and run the printed `git tag ... && git push origin ...` as-is.
-6. **Check GitHub Actions** — confirm the relevant release workflow ended green (watch out for silent skips like §2-C's .NET **and §2-A's Kotlin** — Java is a hard failure).
+6. **Check GitHub Actions** — confirm the relevant release workflow ended green. Every secret-backed path now fails closed when its secret is unset, so green no longer hides a skipped publish (that was previously false for .NET and Kotlin — §2-C, §2-A step 5). Note the phrasing: Go has no secret at all, and the three OIDC languages authenticate by a registered publisher rather than a stored secret — for those, an unset/misregistered publisher fails at the publish call, not at a preflight. What green still does *not* tell you: for Java and Kotlin it means "uploaded to Central Portal staging", not "published" (step 7); for Go it means "tag and GitHub Release created", not "the proxy serves the module"; for PHP it means "pushed to the mirror", after which Packagist still has to pick the tag up.
 7. **(Maven Central family only) Portal manual release** — for Java and Kotlin, a human must click Publish in the Central Portal Deployments for the final public release.
+8. **Verify on the registry itself** — open the package page and confirm the version, the README rendering, and the file list. This is the only step that actually proves the release happened.
 
 ---
 
@@ -251,6 +295,56 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 
 - **When bumping the version**: bump the exact file/field in the "Version bump" column of the §0 table together, and match the tag (the "Tag" column of the §0 table) to that version. Auto-bump languages (go/php/dotnet/java) need no file edits.
 - **Post-deployment coordinate**: see the "Install after release" column of the §0 table. SemVer is based on the SDK's own API and is decoupled from Keycloak/dependency library versions (compatibility is guided by the README matrix).
-- **Release workflows are not the subject of this document**: the nine `.github/workflows/*-release.yml` are already verified, and this document and `scripts/release-readiness.sh`/`scripts/release-trigger.sh` only guide those workflows — they do not modify them.
+- **⚠️ What "the release workflows work" does and does not mean.** This document and `scripts/release-readiness.sh`/`scripts/release-trigger.sh` only guide the nine `.github/workflows/*-release.yml`; they do not modify them. But be precise about their status: **nothing has ever been published to a public registry from this repository, and the repository has zero tags — so no release workflow has ever executed, not once.** What *is* evidenced: their non-publishing steps (checkout, build, lint, unit tests, integration against a real Keycloak) are the same steps the per-language CI runs green on every push; the artifacts build locally via the §3 dry-runs; and the packages install and run via `harness/install/`. What is **not** evidenced: every step from the publishing credential onward — OIDC trusted-publisher exchange, GPG signing, Central Portal upload, `cargo publish`, `dotnet nuget push`, `gem push`, the subtree-split push to the PHP mirror, Go proxy warming — has never run against the real service. Treat each language's first release as a first execution, not a regression check. That is exactly why §7 recommends spending a release candidate on it.
 - **⚠️ Name-collision caution**: even if `release-readiness.sh` reports `registry=published` (already published), it does not rule out the possibility that this is **a same-named package registered by someone else first** (a registry existence check only looks at whether the response is HTTP 200, not who owns it). **Before the first deployment** of each language, a human must directly confirm on the relevant registry (PyPI `keycloak-sdk`, npm `@xzawed/keycloak-sdk`, crates.io `keycloak-sdk`, RubyGems `keycloak-sdk`, NuGet `Xzawed.Keycloak.Sdk`, Packagist `xzawed/keycloak-sdk`, etc.) that the deployment name is **unclaimed or owned by you (`xzawed`)** — scoped packages (`@xzawed/keycloak-sdk`) and Maven Central where the groupId belongs to a GitHub account (`io.github.xzawed`) have low collision risk, but PyPI/crates.io/RubyGems, which use short generic names (`keycloak-sdk`), have a relatively higher chance of having been claimed by someone else.
 - **Never query/record secret values**: `release-readiness.sh` uses `gh secret list` to confirm only names and existence and never prints values. This document also records no actual token/key values.
+
+---
+
+## §6. When a Bad Version Is Already Public
+
+Publishing is irreversible everywhere, but "irreversible" costs a different amount in each registry. Know which situation you are in **before** you push the tag — this table is the reasoning behind the deployment order in §0.
+
+| Registry | What you can do | What that achieves | What it does *not* do |
+|---|---|---|---|
+| **PyPI** (python) | **Yank** the release — project page → Manage → Releases → Options → Yank | Resolvers skip it; an exact pin (`==0.1.0`) still installs it | Does not free the version number. Deleting a release does not free it either — the filename is burned permanently |
+| **npm** (node) | `npm deprecate @xzawed/keycloak-sdk@0.1.0 "reason"` — always available. `npm unpublish` **only within 72 hours** of publishing, and only if no other package depends on it | Deprecate attaches a warning to every install; unpublish removes the version | After an unpublish the same version cannot be republished for 24 hours, and the number stays burned |
+| **crates.io** (rust) | `cargo yank --version 0.1.0` (reversible with `--undo`) | New resolutions skip it; existing `Cargo.lock`s can still download it | Deletion is impossible; the version number is permanently taken |
+| **RubyGems** (ruby) | `gem yank keycloak-sdk -v 0.1.0` | Removes the version from the index | The version number cannot be reused |
+| **NuGet** (dotnet) | **Unlist** — nuget.org → Manage package → Listing, or `dotnet nuget delete <id> <version>`, which unlists rather than deletes | Hidden from search and from floating version ranges | Restoring by exact version keeps working. Unlist is not deletion |
+| **Maven Central** (java · kotlin) | **Nothing.** Released coordinates are immutable — no yank, no unlist, no delete | — | Your only remedy is publishing a corrected higher version, plus a public advisory if it is a security issue. This is why the Central Portal's manual Publish step is the real last line of defence: dropping a *staged* deployment costs nothing |
+| **Go proxy** (go) | Add a `retract` directive for the bad version to `go/go.mod` and **release a new version containing it** | `go get` and `go list -m -u` then warn about / skip the retracted version | The old version stays in the proxy cache forever and remains fetchable by exact version. A retraction that is never itself released does nothing at all |
+| **Packagist** (php) | Delete the `vX.Y.Z` tag in the mirror `xzawed/keycloak-sdk-php`, then trigger an Update on the Packagist page | The version disappears from Packagist's metadata | Composer caches and existing `composer.lock` files are unaffected, and anyone who already installed keeps the code |
+
+**⚠️ Get the incident-response credentials in place before the first release, not during the incident.** The credential that publishes and the credential that withdraws are usually not the same thing:
+
+- **python · node · ruby** publish via OIDC, and this repository stores **no secret at all** for them (`release-readiness.sh` shows `secrets=na`). There is therefore nothing anywhere that can withdraw a release — a yank/deprecate needs an interactive, logged-in account session, and PyPI's yank is web-UI only. Confirm you can log in to pypi.org, npmjs.com and rubygems.org — including 2FA and recovery codes — **before** you publish.
+- **rust · dotnet** can yank/unlist with an API token, but those tokens live in GitHub Actions secrets, where you cannot read them back. Keep a usable copy, or make sure you can log in to crates.io and nuget.org.
+- **java · kotlin** have no withdrawal mechanism whatsoever. All of your leverage is in the Central Portal staging step, so do not skip the manual review there.
+- **php** withdrawal is a `git push --delete` against the mirror repository, so `PHP_SPLIT_TOKEN` (or your own account access to `xzawed/keycloak-sdk-php`) is what you need.
+
+---
+
+## §7. Make the First Tag a Release Candidate
+
+All nine registries support prerelease versions, and most resolvers exclude them from ordinary version ranges by default. Since no release workflow here has ever executed (§5), each language's first tag is a **first execution of an irreversible pipeline**. Spend a release candidate on it instead of `0.1.0`: if the OIDC claim does not match, the GPG public key was never distributed, or the PHP mirror does not exist, you find that out on `0.1.0-rc.1` and `0.1.0` is still yours to use.
+
+| Language | Version to write in the manifest | Tag to push | Resolver behaviour |
+|---|---|---|---|
+| Python | `0.1.0rc1` (PEP 440 normal form) | `py-v0.1.0rc1` | `pip install keycloak-sdk` skips prereleases; `--pre` or an exact pin opts in |
+| .NET | — (injected from the tag) | `dotnet-v0.1.0-rc.1` | `dotnet add package` skips prereleases unless given `--prerelease` |
+| Ruby | `0.1.0.rc1` (a letter in a segment marks it prerelease) | `ruby-v0.1.0.rc1` | `gem install` skips it unless given `--prerelease` |
+| Node | `0.1.0-rc.1` (SemVer) | `node-v0.1.0-rc.1` | `^0.1.0` excludes prereleases — see the dist-tag note below |
+| Rust | `0.1.0-rc.1` (SemVer) | `rust-v0.1.0-rc.1` | `^0.1.0` excludes prereleases |
+| Java | — (injected from the tag) | `v0.1.0-RC1` | Maven has no prerelease concept; this is simply a different, lower-sorting coordinate — and just as immutable |
+| Kotlin | `0.1.0-RC1` | `kotlin-v0.1.0-RC1` | Same as Java |
+| Go | — (the tag is the version) | `go/v0.1.0-rc.1` | `go get …@latest` prefers released versions and will not select a prerelease |
+| PHP | — (the tag is the version) | `php-v0.1.0-rc.1` → mirror tag `v0.1.0-rc.1` | Composer's default `minimum-stability: stable` excludes it; `composer require xzawed/keycloak-sdk:^0.1@rc` opts in |
+
+**npm's dist-tag is handled for you.** npm gives the `latest` dist-tag to whatever you publish unless `npm publish` is passed `--tag`, which would have made an RC the default install for everyone. `node-release.yml` now derives the dist-tag from the version instead: a SemVer prerelease (anything containing a hyphen — `0.1.0-rc.1`) publishes under `rc`, and a normal version publishes under `latest`. So a bare `npm install @xzawed/keycloak-sdk` keeps resolving to the last non-prerelease, and the RC is opt-in via `npm install @xzawed/keycloak-sdk@rc`. Nothing to do by hand — should you ever need to move the pointer yourself, it is `npm dist-tag add @xzawed/keycloak-sdk@<real-version> latest`.
+
+**⚠️ `release-trigger.sh` rejects prerelease versions today** — it validates `X.Y.Z` exactly and exits non-zero on anything else. For an RC, skip step 4 of §4 and take the tag spelling from the table above; nothing else in the runbook changes.
+
+**⚠️ The tag↔version guard is literal string equality** (§1), so for the five manual-bump languages the manifest must carry exactly the spelling in the "Version to write" column — `0.1.0rc1` for Python, not `0.1.0-rc1`; `0.1.0.rc1` for Ruby, not `0.1.0-rc.1`.
+
+**⚠️ An RC still burns its own coordinate.** `0.1.0-rc.1` is as unrepublishable as `0.1.0` — if the RC needs a fix, go to `-rc.2`. And on Maven Central an RC is a permanent public artifact like any other; it protects `0.1.0`, it does not make the upload reversible.

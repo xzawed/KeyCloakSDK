@@ -24,6 +24,24 @@ py_line="$(printf '%s\n' "$out" | grep '^python')"
 assert_contains "$py_line" "ℹ️ 수동 확인" "python OIDC → pending-publisher 수동확인 안내"
 assert_contains "$py_line" "pending-publisher" "python OIDC → pending-publisher 문구 포함"
 
+# N2: split-token 언어(php)는 PHP_SPLIT_TOKEN이 있어도 실제 게시 주체가 미러 저장소
+# xzawed/keycloak-sdk-php이고, 그 저장소 신설·Packagist 등록은 API로 확인 불가한 사람 작업이라
+# "준비완료"를 자동표시하지 않는다. 현 리포는 시크릿 미설정이라 그냥 실행하면 "설정필요: 시크릿"에
+# 가려지므로, 시크릿이 실제로 있는 상태를 외부호출 stub으로 재현해 다운그레이드를 고정한다.
+rr_secret_set() { return 0; }   # 모든 시크릿 존재
+rr_url_exists()  { return 1; }  # 확인된 미게시(4xx)
+rr_tag_exists()  { return 1; }  # 태그 없음
+php_row="$(rr_row php)"
+assert_contains "$php_row" "secrets=set" "stub: php 시크릿 존재 상태 재현"
+assert_not_contains "$php_row" "✅ 준비완료" "php는 시크릿만으로 준비완료가 되지 않음"
+assert_contains "$php_row" "ℹ️ 수동 확인" "php split-token → 수동확인 안내"
+assert_contains "$php_row" "xzawed/keycloak-sdk-php" "php split-token → 미러 저장소 명시"
+assert_contains "$php_row" "Packagist" "php split-token → Packagist 등록 명시"
+# 대조군(없으면 "전 언어 다운그레이드" 회귀를 못 잡는다): 같은 stub에서 api-token(rust)은 그대로
+# 준비완료, OIDC(node)는 pending-publisher — case 분기가 auth 값별로만 적용됨을 고정.
+assert_contains "$(rr_row rust)" "✅ 준비완료" "api-token(rust)은 준비완료 유지"
+assert_contains "$(rr_row node)" "pending-publisher" "OIDC(node)는 pending-publisher 유지"
+
 # 상태 불변식: readiness는 git/파일을 변경하는 라인이 없어야 함
 assert_eq "0" "$(grep -cE '^[[:space:]]*(git[[:space:]]+(tag|push|commit|add|checkout)|rm|mv|>[^&])' "$SH" || true)" "readiness는 상태변경 없음"
 # 시크릿 값 출력 금지: gh secret list는 --json 없이 이름만; 값 echo 패턴 부재

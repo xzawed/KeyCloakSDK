@@ -57,7 +57,8 @@ export class AuthClient {
       validator ??
       JwtValidator.forJwksUri(this.#endpoints.jwks, {
         issuer: this.#endpoints.issuer,
-        audience: cfg.clientId,
+        // expectedAudience가 설정되면 그 값을, 아니면 clientId를 기대한다(기존 동작).
+        audience: cfg.expectedAudience ?? cfg.clientId,
         allowedAlgs: [...cfg.signatureAlgorithms],
         clockSkewSeconds: cfg.clockSkewSeconds,
         jwksMinRefetchSeconds: cfg.jwksMinRefetchSeconds,

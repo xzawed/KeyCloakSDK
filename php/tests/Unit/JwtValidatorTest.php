@@ -21,7 +21,7 @@ final class JwtValidatorTest extends TestCase
 {
     /** @var array{priv:string,jwk:array<string,mixed>} */
     private array $key;
-    private string $iss = 'http://kc:8080/realms/it-realm';
+    private string $iss = 'https://kc:8080/realms/it-realm';
 
     protected function setUp(): void
     {
@@ -46,9 +46,14 @@ final class JwtValidatorTest extends TestCase
         $this->key = ['priv' => $priv, 'jwk' => $jwk];
     }
 
-    private function validator(): JwtValidator
+    private function validator(?string $expectedAudience = null): JwtValidator
     {
-        $cfg = new KeycloakConfig(serverUrl: 'http://kc:8080', realm: 'it-realm', clientId: 'it-client');
+        $cfg = new KeycloakConfig(
+            serverUrl: 'https://kc:8080',
+            realm: 'it-realm',
+            clientId: 'it-client',
+            expectedAudience: $expectedAudience,
+        );
         $f = new HttpFactory();
         $jwk = $this->key['jwk'];
         $http = new class ($jwk) implements ClientInterface {
@@ -60,7 +65,7 @@ final class JwtValidatorTest extends TestCase
                 return new Response(200, [], json_encode(['keys' => [$this->jwk]], JSON_THROW_ON_ERROR));
             }
         };
-        $store = new JwksStore('http://kc:8080/realms/it-realm/protocol/openid-connect/certs', $http, $f);
+        $store = new JwksStore('https://kc:8080/realms/it-realm/protocol/openid-connect/certs', $http, $f);
 
         return new JwtValidator($cfg, new OidcEndpoints($cfg), $store);
     }
@@ -108,6 +113,30 @@ final class JwtValidatorTest extends TestCase
         $c['aud'] = ['other-client'];
         $this->expectException(TokenValidationError::class);
         $this->validator()->validate($this->sign($c));
+    }
+
+    public function testExpectedAudienceUnsetFallsBackToClientId(): void
+    {
+        // 미설정이면 종전 동작 그대로 — clientId를 담은 aud는 통과, 담지 않은 aud는 거부.
+        $vt = $this->validator()->validate($this->sign($this->goodClaims()));
+        self::assertContains('it-client', $vt->audience);
+
+        $c = $this->goodClaims();
+        $c['aud'] = ['my-api'];
+        $this->expectException(TokenValidationError::class);
+        $this->validator()->validate($this->sign($c));
+    }
+
+    public function testExpectedAudienceReplacesClientId(): void
+    {
+        // 설정하면 기대 aud가 그 값으로 바뀐다 — clientId만 담은 토큰은 더 이상 통과하지 않는다.
+        $c = $this->goodClaims();
+        $c['aud'] = ['my-api', 'account'];
+        $vt = $this->validator('my-api')->validate($this->sign($c));
+        self::assertContains('my-api', $vt->audience);
+
+        $this->expectException(TokenValidationError::class);
+        $this->validator('my-api')->validate($this->sign($this->goodClaims()));
     }
 
     public function testRejectsExpired(): void
@@ -198,7 +227,7 @@ final class JwtValidatorTest extends TestCase
 
     public function testRejectsUnsupportedJwksKeyKty(): void
     {
-        $cfg = new KeycloakConfig(serverUrl: 'http://kc:8080', realm: 'it-realm', clientId: 'it-client');
+        $cfg = new KeycloakConfig(serverUrl: 'https://kc:8080', realm: 'it-realm', clientId: 'it-client');
         $jwk = ['kty' => 'weird', 'kid' => 'test-kid', 'alg' => 'RS256'];
         $http = new class ($jwk) implements ClientInterface {
             /** @param array<string,mixed> $jwk */
@@ -210,7 +239,7 @@ final class JwtValidatorTest extends TestCase
             }
         };
         $f = new HttpFactory();
-        $store = new JwksStore('http://kc:8080/realms/it-realm/protocol/openid-connect/certs', $http, $f);
+        $store = new JwksStore('https://kc:8080/realms/it-realm/protocol/openid-connect/certs', $http, $f);
         $validator = new JwtValidator($cfg, new OidcEndpoints($cfg), $store);
         $this->expectException(TokenValidationError::class);
         $validator->validate($this->sign($this->goodClaims()));
@@ -223,7 +252,7 @@ final class JwtValidatorTest extends TestCase
         // (\TypeError는 \Error 상속이지 \Exception이 아니다). validate()는 이를 TokenValidationError로
         // 반드시 변환해야 한다(경계 불변식) — 진짜 키쌍으로 서명한 문법적으로 유효한 토큰을 사용해
         // 서명 검증 이전에 파싱 단계에서 \TypeError가 나는 경로를 정확히 행사한다.
-        $cfg = new KeycloakConfig(serverUrl: 'http://kc:8080', realm: 'it-realm', clientId: 'it-client');
+        $cfg = new KeycloakConfig(serverUrl: 'https://kc:8080', realm: 'it-realm', clientId: 'it-client');
         $jwk = $this->key['jwk'];
         $jwk['n'] = ['x']; // 비-스칼라 n — string 타입힌트 위반
         $http = new class ($jwk) implements ClientInterface {
@@ -236,7 +265,7 @@ final class JwtValidatorTest extends TestCase
             }
         };
         $f = new HttpFactory();
-        $store = new JwksStore('http://kc:8080/realms/it-realm/protocol/openid-connect/certs', $http, $f);
+        $store = new JwksStore('https://kc:8080/realms/it-realm/protocol/openid-connect/certs', $http, $f);
         $validator = new JwtValidator($cfg, new OidcEndpoints($cfg), $store);
         $this->expectException(TokenValidationError::class);
         $validator->validate($this->sign($this->goodClaims()));

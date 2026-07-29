@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from ._internal.secrets import mask
 from .client import KeycloakClient
 from .config import KeycloakConfig
 from .exceptions import (
@@ -45,4 +46,7 @@ __all__ = [
     "TokenValidationError",
     "ValidatedToken",
     "__version__",
+    # 시크릿 마스킹 유틸 — Java `Secrets.mask`가 공개 API인 것과 동형(§4). 예제·문서가
+    # `keycloak_sdk._internal.secrets`를 직접 임포트하도록 가르치던 것을 대체한다.
+    "mask",
 ]

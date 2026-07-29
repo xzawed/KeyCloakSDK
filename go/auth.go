@@ -91,7 +91,8 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 // When expectedNonce is non-empty (the nonce returned by
 // CreateAuthorizationRequest), the returned id_token is fully signature-
 // validated (iss/aud/exp via the hardened Validator — Keycloak id_token aud ==
-// clientID, which the Validator is already configured for) and its nonce claim
+// clientID, which is what the Validator expects unless Config.ExpectedAudience
+// overrides it) and its nonce claim
 // is compared against expectedNonce — OIDC nonce replay protection. A mismatch,
 // a missing id_token, or a validation failure all fail closed. An empty
 // expectedNonce skips id_token validation (custom no-nonce flows).
@@ -110,7 +111,8 @@ func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVe
 }
 
 // verifyNonce validates the id_token and checks its nonce claim against
-// expectedNonce. Reuses the access-token Validator (aud == clientID).
+// expectedNonce. Reuses the access-token Validator (aud == Config.ExpectedAudience,
+// i.e. clientID unless overridden).
 func (a *AuthClient) verifyNonce(ctx context.Context, idToken, expectedNonce string) error {
 	if idToken == "" {
 		return &AuthError{Msg: "authorization code exchange failed: missing id_token for nonce validation"}

@@ -14,12 +14,12 @@ jobs:
       run:
         working-directory: kotlin
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
       # 단위테스트 100개 + 커버리지 게이트(로직 모듈 라인≥90/브랜치≥85 — 네트워크 경계
       # AuthClient/admin.*/KeycloakClient omit) + ktlint(무경고). Docker 불필요(integrationTest는 별도 잡).
       - run: ./gradlew build test koverVerify ktlintCheck
@@ -32,11 +32,62 @@ jobs:
       run:
         working-directory: kotlin
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
       - name: Integration E2E (Docker, 실제 Keycloak 26.6 — FullFlowIT)
         run: ./gradlew integrationTest
+
+  # SECURITY.md가 약속하는 "언어별 의존성 취약점 감사"의 Kotlin 구현 — ci.yml(Java)의 동형 잡이다.
+  # OWASP dependency-check(Gradle 플러그인)를 쓰지 않는 이유는 ci.yml의 dependency-audit 주석과 같다
+  # (NVD API 키 없이는 레이트리밋으로 상시 실패 — 이 저장소엔 Actions 시크릿이 없다). 덧붙여 그
+  # 플러그인은 build.gradle.kts 수정을 요구하지만, 키 없는 OSV 대조는 워크플로만으로 완결된다.
+  dependency-audit:
+    name: Dependency CVE audit (OSV — Kotlin)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kotlin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
+      - name: 해석된 런타임 의존성 좌표 수집(runtimeClasspath)
+        # `dependencies` 리포트의 트리 출력을 파싱한다: `|    +--- g:a:v (*)` 꼴이며 (*)/(c)/(n)
+        # 마커는 버리고, 버전 충돌 표기(`g:a:1.0 -> 1.2`)가 있으면 해석된 오른쪽 버전을 쓴다.
+        run: |
+          set -euo pipefail
+          ./gradlew -q dependencies --configuration runtimeClasspath > dep-tree.txt
+          grep -e '--- ' dep-tree.txt \
+            | sed -e 's/^.*--- //' -e 's/ (\*)$//' -e 's/ (c)$//' -e 's/ (n)$//' \
+            | awk -F' -> ' '{ if (NF == 2) { split($1, b, ":"); print b[1]":"b[2]":"$2 } else { print $0 } }' \
+            | awk -F: 'NF == 3 && $1 != "" && $3 != "" { print $1":"$2":"$3 }' \
+            | sort -u > pkgs.txt
+          echo "수집한 Maven 좌표 $(wc -l < pkgs.txt)개"
+      - name: OSV.dev 대조(알려진 취약점 있으면 실패)
+        # ⚠️ fail-open 금지(php-ci.yml 커버리지 게이트와 같은 원칙): 목록이 비었거나 응답 개수가
+        # 어긋나면 "취약점 없음"이 아니라 **측정 실패**이므로 통과시키지 않는다.
+        run: |
+          set -euo pipefail
+          test -s pkgs.txt || { echo "::error::의존성 좌표 목록이 비었다 — 감사 실패(fail-closed)"; exit 1; }
+          jq -Rn '{queries: [inputs | split(":") | {package: {ecosystem: "Maven", name: (.[0] + ":" + .[1])}, version: .[2]}]}' \
+            < pkgs.txt > osv-query.json
+          curl -sS --fail-with-body -X POST -H 'Content-Type: application/json' \
+            --data @osv-query.json https://api.osv.dev/v1/querybatch > osv-result.json
+          n_q=$(wc -l < pkgs.txt)
+          n_r=$(jq '.results | length' osv-result.json)
+          [ "$n_q" -eq "$n_r" ] || { echo "::error::OSV 응답 수($n_r) != 질의 수($n_q) — 감사 실패(fail-closed)"; exit 1; }
+          hits=$(paste pkgs.txt <(jq -r '.results[] | ((.vulns // []) | map(.id) | join(","))' osv-result.json) \
+            | awk -F'\t' '$2 != ""')
+          if [ -n "$hits" ]; then
+            echo "::error::알려진 취약점이 있는 의존성이 있습니다(좌표 <TAB> OSV/GHSA id):"
+            echo "$hits"
+            exit 1
+          fi
+          echo "OK: Maven 좌표 ${n_q}개에 알려진 OSV 취약점 없음"

@@ -6,7 +6,9 @@
 //! ```bash
 //! cd rust && cargo run --example quickstart
 //! ```
-use keycloak::types::UserRepresentation;
+// representation 타입은 `keycloak_sdk::types`로 재노출된다 — 소비자가 `keycloak` 크레이트를
+// 자기 Cargo.toml에 직접 추가할 필요 없음(재노출이 없으면 게시된 이 예제가 컴파일되지 않는다).
+use keycloak_sdk::types::UserRepresentation;
 use keycloak_sdk::{KeycloakClient, KeycloakConfig};
 
 #[tokio::main]

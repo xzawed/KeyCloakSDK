@@ -33,6 +33,12 @@ internal class JwtValidatorTest {
     private val issuer = "https://kc.example.com/realms/r"
     private val audience = "app"
 
+    // Keycloak 서버 베이스 URL(realm 경로 제외) — KeycloakConfig 조립에만 쓴다.
+    private val serverUrl = "https://kc.example.com"
+
+    // clientId("app")가 아닌 리소스 서버 audience — expectedAudience 재정의 경로를 exercise한다.
+    private val apiAudience = "my-api"
+
     private fun rsaKey(kid: String = "k1"): RSAKey = RSAKeyGenerator(2048).keyID(kid).generate()
 
     private fun claims(
@@ -252,6 +258,55 @@ internal class JwtValidatorTest {
         }
 
     @Test
+    fun `expectedAudience unset falls back to clientId and a token carrying it is accepted`() =
+        runTest {
+            // 기본 경로: config.expectedAudience 미설정 → 기대 audience는 clientId(기존 동작과 동일).
+            val config = KeycloakConfig(serverUrl = serverUrl, realm = "r", clientId = audience)
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, config.expectedAudience)
+            val token = signedRs256(key, claims(aud = listOf(audience)))
+
+            assertEquals(issuer, validator.validate(token).issuer)
+        }
+
+    @Test
+    fun `expectedAudience unset still rejects a token whose aud lacks the clientId`() =
+        runTest {
+            val config = KeycloakConfig(serverUrl = serverUrl, realm = "r", clientId = audience)
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, config.expectedAudience)
+            val token = signedRs256(key, claims(aud = listOf(apiAudience)))
+
+            assertFailsWith<TokenValidationException> { validator.validate(token) }
+        }
+
+    @Test
+    fun `expectedAudience set accepts a token carrying that audience instead of the clientId`() =
+        runTest {
+            // 기본 realm(audience 매퍼 없음)·리소스 서버 사례: aud가 client id가 아니라 API 이름이다.
+            val config =
+                KeycloakConfig(serverUrl = serverUrl, realm = "r", clientId = audience, expectedAudience = apiAudience)
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, config.expectedAudience)
+            val token = signedRs256(key, claims(aud = listOf(apiAudience)))
+
+            assertTrue(validator.validate(token).audience.contains(apiAudience))
+        }
+
+    @Test
+    fun `expectedAudience set rejects a token carrying only the clientId`() =
+        runTest {
+            // 재정의가 실제로 기대값을 바꾼다는 증거 — 이 프로브가 없으면 clientId fallback 회귀를 못 잡는다.
+            val config =
+                KeycloakConfig(serverUrl = serverUrl, realm = "r", clientId = audience, expectedAudience = apiAudience)
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, config.expectedAudience)
+            val token = signedRs256(key, claims(aud = listOf(audience)))
+
+            assertFailsWith<TokenValidationException> { validator.validate(token) }
+        }
+
+    @Test
     fun `token expired by less than clock skew is accepted`() =
         runTest {
             val key = rsaKey()
@@ -308,7 +363,7 @@ internal class JwtValidatorTest {
     fun `forRealm builds a validator without performing network IO`() {
         // JWKSourceBuilder.build()는 지연 조회다 — forRealm() 자체는 네트워크를 타지 않는다(non-suspend
         // 팩토리인 이유). 첫 validate() 호출 시점에야 JWKS 블로킹 조회가 발생한다.
-        val config = KeycloakConfig(serverUrl = "https://kc.example.com", realm = "r", clientId = "app")
+        val config = KeycloakConfig(serverUrl = serverUrl, realm = "r", clientId = "app")
         val endpoints = OidcEndpoints.forRealm(config)
 
         val validator = JwtValidator.forRealm(endpoints, config, audience)
@@ -318,7 +373,7 @@ internal class JwtValidatorTest {
 
     @Test
     fun `forRealm wraps an invalid JWKS URI as TokenValidationException`() {
-        val config = KeycloakConfig(serverUrl = "https://kc.example.com", realm = "r", clientId = "app")
+        val config = KeycloakConfig(serverUrl = serverUrl, realm = "r", clientId = "app")
         val badEndpoints =
             OidcEndpoints(
                 issuer = issuer,
