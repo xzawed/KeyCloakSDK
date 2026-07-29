@@ -2,8 +2,10 @@ name: php-release
 on:
   push:
     tags: ['php-v*']
+# 최소권한 기본값: 워크플로 레벨에 write를 두면 verify/integration 잡까지 쓰기 권한을 물려받는다.
+# GitHub Release를 만드는 split 잡에만 잡 레벨로 올린다.
 permissions:
-  contents: write
+  contents: read
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -59,6 +61,8 @@ jobs:
     name: Split php/ → xzawed/keycloak-sdk-php (Packagist source)
     needs: [verify, integration] # 미러 push(=Packagist 게시)는 되돌릴 수 없다 — 두 게이트 통과 후에만
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # `gh release create` — 미러 저장소 push는 PHP_SPLIT_TOKEN을 쓰므로 무관하다
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

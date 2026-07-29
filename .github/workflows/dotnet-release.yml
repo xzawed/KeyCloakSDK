@@ -2,8 +2,10 @@ name: dotnet-release
 on:
   push:
     tags: ['dotnet-v*']
+# 최소권한 기본값: 워크플로 레벨에 write를 두면 verify/integration 잡까지 쓰기 권한을 물려받는다.
+# GitHub Release를 만드는 잡에만 잡 레벨로 올린다.
 permissions:
-  contents: write
+  contents: read
 jobs:
   # 발행 전 게이트(2): 단위테스트는 `Category!=Integration`이라 auth/admin 네트워크 경계를
   # 건드리지 않는다 — dotnet-ci.yml의 integration 잡과 동일한 실 Keycloak E2E를 태그 경로에서도 돌린다.
@@ -24,6 +26,8 @@ jobs:
   release:
     needs: integration # 통합 E2E 통과 후에만 pack/push
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # `gh release create` — 이 잡만 쓰기가 필요하다
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

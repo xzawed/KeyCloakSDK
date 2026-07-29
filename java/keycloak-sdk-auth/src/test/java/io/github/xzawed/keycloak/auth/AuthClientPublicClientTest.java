@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Test;
 // 전부 send() 이전에 실패하므로 네트워크 불필요.
 class AuthClientPublicClientTest {
   // RFC 7636 code_verifier는 43~128자여야 한다(Nimbus CodeVerifier가 강제).
+  private static final String REFRESH_TOKEN = "some-refresh-token";
+  private static final String ACCESS_TOKEN = "some-access-token";
   private static final String VERIFIER = "verifier-value-that-is-at-least-43-characters-long";
 
   private AuthClient publicClient() {
@@ -40,33 +42,33 @@ class AuthClientPublicClientTest {
   @Test void refresh_publicClient_throwsActionableConfigException() {
     AuthClient a = publicClient();
     KeycloakConfigException e =
-        assertThrows(KeycloakConfigException.class, () -> a.refresh("some-refresh-token"));
+        assertThrows(KeycloakConfigException.class, () -> a.refresh(REFRESH_TOKEN));
     assertActionable(e, "token refresh");
   }
 
   @Test void logout_publicClient_throwsActionableConfigException() {
     AuthClient a = publicClient();
     KeycloakConfigException e =
-        assertThrows(KeycloakConfigException.class, () -> a.logout("some-refresh-token"));
+        assertThrows(KeycloakConfigException.class, () -> a.logout(REFRESH_TOKEN));
     assertActionable(e, "logout");
   }
 
   @Test void introspect_publicClient_throwsActionableConfigException() {
     AuthClient a = publicClient();
     KeycloakConfigException e =
-        assertThrows(KeycloakConfigException.class, () -> a.introspect("some-access-token"));
+        assertThrows(KeycloakConfigException.class, () -> a.introspect(ACCESS_TOKEN));
     assertActionable(e, "token introspection");
   }
 
   // 요청 조립 헬퍼도 동일하게 실패해야 한다(logout/introspect의 send()는 이 지점을 넘지 못한다).
   @Test void buildLogoutRequest_publicClient_throwsBeforeAssemblingRequest() {
     AuthClient a = publicClient();
-    assertThrows(KeycloakConfigException.class, () -> a.buildLogoutRequest("some-refresh-token"));
+    assertThrows(KeycloakConfigException.class, () -> a.buildLogoutRequest(REFRESH_TOKEN));
   }
 
   @Test void buildIntrospectionRequest_publicClient_throwsBeforeAssemblingRequest() {
     AuthClient a = publicClient();
-    assertThrows(KeycloakConfigException.class, () -> a.buildIntrospectionRequest("some-access-token"));
+    assertThrows(KeycloakConfigException.class, () -> a.buildIntrospectionRequest(ACCESS_TOKEN));
   }
 
   // 인자 검증(null)은 clientAuth() 가드보다 먼저다 — 퍼블릭 클라이언트라도 계약 위반이 우선 보고된다.
