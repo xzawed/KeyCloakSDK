@@ -29,7 +29,8 @@ func New(cfg Config) (*Client, error) {
 	cfg = cfg.withDefaults()
 	ep := oidcEndpoints(cfg)
 	v := newValidator(validatorOptions{
-		jwksURI: ep.jwks, issuer: ep.issuer, audience: cfg.ClientID,
+		// withDefaults has already resolved ExpectedAudience to ClientID when unset.
+		jwksURI: ep.jwks, issuer: ep.issuer, audience: cfg.ExpectedAudience,
 		allowedAlgs: cfg.signatureAlgorithms(), clockSkewSec: cfg.ClockSkew,
 		minRefetch: time.Duration(cfg.JwksMinRefetch) * time.Second,
 		// Bound the JWKS fetch by the configured read timeout (a hung IdP must not

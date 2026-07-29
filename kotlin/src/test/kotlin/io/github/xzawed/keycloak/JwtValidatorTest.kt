@@ -252,6 +252,55 @@ internal class JwtValidatorTest {
         }
 
     @Test
+    fun `expectedAudience unset falls back to clientId and a token carrying it is accepted`() =
+        runTest {
+            // 기본 경로: config.expectedAudience 미설정 → 기대 audience는 clientId(기존 동작과 동일).
+            val config = KeycloakConfig(serverUrl = "https://kc.example.com", realm = "r", clientId = audience)
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, config.expectedAudience)
+            val token = signedRs256(key, claims(aud = listOf(audience)))
+
+            assertEquals(issuer, validator.validate(token).issuer)
+        }
+
+    @Test
+    fun `expectedAudience unset still rejects a token whose aud lacks the clientId`() =
+        runTest {
+            val config = KeycloakConfig(serverUrl = "https://kc.example.com", realm = "r", clientId = audience)
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, config.expectedAudience)
+            val token = signedRs256(key, claims(aud = listOf("my-api")))
+
+            assertFailsWith<TokenValidationException> { validator.validate(token) }
+        }
+
+    @Test
+    fun `expectedAudience set accepts a token carrying that audience instead of the clientId`() =
+        runTest {
+            // 기본 realm(audience 매퍼 없음)·리소스 서버 사례: aud가 client id가 아니라 API 이름이다.
+            val config =
+                KeycloakConfig(serverUrl = "https://kc.example.com", realm = "r", clientId = audience, expectedAudience = "my-api")
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, config.expectedAudience)
+            val token = signedRs256(key, claims(aud = listOf("my-api")))
+
+            assertTrue(validator.validate(token).audience.contains("my-api"))
+        }
+
+    @Test
+    fun `expectedAudience set rejects a token carrying only the clientId`() =
+        runTest {
+            // 재정의가 실제로 기대값을 바꾼다는 증거 — 이 프로브가 없으면 clientId fallback 회귀를 못 잡는다.
+            val config =
+                KeycloakConfig(serverUrl = "https://kc.example.com", realm = "r", clientId = audience, expectedAudience = "my-api")
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, config.expectedAudience)
+            val token = signedRs256(key, claims(aud = listOf(audience)))
+
+            assertFailsWith<TokenValidationException> { validator.validate(token) }
+        }
+
+    @Test
     fun `token expired by less than clock skew is accepted`() =
         runTest {
             val key = rsaKey()

@@ -18,6 +18,11 @@ pub struct KeycloakConfig {
     /// 미해결 kid(키 회전)로 인한 JWKS 재조회의 최소 간격(초, 기본 60) — DoS 증폭 상한.
     /// 위조 kid를 연속 주입해도 이 간격보다 자주 IdP를 때리지 못한다.
     pub jwks_min_refetch_secs: u64,
+    /// `validate()`가 토큰 `aud`에서 찾을 값. `None`이면 `client_id`를 기대한다(기존 동작).
+    /// 기본 realm은 client-credentials 토큰 `aud`에 client_id를 넣지 않으므로(audience 매퍼를
+    /// 추가해야 들어간다), 리소스 서버처럼 API 이름이 aud면 여기에 그 값을 설정한다.
+    /// 같은 검증기를 쓰는 `exchange_code`의 id_token 검사에도 함께 적용된다.
+    pub expected_audience: Option<String>,
     pub redirect_uri: Option<String>,
 }
 
@@ -51,6 +56,7 @@ impl KeycloakConfig {
             read_timeout: Duration::from_secs(30),
             clock_skew: 30,
             jwks_min_refetch_secs: 60,
+            expected_audience: None,
             redirect_uri: None,
         })
     }
@@ -76,6 +82,12 @@ impl KeycloakConfig {
     #[must_use]
     pub fn with_jwks_min_refetch_secs(mut self, secs: u64) -> Self {
         self.jwks_min_refetch_secs = secs;
+        self
+    }
+    /// `validate()`가 토큰 `aud`에서 기대할 값을 설정한다(미설정이면 `client_id`).
+    #[must_use]
+    pub fn with_expected_audience(mut self, audience: impl Into<String>) -> Self {
+        self.expected_audience = Some(audience.into());
         self
     }
 }
@@ -111,6 +123,16 @@ mod tests {
         let c = KeycloakConfig::new("http://kc:8080", "r", "c").unwrap();
         assert_eq!(c.jwks_min_refetch_secs, 60);
         assert_eq!(c.with_jwks_min_refetch_secs(120).jwks_min_refetch_secs, 120);
+    }
+
+    #[test]
+    fn expected_audience_default_none_and_custom() {
+        let c = KeycloakConfig::new("http://kc:8080", "r", "c").unwrap();
+        assert_eq!(c.expected_audience, None); // 미설정 → JwtValidator가 client_id로 폴백
+        assert_eq!(
+            c.with_expected_audience("api://orders").expected_audience,
+            Some("api://orders".to_string())
+        );
     }
 
     #[test]

@@ -48,7 +48,11 @@ impl JwtValidator {
         }
         Ok(Self {
             issuer: endpoints.issuer(),
-            audience: config.client_id.clone(),
+            // expected_audience가 설정되면 그 값을, 아니면 client_id를 기대한다(기존 동작).
+            audience: config
+                .expected_audience
+                .clone()
+                .unwrap_or_else(|| config.client_id.clone()),
             clock_skew: config.clock_skew,
             algorithms,
             jwks,
@@ -175,6 +179,12 @@ mod tests {
     }
 
     async fn validator_for(fx: &Fixture) -> JwtValidator {
+        let cfg = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client").unwrap();
+        validator_for_config(fx, cfg).await
+    }
+
+    /// `validator_for`의 config 주입 변형 — expected_audience 등 config 배선을 검증할 때 쓴다.
+    async fn validator_for_config(fx: &Fixture, cfg: KeycloakConfig) -> JwtValidator {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/certs"))
@@ -183,7 +193,6 @@ mod tests {
             .await;
         // server 수명: MockServer는 drop되면 종료되므로, validator의 JWKS fetch가 성립하도록
         // Box::leak로 유지(테스트 전용 — 실제 코드 아님).
-        let cfg = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client").unwrap();
         let endpoints = OidcEndpoints::new(&cfg);
         let jwks_uri = format!("{}/certs", Box::leak(Box::new(server)).uri());
         let store = JwksStore::new(jwks_uri, reqwest::Client::new(), 60);
@@ -280,6 +289,45 @@ mod tests {
         c["aud"] = json!(["other-client"]);
         assert!(matches!(
             v.validate(&sign(&fx, c, "test-kid")).await,
+            Err(KeycloakError::TokenValidation(_))
+        ));
+    }
+
+    /// expected_audience 미설정(기본): 기대 aud는 client_id — 기존 동작 그대로.
+    #[tokio::test]
+    async fn expected_audience_unset_falls_back_to_client_id() {
+        let fx = make_key();
+        let v = validator_for(&fx).await;
+        // aud에 client_id가 있으면 통과.
+        assert!(
+            v.validate(&sign(&fx, good_claims(), "test-kid"))
+                .await
+                .is_ok()
+        );
+        // 없으면 여전히 거부.
+        let mut c = good_claims();
+        c["aud"] = json!(["api://orders"]);
+        assert!(matches!(
+            v.validate(&sign(&fx, c, "test-kid")).await,
+            Err(KeycloakError::TokenValidation(_))
+        ));
+    }
+
+    /// expected_audience 설정: 기대 aud가 client_id를 *대체*한다(리소스 서버 케이스 —
+    /// aud가 요청 클라이언트가 아니라 API 이름인 토큰).
+    #[tokio::test]
+    async fn expected_audience_overrides_client_id() {
+        let fx = make_key();
+        let cfg = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
+            .unwrap()
+            .with_expected_audience("api://orders");
+        let v = validator_for_config(&fx, cfg).await;
+        let mut c = good_claims();
+        c["aud"] = json!(["api://orders", "account"]);
+        assert!(v.validate(&sign(&fx, c, "test-kid")).await.is_ok());
+        // client_id만 담은 토큰은 거부 — 추가가 아니라 대체임을 증명.
+        assert!(matches!(
+            v.validate(&sign(&fx, good_claims(), "test-kid")).await,
             Err(KeycloakError::TokenValidation(_))
         ));
     }

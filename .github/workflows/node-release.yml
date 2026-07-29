@@ -90,5 +90,17 @@ jobs:
       - run: npm ci
       - name: Build (tsc → dist)
         run: npm run build
+      # ⚠️ `--tag` 없이 publish하면 npm이 무조건 `latest` dist-tag를 붙인다 — RC를 그대로 올리면
+      # 맨손 `npm i @xzawed/keycloak-sdk`가 RC를 받게 된다. DEPLOY.md §7은 각 언어의 첫 태그를 RC로
+      # 권하므로 런북과 정면으로 충돌하는 지점이었다. dist-tag를 하드코딩하지 않고 버전에서 파생한다:
+      # SemVer prerelease만 하이픈을 포함하므로(`0.1.0-rc.1`) 그때만 `rc`, 정식 버전은 `latest`.
+      # 버전은 태그에서 뽑되, 위 정합성 가드가 태그↔package.json `version` 일치를 이미 보증한 뒤다.
       - name: Publish to npm (Trusted Publishing / OIDC + provenance)
-        run: npm publish --provenance --access public
+        run: |
+          VERSION="${GITHUB_REF_NAME#node-v}"
+          case "$VERSION" in
+            *-*) DIST_TAG='rc' ;;
+            *) DIST_TAG='latest' ;;
+          esac
+          echo "publishing ${VERSION} under dist-tag '${DIST_TAG}'"
+          npm publish --provenance --access public --tag "$DIST_TAG"

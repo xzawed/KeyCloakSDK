@@ -188,14 +188,17 @@ public class AuthClient internal constructor(
         jwtValidator?.let { return it }
         synchronized(validatorLock) {
             jwtValidator?.let { return it }
-            val created = JwtValidator.forRealm(endpoints, config, config.clientId)
+            val created = JwtValidator.forRealm(endpoints, config, config.expectedAudience)
             jwtValidator = created
             return created
         }
     }
 
     // id_token의 nonce 클레임을 대조하기 전에 realm JWKS로 서명·iss·aud·exp까지 강화 검증한다(ensureValidator
-    // 재사용 — 액세스 토큰과 id_token 모두 aud=config.clientId이므로 검증기를 공유해도 안전하다).
+    // 재사용 — 기본값(aud=config.clientId)에서는 액세스 토큰과 id_token이 기대 audience를 공유해 안전하다).
+    // ⚠️ config.expectedAudience를 clientId가 아닌 값(리소스 서버 이름 등)으로 재정의하면 이 공유 검증기의
+    // 기대 audience도 그 값이 된다 — OIDC id_token의 aud는 항상 client id이므로, 그런 구성에서는
+    // expectedNonce를 넘기는 exchangeCode 흐름을 함께 쓰지 않는다.
     private suspend fun requireValidNonce(
         idToken: String?,
         expectedNonce: String,

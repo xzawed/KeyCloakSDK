@@ -43,7 +43,7 @@ public class AuthClient {
       synchronized (this) {
         v = jwtValidator;
         if (v == null) {
-          v = JwtValidator.forRealm(metadata, config, allowedAlgorithms(), config.getClientId());
+          v = JwtValidator.forRealm(metadata, config, allowedAlgorithms(), config.getExpectedAudience());
           jwtValidator = v;
         }
       }
@@ -118,7 +118,10 @@ public class AuthClient {
   }
 
   // id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다
-  // (validate() 재사용 — 액세스 토큰과 id_token 모두 aud=clientId라 검증기를 공유해도 안전).
+  // (validate() 재사용 — 액세스 토큰과 id_token 모두 기본값(aud=clientId)에서 검증기를 공유해도 안전).
+  // ⚠️ config.expectedAudience를 clientId가 아닌 값(리소스 서버 이름 등)으로 재정의하면 이 공유 검증기의
+  // 기대 audience도 그 값이 된다 — OIDC id_token의 aud는 항상 client id이므로, 그런 구성에서는
+  // 이 nonce 검증 경로를 쓰는 흐름(expectedNonce를 넘기는 exchangeCode)을 함께 쓰지 않는다.
   // 패키지 가시성: 토큰 엔드포인트 send() 없이 nonce 로직을 단위 테스트로 검증하기 위함
   // (buildExchangeCodeRequest/buildLogoutRequest와 동일 패턴).
   void requireValidNonce(String idToken, String expectedNonce) {

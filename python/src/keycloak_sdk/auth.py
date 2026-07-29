@@ -230,7 +230,8 @@ class AuthClient:
         key_set = self._load_jwks()
         validator = JwtValidator(
             issuer=self._endpoints.issuer,
-            audience=self._config.client_id,
+            # `expected_audience`가 설정되면 그 값을, 아니면 client_id를 기대한다(기존 동작).
+            audience=self._config.expected_audience or self._config.client_id,
             allowed_algs=self._config.signature_algorithms,
             clock_skew=self._config.clock_skew,
         )

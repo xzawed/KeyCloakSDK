@@ -29,6 +29,13 @@ type Config struct {
 	// refetches triggered by an unresolved kid (key rotation) — a DoS-amplification
 	// cap. A forged random kid cannot flood the IdP faster than this.
 	JwksMinRefetch int64
+	// ExpectedAudience is the value Validate looks for in the token's aud claim.
+	// Unset, it defaults to ClientID (the previous behaviour). A stock realm does
+	// not put the client id in a client-credentials token's aud unless an audience
+	// mapper is configured, so set this to the API/resource name when the token is
+	// audienced at a resource server instead. It applies to the id_token check in
+	// ExchangeCode too, which uses the same Validator.
+	ExpectedAudience string
 }
 
 func (c Config) validate() error {
@@ -71,6 +78,9 @@ func (c Config) withDefaults() Config {
 	}
 	if len(c.SignatureAlgorithms) == 0 {
 		c.SignatureAlgorithms = []string{"RS256"}
+	}
+	if c.ExpectedAudience == "" {
+		c.ExpectedAudience = c.ClientID
 	}
 	return c
 }

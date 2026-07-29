@@ -39,6 +39,8 @@ with KeycloakClient.create(config) as kc:
     print([u.get("username") for u in users])
 ```
 
+`validate()`는 기본적으로 토큰 `aud`에 `client_id`가 있기를 기대하지만, 기본 realm은 client-credentials 토큰 `aud`에 client_id를 넣지 않는다. 설정에 `expected_audience="my-api"`로 실제 토큰이 담는 audience를 지정하거나, Keycloak 클라이언트에 audience 매퍼를 추가한다(Client scopes → dedicated scope → Add mapper → Audience).
+
 전체 예제: [`examples/quickstart.py`](https://github.com/xzawed/KeyCloakSDK/blob/main/python/examples/quickstart.py).
 
 ## Async

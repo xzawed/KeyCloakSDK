@@ -127,6 +127,88 @@ class JwtValidatorTest {
         () -> v.validate(jwt.serialize()));
   }
 
+  // config.expectedAudience 미설정(기본): 기대 audience는 clientId — 기존 동작과 완전히 동일하다.
+  @Test void expectedAudienceUnset_tokenAudienceWithClientId_passes() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String issuer = "https://kc.example.com/realms/r";
+    io.github.xzawed.keycloak.core.KeycloakConfig cfg =
+        io.github.xzawed.keycloak.core.KeycloakConfig.builder()
+            .serverUrl("https://kc.example.com").realm("r").clientId("app").build();
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+            .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
+    jwt.sign(new RSASSASigner(key));
+    JwtValidator v = JwtValidator.withStaticJwks(
+        new JWKSet(key.toPublicJWK()), issuer, cfg.getExpectedAudience(),
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+
+    assertEquals(issuer, v.validate(jwt.serialize()).getIssuer());
+  }
+
+  // 미설정 경로의 부정 테스트: clientId를 포함하지 않는 aud는 여전히 거부된다.
+  @Test void expectedAudienceUnset_tokenAudienceWithoutClientId_rejected() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String issuer = "https://kc.example.com/realms/r";
+    io.github.xzawed.keycloak.core.KeycloakConfig cfg =
+        io.github.xzawed.keycloak.core.KeycloakConfig.builder()
+            .serverUrl("https://kc.example.com").realm("r").clientId("app").build();
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        new JWTClaimsSet.Builder().issuer(issuer).audience("my-api")
+            .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
+    jwt.sign(new RSASSASigner(key));
+    JwtValidator v = JwtValidator.withStaticJwks(
+        new JWKSet(key.toPublicJWK()), issuer, cfg.getExpectedAudience(),
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+
+    assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+        () -> v.validate(jwt.serialize()));
+  }
+
+  // config.expectedAudience 설정: 기본 realm(audience 매퍼 없음)이나 리소스 서버 사례 — 토큰의 aud가
+  // clientId가 아니라 설정한 값이어야 통과한다.
+  @Test void expectedAudienceSet_tokenAudienceWithThatValue_passes() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String issuer = "https://kc.example.com/realms/r";
+    io.github.xzawed.keycloak.core.KeycloakConfig cfg =
+        io.github.xzawed.keycloak.core.KeycloakConfig.builder()
+            .serverUrl("https://kc.example.com").realm("r").clientId("app")
+            .expectedAudience("my-api").build();
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        new JWTClaimsSet.Builder().issuer(issuer).audience("my-api")
+            .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
+    jwt.sign(new RSASSASigner(key));
+    JwtValidator v = JwtValidator.withStaticJwks(
+        new JWKSet(key.toPublicJWK()), issuer, cfg.getExpectedAudience(),
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+
+    assertTrue(v.validate(jwt.serialize()).getAudience().contains("my-api"));
+  }
+
+  // 설정 경로의 부정 테스트: expectedAudience를 재정의했으면 clientId만 담은 aud는 더 이상 통과하지
+  // 않는다 — 재정의가 실제로 기대값을 바꾼다는 증거(이 테스트가 없으면 fallback 회귀를 못 잡는다).
+  @Test void expectedAudienceSet_tokenAudienceWithOnlyClientId_rejected() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String issuer = "https://kc.example.com/realms/r";
+    io.github.xzawed.keycloak.core.KeycloakConfig cfg =
+        io.github.xzawed.keycloak.core.KeycloakConfig.builder()
+            .serverUrl("https://kc.example.com").realm("r").clientId("app")
+            .expectedAudience("my-api").build();
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+            .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
+    jwt.sign(new RSASSASigner(key));
+    JwtValidator v = JwtValidator.withStaticJwks(
+        new JWKSet(key.toPublicJWK()), issuer, cfg.getExpectedAudience(),
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+
+    assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+        () -> v.validate(jwt.serialize()));
+  }
+
   // 부정 테스트(PR6): 만료된 토큰은 서명이 유효해도 거부돼야 한다 — 이 테스트가 없으면 exp
   // 검증(DefaultJWTClaimsVerifier)이 사라져도 나머지 테스트가 전부 통과한다(감사 test-quality).
   @Test void expiredToken_rejected() throws Exception {

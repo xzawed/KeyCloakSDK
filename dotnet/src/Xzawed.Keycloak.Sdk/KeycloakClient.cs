@@ -33,18 +33,20 @@ public sealed class KeycloakClient : IAsyncDisposable, IDisposable
             Timeout = TimeSpan.FromMilliseconds(cfg.ReadTimeoutMs),
         };
         var ep = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm);
-        var validator = new JwtValidator(ep.Issuer,
-            new JwtValidatorOptions
-            {
-                Issuer = ep.Issuer,
-                Audiences = new[] { cfg.ClientId },
-                AllowedAlgorithms = cfg.SignatureAlgorithms,
-                ClockSkewSeconds = cfg.ClockSkewSeconds,
-            },
-            http);
+        var validator = new JwtValidator(ep.Issuer, ValidatorOptionsFor(cfg, ep.Issuer), http);
         var auth = new AuthClient(cfg, ep, validator, http);
         return new KeycloakClient(cfg, http, auth);
     }
+
+    /// <summary>Validator options for a config: the expected audience is ExpectedAudience when set,
+    /// otherwise ClientId (the pre-existing default).</summary>
+    internal static JwtValidatorOptions ValidatorOptionsFor(KeycloakConfig cfg, string issuer) => new()
+    {
+        Issuer = issuer,
+        Audiences = new[] { cfg.ExpectedAudience ?? cfg.ClientId },
+        AllowedAlgorithms = cfg.SignatureAlgorithms,
+        ClockSkewSeconds = cfg.ClockSkewSeconds,
+    };
 
     /// <summary>Lazily builds the admin facade (client-credentials). Throws before any network if clientSecret is absent.</summary>
     public async Task<AdminClient> AdminAsync(CancellationToken ct = default)

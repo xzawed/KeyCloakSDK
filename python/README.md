@@ -47,6 +47,8 @@ with KeycloakClient.create(config) as kc:
     users = kc.admin.users.search(first=0, max=20)
 ```
 
+`validate()` expects the token's `aud` to contain `client_id` by default, but a stock realm does not put the client id into a client-credentials token. Either set `expected_audience="my-api"` on the config to check the audience your tokens actually carry, or add an audience mapper to the client in Keycloak (Client scopes → dedicated scope → Add mapper → Audience).
+
 ### Async
 
 `keycloak_sdk.aio` is a complete async mirror — same method names, value types, and exceptions — so it never blocks the event loop (FastAPI and friends):

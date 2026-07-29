@@ -57,6 +57,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+A stock realm does **not** put the client id in a client-credentials token's `aud`, so step 2 fails until the
+audience matches: either add an *Audience* protocol mapper to the client in Keycloak, or chain
+`.with_expected_audience("…")` onto the config with the value your tokens actually carry (the API/resource
+name, when the token is audienced at a resource server).
+
 Errors are values, not panics: every fallible call returns `Result<T, KeycloakError>`, whose variants are
 `Config` · `Auth` · `Transport` · `Admin` · `TokenValidation`.
 
@@ -67,7 +72,7 @@ crate does not need to be a direct dependency of your project.
 ## Secure by default
 
 - **Algorithm pinning** — only the configured signature algorithms are accepted (default `RS256`); the header's `alg` is never trusted and `alg: none` is structurally impossible.
-- **Strict claim checks** — exact `iss` match, `aud` containment, mandatory `exp`, `nbf` verified, and a bounded clock skew (30s by default).
+- **Strict claim checks** — exact `iss` match, `aud` containment (against `expected_audience`, the client id by default), mandatory `exp`, `nbf` verified, and a bounded clock skew (30s by default).
 - **DoS-safe JWKS** — keys are cached, a refetch is triggered only by an unresolved `kid`, and it is rate-limited, so a flood of forged tokens cannot amplify traffic to your identity provider.
 - **Safe transport** — TLS verification on by default (rustls), redirects disabled (SSRF hardening), and secrets/tokens masked as `***` in every `Debug` output.
 

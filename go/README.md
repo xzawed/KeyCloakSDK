@@ -75,12 +75,14 @@ func main() {
 }
 ```
 
+A stock realm does **not** put the client id in a client-credentials token's `aud`, so step 2 fails until the audience matches: either add an *Audience* protocol mapper to the client in Keycloak, or set `Config.ExpectedAudience` to the value your tokens actually carry (the API/resource name, when the token is audienced at a resource server).
+
 Errors are values, not panics: match outcomes with `errors.Is` against `ErrNotFound` / `ErrConflict` / `ErrForbidden`, or reach the concrete `*AuthError`, `*AdminError`, `*TokenValidationError`, `*TransportError` with `errors.As`.
 
 ## Secure by default
 
 - **Algorithm pinning** — the accepted JWT signature algorithms are pinned (`RS256` by default, configurable via `Config.SignatureAlgorithms`); the header-supplied `alg`, including `none`, is never trusted.
-- **Hardened claims** — exact `iss` match, `aud` containment check, mandatory `exp` (a token without one is rejected), and a bounded clock skew (`Config.ClockSkew`, default 30s).
+- **Hardened claims** — exact `iss` match, `aud` containment check (against `Config.ExpectedAudience`, the client id by default), mandatory `exp` (a token without one is rejected), and a bounded clock skew (`Config.ClockSkew`, default 30s).
 - **DoS-safe JWKS** — a refetch happens only for an unresolved key ID (rotation), rate-limited by `Config.JwksMinRefetch` (default 60s), so forged random `kid`s cannot flood the IdP.
 - **Secrets stay out of logs** — `Config.String` and `TokenSet.String` mask secrets and tokens fully (`***`, no prefix); TLS verification is on by default and both connect and read timeouts are always applied.
 

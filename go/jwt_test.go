@@ -99,6 +99,45 @@ func TestValidateMultiAudienceMembership(t *testing.T) {
 	}
 }
 
+// TestExpectedAudienceWiring proves Config.ExpectedAudience reaches the Validator
+// built by New: unset it still expects ClientID (unchanged behaviour), set it
+// replaces that expectation — the resource-server case, where aud carries an API
+// name rather than the client that asked for the token.
+func TestExpectedAudienceWiring(t *testing.T) {
+	f := newJWTFixture(t) // its handler serves the JWKS on every path, incl. /realms/test/…/certs
+	iss := f.jwksSrv.URL + "/realms/test"
+	token := func(aud string) string {
+		return f.sign(t, f.priv, "k1", claims(jwt.Audience{aud}, iss, time.Now().Add(5*time.Minute)))
+	}
+	ctx := context.Background()
+	cfg := Config{ServerURL: f.jwksSrv.URL, Realm: "test", ClientID: "my-client"}
+
+	// (1) unset → ClientID is expected, exactly as before.
+	c, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := c.Auth.Validate(ctx, token("my-client")); err != nil {
+		t.Fatalf("unset ExpectedAudience must still accept aud=ClientID: %v", err)
+	}
+	if _, err := c.Auth.Validate(ctx, token("api://orders")); err == nil {
+		t.Fatal("unset ExpectedAudience must still reject an aud without ClientID")
+	}
+
+	// (2) set → the configured value is expected instead of ClientID.
+	cfg.ExpectedAudience = "api://orders"
+	c, err = New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := c.Auth.Validate(ctx, token("api://orders")); err != nil {
+		t.Fatalf("ExpectedAudience must be accepted: %v", err)
+	}
+	if _, err := c.Auth.Validate(ctx, token("my-client")); err == nil {
+		t.Fatal("ExpectedAudience must replace ClientID, not be added to it")
+	}
+}
+
 func TestValidateRejects(t *testing.T) {
 	f := newJWTFixture(t)
 	now := time.Now()

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 
 // openid-client는 네트워크 경계 — 함수형 API를 목킹해 매핑/PKCE/예외변환을 격리 검증한다.
 vi.mock('openid-client', () => ({
@@ -12,11 +12,16 @@ vi.mock('openid-client', () => ({
   customFetch: Symbol('customFetch'),
 }))
 
+import { generateKeyPair, exportJWK, SignJWT, createLocalJWKSet, type JWTVerifyGetKey } from 'jose'
 import * as oidc from 'openid-client'
 import { AuthClient } from '../../src/auth.js'
-import { defineConfig } from '../../src/config.js'
-import { KeycloakAuthError, KeycloakTransportError } from '../../src/errors.js'
-import type { JwtValidator } from '../../src/jwt.js'
+import { defineConfig, type KeycloakConfigInput } from '../../src/config.js'
+import {
+  KeycloakAuthError,
+  KeycloakTokenValidationError,
+  KeycloakTransportError,
+} from '../../src/errors.js'
+import { JwtValidator } from '../../src/jwt.js'
 import { TokenSet } from '../../src/tokens.js'
 
 const cfg = defineConfig({
@@ -244,6 +249,64 @@ describe('logout (백채널 — refresh_token revoke)', () => {
       .mockResolvedValue(new Response(null, { status: 400 }))
     await expect(new AuthClient(cfg).logout('RT')).rejects.toBeInstanceOf(KeycloakAuthError)
     fetchSpy.mockRestore()
+  })
+})
+
+describe('validate — expectedAudience', () => {
+  let priv: Awaited<ReturnType<typeof generateKeyPair>>['privateKey']
+  let keys: JWTVerifyGetKey
+
+  beforeAll(async () => {
+    const kp = await generateKeyPair('RS256')
+    priv = kp.privateKey
+    const jwk = await exportJWK(kp.publicKey)
+    keys = createLocalJWKSet({ keys: [{ ...jwk, kid: 'k1', use: 'sig', alg: 'RS256' }] })
+  })
+
+  const sign = (aud: string) =>
+    new SignJWT({ sub: 'u', aud })
+      .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+      .setIssuedAt()
+      .setIssuer('https://kc.example.com/realms/demo')
+      .setExpirationTime('5m')
+      .sign(priv)
+
+  /** 원격 JWKS 대신 로컬 키셋을 쓰는 검증기로 조립한다 — 실제 aud 판정을 네트워크 없이 관찰. */
+  const authWithLocalJwks = (input: KeycloakConfigInput): AuthClient => {
+    const spy = vi
+      .spyOn(JwtValidator, 'forJwksUri')
+      .mockImplementation((_uri, opts) => new JwtValidator(keys, opts))
+    try {
+      return new AuthClient(defineConfig(input))
+    } finally {
+      spy.mockRestore()
+    }
+  }
+
+  const base: KeycloakConfigInput = {
+    serverUrl: 'https://kc.example.com',
+    realm: 'demo',
+    clientId: 'app',
+  }
+
+  it('미지정이면 clientId를 기대한다(기존 동작 유지)', async () => {
+    const auth = authWithLocalJwks(base)
+    await expect(auth.validate(await sign('app'))).resolves.toMatchObject({ audience: ['app'] })
+    await expect(auth.validate(await sign('some-api'))).rejects.toBeInstanceOf(
+      KeycloakTokenValidationError,
+    )
+  })
+
+  it('설정하면 그 값을 기대하고 clientId만 담긴 토큰은 거부한다', async () => {
+    // 기본 realm은 client-credentials 토큰 aud에 client_id를 넣지 않는다(audience 매퍼 필요) —
+    // 리소스 서버처럼 API 이름이 aud인 경우를 위한 탈출구.
+    const auth = authWithLocalJwks({ ...base, expectedAudience: 'some-api' })
+    await expect(auth.validate(await sign('some-api'))).resolves.toMatchObject({
+      audience: ['some-api'],
+    })
+    await expect(auth.validate(await sign('app'))).rejects.toBeInstanceOf(
+      KeycloakTokenValidationError,
+    )
   })
 })
 

@@ -27,6 +27,7 @@ public class ConfigTests
         Assert.Equal(10_000, c.ConnectTimeoutMs);
         Assert.Equal(30_000, c.ReadTimeoutMs);
         Assert.Empty(c.Scopes);
+        Assert.Null(c.ExpectedAudience);   // unset => the validator expects ClientId
         Assert.Equal(new[] { "RS256" }, c.SignatureAlgorithms);
     }
 

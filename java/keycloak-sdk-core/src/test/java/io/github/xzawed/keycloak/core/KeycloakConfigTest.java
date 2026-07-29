@@ -57,6 +57,18 @@ class KeycloakConfigTest {
     KeycloakConfig c = KeycloakConfig.builder().serverUrl("x").realm("r").clientId("app").build();
     assertNull(c.getClientSecret());
   }
+  @Test void expectedAudience_defaultsToClientId() {
+    // 미설정이면 기존 동작 그대로 — 기대 audience는 clientId다(하위 호환).
+    KeycloakConfig c = KeycloakConfig.builder().serverUrl("x").realm("r").clientId("app").build();
+    assertEquals("app", c.getExpectedAudience());
+  }
+  @Test void expectedAudience_customValueOverridesClientId() {
+    // 기본 realm은 client-credentials 토큰의 aud에 client id를 넣지 않는다 — 리소스 서버 이름 등
+    // 실제 발급되는 audience로 재정의할 수 있어야 한다.
+    KeycloakConfig c = KeycloakConfig.builder().serverUrl("x").realm("r").clientId("app")
+        .expectedAudience("my-api").build();
+    assertEquals("my-api", c.getExpectedAudience());
+  }
   @Test void signatureAlgorithms_defaultsToRs256() {
     KeycloakConfig c = KeycloakConfig.builder().serverUrl("x").realm("r").clientId("app").build();
     assertEquals(java.util.List.of("RS256"), c.getSignatureAlgorithms());

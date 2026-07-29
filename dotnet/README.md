@@ -52,6 +52,8 @@ var userId = await admin.Users.CreateAsync(new UserRepresentation { Username = "
 Console.WriteLine($"created userId={userId}");
 ```
 
+> **Audience** — validation requires the token's `aud` to contain `ClientId`. A stock realm does *not* put the client id in a client-credentials token's `aud`, so on a default realm either set `ExpectedAudience = "my-api"` to the audience your realm issues, or add an *Audience* protocol mapper to the client in Keycloak.
+
 Dependency injection is **optional** — `KeycloakClient.Create(config)` works standalone. If you do use a container, register the client as a singleton:
 
 ```csharp

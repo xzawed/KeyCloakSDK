@@ -63,6 +63,8 @@ fun main() = runBlocking {
 }
 ```
 
+> **Audience on a default realm** — `validate` requires the token's `aud` to contain `expectedAudience`, which defaults to your `clientId`. A stock Keycloak realm does *not* put the client id into a client-credentials token's `aud`, so on a default realm step 2 fails until you either set `expectedAudience = "my-api"` to the audience your realm actually issues (also the right setting when the token targets a resource server rather than the requesting client), or add an *Audience* protocol mapper to the client in Keycloak.
+
 Admin failures surface as the sealed `KeycloakAdminException` (`NotFound` / `Conflict` / `Forbidden` / `Other`, each carrying `status`), or `KeycloakTransportException` on a network failure — so a `when` over them is exhaustive.
 
 ## Secure by default

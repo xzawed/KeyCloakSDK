@@ -145,7 +145,8 @@ impl AuthClient {
     }
 
     // id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다
-    // (액세스 토큰과 id_token 모두 aud=client_id라 검증기를 공유해도 안전).
+    // (액세스 토큰과 id_token 모두 aud=client_id라 검증기를 공유해도 안전 — config.expected_audience로
+    // 기대 aud를 바꾸면 그 값이 id_token 검사에도 함께 적용된다).
     async fn verify_nonce(&self, id_token: Option<&str>, expected_nonce: &str) -> Result<()> {
         let id_token = id_token.ok_or_else(|| KeycloakError::Auth {
             message: "authorization code exchange failed: missing id_token for nonce validation"

@@ -374,6 +374,39 @@ async def test_validate_rejects_token_with_wrong_audience():
         await client.validate(token)
 
 
+def _validate_client(config: KeycloakConfig) -> tuple[AsyncAuthClient, RSAKey, OidcEndpoints]:
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    openid = MagicMock()
+    openid.a_certs = AsyncMock(return_value={"keys": [key.as_dict(private=False)]})
+    return _client(openid, config=config), key, OidcEndpoints.for_realm(config)
+
+
+async def test_validate_defaults_expected_audience_to_client_id():
+    """`expected_audience` 미지정 시 기대 audience는 client_id다(sync 동형·기존 동작 유지)."""
+    client, key, endpoints = _validate_client(_config())
+    client_id_token = _signed_token(key, issuer=endpoints.issuer, audience="app")
+    api_token = _signed_token(key, issuer=endpoints.issuer, audience="some-api")
+
+    result = await client.validate(client_id_token)
+
+    assert "app" in result.audience
+    with pytest.raises(TokenValidationError):
+        await client.validate(api_token)
+
+
+async def test_validate_uses_configured_expected_audience():
+    """`expected_audience`를 설정하면 client_id 대신 그 값을 `aud`에서 찾는다(sync 동형)."""
+    client, key, endpoints = _validate_client(_config(expected_audience="some-api"))
+    api_token = _signed_token(key, issuer=endpoints.issuer, audience="some-api")
+    client_id_token = _signed_token(key, issuer=endpoints.issuer, audience="app")
+
+    result = await client.validate(api_token)
+
+    assert "some-api" in result.audience
+    with pytest.raises(TokenValidationError):
+        await client.validate(client_id_token)
+
+
 async def test_validate_refetches_jwks_and_retries_once_on_signature_failure():
     """키 회전 시나리오: sync와 동형 — 서명 실패(TokenSignatureError) 시 a_certs()를
     한 번 재조회한 뒤 재시도해 성공해야 한다."""

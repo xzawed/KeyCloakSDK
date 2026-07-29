@@ -25,7 +25,7 @@ Rows are in the recommended deployment order explained below.
 | **Ruby** | RubyGems | OIDC | `ruby-v*` | `ruby/lib/keycloak_sdk/version.rb` `VERSION` | 0 (OIDC + `release` environment) | `gem install keycloak-sdk` |
 | **Node** | npm | OIDC | `node-v*` | `node/package.json` `version` | 0 (OIDC + provenance) | `npm install @xzawed/keycloak-sdk` |
 | **Rust** | crates.io | api-token | `rust-v*` | `rust/Cargo.toml` `[package].version` | 1 (`CARGO_REGISTRY_TOKEN` · hard-fails if unset) | `cargo add keycloak-sdk` |
-| **Java** | Maven Central | maven-gpg | `v*` | automatic (versions-maven-plugin, tag value injected) | 4 (GPG 2 + Portal token 2) | `io.github.xzawed:keycloak-sdk` |
+| **Java** | Maven Central | maven-gpg | `v*` | automatic (versions-maven-plugin, tag value injected) | 4 (GPG 2 + Portal token 2 · **all four checked, hard-fails if any is unset**) | `io.github.xzawed:keycloak-sdk` |
 | **Kotlin** | Maven Central | maven-gpg | `kotlin-v*` | `kotlin/build.gradle.kts` `version` (manual) | 4 (vanniktech names · **all four checked, hard-fails if any is unset**) | `io.github.xzawed:keycloak-sdk-kotlin` |
 | **Go** | Go module proxy (proxy.golang.org) | none | `go/v*` | none (tag = SSOT) | 0 | `go get github.com/xzawed/KeyCloakSDK/go@vX.Y.Z` |
 | **PHP** | Packagist — **via the mirror repository `xzawed/keycloak-sdk-php`** | split-token | `php-v*` | none (tag = SSOT) | 1 (`PHP_SPLIT_TOKEN` · **hard-fails if unset**) | `composer require xzawed/keycloak-sdk` |
@@ -54,9 +54,9 @@ The first publish of a coordinate is irreversible everywhere, so the axis that a
 ## §1. Common Principles
 
 - **Tag-driven**: all nine release workflows are triggered only by pushing a tag in a specific format (the "Tag" column of the §0 table).
-- **`needs:` gate**: nothing publishes unless the tagged commit's checks are green. Seven languages (python · node · go · rust · dotnet · ruby · kotlin) now run their **integration suite against a real Keycloak** in a dedicated `integration` job that the publishing job lists in `needs:`, so a tag can no longer publish on unit tests alone. **Java** (`release.yml`) has no separate job — a single `release` job runs `mvn -Prelease deploy` without `-DskipTests`, so the Maven lifecycle runs the test *and* integration-test phases inline before `deploy` (if tests fail it never reaches deploy). Different structure, same guarantee. **PHP is the one language whose tag path runs unit tests only** — its `verify` job is `composer audit` + `phpstan` + `phpunit --testsuite unit`, and the PHP integration suite runs in `php-ci.yml`, not on the tag. For PHP, passing the dry-run before tagging matters more than for the others.
+- **`needs:` gate**: nothing publishes unless the tagged commit's checks are green. Eight languages (python · node · go · rust · dotnet · ruby · kotlin · php) now run their **integration suite against a real Keycloak** in a dedicated `integration` job that the publishing job lists in `needs:`, so a tag can no longer publish on unit tests alone. PHP was the last exception and no longer is: `php-release.yml` gained an `integration` job (`phpunit --testsuite integration`) that its `split` job lists in `needs:` alongside `verify`. **Java** (`release.yml`) is the only language with no separate job — a single `release` job runs `mvn -Prelease deploy` without `-DskipTests`, so the Maven lifecycle runs the test *and* integration-test phases inline before `deploy` (if tests fail it never reaches deploy). Different structure, same guarantee.
 - **Go's gate is different in kind**: `go-release.yml`'s `verify`/`integration` jobs run before the `release` job, but the module proxy serves whatever the *tag* points at — it does not wait for CI. Once the tag is pushed, the version is effectively public.
-- **PHP's gate is real now**: `verify` → `split`, and GitHub Release creation lives inside `split`, **after** the mirror push succeeds — so the release notes can no longer announce a publication that did not happen.
+- **PHP's gate is real now**: `verify` + `integration` → `split`, and GitHub Release creation lives inside `split`, **after** the mirror push succeeds — so the release notes can no longer announce a publication that did not happen.
 - **human-gate**: the actual deployment trigger (tag push) must always be performed **by a human directly**. `release-trigger.sh` only prints the commands and does not run `git tag`/`git push` itself.
 - **Irreversible**: no registry allows re-publishing the same version — if you push a wrong tag, that version number is effectively burned.
 - **Dry-run required**: before pushing a tag, always confirm with a local dry-run (building only the artifacts, without deploying) that the artifacts are generated correctly (per-language in the §0 table; also included in the `release-trigger.sh` output).
@@ -98,7 +98,7 @@ Since the same auth model has the same setup procedure, it is explained once per
    | Portal token username | `CENTRAL_TOKEN_USER` | `MAVEN_CENTRAL_USERNAME` | the token username from step 2 |
    | Portal token password | `CENTRAL_TOKEN_PW` | `MAVEN_CENTRAL_PASSWORD` | the token password from step 2 |
 
-5. **Behavior when a secret is unset — both languages now fail closed**: for Java, if any one of the four secrets is missing, `mvn -Prelease deploy` **hard-fails**. Kotlin's publish job now checks **all four** secrets (`MAVEN_CENTRAL_USERNAME` · `MAVEN_CENTRAL_PASSWORD` · `SIGNING_IN_MEMORY_KEY` · `SIGNING_IN_MEMORY_KEY_PASSWORD`) and, if any are missing, emits `::error::` naming exactly which ones and exits 1.
+5. **Behavior when a secret is unset — both languages fail closed, and both now name the missing secret**: each job checks **all four** of its own secrets in a step and, if any are missing, emits `::error::` naming exactly which ones and exits 1. Java (`MAVEN_GPG_PRIVATE_KEY` · `MAVEN_GPG_PASSPHRASE` · `CENTRAL_TOKEN_USER` · `CENTRAL_TOKEN_PW`) does this in a preflight right after checkout, before `setup-java` even imports the GPG key; Kotlin (`MAVEN_CENTRAL_USERNAME` · `MAVEN_CENTRAL_PASSWORD` · `SIGNING_IN_MEMORY_KEY` · `SIGNING_IN_MEMORY_KEY_PASSWORD`) does it immediately before the upload. Java previously failed later instead, inside `mvn -Prelease deploy` — fail-closed either way, but a noisier error that never said the cause was an unset secret.
 
    > ⚠️ **This used to be much worse.** The old Kotlin guard checked only `MAVEN_CENTRAL_USERNAME` and exited 0 when it was missing — a silent skip that ended green — and it did not check the signing key at all, which permitted an **unsigned** Central Portal upload on a green run. That is fixed. (Note that a job-level `if:` cannot read the `secrets` context in GitHub Actions, which is why the guard has to live inside the step, on env-mapped values.)
 6. **Two-step manual release**: the workflow only auto-uploads **as far as Central Portal staging**. The actual public release (Publish) is completed only when **a human manually Publishes** from the Deployments screen in the [Central Portal](https://central.sonatype.com) (when autoPublish is not configured).
@@ -198,7 +198,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   ```
 - Deployment check: confirm GitHub Actions `node-release.yml` (OIDC + provenance, including `npm install -g npm@latest`) succeeded → https://www.npmjs.com/package/@xzawed/keycloak-sdk
 - Install: `npm install @xzawed/keycloak-sdk`
-- ⚠️ `npm publish` runs without `--tag`, so whatever is published becomes `latest`. That matters for a release candidate — see §7.
+- ⚠️ The publish step derives the dist-tag from the version: a SemVer prerelease (anything containing a hyphen, e.g. `0.1.0-rc.1`) publishes under `rc`, anything else under `latest`. That matters for a release candidate — see §7.
 
 ### 5. Rust
 
@@ -267,7 +267,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 - One-time setup: §2-D — **three steps that have not been done yet**: create the mirror repository `xzawed/keycloak-sdk-php`, register *that* repository on Packagist, and add the `PHP_SPLIT_TOKEN` secret here.
 - Version bump: none (the tag is the SSOT; the mirror tag `vX.Y.Z` is derived from `php-vX.Y.Z`).
 - dry-run: `cd php && composer install && composer audit && vendor/bin/phpstan analyse && vendor/bin/phpunit --testsuite unit`
-  > The PHP integration suite does **not** run on the tag path (§1), so this dry-run carries more weight here than elsewhere.
+  > This mirrors the tag path's `verify` job exactly. The integration suite that `split` now also requires (§1) needs Docker and runs in CI, not here.
 - Tag: `php-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh php 0.1.0`
   ```bash
   git tag php-v0.1.0 && git push origin php-v0.1.0
@@ -334,14 +334,14 @@ All nine registries support prerelease versions, and most resolvers exclude them
 | Python | `0.1.0rc1` (PEP 440 normal form) | `py-v0.1.0rc1` | `pip install keycloak-sdk` skips prereleases; `--pre` or an exact pin opts in |
 | .NET | — (injected from the tag) | `dotnet-v0.1.0-rc.1` | `dotnet add package` skips prereleases unless given `--prerelease` |
 | Ruby | `0.1.0.rc1` (a letter in a segment marks it prerelease) | `ruby-v0.1.0.rc1` | `gem install` skips it unless given `--prerelease` |
-| Node | `0.1.0-rc.1` (SemVer) | `node-v0.1.0-rc.1` | `^0.1.0` excludes prereleases — **but see the warning below** |
+| Node | `0.1.0-rc.1` (SemVer) | `node-v0.1.0-rc.1` | `^0.1.0` excludes prereleases — see the dist-tag note below |
 | Rust | `0.1.0-rc.1` (SemVer) | `rust-v0.1.0-rc.1` | `^0.1.0` excludes prereleases |
 | Java | — (injected from the tag) | `v0.1.0-RC1` | Maven has no prerelease concept; this is simply a different, lower-sorting coordinate — and just as immutable |
 | Kotlin | `0.1.0-RC1` | `kotlin-v0.1.0-RC1` | Same as Java |
 | Go | — (the tag is the version) | `go/v0.1.0-rc.1` | `go get …@latest` prefers released versions and will not select a prerelease |
 | PHP | — (the tag is the version) | `php-v0.1.0-rc.1` → mirror tag `v0.1.0-rc.1` | Composer's default `minimum-stability: stable` excludes it; `composer require xzawed/keycloak-sdk:^0.1@rc` opts in |
 
-**⚠️ npm gives the `latest` dist-tag to whatever you publish** unless `npm publish` is passed `--tag`, and `node-release.yml` runs `npm publish --provenance --access public` with no `--tag`. An RC published as-is therefore becomes what a bare `npm install @xzawed/keycloak-sdk` resolves to. Either add `--tag rc` to that step before tagging an RC, or move the dist-tag afterwards with `npm dist-tag add @xzawed/keycloak-sdk@<real-version> latest`.
+**npm's dist-tag is handled for you.** npm gives the `latest` dist-tag to whatever you publish unless `npm publish` is passed `--tag`, which would have made an RC the default install for everyone. `node-release.yml` now derives the dist-tag from the version instead: a SemVer prerelease (anything containing a hyphen — `0.1.0-rc.1`) publishes under `rc`, and a normal version publishes under `latest`. So a bare `npm install @xzawed/keycloak-sdk` keeps resolving to the last non-prerelease, and the RC is opt-in via `npm install @xzawed/keycloak-sdk@rc`. Nothing to do by hand — should you ever need to move the pointer yourself, it is `npm dist-tag add @xzawed/keycloak-sdk@<real-version> latest`.
 
 **⚠️ `release-trigger.sh` rejects prerelease versions today** — it validates `X.Y.Z` exactly and exits non-zero on anything else. For an RC, skip step 4 of §4 and take the tag spelling from the table above; nothing else in the runbook changes.
 

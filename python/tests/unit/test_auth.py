@@ -495,6 +495,40 @@ def test_validate_rejects_token_with_wrong_audience():
         client.validate(token)
 
 
+def _validate_client(config: KeycloakConfig) -> tuple[AuthClient, RSAKey, OidcEndpoints]:
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.certs.return_value = {"keys": [key.as_dict(private=False)]}
+    return _client(openid, config=config), key, OidcEndpoints.for_realm(config)
+
+
+def test_validate_defaults_expected_audience_to_client_id():
+    """`expected_audience` 미지정 시 기대 audience는 client_id다(기존 동작 유지)."""
+    client, key, endpoints = _validate_client(_config())
+    client_id_token = _signed_token(key, issuer=endpoints.issuer, audience="app")
+    api_token = _signed_token(key, issuer=endpoints.issuer, audience="some-api")
+
+    result = client.validate(client_id_token)
+
+    assert "app" in result.audience
+    with pytest.raises(TokenValidationError):
+        client.validate(api_token)
+
+
+def test_validate_uses_configured_expected_audience():
+    """`expected_audience`를 설정하면 client_id가 아니라 그 값을 토큰 `aud`에서 찾는다 —
+    기본 realm은 client-credentials 토큰 aud에 client_id를 넣지 않으므로 필요한 탈출구다."""
+    client, key, endpoints = _validate_client(_config(expected_audience="some-api"))
+    api_token = _signed_token(key, issuer=endpoints.issuer, audience="some-api")
+    client_id_token = _signed_token(key, issuer=endpoints.issuer, audience="app")
+
+    result = client.validate(api_token)
+
+    assert "some-api" in result.audience
+    with pytest.raises(TokenValidationError):
+        client.validate(client_id_token)
+
+
 def _es256_setup(config: KeycloakConfig):
     key = ECKey.generate_key("P-256", {"kid": "k1", "use": "sig"})
     endpoints = OidcEndpoints.for_realm(config)

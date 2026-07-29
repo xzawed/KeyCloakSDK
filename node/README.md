@@ -51,6 +51,8 @@ try {
 }
 ```
 
+`validate()` expects the token's `aud` to contain `clientId` by default, but a stock realm does not put the client id into a client-credentials token. Either pass `expectedAudience: 'my-api'` to `create()` to check the audience your tokens actually carry, or add an audience mapper to the client in Keycloak (Client scopes → dedicated scope → Add mapper → Audience).
+
 `KeycloakClient` implements `AsyncDisposable`, so `await using client = KeycloakClient.create(…)` cleans up on scope exit.
 
 For the browser/authorization-code flow, start with `client.auth.createAuthorizationRequest(redirectUri)` and exchange the callback with `client.auth.exchangeCode(code, redirectUri, codeVerifier, nonce)` — the `nonce` must be passed back for id_token validation to succeed.

@@ -26,6 +26,17 @@ describe('defineConfig', () => {
     expect(c.clientSecret).toBeUndefined()
     expect(c.signatureAlgorithms).toEqual(['RS256'])
     expect(c.jwksMinRefetchSeconds).toBe(30)
+    expect(c.expectedAudience).toBeUndefined()
+  })
+
+  it('expectedAudience를 설정하면 그대로 유지한다', () => {
+    const c = defineConfig({
+      serverUrl: 'https://kc',
+      realm: 'r',
+      clientId: 'c',
+      expectedAudience: 'some-api',
+    })
+    expect(c.expectedAudience).toBe('some-api')
   })
 
   it('jwksMinRefetchSeconds를 설정하면 유지하고, 음수는 거부', () => {
