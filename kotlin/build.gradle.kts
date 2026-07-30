@@ -58,7 +58,7 @@ dependencies {
     // stdlib는 KGP 자동주입을 끄고(gradle.properties `kotlin.stdlib.default.dependency=false`)
     // 소비자 하한(= compilerOptions의 languageVersion/apiVersion)에 맞춰 직접 선언한다.
     // ⚠️ 이 버전은 위 KOTLIN_2_2와 함께 움직여야 한다 — 하나만 올리면 소비자 하한이 조용히 갈라진다.
-    api("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
+    api("org.jetbrains.kotlin:kotlin-stdlib:2.4.10")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0") // 공개 suspend → api
     api("org.keycloak:keycloak-admin-client:26.0.11") // representation 노출 → api
     implementation("com.nimbusds:oauth2-oidc-sdk:11.38.2")
