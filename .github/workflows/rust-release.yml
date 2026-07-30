@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable
       - run: cargo test --locked --test integration_test -- --ignored
 
   publish:
@@ -55,7 +55,7 @@ jobs:
           fi
           echo "tag ${GITHUB_REF_NAME} ↔ rust/Cargo.toml ${ACTUAL} 일치"
 
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable
       # 발행 전 게이트: 태그된 커밋이 green이 아니면 릴리스하지 않는다.
       # `--locked`는 이 경로에서 특히 중요하다 — 태그가 가리키는 커밋의 rust/Cargo.lock을 그대로
       # 쓰지 않으면, 게이트가 검증한 의존성 트리와 `cargo publish`의 검증 빌드가 쓰는 트리가

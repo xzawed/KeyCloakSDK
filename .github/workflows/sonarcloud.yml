@@ -106,7 +106,7 @@ jobs:
       # ⚠️ dtolnay/rust-toolchain·taiki-e/install-action은 ref 이름이 곧 toolchain/설치대상이라 SHA가
       # 그 브랜치의 커밋이어야 의미가 보존된다 — rust-ci.yml과 같은 SHA·같은 ref 주석을 유지할 것.
       - name: Set up Rust stable
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@face1f3efc4b60bb08e253dcbd8306cbc8487e68 # cargo-llvm-cov
       - name: Generate Rust lcov coverage
