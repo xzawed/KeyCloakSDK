@@ -130,6 +130,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(C#) 네임스페이스 셰도잉.** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(C#) `record` 자동 `ToString()`은 토큰/시크릿을 전체 노출.** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(C#) `HttpClient.Timeout` 만료는 `TaskCanceledException`이지 `HttpRequestException`이 아니다.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(C#) 위조 서명은 JWKS 재조회를 유발한다 — 나머지 8개 언어와 달리 재조회 0회 불변식을 갖지 못하고 rate-limit 상한만 걸린다.** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(C#) `JsonWebTokenHandler.ValidateTokenAsync`는 실패해도 예외를 안 던진다.** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(C#) `POST /admin/realms`(신규 realm 생성)는 master realm 전용.** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(C#) Duende.IdentityModel 확장 메서드는 예외를 안 던진다.** 상세: `.claude/rules/dotnet.md`

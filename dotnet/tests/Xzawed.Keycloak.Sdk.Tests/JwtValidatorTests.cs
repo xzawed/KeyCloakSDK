@@ -235,6 +235,50 @@ public class JwtValidatorTests
             $"control must fetch more often, else this test does not measure the bound — shared={shared} perToken={perToken}");
     }
 
+    // ⚠️ DOCUMENTED DIVERGENCE — read before "fixing" this test to assert zero.
+    //
+    // Python/Go/Rust/Ruby/Java hold the stronger invariant "a forged signature never refetches the
+    // JWKS". .NET does NOT, and cannot without abandoning ConfigurationManager: on a signature
+    // failure Microsoft.IdentityModel calls RequestRefresh() and retries, because that is how it
+    // recovers from key rotation. What bounds the damage is RefreshInterval (our default: 30s).
+    //
+    // So the honest invariant here is the BOUND, not zero: N forged tokens must not produce N
+    // fetches. Measured at the time of writing: 6 forged tokens → exactly 1 extra fetch. Asserting
+    // zero would be asserting something this SDK does not do; asserting "< N" is what actually
+    // protects the IdP and what a regression would break.
+    [Fact]
+    public async Task Forged_signature_with_known_kid_refetch_is_rate_limited()
+    {
+        using var server = WireMockServer.Start();
+        var issuer = $"{server.Urls[0]}/realms/it-realm";
+        StubDiscovery(server, issuer);
+        server.Given(Request.Create().WithPath(JwksPath).UsingGet())
+            .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                .WithBody($$"""{"keys":[{{JwksKeyJson("test-kid")}}]}"""));
+
+        using var http = new HttpClient();
+        var v = new JwtValidator(issuer, new JwtValidatorOptions { Issuer = issuer, Audiences = new[] { "it-client" } }, http);
+
+        // Warm up with a genuine token so the JWKS is actually fetched once; without this the
+        // "count did not grow" assertion would hold vacuously.
+        var vt = await v.ValidateAsync(Sign(PayloadJson("\"it-client\"", iss: issuer), Key));
+        Assert.Equal(issuer, vt.Issuer);
+        var afterWarmup = server.LogEntries.Count(e => e.RequestMessage?.Path == JwksPath);
+        Assert.True(afterWarmup > 0, "warm-up must have fetched the JWKS for this test to mean anything");
+
+        var attacker = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "test-kid" }; // same kid, different key
+        const int forgedCount = 6;
+        for (var i = 0; i < forgedCount; i++)
+        {
+            await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+                () => v.ValidateAsync(Sign(PayloadJson("\"it-client\"", iss: issuer), attacker)));
+        }
+
+        var refetches = server.LogEntries.Count(e => e.RequestMessage?.Path == JwksPath) - afterWarmup;
+        Assert.True(refetches < forgedCount,
+            $"forged signatures must not translate 1:1 into JWKS fetches — {forgedCount} tokens caused {refetches} refetches");
+    }
+
     private const string JwksPath = "/realms/it-realm/protocol/openid-connect/certs";
 
     private static void StubDiscovery(WireMockServer server, string issuer)
@@ -242,10 +286,10 @@ public class JwtValidatorTests
             .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
                 .WithBody($$"""{"issuer":"{{issuer}}","jwks_uri":"{{issuer}}/protocol/openid-connect/certs"}"""));
 
-    private static string JwksKeyJson()
+    private static string JwksKeyJson(string kid = "served-kid")
     {
         var p = Key.Rsa!.ExportParameters(false);
-        return $$"""{"kty":"RSA","kid":"served-kid","use":"sig","alg":"RS256","n":"{{Base64UrlEncoder.Encode(p.Modulus)}}","e":"{{Base64UrlEncoder.Encode(p.Exponent)}}"}""";
+        return $$"""{"kty":"RSA","kid":"{{kid}}","use":"sig","alg":"RS256","n":"{{Base64UrlEncoder.Encode(p.Modulus)}}","e":"{{Base64UrlEncoder.Encode(p.Exponent)}}"}""";
     }
 
     // Feed `attempts` tokens whose kid cannot be resolved, and count how often JWKS was actually fetched.
