@@ -34,10 +34,20 @@ public final class JwtValidator {
               (int) cfg.getConnectTimeout().toMillis(), (int) cfg.getReadTimeout().toMillis());
       // 미해결 kid 재조회 rate-limit 간격을 config로 설정 가능하게 한다(기본 30초 = Nimbus
       // DEFAULT_RATE_LIMIT_MIN_INTERVAL 동형). 위조 kid 폭주에 대한 DoS 증폭 상한.
-      JWKSource<SecurityContext> src =
-          JWKSourceBuilder.create(md.getJwksUri().toURL(), retriever)
-              .rateLimited(cfg.getJwksMinRefetch().toMillis())
-              .build();
+      // ⚠️ Nimbus는 rate-limit 간격이 캐시 TTL(기본 5분) 이상이면 build()에서 IllegalStateException을
+      // 던진다(캐시가 만료돼도 rate-limit이 재조회를 막아 영영 갱신할 수 없는 구성이므로 정당한 거부다).
+      // 그대로 두면 이 foreign 예외가 공개 API로 새어나가므로(§4 위반) 경계에서 SDK 타입으로 바꾼다.
+      JWKSource<SecurityContext> src;
+      try {
+        src = JWKSourceBuilder.create(md.getJwksUri().toURL(), retriever)
+            .rateLimited(cfg.getJwksMinRefetch().toMillis())
+            .build();
+      } catch (IllegalStateException e) {
+        throw new io.github.xzawed.keycloak.core.exception.KeycloakConfigException(
+            "jwksMinRefetch (" + cfg.getJwksMinRefetch().toSeconds()
+                + "s) must be shorter than the JWKS cache time-to-live ("
+                + (JWKSourceBuilder.DEFAULT_CACHE_TIME_TO_LIVE / 1000) + "s)", e);
+      }
       return new JwtValidator(src, md.getIssuer(), audience, allowedAlgs, cfg.getClockSkew());
     } catch (java.net.MalformedURLException e) {
       throw new TokenValidationException("Invalid JWKS URI", e);

@@ -94,11 +94,24 @@ public class JwtValidator private constructor(
             // true)뿐이다 — 위조 kid를 연속 주입해도 JWKS 재조회가 무제한으로 증폭되지 않는다.
             // retrying/outageTolerant는 기본 false(비활성)이므로 이 체인에 포함되지 않는다. rateLimited
             // 간격은 config로 설정 가능하게 한다(기본 30초 = Nimbus DEFAULT_RATE_LIMIT_MIN_INTERVAL 동형).
+            // ⚠️ Nimbus는 rate-limit 간격이 캐시 TTL(기본 5분) 이상이면 build()에서
+            // IllegalStateException을 던진다(캐시가 만료돼도 rate-limit이 재조회를 막아 JWKS를 영영
+            // 갱신할 수 없는 구성이므로 정당한 거부다). 그대로 두면 이 foreign 예외가 공개 API로
+            // 새어나가므로(§4 위반) 경계에서 sealed KeycloakException 계급으로 바꾼다 — Java 동형.
             val source: JWKSource<SecurityContext> =
-                JWKSourceBuilder
-                    .create<SecurityContext>(jwksUrl, retriever)
-                    .rateLimited(config.jwksMinRefetch.toMillis())
-                    .build()
+                try {
+                    JWKSourceBuilder
+                        .create<SecurityContext>(jwksUrl, retriever)
+                        .rateLimited(config.jwksMinRefetch.toMillis())
+                        .build()
+                } catch (e: IllegalStateException) {
+                    throw KeycloakConfigException(
+                        "jwksMinRefetch (${config.jwksMinRefetch.toSeconds()}s) must be shorter than " +
+                            "the JWKS cache time-to-live " +
+                            "(${JWKSourceBuilder.DEFAULT_CACHE_TIME_TO_LIVE / 1000}s)",
+                        e,
+                    )
+                }
             return JwtValidator(source, endpoints.issuer, audience, allowedAlgs, config.clockSkew)
         }
 

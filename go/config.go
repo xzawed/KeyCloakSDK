@@ -25,7 +25,7 @@ type Config struct {
 	ConnectTimeout      int64 // ms; default 10000
 	ReadTimeout         int64 // ms; default 30000
 	ClockSkew           int64 // seconds; default 30
-	// JwksMinRefetch is the minimum interval (seconds; default 60) between JWKS
+	// JwksMinRefetch is the minimum interval (seconds; default 30) between JWKS
 	// refetches triggered by an unresolved kid (key rotation) — a DoS-amplification
 	// cap. A forged random kid cannot flood the IdP faster than this.
 	JwksMinRefetch int64
@@ -74,7 +74,7 @@ func (c Config) withDefaults() Config {
 		c.ClockSkew = 30
 	}
 	if c.JwksMinRefetch == 0 {
-		c.JwksMinRefetch = 60
+		c.JwksMinRefetch = 30
 	}
 	if len(c.SignatureAlgorithms) == 0 {
 		c.SignatureAlgorithms = []string{"RS256"}

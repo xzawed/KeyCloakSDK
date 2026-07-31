@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -150,6 +151,40 @@ func TestValidateRejects(t *testing.T) {
 		if _, err := f.validator(t, time.Minute).Validate(context.Background(), tok); err == nil {
 			t.Errorf("%s: expected rejection", name)
 		}
+	}
+}
+
+// TestValidateConfiguredClockSkewBoundary proves clockSkewSec=30 is wired into
+// ValidateWithLeeway — not ignored and not relying on go-jose's zero-leeway default
+// alone. Far-past expiry (e.g. now-5min) rejects under any reasonable skew and does
+// not prove the configured value is applied. The pair below does: exp=now-10s must
+// PASS (20s margin inside the 30s window) and exp=now-60s must fail with
+// *TokenValidationError (30s margin past it). If skew were 0 (unwired) the first half
+// fails; if a larger default were used instead of 30 the second half fails.
+func TestValidateConfiguredClockSkewBoundary(t *testing.T) {
+	f := newJWTFixture(t)
+	now := time.Now()
+	const skewSec int64 = 30
+	v := newValidator(validatorOptions{
+		jwksURI: f.jwksSrv.URL, issuer: testISS, audience: "my-client",
+		allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: skewSec,
+		minRefetch: time.Minute,
+	})
+	ctx := context.Background()
+
+	within := f.sign(t, f.priv, "k1", claims(jwt.Audience{"my-client"}, testISS, now.Add(-10*time.Second)))
+	if _, err := v.Validate(ctx, within); err != nil {
+		t.Fatalf("exp 10s in the past MUST pass under configured clockSkewSec=30: %v", err)
+	}
+
+	beyond := f.sign(t, f.priv, "k1", claims(jwt.Audience{"my-client"}, testISS, now.Add(-60*time.Second)))
+	_, err := v.Validate(ctx, beyond)
+	if err == nil {
+		t.Fatal("exp 60s in the past MUST be rejected under configured clockSkewSec=30")
+	}
+	var tve *TokenValidationError
+	if !errors.As(err, &tve) {
+		t.Fatalf("beyond-skew rejection must be *TokenValidationError, got %T: %v", err, err)
 	}
 }
 

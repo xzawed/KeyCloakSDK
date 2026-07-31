@@ -3,6 +3,7 @@ package io.github.xzawed.keycloak
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.github.tomakehurst.wiremock.client.WireMock.aResponse
 import com.github.tomakehurst.wiremock.client.WireMock.get
+import com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor
 import com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig
 import com.nimbusds.jose.JWSAlgorithm
@@ -446,4 +447,97 @@ internal class JwtValidatorTest {
                 server.stop()
             }
         }
+
+    // ── 릴리스 전 감사 후속: DoS-safe JWKS 재조회를 '설정값'이 아니라 '행동'으로 증명한다 ──
+    // 기존 커버리지는 config 기본값(30초) 확인과 정적 JWKS 검증뿐이라, forRealm의 `.rateLimited(...)`를
+    // 통째로 지워도 전부 통과했다. 여기서는 JWKS 조회 횟수를 직접 센다(Java 동형).
+    @Test
+    fun `jwks refetch is rate limited proven by hit count`() =
+        runTest {
+            val servedKey = rsaKey("served-kid")
+            val server = WireMockServer(wireMockConfig().dynamicPort())
+            server.start()
+            try {
+                server.stubFor(
+                    get(urlPathEqualTo(JWKS_PATH))
+                        .willReturn(
+                            aResponse()
+                                .withHeader("Content-Type", "application/json")
+                                .withBody(JWKSet(servedKey.toPublicJWK()).toString()),
+                        ),
+                )
+                val attempts = 8
+                // ⚠️ 대조군이 없으면 이 테스트는 rate-limit이 사라져도 캐시 때문에 통과할 수 있다
+                // (Node에서 실제로 겪은 함정 — `.claude/rules/node.md`). 간격 0인 검증기를 나란히 돌려
+                // 히트가 유의미하게 늘어나는지까지 확인해야 rate-limit을 증명한 것이 된다.
+                val limited = countJwksHits(server, Duration.ofMinutes(2), attempts, servedKey)
+                val unlimited = countJwksHits(server, Duration.ZERO, attempts, servedKey)
+
+                assertTrue(
+                    limited < attempts,
+                    "rate-limit이 걸리면 미해결 kid ${attempts}건이 JWKS를 ${attempts}번 때리지 " +
+                        "않아야 한다 — 실제 $limited",
+                )
+                assertTrue(
+                    unlimited > limited,
+                    "대조군(간격 0)이 더 많이 조회해야 rate-limit을 실제로 증명한다 — " +
+                        "limited=$limited unlimited=$unlimited",
+                )
+            } finally {
+                server.stop()
+            }
+        }
+
+    // jwksMinRefetch가 Nimbus 캐시 TTL(기본 5분) 이상이면 SDK 설정 오류로 거부된다.
+    // 고치기 전에는 Nimbus의 IllegalStateException이 forRealm에서 그대로 새어나와 공개 API에
+    // 하위 라이브러리 예외가 노출됐다(§4 위반). Java SDK와 같은 경계에서 같은 계급으로 변환한다.
+    @Test
+    fun `jwksMinRefetch at or above cache ttl is rejected as config error`() {
+        val config =
+            KeycloakConfig(
+                serverUrl = serverUrl,
+                realm = "r",
+                clientId = audience,
+                jwksMinRefetch = Duration.ofMinutes(10),
+            )
+        val endpoints = OidcEndpoints.forRealm(config)
+
+        val ex =
+            assertFailsWith<KeycloakConfigException> {
+                JwtValidator.forRealm(endpoints, config, audience)
+            }
+        assertTrue(
+            ex.message!!.contains("jwksMinRefetch"),
+            "진단 메시지는 어떤 설정이 문제인지 말해야 한다: ${ex.message}",
+        )
+    }
+
+    // 위조(미해결) kid 토큰을 연속 주입하고 그동안 JWKS 엔드포인트가 몇 번 조회됐는지 센다.
+    private suspend fun countJwksHits(
+        server: WireMockServer,
+        minRefetch: Duration,
+        attempts: Int,
+        signingKey: RSAKey,
+    ): Int {
+        val config =
+            KeycloakConfig(
+                serverUrl = server.baseUrl(),
+                realm = "r",
+                clientId = audience,
+                jwksMinRefetch = minRefetch,
+            )
+        val endpoints = OidcEndpoints.forRealm(config)
+        val validator = JwtValidator.forRealm(endpoints, config, audience)
+        server.resetRequests()
+        repeat(attempts) { i ->
+            val forged =
+                signedRs256(signingKey, claims(iss = endpoints.issuer), kid = "forged-$i")
+            assertFailsWith<TokenValidationException> { validator.validate(forged) }
+        }
+        return server.findAll(getRequestedFor(urlPathEqualTo(JWKS_PATH))).size
+    }
+
+    private companion object {
+        const val JWKS_PATH = "/realms/r/protocol/openid-connect/certs"
+    }
 }

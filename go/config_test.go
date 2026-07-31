@@ -79,7 +79,7 @@ func TestConfigDefaultsAndTrim(t *testing.T) {
 	if c.ConnectTimeout != 10000 || c.ReadTimeout != 30000 || c.ClockSkew != 30 {
 		t.Fatalf("defaults: %+v", c)
 	}
-	if c.JwksMinRefetch != 60 {
+	if c.JwksMinRefetch != 30 {
 		t.Fatalf("JwksMinRefetch default: %d", c.JwksMinRefetch)
 	}
 }

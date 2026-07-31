@@ -55,7 +55,7 @@ impl KeycloakConfig {
             connect_timeout: Duration::from_secs(5),
             read_timeout: Duration::from_secs(30),
             clock_skew: 30,
-            jwks_min_refetch_secs: 60,
+            jwks_min_refetch_secs: 30,
             expected_audience: None,
             redirect_uri: None,
         })
@@ -115,13 +115,13 @@ mod tests {
         assert_eq!(c.server_url, "http://kc:8080");
         assert_eq!(c.scopes, vec!["openid".to_string()]);
         assert_eq!(c.clock_skew, 30);
-        assert_eq!(c.jwks_min_refetch_secs, 60);
+        assert_eq!(c.jwks_min_refetch_secs, 30);
     }
 
     #[test]
     fn jwks_min_refetch_default_and_custom() {
         let c = KeycloakConfig::new("http://kc:8080", "r", "c").unwrap();
-        assert_eq!(c.jwks_min_refetch_secs, 60);
+        assert_eq!(c.jwks_min_refetch_secs, 30);
         assert_eq!(c.with_jwks_min_refetch_secs(120).jwks_min_refetch_secs, 120);
     }
 

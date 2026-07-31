@@ -10,7 +10,7 @@ module KeycloakSdk
     def initialize(server_url:, realm:, client_id:, client_secret: nil,
                    scopes: ["openid"], signature_algorithms: ["RS256"],
                    connect_timeout: 10, read_timeout: 10, clock_skew: 30,
-                   jwks_min_refetch: 10.0, expected_audience: nil)
+                   jwks_min_refetch: 30.0, expected_audience: nil)
       @server_url = normalize_required("server_url", server_url).sub(%r{/+\z}, "")
       @realm = normalize_required("realm", realm)
       @client_id = normalize_required("client_id", client_id)

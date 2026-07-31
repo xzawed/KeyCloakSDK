@@ -20,7 +20,7 @@ RSpec.describe KeycloakSdk::Config do
     expect(c.connect_timeout).to eq(10)
     expect(c.read_timeout).to eq(10)
     expect(c.clock_skew).to eq(30)
-    expect(c.jwks_min_refetch).to eq(10.0)
+    expect(c.jwks_min_refetch).to eq(30.0)
     expect(c.client_secret).to be_nil
   end
 

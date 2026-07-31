@@ -266,4 +266,140 @@ class JwtValidatorTest {
     assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
         () -> v.validate(jwt.serialize()));
   }
+
+  // ── 릴리스 전 감사 후속: 구현만 있고 테스트가 없던 3개 불변식 ──
+  // exp 필수 · 클록 스큐 경계 · JWKS 재조회 rate-limit(행동). 앞의 둘은 JwtValidator 생성자의
+  // `Set.of("exp")`/`setMaxClockSkew`가, 셋째는 forRealm의 `.rateLimited(...)`가 대상이다.
+
+  /** 서명된 토큰이라도 exp가 없으면 거부된다 — 무만료 토큰 방지(Node/Go/Rust/Python 동형). */
+  @Test void missingExp_rejected() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String issuer = "https://kc.example.com/realms/r";
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        // expirationTime을 넣지 않는다 — 나머지 클레임은 전부 정상이라, 거부된다면 그 이유는 exp 부재뿐이다.
+        new JWTClaimsSet.Builder().issuer(issuer).audience("app").build());
+    jwt.sign(new RSASSASigner(key));
+    JwtValidator v = JwtValidator.withStaticJwks(
+        new JWKSet(key.toPublicJWK()), issuer, "app",
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+
+    assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+        () -> v.validate(jwt.serialize()));
+  }
+
+  /**
+   * 클록 스큐 경계 — 스큐 안에서 만료된 토큰은 통과하고, 밖에서 만료된 토큰은 거부된다.
+   * 두 단언이 한 쌍이어야 의미가 있다: 통과 케이스만 있으면 "스큐가 무한대"여도 통과하고,
+   * 거부 케이스만 있으면 "스큐가 0"이어도 통과한다. 쌍으로 두어야 설정값이 실제로 배선됐음이 증명된다.
+   */
+  @Test void clockSkewBoundary_withinPasses_beyondRejected() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String issuer = "https://kc.example.com/realms/r";
+    java.time.Duration skew = java.time.Duration.ofSeconds(30);
+    JwtValidator v = JwtValidator.withStaticJwks(
+        new JWKSet(key.toPublicJWK()), issuer, "app", Set.of(JWSAlgorithm.RS256), skew);
+
+    assertEquals(issuer, v.validate(signExpiredSecondsAgo(key, issuer, 10)).getIssuer(),
+        "스큐(30s) 안에서 10초 전 만료된 토큰은 통과해야 한다");
+    assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+        () -> v.validate(signExpiredSecondsAgo(key, issuer, 90)),
+        "스큐(30s) 밖에서 90초 전 만료된 토큰은 거부되어야 한다");
+  }
+
+  private static String signExpiredSecondsAgo(RSAKey key, String issuer, long secondsAgo)
+      throws Exception {
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+            .expirationTime(new Date(System.currentTimeMillis() - secondsAgo * 1000)).build());
+    jwt.sign(new RSASSASigner(key));
+    return jwt.serialize();
+  }
+
+  /**
+   * DoS-safe JWKS 재조회(행동 검증). 기존 {@code forRealmBuildsRemoteValidatorWithConfiguredJwksRefetch}는
+   * 구성만 확인해 rate-limit이 실제로 걸리는지는 증명하지 못했다 — `.rateLimited(...)` 한 줄을 지워도
+   * 통과한다. 여기서는 JDK 내장 HTTP 서버로 실제 JWKS를 서빙하고 **요청 수를 센다**(새 의존성 없음).
+   *
+   * ⚠️ 대조군이 핵심이다(Node의 같은 교훈 — `.claude/rules/node.md`). rate-limit이 사라져도
+   * "히트가 토큰 수보다 적다"는 단언은 캐시 때문에 여전히 통과할 수 있다. 그래서 rate-limit을
+   * 사실상 끈 검증기(간격 0)를 나란히 돌려 **히트가 유의미하게 늘어나는지**까지 확인한다.
+   */
+  @Test void jwksRefetch_isRateLimited_provenByHitCount() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("served-kid").generate();
+    java.util.concurrent.atomic.AtomicInteger hits = new java.util.concurrent.atomic.AtomicInteger();
+    com.sun.net.httpserver.HttpServer server =
+        com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    byte[] body = new JWKSet(key.toPublicJWK()).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    server.createContext("/realms/r/protocol/openid-connect/certs", ex -> {
+      hits.incrementAndGet();
+      ex.getResponseHeaders().add("Content-Type", "application/json");
+      ex.sendResponseHeaders(200, body.length);
+      try (java.io.OutputStream os = ex.getResponseBody()) { os.write(body); }
+    });
+    server.start();
+    try {
+      String base = "http://127.0.0.1:" + server.getAddress().getPort();
+      int attempts = 8;
+
+      // ⚠️ 간격은 Nimbus 캐시 TTL(기본 5분)보다 작아야 한다 — 그 이상이면 JWKSourceBuilder가
+      // IllegalStateException을 던진다(아래 jwksMinRefetch_atOrAboveCacheTtl_isRejectedAsConfigError 참고).
+      int limited = countJwksHitsForUnknownKids(base, java.time.Duration.ofMinutes(2), attempts, hits, key);
+      int unlimited = countJwksHitsForUnknownKids(base, java.time.Duration.ZERO, attempts, hits, key);
+
+      assertTrue(limited < attempts,
+          "rate-limit이 걸리면 미해결 kid " + attempts + "건이 JWKS를 " + attempts
+              + "번 때리지 않아야 한다 — 실제 " + limited);
+      assertTrue(unlimited > limited,
+          "대조군(간격 0)이 rate-limit 적용본보다 많이 조회해야 이 테스트가 rate-limit을 실제로 "
+              + "증명한다 — limited=" + limited + " unlimited=" + unlimited);
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  /**
+   * jwksMinRefetch가 Nimbus 캐시 TTL(5분) 이상이면 SDK 설정 오류로 거부된다.
+   * 이 경계는 위 rate-limit 테스트를 쓰다 발견했다 — 고치기 전에는 Nimbus의 `IllegalStateException`이
+   * `forRealm`에서 그대로 새어나와, 공개 API에 하위 라이브러리 예외가 노출됐다(§4 위반).
+   * 구성 자체를 거부하는 것은 정당하다: 캐시가 만료돼도 rate-limit이 재조회를 막으면 JWKS를
+   * 영영 갱신할 수 없다. 다만 진단은 SDK 타입으로, 한계값을 담아 돌려준다.
+   */
+  @Test void jwksMinRefetch_atOrAboveCacheTtl_isRejectedAsConfigError() {
+    io.github.xzawed.keycloak.core.KeycloakConfig cfg =
+        io.github.xzawed.keycloak.core.KeycloakConfig.builder()
+            .serverUrl(SERVER_URL).realm("r").clientId("app")
+            .jwksMinRefetch(java.time.Duration.ofMinutes(10)).build();
+    OidcMetadata md = OidcMetadata.forRealm(cfg);
+
+    io.github.xzawed.keycloak.core.exception.KeycloakConfigException ex =
+        assertThrows(io.github.xzawed.keycloak.core.exception.KeycloakConfigException.class,
+            () -> JwtValidator.forRealm(md, cfg, Set.of(JWSAlgorithm.RS256), "app"));
+    assertTrue(ex.getMessage().contains("jwksMinRefetch"),
+        "진단 메시지는 어떤 설정이 문제인지 말해야 한다: " + ex.getMessage());
+  }
+
+  /** 위조(미해결) kid 토큰을 연속 주입하고 그동안 JWKS 엔드포인트가 몇 번 조회됐는지 센다. */
+  private static int countJwksHitsForUnknownKids(String baseUrl, java.time.Duration minRefetch,
+      int attempts, java.util.concurrent.atomic.AtomicInteger hits, RSAKey signingKey)
+      throws Exception {
+    io.github.xzawed.keycloak.core.KeycloakConfig cfg =
+        io.github.xzawed.keycloak.core.KeycloakConfig.builder()
+            .serverUrl(baseUrl).realm("r").clientId("app").jwksMinRefetch(minRefetch).build();
+    OidcMetadata md = OidcMetadata.forRealm(cfg);
+    JwtValidator v = JwtValidator.forRealm(md, cfg, Set.of(JWSAlgorithm.RS256), "app");
+    hits.set(0);
+    for (int i = 0; i < attempts; i++) {
+      SignedJWT jwt = new SignedJWT(
+          new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("forged-" + i).build(), // 매번 다른 미해결 kid
+          new JWTClaimsSet.Builder().issuer(md.getIssuer()).audience("app")
+              .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
+      jwt.sign(new RSASSASigner(signingKey));
+      final String serialized = jwt.serialize();
+      assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+          () -> v.validate(serialized), "미해결 kid 토큰은 항상 거부되어야 한다");
+    }
+    return hits.get();
+  }
 }
