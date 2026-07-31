@@ -1,8 +1,15 @@
 package io.github.xzawed.keycloak
 
+import com.nimbusds.jose.util.DefaultResourceRetriever
 import com.nimbusds.oauth2.sdk.http.HTTPRequest
+import com.sun.net.httpserver.HttpServer
+import java.io.IOException
+import java.net.InetSocketAddress
 import java.net.URI
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -40,5 +47,50 @@ internal class AuthClientRedirectHardeningTest {
             client.applyTimeouts(req).followRedirects,
             "SSRF 하드닝: back-channel 요청은 3xx를 따라가면 안 된다",
         )
+    }
+
+    /**
+     * JWKS 조회 경로도 3xx를 따라가면 안 된다 — 여기가 뚫리면 공격자가 고른 URL의 응답이
+     * **서명 검증용 키 집합으로 쓰인다**. auth 경로보다 결과가 나쁘다.
+     *
+     * 대조군으로 Nimbus 기본 리트리버를 같은 서버에 붙여 **그쪽은 따라간다**는 것까지 확인한다 —
+     * 없으면 "서버가 302를 주긴 했다"만 증명하는 셈이 된다. Java 자매 SDK와 동형.
+     */
+    @Test
+    fun `jwks retriever does not follow redirects`() {
+        val internalHits = AtomicInteger()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val keys = """{"keys":[]}""".toByteArray()
+        server.createContext("/internal") { ex ->
+            internalHits.incrementAndGet()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(200, keys.size.toLong())
+            ex.responseBody.use { it.write(keys) }
+        }
+        server.createContext("/certs") { ex ->
+            ex.responseHeaders.add("Location", "/internal")
+            ex.sendResponseHeaders(302, -1)
+            ex.close()
+        }
+        server.start()
+        try {
+            val certs = URI("http://127.0.0.1:${server.address.port}/certs").toURL()
+
+            // 대조군: Nimbus 기본 리트리버는 따라간다 — 깨지면 상류가 기본값을 바꿨다는 뜻이다.
+            DefaultResourceRetriever(2000, 2000).retrieveResource(certs)
+            assertTrue(internalHits.get() > 0, "대조군(기본 리트리버)은 리다이렉트를 따라가야 한다")
+
+            internalHits.set(0)
+            assertFailsWith<IOException> {
+                NoRedirectResourceRetriever(2000, 2000).retrieveResource(certs)
+            }
+            assertEquals(
+                0,
+                internalHits.get(),
+                "SSRF 하드닝: 리다이렉트 대상은 조회되면 안 된다 — 그 응답이 서명 검증 키가 된다",
+            )
+        } finally {
+            server.stop(0)
+        }
     }
 }

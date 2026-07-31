@@ -29,8 +29,11 @@ public final class JwtValidator {
     try {
       // JWKS fetch도 KeycloakConfig의 connect/read 타임아웃을 따른다 (M.7): 기본
       // DefaultResourceRetriever는 자체 기본 타임아웃을 쓰므로 그대로 두면 설정이 무시된다.
+      // ⚠️ 기본 DefaultResourceRetriever는 HttpURLConnection의 기본 동작(리다이렉트 추종)을
+      // 그대로 쓴다 — JWKS가 예상 밖 3xx를 주면 공격자가 고른 URL의 응답을 **서명 검증용 키
+      // 집합으로 사용**하게 된다. NoRedirectResourceRetriever가 그 확장점을 막는다.
       com.nimbusds.jose.util.DefaultResourceRetriever retriever =
-          new com.nimbusds.jose.util.DefaultResourceRetriever(
+          new NoRedirectResourceRetriever(
               (int) cfg.getConnectTimeout().toMillis(), (int) cfg.getReadTimeout().toMillis());
       // 미해결 kid 재조회 rate-limit 간격을 config로 설정 가능하게 한다(기본 30초 = Nimbus
       // DEFAULT_RATE_LIMIT_MIN_INTERVAL 동형). 위조 kid 폭주에 대한 DoS 증폭 상한.

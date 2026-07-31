@@ -39,4 +39,49 @@ class AuthClientRedirectHardeningTest {
     assertFalse(client().applyTimeouts(req).getFollowRedirects(),
         "SSRF 하드닝: back-channel 요청은 3xx를 따라가면 안 된다");
   }
+
+  /**
+   * JWKS 조회 경로도 3xx를 따라가면 안 된다 — 여기가 뚫리면 공격자가 고른 URL의 응답이
+   * **서명 검증용 키 집합으로 쓰인다**. auth 경로보다 결과가 나쁘다.
+   *
+   * <p>행동 검증: 302를 주는 로컬 서버에 붙여 리다이렉트 대상이 실제로 조회되지 않는지 센다.
+   * 대조군으로 Nimbus 기본 리트리버를 같은 서버에 붙여 **그쪽은 따라간다**는 것까지 확인한다 —
+   * 대조군이 없으면 이 테스트는 "서버가 302를 주긴 했다"만 증명할 수도 있다.
+   */
+  @Test void jwksRetriever_doesNotFollowRedirects() throws Exception {
+    java.util.concurrent.atomic.AtomicInteger internalHits = new java.util.concurrent.atomic.AtomicInteger();
+    com.sun.net.httpserver.HttpServer server =
+        com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    byte[] keys = "{\"keys\":[]}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    server.createContext("/internal", ex -> {
+      internalHits.incrementAndGet();
+      ex.getResponseHeaders().add("Content-Type", "application/json");
+      ex.sendResponseHeaders(200, keys.length);
+      try (java.io.OutputStream os = ex.getResponseBody()) { os.write(keys); }
+    });
+    server.createContext("/certs", ex -> {
+      ex.getResponseHeaders().add("Location", "/internal");
+      ex.sendResponseHeaders(302, -1);
+      ex.close();
+    });
+    server.start();
+    try {
+      java.net.URL certs = java.net.URI.create(
+          "http://127.0.0.1:" + server.getAddress().getPort() + "/certs").toURL();
+
+      // 대조군: Nimbus 기본 리트리버는 따라간다 — 이 단언이 깨지면 상류가 기본값을 바꿨다는 뜻이다.
+      new com.nimbusds.jose.util.DefaultResourceRetriever(2000, 2000).retrieveResource(certs);
+      assertTrue(internalHits.get() > 0, "대조군(기본 리트리버)은 리다이렉트를 따라가야 한다");
+
+      internalHits.set(0);
+      // 우리 리트리버: 따라가지 않으므로 조회가 실패해야 하고, /internal은 건드리지 않아야 한다.
+      assertThrows(java.io.IOException.class,
+          () -> new NoRedirectResourceRetriever(2000, 2000).retrieveResource(certs),
+          "리다이렉트를 따라가지 않으므로 JWKS 조회는 실패로 표면화되어야 한다");
+      assertEquals(0, internalHits.get(),
+          "SSRF 하드닝: 리다이렉트 대상은 조회되면 안 된다 — 그 응답이 서명 검증 키가 된다");
+    } finally {
+      server.stop(0);
+    }
+  }
 }
