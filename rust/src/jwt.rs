@@ -476,8 +476,16 @@ mod tests {
 
     /// 악성 JWKS: RSA `n`이 JSON 배열(문자열이 아님). PHP SDK 자매 구현에서 이 클래스가
     /// 일반 리뷰를 뚫고 Critical(경계 미변환 예외 누출)로 실제 배포된 전례가 있다.
-    /// Rust는 `JwkSet` serde 역직렬화 단계에서 타입 불일치로 실패하고, `JwksStore::fetch`가
-    /// 이를 `KeycloakError::Transport`로 흡수한다 — 핵심 불변식은 "panic이 아니라 깨끗한 Err".
+    /// 핵심 불변식은 **"panic이 아니라 깨끗한 Err"**(= fail-closed)이며, 그 Err가 어느 단계에서
+    /// 나오는지는 하위 크레이트의 관용에 달려 있다.
+    ///
+    /// ⚠️ jsonwebtoken 11.0.0에서 거부 **단계가 옮겨졌다**("JWKs with unknown key types are now
+    /// deserializable"). 10.x는 `JwkSet` serde 역직렬화가 타입 불일치로 실패해 `JwksStore::fetch`가
+    /// `Transport`로 흡수했지만, 11.x는 RSA 변형 매칭에 실패한 이 키를 unknown 키타입으로
+    /// 역직렬화에 성공시킨다 → 세트는 파싱되고 kid도 찾히며, 한 단계 뒤 `DecodingKey::from_jwk`가
+    /// 거부해 `TokenValidation`이 된다(아래 `rejects_jwks_with_invalid_base64_n`과 같은 경로).
+    /// 거부 자체는 그대로이므로 fail-closed는 유지된다 — 오히려 **세트 전체가 죽지 않는** 쪽이
+    /// 안전하다(`tolerates_unknown_kty_alongside_valid_key` 참고).
     #[tokio::test]
     async fn rejects_jwks_with_n_as_array() {
         let fx = make_key();
@@ -486,11 +494,35 @@ mod tests {
             "alg":"RS256","n":["not","a","string"],"e":"AQAB" } ] });
         let v = validator_with_raw_jwks(malformed).await;
         match v.validate(&token).await {
-            Err(KeycloakError::Transport(_)) => {} // 기대: JWKS 역직렬화 실패 → 깨끗한 Transport 오류(panic 아님)
+            Err(KeycloakError::TokenValidation(_)) => {} // 기대: from_jwk 거부 → 깨끗한 Err(panic 아님)
             other => panic!(
-                "malformed JWKS (n as JSON array) MUST yield a clean Err(Transport(_)), not panic — got {other:?}"
+                "malformed JWKS (n as JSON array) MUST yield a clean Err(TokenValidation(_)), not panic — got {other:?}"
             ),
         }
+    }
+
+    /// jsonwebtoken 11.0.0을 수용한 **근거**를 고정하는 회귀 테스트.
+    ///
+    /// 10.x에서는 JWKS에 우리가 모르는 `kty` 키가 **하나라도** 섞이면 `JwkSet` 역직렬화가 통째로
+    /// 실패해 같은 세트의 멀쩡한 RSA 키까지 못 쓰고 **모든 검증이 죽었다**. Keycloak이 realm에
+    /// EdDSA 등 키를 추가하면 그대로 발현하는 가용성 사고다. 11.x는 미지 키타입을 관용하므로
+    /// 유효한 키로 서명된 토큰은 계속 검증된다 — 이 성질이 깨지면 상향을 되돌려야 한다.
+    #[tokio::test]
+    async fn tolerates_unknown_kty_alongside_valid_key() {
+        let fx = make_key();
+        let token = sign(&fx, good_claims(), "test-kid");
+        // 미지 kty 키가 유효한 RSA 키보다 **앞에** 오도록 배치(순회 중 조기 실패 방지 확인).
+        let mixed = json!({ "keys": [
+            { "kty":"OKP","kid":"future-kid","use":"sig","alg":"EdDSA","crv":"Ed25519","x":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo" },
+            fx.jwk,
+        ] });
+        let v = validator_with_raw_jwks(mixed).await;
+        let out = v.validate(&token).await;
+        assert!(
+            out.is_ok(),
+            "unknown-kty key in the set MUST NOT disable the valid RSA key — got {out:?}"
+        );
+        assert_eq!(out.unwrap().subject, "s1");
     }
 
     /// 악성 JWKS: RSA `n`이 문법적으로 유효한 JSON 문자열이지만 base64url이 아니다.
