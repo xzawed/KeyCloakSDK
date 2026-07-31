@@ -380,6 +380,96 @@ class JwtValidatorTest {
         "진단 메시지는 어떤 설정이 문제인지 말해야 한다: " + ex.getMessage());
   }
 
+  /**
+   * 기형 JWKS(base64url이 아닌 modulus)는 raw 예외가 아니라 SDK 타입 오류로 나와야 한다.
+   * PHP 자매 구현에서 이 클래스가 일반 리뷰를 뚫고 Critical(경계 미변환 예외 누출)로 배포된 전례가 있다.
+   * 동형 최소집합 5번 — Java에는 이 프로브가 없었다(감사 실측).
+   */
+  @Test void malformedJwks_yieldsSdkError_notRawException() throws Exception {
+    byte[] body = ("{\"keys\":[{\"kty\":\"RSA\",\"kid\":\"k1\",\"use\":\"sig\",\"alg\":\"RS256\","
+        + "\"n\":\"!!!not-base64!!!\",\"e\":\"AQAB\"}]}")
+        .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    com.sun.net.httpserver.HttpServer server = jwksServer(body, null);
+    try {
+      io.github.xzawed.keycloak.core.KeycloakConfig cfg = localConfig(server);
+      OidcMetadata md = OidcMetadata.forRealm(cfg);
+      JwtValidator v = JwtValidator.forRealm(md, cfg, Set.of(JWSAlgorithm.RS256), "app");
+      RSAKey signing = new RSAKeyGenerator(2048).keyID("k1").generate();
+      SignedJWT jwt = signWith(signing, md.getIssuer(), "k1");
+
+      assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+          () -> v.validate(jwt.serialize()));
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  /**
+   * 위조 서명 + **알려진** kid는 JWKS 재조회를 전혀 유발하면 안 된다(동형 최소집합 4번).
+   * 미해결 kid는 rate-limited 재조회를 유발하지만(키 회전 대응), 서명만 바꾼 토큰까지 재조회를
+   * 유발하면 공격자가 서명 바이트만 바꿔가며 IdP를 때릴 수 있다 — 재조회 증폭 경로가 열린다.
+   * Python·Go·Rust·Ruby는 이미 고정돼 있었고 Java에는 없었다(감사 실측).
+   */
+  @Test void forgedSignatureWithKnownKid_doesNotRefetchJwks() throws Exception {
+    RSAKey served = new RSAKeyGenerator(2048).keyID("k1").generate();
+    RSAKey attacker = new RSAKeyGenerator(2048).keyID("k1").generate(); // 같은 kid, 다른 키
+    java.util.concurrent.atomic.AtomicInteger hits = new java.util.concurrent.atomic.AtomicInteger();
+    com.sun.net.httpserver.HttpServer server = jwksServer(
+        new JWKSet(served.toPublicJWK()).toString()
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8), hits);
+    try {
+      io.github.xzawed.keycloak.core.KeycloakConfig cfg = localConfig(server);
+      OidcMetadata md = OidcMetadata.forRealm(cfg);
+      JwtValidator v = JwtValidator.forRealm(md, cfg, Set.of(JWSAlgorithm.RS256), "app");
+
+      // 워밍업: 정상 토큰 1건으로 JWKS를 실제로 받아둔다(그래야 이후 증가분이 '재조회'를 뜻한다).
+      assertEquals(md.getIssuer(), v.validate(signWith(served, md.getIssuer(), "k1").serialize()).getIssuer());
+      int afterWarmup = hits.get();
+      assertTrue(afterWarmup > 0, "워밍업이 JWKS를 실제로 조회했어야 이 테스트가 의미를 갖는다");
+
+      for (int i = 0; i < 8; i++) {
+        final String forged = signWith(attacker, md.getIssuer(), "k1").serialize();
+        assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+            () -> v.validate(forged));
+      }
+      assertEquals(afterWarmup, hits.get(),
+          "위조 서명(알려진 kid)은 JWKS 재조회를 유발하면 안 된다 — 서명위조 DoS 증폭 경로");
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  /** 지정한 바디를 /certs로 서빙하는 로컬 HTTP 서버. hits가 non-null이면 요청 수를 센다. */
+  private static com.sun.net.httpserver.HttpServer jwksServer(
+      byte[] body, java.util.concurrent.atomic.AtomicInteger hits) throws Exception {
+    com.sun.net.httpserver.HttpServer server =
+        com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext("/realms/r/protocol/openid-connect/certs", ex -> {
+      if (hits != null) hits.incrementAndGet();
+      ex.getResponseHeaders().add("Content-Type", "application/json");
+      ex.sendResponseHeaders(200, body.length);
+      try (java.io.OutputStream os = ex.getResponseBody()) { os.write(body); }
+    });
+    server.start();
+    return server;
+  }
+
+  private static io.github.xzawed.keycloak.core.KeycloakConfig localConfig(
+      com.sun.net.httpserver.HttpServer server) {
+    return io.github.xzawed.keycloak.core.KeycloakConfig.builder()
+        .serverUrl("http://127.0.0.1:" + server.getAddress().getPort())
+        .realm("r").clientId("app").build();
+  }
+
+  private static SignedJWT signWith(RSAKey key, String issuer, String kid) throws Exception {
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(kid).build(),
+        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+            .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
+    jwt.sign(new RSASSASigner(key));
+    return jwt;
+  }
+
   /** 위조(미해결) kid 토큰을 연속 주입하고 그동안 JWKS 엔드포인트가 몇 번 조회됐는지 센다. */
   private static int countJwksHitsForUnknownKids(String baseUrl, java.time.Duration minRefetch,
       int attempts, java.util.concurrent.atomic.AtomicInteger hits, RSAKey signingKey)
