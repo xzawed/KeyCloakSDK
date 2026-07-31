@@ -14,6 +14,17 @@ updates:
     schedule: { interval: weekly }
     groups:
       kotlin-minor-patch: { update-types: [minor, patch] }
+    ignore:
+      # kotlin-stdlib 버전은 게시 아티팩트의 **소비자 하한**이다 — build.gradle.kts에서 KGP 자동주입을
+      # 끄고(`kotlin.stdlib.default.dependency=false`) compilerOptions의 languageVersion/apiVersion
+      # (=KOTLIN_2_2)에 맞춰 손수 선언한 값이라, 이것만 올라가면 메타데이터는 "Kotlin 2.2 가능"이라
+      # 주장하면서 전이 stdlib는 2.4를 요구하는 상태로 조용히 갈라진다(2.2 소비자는 "newer Kotlin
+      # compiler로 컴파일되어 읽을 수 없다"로 빌드 실패 — d6f1729가 고친 그 상태로 되돌아간다).
+      # 패치(2.2.x)는 같은 언어버전 라인이라 받되, 마이너/메이저는 languageVersion과 함께 사람이
+      # 올린다. 하한을 올릴 때 이 ignore도 함께 재검토한다. (PR #110 close 근거)
+      - dependency-name: 'org.jetbrains.kotlin:kotlin-stdlib'
+        update-types:
+          ['version-update:semver-minor', 'version-update:semver-major']
 
   - package-ecosystem: pip # Python
     directory: /python
@@ -76,3 +87,14 @@ updates:
     schedule: { interval: weekly }
     groups:
       actions-all: { patterns: ["*"] }
+    ignore:
+      # dtolnay/rust-toolchain은 **ref 이름이 곧 설치할 toolchain**이다(`@stable`·`@1.88`). 그래서
+      # 우리 핀은 `stable` 브랜치의 헤드 SHA이고 `# stable` 주석이 그 의미를 보존한다. dependabot은
+      # 이 주석을 semver 태그로만 해석해 브랜치 이름은 못 읽고 기본 브랜치(master) 헤드로 SHA를
+      # 갈아끼우는데, master 커밋에는 toolchain을 고를 ref 이름이 없어 액션이 첫 스텝에서
+      # `'toolchain' is a required input`으로 즉시 죽는다(PR #111에서 rust 잡 3종 동시 실패 실측).
+      # 즉 이 액션의 자동 bump는 구조적으로 항상 틀린다 — `stable` 브랜치 헤드를 직접 확인해
+      # 사람이 올린다(`gh api repos/dtolnay/rust-toolchain/branches/stable --jq .commit.sha`).
+      # taiki-e/install-action도 ref가 설치대상을 고르지만 태그(`cargo-llvm-cov`·`cargo-audit`)라
+      # dependabot이 애초에 손대지 않으므로 여기 넣지 않는다.
+      - dependency-name: 'dtolnay/rust-toolchain'
