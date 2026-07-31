@@ -57,6 +57,7 @@ with KeycloakClient.create(config) as kc:
 from keycloak_sdk import KeycloakConfig
 from keycloak_sdk.aio import AsyncKeycloakClient
 
+
 async def handler(config: KeycloakConfig) -> None:
     async with AsyncKeycloakClient.create(config) as kc:
         token = await kc.auth.client_credentials_token()

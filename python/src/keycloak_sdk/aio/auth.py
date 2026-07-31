@@ -23,6 +23,7 @@ from joserfc.jwk import KeySet, KeySetSerialization
 from keycloak import KeycloakOpenID
 from keycloak.exceptions import KeycloakError
 
+from .._internal.redirects import harden_openid
 from ..auth import AuthorizationUrl, _generate_pkce_pair
 from ..config import KeycloakConfig
 from ..exceptions import (
@@ -67,6 +68,10 @@ class AsyncAuthClient:
                 timeout=max(1, round(config.read_timeout)),
             )
         )
+        # async 전송(httpx)은 오늘 안전하지만, 이 객체는 쓰이지 않는 sync requests 세션도
+        # 함께 들고 있다. 지금은 어떤 `a_*`도 sync `raw_*`로 내려가지 않음을 확인했으나,
+        # 한 줄로 그 경로가 생길 가능성을 미리 닫아둔다(비용 0의 심층방어).
+        harden_openid(self._openid)
         self._jwks_cache: KeySet | None = None
         self._jwks_lock = asyncio.Lock()
         self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)

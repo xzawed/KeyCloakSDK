@@ -95,10 +95,28 @@ async def test_aclose_is_noop_when_admin_never_constructed():
     assert client._admin is None
 
 
-async def test_aclose_is_noop_when_connection_missing():
-    """`connection`이 없으면(내부 구조 변경 대비) 조용히 넘어간다."""
+async def test_construction_is_refused_when_connection_is_missing():
+    """⚠️ 의도된 계약 변경 — 예전에는 `connection`이 없어도 조용히 넘어갔다.
+
+    지금은 **생성 자체를 거부**한다. 리다이렉트 하드닝이 `connection._s`에 걸리므로, 그 구조가
+    없는데도 클라이언트를 만들어주면 하드닝이 조용히 사라진 채 동작하는 객체가 나온다 —
+    그 상태에서 3xx를 만나면 `client_secret`이 실린 POST 바디가 리다이렉트 대상으로 간다.
+    "조용히 무방비"보다 "시끄럽게 실패"가 맞다.
+    """
     admin = MagicMock(spec=KeycloakAdmin)
     admin.connection = None
+
+    with pytest.raises(KeycloakConfigError, match="cannot harden"):
+        AsyncAdminClient(_config(), admin=admin)
+
+
+async def test_aclose_is_noop_when_connection_disappears_after_construction():
+    """원래 의도(내부 구조 변경에 대한 aclose의 관용)는 그대로 보존한다.
+
+    생성 시점에는 구조가 온전했고 그 뒤에 사라진 경우 — 정리 경로는 여전히 조용히 넘어가야 한다.
+    """
+    admin = MagicMock(spec=KeycloakAdmin)  # 잘 갖춰진 목이라 생성 시 하드닝을 통과한다
     client = AsyncAdminClient(_config(), admin=admin)
+    admin.connection = None  # 생성 이후 내부 구조가 바뀐 상황
 
     await client.aclose()  # must not raise

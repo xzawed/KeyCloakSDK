@@ -21,6 +21,7 @@ from joserfc.jwk import KeySet, KeySetSerialization
 from keycloak import KeycloakOpenID
 from keycloak.exceptions import KeycloakError
 
+from ._internal.redirects import harden_openid
 from ._internal.secrets import mask
 from .config import KeycloakConfig
 from .exceptions import (
@@ -92,6 +93,9 @@ class AuthClient:
                 timeout=max(1, round(config.read_timeout)),
             )
         )
+        # 백채널은 3xx를 따라가지 않는다 — 주입된 인스턴스도 동일하게 막는다(주입 경로가
+        # 프로덕션 경로보다 느슨해지면 테스트가 증명하는 것이 실제와 달라진다).
+        harden_openid(self._openid)
         self._jwks_cache: KeySet | None = None
         self._jwks_lock = threading.Lock()
         self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)

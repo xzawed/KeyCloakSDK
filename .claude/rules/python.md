@@ -25,4 +25,6 @@ cd python && "${KCSDK_PY:-.venv/Scripts/python.exe}" -m mypy src                
 
 ## 게차
 
+- ⚠️ **(Python) python-keycloak sync는 `allow_redirects`를 전달하지 않고, admin은 세션이 **둘**이며 그중 하나는 지연 생성된다.** `raw_get`/`raw_post`가 kwargs를 `params=`(쿼리스트링)로 흘려보내므로 호출 시점에 플래그를 넘길 수단이 없다 — 세션의 `resolve_redirects`를 덮는 것이 유일하게 우회 불가능한 지점이다. ⚠️ **admin은 `connection._s`(REST)와 `connection.keycloak_openid.connection._s`(자체 토큰 그랜트) 두 세션을 갖고, 후자는 첫 접근 때 생성된다** — 바깥만 막으면 첫 admin 호출의 그랜트가 `client_secret`이 실린 POST 바디를 리다이렉트 대상에 그대로 넘긴다(실측). ⚠️ 유출되는 것은 `Authorization` 헤더가 아니다 — requests의 `rebuild_auth`가 교차출처에서 그 헤더는 떼어내지만 **POST 바디는 307/308에서 그대로 보존**하며 거기에 자격증명이 있다(헤더를 겨냥한 방어는 이걸 못 막는다). 근거: `_internal/redirects.py`·`tests/unit/test_redirects.py`.
+
 `(Python)` 단일 언어 태그로 표시된 게차 항목은 현재 없다 — Python 관련 게차(JWKS DoS-안전 재조회·admin 타임아웃/자원정리 등)는 태그 없는 프로젝트 공통 항목이라 루트 `CLAUDE.md`의 `## 핵심 게차` 섹션에 전문이 남아있다.

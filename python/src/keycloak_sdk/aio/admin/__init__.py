@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from keycloak import KeycloakAdmin
 
+from ..._internal.redirects import harden_admin
 from ...config import KeycloakConfig
 from ...exceptions import KeycloakConfigError
 from .clients import AsyncClientsResource
@@ -35,6 +36,8 @@ class AsyncAdminClient:
 
     def __init__(self, config: KeycloakConfig, admin: KeycloakAdmin | None = None) -> None:
         self._config = config
+        if admin is not None:
+            harden_admin(admin)
         self._admin = admin
 
     @property
@@ -57,6 +60,7 @@ class AsyncAdminClient:
                 # 전달한다(python-keycloak 스텁은 int로 좁게 타이핑하나 런타임은 정상).
                 timeout=self._config.read_timeout,  # type: ignore[arg-type]
             )
+            harden_admin(self._admin)
         return self._admin
 
     @property
