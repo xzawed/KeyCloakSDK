@@ -22,6 +22,14 @@ permissions:
   contents: read
 
 jobs:
+  # 게시 직전 마지막 게이트 — 패키징된 산출물을 로컬 레지스트리에 올린 뒤 모노레포 바깥의 깨끗한
+  # 컨테이너에서 설치해 quickstart를 돌린다. 소스 테스트가 통과해도 패키징 층(매니페스트 메타데이터·
+  # 파일 포함규칙·게시 아티팩트 호환성)의 결함은 여기서만 드러난다 — 레지스트리에 태우기 전 마지막 기회다.
+  install-smoke:
+    uses: ./.github/workflows/install-smoke.yml
+    with:
+      lang: java
+
   # 발행 전 게이트 — 실제 Keycloak 컨테이너로 통합 E2E를 돌리고, 통과해야만 release 잡이 시작된다.
   # ⚠️ 이 잡은 구조를 위해 존재한다. `mvn -Prelease deploy`도 lifecycle상 verify(failsafe)를 먼저
   # 지나므로 "이미 게이트가 있다"고 볼 수도 있지만, 그 보장은 프로파일·플래그 한 줄로 조용히
@@ -40,7 +48,7 @@ jobs:
         run: mvn -B -f java/pom.xml verify
 
   release:
-    needs: integration
+    needs: [integration, install-smoke]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
