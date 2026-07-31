@@ -236,7 +236,15 @@ class AsyncAuthClient:
                 self._jwks_forced_at = now
             certs = await self._awrap(self._openid.a_certs())
             certs_typed = cast(KeySetSerialization, cast(Any, certs))
-            self._jwks_cache = KeySet.import_key_set(certs_typed)
+            # ⚠️ sync 미러와 동일 — 기형 JWKS에서 joserfc는 joserfc 타입도 아닌 stdlib
+            # `binascii.Error`를 던진다. 그대로 두면 `keycloak_sdk.exceptions`를 잡는 소비자가
+            # 아무것도 잡지 못한다(§4 위반). 두 미러가 갈라지지 않도록 같이 고친다.
+            try:
+                self._jwks_cache = KeySet.import_key_set(certs_typed)
+            except Exception as exc:
+                raise TokenValidationError(
+                    f"malformed JWKS from the identity provider: {exc}"
+                ) from exc
         return self._jwks_cache
 
     async def aclose(self) -> None:

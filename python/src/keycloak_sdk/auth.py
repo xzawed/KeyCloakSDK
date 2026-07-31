@@ -263,7 +263,17 @@ class AuthClient:
             certs = self._wrap(lambda: self._openid.certs())
             # python-keycloak types certs() as a bare `dict`; the realm JWKS endpoint
             # (RFC 7517) always returns `{"keys": [...]}`, matching joserfc's shape.
-            self._jwks_cache = KeySet.import_key_set(cast(KeySetSerialization, certs))
+            # ⚠️ 파싱은 `_wrap`이 덮지 않는다 — `_wrap`은 전송 오류용이고 여기는 **응답 내용**이
+            # 문제인 경우다. base64url이 아닌 modulus 같은 기형 JWKS에서 joserfc는 joserfc 타입도
+            # 아닌 `binascii.Error`(stdlib)를 던지며, 그대로 두면 `keycloak_sdk.exceptions`를 잡는
+            # 소비자가 **아무것도 잡지 못한다**(§4 위반). IdP가 기형 JWKS를 주는 것은 가정이
+            # 아니다 — 프록시 오구성·부분 배포·중간자가 모두 이 모양이 된다.
+            try:
+                self._jwks_cache = KeySet.import_key_set(cast(KeySetSerialization, certs))
+            except Exception as exc:
+                raise TokenValidationError(
+                    f"malformed JWKS from the identity provider: {exc}"
+                ) from exc
         return self._jwks_cache
 
     def close(self) -> None:

@@ -471,3 +471,36 @@ async def test_aclose_closes_underlying_connection():
     await client.aclose()
 
     openid.connection.aclose.assert_awaited_once_with()
+
+
+async def test_malformed_jwks_yields_sdk_error_not_a_raw_library_exception():
+    """sync 미러와 동일한 계약 — 기형 JWKS는 SDK 오류로 나와야 한다(동형 최소집합 5번).
+
+    두 미러가 갈라지지 않도록 async에도 같은 프로브를 둔다. 고치기 전에는 joserfc가 joserfc
+    타입도 아닌 stdlib `binascii.Error`를 던져 `keycloak_sdk.exceptions`를 잡는 소비자가
+    아무것도 잡지 못했다(§4 위반).
+    """
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    token = _signed_token(key, issuer=endpoints.issuer, audience=config.client_id)
+
+    openid = MagicMock()
+    openid.a_certs = AsyncMock(
+        return_value={
+            "keys": [
+                {
+                    "kty": "RSA",
+                    "kid": "k1",
+                    "use": "sig",
+                    "alg": "RS256",
+                    "n": "!!!not-base64!!!",
+                    "e": "AQAB",
+                }
+            ]
+        }
+    )
+    client = _client(openid, config=config)
+
+    with pytest.raises(TokenValidationError):
+        await client.validate(token)
