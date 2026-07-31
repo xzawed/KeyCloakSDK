@@ -145,6 +145,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(Rust) `keycloak` crate와 `openidconnect`는 reqwest 메이저를 정렬해야 함.** 상세: `.claude/rules/rust.md`
 - ⚠️ **(Rust) `openidconnect`의 `CoreClient`는 6개 엔드포인트 typestate 제네릭.** 상세: `.claude/rules/rust.md`
 - ⚠️ **(Rust) `jsonwebtoken`의 `Validation` 기본값은 안전하지 않다.** 상세: `.claude/rules/rust.md`
+- ⚠️ **(Rust) jsonwebtoken 11.0.0부터 기형 JWKS 거부가 파싱이 아니라 키 생성 단계에서 일어난다(`Transport`→`TokenValidation`) — fail-closed는 유지, 미지 kty 혼재 세트는 이제 죽지 않는다.** 상세: `.claude/rules/rust.md`
 - ⚠️ **(Rust) JWKS rate-limit은 재조회 *결정 시점*에 stamp(Go/Python 동형).** 상세: `.claude/rules/rust.md`
 - ⚠️ **(Rust) 공유 `reqwest::Client`는 `redirect::Policy::none()`으로 리다이렉트 전면차단(SSRF 하드닝).** 상세: `.claude/rules/rust.md`
 - ⚠️ **(Rust) MSRV 1.88.** 상세: `.claude/rules/rust.md`
@@ -249,7 +250,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 |---|---|---|---|
 | Admin | `keycloak`(`default-features = false`, features: `tags-all`·`resource-builder`·`reqwest12`) | `reqwest12` feature로 `openidconnect`와 reqwest 0.12를 정렬(안 맞추면 타입 불일치로 컴파일 실패) | `26.6.2` |
 | 인증(OIDC/OAuth2) | `openidconnect`(`default-features = false`, feature: `reqwest`) | `CoreClient`가 6개 엔드포인트 typestate 제네릭 — auth/introspection/token만 `EndpointSet`으로 명시해 무오류 호출 가능 | `4.0.1` |
-| JWT(강화 검증) | `jsonwebtoken`(`default-features = false`, features: `rust_crypto`·`use_pem`) | `Validation` 기본값이 안전하지 않아 `validate_nbf`/`leeway`/`required_spec_claims` 전부 재정의 필요 | `10.4.0` |
+| JWT(강화 검증) | `jsonwebtoken`(`default-features = false`, features: `rust_crypto`·`use_pem`) | `Validation` 기본값이 안전하지 않아 `validate_nbf`/`leeway`/`required_spec_claims` 전부 재정의 필요 | `11.0.0` |
 | HTTP | `reqwest`(`default-features = false`, features: `json`·`rustls-tls`) | `keycloak` crate·`openidconnect`가 공유하는 단일 HTTP 클라이언트(SSRF 하드닝을 위해 `redirect::Policy::none()` 적용) | `0.12` |
 | 비동기 런타임 | `tokio`(features: `rt-multi-thread`·`macros`·`time`·`sync`) | `openidconnect`·`keycloak` crate 양쪽이 요구하는 비동기 런타임 | `1.52` |
 
@@ -259,7 +260,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 | 단위 테스트 | wiremock 0.6(HTTP 목) · rsa 0.9+rand 0.8+base64 0.23(JWKS 공격 프로브 픽스처 생성) | HTTP 목 + 공격 프로브용 테스트 키 생성(RUSTSEC-2023-0071은 서명검증 전용인 런타임에 무영향) | — |
 | 통합 테스트 | testcontainers 0.27.3(pre-1.0, base `GenericImage` — 언어별 편의 모듈 없음) | pre-1.0이라 Keycloak 전용 편의 모듈이 없어 `GenericImage`로 직접 조립 | — |
 
-전부 Apache-2.0/MIT(호환). **`keycloak`/`openidconnect`/`jsonwebtoken`은 캐럿(semver 호환) 요구다 — 라이브러리에서 정확 핀(`=`)을 쓰면 안 된다.** cargo는 semver 호환 요구를 하나의 버전으로 통일하므로, 우리가 `=26.6.2`를 박아두면 같은 의존 트리에서 `keycloak 26.6.3`(또는 `openidconnect 4.0.2`·`jsonwebtoken 10.4.1`)을 요구하는 소비자는 만족 가능한 조합이 없어 **의존성 해소가 하드 실패**한다 — 소비자 측에 우회수단이 없고 우리가 새 버전을 내야만 풀린다. 재현성은 핀이 아니라 **커밋된 `rust/Cargo.lock`**(318 패키지, `rust/.gitignore`에서 제거)에서 온다 — 우리 빌드/CI는 lockfile을 그대로 쓰고, 소비자는 자기 lockfile로 스스로 고정한다. 다만 reqwest 메이저 정렬(`reqwest12` feature)·typestate 제네릭·`Validation` 필드는 여전히 버전 간 깨지기 쉬운 표면이므로 메이저 상향은 게차를 확인하고 수동으로 한다. RUSTSEC-2023-0071(rsa Marvin)은 dev-dependency `rsa`(테스트 키 생성 전용)에 대한 것으로 SDK 런타임(공개키 서명검증만 수행)에는 무영향(게차 참조).
+전부 Apache-2.0/MIT(호환). **`keycloak`/`openidconnect`/`jsonwebtoken`은 캐럿(semver 호환) 요구다 — 라이브러리에서 정확 핀(`=`)을 쓰면 안 된다.** cargo는 semver 호환 요구를 하나의 버전으로 통일하므로, 우리가 `=26.6.2`를 박아두면 같은 의존 트리에서 `keycloak 26.6.3`(또는 `openidconnect 4.0.2`·`jsonwebtoken 11.0.1`)을 요구하는 소비자는 만족 가능한 조합이 없어 **의존성 해소가 하드 실패**한다 — 소비자 측에 우회수단이 없고 우리가 새 버전을 내야만 풀린다. 재현성은 핀이 아니라 **커밋된 `rust/Cargo.lock`**(318 패키지, `rust/.gitignore`에서 제거)에서 온다 — 우리 빌드/CI는 lockfile을 그대로 쓰고, 소비자는 자기 lockfile로 스스로 고정한다. 다만 reqwest 메이저 정렬(`reqwest12` feature)·typestate 제네릭·`Validation` 필드는 여전히 버전 간 깨지기 쉬운 표면이므로 메이저 상향은 게차를 확인하고 수동으로 한다. RUSTSEC-2023-0071(rsa Marvin)은 dev-dependency `rsa`(테스트 키 생성 전용)에 대한 것으로 SDK 런타임(공개키 서명검증만 수행)에는 무영향(게차 참조).
 
 **Ruby 확정 의존성(gemspec, 범위 지정)**:
 
