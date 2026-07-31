@@ -212,7 +212,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 | 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
 |---|---|---|---|
 | 인증(OIDC/OAuth2) | `Duende.IdentityModel` | 확장 메서드가 예외를 던지지 않아(`resp.IsError` 검사) 결정적 파사드에 맞음 — PKCE 헬퍼는 없어 SDK가 손수 생성 | 8.1.0 |
-| JWT(강화 검증) | `Microsoft.IdentityModel.JsonWebTokens` + `.Protocols.OpenIdConnect` | `ValidateTokenAsync`가 실패해도 던지지 않는 저수준 API라 SDK가 `ValidAlgorithms`/`ClockSkew`/`RequireExpirationTime` 전부 명시 강화해야 함(기본값이 안전하지 않음) | 8.21.0 |
+| JWT(강화 검증) | `Microsoft.IdentityModel.JsonWebTokens` + `.Protocols.OpenIdConnect` | `ValidateTokenAsync`가 실패해도 던지지 않는 저수준 API라 SDK가 `ValidAlgorithms`/`ClockSkew`/`RequireExpirationTime` 전부 명시 강화해야 함(기본값이 안전하지 않음) | 8.22.0 |
 
 | 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
 |---|---|---|---|
