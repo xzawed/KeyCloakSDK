@@ -29,4 +29,4 @@ cd python && "${KCSDK_PY:-.venv/Scripts/python.exe}" -m mypy src                
 
 - ⚠️ **(Python) joserfc `KeySet.import_key_set`은 기형 JWKS에서 joserfc 타입도 아닌 stdlib `binascii.Error`를 던진다.** base64url이 아닌 modulus가 오면 이 예외가 SDK 경계를 그대로 뚫고 나가, `keycloak_sdk.exceptions`를 잡는 소비자는 **아무것도 잡지 못한다**(§4 위반). `_load_jwks`의 파싱은 `_wrap`이 덮지 않는다 — `_wrap`은 전송 오류용이고 이건 **응답 내용** 문제다. sync·async 두 미러 모두 `TokenValidationError`로 변환한다. IdP가 기형 JWKS를 주는 것은 가정이 아니다(프록시 오구성·부분 배포·중간자). 근거: `test_auth.py`·`aio/test_auth.py`의 `test_malformed_jwks_yields_sdk_error_not_a_raw_library_exception`.
 
-(아래는 과거 서술) — Python 관련 게차(JWKS DoS-안전 재조회·admin 타임아웃/자원정리 등)는 태그 없는 프로젝트 공통 항목이라 루트 `CLAUDE.md`의 `## 핵심 게차` 섹션에 전문이 남아있다.
+위 두 건 외의 Python 관련 게차(JWKS DoS-안전 재조회·admin 타임아웃/자원정리 등)는 태그 없는 프로젝트 공통 항목이라 루트 `CLAUDE.md`의 `## 핵심 게차` 섹션에 전문이 남아있다.

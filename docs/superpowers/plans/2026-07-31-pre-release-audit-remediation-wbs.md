@@ -16,10 +16,10 @@
 |---|---|---|---|
 | 1. Go HS/RS 혼동 | ✅ 완료 | `dbc4e9a` | 변이검증: 막는 것은 alg 핀이 아니라 키 소스 분리 |
 | 2. Java 기형 JWKS | ✅ 완료 | `aa7f5bc` | 변이검증: 던지는 타입을 바꾸면 실패 |
-| 3. Node 기형 JWKS | ⬜ 미착수 | — | |
-| 4. Python 기형 JWKS | ⬜ 미착수 | — | `KeySet` 경계 때문에 "해당 없음"으로 끝날 수 있음 |
+| 3. Node 기형 JWKS | ✅ 완료 | `ee710ae` | 변이검증: 경계 변환 제거 시 이 테스트만 실패 |
+| 4. Python 기형 JWKS | ✅ 완료 | `e697d61` | **실제 결함 발견** — `binascii.Error`가 경계를 뚫고 나갔다. sync·async 둘 다 수정 |
 | 5. Java·.NET 위조서명 무재조회 | ⚠️ 부분 | `aa7f5bc`·`77f4bc8` | **.NET은 이 불변식을 갖지 못함이 실측됨** — 0회가 아니라 rate-limit 상한만 고정 |
-| 6. 리다이렉트 SSRF 차단 | ⚠️ 진행중 | `61f65f8`·`7b3dd3e` | go·dotnet·**java auth·kotlin auth** 완료. 남음: java/kotlin **JWKS**, php(2곳), node(logout+admin), python(sync). 아래 정정 참조 |
+| 6. 리다이렉트 SSRF 차단 | ✅ 완료 | `61f65f8`·`7b3dd3e`·`5808d3a`·`b2014d6`·`14059dc`·`e92316b` | **9개 언어 전부**. 7개가 실제로 취약했다 |
 | 7. 버전 SSOT 가드 | ✅ 완료 | `7aa7959` | 자가테스트 5건(변이 3 + 오탐방지 1 포함) |
 | 8. admin 능력 매트릭스 | ⬜ 미착수 | — | |
 
