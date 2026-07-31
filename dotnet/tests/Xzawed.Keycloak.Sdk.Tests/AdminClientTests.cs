@@ -75,4 +75,49 @@ public class AdminClientTests : IDisposable
                  .WithBodyAsJson(new { name = "slow" }).WithDelay(TimeSpan.FromMilliseconds(1500)));
         await Assert.ThrowsAsync<KeycloakTransportException>(() => admin.Roles.GetAsync("slow"));
     }
+    // ── 감사 후속: 이 셋은 이전에 파사드에도 `Raw`에도 없어 **소비자가 도달할 방법이 아예 없었다**.
+    // `Raw`는 users/groups/realm-read만 커버하는 타입드 클라이언트고, 내부 raw-REST 헬퍼는 internal이라
+    // 별도 HttpClient를 손수 만드는 것 말고는 길이 없었다 — 그러면 오류 변환·타임아웃·리다이렉트
+    // 하드닝을 전부 잃는다. 아홉 SDK 중 유일하게 도달 불가능했던 갭이다.
+    // 각 테스트는 **HTTP 메서드와 경로를 함께** 단언한다 — 경로만 맞추면 PUT을 GET으로 잘못 써도 통과한다.
+
+    [Fact]
+    public async Task Roles_update_puts_to_the_named_role()
+    {
+        await using var admin = await BuildAsync();
+        _mock.Given(Request.Create().WithPath("/admin/realms/r/roles/app-admin").UsingPut())
+             .RespondWith(Response.Create().WithStatusCode(204));
+
+        await admin.Roles.UpdateAsync("app-admin", new RoleRepresentation { Name = "app-admin-renamed" });
+
+        var hit = Assert.Single(_mock.LogEntries, e => e.RequestMessage?.Path == "/admin/realms/r/roles/app-admin");
+        Assert.Equal("PUT", hit.RequestMessage!.Method, ignoreCase: true);
+    }
+
+    [Fact]
+    public async Task Realms_update_puts_to_the_named_realm()
+    {
+        await using var admin = await BuildAsync();
+        _mock.Given(Request.Create().WithPath("/admin/realms/other").UsingPut())
+             .RespondWith(Response.Create().WithStatusCode(204));
+
+        await admin.Realms.UpdateAsync("other", new RealmRepresentation { Realm = "other" });
+
+        var hit = Assert.Single(_mock.LogEntries, e => e.RequestMessage?.Path == "/admin/realms/other");
+        Assert.Equal("PUT", hit.RequestMessage!.Method, ignoreCase: true);
+    }
+
+    [Fact]
+    public async Task Realms_list_gets_the_collection()
+    {
+        await using var admin = await BuildAsync();
+        _mock.Given(Request.Create().WithPath("/admin/realms").UsingGet())
+             .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                 .WithBodyAsJson(new[] { new { realm = "master" }, new { realm = "r" } }));
+
+        var realms = await admin.Realms.ListAsync();
+
+        Assert.Equal(2, realms.Count);
+        Assert.Contains(realms, r => r.Realm == "master");
+    }
 }

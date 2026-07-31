@@ -18,6 +18,18 @@ public sealed class RealmsResource
     public Task<RealmRepresentation> GetAsync(string realmName, CancellationToken ct = default)
         => _a.CallTypedAsync(c => c.GetRealmAsync(realmName, ct));
 
+    /// <summary>List every realm visible to the caller. Requires a master-realm-scoped account in practice.</summary>
+    public async Task<IReadOnlyList<RealmRepresentation>> ListAsync(CancellationToken ct = default)
+        => await _a.GetJsonAsync<List<RealmRepresentation>>("admin/realms", ct).ConfigureAwait(false);
+
+    /// <summary>Update a realm, addressed by its CURRENT name.</summary>
+    public async Task UpdateAsync(string realmName, RealmRepresentation realm, CancellationToken ct = default)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Put, $"admin/realms/{Uri.EscapeDataString(realmName)}")
+        { Content = System.Net.Http.Json.JsonContent.Create(realm) };
+        (await _a.SendRawAsync(req, ct).ConfigureAwait(false)).Dispose();
+    }
+
     public async Task DeleteAsync(string realmName, CancellationToken ct = default)
     {
         using var req = new HttpRequestMessage(HttpMethod.Delete, $"admin/realms/{Uri.EscapeDataString(realmName)}");

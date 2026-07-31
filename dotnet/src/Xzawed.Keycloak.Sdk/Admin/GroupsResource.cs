@@ -19,6 +19,10 @@ public sealed class GroupsResource
             (IReadOnlyList<GroupRepresentation>)(await c.GetGroupsAsync(_a.Realm,
                 new GetGroupsRequestParameters { First = first, Max = max }, ct)).ToList());
 
+    /// <summary>Update a group. Uses the typed client, which does cover this one.</summary>
+    public Task UpdateAsync(string id, GroupRepresentation group, CancellationToken ct = default)
+        => _a.CallTypedAsync(c => c.UpdateGroupAsync(_a.Realm, id, group, ct));
+
     public Task DeleteAsync(string id, CancellationToken ct = default)
         => _a.CallTypedAsync(c => c.DeleteGroupAsync(_a.Realm, id, ct));
 }

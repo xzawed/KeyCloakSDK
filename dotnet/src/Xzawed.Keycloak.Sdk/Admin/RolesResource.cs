@@ -22,6 +22,14 @@ public sealed class RolesResource
     public async Task<IReadOnlyList<RoleRepresentation>> ListAsync(CancellationToken ct = default)
         => await _a.GetJsonAsync<List<RoleRepresentation>>($"admin/realms/{_a.Realm}/roles", ct).ConfigureAwait(false);
 
+    /// <summary>Update a realm role, addressed by its CURRENT name (rename by giving the new name in <paramref name="role"/>).</summary>
+    public async Task UpdateAsync(string name, RoleRepresentation role, CancellationToken ct = default)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Put, $"admin/realms/{_a.Realm}/roles/{Uri.EscapeDataString(name)}")
+        { Content = JsonContent.Create(role) };
+        (await _a.SendRawAsync(req, ct).ConfigureAwait(false)).Dispose();
+    }
+
     public async Task DeleteAsync(string name, CancellationToken ct = default)
     {
         using var req = new HttpRequestMessage(HttpMethod.Delete, $"admin/realms/{_a.Realm}/roles/{Uri.EscapeDataString(name)}");

@@ -126,7 +126,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(Node) PKCE `exchangeCode`는 `nonce` 필수 전달.** 상세: `.claude/rules/node.md`
 - ⚠️ **(Node) admin은 만료 시 재인증하려면 SDK provider를 `registerTokenProvider`로 배선한다 — `kc.auth()`는 호출하지 않는다(PR #63).** 상세: `.claude/rules/node.md`
 - ⚠️ **(C#) `Keycloak.AuthServices.Sdk` 3.0.0은 net10 전용 → net8.0은 2.7.0 핀.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) `Raw`로도 도달 불가능한 admin 갭 3건(realms.list·realms.update·roles.update) — 아홉 SDK 중 유일.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(C#) `Raw`는 users/groups/realm-read만 커버 — 그 밖은 파사드가 raw Admin REST로 직접 구현한다(한때 3건이 도달 불가능했다).** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(Rust) `search_users`가 max=20을 하드코딩해 결과가 조용히 잘린다.** 상세: `.claude/rules/rust.md`
 - ⚠️ **(C#) admin 타입드 커버리지는 users/groups/realm-get뿐.** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(C#) 네임스페이스 셰도잉.** 상세: `.claude/rules/dotnet.md`

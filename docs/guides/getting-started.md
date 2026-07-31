@@ -674,13 +674,13 @@ Every SDK also exposes a `raw` escape hatch that returns the underlying client. 
 | **Python** (sync + `aio`) | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
 | **Node** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
 | **Go** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
-| **.NET** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **.NET** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ |
 | **PHP** | ✅✅✅—✅ | ✅✅✅—✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
 | **Rust** | ✅✅✅—✅ | ✅✅—​—✅ | ✅✅—​—✅ | ✅✅—​—✅ | ✅✅—​—✅ |
 
 C=create G=get L=list/find U=update D=delete
 
-Six languages share exactly the same four gaps: `realms.list`, `realms.update`, `roles.update`, `groups.update`. PHP additionally has no `update` on any resource; Rust has no `update` and no `list` outside users.
+Five languages share exactly the same four gaps: `realms.list`, `realms.update`, `roles.update`, `groups.update`. (.NET used to be a sixth, but three of its gaps were unreachable even through the escape hatch, so they were filled directly rather than documented as workarounds.) PHP additionally has no `update` on any resource; Rust has no `update` and no `list` outside users.
 
 ### What you get back
 
@@ -701,7 +701,7 @@ This is a deliberate, documented decision: re-wrapping stable Keycloak represent
 | PHP | `raw()` → `Fschmtt\Keycloak\Keycloak` | `raw()->realms()->update($realm, $rep)` |
 | Rust | `raw()` → `&KeycloakAdmin<SdkTokenSupplier>` | `raw().realm_put(&realm, rep).await` |
 | Ruby | `raw` → `Faraday::Connection` | no gaps; the hatch is a general bearer-authed connection |
-| .NET | `Raw` → `IKeycloakClient` | ⚠️ **does not reach this gap** — see below |
+| .NET | `Raw` → `IKeycloakClient` (users, groups, realm-read only) | no gaps; for anything outside that typed surface the facade already uses raw Admin REST internally |
 
 ⚠️ **Go's hatch needs a token.** Every `gocloak` method takes a bearer token, and the admin facade's cached provider is not exported. Get one with `client.Auth.ClientCredentialsToken(ctx)`. Note this performs a fresh grant rather than reusing the facade's cached, single-flighted token.
 
@@ -711,7 +711,7 @@ This is a deliberate, documented decision: re-wrapping stable Keycloak represent
 
 These are real and worth knowing before you port code between languages.
 
-- **⚠️ .NET cannot reach `realms.list`, `realms.update`, or `roles.update` at all.** `Raw` is a typed client covering only users, groups, and realm-read. The facade's own raw-REST helpers are internal. Working around it means building a parallel `HttpClient` with a token from `ClientCredentialsTokenProvider`, which forfeits the facade's error translation, timeout injection, and redirect hardening. This is the only genuinely unreachable gap in the nine SDKs.
+- **.NET has full coverage, for a specific reason.** Its `Raw` accessor is a *typed* client covering only users, groups, and realm-read, so `realms.list`, `realms.update`, and `roles.update` were once reachable by no route at all — short of hand-rolling a parallel `HttpClient`, which forfeits the facade's error translation, timeout injection, and redirect hardening. They are now implemented directly on the facade via raw Admin REST, the same mechanism it already used for clients and roles. Do not assume `Raw` covers everything in .NET; prefer the facade.
 - **⚠️ Rust `search_users` silently returns at most 20 results** and always matches exactly. Offset, page size, and match mode are not exposed. If you need more, use `raw().realm_users_get(...)`.
 - **`findByClientId` returns different things.** Java, Kotlin, Node, Go, and .NET return a list of client representations. **Python returns the client's UUID string** (or `None`). Ruby has no such method — use `clients.list(clientId: "…")`.
 - **`create` return values differ.** Most languages give you the new id. **PHP returns nothing** — for users, follow up with `findIdByUsername`; for groups there is no equivalent lookup. **Rust returns `Option<String>`**, so a successful create may still yield no id. Go returns `(string, error)`.
