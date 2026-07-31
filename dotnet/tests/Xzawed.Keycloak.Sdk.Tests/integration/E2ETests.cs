@@ -67,12 +67,19 @@ public class E2ETests
         await admin.Roles.CreateAsync(new RoleRepresentation { Name = "role-e2e" });
         Assert.Equal("role-e2e", (await admin.Roles.GetAsync("role-e2e")).Name);
         Assert.Contains(await admin.Roles.ListAsync(), r => r.Name == "role-e2e");
+        // ⚠️ update: 이 셋(roles.update · realms.update · realms.list)은 예전에 파사드에도 Raw에도 없어
+        // 소비자가 도달할 수 없던 연산이다. 단위테스트는 WireMock에 대고 우리가 **무엇을 보내는지**만
+        // 잠근다 — 실 Keycloak이 그 PUT/GET을 실제로 받아들이는지는 여기서만 증명된다.
+        await admin.Roles.UpdateAsync("role-e2e", new RoleRepresentation { Name = "role-e2e", Description = "renamed-desc" });
+        Assert.Equal("renamed-desc", (await admin.Roles.GetAsync("role-e2e")).Description);
         await admin.Roles.DeleteAsync("role-e2e");
 
         // 7) groups (typed)
         var groupId = await admin.Groups.CreateAsync(new GroupRepresentation { Name = "group-e2e" });
         Assert.Equal("group-e2e", (await admin.Groups.GetAsync(groupId)).Name);
         Assert.Contains(await admin.Groups.ListAsync(), g => g.Name == "group-e2e");
+        await admin.Groups.UpdateAsync(groupId, new GroupRepresentation { Name = "group-e2e-renamed" });
+        Assert.Equal("group-e2e-renamed", (await admin.Groups.GetAsync(groupId)).Name);
         await admin.Groups.DeleteAsync(groupId);
 
         // 8) realms: get current (typed, it-client's own realm-management scope) + create/delete throwaway.
@@ -94,6 +101,10 @@ public class E2ETests
 
         await masterAdmin.Realms.CreateAsync(new RealmRepresentation { Realm = "throwaway-e2e", Enabled = true });
         Assert.Equal("throwaway-e2e", (await masterAdmin.Realms.GetAsync("throwaway-e2e")).Realm);
+        Assert.Contains(await masterAdmin.Realms.ListAsync(), r => r.Realm == "throwaway-e2e");
+        await masterAdmin.Realms.UpdateAsync("throwaway-e2e",
+            new RealmRepresentation { Realm = "throwaway-e2e", Enabled = true, DisplayName = "renamed-e2e" });
+        Assert.Equal("renamed-e2e", (await masterAdmin.Realms.GetAsync("throwaway-e2e")).DisplayName);
         await masterAdmin.Realms.DeleteAsync("throwaway-e2e");
 
         // 9) Raw escape hatch
