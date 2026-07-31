@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -206,6 +207,37 @@ func TestValidateRejectsNoneAlg(t *testing.T) {
 	none := hdr + "." + pay + "."
 	if _, err := f.validator(t, time.Minute).Validate(context.Background(), none); err == nil {
 		t.Fatal("alg=none must be rejected")
+	}
+}
+
+// Classic HS/RS confusion: the attacker signs HS256 using the *public* key bytes as the HMAC
+// secret. If a validator trusted the header's alg to choose a key, "knows the public key" would
+// become "can mint tokens".
+//
+// ⚠️ Mutation-verified: widening the pin to allow HS256 does NOT make this test pass — the
+// rejection comes from the key source, not the algorithm pin. The JWKS yields an RSA key and
+// go-jose will not verify an HMAC signature with it. So this test guards the key-selection
+// boundary specifically; TestValidateRejectsAlgPinViolation is what guards the pin. Keep both:
+// each covers a layer the other does not, and a future refactor could break either alone.
+func TestValidateRejectsHS256ForgedWithRSAPublicKey(t *testing.T) {
+	f := newJWTFixture(t)
+	pubDER, err := x509.MarshalPKIXPublicKey(&f.priv.PublicKey)
+	if err != nil {
+		t.Fatalf("marshal public key: %v", err)
+	}
+	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: pubDER},
+		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", "k1"))
+	if err != nil {
+		t.Fatalf("hmac signer: %v", err)
+	}
+	forged, err := jwt.Signed(sig).
+		Claims(claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute))).
+		Serialize()
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if _, err := f.validator(t, time.Minute).Validate(context.Background(), forged); err == nil {
+		t.Fatal("HS256 token forged with the RSA public key as the HMAC secret must be rejected")
 	}
 }
 
