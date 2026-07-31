@@ -10,6 +10,23 @@
 
 **Spec:** [2026-07-31-pre-release-audit-remediation.md](../specs/2026-07-31-pre-release-audit-remediation.md)
 
+## 진행 상태 (2026-07-31)
+
+| Task | 상태 | 커밋 | 비고 |
+|---|---|---|---|
+| 1. Go HS/RS 혼동 | ✅ 완료 | `dbc4e9a` | 변이검증: 막는 것은 alg 핀이 아니라 키 소스 분리 |
+| 2. Java 기형 JWKS | ✅ 완료 | `aa7f5bc` | 변이검증: 던지는 타입을 바꾸면 실패 |
+| 3. Node 기형 JWKS | ⬜ 미착수 | — | |
+| 4. Python 기형 JWKS | ⬜ 미착수 | — | `KeySet` 경계 때문에 "해당 없음"으로 끝날 수 있음 |
+| 5. Java·.NET 위조서명 무재조회 | ⚠️ 부분 | `aa7f5bc`·`77f4bc8` | **.NET은 이 불변식을 갖지 못함이 실측됨** — 0회가 아니라 rate-limit 상한만 고정 |
+| 6. 리다이렉트 SSRF 차단 | ⚠️ 부분 | `61f65f8` | go(행동 테스트+변이검증)·dotnet(시임 부재로 테스트 미첨부) 완료. **java·kotlin·node·python·php 남음** |
+| 7. 버전 SSOT 가드 | ⬜ 미착수 | — | |
+| 8. admin 능력 매트릭스 | ⬜ 미착수 | — | |
+
+**Task 6 후속 판단 필요**: .NET은 핸들러가 `KeycloakClient.Create` 안에서 만들어지고 외부 시임이 없어 행동 테스트를 붙이지 못했다. 시임을 열 것인지(공개 표면 증가) 리플렉션으로 단언할 것인지 결정이 필요하다.
+
+---
+
 ## Global Constraints
 
 - 프로덕션 소스 변경은 **Task 7만** 허용. Task 1~6은 테스트 전용.
