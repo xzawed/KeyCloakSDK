@@ -19,17 +19,41 @@
 | 3. Node 기형 JWKS | ⬜ 미착수 | — | |
 | 4. Python 기형 JWKS | ⬜ 미착수 | — | `KeySet` 경계 때문에 "해당 없음"으로 끝날 수 있음 |
 | 5. Java·.NET 위조서명 무재조회 | ⚠️ 부분 | `aa7f5bc`·`77f4bc8` | **.NET은 이 불변식을 갖지 못함이 실측됨** — 0회가 아니라 rate-limit 상한만 고정 |
-| 6. 리다이렉트 SSRF 차단 | ⚠️ 부분 | `61f65f8` | go(행동 테스트+변이검증)·dotnet(시임 부재로 테스트 미첨부) 완료. **java·kotlin·node·python·php 남음** |
-| 7. 버전 SSOT 가드 | ⬜ 미착수 | — | |
+| 6. 리다이렉트 SSRF 차단 | ⚠️ 진행중 | `61f65f8`·`7b3dd3e` | go·dotnet·**java auth·kotlin auth** 완료. 남음: java/kotlin **JWKS**, php(2곳), node(logout+admin), python(sync). 아래 정정 참조 |
+| 7. 버전 SSOT 가드 | ✅ 완료 | `7aa7959` | 자가테스트 5건(변이 3 + 오탐방지 1 포함) |
 | 8. admin 능력 매트릭스 | ⬜ 미착수 | — | |
 
 **Task 6 후속 판단 필요**: .NET은 핸들러가 `KeycloakClient.Create` 안에서 만들어지고 외부 시임이 없어 행동 테스트를 붙이지 못했다. 시임을 열 것인지(공개 표면 증가) 리플렉션으로 단언할 것인지 결정이 필요하다.
 
 ---
 
+### Task 6 정정 — Grok 실측이 계획의 전제를 반박했다 (2026-07-31)
+
+이 태스크의 Step 1이 "추측 금지, 실측"이었는데, **계획 본문에 적어둔 기본값 자체가 틀려 있었다.** Grok이 로컬 302 서버로 전 언어를 실행 측정해 반박했고, 아래는 그 결과다. 원문 서술은 남겨두고 여기서 정정한다 — 무엇이 왜 틀렸는지가 다음 사람에게 더 중요하다.
+
+**정정 1 — "Guzzle은 기본 미추종"은 틀렸다.** PSR-18 `sendRequest()`만 미추종이고 `request()`는 **추종한다**(`vendor/guzzlehttp/guzzle/src/Client.php:342`가 `RedirectMiddleware::$defaultSettings`를 기본값으로 넣는다 — 직접 확인). 이 한 줄을 믿었으면 PHP를 건너뛰었을 것이고, PHP는 **`client_secret_basic` 헤더가 공격자가 고른 경로로 재전송되는 것이 실측된** 언어다.
+
+**정정 2 — "언어당 HTTP 클라이언트 하나"라는 전제가 틀렸다.** Java 3개 · Node 4개 · PHP 3개+ · Python 2개이고, Java·Node·PHP는 **일부만 안전한 혼재 상태**다. 눈에 띄는 하나를 고치고 끝내면 세 언어 모두 구멍이 남는다.
+
+**정정 3 — 계획이 지목한 JVM 수정 대상이 틀렸다.** "RESTEasy 구성에서 followRedirects(false)"라고 썼는데 RESTEasy admin은 **이미 안전**하고 JAX-RS `ClientBuilder`에는 그런 메서드가 없다. 실제로 취약한 두 경로는 Nimbus `HTTPRequest`(auth)와 `DefaultResourceRetriever`(JWKS)였다.
+
+**정정 4 — Python 수정안이 구현 불가였다.** "요청 시 `allow_redirects=False`"는 SDK가 요청을 보낸다는 전제인데, 실제로는 python-keycloak이 보내고 그 플래그를 넘기지 않는다.
+
+**누락 1 — 자격증명 재전송이 심각도를 결정한다.** same-host 리다이렉트에서 Python(requests)·Node(undici)·PHP(Guzzle)는 `Authorization`을 **재전송**한다(JVM은 안 한다). 이것이 이 결함을 SSRF에서 자격증명 노출로 격상시킨다. 테스트는 "/internal에 도달하지 않았다"만이 아니라 이 점도 반영해야 한다.
+
+**누락 2 — 조용한 거짓 성공.** Kotlin·PHP `logout`은 302를 따라가 무관한 200을 받으면 **정상 반환**했다. 세션이 살아 있는데 호출자는 폐기됐다고 믿는다. "/internal 미도달"만 단언하는 테스트는 302를 삼키고 성공을 반환하는 변형에서도 통과하므로, **표면화된 상태코드까지 단언**해야 한다.
+
+**순서 정정** — 5개 언어 일괄이 아니라 시임 품질 순으로: Java → Kotlin → PHP → Node → **Python 마지막**(공개 노브가 없어 private 속성을 건드리는 유일한 수정이라 회귀 위험이 가장 크고, 단독 커밋이어야 되돌리기 쉽다).
+
+**추가 태스크 — 이미 안전한 경로에 고정(pinning) 테스트.** Java/Kotlin admin · Node jose+openid-client · PHP PSR-18 · Python httpx는 **라이브러리 기본값 덕분에** 안전하다. 이는 §3-2가 막으려던 "업그레이드로 조용히 취약해지는" 바로 그 상태이고, 몇몇은 끌 노브 자체가 없어 **테스트가 유일한 방어수단**이다.
+
+**.NET 후속의 값싼 답** — 시임 노출 vs 리플렉션의 양자택일이 아니었다: `internal static SocketsHttpHandler CreateHandler(KeycloakConfig)` 추출 + `InternalsVisibleTo` + 로컬 `HttpListener`. 공개 표면이 늘지 않으며, Java `buildTimeoutClient`가 이미 같은 모양의 시임을 갖고 있다.
+
+---
+
 ## Global Constraints
 
-- 프로덕션 소스 변경은 **Task 7만** 허용. Task 1~6은 테스트 전용.
+- 프로덕션 소스를 만지는 것은 **Task 6뿐**이다(Task 7은 병합됨). 나머지는 테스트·문서 전용.
 - 새 의존성 추가 금지 — 필요한 것은 전부 이미 dev 의존성에 있다.
 - **모든 신규 테스트는 변이검증을 통과해야 한다**: 방어 코드/설정을 지웠을 때 실제로 깨지는지 확인하고, 그 결과를 커밋 메시지에 남긴다. 깨지지 않으면 그 테스트는 무효이며, 무엇이 실제로 막고 있는지 규명해 주석에 적는다.
 - 각 언어의 린트·포맷 게이트를 통과해야 한다(gofmt · prettier · php-cs-fixer · ktlint · ruff · rubocop · dotnet format · cargo fmt).
