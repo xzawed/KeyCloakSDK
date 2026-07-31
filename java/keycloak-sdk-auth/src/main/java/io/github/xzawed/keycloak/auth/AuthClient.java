@@ -65,6 +65,14 @@ public class AuthClient {
   HTTPRequest applyTimeouts(HTTPRequest req) {
     req.setConnectTimeout((int) config.getConnectTimeout().toMillis());
     req.setReadTimeout((int) config.getReadTimeout().toMillis());
+    // SSRF 하드닝: back-channel 요청은 3xx를 따라가지 않는다. Nimbus 기본값은 **추종**이라
+    // 명시하지 않으면 token/refresh/introspect/logout이 전부 예상 밖 리다이렉트를 따라간다.
+    // 이 헬퍼가 5개 send() 호출부의 단일 병목이라 여기 한 줄이 그 전부를 덮는다.
+    // ⚠️ 단순한 SSRF보다 나쁜 실패 모드가 있다: logout이 302를 따라가 무관한 200을 받으면
+    // **정상 반환**한다 — 호출자는 세션이 폐기됐다고 믿지만 살아 있다.
+    // Rust(redirect::Policy::none())·Ruby·Go(ErrUseLastResponse)·.NET(AllowAutoRedirect=false)과 동형.
+    // ⚠️ OIDC authorization-code의 redirect_uri는 브라우저 front-channel 개념이라 무관하다.
+    req.setFollowRedirects(false);
     return req;
   }
   public AuthorizationUrlRequest createAuthorizationRequest(URI redirectUri) {
