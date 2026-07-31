@@ -655,6 +655,72 @@ fun main() = runBlocking {
 
 ---
 
+## Admin capability matrix
+
+The nine SDKs are isomorphic in **layering and flow**, not in method-for-method coverage. The admin facade wraps a different underlying library in each language, and those libraries do not expose the same surface. This table tells you what you can call directly, what you get back, and — where a convenience method is absent — what to call instead.
+
+Every SDK also exposes a `raw` escape hatch that returns the underlying client. Reaching for it is normal and expected for the blank cells below. **One caveat that applies everywhere:** the `raw` path bypasses the SDK's error translation, so lower-library exception types surface there. The "no lower-library types leak" guarantee covers the facade path only.
+
+### Direct coverage
+
+✅ present · — absent (use the escape hatch)
+
+| | users | clients | realms | roles | groups |
+|---|---|---|---|---|---|
+| | C G L U D | C G L U D | C G L U D | C G L U D | C G L U D |
+| **Ruby** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ |
+| **Java** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **Kotlin** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **Python** (sync + `aio`) | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **Node** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **Go** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **.NET** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **PHP** | ✅✅✅—✅ | ✅✅✅—✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **Rust** | ✅✅✅—✅ | ✅✅—​—✅ | ✅✅—​—✅ | ✅✅—​—✅ | ✅✅—​—✅ |
+
+C=create G=get L=list/find U=update D=delete
+
+Six languages share exactly the same four gaps: `realms.list`, `realms.update`, `roles.update`, `groups.update`. PHP additionally has no `update` on any resource; Rust has no `update` and no `list` outside users.
+
+### What you get back
+
+| Returns representation types from the wrapped library | Returns plain maps |
+|---|---|
+| Java · Kotlin (`org.keycloak.representations.idm.*`) · Node (`@keycloak/keycloak-admin-client` defs) · Go (`gocloak.*`, **as pointers** — nil-check) · .NET (`Keycloak.AuthServices.Sdk.Admin.Models.*`) · PHP (`Fschmtt\Keycloak\Representation\*`, **lists come back as `*Collection` wrappers**) · Rust (`keycloak::types::*`, re-exported as `keycloak_sdk::types` so you need no extra dependency) | Python — `dict[str, Any]` · Ruby — `Hash` |
+
+This is a deliberate, documented decision: re-wrapping stable Keycloak representation types in SDK-owned DTOs was judged not worth the cost.
+
+### Filling the gaps
+
+| Language | Escape hatch | Example — the `realms.update` gap |
+|---|---|---|
+| Java · Kotlin | `raw()` → `org.keycloak.admin.client.Keycloak` | `raw().realm(name).update(rep)` |
+| Python | `raw` → `keycloak.KeycloakAdmin` | `raw.update_realm(name, rep)` (async: `a_update_realm`) |
+| Node | `raw()` → `KcAdminClient` | `raw().realms.update({ realm }, rep)` |
+| Go | `Raw()` → `*gocloak.GoCloak` | `Raw().UpdateRealm(ctx, token, rep)` — ⚠️ you must supply the token yourself |
+| PHP | `raw()` → `Fschmtt\Keycloak\Keycloak` | `raw()->realms()->update($realm, $rep)` |
+| Rust | `raw()` → `&KeycloakAdmin<SdkTokenSupplier>` | `raw().realm_put(&realm, rep).await` |
+| Ruby | `raw` → `Faraday::Connection` | no gaps; the hatch is a general bearer-authed connection |
+| .NET | `Raw` → `IKeycloakClient` | ⚠️ **does not reach this gap** — see below |
+
+⚠️ **Go's hatch needs a token.** Every `gocloak` method takes a bearer token, and the admin facade's cached provider is not exported. Get one with `client.Auth.ClientCredentialsToken(ctx)`. Note this performs a fresh grant rather than reusing the facade's cached, single-flighted token.
+
+⚠️ **Kotlin's hatch is blocking.** `raw()` returns the JAX-RS client directly; calls are not wrapped in `runInterruptible(Dispatchers.IO)` and will block the coroutine dispatcher. Wrap them yourself.
+
+### Known rough edges
+
+These are real and worth knowing before you port code between languages.
+
+- **⚠️ .NET cannot reach `realms.list`, `realms.update`, or `roles.update` at all.** `Raw` is a typed client covering only users, groups, and realm-read. The facade's own raw-REST helpers are internal. Working around it means building a parallel `HttpClient` with a token from `ClientCredentialsTokenProvider`, which forfeits the facade's error translation, timeout injection, and redirect hardening. This is the only genuinely unreachable gap in the nine SDKs.
+- **⚠️ Rust `search_users` silently returns at most 20 results** and always matches exactly. Offset, page size, and match mode are not exposed. If you need more, use `raw().realm_users_get(...)`.
+- **`findByClientId` returns different things.** Java, Kotlin, Node, Go, and .NET return a list of client representations. **Python returns the client's UUID string** (or `None`). Ruby has no such method — use `clients.list(clientId: "…")`.
+- **`create` return values differ.** Most languages give you the new id. **PHP returns nothing** — for users, follow up with `findIdByUsername`; for groups there is no equivalent lookup. **Rust returns `Option<String>`**, so a successful create may still yield no id. Go returns `(string, error)`.
+- **PHP uses `import`, not `create`, for clients and realms** (users, roles, and groups still use `create`). Both require the id/realm pre-set on the object you pass in.
+- **Rust's admin facade is flat** — `create_user`, `get_client`, `delete_group` directly on the client, with no `users`/`clients`/… sub-objects. And **`get_realm()` takes no argument**: it returns the configured realm, while `delete_realm(name)` is name-addressed.
+- **Pagination is spelled differently.** Java, Kotlin, and Go take positional `(first, max)` with no defaults; Python, Node, and .NET default them; Ruby takes free-form keyword params; PHP takes a `Criteria` object. Kotlin also requires a non-null `username` for `search`, so "list all users" is not expressible there the way it is in Node, Python, or .NET.
+- **`realms.create` exists everywhere but is master-realm-only at runtime.** A realm-scoped service account gets 403 regardless of its roles.
+- **Java's `Optional` and Python's `| None` on `get` are never actually empty.** Both raise a not-found error instead. Kotlin deliberately returns the value directly rather than copying the Java idiom.
+
 ## Compatibility
 
 Each SDK's own SemVer is decoupled from the Keycloak server and underlying library versions. See the table below for the supported server range and the base libraries · runtimes.

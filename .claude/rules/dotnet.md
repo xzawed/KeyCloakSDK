@@ -27,6 +27,7 @@ cd dotnet && dotnet format Keycloak.Sdk.sln --verify-no-changes    # 포맷 검�
 
 ## 게차
 
+- ⚠️ **(C#) `Raw`로도 도달할 수 없는 admin 갭이 셋 있다 — 아홉 SDK 중 유일하다.** `Raw`는 `IKeycloakClient`(users/groups/realm-read만 커버하는 타입드 클라이언트)라 `realms.list`·`realms.update`·`roles.update`에 닿을 방법이 파사드 안에 없다. 파사드 자체의 raw-REST 헬퍼(`SendRawAsync`)는 `internal`이고 bearer 붙은 `HttpClient`는 `private`다. 소비자가 할 수 있는 것은 `ClientCredentialsTokenProvider`로 토큰을 얻어 **별도 `HttpClient`를 손수 만드는 것**뿐이고, 그러면 파사드의 오류 변환·타임아웃 주입·리다이렉트 하드닝(`AllowAutoRedirect=false`)을 전부 잃는다. 편의 메서드 부재보다 나쁜 종류의 갭이므로 `SendRawAsync` 공개 여부를 배포 전에 판단할 것.
 - ⚠️ **(C#) `Keycloak.AuthServices.Sdk` 3.0.0은 net10 전용 → net8.0은 2.7.0 핀.** 2.7.0이 요구하는 `DI.Abstractions >= 9.0.8`보다 낮은 핀은 NU1605(downgrade)로 `TreatWarningsAsErrors` 하드오류.
 - ⚠️ **(C#) admin 타입드 커버리지는 users/groups/realm-get뿐**(`IKeycloakUserClient`/`IKeycloakGroupClient`/`IKeycloakRealmClient`) — clients/roles/realm-CRUD는 같은 bearer `HttpClient`로 raw REST. `…Async` 편의메서드 호출하려면 변수를 `IKeycloakClient`로 타입. `CreateUserAsync`는 void 반환이라 `CreateUserWithResponseAsync`+`Location` 헤더로 id 취득.
 - ⚠️ **(C#) 네임스페이스 셰도잉**: `Xzawed.Keycloak.Admin` 안에서 `new KeycloakClient(http)`는 파사드(private ctor)에 바인딩돼 CS1729 — `using KcAdminClient = Keycloak.AuthServices.Sdk.Admin.KeycloakClient;` 별칭 필요.
