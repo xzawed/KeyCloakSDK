@@ -103,6 +103,15 @@ func (c Config) httpClient() *http.Client {
 	return &http.Client{
 		Timeout:   time.Duration(c.ReadTimeout) * time.Millisecond,
 		Transport: c.transport(),
+		// SSRF hardening: never follow redirects on back-channel requests. Go's default follows up
+		// to 10 hops, so an unexpected 3xx from a token/JWKS/admin endpoint would make the SDK fetch
+		// an attacker-chosen URL — possibly on the internal network — while carrying our headers.
+		// ErrUseLastResponse surfaces the 3xx to the caller instead of erroring, so a legitimate
+		// redirect stays observable rather than being silently swallowed.
+		// Isomorphic with Rust (`redirect::Policy::none()`) and Ruby (no follow_redirects middleware).
+		// ⚠️ This governs requests the SDK itself makes. The OIDC authorization-code `redirect_uri`
+		// is a browser front-channel concern and is unaffected.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 }
 
