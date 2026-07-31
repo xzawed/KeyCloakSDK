@@ -189,12 +189,14 @@ async fn create_user(State(state): State<AppState>, body: Bytes) -> Response {
     match state.kc.admin().create_user(rep).await {
         Ok(Some(id)) => (StatusCode::CREATED, Json(json!({ "id": id }))).into_response(),
         // Location 헤더 부재 — username으로 후속 조회(fschmtt/PHP 자매 SDK와 동형 폴백).
-        Ok(None) => match state.kc.admin().search_users(&username).await {
-            Ok(found) if !found.is_empty() => {
-                let id = found[0].id.clone().unwrap_or_default();
+        // 정확일치 단건 조회를 쓴다: 잘림이 구조적으로 불가능하고(realm 안 username 유일),
+        // "첫 건을 고른다"는 임의 선택이 사라진다.
+        Ok(None) => match state.kc.admin().find_user_by_username(&username).await {
+            Ok(Some(u)) => {
+                let id = u.id.clone().unwrap_or_default();
                 (StatusCode::CREATED, Json(json!({ "id": id }))).into_response()
             }
-            Ok(_) => err_json(StatusCode::INTERNAL_SERVER_ERROR, "user created but id not resolvable"),
+            Ok(None) => err_json(StatusCode::INTERNAL_SERVER_ERROR, "user created but id not resolvable"),
             Err(e) => err_json(map_admin(&e), e),
         },
         Err(e) => err_json(map_admin(&e), e),
@@ -208,15 +210,13 @@ async fn get_user(State(state): State<AppState>, Path(id): Path<String>) -> Resp
     }
 }
 
-/// ⚠️ Rust SDK의 admin 표면에는 list-all이 없다 — `search_users(username)`만 존재(exact-match 전용,
-/// username 필수). username 쿼리파라미터가 없으면 빈 배열로 응답한다(SDK 표면 불변 원칙 —
-/// k6 드라이버는 이 목록 엔드포인트를 실제로 호출하지 않는다, CONTRACT.md 참고).
+/// `search_users(username, first, max)` — username이 `None`이면 realm 전체를 페이지 단위로 훑는다.
+/// (이전에는 SDK가 exact-match 전용에 username 필수였고 `max=20`이 하드코딩돼 있어, 이 핸들러는
+/// username 없는 요청에 빈 배열을 돌려주는 수밖에 없었다. 지금은 실제 목록을 낼 수 있다.)
+/// 페이지 크기는 호출자가 정한다 — SDK가 기본값을 숨기지 않으므로 여기서 명시한다.
 async fn list_users(State(state): State<AppState>, Query(params): Query<HashMap<String, String>>) -> Response {
-    let username = params.get("username").map(String::as_str).unwrap_or("");
-    if username.is_empty() {
-        return (StatusCode::OK, Json(Value::Array(vec![]))).into_response();
-    }
-    match state.kc.admin().search_users(username).await {
+    let username = params.get("username").map(String::as_str).filter(|s| !s.is_empty());
+    match state.kc.admin().search_users(username, 0, 100).await {
         Ok(users) => {
             let out: Vec<Value> = users
                 .iter()

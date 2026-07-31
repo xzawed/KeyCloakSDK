@@ -97,7 +97,7 @@ run_lang_go() {
   # 런타임 run.sh가 install→quickstart→boot 수행: install/quickstart는 /status 마커로, boot는 healthz로 판정.
   # go get이 공개 프록시(proxy.golang.org)로 전이 의존성을 내려받고 이어서 두 번(app+quickstart) 빌드하므로
   # node(순수 JS npm install)보다 무겁다 — java/dotnet과 같은 이유로 180s→240s로 여유를 둔다.
-  wait_healthy "http://localhost:${app_port_host}/healthz" 240 || true
+  wait_healthy "http://localhost:${app_port_host}/healthz" 240 "$app_container" || true
   if [ ! -f "$status_dir/installed.ok" ]; then
     fail_lang "$lang" install "설치 마커 부재 — file GOPROXY 설치(go get) 실패"
     docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
@@ -188,7 +188,7 @@ run_lang_dotnet() {
   # install/quickstart는 /status 마커로, boot는 healthz로 판정. dotnet은 런타임에 실제 컴파일
   # (dotnet publish)까지 수행하므로 node보다 타임아웃을 넉넉히 둔다(실측: 전 단계 합쳐 약 25초 —
   # 240초는 콜드 NuGet 캐시·느린 CI 러너까지 감안한 여유값).
-  wait_healthy "http://localhost:${app_port_host}/healthz" 240 || true
+  wait_healthy "http://localhost:${app_port_host}/healthz" 240 "$app_container" || true
   if [ ! -f "$status_dir/installed.ok" ]; then
     fail_lang "$lang" install "설치 마커 부재 — 레지스트리 설치(dotnet add package) 실패"
     docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
@@ -283,7 +283,7 @@ run_lang_node() {
   fi
 
   # 런타임 run.sh가 install→quickstart→boot 수행: install/quickstart는 /status 마커로, boot는 healthz로 판정.
-  wait_healthy "http://localhost:${app_port_host}/healthz" 180 || true
+  wait_healthy "http://localhost:${app_port_host}/healthz" 180 "$app_container" || true
   if [ ! -f "$status_dir/installed.ok" ]; then
     fail_lang "$lang" install "설치 마커 부재 — 레지스트리 설치(npm install) 실패"
     docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
@@ -369,7 +369,7 @@ run_lang_python() {
   # 런타임 run.sh가 install→quickstart→boot 수행: install/quickstart는 /status 마커로, boot는 healthz로 판정.
   # pip install(fastapi·uvicorn·python-keycloak·joserfc→cryptography 등 네이티브 휠 포함)이 node의 순수
   # JS npm install보다 무겁다 — java/dotnet과 같은 이유로 180s→240s로 여유를 둔다.
-  wait_healthy "http://localhost:${app_port_host}/healthz" 240 || true
+  wait_healthy "http://localhost:${app_port_host}/healthz" 240 "$app_container" || true
   if [ ! -f "$status_dir/installed.ok" ]; then
     fail_lang "$lang" install "설치 마커 부재 — 레지스트리 설치(pip install) 실패"
     docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
@@ -457,7 +457,7 @@ run_lang_java() {
   # install/quickstart는 /status 마커로, boot는 healthz로 판정. mvn 콜드스타트(전이 의존성 다운로드가
   # node의 npm install보다 훨씬 무거움 — spring-boot-starter-web 트리 전체를 이 컨테이너의 빈 .m2에서
   # 매번 새로 받는다, 실측 약 2~3분)를 반영해 node(180s)보다 넉넉한 타임아웃을 둔다.
-  wait_healthy "http://localhost:${app_port_host}/healthz" 300 || true
+  wait_healthy "http://localhost:${app_port_host}/healthz" 300 "$app_container" || true
   if [ ! -f "$status_dir/installed.ok" ]; then
     fail_lang "$lang" install "설치 마커 부재 — 저장소 해석(mvn dependency:get) 실패"
     docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
@@ -545,7 +545,7 @@ run_lang_php() {
   fi
 
   # 런타임 run.sh가 install→quickstart→boot 수행: install/quickstart는 /status 마커로, boot는 healthz로 판정.
-  wait_healthy "http://localhost:${app_port_host}/healthz" 180 || true
+  wait_healthy "http://localhost:${app_port_host}/healthz" 180 "$app_container" || true
   if [ ! -f "$status_dir/installed.ok" ]; then
     fail_lang "$lang" install "설치 마커 부재 — 레지스트리 설치(composer require) 실패"
     docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
@@ -650,7 +650,7 @@ run_lang_rust() {
   # cargo build --offline(quickstart+app, 오프라인이지만 SDK 전체 컴파일이 실제로 일어남)이 15~25분
   # 안팎씩(둘째 빌드는 CARGO_TARGET_DIR 공유로 대부분 캐시 재사용) 걸릴 수 있어 node(180s)보다 훨씬
   # 긴 타임아웃을 둔다.
-  wait_healthy "http://localhost:${app_port_host}/healthz" 2400 || true
+  wait_healthy "http://localhost:${app_port_host}/healthz" 2400 "$app_container" || true
   if [ ! -f "$status_dir/installed.ok" ]; then
     fail_lang "$lang" install "설치 마커 부재 — 오프라인 설치(cargo build --offline) 실패"
     docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
@@ -738,7 +738,7 @@ run_lang_ruby() {
   # 런타임 run.sh가 install→quickstart→boot 수행: install/quickstart는 /status 마커로, boot는 healthz로 판정.
   # ⚠️ gem install은 네이티브 확장(activesupport/rack-oauth2 전이의존 bigdecimal·json·bindata 등) 컴파일이
   # 필요해 npm install(순수 JS)보다 느리다 — java/dotnet과 같은 이유로 240s→300s로 한 번 더 여유를 둔다.
-  wait_healthy "http://localhost:${app_port_host}/healthz" 300 || true
+  wait_healthy "http://localhost:${app_port_host}/healthz" 300 "$app_container" || true
   if [ ! -f "$status_dir/installed.ok" ]; then
     fail_lang "$lang" install "설치 마커 부재 — 레지스트리 설치(gem install) 실패"
     docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
@@ -825,7 +825,7 @@ run_lang_kotlin() {
   # 런타임 run.sh가 install(gradle classes — gradle 9.5.0 배포판 + SDK/Ktor/coroutines/nimbus 트리를 빈
   # 캐시에서 매번 받으므로 mvn 콜드스타트보다 무겁다, 실측 약 3~5분)→quickstart→boot(installDist)를 수행 —
   # java(300s)보다 넉넉한 420s 타임아웃을 둔다.
-  wait_healthy "http://localhost:${app_port_host}/healthz" 420 || true
+  wait_healthy "http://localhost:${app_port_host}/healthz" 420 "$app_container" || true
   if [ ! -f "$status_dir/installed.ok" ]; then
     fail_lang "$lang" install "설치 마커 부재 — 저장소 해석(gradle classes) 실패"
     docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
