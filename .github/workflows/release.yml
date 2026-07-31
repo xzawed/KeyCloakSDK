@@ -22,7 +22,25 @@ permissions:
   contents: read
 
 jobs:
+  # 발행 전 게이트 — 실제 Keycloak 컨테이너로 통합 E2E를 돌리고, 통과해야만 release 잡이 시작된다.
+  # ⚠️ 이 잡은 구조를 위해 존재한다. `mvn -Prelease deploy`도 lifecycle상 verify(failsafe)를 먼저
+  # 지나므로 "이미 게이트가 있다"고 볼 수도 있지만, 그 보장은 프로파일·플래그 한 줄로 조용히
+  # 사라진다(`-DskipITs` 하나면 끝이다). 나머지 8개 언어는 전부 `needs: integration`으로 게이트를
+  # 잡 경계에 명시하고 있어, java만 다른 형태로 남아 있었다 — 같은 관용으로 맞춘다.
+  integration:
+    name: Integration tests (Testcontainers, 실제 Keycloak)
+    runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → Testcontainers 동작
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
+      - name: Full verify (단위 + 통합 IT + 커버리지 게이트)
+        run: mvn -B -f java/pom.xml verify
+
   release:
+    needs: integration
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

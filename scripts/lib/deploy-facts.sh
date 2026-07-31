@@ -89,6 +89,26 @@ df_check_url() { case "$1" in   # 200이면 이미 게시됨(readiness). go는 �
   kotlin) echo "https://repo1.maven.org/maven2/io/github/xzawed/keycloak-sdk-kotlin/maven-metadata.xml" ;;
   go) echo "" ;; esac; }
 
+# 프리릴리스 표기는 레지스트리마다 다르다. 태그↔매니페스트 가드가 **문자열 정확비교**라 표기가
+# 틀리면 CI가 막는다(의도된 동작) — 그래서 검증을 언어별로 나눈다. 첫 게시는 RC로 하라는
+# DEPLOY.md §7 권고를 헬퍼가 실제로 지원하려면 이 정규식이 필요하다.
+df_version_re() { case "$1" in
+  python) echo '^[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$' ;;          # PEP 440: 0.1.0rc1
+  ruby) echo '^[0-9]+\.[0-9]+\.[0-9]+(\.(alpha|beta|rc)[0-9]+)?$' ;;   # RubyGems: 0.1.0.rc1
+  java|kotlin) echo '^[0-9]+\.[0-9]+\.[0-9]+(-(RC|M|alpha|beta)[0-9]+)?$' ;; # Maven: 0.1.0-RC1
+  *) echo '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' ;;               # SemVer: 0.1.0-rc.1
+esac; }
+
+df_version_hint() { case "$1" in
+  python) echo 'X.Y.Z 또는 PEP 440 프리릴리스 X.Y.ZrcN (예: 0.1.0rc1 — 하이픈·점 없음)' ;;
+  ruby) echo 'X.Y.Z 또는 RubyGems 프리릴리스 X.Y.Z.rcN (예: 0.1.0.rc1 — 점 구분)' ;;
+  java|kotlin) echo 'X.Y.Z 또는 Maven 프리릴리스 X.Y.Z-RCN (예: 0.1.0-RC1 — 대문자 RC)' ;;
+  *) echo 'X.Y.Z 또는 SemVer 프리릴리스 X.Y.Z-rc.N (예: 0.1.0-rc.1)' ;;
+esac; }
+
+# 프리릴리스 여부(표기 무관) — 정식 X.Y.Z가 아니면 프리릴리스로 본다.
+df_is_prerelease() { ! echo "$1" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; }
+
 df_workflow_hint() { case "$1" in
   python) echo "python-release.yml" ;; node) echo "node-release.yml" ;; ruby) echo "ruby-release.yml" ;;
   *) echo "" ;; esac; }

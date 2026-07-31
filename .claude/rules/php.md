@@ -14,7 +14,7 @@ PHP는 포터블 설치 `${KCSDK_TOOLS:-$HOME/tools}/php`(8.3.32 NTS x64 — ext
 ```bash
 export PATH="${KCSDK_TOOLS:-$HOME/tools}/php:$PATH" OPENSSL_CONF="${KCSDK_OPENSSL_CNF:-C:\Users\dirtc\tools\php\extras\ssl\openssl.cnf}"
 cd php && composer install                                    # 의존성 설치
-cd php && vendor/bin/phpunit --testsuite unit                  # 단위테스트 64개. Docker 불필요
+cd php && vendor/bin/phpunit --testsuite unit                  # 단위테스트 74개. Docker 불필요
 cd php && vendor/bin/phpunit --testsuite integration           # 통합테스트 3개(Docker 필요 — docker CLI 셸아웃, 실제 Keycloak 26.6)
 cd php && vendor/bin/phpstan analyse                           # 정적분석(level max + strict-rules + phpunit 확장)
 cd php && vendor/bin/php-cs-fixer fix --dry-run --allow-risky=yes   # 스타일 검사(--allow-risky는 declare_strict_types risky rule에 필요)

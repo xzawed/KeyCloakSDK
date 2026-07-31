@@ -14,7 +14,7 @@ paths:
 .NET은 시스템 설치 `C:\Program Files\dotnet`(SDK 10.0.102, net8.0 런타임 8.0.23 네이티브 존재 — 포터블 설치 불필요)을 사용한다. 명령은 `dotnet/`에서 실행한다:
 ```bash
 cd dotnet && dotnet build                                          # 빌드(warnaserror·Nullable·AnalysisLevel 8.0)
-cd dotnet && dotnet test --filter "Category!=Integration"          # 단위테스트 58개. Docker 불필요
+cd dotnet && dotnet test --filter "Category!=Integration"          # 단위테스트 67개. Docker 불필요
 cd dotnet && dotnet test --filter "Category=Integration"           # 통합테스트 1개(E2E `Full_flow`, Docker 필요 — 실제 Keycloak 26.6)
 cd dotnet && dotnet format Keycloak.Sdk.sln --verify-no-changes    # 포맷 검사
 ```

@@ -5,19 +5,37 @@ set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/lib/deploy-facts.sh"
 
-usage() { echo "usage: release-trigger.sh <lang> <version>   (lang: $DEPLOY_LANGS; version: X.Y.Z)" >&2; exit 1; }
+usage() { echo "usage: release-trigger.sh <lang> <version>   (lang: $DEPLOY_LANGS; version: X.Y.Z 또는 언어별 프리릴리스 표기)" >&2; exit 1; }
 
 [ $# -eq 2 ] || usage
 LANG_="$1"; VER="$2"
 df_known "$LANG_" || { echo "error: unknown lang '$LANG_'" >&2; usage; }
-# semver X.Y.Z 검증(프리릴리스 접미 미지원 — 필요 시 확장)
-echo "$VER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "error: version must be X.Y.Z (got '$VER')" >&2; usage; }
+# 버전 검증은 언어별이다 — 프리릴리스 표기가 레지스트리마다 다르기 때문(PEP 440 / RubyGems /
+# Maven / SemVer). 예전에는 X.Y.Z만 받아서, "첫 태그는 RC로" 라는 DEPLOY.md §7 권고를 이
+# 헬퍼로는 아예 따를 수 없었다.
+echo "$VER" | grep -qE "$(df_version_re "$LANG_")" || {
+  echo "error: '$VER' is not a valid $LANG_ version" >&2
+  echo "       expected: $(df_version_hint "$LANG_")" >&2
+  exit 1
+}
 
 TAG="$(printf "$(df_tag "$LANG_")" "$VER")"
 BUMP="$(df_versionbump "$LANG_")"
 AUTH="$(df_auth "$LANG_")"
 
 printf '=== 릴리스 트리거 안내: %s v%s ===\n\n' "$LANG_" "$VER"
+
+if df_is_prerelease "$VER"; then
+  printf '0) 프리릴리스(RC)\n'
+  printf '   ✅ 첫 게시는 RC 권장 — 아홉 레지스트리 전부 프리릴리스를 지원하고 대부분의 리졸버가\n'
+  printf '      기본 설치 대상에서 제외한다. 파이프라인을 실전에서 증명하면서 0.1.0을 깨끗이 남긴다.\n'
+  printf '   ⚠️ 매니페스트에도 **이 문자열 그대로** 넣을 것 — 태그↔매니페스트 가드는 정확비교다(%s).\n' "$(df_version_hint "$LANG_")"
+  case "$LANG_" in
+    node) printf '   ℹ️ node: 하이픈 프리릴리스는 dist-tag가 latest가 아니라 rc로 붙는다(node-release.yml)\n' ;;
+    go) printf '   ⚠️ go: RC라도 프록시가 캐시하면 불변이다 — 회수는 후속 릴리스의 retract뿐\n' ;;
+  esac
+  printf '\n'
+fi
 
 printf '1) 버전 범프\n'
 case "$BUMP" in
