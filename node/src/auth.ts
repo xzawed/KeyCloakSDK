@@ -174,6 +174,14 @@ export class AuthClient {
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body,
         signal: AbortSignal.timeout(this.#cfg.readTimeoutMs),
+        // SSRF 하드닝: back-channel 요청은 3xx를 따라가지 않는다. fetch 기본값은 'follow'이고
+        // undici는 same-host 리다이렉트에서 자격증명을 재전송한다. 여기가 특히 위험한 이유는
+        // 실패 모드다 — 302를 따라가 무관한 200을 받으면 `response.ok`가 참이라 **logout이 성공을
+        // 반환**하고, 호출자는 세션이 폐기됐다고 믿지만 살아 있다(실측 확인).
+        // ⚠️ 'error'가 아니라 'manual'을 쓴다: 'error'는 `TypeError: fetch failed`로 뭉개져
+        // 네트워크 장애와 구분되지 않는다. 'manual'은 3xx를 그대로 표면화해 아래 `!response.ok`가
+        // 정상적으로 실패로 처리한다 — Go의 `ErrUseLastResponse`와 같은 의미론이다.
+        redirect: 'manual',
       })
     } catch (e) {
       throw new KeycloakAuthError(`Logout request error: ${(e as Error).message}`, { cause: e })

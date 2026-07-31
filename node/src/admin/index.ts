@@ -67,6 +67,11 @@ export class AdminClient {
       realmName: config.realm,
       // ms 단위 — admin-client가 요청마다 AbortSignal.timeout(ms)로 적용한다.
       timeout: config.readTimeoutMs,
+      // SSRF 하드닝: admin REST도 3xx를 따라가지 않는다. 이 경로가 가장 위험하다 — 실측에서
+      // admin 요청이 302를 따라가며 **Authorization 헤더를 리다이렉트 대상까지 들고 갔고**
+      // 호출은 성공으로 resolve됐다. requestOptions는 admin-client가 모든 리소스 fetch에
+      // 전달한다. Java·Kotlin·Go·.NET·PHP·Rust·Ruby와 동형.
+      requestOptions: { redirect: 'manual' },
     })
     // 매 요청 admin-client는 이 provider에서 액세스 토큰을 얻는다(만료 시 provider가 재인증).
     kc.registerTokenProvider({ getAccessToken: () => tokenProvider.getAccessToken() })
