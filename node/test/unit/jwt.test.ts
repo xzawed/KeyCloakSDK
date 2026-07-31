@@ -126,9 +126,7 @@ describe('JwtValidator (강화 검증)', () => {
     )
     // 'none'을 명시적으로 허용해도 뚫리지 않는다 — 설정 실수에 대한 심층방어.
     const permissive = new JwtValidator(keys, { ...OPTS, allowedAlgs: ['RS256', 'none'] })
-    await expect(permissive.validate(unsigned)).rejects.toBeInstanceOf(
-      KeycloakTokenValidationError,
-    )
+    await expect(permissive.validate(unsigned)).rejects.toBeInstanceOf(KeycloakTokenValidationError)
   })
 
   it('HS256/RS256 혼동 공격(공개키를 HMAC 비밀로 사용) → 거부', async () => {
