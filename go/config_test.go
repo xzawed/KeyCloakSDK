@@ -3,7 +3,9 @@ package keycloak
 import (
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -79,7 +81,7 @@ func TestConfigDefaultsAndTrim(t *testing.T) {
 	if c.ConnectTimeout != 10000 || c.ReadTimeout != 30000 || c.ClockSkew != 30 {
 		t.Fatalf("defaults: %+v", c)
 	}
-	if c.JwksMinRefetch != 60 {
+	if c.JwksMinRefetch != 30 {
 		t.Fatalf("JwksMinRefetch default: %d", c.JwksMinRefetch)
 	}
 }
@@ -100,5 +102,40 @@ func TestConfigStringMasksSecret(t *testing.T) {
 	s := Config{ServerURL: "https://kc", Realm: "r", ClientID: "c", ClientSecret: "supersecret"}.String()
 	if strings.Contains(s, "supersecret") || !strings.Contains(s, "***") {
 		t.Fatalf("String must mask clientSecret: %q", s)
+	}
+}
+
+// SSRF hardening: the SDK's back-channel HTTP client must not follow redirects. Go's http.Client
+// follows up to 10 by default, so an unexpected 3xx from a token/JWKS/admin endpoint would make the
+// SDK fetch an attacker-chosen URL — including one on the internal network — carrying our headers.
+// Rust (redirect::Policy::none()) and Ruby (no follow_redirects middleware) already harden this;
+// this test brings Go to the same contract and locks it against a future refactor.
+//
+// Note this is about *back-channel* requests the SDK itself makes. The OIDC authorization-code
+// `redirect_uri` is a browser front-channel concern and is unaffected.
+func TestHTTPClientDoesNotFollowRedirects(t *testing.T) {
+	var reachedInternal int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/internal" {
+			atomic.AddInt32(&reachedInternal, 1)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.Redirect(w, r, "/internal", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	c := Config{ServerURL: srv.URL, Realm: "r", ClientID: "c"}.withDefaults()
+	resp, err := c.httpClient().Get(srv.URL + "/start")
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if atomic.LoadInt32(&reachedInternal) != 0 {
+		t.Fatal("SSRF hardening: the SDK must not follow a 3xx to another path/host")
+	}
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("the 302 must be surfaced to the caller, got %d", resp.StatusCode)
 	}
 }

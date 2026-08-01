@@ -678,3 +678,37 @@ def test_close_closes_underlying_requests_session():
     client.close()
 
     session.close.assert_called_once_with()
+
+
+def test_malformed_jwks_yields_sdk_error_not_a_raw_library_exception():
+    """기형 JWKS(base64url 아닌 modulus)는 SDK 오류로 나와야 한다 — 동형 최소집합 5번.
+
+    ⚠️ 이 프로브가 없을 때 `KeySet.import_key_set`이 `binascii.Error`(stdlib 예외)를 그대로
+    던졌다. joserfc 타입도 아니어서 `keycloak_sdk.exceptions`를 잡는 소비자는 **아무것도 잡지
+    못한다** — §4(경계에서 SDK 타입으로 변환) 위반이다. PHP 자매 구현에서 같은 클래스가 일반
+    리뷰를 뚫고 Critical로 배포된 전례가 있어 아홉 언어에 같은 프로브를 둔다.
+
+    IdP가 기형 JWKS를 주는 것은 가정이 아니다 — 프록시 오구성·부분 배포·중간자 모두 이 모양이 된다.
+    """
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    token = _signed_token(key, issuer=endpoints.issuer, audience=config.client_id)
+
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.certs.return_value = {
+        "keys": [
+            {
+                "kty": "RSA",
+                "kid": "k1",
+                "use": "sig",
+                "alg": "RS256",
+                "n": "!!!not-base64!!!",
+                "e": "AQAB",
+            }
+        ]
+    }
+    client = _client(openid, config=config)
+
+    with pytest.raises(TokenValidationError):
+        client.validate(token)

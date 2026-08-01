@@ -267,10 +267,19 @@ public class AuthClient internal constructor(
     }
 
     // Nimbus HTTPRequest에 KeycloakConfig 타임아웃을 적용한다(부록 §코루틴 래핑 핵심 계약 exactConfig).
-    private fun applyTimeouts(req: HTTPRequest): HTTPRequest =
+    // ⚠️ `internal`인 이유: 네트워크 없는 하드닝 회귀 테스트가 이 헬퍼의 산출물을 직접 검사한다
+    // (Java 자매 SDK의 package-private `applyTimeouts`와 같은 시임).
+    internal fun applyTimeouts(req: HTTPRequest): HTTPRequest =
         req.apply {
             connectTimeout = config.connectTimeout.toMillis().toInt()
             readTimeout = config.readTimeout.toMillis().toInt()
+            // SSRF 하드닝: back-channel 요청은 3xx를 따라가지 않는다. Nimbus 기본값은 **추종**이라
+            // 명시하지 않으면 token/refresh/introspect/logout이 전부 예상 밖 리다이렉트를 따라간다.
+            // 이 헬퍼가 모든 send() 호출부의 단일 병목이라 여기 한 줄이 그 전부를 덮는다.
+            // ⚠️ 단순 SSRF보다 나쁜 실패 모드: logout이 302를 따라가 무관한 200을 받으면 **정상
+            // 반환**한다 — 호출자는 세션이 폐기됐다고 믿지만 살아 있다(실측으로 확인된 동작).
+            // Java·Rust·Ruby·Go·.NET과 동형. authorization-code의 redirect_uri와는 무관하다.
+            followRedirects = false
         }
 
     // 기밀 클라이언트(clientSecret 설정됨)를 요구하는 그랜트(client-credentials/refresh/introspect/logout)의

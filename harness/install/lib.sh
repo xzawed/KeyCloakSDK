@@ -72,11 +72,18 @@ hostpath() {
   if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
 }
 
+# wait_healthy <url> [timeout_s] [container]
+#
+# ⚠️ `container`를 주면 **죽은 컨테이너를 기다리지 않는다**. 이게 없으면 앱이 부팅 1초 만에
+# 크래시해도 타임아웃 전체를 소진한다 — rust는 소비자 쪽에서 실제 컴파일을 하느라 타임아웃이
+# 2400초라, 컴파일 오류 하나가 **40분의 침묵**이 됐다(2026-08-01 install-all 실측: 빌드 실패
+# 17:05:02 → 실패 보고 17:45:02). install-smoke가 릴리스 게이트가 된 뒤로는 그 40분이 매
+# 릴리스 시도에 붙는다. 종료 코드와 마지막 로그를 즉시 보여주는 편이 진단에도 낫다.
 wait_healthy() {
-  local url="$1" timeout_s="${2:-120}"
+  local url="$1" timeout_s="${2:-120}" container="${3:-}"
   local start now
   start=$(date +%s)
-  log "wait_healthy: waiting for $url (timeout ${timeout_s}s)"
+  log "wait_healthy: waiting for $url (timeout ${timeout_s}s${container:+, watching container $container})"
   while true; do
     # NOTE: `curl -o /dev/null`는 Windows mingw curl에서 /dev/null을 유효 출력 경로로 못 열어
     # HTTP 200에도 exit 23(write error)을 내 wait_healthy가 성공을 감지 못 한다(MSYS_NO_PATHCONV=1로
@@ -85,9 +92,28 @@ wait_healthy() {
       log "wait_healthy: $url is up"
       return 0
     fi
+    # 컨테이너가 이미 죽었으면 더 기다릴 이유가 없다 — 남은 타임아웃을 태우는 대신 즉시 실패한다.
+    # `docker inspect`가 실패하는 경우(컨테이너가 아직 안 생겼거나 이름이 사라짐)는 판단을
+    # 보류하고 계속 기다린다 — 기동 직전의 경합을 크래시로 오인하면 안 된다.
+    if [ -n "$container" ]; then
+      local state
+      state="$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || true)"
+      if [ "$state" = "false" ]; then
+        local code
+        code="$(docker inspect -f '{{.State.ExitCode}}' "$container" 2>/dev/null || echo '?')"
+        log "wait_healthy: container $container exited (code=$code) — 남은 타임아웃을 기다리지 않고 중단"
+        log "wait_healthy: --- $container 마지막 로그 40줄 ---"
+        docker logs --tail 40 "$container" 2>&1 | sed "s/^/    /" || true
+        return 1
+      fi
+    fi
     now=$(date +%s)
     if [ $((now - start)) -ge "$timeout_s" ]; then
       log "wait_healthy: timeout waiting for $url after ${timeout_s}s"
+      if [ -n "$container" ]; then
+        log "wait_healthy: --- $container 마지막 로그 40줄 ---"
+        docker logs --tail 40 "$container" 2>&1 | sed "s/^/    /" || true
+      fi
       return 1
     fi
     sleep 3

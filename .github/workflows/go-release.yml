@@ -13,6 +13,14 @@ permissions:
   contents: read
 
 jobs:
+  # 게시 직전 마지막 게이트 — 패키징된 산출물을 로컬 레지스트리에 올린 뒤 모노레포 바깥의 깨끗한
+  # 컨테이너에서 설치해 quickstart를 돌린다. 소스 테스트가 통과해도 패키징 층(매니페스트 메타데이터·
+  # 파일 포함규칙·게시 아티팩트 호환성)의 결함은 여기서만 드러난다 — 레지스트리에 태우기 전 마지막 기회다.
+  install-smoke:
+    uses: ./.github/workflows/install-smoke.yml
+    with:
+      lang: go
+
   # 발행 전 게이트: 태그된 커밋이 green이 아니면 릴리스하지 않는다.
   verify:
     runs-on: ubuntu-latest
@@ -43,7 +51,7 @@ jobs:
         run: go test -tags=integration -run TestE2E -count=1 ./...
 
   release:
-    needs: [verify, integration] # 단위 + 통합 둘 다 통과해야 릴리스
+    needs: [verify, integration, install-smoke] # 단위 + 통합 + 설치 스모크 전부 통과해야 릴리스
     runs-on: ubuntu-latest
     permissions:
       contents: write # GitHub Release 생성에 필요

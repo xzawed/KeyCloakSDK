@@ -7,7 +7,7 @@
 //! 문서화된 은닉성 예외(모든 SDK에서 admin representation은 leaked-by-design)다.
 //! 커버리지 omit(네트워크 경계) — CRUD는 Task 11 통합테스트로 검증, 여기선 `map_admin` 매핑만 단위테스트.
 use crate::config::KeycloakConfig;
-use crate::error::{KeycloakError, Result};
+use crate::error::{AdminError, KeycloakError, Result};
 use crate::token_provider::TokenProvider;
 use async_trait::async_trait;
 use keycloak::prelude::reqwest;
@@ -91,10 +91,63 @@ impl AdminClient {
             .await
             .map_err(map_admin)
     }
-    /// username 정확일치(exact=true) 검색. 인자 순서: brief_representation·created_after·created_before·
-    /// email·email_verified·enabled·`exact`·`first`·first_name·idp_alias·idp_user_id·last_name·`max`·q·search·`username`.
-    pub async fn search_users(&self, username: &str) -> Result<Vec<UserRepresentation>> {
+    /// 사용자 검색(부분일치 — Keycloak 기본 매칭). **페이지 경계는 호출자가 정한다.**
+    ///
+    /// - `username`: `None`이면 필터 없이 realm 전체를 페이지 단위로 훑는다(= users.list).
+    ///   `Some(u)`는 username에 `u`가 **포함된** 사용자를 찾는다(정확일치는 [`Self::find_user_by_username`]).
+    /// - `first`: 0-based 페이지 오프셋. Keycloak은 음수를 "오프셋 없음"으로 무시한다.
+    /// - `max`: 이 페이지의 최대 건수. **음수(`-1`)는 "서버 측 상한 없음"** 이다.
+    ///
+    /// ⚠️ `max`에 `Option`을 두지 않은 것은 의도다 — Keycloak은 `max`가 없으면
+    /// `Constants.DEFAULT_MAX_RESULTS`(**100**)를 조용히 적용한다. 생략을 허용하면 "상한이 없다"고
+    /// 읽히는 호출이 실제로는 100에서 잘린다. 상한은 항상 호출부에 **보이는** 값이어야 한다.
+    ///
+    /// ⚠️ 반환 길이가 `max`와 같다면 **다음 페이지가 있을 수 있다**(총건수는 이 응답에 없다).
+    /// 끝까지 훑으려면 `first`를 `max`씩 늘리며 길이 < `max`가 될 때까지 반복한다.
+    ///
+    /// 인자 순서: brief_representation·created_after·created_before·email·email_verified·enabled·
+    /// `exact`·`first`·first_name·idp_alias·idp_user_id·last_name·`max`·q·search·`username`.
+    pub async fn search_users(
+        &self,
+        username: Option<&str>,
+        first: i32,
+        max: i32,
+    ) -> Result<Vec<UserRepresentation>> {
         self.admin
+            .realm_users_get(
+                &self.realm,
+                None,                         // brief_representation
+                None,                         // created_after
+                None,                         // created_before
+                None,                         // email
+                None,                         // email_verified
+                None,                         // enabled
+                None,                         // exact 미전송 = Keycloak 기본(부분일치)
+                Some(first),                  // first(페이징 오프셋)
+                None,                         // first_name
+                None,                         // idp_alias
+                None,                         // idp_user_id
+                None,                         // last_name
+                Some(max),                    // max(페이지 크기 — 호출자 소유)
+                None,                         // q
+                None,                         // search
+                username.map(str::to_string), // username
+            )
+            .await
+            .map_err(map_admin)
+    }
+    /// username **정확일치** 단건 조회(`exact=true`). 없으면 `Ok(None)`.
+    ///
+    /// 페이지네이션 인자가 없는 것은 잘림이 **구조적으로 불가능**하기 때문이다 — Keycloak은 realm 안에서
+    /// username 유일성을 강제하므로 `exact=true` 결과는 0건 아니면 1건이다. 그래도 `max=2`를 요청한다:
+    /// `max=1`이면 "1건 반환"이 정말 1건인지 잘린 것인지 구분할 수 없다. 2건이 오면 그 불변식이 깨진
+    /// 것이므로 첫 건을 조용히 고르지 않고 [`AdminError::Conflict`]로 표면화한다.
+    pub async fn find_user_by_username(
+        &self,
+        username: &str,
+    ) -> Result<Option<UserRepresentation>> {
+        let found = self
+            .admin
             .realm_users_get(
                 &self.realm,
                 None,                       // brief_representation
@@ -104,18 +157,22 @@ impl AdminClient {
                 None,                       // email_verified
                 None,                       // enabled
                 Some(true),                 // exact = true(정확일치)
-                Some(0),                    // first(페이징 오프셋)
+                Some(0),                    // first
                 None,                       // first_name
                 None,                       // idp_alias
                 None,                       // idp_user_id
                 None,                       // last_name
-                Some(20),                   // max(합리적 페이지 크기)
+                Some(2),                    // max — 유일성 위반 탐지용(1이면 잘림과 구분 불가)
                 None,                       // q
                 None,                       // search
                 Some(username.to_string()), // username
             )
             .await
-            .map_err(map_admin)
+            .map_err(map_admin)?;
+        if found.len() > 1 {
+            return Err(KeycloakError::Admin(AdminError::Conflict));
+        }
+        Ok(found.into_iter().next())
     }
     /// id로 사용자 삭제.
     pub async fn delete_user(&self, user_id: &str) -> Result<()> {
@@ -232,7 +289,8 @@ impl AdminClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::AdminError;
+    use wiremock::matchers::{method, path, query_param, query_param_is_missing};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     // 네트워크 경계는 omit이므로 CRUD는 Task 11 통합에서 검증. 여기선 map_admin 상태매핑만 단위테스트.
     #[test]
@@ -269,5 +327,148 @@ mod tests {
             }),
             KeycloakError::Admin(AdminError::Other { status: 500 })
         ));
+    }
+
+    struct StubProvider;
+    #[async_trait]
+    impl TokenProvider for StubProvider {
+        async fn access_token(&self) -> Result<String> {
+            Ok("AT".to_string())
+        }
+    }
+
+    fn admin_against(server: &MockServer) -> AdminClient {
+        let config = KeycloakConfig::new(server.uri(), "it-realm", "it-client").unwrap();
+        AdminClient::new(&config, reqwest::Client::new(), Arc::new(StubProvider))
+    }
+
+    // ── search_users: 페이지 경계가 실제로 와이어에 실리는지 ──
+    // wiremock은 매치되지 않은 요청에 404를 돌려준다 → map_admin이 Admin(NotFound)로 바꾼다.
+    // 즉 쿼리스트링이 하나라도 어긋나면 이 테스트들은 Ok가 아니라 Err로 떨어져 실패한다.
+    // "호출했더니 뭔가 돌아왔다"가 아니라 **서버가 무엇을 받았는지**를 단언하는 구조다.
+
+    #[tokio::test]
+    async fn search_users_puts_caller_pagination_on_the_wire() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/admin/realms/it-realm/users"))
+            .and(query_param("username", "ali"))
+            .and(query_param("first", "40")) // 하드코딩 0이 아니라 호출자 값
+            .and(query_param("max", "25")) // 하드코딩 20이 아니라 호출자 값
+            .and(query_param_is_missing("exact")) // 부분일치 = Keycloak 기본
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!([{"id":"u1"}])),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let users = admin_against(&server)
+            .search_users(Some("ali"), 40, 25)
+            .await
+            .expect("query string must match: first/max are the caller's, exact unset");
+        assert_eq!(users.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn search_users_without_username_lists_the_realm() {
+        // username=None은 필터를 통째로 빼야 한다(빈 문자열 필터가 아니라 users.list).
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/admin/realms/it-realm/users"))
+            .and(query_param_is_missing("username"))
+            .and(query_param("first", "0"))
+            .and(query_param("max", "100"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        assert!(
+            admin_against(&server)
+                .search_users(None, 0, 100)
+                .await
+                .expect("username=None이면 username 파라미터 자체가 없어야 한다")
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn search_users_forwards_negative_max_as_no_server_limit() {
+        // Keycloak: max 생략 → Constants.DEFAULT_MAX_RESULTS(100), 음수 → 상한 미적용.
+        // 그러므로 "상한 없음"은 max를 빼는 게 아니라 음수를 **보내야** 표현된다.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/admin/realms/it-realm/users"))
+            .and(query_param("max", "-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        admin_against(&server)
+            .search_users(None, 0, -1)
+            .await
+            .expect("max=-1이 그대로 전달돼야 서버가 상한을 걸지 않는다");
+    }
+
+    #[tokio::test]
+    async fn find_user_by_username_asks_for_an_exact_match() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/admin/realms/it-realm/users"))
+            .and(query_param("username", "alice"))
+            .and(query_param("exact", "true")) // 부분일치로 새면 안 된다
+            .and(query_param("max", "2")) // 유일성 위반 탐지분(1이면 잘림과 구분 불가)
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!([{"id":"u1","username":"alice"}])),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let found = admin_against(&server)
+            .find_user_by_username("alice")
+            .await
+            .expect("exact=true·max=2가 와이어에 실려야 한다");
+        assert_eq!(found.and_then(|u| u.id).as_deref(), Some("u1"));
+    }
+
+    #[tokio::test]
+    async fn find_user_by_username_returns_none_when_absent() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/admin/realms/it-realm/users"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server)
+            .await;
+
+        assert!(
+            admin_against(&server)
+                .find_user_by_username("nobody")
+                .await
+                .unwrap()
+                .is_none(),
+            "빈 결과는 NotFound 오류가 아니라 Ok(None)이다"
+        );
+    }
+
+    #[tokio::test]
+    async fn find_user_by_username_surfaces_duplicates_instead_of_picking_one() {
+        // exact 조회가 2건이면 username 유일성 불변식이 깨진 것이다 — 첫 건을 조용히 고르지 않는다.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/admin/realms/it-realm/users"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(
+                serde_json::json!([{"id":"u1","username":"alice"},{"id":"u2","username":"alice"}]),
+            ))
+            .mount(&server)
+            .await;
+
+        match admin_against(&server).find_user_by_username("alice").await {
+            Err(KeycloakError::Admin(AdminError::Conflict)) => {}
+            other => panic!("중복 exact 매치는 Conflict여야 한다, got {other:?}"),
+        }
     }
 }

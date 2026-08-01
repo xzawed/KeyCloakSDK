@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -153,6 +155,40 @@ func TestValidateRejects(t *testing.T) {
 	}
 }
 
+// TestValidateConfiguredClockSkewBoundary proves clockSkewSec=30 is wired into
+// ValidateWithLeeway — not ignored and not relying on go-jose's zero-leeway default
+// alone. Far-past expiry (e.g. now-5min) rejects under any reasonable skew and does
+// not prove the configured value is applied. The pair below does: exp=now-10s must
+// PASS (20s margin inside the 30s window) and exp=now-60s must fail with
+// *TokenValidationError (30s margin past it). If skew were 0 (unwired) the first half
+// fails; if a larger default were used instead of 30 the second half fails.
+func TestValidateConfiguredClockSkewBoundary(t *testing.T) {
+	f := newJWTFixture(t)
+	now := time.Now()
+	const skewSec int64 = 30
+	v := newValidator(validatorOptions{
+		jwksURI: f.jwksSrv.URL, issuer: testISS, audience: "my-client",
+		allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: skewSec,
+		minRefetch: time.Minute,
+	})
+	ctx := context.Background()
+
+	within := f.sign(t, f.priv, "k1", claims(jwt.Audience{"my-client"}, testISS, now.Add(-10*time.Second)))
+	if _, err := v.Validate(ctx, within); err != nil {
+		t.Fatalf("exp 10s in the past MUST pass under configured clockSkewSec=30: %v", err)
+	}
+
+	beyond := f.sign(t, f.priv, "k1", claims(jwt.Audience{"my-client"}, testISS, now.Add(-60*time.Second)))
+	_, err := v.Validate(ctx, beyond)
+	if err == nil {
+		t.Fatal("exp 60s in the past MUST be rejected under configured clockSkewSec=30")
+	}
+	var tve *TokenValidationError
+	if !errors.As(err, &tve) {
+		t.Fatalf("beyond-skew rejection must be *TokenValidationError, got %T: %v", err, err)
+	}
+}
+
 func TestValidateRejectsAlgPinViolation(t *testing.T) {
 	f := newJWTFixture(t)
 	tok := f.sign(t, f.priv, "k1", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
@@ -171,6 +207,37 @@ func TestValidateRejectsNoneAlg(t *testing.T) {
 	none := hdr + "." + pay + "."
 	if _, err := f.validator(t, time.Minute).Validate(context.Background(), none); err == nil {
 		t.Fatal("alg=none must be rejected")
+	}
+}
+
+// Classic HS/RS confusion: the attacker signs HS256 using the *public* key bytes as the HMAC
+// secret. If a validator trusted the header's alg to choose a key, "knows the public key" would
+// become "can mint tokens".
+//
+// ⚠️ Mutation-verified: widening the pin to allow HS256 does NOT make this test pass — the
+// rejection comes from the key source, not the algorithm pin. The JWKS yields an RSA key and
+// go-jose will not verify an HMAC signature with it. So this test guards the key-selection
+// boundary specifically; TestValidateRejectsAlgPinViolation is what guards the pin. Keep both:
+// each covers a layer the other does not, and a future refactor could break either alone.
+func TestValidateRejectsHS256ForgedWithRSAPublicKey(t *testing.T) {
+	f := newJWTFixture(t)
+	pubDER, err := x509.MarshalPKIXPublicKey(&f.priv.PublicKey)
+	if err != nil {
+		t.Fatalf("marshal public key: %v", err)
+	}
+	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: pubDER},
+		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", "k1"))
+	if err != nil {
+		t.Fatalf("hmac signer: %v", err)
+	}
+	forged, err := jwt.Signed(sig).
+		Claims(claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute))).
+		Serialize()
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if _, err := f.validator(t, time.Minute).Validate(context.Background(), forged); err == nil {
+		t.Fatal("HS256 token forged with the RSA public key as the HMAC secret must be rejected")
 	}
 }
 

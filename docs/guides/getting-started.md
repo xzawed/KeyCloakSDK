@@ -460,7 +460,7 @@ keycloak-sdk = { path = "../KeyCloakSDK/rust" }
 ```
 
 ```bash
-cd rust && cargo build && cargo test   # Just verify a local build/test: 34 unit tests + coverage gate
+cd rust && cargo build && cargo test   # Just verify a local build/test: 51 unit tests + coverage gate
 ```
 
 The crate name is `keycloak-sdk`, and the root module is `keycloak_sdk` (`keycloak_sdk::{KeycloakClient, KeycloakConfig, ...}`).
@@ -655,6 +655,72 @@ fun main() = runBlocking {
 
 ---
 
+## Admin capability matrix
+
+The nine SDKs are isomorphic in **layering and flow**, not in method-for-method coverage. The admin facade wraps a different underlying library in each language, and those libraries do not expose the same surface. This table tells you what you can call directly, what you get back, and — where a convenience method is absent — what to call instead.
+
+Every SDK also exposes a `raw` escape hatch that returns the underlying client. Reaching for it is normal and expected for the blank cells below. **One caveat that applies everywhere:** the `raw` path bypasses the SDK's error translation, so lower-library exception types surface there. The "no lower-library types leak" guarantee covers the facade path only.
+
+### Direct coverage
+
+✅ present · — absent (use the escape hatch)
+
+| | users | clients | realms | roles | groups |
+|---|---|---|---|---|---|
+| | C G L U D | C G L U D | C G L U D | C G L U D | C G L U D |
+| **Ruby** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ |
+| **Java** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **Kotlin** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **Python** (sync + `aio`) | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **Node** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **Go** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **.NET** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ |
+| **PHP** | ✅✅✅—✅ | ✅✅✅—✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **Rust** | ✅✅✅—✅ | ✅✅—​—✅ | ✅✅—​—✅ | ✅✅—​—✅ | ✅✅—​—✅ |
+
+C=create G=get L=list/find U=update D=delete
+
+Five languages share exactly the same four gaps: `realms.list`, `realms.update`, `roles.update`, `groups.update`. (.NET used to be a sixth, but three of its gaps were unreachable even through the escape hatch, so they were filled directly rather than documented as workarounds.) PHP additionally has no `update` on any resource; Rust has no `update` and no `list` outside users.
+
+### What you get back
+
+| Returns representation types from the wrapped library | Returns plain maps |
+|---|---|
+| Java · Kotlin (`org.keycloak.representations.idm.*`) · Node (`@keycloak/keycloak-admin-client` defs) · Go (`gocloak.*`, **as pointers** — nil-check) · .NET (`Keycloak.AuthServices.Sdk.Admin.Models.*`) · PHP (`Fschmtt\Keycloak\Representation\*`, **lists come back as `*Collection` wrappers**) · Rust (`keycloak::types::*`, re-exported as `keycloak_sdk::types` so you need no extra dependency) | Python — `dict[str, Any]` · Ruby — `Hash` |
+
+This is a deliberate, documented decision: re-wrapping stable Keycloak representation types in SDK-owned DTOs was judged not worth the cost.
+
+### Filling the gaps
+
+| Language | Escape hatch | Example — the `realms.update` gap |
+|---|---|---|
+| Java · Kotlin | `raw()` → `org.keycloak.admin.client.Keycloak` | `raw().realm(name).update(rep)` |
+| Python | `raw` → `keycloak.KeycloakAdmin` | `raw.update_realm(name, rep)` (async: `a_update_realm`) |
+| Node | `raw()` → `KcAdminClient` | `raw().realms.update({ realm }, rep)` |
+| Go | `Raw()` → `*gocloak.GoCloak` | `Raw().UpdateRealm(ctx, token, rep)` — ⚠️ you must supply the token yourself |
+| PHP | `raw()` → `Fschmtt\Keycloak\Keycloak` | `raw()->realms()->update($realm, $rep)` |
+| Rust | `raw()` → `&KeycloakAdmin<SdkTokenSupplier>` | `raw().realm_put(&realm, rep).await` |
+| Ruby | `raw` → `Faraday::Connection` | no gaps; the hatch is a general bearer-authed connection |
+| .NET | `Raw` → `IKeycloakClient` (users, groups, realm-read only) | no gaps; for anything outside that typed surface the facade already uses raw Admin REST internally |
+
+⚠️ **Go's hatch needs a token.** Every `gocloak` method takes a bearer token, and the admin facade's cached provider is not exported. Get one with `client.Auth.ClientCredentialsToken(ctx)`. Note this performs a fresh grant rather than reusing the facade's cached, single-flighted token.
+
+⚠️ **Kotlin's hatch is blocking.** `raw()` returns the JAX-RS client directly; calls are not wrapped in `runInterruptible(Dispatchers.IO)` and will block the coroutine dispatcher. Wrap them yourself.
+
+### Known rough edges
+
+These are real and worth knowing before you port code between languages.
+
+- **.NET has full coverage, for a specific reason.** Its `Raw` accessor is a *typed* client covering only users, groups, and realm-read, so `realms.list`, `realms.update`, and `roles.update` were once reachable by no route at all — short of hand-rolling a parallel `HttpClient`, which forfeits the facade's error translation, timeout injection, and redirect hardening. They are now implemented directly on the facade via raw Admin REST, the same mechanism it already used for clients and roles. Do not assume `Raw` covers everything in .NET; prefer the facade.
+- **Rust `search_users` requires you to state the page explicitly** — `search_users(username, first, max)`. There is deliberately no default: Keycloak silently applies 100 when `max` is omitted, so an optional parameter would read as "no limit" and truncate anyway. Pass a negative `max` if you really want no server-side cap. For an exact single-user lookup use `find_user_by_username`, which cannot truncate. (It used to hardcode `max=20` and match exactly, with no way to detect the truncation.)
+- **`findByClientId` returns different things.** Java, Kotlin, Node, Go, and .NET return a list of client representations. **Python returns the client's UUID string** (or `None`). Ruby has no such method — use `clients.list(clientId: "…")`.
+- **`create` return values differ.** Most languages give you the new id. **PHP returns nothing** — for users, follow up with `findIdByUsername`; for groups there is no equivalent lookup. **Rust returns `Option<String>`**, so a successful create may still yield no id. Go returns `(string, error)`.
+- **PHP uses `import`, not `create`, for clients and realms** (users, roles, and groups still use `create`). Both require the id/realm pre-set on the object you pass in.
+- **Rust's admin facade is flat** — `create_user`, `get_client`, `delete_group` directly on the client, with no `users`/`clients`/… sub-objects. And **`get_realm()` takes no argument**: it returns the configured realm, while `delete_realm(name)` is name-addressed.
+- **Pagination is spelled differently.** Java, Kotlin, and Go take positional `(first, max)` with no defaults; Python, Node, and .NET default them; Ruby takes free-form keyword params; PHP takes a `Criteria` object. Kotlin also requires a non-null `username` for `search`, so "list all users" is not expressible there the way it is in Node, Python, or .NET.
+- **`realms.create` exists everywhere but is master-realm-only at runtime.** A realm-scoped service account gets 403 regardless of its roles.
+- **Java's `Optional` and Python's `| None` on `get` are never actually empty.** Both raise a not-found error instead. Kotlin deliberately returns the value directly rather than copying the Java idiom.
+
 ## Compatibility
 
 Each SDK's own SemVer is decoupled from the Keycloak server and underlying library versions. See the table below for the supported server range and the base libraries · runtimes.
@@ -680,4 +746,4 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 - **Language support roadmap** — currently supported languages (depth-first: Java · Python · TypeScript/Node · Go · C#/.NET · PHP · Rust · Ruby · Kotlin complete — 9 languages): [../roadmap/language-support.md](../roadmap/language-support.md)
 - **Add-a-language playbook** — the procedure for adding a language with quality isomorphic to the existing Java/Python/Node/Go/C#/PHP/Rust/Ruby/Kotlin: [add-a-language-playbook.md](add-a-language-playbook.md)
 
-> The language-neutral API contract (the source of truth) is defined in [design spec §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md). Every language implements this contract, and the JWT validation hardening (algorithm pinning · `none` rejection · exact `iss` match · `aud` containment check · clock skew · DoS-safe JWKS refetch) is a cross-language mandatory requirement. Current test counts: **Java 123** (117 unit + 6 Testcontainers integration) · **Python 235** (224 unit + 11 integration) · **Node 76** (71 unit + 5 Testcontainers integration) · **Go 41** (40 unit + 1 Testcontainers integration — E2E, full flow · 5 admin resources) · **C#/.NET 59** (58 unit + 1 Testcontainers integration — E2E `Full_flow`, full flow · 5 admin resources) · **PHP 67** (64 unit + 3 integration — docker CLI shell-out, `FullFlowIT`: full flow · client CRUD · raw escape hatch) · **Rust 35** (34 unit + 1 Testcontainers integration — E2E `full_flow`, full flow · 5 admin resources) · **Ruby 74** (73 unit + 1 integration — docker CLI shell-out, E2E `full_flow`, full flow · 5 admin resources) · **Kotlin 101** (100 unit + 1 Testcontainers integration — E2E `FullFlowIT`, full flow · 5 admin resources). Total **811**.
+> The language-neutral API contract (the source of truth) is defined in [design spec §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md). Every language implements this contract, and the JWT validation hardening (algorithm pinning · `none` rejection · exact `iss` match · `aud` containment check · clock skew · DoS-safe JWKS refetch) is a cross-language mandatory requirement. Current test counts: **Java 165** (159 unit + 6 Testcontainers integration) · **Python 272** (261 unit + 11 integration) · **Node 93** (88 unit + 5 Testcontainers integration) · **Go 51** (50 unit + 1 Testcontainers integration — E2E, full flow · 5 admin resources) · **C#/.NET 72** (71 unit + 1 Testcontainers integration — E2E `Full_flow`, full flow · 5 admin resources) · **PHP 79** (76 unit + 3 integration — docker CLI shell-out, `FullFlowIT`: full flow · client CRUD · raw escape hatch) · **Rust 52** (51 unit + 1 Testcontainers integration — E2E `full_flow`, full flow · 5 admin resources) · **Ruby 88** (87 unit + 1 integration — docker CLI shell-out, E2E `full_flow`, full flow · 5 admin resources) · **Kotlin 121** (120 unit + 1 Testcontainers integration — E2E `FullFlowIT`, full flow · 5 admin resources). Total **993**.

@@ -22,7 +22,7 @@ class KeycloakConfig:
     signature_algorithms: tuple[str, ...] = ("RS256",)
     # 미해결 kid(키 회전)로 인한 JWKS 강제 재조회의 최소 간격(초, 기본 60) — DoS 증폭 상한.
     # 위조 kid를 연속 주입해도 이 간격보다 자주 IdP를 때리지 못한다.
-    jwks_min_refetch_seconds: float = 60.0
+    jwks_min_refetch_seconds: float = 30.0
     # `validate()`가 토큰 `aud`에서 찾을 값. 미지정(None)이면 `client_id`를 기대한다(기존 동작).
     # 기본 realm은 client-credentials 토큰 `aud`에 client_id를 넣지 않으므로(audience 매퍼를
     # 추가해야 들어간다), 리소스 서버처럼 API 이름이 aud인 경우 여기에 그 값을 설정한다.

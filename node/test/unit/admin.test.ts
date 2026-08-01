@@ -70,12 +70,16 @@ beforeEach(() => {
 })
 
 describe('AdminClient.create — 생성/인증/타임아웃 주입', () => {
-  it('baseUrl/realmName/timeout(ms)을 주입하고 SDK TokenProvider를 등록한다(내장 auth 미사용)', async () => {
+  it('baseUrl/realmName/timeout(ms)+리다이렉트 차단을 주입하고 SDK TokenProvider를 등록한다(내장 auth 미사용)', async () => {
     await AdminClient.create(cfg, provider)
     expect(h.ctor).toHaveBeenCalledWith({
       baseUrl: 'https://kc.example.com',
       realmName: 'demo',
       timeout: 12345, // ms — admin-client가 AbortSignal.timeout(ms)로 적용(무한대기 방지)
+      // SSRF 하드닝 — admin REST가 3xx를 따라가면 **Authorization 헤더를 리다이렉트 대상까지
+      // 들고 가고**(실측) 호출은 성공으로 resolve된다. 이 옵션은 admin-client가 모든 리소스
+      // fetch에 전달한다. 여기서 함께 고정하지 않으면 생성자 옵션 리팩터에서 조용히 사라진다.
+      requestOptions: { redirect: 'manual' },
     })
     // 만료 시 재인증하는 SDK provider를 등록하고, 크래시·refresh-only 만료버그의 원인인 kc.auth()는
     // 호출하지 않는다.

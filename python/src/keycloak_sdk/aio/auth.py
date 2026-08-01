@@ -23,6 +23,7 @@ from joserfc.jwk import KeySet, KeySetSerialization
 from keycloak import KeycloakOpenID
 from keycloak.exceptions import KeycloakError
 
+from .._internal.redirects import harden_openid
 from ..auth import AuthorizationUrl, _generate_pkce_pair
 from ..config import KeycloakConfig
 from ..exceptions import (
@@ -67,6 +68,10 @@ class AsyncAuthClient:
                 timeout=max(1, round(config.read_timeout)),
             )
         )
+        # async 전송(httpx)은 오늘 안전하지만, 이 객체는 쓰이지 않는 sync requests 세션도
+        # 함께 들고 있다. 지금은 어떤 `a_*`도 sync `raw_*`로 내려가지 않음을 확인했으나,
+        # 한 줄로 그 경로가 생길 가능성을 미리 닫아둔다(비용 0의 심층방어).
+        harden_openid(self._openid)
         self._jwks_cache: KeySet | None = None
         self._jwks_lock = asyncio.Lock()
         self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)
@@ -231,7 +236,15 @@ class AsyncAuthClient:
                 self._jwks_forced_at = now
             certs = await self._awrap(self._openid.a_certs())
             certs_typed = cast(KeySetSerialization, cast(Any, certs))
-            self._jwks_cache = KeySet.import_key_set(certs_typed)
+            # ⚠️ sync 미러와 동일 — 기형 JWKS에서 joserfc는 joserfc 타입도 아닌 stdlib
+            # `binascii.Error`를 던진다. 그대로 두면 `keycloak_sdk.exceptions`를 잡는 소비자가
+            # 아무것도 잡지 못한다(§4 위반). 두 미러가 갈라지지 않도록 같이 고친다.
+            try:
+                self._jwks_cache = KeySet.import_key_set(certs_typed)
+            except Exception as exc:
+                raise TokenValidationError(
+                    f"malformed JWKS from the identity provider: {exc}"
+                ) from exc
         return self._jwks_cache
 
     async def aclose(self) -> None:

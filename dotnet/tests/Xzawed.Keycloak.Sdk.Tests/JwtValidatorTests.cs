@@ -1,7 +1,12 @@
+using System.Linq;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using WireMock.RequestBuilders;
+using WireMock.ResponseBuilders;
+using WireMock.Server;
 using Xunit;
 using Xzawed.Keycloak;
 
@@ -154,5 +159,158 @@ public class JwtValidatorTests
         var opts = new JwtValidatorOptions { Issuer = issuer, Audiences = new[] { "it-client" }, RefreshIntervalSeconds = 15 };
         var validator = new JwtValidator(issuer, opts, http); // no exception, no network (lazy ConfigurationManager)
         Assert.NotNull(validator);
+    }
+
+    // ── Pre-release audit follow-up: invariants that were implemented but never proven ──
+
+    // Classic HS/RS confusion: the attacker forges an HS256 token using the PUBLIC key material as the
+    // HMAC secret. If the validator trusted the header's alg to pick a key, "knows the public key" would
+    // become "can mint tokens". The second assertion is the load-bearing one: even when HS256 is (wrongly)
+    // allowed, the configured key material is RSA, so there is no symmetric key to verify against.
+    [Fact]
+    public async Task Hs256_forged_with_rsa_public_key_rejected()
+    {
+        var publicKeyBytes = Key.Rsa!.ExportSubjectPublicKeyInfo();
+        var hmacKey = new SymmetricSecurityKey(publicKeyBytes);
+        var handler = new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false };
+        var forged = handler.CreateToken(
+            PayloadJson("\"it-client\""),
+            new SigningCredentials(hmacKey, SecurityAlgorithms.HmacSha256));
+
+        var pinned = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => pinned.ValidateAsync(forged));
+
+        var permissive = ValidatorWith(new JwtValidatorOptions
+        {
+            Issuer = Issuer,
+            Audiences = new[] { "it-client" },
+            AllowedAlgorithms = new[] { "RS256", "HS256" },
+        });
+        await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => permissive.ValidateAsync(forged));
+    }
+
+    // A JWKS whose RSA modulus is not valid base64url must surface as the SDK's typed error, never as a raw
+    // library/parse exception escaping the facade (§4 boundary contract).
+    [Fact]
+    public async Task Malformed_jwks_yields_typed_error_not_raw_exception()
+    {
+        using var server = WireMockServer.Start();
+        var issuer = $"{server.Urls[0]}/realms/it-realm";
+        StubDiscovery(server, issuer);
+        server.Given(Request.Create().WithPath(JwksPath).UsingGet())
+            .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                .WithBody("""{"keys":[{"kty":"RSA","kid":"test-kid","use":"sig","alg":"RS256","n":"!!!not-base64!!!","e":"AQAB"}]}"""));
+
+        using var http = new HttpClient();
+        var v = new JwtValidator(issuer, new JwtValidatorOptions { Issuer = issuer, Audiences = new[] { "it-client" } }, http);
+
+        await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+            () => v.ValidateAsync(Sign(PayloadJson("\"it-client\"", iss: issuer), Key)));
+    }
+
+    // DoS-safe JWKS: forged tokens carrying unresolvable kids must not translate 1:1 into JWKS fetches.
+    // ⚠️ The control group is what makes this non-vacuous. "Hits are fewer than tokens" would also hold for a
+    // validator that simply never refreshes, so we contrast against a fresh validator per token — that path has
+    // no shared cache/throttle state and therefore does fetch per token. The gap between the two numbers IS the
+    // DoS bound. (RefreshInterval cannot be driven to zero as a control: ConfigurationManager rejects anything
+    // below its 1s MinimumRefreshInterval, and a 1s interval inside a sub-second loop is indistinguishable
+    // from a long one.)
+    [Fact]
+    public async Task Jwks_refetch_is_bounded_proven_by_hit_count()
+    {
+        using var server = WireMockServer.Start();
+        var issuer = $"{server.Urls[0]}/realms/it-realm";
+        StubDiscovery(server, issuer);
+        server.Given(Request.Create().WithPath(JwksPath).UsingGet())
+            .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                .WithBody($$"""{"keys":[{{JwksKeyJson()}}]}"""));
+
+        const int attempts = 6;
+        var shared = await CountJwksHitsAsync(server, issuer, attempts, freshValidatorPerToken: false);
+        var perToken = await CountJwksHitsAsync(server, issuer, attempts, freshValidatorPerToken: true);
+
+        Assert.True(shared < attempts,
+            $"one validator must not fetch JWKS once per forged token — attempts={attempts} hits={shared}");
+        Assert.True(perToken > shared,
+            $"control must fetch more often, else this test does not measure the bound — shared={shared} perToken={perToken}");
+    }
+
+    // ⚠️ DOCUMENTED DIVERGENCE — read before "fixing" this test to assert zero.
+    //
+    // Python/Go/Rust/Ruby/Java hold the stronger invariant "a forged signature never refetches the
+    // JWKS". .NET does NOT, and cannot without abandoning ConfigurationManager: on a signature
+    // failure Microsoft.IdentityModel calls RequestRefresh() and retries, because that is how it
+    // recovers from key rotation. What bounds the damage is RefreshInterval (our default: 30s).
+    //
+    // So the honest invariant here is the BOUND, not zero: N forged tokens must not produce N
+    // fetches. Measured at the time of writing: 6 forged tokens → exactly 1 extra fetch. Asserting
+    // zero would be asserting something this SDK does not do; asserting "< N" is what actually
+    // protects the IdP and what a regression would break.
+    [Fact]
+    public async Task Forged_signature_with_known_kid_refetch_is_rate_limited()
+    {
+        using var server = WireMockServer.Start();
+        var issuer = $"{server.Urls[0]}/realms/it-realm";
+        StubDiscovery(server, issuer);
+        server.Given(Request.Create().WithPath(JwksPath).UsingGet())
+            .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                .WithBody($$"""{"keys":[{{JwksKeyJson("test-kid")}}]}"""));
+
+        using var http = new HttpClient();
+        var v = new JwtValidator(issuer, new JwtValidatorOptions { Issuer = issuer, Audiences = new[] { "it-client" } }, http);
+
+        // Warm up with a genuine token so the JWKS is actually fetched once; without this the
+        // "count did not grow" assertion would hold vacuously.
+        var vt = await v.ValidateAsync(Sign(PayloadJson("\"it-client\"", iss: issuer), Key));
+        Assert.Equal(issuer, vt.Issuer);
+        var afterWarmup = server.LogEntries.Count(e => e.RequestMessage?.Path == JwksPath);
+        Assert.True(afterWarmup > 0, "warm-up must have fetched the JWKS for this test to mean anything");
+
+        var attacker = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "test-kid" }; // same kid, different key
+        const int forgedCount = 6;
+        for (var i = 0; i < forgedCount; i++)
+        {
+            await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+                () => v.ValidateAsync(Sign(PayloadJson("\"it-client\"", iss: issuer), attacker)));
+        }
+
+        var refetches = server.LogEntries.Count(e => e.RequestMessage?.Path == JwksPath) - afterWarmup;
+        Assert.True(refetches < forgedCount,
+            $"forged signatures must not translate 1:1 into JWKS fetches — {forgedCount} tokens caused {refetches} refetches");
+    }
+
+    private const string JwksPath = "/realms/it-realm/protocol/openid-connect/certs";
+
+    private static void StubDiscovery(WireMockServer server, string issuer)
+        => server.Given(Request.Create().WithPath("/realms/it-realm/.well-known/openid-configuration").UsingGet())
+            .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                .WithBody($$"""{"issuer":"{{issuer}}","jwks_uri":"{{issuer}}/protocol/openid-connect/certs"}"""));
+
+    private static string JwksKeyJson(string kid = "served-kid")
+    {
+        var p = Key.Rsa!.ExportParameters(false);
+        return $$"""{"kty":"RSA","kid":"{{kid}}","use":"sig","alg":"RS256","n":"{{Base64UrlEncoder.Encode(p.Modulus)}}","e":"{{Base64UrlEncoder.Encode(p.Exponent)}}"}""";
+    }
+
+    // Feed `attempts` tokens whose kid cannot be resolved, and count how often JWKS was actually fetched.
+    private static async Task<int> CountJwksHitsAsync(WireMockServer server, string issuer, int attempts, bool freshValidatorPerToken)
+    {
+        using var http = new HttpClient();
+        JwtValidator NewValidator() => new(issuer, new JwtValidatorOptions
+        {
+            Issuer = issuer,
+            Audiences = new[] { "it-client" },
+        }, http);
+
+        var shared = NewValidator();
+        server.ResetLogEntries();
+        for (var i = 0; i < attempts; i++)
+        {
+            var v = freshValidatorPerToken ? NewValidator() : shared;
+            var forgedKey = new RsaSecurityKey(RSA.Create(2048)) { KeyId = $"forged-{i}" };
+            await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+                () => v.ValidateAsync(Sign(PayloadJson("\"it-client\"", iss: issuer), forgedKey)));
+        }
+        return server.LogEntries.Count(e => e.RequestMessage?.Path == JwksPath);
     }
 }

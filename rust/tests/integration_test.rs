@@ -169,11 +169,24 @@ async fn full_flow() {
         })
         .await
         .unwrap();
-    let found = client.admin().search_users(&uname).await.unwrap();
-    let uid = found
-        .first()
+    // 정확일치 단건 조회 — 잘림이 구조적으로 불가능한 경로다(username은 realm 안에서 유일).
+    let uid = client
+        .admin()
+        .find_user_by_username(&uname)
+        .await
+        .unwrap()
         .and_then(|u| u.id.clone())
         .expect("created user must be found by exact search");
+
+    // 페이지 경계가 실제로 서버에 전달되는지는 실 Keycloak만 증명할 수 있다 —
+    // 단위테스트는 우리가 **무엇을 보내는지**만 잠그고, 여기서는 **서버가 지키는지**를 본다.
+    // (이전 구현은 max=20을 하드코딩해 21번째부터 조용히 잘렸고, 그 사실을 알 방법이 없었다.)
+    let page = client
+        .admin()
+        .search_users(Some(&uname), 0, 1)
+        .await
+        .unwrap();
+    assert_eq!(page.len(), 1, "max=1을 보냈으면 서버도 1건만 돌려줘야 한다");
     let got = client.admin().get_user(&uid).await.unwrap();
     assert_eq!(got.username.as_deref(), Some(uname.as_str()));
     client.admin().delete_user(&uid).await.unwrap();

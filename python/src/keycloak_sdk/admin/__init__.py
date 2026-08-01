@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from keycloak import KeycloakAdmin
 
+from .._internal.redirects import harden_admin
 from ..config import KeycloakConfig
 from ..exceptions import KeycloakConfigError
 from .clients import ClientsResource
@@ -29,6 +30,8 @@ class AdminClient:
 
     def __init__(self, config: KeycloakConfig, admin: KeycloakAdmin | None = None) -> None:
         self._config = config
+        if admin is not None:
+            harden_admin(admin)
         self._admin = admin
 
     @property
@@ -52,6 +55,9 @@ class AdminClient:
                 # (런타임은 requests로 흘러 float 정상 동작 — 스텁 부정확).
                 timeout=self._config.read_timeout,  # type: ignore[arg-type]
             )
+            # 생성 직후·첫 호출 전에 막는다. `KeycloakAdmin.__init__`은 네트워크를
+            # 타지 않으므로(토큰 그랜트는 첫 호출 때 지연 수행) 여기가 안전한 지점이다.
+            harden_admin(self._admin)
         return self._admin
 
     @property

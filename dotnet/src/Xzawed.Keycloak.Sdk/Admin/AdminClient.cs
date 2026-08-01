@@ -49,6 +49,8 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
             {
                 ConnectTimeout = TimeSpan.FromMilliseconds(cfg.ConnectTimeoutMs),
                 PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+                // SSRF 하드닝 — 메인 KeycloakClient 핸들러와 동형(기본값 true를 명시적으로 끈다).
+                AllowAutoRedirect = false,
             },
         })
         {

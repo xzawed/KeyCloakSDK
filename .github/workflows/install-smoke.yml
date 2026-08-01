@@ -1,0 +1,47 @@
+name: install-smoke
+
+# 게시 **직전** 게이트: 모노레포 소스가 아니라 **패키징된 산출물**이 실제로 설치되고 동작하는지 본다.
+#
+# 왜 별도 게이트인가 — 단위·통합 테스트는 소스 트리 안에서 돈다. 그래서 매니페스트 메타데이터,
+# 파일 포함/제외 규칙, 게시 아티팩트의 바이너리 호환성처럼 "패키징 층"에서만 드러나는 결함은
+# 전부 통과시킨다. Kotlin의 게시 메타데이터 사고가 정확히 그 층이었다(languageVersion 미설정으로
+# 소비자 하한이 갈라진 건). 이 워크플로는 로컬 레지스트리에 실제로 게시한 뒤 **모노레포 바깥의
+# 깨끗한 컨테이너**에서 설치해 quickstart를 돌린다 — 레지스트리에 태우기 전에 잡을 마지막 기회다.
+#
+# 구현은 이미 야간 CI에서 검증된 것을 그대로 재사용한다(`harness.yml`의 install-all 잡과 동일한
+# 레시피: checkout + setup-node + install-verify.sh). 언어 하나만 넘기면 그 언어만 돈다.
+# `install-verify.sh`는 마지막에 `--strict`로 매트릭스를 판정해 ✗가 하나라도 있으면 exit 1이다.
+#
+# ⚠️ Docker 이미지 빌드가 포함돼 느리다. 릴리스 경로에서만 쓰고 PR에는 걸지 않는다.
+
+on:
+  workflow_call:
+    inputs:
+      lang:
+        description: '검증할 언어 하나 (go|dotnet|node|python|java|php|rust|ruby|kotlin)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  install-smoke:
+    name: Install smoke (게시 산출물을 깨끗한 환경에서 설치·실행)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with: { node-version: '22' }
+      - name: 로컬 레지스트리 게시 → 깨끗한 소비자에서 설치·실행
+        run: cd harness/install && ./install-verify.sh ${{ inputs.lang }}
+      - name: 설치 매트릭스 업로드
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: install-matrix-${{ inputs.lang }}
+          path: harness/install/report/INSTALL-MATRIX.md
+          if-no-files-found: warn

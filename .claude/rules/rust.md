@@ -15,7 +15,7 @@ Rust는 시스템 설치(MSRV 1.88, edition 2024)를 사용한다. **Windows 로
 cd rust && cargo build --all-targets              # 빌드(examples/tests 포함)
 cd rust && cargo fmt --all --check                # 포맷 검사
 cd rust && cargo clippy --all-targets -- -D warnings  # 린트(0 경고 게이트)
-cd rust && cargo test                              # 단위테스트 45개. Docker 불필요
+cd rust && cargo test                              # 단위테스트 51개. Docker 불필요
 cd rust && cargo test --test integration_test -- --ignored  # 통합 E2E 1개(Docker 필요 — testcontainers, 실제 Keycloak 26.6)
 cd rust && cargo run --example quickstart           # QuickStart 예제 실행(Keycloak 필요)
 ```
@@ -28,6 +28,7 @@ cd rust && cargo run --example quickstart           # QuickStart 예제 실행(K
 
 ## 게차
 
+- ⚠️ **(Rust) `search_users(username, first, max)`의 `max`에 `Option`을 두지 말 것 — Keycloak은 `max` 미전송 시 조용히 100을 적용한다.** 실측 근거: `UsersResource.getUsers`가 `maxResults != null ? maxResults : Constants.DEFAULT_MAX_RESULTS`이고 그 상수가 **100**이다. 따라서 `None`은 "상한 없음"이 아니라 "100에서 잘림"이며, 옵션으로 두면 호출부에 상한이 **보이지 않는** 채로 잘린다(이전 구현이 `max=20`을 하드코딩해 겪은 문제와 같은 부류다). "상한 없음"은 **음수 `max`(-1)** 로 표현한다 — 단 우리는 `first`를 항상 보내므로 JPA 경로를 타 실제로는 약 10.7억에서 캡된다(사실상 무제한이나 캡은 존재). 정확일치 단건은 `find_user_by_username`을 쓴다(`max=2`를 요청해 username 유일성 위반을 잘림과 구분하고 `Conflict`로 표면화 — `max=1`이면 둘을 구분할 수 없다). ⚠️ **`update`/`list`가 다섯 리소스에 없는 것은 결정이다** — `raw()`가 전부 도달하므로 릴리스 차단요소가 아니고 v0.2 대상이다(도달 자체가 불가능했던 .NET 갭과 다른 종류다).
 - ⚠️ **(Rust) 라이브러리 크레이트에서 정확 핀(`=`)을 쓰지 말 것 — 소비자 의존성 해소를 하드 실패시킨다.** cargo는 semver 호환 요구를 하나의 버전으로 통일하므로 `keycloak = "=26.6.2"`처럼 박아두면, 같은 트리에서 `keycloak 26.6.3`(또는 `openidconnect 4.0.2`·`jsonwebtoken 11.0.1`)을 요구하는 다른 크레이트와 만족 가능한 조합이 없어 소비자 빌드가 실패한다 — 소비자에게 우회수단이 없고 우리가 새 버전을 내야만 풀린다. 그래서 셋 다 범위 요구이되 **연산자는 다르다**: `openidconnect "4.0.1"`·`jsonwebtoken "11.0.0"`은 평범한 semver 크레이트라 **캐럿**, `keycloak`은 **틸드 `"~26.6.2"`**(`>=26.6.2, <26.7.0`)다 — 이 크레이트의 버전은 semver가 아니라 **Keycloak 서버 라인을 추종**해서 "26.7"이 곧 Keycloak 마이너 업그레이드이고, 실제로 그 경계에서 reqwest feature 구성이 재편된 전례가 있다(우리가 의존하는 `reqwest12` feature의 존속이 보장되지 않는다). 대신 틸드는 트리 안에서 `keycloak 26.7`을 요구하는 소비자와는 여전히 충돌하므로, 그때는 아래 게차를 재확인하고 우리가 의도적으로 상향한다.
 - ⚠️ **(Rust) 커밋된 `rust/Cargo.lock`은 *우리* 빌드만 재현 가능하게 한다 — 소비자에게는 닿지 않는다.** cargo는 의존 크레이트의 lockfile을 무시하므로(lockfile은 최상위 패키지의 것만 쓰인다) 커밋된 lock(318 패키지 — `rust/.gitignore`에서 `Cargo.lock` 제거)이 고정하는 것은 CI·로컬 개발·`--locked` 빌드뿐이고, 소비자는 자기 lockfile로 스스로 고정한다. 즉 다운스트림을 실제로 보호하는 것은 lockfile이 아니라 **위의 범위 선택**이다. 세 크레이트는 reqwest 메이저 정렬·typestate 제네릭·`Validation` 필드가 버전 간 깨지기 쉬운 표면이므로 **메이저/마이너 상향은 lockfile 갱신 + 아래 게차 재확인을 동반해 수동으로** 한다.
 - ⚠️ **(Rust) `keycloak` crate와 `openidconnect`는 reqwest 메이저를 정렬해야 함** — openidconnect 4.0.1이 reqwest 0.12 고정, `keycloak` crate는 `reqwest12` feature(`default-features=false`) 명시해야 같은 `reqwest::Client` 공유(안 맞으면 컴파일 실패, `Cargo.toml` 주석 명문화).

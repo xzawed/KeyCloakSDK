@@ -52,9 +52,14 @@ fi
 #   "Passed!  - Failed:     0, Passed:    58, Skipped:     0, Total:    58"
 # 리터럴 단일 공백(`Passed: `)은 이 패딩과 매치하지 않으므로 공백류를 관용한다.
 UNIT=$(printf '%s\n' "$OUT" | grep -oiE 'Passed:[[:space:]]+[0-9]+' | tail -1 | grep -oE '[0-9]+$')
-# coverlet.msbuild 콘솔 요약 테이블(| Module | Line | Branch | Method |); 첫 % 값을 라인으로 근사.
-LINE=$(printf '%s\n' "$OUT" | grep -E '^\| .*%' | head -1 | grep -oE '[0-9]+(\.[0-9]+)?%' | sed -n '1p' | tr -d '%')
-BRANCH=$(printf '%s\n' "$OUT" | grep -E '^\| .*%' | head -1 | grep -oE '[0-9]+(\.[0-9]+)?%' | sed -n '2p' | tr -d '%')
+# coverlet.msbuild 콘솔 요약 테이블(| Module | Line | Branch | Method |)에서 **Total 행**을 읽는다.
+# ⚠️ 예전에는 `head -1`로 첫 행을 읽었다. 계측 모듈이 하나뿐인 지금은 모듈 행과 Total 행의 값이
+# 같아 우연히 맞았지만, 계측 대상이 둘 이상이 되는 순간 **알파벳순 첫 모듈**의 수치를 전체 커버리지로
+# 조용히 보고하게 된다 — 틀렸는데 그럴듯해 보이는 숫자다(ruby의 0과 달리 눈에 띄지 않는다).
+# Total 행을 못 찾으면 0으로 폴백하지 않고 아래에서 시끄럽게 죽는다.
+TOTALROW=$(printf '%s\n' "$OUT" | grep -E '^\|[[:space:]]*Total[[:space:]]*\|' | tail -1)
+LINE=$(printf '%s\n' "$TOTALROW" | grep -oE '[0-9]+(\.[0-9]+)?%' | sed -n '1p' | tr -d '%')
+BRANCH=$(printf '%s\n' "$TOTALROW" | grep -oE '[0-9]+(\.[0-9]+)?%' | sed -n '2p' | tr -d '%')
 FMTEXIT=$(printf '%s\n' "$OUT" | grep -oE '___FMTEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${FMTEXIT:-1}" = "0" ]; then LINTCLEAN=true; else LINTCLEAN=false; fi
 
@@ -75,4 +80,14 @@ fi
 # 마커가 아예 없으면(컨테이너가 중간에 죽은 경우) 실패로 간주한다 — fail-closed.
 TESTEXIT=$(printf '%s\n' "$OUT" | grep -oE '___TESTEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${TESTEXIT:-1}" = "0" ]; then TESTSPASSED=true; else TESTSPASSED=false; fi
+
+# ⚠️ ruby·rust와 같은 원칙: 측정 실패를 0으로 접지 않는다. 테스트가 통과했는데 Total 행을 못
+# 읽었다면 coverlet 출력 형식이 바뀐 것이고, 0을 보고하면 아무도 눈치채지 못한 채 감점만 남는다.
+if [ "$TESTSPASSED" = "true" ] && { [ -z "$LINE" ] || [ -z "$BRANCH" ]; }; then
+  echo "[dotnet.sh] FATAL: 단위테스트는 통과했는데 커버리지 Total 행을 읽지 못했다." >&2
+  echo "[dotnet.sh]   Total 행='${TOTALROW:-<absent>}' parsed line='${LINE:-<empty>}' branch='${BRANCH:-<empty>}'" >&2
+  echo "[dotnet.sh]   coverlet 요약 테이블 형식이 바뀌었을 가능성 — 0으로 보고하지 않는다." >&2
+  echo "{\"lang\":\"dotnet\",\"unit\":${UNIT:-0},\"integration\":0,\"coverageLine\":null,\"coverageBranch\":null,\"lintClean\":${LINTCLEAN},\"testsPassed\":${TESTSPASSED},\"ran\":false,\"error\":\"coverage-extraction-failed\"}"
+  exit 1
+fi
 echo "{\"lang\":\"dotnet\",\"unit\":${UNIT:-0},\"integration\":${INTEGRATION:-0},\"coverageLine\":${LINE:-0},\"coverageBranch\":${BRANCH:-0},\"lintClean\":${LINTCLEAN},\"testsPassed\":${TESTSPASSED},\"ran\":true}"

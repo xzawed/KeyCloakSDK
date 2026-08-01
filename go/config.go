@@ -25,7 +25,7 @@ type Config struct {
 	ConnectTimeout      int64 // ms; default 10000
 	ReadTimeout         int64 // ms; default 30000
 	ClockSkew           int64 // seconds; default 30
-	// JwksMinRefetch is the minimum interval (seconds; default 60) between JWKS
+	// JwksMinRefetch is the minimum interval (seconds; default 30) between JWKS
 	// refetches triggered by an unresolved kid (key rotation) — a DoS-amplification
 	// cap. A forged random kid cannot flood the IdP faster than this.
 	JwksMinRefetch int64
@@ -74,7 +74,7 @@ func (c Config) withDefaults() Config {
 		c.ClockSkew = 30
 	}
 	if c.JwksMinRefetch == 0 {
-		c.JwksMinRefetch = 60
+		c.JwksMinRefetch = 30
 	}
 	if len(c.SignatureAlgorithms) == 0 {
 		c.SignatureAlgorithms = []string{"RS256"}
@@ -103,6 +103,15 @@ func (c Config) httpClient() *http.Client {
 	return &http.Client{
 		Timeout:   time.Duration(c.ReadTimeout) * time.Millisecond,
 		Transport: c.transport(),
+		// SSRF hardening: never follow redirects on back-channel requests. Go's default follows up
+		// to 10 hops, so an unexpected 3xx from a token/JWKS/admin endpoint would make the SDK fetch
+		// an attacker-chosen URL — possibly on the internal network — while carrying our headers.
+		// ErrUseLastResponse surfaces the 3xx to the caller instead of erroring, so a legitimate
+		// redirect stays observable rather than being silently swallowed.
+		// Isomorphic with Rust (`redirect::Policy::none()`) and Ruby (no follow_redirects middleware).
+		// ⚠️ This governs requests the SDK itself makes. The OIDC authorization-code `redirect_uri`
+		// is a browser front-channel concern and is unaffected.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 }
 

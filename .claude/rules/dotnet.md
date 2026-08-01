@@ -14,7 +14,7 @@ paths:
 .NET은 시스템 설치 `C:\Program Files\dotnet`(SDK 10.0.102, net8.0 런타임 8.0.23 네이티브 존재 — 포터블 설치 불필요)을 사용한다. 명령은 `dotnet/`에서 실행한다:
 ```bash
 cd dotnet && dotnet build                                          # 빌드(warnaserror·Nullable·AnalysisLevel 8.0)
-cd dotnet && dotnet test --filter "Category!=Integration"          # 단위테스트 58개. Docker 불필요
+cd dotnet && dotnet test --filter "Category!=Integration"          # 단위테스트 67개. Docker 불필요
 cd dotnet && dotnet test --filter "Category=Integration"           # 통합테스트 1개(E2E `Full_flow`, Docker 필요 — 실제 Keycloak 26.6)
 cd dotnet && dotnet format Keycloak.Sdk.sln --verify-no-changes    # 포맷 검사
 ```
@@ -27,11 +27,13 @@ cd dotnet && dotnet format Keycloak.Sdk.sln --verify-no-changes    # 포맷 검�
 
 ## 게차
 
+- ⚠️ **(C#) `Raw`는 타입드 클라이언트라 users/groups/realm-read만 커버한다 — 파사드가 그 밖의 것을 raw Admin REST로 직접 구현하는 이유다.** 한때 `realms.list`·`realms.update`·`roles.update`가 파사드에도 `Raw`에도 없어 **아홉 SDK 중 유일하게 도달 불가능**했다(내부 raw-REST 헬퍼는 `internal`, bearer `HttpClient`는 `private`이라 별도 클라이언트를 손수 만드는 수밖에 없었고 그러면 오류 변환·타임아웃·리다이렉트 하드닝을 전부 잃는다). 지금은 셋 다 기존 raw REST 패턴으로 파사드에 구현했고 `groups.update`까지 더해 25/25다. ⚠️ **.NET에서 `Raw`가 모든 것을 덮는다고 가정하지 말 것** — 새 admin 연산을 추가할 때 타입드 클라이언트에 없으면 `SendRawAsync`/`GetJsonAsync`로 구현하는 것이 이 SDK의 관용이다.
 - ⚠️ **(C#) `Keycloak.AuthServices.Sdk` 3.0.0은 net10 전용 → net8.0은 2.7.0 핀.** 2.7.0이 요구하는 `DI.Abstractions >= 9.0.8`보다 낮은 핀은 NU1605(downgrade)로 `TreatWarningsAsErrors` 하드오류.
 - ⚠️ **(C#) admin 타입드 커버리지는 users/groups/realm-get뿐**(`IKeycloakUserClient`/`IKeycloakGroupClient`/`IKeycloakRealmClient`) — clients/roles/realm-CRUD는 같은 bearer `HttpClient`로 raw REST. `…Async` 편의메서드 호출하려면 변수를 `IKeycloakClient`로 타입. `CreateUserAsync`는 void 반환이라 `CreateUserWithResponseAsync`+`Location` 헤더로 id 취득.
 - ⚠️ **(C#) 네임스페이스 셰도잉**: `Xzawed.Keycloak.Admin` 안에서 `new KeycloakClient(http)`는 파사드(private ctor)에 바인딩돼 CS1729 — `using KcAdminClient = Keycloak.AuthServices.Sdk.Admin.KeycloakClient;` 별칭 필요.
 - ⚠️ **(C#) `record` 자동 `ToString()`은 토큰/시크릿을 전체 노출** — `TokenSet`/`KeycloakConfig`는 `ToString()` override+`JsonConverter<T>`로 마스킹. **단 Serilog `{@}` 구조분해는 raw 프로퍼티를 직접 읽어 이 마스킹을 우회** — 두 타입을 `{@}`로 구조분해하지 말 것.
 - ⚠️ **(C#) `HttpClient.Timeout` 만료는 `TaskCanceledException`이지 `HttpRequestException`이 아니다** — admin 경계는 `catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)`로 `KeycloakTransportException` 변환 필요.
+- ⚠️ **(C#) 위조 서명은 JWKS 재조회를 **유발한다** — 나머지 8개 언어와 다르다(rate-limit으로 상한만 걸린다).** `Microsoft.IdentityModel`은 서명 검증 실패를 키 회전 신호로 보고 `ConfigurationManager.RequestRefresh()` 후 재시도한다. 이는 `ConfigurationManager`를 버리지 않는 한 끌 수 없다. Python·Go·Rust·Ruby·Java는 "위조 서명은 재조회 0회"라는 더 강한 불변식을 갖지만 .NET은 갖지 못하며, 실제 피해를 막는 것은 `RefreshIntervalSeconds`(기본 30초)다 — 실측: 위조 토큰 6건 → 추가 조회 1회. **테스트를 "0회"로 바꾸지 말 것**(이 SDK가 하지 않는 것을 주장하게 된다). 근거: `Forged_signature_with_known_kid_refetch_is_rate_limited`.
 - ⚠️ **(C#) `JsonWebTokenHandler.ValidateTokenAsync`는 실패해도 예외를 안 던진다** — `result.IsValid` 검사 필수. `ValidAlgorithms` 기본 `null`(전체허용)이라 `["RS256"]` 핀, `ClockSkew` 기본 5분→30초, `RequireExpirationTime=true`(다른 4개 언어와 동형). JWKS는 `TokenValidationParameters.ConfigurationManager`(`RefreshInterval`이 DoS 스로틀)로 재조회한다. **테스트 함정**: `CreateToken`이 `exp` 자동주입하므로 no-exp 테스트는 `SetDefaultTimesOnTokenCreation=false` 명시 필요.
 - ⚠️ **(C#) `POST /admin/realms`(신규 realm 생성)는 master realm 전용** — 어떤 realm의 service account도(최광범위 롤 포함) 403. E2E는 master bootstrap admin으로 검증.
 - ⚠️ **(C#) Duende.IdentityModel 확장 메서드는 예외를 안 던진다**(`resp.IsError` 검사 필요) — 잘못된 client 자격증명엔 401(`ErrorType=Http`)이라 에러코드는 `resp.Json["error"]`에서 읽는다. PKCE는 라이브러리 미지원(수동 생성), introspection은 `IntrospectTokenAsync`, logout은 수동 POST.

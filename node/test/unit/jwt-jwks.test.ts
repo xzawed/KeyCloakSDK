@@ -17,6 +17,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { generateKeyPair, exportJWK, SignJWT } from 'jose'
 import { JwtValidator, type JwtValidatorOptions } from '../../src/jwt.js'
+import { KeycloakTokenValidationError } from '../../src/errors.js'
 
 const ISS = 'https://kc.example.com/realms/test'
 
@@ -93,5 +94,45 @@ describe('JWKS 재조회 rate-limit (cooldownDuration 실동작)', () => {
 
     // 이 단언이 실패하면 히트 계측 자체가 고장난 것이고, 위 테스트의 통과는 무의미해진다.
     expect(hits).toBeGreaterThan(2)
+  })
+
+  // 동형 최소집합 5번 — 기형 JWKS가 raw 라이브러리 예외가 아니라 SDK 오류 계급으로 나와야 한다.
+  // PHP 자매 구현에서 이 클래스가 일반 리뷰를 뚫고 Critical(경계 미변환 예외 누출)로 배포된
+  // 전례가 있어 아홉 언어에 같은 프로브를 둔다. Node에는 없었다(감사 실측).
+  it('기형 JWKS(base64url 아닌 modulus) → raw 예외가 아니라 KeycloakTokenValidationError', async () => {
+    const bad = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          keys: [
+            {
+              kty: 'RSA',
+              kid: 'served',
+              use: 'sig',
+              alg: 'RS256',
+              n: '!!!not-base64!!!',
+              e: 'AQAB',
+            },
+          ],
+        }),
+      )
+    })
+    await new Promise<void>((resolve) => bad.listen(0, '127.0.0.1', resolve))
+    try {
+      const uri = `http://127.0.0.1:${(bad.address() as AddressInfo).port}/certs`
+      const v = JwtValidator.forJwksUri(uri, { ...baseOpts, jwksMinRefetchSeconds: 30 })
+      // kid는 서버가 내주는 것과 같게 둔다 — 그래야 "kid 미해결"이 아니라 **키 자체가 기형**인
+      // 경로를 타고, 이 테스트가 의도한 실패 모드를 검증한다.
+      const token = await new SignJWT({ sub: 'u', aud: 'my-client' })
+        .setProtectedHeader({ alg: 'RS256', kid: 'served' })
+        .setIssuer(ISS)
+        .setIssuedAt()
+        .setExpirationTime('5m')
+        .sign(attackerKey)
+
+      await expect(v.validate(token)).rejects.toBeInstanceOf(KeycloakTokenValidationError)
+    } finally {
+      await new Promise<void>((resolve) => bad.close(() => resolve()))
+    }
   })
 })

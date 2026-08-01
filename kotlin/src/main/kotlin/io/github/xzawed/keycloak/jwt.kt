@@ -7,7 +7,6 @@ import com.nimbusds.jose.jwk.source.JWKSource
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder
 import com.nimbusds.jose.proc.JWSVerificationKeySelector
 import com.nimbusds.jose.proc.SecurityContext
-import com.nimbusds.jose.util.DefaultResourceRetriever
 import com.nimbusds.jwt.JWTClaimsSet
 import com.nimbusds.jwt.JWTParser
 import com.nimbusds.jwt.SignedJWT
@@ -79,8 +78,11 @@ public class JwtValidator private constructor(
         ): JwtValidator {
             // JWKS fetch도 KeycloakConfig의 connect/read 타임아웃을 따른다: 기본 DefaultResourceRetriever는
             // 자체 기본 타임아웃을 쓰므로 그대로 두면 설정이 무시된다.
+            // ⚠️ 기본 DefaultResourceRetriever는 HttpURLConnection의 기본 동작(리다이렉트 추종)을
+            // 그대로 쓴다 — JWKS가 예상 밖 3xx를 주면 공격자가 고른 URL의 응답을 **서명 검증용 키
+            // 집합으로 사용**하게 된다. auth 경로보다 결과가 나쁘다. Java 자매 SDK와 동형으로 막는다.
             val retriever =
-                DefaultResourceRetriever(
+                NoRedirectResourceRetriever(
                     config.connectTimeout.toMillis().toInt(),
                     config.readTimeout.toMillis().toInt(),
                 )
@@ -94,11 +96,24 @@ public class JwtValidator private constructor(
             // true)뿐이다 — 위조 kid를 연속 주입해도 JWKS 재조회가 무제한으로 증폭되지 않는다.
             // retrying/outageTolerant는 기본 false(비활성)이므로 이 체인에 포함되지 않는다. rateLimited
             // 간격은 config로 설정 가능하게 한다(기본 30초 = Nimbus DEFAULT_RATE_LIMIT_MIN_INTERVAL 동형).
+            // ⚠️ Nimbus는 rate-limit 간격이 캐시 TTL(기본 5분) 이상이면 build()에서
+            // IllegalStateException을 던진다(캐시가 만료돼도 rate-limit이 재조회를 막아 JWKS를 영영
+            // 갱신할 수 없는 구성이므로 정당한 거부다). 그대로 두면 이 foreign 예외가 공개 API로
+            // 새어나가므로(§4 위반) 경계에서 sealed KeycloakException 계급으로 바꾼다 — Java 동형.
             val source: JWKSource<SecurityContext> =
-                JWKSourceBuilder
-                    .create<SecurityContext>(jwksUrl, retriever)
-                    .rateLimited(config.jwksMinRefetch.toMillis())
-                    .build()
+                try {
+                    JWKSourceBuilder
+                        .create<SecurityContext>(jwksUrl, retriever)
+                        .rateLimited(config.jwksMinRefetch.toMillis())
+                        .build()
+                } catch (e: IllegalStateException) {
+                    throw KeycloakConfigException(
+                        "jwksMinRefetch (${config.jwksMinRefetch.toSeconds()}s) must be shorter than " +
+                            "the JWKS cache time-to-live " +
+                            "(${JWKSourceBuilder.DEFAULT_CACHE_TIME_TO_LIVE / 1000}s)",
+                        e,
+                    )
+                }
             return JwtValidator(source, endpoints.issuer, audience, allowedAlgs, config.clockSkew)
         }
 

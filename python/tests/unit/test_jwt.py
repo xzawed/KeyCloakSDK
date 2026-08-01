@@ -136,6 +136,35 @@ def test_expired_token_rejected():
         validator.validate(tok, KeySet([key]))
 
 
+def test_configured_clock_skew_boundary():
+    """Configured clock_skew=30 is actually applied — not ignored, not a far-past default.
+
+    Far-past expiry (e.g. now-1000) rejects under any reasonable skew and does not
+    prove wiring. The pair below does: exp=now-10 must PASS (20s margin inside the
+    30s window) and exp=now-60 must raise TokenValidationError (30s margin past it).
+    If skew were 0 (unwired) the first half fails; if a large library default were
+    used instead of 30 the second half fails.
+    """
+    key = _rsa_key()
+    now = int(time.time())
+    skew = 30.0
+    validator = JwtValidator(issuer=ISSUER, audience="app", clock_skew=skew)
+
+    within = _sign(
+        key,
+        {"iss": ISSUER, "aud": "app", "exp": now - 10},
+    )
+    result = validator.validate(within, KeySet([key]))
+    assert result.issuer == ISSUER
+
+    beyond = _sign(
+        key,
+        {"iss": ISSUER, "aud": "app", "exp": now - 60},
+    )
+    with pytest.raises(TokenValidationError):
+        validator.validate(beyond, KeySet([key]))
+
+
 def test_wrong_issuer_rejected():
     key = _rsa_key()
     tok = _sign(
