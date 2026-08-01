@@ -80,3 +80,9 @@ coverage.json
 coverage.cobertura.xml
 coverage.opencover.xml
 coverage.info
+# ⚠️ 단, 커버리지 가드의 테스트 픽스처는 산출물이 아니라 **소스**다. 위 규칙들은 파일명만 보므로
+# `coverage.cobertura.xml` 픽스처를, 그리고 위쪽 `coverage/` 규칙은 디렉터리째 삼킨다 — 그러면
+# 로컬에서는 테스트가 통과하는데 CI에서는 픽스처가 없어 깨진다(실제로 커밋 직전에 걸렸다).
+# ⚠️ 예외는 이 디렉터리로만 좁힌다. `!scripts/test/fixtures/**`처럼 넓게 열면 doc-guard 픽스처
+# 아래 실제 빌드 산출물(.gradle 잠금·바이너리 캐시)까지 추적된다(이것도 실제로 걸렸다).
+!scripts/test/fixtures/coverage-gate/**

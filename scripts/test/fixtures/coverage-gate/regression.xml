@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<coverage line-rate="0.8287" branch-rate="0.84" version="1.9" timestamp="1785548354" lines-covered="150" lines-valid="181" branches-covered="42" branches-valid="50">
+  <sources><source>/src/</source></sources>
+  <packages><package name="Xzawed.Keycloak.Sdk" line-rate="0.8287" branch-rate="0.84" /></packages>
+</coverage>

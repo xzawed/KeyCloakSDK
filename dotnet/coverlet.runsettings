@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  coverlet 데이터 컬렉터("XPlat Code Coverage") 설정.
+  (주의: XML 주석 안에는 하이픈 2개를 연달아 쓸 수 없어 CLI 스위치는 접두 하이픈 없이 적는다.)
+
+  ⚠️ 왜 msbuild 통합(/p:CollectCoverage=true)이 아니라 컬렉터인가:
+  msbuild 통합의 히트 수집기는 테스트 호스트 프로세스의 AppDomain.ProcessExit 핸들러에서 hits
+  파일을 기록한다. VSTest가 테스트 호스트 종료를 짧게만 기다리므로, 종료가 느린 실행에서는 핸들러가
+  돌기 전에 프로세스가 정리되고 hits 파일이 남지 않는다. 이때 coverlet은 경고만 내고 분모(계측된
+  라인)는 그대로 둔 채 분자만 0으로 리포트한다. 결과가 0%이고, 내장 임계값 게이트는 이를
+  "커버리지가 90 미만"이라고 보고한다. 진짜 하락과 문구가 같아 구분이 불가능하다.
+  실제로 dotnet-ci run 30676360497이 이 문구로 실패했고, 같은 커밋 재실행은 96.68%로 통과했다.
+
+  컬렉터는 VSTest 확장으로 테스트 호스트 안에서 돌며 플랫폼이 주는 SessionEnd 콜백에 flush한다.
+  프로세스가 아직 살아있고 VSTest가 기다리는 시점이라 종료 타이밍에 의존하지 않는다. 즉 이 전환은
+  실패 확률을 낮추는 게 아니라 실패 경로 자체를 없앤다.
+
+  ⚠️ 제외 필터는 여기가 SSOT다. 예전에는 CI 명령줄의 /p:Exclude에 있었다(필터 문법은 동일).
+  네트워크 경계(AuthClient·Admin.*·KeycloakClient)는 단위테스트 대상이 아니라 제외한다.
+  ⚠️ 제외를 늘리면 분모가 줄어 백분율 게이트가 민감해진다(현재 브랜치 분모 50 = 1개당 2%p).
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <Exclude>[*]Xzawed.Keycloak.AuthClient,[*]Xzawed.Keycloak.Admin.*,[*]Xzawed.Keycloak.KeycloakClient</Exclude>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

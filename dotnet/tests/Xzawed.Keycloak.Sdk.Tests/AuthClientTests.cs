@@ -31,7 +31,9 @@ public class AuthClientTests : IDisposable
         return new AuthClient(cfg, ep, validator, _http);
     }
 
-    public void Dispose() { _mock.Stop(); _http.Dispose(); }
+    // ⚠️ Stop()이 아니라 Dispose() — 근거는 AdminClientTests.Dispose 주석 참고(호스트/리스너가
+    // 남아 프로세스 종료가 느려지고, 그 지연이 커버리지 히트 flush 실패의 가중 요인이 된다).
+    public void Dispose() { _mock.Dispose(); _http.Dispose(); }
 
     [Fact]
     public void CreateAuthorizationRequest_builds_s256_url_with_all_params()

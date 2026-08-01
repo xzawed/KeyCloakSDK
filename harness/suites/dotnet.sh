@@ -31,10 +31,21 @@ RAW=$(docker run --rm -v "$ROOT/dotnet:/src-ro:ro" mcr.microsoft.com/dotnet/sdk:
   cp -r /src-ro /src && cd /src
   find . -name "*.cs" -exec sed -i "s/\r$//" {} +
   dotnet test --filter "Category!=Integration" \
-    /p:CollectCoverage=true \
-    /p:Exclude="[*]Xzawed.Keycloak.AuthClient%2c[*]Xzawed.Keycloak.Admin.*%2c[*]Xzawed.Keycloak.KeycloakClient" \
+    --collect:"XPlat Code Coverage" \
+    --settings coverlet.runsettings \
+    --results-directory /tmp/cov \
     2>&1
   echo "___TESTEXIT=$?"
+  # 컬렉터는 콘솔 요약 테이블을 찍지 않으므로 cobertura 루트 속성에서 분모/분자를 직접 읽는다.
+  # 비율이 아니라 **분모와 분자를 따로** 내보내는 것이 요점이다 — 바깥에서 "계측은 됐는데 히트가
+  # 0"(측정 실패)과 "히트는 있는데 낮음"(진짜 하락)을 구분할 수 있어야 하기 때문이다.
+  COV=$(find /tmp/cov -name "*.cobertura.xml" 2>/dev/null | head -1)
+  if [ -n "$COV" ]; then
+    for a in lines-covered lines-valid branches-covered branches-valid; do
+      v=$(grep -oE "$a=\"[0-9]+\"" "$COV" | head -1 | grep -oE "[0-9]+")
+      echo "___COV_$a=${v:-}"
+    done
+  fi
   dotnet format Keycloak.Sdk.sln --verify-no-changes >/tmp/fmt.log 2>&1
   echo "___FMTEXIT=$?"
   cat /tmp/fmt.log
@@ -52,14 +63,21 @@ fi
 #   "Passed!  - Failed:     0, Passed:    58, Skipped:     0, Total:    58"
 # 리터럴 단일 공백(`Passed: `)은 이 패딩과 매치하지 않으므로 공백류를 관용한다.
 UNIT=$(printf '%s\n' "$OUT" | grep -oiE 'Passed:[[:space:]]+[0-9]+' | tail -1 | grep -oE '[0-9]+$')
-# coverlet.msbuild 콘솔 요약 테이블(| Module | Line | Branch | Method |)에서 **Total 행**을 읽는다.
-# ⚠️ 예전에는 `head -1`로 첫 행을 읽었다. 계측 모듈이 하나뿐인 지금은 모듈 행과 Total 행의 값이
-# 같아 우연히 맞았지만, 계측 대상이 둘 이상이 되는 순간 **알파벳순 첫 모듈**의 수치를 전체 커버리지로
-# 조용히 보고하게 된다 — 틀렸는데 그럴듯해 보이는 숫자다(ruby의 0과 달리 눈에 띄지 않는다).
-# Total 행을 못 찾으면 0으로 폴백하지 않고 아래에서 시끄럽게 죽는다.
-TOTALROW=$(printf '%s\n' "$OUT" | grep -E '^\|[[:space:]]*Total[[:space:]]*\|' | tail -1)
-LINE=$(printf '%s\n' "$TOTALROW" | grep -oE '[0-9]+(\.[0-9]+)?%' | sed -n '1p' | tr -d '%')
-BRANCH=$(printf '%s\n' "$TOTALROW" | grep -oE '[0-9]+(\.[0-9]+)?%' | sed -n '2p' | tr -d '%')
+# cobertura 분모/분자에서 백분율을 계산한다(콘솔 테이블 파싱이 아니다).
+# ⚠️ 예전에는 coverlet.msbuild가 찍는 `| Total |` 행을 파싱했다. 그 방식은 두 가지가 깨져 있었다:
+#   (1) 한때 `head -1`로 **첫 모듈 행**을 읽어, 계측 대상이 둘 이상이 되면 알파벳순 첫 모듈의 수치를
+#       전체로 조용히 보고했다(틀렸는데 그럴듯한 숫자).
+#   (2) 더 근본적으로, msbuild 통합은 히트 flush가 프로세스 종료 타이밍에 걸려 실패할 수 있고
+#       그때 분모는 그대로 둔 채 `0%`를 찍는다 — 테이블은 멀쩡히 파싱되므로 (1)을 고쳐도
+#       "커버리지 0"이 조용히 점수에 반영된다(ruby가 0으로 감점당하던 것과 같은 부류).
+# 지금은 컬렉터가 내는 cobertura의 분모/분자를 직접 읽고, 아래에서 그 둘을 나눠 판정한다.
+CL=$(printf '%s\n' "$OUT" | grep -oE '___COV_lines-covered=[0-9]*' | tail -1 | cut -d= -f2)
+LV=$(printf '%s\n' "$OUT" | grep -oE '___COV_lines-valid=[0-9]*' | tail -1 | cut -d= -f2)
+CB=$(printf '%s\n' "$OUT" | grep -oE '___COV_branches-covered=[0-9]*' | tail -1 | cut -d= -f2)
+BV=$(printf '%s\n' "$OUT" | grep -oE '___COV_branches-valid=[0-9]*' | tail -1 | cut -d= -f2)
+pct() { [ -n "$2" ] && [ "$2" -gt 0 ] 2>/dev/null && awk "BEGIN{printf \"%.2f\", $1/$2*100}" || echo ""; }
+LINE=$(pct "${CL:-0}" "${LV:-}")
+BRANCH=$(pct "${CB:-0}" "${BV:-}")
 FMTEXIT=$(printf '%s\n' "$OUT" | grep -oE '___FMTEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${FMTEXIT:-1}" = "0" ]; then LINTCLEAN=true; else LINTCLEAN=false; fi
 
@@ -81,13 +99,20 @@ fi
 TESTEXIT=$(printf '%s\n' "$OUT" | grep -oE '___TESTEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${TESTEXIT:-1}" = "0" ]; then TESTSPASSED=true; else TESTSPASSED=false; fi
 
-# ⚠️ ruby·rust와 같은 원칙: 측정 실패를 0으로 접지 않는다. 테스트가 통과했는데 Total 행을 못
-# 읽었다면 coverlet 출력 형식이 바뀐 것이고, 0을 보고하면 아무도 눈치채지 못한 채 감점만 남는다.
-if [ "$TESTSPASSED" = "true" ] && { [ -z "$LINE" ] || [ -z "$BRANCH" ]; }; then
-  echo "[dotnet.sh] FATAL: 단위테스트는 통과했는데 커버리지 Total 행을 읽지 못했다." >&2
-  echo "[dotnet.sh]   Total 행='${TOTALROW:-<absent>}' parsed line='${LINE:-<empty>}' branch='${BRANCH:-<empty>}'" >&2
-  echo "[dotnet.sh]   coverlet 요약 테이블 형식이 바뀌었을 가능성 — 0으로 보고하지 않는다." >&2
+# ⚠️ ruby·rust와 같은 원칙: 측정 실패를 0으로 접지 않는다. 여기서는 두 가지를 구분해서 잡는다.
+# (1) 분모 자체가 없다 = 리포트를 못 찾았거나 아무것도 계측되지 않았다.
+if [ "$TESTSPASSED" = "true" ] && { [ -z "$LV" ] || [ "${LV:-0}" -eq 0 ] 2>/dev/null; }; then
+  echo "[dotnet.sh] FATAL: 단위테스트는 통과했는데 계측된 라인이 0이다(lines-valid='${LV:-<absent>}')." >&2
+  echo "[dotnet.sh]   cobertura 리포트를 못 찾았거나 컬렉터가 동작하지 않은 것 — 0으로 보고하지 않는다." >&2
   echo "{\"lang\":\"dotnet\",\"unit\":${UNIT:-0},\"integration\":0,\"coverageLine\":null,\"coverageBranch\":null,\"lintClean\":${LINTCLEAN},\"testsPassed\":${TESTSPASSED},\"ran\":false,\"error\":\"coverage-extraction-failed\"}"
+  exit 1
+fi
+# (2) 분모는 있는데 히트가 0 = 계측은 됐으나 결과가 flush되지 않았다. 테스트가 통과한 실행에서
+# 이 조합은 "커버리지가 낮다"로는 성립할 수 없다 — 0%를 점수에 먹이면 조용히 감점만 남는다.
+if [ "$TESTSPASSED" = "true" ] && [ "${CL:-0}" -eq 0 ] 2>/dev/null; then
+  echo "[dotnet.sh] FATAL: 계측은 됐는데(lines-valid=$LV) 히트가 0이다(lines-covered=$CL)." >&2
+  echo "[dotnet.sh]   테스트가 통과한 실행에서 이건 커버리지 하락이 아니라 측정 실패다." >&2
+  echo "{\"lang\":\"dotnet\",\"unit\":${UNIT:-0},\"integration\":0,\"coverageLine\":null,\"coverageBranch\":null,\"lintClean\":${LINTCLEAN},\"testsPassed\":${TESTSPASSED},\"ran\":false,\"error\":\"coverage-measurement-failed\"}"
   exit 1
 fi
 echo "{\"lang\":\"dotnet\",\"unit\":${UNIT:-0},\"integration\":${INTEGRATION:-0},\"coverageLine\":${LINE:-0},\"coverageBranch\":${BRANCH:-0},\"lintClean\":${LINTCLEAN},\"testsPassed\":${TESTSPASSED},\"ran\":true}"
