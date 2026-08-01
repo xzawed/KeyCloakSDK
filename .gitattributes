@@ -15,6 +15,16 @@ gradlew text eol=lf
 # 마크다운도 LF로 고정한다. 가드(scripts/check-docs.mjs)가 `--fix`로 문서를 고칠 때
 # CRLF 워킹트리에서는 파일 전체가 변경된 것처럼 보여 리뷰가 불가능해진다.
 *.md    text eol=lf
+# 가드 자가테스트의 픽스처는 `sed`가 줄 단위로 편집하는 **입력 데이터**다(예:
+# test-check-ci-permissions.sh의 `/^    permissions: {}$/d`). Windows 기본
+# (`core.autocrlf=true`)에서 CRLF로 체크아웃되면 `$` 앵커가 줄 끝의 `\r` 앞에서 매치하지
+# 않으므로, 그런 변이는 아무것도 바꾸지 못한 채 "가드가 위반을 못 잡았다"로 빨개진다.
+# ⚠️ 관측된 버그를 고친 것이 아니라 툴체인 의존을 없애는 것이다 — Git for Windows의 msys2
+# sed는 읽을 때 `\r`을 떼어내서 지금은 물리지 않는다(실측). 그러나 그건 sed 구현에 기댄
+# 우연이고(WSL sed는 떼지 않는다), 픽스처는 어느 기계에서든 바이트가 같아야 하는 테스트
+# 데이터다. `*.sh`·`*.md`를 이미 같은 이유로 고정하고 있다.
+# (가드 스크립트 자체는 CRLF에 안전하다 — `\r?\n`으로 분리하고 `trimEnd()`한다.)
+scripts/test/fixtures/** text eol=lf
 # 배치 파일(.bat)은 Windows `cmd.exe`가 직접 실행하며 줄바꿈에 민감하다(괄호
 # 블록 안의 goto/label이 LF 전용에서 오동작할 수 있다) — 그래서 `*.sh`와 반대
 # 방향인 CRLF로 고정한다. 직전 커밋의 `git add --renormalize .`가 이 규칙 없이
