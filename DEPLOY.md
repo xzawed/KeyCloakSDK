@@ -38,14 +38,40 @@ Rows are in the recommended deployment order explained below.
 python → dotnet → ruby → node → rust → java → kotlin → go → php
 ```
 
+### Step 0 — spend the first tag on PHP as a rehearsal, before that order starts
+
+⚠️ **This is not a real publish, which is exactly why it goes first.** Until the mirror is registered on Packagist (§2-D step 3), the `split` job pushes to a GitHub repository that **no registry is watching**, and `main` is force-pushed on every release anyway — so nothing consumable is created and the whole thing is undoable with a tag delete. What it *does* exercise, for real, is the machinery every other language depends on: a human tag push → `verify` → `integration` against a live Keycloak → `install-smoke` → **a real stored credential** (`PHP_SPLIT_TOKEN`) → an authenticated push to an external repository → `gh release create`. None of that has ever run (§5). Spending the first execution on the one language where a failure costs nothing is worth more than the ordering purity of going by recoverability alone.
+
+This also happens to match what is actually set up: `./scripts/release-readiness.sh` currently reports **php as the only language whose credential is in place** (`secrets=set`); the four token/GPG languages are `unset` and the three OIDC languages still need their publisher registered.
+
+Once the rehearsal has passed and the mirror is registered on Packagist, PHP takes its normal place in the order above (last, group 4 below).
+
+### Why that order
+
 The first publish of a coordinate is irreversible everywhere, so the axis that actually matters is "if this version turns out to be broken, what can I do about it?" (§6 has the per-registry detail):
 
 1. **python · dotnet · ruby · node · rust** — the registry supports yank / unlist / deprecate, so a bad version can at least be pulled out of resolution.
 2. **java · kotlin** — Maven Central is immutable once released, but the Central Portal puts a human staging step in front of it: a bad upload can be dropped *before* it is published, at zero cost.
 3. **go** — nothing to set up, and the weakest recovery of all nine. Once `proxy.golang.org` has cached the version it is immutable and there is no yank; the only remedy is a `retract` directive in a *later* release.
-4. **php** — a special case rather than simply "last". Its `split` job pushes to a mirror repository that **is not yet registered on Packagist**, so until that registration happens the push publishes nothing consumable and `main` is force-pushed on every release anyway. Recovery is therefore the *best* of the nine, not the worst; the reason to hold it is sequencing, not risk (§2-D: register only after the first release has populated the mirror).
+4. **php** — recovery is the *best* of the nine while Packagist registration is still pending (see the rehearsal note above), which is why it moved to the front rather than the back. Once the mirror **is** registered, PHP joins group 1: withdrawal is a tag delete on the mirror plus a Packagist update.
 
-> The order this document used to recommend ("easy auth → hard auth", starting with Go) optimised for the wrong axis: Go is the easiest to *set up* and the hardest to *undo*.
+> The order this document used to recommend ("easy auth → hard auth", starting with Go) optimised for the wrong axis: Go is the easiest to *set up* and the hardest to *undo*. A later revision put PHP last for a reason that has since expired — the mirror repository did not exist then; it does now.
+
+### Before the first tag — what has and has not been proven
+
+Measured locally (this is the "Tier 1" pre-flight; none of it touches a public registry):
+
+| Check | Result |
+|---|---|
+| `cargo publish --dry-run --locked` | **pass** — 19 files packaged, and the packaged tree *compiles*. The only true registry-equivalent dry-run of the nine |
+| `npm publish --dry-run` | **pass** — 75 files, `LICENSE` + `README.md` present, name/version correct |
+| `twine check --strict` (wheel + sdist) | **pass** |
+| `dotnet pack` → nuspec | **pass** — `LICENSE`, `README`, XML docs; `<repository>` at repo root, `<projectUrl>` at `tree/main/dotnet` |
+| `gem build` | **pass, warning-free** |
+| `mvn -Prelease package` | **pass** — `META-INF/LICENSE` in all five jars, byte-identical to root `LICENSE` |
+| Name availability (7 registries) | **all unregistered** — crates.io · PyPI · npm · RubyGems · NuGet · Packagist · Maven Central |
+
+⚠️ **Still unproven, and only a real publish can prove it**: OIDC claim matching (PyPI · npm · RubyGems), GPG signing, Central Portal staging, npm provenance attestation, `sum.golang.org` inclusion, and Packagist's VCS driver actually reading the mirror. Treat every first tag as a first execution, not a regression check.
 
 **Check the current status**: `./scripts/release-readiness.sh` (with no arguments, it reports all nine languages at once, in this order).
 
