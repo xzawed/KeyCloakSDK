@@ -22,13 +22,37 @@ permissions:
   contents: read
 
 jobs:
+  # 태그 접미사 = 릴리스 버전. 이 워크플로에서 버전을 유도하는 **유일한** 지점이다 — install-smoke와
+  # deploy가 각자 태그를 파싱하면 "게이트가 검증한 버전"과 "실제로 게시하는 버전"이 갈릴 수 있다.
+  # ⚠️ java에는 태그↔매니페스트 가드가 없다. POM이 main에서 -SNAPSHOT을 유지하고 릴리스 때
+  # `versions:set`으로 태그값을 **덮어쓰기** 때문이다(아래 release 잡). 그래서 install-smoke가
+  # 버전을 넘겨받지 못하면 그냥 실패하는 게 아니라 **조용히 다른 버전을 검증하고 통과한다** —
+  # 하네스의 publish/java.sh도 같은 방식으로 버전을 덮어쓰기 때문이다. 이 잡이 그 구멍을 막는다.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+    steps:
+      - id: derive
+        name: Derive version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            echo "::error::태그 ${GITHUB_REF_NAME}에서 'v' 접두를 벗겨내지 못했다 — 버전 유도 불가(fail-closed)."
+            exit 1
+          fi
+          echo "releasing io.github.xzawed:* version ${VERSION} (from tag ${GITHUB_REF_NAME})"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
   # 게시 직전 마지막 게이트 — 패키징된 산출물을 로컬 레지스트리에 올린 뒤 모노레포 바깥의 깨끗한
   # 컨테이너에서 설치해 quickstart를 돌린다. 소스 테스트가 통과해도 패키징 층(매니페스트 메타데이터·
   # 파일 포함규칙·게시 아티팩트 호환성)의 결함은 여기서만 드러난다 — 레지스트리에 태우기 전 마지막 기회다.
   install-smoke:
+    needs: version
     uses: ./.github/workflows/install-smoke.yml
     with:
       lang: java
+      version: ${{ needs.version.outputs.version }}
 
   # 발행 전 게이트 — 실제 Keycloak 컨테이너로 통합 E2E를 돌리고, 통과해야만 release 잡이 시작된다.
   # ⚠️ 이 잡은 구조를 위해 존재한다. `mvn -Prelease deploy`도 lifecycle상 verify(failsafe)를 먼저
@@ -48,7 +72,7 @@ jobs:
         run: mvn -B -f java/pom.xml verify
 
   release:
-    needs: [integration, install-smoke]
+    needs: [version, integration, install-smoke]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -92,8 +116,9 @@ jobs:
       # 여기서 태그값으로 버전을 덮어써 Central이 요구하는 릴리스(비-SNAPSHOT) 좌표로 배포한다.
       # (Maven Central은 SNAPSHOT 좌표를 거부하므로 이 단계가 없으면 배포가 실패한다.)
       - name: Set release version from tag
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           echo "Releasing io.github.xzawed:* version $VERSION (from tag $GITHUB_REF_NAME)"
           mvn -B -f java/pom.xml org.codehaus.mojo:versions-maven-plugin:2.21.0:set \
             -DnewVersion="$VERSION" -DgenerateBackupPoms=false

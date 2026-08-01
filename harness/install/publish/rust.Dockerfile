@@ -42,7 +42,7 @@ RUN cargo install cargo-local-registry --version 0.2.8 --locked
 WORKDIR /work
 COPY rust/ /work/rust/
 
-# 1) keycloak-sdk 본체 패키징 — cargo publish와 동일 tarball(target/package/keycloak-sdk-0.1.0.crate).
+# 1) keycloak-sdk 본체 패키징 — cargo publish와 동일 tarball(target/package/keycloak-sdk-${PKG_VER}.crate).
 #    ⚠️ rust/Cargo.lock은 라이브러리라 rust/.gitignore가 커밋에서 제외한다 — 신선한 CI 체크아웃에는
 #    lockfile이 없으므로 패키징 직전에 새로 생성한다(--locked는 쓰지 않음: 패키징 자체는 lockfile 일치를
 #    요구하지 않고, 없는 lockfile을 --locked로 요구하면 이 단계가 즉시 실패한다).
@@ -81,12 +81,21 @@ RUN mkdir -p /opt/local-registry \
 #    샤딩 경로 규칙(4자 이상 이름): index/<첫2자>/<다음2자>/<name> → "keycloak-sdk" ⇒ index/ke/yc/keycloak-sdk.
 COPY harness/install/publish/rust-index-entry.jq /work/rust-index-entry.jq
 WORKDIR /work/rust
-RUN CKSUM="$(sha256sum /work/rust/target/package/keycloak-sdk-0.1.0.crate | awk '{print $1}')" \
-    && cp /work/rust/target/package/keycloak-sdk-0.1.0.crate /opt/local-registry/keycloak-sdk-0.1.0.crate \
+
+# 릴리스 버전(publish/rust.sh가 --build-arg로 넘긴다 — 기본값은 하네스 전체 기본과 같은 0.1.0).
+# `cargo package`가 만드는 tarball 이름은 rust/Cargo.toml의 version이 정하므로 이 ARG는 "그 파일이
+# 무슨 이름일지"에 대한 기대값이다 — 태그↔매니페스트가 어긋나면 아래 cp/test가 즉시 실패한다
+# (조용히 엉뚱한 버전을 게시하는 것보다 낫다 — 그게 이 버전 스레딩의 요점이다).
+# ⚠️ ARG를 FROM 직후가 아니라 여기(첫 사용 지점)에 두는 이유: ARG 값 변경은 그 지점 이후의 모든
+# 레이어 캐시를 무효화한다. 위에 두면 버전을 바꿀 때마다 cargo-local-registry 설치와 트랜지티브
+# 클로저 sync(수 분)까지 통째로 다시 돈다.
+ARG PKG_VER=0.1.0
+RUN CKSUM="$(sha256sum "/work/rust/target/package/keycloak-sdk-${PKG_VER}.crate" | awk '{print $1}')" \
+    && cp "/work/rust/target/package/keycloak-sdk-${PKG_VER}.crate" "/opt/local-registry/keycloak-sdk-${PKG_VER}.crate" \
     && cargo metadata --no-deps --format-version 1 > /tmp/meta.json \
     && mkdir -p /opt/local-registry/index/ke/yc \
     && jq -c -f /work/rust-index-entry.jq --arg cksum "$CKSUM" /tmp/meta.json > /opt/local-registry/index/ke/yc/keycloak-sdk
 
 # 산출물 확인(빌드 실패를 조기에 드러냄) — publish/rust.sh가 이후 docker create+cp로 통째로 추출한다.
-RUN test -s /opt/local-registry/keycloak-sdk-0.1.0.crate \
+RUN test -s "/opt/local-registry/keycloak-sdk-${PKG_VER}.crate" \
     && test -s /opt/local-registry/index/ke/yc/keycloak-sdk

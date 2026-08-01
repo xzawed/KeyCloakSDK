@@ -28,13 +28,51 @@ permissions:
   contents: read
 
 jobs:
+  # 태그 접미사 = 릴리스 버전. 이 워크플로에서 버전을 유도하는 **유일한** 지점이다 — install-smoke와
+  # publish가 각자 태그를 파싱하면 "게이트가 검증한 버전"과 "실제로 게시하는 버전"이 갈릴 수 있다.
+  # 태그↔매니페스트 정합성 가드도 여기로 옮겼다: Central Portal은 스테이징된 좌표를 되돌릴 수 없으므로
+  # 이 검증은 어떤 게이트보다 앞에 있어야 의미가 있다.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # 추출 실패(빈 문자열)도 실패로 취급한다 — 조용히 빈 값이 되면 어떤 값과도 "다르다"고
+      # 판정되지 않는 오검증이 생기기 때문이다. (행 앵커 `^version`은 plugins 블록의
+      # `kotlin("jvm") version "..."`과 겹치지 않는다.)
+      - id: derive
+        name: Derive version from tag and verify it matches build.gradle.kts
+        run: |
+          VERSION="${GITHUB_REF_NAME#kotlin-v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            echo "::error::태그 ${GITHUB_REF_NAME}에서 'kotlin-v' 접두를 벗겨내지 못했다 — 버전 유도 불가(fail-closed)."
+            exit 1
+          fi
+          ACTUAL=$(grep -m1 -E '^version[[:space:]]*=' kotlin/build.gradle.kts | sed -E 's/^version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' || true)
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::kotlin/build.gradle.kts에서 version을 추출하지 못했다 — 정합성 검증 불가(fail-closed)."
+            exit 1
+          fi
+          if [ "$VERSION" != "$ACTUAL" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} implies version ${VERSION} but kotlin/build.gradle.kts declares ${ACTUAL}"
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} ↔ kotlin/build.gradle.kts ${ACTUAL} 일치"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
   # 게시 직전 마지막 게이트 — 패키징된 산출물을 로컬 레지스트리에 올린 뒤 모노레포 바깥의 깨끗한
   # 컨테이너에서 설치해 quickstart를 돌린다. 소스 테스트가 통과해도 패키징 층(매니페스트 메타데이터·
   # 파일 포함규칙·게시 아티팩트 호환성)의 결함은 여기서만 드러난다 — 레지스트리에 태우기 전 마지막 기회다.
+  # ⚠️ `version`을 넘기지 않으면 이 게이트는 태그와 무관한 기본 버전을 검증한다(install-smoke.yml 주석 참고).
   install-smoke:
+    needs: version
     uses: ./.github/workflows/install-smoke.yml
     with:
       lang: kotlin
+      version: ${{ needs.version.outputs.version }}
 
   # 발행 전 게이트: 태그된 커밋이 green이 아니면 릴리스하지 않는다.
   verify:
@@ -76,7 +114,7 @@ jobs:
         run: ./gradlew integrationTest
 
   publish:
-    needs: [verify, integration, install-smoke] # 단위/커버리지/린트 + 통합 E2E + 설치 스모크 전부 통과해야 업로드
+    needs: [version, verify, integration, install-smoke] # 단위/커버리지/린트 + 통합 E2E + 설치 스모크 전부 통과해야 업로드
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -85,26 +123,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-
-      # 태그↔소스 정합성(fail-fast): 태그가 함의하는 버전과 build.gradle.kts의 `version`이 다르면
-      # JDK/Gradle 셋업 전에 중단한다(Central Portal은 스테이징된 좌표를 되돌릴 수 없다).
-      # 추출 실패(빈 문자열)도 실패로 취급한다 — 조용히 빈 값이 되면 어떤 값과도 "다르다"고
-      # 판정되지 않는 오검증이 생기기 때문이다.
-      # (working-directory: kotlin → `build.gradle.kts`는 kotlin/build.gradle.kts를 가리킨다. 행 앵커
-      #  `^version`은 plugins 블록의 `kotlin("jvm") version "..."`과 겹치지 않는다.)
-      - name: Verify tag matches build.gradle.kts version
-        run: |
-          EXPECTED="${GITHUB_REF_NAME#kotlin-v}"
-          ACTUAL=$(grep -m1 -E '^version[[:space:]]*=' build.gradle.kts | sed -E 's/^version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' || true)
-          if [ -z "$ACTUAL" ]; then
-            echo "::error::kotlin/build.gradle.kts에서 version을 추출하지 못했다 — 정합성 검증 불가(fail-closed)."
-            exit 1
-          fi
-          if [ "$EXPECTED" != "$ACTUAL" ]; then
-            echo "::error::tag ${GITHUB_REF_NAME} implies version ${EXPECTED} but kotlin/build.gradle.kts declares ${ACTUAL}"
-            exit 1
-          fi
-          echo "tag ${GITHUB_REF_NAME} ↔ kotlin/build.gradle.kts ${ACTUAL} 일치"
 
       - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:

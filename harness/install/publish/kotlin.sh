@@ -27,7 +27,7 @@ REPO_ROOT="$(cd "$HARNESS_DIR/.." && pwd)"        # 리포지토리 루트
 # shellcheck source=../lib.sh
 . "$INSTALL_DIR/lib.sh"
 
-PKG_VER="0.1.0"
+PKG_VER="${PKG_VER:-0.1.0}"
 BUILD_IMAGE="eclipse-temurin:21-jdk-alpine"
 STAGING_DIR="$INSTALL_DIR/publish/out/kotlin/staging-m2"
 GRADLE_CACHE_VOLUME="install-kotlin-gradle-cache"   # 명명 볼륨(재실행 시 gradle·의존성 재다운로드 절감)

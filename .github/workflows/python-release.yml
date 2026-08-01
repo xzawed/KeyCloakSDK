@@ -17,13 +17,50 @@ permissions:
   contents: read
 
 jobs:
+  # 태그 접미사 = 릴리스 버전. 이 워크플로에서 버전을 유도하는 **유일한** 지점이다 — install-smoke와
+  # publish가 각자 태그를 파싱하면 "게이트가 검증한 버전"과 "실제로 게시하는 버전"이 갈릴 수 있다.
+  # 태그↔매니페스트 정합성 가드도 여기로 옮겼다: 45분짜리 install-smoke를 태우기 전에 실패한다.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # 태그↔소스 정합성(fail-fast): 태그가 함의하는 버전과 pyproject.toml이 선언한 버전이
+      # 다르면 어떤 게이트도 돌기 전에 중단한다. 추출 실패(빈 문자열)도 실패로 취급한다 —
+      # 조용히 빈 값이 되면 어떤 값과도 "다르다"고 판정되지 않는 오검증이 생기기 때문이다.
+      - id: derive
+        name: Derive version from tag and verify it matches pyproject
+        run: |
+          VERSION="${GITHUB_REF_NAME#py-v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            echo "::error::태그 ${GITHUB_REF_NAME}에서 'py-v' 접두를 벗겨내지 못했다 — 버전 유도 불가(fail-closed)."
+            exit 1
+          fi
+          ACTUAL=$(grep -m1 -E '^version[[:space:]]*=' python/pyproject.toml | sed -E 's/^version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' || true)
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::python/pyproject.toml에서 [project] version을 추출하지 못했다 — 정합성 검증 불가(fail-closed)."
+            exit 1
+          fi
+          if [ "$VERSION" != "$ACTUAL" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} implies version ${VERSION} but python/pyproject.toml declares ${ACTUAL}"
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} ↔ python/pyproject.toml ${ACTUAL} 일치"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
   # 게시 직전 마지막 게이트 — 패키징된 산출물을 로컬 레지스트리에 올린 뒤 모노레포 바깥의 깨끗한
   # 컨테이너에서 설치해 quickstart를 돌린다. 소스 테스트가 통과해도 패키징 층(매니페스트 메타데이터·
   # 파일 포함규칙·게시 아티팩트 호환성)의 결함은 여기서만 드러난다 — 레지스트리에 태우기 전 마지막 기회다.
+  # ⚠️ `version`을 넘기지 않으면 이 게이트는 태그와 무관한 기본 버전을 검증한다(install-smoke.yml 주석 참고).
   install-smoke:
+    needs: version
     uses: ./.github/workflows/install-smoke.yml
     with:
       lang: python
+      version: ${{ needs.version.outputs.version }}
 
   # 발행 전 게이트: 태그된 커밋이 green이 아니면 PyPI로 나가지 않는다(무회귀 보증).
   verify:
@@ -54,30 +91,13 @@ jobs:
         run: pytest -m integration
 
   release:
-    needs: [verify, integration, install-smoke] # 단위 + 통합 + 설치 스모크 전부 통과해야 발행
+    needs: [version, verify, integration, install-smoke] # 단위 + 통합 + 설치 스모크 전부 통과해야 발행
     runs-on: ubuntu-latest
     permissions:
       contents: read # checkout
       id-token: write # PyPI Trusted Publisher(OIDC)에 필요 — 다른 권한 불필요
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      # 태그↔소스 정합성(fail-fast): 태그가 함의하는 버전과 pyproject.toml이 선언한 버전이
-      # 다르면 빌드조차 하지 않고 중단한다. 추출 실패(빈 문자열)도 실패로 취급한다 —
-      # 조용히 빈 값이 되면 어떤 값과도 "다르다"고 판정되지 않는 오검증이 생기기 때문이다.
-      - name: Verify tag matches pyproject version
-        run: |
-          EXPECTED="${GITHUB_REF_NAME#py-v}"
-          ACTUAL=$(grep -m1 -E '^version[[:space:]]*=' python/pyproject.toml | sed -E 's/^version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' || true)
-          if [ -z "$ACTUAL" ]; then
-            echo "::error::python/pyproject.toml에서 [project] version을 추출하지 못했다 — 정합성 검증 불가(fail-closed)."
-            exit 1
-          fi
-          if [ "$EXPECTED" != "$ACTUAL" ]; then
-            echo "::error::tag ${GITHUB_REF_NAME} implies version ${EXPECTED} but python/pyproject.toml declares ${ACTUAL}"
-            exit 1
-          fi
-          echo "tag ${GITHUB_REF_NAME} ↔ python/pyproject.toml ${ACTUAL} 일치"
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:

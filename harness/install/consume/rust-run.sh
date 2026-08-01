@@ -17,6 +17,8 @@
 # run_lang_rust()가 node(180s)보다 훨씬 긴 wait_healthy 타임아웃을 쓰는 이유).
 set -u
 STATUS="${STATUS_DIR:-/status}"
+# 릴리스 버전 — 오케스트레이터(install-verify.sh)가 -e PKG_VER로 주입한다(기본값은 단독 실행용).
+PKG_VER="${PKG_VER:-0.1.0}"
 mkdir -p "$STATUS"
 rm -f "$STATUS/installed.ok" "$STATUS/quickstart.ok"
 
@@ -24,11 +26,22 @@ echo "[rust-run] 0/3 .cargo/config.toml 배치(source replace → /opt/local-reg
 mkdir -p /app/.cargo
 cp /app/cargo-config.toml.template /app/.cargo/config.toml
 
-echo "[rust-run] 0/3 app Cargo.toml 조립(path=/src/rust → keycloak-sdk=\"0.1.0\")"
-sed 's#keycloak-sdk = { path = "/src/rust" }#keycloak-sdk = "0.1.0"#' /app/app/Cargo.toml.orig > /app/app/Cargo.toml
-if ! grep -q 'keycloak-sdk = "0.1.0"' /app/app/Cargo.toml; then
+echo "[rust-run] 0/3 app Cargo.toml 조립(path=/src/rust → keycloak-sdk=\"$PKG_VER\")"
+sed "s#keycloak-sdk = { path = \"/src/rust\" }#keycloak-sdk = \"${PKG_VER}\"#" /app/app/Cargo.toml.orig > /app/app/Cargo.toml
+if ! grep -q "keycloak-sdk = \"${PKG_VER}\"" /app/app/Cargo.toml; then
   echo "[rust-run] app Cargo.toml 조립 FAILED — sed 치환이 매칭되지 않았다(원본 라인 형식 변경?)"
   cp /app/app/Cargo.toml.orig "$STATUS/install.log" 2>/dev/null || true
+  sleep 3600; exit 1
+fi
+
+# quickstart Cargo.toml(harness/install/quickstart/rust/Cargo.toml)은 컨테이너에 구워진 파일이라
+# 환경변수 보간이 통하지 않는다 — SDK 의존성 줄만 치환한다. `^keycloak-sdk = ` 앵커라 이 크레이트
+# 자신의 `version = "…"`(install-quickstart-rust의 버전)은 건드리지 않는다.
+echo "[rust-run] 0/3 quickstart Cargo.toml의 keycloak-sdk 버전 → \"$PKG_VER\""
+sed -i "s#^keycloak-sdk = \".*\"#keycloak-sdk = \"${PKG_VER}\"#" /app/quickstart/Cargo.toml
+if ! grep -q "^keycloak-sdk = \"${PKG_VER}\"" /app/quickstart/Cargo.toml; then
+  echo "[rust-run] quickstart Cargo.toml 치환 FAILED — 의존성 표기 형식이 바뀌었나?"
+  grep -n 'keycloak-sdk' /app/quickstart/Cargo.toml
   sleep 3600; exit 1
 fi
 

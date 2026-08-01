@@ -13,11 +13,27 @@
 set -u
 STATUS="${STATUS_DIR:-/status}"
 SETTINGS=/work/settings.xml
+# 릴리스 버전 — 오케스트레이터(install-verify.sh)가 -e PKG_VER로 주입한다(기본값은 단독 실행용).
+PKG_VER="${PKG_VER:-0.1.0}"
 mkdir -p "$STATUS"
 rm -f "$STATUS/installed.ok" "$STATUS/quickstart.ok"
 
-echo "[java-run] 1/3 install — mvn dependency:get -Dartifact=io.github.xzawed:keycloak-sdk:0.1.0 (mvn-repo)"
-if mvn -s "$SETTINGS" -B -q dependency:get -Dartifact=io.github.xzawed:keycloak-sdk:0.1.0 >/tmp/install.log 2>&1; then
+# 두 소비자 POM(app·quickstart)은 컨테이너에 구워진 파일이라 환경변수 보간이 통하지 않는다 —
+# BOM import의 <version>만 런타임에 치환한다. `/keycloak-sdk-bom/{n;…}`는 "artifactId 줄 바로
+# 다음 줄"만 건드리므로 앱 자신의 <version>0.0.1</version>이나 spring-boot parent 버전은 손대지
+# 않는다(rust-run.sh가 app Cargo.toml에 쓰는 sed 치환과 같은 관용).
+for POM in /work/app/pom.xml /work/quickstart/pom.xml; do
+  sed -i "/<artifactId>keycloak-sdk-bom<\/artifactId>/{n;s#<version>[^<]*</version>#<version>${PKG_VER}</version>#;}" "$POM"
+  if ! grep -A1 '<artifactId>keycloak-sdk-bom</artifactId>' "$POM" | grep -q "<version>${PKG_VER}</version>"; then
+    echo "[java-run] $POM 의 BOM 버전 치환 FAILED — keycloak-sdk-bom 다음 줄이 <version>이 아닌가?"
+    sed -n '/keycloak-sdk-bom/,+2p' "$POM"
+    sleep 3600; exit 1
+  fi
+done
+echo "[java-run] 소비자 POM의 keycloak-sdk-bom 버전을 ${PKG_VER}로 치환 완료"
+
+echo "[java-run] 1/3 install — mvn dependency:get -Dartifact=io.github.xzawed:keycloak-sdk:$PKG_VER (mvn-repo)"
+if mvn -s "$SETTINGS" -B -q dependency:get "-Dartifact=io.github.xzawed:keycloak-sdk:$PKG_VER" >/tmp/install.log 2>&1; then
   : > "$STATUS/installed.ok"
   echo "[java-run] install OK"
 else

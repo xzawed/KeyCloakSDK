@@ -38,12 +38,14 @@ REPO_ROOT="$(cd "$HARNESS_DIR/.." && pwd)"        # 리포지토리 루트
 
 BUILDER_IMAGE="install-rust-sdk-builder"
 EXTRACT_DIR="$INSTALL_DIR/publish/out/rust-local-registry"
-CRATE_FILE="keycloak-sdk-0.1.0.crate"
+PKG_VER="${PKG_VER:-0.1.0}"
+CRATE_FILE="keycloak-sdk-${PKG_VER}.crate"
 
 log() { printf '[publish/rust] %s\n' "$*" >&2; }
 
 log "1/3 로컬 레지스트리 빌드 — publish/rust.Dockerfile(rust:1.88-alpine, cargo package + local-registry sync + 수동주입)"
-if ! docker build -t "$BUILDER_IMAGE" -f "$(hostpath "$SCRIPT_DIR/rust.Dockerfile")" "$(hostpath "$REPO_ROOT")"; then
+if ! docker build -t "$BUILDER_IMAGE" --build-arg PKG_VER="$PKG_VER" \
+    -f "$(hostpath "$SCRIPT_DIR/rust.Dockerfile")" "$(hostpath "$REPO_ROOT")"; then
   log "빌드 실패(docker build) — publish/rust.Dockerfile 로그 참고"
   exit 1
 fi
@@ -67,4 +69,4 @@ if [ ! -f "$EXTRACT_DIR/$CRATE_FILE" ] || [ ! -f "$EXTRACT_DIR/index/ke/yc/keycl
 fi
 log "로컬 레지스트리 확인됨: $EXTRACT_DIR ($CRATE_FILE + index/ke/yc/keycloak-sdk)"
 
-log "3/3 완료 — keycloak-sdk 0.1.0 published to local cargo registry directory ($EXTRACT_DIR)"
+log "3/3 완료 — keycloak-sdk ${PKG_VER} published to local cargo registry directory ($EXTRACT_DIR)"

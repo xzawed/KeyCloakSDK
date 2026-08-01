@@ -12,7 +12,8 @@
 set -u
 STATUS="${STATUS_DIR:-/status}"
 REG="${REGISTRY_URL:-http://bagetter:8080/v3/index.json}"
-PKG_VER="0.1.0"
+# 릴리스 버전 — 오케스트레이터(install-verify.sh)가 -e PKG_VER로 주입한다(기본값은 단독 실행용).
+PKG_VER="${PKG_VER:-0.1.0}"
 mkdir -p "$STATUS"
 rm -f "$STATUS/installed.ok" "$STATUS/quickstart.ok"
 
