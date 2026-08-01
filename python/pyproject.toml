@@ -31,7 +31,13 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/xzawed/KeyCloakSDK"
+# `Homepage`는 표시 전용이라 python/을 가리켜도 안전하다 — PyPI 페이지에서 링크를 누른 소비자가
+# 9개 언어 README가 아니라 python/README.md에 닿는다. PyPI의 Trusted Publisher URL 검증은
+# 하위경로를 허용하므로(reference path의 subpath면 통과) 초록 체크마크도 그대로 유지된다.
+Homepage = "https://github.com/xzawed/KeyCloakSDK/tree/main/python"
+# ⚠️ `Repository`는 저장소 **루트**로 둔다. PEP 753의 라벨 정규화에서 이 이름은 well-known `source`
+# 버킷(별칭 repository/sourcecode/github)으로 접히며, 자동화 도구가 패키지→저장소 매핑에 쓰는 값이다.
+# Ruby/Rust에서 실측된 것과 같은 부류의 조용한 파손(하위경로가 붙으면 owner/repo 파싱이 깨짐)을 피한다.
 Repository = "https://github.com/xzawed/KeyCloakSDK"
 Issues = "https://github.com/xzawed/KeyCloakSDK/issues"
 

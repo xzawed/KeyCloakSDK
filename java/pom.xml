@@ -1,6 +1,18 @@
+<!-- ⚠️ child.project.url.inherit.append.path="false" — 이게 없으면 Maven이 자식 모듈의 artifactId를
+     부모의 URL 뒤에 **자동으로 덧붙인다**(maven-model-builder "Inheritance Assembly"의 기본 동작이며
+     url·scm.connection·scm.developerConnection·scm.url·distributionManagement.site.url 5개가 대상).
+     실측(`mvn -f java/keycloak-sdk-core/pom.xml help:effective-pom`)으로 keycloak-sdk-core의 유효 POM이
+     이렇게 나오고 있었다:
+       url        = https://github.com/xzawed/KeyCloakSDK/keycloak-sdk-core          (404)
+       connection = scm:git:https://github.com/xzawed/KeyCloakSDK.git/keycloak-sdk-core  (clone 불가)
+     즉 게시되는 4개 모듈 POM 전부가 **깨진 SCM URL**을 주장하게 된다 — 부정확한 URL보다 나쁘다.
+     자식 POM에는 <url>/<scm>이 없어 눈에 띄지 않았고, 배포 산출물이 아니라 소비자 측 모델 빌드에서
+     조립되므로 파일만 읽어서는 발견되지 않는다(반드시 effective-pom으로 확인할 것).
+     quarkus·gson 등이 쓰는 것과 같은 표준 해법이다. -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"
+         child.project.url.inherit.append.path="false">
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.xzawed</groupId>
   <artifactId>keycloak-sdk-parent</artifactId>
@@ -8,7 +20,11 @@
   <packaging>pom</packaging>
   <name>Keycloak SDK (parent)</name>
   <description>Multi-language Keycloak SDK — Java reference implementation</description>
-  <url>https://github.com/xzawed/KeyCloakSDK</url>
+  <!-- <url>은 POM 레퍼런스상 "The project's home page" — 사람이 읽는 표시용 링크이지 VCS URL이 아니다
+       (VCS는 아래 <scm>). 9개 언어 모노레포이므로 저장소 루트가 아니라 java/를 가리켜 소비자가
+       Central에서 링크를 눌렀을 때 9개 언어 README가 아니라 java/README.md에 닿게 한다.
+       Central 요구사항은 "presence"이고 resolvability는 검사하지 않는다. -->
+  <url>https://github.com/xzawed/KeyCloakSDK/tree/main/java</url>
 
   <licenses>
     <license>
@@ -19,7 +35,14 @@
   <developers>
     <developer><name>xzawed</name><email>xzawed31@gmail.com</email></developer>
   </developers>
-  <scm>
+  <!-- ⚠️ <scm>은 저장소 루트를 가리킨 채로 둔다 — connection/developerConnection은 사람이 읽는 링크가
+       아니라 **VCS가 직접 물어야 하는 clone URL**이다. 모노레포라고 해서 여기에
+       `/tree/main/java` 같은 경로를 넣으면 clone이 불가능해진다(위 project 주석의 실측 사례와 동일한
+       종류의 파손). Maven에는 npm의 `repository.directory`에 해당하는 하위경로 필드가 없다.
+       위 project 요소와 같은 이유로 append 억제 속성 3개를 명시한다. -->
+  <scm child.scm.connection.inherit.append.path="false"
+       child.scm.developerConnection.inherit.append.path="false"
+       child.scm.url.inherit.append.path="false">
     <connection>scm:git:https://github.com/xzawed/KeyCloakSDK.git</connection>
     <developerConnection>scm:git:https://github.com/xzawed/KeyCloakSDK.git</developerConnection>
     <url>https://github.com/xzawed/KeyCloakSDK</url>
@@ -82,6 +105,25 @@
   </dependencyManagement>
 
   <build>
+    <!-- Apache-2.0 §4(a): 배포되는 모든 jar가 라이선스 전문을 담아야 한다. 여기 한 곳에서 상속시켜
+         6개 모듈에 파일을 복사하지 않는다 — `${project.basedir}/..`는 각 모듈에서 `java/`로 해석되고
+         `java/LICENSE`는 이미 저장소에 있다(루트 LICENSE와 동일 blob, 다른 8개 언어 디렉터리와 같은 관용).
+         ⚠️ `<resources>`를 명시하면 Maven 기본값(src/main/resources)이 **대체**되므로 함께 재선언한다 —
+         지금은 어느 모듈에도 없지만, 빠뜨리면 나중에 추가하는 모듈이 조용히 리소스를 잃는다.
+         ⚠️ keycloak-sdk-bom은 packaging=pom이라 process-resources에 기본 바인딩이 없다 — 이 블록은
+         상속되지만 실행되지 않아 BOM은 target/조차 만들지 않는다(현행 동작 유지). -->
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <resource>
+        <directory>${project.basedir}/..</directory>
+        <includes>
+          <include>LICENSE</include>
+        </includes>
+        <targetPath>META-INF</targetPath>
+      </resource>
+    </resources>
     <pluginManagement>
       <plugins>
         <!-- Java 21 컴파일 재현성: 컴파일러 플러그인 버전을 명시 고정(Maven 기본값 드리프트 방지). -->

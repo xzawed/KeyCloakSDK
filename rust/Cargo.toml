@@ -1,12 +1,23 @@
 [package]
 name = "keycloak-sdk"
 version = "0.1.0"
+authors = ["xzawed <xzawed31@gmail.com>"]
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
 description = "Keycloak SDK for Rust — async OIDC auth + Admin REST, isomorphic with the Java/Python/Node/Go/C#/PHP/Ruby/Kotlin SDKs"
+# ⚠️ `repository`는 저장소 **루트**로 둔다 — 모노레포라고 `/tree/main/rust`를 넣으면 안 된다.
+# crates.io는 http(s)이기만 하면 통과시키지만(검증은 그게 전부), docs.rs의 repository_name() 정규식은
+# `host/owner/repo`를 그리디 매칭해 `/tree/...`가 붙으면 owner를 잘못 잘라내고 **repository 통계가
+# 조용히 사라진다**(js-sys·web-sys·wasm-bindgen-futures가 실제로 그 상태 — 통계 없음. 루트를 쓰는
+# tokio-util·serde_derive·tracing-subscriber는 정상). 실패가 에러로 드러나지 않는 종류라 더 나쁘다.
+# 하위 디렉터리는 아무도 저장소 식별자로 파싱하지 않는 `homepage`로 표현한다.
 repository = "https://github.com/xzawed/KeyCloakSDK"
-homepage = "https://github.com/xzawed/KeyCloakSDK"
+# Cargo 매뉴얼: "A value should only be set for `homepage` if there is a dedicated website for the crate
+# other than the source repository... Do not make `homepage` redundant with either the `documentation` or
+# `repository` values." — 이전 값은 `repository`와 글자까지 같아 이 지침을 정면으로 어기고 있었다.
+# rust/를 가리키게 하면 중복이 해소되면서 소비자가 9개 언어 README 대신 rust/README.md에 닿는다.
+homepage = "https://github.com/xzawed/KeyCloakSDK/tree/main/rust"
 documentation = "https://docs.rs/keycloak-sdk"
 readme = "README.md"
 keywords = ["keycloak", "oidc", "oauth2", "jwt", "sso"]

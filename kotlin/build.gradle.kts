@@ -80,6 +80,26 @@ tasks.test {
     useJUnitPlatform()
 }
 
+// Apache-2.0 §4(a): 배포되는 아카이브가 라이선스 전문을 담아야 한다. `kotlin/LICENSE`는 이미 저장소에
+// 있다(루트 LICENSE와 동일 blob, 다른 8개 언어 디렉터리와 같은 관용)이므로 새 사본을 만들지 않는다.
+// Central에 올라가는 아카이브는 main jar 하나가 아니라 `-sources`·`-javadoc`까지 셋이므로 `tasks.jar`
+// 하나만 거는 것으로는 부족하다.
+//
+// ⚠️ 타입을 `org.gradle.jvm.tasks.Jar`로 **명시**해야 한다 — Kotlin DSL에서 그냥 `withType<Jar>()`라고
+// 쓰면 기본 import인 `org.gradle.api.tasks.bundling.Jar`로 해석되는데, 이것은 `jvm.tasks.Jar`의
+// **하위** 클래스다. vanniktech가 등록하는 `dokkaJavadocJar`(타입
+// `com.vanniktech.maven.publish.tasks.JavadocJar`)는 상위 클래스인 `jvm.tasks.Jar`만 상속하므로
+// 좁은 쪽으로 걸면 javadoc jar만 조용히 빠진다(실측: 좁은 타입 → main·sources에는 들어가고 javadoc은
+// 누락, 넓은 타입 → 셋 다 포함). 실패가 눈에 띄지 않는 종류라 회귀 시 알아채기 어렵다.
+//
+// 참고: Java SDK의 `-javadoc.jar`에는 LICENSE가 없다(maven-javadoc-plugin이 리소스를 포함하지 않음).
+// 두 JVM SDK가 여기서만 어긋나는데, 덜 담는 쪽에 맞추기보다 더 담는 쪽이 §4(a)에 부합해 이대로 둔다.
+tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
+    from(layout.projectDirectory.file("LICENSE")) {
+        into("META-INF")
+    }
+}
+
 // integrationTest = 별도 스위트·태스크(T10) — 단위 `test`는 Docker-free로 유지하고, 실 Keycloak
 // Testcontainers E2E(FullFlowIT)만 이 스위트로 분리한다. `check`(→koverVerify)에는 의존시키지 않는다 —
 // integrationTest는 Docker가 필요해 로컬/CI의 매 빌드마다 강제로 돌리면 부적합하다(Kotlin WBS Task 11의
@@ -199,9 +219,25 @@ mavenPublishing {
 
     pom {
         name.set("Keycloak SDK (Kotlin)")
-        description.set("Multi-language Keycloak SDK — Kotlin implementation")
+        // ⚠️ Maven Central은 README를 렌더링하지 않는다 — 이 한 줄과 위 `name`이 아티팩트 페이지의
+        // **전부**다. 소비자가 좌표만 보고 판단할 수 있도록 (1) 무엇을 덮는지(auth+admin+JWT),
+        // (2) 어떤 관용인지(suspend), (3) 무엇을 감싸는지, (4) 소비자 하한(Kotlin 2.2+/JDK 21+)까지 담는다.
+        // 하한을 여기 적어두는 이유: 잘못 맞추면 "compiled with an incompatible version of Kotlin"으로
+        // 컴파일 자체가 실패하는데, 그 사실을 알려줄 다른 지면이 Central에는 없다(게차 참고).
+        // ⚠️ POM `<description>`으로 나가므로 반드시 한 줄로 유지할 것.
+        description.set(
+            "Keycloak SDK for Kotlin — coroutine-first (suspend) OIDC/OAuth2 authentication with " +
+                "hardened JWT validation, plus the Admin REST API, behind one facade. Wraps the same JVM " +
+                "stack as the sibling Java SDK (keycloak-admin-client, oauth2-oidc-sdk, nimbus-jose-jwt). " +
+                "Requires Kotlin 2.2+ / JDK 21+. The Kotlin implementation of a nine-language polyglot " +
+                "Keycloak SDK (Java, Python, Node, Go, C#, PHP, Rust, Ruby, Kotlin).",
+        )
         inceptionYear.set("2026")
-        url.set("https://github.com/xzawed/KeyCloakSDK")
+        // POM `<url>`은 "The project's home page"(표시용)이지 VCS URL이 아니다 — 아래 <scm>이 VCS다.
+        // kotlin/을 가리켜 Central에서 링크를 누른 소비자가 kotlin/README.md에 닿게 한다.
+        // (Java SDK의 java/pom.xml과 같은 결정. 단 Kotlin은 단일 모듈이라 Maven의 URL 상속
+        //  artifactId 자동 덧붙임 문제는 애초에 발생하지 않는다.)
+        url.set("https://github.com/xzawed/KeyCloakSDK/tree/main/kotlin")
         licenses {
             license {
                 name.set("Apache-2.0")

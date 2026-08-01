@@ -19,7 +19,17 @@
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <!-- NuGet renders the package landing page from this file; it must also be packed (ItemGroup below). -->
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageProjectUrl>https://github.com/xzawed/KeyCloakSDK</PackageProjectUrl>
+    <!-- PackageProjectUrl = nuget.org에 표시되는 "홈페이지" 링크(표시 전용) → dotnet/을 가리켜도 안전하다. -->
+    <PackageProjectUrl>https://github.com/xzawed/KeyCloakSDK/tree/main/dotnet</PackageProjectUrl>
+    <!-- ⚠️ RepositoryUrl은 저장소 **루트**로 둔다. nuspec 레퍼런스가 명시한다: "Repository URL used to
+         clone or retrieve source code... This should be a publicly available url that can be invoked
+         directly by a version control software. It should not be an html page as this is meant for the
+         computer. For linking to project page, use the projectUrl field, instead."
+         즉 `/tree/main/dotnet`은 이 필드의 용도에 정면으로 어긋난다. NuGet에는 npm의
+         `repository.directory`에 해당하는 하위경로 필드가 없다.
+         ⚠️ 또한 SourceLink/pack 타깃은 `RepositoryUrl`이 **비어 있을 때만** 자동 채움을 하므로
+         (`Condition="'$(RepositoryUrl)' == '' and '$(PublishRepositoryUrl)' == 'true'"`), 여기 적은 값이
+         그대로 최종 nuspec에 실린다 — 잘못 넣으면 아무도 덮어써 주지 않는다. -->
     <RepositoryUrl>https://github.com/xzawed/KeyCloakSDK</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
