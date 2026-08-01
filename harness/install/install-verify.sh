@@ -46,6 +46,23 @@ if [ -z "$PKG_VER" ]; then
   echo "PKG_VER이 빈 값이다 — 버전 없이 검증하면 무엇을 검증했는지 알 수 없다(fail-closed)" >&2
   exit 2
 fi
+# ⚠️ 형식을 경계에서 검증한다. 이 값은 단순히 문자열로 비교되는 게 아니라 **sed 표현식과 컨테이너
+# 명령의 일부가 된다**(consume/java-run.sh·kotlin-run.sh·rust-run.sh가 `s#…#…${PKG_VER}…#` 형태로
+# 치환하고, publish 쪽은 파일명·좌표를 조립한다). `#`나 따옴표가 섞이면 sed 표현식이 깨지거나
+# 의도하지 않은 치환이 일어난다. CI에서는 태그 접미사가 이미 매니페스트와 대조되지만, 이 스크립트는
+# 손으로도 돌아가고(`--version`) 방어는 값을 쓰는 쪽이 아니라 받는 쪽에 있어야 한다.
+# 허용 범위는 아홉 레지스트리의 표기를 전부 덮는다: 0.1.0 · 0.1.0rc1(PEP 440) · 0.1.0-rc.1(SemVer)
+# · 0.1.0.rc1(RubyGems) · 0.1.0-RC1/0.1.0-SNAPSHOT(Maven).
+case "$PKG_VER" in
+  *[!0-9A-Za-z.+-]* | -* | *..* )
+    echo "PKG_VER='$PKG_VER' 형식이 허용되지 않는다 — 영숫자·점·하이픈·플러스만 쓸 수 있다." >&2
+    echo "  이 값은 sed 표현식과 컨테이너 명령에 삽입되므로 경계에서 막는다(fail-closed)." >&2
+    exit 2 ;;
+esac
+case "$PKG_VER" in
+  [0-9]*.[0-9]*.[0-9]*) : ;;
+  *) echo "PKG_VER='$PKG_VER'가 X.Y.Z로 시작하지 않는다 — 릴리스 버전이 맞는지 확인하라." >&2; exit 2 ;;
+esac
 export PKG_VER
 
 # shellcheck disable=SC2206  # 언어명은 공백 구분 단순 토큰이라 의도적 워드분할("node python" 한 인자도 허용)
