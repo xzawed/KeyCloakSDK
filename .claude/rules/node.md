@@ -28,6 +28,8 @@ cd node && npm run build             # tsc → dist/ (배포 산출물)
 
 ## 게차
 
+- ⚠️ **(Node) `jose`/`openid-client`의 `^6`을 `~`로 좁히지 말 것 — 안전해 보이지만 JWT 라이브러리를 트리에 중복시킨다.** "0.1.0 라이브러리가 검증하지 않은 마이너를 소비자가 해석하게 두는 건 위험하니 `~`로 좁히자"는 제안이 릴리스 감사에서 나왔는데, 실측하면 반대 결과가 된다. `openid-client` 6.8.4는 **자기 의존성으로 `jose ^6.2.2`를 요구**한다(`node_modules/openid-client/package.json`으로 확인). 우리가 `~6.2`를 선언하면 jose 6.3.0이 나오는 순간 openid-client는 6.3.0을 받고 우리는 6.2.x를 요구해 npm이 **jose를 두 벌 설치**한다 — 우리 검증기와 openid-client 내부가 서로 다른 JOSE 구현을 쓰게 된다. 보안 라이브러리에서 이건 범위가 넓은 것보다 나쁘다. 현재 `^6`은 트리를 **dedupe**하려고 의도적으로 고른 값이고(실측: `jose` 1벌), 마이너에 실리는 보안 수정도 소비자에게 자동으로 닿는다. 범위를 좁히고 싶다면 먼저 `openid-client`의 요구 범위를 확인할 것.
+
 - ⚠️ **(Node) admin-client `findOne`류는 404에서 `null` 반환(선언 타입은 `undefined`)** — `null`/`undefined` 모두 부재로 처리해 `KeycloakNotFoundError`로 변환. `=== undefined`만 검사하면 삭제 후 조회가 버그로 샌다. 근거: `admin/call.ts`의 `requireFound`.
 - ⚠️ **(Node) 타임아웃은 `Configuration.timeout`(초), admin-client는 `ConnectionConfig.timeout`(ms)로 주입** — `requestOptions`는 signal 주입 불가. TLS는 `serverUrl`이 `http://`일 때만 `allowInsecureRequests` 적용(https는 강제 유지).
 - ⚠️ **(Node) PKCE `exchangeCode`는 `nonce` 필수 전달.** authorization request가 실은 nonce를 Keycloak이 id_token에 담아 돌려주고 openid-client v6가 자동검증 — 기대 nonce 누락 시 "unexpected nonce"로 전면 거부(리뷰 HIGH). `TokenSet`/`KeycloakConfig`는 toString/JSON/inspect에서 마스킹. JWKS는 `cooldownDuration`으로 DoS-안전.
