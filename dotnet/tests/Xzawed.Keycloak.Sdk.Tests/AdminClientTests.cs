@@ -24,7 +24,12 @@ public class AdminClientTests : IDisposable
         return AdminClient.CreateAsync(cfg, new FixedToken());
     }
 
-    public void Dispose() => _mock.Stop();
+    // ⚠️ Stop()이 아니라 Dispose()다. xUnit은 테스트 메서드마다 클래스를 새로 만들므로 이 파일
+    // 하나가 self-host를 여러 개 띄운다. Stop()은 요청 처리만 멈추고 호스트/리스너 스레드는
+    // 남겨서, 프로세스 종료가 느려지고 편차가 커진다 — 커버리지 히트 flush가 종료 타이밍에
+    // 걸리는 구성에서 이게 플레이크의 가중 요인이 된다. JwtValidatorTests는 처음부터
+    // `using var server`로 올바르게 해제하고 있었다.
+    public void Dispose() => _mock.Dispose();
 
     [Fact]
     public async Task Create_without_secret_throws_before_network()

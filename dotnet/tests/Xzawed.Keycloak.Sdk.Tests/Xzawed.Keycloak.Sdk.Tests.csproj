@@ -12,8 +12,13 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <!-- ⚠️ coverlet은 **컬렉터만** 참조한다. msbuild 통합(coverlet.msbuild)은 두 가지 이유로 뺐다:
+         (1) 히트를 AppDomain.ProcessExit에서 flush해 테스트 호스트 종료가 느리면 결과가 유실되고,
+             그때 분모는 남고 분자만 0이 돼 "커버리지 90 미만"으로 오보고된다(dotnet-ci 실제 실패).
+         (2) 두 패키지는 ReferencedPathMaps라는 **같은 이름의 MSBuild 타깃**을 각자 정의한다.
+             MSBuild는 중복 타깃을 경고 없이 마지막 import로 덮으므로, 버전이 갈리는 순간
+             조용한 동작 변경이 된다(10.0.1에서는 본문이 동일해 아직 무해). -->
     <PackageReference Include="coverlet.collector" Version="10.0.1" />
-    <PackageReference Include="coverlet.msbuild" Version="10.0.1" />
     <PackageReference Include="WireMock.Net" Version="2.13.0" />
     <PackageReference Include="Testcontainers.Keycloak" Version="4.13.0" />
   </ItemGroup>

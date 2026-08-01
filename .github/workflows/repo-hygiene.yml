@@ -61,6 +61,11 @@ jobs:
         # 리뷰에서 그 자체가 신호가 된다).
         run: node scripts/check-docs.mjs . --min-facts=14 --min-anchors=4
 
+      - name: 커버리지 게이트 가드 자가테스트(측정 실패와 하락을 구분하는지)
+        # 이 가드의 가치는 임계값 비교가 아니라 판별이다 — 둘 다 exit 1이라 종료코드만 보는
+        # 테스트는 판별자를 지워도 통과한다. 자가테스트가 stderr 문구까지 고정하는 이유다.
+        run: sh scripts/test/test-check-coverage.sh
+
       - name: 버전 SSOT 가드 자가테스트(반쯤 적용된 범프를 잡는지 + 오탐 없는지)
         run: sh scripts/test/test-check-versions.sh
       - name: 버전 SSOT 대조

@@ -20,13 +20,27 @@ jobs:
         run: dotnet build dotnet/Keycloak.Sdk.sln --no-restore -c Release
       - name: Format check
         run: dotnet format dotnet/Keycloak.Sdk.sln --verify-no-changes
-      - name: Unit tests + coverage gate
+      # ⚠️ 커버리지는 coverlet **컬렉터**로 수집한다(msbuild 통합 `/p:CollectCoverage`가 아니다).
+      # msbuild 통합은 히트를 테스트 호스트의 AppDomain.ProcessExit 핸들러에서 flush하는데, VSTest가
+      # 호스트 종료를 짧게만 기다려서 종료가 느린 실행에서는 hits 파일이 남지 않는다. 그러면 coverlet은
+      # 분모(계측된 라인)를 그대로 둔 채 분자만 0으로 리포트하고, 내장 임계값 게이트가 그것을
+      # "The minimum line coverage is below the specified 90"이라고 보고한다 — 진짜 하락과 문구가
+      # 같아 구분이 불가능하다. run 30676360497이 이 문구로 실패했는데 같은 커밋 재실행은 96.68%로
+      # 통과했다(로컬 45회는 무재현 — CI 러너 종료 타이밍에만 걸리는 경로였다).
+      # 컬렉터는 테스트 호스트 안에서 VSTest의 SessionEnd 콜백에 flush하므로 이 경로가 아예 없다.
+      # 제외 필터는 dotnet/coverlet.runsettings로 옮겼다(문법 동일, 측정 수치 무변경을 실측 확인:
+      # 두 방식 모두 lines 175/181 · branches 45/50).
+      - name: Unit tests + coverage
         run: >
           dotnet test dotnet/Keycloak.Sdk.sln --no-build -c Release
           --filter "Category!=Integration"
-          /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura
-          /p:Threshold=\"90,85\" /p:ThresholdType=\"line,branch\" /p:ThresholdStat=minimum
-          /p:Exclude=\"[*]Xzawed.Keycloak.AuthClient,[*]Xzawed.Keycloak.Admin.*,[*]Xzawed.Keycloak.KeycloakClient\"
+          --collect:"XPlat Code Coverage"
+          --settings dotnet/coverlet.runsettings
+          --results-directory ${{ runner.temp }}/coverage
+      # 임계값 비교 **전에** 측정이 실제로 일어났는지부터 판정한다 — 분모는 있는데 히트가 0인 실행은
+      # 커버리지 하락이 아니라 측정 실패이고, 그 둘을 다른 문구로 보고해야 사람이 헛수고하지 않는다.
+      - name: Coverage gate
+        run: node scripts/check-coverage.mjs "${{ runner.temp }}/coverage" --min-line 90 --min-branch 85
       - name: 취약 패키지 감사 (배포 SDK 프로젝트)
         # 배포되는 SDK 프로젝트의 (전이 포함) 취약 패키지만 게이트한다 — 테스트 전용 의존성
         # (예: WireMock 경유 Scriban Moderate)은 배포물이 아니라 감사 대상에서 제외.
