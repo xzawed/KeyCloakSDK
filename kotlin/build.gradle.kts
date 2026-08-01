@@ -183,7 +183,14 @@ val signingKeyPresent: Boolean =
     providers.gradleProperty("signingInMemoryKey").isPresent ||
         providers.environmentVariable("ORG_GRADLE_PROJECT_signingInMemoryKey").isPresent
 mavenPublishing {
-    publishToMavenCentral()
+    // ⚠️ `automaticRelease = false`를 명시한다. Maven Central은 게시 후 철회 수단이 전혀 없고,
+    // 이 SDK가 가진 유일한 회복 수단은 Central Portal의 사람 스테이징 하나다 — staging에 머무는
+    // 동안에는 무비용 폐기가 가능하고 Publish를 누르면 영구다. 인자 없는 `publishToMavenCentral()`의
+    // 기본값도 수동 릴리스라 지금도 안전하지만, 그 안전이 **플러그인 기본값 상속**에 의존하고 있었다
+    // (Java 쪽 `<autoPublish>false</autoPublish>`와 같은 이유로 명시한다).
+    // ⚠️ 릴리스 워크플로가 `publishAndReleaseToMavenCentral`(사람 게이트를 건너뛴다)이 아니라
+    // `publishToMavenCentral` 태스크를 부르는지도 함께 유지할 것 — kotlin-release.yml.
+    publishToMavenCentral(automaticRelease = false)
     if (signingKeyPresent) {
         signAllPublications()
     }

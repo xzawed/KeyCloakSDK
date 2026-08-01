@@ -207,6 +207,13 @@
             <extensions>true</extensions>
             <configuration>
               <publishingServerId>central</publishingServerId>
+              <!-- ⚠️ Maven Central은 게시 후 철회 수단이 전혀 없다. 이 SDK가 가진 유일한 회복
+                   수단은 Central Portal의 사람 스테이징 단계 하나뿐이다 — 업로드가 staging에
+                   머무는 동안에는 무비용으로 폐기할 수 있고, Publish를 누르는 순간 영구다.
+                   `autoPublish`의 기본값은 false(수동 게시)이므로 지금도 안전하지만, 그 안전이
+                   **플러그인 기본값 상속**에 의존하고 있었다. 기본값은 업그레이드로 바뀔 수 있고
+                   그러면 아무 경고 없이 유일한 안전장치가 사라진다. 명시해 둔다. -->
+              <autoPublish>false</autoPublish>
             </configuration>
           </plugin>
         </plugins>

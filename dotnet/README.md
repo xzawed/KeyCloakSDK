@@ -62,12 +62,18 @@ builder.Services.AddKeycloak(config); // registers KeycloakConfig + KeycloakClie
 
 Admin failures surface as `KeycloakNotFoundException` / `KeycloakConflictException` / `KeycloakForbiddenException` (all carrying `KeycloakAdminException.StatusCode`), or `KeycloakTransportException` on a network failure.
 
-## Secure by default
+## Security defaults
 
-- **Algorithm pinning** — the accepted signature algorithms are fixed by config (`RS256` by default); `alg: none` and header-supplied algorithms are rejected.
-- **Strict claim checks** — exact `iss` match, `aud` containment check, mandatory `exp`, and a bounded clock skew (30s by default).
-- **DoS-safe JWKS refetch** — key sets are cached and rate-limited, and a refetch happens only for an unresolved key ID, so forged tokens cannot amplify traffic to your IdP.
-- **Secrets stay secret** — `KeycloakConfig` and `TokenSet` mask secrets and tokens (`***`) in `ToString()` and JSON serialization, and TLS verification is on by default.
+- **Algorithm pinning** — the accepted signature algorithms are fixed by config (`RS256` by default); `alg: none` and unsigned tokens are rejected. `Microsoft.IdentityModel` leaves `ValidAlgorithms` unset, which accepts every algorithm it supports, so the SDK pins it explicitly.
+- **Strict claim checks** — exact `iss` match, `aud` containment check, mandatory `exp`, and a bounded clock skew (30s by default, down from the library's 5 minutes).
+- **Rate-limited JWKS refetch** — key sets are cached and refetches are throttled to a 30-second minimum interval. Read this one precisely: unlike its sibling SDKs, this one **cannot** promise that a bad signature never causes a refetch. `Microsoft.IdentityModel` treats signature-validation failure as a possible key rotation and refreshes through its `ConfigurationManager`, and that behaviour cannot be disabled without giving up the manager entirely. The refresh interval is what bounds the amplification — measured, 6 forged tokens produce 1 extra fetch, not 6.
+- **Secret handling** — `KeycloakConfig` and `TokenSet` mask secrets and tokens as `***` in `ToString()` and JSON serialization, and TLS verification is on by default.
+
+Masking covers `ToString()` and the types' JSON converters. It does **not** cover Serilog-style destructuring — `{@Config}` reads the properties directly and will print the raw secret, so log these two types with `{Config}`, not `{@Config}`.
+
+## Versioning and support
+
+This SDK is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking changes, so read the release notes before upgrading. Only the newest released version of each language SDK receives security fixes — there are no LTS lines, and older `0.x` releases are not backported to. Full policy: [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
 
 ## Documentation
 

@@ -13,7 +13,11 @@ license-files = ["LICENSE"]
 authors = [{ name = "xzawed", email = "xzawed31@gmail.com" }]
 keywords = ["keycloak", "oidc", "oauth2", "sso", "admin"]
 classifiers = [
-  "License :: OSI Approved :: Apache Software License",
+  # ⚠️ 라이선스는 위 `license = "Apache-2.0"`(PEP 639 SPDX 표현식)이 진실 원천이다.
+  # `License :: OSI Approved :: ...` 분류자는 Metadata 2.4에서 폐기 예정이고, PEP 639는
+  # 표현식이 있을 때 빌드 도구가 분류자 병기를 **오류로 처리할 수 있다(MAY)**고 규정한다.
+  # PyPI가 지금 그것을 거부하지는 않지만(실측: twine check --strict 통과) 빌드 도구가 언제든
+  # 막을 수 있는 조합이라 분류자 쪽을 지웠다 — 중복 선언이지 추가 정보가 아니었다.
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
