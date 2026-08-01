@@ -86,12 +86,18 @@ try (KeycloakClient client = KeycloakClient.create(config)) {
 
 > **Audience on a default realm** — `validate()` requires the token's `aud` to contain `expectedAudience`, which defaults to your `clientId`. A stock Keycloak realm does *not* put the client id into a client-credentials token's `aud`, so on a default realm step 2 fails until you either set `.expectedAudience("my-api")` to the audience your realm actually issues (also the right setting when the token targets a resource server rather than the requesting client), or add an *Audience* protocol mapper to the client in Keycloak.
 
-## Secure by default
+## Security defaults
 
 - **Algorithm pinning** — the accepted signature algorithms are fixed by config (`RS256` by default); `alg: none` and header-supplied algorithms are rejected.
 - **Strict claim checks** — exact `iss` match, `aud` containment check, mandatory `exp`, and a bounded clock skew (30s by default).
-- **DoS-safe JWKS refetch** — key sets are cached and rate-limited, and a refetch happens only for an unresolved key ID, so forged tokens cannot amplify traffic to your IdP.
-- **Secrets stay secret** — tokens and client secrets are fully masked (`***`) in logs and `toString()`, and TLS verification is on by default.
+- **DoS-safe JWKS refetch** — key sets are cached, a refetch is triggered only by an unresolved key ID and never by a bad signature, and refetches are rate-limited to a minimum interval (`jwksMinRefetch`, 30s by default) — so no volume of forged tokens makes this SDK issue more than one JWKS request per interval.
+- **Secret handling** — `TokenSet.toString()` masks tokens as `***` (no prefix), `KeycloakConfig` holds the client secret in a `char[]` and has no field-printing `toString()`, and `Secrets.mask(…)` is provided for your own log statements. TLS verification is on by default.
+
+Masking covers this SDK's own `toString()` and serialization; it cannot cover what your logging framework, a debugger, or a heap dump does with a value you hand it. The `char[]` secret is defence in depth rather than an erasure guarantee — `keycloak-admin-client` and Nimbus both take `String`, so the secret is copied into an unerasable heap string at the point of use.
+
+## Versioning and support
+
+This SDK is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking changes, so read the release notes before upgrading. Only the newest released version of each language SDK receives security fixes — there are no LTS lines, and older `0.x` releases are not backported to. Full policy: [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
 
 ## Documentation
 

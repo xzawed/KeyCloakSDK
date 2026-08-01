@@ -57,14 +57,20 @@ try {
 
 For the browser/authorization-code flow, start with `client.auth.createAuthorizationRequest(redirectUri)` and exchange the callback with `client.auth.exchangeCode(code, redirectUri, codeVerifier, nonce)` — the `nonce` must be passed back for id_token validation to succeed.
 
-## Secure by default
+## Security defaults
 
 Hardened JWT validation, not the unsafe library defaults:
 
 - **Algorithm pinning** — signature algorithms are pinned by configuration (`RS256` by default); `alg: none` and header-supplied algorithms are rejected.
 - **Strict claim checks** — exact `iss` match, `aud` containment check, mandatory `exp`, and a bounded clock skew (30s by default).
-- **DoS-safe JWKS refetch** — the key set is refetched only on an unresolved key ID, and rate-limited by a cooldown so forged tokens cannot amplify traffic to the IdP.
-- **Safe handling of secrets** — `clientSecret` and tokens are fully masked (`***`) in `toString`, `JSON.stringify`, and `util.inspect` output; TLS verification is on by default.
+- **DoS-safe JWKS refetch** — the key set is refetched only on an unresolved key ID and never on a bad signature, and a cooldown rate-limits refetches to a minimum interval (`jwksMinRefetchSeconds`, 30s by default) — so no volume of forged tokens makes the SDK issue more than one JWKS request per interval.
+- **Secret handling** — `clientSecret` and tokens are masked as `***` in `toString`, `JSON.stringify`, and `util.inspect` output; TLS verification is on by default.
+
+Masking covers those three serialization paths, which is what most loggers reach for. It does not cover direct property access, so it is defence in depth rather than a guarantee about your logs.
+
+## Versioning and support
+
+This SDK is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking changes, so read the release notes before upgrading. Only the newest released version of each language SDK receives security fixes — there are no LTS lines, and older `0.x` releases are not backported to. Full policy: [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
 
 ## Documentation
 

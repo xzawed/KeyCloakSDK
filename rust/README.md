@@ -69,12 +69,18 @@ The Admin representation types (`UserRepresentation`, `ClientRepresentation`, `R
 `RoleRepresentation`, `GroupRepresentation`) are re-exported from `keycloak_sdk::types`, so the `keycloak`
 crate does not need to be a direct dependency of your project.
 
-## Secure by default
+## Security defaults
 
-- **Algorithm pinning** — only the configured signature algorithms are accepted (default `RS256`); the header's `alg` is never trusted and `alg: none` is structurally impossible.
+- **Algorithm pinning** — only the configured signature algorithms are accepted (default `RS256`); the header's `alg` is never trusted, and `alg: none` is structurally impossible: `jsonwebtoken`'s `Algorithm` enum has no `none` variant, so such a header fails to deserialize before any key is looked up.
 - **Strict claim checks** — exact `iss` match, `aud` containment (against `expected_audience`, the client id by default), mandatory `exp`, `nbf` verified, and a bounded clock skew (30s by default).
-- **DoS-safe JWKS** — keys are cached, a refetch is triggered only by an unresolved `kid`, and it is rate-limited, so a flood of forged tokens cannot amplify traffic to your identity provider.
-- **Safe transport** — TLS verification on by default (rustls), redirects disabled (SSRF hardening), and secrets/tokens masked as `***` in every `Debug` output.
+- **DoS-safe JWKS** — keys are cached, a refetch is triggered only by an unresolved `kid` and never by a bad signature, and it is rate-limited to a minimum interval (`with_jwks_min_refetch_secs`, 30s by default). The gate is stamped when the refetch is *decided*, not when it succeeds, so an IdP outage cannot be used to reopen it — no volume of forged `kid`s makes the SDK issue more than one JWKS request per interval.
+- **Safe transport** — TLS verification on by default (rustls), redirects disabled entirely (SSRF hardening), and secrets/tokens masked as `***` in the SDK's `Debug` output.
+
+Masking covers the SDK's own `Debug` impls; it cannot cover what your logging framework or a panic message does with a value you hand it.
+
+## Versioning and support
+
+This crate is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking changes, so read the release notes before upgrading — and note that Cargo's default caret requirement treats `0.x` minors as incompatible, so `cargo update` will not cross one for you. Only the newest released version of each language SDK receives security fixes — there are no LTS lines, and older `0.x` releases are not backported to. Full policy: [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
 
 ## Documentation
 

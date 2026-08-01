@@ -79,12 +79,18 @@ A stock realm does **not** put the client id in a client-credentials token's `au
 
 Errors are values, not panics: match outcomes with `errors.Is` against `ErrNotFound` / `ErrConflict` / `ErrForbidden`, or reach the concrete `*AuthError`, `*AdminError`, `*TokenValidationError`, `*TransportError` with `errors.As`.
 
-## Secure by default
+## Security defaults
 
 - **Algorithm pinning** — the accepted JWT signature algorithms are pinned (`RS256` by default, configurable via `Config.SignatureAlgorithms`); the header-supplied `alg`, including `none`, is never trusted.
-- **Hardened claims** — exact `iss` match, `aud` containment check (against `Config.ExpectedAudience`, the client id by default), mandatory `exp` (a token without one is rejected), and a bounded clock skew (`Config.ClockSkew`, default 30s).
-- **DoS-safe JWKS** — a refetch happens only for an unresolved key ID (rotation), rate-limited by `Config.JwksMinRefetch` (default 30s), so forged random `kid`s cannot flood the IdP.
-- **Secrets stay out of logs** — `Config.String` and `TokenSet.String` mask secrets and tokens fully (`***`, no prefix); TLS verification is on by default and both connect and read timeouts are always applied.
+- **Hardened claims** — exact `iss` match, `aud` containment check (against `Config.ExpectedAudience`, the client id by default), mandatory `exp` (a token without one is rejected — go-jose skips the expiry check when the claim is absent, so the SDK enforces it), and a bounded clock skew (`Config.ClockSkew`, default 30s).
+- **DoS-safe JWKS** — a refetch is triggered only by an unresolved key ID (rotation) and never by a bad signature, and is rate-limited by `Config.JwksMinRefetch` (default 30s) — so no volume of forged random `kid`s makes the SDK issue more than one JWKS request per interval.
+- **Secret handling** — `Config.String` and `TokenSet.String` mask secrets and tokens fully (`***`, no prefix); TLS verification is on by default and both connect and read timeouts are always applied.
+
+Masking covers this SDK's own `String()` methods, which is what `%v`/`%s` formatting reaches. It does not cover `%#v`, reflection-based structured loggers, or anything else that reads the fields directly — masking is defence in depth, not a guarantee about your logs.
+
+## Versioning and support
+
+This SDK is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking changes, so read the release notes before upgrading. Only the newest released version of each language SDK receives security fixes — there are no LTS lines, and older `0.x` releases are not backported to. Full policy: [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
 
 ## Documentation
 

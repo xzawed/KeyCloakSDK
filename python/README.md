@@ -67,14 +67,20 @@ async def handler(config: KeycloakConfig) -> None:
 
 Only `authorization_url` stays synchronous — it assembles a URL and needs no network.
 
-## Secure by default
+## Security defaults
 
 The SDK replaces the unsafe library defaults rather than inheriting them:
 
-- **Algorithm pinning** — the header-supplied `alg` is never trusted, so `alg: none` and HS/RS confusion are rejected structurally.
+- **Algorithm pinning** — the header-supplied `alg` is never trusted, so `alg: none` and HS/RS confusion are rejected structurally: joserfc decodes against the configured allowlist, and an empty allowlist is refused at construction rather than falling back to joserfc's permissive default set.
 - **Strict claim checks** — exact `iss` match, `aud` containment, mandatory `exp`, `nbf`, and a bounded clock skew.
-- **DoS-safe JWKS** — refetch happens only for an unresolved key ID, and is rate-limited, so forged tokens cannot amplify traffic onto your IdP.
-- **Secrets stay out of logs** — config secrets and tokens are fully masked (`***`, no prefix leak) and TLS verification is on by default.
+- **DoS-safe JWKS** — a refetch is triggered only by an unresolved key ID and never by a bad signature, and is rate-limited to a minimum interval (`jwks_min_refetch_seconds`, 30s by default) — so no volume of forged tokens makes the SDK issue more than one JWKS request per interval.
+- **Secret handling** — `repr()` of the config and token types masks secrets and tokens as `***` (no prefix leak), and TLS verification is on by default.
+
+Masking covers this SDK's own `repr()`; it cannot cover what your logging framework or a traceback does with a value you hand it. Python has no erasable string type, so the client secret lives in an ordinary `str` for its lifetime — masking is defence in depth, not an erasure guarantee.
+
+## Versioning and support
+
+This SDK is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking changes, so read the release notes before upgrading. Only the newest released version of each language SDK receives security fixes — there are no LTS lines, and older `0.x` releases are not backported to. Full policy: [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
 
 ## Documentation
 

@@ -59,14 +59,20 @@ client.close
 
 The five admin resources — `users` / `clients` / `roles` / `groups` / `realms` — offer symmetric CRUD, and `client.admin.raw` is the escape hatch to the underlying bearer-authenticated `Faraday::Connection`.
 
-## Secure by default
+## Security defaults
 
 The SDK replaces the unsafe library defaults rather than inheriting them:
 
-- **Algorithm pinning** — the header-supplied `alg` is never trusted, so `alg: none` and HS/RS confusion are rejected structurally.
+- **Algorithm pinning** — the header-supplied `alg` is never trusted, so `alg: none` and HS/RS confusion are rejected structurally: the pin is applied before key lookup and signature verification, not after.
 - **Strict claim checks** — exact `iss` match, `aud` containment, mandatory `exp`, `nbf`, and a bounded clock skew.
-- **DoS-safe JWKS** — refetch happens only for an unresolved key ID, and is rate-limited, so forged tokens cannot amplify traffic onto your IdP.
-- **Secrets stay out of logs** — `Config`, `TokenSet`, and `AuthorizationRequest` mask secrets and tokens in `#inspect` (`***`, no prefix leak), TLS verification is on by default, timeouts are always applied, and redirect-following middleware is never installed (SSRF hardening).
+- **DoS-safe JWKS** — a refetch is triggered only by an unresolved key ID and never by a bad signature, and is rate-limited to a minimum interval (`jwks_min_refetch`, 30s by default). The gate applies on a cold cache too, so it cannot be sidestepped by hitting the SDK before its first successful fetch — no volume of forged tokens makes the SDK issue more than one JWKS request per interval.
+- **Secret handling** — `Config`, `TokenSet`, and `AuthorizationRequest` mask secrets and tokens in `#inspect` (`***`, no prefix leak), TLS verification is on by default, timeouts are always applied, and redirect-following middleware is never installed (SSRF hardening).
+
+Masking covers this SDK's own `#inspect`; it cannot cover what your logging framework or a backtrace does with a value you hand it. Ruby has no erasable string type, so the client secret lives in an ordinary `String` for its lifetime — masking is defence in depth, not an erasure guarantee.
+
+## Versioning and support
+
+This SDK is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking changes, so read the release notes before upgrading. Only the newest released version of each language SDK receives security fixes — there are no LTS lines, and older `0.x` releases are not backported to. Full policy: [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
 
 ## Documentation
 
