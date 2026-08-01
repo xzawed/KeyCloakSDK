@@ -24,6 +24,11 @@ jobs:
     permissions: {}
     outputs:
       version: ${{ steps.derive.outputs.version }}
+      # 프리릴리스 여부도 **버전과 같은 지점에서 한 번만** 유도한다. 릴리스 잡이 태그를 다시
+      # 파싱하면 "게이트가 검증한 버전"과 "GitHub Release에 붙는 표시"가 갈릴 수 있다 —
+      # 버전 스레딩과 정확히 같은 원칙이다(그리고 이 잡은 체크아웃이 없어 공유 스크립트를
+      # 부를 수 없다 — `permissions: {}`를 지키려면 판정은 인라인이어야 한다).
+      prerelease: ${{ steps.derive.outputs.prerelease }}
     steps:
       - id: derive
         name: Derive version from tag
@@ -33,8 +38,44 @@ jobs:
             echo "::error::태그 ${GITHUB_REF_NAME}에서 'dotnet-v' 접두를 벗겨내지 못했다 — 버전 유도 불가(fail-closed)."
             exit 1
           fi
-          echo "releasing Xzawed.Keycloak.Sdk ${VERSION} (from tag ${GITHUB_REF_NAME})"
+          # >>> prerelease-classify — 세 릴리스 워크플로(go·dotnet·php)가 **글자 그대로** 공유하는 블록이다.
+          # scripts/test/test-release-prerelease.sh가 이 마커 사이를 떼어내 셋의 동일성을 대조하고 분류표를
+          # 실행한다 — 한 곳만 고치면 자가테스트가 빨개진다.
+          #
+          # 접미사 목록을 박지 않는다. 아홉 언어의 표기가 서로 다르고(SemVer `0.1.0-rc.1` · Maven/Kotlin
+          # `0.1.0-RC1`·`-SNAPSHOT` · PEP 440 `0.1.0rc1` · RubyGems `0.1.0.rc1` — DEPLOY.md §7) 목록은
+          # 표기가 바뀌는 순간 **조용히** 틀린다. 대신 정식 릴리스의 모양을 정의하고 나머지를 판별한다:
+          #   1) 빌드 메타데이터(`+…`)를 먼저 떼어낸다 — SemVer에서 `+` 뒤는 프리릴리스가 아니고
+          #      `1.0.0+incompatible`은 **정식** go 모듈 버전이다. 정식이 프리릴리스로 오분류되는 경로는
+          #      이것뿐이라, 이 한 줄이 곧 오탐 방지책이다(오탐은 이 커밋이 고치는 버그보다 나쁘다 —
+          #      정식 0.1.0이 releases/latest에서 사라진다).
+          #   2) 남은 것이 숫자와 점뿐이면(`0.1.0`·`1.0.0`·`0.10.0`·NuGet 4마디 `1.2.3.4`) 정식이다.
+          #   3) 하이픈(SemVer 프리릴리스 구분자)이나 알파벳(PEP 440·RubyGems·Maven 표기)이 있으면
+          #      프리릴리스다.
+          #   4) 둘 다 아니면 판정하지 않고 **실패한다**. 모르는 표기를 정식으로 넘기면 RC가 저장소의
+          #      Latest release가 되고(php-v0.1.0-rc.1에서 실제로 일어난 일), 프리릴리스로 넘기면 정식이
+          #      숨는다. 어느 쪽으로도 추측하지 않는다.
+          CORE="${VERSION%%+*}"
+          case "$CORE" in
+            '' | *[!0-9.]*) NUMERIC_ONLY=false ;;
+            *) NUMERIC_ONLY=true ;;
+          esac
+          case "$CORE" in
+            *-* | *[A-Za-z]*) HAS_MARKER=true ;;
+            *) HAS_MARKER=false ;;
+          esac
+          if [ "$NUMERIC_ONLY" = true ]; then
+            PRERELEASE=false
+          elif [ "$HAS_MARKER" = true ]; then
+            PRERELEASE=true
+          else
+            echo "::error::버전 '${VERSION}'을 정식(숫자 마디)으로도 프리릴리스(하이픈/알파벳)로도 판정할 수 없다 — GitHub Release 표시를 추측하지 않고 중단한다(fail-closed)."
+            exit 1
+          fi
+          # <<< prerelease-classify
+          echo "releasing Xzawed.Keycloak.Sdk ${VERSION} (from tag ${GITHUB_REF_NAME}) — prerelease=${PRERELEASE}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
 
   # 게시 직전 마지막 게이트 — 패키징된 산출물을 로컬 레지스트리에 올린 뒤 모노레포 바깥의 깨끗한
   # 컨테이너에서 설치해 quickstart를 돌린다. 소스 테스트가 통과해도 패키징 층(매니페스트 메타데이터·
@@ -103,7 +144,12 @@ jobs:
             exit 1
           fi
           dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json
+      # ⚠️ `--prerelease`를 붙이지 않으면 GitHub은 RC를 저장소의 **Latest release**로 내건다
+      # (php-v0.1.0-rc.1의 첫 실행에서 실제로 그랬다 — 파이프라인은 전부 green이었고 이것만 틀렸다).
+      # 불리언은 `--prerelease=true|false`로 **명시**한다: 값이 비거나 오염되면 gh의 pflag가
+      # `strconv.ParseBool` 오류로 즉사하므로, 판정이 깨졌을 때 조용히 "정식"으로 흘러가지 않는다.
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${GITHUB_REF_NAME}" artifacts/* --title "${GITHUB_REF_NAME}" --generate-notes
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: gh release create "${GITHUB_REF_NAME}" artifacts/* --prerelease="${PRERELEASE}" --title "${GITHUB_REF_NAME}" --generate-notes

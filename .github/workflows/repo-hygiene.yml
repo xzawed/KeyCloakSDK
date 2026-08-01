@@ -73,6 +73,18 @@ jobs:
         # 테스트는 판별자를 지워도 통과한다. 자가테스트가 stderr 문구까지 고정하는 이유다.
         run: sh scripts/test/test-check-coverage.sh
 
+      # ⚠️ 배포 문서·헬퍼의 자가테스트 4종. 이들은 오래 **어떤 워크플로에도 배선돼 있지 않았고**,
+      # 그래서 DEPLOY.md가 실제와 어긋나도 아무도 몰랐다 — 첫 태그(`php-v0.1.0-rc.1`)를 민 뒤
+      # 문서가 "zero tags"라고 주장하는 상태가 그대로 통과했다(오히려 test-deploy-md.sh의
+      # 어서션이 그 낡은 주장을 강제하고 있었다). 자가테스트가 CI에서 돌지 않으면 그건
+      # 문서일 뿐 가드가 아니다.
+      - name: 배포 문서·헬퍼 자가테스트(DEPLOY.md ↔ deploy-facts SSOT · readiness · trigger)
+        run: |
+          sh scripts/test/test-deploy-facts.sh
+          sh scripts/test/test-deploy-md.sh
+          sh scripts/test/test-release-readiness.sh
+          sh scripts/test/test-release-trigger.sh
+
       - name: 버전 SSOT 가드 자가테스트(반쯤 적용된 범프를 잡는지 + 오탐 없는지)
         run: sh scripts/test/test-check-versions.sh
       - name: 버전 SSOT 대조
@@ -80,6 +92,13 @@ jobs:
         # 있고, 릴리스 워크플로의 태그↔매니페스트 가드는 **자기 언어만** 본다 — python만 올리고
         # node를 두면 어떤 게이트도 잡지 못한 채 태그가 밀리고 그 좌표는 태워버린 것이 된다.
         run: node scripts/check-versions.mjs
+
+      - name: 릴리스 프리릴리스 판정 자가테스트(세 워크플로 동일성 + 분류표)
+        # 태그를 태우지 않고 검증할 수 있는 유일한 대상이 판정 로직이다. php-v0.1.0-rc.1의
+        # 첫 실행은 다섯 잡이 전부 green이면서도 RC를 Latest release로 걸었다 — 파이프라인
+        # 성공은 이 결함에 대해 아무 말도 하지 않는다. 이 테스트는 워크플로에서 판정 블록을
+        # **그대로 떼어내** 실행하므로, 복사본만 맞고 배포되는 문자열이 틀린 상태가 될 수 없다.
+        run: sh scripts/test/test-release-prerelease.sh
 
       - name: CI 권한 가드 자가테스트(잡 권한 누락·워크플로 레벨 블록을 잡는지 + 오탐 없는지)
         run: sh scripts/test/test-check-ci-permissions.sh

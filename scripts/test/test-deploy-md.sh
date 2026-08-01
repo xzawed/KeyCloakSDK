@@ -33,6 +33,22 @@ assert_contains "$body" "git subtree split --prefix=php" "PHP split 방식"
 assert_not_contains "$body" "silently skipped" "조용한 스킵 서술 잔존"
 assert_not_contains "$body" "silently skips" "조용한 스킵 서술 잔존(2)"
 
-# 게시 이력에 대한 정직성: 공개 레지스트리 게시·태그가 0인 사실이 문서에 남아 있어야 한다.
-assert_contains "$body" "zero tags" "미게시·무태그 사실 명시"
+# 게시 이력에 대한 정직성 — ⚠️ 이 어서션은 두 번 잘못 설계됐다. 그 이력을 남긴다.
+#
+# (1) 처음에는 `assert_contains "$body" "zero tags"`였다. 낡음을 잡으라고 둔 어서션인데, 사실이
+#     바뀌자(첫 태그 `php-v0.1.0-rc.1`) **낡은 주장을 강제하는 쪽으로 뒤집혔다** — 문서를 진실에
+#     맞추면 테스트가 빨간불이 되는 상태. 상수를 못박은 가드의 전형적 실패다.
+# (2) 그래서 `git tag -l`과 대조하도록 바꿨는데 그것도 틀렸다. CI의 `actions/checkout`은 기본적으로
+#     **태그를 가져오지 않아** 거기서는 항상 0이다. "실제와 대조"한다고 믿었지만 실제로는 체크아웃
+#     산물에 기댄 것이었고, 로컬 통과·CI 실패로 드러났다.
+#
+# 지금은 **환경과 무관하게 참인 것**에 건다: 게시는 단방향이다. 한번 태그를 밀고 한번 레지스트리에
+# 올라가면 그 사실은 되돌아가지 않으므로, 아래 절대 표현들은 앞으로 영원히 거짓이다. 존재 여부만
+# 보면 되고 네트워크도 git 상태도 필요 없다.
+assert_not_contains "$body" "zero tags" "이미 태그가 밀렸는데 문서가 'zero tags'라고 주장한다"
+assert_not_contains "$body" "has ever executed, not once" "릴리스 워크플로가 실행됐는데 '한 번도 없다'고 주장한다"
+assert_not_contains "$body" "nothing has ever been published to a public registry" \
+  "PHP가 Packagist에 게시됐는데 문서가 '어디에도 게시된 적 없다'고 주장한다"
+# 반대 방향도 고정한다 — 여덟 언어가 미게시라는 사실이 사라지면 안 된다(하나 게시했다고 전부는 아니다).
+assert_contains "$body" "eight" "나머지 여덟 언어가 미게시라는 사실이 문서에서 사라졌다"
 assert_report
