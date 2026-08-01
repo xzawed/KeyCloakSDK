@@ -106,12 +106,26 @@ Since the same auth model has the same setup procedure, it is explained once per
 
 ### B. OIDC / Trusted Publisher (Python · Node · Ruby)
 
-1. **Pre-register a Pending Publisher (one-time, no secret needed)**: you must register this in each registry's Publishing settings screen **before deployment** (since the package does not exist yet, there is no per-project registration screen, so use the account-level "pending publisher" registration). The registration values are commonly **owner=`xzawed`** · **repo=`KeyCloakSDK`**, and the workflow filename differs per language:
-   - Python: `python-release.yml`
-   - Node: `node-release.yml`
-   - Ruby: `ruby-release.yml` · **environment is `release`** (the other two languages leave it blank)
-2. **Ruby chicken-and-egg caution**: RubyGems' Trusted Publisher can only be registered in the UI **once the gem already exists** — that is, the first time you must either publish manually with an API key, or go through rubygems.org's pre-registration procedure for new projects, after which you can switch to tag-based OIDC deployment.
-3. Since this is OIDC, no stored secrets are needed (the workflow exchanges directly with the registry using a GitHub Actions OIDC token).
+⚠️ **These three registries do not behave the same way, and the difference decides whether the first publish can use OIDC at all.** Verified against each registry's own documentation:
+
+| Registry | Pending publisher for a package that does not exist yet? | First publish over OIDC with no stored secret? |
+|---|---|---|
+| **PyPI** | **Yes** — *"Trusted Publishers are not just for pre-existing PyPI projects: you can also use them to create a PyPI project!"* | Yes. Pending publishers *"are converted into 'normal' publishers on first use"* |
+| **RubyGems** | **Yes** — *"Trusted publishers are not just for existing gems, they can also be used to push new gems!"* Register a *pending* publisher under your profile | Yes. Converted to a normal publisher on first successful push, and you are added as gem owner |
+| **npm** | **No.** `npm trust` states the prerequisite plainly: *"The package you're configuring must already exist on the npm registry."* The trusted-publishers guide never mentions it | **No** — one bootstrap publish is required first (see below) |
+
+1. **Pre-register a Pending Publisher (Python and Ruby only — one-time, no secret needed)**: register in the registry's Publishing settings **before** pushing the tag. Values are **owner=`xzawed`** · **repo=`KeyCloakSDK`**, workflow filename per language:
+   - Python: `python-release.yml` — no expiry is documented for a pending publisher, so this can be registered well in advance.
+   - Ruby: `ruby-release.yml` · **environment is `release`** (Python leaves it blank). ⚠️ **Register it and push the tag in the same sitting.** RubyGems creates pending publishers with `expires_at: 12.hours.from_now` (read from the `pending_trusted_publishers_controller` source — this is *not* in the published guide, so treat it as a strong operational assumption rather than a documented contract).
+2. **Node needs one bootstrap publish, and the safe way to do it is through CI.** Because `npm trust` requires the package to exist, `node-v0.1.0*` will reach the publish step and fail authentication. Nothing is burned (npm never receives the tarball), but the OIDC path cannot make the *first* publish.
+   ⚠️ **Do not bootstrap with a local `npm publish`.** `node/package.json` sets `publishConfig.provenance: true`, and provenance cannot be generated outside a supported CI — a local publish errors, and reaching for `--provenance=false` hand-publishes the real coordinate with no provenance, no `install-smoke`, no integration gate and no tag↔manifest check. Do it in CI instead, keeping every gate:
+   1. Add a temporary `NPM_TOKEN` secret and map it as `NODE_AUTH_TOKEN` on the existing publish step in `node-release.yml`.
+   2. Push the RC tag (`node-v0.1.0-rc.1`) through the normal pipeline.
+   3. `npm trust github @xzawed/keycloak-sdk --repo xzawed/KeyCloakSDK --file node-release.yml --allow-publish` — requires **npm ≥ 11.15.0** (higher than the version needed for trusted publishing itself) and **account-level 2FA**; granular tokens with the bypass-2FA option are rejected.
+   4. Delete the secret and the env mapping, then let `0.1.0` go out over pure OIDC.
+3. Since this is OIDC, no stored secrets are needed **after** the bootstrap above (the workflow exchanges directly with the registry using a GitHub Actions OIDC token).
+
+> This section previously said the opposite for two of the three: that pending registration worked for all three (wrong for npm), and that RubyGems required a manual API-key publish first (wrong, and wrong in the costly direction — a hand-pushed `gem push` bypasses `install-smoke`, the integration gate and the tag↔version guard, and burns the coordinate outside the pipeline).
 
 ### C. API Token (.NET · Rust)
 
