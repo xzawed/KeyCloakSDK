@@ -24,7 +24,7 @@ PYTHON_DIR="$REPO_ROOT/python"
 # shellcheck source=../lib.sh
 . "$INSTALL_DIR/lib.sh"
 
-PKG_VER="0.1.0"
+PKG_VER="${PKG_VER:-0.1.0}"
 PKG_SPEC="keycloak-sdk==${PKG_VER}"
 WHEEL="keycloak_sdk-${PKG_VER}-py3-none-any.whl"
 SDIST="keycloak_sdk-${PKG_VER}.tar.gz"

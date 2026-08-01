@@ -37,7 +37,7 @@ REPO_ROOT="$(cd "$HARNESS_DIR/.." && pwd)"        # 리포지토리 루트
 
 MODULE_PATH="github.com/xzawed/KeyCloakSDK/go"
 MODULE_ORIGIN="https://github.com/xzawed/KeyCloakSDK"
-PKG_VER="0.1.0"
+PKG_VER="${PKG_VER:-0.1.0}"
 SRC_DIR="$REPO_ROOT/go"
 PROXY_DIR="$INSTALL_DIR/publish/out/go/proxy"
 

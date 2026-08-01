@@ -20,11 +20,14 @@ export GOPROXY="${GOPROXY:-file:///proxy,https://proxy.golang.org,direct}"
 export GOSUMDB=off
 export GOTOOLCHAIN=local
 export GOPATH=/root/go
+# 릴리스 버전 — 오케스트레이터(install-verify.sh)가 -e PKG_VER로 주입한다(기본값은 단독 실행용).
+# publish/go.sh가 합성한 file GOPROXY의 태그(go/v$PKG_VER)와 반드시 같은 값이어야 한다.
+PKG_VER="${PKG_VER:-0.1.0}"
 cd /app || exit 1
 
-echo "[go-run] 1/3 install — go get github.com/xzawed/KeyCloakSDK/go@v0.1.0 github.com/Nerzal/gocloak/v13@v13.9.0"
-# 실제 소비자 명령 형태(패키지@버전을 커맨드라인에 명시) — SDK를 file GOPROXY에서 0.1.0으로 설치.
-if go get github.com/xzawed/KeyCloakSDK/go@v0.1.0 github.com/Nerzal/gocloak/v13@v13.9.0 >/tmp/install.log 2>&1 \
+echo "[go-run] 1/3 install — go get github.com/xzawed/KeyCloakSDK/go@v$PKG_VER github.com/Nerzal/gocloak/v13@v13.9.0"
+# 실제 소비자 명령 형태(패키지@버전을 커맨드라인에 명시) — SDK를 file GOPROXY에서 $PKG_VER로 설치.
+if go get "github.com/xzawed/KeyCloakSDK/go@v$PKG_VER" github.com/Nerzal/gocloak/v13@v13.9.0 >/tmp/install.log 2>&1 \
     && go build -o /tmp/app-bin . >>/tmp/install.log 2>&1 \
     && go build -o /tmp/quickstart-bin ./quickstart >>/tmp/install.log 2>&1; then
   : > "$STATUS/installed.ok"

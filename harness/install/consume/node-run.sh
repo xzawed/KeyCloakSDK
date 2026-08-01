@@ -7,12 +7,15 @@
 set -u
 STATUS="${STATUS_DIR:-/status}"
 REG="${REGISTRY_URL:-http://verdaccio:4873}"
+# 릴리스 버전 — 오케스트레이터(install-verify.sh)가 -e PKG_VER로 주입한다. 기본값은 하네스가
+# 릴리스 경로 바깥에서 단독 실행될 때(nightly harness 등)의 값이다.
+PKG_VER="${PKG_VER:-0.1.0}"
 mkdir -p "$STATUS"
 rm -f "$STATUS/installed.ok" "$STATUS/quickstart.ok"
 
-echo "[node-run] 1/3 install — npm install @xzawed/keycloak-sdk@0.1.0 express --registry $REG"
-# 실제 소비자 명령 형태(패키지@버전을 커맨드라인에 명시) — SDK를 레지스트리에서 0.1.0으로 설치.
-if npm install @xzawed/keycloak-sdk@0.1.0 express --registry "$REG" >/tmp/install.log 2>&1; then
+echo "[node-run] 1/3 install — npm install @xzawed/keycloak-sdk@$PKG_VER express --registry $REG"
+# 실제 소비자 명령 형태(패키지@버전을 커맨드라인에 명시) — SDK를 레지스트리에서 $PKG_VER로 설치.
+if npm install "@xzawed/keycloak-sdk@$PKG_VER" express --registry "$REG" >/tmp/install.log 2>&1; then
   : > "$STATUS/installed.ok"
   echo "[node-run] install OK"
 else

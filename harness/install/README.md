@@ -9,9 +9,19 @@ Without a real release (public registry), this harness **installs each language'
 
 ```bash
 cd harness/install
-./install-verify.sh                                  # all 9 languages (default)
+./install-verify.sh                                  # all 9 languages (default), version 0.1.0
 ./install-verify.sh go python                        # a subset
+./install-verify.sh --version 0.2.0 node             # verify a specific release version
+PKG_VER=0.2.0 ./install-verify.sh node               # same, via the environment
 ```
+
+**The version is part of what is being verified.** `--version` (or `PKG_VER`) is threaded through every
+publish and consume step, so the harness publishes *that* version to the local registry and installs
+*that* version in the clean consumer. The release workflows pass the tag suffix here — without it a
+green run on a `v0.2.0` tag would certify `0.1.0`. Five languages build from their manifest
+(python · node · rust · ruby · kotlin) and fail loudly if the requested version does not match it;
+four override the version at build time (java · dotnet · go · php) and would otherwise pass while
+testing the wrong artifact.
 
 Output: `report/INSTALL-MATRIX.md` (per-language step-status table) + `report/signals/<lang>.install.json` (raw signals). Both are git-ignored (generated artifacts).
 
@@ -32,17 +42,27 @@ D. Report    report/install-matrix.mjs turns signals/*.install.json → INSTALL-
 
 ## Per-language local registry (hybrid = ecosystem-native local)
 
+`$PKG_VER` below is the version under verification (`--version`, default `0.1.0`). Every command pins it
+**exactly** — a range would let the consumer resolve some other version still sitting in the local
+registry, which is precisely what this gate must not allow.
+
 | Language | Local source | Consumer's real command (only the source URL is local) |
 |---|---|---|
-| node | Verdaccio (real npm protocol) | `npm install @xzawed/keycloak-sdk@0.1.0 --registry …` |
-| python | pypiserver (PEP 503 simple) | `pip install "keycloak-sdk==0.1.0"` (+`PIP_EXTRA_INDEX_URL`) |
-| go | file GOPROXY (directory volume) | `GOPROXY=file:///proxy,… go get …/go@v0.1.0` |
-| dotnet | BaGetter (NuGet V3) | `dotnet add package Xzawed.Keycloak.Sdk --version 0.1.0` |
-| java | nginx static staged .m2 | POM: `keycloak-sdk-bom:0.1.0` (import) + `keycloak-sdk` |
-| ruby | static gem repo (generate_index) | `gem install keycloak-sdk --version 0.1.0 --source …` |
-| php | Satis (static type:composer) | `composer require xzawed/keycloak-sdk:^0.1` |
-| rust | cargo-local-registry (source replacement) | `cargo build --offline` (Cargo.toml `keycloak-sdk="0.1.0"`) |
-| kotlin | nginx static staged .m2 (mvn-repo-kotlin) | Gradle: `maven { url }` + `keycloak-sdk-kotlin:0.1.0` (transitive deps from Central) |
+| node | Verdaccio (real npm protocol) | `npm install @xzawed/keycloak-sdk@$PKG_VER --registry …` |
+| python | pypiserver (PEP 503 simple) | `pip install "keycloak-sdk==$PKG_VER"` (+`PIP_EXTRA_INDEX_URL`) |
+| go | file GOPROXY (directory volume) | `GOPROXY=file:///proxy,… go get …/go@v$PKG_VER` |
+| dotnet | BaGetter (NuGet V3) | `dotnet add package Xzawed.Keycloak.Sdk --version $PKG_VER` |
+| java | nginx static staged .m2 | POM: `keycloak-sdk-bom:$PKG_VER` (import) + `keycloak-sdk` |
+| ruby | static gem repo (generate_index) | `gem install keycloak-sdk --version $PKG_VER --source …` |
+| php | Satis (static type:composer) | `composer require xzawed/keycloak-sdk:$PKG_VER` |
+| rust | cargo-local-registry (source replacement) | `cargo build --offline` (Cargo.toml `keycloak-sdk="$PKG_VER"`) |
+| kotlin | nginx static staged .m2 (mvn-repo-kotlin) | Gradle: `maven { url }` + `keycloak-sdk-kotlin:$PKG_VER` (transitive deps from Central) |
+
+Files the consume container reads rather than commands it runs — the two Java POMs,
+`consume/kotlin-app/build.gradle.kts`, and `quickstart/rust/Cargo.toml` — cannot interpolate an
+environment variable, so their run scripts substitute the SDK coordinate's version at container start
+and **fail closed** if the substitution does not match (a changed manifest layout must not silently
+fall back to the baked-in literal).
 
 Host ports: node 18090 · python 18091 · go 18092 · dotnet 18093 · java 18094 · ruby 18095 · php 18096 · rust 18097 (for polling the app's healthz). go and rust mount a directory volume into the consume container instead of running a registry service.
 

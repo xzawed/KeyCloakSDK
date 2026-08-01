@@ -21,6 +21,18 @@ on:
         description: '검증할 언어 하나 (go|dotnet|node|python|java|php|rust|ruby|kotlin)'
         required: true
         type: string
+      # ⚠️ 이 입력이 없으면 이 게이트는 **태그와 무관한 버전**을 검증한다. 하네스의 publish/consume은
+      # 예전에 `0.1.0`을 하드코딩했으므로, `v0.2.0` 태그에서 초록으로 끝난 install-smoke가 실제로는
+      # 0.1.0을 설치·기동해 본 것이 되어 — 배포하지 않을 산출물을 게이트가 보증했다. 매니페스트에서
+      # 빌드하는 다섯(python·node·rust·ruby·kotlin)은 파일명 불일치로 그냥 실패했지만, 버전을
+      # 덮어쓰는 넷(java·dotnet·go·php)은 **조용히 통과**했다 — 그쪽이 더 위험한 절반이다.
+      # ⚠️ `required: true`이고 기본값이 없다 — 의도적이다. 기본값을 두면 새 릴리스 워크플로가
+      # `version:`을 빠뜨렸을 때 게이트가 조용히 그 기본 버전을 검증하고 통과한다(= 지금 고치는
+      # 바로 그 결함의 재발). 없으면 워크플로 호출 자체가 실패해 사람이 즉시 알아챈다.
+      version:
+        description: '검증할 릴리스 버전 = 태그 접미사 (예: 0.2.0). 호출자의 태그↔매니페스트 가드가 검증한 그 값이어야 한다.'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -47,8 +59,12 @@ jobs:
       # 이후 버전이 갈릴 수 있다고 말하는 그 시점 — 이 스텝과 그 문장을 함께 정리해야 한다.
       - name: 언어 간 버전 SSOT (반쯤 적용된 범프로 태그가 밀리는 것을 막는다)
         run: node scripts/check-versions.mjs
+      # 입력은 env로 매핑해서 넘긴다(태그 이름이 run 스크립트 본문으로 보간되지 않도록).
       - name: 로컬 레지스트리 게시 → 깨끗한 소비자에서 설치·실행
-        run: cd harness/install && ./install-verify.sh ${{ inputs.lang }}
+        env:
+          SMOKE_LANG: ${{ inputs.lang }}
+          SMOKE_VERSION: ${{ inputs.version }}
+        run: cd harness/install && ./install-verify.sh --version "$SMOKE_VERSION" "$SMOKE_LANG"
       - name: 설치 매트릭스 업로드
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

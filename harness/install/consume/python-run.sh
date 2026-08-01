@@ -8,6 +8,8 @@
 set -u
 STATUS="${STATUS_DIR:-/status}"
 REG="${REGISTRY_URL:-http://pypiserver:8080}"
+# 릴리스 버전 — 오케스트레이터(install-verify.sh)가 -e PKG_VER로 주입한다(기본값은 단독 실행용).
+PKG_VER="${PKG_VER:-0.1.0}"
 mkdir -p "$STATUS"
 rm -f "$STATUS/installed.ok" "$STATUS/quickstart.ok"
 
@@ -19,9 +21,9 @@ REG_HOST="${REG_HOST%%:*}"
 export PIP_EXTRA_INDEX_URL="${REG}/simple/"
 export PIP_TRUSTED_HOST="$REG_HOST"
 
-echo "[python-run] 1/3 install — pip install keycloak-sdk==0.1.0 -r requirements.txt (extra-index=$PIP_EXTRA_INDEX_URL trusted-host=$PIP_TRUSTED_HOST)"
-# 실제 소비자 명령 형태(패키지==버전을 커맨드라인에 명시) — SDK를 레지스트리에서 0.1.0으로 설치.
-if pip install --no-cache-dir "keycloak-sdk==0.1.0" -r requirements.txt >/tmp/install.log 2>&1; then
+echo "[python-run] 1/3 install — pip install keycloak-sdk==$PKG_VER -r requirements.txt (extra-index=$PIP_EXTRA_INDEX_URL trusted-host=$PIP_TRUSTED_HOST)"
+# 실제 소비자 명령 형태(패키지==버전을 커맨드라인에 명시) — SDK를 레지스트리에서 $PKG_VER로 설치.
+if pip install --no-cache-dir "keycloak-sdk==$PKG_VER" -r requirements.txt >/tmp/install.log 2>&1; then
   : > "$STATUS/installed.ok"
   echo "[python-run] install OK"
 else

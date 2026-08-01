@@ -18,7 +18,20 @@ rm -f "$STATUS/installed.ok" "$STATUS/quickstart.ok"
 cd /work/app || { echo "[kotlin-run] /work/app 부재"; sleep 3600; exit 1; }
 sed -i 's/\r$//' gradlew
 
-echo "[kotlin-run] 1/3 install — gradle classes(mvn-repo-kotlin에서 keycloak-sdk-kotlin:0.1.0 해석·다운로드·컴파일)"
+# 릴리스 버전 — 오케스트레이터(install-verify.sh)가 -e PKG_VER로 주입한다(기본값은 단독 실행용).
+PKG_VER="${PKG_VER:-0.1.0}"
+# build.gradle.kts는 컨테이너에 구워진 파일이라 환경변수 보간이 통하지 않는다 — SDK 좌표의 버전만
+# 런타임에 치환한다(rust-run.sh의 Cargo.toml sed 치환과 같은 관용). 좌표를 앵커로 삼으므로 Ktor 등
+# 다른 의존성 버전은 건드리지 않는다.
+sed -i "s#\(implementation(\"io\.github\.xzawed:keycloak-sdk-kotlin:\)[^\"]*#\1${PKG_VER}#" build.gradle.kts
+if ! grep -q "implementation(\"io.github.xzawed:keycloak-sdk-kotlin:${PKG_VER}\")" build.gradle.kts; then
+  echo "[kotlin-run] build.gradle.kts SDK 버전 치환 FAILED — 좌표 표기 형식이 바뀌었나?"
+  grep -n 'keycloak-sdk-kotlin' build.gradle.kts
+  sleep 3600; exit 1
+fi
+echo "[kotlin-run] build.gradle.kts의 keycloak-sdk-kotlin 버전을 ${PKG_VER}로 치환 완료"
+
+echo "[kotlin-run] 1/3 install — gradle classes(mvn-repo-kotlin에서 keycloak-sdk-kotlin:$PKG_VER 해석·다운로드·컴파일)"
 if sh ./gradlew --no-daemon classes >/tmp/install.log 2>&1; then
   : > "$STATUS/installed.ok"
   echo "[kotlin-run] install OK"

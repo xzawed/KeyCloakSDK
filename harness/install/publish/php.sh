@@ -26,7 +26,7 @@ REPO_ROOT="$(cd "$HARNESS_DIR/.." && pwd)"        # 리포지토리 루트
 # shellcheck source=../lib.sh
 . "$INSTALL_DIR/lib.sh"
 
-PKG_VER="0.1.0"
+PKG_VER="${PKG_VER:-0.1.0}"
 TAG="v${PKG_VER}"
 WORK_DIR="$INSTALL_DIR/publish/out/php"
 SRC_DIR="$WORK_DIR/php-src"

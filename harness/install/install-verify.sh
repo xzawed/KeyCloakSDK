@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# 설치·동작 검증 오케스트레이터. Usage: ./install-verify.sh [go dotnet node python java php rust ruby kotlin]  (기본 전체)
+# 설치·동작 검증 오케스트레이터.
+# Usage: ./install-verify.sh [--version <X.Y.Z>] [go dotnet node python java php rust ruby kotlin]  (기본 전체)
+#
+# --version(또는 PKG_VER 환경변수)은 **검증 대상 릴리스 버전**이다. 기본값 0.1.0은 릴리스 경로
+# 바깥에서 단독 실행할 때(야간 harness 워크플로가 언어명만 넘긴다)의 값이라, 인자 없이 부르면
+# 지금까지와 완전히 동일하게 동작한다. 릴리스 워크플로는 태그 접미사를 여기로 넘겨 publish/consume
+# 전 단계가 **그 버전**을 게시하고 설치하게 한다 — 그러지 않으면 `v0.2.0` 태그에서 초록으로 끝난
+# install-smoke가 실제로는 0.1.0을 검증한 것이 되어, 게이트가 배포하지 않을 산출물을 보증한다.
 #
 # 언어별 4단계(harness/install/README 설계 §3 — Publish→Install→Operate→Report)를 순차 실행한다:
 #   A. Publish  publish/<lang>.sh 가 실 배포 산출물을 빌드해 로컬 레지스트리에 게시.
@@ -20,11 +27,51 @@ cd "$(dirname "$0")"
 . ./lib.sh
 
 DEFAULT_LANGS="go dotnet node python java php rust ruby kotlin"
-LANGS=("${@:-$DEFAULT_LANGS}")
-[ "${#LANGS[@]}" -eq 1 ] && read -ra LANGS <<< "${LANGS[0]}"
+
+# 검증 대상 릴리스 버전 — 우선순위는 --version 플래그 > PKG_VER 환경변수 > 기본값(0.1.0).
+# export하므로 publish/<lang>.sh(자식 프로세스)가 그대로 물려받는다. consume 컨테이너에는
+# 아래 각 run_lang_*()의 docker run이 -e PKG_VER로 명시 주입한다.
+PKG_VER="${PKG_VER:-0.1.0}"
+ARGS=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --version=*) PKG_VER="${1#--version=}"; shift ;;
+    --version)
+      if [ "$#" -lt 2 ]; then echo "--version에는 값이 필요하다" >&2; exit 2; fi
+      PKG_VER="$2"; shift 2 ;;
+    *) ARGS="$ARGS $1"; shift ;;
+  esac
+done
+if [ -z "$PKG_VER" ]; then
+  echo "PKG_VER이 빈 값이다 — 버전 없이 검증하면 무엇을 검증했는지 알 수 없다(fail-closed)" >&2
+  exit 2
+fi
+# ⚠️ 형식을 경계에서 검증한다. 이 값은 단순히 문자열로 비교되는 게 아니라 **sed 표현식과 컨테이너
+# 명령의 일부가 된다**(consume/java-run.sh·kotlin-run.sh·rust-run.sh가 `s#…#…${PKG_VER}…#` 형태로
+# 치환하고, publish 쪽은 파일명·좌표를 조립한다). `#`나 따옴표가 섞이면 sed 표현식이 깨지거나
+# 의도하지 않은 치환이 일어난다. CI에서는 태그 접미사가 이미 매니페스트와 대조되지만, 이 스크립트는
+# 손으로도 돌아가고(`--version`) 방어는 값을 쓰는 쪽이 아니라 받는 쪽에 있어야 한다.
+# 허용 범위는 아홉 레지스트리의 표기를 전부 덮는다: 0.1.0 · 0.1.0rc1(PEP 440) · 0.1.0-rc.1(SemVer)
+# · 0.1.0.rc1(RubyGems) · 0.1.0-RC1/0.1.0-SNAPSHOT(Maven).
+case "$PKG_VER" in
+  *[!0-9A-Za-z.+-]* | -* | *..* )
+    echo "PKG_VER='$PKG_VER' 형식이 허용되지 않는다 — 영숫자·점·하이픈·플러스만 쓸 수 있다." >&2
+    echo "  이 값은 sed 표현식과 컨테이너 명령에 삽입되므로 경계에서 막는다(fail-closed)." >&2
+    exit 2 ;;
+esac
+case "$PKG_VER" in
+  [0-9]*.[0-9]*.[0-9]*) : ;;
+  *) echo "PKG_VER='$PKG_VER'가 X.Y.Z로 시작하지 않는다 — 릴리스 버전이 맞는지 확인하라." >&2; exit 2 ;;
+esac
+export PKG_VER
+
+# shellcheck disable=SC2206  # 언어명은 공백 구분 단순 토큰이라 의도적 워드분할("node python" 한 인자도 허용)
+LANGS=(${ARGS:-$DEFAULT_LANGS})
 
 export MSYS_NO_PATHCONV=1
 mkdir -p report/signals
+
+log "검증 대상 버전: ${PKG_VER} (언어: ${LANGS[*]})"
 
 # not_implemented <lang> — 아직 publish/consume이 없는 언어의 공통 스텁 신호.
 # artifactBuilt 이하 전부 false + error로 명시해 INSTALL-MATRIX.md에서 "미구현"이 실패와
@@ -85,6 +132,7 @@ run_lang_go() {
   # 폴스루)→direct 순.  ⚠️ GOPRIVATE는 설정 금지(설정 시 GONOPROXY로 전이돼 file 프록시를 우회한다).
   if ! docker run -d --name "$app_container" --network install-net \
       -v "$(hostpath "$status_dir"):/status" \
+      -e PKG_VER="$PKG_VER" \
       -v "$(hostpath "$PWD/publish/out/go/proxy"):/proxy:ro" \
       -e GOPROXY="file:///proxy,https://proxy.golang.org,direct" \
       -e KC_SERVER_URL=http://keycloak:8080 -e KC_REALM=it-realm \
@@ -176,6 +224,7 @@ run_lang_dotnet() {
   docker rm -f "$app_container" >/dev/null 2>&1 || true
   if ! docker run -d --name "$app_container" --network install-net \
       -v "$(hostpath "$status_dir"):/status" \
+      -e PKG_VER="$PKG_VER" \
       -e REGISTRY_URL=http://bagetter:8080/v3/index.json \
       -e KC_SERVER_URL=http://keycloak:8080 -e KC_REALM=it-realm \
       -e KC_CLIENT_ID=it-client -e KC_CLIENT_SECRET=it-secret -e APP_PORT=8090 \
@@ -274,6 +323,7 @@ run_lang_node() {
   docker rm -f "$app_container" >/dev/null 2>&1 || true
   if ! docker run -d --name "$app_container" --network install-net \
       -v "$(hostpath "$status_dir"):/status" \
+      -e PKG_VER="$PKG_VER" \
       -e REGISTRY_URL=http://verdaccio:4873 \
       -e KC_SERVER_URL=http://keycloak:8080 -e KC_REALM=it-realm \
       -e KC_CLIENT_ID=it-client -e KC_CLIENT_SECRET=it-secret -e APP_PORT=8090 \
@@ -358,6 +408,7 @@ run_lang_python() {
   docker rm -f "$app_container" >/dev/null 2>&1 || true
   if ! docker run -d --name "$app_container" --network install-net \
       -v "$(hostpath "$status_dir"):/status" \
+      -e PKG_VER="$PKG_VER" \
       -e REGISTRY_URL=http://pypiserver:8080 \
       -e KC_SERVER_URL=http://keycloak:8080 -e KC_REALM=it-realm \
       -e KC_CLIENT_ID=it-client -e KC_CLIENT_SECRET=it-secret -e APP_PORT=8090 \
@@ -446,6 +497,7 @@ run_lang_java() {
   docker rm -f "$app_container" >/dev/null 2>&1 || true
   if ! docker run -d --name "$app_container" --network install-net \
       -v "$(hostpath "$status_dir"):/status" \
+      -e PKG_VER="$PKG_VER" \
       -e KC_SERVER_URL=http://keycloak:8080 -e KC_REALM=it-realm \
       -e KC_CLIENT_ID=it-client -e KC_CLIENT_SECRET=it-secret -e APP_PORT=8090 \
       -p "${app_port_host}:8090" install-consume-java >/dev/null; then
@@ -536,6 +588,7 @@ run_lang_php() {
   docker rm -f "$app_container" >/dev/null 2>&1 || true
   if ! docker run -d --name "$app_container" --network install-net \
       -v "$(hostpath "$status_dir"):/status" \
+      -e PKG_VER="$PKG_VER" \
       -e REGISTRY_URL=http://satis-web \
       -e KC_SERVER_URL=http://keycloak:8080 -e KC_REALM=it-realm \
       -e KC_CLIENT_ID=it-client -e KC_CLIENT_SECRET=it-secret -e APP_PORT=8090 \
@@ -639,6 +692,7 @@ run_lang_rust() {
   docker rm -f "$app_container" >/dev/null 2>&1 || true
   if ! docker run -d --name "$app_container" --network install-net \
       -v "$(hostpath "$status_dir"):/status" \
+      -e PKG_VER="$PKG_VER" \
       -v "$(hostpath "$registry_dir"):/opt/local-registry:ro" \
       -e KC_SERVER_URL=http://keycloak:8080 -e KC_REALM=it-realm \
       -e KC_CLIENT_ID=it-client -e KC_CLIENT_SECRET=it-secret -e APP_PORT=8090 \
@@ -727,6 +781,7 @@ run_lang_ruby() {
   docker rm -f "$app_container" >/dev/null 2>&1 || true
   if ! docker run -d --name "$app_container" --network install-net \
       -v "$(hostpath "$status_dir"):/status" \
+      -e PKG_VER="$PKG_VER" \
       -e REGISTRY_URL=http://gemserver:8808 \
       -e KC_SERVER_URL=http://keycloak:8080 -e KC_REALM=it-realm \
       -e KC_CLIENT_ID=it-client -e KC_CLIENT_SECRET=it-secret -e APP_PORT=8090 \
@@ -815,6 +870,7 @@ run_lang_kotlin() {
   docker rm -f "$app_container" >/dev/null 2>&1 || true
   if ! docker run -d --name "$app_container" --network install-net \
       -v "$(hostpath "$status_dir"):/status" \
+      -e PKG_VER="$PKG_VER" \
       -e KC_SERVER_URL=http://keycloak:8080 -e KC_REALM=it-realm \
       -e KC_CLIENT_ID=it-client -e KC_CLIENT_SECRET=it-secret -e APP_PORT=8090 \
       -p "${app_port_host}:8090" install-consume-kotlin >/dev/null; then
@@ -892,7 +948,7 @@ else
 fi
 
 for L in "${LANGS[@]}"; do
-  log "== [$L] 설치·동작 검증 시작 =="
+  log "== [$L] 설치·동작 검증 시작 (버전 ${PKG_VER}) =="
   # 언어별 신호를 fresh로 리셋 — 이전(실패)실행의 stale error/필드가 누적 신호에 남지 않도록.
   printf '{"lang":"%s"}\n' "$L" > "report/signals/${L}.install.json"
   # conformance.mjs/probe.mjs가 별도로 쓰는 report/signals/<lang>.{conformance,security}.json도 함께

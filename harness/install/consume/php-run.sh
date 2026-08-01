@@ -7,6 +7,8 @@
 set -u
 STATUS="${STATUS_DIR:-/status}"
 REG="${REGISTRY_URL:-http://satis-web}"
+# 릴리스 버전 — 오케스트레이터(install-verify.sh)가 -e PKG_VER로 주입한다(기본값은 단독 실행용).
+PKG_VER="${PKG_VER:-0.1.0}"
 mkdir -p "$STATUS"
 rm -f "$STATUS/installed.ok" "$STATUS/quickstart.ok"
 
@@ -14,10 +16,17 @@ rm -f "$STATUS/installed.ok" "$STATUS/quickstart.ok"
 export COMPOSER_ALLOW_SUPERUSER=1
 export COMPOSER_HOME=/tmp/composer-home
 
-echo "[php-run] 1/3 install — composer require xzawed/keycloak-sdk:^0.1 (registry=$REG)"
+echo "[php-run] 1/3 install — composer require xzawed/keycloak-sdk:$PKG_VER (registry=$REG)"
+# ⚠️ 캐럿 범위(`^0.1`)가 아니라 **정확 버전**으로 요구한다. 두 가지 이유가 있다:
+#  (1) 이 게이트의 요점은 "태그된 그 버전이 설치되는가"다 — 범위는 레지스트리에 있는 아무 버전이나
+#      집어올 수 있어(예: 0.1.0이 남아 있으면 0.2.0 태그를 검증하면서 0.1.0을 설치한다) 게이트가
+#      엉뚱한 산출물을 통과시킨다.
+#  (2) composer 기본 `minimum-stability: stable`은 프리릴리스를 **범위에서 제외**한다 — DEPLOY.md가
+#      권하는 첫 태그(RC)가 `^0.1`로는 아예 해석되지 않아 이 단계가 통째로 실패한다. 정확 버전에
+#      안정성 접미사가 그대로 들어가면 composer가 그 패키지에 한해 stability 플래그를 세워준다.
 if composer config repositories.local composer "$REG" >/tmp/install.log 2>&1 \
     && composer config secure-http false >>/tmp/install.log 2>&1 \
-    && composer require xzawed/keycloak-sdk:^0.1 --no-interaction --no-progress >>/tmp/install.log 2>&1; then
+    && composer require "xzawed/keycloak-sdk:$PKG_VER" --no-interaction --no-progress >>/tmp/install.log 2>&1; then
   : > "$STATUS/installed.ok"
   echo "[php-run] install OK"
 else

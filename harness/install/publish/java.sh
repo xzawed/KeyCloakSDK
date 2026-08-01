@@ -39,7 +39,7 @@ REPO_ROOT="$(cd "$HARNESS_DIR/.." && pwd)"        # 리포지토리 루트
 # shellcheck source=../lib.sh
 . "$INSTALL_DIR/lib.sh"
 
-PKG_VER="0.1.0"
+PKG_VER="${PKG_VER:-0.1.0}"
 BUILD_IMAGE="maven:3.9-eclipse-temurin-21-alpine"
 STAGING_DIR="$INSTALL_DIR/publish/out/java/staging-m2"
 M2_CACHE_VOLUME="install-java-m2-cache"        # 명명된 도커 볼륨(재실행 시 의존성 재다운로드 절감 — 없으면 자동 생성)
@@ -59,7 +59,7 @@ mkdir -p "$STAGING_DIR"
 find "$STAGING_DIR" -mindepth 1 -delete
 docker rm -f "$BUILDER_CONTAINER" >/dev/null 2>&1 || true
 
-log "2/4 빌드(컨테이너 로컬 파일시스템, ${JAVA_BUILD_TIMEOUT_S}s 타임아웃 가드) — versions:set 0.1.0 → mvn -Prelease install(인터넷 필요)"
+log "2/4 빌드(컨테이너 로컬 파일시스템, ${JAVA_BUILD_TIMEOUT_S}s 타임아웃 가드) — versions:set ${PKG_VER} → mvn -Prelease install(인터넷 필요)"
 if ! timeout "${JAVA_BUILD_TIMEOUT_S}s" docker run --name "$BUILDER_CONTAINER" \
     -v "$(hostpath "$REPO_ROOT/java"):/src:ro" \
     -v "$M2_CACHE_VOLUME:/root/.m2" \

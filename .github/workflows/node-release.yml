@@ -12,22 +12,73 @@ on:
   push:
     tags: ['node-v*']
 
-# 최소권한 기본값. release 잡만 OIDC/provenance용 `id-token: write`를 추가로 선언한다.
-permissions:
-  contents: read
-
+# 최소권한: 워크플로 레벨 기본값을 두지 않고 **모든 잡이 자기 권한을 직접 선언**한다. 워크플로 레벨에
+# `contents: read`를 두면 그 스코프를 실제로 쓰지 않는 잡까지 토큰에 읽기 권한을 갖기 때문이다
+# (SonarQube `githubactions:S7637`. 이 저장소에서 그 규칙이 걸린 워크플로는 정확히 "체크아웃 없는 잡을
+# 가진 넷" — java·dotnet·go·php — 이었다. 나머지 다섯은 모든 잡이 체크아웃해서 걸리지 않았다).
+# ⚠️ 새 잡에는 반드시 `permissions:`를 함께 적을 것 — 빠뜨리면 워크플로 레벨 기본값이 아니라
+# **저장소 기본 권한**(Settings → Actions)을 물려받는다. 그 값은 이 파일 바깥에서 바뀔 수 있다.
 jobs:
+  # 태그 접미사 = 릴리스 버전. 이 워크플로에서 버전을 유도하는 **유일한** 지점이다 — install-smoke와
+  # publish가 각자 태그를 파싱하면 "게이트가 검증한 버전"과 "실제로 게시하는 버전"이 갈릴 수 있다.
+  # 태그↔매니페스트 정합성 가드도 여기로 옮겼다: 45분짜리 install-smoke를 태우기 전에 실패한다.
+  version:
+    runs-on: ubuntu-latest
+    # 태그↔매니페스트 가드가 매니페스트를 읽어야 하므로 체크아웃이 필요하다
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # 태그↔소스 정합성(fail-fast): 태그가 함의하는 버전과 package.json이 선언한 버전이
+      # 다르면 어떤 게이트도 돌기 전에 중단한다. 추출 실패(빈 문자열)도 실패로 취급한다 — 조용히 빈
+      # 값이 되면 어떤 값과도 "다르다"고 판정되지 않는 오검증이 생기기 때문이다.
+      - id: derive
+        name: Derive version from tag and verify it matches package.json
+        run: |
+          VERSION="${GITHUB_REF_NAME#node-v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            echo "::error::태그 ${GITHUB_REF_NAME}에서 'node-v' 접두를 벗겨내지 못했다 — 버전 유도 불가(fail-closed)."
+            exit 1
+          fi
+          ACTUAL=$(grep -m1 -E '^[[:space:]]*"version"[[:space:]]*:' node/package.json | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true)
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::node/package.json에서 \"version\"을 추출하지 못했다 — 정합성 검증 불가(fail-closed)."
+            exit 1
+          fi
+          if [ "$VERSION" != "$ACTUAL" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} implies version ${VERSION} but node/package.json declares ${ACTUAL}"
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} ↔ node/package.json ${ACTUAL} 일치"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
   # 게시 직전 마지막 게이트 — 패키징된 산출물을 로컬 레지스트리에 올린 뒤 모노레포 바깥의 깨끗한
   # 컨테이너에서 설치해 quickstart를 돌린다. 소스 테스트가 통과해도 패키징 층(매니페스트 메타데이터·
   # 파일 포함규칙·게시 아티팩트 호환성)의 결함은 여기서만 드러난다 — 레지스트리에 태우기 전 마지막 기회다.
+  # ⚠️ `version`을 넘기지 않으면 이 게이트는 태그와 무관한 기본 버전을 검증한다(install-smoke.yml 주석 참고).
   install-smoke:
+    needs: version
+    # 호출되는 install-smoke.yml이 체크아웃한다. ⚠️ 재사용 워크플로를 부르는 잡에서 `permissions:`를
+    # 생략하면 호출된 워크플로는 저장소 기본 권한을 상한으로 받는다(GitHub 문서: "If jobs.<job_id>.permissions
+    # is not specified in the calling job, the called workflow will have the default permissions for the
+    # GITHUB_TOKEN"). 즉 여기 한 줄이 곧 호출된 워크플로의 권한 상한이다.
+    permissions:
+      contents: read
     uses: ./.github/workflows/install-smoke.yml
     with:
       lang: node
+      version: ${{ needs.version.outputs.version }}
 
   # 발행 전 게이트: 태그된 커밋이 green이 아니면 npm으로 나가지 않는다(무회귀 보증).
   verify:
     runs-on: ubuntu-latest
+    # 체크아웃만 필요하다
+    permissions:
+      contents: read
     defaults: { run: { working-directory: node } }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -46,6 +97,9 @@ jobs:
   integration:
     name: Integration tests (testcontainers, 실제 Keycloak)
     runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → testcontainers 동작
+    # 체크아웃만 필요하다
+    permissions:
+      contents: read
     defaults: { run: { working-directory: node } }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -59,7 +113,7 @@ jobs:
         run: npm run test:it
 
   release:
-    needs: [verify, integration, install-smoke] # 단위 + 통합 + 설치 스모크 전부 통과해야 발행
+    needs: [version, verify, integration, install-smoke] # 단위 + 통합 + 설치 스모크 전부 통과해야 발행
     runs-on: ubuntu-latest
     permissions:
       contents: read # checkout
@@ -67,24 +121,6 @@ jobs:
     defaults: { run: { working-directory: node } }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      # 태그↔소스 정합성(fail-fast): 태그가 함의하는 버전과 package.json이 선언한 버전이
-      # 다르면 setup/빌드 전에 중단한다. 추출 실패(빈 문자열)도 실패로 취급한다 — 조용히 빈
-      # 값이 되면 어떤 값과도 "다르다"고 판정되지 않는 오검증이 생기기 때문이다.
-      # (working-directory: node → `package.json`은 node/package.json을 가리킨다.)
-      - name: Verify tag matches package.json version
-        run: |
-          EXPECTED="${GITHUB_REF_NAME#node-v}"
-          ACTUAL=$(grep -m1 -E '^[[:space:]]*"version"[[:space:]]*:' package.json | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true)
-          if [ -z "$ACTUAL" ]; then
-            echo "::error::node/package.json에서 \"version\"을 추출하지 못했다 — 정합성 검증 불가(fail-closed)."
-            exit 1
-          fi
-          if [ "$EXPECTED" != "$ACTUAL" ]; then
-            echo "::error::tag ${GITHUB_REF_NAME} implies version ${EXPECTED} but node/package.json declares ${ACTUAL}"
-            exit 1
-          fi
-          echo "tag ${GITHUB_REF_NAME} ↔ node/package.json ${ACTUAL} 일치"
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
@@ -102,10 +138,11 @@ jobs:
       # 맨손 `npm i @xzawed/keycloak-sdk`가 RC를 받게 된다. DEPLOY.md §7은 각 언어의 첫 태그를 RC로
       # 권하므로 런북과 정면으로 충돌하는 지점이었다. dist-tag를 하드코딩하지 않고 버전에서 파생한다:
       # SemVer prerelease만 하이픈을 포함하므로(`0.1.0-rc.1`) 그때만 `rc`, 정식 버전은 `latest`.
-      # 버전은 태그에서 뽑되, 위 정합성 가드가 태그↔package.json `version` 일치를 이미 보증한 뒤다.
+      # 버전은 `version` 잡이 유도·검증한 값을 그대로 받는다 — install-smoke가 검증한 것과 같은 값이다.
       - name: Publish to npm (Trusted Publishing / OIDC + provenance)
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#node-v}"
           case "$VERSION" in
             *-*) DIST_TAG='rc' ;;
             *) DIST_TAG='latest' ;;

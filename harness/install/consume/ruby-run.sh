@@ -9,14 +9,16 @@
 set -u
 STATUS="${STATUS_DIR:-/status}"
 REG="${REGISTRY_URL:-http://gemserver:8808}"
+# 릴리스 버전 — 오케스트레이터(install-verify.sh)가 -e PKG_VER로 주입한다(기본값은 단독 실행용).
+PKG_VER="${PKG_VER:-0.1.0}"
 mkdir -p "$STATUS"
 rm -f "$STATUS/installed.ok" "$STATUS/quickstart.ok"
 
-echo "[ruby-run] 1/3 install — gem install keycloak-sdk --version 0.1.0 --source $REG (+ sinatra/puma/rackup)"
+echo "[ruby-run] 1/3 install — gem install keycloak-sdk --version $PKG_VER --source $REG (+ sinatra/puma/rackup)"
 # keycloak-sdk와 sinatra/puma/rackup은 별도 `gem install` 호출로 나눈다: `--version`은 한 커맨드에
-# 여러 gem명을 함께 주면 전부에 동일 버전 제약이 걸려버려(sinatra/puma/rackup엔 "0.1.0"이 존재하지
+# 여러 gem명을 함께 주면 전부에 동일 버전 제약이 걸려버려(sinatra/puma/rackup엔 그 버전이 존재하지
 # 않는다) 뒤엣것들이 실패한다 — node의 `npm install pkg@ver express`처럼 한 줄로 합칠 수 없다.
-if gem install keycloak-sdk --version 0.1.0 --source "$REG" --no-document >/tmp/install.log 2>&1 \
+if gem install keycloak-sdk --version "$PKG_VER" --source "$REG" --no-document >/tmp/install.log 2>&1 \
    && gem install sinatra puma rackup --no-document >>/tmp/install.log 2>&1; then
   : > "$STATUS/installed.ok"
   echo "[ruby-run] install OK"

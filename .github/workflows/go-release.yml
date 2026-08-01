@@ -8,22 +8,59 @@ on:
   push:
     tags: ['go/v*']
 
-# 최소권한 기본값. GitHub Release를 만드는 release 잡만 `contents: write`로 올린다.
-permissions:
-  contents: read
-
+# 최소권한: 워크플로 레벨 기본값을 두지 않고 **모든 잡이 자기 권한을 직접 선언**한다. 워크플로 레벨에
+# `contents: read`를 두면 그 스코프를 실제로 쓰지 않는 잡까지 토큰에 읽기 권한을 갖기 때문이다
+# (SonarQube `githubactions:S7637`. 이 저장소에서 그 규칙이 걸린 워크플로는 정확히 "체크아웃 없는 잡을
+# 가진 넷" — java·dotnet·go·php — 이었다. 나머지 다섯은 모든 잡이 체크아웃해서 걸리지 않았다).
+# ⚠️ 새 잡에는 반드시 `permissions:`를 함께 적을 것 — 빠뜨리면 워크플로 레벨 기본값이 아니라
+# **저장소 기본 권한**(Settings → Actions)을 물려받는다. 그 값은 이 파일 바깥에서 바뀔 수 있다.
 jobs:
+  # 태그 접미사 = 릴리스 버전. 이 워크플로에서 버전을 유도하는 **유일한** 지점이다.
+  # ⚠️ go 모듈에는 버전을 담은 매니페스트가 아예 없다 — 태그 자체가 버전이다. 그래서 하네스도
+  # 격리 repo에 `go/v$PKG_VER` 태그를 **합성**하는데, 버전을 넘겨받지 못하면 그 합성 태그가 늘
+  # go/v0.1.0이 되어 install-smoke가 **조용히 다른 버전을 검증하고 통과한다**. 이 잡이 그 구멍을 막는다.
+  # ⚠️ 출력은 접두 없는 semver(0.1.0)다 — 나머지 여덟 언어와 형태를 맞춘다(하네스도 이 형태를 받는다).
+  # go 툴체인이 요구하는 `v` 접두는 쓰는 쪽에서 `v${VERSION}`으로 붙인다.
+  version:
+    runs-on: ubuntu-latest
+    # 태그 문자열만 파싱한다 — 체크아웃도 API 호출도 없어 토큰 스코프가 전혀 필요없다
+    permissions: {}
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+    steps:
+      - id: derive
+        name: Derive version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#go/v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            echo "::error::태그 ${GITHUB_REF_NAME}에서 'go/v' 접두를 벗겨내지 못했다 — 버전 유도 불가(fail-closed)."
+            exit 1
+          fi
+          echo "releasing github.com/xzawed/KeyCloakSDK/go v${VERSION} (from tag ${GITHUB_REF_NAME})"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
   # 게시 직전 마지막 게이트 — 패키징된 산출물을 로컬 레지스트리에 올린 뒤 모노레포 바깥의 깨끗한
   # 컨테이너에서 설치해 quickstart를 돌린다. 소스 테스트가 통과해도 패키징 층(매니페스트 메타데이터·
   # 파일 포함규칙·게시 아티팩트 호환성)의 결함은 여기서만 드러난다 — 레지스트리에 태우기 전 마지막 기회다.
   install-smoke:
+    needs: version
+    # 호출되는 install-smoke.yml이 체크아웃한다. ⚠️ 재사용 워크플로를 부르는 잡에서 `permissions:`를
+    # 생략하면 호출된 워크플로는 저장소 기본 권한을 상한으로 받는다(GitHub 문서: "If jobs.<job_id>.permissions
+    # is not specified in the calling job, the called workflow will have the default permissions for the
+    # GITHUB_TOKEN"). 즉 여기 한 줄이 곧 호출된 워크플로의 권한 상한이다.
+    permissions:
+      contents: read
     uses: ./.github/workflows/install-smoke.yml
     with:
       lang: go
+      version: ${{ needs.version.outputs.version }}
 
   # 발행 전 게이트: 태그된 커밋이 green이 아니면 릴리스하지 않는다.
   verify:
     runs-on: ubuntu-latest
+    # 체크아웃만 필요하다
+    permissions:
+      contents: read
     defaults: { run: { working-directory: go } }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -40,6 +77,9 @@ jobs:
   integration:
     name: Integration (testcontainers, 실제 Keycloak)
     runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → testcontainers 동작
+    # 체크아웃만 필요하다
+    permissions:
+      contents: read
     defaults: { run: { working-directory: go } }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -51,7 +91,7 @@ jobs:
         run: go test -tags=integration -run TestE2E -count=1 ./...
 
   release:
-    needs: [verify, integration, install-smoke] # 단위 + 통합 + 설치 스모크 전부 통과해야 릴리스
+    needs: [version, verify, integration, install-smoke] # 단위 + 통합 + 설치 스모크 전부 통과해야 릴리스
     runs-on: ubuntu-latest
     permissions:
       contents: write # GitHub Release 생성에 필요
@@ -60,15 +100,18 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.26'
+      # `version` 잡이 유도한 접두 없는 semver에 go 툴체인이 요구하는 `v`를 붙인다 — 값은 예전에
+      # 이 두 스텝이 각자 태그에서 뽑던 것과 같지만, 유도 지점은 이제 `version` 잡 하나뿐이다.
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          version="${GITHUB_REF_NAME#go/}"   # go/v0.1.0 → v0.1.0
           gh release create "${GITHUB_REF_NAME}" \
-            --title "Go SDK ${version}" \
-            --notes "Keycloak Go SDK ${version} — \`go get github.com/xzawed/KeyCloakSDK/go@${version}\`"
+            --title "Go SDK v${VERSION}" \
+            --notes "Keycloak Go SDK v${VERSION} — \`go get github.com/xzawed/KeyCloakSDK/go@v${VERSION}\`"
       - name: Warm the Go module proxy
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          version="${GITHUB_REF_NAME#go/}"
-          GOPROXY=proxy.golang.org GOFLAGS=-mod=mod go list -m "github.com/xzawed/KeyCloakSDK/go@${version}" || true
+          GOPROXY=proxy.golang.org GOFLAGS=-mod=mod go list -m "github.com/xzawed/KeyCloakSDK/go@v${VERSION}" || true

@@ -40,7 +40,7 @@ REPO_ROOT="$(cd "$HARNESS_DIR/.." && pwd)"        # 리포지토리 루트
 . "$INSTALL_DIR/lib.sh"
 
 PKG_NAME="Xzawed.Keycloak.Sdk"
-PKG_VER="0.1.0"
+PKG_VER="${PKG_VER:-0.1.0}"
 NUPKG="${PKG_NAME}.${PKG_VER}.nupkg"
 BUILDER_IMAGE="mcr.microsoft.com/dotnet/sdk:8.0-alpine"
 OUT_DIR="$INSTALL_DIR/publish/out"

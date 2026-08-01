@@ -22,7 +22,7 @@ REPO_ROOT="$(cd "$HARNESS_DIR/.." && pwd)"        # 리포지토리 루트
 # shellcheck source=../lib.sh
 . "$INSTALL_DIR/lib.sh"
 
-PKG_VER="0.1.0"
+PKG_VER="${PKG_VER:-0.1.0}"
 GEM_FILE="keycloak-sdk-${PKG_VER}.gem"
 TOOL_IMAGE="install-ruby-gem-tool"
 # gemserver(compose.install.yml)가 서빙하는 것과 동일한 호스트 디렉터리 — 경로 문자열까지 일치해야
