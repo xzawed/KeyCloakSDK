@@ -81,6 +81,13 @@ jobs:
         # node를 두면 어떤 게이트도 잡지 못한 채 태그가 밀리고 그 좌표는 태워버린 것이 된다.
         run: node scripts/check-versions.mjs
 
+      - name: 릴리스 프리릴리스 판정 자가테스트(세 워크플로 동일성 + 분류표)
+        # 태그를 태우지 않고 검증할 수 있는 유일한 대상이 판정 로직이다. php-v0.1.0-rc.1의
+        # 첫 실행은 다섯 잡이 전부 green이면서도 RC를 Latest release로 걸었다 — 파이프라인
+        # 성공은 이 결함에 대해 아무 말도 하지 않는다. 이 테스트는 워크플로에서 판정 블록을
+        # **그대로 떼어내** 실행하므로, 복사본만 맞고 배포되는 문자열이 틀린 상태가 될 수 없다.
+        run: sh scripts/test/test-release-prerelease.sh
+
       - name: CI 권한 가드 자가테스트(잡 권한 누락·워크플로 레벨 블록을 잡는지 + 오탐 없는지)
         run: sh scripts/test/test-check-ci-permissions.sh
       - name: CI 권한 대조
