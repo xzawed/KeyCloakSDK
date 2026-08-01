@@ -11,7 +11,7 @@
 // 레지스트리마다 다르기 때문이다(PEP 440 `0.1.0rc1` · RubyGems `0.1.0.rc1` · Maven `0.1.0-RC1` ·
 // SemVer `0.1.0-rc.1`). 표기를 통일하라고 요구하면 각 레지스트리가 거부한다.
 // ⚠️ go·php는 태그가 버전 SSOT라 매니페스트에 버전이 없다 — 검사 대상이 아니다(scripts/lib/deploy-facts.sh).
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 // 루트는 인자로 받는다(check-docs.mjs와 같은 관용) — 그래야 자가테스트가 픽스처 트리에 대해
@@ -30,11 +30,19 @@ const pick = (p, re, label) => {
   return m[1]
 }
 
-// ── Java: 루트 + 6개 자식 POM. 전부 **문자열까지** 같아야 한다(같은 reactor의 한 버전이므로). ──
-const javaDir = join(root, 'java')
-const javaPoms = ['pom.xml', ...readdirSync(javaDir, { withFileTypes: true })
-  .filter((d) => d.isDirectory())
-  .map((d) => `${d.name}/pom.xml`)]
+// ── Java: 루트 + 자식 POM. 전부 **문자열까지** 같아야 한다(같은 reactor의 한 버전이므로). ──
+// ⚠️ 모듈 목록은 디렉터리 나열이 아니라 **루트 POM의 `<module>` 선언**에서 얻는다.
+// 예전에는 `java/` 아래 디렉터리를 전부 모듈로 간주했는데, 그러면 pom.xml이 없는 디렉터리가
+// 하나라도 있으면 readFileSync가 ENOENT 스택트레이스로 죽었다 — Maven을 한 번이라도 빌드한
+// 워킹트리에는 `java/target/`이 생기므로 **로컬에서는 늘 깨지고 CI(새 체크아웃)에서만 통과**했다.
+// 가드가 개발자 머신에서만 죽으면 사람들은 가드를 신뢰하지 않게 된다. 게다가 reactor의 진짜
+// 모듈 목록은 루트 POM이 선언하는 것이지 디렉터리 존재가 아니다(선언되지 않은 디렉터리는
+// 애초에 빌드에 참여하지 않는다).
+const rootPom = read('java/pom.xml')
+const javaPoms = [
+  'pom.xml',
+  ...[...rootPom.matchAll(/<module>([^<]+)<\/module>/g)].map((m) => `${m[1].trim()}/pom.xml`),
+]
 const javaVersions = new Map()
 for (const rel of javaPoms) {
   const p = `java/${rel}`
