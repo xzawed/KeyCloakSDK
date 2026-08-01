@@ -1,0 +1,34 @@
+name: demo-release
+# 가드 테스트용 픽스처 — 실제로 실행되는 워크플로가 아니다(저장소 루트가 아니라
+# scripts/test/fixtures/ 아래에 있으므로 GitHub이 등록하지 않는다).
+# test-check-ci-permissions.sh가 이 파일을 임시 디렉터리에 복사한 뒤 한 줄씩 망가뜨려
+# 가드가 각 위반을 **실제로 잡는지** 확인한다.
+on:
+  push:
+    tags: ['demo-v*']
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: derive
+        run: |
+          # 아래 줄은 셸 텍스트이지 YAML 키가 아니다 — 스캐너가 블록 스칼라 본문을
+          # 구조로 읽지 않는지 확인하는 입력이다(방어적: GitHub 스키마상 스텝 본문은
+          # 항상 잡 레벨 키보다 깊게 들여쓰기되므로 오늘의 규칙들과는 충돌하지 않는다).
+          permissions:
+          echo "version=1.0.0"
+  integration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - run: echo "픽스처 — 실행되지 않는다"
+  publish:
+    needs: [version, integration]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC Trusted Publishing에 필요 — 저장 시크릿 없음
+    steps:
+      - run: echo "픽스처 — 실행되지 않는다"

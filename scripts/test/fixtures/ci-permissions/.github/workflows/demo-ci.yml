@@ -1,0 +1,16 @@
+name: demo-ci
+# 가드 테스트용 픽스처 — 오탐 대조군이다.
+# 이 워크플로는 잡이 하나뿐이고 그 잡은 체크아웃만 한다. 이런 동질 워크플로에서는
+# 워크플로 레벨 `permissions:` 한 줄이 정답이고, 잡 레벨로 흩으면 중복만 늘어난다
+# (저장소의 `*-ci.yml`·`install-smoke.yml`이 정확히 이 모양이다).
+# 릴리스 전용 규칙(잡마다 선언 + 워크플로 레벨 블록 금지)을 저장소 전체로 넓히면
+# 이 파일이 곧바로 오탐이 된다 — 그 경계를 여기서 고정한다.
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "픽스처 — 실행되지 않는다"
