@@ -92,17 +92,37 @@ for (const [lang, v] of found) {
   if (!bases.has(b)) bases.set(b, [])
   bases.get(b).push(`${lang}=${v}`)
 }
+// ⚠️ 언어 간 갈림은 **경고이지 오류가 아니다.** 한때 오류였고, 그 상태로 릴리스 경로
+// (install-smoke.yml — 아홉 워크플로가 전부 `needs:`로 부른다)에 배선되면서 SECURITY.md가
+// 소비자에게 한 약속을 지킬 수 없게 만들었다: "각 언어는 독립적으로 버저닝하며, 보안 수정은 그
+// 언어에서 준비되는 즉시 릴리스하고 나머지 여덟을 기다리지 않는다." 오류로 두면 python 하나만
+// 고친 보안 패치가 아홉을 전부 올릴 때까지 나갈 수 없고, 우회하려고 아홉을 다 올리면 나머지
+// 여덟은 그 기저 버전을 영영 쓸 수 없게 된다(각 언어의 태그↔매니페스트 가드가 문자열 동일 비교라).
+//
+// 게다가 이 검사는 애초에 무엇도 지키지 못했다. `py-v0.2.0`을 밀면 python 자신의 가드가 이미
+// pyproject를 확인하므로 node의 상태는 무관하고, `node-v0.2.0`을 package.json이 0.1.0인 채로
+// 밀면 node 자신의 가드가 첫 스텝에서 잡는다 — 반쯤 적용된 범프는 **해를 끼칠 수 있는 각
+// 지점에서 이미** 잡힌다. 남는 역할은 조율 실수 알림뿐이고, 그건 경고가 할 일이다.
+//
+// 아래 두 가지는 버저닝 정책과 무관한 불변식이라 **오류로 유지**한다:
+//   (1) Java reactor 내부 7개 POM의 문자열 동일(같은 reactor의 한 버전이므로)
+//   (2) 추출 실패(가드가 조용히 무력화되는 것을 막는다)
+const warnings = []
 if (bases.size > 1) {
-  errors.push(
-    `언어 간 기저 버전이 갈렸다(${bases.size}종) — 범프가 반쯤 적용된 상태다:\n` +
+  warnings.push(
+    `언어 간 기저 버전이 갈렸다(${bases.size}종) — 의도한 것이면 무시해도 된다(언어별 독립 버저닝은 SECURITY.md가 명시한 정책이다). 조율 릴리스를 하려던 것이라면 하나를 빠뜨린 것이다:\n` +
       [...bases].map(([b, who]) => `      ${b}: ${who.join(' · ')}`).join('\n'),
   )
 }
 
 for (const [lang, v, where] of found) console.log(`  ${lang.padEnd(8)} ${v.padEnd(18)} ${where}`)
+for (const w of warnings) console.log(`::warning::${w}`)
 if (errors.length) {
   for (const e of errors) console.log(`::error::${e}`)
   console.log(`\n버전 SSOT 검사 실패 — ${errors.length}건`)
   process.exit(1)
 }
-console.log(`\n버전 SSOT 일치 — ${found.length}개 언어(go·php는 태그가 SSOT라 대상 아님)`)
+console.log(
+  `\n버전 SSOT 검사 통과 — ${found.length}개 언어(go·php는 태그가 SSOT라 대상 아님)` +
+    (warnings.length ? ` · 경고 ${warnings.length}건(기저 버전 갈림 — 차단하지 않는다)` : ''),
+)

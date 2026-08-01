@@ -19,11 +19,21 @@ cp -r "$FIX/." "$TMP/"
 sed -i 's|<parent><version>0.1.0-SNAPSHOT</version></parent>|<parent><version>0.2.0-SNAPSHOT</version></parent>|' "$TMP/java/mod-a/pom.xml"
 assert_fails node "$GUARD" "$TMP"
 
-# 변이 2: 한 언어만 범프 — 언어 간 갈림. 릴리스 워크플로의 태그↔매니페스트 가드는 자기 언어만
-# 보므로 이것을 잡지 못한다. 이 가드가 유일한 방어선이다.
+# 한 언어만 범프 — 언어 간 갈림은 **경고이지 실패가 아니다**.
+# SECURITY.md가 소비자에게 명시적으로 약속한다: "각 언어는 독립적으로 버저닝하며, 보안 수정은
+# 그 언어에서 준비되는 즉시 릴리스하고 나머지 여덟을 기다리지 않는다." 이 가드가 릴리스 경로
+# (install-smoke.yml)에서 실패로 동작하면 그 약속을 지킬 수 없다 — python만 고친 보안 패치가
+# 아홉 언어를 전부 올릴 때까지 나갈 수 없게 된다.
+# 그리고 이 검사는 애초에 무엇도 지키지 못한다: `py-v0.2.0`을 밀면 python 자신의 태그↔매니페스트
+# 가드가 이미 확인하므로 node의 상태는 무관하고, `node-v0.2.0`을 package.json이 0.1.0인 채로 밀면
+# node 자신의 가드가 첫 스텝에서 잡는다. 반쯤 적용된 범프는 **해를 끼칠 수 있는 각 지점에서**
+# 이미 잡힌다. 남는 역할은 "하나 빠뜨린 것 아닌가" 하는 조율용 알림뿐이다.
 cp -r "$FIX/." "$TMP/"
 sed -i 's/"version": "0.1.0"/"version": "0.2.0"/' "$TMP/node/package.json"
-assert_fails node "$GUARD" "$TMP"
+assert_ok node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "::warning::" "언어 간 갈림은 경고로 알린다"
+assert_not_contains "$out" "::error::" "언어 간 갈림을 오류로 올리지 않는다"
 
 # 변이 3: 매니페스트에서 버전 줄을 없애면 실패해야 한다 — 추출 실패를 통과로 처리하면 가드가
 # 조용히 무력화된다(공허한 통과 방지).
