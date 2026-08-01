@@ -36,6 +36,17 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with: { node-version: '22' }
+      # 언어 간 버전 SSOT. 각 릴리스 워크플로의 태그↔매니페스트 가드는 **자기 언어만** 본다 —
+      # python만 올리고 node를 두면 어떤 게이트도 잡지 못한 채 태그가 밀린다. `check-versions.mjs`가
+      # 그걸 잡지만 지금까지 `repo-hygiene.yml`(머지 게이트)에서만 돌았고, 태그는 임의 커밋에
+      # 붙일 수 있으므로 릴리스 경로에는 이 검사가 없었다.
+      # ⚠️ 아홉 릴리스 워크플로에 각각 넣지 않고 여기 한 곳에 두는 이유: 아홉 전부가 이 워크플로를
+      # `needs:`로 부르므로 한 번의 편집이 아홉을 게이트한다(9곳 복제는 곧 9곳 드리프트다).
+      # ⚠️ 이 가드는 **기저 X.Y.Z 일치**만 요구한다(프리릴리스 표기는 레지스트리마다 달라도 됨).
+      # 즉 락스텝 정책을 강제한다. 언어별 독립 버저닝으로 전환하는 날 — SECURITY.md가 보안 수정
+      # 이후 버전이 갈릴 수 있다고 말하는 그 시점 — 이 스텝과 그 문장을 함께 정리해야 한다.
+      - name: 언어 간 버전 SSOT (반쯤 적용된 범프로 태그가 밀리는 것을 막는다)
+        run: node scripts/check-versions.mjs
       - name: 로컬 레지스트리 게시 → 깨끗한 소비자에서 설치·실행
         run: cd harness/install && ./install-verify.sh ${{ inputs.lang }}
       - name: 설치 매트릭스 업로드

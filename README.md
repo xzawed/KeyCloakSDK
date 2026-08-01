@@ -72,7 +72,7 @@ Then create a confidential client with its service account enabled in the realm 
 
 ## Languages
 
-| Language | Runtime · idiom | Package *(name reserved, not published)* | Example |
+| Language | Runtime · idiom | Package *(not yet published)* | Example |
 |---|---|---|---|
 | **Java** | JDK 21+ · blocking | `io.github.xzawed:keycloak-sdk` (Maven Central) | [QuickStart.java](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) |
 | **Python** | 3.10+ · sync + async (`aio`) | `keycloak-sdk` (PyPI) | [quickstart.py](python/examples/quickstart.py) · [async](python/examples/async_quickstart.py) |

@@ -72,7 +72,7 @@ pip install -e KeyCloakSDK/python
 
 ## 지원 언어
 
-| 언어 | 런타임 · 관용 | 패키지 *(이름 예약, 미배포)* | 예제 |
+| 언어 | 런타임 · 관용 | 패키지 *(미배포)* | 예제 |
 |---|---|---|---|
 | **Java** | JDK 21+ · 블로킹 | `io.github.xzawed:keycloak-sdk` (Maven Central) | [QuickStart.java](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) |
 | **Python** | 3.10+ · sync + async(`aio`) | `keycloak-sdk` (PyPI) | [quickstart.py](python/examples/quickstart.py) · [async](python/examples/async_quickstart.py) |
