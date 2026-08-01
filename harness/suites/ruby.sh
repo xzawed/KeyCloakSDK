@@ -26,6 +26,15 @@ RAW=$(docker run --rm -v "$ROOT/ruby:/src-ro:ro" ruby:3.4-alpine sh -c '
   echo "___INSTALLEXIT=$?"
   bundle exec rspec --tag ~integration 2>&1
   echo "___TESTEXIT=$?"
+  # 커버리지는 콘솔 텍스트가 아니라 SimpleCov가 쓴 산출물에서 읽는다 — 콘솔 요약 문구는
+  # simplecov 메이저마다 바뀌지만(0.22 "Line Coverage: 100.0% (214 / 214)" →
+  # 1.0 "Line coverage: 214 / 214 (100.00%)") .last_run.json 스키마는 0.9부터 안정적이고,
+  # SimpleCov 자신의 minimum_coverage 게이트가 먹는 바로 그 파일이다.
+  if [ -f coverage/.last_run.json ]; then
+    echo "___COV_LAST_RUN=$(tr -d "\n\r " < coverage/.last_run.json)"
+  else
+    echo "___COV_LAST_RUN=MISSING"
+  fi
   bundle exec rubocop >/tmp/rubocop.log 2>&1
   echo "___LINTEXIT=$?"
   cat /tmp/rubocop.log
@@ -41,12 +50,14 @@ fi
 
 # rspec 요약: "64 examples, 0 failures"
 UNIT=$(printf '%s\n' "$OUT" | grep -oE '[0-9]+ examples?' | head -1 | grep -oE '[0-9]+')
-# SimpleCov 콘솔 요약(신 포맷 ~0.22 — 구 "N / M LOC (X%) covered"에서 변경됨):
-#   "Line Coverage: 100.0% (212 / 212)"  /  "Branch Coverage: 93.75% (45 / 48)"
-# ⚠️ 구 LOC 정규식은 이 포맷과 매치하지 않아 커버리지가 0으로 집계돼 스코어카드에서 ruby가
-# 부당하게 감점됐다(실측 라인 100%/브랜치 93.75%). 신 포맷으로 라인+브랜치를 파싱한다.
-LINE=$(printf '%s\n' "$OUT" | grep -oE 'Line Coverage: [0-9]+(\.[0-9]+)?%' | head -1 | grep -oE '[0-9]+(\.[0-9]+)?')
-BRANCH=$(printf '%s\n' "$OUT" | grep -oE 'Branch Coverage: [0-9]+(\.[0-9]+)?%' | head -1 | grep -oE '[0-9]+(\.[0-9]+)?')
+# 커버리지: SimpleCov 산출물 coverage/.last_run.json({"result":{"line":100.0,"branch":95.83}})에서
+# 읽는다. ⚠️ 콘솔 문구 파싱으로 돌아가지 말 것 — simplecov 0.22→1.0 범프(dependabot 6da01c2)가
+# 문구를 "Line Coverage: 100.0% (214 / 214)" → "Line coverage: 214 / 214 (100.00%)"로 바꿔
+# 대소문자·순서 양쪽이 어긋났고, 정규식이 조용히 빈 값→0으로 폴백해 ruby가 커버리지 10점으로
+# 오집계됐다(run 30653201172). 산출물 스키마는 그 범프를 그대로 통과한다.
+COVJSON=$(printf '%s\n' "$OUT" | grep -oE '___COV_LAST_RUN=.*' | tail -1 | cut -d= -f2-)
+LINE=$(printf '%s\n' "$COVJSON" | grep -oE '"line":[0-9]+(\.[0-9]+)?' | head -1 | cut -d: -f2)
+BRANCH=$(printf '%s\n' "$COVJSON" | grep -oE '"branch":[0-9]+(\.[0-9]+)?' | head -1 | cut -d: -f2)
 LINTEXIT=$(printf '%s\n' "$OUT" | grep -oE '___LINTEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${LINTEXIT:-1}" = "0" ]; then LINTCLEAN=true; else LINTCLEAN=false; fi
 
@@ -69,4 +80,18 @@ fi
 TESTEXIT=$(printf '%s\n' "$OUT" | grep -oE '___TESTEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 INSTALLEXIT=$(printf '%s\n' "$OUT" | grep -oE '___INSTALLEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${TESTEXIT:-1}" = "0" ] && [ "${INSTALLEXIT:-1}" = "0" ]; then TESTSPASSED=true; else TESTSPASSED=false; fi
+
+# 커버리지를 못 읽었으면 0을 보고하지 말고 시끄럽게 죽는다. "실측 0%"와 "읽지 못함"이 같은 값이면
+# 추출기가 깨져도 아무도 모른다(이 버그가 정확히 그랬다 — 통과하는 테스트가 잡아줄 수 없는 부류다).
+# 단위테스트가 실제로 통과했을 때만 강제한다: 테스트가 깨진 실행은 커버리지 산출물이 없는 게 정상이고
+# score.mjs가 이미 testsPassed=false에 커버리지 0점을 준다(score.mjs:23-27).
+if [ "$TESTSPASSED" = "true" ] && { [ -z "$LINE" ] || [ -z "$BRANCH" ]; }; then
+  echo "[ruby.sh] FATAL: 단위테스트는 통과했는데 커버리지를 추출하지 못했다." >&2
+  echo "[ruby.sh]   marker '___COV_LAST_RUN' = '${COVJSON:-<absent>}'" >&2
+  echo "[ruby.sh]   parsed line='${LINE:-<empty>}' branch='${BRANCH:-<empty>}'" >&2
+  echo "[ruby.sh]   SimpleCov 산출물 포맷/경로가 바뀌었을 가능성 — 0으로 보고하지 않는다." >&2
+  echo "{\"lang\":\"ruby\",\"unit\":${UNIT:-0},\"integration\":${INTEGRATION:-0},\"coverageLine\":null,\"coverageBranch\":null,\"lintClean\":${LINTCLEAN},\"testsPassed\":${TESTSPASSED},\"ran\":false,\"error\":\"coverage-extraction-failed\"}"
+  exit 1
+fi
+
 echo "{\"lang\":\"ruby\",\"unit\":${UNIT:-0},\"integration\":${INTEGRATION:-0},\"coverageLine\":${LINE:-0},\"coverageBranch\":${BRANCH:-0},\"lintClean\":${LINTCLEAN},\"testsPassed\":${TESTSPASSED},\"ran\":true}"
