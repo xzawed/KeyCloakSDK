@@ -6,8 +6,13 @@ name: rust-release
 on:
   push:
     tags: ['rust-v*']
-permissions:
-  contents: read
+
+# 최소권한: 워크플로 레벨 기본값을 두지 않고 **모든 잡이 자기 권한을 직접 선언**한다. 워크플로 레벨에
+# `contents: read`를 두면 그 스코프를 실제로 쓰지 않는 잡까지 토큰에 읽기 권한을 갖기 때문이다
+# (SonarQube `githubactions:S7637`. 이 저장소에서 그 규칙이 걸린 워크플로는 정확히 "체크아웃 없는 잡을
+# 가진 넷" — java·dotnet·go·php — 이었다. 나머지 다섯은 모든 잡이 체크아웃해서 걸리지 않았다).
+# ⚠️ 새 잡에는 반드시 `permissions:`를 함께 적을 것 — 빠뜨리면 워크플로 레벨 기본값이 아니라
+# **저장소 기본 권한**(Settings → Actions)을 물려받는다. 그 값은 이 파일 바깥에서 바뀔 수 있다.
 jobs:
   # 태그 접미사 = 릴리스 버전. 이 워크플로에서 버전을 유도하는 **유일한** 지점이다 — install-smoke와
   # publish가 각자 태그를 파싱하면 "게이트가 검증한 버전"과 "실제로 게시하는 버전"이 갈릴 수 있다.
@@ -15,6 +20,9 @@ jobs:
   # 검증은 어떤 게이트보다 앞에 있어야 의미가 있다.
   version:
     runs-on: ubuntu-latest
+    # 태그↔매니페스트 가드가 매니페스트를 읽어야 하므로 체크아웃이 필요하다
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.derive.outputs.version }}
     steps:
@@ -50,6 +58,12 @@ jobs:
   # ⚠️ `version`을 넘기지 않으면 이 게이트는 태그와 무관한 기본 버전을 검증한다(install-smoke.yml 주석 참고).
   install-smoke:
     needs: version
+    # 호출되는 install-smoke.yml이 체크아웃한다. ⚠️ 재사용 워크플로를 부르는 잡에서 `permissions:`를
+    # 생략하면 호출된 워크플로는 저장소 기본 권한을 상한으로 받는다(GitHub 문서: "If jobs.<job_id>.permissions
+    # is not specified in the calling job, the called workflow will have the default permissions for the
+    # GITHUB_TOKEN"). 즉 여기 한 줄이 곧 호출된 워크플로의 권한 상한이다.
+    permissions:
+      contents: read
     uses: ./.github/workflows/install-smoke.yml
     with:
       lang: rust
@@ -60,6 +74,9 @@ jobs:
   integration:
     name: Integration (testcontainers, 실제 Keycloak 26.6)
     runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → testcontainers-rs 동작
+    # 체크아웃만 필요하다
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: rust
@@ -73,6 +90,9 @@ jobs:
   publish:
     needs: [version, integration, install-smoke] # 통합 E2E + 설치 스모크 통과 후에만 crates.io로 나간다
     runs-on: ubuntu-latest
+    # 체크아웃 + crates.io 업로드 — GitHub Release를 만들지 않으므로 write는 불필요하다
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: rust

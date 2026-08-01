@@ -2,10 +2,13 @@ name: php-release
 on:
   push:
     tags: ['php-v*']
-# 최소권한 기본값: 워크플로 레벨에 write를 두면 verify/integration 잡까지 쓰기 권한을 물려받는다.
-# GitHub Release를 만드는 split 잡에만 잡 레벨로 올린다.
-permissions:
-  contents: read
+
+# 최소권한: 워크플로 레벨 기본값을 두지 않고 **모든 잡이 자기 권한을 직접 선언**한다. 워크플로 레벨에
+# `contents: read`를 두면 그 스코프를 실제로 쓰지 않는 잡까지 토큰에 읽기 권한을 갖기 때문이다
+# (SonarQube `githubactions:S7637`. 이 저장소에서 그 규칙이 걸린 워크플로는 정확히 "체크아웃 없는 잡을
+# 가진 넷" — java·dotnet·go·php — 이었다. 나머지 다섯은 모든 잡이 체크아웃해서 걸리지 않았다).
+# ⚠️ 새 잡에는 반드시 `permissions:`를 함께 적을 것 — 빠뜨리면 워크플로 레벨 기본값이 아니라
+# **저장소 기본 권한**(Settings → Actions)을 물려받는다. 그 값은 이 파일 바깥에서 바뀔 수 있다.
 jobs:
   # 태그 접미사 = 릴리스 버전. 이 워크플로에서 버전을 유도하는 **유일한** 지점이다 — install-smoke와
   # split이 각자 태그를 파싱하면 "게이트가 검증한 버전"과 "실제로 미러에 태그되는 버전"이 갈릴 수 있다.
@@ -15,6 +18,8 @@ jobs:
   # install-smoke가 그냥 실패하는 게 아니라 **조용히 다른 버전을 검증하고 통과한다**.
   version:
     runs-on: ubuntu-latest
+    # 태그 문자열만 파싱한다 — 체크아웃도 API 호출도 없어 토큰 스코프가 전혀 필요없다
+    permissions: {}
     outputs:
       version: ${{ steps.derive.outputs.version }}
     steps:
@@ -34,6 +39,12 @@ jobs:
   # 파일 포함규칙·게시 아티팩트 호환성)의 결함은 여기서만 드러난다 — 레지스트리에 태우기 전 마지막 기회다.
   install-smoke:
     needs: version
+    # 호출되는 install-smoke.yml이 체크아웃한다. ⚠️ 재사용 워크플로를 부르는 잡에서 `permissions:`를
+    # 생략하면 호출된 워크플로는 저장소 기본 권한을 상한으로 받는다(GitHub 문서: "If jobs.<job_id>.permissions
+    # is not specified in the calling job, the called workflow will have the default permissions for the
+    # GITHUB_TOKEN"). 즉 여기 한 줄이 곧 호출된 워크플로의 권한 상한이다.
+    permissions:
+      contents: read
     uses: ./.github/workflows/install-smoke.yml
     with:
       lang: php
