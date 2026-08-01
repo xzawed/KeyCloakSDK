@@ -73,6 +73,18 @@ jobs:
         # 테스트는 판별자를 지워도 통과한다. 자가테스트가 stderr 문구까지 고정하는 이유다.
         run: sh scripts/test/test-check-coverage.sh
 
+      # ⚠️ 배포 문서·헬퍼의 자가테스트 4종. 이들은 오래 **어떤 워크플로에도 배선돼 있지 않았고**,
+      # 그래서 DEPLOY.md가 실제와 어긋나도 아무도 몰랐다 — 첫 태그(`php-v0.1.0-rc.1`)를 민 뒤
+      # 문서가 "zero tags"라고 주장하는 상태가 그대로 통과했다(오히려 test-deploy-md.sh의
+      # 어서션이 그 낡은 주장을 강제하고 있었다). 자가테스트가 CI에서 돌지 않으면 그건
+      # 문서일 뿐 가드가 아니다.
+      - name: 배포 문서·헬퍼 자가테스트(DEPLOY.md ↔ deploy-facts SSOT · readiness · trigger)
+        run: |
+          sh scripts/test/test-deploy-facts.sh
+          sh scripts/test/test-deploy-md.sh
+          sh scripts/test/test-release-readiness.sh
+          sh scripts/test/test-release-trigger.sh
+
       - name: 버전 SSOT 가드 자가테스트(반쯤 적용된 범프를 잡는지 + 오탐 없는지)
         run: sh scripts/test/test-check-versions.sh
       - name: 버전 SSOT 대조
