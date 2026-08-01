@@ -70,5 +70,13 @@ lcov.info
 .scamanager/
 
 # coverlet(.NET)이 테스트 실행 때마다 테스트 프로젝트 옆에 떨어뜨리는 커버리지 산출물.
-# ⚠️ 절대경로가 박혀 있어 커밋되면 개인 머신 경로가 공개 이력에 남는다(실제로 한 번 유입됨).
+# ⚠️ 절대경로가 박혀 있어 커밋되면 개인 머신 경로가 공개 이력에 남는다(실제로 한 번 유입됨 —
+# 742a01b의 coverage.json에 `F:\DEVELOPMENT\...` 경로가 그대로 들어갔다).
+# ⚠️ 출력 파일명은 `/p:CoverletOutputFormat`이 정한다. 오래 `coverage.json`(기본 json 형식)만
+# 막아뒀는데 dotnet-ci와 harness가 실제로 쓰는 형식은 **cobertura**라, 로컬에서 CI와 같은 명령을
+# 돌리면 무시되지 않는 `coverage.cobertura.xml`이 남았다(실제로 남는 것을 확인). 한 형식만 막으면
+# 나머지가 새므로 coverlet이 내는 형식을 전부 막는다.
 coverage.json
+coverage.cobertura.xml
+coverage.opencover.xml
+coverage.info
