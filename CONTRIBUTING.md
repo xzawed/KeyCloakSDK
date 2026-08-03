@@ -188,11 +188,25 @@ tag rulesets do the opposite on purpose, and they **must**: a tag ruleset with a
 bypass list can never be satisfied by anyone, so every one of the nine releases would be
 permanently blocked with no way to unblock it.
 
-| Ruleset | Refs | Rule | Who may bypass |
+| Ruleset | Refs | Rule | Who may bypass (as committed) |
 |---|---|---|---|
-| `RELEASE-TAGS-CREATE` | the eight non-Go release tags | `creation` | repository admin (+ the release App once it exists) |
-| `RELEASE-TAGS-CREATE-GO` | `go/v*` | `creation` | repository admin **only** |
-| `RELEASE-TAGS-IMMUTABLE` | all nine | `update`, `deletion` | repository admin |
+| `RELEASE-TAGS-CREATE` | the eight non-Go release tags | `creation` | repository admin — **the release App must be added here** (DEPLOY.md §2-F step 4) |
+| `RELEASE-TAGS-CREATE-GO` | `go/v*` | `creation` | repository admin **only** — never the App |
+| `RELEASE-TAGS-IMMUTABLE` | all nine | `update`, `deletion` | repository admin **only** — never the App |
+
+⚠️ **As committed, all three files list the same single bypass actor (the admin), so nothing yet
+distinguishes the eight from Go, and `dispatch-release.yml` cannot create a tag at all.** That is
+deliberate: the App's `actor_id` is not known until the App exists, and it must be added to exactly
+one of the three. The procedure, including why the other two must never receive it and why a web-UI
+edit is erased by the next `repo-config.mjs apply` (it sends a full `PUT` of the committed file), is
+[DEPLOY.md §2-F](DEPLOY.md). Until that step is done the automated release path is inactive and
+fails closed — releases still go out by hand-pushed tag.
+
+⚠️ **A committed ruleset is not an applied ruleset.** `repo-config.mjs` only walks the files in
+`.github/rulesets/`, so it cannot see a ruleset that exists on github.com but has no file, and CI
+runs the checker's *self-test* rather than `check` (no admin token is stored here). The only thing
+that notices a missing or deactivated tag ruleset is `dispatch-release.yml`, which queries the API
+before cutting a tag and **stops** if any of the three names is absent or not `enforcement: active`.
 
 **Why Go is separated:** Go's tag *is* its publication — `proxy.golang.org` serves whatever
 the tag points at, regardless of CI. No gate can exist after the tag, so Go is excluded from
