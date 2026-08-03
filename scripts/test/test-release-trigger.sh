@@ -22,6 +22,11 @@ assert_contains "$out" "Portal" "java Maven 수동 release 주의"
 assert_fails sh "$SH" perl 0.1.0       # 알 수 없는 언어
 assert_fails sh "$SH" python 1.2         # 비-semver
 assert_fails sh "$SH" python             # 인자 부족
+# ⚠️ dash 전용 회귀(bash에서는 재현되지 않는다): 버전 검사가 `echo "$VER" | grep`이면 dash의
+# echo가 `\c`를 확장해 문자열을 잘라내고, 잘린 앞부분만 정규식을 만족해도 통과한다 — 그러면
+# 이 스크립트가 사람에게 **주입 문자열이 붙은 태그 명령을 복사하라고 안내**한다.
+assert_fails sh "$SH" python '0.1.0\c; touch /tmp/pwned'
+assert_fails sh "$SH" python '0.1.0\nnode-v9.9.9'
 
 # human-gate 불변식: 스크립트가 실제로 git을 변경하는 라인이 없어야 함(주석/echo 안의 문자열은 허용)
 # 실행 라인만 검사: 줄 시작(공백 후)이 git tag/push로 시작하는 라인이 없어야 한다.

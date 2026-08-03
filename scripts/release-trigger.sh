@@ -13,7 +13,10 @@ df_known "$LANG_" || { echo "error: unknown lang '$LANG_'" >&2; usage; }
 # 버전 검증은 언어별이다 — 프리릴리스 표기가 레지스트리마다 다르기 때문(PEP 440 / RubyGems /
 # Maven / SemVer). 예전에는 X.Y.Z만 받아서, "첫 태그는 RC로" 라는 DEPLOY.md §7 권고를 이
 # 헬퍼로는 아예 따를 수 없었다.
-echo "$VER" | grep -qE "$(df_version_re "$LANG_")" || {
+# ⚠️ `echo`가 아니라 `printf '%s\n'`이다. dash(우분투 러너의 /bin/sh)의 `echo`는 `-e` 없이도
+# 백슬래시 이스케이프를 확장한다 — '0.1.0\c; touch /tmp/pwned'가 '0.1.0'으로 잘려 검사를
+# 통과하면, 이 스크립트가 사람에게 **주입 문자열이 붙은 태그 명령을 복사해 실행하라고 안내**한다.
+printf '%s\n' "$VER" | grep -qE "$(df_version_re "$LANG_")" || {
   echo "error: '$VER' is not a valid $LANG_ version" >&2
   echo "       expected: $(df_version_hint "$LANG_")" >&2
   exit 1
@@ -38,8 +41,10 @@ if df_is_prerelease "$VER"; then
 fi
 
 printf '1) 버전 범프\n'
-case "$BUMP" in
-  none*|auto*) printf '   버전 파일 수정 불필요 — %s\n' "$BUMP" ;;
+# 분기는 기계가독 값(df_bump_mode)으로 한다 — df_versionbump는 사람이 읽는 산문이라
+# `none*|auto*` 같은 접두 매칭으로 긁으면 문구를 다듬는 것만으로 분류가 뒤집힌다.
+case "$(df_bump_mode "$LANG_")" in
+  auto) printf '   버전 파일 수정 불필요 — %s\n' "$BUMP" ;;
   *) printf '   ⚠️ 태그 push 전에 수동으로 올릴 것: %s → 값을 %s로\n' "$BUMP" "$VER" ;;
 esac
 

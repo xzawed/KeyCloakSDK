@@ -73,17 +73,22 @@ jobs:
         # 테스트는 판별자를 지워도 통과한다. 자가테스트가 stderr 문구까지 고정하는 이유다.
         run: sh scripts/test/test-check-coverage.sh
 
-      # ⚠️ 배포 문서·헬퍼의 자가테스트 4종. 이들은 오래 **어떤 워크플로에도 배선돼 있지 않았고**,
+      # ⚠️ 배포 문서·헬퍼의 자가테스트 6종. 이들은 오래 **어떤 워크플로에도 배선돼 있지 않았고**,
       # 그래서 DEPLOY.md가 실제와 어긋나도 아무도 몰랐다 — 첫 태그(`php-v0.1.0-rc.1`)를 민 뒤
       # 문서가 "zero tags"라고 주장하는 상태가 그대로 통과했다(오히려 test-deploy-md.sh의
       # 어서션이 그 낡은 주장을 강제하고 있었다). 자가테스트가 CI에서 돌지 않으면 그건
       # 문서일 뿐 가드가 아니다.
-      - name: 배포 문서·헬퍼 자가테스트(DEPLOY.md ↔ deploy-facts SSOT · readiness · trigger)
+      # ⚠️ 이 잡의 셸은 dash다(우분투의 /bin/sh). 로컬 Git Bash와 동작이 갈리는 지점이 실제로
+      # 있었다 — `. "$SH" --lib`(dash는 dot의 인자를 무시한다)와 `echo`의 백슬래시 확장이다.
+      # 이 목록을 고칠 때는 로컬 통과로 만족하지 말고 dash로 한 번 돌릴 것(각 테스트 상단 참고).
+      - name: 배포 문서·헬퍼 자가테스트(DEPLOY.md ↔ deploy-facts SSOT · readiness · trigger · request · dispatch)
         run: |
           sh scripts/test/test-deploy-facts.sh
           sh scripts/test/test-deploy-md.sh
           sh scripts/test/test-release-readiness.sh
           sh scripts/test/test-release-trigger.sh
+          sh scripts/test/test-release-request.sh
+          sh scripts/test/test-dispatch-release.sh
 
       - name: 버전 SSOT 가드 자가테스트(반쯤 적용된 범프를 잡는지 + 오탐 없는지)
         run: sh scripts/test/test-check-versions.sh
@@ -109,11 +114,12 @@ jobs:
         # 권한을 잡 레벨로 내린 뒤(S7637) 남은 안전망은 각 파일 헤더의 **주석**뿐이었다.
         # 주석은 잡을 추가하는 사람이 읽어야만 동작한다.
         #
-        # --min-release=9는 현재 실측치다. glob으로 범위를 좁힌 가드는 대상이 0건이어도
-        # 통과하므로(릴리스 워크플로를 개명하면 그대로 침묵한다) 하한을 명시로 못박는다
-        # — check-docs의 --min-facts/--min-anchors와 같은 관용이다. 릴리스 워크플로를
-        # 늘리면 이 값도 함께 올린다(내리는 PR은 곧 커버리지 축소라 리뷰 신호가 된다).
-        run: node scripts/check-ci-permissions.mjs . --min-release=9
+        # --min-release=10은 현재 실측치다(9개 언어 릴리스 워크플로 + dispatch-release.yml).
+        # glob으로 범위를 좁힌 가드는 대상이 0건이어도 통과하므로(릴리스 워크플로를 개명하면
+        # 그대로 침묵한다) 하한을 명시로 못박는다 — check-docs의 --min-facts/--min-anchors와
+        # 같은 관용이다. 릴리스 워크플로를 늘리면 이 값도 함께 올린다(내리는 PR은 곧 커버리지
+        # 축소라 리뷰 신호가 된다).
+        run: node scripts/check-ci-permissions.mjs . --min-release=10
 
   repo-config:
     # 저장소 설정(브랜치 룰셋) 대조기의 자가테스트.

@@ -22,10 +22,16 @@ trap 'rm -rf "$TMP"' EXIT
 
 # 마커 사이만 뽑고 워크플로 들여쓰기(`run: |` 안 10칸)를 벗긴다. `{10}` 반복 표기는 mawk에서
 # 기본 비활성이라 리터럴 공백 10칸으로 적는다(ubuntu 러너의 기본 awk가 mawk다).
+#
+# ⚠️ `\r`도 떼어낸다. `.gitattributes`는 `*.sh`·`*.md`만 `eol=lf`로 고정하고 `*.yml`은 고정하지
+# 않으므로 Windows 기본(`core.autocrlf=true`) 체크아웃에서 워크플로는 **CRLF**로 내려온다.
+# 그러면 떼어낸 블록이 `Syntax error: word unexpected (expecting "in")`으로 죽어(실측: Alpine
+# dash) 이 테스트는 CI에서만 돌릴 수 있는 것이 됐다 — 로컬에서 검증할 수 없는 가드는 로컬에서
+# 회귀를 잡지 못한다.
 extract() {
   awk '
     /# <<< prerelease-classify/ { inb = 0 }
-    inb                         { sub(/^          /, ""); print }
+    inb                         { sub(/\r$/, ""); sub(/^          /, ""); print }
     /# >>> prerelease-classify/ { inb = 1 }
   ' "$1"
 }

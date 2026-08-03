@@ -1,0 +1,132 @@
+#!/usr/bin/env sh
+# release-request.sh — .github/release-request.json을 검증하고 릴리스 태그를 파생한다.
+#
+# ⚠️ 읽기전용: 어떤 상태도 변경하지 않는다(태그를 만들지 않는다 — 만드는 것은 워크플로다).
+#
+# 왜 태그가 요청 파일에 없는가: 태그를 데이터로 받으면
+# {"lang":"python","version":"0.1.0rc2","tag":"node-v9.9.9"} 가 유효한 JSON으로 통과해
+# **싼 언어를 선언하고 비싼 태그를 미는** 권한상승이 성립한다. 태그는 lang+version에서
+# df_tag로 파생한다 — release-trigger.sh:22가 이미 쓰는 방식이다.
+set -eu
+DIR="$(cd "$(dirname "$0")" && pwd)"
+# release-readiness.sh와 같은 이유로 두 경로를 모두 시도한다(직접 실행 · 테스트에서 소싱).
+if [ -f "$DIR/lib/deploy-facts.sh" ]; then
+  . "$DIR/lib/deploy-facts.sh"
+else
+  . "$DIR/../lib/deploy-facts.sh"
+fi
+
+# JSON 파싱은 node에 맡긴다 — sed로 JSON을 긁으면 중첩·이스케이프에서 조용히 틀린다.
+# 문자열이 아닌 값·파싱 실패는 빈 출력 + 비0으로 fail-closed.
+#
+# ⚠️ 종료코드로 두 가지를 구분한다: 1 = "값이 없거나 부적합"(의도된 fail-closed),
+# 그 외(127 등) = "node를 실행하지 못했다". 예전에는 `2>/dev/null`로 stderr까지 버려서
+# node 부재·크래시가 "lang·version 문자열 필드가 필요하다"로 오보고됐다 — 실제 원인과 무관한
+# 진단이라 사람이 요청 파일을 뒤지며 없는 버그를 찾는다. 지금은 stderr를 살린다. 의도된
+# 거부 경로(process.exit(1))는 stderr에 아무것도 쓰지 않으므로 노이즈가 늘지 않는다.
+rq_field() { # <file> <key> → stdout: 값 · rc 0=성공 1=값 없음/부적합 그 외=node 실행 실패
+  node -e '
+    const fs = require("fs")
+    let obj
+    try { obj = JSON.parse(fs.readFileSync(process.argv[1], "utf8")) } catch { process.exit(1) }
+    // 최상위가 객체가 아니면(예: JSON `null`·배열·숫자) obj[key]가 미처리 TypeError를 던져
+    // 스택트레이스가 stderr로 샌다 — 그러면 "고장"과 "거부"를 구분할 수 없게 된다.
+    if (obj === null || typeof obj !== "object" || Array.isArray(obj)) process.exit(1)
+    const v = obj[process.argv[2]]
+    if (typeof v !== "string") process.exit(1)
+    // ⚠️ 제어문자(특히 개행)를 여기서 막는다. 아래 rq_validate_file의 버전 검사는
+    // `grep -qE "^...$"` 인데 POSIX grep의 ^/$ 는 "문자열 전체"가 아니라 "줄" 단위다 —
+    // JSON의 \n 이스케이프가 실제 개행으로 복원되면 필드값이 여러 줄이 되고, 그 중
+    // 한 줄만 정규식을 만족해도 grep -q가 통과한다(예: version이
+    // "0.1.0\nnode-v9.9.9"). 그러면 stdout도 두 줄이 되어 "<lang> <version> <tag>"를
+    // 위치 인자로 읽는 다운스트림이 태그 대신 공격자가 넣은 두 번째 줄을 $3으로 받는다 —
+    // "싼 언어를 선언하고 비싼 태그를 민다"가 tag 필드가 아니라 version을 통해 성립한다
+    // (코드리뷰에서 발견). 값이 이 함수를 통과하는 유일한 지점이므로 여기서 한 번
+    // 막으면 lang·version·향후 추가되는 어떤 필드에도 같은 방어가 자동 적용된다.
+    //
+    // ⚠️ 리터럴 백슬래시(0x5C)도 함께 막는다 — 백슬래시는 제어문자가 아니라 위 이유만으로는
+    // 통과하는데, POSIX 셸의 echo가 그것을 이스케이프로 확장한다. dash(우분투 러너의
+    // /bin/sh)는 -e 없이도 확장하므로 version = 0.1.0\c go/v9.9.9 가 echo 출력에서
+    // 0.1.0 으로 잘려 버전 정규식을 통과했고, 변수에는 전체 문자열이 남아 stdout의
+    // 공백 3필드 계약이 깨지면서 다운스트림의 cut -f3 가 go/v9.9.9 를 태그로 집었다
+    // (실측 재현). 검사 파이프를 printf로 바꾸는 것이 근본 수정이지만, 아홉 레지스트리의
+    // 어떤 버전 표기에도 백슬래시는 없으므로 관문에서 아예 거부하는 편이 더 좁고 확실하다.
+    // bash·busybox ash는 확장하지 않아 이 결함은 로컬 통과로는 보이지 않았다.
+    //
+    // ⚠️ 이 node 스크립트는 셸의 단따옴표 안에 있다 — 주석에도 작은따옴표를 쓰면 안 된다
+    // (문자열이 그 자리에서 끝나 스크립트가 통째로 깨진다. 실제로 한 번 그랬다).
+    if (/[\x00-\x1f\x7f\\]/.test(v)) process.exit(1)
+    process.stdout.write(v)
+  ' "$1" "$2"
+}
+
+rq_derive_tag() { # <lang> <version> → stdout: 태그
+  printf "$(df_tag "$1")" "$2"
+}
+
+rq_validate_file() { # <path> → stdout: "<lang> <version> <tag>" · 0=진행 1=거부 3=요청없음
+  f="$1"
+  if [ ! -f "$f" ]; then
+    echo "릴리스 요청 파일이 없다: $f — 할 일 없음(no-op)" >&2
+    return 3
+  fi
+
+  # rc 1은 의도된 거부(값 없음/부적합), 그 외는 파싱기 자체의 고장이다 — 둘을 같은 문구로
+  # 보고하면 "node가 없다"가 "요청 파일에 필드가 없다"로 둔갑해 사람이 엉뚱한 곳을 뒤진다.
+  lang_rc=0; lang="$(rq_field "$f" lang)" || lang_rc=$?
+  ver_rc=0;  ver="$(rq_field "$f" version)" || ver_rc=$?
+  if [ "$lang_rc" -gt 1 ] || [ "$ver_rc" -gt 1 ]; then
+    echo "::error::요청 파일 파싱기(node) 실행에 실패했다(rc=$lang_rc/$ver_rc) — 위 stderr가 실제 원인이다(fail-closed)." >&2
+    return 1
+  fi
+  if [ -z "$lang" ] || [ -z "$ver" ]; then
+    echo "::error::릴리스 요청을 읽지 못했다($f) — lang·version 문자열 필드가 필요하다(fail-closed)." >&2
+    return 1
+  fi
+
+  if ! df_known "$lang"; then
+    echo "::error::미지의 언어 '$lang' — 지원: $DEPLOY_LANGS" >&2
+    return 1
+  fi
+
+  # ⚠️ Go는 자동화하지 않는다. 태그가 곧 게시라(proxy가 CI를 기다리지 않는다) 머지 이후에
+  # 어떤 게이트도 둘 수 없고, sum.golang.org가 append-only라 태그를 고쳐 다시 밀면 기존
+  # 소비자가 checksum mismatch를 본다 — 아홉 중 복구 시도가 원래 사고보다 해로운 유일한 곳이다.
+  # 이 거부는 두 번째 방어선이다. 첫 번째는 태그 룰셋(RELEASE-TAGS-CREATE-GO)이며, 그쪽은
+  # 이 워크플로를 수정해도 우회되지 않는다.
+  if [ "$lang" = "go" ]; then
+    echo "::error::go는 자동 릴리스 대상이 아니다 — 태그가 곧 게시이고 회수가 불가능하다." >&2
+    echo "  사람이 직접 실행한다: git tag go/v${ver} && git push origin go/v${ver}" >&2
+    return 1
+  fi
+
+  # 버전 표기는 레지스트리마다 다르다(PEP 440 · RubyGems · Maven · SemVer). 언어별 정규식으로
+  # 검사하는 것은 오타 방지이자 **주입 차단**이다 — 이 값이 태그 문자열과 명령에 삽입된다.
+  # ⚠️ `echo`가 아니라 `printf '%s\n'`이다. dash의 `echo`는 `-e` 없이도 백슬래시 이스케이프를
+  # 확장해 '0.1.0\c …'를 '0.1.0'으로 잘라내고, 잘린 앞부분만 정규식을 만족해도 통과시킨다
+  # (= 검사 우회). printf '%s'는 어떤 POSIX 셸에서도 확장하지 않는다.
+  if ! printf '%s\n' "$ver" | grep -qE "$(df_version_re "$lang")"; then
+    echo "::error::'$lang'의 버전 표기가 아니다: '$ver'" >&2
+    echo "  기대: $(df_version_hint "$lang")" >&2
+    return 1
+  fi
+
+  printf '%s %s %s\n' "$lang" "$ver" "$(rq_derive_tag "$lang" "$ver")"
+  return 0
+}
+
+rq_main() {
+  rq_validate_file "${1:-.github/release-request.json}"
+}
+
+# --lib: 함수만 로드(테스트용). 그 외: main 실행.
+#
+# ⚠️ 소싱하는 쪽은 반드시 **소싱 전에** 위치인자를 설정해야 한다 — 인자를 dot에 직접 넘기면 안 된다:
+#     set -- --lib
+#     . "$SH"
+# POSIX의 `.`(dot)은 파일명 외의 인자를 정의하지 않는다. bash는 호의로 위치인자를 설정하지만
+# **dash는 조용히 무시한다**. 우분투 러너의 `/bin/sh`가 dash라, `. "$SH" --lib`로 쓰면 CI에서만
+# `$1`이 비어 rq_main이 기본 경로로 실행되고(요청 파일 부재 → return 3) 호출자의 `set -e`가
+# 테스트를 죽인다. 로컬 Git Bash(bash)와 busybox ash는 둘 다 통과하므로 이 차이는 CI에서만 보인다.
+# release-readiness.sh도 같은 가드를 쓴다 — 넷(스크립트 2·테스트 2)이 같은 방식이어야 한다.
+[ "${1:-}" = "--lib" ] || rq_main "$@"

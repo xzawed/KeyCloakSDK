@@ -1,0 +1,36 @@
+{
+  "name": "RELEASE-TAGS-IMMUTABLE",
+  "target": "tag",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "always"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/tags/v*",
+        "refs/tags/py-v*",
+        "refs/tags/node-v*",
+        "refs/tags/dotnet-v*",
+        "refs/tags/php-v*",
+        "refs/tags/rust-v*",
+        "refs/tags/ruby-v*",
+        "refs/tags/kotlin-v*",
+        "refs/tags/go/v*"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "update"
+    },
+    {
+      "type": "deletion"
+    }
+  ]
+}

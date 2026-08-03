@@ -1,0 +1,349 @@
+name: Dispatch Release
+
+# 릴리스 PR **머지**가 트리거다 — 그 머지가 사람의 승인이다.
+# 이 워크플로는 검증하고 태그만 만든다. 게시는 기존 <lang>-release.yml이 태그에 반응해 수행하며
+# 그쪽은 한 줄도 수정하지 않았다(verify·integration·install-smoke 게이트 전부 그대로).
+#
+# ⚠️ 파일명이 `dispatch-release.yml`인 것은 의도다 — scripts/check-ci-permissions.mjs의
+# isRelease(/release\.ya?ml$/)에 매칭돼야 릴리스 워크플로용 강한 권한 규칙을 상속한다.
+# `release-dispatch.yml`로 두면 가장 특권적인 이 파일만 조용히 검사에서 빠진다.
+#
+# ⚠️ 이 파일의 검증 블록 셋은 마커(`# >>> dispatch-*` … `# <<< dispatch-*`)로 감싸져 있고
+# scripts/test/test-dispatch-release.sh가 **그 블록을 그대로 떼어내 실행**한다. 복사본을 두고
+# 테스트하면 워크플로만 고쳤을 때 조용히 통과한다(test-release-prerelease.sh가 세운 관용).
+# 마커를 지우거나 이름을 바꾸면 그 테스트가 빨개진다 — 그게 의도다.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/release-request.json']
+  # 복구 경로(스펙 §4.5): 태그 삭제 후 재시도는 채택하지 않았으므로 정상 경로는 항상 새 버전이다.
+  # 이 입력은 요청 파일 내용이 이미 동일해 diff가 나지 않는 상황에서 감사 가능한 수동 재실행을
+  # 제공한다 — 사람이 셸에서 PAT로 태그를 미는 것보다 로그가 남는다.
+  #
+  # ⚠️ workflow_dispatch는 **선택된 ref의 워크플로 정의**로 실행되고 actions/checkout도 기본이
+  # 그 ref다. 즉 ref 가드가 없으면 "브랜치 x를 만들고 거기서 dispatch"만으로 머지·PR diff·사람
+  # 승인을 전부 건너뛴 릴리스가 성립한다(시크릿은 브랜치로 스코프되지 않는다). 아래 첫 두
+  # 스텝이 그것을 막는다 — 하나는 트리거를, 하나는 체크아웃된 트리를.
+  workflow_dispatch:
+    inputs:
+      lang:
+        description: '언어 (go 제외 — go는 사람이 직접 태그한다)'
+        required: true
+      version:
+        description: '버전 (해당 레지스트리 표기 — 예: python 0.1.0rc2, ruby 0.1.0.rc1)'
+        required: true
+
+# 태그 생성이 겹치면 원자성이 깨진다. cancel-in-progress는 반드시 false다 —
+# git push 도중 취소가 곧 그 사고다.
+#
+# ⚠️ 그러나 concurrency가 지켜주는 것은 **실행 중**인 잡뿐이다. 같은 그룹에서 대기(pending)
+# 중이던 실행은 새 실행이 큐에 들어올 때 GitHub이 **취소**한다. 릴리스 PR을 연달아 셋 머지하면
+# 가운데 것이 조용히 유실되고 그 태그는 만들어지지 않는다 — 요청 파일은 이미 다음 PR이
+# 덮어썼으므로 재실행으로도 되살릴 수 없다(같은 내용이면 push 트리거도 다시 걸리지 않는다).
+# **릴리스 PR은 하나씩 머지하고, 태그가 실제로 생긴 것을 확인한 뒤 다음을 머지한다**(DEPLOY.md §4).
+concurrency:
+  group: dispatch-release
+  cancel-in-progress: false
+
+# 최소권한: 워크플로 레벨 기본값을 두지 않고 잡이 자기 권한을 직접 선언한다(릴리스 워크플로 관용).
+jobs:
+  cut-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      # 체크아웃과 룰셋 조회만 GITHUB_TOKEN을 쓴다. 태그 push는 App 설치 토큰으로 하므로 이
+      # 토큰에는 write가 필요 없다 — 그리고 main.json의 bypass_actors:[]가 어차피 이 토큰의
+      # main push를 막는다. 룰셋 조회는 인증을 **먼저 시도하고** 실패하면 익명으로 재시도한다
+      # (해당 스텝 주석 참고: administration은 워크플로 permissions에 아예 없는 키라 부여 불가).
+      contents: read
+    steps:
+      # ── C1: 트리거 ref 가드 — 토큰 발급보다 **먼저**, 체크아웃보다도 먼저 ────────────
+      - name: Refuse to run outside main
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          # >>> dispatch-refguard
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::dispatch-release는 main에서만 실행할 수 있다(현재 ref: ${GITHUB_REF:-없음})."
+            echo "  workflow_dispatch는 선택된 ref의 워크플로 정의로 실행되고 checkout도 그 ref를 가져온다."
+            echo "  가드가 없으면 브랜치 하나를 밀고 dispatch하는 것만으로 머지·PR diff·사람 승인을"
+            echo "  전부 건너뛴 릴리스가 성립한다 — 시크릿은 브랜치로 스코프되지 않는다."
+            exit 1
+          fi
+          echo "트리거 ref 확인: $GITHUB_REF (event=${EVENT_NAME:-?})"
+          # <<< dispatch-refguard
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # ⚠️ 앞의 ref 가드는 **트리거**를 막는다. 이것은 체크아웃된 **트리**를 막는다 —
+      # "main에서 dispatch했는데 다른 커밋이 체크아웃된" 경우가 남기 때문이다.
+      # persist-credentials: false라 이 fetch는 익명이다(공개 저장소 — 아래 git ls-remote도
+      # 이미 같은 전제 위에 있다). 판정 불가는 통과가 아니라 중단이다.
+      - name: Assert the checked-out commit is on main
+        run: |
+          git fetch --no-tags --depth=100 origin main
+          HEAD_SHA="$(git rev-parse HEAD)"
+          MAIN_SHA="$(git rev-parse FETCH_HEAD)"
+          if [ "$HEAD_SHA" = "$MAIN_SHA" ]; then
+            echo "체크아웃 커밋 = origin/main ($HEAD_SHA)"
+          elif git merge-base --is-ancestor "$HEAD_SHA" "$MAIN_SHA"; then
+            echo "체크아웃 커밋 $HEAD_SHA 은 origin/main($MAIN_SHA)의 조상이다"
+          else
+            echo "::error::체크아웃된 커밋 $HEAD_SHA 이 origin/main($MAIN_SHA) 선상에 없다 — 태그를 만들지 않는다."
+            echo "  얕은 클론이라 조상 판정이 실패했을 수도 있다. 어느 쪽이든 확인 불가를 통과로 취급하지 않는다."
+            exit 1
+          fi
+
+      - name: Validate the release request and derive the tag
+        id: request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WF_LANG: ${{ github.event.inputs.lang }}
+          WF_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          # workflow_dispatch 경로도 파일 경로와 **같은 검증 코드**를 지난다 — 검증이 두 벌이면
+          # 한쪽만 고쳐지는 드리프트가 생긴다. 입력을 임시 요청 파일로 만들어 같은 함수에 넣는다.
+          #
+          # ⚠️ `required: true`는 **빈 문자열을 막지 못한다**(GitHub Actions의 required는 입력의
+          # 존재만 본다). lang만 비면 아래 분기가 거짓이 되어 디스패처가 조용히 디스크의 요청
+          # 파일을 평가한다 — 사람이 요구한 것과 다른 릴리스가 나갈 수 있다. 둘 다 있거나 둘 다
+          # 없거나여야 한다.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && { [ -z "$WF_LANG" ] || [ -z "$WF_VERSION" ]; }; then
+            echo "::error::workflow_dispatch에는 lang·version을 둘 다 넣어야 한다(lang='$WF_LANG' version='$WF_VERSION')."
+            exit 1
+          fi
+          REQ=.github/release-request.json
+          if [ -n "$WF_LANG" ]; then
+            REQ="$RUNNER_TEMP/release-request.json"
+            node -e '
+              const fs = require("fs")
+              fs.writeFileSync(process.argv[1], JSON.stringify({ lang: process.argv[2], version: process.argv[3] }))
+            ' "$REQ" "$WF_LANG" "$WF_VERSION"
+          fi
+          set +e
+          OUT="$(sh scripts/release-request.sh "$REQ")"
+          RC=$?
+          set -e
+          if [ "$RC" -eq 3 ]; then
+            echo "요청 파일이 없다(리버트 등) — 할 일 없음."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$RC" -eq 0 ] || exit "$RC"
+          # ⚠️ `echo "$OUT" | cut -d' ' -f3`로 읽지 않는다. dash의 echo는 백슬래시 이스케이프를
+          # 확장하므로 값에 리터럴 백슬래시가 있으면 필드가 어긋나고 다운스트림이 공격자가 고른
+          # 문자열을 태그로 집는다(release-request.sh의 관문이 백슬래시를 거부하는 것이 1차
+          # 방어이고, 이것이 2차다). 계약은 "공백 3필드 한 줄"이므로 그 계약 자체를 어서션한다.
+          set -f
+          # shellcheck disable=SC2086
+          set -- $OUT
+          set +f
+          if [ "$#" -ne 3 ]; then
+            echo "::error::검증 스크립트 출력이 공백 3필드가 아니다($# 필드): [$OUT]"
+            exit 1
+          fi
+          {
+            printf 'lang=%s\n' "$1"
+            printf 'version=%s\n' "$2"
+            printf 'tag=%s\n' "$3"
+            printf 'proceed=true\n'
+          } >> "$GITHUB_OUTPUT"
+          printf '요청 확인: lang=%s version=%s tag=%s\n' "$1" "$2" "$3"
+
+      # ⚠️ GitHub은 job-level `if:`에 secrets 컨텍스트를 노출하지 않는다. 시크릿 가드는 반드시
+      # 스텝 안에서 env-매핑된 값으로 해야 실제로 동작한다(php-release.yml의 선례와 동일).
+      # 미설정이 "스킵"이 되면 아무것도 하지 않은 실행이 성공한 실행과 구분되지 않는다.
+      #
+      # ⚠️ 이 가드는 반드시 request 스텝 **뒤**에 있어야 한다. 앞에 두면, 리버트로 요청 파일이
+      # 사라져 스펙이 "깨끗한 no-op"이라 약속한 경우(proceed=false)에도 App 시크릿이 없다는
+      # 이유로 빨간불이 난다 — 할 일이 없는 실행은 조용히 끝나야 한다.
+      - name: Fail closed when the release App credentials are unset
+        if: steps.request.outputs.proceed == 'true'
+        env:
+          APP_ID: ${{ secrets.RELEASE_APP_ID }}
+          APP_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          missing=''
+          [ -z "$APP_ID" ] && missing="$missing RELEASE_APP_ID"
+          [ -z "$APP_KEY" ] && missing="$missing RELEASE_APP_PRIVATE_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::릴리스 App 자격증명 미설정 —$missing. 태그를 만들 수 없다(fail-closed)."
+            echo "  기본 GITHUB_TOKEN으로 만든 태그는 릴리스 워크플로를 트리거하지 않으므로 App이 필수다."
+            echo "  설정 절차: DEPLOY.md §2-F (Release automation)."
+            exit 1
+          fi
+
+      # 요청이 선언한 버전과 매니페스트가 어긋나면 태그를 만들지 않는다. 추출 SSOT는
+      # check-versions.mjs --list 하나다 — 정규식을 여기에 복제하면 갈라진다.
+      #
+      # ⚠️ **면제 대상은 하드코딩하지 않는다.** 한때 `php` 리터럴 하나만 면제했는데, DEPLOY.md
+      # §1이 이미 분류해 둔 자동범프는 **넷**(go·php·dotnet·java)이다. 그 결과 java는 POM이
+      # 설계대로 `-SNAPSHOT`이라 **모든** 릴리스가 "버전 범프가 반쯤 적용됐다"는 거짓 진단으로
+      # 중단됐고(어떤 값도 양쪽을 만족할 수 없다), dotnet은 csproj의 로컬 기본값 `0.1.0`만
+      # 우연히 통과하고 `0.1.0-rc.2` 같은 RC는 전부 중단됐다. 분류는 SSOT(df_bump_mode)에서
+      # 가져오고, 산문(df_versionbump)을 패턴으로 긁지 않는다.
+      - name: Cross-check the declared version against the language manifest
+        if: steps.request.outputs.proceed == 'true'
+        env:
+          LANG_: ${{ steps.request.outputs.lang }}
+          VERSION: ${{ steps.request.outputs.version }}
+        run: |
+          # >>> dispatch-manifest
+          . scripts/lib/deploy-facts.sh
+          MODE="$(df_bump_mode "$LANG_")"
+          if [ "$MODE" = "auto" ]; then
+            echo "$LANG_ 은 자동범프(태그가 버전 SSOT)라 대조할 매니페스트가 없다 — 건너뛴다."
+            exit 0
+          fi
+          if [ "$MODE" != "manual" ]; then
+            echo "::error::$LANG_ 의 버전범프 모드를 판정하지 못했다(df_bump_mode='$MODE') — 검증 불가(fail-closed)."
+            exit 1
+          fi
+          ACTUAL="$(node scripts/check-versions.mjs --list | awk -v l="$LANG_" '$1 == l { print $2 }')"
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::$LANG_ 의 매니페스트 버전을 추출하지 못했다 — 정합성 검증 불가(fail-closed)."
+            exit 1
+          fi
+          if [ "$ACTUAL" != "$VERSION" ]; then
+            echo "::error::요청은 $LANG_ $VERSION 이지만 매니페스트는 $ACTUAL 을 선언한다. 버전 범프가 반쯤 적용됐다."
+            exit 1
+          fi
+          echo "요청 $VERSION ↔ 매니페스트 $ACTUAL 일치"
+          # <<< dispatch-manifest
+
+      # 태그 룰셋이 없으면 승인 없는 태그 생성을 막는 장치가 사라진 상태다. repo-config.mjs는
+      # orphan 룰셋(파일 없이 라이브에만 있음/라이브에서 삭제됨)을 감지하지 못하고 CI에서
+      # check도 돌지 않으므로, 룰셋 삭제는 저장소 어디에서도 신호가 나지 않는다.
+      # App 토큰을 들고 있는 이 워크플로가 유일하게 확인할 수 있는 지점이다.
+      #
+      # 세 룰셋을 **전부** 요구하고 `enforcement`까지 본다. 한때 RELEASE-TAGS-CREATE 하나만
+      # 이름으로 확인했는데, 스펙이 "Go 배제는 반드시 서버상태에 있어야 한다"고 못박은 룰셋은
+      # RELEASE-TAGS-CREATE-GO이고 그것이 빠져 있었다 — 감지 장치가 정작 지켜야 할 것을
+      # 빼놓고 본 셈이다. `enforcement`가 evaluate/disabled로 바뀐 룰셋은 아무것도 강제하지
+      # 않는데 이름만 보는 검사는 그것을 통과시킨다.
+      #
+      # ⚠️ 조회는 인증을 먼저 시도하고(익명은 IP당 60/시간이고 러너 IP는 공유된다 — 403은 드문
+      # 일이 아니다) 실패하면 익명으로 재시도한다. `GET /repos/{owner}/{repo}/rulesets`는
+      # Administration: read를 요구하는데 워크플로 `permissions:` 블록에는 `administration`
+      # 이라는 키 자체가 없어 부여할 수 없다 — 이 저장소가 public이라 익명 GET이 200을 준다.
+      # ⚠️ **둘 다 실패하면 경고가 아니라 중단이다.** "확인 불가"를 통과로 취급하면 이 저장소가
+      # 스스로 세운 원칙("배포 시크릿 미설정은 스킵이 아니라 실패여야 한다")과 정면으로 어긋난다.
+      # 저장소가 private으로 바뀌어 조회가 영구 실패하는 경우의 탈출구는 이 워크플로가 아니라
+      # 사람이 직접 태그를 미는 경로(DEPLOY.md §4-5)가 이미 제공한다.
+      - name: Assert the tag rulesets are still in place
+        if: steps.request.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RS_FILE="$RUNNER_TEMP/rulesets.json"
+          RS_URL="https://api.github.com/repos/${GITHUB_REPOSITORY}/rulesets"
+          fetch_rulesets() { # $1: bearer 토큰(빈 문자열이면 익명) → 0=HTTP 200
+            if [ -n "$1" ]; then
+              HTTP_CODE="$(curl -sS -o "$RS_FILE" -w '%{http_code}' \
+                -H "Authorization: Bearer $1" -H 'Accept: application/vnd.github+json' "$RS_URL")" || return 1
+            else
+              HTTP_CODE="$(curl -sS -o "$RS_FILE" -w '%{http_code}' \
+                -H 'Accept: application/vnd.github+json' "$RS_URL")" || return 1
+            fi
+            [ "$HTTP_CODE" = "200" ]
+          }
+          if ! fetch_rulesets "$GH_TOKEN" && ! fetch_rulesets ""; then
+            echo "::error::룰셋을 조회하지 못했다(마지막 HTTP ${HTTP_CODE:-없음}) — 강제 장치의 존재를 확인할 수 없다."
+            echo "  확인 불가는 통과가 아니다(fail-closed). 지금 릴리스해야 한다면 사람이 직접 태그를 민다(DEPLOY.md §4-5)."
+            exit 1
+          fi
+          # grep이 아니라 node로 파싱한다 — JSON 공백·줄바꿈이 문자열 매칭을 깨뜨릴 수 있다.
+          if ! MISSING="$(node -e '
+            const fs = require("fs")
+            const want = ["RELEASE-TAGS-CREATE", "RELEASE-TAGS-CREATE-GO", "RELEASE-TAGS-IMMUTABLE"]
+            let arr
+            try { arr = JSON.parse(fs.readFileSync(process.argv[1], "utf8")) } catch { process.exit(1) }
+            if (!Array.isArray(arr)) process.exit(1)
+            const active = new Set(
+              arr.filter((r) => r && r.enforcement === "active").map((r) => r.name),
+            )
+            process.stdout.write(want.filter((n) => !active.has(n)).join(" "))
+          ' "$RS_FILE")"; then
+            echo "::error::룰셋 응답을 파싱하지 못했다 — 확인 불가를 통과로 취급하지 않는다(fail-closed)."
+            exit 1
+          fi
+          if [ -n "$MISSING" ]; then
+            echo "::error::태그 룰셋이 없거나 아직 적용되지 않았거나 enforcement가 active가 아니다:$MISSING"
+            echo "  1일차의 실제 상태는 '미적용'이다 — 파일은 저장소에 있어도 서버에 올라가야 효력이 생긴다."
+            echo "  적용: node scripts/repo-config.mjs apply  (⚠️ 전체 PUT이므로 웹 UI로 추가한 bypass_actors를 지운다 — DEPLOY.md §2-F)"
+            exit 1
+          fi
+          echo "태그 룰셋 3종 확인됨(전부 enforcement=active)"
+
+      - name: Mint a GitHub App installation token
+        # 기본 GITHUB_TOKEN으로 만든 태그는 다른 워크플로를 트리거하지 않는다(GitHub의 재귀
+        # 실행 방지). 이 한 가지 제약이 App을 요구한다 — 권한은 Contents: write 하나뿐이고,
+        # main.json의 bypass_actors:[]가 이 토큰의 main push를 막는다.
+        if: steps.request.outputs.proceed == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Create and push the release tag
+        if: steps.request.outputs.proceed == 'true'
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ steps.request.outputs.tag }}
+          LANG_: ${{ steps.request.outputs.lang }}
+          VERSION: ${{ steps.request.outputs.version }}
+        run: |
+          # 파생된 태그 **자체**를 되돌릴 수 없는 행위 직전에 한 번 더 검증한다. 앞선 검사는
+          # 전부 lang·version에 대한 것이고, 이것은 실제로 push될 문자열에 대한 것이다 —
+          # 값이 GITHUB_OUTPUT 파일을 한 번 왕복한 뒤이기도 하다. `/`를 포함하면 무조건
+          # 거부한다: `go/v*` 형태를 원천 차단하는 가장 좁은 규칙이고, Go는 태그가 곧 게시라
+          # 이 워크플로가 만들어서는 안 되는 유일한 태그다.
+          # >>> dispatch-tagguard
+          case "$TAG" in
+            */*)
+              echo "::error::파생된 태그에 '/'가 있다: '$TAG' — 이 워크플로는 go/v* 형태의 태그를 만들지 않는다."
+              exit 1
+              ;;
+          esac
+          if ! printf '%s\n' "$TAG" | grep -qE '^(v|py-v|node-v|dotnet-v|php-v|rust-v|ruby-v|kotlin-v)[0-9A-Za-z.+-]+$'; then
+            echo "::error::파생된 태그가 릴리스 태그 형태가 아니다: '$TAG'"
+            exit 1
+          fi
+          echo "태그 형태 확인: $TAG"
+          # <<< dispatch-tagguard
+          # 이미 존재하면 스킵한다(멱등) — 같은 요청이 재머지되거나 워크플로가 재실행돼도
+          # 안전해야 한다. 릴리스 태그는 RELEASE-TAGS-IMMUTABLE로 불변이므로 "존재한다"는
+          # 종착 상태이지 되돌릴 수 있는 상태가 아니다. 재시도는 항상 새 버전으로 전진한다.
+          #
+          # ⚠️ `--exit-code`의 2("없음")와 128(전송·인증 실패)을 구분해야 한다. `if git ls-remote`
+          # 한 줄로 쓰면 원격에 닿지도 못한 실행이 "태그 없음"으로 읽혀 그대로 태그 생성으로
+          # 넘어간다 — 멱등성 검사가 실패했는데 그 사실이 어디에도 나타나지 않는다.
+          set +e
+          git ls-remote --tags --exit-code origin "refs/tags/${TAG}" >/dev/null 2>&1
+          LS_RC=$?
+          set -e
+          case "$LS_RC" in
+            0)
+              echo "태그 ${TAG} 가 이미 존재한다 — 아무것도 하지 않는다(멱등)."
+              exit 0
+              ;;
+            2) : ;;  # 원격에 없음 — 정상 경로
+            *)
+              echo "::error::원격 태그 조회에 실패했다(git ls-remote rc=$LS_RC) — 태그가 이미 있는지 알 수 없다."
+              echo "  확인 불가는 통과가 아니다(fail-closed)."
+              exit 1
+              ;;
+          esac
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # ⚠️ 토큰을 remote URL에 넣지 않는다 — 그 형태는 git remote -v·reflog·오류 출력에 남는다.
+          # credential helper가 push 시점에 환경변수에서 읽게 한다(php-release.yml과 동일 기법).
+          git config --local credential.helper \
+            '!f() { echo username=x-access-token; echo "password=$APP_TOKEN"; }; f'
+          git tag "$TAG"
+          git push "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${TAG}"
+          echo "### 릴리스 태그 생성됨" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 언어: \`${LANG_}\` · 버전: \`${VERSION}\` · 태그: \`${TAG}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 게시는 \`${LANG_}\` 릴리스 워크플로가 이어서 수행한다(verify → integration → install-smoke → 레지스트리)." >> "$GITHUB_STEP_SUMMARY"

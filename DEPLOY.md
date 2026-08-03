@@ -82,7 +82,20 @@ Measured locally (this is the "Tier 1" pre-flight; none of it touches a public r
 - **`install-smoke` gate**: unit and integration suites both run *inside the monorepo*, so neither can catch a defect that only exists in the **packaged artifact** — manifest metadata, file include/exclude rules, published-artifact compatibility. That layer is exactly where the Kotlin binary-metadata problem lived. Every release workflow now calls the reusable [`install-smoke.yml`](.github/workflows/install-smoke.yml) for its own language before publishing: it publishes to a **local** registry and then installs from it into a clean container outside the monorepo and runs the quickstart. The publishing job lists `install-smoke` in `needs:`, so a package that cannot actually be consumed never reaches a public registry. It reuses `harness/install/install-verify.sh` — the same recipe the nightly `harness` workflow already runs — and that script exits non-zero if any language's matrix row is ✗. ⚠️ It builds Docker images, so it is slow (45-minute timeout) and is deliberately wired only into the tag path, never into PRs.
 - **Go's gate is different in kind**: `go-release.yml`'s `verify`/`integration` jobs run before the `release` job, but the module proxy serves whatever the *tag* points at — it does not wait for CI. Once the tag is pushed, the version is effectively public.
 - **PHP's gate is real now**: `verify` + `integration` → `split`, and GitHub Release creation lives inside `split`, **after** the mirror push succeeds — so the release notes can no longer announce a publication that did not happen.
-- **human-gate**: the actual deployment trigger (tag push) must always be performed **by a human directly**. `release-trigger.sh` only prints the commands and does not run `git tag`/`git push` itself.
+- **human-gate**: the deployment decision must always be made **by a human**. There are two
+  supported ways to express it. (1) **Merge a release PR** — Claude prepares a PR that bumps
+  the version and writes `.github/release-request.json`; merging it is the approval, and
+  `dispatch-release.yml` cuts the tag from `lang` + `version` (never from a `tag` field, which
+  would let a cheap language declare an expensive tag). ⚠️ **This path does not work until the
+  one-time setup in §2-F is complete** — the tag-cutting App and the tag rulesets must both
+  exist, and until they do the workflow fails closed without creating anything. ⚠️ Merge release
+  PRs **one at a time** (see §4 step 5). (2) **Push the tag by hand** — still supported, and
+  **mandatory for Go**, whose tag *is* its publication. `release-trigger.sh` only prints the
+  commands and never runs `git tag`/`git push` itself.
+- **Tag creation is now enforced, not merely conventional.** Three tag rulesets restrict who
+  may create release tags; `go/v*` is restricted to the repository admin, so no workflow change
+  can make Go release automatically. The definitions are committed under `.github/rulesets/`,
+  but a committed definition is not an applied one — see §2-F step 3, and CONTRIBUTING §4.
 - **Irreversible**: no registry allows re-publishing the same version — if you push a wrong tag, that version number is effectively burned.
 - **Dry-run required**: before pushing a tag, always confirm with a local dry-run (building only the artifacts, without deploying) that the artifacts are generated correctly (per-language in the §0 table; also included in the `release-trigger.sh` output).
 
@@ -187,6 +200,32 @@ What `php-release.yml` does instead: once `verify` passes, the `split` job runs 
 ### E. No Setup (Go)
 
 1. No prior setup is needed at all. When you push a `go/v*` tag, `proxy.golang.org` caches the module on-demand on the first `go get`/`go install` request. Since it is a monorepo submodule, the tag must have the `go/` prefix.
+
+### F. Release automation — the tag-cutting GitHub App (every language except Go)
+
+This is what makes the "merge a release PR" path of §1 work. **Until all four steps below are done that path is inactive**: `dispatch-release.yml` fails closed — it names the missing secret, or reports that the tag rulesets are absent or not yet applied — and no tag is created. Nothing is published and nothing is burned; you simply fall back to pushing the tag by hand, which is the only supported path for Go anyway.
+
+⚠️ **The order matters, and step 4 will be silently undone if you take a shortcut.** Read it before starting.
+
+1. **Create and install a GitHub App** — Settings → Developer settings → GitHub Apps → New GitHub App. Permissions: **Contents: Read and write, and nothing else**. Install it on `xzawed/KeyCloakSDK` only. Keep the numeric **App ID** and generate a **private key** (`.pem`).
+
+   > Why an App is required at all: a tag created with the default `GITHUB_TOKEN` does **not** trigger other workflows (GitHub's recursion guard), so the nine release workflows would never fire. That single constraint is the entire reason this credential exists. `main.json`'s `bypass_actors: []` still stops this token from pushing to `main`, so its blast radius is release tags and nothing else.
+
+2. **Register two secrets in this repository** (Settings → Secrets and variables → Actions): `RELEASE_APP_ID` (the numeric App ID) and `RELEASE_APP_PRIVATE_KEY` (the whole `.pem`, BEGIN/END lines included). If either is unset the workflow emits `::error::` and exits 1 — it never skips silently, for the same reason .NET and Kotlin no longer do (§2-A step 5, §2-C step 3).
+
+3. **Apply the tag rulesets**: `node scripts/repo-config.mjs apply` (needs an admin token; the three definitions are already committed under `.github/rulesets/`). Then run `node scripts/repo-config.mjs check` and confirm it reports no drift — `target: "tag"` may return server-managed fields the checker was only taught about branch rulesets, in which case use `pull` to diff and extend `SERVER_FIELDS`.
+
+4. **Add the App to `RELEASE-TAGS-CREATE`, and to nothing else.** The committed `tags-create.json` lists only the repository admin as a bypass actor, so after step 3 the App still cannot create tags and the flow stops at its last step (fail-closed, so nothing dangerous — just stuck). Add this entry to the `bypass_actors` array of **`.github/rulesets/tags-create.json`**, commit it, and run `apply` again:
+
+   ```json
+   { "actor_id": <APP_ID>, "actor_type": "Integration", "bypass_mode": "always" }
+   ```
+
+   > ⚠️ **Never add it to `tags-create-go.json`.** That file is the only reason "Go is released by a human" is a fact about server state rather than a promise inside a workflow file — and a workflow file can be rewritten by a single merge. Go's tag *is* its publication, `sum.golang.org` is append-only, and it is the one registry where the recovery attempt is worse than the original mistake (§6).
+   >
+   > ⚠️ **Never add it to `tags-immutable.json`.** The App must not be able to move or delete a release tag. Recovery from a failed release is always "go forward to a new version", never "delete and retry".
+   >
+   > ⚠️ **Edit the file, not the web UI.** `repo-config.mjs apply` sends a full `PUT` of each committed definition, so a bypass actor added through the web UI is erased the next time anyone applies — and CI never runs `check`, so nothing would report the drift. This is exactly why the workflow's own recovery hint points at `apply` with that caveat attached.
 
 ---
 
@@ -327,7 +366,15 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 2. **dry-run** — locally confirm artifact generation without deploying (the relevant language in §3).
 3. **`./scripts/release-readiness.sh <lang>`** — check the secret/registry/tag readiness.
 4. **`./scripts/release-trigger.sh <lang> <ver>`** — prints the version-bump guidance, dry-run command, pre-checks, and exact tag command (does not execute them). ✅ It validates the version **per language**, so it accepts prereleases in each registry's own spelling (`0.1.0rc1` for Python, `0.1.0.rc1` for Ruby, `0.1.0-rc.1` for SemVer registries) and rejects the wrong one with the expected form in the error. **Do not skip it for an RC** — that is precisely when it earns its keep, because the tag↔manifest guard is literal string equality (§7).
-5. **A human pushes the tag** — copy and run the printed `git tag ... && git push origin ...` as-is.
+5. **A human approves** — either merge the release PR (step 1 is in the PR; steps 2–4 still happen
+   before you open it), or, for Go, copy and run the printed `git tag ... && git push origin ...`
+   as-is. The PR path requires the one-time setup in §2-F.
+   > ⚠️ **Merge release PRs one at a time, and confirm the tag exists before merging the next.**
+   > `dispatch-release.yml` serialises itself with a `concurrency` group, which protects a run that
+   > is already executing — but GitHub *cancels* a **pending** run in a group when a newer one is
+   > queued. Merge three release PRs back to back and the middle one is silently dropped: no tag,
+   > no error, and no way to replay it, because the next PR has already overwritten
+   > `.github/release-request.json` and an unchanged file does not re-trigger the `push` path.
 6. **Check GitHub Actions** — confirm the relevant release workflow ended green. Every secret-backed path now fails closed when its secret is unset, so green no longer hides a skipped publish (that was previously false for .NET and Kotlin — §2-C, §2-A step 5). Note the phrasing: Go has no secret at all, and the three OIDC languages authenticate by a registered publisher rather than a stored secret — for those, an unset/misregistered publisher fails at the publish call, not at a preflight. What green still does *not* tell you: for Java and Kotlin it means "uploaded to Central Portal staging", not "published" (step 7); for Go it means "tag and GitHub Release created", not "the proxy serves the module"; for PHP it means "pushed to the mirror", after which Packagist still has to pick the tag up.
 7. **(Maven Central family only) Portal manual release** — for Java and Kotlin, a human must click Publish in the Central Portal Deployments for the final public release.
 8. **Verify on the registry itself** — open the package page and confirm the version, the README rendering, and the file list. This is the only step that actually proves the release happened.
