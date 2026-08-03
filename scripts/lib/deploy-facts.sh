@@ -46,6 +46,23 @@ df_versionbump() { case "$1" in
   ruby) echo "ruby/lib/keycloak_sdk/version.rb VERSION" ;;
   kotlin) echo "kotlin/build.gradle.kts version" ;; esac; }
 
+# 버전범프 **모드** — 기계가독 분류(auto|manual). DEPLOY.md §1의 분류표와 같은 사실이다.
+#   auto   = 태그가 버전 SSOT다. 매니페스트에는 대조할 값이 아예 없거나(go·php·dotnet),
+#            의도적으로 다른 값이 들어 있다(java의 `-SNAPSHOT` — versions-maven-plugin이
+#            배포 시점에 태그값을 주입하고 POM은 SNAPSHOT을 유지한다).
+#   manual = 사람이 매니페스트를 올려야 한다. 태그↔매니페스트 정확비교의 대상이다.
+#
+# ⚠️ 이 함수가 df_versionbump와 별도로 존재하는 이유: df_versionbump는 사람이 읽는 **산문**
+# (파일 경로·설명)이다. 소비자가 그걸 `case "$BUMP" in none*|auto*)` 로 긁으면 문구를 한 번
+# 다듬는 것만으로 분류가 조용히 뒤집힌다. 실제로 dispatch-release.yml은 산문 대신 `php`를
+# 하드코딩하고 있었고, 그 결과 **java는 모든 릴리스가**(POM이 설계대로 `-SNAPSHOT`이라
+# 어떤 값도 대조를 만족할 수 없다) **dotnet은 `0.1.0` 외 모든 버전이** "버전 범프가 반쯤
+# 적용됐다"는 거짓 진단으로 중단됐다.
+df_bump_mode() { case "$1" in
+  go|php|dotnet|java) echo "auto" ;;
+  rust|python|node|ruby|kotlin) echo "manual" ;;
+esac; }
+
 df_dryrun() { case "$1" in
   go) echo "go -C go build ./... && go -C go vet ./... && go -C go test ./..." ;;
   php) echo "cd php && composer install && composer audit && vendor/bin/phpstan analyse && vendor/bin/phpunit --testsuite unit" ;;

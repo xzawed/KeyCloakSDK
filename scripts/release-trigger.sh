@@ -41,8 +41,10 @@ if df_is_prerelease "$VER"; then
 fi
 
 printf '1) 버전 범프\n'
-case "$BUMP" in
-  none*|auto*) printf '   버전 파일 수정 불필요 — %s\n' "$BUMP" ;;
+# 분기는 기계가독 값(df_bump_mode)으로 한다 — df_versionbump는 사람이 읽는 산문이라
+# `none*|auto*` 같은 접두 매칭으로 긁으면 문구를 다듬는 것만으로 분류가 뒤집힌다.
+case "$(df_bump_mode "$LANG_")" in
+  auto) printf '   버전 파일 수정 불필요 — %s\n' "$BUMP" ;;
   *) printf '   ⚠️ 태그 push 전에 수동으로 올릴 것: %s → 값을 %s로\n' "$BUMP" "$VER" ;;
 esac
 
