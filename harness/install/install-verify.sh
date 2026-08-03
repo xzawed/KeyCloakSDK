@@ -2,11 +2,20 @@
 # 설치·동작 검증 오케스트레이터.
 # Usage: ./install-verify.sh [--version <X.Y.Z>] [go dotnet node python java php rust ruby kotlin]  (기본 전체)
 #
-# --version(또는 PKG_VER 환경변수)은 **검증 대상 릴리스 버전**이다. 기본값 0.1.0은 릴리스 경로
-# 바깥에서 단독 실행할 때(야간 harness 워크플로가 언어명만 넘긴다)의 값이라, 인자 없이 부르면
-# 지금까지와 완전히 동일하게 동작한다. 릴리스 워크플로는 태그 접미사를 여기로 넘겨 publish/consume
-# 전 단계가 **그 버전**을 게시하고 설치하게 한다 — 그러지 않으면 `v0.2.0` 태그에서 초록으로 끝난
-# install-smoke가 실제로는 0.1.0을 검증한 것이 되어, 게이트가 배포하지 않을 산출물을 보증한다.
+# --version(또는 PKG_VER 환경변수)은 **검증 대상 릴리스 버전**이다. 릴리스 워크플로는 태그
+# 접미사를 여기로 넘겨 publish/consume 전 단계가 **그 버전**을 게시하고 설치하게 한다 —
+# 그러지 않으면 `v0.2.0` 태그에서 초록으로 끝난 install-smoke가 실제로는 0.1.0을 검증한 것이
+# 되어, 게이트가 배포하지 않을 산출물을 보증한다.
+#
+# 무명시 실행(야간 harness 워크플로는 언어명만 넘긴다)은 언어별로 **자기 매니페스트가 선언한
+# 버전**을 검증한다 — `scripts/check-versions.mjs --list`에서 파생하며, 추출 정규식의 SSOT를
+# bash에 복제하지 않는다. 전 언어 공통 고정 기본값(구 0.1.0)을 버린 이유: 언어별 독립 버저닝이
+# 정책(SECURITY.md)이라 매니페스트는 언어마다 갈라지는데, 빌드 산출물 버전은 매니페스트를
+# 따르므로 고정값과 어긋난 언어는 반드시 publish 단계에서 죽는다 — python이 0.1.0rc1로 먼저
+# 움직이자 스케줄 harness가 이틀 연속 "0.1.0 산출물이 없다"로 죽은 게 그 실측이다.
+# go·php는 태그가 버전 SSOT라 매니페스트에 버전이 없고, java는 publish가 versions:set으로
+# 주입하는데 POM 선언은 `-SNAPSHOT`(레지스트리 표기가 아님)이라, 셋은 기본값(0.1.0)으로
+# 검증한다 — 셋 다 publish→consume이 같은 값으로 자기완결이라 어떤 버전이든 어긋남이 없다.
 #
 # 언어별 4단계(harness/install/README 설계 §3 — Publish→Install→Operate→Report)를 순차 실행한다:
 #   A. Publish  publish/<lang>.sh 가 실 배포 산출물을 빌드해 로컬 레지스트리에 게시.
@@ -15,9 +24,8 @@
 #   C. Operate  설치된-패키지 앱에 대해 기존 conformance.mjs(계약 체크) + security/probe.mjs(JWT 프로브) 재실행.
 #   D. Report   전 언어 루프 후 report/install-matrix.mjs 가 report/signals/*.install.json → INSTALL-MATRIX.md.
 #
-# 각 언어 태스크는 아직 publish/consume을 채우지 않았으므로(run_lang_<lang> 스텁), 현재는
-# 모든 언어가 "not implemented" 신호를 emit하고 계속 진행한다 — 이후 언어별 태스크가
-# run_lang_<lang>() 본문을 실제 파이프라인으로 교체한다.
+# 아홉 언어 전부 run_lang_<lang>()이 실제 publish/consume 파이프라인으로 채워져 있다 —
+# not_implemented()는 새 언어를 추가할 때 쓰는 공통 스텁 신호로만 남아 있다.
 #
 # 한 언어의 실패가 나머지 언어를 막지 않도록 harness/verify.sh 관용을 재구현한다(소싱 아님):
 # set -e 없이 각 단계를 명시적으로 처리하고 실패 시 fail_lang → continue.
@@ -28,17 +36,19 @@ cd "$(dirname "$0")"
 
 DEFAULT_LANGS="go dotnet node python java php rust ruby kotlin"
 
-# 검증 대상 릴리스 버전 — 우선순위는 --version 플래그 > PKG_VER 환경변수 > 기본값(0.1.0).
-# export하므로 publish/<lang>.sh(자식 프로세스)가 그대로 물려받는다. consume 컨테이너에는
-# 아래 각 run_lang_*()의 docker run이 -e PKG_VER로 명시 주입한다.
+# 검증 대상 릴리스 버전 — 우선순위는 --version 플래그 > PKG_VER 환경변수 > 언어별 매니페스트
+# 파생(파일 상단 주석). export하므로 publish/<lang>.sh(자식 프로세스)가 그대로 물려받는다.
+# consume 컨테이너에는 아래 각 run_lang_*()의 docker run이 -e PKG_VER로 명시 주입한다.
+PKG_VER_EXPLICIT=0
+[ -n "${PKG_VER:-}" ] && PKG_VER_EXPLICIT=1 # 빈 문자열 env는 "미지정"과 동치(언어별 파생으로)
 PKG_VER="${PKG_VER:-0.1.0}"
 ARGS=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --version=*) PKG_VER="${1#--version=}"; shift ;;
+    --version=*) PKG_VER="${1#--version=}"; PKG_VER_EXPLICIT=1; shift ;;
     --version)
       if [ "$#" -lt 2 ]; then echo "--version에는 값이 필요하다" >&2; exit 2; fi
-      PKG_VER="$2"; shift 2 ;;
+      PKG_VER="$2"; PKG_VER_EXPLICIT=1; shift 2 ;;
     *) ARGS="$ARGS $1"; shift ;;
   esac
 done
@@ -53,17 +63,44 @@ fi
 # 손으로도 돌아가고(`--version`) 방어는 값을 쓰는 쪽이 아니라 받는 쪽에 있어야 한다.
 # 허용 범위는 아홉 레지스트리의 표기를 전부 덮는다: 0.1.0 · 0.1.0rc1(PEP 440) · 0.1.0-rc.1(SemVer)
 # · 0.1.0.rc1(RubyGems) · 0.1.0-RC1/0.1.0-SNAPSHOT(Maven).
-case "$PKG_VER" in
-  *[!0-9A-Za-z.+-]* | -* | *..* )
-    echo "PKG_VER='$PKG_VER' 형식이 허용되지 않는다 — 영숫자·점·하이픈·플러스만 쓸 수 있다." >&2
-    echo "  이 값은 sed 표현식과 컨테이너 명령에 삽입되므로 경계에서 막는다(fail-closed)." >&2
-    exit 2 ;;
-esac
-case "$PKG_VER" in
-  [0-9]*.[0-9]*.[0-9]*) : ;;
-  *) echo "PKG_VER='$PKG_VER'가 X.Y.Z로 시작하지 않는다 — 릴리스 버전이 맞는지 확인하라." >&2; exit 2 ;;
-esac
+# 매니페스트 파생 값도 같은 경계를 지난다 — 저장소 파일에서 읽었다고 신뢰되는 것은 아니다.
+validate_pkg_ver() { # <값> <출처 라벨>
+  case "$1" in
+    *[!0-9A-Za-z.+-]* | -* | *..* )
+      echo "PKG_VER='$1'($2) 형식이 허용되지 않는다 — 영숫자·점·하이픈·플러스만 쓸 수 있다." >&2
+      echo "  이 값은 sed 표현식과 컨테이너 명령에 삽입되므로 경계에서 막는다(fail-closed)." >&2
+      exit 2 ;;
+  esac
+  case "$1" in
+    [0-9]*.[0-9]*.[0-9]*) : ;;
+    *) echo "PKG_VER='$1'($2)가 X.Y.Z로 시작하지 않는다 — 릴리스 버전이 맞는지 확인하라." >&2; exit 2 ;;
+  esac
+}
+validate_pkg_ver "$PKG_VER" "명시/기본값"
 export PKG_VER
+
+# 무명시 실행: 언어별 매니페스트 버전을 한 번에 파생해 둔다(상단 주석 참고). 실패는 곧
+# "무엇을 검증할지 모른다"이므로 fail-closed — 조용히 기본값으로 계속하면 python 회귀가 재발한다.
+declare -A MANIFEST_VER=()
+if [ "$PKG_VER_EXPLICIT" -eq 0 ]; then
+  if ! _manifest_list="$(node ../../scripts/check-versions.mjs --list)"; then
+    echo "scripts/check-versions.mjs --list 실패 — 언어별 검증 버전을 파생할 수 없다(fail-closed)" >&2
+    exit 2
+  fi
+  while IFS=$'\t' read -r _ml_lang _ml_ver; do
+    [ -n "$_ml_lang" ] && MANIFEST_VER["$_ml_lang"]="$_ml_ver"
+  done <<<"$_manifest_list"
+fi
+
+ver_for_lang() { # <lang> → 이 언어가 검증할 버전(stdout)
+  if [ "$PKG_VER_EXPLICIT" -eq 1 ]; then echo "$PKG_VER"; return; fi
+  case "$1" in
+    # 매니페스트가 산출물 버전을 결정하는 여섯 언어 — 다른 버전을 기대하면 publish에서 반드시 죽는다.
+    python|node|rust|ruby|kotlin|dotnet)
+      if [ -n "${MANIFEST_VER[$1]:-}" ]; then echo "${MANIFEST_VER[$1]}"; return; fi ;;
+  esac
+  echo "$PKG_VER" # go·php(태그 SSOT)·java(versions:set 주입) — publish→consume 자기완결이라 기본값
+}
 
 # shellcheck disable=SC2206  # 언어명은 공백 구분 단순 토큰이라 의도적 워드분할("node python" 한 인자도 허용)
 LANGS=(${ARGS:-$DEFAULT_LANGS})
@@ -71,7 +108,11 @@ LANGS=(${ARGS:-$DEFAULT_LANGS})
 export MSYS_NO_PATHCONV=1
 mkdir -p report/signals
 
-log "검증 대상 버전: ${PKG_VER} (언어: ${LANGS[*]})"
+if [ "$PKG_VER_EXPLICIT" -eq 1 ]; then
+  log "검증 대상 버전: ${PKG_VER} — 명시 (언어: ${LANGS[*]})"
+else
+  log "검증 대상 버전: 언어별 매니페스트 파생 · go/php/java는 기본값 ${PKG_VER} (언어: ${LANGS[*]})"
+fi
 
 # not_implemented <lang> — 아직 publish/consume이 없는 언어의 공통 스텁 신호.
 # artifactBuilt 이하 전부 false + error로 명시해 INSTALL-MATRIX.md에서 "미구현"이 실패와
@@ -948,6 +989,9 @@ else
 fi
 
 for L in "${LANGS[@]}"; do
+  PKG_VER="$(ver_for_lang "$L")"
+  validate_pkg_ver "$PKG_VER" "$L"
+  export PKG_VER
   log "== [$L] 설치·동작 검증 시작 (버전 ${PKG_VER}) =="
   # 언어별 신호를 fresh로 리셋 — 이전(실패)실행의 stale error/필드가 누적 신호에 남지 않도록.
   printf '{"lang":"%s"}\n' "$L" > "report/signals/${L}.install.json"

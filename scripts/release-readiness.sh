@@ -77,7 +77,7 @@ rr_row() { # <lang>
       # 미등록이면 배포가 실패한다.
       OIDC) verdict="ℹ️ 수동 확인: pending-publisher" ;;
       # split-token(php): PHP_SPLIT_TOKEN이 있어도 실제 게시 주체는 이 저장소가 아니라 미러
-      # xzawed/keycloak-sdk-php다 — 그 저장소 신설과 Packagist 등록이 아직 남아있다(DEPLOY.md §2-D).
+      # xzawed/keycloak-sdk-php다 — 미러·Packagist 등록 상태는 조회 API가 없어 사람이 확인한다(DEPLOY.md §2-D).
       split-token) verdict="ℹ️ 수동 확인: 미러 xzawed/keycloak-sdk-php + Packagist 등록" ;;
     esac
   fi

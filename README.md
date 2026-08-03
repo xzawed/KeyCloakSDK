@@ -13,7 +13,7 @@ English · [한국어](README.ko.md)
 
 > "Polyglot" here means **programming languages**, not natural-language localization (i18n).
 >
-> ⚠️ **Nothing is published to a public registry yet** — every release is human-gated. Everything below runs today from a clone: see [Try it today](#try-it-today).
+> ⚠️ **First release candidates are live for PHP, Python and .NET; the other six languages are not on a registry yet** — every release is human-gated. Everything below runs today from a clone: see [Try it today](#try-it-today).
 
 ---
 
@@ -53,7 +53,7 @@ with KeycloakClient.create(config) as kc:
 
 ## Try it today
 
-There is no registry install yet, but the whole path works from a clone:
+Registry installs exist so far only as first RCs (PHP · Python · .NET) — either way, the whole path works from a clone:
 
 ```bash
 # 1) a Keycloak server to talk to
@@ -72,7 +72,7 @@ Then create a confidential client with its service account enabled in the realm 
 
 ## Languages
 
-| Language | Runtime · idiom | Package *(not yet published)* | Example |
+| Language | Runtime · idiom | Package *(registry availability: see [Status](#status))* | Example |
 |---|---|---|---|
 | **Java** | JDK 21+ · blocking | `io.github.xzawed:keycloak-sdk` (Maven Central) | [QuickStart.java](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) |
 | **Python** | 3.10+ · sync + async (`aio`) | `keycloak-sdk` (PyPI) | [quickstart.py](python/examples/quickstart.py) · [async](python/examples/async_quickstart.py) |
@@ -109,7 +109,7 @@ Secrets and tokens are masked in logs and serialization, TLS verification is on 
 
 All nine SDKs are feature-complete and merged to `main`. Each is verified against a **real Keycloak 26.6 server** (Testcontainers; PHP and Ruby shell out to the docker CLI) and held to a coverage gate of line ≥ 90% / branch ≥ 85% on logic modules. Security cores were reviewed adversarially, and pre-release hardening (OIDC nonce replay protection, configurable JWT signature algorithms, dependency CVE audits) is applied across all nine.
 
-Everything is **pre-1.0 (`0.1.0`) and unpublished** — publishing to the registries is the remaining step, and it is human-gated. See [DEPLOY.md](DEPLOY.md) for that procedure, and [SECURITY.md](SECURITY.md) for the security policy and what pre-1.0 means here.
+Everything is **pre-1.0 (`0.1.0` line)**. Three of the nine have shipped their first release candidates to public registries — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 — while the remaining six (Java · Node · Go · Rust · Ruby · Kotlin) are unpublished, behind a human tag gate. See [DEPLOY.md](DEPLOY.md) for that procedure, and [SECURITY.md](SECURITY.md) for the security policy and what pre-1.0 means here.
 
 ---
 

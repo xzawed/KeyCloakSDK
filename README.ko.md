@@ -13,7 +13,7 @@
 
 > 여기서 "다국어/polyglot"은 **프로그래밍 언어**를 뜻하며, 자연어 현지화(i18n)와는 무관합니다.
 >
-> ⚠️ **아직 어떤 공개 레지스트리에도 배포되지 않았습니다** — 모든 배포는 사람 승인 게이트입니다. 아래 내용은 지금 당장 클론해서 그대로 돌아갑니다: [지금 바로 써보기](#지금-바로-써보기) 참고.
+> ⚠️ **PHP·Python·.NET은 첫 릴리스 후보(RC)가 공개 레지스트리에 게시됐고, 나머지 여섯 언어는 아직 레지스트리에 없습니다** — 모든 배포는 사람 승인 게이트입니다. 아래 내용은 지금 당장 클론해서 그대로 돌아갑니다: [지금 바로 써보기](#지금-바로-써보기) 참고.
 
 ---
 
@@ -53,7 +53,7 @@ with KeycloakClient.create(config) as kc:
 
 ## 지금 바로 써보기
 
-레지스트리 설치는 아직 없지만, 클론만 하면 전체 경로가 그대로 동작합니다:
+레지스트리 설치는 아직 첫 RC(PHP · Python · .NET)뿐이지만 — 어느 쪽이든, 클론만 하면 전체 경로가 그대로 동작합니다:
 
 ```bash
 # 1) 붙을 Keycloak 서버
@@ -72,7 +72,7 @@ pip install -e KeyCloakSDK/python
 
 ## 지원 언어
 
-| 언어 | 런타임 · 관용 | 패키지 *(미배포)* | 예제 |
+| 언어 | 런타임 · 관용 | 패키지 *(레지스트리 게시 여부: [현재 상태](#현재-상태) 참고)* | 예제 |
 |---|---|---|---|
 | **Java** | JDK 21+ · 블로킹 | `io.github.xzawed:keycloak-sdk` (Maven Central) | [QuickStart.java](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) |
 | **Python** | 3.10+ · sync + async(`aio`) | `keycloak-sdk` (PyPI) | [quickstart.py](python/examples/quickstart.py) · [async](python/examples/async_quickstart.py) |
@@ -109,7 +109,7 @@ pip install -e KeyCloakSDK/python
 
 아홉 개 SDK 전부 기능 완료·`main` 병합 상태입니다. 각각 **실제 Keycloak 26.6 서버**로 검증되며(Testcontainers, PHP·Ruby는 docker CLI 셸아웃), 로직 모듈에 라인 ≥ 90% / 브랜치 ≥ 85% 커버리지 게이트가 걸려 있습니다. 각 SDK의 보안 핵심은 어드버서리얼 리뷰를 거쳤고, 배포 전 하드닝(OIDC nonce 재생 방지, 설정 가능한 JWT 서명 알고리즘, 의존성 CVE 감사)이 아홉 언어 전부에 적용됐습니다.
 
-전부 **pre-1.0(`0.1.0`)이자 미배포** 상태입니다 — 남은 것은 레지스트리 실배포뿐이며, 이는 사람 승인 게이트입니다. 절차는 [DEPLOY.md](DEPLOY.md), 보안 정책과 여기서 pre-1.0이 뜻하는 바는 [SECURITY.md](SECURITY.md)를 보세요.
+전부 **pre-1.0(`0.1.0` 라인)** 입니다. 아홉 중 셋은 첫 릴리스 후보(RC)를 공개 레지스트리에 게시했습니다 — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 — 나머지 여섯(Java · Node · Go · Rust · Ruby · Kotlin)은 미게시이며 사람 태그 게이트 뒤에 있습니다. 절차는 [DEPLOY.md](DEPLOY.md), 보안 정책과 여기서 pre-1.0이 뜻하는 바는 [SECURITY.md](SECURITY.md)를 보세요.
 
 ---
 

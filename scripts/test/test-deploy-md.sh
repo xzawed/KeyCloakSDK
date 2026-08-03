@@ -49,6 +49,22 @@ assert_not_contains "$body" "zero tags" "이미 태그가 밀렸는데 문서가
 assert_not_contains "$body" "has ever executed, not once" "릴리스 워크플로가 실행됐는데 '한 번도 없다'고 주장한다"
 assert_not_contains "$body" "nothing has ever been published to a public registry" \
   "PHP가 Packagist에 게시됐는데 문서가 '어디에도 게시된 적 없다'고 주장한다"
-# 반대 방향도 고정한다 — 여덟 언어가 미게시라는 사실이 사라지면 안 된다(하나 게시했다고 전부는 아니다).
-assert_contains "$body" "eight" "나머지 여덟 언어가 미게시라는 사실이 문서에서 사라졌다"
+# python(py-v0.1.0rc1 → PyPI)·dotnet(dotnet-v0.1.0-rc.1 → NuGet)이 게시되면서 늘어난
+# 영원-거짓 절대 표현들 — 같은 단방향 원리로 금지 목록에 추가한다.
+assert_not_contains "$body" "Exactly one tag has ever been pushed" \
+  "태그가 셋인데 문서가 '정확히 하나'라고 주장한다"
+assert_not_contains "$body" "The other eight languages are unpublished" \
+  "python·dotnet이 게시됐는데 문서가 '나머지 여덟 미게시'라고 주장한다"
+assert_not_contains "$body" "what remains is the Packagist registration" \
+  "Packagist 등록이 끝났는데 문서가 '등록이 남았다'고 주장한다"
+# 밀린 태그·게시 사실 자체는 단방향(한번 참이면 영원히 참)이라 존재 어서션이 안전하다 —
+# 문서가 게시 이력을 기록에서 지우면 잡는다.
+assert_contains "$body" "php-v0.1.0-rc.1" "PHP 첫 태그(리허설) 기록"
+assert_contains "$body" "py-v0.1.0rc1" "Python 첫 태그 기록"
+assert_contains "$body" "dotnet-v0.1.0-rc.1" ".NET 첫 태그 기록"
+# 반대 방향(과대주장 방지)도 고정한다 — 셋 게시했다고 전부 게시된 것은 아니다. 이 문구는
+# 문서와 이 테스트가 **같은 커밋에서 함께** 갱신되는 카운트다(환경이 아니라 문서만 읽으므로
+# 체크아웃 안에서 항상 자기일관 — 다음 언어가 게시되면 문서와 이 줄을 한 PR에서 같이 고친다).
+assert_contains "$body" "The other six languages are unpublished" \
+  "나머지 여섯 언어가 미게시라는 사실이 문서에서 사라졌다"
 assert_report
