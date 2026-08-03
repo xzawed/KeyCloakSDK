@@ -5,7 +5,13 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 SH="$DIR/../release-readiness.sh"
 
 # 순수 판정 함수 단위테스트(외부호출 stub — 소싱해 override)
-. "$SH" --lib   # --lib: 함수만 로드하고 main 실행 안 함
+# ⚠️ 소싱 전에 위치인자를 설정한다 — `. "$SH" --lib`로 쓰면 안 된다. POSIX의 `.`(dot)은 파일명 외의
+# 인자를 정의하지 않아 dash(우분투 러너의 /bin/sh)가 그것을 무시한다. 그러면 `--lib` 가드가 거짓이
+# 되어 rr_main이 실행되는데, rr_main은 0으로 끝나므로 테스트가 죽지도 않고 **매 CI 실행마다 아홉
+# 레지스트리를 실제로 조회**해 왔다(아래 N1 주석이 경고하는 바로 그 부류의 환경 의존이 소싱
+# 한 줄에 숨어 있었다). 로컬 Git Bash는 위치인자를 설정하므로 이 결함은 CI 로그에서만 보였다.
+set -- --lib
+. "$SH"   # 라이브러리 모드: 함수만 로드하고 main 실행 안 함
 assert_eq "✅ 준비완료" "$(rr_verdict set exists none)" "시크릿O·미게시·태그無 → 준비완료"
 assert_eq "⚠️ 설정필요: 시크릿" "$(rr_verdict unset exists none)" "시크릿X → 설정필요"
 assert_eq "ℹ️ 이미 게시됨" "$(rr_verdict set published none)" "이미 게시 → 안내"

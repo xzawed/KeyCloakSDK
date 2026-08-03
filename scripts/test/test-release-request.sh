@@ -13,7 +13,12 @@ SH="$DIR/../release-request.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-. "$SH" --lib
+# ⚠️ 소싱 전에 위치인자를 설정한다 — `. "$SH" --lib`로 쓰면 안 된다. POSIX의 `.`(dot)은 파일명 외의
+# 인자를 정의하지 않아 dash(우분투 러너의 /bin/sh)가 그것을 무시하고, 그러면 스크립트의 `--lib`
+# 가드가 거짓이 되어 rq_main이 실행된다(요청 파일 부재 → return 3 → `set -e`가 이 테스트를 죽인다).
+# 로컬 Git Bash는 위치인자를 설정하므로 통과한다 — 이 결함은 CI에서만 보였다.
+set -- --lib
+. "$SH"
 
 # ── 태그 파생: 요청이 태그를 말하지 않고 lang+version에서 나온다 ──────────────
 # 태그를 데이터로 받으면 "싼 언어를 선언하고 비싼 태그를 민다"가 성립한다.
@@ -74,5 +79,16 @@ assert_fails rq_validate_file "$TMP/newline.json"
 
 # ── 상태 불변식: 이 스크립트는 아무것도 바꾸지 않는다 ─────────────────────────
 assert_eq "0" "$(grep -cE '^[[:space:]]*(git[[:space:]]+(tag|push|commit)|rm[[:space:]]|mv[[:space:]])' "$SH" || true)" "요청 검증은 상태를 변경하지 않는다"
+
+# ── 소싱 방식 드리프트 가드 ───────────────────────────────────────────────────
+# POSIX의 `.`(dot)은 파일명 외의 인자를 정의하지 않는다 — bash는 위치인자를 설정하지만 dash는
+# 무시한다. 그래서 `. "$SH" --lib`는 **로컬 bash에서만** 라이브러리 모드가 되고 CI(dash)에서는
+# main이 실행된다. request 쪽은 exit 3으로 즉사했고, readiness 쪽은 조용히 라이브 레지스트리를
+# 조회해 왔다. 어느 쪽이든 로컬 통과가 CI를 보증하지 못했다 — 그러니 idiom 자체를 고정한다.
+# (이 테스트 자체가 dash에서 돌아야 의미가 있으므로 CI가 곧 실행 증거다.)
+for t in test-release-request.sh test-release-readiness.sh; do
+  assert_eq "0" "$(grep -cE '^\.[[:space:]].*--lib' "$DIR/$t" || true)" "$t: dot에 인자를 직접 넘기지 않는다(dash가 무시한다)"
+  assert_eq "1" "$(grep -cE '^set -- --lib$' "$DIR/$t" || true)" "$t: 소싱 전에 위치인자를 설정한다"
+done
 
 assert_report
