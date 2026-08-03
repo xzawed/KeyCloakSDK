@@ -25,6 +25,16 @@ rq_field() { # <file> <key> → stdout: 값
     try { obj = JSON.parse(fs.readFileSync(process.argv[1], "utf8")) } catch { process.exit(1) }
     const v = obj[process.argv[2]]
     if (typeof v !== "string") process.exit(1)
+    // ⚠️ 제어문자(특히 개행)를 여기서 막는다. 아래 rq_validate_file의 버전 검사는
+    // `grep -qE "^...$"` 인데 POSIX grep의 ^/$ 는 "문자열 전체"가 아니라 "줄" 단위다 —
+    // JSON의 \n 이스케이프가 실제 개행으로 복원되면 필드값이 여러 줄이 되고, 그 중
+    // 한 줄만 정규식을 만족해도 grep -q가 통과한다(예: version이
+    // "0.1.0\nnode-v9.9.9"). 그러면 stdout도 두 줄이 되어 "<lang> <version> <tag>"를
+    // 위치 인자로 읽는 다운스트림이 태그 대신 공격자가 넣은 두 번째 줄을 $3으로 받는다 —
+    // "싼 언어를 선언하고 비싼 태그를 민다"가 tag 필드가 아니라 version을 통해 성립한다
+    // (코드리뷰에서 발견). 값이 이 함수를 통과하는 유일한 지점이므로 여기서 한 번
+    // 막으면 lang·version·향후 추가되는 어떤 필드에도 같은 방어가 자동 적용된다.
+    if (/[\x00-\x1f\x7f]/.test(v)) process.exit(1)
     process.stdout.write(v)
   ' "$1" "$2" 2>/dev/null
 }

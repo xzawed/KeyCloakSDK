@@ -26,6 +26,9 @@ assert_eq "ruby-v0.1.0.rc1" "$(rq_derive_tag ruby 0.1.0.rc1)"   "ruby 태그 파
 printf '{"lang":"python","version":"0.1.0rc2"}\n' > "$TMP/ok.json"
 assert_eq "python 0.1.0rc2 py-v0.1.0rc2" "$(rq_validate_file "$TMP/ok.json")" "정상 요청은 lang/version/tag를 낸다"
 assert_ok rq_validate_file "$TMP/ok.json"
+# 다운스트림은 이 출력을 위치 인자로 파싱한다(`set -- $(rq_validate_file "$f"); tag=$3`) —
+# 그러니 출력이 한 줄이라는 계약 자체를 고정한다(아래 개행주입 케이스가 이걸 깨려 한다).
+assert_eq "1" "$(rq_validate_file "$TMP/ok.json" | wc -l | tr -d ' ')" "정상 출력은 한 줄이다(다운스트림이 위치 인자로 파싱한다)"
 
 # ── go 거부 ──────────────────────────────────────────────────────────────────
 # 태그가 곧 게시라 머지 이후 게이트가 불가능하다. 거부는 조용하면 안 된다 — 왜인지 말해야 한다.
@@ -61,6 +64,13 @@ assert_not_contains "$inject_out" "node-v9.9.9" "요청의 tag 필드가 무시�
 # 셸 주입 시도 — 버전 정규식이 막아야 한다.
 printf '{"lang":"python","version":"0.1.0rc2; touch /tmp/pwned"}\n' > "$TMP/shell.json"
 assert_fails rq_validate_file "$TMP/shell.json"
+
+# 개행 주입 시도 — `grep -qE "^...$"`는 문자열 전체가 아니라 줄 단위라, version에 실제
+# 개행이 섞이면 "한 줄은 유효한 버전 + 다른 줄은 임의 문자열"로 정규식 검사를 우회하고
+# 그 임의 문자열이 stdout의 두 번째 줄로 새어나갈 수 있었다(코드리뷰 발견 — tag 필드가
+# 아니라 version을 통한 같은 권한상승). node로 실제 개행을 담은 JSON을 생성해 고정한다.
+node -e 'process.stdout.write(JSON.stringify({lang:"python",version:"0.1.0\nnode-v9.9.9"}))' > "$TMP/newline.json"
+assert_fails rq_validate_file "$TMP/newline.json"
 
 # ── 상태 불변식: 이 스크립트는 아무것도 바꾸지 않는다 ─────────────────────────
 assert_eq "0" "$(grep -cE '^[[:space:]]*(git[[:space:]]+(tag|push|commit)|rm[[:space:]]|mv[[:space:]])' "$SH" || true)" "요청 검증은 상태를 변경하지 않는다"
