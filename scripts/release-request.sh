@@ -18,11 +18,20 @@ fi
 
 # JSON 파싱은 node에 맡긴다 — sed로 JSON을 긁으면 중첩·이스케이프에서 조용히 틀린다.
 # 문자열이 아닌 값·파싱 실패는 빈 출력 + 비0으로 fail-closed.
-rq_field() { # <file> <key> → stdout: 값
+#
+# ⚠️ 종료코드로 두 가지를 구분한다: 1 = "값이 없거나 부적합"(의도된 fail-closed),
+# 그 외(127 등) = "node를 실행하지 못했다". 예전에는 `2>/dev/null`로 stderr까지 버려서
+# node 부재·크래시가 "lang·version 문자열 필드가 필요하다"로 오보고됐다 — 실제 원인과 무관한
+# 진단이라 사람이 요청 파일을 뒤지며 없는 버그를 찾는다. 지금은 stderr를 살린다. 의도된
+# 거부 경로(process.exit(1))는 stderr에 아무것도 쓰지 않으므로 노이즈가 늘지 않는다.
+rq_field() { # <file> <key> → stdout: 값 · rc 0=성공 1=값 없음/부적합 그 외=node 실행 실패
   node -e '
     const fs = require("fs")
     let obj
     try { obj = JSON.parse(fs.readFileSync(process.argv[1], "utf8")) } catch { process.exit(1) }
+    // 최상위가 객체가 아니면(예: JSON `null`·배열·숫자) obj[key]가 미처리 TypeError를 던져
+    // 스택트레이스가 stderr로 샌다 — 그러면 "고장"과 "거부"를 구분할 수 없게 된다.
+    if (obj === null || typeof obj !== "object" || Array.isArray(obj)) process.exit(1)
     const v = obj[process.argv[2]]
     if (typeof v !== "string") process.exit(1)
     // ⚠️ 제어문자(특히 개행)를 여기서 막는다. 아래 rq_validate_file의 버전 검사는
@@ -48,7 +57,7 @@ rq_field() { # <file> <key> → stdout: 값
     // (문자열이 그 자리에서 끝나 스크립트가 통째로 깨진다. 실제로 한 번 그랬다).
     if (/[\x00-\x1f\x7f\\]/.test(v)) process.exit(1)
     process.stdout.write(v)
-  ' "$1" "$2" 2>/dev/null
+  ' "$1" "$2"
 }
 
 rq_derive_tag() { # <lang> <version> → stdout: 태그
@@ -62,8 +71,14 @@ rq_validate_file() { # <path> → stdout: "<lang> <version> <tag>" · 0=진행 1
     return 3
   fi
 
-  lang="$(rq_field "$f" lang)" || lang=""
-  ver="$(rq_field "$f" version)" || ver=""
+  # rc 1은 의도된 거부(값 없음/부적합), 그 외는 파싱기 자체의 고장이다 — 둘을 같은 문구로
+  # 보고하면 "node가 없다"가 "요청 파일에 필드가 없다"로 둔갑해 사람이 엉뚱한 곳을 뒤진다.
+  lang_rc=0; lang="$(rq_field "$f" lang)" || lang_rc=$?
+  ver_rc=0;  ver="$(rq_field "$f" version)" || ver_rc=$?
+  if [ "$lang_rc" -gt 1 ] || [ "$ver_rc" -gt 1 ]; then
+    echo "::error::요청 파일 파싱기(node) 실행에 실패했다(rc=$lang_rc/$ver_rc) — 위 stderr가 실제 원인이다(fail-closed)." >&2
+    return 1
+  fi
   if [ -z "$lang" ] || [ -z "$ver" ]; then
     echo "::error::릴리스 요청을 읽지 못했다($f) — lang·version 문자열 필드가 필요하다(fail-closed)." >&2
     return 1

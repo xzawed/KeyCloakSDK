@@ -68,6 +68,24 @@ assert_fails rq_validate_file "$TMP/noversion.json"
 printf 'not json at all\n' > "$TMP/broken.json"
 assert_fails rq_validate_file "$TMP/broken.json"
 
+# 최상위가 객체가 아닌 JSON — node가 미처리 예외(TypeError)로 죽으면 스택트레이스가 stderr로
+# 새고, 그건 "node가 고장났다"와 구분되지 않는다. 진단 메시지로 거부해야 한다.
+printf 'null\n' > "$TMP/nulljson.json"
+assert_fails rq_validate_file "$TMP/nulljson.json"
+null_err="$(rq_validate_file "$TMP/nulljson.json" 2>&1 >/dev/null || true)"
+assert_not_contains "$null_err" "TypeError" "최상위 null JSON은 node 스택트레이스가 아니라 진단으로 거부된다"
+
+# ── node 실행 실패를 "필드 누락"으로 오보고하지 않는다 ───────────────────────
+# 예전에는 node 호출에 `2>/dev/null`이 붙어 있어서 node 부재(rc 127)·크래시까지 조용히 삼키고
+# 그것을 "lang·version 문자열 필드가 필요하다"로 보고했다 — 실제 원인과 무관한 진단이라 사람이
+# 요청 파일을 들여다보며 없는 버그를 찾게 된다. 함수로 node를 가려 부재를 흉내낸다.
+node() { return 127; }
+m6_err="$(rq_validate_file "$TMP/ok.json" 2>&1 >/dev/null || true)"
+unset -f node
+assert_fails test -z "$m6_err"
+assert_contains "$m6_err" "node" "node 실행 실패는 실행 실패로 보고된다"
+assert_not_contains "$m6_err" "문자열 필드가 필요하다" "실행 실패를 필드 누락으로 오보고하지 않는다"
+
 # 태그를 데이터로 넣으려는 시도 — 무시되어야 한다(파생값이 이긴다).
 printf '{"lang":"python","version":"0.1.0rc2","tag":"node-v9.9.9"}\n' > "$TMP/inject.json"
 inject_out="$(rq_validate_file "$TMP/inject.json" 2>/dev/null || true)"
