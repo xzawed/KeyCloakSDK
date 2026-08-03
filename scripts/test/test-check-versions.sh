@@ -51,4 +51,17 @@ sed -i 's/VERSION = "0.1.0"/VERSION = "0.1.0.rc1"/' "$TMP/ruby/lib/keycloak_sdk/
 sed -i 's/version = "0.1.0"/version = "0.1.0-RC1"/' "$TMP/kotlin/build.gradle.kts"
 assert_ok node "$GUARD" "$TMP"
 
+# --list: 기계가독 모드 — harness/install/install-verify.sh가 무명시 실행에서 언어별 검증 버전을
+# 파생할 때 소비한다. 계약은 `lang<TAB>version` 두 컬럼뿐이고 경고·요약이 섞이면 안 된다
+# (소비자가 행 단위로 파싱한다). 위와 같은 프리릴리스 표기 픽스처를 그대로 재사용해 레지스트리
+# 원표기(0.1.0rc1)가 가공 없이 그대로 나오는 것을 고정한다.
+out=$(node "$GUARD" "$TMP" --list)
+assert_contains "$out" "$(printf 'python\t0.1.0rc1')" "--list: python 원표기 그대로"
+assert_contains "$out" "$(printf 'node\t0.1.0-rc.1')" "--list: node 원표기 그대로"
+assert_not_contains "$out" "::warning::" "--list: 경고 미출력(기계가독 계약)"
+assert_not_contains "$out" "버전 SSOT" "--list: 사람용 요약 미출력(기계가독 계약)"
+# 추출 실패는 --list에서도 하드 실패다 — 소비자가 빈 목록을 "버전 없음"으로 오독하면 안 된다.
+: > "$TMP/rust/Cargo.toml"
+assert_fails node "$GUARD" "$TMP" --list
+
 assert_report

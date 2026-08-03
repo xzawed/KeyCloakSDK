@@ -16,7 +16,15 @@ import { join } from 'node:path'
 
 // 루트는 인자로 받는다(check-docs.mjs와 같은 관용) — 그래야 자가테스트가 픽스처 트리에 대해
 // 이 가드를 실제로 돌려볼 수 있다. 인자가 없으면 저장소 루트.
-const root = process.argv[2] ?? new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+// --list: `lang<TAB>version` 만 출력하는 기계가독 모드. harness/install/install-verify.sh가
+// 무명시 실행에서 언어별 검증 버전을 파생할 때 소비한다 — 추출 테이블을 bash에 복제하면
+// 여기와 어긋나므로(드리프트) 이 파일이 유일한 추출 SSOT로 남는다. 추출 실패는 이 모드에서도
+// exit 1이다(가드가 조용히 무력화되면 안 된다).
+const cliArgs = process.argv.slice(2)
+const listMode = cliArgs.includes('--list')
+const root =
+  cliArgs.find((a) => !a.startsWith('--')) ??
+  new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
 const errors = []
 const found = []
 
@@ -113,6 +121,18 @@ if (bases.size > 1) {
     `언어 간 기저 버전이 갈렸다(${bases.size}종) — 의도한 것이면 무시해도 된다(언어별 독립 버저닝은 SECURITY.md가 명시한 정책이다). 조율 릴리스를 하려던 것이라면 하나를 빠뜨린 것이다:\n` +
       [...bases].map(([b, who]) => `      ${b}: ${who.join(' · ')}`).join('\n'),
   )
+}
+
+if (listMode) {
+  // 기계가독 출력 — 소비자(install-verify.sh)는 탭 구분 두 컬럼만 기대한다. 경고(기저 버전
+  // 갈림)는 사람용 신호라 여기서는 내지 않는다 — 언어별 독립 버저닝이 정책이므로 갈림 자체가
+  // 파생을 막을 이유가 아니다. 추출 실패는 동일하게 하드 실패.
+  if (errors.length) {
+    for (const e of errors) console.error(`::error::${e}`)
+    process.exit(1)
+  }
+  for (const [lang, v] of found) console.log(`${lang}\t${v}`)
+  process.exit(0)
 }
 
 for (const [lang, v, where] of found) console.log(`  ${lang.padEnd(8)} ${v.padEnd(18)} ${where}`)
