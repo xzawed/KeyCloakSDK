@@ -21,21 +21,21 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 
 ## 현재 상태
 
-9개 언어 SDK 모두 `main` 병합 완료. 어떤 언어도 아직 레지스트리에 게시되지 않았다(전부 사람 승인 게이트).
+9개 언어 SDK 모두 `main` 병합 완료. PHP·Python·.NET 3개는 첫 RC가 공개 레지스트리에 게시됐다 — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1. 나머지 6개(Java·Node·Go·Rust·Ruby·Kotlin)는 미게시이며, 배포는 여전히 전부 사람 승인 게이트다(사람이 태그를 민다).
 
 | 언어 | 배포명 | 태그 접두 | 배포 |
 |---|---|---|---|
 | Java | `io.github.xzawed:keycloak-sdk` | `v*` | 미실행 |
-| Python | `keycloak-sdk` | `py-v*` | 미실행 |
+| Python | `keycloak-sdk` | `py-v*` | 게시됨(`0.1.0rc1` RC) |
 | Node | `@xzawed/keycloak-sdk` | `node-v*` | 미실행 |
 | Go | `github.com/xzawed/KeyCloakSDK/go` | `go/v*` | 미실행 |
-| C#/.NET | `Xzawed.Keycloak.Sdk` | `dotnet-v*` | 미실행 |
-| PHP | `xzawed/keycloak-sdk` | `php-v*` | 미실행 |
+| C#/.NET | `Xzawed.Keycloak.Sdk` | `dotnet-v*` | 게시됨(`0.1.0-rc.1` RC) |
+| PHP | `xzawed/keycloak-sdk` | `php-v*` | 게시됨(`0.1.0-rc.1` RC) |
 | Rust | `keycloak-sdk` | `rust-v*` | 미실행 |
 | Ruby | `keycloak-sdk` | `ruby-v*` | 미실행 |
 | Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` | `kotlin-v*` | 미실행 |
 
-**릴리스-레디니스 감사(브랜치 `fix/release-readiness-blockers`)**: 게시 직전 차단요소를 훑어 릴리스 워크플로(태그↔매니페스트 버전 가드·시크릿 미설정 시 fail-closed·발행 전 통합 E2E 게이트·서드파티 액션 SHA 핀·`permissions` 최소화)와 패키징 표면(패키지에 담기는 LICENSE·영문 README·레지스트리 메타데이터 보강, Rust 캐럿 요구 전환 + `Cargo.lock` 커밋 + `keycloak::types` 재노출)을 고쳤다. **PHP 선행작업은 대부분 끝났다** — 미러 저장소 `xzawed/keycloak-sdk-php`는 생성됐고(public·비어있음) `PHP_SPLIT_TOKEN`도 등록됐다(`./scripts/release-readiness.sh php` → `secrets=set`). 남은 것은 **Packagist 등록 하나**이고, 그건 첫 `php-v*` 릴리스가 미러를 채운 **뒤에만** 가능하다(빈 저장소에는 Packagist가 읽을 `composer.json`이 없다 — 아래 (PHP) Packagist 게차).
+**릴리스-레디니스 감사(브랜치 `fix/release-readiness-blockers`)**: 게시 직전 차단요소를 훑어 릴리스 워크플로(태그↔매니페스트 버전 가드·시크릿 미설정 시 fail-closed·발행 전 통합 E2E 게이트·서드파티 액션 SHA 핀·`permissions` 최소화)와 패키징 표면(패키지에 담기는 LICENSE·영문 README·레지스트리 메타데이터 보강, Rust 캐럿 요구 전환 + `Cargo.lock` 커밋 + `keycloak::types` 재노출)을 고쳤다. **PHP 선행작업은 전부 끝났다** — 미러 저장소 `xzawed/keycloak-sdk-php` 생성과 `PHP_SPLIT_TOKEN` 등록(`./scripts/release-readiness.sh php` → `secrets=set`)에 이어, 첫 `php-v*` 릴리스가 미러를 채운 뒤 **Packagist 등록까지 완료**됐다(`xzawed/keycloak-sdk` 라이브 — 아래 (PHP) Packagist 게차).
 
 구현 경위·PR 이력: [docs/governance/history.md](docs/governance/history.md) · 배포 절차: [DEPLOY.md](DEPLOY.md)
 
@@ -146,7 +146,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(PHP) `JwksStore`의 rate-limit은 per-instance 메모리 상태.** 상세: `.claude/rules/php.md`
 - ⚠️ **(PHP) 시크릿 메모리 위생은 언어 차원에서 불가능.** 상세: `.claude/rules/php.md`
 - ⚠️ **(PHP) 통합테스트는 Testcontainers 아닌 docker CLI 셸아웃.** 상세: `.claude/rules/php.md`
-- ⚠️ **(PHP) 모노레포는 Packagist에 직접 게시할 수 없다 — subtree-split 미러 저장소가 필수다.** Composer의 VCS 드라이버는 저장소 **루트**의 `composer.json`만 읽고 하위 디렉터리를 패키지 루트로 지정할 수단이 없는데, 이 저장소 루트에는 composer.json이 아예 없다(`php/composer.json` 하나뿐) — 즉 `php-v*` 태그를 밀면 Packagist가 웹훅으로 갱신된다는 전제는 성립한 적이 없다. `php-release.yml`의 `split` 잡이 `git subtree split --prefix=php` 결과를 미러 저장소 `xzawed/keycloak-sdk-php`로 force-push하고 거기에 접두어 없는 **bare `vX.Y.Z`** 태그를 단다(`php-vX.Y.Z`는 Composer가 버전으로 파싱하지 못한다). 신규 시크릿 `PHP_SPLIT_TOKEN`(미러 write) 필요 — 미설정이면 fail-closed, GitHub Release 생성도 미러 push 성공 이후로 옮겼다(하지 않은 게시를 릴리스 노트가 주장하지 못하도록). ⚠️ **미러 생성·토큰 등록은 완료됐고, 남은 사람 작업은 Packagist 등록뿐이다 — 그리고 그 순서는 뒤집을 수 없다.** Packagist는 제출한 저장소의 기본 브랜치에서 `composer.json`을 읽는데 갓 만든 미러에는 기본 브랜치도 파일도 없으므로, 가능한 순서는 **생성 → 토큰 → 첫 릴리스(미러를 채움) → 등록**이다(DEPLOY.md §2-D가 한때 반대로 지시하고 있었다). 부수 효과로 **등록 전까지 미러 push는 소비 가능한 것을 만들지 않고** `main`은 매 릴리스 force-push되므로, PHP의 첫 릴리스는 아홉 언어 중 회복 가능성이 가장 좋다 — 자격증명·태그 경로를 실제로 태워보는 리허설로 쓸 수 있다. 이 제약 자체는 `harness/install/publish/php.sh`가 로컬 Satis 검증 전제로 이미 문서화하고 있었는데 `DEPLOY.md`·`php-release.yml`이 그걸 반영하지 않아 오래 어긋나 있었다 — 지금은 셋 다 같은 경로를 서술한다(감사가 고친 것을 이 메모가 과거형으로 남겨두면 다음 사람이 이미 해결된 문제를 다시 판다).
+- ⚠️ **(PHP) 모노레포는 Packagist에 직접 게시할 수 없다 — subtree-split 미러 저장소가 필수다.** Composer의 VCS 드라이버는 저장소 **루트**의 `composer.json`만 읽고 하위 디렉터리를 패키지 루트로 지정할 수단이 없는데, 이 저장소 루트에는 composer.json이 아예 없다(`php/composer.json` 하나뿐) — 즉 `php-v*` 태그를 밀면 Packagist가 웹훅으로 갱신된다는 전제는 성립한 적이 없다. `php-release.yml`의 `split` 잡이 `git subtree split --prefix=php` 결과를 미러 저장소 `xzawed/keycloak-sdk-php`로 force-push하고 거기에 접두어 없는 **bare `vX.Y.Z`** 태그를 단다(`php-vX.Y.Z`는 Composer가 버전으로 파싱하지 못한다). 신규 시크릿 `PHP_SPLIT_TOKEN`(미러 write) 필요 — 미설정이면 fail-closed, GitHub Release 생성도 미러 push 성공 이후로 옮겼다(하지 않은 게시를 릴리스 노트가 주장하지 못하도록). ⚠️ **미러 생성·토큰 등록·Packagist 등록까지 사람 작업은 전부 완료됐다 — 그리고 그 순서는 뒤집을 수 없다.** Packagist는 제출한 저장소의 기본 브랜치에서 `composer.json`을 읽는데 갓 만든 미러에는 기본 브랜치도 파일도 없으므로, 가능한 순서는 **생성 → 토큰 → 첫 릴리스(미러를 채움) → 등록**이다(DEPLOY.md §2-D가 한때 반대로 지시하고 있었다). 그 리허설은 실제로 일어났다 — 첫 릴리스 `php-v0.1.0-rc.1`이 split→미러 push→bare `v0.1.0-rc.1` 태그 경로를 끝까지 통과해 미러를 채웠고, 이어 Packagist 등록이 완료되어 `xzawed/keycloak-sdk` 0.1.0-rc.1이 라이브다. **등록이 끝났으므로 이제 미러 push는 Packagist가 실제로 소비한다**(철회 = 미러 태그 삭제 + Packagist 업데이트 트리거). 이 제약 자체는 `harness/install/publish/php.sh`가 로컬 Satis 검증 전제로 이미 문서화하고 있었는데 `DEPLOY.md`·`php-release.yml`이 그걸 반영하지 않아 오래 어긋나 있었다 — 지금은 셋 다 같은 경로를 서술한다(감사가 고친 것을 이 메모가 과거형으로 남겨두면 다음 사람이 이미 해결된 문제를 다시 판다).
 - ⚠️ **(Rust) `keycloak` crate와 `openidconnect`는 reqwest 메이저를 정렬해야 함.** 상세: `.claude/rules/rust.md`
 - ⚠️ **(Rust) `openidconnect`의 `CoreClient`는 6개 엔드포인트 typestate 제네릭.** 상세: `.claude/rules/rust.md`
 - ⚠️ **(Rust) `jsonwebtoken`의 `Validation` 기본값은 안전하지 않다.** 상세: `.claude/rules/rust.md`
@@ -317,7 +317,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 
 ### 문서 언어 규칙 (bilingual README + 영문 사용자 문서, PR #31·#32)
 
-- **README는 영문 기본 + 한글 미러**: [`README.md`](README.md)(영문, 기본)와 [`README.ko.md`](README.ko.md)(한글)는 **동일 구조의 미러**다 — 한쪽을 고치면 다른 쪽도 함께 갱신해 동기 유지(상단 상호 링크 `English ↔ 한국어`). 둘 다 슬림 랜딩(정적 배지·9언어 표·30초 퀵스타트·보안·상태·링크)이며, 미배포(human-gated) 상태이므로 **라이브 레지스트리 배지 금지**(정적 배지만 — 오해 방지).
+- **README는 영문 기본 + 한글 미러**: [`README.md`](README.md)(영문, 기본)와 [`README.ko.md`](README.ko.md)(한글)는 **동일 구조의 미러**다 — 한쪽을 고치면 다른 쪽도 함께 갱신해 동기 유지(상단 상호 링크 `English ↔ 한국어`). 둘 다 슬림 랜딩(정적 배지·9언어 표·30초 퀵스타트·보안·상태·링크)이며, 게시가 언어별로 진행 중인 전환기(human-gated, 9개 중 3개만 첫 RC 게시)이므로 **라이브 레지스트리 배지 금지**(정적 배지만 — 오해 방지).
 - **사용자 대상 문서는 영문(in-place)**: [`docs/guides/`](docs/guides/) 3종 · [`docs/roadmap/language-support.md`](docs/roadmap/language-support.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`DEPLOY.md`](DEPLOY.md) · [`harness/README.md`](harness/README.md) · [`harness/install/README.md`](harness/install/README.md)는 영문으로 유지·갱신한다(한글 미러 없음).
 - **내부 산출물은 한글 유지**: [`docs/superpowers/`](docs/superpowers/)(설계 스펙·WBS 플랜)·[`docs/governance/`](docs/governance/)(검증 로그)와 이 `CLAUDE.md`는 개발/거버넌스 내부 문서로 한글을 유지한다.
 - **앵커 주의**: 영문 문서에서 헤딩을 바꾸면 `#anchor`가 바뀐다. `getting-started.md`의 `## C# / .NET`(앵커 `#c--net`)은 양쪽 README가 링크하므로 **헤딩 텍스트를 바꾸지 말 것**.
