@@ -181,6 +181,30 @@ require). A workflow skipped by a **workflow-level `paths:`** filter creates not
 unit tests still shows a red check and can still be merged. Treat section 1's gates as binding by
 convention; only these two are binding by machine.
 
+### Tag rulesets — deliberately the mirror image of `main.json`
+
+`main.json` has `bypass_actors: []` — nobody bypasses, not even the owner. The three
+tag rulesets do the opposite on purpose, and they **must**: a tag ruleset with an empty
+bypass list can never be satisfied by anyone, so every one of the nine releases would be
+permanently blocked with no way to unblock it.
+
+| Ruleset | Refs | Rule | Who may bypass |
+|---|---|---|---|
+| `RELEASE-TAGS-CREATE` | the eight non-Go release tags | `creation` | repository admin (+ the release App once it exists) |
+| `RELEASE-TAGS-CREATE-GO` | `go/v*` | `creation` | repository admin **only** |
+| `RELEASE-TAGS-IMMUTABLE` | all nine | `update`, `deletion` | repository admin |
+
+**Why Go is separated:** Go's tag *is* its publication — `proxy.golang.org` serves whatever
+the tag points at, regardless of CI. No gate can exist after the tag, so Go is excluded from
+automated release. Keeping that exclusion in a workflow file would not be enough: `on: push`
+runs the workflow as it exists in the pushed commit, so a single merge editing that workflow
+would erase the exclusion. A ruleset is server-side state and survives it.
+
+**Why creation and immutability are separate files:** `bypass_actors` applies to a whole
+ruleset, so "the App may create but may not delete" cannot be expressed in one file.
+
+⚠️ Do not "harmonize" these with `main.json`.
+
 ### Making the language CI requireable (follow-up, not done)
 
 Move the filtering from workflow level to job level: a small `changes` job that always runs (e.g.
