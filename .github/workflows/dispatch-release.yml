@@ -34,9 +34,10 @@ jobs:
   cut-tag:
     runs-on: ubuntu-latest
     permissions:
-      # 체크아웃과 룰셋 조회만 GITHUB_TOKEN을 쓴다. 태그 push는 App 설치 토큰으로 하므로
-      # 이 토큰에는 write가 필요 없다 — 그리고 main.json의 bypass_actors:[]가 어차피
-      # 이 토큰의 main push를 막는다.
+      # 체크아웃만 GITHUB_TOKEN을 쓴다(룰셋 조회는 익명 curl로 바뀌었다 — 해당 스텝 주석
+      # 참고: administration 스코프는 워크플로 permissions에 아예 없는 키라 부여 불가하다).
+      # 태그 push는 App 설치 토큰으로 하므로 이 토큰에는 write가 필요 없다 — 그리고
+      # main.json의 bypass_actors:[]가 어차피 이 토큰의 main push를 막는다.
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -119,16 +120,37 @@ jobs:
       # orphan 룰셋(파일 없이 라이브에만 있음/라이브에서 삭제됨)을 감지하지 못하고 CI에서
       # check도 돌지 않으므로, 룰셋 삭제는 저장소 어디에서도 신호가 나지 않는다.
       # App 토큰을 들고 있는 이 워크플로가 유일하게 확인할 수 있는 지점이다.
+      #
+      # ⚠️ 인증 없이(익명 curl로) 조회한다 — 의도다. `GET /repos/{owner}/{repo}/rulesets`는
+      # Administration: read를 요구하는데, 워크플로 `permissions:` 블록에는 `administration`
+      # 이라는 키 자체가 없어(부여 불가) 이 잡의 GITHUB_TOKEN으로는 스코프를 아무리 넓혀도
+      # 통과할 수 없고, App을 그 정도까지 넓히면 승인된 설계(Contents: read/write뿐)를
+      # 벗어난다. 이 저장소는 public이라 익명 GET으로 충분하다(실측:
+      # `curl -s -o /dev/null -w '%{http_code}' https://api.github.com/repos/xzawed/KeyCloakSDK/rulesets`
+      # → 200). 저장소가 나중에 private으로 바뀌면 이 조회는 실패로 전환되고, 아래 첫 번째
+      # 분기(::warning:: + exit 0)로 의도적으로 떨어진다 — "확인 불가"를 "위반"으로 취급해
+      # 정당한 릴리스를 막지 않기 위해서다.
       - name: Assert the tag ruleset is still in place
         if: steps.request.outputs.proceed == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          if ! RS="$(gh api "repos/${GITHUB_REPOSITORY}/rulesets" --jq '[.[] | select(.name == "RELEASE-TAGS-CREATE")] | length' 2>/dev/null)"; then
-            echo "::warning::룰셋을 조회하지 못했다(권한 부족일 수 있다) — 존재 확인을 건너뛴다."
+          RS_FILE="$RUNNER_TEMP/rulesets.json"
+          HTTP_CODE="$(curl -sS -o "$RS_FILE" -w '%{http_code}' "https://api.github.com/repos/${GITHUB_REPOSITORY}/rulesets" 2>/dev/null)" || HTTP_CODE=""
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::warning::룰셋을 조회하지 못했다(HTTP ${HTTP_CODE:-없음}) — 존재 확인을 건너뛴다."
             exit 0
           fi
-          if [ "$RS" -lt 1 ]; then
+          # grep이 아니라 node로 파싱한다 — JSON 공백·줄바꿈이 문자열 매칭을 깨뜨릴 수 있다.
+          if ! COUNT="$(node -e '
+            const fs = require("fs")
+            let arr
+            try { arr = JSON.parse(fs.readFileSync(process.argv[1], "utf8")) } catch { process.exit(1) }
+            if (!Array.isArray(arr)) process.exit(1)
+            process.stdout.write(String(arr.filter((r) => r && r.name === "RELEASE-TAGS-CREATE").length))
+          ' "$RS_FILE" 2>/dev/null)"; then
+            echo "::warning::룰셋 응답을 파싱하지 못했다 — 존재 확인을 건너뛴다."
+            exit 0
+          fi
+          if [ "$COUNT" -lt 1 ]; then
             echo "::error::RELEASE-TAGS-CREATE 룰셋이 없다 — 승인 없는 태그 생성을 막는 장치가 사라졌다. 태그를 만들지 않는다."
             echo "  복구: node scripts/repo-config.mjs apply"
             exit 1

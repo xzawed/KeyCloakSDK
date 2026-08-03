@@ -110,11 +110,12 @@ jobs:
         # 권한을 잡 레벨로 내린 뒤(S7637) 남은 안전망은 각 파일 헤더의 **주석**뿐이었다.
         # 주석은 잡을 추가하는 사람이 읽어야만 동작한다.
         #
-        # --min-release=9는 현재 실측치다. glob으로 범위를 좁힌 가드는 대상이 0건이어도
-        # 통과하므로(릴리스 워크플로를 개명하면 그대로 침묵한다) 하한을 명시로 못박는다
-        # — check-docs의 --min-facts/--min-anchors와 같은 관용이다. 릴리스 워크플로를
-        # 늘리면 이 값도 함께 올린다(내리는 PR은 곧 커버리지 축소라 리뷰 신호가 된다).
-        run: node scripts/check-ci-permissions.mjs . --min-release=9
+        # --min-release=10은 현재 실측치다(9개 언어 릴리스 워크플로 + dispatch-release.yml).
+        # glob으로 범위를 좁힌 가드는 대상이 0건이어도 통과하므로(릴리스 워크플로를 개명하면
+        # 그대로 침묵한다) 하한을 명시로 못박는다 — check-docs의 --min-facts/--min-anchors와
+        # 같은 관용이다. 릴리스 워크플로를 늘리면 이 값도 함께 올린다(내리는 PR은 곧 커버리지
+        # 축소라 리뷰 신호가 된다).
+        run: node scripts/check-ci-permissions.mjs . --min-release=10
 
   repo-config:
     # 저장소 설정(브랜치 룰셋) 대조기의 자가테스트.
