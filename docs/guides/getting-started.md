@@ -110,27 +110,27 @@ try (KeycloakClient client = KeycloakClient.create(config)) {
 
 Python 3.10 or newer is required. The package includes the PEP 561 `py.typed` marker, so consumers can also type-check with `mypy`.
 
-### 2) Local installation (current — not yet published)
+### 2) Local installation (from a clone)
 
-Since it is not published to PyPI, clone the repository and do an editable install or build locally:
+To work from a clone, do an editable install or build locally:
 
 ```bash
 pip install -e python
 # Or build the distributable artifact locally to verify:
-cd python && python -m build   # dist/keycloak_sdk-0.1.0-py3-none-any.whl + .tar.gz
+cd python && python -m build   # dist/keycloak_sdk-*-py3-none-any.whl + .tar.gz
 ```
 
 The distribution name is `keycloak-sdk` and the import package name is `keycloak_sdk`.
 
-### 3) Installation after release (future)
+### 3) Installation from PyPI (first release candidate available)
 
-Once publishing to PyPI is complete:
+The first release candidate, `0.1.0rc1`, is live on PyPI; there is no stable release yet:
 
 ```bash
-pip install keycloak-sdk
+pip install keycloak-sdk==0.1.0rc1
 ```
 
-> ⚠️ **Not yet published to PyPI (human-gated, PyPI Trusted Publisher / OIDC).** The actual publish runs only when a human pushes a `py-v*` tag to trigger [`.github/workflows/python-release.yml`](../../.github/workflows/python-release.yml). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> ⚠️ **Prerelease-only caveat**: while the RC is the *only* release on PyPI, a bare `pip install keycloak-sdk` also resolves it — pip falls back to pre-releases when no stable release exists. Pin the exact version to be explicit about opting into an RC. Releases remain human-gated: a publish runs only when a human pushes a `py-v*` tag to trigger [`.github/workflows/python-release.yml`](../../.github/workflows/python-release.yml) (PyPI Trusted Publisher / OIDC). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 
@@ -322,9 +322,9 @@ func main() {
 <!-- doc-guard: kind=runtime lang=dotnet -->
 .NET **8 or newer** (`net8.0`) is required. The idiom is async-first (every network method takes `Task<T>` + a trailing `CancellationToken ct = default`, and only `CreateAuthorizationRequest` is purely synchronous). Docker is needed only for integration tests.
 
-### 2) Local installation (current — not yet published)
+### 2) Local installation (from a clone)
 
-Since it is not published to NuGet, clone the repository and attach it as a project reference from your consuming project:
+To work from a clone, attach it as a project reference from your consuming project:
 
 ```bash
 dotnet add reference ../KeyCloakSDK/dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj
@@ -333,15 +333,15 @@ dotnet add reference ../KeyCloakSDK/dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keyclo
 
 The package ID is `Xzawed.Keycloak.Sdk`, and the root namespace is `Xzawed.Keycloak` (admin is the `Xzawed.Keycloak.Admin` sub-namespace).
 
-### 3) Installation after release (future)
+### 3) Installation from NuGet (first release candidate available)
 
-Once publishing to NuGet is complete:
+The first release candidate, `0.1.0-rc.1`, is live on NuGet; there is no stable release yet:
 
 ```bash
-dotnet add package Xzawed.Keycloak.Sdk
+dotnet add package Xzawed.Keycloak.Sdk --version 0.1.0-rc.1   # or: --prerelease
 ```
 
-> ⚠️ **Not yet published to NuGet (human-gated).** The actual publish runs only when a human pushes a `dotnet-v*` tag to trigger [`.github/workflows/dotnet-release.yml`](../../.github/workflows/dotnet-release.yml) (requires the `NUGET_API_KEY` secret). For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> ⚠️ A plain `dotnet add package Xzawed.Keycloak.Sdk` fails while only the RC exists ("There are no stable versions available") — pass `--prerelease` or the exact version to opt in. Releases remain human-gated: a publish runs only when a human pushes a `dotnet-v*` tag to trigger [`.github/workflows/dotnet-release.yml`](../../.github/workflows/dotnet-release.yml) (requires the `NUGET_API_KEY` secret). For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 
@@ -386,9 +386,9 @@ foreach (var u in users) Console.WriteLine($" - {u.Username}");
 
 PHP **8.3 or newer** is required. Value types are declared as `final readonly class` (immutable), and the idiom is exception-based (`KeycloakException` hierarchy). Docker is needed only for integration tests.
 
-### 2) Local installation (current — not yet published)
+### 2) Local installation (from a clone)
 
-Since it is not published to Packagist, clone the repository and reference it as a local path repository, or build directly under `php/` to verify:
+To work from a clone, reference it as a local path repository, or build directly under `php/` to verify:
 
 ```bash
 cd php && composer install   # install dependencies (fschmtt/league/stevenmaguire/firebase, etc.)
@@ -399,15 +399,15 @@ cd php && composer install   # install dependencies (fschmtt/league/stevenmaguir
 
 The distribution name is `xzawed/keycloak-sdk`, and the root namespace is `Xzawed\Keycloak` (admin is the `Xzawed\Keycloak\Admin` sub-namespace).
 
-### 3) Installation after release (future)
+### 3) Installation from Packagist (first release candidate available)
 
-Once publishing to Packagist is complete:
+The first release candidate, `v0.1.0-rc.1`, is live on Packagist; there is no stable release yet:
 
 ```bash
-composer require xzawed/keycloak-sdk
+composer require "xzawed/keycloak-sdk:0.1.0-rc.1"
 ```
 
-> ⚠️ **Not yet published to Packagist (human-gated).** PHP does not publish from this monorepo, and it never could: Composer's VCS driver reads only a `composer.json` at a repository **root**, and there is none here (only `php/composer.json`). So when a human pushes a `php-v*` tag, [`.github/workflows/php-release.yml`](../../.github/workflows/php-release.yml) verifies, then splits `php/` out with `git subtree split` and pushes it to a separate read-only mirror repository, **`xzawed/keycloak-sdk-php`**, tagging it there with a **bare `vX.Y.Z`** (Composer cannot parse `php-vX.Y.Z` as a version). **That mirror — not this repository — is what gets registered on Packagist**; the package name stays `xzawed/keycloak-sdk`, since it comes from `php/composer.json`, which the split carries along. The split job requires a `PHP_SPLIT_TOKEN` secret with write access to the mirror and **fails closed without it** (nothing is pushed, and no GitHub Release is created). ⚠️ **The mirror repository and its Packagist registration do not exist yet** — for that one-time human setup and the full procedure, see [DEPLOY.md](../../DEPLOY.md) §2-D. For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> ⚠️ A plain `composer require xzawed/keycloak-sdk` fails while only the RC exists (default `minimum-stability: stable` excludes it) — require the exact version, or `^0.1@rc`, to opt in. How publishing works here: PHP does not publish from this monorepo, and it never could — Composer's VCS driver reads only a `composer.json` at a repository **root**, and there is none here (only `php/composer.json`). When a human pushes a `php-v*` tag, [`.github/workflows/php-release.yml`](../../.github/workflows/php-release.yml) verifies, then splits `php/` out with `git subtree split` and pushes it to a separate read-only mirror repository, **`xzawed/keycloak-sdk-php`**, tagging it there with a **bare `vX.Y.Z`** (Composer cannot parse `php-vX.Y.Z` as a version). **That mirror — not this repository — is what is registered on Packagist**; the package name stays `xzawed/keycloak-sdk`, since it comes from `php/composer.json`, which the split carries along. The split job requires a `PHP_SPLIT_TOKEN` secret with write access to the mirror and **fails closed without it** (nothing is pushed, and no GitHub Release is created). The mirror and its Packagist registration exist and serve `v0.1.0-rc.1` today — for the full procedure, see [DEPLOY.md](../../DEPLOY.md) §2-D. For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 

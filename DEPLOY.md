@@ -376,7 +376,7 @@ All nine registries support prerelease versions, and most resolvers exclude them
 
 | Language | Version to write in the manifest | Tag to push | Resolver behaviour |
 |---|---|---|---|
-| Python | `0.1.0rc1` (PEP 440 normal form) | `py-v0.1.0rc1` | `pip install keycloak-sdk` skips prereleases; `--pre` or an exact pin opts in |
+| Python | `0.1.0rc1` (PEP 440 normal form) | `py-v0.1.0rc1` | ⚠️ pip skips prereleases **only when a stable release also exists** — while an RC is the *only* release on PyPI, a bare `pip install keycloak-sdk` falls back to it and installs the RC (measured live on `0.1.0rc1` in a clean container; NuGet and Composer refuse instead). `--pre` or an exact pin opts in explicitly; publishing stable `0.1.0` restores the skip-prereleases default |
 | .NET | — (injected from the tag) | `dotnet-v0.1.0-rc.1` | `dotnet add package` skips prereleases unless given `--prerelease` |
 | Ruby | `0.1.0.rc1` (a letter in a segment marks it prerelease) | `ruby-v0.1.0.rc1` | `gem install` skips it unless given `--prerelease` |
 | Node | `0.1.0-rc.1` (SemVer) | `node-v0.1.0-rc.1` | `^0.1.0` excludes prereleases — see the dist-tag note below |
