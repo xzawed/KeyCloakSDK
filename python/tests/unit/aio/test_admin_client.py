@@ -78,9 +78,68 @@ async def test_aclose_closes_admin_connection():
     있으므로 `admin.connection.aclose()`를 호출해야 한다(async auth 미러와 동형)."""
     admin = MagicMock(spec=KeycloakAdmin)
     admin.connection.aclose = AsyncMock()
+    # ⚠️ 중첩 그랜트도 async로 세워둔다. MagicMock(spec=...)은 이 자리를 **동기** MagicMock으로
+    # 자동 생성하는데, 실제 python-keycloak에서는 코루틴 함수다 — 세우지 않으면 목이 프로덕션과
+    # 다른 모양이 되어(`await`할 수 없는 객체) 테스트가 실제 결함이 아닌 목 아티팩트로 깨진다.
+    admin.connection.keycloak_openid.connection.aclose = AsyncMock()
     client = AsyncAdminClient(_config(), admin=admin)
 
     await client.aclose()
+
+    admin.connection.aclose.assert_awaited_once()
+
+
+async def test_aclose_closes_the_outer_connection_even_if_the_nested_close_fails():
+    """중첩 정리가 터져도 바깥 FD는 회수해야 한다(`finally`) — 하나가 깨졌다고 나머지까지
+    잃는 것이 최악이다. 실패 자체는 숨기지 않는다(예외 전파)."""
+    admin = MagicMock(spec=KeycloakAdmin)
+    admin.connection.aclose = AsyncMock()
+    admin.connection.keycloak_openid.connection.aclose = AsyncMock(side_effect=RuntimeError("boom"))
+    client = AsyncAdminClient(_config(), admin=admin)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await client.aclose()
+
+    admin.connection.aclose.assert_awaited_once()
+
+
+async def test_aclose_also_closes_the_nested_token_grant_connection():
+    """⚠️ admin에는 async 클라이언트가 **둘** 있다 — 바깥만 닫으면 FD가 샌다.
+
+    `harden_admin`이 이미 아는 구조 그대로다(`_internal/redirects.py`): admin REST 세션과,
+    admin 자신의 client-credentials 토큰 그랜트가 쓰는 `connection.keycloak_openid.connection`.
+    후자는 **지연 프로퍼티**라 첫 admin 호출 때 생겨서 눈에 잘 띄지 않는다.
+
+    게시된 0.1.0rc1을 실 Keycloak에 대해 돌려서 실측한 결함이다: `aclose()` 후 바깥은
+    `is_closed=True`인데 안쪽 httpx.AsyncClient는 `is_closed=False`로 남아
+    "unclosed transport"/"unclosed socket" ResourceWarning이 뜨고, admin을 쓰는 async
+    클라이언트마다 FD가 하나씩 샌다(장기 서비스에서 EMFILE). auth 전용 클라이언트는 깨끗했다.
+    """
+    admin = MagicMock(spec=KeycloakAdmin)
+    admin.connection.aclose = AsyncMock()
+    admin.connection.keycloak_openid.connection.aclose = AsyncMock()
+    client = AsyncAdminClient(_config(), admin=admin)
+
+    await client.aclose()
+
+    admin.connection.aclose.assert_awaited_once()
+    admin.connection.keycloak_openid.connection.aclose.assert_awaited_once()
+
+
+async def test_aclose_still_closes_the_outer_connection_when_the_nested_one_is_absent():
+    """중첩 그랜트 구조가 사라진 경우 — 바깥 정리는 그대로 수행되어야 한다
+    (중첩 탐색 실패가 정리 전체를 삼키면 안 된다).
+
+    생성 시점에는 온전한 목이라 하드닝을 통과하고, 그 뒤에 구조를 없앤다 —
+    `test_aclose_is_noop_when_connection_disappears_after_construction`과 같은 관용이다
+    (생성 시 `keycloak_openid`가 없으면 하드닝이 아예 생성을 거부한다).
+    """
+    admin = MagicMock(spec=KeycloakAdmin)
+    admin.connection.aclose = AsyncMock()
+    client = AsyncAdminClient(_config(), admin=admin)
+    admin.connection.keycloak_openid = None  # 생성 이후 내부 구조가 바뀐 상황
+
+    await client.aclose()  # must not raise
 
     admin.connection.aclose.assert_awaited_once()
 

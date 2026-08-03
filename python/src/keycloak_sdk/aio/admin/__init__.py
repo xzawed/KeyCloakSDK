@@ -84,15 +84,38 @@ class AsyncAdminClient:
         return AsyncGroupsResource(self.raw)
 
     async def aclose(self) -> None:
-        """하위 `KeycloakAdmin`의 async httpx 클라이언트(및 sync 세션)를 닫는다.
+        """하위 `KeycloakAdmin`의 async httpx 클라이언트(및 sync 세션)를 **둘 다** 닫는다.
 
         `KeycloakAdmin`에는 `aclose`가 없다 — 실제 자원인 `httpx.AsyncClient`는
-        `self._admin.connection`(`ConnectionManager`)에 있고 그 `aclose()`가 정리한다
-        (async auth 미러와 동형). 미해제 시 async 소켓/FD가 누수돼 장기 서비스에서
-        EMFILE에 이를 수 있다. `raw` 미생성이면 `self._admin`이 None이라 no-op이다
-        (굳이 생성하지 않음). 내부 구조 변경에도 안전하도록 가드한다.
+        `ConnectionManager`에 있고 그 `aclose()`가 정리한다(async auth 미러와 동형).
+
+        ⚠️ 그 ConnectionManager가 **둘**이다(`harden_admin`이 리다이렉트 하드닝에서 이미
+        다루는 바로 그 구조 — `_internal/redirects.py`):
+
+        1. `connection` — admin REST 호출.
+        2. `connection.keycloak_openid.connection` — admin 자신의 client-credentials
+           토큰 그랜트. **지연 프로퍼티**라 첫 admin 호출 때 생겨서 눈에 잘 띄지 않는다.
+
+        1번만 닫으면 2번의 httpx.AsyncClient가 열린 채 남아 "unclosed transport" /
+        "unclosed socket" ResourceWarning이 뜨고 admin을 쓰는 클라이언트마다 FD가 하나씩
+        샌다(장기 서비스에서 EMFILE). 게시된 0.1.0rc1을 실 Keycloak에 대해 돌려 실측했다 —
+        auth 전용 클라이언트는 깨끗했고 admin을 건드린 경우만 샜다.
+
+        `raw` 미생성이면 `self._admin`이 None이라 no-op이다(굳이 생성하지 않음).
+        중첩 정리가 실패해도 바깥 정리는 `finally`로 반드시 수행한다 — 둘 중 하나가
+        깨졌다고 나머지 FD까지 함께 잃는 것이 최악이다. 실패 자체는 숨기지 않는다
+        (예외는 그대로 전파된다 — 조용한 누수보다 시끄러운 실패가 낫다).
         """
         conn = getattr(self._admin, "connection", None)
-        aclose = getattr(conn, "aclose", None) if conn is not None else None
-        if callable(aclose):
-            await aclose()
+        if conn is None:
+            return
+        nested = getattr(conn, "keycloak_openid", None)
+        nested_conn = getattr(nested, "connection", None) if nested is not None else None
+        nested_aclose = getattr(nested_conn, "aclose", None) if nested_conn is not None else None
+        try:
+            if callable(nested_aclose):
+                await nested_aclose()
+        finally:
+            aclose = getattr(conn, "aclose", None)
+            if callable(aclose):
+                await aclose()
