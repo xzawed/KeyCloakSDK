@@ -107,7 +107,11 @@ df_version_hint() { case "$1" in
 esac; }
 
 # 프리릴리스 여부(표기 무관) — 정식 X.Y.Z가 아니면 프리릴리스로 본다.
-df_is_prerelease() { ! echo "$1" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; }
+# ⚠️ `echo`가 아니라 `printf '%s\n'`이다. dash(우분투 러너의 /bin/sh)의 `echo`는 `-e` 없이도
+# 백슬래시 이스케이프를 확장하므로 '0.1.0\c-rc.1'이 '0.1.0'으로 잘려 **프리릴리스가 정식
+# 릴리스로 오판**된다(RC가 Latest release로 걸리는 사고와 같은 경로). bash·busybox ash는
+# 확장하지 않아 로컬에서는 재현되지 않는다.
+df_is_prerelease() { ! printf '%s\n' "$1" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; }
 
 df_workflow_hint() { case "$1" in
   python) echo "python-release.yml" ;; node) echo "node-release.yml" ;; ruby) echo "ruby-release.yml" ;;

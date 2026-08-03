@@ -6,6 +6,14 @@
 #
 # ⚠️ 환경 의존 어서션을 쓰지 않는다. 이 저장소는 test-deploy-md.sh·test-release-readiness.sh가
 # 각각 실제 태그·게시 상태에 기대다가 사실이 바뀌자 뒤집힌 이력이 있다. 여기서는 임시 파일만 쓴다.
+#
+# ⚠️ **이 파일의 일부 케이스는 bash에서 재현되지 않는다 — dash 전용이다.** 아래 "리터럴 백슬래시"
+# 절이 그것이다. POSIX 셸의 `echo`는 백슬래시 이스케이프를 확장해도 되고(dash는 `-e` 없이도
+# 확장한다) 안 해도 된다(bash·busybox ash는 확장하지 않는다). 우분투 러너의 `/bin/sh`가 dash라
+# **로컬 Git Bash 전건 통과가 CI 통과를 보증하지 않는다.** 이 파일을 고칠 때는 반드시 실제 dash로
+# 한 번 돌릴 것:
+#   docker run --rm -v "$PWD:/repo:ro" -w /repo alpine:3 \
+#     sh -c 'apk add --no-cache dash nodejs >/dev/null; dash scripts/test/test-release-request.sh'
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
@@ -76,6 +84,32 @@ assert_fails rq_validate_file "$TMP/shell.json"
 # 아니라 version을 통한 같은 권한상승). node로 실제 개행을 담은 JSON을 생성해 고정한다.
 node -e 'process.stdout.write(JSON.stringify({lang:"python",version:"0.1.0\nnode-v9.9.9"}))' > "$TMP/newline.json"
 assert_fails rq_validate_file "$TMP/newline.json"
+
+# ── 리터럴 백슬래시 주입 (⚠️ dash 전용 — bash에서는 재현되지 않는다) ──────────
+# 개행 주입을 닫은 제어문자 필터(`[\x00-\x1f\x7f]`)는 **리터럴 백슬래시(0x5C)를 통과시킨다** —
+# 백슬래시는 제어문자가 아니기 때문이다. 그리고 dash의 `echo`는 `-e` 없이도 이스케이프를
+# 확장하므로 `echo "$ver" | grep -qE '^…$'` 형태의 검사에서
+#   ver='0.1.0\c go/v9.9.9'  →  echo 출력 '0.1.0'  →  정규식 통과(우회 성립)
+# 가 된다. `$ver` 자체에는 전체 문자열이 남으므로 stdout의 "<lang> <version> <tag>" 3필드
+# 계약이 깨지고, 워크플로의 `cut -d' ' -f3`가 **공격자가 고른 문자열을 태그로** 집는다.
+# 방어는 둘 다 필요하다: (1) 검사 파이프를 `printf '%s\n'`으로 바꿔 확장 자체를 없애고,
+# (2) 값이 통과하는 유일한 관문(rq_field)에서 백슬래시를 거부한다 — 아홉 레지스트리의 어떤
+# 버전 표기에도 백슬래시는 없다.
+# ⚠️ JSON 안의 리터럴 백슬래시는 `\\`로 적어야 하는데 printf/heredoc을 거치면 접히거나
+# 유효하지 않은 JSON 이스케이프가 되어 **거짓 음성**이 난다 — node로 생성한다.
+node -e 'process.stdout.write(JSON.stringify({lang:"python",version:"0.1.0"+String.fromCharCode(92)+"c go/v9.9.9"}))' > "$TMP/backslash.json"
+assert_fails rq_validate_file "$TMP/backslash.json"
+bs_out="$(rq_validate_file "$TMP/backslash.json" 2>/dev/null || true)"
+assert_not_contains "$bs_out" "go/v9.9.9" "백슬래시 우회로 go 태그가 stdout에 새지 않는다"
+
+# `\n`(백슬래시+n)도 같은 부류다 — dash의 echo가 실제 개행으로 확장하면 grep의 줄 단위
+# `^…$`가 다시 우회된다(제어문자 필터는 이 시점에 이미 지나갔다).
+node -e 'process.stdout.write(JSON.stringify({lang:"python",version:"0.1.0"+String.fromCharCode(92)+"nnode-v9.9.9"}))' > "$TMP/backslash-n.json"
+assert_fails rq_validate_file "$TMP/backslash-n.json"
+
+# 정상 출력의 필드 수 계약(다운스트림이 위치 인자/`cut -d' '`로 파싱한다) — 위 케이스들이
+# 깨뜨리려는 것이 바로 이 계약이므로 계약 자체도 못박는다.
+assert_eq "3" "$(rq_validate_file "$TMP/ok.json" | wc -w | tr -d ' ')" "정상 출력은 공백 3필드다"
 
 # ── 상태 불변식: 이 스크립트는 아무것도 바꾸지 않는다 ─────────────────────────
 assert_eq "0" "$(grep -cE '^[[:space:]]*(git[[:space:]]+(tag|push|commit)|rm[[:space:]]|mv[[:space:]])' "$SH" || true)" "요청 검증은 상태를 변경하지 않는다"

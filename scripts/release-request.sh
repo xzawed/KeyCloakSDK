@@ -34,7 +34,19 @@ rq_field() { # <file> <key> → stdout: 값
     // "싼 언어를 선언하고 비싼 태그를 민다"가 tag 필드가 아니라 version을 통해 성립한다
     // (코드리뷰에서 발견). 값이 이 함수를 통과하는 유일한 지점이므로 여기서 한 번
     // 막으면 lang·version·향후 추가되는 어떤 필드에도 같은 방어가 자동 적용된다.
-    if (/[\x00-\x1f\x7f]/.test(v)) process.exit(1)
+    //
+    // ⚠️ 리터럴 백슬래시(0x5C)도 함께 막는다 — 백슬래시는 제어문자가 아니라 위 이유만으로는
+    // 통과하는데, POSIX 셸의 echo가 그것을 이스케이프로 확장한다. dash(우분투 러너의
+    // /bin/sh)는 -e 없이도 확장하므로 version = 0.1.0\c go/v9.9.9 가 echo 출력에서
+    // 0.1.0 으로 잘려 버전 정규식을 통과했고, 변수에는 전체 문자열이 남아 stdout의
+    // 공백 3필드 계약이 깨지면서 다운스트림의 cut -f3 가 go/v9.9.9 를 태그로 집었다
+    // (실측 재현). 검사 파이프를 printf로 바꾸는 것이 근본 수정이지만, 아홉 레지스트리의
+    // 어떤 버전 표기에도 백슬래시는 없으므로 관문에서 아예 거부하는 편이 더 좁고 확실하다.
+    // bash·busybox ash는 확장하지 않아 이 결함은 로컬 통과로는 보이지 않았다.
+    //
+    // ⚠️ 이 node 스크립트는 셸의 단따옴표 안에 있다 — 주석에도 작은따옴표를 쓰면 안 된다
+    // (문자열이 그 자리에서 끝나 스크립트가 통째로 깨진다. 실제로 한 번 그랬다).
+    if (/[\x00-\x1f\x7f\\]/.test(v)) process.exit(1)
     process.stdout.write(v)
   ' "$1" "$2" 2>/dev/null
 }
@@ -75,7 +87,10 @@ rq_validate_file() { # <path> → stdout: "<lang> <version> <tag>" · 0=진행 1
 
   # 버전 표기는 레지스트리마다 다르다(PEP 440 · RubyGems · Maven · SemVer). 언어별 정규식으로
   # 검사하는 것은 오타 방지이자 **주입 차단**이다 — 이 값이 태그 문자열과 명령에 삽입된다.
-  if ! echo "$ver" | grep -qE "$(df_version_re "$lang")"; then
+  # ⚠️ `echo`가 아니라 `printf '%s\n'`이다. dash의 `echo`는 `-e` 없이도 백슬래시 이스케이프를
+  # 확장해 '0.1.0\c …'를 '0.1.0'으로 잘라내고, 잘린 앞부분만 정규식을 만족해도 통과시킨다
+  # (= 검사 우회). printf '%s'는 어떤 POSIX 셸에서도 확장하지 않는다.
+  if ! printf '%s\n' "$ver" | grep -qE "$(df_version_re "$lang")"; then
     echo "::error::'$lang'의 버전 표기가 아니다: '$ver'" >&2
     echo "  기대: $(df_version_hint "$lang")" >&2
     return 1
