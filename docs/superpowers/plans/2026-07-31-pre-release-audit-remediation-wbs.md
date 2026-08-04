@@ -19,11 +19,17 @@
 | 3. Node 기형 JWKS | ✅ 완료 | `ee710ae` | 변이검증: 경계 변환 제거 시 이 테스트만 실패 |
 | 4. Python 기형 JWKS | ✅ 완료 | `e697d61` | **실제 결함 발견** — `binascii.Error`가 경계를 뚫고 나갔다. sync·async 둘 다 수정 |
 | 5. Java·.NET 위조서명 무재조회 | ⚠️ 부분 | `aa7f5bc`·`77f4bc8` | **.NET은 이 불변식을 갖지 못함이 실측됨** — 0회가 아니라 rate-limit 상한만 고정 |
-| 6. 리다이렉트 SSRF 차단 | ✅ 완료 | `61f65f8`·`7b3dd3e`·`5808d3a`·`b2014d6`·`14059dc`·`e92316b` | **9개 언어 전부**. 7개가 실제로 취약했다 |
+| 6. 리다이렉트 SSRF 차단 | ✅ 완료 | `61f65f8`·`7b3dd3e`·`5808d3a`·`b2014d6`·`14059dc`·`e92316b`·`84e4bf6` | **9개 언어 전부**. 7개가 실제로 취약했다. ⚠️ 이 표가 오래 "완료"였지만 **프로덕션 기준으로만** 참이었다 — 테스트 고정은 7/9였고 .NET·Rust 공백을 `84e4bf6`(PR #131)이 채워 9/9가 됐다 |
 | 7. 버전 SSOT 가드 | ✅ 완료 | `7aa7959` | 자가테스트 5건(변이 3 + 오탐방지 1 포함) |
 | 8. admin 능력 매트릭스 | ✅ 완료 | `4962c18` | 하드 발견 2건은 **문서화에 그치지 않고 고쳤다** — .NET `b408c15` · Rust `8fd963e` |
 
-**해소됨** — .NET 리다이렉트 하드닝의 행동 테스트 시임 문제는 `b408c15`에서 admin 갭을 파사드로 채우며 함께 정리됐다(파사드 경로가 넓어져 `Raw` 의존이 줄었다). 남은 결정: Rust `update`/`list`(v0.2, `raw()`가 도달하므로 차단요소 아님).
+~~**해소됨** — .NET 리다이렉트 하드닝의 행동 테스트 시임 문제는 `b408c15`에서 admin 갭을 파사드로 채우며 함께 정리됐다(파사드 경로가 넓어져 `Raw` 의존이 줄었다).~~
+
+**정정 (2026-08-04) — 위 "해소됨"은 사실이 아니었다.** `b408c15`의 실제 변경은 `.claude/rules/dotnet.md`·`CLAUDE.md`·`getting-started.md`·`GroupsResource.cs`·`RealmsResource.cs`·`RolesResource.cs`·`AdminClientTests.cs`뿐이고 리다이렉트는 커밋 동기 설명에만 등장한다 — **시임도 테스트도 만들어지지 않았다**. admin 능력 갭(Task 8)과 리다이렉트 시임(Task 6)은 서로 다른 문제인데, 한 커밋에 담겼다는 이유만으로 함께 해소된 것처럼 기록됐다. 그 결과 `61f65f8`이 남긴 인계 메모("행동 테스트를 붙이지 못했다 — WBS에 남긴다")가 이 줄에 덮여 3일간 보이지 않았다.
+
+**실제 해소는 `84e4bf6`(PR #131)이다** — 그리고 그 구현은 아래 "**.NET 후속의 값싼 답**"이 처방한 모양 그대로다(`internal static … CreateHandler(KeycloakConfig)` 추출 + 기존 `InternalsVisibleTo` 활용). 다만 로컬 `HttpListener` 대신 이미 참조돼 있던 `WireMock.Net`을 썼고, `KeycloakClient.Create`와 `AdminClient.CreateAsync`가 **같은 세 프로퍼티를 중복**하고 있었으므로 팩토리를 양쪽이 공유하게 해 드리프트 자체를 없앴다. 같은 커밋이 Rust(`build_http` 추출 + wiremock 302)와 Node auth 경로(`init.redirect` 단언 — admin만 고정돼 있던 비대칭)의 같은 공백도 함께 채웠다.
+
+남은 결정: Rust `update`/`list`(v0.2, `raw()`가 도달하므로 차단요소 아님).
 
 ---
 
@@ -47,7 +53,7 @@
 
 **추가 태스크 — 이미 안전한 경로에 고정(pinning) 테스트.** Java/Kotlin admin · Node jose+openid-client · PHP PSR-18 · Python httpx는 **라이브러리 기본값 덕분에** 안전하다. 이는 §3-2가 막으려던 "업그레이드로 조용히 취약해지는" 바로 그 상태이고, 몇몇은 끌 노브 자체가 없어 **테스트가 유일한 방어수단**이다.
 
-**.NET 후속의 값싼 답** — 시임 노출 vs 리플렉션의 양자택일이 아니었다: `internal static SocketsHttpHandler CreateHandler(KeycloakConfig)` 추출 + `InternalsVisibleTo` + 로컬 `HttpListener`. 공개 표면이 늘지 않으며, Java `buildTimeoutClient`가 이미 같은 모양의 시임을 갖고 있다.
+**.NET 후속의 값싼 답** ✅ `84e4bf6` — 시임 노출 vs 리플렉션의 양자택일이 아니었다: `internal static SocketsHttpHandler CreateHandler(KeycloakConfig)` 추출 + `InternalsVisibleTo` + 로컬 `HttpListener`. 공개 표면이 늘지 않으며, Java `buildTimeoutClient`가 이미 같은 모양의 시임을 갖고 있다. (구현은 이 처방대로 됐다 — `HttpListener` 자리에는 이미 참조돼 있던 `WireMock.Net`을 썼다.)
 
 ---
 
