@@ -27,7 +27,8 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 
 ### 1) Required runtime — JDK 21+
 
-Artifacts are compiled with `--release 21`. **Loading them under a JDK earlier than 21 raises `UnsupportedClassVersionError`**, so the consuming application must also be built and run on JDK 21 or newer. (Originally targeted Java 17, then raised to 21 LTS on 2026-07-03.)
+<!-- doc-guard: kind=runtime lang=java -->
+JDK **`21` or newer** is required. Artifacts are compiled with `--release 21`. **Loading them under a JDK earlier than 21 raises `UnsupportedClassVersionError`**, so the consuming application must also be built and run on JDK 21 or newer. (Originally targeted Java 17, then raised to 21 LTS on 2026-07-03.)
 
 ### 2) Local installation (current — not yet published)
 
@@ -108,7 +109,8 @@ try (KeycloakClient client = KeycloakClient.create(config)) {
 
 ### 1) Required runtime — Python 3.10+
 
-Python 3.10 or newer is required. The package includes the PEP 561 `py.typed` marker, so consumers can also type-check with `mypy`.
+<!-- doc-guard: kind=runtime lang=python -->
+Python **`3.10` or newer** is required. The package includes the PEP 561 `py.typed` marker, so consumers can also type-check with `mypy`.
 
 ### 2) Local installation (from a clone)
 
@@ -171,7 +173,8 @@ with KeycloakClient.create(config) as kc:
 
 ### 1) Required runtime — Node 22+
 
-Node.js **22 or newer** is required. The package is **ESM-only** (`"type":"module"`) and all public methods are `async` (Promise) (only `createAuthorizationRequest` is synchronous). It includes TypeScript type declarations (`.d.ts`), so consumers can type-check as well.
+<!-- doc-guard: kind=runtime lang=node -->
+Node.js **`22` or newer** is required. The package is **ESM-only** (`"type":"module"`) and all public methods are `async` (Promise) (only `createAuthorizationRequest` is synchronous). It includes TypeScript type declarations (`.d.ts`), so consumers can type-check as well.
 
 ### 2) Local installation (current — not yet published)
 
@@ -232,7 +235,8 @@ try {
 
 ### 1) Required runtime — Go 1.25+
 
-Go **1.25 or newer** is required (its dependency `golang.org/x/oauth2` v0.36 requires it). The idiom is sync + `context.Context` (every network method takes `ctx` as its first argument, and only `CreateAuthorizationRequest` is synchronous). Docker is needed only for integration tests.
+<!-- doc-guard: kind=runtime lang=go -->
+Go **`1.25` or newer** is required (its dependency `golang.org/x/oauth2` v0.36 requires it). The idiom is sync + `context.Context` (every network method takes `ctx` as its first argument, and only `CreateAuthorizationRequest` is synchronous). Docker is needed only for integration tests.
 
 ### 2) Local installation (current — not yet published)
 
@@ -384,7 +388,8 @@ foreach (var u in users) Console.WriteLine($" - {u.Username}");
 
 ### 1) Required runtime — PHP 8.3+
 
-PHP **8.3 or newer** is required. Value types are declared as `final readonly class` (immutable), and the idiom is exception-based (`KeycloakException` hierarchy). Docker is needed only for integration tests.
+<!-- doc-guard: kind=runtime lang=php -->
+PHP **`8.3` or newer** is required. Value types are declared as `final readonly class` (immutable), and the idiom is exception-based (`KeycloakException` hierarchy). Docker is needed only for integration tests.
 
 ### 2) Local installation (from a clone)
 
@@ -448,7 +453,8 @@ echo "created userId={$userId}\n";
 
 ### 1) Required runtime — Rust 1.88+
 
-Rust **1.88 or newer** (MSRV — required by edition 2024 + let-chains) is required. The idiom is async-only (tokio), and instead of exceptions it uses a `thiserror`-based `KeycloakError` enum (`Config`/`Auth`/`Transport`/`Admin`/`TokenValidation`) + `Result<T, KeycloakError>`. Docker is needed only for integration tests.
+<!-- doc-guard: kind=runtime lang=rust -->
+Rust **`1.88` or newer** (MSRV — required by edition 2024 + let-chains) is required. The idiom is async-only (tokio), and instead of exceptions it uses a `thiserror`-based `KeycloakError` enum (`Config`/`Auth`/`Transport`/`Admin`/`TokenValidation`) + `Result<T, KeycloakError>`. Docker is needed only for integration tests.
 
 ### 2) Local installation (current — not yet published)
 
@@ -520,7 +526,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### 1) Required runtime — Ruby 3.2+
 
-Ruby **3.2 or newer** (dev/CI top end 3.4) is required. The idiom is sync-only (all wrapped gems are synchronous), and it uses exception-based idioms (`KeycloakSdk::Error` hierarchy — isomorphic with Java/Python/Node/C#/PHP, in contrast to the error-value idioms of Go/Rust). Docker is needed only for integration tests.
+<!-- doc-guard: kind=runtime lang=ruby -->
+Ruby **`3.2` or newer** (dev/CI top end 3.4) is required. The idiom is sync-only (all wrapped gems are synchronous), and it uses exception-based idioms (`KeycloakSdk::Error` hierarchy — isomorphic with Java/Python/Node/C#/PHP, in contrast to the error-value idioms of Go/Rust). Docker is needed only for integration tests.
 
 ### 2) Local installation (current — not yet published)
 
@@ -582,7 +589,8 @@ client.close
 
 ### 1) Required runtime — Kotlin 2.2+ / JDK 21+
 
-Kotlin **2.2 or newer** on **JDK 21+** (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). The SDK is *built* with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so the published artifact’s binary metadata is readable by any Kotlin 2.2+ compiler — you do not need to be on 2.4 to consume it. All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
+<!-- doc-guard: kind=runtime lang=kotlin -->
+**JDK `21+`** is required (this anchor verifies the JDK toolchain, not the Kotlin language version). Kotlin **2.2 or newer** is also required on that JDK (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). The SDK is *built* with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so the published artifact’s binary metadata is readable by any Kotlin 2.2+ compiler — you do not need to be on 2.4 to consume it. All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
 
 ### 2) Local installation (current — not yet published)
 

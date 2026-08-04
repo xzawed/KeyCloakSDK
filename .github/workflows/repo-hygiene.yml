@@ -61,7 +61,7 @@ jobs:
         # 않는가다 — check-docs와 같은 종류의 자기기만 방지다.
         run: sh scripts/test/test-doctor.sh
       - name: 문서-소스 대조
-        # --min-facts/--min-anchors는 저장소 루트의 현재 실측치(38 facts / 10 anchors)를
+        # --min-facts/--min-anchors는 저장소 루트의 현재 실측치(46 facts / 18 anchors)를
         # 하한으로 강제한다 — 앵커 주석을 지우면서 그 표를 남겨두면(검사 대상 자체가
         # 조용히 사라지면) 위쪽 검사들만으로는 잡히지 않고 exit 0이 새 나간다. 앵커·
         # 표를 늘리면 이 값도 함께 올려야 한다(내리는 PR은 곧 커버리지 축소이므로
@@ -69,7 +69,7 @@ jobs:
         # ⚠️ 이 값은 한때 14/4에 머물러 있었고 실측은 이미 28/7이었다 — **앵커 절반이
         # 사라져도 CI가 통과하는 상태**였다. 하한을 올리는 것을 잊으면 가드가 조용히
         # 헐거워지므로, 앵커를 추가하는 PR은 이 줄을 함께 고쳐야 한다.
-        run: node scripts/check-docs.mjs . --min-facts=38 --min-anchors=10
+        run: node scripts/check-docs.mjs . --min-facts=46 --min-anchors=18
 
       - name: 커버리지 게이트 가드 자가테스트(측정 실패와 하락을 구분하는지)
         # 이 가드의 가치는 임계값 비교가 아니라 판별이다 — 둘 다 exit 1이라 종료코드만 보는
