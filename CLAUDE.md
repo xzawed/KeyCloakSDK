@@ -198,7 +198,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **java jacoco:check는 `verify` 페이즈 바인딩 — 로컬 `mvn test`로는 커버리지 게이트 미검증**(반드시 `mvn -pl … -am verify -DskipITs`). PR #71에서 `forRealm`에 `.rateLimited()` 1줄이 auth번들을 0.90→0.89로 떨어뜨려 CI 3잡 동시실패 — `JWKSourceBuilder` 지연특성 이용한 네트워크-프리 `forRealm` 단위테스트로 복원.
 - ⚠️ **앱 빌드 이미지는 Alpine(musl) 베이스** — Debian/glibc는 Docker Desktop(Windows) 내장 DNS프록시가 레지스트리 CNAME체인을 glibc 리졸버에 실패로 돌려줘 `dotnet restore`/`pip install`/Maven·npm 다운로드가 막힘(musl은 정상, CI 네이티브 Docker 무해).
 - ⚠️ **앱/레지스트리 전 컨테이너 Alpine/musl**(Windows Docker Desktop glibc-DNS 게차 회피 — install harness 전용 재확인, 위와 동일 근거).
-- ⚠️ **잔여 follow-up(marginal·미착수)**: wait_healthy 크래시 조기감지(run.sh의 `sleep 3600`이 이득 제한) · go 공개프록시 폴스루(현 file-first 체인 정상동작). (rust closure의 `Cargo.lock` 커밋 항목은 해소 — 라이브러리 핀 완화의 재현성 근거로 `rust/Cargo.lock`이 저장소에 커밋됐다.)
+- ⚠️ **잔여 follow-up(marginal·미착수)**: go 공개프록시 폴스루(현 file-first 체인 정상동작). **해소된 항목 둘은 목록에서 뺐다** — (a) rust closure의 `Cargo.lock` 커밋은 라이브러리 핀 완화의 재현성 근거로 `rust/Cargo.lock`이 저장소에 커밋됐고, (b) wait_healthy 크래시 조기감지는 `967d1ce`가 구현했다(`harness/install/lib.sh`의 `wait_healthy`가 `docker inspect`로 컨테이너 종료를 감지하면 남은 타임아웃을 태우지 않고 exit code + 마지막 로그 40줄과 함께 즉시 실패한다 — 단 컨테이너가 아직 안 생긴 경합은 판단 보류로 계속 대기한다).
 
 ## 확정 의존성 (BOM으로 고정)
 
@@ -257,7 +257,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 <!-- doc-guard: kind=dep source=rust/Cargo.toml min=5 -->
 | 의존성 | 크레이트 | 왜 이 선택인가 | 버전 |
 |---|---|---|---|
-| Admin | `keycloak`(`default-features = false`, features: `tags-all`·`resource-builder`·`reqwest12`) | `reqwest12` feature로 `openidconnect`와 reqwest 0.12를 정렬(안 맞추면 타입 불일치로 컴파일 실패). **요구는 틸드 `~26.6.2`** — 이 크레이트의 버전은 semver가 아니라 Keycloak **서버 라인**을 따라가서 "26.7"이 서버 마이너 업그레이드이고 과거에 reqwest feature 구성을 바꾼 적이 있다(우리가 의존하는 `reqwest12`가 그 너머로 보장되지 않는다). 게차를 다시 확인하고 의도적으로 올린다 | `26.6.2` |
+| Admin | `keycloak`(`default-features = false`, features: `tags-all`·`resource-builder`·`reqwest12`) | `reqwest12` feature로 `openidconnect`와 reqwest 0.12를 정렬(안 맞추면 타입 불일치로 컴파일 실패). **요구는 틸드 `~26.6.2`** — 이 크레이트의 버전은 semver가 아니라 Keycloak **서버 라인**을 따라가서 "26.7"이 서버 마이너 업그레이드이고 과거에 reqwest feature 구성을 바꾼 적이 있다(우리가 의존하는 `reqwest12`가 그 너머로 보장되지 않는다). 게차를 다시 확인하고 의도적으로 올린다 | `~26.6.2` |
 | 인증(OIDC/OAuth2) | `openidconnect`(`default-features = false`, feature: `reqwest`) | `CoreClient`가 6개 엔드포인트 typestate 제네릭 — auth/introspection/token만 `EndpointSet`으로 명시해 무오류 호출 가능 | `4.0.1` |
 | JWT(강화 검증) | `jsonwebtoken`(`default-features = false`, features: `rust_crypto`·`use_pem`) | `Validation` 기본값이 안전하지 않아 `validate_nbf`/`leeway`/`required_spec_claims` 전부 재정의 필요 | `11.0.0` |
 | HTTP | `reqwest`(`default-features = false`, features: `json`·`rustls-tls`) | `keycloak` crate·`openidconnect`가 공유하는 단일 HTTP 클라이언트(SSRF 하드닝을 위해 `redirect::Policy::none()` 적용) | `0.12` |
@@ -313,7 +313,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 
 **`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 현재 앵커 스코프는 부분적이다** — `<!-- doc-guard: ... -->` 앵커는 지금 Java·.NET·Kotlin·PHP·Rust·Ruby 의존성 표 6종(pom.xml/csproj/build.gradle.kts/composer.json/Cargo.toml/gemspec 추출기)과 .NET 최소 런타임 선언 1건만 기계 검증하며, 나머지 언어(Go·Python·Node)의 의존성 표(산문 — 표 형식이 아니라 스코프 밖)와 최소 런타임 선언은 여전히 사람이 직접 맞춰야 한다(계획된 후속 확장 — 사람 판단을 완전히 대체하는 것이 아니다).
 
-⚠️ **앵커가 걸린 표에도 사각지대가 있다 — 버전 *제약 연산자*는 대조되지 않는다.** `check-docs.mjs`의 `normalizeVersion()`이 비교 전에 선행 `=`/`^`/`~`/`>=`/`~>`를 떼어내므로 `=26.6.2`와 `26.6.2`가 같은 값으로 판정된다. Rust 3개 크레이트를 정확 핀에서 캐럿 요구로 바꾼 변경(위 Rust 의존성 절)에서 문서가 여전히 `=`를 주장하고 있었는데 `doc-facts`가 통과한 실제 사례가 있다 — **핀 방식(정확 핀 ↔ 캐럿 ↔ 범위)이 바뀌면 가드가 잡아주지 않으니 표와 산문을 사람이 직접 고쳐야 한다.**
+✅ **버전 *제약 연산자* 사각지대는 닫혔다(2026-08-04).** 예전에는 `normalizeVersion()`이 비교 전에 선행 `=`/`^`/`~`/`>=`/`~>`를 떼어내 `=26.6.2`와 `26.6.2`를 같은 값으로 판정했고, Rust 3개 크레이트를 정확 핀에서 캐럿/틸드로 바꾼 변경에서 문서가 여전히 `=`를 주장하는데도 `doc-facts`가 통과한 실제 사례가 있었다 — **핀 방식 변경은 구조적으로 보이지 않는 드리프트**였다. 지금은 의존성 표(`kind=dep`)만 `normalizeRequirement()`로 **연산자까지 포함해** 대조한다. 최소 런타임(`kind=runtime`)은 그대로 연산자를 벗긴다 — 거기서는 `>=22`와 문서 관용 `22+`가 같은 말이라 연산자가 포맷이지만, 의존성에서는 `=`·`~`·`^`가 소비자에게 서로 다른 계약이라 값 자체이기 때문이다. ⚠️ **따라서 표 셀은 빌드 파일이 쓴 대로 적는다.** cargo에서 맨 `"4.0.1"`과 `"^4.0.1"`은 의미가 같지만 가드는 문자로 대조하므로, 매니페스트에 `^`를 명시하면 표도 함께 고쳐야 한다(npm은 맨 `22`와 `^22`가 실제로 다른 의미라 이 엄격함이 오히려 옳다). 전환 시 실측: 오탐 0건, 진짜 드리프트 1건(`keycloak` 셀이 `26.6.2`인데 `Cargo.toml`은 `~26.6.2`)만 잡혀 그 자리에서 고쳤다.
 
 ### 문서 언어 규칙 (bilingual README + 영문 사용자 문서, PR #31·#32)
 

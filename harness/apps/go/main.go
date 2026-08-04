@@ -163,7 +163,7 @@ type passwordReq struct { Username string `json:"username"`; Password string `js
 
 // tokenPasswordH does ROPC(Resource Owner Password Credentials). It is not on
 // the SDK surface by design — the harness app POSTs directly to the token
-// endpoint (same pattern across all 8 harness apps).
+// endpoint (same pattern across all 9 harness apps).
 func tokenPasswordH(w http.ResponseWriter, r *http.Request) {
 	var body passwordReq
 	if json.NewDecoder(r.Body).Decode(&body) != nil { fail(w, 400, "username/password required"); return }

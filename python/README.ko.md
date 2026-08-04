@@ -4,7 +4,7 @@ Keycloak SDK for Python — 인증(OIDC/OAuth2) + 관리 API. [`python-keycloak`
 
 [English](https://github.com/xzawed/KeyCloakSDK/blob/main/python/README.md) · 한국어
 
-> **사전 릴리스** — PyPI에 아직 게시되지 않았다.
+> **사전 릴리스** — 첫 릴리스 후보(`0.1.0rc1`)가 PyPI에 올라가 있고, 안정 릴리스는 아직 없다. 지금은 프리릴리스만 존재하므로 pip이 프리릴리스로 폴백해 **`pip install keycloak-sdk`만 쳐도 이 RC가 설치된다**.
 
 ## 설치
 
