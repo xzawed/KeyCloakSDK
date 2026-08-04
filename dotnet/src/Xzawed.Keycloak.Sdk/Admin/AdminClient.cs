@@ -43,15 +43,9 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
             throw new KeycloakConfigException("clientSecret is required for the admin client (client-credentials).");
         var http = new HttpClient(new BearerHandler(tokenProvider)
         {
-            // PooledConnectionLifetime은 장수명 프로세스에서 stale DNS/커넥션을 피한다(메인
-            // KeycloakClient HttpClient와 동형 — admin 핸들러에도 배선).
-            InnerHandler = new SocketsHttpHandler
-            {
-                ConnectTimeout = TimeSpan.FromMilliseconds(cfg.ConnectTimeoutMs),
-                PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-                // SSRF 하드닝 — 메인 KeycloakClient 핸들러와 동형(기본값 true를 명시적으로 끈다).
-                AllowAutoRedirect = false,
-            },
+            // Shared with the facade HttpClient so pool lifetime / connect timeout / SSRF
+            // redirect hardening cannot drift between auth and admin transports.
+            InnerHandler = HttpTransport.CreateHandler(cfg),
         })
         {
             BaseAddress = new Uri(cfg.ServerUrl.TrimEnd('/') + "/"),   // must end with '/'
