@@ -212,6 +212,16 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 | Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0 모듈명 변경 반영 — JUnit5 확장은 `-junit-jupiter`(구 `junit-jupiter` 아님) | 2.0.5 |
 | 단위 테스트 | JUnit 6.1.2 · Mockito 5.23.0 | 표준 JVM 단위테스트 스택 | — |
 
+**Python 확정 의존성(pyproject.toml, major 상한 고정)**:
+
+<!-- doc-guard: kind=dep source=python/pyproject.toml min=2 -->
+| 의존성 | 배포명 | 왜 이 선택인가 | 버전 |
+|---|---|---|---|
+| Admin + 인증 | `python-keycloak` | 성숙한 Keycloak 클라이언트 — `KeycloakOpenID`/`KeycloakAdmin`을 감싼다. ⚠️ sync 경로가 `allow_redirects`를 전달하지 않고 admin 세션이 **둘**(하나는 지연 생성)이라 SSRF 하드닝은 세션의 `resolve_redirects`를 덮는 방식이어야 한다 | `>=7.1,<8` |
+| JWT(강화 검증) | `joserfc` | 보안 핵심이라 major 상한을 고정해 예기치 않은 파괴적 변경을 차단한다. ⚠️ `KeySet.import_key_set`이 기형 JWKS에서 joserfc 타입도 아닌 stdlib `binascii.Error`를 던지므로 경계 변환이 필수 | `>=1.7,<2` |
+
+dev(비앵커): `pytest` · `pytest-asyncio` · `pytest-cov` · `mypy`(strict) · `ruff`(보안 S/bandit 포함 확장 룰셋) · `testcontainers[keycloak]`. ⚠️ **버전 상수를 매니페스트와 중복해 두지 말 것** — `keycloak_sdk.__version__`은 `importlib.metadata`에서 파생한다(예전 하드코딩이 `0.1.0rc1` 범프를 못 따라가 **게시된 휠이 자신을 `0.1.0`으로 보고**했다).
+
 **Node 확정 의존성(package.json으로 고정)**:
 
 <!-- doc-guard: kind=dep source=node/package.json min=3 -->
@@ -333,7 +343,7 @@ dev(비앵커 — 버전이 셀 안 산문에 있어 기계 대조 스코프 밖
 
 작업 완료(머지/main 반영) 후 프로젝트 전체 문서(`CLAUDE.md`, `docs/`, `README.md`)를 최신화·최적화하고 커밋한다. 언어별 빌드/테스트 명령(단일 테스트 실행 포함)을 툴체인 섹션에 유지한다(Java·Python·Node·Go·C#·PHP·Rust·Ruby·Kotlin).
 
-**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 앵커 스코프는 이제 9개 언어 중 8개다** — `<!-- doc-guard: ... -->` 앵커가 Java·.NET·Kotlin·PHP·Rust·Ruby·**Node·Go** 의존성 표 8종(pom.xml/csproj/build.gradle.kts/composer.json/Cargo.toml/gemspec/package.json/**go.mod**)과 .NET 최소 런타임 선언 1건, 합쳐 **36 facts / 9 anchors**를 기계 검증한다. **남은 것은 Python뿐**이고 이유는 다른 언어와 다르다 — Node·Go는 표가 아니라 산문이라 스코프 밖이었지만(표로 옮겨 해소), Python은 **의존성 절 자체가 이 문서에 없다**. 각 언어의 최소 런타임 선언도 .NET 외에는 여전히 사람이 맞춘다(9개 언어 `RUNTIME` 추출기는 이미 구현돼 있어 `kind=runtime` 앵커 배치만 남았다).
+**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 의존성 앵커 스코프는 이제 9개 언어 전부다** — `<!-- doc-guard: ... -->` 앵커가 Java·Python·Node·Go·.NET·PHP·Rust·Ruby·Kotlin 의존성 표 9종(pom.xml/**pyproject.toml**/package.json/**go.mod**/csproj/composer.json/Cargo.toml/gemspec/build.gradle.kts)과 .NET 최소 런타임 선언 1건, 합쳐 **38 facts / 10 anchors**를 기계 검증한다. **남은 스코프는 최소 런타임 선언**이다 — .NET 외 8개 언어는 여전히 사람이 맞춘다(9개 언어 `RUNTIME` 추출기는 `check-docs.mjs`에 **이미 구현돼 있어** `kind=runtime` 앵커 배치만 남았다). 표의 dev/도구 의존성 절은 버전이 셀 안 산문에 있어 구조적으로 스코프 밖이다.
 
 ⚠️ **앵커를 추가하면 `.github/workflows/repo-hygiene.yml`의 `--min-facts`/`--min-anchors`도 함께 올려야 한다.** 그 하한은 "앵커 주석만 지우고 표를 남기는" 자기기만을 막는 장치인데, 한때 `14/4`에 머물러 있고 실측은 이미 `28/7`이라 **앵커 절반이 사라져도 CI가 통과하는** 상태였다.
 

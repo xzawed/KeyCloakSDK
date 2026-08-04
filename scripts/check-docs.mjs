@@ -301,6 +301,108 @@ function fromGoMod(t) {
   return m
 }
 
+// pyproject.toml 의 `[project].dependencies` 와 `[project.optional-dependencies]` 의
+// **모든** 그룹을 병합해 "package-name" -> "버전 지정자 원문" 맵을 만든다.
+// fromComposer 가 require + require-dev 를 합치는 것과 같은 이유다 — 표 행이 runtime
+// 좌표든 dev 좌표든 같은 앵커/맵에서 해석돼야 한다(이 맵 자체가 두 절을 구분하지는
+// 않는다).
+//
+// ⚠️ TOML 라이브러리 없이 섹션·배열 경계를 줄 단위로 추적한다. 이유: 이 파일의 다른
+// 추출기도 전부 regex/JSON 이고, 일반 TOML 파서를 들이면 의존성이 늘어난다. 이 리포의
+// pyproject 는 의존성을 한 줄에 한 항목으로 쓰므로 그 범위면 충분하다.
+//
+// ⚠️ 반드시 의존성 배열 **안** 만 본다. 같은 파일의 `classifiers = ["Programming
+// Language :: Python :: 3.10"]` 나 `[build-system] requires = ["hatchling"]` 를 스캔하면
+// 쓰레기 키가 맵에 들어가 표 행이 조용히 "찾은 것처럼" 통과한다(naive "모든 따옴표
+// 문자열" 스캔이 빠지는 함정 — 회귀 테스트에 디코이로 고정).
+//
+// 항목은 따옴표 문자열 뒤에 `#` 주석이 붙을 수 있다(`"joserfc>=1.7,<2",   # 보안 핵심…`).
+// 주석은 따옴표 **밖** 에만 있으므로 먼저 따옴표 내용을 뽑고 그 뒤는 버린다.
+// PEP 508 엑스트라(`uvicorn[standard]`)는 배포 이름에 속하지 않으므로 키에서 떼고,
+// 환경 마커(`; python_version < '3.11'`)도 값에서 버린다. 지정자 자체는 정규화하지
+// 않는다 — `>=7.1,<8` 처럼 쓰인 그대로 돌려주고 대조는 normalizeRequirement 가 한다.
+function fromPyproject(t) {
+  const m = new Map()
+  // 'project' | 'optional' | 'other' — 섹션 밖/미관여 테이블은 other 로 무시.
+  let section = 'other'
+  let inDepArray = false
+
+  // 따옴표 한 항목을 PEP 508 로 분해해 맵에 넣는다. 지정자 없으면 빈 문자열 값을 남긴다
+  // (키는 유지 — "좌표를 찾지 못함" 과 "지정자 없음" 을 구분).
+  const addReq = (raw) => {
+    // 환경 마커는 `;` 이후 전부 — 마커 안 따옴표는 이미 raw 가 항목 본문이라 첫 `;` 절단이 안전.
+    const body = raw.split(';')[0].trim()
+    if (!body) return
+    // name [extras] version_spec — extras 는 키에서 제외, 지정자는 원문 그대로.
+    const ent = /^([\w.-]+)(?:\[[^\]]*\])?\s*(.*)$/.exec(body)
+    if (!ent) return
+    m.set(ent[1], (ent[2] || '').trim())
+  }
+
+  // 한 줄(또는 배열 시작 줄의 `[` 이후 잔여)에서 따옴표 항목만 주워 담는다.
+  // ⚠️ 배열 닫는 `]` 는 **따옴표 밖** 에서만 본다 — 항목 안의 PEP 508 extras
+  // (`uvicorn[standard]`·`testcontainers[keycloak]`) 가 가진 `]` 를 배열 종료로
+  // 오인하면 그 항목 이후가 통째로 잘리고 inDepArray 가 조기 false 가 된다.
+  // 또한 환경 마커 안의 작은따옴표(`python_version < '3.11'`) 때문에
+  // `["']…["']` 교차 매칭 정규식은 쓸 수 없다 — 연 따옴표와 같은 종류로만 닫는다.
+  const absorbQuoted = (fragment) => {
+    let i = 0
+    while (i < fragment.length) {
+      const c = fragment[i]
+      if (c === '"' || c === "'") {
+        const q = c
+        i++
+        let content = ''
+        while (i < fragment.length && fragment[i] !== q) {
+          content += fragment[i]
+          i++
+        }
+        if (i < fragment.length && fragment[i] === q) {
+          addReq(content)
+          i++ // 닫는 따옴표
+        }
+        continue
+      }
+      if (c === ']') return true // 배열 종료(따옴표 밖)
+      i++
+    }
+    return false
+  }
+
+  for (const rawLine of t.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+
+    const sec = /^\[([^\]]+)\]$/.exec(line)
+    if (sec) {
+      // 새 테이블이면 열려 있던 배열은 끝(비정상 TOML 이어도 다음 섹션으로 누수 금지).
+      inDepArray = false
+      if (sec[1] === 'project') section = 'project'
+      else if (sec[1] === 'project.optional-dependencies') section = 'optional'
+      else section = 'other'
+      continue
+    }
+
+    if (section === 'other') continue
+
+    if (!inDepArray) {
+      // [project] 에서는 dependencies 배열만. classifiers/keywords/authors 등은 무시.
+      // [project.optional-dependencies] 에서는 그룹 이름 = [ ... ] 전부(dev/test/… 무관).
+      let open = null
+      if (section === 'project') open = /^dependencies\s*=\s*\[(.*)$/.exec(line)
+      else if (section === 'optional') open = /^[\w.-]+\s*=\s*\[(.*)$/.exec(line)
+      if (!open) continue
+      inDepArray = true
+      if (absorbQuoted(open[1])) inDepArray = false
+      continue
+    }
+
+    // 배열 본문 — 닫는 ] 단독 줄이거나 항목+].
+    if (absorbQuoted(line)) inDepArray = false
+  }
+  return m
+}
+
 function extract(sourceRel) {
   const abs = join(ROOT, sourceRel)
   if (sourceRel.endsWith('pom.xml')) return fromPomReactor(abs)
@@ -313,6 +415,7 @@ function extract(sourceRel) {
   if (sourceRel.endsWith('.gemspec')) return fromGemspec(text)
   if (sourceRel.endsWith('Cargo.toml')) return fromCargo(text)
   if (sourceRel.endsWith('go.mod')) return fromGoMod(text)
+  if (sourceRel.endsWith('pyproject.toml')) return fromPyproject(text)
   throw new Error(`no extractor for ${sourceRel}`)
 }
 
