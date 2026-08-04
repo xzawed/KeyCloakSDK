@@ -213,7 +213,18 @@ This is what makes the "merge a release PR" path of §1 work. **Until all four s
 
 2. **Register two secrets in this repository** (Settings → Secrets and variables → Actions): `RELEASE_APP_ID` (the numeric App ID) and `RELEASE_APP_PRIVATE_KEY` (the whole `.pem`, BEGIN/END lines included). If either is unset the workflow emits `::error::` and exits 1 — it never skips silently, for the same reason .NET and Kotlin no longer do (§2-A step 5, §2-C step 3).
 
-3. **Apply the tag rulesets**: `node scripts/repo-config.mjs apply` (needs an admin token; the three definitions are already committed under `.github/rulesets/`). Then run `node scripts/repo-config.mjs check` and confirm it reports no drift — `target: "tag"` may return server-managed fields the checker was only taught about branch rulesets, in which case use `pull` to diff and extend `SERVER_FIELDS`.
+3. ~~**Apply the tag rulesets**: `node scripts/repo-config.mjs apply` (needs an admin token).~~ **Done — 2026-08-04.** All three are live and `check` reports no drift:
+
+   ```
+   PRIMARY                 target=branch  active   (18882689)
+   RELEASE-TAGS-CREATE     target=tag     active   (20384703)
+   RELEASE-TAGS-CREATE-GO  target=tag     active   (20384702)
+   RELEASE-TAGS-IMMUTABLE  target=tag     active   (20384704)
+   ```
+
+   The open question this step carried — whether a `target: "tag"` ruleset returns server-managed fields the checker only knew about for branch rulesets — **resolved as "no"**: `check` passed immediately after `apply` with no `SERVER_FIELDS` extension needed. Nothing further is required here.
+
+   ⚠️ Applying these does **not** close the hand-pushed release path: all three carry `{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"always"}`, so the repository admin still creates, updates and deletes tags freely (verified against the live API after apply). What they stop is *everything else* — which is the point, since a `contents: write` credential could otherwise mint a release tag.
 
 4. **Add the App to `RELEASE-TAGS-CREATE`, and to nothing else.** The committed `tags-create.json` lists only the repository admin as a bypass actor, so after step 3 the App still cannot create tags and the flow stops at its last step (fail-closed, so nothing dangerous — just stuck). Add this entry to the `bypass_actors` array of **`.github/rulesets/tags-create.json`**, commit it, and run `apply` again:
 

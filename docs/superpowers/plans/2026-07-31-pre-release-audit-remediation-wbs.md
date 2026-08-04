@@ -57,7 +57,13 @@
 
 **Kotlin admin(RESTEasy)도 완료** — 이 갈래가 가장 강한 형태다. `AuthClient`는 Nimbus `HTTPRequest.followRedirects = false`를 **우리가 직접 세팅**하지만(그래서 변이검증이 가능하다), JAX-RS `ClientBuilder`에는 **리다이렉트 정책 API가 아예 없다** — 안전한 것은 순전히 RESTEasy 기본 동작 덕이고 우리가 통제하지 않는다. `AdminRedirectHardeningTest`가 `buildTimeoutClient`(이미 `internal` 시임이다)로 로컬 302 서버를 때려 상태코드 표면화와 `/internal` 무요청을 단언하고, 추종하도록 설정한 JDK `HttpClient` 대조군으로 프로브가 살아있음을 증명한다(프로브를 끄면 대조군이 실패함을 실측).
 
-**이제 남은 것은 Java admin 하나뿐이다** — 이 PC에 mvn이 없어 검증할 수 없어 손대지 않았다. Kotlin 테스트가 그대로 이식 가능한 형태다(Java도 `AdminClient.buildTimeoutClient`라는 같은 이름의 패키지 전용 시임을 갖고 있다).
+**Java admin도 완료 — 이 추가 태스크는 이로써 전부 끝났다.** 한때 "이 PC에 mvn이 없다"고 적었는데 **틀린 진단이었다**: Maven 3.9.9는 `~/tools/apache-maven-3.9.9`에 이미 설치돼 있었고 PATH에 없었을 뿐이라 `doctor.mjs`가 MISSING으로 보고했던 것이다(`.claude/rules/java.md`가 처방하는 인라인 프리픽스를 쓰면 그대로 동작한다). Kotlin 테스트를 그대로 이식했고 — Java도 `AdminClient.buildTimeoutClient`라는 같은 이름의 패키지 전용 시임을 갖고 있다 — 로컬에서 실행 검증했다: admin 모듈 48 tests 0 failures, 대조군 변이(경로 기록 비활성) 시 정확히 대조군 단언만 실패, `mvn verify`의 jacoco 게이트 "All coverage checks have been met".
+
+| 경로 | 상태 | 방어 성격 |
+|---|---|---|
+| PHP PSR-18 · Python httpx | ✅ | 라이브러리 기본값 |
+| Node `jose`(JWKS) · Node `openid-client`(토큰) | ✅ | 라이브러리 기본값 — 대조군으로 프로브 증명 |
+| Kotlin admin(RESTEasy) · **Java admin(RESTEasy)** | ✅ | **끌 노브가 아예 없다 — 테스트가 유일 방어수단** |
 
 **.NET 후속의 값싼 답** ✅ `84e4bf6` — 시임 노출 vs 리플렉션의 양자택일이 아니었다: `internal static SocketsHttpHandler CreateHandler(KeycloakConfig)` 추출 + `InternalsVisibleTo` + 로컬 `HttpListener`. 공개 표면이 늘지 않으며, Java `buildTimeoutClient`가 이미 같은 모양의 시임을 갖고 있다. (구현은 이 처방대로 됐다 — `HttpListener` 자리에는 이미 참조돼 있던 `WireMock.Net`을 썼다.)
 
