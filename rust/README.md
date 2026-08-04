@@ -4,7 +4,7 @@ An async Keycloak SDK for Rust — OIDC/OAuth2 authentication with hardened JWT 
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layering and flows are isomorphic across every language — monorepo: <https://github.com/xzawed/KeyCloakSDK>
 
-> **Pre-release** — not yet published to crates.io.
+> **Pre-release** — the first release candidate (`0.1.0-rc.1`) is on crates.io; there is no stable release yet. The bare `cargo add keycloak-sdk` below resolves this RC today, because Cargo falls back to a pre-release when a crate has no stable version. Once a stable release lands, that one wins instead — pin explicitly (`cargo add keycloak-sdk@0.1.0-rc.1`) if you mean to stay on the RC. ⚠️ A hand-written requirement such as `keycloak-sdk = "0.1"` never matches a pre-release; spell the pre-release out (`keycloak-sdk = "0.1.0-rc.1"`).
 
 ## Requirements
 
