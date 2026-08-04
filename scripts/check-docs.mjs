@@ -328,6 +328,22 @@ function normalizeVersion(s) {
   return parts.join('.')
 }
 
+// kind=dep 전용 — 위 정규화를 하되 **범위 연산자는 보존**한다. kind=runtime과 갈리는 데는
+// 이유가 있다: 런타임 선언에서 `>=22`와 문서 관용 `22+`는 같은 말이라 연산자가 포맷이지만,
+// 의존성 선언에서 연산자는 **값 자체**다 — `=26.6.2`(정확 핀)·`~26.6.2`(틸드)·`^26.6.2`(캐럿)는
+// 소비자에게 서로 다른 계약이고, 특히 라이브러리에서 정확 핀은 소비자의 의존성 해소를 하드
+// 실패시킨다(CLAUDE.md Rust 절).
+// ⚠️ 이 함수가 생긴 계기: Rust 3개 크레이트를 정확 핀에서 캐럿/틸드로 바꿨을 때 문서는 여전히
+// `=`를 주장하고 있었는데 **이 가드가 통과시켰다** — normalizeVersion이 대조 전에 연산자를
+// 떼어내고 있었기 때문이다. 즉 핀 방식 변경은 구조적으로 보이지 않는 드리프트였다.
+// ⚠️ 따라서 규칙은 "표 셀을 매니페스트가 쓴 그대로 적는다"이다. cargo에서 맨 `"4.0.1"`과
+// `"^4.0.1"`은 의미가 같지만 이 가드는 문자로 대조하므로, 매니페스트를 `^`로 명시하면 표도
+// 함께 고쳐야 한다(npm은 맨 `22`와 `^22`가 실제로 다른 의미라 이 엄격함이 오히려 옳다).
+function normalizeRequirement(s) {
+  const m = /^(>=|~>|=|>|\^|~)\s*/.exec(s.trim())
+  return (m ? m[1] : '') + normalizeVersion(s)
+}
+
 // 최소 런타임 — 언어별 고정 추출기(좌표가 없는 단일 값)
 const RUNTIME = {
   java: ['java/pom.xml', (t) => /<maven\.compiler\.release>([^<]+)</.exec(t)?.[1]],
@@ -599,12 +615,10 @@ for (const file of walk(ROOT)) {
         continue
       }
       checked++
-      // PHP/Rust/Ruby처럼 문서 표가 빌드 파일과 같은 범위 연산자 표기(예: Rust `=26.6.2`,
-      // Ruby `~> 2.0`)를 그대로 베끼기도 하고, 표기를 벗겨 맨숫자로 쓰기도 한다 — 양쪽을
-      // normalizeVersion으로 정규화한 뒤 대조해 표기 차이만 흡수한다(값 자체가 다르면
-      // 정규화 후에도 여전히 다르므로 실제 드리프트를 가리지 않는다 — normalizeVersion의
-      // 불변식 참고).
-      if (normalizeVersion(actual) !== normalizeVersion(ver)) {
+      // 의존성 표는 **연산자까지 포함해** 대조한다(normalizeRequirement — 그 주석에 이유가 있다).
+      // 표기 차이(`net` 접두·끝의 `+`·go의 3부 버전 등)는 여전히 흡수하되, 핀 방식(`=` ↔ `^` ↔ `~`)은
+      // 값의 일부로 취급한다. 즉 문서 표 셀은 빌드 파일이 쓴 대로 적어야 한다.
+      if (normalizeRequirement(actual) !== normalizeRequirement(ver)) {
         errors.push(`${rel}:${i + 1} '${coord}' 문서=${ver} 실제=${actual} (${attrs.source})`)
       }
     }

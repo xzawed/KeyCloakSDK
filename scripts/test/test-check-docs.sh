@@ -581,37 +581,52 @@ assert_fails node "$GUARD" "$TMP"
 
 rm -rf "$TMP" && mkdir -p "$TMP"
 
-# ---- 회귀 10: kind=dep 대조(검사 1)도 kind=runtime과 같은 normalizeVersion을 거쳐야
-# 한다 ----
-# Rust는 Cargo.toml에 정확 핀 연산자("=26.6.2")로 선언하고, Ruby는 gemspec에 비관적 연산자
-# ("~> 2.0")로 선언한다 — 문서 표가 그 연산자를 그대로 베끼든 맨숫자로 적든 같은 값이면
-# 통과해야 한다(포맷 차이만 다른 것이지 값이 다른 게 아니므로). 동시에 진짜 다른 값
-# (26.6.2 vs 26.6.3)은 정규화 후에도 여전히 달라야 한다 — 이 어서션이 없으면 정규화가
-# 검사 자체를 무력화(항상 통과)했는지 알 수 없다.
+# ---- 회귀 10: kind=dep 대조는 **연산자까지 포함해** 한다(normalizeRequirement) ----
+# ⚠️ 이 테스트는 한때 정반대를 단언했다 — 매니페스트가 "=26.6.2"여도 문서가 맨 "26.6.2"로
+# 적으면 통과해야 한다고. 그게 진짜 드리프트를 통과시킨 사각지대였다: Rust 3개 크레이트를
+# 정확 핀에서 캐럿/틸드로 바꿨는데 문서는 여전히 "="를 주장한 채 doc-facts가 초록이었다.
+# 의존성 선언에서 연산자는 포맷이 아니라 **값**이다 — 라이브러리에서 "="(정확 핀)는 소비자의
+# 의존성 해소를 하드 실패시키고 "~"·"^"는 그렇지 않다. 지금 계약은 "표 셀을 매니페스트가
+# 쓴 그대로 적는다"이다.
+# 대조군: kind=runtime은 여전히 연산자를 벗긴다(위 회귀의 "22+" ≡ ">=22"). 두 경로가 갈린다는
+# 것 자체가 이 변경의 요지이므로, 그쪽 어서션을 지우면 이 구분이 증명되지 않는다.
 mkdir -p "$TMP/rust" "$TMP/ruby"
 printf '%s\n' '[dependencies]' 'keycloak = { version = "=26.6.2" }' > "$TMP/rust/Cargo.toml"
 cat > "$TMP/norm-rust.md" <<'EOF'
-# rust pin-operator normalization fixture
+# rust pin-operator fixture
 
 <!-- doc-guard: kind=dep source=rust/Cargo.toml min=1 -->
 
 | 이름 | 좌표 | 버전 |
 |---|---|---|
-| Admin | `keycloak` | 26.6.2 |
+| Admin | `keycloak` | `=26.6.2` |
 EOF
 printf '%s\n' 'Gem::Specification.new do |spec|' '  spec.add_dependency "faraday", "~> 2.0"' 'end' > "$TMP/ruby/keycloak-sdk.gemspec"
 cat > "$TMP/norm-ruby.md" <<'EOF'
-# ruby pessimistic-operator normalization fixture
+# ruby pessimistic-operator fixture
 
 <!-- doc-guard: kind=dep source=ruby/keycloak-sdk.gemspec min=1 -->
 
 | 이름 | gem | 버전 |
 |---|---|---|
-| HTTP | `faraday` | 2.0 |
+| HTTP | `faraday` | `~> 2.0` |
 EOF
+# 연산자 표기 차이는 흡수한다 — gemspec은 "~> 2.0"(연산자 뒤 공백), 문서도 같은 표기.
 assert_ok node "$GUARD" "$TMP"
 
-# 진짜 드리프트는 정규화 후에도 여전히 잡혀야 한다(26.6.2 ≠ 26.6.3 — 값 자체가 다름).
+# (a) 문서가 연산자를 누락 — 매니페스트는 정확 핀인데 표는 맨숫자. 예전에는 통과했다.
+sed -i 's/`=26\.6\.2`/`26.6.2`/' "$TMP/norm-rust.md"
+assert_fails node "$GUARD" "$TMP"
+sed -i 's/`26\.6\.2`/`=26.6.2`/' "$TMP/norm-rust.md"
+assert_ok node "$GUARD" "$TMP" # 되돌리면 다시 통과(위 실패가 연산자 때문임을 고정)
+
+# (b) 핀 방식 자체가 바뀜 — 정확 핀 → 캐럿(실제로 일어났던 그 변경). 값은 그대로다.
+sed -i 's/"=26\.6\.2"/"^26.6.2"/' "$TMP/rust/Cargo.toml"
+assert_fails node "$GUARD" "$TMP"
+sed -i 's/"\^26\.6\.2"/"=26.6.2"/' "$TMP/rust/Cargo.toml"
+
+# (c) 값 자체의 드리프트도 여전히 잡혀야 한다(26.6.2 ≠ 26.6.3) — 연산자 인식이 값 검사를
+# 대체한 게 아니라는 증거.
 sed -i 's/26\.6\.2/26.6.3/' "$TMP/norm-rust.md"
 assert_fails node "$GUARD" "$TMP"
 
