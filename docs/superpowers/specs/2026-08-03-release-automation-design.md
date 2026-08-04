@@ -202,8 +202,10 @@ Claude                            사용자                  GitHub Actions
 ### A. 자동화를 켜기 위해 필요 (신규)
 
 1. **GitHub App 생성·설치** — Settings → Developer settings → GitHub Apps → New. 권한은 **Contents: Read and write 하나만**. `xzawed/KeyCloakSDK`에 설치 후 App ID·private key를 시크릿으로 등록.
-2. **태그 룰셋 적용** — 파일은 PR로 올라오고, 적용에 admin 토큰이 한 번 필요. 적용 직후 `node scripts/repo-config.mjs check`를 돌려 드리프트가 없는지 확인한다(§10 N5).
-3. **`release` environment 생성** — §2-B의 깨진 참조 해소. **보호 규칙은 붙이지 않는다**(이번 범위에서는 빈 environment 생성만). Ruby에 required reviewer를 붙이는 건 RubyGems 등록 상태를 사람이 확인한 뒤의 **별도 결정**이다(§5).
+2. ✅ **태그 룰셋 적용 — 완료(2026-08-04).** `RELEASE-TAGS-CREATE`(20384703)·`-CREATE-GO`(20384702)·`-IMMUTABLE`(20384704) 전부 `enforcement: active`. **§10 N5도 함께 해소** — `target: "tag"`가 브랜치 룰셋에만 있던 서버 관리 필드를 돌려줘 `SERVER_FIELDS` 확장이 필요할지가 열린 질문이었는데, `apply` 직후 `check`가 확장 없이 그대로 통과했다(불필요). ⚠️ 셋 다 bypass가 admin이라 **사람이 손으로 태그를 미는 경로는 닫히지 않았다**(적용 후 라이브 API로 확인).
+3. ✅ **`release` environment 생성 — 완료(2026-08-05).** §2-B의 깨진 참조가 해소됐다(`ruby-release.yml`의 `environment: release`가 이제 실존 대상을 가리킨다). 실측: `protection_rules: []` · `deployment_branch_policy: null` — 규정대로 **보호 규칙 없는 빈 environment**다. Ruby에 required reviewer를 붙이는 건 RubyGems 등록 상태를 사람이 확인한 뒤의 **별도 결정**으로 그대로 남는다(§5).
+
+   > 부수 효과로 §2-B가 관측했던 "environment 0개" 상태도 끝났다. 이 environment는 현재 `ruby-release.yml` 한 곳만 참조한다 — **다른 여덟 릴리스 워크플로에 `environment:`를 추가하지 말 것**(§5의 비대칭 경고: Python은 environment를 비운 채 OIDC 발행에 성공했고, 일관성 명목의 추가가 동작 중인 신뢰발행 주체 클레임을 깨뜨린다).
 
 ### B. 자동화와 무관하게 필요 (issue #105)
 
