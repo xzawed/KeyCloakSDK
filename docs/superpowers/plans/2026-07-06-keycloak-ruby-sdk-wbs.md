@@ -2363,7 +2363,9 @@ jobs:
         with:
           working-directory: ruby
 ```
-> ⚠️ **첫 게시 선행(1회)**: gem이 rubygems.org에 존재하기 전에는 Trusted Publisher를 붙일 수 없다 — 최초 1회는 API 키로 `gem push`하거나 `gem exec rubygems_configure_trusted_publisher`(또는 rubygems.org UI에서 gem 생성 후 Trusted Publisher: owner `xzawed`·repo `KeyCloakSDK`·workflow `ruby-release.yml`·environment `release` 등록). 이후 `ruby-v*` 태그 push로 무시크릿 릴리스.
+> ~~⚠️ **첫 게시 선행(1회)**: gem이 rubygems.org에 존재하기 전에는 Trusted Publisher를 붙일 수 없다 — 최초 1회는 API 키로 `gem push`하거나 `gem exec rubygems_configure_trusted_publisher`(또는 rubygems.org UI에서 gem 생성 후 Trusted Publisher: owner `xzawed`·repo `KeyCloakSDK`·workflow `ruby-release.yml`·environment `release` 등록). 이후 `ruby-v*` 태그 push로 무시크릿 릴리스.~~
+>
+> ⚠️ **정정 (2026-08-05) — 위 지시를 따르지 말 것.** "gem이 존재해야 Trusted Publisher를 붙일 수 있다"는 **npm 이야기지 RubyGems가 아니다**. RubyGems 가이드는 반대로 말한다 — *"Trusted publishers are not just for existing gems, they can also be used to push new gems!"* 프로필에서 **pending** publisher를 먼저 등록하면 첫 게시가 그대로 OIDC로 나가고 pending이 normal로 승격된다. 여기서 권했던 "최초 1회 API 키로 `gem push`"는 **비싼 방향으로 틀렸다**: 손으로 민 push는 install-smoke·통합 게이트·태그↔매니페스트 버전 가드를 전부 우회하고 좌표를 파이프라인 밖에서 태워버린다. 올바른 절차와 세 레지스트리(PyPI/RubyGems/npm) 차이 표는 [DEPLOY.md §2-B](../../../DEPLOY.md). ⚠️ pending은 12시간 만료로 추정되니 **등록과 태그 push는 같은 자리에서** 한다.
 
 - [ ] **Step 3: `ruby/examples/quickstart.rb`**
 

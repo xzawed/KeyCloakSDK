@@ -16,10 +16,21 @@ name: ruby-release
 # `gem build` + `gem push`로 직접 게시한다 — git 태그를 만들거나 push하지 않으므로
 # `contents: write` 권한이 불필요하다(read-only로 충분).
 #
-# ⚠️ 첫 게시 선행(1회): gem이 rubygems.org에 존재하기 전에는 Trusted Publisher를 붙일 수 없다 —
-# 최초 1회는 API 키로 `gem push`하거나 rubygems.org UI에서 gem을 생성한 뒤 Trusted Publisher를
-# 등록한다(owner `xzawed` · repo `KeyCloakSDK` · workflow `ruby-release.yml` · environment `release`).
-# 이후에는 `ruby-v*` 태그 push만으로 시크릿 없이 릴리스된다.
+# ⚠️ 첫 게시 선행(1회): rubygems.org 프로필에서 **pending** Trusted Publisher를 등록한다
+# (owner `xzawed` · repo `KeyCloakSDK` · workflow `ruby-release.yml` · environment `release`).
+# 그 뒤 `ruby-v*` 태그를 밀면 첫 게시가 OIDC로 나가고, pending이 normal publisher로 승격되며
+# 게시자가 gem 소유자로 등록된다. 이후로도 시크릿은 필요 없다.
+#
+# ⚠️⚠️ **"gem이 존재해야 Trusted Publisher를 붙일 수 있다"는 것은 npm 이야기지 RubyGems가 아니다.**
+# 이 주석은 한때 그렇게 적혀 있었고 "최초 1회는 API 키로 `gem push`"를 대안으로 권했는데, 그건
+# **비싼 방향으로 틀린 지시**다 — 손으로 민 `gem push`는 install-smoke·통합 게이트·태그↔매니페스트
+# 버전 가드를 전부 우회하고 좌표를 파이프라인 밖에서 태워버린다. RubyGems 공식 가이드는 반대로
+# 말한다: *"Trusted publishers are not just for existing gems, they can also be used to push new
+# gems!"* 근거와 세 레지스트리(PyPI/RubyGems/npm)의 차이 표는 DEPLOY.md §2-B.
+#
+# ⚠️ 다만 **등록과 태그 push를 같은 자리에서** 해야 한다. RubyGems는 pending publisher를
+# `expires_at: 12.hours.from_now`로 만든다(`pending_trusted_publishers_controller` 소스에서 읽은
+# 값 — 공개 가이드에 없으므로 문서화된 계약이 아니라 강한 운영 가정으로 다룰 것).
 on:
   push:
     tags: ['ruby-v*']
