@@ -632,4 +632,71 @@ assert_fails node "$GUARD" "$TMP"
 
 rm -rf "$TMP" && mkdir -p "$TMP"
 
+# ---- 회귀 11: fromGoMod — 괄호 블록·단일 줄·다중 require 블록·// indirect 를 모두
+# 파싱해야 하고, module/go 지시어는 의존성 맵에 섞이면 안 된다 ----
+# Go 의존성 표 앵커 확장의 신규 추출기. go mod tidy 가 직접 의존과 간접 의존을 서로 다른
+# require ( ... ) 블록으로 나누는 것이 관례이므로 **두 번째 블록**의 // indirect 좌표도
+# 표가 참조하면 해석돼야 한다(한 블록만 보면 "찾지 못함"으로 거짓 실패). 단일 줄
+# `require module v1.2.3` 도 go.mod 문법이 허용하므로 같은 맵에 들어와야 한다.
+# ⚠️ 디코이: `go 1.25` 지시어와 `module github.com/...` 줄은 의존성이 아니다 — naive
+# 줄 분할 파서가 `go` 를 좌표로 주워 담으면 표 행 `go` | `1.25` 가 조용히 통과한다.
+# 그 행은 반드시 "좌표를 찾지 못함"으로 실패해야 한다(런타임 앵커 RUNTIME.go 와 의존성
+# 맵이 섞이는 부류의 결함).
+mkdir -p "$TMP/go"
+cat > "$TMP/go/go.mod" <<'EOF'
+module github.com/example/sdk/go
+
+go 1.25
+
+require (
+	github.com/Nerzal/gocloak/v13 v13.9.0
+	golang.org/x/oauth2 v0.36.0
+)
+
+require (
+	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
+	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
+)
+
+require github.com/go-jose/go-jose/v4 v4.1.4
+EOF
+cat > "$TMP/gomod.md" <<'EOF'
+# gomod fixture
+
+<!-- doc-guard: kind=dep source=go/go.mod min=4 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| Admin | `github.com/Nerzal/gocloak/v13` | `v13.9.0` |
+| OAuth2 | `golang.org/x/oauth2` | `v0.36.0` |
+| Indirect | `github.com/golang-jwt/jwt/v5` | `v5.2.1` |
+| JOSE | `github.com/go-jose/go-jose/v4` | `v4.1.4` |
+| Pseudo | `github.com/Azure/go-ansiterm` | `v0.0.0-20250102033503-faa5f7b0171c` |
+EOF
+assert_ok node "$GUARD" "$TMP"
+
+# 버전 드리프트 — 추출기가 살아 있어 실제로 대조함을 고정(빈 맵· vacuous min 통과 금지).
+sed -i 's/v13\.9\.0/v99.0.0/' "$TMP/gomod.md"
+assert_fails node "$GUARD" "$TMP"
+sed -i 's/v99\.0\.0/v13.9.0/' "$TMP/gomod.md"
+assert_ok node "$GUARD" "$TMP" # 되돌리면 다시 통과(위 실패가 버전 대조 때문임을 고정)
+
+# 디코이: 좌표 `go` 는 go.mod 의 `go 1.25` 지시어에서 새어 나오면 안 된다.
+# 표 행을 디코이 좌표로 바꾼 뒤 "찾지 못함" 메시지를 어서션한다 — assert_fails 만으로는
+# min 미달 등 다른 이유로 실패해도 통과하므로(과거 전례) 메시지를 고정한다.
+cat > "$TMP/gomod.md" <<'EOF'
+# gomod fixture (go-directive decoy)
+
+<!-- doc-guard: kind=dep source=go/go.mod min=1 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| Runtime leak | `go` | `1.25` |
+EOF
+OUT="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$OUT" "좌표 'go' 를 go/go.mod 에서 찾지 못함" "go directive must not leak into the dep map as coordinate 'go'"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
 assert_report

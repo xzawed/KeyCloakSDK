@@ -257,6 +257,50 @@ function fromGemspec(t) {
   return m
 }
 
+// go.mod의 require 절에서 "module/path" -> "version"을 뽑는다. require 는 두 형태가 모두
+// 유효하다 — 단일 줄 `require module/path v1.2.3` 과 괄호 블록 `require (\n\tmodule/path v1.2.3\n)`.
+// go mod tidy 가 직접 의존과 // indirect 의존을 서로 다른 require 블록으로 나누는 것이 관례이므로
+// **모든** require 블록을 순회해야 한다(한 블록만 보면 간접 의존 좌표가 표에 있어도 "찾지 못함").
+// module/go/toolchain/replace/exclude/retract 는 의존성 좌표가 아니므로 무시한다 — 특히
+// `go 1.25` 한 줄을 좌표 "go" 로 오인하면 런타임 앵커(RUNTIME.go)와 의존성 맵이 섞이는
+// 디코이 버그가 된다(naive 줄 분할 파서가 흔히 빠지는 함정).
+// 버전 문자열은 go.mod 원문 그대로 반환한다(선행 `v` 포함, 의사버전
+// `v0.0.0-20240101120000-abcdef123456` 도 그대로). 다른 추출기와 같이 정규화는
+// normalizeRequirement 에 맡긴다. `// indirect` 주석만 버전 값에서 떼어낸다(맵 키는 남긴다 —
+// 문서가 그 좌표를 참조할 수 있으므로; 간접 의존도 핀된 실제 버전이다).
+function fromGoMod(t) {
+  const m = new Map()
+  let inRequire = false
+  for (const rawLine of t.split(/\r?\n/)) {
+    // 줄 끝 `// ...` 주석을 먼저 떼고 파싱한다 — `// indirect` 가 버전 뒤에 붙는 관례.
+    // 모듈 경로는 `//` 를 포함하지 않으므로 첫 `//` 기준 절단이 안전하다.
+    const code = rawLine.replace(/\s*\/\/.*$/, '').trim()
+    if (!code) continue
+    if (inRequire) {
+      if (code === ')') {
+        inRequire = false
+        continue
+      }
+      const ent = /^(\S+)\s+(\S+)$/.exec(code)
+      if (ent) m.set(ent[1], ent[2])
+      continue
+    }
+    // 괄호 블록 시작 — `require (` / `require(` 둘 다 허용(공백 유무).
+    if (/^require\s*\($/.test(code)) {
+      inRequire = true
+      continue
+    }
+    // 단일 줄 require — 괄호 없는 `require module/path v1.2.3`.
+    const single = /^require\s+(\S+)\s+(\S+)$/.exec(code)
+    if (single) {
+      m.set(single[1], single[2])
+      continue
+    }
+    // module · go · toolchain · replace · exclude · retract · 그 외 지시어는 무시.
+  }
+  return m
+}
+
 function extract(sourceRel) {
   const abs = join(ROOT, sourceRel)
   if (sourceRel.endsWith('pom.xml')) return fromPomReactor(abs)
@@ -268,6 +312,7 @@ function extract(sourceRel) {
   if (sourceRel.endsWith('.csproj')) return fromCsproj(text)
   if (sourceRel.endsWith('.gemspec')) return fromGemspec(text)
   if (sourceRel.endsWith('Cargo.toml')) return fromCargo(text)
+  if (sourceRel.endsWith('go.mod')) return fromGoMod(text)
   throw new Error(`no extractor for ${sourceRel}`)
 }
 

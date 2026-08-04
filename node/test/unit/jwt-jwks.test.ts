@@ -32,11 +32,14 @@ let server: Server
 let jwksUri: string
 let hits = 0
 let attackerKey: Awaited<ReturnType<typeof generateKeyPair>>['privateKey']
+// 리다이렉트 프로브가 "따라갔다면 검증이 성공해버린다"를 재현하려면 유효한 JWK가 필요하다.
+let servedJwkForRedirectProbe: Record<string, unknown>
 
 beforeAll(async () => {
   // 서버가 내주는 JWKS에는 kid 'served' 하나뿐이다.
   const served = await generateKeyPair('RS256')
   const servedJwk = await exportJWK(served.publicKey)
+  servedJwkForRedirectProbe = { ...servedJwk, kid: 'served', use: 'sig', alg: 'RS256' }
   const body = JSON.stringify({
     keys: [{ ...servedJwk, kid: 'served', use: 'sig', alg: 'RS256' }],
   })
@@ -133,6 +136,58 @@ describe('JWKS 재조회 rate-limit (cooldownDuration 실동작)', () => {
       await expect(v.validate(token)).rejects.toBeInstanceOf(KeycloakTokenValidationError)
     } finally {
       await new Promise<void>((resolve) => bad.close(() => resolve()))
+    }
+  })
+
+  // WBS(2026-07-31 감사) "추가 태스크 — 이미 안전한 경로에 고정(pinning) 테스트": JWKS 페치는
+  // SDK가 직접 하지 않는다. jose 내부의 `createRemoteJWKSet`이 하고, **리다이렉트를 끌 노브가
+  // 우리에게 없다** — 즉 여기서는 테스트가 유일한 방어수단이다.
+  //
+  // 실측(jose 6.2.4): 302를 따라가지 않고 `JOSEError: Expected 200 OK from the JSON Web Key Set
+  // HTTP response`로 거부한다. 라이브러리 기본값이 안전하다는 뜻이지만, 그건 **우리가 통제하지
+  // 않는 성질**이라 상위 버전에서 조용히 바뀔 수 있다. 바뀌면 예상 밖 3xx가 공격자가 고른
+  // 내부 URL을 가리켜도 SDK가 그 응답을 서명키로 받아들이게 된다.
+  it('SSRF 고정 — JWKS 302를 따라가지 않는다(jose 기본값이 유일한 방어라 버전 상향을 잠근다)', async () => {
+    const paths: string[] = []
+    const redirecting = createServer((req, res) => {
+      paths.push(req.url ?? '')
+      if (req.url?.startsWith('/certs')) {
+        res.writeHead(302, {
+          location: `http://127.0.0.1:${(redirecting.address() as AddressInfo).port}/internal`,
+        })
+        res.end()
+        return
+      }
+      // 따라갔다면 여기에 도달한다 — 게다가 **유효한** JWKS를 내줘서, 검증이 성공해버리는
+      // 최악의 시나리오(공격자가 고른 출처의 키를 신뢰)를 그대로 재현한다.
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ keys: [servedJwkForRedirectProbe] }))
+    })
+    await new Promise<void>((resolve) => redirecting.listen(0, '127.0.0.1', resolve))
+    try {
+      const uri = `http://127.0.0.1:${(redirecting.address() as AddressInfo).port}/certs`
+      const v = JwtValidator.forJwksUri(uri, { ...baseOpts, jwksMinRefetchSeconds: 30 })
+      const token = await new SignJWT({ sub: 'u', aud: 'my-client' })
+        .setProtectedHeader({ alg: 'RS256', kid: 'served' })
+        .setIssuer(ISS)
+        .setIssuedAt()
+        .setExpirationTime('5m')
+        .sign(attackerKey)
+
+      await expect(v.validate(token)).rejects.toBeInstanceOf(KeycloakTokenValidationError)
+      // 상태코드 거부만으로는 부족하다 — 리다이렉트 대상에 **요청 자체가 가지 않았음**을 본다.
+      expect(paths).not.toContain('/internal')
+
+      // ⚠️ 대조군을 지우지 말 것. 이 하드닝은 jose 내부 동작이라 우리가 끌 수 없고, 따라서
+      // 다른 테스트들처럼 "방어를 제거하면 실패하는가"를 변이로 확인할 수단이 없다. 대신
+      // **추종하는 클라이언트는 실제로 /internal에 도달함**을 같은 서버로 보여, 위 단언이
+      // 프로브 고장(경로 미기록)으로 인한 공허한 통과가 아님을 증명한다. cooldown 테스트가
+      // cooldown=0 대조군을 두는 것과 같은 이유다.
+      paths.length = 0
+      await fetch(uri) // 기본 redirect:'follow'
+      expect(paths).toContain('/internal')
+    } finally {
+      await new Promise<void>((resolve) => redirecting.close(() => resolve()))
     }
   })
 })

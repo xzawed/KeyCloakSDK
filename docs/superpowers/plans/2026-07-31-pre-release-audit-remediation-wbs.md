@@ -53,6 +53,8 @@
 
 **추가 태스크 — 이미 안전한 경로에 고정(pinning) 테스트.** Java/Kotlin admin · Node jose+openid-client · PHP PSR-18 · Python httpx는 **라이브러리 기본값 덕분에** 안전하다. 이는 §3-2가 막으려던 "업그레이드로 조용히 취약해지는" 바로 그 상태이고, 몇몇은 끌 노브 자체가 없어 **테스트가 유일한 방어수단**이다.
 
+> 진행: PHP(`php/tests/Unit/HttpOptionsTest.php`)·Python(httpx)은 완료. **Node `jose`는 완료** — JWKS 페치는 SDK가 직접 하지 않고 `createRemoteJWKSet` 내부가 하며 리다이렉트를 끌 노브가 우리에게 없어서, 실측 후(jose 6.2.4는 302를 `Expected 200 OK…`로 거부한다) 그 거동을 테스트로 잠갔다. ⚠️ 이 하드닝은 **우리가 제거할 수 없어 변이검증이 불가능**하므로, 대신 "기본 `fetch`(redirect:'follow')는 같은 서버에서 `/internal`에 도달한다"는 대조군을 같은 테스트에 두어 프로브가 살아있음을 증명한다(경로 기록을 끄면 대조군이 실패함을 실측). **남은 것은 Java/Kotlin admin(RESTEasy)과 Node `openid-client`** 두 갈래다 — Java는 이 PC에 mvn이 없어 검증 불가라 손대지 않았다.
+
 **.NET 후속의 값싼 답** ✅ `84e4bf6` — 시임 노출 vs 리플렉션의 양자택일이 아니었다: `internal static SocketsHttpHandler CreateHandler(KeycloakConfig)` 추출 + `InternalsVisibleTo` + 로컬 `HttpListener`. 공개 표면이 늘지 않으며, Java `buildTimeoutClient`가 이미 같은 모양의 시임을 갖고 있다. (구현은 이 처방대로 됐다 — `HttpListener` 자리에는 이미 참조돼 있던 `WireMock.Net`을 썼다.)
 
 ---

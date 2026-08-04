@@ -212,9 +212,31 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 | Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0 모듈명 변경 반영 — JUnit5 확장은 `-junit-jupiter`(구 `junit-jupiter` 아님) | 2.0.5 |
 | 단위 테스트 | JUnit 6.1.2 · Mockito 5.23.0 | 표준 JVM 단위테스트 스택 | — |
 
-**Node 확정 의존성(package.json으로 고정)**: `@keycloak/keycloak-admin-client` **`~26.7.0`**(admin — 원래 `^26`→26.7.0의 `decodeToken(undefined).split()` 크래시 회귀로 `~26.6.4`로 좁혔다가[PR #62], PR #63의 provider 배선(`kc.auth()` 미호출)이 크래시 경로를 근본 차단함이 통합테스트로 실증되어 dependabot PR #48로 `~26.7.0`으로 전진) · `openid-client` **6.8.4**(auth, 함수형 API) · `jose` **`^6`**(강화 JWT — 5.10.0에서 전진, `openid-client` 6.8.4가 이미 `jose ^6.2.2`를 요구하고 있어 이 bump는 트리를 **dedupe**한다. SDK가 쓰는 7개 API/옵션이 v6에서 이름·의미 모두 동일함을 published `.d.ts`로 확인했고, `cooldownDuration` rate-limit이 실제로 살아있음을 히트 수로 실측했다) · dev: `typescript` **6**(6.0.x는 JS 기반 안정 라인 — 보류 중인 TS 7이 네이티브 포트 preview다. 산출 `dist/**`가 TS 5.9.3과 **바이트 동일**함을 확인) · `vitest`/`@vitest/coverage-v8` 3(v4는 `vi.mock` 시맨틱 변경으로 보류) · `testcontainers` 12 · `eslint` 10 + `typescript-eslint` 8 · `prettier` 3 · `@types/node` **`^22`**(engines 하한과 일치 — 최신을 따라가지 않는다. dependabot.yml에 메이저 ignore). 런타임 deps(admin-client/openid-client/jose)는 audit clean, devDeps 일부 moderate(dockerode/testcontainers 계열, `files:["dist"]`라 소비자 미배포).
+**Node 확정 의존성(package.json으로 고정)**:
 
-**Go 확정 의존성(go.mod, major 핀)**: `github.com/Nerzal/gocloak/v13` **v13.9.0**(admin) · `golang.org/x/oauth2` **v0.36.0**(auth 흐름) · `github.com/go-jose/go-jose/v4` **v4.1.4**(강화 JWT) · `golang.org/x/sync/singleflight`(single-flight) · test: `github.com/testcontainers/testcontainers-go` **v0.43.0**(base GenericContainer — `modules/keycloak`는 독립 태그 부재로 미사용) · `github.com/stretchr/testify` **v1.11.1**. 전부 Apache-2.0/BSD-3/MIT(호환). `go-oidc`는 제외(discovery는 규약 조립, verifier는 go-jose 자체 강화).
+<!-- doc-guard: kind=dep source=node/package.json min=3 -->
+| 의존성 | 패키지 | 왜 이 선택인가 | 버전 |
+|---|---|---|---|
+| Admin | `@keycloak/keycloak-admin-client` | 공식 클라이언트. 원래 `^26`이었는데 26.7.0의 `decodeToken(undefined).split()` 크래시 회귀로 `~26.6.4`까지 좁혔다가(PR #62), PR #63의 provider 배선(`kc.auth()` 미호출)이 그 크래시 경로를 **근본 차단**함이 통합테스트로 실증되어 dependabot PR #48로 전진 | `~26.7.0` |
+| 인증(OIDC/OAuth2) | `openid-client` | v6 함수형 API. ⚠️ **선언은 범위이고 실제 해석값은 lockfile이 정한다** — 현재 `package-lock.json`이 6.8.4로 고정한다(이 표의 셀은 선언을 말한다) | `^6` |
+| JWT(강화 검증) | `jose` | 5.10.0에서 전진 — `openid-client`가 이미 `jose ^6.2.2`를 요구하고 있어 이 bump는 트리를 **dedupe**한다. SDK가 쓰는 7개 API/옵션이 v6에서 이름·의미 모두 동일함을 published `.d.ts`로 확인했고, `cooldownDuration` rate-limit이 실제로 살아있음을 히트 수로 실측했다(현재 해석값 6.2.4) | `^6` |
+
+dev(비앵커 — 버전이 셀 안 산문에 있어 기계 대조 스코프 밖): `typescript` **6**(6.0.x는 JS 기반 안정 라인 — 보류 중인 TS 7이 네이티브 포트 preview다. 산출 `dist/**`가 TS 5.9.3과 **바이트 동일**함을 확인) · `vitest`/`@vitest/coverage-v8` 3(v4는 `vi.mock` 시맨틱 변경으로 보류) · `testcontainers` 12 · `eslint` 10 + `typescript-eslint` 8 · `prettier` 3 · `@types/node` **`^22`**(engines 하한과 일치 — 최신을 따라가지 않는다. dependabot.yml에 메이저 ignore). 런타임 deps(admin-client/openid-client/jose)는 audit clean, devDeps 일부 moderate(dockerode/testcontainers 계열, `files:["dist"]`라 소비자 미배포).
+
+**Go 확정 의존성(go.mod, major 핀)**:
+
+<!-- doc-guard: kind=dep source=go/go.mod min=5 -->
+| 의존성 | 모듈 | 왜 이 선택인가 | 버전 |
+|---|---|---|---|
+| Admin | `github.com/Nerzal/gocloak/v13` | Go에서 가장 성숙한 Keycloak admin 클라이언트. ⚠️ 네트워크 실패까지 `*APIError{Code:0}`로 감싸므로 경계에서 `Code==0`↔`>0`으로 나눠야 한다 | `v13.9.0` |
+| 인증(OAuth2 흐름) | `golang.org/x/oauth2` | 표준 OAuth2 흐름 — **최소 Go 1.25를 요구하는 쪽이 이것이다**(`go.mod`를 낮춰도 `go mod tidy`가 재상향) | `v0.36.0` |
+| JWT(강화 검증) | `github.com/go-jose/go-jose/v4` | ⚠️ `exp` 부재 시 만료검사를 조용히 건너뛰므로 SDK가 `claims.Expiry == nil` 명시 거부를 얹는다 | `v4.1.4` |
+| single-flight | `golang.org/x/sync` | `singleflight`로 JWKS 동시 미스를 한 번의 조회로 수렴(`client.go`·`jwt.go`·`tokenprovider.go`) | `v0.22.0` |
+| 통합 테스트 | `github.com/testcontainers/testcontainers-go` | base `GenericContainer`로 직접 조립 — 언어별 편의 모듈 `modules/keycloak`는 독립 태그 부재로 미사용 | `v0.43.0` |
+
+전부 Apache-2.0/BSD-3/MIT(호환). `go-oidc`는 제외(discovery는 규약 조립, verifier는 go-jose 자체 강화).
+
+⚠️ **Go에는 dev-dependency 개념이 없다 — `// indirect`를 "우리가 고른 의존성"으로 읽지 말 것.** 이 문서는 한때 `github.com/stretchr/testify` **v1.11.1**을 우리가 선택한 test 의존성처럼 나열했으나, **go 코드는 testify를 import하지 않는다**(`grep -rn stretchr/testify go/*.go` → 0건). `testcontainers-go`가 끌어온 전이 의존성이고 `go.mod`에도 `// indirect`로 적혀 있다. 위 표는 우리가 실제로 import하는 모듈만 담는다.
 
 **C#/.NET 확정 의존성(csproj, major 핀)**:
 
@@ -311,7 +333,9 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 
 작업 완료(머지/main 반영) 후 프로젝트 전체 문서(`CLAUDE.md`, `docs/`, `README.md`)를 최신화·최적화하고 커밋한다. 언어별 빌드/테스트 명령(단일 테스트 실행 포함)을 툴체인 섹션에 유지한다(Java·Python·Node·Go·C#·PHP·Rust·Ruby·Kotlin).
 
-**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 현재 앵커 스코프는 부분적이다** — `<!-- doc-guard: ... -->` 앵커는 지금 Java·.NET·Kotlin·PHP·Rust·Ruby 의존성 표 6종(pom.xml/csproj/build.gradle.kts/composer.json/Cargo.toml/gemspec 추출기)과 .NET 최소 런타임 선언 1건만 기계 검증하며, 나머지 언어(Go·Python·Node)의 의존성 표(산문 — 표 형식이 아니라 스코프 밖)와 최소 런타임 선언은 여전히 사람이 직접 맞춰야 한다(계획된 후속 확장 — 사람 판단을 완전히 대체하는 것이 아니다).
+**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 앵커 스코프는 이제 9개 언어 중 8개다** — `<!-- doc-guard: ... -->` 앵커가 Java·.NET·Kotlin·PHP·Rust·Ruby·**Node·Go** 의존성 표 8종(pom.xml/csproj/build.gradle.kts/composer.json/Cargo.toml/gemspec/package.json/**go.mod**)과 .NET 최소 런타임 선언 1건, 합쳐 **36 facts / 9 anchors**를 기계 검증한다. **남은 것은 Python뿐**이고 이유는 다른 언어와 다르다 — Node·Go는 표가 아니라 산문이라 스코프 밖이었지만(표로 옮겨 해소), Python은 **의존성 절 자체가 이 문서에 없다**. 각 언어의 최소 런타임 선언도 .NET 외에는 여전히 사람이 맞춘다(9개 언어 `RUNTIME` 추출기는 이미 구현돼 있어 `kind=runtime` 앵커 배치만 남았다).
+
+⚠️ **앵커를 추가하면 `.github/workflows/repo-hygiene.yml`의 `--min-facts`/`--min-anchors`도 함께 올려야 한다.** 그 하한은 "앵커 주석만 지우고 표를 남기는" 자기기만을 막는 장치인데, 한때 `14/4`에 머물러 있고 실측은 이미 `28/7`이라 **앵커 절반이 사라져도 CI가 통과하는** 상태였다.
 
 ✅ **버전 *제약 연산자* 사각지대는 닫혔다(2026-08-04).** 예전에는 `normalizeVersion()`이 비교 전에 선행 `=`/`^`/`~`/`>=`/`~>`를 떼어내 `=26.6.2`와 `26.6.2`를 같은 값으로 판정했고, Rust 3개 크레이트를 정확 핀에서 캐럿/틸드로 바꾼 변경에서 문서가 여전히 `=`를 주장하는데도 `doc-facts`가 통과한 실제 사례가 있었다 — **핀 방식 변경은 구조적으로 보이지 않는 드리프트**였다. 지금은 의존성 표(`kind=dep`)만 `normalizeRequirement()`로 **연산자까지 포함해** 대조한다. 최소 런타임(`kind=runtime`)은 그대로 연산자를 벗긴다 — 거기서는 `>=22`와 문서 관용 `22+`가 같은 말이라 연산자가 포맷이지만, 의존성에서는 `=`·`~`·`^`가 소비자에게 서로 다른 계약이라 값 자체이기 때문이다. ⚠️ **따라서 표 셀은 빌드 파일이 쓴 대로 적는다.** cargo에서 맨 `"4.0.1"`과 `"^4.0.1"`은 의미가 같지만 가드는 문자로 대조하므로, 매니페스트에 `^`를 명시하면 표도 함께 고쳐야 한다(npm은 맨 `22`와 `^22`가 실제로 다른 의미라 이 엄격함이 오히려 옳다). 전환 시 실측: 오탐 0건, 진짜 드리프트 1건(`keycloak` 셀이 `26.6.2`인데 `Cargo.toml`은 `~26.6.2`)만 잡혀 그 자리에서 고쳤다.
 
