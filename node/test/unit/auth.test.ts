@@ -250,6 +250,30 @@ describe('logout (백채널 — refresh_token revoke)', () => {
     await expect(new AuthClient(cfg).logout('RT')).rejects.toBeInstanceOf(KeycloakAuthError)
     fetchSpy.mockRestore()
   })
+
+  // SSRF 하드닝 회귀 — admin 경로는 admin.test.ts가 이미 `requestOptions.redirect`를 고정하는데
+  // auth 경로만 비어 있었다(같은 위험, 한쪽만 게이트).
+  it("SSRF 하드닝 — fetch init에 redirect:'manual'을 싣는다", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 204 }))
+    await new AuthClient(cfg).logout('RT')
+    // ⚠️ 이 단언이 실제 게이트다. 옵션이 빠지면 fetch 기본값 'follow'로 돌아가고, 302를 따라가
+    // 받은 무관한 200이 `response.ok`를 참으로 만들어 **logout이 조용히 성공을 반환**한다
+    // (호출자는 세션이 폐기됐다고 믿지만 살아 있다 — src/auth.ts의 주석이 실측이라 적은 그 실패 모드).
+    expect(fetchSpy.mock.calls[0]![1]?.redirect).toBe('manual')
+    fetchSpy.mockRestore()
+  })
+
+  it('3xx를 성공으로 오인하지 않는다 — 302는 KeycloakAuthError다', async () => {
+    // 'manual'이 3xx를 그대로 표면화하면 `!response.ok`가 실패로 처리한다는 계약을 고정한다.
+    // ⚠️ fetch가 목이라 이 케이스만으로는 옵션 유무를 가리지 못한다 — 대조군은 위 단언이다.
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 302 }))
+    await expect(new AuthClient(cfg).logout('RT')).rejects.toBeInstanceOf(KeycloakAuthError)
+    fetchSpy.mockRestore()
+  })
 })
 
 describe('validate — expectedAudience', () => {

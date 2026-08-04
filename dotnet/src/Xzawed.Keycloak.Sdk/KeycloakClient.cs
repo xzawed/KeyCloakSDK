@@ -22,19 +22,10 @@ public sealed class KeycloakClient : IAsyncDisposable, IDisposable
     public static KeycloakClient Create(KeycloakConfig config)
     {
         var cfg = config.Normalized();                 // validates + strips trailing slash
-        // Single long-lived HttpClient (idiomatic for a one-server SDK client); PooledConnectionLifetime
-        // recycles connections so a captured client still picks up DNS changes (the IHttpClientFactory concern).
-        var http = new HttpClient(new SocketsHttpHandler
-        {
-            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-            ConnectTimeout = TimeSpan.FromMilliseconds(cfg.ConnectTimeoutMs),
-            // SSRF hardening: never follow redirects on back-channel requests. AllowAutoRedirect
-            // defaults to TRUE, so an unexpected 3xx from a token/JWKS endpoint would make the SDK
-            // fetch an attacker-chosen URL — possibly internal — while carrying our headers.
-            // Isomorphic with Rust (redirect::Policy::none()), Ruby and Go (ErrUseLastResponse).
-            // The OIDC authorization-code redirect_uri is a browser front-channel concern, unaffected.
-            AllowAutoRedirect = false,
-        })
+        // Single long-lived HttpClient (idiomatic for a one-server SDK client); handler settings
+        // (pool lifetime, connect timeout, SSRF redirect hardening) live in HttpTransport so they
+        // cannot drift from AdminClient's BearerHandler inner handler.
+        var http = new HttpClient(HttpTransport.CreateHandler(cfg))
         {
             Timeout = TimeSpan.FromMilliseconds(cfg.ReadTimeoutMs),
         };
