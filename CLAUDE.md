@@ -343,7 +343,11 @@ dev(비앵커 — 버전이 셀 안 산문에 있어 기계 대조 스코프 밖
 
 작업 완료(머지/main 반영) 후 프로젝트 전체 문서(`CLAUDE.md`, `docs/`, `README.md`)를 최신화·최적화하고 커밋한다. 언어별 빌드/테스트 명령(단일 테스트 실행 포함)을 툴체인 섹션에 유지한다(Java·Python·Node·Go·C#·PHP·Rust·Ruby·Kotlin).
 
-**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 의존성 앵커 스코프는 이제 9개 언어 전부다** — `<!-- doc-guard: ... -->` 앵커가 Java·Python·Node·Go·.NET·PHP·Rust·Ruby·Kotlin 의존성 표 9종(pom.xml/**pyproject.toml**/package.json/**go.mod**/csproj/composer.json/Cargo.toml/gemspec/build.gradle.kts)과 .NET 최소 런타임 선언 1건, 합쳐 **38 facts / 10 anchors**를 기계 검증한다. **남은 스코프는 최소 런타임 선언**이다 — .NET 외 8개 언어는 여전히 사람이 맞춘다(9개 언어 `RUNTIME` 추출기는 `check-docs.mjs`에 **이미 구현돼 있어** `kind=runtime` 앵커 배치만 남았다). 표의 dev/도구 의존성 절은 버전이 셀 안 산문에 있어 구조적으로 스코프 밖이다.
+**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 의존성 앵커 스코프는 이제 9개 언어 전부다** — `<!-- doc-guard: ... -->` 앵커가 Java·Python·Node·Go·.NET·PHP·Rust·Ruby·Kotlin 의존성 표 9종(pom.xml/**pyproject.toml**/package.json/**go.mod**/csproj/composer.json/Cargo.toml/gemspec/build.gradle.kts)과 .NET 최소 런타임 선언 1건, 합쳐 **38 facts / 10 anchors**를 기계 검증한다. **최소 런타임 선언도 9개 언어 전부 앵커가 걸렸다** — [docs/guides/getting-started.md](docs/guides/getting-started.md)의 언어별 "Required runtime" 문장에 `kind=runtime` 앵커가 있다. 합쳐 **46 facts / 18 anchors**다.
+
+⚠️ **런타임 앵커는 "앵커 뒤 3줄 안의 *첫* 백틱 스팬 중 숫자를 포함한 것"을 문서의 주장으로 읽는다** — 그래서 버전보다 먼저 오는 백틱 토큰에 숫자가 있으면 그걸 주장으로 오인한다. 실제로 걸렸던 둘: Java의 `` `--release 21` ``과 Go의 `` `golang.org/x/oauth2` ``(둘 다 숫자를 품는다). 두 절은 버전을 문장 앞으로 옮겨 해결했다. ⚠️ **Kotlin 앵커는 `jvmToolchain(21)`, 즉 JDK 툴체인을 검증한다 — Kotlin 언어 버전(2.2)이 아니다.** 그래서 그 절은 JDK 절을 먼저 두고 그 사실을 본문에 명시했다. 이걸 모르고 "Kotlin 버전을 가리키도록 고치면" 앵커가 21 vs 2.2로 깨진다.
+
+표의 dev/도구 의존성 절은 버전이 셀 안 산문에 있어 구조적으로 스코프 밖이다.
 
 ⚠️ **앵커를 추가하면 `.github/workflows/repo-hygiene.yml`의 `--min-facts`/`--min-anchors`도 함께 올려야 한다.** 그 하한은 "앵커 주석만 지우고 표를 남기는" 자기기만을 막는 장치인데, 한때 `14/4`에 머물러 있고 실측은 이미 `28/7`이라 **앵커 절반이 사라져도 CI가 통과하는** 상태였다.
 
