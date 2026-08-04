@@ -699,4 +699,78 @@ assert_contains "$OUT" "좌표 'go' 를 go/go.mod 에서 찾지 못함" "go dire
 
 rm -rf "$TMP" && mkdir -p "$TMP"
 
+# ---- 회귀 12: fromPyproject — [project].dependencies 와 [project.optional-dependencies]
+# 그룹을 병합하고, 복합 지정자·# 주석·extras·환경 마커를 올바르게 다루며, classifiers /
+# build-system requires 는 맵에 새면 안 된다 ----
+# Python 의존성 표 앵커 확장의 신규 추출기(9/9 언어 커버). fromComposer 와 같이 runtime+dev
+# 를 한 맵에 합친다. 실제 python/pyproject.toml 은 `"joserfc>=1.7,<2",   # 보안…` 형태라
+# 따옴표 밖 주석을 항목에 붙이면 지정자가 오염되고, classifiers 를 스캔하면
+# "Programming Language :: Python :: 3.10" 같은 쓰레기 키가 들어간다 — 둘 다 픽스처에 넣어
+# 회귀를 고정한다.
+mkdir -p "$TMP/python"
+cat > "$TMP/python/pyproject.toml" <<'EOF'
+[build-system]
+requires = ["hatchling>=1.30"]
+build-backend = "hatchling.build"
+
+[project]
+name = "keycloak-sdk"
+classifiers = [
+  "Programming Language :: Python :: 3.10",
+  "Development Status :: 4 - Beta",
+]
+dependencies = [
+  "python-keycloak>=7.1,<8",
+  "joserfc>=1.7,<2",   # 보안 핵심(JWT 검증) — major 상한 고정
+  "uvicorn[standard]>=0.30",
+  "tomli>=2 ; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.0",
+  "ruff>=0.6",
+]
+EOF
+cat > "$TMP/pyproject.md" <<'EOF'
+# pyproject fixture
+
+<!-- doc-guard: kind=dep source=python/pyproject.toml min=5 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| Admin | `python-keycloak` | `>=7.1,<8` |
+| JWT | `joserfc` | `>=1.7,<2` |
+| ASGI | `uvicorn` | `>=0.30` |
+| Compat | `tomli` | `>=2` |
+| Test | `pytest` | `>=9.0` |
+EOF
+assert_ok node "$GUARD" "$TMP"
+
+# 버전 드리프트 — 추출기가 살아 있어 실제로 대조함을 고정(빈 맵·vacuous min 통과 금지).
+sed -i 's/>=7\.1,<8/>=9.9/' "$TMP/pyproject.md"
+assert_fails node "$GUARD" "$TMP"
+sed -i 's/>=9\.9/>=7.1,<8/' "$TMP/pyproject.md"
+assert_ok node "$GUARD" "$TMP" # 되돌리면 다시 통과(위 실패가 버전 대조 때문임을 고정)
+
+# 디코이: build-system 의 hatchling 은 의존성 맵에 새면 안 된다.
+# 표 행을 hatchling 으로 바꾼 뒤 "찾지 못함" 을 어서션 — assert_fails 만으로는 min 미달
+# 등 다른 이유로 실패해도 통과하므로(go.mod 디코이와 동일 패턴) 메시지를 고정한다.
+# classifiers 문자열("Programming Language :: Python :: 3.10")도 같은 부류라, 맵에 키로
+# 들어가면 hatchling 과 무관하게 다른 경로로 오염되지만, hatchling 미해결이 핵심 증거다.
+cat > "$TMP/pyproject.md" <<'EOF'
+# pyproject fixture (build-system / classifiers decoy)
+
+<!-- doc-guard: kind=dep source=python/pyproject.toml min=1 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| Build leak | `hatchling` | `>=1.30` |
+EOF
+OUT="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$OUT" "좌표 'hatchling' 를 python/pyproject.toml 에서 찾지 못함" "build-system requires must not leak into the dep map as coordinate 'hatchling'"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
 assert_report

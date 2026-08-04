@@ -13,7 +13,7 @@ paths:
 Node는 시스템 설치(현재 v22)를 사용한다 — `package.json`의 `engines`는 `>=22`다(문서에서 "20+"라고 쓰지 말 것). 명령은 `node/`에서 실행한다:
 ```bash
 cd node && npm ci                    # 의존성 설치(package-lock.json 기준)
-cd node && npm test                  # 단위테스트 92개 + 커버리지 게이트(라인 90/브랜치 85). Docker 불필요
+cd node && npm test                  # 단위테스트 93개 + 커버리지 게이트(라인 90/브랜치 85). Docker 불필요
 cd node && npm run test:unit         # 동일(단위만 명시)
 cd node && npm run test:it           # 통합테스트 5개(Docker 필요 — vitest.integration.config.ts, 실제 Keycloak 26.6)
 cd node && npm run typecheck         # tsc --noEmit (strict)

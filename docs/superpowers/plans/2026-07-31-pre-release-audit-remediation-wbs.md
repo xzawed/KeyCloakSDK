@@ -53,7 +53,9 @@
 
 **추가 태스크 — 이미 안전한 경로에 고정(pinning) 테스트.** Java/Kotlin admin · Node jose+openid-client · PHP PSR-18 · Python httpx는 **라이브러리 기본값 덕분에** 안전하다. 이는 §3-2가 막으려던 "업그레이드로 조용히 취약해지는" 바로 그 상태이고, 몇몇은 끌 노브 자체가 없어 **테스트가 유일한 방어수단**이다.
 
-> 진행: PHP(`php/tests/Unit/HttpOptionsTest.php`)·Python(httpx)은 완료. **Node `jose`는 완료** — JWKS 페치는 SDK가 직접 하지 않고 `createRemoteJWKSet` 내부가 하며 리다이렉트를 끌 노브가 우리에게 없어서, 실측 후(jose 6.2.4는 302를 `Expected 200 OK…`로 거부한다) 그 거동을 테스트로 잠갔다. ⚠️ 이 하드닝은 **우리가 제거할 수 없어 변이검증이 불가능**하므로, 대신 "기본 `fetch`(redirect:'follow')는 같은 서버에서 `/internal`에 도달한다"는 대조군을 같은 테스트에 두어 프로브가 살아있음을 증명한다(경로 기록을 끄면 대조군이 실패함을 실측). **남은 것은 Java/Kotlin admin(RESTEasy)과 Node `openid-client`** 두 갈래다 — Java는 이 PC에 mvn이 없어 검증 불가라 손대지 않았다.
+> 진행: PHP(`php/tests/Unit/HttpOptionsTest.php`)·Python(httpx)은 완료. **Node `jose`는 완료** — JWKS 페치는 SDK가 직접 하지 않고 `createRemoteJWKSet` 내부가 하며 리다이렉트를 끌 노브가 우리에게 없어서, 실측 후(jose 6.2.4는 302를 `Expected 200 OK…`로 거부한다) 그 거동을 테스트로 잠갔다. ⚠️ 이 하드닝은 **우리가 제거할 수 없어 변이검증이 불가능**하므로, 대신 "기본 `fetch`(redirect:'follow')는 같은 서버에서 `/internal`에 도달한다"는 대조군을 같은 테스트에 두어 프로브가 살아있음을 증명한다(경로 기록을 끄면 대조군이 실패함을 실측). **Node `openid-client`도 완료** — 토큰 그랜트는 자격증명을 POST 바디에 싣는 경로라 더 중요하다(Python requests·PHP Guzzle이 307/308에서 **바디를 보존한 채** 재전송해 `client_secret`을 흘린 그 실패 모드다 — `rebuild_auth`는 `Authorization` 헤더만 떼어내지 바디는 손대지 않는다). 실측: openid-client 6.8.4는 `ClientError: unexpected HTTP response status code`로 거부한다. `test/unit/auth-redirect-pinning.test.ts`는 목을 쓰지 않고 실제 모듈로 로컬 서버를 때린다(vitest 목은 파일 단위라 별도 파일이어야 한다). 여기에도 같은 대조군을 뒀고, 추가로 **비공허성 단언**(discovery와 토큰 엔드포인트에 실제로 도달했는지)을 넣었다 — 없으면 discovery가 먼저 죽어도 "리다이렉트를 안 따라갔다"가 통과한다.
+
+**남은 것은 Java/Kotlin admin(RESTEasy) 한 갈래다** — Java는 이 PC에 mvn이 없어 검증 불가라 손대지 않았다.
 
 **.NET 후속의 값싼 답** ✅ `84e4bf6` — 시임 노출 vs 리플렉션의 양자택일이 아니었다: `internal static SocketsHttpHandler CreateHandler(KeycloakConfig)` 추출 + `InternalsVisibleTo` + 로컬 `HttpListener`. 공개 표면이 늘지 않으며, Java `buildTimeoutClient`가 이미 같은 모양의 시임을 갖고 있다. (구현은 이 처방대로 됐다 — `HttpListener` 자리에는 이미 참조돼 있던 `WireMock.Net`을 썼다.)
 
