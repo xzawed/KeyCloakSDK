@@ -198,7 +198,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **java jacoco:check는 `verify` 페이즈 바인딩 — 로컬 `mvn test`로는 커버리지 게이트 미검증**(반드시 `mvn -pl … -am verify -DskipITs`). PR #71에서 `forRealm`에 `.rateLimited()` 1줄이 auth번들을 0.90→0.89로 떨어뜨려 CI 3잡 동시실패 — `JWKSourceBuilder` 지연특성 이용한 네트워크-프리 `forRealm` 단위테스트로 복원.
 - ⚠️ **앱 빌드 이미지는 Alpine(musl) 베이스** — Debian/glibc는 Docker Desktop(Windows) 내장 DNS프록시가 레지스트리 CNAME체인을 glibc 리졸버에 실패로 돌려줘 `dotnet restore`/`pip install`/Maven·npm 다운로드가 막힘(musl은 정상, CI 네이티브 Docker 무해).
 - ⚠️ **앱/레지스트리 전 컨테이너 Alpine/musl**(Windows Docker Desktop glibc-DNS 게차 회피 — install harness 전용 재확인, 위와 동일 근거).
-- ⚠️ **잔여 follow-up(marginal·미착수)**: wait_healthy 크래시 조기감지(run.sh의 `sleep 3600`이 이득 제한) · go 공개프록시 폴스루(현 file-first 체인 정상동작). (rust closure의 `Cargo.lock` 커밋 항목은 해소 — 라이브러리 핀 완화의 재현성 근거로 `rust/Cargo.lock`이 저장소에 커밋됐다.)
+- ⚠️ **잔여 follow-up(marginal·미착수)**: go 공개프록시 폴스루(현 file-first 체인 정상동작). **해소된 항목 둘은 목록에서 뺐다** — (a) rust closure의 `Cargo.lock` 커밋은 라이브러리 핀 완화의 재현성 근거로 `rust/Cargo.lock`이 저장소에 커밋됐고, (b) wait_healthy 크래시 조기감지는 `967d1ce`가 구현했다(`harness/install/lib.sh`의 `wait_healthy`가 `docker inspect`로 컨테이너 종료를 감지하면 남은 타임아웃을 태우지 않고 exit code + 마지막 로그 40줄과 함께 즉시 실패한다 — 단 컨테이너가 아직 안 생긴 경합은 판단 보류로 계속 대기한다).
 
 ## 확정 의존성 (BOM으로 고정)
 

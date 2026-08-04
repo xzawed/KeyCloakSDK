@@ -476,10 +476,15 @@ printf '%s\n' 'DEPLOY_LANGS="a b c"' > "$TMP/scripts/lib/deploy-facts.sh"
 printf '%s\n' '# verification log' '6개 언어 시절 검증 기록.' > "$TMP/docs/governance/verification-log.md"
 printf '%s\n' '# verification log (lang-specific)' '6개 언어 시절 검증 기록.' > "$TMP/docs/governance/verification-log-python.md"
 printf '%s\n' '# CLAUDE' '이 SDK는 8개 언어를 지원한다.' > "$TMP/CLAUDE.md"
-assert_ok node "$GUARD" "$TMP" # 기본은 경고(CLAUDE.md의 절대주장만 어긋남 — verification-log*는 제외)
+# CHANGELOG.md도 같은 성격이다 — 항목마다 날짜가 붙은 append-only 이력이라 "8개 언어 (2026-07-07)"는
+# 당시 사실로 옳다. 제외하지 않으면 언어가 늘 때마다 과거 항목이 자동으로 경고가 되고, 그걸 없애는
+# 유일한 방법이 이력을 거짓으로 고쳐 쓰는 것이라 가드가 잘못된 수정을 유도한다.
+printf '%s\n' '# Changelog' '- **(harness) 8개 언어 하네스.** (2026-07-07)' > "$TMP/CHANGELOG.md"
+assert_ok node "$GUARD" "$TMP" # 기본은 경고(CLAUDE.md의 절대주장만 어긋남 — verification-log*·CHANGELOG는 제외)
 OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
 assert_not_contains "$OUT" "verification-log.md" "verification-log.md cardinality mismatch must be excluded from Check 6"
 assert_not_contains "$OUT" "verification-log-python.md" "verification-log-<lang>.md cardinality mismatch must be excluded from Check 6"
+assert_not_contains "$OUT" "CHANGELOG.md" "CHANGELOG.md cardinality mismatch must be excluded from Check 6 (dated append-only history)"
 assert_contains "$OUT" 'CLAUDE.md "8개 언어" ≠ DEPLOY_LANGS 3개' "CLAUDE.md absolute count mismatch must still be flagged"
 
 rm -rf "$TMP" && mkdir -p "$TMP"

@@ -13,7 +13,7 @@ import io.github.xzawed.keycloak.core.TokenSet;
  * staged .m2에서 저장소 해석으로 설치한 {@code io.github.xzawed:keycloak-sdk@0.1.0}을 실 Keycloak에
  * 대해 최소 흐름(client-credentials 발급 → 자체 강화 validate)으로 구동해 "설치 후 첫 프로그램이 실제로
  * 동작한다"를 증명한다. harness/apps/java(HarnessController/App)의 {@code KC_*} 환경변수 네이밍과
- * 동형(java/keycloak-sdk-examples/QuickStart.java의 {@code KEYCLOAK_*}이 아님) — 8개 언어
+ * 동형(java/keycloak-sdk-examples/QuickStart.java의 {@code KEYCLOAK_*}이 아님) — 9개 언어
  * install-verify.sh의 {@code docker run -e} 관용과 정렬한다.
  *
  * <p>SDK 소스 트리가 아니라 harness/install/ 아래 하네스 전용 파일이다(java/ 배포 아티팩트에는

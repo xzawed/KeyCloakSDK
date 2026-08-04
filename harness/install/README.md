@@ -83,5 +83,5 @@ Host ports: node 18090 · python 18091 · go 18092 · dotnet 18093 · java 18094
 
 - **All containers use an Alpine/musl base** — this avoids the gotcha where the Windows Docker Desktop built-in DNS proxy hands the registry's CNAME chain back to a Debian/glibc resolver as a failure. On install-net, consumers resolve the registry by **service name** (embedded DNS).
 - **Local Windows**: the lightweight pure-language ones (node, go, python) are recommended for local runs. The heavier languages (java, dotnet, ruby, php, rust) have long build times, so CI is recommended first.
-- **CI**: the `install-all` job in [.github/workflows/harness.yml](../../.github/workflows/harness.yml) (nightly 03:00 UTC + manual `workflow_dispatch`, `timeout-minutes: 90`) runs all 8 languages and uploads `INSTALL-MATRIX.md` + `signals/` as artifacts. It does not run on PR/push (it's heavy).
+- **CI**: the `install-all` job in [.github/workflows/harness.yml](../../.github/workflows/harness.yml) (nightly 03:00 UTC + manual `workflow_dispatch`, `timeout-minutes: 90`) runs all 9 languages and uploads `INSTALL-MATRIX.md` + `signals/` as artifacts. It does not run on PR/push (it's heavy).
 - Deploying to real registries is still human-gated ([DEPLOY.md](../../DEPLOY.md)) — this harness serves as the final verification before release.

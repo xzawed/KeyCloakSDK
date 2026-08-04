@@ -138,7 +138,8 @@ not_implemented() {
 #   컨테이너 내부 네트워크(install-net)에서 probe.mjs 실행       # 동일 BASE/KC_URL
 #     └ 결과 JSON({passed,failed}/{defended,total})을 emit_signal lang conformance=... security=...
 #
-# 지금은 언어 태스크가 아직 이 본문을 채우지 않았으므로 전부 not_implemented로 위임한다.
+# 위 파이프라인 모양이 각 run_lang_<lang>이 실제로 구현하는 흐름이다. not_implemented()는
+# 새로 추가되는 언어를 위한 공통 스텁으로만 남아 있다.
 # ---------------------------------------------------------------------------------------
 run_lang_go() {
   local lang="go"

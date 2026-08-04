@@ -135,7 +135,7 @@ fail_lang() {
 # 책임 — 이 함수는 실행하지 않는다) 그 결과 파일 $SIGNALS_DIR/<lang>.conformance.json({passed,failed,checks})
 # 및 $SIGNALS_DIR/<lang>.security.json({defended,total,probes})을 읽어, install-matrix.mjs가 기대하는
 # emit_signal 키(conformance={"passed":..,"failed":..} / security={"defended":..,"total":..})로 반영한다.
-# 파일 부재·JSON 파싱 실패 시 0으로 폴백(크래시 방지) — 8개 언어의 run_lang_<lang>이 conformance.mjs/
+# 파일 부재·JSON 파싱 실패 시 0으로 폴백(크래시 방지) — 9개 언어의 run_lang_<lang>이 conformance.mjs/
 # probe.mjs를 동일하게 $SIGNALS_DIR/<lang>.{conformance,security}.json에 쓰도록 두면(LANG=<lang> env로
 # 자연히 그렇게 된다) 이 헬퍼를 그대로 재사용할 수 있다 — node 참조 구현이 확립한 패턴.
 emit_conformance_security() {

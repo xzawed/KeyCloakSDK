@@ -57,7 +57,7 @@ export function feedback(dims, signals) {
 function loadSignals(lang) {
   const rd = (p) => { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; } };
   // k6 handleSummary(scenarios.js)는 `/report/${LANG}.json`에 쓰고 aggregate.mjs도 `./${lang}.json`을
-  // 읽는다 — perf가 아직 연동 전(perf:null)이라도 파일명은 그 두 소비자와 일치시켜 향후 연동 시 어긋나지 않게 한다.
+  // 읽는다 — 파일명을 그 두 소비자와 일치시켜 읽기 경로가 어긋나지 않게 한다(아래 validateP95가 같은 경로를 소비).
   const perfRaw = rd(`report/${lang}.json`); // k6 handleSummary(있으면)
   return {
     conformance: rd(`report/signals/${lang}.conformance.json`),

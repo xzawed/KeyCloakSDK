@@ -62,7 +62,7 @@ A one-command pipeline — `run.sh` brings up Keycloak (waiting for health) → 
 ```bash
 cd harness
 ./run.sh go                                    # run just the Go app → report/RESULTS.md (go is also the default)
-./run.sh go dotnet node python java            # run and compare 5 languages (legacy targets) sequentially — any of the 8 languages can be passed as args
+./run.sh go dotnet node python java            # run and compare 5 languages (legacy targets) sequentially — any of the 9 languages can be passed as args
 cat report/RESULTS.md                          # functional correctness gate + cross-language performance table
 ```
 
@@ -97,12 +97,12 @@ Pipeline stages (repeated per language): bring up Keycloak once (wait for health
 |---|---|---|---|
 | functional | 30% | `signals/<lang>.conformance.json` `{passed,failed,checks[]}` | `passed / (passed+failed) * 100` |
 | security | 30% | `signals/<lang>.security.json` `{defended,total,probes[]}` | `defended / total * 100` |
-| coverage/quality | 20% | `signals/<lang>.suite.json` `{coverageLine,coverageBranch,lintClean,ran,unit}` | for languages where branch is measured (>0), `line*0.6+branch*0.3+lint*0.1`; for unmeasured languages, fall back to `line*0.9+lint*0.1` (so as not to penalize the unmeasured with 0%) |
-| performance/isomorphism (perfiso) | 20% | conformance pass rate (approximation) | currently the same value as `functional` (see the §caveat) |
+| coverage/quality | 20% | `signals/<lang>.suite.json` `{coverageLine,coverageBranch,lintClean,ran,unit,testsPassed}` | **0 unless `ran && testsPassed === true`** (fail-closed — a broken suite must not still earn full coverage marks); then for languages where branch is measured (>0), `line*0.6+branch*0.3+lint*0.1`; for unmeasured languages, fall back to `line*0.9+lint*0.1` (so as not to penalize the unmeasured with 0%) |
+| performance/isomorphism (perfiso) | 20% | `report/<lang>.json` (k6 summary, `validate_duration` p95) + conformance pass rate | `perf*0.5 + iso*0.5` when k6 data is present; otherwise `iso` only (no penalty for unmeasured languages). `perf = min(100, (bestP95 / p) * 100)` — fastest language scores 100, one k× slower scores 100/k |
 
 The overall score is the weighted sum of the 4 dimensions; grades are `overall≥90 → A` · `≥80 → B` · `≥70 → C` · otherwise `D`. `report/SCORECARD.md` contains a table sorted by overall score descending, plus per-language rule-based remediation feedback (which probe failed, which coverage is lacking, etc.).
 
-> ⚠️ **Performance/isomorphism (20%) is not yet wired to actual k6 measurements.** It is currently substituted with an approximation of contract-endpoint implementation completeness (conformance pass rate) (the `perf: null` hardcode in `score.mjs`) — reflecting the k6 `report/<lang>.summary.json` as a relative percentile is follow-up work. Missing signals (e.g., app build failure) are scored as 0 without crashing.
+> **Performance/isomorphism (20%)** is wired to k6. `score.mjs` reads the k6 summary at `report/<lang>.json`, extracts `metrics.validate_duration.values["p(95)"]`, and scores each language relative to the fastest in the run (`perf = min(100, (bestP95 / p) * 100)`). The dimension is then `perf * 0.5 + iso * 0.5` (iso = conformance pass rate). Languages with no k6 data fall back to isomorphism only — no penalty for unmeasured languages. Missing signals (e.g., app build failure) are scored as 0 without crashing.
 
 ### Signal files (`report/signals/`)
 
@@ -110,12 +110,12 @@ Generated artifacts (not committed, `report/.gitignore`) that `verify.sh`/`suite
 
 - `<lang>.conformance.json` — produced by conformance.mjs (§functional)
 - `<lang>.security.json` — produced by probe.mjs (§security)
-- `<lang>.suite.json` — the last-line JSON from `suites/<lang>.sh` (§coverage/quality). Falls back to `{"ran":false}` if `suites/<lang>.sh` is missing or violates the convention (a single last line of JSON).
+- `<lang>.suite.json` — the last-line JSON from `suites/<lang>.sh` (§coverage/quality). Coverage credit is given only when `ran && testsPassed === true`; otherwise the dimension scores 0 (fail-closed — a broken suite must not still earn full coverage marks). Falls back to `{"ran":false}` if `suites/<lang>.sh` is missing or violates the convention (a single last line of JSON).
 - `<lang>.error.json` — an isolated record written on app-build/startup failure (that language then skips conformance/security/k6 and may only reflect coverage/quality).
 
 ### Execution scope — CI first, local for smoke
 
-Running the full `verify.sh` across 8 languages is heavy (tens of minutes), since it includes pulling each language's toolchain image + installing dependencies + running the tests. **CI is the primary execution vehicle** — the `score-all` job in `.github/workflows/harness.yml` runs the full 8 languages nightly (`schedule` 03:00 UTC) and on demand (`workflow_dispatch`) and uploads `SCORECARD.md` + `report/signals/` as artifacts (`timeout-minutes: 60`). **Locally (especially on Windows Docker Desktop) it is recommended to limit to a 1–2 language smoke** — the Alpine (musl) base (see the warning above) solves the DNS gotcha, but a full 8-language build + test is inefficiently heavy for the local iterative development loop.
+Running the full `verify.sh` across 9 languages is heavy (tens of minutes), since it includes pulling each language's toolchain image + installing dependencies + running the tests. **CI is the primary execution vehicle** — the `score-all` job in `.github/workflows/harness.yml` runs the full 9 languages nightly (`schedule` 03:00 UTC) and on demand (`workflow_dispatch`) and uploads `SCORECARD.md` + `report/signals/` as artifacts (`timeout-minutes: 60`). **Locally (especially on Windows Docker Desktop) it is recommended to limit to a 1–2 language smoke** — the Alpine (musl) base (see the warning above) solves the DNS gotcha, but a full 9-language build + test is inefficiently heavy for the local iterative development loop.
 
 ## Contract
 
