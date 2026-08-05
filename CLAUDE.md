@@ -1,8 +1,14 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=59700 -->
-<!-- ⚠️ 래칫이다(목표치 아님). 승인된 목표는 33 KB(docs/superpowers/specs/2026-07-23-docs-restructure-design.md).
-     줄일 때마다 이 숫자를 함께 내린다. 올리는 PR은 그 자체가 리뷰 대상이다 —
-     이관 직후 44 KB였던 이 파일이 13일 만에 66 KB가 됐다(+50%). 산문 규칙으로는 막히지 않았다. -->
+<!-- doc-budget: max-bytes=48500 -->
+<!-- ⚠️ 래칫이다(목표치 아님). 줄일 때마다 이 숫자를 함께 내린다. 올리는 PR은 그 자체가 리뷰 대상 —
+     이관 직후 44 KB였던 이 파일이 13일 만에 66 KB가 됐다(+50%). 산문 규칙으로는 막히지 않았다.
+
+     승인된 목표는 33 KB였다(2026-07-23-docs-restructure-design.md). **실측 바닥은 그보다 높다.**
+     47.5 KB의 구성: 게차 스텁 79건 12.4 KB + doc-guard 앵커가 걸린 의존성 표 10.9 KB(=기계 검증
+     46 facts) + 나머지 24 KB. 앞의 둘은 줄일 수 없다 — 스텁을 지우면 `.claude/rules/<lang>.md`는
+     경로 스코프 자동로드라 컨텍스트 압축 후 재주입되지 않아 게차의 존재 자체가 안 보이고(설계 §4.3),
+     앵커 표를 지우면 `--min-facts/--min-anchors`가 실패한다. 33 KB로 가려면 둘 중 하나를 버려야
+     하므로 목표를 낮추는 대신 **바닥을 인정하고 그 위에서 래칫한다.** 여지는 나머지 24 KB에 있다. -->
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -91,21 +97,16 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 
 ### 언어별 결합 규칙
 
-`admin`↔`auth` 결합 방식과 경계 변환의 언어별 사실이다(§4 계약·§4(b) 은닉성 예외에 이미 있는 내용은 반복하지 않는다 — 특히 각 언어의 `raw`/`Raw` 탈출구 타입은 아래 §4(b)에 전부 있다).
+**아홉 언어 공통**: `admin`은 `auth`에 의존하지 않는다 — `TokenProvider` 계열 인터페이스(Rust는 async trait, Ruby는 덕 타이핑, Kotlin은 `fun interface`)가 유일한 접착제이고, 하위 라이브러리 오류는 **경계에서** SDK 타입으로 변환된다. 그래서 auth 없이도 admin을 자체 토큰 소스로 쓸 수 있고, 내부 라이브러리 교체가 소비자에게 파급되지 않는다.
 
-- **Java**: `admin`은 `auth`를 직접 알지 못한다. 유일한 접착제는 `core`의 `TokenProvider` 인터페이스다 — auth 없이도 admin을 자체 토큰 소스로 쓸 수 있고, 내부 라이브러리 교체가 소비자에게 파급되지 않는다.
-- **Python**: `admin`은 `auth`에 의존하지 않는다(각자 독립적으로 client-credentials 인증). 예외는 경계에서 `keycloak_sdk.exceptions.*`로 변환되어 `keycloak.exceptions.*` 타입이 공개 API에 노출되지 않는다.
-- **Node**: `admin`은 `auth`에 의존하지 않는다(각자 독립 client-credentials 인증) — `TokenProvider` 인터페이스가 유일 접착제. 예외는 경계에서 `KeycloakError` 계급으로 변환되어 하위 라이브러리 에러(`NetworkError` 등)가 새지 않는다. `admin.raw()`가 탈출구. **admin은 파사드가 주입한 캐싱 `ClientCredentialsTokenProvider`를 `registerTokenProvider`로 배선하고 `kc.auth()`는 호출하지 않는다(PR #63)** — admin-client 내장 TokenManager는 만료 시 refresh만 시도해 client_credentials에서 영구 실패하므로, 자체 provider가 만료 시 재인증하게 한다(Rust `79ecf76`와 동형 결정).
-- **Go**: **전체가 단일 `package keycloak`**(admin을 서브패키지로 두면 `Client.Admin`이 `*AdminClient` 반환 시 admin↔root import 순환이 생기므로 `admin_*.go`로 같은 패키지). `admin`은 `auth`에 의존하지 않고 `TokenProvider`(gocloak client-credentials 기본)가 유일 접착제. 오류는 경계에서 타입드 구조체(`*AdminError` 등)로 변환. **⚠️ gocloak은 네트워크 실패도 `*APIError{Code:0}`로 감싸므로** `toSDKError`는 `Code==0`→`*TransportError`, `>0`→`*AdminError`로 나눈다(그러지 않으면 전부 `AdminError{HTTP 0}`로 오분류).
-- **C#/.NET**: `admin`은 `auth`에 의존하지 않는다 — `ITokenProvider`가 유일 접착제(`AuthClient : ITokenSource`가 기본 소스). 예외는 경계에서 `KeycloakException` 계급으로 변환. **⚠️ admin 타입드 클라이언트는 users/groups/realm-get만 커버**하므로 clients/roles/realm-CRUD는 같은 bearer-authed `HttpClient`로 raw Admin REST(representation 재사용).
-- **PHP**: `admin`은 `auth`에 의존하지 않는다(각자 독립 client-credentials 인증) — `TokenProvider` 인터페이스가 유일 접착제. 예외는 경계에서 `KeycloakException` 계급으로 변환(`ErrorTranslation`이 fschmtt/Guzzle 예외를, `AuthClient`가 league 예외를 흡수). **⚠️ fschmtt `Users::create()`는 void 반환**(생성된 id는 `findIdByUsername()`로 후속 조회), `Clients`/`Realms`는 `create`가 아니라 **`import`**(대상 representation에 id/realm 사전 세팅 필요).
-- **Rust**: `admin`은 `auth`를 직접 알지 못한다 — `TokenProvider` trait(async)가 유일 접착제(`AuthClient`가 이를 구현, `SdkTokenSupplier`가 이를 `keycloak` crate의 `KeycloakTokenSupplier`로 어댑트). 하위 오류(`keycloak::KeycloakError`)는 경계(`map_admin`)에서 SDK `KeycloakError`로 변환. **예외적으로 `admin`도 `KeycloakClient::new`에서 즉시 조립된다**(공유 `http`·전용 캐싱 provider 재사용) — 다른 8개 언어와 달리 최초 접근 시 지연 생성이 아니다.
-- **Ruby**: `admin`은 `auth`에 의존하지 않는다 — `TokenProvider` 덕 인터페이스가 유일 접착제(admin은 전용 `ClientCredentialsTokenProvider`를 주입받는다, `AuthClient`도 `TokenProvider`를 구현하나 admin에 직접 주입되지 않음 — Rust가 최종리뷰로 배웠던 캐시 불변식을 Ruby는 처음부터 준수). 하위 오류(`Faraday::TimeoutError`/`ConnectionFailed`·`Rack::OAuth2::Client::Error`)는 경계에서 `KeycloakSdk::*Error`로 변환. 공유 Faraday 커넥션 팩토리(`http.rb`)는 `follow_redirects` 미들웨어를 미장착해 SSRF를 하드닝한다(Rust `redirect::Policy::none()`과 동형 결정).
-- **Kotlin**: `admin`은 `auth`를 직접 알지 못한다(§4·Java 동형) — `KeycloakClient`는 admin에 provider를 배선하지 않고, `AdminClient`가 `KeycloakBuilder` 내장 client-credentials 그랜트로 토큰을 자체 소유한다(내부 `TokenManager`가 자동 획득·갱신). `ClientCredentialsTokenProvider`(`fun interface TokenProvider`)는 §4 접착 유틸이자 파사드 레벨 시임일 뿐 admin이 실사용하지는 않는다 — Java SDK가 커스텀 RESTEasy 필터 충돌로 내린 동일 결정을 상속. 하위 예외는 경계에서 sealed `KeycloakException` 계급으로 변환. JWT 검증은 `com.nimbusds:nimbus-jose-jwt` + 자체 강화이며 Java의 `JWKSourceBuilder` 캐시+RateLimited DoS-safe JWKS를 상속한다.
+**공통에서 벗어나는 곳만 아래에 적는다**(각 언어의 상세는 `.claude/rules/<lang>.md`, `raw`/`Raw` 탈출구 타입은 §4(b)):
 
-**언어 중립 계약(§4)**: Java(손수 래핑)·Python(`python-keycloak` 래핑)·Node(`openid-client`+admin-client 래핑)·Go(`gocloak`+`x/oauth2` 래핑)·C#(`Keycloak.AuthServices.Sdk`+`Duende.IdentityModel` 래핑)·PHP(`fschmtt`+`league/oauth2-client` 래핑)·Rust(`keycloak` crate+`openidconnect` 래핑)·Ruby(`rack-oauth2` 래핑+`faraday` 손수 admin)·Kotlin(JVM 자매 Java SDK 스택 `keycloak-admin-client`+`oauth2-oidc-sdk` 재사용 래핑)의 출발점이 다르므로, 언어 중립 API 계약을 진실 원천으로 두고 각 언어가 구현한다. 아홉 언어 모두 하위 라이브러리 타입을 **주 소비 경로(파사드) 뒤에 숨긴다**(camelCase ↔ snake_case ↔ Go/C# PascalCase만 다르고 개념·계층은 동형 — 예: `TokenSet`/`ValidatedToken`/`IntrospectionResult`·오류 계급·`Client.auth/admin`). **예외/오류 계층은 항상 경계에서 SDK 타입으로 변환**되어 `keycloak.exceptions.*`·`jakarta.ws.rs.*`·`NetworkError`·`gocloak.APIError`·`KeycloakHttpClientException`·Guzzle `RequestException`·`keycloak::KeycloakError`·`Faraday::Error`가 공개 API로 새지 않는다. Go/Rust는 예외 대신 **error 값**(Go: 센티넬 `errors.Is`/`errors.As`, Rust: `thiserror` 기반 `Result<T, KeycloakError>`) 관용을 쓴다(§4 허용). Ruby·Kotlin은 예외 기반 관용(Java/Python/Node/C#/PHP 동형 — Kotlin은 sealed class로 exhaustive `when` 강제).
-
-**문서화된 은닉성 예외(의도적, 2026-07-03 보안감사 반영)**: 완전 은닉이 아니라 아래 지점은 하위 타입을 노출한다 — 재래핑 비용이 과다하거나 보조 표면이기 때문이다. (a) **Java·Node·Go·C#·PHP·Rust·Kotlin admin 파사드**는 representation 타입을 데이터 모델로 그대로 노출한다(Java `org.keycloak.representations.idm.*`, Node `@keycloak/keycloak-admin-client/lib/defs/*`, Go `gocloak.User`/`Client`/`Role`/`Group`/`RealmRepresentation`, C# `Keycloak.AuthServices.Sdk.Admin.Models.*Representation`, PHP `Fschmtt\Keycloak\Representation\*`, Rust `keycloak::types::{UserRepresentation, ClientRepresentation, RealmRepresentation, RoleRepresentation, GroupRepresentation}`(**크레이트 루트에서 `keycloak_sdk::types`로 미러 재노출** — 재노출이 없으면 소비자가 `keycloak` crate를 자기 `Cargo.toml`에 버전까지 맞춰 직접 추가해야만 admin 파사드를 호출할 수 있어 게시된 퀵스타트가 컴파일되지 않는다), **Kotlin `org.keycloak.representations.idm.*`(Java와 동일 좌표 재사용)** — 안정적 Keycloak 타입 재사용, SDK 자체 DTO 재래핑은 범위 밖). Python admin은 plain `dict[str, Any]`로 통과(누출 아님), **Ruby admin도 plain `Hash`로 통과**(Python과 동형 — 성숙한 admin gem이 없어 애초에 노출할 하위 representation 타입 자체가 없음). (b) **저수준 주입/구성 지점** — Java `JwtValidator.forRealm`의 Nimbus `JWSAlgorithm`, Python `JwtValidator.validate`의 joserfc `KeySet`, Node `new JwtValidator(keys, opts)`의 jose `JWTVerifyGetKey`, Go `admin.Raw()`의 `*gocloak.GoCloak`·테스트 주입용 파라미터, C# `AdminClient.Raw`의 `IKeycloakClient`·`JwtValidator`의 내부 `TokenValidationParameters` 시임 ctor, PHP `AdminClient::raw()`의 `Fschmtt\Keycloak\Keycloak`, Rust `AdminClient::raw()`의 `&KeycloakAdmin<SdkTokenSupplier>`(반환 타입을 소비자가 이름 붙일 수 있도록 `KeycloakAdmin`·`SdkTokenSupplier`를, 공유 HTTP 클라이언트를 넘기는 저수준 ctor를 위해 `reqwest`를 크레이트 루트에서 재노출), Ruby `AdminClient#raw`의 `Faraday::Connection`, **Kotlin `AdminClient.raw()`의 `org.keycloak.admin.client.Keycloak`**은 하위 타입을 받는다/반환한다. 정상 소비 경로(`Client.auth/admin`, `client.Auth.Validate(...)`)는 이들을 노출하지 않는다.
+| 언어 | 벗어나는 지점 |
+|---|---|
+| Go | **전체가 단일 `package keycloak`** — admin을 서브패키지로 두면 `Client.Admin`이 `*AdminClient`를 반환할 때 import 순환이 생긴다. 그래서 `admin_*.go`로 같은 패키지다. |
+| Rust | **admin도 `KeycloakClient::new`에서 즉시 조립된다** — 나머지 여덟 언어의 "최초 접근 시 지연 생성"과 다르다(공유 `http`·전용 캐싱 provider 재사용). |
+| Kotlin | **admin이 토큰을 자체 소유한다** — `KeycloakBuilder` 내장 client-credentials 그랜트의 `TokenManager`가 획득·갱신하고, 파사드는 admin에 provider를 배선하지 않는다. `ClientCredentialsTokenProvider`는 §4 접착 유틸이자 시임일 뿐이다(Java가 커스텀 RESTEasy 필터 충돌로 내린 결정을 상속). |
+| Node | **파사드가 주입한 캐싱 provider를 `registerTokenProvider`로 배선하고 `kc.auth()`는 호출하지 않는다**(PR #63) — admin-client 내장 TokenManager는 만료 시 refresh만 시도해 client_credentials에서 영구 실패한다(Rust `79ecf76`와 동형 결정). |
 
 ## 핵심 게차 (Gotchas) — 2026-07-02 검증
 
@@ -194,16 +195,13 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(Python) python-keycloak sync는 `allow_redirects`를 전달하지 않고, admin 세션이 둘(하나는 지연 생성)이라 바깥만 막으면 client_secret이 샌다.** 상세: `.claude/rules/python.md`
 - ⚠️ **(Node) `tsconfig.json`의 `include: ["src"]`라 테스트 파일은 타입체크 안 됨.** 상세: `.claude/rules/node.md`
 - ⚠️ **(Node) JWKS rate-limit 회귀는 대조군 없이는 안 잡힌다.** 상세: `.claude/rules/node.md`
-- ⚠️ **(CI) Dependabot 트리거 run에는 Actions 시크릿이 노출 안 됨**(별도 스토어, 이 저장소는 비어있음) — `SONAR_TOKEN`이 빈 문자열로 보간돼 SonarCloud가 반드시 실패(코드 신호 아님). `sonarcloud.yml`은 Dependabot PR만 skip(push는 항상 통과, main 스캔 스킵 불가 — PR0 fail-closed 불변). 토큰 복제안은 기각(미검토 패키지 코드가 토큰과 같은 잡에서 실행됨 우려).
-- ⚠️ **(CI) `main`은 룰셋 `PRIMARY`가 지킨다 — 정의는 `.github/rulesets/main.json`, 대조는 `node scripts/repo-config.mjs check`.** required 체크는 `doc-facts`·`shell-exec-bits` **둘뿐**이고 앞으로도 여기에 언어 CI를 넣으면 안 된다 — 언어 CI 9종은 워크플로 레벨 `paths:` 필터라 해당 경로를 안 건드리는 PR에서 체크가 **생성조차 되지 않아** required면 Pending 영구 차단이다(`bypass_actors: []`라 소유자도 못 푼다). 잡 레벨 `if:` skip은 반대로 체크가 생성돼 성공으로 인정된다 — 이 둘을 혼동하면 저장소가 잠긴다. 컨텍스트명 충돌 3쌍(`integration`=dotnet+php 등)과 `merge_group:` 트리거 부재(머지 큐 켜면 전부 데드락)도 함께 주의. 상세·해소 방안: [CONTRIBUTING.md §4](CONTRIBUTING.md)
-- ⚠️ **(CI) 태그 룰셋 3종도 2026-08-04부터 적용됐다 — `PRIMARY`와 달리 이쪽은 소유자 bypass가 있다.** `RELEASE-TAGS-CREATE`(비-Go 8개 접두 creation)·`RELEASE-TAGS-CREATE-GO`(`go/v*` creation)·`RELEASE-TAGS-IMMUTABLE`(9개 전부 update+deletion)이 전부 `enforcement: active`이고 셋 다 bypass가 `{"actor_id":5,"actor_type":"RepositoryRole"}`(admin)라 **사람이 손으로 태그를 미는 경로는 그대로 살아 있다**(적용 후 라이브 API로 확인). 막히는 것은 그 밖의 주체 — `contents: write` 자격증명이 임의로 릴리스 태그를 만드는 경로다. ⚠️ **`tags-create.json`의 bypass에 GitHub App(Integration)을 추가하는 것은 아직 남았다**(App이 없어 `actor_id`를 모른다) — 그때까지 `dispatch-release.yml`은 태그를 만들지 못하고 fail-closed다. 추가는 **`tags-create.json`에만** 한다(나머지 둘에 넣으면 Go 예외와 태그 불변성의 유일한 서버측 집행 지점이 무너진다). ⚠️ 웹 UI로 룰셋을 비활성화해도 **CI에서는 아무도 보고하지 않는다**(CI는 `check`가 아니라 가드 자가테스트를 돌린다 — admin 토큰 미보관). 웹 UI로 저장소 규칙을 건드렸다면 로컬에서 `check`를 다시 돌릴 것.
-- ⚠️ **(CI) dependabot이 자동으로 올려서는 안 되는 핀이 두 종류 있다 — `.github/dependabot.yml`의 `ignore`가 근거와 함께 막는다.** (1) **ref 이름이 곧 의미인 액션**: `dtolnay/rust-toolchain`의 핀은 `stable` **브랜치** 헤드 SHA인데 dependabot은 `# stable` 주석을 semver 태그로만 읽어 기본 브랜치(master) 헤드로 갈아끼운다 — master 커밋에는 toolchain을 고를 ref 이름이 없어 액션이 `'toolchain' is a required input`으로 즉사한다(PR #111에서 rust 잡 3종 동시 실패). 올릴 때는 `gh api repos/dtolnay/rust-toolchain/branches/stable --jq .commit.sha`로 브랜치 헤드를 직접 확인한다. `taiki-e/install-action`은 ref가 **태그**(`cargo-llvm-cov`)라 dependabot이 손대지 않아 ignore 대상이 아니다. (2) **소비자 하한을 나타내는 버전**: `kotlin-stdlib`는 게시 아티팩트의 소비자 하한이라 `languageVersion`/`apiVersion`(=KOTLIN_2_2)과 **함께** 움직여야 하며, 마이너/메이저만 올라가면 메타데이터와 전이 요구가 조용히 갈라진다(PR #110 — `d6f1729`가 고친 상태로 회귀). 패치는 허용, 마이너/메이저는 차단.
-- ⚠️ **(CI) 배포 시크릿 미설정은 "스킵"이 아니라 실패여야 한다.** 아무것도 게시하지 않고 green으로 끝난 실행은 성공한 실행과 구분되지 않아, 태그가 밀리고 GitHub Release까지 만들어졌는데 레지스트리에는 아무것도 없는 상태가 조용히 성립한다. 두 곳이 그랬다 — `dotnet-release.yml`은 `NUGET_API_KEY` 미설정 시 `exit 0`(Release는 그대로 생성), `kotlin-release.yml`은 4개 시크릿 중 **username 하나만** 검사해 서명키 없이도 통과 → **서명 없는 아티팩트가 Central Portal에 업로드될 수 있었다**. 지금은 둘 다 `::error::`+`exit 1`이고 kotlin은 누락된 시크릿 이름을 전부 나열한다. 같은 원칙으로 `dotnet nuget push`의 `--skip-duplicate`도 제거했다(이미 태워버린 버전을 성공으로 위장하므로). ⚠️ GitHub Actions는 job-level `if:`에 secrets 컨텍스트를 노출하지 않으므로 이 가드는 반드시 **스텝 안에서 env-매핑된 값**으로 해야 실제로 동작한다.
-- ⚠️ **하드닝 CI 게차(로컬↔CI 차이)**: Go `gofmt`·Node `prettier`·PHP `cs-fixer`는 Windows CRLF 워킹트리를 전부 flag(변경파일 LF-정규화 후 재확인) · 전역상태 테스트(Ruby rack-oauth2)는 flaky라 config 훅 mock 검증 · pip-audit는 editable skip에도 exit1(→ `pip freeze --exclude-editable`+`-r`) · SonarCloud "0% Coverage on New Code"는 Kotlin kover만 피드해 비-Kotlin PR마다 fail(비차단·UNSTABLE).
-- ⚠️ **java jacoco:check는 `verify` 페이즈 바인딩 — 로컬 `mvn test`로는 커버리지 게이트 미검증**(반드시 `mvn -pl … -am verify -DskipITs`). PR #71에서 `forRealm`에 `.rateLimited()` 1줄이 auth번들을 0.90→0.89로 떨어뜨려 CI 3잡 동시실패 — `JWKSourceBuilder` 지연특성 이용한 네트워크-프리 `forRealm` 단위테스트로 복원.
-- ⚠️ **앱 빌드 이미지는 Alpine(musl) 베이스** — Debian/glibc는 Docker Desktop(Windows) 내장 DNS프록시가 레지스트리 CNAME체인을 glibc 리졸버에 실패로 돌려줘 `dotnet restore`/`pip install`/Maven·npm 다운로드가 막힘(musl은 정상, CI 네이티브 Docker 무해).
-- ⚠️ **앱/레지스트리 전 컨테이너 Alpine/musl**(Windows Docker Desktop glibc-DNS 게차 회피 — install harness 전용 재확인, 위와 동일 근거).
-- ⚠️ **잔여 follow-up(marginal·미착수)**: go 공개프록시 폴스루(현 file-first 체인 정상동작). **해소된 항목 둘은 목록에서 뺐다** — (a) rust closure의 `Cargo.lock` 커밋은 라이브러리 핀 완화의 재현성 근거로 `rust/Cargo.lock`이 저장소에 커밋됐고, (b) wait_healthy 크래시 조기감지는 `967d1ce`가 구현했다(`harness/install/lib.sh`의 `wait_healthy`가 `docker inspect`로 컨테이너 종료를 감지하면 남은 타임아웃을 태우지 않고 exit code + 마지막 로그 40줄과 함께 즉시 실패한다 — 단 컨테이너가 아직 안 생긴 경합은 판단 보류로 계속 대기한다).
+- ⚠️ **(CI) `main`은 룰셋 `PRIMARY`가 지킨다 — required 체크에 언어 CI를 넣으면 저장소가 잠긴다**(`paths:` 필터는 체크를 *생성조차* 안 해 Pending 영구 차단, `bypass_actors: []`라 소유자도 못 푼다 — 잡 레벨 `if:` skip과 정반대다). 상세: `.claude/rules/ci.md` · [CONTRIBUTING.md §4](CONTRIBUTING.md)
+- ⚠️ **(CI) 태그 룰셋 3종은 active이되 admin bypass가 있다 — 사람이 손으로 미는 경로는 살아 있다.** GitHub App을 `tags-create.json` bypass에 넣는 것이 남아서 `dispatch-release.yml`은 아직 fail-closed다. 상세: `.claude/rules/ci.md`
+- ⚠️ **(CI) 배포 시크릿 미설정은 "스킵"이 아니라 실패여야 한다** — 아무것도 게시하지 않고 green으로 끝난 실행은 성공한 실행과 구분되지 않는다(태그·Release는 있는데 레지스트리는 빈 상태). 상세: `.claude/rules/ci.md`
+- ⚠️ **(CI) dependabot이 자동으로 올려서는 안 되는 핀 두 종류**(ref 이름이 곧 의미인 액션 · 소비자 하한을 나타내는 버전) — `.github/dependabot.yml`의 `ignore`가 근거와 함께 막는다. 상세: `.claude/rules/ci.md`
+- ⚠️ **(CI) Dependabot 트리거 run에는 Actions 시크릿이 노출되지 않는다** — `SONAR_TOKEN`이 빈 문자열이 되어 SonarCloud가 반드시 실패한다(코드 신호 아님). 상세: `.claude/rules/ci.md`
+- ⚠️ **(CI) 로컬↔CI 발산**(CRLF 포매터 오탐 · pip-audit editable · jacoco는 `verify` 바인딩이라 `mvn test`로 미검증 등). 상세: `.claude/rules/ci.md`
+- ⚠️ **(하네스) 앱/레지스트리 전 컨테이너 Alpine(musl)** — Windows Docker Desktop의 glibc-DNS 게차 회피. 잔여 follow-up도 함께. 상세: `.claude/rules/ci.md`
 
 ## 확정 의존성 (BOM으로 고정)
 
