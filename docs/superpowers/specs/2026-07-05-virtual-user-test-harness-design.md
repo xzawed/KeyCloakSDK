@@ -1,8 +1,12 @@
 # 가상사용자 실측 테스트 하네스 — 설계 문서 (Design Spec)
 
+> <!-- doc-status: complete -->
+> **✅ 완료 — 이 설계는 구현됐다. 기록으로 읽어라.** 여기 적힌 "할 것"은 이미 한 것이고, 결정의
+> *근거*가 이 문서의 가치다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [문서 지도](../../README.md)에 있다.
+
 - **작성일**: 2026-07-05
 - **대상**: 크로스커팅 딜리버러블 — `harness/`(5개 언어 SDK 공통)
-- **상태**: 승인 대기 (User Review)
 - **관련**: 5개 언어 SDK(`java/`·`python/`·`node/`·`go/`·`dotnet/`) — 각 SDK의 Testcontainers E2E를 보완(대체 아님)
 - **라이선스**: Apache-2.0
 

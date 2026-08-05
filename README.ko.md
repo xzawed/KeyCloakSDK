@@ -121,7 +121,7 @@ pip install -e KeyCloakSDK/python
 - 🗺️ **[언어 지원 로드맵](docs/roadmap/language-support.md)** — 지금 있는 언어와 앞으로 올 수 있는 언어
 - 📦 **[배포](DEPLOY.md)** — 아홉 언어의 사람 승인 게이트 릴리스 절차
 
-기여: [CONTRIBUTING.md](CONTRIBUTING.md) · [개발 환경 설정](docs/guides/development-setup.md)(`node scripts/doctor.mjs`가 이 PC에 빠진 것을 알려줍니다) · [새 언어 추가 플레이북](docs/guides/add-a-language-playbook.md) · [언어 간 테스트 하네스](harness/README.md). 내부 아키텍처·메인테이너 노트는 [CLAUDE.md](CLAUDE.md)에 있습니다.
+기여: [CONTRIBUTING.md](CONTRIBUTING.md) · [개발 환경 설정](docs/guides/development-setup.md)(`node scripts/doctor.mjs`가 이 PC에 빠진 것을 알려줍니다) · [새 언어 추가 플레이북](docs/guides/add-a-language-playbook.md) · [언어 간 테스트 하네스](harness/README.md). 내부 아키텍처·메인테이너 노트는 [CLAUDE.md](CLAUDE.md)에, 설계 스펙·계획서·검증 로그 전체는 [문서 지도](docs/README.md)에 있습니다.
 
 ---
 

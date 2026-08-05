@@ -11,6 +11,7 @@ pass before merging, where tests go, and the PR checklist.
 | Architecture, cross-language contract, dependency choices | [CLAUDE.md](CLAUDE.md) |
 | Release / publish procedure | [DEPLOY.md](DEPLOY.md) |
 | Verification history | [docs/governance/](docs/governance/) |
+| Every document under `docs/`, and what only that one tells you | [docs/README.md](docs/README.md) |
 
 ---
 

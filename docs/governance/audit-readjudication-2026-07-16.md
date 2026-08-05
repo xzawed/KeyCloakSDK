@@ -1,5 +1,9 @@
 # 감사 미판정 findings 재판정 로그 (2026-07-16)
 
+> <!-- doc-status: complete -->
+> **✅ 완료 — 끝난 재판정의 기록이다.** 여기 판정된 findings는 전부 처리됐다. 지금 상태는
+> [CLAUDE.md](../../CLAUDE.md) · [문서 지도](../README.md)에 있다.
+
 의 미판정 24건(refuted_unadjudicated 15 + verify_failed_unadjudicated 9)을 배포 전 하드닝(PR1~8) + 경계 리뷰(#67/#69/#70) + JWKS config(PR#71) **완료 후 현재 main 코드**에 대해 24-에이전트 병렬 워크플로로 재판정했다.
 
 **결과: still-real 결함 0건.** correctly-refuted 13 · fixed-later 10 · design-intent(외부 제약) 1.

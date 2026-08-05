@@ -1,5 +1,11 @@
 # 설치·동작 검증 하네스 (Install-&-Operate Harness) Implementation Plan
 
+> <!-- doc-status: complete -->
+> **✅ 완료된 계획 — 기록이다. 실행하지 말 것.** 아래 체크박스는 **전부 미체크로 남아 있지만 할 일이
+> 아니다** — 실행 당시 갱신되지 않았을 뿐 작업은 끝났다. 바로 아래의 "For agentic workers" 지시도
+> 그때의 것이라 지금은 유효하지 않다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [구현 이력](../../governance/history.md) · [문서 지도](../../README.md)에 있다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 실배포 없이 Docker에서 8개 언어 SDK를 "게시된 패키지처럼" 로컬 레지스트리에서 설치하고 실 Keycloak에 대해 동작(quickstart 스모크 + conformance + security)까지 검증하는 하네스를 `harness/install/`에 구축한다.

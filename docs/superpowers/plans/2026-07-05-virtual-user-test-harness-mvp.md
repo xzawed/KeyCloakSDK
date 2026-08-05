@@ -1,5 +1,11 @@
 # 가상사용자 실측 테스트 하네스 (MVP) — 구현 계획 (WBS)
 
+> <!-- doc-status: complete -->
+> **✅ 완료된 계획 — 기록이다. 실행하지 말 것.** 아래 체크박스는 **전부 미체크로 남아 있지만 할 일이
+> 아니다** — 실행 당시 갱신되지 않았을 뿐 작업은 끝났다. 바로 아래의 "For agentic workers" 지시도
+> 그때의 것이라 지금은 유효하지 않다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [구현 이력](../../governance/history.md) · [문서 지도](../../README.md)에 있다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development(권장) 또는 superpowers:executing-plans로 태스크 단위 구현. 스텝은 `- [ ]` 체크박스. 실행: WBS → 서브에이전트 구현→리뷰→수정 루프.
 
 **Goal:** [설계 스펙](../specs/2026-07-05-virtual-user-test-harness-design.md)의 MVP — Docker Compose 프로덕션-유사 환경(실제 Keycloak 26.6)에 **Go 샘플 앱**(SDK 빌드 패키지 소비)을 배포하고, **k6 가상사용자 드라이버**가 공통 HTTP 계약을 동시 호출해 **기능 정확성 PASS/FAIL 게이트 + 성능 실측 리포트**를 산출하는 완결 하네스를 `harness/`에 구축한다. (C#/Node/Python/Java 앱 확장은 후속 계획.)

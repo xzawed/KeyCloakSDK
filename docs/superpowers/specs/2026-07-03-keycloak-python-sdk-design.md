@@ -1,7 +1,11 @@
 # Keycloak Python SDK — 설계 문서 (Design Spec)
 
+> <!-- doc-status: complete -->
+> **✅ 완료 — 이 설계는 구현됐다. 기록으로 읽어라.** 여기 적힌 "할 것"은 이미 한 것이고, 결정의
+> *근거*가 이 문서의 가치다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [문서 지도](../../README.md)에 있다.
+
 - **작성일**: 2026-07-03
-- **상태**: 승인 대기 (User Review)
 - **패키지**: `keycloak-sdk` (import `keycloak_sdk`)
 - **라이선스**: Apache-2.0
 - **선행**: [Java SDK 설계](2026-07-02-keycloak-multilang-sdk-design.md) (§10 다국어 확장) — 본 문서가 그 Python 후속

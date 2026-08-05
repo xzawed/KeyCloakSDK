@@ -1,5 +1,10 @@
 # 설치·동작 검증 하네스 (Install-&-Operate Harness) — 설계 (Design)
 
+> <!-- doc-status: complete -->
+> **✅ 완료 — 이 설계는 구현됐다. 기록으로 읽어라.** 여기 적힌 "할 것"은 이미 한 것이고, 결정의
+> *근거*가 이 문서의 가치다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [문서 지도](../../README.md)에 있다.
+
 - **작성일**: 2026-07-07
 - **브랜치**: `feature/install-operate-harness` (main 기준)
 - **대상**: 크로스커팅 딜리버러블 — `harness/install/` (8개 언어 SDK 공통)

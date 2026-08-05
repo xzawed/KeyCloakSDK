@@ -1,7 +1,11 @@
 # 가상사용자 테스트 하네스 — 5개 언어 확장 설계 (Design)
 
+> <!-- doc-status: complete -->
+> **✅ 완료 — 이 설계는 구현됐다. 기록으로 읽어라.** 여기 적힌 "할 것"은 이미 한 것이고, 결정의
+> *근거*가 이 문서의 가치다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [문서 지도](../../README.md)에 있다.
+
 - **날짜**: 2026-07-05
-- **상태**: 설계 승인 대기 → 확정 시 WBS(implementation plan)로 전환
 - **선행**: [가상사용자 테스트 하네스 MVP 설계](2026-07-05-virtual-user-test-harness-design.md) · [MVP WBS](../plans/2026-07-05-virtual-user-test-harness-mvp.md)
 - **관련**: [언어 지원 로드맵](../../roadmap/language-support.md) · [멀티랭 SDK 설계 §4](2026-07-02-keycloak-multilang-sdk-design.md)
 

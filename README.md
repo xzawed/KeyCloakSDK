@@ -121,7 +121,7 @@ Everything is **pre-1.0 (`0.1.0` line)**. Four of the nine have shipped their fi
 - 🗺️ **[Language roadmap](docs/roadmap/language-support.md)** — what exists today and what may come next
 - 📦 **[Deploy](DEPLOY.md)** — the human-gated release procedure for all nine
 
-Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · [development setup](docs/guides/development-setup.md) (`node scripts/doctor.mjs` reports what your machine is missing) · [add-a-language playbook](docs/guides/add-a-language-playbook.md) · [cross-language test harness](harness/README.md). Internal architecture and maintainer notes live in [CLAUDE.md](CLAUDE.md).
+Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · [development setup](docs/guides/development-setup.md) (`node scripts/doctor.mjs` reports what your machine is missing) · [add-a-language playbook](docs/guides/add-a-language-playbook.md) · [cross-language test harness](harness/README.md). Internal architecture and maintainer notes live in [CLAUDE.md](CLAUDE.md); every design spec, plan and verification log is indexed in the [documentation map](docs/README.md).
 
 ---
 

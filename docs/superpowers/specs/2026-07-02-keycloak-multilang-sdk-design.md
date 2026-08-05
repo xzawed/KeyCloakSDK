@@ -1,7 +1,16 @@
 # Keycloak 다국어 SDK — 설계 문서 (Design Spec)
 
+> <!-- doc-status: complete -->
+> **✅ 완료 — 이 설계는 구현됐다. 기록으로 읽어라.** 여기 적힌 "할 것"은 이미 한 것이고, 결정의
+> *근거*가 이 문서의 가치다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [문서 지도](../../README.md)에 있다.
+>
+> ⚠️ **예외 — §11 "배포 전 확인 항목" 중 둘은 아직 남았다**: GPG 서명 키 생성·키서버 배포·CI
+> 시크릿 등록, Central Portal 계정·토큰 발급. 그래서 Java·Kotlin은 Maven Central 미게시다
+> (PyPI 이름 선점은 끝났다 — `keycloak-sdk` 0.1.0rc1이 라이브다). 절차:
+> [DEPLOY.md §2-A](../../../DEPLOY.md).
+
 - **작성일**: 2026-07-02
-- **상태**: 승인 대기 (User Review)
 - **대상 언어(MVP)**: Java (기준 언어) · **향후**: Python
 - **라이선스**: Apache-2.0
 

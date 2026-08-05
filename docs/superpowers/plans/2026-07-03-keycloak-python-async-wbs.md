@@ -1,5 +1,11 @@
 # Keycloak Python SDK async 변형 구현 계획 (WBS)
 
+> <!-- doc-status: complete -->
+> **✅ 완료된 계획 — 기록이다. 실행하지 말 것.** 아래 체크박스는 **전부 미체크로 남아 있지만 할 일이
+> 아니다** — 실행 당시 갱신되지 않았을 뿐 작업은 끝났다. 바로 아래의 "For agentic workers" 지시도
+> 그때의 것이라 지금은 유효하지 않다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [구현 이력](../../governance/history.md) · [문서 지도](../../README.md)에 있다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 기존 sync `keycloak_sdk`에 python-keycloak의 `a_*` 비동기 메서드를 감싼 **`keycloak_sdk.aio` async 미러**(auth+admin, sync와 완전 대칭)를 순수 추가한다.

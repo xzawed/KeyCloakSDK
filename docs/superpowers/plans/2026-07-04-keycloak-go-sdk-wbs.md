@@ -1,5 +1,11 @@
 # Keycloak Go SDK — 구현 계획 (WBS)
 
+> <!-- doc-status: complete -->
+> **✅ 완료된 계획 — 기록이다. 실행하지 말 것.** 아래 체크박스는 **전부 미체크로 남아 있지만 할 일이
+> 아니다** — 실행 당시 갱신되지 않았을 뿐 작업은 끝났다. 바로 아래의 "For agentic workers" 지시도
+> 그때의 것이라 지금은 유효하지 않다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [구현 이력](../../governance/history.md) · [문서 지도](../../README.md)에 있다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development(권장) 또는 superpowers:executing-plans로 태스크 단위 구현. 스텝은 `- [ ]` 체크박스. 실행 방식: **WBS → Workflow 오케스트레이션 + AI 거버넌스(G1~G6) + 다중에이전트 어드버서리얼 리뷰 + Loops + 딥리서치**.
 
 **Goal:** Java/Python/Node와 §4 계약에 동형인 Keycloak Go SDK를 `go/`에 구현한다 — 인증(OIDC)·관리(Admin) 파사드 + 자체 강화 JWT 검증, sync + `context.Context`, Go 모듈 배포 준비.
