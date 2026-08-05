@@ -375,6 +375,12 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 
 0. **Decide the version** — for a language's *first* release, make it a release candidate (§7), not `0.1.0`.
 1. **Version bump** (if the language is subject to manual bump — see the §1 table) — commit. The tag↔version guard will reject a mismatch, so this must land before the tag.
+
+   ⚠️ **The same commit must also fix that language's README.** Each `<lang>/README.md` ships inside the package and *becomes the registry landing page*, and every unpublished language currently opens with a "not yet published" banner that turns false the moment you publish. Fixing it afterwards costs a new version, because registries pin the README per version. Two things to correct:
+   - the banner — say the RC *is* published, as PHP/.NET/Python/Rust already do;
+   - the install command — **a bare install does not get a prerelease in most ecosystems**, and the exceptions are not intuitive. Measured: pip *does* fall back to a prerelease when only prereleases exist; Cargo *does* too (`cargo add` picks it, though a hand-written `"0.1"` requirement never matches); RubyGems does **not** (`gem install` needs `--pre` or an exact version); npm does **not** (the workflow publishes a hyphenated version under dist-tag `rc`, and a bare `npm i` only reads `latest`). Check your ecosystem rather than copying another language's wording.
+
+   ⚠️ **Node only**: `node/package-lock.json` records the root package's own version. Regenerate it in the same commit (`npm install --package-lock-only`) so the lock does not disagree with the manifest. Measured: `npm ci` does **not** fail on that drift today, so nothing will catch it for you.
 2. **dry-run** — locally confirm artifact generation without deploying (the relevant language in §3).
 3. **`./scripts/release-readiness.sh <lang>`** — check the secret/registry/tag readiness.
 4. **`./scripts/release-trigger.sh <lang> <ver>`** — prints the version-bump guidance, dry-run command, pre-checks, and exact tag command (does not execute them). ✅ It validates the version **per language**, so it accepts prereleases in each registry's own spelling (`0.1.0rc1` for Python, `0.1.0.rc1` for Ruby, `0.1.0-rc.1` for SemVer registries) and rejects the wrong one with the expected form in the error. **Do not skip it for an RC** — that is precisely when it earns its keep, because the tag↔manifest guard is literal string equality (§7).
