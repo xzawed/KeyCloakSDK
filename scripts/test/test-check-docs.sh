@@ -773,4 +773,25 @@ assert_contains "$OUT" "좌표 'hatchling' 를 python/pyproject.toml 에서 찾�
 
 rm -rf "$TMP" && mkdir -p "$TMP"
 
+# ---- 회귀 13: 검사 8 — 파일 크기 래칫(`<!-- doc-budget: max-bytes=N -->`) ----
+# 산문 규칙("CLAUDE.md는 33 KB 이하로 유지한다")은 실패한 전례가 있다 — 이관 직후 44 KB였던
+# 파일이 13일 만에 66 KB가 됐다(+50%). 아무도 규칙을 어기려 하지 않았는데도 그렇게 됐다:
+# 한 줄씩 늘어나는 것을 사람은 알아챌 수 없다. 래칫은 그 자리를 메운다.
+printf '%s\n' '# budget fixture' '<!-- doc-budget: max-bytes=100000 -->' 'x' > "$TMP/under.md"
+assert_ok node "$GUARD" "$TMP"
+
+printf '%s\n' '# budget fixture' '<!-- doc-budget: max-bytes=10 -->' 'padding padding padding padding' > "$TMP/over.md"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "doc-budget" "초과 시 doc-budget 위반을 명시해야 한다"
+assert_contains "$OUT" "over.md" "위반 파일명을 지목해야 한다"
+
+# ⚠️ 대조군 — 앵커가 없는 파일은 크기와 무관하게 통과해야 한다. 없으면 "전 문서 크기 제한"이라는
+# 전혀 다른(그리고 저장소를 잠그는) 가드가 되어버린 것을 알 수 없다.
+rm -f "$TMP/over.md"
+printf '%s\n' '# no anchor' 'padding padding padding padding padding padding' > "$TMP/noanchor.md"
+assert_ok node "$GUARD" "$TMP"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
 assert_report
