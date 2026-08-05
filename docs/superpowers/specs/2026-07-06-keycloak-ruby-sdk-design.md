@@ -1,7 +1,11 @@
 # Keycloak Ruby SDK 설계 (Design) — 8번째 언어
 
+> <!-- doc-status: complete -->
+> **✅ 완료 — 이 설계는 구현됐다. 기록으로 읽어라.** 여기 적힌 "할 것"은 이미 한 것이고, 결정의
+> *근거*가 이 문서의 가치다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [문서 지도](../../README.md)에 있다.
+
 - **날짜**: 2026-07-06
-- **상태**: 설계 승인됨 → WBS(implementation plan)로 전환
 - **브랜치**: `feature/ruby-sdk` (main 기준)
 - **선행 정독**: [언어 중립 계약 §4](2026-07-02-keycloak-multilang-sdk-design.md) — **진실 원천** · [새 언어 추가 플레이북](../../guides/add-a-language-playbook.md) · 워크드 예제 [Rust 설계](2026-07-06-keycloak-rust-sdk-design.md)(직전 언어·자체강화 JWT) · [PHP 설계](2026-07-06-keycloak-php-sdk-design.md)(예외 기반·docker-CLI 통합) · [Go 설계](2026-07-04-keycloak-go-sdk-design.md)(sync·raw-REST admin)
 

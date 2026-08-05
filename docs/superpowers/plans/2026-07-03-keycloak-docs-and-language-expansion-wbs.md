@@ -1,5 +1,11 @@
 # Keycloak SDK 문서 & 언어 확장 — 구현 계획 (WBS)
 
+> <!-- doc-status: complete -->
+> **✅ 완료된 계획 — 기록이다. 실행하지 말 것.** 아래 체크박스는 **전부 미체크로 남아 있지만 할 일이
+> 아니다** — 실행 당시 갱신되지 않았을 뿐 작업은 끝났다. 바로 아래의 "For agentic workers" 지시도
+> 그때의 것이라 지금은 유효하지 않다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [구현 이력](../../governance/history.md) · [문서 지도](../../README.md)에 있다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 사용자 승인 실행 방식: **WBS 기준 Workflow 오케스트레이션 + AI 거버넌스(G1~G6) + Loops 엔지니어링 + 딥리서치/다이나믹 워크플로우**.
 
 **Goal:** 개발자가 어떤 언어로든 SDK를 설치·시작할 수 있는 문서(설치 가이드)와, SDK를 Java/Python 품질로 여러 언어에 반복 확장하는 전략·로드맵·플레이북을 만든다.

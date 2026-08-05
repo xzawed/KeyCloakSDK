@@ -1,7 +1,11 @@
 # Keycloak Python SDK — async 변형 설계 문서 (Design Spec)
 
+> <!-- doc-status: complete -->
+> **✅ 완료 — 이 설계는 구현됐다. 기록으로 읽어라.** 여기 적힌 "할 것"은 이미 한 것이고, 결정의
+> *근거*가 이 문서의 가치다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [문서 지도](../../README.md)에 있다.
+
 - **작성일**: 2026-07-03
-- **상태**: 승인 대기 (User Review)
 - **대상**: 기존 `keycloak-sdk`(Python)에 **비동기 API 추가** — `keycloak_sdk.aio`
 - **선행**: [Python SDK 설계](2026-07-03-keycloak-python-sdk-design.md) (sync 구현, main 병합됨)
 

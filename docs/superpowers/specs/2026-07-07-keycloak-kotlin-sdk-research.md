@@ -1,5 +1,10 @@
 # Kotlin SDK — 리서치 부록 (권위 명령·설정 소스)
 
+> <!-- doc-status: complete -->
+> **✅ 완료 — 이 설계는 구현됐다. 기록으로 읽어라.** 여기 적힌 "할 것"은 이미 한 것이고, 결정의
+> *근거*가 이 문서의 가치다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [문서 지도](../../README.md)에 있다.
+
 > Kotlin SDK(9번째 언어)의 Kotlin 고유 관심사를 병렬 딥리서치(2026-07-07, 6 에이전트·web 검증, 전 영역 confidence high)로 확정. WBS 태스크·구현자가 참조하는 **권위 소스**. 설계는 [keycloak-kotlin-sdk-design.md](2026-07-07-keycloak-kotlin-sdk-design.md).
 >
 > 핵심: Java SDK의 3개 JVM 기반(keycloak-admin-client 26.0.10·oauth2-oidc-sdk 11.37.2·nimbus-jose-jwt 10.9.1)을 재사용하되 **코루틴 suspend·data class·sealed 예외**로 Kotlin 관용화. JwtValidator/AuthClient/AdminClient의 하드닝 불변식은 [Java SDK 검증로그](../../governance/verification-log.md)에서 상속.

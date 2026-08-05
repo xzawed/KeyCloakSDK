@@ -1,7 +1,11 @@
 # 8개 언어 종합 검증·점수책정 하네스 설계 (Design)
 
+> <!-- doc-status: complete -->
+> **✅ 완료 — 이 설계는 구현됐다. 기록으로 읽어라.** 여기 적힌 "할 것"은 이미 한 것이고, 결정의
+> *근거*가 이 문서의 가치다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [문서 지도](../../README.md)에 있다.
+
 - **날짜**: 2026-07-07
-- **상태**: 설계 승인됨 → WBS(implementation plan)로 전환
 - **브랜치**: `feature/verification-scoring-harness` (main 기준)
 - **선행 정독**: [기존 하네스 README](../../../harness/README.md) · [HTTP 계약 v1](../../../harness/contract/CONTRACT.md) · [하네스 확장 설계](2026-07-05-harness-language-expansion-design.md) · [언어 중립 계약 §4](2026-07-02-keycloak-multilang-sdk-design.md)
 

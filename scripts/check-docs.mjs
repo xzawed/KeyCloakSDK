@@ -27,6 +27,8 @@ const SKIP = new Set([
 // ruby/spec/fixtures 같은 무관한 "fixtures" 디렉터리까지 함께 가리지 않는다.
 const SKIP_PATHS = new Set(['scripts/test/fixtures'])
 const MAX_PROP_HOPS = 10 // 순환/장기 속성 체인이 무한루프하지 않도록 하는 반복 상한.
+// docs/ 문서 지도. 검사 6(제외 대상)과 검사 9(대조 주체) 둘 다 참조하므로 여기 둔다.
+const DOCS_MAP = 'docs/README.md'
 
 // argv 파싱: 위치 인자(루트 경로)와 플래그(--strict·--min-facts=N·--min-anchors=M)를
 // 서로 완전히 독립적으로 파싱한다. `process.argv[2]`를 무조건 루트로 가정하면
@@ -632,6 +634,12 @@ function checkCardinality() {
     if (rel === 'docs/governance/history.md') continue // 위와 동일 — 이력 스냅샷
     if (/^docs\/governance\/verification-log.*\.md$/.test(rel)) continue // 위와 동일 — 검증 시점 스냅샷(verification-log.md·verification-log-<lang>.md)
     if (rel === 'CHANGELOG.md') continue // 위와 동일 — 항목마다 날짜가 붙은 append-only 이력
+    // 위와 동일 — docs/README.md 는 **이력 문서들의 색인**이라, 각 줄이 대상 문서의 제목과
+    // 당시 범위를 인용한다. 그 문서 제목 자체가 "하네스 5개 언어 확장 설계"처럼 당시 기수를
+    // 담고 있어(그게 그 문서의 실제 H1이다) 지도가 그것을 다르게 적으면 오히려 거짓이 된다.
+    // ⚠️ 대신 이 지도에는 **현재 상태 주장을 적지 않는다** — 현재 언어 수 같은 사실은
+    // CLAUDE.md 소관이고, 지도의 마지막 칸은 "그 문서에만 있는 것"만 말한다.
+    if (rel === DOCS_MAP) continue
     const text = readFileSync(f, 'utf8')
     for (const x of text.matchAll(/(\d+)개 언어/g)) {
       if (Number(x[1]) === n) continue
@@ -811,10 +819,126 @@ function checkDocBudget() {
   }
 }
 
-// 검사 4·6·8 — 파일별 순회와 무관한 전역 대조라 메인 루프 밖에서 한 번만 실행한다.
+// 검사 9 — docs/ 지도(`docs/README.md`)와 디스크가 **양방향**으로 맞는가.
+//
+// 한 방향만 검사하면 반대쪽 드리프트가 그대로 통과한다: "지도에 적힌 파일이 존재하는가"만
+// 보면 새 문서를 지도에 안 넣는 것을 못 잡고, "모든 파일이 지도에 있는가"만 보면 문서를
+// 지우거나 옮긴 뒤 지도를 안 고치는 것을 못 잡는다. 둘 다 실제로 일어나는 방향이라 둘 다 본다.
+//
+// ⚠️ 조건부 실행이 **공허해지지 않도록** 주의해서 걸었다. `docs/README.md`가 없으면 그냥
+// 건너뛰게 하면 지도를 지우는 순간 검사가 사라진다 — 가드를 무력화하는 가장 쉬운 방법이
+// 가드가 지키는 파일을 지우는 것이 되어서는 안 된다. 그래서 발동 조건은 지도의 존재가 아니라
+// **`docs/` 안에 .md가 하나라도 있는가**다. 지도가 없으면 그 자체가 실패다. `docs/`가 아예
+// 없는 트리(가드 자신의 픽스처)에서만 no-op이 된다.
+function checkDocsMap() {
+  const docsDir = join(ROOT, 'docs')
+  let present
+  try {
+    if (!statSync(docsDir).isDirectory()) return
+    present = walk(docsDir)
+      .map((f) => relative(ROOT, f).replace(/\\/g, '/'))
+      .filter((r) => r !== DOCS_MAP)
+  } catch {
+    return // docs/ 없음 — 이 저장소의 문서 규약이 적용되지 않는 트리다.
+  }
+  if (present.length === 0) return
+
+  const mapPath = join(ROOT, DOCS_MAP)
+  let text
+  try {
+    text = readFileSync(mapPath, 'utf8')
+  } catch {
+    errors.push(`${DOCS_MAP} 이 없다 — docs/ 아래 ${present.length}개 문서를 가리키는 지도가 있어야 한다`)
+    return
+  }
+
+  // 지도가 링크한 docs/ 내부 .md 경로. 바깥(../CLAUDE.md 등)과 외부 URL은 대상이 아니다.
+  const linked = new Set()
+  for (const m of text.matchAll(/\]\(([^)\s]+?\.md)(?:#[^)]*)?\)/g)) {
+    const href = m[1]
+    if (/^[a-z]+:/i.test(href)) continue
+    const rel = relative(ROOT, resolve(dirname(mapPath), href)).replace(/\\/g, '/')
+    if (rel.startsWith('docs/')) linked.add(rel)
+  }
+
+  for (const r of present) {
+    if (!linked.has(r)) {
+      errors.push(`${r} 이 ${DOCS_MAP} 에 없다 — 문서를 추가했으면 지도에도 한 줄 넣어라(마지막 칸까지)`)
+    }
+  }
+  for (const r of linked) {
+    if (!present.includes(r)) {
+      errors.push(`${DOCS_MAP} 가 존재하지 않는 ${r} 을 가리킨다 — 문서를 지우거나 옮겼으면 지도도 고쳐라`)
+    }
+  }
+
+  // 지도의 **상태 칸**은 손으로 적는 값이라 그대로 두면 또 하나의 복제본이 된다(게시 현황이
+  // 그래서 6곳에서 동시에 낡았다). 그래서 상태의 진실 원천을 **각 문서 자신**에 두고 대조한다:
+  // 문서 상단의 `<!-- doc-status: X -->` 마커가 있으면 지도의 칸이 그것과 같아야 하고,
+  // 마커가 없는 문서(살아있는 운영 문서)는 지도에서 '운영'이어야 한다. 어느 쪽이든 손으로 적은
+  // 값 하나가 다른 값 하나와 반드시 마주 보게 되어, 한쪽만 고치면 잡힌다.
+  const STATUS_OF = { complete: '완료', active: '진행', living: '운영' }
+  const VALID = new Set(Object.values(STATUS_OF))
+  let statusChecked = 0
+  for (const r of present) {
+    // ⚠️ 링크가 등장하는 **아무 행**이나 잡으면 안 된다. 지도 상단의 상태 범례표에도
+    // `[history.md](governance/history.md)` 같은 링크가 있고 그 행의 첫 칸은 '완료'라서,
+    // 단순 `includes` + `find`는 범례를 그 문서의 행으로 오인해 거짓 실패를 냈다(실제로 냈다).
+    // 색인 행은 **첫 칸이 그 문서 링크**인 행뿐이다.
+    const link = `](${relFromMap(r)})`
+    const row = text
+      .split('\n')
+      .map((l) => l.split('|').map((c) => c.trim()))
+      .find((cells) => cells.length > 2 && cells[1].includes(link))
+    // ⚠️ 여기서 `continue` 하면 안 된다. 행 매칭이 조용히 깨지면(표 서식을 바꾸거나 정규식이
+    // 어긋나면) 대조 대상이 0건이 되고 검사 전체가 공허하게 통과한다 — 이 가드가 막으려는
+    // 바로 그 실패다. 모든 문서는 상태 칸을 가진 표 행으로 색인돼야 하고, 아니면 실패다.
+    if (!row) {
+      errors.push(`${r} 이 ${DOCS_MAP} 의 표 행으로 색인돼 있지 않다 — 첫 칸이 그 문서 링크인 행이 있어야 한다`)
+      continue
+    }
+    const cells = row
+    const cell = cells.find((c) => VALID.has(c))
+    if (!cell) {
+      errors.push(`${DOCS_MAP} 의 ${r} 줄에 상태 칸(${[...VALID].join('/')})이 없다`)
+      continue
+    }
+    const m = /<!--\s*doc-status:\s*(\w+)\s*-->/.exec(readFileSync(join(ROOT, r), 'utf8'))
+    const declared = m ? STATUS_OF[m[1]] : '운영'
+    if (m && !declared) {
+      errors.push(`${r} 의 doc-status='${m[1]}' 는 알 수 없는 값이다 (${Object.keys(STATUS_OF).join('/')})`)
+      continue
+    }
+    statusChecked++
+    // ⚠️ 완료 배너는 **실행 지시보다 앞에** 있어야 한다. 계획서들은 "REQUIRED SUB-SKILL: …
+    // implement this plan task-by-task"로 시작하고 체크박스가 전부 미체크로 남아 있어서,
+    // 위에서부터 읽는 에이전트는 배너를 만나기 전에 이미 실행 지시를 받는다. 순서가 뒤집히면
+    // 배너는 있으나 마나다 — 존재만 검사하면 그 사실을 못 본다.
+    if (m && m[1] === 'complete') {
+      const body = readFileSync(join(ROOT, r), 'utf8')
+      const instr = body.indexOf('For agentic workers')
+      if (instr >= 0 && body.indexOf('doc-status:') > instr) {
+        errors.push(`${r}: 완료 배너가 "For agentic workers" 실행 지시보다 뒤에 있다 — 위에서부터 읽으면 지시를 먼저 받는다`)
+      }
+    }
+    if (cell !== declared) {
+      errors.push(
+        `${r}: 문서가 선언한 상태='${declared}'${m ? '' : '(마커 없음 → 운영으로 간주)'} ≠ ${DOCS_MAP} 의 '${cell}'`,
+      )
+    }
+  }
+  if (errors.length === 0) console.log(`docs map: ${present.length} files linked, ${statusChecked} statuses cross-checked`)
+}
+// 지도 안에서 쓰이는 상대경로(docs/ 기준)로 되돌린다.
+function relFromMap(rel) {
+  return rel.slice('docs/'.length)
+}
+
+// 검사 4·6·8·9 — 파일별 순회와 무관한 전역 대조라 메인 루프 밖에서 한 번만 실행한다.
 checkCoverageGates()
 checkCardinality()
 checkDocBudget()
+checkDocsMap()
 
 // 검사 7 — fact/anchor 최저치(floor, --min-facts/--min-anchors로 opt-in). 앵커 주석 하나를
 // 지우면서 그 앵커가 소유했던 표까지 함께 남겨두면(=검사 대상 자체가 사라지면) 위의 검사

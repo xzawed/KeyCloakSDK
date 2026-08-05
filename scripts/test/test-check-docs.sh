@@ -475,6 +475,12 @@ mkdir -p "$TMP/scripts/lib" "$TMP/docs/governance"
 printf '%s\n' 'DEPLOY_LANGS="a b c"' > "$TMP/scripts/lib/deploy-facts.sh"
 printf '%s\n' '# verification log' '6개 언어 시절 검증 기록.' > "$TMP/docs/governance/verification-log.md"
 printf '%s\n' '# verification log (lang-specific)' '6개 언어 시절 검증 기록.' > "$TMP/docs/governance/verification-log-python.md"
+# 이 픽스처가 docs/ 를 만드는 순간 검사 9(문서 지도)도 발동한다 — 지도가 없으면 그쪽에서 실패해
+# 검사 6에 대한 이 assert_ok 가 엉뚱한 이유로 빨개진다. 지도를 함께 둔다(그 자체가 검사 9의
+# "docs/ 가 있으면 지도가 있어야 한다"를 다시 확인하는 셈이다).
+printf '%s\n' '# map' '' '| 문서 | 상태 |' '|---|---|' \
+  '| [vl](governance/verification-log.md) | 운영 |' \
+  '| [vlp](governance/verification-log-python.md) | 운영 |' > "$TMP/docs/README.md"
 printf '%s\n' '# CLAUDE' '이 SDK는 8개 언어를 지원한다.' > "$TMP/CLAUDE.md"
 # CHANGELOG.md도 같은 성격이다 — 항목마다 날짜가 붙은 append-only 이력이라 "8개 언어 (2026-07-07)"는
 # 당시 사실로 옳다. 제외하지 않으면 언어가 늘 때마다 과거 항목이 자동으로 경고가 되고, 그걸 없애는
@@ -790,6 +796,76 @@ assert_contains "$OUT" "over.md" "위반 파일명을 지목해야 한다"
 # 전혀 다른(그리고 저장소를 잠그는) 가드가 되어버린 것을 알 수 없다.
 rm -f "$TMP/over.md"
 printf '%s\n' '# no anchor' 'padding padding padding padding padding padding' > "$TMP/noanchor.md"
+assert_ok node "$GUARD" "$TMP"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 회귀 14: 검사 9 — docs/ 지도 완전성 + 상태 대조 ----
+# 두 가지 드리프트가 실제로 일어난다: 문서를 추가하고 지도에 안 넣는 것, 문서를 지우고 지도를
+# 안 고치는 것. 한 방향만 검사하면 반대쪽이 그대로 통과하므로 양방향으로 본다. 세 번째로,
+# 지도의 상태 칸은 손으로 적는 값이라 그 자체가 복제본이 된다 — 그래서 각 문서의
+# `<!-- doc-status: -->` 마커를 진실 원천으로 두고 대조한다.
+mkdir -p "$TMP/docs/sub"
+printf '%s\n' '# a' '<!-- doc-status: complete -->' > "$TMP/docs/sub/a.md"
+printf '%s\n' '# map' '' '| 문서 | 상태 |' '|---|---|' '| [a](sub/a.md) | 완료 |' > "$TMP/docs/README.md"
+assert_ok node "$GUARD" "$TMP"
+
+# 지도에 없는 문서 → 실패
+printf '%s\n' '# b' '<!-- doc-status: complete -->' > "$TMP/docs/sub/b.md"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "docs/sub/b.md 이 docs/README.md 에 없다" "새 문서를 지도에 안 넣으면 지목해야 한다"
+rm -f "$TMP/docs/sub/b.md"
+
+# 지도가 없는 문서를 가리킴 → 실패
+printf '%s\n' '# map' '' '| 문서 | 상태 |' '|---|---|' '| [a](sub/a.md) | 완료 |' '| [gone](sub/gone.md) | 완료 |' > "$TMP/docs/README.md"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "존재하지 않는 docs/sub/gone.md" "지운 문서가 지도에 남아 있으면 지목해야 한다"
+
+# 상태 불일치(문서=complete, 지도=진행) → 실패
+printf '%s\n' '# map' '' '| 문서 | 상태 |' '|---|---|' '| [a](sub/a.md) | 진행 |' > "$TMP/docs/README.md"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "문서가 선언한 상태='완료'" "마커와 지도가 어긋나면 지목해야 한다"
+
+# 마커 없는 문서는 '운영'이어야 한다 — 마커를 지우는 것으로 대조를 피할 수 없게 한다.
+printf '%s\n' '# a' > "$TMP/docs/sub/a.md"
+printf '%s\n' '# map' '' '| 문서 | 상태 |' '|---|---|' '| [a](sub/a.md) | 완료 |' > "$TMP/docs/README.md"
+assert_fails node "$GUARD" "$TMP"
+printf '%s\n' '# map' '' '| 문서 | 상태 |' '|---|---|' '| [a](sub/a.md) | 운영 |' > "$TMP/docs/README.md"
+assert_ok node "$GUARD" "$TMP"
+
+# ⚠️ 표 행이 아니라 산문 링크면 실패해야 한다. 여기서 조용히 넘어가면 표 서식이 바뀌는 순간
+# 대조 대상이 0건이 되어 검사 전체가 공허하게 통과한다 — 이 가드가 막으려는 실패 그 자체다.
+printf '%s\n' '# map' '' '- [a](sub/a.md) — 운영' > "$TMP/docs/README.md"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "표 행으로 색인돼 있지 않다" "산문 링크만 있으면 지목해야 한다"
+
+# 지도 자체를 지우는 것으로도 검사를 없앨 수 없다.
+printf '%s\n' '# map' '' '| 문서 | 상태 |' '|---|---|' '| [a](sub/a.md) | 운영 |' > "$TMP/docs/README.md"
+assert_ok node "$GUARD" "$TMP"
+rm -f "$TMP/docs/README.md"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "docs/README.md 이 없다" "지도를 지우면 그 자체가 실패여야 한다"
+
+# 완료 배너가 실행 지시보다 뒤에 있으면 실패해야 한다 — 존재만 검사하면 순서가 뒤집힌 것을
+# 못 본다. 위에서부터 읽는 에이전트는 배너 전에 지시를 받게 되므로 배너가 무의미해진다.
+printf '%s\n' '# plan' '> For agentic workers: implement this plan task-by-task.' '<!-- doc-status: complete -->' > "$TMP/docs/sub/a.md"
+printf '%s\n' '# map' '' '| 문서 | 상태 |' '|---|---|' '| [a](sub/a.md) | 완료 |' > "$TMP/docs/README.md"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "실행 지시보다 뒤에 있다" "배너가 지시 뒤에 있으면 지목해야 한다"
+# 순서를 바로잡으면 통과해야 한다(대조군 — 없으면 "지시가 있으면 무조건 실패"인 가드와 구분 못 함).
+printf '%s\n' '# plan' '<!-- doc-status: complete -->' '> For agentic workers: implement this plan task-by-task.' > "$TMP/docs/sub/a.md"
+assert_ok node "$GUARD" "$TMP"
+
+# ⚠️ 대조군 — docs/ 가 없는 트리는 이 검사의 대상이 아니다(가드 자신의 픽스처가 그렇다).
+# 없으면 "모든 저장소에 docs/README.md를 요구"하는 전혀 다른 가드가 된 것을 알 수 없다.
+rm -rf "$TMP/docs"
+printf '%s\n' '# unrelated' > "$TMP/x.md"
 assert_ok node "$GUARD" "$TMP"
 
 rm -rf "$TMP" && mkdir -p "$TMP"

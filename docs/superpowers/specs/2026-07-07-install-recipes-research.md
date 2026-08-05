@@ -1,5 +1,10 @@
 # 설치·동작 검증 하네스 — 로컬 설치 레시피 리서치 부록
 
+> <!-- doc-status: complete -->
+> **✅ 완료 — 이 설계는 구현됐다. 기록으로 읽어라.** 여기 적힌 "할 것"은 이미 한 것이고, 결정의
+> *근거*가 이 문서의 가치다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
+> [문서 지도](../../README.md)에 있다.
+
 > 8개 언어의 "충실한 로컬 패키지 설치" 레시피를 병렬 딥리서치(2026-07-07, 8 에이전트·web 검증)로 확정. WBS 태스크·구현자가 참조하는 **권위 명령 소스**. 설계는 [install-operate-harness-design.md](2026-07-07-install-operate-harness-design.md).
 >
 > 공통 원칙: 모든 빌더·레지스트리·소비자 컨테이너는 **Alpine/musl** 베이스(Windows Docker Desktop glibc-DNS 게차 회피). 소비자는 격리 docker network에서 레지스트리를 **서비스명**으로 해석(임베디드 DNS). 소비자 설치 명령은 실제와 동일하고 **소스 URL만 로컬로 override**한다.
