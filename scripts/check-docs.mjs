@@ -787,9 +787,34 @@ for (const [coord, hits] of seen) {
   }
 }
 
-// 검사 4·6 — 파일별 순회와 무관한 전역 대조라 메인 루프 밖에서 한 번만 실행한다.
+// 검사 8 — 파일 크기 래칫. `<!-- doc-budget: max-bytes=N -->`를 담은 문서는 N바이트를 넘으면
+// 실패한다. **목표치가 아니라 래칫이다** — 지금 크기를 상한으로 박아 재성장만 막고, 줄일 때마다
+// 사람이 숫자를 함께 내린다(올리는 PR은 그 자체가 리뷰 신호가 된다).
+//
+// 왜 산문 규칙으로 부족한가: `docs/superpowers/specs/2026-07-23-docs-restructure-design.md`가
+// CLAUDE.md 목표를 33 KB로 승인했는데, 이관 커밋 직후 44 KB였던 파일이 13일 만에 66 KB가 됐다
+// (+50%). 규칙은 있었고 아무도 어기려 하지 않았는데도 그렇게 됐다 — 한 줄씩 늘어나는 것을
+// 사람이 알아챌 수 없기 때문이다. 기계만 셀 수 있다.
+function checkDocBudget() {
+  for (const f of walk(ROOT)) {
+    const rel = relative(ROOT, f).replace(/\\/g, '/')
+    const text = readFileSync(f, 'utf8')
+    const m = /<!--\s*doc-budget:\s*max-bytes=(\d+)\s*-->/.exec(text)
+    if (!m) continue
+    const max = Number(m[1])
+    const actual = Buffer.byteLength(text, 'utf8')
+    if (actual > max) {
+      errors.push(
+        `${rel}: ${actual}B > doc-budget ${max}B (초과 ${actual - max}B) — 줄이거나, 늘려야 할 이유가 있다면 앵커의 max-bytes를 함께 올려라(그 변경 자체가 리뷰 대상이다)`,
+      )
+    }
+  }
+}
+
+// 검사 4·6·8 — 파일별 순회와 무관한 전역 대조라 메인 루프 밖에서 한 번만 실행한다.
 checkCoverageGates()
 checkCardinality()
+checkDocBudget()
 
 // 검사 7 — fact/anchor 최저치(floor, --min-facts/--min-anchors로 opt-in). 앵커 주석 하나를
 // 지우면서 그 앵커가 소유했던 표까지 함께 남겨두면(=검사 대상 자체가 사라지면) 위의 검사
