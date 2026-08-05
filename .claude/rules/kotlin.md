@@ -15,7 +15,7 @@ Kotlin은 JDK 21(Eclipse Temurin `jdk-21.0.8.9-hotspot`) + 포터블 Gradle `9.6
 ```bash
 export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot}" PATH="${KCSDK_TOOLS:-$HOME/tools}/gradle-9.6.1/bin:$PATH" GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
 gradle -p kotlin build              # 빌드
-gradle -p kotlin test               # 단위테스트 121개. Docker 불필요
+gradle -p kotlin test               # 단위테스트. Docker 불필요
 gradle -p kotlin integrationTest    # 통합 E2E 1개(Docker 필요 — Testcontainers/dasniko, 실제 Keycloak 26.6)
 gradle -p kotlin koverVerify        # 커버리지 게이트(로직 모듈 라인≥90%/브랜치≥85%, 네트워크 경계 omit)
 gradle -p kotlin ktlintCheck        # 린트(무경고; 수정은 ktlintFormat)

@@ -40,7 +40,7 @@ language's build configuration — that is the source of truth, so this table do
 | Python | `pytest -m "not integration" --cov=keycloak_sdk` | — | ✓ | `fail_under` | ruff (incl. bandit) | mypy strict | `pytest -m integration` |
 | Node | `npm test` | tsc | ✓ | vitest thresholds | eslint + prettier | `npm run typecheck` | `npm run test:it` |
 | Go | `go -C go test ./...` | ✓ | ✓ | `go tool cover` | `go vet` + `gofmt` | ✓ (compiler) | `-tags=integration` |
-| C#/.NET | `dotnet test --filter "Category!=Integration"` | ✓ | ✓ | coverlet `/p:Threshold` | `dotnet format` | ✓ (compiler) | `Category=Integration` |
+| C#/.NET | `dotnet test --filter "Category!=Integration"` | ✓ | ✓ | coverlet **collector** → `scripts/check-coverage.mjs` | `dotnet format` | ✓ (compiler) | `Category=Integration` |
 | PHP | `vendor/bin/phpunit --testsuite unit` | — | ✓ | clover + Xdebug | php-cs-fixer | PHPStan level max | `--testsuite integration` |
 | Rust | `cargo test` | ✓ | ✓ | `cargo llvm-cov` | `cargo fmt` + clippy `-D warnings` | ✓ (compiler) | `--test integration_test -- --ignored` |
 | Ruby | `bundle exec rspec` | — | ✓ | SimpleCov `minimum_coverage` | rubocop | — | `RUN_INTEGRATION=1 … --tag integration` |

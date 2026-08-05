@@ -12,8 +12,8 @@ paths:
 
 가상환경은 `python/.venv`에 있다(리포지토리에 커밋 안 함). 명령은 `python/`에서 실행하거나 절대경로의 venv 인터프리터를 직접 호출한다:
 ```bash
-cd python && "${KCSDK_PY:-.venv/Scripts/python.exe}" -m pytest -m "not integration" --cov=keycloak_sdk   # 단위테스트 224개 + 커버리지 게이트 100%
-cd python && "${KCSDK_PY:-.venv/Scripts/python.exe}" -m pytest -m integration            # 통합테스트 11개(Docker 필요, testcontainers)
+cd python && "${KCSDK_PY:-.venv/Scripts/python.exe}" -m pytest -m "not integration" --cov=keycloak_sdk   # 단위테스트 + 커버리지 게이트 100%
+cd python && "${KCSDK_PY:-.venv/Scripts/python.exe}" -m pytest -m integration            # 통합테스트(Docker 필요, testcontainers)
 cd python && "${KCSDK_PY:-.venv/Scripts/python.exe}" -m ruff check src tests examples     # 린트(보안 S/bandit 포함 확장 룰셋)
 cd python && "${KCSDK_PY:-.venv/Scripts/python.exe}" -m ruff format --check src tests examples  # 포맷 검사
 cd python && "${KCSDK_PY:-.venv/Scripts/python.exe}" -m mypy src                          # 정적 타입 검사(strict)

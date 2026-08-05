@@ -14,7 +14,7 @@ Ruby는 포터블 설치 `${KCSDK_TOOLS:-$HOME/tools}/ruby`(3.4.10, non-devkit R
 ```bash
 export PATH="${KCSDK_TOOLS:-$HOME/tools}/ruby/bin:$PATH"
 cd ruby && bundle install                                     # 의존성 설치
-cd ruby && bundle exec rspec                                   # 단위테스트 73개 + 커버리지 게이트(라인≥90%/브랜치≥85%). Docker 불필요
+cd ruby && bundle exec rspec                                   # 단위테스트 + 커버리지 게이트(라인≥90%/브랜치≥85%). Docker 불필요
 cd ruby && RUN_INTEGRATION=1 bundle exec rspec spec/integration --tag integration  # 통합 1개(Docker 필요 — docker CLI 셸아웃, 실제 Keycloak 26.6)
 cd ruby && bundle exec rubocop                                 # 린트
 cd ruby && bundle exec bundler-audit check --update            # 의존성 취약점 감사

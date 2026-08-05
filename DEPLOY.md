@@ -86,7 +86,11 @@ Measured locally (this is the "Tier 1" pre-flight; none of it touches a public r
   supported ways to express it. (1) **Merge a release PR** — Claude prepares a PR that bumps
   the version and writes `.github/release-request.json`; merging it is the approval, and
   `dispatch-release.yml` cuts the tag from `lang` + `version` (never from a `tag` field, which
-  would let a cheap language declare an expensive tag). ⚠️ **This path does not work until the
+  would let a cheap language declare an expensive tag).
+  ⚠️ **`.github/release-request.json` must never land on `main` except as the approval itself.**
+  `dispatch-release.yml` triggers on a `push` that touches that path, so any other PR that creates
+  or edits it — scaffolding the automation, adding a fixture, "just an example" — **cuts a real tag**.
+  Tests must write it to a temp directory, never to `.github/`. ⚠️ **This path does not work until the
   one-time setup in §2-F is complete** — the tag-cutting App and the tag rulesets must both
   exist, and until they do the workflow fails closed without creating anything. ⚠️ Merge release
   PRs **one at a time** (see §4 step 5). (2) **Push the tag by hand** — still supported, and
@@ -245,14 +249,16 @@ This is what makes the "merge a release PR" path of §1 work. **Until all four s
 
 For each language: one-time setup (see §2) → version-bump location → dry-run → tag/trigger → deployment check → install coordinate.
 
+⚠️ **The example version in each block is that language's release-candidate spelling, and the four spellings are not interchangeable.** §7 explains why a first release should be an RC; this section shows it inline so you do not have to have read §7 first. Python uses PEP 440 (`0.1.0rc1`), RubyGems uses dots (`0.1.0.rc1`), Maven uses an uppercase suffix (`0.1.0-RC1`), and the rest use SemVer (`0.1.0-rc.1`). The machine-readable source is `df_version_re` in `scripts/lib/deploy-facts.sh`, and `release-trigger.sh` rejects the wrong one with the expected form in the error — **these blocks previously all showed `0.1.0`, which for an unpublished language would have burned the stable coordinate on the first attempt.**
+
 ### 1. Python
 
 - One-time setup: §2-B (Pending Publisher, workflow=`python-release.yml`).
 - Version bump: `python/pyproject.toml` `[project].version` — the tag↔version guard (§1) stops the job before the build if it disagrees with the tag.
 - dry-run: `cd python && python -m build` (with the repo-local venv on Windows: `cd python && .venv/Scripts/python.exe -m build`)
-- Tag: `py-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh python 0.1.0`
+- Tag: `py-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh python 0.1.0rc1`
   ```bash
-  git tag py-v0.1.0 && git push origin py-v0.1.0
+  git tag py-v0.1.0rc1 && git push origin py-v0.1.0rc1
   ```
 - Deployment check: confirm GitHub Actions `python-release.yml` succeeded → https://pypi.org/project/keycloak-sdk/
 - Install: `pip install keycloak-sdk`
@@ -262,9 +268,9 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 - One-time setup: §2-C (`NUGET_API_KEY`).
 - Version bump: none (the tag is injected via `-p:Version`).
 - dry-run: `dotnet pack dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release` — confirm the `.nupkg` contains the README and the licence (both are now packed).
-- Tag: `dotnet-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh dotnet 0.1.0`
+- Tag: `dotnet-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh dotnet 0.1.0-rc.1`
   ```bash
-  git tag dotnet-v0.1.0 && git push origin dotnet-v0.1.0
+  git tag dotnet-v0.1.0-rc.1 && git push origin dotnet-v0.1.0-rc.1
   ```
 - Deployment check: confirm GitHub Actions `dotnet-release.yml` succeeded → https://www.nuget.org/packages/Xzawed.Keycloak.Sdk. A green run now means the push actually happened: a missing `NUGET_API_KEY` fails the job, and `--skip-duplicate` is gone, so an already-published version fails rather than reporting success (§2-C).
 - Install: `dotnet add package Xzawed.Keycloak.Sdk`
@@ -274,9 +280,9 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 - One-time setup: §2-B (Pending Publisher, workflow=`ruby-release.yml`, environment=`release`, chicken-and-egg caution).
 - Version bump: `ruby/lib/keycloak_sdk/version.rb` `VERSION` — guarded against the tag (§1).
 - dry-run: `cd ruby && gem build keycloak-sdk.gemspec`
-- Tag: `ruby-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh ruby 0.1.0`
+- Tag: `ruby-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh ruby 0.1.0.rc1`
   ```bash
-  git tag ruby-v0.1.0 && git push origin ruby-v0.1.0
+  git tag ruby-v0.1.0.rc1 && git push origin ruby-v0.1.0.rc1
   ```
 - Deployment check: confirm GitHub Actions `ruby-release.yml` succeeded → https://rubygems.org/gems/keycloak-sdk
 - Install: `gem install keycloak-sdk`
@@ -286,9 +292,9 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 - One-time setup: §2-B (Pending Publisher, workflow=`node-release.yml`).
 - Version bump: `node/package.json` `version` — guarded against the tag (§1).
 - dry-run: `cd node && npm run build && npm pack --dry-run` — check the printed file list, not just the exit code: it must include `LICENSE` and `README.md` alongside `dist/`.
-- Tag: `node-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh node 0.1.0`
+- Tag: `node-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh node 0.1.0-rc.1`
   ```bash
-  git tag node-v0.1.0 && git push origin node-v0.1.0
+  git tag node-v0.1.0-rc.1 && git push origin node-v0.1.0-rc.1
   ```
 - Deployment check: confirm GitHub Actions `node-release.yml` (OIDC + provenance, including `npm install -g npm@latest`) succeeded → https://www.npmjs.com/package/@xzawed/keycloak-sdk
 - Install: `npm install @xzawed/keycloak-sdk`
@@ -300,9 +306,9 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 - Version bump: `rust/Cargo.toml` `[package].version` — guarded against the tag (§1).
 - dry-run: `cd rust && cargo build --locked --all-targets && cargo test --locked && cargo clippy --all-targets -- -D warnings && cargo fmt --all --check && cargo publish --dry-run --locked`
   > `rust/Cargo.lock` is committed, so `--locked` verifies exactly the dependency graph that will be built. `cargo publish --dry-run` is the only way to see the file list that would actually be uploaded (the crate now declares an `exclude` for `tests/`) and to validate the packaging metadata — a plain `cargo build` does not check any of it.
-- Tag: `rust-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh rust 0.1.0`
+- Tag: `rust-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh rust 0.1.0-rc.1`
   ```bash
-  git tag rust-v0.1.0 && git push origin rust-v0.1.0
+  git tag rust-v0.1.0-rc.1 && git push origin rust-v0.1.0-rc.1
   ```
 - Deployment check: confirm GitHub Actions `rust-release.yml` (`cargo publish`) succeeded → https://crates.io/crates/keycloak-sdk. A missing secret surfaces immediately as a hard failure.
 - Install: `cargo add keycloak-sdk`
@@ -317,9 +323,9 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   mvn -f java/pom.xml -Prelease -DskipTests -DskipITs=true -Dgpg.skip=true package
   # → confirm *-sources.jar / *-javadoc.jar are generated under each target/ of core/auth/admin/keycloak-sdk
   ```
-- Tag: `vX.Y.Z` — guidance command: `./scripts/release-trigger.sh java 0.1.0`
+- Tag: `vX.Y.Z` — guidance command: `./scripts/release-trigger.sh java 0.1.0-RC1`
   ```bash
-  git tag v0.1.0 && git push origin v0.1.0
+  git tag v0.1.0-RC1 && git push origin v0.1.0-RC1
   ```
   > ℹ️ The tag value **determines the release version** — match the tag exactly to the desired release version.
 - Deployment check: confirm GitHub Actions `release.yml` succeeded (through the staging upload) → verify in the [Central Portal](https://central.sonatype.com) Deployments, then **a human manually Publishes**. This staging step is your last chance to reject the build: once published, Maven Central is immutable (§6).
@@ -335,9 +341,9 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   gradle -p kotlin publishToMavenLocal
   # → confirm keycloak-sdk-kotlin-0.1.0.jar (+sources/javadoc) is generated in the local ~/.m2
   ```
-- Tag: `kotlin-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh kotlin 0.1.0`
+- Tag: `kotlin-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh kotlin 0.1.0-RC1`
   ```bash
-  git tag kotlin-v0.1.0 && git push origin kotlin-v0.1.0
+  git tag kotlin-v0.1.0-RC1 && git push origin kotlin-v0.1.0-RC1
   ```
 - Deployment check: confirm GitHub Actions `kotlin-release.yml` (vanniktech `publishToMavenCentral`, Central Portal staging) succeeded → **a human manually Publishes** in the [Central Portal](https://central.sonatype.com) Deployments (same two steps as Java). A green run now also means all four secrets were present (§2-A step 5).
 - ⚠️ **Consumer floor**: the build pins `languageVersion`/`apiVersion` to `KOTLIN_2_2`, so the published jar carries `@Metadata(mv=[2,2,0])` and consumers need **Kotlin 2.2+** — not 2.4.10. Say so in the release notes; raising this floor later cuts consumers off.
@@ -348,9 +354,9 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 - One-time setup: §2-E (none).
 - Version bump: none (the tag is the SSOT).
 - dry-run: `go -C go build ./... && go -C go vet ./... && go -C go test ./...`
-- Tag: `go/vX.Y.Z` — guidance command: `./scripts/release-trigger.sh go 0.1.0`
+- Tag: `go/vX.Y.Z` — guidance command: `./scripts/release-trigger.sh go 0.1.0-rc.1`
   ```bash
-  git tag go/v0.1.0 && git push origin go/v0.1.0
+  git tag go/v0.1.0-rc.1 && git push origin go/v0.1.0-rc.1
   ```
 - Deployment check: confirm GitHub Actions `go-release.yml` succeeded. The proxy caches on the first `go get` request, so the version may not be queryable immediately.
 - Install: `go get github.com/xzawed/KeyCloakSDK/go@v0.1.0`
@@ -362,9 +368,9 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 - Version bump: none (the tag is the SSOT; the mirror tag `vX.Y.Z` is derived from `php-vX.Y.Z`).
 - dry-run: `cd php && composer install && composer audit && vendor/bin/phpstan analyse && vendor/bin/phpunit --testsuite unit`
   > This mirrors the tag path's `verify` job exactly. The integration suite that `split` now also requires (§1) needs Docker and runs in CI, not here.
-- Tag: `php-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh php 0.1.0`
+- Tag: `php-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh php 0.1.0-rc.1`
   ```bash
-  git tag php-v0.1.0 && git push origin php-v0.1.0
+  git tag php-v0.1.0-rc.1 && git push origin php-v0.1.0-rc.1
   ```
 - Deployment check: confirm the `split` job of GitHub Actions `php-release.yml` succeeded (it prints the pushed mirror commit) → confirm the mirror https://github.com/xzawed/keycloak-sdk-php carries the `v0.1.0` tag → confirm the new version appears on the Packagist page for `xzawed/keycloak-sdk`. The GitHub Release here is created *after* the mirror push, so its existence is evidence the push happened.
 - Install: `composer require xzawed/keycloak-sdk`
@@ -453,7 +459,9 @@ Publishing is irreversible everywhere, but "irreversible" costs a different amou
 
 ## §7. Make the First Tag a Release Candidate
 
-All nine registries support prerelease versions, and most resolvers exclude them from ordinary version ranges by default. Six of the nine languages have not yet published anything (§5), so each of their first tags is a **first execution of an irreversible pipeline**. Spend a release candidate on it instead of `0.1.0`: if the OIDC claim does not match or the GPG public key was never distributed, you find that out on `0.1.0-rc.1` and `0.1.0` is still yours to use. The three languages that have published (PHP · Python · .NET) spent their first tags exactly this way — `php-v0.1.0-rc.1` · `py-v0.1.0rc1` · `dotnet-v0.1.0-rc.1` — and the pipeline held.
+All nine registries support prerelease versions, and most resolvers exclude them from ordinary version ranges by default. Five of the nine languages have not yet published anything (§5), so each of their first tags is a **first execution of an irreversible pipeline**. Spend a release candidate on it instead of `0.1.0`: if the OIDC claim does not match or the GPG public key was never distributed, you find that out on `0.1.0-rc.1` and `0.1.0` is still yours to use. The four languages that have published (PHP · Python · .NET · Rust) spent their first tags exactly this way — `php-v0.1.0-rc.1` · `py-v0.1.0rc1` · `dotnet-v0.1.0-rc.1` · `rust-v0.1.0-rc.1`.
+
+⚠️ **And the RC earned its keep on the fourth one.** Rust's pipeline passed every gate — tag↔manifest, real-Keycloak integration, install-smoke — and then crates.io rejected the upload twice with `400 A verified email address is required to publish crates to crates.io`. Nothing was published either time (the failure is fail-closed and the coordinate survived), but the tag was spent before anyone could have known: no local check can see the account behind a token. That is the class §5 tabulates. Had it been `0.1.0`, the stable coordinate would have been the one burned on a solvable account-settings problem.
 
 | Language | Version to write in the manifest | Tag to push | Resolver behaviour |
 |---|---|---|---|

@@ -14,7 +14,7 @@ Go는 포터블 설치 `${KCSDK_TOOLS:-$HOME/tools}/go`(1.26.4, 리포지토리 
 ```bash
 export PATH="${KCSDK_TOOLS:-$HOME/tools}/go/bin:$PATH" GOTOOLCHAIN=local
 go -C go build ./...      # 빌드
-go -C go test ./...        # 단위테스트 40개(integration 태그 없이 — E2E 제외)
+go -C go test ./...        # 단위테스트(integration 태그 없이 — E2E 제외)
 go -C go test -tags=integration -run TestE2E -count=1 ./...  # 통합 E2E(Docker 필요)
 go -C go vet ./...         # 정적 분석
 gofmt -l go                # 포맷 검사(출력 없으면 OK; -w로 수정)
