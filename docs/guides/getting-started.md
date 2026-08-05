@@ -6,6 +6,12 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 
 > 🖥️ **You need a Keycloak *server* first.** This SDK is a client library, so it needs a **Keycloak server to connect to** in order to work (the server is a separate, standalone product not included in this SDK). For a local trial, use the one-line Docker command `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`; for a **production deployment**, see the [Keycloak server deployment guide](deploying-keycloak-server.md).
 
+> ⚠️ **Step 2 of every quickstart below fails on a stock realm — this is expected, and here is why.** `validate()` requires the token's `aud` to contain the expected audience, which defaults to your client id. **A stock Keycloak realm does not put the client id into a client-credentials token's `aud`.** So the token issues fine (step 1) and then validation rejects it (step 2). Two ways out, both correct:
+> - set the expected audience to what your realm actually issues — the right choice when the token targets a *resource server* rather than the requesting client (`expectedAudience` / `ExpectedAudience`, spelled per language);
+> - or add an **Audience** protocol mapper to the client in Keycloak, so the realm issues the audience you expect.
+>
+> This is a deliberate default, not a rough edge: accepting a token minted for a different audience is the failure the check exists to prevent. Each language's package README repeats it with that language's spelling.
+
 ## Required runtime
 
 | Language | Minimum runtime | Notes |

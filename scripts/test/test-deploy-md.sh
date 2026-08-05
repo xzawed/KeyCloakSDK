@@ -68,4 +68,29 @@ assert_contains "$body" "rust-v0.1.0-rc.1" "Rust 첫 태그 기록"
 # 체크아웃 안에서 항상 자기일관 — 다음 언어가 게시되면 문서와 이 줄을 한 PR에서 같이 고친다).
 assert_contains "$body" "The other five languages are unpublished" \
   "나머지 다섯 언어가 미게시라는 사실이 문서에서 사라졌다"
+
+# ---- 게시 현황을 SSOT로 대조한다(하드코딩된 숫자 대신) ----
+# ⚠️ 위 (1)의 실패를 반복하지 않으려면 **상수를 못박으면 안 된다**. `DF_PUBLISHED`를 진실 원천으로
+# 삼아, 문서가 그 목록과 어긋나면 잡는다 — 언어를 게시하면 `deploy-facts.sh` 한 줄만 고치고
+# 이 어서션은 그대로 따라온다.
+pub_n=0; for _l in $DF_PUBLISHED; do pub_n=$((pub_n + 1)); done
+all_n=0; for _l in $DEPLOY_LANGS; do all_n=$((all_n + 1)); done
+unpub_n=$((all_n - pub_n))
+assert_eq "4" "$pub_n" "DF_PUBLISHED 개수(이 테스트의 전제 — 바뀌면 아래 기대문구도 함께 움직인다)"
+assert_eq "5" "$unpub_n" "미게시 개수"
+
+# 게시된 언어는 **이름이** DEPLOY.md에 나와야 한다. 이름은 숫자와 달리 단방향이라(게시를 되돌릴
+# 수 없다) 존재 어서션이 안전하고, 새 언어가 게시되면 SSOT에 추가되는 순간 이 루프가 요구한다.
+for _l in $DF_PUBLISHED; do
+  case "$_l" in
+    php) _n="PHP" ;; python) _n="Python" ;; dotnet) _n=".NET" ;; rust) _n="Rust" ;;
+    ruby) _n="Ruby" ;; node) _n="Node" ;; java) _n="Java" ;; kotlin) _n="Kotlin" ;; go) _n="Go" ;;
+  esac
+  assert_contains "$body" "$_n" "게시된 언어 $_n 이 DEPLOY.md에 언급되지 않았다"
+done
+
+# ⚠️ 미게시 언어는 **존재를 요구하지 않는다** — 그것이 (1)의 함정이다. 미게시는 되돌릴 수 있는
+# (게시하면 끝나는) 상태라, "미게시라고 적혀 있어야 한다"는 어서션은 게시하는 순간 낡은 주장을
+# 강제한다. 대신 위의 `The other five languages are unpublished` 한 줄만 세어 맞춘다.
+assert_ok test "$unpub_n" -eq 5
 assert_report
