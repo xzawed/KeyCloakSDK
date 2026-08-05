@@ -870,6 +870,12 @@ printf '%s\n' '# map' '' '| 문서 | 상태 | 여기서만 알 수 있는 것 |'
 assert_fails node "$GUARD" "$TMP"
 OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
 assert_contains "$OUT" "마지막 칸" "빈 마지막 칸을 지목해야 한다"
+# ⚠️ 채움문자로 길이만 맞춘 칸도 잡아야 한다. 처음에는 공백·`—`·`·`만 벗겼는데, 마침표나
+# 하이픈을 20개 늘어놓으면 그대로 통과했다(실측 7종). 유니코드 구두점/기호 클래스로 벗긴다.
+for filler in '....................' '--------------------' '____________________' '••••••••••••••••••••'; do
+  printf '%s\n' '# map' '' '| 문서 | 상태 | 여기서만 알 수 있는 것 |' '|---|---|---|' "| [a](sub/a.md) | 완료 | $filler |" > "$TMP/docs/README.md"
+  assert_fails node "$GUARD" "$TMP"
+done
 # 한 단어짜리도 잡아야 한다(비어있음만 보면 "분해."로 통과한다).
 printf '%s\n' '# map' '' '| 문서 | 상태 | 여기서만 알 수 있는 것 |' '|---|---|---|' '| [a](sub/a.md) | 완료 | 태스크 분해. |' > "$TMP/docs/README.md"
 assert_fails node "$GUARD" "$TMP"
@@ -887,6 +893,24 @@ assert_contains "$OUT" "실행 지시보다 뒤에 있다" "본문 언급이 있
 printf '%s\n' '# plan' '<!-- doc-status: complete -->' \
   '> For agentic workers: implement this plan task-by-task.' '본문에서 doc-status: 를 언급한다.' > "$TMP/docs/sub/a.md"
 assert_ok node "$GUARD" "$TMP"
+
+# ⚠️ 완전한 마커가 **둘 이상**이면 실패해야 한다. 본문에 규약의 *예시*로 마커를 적어둔 문서가
+# 생기면 첫 매치가 배너가 아니게 되어, 배너 순서 검사와 상태 대조가 둘 다 예시 기준이 된다
+# (그 상태로 배너를 지시 뒤로 옮겨도 통과한다). 어느 것이 진실인지 고를 수 없으니 실패시킨다.
+printf '%s\n' '# plan' '예시: <!-- doc-status: active -->' \
+  '> For agentic workers: implement this plan task-by-task.' '<!-- doc-status: complete -->' > "$TMP/docs/sub/a.md"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "마커가 2개다" "마커가 둘 이상이면 지목해야 한다"
+
+# ⚠️ 검사 9가 실패했는데 자기 초록 요약을 함께 찍으면 안 된다(요약이 검사가 돌았다는 신호이자
+# 통과 신호로 읽힌다). 지도가 없는 파일을 가리키는 상태에서 요약이 나오면 안 된다.
+printf '%s\n' '# plan' '<!-- doc-status: complete -->' > "$TMP/docs/sub/a.md"
+printf '%s\n' '# map' '' '| 문서 | 상태 | 여기서만 알 수 있는 것 |' '|---|---|---|' \
+  '| [a](sub/a.md) | 완료 | 이 문서에만 있는 것을 충분히 길게 적어 둔 마지막 칸이다 |' \
+  '| [gone](sub/gone.md) | 완료 | 이 문서에만 있는 것을 충분히 길게 적어 둔 마지막 칸이다 |' > "$TMP/docs/README.md"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_not_contains "$OUT" "files linked" "실패한 검사가 자기 초록 요약을 찍으면 안 된다"
 
 # ⚠️ 대조군 — docs/ 가 없는 트리는 이 검사의 대상이 아니다(가드 자신의 픽스처가 그렇다).
 # 없으면 "모든 저장소에 docs/README.md를 요구"하는 전혀 다른 가드가 된 것을 알 수 없다.

@@ -91,7 +91,7 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 
 | 문서 | 날짜 | 상태 | 여기서만 알 수 있는 것 |
 |---|---|---|---|
-| [Java SDK WBS](superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md) | 07-02 | 완료 | 첫 언어의 태스크 분해 — 이후 8개 언어 WBS가 전부 이 형식을 따랐다. Java 17 기준 시점의 스택(이후 21로 상향). |
+| [Java SDK WBS](superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md) | 07-02 | 완료 | 첫 언어의 태스크 분해 — 이후 모든 언어의 WBS가 전부 이 형식을 따랐다. Java 17 기준 시점의 스택(이후 21로 상향). |
 | [Python SDK WBS](superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md) | 07-03 | 완료 | 23개 태스크 — 두 번째 언어라 "동형이란 무엇인가"를 처음으로 실제 코드에 맞춰 정의해야 했던 분해다. |
 | [Python async WBS](superpowers/plans/2026-07-03-keycloak-python-async-wbs.md) | 07-03 | 완료 | sync API를 한 줄도 건드리지 않고 `keycloak_sdk.aio`를 **완전 대칭**으로 덧붙이는 분해(python-keycloak `a_*` 짝 활용). |
 | [문서 & 언어 확장 WBS](superpowers/plans/2026-07-03-keycloak-docs-and-language-expansion-wbs.md) | 07-03 | 완료 | 5개 태스크 — 설치 가이드와 언어 확장 **플레이북·로드맵**을 한 묶음으로 만든 분해(지금의 add-a-language-playbook이 여기서 나왔다). |

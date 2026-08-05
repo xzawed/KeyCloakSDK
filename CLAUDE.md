@@ -1,5 +1,5 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=52700 -->
+<!-- doc-budget: max-bytes=52800 -->
 <!-- ⚠️ 래칫이다(목표치 아님). 줄일 때마다 이 숫자를 함께 내린다. 올리는 PR은 그 자체가 리뷰 대상 —
      이관 직후 44 KB였던 이 파일이 13일 만에 66 KB가 됐다(+50%). 산문 규칙으로는 막히지 않았다.
 
@@ -107,7 +107,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 
 **아홉 언어 공통**: `admin`은 `auth`에 의존하지 않는다 — `TokenProvider` 계열 인터페이스(Rust는 async trait, Ruby는 덕 타이핑, Kotlin은 `fun interface`)가 유일한 접착제이고, 하위 라이브러리 오류는 **경계에서** SDK 타입으로 변환된다. 그래서 auth 없이도 admin을 자체 토큰 소스로 쓸 수 있고, 내부 라이브러리 교체가 소비자에게 파급되지 않는다.
 
-**공통에서 벗어나는 곳만 아래에 적는다**(각 언어의 상세는 `.claude/rules/<lang>.md`, `raw`/`Raw` 탈출구 타입은 §4(b)):
+**공통에서 벗어나는 곳만 아래에 적는다**(각 언어의 상세는 `.claude/rules/<lang>.md`. `raw`/`Raw` 탈출구는 §4(b)에 일부만 있고 **9개 언어 전체 표는 [getting-started.md](docs/guides/getting-started.md)**에 있다):
 
 | 언어 | 벗어나는 지점 |
 |---|---|
@@ -124,11 +124,11 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 | 언어 | (a) admin 파사드가 노출하는 representation | (b) 저수준 주입/구성 지점 |
 |---|---|---|
 | Java | `org.keycloak.representations.idm.*` | `JwtValidator.forRealm`의 Nimbus `JWSAlgorithm` |
-| Kotlin | 〃 (Java와 동일 좌표 재사용) | `AdminClient.raw()`의 `org.keycloak.admin.client.Keycloak` |
+| Kotlin | `org.keycloak.representations.idm.*` (Java와 동일 좌표 재사용) | `AdminClient.raw()`의 `org.keycloak.admin.client.Keycloak` |
 | Node | `@keycloak/keycloak-admin-client/lib/defs/*` | `new JwtValidator(keys, opts)`의 jose `JWTVerifyGetKey` |
 | Go | `gocloak.User`/`Client`/`Role`/`Group`/`RealmRepresentation` | `admin.Raw()`의 `*gocloak.GoCloak` · 테스트 주입용 파라미터 |
 | C# | `Keycloak.AuthServices.Sdk.Admin.Models.*Representation` | `AdminClient.Raw`의 `IKeycloakClient` · `JwtValidator`의 내부 `TokenValidationParameters` 시임 ctor |
-| PHP | `FschmttKeycloakRepresentation*` | `AdminClient::raw()`의 `FschmttKeycloakKeycloak` |
+| PHP | `Fschmtt\Keycloak\Representation\*` | `AdminClient::raw()`의 `Fschmtt\Keycloak\Keycloak` |
 | Rust | `keycloak::types::{UserRepresentation, ClientRepresentation, RealmRepresentation, RoleRepresentation, GroupRepresentation}` — **크레이트 루트에서 `keycloak_sdk::types`로 미러 재노출** | `AdminClient::raw()`의 `&KeycloakAdmin<SdkTokenSupplier>`(소비자가 반환 타입에 이름을 붙일 수 있도록 `KeycloakAdmin`·`SdkTokenSupplier`를, 공유 HTTP 클라이언트를 넘기는 저수준 ctor를 위해 `reqwest`를 함께 재노출) |
 | Python | 노출 없음 — plain `dict[str, Any]` 통과(누출 아님) | `JwtValidator.validate`의 joserfc `KeySet` |
 | Ruby | 노출 없음 — plain `Hash` 통과(성숙한 admin gem이 없어 애초에 노출할 하위 representation 타입 자체가 없다) | `AdminClient#raw`의 `Faraday::Connection` |

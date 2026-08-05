@@ -848,6 +848,10 @@ function checkDocsMap() {
     return // docs/ 없음 — 이 저장소의 문서 규약이 적용되지 않는 트리다.
   }
   if (present.length === 0) return
+  // ⚠️ 이 스냅샷은 **이 함수가 내는 첫 errors.push보다 앞**이어야 한다. 한때 양방향 연결 검사
+  // 뒤에 두었더니, 지도가 없는 파일을 가리키는데도 "62 files linked" 초록 요약이 자기 실패와
+  // 나란히 찍혔다(전역 errors.length를 쓰던 이전 판은 그 경우를 옳게 억제했었다).
+  const before = errors.length
 
   const mapPath = join(ROOT, DOCS_MAP)
   let text
@@ -883,7 +887,6 @@ function checkDocsMap() {
   // 문서 상단의 `<!-- doc-status: X -->` 마커가 있으면 지도의 칸이 그것과 같아야 하고,
   // 마커가 없는 문서(살아있는 운영 문서)는 지도에서 '운영'이어야 한다. 어느 쪽이든 손으로 적은
   // 값 하나가 다른 값 하나와 반드시 마주 보게 되어, 한쪽만 고치면 잡힌다.
-  const before = errors.length
   const STATUS_OF = { complete: '완료', active: '진행', living: '운영' }
   const VALID = new Set(Object.values(STATUS_OF))
   let statusChecked = 0
@@ -915,13 +918,26 @@ function checkDocsMap() {
     // 열화를 적극적으로 유도하는 셈이다. 내용의 고유성은 기계로 못 보지만 공백은 볼 수 있다.
     // (산문으로 "반드시 채워라"라고 적는 것으로는 안 된다 — 이 저장소의 doc-budget 래칫이
     //  존재하는 이유가 정확히 "산문 규칙은 막지 못한다"였다.)
+    // ⚠️ 공백·구두점·기호를 **전부** 벗기고 센다. 처음에는 `/[\s—·]/`만 벗겼는데, 마침표·밑줄·
+    // 쉼표·하이픈·틸드·별표·불릿을 20개 늘어놓으면 그대로 통과했다(실측 7종). 유니코드 클래스로
+    // 벗기면 그런 채움문자는 전부 0자가 된다.
     const last = cells[cells.length - 2] ?? ''
-    if (last.replace(/[\s—·]/g, '').length < MIN_INSIGHT_CHARS) {
+    if (last.replace(/[\s\p{P}\p{S}]/gu, '').length < MIN_INSIGHT_CHARS) {
       errors.push(
         `${DOCS_MAP} 의 ${r} 줄에서 마지막 칸("여기서만 알 수 있는 것")이 비었거나 너무 짧다 — 채울 말이 없다면 그 문서는 다른 문서에 합쳐야 한다는 뜻이다`,
       )
     }
-    const m = /<!--\s*doc-status:\s*(\w+)\s*-->/.exec(readFileSync(join(ROOT, r), 'utf8'))
+    // ⚠️ `.exec()`로 **첫 매치**를 취하면 안 된다. 본문에 이 규약의 *예시*로 완전한 마커를
+    // 적어둔 문서가 생기면 그 예시가 자기 배너보다 앞서 잡혀, 배너 순서 검사와 상태 대조를
+    // 둘 다 예시 기준으로 하게 된다(실측: 그 상태로 배너를 지시 뒤로 옮겨도 통과). 마커가 둘
+    // 이상이면 어느 것이 진실인지 가드가 임의로 고를 수 없으니 그 자리에서 실패한다.
+    const body = readFileSync(join(ROOT, r), 'utf8')
+    const all = [...body.matchAll(/<!--\s*doc-status:\s*(\w+)\s*-->/g)]
+    if (all.length > 1) {
+      errors.push(`${r}: doc-status 마커가 ${all.length}개다 — 어느 것이 문서의 상태인지 가드가 고를 수 없다`)
+      continue
+    }
+    const m = all[0] ?? null
     const declared = m ? STATUS_OF[m[1]] : '운영'
     if (m && !declared) {
       errors.push(`${r} 의 doc-status='${m[1]}' 는 알 수 없는 값이다 (${Object.keys(STATUS_OF).join('/')})`)
@@ -933,7 +949,6 @@ function checkDocsMap() {
     // 위에서부터 읽는 에이전트는 배너를 만나기 전에 이미 실행 지시를 받는다. 순서가 뒤집히면
     // 배너는 있으나 마나다 — 존재만 검사하면 그 사실을 못 본다.
     if (m && m[1] === 'complete') {
-      const body = readFileSync(join(ROOT, r), 'utf8')
       const instr = body.indexOf('For agentic workers')
       // ⚠️ `indexOf('doc-status:')`(첫 등장)를 쓰면 안 된다 — 이 규약을 **설명하는** 문서가
       // 본문에서 그 문자열을 언급하는 순간 배너보다 앞선 히트가 생겨 검사가 공허하게 통과한다.
