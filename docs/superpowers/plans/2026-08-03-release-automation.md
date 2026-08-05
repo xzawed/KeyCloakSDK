@@ -5,6 +5,11 @@
 > 아니다** — 실행 당시 갱신되지 않았을 뿐 작업은 끝났다. 바로 아래의 "For agentic workers" 지시도
 > 그때의 것이라 지금은 유효하지 않다. 지금 상태는 [CLAUDE.md](../../../CLAUDE.md) ·
 > [구현 이력](../../governance/history.md) · [문서 지도](../../README.md)에 있다.
+>
+> ⚠️ **예외 — Task 3 Step 8은 아직 남았다.** GitHub App을 `.github/rulesets/tags-create.json`의
+> bypass에 추가하는 일이다(App이 없어 `actor_id`를 모른다). 그때까지 `dispatch-release.yml`은
+> 태그를 만들지 못하고 fail-closed이며, 이 계획의 Goal("머지만으로 릴리스가 실행")에는 도달하지
+> 않았다. 절차: [DEPLOY.md §2-F](../../../DEPLOY.md).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

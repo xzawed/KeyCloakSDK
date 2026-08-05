@@ -28,8 +28,8 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 
 | 문서 | 상태 | 여기서만 알 수 있는 것 |
 |---|---|---|
-| [Getting Started](guides/getting-started.md) | 운영 | 9개 언어 각각의 설치 → 토큰 발급 → JWT 검증 → Admin 호출 30줄 퀵스타트. **stock realm에서 2단계 `validate()`가 왜 실패하는지**(`aud`에 client id가 없다)와 두 가지 해법. |
-| [Development environment setup](guides/development-setup.md) | 운영 | 새 PC에서 9개 툴체인을 세우는 절차와 `KCSDK_TOOLS`·`KCSDK_JDK21`·`KCSDK_PY` 환경변수 규약 — 저장소에 특정 PC 경로를 못박지 않기 위한 간접층. `node scripts/doctor.mjs`의 사용법. |
+| [Getting Started](guides/getting-started.md) | 운영 | 언어마다의 설치 → 토큰 발급 → JWT 검증 → Admin 호출 30줄 퀵스타트. **stock realm에서 2단계 `validate()`가 왜 실패하는지**(`aud`에 client id가 없다)와 두 가지 해법. |
+| [Development environment setup](guides/development-setup.md) | 운영 | 새 PC에서 언어별 툴체인을 세우는 절차와 `KCSDK_TOOLS`·`KCSDK_JDK21`·`KCSDK_PY` 환경변수 규약 — 저장소에 특정 PC 경로를 못박지 않기 위한 간접층. `node scripts/doctor.mjs`의 사용법. |
 | [Deploying a Keycloak server](guides/deploying-keycloak-server.md) | 운영 | SDK가 아니라 **상대편 서버**를 세우는 법 — 단일 VM + Docker Compose + Caddy 자동 TLS 프로덕션 구성. |
 | [Add-a-language playbook](guides/add-a-language-playbook.md) | 운영 | 10번째 언어를 추가할 때 밟는 순서. **코드 생성기도 저품질 티어도 두지 않는다**는 depth-first 원칙과 그 이유. |
 | [Language support roadmap](roadmap/language-support.md) | 운영 | 다음에 어떤 언어를, 왜 그 순서로 하는지. 채택/기각된 후보와 판단 근거. |
@@ -41,17 +41,17 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 | 문서 | 상태 | 여기서만 알 수 있는 것 |
 |---|---|---|
 | [AI 거버넌스 프레임워크](governance/ai-governance-framework.md) | 운영 | 이 프로젝트의 작업 규약 — 정량 품질 게이트, 이중검증, 미달 시 루프 엔지니어링. **모든 검증 로그가 이 문서의 기준을 참조한다.** |
-| [구현 이력](governance/history.md) | 운영 | 9개 언어가 어떤 PR로 어떤 순서로 들어왔는지. `CLAUDE.md`에서 분리해 나온 서사(삭제가 아니라 이관). |
+| [구현 이력](governance/history.md) | 운영 | 각 언어가 어떤 PR로 어떤 순서로 들어왔는지. `CLAUDE.md`에서 분리해 나온 서사(삭제가 아니라 이관). |
 | [감사 재판정 로그 (2026-07-16)](governance/audit-readjudication-2026-07-16.md) | 완료 | 감사에서 **미판정으로 남았던 24건**을 하드닝 완료 후 24-에이전트로 재판정한 결과. 어떤 findings가 왜 기각됐는지. |
 | [검증 로그 — Java](governance/verification-log.md) | 운영 | Java SDK 태스크별 정량 검증 기록 + **jackson-databind 핀 이력**(2.21.2→2.21.4→2.21.5→2.22.1)과 각 CVE 대응 근거. |
 | [검증 로그 — Python](governance/verification-log-python.md) | 운영 | Python SDK 태스크별 검증 + async 미러 추가 경위. |
-| [검증 로그 — Node](governance/verification-log-node.md) | 운영 | Node SDK 태스크별 검증. |
-| [검증 로그 — Go](governance/verification-log-go.md) | 운영 | Go SDK 태스크별 검증. |
-| [검증 로그 — .NET](governance/verification-log-dotnet.md) | 운영 | .NET SDK 태스크별 검증. |
-| [검증 로그 — PHP](governance/verification-log-php.md) | 운영 | PHP SDK 태스크별 검증. |
-| [검증 로그 — Rust](governance/verification-log-rust.md) | 운영 | Rust SDK 태스크별 검증 — 9개 중 가장 길다(typestate·reqwest 정렬·MSRV 판단 과정). |
-| [검증 로그 — Ruby](governance/verification-log-ruby.md) | 운영 | Ruby SDK 태스크별 검증. |
-| [검증 로그 — Kotlin](governance/verification-log-kotlin.md) | 운영 | Kotlin SDK 태스크별 검증. |
+| [검증 로그 — Node](governance/verification-log-node.md) | 운영 | Node SDK 태스크별 검증 — admin-client 버전을 `^26`에서 `~26.6.4`로 좁혔다가 provider 배선으로 근본 차단한 뒤 되돌린 경위. |
+| [검증 로그 — Go](governance/verification-log-go.md) | 운영 | Go SDK 태스크별 검증 — 단일 패키지 결정과 gocloak 오류 분류(`Code==0`)를 확정하기까지의 기록. |
+| [검증 로그 — .NET](governance/verification-log-dotnet.md) | 운영 | .NET SDK 태스크별 검증 — coverlet msbuild 통합이 히트 flush 유실로 `0%`를 만들어 컬렉터+자체 가드로 전환한 경위. |
+| [검증 로그 — PHP](governance/verification-log-php.md) | 운영 | PHP SDK 태스크별 검증 — Testcontainers 대신 docker CLI 셸아웃으로 간 이유(Windows native PHP의 `unix://` 미지원). |
+| [검증 로그 — Rust](governance/verification-log-rust.md) | 운영 | Rust SDK 태스크별 검증 — typestate 제네릭·reqwest 메이저 정렬·MSRV 판단이 확정되기까지의 과정. |
+| [검증 로그 — Ruby](governance/verification-log-ruby.md) | 운영 | Ruby SDK 태스크별 검증 — admin gem 부재를 확인하고 faraday 직접 래핑으로 전환하기까지의 판단. |
+| [검증 로그 — Kotlin](governance/verification-log-kotlin.md) | 운영 | Kotlin SDK 태스크별 검증 — MockK가 JAX-RS 추상클래스에서 JDK21 무한 hang을 일으킨 진단과 우회. |
 
 ## 3. 설계 스펙 (`superpowers/specs/`)
 
@@ -75,8 +75,8 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 | [Kotlin 리서치 부록](superpowers/specs/2026-07-07-keycloak-kotlin-sdk-research.md) | 07-07 | 완료 | Gradle/KGP 설정의 권위 소스 원문 — 설계 결정의 근거 인용 모음. |
 | [교차언어 검증·점수 하네스 설계](superpowers/specs/2026-07-07-cross-language-verification-scoring-harness-design.md) | 07-07 | 완료 | 기존 하네스가 **5개 언어·얇은 계약**만 커버한다는 진단과 8개 언어로 넓히는 설계. |
 | [설치·동작 검증 하네스 설계](superpowers/specs/2026-07-07-install-operate-harness-design.md) | 07-07 | 완료 | **소스 경로 소비 ≠ 설치 소비.** 레지스트리 게시 없이 "설치해서 쓴다"를 검증하는 방법(로컬 레지스트리). |
-| [설치 레시피 리서치 부록](superpowers/specs/2026-07-07-install-recipes-research.md) | 07-07 | 완료 | 9개 언어의 로컬 레지스트리 구성 방법 조사 원문. |
-| [통합 배포 가이드 설계](superpowers/specs/2026-07-09-unified-deploy-guide-design.md) | 07-09 | 완료 | 9개 언어 배포를 **한 문서**로 묶는 구조와 릴리스 도우미 스크립트의 역할 분담. |
+| [설치 레시피 리서치 부록](superpowers/specs/2026-07-07-install-recipes-research.md) | 07-07 | 완료 | 언어별 로컬 레지스트리(Verdaccio·devpi·BaGet·Athens 등)를 무엇으로 세울지 고른 조사 원문 — 채택·기각 근거가 여기에만 있다. |
+| [통합 배포 가이드 설계](superpowers/specs/2026-07-09-unified-deploy-guide-design.md) | 07-09 | 완료 | 언어별 배포를 **한 문서**로 묶는 구조와 릴리스 도우미 스크립트의 역할 분담. |
 | [최종 종합 감사 보고서](superpowers/specs/2026-07-10-audit-report.md) | 07-10 | 완료 | **확정 결함 48건**(HIGH 9·MEDIUM 28·LOW 11)의 원본 목록 + 오탐 15건. 지금 코드의 하드닝 대부분이 여기서 나왔다. |
 | [배포 전 하드닝 설계](superpowers/specs/2026-07-10-pre-release-hardening-design.md) | 07-10 | 완료 | 감사 결과를 PR 단위로 쪼갠 설계 — "CI가 초록인데도 드러난 두 가지". |
 | [문서 구조 재편 설계](superpowers/specs/2026-07-23-docs-restructure-design.md) | 07-23 | 완료 | `CLAUDE.md`를 왜 쪼갰는지 + **doc-guard 앵커 기법의 원본 설계**. 순수 서사와 툴체인 블록을 분리해 센 측정 방법. |
@@ -92,20 +92,20 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 | 문서 | 날짜 | 상태 | 여기서만 알 수 있는 것 |
 |---|---|---|---|
 | [Java SDK WBS](superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md) | 07-02 | 완료 | 첫 언어의 태스크 분해 — 이후 8개 언어 WBS가 전부 이 형식을 따랐다. Java 17 기준 시점의 스택(이후 21로 상향). |
-| [Python SDK WBS](superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md) | 07-03 | 완료 | Python 구현 태스크 분해. |
-| [Python async WBS](superpowers/plans/2026-07-03-keycloak-python-async-wbs.md) | 07-03 | 완료 | async 미러 추가 태스크 분해. |
-| [문서 & 언어 확장 WBS](superpowers/plans/2026-07-03-keycloak-docs-and-language-expansion-wbs.md) | 07-03 | 완료 | 문서 정비와 언어 확장을 병행한 태스크 분해. |
-| [Node SDK WBS](superpowers/plans/2026-07-04-keycloak-node-sdk-wbs.md) | 07-04 | 완료 | Node 구현 태스크 분해. |
-| [Go SDK WBS](superpowers/plans/2026-07-04-keycloak-go-sdk-wbs.md) | 07-04 | 완료 | Go 구현 태스크 분해. |
-| [.NET SDK WBS](superpowers/plans/2026-07-04-keycloak-dotnet-sdk-wbs.md) | 07-04 | 완료 | .NET 구현 태스크 분해 — `docs/` 최대 파일(118 KB). |
+| [Python SDK WBS](superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md) | 07-03 | 완료 | 23개 태스크 — 두 번째 언어라 "동형이란 무엇인가"를 처음으로 실제 코드에 맞춰 정의해야 했던 분해다. |
+| [Python async WBS](superpowers/plans/2026-07-03-keycloak-python-async-wbs.md) | 07-03 | 완료 | sync API를 한 줄도 건드리지 않고 `keycloak_sdk.aio`를 **완전 대칭**으로 덧붙이는 분해(python-keycloak `a_*` 짝 활용). |
+| [문서 & 언어 확장 WBS](superpowers/plans/2026-07-03-keycloak-docs-and-language-expansion-wbs.md) | 07-03 | 완료 | 5개 태스크 — 설치 가이드와 언어 확장 **플레이북·로드맵**을 한 묶음으로 만든 분해(지금의 add-a-language-playbook이 여기서 나왔다). |
+| [Node SDK WBS](superpowers/plans/2026-07-04-keycloak-node-sdk-wbs.md) | 07-04 | 완료 | 12개 태스크 — ESM-only·async-only를 전제로 잡고 시작한 첫 언어의 분해. |
+| [Go SDK WBS](superpowers/plans/2026-07-04-keycloak-go-sdk-wbs.md) | 07-04 | 완료 | 12개 태스크 — 예외가 없는 언어에서 §4 오류 계층을 어떻게 표현할지(센티넬 + `errors.As`)를 정한 분해. |
+| [.NET SDK WBS](superpowers/plans/2026-07-04-keycloak-dotnet-sdk-wbs.md) | 07-04 | 완료 | .NET 구현 태스크 분해 — `docs/` 아래 최대 `.md`(118 KB). 타입드 admin 커버리지 공백을 raw REST로 메우는 결정이 여기서 나왔다. |
 | [하네스 MVP WBS](superpowers/plans/2026-07-05-virtual-user-test-harness-mvp.md) | 07-05 | 완료 | Go 앱 하나로 전체 파이프라인(Keycloak→앱→k6→리포트→CI)을 실증한 태스크 분해. |
-| [하네스 언어 확장 WBS](superpowers/plans/2026-07-05-harness-language-expansion.md) | 07-05 | 완료 | 하네스를 5개 언어로 넓힌 태스크 분해. |
-| [PHP SDK WBS](superpowers/plans/2026-07-06-keycloak-php-sdk-wbs.md) | 07-06 | 완료 | PHP 구현 태스크 분해. |
-| [Rust SDK WBS](superpowers/plans/2026-07-06-keycloak-rust-sdk-wbs.md) | 07-06 | 완료 | Rust 구현 태스크 분해. |
+| [하네스 언어 확장 WBS](superpowers/plans/2026-07-05-harness-language-expansion.md) | 07-05 | 완료 | 샘플 앱 4종을 **동일 HTTP 계약**으로 맞춰 `./run.sh` 한 줄로 기능 정확성(checks==1.00)을 강제하게 만든 분해. |
+| [PHP SDK WBS](superpowers/plans/2026-07-06-keycloak-php-sdk-wbs.md) | 07-06 | 완료 | 12개 태스크 — PHPStan level max를 처음부터 게이트로 걸고 간 분해. |
+| [Rust SDK WBS](superpowers/plans/2026-07-06-keycloak-rust-sdk-wbs.md) | 07-06 | 완료 | 12개 태스크 — `clippy -D warnings`·`cargo-llvm-cov`를 게이트로 건 분해. admin 캐싱 provider 결정은 최종리뷰에서야 나왔다. |
 | [Ruby SDK WBS](superpowers/plans/2026-07-06-keycloak-ruby-sdk-wbs.md) | 07-06 | 완료 | Ruby 구현 태스크 분해 + **말미의 2026-08-05 정정 블록** — RubyGems Trusted Publisher는 npm과 달리 gem이 없어도 pending으로 먼저 등록된다(원래 지시가 틀렸다). |
-| [Kotlin SDK WBS](superpowers/plans/2026-07-07-keycloak-kotlin-sdk-wbs.md) | 07-07 | 완료 | Kotlin 구현 태스크 분해. |
-| [설치·동작 하네스 WBS](superpowers/plans/2026-07-07-install-operate-harness-wbs.md) | 07-07 | 완료 | 9개 언어 로컬 레지스트리 + 설치 소비 검증 태스크 분해. |
-| [검증·점수 하네스 WBS](superpowers/plans/2026-07-07-verification-scoring-harness-wbs.md) | 07-07 | 완료 | 8개 언어 교차 검증·점수책정 태스크 분해. |
+| [Kotlin SDK WBS](superpowers/plans/2026-07-07-keycloak-kotlin-sdk-wbs.md) | 07-07 | 완료 | 새 라이브러리를 하나도 들이지 않고(자매 Java SDK 스택 재사용) 코루틴 경계만 새로 만드는 분해 — 신규 리스크 0을 설계로 확보했다. |
+| [설치·동작 하네스 WBS](superpowers/plans/2026-07-07-install-operate-harness-wbs.md) | 07-07 | 완료 | 언어별 로컬 레지스트리 + 설치 소비 검증 태스크 분해 — **소스 경로 소비 ≠ 설치 소비**를 실증한다. |
+| [검증·점수 하네스 WBS](superpowers/plans/2026-07-07-verification-scoring-harness-wbs.md) | 07-07 | 완료 | 12개 태스크 — **4차원 가중 스코어링**(기능30/보안30/커버리지20/성능·동형성20)의 가중치가 정해진 곳. |
 | [통합 배포 가이드 WBS](superpowers/plans/2026-07-09-unified-deploy-guide-wbs.md) | 07-09 | 완료 | `DEPLOY.md`와 릴리스 도우미 두 스크립트를 만든 태스크 분해. |
 | [PR 0 검증 게이트 계획](superpowers/plans/2026-07-10-pr0-verification-gates.md) | 07-10 | 완료 | **"게이트를 진짜로 만들기"** — 통과만 하던 게이트를 실제로 거부하게 무장한 작업. |
 | [PR 0 기준선 관측](superpowers/plans/2026-07-10-pr0-baseline-observation.md) | 07-10 | 완료 | 게이트 무장 **직후** 하네스가 실제로 무엇을 보고했는지의 실행 기록(잡별 결과). |

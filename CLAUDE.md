@@ -1,14 +1,22 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=48500 -->
+<!-- doc-budget: max-bytes=52700 -->
 <!-- ⚠️ 래칫이다(목표치 아님). 줄일 때마다 이 숫자를 함께 내린다. 올리는 PR은 그 자체가 리뷰 대상 —
      이관 직후 44 KB였던 이 파일이 13일 만에 66 KB가 됐다(+50%). 산문 규칙으로는 막히지 않았다.
 
-     승인된 목표는 33 KB였다(2026-07-23-docs-restructure-design.md). **실측 바닥은 그보다 높다.**
-     47.5 KB의 구성: 게차 스텁 79건 12.4 KB + doc-guard 앵커가 걸린 의존성 표 10.9 KB(=기계 검증
-     46 facts) + 나머지 24 KB. 앞의 둘은 줄일 수 없다 — 스텁을 지우면 `.claude/rules/<lang>.md`는
-     경로 스코프 자동로드라 컨텍스트 압축 후 재주입되지 않아 게차의 존재 자체가 안 보이고(설계 §4.3),
-     앵커 표를 지우면 `--min-facts/--min-anchors`가 실패한다. 33 KB로 가려면 둘 중 하나를 버려야
-     하므로 목표를 낮추는 대신 **바닥을 인정하고 그 위에서 래칫한다.** 여지는 나머지 24 KB에 있다. -->
+     승인된 목표는 **34 KB**다(2026-07-23-docs-restructure-design.md §4.1의 상향식 예산 합계.
+     같은 문서 §0 요약의 "33 KB"는 구속력 없는 반올림이고, 스펙 자신이 그 불일치를 지적하며
+     판정 기준은 §4.1이라고 못박는다). **실측 바닥은 그보다 높다.** 구성:
+       · 게차 스텁 79건 ≈ 12 KB — 줄일 수 없다. `.claude/rules/<lang>.md`는 경로 스코프
+         자동로드라 컨텍스트 압축 후 재주입되지 않는다. 항상 로드되는 이 파일의 한 줄이
+         "그런 게차가 있다"의 유일한 상주 지점이고, 지우면 게차 자체가 안 보인다(설계 §4.3).
+       · doc-guard 앵커가 걸린 의존성 표 ≈ 11 KB — 지우면 `--min-facts/--min-anchors`가 실패한다.
+         이 저장소에서 유일하게 기계 대조되는 문서 사실이다.
+       · §4 계약 + §4(b) 은닉성 예외 ≈ 4 KB — 2026-07-03 보안감사 산출물이고
+         `docs/governance/verification-log-python.md`가 "CLAUDE.md §4에 명문화"로 참조한다.
+     34 KB로 가려면 이 중 하나를 버려야 하므로, 목표를 낮추는 대신 **바닥을 인정하고 그 위에서
+     래칫한다.** 줄일 여지는 나머지 ~25 KB 안에 있다.
+     ⚠️ 한때 이 값이 48500이었는데, 그건 §4/§4(b)를 **실수로 지운 상태**에서 잰 수치였다.
+     삭제를 되돌린 뒤의 값이 지금 것이다 — 래칫을 올린 것이 아니라 잘못 잰 바닥을 고친 것이다. -->
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -47,7 +55,7 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 
 **릴리스-레디니스 감사(브랜치 `fix/release-readiness-blockers`)**: 게시 직전 차단요소를 훑어 릴리스 워크플로(태그↔매니페스트 버전 가드·시크릿 미설정 시 fail-closed·발행 전 통합 E2E 게이트·서드파티 액션 SHA 핀·`permissions` 최소화)와 패키징 표면(패키지에 담기는 LICENSE·영문 README·레지스트리 메타데이터 보강, Rust 캐럿 요구 전환 + `Cargo.lock` 커밋 + `keycloak::types` 재노출)을 고쳤다. **PHP 선행작업은 전부 끝났다** — 미러 저장소 `xzawed/keycloak-sdk-php` 생성과 `PHP_SPLIT_TOKEN` 등록(`./scripts/release-readiness.sh php` → `secrets=set`)에 이어, 첫 `php-v*` 릴리스가 미러를 채운 뒤 **Packagist 등록까지 완료**됐다(`xzawed/keycloak-sdk` 라이브 — 아래 (PHP) Packagist 게차).
 
-구현 경위·PR 이력: [docs/governance/history.md](docs/governance/history.md) · 배포 절차: [DEPLOY.md](DEPLOY.md) · **`docs/` 전체 지도(62개 문서 · 각 문서에만 있는 것): [docs/README.md](docs/README.md)**
+구현 경위·PR 이력: [docs/governance/history.md](docs/governance/history.md) · 배포 절차: [DEPLOY.md](DEPLOY.md) · **`docs/` 전체 지도(각 문서에만 있는 것까지): [docs/README.md](docs/README.md)**
 
 ## 툴체인 (빌드 명령)
 
@@ -107,6 +115,25 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 | Rust | **admin도 `KeycloakClient::new`에서 즉시 조립된다** — 나머지 여덟 언어의 "최초 접근 시 지연 생성"과 다르다(공유 `http`·전용 캐싱 provider 재사용). |
 | Kotlin | **admin이 토큰을 자체 소유한다** — `KeycloakBuilder` 내장 client-credentials 그랜트의 `TokenManager`가 획득·갱신하고, 파사드는 admin에 provider를 배선하지 않는다. `ClientCredentialsTokenProvider`는 §4 접착 유틸이자 시임일 뿐이다(Java가 커스텀 RESTEasy 필터 충돌로 내린 결정을 상속). |
 | Node | **파사드가 주입한 캐싱 provider를 `registerTokenProvider`로 배선하고 `kc.auth()`는 호출하지 않는다**(PR #63) — admin-client 내장 TokenManager는 만료 시 refresh만 시도해 client_credentials에서 영구 실패한다(Rust `79ecf76`와 동형 결정). |
+
+
+**언어 중립 계약(§4)**: 아홉 언어의 출발점이 다르므로(Java 손수 래핑 · Python `python-keycloak` · Node `openid-client`+admin-client · Go `gocloak`+`x/oauth2` · C# `Keycloak.AuthServices.Sdk`+`Duende.IdentityModel` · PHP `fschmtt`+`league/oauth2-client` · Rust `keycloak` crate+`openidconnect` · Ruby `rack-oauth2`+`faraday` 손수 admin · Kotlin JVM 자매 Java SDK 스택 재사용) **언어 중립 API 계약을 진실 원천으로 두고 각 언어가 구현한다.** 아홉 전부 하위 라이브러리 타입을 **주 소비 경로(파사드) 뒤에 숨긴다** — 개념·계층은 동형이고 표기만 camelCase ↔ snake_case ↔ Go/C# PascalCase로 갈린다(`TokenSet`/`ValidatedToken`/`IntrospectionResult`·오류 계급·`Client.auth/admin`). **예외/오류 계층은 항상 경계에서 SDK 타입으로 변환**되어 `keycloak.exceptions.*`·`jakarta.ws.rs.*`·`NetworkError`·`gocloak.APIError`·`KeycloakHttpClientException`·Guzzle `RequestException`·`keycloak::KeycloakError`·`Faraday::Error`가 공개 API로 새지 않는다. Go/Rust는 예외 대신 **error 값**(Go 센티넬 `errors.Is`/`errors.As`, Rust `thiserror` 기반 `Result<T, KeycloakError>`), Ruby·Kotlin은 예외 기반(Kotlin은 sealed class로 exhaustive `when` 강제).
+
+**§4(b) 문서화된 은닉성 예외(의도적 — 2026-07-03 보안감사 산출물)**: 완전 은닉이 아니다. 아래 두 자리는 하위 타입을 노출한다 — 재래핑 비용이 과다하거나 보조 표면이기 때문이다. **정상 소비 경로(`Client.auth/admin` · `client.Auth.Validate(...)`)는 이들을 노출하지 않는다.**
+
+| 언어 | (a) admin 파사드가 노출하는 representation | (b) 저수준 주입/구성 지점 |
+|---|---|---|
+| Java | `org.keycloak.representations.idm.*` | `JwtValidator.forRealm`의 Nimbus `JWSAlgorithm` |
+| Kotlin | 〃 (Java와 동일 좌표 재사용) | `AdminClient.raw()`의 `org.keycloak.admin.client.Keycloak` |
+| Node | `@keycloak/keycloak-admin-client/lib/defs/*` | `new JwtValidator(keys, opts)`의 jose `JWTVerifyGetKey` |
+| Go | `gocloak.User`/`Client`/`Role`/`Group`/`RealmRepresentation` | `admin.Raw()`의 `*gocloak.GoCloak` · 테스트 주입용 파라미터 |
+| C# | `Keycloak.AuthServices.Sdk.Admin.Models.*Representation` | `AdminClient.Raw`의 `IKeycloakClient` · `JwtValidator`의 내부 `TokenValidationParameters` 시임 ctor |
+| PHP | `FschmttKeycloakRepresentation*` | `AdminClient::raw()`의 `FschmttKeycloakKeycloak` |
+| Rust | `keycloak::types::{UserRepresentation, ClientRepresentation, RealmRepresentation, RoleRepresentation, GroupRepresentation}` — **크레이트 루트에서 `keycloak_sdk::types`로 미러 재노출** | `AdminClient::raw()`의 `&KeycloakAdmin<SdkTokenSupplier>`(소비자가 반환 타입에 이름을 붙일 수 있도록 `KeycloakAdmin`·`SdkTokenSupplier`를, 공유 HTTP 클라이언트를 넘기는 저수준 ctor를 위해 `reqwest`를 함께 재노출) |
+| Python | 노출 없음 — plain `dict[str, Any]` 통과(누출 아님) | `JwtValidator.validate`의 joserfc `KeySet` |
+| Ruby | 노출 없음 — plain `Hash` 통과(성숙한 admin gem이 없어 애초에 노출할 하위 representation 타입 자체가 없다) | `AdminClient#raw`의 `Faraday::Connection` |
+
+⚠️ Rust의 `keycloak_sdk::types` 재노출이 없으면 소비자가 `keycloak` crate를 자기 `Cargo.toml`에 버전까지 맞춰 직접 추가해야만 admin 파사드를 호출할 수 있어 **게시된 퀵스타트가 컴파일되지 않는다**. 안정적 Keycloak 타입 재사용이 목적이고 SDK 자체 DTO 재래핑은 범위 밖이다.
 
 ## 핵심 게차 (Gotchas) — 2026-07-02 검증
 

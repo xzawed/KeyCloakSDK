@@ -29,6 +29,8 @@ const SKIP_PATHS = new Set(['scripts/test/fixtures'])
 const MAX_PROP_HOPS = 10 // 순환/장기 속성 체인이 무한루프하지 않도록 하는 반복 상한.
 // docs/ 문서 지도. 검사 6(제외 대상)과 검사 9(대조 주체) 둘 다 참조하므로 여기 둔다.
 const DOCS_MAP = 'docs/README.md'
+// 지도 마지막 칸의 최소 길이(공백·구분자 제외). 품질은 못 보지만 공백/한 단어는 잡는다.
+const MIN_INSIGHT_CHARS = 20
 
 // argv 파싱: 위치 인자(루트 경로)와 플래그(--strict·--min-facts=N·--min-anchors=M)를
 // 서로 완전히 독립적으로 파싱한다. `process.argv[2]`를 무조건 루트로 가정하면
@@ -634,11 +636,15 @@ function checkCardinality() {
     if (rel === 'docs/governance/history.md') continue // 위와 동일 — 이력 스냅샷
     if (/^docs\/governance\/verification-log.*\.md$/.test(rel)) continue // 위와 동일 — 검증 시점 스냅샷(verification-log.md·verification-log-<lang>.md)
     if (rel === 'CHANGELOG.md') continue // 위와 동일 — 항목마다 날짜가 붙은 append-only 이력
-    // 위와 동일 — docs/README.md 는 **이력 문서들의 색인**이라, 각 줄이 대상 문서의 제목과
-    // 당시 범위를 인용한다. 그 문서 제목 자체가 "하네스 5개 언어 확장 설계"처럼 당시 기수를
-    // 담고 있어(그게 그 문서의 실제 H1이다) 지도가 그것을 다르게 적으면 오히려 거짓이 된다.
-    // ⚠️ 대신 이 지도에는 **현재 상태 주장을 적지 않는다** — 현재 언어 수 같은 사실은
-    // CLAUDE.md 소관이고, 지도의 마지막 칸은 "그 문서에만 있는 것"만 말한다.
+    // 위와 동일 — docs/README.md 는 **이력 문서들의 색인**이라, 각 줄이 대상 문서의 제목을
+    // 인용한다. 제목 자체가 "하네스 5개 언어 확장 설계"처럼 당시 기수를 담고 있고(그게 그 문서의
+    // 실제 H1이다) 지도가 그것을 다르게 적으면 오히려 거짓이 된다.
+    // ⚠️ 이 면제는 **지도가 현재 상태를 주장하지 않는다는 전제** 위에서만 정당하다. 한때
+    // 지도에 "9개 언어 각각의 설치…" 같은 현재값 여섯 줄이 있었고, 그것들은 9가 마침 현재값이라
+    // 통과했을 뿐 10번째 언어가 들어오는 순간 조용히 썩었을 것이다 — 그리고 이 면제가 그걸
+    // 가렸을 것이다. 지금은 전부 "언어마다"·"각 언어"로 고쳐 두었다. **지도에 현재 언어 수를
+    // 다시 적지 말 것** — 그런 사실은 CLAUDE.md 소관이고, 지도의 마지막 칸은 "그 문서에만
+    // 있는 것"만 말한다.
     if (rel === DOCS_MAP) continue
     const text = readFileSync(f, 'utf8')
     for (const x of text.matchAll(/(\d+)개 언어/g)) {
@@ -877,6 +883,7 @@ function checkDocsMap() {
   // 문서 상단의 `<!-- doc-status: X -->` 마커가 있으면 지도의 칸이 그것과 같아야 하고,
   // 마커가 없는 문서(살아있는 운영 문서)는 지도에서 '운영'이어야 한다. 어느 쪽이든 손으로 적은
   // 값 하나가 다른 값 하나와 반드시 마주 보게 되어, 한쪽만 고치면 잡힌다.
+  const before = errors.length
   const STATUS_OF = { complete: '완료', active: '진행', living: '운영' }
   const VALID = new Set(Object.values(STATUS_OF))
   let statusChecked = 0
@@ -903,6 +910,17 @@ function checkDocsMap() {
       errors.push(`${DOCS_MAP} 의 ${r} 줄에 상태 칸(${[...VALID].join('/')})이 없다`)
       continue
     }
+    // 지도의 존재 이유는 마지막 칸("여기서만 알 수 있는 것")이다. 그런데 검사 9가 새 문서마다
+    // 줄을 요구하므로, 최소저항 경로가 **빈 칸으로 한 줄 추가**가 된다 — 가드가 자기가 못 잡는
+    // 열화를 적극적으로 유도하는 셈이다. 내용의 고유성은 기계로 못 보지만 공백은 볼 수 있다.
+    // (산문으로 "반드시 채워라"라고 적는 것으로는 안 된다 — 이 저장소의 doc-budget 래칫이
+    //  존재하는 이유가 정확히 "산문 규칙은 막지 못한다"였다.)
+    const last = cells[cells.length - 2] ?? ''
+    if (last.replace(/[\s—·]/g, '').length < MIN_INSIGHT_CHARS) {
+      errors.push(
+        `${DOCS_MAP} 의 ${r} 줄에서 마지막 칸("여기서만 알 수 있는 것")이 비었거나 너무 짧다 — 채울 말이 없다면 그 문서는 다른 문서에 합쳐야 한다는 뜻이다`,
+      )
+    }
     const m = /<!--\s*doc-status:\s*(\w+)\s*-->/.exec(readFileSync(join(ROOT, r), 'utf8'))
     const declared = m ? STATUS_OF[m[1]] : '운영'
     if (m && !declared) {
@@ -917,7 +935,10 @@ function checkDocsMap() {
     if (m && m[1] === 'complete') {
       const body = readFileSync(join(ROOT, r), 'utf8')
       const instr = body.indexOf('For agentic workers')
-      if (instr >= 0 && body.indexOf('doc-status:') > instr) {
+      // ⚠️ `indexOf('doc-status:')`(첫 등장)를 쓰면 안 된다 — 이 규약을 **설명하는** 문서가
+      // 본문에서 그 문자열을 언급하는 순간 배너보다 앞선 히트가 생겨 검사가 공허하게 통과한다.
+      // 마커 정규식이 실제로 매치한 위치(`m.index`)만이 배너의 자리다.
+      if (instr >= 0 && m.index > instr) {
         errors.push(`${r}: 완료 배너가 "For agentic workers" 실행 지시보다 뒤에 있다 — 위에서부터 읽으면 지시를 먼저 받는다`)
       }
     }
@@ -927,7 +948,11 @@ function checkDocsMap() {
       )
     }
   }
-  if (errors.length === 0) console.log(`docs map: ${present.length} files linked, ${statusChecked} statuses cross-checked`)
+  // ⚠️ 전역 `errors.length`를 보면 **다른 검사**가 실패했을 때 이 요약이 안 찍혀 검사 9가
+  // 돌기는 했는지 알 수 없다. 이 검사가 낸 실패만 센다.
+  if (errors.length === before) {
+    console.log(`docs map: ${present.length} files linked, ${statusChecked} statuses cross-checked`)
+  }
 }
 // 지도 안에서 쓰이는 상대경로(docs/ 기준)로 되돌린다.
 function relFromMap(rel) {
