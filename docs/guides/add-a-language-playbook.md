@@ -95,10 +95,11 @@ The new language must verify the **same scenarios** as Java (123) and Python (23
 ### Stage 5 — CI · publishing (tag-driven, human-gated) · docs
 
 - [ ] **CI matrix** — build + unit + type + lint across every supported runtime version (e.g. a per-language matrix comparable to Java 21+, Python 3.10–3.13). Integration tests need Docker, so keep them in a separate job/local.
-- [ ] **Local install path** — consumers must be able to use it locally even before publishing. Since both current languages are **unpublished (human-gated release)**, only local install works:
+- [ ] **Local install path** — consumers must be able to use it locally *before* it is published, and a new language always starts unpublished. Every existing language keeps this path working regardless of registry status:
   - Java: `mvn -f java/pom.xml install -DskipITs=true` → coordinate `io.github.xzawed:keycloak-sdk:0.1.0-SNAPSHOT`
   - Python: `pip install -e python` (or `cd python && python -m build`) → distribution name `keycloak-sdk`
   - Make sure the new language likewise supports "local install → run the example" without publishing.
+  - For which languages are already on a public registry, see [DEPLOY.md](../../DEPLOY.md) — do not restate it here, it goes stale.
 - [ ] **Tag-driven release (human-gated)** — actual publishing runs only via a workflow triggered when a human pushes a tag. Existing examples: [`.github/workflows/release.yml`](../../.github/workflows/release.yml) (Java, `v*` tag → Maven Central), [`.github/workflows/python-release.yml`](../../.github/workflows/python-release.yml) (Python, `py-v*` tag → PyPI Trusted Publisher/OIDC). The new language follows the same pattern with a language-specific tag prefix + the appropriate registry (npm/Go proxy/NuGet/Packagist/crates.io/RubyGems). The full procedure is in [DEPLOY.md](../../DEPLOY.md).
   - ⚠️ **Never let an agent auto-run an irreversible publish** — credentials only via CI secrets/OIDC, and the tag push is done by a human.
 - [ ] **Docs** — a new-language section in getting-started (install · QuickStart · cross-language mapping table · compatibility matrix), the README, and updates to the structure tree, build commands, and test counts in [CLAUDE.md](../../CLAUDE.md). Record the per-task gate history in the [verification log](../governance/verification-log.md).

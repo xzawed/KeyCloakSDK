@@ -31,8 +31,14 @@ df_known() { case " $DEPLOY_LANGS " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 df_is_published() { case " $DF_PUBLISHED " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 # 미게시 언어 목록(DEPLOY_LANGS − DF_PUBLISHED). 문서의 "나머지 N개" 주장을 대조하는 데 쓴다.
+# ⚠️ POSIX sh에는 이식 가능한 `local`이 없어 루프 변수가 전역이다. 호출자가 자기 루프를 돌던
+# 중에 이 함수를 부르면 이터레이터를 덮어쓰므로 이름을 충분히 특이하게 둔다(`_l` 같은 흔한
+# 이름은 실제로 이 저장소의 다른 스크립트 루프와 겹칠 수 있다). `printf`를 쓰는 이유는 dash의
+# `echo`가 백슬래시 이스케이프를 해석하기 때문(아래 df_is_prerelease 주석과 같은 이유).
 df_unpublished() {
-  for _l in $DEPLOY_LANGS; do df_is_published "$_l" || printf '%s ' "$_l"; done
+  for _df_unpub_l in $DEPLOY_LANGS; do
+    df_is_published "$_df_unpub_l" || printf '%s ' "$_df_unpub_l"
+  done
 }
 
 df_registry() { case "$1" in

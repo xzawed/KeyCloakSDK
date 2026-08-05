@@ -63,4 +63,32 @@ for L in $DEPLOY_LANGS; do
     v="$(df_$F "$L")"; assert_ok test -n "$v"
   done
 done
+
+# ---- DF_PUBLISHED(게시 현황 SSOT) ----
+# ⚠️ **오타 하나가 SSOT를 조용히 망가뜨린다.** `DF_PUBLISHED="… rusty"`로 써도 개수 기반
+# 어서션은 전부 통과하는데(토큰 4개는 그대로다), `df_is_published rust`는 거짓이 되고
+# `df_unpublished`는 rust를 미게시로 흘린다 — 모든 소비자가 틀린 답을 받으면서 CI는 초록이다.
+# 그래서 멤버십부터 검사한다.
+for L in $DF_PUBLISHED; do
+  assert_ok df_known "$L"
+done
+assert_ok df_is_published php
+assert_fails df_is_published ruby
+assert_fails df_is_published perl
+# df_unpublished = DEPLOY_LANGS − DF_PUBLISHED (원소·개수 둘 다)
+unp="$(df_unpublished)"
+for L in $DEPLOY_LANGS; do
+  if df_is_published "$L"; then
+    assert_fails test "${unp#*"$L"}" != "$unp"   # 게시된 언어는 미게시 목록에 없어야 한다
+  else
+    assert_ok test "${unp#*"$L"}" != "$unp"
+  fi
+done
+n_all=0; for L in $DEPLOY_LANGS; do n_all=$((n_all + 1)); done
+n_pub=0; for L in $DF_PUBLISHED; do n_pub=$((n_pub + 1)); done
+n_unp=0; for L in $unp; do n_unp=$((n_unp + 1)); done
+assert_eq "$((n_all - n_pub))" "$n_unp" "df_unpublished 개수 = 전체 − 게시"
+# ⚠️ 호출자의 루프 변수를 밟지 않아야 한다(POSIX sh에 이식 가능한 `local`이 없다).
+# 이 대조군이 없으면 함수가 `_l` 같은 흔한 이름을 쓰다가 호출자 이터레이터를 덮어써도 모른다.
+_l="sentinel"; df_unpublished > /dev/null; assert_eq "sentinel" "$_l" "df_unpublished 가 호출자의 _l 을 밟았다"
 assert_report
