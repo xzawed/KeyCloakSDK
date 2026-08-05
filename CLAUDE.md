@@ -21,7 +21,7 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 
 ## 현재 상태
 
-9개 언어 SDK 모두 `main` 병합 완료. PHP·Python·.NET 3개는 첫 RC가 공개 레지스트리에 게시됐다 — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1. 나머지 6개(Java·Node·Go·Rust·Ruby·Kotlin)는 미게시이며, 배포는 여전히 전부 사람 승인 게이트다(사람이 태그를 민다).
+9개 언어 SDK 모두 `main` 병합 완료. PHP·Python·.NET·**Rust** 4개는 첫 RC가 공개 레지스트리에 게시됐다 — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 · crates.io `keycloak-sdk` 0.1.0-rc.1. 나머지 5개(Java·Node·Go·Ruby·Kotlin)는 미게시이며, 배포는 여전히 전부 사람 승인 게이트다(사람이 태그를 민다).
 
 | 언어 | 배포명 | 태그 접두 | 배포 |
 |---|---|---|---|
@@ -31,7 +31,7 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 | Go | `github.com/xzawed/KeyCloakSDK/go` | `go/v*` | 미실행 |
 | C#/.NET | `Xzawed.Keycloak.Sdk` | `dotnet-v*` | 게시됨(`0.1.0-rc.1` RC) |
 | PHP | `xzawed/keycloak-sdk` | `php-v*` | 게시됨(`0.1.0-rc.1` RC) |
-| Rust | `keycloak-sdk` | `rust-v*` | 미실행 |
+| Rust | `keycloak-sdk` | `rust-v*` | 게시됨(`0.1.0-rc.1` RC) |
 | Ruby | `keycloak-sdk` | `ruby-v*` | 미실행 |
 | Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` | `kotlin-v*` | 미실행 |
 
@@ -356,7 +356,7 @@ dev(비앵커 — 버전이 셀 안 산문에 있어 기계 대조 스코프 밖
 
 ### 문서 언어 규칙 (bilingual README + 영문 사용자 문서, PR #31·#32)
 
-- **README는 영문 기본 + 한글 미러**: [`README.md`](README.md)(영문, 기본)와 [`README.ko.md`](README.ko.md)(한글)는 **동일 구조의 미러**다 — 한쪽을 고치면 다른 쪽도 함께 갱신해 동기 유지(상단 상호 링크 `English ↔ 한국어`). 둘 다 슬림 랜딩(정적 배지·9언어 표·30초 퀵스타트·보안·상태·링크)이며, 게시가 언어별로 진행 중인 전환기(human-gated, 9개 중 3개만 첫 RC 게시)이므로 **라이브 레지스트리 배지 금지**(정적 배지만 — 오해 방지).
+- **README는 영문 기본 + 한글 미러**: [`README.md`](README.md)(영문, 기본)와 [`README.ko.md`](README.ko.md)(한글)는 **동일 구조의 미러**다 — 한쪽을 고치면 다른 쪽도 함께 갱신해 동기 유지(상단 상호 링크 `English ↔ 한국어`). 둘 다 슬림 랜딩(정적 배지·9언어 표·30초 퀵스타트·보안·상태·링크)이며, 게시가 언어별로 진행 중인 전환기(human-gated, 9개 중 4개만 첫 RC 게시)이므로 **라이브 레지스트리 배지 금지**(정적 배지만 — 오해 방지).
 - **사용자 대상 문서는 영문(in-place)**: [`docs/guides/`](docs/guides/) 3종 · [`docs/roadmap/language-support.md`](docs/roadmap/language-support.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`DEPLOY.md`](DEPLOY.md) · [`harness/README.md`](harness/README.md) · [`harness/install/README.md`](harness/install/README.md)는 영문으로 유지·갱신한다(한글 미러 없음).
 - **내부 산출물은 한글 유지**: [`docs/superpowers/`](docs/superpowers/)(설계 스펙·WBS 플랜)·[`docs/governance/`](docs/governance/)(검증 로그)와 이 `CLAUDE.md`는 개발/거버넌스 내부 문서로 한글을 유지한다.
 - **앵커 주의**: 영문 문서에서 헤딩을 바꾸면 `#anchor`가 바뀐다. `getting-started.md`의 `## C# / .NET`(앵커 `#c--net`)은 양쪽 README가 링크하므로 **헤딩 텍스트를 바꾸지 말 것**.
