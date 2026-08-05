@@ -23,8 +23,13 @@ rr_url_exists() { # <url> → exit 0=게시됨(2xx) 1=미게시(4xx/5xx, curl -f
   command -v curl >/dev/null 2>&1 || return 2
   if curl -sfI "$1" >/dev/null 2>&1; then return 0; fi
   # HEAD가 일부 레지스트리(405 등)에서 미지원일 수 있어 GET으로 재확인 — 최종 판정은 이 결과 기준.
-  if curl -sf "$1" >/dev/null 2>&1; then return 0; fi
+  # ⚠️ `if curl …; then …; fi` 뒤에서 `$?`를 읽으면 안 된다 — 그건 curl이 아니라 **if 문 자체의**
+  # 종료코드이고, 조건이 거짓이고 else가 없으면 POSIX는 그걸 0으로 정의한다. 그래서 예전 코드는
+  # 4xx에서 rc=0을 보고 `-eq 22` 분기를 영영 타지 못했다 — **"미게시(exists)" 판정이 죽어 있었고**
+  # 모든 미게시 좌표가 `unknown`으로 보고됐다(실측: 404 URL에 buggy rc=0 / fixed rc=22).
+  curl -sf "$1" >/dev/null 2>&1
   rc=$?
+  [ "$rc" -eq 0 ] && return 0
   [ "$rc" -eq 22 ] && return 1
   return 2
 }
@@ -38,7 +43,11 @@ rr_verdict() { # <secrets> <registry> <tag>
   if [ "$2" = published ]; then echo "ℹ️ 이미 게시됨"; return; fi
   case "$1" in
     unset) echo "⚠️ 설정필요: 시크릿" ;;
-    *) echo "✅ 준비완료" ;;   # set 또는 na(OIDC/none)
+    # ⚠️ "준비완료"가 아니라 "저장소측 OK"다. 이 스크립트는 시크릿 **이름**·공개 레지스트리 URL·
+    # 로컬 태그만 본다 — 토큰 뒤의 **레지스트리 계정 상태**는 볼 수 없다. 예전 문구(`✅ 준비완료`)를
+    # 믿고 rust 태그를 밀었다가 게이트를 다 통과한 뒤 crates.io가 400으로 거부한 적이 있다
+    # ("A verified email address is required to publish"). 아무것도 게시되지 않았지만 태그는 소모됐다.
+    *) echo "✅ 저장소측 OK" ;;   # set 또는 na(OIDC/none)
   esac
 }
 
@@ -71,7 +80,7 @@ rr_row() { # <lang>
   # 스펙§4: 시크릿 상태만으로는 "준비완료"라 부를 수 없는 auth 모델이 있다 — 남은 사람 작업이
   # API로 확인 불가한 경우다. auth 값별 case로 두어 새 auth 값이 생기면 여기에 추가하게 한다
   # (이미 게시됨/태그존재 판정이 우선하면 그대로 둔다).
-  if [ "$verdict" = "✅ 준비완료" ]; then
+  if [ "$verdict" = "✅ 저장소측 OK" ]; then
     case "$(df_auth "$L")" in
       # OIDC(python/node/ruby): secrets=na라도 pending-publisher 사전등록은 조회 API가 없고
       # 미등록이면 배포가 실패한다.
@@ -79,6 +88,14 @@ rr_row() { # <lang>
       # split-token(php): PHP_SPLIT_TOKEN이 있어도 실제 게시 주체는 이 저장소가 아니라 미러
       # xzawed/keycloak-sdk-php다 — 미러·Packagist 등록 상태는 조회 API가 없어 사람이 확인한다(DEPLOY.md §2-D).
       split-token) verdict="ℹ️ 수동 확인: 미러 xzawed/keycloak-sdk-php + Packagist 등록" ;;
+      # api-token(rust/dotnet): 시크릿 **이름**이 있다는 것만 확인했다. 토큰이 유효한지, 스코프가
+      # 맞는지, 그 토큰이 속한 계정이 게시 가능한 상태인지는 값 없이 볼 수 없다.
+      # 실제로 rust가 여기서 걸렸다 — crates.io는 **이메일 인증**을 요구하고, 그건 계정 UI에만 있다.
+      api-token) verdict="ℹ️ 수동 확인: 레지스트리 계정(이메일 인증·토큰 유효·스코프)" ;;
+      # maven-gpg(java/kotlin): 시크릿 4종이 다 있어도 네임스페이스 검증·GPG 공개키의 키서버 배포는
+      # 조회 API가 없고, 게다가 워크플로는 Portal **스테이징까지만** 한다 — 공개는 사람이 누른다.
+      maven-gpg) verdict="ℹ️ 수동 확인: 네임스페이스 검증·GPG 키서버 배포·Portal 수동 Publish" ;;
+      # none(go): 계정도 시크릿도 없다 — 태그가 곧 게시라 저장소측 확인이 실제로 전부다.
     esac
   fi
   # auth 폭 11 = 가장 긴 값 "split-token" 기준(좁히면 php 행만 컬럼이 밀린다).
