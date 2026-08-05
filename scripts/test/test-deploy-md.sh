@@ -62,9 +62,10 @@ assert_not_contains "$body" "what remains is the Packagist registration" \
 assert_contains "$body" "php-v0.1.0-rc.1" "PHP 첫 태그(리허설) 기록"
 assert_contains "$body" "py-v0.1.0rc1" "Python 첫 태그 기록"
 assert_contains "$body" "dotnet-v0.1.0-rc.1" ".NET 첫 태그 기록"
+assert_contains "$body" "rust-v0.1.0-rc.1" "Rust 첫 태그 기록"
 # 반대 방향(과대주장 방지)도 고정한다 — 셋 게시했다고 전부 게시된 것은 아니다. 이 문구는
 # 문서와 이 테스트가 **같은 커밋에서 함께** 갱신되는 카운트다(환경이 아니라 문서만 읽으므로
 # 체크아웃 안에서 항상 자기일관 — 다음 언어가 게시되면 문서와 이 줄을 한 PR에서 같이 고친다).
-assert_contains "$body" "The other six languages are unpublished" \
-  "나머지 여섯 언어가 미게시라는 사실이 문서에서 사라졌다"
+assert_contains "$body" "The other five languages are unpublished" \
+  "나머지 다섯 언어가 미게시라는 사실이 문서에서 사라졌다"
 assert_report
