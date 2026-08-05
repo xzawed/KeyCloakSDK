@@ -53,7 +53,7 @@ with KeycloakClient.create(config) as kc:
 
 ## Try it today
 
-Registry installs exist so far only as first RCs (PHP · Python · .NET) — either way, the whole path works from a clone:
+Registry installs exist so far only as first RCs (PHP · Python · .NET · Rust) — either way, the whole path works from a clone:
 
 ```bash
 # 1) a Keycloak server to talk to

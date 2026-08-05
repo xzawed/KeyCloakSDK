@@ -455,7 +455,9 @@ Publishing is irreversible everywhere, but "irreversible" costs a different amou
 
 ## §7. Make the First Tag a Release Candidate
 
-All nine registries support prerelease versions, and most resolvers exclude them from ordinary version ranges by default. Six of the nine languages have not yet published anything (§5), so each of their first tags is a **first execution of an irreversible pipeline**. Spend a release candidate on it instead of `0.1.0`: if the OIDC claim does not match or the GPG public key was never distributed, you find that out on `0.1.0-rc.1` and `0.1.0` is still yours to use. The three languages that have published (PHP · Python · .NET) spent their first tags exactly this way — `php-v0.1.0-rc.1` · `py-v0.1.0rc1` · `dotnet-v0.1.0-rc.1` — and the pipeline held.
+All nine registries support prerelease versions, and most resolvers exclude them from ordinary version ranges by default. Five of the nine languages have not yet published anything (§5), so each of their first tags is a **first execution of an irreversible pipeline**. Spend a release candidate on it instead of `0.1.0`: if the OIDC claim does not match or the GPG public key was never distributed, you find that out on `0.1.0-rc.1` and `0.1.0` is still yours to use. The four languages that have published (PHP · Python · .NET · Rust) spent their first tags exactly this way — `php-v0.1.0-rc.1` · `py-v0.1.0rc1` · `dotnet-v0.1.0-rc.1` · `rust-v0.1.0-rc.1`.
+
+⚠️ **And the RC earned its keep on the fourth one.** Rust's pipeline passed every gate — tag↔manifest, real-Keycloak integration, install-smoke — and then crates.io rejected the upload twice with `400 A verified email address is required to publish crates to crates.io`. Nothing was published either time (the failure is fail-closed and the coordinate survived), but the tag was spent before anyone could have known: no local check can see the account behind a token. That is the class §5 tabulates. Had it been `0.1.0`, the stable coordinate would have been the one burned on a solvable account-settings problem.
 
 | Language | Version to write in the manifest | Tag to push | Resolver behaviour |
 |---|---|---|---|

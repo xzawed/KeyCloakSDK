@@ -15,7 +15,7 @@ Rust는 시스템 설치(MSRV 1.88, edition 2024)를 사용한다. **Windows 로
 cd rust && cargo build --all-targets              # 빌드(examples/tests 포함)
 cd rust && cargo fmt --all --check                # 포맷 검사
 cd rust && cargo clippy --all-targets -- -D warnings  # 린트(0 경고 게이트)
-cd rust && cargo test                              # 단위테스트 52개. Docker 불필요
+cd rust && cargo test                              # 단위테스트. Docker 불필요
 cd rust && cargo test --test integration_test -- --ignored  # 통합 E2E 1개(Docker 필요 — testcontainers, 실제 Keycloak 26.6)
 cd rust && cargo run --example quickstart           # QuickStart 예제 실행(Keycloak 필요)
 ```
