@@ -41,7 +41,7 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 
 **릴리스-레디니스 감사(브랜치 `fix/release-readiness-blockers`)**: 게시 직전 차단요소를 훑어 릴리스 워크플로(태그↔매니페스트 버전 가드·시크릿 미설정 시 fail-closed·발행 전 통합 E2E 게이트·서드파티 액션 SHA 핀·`permissions` 최소화)와 패키징 표면(패키지에 담기는 LICENSE·영문 README·레지스트리 메타데이터 보강, Rust 캐럿 요구 전환 + `Cargo.lock` 커밋 + `keycloak::types` 재노출)을 고쳤다. **PHP 선행작업은 전부 끝났다** — 미러 저장소 `xzawed/keycloak-sdk-php` 생성과 `PHP_SPLIT_TOKEN` 등록(`./scripts/release-readiness.sh php` → `secrets=set`)에 이어, 첫 `php-v*` 릴리스가 미러를 채운 뒤 **Packagist 등록까지 완료**됐다(`xzawed/keycloak-sdk` 라이브 — 아래 (PHP) Packagist 게차).
 
-구현 경위·PR 이력: [docs/governance/history.md](docs/governance/history.md) · 배포 절차: [DEPLOY.md](DEPLOY.md)
+구현 경위·PR 이력: [docs/governance/history.md](docs/governance/history.md) · 배포 절차: [DEPLOY.md](DEPLOY.md) · **`docs/` 전체 지도(62개 문서 · 각 문서에만 있는 것): [docs/README.md](docs/README.md)**
 
 ## 툴체인 (빌드 명령)
 
