@@ -10,7 +10,36 @@
 # ⚠️ go가 인증설정은 가장 쉽지만 복구는 가장 약하다 — 옛 순서(쉬운 인증순)는 이 축을 반대로 봤다.
 DEPLOY_LANGS="python dotnet ruby node rust java kotlin go php"
 
+# 첫 게시(RC 포함)를 실제로 마친 언어. **문서가 게시 현황을 말할 때의 유일 원천이다.**
+#
+# 왜 SSOT가 필요한가: 이 사실은 매니페스트 같은 기계가독 원천이 없어 손으로 N곳에 복제돼 있었고,
+# Rust RC 게시 한 번이 최소 6곳(README×2·CLAUDE.md·DEPLOY.md·SECURITY.md·getting-started·roadmap)을
+# 동시에 낡게 만들었다. 정정 커밋이 7개 파일을 고치고도 3곳을 놓쳤고, `SECURITY.md`는 4개가
+# 게시된 뒤에도 "아무것도 게시되지 않았다"고 말하고 있었다(보안 문서라 특히 나빴다 — 신고자가
+# "영향받는 사용자 없음"으로 오판한다).
+#
+# ⚠️ **네트워크로 파생하려는 유혹을 거부할 것.** `test-deploy-md.sh`가 한때 `git tag -l`에 기댔다가
+# CI의 `actions/checkout`이 태그를 안 가져와 **항상 0이라 공허하게 통과**한 이력이 있다. 이 값은
+# 손으로 갱신하되 **한 곳**이고, 낡으면 가드가 CI를 빨갛게 만든다.
+#
+# 언어를 게시하면 여기에 추가한다. 그것이 문서 갱신의 트리거다.
+DF_PUBLISHED="php python dotnet rust"
+
 df_known() { case " $DEPLOY_LANGS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+# <lang> → 0 if 이미 첫 게시를 마쳤다
+df_is_published() { case " $DF_PUBLISHED " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+# 미게시 언어 목록(DEPLOY_LANGS − DF_PUBLISHED). 문서의 "나머지 N개" 주장을 대조하는 데 쓴다.
+# ⚠️ POSIX sh에는 이식 가능한 `local`이 없어 루프 변수가 전역이다. 호출자가 자기 루프를 돌던
+# 중에 이 함수를 부르면 이터레이터를 덮어쓰므로 이름을 충분히 특이하게 둔다(`_l` 같은 흔한
+# 이름은 실제로 이 저장소의 다른 스크립트 루프와 겹칠 수 있다). `printf`를 쓰는 이유는 dash의
+# `echo`가 백슬래시 이스케이프를 해석하기 때문(아래 df_is_prerelease 주석과 같은 이유).
+df_unpublished() {
+  for _df_unpub_l in $DEPLOY_LANGS; do
+    df_is_published "$_df_unpub_l" || printf '%s ' "$_df_unpub_l"
+  done
+}
 
 df_registry() { case "$1" in
   go) echo "Go module proxy (proxy.golang.org)" ;; php) echo "Packagist" ;;

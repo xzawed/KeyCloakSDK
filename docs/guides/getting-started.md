@@ -6,6 +6,12 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 
 > 🖥️ **You need a Keycloak *server* first.** This SDK is a client library, so it needs a **Keycloak server to connect to** in order to work (the server is a separate, standalone product not included in this SDK). For a local trial, use the one-line Docker command `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`; for a **production deployment**, see the [Keycloak server deployment guide](deploying-keycloak-server.md).
 
+> ⚠️ **The validation step of every quickstart below fails on a stock realm — this is expected, and here is why.** Each *Minimal usage example* does three things in order: get a token, `validate()` it, call the Admin API. `validate()` requires the token's `aud` to contain the expected audience, which defaults to your client id. **A stock Keycloak realm does not put the client id into a client-credentials token's `aud`.** So the token issues fine and then validation rejects it. Two ways out, both correct:
+> - set the expected audience to what your realm actually issues — the right choice when the token targets a *resource server* rather than the requesting client (`expectedAudience` in Java/Kotlin/Node/PHP, `ExpectedAudience` in .NET/Go, `expected_audience` in Python/Ruby, `.with_expected_audience(…)` in Rust);
+> - or add an **Audience** protocol mapper to the client in Keycloak, so the realm issues the audience you expect.
+>
+> This is a deliberate default, not a rough edge: accepting a token minted for a different audience is the failure the check exists to prevent. Each language's package README repeats it with that language's spelling.
+
 ## Required runtime
 
 | Language | Minimum runtime | Notes |
@@ -456,9 +462,9 @@ echo "created userId={$userId}\n";
 <!-- doc-guard: kind=runtime lang=rust -->
 Rust **`1.88` or newer** (MSRV — required by edition 2024 + let-chains) is required. The idiom is async-only (tokio), and instead of exceptions it uses a `thiserror`-based `KeycloakError` enum (`Config`/`Auth`/`Transport`/`Admin`/`TokenValidation`) + `Result<T, KeycloakError>`. Docker is needed only for integration tests.
 
-### 2) Local installation (current — not yet published)
+### 2) Local installation (development)
 
-Since it is not published to crates.io, clone the repository and reference it as a path dependency in your consuming project's `Cargo.toml`:
+To build against your working copy, reference it as a path dependency in your consuming project's `Cargo.toml`:
 
 ```toml
 [dependencies]
@@ -471,15 +477,15 @@ cd rust && cargo build && cargo test   # Just verify a local build/test: 51 unit
 
 The crate name is `keycloak-sdk`, and the root module is `keycloak_sdk` (`keycloak_sdk::{KeycloakClient, KeycloakConfig, ...}`).
 
-### 3) Installation after release (future)
+### 3) Installation from crates.io (first release candidate available)
 
-Once publishing to crates.io is complete:
+The first release candidate, `0.1.0-rc.1`, is live on crates.io; there is no stable release yet:
 
 ```bash
 cargo add keycloak-sdk
 ```
 
-> ⚠️ **Not yet published to crates.io (human-gated).** The actual publish runs only when a human pushes a `rust-v*` tag to trigger [`.github/workflows/rust-release.yml`](../../.github/workflows/rust-release.yml) (requires the `CARGO_REGISTRY_TOKEN` secret). For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> ⚠️ **Prerelease-only caveat, and it differs from pip's.** The bare `cargo add` above resolves the RC today, because Cargo falls back to a pre-release when a crate has no stable version — but once a stable release lands, that one wins instead, so pin explicitly (`cargo add keycloak-sdk@0.1.0-rc.1`) if you mean to stay on the RC. Note the asymmetry: a **hand-written** requirement such as `keycloak-sdk = "0.1"` never matches a pre-release, so spell it out (`keycloak-sdk = "0.1.0-rc.1"`). Releases remain human-gated: a publish runs only when a human pushes a `rust-v*` tag to trigger [`.github/workflows/rust-release.yml`](../../.github/workflows/rust-release.yml). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 

@@ -63,9 +63,41 @@ assert_contains "$body" "php-v0.1.0-rc.1" "PHP 첫 태그(리허설) 기록"
 assert_contains "$body" "py-v0.1.0rc1" "Python 첫 태그 기록"
 assert_contains "$body" "dotnet-v0.1.0-rc.1" ".NET 첫 태그 기록"
 assert_contains "$body" "rust-v0.1.0-rc.1" "Rust 첫 태그 기록"
-# 반대 방향(과대주장 방지)도 고정한다 — 셋 게시했다고 전부 게시된 것은 아니다. 이 문구는
-# 문서와 이 테스트가 **같은 커밋에서 함께** 갱신되는 카운트다(환경이 아니라 문서만 읽으므로
-# 체크아웃 안에서 항상 자기일관 — 다음 언어가 게시되면 문서와 이 줄을 한 PR에서 같이 고친다).
-assert_contains "$body" "The other five languages are unpublished" \
-  "나머지 다섯 언어가 미게시라는 사실이 문서에서 사라졌다"
+# (과대주장 방지 — "나머지 N개는 미게시"는 아래 SSOT 블록이 파생값으로 대조한다.)
+
+# ---- 게시 현황을 SSOT(`DF_PUBLISHED`)로 대조한다 ----
+#
+# ⚠️ **어서션이 변별력을 갖는지 반드시 변이로 확인할 것.** 이 블록의 첫 판은 게시된 언어의
+# **이름**이 DEPLOY.md에 있는지만 봤는데, 그건 아무것도 잡지 못했다 — 이 문서에서 미게시 언어가
+# 게시 언어보다 오히려 더 자주 등장한다(실측: Go 26회·Ruby 24회 vs Rust 10회·.NET 12회). 즉
+# "Rust가 언급된다"는 게시 여부와 무관하게 항상 참이라 초록불이 커버리지처럼 보일 뿐이었다.
+# 실제로 crates.io 문구를 라이브 목록에서 지우는 변이가 통과했다.
+#
+# 대신 **게시된 언어만 등장할 수 있는 자리**에 건다: DEPLOY.md 첫머리의 "무엇이 지금 레지스트리에
+# 살아있는가" 한 문장. 거기에 각 언어의 레지스트리명과 좌표가 있어야 한다.
+live="$(printf '%s\n' "$body" | grep -F 'live on public registries')"
+# 이 grep이 빈 값을 돌려주면(문구가 바뀌면) 아래 어서션이 전부 실패한다 — 조용히 통과하는
+# 것보다 시끄럽게 실패하는 쪽이 맞다. 다만 원인이 드러나도록 여기서 먼저 잡는다.
+assert_ok test -n "$live"
+for _dfl in $DF_PUBLISHED; do
+  assert_ok df_known "$_dfl"   # SSOT 오타 방지 — DEPLOY_LANGS에 없는 토큰은 모든 소비자를 조용히 망가뜨린다
+  assert_contains "$live" "$(df_registry "$_dfl")" "게시된 $_dfl 의 레지스트리가 라이브 목록에 없다"
+  assert_contains "$live" "$(df_coordinate "$_dfl")" "게시된 $_dfl 의 좌표가 라이브 목록에 없다"
+done
+
+# ⚠️ 미게시 언어는 **존재를 요구하지 않는다** — 그것이 (1)의 함정이다. 미게시는 되돌릴 수 있는
+# (게시하면 끝나는) 상태라, "미게시라고 적혀 있어야 한다"는 어서션은 게시하는 순간 낡은 주장을
+# 강제한다. 대신 문서가 말하는 미게시 **개수**가 SSOT에서 파생한 값과 맞는지만 본다 — 이쪽은
+# 양방향이라(문서만 고쳐도, SSOT만 고쳐도) 한쪽만 움직이면 잡힌다.
+pub_n=0; for _dfl in $DF_PUBLISHED; do pub_n=$((pub_n + 1)); done
+all_n=0; for _dfl in $DEPLOY_LANGS; do all_n=$((all_n + 1)); done
+unpub_n=$((all_n - pub_n))
+case "$unpub_n" in
+  1) _w="one" ;; 2) _w="two" ;; 3) _w="three" ;; 4) _w="four" ;; 5) _w="five" ;;
+  6) _w="six" ;; 7) _w="seven" ;; 8) _w="eight" ;; 9) _w="nine" ;;
+  *) _w="" ;;
+esac
+assert_ok test -n "$_w"
+assert_contains "$body" "The other $_w languages are unpublished" \
+  "DEPLOY.md의 미게시 개수 문구가 DF_PUBLISHED에서 파생한 $unpub_n 과 다르다"
 assert_report
