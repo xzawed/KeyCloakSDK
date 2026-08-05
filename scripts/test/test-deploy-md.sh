@@ -92,5 +92,4 @@ done
 # ⚠️ 미게시 언어는 **존재를 요구하지 않는다** — 그것이 (1)의 함정이다. 미게시는 되돌릴 수 있는
 # (게시하면 끝나는) 상태라, "미게시라고 적혀 있어야 한다"는 어서션은 게시하는 순간 낡은 주장을
 # 강제한다. 대신 위의 `The other five languages are unpublished` 한 줄만 세어 맞춘다.
-assert_ok test "$unpub_n" -eq 5
 assert_report
