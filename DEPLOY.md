@@ -86,7 +86,11 @@ Measured locally (this is the "Tier 1" pre-flight; none of it touches a public r
   supported ways to express it. (1) **Merge a release PR** — Claude prepares a PR that bumps
   the version and writes `.github/release-request.json`; merging it is the approval, and
   `dispatch-release.yml` cuts the tag from `lang` + `version` (never from a `tag` field, which
-  would let a cheap language declare an expensive tag). ⚠️ **This path does not work until the
+  would let a cheap language declare an expensive tag).
+  ⚠️ **`.github/release-request.json` must never land on `main` except as the approval itself.**
+  `dispatch-release.yml` triggers on a `push` that touches that path, so any other PR that creates
+  or edits it — scaffolding the automation, adding a fixture, "just an example" — **cuts a real tag**.
+  Tests must write it to a temp directory, never to `.github/`. ⚠️ **This path does not work until the
   one-time setup in §2-F is complete** — the tag-cutting App and the tag rulesets must both
   exist, and until they do the workflow fails closed without creating anything. ⚠️ Merge release
   PRs **one at a time** (see §4 step 5). (2) **Push the tag by hand** — still supported, and

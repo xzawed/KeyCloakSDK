@@ -93,6 +93,14 @@ jobs:
           sh scripts/test/test-release-request.sh
           sh scripts/test/test-dispatch-release.sh
 
+      # ⚠️ 자가테스트 자신의 위생 — "테스트가 있다"가 "테스트가 돈다"를 뜻하지 않는 두 경로를 막는다.
+      # (1) `assert.sh`의 어서션은 `_A_FAIL`만 누적하고 종료코드를 바꾸지 않는다 — 종료코드를 내는
+      # 것은 `assert_report`뿐이라, 빠뜨린 테스트는 전부 실패해도 exit 0으로 CI를 초록으로 만든다.
+      # (2) 파일이 존재하는 것과 이 워크플로에 배선된 것은 다르다(위 79행 주석의 사고 참조).
+      # 두 규칙은 계획 문서의 미체크 항목 안에만 산문으로 있었다 — 가드로 옮겼다.
+      - name: 자가테스트 위생(assert_report 호출 · CI 배선)
+        run: sh scripts/test/test-selftest-hygiene.sh
+
       - name: 버전 SSOT 가드 자가테스트(반쯤 적용된 범프를 잡는지 + 오탐 없는지)
         run: sh scripts/test/test-check-versions.sh
       - name: 버전 SSOT 대조
