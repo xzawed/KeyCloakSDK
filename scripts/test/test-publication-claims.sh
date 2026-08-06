@@ -47,4 +47,45 @@ n=0
 for L in $DEPLOY_LANGS; do n=$((n + 1)); done
 assert_ok test "$n" -ge 9
 
+# ---- 루트 문서의 게시 현황 주장 ----
+#
+# `deploy-facts.sh`의 주석이 스스로 열거하듯 rust RC 한 번이 최소 6곳을 동시에 낡게 만들었다.
+# 그중 기계 대조가 붙은 것은 DEPLOY.md(test-deploy-md.sh)와 위의 패키지 README뿐이었고,
+# **랜딩 문서 셋(README·README.ko·SECURITY)과 getting-started는 손으로만 맞춰져 있었다.**
+pub_n=0;  for L in $DF_PUBLISHED; do pub_n=$((pub_n + 1)); done
+unpub_n=$((n - pub_n))
+en() { case "$1" in
+  1) echo one ;; 2) echo two ;; 3) echo three ;; 4) echo four ;; 5) echo five ;;
+  6) echo six ;; 7) echo seven ;; 8) echo eight ;; 9) echo nine ;; *) echo "" ;; esac; }
+ko() { case "$1" in
+  1) echo 하나 ;; 2) echo 둘 ;; 3) echo 셋 ;; 4) echo 넷 ;; 5) echo 다섯 ;;
+  6) echo 여섯 ;; 7) echo 일곱 ;; 8) echo 여덟 ;; 9) echo 아홉 ;; *) echo "" ;; esac; }
+pub_en="$(en "$pub_n")"; unpub_en="$(en "$unpub_n")"
+pub_ko="$(ko "$pub_n")"; unpub_ko="$(ko "$unpub_n")"
+assert_ok test -n "$pub_en" -a -n "$unpub_en" -a -n "$pub_ko" -a -n "$unpub_ko"
+
+# 영문 랜딩 문서 — 대소문자 두 형태를 모두 허용한다(문장 첫머리면 "Four", 아니면 "four").
+for f in README.md SECURITY.md; do
+  t="$(cat "$ROOT/$f")"
+  up="$(printf '%s' "$pub_en" | sed 's/^./\U&/')"
+  case "$t" in
+    *"$pub_en"*|*"$up"*) : ;;
+    *) assert_ok false "$f 가 게시 개수($pub_n=$pub_en)를 말하지 않는다" ;;
+  esac
+  assert_contains "$t" "other $unpub_en" "$f 의 '나머지 N개 미게시' 수가 DF_PUBLISHED 파생값($unpub_n)과 다르다"
+done
+
+# 한글 미러 — 영문과 같은 사실을 한글 수사로 말한다(README.md와 동일 구조의 미러라는 규칙).
+ko_t="$(cat "$ROOT/README.ko.md")"
+assert_contains "$ko_t" "아홉 중 $pub_ko" "README.ko.md 의 게시 개수가 DF_PUBLISHED 파생값($pub_n)과 다르다"
+assert_contains "$ko_t" "나머지 $unpub_ko 언어" "README.ko.md 의 미게시 개수가 DF_PUBLISHED 파생값($unpub_n)과 다르다"
+
+# ⚠️ getting-started는 산문이 아니라 **구조**로 대조한다 — 언어마다 설치 절이 두 형태 중
+# 하나이고, 그 개수가 곧 게시 현황이다. 산문 수사와 달리 표현을 바꿔도 흔들리지 않는다.
+gs="$ROOT/docs/guides/getting-started.md"
+assert_eq "$unpub_n" "$(grep -c '^### 3) Installation after release (future)$' "$gs")" \
+  "getting-started의 '미게시' 설치 절 수 ≠ DF_PUBLISHED 파생 미게시 수"
+assert_eq "$pub_n" "$(grep -c '^### 3) Installation from ' "$gs")" \
+  "getting-started의 '게시됨' 설치 절 수 ≠ DF_PUBLISHED 파생 게시 수"
+
 assert_report
