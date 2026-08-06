@@ -4,7 +4,7 @@ A TypeScript SDK for [Keycloak](https://www.keycloak.org/) covering both **Authe
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .NET · PHP · Rust · Ruby · Kotlin) — idiomatic in each language, isomorphic across all of them. Monorepo: <https://github.com/xzawed/KeyCloakSDK>
 
-> **Pre-release** — not yet published to npm.
+> **Pre-release** — the first release candidate (`0.1.0-rc.1`) is on npm under the `rc` dist-tag; there is no stable release yet. ⚠️ **npm does not fall back to a pre-release, it errors**: while the RC is the only version, both `npm install @xzawed/keycloak-sdk` and a `^0.1.0` dependency range fail with `ETARGET — No matching version found`. Ask for it explicitly — `npm install @xzawed/keycloak-sdk@rc` — or pin `0.1.0-rc.1`.
 
 ## Requirements
 
@@ -16,8 +16,16 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .
 ## Install
 
 ```bash
-npm install @xzawed/keycloak-sdk
+npm install @xzawed/keycloak-sdk@rc
 ```
+
+While `0.1.0-rc.1` is the only published version there is no `latest` dist-tag, so the version **must** be explicit — a bare `npm install @xzawed/keycloak-sdk` fails with `ETARGET`, and so does `"@xzawed/keycloak-sdk": "^0.1.0"` in a manifest. Pin the exact version if you would rather not track the `rc` tag:
+
+```bash
+npm install @xzawed/keycloak-sdk@0.1.0-rc.1
+```
+
+Once a stable release lands, `latest` starts pointing at it and the bare form works again.
 
 ## Quickstart
 

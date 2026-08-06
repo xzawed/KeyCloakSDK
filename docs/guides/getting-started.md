@@ -2,7 +2,7 @@
 
 A guide to installing the Keycloak polyglot SDK locally and running your first token issuance, JWT validation, and Admin API call with minimal code. This SDK is provided in **multiple programming languages** (currently Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby · Kotlin), and while each language is idiomatic, the concepts, layers, and flows are isomorphic.
 
-> ℹ️ **Five of the nine are on a public registry, as first release candidates** — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io) and Ruby (RubyGems). The other four (Java, Node, Go, Kotlin) are not published yet, so for those the local-clone path below is the only way to consume them. **No language has a stable release**, and ecosystems disagree sharply about what a bare install does when only a prerelease exists — pip and Cargo fall back to it, RubyGems resolves nothing, and npm fails outright with `ETARGET`. Each language section spells out the incantation its ecosystem needs; do not copy one language's wording to another. For now, **local installation is the default path** (see each language's "Local installation" below). For the real release procedure, see the unified nine-language [DEPLOY.md](../../DEPLOY.md) (check readiness with `scripts/release-readiness.sh` and tag commands with `scripts/release-trigger.sh <lang> <ver>` — both are human-gates that never push tags automatically).
+> ℹ️ **Six of the nine are on a public registry, as first release candidates** — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems) and Node (npm). The other three (Java, Go, Kotlin) are not published yet, so for those the local-clone path below is the only way to consume them. **No language has a stable release**, and ecosystems disagree sharply about what a bare install does when only a prerelease exists — pip and Cargo fall back to it, RubyGems resolves nothing, and npm fails outright with `ETARGET`. Each language section spells out the incantation its ecosystem needs; do not copy one language's wording to another. For now, **local installation is the default path** (see each language's "Local installation" below). For the real release procedure, see the unified nine-language [DEPLOY.md](../../DEPLOY.md) (check readiness with `scripts/release-readiness.sh` and tag commands with `scripts/release-trigger.sh <lang> <ver>` — both are human-gates that never push tags automatically).
 
 > 🖥️ **You need a Keycloak *server* first.** This SDK is a client library, so it needs a **Keycloak server to connect to** in order to work (the server is a separate, standalone product not included in this SDK). For a local trial, use the one-line Docker command `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`; for a **production deployment**, see the [Keycloak server deployment guide](deploying-keycloak-server.md).
 
@@ -182,26 +182,26 @@ with KeycloakClient.create(config) as kc:
 <!-- doc-guard: kind=runtime lang=node -->
 Node.js **`22` or newer** is required. The package is **ESM-only** (`"type":"module"`) and all public methods are `async` (Promise) (only `createAuthorizationRequest` is synchronous). It includes TypeScript type declarations (`.d.ts`), so consumers can type-check as well.
 
-### 2) Local installation (current — not yet published)
+### 2) Local installation (development)
 
-Since it is not published to npm, clone the repository and build it under `node/` to reference it:
+To build against your working copy, clone the repository and build under `node/`:
 
 ```bash
 cd node && npm ci && npm run build   # generates dist/ (tsc). Consume via npm link or a file reference.
-# Verify the distributable artifact (without uploading): npm pack --dry-run   # includes dist only (24kB)
+# Verify the distributable artifact (without uploading): npm pack --dry-run   # 75 files, 38.7 kB — dist/ plus README.md and LICENSE
 ```
 
 The distribution name is `@xzawed/keycloak-sdk`, and the import path is the same.
 
-### 3) Installation after release (future)
+### 3) Installation from npm (first release candidate available)
 
-Once publishing to npm is complete:
+The first release candidate, `0.1.0-rc.1`, is live on npm under the `rc` dist-tag; there is no stable release yet:
 
 ```bash
-npm install @xzawed/keycloak-sdk
+npm install @xzawed/keycloak-sdk@rc
 ```
 
-> ⚠️ **Not yet published to npm (human-gated, npm Trusted Publishing / OIDC + provenance).** The actual publish runs only when a human pushes a `node-v*` tag to trigger [`.github/workflows/node-release.yml`](../../.github/workflows/node-release.yml). For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> ⚠️ **Prerelease-only caveat, and npm is the harshest of the nine.** While the RC is the only published version there is no `latest` dist-tag, and npm does **not** fall back to a pre-release the way pip and Cargo do — it fails outright. Measured: a bare `npm install @xzawed/keycloak-sdk` and a `"^0.1.0"` dependency range both error with `ETARGET — No matching version found`. Use `@rc` as above, or pin `@0.1.0-rc.1`; the bare form starts working once a stable release exists. Releases remain human-gated: a publish runs only when a human pushes a `node-v*` tag to trigger [`.github/workflows/node-release.yml`](../../.github/workflows/node-release.yml) (npm Trusted Publishing / OIDC + provenance). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 

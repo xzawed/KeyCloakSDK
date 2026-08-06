@@ -144,9 +144,19 @@ jobs:
       # 권하므로 런북과 정면으로 충돌하는 지점이었다. dist-tag를 하드코딩하지 않고 버전에서 파생한다:
       # SemVer prerelease만 하이픈을 포함하므로(`0.1.0-rc.1`) 그때만 `rc`, 정식 버전은 `latest`.
       # 버전은 `version` 잡이 유도·검증한 값을 그대로 받는다 — install-smoke가 검증한 것과 같은 값이다.
+      # ⚠️ **`NODE_AUTH_TOKEN`은 첫 게시 전용 부트스트랩이다 — `npm trust` 직후 이 두 줄과
+      # `NPM_TOKEN` 시크릿을 함께 지운다**(DEPLOY.md §2-B step 4). npm은 다른 레지스트리와 달리
+      # **패키지가 이미 존재해야** trusted publisher를 붙일 수 있어서, 첫 게시만 토큰으로 한다.
+      #
+      # OIDC 설정을 걷어내지 않는 이유: `npm publish`는 **OIDC를 먼저 시도하고 조용히 실패하면
+      # 토큰으로 폴백한다**(`lib/utils/oidc.js`는 던지지 않고 undefined를 반환한다). 그래서 이
+      # 두 줄을 지우는 것만으로 순수 OIDC로 돌아간다 — `permissions.id-token: write`는 그대로 둔다.
+      # 그것은 `--provenance`가 요구하는 것이기도 하다(provenance는 trusted publishing이 아니라
+      # `ACTIONS_ID_TOKEN_REQUEST_URL` 하나에 달려 있어 **토큰 인증에서도 정상 발급된다**).
       - name: Publish to npm (Trusted Publishing / OIDC + provenance)
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # bootstrap-only — remove with the secret after `npm trust`
         run: |
           case "$VERSION" in
             *-*) DIST_TAG='rc' ;;
