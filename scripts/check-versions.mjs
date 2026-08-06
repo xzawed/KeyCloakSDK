@@ -11,7 +11,7 @@
 // 레지스트리마다 다르기 때문이다(PEP 440 `0.1.0rc1` · RubyGems `0.1.0.rc1` · Maven `0.1.0-RC1` ·
 // SemVer `0.1.0-rc.1`). 표기를 통일하라고 요구하면 각 레지스트리가 거부한다.
 // ⚠️ go·php는 태그가 버전 SSOT라 매니페스트에 버전이 없다 — 검사 대상이 아니다(scripts/lib/deploy-facts.sh).
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 // 루트는 인자로 받는다(check-docs.mjs와 같은 관용) — 그래야 자가테스트가 픽스처 트리에 대해
@@ -83,6 +83,46 @@ const manifests = [
 for (const [lang, p, re] of manifests) {
   const v = pick(p, re, lang)
   if (v) found.push([lang, v, p])
+}
+
+// ── node: package-lock.json 이 매니페스트와 같은 버전을 기록하는가 ──
+//
+// lockfile은 루트 패키지 **자신의 버전**을 두 곳(`version`, `packages[""].version`)에 적는다.
+// `package.json`만 올리면 그 둘은 옛 값으로 남고 — 실측 — **`npm ci`는 실패하지 않는다.**
+// DEPLOY.md §4 step 1이 "같은 커밋에서 `npm install --package-lock-only`로 재생성하라"고
+// 적어 두었지만 그건 산문이었고, 잊어도 아무것도 잡지 않았다. Java가 7개 POM에 쓰는
+// "같은 값이 여러 곳에 있으면 전부 같아야 한다"를 node lockfile에 그대로 적용한다.
+{
+  const nodeV = found.find(([l]) => l === 'node')?.[1]
+  const lockPath = 'node/package-lock.json'
+  let lock = null
+  // ⚠️ **부재와 파싱 실패를 구분한다.** lockfile이 아예 없는 트리(이 가드 자신의 테스트
+  // 픽스처)에서는 검사할 것이 없어 조용히 넘어간다 — 그러나 파일이 있는데 읽히지 않으면
+  // 그건 실패다(가드가 조용히 무력화되면 안 된다). 실제 저장소에서 lock을 지워 이 검사를
+  // 피하는 경로는 열려 있지만, 그러면 node 워크플로의 `npm ci`가 전부 죽어 훨씬 시끄럽다.
+  if (existsSync(join(root, lockPath))) {
+    try {
+      lock = JSON.parse(read(lockPath))
+    } catch (e) {
+      errors.push(`${lockPath} 를 읽지 못했다: ${e.message}`)
+    }
+  }
+  if (nodeV && lock) {
+    const spots = [
+      ['version', lock.version],
+      ['packages[""].version', lock.packages?.['']?.version],
+    ]
+    for (const [where, v] of spots) {
+      if (v === undefined) {
+        errors.push(`${lockPath} 에 ${where} 가 없다 — lockfile 형식이 바뀌었다면 이 가드도 함께 고칠 것`)
+      } else if (v !== nodeV) {
+        errors.push(
+          `${lockPath} 의 ${where}="${v}" 가 node/package.json 의 "${nodeV}" 와 다르다 — ` +
+            `같은 커밋에서 \`npm install --package-lock-only\` 로 재생성하라(\`npm ci\`는 이 드리프트에 실패하지 않는다)`,
+        )
+      }
+    }
+  }
 }
 
 // ── 기저 버전(X.Y.Z) 일치 검사 ──

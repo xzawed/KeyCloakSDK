@@ -64,4 +64,41 @@ assert_not_contains "$out" "버전 SSOT" "--list: 사람용 요약 미출력(기
 : > "$TMP/rust/Cargo.toml"
 assert_fails node "$GUARD" "$TMP" --list
 
+# ---- node/package-lock.json 이 매니페스트와 어긋나면 실패해야 한다 ----
+# lockfile은 루트 패키지 자신의 버전을 두 곳에 적는다. `package.json`만 올리면 둘 다 옛 값으로
+# 남고 **`npm ci`는 실패하지 않는다**(실측) — DEPLOY.md가 재생성을 산문으로 요구했지만 잊어도
+# 아무것도 잡지 않았다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+cp -r "$FIX/." "$TMP/"
+nv="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).version)' "$TMP/node/package.json")"
+
+# 두 자리 모두 일치 → 통과(대조군: 없으면 "lock이 있으면 무조건 실패"인 가드와 구분 못 한다)
+printf '{"version":"%s","packages":{"":{"version":"%s"}}}\n' "$nv" "$nv" > "$TMP/node/package-lock.json"
+assert_ok node "$GUARD" "$TMP"
+
+# 최상위만 낡음 → 실패
+printf '{"version":"0.0.9","packages":{"":{"version":"%s"}}}\n' "$nv" > "$TMP/node/package-lock.json"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" 'package-lock.json 의 version="0.0.9"' "최상위 version 드리프트를 지목해야 한다"
+
+# packages[""] 만 낡음 → 실패(둘 중 하나만 검사하면 이 쪽이 새 나간다)
+printf '{"version":"%s","packages":{"":{"version":"0.0.9"}}}\n' "$nv" > "$TMP/node/package-lock.json"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" 'packages[""].version="0.0.9"' 'packages[""] 드리프트를 지목해야 한다'
+
+# 형식이 바뀌어 자리 자체가 사라지면 조용히 통과하면 안 된다
+printf '%s\n' '{"version":"0.1.0-rc.1","packages":{}}' > "$TMP/node/package-lock.json"
+assert_fails node "$GUARD" "$TMP"
+
+# 파일이 있는데 파싱 불가 → 실패(부재와 구분한다)
+printf '%s\n' 'not json' > "$TMP/node/package-lock.json"
+assert_fails node "$GUARD" "$TMP"
+
+# ⚠️ 대조군 — lockfile이 **아예 없는** 트리는 검사 대상이 아니다(이 가드의 다른 픽스처가 그렇다).
+# 없으면 "node/package.json이 있으면 lock도 반드시 있어야 한다"는 전혀 다른 가드가 된 것을 모른다.
+rm -f "$TMP/node/package-lock.json"
+assert_ok node "$GUARD" "$TMP"
+
 assert_report
