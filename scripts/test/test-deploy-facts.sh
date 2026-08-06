@@ -72,9 +72,17 @@ done
 for L in $DF_PUBLISHED; do
   assert_ok df_known "$L"
 done
-assert_ok df_is_published php
-assert_fails df_is_published ruby
-assert_fails df_is_published perl
+assert_ok df_is_published php   # 게시는 단방향이라 이 어서션은 영원히 참이다
+assert_fails df_is_published perl   # 언어가 아닌 토큰
+# ⚠️ **미게시 언어를 이름으로 못박지 말 것.** 여기 한때 `assert_fails df_is_published ruby`가
+# 있었고, ruby를 게시하는 날 그 줄이 **낡은 사실을 강제하는 쪽으로 뒤집혔다**(문서를 진실에
+# 맞추면 테스트가 빨개지는 상태) — `test-deploy-md.sh` 상단이 기록한 "zero tags" 실패와 같은
+# 부류다. 검사하려는 것은 "알려진 언어인데 미게시면 false"라는 **접근자의 동작**이지 특정
+# 언어가 아니므로, 대상을 SSOT에서 뽑는다.
+first_unpub="$(df_unpublished | awk '{print $1}')"
+assert_ok test -n "$first_unpub"
+assert_ok df_known "$first_unpub"
+assert_fails df_is_published "$first_unpub"
 # df_unpublished = DEPLOY_LANGS − DF_PUBLISHED (원소·개수 둘 다)
 unp="$(df_unpublished)"
 for L in $DEPLOY_LANGS; do

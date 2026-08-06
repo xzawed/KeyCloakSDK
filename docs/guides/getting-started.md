@@ -535,9 +535,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 <!-- doc-guard: kind=runtime lang=ruby -->
 Ruby **`3.2` or newer** (dev/CI top end 3.4) is required. The idiom is sync-only (all wrapped gems are synchronous), and it uses exception-based idioms (`KeycloakSdk::Error` hierarchy — isomorphic with Java/Python/Node/C#/PHP, in contrast to the error-value idioms of Go/Rust). Docker is needed only for integration tests.
 
-### 2) Local installation (current — not yet published)
+### 2) Local installation (development)
 
-Since it is not published to RubyGems, clone the repository and install the dependencies under `ruby/` to verify:
+To build against your working copy, clone the repository and install the dependencies under `ruby/`:
 
 ```bash
 cd ruby && bundle install   # install dependencies (faraday/jwt/rack-oauth2, etc.)
@@ -546,15 +546,15 @@ cd ruby && bundle install   # install dependencies (faraday/jwt/rack-oauth2, etc
 
 The gem name is `keycloak-sdk` (hyphen), and the require/module name is `keycloak_sdk`/`KeycloakSdk` (underscore — to avoid a clash with the existing `keycloak` gem's `Keycloak` module).
 
-### 3) Installation after release (future)
+### 3) Installation from RubyGems (first release candidate available)
 
-Once publishing to RubyGems is complete:
+The first release candidate, `0.1.0.rc1`, is live on RubyGems; there is no stable release yet:
 
 ```bash
-gem install keycloak-sdk
+gem install keycloak-sdk -v 0.1.0.rc1
 ```
 
-> ⚠️ **Not yet published to RubyGems (human-gated, RubyGems Trusted Publishing / OIDC).** The actual publish runs only when a human pushes a `ruby-v*` tag to trigger [`.github/workflows/ruby-release.yml`](../../.github/workflows/ruby-release.yml) (the first time requires either a manual API-key publish or pre-registering a Trusted Publisher in the rubygems.org UI — you cannot register one before the gem exists). For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> ⚠️ **Prerelease-only caveat, and RubyGems is stricter than pip or Cargo.** A bare `gem install keycloak-sdk` resolves **nothing** while an RC is the only release — RubyGems never falls back to a pre-release. Pass `--pre` or pin the exact version (a `Gemfile` needs `gem "keycloak-sdk", "0.1.0.rc1"` for the same reason). Releases remain human-gated: a publish runs only when a human pushes a `ruby-v*` tag to trigger [`.github/workflows/ruby-release.yml`](../../.github/workflows/ruby-release.yml) over RubyGems Trusted Publishing (OIDC — no stored secret). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 
