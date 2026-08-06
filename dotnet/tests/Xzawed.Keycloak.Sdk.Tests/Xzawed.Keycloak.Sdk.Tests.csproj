@@ -19,7 +19,7 @@
              MSBuild는 중복 타깃을 경고 없이 마지막 import로 덮으므로, 버전이 갈리는 순간
              조용한 동작 변경이 된다(10.0.1에서는 본문이 동일해 아직 무해). -->
     <PackageReference Include="coverlet.collector" Version="10.0.1" />
-    <PackageReference Include="WireMock.Net" Version="2.13.0" />
+    <PackageReference Include="WireMock.Net" Version="2.14.0" />
     <PackageReference Include="Testcontainers.Keycloak" Version="4.13.0" />
   </ItemGroup>
   <ItemGroup>
