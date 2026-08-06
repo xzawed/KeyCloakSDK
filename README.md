@@ -13,7 +13,7 @@ English · [한국어](README.ko.md)
 
 > "Polyglot" here means **programming languages**, not natural-language localization (i18n).
 >
-> ⚠️ **First release candidates are live for PHP, Python, .NET and Rust; the other five languages are not on a registry yet** — every release is human-gated. Everything below runs today from a clone: see [Try it today](#try-it-today).
+> ⚠️ **First release candidates are live for PHP, Python, .NET, Rust and Ruby; the other four languages are not on a registry yet** — every release is human-gated. Everything below runs today from a clone: see [Try it today](#try-it-today).
 
 ---
 
@@ -109,7 +109,7 @@ Secrets and tokens are masked in logs and serialization, TLS verification is on 
 
 All nine SDKs are feature-complete and merged to `main`. Each is verified against a **real Keycloak 26.6 server** (Testcontainers; PHP and Ruby shell out to the docker CLI) and held to a coverage gate of line ≥ 90% / branch ≥ 85% on logic modules. Security cores were reviewed adversarially, and pre-release hardening (OIDC nonce replay protection, configurable JWT signature algorithms, dependency CVE audits) is applied across all nine.
 
-Everything is **pre-1.0 (`0.1.0` line)**. Four of the nine have shipped their first release candidates to public registries — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 · crates.io `keycloak-sdk` 0.1.0-rc.1 — while the remaining five (Java · Node · Go · Ruby · Kotlin) are unpublished, behind a human tag gate. See [DEPLOY.md](DEPLOY.md) for that procedure, and [SECURITY.md](SECURITY.md) for the security policy and what pre-1.0 means here.
+Everything is **pre-1.0 (`0.1.0` line)**. Five of the nine have shipped their first release candidates to public registries — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 · crates.io `keycloak-sdk` 0.1.0-rc.1 · RubyGems `keycloak-sdk` 0.1.0.rc1 — while the remaining four (Java · Node · Go · Kotlin) are unpublished, behind a human tag gate. See [DEPLOY.md](DEPLOY.md) for that procedure, and [SECURITY.md](SECURITY.md) for the security policy and what pre-1.0 means here.
 
 ---
 

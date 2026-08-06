@@ -6,7 +6,7 @@ English · [한국어](https://github.com/xzawed/KeyCloakSDK/blob/main/ruby/READ
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) — one API surface, isomorphic across all of them: [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **Pre-release** — not yet published to RubyGems.
+> **Pre-release** — the first release candidate (`0.1.0.rc1`) is on RubyGems; there is no stable release yet. ⚠️ **RubyGems does not install a pre-release by default**: a bare `gem install keycloak-sdk` finds nothing until a stable version exists. Ask for it explicitly — `gem install keycloak-sdk --pre`, or pin the exact version as shown below.
 
 ## Requirements
 
@@ -16,14 +16,16 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · 
 ## Install
 
 ```bash
-gem install keycloak-sdk
+gem install keycloak-sdk -v 0.1.0.rc1
 ```
 
 Or in a `Gemfile`:
 
 ```ruby
-gem "keycloak-sdk"
+gem "keycloak-sdk", "0.1.0.rc1"
 ```
+
+While `0.1.0.rc1` is the only release, the version must be explicit — `gem install keycloak-sdk` and a bare `gem "keycloak-sdk"` both skip pre-releases and resolve nothing. Drop the pin once a stable release exists.
 
 > **Name mismatch, on purpose:** the gem is `keycloak-sdk` (hyphen) but the require path and module are `keycloak_sdk` / `KeycloakSdk` (underscore) — this avoids colliding with the existing `keycloak` gem's `Keycloak` module.
 

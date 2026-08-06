@@ -4,19 +4,21 @@ Keycloak SDK for Ruby — 인증(OIDC/OAuth2) + 관리(Admin REST) API. Keycloak
 
 [English](https://github.com/xzawed/KeyCloakSDK/blob/main/ruby/README.md) · 한국어
 
-> **사전 릴리스** — RubyGems에 아직 게시되지 않았다.
+> **사전 릴리스** — 첫 릴리스 후보(`0.1.0.rc1`)가 RubyGems에 게시됐다. 안정 릴리스는 아직 없다. ⚠️ **RubyGems는 프리릴리스를 기본으로 설치하지 않는다** — 안정 버전이 생기기 전까지 맨 `gem install keycloak-sdk`는 아무것도 찾지 못한다. `--pre`를 붙이거나 아래처럼 버전을 명시해야 한다.
 
 ## 설치
 
 ```bash
-gem install keycloak-sdk
+gem install keycloak-sdk -v 0.1.0.rc1
 ```
 
 또는 `Gemfile`:
 
 ```ruby
-gem "keycloak-sdk"
+gem "keycloak-sdk", "0.1.0.rc1"
 ```
+
+`0.1.0.rc1`이 유일한 릴리스인 동안은 버전을 명시해야 한다 — 맨 `gem install keycloak-sdk`와 버전 없는 `gem "keycloak-sdk"`는 둘 다 프리릴리스를 건너뛰어 아무것도 해석하지 못한다. 안정 릴리스가 나오면 핀을 지운다.
 
 require 경로는 `require "keycloak_sdk"`(gem명은 하이픈 `keycloak-sdk`, 모듈/require명은 언더스코어 `keycloak_sdk`/`KeycloakSdk` — 기존 `keycloak` gem의 `Keycloak` 모듈과 충돌 회피).
 
