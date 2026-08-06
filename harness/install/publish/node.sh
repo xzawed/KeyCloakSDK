@@ -60,13 +60,28 @@ log "빌드 산출물 확인됨: $EXTRACT_DIR/$TARBALL"
 # --no-provenance: node/package.json의 publishConfig.provenance=true를 그대로 두면 로컬(비-CI)
 # 환경에서 npm이 provenance 생성을 시도하다 실패한다 — 부록 원 명령엔 없으나 이 SDK의 package.json
 # 설정 때문에 필요해진 로컬 전용 오버라이드(CLI 플래그가 publishConfig보다 우선).
+#
+# ⚠️ **`--tag`는 오늘 필요 없지만 내일 필수가 된다.** npm 11부터 프리릴리스를 기본 태그로
+# 게시하려 하면 하드 거부한다 — `lib/commands/publish.js`:
+#     if (isPreRelease && isDefaultTag) throw new Error('You must specify a tag using --tag …')
+# 실측: 이 가드는 npm 11.11.0에 **있고** `node:22-alpine`의 npm 10.9.8에는 **없다**. 그래서
+# 지금은 `--tag` 없이도 통과하지만, base 이미지의 npm이 11.x로 올라가는 순간 `node-v*` RC 태그마다
+# 이 스크립트가 죽는다 — 그리고 install-smoke는 `node-release.yml`의 `needs:`라 **릴리스 전체가
+# 막힌다**. 미리 붙여두면 오늘 무해하고(10.9.8도 `--tag`를 받는다) 덤으로 하네스 레지스트리의
+# dist-tag 상태가 npmjs와 같아진다. 파생 규칙은 `node-release.yml`과 동일하게 둔다 —
+# SemVer 프리릴리스만 하이픈을 포함한다.
+case "$PKG_VER" in
+  *-*) NPM_DIST_TAG='rc' ;;
+  *) NPM_DIST_TAG='latest' ;;
+esac
+
 publish_once() {
   docker run --rm --network install-net \
     -v "$(hostpath "$EXTRACT_DIR"):/work" \
     node:22-alpine sh -c "
       set -e
       echo '//verdaccio:4873/:_authToken=local-anon' > ~/.npmrc
-      npm publish /work/$TARBALL --registry $REGISTRY_URL --access public --no-provenance
+      npm publish /work/$TARBALL --registry $REGISTRY_URL --access public --no-provenance --tag $NPM_DIST_TAG
     "
 }
 
