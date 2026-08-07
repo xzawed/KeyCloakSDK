@@ -195,13 +195,13 @@ The distribution name is `@xzawed/keycloak-sdk`, and the import path is the same
 
 ### 3) Installation from npm (first release candidate available)
 
-The first release candidate, `0.1.0-rc.1`, is live on npm under the `rc` dist-tag; there is no stable release yet:
+The first release candidate, `0.1.0-rc.2`, is live on npm under the `rc` dist-tag; there is no stable release yet:
 
 ```bash
 npm install @xzawed/keycloak-sdk@rc
 ```
 
-> ⚠️ **Prerelease-only caveat, and npm is the harshest of the nine.** While the RC is the only published version there is no `latest` dist-tag, and npm does **not** fall back to a pre-release the way pip and Cargo do — it fails outright. Measured: a bare `npm install @xzawed/keycloak-sdk` and a `"^0.1.0"` dependency range both error with `ETARGET — No matching version found`. Use `@rc` as above, or pin `@0.1.0-rc.1`; the bare form starts working once a stable release exists. Releases remain human-gated: a publish runs only when a human pushes a `node-v*` tag to trigger [`.github/workflows/node-release.yml`](../../.github/workflows/node-release.yml) (npm Trusted Publishing / OIDC + provenance). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> ⚠️ **Prerelease-only caveat, and npm is the harshest of the nine.** While the RC is the only published version there is no `latest` dist-tag, and npm does **not** fall back to a pre-release the way pip and Cargo do — it fails outright. Measured: a bare `npm install @xzawed/keycloak-sdk` and a `"^0.1.0"` dependency range both error with `ETARGET — No matching version found`. Use `@rc` as above, or pin `@0.1.0-rc.2`; the bare form starts working once a stable release exists. Releases remain human-gated: a publish runs only when a human pushes a `node-v*` tag to trigger [`.github/workflows/node-release.yml`](../../.github/workflows/node-release.yml) (npm Trusted Publishing / OIDC + provenance). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 

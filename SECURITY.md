@@ -40,7 +40,7 @@ Issues in Keycloak itself (the server) should be reported to the
 This project is **pre-1.0**. Six SDKs have shipped a first **release candidate** to
 a public registry — PHP (`0.1.0-rc.1`, Packagist), Python (`0.1.0rc1`, PyPI),
 .NET (`0.1.0-rc.1`, NuGet), Rust (`0.1.0-rc.1`, crates.io), Ruby
-(`0.1.0.rc1`, RubyGems) and Node (`0.1.0-rc.1`, npm). The other three
+(`0.1.0.rc1`, RubyGems) and Node (`0.1.0-rc.2`, npm). The other three
 (Java, Go, Kotlin) are at `0.1.0` (Java: `0.1.0-SNAPSHOT`) and are not
 on a registry. **No language has a stable release yet.** Each release is
 human-gated, see [DEPLOY.md](DEPLOY.md).
