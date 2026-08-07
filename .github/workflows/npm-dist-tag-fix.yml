@@ -1,0 +1,69 @@
+name: npm dist-tag fix (one-off)
+
+# ⚠️ **일회용 유지보수 워크플로다. 목적을 달성하면 이 파일을 지운다.**
+#
+# 왜 필요한가: `@xzawed/keycloak-sdk`의 첫 게시(`node-v0.1.0-rc.2`)는 `--tag rc`로 나갔는데
+# (워크플로 로그: "publishing 0.1.0-rc.2 under dist-tag 'rc'") npm이 **`latest`를 함께 붙였다** —
+# 실측 결과 `dist-tags: {"rc":"0.1.0-rc.2","latest":"0.1.0-rc.2"}`. 새 패키지의 첫 게시에서
+# npm이 `latest`를 강제로 만드는 동작이고, `npm-dist-tag` 문서는 이 경우를 다루지 않는다
+# (문서는 "publishing sets latest unless --tag is used"라고만 적혀 있어 관측과 어긋난다).
+#
+# 그 결과 두 가지가 깨졌다:
+#   1. `DEPLOY.md` §7의 의도 — RC가 기본 설치 대상이 되면 안 된다. 지금은 맨 `npm install`이 RC를 준다.
+#   2. 게시된 `node/README.md`의 주장 — "맨 설치는 ETARGET으로 실패한다"가 거짓이 됐다.
+#      그 README는 npm 랜딩 페이지이고 **버전에 영구 고정**돼 새 버전 없이는 못 고친다.
+#
+# `latest`를 떼면 둘 다 원래 의도대로 복원된다(README를 다시 태울 필요가 없다).
+# 안정 `0.1.0`이 나가면 npm이 다시 `latest`를 붙이고, 그때는 그게 옳다.
+#
+# ⚠️ 수동 트리거 전용이다. 자동 실행 트리거를 여기 추가하지 말 것 — 레지스트리 상태를 바꾸는
+# 조작은 릴리스와 같은 등급의 사람 게이트여야 한다.
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'npm package name'
+        required: true
+        default: '@xzawed/keycloak-sdk'
+      tag:
+        description: 'dist-tag to remove'
+        required: true
+        default: 'latest'
+
+permissions: {}
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Before
+        env:
+          PKG: ${{ inputs.package }}
+        run: npm view "$PKG" dist-tags --json
+
+      # 시크릿 미설정을 조용한 스킵으로 두지 않는다(CLAUDE.md의 릴리스 가드와 같은 원칙) —
+      # 아무것도 하지 않고 green으로 끝나면 성공한 실행과 구분되지 않는다.
+      - name: Remove the dist-tag
+        env:
+          PKG: ${{ inputs.package }}
+          TAG: ${{ inputs.tag }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::NPM_TOKEN이 설정돼 있지 않다 — 아무것도 하지 않고 실패한다(fail-closed)."
+            exit 1
+          fi
+          npm dist-tag rm "$PKG" "$TAG"
+
+      - name: After
+        env:
+          PKG: ${{ inputs.package }}
+        run: npm view "$PKG" dist-tags --json
