@@ -4,7 +4,7 @@ A TypeScript SDK for [Keycloak](https://www.keycloak.org/) covering both **Authe
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .NET · PHP · Rust · Ruby · Kotlin) — idiomatic in each language, isomorphic across all of them. Monorepo: <https://github.com/xzawed/KeyCloakSDK>
 
-> **Pre-release** — the first release candidate (`0.1.0-rc.2`) is on npm under the `rc` dist-tag; there is no stable release yet. ⚠️ **npm does not fall back to a pre-release, it errors**: while the RC is the only version, both `npm install @xzawed/keycloak-sdk` and a `^0.1.0` dependency range fail with `ETARGET — No matching version found`. Ask for it explicitly — `npm install @xzawed/keycloak-sdk@rc` — or pin `0.1.0-rc.1`.
+> **Pre-release** — the first release candidate (`0.1.0-rc.2`) is on npm; there is no stable release yet. It carries **both** the `rc` and `latest` dist-tags, because npm assigns `latest` to a package's first version regardless of `--tag` and then refuses to let that tag be removed. So a bare `npm install @xzawed/keycloak-sdk` gives you this RC today — ask for it explicitly instead: `npm install @xzawed/keycloak-sdk@rc`, or pin `0.1.0-rc.2`.
 
 ## Requirements
 
@@ -19,13 +19,11 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .
 npm install @xzawed/keycloak-sdk@rc
 ```
 
-While `0.1.0-rc.2` is the only published version there is no `latest` dist-tag, so the version **must** be explicit — a bare `npm install @xzawed/keycloak-sdk` fails with `ETARGET`, and so does `"@xzawed/keycloak-sdk": "^0.1.0"` in a manifest. Pin the exact version if you would rather not track the `rc` tag:
+⚠️ **A bare `npm install @xzawed/keycloak-sdk` also resolves this release candidate right now — ask for `@rc` anyway.** The workflow published under the `rc` tag, but npm assigns `latest` on a package's *first* version regardless of `--tag`, and it refuses to let that tag be removed (`403` on `DELETE .../dist-tags/latest`). So `latest` and `rc` currently point at the same prerelease, and a bare install or a `^0.1.0` range silently gives you an RC. Being explicit keeps that choice visible — and it keeps working when a stable release takes over `latest`. Pin the exact version if you would rather not track the `rc` tag:
 
 ```bash
 npm install @xzawed/keycloak-sdk@0.1.0-rc.2
 ```
-
-Once a stable release lands, `latest` starts pointing at it and the bare form works again.
 
 ## Quickstart
 
