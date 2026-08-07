@@ -479,7 +479,9 @@ All nine registries support prerelease versions, and most resolvers exclude them
 
 **npm's dist-tag is handled for you — but read the next paragraph before writing install instructions.** `node-release.yml` derives the dist-tag from the version: a SemVer prerelease (anything containing a hyphen — `0.1.0-rc.1`) publishes under `rc`, a normal version under `latest`. (npm ≥ 11 in fact *refuses* to publish a prerelease under the default tag at all — `publish.js`: `You must specify a tag using --tag when publishing a prerelease version.` — so this derivation is now required, not merely polite. The CI runner installs `npm@latest`, currently 12.x.)
 
-⚠️ **While the RC is the only version, a bare `npm install @xzawed/keycloak-sdk` does not fall back to it — it fails outright.** Measured against a registry serving `dist-tags: {"rc": "0.1.0-rc.1"}` and nothing else:
+⚠️⚠️ **The very first publish of a package gets `latest` anyway — `--tag` does not prevent it.** Measured on the real registry: `node-v0.1.0-rc.2` published with `--tag rc` (workflow log: `publishing 0.1.0-rc.2 under dist-tag 'rc'`) and npm still produced `dist-tags: {"rc":"0.1.0-rc.2","latest":"0.1.0-rc.2"}`. The `npm-dist-tag` docs do not describe this — they say publishing sets `latest` *unless* `--tag` is used, which is not what happens on a package's first version. The consequence is exactly what §7 exists to prevent: a bare install hands everyone the RC. Fix it after the fact with `npm dist-tag rm <pkg> latest`; a later stable release re-creates `latest` correctly. **Check `npm view <pkg> dist-tags` after any first publish** — do not assume `--tag` was honoured.
+
+⚠️ **Once `latest` is absent, a bare `npm install @xzawed/keycloak-sdk` does not fall back to the RC — it fails outright.** Measured against a registry serving `dist-tags: {"rc": "0.1.0-rc.1"}` and nothing else:
 
 | consumer form | result |
 |---|---|
