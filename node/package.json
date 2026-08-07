@@ -1,6 +1,6 @@
 {
   "name": "@xzawed/keycloak-sdk",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "description": "Keycloak SDK for Node.js/TypeScript — OIDC/OAuth2 authentication + Admin REST API, part of a nine-language polyglot SDK",
   "keywords": [
     "keycloak",

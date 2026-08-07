@@ -109,7 +109,7 @@ Secrets and tokens are masked in logs and serialization, TLS verification is on 
 
 All nine SDKs are feature-complete and merged to `main`. Each is verified against a **real Keycloak 26.6 server** (Testcontainers; PHP and Ruby shell out to the docker CLI) and held to a coverage gate of line ≥ 90% / branch ≥ 85% on logic modules. Security cores were reviewed adversarially, and pre-release hardening (OIDC nonce replay protection, configurable JWT signature algorithms, dependency CVE audits) is applied across all nine.
 
-Everything is **pre-1.0 (`0.1.0` line)**. Six of the nine have shipped their first release candidates to public registries — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 · crates.io `keycloak-sdk` 0.1.0-rc.1 · RubyGems `keycloak-sdk` 0.1.0.rc1 · npm `@xzawed/keycloak-sdk` 0.1.0-rc.1 — while the remaining three (Java · Go · Kotlin) are unpublished, behind a human tag gate. See [DEPLOY.md](DEPLOY.md) for that procedure, and [SECURITY.md](SECURITY.md) for the security policy and what pre-1.0 means here.
+Everything is **pre-1.0 (`0.1.0` line)**. Six of the nine have shipped their first release candidates to public registries — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 · crates.io `keycloak-sdk` 0.1.0-rc.1 · RubyGems `keycloak-sdk` 0.1.0.rc1 · npm `@xzawed/keycloak-sdk` 0.1.0-rc.2 — while the remaining three (Java · Go · Kotlin) are unpublished, behind a human tag gate. See [DEPLOY.md](DEPLOY.md) for that procedure, and [SECURITY.md](SECURITY.md) for the security policy and what pre-1.0 means here.
 
 ---
 
