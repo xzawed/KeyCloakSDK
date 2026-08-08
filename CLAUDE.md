@@ -255,7 +255,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(CI) `main`은 룰셋 `PRIMARY`가 지킨다 — required 체크에 언어 CI를 넣으면 저장소가 잠긴다**(`paths:` 필터는 체크를 *생성조차* 안 해 Pending 영구 차단, `bypass_actors: []`라 소유자도 못 푼다 — 잡 레벨 `if:` skip과 정반대다). 상세: `.claude/rules/ci.md` · [CONTRIBUTING.md §4](CONTRIBUTING.md)
 - ⚠️ **(CI) 태그 룰셋 3종은 active이되 admin bypass가 있다 — 사람이 손으로 미는 경로는 살아 있다.** GitHub App을 `tags-create.json` bypass에 넣는 것이 남아서 `dispatch-release.yml`은 아직 fail-closed다. 상세: `.claude/rules/ci.md`
 - ⚠️ **(CI) 배포 시크릿 미설정은 "스킵"이 아니라 실패여야 한다** — 아무것도 게시하지 않고 green으로 끝난 실행은 성공한 실행과 구분되지 않는다(태그·Release는 있는데 레지스트리는 빈 상태). 상세: `.claude/rules/ci.md`
-- ⚠️ **(CI) dependabot이 자동으로 올려서는 안 되는 핀 두 종류**(ref 이름이 곧 의미인 액션 · 소비자 하한을 나타내는 버전) — `.github/dependabot.yml`의 `ignore`가 근거와 함께 막는다. 상세: `.claude/rules/ci.md`
+- ⚠️ **(CI) dependabot이 올려서는 안 되는 핀 두 종류**(**ref가 브랜치인 액션** — `rust-toolchain`·`gh-action-pypi-publish` · 소비자 하한 버전) — `.github/dependabot.yml`의 `ignore`가 근거와 함께 막는다. 상세: `.claude/rules/ci.md`
 - ⚠️ **(CI) Dependabot 트리거 run에는 Actions 시크릿이 노출되지 않는다** — `SONAR_TOKEN`이 빈 문자열이 되어 SonarCloud가 반드시 실패한다(코드 신호 아님). 상세: `.claude/rules/ci.md`
 - ⚠️ **(CI) 로컬↔CI 발산**(CRLF 포매터 오탐 · pip-audit editable · jacoco는 `verify` 바인딩이라 `mvn test`로 미검증 등). 상세: `.claude/rules/ci.md`
 - ⚠️ **(하네스) 앱/레지스트리 전 컨테이너 Alpine(musl)** — Windows Docker Desktop의 glibc-DNS 게차 회피. 잔여 follow-up도 함께. 상세: `.claude/rules/ci.md`
