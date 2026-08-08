@@ -11,9 +11,9 @@ paths:
 
 ## 툴체인 (빌드 명령)
 
-Kotlin은 JDK 21(Eclipse Temurin `jdk-21.0.8.9-hotspot`) + 포터블 Gradle `9.6.1`(로컬 실행용)을 사용한다(래퍼도 동일하게 `9.6.1` — `kotlin/gradle/wrapper/gradle-wrapper.properties`). 프리픽스를 인라인 지정하고 명령은 `gradle -p kotlin <task>`(또는 `kotlin/`에서 `./gradlew`)로 실행한다:
+Kotlin은 JDK 21(Eclipse Temurin `jdk-21.0.11.10-hotspot`) + 포터블 Gradle `9.6.1`(로컬 실행용)을 사용한다(래퍼도 동일하게 `9.6.1` — `kotlin/gradle/wrapper/gradle-wrapper.properties`). 프리픽스를 인라인 지정하고 명령은 `gradle -p kotlin <task>`(또는 `kotlin/`에서 `./gradlew`)로 실행한다:
 ```bash
-export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot}" PATH="${KCSDK_TOOLS:-$HOME/tools}/gradle-9.6.1/bin:$PATH" GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
+export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot}" PATH="${KCSDK_TOOLS:-$HOME/tools}/gradle-9.6.1/bin:$PATH" GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
 gradle -p kotlin build              # 빌드
 gradle -p kotlin test               # 단위테스트. Docker 불필요
 gradle -p kotlin integrationTest    # 통합 E2E 1개(Docker 필요 — Testcontainers/dasniko, 실제 Keycloak 26.6)

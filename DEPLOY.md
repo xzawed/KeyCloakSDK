@@ -321,7 +321,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 - Version bump: automatic (`versions-maven-plugin` injects the tag value — `java/pom.xml` keeps `-SNAPSHOT`, no file edits needed).
 - dry-run:
   ```bash
-  export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot}" PATH="${KCSDK_TOOLS:-$HOME/tools}/apache-maven-3.9.9/bin:$PATH"
+  export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot}" PATH="${KCSDK_TOOLS:-$HOME/tools}/apache-maven-3.9.9/bin:$PATH"
   mvn -f java/pom.xml -Prelease -DskipTests -DskipITs=true -Dgpg.skip=true package
   # → confirm *-sources.jar / *-javadoc.jar are generated under each target/ of core/auth/admin/keycloak-sdk
   ```
@@ -339,7 +339,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 - Version bump: `kotlin/build.gradle.kts` `version` (**manual** — unlike Java, the tag does not auto-inject it; commit it matching the tag value exactly). The tag↔version guard (§1) enforces this.
 - dry-run:
   ```bash
-  export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot}" PATH="${KCSDK_TOOLS:-$HOME/tools}/gradle-9.6.1/bin:$PATH" GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
+  export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot}" PATH="${KCSDK_TOOLS:-$HOME/tools}/gradle-9.6.1/bin:$PATH" GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
   gradle -p kotlin publishToMavenLocal
   # → confirm keycloak-sdk-kotlin-0.1.0.jar (+sources/javadoc) is generated in the local ~/.m2
   ```
