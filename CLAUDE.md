@@ -69,21 +69,23 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 
 ## 현재 상태
 
-9개 언어 SDK 모두 `main` 병합 완료. PHP·Python·.NET·**Rust** 4개는 첫 RC가 공개 레지스트리에 게시됐다 — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 · crates.io `keycloak-sdk` 0.1.0-rc.1. 나머지 5개(Java·Node·Go·Ruby·Kotlin)는 미게시이며, 배포는 여전히 전부 사람 승인 게이트다(사람이 태그를 민다).
+9개 언어 SDK 모두 `main` 병합 완료. PHP·Python·.NET·Rust·**Ruby·Node** 6개는 첫 RC가 공개 레지스트리에 게시됐다(좌표·버전은 아래 표). 나머지 3개(Java·Go·Kotlin)는 미게시이며, 배포는 여전히 전부 사람 승인 게이트다(사람이 태그를 민다).
+
+⚠️ **Java는 "미게시"지만 태그는 이미 소모됐다** — `v0.1.0-RC1` push → `release.yml` 4잡 초록 → **Portal 스테이징**까지 갔고(Central 404 확인), 남은 건 사람이 Publish를 누르는 것 하나다(DEPLOY.md §2-A step 6).
 
 | 언어 | 배포명 | 태그 접두 | 배포 |
 |---|---|---|---|
-| Java | `io.github.xzawed:keycloak-sdk` | `v*` | 미실행 |
+| Java | `io.github.xzawed:keycloak-sdk` | `v*` | **스테이징**(`v0.1.0-RC1`, Portal Publish 대기) |
 | Python | `keycloak-sdk` | `py-v*` | 게시됨(`0.1.0rc1` RC) |
-| Node | `@xzawed/keycloak-sdk` | `node-v*` | 미실행 |
+| Node | `@xzawed/keycloak-sdk` | `node-v*` | 게시됨(`0.1.0-rc.2` RC) |
 | Go | `github.com/xzawed/KeyCloakSDK/go` | `go/v*` | 미실행 |
 | C#/.NET | `Xzawed.Keycloak.Sdk` | `dotnet-v*` | 게시됨(`0.1.0-rc.1` RC) |
 | PHP | `xzawed/keycloak-sdk` | `php-v*` | 게시됨(`0.1.0-rc.1` RC) |
 | Rust | `keycloak-sdk` | `rust-v*` | 게시됨(`0.1.0-rc.1` RC) |
-| Ruby | `keycloak-sdk` | `ruby-v*` | 미실행 |
-| Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` | `kotlin-v*` | 미실행 |
+| Ruby | `keycloak-sdk` | `ruby-v*` | 게시됨(`0.1.0.rc1` RC) |
+| Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` | `kotlin-v*` | 미실행(시크릿 등록됨) |
 
-**릴리스-레디니스 감사(브랜치 `fix/release-readiness-blockers`)**: 게시 직전 차단요소를 훑어 릴리스 워크플로(태그↔매니페스트 버전 가드·시크릿 미설정 시 fail-closed·발행 전 통합 E2E 게이트·서드파티 액션 SHA 핀·`permissions` 최소화)와 패키징 표면(패키지에 담기는 LICENSE·영문 README·레지스트리 메타데이터 보강, Rust 캐럿 요구 전환 + `Cargo.lock` 커밋 + `keycloak::types` 재노출)을 고쳤다. **PHP 선행작업은 전부 끝났다** — 미러 저장소 `xzawed/keycloak-sdk-php` 생성과 `PHP_SPLIT_TOKEN` 등록(`./scripts/release-readiness.sh php` → `secrets=set`)에 이어, 첫 `php-v*` 릴리스가 미러를 채운 뒤 **Packagist 등록까지 완료**됐다(`xzawed/keycloak-sdk` 라이브 — 아래 (PHP) Packagist 게차).
+**릴리스-레디니스 감사(브랜치 `fix/release-readiness-blockers`)**: 게시 직전 차단요소를 훑어 릴리스 워크플로(태그↔매니페스트 버전 가드·시크릿 미설정 시 fail-closed·발행 전 통합 E2E 게이트·서드파티 액션 SHA 핀·`permissions` 최소화)와 패키징 표면(패키지에 담기는 LICENSE·영문 README·레지스트리 메타데이터 보강, Rust 캐럿 요구 전환 + `Cargo.lock` 커밋 + `keycloak::types` 재노출)을 고쳤다. PHP 선행작업(미러 저장소·`PHP_SPLIT_TOKEN`·Packagist 등록)은 전부 끝났다 — 아래 (PHP) Packagist 게차.
 
 구현 경위·PR 이력: [docs/governance/history.md](docs/governance/history.md) · 배포 절차: [DEPLOY.md](DEPLOY.md) · **`docs/` 전체 지도(각 문서에만 있는 것까지): [docs/README.md](docs/README.md)**
 
@@ -415,7 +417,7 @@ dev(비앵커 — 버전이 셀 안 산문이라 기계 대조 밖): `typescript
 
 ### 문서 언어 규칙 (bilingual README + 영문 사용자 문서, PR #31·#32)
 
-- **README는 영문 기본 + 한글 미러**: [`README.md`](README.md)(영문, 기본)와 [`README.ko.md`](README.ko.md)(한글)는 **동일 구조의 미러**다 — 한쪽을 고치면 다른 쪽도 함께 갱신해 동기 유지(상단 상호 링크 `English ↔ 한국어`). 둘 다 슬림 랜딩(정적 배지·9언어 표·30초 퀵스타트·보안·상태·링크)이며, 게시가 언어별로 진행 중인 전환기(human-gated, 9개 중 4개만 첫 RC 게시)이므로 **라이브 레지스트리 배지 금지**(정적 배지만 — 오해 방지).
+- **README는 영문 기본 + 한글 미러**: [`README.md`](README.md)(영문, 기본)와 [`README.ko.md`](README.ko.md)(한글)는 **동일 구조의 미러**다 — 한쪽을 고치면 다른 쪽도 함께 갱신해 동기 유지(상단 상호 링크 `English ↔ 한국어`). 둘 다 슬림 랜딩(정적 배지·9언어 표·30초 퀵스타트·보안·상태·링크)이며, 게시가 언어별로 진행 중인 전환기(human-gated, 9개 중 6개만 첫 RC 게시)이므로 **라이브 레지스트리 배지 금지**(정적 배지만 — 오해 방지).
 - **사용자 대상 문서는 영문(in-place)**: [`docs/guides/`](docs/guides/) 3종 · [`docs/roadmap/language-support.md`](docs/roadmap/language-support.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`DEPLOY.md`](DEPLOY.md) · [`harness/README.md`](harness/README.md) · [`harness/install/README.md`](harness/install/README.md)는 영문으로 유지·갱신한다(한글 미러 없음).
 - **내부 산출물은 한글 유지**: [`docs/superpowers/`](docs/superpowers/)(설계 스펙·WBS 플랜)·[`docs/governance/`](docs/governance/)(검증 로그)와 이 `CLAUDE.md`는 개발/거버넌스 내부 문서로 한글을 유지한다.
 - **앵커 주의**: 영문 문서에서 헤딩을 바꾸면 `#anchor`가 바뀐다. `getting-started.md`의 `## C# / .NET`(앵커 `#c--net`)은 양쪽 README가 링크하므로 **헤딩 텍스트를 바꾸지 말 것**.
