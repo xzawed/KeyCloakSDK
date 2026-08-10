@@ -105,6 +105,30 @@ claim_at README.md "the remaining $unpub_en (" "하단 서술"
 claim_at SECURITY.md "The other $unpub_en" "미게시 열거"
 claim_at docs/guides/getting-started.md "The other $unpub_en (" "상단 배너"
 
+# ---- 가드 스코프 밖에 있던 네 자리(2026-08-10에 드리프트가 실제로 발견된 곳) ----
+#
+# ⚠️ 위 목록은 **랜딩 문서만** 겨눴다. Ruby·Node가 게시된 뒤 그 넷은 손으로 갱신됐지만, 같은
+# 사실을 말하는 다른 네 문서는 `4개 / 나머지 5개`에 그대로 멈춰 있었고 자가테스트 15종이 전부
+# 초록이었다 — 가드가 있다는 사실이 오히려 안심시킨 부류다. 특히 `CLAUDE.md`는 세션마다
+# 자동 로드되는 문서라 낡은 값이 **다음 작업의 전제**가 된다.
+#
+# ⚠️ 처음 보고한 드리프트는 2곳(CLAUDE.md·DEPLOY.md)이었고, 리포 전수 재스캔에서 2곳
+# (CHANGELOG.md·roadmap)이 더 나왔다. "지적받은 집합은 불완전하다"의 실례라 넷 다 넣는다.
+Pub_en="$(printf '%s' "$pub_en" | sed 's/^./\U&/')"
+
+claim_at CLAUDE.md "${pub_n}개는 첫 RC가 공개 레지스트리에 게시됐다" "현재 상태(게시 수)"
+claim_at CLAUDE.md "나머지 ${unpub_n}개("                            "현재 상태(미게시 수)"
+claim_at CLAUDE.md "9개 중 ${pub_n}개만 첫 RC 게시"                  "문서 언어 규칙 절"
+
+claim_at DEPLOY.md "**$pub_en of nine languages are published"       "릴리스 워크플로 상태(게시 수)"
+claim_at DEPLOY.md "and $unpub_en are not.**"                        "릴리스 워크플로 상태(미게시 수)"
+
+claim_at CHANGELOG.md "지금까지 ${pub_ko} 언어가"                     "폴리글랏 안내(게시 수)"
+claim_at CHANGELOG.md "나머지 ${unpub_ko}("                           "폴리글랏 안내(미게시 수)"
+
+claim_at docs/roadmap/language-support.md "**$Pub_en are now live as release candidates**" "step-0(게시 수)"
+claim_at docs/roadmap/language-support.md "the remaining $unpub_en ("                      "step-0(미게시 수)"
+
 # 한글 미러 — 영문과 같은 사실을 한글 수사로 말한다(README.md와 동일 구조의 미러라는 규칙).
 ko_t="$(cat "$ROOT/README.ko.md")"
 assert_contains "$ko_t" "아홉 중 $pub_ko" "README.ko.md 의 게시 개수가 DF_PUBLISHED 파생값($pub_n)과 다르다"

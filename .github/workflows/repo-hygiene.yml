@@ -94,6 +94,14 @@ jobs:
           sh scripts/test/test-release-request.sh
           sh scripts/test/test-dispatch-release.sh
 
+      # ⚠️ 하네스 로컬 레지스트리 설정. 이 설정이 낡으면 야간 `install-all`만 조용히 빨개지고
+      # PR/푸시 CI는 전부 초록이라 며칠씩 안 보인다 — 실제로 3연속(08-08·08-09·08-10) 그랬다.
+      # 원인은 저장소 밖이었다: node 패키지가 공개 npmjs에 게시되자 Verdaccio uplink이 같은
+      # 버전을 이미 아는 상태가 되어 로컬 게시가 E409로 죽었다. 리포를 겨누는 가드는 전부
+      # 초록이었으므로, 그 설정을 겨누는 가드가 따로 필요하다.
+      - name: 하네스 레지스트리 설정 가드(자기 스코프 uplink 격리 · 전이 의존성 프록시 유지)
+        run: sh scripts/test/test-harness-registries.sh
+
       # ⚠️ 자가테스트 자신의 위생 — "테스트가 있다"가 "테스트가 돈다"를 뜻하지 않는 두 경로를 막는다.
       # (1) `assert.sh`의 어서션은 `_A_FAIL`만 누적하고 종료코드를 바꾸지 않는다 — 종료코드를 내는
       # 것은 `assert_report`뿐이라, 빠뜨린 테스트는 전부 실패해도 exit 0으로 CI를 초록으로 만든다.
