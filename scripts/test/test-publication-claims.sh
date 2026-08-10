@@ -167,6 +167,9 @@ for L in $DEPLOY_LANGS; do
   assert_eq "$_want" "$_got" "호환성 표의 $_lbl 버전이 SSOT와 다르다"
 done
 # ⚠️ 대조군 — 라벨 표기가 바뀌면 위 루프가 전부 "빈 값 == 빈 값"으로 조용히 통과할 수 있다.
-assert_eq "9" "$rows_seen"
+# ⚠️ 메시지 인자를 빠뜨리지 말 것: `assert_eq`는 실패 경로에서 `$3`을 읽는데 이 파일은 `set -u`라
+# **실패하는 순간 unbound variable로 죽는다** — 어서션 실패 메시지 대신 셸 오류가 나오고
+# `assert_report`에 도달하지 못해 남은 어서션도 안 돈다(변이검증 M4에서 실제로 그렇게 죽었다).
+assert_eq "9" "$rows_seen" "호환성 표에서 읽은 언어 행 수가 9가 아니다 — 라벨 표기가 바뀌었나"
 
 assert_report
