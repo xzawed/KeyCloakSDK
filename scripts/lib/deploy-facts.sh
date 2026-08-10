@@ -23,7 +23,7 @@ DEPLOY_LANGS="python dotnet ruby node rust java kotlin go php"
 # 손으로 갱신하되 **한 곳**이고, 낡으면 가드가 CI를 빨갛게 만든다.
 #
 # 언어를 게시하면 여기에 추가한다. 그것이 문서 갱신의 트리거다.
-DF_PUBLISHED="php python dotnet rust ruby node java"
+DF_PUBLISHED="php python dotnet rust ruby node java kotlin"
 
 df_known() { case " $DEPLOY_LANGS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
@@ -138,7 +138,7 @@ df_coordinate() { case "$1" in   # 레지스트리상 패키지 식별자(사람
 df_published_version() { case "$1" in
   php) echo "0.1.0-rc.1" ;; python) echo "0.1.0rc1" ;; dotnet) echo "0.1.0-rc.1" ;;
   rust) echo "0.1.0-rc.1" ;; ruby) echo "0.1.0.rc1" ;; node) echo "0.1.0-rc.2" ;;
-  java) echo "0.1.0-RC1" ;;
+  java) echo "0.1.0-RC1" ;; kotlin) echo "0.1.0-RC1" ;;
   *) echo "" ;; esac; }
 
 df_check_url() { case "$1" in   # 200이면 이미 게시됨(readiness). go는 빈 문자열(프록시 온디맨드 — 특수처리)
