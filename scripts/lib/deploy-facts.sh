@@ -23,7 +23,7 @@ DEPLOY_LANGS="python dotnet ruby node rust java kotlin go php"
 # 손으로 갱신하되 **한 곳**이고, 낡으면 가드가 CI를 빨갛게 만든다.
 #
 # 언어를 게시하면 여기에 추가한다. 그것이 문서 갱신의 트리거다.
-DF_PUBLISHED="php python dotnet rust ruby node"
+DF_PUBLISHED="php python dotnet rust ruby node java"
 
 df_known() { case " $DEPLOY_LANGS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 

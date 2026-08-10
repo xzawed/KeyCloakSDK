@@ -19,15 +19,22 @@ rr_secret_set() { # <name> → 0 if a repo secret with this name exists
   command -v gh >/dev/null 2>&1 || return 2
   gh secret list 2>/dev/null | awk '{print $1}' | grep -qx "$1"
 }
+# ⚠️ **User-Agent가 없으면 crates.io가 403을 준다 — 그리고 403은 "미게시"로 읽힌다.**
+# crates.io API는 UA 없는 요청을 거절하는데(실측: UA 없음 403 / UA 있음 200 / 없는 크레이트 404),
+# 아래 판정은 확인된 4xx를 "미게시"로 취급하므로 **이미 게시된 크레이트가 미게시로 보고됐다**
+# (`rust … registry=exists`가 crates.io에 `keycloak-sdk 0.1.0-rc.1`이 살아 있는 동안 계속 표시됐다).
+# 되돌릴 수 없는 행위 직전에 보는 도구가 반대로 말한 것이라, UA는 선택이 아니라 정확성의 일부다.
+# ⚠️ 자가테스트는 curl을 스텁으로 대체해 **순수 판정 로직만** 보므로 이 부류를 구조적으로 못 잡는다.
+RR_UA="kcsdk-release-readiness (+https://github.com/xzawed/KeyCloakSDK)"
 rr_url_exists() { # <url> → exit 0=게시됨(2xx) 1=미게시(4xx/5xx, curl -f rc=22) 2=unknown(curl 부재·네트워크/타임아웃 실패)
   command -v curl >/dev/null 2>&1 || return 2
-  if curl -sfI "$1" >/dev/null 2>&1; then return 0; fi
+  if curl -sfI -A "$RR_UA" "$1" >/dev/null 2>&1; then return 0; fi
   # HEAD가 일부 레지스트리(405 등)에서 미지원일 수 있어 GET으로 재확인 — 최종 판정은 이 결과 기준.
   # ⚠️ `if curl …; then …; fi` 뒤에서 `$?`를 읽으면 안 된다 — 그건 curl이 아니라 **if 문 자체의**
   # 종료코드이고, 조건이 거짓이고 else가 없으면 POSIX는 그걸 0으로 정의한다. 그래서 예전 코드는
   # 4xx에서 rc=0을 보고 `-eq 22` 분기를 영영 타지 못했다 — **"미게시(exists)" 판정이 죽어 있었고**
   # 모든 미게시 좌표가 `unknown`으로 보고됐다(실측: 404 URL에 buggy rc=0 / fixed rc=22).
-  curl -sf "$1" >/dev/null 2>&1
+  curl -sf -A "$RR_UA" "$1" >/dev/null 2>&1
   rc=$?
   [ "$rc" -eq 0 ] && return 0
   [ "$rc" -eq 22 ] && return 1

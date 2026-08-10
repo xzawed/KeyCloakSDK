@@ -4,7 +4,7 @@ A Keycloak client library for Java that covers both **Authentication (OIDC / OAu
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **Pre-release** — not yet published to Maven Central.
+> **Pre-release** — the first release candidate (`0.1.0-RC1`) is on Maven Central; there is no stable release yet. ⚠️ **Maven has no pre-release concept**: `0.1.0-RC1` is not "a prerelease of `0.1.0`", it is simply a different, lower-sorting coordinate. Nothing filters it out and nothing falls back to it — you always name the version explicitly in Maven, so use the one below. Once `0.1.0` is released it will be a separate artifact, and this RC will remain on Central forever (Central is immutable — no delete, no yank, no unlist).
 
 ## Requirements
 
@@ -20,7 +20,7 @@ The SDK ships as several Maven modules, but **most users need exactly one**: `io
 <dependency>
   <groupId>io.github.xzawed</groupId>
   <artifactId>keycloak-sdk</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.0-RC1</version>
 </dependency>
 ```
 
@@ -40,7 +40,7 @@ If you depend on the modules individually, import the BOM so their versions stay
     <dependency>
       <groupId>io.github.xzawed</groupId>
       <artifactId>keycloak-sdk-bom</artifactId>
-      <version>0.1.0</version>
+      <version>0.1.0-RC1</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
