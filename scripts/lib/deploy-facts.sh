@@ -124,6 +124,23 @@ df_coordinate() { case "$1" in   # 레지스트리상 패키지 식별자(사람
   ruby) echo "keycloak-sdk" ;; java) echo "io.github.xzawed:keycloak-sdk" ;;
   kotlin) echo "io.github.xzawed:keycloak-sdk-kotlin" ;; esac; }
 
+# 각 언어가 **실제로 레지스트리에 올린** 버전. 미게시 언어는 빈 문자열.
+#
+# ⚠️ 이것은 매니페스트 버전이 아니다 — 둘은 갈릴 수 있고 실제로 갈려 있다. `dotnet`은 매니페스트가
+# `0.1.0`인 채로 `0.1.0-rc.1`이 게시됐고(릴리스가 태그값을 주입하는 auto-bump 언어), `java`도
+# 매니페스트는 `0.1.0-SNAPSHOT`이다. 매니페스트 쪽 SSOT는 `scripts/check-versions.mjs`가 따로 본다.
+#
+# ⚠️ **왜 이 사실이 필요했나**: 이 값들은 문서 곳곳에 문자열로 복제돼 있는데(랜딩 README 좌표
+# 목록·SECURITY·DEPLOY 라이브 목록·getting-started 호환성 표) **어디에도 기계 대조가 없었다.**
+# 실제로 호환성 표는 아홉 행 중 일곱이 `0.1.0`에 멈춘 채 게시가 여섯 번 지나갔다. 게시 **개수**는
+# `DF_PUBLISHED`가 지켰지만 **버전 문자열은 아무도 지키지 않았다** — 같은 사실의 다른 축이고,
+# 소비자가 실제로 복사해 가는 쪽은 버전이다.
+df_published_version() { case "$1" in
+  php) echo "0.1.0-rc.1" ;; python) echo "0.1.0rc1" ;; dotnet) echo "0.1.0-rc.1" ;;
+  rust) echo "0.1.0-rc.1" ;; ruby) echo "0.1.0.rc1" ;; node) echo "0.1.0-rc.2" ;;
+  java) echo "0.1.0-RC1" ;;
+  *) echo "" ;; esac; }
+
 df_check_url() { case "$1" in   # 200이면 이미 게시됨(readiness). go는 빈 문자열(프록시 온디맨드 — 특수처리)
   python) echo "https://pypi.org/pypi/keycloak-sdk/json" ;;
   node) echo "https://registry.npmjs.org/@xzawed%2Fkeycloak-sdk" ;;

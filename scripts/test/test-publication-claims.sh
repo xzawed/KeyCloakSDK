@@ -38,6 +38,28 @@ for L in $DEPLOY_LANGS; do
     assert_not_contains "$banner" "is on " \
       "$L 은 미게시인데 배너가 레지스트리에 올라가 있다고 말한다"
   fi
+
+  # ---- 설치 스니펫에 **핀된 버전** ----
+  #
+  # ⚠️ 배너만 검사하면 **설치 스니펫이 낡은 채로 통과한다.** `java/README.md`가 실제로 그랬다 —
+  # 배너는 게시형으로 고쳐졌는데 설치 예제 두 곳은 `0.1.0`이었고, 게시된 것은 `0.1.0-RC1`뿐이라
+  # 소비자에게 **존재하지 않는 좌표**를 권하고 있었다(가드는 초록, 사람이 손으로 발견).
+  # 레지스트리는 README를 버전마다 고정하므로 이 실수를 고치려면 좌표 하나를 더 태워야 한다.
+  #
+  # ⚠️ **파일 전체 containment로는 못 잡는다 — 실제로 시도했다가 변이가 통과했다.** 배너 산문에
+  # 게시 버전이 들어 있으면(`the first release candidate (\`0.1.0-RC1\`) is on …`) 스니펫이 옛 값
+  # 이어도 "파일 어딘가에 있다"가 성립한다. 그래서 **코드펜스 안**만 본다.
+  #
+  # ⚠️ "펜스 안에 게시 버전이 있어야 한다"도 틀렸다 — python·rust·dotnet·php는 설치 명령에 버전을
+  # 쓰지 않는 것이 **옳다**(`pip install keycloak-sdk`처럼 리졸버가 고르게 둔다). 그래서 규칙은
+  # "있어야 한다"가 아니라 **"핀했다면 그 값이어야 한다"** 이다. 미게시 언어의 기대값은 아직 태우지
+  # 않은 라인 버전 `0.1.0`이라, 그 언어가 게시되는 순간 기대값이 RC로 바뀌며 갱신을 강제한다.
+  _want="$(df_published_version "$L")"
+  [ -n "$_want" ] || _want="0.1.0"
+  _bad="$(awk '/^```/ { f = !f; next } f' "$f" \
+    | grep -oE '0\.1\.0[A-Za-z0-9.-]*' | sort -u | grep -Fxv "$_want" || true)"
+  assert_eq "" "$_bad" \
+    "$L/README.md 코드펜스에 핀된 버전이 기대값($_want)과 다르다 — 소비자에게 없는 좌표를 권하게 된다"
 done
 
 # ⚠️ 대조군 — 위 루프가 실제로 언어를 돌았는지 확인한다. `DEPLOY_LANGS`가 비거나 파일 경로
@@ -141,5 +163,35 @@ assert_eq "$unpub_n" "$(grep -c '^### 3) Installation after release (future)$' "
   "getting-started의 '미게시' 설치 절 수 ≠ DF_PUBLISHED 파생 미게시 수"
 assert_eq "$pub_n" "$(grep -c '^### 3) Installation from ' "$gs")" \
   "getting-started의 '게시됨' 설치 절 수 ≠ DF_PUBLISHED 파생 게시 수"
+
+# ---- 호환성 표의 **버전 문자열** ↔ df_published_version ----
+#
+# ⚠️ 위 어서션들은 전부 "몇 개가 게시됐나"만 본다. **어떤 버전이 게시됐나는 아무도 안 봤다** —
+# 그래서 이 표는 아홉 행 중 일곱이 `0.1.0`에 멈춘 채 여섯 번의 게시를 그대로 통과했다(2026-08-10
+# 발견). 개수와 버전은 같은 사실의 다른 축이고, 소비자가 실제로 복사해 가는 쪽은 버전이다.
+#
+# 미게시 언어는 `0.1.0`(아직 태우지 않은 라인 버전)이라야 한다 — 이렇게 두면 그 언어가 게시되는
+# 순간 `df_published_version`이 채워지면서 기대값이 RC로 바뀌고, 표를 안 고치면 시끄럽게 깨진다.
+gs_label() { case "$1" in
+  java) echo Java ;; python) echo Python ;; node) echo Node ;; go) echo Go ;;
+  dotnet) echo 'C#/.NET' ;; php) echo PHP ;; rust) echo Rust ;; ruby) echo Ruby ;;
+  kotlin) echo Kotlin ;; esac; }
+
+rows_seen=0
+for L in $DEPLOY_LANGS; do
+  _lbl="$(gs_label "$L")"
+  # `| <Label> `<version>` |` 의 백틱 안을 뽑는다.
+  _row="$(grep -m1 -F "| $_lbl \`" "$gs" || true)"
+  [ -n "$_row" ] && rows_seen=$((rows_seen + 1))
+  _got="$(printf '%s' "$_row" | sed -n 's/^| [^`]*`\([^`]*\)`.*/\1/p')"
+  _want="$(df_published_version "$L")"
+  [ -n "$_want" ] || _want="0.1.0"
+  assert_eq "$_want" "$_got" "호환성 표의 $_lbl 버전이 SSOT와 다르다"
+done
+# ⚠️ 대조군 — 라벨 표기가 바뀌면 위 루프가 전부 "빈 값 == 빈 값"으로 조용히 통과할 수 있다.
+# ⚠️ 메시지 인자를 빠뜨리지 말 것: `assert_eq`는 실패 경로에서 `$3`을 읽는데 이 파일은 `set -u`라
+# **실패하는 순간 unbound variable로 죽는다** — 어서션 실패 메시지 대신 셸 오류가 나오고
+# `assert_report`에 도달하지 못해 남은 어서션도 안 돈다(변이검증 M4에서 실제로 그렇게 죽었다).
+assert_eq "9" "$rows_seen" "호환성 표에서 읽은 언어 행 수가 9가 아니다 — 라벨 표기가 바뀌었나"
 
 assert_report

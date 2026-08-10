@@ -96,6 +96,27 @@ n_all=0; for L in $DEPLOY_LANGS; do n_all=$((n_all + 1)); done
 n_pub=0; for L in $DF_PUBLISHED; do n_pub=$((n_pub + 1)); done
 n_unp=0; for L in $unp; do n_unp=$((n_unp + 1)); done
 assert_eq "$((n_all - n_pub))" "$n_unp" "df_unpublished 개수 = 전체 − 게시"
+# df_published_version ↔ DF_PUBLISHED 자기정합성.
+#
+# ⚠️ **양방향이라야 의미가 있다.** "게시된 언어는 버전이 있다"만 검사하면 미게시 언어에 버전을
+# 남겨둔 채 `DF_PUBLISHED`에서만 빼는 절반짜리 되돌리기를 통과시키고, 그 반대만 검사하면 새
+# 언어가 게시될 때 빈 값을 통과시킨다. 두 방향을 함께 걸면 SSOT 한 줄을 옮길 때 둘이 같이 움직인다.
+# 그리고 값은 그 언어의 표기 규칙(`df_version_re`)을 만족해야 한다 — 표기가 레지스트리마다
+# 다르고(PEP 440·RubyGems 점·Maven 대문자 RC·SemVer) 틀리면 태그↔매니페스트 가드가 막는다.
+# ⚠️ `assert_ok`는 인자를 **명령으로 실행**한다 — 메시지를 덧붙이면 그게 `test`의 피연산자가 되어
+# 어서션이 문법오류로 실패한다(여기서 실제로 겪었다). 메시지를 남기려면 `assert_eq`를 쓴다.
+for L in $DEPLOY_LANGS; do
+  _v="$(df_published_version "$L")"
+  if df_is_published "$L"; then
+    assert_eq "nonempty" "$([ -n "$_v" ] && echo nonempty || echo empty)" \
+      "$L 은 게시됐는데 df_published_version 이 비어 있다"
+    assert_eq "match" "$(printf '%s' "$_v" | grep -qE "$(df_version_re "$L")" && echo match || echo nomatch)" \
+      "$L 의 게시 버전 [$_v] 이 그 언어의 표기 규칙에 맞지 않는다"
+  else
+    assert_eq "" "$_v" "$L 은 미게시인데 df_published_version 이 값을 갖는다"
+  fi
+done
+
 # ⚠️ 호출자의 루프 변수를 밟지 않아야 한다(POSIX sh에 이식 가능한 `local`이 없다).
 # 이 대조군이 없으면 함수가 `_l` 같은 흔한 이름을 쓰다가 호출자 이터레이터를 덮어써도 모른다.
 _l="sentinel"; df_unpublished > /dev/null; assert_eq "sentinel" "$_l" "df_unpublished 가 호출자의 _l 을 밟았다"
