@@ -2,7 +2,7 @@
 
 A guide to installing the Keycloak polyglot SDK locally and running your first token issuance, JWT validation, and Admin API call with minimal code. This SDK is provided in **multiple programming languages** (currently Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby · Kotlin), and while each language is idiomatic, the concepts, layers, and flows are isomorphic.
 
-> ℹ️ **Six of the nine are on a public registry, as first release candidates** — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems) and Node (npm). The other three (Java, Go, Kotlin) are not published yet, so for those the local-clone path below is the only way to consume them. **No language has a stable release**, and ecosystems disagree sharply about what a bare install does when only a prerelease exists — pip and Cargo fall back to it, RubyGems resolves nothing, and npm fails outright with `ETARGET`. Each language section spells out the incantation its ecosystem needs; do not copy one language's wording to another. For now, **local installation is the default path** (see each language's "Local installation" below). For the real release procedure, see the unified nine-language [DEPLOY.md](../../DEPLOY.md) (check readiness with `scripts/release-readiness.sh` and tag commands with `scripts/release-trigger.sh <lang> <ver>` — both are human-gates that never push tags automatically).
+> ℹ️ **Seven of the nine are on a public registry, as first release candidates** — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm) and Java (Maven Central). The other two (Go, Kotlin) are not published yet, so for those the local-clone path below is the only way to consume them. **No language has a stable release**, and ecosystems disagree sharply about what a bare install does when only a prerelease exists — pip and Cargo fall back to it, RubyGems resolves nothing, npm fails outright with `ETARGET`, and Maven has no prerelease concept at all (you always name the version, so nothing filters and nothing falls back). Each language section spells out the incantation its ecosystem needs; do not copy one language's wording to another. For now, **local installation is the default path** (see each language's "Local installation" below). For the real release procedure, see the unified nine-language [DEPLOY.md](../../DEPLOY.md) (check readiness with `scripts/release-readiness.sh` and tag commands with `scripts/release-trigger.sh <lang> <ver>` — both are human-gates that never push tags automatically).
 
 > 🖥️ **You need a Keycloak *server* first.** This SDK is a client library, so it needs a **Keycloak server to connect to** in order to work (the server is a separate, standalone product not included in this SDK). For a local trial, use the one-line Docker command `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`; for a **production deployment**, see the [Keycloak server deployment guide](deploying-keycloak-server.md).
 
@@ -36,15 +36,15 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 <!-- doc-guard: kind=runtime lang=java -->
 JDK **`21` or newer** is required. Artifacts are compiled with `--release 21`. **Loading them under a JDK earlier than 21 raises `UnsupportedClassVersionError`**, so the consuming application must also be built and run on JDK 21 or newer. (Originally targeted Java 17, then raised to 21 LTS on 2026-07-03.)
 
-### 2) Local installation (current — not yet published)
+### 2) Local installation (development)
 
-Since it is not published to Maven Central, clone the repository and install it into your local `~/.m2`. `-DskipITs=true` skips **only the Docker-requiring Testcontainers integration tests** while still running unit tests and the coverage gate, so you can install without Docker:
+To build against your working copy, clone the repository and install it into your local `~/.m2`. `-DskipITs=true` skips **only the Docker-requiring Testcontainers integration tests** while still running unit tests and the coverage gate, so you can install without Docker:
 
 ```bash
 mvn -f java/pom.xml install -DskipITs=true
 ```
 
-After installation, adding just the single facade artifact to your consuming project pulls in `core`/`auth`/`admin` as transitive dependencies:
+After installation, adding just the single facade artifact to your consuming project pulls in `core`/`auth`/`admin` as transitive dependencies. Note the version: the working copy is `0.1.0-SNAPSHOT`, because the release workflow injects the tag value at publish time rather than keeping it in the POM.
 
 ```xml
 <dependency>
@@ -54,19 +54,21 @@ After installation, adding just the single facade artifact to your consuming pro
 </dependency>
 ```
 
-### 3) Installation after release (future)
+### 3) Installation from Maven Central (first release candidate available)
 
-Once publishing to Maven Central is complete, just reference the same coordinates at the release version (no local `install` needed):
+The first release candidate, `0.1.0-RC1`, is live on Maven Central; there is no stable release yet. No local `install` is needed:
 
 ```xml
 <dependency>
   <groupId>io.github.xzawed</groupId>
   <artifactId>keycloak-sdk</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.0-RC1</version>
 </dependency>
 ```
 
-> ⚠️ **Not yet published to Maven Central (human-gated).** The actual publish runs only when a human pushes a `v*` tag to trigger [`.github/workflows/release.yml`](../../.github/workflows/release.yml). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+If you depend on the modules individually rather than through the facade, import the BOM (`io.github.xzawed:keycloak-sdk-bom:0.1.0-RC1`, `<type>pom</type>` `<scope>import</scope>`) so their versions stay aligned.
+
+> ⚠️ **Maven has no prerelease concept — and that makes it the odd one out here.** `0.1.0-RC1` is not "a prerelease of `0.1.0`"; it is simply a different, lower-sorting coordinate. Nothing filters it out the way RubyGems does, and nothing falls back to it the way pip and Cargo do, because in Maven you always name the version yourself. The consequence is on the other side: once `0.1.0` is released it is a **separate** artifact, and this RC stays on Central forever — Central is immutable, with no delete, no yank and no unlist. Releases remain human-gated: a publish runs only when a human pushes a `v*` tag to trigger [`.github/workflows/release.yml`](../../.github/workflows/release.yml), and even then the workflow only stages to the Central Portal until a human clicks Publish. For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 
