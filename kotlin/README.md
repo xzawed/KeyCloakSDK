@@ -4,7 +4,7 @@ A coroutine-first Keycloak client library for Kotlin/JVM that covers both **Auth
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **Pre-release** — not yet published to Maven Central.
+> **Pre-release** — the first release candidate (`0.1.0-RC1`) is on Maven Central; there is no stable release yet. ⚠️ **Maven has no pre-release concept**: `0.1.0-RC1` is not "a prerelease of `0.1.0`", it is simply a different, lower-sorting coordinate — nothing filters it out and nothing falls back to it, so name the version explicitly as shown below. ⚠️ **Consumer floor: Kotlin 2.2+.** The published jar carries `@Metadata(mv=[2,2,0])` and declares `kotlin-stdlib 2.2.21`, so a Kotlin 2.2 project compiles against it — this is deliberately lower than the 2.4.10 toolchain used to build it. Maven Central is immutable: this RC stays there forever (no delete, no yank, no unlist).
 
 ## Requirements
 
@@ -21,7 +21,7 @@ Gradle Kotlin DSL:
 
 ```kotlin
 dependencies {
-    implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0")
+    implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0-RC1")
 }
 ```
 

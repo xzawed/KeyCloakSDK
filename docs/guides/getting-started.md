@@ -2,7 +2,7 @@
 
 A guide to installing the Keycloak polyglot SDK locally and running your first token issuance, JWT validation, and Admin API call with minimal code. This SDK is provided in **multiple programming languages** (currently Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby · Kotlin), and while each language is idiomatic, the concepts, layers, and flows are isomorphic.
 
-> ℹ️ **Seven of the nine are on a public registry, as first release candidates** — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm) and Java (Maven Central). The other two (Go, Kotlin) are not published yet, so for those the local-clone path below is the only way to consume them. **No language has a stable release**, and ecosystems disagree sharply about what a bare install does when only a prerelease exists — pip and Cargo fall back to it, RubyGems resolves nothing, npm fails outright with `ETARGET`, and Maven has no prerelease concept at all (you always name the version, so nothing filters and nothing falls back). Each language section spells out the incantation its ecosystem needs; do not copy one language's wording to another. For now, **local installation is the default path** (see each language's "Local installation" below). For the real release procedure, see the unified nine-language [DEPLOY.md](../../DEPLOY.md) (check readiness with `scripts/release-readiness.sh` and tag commands with `scripts/release-trigger.sh <lang> <ver>` — both are human-gates that never push tags automatically).
+> ℹ️ **Eight of the nine are on a public registry, as first release candidates** — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central) and Kotlin (Maven Central). The other one (Go) is not published yet, so for those the local-clone path below is the only way to consume them. **No language has a stable release**, and ecosystems disagree sharply about what a bare install does when only a prerelease exists — pip and Cargo fall back to it, RubyGems resolves nothing, npm fails outright with `ETARGET`, and Maven has no prerelease concept at all (you always name the version, so nothing filters and nothing falls back). Each language section spells out the incantation its ecosystem needs; do not copy one language's wording to another. For now, **local installation is the default path** (see each language's "Local installation" below). For the real release procedure, see the unified nine-language [DEPLOY.md](../../DEPLOY.md) (check readiness with `scripts/release-readiness.sh` and tag commands with `scripts/release-trigger.sh <lang> <ver>` — both are human-gates that never push tags automatically).
 
 > 🖥️ **You need a Keycloak *server* first.** This SDK is a client library, so it needs a **Keycloak server to connect to** in order to work (the server is a separate, standalone product not included in this SDK). For a local trial, use the one-line Docker command `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`; for a **production deployment**, see the [Keycloak server deployment guide](deploying-keycloak-server.md).
 
@@ -600,32 +600,34 @@ client.close
 <!-- doc-guard: kind=runtime lang=kotlin -->
 **JDK `21+`** is required (this anchor verifies the JDK toolchain, not the Kotlin language version). Kotlin **2.2 or newer** is also required on that JDK (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). The SDK is *built* with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so the published artifact’s binary metadata is readable by any Kotlin 2.2+ compiler — you do not need to be on 2.4 to consume it. All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
 
-### 2) Local installation (current — not yet published)
+### 2) Local installation (development)
 
-Since it is not published to Maven Central, clone the repository and publish it to your local `~/.m2` with Gradle:
+To build against your working copy, clone the repository and publish it to your local `~/.m2` with Gradle:
 
 ```bash
-gradle -p kotlin publishToMavenLocal   # installs keycloak-sdk-kotlin-0.1.0.jar (+ sources/javadoc) into ~/.m2
+gradle -p kotlin publishToMavenLocal   # installs keycloak-sdk-kotlin-0.1.0-RC1.jar (+ sources/javadoc) into ~/.m2
 ```
 
 Then reference it from a consuming Gradle project via `mavenLocal()` (Gradle Kotlin DSL):
 
 ```kotlin
 repositories { mavenLocal(); mavenCentral() }
-dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0") }
+dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0-RC1") }
 ```
 
 (To just build and test locally without publishing: `gradle -p kotlin build && gradle -p kotlin test` — 100 unit tests + coverage gate, Docker-free.)
 
-### 3) Installation after release (future)
+### 3) Installation from Maven Central (first release candidate available)
 
-Once publishing to Maven Central is complete, reference the same coordinates from `mavenCentral()` (no local publish needed):
+The first release candidate, `0.1.0-RC1`, is live on Maven Central; there is no stable release yet. No local publish is needed:
 
 ```kotlin
-dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0") }
+dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0-RC1") }
 ```
 
-> ⚠️ **Not yet published to Maven Central (human-gated, Central Portal).** The actual publish runs only when a human pushes a `kotlin-v*` tag to trigger [`.github/workflows/kotlin-release.yml`](../../.github/workflows/kotlin-release.yml) (vanniktech maven.publish → Central Portal staging), after which a human manually releases from the Portal console — a two-step approval gate. For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> ⚠️ **Consumer floor is Kotlin 2.2+, and that is a deliberate choice you can verify.** The published jar carries `@Metadata(mv=[2,2,0])` and its POM declares `kotlin-stdlib 2.2.21` — both lower than the 2.4.10 toolchain that built it, because a jar built without pinning `languageVersion`/`apiVersion` is unreadable to any compiler older than the one that produced it. (Measured on the published artifact: `javap -v` on a class shows `mv=[2,2,0]`, and a clean `mvn dependency:get` resolves `kotlin-stdlib 2.2.21`, not 2.4.x.)
+>
+> ⚠️ **Maven has no pre-release concept** — `0.1.0-RC1` is simply a different, lower-sorting coordinate, so nothing filters it out and nothing falls back to it; name it explicitly. Releases stay human-gated: a publish runs only when a human pushes a `kotlin-v*` tag to trigger [`.github/workflows/kotlin-release.yml`](../../.github/workflows/kotlin-release.yml) (vanniktech maven.publish → Central Portal staging), and even then the artifact goes public only when a human clicks Publish in the Portal console. For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 
@@ -751,7 +753,7 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 | PHP `0.1.0-rc.1` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `fschmtt/keycloak-rest-api-client-php` **0.42.0** · `league/oauth2-client` **^2.8** · `stevenmaguire/oauth2-keycloak` **^6.1** · `firebase/php-jwt` **^7.1** · PHP 8.3+ |
 | Rust `0.1.0-rc.1` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak` **~26.6.2** (`reqwest12` feature) · `openidconnect` **^4.0.1** · `jsonwebtoken` **^11.0.0** · Rust 1.88+ (edition 2024) |
 | Ruby `0.1.0.rc1` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `rack-oauth2` **~>2.3** · `faraday` **~>2.0** · `jwt` (ruby-jwt) **~>3.2** · Ruby 3.2+ |
-| Kotlin `0.1.0` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak-admin-client` **26.0.11** · `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.9.1** (same JVM stack as Java) · Kotlin 2.2+ consumers (built with 2.4.10, metadata pinned to 2.2) · JDK 21+ |
+| Kotlin `0.1.0-RC1` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak-admin-client` **26.0.11** · `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.9.1** (same JVM stack as Java) · Kotlin 2.2+ consumers (built with 2.4.10, metadata pinned to 2.2) · JDK 21+ |
 
 > Note on the Rust row: those are **ranges, not exact `=` pins**. An exact pin in a *library* crate hard-fails dependency resolution for any consumer whose tree also wants a newer compatible version. `openidconnect`/`jsonwebtoken` are ordinary semver crates and take a caret; the `keycloak` crate takes a tilde (`>=26.6.2, <26.7.0`) because its version tracks the Keycloak **server** line rather than semver. Reproducibility of *our* builds comes from the committed [`rust/Cargo.lock`](../../rust/Cargo.lock) — cargo ignores a dependency's lockfile, so as a consumer you pin with your own.
 

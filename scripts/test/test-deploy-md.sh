@@ -98,6 +98,14 @@ case "$unpub_n" in
   *) _w="" ;;
 esac
 assert_ok test -n "$_w"
-assert_contains "$body" "The other $_w languages are unpublished" \
+# ⚠️ 수·복수를 가린다 — 미게시가 1개가 되는 순간 `The other one languages are …`를 요구하게 되고,
+# 문서를 옳은 영어로 쓰면 CI가 빨개진다(가드가 문서를 틀리게 만드는 상태). 이 파일 상단이 기록한
+# "zero tags" 실패와 같은 부류라 같은 실수를 반복하지 않는다.
+if [ "$unpub_n" -eq 1 ]; then
+  _phrase="The other $_w language is unpublished"
+else
+  _phrase="The other $_w languages are unpublished"
+fi
+assert_contains "$body" "$_phrase" \
   "DEPLOY.md의 미게시 개수 문구가 DF_PUBLISHED에서 파생한 $unpub_n 과 다르다"
 assert_report

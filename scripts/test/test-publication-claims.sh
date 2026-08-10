@@ -122,9 +122,27 @@ done
 claim_at() { # $1=파일 $2=기대 문자열 $3=자리 이름
   assert_contains "$(cat "$ROOT/$1")" "$2" "$1 의 $3 가 DF_PUBLISHED 파생 미게시 수($unpub_n=$unpub_en)와 다르다"
 }
-claim_at README.md "the other $unpub_en languages are not on a registry yet" "상단 배너"
+# ⚠️ **수·복수를 가려야 한다 — 안 그러면 가드가 비문을 강제한다.** 미게시가 1개가 되는 순간
+# `the other one languages are …`를 요구하게 되고, 문서를 옳은 영어로 쓰면 CI가 빨개진다(가드가
+# 문서를 틀리게 만드는 상태 — `test-deploy-md.sh` 상단이 기록한 "zero tags" 실패와 같은 부류다).
+# 한글도 마찬가지로 `나머지 하나 언어`는 비문이다.
+if [ "$unpub_n" -eq 1 ]; then
+  _en_banner="the other language is not on a registry yet"
+  _en_other="The other one"
+  _ko_other="나머지 한 언어"
+else
+  _en_banner="the other $unpub_en languages are not on a registry yet"
+  _en_other="The other $unpub_en"
+  _ko_other="나머지 $unpub_ko 언어"
+fi
+# ⚠️ 미게시가 0이 되면(= 아홉 전부 게시) 이 문장들은 **존재해선 안 된다** — "나머지 N개는
+# 미게시"가 아니라 "전부 게시됐다"로 바뀌어야 한다. 그건 수사 치환이 아니라 문장 교체라
+# 자동으로 만들 수 없으므로, 그 순간 시끄럽게 실패시켜 사람이 다시 쓰게 한다.
+assert_ok test "$unpub_n" -ge 1
+
+claim_at README.md "$_en_banner" "상단 배너"
 claim_at README.md "the remaining $unpub_en (" "하단 서술"
-claim_at SECURITY.md "The other $unpub_en" "미게시 열거"
+claim_at SECURITY.md "$_en_other" "미게시 열거"
 claim_at docs/guides/getting-started.md "The other $unpub_en (" "상단 배너"
 
 # ---- 가드 스코프 밖에 있던 네 자리(2026-08-10에 드리프트가 실제로 발견된 곳) ----
@@ -143,7 +161,9 @@ claim_at CLAUDE.md "나머지 ${unpub_n}개("                            "현재
 claim_at CLAUDE.md "9개 중 ${pub_n}개만 첫 RC 게시"                  "문서 언어 규칙 절"
 
 claim_at DEPLOY.md "**$pub_en of nine languages are published"       "릴리스 워크플로 상태(게시 수)"
-claim_at DEPLOY.md "and $unpub_en are not.**"                        "릴리스 워크플로 상태(미게시 수)"
+# 여기도 수·복수 — 1개면 `and one is not.`
+if [ "$unpub_n" -eq 1 ]; then _dep_unpub="and $unpub_en is not.**"; else _dep_unpub="and $unpub_en are not.**"; fi
+claim_at DEPLOY.md "$_dep_unpub"                                     "릴리스 워크플로 상태(미게시 수)"
 
 claim_at CHANGELOG.md "지금까지 ${pub_ko} 언어가"                     "폴리글랏 안내(게시 수)"
 claim_at CHANGELOG.md "나머지 ${unpub_ko}("                           "폴리글랏 안내(미게시 수)"
@@ -154,7 +174,7 @@ claim_at docs/roadmap/language-support.md "the remaining $unpub_en ("           
 # 한글 미러 — 영문과 같은 사실을 한글 수사로 말한다(README.md와 동일 구조의 미러라는 규칙).
 ko_t="$(cat "$ROOT/README.ko.md")"
 assert_contains "$ko_t" "아홉 중 $pub_ko" "README.ko.md 의 게시 개수가 DF_PUBLISHED 파생값($pub_n)과 다르다"
-assert_contains "$ko_t" "나머지 $unpub_ko 언어" "README.ko.md 의 미게시 개수가 DF_PUBLISHED 파생값($unpub_n)과 다르다"
+assert_contains "$ko_t" "$_ko_other" "README.ko.md 의 미게시 개수가 DF_PUBLISHED 파생값($unpub_n)과 다르다"
 
 # ⚠️ getting-started는 산문이 아니라 **구조**로 대조한다 — 언어마다 설치 절이 두 형태 중
 # 하나이고, 그 개수가 곧 게시 현황이다. 산문 수사와 달리 표현을 바꿔도 흔들리지 않는다.
