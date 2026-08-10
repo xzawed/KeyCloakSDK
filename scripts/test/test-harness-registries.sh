@@ -34,16 +34,34 @@ assert_ok test -n "$SCOPE"
 [ -n "$SCOPE" ] || { assert_report; exit 1; }
 
 # packages: 매핑을 순서대로 훑어 "순번<TAB>패턴<TAB>proxy유무"를 뽑는다.
-# 들여쓰기 2칸의 non-comment 줄만 블록 헤더로 본다(`  # …` 주석 제외).
+#
+# ⚠️ **첫 줄에서 CR을 떼고 시작한다 — Windows 워킹트리 때문이다.** 이 저장소의
+# `.gitattributes`는 `*.sh`·gradlew에만 `eol=lf`를 걸고 `*.yaml`에는 걸지 않는다. 그래서
+# `core.autocrlf=true`(Windows 흔한 기본값) 기여자의 워킹트리에서 이 yaml은 **CRLF**가 된다
+# (실측: `verdaccio.yaml` 68 CR · 기존 `compose.install.yml` 196 CR — blob은 셋 다 0 CR이라
+# CI 체크아웃은 LF다). 이게 조용한 이유는 Git Bash의 gawk·sed가 CR을 **말없이 떼기** 때문이다 —
+# 로컬은 10/10 초록인데 같은 파일을 컨테이너(mawk)에 물리면 모든 줄 길이가 +1이 되어 헤더 판정이
+# 전부 어긋난다. 로컬↔CI 발산이 아니라 **로컬↔로컬 발산**이라 더 안 보인다.
+#
+# 판정을 정규식이 아니라 substr로 하는 것도 같은 이유다 — 방언·앵커 해석에 기대지 않으면
+# 이 부류가 애초에 생기지 않는다. 이걸 잡아낸 것은 아래 대조군(`blocks >= 3`)이다.
 TBL="$(awk '
-  /^packages:/ { inpkg = 1; next }
-  inpkg && /^[^ #]/ { inpkg = 0 }
-  !inpkg { next }
-  /^  [^ #]/ {
-    name = $0; sub(/^  /, "", name); sub(/:[[:space:]]*$/, "", name); gsub(/'"'"'/, "", name)
-    n++; order[n] = name; proxy[name] = 0; cur = name; next
+  substr($0, 1, 9) == "packages:" { inpkg = 1; next }
+  { if (substr($0, length($0), 1) == "\r") $0 = substr($0, 1, length($0) - 1) }
+  inpkg == 0 { next }
+  {
+    if ($0 == "") next                                  # 빈 줄은 블록 구분자일 뿐
+    c1 = substr($0, 1, 1); c2 = substr($0, 2, 1); c3 = substr($0, 3, 1)
+    if (c1 != " ") { inpkg = 0; next }                  # 최상위 키 → packages 매핑 종료
+    if (c2 != " ") next
+    if (c3 == " " || c3 == "#") {                       # 4칸 들여쓰기 본문 · 2칸 주석
+      if (substr($0, 1, 10) == "    proxy:" && cur != "") proxy[cur] = 1
+      next
+    }
+    name = substr($0, 3)                                # 2칸 들여쓰기 = 블록 헤더
+    sub(/: *$/, "", name); gsub(/'"'"'/, "", name)
+    n++; order[n] = name; proxy[name] = 0; cur = name
   }
-  cur != "" && /^    proxy:/ { proxy[cur] = 1 }
   END { for (i = 1; i <= n; i++) printf "%d\t%s\t%d\n", i, order[i], proxy[order[i]] }
 ' "$CFG")"
 
