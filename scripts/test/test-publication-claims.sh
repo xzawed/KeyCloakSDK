@@ -142,4 +142,31 @@ assert_eq "$unpub_n" "$(grep -c '^### 3) Installation after release (future)$' "
 assert_eq "$pub_n" "$(grep -c '^### 3) Installation from ' "$gs")" \
   "getting-started의 '게시됨' 설치 절 수 ≠ DF_PUBLISHED 파생 게시 수"
 
+# ---- 호환성 표의 **버전 문자열** ↔ df_published_version ----
+#
+# ⚠️ 위 어서션들은 전부 "몇 개가 게시됐나"만 본다. **어떤 버전이 게시됐나는 아무도 안 봤다** —
+# 그래서 이 표는 아홉 행 중 일곱이 `0.1.0`에 멈춘 채 여섯 번의 게시를 그대로 통과했다(2026-08-10
+# 발견). 개수와 버전은 같은 사실의 다른 축이고, 소비자가 실제로 복사해 가는 쪽은 버전이다.
+#
+# 미게시 언어는 `0.1.0`(아직 태우지 않은 라인 버전)이라야 한다 — 이렇게 두면 그 언어가 게시되는
+# 순간 `df_published_version`이 채워지면서 기대값이 RC로 바뀌고, 표를 안 고치면 시끄럽게 깨진다.
+gs_label() { case "$1" in
+  java) echo Java ;; python) echo Python ;; node) echo Node ;; go) echo Go ;;
+  dotnet) echo 'C#/.NET' ;; php) echo PHP ;; rust) echo Rust ;; ruby) echo Ruby ;;
+  kotlin) echo Kotlin ;; esac; }
+
+rows_seen=0
+for L in $DEPLOY_LANGS; do
+  _lbl="$(gs_label "$L")"
+  # `| <Label> `<version>` |` 의 백틱 안을 뽑는다.
+  _row="$(grep -m1 -F "| $_lbl \`" "$gs" || true)"
+  [ -n "$_row" ] && rows_seen=$((rows_seen + 1))
+  _got="$(printf '%s' "$_row" | sed -n 's/^| [^`]*`\([^`]*\)`.*/\1/p')"
+  _want="$(df_published_version "$L")"
+  [ -n "$_want" ] || _want="0.1.0"
+  assert_eq "$_want" "$_got" "호환성 표의 $_lbl 버전이 SSOT와 다르다"
+done
+# ⚠️ 대조군 — 라벨 표기가 바뀌면 위 루프가 전부 "빈 값 == 빈 값"으로 조용히 통과할 수 있다.
+assert_eq "9" "$rows_seen"
+
 assert_report
