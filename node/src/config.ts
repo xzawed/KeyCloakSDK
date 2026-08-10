@@ -58,6 +58,19 @@ export interface KeycloakConfigInput {
  * 마스킹한다(Python `KeycloakConfig.__repr__`와 동형) — 실수로 시크릿을 로그에 흘리지 않게 한다.
  * 속성 접근(`config.clientSecret`)과 스프레드는 정상 동작하며, 마스킹 훅은 비열거(non-enumerable)다.
  */
+// 후행 슬래시 제거. 정규식(`replace(/\/+$/, '')`)이 아니라 선형 스캔인 이유:
+//  (1) `/+$`는 매칭 실패 위치마다 다시 시도하며 슬래시를 되짚어 입력 길이에 대해 초선형이 될 수
+//      있다(SonarCloud typescript:S8786). `serverUrl`은 설정값이라 실위험은 낮지만 고칠 이유도 낮다.
+//  (2) ⚠️ **동형성** — 같은 일을 하는 아홉 언어 중 go(`TrimRight`)·dotnet(`TrimEnd`)·php(`rtrim`)
+//      ·rust(`trim_end_matches`)·kotlin(`trimEnd`) 다섯이 이미 선형 문자열 트림을 쓴다. 정규식을
+//      쓰던 것은 java·node·ruby 셋뿐이었고, 그 셋을 나머지에 맞춘다.
+// 동작은 정규식과 **동일**하다(후행 슬래시를 전부 제거, 내부 슬래시는 보존).
+function stripTrailingSlashes(s: string): string {
+  let end = s.length
+  while (end > 0 && s[end - 1] === '/') end--
+  return s.slice(0, end)
+}
+
 export function defineConfig(input: KeycloakConfigInput): KeycloakConfig {
   for (const key of ['serverUrl', 'realm', 'clientId'] as const) {
     if (!input[key] || input[key].trim().length === 0) {
@@ -72,7 +85,7 @@ export function defineConfig(input: KeycloakConfigInput): KeycloakConfig {
     throw new KeycloakConfigError('jwksMinRefetchSeconds must be >= 0')
   }
   const config: KeycloakConfig = {
-    serverUrl: input.serverUrl.replace(/\/+$/, ''),
+    serverUrl: stripTrailingSlashes(input.serverUrl),
     realm: input.realm,
     clientId: input.clientId,
     clientSecret: input.clientSecret,

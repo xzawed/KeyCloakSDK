@@ -50,6 +50,11 @@ class KeycloakConfigTest {
     KeycloakConfig c = KeycloakConfig.builder().serverUrl("x").realm("r").clientId("app")
         .clientSecret("s3cr3t".toCharArray()).build();
     char[] returned = c.getClientSecret();
+    // ⚠️ 억제가 아니라 어서션이다(SonarCloud javabugs:S2259). `getClientSecret()`은 **정말로**
+    // null을 반환할 수 있다 — 퍼블릭/PKCE 클라이언트에는 시크릿이 없다(이 저장소의 알려진 게차:
+    // 그 null을 무조건 문자열화하던 코드가 맨 NPE를 냈다). 여기서는 시크릿을 준 설정이므로
+    // non-null이 계약이고, 그 계약을 명시하면 정적분석의 지적이 사라지면서 테스트 의도도 분명해진다.
+    assertNotNull(returned, "시크릿을 준 설정은 방어복사본을 반환해야 한다");
     returned[0] = 'X';
     assertArrayEquals("s3cr3t".toCharArray(), c.getClientSecret());
   }
