@@ -35,9 +35,28 @@ echo "[ruby-run] 1/3 install — gem install keycloak-sdk --version $PKG_VER --s
 # ⚠️ **`--clear-sources`는 `--source`보다 먼저 와야 한다** — 순서가 바뀌면 방금 추가한 소스까지
 # 지워지고 RubyGems가 기본 소스(rubygems.org)로 되돌아간다. 실측으로 걸렀다: 뒤에 두었더니
 # provenance가 전부 `https://index.rubygems.org/...`로 나왔다.
+# 2단계: SDK의 **런타임 의존성만** 공개 소스에서 채운다.
+# ⚠️ 처음에는 `gem install keycloak-sdk --conservative`로 "빠진 의존성만 채워진다"고 적었는데
+# **그것은 아무것도 설치하지 않는다**(`--conservative` = 이미 요구를 만족하는 gem은 건드리지 않음 —
+# keycloak-sdk가 이미 설치돼 있으므로 즉시 no-op다). 그 결과 설치는 초록인데 앱이
+# `Could not find 'faraday' (~> 2.0) (Gem::MissingSpecError)`로 못 떴다(실측).
+# 그렇다고 `--conservative`를 떼면 keycloak-sdk 자체를 **공개에서 다시 받아** 로컬 gem을 덮어쓴다.
+# 그래서 의존성 이름을 **설치된 gemspec에서 읽어** 그것만 설치한다 — 하드코딩이 아니라 파생이고,
+# 이 단계는 keycloak-sdk를 절대 다시 해석하지 않는다.
+install_sdk_deps() {
+  ruby -e 'require "rubygems"; Gem::Specification.find_by_name("keycloak-sdk").runtime_dependencies.each { |d| puts "#{d.name}|#{d.requirement}" }' >/tmp/sdk-deps.txt 2>>/tmp/install.log || return 1
+  [ -s /tmp/sdk-deps.txt ] || { echo "[ruby-run] SDK 런타임 의존성 목록이 비었다 — gemspec 읽기 실패" >>/tmp/install.log; return 1; }
+  _deps_rc=0
+  while IFS='|' read -r _dn _dr; do
+    [ -n "$_dn" ] || continue
+    gem install "$_dn" -v "$_dr" --no-document >>/tmp/install.log 2>&1 || _deps_rc=1
+  done </tmp/sdk-deps.txt
+  return "$_deps_rc"
+}
+
 if gem install keycloak-sdk --version "$PKG_VER" --clear-sources --source "$REG" \
         --ignore-dependencies --no-document -V >/tmp/install.log 2>&1 \
-   && gem install keycloak-sdk --version "$PKG_VER" --conservative --no-document >>/tmp/install.log 2>&1 \
+   && install_sdk_deps \
    && gem install sinatra puma rackup --no-document >>/tmp/install.log 2>&1; then
   echo "[ruby-run] gem install 성공 — 출처 확인 중"
   # .gem을 실제로 내려받은 URL. 없으면 "못 찾았다"고 적는다 — 빈 파일은 "공개에서 받았다"와
