@@ -19,12 +19,17 @@ describe('defineConfig', () => {
   // ⚠️ 슬래시 **여러 개**를 함께 고정한다. 구현이 정규식 `/\/+$/`에서 선형 트림으로 바뀌었는데,
   // 단일 슬래시만 검사하면 "하나만 지우는" 구현으로 퇴화해도 통과한다(내부 슬래시 보존도 함께).
   it('serverUrl 끝 슬래시를 전부 제거하되 내부 슬래시는 보존', () => {
-    expect(defineConfig({ serverUrl: 'https://kc.example.com////', realm: 'r', clientId: 'c' }).serverUrl)
-      .toBe('https://kc.example.com')
-    expect(defineConfig({ serverUrl: 'https://kc.example.com/auth//', realm: 'r', clientId: 'c' }).serverUrl)
-      .toBe('https://kc.example.com/auth')
-    expect(defineConfig({ serverUrl: 'https://kc.example.com', realm: 'r', clientId: 'c' }).serverUrl)
-      .toBe('https://kc.example.com')
+    expect(
+      defineConfig({ serverUrl: 'https://kc.example.com////', realm: 'r', clientId: 'c' })
+        .serverUrl,
+    ).toBe('https://kc.example.com')
+    expect(
+      defineConfig({ serverUrl: 'https://kc.example.com/auth//', realm: 'r', clientId: 'c' })
+        .serverUrl,
+    ).toBe('https://kc.example.com/auth')
+    expect(
+      defineConfig({ serverUrl: 'https://kc.example.com', realm: 'r', clientId: 'c' }).serverUrl,
+    ).toBe('https://kc.example.com')
   })
 
   it('기본값 채움 + serverUrl 끝 슬래시 제거', () => {
