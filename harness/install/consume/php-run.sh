@@ -39,7 +39,8 @@ if composer config repositories.local composer "$REG" >/tmp/install.log 2>&1 \
   echo "[php-run] SDK 출처: $(cat "$STATUS/provenance.txt" 2>/dev/null)"
   # ⚠️ **출처 단언**(이슈 #167) — Packagist가 살아 있으므로 같은 좌표가 거기 있으면 거기서
   # 받아도 초록이다. 판정을 출처에 의존시킨다(python-run.sh와 동형).
-  if grep -qF "$REG" "$STATUS/provenance.txt" 2>/dev/null; then
+  # ⚠️ **전부 로컬이라야 한다** + 빈 파일도 실패(여섯 언어 공통 규칙).
+  if [ -s "$STATUS/provenance.txt" ] && ! grep -v -F "$REG" "$STATUS/provenance.txt" | grep -q .; then
     PROVENANCE_OK=1
   else
     PROVENANCE_OK=0

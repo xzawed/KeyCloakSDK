@@ -38,13 +38,24 @@ echo "[kotlin-run] 1/3 install — gradle classes(mvn-repo-kotlin에서 keycloak
 # 아티팩트 옆에 저장소 id를 남기지 않으므로 info 레벨의 다운로드 로그가 유일한 관측 지점이다.
 if sh ./gradlew --no-daemon --info classes >/tmp/install.log 2>&1; then
   echo "[kotlin-run] gradle classes 성공 — 출처 확인 중"
-  grep -oE 'https?://[^ ]*keycloak-sdk-kotlin[^ ]*\.(jar|pom|module)' /tmp/install.log | sort -u | head -3 >"$STATUS/provenance.txt" 2>/dev/null || true
+  # ⚠️ **잘라내지 않는다.** 예전 구현은 `sort -u | head -3`이었는데, `http://`가 `https://`보다 먼저
+  # 정렬되므로 로컬 URL 세 개가 앞자리를 채우면 **공개 저장소 URL이 잘려나가** 기록에서 사라진다.
+  # 그러면 아래 "전부 로컬" 규칙이 잘린 증거만 보고 통과한다(공허). 전부 남긴다.
+  grep -oE 'https?://[^ ]*keycloak-sdk-kotlin[^ ]*\.(jar|pom|module)' /tmp/install.log | sort -u >"$STATUS/provenance.txt" 2>/dev/null || true
   [ -s "$STATUS/provenance.txt" ] || echo "<--info 로그에서 SDK 다운로드 URL을 찾지 못했다(캐시 히트?)>" >"$STATUS/provenance.txt"
   echo "[kotlin-run] SDK 출처: $(tr '\n' ' ' <"$STATUS/provenance.txt" 2>/dev/null)"
   # ⚠️ **출처 단언**(이슈 #167). 레지스트리 URL은 build.gradle.kts의 `maven { url = uri(...) }`에서
   # 파생한다 — 하드코딩하면 URL을 바꿀 때 가드가 낡은 값을 지키며 초록이 된다.
   _kreg="$(sed -n 's|.*uri("\(http[^"]*\)").*|\1|p' build.gradle.kts | head -1)"
-  if [ -n "$_kreg" ] && grep -qF "$_kreg" "$STATUS/provenance.txt" 2>/dev/null; then
+  # ⚠️ **전부 로컬이라야 한다.** Gradle은 --info에서 *실패한 시도*의 URL도 남긴다("Resource missing"
+  # 등) — 그래서 "로컬 URL이 하나라도 있으면 통과"로 두면, 로컬에서 pom을 못 찾고 **Central에서
+  # 받은** 실행도 로컬 URL이 로그에 있다는 이유로 통과한다. 기록된 SDK URL이 전부 로컬일 때만
+  # 통과시키면 성공/시도를 구분하지 않고도 그 구멍이 닫힌다.
+  # ⚠️ 음성 조건(외부 URL 없음)만으로는 "아무것도 안 받았는데 통과"가 가능하다 — **양성 조건**을
+  # 함께 건다: 로컬에서 실제로 `.jar`를 받은 줄이 최소 하나 있어야 한다.
+  if [ -n "$_kreg" ] && [ -s "$STATUS/provenance.txt" ] \
+     && ! grep -v -F "$_kreg" "$STATUS/provenance.txt" | grep -q . \
+     && grep -q -e "^${_kreg}.*\.jar$" "$STATUS/provenance.txt"; then
     PROVENANCE_OK=1
   else
     PROVENANCE_OK=0

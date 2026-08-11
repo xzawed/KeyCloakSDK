@@ -122,6 +122,27 @@ for L in python java kotlin ruby php go; do
   # 사람은 없다. 판정(`installed.ok`)이 출처에 **의존**해야 한다.
   assert_contains "$body" 'PROVENANCE_OK' \
     "$L-run.sh 가 출처를 단언하지 않는다 — 공개 레지스트리에서 받아도 installed.ok가 써진다(#167)"
+
+  # ⚠️ **문자열 존재만 보는 것으로는 공허하다 — 실측으로 확인했다.** 단언을 `if true; then`으로
+  # 바꿔도 위 두 어서션은 통과했다(29 passed). 그래서 두 가지를 더 못박는다:
+  #   (a) `PROVENANCE_OK=1`은 **provenance.txt를 읽는 조건** 안에서만 설정돼야 한다
+  #   (b) `installed.ok` 쓰기는 `[ "$PROVENANCE_OK" = 1 ]` **뒤에** 와야 한다(판정 의존성)
+  # 이래도 의미론까지 증명하지는 못한다(그건 컨테이너를 띄워야 한다) — 그러나 "고치는 것처럼
+  # 보이는 편집"으로 단언이 무력화되는 경로는 닫힌다.
+  gated="$(awk '
+    /PROVENANCE_OK=1/ { for (i = NR - 4; i < NR; i++) if (i > 0 && buf[i] ~ /grep .*provenance\.txt/) { print "yes"; exit } }
+    { buf[NR] = $0 }
+  ' "$f")"
+  assert_eq "yes" "$gated" \
+    "$L-run.sh 의 PROVENANCE_OK=1 이 provenance.txt를 읽는 조건 안에 있지 않다 — 무조건 통과로 바뀌었나(#167)"
+
+  ok_line="$(grep -n '\[ "\$PROVENANCE_OK" = 1 \]' "$f" | head -1 | cut -d: -f1)"
+  mark_line="$(grep -n ': > "\$STATUS/installed.ok"' "$f" | head -1 | cut -d: -f1)"
+  assert_ok test -n "$ok_line"
+  assert_ok test -n "$mark_line"
+  if [ -n "$ok_line" ] && [ -n "$mark_line" ]; then
+    assert_ok test "$mark_line" -gt "$ok_line"
+  fi
 done
 # ⚠️ 대조군 — 파일명 규칙이 바뀌면 위 루프가 한 번도 돌지 않고 조용히 통과한다.
 assert_eq "6" "$prov_langs" "소스-추가 6개 언어의 consume 스크립트를 다 찾지 못했다 — 파일명 규칙이 바뀌었나"

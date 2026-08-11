@@ -22,18 +22,40 @@ echo "[ruby-run] 1/3 install — gem install keycloak-sdk --version $PKG_VER --s
 # 있고, 같은 좌표·같은 버전이 거기에도 있으면 거기서 받아도 초록이다 — 그 순간 검증 대상은 방금
 # 만든 산출물이 아니라 공개 gem이다. RubyGems에는 설치 후 출처를 남기는 파일이 없어(설치된 spec은
 # source를 기록하지 않는다) 상세 로그가 유일한 관측 지점이다.
-if gem install keycloak-sdk --version "$PKG_VER" --source "$REG" --no-document -V >/tmp/install.log 2>&1 \
+# ⚠️ **`--clear-sources`가 필수다 — 실측으로 드러났다.** `--source`만 쓰면 rubygems.org가 그대로
+# 남고, 같은 좌표·같은 버전이 공개에도 있으면 RubyGems가 **공개에서 본문을 받는다**. 실측 로그:
+#     http://gemserver:8808/info/keycloak-sdk                        ← 로컬: 인덱스
+#     http://gemserver:8808/quick/Marshal.4.8/…gemspec.rz            ← 로컬: 스펙
+#     https://index.rubygems.org/gems/keycloak-sdk-0.1.0.rc1.gem     ← 공개: **본문**
+# 즉 이 레그는 방금 만든 .gem이 아니라 게시된 gem을 검증하고 있었다(#167이 예측한 바로 그 상태).
+# 그래서 SDK 자기 좌표만 로컬 소스로 **격리**한다(dotnet packageSourceMapping·rust source
+# replacement와 같은 형태). 전이 의존성은 아래 2단계에서 공개 소스로 받는다 —
+# `--ignore-dependencies`로 1단계를 SDK 본문에만 한정하고, 2단계 `--conservative`가 이미 설치된
+# SDK는 건드리지 않고 빠진 의존성만 채운다.
+# ⚠️ **`--clear-sources`는 `--source`보다 먼저 와야 한다** — 순서가 바뀌면 방금 추가한 소스까지
+# 지워지고 RubyGems가 기본 소스(rubygems.org)로 되돌아간다. 실측으로 걸렀다: 뒤에 두었더니
+# provenance가 전부 `https://index.rubygems.org/...`로 나왔다.
+if gem install keycloak-sdk --version "$PKG_VER" --clear-sources --source "$REG" \
+        --ignore-dependencies --no-document -V >/tmp/install.log 2>&1 \
+   && gem install keycloak-sdk --version "$PKG_VER" --conservative --no-document >>/tmp/install.log 2>&1 \
    && gem install sinatra puma rackup --no-document >>/tmp/install.log 2>&1; then
   echo "[ruby-run] gem install 성공 — 출처 확인 중"
   # .gem을 실제로 내려받은 URL. 없으면 "못 찾았다"고 적는다 — 빈 파일은 "공개에서 받았다"와
   # 구분되지 않으므로 침묵시키지 않는다.
-  grep -oE 'https?://[^ "]*keycloak-sdk[^ "]*\.gem' /tmp/install.log | head -1 >"$STATUS/provenance.txt" 2>/dev/null || true
-  [ -s "$STATUS/provenance.txt" ] || grep -oE 'https?://[^ "]*' /tmp/install.log | sort -u | head -3 >"$STATUS/provenance.txt" 2>/dev/null || true
-  [ -s "$STATUS/provenance.txt" ] || echo "<-V 출력에서 URL을 찾지 못했다>" >"$STATUS/provenance.txt"
+  # ⚠️ 예전 구현은 `\.gem`에 매치되는 **첫 줄 하나만** 남겼는데, 그 첫 줄은 실제로 gem 본문이 아니라
+  # quick 스펙 URL(`/quick/Marshal.4.8/…gemspec.rz`)이 `\.gem`까지만 잘린 것이었다(실측:
+  # `http://gemserver:8808/quick/Marshal.4.8/keycloak-sdk-0.1.0.rc1.gem` — 본문은
+  # `/gems/keycloak-sdk-0.1.0.rc1.gem`에 있다). 메타데이터만 로컬이고 본문은 공개에서 받는 조합을
+  # 구분하지 못하므로, **이 gem과 관련된 URL을 전부** 남기고 아래에서 전부 로컬인지 본다.
+  grep -oE 'https?://[^ "]*keycloak-sdk[^ "]*' /tmp/install.log | sort -u >"$STATUS/provenance.txt" 2>/dev/null || true
+  [ -s "$STATUS/provenance.txt" ] || echo "<-V 출력에서 keycloak-sdk URL을 찾지 못했다>" >"$STATUS/provenance.txt"
   echo "[ruby-run] SDK 출처: $(tr '\n' ' ' <"$STATUS/provenance.txt" 2>/dev/null)"
   # ⚠️ **출처 단언**(이슈 #167) — `--source`는 APPEND라 rubygems.org가 살아 있다. 같은 좌표·같은
   # 버전이 거기에도 있으면 거기서 받아도 초록이므로, 판정을 출처에 의존시킨다.
-  if grep -qF "$REG" "$STATUS/provenance.txt" 2>/dev/null; then
+  # ⚠️ **전부 로컬** + **양성 조건**: 로컬에서 `.gem` **본문**(`/gems/…gem`)을 받은 줄이 있어야 한다.
+  # 스펙(`/quick/…gemspec.rz`)·인덱스(`/info/…`)만 로컬이고 본문은 공개인 조합이 실제로 있었다.
+  if [ -s "$STATUS/provenance.txt" ] && ! grep -v -F "$REG" "$STATUS/provenance.txt" | grep -q . \
+     && grep -q "^${REG}.*/gems/.*\.gem$" "$STATUS/provenance.txt"; then
     PROVENANCE_OK=1
   else
     PROVENANCE_OK=0

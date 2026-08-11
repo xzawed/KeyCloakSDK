@@ -49,13 +49,28 @@ if mvn -s "$SETTINGS" -B -q dependency:get "-Dartifact=io.github.xzawed:keycloak
   # ⚠️ **출처 단언**(이슈 #167). 저장소 id는 settings.xml에서 파생한다 — 하드코딩하면 id를 바꿀 때
   # 가드가 **낡은 id를 지키며 초록**이 된다(node 스코프 가드가 package.json에서 파생하는 것과 같은 이유).
   # `_remote.repositories`의 `<파일>><id>=` 형식에서 그 id가 보이면 로컬이 서빙한 것이다.
-  _repo_id="$(grep -o '<id>[^<]*</id>' "$SETTINGS" | sed 's|</*id>||g' | grep -v 'maven-default-http-blocker' | head -1)"
-  _repo_id="${_repo_id:-mvn-repo}"
-  if grep -q ">${_repo_id}=" "$STATUS/provenance.txt" 2>/dev/null; then
-    PROVENANCE_OK=1
-  else
-    PROVENANCE_OK=0
-  fi
+  # ⚠️ **`<repositories>` 블록으로 스코프를 좁힌다.** 예전 구현은 파일 전체의 첫 `<id>`를 집었는데,
+  # settings.xml에는 `<mirror>`·`<server>`·`<proxy>`·`<profile>`에도 `<id>`가 있다. 그게 오늘 맞는
+  # 값을 낸 것은 profile id와 repository id의 철자가 우연히 같기 때문이었다. `<server>`(XSD상
+  # `<mirrors>`보다 위에 와야 한다)를 하나 추가하면 오탐으로 뒤집히고, `<mirror><id>central</id>`를
+  # 추가하면 **거짓 통과**가 된다(Central에서 받은 아티팩트가 `>central=`로 기록되므로).
+  _repo_ids="$(sed -n '/<repositories>/,/<\/repositories>/{ s|.*<id>\([^<]*\)</id>.*|\1|p; }' "$SETTINGS")"
+  # ⚠️ **"하나라도 로컬"이 아니라 "전부 로컬"이라야 한다.** `_remote.repositories`는 파일마다 한 줄이라
+  # jar는 central, pom은 mvn-repo인 **부분 출처**가 성립한다 — 실측으로 확인했다(`jar>central=` +
+  # `pom>mvn-repo=` 조합이 "하나라도" 규칙을 통과했다). 비어 있는 것도 실패다(fail-closed).
+  # 선언된 로컬 저장소 id 중 하나로 **전부** 기록돼 있고, 그중 **jar**가 있어야 통과다
+  # (pom만 로컬인 부분 출처 차단 · `central`은 로컬이 아니므로 후보에서 제외).
+  PROVENANCE_OK=0
+  _repo_id=""
+  for _id in $_repo_ids; do
+    [ "$_id" = central ] && continue
+    if [ -s "$STATUS/provenance.txt" ] \
+       && ! grep -v ">${_id}=" "$STATUS/provenance.txt" | grep -q . \
+       && grep -q "\.jar>${_id}=" "$STATUS/provenance.txt"; then
+      PROVENANCE_OK=1; _repo_id="$_id"; break
+    fi
+  done
+  [ -n "$_repo_id" ] || _repo_id="$(printf '%s' "$_repo_ids" | tr '\n' ' ')"
   if [ "$PROVENANCE_OK" = 1 ]; then
     : > "$STATUS/installed.ok"
     echo "[java-run] install OK (저장소 ${_repo_id}가 서빙했다)"

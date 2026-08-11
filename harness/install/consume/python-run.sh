@@ -43,7 +43,9 @@ PY
   # 실행의 로그를 매일 읽는 사람은 없다. 판정(`installed.ok`)이 출처에 의존해야 한다.
   # 실측: 로컬 인덱스를 못 쓰는 상태에서도 pip은 PyPI에서 받아 exit 0으로 끝난다 — 그때
   # 이 단언이 없으면 하네스는 **공개 패키지를 검증하고 초록**이 된다.
-  if grep -qF "$REG" "$STATUS/provenance.txt" 2>/dev/null; then
+  # ⚠️ **전부 로컬이라야 한다**(기록된 줄이 하나라도 로컬이 아니면 실패) + 빈 파일도 실패.
+  # 여섯 언어가 같은 규칙을 쓴다 — "하나라도 로컬"은 부분 출처·시도 URL 혼입을 통과시킨다.
+  if [ -s "$STATUS/provenance.txt" ] && ! grep -v -F "$REG" "$STATUS/provenance.txt" | grep -q .; then
     PROVENANCE_OK=1
   else
     PROVENANCE_OK=0

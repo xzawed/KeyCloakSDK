@@ -25,6 +25,20 @@ export GOPATH=/root/go
 PKG_VER="${PKG_VER:-0.1.0}"
 cd /app || exit 1
 
+# ⚠️ **출처를 "파일 존재"가 아니라 "실제 다운로드"로 관측한다**(이슈 #167). 예전 구현은 `/proxy`에
+# `v<VER>.info`가 있는지만 봤는데, Go의 GOPROXY 체인은 **파일 단위로** 404에서 다음 프록시로
+# 넘어간다(`file://` 프록시의 파일 부재 = 404). 그래서 `.info`만 있고 `.zip`이 없으면 모듈 본문을
+# 공개 프록시가 서빙하는데도 "로컬이 출처"로 보고됐다(실측: `.info`만 남긴 프록시로 체인 실행 시
+# `go mod download` 성공 + 옛 단언 통과). 지금은 **공개 폴백 없이** file 프록시만으로 모듈 전체를
+# 받아본다 — 성공하면 그 뒤 체인 `go get`은 모듈 캐시가 단락시켜 공개에서 다시 받을 수 없다.
+echo "[go-run] 0/3 출처 확인 — GOPROXY=file:///proxy 단독으로 모듈 전체(.info/.mod/.zip) 다운로드"
+if GOPROXY="file:///proxy" go mod download "github.com/xzawed/KeyCloakSDK/go@v$PKG_VER" >/tmp/prov.log 2>&1; then
+  PROVENANCE_OK=1
+else
+  PROVENANCE_OK=0
+  echo "[go-run] file GOPROXY 단독 다운로드 실패(체인이라면 공개 프록시로 폴스루했을 상황):"; cat /tmp/prov.log
+fi
+
 echo "[go-run] 1/3 install — go get github.com/xzawed/KeyCloakSDK/go@v$PKG_VER github.com/Nerzal/gocloak/v13@v13.9.0"
 # 실제 소비자 명령 형태(패키지@버전을 커맨드라인에 명시) — SDK를 file GOPROXY에서 $PKG_VER로 설치.
 if go get "github.com/xzawed/KeyCloakSDK/go@v$PKG_VER" github.com/Nerzal/gocloak/v13@v13.9.0 >/tmp/install.log 2>&1 \
@@ -36,18 +50,17 @@ if go get "github.com/xzawed/KeyCloakSDK/go@v$PKG_VER" github.com/Nerzal/gocloak
   # 버전을 가지고 있는지가 곧 출처다(go는 받은 모듈 옆에 프록시 URL을 남기지 않아 사후 조회가 안 된다).
   # 동시에 **공개 프록시도 그 버전을 아는지**를 함께 잰다: 둘 다 참인 순간부터 file 합성이 실패해도
   # 공개 프록시가 받아줘 초록이 되고, 그 사각지대가 영구화된다(go/v* 태그를 미는 순간 그렇게 된다).
-  # ⚠️ 모듈 경로는 프록시 레이아웃에서 **대문자가 이스케이프**된다 —
-  # `github.com/xzawed/KeyCloakSDK/go` → `github.com/xzawed/!key!cloak!s!d!k/go`.
-  # 그래서 `*KeyCloak*`로 찾으면 파일이 있는데도 없다고 나온다(실측으로 걸렀다). `@v` 레이아웃으로 찾는다.
+  # 위 0/3 단계의 관측 결과를 리포트용으로 남긴다(판정은 이미 PROVENANCE_OK에 있다).
   {
-    if find /proxy -path "*xzawed*/@v/v${PKG_VER}.info" 2>/dev/null | grep -q .; then
-      echo "file:///proxy (체인 1순위가 v${PKG_VER}를 보유 — 이것이 출처다)"
+    if [ "$PROVENANCE_OK" = 1 ]; then
+      echo "file:///proxy 단독으로 모듈 전체를 받았다 — 출처는 file GOPROXY다"
     else
-      echo "file:///proxy 에 v${PKG_VER} 없음 — 체인이 공개 프록시로 폴스루했다"
+      echo "file:///proxy 단독 다운로드 실패 — 체인이라면 공개 프록시가 서빙했을 것이다"
     fi
     # ⚠️ busybox wget에는 `-S`가 없다(alpine 베이스) — `--spider`의 종료코드로 존재 여부를 잰다.
-    if wget -q --spider "https://proxy.golang.org/github.com/xzawed/!key!cloak!s!d!k/go/@v/v${PKG_VER}.info" 2>/dev/null; then
-      echo "공개 프록시: v${PKG_VER} **보유** — file 합성이 실패해도 폴스루가 조용히 성공한다(사각지대 활성)"
+    # ⚠️ `-T`가 없으면 응답하지 않는 피어에서 busybox 기본 900초를 기다린다(실측: 150초 지나도 미종료).
+    if wget -q -T 5 --spider "https://proxy.golang.org/github.com/xzawed/!key!cloak!s!d!k/go/@v/v${PKG_VER}.info" 2>/dev/null; then
+      echo "공개 프록시: v${PKG_VER} **보유** — file 합성이 실패하면 폴스루가 조용히 성공할 수 있는 상태다"
     else
       echo "공개 프록시: v${PKG_VER} 미보유 — 지금은 폴스루해도 실패한다(go/v* 태그를 미는 순간 위 줄로 바뀐다)"
     fi
