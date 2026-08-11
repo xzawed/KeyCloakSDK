@@ -26,13 +26,26 @@ const root =
   cliArgs.find((a) => !a.startsWith('--')) ??
   new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
 const errors = []
+// ⚠️ **하네스 샘플 앱 핀 오류는 별도 계급이다** — plain 모드에서는 `errors`와 똑같이 치명적이지만
+// `--list`에서는 치명적이지 않다.
+//
+// 왜 나눴나: `--list`의 계약은 "언어별 매니페스트 버전"이고 하네스 앱의 핀은 그 값에 아무 영향도
+// 주지 않는다. 그런데 한 배열을 공유하면 **낡은 핀 하나가 파생 자체를 죽인다** —
+// `harness/install/install-verify.sh`는 무명시 실행에서 이 목록을 fail-closed로 소비하므로
+// (`--list` 실패 → exit 2) 언어 루프에 **진입조차 못 하고** 신호도 INSTALL-MATRIX.md도 나오지 않는다.
+// 즉 kotlin 앱 하나의 드리프트가 아홉 언어를 전부 측정 불가로 만든다 — 이 가드가 막으려던 사고
+// (kotlin 앱 하나가 빌드에 실패하는 것)보다 **더 넓은 정지**다. 실측으로 확인했다.
+// 진짜 추출 실패(매니페스트에서 버전을 못 읽음)는 그대로 `errors`라 두 모드 모두 하드 실패다 —
+// 그건 파생 값 자체를 신뢰할 수 없는 경우이기 때문이다.
+const harnessErrors = []
 const found = []
 
 const read = (p) => readFileSync(join(root, p), 'utf8')
-const pick = (p, re, label) => {
+// sink: 이 오류가 어느 계급인지 — 기본은 파생을 막는 `errors`, 하네스 검사는 `harnessErrors`.
+const pick = (p, re, label, sink = errors) => {
   const m = re.exec(read(p))
   if (!m) {
-    errors.push(`${p} 에서 ${label} 버전을 추출하지 못했다 — 추출 실패도 실패로 취급한다(가드가 조용히 무력화되면 안 된다)`)
+    sink.push(`${p} 에서 ${label} 버전을 추출하지 못했다 — 추출 실패도 실패로 취급한다(가드가 조용히 무력화되면 안 된다)`)
     return null
   }
   return m[1]
@@ -157,12 +170,12 @@ for (const [lang, p, re] of manifests) {
     // (이 가드 자신의 픽스처·부분 체크아웃)에서는 검사할 것이 없다. 그러나 파일이 있는데 좌표
     // 선언이 안 읽히면 그건 실패다 — 조용히 통과하면 가드가 무력화된 것을 아무도 모른다.
     if (!existsSync(join(root, p))) continue
-    const pinned = pick(p, re, `${lang} 하네스 앱의 SDK 핀`)
-    if (pinned === null) continue // pick()이 이미 errors에 적었다
+    const pinned = pick(p, re, `${lang} 하네스 앱의 SDK 핀`, harnessErrors)
+    if (pinned === null) continue // pick()이 이미 harnessErrors에 적었다
     const ssot = found.find(([l]) => l === lang)?.[1]
     if (ssot === undefined) continue // 해당 언어 SSOT 추출이 이미 실패했다 — 중복 보고하지 않는다
     if (pinned !== ssot) {
-      errors.push(
+      harnessErrors.push(
         `${p} 의 ${coord} 핀이 "${pinned}" 인데 ${lang} SSOT 는 "${ssot}" 다 — ` +
           `SDK 버전을 범프하면 **같은 커밋에서** 하네스 앱의 핀도 옮길 것(이 드리프트는 야간 score-all에서만 드러난다)`,
       )
@@ -216,15 +229,22 @@ if (listMode) {
     for (const e of errors) console.error(`::error::${e}`)
     process.exit(1)
   }
+  // ⚠️ 하네스 핀 드리프트는 여기서 **차단하지 않는다**(위 harnessErrors 선언부의 근거). 그러나
+  // 조용히 넘기지도 않는다 — stderr로 경고를 낸다. stdout의 두 컬럼 계약은 그대로다(소비자는
+  // stdout만 읽는다). 차단은 plain 모드(repo-hygiene 머지 게이트)가 한다.
+  for (const e of harnessErrors) console.error(`::warning::${e}`)
   for (const [lang, v] of found) console.log(`${lang}\t${v}`)
   process.exit(0)
 }
 
 for (const [lang, v, where] of found) console.log(`  ${lang.padEnd(8)} ${v.padEnd(18)} ${where}`)
 for (const w of warnings) console.log(`::warning::${w}`)
-if (errors.length) {
-  for (const e of errors) console.log(`::error::${e}`)
-  console.log(`\n버전 SSOT 검사 실패 — ${errors.length}건`)
+// plain 모드에서는 하네스 핀 드리프트도 치명적이다 — 이 모드가 도는 자리(repo-hygiene 머지 게이트 ·
+// install-smoke)는 "리포가 정합한가"를 묻는 자리이고, 거기서는 사람이 고쳐야 한다.
+const fatal = [...errors, ...harnessErrors]
+if (fatal.length) {
+  for (const e of fatal) console.log(`::error::${e}`)
+  console.log(`\n버전 SSOT 검사 실패 — ${fatal.length}건`)
   process.exit(1)
 }
 console.log(

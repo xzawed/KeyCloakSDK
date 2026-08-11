@@ -139,6 +139,22 @@ assert_contains "$OUT" "harness/apps/kotlin/build.gradle.kts" "드리프트한 �
 # 낡은 **핀 쪽** 값이 좌표와 함께 나오는지를 본다.
 assert_contains "$OUT" 'keycloak-sdk-kotlin 핀이 "0.1.0" 인데' "핀에 박힌 낡은 값을 좌표와 함께 보여줘야 한다"
 
+# ⚠️ **같은 드리프트가 `--list`를 죽이면 안 된다.** `--list`의 계약은 "언어별 매니페스트 버전"이고
+# 하네스 앱의 핀은 그 값에 아무 영향도 주지 않는다. 그런데 한때 같은 `errors` 배열을 공유해서,
+# 낡은 핀 하나가 `harness/install/install-verify.sh`의 파생을 fail-closed로 죽였다 — 야간 하네스가
+# **아홉 언어 중 하나도 측정하지 못하고** INSTALL-MATRIX.md도 없이 끝났다(실측). 이 가드가 막으려던
+# 사고(kotlin 앱 하나가 빌드 실패)보다 넓은 정지다. 그래서 `--list`에서는 경고로만 남긴다.
+assert_ok node "$GUARD" "$TMP" --list
+# ⚠️ `|| true` 필수 — 이 파일은 `set -e`라 대입문의 명령치환이 실패하면 그 자리에서 죽고
+# `assert_report`에 도달하지 못해 남은 어서션이 아예 돌지 않는다(회귀 시가 정확히 그 경우다).
+LOUT="$(node "$GUARD" "$TMP" --list 2>/dev/null)" || true
+assert_contains "$LOUT" "$(printf 'kotlin\t0.1.0-RC1')" "--list: 하네스 핀이 낡아도 kotlin 행이 나와야 한다"
+assert_contains "$LOUT" "$(printf 'python\t0.1.0')" "--list: 하네스 핀이 낡아도 나머지 언어 행이 나와야 한다"
+assert_not_contains "$LOUT" "::" "--list: stdout은 두 컬럼뿐이다(경고·오류는 stderr)"
+LERR="$(node "$GUARD" "$TMP" --list 2>&1 1>/dev/null)" || true
+assert_contains "$LERR" '::warning::' "--list: 하네스 드리프트를 경고로는 남겨야 한다(조용한 통과 금지)"
+assert_contains "$LERR" 'keycloak-sdk-kotlin 핀이 "0.1.0" 인데' "--list: 경고가 낡은 핀 값을 지목해야 한다"
+
 # 변이 B — java 쪽만 낡음. 둘 중 하나만 검사하면 이쪽이 새 나간다.
 cp -r "$FIX/." "$TMP/"
 sed -i 's|<version>0.1.0-SNAPSHOT</version>|<version>0.0.9</version>|' "$JPIN"
