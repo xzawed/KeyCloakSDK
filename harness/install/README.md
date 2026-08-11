@@ -32,13 +32,16 @@ Output: `report/INSTALL-MATRIX.md` (per-language step-status table) + `report/si
 ```
 A. Publish   publish/<lang>.sh builds the actual release artifact → publishes it to the local registry.
 B. Install   consume/<lang>.Dockerfile (files only) → the runtime entrypoint consume/<lang>-run.sh, on
-             install-net: installs from the registry → runs the quickstart smoke → boots the harness app.
+             install-net: installs from the registry → **asserts where the SDK actually came from** →
+             runs the quickstart smoke → boots the harness app.
              State is recovered via marker files (installed.ok, quickstart.ok) under the host-mounted /status.
 C. Operate   re-runs the existing conformance.mjs (26 contract checks) + security/probe.mjs (9 JWT probes) against the installed-package app.
 D. Report    report/install-matrix.mjs turns signals/*.install.json → INSTALL-MATRIX.md.
 ```
 
 **Maximum reuse**: the app code (`harness/apps/<lang>`), conformance, security, and the Keycloak realm are reused as-is, and **only the dependency-resolution source** changes from a source path to the local registry. Pass/fail therefore means exactly "does the published package actually install and operate?"
+
+⚠️ **Provenance is asserted, not assumed** (issue #167). Six languages (python · java · kotlin · ruby · php · go) *add* the local source while leaving the public registry enabled, because pinning every transitive dependency to the local registry would stop testing the real consumer path. That means a package with the same coordinate **and the same version** on the public registry can satisfy the install — so a broken local artifact would still go green, and the harness would silently be verifying the public package instead of the one just built. Measured, not hypothesized: with the local index unreachable, `pip install "keycloak-sdk==0.1.0rc1"` succeeds from `files.pythonhosted.org` and exits 0. Each of those six `*-run.sh` scripts therefore records the actual download source to `/status/provenance.txt` (pip `--report` · Maven `_remote.repositories` · Gradle `--info` · `gem install -V` · `composer.lock` `dist.url` · file-GOPROXY presence) and **only writes `installed.ok` when it points at the local registry**. `scripts/test/test-harness-registries.sh` guards that both the record and the assertion stay in place. The other three (node · rust · dotnet) isolate structurally instead (Verdaccio scope without uplink · cargo source replacement · NuGet `packageSourceMapping`).
 
 ## Per-language local registry (hybrid = ecosystem-native local)
 

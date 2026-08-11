@@ -34,8 +34,51 @@ echo "[java-run] 소비자 POM의 keycloak-sdk-bom 버전을 ${PKG_VER}로 치�
 
 echo "[java-run] 1/3 install — mvn dependency:get -Dartifact=io.github.xzawed:keycloak-sdk:$PKG_VER (mvn-repo)"
 if mvn -s "$SETTINGS" -B -q dependency:get "-Dartifact=io.github.xzawed:keycloak-sdk:$PKG_VER" >/tmp/install.log 2>&1; then
-  : > "$STATUS/installed.ok"
-  echo "[java-run] install OK"
+  echo "[java-run] dependency:get 성공 — 출처 확인 중"
+  # ⚠️ **출처를 기록한다**(이슈 #167). settings.xml은 Central을 유지한 채 mvn-repo를 **추가**한다
+  # (부록 §java의 "`<mirror>*</mirror>` 금지" 준수 결과) — 같은 좌표·같은 버전이 Central에도 있으면
+  # 거기서 받아도 초록이다. Maven은 받은 아티팩트 옆에 `_remote.repositories`로 **저장소 id**를
+  # 남기므로(`keycloak-sdk-<ver>.jar>mvn-repo=`) 그것이 이 언어의 기계가독 출처 기록이다.
+  _rr="${HOME}/.m2/repository/io/github/xzawed/keycloak-sdk/${PKG_VER}/_remote.repositories"
+  if [ -f "$_rr" ]; then
+    grep -E '\.(jar|pom)>' "$_rr" >"$STATUS/provenance.txt" 2>/dev/null || true
+  else
+    echo "<_remote.repositories 부재 — 로컬 빌드 산출물이거나 경로가 바뀌었다>" >"$STATUS/provenance.txt"
+  fi
+  echo "[java-run] SDK 출처: $(tr '\n' ' ' <"$STATUS/provenance.txt" 2>/dev/null)"
+  # ⚠️ **출처 단언**(이슈 #167). 저장소 id는 settings.xml에서 파생한다 — 하드코딩하면 id를 바꿀 때
+  # 가드가 **낡은 id를 지키며 초록**이 된다(node 스코프 가드가 package.json에서 파생하는 것과 같은 이유).
+  # `_remote.repositories`의 `<파일>><id>=` 형식에서 그 id가 보이면 로컬이 서빙한 것이다.
+  # ⚠️ **`<repositories>` 블록으로 스코프를 좁힌다.** 예전 구현은 파일 전체의 첫 `<id>`를 집었는데,
+  # settings.xml에는 `<mirror>`·`<server>`·`<proxy>`·`<profile>`에도 `<id>`가 있다. 그게 오늘 맞는
+  # 값을 낸 것은 profile id와 repository id의 철자가 우연히 같기 때문이었다. `<server>`(XSD상
+  # `<mirrors>`보다 위에 와야 한다)를 하나 추가하면 오탐으로 뒤집히고, `<mirror><id>central</id>`를
+  # 추가하면 **거짓 통과**가 된다(Central에서 받은 아티팩트가 `>central=`로 기록되므로).
+  _repo_ids="$(sed -n '/<repositories>/,/<\/repositories>/{ s|.*<id>\([^<]*\)</id>.*|\1|p; }' "$SETTINGS")"
+  # ⚠️ **"하나라도 로컬"이 아니라 "전부 로컬"이라야 한다.** `_remote.repositories`는 파일마다 한 줄이라
+  # jar는 central, pom은 mvn-repo인 **부분 출처**가 성립한다 — 실측으로 확인했다(`jar>central=` +
+  # `pom>mvn-repo=` 조합이 "하나라도" 규칙을 통과했다). 비어 있는 것도 실패다(fail-closed).
+  # 선언된 로컬 저장소 id 중 하나로 **전부** 기록돼 있고, 그중 **jar**가 있어야 통과다
+  # (pom만 로컬인 부분 출처 차단 · `central`은 로컬이 아니므로 후보에서 제외).
+  PROVENANCE_OK=0
+  _repo_id=""
+  for _id in $_repo_ids; do
+    [ "$_id" = central ] && continue
+    if [ -s "$STATUS/provenance.txt" ] \
+       && ! grep -v ">${_id}=" "$STATUS/provenance.txt" | grep -q . \
+       && grep -q "\.jar>${_id}=" "$STATUS/provenance.txt"; then
+      PROVENANCE_OK=1; _repo_id="$_id"; break
+    fi
+  done
+  [ -n "$_repo_id" ] || _repo_id="$(printf '%s' "$_repo_ids" | tr '\n' ' ')"
+  if [ "$PROVENANCE_OK" = 1 ]; then
+    : > "$STATUS/installed.ok"
+    echo "[java-run] install OK (저장소 ${_repo_id}가 서빙했다)"
+  else
+    echo "[java-run] install FAILED — SDK를 로컬 저장소(${_repo_id})가 아닌 곳에서 받았다: $(tr '\n' ' ' <"$STATUS/provenance.txt" 2>/dev/null)"
+    cp /tmp/install.log "$STATUS/install.log" 2>/dev/null || true
+    sleep 3600; exit 1
+  fi
 else
   echo "[java-run] install FAILED"; cat /tmp/install.log
   cp /tmp/install.log "$STATUS/install.log" 2>/dev/null || true

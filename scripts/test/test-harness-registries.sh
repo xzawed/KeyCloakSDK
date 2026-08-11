@@ -91,4 +91,73 @@ fi
 assert_eq "1" "$(proxy_of '@*/*')"  "@*/* 에 proxy가 없다 — 스코프 전이 의존성이 해석되지 않는다"
 assert_eq "1" "$(proxy_of '**')"    "** 에 proxy가 없다 — 비스코프 전이 의존성이 해석되지 않는다"
 
+# ---- 소스 **추가** 언어들: 출처를 기록하고 단언하는가 (이슈 #167) ----
+#
+# node·rust·dotnet은 **구조적 격리**를 쓴다(verdaccio 스코프 uplink 차단 · cargo source
+# replacement · nuget packageSourceMapping) — 위 어서션이 node 쪽을 지킨다. 나머지 여섯은
+# 공개 레지스트리를 살려둔 채 로컬을 **추가**할 뿐이라, 같은 좌표·같은 버전이 공개에 있으면
+# 거기서 받아도 설치가 성공하고 하네스는 초록이 된다. 그 순간 검증 대상은 방금 만든 산출물이
+# 아니라 공개 패키지다.
+#
+# 실측(2026-08-11)이 두 사실을 확정했다:
+#   (1) 지금은 여섯 전부 로컬이 이긴다 — pypiserver·mvn-repo·mvn-repo-kotlin·gemserver·
+#       satis-web·file GOPROXY가 각각 서빙한 것을 각 패키지 매니저의 기록으로 확인했다.
+#   (2) 그러나 그것은 **보장이 아니다** — 로컬 인덱스를 못 쓰는 상태로 같은 pip 명령을 돌리면
+#       PyPI에서 받아 `exit 0`으로 끝난다(files.pythonhosted.org URL 실측).
+#
+# 그래서 각 consume 스크립트는 출처를 파일로 남기고(`provenance.txt`), **로컬이 아니면
+# `installed.ok`를 쓰지 않는다**. 이 가드는 그 두 가지가 스크립트에 실재하는지 본다 —
+# 격리 설정과 달리 이 단언은 "설정이 이렇다"가 아니라 "실제로 어디서 받았나"를 겨눈다.
+CONSUME="$ROOT/harness/install/consume"
+prov_langs=0
+for L in python java kotlin ruby php go; do
+  f="$CONSUME/$L-run.sh"
+  assert_ok test -f "$f"
+  [ -f "$f" ] || continue
+  prov_langs=$((prov_langs + 1))
+  body="$(cat "$f")"
+  assert_contains "$body" 'provenance.txt' \
+    "$L-run.sh 가 SDK 출처를 기록하지 않는다 — 초록/빨강만으로는 로컬을 검증했는지 알 수 없다(#167)"
+  # ⚠️ 기록만으로는 부족하다. 기록은 사람이 읽어야 동작하고, 야간 실행의 로그를 매일 읽는
+  # 사람은 없다. 판정(`installed.ok`)이 출처에 **의존**해야 한다.
+  assert_contains "$body" 'PROVENANCE_OK' \
+    "$L-run.sh 가 출처를 단언하지 않는다 — 공개 레지스트리에서 받아도 installed.ok가 써진다(#167)"
+
+  # ⚠️ **문자열 존재만 보는 것으로는 공허하다 — 실측으로 확인했다.** 단언을 `if true; then`으로
+  # 바꿔도 위 두 어서션은 통과했다(29 passed). 그래서 두 가지를 더 못박는다:
+  #   (a) `PROVENANCE_OK=1`은 **provenance.txt를 읽는 조건** 안에서만 설정돼야 한다
+  #   (b) `installed.ok` 쓰기는 `[ "$PROVENANCE_OK" = 1 ]` **뒤에** 와야 한다(판정 의존성)
+  # 이래도 의미론까지 증명하지는 못한다(그건 컨테이너를 띄워야 한다) — 그러나 "고치는 것처럼
+  # 보이는 편집"으로 단언이 무력화되는 경로는 닫힌다.
+  # ⚠️ **모든** `PROVENANCE_OK=1` 대입이 관측에 근거해야 한다 — "첫 번째가 근거 있으면 통과"로 두면
+  # 뒤에 무근거 대입을 하나 더 붙여 앞의 판정을 덮을 수 있다. 실제로 그 형태의 버그가 있었다(go가
+  # 리포트 문자열을 재-grep해 판정을 뒤집었다). 근거로 인정하는 것은 두 가지다:
+  #   (1) 직전 4줄 안에서 provenance.txt를 읽는 grep  (2) 같은 조건줄에서 실제 다운로드를 수행(go)
+  gated="$(awk '
+    /PROVENANCE_OK=1/ {
+      total++
+      ok = 0
+      for (i = NR - 4; i < NR; i++)
+        if (i > 0 && (buf[i] ~ /grep .*provenance\.txt/ || buf[i] ~ /GOPROXY=.*go mod download/)) ok = 1
+      if (ok) good++
+    }
+    { buf[NR] = $0 }
+    END { print (total > 0 && total == good) ? "yes" : "no(total=" total " good=" good ")" }
+  ' "$f")"
+  assert_eq "yes" "$gated" \
+    "$L-run.sh 의 PROVENANCE_OK=1 대입 중 관측에 근거하지 않은 것이 있다 — 무조건 통과로 바뀌었나(#167)"
+
+  # ⚠️ 조건의 **문자열 형태**까지 고정한다. 줄 번호 순서만 보면 `[ "$PROVENANCE_OK" = 1 ] || true`
+  # 같은 편집이 그대로 통과한다(실측으로 확인한 우회 경로).
+  ok_line="$(grep -n '^  if \[ "\$PROVENANCE_OK" = 1 \]; then$' "$f" | head -1 | cut -d: -f1)"
+  mark_line="$(grep -n ': > "\$STATUS/installed.ok"' "$f" | head -1 | cut -d: -f1)"
+  assert_ok test -n "$ok_line"
+  assert_ok test -n "$mark_line"
+  if [ -n "$ok_line" ] && [ -n "$mark_line" ]; then
+    assert_ok test "$mark_line" -gt "$ok_line"
+  fi
+done
+# ⚠️ 대조군 — 파일명 규칙이 바뀌면 위 루프가 한 번도 돌지 않고 조용히 통과한다.
+assert_eq "6" "$prov_langs" "소스-추가 6개 언어의 consume 스크립트를 다 찾지 못했다 — 파일명 규칙이 바뀌었나"
+
 assert_report
