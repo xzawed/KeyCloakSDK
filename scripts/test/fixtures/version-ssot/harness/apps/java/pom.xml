@@ -1,0 +1,12 @@
+<project>
+  <version>0.0.1</version>
+  <dependencies>
+    <dependency>
+      <!-- 미끼(실제 파일에 있는 모양): 선언 안에 주석이 끼어 있고, 앱 자신의 버전(0.0.1)과
+           부모 버전이 같은 파일에 있다. 가드는 keycloak-sdk 좌표의 <version>만 읽어야 한다. -->
+      <groupId>io.github.xzawed</groupId>
+      <artifactId>keycloak-sdk</artifactId>
+      <version>0.1.0-SNAPSHOT</version>
+    </dependency>
+  </dependencies>
+</project>

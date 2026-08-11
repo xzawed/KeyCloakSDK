@@ -125,6 +125,51 @@ for (const [lang, p, re] of manifests) {
   }
 }
 
+// ── 하네스 샘플 앱이 SDK를 **리터럴 버전으로** 핀한 자리 ──
+//
+// 왜 필요한가: 2026-08-11 야간 `score-all`이 이것 때문에 죽었다 —
+//   > Could not find io.github.xzawed:keycloak-sdk-kotlin:0.1.0.
+// kotlin SDK를 `0.1.0` → `0.1.0-RC1`로 범프한 PR #170이 `harness/apps/kotlin`의 핀을 두고 갔다.
+// 하네스 Dockerfile은 SDK 소스를 `publishToMavenLocal`로 설치하므로 로컬 .m2에는 RC1만 남고 앱이
+// 요구하는 `0.1.0`은 어디에도 없다. 이 드리프트는 **야간에만** 드러난다 — 하네스 앱은 PR/푸시
+// CI(`mvp-go`)에서 빌드되지 않기 때문에, 리포를 겨누는 가드가 전부 초록인 채로 며칠이 지난다.
+//
+// ⚠️ **아래 기저 버전(X.Y.Z) 비교로는 못 잡는다.** `0.1.0`과 `0.1.0-RC1`은 기저가 같지만 Maven·
+// Gradle의 좌표 해석은 문자열 정확비교다. 그래서 이 검사만 **문자열 동일**을 요구한다. 언어 간
+// 갈림이 경고인 것과 반대로 여기서는 오류다 — 독립 버저닝 정책과 충돌하지 않고(같은 언어 안의
+// 기계적 참조다) 드리프트가 곧 빌드 실패이기 때문이다.
+//
+// 대상은 리터럴 버전을 쓰는 **두 앱뿐**이다. 나머지 일곱은 경로/파일 참조라 드리프트할 값이 없다
+// (node `file:./…tgz` · php path repo `*` · ruby `path:` · rust `path` · dotnet `ProjectReference` ·
+// go `replace` + `v0.0.0` · python은 Dockerfile이 소스에서 설치). 새 하네스 앱이 리터럴 핀을
+// 쓰게 되면 여기에 추가할 것.
+{
+  const harnessPins = [
+    ['java', 'harness/apps/java/pom.xml', /<artifactId>keycloak-sdk<\/artifactId>\s*<version>([^<]+)<\/version>/, 'io.github.xzawed:keycloak-sdk'],
+    // ⚠️ **선언에 앵커한다** — 좌표만 찾으면 같은 파일의 *주석*이 먼저 잡힌다(실제 파일의 10행이
+    // 그 좌표를 산문으로 언급한다). 그 상태로는 `[^"]+`가 다음 따옴표까지 여러 줄을 삼켜 엉뚱한
+    // 값을 SSOT와 대조했다 — 픽스처가 실제 파일보다 깨끗해서 자가테스트를 통과했고, 진짜 저장소에
+    // 돌려보고서야 드러났다. 픽스처에 그 주석을 미끼로 넣어 고정했다.
+    ['kotlin', 'harness/apps/kotlin/build.gradle.kts', /implementation\("io\.github\.xzawed:keycloak-sdk-kotlin:([^"]+)"\)/, 'io.github.xzawed:keycloak-sdk-kotlin'],
+  ]
+  for (const [lang, p, re, coord] of harnessPins) {
+    // ⚠️ **부재와 추출 실패를 구분한다**(node lockfile 검사와 같은 관용). 하네스가 없는 트리
+    // (이 가드 자신의 픽스처·부분 체크아웃)에서는 검사할 것이 없다. 그러나 파일이 있는데 좌표
+    // 선언이 안 읽히면 그건 실패다 — 조용히 통과하면 가드가 무력화된 것을 아무도 모른다.
+    if (!existsSync(join(root, p))) continue
+    const pinned = pick(p, re, `${lang} 하네스 앱의 SDK 핀`)
+    if (pinned === null) continue // pick()이 이미 errors에 적었다
+    const ssot = found.find(([l]) => l === lang)?.[1]
+    if (ssot === undefined) continue // 해당 언어 SSOT 추출이 이미 실패했다 — 중복 보고하지 않는다
+    if (pinned !== ssot) {
+      errors.push(
+        `${p} 의 ${coord} 핀이 "${pinned}" 인데 ${lang} SSOT 는 "${ssot}" 다 — ` +
+          `SDK 버전을 범프하면 **같은 커밋에서** 하네스 앱의 핀도 옮길 것(이 드리프트는 야간 score-all에서만 드러난다)`,
+      )
+    }
+  }
+}
+
 // ── 기저 버전(X.Y.Z) 일치 검사 ──
 const base = (v) => {
   const m = /^(\d+)\.(\d+)\.(\d+)/.exec(v)

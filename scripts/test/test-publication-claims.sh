@@ -214,4 +214,33 @@ done
 # `assert_report`에 도달하지 못해 남은 어서션도 안 돈다(변이검증 M4에서 실제로 그렇게 죽었다).
 assert_eq "9" "$rows_seen" "호환성 표에서 읽은 언어 행 수가 9가 아니다 — 라벨 표기가 바뀌었나"
 
+# ---- DEPLOY.md `- Install:` 좌표의 **버전 문자열** ↔ df_published_version ----
+#
+# 같은 축(버전 문자열)인데 위 검사는 getting-started의 호환성 표만 봤다. DEPLOY.md의 설치 좌표
+# 아홉 줄 중 버전을 품는 것은 Maven 좌표 둘(java·kotlin)뿐이고, **그 둘 다 게시 후에도 `0.1.0`에
+# 멈춰 있었다**(2026-08-11 발견 — java는 08-10, kotlin은 08-11에 각각 `0.1.0-RC1`로 게시됐다).
+# 나머지 일곱 줄은 버전 없는 설치 명령(`pip install keycloak-sdk` 등)이라 드리프트할 값이 없다.
+# ⚠️ go(`@v0.1.0`)는 **미게시**라 대상이 아니다 — 게시하는 순간 `df_published_version go`가 채워지고
+# 이 검사가 그 줄을 잡는다(그때 RC 표기로 고치라는 신호가 된다).
+deploy_install_coord() { case "$1" in
+  java) echo 'io.github.xzawed:keycloak-sdk' ;;
+  kotlin) echo 'io.github.xzawed:keycloak-sdk-kotlin' ;;
+  go) echo 'github.com/xzawed/KeyCloakSDK/go@v' ;;
+  *) echo "" ;; esac; }
+
+coords_seen=0
+for L in java kotlin go; do
+  _coord="$(deploy_install_coord "$L")"
+  _want="$(df_published_version "$L")"
+  [ -n "$_want" ] || continue   # 미게시 언어는 대조 대상이 아니다(게시되면 자동으로 편입된다)
+  # ⚠️ `--` 필수 — 패턴이 `-`로 시작해 grep이 옵션으로 파싱한다(빠뜨리면 매치가 **빈 값**이 되고
+  # 아래 대조군이 없으면 "빈 값 == 빈 값"으로 조용히 통과한다).
+  _line="$(grep -m1 -F -- "- Install: \`$_coord" "$ROOT/DEPLOY.md" || true)"
+  [ -n "$_line" ] && coords_seen=$((coords_seen + 1))
+  _got="$(printf '%s' "$_line" | sed -n "s|^- Install: \`$_coord:\{0,1\}\([^\`]*\)\`.*|\1|p")"
+  assert_eq "$_want" "$_got" "DEPLOY.md 의 $L 설치 좌표 버전이 게시 SSOT와 다르다"
+done
+# ⚠️ 대조군 — 좌표 표기가 바뀌면 위 루프가 "빈 값 == 빈 값"이 아니라 아예 돌지 않아 조용히 통과한다.
+assert_eq "2" "$coords_seen" "DEPLOY.md 에서 읽은 게시된 버전-보유 설치 좌표 수가 2(java·kotlin)가 아니다"
+
 assert_report

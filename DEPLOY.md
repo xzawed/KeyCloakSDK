@@ -333,7 +333,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   ```
   > ℹ️ The tag value **determines the release version** — match the tag exactly to the desired release version.
 - Deployment check: confirm GitHub Actions `release.yml` succeeded (through the staging upload) → verify in the [Central Portal](https://central.sonatype.com) Deployments, then **a human manually Publishes**. This staging step is your last chance to reject the build: once published, Maven Central is immutable (§6).
-- Install: `io.github.xzawed:keycloak-sdk:0.1.0` (+ BOM)
+- Install: `io.github.xzawed:keycloak-sdk:0.1.0-RC1` (+ BOM)
 
 ### 7. Kotlin
 
@@ -343,7 +343,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   ```bash
   export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot}" PATH="${KCSDK_TOOLS:-$HOME/tools}/gradle-9.6.1/bin:$PATH" GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
   gradle -p kotlin publishToMavenLocal
-  # → confirm keycloak-sdk-kotlin-0.1.0.jar (+sources/javadoc) is generated in the local ~/.m2
+  # → confirm keycloak-sdk-kotlin-0.1.0-RC1.jar (+sources/javadoc) is generated in the local ~/.m2
   ```
 - Tag: `kotlin-vX.Y.Z` — guidance command: `./scripts/release-trigger.sh kotlin 0.1.0-RC1`
   ```bash
@@ -351,7 +351,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   ```
 - Deployment check: confirm GitHub Actions `kotlin-release.yml` (vanniktech `publishToMavenCentral`, Central Portal staging) succeeded → **a human manually Publishes** in the [Central Portal](https://central.sonatype.com) Deployments (same two steps as Java). A green run now also means all four secrets were present (§2-A step 5).
 - ⚠️ **Consumer floor**: the build pins `languageVersion`/`apiVersion` to `KOTLIN_2_2`, so the published jar carries `@Metadata(mv=[2,2,0])` and consumers need **Kotlin 2.2+** — not 2.4.10. Say so in the release notes; raising this floor later cuts consumers off.
-- Install: `io.github.xzawed:keycloak-sdk-kotlin:0.1.0`
+- Install: `io.github.xzawed:keycloak-sdk-kotlin:0.1.0-RC1`
 
 ### 8. Go
 

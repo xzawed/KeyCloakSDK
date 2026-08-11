@@ -5,7 +5,7 @@
 FROM eclipse-temurin:21-jdk-alpine AS build
 WORKDIR /build
 ENV GRADLE_USER_HOME=/root/.gradle
-# 1) Kotlin SDK를 로컬 .m2에 publish(앱이 io.github.xzawed:keycloak-sdk-kotlin:0.1.0 해석) — 테스트 스킵.
+# 1) Kotlin SDK를 로컬 .m2에 publish(앱이 io.github.xzawed:keycloak-sdk-kotlin:0.1.0-RC1 해석) — 테스트 스킵.
 #    서명은 in-memory 키가 없으면 자동 비활성(build.gradle.kts의 signingKeyPresent 가드) → 무서명 게시.
 COPY kotlin/ ./kotlin/
 WORKDIR /build/kotlin
