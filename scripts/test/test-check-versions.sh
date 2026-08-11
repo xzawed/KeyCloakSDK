@@ -49,6 +49,9 @@ sed -i 's/version = "0.1.0"/version = "0.1.0rc1"/' "$TMP/python/pyproject.toml"
 sed -i 's/"version": "0.1.0"/"version": "0.1.0-rc.1"/' "$TMP/node/package.json"
 sed -i 's/VERSION = "0.1.0"/VERSION = "0.1.0.rc1"/' "$TMP/ruby/lib/keycloak_sdk/version.rb"
 sed -i 's/version = "0.1.0"/version = "0.1.0-RC1"/' "$TMP/kotlin/build.gradle.kts"
+# ⚠️ kotlin SDK를 범프했으면 하네스 앱의 핀도 **같은 커밋에서** 따라가야 한다(아래 하네스 절).
+# 이 줄이 없으면 이 픽스처는 2026-08-11 사고 그 자체가 된다.
+sed -i 's/keycloak-sdk-kotlin:0.1.0"/keycloak-sdk-kotlin:0.1.0-RC1"/' "$TMP/harness/apps/kotlin/build.gradle.kts"
 assert_ok node "$GUARD" "$TMP"
 
 # --list: 기계가독 모드 — harness/install/install-verify.sh가 무명시 실행에서 언어별 검증 버전을
@@ -99,6 +102,79 @@ assert_fails node "$GUARD" "$TMP"
 # ⚠️ 대조군 — lockfile이 **아예 없는** 트리는 검사 대상이 아니다(이 가드의 다른 픽스처가 그렇다).
 # 없으면 "node/package.json이 있으면 lock도 반드시 있어야 한다"는 전혀 다른 가드가 된 것을 모른다.
 rm -f "$TMP/node/package-lock.json"
+assert_ok node "$GUARD" "$TMP"
+
+# ---- 하네스 샘플 앱이 SDK를 **리터럴 버전으로** 핀한 자리 ----
+#
+# 왜 필요한가: 2026-08-11 야간 `score-all`이 빨개졌다 —
+#   > Could not find io.github.xzawed:keycloak-sdk-kotlin:0.1.0.
+# kotlin SDK를 `0.1.0` → `0.1.0-RC1`로 범프한 PR #170이 `harness/apps/kotlin`의 핀을 두고 갔고,
+# Dockerfile은 SDK 소스를 `publishToMavenLocal`로 설치하므로 로컬 .m2에는 RC1만 남아 앱이 요구하는
+# `0.1.0`이 어디에도 없었다. **리포를 겨누는 가드는 그때 전부 초록이었다** — 하네스 앱은 PR/푸시
+# CI(`mvp-go`)에서 빌드되지 않고 야간에만 빌드되기 때문이다(repo-hygiene.yml 97행 주석의 레지스트리
+# 설정 가드와 같은 부류의 사각지대다).
+#
+# ⚠️ **기저 버전 비교로는 못 잡는다.** `0.1.0`과 `0.1.0-RC1`은 기저(X.Y.Z)가 같지만 Maven·Gradle의
+# 좌표 해석은 **문자열 정확비교**다. 그래서 이 검사만 문자열 동일을 요구한다(언어 간 기저 비교가
+# 경고인 것과 반대 — 여기서는 정책 충돌이 없고 드리프트가 곧 빌드 실패다).
+#
+# 대상은 **리터럴 버전을 쓰는 두 앱뿐**이다. 나머지 일곱은 경로/파일 참조라 드리프트할 값이 없다
+# (node `file:./…tgz` · php path repo `*` · ruby `path:` · rust `path` · dotnet `ProjectReference` ·
+# go `replace` + `v0.0.0` · python은 Dockerfile이 소스에서 설치).
+rm -rf "$TMP" && mkdir -p "$TMP"
+cp -r "$FIX/." "$TMP/"
+KPIN="$TMP/harness/apps/kotlin/build.gradle.kts"
+JPIN="$TMP/harness/apps/java/pom.xml"
+
+# 대조군: 핀 = SSOT → 통과. 없으면 "하네스 파일이 있으면 무조건 실패"인 가드와 구분하지 못한다.
+assert_ok node "$GUARD" "$TMP"
+
+# 변이 A — **실제 사고 재현**: SDK만 범프하고 하네스 핀을 두고 간다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's/version = "0.1.0"/version = "0.1.0-RC1"/' "$TMP/kotlin/build.gradle.kts"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "harness/apps/kotlin/build.gradle.kts" "드리프트한 하네스 파일을 지목해야 한다"
+# ⚠️ 기대값만 확인하면 공허하다 — `0.1.0-RC1`은 요약줄(kotlin SSOT)에도 있어 가드가 없어도 통과한다.
+# 낡은 **핀 쪽** 값이 좌표와 함께 나오는지를 본다.
+assert_contains "$OUT" 'keycloak-sdk-kotlin 핀이 "0.1.0" 인데' "핀에 박힌 낡은 값을 좌표와 함께 보여줘야 한다"
+
+# ⚠️ **같은 드리프트가 `--list`를 죽이면 안 된다.** `--list`의 계약은 "언어별 매니페스트 버전"이고
+# 하네스 앱의 핀은 그 값에 아무 영향도 주지 않는다. 그런데 한때 같은 `errors` 배열을 공유해서,
+# 낡은 핀 하나가 `harness/install/install-verify.sh`의 파생을 fail-closed로 죽였다 — 야간 하네스가
+# **아홉 언어 중 하나도 측정하지 못하고** INSTALL-MATRIX.md도 없이 끝났다(실측). 이 가드가 막으려던
+# 사고(kotlin 앱 하나가 빌드 실패)보다 넓은 정지다. 그래서 `--list`에서는 경고로만 남긴다.
+assert_ok node "$GUARD" "$TMP" --list
+# ⚠️ `|| true` 필수 — 이 파일은 `set -e`라 대입문의 명령치환이 실패하면 그 자리에서 죽고
+# `assert_report`에 도달하지 못해 남은 어서션이 아예 돌지 않는다(회귀 시가 정확히 그 경우다).
+LOUT="$(node "$GUARD" "$TMP" --list 2>/dev/null)" || true
+assert_contains "$LOUT" "$(printf 'kotlin\t0.1.0-RC1')" "--list: 하네스 핀이 낡아도 kotlin 행이 나와야 한다"
+assert_contains "$LOUT" "$(printf 'python\t0.1.0')" "--list: 하네스 핀이 낡아도 나머지 언어 행이 나와야 한다"
+assert_not_contains "$LOUT" "::" "--list: stdout은 두 컬럼뿐이다(경고·오류는 stderr)"
+LERR="$(node "$GUARD" "$TMP" --list 2>&1 1>/dev/null)" || true
+assert_contains "$LERR" '::warning::' "--list: 하네스 드리프트를 경고로는 남겨야 한다(조용한 통과 금지)"
+assert_contains "$LERR" 'keycloak-sdk-kotlin 핀이 "0.1.0" 인데' "--list: 경고가 낡은 핀 값을 지목해야 한다"
+
+# 변이 B — java 쪽만 낡음. 둘 중 하나만 검사하면 이쪽이 새 나간다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|<version>0.1.0-SNAPSHOT</version>|<version>0.0.9</version>|' "$JPIN"
+assert_fails node "$GUARD" "$TMP"
+
+# 오탐 방지 — SDK와 하네스 핀을 **함께** 옮기면 통과해야 한다(정상적인 범프 커밋의 모양).
+cp -r "$FIX/." "$TMP/"
+sed -i 's/version = "0.1.0"/version = "0.1.0-RC1"/' "$TMP/kotlin/build.gradle.kts"
+sed -i 's/keycloak-sdk-kotlin:0.1.0"/keycloak-sdk-kotlin:0.1.0-RC1"/' "$KPIN"
+assert_ok node "$GUARD" "$TMP"
+
+# 추출 실패도 실패다 — 파일은 있는데 좌표 선언이 사라지면 조용히 통과하면 안 된다(가드 무력화 방지).
+cp -r "$FIX/." "$TMP/"
+: > "$KPIN"
+assert_fails node "$GUARD" "$TMP"
+
+# ⚠️ 대조군 — 하네스 트리가 **아예 없는** 체크아웃은 검사 대상이 아니다(이 가드의 다른 픽스처가
+# 그렇다). 없으면 "harness/가 반드시 존재해야 한다"는 전혀 다른 가드가 된 것을 모른다.
+cp -r "$FIX/." "$TMP/"
+rm -rf "$TMP/harness"
 assert_ok node "$GUARD" "$TMP"
 
 assert_report

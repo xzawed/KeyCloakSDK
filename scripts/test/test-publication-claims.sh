@@ -214,4 +214,47 @@ done
 # `assert_report`에 도달하지 못해 남은 어서션도 안 돈다(변이검증 M4에서 실제로 그렇게 죽었다).
 assert_eq "9" "$rows_seen" "호환성 표에서 읽은 언어 행 수가 9가 아니다 — 라벨 표기가 바뀌었나"
 
+# ---- DEPLOY.md `- Install:` 좌표의 **버전 문자열** ↔ df_published_version ----
+#
+# 같은 축(버전 문자열)인데 위 검사는 getting-started의 호환성 표만 봤다. DEPLOY.md의 설치 좌표
+# 아홉 줄 중 버전을 품는 것은 Maven 좌표 둘(java·kotlin)뿐이고, **그 둘 다 게시 후에도 `0.1.0`에
+# 멈춰 있었다**(2026-08-11 발견 — java는 08-10, kotlin은 08-11에 각각 `0.1.0-RC1`로 게시됐다).
+# 나머지 일곱 줄은 버전 없는 설치 명령(`pip install keycloak-sdk` 등)이라 드리프트할 값이 없다.
+# ⚠️ **좌표를 여기서 다시 적지 않는다 — `df_install` 템플릿에서 파생한다.** 처음에는 손으로 옮겨
+# 적었는데 go에서 `go get ` 접두를 빠뜨려 **그 어서션이 영원히 성립할 수 없었다**(DEPLOY.md가
+# 옳아도 매치가 빈 값이라 실패). 게다가 java 좌표가 kotlin 좌표의 접두라 `grep -m1`이 문서 순서에
+# 의존했다. 템플릿의 `%s` 앞부분을 앵커로 쓰면 둘 다 사라진다(java 앵커는 `:`로 끝난다).
+_bt='`'      # 백틱 리터럴. 아래 패턴은 전부 완전인용이라야 글롭으로 해석되지 않는다.
+_pct='%s'    # printf 자리표시자 리터럴 — 붙여쓰면 셸마다 파싱이 미묘하다(dash 확인).
+coords_seen=0
+coords_want=0
+for L in $DEPLOY_LANGS; do
+  _tpl="$(df_install "$L")"
+  case "$_tpl" in *"$_pct"*) : ;; *) continue ;; esac   # 버전을 품지 않는 설치 명령은 대조할 값이 없다
+  _prefix="${_tpl%%"$_pct"*}"
+  _want="$(df_published_version "$L")"
+  [ -n "$_want" ] || continue   # 미게시 언어는 대조 대상이 아니다(게시되면 자동으로 편입된다)
+  coords_want=$((coords_want + 1))
+  # ⚠️ `--` 필수 — 패턴이 `-`로 시작해 grep이 옵션으로 파싱한다(빠뜨리면 매치가 **빈 값**이 되고
+  # 아래 대조군이 없으면 "빈 값 == 빈 값"으로 조용히 통과한다).
+  _line="$(grep -m1 -F -- "- Install: $_bt$_prefix" "$ROOT/DEPLOY.md" || true)"
+  [ -n "$_line" ] && coords_seen=$((coords_seen + 1))
+  # sed 대신 파라미터 확장 — 접두에 `/`·`.`·`@`가 섞여 있어 정규식으로 넘기면 이스케이프가 필요하고,
+  # 그 이스케이프를 빠뜨리는 것이 바로 위 사고와 같은 부류다.
+  _rest="${_line#"- Install: $_bt$_prefix"}"
+  _got="${_rest%%"$_bt"*}"
+  assert_eq "$_want" "$_got" \
+    "DEPLOY.md 의 $L 설치 좌표 버전이 게시 SSOT와 다르다(기대 줄: - Install: $_bt$(printf "$_tpl" "$_want")$_bt)"
+done
+# ⚠️ 대조군 — 좌표 표기가 바뀌면 위 루프가 "빈 값 == 빈 값"이 아니라 아예 돌지 않아 조용히 통과한다.
+# ⚠️ **기대 개수를 하드코딩하지 않는다.** 이전 판은 `2`(java·kotlin)를 박아 두었는데, go가 게시되면
+# 실제 기대값은 3인데도 go 줄을 **못 찾은 채** `coords_seen`이 2에 머물러 이 대조군이 통과했다 —
+# 대조군이 눈을 감은 채 초록이었다. 그래서 기대값도 SSOT에서 파생한다.
+# ⚠️ 다만 파생값끼리의 비교는 **둘 다 0이면 공허하게 통과**한다(루프가 아예 안 돌아도 0==0).
+# 하드코딩된 `2`가 우연히 갖고 있던 유일한 미덕이 그 비공허성이었으므로 바닥값으로 분리해 남긴다 —
+# java·kotlin은 이미 게시됐고 이 수는 줄어들 수 없다.
+assert_ok test "$coords_want" -ge 2
+assert_eq "$coords_want" "$coords_seen" \
+  "DEPLOY.md 에서 읽은 버전-보유 설치 좌표 수($coords_seen)가 SSOT 파생 기대값($coords_want)과 다르다 — 좌표 표기가 바뀌었나"
+
 assert_report
