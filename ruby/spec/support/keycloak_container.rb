@@ -33,7 +33,9 @@ class KeycloakContainer
 
   def discover_port
     out, _e, _s = Open3.capture3("docker", "port", @name, "8080/tcp")
-    out[/:(\d+)\s*\z/, 1] or raise "could not discover mapped port: #{out.inspect}"
+    # ⚠️ `or`가 아니라 `||` — SonarCloud rubydre:S7916. `or`는 우선순위가 매우 낮아 대입과 섞이면
+    # 의도와 다르게 묶인다. `||`로 바꾸면 `raise`가 인자를 괄호로 받아야 파싱된다.
+    out[/:(\d+)\s*\z/, 1] || raise("could not discover mapped port: #{out.inspect}")
   end
 
   def wait_ready!(timeout: 120)

@@ -11,7 +11,7 @@ module KeycloakSdk
                    scopes: ["openid"], signature_algorithms: ["RS256"],
                    connect_timeout: 10, read_timeout: 10, clock_skew: 30,
                    jwks_min_refetch: 30.0, expected_audience: nil)
-      @server_url = normalize_required("server_url", server_url).sub(%r{/+\z}, "")
+      @server_url = strip_trailing_slashes(normalize_required("server_url", server_url))
       @realm = normalize_required("realm", realm)
       @client_id = normalize_required("client_id", client_id)
       @client_secret = client_secret
@@ -38,6 +38,18 @@ module KeycloakSdk
     alias to_s inspect
 
     private
+
+    # 후행 슬래시 제거. 정규식(`sub(%r{/+\z}, "")`)이 아니라 선형 스캔인 이유는 **동형성**이다 —
+    # 같은 일을 하는 아홉 언어 중 go(`TrimRight`)·dotnet(`TrimEnd`)·php(`rtrim`)·rust
+    # (`trim_end_matches`)·kotlin(`trimEnd`) 다섯이 선형 문자열 트림을 쓰고, 정규식을 쓰던 것은
+    # java·node·ruby 셋뿐이었다. java/node는 SonarCloud S8786(정규식 초선형 백트래킹)으로 지적됐고
+    # ruby는 지적되지 않았지만, 셋을 함께 옮겨야 "같은 개념은 같은 모양"이라는 이 저장소의 전제가
+    # 유지된다. 동작은 정규식과 동일하다(후행 슬래시 전부 제거, 내부 슬래시 보존).
+    def strip_trailing_slashes(str)
+      i = str.length
+      i -= 1 while i.positive? && str[i - 1] == "/"
+      str[0, i]
+    end
 
     def normalize_required(name, value)
       raise ConfigError, "#{name} is required" if value.nil?
