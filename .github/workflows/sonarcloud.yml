@@ -119,8 +119,24 @@ jobs:
           # 이미 `/` 또는 `rust/`로 시작하는 SF는 건드리지 않는다(중복 접두 방지 — 멱등).
           sed -i '/^SF:\(\/\|rust\/\)/!s|^SF:|SF:rust/|' lcov.info
 
+      # ⚠️ `sonar.qualitygate.wait`가 없으면 이 잡은 **품질 게이트가 빨개도 구조적으로 절대
+      # 실패하지 않는다** — 스캐너는 리포트를 업로드하고 판정을 기다리지 않은 채 `EXECUTION SUCCESS`
+      # 로 끝난다. 실제 결과: main의 게이트가 2026-07-07부터 08-11까지 **100커밋 이상 연속 실패**
+      # 했는데 아무도 보지 못했다(Actions 잡은 초록이고, required 체크도 아니라 아무것도 막지
+      # 않았다 — 이슈 #165). 두 체크가 서로 다른 말을 하고 있었다:
+      #   `SonarCloud`(github-actions) = success · `SonarCloud Code Analysis`(sonarqubecloud) = failure
+      # 이제 스캐너가 서버 판정까지 기다리고, 게이트가 빨가면 이 잡도 빨개진다.
+      #
+      # 저장소를 잠그지 않는다: required 체크는 `doc-facts`·`shell-exec-bits` 둘뿐이고 여기에
+      # 언어 CI·스캔 잡을 넣으면 안 된다(.claude/rules/ci.md — `paths:` 필터 잡은 체크가 생성조차
+      # 되지 않아 Pending 영구 차단). 이 잡은 신호를 **보이게** 만들 뿐 머지를 막지 않는다.
+      # Dependabot PR은 위 `if:`로 애초에 스킵된다(시크릿 미노출 → 스캔은 반드시 실패한다).
+      # 대기 타임아웃은 스캐너 기본값 300초를 쓴다 — 서버측 백그라운드 태스크가 그보다 오래 걸리면
+      # 통과가 아니라 **실패**로 끝난다(fail-closed).
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8
+        with:
+          args: -Dsonar.qualitygate.wait=true
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
