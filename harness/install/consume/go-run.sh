@@ -57,7 +57,7 @@ if go get "github.com/xzawed/KeyCloakSDK/go@v$PKG_VER" github.com/Nerzal/gocloak
     else
       echo "file:///proxy 단독 다운로드 실패 — 체인이라면 공개 프록시가 서빙했을 것이다"
     fi
-    # ⚠️ busybox wget에는 `-S`가 없다(alpine 베이스) — `--spider`의 종료코드로 존재 여부를 잰다.
+    # 존재 여부만 필요하므로 `--spider`의 종료코드로 잰다(busybox wget에 `-S`도 있지만 헤더 파싱은 불필요).
     # ⚠️ `-T`가 없으면 응답하지 않는 피어에서 busybox 기본 900초를 기다린다(실측: 150초 지나도 미종료).
     if wget -q -T 5 --spider "https://proxy.golang.org/github.com/xzawed/!key!cloak!s!d!k/go/@v/v${PKG_VER}.info" 2>/dev/null; then
       echo "공개 프록시: v${PKG_VER} **보유** — file 합성이 실패하면 폴스루가 조용히 성공할 수 있는 상태다"
@@ -66,14 +66,10 @@ if go get "github.com/xzawed/KeyCloakSDK/go@v$PKG_VER" github.com/Nerzal/gocloak
     fi
   } >"$STATUS/provenance.txt" 2>/dev/null || true
   echo "[go-run] SDK 출처: $(tr '\n' ' | ' <"$STATUS/provenance.txt" 2>/dev/null)"
-  # ⚠️ **출처 단언**(이슈 #167) — file 프록시가 그 버전을 갖고 있지 않으면 체인이 공개 프록시로
-  # 폴스루한 것이고, 그때 검증 대상은 방금 합성한 산출물이 아니다. 지금은 공개 프록시가 이 모듈을
-  # 모르므로 폴스루는 곧 실패지만, `go/v*` 태그를 미는 순간 폴스루가 **조용히 성공**하게 된다.
-  if grep -q '^file:///proxy (' "$STATUS/provenance.txt" 2>/dev/null; then
-    PROVENANCE_OK=1
-  else
-    PROVENANCE_OK=0
-  fi
+  # ⚠️ **판정은 위 0/3 단계(`GOPROXY=file:///proxy` 단독 다운로드)가 이미 내렸다.** 여기서 다시
+  # 유도하지 않는다 — 예전에는 리포트 문자열을 grep해 재유도했는데, 리포트 문구를 바꾸자 그 grep이
+  # 어긋나 **관측은 성공인데 판정만 0**이 되어 go 레그가 죽었다(실측). 판정 지점이 둘이면 언제든
+  # 갈라진다. `PROVENANCE_OK` 대입은 이 스크립트에 **하나뿐**이어야 한다.
   if [ "$PROVENANCE_OK" = 1 ]; then
     : > "$STATUS/installed.ok"
     echo "[go-run] install OK (file GOPROXY가 서빙했다)"

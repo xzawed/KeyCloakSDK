@@ -129,14 +129,27 @@ for L in python java kotlin ruby php go; do
   #   (b) `installed.ok` 쓰기는 `[ "$PROVENANCE_OK" = 1 ]` **뒤에** 와야 한다(판정 의존성)
   # 이래도 의미론까지 증명하지는 못한다(그건 컨테이너를 띄워야 한다) — 그러나 "고치는 것처럼
   # 보이는 편집"으로 단언이 무력화되는 경로는 닫힌다.
+  # ⚠️ **모든** `PROVENANCE_OK=1` 대입이 관측에 근거해야 한다 — "첫 번째가 근거 있으면 통과"로 두면
+  # 뒤에 무근거 대입을 하나 더 붙여 앞의 판정을 덮을 수 있다. 실제로 그 형태의 버그가 있었다(go가
+  # 리포트 문자열을 재-grep해 판정을 뒤집었다). 근거로 인정하는 것은 두 가지다:
+  #   (1) 직전 4줄 안에서 provenance.txt를 읽는 grep  (2) 같은 조건줄에서 실제 다운로드를 수행(go)
   gated="$(awk '
-    /PROVENANCE_OK=1/ { for (i = NR - 4; i < NR; i++) if (i > 0 && buf[i] ~ /grep .*provenance\.txt/) { print "yes"; exit } }
+    /PROVENANCE_OK=1/ {
+      total++
+      ok = 0
+      for (i = NR - 4; i < NR; i++)
+        if (i > 0 && (buf[i] ~ /grep .*provenance\.txt/ || buf[i] ~ /GOPROXY=.*go mod download/)) ok = 1
+      if (ok) good++
+    }
     { buf[NR] = $0 }
+    END { print (total > 0 && total == good) ? "yes" : "no(total=" total " good=" good ")" }
   ' "$f")"
   assert_eq "yes" "$gated" \
-    "$L-run.sh 의 PROVENANCE_OK=1 이 provenance.txt를 읽는 조건 안에 있지 않다 — 무조건 통과로 바뀌었나(#167)"
+    "$L-run.sh 의 PROVENANCE_OK=1 대입 중 관측에 근거하지 않은 것이 있다 — 무조건 통과로 바뀌었나(#167)"
 
-  ok_line="$(grep -n '\[ "\$PROVENANCE_OK" = 1 \]' "$f" | head -1 | cut -d: -f1)"
+  # ⚠️ 조건의 **문자열 형태**까지 고정한다. 줄 번호 순서만 보면 `[ "$PROVENANCE_OK" = 1 ] || true`
+  # 같은 편집이 그대로 통과한다(실측으로 확인한 우회 경로).
+  ok_line="$(grep -n '^  if \[ "\$PROVENANCE_OK" = 1 \]; then$' "$f" | head -1 | cut -d: -f1)"
   mark_line="$(grep -n ': > "\$STATUS/installed.ok"' "$f" | head -1 | cut -d: -f1)"
   assert_ok test -n "$ok_line"
   assert_ok test -n "$mark_line"
