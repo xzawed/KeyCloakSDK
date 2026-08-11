@@ -30,8 +30,45 @@ echo "[go-run] 1/3 install — go get github.com/xzawed/KeyCloakSDK/go@v$PKG_VER
 if go get "github.com/xzawed/KeyCloakSDK/go@v$PKG_VER" github.com/Nerzal/gocloak/v13@v13.9.0 >/tmp/install.log 2>&1 \
     && go build -o /tmp/app-bin . >>/tmp/install.log 2>&1 \
     && go build -o /tmp/quickstart-bin ./quickstart >>/tmp/install.log 2>&1; then
-  : > "$STATUS/installed.ok"
-  echo "[go-run] install OK"
+  echo "[go-run] go get/build 성공 — 출처 확인 중"
+  # ⚠️ **출처를 기록한다**(이슈 #167). GOPROXY 체인(`file:///proxy,https://proxy.golang.org,direct`)의
+  # `,`는 404/410에서만 다음으로 넘어가므로 **앞이 가지고 있으면 앞이 이긴다** — 즉 file 프록시가 그
+  # 버전을 가지고 있는지가 곧 출처다(go는 받은 모듈 옆에 프록시 URL을 남기지 않아 사후 조회가 안 된다).
+  # 동시에 **공개 프록시도 그 버전을 아는지**를 함께 잰다: 둘 다 참인 순간부터 file 합성이 실패해도
+  # 공개 프록시가 받아줘 초록이 되고, 그 사각지대가 영구화된다(go/v* 태그를 미는 순간 그렇게 된다).
+  # ⚠️ 모듈 경로는 프록시 레이아웃에서 **대문자가 이스케이프**된다 —
+  # `github.com/xzawed/KeyCloakSDK/go` → `github.com/xzawed/!key!cloak!s!d!k/go`.
+  # 그래서 `*KeyCloak*`로 찾으면 파일이 있는데도 없다고 나온다(실측으로 걸렀다). `@v` 레이아웃으로 찾는다.
+  {
+    if find /proxy -path "*xzawed*/@v/v${PKG_VER}.info" 2>/dev/null | grep -q .; then
+      echo "file:///proxy (체인 1순위가 v${PKG_VER}를 보유 — 이것이 출처다)"
+    else
+      echo "file:///proxy 에 v${PKG_VER} 없음 — 체인이 공개 프록시로 폴스루했다"
+    fi
+    # ⚠️ busybox wget에는 `-S`가 없다(alpine 베이스) — `--spider`의 종료코드로 존재 여부를 잰다.
+    if wget -q --spider "https://proxy.golang.org/github.com/xzawed/!key!cloak!s!d!k/go/@v/v${PKG_VER}.info" 2>/dev/null; then
+      echo "공개 프록시: v${PKG_VER} **보유** — file 합성이 실패해도 폴스루가 조용히 성공한다(사각지대 활성)"
+    else
+      echo "공개 프록시: v${PKG_VER} 미보유 — 지금은 폴스루해도 실패한다(go/v* 태그를 미는 순간 위 줄로 바뀐다)"
+    fi
+  } >"$STATUS/provenance.txt" 2>/dev/null || true
+  echo "[go-run] SDK 출처: $(tr '\n' ' | ' <"$STATUS/provenance.txt" 2>/dev/null)"
+  # ⚠️ **출처 단언**(이슈 #167) — file 프록시가 그 버전을 갖고 있지 않으면 체인이 공개 프록시로
+  # 폴스루한 것이고, 그때 검증 대상은 방금 합성한 산출물이 아니다. 지금은 공개 프록시가 이 모듈을
+  # 모르므로 폴스루는 곧 실패지만, `go/v*` 태그를 미는 순간 폴스루가 **조용히 성공**하게 된다.
+  if grep -q '^file:///proxy (' "$STATUS/provenance.txt" 2>/dev/null; then
+    PROVENANCE_OK=1
+  else
+    PROVENANCE_OK=0
+  fi
+  if [ "$PROVENANCE_OK" = 1 ]; then
+    : > "$STATUS/installed.ok"
+    echo "[go-run] install OK (file GOPROXY가 서빙했다)"
+  else
+    echo "[go-run] install FAILED — file GOPROXY가 v$PKG_VER를 갖고 있지 않다(공개 프록시 폴스루): $(tr '\n' ' | ' <"$STATUS/provenance.txt" 2>/dev/null)"
+    cp /tmp/install.log "$STATUS/install.log" 2>/dev/null || true
+    sleep 3600; exit 1
+  fi
 else
   echo "[go-run] install FAILED"; cat /tmp/install.log
   cp /tmp/install.log "$STATUS/install.log" 2>/dev/null || true

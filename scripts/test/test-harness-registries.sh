@@ -91,4 +91,39 @@ fi
 assert_eq "1" "$(proxy_of '@*/*')"  "@*/* 에 proxy가 없다 — 스코프 전이 의존성이 해석되지 않는다"
 assert_eq "1" "$(proxy_of '**')"    "** 에 proxy가 없다 — 비스코프 전이 의존성이 해석되지 않는다"
 
+# ---- 소스 **추가** 언어들: 출처를 기록하고 단언하는가 (이슈 #167) ----
+#
+# node·rust·dotnet은 **구조적 격리**를 쓴다(verdaccio 스코프 uplink 차단 · cargo source
+# replacement · nuget packageSourceMapping) — 위 어서션이 node 쪽을 지킨다. 나머지 여섯은
+# 공개 레지스트리를 살려둔 채 로컬을 **추가**할 뿐이라, 같은 좌표·같은 버전이 공개에 있으면
+# 거기서 받아도 설치가 성공하고 하네스는 초록이 된다. 그 순간 검증 대상은 방금 만든 산출물이
+# 아니라 공개 패키지다.
+#
+# 실측(2026-08-11)이 두 사실을 확정했다:
+#   (1) 지금은 여섯 전부 로컬이 이긴다 — pypiserver·mvn-repo·mvn-repo-kotlin·gemserver·
+#       satis-web·file GOPROXY가 각각 서빙한 것을 각 패키지 매니저의 기록으로 확인했다.
+#   (2) 그러나 그것은 **보장이 아니다** — 로컬 인덱스를 못 쓰는 상태로 같은 pip 명령을 돌리면
+#       PyPI에서 받아 `exit 0`으로 끝난다(files.pythonhosted.org URL 실측).
+#
+# 그래서 각 consume 스크립트는 출처를 파일로 남기고(`provenance.txt`), **로컬이 아니면
+# `installed.ok`를 쓰지 않는다**. 이 가드는 그 두 가지가 스크립트에 실재하는지 본다 —
+# 격리 설정과 달리 이 단언은 "설정이 이렇다"가 아니라 "실제로 어디서 받았나"를 겨눈다.
+CONSUME="$ROOT/harness/install/consume"
+prov_langs=0
+for L in python java kotlin ruby php go; do
+  f="$CONSUME/$L-run.sh"
+  assert_ok test -f "$f"
+  [ -f "$f" ] || continue
+  prov_langs=$((prov_langs + 1))
+  body="$(cat "$f")"
+  assert_contains "$body" 'provenance.txt' \
+    "$L-run.sh 가 SDK 출처를 기록하지 않는다 — 초록/빨강만으로는 로컬을 검증했는지 알 수 없다(#167)"
+  # ⚠️ 기록만으로는 부족하다. 기록은 사람이 읽어야 동작하고, 야간 실행의 로그를 매일 읽는
+  # 사람은 없다. 판정(`installed.ok`)이 출처에 **의존**해야 한다.
+  assert_contains "$body" 'PROVENANCE_OK' \
+    "$L-run.sh 가 출처를 단언하지 않는다 — 공개 레지스트리에서 받아도 installed.ok가 써진다(#167)"
+done
+# ⚠️ 대조군 — 파일명 규칙이 바뀌면 위 루프가 한 번도 돌지 않고 조용히 통과한다.
+assert_eq "6" "$prov_langs" "소스-추가 6개 언어의 consume 스크립트를 다 찾지 못했다 — 파일명 규칙이 바뀌었나"
+
 assert_report

@@ -78,6 +78,13 @@ validate_pkg_ver() { # <값> <출처 라벨>
 }
 validate_pkg_ver "$PKG_VER" "명시/기본값"
 export PKG_VER
+# ⚠️ **폴백 기준값을 따로 보관한다.** 아래 언어 루프가 `PKG_VER="$(ver_for_lang "$L")"`로 전역을
+# 덮어쓰므로, `ver_for_lang`이 폴백에서 그 전역을 읽으면 **직전 언어의 버전이 다음 언어로 샌다**.
+# 실측(2026-08-11): `./install-verify.sh java kotlin ruby php go` 실행에서 ruby(0.1.0.rc1) 다음의
+# php가 0.1.0.rc1로 검증됐고, go는 `go/v0.1.0.rc1`이 유효한 Go semver가 아니라 publish에서 죽었다
+# ("file GOPROXY 합성 실패"). 기본 순서(go가 첫 번째)에서는 go가 안 물리므로 야간은 초록이었다 —
+# 즉 **언어를 부분집합으로 돌릴 때만 나타나는 순서 의존성**이다.
+PKG_VER_DEFAULT="$PKG_VER"
 
 # 무명시 실행: 언어별 매니페스트 버전을 한 번에 파생해 둔다(상단 주석 참고). 실패는 곧
 # "무엇을 검증할지 모른다"이므로 fail-closed — 조용히 기본값으로 계속하면 python 회귀가 재발한다.
@@ -99,7 +106,9 @@ ver_for_lang() { # <lang> → 이 언어가 검증할 버전(stdout)
     python|node|rust|ruby|kotlin|dotnet)
       if [ -n "${MANIFEST_VER[$1]:-}" ]; then echo "${MANIFEST_VER[$1]}"; return; fi ;;
   esac
-  echo "$PKG_VER" # go·php(태그 SSOT)·java(versions:set 주입) — publish→consume 자기완결이라 기본값
+  # go·php(태그 SSOT)·java(versions:set 주입) — publish→consume 자기완결이라 기본값.
+  # ⚠️ `$PKG_VER`가 아니라 `$PKG_VER_DEFAULT`를 읽는다(위 주석의 순서 의존성 사고).
+  echo "$PKG_VER_DEFAULT"
 }
 
 # shellcheck disable=SC2206  # 언어명은 공백 구분 단순 토큰이라 의도적 워드분할("node python" 한 인자도 허용)

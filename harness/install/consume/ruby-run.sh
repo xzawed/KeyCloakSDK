@@ -18,10 +18,34 @@ echo "[ruby-run] 1/3 install — gem install keycloak-sdk --version $PKG_VER --s
 # keycloak-sdk와 sinatra/puma/rackup은 별도 `gem install` 호출로 나눈다: `--version`은 한 커맨드에
 # 여러 gem명을 함께 주면 전부에 동일 버전 제약이 걸려버려(sinatra/puma/rackup엔 그 버전이 존재하지
 # 않는다) 뒤엣것들이 실패한다 — node의 `npm install pkg@ver express`처럼 한 줄로 합칠 수 없다.
-if gem install keycloak-sdk --version "$PKG_VER" --source "$REG" --no-document >/tmp/install.log 2>&1 \
+# ⚠️ `-V`는 **출처를 기록하기 위한 것**이다(이슈 #167). `--source`는 APPEND라 rubygems.org가 살아
+# 있고, 같은 좌표·같은 버전이 거기에도 있으면 거기서 받아도 초록이다 — 그 순간 검증 대상은 방금
+# 만든 산출물이 아니라 공개 gem이다. RubyGems에는 설치 후 출처를 남기는 파일이 없어(설치된 spec은
+# source를 기록하지 않는다) 상세 로그가 유일한 관측 지점이다.
+if gem install keycloak-sdk --version "$PKG_VER" --source "$REG" --no-document -V >/tmp/install.log 2>&1 \
    && gem install sinatra puma rackup --no-document >>/tmp/install.log 2>&1; then
-  : > "$STATUS/installed.ok"
-  echo "[ruby-run] install OK"
+  echo "[ruby-run] gem install 성공 — 출처 확인 중"
+  # .gem을 실제로 내려받은 URL. 없으면 "못 찾았다"고 적는다 — 빈 파일은 "공개에서 받았다"와
+  # 구분되지 않으므로 침묵시키지 않는다.
+  grep -oE 'https?://[^ "]*keycloak-sdk[^ "]*\.gem' /tmp/install.log | head -1 >"$STATUS/provenance.txt" 2>/dev/null || true
+  [ -s "$STATUS/provenance.txt" ] || grep -oE 'https?://[^ "]*' /tmp/install.log | sort -u | head -3 >"$STATUS/provenance.txt" 2>/dev/null || true
+  [ -s "$STATUS/provenance.txt" ] || echo "<-V 출력에서 URL을 찾지 못했다>" >"$STATUS/provenance.txt"
+  echo "[ruby-run] SDK 출처: $(tr '\n' ' ' <"$STATUS/provenance.txt" 2>/dev/null)"
+  # ⚠️ **출처 단언**(이슈 #167) — `--source`는 APPEND라 rubygems.org가 살아 있다. 같은 좌표·같은
+  # 버전이 거기에도 있으면 거기서 받아도 초록이므로, 판정을 출처에 의존시킨다.
+  if grep -qF "$REG" "$STATUS/provenance.txt" 2>/dev/null; then
+    PROVENANCE_OK=1
+  else
+    PROVENANCE_OK=0
+  fi
+  if [ "$PROVENANCE_OK" = 1 ]; then
+    : > "$STATUS/installed.ok"
+    echo "[ruby-run] install OK (로컬 레지스트리에서 받았다)"
+  else
+    echo "[ruby-run] install FAILED — SDK를 로컬($REG)이 아닌 곳에서 받았거나 URL 기록이 없다: $(tr '\n' ' ' <"$STATUS/provenance.txt" 2>/dev/null)"
+    cp /tmp/install.log "$STATUS/install.log" 2>/dev/null || true
+    sleep 3600; exit 1
+  fi
 else
   echo "[ruby-run] install FAILED"; cat /tmp/install.log
   cp /tmp/install.log "$STATUS/install.log" 2>/dev/null || true

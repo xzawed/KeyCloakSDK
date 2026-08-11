@@ -34,8 +34,36 @@ echo "[java-run] 소비자 POM의 keycloak-sdk-bom 버전을 ${PKG_VER}로 치�
 
 echo "[java-run] 1/3 install — mvn dependency:get -Dartifact=io.github.xzawed:keycloak-sdk:$PKG_VER (mvn-repo)"
 if mvn -s "$SETTINGS" -B -q dependency:get "-Dartifact=io.github.xzawed:keycloak-sdk:$PKG_VER" >/tmp/install.log 2>&1; then
-  : > "$STATUS/installed.ok"
-  echo "[java-run] install OK"
+  echo "[java-run] dependency:get 성공 — 출처 확인 중"
+  # ⚠️ **출처를 기록한다**(이슈 #167). settings.xml은 Central을 유지한 채 mvn-repo를 **추가**한다
+  # (부록 §java의 "`<mirror>*</mirror>` 금지" 준수 결과) — 같은 좌표·같은 버전이 Central에도 있으면
+  # 거기서 받아도 초록이다. Maven은 받은 아티팩트 옆에 `_remote.repositories`로 **저장소 id**를
+  # 남기므로(`keycloak-sdk-<ver>.jar>mvn-repo=`) 그것이 이 언어의 기계가독 출처 기록이다.
+  _rr="${HOME}/.m2/repository/io/github/xzawed/keycloak-sdk/${PKG_VER}/_remote.repositories"
+  if [ -f "$_rr" ]; then
+    grep -E '\.(jar|pom)>' "$_rr" >"$STATUS/provenance.txt" 2>/dev/null || true
+  else
+    echo "<_remote.repositories 부재 — 로컬 빌드 산출물이거나 경로가 바뀌었다>" >"$STATUS/provenance.txt"
+  fi
+  echo "[java-run] SDK 출처: $(tr '\n' ' ' <"$STATUS/provenance.txt" 2>/dev/null)"
+  # ⚠️ **출처 단언**(이슈 #167). 저장소 id는 settings.xml에서 파생한다 — 하드코딩하면 id를 바꿀 때
+  # 가드가 **낡은 id를 지키며 초록**이 된다(node 스코프 가드가 package.json에서 파생하는 것과 같은 이유).
+  # `_remote.repositories`의 `<파일>><id>=` 형식에서 그 id가 보이면 로컬이 서빙한 것이다.
+  _repo_id="$(grep -o '<id>[^<]*</id>' "$SETTINGS" | sed 's|</*id>||g' | grep -v 'maven-default-http-blocker' | head -1)"
+  _repo_id="${_repo_id:-mvn-repo}"
+  if grep -q ">${_repo_id}=" "$STATUS/provenance.txt" 2>/dev/null; then
+    PROVENANCE_OK=1
+  else
+    PROVENANCE_OK=0
+  fi
+  if [ "$PROVENANCE_OK" = 1 ]; then
+    : > "$STATUS/installed.ok"
+    echo "[java-run] install OK (저장소 ${_repo_id}가 서빙했다)"
+  else
+    echo "[java-run] install FAILED — SDK를 로컬 저장소(${_repo_id})가 아닌 곳에서 받았다: $(tr '\n' ' ' <"$STATUS/provenance.txt" 2>/dev/null)"
+    cp /tmp/install.log "$STATUS/install.log" 2>/dev/null || true
+    sleep 3600; exit 1
+  fi
 else
   echo "[java-run] install FAILED"; cat /tmp/install.log
   cp /tmp/install.log "$STATUS/install.log" 2>/dev/null || true

@@ -32,9 +32,31 @@ fi
 echo "[kotlin-run] build.gradle.kts의 keycloak-sdk-kotlin 버전을 ${PKG_VER}로 치환 완료"
 
 echo "[kotlin-run] 1/3 install — gradle classes(mvn-repo-kotlin에서 keycloak-sdk-kotlin:$PKG_VER 해석·다운로드·컴파일)"
-if sh ./gradlew --no-daemon classes >/tmp/install.log 2>&1; then
-  : > "$STATUS/installed.ok"
-  echo "[kotlin-run] install OK"
+# ⚠️ `--info`는 **출처를 기록하기 위한 것**이다(이슈 #167). 이 앱의 repositories는 mvn-repo-kotlin을
+# **추가**할 뿐 mavenCentral을 끄지 않는다 — 같은 좌표·같은 버전이 Central에도 있으면 거기서 받아도
+# 초록이고, 그 순간 검증 대상은 방금 만든 산출물이 아니라 공개 패키지다. Gradle은 Maven과 달리
+# 아티팩트 옆에 저장소 id를 남기지 않으므로 info 레벨의 다운로드 로그가 유일한 관측 지점이다.
+if sh ./gradlew --no-daemon --info classes >/tmp/install.log 2>&1; then
+  echo "[kotlin-run] gradle classes 성공 — 출처 확인 중"
+  grep -oE 'https?://[^ ]*keycloak-sdk-kotlin[^ ]*\.(jar|pom|module)' /tmp/install.log | sort -u | head -3 >"$STATUS/provenance.txt" 2>/dev/null || true
+  [ -s "$STATUS/provenance.txt" ] || echo "<--info 로그에서 SDK 다운로드 URL을 찾지 못했다(캐시 히트?)>" >"$STATUS/provenance.txt"
+  echo "[kotlin-run] SDK 출처: $(tr '\n' ' ' <"$STATUS/provenance.txt" 2>/dev/null)"
+  # ⚠️ **출처 단언**(이슈 #167). 레지스트리 URL은 build.gradle.kts의 `maven { url = uri(...) }`에서
+  # 파생한다 — 하드코딩하면 URL을 바꿀 때 가드가 낡은 값을 지키며 초록이 된다.
+  _kreg="$(sed -n 's|.*uri("\(http[^"]*\)").*|\1|p' build.gradle.kts | head -1)"
+  if [ -n "$_kreg" ] && grep -qF "$_kreg" "$STATUS/provenance.txt" 2>/dev/null; then
+    PROVENANCE_OK=1
+  else
+    PROVENANCE_OK=0
+  fi
+  if [ "$PROVENANCE_OK" = 1 ]; then
+    : > "$STATUS/installed.ok"
+    echo "[kotlin-run] install OK (로컬 레지스트리 ${_kreg}에서 받았다)"
+  else
+    echo "[kotlin-run] install FAILED — SDK를 로컬(${_kreg:-URL 추출 실패})이 아닌 곳에서 받았거나 다운로드 기록이 없다: $(tr '\n' ' ' <"$STATUS/provenance.txt" 2>/dev/null)"
+    cp /tmp/install.log "$STATUS/install.log" 2>/dev/null || true
+    sleep 3600; exit 1
+  fi
 else
   echo "[kotlin-run] install FAILED"; cat /tmp/install.log
   cp /tmp/install.log "$STATUS/install.log" 2>/dev/null || true
