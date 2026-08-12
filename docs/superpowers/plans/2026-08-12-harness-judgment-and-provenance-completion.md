@@ -1,8 +1,15 @@
 # 하네스 판정 계층·출처 완결과 잔여 결함 정리 Implementation Plan
 
 > <!-- doc-status: active -->
-> **진행 중 — Phase A만 반영됐다.** `feat/harness-judgment-phase-a` 브랜치가 Phase A(판정 층·관측 층 공백)를
-> 구현했고, Phase B~E(하네스 복구·문서 SSOT 등)는 아직 시작 전이다. 체크박스는 실제 할 일이다.
+> **진행 중 — Phase A는 커밋됐고 Phase B~E는 시작 전이다.** `feat/harness-judgment-phase-a` 브랜치가
+> Phase A(판정 층·관측 층 공백)를 구현했다: A1 `7340402` · A2 `5fe1c9c` · A3 `d275579` ·
+> A4 `ca00b46`+`b9b3ce1` · A5 `a776213`+`2e58c44`+`bd12adb`. 최종 리뷰가 낸 I1은 `5a3a431`,
+> I2는 `bd12adb`, I4(kotlin이 java의 결함을 반복)는 `a96232c`가 닫았다.
+> ⚠️ **I4를 고치며 §6대로 부류를 재스캔하니 결함이 한 곳이 아니라 일곱 곳이었다**(`a96232c`) —
+> 출처 게이트가 근거를 정규식에 날것으로 보간했고(kotlin·java·ruby), 접두 비교에 origin 경계가
+> 없었으며(kotlin·ruby), 8개 게이트 중 kotlin만 빈 근거를 막고 있었다. 상세·실측은 그 커밋 메시지.
+> **Phase B~E는 아래 체크박스 그대로 남아 있다** — 특히 Task B0(런타임 행동 테스트)는 `a96232c`가
+> 임시로 쓴 "게이트 블록을 sed로 추출해 dash로 실행" 방식을 저장소 테스트로 승격하는 일이다.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -215,6 +222,35 @@ node -e "console.log(require('./report/signals/node.install.json'))"   # install
 - [ ] **Step 3:** 세 변이가 각각 1건 이상 실패하는지 확인하고 건수를 기록
 - [ ] **Step 4:** 정상 트리에서 전건 통과 + `dash`로 재확인
 - [ ] **Step 5:** 커밋
+
+#### A5 실측 기록 — M-A·M-B 변이 3요건 (2026-08-12)
+
+`bd12adb`의 커밋 메시지가 "(M-A/M-B 변이 3요건 측정은 후속 커밋 메시지에 기록)"으로 미룬 측정이다.
+리포를 건드리지 않기 위해 **사본 트리**에서 쟀다(가드가 `ROOT="$DIR/../.."`로 자기 위치에서
+루트를 파생하므로 사본이 성립한다). 변이 대상은 `node-run.sh`의 게이트 조건 한 줄이다.
+
+| 조합 | 결과 | 잡았나 |
+|---|---|---|
+| 기준선(검사 ON, 무변이) | `59 passed, 0 failed` | — |
+| 검사 ON + M-A(극성 반전: `! grep -v -F …` → `grep -q -F …`) | `58 passed, 1 failed` | **예** |
+| 검사 ON + M-B(빈검사 삭제: `[ -s "$STATUS/provenance.txt" ] &&` 제거) | `58 passed, 1 failed` | **예** |
+| 검사 OFF + 무변이 | `59 passed, 0 failed` | — |
+| 검사 OFF + M-A | `59 passed, 0 failed` | **아니오** |
+| 검사 OFF + M-B | `59 passed, 0 failed` | **아니오** |
+
+- (a) **변이 시 실패**: M-A·M-B 각각 1건(`GATED` 어서션이 `no(total=1 good=0)`).
+- (b) **복원 시 통과**: 최종 복원 후 `59 passed, 0 failed`, 사본의 `node-run.sh`가 원본과 `diff` 동일.
+- (c) **비공허성**: `analyze()`의 두 줄(`index(blob, PROV_STAT)`·`index(blob, "grep -v")`)을 주석
+  처리하면 두 변이 **모두** 통과한다 — 즉 그 두 줄이 실제로 일을 하고 있고, 나머지 어서션 중
+  어느 것도 이 변이를 대신 잡아 주지 않는다.
+
+⚠️ **이 측정은 정적 가드가 *자기가 겨눈 두 변이*를 잡는다는 것만 말한다.** 같은 라운드의 적대적
+재리뷰가 정적으로는 못 잡는 우회 4종을 이미 찾았고(S-B0), `a96232c`가 다시 3종(정규식 보간·origin
+경계·빈 근거)을 실행 판정으로만 잡았다. **정적 가드의 통과는 게이트가 옳다는 뜻이 아니다** — Task B0.
+
+⚠️ 측정 도구 함정: 이 PC의 `python`은 `--version`에도 `Python` 한 줄만 내는 스텁이라 heredoc
+스크립트가 **조용히 무동작**한다(변이가 안 걸린 채 "가드가 안 잡는다"는 거짓 결론이 나왔다가,
+"적용됨" 로그가 없다는 것으로 발견했다). 이 리포의 변이 스크립트는 `node`로 쓸 것.
 
 ---
 
