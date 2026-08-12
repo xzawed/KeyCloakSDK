@@ -243,6 +243,18 @@ node -e "console.log(require('./report/signals/node.install.json'))"   # install
 - [ ] Step 3: `check-versions.mjs`의 harnessPins 검사는 **유지**한다(파생이 깨졌을 때의 이중 안전망)
 - [ ] Step 4: kotlin 레그 실측 통과 + 커밋
 
+### Task B0: 메타 가드를 **런타임 행동 테스트**로 옮긴다 (Phase A 잔여에서 승격)
+
+> **S-B0**: 메타 가드는 consume 스크립트의 셸 **텍스트를 정적으로 분석**한다. Phase A에서 두 라운드에 걸쳐 7종 우회를 닫았지만, 적대적 재리뷰가 곧바로 4종을 더 찾았다 — `PROVENANCE_OK="1"`(따옴표라 정확일치 매처에 안 잡힘) · `[ … ] || PROVENANCE_OK=1`(`||`는 clause 분리 대상이 아님) · `REG=""` 그림자(변수명은 남아 근거 검사 통과, 실행 시엔 무조건 참) · 근거 grep을 "하나라도 로컬"로 약화(변수명은 그대로). **정적으로 임의 POSIX 셸의 의미를 증명하려는 시도라 수렴하지 않는다.**
+> 대신 게이트를 **실행**해 판정한다: 합성 `provenance.txt`(로컬 URL + 외부 URL 혼재)를 주고 `PROVENANCE_OK`가 `0`이 되는지, 전부 로컬이면 `1`이 되는지 확인한다. 문법 회피에 면역이고 위 4종을 전부 잡는다.
+
+- [ ] **Step 1:** 각 consume 스크립트의 게이트 블록을 실행 가능하게 만든다 — 센티널 주석(`# >>> provenance-gate` / `# <<< provenance-gate`)으로 감싸거나, 공유 함수로 추출한다. **동작은 바꾸지 않는다**(주석/추출만).
+- [ ] **Step 2: 실패하는 테스트 먼저** — 8개 언어 각각에 대해 표를 만든다: (입력 provenance 내용, 기대 PROVENANCE_OK). 최소 4행: 전부 로컬 → 1 · 외부 한 줄 혼재 → 0 · 빈 파일 → 0 · 아티팩트 줄 없이 메타데이터만 → 0.
+- [ ] **Step 3:** 테스트가 게이트 블록을 추출해 스텁 환경(`$STATUS`·`$REG` 등)에서 실행하도록 구현한다.
+- [ ] **Step 4:** Phase A가 파킹한 4종 우회를 이 테스트에 걸어 **전부 잡히는지** 확인한다(정적 가드는 못 잡던 것들이다).
+- [ ] **Step 5:** 정적 가드는 **남긴다**(둘은 다른 것을 지킨다 — 정적은 "게이트가 존재하고 판정에 배선됐다", 런타임은 "게이트가 실제로 옳게 판정한다").
+- [ ] **Step 6:** 8개 언어 레그를 실제로 돌려 무회귀 확인 후 커밋.
+
 ### Task B4: `install-verify.sh` 자가테스트
 - [ ] Step 1: 순수 함수를 `harness/install/lib/verify-lib.sh`로 추출(`install-verify.sh`는 소싱만)
 - [ ] Step 2: `scripts/test/test-install-verify.sh` 작성 — 최소 케이스: 순서 의존 버전 누수 회귀(`java kotlin ruby php go` 순에서 go가 `0.1.0`), `--version` 명시 우선, 잘못된 버전 표기 거부
