@@ -171,6 +171,35 @@ claim_at CHANGELOG.md "나머지 ${unpub_ko}("                           "폴리
 claim_at docs/roadmap/language-support.md "**$Pub_en are now live as release candidates**" "step-0(게시 수)"
 claim_at docs/roadmap/language-support.md "the remaining $unpub_en ("                      "step-0(미게시 수)"
 
+# ---- 2026-08-12 문서 감사가 찾은 다섯 자리 ----
+#
+# ⚠️ 위 목록은 "게시 현황을 한 문장으로 요약하는 자리"만 겨눴다. 그런데 **같은 문서가 같은
+# 사실을 여러 자리에서 말한다** — DEPLOY.md는 네 자리, language-support.md는 머리말과 상태
+# 매트릭스 두 자리다. 그중 가드 밖이던 자리들이 실제로 낡아 있었고, **82개 어서션이 전부
+# 초록인 채로** 한 문서가 자기 자신을 반박했다(2026-08-12 감사 실측):
+#   DEPLOY.md §7   "Three of the nine … have not yet published" · "The six languages that have published"
+#   DEPLOY.md §5   "Seven release workflows have now executed"       (같은 문단이 eight of nine published)
+#   language-support 머리말 "four of them (PHP, Python, .NET, Rust)" (같은 문서 17행은 "Eight are now live")
+#   language-support 매트릭스 Java·Node·Ruby·Kotlin이 `🔒 human-gated`  (넷 다 게시됨)
+# 개수를 말하는 자리가 늘어날수록 손으로 맞추는 비용이 선형으로 늘고 드리프트 확률은 그보다
+# 빨리 는다 — 그래서 **자리를 늘리는 대신 자리마다 가드를 늘린다**.
+Unpub_en="$(printf '%s' "$unpub_en" | sed 's/^./\U&/')"
+
+claim_at DEPLOY.md "$Unpub_en of the nine languages"                        "§7 첫 실행 경고(미게시 수)"
+claim_at DEPLOY.md "The $pub_en languages that have published"              "§7 RC 선례(게시 수)"
+claim_at DEPLOY.md "$Pub_en release workflows have now executed end to end" "§5 실행 워크플로 수"
+claim_at docs/roadmap/language-support.md "$pub_en of them (all except"     "머리말(게시 수)"
+
+# ⚠️ 상태 매트릭스는 산문이 아니라 **아이콘 개수**로 본다 — `getting-started`의 설치 절 개수
+# 검사와 같은 관용이다. 산문 수사와 달리 표현을 바꿔도 흔들리지 않고, 감사가 찾은 부류(게시됐는데
+# `🔒 human-gated`로 남은 행)를 정확히 겨눈다. ⚠️ **양방향이라야 한다** — 🔒만 세면 게시 행을
+# 지워버려도 통과하고, 🚀만 세면 미게시 행이 🚀로 바뀌어도 통과한다.
+lsm="$ROOT/docs/roadmap/language-support.md"
+assert_eq "$unpub_n" "$(grep -c '🔒 human-gated |' "$lsm")" \
+  "language-support 상태 매트릭스의 🔒(미게시) 행 수가 DF_PUBLISHED 파생 미게시 수($unpub_n)와 다르다"
+assert_eq "$pub_n" "$(grep -c '| 🚀 ' "$lsm")" \
+  "language-support 상태 매트릭스의 🚀(게시) 행 수가 DF_PUBLISHED 파생 게시 수($pub_n)와 다르다"
+
 # 한글 미러 — 영문과 같은 사실을 한글 수사로 말한다(README.md와 동일 구조의 미러라는 규칙).
 ko_t="$(cat "$ROOT/README.ko.md")"
 assert_contains "$ko_t" "아홉 중 $pub_ko" "README.ko.md 의 게시 개수가 DF_PUBLISHED 파생값($pub_n)과 다르다"
