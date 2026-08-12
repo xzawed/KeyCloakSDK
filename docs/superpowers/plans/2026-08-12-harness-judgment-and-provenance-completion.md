@@ -1,5 +1,9 @@
 # 하네스 판정 계층·출처 완결과 잔여 결함 정리 Implementation Plan
 
+> <!-- doc-status: active -->
+> **진행 중 — Phase A만 반영됐다.** `feat/harness-judgment-phase-a` 브랜치가 Phase A(판정 층·관측 층 공백)를
+> 구현했고, Phase B~E(하네스 복구·문서 SSOT 등)는 아직 시작 전이다. 체크박스는 실제 할 일이다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 설치 하네스가 "무엇을 재지 않았는지"를 스스로 알게 만들고(판정 공허성 제거), 아홉 언어 전부에 대해 "방금 만든 산출물을 검증했다"를 기계로 보증한 뒤, 교차검증에서 확정된 잔여 결함을 닫는다.
