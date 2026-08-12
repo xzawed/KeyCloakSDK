@@ -190,15 +190,24 @@ claim_at DEPLOY.md "The $pub_en languages that have published"              "§7
 claim_at DEPLOY.md "$Pub_en release workflows have now executed end to end" "§5 실행 워크플로 수"
 claim_at docs/roadmap/language-support.md "$pub_en of them (all except"     "머리말(게시 수)"
 
-# ⚠️ 상태 매트릭스는 산문이 아니라 **아이콘 개수**로 본다 — `getting-started`의 설치 절 개수
-# 검사와 같은 관용이다. 산문 수사와 달리 표현을 바꿔도 흔들리지 않고, 감사가 찾은 부류(게시됐는데
-# `🔒 human-gated`로 남은 행)를 정확히 겨눈다. ⚠️ **양방향이라야 한다** — 🔒만 세면 게시 행을
-# 지워버려도 통과하고, 🚀만 세면 미게시 행이 🚀로 바뀌어도 통과한다.
+# ⚠️ 상태 매트릭스는 산문이 아니라 **행 개수**로 본다 — `getting-started`의 설치 절 개수 검사와
+# 같은 관용이다. 표현을 바꿔도 흔들리지 않고, 감사가 찾은 부류(게시됐는데 `🔒 human-gated`로 남은
+# 행)를 정확히 겨눈다. ⚠️ **양방향이라야 한다** — 미게시만 세면 게시 행을 지워버려도 통과하고,
+# 게시만 세면 미게시 행이 바뀌어도 통과한다. 그래서 언어 행 **총수**를 함께 고정한다.
+#
+# ⚠️ **패턴에 이모지를 쓰지 않는다 — 환경에 따라 매치가 갈린다.** 처음에는 `grep -c '🔒 …'`로
+# 셌는데, 같은 트리·같은 파일에서 이 PC의 GNU grep 3.0은 1/8을 세고 다른 환경(MSYS grep)은
+# **0/0**을 세어 어서션 둘이 실패했다. 실패 방향은 fail-closed라 위험하진 않지만, **문서가
+# 멀쩡한데 CI가 빨개지는** 부류다. `human-gated`와 행 머리 `| **`는 순수 ASCII라 갈리지 않는다.
 lsm="$ROOT/docs/roadmap/language-support.md"
-assert_eq "$unpub_n" "$(grep -c '🔒 human-gated |' "$lsm")" \
-  "language-support 상태 매트릭스의 🔒(미게시) 행 수가 DF_PUBLISHED 파생 미게시 수($unpub_n)와 다르다"
-assert_eq "$pub_n" "$(grep -c '| 🚀 ' "$lsm")" \
-  "language-support 상태 매트릭스의 🚀(게시) 행 수가 DF_PUBLISHED 파생 게시 수($pub_n)와 다르다"
+_rows_all="$(grep -c '^| \*\*' "$lsm")"
+_rows_gated="$(grep -c 'human-gated |' "$lsm")"
+assert_eq "$n" "$_rows_all" \
+  "language-support 상태 매트릭스의 언어 행 수가 DEPLOY_LANGS 개수($n)와 다르다 — 행 표기가 바뀌었나?"
+assert_eq "$unpub_n" "$_rows_gated" \
+  "language-support 상태 매트릭스의 human-gated(미게시) 행 수가 DF_PUBLISHED 파생 미게시 수($unpub_n)와 다르다"
+assert_eq "$pub_n" "$((_rows_all - _rows_gated))" \
+  "language-support 상태 매트릭스의 게시 행 수(총 행 − human-gated)가 DF_PUBLISHED 파생 게시 수($pub_n)와 다르다"
 
 # 한글 미러 — 영문과 같은 사실을 한글 수사로 말한다(README.md와 동일 구조의 미러라는 규칙).
 ko_t="$(cat "$ROOT/README.ko.md")"
