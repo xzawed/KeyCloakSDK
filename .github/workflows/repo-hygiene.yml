@@ -102,6 +102,17 @@ jobs:
       - name: 하네스 레지스트리 설정 가드(자기 스코프 uplink 격리 · 전이 의존성 프록시 유지)
         run: sh scripts/test/test-harness-registries.sh
 
+      # ⚠️ 이 세 파일은 하네스의 헤드라인 회귀 테스트(판정 공허성 제거·스코어링·보안 판정)인데
+      # 어떤 워크플로에도 배선되지 않은 채 존재만 하고 있었다(최종 리뷰 I1) — `grep -rn
+      # "install-matrix.test\|score.test\|verdict.test" .github/ scripts/`가 아무것도 못
+      # 찾았다. `test-selftest-hygiene.sh`의 CI 배선 규칙은 `scripts/test/test-*.sh`만 보고
+      # `harness/**/*.test.mjs`는 스코프 밖이라 이 누락을 못 잡았다 — 그 스코프를 넓혔다.
+      - name: 하네스 회귀 테스트(판정 공허성·스코어링·보안 판정)
+        run: |
+          node harness/install/report/install-matrix.test.mjs
+          node harness/report/score.test.mjs
+          node harness/security/verdict.test.mjs
+
       # ⚠️ 자가테스트 자신의 위생 — "테스트가 있다"가 "테스트가 돈다"를 뜻하지 않는 두 경로를 막는다.
       # (1) `assert.sh`의 어서션은 `_A_FAIL`만 누적하고 종료코드를 바꾸지 않는다 — 종료코드를 내는
       # 것은 `assert_report`뿐이라, 빠뜨린 테스트는 전부 실패해도 exit 0으로 CI를 초록으로 만든다.
