@@ -1,8 +1,11 @@
 # 문서 전수 감사 후속 조치 Implementation Plan
 
 > <!-- doc-status: active -->
-> **진행 중 — 권고 5개 중 3개 반영됐다.** 2026-08-12 문서 전수 감사(95개 문서)가 확정 138건·반증 9건을
-> 냈고, 그중 즉시항목·권고 1·2·4가 커밋됐다(`8b116e9`·`c3bb034`·`d63e3aa`). 권고 3·5는 미착수다.
+> **진행 중 — 권고 5개 중 3개 반영, 1개 기각, 1개 착수 전.** 2026-08-12 문서 전수 감사(95개 문서)가
+> 확정 138건·반증 9건을 냈다. 즉시항목·권고 1·2·4가 커밋됐고(`8b116e9`·`c3bb034`·`d63e3aa`),
+> 감사 HIGH 잔여와 npm 취약점도 닫았다(`6b79a14`·`f459904`).
+> **권고 5(금칙 문구 린트)는 실측 후 기각했다** — 히트 대부분이 올바른 서술이라 정규식으로
+> 수렴하지 않는다(아래 Task R5). 권고 3만 남았고, 그것도 착수 전에 공허성부터 재야 한다.
 > 아래 체크박스는 실제 할 일이다.
 
 **Goal:** 문서가 코드·리포 실상과 갈리는 것을 **인스턴스가 아니라 부류 단위로** 막는다. 감사가 찾은 138건은 11개 부류로 묶이고, 그중 네 부류(게시 상태 · 앵커 밖 버전 · 문서 내부 자기모순 · 손으로 세는 카운트)가 전체의 60%다.
@@ -66,19 +69,35 @@ harness.yml:86 → ./install-verify.sh go dotnet node python java php rust ruby 
 - [ ] **Step 4:** 변이 3요건 보고 + `--min-facts`/`--min-anchors` 영향 확인.
 - [ ] **Step 5:** 커밋.
 
-### Task R5: 금칙 문구 린트 (확정 ~45건)
+### ~~Task R5: 금칙 문구 린트~~ — **기각(2026-08-13 실측)**
 
-이미 반증된 결정 문구가 문서에 남아 다음 작업의 전제가 되는 부류. 후보(감사 확정분): `webhook.*Packagist` · `coverlet.msbuild` · `golangci-lint-action` · `always exits 0` · mask의 `앞 3자` · `Node 20+` · `=26.6.2`.
+후보 7종(`webhook.*Packagist` · `coverlet.msbuild` · `golangci-lint-action` · `always exits 0` · mask의 `앞 3자` · `Node 20+` · `=26.6.2`)을 리포 전체에 걸어 히트를 하나씩 열어 봤더니 **대부분이 올바른 서술**이었다:
 
-- [ ] **Step 1:** 스코프 결정 — **소비자·운영 문서에만** 적용한다. `docs/governance/`·`docs/superpowers/`는 append-only 이력이라 과거 결정을 서술하는 것이 정상이다(권고 4에서 쓴 것과 같은 원칙이고, 감사의 적대적 검증층이 이 부류를 오탐으로 걸러낸 근거다).
-- [ ] **Step 2:** `scripts/test/test-deploy-md.sh`의 `assert_not_contains` 관용을 재사용해 목록화.
-- [ ] **Step 3:** 각 금칙어마다 **왜 금지인지 한 줄**을 함께 적는다(목록만 있으면 다음 사람이 지운다).
-- [ ] **Step 4:** 변이 3요건 + CI 배선(`test-selftest-hygiene.sh`가 미배선을 잡는다 — 이번 세션에 실제로 잡혔다).
+| 히트 | 판정 |
+|---|---|
+| `.claude/rules/dotnet.md`의 `coverlet.msbuild` 2건 | 둘 다 "**더 이상 쓰지 않는다**"는 설명 — 금지 대상이 아니라 금지 사유 기록 |
+| `docs/roadmap/language-support.md`의 `Node 20+` | `openid-client` v6의 요구사항 서술이고 **같은 줄이 "The SDK requires Node 22+"** 라 적는다 |
+| 같은 파일의 `jose 6.2.4` 등 해석값 | 50행에 **"⚠️ Candidate · point-in-time snapshot caution"** 이 명시돼 있다 |
+
+소비자·운영 문서로 스코프를 좁혀도 걸러지지 않는다 — 위 히트가 **전부 그 스코프 안**이다. 문구 자체가 아니라 **문맥**(설명인가 주장인가 · 캐비앳이 있는가)이 참/거짓을 가르므로, 정규식으로는 수렴하지 않는다. 하네스 메타 가드가 "정적으로 임의 POSIX 셸의 의미를 증명하려다 수렴하지 않은" 것(S-B0)과 같은 부류다.
+
+**대신 유효한 것**: 캐비앳 없이 해석값을 적는 자리를 없애거나(`CLAUDE.md`의 jose 셀을 `해석값은 lockfile 참조`로 바꾼 방식) 표에 point-in-time 캐비앳을 붙이는 것(`getting-started` 호환성 표). 이건 가드가 아니라 편집이고, `6b79a14`에서 했다.
+
+### Task R3: 문서 내부 수치 자기일치 린트 (확정 16건) — 착수 전
+
+⚠️ **착수 전에 공허성을 먼저 재라.** 이 계획을 쓴 시점 이후 인스턴스를 대부분 고쳤다 — 테스트 수는 소비자 문서에서 전부 지웠고(`8b116e9`), 게시 개수는 자리마다 가드가 붙었다(`c3bb034`). 남은 검사 대상이 실제로 있는지부터 확인하고, 없으면 이 태스크도 기각하는 것이 맞다.
+
+- [ ] **Step 1:** 대상 수치 종류를 셋으로 한정한다 — (a) 게시 언어 개수 (b) 테스트 수 (c) 런타임 하한. 넷째부터는 오탐이 급증한다: **실제로 `dotnet/README.md`에서 clock skew와 JWKS 재조회가 둘 다 30초라 변이검증이 한 번 잘못된 결론을 냈다.**
+- [ ] **Step 2:** 실패하는 테스트 먼저 — 픽스처에 "한 파일 안 두 값" 케이스를 만든다.
+- [ ] **Step 3:** `scripts/check-docs.mjs`에 검사 추가. 자가테스트는 기존 `scripts/test/test-check-docs.sh` 패턴 재사용.
+- [ ] **Step 4:** 변이 3요건 보고. ⚠️ `CLAUDE.md`는 doc-budget 래칫(58800B)에 **바짝 붙어 있다**(58799B) — 설명을 덧붙이면 가드가 막는다.
 - [ ] **Step 5:** 커밋.
 
 ### 확정됐으나 미수정인 개별 결함 (감사 HIGH 잔여)
 
-- [ ] `.claude/rules/php.md:13` — 포터블 PHP 경로·버전이 실제와 다르고(디렉터리는 `php-8.3`, 8.3.31) Xdebug·pcov가 없어 **24행의 커버리지 명령이 아예 실행되지 않는다**.
+- [x] `.claude/rules/php.md` — 포터블 PHP 경로·버전이 실제와 다르고 Xdebug·pcov가 없어 커버리지 명령이 실행되지 않던 것을 고쳤다(`6b79a14`). 값을 갱신하는 대신 `KCSDK_PHP` 한 변수에서 파생시키고 패치 버전은 적지 않는다(부류 J 재발 방지). 교정 후 문서 그대로 실행해 확인했다.
+- [x] 앵커 밖 해석버전 — `CLAUDE.md`의 jose 해석값·WireMock, `getting-started` 호환성 표(`6b79a14`). jose는 갱신하지 않고 **스냅샷을 적지 않는 쪽**으로 바꿨다.
+- [x] npm dev 전이 취약점 2건(high) — `nanoid`·`brace-expansion`(`f459904`). 소비자 무영향(`files:["dist"]`·전부 dev 스코프)이지만 CI 잡이 토큰을 보므로 닫았다. 런타임 3종 무변경, 패키지 수 387→387.
 - [ ] `docs/governance/` 검증 로그 9개 — PR 머지·태그 게시 후에도 "미실행/PR 예정"을 현재형으로 유지(H10~H14). append-only 정책과 충돌하지 않는 해법은 **절 단위 `as-of` 날짜** 부여다.
 - [ ] `docs/superpowers/specs/2026-07-06-keycloak-php-sdk-design.md:67` — fschmtt `TokenStorageInterface`에 `ClientCredentialsTokenProvider`를 배선한다고 적지만 `AdminClient::__construct`는 `KeycloakConfig`만 받는다(계획서 Task D4와 같은 건).
 - [ ] `docs/superpowers/specs/2026-07-06-keycloak-rust-sdk-design.md:29` — "reqwest 0.13.4 / reqwest13 feature"인데 실제는 `0.12` + `reqwest12`.
