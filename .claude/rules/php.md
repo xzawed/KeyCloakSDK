@@ -10,20 +10,22 @@ paths:
 
 ## 툴체인 (빌드 명령)
 
-PHP는 포터블 설치 `${KCSDK_TOOLS:-$HOME/tools}/php`(8.3.32 NTS x64 — ext: openssl/curl/mbstring/fileinfo/sodium/zip/json, 리포지토리 미커밋)를 사용한다. Composer(`composer.phar` + bash shim)와 Xdebug 3.5.3(zend_extension, 기본 mode off)도 같은 경로에 있다. 프리픽스를 인라인 지정하고 명령은 `php/`에서 실행한다:
+PHP는 포터블 설치(NTS x64 — ext: openssl/curl/mbstring/fileinfo/sodium/zip/json, 리포지토리 미커밋)를 사용하며 Composer(`composer.phar` + bash shim)가 같은 경로에 있다. **디렉터리 이름은 버전 접미가 붙는다**(다른 포터블 툴과 같은 관용 — `gradle-9.6.1`·`jdk-21…`). 프리픽스를 인라인 지정하고 명령은 `php/`에서 실행한다:
 ```bash
-export PATH="${KCSDK_TOOLS:-$HOME/tools}/php:$PATH" OPENSSL_CONF="${KCSDK_OPENSSL_CNF:-C:\Users\dirtc\tools\php\extras\ssl\openssl.cnf}"
+export KCSDK_PHP="${KCSDK_PHP:-${KCSDK_TOOLS:-$HOME/tools}/php-8.3}"
+export PATH="$KCSDK_PHP:$PATH" OPENSSL_CONF="${KCSDK_OPENSSL_CNF:-$KCSDK_PHP/extras/ssl/openssl.cnf}"
 cd php && composer install                                    # 의존성 설치
 cd php && vendor/bin/phpunit --testsuite unit                  # 단위테스트. Docker 불필요
 cd php && vendor/bin/phpunit --testsuite integration           # 통합테스트(Docker 필요 — docker CLI 셸아웃, 실제 Keycloak 26.6)
 cd php && vendor/bin/phpstan analyse                           # 정적분석(level max + strict-rules + phpunit 확장)
 cd php && vendor/bin/php-cs-fixer fix --dry-run --allow-risky=yes   # 스타일 검사(--allow-risky는 declare_strict_types risky rule에 필요)
 ```
-> 다른 PC에서는 `KCSDK_TOOLS`(포터블 툴 상위 디렉터리, 기본 `$HOME/tools`)·`KCSDK_OPENSSL_CNF`를 덮어쓰거나, 이미 PATH에 있으면 프리픽스를 생략한다. 설치·진단은 [development-setup.md](../../docs/guides/development-setup.md)(`node scripts/doctor.mjs php`).
+> 다른 PC에서는 `KCSDK_PHP`(PHP 디렉터리 통째로)·`KCSDK_TOOLS`(포터블 툴 상위, 기본 `$HOME/tools`)·`KCSDK_OPENSSL_CNF`를 덮어쓰거나, 이미 PATH에 있으면 프리픽스를 생략한다. 설치·진단은 [development-setup.md](../../docs/guides/development-setup.md)(`node scripts/doctor.mjs php`). ⚠️ **정확한 패치 버전을 여기 적지 않는다** — 실측 원천은 `php -v`와 doctor다. 예전에는 `8.3.32`라고 박혀 있었는데 실제 설치는 `8.3.31`이었고, 경로도 `…/php`라고 적혀 있었지만 실제 디렉터리는 `php-8.3`이라 **문서를 그대로 따라 하면 PHP를 못 찾았다**(2026-08-12 문서 감사 H9).
 - 단일 테스트: `vendor/bin/phpunit --filter <TestName> tests/Unit/<Path>Test.php`
 - 커버리지 게이트(로직 라인 ≥90%, 네트워크 경계 omit): `XDEBUG_MODE=coverage vendor/bin/phpunit --testsuite unit --coverage-clover clover.xml` → `phpunit.xml`의 `<source><exclude>`가 `AuthClient`/`Admin/**`/`KeycloakClient`를 이미 제외하므로 clover의 `project.metrics`를 그대로 집계(실측 100.00%)
 - ⚠️ `OPENSSL_CONF`는 로컬 RSA 키 생성(`JwtValidatorTest`)에 필요 — 없으면 openssl 확장이 시스템 기본 cnf를 못 찾아 키 생성이 실패한다.
-- PHP 8.3.32 NTS · Composer 2.10 · Xdebug 3.5.3은 머신 전용 경로(리포지토리에 커밋 안 함, CI는 `shivammathur/setup-php` 사용).
+- 포터블 PHP·Composer는 머신 전용 경로(리포지토리에 커밋 안 함, CI는 `shivammathur/setup-php` 사용). 버전은 `php -v`/`composer -V`로 확인한다.
+- ⚠️ **이 포터블 설치에는 커버리지 드라이버가 없다** — 실측: `php -m | grep -ciE 'xdebug|pcov'` → `0`, `ext/`에도 xdebug 바이너리가 없다. 따라서 위 커버리지 게이트 명령(`XDEBUG_MODE=coverage …`)은 **이 PC에서 그대로는 실행되지 않는다**(PHPUnit이 "No code coverage driver available"로 끝난다). 로컬에서 커버리지를 재려면 Xdebug나 PCOV를 먼저 설치해야 하고, 게이트의 실제 집행 지점은 CI(`shivammathur/setup-php`가 드라이버를 제공)다. 문서가 "Xdebug 3.5.3이 같은 경로에 있다"고 적고 있었으나 사실이 아니었다(2026-08-12 문서 감사 H9).
 - 배포명 `xzawed/keycloak-sdk`. 실제 배포는 로컬에서 실행하지 않는다 — `php-v*` 태그 push 시 `.github/workflows/php-release.yml`이 verify(`composer audit`+`phpstan`+단위테스트) → split 잡(`git subtree split --prefix=php` → 미러 저장소 `xzawed/keycloak-sdk-php`의 `main`에 force-push → 접두어 없는 `vX.Y.Z` 태그를 그 저장소에 push) 순으로 돌고, GitHub Release는 미러 push가 **성공한 뒤에만** 생성된다(사람 승인 게이트). 상세: [DEPLOY.md §2-D](../../DEPLOY.md).
 
 ## 게차

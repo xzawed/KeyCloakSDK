@@ -291,7 +291,7 @@ dev(비앵커): `pytest`·`pytest-asyncio`·`pytest-cov`·`mypy`(strict)·`ruff`
 |---|---|---|---|
 | Admin | `@keycloak/keycloak-admin-client` | 공식 클라이언트. 원래 `^26`이었는데 26.7.0의 `decodeToken(undefined).split()` 크래시 회귀로 `~26.6.4`까지 좁혔다가(PR #62), PR #63의 provider 배선(`kc.auth()` 미호출)이 그 크래시 경로를 **근본 차단**함이 통합테스트로 실증되어 dependabot PR #48로 전진 | `~26.7.0` |
 | 인증(OIDC/OAuth2) | `openid-client` | v6 함수형 API. 선언은 범위이고 해석값은 lockfile이 정한다 | `^6` |
-| JWT(강화 검증) | `jose` | 5.10.0에서 전진 — `openid-client`가 이미 `jose ^6.2.2`를 요구하고 있어 이 bump는 트리를 **dedupe**한다. SDK가 쓰는 7개 API/옵션이 v6에서 이름·의미 모두 동일함을 published `.d.ts`로 확인했고, `cooldownDuration` rate-limit이 실제로 살아있음을 히트 수로 실측했다(현재 해석값 6.2.4) | `^6` |
+| JWT(강화 검증) | `jose` | 5.10.0에서 전진 — `openid-client`가 이미 `jose ^6.2.2`를 요구하고 있어 이 bump는 트리를 **dedupe**한다. SDK가 쓰는 7개 API/옵션이 v6에서 이름·의미 모두 동일함을 published `.d.ts`로 확인했고, `cooldownDuration` rate-limit이 실제로 살아있음을 히트 수로 실측했다(해석값은 lockfile 참조) | `^6` |
 
 dev(비앵커 — 버전이 셀 안 산문이라 기계 대조 밖): `typescript` 6 · `vitest`/`@vitest/coverage-v8` 3(v4는 `vi.mock` 시맨틱 변경으로 보류) · `testcontainers` 12 · `eslint` 10 + `typescript-eslint` 8 · `prettier` 3 · `@types/node` `^22`(engines 하한과 일치 — dependabot.yml에 메이저 ignore). 런타임 deps는 audit clean, devDeps 일부 moderate(`files:["dist"]`라 소비자 미배포).
 
@@ -322,7 +322,7 @@ dev(비앵커 — 버전이 셀 안 산문이라 기계 대조 밖): `typescript
 |---|---|---|---|
 | Admin | `Keycloak.AuthServices.Sdk` | net8 최종 버전 — 3.0.0은 net10 전용이라 사용 불가 | **2.7.0** |
 | DI 추상화 | `Microsoft.Extensions.DependencyInjection.Abstractions` | AuthServices 2.7.0의 하한(9.0.8) 충족 + net8 유지 정책으로 10.x major는 보류(PR #57 close) | 9.0.18 |
-| 단위 테스트 | `xUnit` 2.9.3 · `WireMock.Net` 2.13.0 · `coverlet.collector` 10.0.1 | 표준 .NET 단위테스트+모킹+커버리지 스택(컬렉터만 — msbuild 통합은 히트 flush 유실로 제거, 게차 참고) | — |
+| 단위 테스트 | `xUnit` 2.9.3 · `WireMock.Net` 2.14.0 · `coverlet.collector` 10.0.1 | 표준 .NET 단위테스트+모킹+커버리지 스택(컬렉터만 — msbuild 통합은 히트 flush 유실로 제거, 게차 참고) | — |
 | 통합 테스트 | `Testcontainers.Keycloak` | 실제 Keycloak 26.6 컨테이너로 E2E 검증 | 4.13.0 |
 
 전부 Apache-2.0/MIT(호환).
