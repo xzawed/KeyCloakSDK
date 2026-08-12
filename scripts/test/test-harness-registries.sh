@@ -127,95 +127,183 @@ for L in python java kotlin ruby php go node rust; do
   # 바꿔도 위 두 어서션은 통과했다(29 passed). 그래서 두 가지를 더 못박는다:
   #   (a) `PROVENANCE_OK=1`은 **provenance.txt를 읽는 조건** 안에서만 설정돼야 한다
   #   (b) `installed.ok` 쓰기는 `[ "$PROVENANCE_OK" = 1 ]` **뒤에** 와야 한다(판정 의존성)
-  # 이래도 의미론까지 증명하지는 못한다(그건 컨테이너를 띄워야 한다) — 그러나 "고치는 것처럼
-  # 보이는 편집"으로 단언이 무력화되는 경로는 닫힌다.
-  # ⚠️ **모든** `PROVENANCE_OK=1` 대입이 관측에 근거해야 한다 — "첫 번째가 근거 있으면 통과"로 두면
-  # 뒤에 무근거 대입을 하나 더 붙여 앞의 판정을 덮을 수 있다. 실제로 그 형태의 버그가 있었다(go가
-  # 리포트 문자열을 재-grep해 판정을 뒤집었다). 근거로 인정하는 것은 두 가지다:
-  #   (1) 직전 4줄 안에서 provenance.txt를 읽는 grep  (2) 같은 조건줄에서 실제 다운로드를 수행(go)
   #
-  # ⚠️ **위 (a)(b)만으로도 우회 세 가지가 이 가드를 통과했다(2026-08-12 외부 검토, #167 후속3,
-  # 실측 — task-A5-report.md).** 셋 다 "고치는 것처럼 보이는 편집"이다:
-  #   1. **else 분기 뒤집기** — else 분기의 `PROVENANCE_OK=0`을 `=1`로 바꿔도, 그 대입은 여전히
-  #      "직전 4줄 안에 provenance.txt grep"을 만족한다(if/else가 붙어 있어 grep이 그대로 4줄
-  #      안에 있다) — **어느 분기인지는 안 봤다.**
-  #   2. **후행 무조건 마커** — 게이트(`if [ "$PROVENANCE_OK" = 1 ]; then ... fi`) 뒤에
-  #      `: > "$STATUS/installed.ok"`를 하나 더 적어도, 아래 마커 검사가 `head -1`(첫 줄)만 봐서
-  #      뒤에 붙인 무조건 쓰기는 검사 대상 밖이었다.
-  #   3. **빈 grep 패턴** — 근거 grep을 `grep -q '' "$STATUS/provenance.txt"`(아무 줄이나 매치)로
-  #      바꿔도 "grep을 쓰고 provenance.txt를 언급한다"는 조건은 그대로 참이었다 — **패턴이 실제로
-  #      뭘 매치하는지는 안 봤다.**
-  # 아래 `gated`가 1·3을, `mark_check`가 2를 닫는다(각각 재현·비공허성 실측: task-A5-report.md).
-  gated="$(awk -v sq="''" -v dq='""' '
-    function trim(s) { gsub(/^[ \t]+/, "", s); gsub(/[ \t\r]+$/, "", s); return s }
-    { buf[NR] = $0 }
-    END {
-      for (n = 1; n <= NR; n++) {
-        if (buf[n] !~ /PROVENANCE_OK=1/) continue
-        total++
-        # (1) else 분기 안의 대입은 근거로 인정하지 않는다 — 뒤로 걸으며 중첩 if/fi는 depth로
-        #     건너뛰고, 같은 깊이에서 else를 먼저 만나면(then을 만나기 전) else 분기다.
-        in_else = 0; depth = 0
-        for (i = n - 1; i >= 1; i--) {
-          t = trim(buf[i])
-          if (t == "fi") { depth++; continue }
-          if (depth > 0) { if (t ~ /(^|;)[ \t]*then$/) depth--; continue }
-          if (t == "else") { in_else = 1; break }
-          if (t ~ /(^|;)[ \t]*then$/) break
-        }
-        if (in_else) continue
-        # (2) 직전 4줄 안의 근거 — grep의 패턴이 빈 문자열(연속된 홑따옴표·겹따옴표)이면 아무
-        #     줄이나 매치하므로 근거로 인정하지 않는다.
-        ok = 0
-        for (i = n - 4; i < n; i++) {
-          if (i <= 0) continue
-          if (buf[i] ~ /GOPROXY=.*go mod download/) { ok = 1; continue }
-          if (buf[i] ~ /grep .*provenance\.txt/) {
-            if (index(buf[i], sq) > 0 || index(buf[i], dq) > 0) continue
-            ok = 1
-          }
-        }
-        if (ok) good++
-      }
-      print (total > 0 && total == good) ? "yes" : "no(total=" total " good=" good ")"
-    }
-  ' "$f")"
-  assert_eq "yes" "$gated" \
-    "$L-run.sh 의 PROVENANCE_OK=1 대입 중 관측에 근거하지 않은 것이 있다 — else 분기이거나 빈 패턴 grep으로 무조건 통과로 바뀌었나(#167)"
-
-  # ⚠️ 조건의 **문자열 형태**까지 고정한다. 줄 번호 순서만 보면 `[ "$PROVENANCE_OK" = 1 ] || true`
-  # 같은 편집이 그대로 통과한다(실측으로 확인한 우회 경로).
+  # ⚠️ **1라운드(줄-윈도우 휴리스틱)는 PoC 세 개는 막았지만 그 PoC가 대표하는 *부류*는 못 막았다
+  # — 외부 검토가 2라운드에서 REAL한 우회 넷을 실측 재현했다(#167 후속4, task-A5-report.md):**
+  #   1. **주석이 "then"을 흉내낸다** — else 분기 안에 `# 주석; then`처럼 세미콜론+then으로 끝나는
+  #      주석 줄이 있으면, 주석을 벗기지 않은 채 줄 끝만 보는 판정이 그 줄을 진짜 then으로 오인해
+  #      진짜 else보다 먼저 멈춘다. `mark_check`도 같은 정규식을 재사용해 같은 방식으로 속는다.
+  #   2. **elif를 아예 모른다** — `elif ...; then`도 문자열로는 "; then"으로 끝나 이전 판정이 그걸
+  #      주 if의 then으로 착각한다(else만 보고 elif는 안 봤다).
+  #   3. **같은 줄 여러 절** — `else PROVENANCE_OK=1; fi`처럼 else와 대입이 한 줄에 있으면, 뒤로
+  #      걷는 스캔이 대입 **자기 줄**은 보지 않고 그 앞줄부터 봐서 같은 줄의 else를 놓친다.
+  #   4. **빈 홑/겹따옴표만 막았다** — `grep -q '.'`나 `grep -q "[a-z]"`처럼 *비어있지 않지만
+  #      의미상 아무거나 매치하는* 패턴은 안 걸린다. "패턴이 있다"가 아니라 "패턴이 실제로 근거
+  #      변수를 가리키는가"를 봐야 한다.
+  #
+  # **2라운드 구조적 재작성** — 8언어 스크립트 전체를 실측해서 얻은 결론: 휴리스틱을 더 추가하는
+  # 대신 셸 코드가 실제로 취하는 모양에 맞춰 파싱한다.
+  #   (A) 각 줄에서 따옴표 밖 `#`부터는 주석으로 잘라내고(반례1), `;`로 나눈 **절(clause)** 단위로
+  #       분석하며(반례3 — `else X; fi`가 절 2개로 갈린다), `if`/`elif`/`else`/`then`/`fi`가 절
+  #       **맨 앞 단어**로 붙어 있으면(`then PROVENANCE_OK=1`처럼) 그 키워드만 따로 떼어 별도
+  #       절로 만든다. 이 절의 흐름을 뒤로 걸으며 `if`/`fi` 중첩은 depth로 건너뛰고, 같은 깊이에서
+  #       `else`나 `elif`를 먼저 만나면(반례2 — elif도 else와 동일 취급) 무조건 거부, `then`을
+  #       만나면 그 then을 연 것이 `if`인지 `elif`인지 계속 뒤로 걸어 확인한다.
+  #   (B) 근거 grep을 "패턴이 비어있지 않다"가 아니라 "패턴이 이 스크립트가 실제로 유도한
+  #       로컬-소스 변수를 가리킨다"로 판정한다(반례4). 8언어를 다시 읽고 실제 조건절에 쓰인
+  #       변수만 모았다 — 새 변수를 지어내지 않았다:
+  #         `$REG`        — python/php/ruby/node: `REG="${REGISTRY_URL:-...}"`(각 REGISTRY_URL 파생)
+  #         `$_kreg`      — kotlin: build.gradle.kts `uri(...)`에서 뽑은 로컬 maven 저장소 URL
+  #         `$LOCAL_REG`  — rust: cargo-local-registry 마운트 경로 상수
+  #         `${_id}`/`$_id` — java: for 루프 변수(저장소 id 후보, `>${_id}=` 형태로 grep 패턴에 등장)
+  #         `$_local_url` — java: 같은 grounding 로직이 유도하는 로컬 URL(방어적으로 포함 — 리뷰 라운드1 지시)
+  #       go는 grep을 안 쓰므로 특례로 `GOPROXY=.*go mod download`를 그대로 유지한다.
+  #   `gated`가 1·2·3·4를, `mark_check`가 1의 mark_check쪽 절반(주석에 속는 것)과 마커 재배치를
+  #   같은 절 엔진으로 닫는다(재현·비공허성 실측: task-A5-report.md 「Fix round 1」).
   ok_line="$(grep -n '^  if \[ "\$PROVENANCE_OK" = 1 \]; then$' "$f" | head -1 | cut -d: -f1)"
   assert_ok test -n "$ok_line"
 
-  # ⚠️ **후행 무조건 마커도 우회 경로다(#167 후속3, 실측 — task-A5-report.md).** 예전엔 마커 쓰기의
-  # *첫* 줄만(`head -1`) 봐서, 게이트 뒤에 `: > "$STATUS/installed.ok"`를 하나 더 붙이면 그 줄은
-  # 검사 대상 밖이었다. 게이트가 닫히는 "fi"(중첩 depth로 정확히 추적)까지 구간을 잡고, 파일
-  # **전체**에서 마커 쓰기가 정확히 1건이며 그 1건이 이 구간 **안**에 있을 때만 통과시킨다 — 트레일링
-  # 무조건 쓰기는 구간 밖이라 건수가 2로 늘어 거부된다.
-  mark_check="$(awk -v ok_line="$ok_line" -v marker=': > "$STATUS/installed.ok"' '
-    { buf[NR] = $0 }
-    END {
-      if (ok_line == "" || ok_line == 0) { print "no(no-ok-line)"; exit }
-      depth = 1; close_line = 0
-      for (n = ok_line + 1; n <= NR; n++) {
-        t = buf[n]; gsub(/^[ \t]+/, "", t); gsub(/[ \t\r]+$/, "", t)
-        if (t ~ /(^|;)[ \t]*then$/) { depth++; continue }
-        if (t == "fi") { depth--; if (depth == 0) { close_line = n; break } }
+  combined="$(awk -v ok_line="${ok_line:-0}" -v marker=': > "$STATUS/installed.ok"' '
+    function ltrim(s) { gsub(/^[ \t]+/, "", s); return s }
+    function rtrim(s) { gsub(/[ \t\r]+$/, "", s); return s }
+    function trim(s) { return rtrim(ltrim(s)) }
+    function strip_comment(line,    i, c, out, inS, inD) {
+      inS = 0; inD = 0; out = ""
+      for (i = 1; i <= length(line); i++) {
+        c = substr(line, i, 1)
+        if (c == SQ && !inD) { inS = !inS; out = out c; continue }
+        if (c == "\"" && !inS) { inD = !inD; out = out c; continue }
+        if (c == "#" && !inS && !inD) break
+        out = out c
       }
-      if (close_line == 0) { print "no(no-close)"; exit }
+      return out
+    }
+    # 따옴표·괄호(=$(...))를 인식하며 top-level ";"로 절을 나눈다 — 반례3(같은 줄 여러 절).
+    function split_clauses(line, CL,    i, c, inS, inD, depth, cur, n) {
+      inS = 0; inD = 0; depth = 0; cur = ""; n = 0
+      for (i = 1; i <= length(line); i++) {
+        c = substr(line, i, 1)
+        if (c == SQ && !inD) { inS = !inS; cur = cur c; continue }
+        if (c == "\"" && !inS) { inD = !inD; cur = cur c; continue }
+        if (!inS && !inD) {
+          if (c == "(") { depth++; cur = cur c; continue }
+          if (c == ")") { if (depth > 0) depth--; cur = cur c; continue }
+          if (c == ";" && depth == 0) { n++; CL[n] = cur; cur = ""; continue }
+        }
+        cur = cur c
+      }
+      if (trim(cur) != "") { n++; CL[n] = cur }
+      return n
+    }
+    # 절 맨 앞의 if/elif/else/then/fi를 자기 절로 떼어낸다 — "then PROVENANCE_OK=1"·
+    # "else PROVENANCE_OK=1" 같은 한 줄-여러-키워드를 분리된 절처럼 취급한다(반례2·3).
+    function peel(clause, OUT,    t, kw, rest, n) {
+      t = trim(clause); n = 0
+      while (1) {
+        kw = ""
+        if (t == "if" || t == "elif" || t == "else" || t == "then" || t == "fi") { kw = t; rest = "" }
+        else if (match(t, /^(if|elif|then|else)[ \t]+/)) {
+          kw = substr(t, 1, RLENGTH); gsub(/[ \t]+$/, "", kw)
+          rest = substr(t, RLENGTH + 1)
+        }
+        if (kw == "") break
+        n++; OUT[n] = kw
+        t = trim(rest)
+        if (t == "") break
+      }
+      if (t != "") { n++; OUT[n] = t }
+      return n
+    }
+    # PROVENANCE_OK=1 절(m)에서 뒤로 걸어 이 대입을 감싼 분기를 구조적으로 찾는다.
+    # else/elif를 만나면 즉시 거부(반례2) — then을 만나면 그 then을 연 게 if인지 elif인지
+    # 계속 확인한다. if로 확인되면 그 if..then 사이(조건절)에 근거가 있는지 본다.
+    function analyze(m,    i, t, depth, phase, then_pos, if_pos, verdict, blob, j, seg, v) {
+      depth = 0; phase = "seek"; then_pos = 0; if_pos = 0; verdict = "reject"
+      for (i = m - 1; i >= 1; i--) {
+        t = C[i]
+        if (t == "fi") { depth++; continue }
+        if (depth > 0) { if (t == "if") depth--; continue }
+        if (phase == "seek") {
+          if (t == "else") { verdict = "reject"; break }
+          if (t == "elif") { verdict = "reject"; break }
+          if (t == "then") { phase = "find_opener"; then_pos = i; continue }
+          continue
+        }
+        if (t == "if")   { verdict = "accept"; if_pos = i; break }
+        if (t == "elif") { verdict = "reject"; break }
+        if (t == "else") { verdict = "reject"; break }
+        continue
+      }
+      if (verdict != "accept") return "reject"
+      blob = ""
+      for (j = if_pos + 1; j <= then_pos - 1; j++) blob = blob " " C[j]
+      if (blob ~ /GOPROXY=.*go mod download/) return "accept"
+      # 근거 grep — provenance.txt를 읽는 grep 구간(파이프 앞까지)에 로컬-소스 변수가 있어야 한다.
+      if (match(blob, /grep[^|]*provenance\.txt/)) {
+        seg = substr(blob, RSTART, RLENGTH)
+        for (v = 1; v <= NVARS; v++) if (match(seg, VARPATS[v])) return "accept"
+      }
+      return "reject"
+    }
+    BEGIN {
+      SQ = sprintf("%c", 39); BS = sprintf("%c", 92)
+      nv = 0
+      # 로컬-소스 근거 변수 — 8개 언어를 실측해서 얻은 목록(#167 후속4, 지어내지 않음):
+      VARPATS[++nv] = BS "$REG([^A-Za-z0-9_]|$)"        # python/php/ruby/node: REGISTRY_URL 파생
+      VARPATS[++nv] = BS "$_kreg([^A-Za-z0-9_]|$)"       # kotlin: build.gradle.kts uri()에서 유도
+      VARPATS[++nv] = BS "$LOCAL_REG([^A-Za-z0-9_]|$)"   # rust: cargo-local-registry 마운트 경로
+      VARPATS[++nv] = BS "$_local_url([^A-Za-z0-9_]|$)"  # java: mirrorOf 예외에서 유도한 로컬 URL(방어적)
+      VARPATS[++nv] = BS "$" BS "{?_id" BS "}?([^A-Za-z0-9_]|$)"  # java: for 루프 저장소 id 후보(${_id})
+      NVARS = nv
+      M = 0
+    }
+    {
+      clean = strip_comment($0)
+      if (trim(clean) == "") next
+      nc = split_clauses(clean, CL)
+      for (k = 1; k <= nc; k++) {
+        np = peel(CL[k], PC)
+        for (p = 1; p <= np; p++) { M++; C[M] = trim(PC[p]); L[M] = NR }
+      }
+      delete CL; delete PC
+    }
+    END {
+      total = 0; good = 0
+      for (m = 1; m <= M; m++) {
+        if (C[m] != "PROVENANCE_OK=1") continue
+        total++
+        if (analyze(m) == "accept") good++
+      }
+      print "GATED\t" ((total > 0 && total == good) ? "yes" : ("no(total=" total " good=" good ")"))
+
+      # mark_check — 같은 절 스트림으로 ok_line의 "then"부터 그 then을 닫는 "fi"까지 구간을 잡고,
+      # 마커가 파일 전체에서 정확히 1건 + 그 구간 안에 있는지 본다(반례1의 mark_check쪽·마커 재배치).
+      m0 = 0
+      for (m = 1; m <= M; m++) if (L[m] == ok_line + 0 && C[m] == "then") { m0 = m; break }
+      if (m0 == 0) { print "MARK\tno(no-ok-then)"; exit }
+      depth = 1; close_m = 0
+      for (m = m0 + 1; m <= M; m++) {
+        if (C[m] == "if") { depth++; continue }
+        if (C[m] == "fi") { depth--; if (depth == 0) { close_m = m; break } }
+      }
+      if (close_m == 0) { print "MARK\tno(no-close)"; exit }
       cnt = 0; bad = 0
-      for (n = 1; n <= NR; n++) {
-        if (index(buf[n], marker) > 0) {
+      for (m = 1; m <= M; m++) {
+        if (index(C[m], marker) > 0) {
           cnt++
-          if (!(n > ok_line && n < close_line)) bad = 1
+          if (!(m > m0 && m < close_m)) bad = 1
         }
       }
-      if (cnt == 1 && bad == 0) print "yes"; else print "no(cnt=" cnt " bad=" bad ")"
+      print "MARK\t" ((cnt == 1 && bad == 0) ? "yes" : ("no(cnt=" cnt " bad=" bad ")"))
     }
   ' "$f")"
+  gated="$(printf '%s\n' "$combined" | sed -n 's/^GATED\t//p')"
+  mark_check="$(printf '%s\n' "$combined" | sed -n 's/^MARK\t//p')"
+
+  assert_eq "yes" "$gated" \
+    "$L-run.sh 의 PROVENANCE_OK=1 대입 중 관측에 근거하지 않은 것이 있다 — else/elif 분기이거나 근거 grep이 로컬-소스 변수를 가리키지 않는데 무조건 통과로 바뀌었나(#167)"
   assert_eq "yes" "$mark_check" \
-    "$L-run.sh 의 installed.ok 마커 쓰기가 게이트 하나 안에 정확히 1건이 아니다 — 게이트 뒤에 무조건 쓰기가 추가됐을 수 있다(#167)"
+    "$L-run.sh 의 installed.ok 마커 쓰기가 게이트 하나 안에 정확히 1건이 아니다 — 게이트 뒤로 옮겨졌거나 트레일링 무조건 쓰기가 추가됐을 수 있다(#167)"
 done
 # ⚠️ 대조군 — 파일명 규칙이 바뀌면 위 루프가 한 번도 돌지 않고 조용히 통과한다.
 assert_eq "8" "$prov_langs" "소스-추가 8개 언어의 consume 스크립트를 다 찾지 못했다 — 파일명 규칙이 바뀌었나"
