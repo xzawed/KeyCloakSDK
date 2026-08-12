@@ -137,9 +137,13 @@ if mvn -s "$SETTINGS" -B -q dependency:get "-Dartifact=io.github.xzawed:keycloak
     [ "$_id" = central ] && continue
     _id_url="$(_lookup_url "$_id")"
     [ -n "$_local_url" ] && [ "$_id_url" = "$_local_url" ] || continue
+    # ⚠️ **양쪽 다 고정문자열(`-F`)이라야 한다(2026-08-12 부류 재스캔 — kotlin·ruby 동형).** 예전에는
+    # 둘 다 `_id`를 **이스케이프 없이 BRE에 보간**했다. 저장소 id에 `.`이 섞이는 순간 임의문자가 되어
+    # 다른 id를 매치한다(예: `_id=c.ntral`이 `…jar>central=`을 매치해 Central을 로컬로 판정). 여기서
+    # `_id`는 고정 리터럴로만 쓰이므로 `-F`가 의미 손실 없이 부류를 제거한다(`\.jar` → `.jar`).
     if [ -s "$STATUS/provenance.txt" ] \
-       && ! grep -v ">${_id}=" "$STATUS/provenance.txt" | grep -q . \
-       && grep -q "\.jar>${_id}=" "$STATUS/provenance.txt"; then
+       && ! grep -v -F ">${_id}=" "$STATUS/provenance.txt" | grep -q . \
+       && grep -q -F ".jar>${_id}=" "$STATUS/provenance.txt"; then
       PROVENANCE_OK=1; _repo_id="$_id"; break
     fi
   done

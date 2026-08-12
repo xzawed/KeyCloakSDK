@@ -40,7 +40,10 @@ if composer config repositories.local composer "$REG" >/tmp/install.log 2>&1 \
   # ⚠️ **출처 단언**(이슈 #167) — Packagist가 살아 있으므로 같은 좌표가 거기 있으면 거기서
   # 받아도 초록이다. 판정을 출처에 의존시킨다(python-run.sh와 동형).
   # ⚠️ **전부 로컬이라야 한다** + 빈 파일도 실패(여섯 언어 공통 규칙).
-  if [ -s "$STATUS/provenance.txt" ] && ! grep -v -F "$REG" "$STATUS/provenance.txt" | grep -q .; then
+  # ⚠️ `$REG`가 비면 `grep -v -F ""`가 모든 줄을 걸러내 음성 조건이 **자동 참**이 된다 — 공개
+  # 레지스트리에서 받아도 통과한다(실측 재현). env로는 도달 불가하지만(`:-`가 빈 값도 기본값으로
+  # 대체한다) 스크립트 변이로는 도달하므로 비어있음을 명시 검사한다(2026-08-12 부류 재스캔).
+  if [ -n "$REG" ] && [ -s "$STATUS/provenance.txt" ] && ! grep -v -F "$REG" "$STATUS/provenance.txt" | grep -q .; then
     PROVENANCE_OK=1
   else
     PROVENANCE_OK=0

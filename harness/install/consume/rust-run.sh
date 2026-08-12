@@ -84,7 +84,10 @@ if (cd /app/app && cargo build --offline) >/tmp/install-app.log 2>&1; then
   # 실행의 로그를 매일 읽는 사람은 없다. 판정(`installed.ok`)이 출처에 의존해야 한다.
   # ⚠️ **전부 로컬이라야 한다**(기록된 줄이 하나라도 로컬이 아니면 실패) + 빈 파일도 실패.
   # 여덟 언어가 같은 규칙을 쓴다 — "하나라도 로컬"은 부분 출처·시도 URL 혼입을 통과시킨다.
-  if [ -s "$STATUS/provenance.txt" ] && ! grep -v -F "$LOCAL_REG" "$STATUS/provenance.txt" | grep -q .; then
+  # ⚠️ `$LOCAL_REG`가 비면 `grep -v -F ""`가 모든 줄을 걸러내 음성 조건이 **자동 참**이 된다 —
+  # 공개 crates.io에서 받아도 통과한다(실측 재현). 현재는 상수 대입이라 도달 불가하지만 스크립트
+  # 변이로는 도달하므로 비어있음을 명시 검사한다(2026-08-12 부류 재스캔).
+  if [ -n "$LOCAL_REG" ] && [ -s "$STATUS/provenance.txt" ] && ! grep -v -F "$LOCAL_REG" "$STATUS/provenance.txt" | grep -q .; then
     PROVENANCE_OK=1
   else
     PROVENANCE_OK=0

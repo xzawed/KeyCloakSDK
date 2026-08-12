@@ -46,16 +46,54 @@ if sh ./gradlew --no-daemon --info classes >/tmp/install.log 2>&1; then
   echo "[kotlin-run] SDK 출처: $(tr '\n' ' ' <"$STATUS/provenance.txt" 2>/dev/null)"
   # ⚠️ **출처 단언**(이슈 #167). 레지스트리 URL은 build.gradle.kts의 `maven { url = uri(...) }`에서
   # 파생한다 — 하드코딩하면 URL을 바꿀 때 가드가 낡은 값을 지키며 초록이 된다.
-  _kreg="$(sed -n 's|.*uri("\(http[^"]*\)").*|\1|p' build.gradle.kts | head -1)"
+  # ⚠️ **I4(2026-08-12 최종 리뷰) — java에서 방금 고친 결함(#167, `_local_url` 도입)을 kotlin이 그대로
+  # 반복하고 있었다.** `http[^"]*`는 `https://…`도 매치하고 `head -1`은 **파일 안 등장 위치**를 믿는다.
+  # 지금은 `uri("http://mvn-repo-kotlin/")`(로컬)가 유일한 `uri(...)` 리터럴이고 Central은 `mavenCentral()`
+  # DSL 호출이라 우연히 통과할 뿐이다 — 이 리터럴 위에 `maven { url = uri("https://…") }`를 하나만 추가해도
+  # `_kreg`가 그쪽으로 재타깃되고, SDK가 거기서 해석되면 기록된 URL 전부가 `_kreg`와 일치해 가드가
+  # 공개 아티팩트를 검증하며 통과한다. java가 쓴 것과 같은 근거(빌드파일의 `isAllowInsecureProtocol = true`가
+  # 평문 http만 로컬 레지스트리의 의도적 표식임을 뒷받침한다)로 **평문 `http://`만** 후보로 삼고, 후보가
+  # 둘 이상이면(모호) 정지가 아니라 **명시적으로 시끄럽게 실패**한다 — `head -1`처럼 위치를 믿고 조용히
+  # 하나를 고르는 것 자체가 이 결함의 원인이었다.
+  _kreg_candidates="$(sed -n 's|.*uri("\(http://[^"]*\)").*|\1|p' build.gradle.kts)"
+  _kreg_n="$(printf '%s\n' "$_kreg_candidates" | grep -c . || true)"
+  if [ "$_kreg_n" -gt 1 ]; then
+    echo "[kotlin-run] build.gradle.kts에 평문 http:// uri(...) 후보가 ${_kreg_n}개다 — 로컬 레지스트리 URL을 하나로 특정할 수 없다(java와 같은 결함 재발, #167 I4). 후보:"
+    printf '%s\n' "$_kreg_candidates" | sed 's/^/  /'
+    sleep 3600; exit 1
+  fi
+  _kreg="$(printf '%s\n' "$_kreg_candidates" | head -1)"
+  # ⚠️ **origin 경계로 정규화한다(끝에 `/` 하나).** 접두 비교는 `/`가 없으면 **호스트 경계를 넘어**
+  # 매치한다 — `_kreg=http://repo`는 `http://repo.maven.apache.org/…keycloak-sdk-kotlin-0.1.0.jar`의
+  # 진짜 리터럴 접두라서, 정규식을 고정문자열로 바꿔도 통과한다(행동 테스트가 실제로 이걸 잡았다:
+  # `기대 0, 실제 1`). `http://repo/`로 만들면 공개 호스트와 첫 글자에서 갈린다. 이미 `/`로 끝나는
+  # 정상값(`http://mvn-repo-kotlin/`)은 무변경이다.
+  [ -n "$_kreg" ] && _kreg="${_kreg%/}/"
   # ⚠️ **전부 로컬이라야 한다.** Gradle은 --info에서 *실패한 시도*의 URL도 남긴다("Resource missing"
   # 등) — 그래서 "로컬 URL이 하나라도 있으면 통과"로 두면, 로컬에서 pom을 못 찾고 **Central에서
   # 받은** 실행도 로컬 URL이 로그에 있다는 이유로 통과한다. 기록된 SDK URL이 전부 로컬일 때만
   # 통과시키면 성공/시도를 구분하지 않고도 그 구멍이 닫힌다.
   # ⚠️ 음성 조건(외부 URL 없음)만으로는 "아무것도 안 받았는데 통과"가 가능하다 — **양성 조건**을
   # 함께 건다: 로컬에서 실제로 `.jar`를 받은 줄이 최소 하나 있어야 한다.
+  # ⚠️ **양성 조건은 정규식이 아니라 리터럴 접두 비교로 한다(2026-08-12 부류 재스캔).** 예전 구현은
+  # `grep -q -e "^${_kreg}.*\.jar$"`였는데 `_kreg`가 **이스케이프 없이 BRE에 보간**된다 — URL의 `.`이
+  # 임의문자가 되고, `_kreg`가 짧은 접두로 드리프트하면 공개 저장소 URL이 그대로 매치된다(실측:
+  # `_kreg=http://repo` + `http://repo.maven.apache.org/…/keycloak-sdk-kotlin-0.1.0.jar` → OK=1).
+  # 셸 `case`의 **인용된** 확장은 완전 리터럴이라(실측: 패턴 `http://a.b/`는 `http://aXb/x.jar`를
+  # 매치하지 않고 같은 값의 BRE는 매치한다) 이 부류가 통째로 사라진다.
+  # ⚠️ `grep -F "$_kreg" … | grep -q '\.jar$'`로 바꾸는 대안은 **시작 앵커를 잃어** 회귀다 — 음성
+  # 조건은 "모든 줄이 `_kreg`를 **포함**"만 보장하므로 접두가 아니어도 통과한다(실측:
+  # `https://evil.example/redir?u=http://mvn-repo-kotlin/…/x.jar`가 파이프형은 통과, 앵커형·case형은 거부).
+  # ⚠️ `_kreg`가 비면 `case` 패턴이 `*.jar`로 무너져 아무 `.jar`나 통과한다 — 비어있음 검사가 먼저다.
+  _jar_local=0
+  if [ -n "$_kreg" ] && [ -s "$STATUS/provenance.txt" ]; then
+    while IFS= read -r _pline || [ -n "$_pline" ]; do
+      case "$_pline" in "$_kreg"*.jar) _jar_local=1; break ;; esac
+    done <"$STATUS/provenance.txt"
+  fi
   if [ -n "$_kreg" ] && [ -s "$STATUS/provenance.txt" ] \
      && ! grep -v -F "$_kreg" "$STATUS/provenance.txt" | grep -q . \
-     && grep -q -e "^${_kreg}.*\.jar$" "$STATUS/provenance.txt"; then
+     && [ "$_jar_local" = 1 ]; then
     PROVENANCE_OK=1
   else
     PROVENANCE_OK=0

@@ -73,8 +73,30 @@ if gem install keycloak-sdk --version "$PKG_VER" --clear-sources --source "$REG"
   # 버전이 거기에도 있으면 거기서 받아도 초록이므로, 판정을 출처에 의존시킨다.
   # ⚠️ **전부 로컬** + **양성 조건**: 로컬에서 `.gem` **본문**(`/gems/…gem`)을 받은 줄이 있어야 한다.
   # 스펙(`/quick/…gemspec.rz`)·인덱스(`/info/…`)만 로컬이고 본문은 공개인 조합이 실제로 있었다.
-  if [ -s "$STATUS/provenance.txt" ] && ! grep -v -F "$REG" "$STATUS/provenance.txt" | grep -q . \
-     && grep -q "^${REG}.*/gems/.*\.gem$" "$STATUS/provenance.txt"; then
+  # ⚠️ **양성 조건은 정규식이 아니라 리터럴 접두 비교로 한다(2026-08-12 부류 재스캔 — kotlin·java 동형).**
+  # 예전 구현은 `grep -q "^${REG}.*/gems/.*\.gem$"`였는데 `$REG`가 **이스케이프 없이 BRE에 보간**된다 —
+  # URL의 `.`이 임의문자가 되고 짧은 접두로 드리프트하면 공개 URL이 매치된다. 셸 `case`의 인용된
+  # 확장은 완전 리터럴이라 이 부류가 사라진다(파이프형 `grep -F | grep`는 시작 앵커를 잃어 회귀다).
+  # ⚠️ `$REG`가 비면 음성 조건(`grep -v -F ""`)이 자동 참이 되고 `case` 패턴도 `*/gems/*.gem`으로
+  # 무너져 **공개 rubygems.org가 통과한다**(실측 재현). env로는 도달 불가지만(`:-`가 빈 값도 기본값으로
+  # 대체) 스크립트 변이로는 도달하므로 비어있음 검사를 명시한다.
+  # ⚠️ **origin 경계로 정규화한다(끝에 `/` 하나).** 접두 비교는 `/`가 없으면 호스트 경계를 넘어
+  # 매치한다(kotlin에서 행동 테스트가 실측으로 잡은 부류). install(`--source "$REG"`)은 이미 위에서
+  # 끝났으므로 여기서 REG를 정규화해도 설치 동작에 영향이 없다.
+  # ⚠️ 빈 값일 때 정규화하면 `/`가 되어 **비어있음 검사가 공허해진다** — 반드시 조건부로.
+  [ -n "$REG" ] && REG="${REG%/}/"
+  _gem_local=0
+  if [ -n "$REG" ] && [ -s "$STATUS/provenance.txt" ]; then
+    while IFS= read -r _pline || [ -n "$_pline" ]; do
+      # 접두(로컬 origin)와 형태(`/gems/…gem` 본문)를 **둘 다** 리터럴로 본다. 중첩 case인 이유는
+      # 정규화로 `$REG`가 `/`로 끝나 단일 패턴 `"$REG"*/gems/*.gem`이 `//gems/`를 요구하게 되기 때문.
+      case "$_pline" in
+        "$REG"*) case "$_pline" in *"/gems/"*.gem) _gem_local=1; break ;; esac ;;
+      esac
+    done <"$STATUS/provenance.txt"
+  fi
+  if [ -n "$REG" ] && [ -s "$STATUS/provenance.txt" ] && ! grep -v -F "$REG" "$STATUS/provenance.txt" | grep -q . \
+     && [ "$_gem_local" = 1 ]; then
     PROVENANCE_OK=1
   else
     PROVENANCE_OK=0
