@@ -94,6 +94,13 @@ jobs:
           sh scripts/test/test-release-request.sh
           sh scripts/test/test-dispatch-release.sh
 
+      # ⚠️ 보안 파라미터 기본값의 단일 진실(아홉 언어 코드 ↔ 소비자 문서). 이 값(JWKS 최소
+      # 재조회 간격)은 DoS 증폭 상한이라 문서가 틀리면 소비자가 틀린 전제로 자기 rate-limit을
+      # 설계한다. 실제로 `ruby/README.ko.md`가 `10.0`(코드는 30)이라고 3배 낮게 알려주고 있었고
+      # 리포에 이 불변식을 겨누는 가드는 0건이었다(2026-08-12 문서 감사).
+      - name: 보안 기본값 자가테스트(9언어 코드 ↔ 문서 정합)
+        run: sh scripts/test/test-security-defaults.sh
+
       # ⚠️ 하네스 로컬 레지스트리 설정. 이 설정이 낡으면 야간 `install-all`만 조용히 빨개지고
       # PR/푸시 CI는 전부 초록이라 며칠씩 안 보인다 — 실제로 3연속(08-08·08-09·08-10) 그랬다.
       # 원인은 저장소 밖이었다: node 패키지가 공개 npmjs에 게시되자 Verdaccio uplink이 같은
