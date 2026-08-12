@@ -113,7 +113,8 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 | [문서 구조 재편 WBS](superpowers/plans/2026-07-23-docs-restructure-wbs.md) | 07-23 | 완료 | `.claude/rules/<lang>.md` 분리와 `check-docs.mjs` 도입 태스크 분해. |
 | [감사 잔여분 해소 WBS](superpowers/plans/2026-07-31-pre-release-audit-remediation-wbs.md) | 07-31 | 완료 | 언어별 공격 프로브·리다이렉트 차단·버전 SSOT의 태스크 분해 + **"해소됨"이라 썼다가 사실이 아님을 확인하고 정정한 기록**(2026-08-04) — 한 커밋에 담겼다는 이유만으로 별개 문제(admin 능력 갭 ↔ 리다이렉트 시임)를 함께 해소된 것처럼 적었고, 그 줄이 인계 메모를 3일간 덮었다. **문서의 자기보고를 믿지 말고 산출물을 대조하라**는 이 저장소의 규율이 여기서 나왔다. |
 | [릴리스 자동화 계획](superpowers/plans/2026-08-03-release-automation.md) | 08-03 | 완료 | 디스패처·ref 가드·룰셋 3종 태스크 분해. 자동화를 **켜는** 절차는 여기가 아니라 [DEPLOY.md](../DEPLOY.md) §2-F에 있다(계획서의 미체크 항목으로만 남아 있던 것을 옮겼다). |
-| [하네스 판정·출처 완결 계획](superpowers/plans/2026-08-12-harness-judgment-and-provenance-completion.md) | 08-12 | 진행 | 판정 층(`install-matrix.mjs`)·관측 층(`consume/*-run.sh`)·가드 층(`scripts/test/*`) 3계층을 순서대로 고치는 분해 — Phase A만 반영됐고 Phase B~E는 아직이다. |
+| [하네스 판정·출처 완결 계획](superpowers/plans/2026-08-12-harness-judgment-and-provenance-completion.md) | 08-12 | 진행 | 판정 층(`install-matrix.mjs`)·관측 층(`consume/*-run.sh`)·가드 층(`scripts/test/*`) 3계층을 순서대로 고치는 분해 — Phase A만 반영됐고 Phase B~E는 아직이다. ⚠️ S-B1(dotnet 레그 실패)은 git-ignored 로컬 산출물을 CI 상태로 오독한 것이라 **틀렸다**(문서 감사 후속 계획 참고). |
+| [문서 전수 감사 후속](superpowers/plans/2026-08-12-doc-audit-remediation.md) | 08-12 | 진행 | 95개 문서 감사(확정 138·반증 9)의 로트별 점수와 후속 조치. **확정 결함의 대부분은 "아무도 안 본 자리"가 아니라 "가드가 있는데 그 자리를 안 겨눈" 자리**였다는 것과, 다른 PC에서 이어받을 때 필요한 환경 게차(로컬 스크래치를 CI 상태로 오독하는 함정 등)가 여기에만 있다. |
 
 ---
 
