@@ -133,29 +133,89 @@ for L in python java kotlin ruby php go node rust; do
   # 뒤에 무근거 대입을 하나 더 붙여 앞의 판정을 덮을 수 있다. 실제로 그 형태의 버그가 있었다(go가
   # 리포트 문자열을 재-grep해 판정을 뒤집었다). 근거로 인정하는 것은 두 가지다:
   #   (1) 직전 4줄 안에서 provenance.txt를 읽는 grep  (2) 같은 조건줄에서 실제 다운로드를 수행(go)
-  gated="$(awk '
-    /PROVENANCE_OK=1/ {
-      total++
-      ok = 0
-      for (i = NR - 4; i < NR; i++)
-        if (i > 0 && (buf[i] ~ /grep .*provenance\.txt/ || buf[i] ~ /GOPROXY=.*go mod download/)) ok = 1
-      if (ok) good++
-    }
+  #
+  # ⚠️ **위 (a)(b)만으로도 우회 세 가지가 이 가드를 통과했다(2026-08-12 외부 검토, #167 후속3,
+  # 실측 — task-A5-report.md).** 셋 다 "고치는 것처럼 보이는 편집"이다:
+  #   1. **else 분기 뒤집기** — else 분기의 `PROVENANCE_OK=0`을 `=1`로 바꿔도, 그 대입은 여전히
+  #      "직전 4줄 안에 provenance.txt grep"을 만족한다(if/else가 붙어 있어 grep이 그대로 4줄
+  #      안에 있다) — **어느 분기인지는 안 봤다.**
+  #   2. **후행 무조건 마커** — 게이트(`if [ "$PROVENANCE_OK" = 1 ]; then ... fi`) 뒤에
+  #      `: > "$STATUS/installed.ok"`를 하나 더 적어도, 아래 마커 검사가 `head -1`(첫 줄)만 봐서
+  #      뒤에 붙인 무조건 쓰기는 검사 대상 밖이었다.
+  #   3. **빈 grep 패턴** — 근거 grep을 `grep -q '' "$STATUS/provenance.txt"`(아무 줄이나 매치)로
+  #      바꿔도 "grep을 쓰고 provenance.txt를 언급한다"는 조건은 그대로 참이었다 — **패턴이 실제로
+  #      뭘 매치하는지는 안 봤다.**
+  # 아래 `gated`가 1·3을, `mark_check`가 2를 닫는다(각각 재현·비공허성 실측: task-A5-report.md).
+  gated="$(awk -v sq="''" -v dq='""' '
+    function trim(s) { gsub(/^[ \t]+/, "", s); gsub(/[ \t\r]+$/, "", s); return s }
     { buf[NR] = $0 }
-    END { print (total > 0 && total == good) ? "yes" : "no(total=" total " good=" good ")" }
+    END {
+      for (n = 1; n <= NR; n++) {
+        if (buf[n] !~ /PROVENANCE_OK=1/) continue
+        total++
+        # (1) else 분기 안의 대입은 근거로 인정하지 않는다 — 뒤로 걸으며 중첩 if/fi는 depth로
+        #     건너뛰고, 같은 깊이에서 else를 먼저 만나면(then을 만나기 전) else 분기다.
+        in_else = 0; depth = 0
+        for (i = n - 1; i >= 1; i--) {
+          t = trim(buf[i])
+          if (t == "fi") { depth++; continue }
+          if (depth > 0) { if (t ~ /(^|;)[ \t]*then$/) depth--; continue }
+          if (t == "else") { in_else = 1; break }
+          if (t ~ /(^|;)[ \t]*then$/) break
+        }
+        if (in_else) continue
+        # (2) 직전 4줄 안의 근거 — grep의 패턴이 빈 문자열(연속된 홑따옴표·겹따옴표)이면 아무
+        #     줄이나 매치하므로 근거로 인정하지 않는다.
+        ok = 0
+        for (i = n - 4; i < n; i++) {
+          if (i <= 0) continue
+          if (buf[i] ~ /GOPROXY=.*go mod download/) { ok = 1; continue }
+          if (buf[i] ~ /grep .*provenance\.txt/) {
+            if (index(buf[i], sq) > 0 || index(buf[i], dq) > 0) continue
+            ok = 1
+          }
+        }
+        if (ok) good++
+      }
+      print (total > 0 && total == good) ? "yes" : "no(total=" total " good=" good ")"
+    }
   ' "$f")"
   assert_eq "yes" "$gated" \
-    "$L-run.sh 의 PROVENANCE_OK=1 대입 중 관측에 근거하지 않은 것이 있다 — 무조건 통과로 바뀌었나(#167)"
+    "$L-run.sh 의 PROVENANCE_OK=1 대입 중 관측에 근거하지 않은 것이 있다 — else 분기이거나 빈 패턴 grep으로 무조건 통과로 바뀌었나(#167)"
 
   # ⚠️ 조건의 **문자열 형태**까지 고정한다. 줄 번호 순서만 보면 `[ "$PROVENANCE_OK" = 1 ] || true`
   # 같은 편집이 그대로 통과한다(실측으로 확인한 우회 경로).
   ok_line="$(grep -n '^  if \[ "\$PROVENANCE_OK" = 1 \]; then$' "$f" | head -1 | cut -d: -f1)"
-  mark_line="$(grep -n ': > "\$STATUS/installed.ok"' "$f" | head -1 | cut -d: -f1)"
   assert_ok test -n "$ok_line"
-  assert_ok test -n "$mark_line"
-  if [ -n "$ok_line" ] && [ -n "$mark_line" ]; then
-    assert_ok test "$mark_line" -gt "$ok_line"
-  fi
+
+  # ⚠️ **후행 무조건 마커도 우회 경로다(#167 후속3, 실측 — task-A5-report.md).** 예전엔 마커 쓰기의
+  # *첫* 줄만(`head -1`) 봐서, 게이트 뒤에 `: > "$STATUS/installed.ok"`를 하나 더 붙이면 그 줄은
+  # 검사 대상 밖이었다. 게이트가 닫히는 "fi"(중첩 depth로 정확히 추적)까지 구간을 잡고, 파일
+  # **전체**에서 마커 쓰기가 정확히 1건이며 그 1건이 이 구간 **안**에 있을 때만 통과시킨다 — 트레일링
+  # 무조건 쓰기는 구간 밖이라 건수가 2로 늘어 거부된다.
+  mark_check="$(awk -v ok_line="$ok_line" -v marker=': > "$STATUS/installed.ok"' '
+    { buf[NR] = $0 }
+    END {
+      if (ok_line == "" || ok_line == 0) { print "no(no-ok-line)"; exit }
+      depth = 1; close_line = 0
+      for (n = ok_line + 1; n <= NR; n++) {
+        t = buf[n]; gsub(/^[ \t]+/, "", t); gsub(/[ \t\r]+$/, "", t)
+        if (t ~ /(^|;)[ \t]*then$/) { depth++; continue }
+        if (t == "fi") { depth--; if (depth == 0) { close_line = n; break } }
+      }
+      if (close_line == 0) { print "no(no-close)"; exit }
+      cnt = 0; bad = 0
+      for (n = 1; n <= NR; n++) {
+        if (index(buf[n], marker) > 0) {
+          cnt++
+          if (!(n > ok_line && n < close_line)) bad = 1
+        }
+      }
+      if (cnt == 1 && bad == 0) print "yes"; else print "no(cnt=" cnt " bad=" bad ")"
+    }
+  ' "$f")"
+  assert_eq "yes" "$mark_check" \
+    "$L-run.sh 의 installed.ok 마커 쓰기가 게이트 하나 안에 정확히 1건이 아니다 — 게이트 뒤에 무조건 쓰기가 추가됐을 수 있다(#167)"
 done
 # ⚠️ 대조군 — 파일명 규칙이 바뀌면 위 루프가 한 번도 돌지 않고 조용히 통과한다.
 assert_eq "8" "$prov_langs" "소스-추가 8개 언어의 consume 스크립트를 다 찾지 못했다 — 파일명 규칙이 바뀌었나"
