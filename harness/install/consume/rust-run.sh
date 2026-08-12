@@ -19,6 +19,11 @@ set -u
 STATUS="${STATUS_DIR:-/status}"
 # 릴리스 버전 — 오케스트레이터(install-verify.sh)가 -e PKG_VER로 주입한다(기본값은 단독 실행용).
 PKG_VER="${PKG_VER:-0.1.0}"
+# 로컬 cargo-local-registry 마운트 경로 — rust-cargo-config.toml의 [source.local] local-registry와
+# 반드시 일치해야 한다(§구조 격리는 이미 그 파일이 담당 — 이 상수는 그게 실제로 발동했는지 아래에서
+# 관측하기 위한 값일 뿐, REG처럼 오케스트레이터가 주입하는 것이 아니다: rust엔 상시 레지스트리
+# 서비스가 없다).
+LOCAL_REG="/opt/local-registry"
 mkdir -p "$STATUS"
 rm -f "$STATUS/installed.ok" "$STATUS/quickstart.ok"
 
@@ -50,9 +55,22 @@ fi
 # 재사용 — 15~25분 안팎인 컴파일을 두 번 반복하지 않기 위한 최적화, 정확성에는 영향 없음).
 export CARGO_TARGET_DIR=/app/target
 
-echo "[rust-run] 1/3 install — cargo build --offline (quickstart)"
-if (cd /app/quickstart && cargo build --offline) >/tmp/install-quickstart.log 2>&1; then
-  echo "[rust-run] quickstart build OK"
+echo "[rust-run] 1/3 install — cargo build --offline -v (quickstart)"
+if (cd /app/quickstart && cargo build --offline -v) >/tmp/install-quickstart.log 2>&1; then
+  echo "[rust-run] quickstart build OK — 출처 확인 중"
+  # ⚠️ **출처를 기록한다**(이슈 #167). cargo의 소스 치환([source.crates-io] replace-with = "local")은
+  # 설계상 **투명**하다 — 실측: `cargo metadata --format-version 1 --offline`의 keycloak-sdk
+  # `source` 필드도, 빌드가 만드는 `Cargo.lock`의 `source =` 줄도 로컬로 받았는지와 무관하게 항상
+  # `registry+https://github.com/rust-lang/crates.io-index`로 보고한다(로컬 우회가 실제로 일어났다는
+  # 신호가 그 필드에는 없다 — 관측 지점으로 못 쓴다, 후보로 시도했다가 기각). 대신 `-v`(verbose)
+  # 빌드 로그의 "Unpacking" 줄이 실제 압축해제 **경로**를 낸다(실측: `Unpacking keycloak-sdk
+  # v0.1.0-rc.1 (registry \`/opt/local-registry\`)`, `cargo fetch --offline -v`·`cargo build
+  # --offline -v` 둘 다 동일 — 이건 메타데이터가 아니라 크레이트 **본문**(.crate 압축해제) 자체의
+  # 출처라 §rust 트랩(메타데이터만 로컬이고 본문은 공개에서 받는 경우, ruby 선례)에 걸리지 않는다.
+  # 컨테이너마다 CARGO_HOME이 새로 생기므로 이 줄은 이 최초 빌드(quickstart)에서만 나온다 — app
+  # 빌드는 같은 CARGO_TARGET_DIR·CARGO_HOME을 공유해 이미 압축해제된 소스를 재사용, 다시 찍지 않는다.
+  grep 'Unpacking keycloak-sdk' /tmp/install-quickstart.log > "$STATUS/provenance.txt" 2>/dev/null || true
+  echo "[rust-run] SDK 출처: $(cat "$STATUS/provenance.txt" 2>/dev/null)"
 else
   echo "[rust-run] quickstart build FAILED"; cat /tmp/install-quickstart.log
   cp /tmp/install-quickstart.log "$STATUS/install.log" 2>/dev/null || true
@@ -61,8 +79,24 @@ fi
 
 echo "[rust-run] 1/3 install — cargo build --offline (app)"
 if (cd /app/app && cargo build --offline) >/tmp/install-app.log 2>&1; then
-  : > "$STATUS/installed.ok"
-  echo "[rust-run] install OK (quickstart + app)"
+  echo "[rust-run] app build OK"
+  # ⚠️ **출처 단언**(이슈 #167) — 기록만으로는 부족하다. 기록은 사람이 읽어야 동작하고 야간
+  # 실행의 로그를 매일 읽는 사람은 없다. 판정(`installed.ok`)이 출처에 의존해야 한다.
+  # ⚠️ **전부 로컬이라야 한다**(기록된 줄이 하나라도 로컬이 아니면 실패) + 빈 파일도 실패.
+  # 여덟 언어가 같은 규칙을 쓴다 — "하나라도 로컬"은 부분 출처·시도 URL 혼입을 통과시킨다.
+  if [ -s "$STATUS/provenance.txt" ] && ! grep -v -F "$LOCAL_REG" "$STATUS/provenance.txt" | grep -q .; then
+    PROVENANCE_OK=1
+  else
+    PROVENANCE_OK=0
+  fi
+  if [ "$PROVENANCE_OK" = 1 ]; then
+    : > "$STATUS/installed.ok"
+    echo "[rust-run] install OK (quickstart + app, 로컬 레지스트리에서 받았다)"
+  else
+    echo "[rust-run] install FAILED — SDK를 로컬($LOCAL_REG)이 아닌 곳에서 받았다: $(cat "$STATUS/provenance.txt" 2>/dev/null)"
+    cp /tmp/install-app.log "$STATUS/install.log" 2>/dev/null || true
+    sleep 3600; exit 1
+  fi
 else
   echo "[rust-run] app build FAILED"; cat /tmp/install-app.log
   cp /tmp/install-app.log "$STATUS/install.log" 2>/dev/null || true
