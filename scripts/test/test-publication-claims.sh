@@ -295,4 +295,40 @@ assert_ok test "$coords_want" -ge 2
 assert_eq "$coords_want" "$coords_seen" \
   "DEPLOY.md 에서 읽은 버전-보유 설치 좌표 수($coords_seen)가 SSOT 파생 기대값($coords_want)과 다르다 — 좌표 표기가 바뀌었나"
 
+# ---- getting-started **본문 설치 절**의 버전 문자열 ↔ df_published_version ----
+#
+# ⚠️ 위 호환성 표 검사는 **표만** 본다. 그런데 소비자가 실제로 복사하는 것은 언어별 본문의 설치
+# 명령이다 — 표를 고치고 본문을 남겨도 통과했다(2026-08-13 재검토가 확인한 C1의 남은 절반).
+#
+# ⚠️ **`### 3) Installation …` 하위절만 본다.** 같은 언어의 `### 2) Local installation (development)`
+# 에는 `0.1.0-SNAPSHOT`(java)·`publishToMavenLocal`로 만든 jar 이름(kotlin)이 정당하게 들어 있어
+# 구분 없이 검사하면 오탐이 난다 — 소비자 복사 자리와 로컬 빌드 예제는 다른 것이다.
+# ⚠️ go는 절 제목이 `### 3) Installation after release (future)`라 같은 접두로 함께 걸리고, 기대값은
+# 미게시 라인 버전 `0.1.0`이다(게시되는 순간 기대값이 RC로 바뀌며 갱신을 강제한다).
+gs_head() { case "$1" in
+  java) echo '## Java' ;; python) echo '## Python' ;; node) echo '## Node.js / TypeScript' ;;
+  go) echo '## Go' ;; dotnet) echo '## C# / .NET' ;; php) echo '## PHP' ;; rust) echo '## Rust' ;;
+  ruby) echo '## Ruby' ;; kotlin) echo '## Kotlin' ;; esac; }
+
+body_seen=0
+for L in $DEPLOY_LANGS; do
+  _h="$(gs_head "$L")"
+  _want="$(df_published_version "$L")"
+  [ -n "$_want" ] || _want="0.1.0"
+  _vers="$(awk -v h="$_h" '
+    $0 == h { inlang = 1; next }
+    /^## / { inlang = 0 }
+    inlang && /^### / { ins = ($0 ~ /^### 3\) Installation/) ? 1 : 0 }
+    /^```/ { f = !f; next }
+    inlang && ins && f { print }
+  ' "$gs" | grep -oE '0\.1\.0[A-Za-z0-9.-]*' | sort -u || true)"
+  [ -n "$_vers" ] || continue   # 설치 명령에 버전을 안 쓰는 언어(node·rust)는 대조할 값이 없다
+  body_seen=$((body_seen + 1))
+  _bad="$(printf '%s\n' "$_vers" | grep -Fxv "$_want" || true)"
+  assert_eq "" "$_bad" \
+    "$L 의 getting-started 설치 절 코드펜스에 게시 SSOT($_want)와 다른 버전이 있다 — 소비자가 없는 좌표를 복사한다"
+done
+# ⚠️ 대조군 — H2 표기가 바뀌면 위 루프가 전부 `continue`로 빠져 **한 건도 안 돌고 통과**한다.
+assert_ok test "$body_seen" -ge 6
+
 assert_report

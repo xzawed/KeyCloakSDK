@@ -57,12 +57,12 @@ pg_case() {
 # 대조군 — 추출이 실제로 무언가를 뽑았는가. 센티널이 사라지거나 이름이 바뀌면 블록이 빈 문자열이
 # 되고, 그러면 `PROVENANCE_OK`가 `x`로 남아 모든 행이 실패한다(조용한 통과가 아니라 시끄러운 실패).
 pg_blocks=0
-for L in go java kotlin node php python ruby rust; do
+for L in go java kotlin node php python ruby rust dotnet; do
   _n="$(pg_extract "$L" | grep -c . || true)"
   assert_ok test "$_n" -ge 3
   [ "$_n" -ge 3 ] && pg_blocks=$((pg_blocks + 1))
 done
-assert_eq "8" "$pg_blocks" "센티널로 게이트 블록을 뽑은 언어 수가 8이 아니다 — 센티널이 지워졌나?"
+assert_eq "9" "$pg_blocks" "센티널로 게이트 블록을 뽑은 언어 수가 9가 아니다 — 센티널이 지워졌나?"
 
 # ---------------------------------------------------------------------------
 # 근거 변수의 **정의 자리** — 두 가드 사이의 이음매
@@ -210,6 +210,30 @@ X
 pg_case rust "$RS" 0 "빈 provenance" < /dev/null
 pg_case rust 'LOCAL_REG=""' 0 "빈 근거 그림자" <<'X'
      Unpacking keycloak-sdk v0.1.0-rc.1 (registry `crates-io`)
+X
+
+# dotnet — `$REG`가 origin이 아니라 인덱스 URL 전체이고 `.nupkg.metadata`의 `source`도 그 문자열
+# 그대로다. 그래서 접두가 아니라 **정확일치**를 시험한다.
+DN='REG="http://bagetter:8080/v3/index.json"'
+pg_case dotnet "$DN" 1 "정상: 로컬 BaGetter 인덱스" <<'X'
+http://bagetter:8080/v3/index.json
+X
+pg_case dotnet "$DN" 0 "공개 nuget.org에서 해석" <<'X'
+https://api.nuget.org/v3/index.json
+X
+pg_case dotnet "$DN" 0 "혼재" <<'X'
+http://bagetter:8080/v3/index.json
+https://api.nuget.org/v3/index.json
+X
+pg_case dotnet "$DN" 0 "빈 provenance" < /dev/null
+pg_case dotnet "$DN" 0 "기록 실패 리터럴" <<'X'
+<.nupkg.metadata에서 source를 찾지 못했다: /root/.nuget/packages/xzawed.keycloak.sdk/0.1.0/.nupkg.metadata>
+X
+pg_case dotnet "$DN" 0 "접두만 같은 다른 피드(정확일치라 거부)" <<'X'
+http://bagetter:8080/v3/index.json.evil/v3/index.json
+X
+pg_case dotnet 'REG=""' 0 "빈 근거 그림자" <<'X'
+https://api.nuget.org/v3/index.json
 X
 
 # ---------------------------------------------------------------------------

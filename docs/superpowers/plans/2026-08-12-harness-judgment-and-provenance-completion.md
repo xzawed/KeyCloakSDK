@@ -263,6 +263,30 @@ node -e "console.log(require('./report/signals/node.install.json'))"   # install
 > **S-B3**: `harness/apps/kotlin`의 SDK 핀은 빌드 시 SSOT에서 파생되어 **드리프트가 표현 불가능**해진다.
 > **S-B4**: `install-verify.sh`의 순수 로직(`ver_for_lang`·기대 언어 집합·상태 초기화)은 Docker 없이 실행 가능한 자가테스트를 갖는다.
 
+### ✅ Task B1 — **재검토 후 재정의하고 완료**(2026-08-13)
+
+> **S-B1의 전제가 틀렸다.** "dotnet 레그가 2026-08-03부터 실패 중"의 근거였던
+> `signals/dotnet.install.json`은 **git-ignored 로컬 스크래치**다(`.gitignore:1:signals/`). CI는
+> 초록이었고(`gh run view 31561083854` → install-all=success, 9언어 전부 실행), 로컬 bagetter도
+> 지금은 정상 기동한다(실측: `Up 13 seconds (healthy)`). **복구 작업은 존재하지 않았다.**
+>
+> **그러나 진짜 결함이 그 자리에 있었다** — dotnet은 아홉 중 **유일하게 `PROVENANCE_OK` 게이트가
+> 없어** `dotnet add package`가 exit 0이면 어디서 받았든 `installed.ok`를 썼다(S-A2 위반).
+> `packageSourceMapping`이 구조적 격리이긴 하나, node·rust도 구조 격리를 갖고서 게이트를 함께
+> 둔다(`5fe1c9c`·`d275579`) — 이 리포의 결정은 **격리는 단언을 대체하지 않는다**이다.
+>
+> **관측 지점(실측으로 확정)**: NuGet 글로벌 패키지 폴더의 `.nupkg.metadata`가 패키지별 해석 피드를
+> 남긴다 — `{"version":2,"contentHash":"…","source":"https://api.nuget.org/v3/index.json"}`.
+> 다른 후보는 전부 출처를 안 남긴다: `dotnet list package --format json`은 id/버전만,
+> `project.assets.json`의 `project.restore.sources`는 **설정된 피드 목록**이지 해석 결과가 아니며
+> (rust가 `cargo metadata.source`를 기각한 것과 같은 함정), `.nuget.g.props`는 캐시 폴더뿐이다.
+>
+> **레그 실측으로 확정**: provenance `http://bagetter:8080/v3/index.json`(= `$REG` 정확일치),
+> installed·quickstart·appBoot 전부 true, conformance 26/26, security 9/9,
+> `== 완료 — report/INSTALL-MATRIX.md (exit=0) ==`. 두 가드의 언어 수도 8 → **9**로 올렸다.
+
+<details><summary>원래 계획 단계(전제가 틀려 수행하지 않음)</summary>
+
 ### Task B1: dotnet 레그 복구
 - [ ] Step 1: `cd harness/install && docker compose -f compose.install.yml up bagetter` 를 직접 돌려 **실패 원문**을 확보한다(이미지 태그? 헬스체크? 포트?).
 - [ ] Step 2: 원인에 맞춘 최소 수정(이미지 핀 갱신 또는 헬스체크 조건 완화 — 원문이 결정한다)
@@ -270,12 +294,29 @@ node -e "console.log(require('./report/signals/node.install.json'))"   # install
 - [ ] Step 4: 출처 단언 추가(A2와 동형; NuGet은 `packageSourceMapping`이 이미 격리이므로 관측은 `dotnet list package --include-transitive`/복원 로그에서 취한다 — 지점은 실측으로 정한다)
 - [ ] Step 5: 가드 대상 9개 언어로 확장 + 커밋
 
+</details>
+
+### ⚠️ Task B2 — **재검토 후 문면대로 하지 않기로**(2026-08-13)
+
+> 계획서 문면은 "스크래핑 코드와 `--info` 플래그를 **제거**한다"인데, 그 사이 두 가지가 바뀌었다:
+> `a96232c`가 kotlin 게이트의 정규식·origin 구멍을 닫았고 `5972d4b`가 그 게이트를 **실행으로**
+> 고정했다. 스크래핑을 지우면 그 런타임 테스트가 겨누는 블록이 사라진다.
+> **`exclusiveContent`는 rust의 `replace-with`와 같은 층**(구조적 격리)이고, 이 리포는 그 층이
+> 단언을 대체하지 않는다고 이미 결정했다(node·rust가 둘 다 갖는다). 넣는다면 게이트 **옆에**
+> 추가하는 선택 작업이지, 대체가 아니다. S-A2는 kotlin에서 이미 충족돼 있다.
+> ⚠️ **"로그 194배"는 미측정 주장이다** — 리포 전체에서 `194`는 이 계획서 한 줄뿐이고 측정 명령·
+> 전후 바이트가 없다. 재는 법: 같은 워밍 상태에서 `--info` 유무로 `wc -c` 대조.
+
+<details><summary>원래 계획 단계(대체안이라 보류)</summary>
+
 ### Task B2: kotlin `exclusiveContent` 전환
 - [ ] Step 1: 사본에서 `exclusiveContent`가 fail-closed임을 재현(빈 로컬 저장소 → Central에 그 좌표가 실재해도 해석 실패)
 - [ ] Step 2: `kotlin-app/build.gradle.kts`에 적용
 - [ ] Step 3: `kotlin-run.sh`에서 `--info`·스크래핑·URL 파생 제거, provenance는 "격리 하에 해석 성공" 사실로 기록
 - [ ] Step 4: `./install-verify.sh kotlin` 실측 + 로그 크기 전후 비교 기록
 - [ ] Step 5: 커밋
+
+</details>
 
 ### Task B3: 하네스 앱 핀을 SSOT에서 파생
 - [ ] Step 1: `harness/apps/kotlin/Dockerfile`에 SDK 버전 치환 단계 추가(`consume/kotlin-run.sh`가 이미 쓰는 관용과 동형, 치환 실패 시 loud fail)
@@ -336,6 +377,21 @@ node -e "console.log(require('./report/signals/node.install.json'))"   # install
 > **S-C1**: 게시버전 문자열을 담은 **모든** 소비자 문서가 `df_published_version`과 대조된다. 현재 대상은 `getting-started.md` 호환성 표와 `DEPLOY.md` 설치 좌표뿐이고, 실측상 12개 문서가 버전 문자열을 갖는다(README×2·SECURITY·언어별 README 9).
 > **S-C2**: 하네스 앱이 SDK와 **공유해야 하는 제3자 좌표**(rust `keycloak` crate)의 표기 발산을 가드가 잡는다. 현재 `rust/Cargo.toml`은 `~26.6.2`, `harness/apps/rust/Cargo.toml`과 `harness/install/quickstart/rust/Cargo.toml`은 `=26.6.2`이며, 두 파일의 주석은 "SDK와 동일해야 한다"고 적고 있다.
 
+### ✅ Task C1 — **완료**(2026-08-13). S-C1의 "12개 문서" 프레이밍은 부정확했다
+
+> 축이 둘이다. **개수 축**(몇 개가 게시됐나)은 `c3bb034`가 닫았고, **버전 문자열 축**(어떤 버전이
+> 게시됐나)의 남은 절반을 여기서 닫았다 — `getting-started`의 **본문 설치 절**이 가드 밖이었다
+> (호환성 표만 봤다). 소비자가 실제로 복사하는 것은 본문이므로 표만 고치고 본문을 남기면 없는
+> 좌표를 권하게 된다.
+> ⚠️ 판별자: **`### 3) Installation …` 하위절만** 본다. 같은 언어의 `### 2) Local installation`에는
+> `0.1.0-SNAPSHOT`(java)·`publishToMavenLocal` jar 이름(kotlin)이 정당하게 들어 있다.
+> 어서션 89 → **97**(본문 7건 + 대조군 1). 변이(java 본문 `0.1.0-RC1` → `0.1.0`) 1건 잡힘.
+> **범위 밖으로 남긴 것**: `CHANGELOG.md`·`DEPLOY.md`의 태그 서사(이미 일어난 일의 기록) ·
+> `docs/roadmap/language-support.md:50`의 후보 클라이언트 표(명시적 point-in-time 캐비앳) ·
+> `docs/superpowers/**`(내부 산출물).
+
+<details><summary>원래 계획 단계</summary>
+
 ### Task C1: 게시버전 가드 확장
 - [ ] Step 1: 12개 문서 각각에서 "버전을 주장하는 자리"를 열거하고, 그중 **소비자가 복사해 가는 자리**만 대상으로 정한다(변경 이력·인용문 제외)
 - [ ] Step 2: 대상 자리마다 드리프트를 넣어 현재 가드가 통과함을 보인다(공허성 증명)
@@ -343,7 +399,9 @@ node -e "console.log(require('./report/signals/node.install.json'))"   # install
 - [ ] Step 4: 각 드리프트가 잡히는지 + 정상 트리 통과 + 비공허성 건수 기록
 - [ ] Step 5: 커밋
 
-### Task C2: 제3자 좌표 발산 가드
+</details>
+
+### ✅ Task C2 — 완료(`0c0fd7c`)
 - [ ] Step 1: 현재 발산을 실측으로 보인다(`grep -n 'keycloak = ' rust/Cargo.toml harness/apps/rust/Cargo.toml harness/install/quickstart/rust/Cargo.toml`)
 - [ ] Step 2: 테스트 먼저 — 픽스처에서 SDK가 `~26.7.0`인데 하네스가 `=26.6.2`면 실패해야 한다
 - [ ] Step 3: `check-versions.mjs`에 "공유 제3자 좌표" 검사 추가(하네스 핀 검사와 같은 계급 = `harnessErrors`)
