@@ -110,7 +110,7 @@ assert_eq "1" "$(proxy_of '**')"    "** 에 proxy가 없다 — 비스코프 전
 # 격리 설정과 달리 이 단언은 "설정이 이렇다"가 아니라 "실제로 어디서 받았나"를 겨눈다.
 CONSUME="$ROOT/harness/install/consume"
 prov_langs=0
-for L in python java kotlin ruby php go; do
+for L in python java kotlin ruby php go node rust; do
   f="$CONSUME/$L-run.sh"
   assert_ok test -f "$f"
   [ -f "$f" ] || continue
@@ -158,6 +158,6 @@ for L in python java kotlin ruby php go; do
   fi
 done
 # ⚠️ 대조군 — 파일명 규칙이 바뀌면 위 루프가 한 번도 돌지 않고 조용히 통과한다.
-assert_eq "6" "$prov_langs" "소스-추가 6개 언어의 consume 스크립트를 다 찾지 못했다 — 파일명 규칙이 바뀌었나"
+assert_eq "8" "$prov_langs" "소스-추가 8개 언어의 consume 스크립트를 다 찾지 못했다 — 파일명 규칙이 바뀌었나"
 
 assert_report
