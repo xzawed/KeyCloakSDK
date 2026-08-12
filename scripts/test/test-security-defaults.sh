@@ -33,11 +33,15 @@ ok_if() { if [ "$1" = 0 ]; then printf 'ok'; else printf '%s' "${2:-NOT-OK}"; fi
 # 1) 코드 축 — 아홉 언어의 config 기본값
 # ---------------------------------------------------------------------------
 #
-# ⚠️ 정의 자리를 **언어당 하나**(소비자가 실제로 받는 config 기본값)만 겨눈다. go `jwt.go`·
-# php `JwksStore`·ruby `jwks_store.rb`에는 2차 리터럴이 남아 있는데(60·60·10.0), 그 셋은
-# config가 값을 넘기므로 정상 경로에서 도달하지 않는다. **그건 별개의 결함이고 별개로 고친다**
-# (계획서 Task D1) — 여기서 함께 검사하면 이 가드가 그 미해결 결함 때문에 영구 RED가 되어
-# 아무도 켜두지 않게 된다. 스코프를 좁힌 사실 자체를 여기 적어 두는 것이 그 대가다.
+# ✅ **좁혔던 스코프는 Task D1에서 해소됐다(2026-08-13).** 예전에는 go `jwt.go`(60)·php
+# `JwksStore`(60)·ruby `jwks_store.rb`(10.0)에 **2차 리터럴**이 남아 있었고, 이 가드는 그 셋을
+# 스코프 밖에 두었다(함께 검사하면 미해결 결함 때문에 영구 RED가 되어 아무도 켜두지 않게 되므로).
+# 지금은 셋 다 config의 상수를 참조하므로 리터럴이 하나뿐이고, **2차 리터럴이 다시 생기는 것을
+# 아래 3-절이 막는다.**
+#
+# ⚠️ php·ruby의 2차 자리는 cosmetic이 아니었다 — 두 클래스 다 public 생성자라 소비자가 파사드를
+# 거치지 않고 직접 생성할 수 있었고, ruby는 그 경로에서 10초를 받아 문서가 말하는 30초보다
+# **IdP를 3배 자주** 때렸다(한글 README도 그 10.0을 옮겨 적고 있었다). go만 비수출이라 도달 불가였다.
 sd_default() { # $1=언어 → 기본값(정규화 전)
   case "$1" in
     java)   sed -n 's/.*jwksMinRefetch *= *Duration\.ofSeconds(\([0-9][0-9.]*\)).*/\1/p' \
@@ -46,12 +50,12 @@ sd_default() { # $1=언어 → 기본값(정규화 전)
               "$ROOT/python/src/keycloak_sdk/config.py" | head -1 ;;
     node)   sed -n 's/.*jwksMinRefetchSeconds: *input\.jwksMinRefetchSeconds *?? *\([0-9][0-9.]*\).*/\1/p' \
               "$ROOT/node/src/config.ts" | head -1 ;;
-    go)     sed -n 's/.*c\.JwksMinRefetch *= *\([0-9][0-9.]*\).*/\1/p' "$ROOT/go/config.go" | head -1 ;;
+    go)     sed -n 's/.*DefaultJwksMinRefetchSecs *int64 *= *\([0-9][0-9.]*\).*/\1/p' "$ROOT/go/config.go" | head -1 ;;
     dotnet) sed -n 's/.*RefreshIntervalSeconds *{ *get; *init; *} *= *\([0-9][0-9.]*\).*/\1/p' \
               "$ROOT/dotnet/src/Xzawed.Keycloak.Sdk/JwtValidator.cs" | head -1 ;;
-    php)    sed -n 's/.*\$jwksMinRefetchSeconds *= *\([0-9][0-9.]*\).*/\1/p' "$ROOT/php/src/KeycloakConfig.php" | head -1 ;;
+    php)    sed -n 's/.*DEFAULT_JWKS_MIN_REFETCH_SECONDS *= *\([0-9][0-9.]*\).*/\1/p' "$ROOT/php/src/KeycloakConfig.php" | head -1 ;;
     rust)   sed -n 's/.*jwks_min_refetch_secs: *\([0-9][0-9.]*\).*/\1/p' "$ROOT/rust/src/config.rs" | head -1 ;;
-    ruby)   sed -n 's/.*jwks_min_refetch: *\([0-9][0-9.]*\).*/\1/p' "$ROOT/ruby/lib/keycloak_sdk/config.rb" | head -1 ;;
+    ruby)   sed -n 's/.*DEFAULT_JWKS_MIN_REFETCH *= *\([0-9][0-9.]*\).*/\1/p' "$ROOT/ruby/lib/keycloak_sdk/config.rb" | head -1 ;;
     kotlin) sed -n 's/.*jwksMinRefetch: *Duration *= *Duration\.ofSeconds(\([0-9][0-9.]*\)).*/\1/p' \
               "$ROOT/kotlin/src/main/kotlin/io/github/xzawed/keycloak/config.kt" | head -1 ;;
   esac
@@ -123,5 +127,29 @@ done
 _enough=1; [ "$sd_hits" -ge 10 ] && _enough=0
 assert_eq "ok" "$(ok_if "$_enough" "$sd_hits")" \
   "기본값을 말하는 문서 줄을 10건 미만 찾았다 — 탐지 패턴이 낡았나?"
+
+# ---------------------------------------------------------------------------
+# 3) 2차 정의 자리 금지 — 같은 값을 두 번 적지 않는다
+# ---------------------------------------------------------------------------
+#
+# ⚠️ 1절은 "config 기본값 아홉이 서로 같은가"만 본다. 그런데 이 값이 **한 언어 안에서 두 번**
+# 적히면 그 둘이 갈라지는 것을 1절이 못 본다 — 실제로 그랬다(go 30/60 · php 30/60 · ruby 30.0/10.0).
+# 그래서 2차 자리가 상수를 **참조**하는지(리터럴이 아닌지) 문자로 확인한다.
+sd_no_literal() { # $1=라벨 $2=파일 $3=파라미터가 등장하는 줄의 앵커
+  _l="$(grep -m1 -F "$3" "$ROOT/$2" || true)"
+  _found=1; [ -n "$_l" ] && _found=0
+  assert_eq "ok" "$(ok_if "$_found" MISSING)" "[$1] 2차 정의 자리를 찾지 못했다($3) — 표기가 바뀌었나?"
+  [ -n "$_l" ] || return 0
+  # 그 줄에 숫자 리터럴이 있으면 2차 정의다(상수를 참조하면 숫자가 없다).
+  case "$_l" in
+    *[0-9]*) assert_eq "" "$_l" "[$1] 2차 정의 자리에 숫자 리터럴이 있다 — config 상수를 참조할 것(정의 자리는 언어당 하나)" ;;
+    *) assert_eq "ok" "ok" ;;
+  esac
+}
+# ⚠️ go 앵커의 **뒤 공백이 하중을 받는다** — `opts.minRefetch =`(공백 없음)로 잡으면 바로 위의
+# `if opts.minRefetch == 0 {`이 먼저 걸려 그 `0`을 2차 리터럴로 오인한다(실측 오탐).
+sd_no_literal go   go/jwt.go                        'opts.minRefetch = '
+sd_no_literal php  php/src/Jwks/JwksStore.php       'private readonly int $minRefetchIntervalSeconds ='
+sd_no_literal ruby ruby/lib/keycloak_sdk/jwks_store.rb 'def initialize(jwks_url:, http:, min_refetch:'
 
 assert_report

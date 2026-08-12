@@ -8,7 +8,10 @@ module KeycloakSdk
   # 미해결 kid(force:true)만 재조회하며, rate-limit gate는 재조회 결정 시점에 stamp한다
   # (성공 아님 — IdP 장애창에서 위조 kid 폭주에도 재조회를 상한한다). Go/Rust/Python 동형.
   class JwksStore
-    def initialize(jwks_url:, http:, min_refetch: 10.0)
+    # ⚠️ 기본값을 여기 숫자로 적지 말 것 — `Config`가 유일한 정의 자리다. 이 클래스는 평범한
+    # public 클래스라 소비자가 파사드를 거치지 않고 직접 생성할 수 있고, 예전에는 그 경로가
+    # 문서의 30초가 아니라 10초를 받아 IdP를 3배 자주 때렸다(2026-08-13 Task D1).
+    def initialize(jwks_url:, http:, min_refetch: Config::DEFAULT_JWKS_MIN_REFETCH)
       @jwks_url = jwks_url
       @http = http
       @min_refetch = min_refetch
