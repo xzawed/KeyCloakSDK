@@ -251,7 +251,7 @@ Go **`1.25` or newer** is required (its dependency `golang.org/x/oauth2` v0.36 r
 Go modules are **published via VCS tags** with no separate registry. There is no release tag (`go/vX.Y.Z`) yet, so clone the monorepo and build under `go/`, or reference it with a `replace` directive:
 
 ```bash
-cd go && go build ./... && go test ./...   # 40 unit tests + coverage gate (logic ≥90)
+cd go && go build ./... && go test ./...   # unit tests + coverage gate (logic ≥90)
 # Reference locally from a consuming project: add `replace github.com/xzawed/KeyCloakSDK/go => ../KeyCloakSDK/go` to go.mod
 ```
 
@@ -340,7 +340,7 @@ To work from a clone, attach it as a project reference from your consuming proje
 
 ```bash
 dotnet add reference ../KeyCloakSDK/dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj
-# Just verify a local build/test: cd dotnet && dotnet build && dotnet test --filter "Category!=Integration"   # 58 unit tests + coverage gate
+# Just verify a local build/test: cd dotnet && dotnet build && dotnet test --filter "Category!=Integration"   # unit tests + coverage gate
 ```
 
 The package ID is `Xzawed.Keycloak.Sdk`, and the root namespace is `Xzawed.Keycloak` (admin is the `Xzawed.Keycloak.Admin` sub-namespace).
@@ -474,7 +474,7 @@ keycloak-sdk = { path = "../KeyCloakSDK/rust" }
 ```
 
 ```bash
-cd rust && cargo build && cargo test   # Just verify a local build/test: 51 unit tests + coverage gate
+cd rust && cargo build && cargo test   # Just verify a local build/test: unit tests + coverage gate
 ```
 
 The crate name is `keycloak-sdk`, and the root module is `keycloak_sdk` (`keycloak_sdk::{KeycloakClient, KeycloakConfig, ...}`).
@@ -615,7 +615,7 @@ repositories { mavenLocal(); mavenCentral() }
 dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0-RC1") }
 ```
 
-(To just build and test locally without publishing: `gradle -p kotlin build && gradle -p kotlin test` — 100 unit tests + coverage gate, Docker-free.)
+(To just build and test locally without publishing: `gradle -p kotlin build && gradle -p kotlin test` — unit tests + coverage gate, Docker-free.)
 
 ### 3) Installation from Maven Central (first release candidate available)
 
@@ -764,4 +764,4 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 - **Language support roadmap** — currently supported languages (depth-first: Java · Python · TypeScript/Node · Go · C#/.NET · PHP · Rust · Ruby · Kotlin complete — 9 languages): [../roadmap/language-support.md](../roadmap/language-support.md)
 - **Add-a-language playbook** — the procedure for adding a language with quality isomorphic to the existing Java/Python/Node/Go/C#/PHP/Rust/Ruby/Kotlin: [add-a-language-playbook.md](add-a-language-playbook.md)
 
-> The language-neutral API contract (the source of truth) is defined in [design spec §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md). Every language implements this contract, and the JWT validation hardening (algorithm pinning · `none` rejection · exact `iss` match · `aud` containment check · clock skew · DoS-safe JWKS refetch) is a cross-language mandatory requirement. Current test counts: **Java 165** (159 unit + 6 Testcontainers integration) · **Python 272** (261 unit + 11 integration) · **Node 93** (88 unit + 5 Testcontainers integration) · **Go 51** (50 unit + 1 Testcontainers integration — E2E, full flow · 5 admin resources) · **C#/.NET 72** (71 unit + 1 Testcontainers integration — E2E `Full_flow`, full flow · 5 admin resources) · **PHP 79** (76 unit + 3 integration — docker CLI shell-out, `FullFlowIT`: full flow · client CRUD · raw escape hatch) · **Rust 52** (51 unit + 1 Testcontainers integration — E2E `full_flow`, full flow · 5 admin resources) · **Ruby 88** (87 unit + 1 integration — docker CLI shell-out, E2E `full_flow`, full flow · 5 admin resources) · **Kotlin 121** (120 unit + 1 Testcontainers integration — E2E `FullFlowIT`, full flow · 5 admin resources). Total **993**.
+> The language-neutral API contract (the source of truth) is defined in [design spec §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md). Every language implements this contract, and the JWT validation hardening (algorithm pinning · `none` rejection · exact `iss` match · `aud` containment check · clock skew · DoS-safe JWKS refetch) is a cross-language mandatory requirement. Every language covers the same scenarios (full auth flow · the five admin resources · the JWT hardening probes) with a unit suite plus one Testcontainers or docker-CLI integration test. Exact test counts are intentionally **not** hand-maintained here — the authority is each language's own CI job and coverage gate; run the unit/integration command in [`.claude/rules/<lang>.md`](../../.claude/rules/) to get the current number. Counts copied into prose drift the moment CI's count changes, and the ones this file used to carry were stale for seven of the nine languages.
