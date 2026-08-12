@@ -238,6 +238,19 @@ for L in python java kotlin ruby php go node rust; do
       blob = ""
       for (j = if_pos + 1; j <= then_pos - 1; j++) blob = blob " " C[j]
       if (blob ~ /GOPROXY=.*go mod download/) return "accept"
+      # I2(2026-08-12 최종 리뷰) — 근거-grep 검사(아래)만으로는 게이트 **조건 자체**가 부실해도
+      # 못 잡는다. 외부 검토가 `59 passed, 0 failed`(가드 전체 초록)로 실측 재현한 우회 둘:
+      #   M-A(극성 반전): `! grep -v -F "$REG" … | grep -q .; then`을 `grep -q -F "$REG" …; then`로
+      #     바꾸면 — provenance.txt에 로컬 tgz와 registry.npmjs.org tgz가 섞여 있어도(OK=0이어야
+      #     할 상황) 통과(OK=1)한다. `grep -v`(제외 검사)가 `grep -q`(포함 검사)로 뒤집혀도 근거
+      #     변수는 그대로 등장하므로 근거-grep 검사만으로는 안 걸린다.
+      #   M-B(빈검사 삭제): `[ -s "$STATUS/provenance.txt" ] &&`를 지우면 — 빈 provenance.txt도
+      #     통과(OK=1)한다. 삭제해도 근거 grep 자체는 여전히 등장하므로 역시 안 걸린다.
+      # 그래서 조건절이 (a) 빈검사와 (b) grep -v 형태를 **직접** 포함하는지 문자열로 본다(더
+      # 이상의 셸 렉싱은 추가하지 않는다 — 위 절 엔진이 이미 조건절 blob을 뽑아 놓았다).
+      # go는 grep을 안 쓰고(GOPROXY 메커니즘, 위에서 이미 accept로 빠짐) 이 둘에서 제외된다.
+      if (index(blob, PROV_STAT) == 0) return "reject"
+      if (index(blob, "grep -v") == 0) return "reject"
       # 근거 grep — provenance.txt를 읽는 grep 구간(파이프 앞까지)에 로컬-소스 변수가 있어야 한다.
       if (match(blob, /grep[^|]*provenance\.txt/)) {
         seg = substr(blob, RSTART, RLENGTH)
@@ -247,6 +260,8 @@ for L in python java kotlin ruby php go node rust; do
     }
     BEGIN {
       SQ = sprintf("%c", 39); BS = sprintf("%c", 92)
+      # I2 — 게이트 조건절이 반드시 포함해야 하는 빈검사 리터럴(문자열 비교라 정규식 이스케이프 불요).
+      PROV_STAT = "-s \"$STATUS/provenance.txt\""
       nv = 0
       # 로컬-소스 근거 변수 — 8개 언어를 실측해서 얻은 목록(#167 후속4, 지어내지 않음):
       VARPATS[++nv] = BS "$REG([^A-Za-z0-9_]|$)"        # python/php/ruby/node: REGISTRY_URL 파생
