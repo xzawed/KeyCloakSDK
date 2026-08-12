@@ -1016,7 +1016,11 @@ log "== 설치 매트릭스 생성 =="
 # --strict: 매트릭스에 ✗가 있으면 exit 1. 부분실패 격리(위 루프가 실패 언어를 건너뛰고 계속
 # 진행하는 것)는 유지하고, 최종 종료코드에만 반영한다. 이전에는 여기가 `|| true` + 무조건
 # `exit 0`이라 java/php가 publish 단계에서 죽어도 CI 잡이 초록이었다(2026-07-08·07-09 실측).
+# --expect: 이번 실행이 실제로 돌린 언어 목록("${LANGS[@]}") — 신호 파일이 없는 언어를
+# "통과"가 아니라 "재지 않음"으로 잡으려면 판정이 기대 집합을 알아야 한다(S-A1). 하드코딩하지
+# 않고 이 실행의 $LANGS를 그대로 넘긴다 — 부분집합 실행(예: `install-verify.sh go python`)에서
+# 기대 집합이 아홉 전체로 부풀지 않게 하기 위해서다.
 MATRIX_RC=0
-node report/install-matrix.mjs --strict || MATRIX_RC=$?
+node report/install-matrix.mjs --strict --expect "$(printf '%s ' "${LANGS[@]}")" || MATRIX_RC=$?
 log "== 완료 — report/INSTALL-MATRIX.md (exit=${MATRIX_RC}) =="
 exit "$MATRIX_RC"
