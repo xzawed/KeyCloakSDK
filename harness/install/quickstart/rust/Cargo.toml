@@ -20,5 +20,7 @@ keycloak-sdk = "0.1.0"
 # rust/examples/quickstart.rs가 keycloak::types::UserRepresentation을 직접 구성하므로, keycloak-sdk와
 # 동일 버전·피처의 keycloak crate가 필요하다(같은 타입이어야 AdminClient 메서드에 값으로 전달
 # 가능 — harness/apps/rust/Cargo.toml의 동일 주석과 같은 이유).
-keycloak = { version = "=26.6.2", default-features = false, features = ["tags-all", "resource-builder", "reqwest12"] }
+# ⚠️ 요구 문자열이 `rust/Cargo.toml`과 **글자까지 같아야** 한다(위 주석의 "동일 버전"이 뜻하는 것).
+# `scripts/check-versions.mjs`가 셋을 대조한다(2026-08-12 문서 감사 C2).
+keycloak = { version = "~26.6.2", default-features = false, features = ["tags-all", "resource-builder", "reqwest12"] }
 tokio = { version = "1.52", features = ["rt-multi-thread", "macros"] }

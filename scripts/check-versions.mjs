@@ -181,6 +181,47 @@ for (const [lang, p, re] of manifests) {
       )
     }
   }
+
+  // ── 하네스와 SDK가 **공유해야 하는 제3자 좌표** ──
+  //
+  // ⚠️ 위 검사는 SDK **자신의** 버전만 본다. 그런데 rust 하네스 앱과 quickstart는 `keycloak`
+  // crate를 직접 의존한다 — `keycloak::types::UserRepresentation`을 값으로 만들어 `AdminClient`
+  // 메서드에 넘기려면 **같은 crate·같은 버전·같은 피처**여야 같은 타입이기 때문이다(두 파일의
+  // 주석이 그렇게 적고 있다). 그런데 그 "동일"을 아무도 검사하지 않았고, 실제로 SDK는
+  // `~26.6.2`인데 하네스 둘은 `=26.6.2`로 갈라져 있었다(2026-08-12 문서 감사 C2).
+  //
+  // ⚠️ **연산자까지 포함해 문자로 대조한다.** `=`(정확)와 `~`(패치 범위)는 서로 다른 계약이라
+  // SDK가 상한을 올리는 순간 교집합이 비어 cargo가 통일에 실패한다 — 조용한 드리프트는 아니지만
+  // 그때 깨지는 것은 야간 하네스이고 원인이 보이지 않는다. `check-docs.mjs`가 의존성 표에서
+  // 연산자를 값으로 취급하는 것과 같은 이유다.
+  const sharedThirdParty = [
+    ['keycloak', /^\s*keycloak\s*=\s*\{\s*version\s*=\s*"([^"]+)"/m, [
+      'rust/Cargo.toml',
+      'harness/apps/rust/Cargo.toml',
+      'harness/install/quickstart/rust/Cargo.toml',
+    ]],
+  ]
+  for (const [crate, re, paths] of sharedThirdParty) {
+    const present = paths.filter((p) => existsSync(join(root, p)))
+    if (present.length < 2) continue // 부분 체크아웃 — 대조할 짝이 없다
+    const seen = []
+    for (const p of present) {
+      const v = pick(p, re, `${p} 의 ${crate} 요구`, harnessErrors)
+      if (v !== null) seen.push([p, v])
+    }
+    // 대조군 — 추출이 실제로 짝을 이뤘는가. 정규식이 낡으면 0~1건만 잡히고 조용히 통과한다.
+    if (seen.length !== present.length) continue // pick()이 이미 적었다
+    const [, want] = seen[0]
+    for (const [p, v] of seen.slice(1)) {
+      if (v !== want) {
+        harnessErrors.push(
+          `${p} 의 ${crate} 요구가 "${v}" 인데 ${seen[0][0]} 는 "${want}" 다 — ` +
+            `두 파일의 주석이 "SDK와 동일한 crate/버전/피처"를 요구한다(같은 타입이어야 값으로 전달 가능). ` +
+            `연산자도 값의 일부다(\`=\` ≠ \`~\`)`,
+        )
+      }
+    }
+  }
 }
 
 // ── 기저 버전(X.Y.Z) 일치 검사 ──
