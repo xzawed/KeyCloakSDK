@@ -84,6 +84,7 @@ if gem install keycloak-sdk --version "$PKG_VER" --clear-sources --source "$REG"
   # 매치한다(kotlin에서 행동 테스트가 실측으로 잡은 부류). install(`--source "$REG"`)은 이미 위에서
   # 끝났으므로 여기서 REG를 정규화해도 설치 동작에 영향이 없다.
   # ⚠️ 빈 값일 때 정규화하면 `/`가 되어 **비어있음 검사가 공허해진다** — 반드시 조건부로.
+  # >>> provenance-gate
   [ -n "$REG" ] && REG="${REG%/}/"
   _gem_local=0
   if [ -n "$REG" ] && [ -s "$STATUS/provenance.txt" ]; then
@@ -101,6 +102,7 @@ if gem install keycloak-sdk --version "$PKG_VER" --clear-sources --source "$REG"
   else
     PROVENANCE_OK=0
   fi
+  # <<< provenance-gate
   if [ "$PROVENANCE_OK" = 1 ]; then
     : > "$STATUS/installed.ok"
     echo "[ruby-run] install OK (로컬 레지스트리에서 받았다)"

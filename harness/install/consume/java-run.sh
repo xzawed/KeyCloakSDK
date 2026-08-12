@@ -131,6 +131,7 @@ if mvn -s "$SETTINGS" -B -q dependency:get "-Dartifact=io.github.xzawed:keycloak
   # `pom>mvn-repo=` 조합이 "하나라도" 규칙을 통과했다). 비어 있는 것도 실패다(fail-closed).
   # 선언된 로컬 저장소 id 중 하나로 **전부** 기록돼 있고, 그중 **jar**가 있어야 통과다
   # (pom만 로컬인 부분 출처 차단 · `central`은 로컬이 아니므로 후보에서 제외).
+  # >>> provenance-gate
   PROVENANCE_OK=0
   _repo_id=""
   for _id in $_repo_ids; do
@@ -147,6 +148,7 @@ if mvn -s "$SETTINGS" -B -q dependency:get "-Dartifact=io.github.xzawed:keycloak
       PROVENANCE_OK=1; _repo_id="$_id"; break
     fi
   done
+  # <<< provenance-gate
   [ -n "$_repo_id" ] || _repo_id="$(printf '%s' "$_repo_ids" | tr '\n' ' ')"
   if [ "$PROVENANCE_OK" = 1 ]; then
     : > "$STATUS/installed.ok"

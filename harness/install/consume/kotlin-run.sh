@@ -68,6 +68,7 @@ if sh ./gradlew --no-daemon --info classes >/tmp/install.log 2>&1; then
   # 진짜 리터럴 접두라서, 정규식을 고정문자열로 바꿔도 통과한다(행동 테스트가 실제로 이걸 잡았다:
   # `기대 0, 실제 1`). `http://repo/`로 만들면 공개 호스트와 첫 글자에서 갈린다. 이미 `/`로 끝나는
   # 정상값(`http://mvn-repo-kotlin/`)은 무변경이다.
+  # >>> provenance-gate
   [ -n "$_kreg" ] && _kreg="${_kreg%/}/"
   # ⚠️ **전부 로컬이라야 한다.** Gradle은 --info에서 *실패한 시도*의 URL도 남긴다("Resource missing"
   # 등) — 그래서 "로컬 URL이 하나라도 있으면 통과"로 두면, 로컬에서 pom을 못 찾고 **Central에서
@@ -98,6 +99,7 @@ if sh ./gradlew --no-daemon --info classes >/tmp/install.log 2>&1; then
   else
     PROVENANCE_OK=0
   fi
+  # <<< provenance-gate
   if [ "$PROVENANCE_OK" = 1 ]; then
     : > "$STATUS/installed.ok"
     echo "[kotlin-run] install OK (로컬 레지스트리 ${_kreg}에서 받았다)"

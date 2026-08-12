@@ -42,11 +42,25 @@ JS
   # ⚠️ `$REG`가 비면 `grep -v -F ""`가 모든 줄을 걸러내 음성 조건이 **자동 참**이 된다 — 공개
   # 레지스트리에서 받아도 통과한다(실측 재현). env로는 도달 불가하지만(`:-`가 빈 값도 기본값으로
   # 대체한다) 스크립트 변이로는 도달하므로 비어있음을 명시 검사한다(2026-08-12 부류 재스캔).
-  if [ -n "$REG" ] && [ -s "$STATUS/provenance.txt" ] && ! grep -v -F "$REG" "$STATUS/provenance.txt" | grep -q .; then
+  # ⚠️ python-run.sh와 같은 하드닝(B0 런타임 테스트가 드러냈다) — 음성 조건은 "모든 줄이 `$REG`를
+  # **포함**"만 보므로 packument URL만 있는 기록(tarball 미수신)·중간 임베드·호스트 경계 침범이
+  # 통과한다. origin 정규화 + 양성 조건(로컬 origin에서 받은 `.tgz` 한 줄)으로 셋 다 닫는다.
+  # >>> provenance-gate
+  [ -n "$REG" ] && REG="${REG%/}/"
+  _art_local=0
+  if [ -n "$REG" ] && [ -s "$STATUS/provenance.txt" ]; then
+    while IFS= read -r _pline || [ -n "$_pline" ]; do
+      case "$_pline" in "$REG"*.tgz) _art_local=1; break ;; esac
+    done <"$STATUS/provenance.txt"
+  fi
+  if [ -n "$REG" ] && [ -s "$STATUS/provenance.txt" ] \
+     && ! grep -v -F "$REG" "$STATUS/provenance.txt" | grep -q . \
+     && [ "$_art_local" = 1 ]; then
     PROVENANCE_OK=1
   else
     PROVENANCE_OK=0
   fi
+  # <<< provenance-gate
   if [ "$PROVENANCE_OK" = 1 ]; then
     : > "$STATUS/installed.ok"
     echo "[node-run] install OK (로컬 레지스트리에서 받았다)"

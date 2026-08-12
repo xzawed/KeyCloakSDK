@@ -87,11 +87,17 @@ if (cd /app/app && cargo build --offline) >/tmp/install-app.log 2>&1; then
   # ⚠️ `$LOCAL_REG`가 비면 `grep -v -F ""`가 모든 줄을 걸러내 음성 조건이 **자동 참**이 된다 —
   # 공개 crates.io에서 받아도 통과한다(실측 재현). 현재는 상수 대입이라 도달 불가하지만 스크립트
   # 변이로는 도달하므로 비어있음을 명시 검사한다(2026-08-12 부류 재스캔).
+  # ⚠️ rust는 URL 목록이 아니라 **cargo 로그 줄**을 기록한다(`Unpacking keycloak-sdk …(/opt/local-registry/…)`).
+  # 그래서 origin 접두 정규화가 성립하지 않고(경로가 문장 가운데 있다) 양성 조건도 기록 단계가
+  # 이미 건다(`grep 'Unpacking keycloak-sdk'`로 걸러 넣으므로 파일에 그 줄만 있다). 부분문자열
+  # 대조가 여기서는 옳은 도구다 — 다른 언어와 형태가 다른 이유를 적어 둔다.
+  # >>> provenance-gate
   if [ -n "$LOCAL_REG" ] && [ -s "$STATUS/provenance.txt" ] && ! grep -v -F "$LOCAL_REG" "$STATUS/provenance.txt" | grep -q .; then
     PROVENANCE_OK=1
   else
     PROVENANCE_OK=0
   fi
+  # <<< provenance-gate
   if [ "$PROVENANCE_OK" = 1 ]; then
     : > "$STATUS/installed.ok"
     echo "[rust-run] install OK (quickstart + app, 로컬 레지스트리에서 받았다)"
