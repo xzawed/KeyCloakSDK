@@ -55,6 +55,27 @@ if mvn -s "$SETTINGS" -B -q dependency:get "-Dartifact=io.github.xzawed:keycloak
   # `<mirrors>`보다 위에 와야 한다)를 하나 추가하면 오탐으로 뒤집히고, `<mirror><id>central</id>`를
   # 추가하면 **거짓 통과**가 된다(Central에서 받은 아티팩트가 `>central=`로 기록되므로).
   _repo_ids="$(sed -n '/<repositories>/,/<\/repositories>/{ s|.*<id>\([^<]*\)</id>.*|\1|p; }' "$SETTINGS")"
+  # ⚠️ **id가 아니라 URL로 판정한다(이슈 #167 후속).** 위 스코핑도 여전히 **id 문자열**을 신뢰한다 —
+  # `<repositories>` 블록에 `mvn-repo`와 나란히 `<repository><id>central-mirror</id>
+  # <url>https://repo.maven.apache.org/maven2</url></repository>`를 추가하면(리터럴 `central`이
+  # 아니므로) 위 스코핑을 그대로 통과하고, Central에서 받은 아티팩트가 `>central-mirror=`로 기록돼도
+  # 거짓 통과한다(재현: task-A4-report.md Step 1). 이 leg에는 다른 8개 언어와 달리 오케스트레이터가
+  # 주입하는 `REGISTRY_URL` 환경변수가 없다(install-verify.sh의 run_lang_java 확인 — mvn-repo 자체는
+  # settings.xml 파일 배포로 주입되지 그 URL이 env로 오지 않는다). 그래서 "로컬 레지스트리 URL"은
+  # settings.xml 자신에서 구조적으로 유도한다: 이 파일의 `<mirrors>` 블록은 전역 HTTP 차단기의
+  # `mirrorOf`에서 우리 저장소 id 하나만 `,!<id>` 예외로 뺀다(파일 상단 주석 참고) — 이 예외가
+  # 존재하는 이유 자체가 "우리 로컬 저장소는 평문 HTTP라 차단 대상이라서"이므로, 그 예외 id가 가리키는
+  # `<repository>`의 `<url>`이 곧 로컬 레지스트리다. Central은 HTTPS라 애초에 이 차단기 대상이 아니므로
+  # `central-mirror` 같은 위조 항목은 이 예외 메커니즘에 등장하지 않는다 — id를 흉내내도 URL은 못
+  # 흉내낸다. `<repositories>` 안의 각 후보 id는 **그 id 자신의 `<url>`** 이 이렇게 유도한 로컬 URL과
+  # 문자열 일치할 때만 남긴다(id가 아니라 URL이 근거).
+  _local_repo_id="$(sed -n 's|.*<mirrorOf>[^<]*,!\([^,<]*\)</mirrorOf>.*|\1|p' "$SETTINGS" | head -1)"
+  _repos_xml="$(sed -n '/<repositories>/,/<\/repositories>/p' "$SETTINGS")"
+  _local_url=""
+  if [ -n "$_local_repo_id" ]; then
+    _local_url="$(printf '%s\n' "$_repos_xml" | sed -n "/<id>${_local_repo_id}<\/id>/,/<\/repository>/{ s|.*<url>\([^<]*\)</url>.*|\1|p; }" | head -1)"
+  fi
+  echo "[java-run] settings.xml에서 유도한 로컬 레지스트리 URL: ${_local_url:-<유도 실패>}"
   # ⚠️ **"하나라도 로컬"이 아니라 "전부 로컬"이라야 한다.** `_remote.repositories`는 파일마다 한 줄이라
   # jar는 central, pom은 mvn-repo인 **부분 출처**가 성립한다 — 실측으로 확인했다(`jar>central=` +
   # `pom>mvn-repo=` 조합이 "하나라도" 규칙을 통과했다). 비어 있는 것도 실패다(fail-closed).
@@ -64,6 +85,8 @@ if mvn -s "$SETTINGS" -B -q dependency:get "-Dartifact=io.github.xzawed:keycloak
   _repo_id=""
   for _id in $_repo_ids; do
     [ "$_id" = central ] && continue
+    _id_url="$(printf '%s\n' "$_repos_xml" | sed -n "/<id>${_id}<\/id>/,/<\/repository>/{ s|.*<url>\([^<]*\)</url>.*|\1|p; }" | head -1)"
+    [ -n "$_local_url" ] && [ "$_id_url" = "$_local_url" ] || continue
     if [ -s "$STATUS/provenance.txt" ] \
        && ! grep -v ">${_id}=" "$STATUS/provenance.txt" | grep -q . \
        && grep -q "\.jar>${_id}=" "$STATUS/provenance.txt"; then
