@@ -50,7 +50,7 @@ sd_default() { # $1=언어 → 기본값(정규화 전)
               "$ROOT/python/src/keycloak_sdk/config.py" | head -1 ;;
     node)   sed -n 's/.*jwksMinRefetchSeconds: *input\.jwksMinRefetchSeconds *?? *\([0-9][0-9.]*\).*/\1/p' \
               "$ROOT/node/src/config.ts" | head -1 ;;
-    go)     sed -n 's/.*DefaultJwksMinRefetchSecs *int64 *= *\([0-9][0-9.]*\).*/\1/p' "$ROOT/go/config.go" | head -1 ;;
+    go)     sed -n 's/.*defaultJwksMinRefetchSecs *int64 *= *\([0-9][0-9.]*\).*/\1/p' "$ROOT/go/config.go" | head -1 ;;
     dotnet) sed -n 's/.*RefreshIntervalSeconds *{ *get; *init; *} *= *\([0-9][0-9.]*\).*/\1/p' \
               "$ROOT/dotnet/src/Xzawed.Keycloak.Sdk/JwtValidator.cs" | head -1 ;;
     php)    sed -n 's/.*DEFAULT_JWKS_MIN_REFETCH_SECONDS *= *\([0-9][0-9.]*\).*/\1/p' "$ROOT/php/src/KeycloakConfig.php" | head -1 ;;
