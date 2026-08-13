@@ -141,7 +141,7 @@ Every task follows the [AI governance framework](../governance/ai-governance-fra
 
 This playbook is induced from the two completed implementations below. When writing a new language's WBS, mirror their **format, granularity, and self-review tables** exactly:
 
-- **Java (baseline language, hand-wrapped):** [docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md](../superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md) — 6 Maven modules, coupling auth/admin via `TokenProvider` in `core`, JaCoCo 90/85 gate, `v*` tag → Maven Central. Unit suite + Testcontainers integration.
+- **Java (baseline language, hand-wrapped):** [docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md](../superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md) — 6 Maven modules, JaCoCo 90/85 gate, `v*` tag → Maven Central. Unit suite + Testcontainers integration.
 - **Python (2nd language, wrapping `python-keycloak`):** [docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md](../superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md) — a single package with the `src/` layout + an `aio` async mirror, self JWT validation with `joserfc`, logic coverage enforced at 100%, `py-v*` tag → PyPI Trusted Publisher. Unit suite (sync + async) + integration.
 
 The key thing the two cases prove: **even with different starting points (hand-wrapping vs. wrapping a mature library), keeping the §4 contract as the source of truth makes the results isomorphic.** A new language implements that contract too — it does not redesign it.
