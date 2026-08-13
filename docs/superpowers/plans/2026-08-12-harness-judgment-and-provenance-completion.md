@@ -318,11 +318,40 @@ node -e "console.log(require('./report/signals/node.install.json'))"   # install
 
 </details>
 
+### ⚠️ Task B3 — **기각(2026-08-13 실측)**. 가드가 이미 드리프트 가능 자리를 100% 덮는다
+
+> **드리프트 가능 자리를 전수로 세었더니 둘뿐이다.** 아홉 앱 중 버전 리터럴로 SDK를 핀하는 것은
+> `harness/apps/java/pom.xml:26`(`0.1.0-SNAPSHOT`)과 `harness/apps/kotlin/build.gradle.kts:22`
+> (`0.1.0-RC1`)뿐이고, 나머지 일곱은 경로 참조·로컬 설치라 **드리프트가 구조적으로 불가능**하다
+> (`harness/apps/rust/Cargo.toml:3`의 `0.1.0`은 앱 자신의 버전이지 SDK 핀이 아니다).
+> 그리고 `check-versions.mjs`의 `harnessPins`가 **그 둘을 정확히** 대조한다.
+>
+> **파생이 더 낫다는 근거가 서지 않는다.** B3는 "탐지됨"을 "표현 불가능"으로 바꾸는 일인데:
+> - 탐지는 이미 작동한다. 이 검사가 **실제 드리프트를 잡은 이력**이 있다(PR #170이 kotlin SDK를
+>   `0.1.0` → `0.1.0-RC1`로 범프하며 앱 핀을 두고 갔다). repo-hygiene은 `paths:` 필터가 없어
+>   **모든 push에서** 돈다 — 야간이 아니라 머지 전에 잡힌다.
+> - 계획서 Step 3이 스스로 "`harnessPins` 검사는 **유지**한다(파생이 깨졌을 때의 이중 안전망)"고
+>   적는다. 즉 B3 후에도 가드는 남고 **치환 단계가 얹힌다** — 실패 표면이 줄지 않고 는다.
+> - 그 치환은 조용히 실패하는 부류다. 같은 관용을 쓰는 `consume/kotlin-run.sh`가 그래서 "치환
+>   FAILED — 좌표 표기가 바뀌었나?" loud-fail을 별도로 달고 있다. 두 번째 치환점을 만들면 그
+>   보호도 두 벌 필요해진다.
+>
+> **되살릴 조건**: 드리프트 가능 자리가 늘어날 때(새 언어가 버전 리터럴로 핀하거나, 앱이
+> 레지스트리에서 설치하도록 바뀔 때). 그때는 자리 수가 가드의 손유지 비용을 넘는지 다시 잰다.
+>
+> ⚠️ 실측 중 나온 사소한 것: `harness/apps/kotlin/build.gradle.kts:10`의 **주석**도 같은 버전을
+> 적고 있는데 가드는 `implementation(...)` 선언에만 앵커한다(주석이 미끼로 먼저 잡히던 사고를
+> 고친 결과다). 주석은 드리프트해도 안 잡히지만 소비자에게 닿지 않는 자리다.
+
+<details><summary>원래 계획 단계</summary>
+
 ### Task B3: 하네스 앱 핀을 SSOT에서 파생
 - [ ] Step 1: `harness/apps/kotlin/Dockerfile`에 SDK 버전 치환 단계 추가(`consume/kotlin-run.sh`가 이미 쓰는 관용과 동형, 치환 실패 시 loud fail)
 - [ ] Step 2: `harness/apps/java/pom.xml`도 같은 방식이 가능한지 판단(Maven은 `versions:set` 또는 property) — 불가하면 그 사실과 이유를 기록
 - [ ] Step 3: `check-versions.mjs`의 harnessPins 검사는 **유지**한다(파생이 깨졌을 때의 이중 안전망)
 - [ ] Step 4: kotlin 레그 실측 통과 + 커밋
+
+</details>
 
 ### ✅ Task B0: 메타 가드를 **런타임 행동 테스트**로 옮긴다 — 완료(`5972d4b`)
 
