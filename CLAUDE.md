@@ -1,5 +1,5 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=58800 -->
+<!-- doc-budget: max-bytes=58764 -->
 <!-- ⚠️ **2026-08-07: 52,800 → 58,800. 래칫을 올린 것이고, 그 자체가 리뷰 대상이라는 규칙에 따라
      이유를 여기 적는다.** 「작업 규율」절(약 5 KB)을 추가했다. 그 절이 **반드시 여기 있어야 하는
      이유**: `.claude/rules/*.md`는 경로 스코프 자동로드라 해당 경로를 건드릴 때만 들어온다 —
@@ -30,6 +30,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 작업 규율 (반복 실수 방지) — 2026-08-07 포렌식 감사에서 도출
 
 ⚠️ **이 절을 먼저 읽어라. 아래 규칙은 전부 이 저장소에서 실제로 일어난 사고에서 나왔다.**
+여기는 **무엇을 어기면 안 되는가**다. **어떤 순서로 하고 어디서 "만들지 않는다"로 나가는가**는
+[docs/governance/working-loop.md](docs/governance/working-loop.md).
 
 독립 감사(git 779커밋·reflog·dangling commit 대조)가 이 저장소 작업의 실수 20건을 분류했다.
 **자기검출률 35%, 고위험 6건만 보면 17%**였다. 그리고 자기검출 7건 중 검증 절차의 산물은 1건뿐
@@ -405,7 +407,7 @@ dev(비앵커 — 버전이 셀 안 산문이라 기계 대조 밖): `typescript
 
 작업 완료(머지/main 반영) 후 프로젝트 전체 문서(`CLAUDE.md`, `docs/`, `README.md`)를 최신화·최적화하고 커밋한다. 언어별 빌드/테스트 명령(단일 테스트 실행 포함)을 툴체인 섹션에 유지한다(Java·Python·Node·Go·C#·PHP·Rust·Ruby·Kotlin).
 
-**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 의존성 앵커 스코프는 이제 9개 언어 전부다** — `<!-- doc-guard: ... -->` 앵커가 Java·Python·Node·Go·.NET·PHP·Rust·Ruby·Kotlin 의존성 표 9종(pom.xml/**pyproject.toml**/package.json/**go.mod**/csproj/composer.json/Cargo.toml/gemspec/build.gradle.kts)과 .NET 최소 런타임 선언 1건, 합쳐 **38 facts / 10 anchors**를 기계 검증한다. **최소 런타임 선언도 9개 언어 전부 앵커가 걸렸다** — [docs/guides/getting-started.md](docs/guides/getting-started.md)의 언어별 "Required runtime" 문장에 `kind=runtime` 앵커가 있다. 합쳐 **46 facts / 18 anchors**다.
+**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 앵커 스코프는 9개 언어 전부다** — `<!-- doc-guard: ... -->` 앵커가 의존성 표 9종(pom.xml/**pyproject.toml**/package.json/**go.mod**/csproj/composer.json/Cargo.toml/gemspec/build.gradle.kts)과 [docs/guides/getting-started.md](docs/guides/getting-started.md)의 언어별 "Required runtime" 문장(`kind=runtime`)을 합쳐 **46 facts / 18 anchors**를 기계 검증한다.
 
 ⚠️ **런타임 앵커는 "앵커 뒤 3줄 안의 *첫* 백틱 스팬 중 숫자를 포함한 것"을 문서의 주장으로 읽는다** — 그래서 버전보다 먼저 오는 백틱 토큰에 숫자가 있으면 그걸 주장으로 오인한다. 실제로 걸렸던 둘: Java의 `` `--release 21` ``과 Go의 `` `golang.org/x/oauth2` ``(둘 다 숫자를 품는다). 두 절은 버전을 문장 앞으로 옮겨 해결했다. ⚠️ **Kotlin 앵커는 `jvmToolchain(21)`, 즉 JDK 툴체인을 검증한다 — Kotlin 언어 버전(2.2)이 아니다.** 그래서 그 절은 JDK 절을 먼저 두고 그 사실을 본문에 명시했다. 이걸 모르고 "Kotlin 버전을 가리키도록 고치면" 앵커가 21 vs 2.2로 깨진다.
 

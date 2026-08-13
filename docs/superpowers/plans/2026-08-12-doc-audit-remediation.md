@@ -6,8 +6,12 @@
 > 감사 HIGH 잔여와 npm 취약점도 닫았다(`6b79a14`·`f459904`).
 > **권고 3·5는 만들지 않기로 했다** — 둘 다 "문구가 아니라 문맥이 참/거짓을 정한다"는 같은
 > 이유로 정규식이 수렴하지 않고, 게시 개수는 이미 SSOT 파생 어서션 23개가 더 강하게 덮는다.
+> 이어진 **문서 압축 검토(08-13)도 3건 중 2건이 실측으로 기각**됐다 — 중복으로 보이던 것이
+> 가드의 조준점이거나(①) 생태계 고유 사실이었다(③).
 > 기각 근거는 각 Task 절에 실측과 함께 있다 — **되살릴 조건도 적어 두었다.**
 > 남은 체크박스는 없다. 이 문서는 감사 결과와 기각 근거의 보존이 목적이다.
+> 여기서 반복된 "만들기 전에 재고, 안 만들기로 할 수 있다"는 절차 자체는
+> [작업 루프](../../governance/working-loop.md)에 있다.
 
 **Goal:** 문서가 코드·리포 실상과 갈리는 것을 **인스턴스가 아니라 부류 단위로** 막는다. 감사가 찾은 138건은 11개 부류로 묶이고, 그중 네 부류(게시 상태 · 앵커 밖 버전 · 문서 내부 자기모순 · 손으로 세는 카운트)가 전체의 60%다.
 
@@ -96,6 +100,43 @@ harness.yml:86 → ./install-verify.sh go dotnet node python java php rust ruby 
 
 ⚠️ **되살릴 조건**: 게시 개수 외의 수치(예: 언어 수 9, 리소스 5, 오퍼레이션 7)가 SSOT 없이 여러 문서에 흩어져 드리프트가 실측될 때. 그때도 문맥 문제는 그대로이므로 **자리 명시(`claim_at` 관용)** 가 정규식 스캔보다 낫다.
 
+### 문서 압축 검토 (2026-08-13) — 3건 중 1건 반영, 2건 기각
+
+감사와 별개로 "중복·불필요·코드와 다른 서술"을 다시 훑어 압축 후보 3건을 뽑았다. 착수 전에 셋 다 실측했고, **가장 큰 두 건이 실측으로 기각됐다** — 둘 다 "중복으로 보이는 것이 중복이 아니었다".
+
+- [x] **② `docs/roadmap/language-support.md` 압축**(`11ce621`) — ✅ Done 행이 게차 교본과 스냅샷 핀을 재서술하고 있었다. 27.0KB → 19.4KB(**7,684B 절감**). 기각 근거만 남기고 핀·게차는 `CLAUDE.md`/`.claude/rules/`로 포인터. ⚠️ **.NET의 "구 `IdentityModel*`(비-Duende) 아카이브 궤도" 기각 근거는 리포 전체에서 이 파일에만 있다**(`grep -rn 'archive trajectory' | wc -l` → 1) — 압축하면서 그 사실을 행 안에 명시했다.
+
+#### ~~① 언어 README ↔ getting-started 퀵스타트 중복 제거~~ — **기각(2026-08-13 실측)**
+
+9개 `<lang>/README.md`(5.1–6.7KB)의 퀵스타트가 `getting-started.md`와 같은 흐름을 반복한다. 합치면 ~12KB가 준다. 만들지 않기로 한 이유 둘:
+
+**(1) 그 코드펜스가 가드의 조준점이다.** `test-publication-claims.sh:44-62`는 배너뿐 아니라 **README 코드펜스 안의 핀된 버전**을 `DF_PUBLISHED` 파생 기대값과 대조한다. 주석이 그 이유를 적고 있다 — `java/README.md`가 실제로 낡은 좌표를 권한 적이 있고, "레지스트리는 README를 버전마다 고정하므로 이 실수를 고치려면 좌표 하나를 더 태워야 한다". 예제를 옮기면 **검사할 대상이 사라진다** = 가드가 덮는 면적이 준다.
+
+**(2) 레지스트리 페이지에는 `getting-started.md`가 없다.** PyPI·npm·crates.io·NuGet은 패키지에 담긴 README **한 장**만 보여 준다. 그래서 이 README들의 링크는 전부 절대 URL이다(`grep -c 'https://github.com/xzawed/KeyCloakSDK/blob/main/' python/README.md` → 7). 상대링크가 깨지는 표면을 이미 누군가 계산해 둔 흔적이고, 퀵스타트를 링크로 바꾸면 소비자가 처음 보는 화면이 "다른 데 가서 보세요"가 된다.
+
+감사에서 **두 예제가 실제로 갈린 건 0건**이다 — 드리프트가 실측되지 않은 중복에 가드 면적을 지불하지 않는다.
+
+⚠️ **되살릴 조건**: 두 예제가 실제로 갈린 사례가 나올 때. 그때도 정답은 삭제가 아니라 **한쪽을 생성원으로 삼고 다른 쪽을 파생**시키는 것이다(가드 조준점은 파생 결과에 그대로 남는다).
+
+#### ~~③ pre-1.0 정책 문단 중복 제거~~ — **기각(2026-08-13 실측, 근거가 착수 전 가설과 다름)**
+
+같은 문단이 9개 README에 있어 "복붙 3KB"로 보였다. **실측하니 복붙이 아니었다.**
+
+```
+$ for f in java python node go dotnet php rust ruby kotlin; do
+    grep "This SDK is \*\*pre-1.0\*\*" "$f/README.md" | wc -c; done
+376 ×8, rust 0
+$ grep -n "pre-1.0" rust/README.md
+83: This crate is **pre-1.0**. … and note that Cargo's default caret requirement
+    treats `0.x` minors as incompatible, so `cargo update` will not cross one for you. …
+```
+
+8개는 동일하지만 **Rust는 생태계 고유 사실을 담고 있다**. `0.x` 마이너를 캐럿이 넘지 않는 것은 Cargo의 동작이고 npm·pip은 다르다 — `CLAUDE.md` 규율 5의 "자매 생태계의 동작을 대칭으로 가정하지 않는다"가 정확히 이 자리다. 공통 문단으로 접었으면 **그 문장이 지워졌을 것**이고, 그건 압축이 아니라 사실 손실이다.
+
+남은 8개(3,008B)만 접는 것도 (①-2)와 같은 이유로 하지 않는다 — 레지스트리 페이지에서 SemVer 계약은 링크 뒤가 아니라 본문에 있어야 한다.
+
+⚠️ **되살릴 조건**: 이 문단이 세 번째 자리(예: 각 언어 패키지 메타데이터 description)까지 번져 손으로 맞추기 시작할 때. 그때는 삭제가 아니라 `deploy-facts.sh` 같은 SSOT에서 **생성**한다.
+
 ### 확정됐으나 미수정인 개별 결함 (감사 HIGH 잔여)
 
 - [x] `.claude/rules/php.md` — 포터블 PHP 경로·버전이 실제와 다르고 Xdebug·pcov가 없어 커버리지 명령이 실행되지 않던 것을 고쳤다(`6b79a14`). 값을 갱신하는 대신 `KCSDK_PHP` 한 변수에서 파생시키고 패치 버전은 적지 않는다(부류 J 재발 방지). 교정 후 문서 그대로 실행해 확인했다.
@@ -119,15 +160,29 @@ harness.yml:86 → ./install-verify.sh go dotnet node python java php rust ruby 
 
 ### 현재 상태 확인 명령
 
+⚠️ **어서션 수를 여기 적지 않는다** — 매 커밋 변하므로 적는 순간 낡는다. 각 스크립트가 말미에
+`N passed, M failed`를 찍으니 **`M`이 0인지만** 본다(하한은 CI의 `--min-facts`/`--min-anchors`가
+지킨다).
+
 ```bash
 git log --oneline -6
-sh   scripts/test/test-publication-claims.sh    # 88 passed, 0 failed
-sh   scripts/test/test-security-defaults.sh     # 30 passed, 0 failed
-sh   scripts/test/test-harness-registries.sh    # 59 passed, 0 failed
-dash scripts/test/test-selftest-hygiene.sh      # 42 passed, 0 failed
+
+# 셸 가드 — 인터프리터는 각 파일의 shebang을 따른다.
+# ⚠️ test-install-verify.sh만 bash다(배열 사용). 나머지는 sh이고 CI의 /bin/sh는 dash이므로
+#    로컬 검증도 dash로 한다 — 로컬 `sh`는 bash라 통과해도 CI에서 갈릴 수 있다.
+for t in publication-claims security-defaults provenance-gate \
+         harness-registries selftest-hygiene; do
+  dash "scripts/test/test-$t.sh"
+done
+bash scripts/test/test-install-verify.sh
+
 node scripts/check-docs.mjs . --strict --min-facts=46 --min-anchors=18
-node --test harness/install/report/install-matrix.test.mjs
+node --test harness/install/report/install-matrix.test.mjs \
+            harness/report/score.test.mjs harness/security/verdict.test.mjs
 ```
+
+가드 전건 목록과 CI 배선은 `.github/workflows/repo-hygiene.yml`이 진실 원천이다
+(`test-selftest-hygiene.sh`가 **배선 누락 자체를 실패로 만든다** — 위 목록은 발췌다).
 
 ### 병행 진행 중인 다른 계획
 
