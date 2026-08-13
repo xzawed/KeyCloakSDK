@@ -109,6 +109,14 @@ jobs:
       - name: 출처 게이트 런타임 행동 테스트(8언어 게이트를 실제로 실행)
         run: sh scripts/test/test-provenance-gate.sh
 
+      # ⚠️ `install-verify.sh`의 순수 로직(버전 파생·형식 검증). 이 로직은 1000줄짜리 Docker
+      # 오케스트레이터 안에 있어 레그를 통째로 돌리기 전에는 시험할 방법이 없었고, 실제로 거기서
+      # 사고가 났다 — 폴백이 루프가 덮어쓰는 전역을 읽어 직전 언어의 버전이 다음 언어로 샜다.
+      # 기본 순서에서는 안 물려 **야간이 초록이었다**(부분집합 실행에서만 나타났다).
+      # ⚠️ 대상이 bash 스크립트(연관배열)라 이 테스트만 `bash`로 돌린다 — 나머지는 dash다.
+      - name: install-verify 순수 로직 자가테스트(Docker 불필요)
+        run: bash scripts/test/test-install-verify.sh
+
       # ⚠️ 하네스 로컬 레지스트리 설정. 이 설정이 낡으면 야간 `install-all`만 조용히 빨개지고
       # PR/푸시 CI는 전부 초록이라 며칠씩 안 보인다 — 실제로 3연속(08-08·08-09·08-10) 그랬다.
       # 원인은 저장소 밖이었다: node 패키지가 공개 npmjs에 게시되자 Verdaccio uplink이 같은
