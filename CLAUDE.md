@@ -137,7 +137,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 
 ### 언어별 결합 규칙
 
-**아홉 언어 공통**: `admin`은 `auth`에 의존하지 않는다 — `TokenProvider` 계열 인터페이스(Rust는 async trait, Ruby는 덕 타이핑, Kotlin은 `fun interface`)가 유일한 접착제이고, 하위 라이브러리 오류는 **경계에서** SDK 타입으로 변환된다. 그래서 auth 없이도 admin을 자체 토큰 소스로 쓸 수 있고, 내부 라이브러리 교체가 소비자에게 파급되지 않는다.
+**아홉 언어 공통**: `admin`은 `auth`에 의존하지 않고, 하위 라이브러리 오류는 **경계에서** SDK 타입으로 변환된다. 그래서 내부 라이브러리 교체가 소비자에게 파급되지 않는다. ⚠️ **독립을 이루는 방법은 둘로 갈린다** — Node·Rust·Ruby·.NET·Go는 `TokenProvider` 계열이 유일한 접착제이고, **Java·Kotlin·PHP·Python은 admin이 토큰을 자체 소유해**(하위 라이브러리의 client-credentials 그랜트) 소비자가 토큰 소스를 주입할 수단이 없다.
 
 **공통에서 벗어나는 곳만 아래에 적는다**(각 언어의 상세는 `.claude/rules/<lang>.md`. `raw`/`Raw` 탈출구는 §4(b)에 일부만 있고 **9개 언어 전체 표는 [getting-started.md](docs/guides/getting-started.md)**에 있다):
 
@@ -145,7 +145,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 |---|---|
 | Go | **전체가 단일 `package keycloak`** — admin을 서브패키지로 두면 `Client.Admin`이 `*AdminClient`를 반환할 때 import 순환이 생긴다. 그래서 `admin_*.go`로 같은 패키지다. |
 | Rust | **admin도 `KeycloakClient::new`에서 즉시 조립된다** — 나머지 여덟 언어의 "최초 접근 시 지연 생성"과 다르다(공유 `http`·전용 캐싱 provider 재사용). |
-| Kotlin | **admin이 토큰을 자체 소유한다** — `KeycloakBuilder` 내장 client-credentials 그랜트의 `TokenManager`가 획득·갱신하고, 파사드는 admin에 provider를 배선하지 않는다. `ClientCredentialsTokenProvider`는 §4 접착 유틸이자 시임일 뿐이다(Java가 커스텀 RESTEasy 필터 충돌로 내린 결정을 상속). |
+| Kotlin | 자체 소유 넷 중 유일하게 `ClientCredentialsTokenProvider`가 **존재는 한다** — 파사드가 배선하지 않는 시임일 뿐이다(Java의 RESTEasy 필터 충돌 결정을 상속). PHP·Python엔 그것조차 없다. |
 | Node | **파사드가 주입한 캐싱 provider를 `registerTokenProvider`로 배선하고 `kc.auth()`는 호출하지 않는다**(PR #63) — admin-client 내장 TokenManager는 만료 시 refresh만 시도해 client_credentials에서 영구 실패한다(Rust `79ecf76`와 동형 결정). |
 
 
