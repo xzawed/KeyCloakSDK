@@ -63,32 +63,62 @@ sd_default() { # $1=언어 → 기본값(정규화 전)
 # `30.0`·`30` 은 같은 값이다 — 언어마다 float/int 관용이 달라 표기만 갈린다.
 sd_norm() { printf '%s' "$1" | sed 's/\.0*$//'; }
 
+# clock skew — JWT `exp`/`nbf` 검증의 시계 오차 허용치. **이것도 아홉 언어 공동 불변식이다**
+# (2026-08-13 결정). 한 언어만 커지면 **그 언어에서만 만료된 토큰이 더 오래 통과한다** — JWKS와
+# 같은 계급의 보안 파라미터인데 가드가 없어서, JWKS가 10/30/60으로 갈렸던 것과 똑같은 조건에
+# 놓여 있었다(측정 시점에는 아홉 전부 30으로 우연히 정렬돼 있었다).
+sd_skew() { # $1=언어 → clock skew 기본값
+  case "$1" in
+    java)   sed -n 's/.*clockSkew *= *Duration\.ofSeconds(\([0-9][0-9.]*\)).*/\1/p' \
+              "$ROOT/java/keycloak-sdk-core/src/main/java/io/github/xzawed/keycloak/core/KeycloakConfig.java" | head -1 ;;
+    python) sed -n 's/.*clock_skew: *float *= *\([0-9][0-9.]*\).*/\1/p' \
+              "$ROOT/python/src/keycloak_sdk/config.py" | head -1 ;;
+    node)   sed -n 's/.*clockSkewSeconds: *input\.clockSkewSeconds *?? *\([0-9][0-9.]*\).*/\1/p' \
+              "$ROOT/node/src/config.ts" | head -1 ;;
+    go)     sed -n 's/.*c\.ClockSkew *= *\([0-9][0-9.]*\).*/\1/p' "$ROOT/go/config.go" | head -1 ;;
+    dotnet) sed -n 's/.*ClockSkewSeconds *{ *get; *init; *} *= *\([0-9][0-9.]*\).*/\1/p' \
+              "$ROOT/dotnet/src/Xzawed.Keycloak.Sdk/JwtValidator.cs" | head -1 ;;
+    php)    sed -n 's/.*\$clockSkew *= *\([0-9][0-9.]*\).*/\1/p' "$ROOT/php/src/KeycloakConfig.php" | head -1 ;;
+    rust)   sed -n 's/.*clock_skew: *\([0-9][0-9.]*\).*/\1/p' "$ROOT/rust/src/config.rs" | head -1 ;;
+    ruby)   sed -n 's/.*DEFAULT_CLOCK_SKEW *= *\([0-9][0-9.]*\).*/\1/p' "$ROOT/ruby/lib/keycloak_sdk/config.rb" | head -1 ;;
+    kotlin) sed -n 's/.*clockSkew: *Duration *= *Duration\.ofSeconds(\([0-9][0-9.]*\)).*/\1/p' \
+              "$ROOT/kotlin/src/main/kotlin/io/github/xzawed/keycloak/config.kt" | head -1 ;;
+  esac
+}
+
 SD_LANGS='java python node go dotnet php rust ruby kotlin'
 
-sd_expect=''
-sd_seen=0
-for L in $SD_LANGS; do
-  _raw="$(sd_default "$L" || true)"
-  # ⚠️ 추출 실패를 통과로 읽지 않는다 — 파일이 옮겨지거나 선언 표기가 바뀌면 sed가 빈 문자열을
-  # 내는데, 그걸 넘기면 이 가드는 **아홉 언어를 하나도 안 보면서 초록**이 된다(이 저장소가
-  # 반복해서 겪은 부류).
-  _has=1; [ -n "$_raw" ] && _has=0
-  assert_eq "ok" "$(ok_if "$_has" MISSING)" \
-    "$L 의 JWKS 기본값을 소스에서 추출하지 못했다 — 선언 표기가 바뀌었나?"
-  [ -n "$_raw" ] || continue
-  _v="$(sd_norm "$_raw")"
-  sd_seen=$((sd_seen + 1))
-  if [ -z "$sd_expect" ]; then
-    sd_expect="$_v"
-  else
-    assert_eq "$sd_expect" "$_v" \
-      "$L 의 JWKS 최소 재조회 기본값이 다른 언어와 다르다 — 아홉이 함께 움직여야 하는 값이다"
-  fi
-done
+# 코드 축을 파라미터별로 돈다. 결과 기대값은 `SD_EXPECT`에 남긴다(문서 축이 그걸 쓴다).
+sd_code_axis() { # $1=라벨 $2=추출 함수명
+  SD_EXPECT=''
+  _seen=0
+  for L in $SD_LANGS; do
+    _raw="$("$2" "$L" || true)"
+    # ⚠️ 추출 실패를 통과로 읽지 않는다 — 파일이 옮겨지거나 선언 표기가 바뀌면 sed가 빈 문자열을
+    # 내는데, 그걸 넘기면 이 가드는 **아홉 언어를 하나도 안 보면서 초록**이 된다(이 저장소가
+    # 반복해서 겪은 부류).
+    _has=1; [ -n "$_raw" ] && _has=0
+    assert_eq "ok" "$(ok_if "$_has" MISSING)" \
+      "[$1] $L 의 기본값을 소스에서 추출하지 못했다 — 선언 표기가 바뀌었나?"
+    [ -n "$_raw" ] || continue
+    _v="$(sd_norm "$_raw")"
+    _seen=$((_seen + 1))
+    if [ -z "$SD_EXPECT" ]; then
+      SD_EXPECT="$_v"
+    else
+      assert_eq "$SD_EXPECT" "$_v" \
+        "[$1] $L 의 기본값이 다른 언어와 다르다 — 아홉이 함께 움직여야 하는 값이다"
+    fi
+  done
+  # 대조군 — 위 루프가 실제로 아홉 언어를 돌았는지. `SD_LANGS`가 비거나 경로 규칙이 바뀌면
+  # 어서션이 0건 실행되고 이 테스트는 조용히 통과한다.
+  assert_eq "9" "$_seen" "[$1] 기본값을 읽은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
+}
 
-# 대조군 — 위 루프가 실제로 아홉 언어를 돌았는지. `SD_LANGS`가 비거나 경로 규칙이 바뀌면
-# 어서션이 0건 실행되고 이 테스트는 조용히 통과한다.
-assert_eq "9" "$sd_seen" "JWKS 기본값을 읽은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
+sd_code_axis "JWKS 재조회" sd_default
+sd_expect="$SD_EXPECT"
+sd_code_axis "clock skew" sd_skew
+sd_skew_expect="$SD_EXPECT"
 
 # ---------------------------------------------------------------------------
 # 2) 문서 축 — 그 값을 말하는 소비자 문서
@@ -106,6 +136,35 @@ SD_DOCS="$(cd "$ROOT" && git ls-files '*/README.md' '*/README.ko.md' 'README.md'
 _hasdocs=1; [ -n "$SD_DOCS" ] && _hasdocs=0
 assert_eq "ok" "$(ok_if "$_hasdocs" EMPTY)" "소비자 문서 목록이 비었다 — git ls-files 패턴이 바뀌었나?"
 
+sd_doc_axis() { # $1=라벨 $2=파라미터명 정규식 $3=기대값 $4=최소 히트 $5=값-서술 신호 정규식
+  _hits=0
+  for f in $SD_DOCS; do
+    _lines="$(grep -inE "$2" "$ROOT/$f" 2>/dev/null | grep -E "$5" || true)"
+    [ -n "$_lines" ] || continue
+    # ⚠️ **자릿수 경계로 대조한다 — 부분문자열이면 안 된다.** `grep -F "30"`으로 했더니 문서가
+    # `300s by default`라고 말해도 "30을 포함한다"는 이유로 통과했다(변이 MS3가 실측으로 잡았다).
+    # 값 앞뒤가 숫자가 아니어야 그 값을 말한 것이다(`30.0`은 `.`이 비숫자라 여전히 매치된다).
+    _bad="$(printf '%s\n' "$_lines" | grep -vE "(^|[^0-9])$3([^0-9]|\$)" || true)"
+    assert_eq "" "$_bad" "[$1] $f 가 기본값을 코드값($3)과 다르게 말한다"
+    _hits=$((_hits + $(printf '%s\n' "$_lines" | grep -c . || true)))
+  done
+  _enough=1; [ "$_hits" -ge "$4" ] && _enough=0
+  assert_eq "ok" "$(ok_if "$_enough" "$_hits")" \
+    "[$1] 기본값을 말하는 문서 줄을 $4건 미만 찾았다 — 탐지 패턴이 낡았나?"
+}
+
+# clock skew 문서 축 — 값을 말하는 자리는 실측 기준 java·node·dotnet·rust·kotlin의 "30s by
+# default"와 `ruby/README.ko.md`의 설정표 행, `add-a-language-playbook.md`의 "(default 30s)"다.
+# ⚠️ dotnet은 "30s by default, **down from the library's 5 minutes**"라 한 줄에 다른 숫자가
+# 함께 있다 — 검사는 "코드값을 담고 있는가"라 통과한다(다른 숫자의 존재는 금지하지 않는다).
+# ⚠️ **값-서술 신호를 파라미터별로 좁힌다.** JWKS는 "default"·"기본값" 같은 낱말 신호로 충분했지만
+# clock skew는 그 낱말이 값 없는 산문에도 붙는다 — `add-a-language-playbook.md:37`의 "Fix defaults
+# for timeouts, clock skew, and scopes"와 `:82`의 표 행이 실제로 걸려 **오탐 2건**이 났다(권고 5를
+# 기각시킨 것과 같은 부류: 문구가 아니라 문맥이 값-서술 여부를 정한다). 그래서 clock skew는
+# **시간량(`30s`·`30초`)이나 설정표의 순수 숫자 셀**이 있는 줄만 대상으로 삼는다.
+sd_doc_axis "clock skew" 'clock.?skew' "$sd_skew_expect" 6 \
+  '[0-9]+ ?s\b|[0-9]+ ?(초|seconds)|\| *`?[0-9][0-9.]*`? *\|'
+
 sd_hits=0
 for f in $SD_DOCS; do
   # ⚠️ **설정표 행(`^N:|`)을 신호에 반드시 포함할 것.** 이 가드를 만든 바로 그 결함
@@ -115,8 +174,10 @@ for f in $SD_DOCS; do
   _lines="$(grep -inE 'jwks[_ ]?min[_ ]?refetch|RefreshIntervalSeconds' "$ROOT/$f" 2>/dev/null \
     | grep -iE 'default|기본값|minimum interval|throttled|cooldown|^[0-9]+:\|' || true)"
   [ -n "$_lines" ] || continue
-  # 코드값을 담지 않은 줄이 곧 드리프트다(고정문자열 대조 — 값에 `.`이 들어가도 안전하다).
-  _bad="$(printf '%s\n' "$_lines" | grep -v -F "$sd_expect" || true)"
+  # ⚠️ **자릿수 경계로 대조한다**(위 `sd_doc_axis`와 같은 이유). 고정문자열 `grep -F "30"`이면
+  # 문서가 `300s by default`라 해도 "30을 포함한다"는 이유로 통과한다 — clock skew 변이 MS3가
+  # 그 구멍을 실측으로 드러냈고, 이 자리도 같은 구멍이었다.
+  _bad="$(printf '%s\n' "$_lines" | grep -vE "(^|[^0-9])$sd_expect([^0-9]|\$)" || true)"
   assert_eq "" "$_bad" "$f 가 JWKS 최소 재조회 기본값을 코드값($sd_expect)과 다르게 말한다"
   sd_hits=$((sd_hits + $(printf '%s\n' "$_lines" | grep -c . || true)))
 done
@@ -140,9 +201,13 @@ sd_no_literal() { # $1=라벨 $2=파일 $3=파라미터가 등장하는 줄의 �
   _found=1; [ -n "$_l" ] && _found=0
   assert_eq "ok" "$(ok_if "$_found" MISSING)" "[$1] 2차 정의 자리를 찾지 못했다($3) — 표기가 바뀌었나?"
   [ -n "$_l" ] || return 0
-  # 그 줄에 숫자 리터럴이 있으면 2차 정의다(상수를 참조하면 숫자가 없다).
-  case "$_l" in
-    *[0-9]*) assert_eq "" "$_l" "[$1] 2차 정의 자리에 숫자 리터럴이 있다 — config 상수를 참조할 것(정의 자리는 언어당 하나)" ;;
+  # ⚠️ **줄 전체가 아니라 앵커 바로 뒤의 값 자리만 본다.** 처음에는 "줄에 숫자가 있으면 2차 정의"로
+  # 했는데, ruby `JwtValidator`의 같은 줄에 있는 `algorithms: ["RS256"]`의 **256이 걸려 오탐**이 났다.
+  # 값 자리에 숫자가 오면 리터럴, 식별자가 오면 상수 참조다.
+  _rest="${_l#*"$3"}"
+  case "$_rest" in
+    [0-9]* | ' '[0-9]* | '"'[0-9]* )
+      assert_eq "" "$_l" "[$1] 2차 정의 자리에 숫자 리터럴이 있다 — config 상수를 참조할 것(정의 자리는 언어당 하나)" ;;
     *) assert_eq "ok" "ok" ;;
   esac
 }
@@ -151,5 +216,9 @@ sd_no_literal() { # $1=라벨 $2=파일 $3=파라미터가 등장하는 줄의 �
 sd_no_literal go   go/jwt.go                        'opts.minRefetch = '
 sd_no_literal php  php/src/Jwks/JwksStore.php       'private readonly int $minRefetchIntervalSeconds ='
 sd_no_literal ruby ruby/lib/keycloak_sdk/jwks_store.rb 'def initialize(jwks_url:, http:, min_refetch:'
+# clock skew도 ruby에 2차 자리가 있었다 — `JwtValidator`도 public 클래스라 소비자가 직접 생성할 수
+# 있고, 두 자리가 갈리면 그 경로에서만 만료된 토큰이 더 오래 통과한다. 값은 아직 갈리지 않았지만
+# (둘 다 30) JWKS가 10.0/30.0으로 갈린 것과 **똑같은 모양**이라 같은 방식으로 닫았다.
+sd_no_literal ruby-skew ruby/lib/keycloak_sdk/jwt_validator.rb 'algorithms: ["RS256"], clock_skew:'
 
 assert_report

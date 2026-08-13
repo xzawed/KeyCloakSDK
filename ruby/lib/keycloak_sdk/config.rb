@@ -13,13 +13,19 @@ module KeycloakSdk
     # 한글 README도 그 10.0을 그대로 옮겨 적고 있었다(2026-08-12 문서 감사 → 2026-08-13 Task D1).
     DEFAULT_JWKS_MIN_REFETCH = 30.0
 
+    # JWT `exp`/`nbf` 검증의 시계 오차 허용치 기본값(초). 이것도 아홉 언어 공동 불변식이다 —
+    # 한 언어만 커지면 **그 언어에서만 만료된 토큰이 더 오래 통과한다**.
+    # ⚠️ `JwtValidator#initialize`가 같은 값을 두 번째로 적고 있었다(둘 다 30이라 아직 갈리지는
+    # 않았으나 JWKS가 10.0/30.0으로 갈린 것과 똑같은 모양이다). 그 자리는 이제 이 상수를 참조한다.
+    DEFAULT_CLOCK_SKEW = 30
+
     attr_reader :server_url, :realm, :client_id, :client_secret,
                 :scopes, :signature_algorithms, :connect_timeout, :read_timeout, :clock_skew,
                 :jwks_min_refetch, :expected_audience
 
     def initialize(server_url:, realm:, client_id:, client_secret: nil,
                    scopes: ["openid"], signature_algorithms: ["RS256"],
-                   connect_timeout: 10, read_timeout: 10, clock_skew: 30,
+                   connect_timeout: 10, read_timeout: 10, clock_skew: DEFAULT_CLOCK_SKEW,
                    jwks_min_refetch: DEFAULT_JWKS_MIN_REFETCH, expected_audience: nil)
       @server_url = strip_trailing_slashes(normalize_required("server_url", server_url))
       @realm = normalize_required("realm", realm)
