@@ -16,8 +16,8 @@
     <PackageReference Include="Keycloak.AuthServices.Sdk" Version="2.7.0" />
     <!-- AddKeycloak DI extension needs IServiceCollection/AddSingleton (DI.Abstractions), NOT IHttpClientFactory.
          9.0.8 satisfies Keycloak.AuthServices.Sdk 2.7.0's transitive floor (>= 9.0.8); 9.0.x still supports net8.0. -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.18" />
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.301" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.19" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.400" PrivateAssets="All" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Xzawed.Keycloak.Sdk.Tests" />
