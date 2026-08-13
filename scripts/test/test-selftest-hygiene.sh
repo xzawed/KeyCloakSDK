@@ -75,6 +75,32 @@ else
   printf 'FAIL repo-hygiene.yml을 찾지 못함(%s) — harness .test.mjs 배선 검사 불가\n' "$HYGIENE" >&2
 fi
 
+# ---- 규칙 4: 추적되는 모든 *.sh 는 인덱스에 실행비트(100755)가 있어야 한다 ----
+# 2026-08-14: 이 규칙이 CI에만 있고 로컬에는 없어서, 이번 브랜치의 repo-hygiene가 **11번 연속
+# 빨간 채로** 작업이 계속됐다. 로컬 자가테스트는 전건 초록이었다 — `sh <file>` 로 직접 부르면
+# 실행비트가 없어도 돌기 때문이다. 원인은 환경이다: Windows 체크아웃은 파일시스템 실행비트를
+# 갖지 않아 새로 만든 `.sh` 가 `100644` 로 인덱스에 들어간다(이번에 4개가 그랬다).
+# `shell-exec-bits` 는 `main` 룰셋 PRIMARY 의 required 체크 **둘 중 하나**라, 이 상태로는
+# 브랜치가 아예 머지되지 않는다. 규칙 1~3과 같은 부류다 — **파일은 있는데 돌지 않는다.**
+# 고치는 법: `git update-index --chmod=+x <file>`
+NONEXEC="$(cd "$ROOT" && git ls-files -s -- '*.sh' | awk '$1 == "100644" { print $4 }')"
+if [ -z "$NONEXEC" ]; then
+  _A_PASS=$((_A_PASS + 1))
+else
+  for f in $NONEXEC; do
+    _A_FAIL=$((_A_FAIL + 1))
+    printf 'FAIL %s: 인덱스 모드가 100644 — 실행비트 없음(git update-index --chmod=+x)\n' "$f" >&2
+  done
+fi
+# 스윕이 깨져 0개를 훑고 통과하는 공허를 막는다(규칙 3의 빈 목록 검사와 동형).
+SH_ALL="$(cd "$ROOT" && git ls-files -- '*.sh' | wc -l)"
+if [ "$SH_ALL" -gt 0 ]; then
+  _A_PASS=$((_A_PASS + 1))
+else
+  _A_FAIL=$((_A_FAIL + 1))
+  printf 'FAIL 추적되는 *.sh 를 하나도 못 찾음 — 스윕이 깨졌다\n' >&2
+fi
+
 # ---- 대조군: 이 가드가 실제로 잡는가 ----
 # ⚠️ 없으면 "전부 통과"가 검사가 도는 증거인지 grep이 항상 참인지 구분할 수 없다.
 # 임시 파일로 두 위반을 실제로 만들어 규칙이 반응하는지 본다.
