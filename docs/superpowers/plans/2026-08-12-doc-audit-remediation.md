@@ -227,8 +227,43 @@ $ grep -n "pre-1.0" rust/README.md
 
 ## 다른 PC에서 이어받을 때
 
+### 브랜치 상태 (as-of 2026-08-14)
+
+```bash
+git clone https://github.com/xzawed/KeyCloakSDK.git
+cd KeyCloakSDK && git checkout feat/harness-judgment-phase-a
+node scripts/doctor.mjs          # 이 PC에 무엇이 없는지
+```
+
+- **작업 브랜치**: `feat/harness-judgment-phase-a` — `main` 대비 42커밋, `main`은 0커밋 앞섬(리베이스 불필요).
+- **PR**: 열려 있다(아래 「GitHub 정리」 참고). 머지는 사람 승인 게이트다.
+- **CI**: `repo-hygiene` 초록(`76ca5d4`). ⚠️ 그 앞 11개 실행은 **실행비트 때문에 빨갰다** — 커밋 이력에서 빨간 것을 보고 코드 결함으로 오해하지 말 것.
+- **환경변수**: 툴체인 경로는 `KCSDK_TOOLS`·`KCSDK_JDK21`·`KCSDK_PY`로 덮어쓴다([development-setup.md](../../guides/development-setup.md)). 리포에 특정 PC 경로를 못박지 않는다.
+
+### 다음에 할 수 있는 일 (우선순위 순)
+
+1. **Phase B~E** — [하네스 판정·출처 완결 계획](2026-08-12-harness-judgment-and-provenance-completion.md). Phase E는 **사람 게이트**라 에이전트가 못 한다(Go 첫 게시 태그 `go/v0.1.0-rc.1` · `dispatch-release.yml`용 GitHub App 등록).
+2. **「현재 상태」 표 27셀을 `deploy-facts.sh`와 기계 대조로 배선** — 세션마다 자동 로드되는 표인데 무보호다. 같은 가드가 `DEPLOY.md`·`getting-started`·9개 README에는 이미 `df_published_version` 대조를 붙여 두었다. 압축 조사에서 나온 잔여 항목이고, 압축과 무관하게 우선순위가 높다.
+3. **`checkLinks`가 맨상대경로를 못 본다** — 정규식이 선두 `/`·`./`·`../`를 요구해 `CLAUDE.md`의 링크 20개를 **하나도 검사하지 않는다**. 고치면 위 기각 항목 몇 개의 선행조건이 풀린다.
+4. **감사 HIGH 잔여 3건**(아래 「확정됐으나 미수정인 개별 결함」).
+
+
+
 ### 환경 게차 (이번 세션에 실측으로 드러난 것)
 
+- 🔴 **가장 비싼 것 — Windows에서 만든 `.sh`는 인덱스에 실행비트가 없다.** Windows 체크아웃은
+  파일시스템 실행비트를 갖지 않아 새 `.sh`가 `100644`로 커밋된다. `shell-exec-bits`는 `main`
+  룰셋 PRIMARY의 **required 체크 둘 중 하나**라 그 상태로는 브랜치가 머지되지 않는데,
+  **로컬 자가테스트는 전부 초록이다**(`sh <file>`로 직접 부르면 실행비트가 없어도 돌기 때문).
+  이번에 4개가 그렇게 들어가 `repo-hygiene`가 **11번 연속 빨간 채로** 작업이 계속됐다(`76ca5d4`가 해소).
+  새 셸 파일을 만들면 즉시:
+  ```bash
+  git update-index --chmod=+x <file>
+  git ls-files -s -- '*.sh' | awk '$1 == "100644"'   # 빈 출력이어야 한다
+  ```
+  지금은 `test-selftest-hygiene.sh` 규칙 4가 로컬에서도 잡는다.
+- 🔴 **로컬 초록 ≠ CI 초록.** 커밋을 밀었으면 `gh run list --limit 3`을 본다. 이 한 줄을 안 봐서
+  위 사고가 열흘 갔다. 「작업 규율」 8이 정확히 이 부류다.
 - ⚠️ **`harness/install/report/`의 `signals/`·`INSTALL-MATRIX.md`는 git-ignored 로컬 스크래치다.** CI 상태를 여기서 추론하지 말 것 — `gh run list --workflow=harness.yml` / `gh run view <id> --json jobs`로 볼 것. 이 혼동이 이번 세션에 실제로 잘못된 보고를 낳았고 계획서 S-B1에도 남아 있다.
 - ⚠️ **이 PC(Windows)의 `python`은 스텁이다** — `python --version`이 `Python` 한 줄만 출력하고 heredoc 스크립트가 **조용히 무동작**한다. 변이검증 스크립트는 `node`로 쓸 것. 실제로 이 때문에 "가드가 변이를 못 잡는다"는 거짓 측정이 한 번 나왔다(적용 로그 부재로 발견).
 - ⚠️ **셸 가드는 `dash`로 재확인할 것**(CI의 `/bin/sh`). 로컬 `sh`는 bash다.
@@ -243,6 +278,8 @@ $ grep -n "pre-1.0" rust/README.md
 
 ```bash
 git log --oneline -6
+gh run list --limit 3          # ⚠️ 로컬 초록 ≠ CI 초록. 이걸 먼저 본다.
+git ls-files -s -- '*.sh' | awk '$1 == "100644"'   # 빈 출력이어야 한다
 
 # 셸 가드 — 인터프리터는 각 파일의 shebang을 따른다.
 # ⚠️ test-install-verify.sh만 bash다(배열 사용). 나머지는 sh이고 CI의 /bin/sh는 dash이므로
