@@ -361,12 +361,29 @@ node -e "console.log(require('./report/signals/node.install.json'))"   # install
 
 </details>
 
+### ✅ Task B4 — 완료(`efbdac3`)
+
+> `harness/install/lib/verify-lib.sh`로 `validate_pkg_ver`·`ver_for_lang`을 옮기고
+> `scripts/test/test-install-verify.sh`(38 어서션, **bash**)를 붙였다. Docker 불필요.
+> ⚠️ `validate_pkg_ver`가 `exit 2` → **`return 2`**로 바뀌었다(함수 안 exit는 첫 실패 케이스가
+> 테스트 프로세스를 죽인다). 호출부 두 곳이 `|| exit 2`로 같은 동작을 만든다.
+> ⚠️ **bash 전용 예외** — 대상이 bash이고 연관배열을 읽는다. CI 스텝도 `bash`로 돌린다.
+>
+> **변이 3요건**: M1 폴백이 `$PKG_VER`를 읽도록(원래 버그) 1건 · M2 `--version` 우선순위 제거
+> 9건 · M3 형식 검증 무력화 4건 — 전부 잡힘. 복원 38/0.
+> **대조군을 함께 넣었다** — 기본 순서(go 첫 번째)에서는 이 버그가 안 보인다. 그 행이 없으면
+> "원래 순서 무관하게 통과하는 것"과 구분되지 않는다(야간이 초록이었던 이유가 그것이다).
+
+<details><summary>원래 계획 단계</summary>
+
 ### Task B4: `install-verify.sh` 자가테스트
 - [ ] Step 1: 순수 함수를 `harness/install/lib/verify-lib.sh`로 추출(`install-verify.sh`는 소싱만)
 - [ ] Step 2: `scripts/test/test-install-verify.sh` 작성 — 최소 케이스: 순서 의존 버전 누수 회귀(`java kotlin ruby php go` 순에서 go가 `0.1.0`), `--version` 명시 우선, 잘못된 버전 표기 거부
 - [ ] Step 3: 실패 확인 → 추출 → 통과 확인
 - [ ] Step 4: `repo-hygiene.yml`에 배선(`test-selftest-hygiene.sh`가 배선을 강제하므로 누락 시 CI가 잡는다)
 - [ ] Step 5: 커밋
+
+</details>
 
 ---
 
