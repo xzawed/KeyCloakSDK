@@ -1,5 +1,5 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=58764 -->
+<!-- doc-budget: max-bytes=54402 -->
 <!-- ⚠️ **2026-08-07: 52,800 → 58,800. 래칫을 올린 것이고, 그 자체가 리뷰 대상이라는 규칙에 따라
      이유를 여기 적는다.** 「작업 규율」절(약 5 KB)을 추가했다. 그 절이 **반드시 여기 있어야 하는
      이유**: `.claude/rules/*.md`는 경로 스코프 자동로드라 해당 경로를 건드릴 때만 들어온다 —
@@ -12,16 +12,22 @@
 
      승인된 목표는 **34 KB**다(2026-07-23-docs-restructure-design.md §4.1의 상향식 예산 합계.
      같은 문서 §0 요약의 "33 KB"는 구속력 없는 반올림이고, 스펙 자신이 그 불일치를 지적하며
-     판정 기준은 §4.1이라고 못박는다). **실측 바닥은 그보다 높다.** 구성:
-       · 게차 스텁 79건 ≈ 12 KB — 줄일 수 없다. `.claude/rules/<lang>.md`는 경로 스코프
-         자동로드라 컨텍스트 압축 후 재주입되지 않는다. 항상 로드되는 이 파일의 한 줄이
-         "그런 게차가 있다"의 유일한 상주 지점이고, 지우면 게차 자체가 안 보인다(설계 §4.3).
-       · doc-guard 앵커가 걸린 의존성 표 ≈ 11 KB — 지우면 `--min-facts/--min-anchors`가 실패한다.
-         이 저장소에서 유일하게 기계 대조되는 문서 사실이다.
-       · §4 계약 + §4(b) 은닉성 예외 ≈ 4 KB — 2026-07-03 보안감사 산출물이고
+     판정 기준은 §4.1이라고 못박는다). 실측 바닥:
+       · 게차 스텁 ≈ 12 KB — **건수는 바닥이다**(바이트는 아니다). `.claude/rules/<lang>.md`는
+         경로 스코프 자동로드라 컨텍스트 압축 후 재주입되지 않는다. 항상 로드되는 이 파일의
+         한 줄이 "그런 게차가 있다"의 유일한 상주 지점이고, 지우면 게차 자체가 안 보인다(설계 §4.3).
+       · §4 계약 + §4(b) 은닉성 예외 ≈ 5.5 KB — 2026-07-03 보안감사 산출물이고
          `docs/governance/verification-log-python.md`가 "CLAUDE.md §4에 명문화"로 참조한다.
-     34 KB로 가려면 이 중 하나를 버려야 하므로, 목표를 낮추는 대신 **바닥을 인정하고 그 위에서
-     래칫한다.** 줄일 여지는 나머지 ~25 KB 안에 있다.
+       · 「작업 규율」 ≈ 5 KB — 위 첫 주석의 이유로 경로와 무관하게 상주해야 한다.
+     ⚠️ **2026-08-14: 이 주석의 옛 셋째 항목("doc-guard 표 ≈ 11 KB — 줄일 수 없다 / 유일하게
+     기계 대조되는 문서 사실")은 실측으로 반증돼 삭제했다.** (a) `tableAt`(check-docs.mjs:436-453)이
+     읽는 것은 **행의 첫 백틱(좌표)과 마지막 셀(버전)** 뿐이라 "왜 이 선택인가" 열은 파서에
+     도달하지 않았다 — 격리 트리에서 원본 14,293 B와 최소형 2,144 B가 **둘 다** `49 facts /
+     18 anchors`를 내고 버전·핀연산자 변이를 동일하게 잡았다. (b) "유일하게"도 거짓이다
+     (`test-publication-claims.sh:159-161` · `checkCardinality`도 이 파일을 대조한다).
+     그 열 6,043 B를 지우고 상주가 필요한 사실 4건은 게차 스텁으로 옮겼다.
+     ⚠️ 34 KB는 「작업 규율」 절이 **그 예산 이후에 추가**됐으므로 지금 제약 안에서는 도달할 수
+     없다. 바닥을 깎아 34 KB를 맞추지 말 것 — 틀린 쪽은 목표다.
      ⚠️ 한때 이 값이 48500이었는데, 그건 §4/§4(b)를 **실수로 지운 상태**에서 잰 수치였다.
      삭제를 되돌린 뒤의 값이 지금 것이다 — 래칫을 올린 것이 아니라 잘못 잰 바닥을 고친 것이다. -->
 
@@ -65,9 +71,9 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 - **7번째 언어**: Rust 1.88+(edition 2024) · async-only(tokio) · `keycloak` crate 래핑(admin, `reqwest12` feature로 reqwest 0.12 정렬) + `openidconnect` 래핑(auth, 수동 EndpointSet typestate) + `jsonwebtoken` 자체 JWT 검증 (`main` 병합, PR #18)
 - **8번째 언어**: Ruby 3.2+ · sync-only · gem 없이 `faraday`로 Admin REST 직접 래핑(admin) + `rack-oauth2` 래핑(auth, PKCE S256 손수) + `jwt`(ruby-jwt) 자체 JWT 검증 (`feature/ruby-sdk`)
 - **9번째 언어**: Kotlin — 빌드는 KGP 2.4.10이되 **소비자 하한은 2.2+**(`languageVersion`/`apiVersion`=KOTLIN_2_2로 게시 아티팩트 메타데이터를 낮춤, 게차 참고) · JDK 21 · 단일 Gradle 모듈 · coroutines(`suspend`+`runInterruptible(Dispatchers.IO)`) · JVM 자매 Java SDK 라이브러리 스택(`keycloak-admin-client` 26.0.11 + `oauth2-oidc-sdk` 11.38.2) 재사용 래핑 + `nimbus-jose-jwt` 자체 JWT 검증 (`main` 병합, PR #23)
-- **라이선스**: Apache-2.0 · **groupId**: `io.github.xzawed` · Python 배포명: `keycloak-sdk` · npm 배포명: `@xzawed/keycloak-sdk` · Go 모듈: `github.com/xzawed/KeyCloakSDK/go` · NuGet 배포명: `Xzawed.Keycloak.Sdk` · Packagist 배포명: `xzawed/keycloak-sdk` · crates.io 배포명: `keycloak-sdk` · RubyGems 배포명: `keycloak-sdk` · Maven Central 좌표(Kotlin): `io.github.xzawed:keycloak-sdk-kotlin`
+- **라이선스**: Apache-2.0 · **groupId**: `io.github.xzawed` (배포명·레지스트리는 「현재 상태」 표)
 
-**핵심 전략**: 언어마다 가장 좋은 기반을 사용한다 — 공식/성숙 클라이언트가 있으면 감싼다(Java는 `keycloak-admin-client`, Python은 `python-keycloak`, Node는 공식 `@keycloak/keycloak-admin-client` + `openid-client`, Go는 `gocloak` + `x/oauth2`, C#은 `Keycloak.AuthServices.Sdk` + `Duende.IdentityModel`, PHP는 `fschmtt/keycloak-rest-api-client-php` + `league/oauth2-client`, Rust는 `keycloak` crate + `openidconnect`, Ruby는 성숙한 admin gem이 없어 `faraday`로 직접 래핑 + `rack-oauth2`, Kotlin은 JVM 자매 Java SDK의 검증된 스택(`keycloak-admin-client` + `oauth2-oidc-sdk` + `nimbus-jose-jwt`)을 코루틴 관용으로 재래핑) — 그 위에 **일관된 파사드 + 인증 래퍼**를 언어 공통 설계로 얹는다. JWT 검증은 아홉 언어 모두 자체 강화 구현(algorithm pinning·iss 정확일치·aud 포함검사·`exp` 필수·클록 스큐·DoS-안전 JWKS 재조회)이다.
+**핵심 전략**: 언어마다 가장 좋은 기반을 사용한다 — 공식/성숙 클라이언트가 있으면 감싼다(어느 것인지는 위 목록, 핀은 「확정 의존성」). 그 위에 **일관된 파사드 + 인증 래퍼**를 언어 공통 설계로 얹는다. JWT 검증은 아홉 언어 모두 자체 강화 구현(algorithm pinning·iss 정확일치·aud 포함검사·`exp` 필수·클록 스큐·DoS-안전 JWKS 재조회)이다.
 
 ## 현재 상태
 
@@ -77,15 +83,15 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 
 | 언어 | 배포명 | 태그 접두 | 배포 |
 |---|---|---|---|
-| Java | `io.github.xzawed:keycloak-sdk` | `v*` | 게시됨(`0.1.0-RC1` RC) |
-| Python | `keycloak-sdk` | `py-v*` | 게시됨(`0.1.0rc1` RC) |
-| Node | `@xzawed/keycloak-sdk` | `node-v*` | 게시됨(`0.1.0-rc.2` RC) |
-| Go | `github.com/xzawed/KeyCloakSDK/go` | `go/v*` | 미실행 |
-| C#/.NET | `Xzawed.Keycloak.Sdk` | `dotnet-v*` | 게시됨(`0.1.0-rc.1` RC) |
-| PHP | `xzawed/keycloak-sdk` | `php-v*` | 게시됨(`0.1.0-rc.1` RC) |
-| Rust | `keycloak-sdk` | `rust-v*` | 게시됨(`0.1.0-rc.1` RC) |
-| Ruby | `keycloak-sdk` | `ruby-v*` | 게시됨(`0.1.0.rc1` RC) |
-| Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` | `kotlin-v*` | 게시됨(`0.1.0-RC1` RC · 하한 2.2+) |
+| Java | `io.github.xzawed:keycloak-sdk` (Maven Central) | `v*` | 게시됨(`0.1.0-RC1` RC) |
+| Python | `keycloak-sdk` (PyPI) | `py-v*` | 게시됨(`0.1.0rc1` RC) |
+| Node | `@xzawed/keycloak-sdk` (npm) | `node-v*` | 게시됨(`0.1.0-rc.2` RC) |
+| Go | `github.com/xzawed/KeyCloakSDK/go` (proxy.golang.org) | `go/v*` | 미실행 |
+| C#/.NET | `Xzawed.Keycloak.Sdk` (NuGet) | `dotnet-v*` | 게시됨(`0.1.0-rc.1` RC) |
+| PHP | `xzawed/keycloak-sdk` (Packagist) | `php-v*` | 게시됨(`0.1.0-rc.1` RC) |
+| Rust | `keycloak-sdk` (crates.io) | `rust-v*` | 게시됨(`0.1.0-rc.1` RC) |
+| Ruby | `keycloak-sdk` (RubyGems) | `ruby-v*` | 게시됨(`0.1.0.rc1` RC) |
+| Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` (Maven Central) | `kotlin-v*` | 게시됨(`0.1.0-RC1` RC · 하한 2.2+) |
 
 **릴리스-레디니스 감사**(브랜치 `fix/release-readiness-blockers`)로 릴리스 워크플로 불변식(태그↔매니페스트 가드·시크릿 미설정 시 fail-closed·발행 전 E2E 게이트·액션 SHA 핀·`permissions` 최소화)과 패키징 표면(LICENSE·영문 README·레지스트리 메타데이터, Rust 캐럿 전환 + `Cargo.lock` 커밋 + `keycloak::types` 재노출)을 갖췄다. PHP 선행작업(미러·`PHP_SPLIT_TOKEN`·Packagist 등록)도 끝났다.
 
@@ -131,7 +137,7 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(5리소스: users·clients·r
 |---|---|
 | Java | 6개 Maven 모듈로 물리 분리(`keycloak-sdk-{bom,core,auth,admin}` + `keycloak-sdk` + `-examples`, reactor 빌드) |
 | Python | 단일 패키지 `keycloak_sdk`(`src/` 레이아웃) + `aio/` 비동기 미러 추가(`AsyncKeycloakClient` 등, python-keycloak `a_*` 래핑) |
-| Go | 전체가 단일 `package keycloak` — admin을 서브패키지로 두면 `Client.Admin`이 `*AdminClient`를 반환해 import 순환이 생기므로 `admin_*.go`로 같은 패키지 |
+| Go | 전체가 단일 `package keycloak`(사유는 아래 「언어별 결합 규칙」 표) |
 | Ruby | 단일 gem `keycloak-sdk`(모듈 `KeycloakSdk`) — admin 성숙한 gem 부재로 Faraday raw-REST를 직접 구현 |
 | Kotlin | 단일 Gradle 모듈 `keycloak-sdk-kotlin` — 네트워크 메서드 전부 `suspend`, JVM 자매 Java SDK 스택(`keycloak-admin-client`·`oauth2-oidc-sdk`) 재사용 |
 
@@ -151,7 +157,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 | Node | **파사드가 주입한 캐싱 provider를 `registerTokenProvider`로 배선하고 `kc.auth()`는 호출하지 않는다**(PR #63) — admin-client 내장 TokenManager는 만료 시 refresh만 시도해 client_credentials에서 영구 실패한다(Rust `79ecf76`와 동형 결정). |
 
 
-**언어 중립 계약(§4)**: 아홉 언어의 출발점이 다르므로(Java 손수 래핑 · Python `python-keycloak` · Node `openid-client`+admin-client · Go `gocloak`+`x/oauth2` · C# `Keycloak.AuthServices.Sdk`+`Duende.IdentityModel` · PHP `fschmtt`+`league/oauth2-client` · Rust `keycloak` crate+`openidconnect` · Ruby `rack-oauth2`+`faraday` 손수 admin · Kotlin JVM 자매 Java SDK 스택 재사용) **언어 중립 API 계약을 진실 원천으로 두고 각 언어가 구현한다.** 아홉 전부 하위 라이브러리 타입을 **주 소비 경로(파사드) 뒤에 숨긴다** — 개념·계층은 동형이고 표기만 camelCase ↔ snake_case ↔ Go/C# PascalCase로 갈린다(`TokenSet`/`ValidatedToken`/`IntrospectionResult`·오류 계급·`Client.auth/admin`). **예외/오류 계층은 항상 경계에서 SDK 타입으로 변환**되어 `keycloak.exceptions.*`·`jakarta.ws.rs.*`·`NetworkError`·`gocloak.APIError`·`KeycloakHttpClientException`·Guzzle `RequestException`·`keycloak::KeycloakError`·`Faraday::Error`가 공개 API로 새지 않는다. Go/Rust는 예외 대신 **error 값**(Go 센티넬 `errors.Is`/`errors.As`, Rust `thiserror` 기반 `Result<T, KeycloakError>`), Ruby·Kotlin은 예외 기반(Kotlin은 sealed class로 exhaustive `when` 강제).
+**언어 중립 계약(§4)**: 아홉 언어의 출발점이 서로 다르므로(무엇을 감쌌는지는 「프로젝트 개요」 목록) **언어 중립 API 계약을 진실 원천으로 두고 각 언어가 구현한다.** 아홉 전부 하위 라이브러리 타입을 **주 소비 경로(파사드) 뒤에 숨긴다** — 개념·계층은 동형이고 표기만 camelCase ↔ snake_case ↔ Go/C# PascalCase로 갈린다(`TokenSet`/`ValidatedToken`/`IntrospectionResult`·오류 계급·`Client.auth/admin`). **예외/오류 계층은 항상 경계에서 SDK 타입으로 변환**되어 `keycloak.exceptions.*`·`jakarta.ws.rs.*`·`NetworkError`·`gocloak.APIError`·`KeycloakHttpClientException`·Guzzle `RequestException`·`keycloak::KeycloakError`·`Faraday::Error`가 공개 API로 새지 않는다. Go/Rust는 예외 대신 **error 값**(Go 센티넬 `errors.Is`/`errors.As`, Rust `thiserror` 기반 `Result<T, KeycloakError>`), Ruby·Kotlin은 예외 기반(Kotlin은 sealed class로 exhaustive `when` 강제).
 
 **§4(b) 문서화된 은닉성 예외(의도적 — 2026-07-03 보안감사 산출물)**: 완전 은닉이 아니다. 아래 두 자리는 하위 타입을 노출한다 — 재래핑 비용이 과다하거나 보조 표면이기 때문이다. **정상 소비 경로(`Client.auth/admin` · `client.Auth.Validate(...)`)는 이들을 노출하지 않는다.**
 
@@ -191,7 +197,9 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(Node) 타임아웃은 `Configuration.timeout`(초), admin-client는 `ConnectionConfig.timeout`(ms)로 주입.** 상세: `.claude/rules/node.md`
 - ⚠️ **(Node) PKCE `exchangeCode`는 `nonce` 필수 전달.** 상세: `.claude/rules/node.md`
 - ⚠️ **(Node) admin은 만료 시 재인증하려면 SDK provider를 `registerTokenProvider`로 배선한다 — `kc.auth()`는 호출하지 않는다(PR #63).** 상세: `.claude/rules/node.md`
+- ⚠️ **(Node) admin-client 핀이 `~26.7.0`인 것은 이력의 산물이다** — 26.7.0의 `decodeToken(undefined).split()` 크래시 회귀로 `~26.6.4`까지 좁혔다가(PR #62), 위 provider 배선이 그 경로를 근본 차단함을 통합테스트로 실증하고 전진했다(PR #48). 좁히기로 되돌리기 전에 배선을 먼저 볼 것.
 - ⚠️ **(C#) `Keycloak.AuthServices.Sdk` 3.0.0은 net10 전용 → net8.0은 2.7.0 핀.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(C#) `Microsoft.Extensions.DependencyInjection.Abstractions`의 10.x major는 net8 유지 정책으로 보류다(PR #57 close).** 9.0.18은 AuthServices 2.7.0의 하한(9.0.8)을 충족하는 값이며, dependabot이 올리는 10.x는 닫는다.
 - ⚠️ **(C#) `Raw`는 users/groups/realm-read만 커버 — 그 밖은 파사드가 raw Admin REST로 직접 구현한다(한때 3건이 도달 불가능했다).** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(Rust) `search_users`의 `max`에 `Option`을 두지 말 것 — Keycloak은 미전송 시 조용히 100을 적용한다(무제한 아님).** 상세: `.claude/rules/rust.md`
 - ⚠️ **(C#) admin 타입드 커버리지는 users/groups/realm-get뿐.** 상세: `.claude/rules/dotnet.md`
@@ -206,6 +214,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(C#) `AddKeycloak(config)`는 `KeycloakConfig`도 싱글턴 등록.** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(C#) coverlet msbuild 통합은 히트 flush 유실 시 `0%`를 "커버리지 90 미만"으로 둔갑시킨다 — 컬렉터+자체 가드로 전환했다.** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(C#) 브랜치 게이트 실제 여유는 2개다(분모 50, 1개당 2%p) — 백분율로 읽지 말 것.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(PHP) fschmtt는 pre-1.0이라 `0.42.0` 정확 핀이다 — 캐럿으로 넓히지 말 것**(0.x 마이너에 파괴적 변경이 온다). 유일한 성숙 admin 클라이언트라 대안이 없다.
 - ⚠️ **(PHP) fschmtt `Users::create()`는 void 반환.** 상세: `.claude/rules/php.md`
 - ⚠️ **(PHP) league/stevenmaguire의 `pkceMethod` 생성자 옵션은 no-op.** 상세: `.claude/rules/php.md`
 - ⚠️ **(PHP) firebase/php-jwt의 `&$headers` out-파라미터는 성공 디코드 후에만 채워진다.** 상세: `.claude/rules/php.md`
@@ -254,6 +263,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **JWKS 재조회 최소 간격 기본값은 아홉 언어 전부 30초다(2026-07-31 정렬).** 그 전엔 10·30·60초 세 갈래였는데, PR #71이 config화하며 각 언어 하드코딩 값을 둔 **산물**이었다(같은 위조 kid 폭주에 Ruby가 Python보다 IdP를 6배 자주 때렸다). 30초는 Nimbus `DEFAULT_RATE_LIMIT_MIN_INTERVAL`과 같아 외부 근거가 있는 유일 후보다. **`clockSkew`(JWT `exp`/`nbf` 허용 오차)도 같은 불변식이고 역시 30초다**(한 언어만 커지면 거기서만 만료 토큰이 오래 산다). 둘 중 하나를 바꿀 땐 아홉 함께 — `test-security-defaults.sh`가 코드·문서·2차 자리를 본다.
 - ⚠️ **(Java·Kotlin) `resteasyClient(...)` 주입은 admin-client의 `JacksonProvider` 등록을 통째로 우회한다** — `NON_NULL`과 `FAIL_ON_UNKNOWN_PROPERTIES=false`를 함께 잃어 버전 스큐에서 양방향으로 깨진다(26.0.11 `UserRepresentation.verifiableCredentials`에서 실제 발현). `buildTimeoutClient`가 프로바이더를 직접 등록한다. 상세: `.claude/rules/java.md`·`.claude/rules/kotlin.md`
 - ⚠️ **(Python) python-keycloak sync는 `allow_redirects`를 전달하지 않고, admin 세션이 둘(하나는 지연 생성)이라 바깥만 막으면 client_secret이 샌다.** 상세: `.claude/rules/python.md`
+- ⚠️ **(Python) joserfc는 기형 JWKS에서 joserfc 타입도 아닌 stdlib 예외를 던져 §4를 뚫는다** — SDK가 경계에서 변환한다. 상세: `.claude/rules/python.md`
 - ⚠️ **(Node) `tsconfig.json`의 `include: ["src"]`라 테스트 파일은 타입체크 안 됨.** 상세: `.claude/rules/node.md`
 - ⚠️ **(Node) JWKS rate-limit 회귀는 대조군 없이는 안 잡힌다.** 상세: `.claude/rules/node.md`
 - ⚠️ **(CI) `main`은 룰셋 `PRIMARY`가 지킨다 — required 체크에 언어 CI를 넣으면 저장소가 잠긴다**(`paths:` 필터는 체크를 *생성조차* 안 해 Pending 영구 차단, `bypass_actors: []`라 소유자도 못 푼다 — 잡 레벨 `if:` skip과 정반대다). 상세: `.claude/rules/ci.md` · [CONTRIBUTING.md §4](CONTRIBUTING.md)
@@ -267,46 +277,46 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 ## 확정 의존성 (BOM으로 고정)
 
 <!-- doc-guard: kind=dep source=java/pom.xml min=5 -->
-| 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
-|---|---|---|---|
-| Keycloak admin-client | `org.keycloak:keycloak-admin-client` | 서버(26.6.4)와 독립 버전 트랙 — "26.6.x admin-client"는 존재하지 않는다 | 26.0.11 |
-| OAuth2/OIDC SDK | `com.nimbusds:oauth2-oidc-sdk` | 표준 OAuth2/OIDC 흐름의 성숙한 레퍼런스 구현(단, 그 자체가 "certified"는 아님 — 완성 제품 인증은 OIDF에 별도로) | 11.38.2 |
-| JOSE/JWT | `com.nimbusds:nimbus-jose-jwt` | `JWKSourceBuilder`가 DoS-safe JWKS 재조회 제공 — 안전한 기본값은 SDK가 얹는다 | 10.9.1 |
-| 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 실제 Keycloak 26.6 컨테이너로 통합검증(단위 모킹만으론 admin-client 버전 스큐를 못 잡음) | 4.3.1 |
-| Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0 모듈명 변경 반영 — JUnit5 확장은 `-junit-jupiter`(구 `junit-jupiter` 아님) | 2.0.5 |
-| 단위 테스트 | JUnit 6.1.2 · Mockito 5.23.0 | 표준 JVM 단위테스트 스택 | — |
+| 의존성 | 좌표 | 버전 |
+|---|---|---|
+| Keycloak admin-client | `org.keycloak:keycloak-admin-client` | 26.0.11 |
+| OAuth2/OIDC SDK | `com.nimbusds:oauth2-oidc-sdk` | 11.38.2 |
+| JOSE/JWT | `com.nimbusds:nimbus-jose-jwt` | 10.9.1 |
+| 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 4.3.1 |
+| Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0.5 |
+| 단위 테스트 | JUnit 6.1.2 · Mockito 5.23.0 | — |
 
 **Python 확정 의존성(pyproject.toml, major 상한 고정)**:
 
 <!-- doc-guard: kind=dep source=python/pyproject.toml min=2 -->
-| 의존성 | 배포명 | 왜 이 선택인가 | 버전 |
-|---|---|---|---|
-| Admin + 인증 | `python-keycloak` | 성숙한 Keycloak 클라이언트. ⚠️ admin 세션이 **둘**이라 SSRF·정리 양쪽에서 함정 — rules | `>=7.1,<8` |
-| JWT(강화 검증) | `joserfc` | 보안 핵심이라 major 상한 고정. ⚠️ 기형 JWKS에서 stdlib 예외가 새는 경계 문제는 rules | `>=1.7,<2` |
+| 의존성 | 배포명 | 버전 |
+|---|---|---|
+| Admin + 인증 | `python-keycloak` | `>=7.1,<8` |
+| JWT(강화 검증) | `joserfc` | `>=1.7,<2` |
 
 dev(비앵커): `pytest`·`pytest-asyncio`·`pytest-cov`·`mypy`(strict)·`ruff`(보안 S/bandit 포함)·`testcontainers[keycloak]`. ⚠️ 버전 상수를 매니페스트와 중복하지 말 것 — `__version__`은 `importlib.metadata` 파생이다(경위: `.claude/rules/python.md`).
 
 **Node 확정 의존성(package.json으로 고정)**:
 
 <!-- doc-guard: kind=dep source=node/package.json min=3 -->
-| 의존성 | 패키지 | 왜 이 선택인가 | 버전 |
-|---|---|---|---|
-| Admin | `@keycloak/keycloak-admin-client` | 공식 클라이언트. 원래 `^26`이었는데 26.7.0의 `decodeToken(undefined).split()` 크래시 회귀로 `~26.6.4`까지 좁혔다가(PR #62), PR #63의 provider 배선(`kc.auth()` 미호출)이 그 크래시 경로를 **근본 차단**함이 통합테스트로 실증되어 dependabot PR #48로 전진 | `~26.7.0` |
-| 인증(OIDC/OAuth2) | `openid-client` | v6 함수형 API. 선언은 범위이고 해석값은 lockfile이 정한다 | `^6` |
-| JWT(강화 검증) | `jose` | 5.10.0에서 전진 — `openid-client`가 이미 `jose ^6.2.2`를 요구하고 있어 이 bump는 트리를 **dedupe**한다. SDK가 쓰는 7개 API/옵션이 v6에서 이름·의미 모두 동일함을 published `.d.ts`로 확인했고, `cooldownDuration` rate-limit이 실제로 살아있음을 히트 수로 실측했다(해석값은 lockfile 참조) | `^6` |
+| 의존성 | 패키지 | 버전 |
+|---|---|---|
+| Admin | `@keycloak/keycloak-admin-client` | `~26.7.0` |
+| 인증(OIDC/OAuth2) | `openid-client` | `^6` |
+| JWT(강화 검증) | `jose` | `^6` |
 
 dev(비앵커 — 버전이 셀 안 산문이라 기계 대조 밖): `typescript` 6 · `vitest`/`@vitest/coverage-v8` 3(v4는 `vi.mock` 시맨틱 변경으로 보류) · `testcontainers` 12 · `eslint` 10 + `typescript-eslint` 8 · `prettier` 3 · `@types/node` `^22`(engines 하한과 일치 — dependabot.yml에 메이저 ignore). 런타임 deps는 audit clean, devDeps 일부 moderate(`files:["dist"]`라 소비자 미배포).
 
 **Go 확정 의존성(go.mod, major 핀)**:
 
 <!-- doc-guard: kind=dep source=go/go.mod min=5 -->
-| 의존성 | 모듈 | 왜 이 선택인가 | 버전 |
-|---|---|---|---|
-| Admin | `github.com/Nerzal/gocloak/v13` | Go에서 가장 성숙한 Keycloak admin 클라이언트. ⚠️ 네트워크 실패까지 `*APIError{Code:0}`로 감싸므로 경계에서 `Code==0`↔`>0`으로 나눠야 한다 | `v13.9.0` |
-| 인증(OAuth2 흐름) | `golang.org/x/oauth2` | 표준 OAuth2 흐름 — **최소 Go 1.25를 요구하는 쪽이 이것이다**(`go.mod`를 낮춰도 `go mod tidy`가 재상향) | `v0.36.0` |
-| JWT(강화 검증) | `github.com/go-jose/go-jose/v4` | ⚠️ `exp` 부재 시 만료검사를 조용히 건너뛰므로 SDK가 `claims.Expiry == nil` 명시 거부를 얹는다 | `v4.1.4` |
-| single-flight | `golang.org/x/sync` | `singleflight`로 JWKS 동시 미스를 한 번의 조회로 수렴(`client.go`·`jwt.go`·`tokenprovider.go`) | `v0.22.0` |
-| 통합 테스트 | `github.com/testcontainers/testcontainers-go` | base `GenericContainer`로 직접 조립 — 언어별 편의 모듈 `modules/keycloak`는 독립 태그 부재로 미사용 | `v0.43.0` |
+| 의존성 | 모듈 | 버전 |
+|---|---|---|
+| Admin | `github.com/Nerzal/gocloak/v13` | `v13.9.0` |
+| 인증(OAuth2 흐름) | `golang.org/x/oauth2` | `v0.36.0` |
+| JWT(강화 검증) | `github.com/go-jose/go-jose/v4` | `v4.1.4` |
+| single-flight | `golang.org/x/sync` | `v0.22.0` |
+| 통합 테스트 | `github.com/testcontainers/testcontainers-go` | `v0.43.0` |
 
 전부 Apache-2.0/BSD-3/MIT(호환).
 
@@ -314,90 +324,88 @@ dev(비앵커 — 버전이 셀 안 산문이라 기계 대조 밖): `typescript
 
 **C#/.NET 확정 의존성(csproj, major 핀)**:
 
-<!-- doc-guard: kind=dep source=dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj min=2 -->
-| 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
-|---|---|---|---|
-| 인증(OIDC/OAuth2) | `Duende.IdentityModel` | 확장 메서드가 예외를 던지지 않아(`resp.IsError` 검사) 결정적 파사드에 맞음 — PKCE 헬퍼는 없어 SDK가 손수 생성 | 8.1.0 |
-| JWT(강화 검증) | `Microsoft.IdentityModel.JsonWebTokens` + `.Protocols.OpenIdConnect` | 기본값이 안전하지 않아 전부 명시 강화. 실패해도 안 던지는 API — rules | 8.22.0 |
+<!-- doc-guard: kind=dep source=dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj min=5 -->
+| 의존성 | 좌표 | 버전 |
+|---|---|---|
+| 인증(OIDC/OAuth2) | `Duende.IdentityModel` | 8.1.0 |
+| JWT(강화 검증) | `Microsoft.IdentityModel.JsonWebTokens` | 8.22.0 |
+| JWT(JWKS/디스커버리) | `Microsoft.IdentityModel.Protocols.OpenIdConnect` | 8.22.0 |
+| Admin | `Keycloak.AuthServices.Sdk` | 2.7.0 |
+| DI 추상화 | `Microsoft.Extensions.DependencyInjection.Abstractions` | 9.0.18 |
 
-| 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
-|---|---|---|---|
-| Admin | `Keycloak.AuthServices.Sdk` | net8 최종 버전 — 3.0.0은 net10 전용이라 사용 불가 | **2.7.0** |
-| DI 추상화 | `Microsoft.Extensions.DependencyInjection.Abstractions` | AuthServices 2.7.0의 하한(9.0.8) 충족 + net8 유지 정책으로 10.x major는 보류(PR #57 close) | 9.0.18 |
-| 단위 테스트 | `xUnit` 2.9.3 · `WireMock.Net` 2.14.0 · `coverlet.collector` 10.0.1 | 표준 .NET 단위테스트+모킹+커버리지 스택(컬렉터만 — msbuild 통합은 히트 flush 유실로 제거, 게차 참고) | — |
-| 통합 테스트 | `Testcontainers.Keycloak` | 실제 Keycloak 26.6 컨테이너로 E2E 검증 | 4.13.0 |
+dev(비앵커): `xUnit` 2.9.3 · `WireMock.Net` 2.14.0 · `coverlet.collector` 10.0.1 · `Testcontainers.Keycloak` 4.13.0(테스트 csproj).
 
 전부 Apache-2.0/MIT(호환).
 
 **PHP 확정 의존성(composer.json, 정확 핀/범위 지정)**:
 
 <!-- doc-guard: kind=dep source=php/composer.json min=6 -->
-| 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
-|---|---|---|---|
-| Admin | `fschmtt/keycloak-rest-api-client-php` | 유일한 성숙 admin 클라이언트 — pre-1.0 계열이라 정확 핀(파괴적 변경 가능) | **0.42.0** |
-| 인증(OAuth2) | `league/oauth2-client` | 성숙한 OAuth2 클라이언트(대안 `jumbojett/openid-connect-php`는 세션 슈퍼글로벌 결합으로 기각) | `^2.8` |
-| 인증(OAuth2, Keycloak 프로바이더) | `stevenmaguire/oauth2-keycloak` | `league/oauth2-client`용 Keycloak 프로바이더 확장 | `^6.1` |
-| JWT(강화 검증) | `firebase/php-jwt` | 표준 JWT 라이브러리 — 내장 `CachedKeySet`은 rate-limit 버그(#543)가 있어 자체 `JwksStore`로 대체 | `^7.1` |
-| HTTP(PSR-18) | `guzzlehttp/guzzle` | fschmtt·league 양쪽이 공통으로 요구하는 PSR-18 전송 계층 | `^7.9` |
-| HTTP(PSR-17) | `guzzlehttp/psr7` | PSR-17 메시지 팩토리(guzzle과 짝) | `^2.7` |
+| 의존성 | 좌표 | 버전 |
+|---|---|---|
+| Admin | `fschmtt/keycloak-rest-api-client-php` | **0.42.0** |
+| 인증(OAuth2) | `league/oauth2-client` | `^2.8` |
+| 인증(OAuth2, Keycloak 프로바이더) | `stevenmaguire/oauth2-keycloak` | `^6.1` |
+| JWT(강화 검증) | `firebase/php-jwt` | `^7.1` |
+| HTTP(PSR-18) | `guzzlehttp/guzzle` | `^7.9` |
+| HTTP(PSR-17) | `guzzlehttp/psr7` | `^2.7` |
 
-| 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
-|---|---|---|---|
-| 단위 테스트 | `phpunit/phpunit` 12 · `phpstan/phpstan` 2.2(+ strict-rules·phpunit 확장) · `friendsofphp/php-cs-fixer` 3.95 | 표준 PHP 정적분석(level max)+테스트+스타일 스택 | — |
-| 통합 테스트 | (docker CLI 셸아웃 — `testcontainers/testcontainers` ^1.0은 dev 의존이나 Windows native PHP 미지원으로 실사용 안 함) | Windows native PHP가 `unix://` 스트림 트랜스포트 미지원(Docker Desktop npipe도 불가) | — |
+| 의존성 | 좌표 | 버전 |
+|---|---|---|
+| 단위 테스트 | `phpunit/phpunit` 12 · `phpstan/phpstan` 2.2(+ strict-rules·phpunit 확장) · `friendsofphp/php-cs-fixer` 3.95 | — |
+| 통합 테스트 | (docker CLI 셸아웃 — `testcontainers/testcontainers` ^1.0은 dev 의존이나 Windows native PHP 미지원으로 실사용 안 함) | — |
 
 전부 MIT/BSD-3(Apache-2.0 호환).
 
 **Rust 확정 의존성(Cargo.toml, 정확 핀 없음 — 크레이트별로 캐럿/틸드 + 커밋된 `Cargo.lock`)**:
 
 <!-- doc-guard: kind=dep source=rust/Cargo.toml min=5 -->
-| 의존성 | 크레이트 | 왜 이 선택인가 | 버전 |
-|---|---|---|---|
-| Admin | `keycloak`(`default-features = false`, features: `tags-all`·`resource-builder`·`reqwest12`) | `reqwest12` feature로 reqwest 0.12 정렬 필수. 틸드 요구인 이유는 rules | `~26.6.2` |
-| 인증(OIDC/OAuth2) | `openidconnect`(`default-features = false`, feature: `reqwest`) | `CoreClient`가 6개 엔드포인트 typestate 제네릭 — auth/introspection/token만 `EndpointSet`으로 명시해 무오류 호출 가능 | `4.0.1` |
-| JWT(강화 검증) | `jsonwebtoken`(`default-features = false`, features: `rust_crypto`·`use_pem`) | `Validation` 기본값이 안전하지 않아 `validate_nbf`/`leeway`/`required_spec_claims` 전부 재정의 필요 | `11.0.0` |
-| HTTP | `reqwest`(`default-features = false`, features: `json`·`rustls-tls`) | `keycloak` crate·`openidconnect`가 공유하는 단일 HTTP 클라이언트(SSRF 하드닝을 위해 `redirect::Policy::none()` 적용) | `0.12` |
-| 비동기 런타임 | `tokio`(features: `rt-multi-thread`·`macros`·`time`·`sync`) | `openidconnect`·`keycloak` crate 양쪽이 요구하는 비동기 런타임 | `1.52` |
+| 의존성 | 크레이트 | 버전 |
+|---|---|---|
+| Admin | `keycloak`(`default-features = false`, features: `tags-all`·`resource-builder`·`reqwest12`) | `~26.6.2` |
+| 인증(OIDC/OAuth2) | `openidconnect`(`default-features = false`, feature: `reqwest`) | `4.0.1` |
+| JWT(강화 검증) | `jsonwebtoken`(`default-features = false`, features: `rust_crypto`·`use_pem`) | `11.0.0` |
+| HTTP | `reqwest`(`default-features = false`, features: `json`·`rustls-tls`) | `0.12` |
+| 비동기 런타임 | `tokio`(features: `rt-multi-thread`·`macros`·`time`·`sync`) | `1.52` |
 
-| 의존성 | 크레이트 | 왜 이 선택인가 | 버전 |
-|---|---|---|---|
-| 오류/직렬화 | thiserror 2.0 · async-trait 0.1 · serde+serde_json 1 · url 2 | 표준 에러 계급·직렬화·URL 유틸 | — |
-| 단위 테스트 | wiremock 0.6(HTTP 목) · rsa 0.9+rand 0.8+base64 0.23(JWKS 공격 프로브 픽스처 생성) | HTTP 목 + 공격 프로브용 테스트 키 생성(RUSTSEC-2023-0071은 서명검증 전용인 런타임에 무영향) | — |
-| 통합 테스트 | testcontainers 0.27.3(pre-1.0, base `GenericImage` — 언어별 편의 모듈 없음) | pre-1.0이라 Keycloak 전용 편의 모듈이 없어 `GenericImage`로 직접 조립 | — |
+| 의존성 | 크레이트 | 버전 |
+|---|---|---|
+| 오류/직렬화 | thiserror 2.0 · async-trait 0.1 · serde+serde_json 1 · url 2 | — |
+| 단위 테스트 | wiremock 0.6(HTTP 목) · rsa 0.9+rand 0.8+base64 0.23(JWKS 공격 프로브 픽스처 생성) | — |
+| 통합 테스트 | testcontainers 0.27.3(pre-1.0, base `GenericImage` — 언어별 편의 모듈 없음) | — |
 
 전부 Apache-2.0/MIT(호환). ⚠️ **셋 다 정확 핀(`=`)이 아니다** — `openidconnect`/`jsonwebtoken`은 캐럿, `keycloak`은 틸드 `~26.6.2`(버전이 semver가 아니라 Keycloak 서버 라인을 추종). 라이브러리에서 정확 핀이 왜 소비자 빌드를 하드 실패시키는지, 커밋된 `Cargo.lock`이 소비자에게 왜 닿지 않는지는 `.claude/rules/rust.md`.
 
 **Ruby 확정 의존성(gemspec, 범위 지정)**:
 
 <!-- doc-guard: kind=dep source=ruby/keycloak-sdk.gemspec min=3 -->
-| 의존성 | gem | 왜 이 선택인가 | 버전 |
-|---|---|---|---|
-| 인증(OAuth2/OIDC) | `rack-oauth2`(nov) | OIDF 인증 RP 저자(nov)의 유지 gem — PKCE는 passthrough라 S256을 SDK가 손수 생성 | `~> 2.3` |
-| Admin | (성숙한 gem 부재 — faraday로 Admin REST 직접 래핑) | looorent/keycloak-admin 등은 전부 공유 TokenProvider 주입 미지원(§4 캐싱 불변식 위반)으로 기각 | — |
-| HTTP | `faraday` | 직접 구현하는 admin REST + rack-oauth2 전역 타임아웃 설정의 공통 기반 | `~> 2.0` |
-| JWT(강화 검증) | `jwt`(ruby-jwt) | 기본값이 안전하지 않아 `algorithms`/`verify_iss`/`verify_aud`/`leeway` 전부 재정의 필요 | `~> 3.2` |
-| 단위 테스트 | rspec 3 · webmock · simplecov · rubocop(+ rubocop-rspec) | 표준 RSpec+HTTP목+커버리지+린트 스택 | — |
-| 통합 테스트 | (docker CLI 셸아웃 — Windows native Ruby가 testcontainers-ruby 소켓 트랜스포트 미지원, PHP와 동일 패턴) | Windows native Ruby가 testcontainers-ruby 소켓 트랜스포트 미지원 | — |
-| 의존성 감사 | bundler-audit | gem 취약점 감사 | — |
+| 의존성 | gem | 버전 |
+|---|---|---|
+| 인증(OAuth2/OIDC) | `rack-oauth2`(nov) | `~> 2.3` |
+| Admin | (성숙한 gem 부재 — faraday로 Admin REST 직접 래핑) | — |
+| HTTP | `faraday` | `~> 2.0` |
+| JWT(강화 검증) | `jwt`(ruby-jwt) | `~> 3.2` |
+| 단위 테스트 | rspec 3 · webmock · simplecov · rubocop(+ rubocop-rspec) | — |
+| 통합 테스트 | (docker CLI 셸아웃 — Windows native Ruby가 testcontainers-ruby 소켓 트랜스포트 미지원, PHP와 동일 패턴) | — |
+| 의존성 감사 | bundler-audit | — |
 
 전부 MIT(Apache-2.0 호환). ⚠️ admin gem 후보 3종(`looorent/keycloak-admin` 등)은 **공유 `TokenProvider` 주입 미지원**(§4 캐시 불변식 위반)으로 기각했다 — 그래서 `faraday` 직접 래핑이다(상세: `.claude/rules/ruby.md`).
 
 **Kotlin 확정 의존성(build.gradle.kts, JVM 자매 Java SDK 스택 재사용 + 코루틴 경계 신규)**:
 
 <!-- doc-guard: kind=dep source=kotlin/build.gradle.kts min=6 -->
-| 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
-|---|---|---|---|
-| Admin(재사용, api) | `org.keycloak:keycloak-admin-client` | JVM 자매 Java SDK가 실 Keycloak으로 이미 필드 검증 — 신규 라이브러리 리스크 0 | 26.0.11 |
-| 인증(재사용) | `com.nimbusds:oauth2-oidc-sdk` | 위와 동일 이유(Java SDK 검증 스택 재사용) | 11.38.2 |
-| JWT(재사용, 강화 검증) | `com.nimbusds:nimbus-jose-jwt` | 위와 동일 이유 + Java의 `JWKSourceBuilder` 캐시+RateLimited DoS-safe JWKS를 그대로 상속 | 10.9.1 |
-| 코루틴(신규, 공개 suspend 노출 → api) | `org.jetbrains.kotlinx:kotlinx-coroutines-core` | 유일한 신규 경계 — `suspend`+`runInterruptible(Dispatchers.IO)`로 블로킹 JVM 라이브러리 호출을 코루틴 관용으로 감쌈 | 1.11.0 |
-| 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 실제 Keycloak 26.6 컨테이너로 통합검증(Java와 동일 모듈) | 4.3.1 |
-| Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0 모듈명 변경 반영(Java와 동형) | 2.0.5 |
+| 의존성 | 좌표 | 버전 |
+|---|---|---|
+| Admin(재사용, api) | `org.keycloak:keycloak-admin-client` | 26.0.11 |
+| 인증(재사용) | `com.nimbusds:oauth2-oidc-sdk` | 11.38.2 |
+| JWT(재사용, 강화 검증) | `com.nimbusds:nimbus-jose-jwt` | 10.9.1 |
+| 코루틴(신규, 공개 suspend 노출 → api) | `org.jetbrains.kotlinx:kotlinx-coroutines-core` | 1.11.0 |
+| 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 4.3.1 |
+| Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0.5 |
 
-| 의존성 | 좌표 | 왜 이 선택인가 | 버전 |
-|---|---|---|---|
-| 단위 테스트 | JUnit 6.1.2 · MockK 1.14.11 · WireMock 3.13.2 · `kotlinx-coroutines-test` 1.11.0 · `kotlin-test-junit5` 2.4.10 | JVM 표준 테스트+모킹+HTTP목+코루틴테스트 스택(MockK는 JAX-RS 추상클래스엔 미사용 — 게차 참고) | — |
-| 빌드/배포 플러그인 | Kotlin 2.4.10 · vanniktech `maven.publish` 0.37.0(Central Portal) · Kover 0.9.9 · ktlint gradle 14.2.0 · Dokka 2.2.0 | Central Portal 배포(구 OSSRH 종료)+커버리지 게이트+린트+API 문서 생성 | — |
+| 의존성 | 좌표 | 버전 |
+|---|---|---|
+| 단위 테스트 | JUnit 6.1.2 · MockK 1.14.11 · WireMock 3.13.2 · `kotlinx-coroutines-test` 1.11.0 · `kotlin-test-junit5` 2.4.10 | — |
+| 빌드/배포 플러그인 | Kotlin 2.4.10 · vanniktech `maven.publish` 0.37.0(Central Portal) · Kover 0.9.9 · ktlint gradle 14.2.0 · Dokka 2.2.0 | — |
 
 전부 Apache-2.0/EPL-2.0(호환). Admin·인증·JWT 3좌표는 Java SDK가 실 Keycloak으로 이미 검증한 것과 동일해 **신규 라이브러리 리스크 0** — 차이는 코루틴 래핑뿐이다.
 
@@ -407,7 +415,7 @@ dev(비앵커 — 버전이 셀 안 산문이라 기계 대조 밖): `typescript
 
 작업 완료(머지/main 반영) 후 프로젝트 전체 문서(`CLAUDE.md`, `docs/`, `README.md`)를 최신화·최적화하고 커밋한다. 언어별 빌드/테스트 명령(단일 테스트 실행 포함)을 툴체인 섹션에 유지한다(Java·Python·Node·Go·C#·PHP·Rust·Ruby·Kotlin).
 
-**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 앵커 스코프는 9개 언어 전부다** — `<!-- doc-guard: ... -->` 앵커가 의존성 표 9종(pom.xml/**pyproject.toml**/package.json/**go.mod**/csproj/composer.json/Cargo.toml/gemspec/build.gradle.kts)과 [docs/guides/getting-started.md](docs/guides/getting-started.md)의 언어별 "Required runtime" 문장(`kind=runtime`)을 합쳐 **46 facts / 18 anchors**를 기계 검증한다.
+**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 앵커 스코프는 9개 언어 전부다** — `<!-- doc-guard: ... -->` 앵커가 의존성 표 9종(pom.xml/**pyproject.toml**/package.json/**go.mod**/csproj/composer.json/Cargo.toml/gemspec/build.gradle.kts)과 [docs/guides/getting-started.md](docs/guides/getting-started.md)의 언어별 "Required runtime" 문장(`kind=runtime`)을 합쳐 **49 facts / 18 anchors**를 기계 검증한다.
 
 ⚠️ **런타임 앵커는 "앵커 뒤 3줄 안의 *첫* 백틱 스팬 중 숫자를 포함한 것"을 문서의 주장으로 읽는다** — 그래서 버전보다 먼저 오는 백틱 토큰에 숫자가 있으면 그걸 주장으로 오인한다. 실제로 걸렸던 둘: Java의 `` `--release 21` ``과 Go의 `` `golang.org/x/oauth2` ``(둘 다 숫자를 품는다). 두 절은 버전을 문장 앞으로 옮겨 해결했다. ⚠️ **Kotlin 앵커는 `jvmToolchain(21)`, 즉 JDK 툴체인을 검증한다 — Kotlin 언어 버전(2.2)이 아니다.** 그래서 그 절은 JDK 절을 먼저 두고 그 사실을 본문에 명시했다. 이걸 모르고 "Kotlin 버전을 가리키도록 고치면" 앵커가 21 vs 2.2로 깨진다.
 
