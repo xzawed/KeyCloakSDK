@@ -60,12 +60,12 @@ dependencies {
     // ⚠️ 이 버전은 위 KOTLIN_2_2와 함께 움직여야 한다 — 하나만 올리면 소비자 하한이 조용히 갈라진다.
     api("org.jetbrains.kotlin:kotlin-stdlib:2.2.21")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0") // 공개 suspend → api
-    api("org.keycloak:keycloak-admin-client:26.0.11") // representation 노출 → api
+    api("org.keycloak:keycloak-admin-client:26.0.12") // representation 노출 → api
     implementation("com.nimbusds:oauth2-oidc-sdk:11.38.2")
     implementation("com.nimbusds:nimbus-jose-jwt:10.9.1")
 
     testImplementation(kotlin("test"))
-    testImplementation(platform("org.junit:junit-bom:6.1.2"))
+    testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")

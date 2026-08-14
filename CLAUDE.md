@@ -70,7 +70,7 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 - **6번째 언어**: PHP 8.3+ · `final readonly class` 값타입 · `fschmtt/keycloak-rest-api-client-php` 래핑(admin) + `league/oauth2-client`+`stevenmaguire/oauth2-keycloak` 래핑(auth, PKCE S256 오버라이드) + `firebase/php-jwt` 자체 JWT 검증 (`feature/php-sdk`)
 - **7번째 언어**: Rust 1.88+(edition 2024) · async-only(tokio) · `keycloak` crate 래핑(admin, `reqwest12` feature로 reqwest 0.12 정렬) + `openidconnect` 래핑(auth, 수동 EndpointSet typestate) + `jsonwebtoken` 자체 JWT 검증 (`main` 병합, PR #18)
 - **8번째 언어**: Ruby 3.2+ · sync-only · gem 없이 `faraday`로 Admin REST 직접 래핑(admin) + `rack-oauth2` 래핑(auth, PKCE S256 손수) + `jwt`(ruby-jwt) 자체 JWT 검증 (`feature/ruby-sdk`)
-- **9번째 언어**: Kotlin — 빌드는 KGP 2.4.10이되 **소비자 하한은 2.2+**(`languageVersion`/`apiVersion`=KOTLIN_2_2로 게시 아티팩트 메타데이터를 낮춤, 게차 참고) · JDK 21 · 단일 Gradle 모듈 · coroutines(`suspend`+`runInterruptible(Dispatchers.IO)`) · JVM 자매 Java SDK 라이브러리 스택(`keycloak-admin-client` 26.0.11 + `oauth2-oidc-sdk` 11.38.2) 재사용 래핑 + `nimbus-jose-jwt` 자체 JWT 검증 (`main` 병합, PR #23)
+- **9번째 언어**: Kotlin — 빌드는 KGP 2.4.10이되 **소비자 하한은 2.2+**(`languageVersion`/`apiVersion`=KOTLIN_2_2로 게시 아티팩트 메타데이터를 낮춤, 게차 참고) · JDK 21 · 단일 Gradle 모듈 · coroutines(`suspend`+`runInterruptible(Dispatchers.IO)`) · JVM 자매 Java SDK 라이브러리 스택(`keycloak-admin-client` + `oauth2-oidc-sdk`) 재사용 래핑 + `nimbus-jose-jwt` 자체 JWT 검증 (`main` 병합, PR #23)
 - **라이선스**: Apache-2.0 · **groupId**: `io.github.xzawed` (배포명·레지스트리는 「현재 상태」 표)
 
 **핵심 전략**: 언어마다 가장 좋은 기반을 사용한다 — 공식/성숙 클라이언트가 있으면 감싼다(어느 것인지는 위 목록, 핀은 「확정 의존성」). 그 위에 **일관된 파사드 + 인증 래퍼**를 언어 공통 설계로 얹는다. JWT 검증은 아홉 언어 모두 자체 강화 구현(algorithm pinning·iss 정확일치·aud 포함검사·`exp` 필수·클록 스큐·DoS-안전 JWKS 재조회)이다.
@@ -177,7 +177,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 
 ## 핵심 게차 (Gotchas) — 2026-07-02 검증
 
-- ⚠️ **admin-client(26.0.11) ≠ 서버(26.6.4) — 독립 버전 트랙.** `representation` 필드가 서버와 불일치할 수 있어 의존 필드는 실서버로 검증.
+- ⚠️ **admin-client와 Keycloak 서버는 독립 버전 트랙이다 — 서버 라인과 같은 번호의 admin-client는 존재하지 않는다**(핀은 「확정 의존성」). `representation` 필드가 서버와 불일치할 수 있어 의존 필드는 실서버로 검증.
 - ⚠️ **Maven Central은 Central Portal 경로만(구 OSSRH 2025-06-30 종료).** `central-publishing-maven-plugin:0.11.0` 사용 — 0.9.0 예제는 낡음.
 - ⚠️ **Testcontainers 2.0은 모듈명이 바뀌었다.** JUnit5 확장은 `testcontainers-junit-jupiter`(구 `junit-jupiter` 아님). `testcontainers-keycloak:4.3.1`이 KC 26.6 기본.
 - ⚠️ **JWT 검증 강화 필수(CVE-2026-11800).** 알고리즘 핀닝(`none` 거부)·iss/aud 검증·클록스큐 제한 — Nimbus는 building block만 제공, 안전한 기본값 없음.
@@ -279,12 +279,12 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 <!-- doc-guard: kind=dep source=java/pom.xml min=5 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
-| Keycloak admin-client | `org.keycloak:keycloak-admin-client` | 26.0.11 |
+| Keycloak admin-client | `org.keycloak:keycloak-admin-client` | 26.0.12 |
 | OAuth2/OIDC SDK | `com.nimbusds:oauth2-oidc-sdk` | 11.38.2 |
 | JOSE/JWT | `com.nimbusds:nimbus-jose-jwt` | 10.9.1 |
 | 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 4.3.1 |
 | Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0.5 |
-| 단위 테스트 | JUnit 6.1.2 · Mockito 5.23.0 | — |
+| 단위 테스트 | JUnit 6.1.3 · Mockito 5.23.0 | — |
 
 **Python 확정 의존성(pyproject.toml, major 상한 고정)**:
 
@@ -396,7 +396,7 @@ dev(비앵커): `xUnit` 2.9.3 · `WireMock.Net` 2.14.0 · `coverlet.collector` 1
 <!-- doc-guard: kind=dep source=kotlin/build.gradle.kts min=6 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
-| Admin(재사용, api) | `org.keycloak:keycloak-admin-client` | 26.0.11 |
+| Admin(재사용, api) | `org.keycloak:keycloak-admin-client` | 26.0.12 |
 | 인증(재사용) | `com.nimbusds:oauth2-oidc-sdk` | 11.38.2 |
 | JWT(재사용, 강화 검증) | `com.nimbusds:nimbus-jose-jwt` | 10.9.1 |
 | 코루틴(신규, 공개 suspend 노출 → api) | `org.jetbrains.kotlinx:kotlinx-coroutines-core` | 1.11.0 |
@@ -405,7 +405,7 @@ dev(비앵커): `xUnit` 2.9.3 · `WireMock.Net` 2.14.0 · `coverlet.collector` 1
 
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
-| 단위 테스트 | JUnit 6.1.2 · MockK 1.14.11 · WireMock 3.13.2 · `kotlinx-coroutines-test` 1.11.0 · `kotlin-test-junit5` 2.4.10 | — |
+| 단위 테스트 | JUnit 6.1.3 · MockK 1.14.11 · WireMock 3.13.2 · `kotlinx-coroutines-test` 1.11.0 · `kotlin-test-junit5` 2.4.10 | — |
 | 빌드/배포 플러그인 | Kotlin 2.4.10 · vanniktech `maven.publish` 0.37.0(Central Portal) · Kover 0.9.9 · ktlint gradle 14.2.0 · Dokka 2.2.0 | — |
 
 전부 Apache-2.0/EPL-2.0(호환). Admin·인증·JWT 3좌표는 Java SDK가 실 Keycloak으로 이미 검증한 것과 동일해 **신규 라이브러리 리스크 0** — 차이는 코루틴 래핑뿐이다.
