@@ -199,7 +199,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(Node) admin은 만료 시 재인증하려면 SDK provider를 `registerTokenProvider`로 배선한다 — `kc.auth()`는 호출하지 않는다(PR #63).** 상세: `.claude/rules/node.md`
 - ⚠️ **(Node) admin-client 핀이 `~26.7.0`인 것은 이력의 산물이다** — 26.7.0의 `decodeToken(undefined).split()` 크래시 회귀로 `~26.6.4`까지 좁혔다가(PR #62), 위 provider 배선이 그 경로를 근본 차단함을 통합테스트로 실증하고 전진했다(PR #48). 좁히기로 되돌리기 전에 배선을 먼저 볼 것.
 - ⚠️ **(C#) `Keycloak.AuthServices.Sdk` 3.0.0은 net10 전용 → net8.0은 2.7.0 핀.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) `Microsoft.Extensions.DependencyInjection.Abstractions`의 10.x major는 net8 유지 정책으로 보류다(PR #57 close).** 9.0.18은 AuthServices 2.7.0의 하한(9.0.8)을 충족하는 값이며, dependabot이 올리는 10.x는 닫는다.
+- ⚠️ **(C#) `Microsoft.Extensions.DependencyInjection.Abstractions`의 10.x major는 net8 유지 정책으로 보류다(PR #57 close).** 9.x 안에 머무르되 AuthServices 2.7.0의 하한(9.0.8) 이상이어야 한다 — dependabot의 9.x 패치는 받고 10.x는 닫는다. 현재 핀은 아래 의존성 표에만 적는다(2차 정의 자리를 만들지 않는다).
 - ⚠️ **(C#) `Raw`는 users/groups/realm-read만 커버 — 그 밖은 파사드가 raw Admin REST로 직접 구현한다(한때 3건이 도달 불가능했다).** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(Rust) `search_users`의 `max`에 `Option`을 두지 말 것 — Keycloak은 미전송 시 조용히 100을 적용한다(무제한 아님).** 상세: `.claude/rules/rust.md`
 - ⚠️ **(C#) admin 타입드 커버리지는 users/groups/realm-get뿐.** 상세: `.claude/rules/dotnet.md`
@@ -331,7 +331,7 @@ dev(비앵커 — 버전이 셀 안 산문이라 기계 대조 밖): `typescript
 | JWT(강화 검증) | `Microsoft.IdentityModel.JsonWebTokens` | 8.22.0 |
 | JWT(JWKS/디스커버리) | `Microsoft.IdentityModel.Protocols.OpenIdConnect` | 8.22.0 |
 | Admin | `Keycloak.AuthServices.Sdk` | 2.7.0 |
-| DI 추상화 | `Microsoft.Extensions.DependencyInjection.Abstractions` | 9.0.18 |
+| DI 추상화 | `Microsoft.Extensions.DependencyInjection.Abstractions` | 9.0.19 |
 
 dev(비앵커): `xUnit` 2.9.3 · `WireMock.Net` 2.14.0 · `coverlet.collector` 10.0.1 · `Testcontainers.Keycloak` 4.13.0(테스트 csproj).
 
