@@ -66,7 +66,7 @@
 - **G2**: ✅ 단위 **64** GREEN(242 assertions) + 통합 **3**(`FullFlowIT`: `testFullFlow`·`testAdminClientCrud`·`testRawEscapeHatch`, 실제 Keycloak 26.6, docker CLI 셸아웃) = **총 67**.
 - **G3**: ✅ 집계 로직 라인 커버리지 **100.00%**(게이트 ≥90%, `phpunit.xml` source exclude로 `AuthClient`/`Admin/**`/`KeycloakClient` 네트워크 경계 omit). 최종리뷰 폴리시(커밋 `367f98b`)에서 값타입 3개(`TokenSet`·`OidcEndpoints`·`IntrospectionResult` — 종전 각 86.67%/85.71%/90%)의 커버리지 갭을 메우는 테스트 7건을 추가해 단위 57→64(224→242 assertions), 집계 라인 96.94%→100.00%로 상향.
 - **통합**: ✅ Testcontainers 대체 경로(docker CLI 셸아웃, `KeycloakContainerTrait`) E2E **3** GREEN(client-credentials→validate[실 JWKS·RS256 강화검증]→introspect→user CRUD→delete→`KeycloakNotFoundError` + client CRUD[import, UUID id] + `raw()` 탈출구). **SDK 버그 0건**(6번째 언어 — 선행 5개 언어의 강화 설계·게차 학습이 선반영됨).
-- **G4**: ✅ 설계 스펙 §4 언어중립 계약과 동형(계층: config→auth/jwt→admin→client, `admin`이 `auth`를 직접 모름·`TokenProvider`만 접착제, 예외 계급, 값타입 필드명 camelCase). PHP 관용 편차(예외 기반·`readonly class`·완전 은닉 admin representation 재노출은 문서화된 예외로 허용)는 §4 허용.
+- **G4**: ✅ 설계 스펙 §4 언어중립 계약과 동형(계층: config→auth/jwt→admin→client, `admin`이 `auth`를 직접 모름 — ⚠️ **2026-08-13 정정: PHP에서 그 독립의 기전은 `TokenProvider` 접착이 아니라 admin의 토큰 자체 소유다**(`php/src/Admin`에 `TokenProvider` 참조 0건, fschmtt가 자체 client-credentials로 인증). 아래 원문의 "`TokenProvider`만 접착"은 그 시점의 오독이고 이력이라 지우지 않는다 — Task D4)·`TokenProvider`만 접착제, 예외 계급, 값타입 필드명 camelCase). PHP 관용 편차(예외 기반·`readonly class`·완전 은닉 admin representation 재노출은 문서화된 예외로 허용)는 §4 허용.
 - **G5**: ✅ 태스크별 소규모 리뷰 루프(위 Loops, Task 1/3/4/5/7/8/9/10/11) + Task 7 OPUS 어드버서리얼 보안리뷰(20+ 공격 프로브, Critical 1건 확정 수정).
 - **G6**: ✅ 위 "G6 — 보안 불변식" 절 참조.
 - **배포**: 🔒 Packagist(`xzawed/keycloak-sdk`, GitHub 웹훅 자동감지 — 저장 시크릿 없음), `php-v*` 태그 push 대기(human-gated, 미실행). Packagist 저장소 등록(1회 수동 선행)도 미실행.

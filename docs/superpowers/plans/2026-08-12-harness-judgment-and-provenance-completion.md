@@ -1,0 +1,584 @@
+# 하네스 판정 계층·출처 완결과 잔여 결함 정리 Implementation Plan
+
+> <!-- doc-status: active -->
+> **진행 중 — Phase A는 커밋됐고 Phase B~E는 시작 전이다.** `feat/harness-judgment-phase-a` 브랜치가
+> Phase A(판정 층·관측 층 공백)를 구현했다: A1 `7340402` · A2 `5fe1c9c` · A3 `d275579` ·
+> A4 `ca00b46`+`b9b3ce1` · A5 `a776213`+`2e58c44`+`bd12adb`. 최종 리뷰가 낸 I1은 `5a3a431`,
+> I2는 `bd12adb`, I4(kotlin이 java의 결함을 반복)는 `a96232c`가 닫았다.
+> ⚠️ **I4를 고치며 §6대로 부류를 재스캔하니 결함이 한 곳이 아니라 일곱 곳이었다**(`a96232c`) —
+> 출처 게이트가 근거를 정규식에 날것으로 보간했고(kotlin·java·ruby), 접두 비교에 origin 경계가
+> 없었으며(kotlin·ruby), 8개 게이트 중 kotlin만 빈 근거를 막고 있었다. 상세·실측은 그 커밋 메시지.
+> **Phase B~E는 아래 체크박스 그대로 남아 있다** — 특히 Task B0(런타임 행동 테스트)는 `a96232c`가
+> 임시로 쓴 "게이트 블록을 sed로 추출해 dash로 실행" 방식을 저장소 테스트로 승격하는 일이다.
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 설치 하네스가 "무엇을 재지 않았는지"를 스스로 알게 만들고(판정 공허성 제거), 아홉 언어 전부에 대해 "방금 만든 산출물을 검증했다"를 기계로 보증한 뒤, 교차검증에서 확정된 잔여 결함을 닫는다.
+
+**Architecture:** 세 층을 순서대로 고친다 — (1) **판정 층**(`install-matrix.mjs`)이 기대 언어 집합을 요구하게 하고, (2) **관측 층**(`consume/*-run.sh`)의 빈 칸(node·rust·dotnet)을 채우고 java 단언을 id가 아닌 URL로 옮기고, (3) **가드 층**(`scripts/test/*`)이 그 둘을 우회 불가능하게 만든다. 각 단계는 실패하는 테스트 → 최소 구현 → 실측 순으로만 진행한다(TDD). 각 Phase는 독립 PR로 머지 가능하다.
+
+**Tech Stack:** Node 22(ESM, `node:test` 없이 자체 assert 관용), POSIX sh(dash 호환), Docker(하네스 실행), 기존 자가테스트 틀 `scripts/test/assert.sh`.
+
+## Global Constraints
+
+> ℹ️ 아래는 **이 계획의 구속 제약**이다. 같은 제약의 일반형 — 어떤 순서로 밟고 어디서 기각으로
+> 나가는가 — 은 [작업 루프](../../governance/working-loop.md)에 있다. 다음 계획서는 여기서
+> 재유도하지 말고 그 문서를 가리킬 것.
+
+- 자가테스트는 **dash**로 통과해야 한다(CI의 `/bin/sh`). 로컬 `sh`는 bash이므로 `dash scripts/test/<t>.sh`로 재확인한다.
+- 새 가드는 반드시 3요건을 함께 보고한다: (a) 변이 시 실패 (b) 복원 시 통과 (c) **가드 비활성화 시 N건 실패**(N>0, 비공허성).
+- 파괴적 명령(변이검증 포함) 전에 커밋한다. 복원은 역연산으로 하고 `git diff`가 빈 출력임을 확인한다.
+  ⚠️ **따라서 각 Task의 단계 순서는 "구현 → 통과 확인 → **커밋** → 변이·비공허성 측정 → (필요시 측정 결과를 커밋 메시지에 반영해 amend)"이다.** 아래 Task 본문이 커밋을 마지막 Step에 두었더라도 이 제약이 우선한다 — Task A1 리뷰에서 실제로 이 충돌이 드러났다(커밋 없는 상태에서 변이해 `git diff` 빈 출력 확인이 불가능했다).
+- 외부 도구·레지스트리 동작을 서술할 때는 그 문장을 검증하는 명령의 **실측 출력**을 함께 남긴다.
+- 하네스 변경은 PR CI가 돌리지 않는다(`install-all`·`score-all`은 야간·수동 전용) — 각 Task는 해당 언어 레그를 **로컬에서 실제로 돌려** 통과를 확인해야 완료다.
+- 버전·좌표 문자열은 새로 하드코딩하지 않는다. SSOT는 `scripts/lib/deploy-facts.sh`와 각 언어 매니페스트이며, 가드는 거기서 파생한다.
+
+---
+
+## File Structure
+
+| 파일 | 책임 | Phase |
+|---|---|---|
+| `harness/install/report/install-matrix.mjs` | 기대 언어 집합 대비 **부재**를 실패로 판정 | A |
+| `harness/install/report/install-matrix.test.mjs` | 위 판정의 회귀 고정 | A |
+| `harness/install/consume/node-run.sh` | npm 설치 출처 기록·단언 | A |
+| `harness/install/consume/rust-run.sh` | cargo 설치 출처 기록·단언 | A |
+| `harness/install/consume/java-run.sh` | 저장소 **URL** 기준 단언으로 교정 | A |
+| `scripts/test/test-harness-registries.sh` | 우회 경로(else 분기·후행 마커·공백 패턴) 차단 | A |
+| `harness/install/lib/verify-lib.sh` (신규) | `install-verify.sh`에서 순수 함수 추출(테스트 가능화) | B |
+| `scripts/test/test-install-verify.sh` (신규) | 위 순수 함수의 자가테스트 + CI 배선 | B |
+| `harness/install/consume/dotnet-*.{sh,Dockerfile}`·`registries/` | bagetter 레그 복구 + 출처 단언 | B |
+| `harness/install/consume/kotlin-app/build.gradle.kts` | `exclusiveContent`로 구조적 격리 전환 | B |
+| `harness/apps/kotlin/Dockerfile` | 핀을 SSOT에서 파생(드리프트 표현 불가능화) | B |
+| `scripts/test/test-publication-claims.sh` | 게시버전 문자열 가드를 12개 문서로 확장 | C |
+| `scripts/check-versions.mjs` | 하네스 앱의 **제3자 좌표** 발산 검사(rust `keycloak`) | C |
+| (Phase D는 검증 결과 확정 후 확정) | Go JWKS 기본값 정합 · PHP §4 문서 정합 | D |
+
+---
+
+## Phase A — 판정 층과 관측 층의 공백 (독립 PR 1)
+
+### 사양 (SDD)
+
+> **S-A1**: `install-matrix.mjs --strict`는 **기대 언어 집합**을 인자로 받고, 신호가 없는 언어를 `✗ (미측정)`으로 표에 적고 실패로 판정한다. 기대 집합은 오케스트레이터가 실제로 실행한 언어 목록이며 하드코딩하지 않는다.
+> **근거(실측)**: 현재 `failedLangs([])` → `[]`, `failedLangs([go만])` → `[]`. 즉 아홉 중 여덟이 아예 실행되지 않아도 `--strict`가 exit 0이다.
+
+> **S-A2**: 아홉 언어 **전부**의 consume 레그는 SDK 자기 좌표의 실제 다운로드 출처를 `$STATUS/provenance.txt`에 기록하고, 로컬 레지스트리가 아니면 `installed.ok`를 쓰지 않는다. 현재 node·rust·dotnet은 기록도 단언도 없다(`grep -c provenance` → 0/0/0).
+
+> **S-A3**: java 단언은 저장소 **id**가 아니라 그 id의 `<url>`을 근거로 한다. 현재는 id 이름만 보므로 `<mirror><id>central-mirror</id><url>…apache.org…</url>`처럼 **다른 이름으로 Central을 가리키는** 항목이 통과한다.
+
+> **S-A4**: 메타 가드는 (a) `else` 분기의 `PROVENANCE_OK=1` (b) 판정 뒤의 무조건 `installed.ok` 쓰기 (c) 아무것이나 매치하는 빈 패턴 grep 을 전부 거부한다. 현재 셋 다 통과한다(외부 검토 실측).
+
+### Task A1: `--strict`가 부재를 실패로 본다
+
+**Files:**
+- Modify: `harness/install/report/install-matrix.mjs`
+- Modify: `harness/install/report/install-matrix.test.mjs`
+- Modify: `harness/install/install-verify.sh` (실행한 언어 목록을 매트릭스에 전달)
+
+**Interfaces:**
+- Produces: `failedLangs(signals, expectedLangs)` — `expectedLangs`가 주어지면 신호가 없는 언어를 실패 목록에 포함한다. 미지정 시 기존 동작(하위호환).
+
+- [ ] **Step 1: 실패하는 테스트를 쓴다**
+
+```js
+// harness/install/report/install-matrix.test.mjs 에 추가
+test("기대 언어에 신호가 없으면 실패로 잡는다(부재 = 미측정)", () => {
+  const ok = (lang) => ({
+    lang, artifactBuilt: true, published: true, installed: true,
+    quickstartOk: true, appBoot: true,
+    conformance: { passed: 26, failed: 0 }, security: { defended: 9, total: 9 },
+  });
+  // 아홉을 기대했는데 go 하나만 왔다 → 나머지 여덟이 실패여야 한다
+  const failed = failedLangs([ok("go")], ["go", "dotnet", "node", "python", "java", "php", "rust", "ruby", "kotlin"]);
+  assert.deepEqual(failed, ["dotnet", "node", "python", "java", "php", "rust", "ruby", "kotlin"]);
+  // 대조군: 기대 집합을 주지 않으면 예전 동작 그대로(하위호환)
+  assert.deepEqual(failedLangs([ok("go")]), []);
+  // 대조군: 전부 왔으면 빈 배열
+  const all = ["go", "dotnet"].map(ok);
+  assert.deepEqual(failedLangs(all, ["go", "dotnet"]), []);
+});
+```
+
+- [ ] **Step 2: 실패를 확인한다**
+
+Run: `node --test harness/install/report/install-matrix.test.mjs`
+Expected: FAIL — 현재 `failedLangs`는 인자를 하나만 받아 `["dotnet", …]` 대신 `[]`를 낸다.
+
+- [ ] **Step 3: 최소 구현**
+
+```js
+export function failedLangs(signals, expectedLangs) {
+  const failed = signals.filter((s) => { /* 기존 본문 그대로 */ }).map((s) => s.lang);
+  if (!expectedLangs) return failed;                       // 하위호환: 기대 집합 미지정
+  const seen = new Set(signals.map((s) => s.lang));
+  // ⚠️ 부재는 "통과"가 아니라 "재지 않았다"이다 — 판정이 그것을 구분하지 못하면
+  // 레지스트리가 안 떠서 여덟 언어가 통째로 빠진 실행도 초록이 된다(실측: failedLangs([]) === []).
+  const missing = expectedLangs.filter((l) => !seen.has(l));
+  return [...failed, ...missing];
+}
+```
+
+- [ ] **Step 4: 통과를 확인한다**
+
+Run: `node --test harness/install/report/install-matrix.test.mjs`
+Expected: PASS (기존 테스트 포함 전부)
+
+- [ ] **Step 5: 오케스트레이터가 기대 집합을 넘긴다**
+
+`install-verify.sh`의 매트릭스 호출에 실행 언어를 넘긴다:
+```sh
+node report/install-matrix.mjs --strict --expect "$(printf '%s ' "${LANGS[@]}")"
+```
+`install-matrix.mjs`는 `--expect`를 공백 분리로 파싱해 `failedLangs(signals, expected)`에 넘기고, 표에는 부재 언어를 `✗ 미측정` 행으로 그린다.
+
+- [ ] **Step 6: 실측 — 부재를 만들어 본다**
+
+```bash
+cd harness/install && mv report/signals/go.install.json /tmp/ \
+  && node report/install-matrix.mjs --strict --expect "go python"; echo "exit=$?"   # 1 이어야 한다
+mv /tmp/go.install.json report/signals/ && git diff --stat   # 빈 출력
+```
+
+- [ ] **Step 7: 비공허성 — 새 코드를 지우면 몇 건이 실패하는가**
+
+`failedLangs`의 `missing` 병합을 지운 뒤 `node --test …` 실패 건수를 기록한다(0이면 이 테스트는 아무것도 지키지 않는다).
+
+- [ ] **Step 8: 커밋**
+
+```bash
+git add harness/install/report/install-matrix.mjs harness/install/report/install-matrix.test.mjs harness/install/install-verify.sh
+git commit -m "fix(harness): 부재를 통과로 읽던 판정 — 기대 언어 집합을 요구한다"
+```
+
+### Task A2: node 레그의 출처 기록·단언
+
+**Files:**
+- Modify: `harness/install/consume/node-run.sh`
+- Modify: `scripts/test/test-harness-registries.sh` (대상 언어 목록 6 → 8)
+
+**Interfaces:**
+- Consumes: A1의 판정(변경 없음)
+- Produces: `node-run.sh`가 `$STATUS/provenance.txt`에 tarball URL을 남기고 `PROVENANCE_OK` 게이트를 통과할 때만 `installed.ok`를 쓴다.
+
+- [ ] **Step 1: 관측 지점을 실측으로 정한다(추측 금지)**
+
+```bash
+docker run --rm node:22-alpine sh -c \
+  'npm install --registry https://registry.npmjs.org --json --dry-run @xzawed/keycloak-sdk@0.1.0-rc.2 2>/dev/null | head -40'
+```
+`npm install --json`의 `added[].resolved`(또는 `npm ls --json`의 `resolved`)가 실제 tarball URL을 담는지 확인하고, **출력을 그대로** 커밋 메시지에 남긴다.
+
+- [ ] **Step 2: 가드에 node를 추가해 실패를 확인한다**
+
+`scripts/test/test-harness-registries.sh`의 `for L in python java kotlin ruby php go` → `… node rust`로 넓히고 `assert_eq "6" "$prov_langs"` → `"8"`로 바꾼다.
+Run: `sh scripts/test/test-harness-registries.sh`
+Expected: FAIL — node·rust에 `provenance.txt`/`PROVENANCE_OK`가 없다(언어당 2건씩 4건).
+
+- [ ] **Step 3: node-run.sh 구현**
+
+`npm install` 뒤 `npm ls --json @xzawed/keycloak-sdk`(또는 Step 1이 확정한 지점)에서 `resolved`를 뽑아 `$STATUS/provenance.txt`에 쓰고, `$REG` 접두 전부일치 + tarball 양성조건으로 게이트한다(python-run.sh와 동형).
+
+- [ ] **Step 4: 가드 통과 확인**
+
+Run: `sh scripts/test/test-harness-registries.sh` → 통과(단, rust는 Task A3에서 채우므로 이 시점엔 rust 2건이 남는다 — A2·A3는 같은 PR에서 연속 수행한다)
+
+- [ ] **Step 5: 레그 실측**
+
+```bash
+cd harness/install && ./install-verify.sh node
+cat report/status/node/provenance.txt          # verdaccio 호스트여야 한다
+node -e "console.log(require('./report/signals/node.install.json'))"   # installed·appBoot·26/26·9/9
+```
+
+- [ ] **Step 6: 커밋** — `git commit -m "test(harness): node 레그가 SDK를 어디서 받았는지 기록·단언한다 (#167)"`
+
+### Task A3: rust 레그의 출처 기록·단언
+
+**Files:** Modify `harness/install/consume/rust-run.sh`
+
+- [ ] **Step 1: 관측 지점 실측** — `cargo build --offline` 트리에서 `cargo metadata --format-version 1`의 `packages[] | select(.name=="keycloak-sdk") | .source`가 로컬 레지스트리를 가리키는지 확인하고 출력을 남긴다. (`registries/rust-cargo-config.toml`의 `replace-with = "local"`이 이미 구조적 격리이므로 이 단계는 **그 격리가 실제로 발동했는지**를 증거로 남기는 일이다.)
+- [ ] **Step 2:** 가드가 rust 2건으로 실패하는 것을 확인(A2 Step 2에서 이미 확장됨)
+- [ ] **Step 3:** `rust-run.sh`에 기록·게이트 추가(다른 언어와 동형)
+- [ ] **Step 4:** `sh scripts/test/test-harness-registries.sh` 통과(8개 언어)
+- [ ] **Step 5:** `./install-verify.sh rust` 실측 — provenance가 `local` 소스, 신호 26/26·9/9
+- [ ] **Step 6:** 커밋
+
+### Task A4: java 단언을 저장소 URL 기준으로
+
+**Files:** Modify `harness/install/consume/java-run.sh`
+
+- [ ] **Step 1: 재현** — `java-settings.xml` 사본에 `<mirror><id>central-mirror</id><url>https://repo.maven.apache.org/maven2</url><mirrorOf>central</mirrorOf></mirror>`를 넣고, 현재 로직이 `_repo_ids`에 그 id를 포함시켜 `>central-mirror=` 기록을 통과시키는지 확인한다(거짓 통과 재현).
+- [ ] **Step 2: 구현** — id마다 같은 블록의 `<url>`을 함께 뽑아, **로컬 레지스트리 호스트**(오케스트레이터가 주입하는 `REGISTRY_URL`의 호스트)와 일치하는 id만 후보로 삼는다.
+- [ ] **Step 3: 대조군** — 원래 settings.xml에서 `mvn-repo`가 계속 뽑히는지, 위조 mirror가 거부되는지 둘 다 확인
+- [ ] **Step 4:** `./install-verify.sh java` 실측 통과
+- [ ] **Step 5:** 커밋
+
+### Task A5: 메타 가드의 남은 우회 세 경로 차단
+
+**Files:** Modify `scripts/test/test-harness-registries.sh`
+
+- [ ] **Step 1: 세 변이를 재현한다**(각각 사본 트리에서, 현재 가드가 통과함을 먼저 보인다)
+  1. `else` 분기에서 `PROVENANCE_OK=0` → `=1`
+  2. 판정 블록 뒤에 무조건 `: > "$STATUS/installed.ok"` 한 줄 추가
+  3. 근거 grep을 `grep -q '' "$STATUS/provenance.txt"`(아무것이나 매치)로 교체
+- [ ] **Step 2: 구현** — (1) `PROVENANCE_OK=1`이 `else`와 같은 블록에 오면 거부 (2) `installed.ok` 쓰기는 **마지막 것**까지 게이트 뒤여야 한다(`tail -1`) (3) 근거 grep의 패턴이 비어 있으면 거부
+- [ ] **Step 3:** 세 변이가 각각 1건 이상 실패하는지 확인하고 건수를 기록
+- [ ] **Step 4:** 정상 트리에서 전건 통과 + `dash`로 재확인
+- [ ] **Step 5:** 커밋
+
+#### A5 실측 기록 — M-A·M-B 변이 3요건 (2026-08-12)
+
+`bd12adb`의 커밋 메시지가 "(M-A/M-B 변이 3요건 측정은 후속 커밋 메시지에 기록)"으로 미룬 측정이다.
+리포를 건드리지 않기 위해 **사본 트리**에서 쟀다(가드가 `ROOT="$DIR/../.."`로 자기 위치에서
+루트를 파생하므로 사본이 성립한다). 변이 대상은 `node-run.sh`의 게이트 조건 한 줄이다.
+
+| 조합 | 결과 | 잡았나 |
+|---|---|---|
+| 기준선(검사 ON, 무변이) | `59 passed, 0 failed` | — |
+| 검사 ON + M-A(극성 반전: `! grep -v -F …` → `grep -q -F …`) | `58 passed, 1 failed` | **예** |
+| 검사 ON + M-B(빈검사 삭제: `[ -s "$STATUS/provenance.txt" ] &&` 제거) | `58 passed, 1 failed` | **예** |
+| 검사 OFF + 무변이 | `59 passed, 0 failed` | — |
+| 검사 OFF + M-A | `59 passed, 0 failed` | **아니오** |
+| 검사 OFF + M-B | `59 passed, 0 failed` | **아니오** |
+
+- (a) **변이 시 실패**: M-A·M-B 각각 1건(`GATED` 어서션이 `no(total=1 good=0)`).
+- (b) **복원 시 통과**: 최종 복원 후 `59 passed, 0 failed`, 사본의 `node-run.sh`가 원본과 `diff` 동일.
+- (c) **비공허성**: `analyze()`의 두 줄(`index(blob, PROV_STAT)`·`index(blob, "grep -v")`)을 주석
+  처리하면 두 변이 **모두** 통과한다 — 즉 그 두 줄이 실제로 일을 하고 있고, 나머지 어서션 중
+  어느 것도 이 변이를 대신 잡아 주지 않는다.
+
+⚠️ **이 측정은 정적 가드가 *자기가 겨눈 두 변이*를 잡는다는 것만 말한다.** 같은 라운드의 적대적
+재리뷰가 정적으로는 못 잡는 우회 4종을 이미 찾았고(S-B0), `a96232c`가 다시 3종(정규식 보간·origin
+경계·빈 근거)을 실행 판정으로만 잡았다. **정적 가드의 통과는 게이트가 옳다는 뜻이 아니다** — Task B0.
+
+⚠️ 측정 도구 함정: 이 PC의 `python`은 `--version`에도 `Python` 한 줄만 내는 스텁이라 heredoc
+스크립트가 **조용히 무동작**한다(변이가 안 걸린 채 "가드가 안 잡는다"는 거짓 결론이 나왔다가,
+"적용됨" 로그가 없다는 것으로 발견했다). 이 리포의 변이 스크립트는 `node`로 쓸 것.
+
+---
+
+## Phase B — 하네스 복구·단순화 (독립 PR 2)
+
+### 사양 (SDD)
+
+> **S-B1**: dotnet install 레그가 초록으로 복귀한다. 현재 `signals/dotnet.install.json` = `{"installed":false,"error":"registry: bagetter 기동(docker compose up) 실패"}`이며 **2026-08-03부터 그 상태**다. 복구 후에는 다른 여덟과 같은 출처 단언을 갖는다.
+> **S-B2**: kotlin 레그는 `--info` 로그 스크래핑 대신 Gradle `exclusiveContent`로 SDK 좌표를 로컬 저장소에만 묶는다(구조적 격리). 스크래핑 코드와 `--info` 플래그(로그 194배)를 제거한다.
+> **S-B3**: `harness/apps/kotlin`의 SDK 핀은 빌드 시 SSOT에서 파생되어 **드리프트가 표현 불가능**해진다.
+> **S-B4**: `install-verify.sh`의 순수 로직(`ver_for_lang`·기대 언어 집합·상태 초기화)은 Docker 없이 실행 가능한 자가테스트를 갖는다.
+
+### ✅ Task B1 — **재검토 후 재정의하고 완료**(2026-08-13)
+
+> **S-B1의 전제가 틀렸다.** "dotnet 레그가 2026-08-03부터 실패 중"의 근거였던
+> `signals/dotnet.install.json`은 **git-ignored 로컬 스크래치**다(`.gitignore:1:signals/`). CI는
+> 초록이었고(`gh run view 31561083854` → install-all=success, 9언어 전부 실행), 로컬 bagetter도
+> 지금은 정상 기동한다(실측: `Up 13 seconds (healthy)`). **복구 작업은 존재하지 않았다.**
+>
+> **그러나 진짜 결함이 그 자리에 있었다** — dotnet은 아홉 중 **유일하게 `PROVENANCE_OK` 게이트가
+> 없어** `dotnet add package`가 exit 0이면 어디서 받았든 `installed.ok`를 썼다(S-A2 위반).
+> `packageSourceMapping`이 구조적 격리이긴 하나, node·rust도 구조 격리를 갖고서 게이트를 함께
+> 둔다(`5fe1c9c`·`d275579`) — 이 리포의 결정은 **격리는 단언을 대체하지 않는다**이다.
+>
+> **관측 지점(실측으로 확정)**: NuGet 글로벌 패키지 폴더의 `.nupkg.metadata`가 패키지별 해석 피드를
+> 남긴다 — `{"version":2,"contentHash":"…","source":"https://api.nuget.org/v3/index.json"}`.
+> 다른 후보는 전부 출처를 안 남긴다: `dotnet list package --format json`은 id/버전만,
+> `project.assets.json`의 `project.restore.sources`는 **설정된 피드 목록**이지 해석 결과가 아니며
+> (rust가 `cargo metadata.source`를 기각한 것과 같은 함정), `.nuget.g.props`는 캐시 폴더뿐이다.
+>
+> **레그 실측으로 확정**: provenance `http://bagetter:8080/v3/index.json`(= `$REG` 정확일치),
+> installed·quickstart·appBoot 전부 true, conformance 26/26, security 9/9,
+> `== 완료 — report/INSTALL-MATRIX.md (exit=0) ==`. 두 가드의 언어 수도 8 → **9**로 올렸다.
+
+<details><summary>원래 계획 단계(전제가 틀려 수행하지 않음)</summary>
+
+### Task B1: dotnet 레그 복구
+- [ ] Step 1: `cd harness/install && docker compose -f compose.install.yml up bagetter` 를 직접 돌려 **실패 원문**을 확보한다(이미지 태그? 헬스체크? 포트?).
+- [ ] Step 2: 원인에 맞춘 최소 수정(이미지 핀 갱신 또는 헬스체크 조건 완화 — 원문이 결정한다)
+- [ ] Step 3: `./install-verify.sh dotnet` 실측 통과
+- [ ] Step 4: 출처 단언 추가(A2와 동형; NuGet은 `packageSourceMapping`이 이미 격리이므로 관측은 `dotnet list package --include-transitive`/복원 로그에서 취한다 — 지점은 실측으로 정한다)
+- [ ] Step 5: 가드 대상 9개 언어로 확장 + 커밋
+
+</details>
+
+### ⚠️ Task B2 — **재검토 후 문면대로 하지 않기로**(2026-08-13)
+
+> 계획서 문면은 "스크래핑 코드와 `--info` 플래그를 **제거**한다"인데, 그 사이 두 가지가 바뀌었다:
+> `a96232c`가 kotlin 게이트의 정규식·origin 구멍을 닫았고 `5972d4b`가 그 게이트를 **실행으로**
+> 고정했다. 스크래핑을 지우면 그 런타임 테스트가 겨누는 블록이 사라진다.
+> **`exclusiveContent`는 rust의 `replace-with`와 같은 층**(구조적 격리)이고, 이 리포는 그 층이
+> 단언을 대체하지 않는다고 이미 결정했다(node·rust가 둘 다 갖는다). 넣는다면 게이트 **옆에**
+> 추가하는 선택 작업이지, 대체가 아니다. S-A2는 kotlin에서 이미 충족돼 있다.
+> ⚠️ **"로그 194배"는 미측정 주장이다** — 리포 전체에서 `194`는 이 계획서 한 줄뿐이고 측정 명령·
+> 전후 바이트가 없다. 재는 법: 같은 워밍 상태에서 `--info` 유무로 `wc -c` 대조.
+
+<details><summary>원래 계획 단계(대체안이라 보류)</summary>
+
+### Task B2: kotlin `exclusiveContent` 전환
+- [ ] Step 1: 사본에서 `exclusiveContent`가 fail-closed임을 재현(빈 로컬 저장소 → Central에 그 좌표가 실재해도 해석 실패)
+- [ ] Step 2: `kotlin-app/build.gradle.kts`에 적용
+- [ ] Step 3: `kotlin-run.sh`에서 `--info`·스크래핑·URL 파생 제거, provenance는 "격리 하에 해석 성공" 사실로 기록
+- [ ] Step 4: `./install-verify.sh kotlin` 실측 + 로그 크기 전후 비교 기록
+- [ ] Step 5: 커밋
+
+</details>
+
+### ⚠️ Task B3 — **기각(2026-08-13 실측)**. 가드가 이미 드리프트 가능 자리를 100% 덮는다
+
+> **드리프트 가능 자리를 전수로 세었더니 둘뿐이다.** 아홉 앱 중 버전 리터럴로 SDK를 핀하는 것은
+> `harness/apps/java/pom.xml:26`(`0.1.0-SNAPSHOT`)과 `harness/apps/kotlin/build.gradle.kts:22`
+> (`0.1.0-RC1`)뿐이고, 나머지 일곱은 경로 참조·로컬 설치라 **드리프트가 구조적으로 불가능**하다
+> (`harness/apps/rust/Cargo.toml:3`의 `0.1.0`은 앱 자신의 버전이지 SDK 핀이 아니다).
+> 그리고 `check-versions.mjs`의 `harnessPins`가 **그 둘을 정확히** 대조한다.
+>
+> **파생이 더 낫다는 근거가 서지 않는다.** B3는 "탐지됨"을 "표현 불가능"으로 바꾸는 일인데:
+> - 탐지는 이미 작동한다. 이 검사가 **실제 드리프트를 잡은 이력**이 있다(PR #170이 kotlin SDK를
+>   `0.1.0` → `0.1.0-RC1`로 범프하며 앱 핀을 두고 갔다). repo-hygiene은 `paths:` 필터가 없어
+>   **모든 push에서** 돈다 — 야간이 아니라 머지 전에 잡힌다.
+> - 계획서 Step 3이 스스로 "`harnessPins` 검사는 **유지**한다(파생이 깨졌을 때의 이중 안전망)"고
+>   적는다. 즉 B3 후에도 가드는 남고 **치환 단계가 얹힌다** — 실패 표면이 줄지 않고 는다.
+> - 그 치환은 조용히 실패하는 부류다. 같은 관용을 쓰는 `consume/kotlin-run.sh`가 그래서 "치환
+>   FAILED — 좌표 표기가 바뀌었나?" loud-fail을 별도로 달고 있다. 두 번째 치환점을 만들면 그
+>   보호도 두 벌 필요해진다.
+>
+> **되살릴 조건**: 드리프트 가능 자리가 늘어날 때(새 언어가 버전 리터럴로 핀하거나, 앱이
+> 레지스트리에서 설치하도록 바뀔 때). 그때는 자리 수가 가드의 손유지 비용을 넘는지 다시 잰다.
+>
+> ⚠️ 실측 중 나온 사소한 것: `harness/apps/kotlin/build.gradle.kts:10`의 **주석**도 같은 버전을
+> 적고 있는데 가드는 `implementation(...)` 선언에만 앵커한다(주석이 미끼로 먼저 잡히던 사고를
+> 고친 결과다). 주석은 드리프트해도 안 잡히지만 소비자에게 닿지 않는 자리다.
+
+<details><summary>원래 계획 단계</summary>
+
+### Task B3: 하네스 앱 핀을 SSOT에서 파생
+- [ ] Step 1: `harness/apps/kotlin/Dockerfile`에 SDK 버전 치환 단계 추가(`consume/kotlin-run.sh`가 이미 쓰는 관용과 동형, 치환 실패 시 loud fail)
+- [ ] Step 2: `harness/apps/java/pom.xml`도 같은 방식이 가능한지 판단(Maven은 `versions:set` 또는 property) — 불가하면 그 사실과 이유를 기록
+- [ ] Step 3: `check-versions.mjs`의 harnessPins 검사는 **유지**한다(파생이 깨졌을 때의 이중 안전망)
+- [ ] Step 4: kotlin 레그 실측 통과 + 커밋
+
+</details>
+
+### ✅ Task B0: 메타 가드를 **런타임 행동 테스트**로 옮긴다 — 완료(`5972d4b`)
+
+> **결과**: `scripts/test/test-provenance-gate.sh`(54 어서션, sh·dash). 센티널 주석
+> (`# >>> provenance-gate` … `# <<< provenance-gate`)으로 8개 게이트의 판정 구간을 감싸고,
+> 테스트가 그 블록만 뽑아 합성 입력과 스텁 환경으로 **실행**한다. go는 축이 달라 스텁 `go`를 먹인다.
+>
+> **파킹된 우회 4종 측정** — 정적은 넷 중 **하나만** 잡는다:
+>
+> | 우회 | 런타임 | 정적 |
+> |---|---|---|
+> | E1 `else`에 `PROVENANCE_OK="1"` | 4건 실패 잡음 | 59/0 못잡음 |
+> | E2 `\|\| PROVENANCE_OK=1` | 4건 실패 잡음 | 59/0 못잡음 |
+> | E3 `REG="."` (약한 근거) | 1건 실패 잡음 | 59/0 못잡음 |
+> | E4 전부-로컬 → 하나라도-로컬 | 1건 실패 잡음 | 58/1 잡음 |
+>
+> ⚠️ **E3는 처음에 런타임도 못 잡았다** — 근거 변수 정의가 센티널 **밖**이라 런타임은 스텁으로
+> 덮어쓰고 정적은 이름만 본다. 두 가드가 함께 초록인 채로 공개 레지스트리를 통과시킬 수 있었다.
+> 정의 자리의 **모양**(주입 가능한 출처에서 파생되는가)을 확인하는 검사를 넣어 닫았다.
+>
+> ⚠️ **설계 중 런타임 테스트가 게이트 셋의 결함을 드러냈다** — python·node·php가 `a96232c`의
+> 하드닝을 못 받아 메타만·중간 임베드·호스트 경계를 전부 통과시키고 있었다. 같은 커밋에서 닫았고
+> node 레그 실측으로 무회귀를 확인했다(26/26·9/9, provenance가 로컬 tarball).
+
+<details><summary>원래 계획 단계(참고)</summary>
+
+> **S-B0**: 메타 가드는 consume 스크립트의 셸 **텍스트를 정적으로 분석**한다. Phase A에서 두 라운드에 걸쳐 7종 우회를 닫았지만, 적대적 재리뷰가 곧바로 4종을 더 찾았다 — `PROVENANCE_OK="1"`(따옴표라 정확일치 매처에 안 잡힘) · `[ … ] || PROVENANCE_OK=1`(`||`는 clause 분리 대상이 아님) · `REG=""` 그림자(변수명은 남아 근거 검사 통과, 실행 시엔 무조건 참) · 근거 grep을 "하나라도 로컬"로 약화(변수명은 그대로). **정적으로 임의 POSIX 셸의 의미를 증명하려는 시도라 수렴하지 않는다.**
+> 대신 게이트를 **실행**해 판정한다: 합성 `provenance.txt`(로컬 URL + 외부 URL 혼재)를 주고 `PROVENANCE_OK`가 `0`이 되는지, 전부 로컬이면 `1`이 되는지 확인한다. 문법 회피에 면역이고 위 4종을 전부 잡는다.
+
+- [ ] **Step 1:** 각 consume 스크립트의 게이트 블록을 실행 가능하게 만든다 — 센티널 주석(`# >>> provenance-gate` / `# <<< provenance-gate`)으로 감싸거나, 공유 함수로 추출한다. **동작은 바꾸지 않는다**(주석/추출만).
+- [ ] **Step 2: 실패하는 테스트 먼저** — 8개 언어 각각에 대해 표를 만든다: (입력 provenance 내용, 기대 PROVENANCE_OK). 최소 4행: 전부 로컬 → 1 · 외부 한 줄 혼재 → 0 · 빈 파일 → 0 · 아티팩트 줄 없이 메타데이터만 → 0.
+- [ ] **Step 3:** 테스트가 게이트 블록을 추출해 스텁 환경(`$STATUS`·`$REG` 등)에서 실행하도록 구현한다.
+- [ ] **Step 4:** Phase A가 파킹한 4종 우회를 이 테스트에 걸어 **전부 잡히는지** 확인한다(정적 가드는 못 잡던 것들이다).
+- [ ] **Step 5:** 정적 가드는 **남긴다**(둘은 다른 것을 지킨다 — 정적은 "게이트가 존재하고 판정에 배선됐다", 런타임은 "게이트가 실제로 옳게 판정한다").
+- [ ] **Step 6:** 8개 언어 레그를 실제로 돌려 무회귀 확인 후 커밋.
+
+</details>
+
+### ✅ Task B4 — 완료(`efbdac3`)
+
+> `harness/install/lib/verify-lib.sh`로 `validate_pkg_ver`·`ver_for_lang`을 옮기고
+> `scripts/test/test-install-verify.sh`(38 어서션, **bash**)를 붙였다. Docker 불필요.
+> ⚠️ `validate_pkg_ver`가 `exit 2` → **`return 2`**로 바뀌었다(함수 안 exit는 첫 실패 케이스가
+> 테스트 프로세스를 죽인다). 호출부 두 곳이 `|| exit 2`로 같은 동작을 만든다.
+> ⚠️ **bash 전용 예외** — 대상이 bash이고 연관배열을 읽는다. CI 스텝도 `bash`로 돌린다.
+>
+> **변이 3요건**: M1 폴백이 `$PKG_VER`를 읽도록(원래 버그) 1건 · M2 `--version` 우선순위 제거
+> 9건 · M3 형식 검증 무력화 4건 — 전부 잡힘. 복원 38/0.
+> **대조군을 함께 넣었다** — 기본 순서(go 첫 번째)에서는 이 버그가 안 보인다. 그 행이 없으면
+> "원래 순서 무관하게 통과하는 것"과 구분되지 않는다(야간이 초록이었던 이유가 그것이다).
+
+<details><summary>원래 계획 단계</summary>
+
+### Task B4: `install-verify.sh` 자가테스트
+- [ ] Step 1: 순수 함수를 `harness/install/lib/verify-lib.sh`로 추출(`install-verify.sh`는 소싱만)
+- [ ] Step 2: `scripts/test/test-install-verify.sh` 작성 — 최소 케이스: 순서 의존 버전 누수 회귀(`java kotlin ruby php go` 순에서 go가 `0.1.0`), `--version` 명시 우선, 잘못된 버전 표기 거부
+- [ ] Step 3: 실패 확인 → 추출 → 통과 확인
+- [ ] Step 4: `repo-hygiene.yml`에 배선(`test-selftest-hygiene.sh`가 배선을 강제하므로 누락 시 CI가 잡는다)
+- [ ] Step 5: 커밋
+
+</details>
+
+---
+
+## Phase C — 문서·좌표 SSOT (독립 PR 3)
+
+### 사양 (SDD)
+
+> **S-C1**: 게시버전 문자열을 담은 **모든** 소비자 문서가 `df_published_version`과 대조된다. 현재 대상은 `getting-started.md` 호환성 표와 `DEPLOY.md` 설치 좌표뿐이고, 실측상 12개 문서가 버전 문자열을 갖는다(README×2·SECURITY·언어별 README 9).
+> **S-C2**: 하네스 앱이 SDK와 **공유해야 하는 제3자 좌표**(rust `keycloak` crate)의 표기 발산을 가드가 잡는다. 현재 `rust/Cargo.toml`은 `~26.6.2`, `harness/apps/rust/Cargo.toml`과 `harness/install/quickstart/rust/Cargo.toml`은 `=26.6.2`이며, 두 파일의 주석은 "SDK와 동일해야 한다"고 적고 있다.
+
+### ✅ Task C1 — **완료**(2026-08-13). S-C1의 "12개 문서" 프레이밍은 부정확했다
+
+> 축이 둘이다. **개수 축**(몇 개가 게시됐나)은 `c3bb034`가 닫았고, **버전 문자열 축**(어떤 버전이
+> 게시됐나)의 남은 절반을 여기서 닫았다 — `getting-started`의 **본문 설치 절**이 가드 밖이었다
+> (호환성 표만 봤다). 소비자가 실제로 복사하는 것은 본문이므로 표만 고치고 본문을 남기면 없는
+> 좌표를 권하게 된다.
+> ⚠️ 판별자: **`### 3) Installation …` 하위절만** 본다. 같은 언어의 `### 2) Local installation`에는
+> `0.1.0-SNAPSHOT`(java)·`publishToMavenLocal` jar 이름(kotlin)이 정당하게 들어 있다.
+> 어서션 89 → **97**(본문 7건 + 대조군 1). 변이(java 본문 `0.1.0-RC1` → `0.1.0`) 1건 잡힘.
+> **범위 밖으로 남긴 것**: `CHANGELOG.md`·`DEPLOY.md`의 태그 서사(이미 일어난 일의 기록) ·
+> `docs/roadmap/language-support.md:50`의 후보 클라이언트 표(명시적 point-in-time 캐비앳) ·
+> `docs/superpowers/**`(내부 산출물).
+
+<details><summary>원래 계획 단계</summary>
+
+### Task C1: 게시버전 가드 확장
+- [ ] Step 1: 12개 문서 각각에서 "버전을 주장하는 자리"를 열거하고, 그중 **소비자가 복사해 가는 자리**만 대상으로 정한다(변경 이력·인용문 제외)
+- [ ] Step 2: 대상 자리마다 드리프트를 넣어 현재 가드가 통과함을 보인다(공허성 증명)
+- [ ] Step 3: `test-publication-claims.sh`를 확장(파일·패턴을 표로 두고 `df_published_version`에서 파생)
+- [ ] Step 4: 각 드리프트가 잡히는지 + 정상 트리 통과 + 비공허성 건수 기록
+- [ ] Step 5: 커밋
+
+</details>
+
+### ✅ Task C2 — 완료(`0c0fd7c`)
+- [ ] Step 1: 현재 발산을 실측으로 보인다(`grep -n 'keycloak = ' rust/Cargo.toml harness/apps/rust/Cargo.toml harness/install/quickstart/rust/Cargo.toml`)
+- [ ] Step 2: 테스트 먼저 — 픽스처에서 SDK가 `~26.7.0`인데 하네스가 `=26.6.2`면 실패해야 한다
+- [ ] Step 3: `check-versions.mjs`에 "공유 제3자 좌표" 검사 추가(하네스 핀 검사와 같은 계급 = `harnessErrors`)
+- [ ] Step 4: 현 상태를 어느 쪽으로 정렬할지 결정하고(SDK 쪽 `~`로 통일 권장) 실제로 정렬 + rust 레그 실측
+- [ ] Step 5: 커밋
+
+---
+
+## Phase D — SDK·문서 정합 (독립 PR 4)
+
+### 사양 (SDD)
+
+> **S-D1**: JWKS 최소 재조회 간격의 기본값은 **정의 자리가 언어당 하나**여야 한다. 2026-07-31 정렬 커밋은 아홉 개의 *config* 파일만 만졌고 **JWKS 스토어/검증기 생성자의 2차 기본값은 남겨 두었다**. 실측:
+> ```
+> go/jwt.go:46                     opts.minRefetch = 60 * time.Second   (소비자 도달 불가 — withDefaults가 선행, 미노출)
+> php/src/Jwks/JwksStore.php:28    $minRefetchIntervalSeconds = 60      (public final class — 소비자 도달 가능)
+> ruby/lib/.../jwks_store.rb:11    min_refetch: 10.0                    (public class — 정렬 전 값 그대로)
+> ```
+> 어떤 언어도 2차 자리를 테스트하지 않으며(변이 실측: go의 60을 999로 바꿔도 `ok`), 리포 전체에 이 불변식을 겨누는 가드가 없다(`grep -rn "efetch" scripts/ .github/workflows/` → 0건).
+
+> **S-D2**: `ruby/README.ko.md:72`가 소비자에게 `jwks_min_refetch` 기본값을 **`10.0`** 이라고 알려준다. 영문 미러 `ruby/README.md:70`은 30초라고 적는다. CLAUDE.md의 문서 언어 규칙상 두 README는 **동일 구조의 미러**여야 하므로 이는 미러 파손이자 소비자 오도다.
+
+> **S-D3**: CLAUDE.md §4의 "**아홉 언어 공통** — `TokenProvider`가 유일한 접착제"는 실제로 **5개 언어에만** 참이다(Node·Rust·Ruby·.NET·Go). Java·Kotlin·PHP·Python은 admin이 토큰을 자체 소유하며, 그중 **PHP·Python은 §4 이탈 표에 행이 없다**. Python은 `TokenProvider` 추상 자체가 존재하지 않는다(`grep -rn TokenProvider python/src/` → 0건). PHP `Admin/AdminClient.php`의 유일한 생성자는 `KeycloakConfig`만 받아 **소비자가 토큰 소스를 주입할 수단이 없다**.
+> 추가로 `docs/superpowers/specs/2026-07-06-keycloak-php-sdk-design.md:67`은 "fschmtt `TokenStorageInterface`에 우리 `ClientCredentialsTokenProvider` 배선"이라고 **없는 사실**을 적고 있으며, 같은 문서 `:70`이 스스로 반박한다.
+
+### Task D1: 2차 기본값 제거(정의 자리를 언어당 하나로)
+
+**Files:** Modify `ruby/lib/keycloak_sdk/jwks_store.rb`, `php/src/Jwks/JwksStore.php`, `go/jwt.go` · Test: `ruby/spec/unit/jwks_store_spec.rb`, `php/tests/Unit/Jwks/JwksStoreTest.php`, `go/jwt_test.go`
+
+- [ ] **Step 1: 실패하는 테스트(ruby)** — 인자를 **생략**했을 때의 기본값을 고정한다
+```ruby
+it "기본 min_refetch는 config 기본값과 같다(2차 정의 자리 금지)" do
+  store = described_class.new(jwks_url: "https://idp/jwks", http: http_double)
+  expect(store.min_refetch).to eq(KeycloakSdk::Config::DEFAULT_JWKS_MIN_REFETCH)
+end
+```
+- [ ] **Step 2: 실패 확인** — `cd ruby && bundle exec rspec spec/unit/jwks_store_spec.rb` → `10.0 != 30.0`
+- [ ] **Step 3: 구현** — 2차 리터럴을 지우고 config의 상수를 참조한다(PHP·Go도 동형: 상수/설정에서 읽거나 인자 필수화)
+- [ ] **Step 4: 통과 확인 + 세 언어 각각의 기존 테스트 전건 통과**
+- [ ] **Step 5: 비공허성** — 상수를 999로 바꾸면 세 언어에서 각각 몇 건이 실패하는지 기록
+- [ ] **Step 6: 커밋**
+
+### ✅ Task D2 — **`test-security-defaults.sh`가 이미 흡수했다**(2026-08-13 공허성 측정)
+
+> 착수 전에 D2의 문면과 현재 가드를 대조했더니 남은 일이 없다:
+>
+> | D2가 요구한 것 | 현재 상태 |
+> |---|---|
+> | 아홉 언어 기본값 정의 자리를 열거하는 테이블 | `sd_default()`에 9개 전부 |
+> | 값이 전부 같은지 검사 | 있음 + 대조군(`assert_eq "9" "$sd_seen"`) |
+> | `repo-hygiene.yml` 배선 | 있음(위생 가드가 강제) |
+> | 변이 + 비공허성 측정 | `d63e3aa`·`6a74708`에서 보고(2차 리터럴 부활·정렬 이탈 둘 다 잡힘) |
+>
+> D1이 2차 정의 자리까지 닫으면서 가드가 좁혔던 스코프도 해소됐다(30 → 36 어서션).
+>
+> ⚠️ **측정 중 나온 것 — clock skew는 아홉 전부 30인데 가드가 없다.** JWKS가 드리프트한 것과
+> 같은 조건이다. 다만 **JWKS와 결정적으로 다른 점**이 있다: CLAUDE.md가 JWKS는 "아홉 언어 전부
+> 30초… 이 값을 바꿀 때는 아홉을 함께 움직일 것"이라고 **값 불변식을 선언**하는 반면, clock skew는
+> "cross-language mandatory requirement"로 **존재만** 요구하고 값을 선언하지 않는다. 지금 가드를
+> 걸면 리포가 선언한 적 없는 불변식을 **가드가 새로 만드는** 것이다 — 그건 기술 결정이라 사람이
+> 정할 몫이다. 타임아웃은 애초에 정렬돼 있지 않다(ruby read 10s vs java/go 30s, 단위도 갈림).
+
+<details><summary>원래 계획 단계</summary>
+
+### Task D2: 불변식을 리포 가드로 승격
+
+**Files:** Modify `scripts/check-docs.mjs` 또는 신규 `scripts/test/test-jwks-refetch-invariant.sh`
+
+- [ ] **Step 1:** 아홉 언어의 기본값 정의 자리를 열거하는 테이블을 하나 만들고(파일·정규식), 그 값이 전부 같은지 검사하는 테스트를 **먼저** 쓴다
+- [ ] **Step 2:** 현재 트리에서 실패하는지 확인(D1 이전이면 3건 실패 — D1 이후엔 통과해야 한다)
+- [ ] **Step 3:** 구현 + `repo-hygiene.yml` 배선
+- [ ] **Step 4:** 변이 — 한 언어의 값을 바꾸면 잡히는지 + 가드 비활성화 시 실패 건수
+- [ ] **Step 5:** 커밋
+
+</details>
+
+### ✅ Task D3 — 완료(문서 감사에서 처리)
+
+> `ruby/README.ko.md:72`의 `10.0` → `30.0`은 `d63e3aa`에서 고쳤고, 같은 부류 재스캔(아홉 언어
+> README의 기본값 주장 전수)도 그때 수행했다. 재발 방지는 `test-security-defaults.sh`의 문서 축.
+
+<details><summary>원래 계획 단계</summary>
+
+### Task D3: ruby README 미러 복구
+
+- [ ] **Step 1:** `ruby/README.ko.md:72`의 `10.0` → `30.0`으로 고치고, 영문 미러와 **같은 구조인지** 두 파일을 나란히 확인
+- [ ] **Step 2:** 같은 부류 재스캔 — 아홉 언어 README에서 기본값을 주장하는 자리를 전부 뽑아 실제 코드값과 대조(수치가 다른 것이 더 있는지)
+- [ ] **Step 3:** 발견분 수정 + 재스캔 명령·히트 수를 커밋에 기록
+- [ ] **Step 4:** 커밋
+
+</details>
+
+### ✅ Task D4 — 완료(`b2e8a39`)
+
+> §4의 "아홉 언어 공통 `TokenProvider`"가 **다섯 언어에만** 참이었다. 불변식 자체("admin은 auth에
+> 의존하지 않는다")는 아홉 전부 참이고 **갈리는 것은 그 독립을 이루는 방법**이라는 사실을 본문에
+> 적었다(접착제 5: Node·Rust·Ruby·.NET·Go / 자체 소유 4: Java·Kotlin·PHP·Python).
+> ⚠️ **doc-budget이 네 번 되돌렸다** — CLAUDE.md가 래칫에 1바이트 남아 있어 순증 0 이하로 넣어야
+> 했고, 예산을 올리지 않고 중복 문구를 줄여 맞췄다(최종 58800/58800, 정확히 한도).
+> append-only 산출물(php 설계 스펙·verification-log-php)은 덮어쓰지 않고 취소선+정정 주석.
+
+<details><summary>원래 계획 단계</summary>
+
+### Task D4: §4 계약 문서를 코드에 맞춘다
+
+- [ ] **Step 1:** `CLAUDE.md`의 "아홉 언어 공통" 문장을 사실대로 고친다 — provider가 유일 접착제인 언어(Node·Rust·Ruby·.NET·Go)와 admin이 토큰을 자체 소유하는 언어(Java·Kotlin·PHP·Python)를 나눈다
+- [ ] **Step 2:** §4 이탈 표에 **PHP·Python 행 추가**(PHP: fschmtt `GrantType::clientCredentials`, 소비자 주입 수단 없음 / Python: `TokenProvider` 추상 자체가 없음, python-keycloak `KeycloakAdmin`이 자체 그랜트)
+- [ ] **Step 3:** `docs/superpowers/specs/2026-07-06-keycloak-php-sdk-design.md:67`의 거짓 문장을 `:70`과 일치하도록 정정
+- [ ] **Step 4:** `docs/governance/verification-log-php.md:69`의 "TokenProvider만 접착제" 과장 정정
+- [ ] **Step 5:** `check-docs.mjs` 앵커로 기계 대조가 가능한 부분이 있는지 판단(§4 표는 산문이라 스코프 밖일 수 있다 — 그러면 그 사실을 명시한다)
+- [ ] **Step 6:** 커밋
+
+⚠️ **D4는 "코드를 문서에 맞추는" 선택지도 있다** — PHP는 fschmtt `Builder::withTokenStorage()` 시임이 실재하므로 배선이 가능하다. 그러나 그것은 동작 변경이고 통합 테스트가 필요하다. **기본 선택은 문서 정정**이며, 배선은 별도 결정으로 남긴다.
+
+</details>
+
+---
+
+## Phase E — 사람 게이트 (계획만, 에이전트 수행 불가)
+
+- **Go 첫 게시**: `git tag go/v0.1.0-rc.1 && git push origin go/v0.1.0-rc.1`. 선행조건은 충족됐다(#167 출처 단언·file GOPROXY 관측). 되돌릴 수 없다 — 회수 수단은 후속 릴리스의 `retract`뿐.
+- **`dispatch-release.yml` 활성화**: GitHub App 생성 → `RELEASE_APP_ID`/`RELEASE_APP_PRIVATE_KEY` 등록 → `tags-create.json` bypass에 App(Integration) 추가(⚠️ **`tags-create.json`에만** — 나머지 둘에 넣으면 태그 불변성의 유일한 서버측 집행 지점이 무너진다).
+
+---
+
+## Self-Review
+
+- **사양 커버리지**: S-A1→A1, S-A2→A2·A3(+B1의 dotnet), S-A3→A4, S-A4→A5, S-B1→B1, S-B2→B2, S-B3→B3, S-B4→B4, S-C1→C1, S-C2→C2. Phase D는 검증 미완이라 사양을 비워 두었다(placeholder가 아니라 **명시적 미확정**).
+- **관측 지점 미확정 3곳**(node·rust·dotnet)은 각 Task의 Step 1에서 **실측으로 정하도록** 절차를 박아 두었다 — 추측으로 코드를 쓰지 않기 위함이다.
+- **타입/이름 일관성**: `failedLangs(signals, expectedLangs)` · `$STATUS/provenance.txt` · `PROVENANCE_OK` 세 이름이 모든 Task에서 동일하다.

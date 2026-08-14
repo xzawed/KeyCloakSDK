@@ -10,6 +10,18 @@ import (
 	jose "github.com/go-jose/go-jose/v4"
 )
 
+// defaultJwksMinRefetchSecs is the single definition of the JWKS
+// minimum-refetch default. It is a DoS-amplification cap, and all nine language
+// SDKs are aligned on the same value — `scripts/test/test-security-defaults.sh`
+// asserts that alignment across the nine and against the consumer docs.
+//
+// ⚠️ Do not restate this number anywhere else in the package. It used to be
+// written twice with two different values (30 here, 60 in jwt.go's fallback);
+// the fallback was unreachable from outside the package so nothing broke, but
+// "one value, two literals" is exactly how the other languages' consumer-facing
+// copies drifted (Ruby shipped 10.0 while its docs said 30).
+const defaultJwksMinRefetchSecs int64 = 30
+
 // Config is immutable SDK configuration. Build it as a struct literal and pass
 // it to New, which validates it and fills defaults.
 type Config struct {
@@ -74,7 +86,7 @@ func (c Config) withDefaults() Config {
 		c.ClockSkew = 30
 	}
 	if c.JwksMinRefetch == 0 {
-		c.JwksMinRefetch = 30
+		c.JwksMinRefetch = defaultJwksMinRefetchSecs
 	}
 	if len(c.SignatureAlgorithms) == 0 {
 		c.SignatureAlgorithms = []string{"RS256"}

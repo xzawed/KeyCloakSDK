@@ -19,7 +19,7 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .
 npm install @xzawed/keycloak-sdk@rc
 ```
 
-⚠️ **A bare `npm install @xzawed/keycloak-sdk` also resolves this release candidate right now — ask for `@rc` anyway.** The workflow published under the `rc` tag, but npm assigns `latest` on a package's *first* version regardless of `--tag`, and it refuses to let that tag be removed (`403` on `DELETE .../dist-tags/latest`). So `latest` and `rc` currently point at the same prerelease, and a bare install or a `^0.1.0` range silently gives you an RC. Being explicit keeps that choice visible — and it keeps working when a stable release takes over `latest`. Pin the exact version if you would rather not track the `rc` tag:
+⚠️ **A bare `npm install @xzawed/keycloak-sdk` also resolves this release candidate right now — ask for `@rc` anyway.** The workflow published under the `rc` tag, but npm assigns `latest` on a package's *first* version regardless of `--tag`, and it refuses to let that tag be removed (`403` on `DELETE .../dist-tags/latest`). So `latest` and `rc` currently point at the same prerelease, and a bare install silently gives you an RC. ⚠️ A `^0.1.0` **range does not** — SemVer ranges exclude prereleases, so it fails with `ETARGET` (measured 2026-08-13: `npm install "@xzawed/keycloak-sdk@^0.1.0" --dry-run` → `notarget No matching version found`, while the bare install resolves `0.1.0-rc.2`). Being explicit keeps that choice visible — and it keeps working when a stable release takes over `latest`. Pin the exact version if you would rather not track the `rc` tag:
 
 ```bash
 npm install @xzawed/keycloak-sdk@0.1.0-rc.2

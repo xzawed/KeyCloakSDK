@@ -67,4 +67,16 @@ const goIdx = orderRows.indexOf("| go |");
 const kotlinIdx = orderRows.indexOf("| kotlin |");
 assert.ok(goIdx > 0 && kotlinIdx > goIdx, "go가 kotlin보다 먼저 정렬되어야 한다(LANG_ORDER 등재 확인)");
 
+// ── failedLangs(signals, expectedLangs): 부재 = 미측정이지 통과가 아니다 (A1) ──────────
+// 실측: 레지스트리가 안 뜨는 등으로 아홉 중 여덟이 통째로 안 돌아도 신호 파일이 없을 뿐이라
+// failedLangs([])는 []를 낸다 — expectedLangs 없이는 "안 돌았다"와 "통과했다"를 구분 못 한다.
+// 아홉을 기대했는데 go 하나만 왔다 → 나머지 여덟이 실패여야 한다.
+const nineExpected = ["go", "dotnet", "node", "python", "java", "php", "rust", "ruby", "kotlin"];
+assert.deepStrictEqual(failedLangs([okLang], nineExpected), nineExpected.slice(1));
+// 대조군: expectedLangs를 안 주면 예전 동작 그대로(하위호환 — 오케스트레이터 구버전과의 계약).
+assert.deepStrictEqual(failedLangs([okLang]), []);
+// 대조군: 기대한 만큼 전부 왔으면 빈 배열.
+const dotnetOk = { ...okLang, lang: "dotnet" };
+assert.deepStrictEqual(failedLangs([okLang, dotnetOk], ["go", "dotnet"]), []);
+
 console.log("install-matrix.test OK");

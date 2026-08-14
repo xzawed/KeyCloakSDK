@@ -2,7 +2,7 @@
 
 A guide to installing the Keycloak polyglot SDK locally and running your first token issuance, JWT validation, and Admin API call with minimal code. This SDK is provided in **multiple programming languages** (currently Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby · Kotlin), and while each language is idiomatic, the concepts, layers, and flows are isomorphic.
 
-> ℹ️ **Eight of the nine are on a public registry, as first release candidates** — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central) and Kotlin (Maven Central). The other one (Go) is not published yet, so for those the local-clone path below is the only way to consume them. **No language has a stable release**, and ecosystems disagree sharply about what a bare install does when only a prerelease exists — pip and Cargo fall back to it, RubyGems resolves nothing, npm fails outright with `ETARGET`, and Maven has no prerelease concept at all (you always name the version, so nothing filters and nothing falls back). Each language section spells out the incantation its ecosystem needs; do not copy one language's wording to another. For now, **local installation is the default path** (see each language's "Local installation" below). For the real release procedure, see the unified nine-language [DEPLOY.md](../../DEPLOY.md) (check readiness with `scripts/release-readiness.sh` and tag commands with `scripts/release-trigger.sh <lang> <ver>` — both are human-gates that never push tags automatically).
+> ℹ️ **Eight of the nine are on a public registry, as first release candidates** — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central) and Kotlin (Maven Central). The other one (Go) is not published yet, so for those the local-clone path below is the only way to consume them. **No language has a stable release**, and ecosystems disagree sharply about what a bare install does when only a prerelease exists — pip and Cargo fall back to it, RubyGems resolves nothing, npm resolves it too (its `latest` tag points at the prerelease — but a `^0.1.0` *range* excludes prereleases and fails with `ETARGET`), and Maven has no prerelease concept at all (you always name the version, so nothing filters and nothing falls back). Each language section spells out the incantation its ecosystem needs; do not copy one language's wording to another. For now, **local installation is the default path** (see each language's "Local installation" below). For the real release procedure, see the unified nine-language [DEPLOY.md](../../DEPLOY.md) (check readiness with `scripts/release-readiness.sh` and tag commands with `scripts/release-trigger.sh <lang> <ver>` — both are human-gates that never push tags automatically).
 
 > 🖥️ **You need a Keycloak *server* first.** This SDK is a client library, so it needs a **Keycloak server to connect to** in order to work (the server is a separate, standalone product not included in this SDK). For a local trial, use the one-line Docker command `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`; for a **production deployment**, see the [Keycloak server deployment guide](deploying-keycloak-server.md).
 
@@ -251,7 +251,7 @@ Go **`1.25` or newer** is required (its dependency `golang.org/x/oauth2` v0.36 r
 Go modules are **published via VCS tags** with no separate registry. There is no release tag (`go/vX.Y.Z`) yet, so clone the monorepo and build under `go/`, or reference it with a `replace` directive:
 
 ```bash
-cd go && go build ./... && go test ./...   # 40 unit tests + coverage gate (logic ≥90)
+cd go && go build ./... && go test ./...   # unit tests + coverage gate (logic ≥90)
 # Reference locally from a consuming project: add `replace github.com/xzawed/KeyCloakSDK/go => ../KeyCloakSDK/go` to go.mod
 ```
 
@@ -340,7 +340,7 @@ To work from a clone, attach it as a project reference from your consuming proje
 
 ```bash
 dotnet add reference ../KeyCloakSDK/dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj
-# Just verify a local build/test: cd dotnet && dotnet build && dotnet test --filter "Category!=Integration"   # 58 unit tests + coverage gate
+# Just verify a local build/test: cd dotnet && dotnet build && dotnet test --filter "Category!=Integration"   # unit tests + coverage gate
 ```
 
 The package ID is `Xzawed.Keycloak.Sdk`, and the root namespace is `Xzawed.Keycloak` (admin is the `Xzawed.Keycloak.Admin` sub-namespace).
@@ -474,7 +474,7 @@ keycloak-sdk = { path = "../KeyCloakSDK/rust" }
 ```
 
 ```bash
-cd rust && cargo build && cargo test   # Just verify a local build/test: 51 unit tests + coverage gate
+cd rust && cargo build && cargo test   # Just verify a local build/test: unit tests + coverage gate
 ```
 
 The crate name is `keycloak-sdk`, and the root module is `keycloak_sdk` (`keycloak_sdk::{KeycloakClient, KeycloakConfig, ...}`).
@@ -615,7 +615,7 @@ repositories { mavenLocal(); mavenCentral() }
 dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0-RC1") }
 ```
 
-(To just build and test locally without publishing: `gradle -p kotlin build && gradle -p kotlin test` — 100 unit tests + coverage gate, Docker-free.)
+(To just build and test locally without publishing: `gradle -p kotlin build && gradle -p kotlin test` — unit tests + coverage gate, Docker-free.)
 
 ### 3) Installation from Maven Central (first release candidate available)
 
@@ -743,11 +743,13 @@ These are real and worth knowing before you port code between languages.
 
 Each SDK's own SemVer is decoupled from the Keycloak server and underlying library versions. See the table below for the supported server range and the base libraries · runtimes.
 
+> ⚠️ **Point-in-time snapshot.** Where a cell gives an exact library version it is a *resolved* value read from that language's lockfile at the time of writing, not a contract. The contract is the range declared in each manifest (`node/package.json`, `rust/Cargo.toml`, …); the resolved value moves whenever the lockfile is updated. Read the manifest, not this table, when the difference matters.
+
 | SDK | Target Keycloak server | Base libraries · runtime |
 |---|---|---|
 | Java `0.1.0-RC1` | 26.6.x (integration tests: actual **26.6.4**) | `keycloak-admin-client` **26.0.11** (an independent version track from the server — there is no "26.6.x admin-client") · Nimbus `oauth2-oidc-sdk` **11.38.2** · JDK 21+ |
 | Python `0.1.0rc1` | 26.6.x (integration tests: actual **26.6.4**) | `python-keycloak` **7.1.x** · `joserfc` **1.7.x** · Python 3.10+ |
-| Node `0.1.0-rc.2` | 26.6.x (integration tests: actual **26.6**) | `@keycloak/keycloak-admin-client` **26.7.0** · `openid-client` **6.8.4** · `jose` **6.2.4** · Node 22+ |
+| Node `0.1.0-rc.2` | 26.6.x (integration tests: actual **26.6**) | `@keycloak/keycloak-admin-client` **26.7.0** · `openid-client` **6.8.4** · `jose` **6.2.8** · Node 22+ |
 | Go `0.1.0` | 26.6.x (integration tests: actual **26.6**) | `Nerzal/gocloak/v13` **13.9.0** · `golang.org/x/oauth2` **0.36.0** · `go-jose/v4` **4.1.4** · Go 1.25+ |
 | C#/.NET `0.1.0-rc.1` | 26.6.x (integration tests: actual **26.6**) | `Keycloak.AuthServices.Sdk` **2.7.0** · `Duende.IdentityModel` **8.1.0** · `Microsoft.IdentityModel.JsonWebTokens` **8.22.0** · .NET 8+ |
 | PHP `0.1.0-rc.1` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `fschmtt/keycloak-rest-api-client-php` **0.42.0** · `league/oauth2-client` **^2.8** · `stevenmaguire/oauth2-keycloak` **^6.1** · `firebase/php-jwt` **^7.1** · PHP 8.3+ |
@@ -764,4 +766,4 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 - **Language support roadmap** — currently supported languages (depth-first: Java · Python · TypeScript/Node · Go · C#/.NET · PHP · Rust · Ruby · Kotlin complete — 9 languages): [../roadmap/language-support.md](../roadmap/language-support.md)
 - **Add-a-language playbook** — the procedure for adding a language with quality isomorphic to the existing Java/Python/Node/Go/C#/PHP/Rust/Ruby/Kotlin: [add-a-language-playbook.md](add-a-language-playbook.md)
 
-> The language-neutral API contract (the source of truth) is defined in [design spec §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md). Every language implements this contract, and the JWT validation hardening (algorithm pinning · `none` rejection · exact `iss` match · `aud` containment check · clock skew · DoS-safe JWKS refetch) is a cross-language mandatory requirement. Current test counts: **Java 165** (159 unit + 6 Testcontainers integration) · **Python 272** (261 unit + 11 integration) · **Node 93** (88 unit + 5 Testcontainers integration) · **Go 51** (50 unit + 1 Testcontainers integration — E2E, full flow · 5 admin resources) · **C#/.NET 72** (71 unit + 1 Testcontainers integration — E2E `Full_flow`, full flow · 5 admin resources) · **PHP 79** (76 unit + 3 integration — docker CLI shell-out, `FullFlowIT`: full flow · client CRUD · raw escape hatch) · **Rust 52** (51 unit + 1 Testcontainers integration — E2E `full_flow`, full flow · 5 admin resources) · **Ruby 88** (87 unit + 1 integration — docker CLI shell-out, E2E `full_flow`, full flow · 5 admin resources) · **Kotlin 121** (120 unit + 1 Testcontainers integration — E2E `FullFlowIT`, full flow · 5 admin resources). Total **993**.
+> The language-neutral API contract (the source of truth) is defined in [design spec §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md). Every language implements this contract, and the JWT validation hardening (algorithm pinning · `none` rejection · exact `iss` match · `aud` containment check · clock skew · DoS-safe JWKS refetch) is a cross-language mandatory requirement. Every language covers the same scenarios (full auth flow · the five admin resources · the JWT hardening probes) with a unit suite plus one Testcontainers or docker-CLI integration test. Exact test counts are intentionally **not** hand-maintained here — the authority is each language's own CI job and coverage gate; run the unit/integration command in [`.claude/rules/<lang>.md`](../../.claude/rules/) to get the current number. Counts copied into prose drift the moment CI's count changes, and the ones this file used to carry were stale for seven of the nine languages.

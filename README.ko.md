@@ -53,7 +53,7 @@ with KeycloakClient.create(config) as kc:
 
 ## 지금 바로 써보기
 
-레지스트리 설치는 아직 첫 RC(PHP · Python · .NET · Rust)뿐이지만 — 어느 쪽이든, 클론만 하면 전체 경로가 그대로 동작합니다:
+레지스트리 설치는 아직 첫 RC뿐이지만 — 어느 쪽이든, 클론만 하면 전체 경로가 그대로 동작합니다:
 
 ```bash
 # 1) 붙을 Keycloak 서버
