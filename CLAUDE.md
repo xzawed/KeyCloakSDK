@@ -153,7 +153,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 |---|---|
 | Go | **전체가 단일 `package keycloak`** — admin을 서브패키지로 두면 `Client.Admin`이 `*AdminClient`를 반환할 때 import 순환이 생긴다. 그래서 `admin_*.go`로 같은 패키지다. |
 | Rust | **admin도 `KeycloakClient::new`에서 즉시 조립된다** — 나머지 여덟 언어의 "최초 접근 시 지연 생성"과 다르다(공유 `http`·전용 캐싱 provider 재사용). |
-| Kotlin | 자체 소유 넷 중 유일하게 `ClientCredentialsTokenProvider`가 **존재는 한다** — 파사드가 배선하지 않는 시임일 뿐이다(Java의 RESTEasy 필터 충돌 결정을 상속). PHP·Python엔 그것조차 없다. |
+| Kotlin | 자체 소유 넷(Java·Kotlin·PHP·Python)은 파사드가 TokenProvider를 admin에 꽂지 않는다. Kotlin·Java·PHP에는 타입이 시임으로 남아 있고, Python에만 타입 자체가 없다. |
 | Node | **파사드가 주입한 캐싱 provider를 `registerTokenProvider`로 배선하고 `kc.auth()`는 호출하지 않는다**(PR #63) — admin-client 내장 TokenManager는 만료 시 refresh만 시도해 client_credentials에서 영구 실패한다(Rust `79ecf76`와 동형 결정). |
 
 
@@ -163,14 +163,14 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 
 | 언어 | (a) admin 파사드가 노출하는 representation | (b) 저수준 주입/구성 지점 |
 |---|---|---|
-| Java | `org.keycloak.representations.idm.*` | `JwtValidator.forRealm`의 Nimbus `JWSAlgorithm` |
+| Java | `org.keycloak.representations.idm.*` | `JwtValidator.forRealm`의 Nimbus `JWSAlgorithm` · `AdminClient.raw()`의 `org.keycloak.admin.client.Keycloak` |
 | Kotlin | `org.keycloak.representations.idm.*` (Java와 동일 좌표 재사용) | `AdminClient.raw()`의 `org.keycloak.admin.client.Keycloak` |
-| Node | `@keycloak/keycloak-admin-client/lib/defs/*` | `new JwtValidator(keys, opts)`의 jose `JWTVerifyGetKey` |
-| Go | `gocloak.User`/`Client`/`Role`/`Group`/`RealmRepresentation` | `admin.Raw()`의 `*gocloak.GoCloak` · 테스트 주입용 파라미터 |
-| C# | `Keycloak.AuthServices.Sdk.Admin.Models.*Representation` | `AdminClient.Raw`의 `IKeycloakClient` · `JwtValidator`의 내부 `TokenValidationParameters` 시임 ctor |
+| Node | `@keycloak/keycloak-admin-client/lib/defs/*` | `new JwtValidator(keys, opts)`의 jose `JWTVerifyGetKey` · `raw()`의 `KcAdminClient` |
+| Go | `gocloak.User`/`Client`/`Role`/`Group`/`RealmRepresentation` | `admin.Raw()`의 `*gocloak.GoCloak` |
+| C# | `Keycloak.AuthServices.Sdk.Admin.Models.*Representation` | `AdminClient.Raw`의 `IKeycloakClient` |
 | PHP | `Fschmtt\Keycloak\Representation\*` | `AdminClient::raw()`의 `Fschmtt\Keycloak\Keycloak` |
 | Rust | `keycloak::types::{UserRepresentation, ClientRepresentation, RealmRepresentation, RoleRepresentation, GroupRepresentation}` — **크레이트 루트에서 `keycloak_sdk::types`로 미러 재노출** | `AdminClient::raw()`의 `&KeycloakAdmin<SdkTokenSupplier>`(소비자가 반환 타입에 이름을 붙일 수 있도록 `KeycloakAdmin`·`SdkTokenSupplier`를, 공유 HTTP 클라이언트를 넘기는 저수준 ctor를 위해 `reqwest`를 함께 재노출) |
-| Python | 노출 없음 — plain `dict[str, Any]` 통과(누출 아님) | `JwtValidator.validate`의 joserfc `KeySet` |
+| Python | 노출 없음 — plain `dict[str, Any]` 통과(누출 아님) | `JwtValidator.validate`의 joserfc `KeySet` · `raw`의 `KeycloakAdmin` |
 | Ruby | 노출 없음 — plain `Hash` 통과(성숙한 admin gem이 없어 애초에 노출할 하위 representation 타입 자체가 없다) | `AdminClient#raw`의 `Faraday::Connection` |
 
 ⚠️ Rust의 `keycloak_sdk::types` 재노출이 없으면 소비자가 `keycloak` crate를 자기 `Cargo.toml`에 버전까지 맞춰 직접 추가해야만 admin 파사드를 호출할 수 있어 **게시된 퀵스타트가 컴파일되지 않는다**. 안정적 Keycloak 타입 재사용이 목적이고 SDK 자체 DTO 재래핑은 범위 밖이다.
@@ -254,7 +254,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(Kotlin) jvm-test-suite 없이 수동 `creating` 소스셋으로 `integrationTest`를 만들면 "no tests discovered".** 상세: `.claude/rules/kotlin.md`
 - ⚠️ **(Kotlin) `= runBlocking {…}` 표현식-본문 `@Test`는 Jupiter가 발견 못 함.** 상세: `.claude/rules/kotlin.md`
 - ⚠️ **(Kotlin) Kover 0.9.x는 jvm-test-suite `integrationTest`를 자동 계측대상에 포함.** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) exchangeCode는 id_token을 nonce 비교 전에 완전 서명검증한다(Java보다 강함).** 상세: `.claude/rules/kotlin.md`
+- ⚠️ **(Kotlin) exchangeCode는 id_token을 nonce 비교 전에 완전 서명검증한다(Java와 동형).** 상세: `.claude/rules/kotlin.md`
 - ⚠️ **(Kotlin) admin 파사드는 auth를 직접 알지 못한다(§4·Java 동형).** 상세: `.claude/rules/kotlin.md`
 - ⚠️ **(Kotlin) 로컬 포터블 Gradle과 CI 래퍼 버전을 일치시켜 둔다(현재 둘다 9.6.1).** 상세: `.claude/rules/kotlin.md`
 - ⚠️ **(Kotlin) 신규 라이브러리 리스크 0.** 상세: `.claude/rules/kotlin.md`

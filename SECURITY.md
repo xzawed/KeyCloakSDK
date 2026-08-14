@@ -26,8 +26,17 @@ This project is a multi-language SDK for Keycloak covering authentication
 not limited to:
 
 - **JWT validation** — algorithm pinning, `iss`/`aud`/`exp`/`nbf` enforcement,
-  DoS-safe JWKS refetch (all nine SDKs implement hardened, self-verified validation).
-- **OIDC flows** — PKCE (S256), nonce/`id_token` replay protection, state handling.
+  DoS-safe JWKS refetch (rate-limited on all nine; eight languages refetch only
+  on an unresolved key id — .NET also refetches on a bad signature, bounded by
+  the same interval). All nine implement hardened, self-verified validation.
+- **OIDC flows** — PKCE (S256) on all nine. nonce/`id_token` replay protection
+  on eight (Java, Python, Node, Go, .NET, Rust, Ruby, Kotlin): the authorization
+  request issues a nonce and `exchange*` validates the `id_token` against it.
+  **PHP has no nonce parameter and does not validate `id_token` nonce** — that
+  flow requires the underlying provider via `raw()`. **Ruby is opt-in**:
+  `create_authorization_request(nonce:)` / `exchange_code(expected_nonce:)`
+  must be passed; omitting them skips id_token validation. State is returned
+  to the caller on all nine (the SDK is stateless; the caller compares it).
 - **Secret handling** — client-secret masking in logs/serialization.
 - **Transport** — TLS verification on by default, timeouts, SSRF hardening (no
   automatic redirect following where applicable).

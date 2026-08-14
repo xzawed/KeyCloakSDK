@@ -96,7 +96,7 @@ async def handler(config: KeycloakConfig) -> None:
 |---|---|
 | Keycloak 서버 | 26.6.x (통합테스트 검증 대상) |
 | `python-keycloak` | `>=7.1,<8` |
-| `joserfc` | `>=1.7` |
+| `joserfc` | `>=1.7,<2` |
 | Python | `>=3.10` (3.10 / 3.11 / 3.12 / 3.13 CI 매트릭스) |
 
 ## 문서

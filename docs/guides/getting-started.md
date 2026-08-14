@@ -72,7 +72,7 @@ If you depend on the modules individually rather than through the facade, import
 
 ### 4) Minimal usage example
 
-Full example: [`java/keycloak-sdk-examples/.../QuickStart.java`](../../java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java)
+Runnable example (token + user search, not the three steps below): [`java/keycloak-sdk-examples/.../QuickStart.java`](../../java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java)
 
 ```java
 import io.github.xzawed.keycloak.KeycloakClient;
@@ -88,7 +88,7 @@ KeycloakConfig config = KeycloakConfig.builder()
     .clientId("admin-cli").clientSecret("changeme".toCharArray())
     .build();
 
-// try-with-resources: close() cleans up admin + auth sessions too.
+// try-with-resources: close() releases the admin client if it was created (AuthClient holds no closeable session).
 try (KeycloakClient client = KeycloakClient.create(config)) {
   // 1) Issue a token via the client-credentials grant. Never log the raw value — mask it.
   TokenSet tokens = client.auth().clientCredentialsToken();
@@ -144,7 +144,7 @@ pip install keycloak-sdk==0.1.0rc1
 
 ### 4) Minimal usage example
 
-Full example: [`python/examples/quickstart.py`](../../python/examples/quickstart.py) · async example: [`python/examples/async_quickstart.py`](../../python/examples/async_quickstart.py)
+Runnable example (token + user search, not the three steps below): [`python/examples/quickstart.py`](../../python/examples/quickstart.py) · async: [`python/examples/async_quickstart.py`](../../python/examples/async_quickstart.py)
 
 ```python
 from keycloak_sdk import KeycloakClient, KeycloakConfig, mask

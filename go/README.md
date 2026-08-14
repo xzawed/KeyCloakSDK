@@ -12,7 +12,14 @@ Go **1.25+** (`go.mod` declares `go 1.25.0`; `golang.org/x/oauth2` v0.36 sets th
 
 ## Install
 
-Go modules have no registry — the VCS tag *is* the release. This SDK lives in the `go/` subdirectory of a monorepo, so its release tags are prefixed `go/v...` while the import path carries the `/go` suffix and the package name is `keycloak`:
+Go modules have no registry — the VCS tag *is* the release. This SDK lives in the `go/` subdirectory of a monorepo, so its release tags are prefixed `go/v...` while the import path carries the `/go` suffix and the package name is `keycloak`. **No `go/v*` tag has been published yet**, so the module is not resolvable from the Go module proxy. Clone the monorepo and build under `go/`, or add a `replace`:
+
+```bash
+cd go && go build ./... && go test ./...
+# from a consuming module: replace github.com/xzawed/KeyCloakSDK/go => ../KeyCloakSDK/go
+```
+
+After the first `go/v*` tag:
 
 ```bash
 go get github.com/xzawed/KeyCloakSDK/go@v0.1.0
