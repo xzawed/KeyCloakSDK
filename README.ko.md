@@ -21,7 +21,7 @@
 
 실제로 그것들을 계속 씁니다 — 이 SDK는 각 생태계에서 **가장 좋은 클라이언트를 대체하지 않고 감쌉니다**. 그 위에, 그 클라이언트들이 사용자에게 떠넘기는 세 가지를 더합니다:
 
-- **기본값부터 강화된 JWT 검증.** 감싸는 라이브러리들은 느슨한 기본값을 주거나 building block만 줍니다. 여기서는 알고리즘 핀닝·`iss` 정확일치·`aud` 검사·`exp` 필수·클록 스큐 제한·DoS-안전 JWKS 재조회가 아홉 언어 모두에서 기본값입니다 — [자세히](#기본이-안전한-설계).
+- **기본값부터 강화된 JWT 검증.** 감싸는 라이브러리들은 느슨한 기본값을 주거나 building block만 줍니다. 여기서는 알고리즘 핀닝·`iss` 정확일치·`aud` 검사·`exp` 필수·클록 스큐 제한·rate-limit JWKS 재조회가 아홉 언어 모두에서 기본값입니다(.NET의 재조회 트리거는 더 넓다 — [자세히](#기본이-안전한-설계)).
 - **전체 서비스군에 걸친 하나의 사고 모델.** 동일한 `auth` / `admin` 파사드, 동일한 토큰·검증 타입, 동일한 오류 계층 — Go 서비스와 PHP 서비스를 같은 체크리스트로 리뷰할 수 있습니다.
 - **뺏어가는 것은 없음.** 파사드가 못 덮는 것이 있으면 `raw` 탈출구로 감싼 클라이언트에 그대로 접근합니다.
 
@@ -88,26 +88,22 @@ pip install -e KeyCloakSDK/python
 
 ## 무엇이 동일하고, 무엇이 다른가
 
-- **인증·JWT 검증: 아홉 언어 모두 동일.** 동일한 7개 오퍼레이션 — client-credentials 토큰 · 인가 요청(PKCE S256) · 코드 교환 · refresh · introspect · logout · validate — 과 동일한 `TokenSet` / `ValidatedToken` / `IntrospectionResult` 모양, 동일한 검증 규칙입니다. 다른 것은 명명 관례와 오류 관용뿐입니다: Go·Rust는 error 값을 반환하고, 나머지 일곱은 `Keycloak*` 예외 계층을 던집니다.
-- **Admin: 커버리지는 같고, 모양은 같지 않다.** 아홉 언어 모두 동일한 5개 리소스 — users · clients · realms · roles · groups — 를 노출하며 각각 생성·조회·삭제가 가능하고 `raw` 탈출구가 있습니다. 그 이상은 감싼 클라이언트를 따라갑니다: **Rust는 평평하고**(`admin.users.create(…)`가 아니라 `admin.create_user(…)`), **Rust·PHP에는 `update()`가 없으며**, PHP는 clients·realms의 생성을 `import()`로 부르고, list/search 지원은 리소스마다 다릅니다. 메서드가 있으리라 가정하기 전에 해당 언어의 예제를 확인하세요.
+- **인증: 일곱 오퍼레이션은 아홉에 모두 있다** — client-credentials 토큰 · 인가 요청(PKCE S256) · 코드 교환 · refresh · introspect · logout · validate. 시그니처는 같지 않습니다: PHP·Rust는 `redirectUri`를 설정에서 읽고, Python 시작점은 `authorization_url`이며, nonce 인자는 여덟 언어에만 있습니다. 값 타입 이름은 전부 `TokenSet` / `ValidatedToken` / `IntrospectionResult`이되 필드 집합은 조금 다릅니다(`expires_in`은 Java·Python·Kotlin에 없고, PHP·Ruby는 `expiresAt` 부재를 미만료로 봅니다). Go·Rust는 error 값을 반환하고, 나머지 일곱은 `Keycloak*` 예외 계층을 던집니다.
+- **Admin: 리소스 다섯은 같고, 메서드는 같지 않다.** 아홉 모두 users · clients · realms · roles · groups 를 노출하며 생성·조회·삭제와 `raw` 탈출구가 있습니다. 25/25는 아닙니다: 다섯 언어(Java·Kotlin·Python·Node·Go)가 `realms.list`·`realms.update`·`roles.update`·`groups.update` 네 갭을 공유하고, PHP는 어느 리소스에도 `update()`가 없으며, Rust는 평평하고(`admin.create_user(…)`) 갭이 가장 넓고, .NET·Ruby만 25/25입니다. 갭은 전부 `raw`로 도달합니다. 정확한 표는 [Admin capability matrix](docs/guides/getting-started.md#admin-capability-matrix)입니다.
 
 ---
 
 ## 기본이 안전한 설계
 
-아홉 개 SDK 모두 **동일한 JWT 검증 규칙**을 탑재합니다 — 하위 라이브러리 기본값이 아닙니다:
+아홉 개 SDK 모두 **같은 클레임 검사 규칙**(알고리즘 핀닝, `iss` 정확일치, `aud` 포함검사, `exp` 필수, 클록 스큐 제한)을 탑재합니다 — 하위 라이브러리 기본값이 아닙니다. JWKS 재조회 rate-limit은 아홉 공통이고, **「미해결 kid에만」은 여덟 언어**입니다. .NET은 `Microsoft.IdentityModel`의 `ConfigurationManager`가 서명 실패도 키 회전으로 보아 재조회하므로, rate-limit이 증폭 상한입니다 — [dotnet/README.md](dotnet/README.md).
 
-- 알고리즘 핀닝(`alg: none`·헤더 지정 알고리즘 거부)
-- `iss` 정확일치 · `aud` 포함검사 · `exp` 필수 · 클록 스큐 제한
-- DoS-안전 JWKS 재조회(rate-limit, 미해결 kid에만 재조회)
-
-토큰·시크릿은 로그·직렬화에서 마스킹되고, TLS 검증은 기본 활성이며, 각 SDK는 하위 라이브러리 타입을 일관된 파사드 뒤에 두어 사용자 코드로 새지 않게 합니다.
+토큰·시크릿은 로그·직렬화에서 마스킹되고, TLS 검증은 기본 활성입니다. 인증 경로의 파사드 뒤에는 SDK 타입만 둡니다. admin representation과 `raw()`는 문서화된 예외입니다([Admin capability matrix](docs/guides/getting-started.md#admin-capability-matrix)).
 
 ---
 
 ## 현재 상태
 
-아홉 개 SDK 전부 기능 완료·`main` 병합 상태입니다. 각각 **실제 Keycloak 26.6 서버**로 검증되며(Testcontainers, PHP·Ruby는 docker CLI 셸아웃), 로직 모듈에 라인 ≥ 90% / 브랜치 ≥ 85% 커버리지 게이트가 걸려 있습니다. 각 SDK의 보안 핵심은 어드버서리얼 리뷰를 거쳤고, 배포 전 하드닝(OIDC nonce 재생 방지, 설정 가능한 JWT 서명 알고리즘, 의존성 CVE 감사)이 아홉 언어 전부에 적용됐습니다.
+아홉 개 SDK 전부 기능 완료·`main` 병합 상태입니다. 각각 **실제 Keycloak 26.6 서버**로 검증되며(Testcontainers, PHP·Ruby는 docker CLI 셸아웃), 로직 모듈에 라인 ≥ 90% 커버리지 게이트가 걸려 있습니다. 여섯 언어는 브랜치 ≥ 85%도 강제하고, Go·PHP·Rust는 라인만 봅니다. 각 SDK의 보안 핵심은 어드버서리얼 리뷰를 거쳤고, 설정 가능한 JWT 서명 알고리즘과 의존성 CVE 감사는 아홉 전부에 적용됐습니다. OIDC nonce/`id_token` 재생 방지는 **여덟 언어**에 있습니다 — **PHP에는 없고**(그 흐름은 `raw`/하위 provider), **Ruby는 `nonce:`를 넘길 때만 켜집니다**(생략 시 id_token 검증을 건너뜁니다).
 
 전부 **pre-1.0(`0.1.0` 라인)** 입니다. 아홉 중 여덟은 첫 릴리스 후보(RC)를 공개 레지스트리에 게시했습니다 — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 · crates.io `keycloak-sdk` 0.1.0-rc.1 · RubyGems `keycloak-sdk` 0.1.0.rc1 · npm `@xzawed/keycloak-sdk` 0.1.0-rc.2 · Maven Central `io.github.xzawed:keycloak-sdk` 0.1.0-RC1 · Maven Central `io.github.xzawed:keycloak-sdk-kotlin` 0.1.0-RC1 — 나머지 한 언어(Go)는 미게시이며 사람 태그 게이트 뒤에 있습니다. 절차는 [DEPLOY.md](DEPLOY.md), 보안 정책과 여기서 pre-1.0이 뜻하는 바는 [SECURITY.md](SECURITY.md)를 보세요.
 

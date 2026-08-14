@@ -28,8 +28,8 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 
 | 문서 | 상태 | 여기서만 알 수 있는 것 |
 |---|---|---|
-| [Getting Started](guides/getting-started.md) | 운영 | 아홉 언어의 설치 명령(로컬·게시)과 30줄 퀵스타트를 한곳에 모은 것. Python `aio` / Node / .NET / Rust **async 변형**을 나란히 둔 것. **호환성 표**(각 행 머리의 게시본이 실은 기반 라이브러리). **Admin capability matrix**(언어별 직접 커버리지). |
-| [Development environment setup](guides/development-setup.md) | 운영 | 새 PC에서 언어별 툴체인을 세우는 절차와 `KCSDK_TOOLS`·`KCSDK_JDK21`·`KCSDK_PY` 환경변수 규약 — 저장소에 특정 PC 경로를 못박지 않기 위한 간접층. `node scripts/doctor.mjs`의 사용법. |
+| [Getting Started](guides/getting-started.md) | 운영 | Python `aio` / Node / .NET / Rust **async 변형**을 나란히 둔 것. **호환성 표**(각 행 머리의 게시본이 실은 기반 라이브러리). **Admin capability matrix**(언어별 직접 커버리지 — 루트 README는 요지만 적고 이 표를 가리킨다). |
+| [Development environment setup](guides/development-setup.md) | 운영 | 새 PC에서 언어별 툴체인을 세우는 **절차**와 `node scripts/doctor.mjs` 사용법. 변수 이름(`KCSDK_*`)은 CLAUDE.md·rules에도 있으나, 설치 순서는 여기에만 있다. |
 | [Deploying a Keycloak server](guides/deploying-keycloak-server.md) | 운영 | SDK가 아니라 **상대편 서버**를 세우는 법 — 단일 VM + Docker Compose + Caddy 자동 TLS 프로덕션 구성. |
 | [Add-a-language playbook](guides/add-a-language-playbook.md) | 운영 | 10번째 언어를 추가할 때 밟는 순서. **코드 생성기도 저품질 티어도 두지 않는다**는 depth-first 원칙과 그 이유. |
 | [Language support roadmap](roadmap/language-support.md) | 운영 | 다음에 어떤 언어를, 왜 그 순서로 하는지. 채택/기각된 후보와 판단 근거. |

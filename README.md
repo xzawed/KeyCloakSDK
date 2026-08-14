@@ -21,7 +21,7 @@ English · [한국어](README.ko.md)
 
 You still do — this SDK **wraps the best client in each ecosystem** instead of replacing it, and adds the three things those clients leave to you:
 
-- **JWT validation that is hardened by default.** The wrapped libraries ship permissive defaults, or only building blocks. Here, algorithm pinning, exact `iss`, `aud` checking, mandatory `exp`, bounded clock skew and DoS-safe JWKS refetch are the default in all nine — [details below](#hardened-by-default).
+- **JWT validation that is hardened by default.** The wrapped libraries ship permissive defaults, or only building blocks. Here, algorithm pinning, exact `iss`, `aud` checking, mandatory `exp`, bounded clock skew and rate-limited JWKS refetch are the default in all nine (.NET’s refetch trigger is broader — [details below](#hardened-by-default)).
 - **One mental model across the fleet.** The same `auth` / `admin` facade, the same token and validation types, the same error hierarchy, in every language — so the Go service and the PHP service review the same way.
 - **Nothing taken away.** The wrapped client stays reachable through a `raw` escape hatch whenever the facade doesn't cover what you need.
 
@@ -88,26 +88,22 @@ Then create a confidential client with its service account enabled in the realm 
 
 ## What's identical, and what isn't
 
-- **Auth and JWT validation: identical in all nine.** The same seven operations — client-credentials token · authorization request (PKCE S256) · code exchange · refresh · introspect · logout · validate — the same `TokenSet` / `ValidatedToken` / `IntrospectionResult` shapes, and the same validation rules. What differs is naming conventions and the error idiom: Go and Rust return error values, the other seven raise a `Keycloak*` exception hierarchy.
-- **Admin: same coverage, not the same shape.** All nine expose the same five resources — users · clients · realms · roles · groups — each able to create, read and delete, plus a `raw` escape hatch. Past that, the surface follows the client being wrapped: **Rust** is flat (`admin.create_user(…)`, not `admin.users.create(…)`), **Rust and PHP have no `update()`**, PHP spells create as `import()` for clients and realms, and list/search coverage varies per resource. Check your language's example before assuming a method is there.
+- **Auth: the same seven operations exist in all nine** — client-credentials token · authorization request (PKCE S256) · code exchange · refresh · introspect · logout · validate. Signatures are not identical: PHP and Rust take `redirectUri` from config rather than as an argument; Python names the start `authorization_url`; a nonce parameter exists on eight languages and is absent on PHP. The types are named `TokenSet` / `ValidatedToken` / `IntrospectionResult` everywhere; a few fields differ (`expires_in` is not on Java/Python/Kotlin; PHP and Ruby treat a missing `expiresAt` as not-expired). Go and Rust return error values; the other seven raise a `Keycloak*` hierarchy.
+- **Admin: five resources everywhere, not the same methods.** All nine expose users · clients · realms · roles · groups, each able to create, read and delete, plus a `raw` escape hatch. Coverage is not 25/25: five languages (Java · Kotlin · Python · Node · Go) share the same four gaps (`realms.list`, `realms.update`, `roles.update`, `groups.update`); PHP has no `update()` on any resource; Rust is flat (`admin.create_user(…)`) and has the widest gaps; only .NET and Ruby are 25/25. Every gap is reachable through `raw`. The exact table is the [Admin capability matrix](docs/guides/getting-started.md#admin-capability-matrix).
 
 ---
 
 ## Hardened by default
 
-All nine ship the **same JWT validation rules** — not the underlying library defaults:
+All nine ship **the same claim-check rules** (algorithm pinning, exact `iss`, `aud` containment, mandatory `exp`, bounded clock skew) — not the underlying library defaults. JWKS refetch is rate-limited on all nine; **“only on an unresolved key id” is eight languages**. .NET’s `Microsoft.IdentityModel` `ConfigurationManager` also refetches on a bad signature, so the rate-limit is the amplification cap — see [dotnet/README.md](dotnet/README.md).
 
-- Algorithm pinning (rejects `alg: none` and header-supplied algorithms)
-- Exact `iss` match · `aud` containment check · mandatory `exp` · bounded clock skew
-- DoS-safe JWKS refetch (rate-limited, and only on an unresolved key id)
-
-Secrets and tokens are masked in logs and serialization, TLS verification is on by default, and each SDK keeps its underlying library types behind a consistent facade so they don't leak into your code.
+Secrets and tokens are masked in logs and serialization, and TLS verification is on by default. Auth-path types stay behind the facade; admin representations and `raw()` are documented exceptions ([Admin capability matrix](docs/guides/getting-started.md#admin-capability-matrix)).
 
 ---
 
 ## Status
 
-All nine SDKs are feature-complete and merged to `main`. Each is verified against a **real Keycloak 26.6 server** (Testcontainers; PHP and Ruby shell out to the docker CLI) and held to a coverage gate of line ≥ 90% / branch ≥ 85% on logic modules. Security cores were reviewed adversarially, and pre-release hardening (OIDC nonce replay protection, configurable JWT signature algorithms, dependency CVE audits) is applied across all nine.
+All nine SDKs are feature-complete and merged to `main`. Each is verified against a **real Keycloak 26.6 server** (Testcontainers; PHP and Ruby shell out to the docker CLI). Logic modules are held to a line ≥ 90% coverage gate; six languages also gate branch ≥ 85% (Go, PHP and Rust measure lines only). Security cores were reviewed adversarially. Configurable JWT signature algorithms and dependency CVE audits apply across all nine. OIDC nonce / `id_token` replay protection is in **eight** languages — **PHP has none** (that flow needs `raw` / the underlying provider); **Ruby turns it on only when you pass `nonce:`** (omitting it skips id_token validation).
 
 Everything is **pre-1.0 (`0.1.0` line)**. Eight of the nine have shipped their first release candidates to public registries — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 · crates.io `keycloak-sdk` 0.1.0-rc.1 · RubyGems `keycloak-sdk` 0.1.0.rc1 · npm `@xzawed/keycloak-sdk` 0.1.0-rc.2 · Maven Central `io.github.xzawed:keycloak-sdk` 0.1.0-RC1 · Maven Central `io.github.xzawed:keycloak-sdk-kotlin` 0.1.0-RC1 — while the remaining one (Go) is unpublished, behind a human tag gate. See [DEPLOY.md](DEPLOY.md) for that procedure, and [SECURITY.md](SECURITY.md) for the security policy and what pre-1.0 means here.
 

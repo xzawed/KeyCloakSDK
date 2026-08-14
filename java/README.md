@@ -65,7 +65,7 @@ KeycloakConfig config = KeycloakConfig.builder()
     .clientSecret("changeme".toCharArray())   // load from an env var / secret manager
     .build();
 
-// try-with-resources: close() releases the auth session and, if used, the admin client.
+// try-with-resources: close() releases the admin client if it was created (AuthClient holds no closeable session).
 try (KeycloakClient client = KeycloakClient.create(config)) {
   // 1. Get a token (client-credentials grant). Never log the raw value.
   TokenSet tokens = client.auth().clientCredentialsToken();

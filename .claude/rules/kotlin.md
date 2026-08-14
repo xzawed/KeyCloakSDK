@@ -40,7 +40,7 @@ gradle -p kotlin ktlintCheck        # 린트(무경고; 수정은 ktlintFormat)
 - ⚠️ **(Kotlin) jvm-test-suite 없이 수동 `creating` 소스셋으로 `integrationTest`를 만들면 "no tests discovered"** — Kotlin 컴파일출력이 `output.classesDirs`에 미등록. Gradle 표준 `jvm-test-suite`로 전환 필요, `dependencies`엔 `kotlin("test")` 대신 **`kotlin-test-junit5`** 명시(plain은 assertions만).
 - ⚠️ **(Kotlin) `= runBlocking {…}` 표현식-본문 `@Test`는 Jupiter가 발견 못 함** — 블록 마지막식이 non-Unit이면 메서드가 non-void가 됨 → `: Unit` 반환타입 명시 필요.
 - ⚠️ **(Kotlin) Kover 0.9.x는 jvm-test-suite `integrationTest`를 자동 계측대상에 포함** — `FullFlowIT` 미실행 시 0%로 총계 붕괴 + `koverVerify`가 Docker없는 단위CI를 파손 → `instrumentation.disabledForTestTasks.add("integrationTest")`+`sources.excludedSourceSets.add("integrationTest")` 둘 다 필요.
-- ⚠️ **(Kotlin) exchangeCode는 id_token을 nonce 비교 전에 완전 서명검증한다(Java보다 강함)** — `JwtValidator`로 서명검증 먼저, nonce는 그 다음(Java는 nonce 파스온리였음).
+- ⚠️ **(Kotlin) exchangeCode는 id_token을 nonce 비교 전에 완전 서명검증한다(Java와 동형)** — `JwtValidator`로 서명·iss·aud·exp를 먼저 검증하고 nonce를 그 다음에 대조한다. Java `AuthClient.requireValidNonce`도 `validate(idToken)` 후 nonce 비교다.
 - ⚠️ **(Kotlin) admin 파사드는 auth를 직접 알지 못한다(§4·Java 동형)** — `AdminClient`가 `KeycloakBuilder` 내장 client-credentials로 토큰 자체소유(TokenManager 자동 획득/갱신) — Java가 RESTEasy 필터충돌로 내린 결정을 상속.
 - ⚠️ **(Kotlin) 로컬 포터블 Gradle과 CI 래퍼 버전을 일치시켜 둔다(현재 둘다 9.6.1)** — 어긋나면 로컬에서 재현 안 되는 CI실패 발생. KGP 상향 시 Gradle 지원밴드 확인(현재 KGP 2.4.10).
 - ⚠️ **(Kotlin) 신규 라이브러리 리스크 0** — Java SDK가 실Keycloak으로 이미 검증한 3개(admin-client·oauth2-oidc-sdk·nimbus-jose-jwt)를 그대로 재사용, Java의 게차를 코루틴 경계만 다르게 상속. **핀은 루트 `CLAUDE.md`의 Kotlin 의존성 표에만 적는다**(doc-guard 앵커가 `kotlin/build.gradle.kts`와 대조 — 여기 숫자를 쓰면 2차 정의 자리가 된다).
