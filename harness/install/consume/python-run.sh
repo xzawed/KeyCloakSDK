@@ -45,11 +45,32 @@ PY
   # 이 단언이 없으면 하네스는 **공개 패키지를 검증하고 초록**이 된다.
   # ⚠️ **전부 로컬이라야 한다**(기록된 줄이 하나라도 로컬이 아니면 실패) + 빈 파일도 실패.
   # 여섯 언어가 같은 규칙을 쓴다 — "하나라도 로컬"은 부분 출처·시도 URL 혼입을 통과시킨다.
-  if [ -s "$STATUS/provenance.txt" ] && ! grep -v -F "$REG" "$STATUS/provenance.txt" | grep -q .; then
+  # ⚠️ `$REG`가 비면 `grep -v -F ""`가 모든 줄을 걸러내 음성 조건이 **자동 참**이 된다 — 공개
+  # 레지스트리에서 받아도 통과한다(실측 재현). env로는 도달 불가하지만(`:-`가 빈 값도 기본값으로
+  # 대체한다) 스크립트 변이로는 도달하므로 비어있음을 명시 검사한다(2026-08-12 부류 재스캔).
+  # ⚠️ **음성 조건만으로는 부족하다 — kotlin·ruby가 이미 받은 하드닝을 여기도 건다(B0 런타임
+  # 테스트가 드러냈다).** `grep -v -F "$REG"`는 "모든 줄이 `$REG`를 **포함**"만 본다. 실측으로
+  # 세 가지가 통과했다: (a) 인덱스 URL만 있고 휠을 안 받은 기록(`…/simple/keycloak-sdk/`)
+  # (b) 중간 임베드(`https://evil.example/redir?u=http://pypiserver:8080/x.whl`)
+  # (c) 호스트 경계 침범(`http://pypiserver:8080.evil.com/x.whl`).
+  # 끝의 `/` 하나로 정규화하면 (b)(c)가 닫히고, 양성 조건(로컬 origin에서 받은 `.whl` 한 줄)이
+  # (a)를 닫는다. 셸 `case`의 인용된 확장은 완전 리터럴이라 정규식 확장 부류도 함께 사라진다.
+  # >>> provenance-gate
+  [ -n "$REG" ] && REG="${REG%/}/"
+  _art_local=0
+  if [ -n "$REG" ] && [ -s "$STATUS/provenance.txt" ]; then
+    while IFS= read -r _pline || [ -n "$_pline" ]; do
+      case "$_pline" in "$REG"*.whl) _art_local=1; break ;; esac
+    done <"$STATUS/provenance.txt"
+  fi
+  if [ -n "$REG" ] && [ -s "$STATUS/provenance.txt" ] \
+     && ! grep -v -F "$REG" "$STATUS/provenance.txt" | grep -q . \
+     && [ "$_art_local" = 1 ]; then
     PROVENANCE_OK=1
   else
     PROVENANCE_OK=0
   fi
+  # <<< provenance-gate
   if [ "$PROVENANCE_OK" = 1 ]; then
     : > "$STATUS/installed.ok"
     echo "[python-run] install OK (로컬 레지스트리에서 받았다)"

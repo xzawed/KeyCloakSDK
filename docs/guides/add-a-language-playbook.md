@@ -75,12 +75,12 @@ Nail down the security properties implemented in Stage 2 **so that CI prevents r
 
 ### Stage 4 — Test parity matrix
 
-The new language must verify the **same scenarios** as Java (123) and Python (235). Counts may differ per language (test idiom differences), but the **set of covered scenarios must be isomorphic**.
+The new language must verify the **same scenarios** as Java and Python. Counts may differ per language (test idiom differences), but the **set of covered scenarios must be isomorphic**.
 
 | Level | Content | Reference (Java / Python) |
 |---|---|---|
-| **Unit** | PKCE generation, config validation & defaults, token-response parsing (`from_response`), expiry & clock-skew decisions, JWT hardening (alg pin · reject none · iss · aud · exp/nbf), **exception boundary mapping** (404 → `KeycloakNotFoundError`/`KeycloakNotFoundException`, etc.), masking | Java 117 / Python 224 (sync 135 + async 89) |
-| **Integration (Testcontainers)** | **Real Keycloak 26.6** container + realm import. client-credentials token issuance, `validate` (accept multiple aud), introspect, user/client CRUD, the `raw()` escape hatch, lookup after delete → `KeycloakNotFoundError`/`KeycloakNotFoundException` | Java 6 (SmokeIT·AuthFlowIT·AdminOpsIT) / Python 11 (sync 6 + async 5) |
+| **Unit** | PKCE generation, config validation & defaults, token-response parsing (`from_response`), expiry & clock-skew decisions, JWT hardening (alg pin · reject none · iss · aud · exp/nbf), **exception boundary mapping** (404 → `KeycloakNotFoundError`/`KeycloakNotFoundException`, etc.), masking | see each language's CI job and coverage gate (counts are not hand-maintained) |
+| **Integration (Testcontainers)** | **Real Keycloak 26.6** container + realm import. client-credentials token issuance, `validate` (accept multiple aud), introspect, user/client CRUD, the `raw()` escape hatch, lookup after delete → `KeycloakNotFoundError`/`KeycloakNotFoundException` | Java `SmokeIT`·`AuthFlowIT`·`AdminOpsIT` / Python sync + async integration suites |
 | **Coverage gate** | Line/branch thresholds on logic modules. Network-boundary classes (`auth`/`admin` creation) are verified by integration and omit/excluded from coverage | Java line ≥90%/branch ≥85% (JaCoCo) · Python logic 100% enforced (`--cov-fail-under`, boundaries omit) |
 
 - [ ] Cover all the scenarios above with unit tests (isolate the network with mocks/stubs).
@@ -102,10 +102,10 @@ The new language must verify the **same scenarios** as Java (123) and Python (23
   - For which languages are already on a public registry, see [DEPLOY.md](../../DEPLOY.md) — do not restate it here, it goes stale.
 - [ ] **Tag-driven release (human-gated)** — actual publishing runs only via a workflow triggered when a human pushes a tag. Existing examples: [`.github/workflows/release.yml`](../../.github/workflows/release.yml) (Java, `v*` tag → Maven Central), [`.github/workflows/python-release.yml`](../../.github/workflows/python-release.yml) (Python, `py-v*` tag → PyPI Trusted Publisher/OIDC). The new language follows the same pattern with a language-specific tag prefix + the appropriate registry (npm/Go proxy/NuGet/Packagist/crates.io/RubyGems). The full procedure is in [DEPLOY.md](../../DEPLOY.md).
   - ⚠️ **Never let an agent auto-run an irreversible publish** — credentials only via CI secrets/OIDC, and the tag push is done by a human.
-- [ ] **Docs** — a new-language section in getting-started (install · QuickStart · cross-language mapping table · compatibility matrix), the README, and updates to the structure tree, build commands, and test counts in [CLAUDE.md](../../CLAUDE.md). Record the per-task gate history in the [verification log](../governance/verification-log.md).
+- [ ] **Docs** — a new-language section in getting-started (install · QuickStart · cross-language mapping table · compatibility matrix), the README, and updates to the structure tree and build commands in [CLAUDE.md](../../CLAUDE.md) (do **not** hand-copy test counts — see the scenario table above). Record the per-task gate history in the [verification log](../governance/verification-log.md).
 
 **Deliverable:** A CI workflow + a release workflow (prepared, not executed) + updated docs + verification-log entries.
-**Gate:** CI GREEN. The release workflow is in a prepared state (human-gated, not executed). Docs match the actual implementation and test counts (zero discrepancies).
+**Gate:** CI GREEN. The release workflow is in a prepared state (human-gated, not executed). Docs match the actual implementation (do not hand-copy test counts — CI is the authority).
 
 ---
 
@@ -141,7 +141,7 @@ Every task follows the [AI governance framework](../governance/ai-governance-fra
 
 This playbook is induced from the two completed implementations below. When writing a new language's WBS, mirror their **format, granularity, and self-review tables** exactly:
 
-- **Java (baseline language, hand-wrapped):** [docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md](../superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md) — 6 Maven modules, coupling auth/admin via `TokenProvider` in `core`, JaCoCo 90/85 gate, `v*` tag → Maven Central. Unit 117 + integration 6 = **123**.
-- **Python (2nd language, wrapping `python-keycloak`):** [docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md](../superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md) — a single package with the `src/` layout + an `aio` async mirror, self JWT validation with `joserfc`, logic coverage enforced at 100%, `py-v*` tag → PyPI Trusted Publisher. Unit 224 + integration 11 = **235**.
+- **Java (baseline language, hand-wrapped):** [docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md](../superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md) — 6 Maven modules, JaCoCo 90/85 gate, `v*` tag → Maven Central. Unit suite + Testcontainers integration.
+- **Python (2nd language, wrapping `python-keycloak`):** [docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md](../superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md) — a single package with the `src/` layout + an `aio` async mirror, self JWT validation with `joserfc`, logic coverage enforced at 100%, `py-v*` tag → PyPI Trusted Publisher. Unit suite (sync + async) + integration.
 
 The key thing the two cases prove: **even with different starting points (hand-wrapping vs. wrapping a mature library), keeping the §4 contract as the source of truth makes the results isomorphic.** A new language implements that contract too — it does not redesign it.

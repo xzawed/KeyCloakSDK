@@ -69,7 +69,7 @@ client.close
 | `connect_timeout:` | | `10` | 커넥션 타임아웃(초, `> 0`) |
 | `read_timeout:` | | `10` | 읽기 타임아웃(초, `> 0`) |
 | `clock_skew:` | | `30` | JWT 검증 클록 스큐 허용치(초, `>= 0`) — ruby-jwt `leeway`로 전달 |
-| `jwks_min_refetch:` | | `10.0` | 미해결 kid로 인한 JWKS 재조회의 최소 간격(초, `>= 0`) — DoS 증폭 상한 |
+| `jwks_min_refetch:` | | `30.0` | 미해결 kid로 인한 JWKS 재조회의 최소 간격(초, `>= 0`) — DoS 증폭 상한 |
 | `expected_audience:` | | `nil` | 토큰 `aud`에 들어있어야 할 값. 미설정이면 `client_id`(기본 realm은 client-credentials 토큰 `aud`에 client_id를 넣지 않는다) |
 
 값 검증 실패(필수 누락·공백·타임아웃 비양수 등)는 `KeycloakSdk::ConfigError`를 raise한다.

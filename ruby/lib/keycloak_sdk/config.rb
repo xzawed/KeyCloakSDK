@@ -3,14 +3,30 @@
 module KeycloakSdk
   # 불변 설정. 생성 시 검증하고 freeze한다. client_secret은 inspect에서 마스킹.
   class Config
+    # JWKS 최소 재조회 간격 기본값의 **유일한 정의 자리**(초). DoS 증폭 상한이고 아홉 언어가
+    # 같은 값으로 정렬돼 있다 — `scripts/test/test-security-defaults.sh`가 아홉 언어 코드와
+    # 소비자 문서를 함께 대조한다.
+    #
+    # ⚠️ 이 숫자를 다른 곳에 다시 적지 말 것. 예전에는 여기 30.0, `JwksStore#initialize`에 10.0으로
+    # **두 번** 적혀 있었다. `JwksStore`는 평범한 public 클래스라 소비자가 직접 생성하면
+    # (파사드를 거치지 않으면) 문서가 말하는 30초가 아니라 10초를 받아 **IdP를 3배 자주** 때렸다.
+    # 한글 README도 그 10.0을 그대로 옮겨 적고 있었다(2026-08-12 문서 감사 → 2026-08-13 Task D1).
+    DEFAULT_JWKS_MIN_REFETCH = 30.0
+
+    # JWT `exp`/`nbf` 검증의 시계 오차 허용치 기본값(초). 이것도 아홉 언어 공동 불변식이다 —
+    # 한 언어만 커지면 **그 언어에서만 만료된 토큰이 더 오래 통과한다**.
+    # ⚠️ `JwtValidator#initialize`가 같은 값을 두 번째로 적고 있었다(둘 다 30이라 아직 갈리지는
+    # 않았으나 JWKS가 10.0/30.0으로 갈린 것과 똑같은 모양이다). 그 자리는 이제 이 상수를 참조한다.
+    DEFAULT_CLOCK_SKEW = 30
+
     attr_reader :server_url, :realm, :client_id, :client_secret,
                 :scopes, :signature_algorithms, :connect_timeout, :read_timeout, :clock_skew,
                 :jwks_min_refetch, :expected_audience
 
     def initialize(server_url:, realm:, client_id:, client_secret: nil,
                    scopes: ["openid"], signature_algorithms: ["RS256"],
-                   connect_timeout: 10, read_timeout: 10, clock_skew: 30,
-                   jwks_min_refetch: 30.0, expected_audience: nil)
+                   connect_timeout: 10, read_timeout: 10, clock_skew: DEFAULT_CLOCK_SKEW,
+                   jwks_min_refetch: DEFAULT_JWKS_MIN_REFETCH, expected_audience: nil)
       @server_url = strip_trailing_slashes(normalize_required("server_url", server_url))
       @realm = normalize_required("realm", realm)
       @client_id = normalize_required("client_id", client_id)
@@ -22,7 +38,7 @@ module KeycloakSdk
       @connect_timeout = positive("connect_timeout", connect_timeout)
       @read_timeout = positive("read_timeout", read_timeout)
       @clock_skew = non_negative("clock_skew", clock_skew)
-      # 미해결 kid로 인한 JWKS 재조회의 최소 간격(초, 기본 10.0) — DoS 증폭 상한.
+      # 미해결 kid로 인한 JWKS 재조회의 최소 간격(초) — DoS 증폭 상한. 기본값은 위 상수.
       @jwks_min_refetch = non_negative("jwks_min_refetch", jwks_min_refetch)
       # 토큰 aud에 들어있어야 할 값(기본 nil = client_id). 기본 realm은 client-credentials 토큰의
       # aud에 client_id를 넣지 않으므로, realm이 실제로 발급하는 리소스/오디언스를 지정한다.

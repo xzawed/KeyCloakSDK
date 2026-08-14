@@ -43,7 +43,7 @@ func newValidator(opts validatorOptions) *Validator {
 		opts.httpClient = http.DefaultClient
 	}
 	if opts.minRefetch == 0 {
-		opts.minRefetch = 60 * time.Second
+		opts.minRefetch = time.Duration(defaultJwksMinRefetchSecs) * time.Second
 	}
 	return &Validator{opts: opts}
 }

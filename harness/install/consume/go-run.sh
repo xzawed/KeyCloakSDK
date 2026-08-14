@@ -32,12 +32,16 @@ cd /app || exit 1
 # `go mod download` 성공 + 옛 단언 통과). 지금은 **공개 폴백 없이** file 프록시만으로 모듈 전체를
 # 받아본다 — 성공하면 그 뒤 체인 `go get`은 모듈 캐시가 단락시켜 공개에서 다시 받을 수 없다.
 echo "[go-run] 0/3 출처 확인 — GOPROXY=file:///proxy 단독으로 모듈 전체(.info/.mod/.zip) 다운로드"
+# ⚠️ go만 축이 다르다 — provenance.txt를 **읽지 않고** `file:///proxy` 단독 다운로드의 성공 여부로
+# 판정한다. 그래서 런타임 게이트 테스트는 합성 URL 목록이 아니라 **스텁 `go`** 를 먹인다.
+# >>> provenance-gate
 if GOPROXY="file:///proxy" go mod download "github.com/xzawed/KeyCloakSDK/go@v$PKG_VER" >/tmp/prov.log 2>&1; then
   PROVENANCE_OK=1
 else
   PROVENANCE_OK=0
   echo "[go-run] file GOPROXY 단독 다운로드 실패(체인이라면 공개 프록시로 폴스루했을 상황):"; cat /tmp/prov.log
 fi
+# <<< provenance-gate
 
 echo "[go-run] 1/3 install — go get github.com/xzawed/KeyCloakSDK/go@v$PKG_VER github.com/Nerzal/gocloak/v13@v13.9.0"
 # 실제 소비자 명령 형태(패키지@버전을 커맨드라인에 명시) — SDK를 file GOPROXY에서 $PKG_VER로 설치.

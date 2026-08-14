@@ -56,27 +56,12 @@ if [ -z "$PKG_VER" ]; then
   echo "PKG_VER이 빈 값이다 — 버전 없이 검증하면 무엇을 검증했는지 알 수 없다(fail-closed)" >&2
   exit 2
 fi
-# ⚠️ 형식을 경계에서 검증한다. 이 값은 단순히 문자열로 비교되는 게 아니라 **sed 표현식과 컨테이너
-# 명령의 일부가 된다**(consume/java-run.sh·kotlin-run.sh·rust-run.sh가 `s#…#…${PKG_VER}…#` 형태로
-# 치환하고, publish 쪽은 파일명·좌표를 조립한다). `#`나 따옴표가 섞이면 sed 표현식이 깨지거나
-# 의도하지 않은 치환이 일어난다. CI에서는 태그 접미사가 이미 매니페스트와 대조되지만, 이 스크립트는
-# 손으로도 돌아가고(`--version`) 방어는 값을 쓰는 쪽이 아니라 받는 쪽에 있어야 한다.
-# 허용 범위는 아홉 레지스트리의 표기를 전부 덮는다: 0.1.0 · 0.1.0rc1(PEP 440) · 0.1.0-rc.1(SemVer)
-# · 0.1.0.rc1(RubyGems) · 0.1.0-RC1/0.1.0-SNAPSHOT(Maven).
-# 매니페스트 파생 값도 같은 경계를 지난다 — 저장소 파일에서 읽었다고 신뢰되는 것은 아니다.
-validate_pkg_ver() { # <값> <출처 라벨>
-  case "$1" in
-    *[!0-9A-Za-z.+-]* | -* | *..* )
-      echo "PKG_VER='$1'($2) 형식이 허용되지 않는다 — 영숫자·점·하이픈·플러스만 쓸 수 있다." >&2
-      echo "  이 값은 sed 표현식과 컨테이너 명령에 삽입되므로 경계에서 막는다(fail-closed)." >&2
-      exit 2 ;;
-  esac
-  case "$1" in
-    [0-9]*.[0-9]*.[0-9]*) : ;;
-    *) echo "PKG_VER='$1'($2)가 X.Y.Z로 시작하지 않는다 — 릴리스 버전이 맞는지 확인하라." >&2; exit 2 ;;
-  esac
-}
-validate_pkg_ver "$PKG_VER" "명시/기본값"
+# ⚠️ 순수 로직(버전 형식 검증·언어별 버전 파생)은 `lib/verify-lib.sh`로 분리했다 — Docker 없이
+# 자가테스트가 가능하도록(계획서 Task B4). 거기 실린 두 함수가 실제로 사고를 낸 자리다
+# (부분집합 실행에서만 나타난 순서 의존성). 가드는 `scripts/test/test-install-verify.sh`.
+# shellcheck source=lib/verify-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/verify-lib.sh"
+validate_pkg_ver "$PKG_VER" "명시/기본값" || exit 2
 export PKG_VER
 # ⚠️ **폴백 기준값을 따로 보관한다.** 아래 언어 루프가 `PKG_VER="$(ver_for_lang "$L")"`로 전역을
 # 덮어쓰므로, `ver_for_lang`이 폴백에서 그 전역을 읽으면 **직전 언어의 버전이 다음 언어로 샌다**.
@@ -99,17 +84,6 @@ if [ "$PKG_VER_EXPLICIT" -eq 0 ]; then
   done <<<"$_manifest_list"
 fi
 
-ver_for_lang() { # <lang> → 이 언어가 검증할 버전(stdout)
-  if [ "$PKG_VER_EXPLICIT" -eq 1 ]; then echo "$PKG_VER"; return; fi
-  case "$1" in
-    # 매니페스트가 산출물 버전을 결정하는 여섯 언어 — 다른 버전을 기대하면 publish에서 반드시 죽는다.
-    python|node|rust|ruby|kotlin|dotnet)
-      if [ -n "${MANIFEST_VER[$1]:-}" ]; then echo "${MANIFEST_VER[$1]}"; return; fi ;;
-  esac
-  # go·php(태그 SSOT)·java(versions:set 주입) — publish→consume 자기완결이라 기본값.
-  # ⚠️ `$PKG_VER`가 아니라 `$PKG_VER_DEFAULT`를 읽는다(위 주석의 순서 의존성 사고).
-  echo "$PKG_VER_DEFAULT"
-}
 
 # shellcheck disable=SC2206  # 언어명은 공백 구분 단순 토큰이라 의도적 워드분할("node python" 한 인자도 허용)
 LANGS=(${ARGS:-$DEFAULT_LANGS})
@@ -1000,7 +974,7 @@ fi
 
 for L in "${LANGS[@]}"; do
   PKG_VER="$(ver_for_lang "$L")"
-  validate_pkg_ver "$PKG_VER" "$L"
+  validate_pkg_ver "$PKG_VER" "$L" || exit 2
   export PKG_VER
   log "== [$L] 설치·동작 검증 시작 (버전 ${PKG_VER}) =="
   # 언어별 신호를 fresh로 리셋 — 이전(실패)실행의 stale error/필드가 누적 신호에 남지 않도록.
@@ -1016,7 +990,11 @@ log "== 설치 매트릭스 생성 =="
 # --strict: 매트릭스에 ✗가 있으면 exit 1. 부분실패 격리(위 루프가 실패 언어를 건너뛰고 계속
 # 진행하는 것)는 유지하고, 최종 종료코드에만 반영한다. 이전에는 여기가 `|| true` + 무조건
 # `exit 0`이라 java/php가 publish 단계에서 죽어도 CI 잡이 초록이었다(2026-07-08·07-09 실측).
+# --expect: 이번 실행이 실제로 돌린 언어 목록("${LANGS[@]}") — 신호 파일이 없는 언어를
+# "통과"가 아니라 "재지 않음"으로 잡으려면 판정이 기대 집합을 알아야 한다(S-A1). 하드코딩하지
+# 않고 이 실행의 $LANGS를 그대로 넘긴다 — 부분집합 실행(예: `install-verify.sh go python`)에서
+# 기대 집합이 아홉 전체로 부풀지 않게 하기 위해서다.
 MATRIX_RC=0
-node report/install-matrix.mjs --strict || MATRIX_RC=$?
+node report/install-matrix.mjs --strict --expect "$(printf '%s ' "${LANGS[@]}")" || MATRIX_RC=$?
 log "== 완료 — report/INSTALL-MATRIX.md (exit=${MATRIX_RC}) =="
 exit "$MATRIX_RC"

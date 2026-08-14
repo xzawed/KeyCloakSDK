@@ -13,7 +13,10 @@ path = "src/main.rs"
 keycloak-sdk = { path = "/src/rust" }
 # admin representation 타입(UserRepresentation 등)을 직접 구성하려면 keycloak-sdk와 동일한
 # 크레이트/버전/피처를 써야 한다(같은 타입이어야 AdminClient 메서드에 값으로 전달 가능).
-keycloak = { version = "=26.6.2", default-features = false, features = ["tags-all", "resource-builder", "reqwest12"] }
+# ⚠️ 요구 문자열이 `rust/Cargo.toml`과 **글자까지 같아야** 한다. `=26.6.2`(정확 핀)와 `~26.6.2`
+# (SDK 선언)는 서로 다른 계약이다 — SDK가 상한을 올리는 순간 교집합이 비어 cargo가 통일에
+# 실패한다. `scripts/check-versions.mjs`가 셋을 대조한다(2026-08-12 문서 감사 C2).
+keycloak = { version = "~26.6.2", default-features = false, features = ["tags-all", "resource-builder", "reqwest12"] }
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 serde_json = "1"
