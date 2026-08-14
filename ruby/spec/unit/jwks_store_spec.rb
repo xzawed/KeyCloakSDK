@@ -8,7 +8,18 @@ RSpec.describe KeycloakSdk::JwksStore do
   let(:config) { KeycloakSdk::Config.new(server_url: "https://k", realm: "r", client_id: "c") }
   let(:http) { KeycloakSdk::Http.build(config) { |f| f.response :json } }
   let(:jwks_url) { "https://k/realms/r/protocol/openid-connect/certs" }
+
   let(:body) { { keys: [{ kty: "RSA", kid: "k1", n: "AQAB", e: "AQAB" }] }.to_json }
+
+  # ⚠️ **2차 정의 자리 금지**(Task D1). 이 클래스는 평범한 public 클래스라 소비자가 파사드를
+  # 거치지 않고 직접 생성할 수 있다. 예전에는 그 경로의 기본값이 10.0이라 문서·config가 말하는
+  # 30초가 아니라 **IdP를 3배 자주** 때렸고, 한글 README도 그 10.0을 옮겨 적고 있었다.
+  # 이 예제는 "생략했을 때의 값"을 config 상수에 고정한다 — 리터럴을 다시 적으면 실패한다.
+  it "min_refetch를 생략하면 Config의 기본값과 같다(정의 자리는 하나여야 한다)" do
+    omitted = described_class.new(jwks_url: jwks_url, http: http)
+    expect(omitted.instance_variable_get(:@min_refetch))
+      .to eq(KeycloakSdk::Config::DEFAULT_JWKS_MIN_REFETCH)
+  end
 
   it "fetches once (cold) and caches subsequent non-forced reads" do
     stub = stub_request(:get, jwks_url).to_return(status: 200, body: body,

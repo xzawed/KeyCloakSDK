@@ -42,8 +42,49 @@ EOF
 echo "[dotnet-run] 2/4 install — dotnet add package Xzawed.Keycloak.Sdk --version $PKG_VER (app 프로젝트)"
 # 실제 소비자 명령 형태(패키지@버전 명시, -s 없음 — packageSourceMapping이 소스를 가른다).
 if (cd /work/app && dotnet add package Xzawed.Keycloak.Sdk --version "$PKG_VER") >/tmp/install.log 2>&1; then
-  : > "$STATUS/installed.ok"
-  echo "[dotnet-run] install OK"
+  # ⚠️ **출처 단언**(이슈 #167 · 계획서 S-A2). `packageSourceMapping`이 구조적 격리이긴 하지만
+  # node·rust도 구조 격리를 갖고서 게이트를 함께 둔다(`5fe1c9c`·`d275579`) — 이 리포의 결정은
+  # **격리는 단언을 대체하지 않는다**이다. dotnet만 아홉 중 유일하게 게이트가 없어 `dotnet add
+  # package`가 exit 0이면 어디서 받았든 `installed.ok`를 썼다.
+  #
+  # 관측 지점: NuGet은 글로벌 패키지 폴더의 `.nupkg.metadata`에 **패키지별 해석 피드**를 남긴다.
+  # 실측(이 PC 캐시 샘플): `{"version":2,"contentHash":"…","source":"https://api.nuget.org/v3/index.json"}`.
+  # ⚠️ 다른 후보는 전부 출처를 안 남긴다 — `dotnet list package --format json`은 id/버전만,
+  # `obj/project.assets.json`의 `project.restore.sources`는 **설정된 피드 목록**이지 해석 결과가
+  # 아니며(rust가 `cargo metadata.source`를 기각한 것과 같은 함정), `.nuget.g.props`는 캐시 폴더뿐이다.
+  # ⚠️ NuGet은 폴더명에서 id·버전을 **소문자화**한다.
+  _nupkgs="${NUGET_PACKAGES:-$HOME/.nuget/packages}"
+  _vlc="$(printf '%s' "$PKG_VER" | tr 'A-Z' 'a-z')"
+  _meta="$_nupkgs/xzawed.keycloak.sdk/$_vlc/.nupkg.metadata"
+  sed -n 's/.*"source"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_meta" >"$STATUS/provenance.txt" 2>/dev/null || true
+  [ -s "$STATUS/provenance.txt" ] || echo "<.nupkg.metadata에서 source를 찾지 못했다: $_meta>" >"$STATUS/provenance.txt"
+  echo "[dotnet-run] SDK 출처: $(tr '\n' ' ' <"$STATUS/provenance.txt" 2>/dev/null)"
+  # ⚠️ `$REG`는 origin이 아니라 **인덱스 URL 전체**(`http://bagetter:8080/v3/index.json`)이고
+  # `.nupkg.metadata`의 `source`도 설정된 그 문자열 그대로다 — 그래서 접두가 아니라 **정확일치**가
+  # 옳다. `grep -x`(줄 전체 일치)로 음성 조건도 같은 강도로 맞춘다.
+  # >>> provenance-gate
+  _src_local=0
+  if [ -n "$REG" ] && [ -s "$STATUS/provenance.txt" ]; then
+    while IFS= read -r _pline || [ -n "$_pline" ]; do
+      [ "$_pline" = "$REG" ] && { _src_local=1; break; }
+    done <"$STATUS/provenance.txt"
+  fi
+  if [ -n "$REG" ] && [ -s "$STATUS/provenance.txt" ] \
+     && ! grep -v -F -x "$REG" "$STATUS/provenance.txt" | grep -q . \
+     && [ "$_src_local" = 1 ]; then
+    PROVENANCE_OK=1
+  else
+    PROVENANCE_OK=0
+  fi
+  # <<< provenance-gate
+  if [ "$PROVENANCE_OK" = 1 ]; then
+    : > "$STATUS/installed.ok"
+    echo "[dotnet-run] install OK (로컬 레지스트리 $REG 가 서빙했다)"
+  else
+    echo "[dotnet-run] install FAILED — SDK를 로컬($REG)이 아닌 곳에서 받았거나 출처 기록이 없다: $(tr '\n' ' ' <"$STATUS/provenance.txt" 2>/dev/null)"
+    cp /tmp/install.log "$STATUS/install.log" 2>/dev/null || true
+    sleep 3600; exit 1
+  fi
 else
   echo "[dotnet-run] install FAILED"; cat /tmp/install.log
   cp /tmp/install.log "$STATUS/install.log" 2>/dev/null || true

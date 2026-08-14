@@ -171,6 +171,44 @@ claim_at CHANGELOG.md "나머지 ${unpub_ko}("                           "폴리
 claim_at docs/roadmap/language-support.md "**$Pub_en are now live as release candidates**" "step-0(게시 수)"
 claim_at docs/roadmap/language-support.md "the remaining $unpub_en ("                      "step-0(미게시 수)"
 
+# ---- 2026-08-12 문서 감사가 찾은 다섯 자리 ----
+#
+# ⚠️ 위 목록은 "게시 현황을 한 문장으로 요약하는 자리"만 겨눴다. 그런데 **같은 문서가 같은
+# 사실을 여러 자리에서 말한다** — DEPLOY.md는 네 자리, language-support.md는 머리말과 상태
+# 매트릭스 두 자리다. 그중 가드 밖이던 자리들이 실제로 낡아 있었고, **82개 어서션이 전부
+# 초록인 채로** 한 문서가 자기 자신을 반박했다(2026-08-12 감사 실측):
+#   DEPLOY.md §7   "Three of the nine … have not yet published" · "The six languages that have published"
+#   DEPLOY.md §5   "Seven release workflows have now executed"       (같은 문단이 eight of nine published)
+#   language-support 머리말 "four of them (PHP, Python, .NET, Rust)" (같은 문서 17행은 "Eight are now live")
+#   language-support 매트릭스 Java·Node·Ruby·Kotlin이 `🔒 human-gated`  (넷 다 게시됨)
+# 개수를 말하는 자리가 늘어날수록 손으로 맞추는 비용이 선형으로 늘고 드리프트 확률은 그보다
+# 빨리 는다 — 그래서 **자리를 늘리는 대신 자리마다 가드를 늘린다**.
+Unpub_en="$(printf '%s' "$unpub_en" | sed 's/^./\U&/')"
+
+claim_at DEPLOY.md "$Unpub_en of the nine languages"                        "§7 첫 실행 경고(미게시 수)"
+claim_at DEPLOY.md "The $pub_en languages that have published"              "§7 RC 선례(게시 수)"
+claim_at DEPLOY.md "$Pub_en release workflows have now executed end to end" "§5 실행 워크플로 수"
+claim_at docs/roadmap/language-support.md "$pub_en of them (all except"     "머리말(게시 수)"
+
+# ⚠️ 상태 매트릭스는 산문이 아니라 **행 개수**로 본다 — `getting-started`의 설치 절 개수 검사와
+# 같은 관용이다. 표현을 바꿔도 흔들리지 않고, 감사가 찾은 부류(게시됐는데 `🔒 human-gated`로 남은
+# 행)를 정확히 겨눈다. ⚠️ **양방향이라야 한다** — 미게시만 세면 게시 행을 지워버려도 통과하고,
+# 게시만 세면 미게시 행이 바뀌어도 통과한다. 그래서 언어 행 **총수**를 함께 고정한다.
+#
+# ⚠️ **패턴에 이모지를 쓰지 않는다 — 환경에 따라 매치가 갈린다.** 처음에는 `grep -c '🔒 …'`로
+# 셌는데, 같은 트리·같은 파일에서 이 PC의 GNU grep 3.0은 1/8을 세고 다른 환경(MSYS grep)은
+# **0/0**을 세어 어서션 둘이 실패했다. 실패 방향은 fail-closed라 위험하진 않지만, **문서가
+# 멀쩡한데 CI가 빨개지는** 부류다. `human-gated`와 행 머리 `| **`는 순수 ASCII라 갈리지 않는다.
+lsm="$ROOT/docs/roadmap/language-support.md"
+_rows_all="$(grep -c '^| \*\*' "$lsm")"
+_rows_gated="$(grep -c 'human-gated |' "$lsm")"
+assert_eq "$n" "$_rows_all" \
+  "language-support 상태 매트릭스의 언어 행 수가 DEPLOY_LANGS 개수($n)와 다르다 — 행 표기가 바뀌었나?"
+assert_eq "$unpub_n" "$_rows_gated" \
+  "language-support 상태 매트릭스의 human-gated(미게시) 행 수가 DF_PUBLISHED 파생 미게시 수($unpub_n)와 다르다"
+assert_eq "$pub_n" "$((_rows_all - _rows_gated))" \
+  "language-support 상태 매트릭스의 게시 행 수(총 행 − human-gated)가 DF_PUBLISHED 파생 게시 수($pub_n)와 다르다"
+
 # 한글 미러 — 영문과 같은 사실을 한글 수사로 말한다(README.md와 동일 구조의 미러라는 규칙).
 ko_t="$(cat "$ROOT/README.ko.md")"
 assert_contains "$ko_t" "아홉 중 $pub_ko" "README.ko.md 의 게시 개수가 DF_PUBLISHED 파생값($pub_n)과 다르다"
@@ -256,5 +294,41 @@ done
 assert_ok test "$coords_want" -ge 2
 assert_eq "$coords_want" "$coords_seen" \
   "DEPLOY.md 에서 읽은 버전-보유 설치 좌표 수($coords_seen)가 SSOT 파생 기대값($coords_want)과 다르다 — 좌표 표기가 바뀌었나"
+
+# ---- getting-started **본문 설치 절**의 버전 문자열 ↔ df_published_version ----
+#
+# ⚠️ 위 호환성 표 검사는 **표만** 본다. 그런데 소비자가 실제로 복사하는 것은 언어별 본문의 설치
+# 명령이다 — 표를 고치고 본문을 남겨도 통과했다(2026-08-13 재검토가 확인한 C1의 남은 절반).
+#
+# ⚠️ **`### 3) Installation …` 하위절만 본다.** 같은 언어의 `### 2) Local installation (development)`
+# 에는 `0.1.0-SNAPSHOT`(java)·`publishToMavenLocal`로 만든 jar 이름(kotlin)이 정당하게 들어 있어
+# 구분 없이 검사하면 오탐이 난다 — 소비자 복사 자리와 로컬 빌드 예제는 다른 것이다.
+# ⚠️ go는 절 제목이 `### 3) Installation after release (future)`라 같은 접두로 함께 걸리고, 기대값은
+# 미게시 라인 버전 `0.1.0`이다(게시되는 순간 기대값이 RC로 바뀌며 갱신을 강제한다).
+gs_head() { case "$1" in
+  java) echo '## Java' ;; python) echo '## Python' ;; node) echo '## Node.js / TypeScript' ;;
+  go) echo '## Go' ;; dotnet) echo '## C# / .NET' ;; php) echo '## PHP' ;; rust) echo '## Rust' ;;
+  ruby) echo '## Ruby' ;; kotlin) echo '## Kotlin' ;; esac; }
+
+body_seen=0
+for L in $DEPLOY_LANGS; do
+  _h="$(gs_head "$L")"
+  _want="$(df_published_version "$L")"
+  [ -n "$_want" ] || _want="0.1.0"
+  _vers="$(awk -v h="$_h" '
+    $0 == h { inlang = 1; next }
+    /^## / { inlang = 0 }
+    inlang && /^### / { ins = ($0 ~ /^### 3\) Installation/) ? 1 : 0 }
+    /^```/ { f = !f; next }
+    inlang && ins && f { print }
+  ' "$gs" | grep -oE '0\.1\.0[A-Za-z0-9.-]*' | sort -u || true)"
+  [ -n "$_vers" ] || continue   # 설치 명령에 버전을 안 쓰는 언어(node·rust)는 대조할 값이 없다
+  body_seen=$((body_seen + 1))
+  _bad="$(printf '%s\n' "$_vers" | grep -Fxv "$_want" || true)"
+  assert_eq "" "$_bad" \
+    "$L 의 getting-started 설치 절 코드펜스에 게시 SSOT($_want)와 다른 버전이 있다 — 소비자가 없는 좌표를 복사한다"
+done
+# ⚠️ 대조군 — H2 표기가 바뀌면 위 루프가 전부 `continue`로 빠져 **한 건도 안 돌고 통과**한다.
+assert_ok test "$body_seen" -ge 6
 
 assert_report

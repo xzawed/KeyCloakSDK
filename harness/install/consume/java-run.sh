@@ -54,22 +54,101 @@ if mvn -s "$SETTINGS" -B -q dependency:get "-Dartifact=io.github.xzawed:keycloak
   # 값을 낸 것은 profile id와 repository id의 철자가 우연히 같기 때문이었다. `<server>`(XSD상
   # `<mirrors>`보다 위에 와야 한다)를 하나 추가하면 오탐으로 뒤집히고, `<mirror><id>central</id>`를
   # 추가하면 **거짓 통과**가 된다(Central에서 받은 아티팩트가 `>central=`로 기록되므로).
-  _repo_ids="$(sed -n '/<repositories>/,/<\/repositories>/{ s|.*<id>\([^<]*\)</id>.*|\1|p; }' "$SETTINGS")"
+  # ⚠️ **id가 아니라 URL로 판정한다(이슈 #167 후속).** 위 스코핑도 여전히 **id 문자열**을 신뢰한다 —
+  # `<repositories>` 블록에 `mvn-repo`와 나란히 `<repository><id>central-mirror</id>
+  # <url>https://repo.maven.apache.org/maven2</url></repository>`를 추가하면(리터럴 `central`이
+  # 아니므로) 위 스코핑을 그대로 통과하고, Central에서 받은 아티팩트가 `>central-mirror=`로 기록돼도
+  # 거짓 통과한다(재현: task-A4-report.md Step 1). 이 leg에는 다른 8개 언어와 달리 오케스트레이터가
+  # 주입하는 `REGISTRY_URL` 환경변수가 없다(install-verify.sh의 run_lang_java 확인 — mvn-repo 자체는
+  # settings.xml 파일 배포로 주입되지 그 URL이 env로 오지 않는다). 그래서 "로컬 레지스트리 URL"은
+  # settings.xml 자신에서 구조적으로 유도한다: 이 파일의 `<mirrors>` 블록은 전역 HTTP 차단기의
+  # `mirrorOf`에서 우리 저장소 id를 `,!<id>` 예외로 뺀다(파일 상단 주석 참고) — 이 예외가 존재하는
+  # 이유 자체가 "우리 로컬 저장소는 평문 HTTP라 차단 대상이라서"이므로, 그 예외가 가리키는
+  # `<repository>`의 `<url>`이 곧 로컬 레지스트리다. Central은 HTTPS라 애초에 이 차단기 대상이
+  # 아니므로 `central-mirror` 같은 위조 항목은 이 예외 메커니즘에 등장하지 않는다 — id를 흉내내도
+  # URL은 못 흉내낸다.
+  # ⚠️ **파싱이 기대는 불변식 둘(코드리뷰 지적, #167 후속2) — 둘 다 깨져도 fail-closed지만 원인
+  # 진단 없이 leg 전체가 실패했었다:**
+  #   (1) `mirrorOf` 예외는 **여러 개**(`,!mvn-repo,!other-repo`)일 수 있다 — 마지막 하나만 집으면
+  #       실제 로컬이 아닌 다른 예외를 오인해 정상 설치까지 거부한다. 그래서 예외를 전부 훑어
+  #       **`<repository>`의 `<url>`이 실제로 `http://`(평문)인 예외**를 로컬로 판정한다(id를
+  #       하드코딩하지 않는다 — HTTPS 예외는 애초에 이 블로커를 피할 이유가 없어 후보에서 자연히
+  #       빠진다).
+  #   (2) 한 `<repository>` 블록 안에서 `<id>`·`<url>`의 **등장 순서**를 가정하지 않는다 — 블록을
+  #       단위로 보고 그 안에서 어느 것이 먼저 나오든 둘 다 모은다(포매터가 순서를 바꿔도 안전).
+  _repos_xml="$(sed -n '/<repositories>/,/<\/repositories>/p' "$SETTINGS")"
+  # id<TAB>url 쌍 — <repository>…</repository> 한 블록을 레코드 하나로 보고, 블록이 닫힐 때 그 안에서
+  # 모은 <id>·<url>을 한 줄로 낸다(순서 불변식 없음 — 불변식 (2)).
+  _repo_pairs="$(printf '%s\n' "$_repos_xml" | {
+    _cur_id=""; _cur_url=""; _in_repo=0
+    while IFS= read -r _ln; do
+      case "$_ln" in
+        *'<repository>'*) _in_repo=1; _cur_id=""; _cur_url="" ;;
+        *'</repository>'*)
+          [ "$_in_repo" = 1 ] && printf '%s\t%s\n' "$_cur_id" "$_cur_url"
+          _in_repo=0 ;;
+        *'<id>'*'</id>'*)
+          [ "$_in_repo" = 1 ] && _cur_id="$(printf '%s' "$_ln" | sed 's|.*<id>\([^<]*\)</id>.*|\1|')" ;;
+        *'<url>'*'</url>'*)
+          [ "$_in_repo" = 1 ] && _cur_url="$(printf '%s' "$_ln" | sed 's|.*<url>\([^<]*\)</url>.*|\1|')" ;;
+      esac
+    done
+  })"
+  _repo_ids="$(printf '%s\n' "$_repo_pairs" | while IFS="$(printf '\t')" read -r _pid _purl; do printf '%s\n' "$_pid"; done)"
+  # id를 넣으면 $_repo_pairs에서 그 id의 url을 찾아 표준출력으로 낸다(못 찾으면 빈 문자열) —
+  # 호출부는 항상 `$( )`로 감싸 stdout만 취하므로 파이프 서브셸 안에서 값을 모아도 무방하다.
+  _lookup_url() {
+    _want="$1"
+    printf '%s\n' "$_repo_pairs" | while IFS="$(printf '\t')" read -r _pid _purl; do
+      if [ "$_pid" = "$_want" ]; then printf '%s' "$_purl"; break; fi
+    done
+  }
+  _mirrorof="$(sed -n 's|.*<mirrorOf>\([^<]*\)</mirrorOf>.*|\1|p' "$SETTINGS" | head -1)"
+  _local_repo_id=""
+  _local_url=""
+  _save_ifs="$IFS"
+  IFS=','
+  for _tok in $_mirrorof; do
+    [ -n "$_local_url" ] && continue   # 이미 찾았으면 이후 예외는 무시(첫 매치 결정론)
+    case "$_tok" in
+      '!'*)
+        _exc_id="${_tok#!}"
+        _exc_url="$(_lookup_url "$_exc_id")"
+        case "$_exc_url" in
+          http://*) _local_repo_id="$_exc_id"; _local_url="$_exc_url" ;;
+        esac
+        ;;
+    esac
+  done
+  IFS="$_save_ifs"
+  if [ -n "$_local_url" ]; then
+    echo "[java-run] settings.xml에서 유도한 로컬 레지스트리 URL: $_local_url (예외 id: $_local_repo_id)"
+  else
+    echo "[java-run] 로컬 레지스트리 URL을 settings.xml에서 파생하지 못했다 — <mirrorOf> 예외 또는 <repository> 구조가 바뀌었나?"
+  fi
   # ⚠️ **"하나라도 로컬"이 아니라 "전부 로컬"이라야 한다.** `_remote.repositories`는 파일마다 한 줄이라
   # jar는 central, pom은 mvn-repo인 **부분 출처**가 성립한다 — 실측으로 확인했다(`jar>central=` +
   # `pom>mvn-repo=` 조합이 "하나라도" 규칙을 통과했다). 비어 있는 것도 실패다(fail-closed).
   # 선언된 로컬 저장소 id 중 하나로 **전부** 기록돼 있고, 그중 **jar**가 있어야 통과다
   # (pom만 로컬인 부분 출처 차단 · `central`은 로컬이 아니므로 후보에서 제외).
+  # >>> provenance-gate
   PROVENANCE_OK=0
   _repo_id=""
   for _id in $_repo_ids; do
     [ "$_id" = central ] && continue
+    _id_url="$(_lookup_url "$_id")"
+    [ -n "$_local_url" ] && [ "$_id_url" = "$_local_url" ] || continue
+    # ⚠️ **양쪽 다 고정문자열(`-F`)이라야 한다(2026-08-12 부류 재스캔 — kotlin·ruby 동형).** 예전에는
+    # 둘 다 `_id`를 **이스케이프 없이 BRE에 보간**했다. 저장소 id에 `.`이 섞이는 순간 임의문자가 되어
+    # 다른 id를 매치한다(예: `_id=c.ntral`이 `…jar>central=`을 매치해 Central을 로컬로 판정). 여기서
+    # `_id`는 고정 리터럴로만 쓰이므로 `-F`가 의미 손실 없이 부류를 제거한다(`\.jar` → `.jar`).
     if [ -s "$STATUS/provenance.txt" ] \
-       && ! grep -v ">${_id}=" "$STATUS/provenance.txt" | grep -q . \
-       && grep -q "\.jar>${_id}=" "$STATUS/provenance.txt"; then
+       && ! grep -v -F ">${_id}=" "$STATUS/provenance.txt" | grep -q . \
+       && grep -q -F ".jar>${_id}=" "$STATUS/provenance.txt"; then
       PROVENANCE_OK=1; _repo_id="$_id"; break
     fi
   done
+  # <<< provenance-gate
   [ -n "$_repo_id" ] || _repo_id="$(printf '%s' "$_repo_ids" | tr '\n' ' ')"
   if [ "$PROVENANCE_OK" = 1 ]; then
     : > "$STATUS/installed.ok"

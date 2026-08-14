@@ -7,7 +7,10 @@ module KeycloakSdk
   # RS256 핀(none/confusion 구조적 거부)·iss 정확·aud 포함·exp 필수·nbf·클록스큐.
   # 키는 DoS-safe JwksStore로 조회한다(위조 서명은 재조회 미유발). 헤더 alg는 검증 알고리즘 선택에 미사용.
   class JwtValidator
-    def initialize(issuer:, audience:, jwks_store:, algorithms: ["RS256"], clock_skew: 30)
+    # ⚠️ `clock_skew` 기본값을 여기 숫자로 적지 말 것 — `Config`가 유일한 정의 자리다(Task D1과
+    # 같은 부류). 이 클래스도 public이라 소비자가 직접 생성할 수 있고, 두 자리가 갈리면 그
+    # 경로에서만 만료된 토큰이 더 오래 통과한다.
+    def initialize(issuer:, audience:, jwks_store:, algorithms: ["RS256"], clock_skew: Config::DEFAULT_CLOCK_SKEW)
       # ruby-jwt의 verify_iss/verify_aud 빌더는 값이 nil이면 조용히 no-op이 되어
       # verify_iss:true/verify_aud:true를 켜도 검사를 건너뛴다 — fail-closed로 방어.
       raise ConfigError, "issuer is required" if issuer.nil? || issuer.to_s.strip.empty?

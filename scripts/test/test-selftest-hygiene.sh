@@ -48,6 +48,59 @@ else
   printf 'FAIL repo-hygiene.yml을 찾지 못함(%s) — 배선 검사 불가\n' "$HYGIENE" >&2
 fi
 
+# ---- 규칙 3: harness의 회귀 테스트(*.test.mjs)도 CI에 배선돼야 한다 ----
+# I1(2026-08-12 최종 리뷰): install-matrix.test.mjs·score.test.mjs·verdict.test.mjs 세 파일이
+# 하네스의 헤드라인 회귀 테스트인데 `grep -rn "install-matrix.test\|score.test\|verdict.test"
+# .github/ scripts/`가 아무것도 못 찾을 만큼 어떤 워크플로에도 배선돼 있지 않았다. 규칙 2는
+# `scripts/test/test-*.sh`만 훑어 harness/ 아래는 애초에 스코프 밖이라 이 누락을 못 잡았다.
+# git으로 추적된 harness/**/*.test.mjs 전부가 repo-hygiene.yml에서 `node <path>` 형태로
+# 실제 실행되는지 본다(규칙 2와 동형 — 언급이 아니라 실행을 센다).
+ROOT="$(cd "$DIR/../.." && pwd)"
+MJS_TESTS="$(cd "$ROOT" && git ls-files -- 'harness/**/*.test.mjs')"
+if [ -z "$MJS_TESTS" ]; then
+  _A_FAIL=$((_A_FAIL + 1))
+  printf 'FAIL harness/**/*.test.mjs 를 하나도 못 찾음 — 스윕이 깨졌거나 파일이 옮겨졌다\n' >&2
+elif [ -f "$HYGIENE" ]; then
+  RUNLINES_MJS="$(sed 's/#.*//' "$HYGIENE")"
+  for m in $MJS_TESTS; do
+    if printf '%s' "$RUNLINES_MJS" | grep -q "node $m"; then
+      _A_PASS=$((_A_PASS + 1))
+    else
+      _A_FAIL=$((_A_FAIL + 1))
+      printf 'FAIL %s: repo-hygiene.yml에서 실행되지 않음 — 존재하지만 돌지 않는다\n' "$m" >&2
+    fi
+  done
+else
+  _A_FAIL=$((_A_FAIL + 1))
+  printf 'FAIL repo-hygiene.yml을 찾지 못함(%s) — harness .test.mjs 배선 검사 불가\n' "$HYGIENE" >&2
+fi
+
+# ---- 규칙 4: 추적되는 모든 *.sh 는 인덱스에 실행비트(100755)가 있어야 한다 ----
+# 2026-08-14: 이 규칙이 CI에만 있고 로컬에는 없어서, 이번 브랜치의 repo-hygiene가 **11번 연속
+# 빨간 채로** 작업이 계속됐다. 로컬 자가테스트는 전건 초록이었다 — `sh <file>` 로 직접 부르면
+# 실행비트가 없어도 돌기 때문이다. 원인은 환경이다: Windows 체크아웃은 파일시스템 실행비트를
+# 갖지 않아 새로 만든 `.sh` 가 `100644` 로 인덱스에 들어간다(이번에 4개가 그랬다).
+# `shell-exec-bits` 는 `main` 룰셋 PRIMARY 의 required 체크 **둘 중 하나**라, 이 상태로는
+# 브랜치가 아예 머지되지 않는다. 규칙 1~3과 같은 부류다 — **파일은 있는데 돌지 않는다.**
+# 고치는 법: `git update-index --chmod=+x <file>`
+NONEXEC="$(cd "$ROOT" && git ls-files -s -- '*.sh' | awk '$1 == "100644" { print $4 }')"
+if [ -z "$NONEXEC" ]; then
+  _A_PASS=$((_A_PASS + 1))
+else
+  for f in $NONEXEC; do
+    _A_FAIL=$((_A_FAIL + 1))
+    printf 'FAIL %s: 인덱스 모드가 100644 — 실행비트 없음(git update-index --chmod=+x)\n' "$f" >&2
+  done
+fi
+# 스윕이 깨져 0개를 훑고 통과하는 공허를 막는다(규칙 3의 빈 목록 검사와 동형).
+SH_ALL="$(cd "$ROOT" && git ls-files -- '*.sh' | wc -l)"
+if [ "$SH_ALL" -gt 0 ]; then
+  _A_PASS=$((_A_PASS + 1))
+else
+  _A_FAIL=$((_A_FAIL + 1))
+  printf 'FAIL 추적되는 *.sh 를 하나도 못 찾음 — 스윕이 깨졌다\n' >&2
+fi
+
 # ---- 대조군: 이 가드가 실제로 잡는가 ----
 # ⚠️ 없으면 "전부 통과"가 검사가 도는 증거인지 grep이 항상 참인지 구분할 수 없다.
 # 임시 파일로 두 위반을 실제로 만들어 규칙이 반응하는지 본다.
@@ -63,5 +116,11 @@ assert_ok grep -q 'sh scripts/test/test-selftest-hygiene.sh' "$HYGIENE"
 # ⚠️ 대조군 — 주석에만 등장하는 이름이 배선으로 오인되지 않는지. 이 어서션이 없었다면
 # 첫 구현의 결함(주석 매치)이 그대로 남았을 것이다.
 assert_fails sh -c 'printf "%s" "$(sed "s/#.*//" "$1")" | grep -q "sh scripts/test/test-does-not-exist.sh"' _ "$HYGIENE"
+
+# ---- 대조군: 규칙 3(harness *.test.mjs 배선)이 실제로 잡는가 ----
+# I1을 고치며 넣은 규칙 3이 공허하지 않음을 규칙 1·2와 같은 방식으로 보인다: 실제로 배선된
+# 파일 하나는 잡히고, 주석에만 등장하는 가짜 경로는 안 잡혀야 한다.
+assert_ok grep -q 'node harness/install/report/install-matrix.test.mjs' "$HYGIENE"
+assert_fails sh -c 'printf "%s" "$(sed "s/#.*//" "$1")" | grep -q "node harness/does/not/exist.test.mjs"' _ "$HYGIENE"
 
 assert_report

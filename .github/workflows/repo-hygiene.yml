@@ -61,7 +61,7 @@ jobs:
         # 않는가다 — check-docs와 같은 종류의 자기기만 방지다.
         run: sh scripts/test/test-doctor.sh
       - name: 문서-소스 대조
-        # --min-facts/--min-anchors는 저장소 루트의 현재 실측치(46 facts / 18 anchors)를
+        # --min-facts/--min-anchors는 저장소 루트의 현재 실측치(49 facts / 18 anchors)를
         # 하한으로 강제한다 — 앵커 주석을 지우면서 그 표를 남겨두면(검사 대상 자체가
         # 조용히 사라지면) 위쪽 검사들만으로는 잡히지 않고 exit 0이 새 나간다. 앵커·
         # 표를 늘리면 이 값도 함께 올려야 한다(내리는 PR은 곧 커버리지 축소이므로
@@ -69,7 +69,7 @@ jobs:
         # ⚠️ 이 값은 한때 14/4에 머물러 있었고 실측은 이미 28/7이었다 — **앵커 절반이
         # 사라져도 CI가 통과하는 상태**였다. 하한을 올리는 것을 잊으면 가드가 조용히
         # 헐거워지므로, 앵커를 추가하는 PR은 이 줄을 함께 고쳐야 한다.
-        run: node scripts/check-docs.mjs . --strict --min-facts=46 --min-anchors=18
+        run: node scripts/check-docs.mjs . --strict --min-facts=49 --min-anchors=18
 
       - name: 커버리지 게이트 가드 자가테스트(측정 실패와 하락을 구분하는지)
         # 이 가드의 가치는 임계값 비교가 아니라 판별이다 — 둘 다 exit 1이라 종료코드만 보는
@@ -94,6 +94,29 @@ jobs:
           sh scripts/test/test-release-request.sh
           sh scripts/test/test-dispatch-release.sh
 
+      # ⚠️ 보안 파라미터 기본값의 단일 진실(아홉 언어 코드 ↔ 소비자 문서). 이 값(JWKS 최소
+      # 재조회 간격)은 DoS 증폭 상한이라 문서가 틀리면 소비자가 틀린 전제로 자기 rate-limit을
+      # 설계한다. 실제로 `ruby/README.ko.md`가 `10.0`(코드는 30)이라고 3배 낮게 알려주고 있었고
+      # 리포에 이 불변식을 겨누는 가드는 0건이었다(2026-08-12 문서 감사).
+      - name: 보안 기본값 자가테스트(9언어 코드 ↔ 문서 정합)
+        run: sh scripts/test/test-security-defaults.sh
+
+      # ⚠️ 출처 게이트를 **실행해** 판정한다(계획서 Task B0). 자매 가드
+      # `test-harness-registries.sh`는 같은 스크립트를 정적으로 렉싱하는데, 그 방식으로 7종
+      # 우회를 닫은 뒤에도 적대적 재리뷰가 4종을 더 찾았다 — 정적으로 임의 POSIX 셸의 의미를
+      # 증명하려는 시도라 수렴하지 않는다. 실측: 그 4종 중 **3종을 정적 가드는 못 잡고 런타임이
+      # 잡는다**. 둘 다 돌린다(정적=존재·배선, 런타임=판정의 옳음).
+      - name: 출처 게이트 런타임 행동 테스트(8언어 게이트를 실제로 실행)
+        run: sh scripts/test/test-provenance-gate.sh
+
+      # ⚠️ `install-verify.sh`의 순수 로직(버전 파생·형식 검증). 이 로직은 1000줄짜리 Docker
+      # 오케스트레이터 안에 있어 레그를 통째로 돌리기 전에는 시험할 방법이 없었고, 실제로 거기서
+      # 사고가 났다 — 폴백이 루프가 덮어쓰는 전역을 읽어 직전 언어의 버전이 다음 언어로 샜다.
+      # 기본 순서에서는 안 물려 **야간이 초록이었다**(부분집합 실행에서만 나타났다).
+      # ⚠️ 대상이 bash 스크립트(연관배열)라 이 테스트만 `bash`로 돌린다 — 나머지는 dash다.
+      - name: install-verify 순수 로직 자가테스트(Docker 불필요)
+        run: bash scripts/test/test-install-verify.sh
+
       # ⚠️ 하네스 로컬 레지스트리 설정. 이 설정이 낡으면 야간 `install-all`만 조용히 빨개지고
       # PR/푸시 CI는 전부 초록이라 며칠씩 안 보인다 — 실제로 3연속(08-08·08-09·08-10) 그랬다.
       # 원인은 저장소 밖이었다: node 패키지가 공개 npmjs에 게시되자 Verdaccio uplink이 같은
@@ -101,6 +124,17 @@ jobs:
       # 초록이었으므로, 그 설정을 겨누는 가드가 따로 필요하다.
       - name: 하네스 레지스트리 설정 가드(자기 스코프 uplink 격리 · 전이 의존성 프록시 유지)
         run: sh scripts/test/test-harness-registries.sh
+
+      # ⚠️ 이 세 파일은 하네스의 헤드라인 회귀 테스트(판정 공허성 제거·스코어링·보안 판정)인데
+      # 어떤 워크플로에도 배선되지 않은 채 존재만 하고 있었다(최종 리뷰 I1) — `grep -rn
+      # "install-matrix.test\|score.test\|verdict.test" .github/ scripts/`가 아무것도 못
+      # 찾았다. `test-selftest-hygiene.sh`의 CI 배선 규칙은 `scripts/test/test-*.sh`만 보고
+      # `harness/**/*.test.mjs`는 스코프 밖이라 이 누락을 못 잡았다 — 그 스코프를 넓혔다.
+      - name: 하네스 회귀 테스트(판정 공허성·스코어링·보안 판정)
+        run: |
+          node harness/install/report/install-matrix.test.mjs
+          node harness/report/score.test.mjs
+          node harness/security/verdict.test.mjs
 
       # ⚠️ 자가테스트 자신의 위생 — "테스트가 있다"가 "테스트가 돈다"를 뜻하지 않는 두 경로를 막는다.
       # (1) `assert.sh`의 어서션은 `_A_FAIL`만 누적하고 종료코드를 바꾸지 않는다 — 종료코드를 내는
