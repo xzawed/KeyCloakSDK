@@ -13,7 +13,7 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · 
 
 Every network call is a `suspend` function — blocking calls into the underlying JVM libraries run on `Dispatchers.IO` via `runInterruptible`. Only `createAuthorizationRequest` is synchronous, because it needs no network. Public API visibility is enforced with `explicitApi()`.
 
-This SDK reuses the verified JVM stack of its sibling Java SDK — `org.keycloak:keycloak-admin-client` 26.0.11, `com.nimbusds:oauth2-oidc-sdk` 11.38.2, and `com.nimbusds:nimbus-jose-jwt` 10.9.1 — plus `kotlinx-coroutines-core` 1.11.0 for the coroutine boundary.
+The published `0.1.0-RC1` reuses the verified JVM stack of its sibling Java SDK — `org.keycloak:keycloak-admin-client` 26.0.11, `com.nimbusds:oauth2-oidc-sdk` 11.38.2, and `com.nimbusds:nimbus-jose-jwt` 10.9.1 — plus `kotlinx-coroutines-core` 1.11.0 for the coroutine boundary. Pins on `main` may already be ahead of this published artifact.
 
 ## Install
 

@@ -38,14 +38,14 @@ language's build configuration — that is the source of truth, so this table do
 | Language | Runs every local gate | Compile | Unit | Coverage gate | Lint / format | Types | Integration (Docker) |
 |---|---|:--:|:--:|:--:|:--:|:--:|:--:|
 | Java | `mvn -f java/pom.xml verify` | ✓ | ✓ | JaCoCo `jacoco:check` | enforcer | — | failsafe `*IT` |
-| Python | `pytest -m "not integration" --cov=keycloak_sdk` | — | ✓ | `fail_under` | ruff (incl. bandit) | mypy strict | `pytest -m integration` |
-| Node | `npm test` | tsc | ✓ | vitest thresholds | eslint + prettier | `npm run typecheck` | `npm run test:it` |
+| Python | `cd python && pytest -m "not integration" --cov=keycloak_sdk` | — | ✓ | `fail_under` | ruff (incl. bandit) | mypy strict | `pytest -m integration` |
+| Node | `cd node && npm test` | tsc | ✓ | vitest thresholds | eslint + prettier | `npm run typecheck` | `npm run test:it` |
 | Go | `go -C go test ./...` | ✓ | ✓ | `go tool cover` | `go vet` + `gofmt` | ✓ (compiler) | `-tags=integration` |
-| C#/.NET | `dotnet test --filter "Category!=Integration"` | ✓ | ✓ | coverlet **collector** → `scripts/check-coverage.mjs` | `dotnet format` | ✓ (compiler) | `Category=Integration` |
-| PHP | `vendor/bin/phpunit --testsuite unit` | — | ✓ | clover + Xdebug | php-cs-fixer | PHPStan level max | `--testsuite integration` |
-| Rust | `cargo test` | ✓ | ✓ | `cargo llvm-cov` | `cargo fmt` + clippy `-D warnings` | ✓ (compiler) | `--test integration_test -- --ignored` |
-| Ruby | `bundle exec rspec` | — | ✓ | SimpleCov `minimum_coverage` | rubocop | — | `RUN_INTEGRATION=1 … --tag integration` |
-| Kotlin | `./gradlew test` | ✓ | ✓ | Kover `koverVerify` | ktlint | ✓ (compiler) | `./gradlew integrationTest` |
+| C#/.NET | `cd dotnet && dotnet test --filter "Category!=Integration"` | ✓ | ✓ | coverlet **collector** → `scripts/check-coverage.mjs` | `dotnet format` | ✓ (compiler) | `Category=Integration` |
+| PHP | `cd php && vendor/bin/phpunit --testsuite unit` | — | ✓ | clover + Xdebug | php-cs-fixer | PHPStan level max | `--testsuite integration` |
+| Rust | `cd rust && cargo test` | ✓ | ✓ | `cargo llvm-cov` | `cargo fmt` + clippy `-D warnings` | ✓ (compiler) | `--test integration_test -- --ignored` |
+| Ruby | `cd ruby && bundle exec rspec` | — | ✓ | SimpleCov `minimum_coverage` | rubocop | — | `RUN_INTEGRATION=1 … --tag integration` |
+| Kotlin | `cd kotlin && ./gradlew test` | ✓ | ✓ | Kover `koverVerify` | ktlint | ✓ (compiler) | `cd kotlin && ./gradlew integrationTest` |
 
 Repo-wide, on every push and PR (`repo-hygiene.yml`):
 
