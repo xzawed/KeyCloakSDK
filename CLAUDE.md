@@ -213,7 +213,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(C#) SDK10 기본 솔루션 포맷은 `.slnx`.** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(C#) `AddKeycloak(config)`는 `KeycloakConfig`도 싱글턴 등록.** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(C#) coverlet msbuild 통합은 히트 flush 유실 시 `0%`를 "커버리지 90 미만"으로 둔갑시킨다 — 컬렉터+자체 가드로 전환했다.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) 브랜치 게이트 실제 여유는 2개다(분모 50, 1개당 2%p) — 백분율로 읽지 말 것.** 상세: `.claude/rules/dotnet.md`
+- ⚠️ **(C#) 브랜치 게이트 실제 여유는 개수로 읽어라 — 백분율로 읽지 말 것.** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(PHP) fschmtt는 pre-1.0이라 `0.42.0` 정확 핀이다 — 캐럿으로 넓히지 말 것**(0.x 마이너에 파괴적 변경이 온다). 유일한 성숙 admin 클라이언트라 대안이 없다.
 - ⚠️ **(PHP) fschmtt `Users::create()`는 void 반환.** 상세: `.claude/rules/php.md`
 - ⚠️ **(PHP) league/stevenmaguire의 `pkceMethod` 생성자 옵션은 no-op.** 상세: `.claude/rules/php.md`
