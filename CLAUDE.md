@@ -22,8 +22,8 @@
      ⚠️ **2026-08-14: 이 주석의 옛 셋째 항목("doc-guard 표 ≈ 11 KB — 줄일 수 없다 / 유일하게
      기계 대조되는 문서 사실")은 실측으로 반증돼 삭제했다.** (a) `tableAt`(check-docs.mjs:436-453)이
      읽는 것은 **행의 첫 백틱(좌표)과 마지막 셀(버전)** 뿐이라 "왜 이 선택인가" 열은 파서에
-     도달하지 않았다 — 격리 트리에서 원본 14,293 B와 최소형 2,144 B가 **둘 다** `49 facts /
-     18 anchors`를 내고 버전·핀연산자 변이를 동일하게 잡았다. (b) "유일하게"도 거짓이다
+     도달하지 않았다 — 격리 트리에서 원본 14,293 B와 최소형 2,144 B가 **똑같은 facts/anchors**를
+     내고 버전·핀연산자 변이를 동일하게 잡았다. (b) "유일하게"도 거짓이다
      (`test-publication-claims.sh:159-161` · `checkCardinality`도 이 파일을 대조한다).
      그 열 6,043 B를 지우고 상주가 필요한 사실 4건은 게차 스텁으로 옮겼다.
      ⚠️ 34 KB는 「작업 규율」 절이 **그 예산 이후에 추가**됐으므로 지금 제약 안에서는 도달할 수
@@ -229,7 +229,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(Rust) JWKS rate-limit은 재조회 *결정 시점*에 stamp(Go/Python 동형).** 상세: `.claude/rules/rust.md`
 - ⚠️ **(Rust) 공유 `reqwest::Client`는 `redirect::Policy::none()`으로 리다이렉트 전면차단(SSRF 하드닝).** 상세: `.claude/rules/rust.md`
 - ⚠️ **(Rust) MSRV 1.88.** 상세: `.claude/rules/rust.md`
-- ⚠️ **(Rust) dev-dep `testcontainers 0.27.3`은 pre-1.0.** 상세: `.claude/rules/rust.md`
+- ⚠️ **(Rust) dev-dep `testcontainers`는 pre-1.0이라 마이너에 파괴적 변경이 온다**(핀은 의존성 표). 상세: `.claude/rules/rust.md`
 - ⚠️ **(Rust) RUSTSEC-2023-0071(rsa crate Marvin Attack)은 무영향.** 상세: `.claude/rules/rust.md`
 - ⚠️ **(Rust) 로컬 Windows 빌드는 VS2019 BuildTools MSVC 환경 필요.** 상세: `.claude/rules/rust.md`
 - ⚠️ **(Rust) admin 파사드는 캐싱 `ClientCredentialsTokenProvider`를 쓴다 — 무캐시 `AuthClient` 직접주입 아님(`79ecf76`).** 상세: `.claude/rules/rust.md`
@@ -367,11 +367,12 @@ dev(비앵커): `xUnit` 2.9.3 · `WireMock.Net` 2.14.0 · `coverlet.collector` 1
 | HTTP | `reqwest`(`default-features = false`, features: `json`·`rustls-tls`) | `0.12` |
 | 비동기 런타임 | `tokio`(features: `rt-multi-thread`·`macros`·`time`·`sync`) | `1.52` |
 
+<!-- doc-guard: kind=dep source=rust/Cargo.toml min=1 -->
 | 의존성 | 크레이트 | 버전 |
 |---|---|---|
 | 오류/직렬화 | thiserror 2.0 · async-trait 0.1 · serde+serde_json 1 · url 2 | — |
 | 단위 테스트 | wiremock 0.6(HTTP 목) · rsa 0.9+rand 0.8+base64 0.23(JWKS 공격 프로브 픽스처 생성) | — |
-| 통합 테스트 | testcontainers 0.27.3(pre-1.0, base `GenericImage` — 언어별 편의 모듈 없음) | — |
+| 통합 테스트 | `testcontainers` — pre-1.0, base `GenericImage`(언어별 편의 모듈 없음) | `0.28.0` |
 
 전부 Apache-2.0/MIT(호환). ⚠️ **셋 다 정확 핀(`=`)이 아니다** — `openidconnect`/`jsonwebtoken`은 캐럿, `keycloak`은 틸드 `~26.6.2`(버전이 semver가 아니라 Keycloak 서버 라인을 추종). 라이브러리에서 정확 핀이 왜 소비자 빌드를 하드 실패시키는지, 커밋된 `Cargo.lock`이 소비자에게 왜 닿지 않는지는 `.claude/rules/rust.md`.
 
@@ -415,7 +416,7 @@ dev(비앵커): `xUnit` 2.9.3 · `WireMock.Net` 2.14.0 · `coverlet.collector` 1
 
 작업 완료(머지/main 반영) 후 프로젝트 전체 문서(`CLAUDE.md`, `docs/`, `README.md`)를 최신화·최적화하고 커밋한다. 언어별 빌드/테스트 명령(단일 테스트 실행 포함)을 툴체인 섹션에 유지한다(Java·Python·Node·Go·C#·PHP·Rust·Ruby·Kotlin).
 
-**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 앵커 스코프는 9개 언어 전부다** — `<!-- doc-guard: ... -->` 앵커가 의존성 표 9종(pom.xml/**pyproject.toml**/package.json/**go.mod**/csproj/composer.json/Cargo.toml/gemspec/build.gradle.kts)과 [docs/guides/getting-started.md](docs/guides/getting-started.md)의 언어별 "Required runtime" 문장(`kind=runtime`)을 합쳐 **49 facts / 18 anchors**를 기계 검증한다.
+**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 앵커 스코프는 9개 언어 전부다** — `<!-- doc-guard: ... -->` 앵커가 의존성 표 9종(pom.xml/**pyproject.toml**/package.json/**go.mod**/csproj/composer.json/Cargo.toml/gemspec/build.gradle.kts)과 [docs/guides/getting-started.md](docs/guides/getting-started.md)의 언어별 "Required runtime" 문장(`kind=runtime`)을 합쳐 **50 facts / 19 anchors**를 기계 검증한다.
 
 ⚠️ **런타임 앵커는 "앵커 뒤 3줄 안의 *첫* 백틱 스팬 중 숫자를 포함한 것"을 문서의 주장으로 읽는다** — 그래서 버전보다 먼저 오는 백틱 토큰에 숫자가 있으면 그걸 주장으로 오인한다. 실제로 걸렸던 둘: Java의 `` `--release 21` ``과 Go의 `` `golang.org/x/oauth2` ``(둘 다 숫자를 품는다). 두 절은 버전을 문장 앞으로 옮겨 해결했다. ⚠️ **Kotlin 앵커는 `jvmToolchain(21)`, 즉 JDK 툴체인을 검증한다 — Kotlin 언어 버전(2.2)이 아니다.** 그래서 그 절은 JDK 절을 먼저 두고 그 사실을 본문에 명시했다. 이걸 모르고 "Kotlin 버전을 가리키도록 고치면" 앵커가 21 vs 2.2로 깨진다.
 

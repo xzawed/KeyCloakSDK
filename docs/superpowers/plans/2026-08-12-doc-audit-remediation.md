@@ -290,7 +290,7 @@ for t in publication-claims security-defaults provenance-gate \
 done
 bash scripts/test/test-install-verify.sh
 
-node scripts/check-docs.mjs . --strict --min-facts=49 --min-anchors=18
+node scripts/check-docs.mjs . --strict --min-facts=50 --min-anchors=19
 node --test harness/install/report/install-matrix.test.mjs \
             harness/report/score.test.mjs harness/security/verdict.test.mjs
 ```

@@ -39,7 +39,7 @@ cd rust && cargo run --example quickstart           # QuickStart 예제 실행(K
 - ⚠️ **(Rust) JWKS rate-limit은 재조회 *결정 시점*에 stamp(Go/Python 동형).** `JwksStore::get_key`의 `refetch_gate`는 fetch 성공 후가 아니라 재조회 결정 순간 갱신 — IdP 장애로 fetch 실패해도 gate가 소모돼 장애창의 위조 kid 연속주입도 상한. 근거: `fetch_failure_still_stamps_gate_rate_limiting_next_lookup`.
 - ⚠️ **(Rust) 공유 `reqwest::Client`는 `redirect::Policy::none()`으로 리다이렉트 전면차단(SSRF 하드닝)** — 예상 밖 3xx가 내부망을 가리켜도 자동추적 안 함. auth·admin·JWKS 전부 이 공유 클라이언트(타임아웃 주입됨) 재사용.
 - ⚠️ **(Rust) MSRV 1.88** — `edition="2024"`+let-chain 문법이 요구하는 최소버전. CI 매트릭스는 1.88(회귀방지)·stable 둘 다 검증. 근거: `jwks.rs`의 `get_key`·`token_provider.rs`.
-- ⚠️ **(Rust) dev-dep `testcontainers 0.27.3`은 pre-1.0** — 언어별 편의모듈 없어 `GenericImage` 베이스로 이미지·포트·헬스체크 직접 조립(Go `testcontainers-go`와 동일 이유).
+- ⚠️ **(Rust) dev-dep `testcontainers`는 pre-1.0** — 언어별 편의모듈 없어 `GenericImage` 베이스로 이미지·포트·헬스체크 직접 조립(Go `testcontainers-go`와 동일 이유). 0.x 마이너 범프는 파괴적 변경일 수 있으므로 통합테스트를 반드시 돌린다. **현재 핀은 루트 `CLAUDE.md`의 Rust 의존성 표에만 적는다**(doc-guard 앵커가 `rust/Cargo.toml`과 대조 — 여기 숫자를 쓰면 2차 정의 자리가 된다).
 - ⚠️ **(Rust) RUSTSEC-2023-0071(rsa crate Marvin Attack)은 무영향** — `rsa`는 dev-dep로 테스트 키생성에만 사용, advisory는 개인키 복호화 타이밍 사이드채널이나 SDK 런타임은 서명검증만 수행. `cargo audit`는 CI 미배선(Task12 스코프 밖). 근거: `jwt.rs`의 JWKS 공격 프로브 픽스처.
 - ⚠️ **(Rust) 로컬 Windows 빌드는 VS2019 BuildTools MSVC 환경 필요**(`ring`·`rsa` 네이티브 컴파일 — `vcvars64.bat` 소싱 셸에서 cargo 실행. CI ubuntu-latest는 무관).
 - ⚠️ **(Rust) admin 파사드는 캐싱 `ClientCredentialsTokenProvider`를 쓴다 — 무캐시 `AuthClient` 직접주입 아님(`79ecf76`)** — 직접 주입하면 admin 호출마다 토큰재발급으로 §4 캐시/single-flight 불변식(6개 자매SDK 준수) 위반. 공유 `http`는 재사용하되 admin 전용 provider 인스턴스 별도생성. 같은 커밋에서 `config.scopes`를 token-provider+authorization URL 양쪽에 threading(이전 `"openid"` 하드코딩 버그).
