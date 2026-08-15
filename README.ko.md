@@ -89,7 +89,7 @@ pip install -e KeyCloakSDK/python
 ## 무엇이 동일하고, 무엇이 다른가
 
 - **인증: 일곱 오퍼레이션은 아홉에 모두 있다** — client-credentials 토큰 · 인가 요청(PKCE S256) · 코드 교환 · refresh · introspect · logout · validate. 시그니처는 같지 않습니다: PHP·Rust는 `redirectUri`를 설정에서 읽고, Python 시작점은 `authorization_url`입니다. 아홉 모두 인가 요청에서 nonce를 발급하고, 호출자가 그 nonce를 `exchange*`에 넘기면 `id_token`을 검증합니다(인자는 아홉 모두 옵셔널 — 생략하면 id_token 검증을 건너뜁니다). 값 타입 이름은 전부 `TokenSet` / `ValidatedToken` / `IntrospectionResult`이되 필드 집합은 조금 다릅니다(`expires_in`은 Java·Python·Kotlin에 없고, PHP·Ruby는 `expiresAt` 부재를 미만료로 봅니다). Go·Rust는 error 값을 반환하고, 나머지 일곱은 `Keycloak*` 예외 계층을 던집니다.
-- **Admin: 리소스 다섯은 같고, 메서드는 같지 않다.** 아홉 모두 users · clients · realms · roles · groups 를 노출하며 생성·조회·삭제와 `raw` 탈출구가 있습니다. 25/25는 아닙니다: 다섯 언어(Java·Kotlin·Python·Node·Go)가 `realms.list`·`realms.update`·`roles.update`·`groups.update` 네 갭을 공유하고, PHP는 어느 리소스에도 `update()`가 없으며, Rust는 평평하고(`admin.create_user(…)`) 갭이 가장 넓고, .NET·Ruby만 25/25입니다. 갭은 전부 `raw`로 도달합니다. 정확한 표는 [Admin capability matrix](docs/guides/getting-started.md#admin-capability-matrix)입니다.
+- **Admin: 리소스 다섯은 같고, 메서드는 같지 않다.** 아홉 모두 users · clients · realms · roles · groups 를 노출하며 생성·조회·삭제와 `raw` 탈출구가 있습니다. 25/25는 아닙니다: 다섯 언어(Java·Kotlin·Python·Node·Go)가 `realms.list`·`realms.update`·`roles.update`·`groups.update` 네 갭을 공유하고, Rust는 평평하며(`admin.create_user(…)`) 갭이 가장 넓고, .NET·Ruby·PHP가 25/25입니다. 갭은 전부 `raw`로 도달합니다. 정확한 표는 [Admin capability matrix](docs/guides/getting-started.md#admin-capability-matrix)입니다.
 
 ---
 

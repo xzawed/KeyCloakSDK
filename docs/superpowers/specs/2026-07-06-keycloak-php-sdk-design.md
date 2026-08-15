@@ -129,3 +129,13 @@ php/
 - [ ] 자체강화 JWT 불변식 전부(alg핀·none·iss·aud·exp/nbf·DoS-safe JWKS) 단위 테스트로 고정 · 마스킹·TLS·타임아웃 강제
 - [ ] `php-ci.yml`(매트릭스 GREEN) + `php-release.yml`(준비, human-gated) · 문서(getting-started PHP 섹션·README·CLAUDE.md·로드맵·verification-log-php) 갱신
 - [ ] 로컬 설치 경로(`composer require xzawed/keycloak-sdk` 전 단계로 path repo/`composer install` + `examples/quickstart.php` 실행) 동작
+
+---
+
+> **정정 (2026-08-15) — §3 admin 절의 「fschmtt `TokenStorageInterface`에 우리 `ClientCredentialsTokenProvider`를 배선(토큰 재사용)」은 구현되지 않았다.**
+>
+> 이 문서는 append-only 기록이므로 본문(§3 admin 절 · 결합 규칙 「접착제는 TokenProvider뿐」)은 고치지 않고 여기에 덧붙인다.
+>
+> 실제 `Admin/AdminClient.php`의 유일한 생성자는 `KeycloakConfig`만 받고, `php/src/Admin` 전체에 `TokenProvider` 참조가 **0건**이다(`grep -rl TokenProvider php/src/Admin`). fschmtt가 자체 client-credentials로 독립 인증하므로 admin이 auth를 모른다는 §4 불변식 자체는 성립하지만, **그 독립을 이루는 방법이 provider 주입이 아니라 admin의 토큰 자체 소유**다 — Java·Kotlin·Python과 같은 부류이고 소비자가 토큰 소스를 주입할 수단이 없다.
+>
+> 원문은 이력이라 본문을 지우지 않는다. 본문 §3에 이미 2026-08-13 인라인 취소선이 붙어 있으면 같은 사실의 중복 표기다 — 자리만 말미 정정 블록으로 옮긴 것이 이 절이다.

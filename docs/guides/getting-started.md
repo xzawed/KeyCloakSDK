@@ -697,12 +697,12 @@ Every SDK also exposes a `raw` escape hatch that returns the underlying client. 
 | **Node** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
 | **Go** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
 | **.NET** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ |
-| **PHP** | ✅✅✅—✅ | ✅✅✅—✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **PHP** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ |
 | **Rust** | ✅✅✅—✅ | ✅✅—​—✅ | ✅✅—​—✅ | ✅✅—​—✅ | ✅✅—​—✅ |
 
 C=create G=get L=list/find U=update D=delete
 
-Five languages share exactly the same four gaps: `realms.list`, `realms.update`, `roles.update`, `groups.update`. (.NET used to be a sixth, but three of its gaps were unreachable even through the escape hatch, so they were filled directly rather than documented as workarounds.) PHP additionally has no `update` on any resource; Rust has no `update` and no `list` outside users.
+Five languages share exactly the same four gaps: `realms.list`, `realms.update`, `roles.update`, `groups.update`. (.NET used to be a sixth, but three of its gaps were unreachable even through the escape hatch, so they were filled directly rather than documented as workarounds.) PHP now matches .NET and Ruby at 25/25 — `update` on all five resources plus `realms.all` (the library already had both; the facade had not exposed them). Rust has no `update` and no `list` outside users.
 
 ### What you get back
 
@@ -720,7 +720,7 @@ This is a deliberate, documented decision: re-wrapping stable Keycloak represent
 | Python | `raw` → `keycloak.KeycloakAdmin` | `raw.update_realm(name, rep)` (async: `a_update_realm`) |
 | Node | `raw()` → `KcAdminClient` | `raw().realms.update({ realm }, rep)` |
 | Go | `Raw()` → `*gocloak.GoCloak` | `Raw().UpdateRealm(ctx, token, rep)` — ⚠️ you must supply the token yourself |
-| PHP | `raw()` → `Fschmtt\Keycloak\Keycloak` | `raw()->realms()->update($realm, $rep)` |
+| PHP | `raw()` → `Fschmtt\Keycloak\Keycloak` | no gaps; the hatch is the typed fschmtt client |
 | Rust | `raw()` → `&KeycloakAdmin<SdkTokenSupplier>` | `raw().realm_put(&realm, rep).await` |
 | Ruby | `raw` → `Faraday::Connection` | no gaps; the hatch is a general bearer-authed connection |
 | .NET | `Raw` → `IKeycloakClient` (users, groups, realm-read only) | no gaps; for anything outside that typed surface the facade already uses raw Admin REST internally |
