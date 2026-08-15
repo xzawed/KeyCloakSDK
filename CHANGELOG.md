@@ -14,13 +14,13 @@
 ### Added
 - **(PHP) admin 파사드에 다섯 리소스 `update()`와 `realms.all()`을 노출.** 반환은 전부 `void`(§4 동형 — fschmtt가 representation을 되돌려주는 불균질은 버린다). `Users::all()`은 `search()`와 같은 엔드포인트라 만들지 않았다. PHP 행은 25/25. 이슈 #190.
 - **(PHP) OIDC nonce / `id_token` 재생 방지.** `createAuthorizationRequest()`가 nonce를 항상 만들어 URL에 싣는다. `exchangeCode`의 옵셔널 3번째 인자에 넘기면 `id_token`을 완전 검증한 뒤 nonce를 대조한다. 생략하면 기존처럼 검증을 건너뛴다. 소비자 시그니처 영향은 아래 BREAKING. 이슈 #188.
-- **(harness) 교차언어 검증·점수 하네스 `main` 병합 (PR #20).** 8개 언어 샘플 앱 + conformance/security/suites + 4차원 스코어카드. 상세: [`harness/README.md`](harness/README.md) · [history.md](docs/governance/history.md). (2026-07-07)
-- **(Ruby) `keycloak-sdk` gem 추가 — 8번째 언어 (sync-only).** `faraday`로 Admin REST 직접 래핑 + `rack-oauth2`(PKCE S256 손수) + `jwt` 자체 강화. 경위: [history.md](docs/governance/history.md). (2026-07-06)
-- **(Rust) `keycloak-sdk` crate 추가 — 7번째 언어 (1.88+ · async-only).** `keycloak` crate + `openidconnect` + `jsonwebtoken` 자체 강화. 경위: [history.md](docs/governance/history.md). (2026-07-06)
-- **(PHP) `xzawed/keycloak-sdk` 추가 — 6번째 언어 (8.3+).** `fschmtt` + `league`/`stevenmaguire` + `firebase/php-jwt` 자체 강화. 게시는 미러 저장소 경로([DEPLOY.md](DEPLOY.md) §2-D). 경위: [history.md](docs/governance/history.md). (2026-07-06)
-- **(dotnet) `Xzawed.Keycloak.Sdk` 추가 — 5번째 언어 (net8 · async-first).** `Duende.IdentityModel` + `Microsoft.IdentityModel` + `Keycloak.AuthServices.Sdk` 2.7.0. 경위: [history.md](docs/governance/history.md). (2026-07-05)
-- **(Go) `github.com/xzawed/KeyCloakSDK/go` 추가 — 4번째 언어 (sync + `context.Context`).** `gocloak` + `x/oauth2` + `go-jose/v4` 자체 강화. `go/v*` 태그가 곧 릴리스. 경위: [history.md](docs/governance/history.md). (2026-07-04)
-- **(Node) `@xzawed/keycloak-sdk` 추가 — 3번째 언어 (ESM · async-only).** 공식 admin-client + `openid-client` v6 + `jose` 자체 강화. 경위: [history.md](docs/governance/history.md). (2026-07-04)
+- **(harness) 교차언어 검증·점수 하네스 `main` 병합 (PR #20).** 8개 언어 샘플 앱 + conformance/security/suites + 4차원 스코어카드. 상세: [`harness/README.md`](harness/README.md). (2026-07-07)
+- **(Ruby) `keycloak-sdk` gem 추가 — 8번째 언어 (sync-only).** `faraday`로 Admin REST 직접 래핑 + `rack-oauth2`(PKCE S256 손수) + `jwt` 자체 강화. 경위는 해당 언어 README. (2026-07-06)
+- **(Rust) `keycloak-sdk` crate 추가 — 7번째 언어 (1.88+ · async-only).** `keycloak` crate + `openidconnect` + `jsonwebtoken` 자체 강화. 경위는 해당 언어 README. (2026-07-06)
+- **(PHP) `xzawed/keycloak-sdk` 추가 — 6번째 언어 (8.3+).** `fschmtt` + `league`/`stevenmaguire` + `firebase/php-jwt` 자체 강화. 게시는 미러 저장소 경로([DEPLOY.md](DEPLOY.md) §2-D). 경위는 해당 언어 README. (2026-07-06)
+- **(dotnet) `Xzawed.Keycloak.Sdk` 추가 — 5번째 언어 (net8 · async-first).** `Duende.IdentityModel` + `Microsoft.IdentityModel` + `Keycloak.AuthServices.Sdk` 2.7.0. 경위는 해당 언어 README. (2026-07-05)
+- **(Go) `github.com/xzawed/KeyCloakSDK/go` 추가 — 4번째 언어 (sync + `context.Context`).** `gocloak` + `x/oauth2` + `go-jose/v4` 자체 강화. `go/v*` 태그가 곧 릴리스. 경위는 해당 언어 README. (2026-07-04)
+- **(Node) `@xzawed/keycloak-sdk` 추가 — 3번째 언어 (ESM · async-only).** 공식 admin-client + `openid-client` v6 + `jose` 자체 강화. 경위는 해당 언어 README. (2026-07-04)
 - **(Docs) Keycloak *서버* 배포 가이드** — [`docs/guides/deploying-keycloak-server.md`](docs/guides/deploying-keycloak-server.md). (2026-07-03)
 - **(Docs) getting-started · language-support · add-a-language 플레이북 신설.** README는 요약+딥링크만. (2026-07-03)
 
@@ -28,7 +28,7 @@
 - **(PHP) ⚠️ BREAKING — `AuthorizationRequest`에 `string $nonce` 필드가 추가됐고 `exchangeCode` 시그니처에 옵셔널 3번째 인자가 붙었다.** 게시된 Packagist `0.1.0-rc.1`을 쓰는 소비자: (1) `new AuthorizationRequest(url:, state:, codeVerifier:)`를 **직접** 호출하면 필수 인자 누락으로 TypeError — 이 타입은 SDK가 만들어 주는 값이라 손수 생성하는 소비자는 드물다. (2) `createAuthorizationRequest()` 반환값을 읽기만 하는 소비자는 필드가 **늘어난** 것이라 기존 접근은 그대로다. (3) `exchangeCode($code, $verifier)` 두 인자 호출은 바이너리 호환(기본값 `null`) — 다만 그 경로에서는 여전히 id_token을 검증하지 않는다. 재생 방지를 쓰려면 세 번째 인자로 `$req->nonce`를 넘겨야 한다. 다음 PHP RC에서 소비자 코드가 깨지는 자리는 (1)뿐이다.
 - **(Ruby) `create_authorization_request`가 nonce를 기본 생성한다.** 이전에는 `nonce: nil`이 기본이라 호출자가 `nonce:`를 넘겨야만 인가 URL에 실렸다(아홉 중 유일). 지금은 `state:`와 같이 `SecureRandom.urlsafe_base64(24)`가 기본이고 URL에 항상 실린다. `exchange_code(expected_nonce:)`는 그대로 옵셔널 — 생략하면 id_token 검증을 건너뛴다. `AuthorizationRequest` `Data.define`에 `:nonce`가 추가됐으므로 이 값을 **직접** `new`하던 소비자는 키워드를 더해야 한다(파사드 경로는 무변경).
 - **(Java·Kotlin) `keycloak-admin-client` 26.0.11 → 26.0.12 · `junit` 6.1.2 → 6.1.3 (PR #185).** `StreamMessageBodyReader`는 26.0.12에도 있다(컴파일로 확인).
-- **(Java·Kotlin) ⚠️ admin 부분 업데이트에서 `null`로 필드를 비울 수 없게 된다 — 공식 admin-client 동작으로의 복원 (PR #84·#85).** `resteasyClient(...)` 주입이 상류 `JacksonProvider` 등록을 우회해 NON_NULL을 잃고 있었다. **소비자 영향**: 미설정 필드는 전송되지 않아 서버가 '변경 없음'으로 처리하므로, 필드를 비우려면 빈 문자열이나 전용 API를 써야 한다. 경위: [history.md](docs/governance/history.md) · [`.claude/rules/java.md`](.claude/rules/java.md). (2026-07-22)
+- **(Java·Kotlin) ⚠️ admin 부분 업데이트에서 `null`로 필드를 비울 수 없게 된다 — 공식 admin-client 동작으로의 복원 (PR #84·#85).** `resteasyClient(...)` 주입이 상류 `JacksonProvider` 등록을 우회해 NON_NULL을 잃고 있었다. **소비자 영향**: 미설정 필드는 전송되지 않아 서버가 '변경 없음'으로 처리하므로, 필드를 비우려면 빈 문자열이나 전용 API를 써야 한다. 경위: [`.claude/rules/java.md`](.claude/rules/java.md). (2026-07-22)
 - **(Node) ⚠️ BREAKING — 지원 런타임 하한을 Node 20 → 22로 상향 (PR #87).** Node 20은 2026-04-30 EOL이고 DefinitelyTyped가 `types/node/v20`을 제거해 기존 `@types/node ^20` 핀 자체가 유지보수 종료 상태였다. `engines.node >= 22` · `@types/node ^22`(타입은 최신이 아니라 engines 하한을 따라간다) · CI 매트릭스 `['22','24']` · 하네스 이미지 `node:22-alpine` · 문서를 함께 옮겼다. 레지스트리 게시 0회 시점이라 소비자 비용 없음. (2026-07-22)
 - **(Node) 의존성 메이저 전진 (PR #79·#80·#86).** `jose` 5 → 6 (공개 API 동일, JWKS rate-limit 유지) · `typescript` 5 → 6 (산출 `dist/**` 바이트 동일). 소비자 런타임 표면 무변경. 경위: [`.claude/rules/node.md`](.claude/rules/node.md). (2026-07-22)
 - **(Rust) `jsonwebtoken` 10.4.0 → 11.0.0 (PR #108).** 기형 JWKS 거부 단계가 파싱(`Transport`)에서 키 생성(`TokenValidation`)으로 옮겨졌다. fail-closed는 유지되고, 미지 kty가 섞여 있어도 세트 전체가 죽지 않는다. MSRV 1.88 그대로. 경위: [`.claude/rules/rust.md`](.claude/rules/rust.md). (2026-07-31)
@@ -42,7 +42,7 @@
 ### Security
 - **(9개 언어) JWT 하드닝 6불변식을 행동 테스트로 닫았다.** 감사 당시 테스트로 증명된 언어는 Rust·Ruby뿐이었다. JWKS rate-limit 테스트에는 대조군이 있다. 공개 API 무변경.
 - **(Java·Kotlin) `jwksMinRefetch`가 Nimbus 캐시 TTL 이상이면 이제 `KeycloakConfigException`이다.** 예전에는 `IllegalStateException`이 공개 API로 샜다(§4 위반). 경위: [`.claude/rules/java.md`](.claude/rules/java.md).
-- **(Java) jackson-databind `2.21.2` → `2.21.4`.** CVE 6건 해소. 사용맥락 판정·후속 핀 이력: [`docs/governance/verification-log.md`](docs/governance/verification-log.md). (2026-07-03)
+- **(Java) jackson-databind `2.21.2` → `2.21.4`.** CVE 6건 해소. 후속 핀 이력은 CLAUDE.md 의존성 표. (2026-07-03)
 - **(Java) Jackson default/polymorphic typing 도입을 CI `invariant` 잡이 막는다.** 위 무위험 판정의 전제. (2026-07-03)
 
 ---

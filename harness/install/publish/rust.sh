@@ -2,9 +2,8 @@
 # publish/rust.sh — keycloak-sdk를 로컬 cargo-local-registry 디렉터리(볼륨)로 "게시"한다(rust 구현).
 #
 # node/python/php/ruby/dotnet/java와 달리 rust에는 상시 구동 레지스트리 *서비스*가 없다 — 소스 치환
-# ([source.local] local-registry = "…")이 가리키는 **디렉터리**가 곧 레지스트리다(리서치 부록
-# docs/superpowers/specs/2026-07-07-install-recipes-research.md §rust — go의 file GOPROXY와 동류라
-# compose.install.yml에 rust 전용 서비스가 없다).
+# ([source.local] local-registry = "…")이 가리키는 **디렉터리**가 곧 레지스트리다(go의 file
+# GOPROXY와 동류라 compose.install.yml에 rust 전용 서비스가 없다).
 #
 # 1) 빌드: publish/rust.Dockerfile(rust:1.88-alpine 빌더)이 keycloak-sdk를 cargo package(cargo
 #    publish와 동일 tarball)하고, harness/apps/rust(axum 등 앱 전용 의존성 포함)를 클로저 매니페스트

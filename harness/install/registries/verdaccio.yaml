@@ -1,8 +1,7 @@
 # Verdaccio 설정 — node 설치·동작 검증(install-verify.sh) 참조 구현용 로컬 npm 레지스트리.
 #
-# 리서치 부록(docs/superpowers/specs/2026-07-07-install-recipes-research.md) §node:
-#   "레지스트리: verdaccio/verdaccio:6.7.4(node:24-alpine 베이스). config packages.'**'.publish: $all
-#    (익명 게시 허용)."
+# 레지스트리: verdaccio/verdaccio:6.7.4(node:24-alpine 베이스). config packages.'**'.publish: $all
+# (익명 게시 허용). 레시피는 이 파일과 publish/node.sh 가 SSOT.
 #
 # access/unpublish도 함께 $all로 열어둔다(부록엔 publish만 명시돼 있으나, 이 하네스는 소비자의
 # `npm install`(읽기)과 publish/node.sh의 멱등 재실행(`npm unpublish --force`)도 필요하므로

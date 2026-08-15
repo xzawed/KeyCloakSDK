@@ -6,7 +6,7 @@
 # `assert_report`의 마지막 줄(`[ "$_A_FAIL" -eq 0 ]`)뿐이다. 빠뜨리면 어서션이 전부 실패해도
 # 스크립트가 **exit 0으로 끝나고 CI가 초록이 된다**(테스트가 있다는 사실이 오히려 안심시킨다).
 # 이 규칙은 `scripts/test/test-selftest-hygiene.sh`가 기계로 강제한다 — 산문만 있던 시절엔
-# `docs/superpowers/plans/`의 미체크 항목 안에만 적혀 있어 아무도 보지 않았다.
+# 계획서 미체크 항목 안에만 적혀 있어 아무도 보지 않았다.
 _A_PASS=0; _A_FAIL=0
 assert_eq() { # expected actual msg
   if [ "$1" = "$2" ]; then _A_PASS=$((_A_PASS+1)); else _A_FAIL=$((_A_FAIL+1)); printf 'FAIL %s\n  expected: [%s]\n  actual:   [%s]\n' "$3" "$1" "$2" >&2; fi

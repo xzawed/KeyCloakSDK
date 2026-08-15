@@ -6,7 +6,7 @@
 #
 # 각 <lang>.sh는 해당 SDK 자체 단위테스트+커버리지+린트를 언어 툴체인 Docker 이미지에서
 # 실행(재구현 아님)하고 마지막 줄에 JSON 신호를 출력하는 규약을 따른다(자세한 스키마는
-# docs/superpowers/specs/2026-07-07-cross-language-verification-scoring-harness-design.md §4 참고).
+# 가중 스코어링은 harness/README.md 와 report/score.mjs 가 소유.
 #
 # 기본은 단위+커버리지+린트만(무거운 통합테스트는 Docker-in-Docker 필요라 제외).
 # SUITE_INTEGRATION=1 환경변수를 주면 각 <lang>.sh가 best-effort로 통합테스트도 시도한다

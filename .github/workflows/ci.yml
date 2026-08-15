@@ -29,7 +29,7 @@ jobs:
         run: mvn -B -f java/pom.xml verify
 
   # jackson-databind CVE(2026-54512..54518) 무위험 판정은 "SDK가 default/polymorphic typing을
-  # 켜지 않고 커스텀 JAX-RS Jackson provider를 등록하지 않는다"는 불변식에 의존한다(verification-log.md).
+  # 켜지 않고 커스텀 JAX-RS Jackson provider를 등록하지 않는다"는 불변식에 의존한다(CLAUDE.md).
   # 문서로만 두면 미래 기여자가 깨뜨릴 수 있으므로 CI에서 소스 스캔으로 강제한다.
   invariant:
     name: Security invariant (Jackson no default/polymorphic typing)
@@ -49,7 +49,7 @@ jobs:
             } | xargs grep -lnE 'activateDefaultTyping|enableDefaultTyping|@JsonTypeInfo|ContextResolver<' 2>/dev/null || true
           )
           if [ -n "$hits" ]; then
-            echo "::error::SDK 소스는 Jackson default/polymorphic typing 활성화나 자체 JAX-RS Jackson provider(ContextResolver) 등록을 금지합니다 — jackson-databind CVE 무위험 불변식 위반(docs/governance/verification-log.md). 상류 admin-client의 JacksonProvider 등록은 허용이며 이 패턴에 걸리지 않습니다."
+            echo "::error::SDK 소스는 Jackson default/polymorphic typing 활성화나 자체 JAX-RS Jackson provider(ContextResolver) 등록을 금지합니다 — jackson-databind CVE 무위험 불변식 위반(CLAUDE.md). 상류 admin-client의 JacksonProvider 등록은 허용이며 이 패턴에 걸리지 않습니다."
             echo "$hits"
             exit 1
           fi
