@@ -45,7 +45,7 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 
 | 문서 | 날짜 | 상태 | 여기서만 알 수 있는 것 |
 |---|---|---|---|
-| [하네스 판정·출처 완결 계획](superpowers/plans/2026-08-12-harness-judgment-and-provenance-completion.md) | 08-12 | 진행 | 판정 층(`install-matrix.mjs`)·관측 층(`consume/*-run.sh`)·가드 층(`scripts/test/*`) 3계층을 순서대로 고치는 분해 — Phase A만 반영됐고 Phase B~E는 아직이다. ⚠️ S-B1(dotnet 레그 실패)은 git-ignored 로컬 산출물을 CI 상태로 오독한 것이라 **틀렸다**. |
+| [하네스 판정·출처 완결 계획](superpowers/plans/2026-08-12-harness-judgment-and-provenance-completion.md) | 08-12 | 진행 | 판정·관측·가드 3계층 분해. Phase A~D는 처리·기각됐고 남은 미체크는 Phase E 2건(사람 게이트: Go 첫 태그 · GitHub App, #105)뿐이다. ⚠️ S-B1(dotnet 레그 실패)은 git-ignored 로컬 산출물을 CI 상태로 오독한 것이라 **틀렸다**. |
 
 ---
 
