@@ -79,8 +79,8 @@ client.close
 | 메서드 | 설명 |
 |---|---|
 | `client_credentials_token` | client-credentials 그랜트. `config.scopes`가 threading됨 |
-| `create_authorization_request(redirect_uri:, scopes: nil, state: ..., nonce: nil)` | authorization-code+PKCE(S256) 시작 — `AuthorizationRequest#url/#state/#code_verifier` 반환(네트워크 없음, 동기) |
-| `exchange_code(code:, code_verifier:, redirect_uri:)` | 콜백에서 받은 code를 code_verifier와 교환 |
+| `create_authorization_request(redirect_uri:, scopes: nil, state: ..., nonce: …)` | authorization-code+PKCE(S256) 시작 — nonce는 `state:`와 같이 항상 생성되어 URL에 실림. `AuthorizationRequest#url/#state/#code_verifier/#nonce` 반환(네트워크 없음, 동기) |
+| `exchange_code(code:, code_verifier:, redirect_uri:, expected_nonce: nil)` | 콜백에서 받은 code를 code_verifier와 교환. `expected_nonce:`를 주면 id_token을 서명·iss·aud·exp 검증한 뒤 nonce 클레임을 대조(생략 시 검증 스킵 — 아홉 공통) |
 | `refresh(refresh_token:)` | refresh_token 그랜트 |
 | `introspect(token)` | RFC 7662 introspection → `IntrospectionResult#active?` |
 | `logout(refresh_token:)` | 세션 종료(RP-initiated logout) |

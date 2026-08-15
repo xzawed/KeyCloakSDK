@@ -46,6 +46,20 @@ RSpec.describe KeycloakSdk::AuthClient do
       challenge = CGI.parse(URI(req.url).query)["code_challenge"].first
       expect(challenge).to eq(expected)
     end
+
+    it "always issues a nonce and puts it on the authorization URL" do
+      req = auth.create_authorization_request(redirect_uri: "https://app/cb")
+      expect(req.nonce).to be_a(String)
+      expect(req.nonce).not_to be_empty
+      parsed = CGI.parse(URI(req.url).query)
+      expect(parsed["nonce"]).to eq([req.nonce])
+    end
+
+    it "issues a different nonce on every call" do
+      a = auth.create_authorization_request(redirect_uri: "https://app/cb")
+      b = auth.create_authorization_request(redirect_uri: "https://app/cb")
+      expect(a.nonce).not_to eq(b.nonce)
+    end
   end
 
   describe "#introspect" do

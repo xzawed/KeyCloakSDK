@@ -121,6 +121,75 @@ sd_code_axis "clock skew" sd_skew
 sd_skew_expect="$SD_EXPECT"
 
 # ---------------------------------------------------------------------------
+# 1b) nonce 축 — 아홉 언어 auth 소스에 생성·검증이 있는가
+# ---------------------------------------------------------------------------
+#
+# JWKS/clock-skew는 **숫자 기본값**이라 위 1절이 잡는다. nonce는 값이 아니라 **존재**다.
+# 이슈 #188: PHP `src/`에 nonce 0건인데 README가 "아홉 전부"라고 했고, 이 파일이
+# 그 주장을 세지 않아 문서만 정직해지고 코드 갭은 남았다. 이 축은 아홉 auth 파일이
+# (a) 인가 요청에 nonce를 만들고 (b) exchange에서 id_token nonce를 검증하는지 본다.
+# 한 언어라도 빠지면 실패한다. `_seen`이 9가 아니면 표가 낡은 것이다.
+sd_nonce_file() {
+  case "$1" in
+    java)   printf '%s' 'java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java' ;;
+    python) printf '%s' 'python/src/keycloak_sdk/auth.py' ;;
+    node)   printf '%s' 'node/src/auth.ts' ;;
+    go)     printf '%s' 'go/auth.go' ;;
+    dotnet) printf '%s' 'dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs' ;;
+    php)    printf '%s' 'php/src/AuthClient.php' ;;
+    rust)   printf '%s' 'rust/src/auth.rs' ;;
+    ruby)   printf '%s' 'ruby/lib/keycloak_sdk/auth_client.rb' ;;
+    kotlin) printf '%s' 'kotlin/src/main/kotlin/io/github/xzawed/keycloak/auth.kt' ;;
+  esac
+}
+# 생성 앵커 — "인가 URL에 nonce를 싣는 줄". 주석만 남기고 구현을 지우면 실패해야 한다.
+sd_nonce_create() {
+  case "$1" in
+    java)   printf '%s' 'Nonce nonce = new Nonce()' ;;
+    python) printf '%s' 'nonce = secrets.token_urlsafe' ;;
+    node)   printf '%s' "searchParams.set('nonce'" ;;
+    go)     printf '%s' 'SetAuthURLParam("nonce"' ;;
+    dotnet) printf '%s' 'var nonce = CryptoRandom.CreateUniqueId' ;;
+    php)    printf '%s' "'nonce' => \$nonce" ;;
+    rust)   printf '%s' 'Nonce::new_random' ;;
+    ruby)   printf '%s' 'nonce: SecureRandom.urlsafe_base64(24)' ;;
+    kotlin) printf '%s' 'val nonce = Nonce()' ;;
+  esac
+}
+# 검증 앵커 — exchange가 id_token nonce를 대조하는 줄.
+sd_nonce_verify() {
+  case "$1" in
+    java)   printf '%s' 'requireValidNonce' ;;
+    python) printf '%s' '_verify_nonce' ;;
+    node)   printf '%s' 'expectedNonce' ;;
+    go)     printf '%s' 'verifyNonce' ;;
+    dotnet) printf '%s' 'id_token nonce mismatch' ;;
+    php)    printf '%s' 'requireValidNonce' ;;
+    rust)   printf '%s' 'async fn verify_nonce(&self' ;;
+    ruby)   printf '%s' 'verify_nonce!' ;;
+    kotlin) printf '%s' 'unexpected nonce' ;;
+  esac
+}
+
+_nonce_seen=0
+for L in $SD_LANGS; do
+  _nf="$(sd_nonce_file "$L")"
+  _exists=1; [ -f "$ROOT/$_nf" ] && _exists=0
+  assert_eq "ok" "$(ok_if "$_exists" MISSING)" "[nonce] $L auth 파일이 없다($_nf)"
+  [ -f "$ROOT/$_nf" ] || continue
+  _cp="$(sd_nonce_create "$L")"
+  _vp="$(sd_nonce_verify "$L")"
+  _hasc=1; grep -qF -- "$_cp" "$ROOT/$_nf" && _hasc=0
+  assert_eq "ok" "$(ok_if "$_hasc" MISSING)" \
+    "[nonce] $L 인가 요청에 nonce 생성이 없다 — 기대: $_cp"
+  _hasv=1; grep -qF -- "$_vp" "$ROOT/$_nf" && _hasv=0
+  assert_eq "ok" "$(ok_if "$_hasv" MISSING)" \
+    "[nonce] $L exchange nonce 검증이 없다 — 기대: $_vp"
+  _nonce_seen=$((_nonce_seen + 1))
+done
+assert_eq "9" "$_nonce_seen" "[nonce] 훑은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
+
+# ---------------------------------------------------------------------------
 # 2) 문서 축 — 그 값을 말하는 소비자 문서
 # ---------------------------------------------------------------------------
 #

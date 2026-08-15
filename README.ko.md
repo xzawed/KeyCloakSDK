@@ -88,7 +88,7 @@ pip install -e KeyCloakSDK/python
 
 ## 무엇이 동일하고, 무엇이 다른가
 
-- **인증: 일곱 오퍼레이션은 아홉에 모두 있다** — client-credentials 토큰 · 인가 요청(PKCE S256) · 코드 교환 · refresh · introspect · logout · validate. 시그니처는 같지 않습니다: PHP·Rust는 `redirectUri`를 설정에서 읽고, Python 시작점은 `authorization_url`이며, nonce 인자는 여덟 언어에만 있습니다. 값 타입 이름은 전부 `TokenSet` / `ValidatedToken` / `IntrospectionResult`이되 필드 집합은 조금 다릅니다(`expires_in`은 Java·Python·Kotlin에 없고, PHP·Ruby는 `expiresAt` 부재를 미만료로 봅니다). Go·Rust는 error 값을 반환하고, 나머지 일곱은 `Keycloak*` 예외 계층을 던집니다.
+- **인증: 일곱 오퍼레이션은 아홉에 모두 있다** — client-credentials 토큰 · 인가 요청(PKCE S256) · 코드 교환 · refresh · introspect · logout · validate. 시그니처는 같지 않습니다: PHP·Rust는 `redirectUri`를 설정에서 읽고, Python 시작점은 `authorization_url`입니다. 아홉 모두 인가 요청에서 nonce를 발급하고, 호출자가 그 nonce를 `exchange*`에 넘기면 `id_token`을 검증합니다(인자는 아홉 모두 옵셔널 — 생략하면 id_token 검증을 건너뜁니다). 값 타입 이름은 전부 `TokenSet` / `ValidatedToken` / `IntrospectionResult`이되 필드 집합은 조금 다릅니다(`expires_in`은 Java·Python·Kotlin에 없고, PHP·Ruby는 `expiresAt` 부재를 미만료로 봅니다). Go·Rust는 error 값을 반환하고, 나머지 일곱은 `Keycloak*` 예외 계층을 던집니다.
 - **Admin: 리소스 다섯은 같고, 메서드는 같지 않다.** 아홉 모두 users · clients · realms · roles · groups 를 노출하며 생성·조회·삭제와 `raw` 탈출구가 있습니다. 25/25는 아닙니다: 다섯 언어(Java·Kotlin·Python·Node·Go)가 `realms.list`·`realms.update`·`roles.update`·`groups.update` 네 갭을 공유하고, PHP는 어느 리소스에도 `update()`가 없으며, Rust는 평평하고(`admin.create_user(…)`) 갭이 가장 넓고, .NET·Ruby만 25/25입니다. 갭은 전부 `raw`로 도달합니다. 정확한 표는 [Admin capability matrix](docs/guides/getting-started.md#admin-capability-matrix)입니다.
 
 ---
@@ -103,7 +103,7 @@ pip install -e KeyCloakSDK/python
 
 ## 현재 상태
 
-아홉 개 SDK 전부 기능 완료·`main` 병합 상태입니다. 각각 **실제 Keycloak 26.6 서버**로 검증되며(Testcontainers, PHP·Ruby는 docker CLI 셸아웃), 로직 모듈에 라인 ≥ 90% 커버리지 게이트가 걸려 있습니다. 여섯 언어는 브랜치 ≥ 85%도 강제하고, Go·PHP·Rust는 라인만 봅니다. 각 SDK의 보안 핵심은 어드버서리얼 리뷰를 거쳤고, 설정 가능한 JWT 서명 알고리즘과 의존성 CVE 감사는 아홉 전부에 적용됐습니다. OIDC nonce/`id_token` 재생 방지는 **여덟 언어**에 있습니다 — **PHP에는 없고**(그 흐름은 `raw`/하위 provider), **Ruby는 `nonce:`를 넘길 때만 켜집니다**(생략 시 id_token 검증을 건너뜁니다).
+아홉 개 SDK 전부 기능 완료·`main` 병합 상태입니다. 각각 **실제 Keycloak 26.6 서버**로 검증되며(Testcontainers, PHP·Ruby는 docker CLI 셸아웃), 로직 모듈에 라인 ≥ 90% 커버리지 게이트가 걸려 있습니다. 여섯 언어는 브랜치 ≥ 85%도 강제하고, Go·PHP·Rust는 라인만 봅니다. 각 SDK의 보안 핵심은 어드버서리얼 리뷰를 거쳤고, 설정 가능한 JWT 서명 알고리즘과 의존성 CVE 감사는 아홉 전부에 적용됐습니다. OIDC nonce/`id_token` 재생 방지는 **아홉 전부**입니다: `create*`는 항상 nonce를 만들어 인가 URL에 싣고, 호출자가 그 값을 `exchange*`에 넘기면 `id_token`을 서명·`iss`·`aud`·`exp`까지 검증한 뒤 nonce 클레임을 대조합니다. nonce 인자를 생략하면 id_token 검증을 건너뛰는 것은 아홉 공통 패턴이지 Ruby만의 예외가 아닙니다.
 
 전부 **pre-1.0(`0.1.0` 라인)** 입니다. 아홉 중 여덟은 첫 릴리스 후보(RC)를 공개 레지스트리에 게시했습니다 — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 · crates.io `keycloak-sdk` 0.1.0-rc.1 · RubyGems `keycloak-sdk` 0.1.0.rc1 · npm `@xzawed/keycloak-sdk` 0.1.0-rc.2 · Maven Central `io.github.xzawed:keycloak-sdk` 0.1.0-RC1 · Maven Central `io.github.xzawed:keycloak-sdk-kotlin` 0.1.0-RC1 — 나머지 한 언어(Go)는 미게시이며 사람 태그 게이트 뒤에 있습니다. 절차는 [DEPLOY.md](DEPLOY.md), 보안 정책과 여기서 pre-1.0이 뜻하는 바는 [SECURITY.md](SECURITY.md)를 보세요.
 
