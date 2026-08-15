@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # publish/go.sh — github.com/xzawed/KeyCloakSDK/go 를 로컬 file GOPROXY 디렉터리에 "게시"한다(go 참조
-# 구현: docs/superpowers/specs/2026-07-07-install-recipes-research.md §go 그대로).
+# 구현: 이 스크립트 자신이 SSOT).
 #
 # go 모듈에는 레지스트리 데몬이 없다 — GOPROXY 자체가 <module>/@v/<version>.{info,mod,zip,ziphash}
 # 레이아웃의 단순 정적 디렉터리이므로, 그 디렉터리를 직접 합성한다:

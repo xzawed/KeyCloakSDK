@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # 9언어 배포 사실 — 단일 진실원천(SSOT). release-readiness.sh·release-trigger.sh·DEPLOY.md가 소비.
-# 값은 스펙 §2(docs/superpowers/specs/2026-07-09-unified-deploy-guide-design.md) 실측. 추측 금지.
+# 값은 이 파일이 SSOT다. 추측 금지. 근거 스냅샷은 태그 archive/docs-history-2026-08.
 # 권장 배포 순서 = **복구가능성(recoverability)** 순. 첫 게시는 되돌릴 수 없으므로 "인증 설정이
 # 쉬운 순"이 아니라 "사고가 났을 때 되돌릴 수 있는 순"으로 간다:
 #   1) yank/unlist가 되는 레지스트리(PyPI·NuGet·RubyGems·npm·crates.io)

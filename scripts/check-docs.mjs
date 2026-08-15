@@ -606,12 +606,14 @@ function checkLinks(file, rel, lines) {
 const RELATIVE_COUNT_MARKERS = ['다른', '그 외', '나머지', '선행', '외']
 
 // 검사 6 — "N개 언어" 기수가 scripts/lib/deploy-facts.sh 의 DEPLOY_LANGS 와 맞는가. 예방적
-// 검사라 기본은 경고. docs/superpowers/** 와 docs/governance/history.md·docs/governance/verification-log*.md
-// ·CHANGELOG.md 는 그 시절 언어 수를 정당하게 말하는 이력 문서라 제외한다(verification-log.md는 6개 언어
-// 시절 작성된 검증 기록이고, 언어별 분리 로그 verification-log-<lang>.md도 같은 성격이라 함께
-// 패턴으로 묶는다). ⚠️ CHANGELOG.md 를 뒤늦게 넣은 이유: 항목마다 날짜가 붙은 append-only 이력이라
-// "8개 언어 하네스 (2026-07-07)"는 **당시 사실로 옳다**. 제외 전에는 언어가 하나 늘 때마다 과거
-// 항목이 자동으로 경고가 됐고(9번째 Kotlin 추가 시 실제로 2건 발생), 그걸 없애는 유일한 방법이
+// 검사라 기본은 경고. docs/superpowers/** 와 (자가테스트 픽스처가 합성하는)
+// docs/governance/history.md·docs/governance/verification-log*.md ·CHANGELOG.md 는
+// 그 시절 언어 수를 정당하게 말하는 이력 문서라 제외한다. 운영 트리에는 history.md·
+// verification-log* 가 더 이상 없지만, 픽스처가 같은 경로를 만들어 제외가 공허하지
+// 않음을 증명하므로 분기를 지우지 않는다. ⚠️ CHANGELOG.md 를 뒤늦게 넣은 이유:
+// 항목마다 날짜가 붙은 append-only 이력이라 "8개 언어 하네스 (2026-07-07)"는
+// **당시 사실로 옳다**. 제외 전에는 언어가 하나 늘 때마다 과거 항목이 자동으로
+// 경고가 됐고(9번째 Kotlin 추가 시 실제로 2건 발생), 그걸 없애는 유일한 방법이
 // **이력을 거짓으로 고쳐 쓰는 것**이라 가드가 잘못된 수정을 유도하고 있었다.
 // 상대 기수(위 RELATIVE_COUNT_MARKERS)도 구조적으로
 // 총 언어 수와 무관하므로 제외한다 — "9개 언어" · "8개 언어 폴리글랏"처럼 전체 언어 수를
@@ -632,9 +634,9 @@ function checkCardinality() {
   const n = m[1].trim().split(/\s+/).length
   for (const f of walk(ROOT)) {
     const rel = relative(ROOT, f).replace(/\\/g, '/')
-    if (rel.startsWith('docs/superpowers/')) continue // 이력 문서는 당시 기준이 맞다
-    if (rel === 'docs/governance/history.md') continue // 위와 동일 — 이력 스냅샷
-    if (/^docs\/governance\/verification-log.*\.md$/.test(rel)) continue // 위와 동일 — 검증 시점 스냅샷(verification-log.md·verification-log-<lang>.md)
+    if (rel.startsWith('docs/superpowers/')) continue // 진행 계획·이력 문서는 당시 기준이 맞다
+    if (rel === 'docs/governance/history.md') continue // 픽스처용 — 운영 트리엔 없음
+    if (/^docs\/governance\/verification-log.*\.md$/.test(rel)) continue // 픽스처용 — 운영 트리엔 없음
     if (rel === 'CHANGELOG.md') continue // 위와 동일 — 항목마다 날짜가 붙은 append-only 이력
     // 위와 동일 — docs/README.md 는 **이력 문서들의 색인**이라, 각 줄이 대상 문서의 제목을
     // 인용한다. 제목 자체가 "하네스 5개 언어 확장 설계"처럼 당시 기수를 담고 있고(그게 그 문서의
@@ -805,10 +807,10 @@ for (const [coord, hits] of seen) {
 // 실패한다. **목표치가 아니라 래칫이다** — 지금 크기를 상한으로 박아 재성장만 막고, 줄일 때마다
 // 사람이 숫자를 함께 내린다(올리는 PR은 그 자체가 리뷰 신호가 된다).
 //
-// 왜 산문 규칙으로 부족한가: `docs/superpowers/specs/2026-07-23-docs-restructure-design.md`가
-// CLAUDE.md 목표를 33 KB로 승인했는데, 이관 커밋 직후 44 KB였던 파일이 13일 만에 66 KB가 됐다
-// (+50%). 규칙은 있었고 아무도 어기려 하지 않았는데도 그렇게 됐다 — 한 줄씩 늘어나는 것을
-// 사람이 알아챌 수 없기 때문이다. 기계만 셀 수 있다.
+// 왜 산문 규칙으로 부족한가: 문서 재편 설계가 CLAUDE.md 목표를 33 KB로 승인했는데,
+// 이관 커밋 직후 44 KB였던 파일이 13일 만에 66 KB가 됐다(+50%). 규칙은 있었고 아무도
+// 어기려 하지 않았는데도 그렇게 됐다 — 한 줄씩 늘어나는 것을 사람이 알아챌 수 없기
+// 때문이다. 기계만 셀 수 있다.
 function checkDocBudget() {
   for (const f of walk(ROOT)) {
     const rel = relative(ROOT, f).replace(/\\/g, '/')
@@ -892,7 +894,7 @@ function checkDocsMap() {
   let statusChecked = 0
   for (const r of present) {
     // ⚠️ 링크가 등장하는 **아무 행**이나 잡으면 안 된다. 지도 상단의 상태 범례표에도
-    // `[history.md](governance/history.md)` 같은 링크가 있고 그 행의 첫 칸은 '완료'라서,
+    // `[CLAUDE.md](../CLAUDE.md)` 같은 링크가 있고 그 행의 첫 칸은 '완료'라서,
     // 단순 `includes` + `find`는 범례를 그 문서의 행으로 오인해 거짓 실패를 냈다(실제로 냈다).
     // 색인 행은 **첫 칸이 그 문서 링크**인 행뿐이다.
     const link = `](${relFromMap(r)})`

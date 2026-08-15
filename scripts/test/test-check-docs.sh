@@ -373,7 +373,7 @@ assert_fails node "$GUARD" "$TMP" --strict # --strict 는 실패
 rm -rf "$TMP" && mkdir -p "$TMP"
 
 # ---- 회귀 1: 검사 5는 펜스(```) 안의 링크를 진짜 링크로 오인하면 안 된다 ----
-# docs/superpowers/plans/2026-07-23-docs-restructure-wbs.md의 실제 사례(펜스 안
+# 끝난 계획서의 실제 사례(펜스 안
 # `./nope.md`가 문법 예시일 뿐인데도 링크 대상 부재로 거짓 경고됐던 것)를 재현한다.
 # 앵커 스캐너는 이미 펜스를 건너뛰므로, checkLinks도 독립적으로 같은 규칙을 지켜야
 # 한다 — 기본 실행뿐 아니라 --strict에서도 전혀 등장하지 않아야 진짜 억제다(기본
@@ -466,11 +466,10 @@ assert_contains "$OUT" "anchors 3 < --min-anchors=4" "floor failure must name th
 rm -rf "$TMP" && mkdir -p "$TMP"
 
 # ---- 회귀 6: 검사 6의 카디널리티 제외는 docs/governance/verification-log*.md 까지
-# 덮어야 한다 — verification-log.md(및 언어별 verification-log-<lang>.md)는 그 시절
-# 언어 수를 정당하게 말하는 이력 검증 기록이라 docs/governance/history.md와 동일하게
-# 대조 대상이 아니지만, 같은 숫자 불일치라도 CLAUDE.md처럼 현재-사실을 주장하는
-# 문서에서는 여전히 잡혀야 한다(제외 패턴이 과도해 진짜 드리프트까지 죽이지 않았다는
-# 증거) ----
+# 덮어야 한다 — 운영 트리에는 그 파일이 없지만, 이 픽스처가 합성하는 같은 경로의
+# 이력 기록은 그 시절 언어 수를 정당하게 말하므로 제외가 유지돼야 한다. 같은 숫자
+# 불일치라도 CLAUDE.md처럼 현재-사실을 주장하는 문서에서는 여전히 잡혀야 한다
+# (제외 패턴이 과도해 진짜 드리프트까지 죽이지 않았다는 증거) ----
 mkdir -p "$TMP/scripts/lib" "$TMP/docs/governance"
 printf '%s\n' 'DEPLOY_LANGS="a b c"' > "$TMP/scripts/lib/deploy-facts.sh"
 printf '%s\n' '# verification log' '6개 언어 시절 검증 기록.' > "$TMP/docs/governance/verification-log.md"
