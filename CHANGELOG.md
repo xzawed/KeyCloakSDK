@@ -7,7 +7,7 @@
 ## [Unreleased]
 
 ### Fixed
-- **(PHP·Ruby·Go) `JwksStore`를 직접 생성한 소비자의 JWKS 재조회 기본값이 문서(30초)와 달랐다.** 파사드 경로는 무변경. PHP `60초 → 30초`(창이 좁아짐), Ruby `10.0초 → 30.0초`(창이 넓어짐). Go 폴백은 비수출이라 소비자 도달 불가. 정의 자리는 이제 언어당 하나. (2026-08-13)
+- **(PHP·Ruby·Go) `JwksStore`를 직접 생성한 소비자의 JWKS 재조회 기본값이 문서(30초)와 달랐다.** 파사드 경로는 무변경. PHP `60초 → 30초`, Ruby `10.0초 → 30.0초`(창이 넓어짐). Go 폴백은 비수출이라 소비자 도달 불가. 정의 자리는 이제 언어당 하나. 60→30 양방향 해석: [CLAUDE.md](CLAUDE.md) JWKS 재조회 게차. (2026-08-13)
 - **(Python) `AsyncAdminClient.aclose()`가 중첩 토큰그랜트 httpx 클라이언트를 닫지 않아 FD가 누수됐다.** 게시된 `0.1.0rc1`에서 실측. 지금은 둘 다 닫는다. 경위: [`.claude/rules/python.md`](.claude/rules/python.md). (2026-08-03)
 - **(Python) 게시된 휠이 자신을 `0.1.0`으로 보고했다** — `__version__`이 매니페스트와 어긋남. 이제 `importlib.metadata`에서 파생. 경위: [`.claude/rules/python.md`](.claude/rules/python.md). (2026-08-03)
 
@@ -35,7 +35,7 @@
 - **(CI) SonarCloud를 Dependabot PR에서 건너뛴다 (PR #83).** Dependabot run에는 Actions 시크릿이 없어 스캔이 항상 실패했다. 사람 PR·push 게이트는 불변. 경위: [`.claude/rules/ci.md`](.claude/rules/ci.md). (2026-07-22)
 - **(Java) ⚠️ BREAKING — 요구 런타임을 JDK 17 → 21 LTS로 상향.** `maven.compiler.release=21` + enforcer `requireJavaVersion=[21,)`. 아티팩트는 `--release 21`로 컴파일되므로 **소비자도 JDK 21+에서 실행**해야 하며, 이전 JDK에서는 `UnsupportedClassVersionError`가 발생합니다. `maven-compiler-plugin`을 `3.11.0`으로 명시 고정(기본값 드리프트 방지). CI·릴리스 워크플로도 JDK 21 단일 사용. 소스·공개 API 무변경. (2026-07-03)
 
-- **(9개 언어) JWKS 재조회 최소 간격 기본값을 30초로 정렬했다(기존 10·30·60초 세 갈래).** PR #71 config화의 산물이었고, 같은 위조 kid 폭주에 Ruby가 Python보다 IdP를 6배 자주 때렸다. 소비자 API 무변경. 경위: [CLAUDE.md](CLAUDE.md) 핵심 게차.
+- **(9개 언어) JWKS 재조회 최소 간격 기본값을 30초로 정렬했다(기존 10·30·60초 세 갈래).** PR #71 config화의 산물이었고, 같은 위조 kid 폭주에 Ruby가 Python보다 IdP를 6배 자주 때렸다. 소비자 API 무변경. 경위·60초를 버려 잃은 것: [CLAUDE.md](CLAUDE.md) JWKS 재조회 게차.
 - **(릴리스) `release-trigger.sh`가 언어별 RC 표기를 받는다** — PEP 440 / RubyGems / Maven / SemVer. 절차: [DEPLOY.md](DEPLOY.md) §7.
 - **(릴리스) Java도 발행 전 통합 게이트를 `needs:` 잡 경계에 둔다.** 아홉 언어가 같은 서술. 절차: [DEPLOY.md](DEPLOY.md) §1.
 
