@@ -1,10 +1,10 @@
 # AI 거버넌스 · 이중검증 · 루프 엔지니어링 실행 체계
 
 - **작성일**: 2026-07-02
-- **적용 대상**: KeyCloakSDK Java MVP 구현 (WBS 계획서 실행)
+- **적용 대상**: 언어 SDK 구현 ([add-a-language playbook](../guides/add-a-language-playbook.md))
 - **상태**: 활성
 
-이 문서는 [WBS 계획서](../superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md)를 **정량 품질 게이트 + Codex 이중검증 + 미달 시 루프 엔지니어링 + AI 거버넌스** 아래에서 실행하기 위한 규약이다. 모든 태스크 실행은 이 체계를 따른다.
+이 문서는 언어 SDK 작업을 **정량 품질 게이트 + Codex 이중검증 + 미달 시 루프 엔지니어링 + AI 거버넌스** 아래에서 실행하기 위한 규약이다. 모든 태스크 실행은 이 체계를 따른다. 순서의 6단계는 [add-a-language playbook](../guides/add-a-language-playbook.md)이 소유한다.
 
 ---
 
@@ -59,8 +59,8 @@
 ## 4. 감사 추적 · 재현성 (Traceability)
 
 - **진척 원장**: `.superpowers/sdd/progress.md` (gitignore) — 태스크 완료·커밋 해시. 컴팩션 복구용.
-- **검증 로그**: [`verification-log.md`](verification-log.md) (커밋) — 태스크별 지표(커버리지·테스트 수·통과율), Codex 판정, 루프 이력, RCA. **WBS → 커밋 → 검증기록** 완전 추적.
-- **커밋 규약**: 각 커밋 메시지에 WBS id 포함 (계획서에 이미 반영).
+- **게이트 이력**: PR / 커밋 메시지 — 태스크별 지표, Codex 판정, 루프 이력, RCA. 별도 검증 로그 파일은 **새 언어의 필수 산출물이 아니다**.
+- **커밋 규약**: 각 커밋 메시지에 태스크 id 포함.
 - **재현성**: 의존성 버전 BOM 고정, Keycloak 컨테이너 태그 고정(`quay.io/keycloak/keycloak:26.6`), 툴체인 버전 고정(JDK 21.0.8, Maven 3.9.9).
 
 ---
@@ -107,7 +107,7 @@ $env:JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot'; $env:Pa
 4. **G4 리뷰**: Claude 리뷰 에이전트 (스펙+품질).
 5. **G5 Codex 교차검증**: Codex가 diff 독립 검토.
 6. **G6 보안 체크**.
-7. **판정**: 전 게이트 PASS → 검증 로그 기록 → 완료. 미달 → §3 루프.
+7. **판정**: 전 게이트 PASS → PR에 게이트 이력 기록 → 완료. 미달 → §3 루프.
 8. **다음 태스크** (사이에 사람 확인 없이 연속 실행; BLOCKED·모순·3회 초과 시에만 중단).
 
 Phase 완료 시 Phase 게이트(전 태스크 green + 통합테스트) 확인. 전체 완료 시 Codex 포함 전체 브랜치 최종 리뷰 → PR(사람 승인).

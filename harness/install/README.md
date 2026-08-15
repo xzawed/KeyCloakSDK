@@ -2,8 +2,7 @@
 
 Without a real release (public registry), this harness **installs each language's SDK "as if it were a published package" from a local registry and verifies that it actually operates against a real Keycloak**. Unlike the existing harness (`harness/`), which consumes the SDK via a **source path**, this harness verifies the **install path** of the actual release artifact (manifest, file list, entrypoint, metadata, dependency resolution).
 
-- Design: [docs/superpowers/specs/2026-07-07-install-operate-harness-design.md](../../docs/superpowers/specs/2026-07-07-install-operate-harness-design.md)
-- Exact per-language commands (authoritative source): [docs/superpowers/specs/2026-07-07-install-recipes-research.md](../../docs/superpowers/specs/2026-07-07-install-recipes-research.md)
+- Exact per-language commands (authoritative source): [`publish/*.sh`](publish/). The scripts are the SSOT; do not keep a second copy of the recipe in prose.
 
 ## Running
 

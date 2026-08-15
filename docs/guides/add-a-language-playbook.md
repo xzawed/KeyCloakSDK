@@ -1,7 +1,7 @@
 # Add-a-Language Playbook
 
 > **Audience:** Implementation agents, reviewers, and human approvers who want to add a **new-language implementation** to the Keycloak polyglot SDK at the same quality bar as Java and Python.
-> **Required reading first:** [Language-neutral contract §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md) · [AI governance framework](../governance/ai-governance-framework.md) · the worked examples [Java WBS](../superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md) · [Python WBS](../superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md).
+> **Required reading first:** [Language-neutral contract §4](../../CLAUDE.md) (in `CLAUDE.md` — not a frozen design spec) · [AI governance framework](../governance/ai-governance-framework.md) · any existing language tree (`java/`, `python/`, …) as a worked example.
 
 **Nine languages are done** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin). Kotlin is a published ninth SDK (`io.github.xzawed:keycloak-sdk-kotlin` `0.1.0-RC1` on Maven Central): it reuses the sibling Java library stack (`keycloak-admin-client` · `oauth2-oidc-sdk` · `nimbus-jose-jwt`) but is a **separate implementation**, not an interoperability-verification track. The former recommended order (TypeScript/Node → Go → C# → PHP → Rust → Ruby) is **history, not a roadmap**.
 
@@ -17,7 +17,7 @@ This document is a **copy-pasteable checklist plus per-stage deliverables and ga
 
 The first task for a new language is not code but **research and decisions**.
 
-- [ ] **Re-read the §4 language-neutral contract** — the source of truth is always [the design spec §4](../superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md). A new language *implements* this contract; it does not redesign it. Map naming, layering, the exception hierarchy, the value types (`TokenSet`/`ValidatedToken`/`IntrospectionResult`), and the security invariants verbatim.
+- [ ] **Re-read the §4 language-neutral contract** — the source of truth is always [CLAUDE.md §4](../../CLAUDE.md). A new language *implements* this contract; it does not redesign it. Map naming, layering, the exception hierarchy, the value types (`TokenSet`/`ValidatedToken`/`IntrospectionResult`), and the security invariants verbatim.
 - [ ] **Deep research on foundation libraries** — pick the "best foundation" for each language. If a mature official/semi-official client exists, **wrap it** (Java = `keycloak-admin-client`, Python = `python-keycloak`); if not, hand-assemble standard HTTP + OIDC. Decision criteria:
   - Admin REST coverage, maintenance activity, license compatibility (consumable under Apache-2.0).
   - Support for OIDC/OAuth2 flows (Authorization Code + PKCE, Client Credentials, Refresh, Logout, Introspection).
@@ -102,9 +102,9 @@ The new language must verify the **same scenarios** as Java and Python. Counts m
   - For which languages are already on a public registry, see [DEPLOY.md](../../DEPLOY.md) — do not restate it here, it goes stale.
 - [ ] **Tag-driven release (human-gated)** — actual publishing runs only via a workflow triggered when a human pushes a tag. Existing examples: [`.github/workflows/release.yml`](../../.github/workflows/release.yml) (Java, `v*` tag → Maven Central), [`.github/workflows/python-release.yml`](../../.github/workflows/python-release.yml) (Python, `py-v*` tag → PyPI Trusted Publisher/OIDC). The new language follows the same pattern with a language-specific tag prefix + the appropriate registry (npm/Go proxy/NuGet/Packagist/crates.io/RubyGems). The full procedure is in [DEPLOY.md](../../DEPLOY.md).
   - ⚠️ **Never let an agent auto-run an irreversible publish** — credentials only via CI secrets/OIDC, and the tag push is done by a human.
-- [ ] **Docs** — a new-language section in getting-started (install · QuickStart · cross-language mapping table · compatibility matrix), the README, and updates to the structure tree and build commands in [CLAUDE.md](../../CLAUDE.md) (do **not** hand-copy test counts — see the scenario table above). Record the per-task gate history in the [verification log](../governance/verification-log.md).
+- [ ] **Docs** — a new-language section in getting-started (install · QuickStart · cross-language mapping table · compatibility matrix), the README, and updates to the structure tree and build commands in [CLAUDE.md](../../CLAUDE.md) (do **not** hand-copy test counts — see the scenario table above). Gate history belongs in the PR / commit message — a separate verification-log file is **not** a required deliverable.
 
-**Deliverable:** A CI workflow + a release workflow (prepared, not executed) + updated docs + verification-log entries.
+**Deliverable:** A CI workflow + a release workflow (prepared, not executed) + updated docs.
 **Gate:** CI GREEN. The release workflow is in a prepared state (human-gated, not executed). Docs match the actual implementation (do not hand-copy test counts — CI is the authority).
 
 ---
@@ -116,10 +116,10 @@ Every task follows the [AI governance framework](../governance/ai-governance-fra
 - [ ] **G1–G6 gates** — all must pass per task to be considered done:
   - **G1 Build** (0 compile errors) · **G2 Unit tests** (100%) · **G3 Coverage** (threshold) · **G4 Spec conformance** (0 unresolved Critical/Important, reviewer approval) · **G5 Codex cross-verification** (0 discrepancies, verdict "confirmed") · **G6 Security** (0 token/secret · internal-type leakage).
 - [ ] **Codex dual verification (G5)** — Codex independently reviews every task diff. No self-approving your own code.
-- [ ] **Loop engineering** — on a gate miss, RCA (joint Claude+Codex diagnosis) → remediation (minimal change) → re-verification (G1–G6) → re-measurement. **Up to 3 iterations per gate**; escalate to a human if exceeded. Record every iteration in the verification log as "prior metric → action → post metric → RCA".
+- [ ] **Loop engineering** — on a gate miss, RCA (joint Claude+Codex diagnosis) → remediation (minimal change) → re-verification (G1–G6) → re-measurement. **Up to 3 iterations per gate**; escalate to a human if exceeded. Record every iteration in the PR as "prior metric → action → post metric → RCA".
 - [ ] **Governance guardrails** — `feature/<lang>-sdk` branch isolation, main via PR (human approval), publishing on human approval, secret handling (masking + review), reproducibility (pinned dependency BOM/lockfile, pinned Keycloak container tag, pinned toolchain versions).
 
-**Deliverable:** A verification log recording the gate-pass history, a Codex "confirmed" verdict, and a PR.
+**Deliverable:** A PR that records the gate-pass history and a Codex "confirmed" verdict.
 **Gate:** All gates GREEN + a whole-branch final review including Codex → PR (human-approved merge).
 
 ---
@@ -133,15 +133,15 @@ Every task follows the [AI governance framework](../governance/ai-governance-fra
 | 3. Security invariants + CI enforcement | Security tests + strict/security lint jobs | **G6** | masking · JWKS DoS · timeout tests, required CI jobs |
 | 4. Test parity matrix | Unit + Testcontainers integration | G2·G3 + integration GREEN | coverage gate, scenario-parity table |
 | 5. CI · publishing · docs | CI + tag-driven release (not executed) + docs | CI GREEN + docs match | matrix build, local-install verification, docs comparison |
-| 6. Governance | Verification log, Codex verdict, PR | **All of G1–G6** + Codex confirmed | gate measurement + loop + human approval |
+| 6. Governance | Codex verdict, PR | **All of G1–G6** + Codex confirmed | gate measurement + loop + human approval |
 
 ---
 
 ## Real-world cases (worked examples)
 
-This playbook is induced from the two completed implementations below. When writing a new language's WBS, mirror their **format, granularity, and self-review tables** exactly:
+This playbook is induced from the completed implementations. When writing a new language's WBS, take the **format** from any existing tree and the **contract** from [CLAUDE.md §4](../../CLAUDE.md):
 
-- **Java (baseline language, hand-wrapped):** [docs/superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md](../superpowers/plans/2026-07-02-keycloak-java-sdk-wbs.md) — 6 Maven modules, JaCoCo 90/85 gate, `v*` tag → Maven Central. Unit suite + Testcontainers integration.
-- **Python (2nd language, wrapping `python-keycloak`):** [docs/superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md](../superpowers/plans/2026-07-03-keycloak-python-sdk-wbs.md) — a single package with the `src/` layout + an `aio` async mirror, self JWT validation with `joserfc`, logic coverage enforced at 100%, `py-v*` tag → PyPI Trusted Publisher. Unit suite (sync + async) + integration.
+- **Java (baseline, hand-wrapped):** `java/` — 6 Maven modules, JaCoCo 90/85 gate, `v*` tag → Maven Central.
+- **Python (2nd language, wrapping `python-keycloak`):** `python/` — a single package with the `src/` layout + an `aio` async mirror, self JWT validation with `joserfc`, logic coverage enforced at 100%, `py-v*` tag → PyPI Trusted Publisher.
 
-The key thing the two cases prove: **even with different starting points (hand-wrapping vs. wrapping a mature library), keeping the §4 contract as the source of truth makes the results isomorphic.** A new language implements that contract too — it does not redesign it.
+The key thing the two cases prove: **even with different starting points (hand-wrapping vs. wrapping a mature library), keeping the §4 contract in CLAUDE.md as the source of truth makes the results isomorphic.** A new language implements that contract too — it does not redesign it.

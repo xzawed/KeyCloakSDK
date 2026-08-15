@@ -31,7 +31,7 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 | [Getting Started](guides/getting-started.md) | 운영 | Python `aio` / Node / .NET / Rust **async 변형**을 나란히 둔 것. **호환성 표**(각 행 머리의 게시본이 실은 기반 라이브러리). **Admin capability matrix**(언어별 직접 커버리지 — 루트 README는 요지만 적고 이 표를 가리킨다). |
 | [Development environment setup](guides/development-setup.md) | 운영 | 새 PC에서 언어별 툴체인을 세우는 **절차**와 `node scripts/doctor.mjs` 사용법. 변수 이름(`KCSDK_*`)은 CLAUDE.md·rules에도 있으나, 설치 순서는 여기에만 있다. |
 | [Deploying a Keycloak server](guides/deploying-keycloak-server.md) | 운영 | SDK가 아니라 **상대편 서버**를 세우는 법 — 단일 VM + Docker Compose + Caddy 자동 TLS 프로덕션 구성. |
-| [Add-a-language playbook](guides/add-a-language-playbook.md) | 운영 | 10번째 언어를 추가할 때 밟는 순서. **코드 생성기도 저품질 티어도 두지 않는다**는 depth-first 원칙과 그 이유. |
+| [Add-a-language playbook](guides/add-a-language-playbook.md) | 운영 | 10번째 언어를 추가할 때 밟는 순서. **코드 생성기도 저품질 티어도 두지 않는다**는 depth-first 원칙과 그 이유. **§4 계약의 진실 원천은 [CLAUDE.md](../CLAUDE.md)다**(원본 스펙이 아니라). |
 | [Language support roadmap](roadmap/language-support.md) | 운영 | 다음에 어떤 언어를, 왜 그 순서로 하는지. 채택/기각된 후보와 판단 근거. |
 
 ## 2. 거버넌스 · 검증 기록
@@ -60,7 +60,7 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 
 | 문서 | 날짜 | 상태 | 여기서만 알 수 있는 것 |
 |---|---|---|---|
-| [다국어 SDK 설계](superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md) | 07-02 | 완료 | **§4 언어 중립 계약의 원본.** 아홉 언어가 전부 이 문서를 진실 원천으로 삼는다 — 계층·오류 계급·`TokenSet`/`ValidatedToken` 개념이 여기서 정의됐다. |
+| [다국어 SDK 설계](superpowers/specs/2026-07-02-keycloak-multilang-sdk-design.md) | 07-02 | 완료 | **§4 언어 중립 계약의 초안.** 진실 원천은 이제 [CLAUDE.md](../CLAUDE.md) §4다 — 원본 스펙의 Python 절은 OpenAPI 생성·Authlib을 말하는데 실제는 `python-keycloak`+`joserfc`다. |
 | [Python SDK 설계](superpowers/specs/2026-07-03-keycloak-python-sdk-design.md) | 07-03 | 완료 | `python-keycloak` 래핑 + `joserfc` 자체 검증을 고른 이유. |
 | [Python async 변형 설계](superpowers/specs/2026-07-03-keycloak-python-async-design.md) | 07-03 | 완료 | sync API를 **건드리지 않고** `aio/` 미러를 순수 추가하기로 한 근거와 `a_*` 짝 활용. |
 | [문서 & 언어 확장 전략](superpowers/specs/2026-07-03-keycloak-docs-and-language-expansion-design.md) | 07-03 | 완료 | 설치 경로 문서화와 언어 확장을 **한 스펙으로 묶은** 이유. |
