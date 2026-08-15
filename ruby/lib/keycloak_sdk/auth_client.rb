@@ -19,23 +19,25 @@ module KeycloakSdk
       configure_rack_oauth2_timeouts(config)
     end
 
-    def create_authorization_request(redirect_uri:, scopes: nil, state: SecureRandom.urlsafe_base64(24), nonce: nil)
+    def create_authorization_request(redirect_uri:, scopes: nil, state: SecureRandom.urlsafe_base64(24),
+                                     nonce: SecureRandom.urlsafe_base64(24))
       verifier = SecureRandom.urlsafe_base64(64)
       challenge = Base64.urlsafe_encode64(Digest::SHA256.digest(verifier), padding: false)
       params = {
         scope: (scopes || @config.scopes).join(" "),
         state: state,
+        nonce: nonce,
         code_challenge: challenge,
         code_challenge_method: :S256
       }
-      params[:nonce] = nonce if nonce
       url = oauth_client(redirect_uri: redirect_uri).authorization_uri(params)
-      AuthorizationRequest.new(url: url.to_s, state: state, code_verifier: verifier)
+      AuthorizationRequest.new(url: url.to_s, state: state, code_verifier: verifier, nonce: nonce)
     end
 
-    # `expected_nonce`가 주어지면(create_authorization_request가 돌려준 nonce) 응답 id_token을
+    # `expected_nonce`가 주어지면(create_authorization_request가 항상 돌려주는 nonce) 응답 id_token을
     # realm JWKS로 서명·iss·aud·exp까지 강화 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce 재생
-    # 방지. 불일치·부재·검증실패는 모두 거부(fail-closed). 생략 시 id_token 검증을 건너뛴다(무-nonce 흐름).
+    # 방지. 불일치·부재·검증실패는 모두 거부(fail-closed). 생략 시 id_token 검증을 건너뛴다
+    # (여덟 언어 공통 — exchange에서 nonce를 필수로 만들지 않는다).
     def exchange_code(code:, code_verifier:, redirect_uri:, expected_nonce: nil)
       client = oauth_client(redirect_uri: redirect_uri)
       client.authorization_code = code

@@ -58,9 +58,11 @@ RSpec.describe KeycloakSdk do
 
   describe KeycloakSdk::AuthorizationRequest do
     it "masks code_verifier in inspect" do
-      s = described_class.new(url: "https://x?code_challenge=abc", state: "st", code_verifier: "verysecret").inspect
+      s = described_class.new(url: "https://x?code_challenge=abc", state: "st",
+                              code_verifier: "verysecret", nonce: "n-public").inspect
       expect(s).to include("***")
       expect(s).not_to include("verysecret")
+      expect(s).to include("n-public")
     end
   end
 end

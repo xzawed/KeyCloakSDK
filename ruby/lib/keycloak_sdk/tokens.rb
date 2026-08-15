@@ -47,9 +47,11 @@ module KeycloakSdk
   end
 
   # authorization-code 흐름 시작 값(PKCE code_verifier 포함·inspect 마스킹).
-  AuthorizationRequest = Data.define(:url, :state, :code_verifier) do
+  # nonce는 인가 URL에 실리는 재생 방지 값이라 비밀이 아니다(state와 동급 — code_verifier만 마스킹).
+  AuthorizationRequest = Data.define(:url, :state, :code_verifier, :nonce) do
     def inspect
-      "#<KeycloakSdk::AuthorizationRequest url=#{url.inspect} state=#{state.inspect} code_verifier=\"***\">"
+      "#<KeycloakSdk::AuthorizationRequest url=#{url.inspect} state=#{state.inspect} " \
+        "nonce=#{nonce.inspect} code_verifier=\"***\">"
     end
     alias_method :to_s, :inspect
   end

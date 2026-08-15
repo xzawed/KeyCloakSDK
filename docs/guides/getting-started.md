@@ -457,6 +457,8 @@ echo "created userId={$userId}\n";
 
 > Error handling: admin failures are classified as `KeycloakNotFoundError`/`KeycloakConflictError`/`KeycloakForbiddenError` (all of which carry `KeycloakAdminError::getStatusCode()`), or `KeycloakTransportError` on a network failure. `admin()->raw()` is the escape hatch to the underlying `Fschmtt\Keycloak\Keycloak` typed client.
 
+> **Authorization code (PKCE) flow**: `$req = $client->auth()->createAuthorizationRequest()` always issues a nonce (on `$req->nonce` and on the authorization URL). Exchange with `$client->auth()->exchangeCode($code, $req->codeVerifier, $req->nonce)` so the `id_token` is signature-verified and the nonce claim is checked. The third argument is optional — omit it and id_token validation is skipped, matching the other eight languages.
+
 ## Rust
 
 ### 1) Required runtime — Rust 1.88+
@@ -590,6 +592,8 @@ client.close
 ```
 
 > Error handling: admin failures are classified as `KeycloakSdk::NotFoundError`/`ConflictError`/`ForbiddenError` (all of which carry `AdminError#status`), or `KeycloakSdk::TransportError` on a network failure. `admin.raw` is the escape hatch to the underlying `Faraday::Connection`.
+
+> **Authorization code (PKCE) flow**: `req = client.auth.create_authorization_request(redirect_uri: …)` always issues a nonce (on `req.nonce` and on the authorization URL). Exchange with `client.auth.exchange_code(code:, code_verifier: req.code_verifier, redirect_uri:, expected_nonce: req.nonce)` so the `id_token` is signature-verified and the nonce claim is checked. `expected_nonce:` remains optional — omit it and id_token validation is skipped, matching the other eight languages.
 
 ---
 
