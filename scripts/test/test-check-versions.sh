@@ -177,4 +177,95 @@ cp -r "$FIX/." "$TMP/"
 rm -rf "$TMP/harness"
 assert_ok node "$GUARD" "$TMP"
 
+# ---- Kotlin: Gradle 래퍼가 KGP의 완전지원 밴드 안에 있는가 ----
+#
+# 왜 필요한가: 이 저장소의 Kotlin 모듈은 **첫 커밋부터 밴드 안에 있던 적이 없다**(실측).
+#   bf38670(스캐폴딩)  KGP 2.2.20(상한 8.14)  + 래퍼 9.5.0  → 메이저 하나만큼 밖
+#   723d0a4(dependabot) KGP 2.4.10(상한 9.5.0) + 래퍼 9.6.1 → 0.1.1 만큼 밖
+# 그동안 리포를 겨누는 가드는 전부 초록이었다 — 어떤 가드도 `gradle-wrapper.properties`를 읽지
+# 않았기 때문이다. 723d0a4는 KGP와 래퍼를 **한 커밋에** 올려 밴드 확인 계기 자체를 지웠다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+cp -r "$FIX/." "$TMP/"
+WPROPS="$TMP/kotlin/gradle/wrapper/gradle-wrapper.properties"
+BGK="$TMP/kotlin/build.gradle.kts"
+
+# 대조군: 래퍼 9.5.0 == 밴드 상한 → 통과(경계는 포함이다). 이 대조군이 없으면
+# "kotlin 래퍼 파일이 있으면 무조건 실패"인 가드와 구별하지 못한다.
+assert_ok node "$GUARD" "$TMP"
+
+# 변이 1 — **723d0a4 재현**: 래퍼만 밴드 위로 나간다.
+# ⚠️ 미러 주석도 **함께** 옮긴다. 그러지 않으면 미러 검사가 대신 실패시켜서, 밴드 검사가
+# 아무것도 안 해도 이 어서션이 통과한다(공허성). 밴드 위반만 남긴 뒤 메시지로 확인한다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's/gradle-9\.5\.0-bin\.zip/gradle-9.6.1-bin.zip/' "$WPROPS"
+sed -i 's|^// gradle/wrapper: 9\.5\.0$|// gradle/wrapper: 9.6.1|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "밴드 7.6.3–9.5.0 를 벗어났다" "밴드 위반을 실제 밴드 값과 함께 지목해야 한다"
+assert_contains "$OUT" "Gradle 래퍼 9.6.1" "밴드 밖 래퍼 버전을 지목해야 한다"
+assert_not_contains "$OUT" "미러 주석" "미러 검사가 아니라 밴드 검사가 잡은 것이어야 한다(공허성 방지)"
+
+# 변이 2 — 밴드 **하한** 밖. 상한만 검사하면 이쪽이 새 나간다(KGP를 올리면 하한도 같이 올라간다).
+cp -r "$FIX/." "$TMP/"
+sed -i 's/gradle-9\.5\.0-bin\.zip/gradle-7.0-bin.zip/' "$WPROPS"
+sed -i 's|^// gradle/wrapper: 9\.5\.0$|// gradle/wrapper: 7.0|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "Gradle 래퍼 7.0" "하한 미만도 밴드 위반이다"
+
+# 변이 3 — **KGP만 올리고 밴드 기록을 두고 간다.** 이것이 이 검사가 수렴하는 이유다:
+# 밴드 값은 외부(kotlinlang.org) 데이터라 CI가 가져올 수 없으므로 하드코딩하되 `kgp=`로 KGP에
+# 묶어 둔다. KGP가 움직이면 기록이 무효가 되어 사람이 밴드를 다시 확인할 수밖에 없다.
+# 이 어서션이 없으면 하드코딩한 상수가 조용히 낡는다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's/kotlin("jvm") version "2\.4\.10"/kotlin("jvm") version "2.5.0"/' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "실제 KGP 선언은 \"2.5.0\" 다" "낡은 밴드 기록을 새 KGP와 함께 지목해야 한다"
+assert_contains "$OUT" "새 밴드를 다시 확인" "무엇을 하라는 것인지 말해야 한다"
+
+# 변이 4 — build.gradle.kts 1행 미러 주석이 래퍼와 갈린다. 이 줄은 오래 **아무도 검사하지 않는
+# 2차 정의 자리**였다(723d0a4가 같이 옮긴 것은 우연이지 강제가 아니었다).
+cp -r "$FIX/." "$TMP/"
+sed -i 's|^// gradle/wrapper: 9\.5\.0$|// gradle/wrapper: 9.4.0|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" '1행의 미러 주석이 "9.4.0" 인데' "미러 주석의 낡은 값을 지목해야 한다"
+
+# 변이 5 — 밴드 선언줄을 지우면 조용히 통과하면 안 된다(가드 무력화 방지).
+# 주석처럼 생겼기 때문에 정리 커밋에서 지워지기 가장 쉬운 줄이다.
+cp -r "$FIX/." "$TMP/"
+sed -i '/^\/\/ kgp-gradle-band:/d' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "주석이 아니라 검사되는 선언이다" "선언이 사라진 것을 지목해야 한다"
+
+# 오탐 방지 — KGP와 밴드 기록과 래퍼를 **함께** 옮기면 통과해야 한다(정상적인 KGP 범프의 모양).
+# 이 대조군이 없으면 이 가드는 "KGP를 영원히 올리지 마라"가 된다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's/kotlin("jvm") version "2\.4\.10"/kotlin("jvm") version "2.6.0"/' "$BGK"
+sed -i 's|^// kgp-gradle-band: .*$|// kgp-gradle-band: kgp=2.6.0 gradle=8.0-9.9.0|' "$BGK"
+sed -i 's|^// gradle/wrapper: 9\.5\.0$|// gradle/wrapper: 9.9.0|' "$BGK"
+sed -i 's/gradle-9\.5\.0-bin\.zip/gradle-9.9.0-bin.zip/' "$WPROPS"
+assert_ok node "$GUARD" "$TMP"
+
+# ⚠️ **밴드 위반이 `--list`를 죽이면 안 된다.** `--list`의 계약은 "언어별 매니페스트 버전"이고
+# Kotlin 툴체인 정책은 그 값에 아무 영향도 주지 않는다. 하네스 핀과 같은 근거다 — 한때 그 부류가
+# `errors`를 공유해서 낡은 핀 하나가 아홉 언어의 install-verify 파생을 통째로 죽였다(실측).
+cp -r "$FIX/." "$TMP/"
+sed -i 's/gradle-9\.5\.0-bin\.zip/gradle-9.6.1-bin.zip/' "$WPROPS"
+sed -i 's|^// gradle/wrapper: 9\.5\.0$|// gradle/wrapper: 9.6.1|' "$BGK"
+assert_ok node "$GUARD" "$TMP" --list
+LOUT="$(node "$GUARD" "$TMP" --list 2>/dev/null)" || true
+assert_contains "$LOUT" "$(printf 'kotlin\t0.1.0')" "--list: 밴드가 어긋나도 kotlin 행이 나와야 한다"
+assert_not_contains "$LOUT" "::" "--list: stdout은 두 컬럼뿐이다(경고·오류는 stderr)"
+LERR="$(node "$GUARD" "$TMP" --list 2>&1 1>/dev/null)" || true
+assert_contains "$LERR" '::warning::' "--list: 밴드 위반을 경고로는 남겨야 한다(조용한 통과 금지)"
+
+# ⚠️ 대조군 — 래퍼 파일이 **아예 없는** 체크아웃은 검사 대상이 아니다(부분 체크아웃). 없으면
+# "kotlin/gradle/wrapper/ 가 반드시 존재해야 한다"는 전혀 다른 가드가 된 것을 모른다.
+cp -r "$FIX/." "$TMP/"
+rm -rf "$TMP/kotlin/gradle"
+assert_ok node "$GUARD" "$TMP"
+
 assert_report

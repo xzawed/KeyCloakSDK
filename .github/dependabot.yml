@@ -13,7 +13,24 @@ updates:
     directory: /kotlin
     schedule: { interval: weekly }
     groups:
-      kotlin-minor-patch: { update-types: [minor, patch] }
+      kotlin-minor-patch:
+        update-types: [minor, patch]
+        # ⚠️ **Gradle 래퍼는 독립적인 의존성이 아니다 — 상한을 같은 그룹의 다른 항목(KGP)이 정한다.**
+        # kotlinlang.org의 KGP↔Gradle 호환표가 KGP 버전마다 "완전지원 밴드"를 주고(실측:
+        # `2.2.20–2.2.21 | 7.6.3–8.14`, `2.4.0–2.4.10 | 7.6.3–9.5.0`), 래퍼는 그 안에 있어야 한다.
+        # 그런데 723d0a4가 KGP `2.2.20→2.4.10`과 래퍼 `9.5.0→9.6.1`을 **한 PR에** 올리면서 밴드를
+        # 확인할 계기 자체가 사라졌다 — 두 값이 같은 diff 안에서 함께 움직이면 "어느 쪽이 어느 쪽의
+        # 제약인가"가 보이지 않는다. 그렇게 한 달간 밴드 밖에 있었고 아무도 몰랐다.
+        # 빼면 dependabot이 이것만 **단독 PR**로 올린다(문서: "Any outdated dependencies that do not
+        # match a rule are updated in individual pull requests") — 사람이 밴드를 확인할 자리가 생긴다.
+        # 선례: 단독으로 온 #183(`9.6.1→9.7.0`)은 실제로 검토되어 기각됐다.
+        # ⚠️ `ignore`로 막지 않는 이유: 래퍼 범프는 **밴드가 허용하는 한 정당하다**(rust-toolchain·
+        # gh-action-pypi-publish 처럼 구조적으로 항상 틀리는 부류가 아니다). 막아버리면 Gradle의
+        # 패치·보안 릴리스를 영영 듣지 못하게 되어, 보이는 결정 지점을 침묵과 맞바꾸는 것이 된다.
+        # ⚠️ 격리는 단언을 대신하지 못한다 — 단독 PR은 사람이 **알아채야** 동작한다. 기계 쪽 백스톱은
+        # `scripts/check-versions.mjs`의 래퍼↔KGP 밴드 검사이고, 그쪽이 `kgp=` 기록을 실제 KGP 선언과
+        # 대조해 KGP가 움직이면 밴드 재확인을 강제한다. 둘은 서로를 대체하지 않는다.
+        exclude-patterns: ['gradle-wrapper']
     ignore:
       # kotlin-stdlib 버전은 게시 아티팩트의 **소비자 하한**이다 — build.gradle.kts에서 KGP 자동주입을
       # 끄고(`kotlin.stdlib.default.dependency=false`) compilerOptions의 languageVersion/apiVersion

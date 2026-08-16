@@ -326,7 +326,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 - Version bump: `kotlin/build.gradle.kts` `version` (**manual** — unlike Java, the tag does not auto-inject it; commit it matching the tag value exactly). The tag↔version guard (§1) enforces this.
 - dry-run:
   ```bash
-  export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot}" PATH="${KCSDK_TOOLS:-$HOME/tools}/gradle-9.6.1/bin:$PATH" GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
+  export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot}" PATH="${KCSDK_TOOLS:-$HOME/tools}/gradle-9.5.0/bin:$PATH" GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
   gradle -p kotlin publishToMavenLocal
   # → confirm keycloak-sdk-kotlin-0.1.0-RC1.jar (+sources/javadoc) is generated in the local ~/.m2
   ```

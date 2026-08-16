@@ -37,6 +37,11 @@ const errors = []
 // (kotlin 앱 하나가 빌드에 실패하는 것)보다 **더 넓은 정지**다. 실측으로 확인했다.
 // 진짜 추출 실패(매니페스트에서 버전을 못 읽음)는 그대로 `errors`라 두 모드 모두 하드 실패다 —
 // 그건 파생 값 자체를 신뢰할 수 없는 경우이기 때문이다.
+//
+// ⚠️ 이 배열은 이름과 달리 "하네스 전용"이 아니라 **파생을 막지 않는 치명적 오류** 계급이다 —
+// Kotlin의 Gradle 래퍼↔KGP 밴드 검사도 여기 들어간다. 같은 근거다: 래퍼 버전은 `--list`의 계약
+// (언어별 매니페스트 버전)에 아무 영향도 주지 않으므로, Kotlin 툴체인 정책 하나가 아홉 언어의
+// install-verify 파생을 통째로 죽여서는 안 된다. 차단은 plain 모드(repo-hygiene 머지 게이트)가 한다.
 const harnessErrors = []
 const found = []
 
@@ -218,6 +223,80 @@ for (const [lang, p, re] of manifests) {
           `${p} 의 ${crate} 요구가 "${v}" 인데 ${seen[0][0]} 는 "${want}" 다 — ` +
             `두 파일의 주석이 "SDK와 동일한 crate/버전/피처"를 요구한다(같은 타입이어야 값으로 전달 가능). ` +
             `연산자도 값의 일부다(\`=\` ≠ \`~\`)`,
+        )
+      }
+    }
+  }
+}
+
+// ── Kotlin: Gradle 래퍼가 KGP의 **완전지원 밴드** 안에 있는가 ──
+//
+// 왜 필요한가: 이 저장소의 Kotlin 모듈은 **첫 커밋부터 한 번도 밴드 안에 있던 적이 없다**(실측).
+//   bf38670(스캐폴딩): KGP 2.2.20(밴드 상한 8.14) + 래퍼 9.5.0  → 메이저 하나만큼 밖
+//   723d0a4(dependabot): KGP 2.4.10(밴드 상한 9.5.0) + 래퍼 9.6.1 → 0.1.1 만큼 밖
+// 즉 723d0a4는 "밴드 밖으로 나간 사고"가 아니라 간격을 **좁힌** 커밋이었고, 진짜 사고는
+// **아무도 이 짝을 확인한 적이 없다는 것**이다. 리포를 겨누는 가드는 그동안 전부 초록이었다 —
+// 어떤 가드도 `gradle-wrapper.properties`를 읽지 않았기 때문이다(실측: 이 블록을 넣기 전
+// `grep -rn 'gradle-wrapper' scripts/ .github/workflows/` → 0건).
+//
+// ⚠️ **밴드 데이터는 외부(kotlinlang.org)라 CI가 가져올 수 없다.** 그래서 밴드를 하드코딩하되
+// **KGP 버전과 묶어서** 기록한다(`kotlin/build.gradle.kts`의 `// kgp-gradle-band:` 줄). 상수만
+// 박아두면 그 상수 자체가 조용히 낡지만, `kgp=`를 실제 KGP 선언과 대조하면 **KGP가 움직이는
+// 순간 기록이 무효가 되어** 사람이 밴드를 다시 확인할 수밖에 없다. 이것이 이 검사가 수렴하는
+// 이유다 — 비교 대상 셋이 전부 로컬 파일이고 문맥 의존이 없다.
+//
+// ⚠️ 밴드 밖이 곧 고장은 아니다(kotlinlang: "you might encounter deprecation warnings or some new
+// features might not work"). 그래서 이 검사가 지키는 것은 "빌드가 깨진다"가 아니라 **선언된 정책**
+// 이다 — 정책은 사람이 정하고(사용자 승인), 가드는 그것이 조용히 어긋나는 것만 막는다.
+{
+  const bgk = 'kotlin/build.gradle.kts'
+  const wrapProps = 'kotlin/gradle/wrapper/gradle-wrapper.properties'
+  // ⚠️ **부재와 추출 실패를 구분한다**(위 두 검사와 같은 관용). 래퍼가 없는 트리(부분 체크아웃·
+  // 이 가드의 픽스처 일부)는 검사 대상이 아니다. 그러나 파일이 있는데 값이 안 읽히면 실패다.
+  if (existsSync(join(root, bgk)) && existsSync(join(root, wrapProps))) {
+    const cmpVer = (a, b) => {
+      const pa = a.split('.').map(Number)
+      const pb = b.split('.').map(Number)
+      for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const d = (pa[i] ?? 0) - (pb[i] ?? 0)
+        if (d !== 0) return d < 0 ? -1 : 1
+      }
+      return 0
+    }
+    // 래퍼의 실제 버전 SSOT는 배포 URL이다(`-bin`/`-all` 둘 다 허용).
+    const wrapper = pick(wrapProps, /gradle-(\d+(?:\.\d+)*)-(?:bin|all)\.zip/, 'Gradle 래퍼 배포', harnessErrors)
+    // build.gradle.kts 1행의 미러 주석. 이것은 오래 **아무도 검사하지 않는 2차 정의 자리**였다 —
+    // 723d0a4는 래퍼를 9.6.1로 올리면서 이 줄도 같이 옮겼지만, 그건 우연이지 강제가 아니었다.
+    const mirror = pick(bgk, /^\/\/ gradle\/wrapper:\s*(\S+)\s*$/m, '래퍼 미러 주석(build.gradle.kts 1행)', harnessErrors)
+    const kgpActual = pick(bgk, /kotlin\("jvm"\)\s+version\s+"([^"]+)"/, 'KGP 선언', harnessErrors)
+    const bandRe = /^\/\/ kgp-gradle-band:\s*kgp=(\S+)\s+gradle=(\d+(?:\.\d+)*)-(\d+(?:\.\d+)*)\s*$/m
+    const band = bandRe.exec(read(bgk))
+    if (!band) {
+      harnessErrors.push(
+        `${bgk} 에서 \`// kgp-gradle-band: kgp=<KGP> gradle=<min>-<max>\` 선언을 읽지 못했다 — ` +
+          `이 줄은 주석이 아니라 검사되는 선언이다(지우면 래퍼↔KGP 정합을 아무도 안 본다)`,
+      )
+    }
+    if (wrapper && mirror && wrapper !== mirror) {
+      harnessErrors.push(
+        `${bgk} 1행의 미러 주석이 "${mirror}" 인데 ${wrapProps} 는 "${wrapper}" 다 — ` +
+          `래퍼를 옮기면 같은 커밋에서 이 주석도 옮길 것(2차 정의 자리다)`,
+      )
+    }
+    if (band && kgpActual && band[1] !== kgpActual) {
+      harnessErrors.push(
+        `${bgk} 의 kgp-gradle-band 는 kgp=${band[1]} 기준으로 기록됐는데 실제 KGP 선언은 "${kgpActual}" 다 — ` +
+          `KGP를 올렸으면 kotlinlang.org의 KGP↔Gradle 호환표에서 **새 밴드를 다시 확인**하고 이 줄을 함께 고칠 것. ` +
+          `밴드는 KGP 버전마다 다르다(실측: 2.2.20–2.2.21 는 7.6.3–8.14, 2.4.0–2.4.10 는 7.6.3–9.5.0)`,
+      )
+    }
+    if (band && wrapper) {
+      const [, , lo, hi] = band
+      if (cmpVer(wrapper, lo) < 0 || cmpVer(wrapper, hi) > 0) {
+        harnessErrors.push(
+          `Gradle 래퍼 ${wrapper} 가 KGP ${band[1]} 의 완전지원 밴드 ${lo}–${hi} 를 벗어났다 — ` +
+            `래퍼만 올리지 말고 KGP와 **함께** 올릴 것(밴드 밖이 곧 고장은 아니지만, 이 저장소의 선언된 정책이다). ` +
+            `근거·되살릴 조건: .claude/rules/kotlin.md`,
         )
       }
     }

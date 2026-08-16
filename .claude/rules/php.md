@@ -10,7 +10,7 @@ paths:
 
 ## 툴체인 (빌드 명령)
 
-PHP는 포터블 설치(NTS x64 — ext: openssl/curl/mbstring/fileinfo/sodium/zip/json, 리포지토리 미커밋)를 사용하며 Composer(`composer.phar` + bash shim)가 같은 경로에 있다. **디렉터리 이름은 버전 접미가 붙는다**(다른 포터블 툴과 같은 관용 — `gradle-9.6.1`·`jdk-21…`). 프리픽스를 인라인 지정하고 명령은 `php/`에서 실행한다:
+PHP는 포터블 설치(NTS x64 — ext: openssl/curl/mbstring/fileinfo/sodium/zip/json, 리포지토리 미커밋)를 사용하며 Composer(`composer.phar` + bash shim)가 같은 경로에 있다. **디렉터리 이름은 버전 접미가 붙는다**(다른 포터블 툴과 같은 관용 — `gradle-9.5.0`·`jdk-21…`). 프리픽스를 인라인 지정하고 명령은 `php/`에서 실행한다:
 ```bash
 export KCSDK_PHP="${KCSDK_PHP:-${KCSDK_TOOLS:-$HOME/tools}/php-8.3}"
 export PATH="$KCSDK_PHP:$PATH" OPENSSL_CONF="${KCSDK_OPENSSL_CNF:-$KCSDK_PHP/extras/ssl/openssl.cnf}"
