@@ -22,7 +22,7 @@ cd go && go build ./... && go test ./...
 After the first `go/v*` tag:
 
 ```bash
-go get github.com/xzawed/KeyCloakSDK/go@v0.1.0
+go get github.com/xzawed/KeyCloakSDK/go@v0.1.0-rc.1
 ```
 
 ## Quickstart
