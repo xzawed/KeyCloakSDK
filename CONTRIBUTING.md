@@ -191,17 +191,20 @@ permanently blocked with no way to unblock it.
 
 | Ruleset | Refs | Rule | Who may bypass (as committed) |
 |---|---|---|---|
-| `RELEASE-TAGS-CREATE` | the eight non-Go release tags | `creation` | repository admin — **the release App must be added here** (DEPLOY.md §2-F step 4) |
+| `RELEASE-TAGS-CREATE` | the eight non-Go release tags | `creation` | repository admin **and the release App** (`Integration`) — the only file the App may appear in |
 | `RELEASE-TAGS-CREATE-GO` | `go/v*` | `creation` | repository admin **only** — never the App |
 | `RELEASE-TAGS-IMMUTABLE` | all nine | `update`, `deletion` | repository admin **only** — never the App |
 
-⚠️ **As committed, all three files list the same single bypass actor (the admin), so nothing yet
-distinguishes the eight from Go, and `dispatch-release.yml` cannot create a tag at all.** That is
-deliberate: the App's `actor_id` is not known until the App exists, and it must be added to exactly
-one of the three. The procedure, including why the other two must never receive it and why a web-UI
-edit is erased by the next `repo-config.mjs apply` (it sends a full `PUT` of the committed file), is
-[DEPLOY.md §2-F](DEPLOY.md). Until that step is done the automated release path is inactive and
-fails closed — releases still go out by hand-pushed tag.
+✅ **The release App was added to `RELEASE-TAGS-CREATE` on 2026-08-17** (PR #203), so the automated
+release path is live. It is in that one file and no other: `tags-create-go.json` and
+`tags-immutable.json` still list the admin alone, which is what makes "Go is released by a human"
+and "a release tag cannot be moved or deleted" facts about server state rather than promises inside
+a workflow file. `scripts/test/test-repo-config.sh` pins the split (one `Integration` bypass in
+`tags-create.json`, zero in the other two) so that adding the App to the wrong file is a red check
+rather than a silent loss of the only server-side enforcement point. The full procedure — including
+why a web-UI edit is erased by the next `repo-config.mjs apply` (it sends a full `PUT` of the
+committed file) — is [DEPLOY.md §2-F](DEPLOY.md). If a secret or ruleset ever goes missing,
+`dispatch-release.yml` fails closed again and releases fall back to hand-pushed tags.
 
 ✅ **All four rulesets are applied and active as of 2026-08-04** (`PRIMARY` on `main`, plus the three
 tag rulesets above). `node scripts/repo-config.mjs check` reports no drift against the committed

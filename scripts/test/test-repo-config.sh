@@ -100,4 +100,45 @@ for ctx in $(node -e "
   fi
 done
 
+# ── 7. 태그 커팅 App은 `tags-create.json`에만 있어야 한다 ────────────────────
+# DEPLOY.md §2-F와 CONTRIBUTING.md가 이것을 ⚠️로 세 번 선언하는데(“Never add it to
+# tags-create-go.json” · “Never add it to tags-immutable.json” · “and to nothing else”)
+# **아무도 기계로 보지 않았다**(실측: `grep -rn Integration scripts/ .github/workflows/`
+# → 룰셋 관련 히트 0). PR #203 이전에는 세 파일이 동일해 지킬 것이 없었지만, App이
+# 실재하는 지금은 이게 두 가지의 유일한 서버측 집행 지점이다:
+#   - `tags-create-go.json`에 App이 들어가면 "Go는 사람이 릴리스한다"가 워크플로 파일 안의
+#     약속으로 격하된다(그 파일은 머지 한 번으로 다시 쓸 수 있다). go는 sum.golang.org가
+#     append-only라 회수 시도가 원래 실수보다 나쁜 유일한 레지스트리다.
+#   - `tags-immutable.json`에 들어가면 App이 릴리스 태그를 옮기거나 지울 수 있다.
+# 커밋된 JSON이 SSOT다 — 산문을 정규식으로 훑지 않는다(그 부류는 수렴하지 않아 기각됐다).
+RS="$ROOT/.github/rulesets"
+count_integration() { # <file> → bypass_actors 중 actor_type=Integration 개수
+  node -e "
+    const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
+    const n=(r.bypass_actors||[]).filter(a=>a.actor_type==='Integration').length;
+    process.stdout.write(String(n));
+  " "$1"
+}
+assert_eq "1" "$(count_integration "$RS/tags-create.json")" 'tags-create.json에 App(Integration) bypass가 정확히 1개'
+assert_eq "0" "$(count_integration "$RS/tags-create-go.json")" 'tags-create-go.json에는 App이 없다 — Go는 사람만 릴리스한다'
+assert_eq "0" "$(count_integration "$RS/tags-immutable.json")" 'tags-immutable.json에는 App이 없다 — App은 태그를 옮기거나 지울 수 없다'
+# 세 파일 모두 admin bypass는 유지돼야 한다. 비면 그 룰셋은 **누구도 만족시킬 수 없어**
+# 아홉 릴리스가 영구 차단되고 푸는 방법도 없다(main.json의 `bypass_actors: []`와 정반대로
+# 태그 룰셋은 반드시 비워두면 안 된다 — CONTRIBUTING.md가 그 이유를 적는다).
+count_admin() { # <file> → actor_type=RepositoryRole 개수
+  node -e "
+    const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
+    const n=(r.bypass_actors||[]).filter(a=>a.actor_type==='RepositoryRole').length;
+    process.stdout.write(String(n));
+  " "$1"
+}
+for f in tags-create tags-create-go tags-immutable; do
+  assert_ok test "$(count_admin "$RS/$f.json")" -ge 1
+  # enforcement가 active가 아니면 위 구분은 아무것도 강제하지 않는다.
+  assert_eq "active" "$(node -e "
+    const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
+    process.stdout.write(r.enforcement||'');
+  " "$RS/$f.json")" "$f.json은 enforcement=active"
+done
+
 assert_report
