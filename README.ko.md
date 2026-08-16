@@ -13,7 +13,7 @@
 
 > 여기서 "다국어/polyglot"은 **프로그래밍 언어**를 뜻하며, 자연어 현지화(i18n)와는 무관합니다.
 >
-> ⚠️ **PHP·Python·.NET·Rust·Ruby·Node·Java·Kotlin은 첫 릴리스 후보(RC)가 공개 레지스트리에 게시됐고, 나머지 한 언어는 아직 레지스트리에 없습니다** — 모든 배포는 사람 승인 게이트입니다. 아래 내용은 지금 당장 클론해서 그대로 돌아갑니다: [지금 바로 써보기](#지금-바로-써보기) 참고.
+> ⚠️ **아홉 언어 전부 첫 릴리스 후보(RC)가 공개 레지스트리에 게시됐습니다** — 모든 배포는 사람 승인 게이트이고, 아홉 중 정식(stable) 릴리스는 아직 없습니다. 아래 내용은 지금 당장 클론해서도 그대로 돌아갑니다: [지금 바로 써보기](#지금-바로-써보기) 참고.
 
 ---
 
@@ -105,7 +105,7 @@ pip install -e KeyCloakSDK/python
 
 아홉 개 SDK 전부 기능 완료·`main` 병합 상태입니다. 각각 **실제 Keycloak 26.6 서버**로 검증되며(Testcontainers, PHP·Ruby는 docker CLI 셸아웃), 로직 모듈에 라인 ≥ 90% 커버리지 게이트가 걸려 있습니다. 여섯 언어는 브랜치 ≥ 85%도 강제하고, Go·PHP·Rust는 라인만 봅니다. 각 SDK의 보안 핵심은 어드버서리얼 리뷰를 거쳤고, 설정 가능한 JWT 서명 알고리즘과 의존성 CVE 감사는 아홉 전부에 적용됐습니다. OIDC nonce/`id_token` 재생 방지는 **아홉 전부**입니다: `create*`는 항상 nonce를 만들어 인가 URL에 싣고, 호출자가 그 값을 `exchange*`에 넘기면 `id_token`을 서명·`iss`·`aud`·`exp`까지 검증한 뒤 nonce 클레임을 대조합니다. nonce 인자를 생략하면 id_token 검증을 건너뛰는 것은 아홉 공통 패턴이지 Ruby만의 예외가 아닙니다.
 
-전부 **pre-1.0(`0.1.0` 라인)** 입니다. 아홉 중 여덟은 첫 릴리스 후보(RC)를 공개 레지스트리에 게시했습니다 — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 · crates.io `keycloak-sdk` 0.1.0-rc.1 · RubyGems `keycloak-sdk` 0.1.0.rc1 · npm `@xzawed/keycloak-sdk` 0.1.0-rc.2 · Maven Central `io.github.xzawed:keycloak-sdk` 0.1.0-RC1 · Maven Central `io.github.xzawed:keycloak-sdk-kotlin` 0.1.0-RC1 — 나머지 한 언어(Go)는 미게시이며 사람 태그 게이트 뒤에 있습니다. 절차는 [DEPLOY.md](DEPLOY.md), 보안 정책과 여기서 pre-1.0이 뜻하는 바는 [SECURITY.md](SECURITY.md)를 보세요.
+전부 **pre-1.0(`0.1.0` 라인)** 입니다. 아홉 전부 첫 릴리스 후보(RC)를 공개 레지스트리에 게시했습니다 — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.1 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 · crates.io `keycloak-sdk` 0.1.0-rc.1 · RubyGems `keycloak-sdk` 0.1.0.rc1 · npm `@xzawed/keycloak-sdk` 0.1.0-rc.2 · Maven Central `io.github.xzawed:keycloak-sdk` 0.1.0-RC1 · Maven Central `io.github.xzawed:keycloak-sdk-kotlin` 0.1.0-RC1 · Go module proxy `github.com/xzawed/KeyCloakSDK/go` 0.1.0-rc.1 — 하나하나가 사람 태그 게이트를 거쳤고, **정식(stable) 릴리스는 아직 어느 언어에도 없습니다**. 절차는 [DEPLOY.md](DEPLOY.md), 보안 정책과 여기서 pre-1.0이 뜻하는 바는 [SECURITY.md](SECURITY.md)를 보세요.
 
 ---
 

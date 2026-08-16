@@ -1,6 +1,6 @@
 # Language Support Roadmap
 
-This document defines the **language expansion strategy and priorities** for the Keycloak polyglot SDK. The languages currently supported are the nine — **Java**, **Python**, **TypeScript/Node**, **Go**, **C#/.NET**, **PHP**, **Rust**, **Ruby**, and **Kotlin** — and for all nine, design, implementation, unit tests, integration tests, and CI are complete, with only the real publish step remaining behind a human gate — eight of them (all except Go) have since shipped a first release candidate. This roadmap lays out (1) the principles of language expansion, (2) the prerequisite step-0 for actually publishing the existing SDKs, (3) the priorities and candidate clients for the next expansion languages, and (4) a per-language status matrix.
+This document defines the **language expansion strategy and priorities** for the Keycloak polyglot SDK. The languages currently supported are the nine — **Java**, **Python**, **TypeScript/Node**, **Go**, **C#/.NET**, **PHP**, **Rust**, **Ruby**, and **Kotlin** — and for all nine, design, implementation, unit tests, integration tests, and CI are complete, and all nine have since shipped a first release candidate through the human-gated publish step. This roadmap lays out (1) the principles of language expansion, (2) the prerequisite step-0 for actually publishing the existing SDKs, (3) the priorities and candidate clients for the next expansion languages, and (4) a per-language status matrix.
 
 "Polyglot" means **multiple programming languages** and has nothing to do with natural-language localization (i18n).
 
@@ -14,7 +14,7 @@ This document defines the **language expansion strategy and priorities** for the
 
 ## step-0 — Real publish of the existing SDKs (human-gated)
 
-Before expanding to a new language, **actually publishing the 9 already-complete SDKs (Java, Python, Node, Go, .NET, PHP, Rust, Ruby, Kotlin)** is the top roadmap item. **Eight are now live as release candidates** — Packagist `xzawed/keycloak-sdk` `0.1.0-rc.1` · PyPI `keycloak-sdk` `0.1.0rc1` · NuGet `Xzawed.Keycloak.Sdk` `0.1.0-rc.1` · crates.io `keycloak-sdk` `0.1.0-rc.1` · RubyGems `keycloak-sdk` `0.1.0.rc1` · npm `@xzawed/keycloak-sdk` `0.1.0-rc.2` · Maven Central `io.github.xzawed:keycloak-sdk` `0.1.0-RC1` · Maven Central `io.github.xzawed:keycloak-sdk-kotlin` `0.1.0-RC1` — and the remaining one (Go) is still unpublished (`0.1.0`). Go needs no setup at all, which is exactly why it is last: pushing the tag *is* the publish, and the only remedy afterwards is a `retract` directive in a later release.
+Before expanding to a new language, **actually publishing the 9 already-complete SDKs (Java, Python, Node, Go, .NET, PHP, Rust, Ruby, Kotlin)** was the top roadmap item, and it is now done. **All nine are now live as release candidates** — Packagist `xzawed/keycloak-sdk` `0.1.0-rc.1` · PyPI `keycloak-sdk` `0.1.0rc1` · NuGet `Xzawed.Keycloak.Sdk` `0.1.0-rc.1` · crates.io `keycloak-sdk` `0.1.0-rc.1` · RubyGems `keycloak-sdk` `0.1.0.rc1` · npm `@xzawed/keycloak-sdk` `0.1.0-rc.2` · Maven Central `io.github.xzawed:keycloak-sdk` `0.1.0-RC1` · Maven Central `io.github.xzawed:keycloak-sdk-kotlin` `0.1.0-RC1` · Go module proxy `github.com/xzawed/KeyCloakSDK/go` `0.1.0-rc.1`. Go went last on purpose: it needs no credential setup at all, but it has the weakest recovery of the nine — pushing the tag *is* the publish, the proxy cache is immutable, and the only remedy afterwards is a `retract` directive in a later release. **What remains on this axis is the first *stable* release of each language, not the first publish.**
 
 The procedure lives in **[DEPLOY.md](../../DEPLOY.md)** — do not copy checklists here. A previous copy in this file still said `git tag v0.1.0` / `py-v0.1.0` and "keycloak-sdk is not yet on PyPI" after those RCs had shipped. Use `scripts/release-readiness.sh [lang…]` and `scripts/release-trigger.sh <lang> <ver>` (both print only; they never push a tag).
 
@@ -41,7 +41,7 @@ The procedure lives in **[DEPLOY.md](../../DEPLOY.md)** — do not copy checklis
 | **Java** | ✅ | ✅ | ✅ | ✅ (Testcontainers) | ✅ | 🚀 Maven Central `0.1.0-RC1` |
 | **Python** | ✅ | ✅ (+ `aio` async mirror) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 PyPI `0.1.0rc1` |
 | **TypeScript / Node.js** | ✅ | ✅ (ESM · async-only) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 npm `0.1.0-rc.2` |
-| **Go** | ✅ | ✅ (sync + `context.Context`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🔒 human-gated |
+| **Go** | ✅ | ✅ (sync + `context.Context`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 Go module proxy `0.1.0-rc.1` |
 | **C# / .NET** | ✅ | ✅ (async-first `Task<T>`+`CancellationToken`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 NuGet `0.1.0-rc.1` |
 | **PHP** | ✅ | ✅ (`readonly class` · exception-based) | ✅ | ✅ (docker CLI shell-out — real Keycloak 26.6) | ✅ | 🚀 Packagist `0.1.0-rc.1` |
 | **Rust** | ✅ | ✅ (edition 2024 · async-only) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 crates.io `0.1.0-rc.1` |

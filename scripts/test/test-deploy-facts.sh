@@ -79,10 +79,30 @@ assert_fails df_is_published perl   # 언어가 아닌 토큰
 # 맞추면 테스트가 빨개지는 상태) — `test-deploy-md.sh` 상단이 기록한 "zero tags" 실패와 같은
 # 부류다. 검사하려는 것은 "알려진 언어인데 미게시면 false"라는 **접근자의 동작**이지 특정
 # 언어가 아니므로, 대상을 SSOT에서 뽑는다.
-first_unpub="$(df_unpublished | awk '{print $1}')"
-assert_ok test -n "$first_unpub"
-assert_ok df_known "$first_unpub"
-assert_fails df_is_published "$first_unpub"
+# ⚠️ **2026-08-17: 이 검사의 대상이 사라졌다.** 예전 판은 `df_unpublished`의 첫 원소를 실제
+# 대상으로 삼았는데, 아홉 전부 게시되면서 그 목록이 비어 `test -n`·`df_known`이 빈 문자열로
+# 2건 실패했다(go 게시 실측). 대상이 저장소의 **게시 상태**에 묶여 있던 것이 문제다 —
+# 검사하려는 것은 "알려진 언어인데 미게시면 false"라는 **접근자의 동작**이지 특정 시점의
+# 게시 현황이 아니다. 그래서 대상을 **합성**한다: 서브셸에서 `DF_PUBLISHED`를 한 언어만큼
+# 좁혀 그 상황을 만들고 접근자가 어떻게 답하는지 직접 본다. 이 형태는 게시 상태와 무관하게
+# 성립하므로 열 번째 언어가 와도, 전부 게시돼도 다시 낡지 않는다.
+# ⚠️ 서브셸 안에서 대입해야 한다 — 현재 셸에서 `DF_PUBLISHED`를 건드리면 이 파일의 나머지
+# 어서션이 전부 가짜 SSOT를 보게 된다.
+_pub_with()   { ( DF_PUBLISHED="$1"; df_is_published "$2" ); }   # $1=가상 SSOT $2=언어
+_unpub_with() { ( DF_PUBLISHED="$1"; df_unpublished ); }
+_synth_lang="$(printf '%s\n' $DEPLOY_LANGS | head -n1)"
+_synth_pub=""
+for L in $DEPLOY_LANGS; do
+  [ "$L" = "$_synth_lang" ] || _synth_pub="$_synth_pub $L"
+done
+assert_ok test -n "$_synth_lang"
+assert_ok df_known "$_synth_lang"
+# 양방향: 같은 언어가 가상 SSOT에서는 미게시, 실제 SSOT에서는 게시로 답해야 한다.
+assert_fails _pub_with "$_synth_pub"    "$_synth_lang"
+assert_ok    _pub_with "$DF_PUBLISHED"  "$_synth_lang"
+# 그리고 `df_unpublished`가 정확히 그 언어만 흘려야 한다(`printf '%s '`라 후행 공백이 붙는다).
+assert_eq "$_synth_lang " "$(_unpub_with "$_synth_pub")" \
+  "가상 SSOT에서 df_unpublished 가 제외한 언어만 흘리지 않는다"
 # df_unpublished = DEPLOY_LANGS − DF_PUBLISHED (원소·개수 둘 다)
 unp="$(df_unpublished)"
 for L in $DEPLOY_LANGS; do
