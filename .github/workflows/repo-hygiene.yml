@@ -101,6 +101,13 @@ jobs:
       - name: 보안 기본값 자가테스트(9언어 코드 ↔ 문서 정합)
         run: sh scripts/test/test-security-defaults.sh
 
+      # ⚠️ Admin capability matrix의 U(update) 열. 이 표가 권위인데 자기는 무보호였다 —
+      # 루트 README가 "Rust와 PHP만 update()가 없다"고 거짓을 말했을 때 정답을 갖고 있던
+      # 것이 이 표이고, PHP가 25/25가 되며(#190) 또 손으로 고쳤다. C/G/L은 이름이 언어마다
+      # 갈려 225셀은 만들지 않는다. U만 45셀(update/Update/UpdateAsync/update_<resource>).
+      - name: Admin capability matrix U열(표 ↔ 9언어 소스)
+        run: sh scripts/test/test-admin-capability.sh
+
       # ⚠️ 출처 게이트를 **실행해** 판정한다(계획서 Task B0). 자매 가드
       # `test-harness-registries.sh`는 같은 스크립트를 정적으로 렉싱하는데, 그 방식으로 7종
       # 우회를 닫은 뒤에도 적대적 재리뷰가 4종을 더 찾았다 — 정적으로 임의 POSIX 셸의 의미를
