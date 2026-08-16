@@ -256,7 +256,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(Kotlin) Kover 0.9.x는 jvm-test-suite `integrationTest`를 자동 계측대상에 포함.** 상세: `.claude/rules/kotlin.md`
 - ⚠️ **(Kotlin) exchangeCode는 id_token을 nonce 비교 전에 완전 서명검증한다(Java와 동형).** 상세: `.claude/rules/kotlin.md`
 - ⚠️ **(Kotlin) admin 파사드는 auth를 직접 알지 못한다(§4·Java 동형).** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) 로컬 포터블 Gradle과 CI 래퍼 버전을 일치시켜 둔다(현재 둘다 9.6.1).** 상세: `.claude/rules/kotlin.md`
+- ⚠️ **(Kotlin) Gradle 래퍼는 KGP 완전지원 밴드 안에 둔다(둘다 9.5.0으로 되돌림) — 가드가 `kgp=` 기록을 실제 KGP와 대조한다.** 상세: `.claude/rules/kotlin.md`
 - ⚠️ **(Kotlin) 신규 라이브러리 리스크 0.** 상세: `.claude/rules/kotlin.md`
 - ⚠️ **(Kotlin) 게시 아티팩트의 바이너리 메타데이터 버전은 KGP 버전이 아니라 `languageVersion`/`apiVersion`이 정한다 — 설정 없이 KGP 2.4.10으로 빌드하면 Kotlin 2.4 미만 소비자는 라이브러리를 아예 쓸 수 없다.** 상세: `.claude/rules/kotlin.md`
 - ⚠️ **(Java·Kotlin) `jwksMinRefetch`는 Nimbus 캐시 TTL(기본 5분) 미만이어야 한다** — 크면 `JWKSourceBuilder.build()`가 던지고, 그 foreign 예외가 공개 API로 새면 §4 위반이다(지금은 경계에서 `KeycloakConfigException`으로 변환). ⚠️ **JWKS rate-limit 테스트에는 반드시 대조군을 둘 것** — 캐시만으로도 통과해 하드닝 한 줄을 지워도 초록이 된다. 상세: `.claude/rules/java.md`·`.claude/rules/kotlin.md`
