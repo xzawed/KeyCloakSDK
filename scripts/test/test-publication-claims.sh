@@ -16,6 +16,18 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/../lib/deploy-facts.sh"
 ROOT="$DIR/../.."
 
+# 미게시 언어의 **설치 스니펫** 기대 버전. 라인 버전(`0.1.0`)이 아니라 DEPLOY.md §8이 명시한
+# **첫 태그 버전**이다 — go의 첫 릴리스 태그는 `go/v0.1.0-rc.1`이고 `go/v0.1.0`은 존재한 적이
+# 없으며 앞으로도 없다(DEPLOY.md §7이 첫 게시를 RC로 하라고 권고하고, 이미 여덟 언어가 그랬다).
+# 설치 스니펫은 "태그가 밀리면 이걸 실행하라"는 **소비자용 명령**이라 실제로 태울 좌표를 적어야
+# 한다 — `@v0.1.0`은 그대로 `go get`이 실패하는 좌표다.
+#
+# ⚠️ 호환성 표는 이 값을 쓰지 않는다(아래 루프는 `0.1.0`을 그대로 둔다). 그 표는 "그 행이 무엇을
+# shipped했나"를 적는 자리이고, 미게시 행은 getting-started §Compatibility의 경고문이 선언한 대로
+# **현재 `main`**(`go/go.mod`)을 뜻하므로 라인 버전 `0.1.0`이 옳다. 둘은 같은 문자열이 아니라
+# 서로 다른 사실이다 — 한 상수로 합치면 그 구분이 사라진다.
+UNPUBLISHED_INSTALL_VER="0.1.0-rc.1"
+
 for L in $DEPLOY_LANGS; do
   f="$ROOT/$L/README.md"
   assert_ok test -f "$f"
@@ -52,10 +64,11 @@ for L in $DEPLOY_LANGS; do
   #
   # ⚠️ "펜스 안에 게시 버전이 있어야 한다"도 틀렸다 — python·rust·dotnet·php는 설치 명령에 버전을
   # 쓰지 않는 것이 **옳다**(`pip install keycloak-sdk`처럼 리졸버가 고르게 둔다). 그래서 규칙은
-  # "있어야 한다"가 아니라 **"핀했다면 그 값이어야 한다"** 이다. 미게시 언어의 기대값은 아직 태우지
-  # 않은 라인 버전 `0.1.0`이라, 그 언어가 게시되는 순간 기대값이 RC로 바뀌며 갱신을 강제한다.
+  # "있어야 한다"가 아니라 **"핀했다면 그 값이어야 한다"** 이다. 미게시 언어의 기대값은
+  # `UNPUBLISHED_INSTALL_VER`(첫 태그 버전)이라, 그 언어가 게시되는 순간 `df_published_version`이
+  # 채워지며 기대값이 실제 게시 버전으로 바뀌고, 스니펫을 안 고치면 시끄럽게 깨진다.
   _want="$(df_published_version "$L")"
-  [ -n "$_want" ] || _want="0.1.0"
+  [ -n "$_want" ] || _want="$UNPUBLISHED_INSTALL_VER"
   _bad="$(awk '/^```/ { f = !f; next } f' "$f" \
     | grep -oE '0\.1\.0[A-Za-z0-9.-]*' | sort -u | grep -Fxv "$_want" || true)"
   assert_eq "" "$_bad" \
@@ -342,7 +355,8 @@ assert_eq "$coords_want" "$coords_seen" \
 # 에는 `0.1.0-SNAPSHOT`(java)·`publishToMavenLocal`로 만든 jar 이름(kotlin)이 정당하게 들어 있어
 # 구분 없이 검사하면 오탐이 난다 — 소비자 복사 자리와 로컬 빌드 예제는 다른 것이다.
 # ⚠️ go는 절 제목이 `### 3) Installation after release (future)`라 같은 접두로 함께 걸리고, 기대값은
-# 미게시 라인 버전 `0.1.0`이다(게시되는 순간 기대값이 RC로 바뀌며 갱신을 강제한다).
+# `UNPUBLISHED_INSTALL_VER`(첫 태그 버전 `0.1.0-rc.1`)이다 — 그 절은 "태그가 밀리면 이걸 실행하라"
+# 이므로 실제로 태울 좌표라야 하고, 게시되는 순간 기대값이 실제 게시 버전으로 바뀌며 갱신을 강제한다.
 gs_head() { case "$1" in
   java) echo '## Java' ;; python) echo '## Python' ;; node) echo '## Node.js / TypeScript' ;;
   go) echo '## Go' ;; dotnet) echo '## C# / .NET' ;; php) echo '## PHP' ;; rust) echo '## Rust' ;;
@@ -352,7 +366,7 @@ body_seen=0
 for L in $DEPLOY_LANGS; do
   _h="$(gs_head "$L")"
   _want="$(df_published_version "$L")"
-  [ -n "$_want" ] || _want="0.1.0"
+  [ -n "$_want" ] || _want="$UNPUBLISHED_INSTALL_VER"
   _vers="$(awk -v h="$_h" '
     $0 == h { inlang = 1; next }
     /^## / { inlang = 0 }

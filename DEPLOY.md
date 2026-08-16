@@ -348,7 +348,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   git tag go/v0.1.0-rc.1 && git push origin go/v0.1.0-rc.1
   ```
 - Deployment check: confirm GitHub Actions `go-release.yml` succeeded. The proxy caches on the first `go get` request, so the version may not be queryable immediately.
-- Install: `go get github.com/xzawed/KeyCloakSDK/go@v0.1.0`
+- Install: `go get github.com/xzawed/KeyCloakSDK/go@v0.1.0-rc.1`
 - ⚠️ **The weakest recovery of the nine.** The tag alone makes the version fetchable — CI does not gate that — and once the proxy has cached it, it is immutable and cannot be yanked. Your only remedy is a `retract` directive in a later release (§6). Be correspondingly careful with the tag.
 
 ### 9. PHP

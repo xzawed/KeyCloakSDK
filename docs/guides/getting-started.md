@@ -262,7 +262,7 @@ The module path is `github.com/xzawed/KeyCloakSDK/go` and the package name is `k
 Once a release tag is pushed:
 
 ```bash
-go get github.com/xzawed/KeyCloakSDK/go@v0.1.0
+go get github.com/xzawed/KeyCloakSDK/go@v0.1.0-rc.1
 ```
 
 > ⚠️ **No release tag yet (human-gated).** Go has no registry publish, so **the tag *is* the release** — when a human pushes a `go/v*` tag, [`.github/workflows/go-release.yml`](../../.github/workflows/go-release.yml) runs verification + a GitHub Release + proxy warming, and `proxy.golang.org` auto-caches from the tag. No stored secrets are needed.
