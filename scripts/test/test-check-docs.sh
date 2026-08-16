@@ -358,6 +358,55 @@ assert_fails node "$GUARD" "$TMP" --strict # --strict 는 실패
 # 이 블록도 ok.md를 오염시켰다 — 다음 블록을 위해 다시 리셋한다.
 rm -rf "$TMP" && mkdir -p "$TMP"
 
+# ---- 검사 5 확장(#193): 맨상대경로(점·슬래시 없는 저장소 경로)도 존재 검사 ----
+# 구버전 정규식은 `./`·`../`·선두 `/`만 봐서 `[없는문서](nope.md)` · `[x](docs/gone.md)`는
+# 대상이 없어도 --strict 가 통과한다. CLAUDE.md·CHANGELOG.md 의 맨경로 링크가 그 구멍이다.
+# 해석은 기존과 같다 — 링크는 그 문서의 부모 디렉터리 기준(루트 문서에서는 ROOT 와 같다).
+# ROOT 단독으로 보면 하위 문서의 형제 링크(docs/README.md → guides/…)가 전부 오탐이다.
+cp -r "$FIX/." "$TMP/"
+printf '%s\n' '[없는문서](nope.md)' >> "$TMP/ok.md"
+assert_ok node "$GUARD" "$TMP"             # 기본은 경고
+assert_fails node "$GUARD" "$TMP" --strict
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" "nope.md" "bare relative path (*.md) must be flagged under --strict"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+cp -r "$FIX/." "$TMP/"
+printf '%s\n' '[없는문서](docs/gone.md)' >> "$TMP/ok.md"
+assert_fails node "$GUARD" "$TMP" --strict
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" "docs/gone.md" "bare path containing / must be flagged under --strict"
+
+# 살아 있는 맨경로·같은 디렉터리 형제 링크는 통과해야 한다(오탐 0).
+rm -rf "$TMP" && mkdir -p "$TMP"
+cp -r "$FIX/." "$TMP/"
+mkdir -p "$TMP/sub"
+printf '%s\n' '[ok](ok.md)' > "$TMP/bare-ok.md"
+printf '%s\n' '[peer](peer.md)' > "$TMP/sub/a.md"
+printf '%s\n' '# peer' > "$TMP/sub/peer.md"
+assert_ok node "$GUARD" "$TMP" --strict
+
+# 오탐 억제: 스킴·순수 앵커·경로로 볼 근거가 없는 식별자는 잡지 않는다.
+# LICENSE 처럼 확장자 없는 루트 파일명은 `/` 도 `.md` 도 없어 스킵 — 식별자 오탐을
+# 막으려는 필터의 대조군이다(살아 있는 LICENSE 를 검사하지 않는 것이 목적).
+rm -rf "$TMP" && mkdir -p "$TMP"
+cp -r "$FIX/." "$TMP/"
+printf '%s\n' \
+  '[웹](https://example.com/nope.md)' \
+  '[메일](mailto:dev@example.com)' \
+  '[앵커](#nope)' \
+  '[식별자](SomeType)' \
+  '[라이선스](LICENSE)' >> "$TMP/ok.md"
+assert_ok node "$GUARD" "$TMP" --strict
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_not_contains "$OUT" "nope.md" "http(s) dest must never be flagged"
+assert_not_contains "$OUT" "mailto:" "mailto dest must never be flagged"
+assert_not_contains "$OUT" "#nope" "pure anchor must never be flagged"
+assert_not_contains "$OUT" "SomeType" "bare identifier without / or .md must never be flagged"
+assert_not_contains "$OUT" "LICENSE" "extensionless basename is not a path under the filter"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
 # ---- 검사 6: "N개 언어" 기수가 scripts/lib/deploy-facts.sh 의 DEPLOY_LANGS 언어 수와
 # 다르면 --strict 에서 실패해야 한다(기본은 경고). deploy-facts.sh 가 아예 없는 트리
 # (위 다른 모든 블록)에서는 이 검사가 조용히 스킵됨을 그 블록들의 assert_ok가 이미

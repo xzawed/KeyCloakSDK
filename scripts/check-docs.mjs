@@ -577,9 +577,25 @@ function checkCoverageGates() {
   }
 }
 
-// 검사 5 — 상대 링크(`./`·`../`) 대상이 실제로 디스크에 존재하는가. 예방적 검사라 기본은 경고.
-// 펜스(```) 안의 링크 문법은 예시일 뿐 실제 링크가 아니다 — 앵커 스캐너(메인 루프)가 펜스를
-// 건너뛰는 것과 동일한 규칙을 여기서도 독립적으로 추적한다(둘은 별개 순회라 상태를 공유하지 않는다).
+// 검사 5 — 상대 링크 대상이 실제로 디스크에 존재하는가. 예방적 검사라 기본은 경고.
+// `./`·`../`·선두 `/`뿐 아니라 맨상대경로(CHANGELOG.md, docs/…)도 본다 — 점·슬래시
+// 접두가 없으면 구버전은 죽어도 초록이었다(#193). 해석은 그 문서의 부모 디렉터리
+// 기준(루트 문서에서는 ROOT 와 같다). ROOT 단독으로 보면 하위 문서의 형제 링크가
+// 오탐이다(실측 32건: docs/README.md → guides/… 등).
+// 오탐 억제: 스킴(http(s):, mailto: 등)·프로토콜상대(//) ·경로로 볼 근거가 없는
+// 식별자는 건너뛴다. 경로 근거 = `/`를 포함하거나 `.md`로 끝남. 순수 앵커(`#…`)는
+// 정규식이 `(` 뒤를 `#`에서 끊으므로 애초에 안 잡힌다.
+// 펜스(```) 안의 링크 문법은 예시일 뿐 실제 링크가 아니다 — 앵커 스캐너(메인 루프)가
+// 펜스를 건너뛰는 것과 동일한 규칙을 여기서도 독립적으로 추적한다(둘은 별개 순회라
+// 상태를 공유하지 않는다).
+function looksLikeRepoPath(dest) {
+  if (!dest) return false
+  if (/^[a-z][a-z0-9+.-]*:/i.test(dest)) return false
+  if (dest.startsWith('//')) return false
+  if (dest.includes('/')) return true
+  return /\.md$/i.test(dest)
+}
+
 function checkLinks(file, rel, lines) {
   let inFence = false
   for (const line of lines) {
@@ -588,12 +604,14 @@ function checkLinks(file, rel, lines) {
       continue
     }
     if (inFence) continue
-    for (const m of line.matchAll(/\[[^\]]*\]\((\.{0,2}\/[^)#\s]+)/g)) {
-      const target = resolve(file, '..', m[1])
+    for (const m of line.matchAll(/\[[^\]]*\]\(([^)#\s]+)/g)) {
+      const dest = m[1]
+      if (!looksLikeRepoPath(dest)) continue
+      const target = resolve(file, '..', dest)
       try {
         statSync(target)
       } catch {
-        ;(STRICT ? errors : warnings).push(`${rel} 링크 대상 없음: ${m[1]}`)
+        ;(STRICT ? errors : warnings).push(`${rel} 링크 대상 없음: ${dest}`)
       }
     }
   }
