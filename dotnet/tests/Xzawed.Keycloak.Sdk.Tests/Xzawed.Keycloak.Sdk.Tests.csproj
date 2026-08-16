@@ -11,7 +11,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
     <!-- ⚠️ coverlet은 **컬렉터만** 참조한다. msbuild 통합(coverlet.msbuild)은 두 가지 이유로 뺐다:
          (1) 히트를 AppDomain.ProcessExit에서 flush해 테스트 호스트 종료가 느리면 결과가 유실되고,
              그때 분모는 남고 분자만 0이 돼 "커버리지 90 미만"으로 오보고된다(dotnet-ci 실제 실패).
