@@ -45,16 +45,17 @@ Issues in Keycloak itself (the server) should be reported to the
 
 ## Supported Versions
 
-This project is **pre-1.0**. Eight SDKs have shipped a first **release candidate** to
-a public registry — PHP (`0.1.0-rc.1`, Packagist), Python (`0.1.0rc1`, PyPI),
-.NET (`0.1.0-rc.1`, NuGet), Rust (`0.1.0-rc.1`, crates.io), Ruby
-(`0.1.0.rc1`, RubyGems), Node (`0.1.0-rc.2`, npm), Java
-(`0.1.0-RC1`, Maven Central) and Kotlin
-(`0.1.0-RC1`, Maven Central). The other one
-(Go) has **no release at all** — for Go the git tag *is* the version, no `go/v*`
-tag has ever been pushed, and it is on no registry, so there is no released
-version of it to support. **No language has a stable release yet.** Each release
-is human-gated, see [DEPLOY.md](DEPLOY.md).
+This project is **pre-1.0**. All nine SDKs have shipped a first **release
+candidate** to a public registry — PHP (`0.1.0-rc.1`, Packagist), Python
+(`0.1.0rc1`, PyPI), .NET (`0.1.0-rc.1`, NuGet), Rust (`0.1.0-rc.1`, crates.io),
+Ruby (`0.1.0.rc1`, RubyGems), Node (`0.1.0-rc.2`, npm), Java
+(`0.1.0-RC1`, Maven Central), Kotlin
+(`0.1.0-RC1`, Maven Central) and Go
+(`0.1.0-rc.1`, the Go module proxy — for Go the git tag *is* the version, so the
+`go/v0.1.0-rc.1` tag is the release). **No language has a stable release yet**, so
+for every language the release candidate above is the only released version and
+the one that receives fixes. Each release is human-gated, see
+[DEPLOY.md](DEPLOY.md).
 
 What pre-1.0 means here:
 
@@ -62,7 +63,8 @@ What pre-1.0 means here:
   may contain breaking changes. Read the release notes before upgrading.
 - **Only the newest released version of each language SDK receives security
   fixes.** There are no long-term-support lines and older `0.x` releases are not
-  backported to. Until the first publication, fixes land on `main`.
+  backported to. In practice that is each language's release candidate above,
+  since none of the nine has a later release yet.
 - A security fix ships as a new release of the affected SDK plus a
   [GitHub Security Advisory](https://github.com/xzawed/KeyCloakSDK/security/advisories)
   on this repository.

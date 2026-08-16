@@ -77,7 +77,7 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 
 ## 현재 상태
 
-9개 언어 SDK 모두 `main` 병합 완료. PHP·Python·.NET·Rust·Ruby·Node·Java·**Kotlin** 8개는 첫 RC가 공개 레지스트리에 게시됐다(좌표·버전은 아래 표). 나머지 1개(Go)는 미게시이며, 배포는 여전히 전부 사람 승인 게이트다(사람이 태그를 민다).
+9개 언어 SDK 모두 `main` 병합 완료. **9개 언어 전부 첫 RC가 공개 레지스트리에 게시됐다**(좌표·버전은 아래 표) — 2026-08-16 Go 첫 태그로 9/9가 됐다. 배포는 여전히 전부 사람 승인 게이트다(사람이 태그를 민다). 정식(stable) 릴리스는 아직 어느 언어도 없다.
 
 ⚠️ **Maven Central은 "워크플로 초록"과 "게시" 사이에 사람 클릭과 전파 지연이 둘 다 있다.** `release.yml`이 끝나도 Portal **스테이징**일 뿐이고, Publish 후에도 시차가 있다(실측: 첫 확인 404 → 3분 뒤 200, 검색 색인은 한참 뒤). **404로 "실패"를 결론내지 말 것** — 판정은 Portal 상태로 하고 repo1은 폴링한다. Kotlin도 같다.
 
@@ -86,7 +86,7 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 | Java | `io.github.xzawed:keycloak-sdk` (Maven Central) | `v*` | 게시됨(`0.1.0-RC1` RC) |
 | Python | `keycloak-sdk` (PyPI) | `py-v*` | 게시됨(`0.1.0rc1` RC) |
 | Node | `@xzawed/keycloak-sdk` (npm) | `node-v*` | 게시됨(`0.1.0-rc.2` RC) |
-| Go | `github.com/xzawed/KeyCloakSDK/go` (proxy.golang.org) | `go/v*` | 미실행 |
+| Go | `github.com/xzawed/KeyCloakSDK/go` (proxy.golang.org) | `go/v*` | 게시됨(`0.1.0-rc.1` RC) |
 | C#/.NET | `Xzawed.Keycloak.Sdk` (NuGet) | `dotnet-v*` | 게시됨(`0.1.0-rc.1` RC) |
 | PHP | `xzawed/keycloak-sdk` (Packagist) | `php-v*` | 게시됨(`0.1.0-rc.1` RC) |
 | Rust | `keycloak-sdk` (crates.io) | `rust-v*` | 게시됨(`0.1.0-rc.1` RC) |
@@ -428,7 +428,7 @@ dev(비앵커): `xUnit` 2.9.3 · `WireMock.Net` 2.14.0 · `coverlet.collector` 1
 
 ### 문서 언어 규칙 (bilingual README + 영문 사용자 문서, PR #31·#32)
 
-- **README는 영문 기본 + 한글 미러**: [`README.md`](README.md)(영문, 기본)와 [`README.ko.md`](README.ko.md)(한글)는 **동일 구조의 미러**다 — 한쪽을 고치면 다른 쪽도 함께 갱신해 동기 유지(상단 상호 링크 `English ↔ 한국어`). 둘 다 슬림 랜딩(정적 배지·9언어 표·30초 퀵스타트·보안·상태·링크)이며, 게시가 언어별로 진행 중인 전환기(human-gated, 9개 중 8개만 첫 RC 게시)이므로 **라이브 레지스트리 배지 금지**(정적 배지만 — 오해 방지).
+- **README는 영문 기본 + 한글 미러**: [`README.md`](README.md)(영문, 기본)와 [`README.ko.md`](README.ko.md)(한글)는 **동일 구조의 미러**다 — 한쪽을 고치면 다른 쪽도 함께 갱신해 동기 유지(상단 상호 링크 `English ↔ 한국어`). 둘 다 슬림 랜딩(정적 배지·9언어 표·30초 퀵스타트·보안·상태·링크)이며, 게시된 것이 전부 프리릴리스이므로(human-gated, 9개 중 9개가 첫 RC 게시 · 정식 릴리스 0) **라이브 레지스트리 배지 금지**(정적 배지만 — 라이브 배지는 RC를 "최신 릴리스"로 보여 정식 릴리스가 있는 것처럼 읽힌다).
 - **사용자 대상 문서는 영문(in-place)**: [`docs/guides/`](docs/guides/) 3종 · [`docs/roadmap/language-support.md`](docs/roadmap/language-support.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`DEPLOY.md`](DEPLOY.md) · [`harness/README.md`](harness/README.md) · [`harness/install/README.md`](harness/install/README.md)는 영문으로 유지·갱신한다(한글 미러 없음).
 - **내부 산출물은 한글 유지**: [`docs/governance/`](docs/governance/)와 남은 진행 계획, 이 `CLAUDE.md`는 개발/거버넌스 내부 문서로 한글을 유지한다.
 - **앵커 주의**: 영문 문서에서 헤딩을 바꾸면 `#anchor`가 바뀐다. `getting-started.md`의 `## C# / .NET`(앵커 `#c--net`)은 양쪽 README가 링크하므로 **헤딩 텍스트를 바꾸지 말 것**.

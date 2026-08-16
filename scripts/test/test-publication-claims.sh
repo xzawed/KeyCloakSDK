@@ -16,17 +16,14 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/../lib/deploy-facts.sh"
 ROOT="$DIR/../.."
 
-# 미게시 언어의 **설치 스니펫** 기대 버전. 라인 버전(`0.1.0`)이 아니라 DEPLOY.md §8이 명시한
-# **첫 태그 버전**이다 — go의 첫 릴리스 태그는 `go/v0.1.0-rc.1`이고 `go/v0.1.0`은 존재한 적이
-# 없으며 앞으로도 없다(DEPLOY.md §7이 첫 게시를 RC로 하라고 권고하고, 이미 여덟 언어가 그랬다).
-# 설치 스니펫은 "태그가 밀리면 이걸 실행하라"는 **소비자용 명령**이라 실제로 태울 좌표를 적어야
-# 한다 — `@v0.1.0`은 그대로 `go get`이 실패하는 좌표다.
-#
-# ⚠️ 호환성 표는 이 값을 쓰지 않는다(아래 루프는 `0.1.0`을 그대로 둔다). 그 표는 "그 행이 무엇을
-# shipped했나"를 적는 자리이고, 미게시 행은 getting-started §Compatibility의 경고문이 선언한 대로
-# **현재 `main`**(`go/go.mod`)을 뜻하므로 라인 버전 `0.1.0`이 옳다. 둘은 같은 문자열이 아니라
-# 서로 다른 사실이다 — 한 상수로 합치면 그 구분이 사라진다.
-UNPUBLISHED_INSTALL_VER="0.1.0-rc.1"
+# ⚠️ **여기 있던 `UNPUBLISHED_INSTALL_VER="0.1.0-rc.1"`은 2026-08-17 go 게시로 제거했다.**
+# 그 상수는 "미게시 언어의 설치 스니펫이 첫 태그에 무엇을 적어야 하는가"에 대한 **예측**이었고,
+# 예측 대상은 go 하나였다(`go/v0.1.0`은 존재한 적이 없다). 이제 그 예측은 사실이 되어
+# `df_published_version go`가 들고 있으므로, 상수는 (a) 아홉 전부 게시된 지금 도달 불가이고
+# (b) 열 번째 언어가 생겨 다시 도달 가능해지는 순간에는 **그 언어의 첫 태그 버전을 알 수 없어
+# 틀린 값을 단언**하게 된다. 그래서 조용한 폴백 대신 아래 `-n` 어서션으로 바꿨다 — 미게시
+# 언어가 다시 생기면 "기대값을 모른다"고 시끄럽게 실패하고, 사람이 그때 값을 정한다.
+# (같은 이유로 호환성 표 루프의 `0.1.0` 폴백도 함께 제거했다.)
 
 for L in $DEPLOY_LANGS; do
   f="$ROOT/$L/README.md"
@@ -64,11 +61,13 @@ for L in $DEPLOY_LANGS; do
   #
   # ⚠️ "펜스 안에 게시 버전이 있어야 한다"도 틀렸다 — python·rust·dotnet·php는 설치 명령에 버전을
   # 쓰지 않는 것이 **옳다**(`pip install keycloak-sdk`처럼 리졸버가 고르게 둔다). 그래서 규칙은
-  # "있어야 한다"가 아니라 **"핀했다면 그 값이어야 한다"** 이다. 미게시 언어의 기대값은
-  # `UNPUBLISHED_INSTALL_VER`(첫 태그 버전)이라, 그 언어가 게시되는 순간 `df_published_version`이
-  # 채워지며 기대값이 실제 게시 버전으로 바뀌고, 스니펫을 안 고치면 시끄럽게 깨진다.
+  # "있어야 한다"가 아니라 **"핀했다면 그 값이어야 한다"** 이다. 기대값은 `df_published_version`
+  # 하나뿐이라, 게시로 그 값이 바뀌면 스니펫을 안 고친 언어에서 시끄럽게 깨진다.
   _want="$(df_published_version "$L")"
-  [ -n "$_want" ] || _want="$UNPUBLISHED_INSTALL_VER"
+  if [ -z "$_want" ]; then
+    assert_ok false "$L 의 df_published_version 이 비어 있다 — 미게시 언어의 설치 스니펫 기대 버전은 사람이 정해야 한다"
+    continue
+  fi
   _bad="$(awk '/^```/ { f = !f; next } f' "$f" \
     | grep -oE '0\.1\.0[A-Za-z0-9.-]*' | sort -u | grep -Fxv "$_want" || true)"
   assert_eq "" "$_bad" \
@@ -97,7 +96,13 @@ ko() { case "$1" in
   6) echo 여섯 ;; 7) echo 일곱 ;; 8) echo 여덟 ;; 9) echo 아홉 ;; *) echo "" ;; esac; }
 pub_en="$(en "$pub_n")"; unpub_en="$(en "$unpub_n")"
 pub_ko="$(ko "$pub_n")"; unpub_ko="$(ko "$unpub_n")"
-assert_ok test -n "$pub_en" -a -n "$unpub_en" -a -n "$pub_ko" -a -n "$unpub_ko"
+# ⚠️ `en 0`/`ko 0`은 의도적으로 빈 문자열이다 — "0개가 미게시"를 수사로 쓰는 문장은 없어야 하고,
+# 있다면 그건 "전부 게시됐다"로 다시 쓰여야 한다. 그래서 미게시 수사는 미게시가 실제로 있을
+# 때만 요구한다(예전엔 무조건 요구해 9/9 전환에서 이 어서션이 먼저 터졌다).
+assert_ok test -n "$pub_en" -a -n "$pub_ko"
+if [ "$unpub_n" -ge 1 ]; then
+  assert_ok test -n "$unpub_en" -a -n "$unpub_ko"
+fi
 
 # 영문 랜딩 문서 — 대소문자 두 형태를 모두 허용한다(문장 첫머리면 "Four", 아니면 "four").
 #
@@ -131,77 +136,106 @@ done
 #       "(`0.1.0.rc1`, RubyGems). The other four" 줄에 그 키워드가 없어 **0건**이 됐다.
 # 그래서 어디에 무엇이 적혀 있어야 하는지를 그냥 적는다. 문구를 바꾸면 시끄럽게 실패하고,
 # 그때 이 목록을 함께 고치는 것이 맞다 — DEPLOY.md 가드가 쓰는 것과 같은 관용이다.
-# ⚠️ README.md는 **두 곳**이다(상단 배너 + 하단 서술). 하나만 검사하면 다른 쪽이 낡어도 통과한다.
 claim_at() { # $1=파일 $2=기대 문자열 $3=자리 이름
-  assert_contains "$(cat "$ROOT/$1")" "$2" "$1 의 $3 가 DF_PUBLISHED 파생 미게시 수($unpub_n=$unpub_en)와 다르다"
+  assert_contains "$(cat "$ROOT/$1")" "$2" "$1 의 $3 가 DF_PUBLISHED 파생 게시/미게시 수($pub_n/$unpub_n)와 다르다"
 }
-# ⚠️ **수·복수를 가려야 한다 — 안 그러면 가드가 비문을 강제한다.** 미게시가 1개가 되는 순간
-# `the other one languages are …`를 요구하게 되고, 문서를 옳은 영어로 쓰면 CI가 빨개진다(가드가
-# 문서를 틀리게 만드는 상태 — `test-deploy-md.sh` 상단이 기록한 "zero tags" 실패와 같은 부류다).
-# 한글도 마찬가지로 `나머지 하나 언어`는 비문이다.
-if [ "$unpub_n" -eq 1 ]; then
-  _en_banner="the other language is not on a registry yet"
-  _en_other="The other one"
-  _ko_other="나머지 한 언어"
-else
-  _en_banner="the other $unpub_en languages are not on a registry yet"
-  _en_other="The other $unpub_en"
-  _ko_other="나머지 $unpub_ko 언어"
-fi
-# ⚠️ 미게시가 0이 되면(= 아홉 전부 게시) 이 문장들은 **존재해선 안 된다** — "나머지 N개는
-# 미게시"가 아니라 "전부 게시됐다"로 바뀌어야 한다. 그건 수사 치환이 아니라 문장 교체라
-# 자동으로 만들 수 없으므로, 그 순간 시끄럽게 실패시켜 사람이 다시 쓰게 한다.
-assert_ok test "$unpub_n" -ge 1
-
-claim_at README.md "$_en_banner" "상단 배너"
-claim_at README.md "the remaining $unpub_en (" "하단 서술"
-claim_at SECURITY.md "$_en_other" "미게시 열거"
-claim_at docs/guides/getting-started.md "The other $unpub_en (" "상단 배너"
-
-# ---- 가드 스코프 밖에 있던 네 자리(2026-08-10에 드리프트가 실제로 발견된 곳) ----
-#
-# ⚠️ 위 목록은 **랜딩 문서만** 겨눴다. Ruby·Node가 게시된 뒤 그 넷은 손으로 갱신됐지만, 같은
-# 사실을 말하는 다른 네 문서는 `4개 / 나머지 5개`에 그대로 멈춰 있었고 자가테스트 15종이 전부
-# 초록이었다 — 가드가 있다는 사실이 오히려 안심시킨 부류다. 특히 `CLAUDE.md`는 세션마다
-# 자동 로드되는 문서라 낡은 값이 **다음 작업의 전제**가 된다.
-#
-# ⚠️ 처음 보고한 드리프트는 2곳(CLAUDE.md·DEPLOY.md)이었고, 리포 전수 재스캔에서 2곳
-# (CHANGELOG.md·roadmap)이 더 나왔다. "지적받은 집합은 불완전하다"의 실례라 넷 다 넣는다.
 Pub_en="$(printf '%s' "$pub_en" | sed 's/^./\U&/')"
 
-claim_at CLAUDE.md "${pub_n}개는 첫 RC가 공개 레지스트리에 게시됐다" "현재 상태(게시 수)"
-claim_at CLAUDE.md "나머지 ${unpub_n}개("                            "현재 상태(미게시 수)"
-claim_at CLAUDE.md "9개 중 ${pub_n}개만 첫 RC 게시"                  "문서 언어 규칙 절"
-
-claim_at DEPLOY.md "**$pub_en of nine languages are published"       "릴리스 워크플로 상태(게시 수)"
-# 여기도 수·복수 — 1개면 `and one is not.`
-if [ "$unpub_n" -eq 1 ]; then _dep_unpub="and $unpub_en is not.**"; else _dep_unpub="and $unpub_en are not.**"; fi
-claim_at DEPLOY.md "$_dep_unpub"                                     "릴리스 워크플로 상태(미게시 수)"
-
-claim_at CHANGELOG.md "지금까지 ${pub_ko} 언어가"                     "폴리글랏 안내(게시 수)"
-claim_at CHANGELOG.md "나머지 ${unpub_ko}("                           "폴리글랏 안내(미게시 수)"
-
-claim_at docs/roadmap/language-support.md "**$Pub_en are now live as release candidates**" "step-0(게시 수)"
-claim_at docs/roadmap/language-support.md "the remaining $unpub_en ("                      "step-0(미게시 수)"
-
-# ---- 2026-08-12 문서 감사가 찾은 다섯 자리 ----
+# ---- 게시 현황 수사를 자리마다 강제한다 ----
 #
-# ⚠️ 위 목록은 "게시 현황을 한 문장으로 요약하는 자리"만 겨눴다. 그런데 **같은 문서가 같은
-# 사실을 여러 자리에서 말한다** — DEPLOY.md는 네 자리, language-support.md는 머리말과 상태
-# 매트릭스 두 자리다. 그중 가드 밖이던 자리들이 실제로 낡아 있었고, **82개 어서션이 전부
-# 초록인 채로** 한 문서가 자기 자신을 반박했다(2026-08-12 감사 실측):
-#   DEPLOY.md §7   "Three of the nine … have not yet published" · "The six languages that have published"
-#   DEPLOY.md §5   "Seven release workflows have now executed"       (같은 문단이 eight of nine published)
-#   language-support 머리말 "four of them (PHP, Python, .NET, Rust)" (같은 문서 17행은 "Eight are now live")
-#   language-support 매트릭스 Java·Node·Ruby·Kotlin이 `🔒 human-gated`  (넷 다 게시됨)
-# 개수를 말하는 자리가 늘어날수록 손으로 맞추는 비용이 선형으로 늘고 드리프트 확률은 그보다
-# 빨리 는다 — 그래서 **자리를 늘리는 대신 자리마다 가드를 늘린다**.
-Unpub_en="$(printf '%s' "$unpub_en" | sed 's/^./\U&/')"
+# 아래 자리 목록의 유래(왜 자리를 그냥 적는가, 왜 이만큼 많은가):
+#   * 산문을 일반 파싱하려던 두 시도가 모두 실패했다 — (1) 파일 전체에서 `other <수사>` 찾기는
+#     게시와 무관한 "the other eight languages"(보여준 언어 말고 나머지 여덟)까지 걸려 오탐,
+#     (2) registry/published를 언급하는 **줄**로 좁히기는 `SECURITY.md`의 하드랩 때문에 0건.
+#   * 2026-08-10: 랜딩 문서만 겨눈 탓에 CLAUDE.md·DEPLOY.md·CHANGELOG.md·roadmap 네 곳이
+#     `4개 / 나머지 5개`에 멈춘 채 자가테스트 15종이 전부 초록이었다.
+#   * 2026-08-12: **같은 문서가 같은 사실을 여러 자리에서 말한다** — DEPLOY.md 네 자리,
+#     language-support 머리말+매트릭스. 82개 어서션이 초록인 채로 한 문서가 자기를 반박했다.
+# ⚠️ README.md는 **두 곳**이다(상단 배너 + 하단 서술). 하나만 검사하면 다른 쪽이 낡어도 통과한다.
+#
+# ---- 2026-08-17: 이 블록의 **방향이 뒤집혔다** ----
+#
+# 예전 이 자리에는 `assert_ok test "$unpub_n" -ge 1`이 있었고, 바로 위 주석은 "미게시가 0이 되면
+# 이 문장들은 존재해선 안 된다 — 수사 치환이 아니라 문장 교체라 자동으로 만들 수 없으므로 그
+# 순간 시끄럽게 실패시켜 사람이 다시 쓰게 한다"였다. **go 첫 게시가 설계대로 그것을 터뜨렸다**
+# (32건 실패: 이 파일 28 + test-deploy-md.sh 4).
+#
+# 그래서 가드를 **약화시키지 않고 방향만 바꾼다**: 미게시 수사를 강제하던 자리를 그대로 두되,
+# 전부 게시된 동안에는 **"전부 게시" 수사**를 강제한다. 두 갈래를 **둘 다 남기는** 이유는 열
+# 번째 언어가 미게시로 추가되는 순간 "전부 게시" 문장들이 다시 거짓이 되기 때문이다 — 그때는
+# else 가지가 자동으로 재무장해 옛 수사를 요구한다. 어느 상태에서도 문서가 SSOT를 따라오지
+# 않으면 시끄럽게 실패한다.
+#
+# ⚠️ **수·복수를 가려야 한다 — 안 그러면 가드가 비문을 강제한다.** 미게시가 1개면
+# `the other one languages are …`를, 0개면 `나머지 0 언어`를 요구하게 되고, 문서를 옳은 말로
+# 쓰면 CI가 빨개진다(가드가 문서를 틀리게 만드는 상태 — `test-deploy-md.sh` 상단이 기록한
+# "zero tags" 실패와 같은 부류다).
+if [ "$unpub_n" -eq 0 ]; then
+  # 아홉 전부 게시. "나머지 N개" 수사는 **존재해선 안 되고**, 그 자리마다 "전부"를 요구한다.
+  claim_at README.md "First release candidates are live for all $pub_en languages" "상단 배너"
+  claim_at README.md "All $pub_en have shipped their first release candidates"     "하단 서술"
+  claim_at SECURITY.md "All $pub_en SDKs have shipped a first"                     "게시 열거"
+  claim_at docs/guides/getting-started.md "All $pub_en are on a public registry"   "상단 배너"
 
-claim_at DEPLOY.md "$Unpub_en of the nine languages"                        "§7 첫 실행 경고(미게시 수)"
-claim_at DEPLOY.md "The $pub_en languages that have published"              "§7 RC 선례(게시 수)"
+  claim_at CLAUDE.md "${pub_n}개 언어 전부 첫 RC가 공개 레지스트리에 게시됐다" "현재 상태(게시 수)"
+  claim_at CLAUDE.md "9개 중 ${pub_n}개가 첫 RC 게시"                          "문서 언어 규칙 절"
+
+  claim_at DEPLOY.md "**all $pub_en languages are published"        "릴리스 워크플로 상태(게시 수)"
+  claim_at CHANGELOG.md "지금까지 ${pub_ko} 언어 전부가"             "폴리글랏 안내(게시 수)"
+
+  claim_at docs/roadmap/language-support.md "**All $pub_en are now live as release candidates**" "step-0(게시 수)"
+  claim_at DEPLOY.md "All $pub_en languages have now published"     "§7 첫 실행 경고(게시 수)"
+  claim_at docs/roadmap/language-support.md "all $pub_en have since shipped a first release candidate" "머리말(게시 수)"
+
+  # ⚠️ 부정 어서션 — 긍정만 걸면 "전부 게시" 문장을 **추가**하고 옛 "나머지 N개" 문장을 **남겨둔**
+  # 자기모순 상태가 통과한다(2026-08-12 감사가 찾은 부류가 정확히 그것이다).
+  for _cf in README.md README.ko.md SECURITY.md DEPLOY.md CHANGELOG.md CLAUDE.md \
+             docs/guides/getting-started.md docs/roadmap/language-support.md; do
+    _ct="$(cat "$ROOT/$_cf")"
+    assert_not_contains "$_ct" "is unpublished"  "$_cf 에 아홉 전부 게시인데 미게시 수사가 남아 있다"
+    assert_not_contains "$_ct" "are unpublished" "$_cf 에 아홉 전부 게시인데 미게시 수사가 남아 있다"
+    assert_not_contains "$_ct" "is not on a registry yet" "$_cf 에 아홉 전부 게시인데 미게시 수사가 남아 있다"
+    assert_not_contains "$_ct" "미게시"          "$_cf 에 아홉 전부 게시인데 「미게시」가 남아 있다"
+  done
+else
+  if [ "$unpub_n" -eq 1 ]; then
+    _en_banner="the other language is not on a registry yet"
+    _en_other="The other one"
+    _ko_other="나머지 한 언어"
+    _dep_unpub="and $unpub_en is not.**"
+  else
+    _en_banner="the other $unpub_en languages are not on a registry yet"
+    _en_other="The other $unpub_en"
+    _ko_other="나머지 $unpub_ko 언어"
+    _dep_unpub="and $unpub_en are not.**"
+  fi
+  Unpub_en="$(printf '%s' "$unpub_en" | sed 's/^./\U&/')"
+
+  claim_at README.md "$_en_banner" "상단 배너"
+  claim_at README.md "the remaining $unpub_en (" "하단 서술"
+  claim_at SECURITY.md "$_en_other" "미게시 열거"
+  claim_at docs/guides/getting-started.md "The other $unpub_en (" "상단 배너"
+
+  claim_at CLAUDE.md "${pub_n}개는 첫 RC가 공개 레지스트리에 게시됐다" "현재 상태(게시 수)"
+  claim_at CLAUDE.md "나머지 ${unpub_n}개("                            "현재 상태(미게시 수)"
+  claim_at CLAUDE.md "9개 중 ${pub_n}개만 첫 RC 게시"                  "문서 언어 규칙 절"
+
+  claim_at DEPLOY.md "**$pub_en of nine languages are published"       "릴리스 워크플로 상태(게시 수)"
+  claim_at DEPLOY.md "$_dep_unpub"                                     "릴리스 워크플로 상태(미게시 수)"
+
+  claim_at CHANGELOG.md "지금까지 ${pub_ko} 언어가"                     "폴리글랏 안내(게시 수)"
+  claim_at CHANGELOG.md "나머지 ${unpub_ko}("                           "폴리글랏 안내(미게시 수)"
+
+  claim_at docs/roadmap/language-support.md "**$Pub_en are now live as release candidates**" "step-0(게시 수)"
+  claim_at docs/roadmap/language-support.md "the remaining $unpub_en ("                      "step-0(미게시 수)"
+
+  claim_at DEPLOY.md "$Unpub_en of the nine languages"                 "§7 첫 실행 경고(미게시 수)"
+  claim_at DEPLOY.md "The $pub_en languages that have published"       "§7 RC 선례(게시 수)"
+  claim_at docs/roadmap/language-support.md "$pub_en of them (all except" "머리말(게시 수)"
+fi
+
+# 상태와 무관하게 게시 **수**만 말하는 자리(수사 형태가 갈리지 않는다).
 claim_at DEPLOY.md "$Pub_en release workflows have now executed end to end" "§5 실행 워크플로 수"
-claim_at docs/roadmap/language-support.md "$pub_en of them (all except"     "머리말(게시 수)"
 
 # ⚠️ 상태 매트릭스는 산문이 아니라 **행 개수**로 본다 — `getting-started`의 설치 절 개수 검사와
 # 같은 관용이다. 표현을 바꿔도 흔들리지 않고, 감사가 찾은 부류(게시됐는데 `🔒 human-gated`로 남은
@@ -213,8 +247,13 @@ claim_at docs/roadmap/language-support.md "$pub_en of them (all except"     "머
 # **0/0**을 세어 어서션 둘이 실패했다. 실패 방향은 fail-closed라 위험하진 않지만, **문서가
 # 멀쩡한데 CI가 빨개지는** 부류다. `human-gated`와 행 머리 `| **`는 순수 ASCII라 갈리지 않는다.
 lsm="$ROOT/docs/roadmap/language-support.md"
-_rows_all="$(grep -c '^| \*\*' "$lsm")"
-_rows_gated="$(grep -c 'human-gated |' "$lsm")"
+# ⚠️ **`|| true`가 없으면 0건에서 스크립트가 통째로 죽는다.** `grep -c`는 매치가 없으면 `0`을
+# 출력하고 **exit 1**을 낸다. 이 파일은 `set -e`라 대입문의 종료코드가 그대로 셸을 끝내고,
+# `assert_report`에 도달하지 못해 **출력 한 줄 없이 exit 1**이 된다(어서션 실패 메시지도, 남은
+# 어서션도 사라진다 — fail-closed지만 원인을 못 읽는다). 아홉 전부 게시되어 human-gated 행이
+# 0이 되는 순간 실제로 그렇게 죽었다(2026-08-17 실측).
+_rows_all="$(grep -c '^| \*\*' "$lsm" || true)"
+_rows_gated="$(grep -c 'human-gated |' "$lsm" || true)"
 assert_eq "$n" "$_rows_all" \
   "language-support 상태 매트릭스의 언어 행 수가 DEPLOY_LANGS 개수($n)와 다르다 — 행 표기가 바뀌었나?"
 assert_eq "$unpub_n" "$_rows_gated" \
@@ -224,15 +263,26 @@ assert_eq "$pub_n" "$((_rows_all - _rows_gated))" \
 
 # 한글 미러 — 영문과 같은 사실을 한글 수사로 말한다(README.md와 동일 구조의 미러라는 규칙).
 ko_t="$(cat "$ROOT/README.ko.md")"
-assert_contains "$ko_t" "아홉 중 $pub_ko" "README.ko.md 의 게시 개수가 DF_PUBLISHED 파생값($pub_n)과 다르다"
-assert_contains "$ko_t" "$_ko_other" "README.ko.md 의 미게시 개수가 DF_PUBLISHED 파생값($unpub_n)과 다르다"
+if [ "$unpub_n" -eq 0 ]; then
+  # 두 자리를 **서로 다른 문자열**로 겨눈다 — 한쪽만 고치고 다른 쪽을 남기는 절반짜리 수정을
+  # 막기 위해서다(영문 README와 같은 이유로 상단/하단이 나뉘어 있다).
+  assert_contains "$ko_t" "$pub_ko 언어 전부 첫 릴리스 후보(RC)가 공개 레지스트리에 게시됐습니다" \
+    "README.ko.md 상단 배너가 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
+  assert_contains "$ko_t" "$pub_ko 전부 첫 릴리스 후보(RC)를 공개 레지스트리에 게시했습니다" \
+    "README.ko.md 하단 서술이 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
+else
+  assert_contains "$ko_t" "아홉 중 $pub_ko" "README.ko.md 의 게시 개수가 DF_PUBLISHED 파생값($pub_n)과 다르다"
+  assert_contains "$ko_t" "$_ko_other" "README.ko.md 의 미게시 개수가 DF_PUBLISHED 파생값($unpub_n)과 다르다"
+fi
 
 # ⚠️ getting-started는 산문이 아니라 **구조**로 대조한다 — 언어마다 설치 절이 두 형태 중
 # 하나이고, 그 개수가 곧 게시 현황이다. 산문 수사와 달리 표현을 바꿔도 흔들리지 않는다.
 gs="$ROOT/docs/guides/getting-started.md"
-assert_eq "$unpub_n" "$(grep -c '^### 3) Installation after release (future)$' "$gs")" \
+# ⚠️ `|| true` — 위 매트릭스 카운트와 같은 이유다(0건이면 `grep -c`가 exit 1 → `set -e`가 죽인다).
+# 아홉 전부 게시되면 '미게시' 설치 절은 정확히 0건이라야 하므로 이쪽이 정상 상태다.
+assert_eq "$unpub_n" "$(grep -c '^### 3) Installation after release (future)$' "$gs" || true)" \
   "getting-started의 '미게시' 설치 절 수 ≠ DF_PUBLISHED 파생 미게시 수"
-assert_eq "$pub_n" "$(grep -c '^### 3) Installation from ' "$gs")" \
+assert_eq "$pub_n" "$(grep -c '^### 3) Installation from ' "$gs" || true)" \
   "getting-started의 '게시됨' 설치 절 수 ≠ DF_PUBLISHED 파생 게시 수"
 
 # ---- 호환성 표의 **버전 문자열** ↔ df_published_version ----
@@ -241,8 +291,9 @@ assert_eq "$pub_n" "$(grep -c '^### 3) Installation from ' "$gs")" \
 # 그래서 이 표는 아홉 행 중 일곱이 `0.1.0`에 멈춘 채 여섯 번의 게시를 그대로 통과했다(2026-08-10
 # 발견). 개수와 버전은 같은 사실의 다른 축이고, 소비자가 실제로 복사해 가는 쪽은 버전이다.
 #
-# 미게시 언어는 `0.1.0`(아직 태우지 않은 라인 버전)이라야 한다 — 이렇게 두면 그 언어가 게시되는
-# 순간 `df_published_version`이 채워지면서 기대값이 RC로 바뀌고, 표를 안 고치면 시끄럽게 깨진다.
+# ⚠️ 여기 있던 `[ -n "$_want" ] || _want="0.1.0"`(미게시 행 = 현재 `main` = 라인 버전) 폴백도
+# 2026-08-17에 제거했다 — 아홉 전부 게시라 도달 불가이고, 열 번째 언어가 생겨도 그 언어의 라인
+# 버전을 이 가드가 알 수 없다. 위 README 루프와 같은 이유로 조용한 추측 대신 시끄러운 실패다.
 gs_label() { case "$1" in
   java) echo Java ;; python) echo Python ;; node) echo Node ;; go) echo Go ;;
   dotnet) echo 'C#/.NET' ;; php) echo PHP ;; rust) echo Rust ;; ruby) echo Ruby ;;
@@ -256,7 +307,7 @@ for L in $DEPLOY_LANGS; do
   [ -n "$_row" ] && rows_seen=$((rows_seen + 1))
   _got="$(printf '%s' "$_row" | sed -n 's/^| [^`]*`\([^`]*\)`.*/\1/p')"
   _want="$(df_published_version "$L")"
-  [ -n "$_want" ] || _want="0.1.0"
+  [ -n "$_want" ] || assert_ok false "$L 의 df_published_version 이 비어 있다 — 호환성 표의 기대 버전은 사람이 정해야 한다"
   assert_eq "$_want" "$_got" "호환성 표의 $_lbl 버전이 SSOT와 다르다"
 done
 # ⚠️ 대조군 — 라벨 표기가 바뀌면 위 루프가 전부 "빈 값 == 빈 값"으로 조용히 통과할 수 있다.
@@ -354,9 +405,10 @@ assert_eq "$coords_want" "$coords_seen" \
 # ⚠️ **`### 3) Installation …` 하위절만 본다.** 같은 언어의 `### 2) Local installation (development)`
 # 에는 `0.1.0-SNAPSHOT`(java)·`publishToMavenLocal`로 만든 jar 이름(kotlin)이 정당하게 들어 있어
 # 구분 없이 검사하면 오탐이 난다 — 소비자 복사 자리와 로컬 빌드 예제는 다른 것이다.
-# ⚠️ go는 절 제목이 `### 3) Installation after release (future)`라 같은 접두로 함께 걸리고, 기대값은
-# `UNPUBLISHED_INSTALL_VER`(첫 태그 버전 `0.1.0-rc.1`)이다 — 그 절은 "태그가 밀리면 이걸 실행하라"
-# 이므로 실제로 태울 좌표라야 하고, 게시되는 순간 기대값이 실제 게시 버전으로 바뀌며 갱신을 강제한다.
+# ⚠️ go의 절 제목은 게시 전 `### 3) Installation after release (future)`였고 기대값이 "첫 태그
+# 버전" 예측이었다. 게시 후에는 자매 언어와 같은 `### 3) Installation from …` 형태가 됐고
+# 기대값도 `df_published_version go`(실제 게시 버전)로 자동 전환됐다 — 접두가 같아 이 루프는
+# 두 형태를 모두 집는다.
 gs_head() { case "$1" in
   java) echo '## Java' ;; python) echo '## Python' ;; node) echo '## Node.js / TypeScript' ;;
   go) echo '## Go' ;; dotnet) echo '## C# / .NET' ;; php) echo '## PHP' ;; rust) echo '## Rust' ;;
@@ -366,7 +418,10 @@ body_seen=0
 for L in $DEPLOY_LANGS; do
   _h="$(gs_head "$L")"
   _want="$(df_published_version "$L")"
-  [ -n "$_want" ] || _want="$UNPUBLISHED_INSTALL_VER"
+  if [ -z "$_want" ]; then
+    assert_ok false "$L 의 df_published_version 이 비어 있다 — getting-started 설치 절 기대 버전은 사람이 정해야 한다"
+    continue
+  fi
   _vers="$(awk -v h="$_h" '
     $0 == h { inlang = 1; next }
     /^## / { inlang = 0 }

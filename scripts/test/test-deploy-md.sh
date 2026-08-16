@@ -92,20 +92,38 @@ done
 pub_n=0; for _dfl in $DF_PUBLISHED; do pub_n=$((pub_n + 1)); done
 all_n=0; for _dfl in $DEPLOY_LANGS; do all_n=$((all_n + 1)); done
 unpub_n=$((all_n - pub_n))
-case "$unpub_n" in
-  1) _w="one" ;; 2) _w="two" ;; 3) _w="three" ;; 4) _w="four" ;; 5) _w="five" ;;
-  6) _w="six" ;; 7) _w="seven" ;; 8) _w="eight" ;; 9) _w="nine" ;;
-  *) _w="" ;;
-esac
-assert_ok test -n "$_w"
+_num_word() { case "$1" in
+  1) echo one ;; 2) echo two ;; 3) echo three ;; 4) echo four ;; 5) echo five ;;
+  6) echo six ;; 7) echo seven ;; 8) echo eight ;; 9) echo nine ;; *) echo "" ;;
+esac; }
+_w="$(_num_word "$unpub_n")"
+_pw="$(_num_word "$pub_n")"
+assert_ok test -n "$_pw"
 # ⚠️ 수·복수를 가린다 — 미게시가 1개가 되는 순간 `The other one languages are …`를 요구하게 되고,
 # 문서를 옳은 영어로 쓰면 CI가 빨개진다(가드가 문서를 틀리게 만드는 상태). 이 파일 상단이 기록한
 # "zero tags" 실패와 같은 부류라 같은 실수를 반복하지 않는다.
-if [ "$unpub_n" -eq 1 ]; then
-  _phrase="The other $_w language is unpublished"
+#
+# ⚠️ **2026-08-17: 미게시가 0이 되는 갈래를 추가했다.** 그 전에는 `_w=""`에서 `assert_ok test -n`이
+# 먼저 터지고 `_phrase`가 `The other  languages are unpublished`라는 성립 불가능한 문자열이 됐다
+# (go 게시가 설계대로 그것을 터뜨렸다 — 이 파일 4건). 가드를 약화시키지 않고 **방향만 바꾼다**:
+# 전부 게시된 동안에는 미게시 수사가 **없을 것**을 요구하고, 대신 밀린 태그 수를 SSOT에서
+# 파생해 대조한다(예전엔 그 수가 아무 가드도 없이 손으로만 맞춰져 있었다 — 강화다).
+# 열 번째 언어가 미게시로 추가되면 else 가지가 그대로 재무장한다.
+if [ "$unpub_n" -eq 0 ]; then
+  assert_contains "$body" "$(printf '%s' "$_pw" | sed 's/^./\U&/') tags have been pushed so far" \
+    "DEPLOY.md의 밀린 태그 수 문구가 DF_PUBLISHED에서 파생한 $pub_n 과 다르다"
+  assert_not_contains "$body" "languages are unpublished" \
+    "아홉 전부 게시인데 DEPLOY.md가 '나머지 N개 미게시'라고 주장한다"
+  assert_not_contains "$body" "language is unpublished" \
+    "아홉 전부 게시인데 DEPLOY.md가 '나머지 한 개 미게시'라고 주장한다"
 else
-  _phrase="The other $_w languages are unpublished"
+  assert_ok test -n "$_w"
+  if [ "$unpub_n" -eq 1 ]; then
+    _phrase="The other $_w language is unpublished"
+  else
+    _phrase="The other $_w languages are unpublished"
+  fi
+  assert_contains "$body" "$_phrase" \
+    "DEPLOY.md의 미게시 개수 문구가 DF_PUBLISHED에서 파생한 $unpub_n 과 다르다"
 fi
-assert_contains "$body" "$_phrase" \
-  "DEPLOY.md의 미게시 개수 문구가 DF_PUBLISHED에서 파생한 $unpub_n 과 다르다"
 assert_report
