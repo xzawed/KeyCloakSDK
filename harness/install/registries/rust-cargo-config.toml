@@ -1,6 +1,7 @@
 # .cargo/config.toml 템플릿(rust 참조 구현) — consume 컨테이너가 이 파일을 /app/.cargo/config.toml로
 # 배치해 crates-io 소스를 로컬 cargo-local-registry **디렉터리**로 치환한다(리서치 부록
-# docs/superpowers/specs/2026-07-07-install-recipes-research.md §rust).
+# docs/superpowers/specs/2026-07-07-install-recipes-research.md §rust — 태그
+# `archive/docs-history-2026-08`에 있다).
 #
 # /opt/local-registry는 docker run 시 publish/rust.sh의 산출물
 # (harness/install/publish/out/rust-local-registry/)을 read-only 볼륨으로 마운트하는 컨테이너 내부

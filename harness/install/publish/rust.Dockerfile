@@ -2,7 +2,8 @@
 #
 # node(Verdaccio, 상시 구동 HTTP 레지스트리)와 달리 rust에는 서비스가 없다 — 소스 치환
 # ([source.local] local-registry = "…")이 가리키는 **디렉터리**가 곧 레지스트리다(리서치 부록
-# docs/superpowers/specs/2026-07-07-install-recipes-research.md §rust). 이 Dockerfile은 그 디렉터리
+# docs/superpowers/specs/2026-07-07-install-recipes-research.md §rust — 태그
+# `archive/docs-history-2026-08`에 있다). 이 Dockerfile은 그 디렉터리
 # (/opt/local-registry)를 만드는 일회성 빌더이고, publish/rust.sh가 docker build 후 docker
 # create+cp로 산출물만 호스트로 뽑아낸다(런타임 이미지가 아님 — consume는 별도 rust.Dockerfile).
 #
