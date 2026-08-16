@@ -1,7 +1,7 @@
 # 하네스 판정 계층·출처 완결과 잔여 결함 정리 Implementation Plan
 
 > <!-- doc-status: active -->
-> **에이전트 작업은 끝났다 — Phase A~D는 처리·기각됐고, 남은 미체크는 Phase E 2건(사람 게이트)뿐이다.**
+> **에이전트 작업은 끝났다 — Phase A~D는 처리·기각됐고, 남은 미체크는 Phase E 1건(사람 게이트)뿐이다.**
 > Phase A: A1 `7340402` · A2 `5fe1c9c` · A3 `d275579` · A4 `ca00b46`+`b9b3ce1` ·
 > A5 `a776213`+`2e58c44`+`bd12adb`. I1 `5a3a431` · I2 `bd12adb` · I4 `a96232c`.
 > Phase B~D는 뒤 세션이 처리했고 PR #177이 `6942260`으로 squash 착지했다(개별 SHA는 객체로 남음,
@@ -11,11 +11,11 @@
 > B2(스크래핑 제거는 런타임 테스트를 지운다) · B3(가드가 드리프트 가능 자리 2곳을 이미 덮음) ·
 > D2(`test-security-defaults.sh`가 흡수). B1 재검토에서 드러난 진짜 결함(dotnet만 `PROVENANCE_OK`
 > 부재)은 S-A2의 9번째 언어로 `b38f83c`가 닫았다 — 원본 B1(레그 복구)은 수행하지 않았다.
-> ⚠️ **남은 미체크 2건은 Phase E** — Go 첫 태그 · `dispatch-release.yml` GitHub App.
-> 둘 다 사람 게이트이며 #105가 추적한다. 에이전트는 수행하지 않는다.
+> ⚠️ **남은 미체크 1건은 Phase E** — Go 첫 태그. 사람 게이트이며 #105가 추적한다.
+> 에이전트는 수행하지 않는다. `dispatch-release.yml` 활성화는 `85715ec`(PR #203)로 닫혔다.
 
 > **For agentic workers:** Phase A~D를 다시 구현하지 마라 — 체크된 항목은 끝났고 기각 항목은
-> 되살릴 조건이 오기 전에는 열지 않는다. 남은 `- [ ]` 2건은 사람 게이트(Phase E, #105)다.
+> 되살릴 조건이 오기 전에는 열지 않는다. 남은 `- [ ]` 1건은 사람 게이트(Phase E, #105)다.
 
 **Goal:** 설치 하네스가 "무엇을 재지 않았는지"를 스스로 알게 만들고(판정 공허성 제거), 아홉 언어 전부에 대해 "방금 만든 산출물을 검증했다"를 기계로 보증한 뒤, 교차검증에서 확정된 잔여 결함을 닫는다.
 
@@ -576,10 +576,10 @@ end
 
 ## Phase E — 사람 게이트 (계획만, 에이전트 수행 불가)
 
-남은 미체크는 여기 2건뿐이다. 둘 다 #105가 추적한다. 에이전트는 이슈를 만들지 말고 수행하지도 않는다.
+남은 미체크는 여기 1건뿐이다. #105가 추적한다. 에이전트는 이슈를 만들지 말고 수행하지도 않는다.
 
 - [ ] **Go 첫 게시**: `git tag go/v0.1.0-rc.1 && git push origin go/v0.1.0-rc.1`. 선행조건은 충족됐다(#167 출처 단언·file GOPROXY 관측). 되돌릴 수 없다 — 회수 수단은 후속 릴리스의 `retract`뿐.
-- [ ] **`dispatch-release.yml` 활성화**: GitHub App 생성 → `RELEASE_APP_ID`/`RELEASE_APP_PRIVATE_KEY` 등록 → `tags-create.json` bypass에 App(Integration) 추가(⚠️ **`tags-create.json`에만** — 나머지 둘에 넣으면 태그 불변성의 유일한 서버측 집행 지점이 무너진다).
+- [x] **`dispatch-release.yml` 활성화**: GitHub App 생성 → `RELEASE_APP_ID`/`RELEASE_APP_PRIVATE_KEY` 등록 → `tags-create.json` bypass에 App(Integration) 추가(⚠️ **`tags-create.json`에만** — 나머지 둘에 넣으면 태그 불변성의 유일한 서버측 집행 지점이 무너진다). **완료** — App `keycloaksdk-release-tagger`(ID `4614080`), PR #203 `85715ec`, `repo-config.mjs apply` 후 라이브 API로 확인(`RELEASE-TAGS-CREATE`에 Integration 실재 + admin 유지, `CREATE-GO`·`IMMUTABLE`은 Integration 0건, 4종 전부 `active`).
 
 ---
 
