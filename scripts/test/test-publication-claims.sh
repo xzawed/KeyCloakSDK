@@ -252,6 +252,44 @@ done
 # `assert_report`에 도달하지 못해 남은 어서션도 안 돈다(변이검증 M4에서 실제로 그렇게 죽었다).
 assert_eq "9" "$rows_seen" "호환성 표에서 읽은 언어 행 수가 9가 아니다 — 라벨 표기가 바뀌었나"
 
+# ---- CLAUDE.md 「현재 상태」 표 27셀 ↔ deploy-facts SSOT (#194) ----
+#
+# 위 claim_at CLAUDE.md 3줄은 게시 *개수* 문장만 본다. 표의 배포명·태그 접두·
+# 게시 버전(9×3=27셀)은 한 줄도 없다 — 셀 하나(kotlin 태그 접두)를 바꿔도
+# 개수 문장은 그대로라 기존 가드는 통과한다(공허성 실측: 이 루프 없이
+# `kotlin-v*` → `kt-v*` 변이 후 이 파일이 97 passed).
+#
+# 기대값은 전부 SSOT 파생. 하드코딩 금지.
+# 미게시(go): df_published_version 은 빈 문자열이고 표는 「미실행」 — 게시되는
+# 순간 기대값이 RC 로 바뀌며 미실행 잔존이 실패한다.
+claude_status_row() { # $1=언어 라벨. 「현재 상태」 절만 — 뒤의 의존성 표와 섞지 않는다.
+  awk '/^## 현재 상태$/{p=1;next} p&&/^## /{exit} p' "$ROOT/CLAUDE.md" \
+    | grep -F "| $1 |" | head -n1
+}
+status_seen=0
+for L in $DEPLOY_LANGS; do
+  _lbl="$(gs_label "$L")"
+  _row="$(claude_status_row "$_lbl")"
+  [ -n "$_row" ] && status_seen=$((status_seen + 1))
+  _coord="$(df_coordinate "$L")"
+  _tag="$(printf "$(df_tag "$L")" '*')"
+  _ver="$(df_published_version "$L")"
+  assert_contains "$_row" "$_coord" \
+    "CLAUDE.md 현재 상태 표의 $_lbl 배포명이 SSOT($_coord)와 다르다"
+  assert_contains "$_row" "$_tag" \
+    "CLAUDE.md 현재 상태 표의 $_lbl 태그 접두가 SSOT($_tag)와 다르다"
+  if [ -n "$_ver" ]; then
+    assert_contains "$_row" "$_ver" \
+      "CLAUDE.md 현재 상태 표의 $_lbl 게시 버전이 SSOT($_ver)와 다르다"
+  else
+    assert_contains "$_row" "미실행" \
+      "CLAUDE.md 현재 상태 표의 $_lbl 은 미게시인데 「미실행」이 없다"
+  fi
+done
+# ⚠️ 대조군 — 라벨 표기가 바뀌면 위 루프가 빈 행을 9번 비교해 조용히 통과할 수 있다.
+assert_eq "9" "$status_seen" \
+  "CLAUDE.md 현재 상태 표에서 읽은 언어 행 수가 9가 아니다 — 라벨 표기가 바뀌었나"
+
 # ---- DEPLOY.md `- Install:` 좌표의 **버전 문자열** ↔ df_published_version ----
 #
 # 같은 축(버전 문자열)인데 위 검사는 getting-started의 호환성 표만 봤다. DEPLOY.md의 설치 좌표
