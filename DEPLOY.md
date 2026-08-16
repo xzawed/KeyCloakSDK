@@ -204,9 +204,9 @@ What `php-release.yml` does instead: once `verify` passes, the `split` job runs 
 
 ### F. Release automation — the tag-cutting GitHub App (every language except Go)
 
-This is what makes the "merge a release PR" path of §1 work. **Until all four steps below are done that path is inactive**: `dispatch-release.yml` fails closed — it names the missing secret, or reports that the tag rulesets are absent or not yet applied — and no tag is created. Nothing is published and nothing is burned; you simply fall back to pushing the tag by hand, which is the only supported path for Go anyway.
+This is what makes the "merge a release PR" path of §1 work. ✅ **All four steps are done — that path went live on 2026-08-17** (step 3 applied the rulesets, step 4 added the App). The steps are kept below because they are the recovery procedure, not a to-do list: if a secret is deleted or a ruleset is deactivated, `dispatch-release.yml` fails closed again — it names the missing secret, or reports that the tag rulesets are absent or not yet applied — and no tag is created. Nothing is published and nothing is burned; you simply fall back to pushing the tag by hand, which is the only supported path for Go anyway.
 
-⚠️ **The order matters, and step 4 will be silently undone if you take a shortcut.** Read it before starting.
+⚠️ **The order matters, and step 4 will be silently undone if you take a shortcut.** Read it before re-running any of this.
 
 1. **Create and install a GitHub App** — Settings → Developer settings → GitHub Apps → New GitHub App. Permissions: **Contents: Read and write, and nothing else**. Install it on `xzawed/KeyCloakSDK` only. Keep the numeric **App ID** and generate a **private key** (`.pem`).
 
@@ -218,7 +218,7 @@ This is what makes the "merge a release PR" path of §1 work. **Until all four s
 
    ⚠️ Applying these does **not** close the hand-pushed release path: all three carry `{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"always"}`, so the repository admin still creates, updates and deletes tags freely (verified against the live API after apply). What they stop is *everything else* — which is the point, since a `contents: write` credential could otherwise mint a release tag.
 
-4. **Add the App to `RELEASE-TAGS-CREATE`, and to nothing else.** The committed `tags-create.json` lists only the repository admin as a bypass actor, so after step 3 the App still cannot create tags and the flow stops at its last step (fail-closed, so nothing dangerous — just stuck). Add this entry to the `bypass_actors` array of **`.github/rulesets/tags-create.json`**, commit it, and run `apply` again:
+4. ~~**Add the App to `RELEASE-TAGS-CREATE`, and to nothing else.**~~ **Done — 2026-08-17** (PR #203, `85715ec`). The App is `keycloaksdk-release-tagger`. `.github/rulesets/tags-create.json` now carries its `Integration` entry next to the admin, while `tags-create-go.json` and `tags-immutable.json` still carry the admin alone — verified against the live API after `apply` (`RELEASE-TAGS-CREATE` → `RepositoryRole:5, Integration:4614080`; the other two → `RepositoryRole:5`). `scripts/test/test-repo-config.sh` pins that 1/0/0 split, so the two ⚠️ below are enforced by a guard rather than remembered. If you ever have to redo this, the entry added to the `bypass_actors` array of **`.github/rulesets/tags-create.json`** — committed, then `apply` again — has this shape:
 
    ```json
    { "actor_id": <APP_ID>, "actor_type": "Integration", "bypass_mode": "always" }

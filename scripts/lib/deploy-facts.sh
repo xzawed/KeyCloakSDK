@@ -141,7 +141,24 @@ df_published_version() { case "$1" in
   java) echo "0.1.0-RC1" ;; kotlin) echo "0.1.0-RC1" ;; go) echo "0.1.0-rc.1" ;;
   *) echo "" ;; esac; }
 
-df_check_url() { case "$1" in   # 200이면 이미 게시됨(readiness). go는 빈 문자열(프록시 온디맨드 — 특수처리)
+# 200이면 이미 게시됨(readiness). 아홉 전부 **좌표 단위**(버전이 아니라 패키지) 엔드포인트다 —
+# 묻는 것은 "이 좌표에 버전이 하나라도 올라가 있는가"이고, 버전 문자열은 df_published_version이
+# 따로 소유한다. 여기에 버전을 박으면 같은 사실의 두 번째 정의 자리가 생긴다.
+#
+# ⚠️ go가 오래 빈 문자열이었던 것은 "프록시는 온디맨드라 게시 이벤트가 없다"는 이유였는데, 그
+# 특수처리는 rr_registry_state가 **조회 없이 `exists`(확인됨·미게시)를 지어내게** 만들었다.
+# go 첫 게시 뒤에도 readiness는 계속 미게시로 보고했고, 태그를 안 가져오는 CI 체크아웃에서는
+# `tag=none`까지 겹쳐 **이미 게시된 좌표에 "✅ 저장소측 OK"(=밀어도 된다)** 가 찍힌다.
+# 프록시는 게시 이벤트를 갖지 않을 뿐 **좌표 질의에는 나머지 여덟과 같은 방식으로 답한다**(실측):
+#   /go/@v/list      → 200 `v0.1.0-rc.1`
+#   /java/@v/list    → 404 `no matching versions for query "latest"` (curl rc=22 → exists=미게시)
+# 즉 "버전 없음"이 200-빈본문이 아니라 404라, 상태코드만 보는 rr_url_exists와 정합한다.
+#
+# ⚠️ 경로는 반드시 `/go` 서브모듈까지 적는다. 저장소 **루트** 경로는 java의 `v*` 태그를 주워
+# 200 `v0.1.0-RC1`을 돌려주므로(실측) go가 미게시여도 게시로 오판한다.
+# ⚠️ 대문자는 `!` 이스케이프다(KeyCloakSDK → `!key!cloak!s!d!k`). `!`는 셸 history expansion
+# 문자지만 확장은 **대화형 bash에서만** 일어난다 — 스크립트는 비대화형이고 dash엔 기능 자체가 없다.
+df_check_url() { case "$1" in
   python) echo "https://pypi.org/pypi/keycloak-sdk/json" ;;
   node) echo "https://registry.npmjs.org/@xzawed%2Fkeycloak-sdk" ;;
   rust) echo "https://crates.io/api/v1/crates/keycloak-sdk" ;;
@@ -150,7 +167,7 @@ df_check_url() { case "$1" in   # 200이면 이미 게시됨(readiness). go는 �
   php) echo "https://repo.packagist.org/p2/xzawed/keycloak-sdk.json" ;;
   java) echo "https://repo1.maven.org/maven2/io/github/xzawed/keycloak-sdk/maven-metadata.xml" ;;
   kotlin) echo "https://repo1.maven.org/maven2/io/github/xzawed/keycloak-sdk-kotlin/maven-metadata.xml" ;;
-  go) echo "" ;; esac; }
+  go) echo "https://proxy.golang.org/github.com/xzawed/!key!cloak!s!d!k/go/@v/list" ;; esac; }
 
 # 프리릴리스 표기는 레지스트리마다 다르다. 태그↔매니페스트 가드가 **문자열 정확비교**라 표기가
 # 틀리면 CI가 막는다(의도된 동작) — 그래서 검증을 언어별로 나눈다. 첫 게시는 RC로 하라는

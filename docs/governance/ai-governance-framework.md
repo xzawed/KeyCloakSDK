@@ -26,14 +26,16 @@
 
 | 게이트 | 지표 | 임계값 | 측정 수단 |
 |---|---|---|---|
-| **G1 빌드** | 컴파일 에러 수 | 0 | `mvn compile` |
-| **G2 단위테스트** | 통과율 | 100% | `mvn test` |
-| **G3 커버리지** | 라인 / 브랜치 | **≥ 90% / ≥ 85%** | JaCoCo `jacoco:check` |
+| **G1 빌드** | 컴파일 에러 수 | 0 | 그 언어의 빌드 명령 |
+| **G2 단위테스트** | 통과율 | 100% | 그 언어의 진입 명령 |
+| **G3 커버리지** | 라인 / 브랜치 | **≥ 90% / ≥ 85%** | 그 언어의 커버리지 도구 |
 | **G4 스펙 준수** | 미해결 Critical/Important | 0, 리뷰어 ✅ | Claude 리뷰 에이전트 |
 | **G5 Codex 교차검증** | 미해결 불일치 | 0, 판정 "confirmed" | Codex CLI (전 태스크) |
 | **G6 보안** | 토큰/시크릿 로그·내부타입 누출 | 0 | 리뷰어 + Codex |
 
-- **G3 대상**: 로직 모듈(core, auth, admin 파사드의 순수 로직). **라이브 네트워크 경계 클래스**(`AuthClient` — 토큰 엔드포인트 호출, `AdminClient` — 실제 `Keycloak` 구성)와 통합 전용 코드(`*IT`, Testcontainers)는 단위테스트로 커버 불가하므로 jacoco `<excludes>`로 G3에서 제외하고 **Phase 6 통합테스트로 검증**한다. 나머지 순수 로직(config·tokens·PKCE·metadata·JWT검증·TokenProvider·admin 리소스 파사드[목 기반]·예외변환)은 90/85 강제.
+⚠️ **G1–G3의 측정 수단은 언어마다 다르다.** 이 표는 한때 `mvn compile`/`mvn test`/JaCoCo를 박아 두었는데, Java가 유일한 언어였던 시절의 산물이라 나머지 여덟에 대해 거짓이었다. 각 언어의 실제 명령은 루트 `CLAUDE.md`의 「툴체인」 표(언어당 진입 명령 하나)와 `.claude/rules/<lang>.md`(단일 테스트 실행·커버리지 게이트 포함)가 소유한다. 임계값 90/85는 언어 중립이고, 언어별 커버리지 게이트의 실제 설정은 `scripts/check-coverage.mjs`가 기계 대조한다.
+
+- **G3 대상**: 로직 모듈(core, auth, admin 파사드의 순수 로직). **라이브 네트워크 경계**(토큰 엔드포인트를 실제로 호출하는 auth 클라이언트, 하위 admin 클라이언트를 실제로 구성하는 admin 클라이언트)와 통합 전용 코드(`*IT`·Testcontainers·docker 셸아웃)는 단위테스트로 커버 불가하므로 커버리지 도구의 exclude로 G3에서 빼고 **통합테스트로 검증**한다. 나머지 순수 로직(config·tokens·PKCE·metadata·JWT검증·TokenProvider·admin 리소스 파사드[목 기반]·예외변환)은 90/85 강제.
 - **G5 깊이**: **모든 태스크**. Codex가 태스크 diff를 독립 검토하여 정합성·스펙 부합을 판정한다.
 
 ---
@@ -58,16 +60,17 @@
 
 ## 4. 감사 추적 · 재현성 (Traceability)
 
-- **진척 원장**: `.superpowers/sdd/progress.md` (gitignore) — 태스크 완료·커밋 해시. 컴팩션 복구용.
+- **진척 원장**: `.superpowers/sdd/<계획>/progress.md` (gitignore) — 태스크 완료·커밋 해시. 컴팩션 복구용. ⚠️ 계획별 디렉터리 아래다(예전에는 `sdd/` 바로 밑의 단일 파일이었다). ⚠️ **git-ignored 로컬 산출물을 CI·저장소 상태로 읽지 않는다** — `harness/install/report/signals/*.json`을 CI 상태로 오독해 "dotnet 레그가 열흘째 빨갛다"를 두 번 보고한 전례가 있고, 실제 CI는 초록이었다(`git check-ignore -v` 한 번이면 갈린다).
 - **게이트 이력**: PR / 커밋 메시지 — 태스크별 지표, Codex 판정, 루프 이력, RCA. 별도 검증 로그 파일은 **새 언어의 필수 산출물이 아니다**.
 - **커밋 규약**: 각 커밋 메시지에 태스크 id 포함.
-- **재현성**: 의존성 버전 BOM 고정, Keycloak 컨테이너 태그 고정(`quay.io/keycloak/keycloak:26.6`), 툴체인 버전 고정(JDK 21.0.8, Maven 3.9.9).
+- **재현성**: 의존성 버전은 언어별 매니페스트에 고정(루트 `CLAUDE.md`의 「확정 의존성」이 표로 요약하고 `scripts/check-docs.mjs`가 **기계 대조**한다 — 여기에 버전을 복제하지 않는 이유다), Keycloak 컨테이너 태그 고정(`quay.io/keycloak/keycloak:26.6`), 툴체인 버전 고정(언어별 값은 §6이 가리키는 `.claude/rules/<lang>.md`).
 
 ---
 
 ## 5. 거버넌스 통제 (Guardrails)
 
-- **브랜치 격리**: 구현은 `feature/java-sdk-mvp`에서만. main 직접 구현 금지. 완료 후 PR로 머지(사람 승인).
+- **브랜치 격리**: `main`에 직접 커밋하지 않는다 — 작업마다 브랜치를 따서 PR로 넣는다. 이건 관례가 아니라 **서버 상태**다: 룰셋 `PRIMARY`(`.github/rulesets/main.json`)가 `bypass_actors: []`로 소유자에게도 예외를 주지 않은 채 `pull_request`·`non_fast_forward`·삭제 금지를 강제한다. required 체크는 `doc-facts`·`shell-exec-bits` **둘뿐**이고 여기에 언어 CI를 넣으면 저장소가 잠긴다([CONTRIBUTING.md §4](../../CONTRIBUTING.md)). 브랜치 이름은 작업 종류를 접두로 쓰고(`fix/`·`docs/`·`chore/`·`feat/`) **머지 후 지운다**(확인: `git ls-remote --heads origin` — 살아 있는 것은 `main`뿐이어야 한다). 머지는 squash가 현재 관용이다(확인: `git log --merges -1`의 날짜가 한참 전이면 그 뒤로는 전부 squash다). 머지 승인은 사람이 한다.
+  > ⚠️ 이 항목은 한때 "구현은 `feature/java-sdk-mvp`에서만"이었다. 그 브랜치는 오래전에 사라졌는데도(확인: `git branch -a`) **규칙 문장**으로 남아 있어서, 읽는 쪽에서는 지켜야 할 규약이 존재하지 않는 브랜치를 가리켰다. 규칙을 적을 때는 그것이 **무엇으로 확인되는가**를 함께 적는다 — 위의 괄호들이 그 자리다.
 - **되돌릴 수 없는 작업은 사람 승인 필수**: Maven Central 배포(Phase 7.2 `deploy`)는 에이전트 자동 실행 금지. GPG 키·Portal 토큰은 CI 시크릿으로만.
 - **비밀 취급**: 코드·로그·커밋에 토큰/시크릿 금지 (마스킹 유틸 + 리뷰로 강제).
 - **최소권한 모델 선택**: 역할별 최저 적정 모델 사용(전사 코드=저가, 판단=표준, 최종설계리뷰=최고).
@@ -79,21 +82,9 @@
 
 빌드/테스트는 로컬에 설치된 툴체인으로 실행한다. 하네스 셸은 프로파일을 소싱하지 않으므로 **명령마다 환경을 인라인 지정**한다.
 
-**표준 빌드 프리픽스 (Bash):**
-```bash
-JAVA_HOME='/c/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot' \
-PATH="/c/Users/dirtc/tools/apache-maven-3.9.9/bin:$PATH" \
-mvn <args>
-```
-**PowerShell 변형:**
-```powershell
-$env:JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot'; $env:Path='C:\Users\dirtc\tools\apache-maven-3.9.9\bin;' + $env:Path; mvn <args>
-```
-- JDK: Eclipse Temurin **21.0.8** (`C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot`)
-- Maven: **3.9.9** (`C:\Users\dirtc\tools\apache-maven-3.9.9`)
-- ⚠️ 위 경로는 이 개발 머신 전용 — 리포지토리에 커밋하지 않는다(포터블 아님). CI는 `setup-java`가 제공하는 JAVA_HOME 사용.
+⚠️ **구체적인 경로·버전은 여기에 적지 않는다.** 예전에는 이 절이 `C:\Users\dirtc\...`와 JDK `21.0.8`을 본문에 박아 두고 바로 아래 줄에서 "리포지토리에 커밋하지 않는다"고 적는 자기모순이었다. 그리고 실제로 낡았다 — 이 PC의 JDK는 `21.0.11`이다(확인: `java -version`). 언어별 프리픽스와 `KCSDK_TOOLS`·`KCSDK_JDK21`·`KCSDK_PY` 덮어쓰기 규약은 **`.claude/rules/<lang>.md`**(해당 언어 경로 작업 시 자동 로드)와 [개발환경 셋업 가이드](../guides/development-setup.md)가 소유한다. 새 머신이라면 `node scripts/doctor.mjs [<lang>…]`가 이 PC에 무엇이 없는지 알려준다. CI는 `setup-java` 등 액션이 제공하는 환경을 쓴다.
 
-**커밋 규약**: 신규 파일 누락 방지를 위해 커밋은 항상 `git add -A && git commit -m "..."` 형식을 쓴다. `git commit -am`은 untracked 파일을 스테이징하지 못하므로 **금지**. 구현은 `feature/java-sdk-mvp`에만 push하고 main에는 PR로 머지(사람 승인).
+**커밋 규약**: 신규 파일 누락 방지를 위해 커밋은 항상 `git add -A && git commit -m "..."` 형식을 쓴다. `git commit -am`은 untracked 파일을 스테이징하지 못하므로 **금지**. push 대상 브랜치와 머지 경로는 §5 「브랜치 격리」가 소유한다 — 여기에 다시 적지 않는다. (두 자리에 적힌 같은 규칙이 갈린 채 굳은 것이 이 문단이 낡았던 이유다: 양쪽 모두 사라진 브랜치를 가리키고 있었다.)
 
 ---
 

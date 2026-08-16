@@ -67,7 +67,12 @@ rr_secrets_state() { # <lang> → set|unset|na
 
 rr_registry_state() { # <lang> → published|exists|unknown  (exists = 확인됨·미게시)
   url="$(df_check_url "$1")"
-  [ -z "$url" ] && { echo exists; return; }   # go: 프록시 온디맨드 — 미게시로 간주
+  # ⚠️ 조회 URL이 없다는 것은 "미게시"가 아니라 **확인하지 않았다**이다. 예전에는 여기서
+  # exists(=확인됨·미게시)를 냈는데, 그건 한 번도 조회하지 않은 좌표에 대해 판정을 지어내는
+  # 것이라 go가 실제로 게시된 뒤에도 계속 미게시로 보고했다. 되돌릴 수 없는 행위 직전에 보는
+  # 도구에서 "모른다"를 "안전하다"로 반올림하지 않는다(crates.io 403을 미게시로 읽은 것과 같은 부류).
+  # 지금은 아홉 전부 URL이 있어 이 분기는 새 언어를 추가하고 df_check_url을 빠뜨렸을 때만 열린다.
+  [ -z "$url" ] && { echo unknown; return; }
   if rr_url_exists "$url"; then
     echo published
   else
