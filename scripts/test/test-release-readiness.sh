@@ -87,6 +87,30 @@ assert_eq "0" "$(grep -cE '^[[:space:]]*(git[[:space:]]+(tag|push|commit|add|che
 assert_eq "0" "$(grep -cE 'secret (view|get)|gh api.*secrets' "$SH" || true)" "시크릿 값 미조회"
 
 # df_check_url 검증(Task 1 리뷰 Minor — readiness가 df_check_url 소비)
-assert_eq "" "$(df_check_url go)" "go check_url 빈값(프록시 온디맨드)"
-for L in php rust dotnet python node ruby java kotlin; do assert_ok test -n "$(df_check_url "$L")"; done
+# ⚠️ 여기서 go만 빈값을 **요구**하던 시절이 있었다. 그 어서션은 "프록시 온디맨드"라는 설명을
+# 계약으로 굳혀, rr_registry_state가 조회 없이 exists(미게시)를 지어내는 것을 고정했다 —
+# go 첫 게시 뒤 readiness가 이미 게시된 좌표를 "✅ 저장소측 OK"로 보고한 경로다. 이제 아홉
+# 전부 좌표 단위 URL을 갖는다. 목록을 손으로 늘어놓지 않고 DEPLOY_LANGS를 도는 이유는 열 번째
+# 언어가 추가될 때 이 어서션이 **자동으로** 그 언어를 요구하게 하기 위해서다.
+for L in $DEPLOY_LANGS; do assert_ok test -n "$(df_check_url "$L")"; done
+# go URL은 반드시 `/go` 서브모듈 경로다. 저장소 루트 경로는 java의 `v*` 태그를 주워 200을
+# 돌려주므로(실측 `v0.1.0-RC1`) go가 미게시여도 "게시됨"으로 오판한다.
+assert_contains "$(df_check_url go)" "proxy.golang.org" "go check_url은 모듈 프록시를 본다"
+assert_contains "$(df_check_url go)" "/go/@v/list" "go check_url은 /go 서브모듈의 버전 목록"
+# 좌표 단위 불변식: 어떤 언어의 조회 URL에도 게시 버전 문자열이 박혀 있으면 안 된다
+# (df_published_version과 두 번째 정의 자리가 생겨 다음 릴리스에 조용히 갈린다).
+# ⚠️ 빈 버전(미게시 언어)은 건너뛴다 — `case`의 `*""*`는 **모든 문자열에 매치**하므로 그대로
+# 두면 열 번째 언어를 미게시 상태로 추가하는 순간 이 어서션이 거짓으로 빨개진다.
+for L in $DEPLOY_LANGS; do
+  v="$(df_published_version "$L")"
+  [ -z "$v" ] && continue
+  case "$(df_check_url "$L")" in
+    *"$v"*) assert_ok false "$L check_url에 게시 버전이 박혀 있다" ;;
+    *) assert_ok true "$L check_url은 버전을 박지 않는다(좌표 단위)" ;;
+  esac
+done
+# 빈 URL 폴백은 exists가 아니라 unknown이어야 한다 — 조회한 적 없는 좌표에 판정을 지어내지 않는다.
+# ⚠️ df_check_url을 여기서 덮어쓰므로 이 블록은 반드시 위 어서션들보다 뒤에 온다.
+df_check_url() { echo ""; }
+assert_eq "unknown" "$(rr_registry_state go)" "check_url이 비면 미게시가 아니라 unknown"
 assert_report
