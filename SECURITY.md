@@ -51,9 +51,10 @@ a public registry — PHP (`0.1.0-rc.1`, Packagist), Python (`0.1.0rc1`, PyPI),
 (`0.1.0.rc1`, RubyGems), Node (`0.1.0-rc.2`, npm), Java
 (`0.1.0-RC1`, Maven Central) and Kotlin
 (`0.1.0-RC1`, Maven Central). The other one
-(Go) is at `0.1.0` and is not
-on a registry. **No language has a stable release yet.** Each release is
-human-gated, see [DEPLOY.md](DEPLOY.md).
+(Go) has **no release at all** — for Go the git tag *is* the version, no `go/v*`
+tag has ever been pushed, and it is on no registry, so there is no released
+version of it to support. **No language has a stable release yet.** Each release
+is human-gated, see [DEPLOY.md](DEPLOY.md).
 
 What pre-1.0 means here:
 
