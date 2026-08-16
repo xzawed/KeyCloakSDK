@@ -5,7 +5,8 @@
 # 충분하고, 이미지를 분리하면 각자 별도로 rubygems.org에 접속해 같은 gem을 두 번 받아야 한다.
 #
 # rubygems-generate_index: RubyGems 3.5.0에서 코어 커맨드로부터 제거된 레거시 Marshal 인덱스 생성기를
-# 플러그인 gem으로 복원한 것(docs/superpowers/specs/2026-07-07-install-recipes-research.md §ruby).
+# 플러그인 gem으로 복원한 것(docs/superpowers/specs/2026-07-07-install-recipes-research.md §ruby —
+# 태그 `archive/docs-history-2026-08`에 있다).
 # webrick: Ruby 3.0부터 stdlib에서 un-bundle(비-번들)돼 별도 gem 설치가 필요하다(동일 문서).
 FROM ruby:3.4-alpine
 RUN gem install --no-document webrick rubygems-generate_index
