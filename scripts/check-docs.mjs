@@ -821,28 +821,108 @@ for (const [coord, hits] of seen) {
   }
 }
 
-// 검사 8 — 파일 크기 래칫. `<!-- doc-budget: max-bytes=N -->`를 담은 문서는 N바이트를 넘으면
-// 실패한다. **목표치가 아니라 래칫이다** — 지금 크기를 상한으로 박아 재성장만 막고, 줄일 때마다
-// 사람이 숫자를 함께 내린다(올리는 PR은 그 자체가 리뷰 신호가 된다).
+// 검사 8 — 크기 래칫. `<!-- doc-budget: max-bytes=N [max-lines=M] -->`를 담은 문서가 상한을
+// 넘으면 실패한다. **목표치가 아니라 래칫이다** — 지금 크기를 상한으로 박아 재성장만 막고,
+// 줄일 때마다 사람이 숫자를 함께 내린다(올리는 PR은 그 자체가 리뷰 신호가 된다).
 //
 // 왜 산문 규칙으로 부족한가: 문서 재편 설계가 CLAUDE.md 목표를 33 KB로 승인했는데,
 // 이관 커밋 직후 44 KB였던 파일이 13일 만에 66 KB가 됐다(+50%). 규칙은 있었고 아무도
 // 어기려 하지 않았는데도 그렇게 됐다 — 한 줄씩 늘어나는 것을 사람이 알아챌 수 없기
 // 때문이다. 기계만 셀 수 있다.
+//
+// ⚠️ **재는 것은 raw가 아니라 `loadedText()`, 즉 실제로 컨텍스트에 주입되는 부분이다**(2026-08-17).
+// 블록 레벨 HTML 주석은 주입 전에 제거되므로 토큰을 1바이트도 쓰지 않는데, raw를 재던 시절에는
+// CLAUDE.md의 그 4,116 B(41줄·주석 13개)가 예산을 잠식했다. 이 저장소는 가드·이관의 **설계 근거를
+// 블록 주석으로 남기는** 관용을 쓰므로, 여유가 440 B까지 좁아진 상태에서 기준이 틀리면 "근거를
+// 지우는 것"이 예산을 맞추는 최소저항 경로가 된다 — 가장 값진 것을 가장 먼저 깎게 만드는 계측이다.
+// (선례: Claude Code 자신이 v2.1.211에서 같은 버그를 고쳤다.) 기준을 바꾸면서 상한도 함께 내려
+// **여유(440 B)를 그대로 옮겼다** — 안 그러면 이 변경 자체가 조용한 4,116 B 예산 인상이 된다.
+//
+// `max-lines`는 선택 축이다(공식 권고가 줄 기준이라 바이트만으로는 그 축이 안 보인다). 없으면
+// 줄 수를 보지 않아 기존 앵커를 깨지 않는다.
 function checkDocBudget() {
   for (const f of walk(ROOT)) {
     const rel = relative(ROOT, f).replace(/\\/g, '/')
     const text = readFileSync(f, 'utf8')
-    const m = /<!--\s*doc-budget:\s*max-bytes=(\d+)\s*-->/.exec(text)
+    const m = /<!--\s*doc-budget:([^>]*?)-->/.exec(text)
     if (!m) continue
-    const max = Number(m[1])
-    const actual = Buffer.byteLength(text, 'utf8')
+    const spec = m[1]
+    const mb = /max-bytes=(\d+)/.exec(spec)
+    const ml = /max-lines=(\d+)/.exec(spec)
+    // ⚠️ 앵커는 있는데 max-bytes가 없으면 실패다. 오타 하나(`maxbytes=`)로 래칫이 조용히
+    // 사라지는 것이 가드 무력화의 최소저항 경로가 되어서는 안 된다 — 검사 9가 "지도를 지우는
+    // 것으로 검사를 없앨 수 없다"를 고정한 것과 같은 이유다.
+    if (!mb) {
+      errors.push(`${rel}: doc-budget 앵커에 max-bytes=N 이 없다 — 오타 하나로 래칫이 사라져서는 안 된다`)
+      continue
+    }
+    const loaded = loadedText(text)
+    const raw = Buffer.byteLength(text, 'utf8')
+    const max = Number(mb[1])
+    const actual = Buffer.byteLength(loaded, 'utf8')
     if (actual > max) {
       errors.push(
-        `${rel}: ${actual}B > doc-budget ${max}B (초과 ${actual - max}B) — 줄이거나, 늘려야 할 이유가 있다면 앵커의 max-bytes를 함께 올려라(그 변경 자체가 리뷰 대상이다)`,
+        `${rel}: 적재 ${actual}B > doc-budget ${max}B (초과 ${actual - max}B · raw ${raw}B) — 줄이거나, 늘려야 할 이유가 있다면 앵커의 max-bytes를 함께 올려라(그 변경 자체가 리뷰 대상이다)`,
       )
     }
+    if (ml) {
+      const maxLines = Number(ml[1])
+      const lines = countLines(loaded)
+      if (lines > maxLines) {
+        errors.push(
+          `${rel}: 적재 ${lines}줄 > doc-budget max-lines=${maxLines} (초과 ${lines - maxLines}줄 · raw ${countLines(text)}줄) — 공식 권고는 200줄이다`,
+        )
+      }
+    }
   }
+}
+
+// 이 문서에서 **실제로 컨텍스트에 주입되는** 부분. 블록 레벨 HTML 주석은 주입 전에 제거되므로
+// 토큰을 1바이트도 쓰지 않는다(code.claude.com/docs/en/memory#how-claude-md-files-load).
+// ⚠️ **코드블록 안의 주석은 보존된다**(같은 문서) — 펜스를 무시하고 지우면 예산이 조용히
+// 헐거워지고, 하필 주석 규약을 *설명하는* 문서일수록 더 헐거워진다.
+// ⚠️ **인라인 주석은 블록이 아니다** — 앞에 본문이 있는 줄은 통째로 적재된다.
+// 애매한 경계에서는 전부 **과대계상 쪽**으로 붙였다(그 방향이 예산을 조이는 쪽이다).
+function loadedText(text) {
+  const lines = text.split('\n')
+  const out = []
+  let inFence = false
+  let inComment = false
+  for (const line of lines) {
+    const bare = line.replace(/\r$/, '')
+    if (inComment) {
+      const end = bare.indexOf('-->')
+      if (end >= 0) {
+        inComment = false
+        const rest = bare.slice(end + 3)
+        if (rest.trim() !== '') out.push(rest) // 주석이 줄 중간에 끝나면 나머지는 본문이다
+      }
+      continue
+    }
+    if (/^[ \t]*(```|~~~)/.test(bare)) {
+      inFence = !inFence
+      out.push(line)
+      continue
+    }
+    if (!inFence && /^[ \t]*<!--/.test(bare)) {
+      if (/-->[ \t]*$/.test(bare)) continue // 한 줄짜리 블록 주석
+      if (bare.includes('-->')) {
+        out.push(line) // 주석 뒤에 본문이 이어진다 → 블록이 아니다
+        continue
+      }
+      inComment = true
+      continue
+    }
+    out.push(line)
+  }
+  return out.join('\n')
+}
+
+// 내용 줄 수. 끝개행이 만드는 빈 마지막 원소는 줄이 아니다.
+function countLines(text) {
+  const parts = text.split('\n')
+  if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop()
+  return parts.length
 }
 
 // 검사 9 — docs/ 지도(`docs/README.md`)와 디스크가 **양방향**으로 맞는가.
