@@ -1109,7 +1109,7 @@ printf '%s\n' '# plan' '<!-- doc-status: active -->' '- [x] 하나' '' '```sh' '
 assert_ok node "$GUARD" "$TMP"
 
 # 마커 없는 문서('운영')는 체크박스와 무관하다 — 이 검사는 'active'에만 건다. 운영 문서에
-# 체크박스를 요구하면 `docs/governance/working-loop.md` 부류가 통째로 빨개진다.
+# 체크박스를 요구하면 `docs/governance/process.md` 부류가 통째로 빨개진다.
 printf '%s\n' '# living' '운영 문서에는 체크박스가 없어도 된다.' > "$TMP/docs/sub/a.md"
 printf '%s\n' '# map' '' '| 문서 | 상태 | 여기서만 알 수 있는 것 |' '|---|---|---|' '| [a](sub/a.md) | 운영 | 이 문서에만 있는 것을 충분히 길게 적어 둔 마지막 칸이다 |' > "$TMP/docs/README.md"
 assert_ok node "$GUARD" "$TMP"

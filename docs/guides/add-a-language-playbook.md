@@ -1,7 +1,7 @@
 # Add-a-Language Playbook
 
 > **Audience:** Implementation agents, reviewers, and human approvers who want to add a **new-language implementation** to the Keycloak polyglot SDK at the same quality bar as Java and Python.
-> **Required reading first:** [Language-neutral contract §4](../../CLAUDE.md) (in `CLAUDE.md` — not a frozen design spec) · [AI governance framework](../governance/ai-governance-framework.md) · any existing language tree (`java/`, `python/`, …) as a worked example.
+> **Required reading first:** [Language-neutral contract §4](../../CLAUDE.md) (in `CLAUDE.md` — not a frozen design spec) · [work process](../governance/process.md) · any existing language tree (`java/`, `python/`, …) as a worked example.
 
 **Nine languages are done** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin). Kotlin is a published ninth SDK (`io.github.xzawed:keycloak-sdk-kotlin` `0.1.0-RC1` on Maven Central): it reuses the sibling Java library stack (`keycloak-admin-client` · `oauth2-oidc-sdk` · `nimbus-jose-jwt`) but is a **separate implementation**, not an interoperability-verification track. The former recommended order (TypeScript/Node → Go → C# → PHP → Rust → Ruby) is **history, not a roadmap**.
 
@@ -111,7 +111,7 @@ The new language must verify the **same scenarios** as Java and Python. Counts m
 
 ### Stage 6 — Governance G1–G6 + Codex dual verification + loop
 
-Every task follows the [AI governance framework](../governance/ai-governance-framework.md). **Separation of duties**: implementer ≠ reviewer ≠ verifier, and the verifier uses a **different model (Codex/GPT-5)** to offset correlated blind spots.
+Every task follows the [work process](../governance/process.md) — six phases (plan → WBS → review → schedule → build → verify) with a WBS as the backbone. **Separation of duties**: implementer ≠ reviewer ≠ verifier, and the verifier uses a **different model (Codex/GPT-5)** to offset correlated blind spots.
 
 - [ ] **G1–G6 gates** — all must pass per task to be considered done:
   - **G1 Build** (0 compile errors) · **G2 Unit tests** (100%) · **G3 Coverage** (threshold) · **G4 Spec conformance** (0 unresolved Critical/Important, reviewer approval) · **G5 Codex cross-verification** (0 discrepancies, verdict "confirmed") · **G6 Security** (0 token/secret · internal-type leakage).
