@@ -78,4 +78,27 @@ describe('Keycloak E2E (testcontainers · 실제 Keycloak 26.6)', () => {
     const realm = await admin.raw().realms.findOne({ realm: 'it-realm' })
     expect(realm?.realm).toBe('it-realm')
   })
+
+  // ⚠️ update 셋은 전부 **경로(주소)와 body(새 값)를 분리**해 넘긴다 — 그래야 rename이 된다.
+  // 경로 인자를 body의 이름으로 덮어쓰면 rename이 조용한 no-op이 된다.
+  it('roles/groups/realms의 list·update가 실서버에 반영된다', async () => {
+    const admin = await client.admin()
+
+    await admin.roles.create({ name: 'e2e-role' })
+    await admin.roles.update('e2e-role', { name: 'e2e-role', description: 'updated by e2e' })
+    expect((await admin.roles.get('e2e-role')).description).toBe('updated by e2e')
+    await admin.roles.delete('e2e-role')
+
+    const gid = await admin.groups.create({ name: 'e2e-group' })
+    await admin.groups.update(gid, { name: 'e2e-group-renamed' })
+    expect((await admin.groups.get(gid)).name).toBe('e2e-group-renamed')
+    await admin.groups.delete(gid)
+
+    // 서비스 계정은 보통 자기 렐름만 본다 — 전체 목록을 가정하지 않고 포함 여부만 본다.
+    const realms = await admin.realms.list()
+    expect(realms.some((r) => r.realm === 'it-realm')).toBe(true)
+
+    await admin.realms.update('it-realm', { realm: 'it-realm', displayName: 'updated by e2e' })
+    expect((await admin.realms.get('it-realm')).displayName).toBe('updated by e2e')
+  })
 })

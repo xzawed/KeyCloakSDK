@@ -23,6 +23,21 @@ export class RealmsResource {
     )
   }
 
+  /** 호출자가 볼 수 있는 렐름 전부. 서비스 계정은 보통 자기 렐름만 본다 — 전체를 가정하지 말 것. */
+  async list(): Promise<RealmRepresentation[]> {
+    return call(() => this.kc.realms.find())
+  }
+
+  /**
+   * 현재 이름으로 주소를 잡아 렐름을 갱신한다. `representation.realm`에 새 이름을 주면 rename이다.
+   *
+   * ⚠️ 경로(`realmName`)와 body(`representation`)를 **합치지 말 것** — 경로 인자를 body의 이름으로
+   * 덮어쓰면 rename이 조용한 no-op이 된다.
+   */
+  async update(realmName: string, representation: RealmRepresentation): Promise<void> {
+    await call(() => this.kc.realms.update({ realm: realmName }, representation))
+  }
+
   async delete(realmName: string): Promise<void> {
     await call(() => this.kc.realms.del({ realm: realmName }))
   }

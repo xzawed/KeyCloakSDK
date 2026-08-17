@@ -12,6 +12,7 @@
 - **(Python) 게시된 휠이 자신을 `0.1.0`으로 보고했다** — `__version__`이 매니페스트와 어긋남. 이제 `importlib.metadata`에서 파생. 경위: [`.claude/rules/python.md`](.claude/rules/python.md). (2026-08-03)
 
 ### Added
+- **(Node) admin 파사드가 25/25가 됐다 — `realms.list`·`realms.update`·`roles.update`·`groups.update` 추가.** 시그니처는 자매 언어와 동형이다(`update(주소, representation): Promise<void>`). admin-client가 경로(query)와 body(payload)를 이미 분리해 받으므로 **rename이 네이티브로 된다** — Go처럼 raw REST로 우회할 필요가 없었다.
 - **(Go) admin 파사드가 25/25가 됐다 — `realms.List`·`realms.Update`·`roles.Update`·`groups.Update` 추가.** 갭 넷은 `Raw()`로만 닿던 자리였다. 시그니처는 자매 언어와 동형이다(`Update(ctx, 주소, representation) error`). ⚠️ **`Realms.Update`만 gocloak을 거치지 않는다** — gocloak의 `UpdateRealm`이 경로를 body의 `.Realm`에서 만들어 rename을 표현할 수 없어서, §4 동형(Ruby·.NET·PHP는 rename이 된다)을 지키려고 그 한 자리만 직접 요청한다. 오류 분류는 다른 메서드와 동일하다. 경위: [`.claude/rules/go.md`](.claude/rules/go.md).
 - **(PHP) admin 파사드에 다섯 리소스 `update()`와 `realms.all()`을 노출.** 반환은 전부 `void`(§4 동형 — fschmtt가 representation을 되돌려주는 불균질은 버린다). `Users::all()`은 `search()`와 같은 엔드포인트라 만들지 않았다. PHP 행은 25/25. 이슈 #190.
 - **(PHP) OIDC nonce / `id_token` 재생 방지.** `createAuthorizationRequest()`가 nonce를 항상 만들어 URL에 싣는다. `exchangeCode`의 옵셔널 3번째 인자에 넘기면 `id_token`을 완전 검증한 뒤 nonce를 대조한다. 생략하면 기존처럼 검증을 건너뛴다. 소비자 시그니처 영향은 아래 BREAKING. 이슈 #188.
