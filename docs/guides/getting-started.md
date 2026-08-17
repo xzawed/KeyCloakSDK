@@ -200,7 +200,7 @@ The distribution name is `@xzawed/keycloak-sdk`, and the import path is the same
 `0.1.0` is live on npm — the first stable release, and it holds the `latest` dist-tag:
 
 ```bash
-npm install @xzawed/keycloak-sdk@rc
+npm install @xzawed/keycloak-sdk
 ```
 
 > ⚠️ **npm was the one registry where a bare install silently handed you an RC — and it could not be fixed by hand.** npm assigns `latest` to a package's *first* version regardless of `--tag` and then refuses to remove it (`403` on `DELETE .../dist-tags/latest`), so `latest` and `rc` both pointed at `0.1.0-rc.2`, and a `"^0.1.0"` range failed with `ETARGET` at the same time. Publishing `0.1.0` is what moved `latest`; the `rc` tag still points at the prerelease. Releases remain human-gated: a publish runs only when a human pushes a `node-v*` tag to trigger [`.github/workflows/node-release.yml`](../../.github/workflows/node-release.yml) (npm Trusted Publishing / OIDC + provenance). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
@@ -351,7 +351,7 @@ The package ID is `Xzawed.Keycloak.Sdk`, and the root namespace is `Xzawed.Keycl
 dotnet add package Xzawed.Keycloak.Sdk --version 0.1.0   # or omit --version for latest
 ```
 
-> ⚠️ A plain `dotnet add package Xzawed.Keycloak.Sdk` fails while only the RC exists ("There are no stable versions available") — pass `--prerelease` or the exact version to opt in. Releases remain human-gated: a publish runs only when a human pushes a `dotnet-v*` tag to trigger [`.github/workflows/dotnet-release.yml`](../../.github/workflows/dotnet-release.yml) (requires the `NUGET_API_KEY` secret). For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> A plain `dotnet add package Xzawed.Keycloak.Sdk` now resolves `0.1.0`. While only the RC existed it failed outright ("There are no stable versions available") — opting in took `--prerelease` or the exact version. Releases remain human-gated: a publish runs only when a human pushes a `dotnet-v*` tag to trigger [`.github/workflows/dotnet-release.yml`](../../.github/workflows/dotnet-release.yml) (requires the `NUGET_API_KEY` secret). For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 

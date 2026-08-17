@@ -16,7 +16,7 @@ Every network method returns `Task<T>` and takes a trailing `CancellationToken c
 ## Install
 
 ```bash
-dotnet add package Xzawed.Keycloak.Sdk --prerelease
+dotnet add package Xzawed.Keycloak.Sdk
 ```
 
 The root namespace is `Xzawed.Keycloak` (Admin resources live in `Xzawed.Keycloak.Admin`).
