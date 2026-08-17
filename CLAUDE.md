@@ -1,5 +1,15 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=50286 max-lines=396 -->
+<!-- doc-budget: max-bytes=46531 max-lines=392 -->
+<!-- ⚠️ **2026-08-17(2): 50,286 → 46,531 · 396 → 392줄. 압축분만큼 래칫을 함께 내렸다(#215).**
+     적재 49,846 → 46,091 B(**−3,755 B**) / 393 → 389줄. 여유는 440 B / 3줄 그대로 옮겼다.
+     내린 곳 둘: (a) 「문서 유지 규칙」의 doc-guard 앵커 계약 해설 3문단 → `.claude/rules/ci.md`
+     (그 파일 `paths:`가 `scripts/**`를 포함해 가드를 고칠 때 자동으로 온다). (b) 포인터 없던
+     게차 16건 중 **280 B 초과 8건만** 스텁화 → 각 언어 rules + 신설 `.claude/rules/security.md`.
+     ⚠️ **나머지 8건은 일부러 남겼다** — 실측 평균 191 B로 포인터 있는 것의 평균(158 B)과 거의
+     같아, 옮겨도 절감이 노이즈이고 왕복 비용만 는다. 이슈 #215의 「16건 전부」는 그 점에서
+     과대추정이었다(예측 −2,484 B / 실제 −1,674 B가 게차분).
+     ⚠️ **게차 건수 96은 그대로다**(80+16 → 88+8). 「건수는 바닥이다」는 위 주석의 선언을 지킨다. -->
+
 <!-- ⚠️ **2026-08-17: 계상 기준이 raw → 적재로 바뀌었다. 예산 인상이 아니라 같은 예산의 재표기다.**
      블록 레벨 HTML 주석은 컨텍스트 주입 전에 제거되므로(code.claude.com/docs/en/memory
      #how-claude-md-files-load) 토큰을 1바이트도 쓰지 않는데, 그동안 래칫이 raw를 재서 그 4,116 B
@@ -190,18 +200,18 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 
 ## 핵심 게차 (Gotchas) — 2026-07-02 검증
 
-- ⚠️ **admin-client와 Keycloak 서버는 독립 버전 트랙이다 — 서버 라인과 같은 번호의 admin-client는 존재하지 않는다**(핀은 「확정 의존성」). `representation` 필드가 서버와 불일치할 수 있어 의존 필드는 실서버로 검증.
+- ⚠️ **(Java·Kotlin) admin-client와 Keycloak 서버는 독립 버전 트랙이다 — 서버 라인과 같은 번호의 admin-client는 존재하지 않는다**(핀은 「확정 의존성」). 상세: `.claude/rules/java.md`
 - ⚠️ **Maven Central은 Central Portal 경로만(구 OSSRH 2025-06-30 종료).** `central-publishing-maven-plugin:0.11.0` 사용 — 0.9.0 예제는 낡음.
 - ⚠️ **Testcontainers 2.0은 모듈명이 바뀌었다.** JUnit5 확장은 `testcontainers-junit-jupiter`(구 `junit-jupiter` 아님). `testcontainers-keycloak:4.3.1`이 KC 26.6 기본.
 - ⚠️ **JWT 검증 강화 필수(CVE-2026-11800).** 알고리즘 핀닝(`none` 거부)·iss/aud 검증·클록스큐 제한 — Nimbus는 building block만 제공, 안전한 기본값 없음.
 - ⚠️ **보안 기본선**: 토큰/시크릿 로깅 금지·완전 마스킹(`***`, 접두 노출 없음)·TLS 검증 기본 on·인메모리 토큰저장 + 교체 가능 `TokenStore` SPI.
-- ⚠️ **시크릿 메모리 위생은 경계가 있다.** Java `KeycloakConfig`는 `char[]`(방어복사)로 보관하나 하위 라이브러리(Nimbus `Secret`·admin-client, Python `str`)가 `String`을 요구해 사용 시점에 소거불가 `String`으로 복사됨 — char[]는 심층방어일 뿐 end-to-end 소거 보장 아님. 과대광고 금지.
-- ⚠️ **JWKS 재조회는 DoS-안전해야 한다(Python, 2026-07-03 감사).** 서명위조(`BadSignatureError`)는 재조회를 유발하지 않고 kid 미해결(`InvalidKeyIdError`→`TokenKeyError`)에만 재조회하며 최소간격(`_jwks_min_refetch`)으로 rate-limit — 위조 토큰마다 IdP를 때리는 DoS 증폭 차단. Java(Nimbus `JWKSourceBuilder`)는 이미 안전.
-- ⚠️ **admin 타임아웃·자원정리.** Java `AdminClient`는 connect/read 타임아웃을 `KeycloakBuilder.resteasyClient(...)`로 주입해야 무한대기 방지(미주입=스레드고갈 DoS). `close()`/`aclose()`는 admin뿐 아니라 auth 세션(requests/httpx)까지 정리(미정리=FD/커넥션풀 누수).
+- ⚠️ **시크릿 메모리 위생은 경계가 있다 — end-to-end 소거 보장이 아니므로 과대광고 금지.** 상세: `.claude/rules/security.md`
+- ⚠️ **(Python) JWKS 재조회는 DoS-안전해야 한다 — 서명위조는 재조회를 유발하지 않고 kid 미해결에만 재조회한다**(위조 토큰마다 IdP를 때리는 증폭 차단). Java는 Nimbus가 이미 안전. 상세: `.claude/rules/python.md`
+- ⚠️ **(Java) admin 타임아웃·자원정리 — 타임아웃 미주입은 스레드고갈 DoS, close 누락은 FD/커넥션풀 누수다.** 상세: `.claude/rules/java.md`
 - ⚠️ **어떤 Java OIDC 라이브러리도 자체 인증("certified") 아니다.** 완성 제품을 필요 시 OIDF에 별도 인증.
 - ⚠️ **Java 17+ javadoc은 doclint 기본 엄격.** `release` 프로파일 `maven-javadoc-plugin`에 `<doclint>none</doclint>`+`<failOnError>false</failOnError>` 없으면 문서경고로 `-javadoc.jar` 생성 실패 가능.
 - ⚠️ **Java 런타임 타깃은 21 LTS.** `maven.compiler.release=21`+enforcer `requireJavaVersion=[21,)`로 JDK21 미만 fail-fast. `maven-compiler-plugin`은 `3.11.0` 명시 고정. CI 전부 JDK21 단일.
-- ⚠️ **jackson-databind는 2.22.1 고정(dependencyManagement, dependabot 유지)** — CVE 대응 이력(2.21.2→2.21.4→2.21.5[CVE-2026-54515]→2.22.1). **보안 불변식**: 자체 `ObjectMapper`/default·polymorphic typing 금지, 신뢰된 Keycloak 응답만 고정 POJO로 역직렬화 — default typing 활성화·커스텀 JAX-RS Jackson provider 등록·미신뢰 JSON 다형 역직렬화 도입 금지.
+- ⚠️ **(Java) jackson-databind는 2.22.1 고정이고, 자체 `ObjectMapper`·default/polymorphic typing은 금지다**(CVE 대응 이력의 산물). 상세: `.claude/rules/java.md`
 - ⚠️ **(Java) 퍼블릭/PKCE 클라이언트에서 `char[]` 시크릿을 무조건 문자열화하면 맨 NPE다.** 상세: `.claude/rules/java.md`
 - ⚠️ **(Node) admin-client `findOne`류는 404에서 `null` 반환(선언 타입은 `undefined`).** 상세: `.claude/rules/node.md`
 - ⚠️ **(Go) gocloak은 네트워크 실패까지 `*gocloak.APIError`로 감싼다(`Code:0`).** 상세: `.claude/rules/go.md`
@@ -210,9 +220,9 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(Node) 타임아웃은 `Configuration.timeout`(초), admin-client는 `ConnectionConfig.timeout`(ms)로 주입.** 상세: `.claude/rules/node.md`
 - ⚠️ **(Node) PKCE `exchangeCode`는 `nonce` 필수 전달.** 상세: `.claude/rules/node.md`
 - ⚠️ **(Node) admin은 만료 시 재인증하려면 SDK provider를 `registerTokenProvider`로 배선한다 — `kc.auth()`는 호출하지 않는다(PR #63).** 상세: `.claude/rules/node.md`
-- ⚠️ **(Node) admin-client 핀이 `~26.7.0`인 것은 이력의 산물이다** — 26.7.0의 `decodeToken(undefined).split()` 크래시 회귀로 `~26.6.4`까지 좁혔다가(PR #62), 위 provider 배선이 그 경로를 근본 차단함을 통합테스트로 실증하고 전진했다(PR #48). 좁히기로 되돌리기 전에 배선을 먼저 볼 것.
+- ⚠️ **(Node) admin-client 핀 `~26.7.0`은 이력의 산물이다 — 좁히기로 되돌리기 전에 provider 배선을 먼저 볼 것.** 상세: `.claude/rules/node.md`
 - ⚠️ **(C#) `Keycloak.AuthServices.Sdk` 3.0.0은 net10 전용 → net8.0은 2.7.0 핀.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) `Microsoft.Extensions.DependencyInjection.Abstractions`의 10.x major는 net8 유지 정책으로 보류다(PR #57 close).** 9.x 안에 머무르되 AuthServices 2.7.0의 하한(9.0.8) 이상이어야 한다 — dependabot의 9.x 패치는 받고 10.x는 닫는다. 현재 핀은 아래 의존성 표에만 적는다(2차 정의 자리를 만들지 않는다).
+- ⚠️ **(C#) `Microsoft.Extensions.DependencyInjection.Abstractions`의 10.x major는 net8 유지 정책으로 보류다 — 9.x 패치는 받고 10.x는 닫는다.** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(C#) `Raw`는 users/groups/realm-read만 커버 — 그 밖은 파사드가 raw Admin REST로 직접 구현한다(한때 3건이 도달 불가능했다).** 상세: `.claude/rules/dotnet.md`
 - ⚠️ **(Rust) `search_users`의 `max`에 `Option`을 두지 말 것 — Keycloak은 미전송 시 조용히 100을 적용한다(무제한 아님).** 상세: `.claude/rules/rust.md`
 - ⚠️ **(C#) admin 타입드 커버리지는 users/groups/realm-get뿐.** 상세: `.claude/rules/dotnet.md`
@@ -273,7 +283,7 @@ Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/�
 - ⚠️ **(Kotlin) 신규 라이브러리 리스크 0.** 상세: `.claude/rules/kotlin.md`
 - ⚠️ **(Kotlin) 게시 아티팩트의 바이너리 메타데이터 버전은 KGP 버전이 아니라 `languageVersion`/`apiVersion`이 정한다 — 설정 없이 KGP 2.4.10으로 빌드하면 Kotlin 2.4 미만 소비자는 라이브러리를 아예 쓸 수 없다.** 상세: `.claude/rules/kotlin.md`
 - ⚠️ **(Java·Kotlin) `jwksMinRefetch`는 Nimbus 캐시 TTL(기본 5분) 미만이어야 한다** — 크면 `JWKSourceBuilder.build()`가 던지고, 그 foreign 예외가 공개 API로 새면 §4 위반이다(지금은 경계에서 `KeycloakConfigException`으로 변환). ⚠️ **JWKS rate-limit 테스트에는 반드시 대조군을 둘 것** — 캐시만으로도 통과해 하드닝 한 줄을 지워도 초록이 된다. 상세: `.claude/rules/java.md`·`.claude/rules/kotlin.md`
-- ⚠️ **JWKS 재조회 최소 간격 기본값은 아홉 언어 전부 30초다(2026-07-31 정렬).** 그 전엔 10·30·60초 세 갈래였는데, PR #71이 config화하며 각 언어 하드코딩 값을 둔 **산물**이었다(같은 위조 kid 폭주에 Ruby가 Python보다 IdP를 6배 자주 때렸다). 30초는 Nimbus `DEFAULT_RATE_LIMIT_MIN_INTERVAL`과 같아 외부 근거가 있는 유일 후보다. ⚠️ **60초를 버려서 잃은 것**: 30초는 키 로테이션 회복 창을 절반으로 줄이지만, rate-limit 상한은 60초에 1회 → 30초에 1회로 **DoS 증폭이 2배 느슨해진다**. 보안 문맥의 "창이 좁아짐"을 "더 조여졌다"로 읽지 말 것. **`clockSkew`(JWT `exp`/`nbf` 허용 오차)도 같은 불변식이고 역시 30초다**(한 언어만 커지면 거기서만 만료 토큰이 오래 산다). 둘 중 하나를 바꿀 땐 아홉 함께 — `test-security-defaults.sh`가 코드·문서·2차 자리를 본다.
+- ⚠️ **JWKS 재조회 최소 간격과 `clockSkew`는 아홉 언어 전부 30초다 — 하나만 바꾸지 말 것**(한 언어만 커지면 거기서만 DoS 증폭이 느슨해지거나 만료 토큰이 오래 산다). 정렬 경위·30초의 근거·"창이 좁아짐"을 "조여졌다"로 읽으면 안 되는 이유는 `.claude/rules/security.md` · 가드는 `test-security-defaults.sh`.
 - ⚠️ **(Java·Kotlin) `resteasyClient(...)` 주입은 admin-client의 `JacksonProvider` 등록을 통째로 우회한다** — `NON_NULL`과 `FAIL_ON_UNKNOWN_PROPERTIES=false`를 함께 잃어 버전 스큐에서 양방향으로 깨진다(26.0.11 `UserRepresentation.verifiableCredentials`에서 실제 발현). `buildTimeoutClient`가 프로바이더를 직접 등록한다. 상세: `.claude/rules/java.md`·`.claude/rules/kotlin.md`
 - ⚠️ **(Python) python-keycloak sync는 `allow_redirects`를 전달하지 않고, admin 세션이 둘(하나는 지연 생성)이라 바깥만 막으면 client_secret이 샌다.** 상세: `.claude/rules/python.md`
 - ⚠️ **(Python) joserfc는 기형 JWKS에서 joserfc 타입도 아닌 stdlib 예외를 던져 §4를 뚫는다** — SDK가 경계에서 변환한다. 상세: `.claude/rules/python.md`
@@ -431,13 +441,9 @@ dev(비앵커): `xUnit` 2.9.3 · `WireMock.Net` 2.15.0 · `coverlet.collector` 1
 
 **`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 앵커 스코프는 9개 언어 전부다** — `<!-- doc-guard: ... -->` 앵커가 의존성 표 9종(pom.xml/**pyproject.toml**/package.json/**go.mod**/csproj/composer.json/Cargo.toml/gemspec/build.gradle.kts)과 [docs/guides/getting-started.md](docs/guides/getting-started.md)의 언어별 "Required runtime" 문장(`kind=runtime`)을 합쳐 **50 facts / 19 anchors**를 기계 검증한다.
 
-⚠️ **런타임 앵커는 "앵커 뒤 3줄 안의 *첫* 백틱 스팬 중 숫자를 포함한 것"을 문서의 주장으로 읽는다** — 그래서 버전보다 먼저 오는 백틱 토큰에 숫자가 있으면 그걸 주장으로 오인한다. 실제로 걸렸던 둘: Java의 `` `--release 21` ``과 Go의 `` `golang.org/x/oauth2` ``(둘 다 숫자를 품는다). 두 절은 버전을 문장 앞으로 옮겨 해결했다. ⚠️ **Kotlin 앵커는 `jvmToolchain(21)`, 즉 JDK 툴체인을 검증한다 — Kotlin 언어 버전(2.2)이 아니다.** 그래서 그 절은 JDK 절을 먼저 두고 그 사실을 본문에 명시했다. 이걸 모르고 "Kotlin 버전을 가리키도록 고치면" 앵커가 21 vs 2.2로 깨진다.
-
 표의 dev/도구 의존성 절은 버전이 셀 안 산문에 있어 구조적으로 스코프 밖이다.
 
-⚠️ **앵커를 추가하면 `.github/workflows/repo-hygiene.yml`의 `--min-facts`/`--min-anchors`도 함께 올려야 한다.** 그 하한은 "앵커 주석만 지우고 표를 남기는" 자기기만을 막는 장치인데, 한때 `14/4`에 머물러 있고 실측은 이미 `28/7`이라 **앵커 절반이 사라져도 CI가 통과하는** 상태였다.
-
-✅ **버전 *제약 연산자* 사각지대는 닫혔다(2026-08-04).** 예전에는 `normalizeVersion()`이 비교 전에 선행 `=`/`^`/`~`/`>=`/`~>`를 떼어내 `=26.6.2`와 `26.6.2`를 같은 값으로 판정했고, Rust 3개 크레이트를 정확 핀에서 캐럿/틸드로 바꾼 변경에서 문서가 여전히 `=`를 주장하는데도 `doc-facts`가 통과한 실제 사례가 있었다 — **핀 방식 변경은 구조적으로 보이지 않는 드리프트**였다. 지금은 의존성 표(`kind=dep`)만 `normalizeRequirement()`로 **연산자까지 포함해** 대조한다. 최소 런타임(`kind=runtime`)은 그대로 연산자를 벗긴다 — 거기서는 `>=22`와 문서 관용 `22+`가 같은 말이라 연산자가 포맷이지만, 의존성에서는 `=`·`~`·`^`가 소비자에게 서로 다른 계약이라 값 자체이기 때문이다. ⚠️ **따라서 표 셀은 빌드 파일이 쓴 대로 적는다.** cargo에서 맨 `"4.0.1"`과 `"^4.0.1"`은 의미가 같지만 가드는 문자로 대조하므로, 매니페스트에 `^`를 명시하면 표도 함께 고쳐야 한다(npm은 맨 `22`와 `^22`가 실제로 다른 의미라 이 엄격함이 오히려 옳다). 전환 시 실측: 오탐 0건, 진짜 드리프트 1건(`keycloak` 셀이 `26.6.2`인데 `Cargo.toml`은 `~26.6.2`)만 잡혀 그 자리에서 고쳤다.
+⚠️ 앵커 계약의 **세부**는 `.claude/rules/ci.md` — 런타임 앵커가 무엇을 "주장"으로 읽는지(백틱 토큰 오인 2건·Kotlin은 JDK 툴체인을 본다) · 앵커 추가 시 `--min-facts`/`--min-anchors` 동반 인상 · `kind=dep`가 **제약 연산자까지** 대조하게 된 경위(그래서 표 셀은 빌드 파일이 쓴 대로 적는다).
 
 ### 문서 언어 규칙 (bilingual README + 영문 사용자 문서, PR #31·#32)
 
