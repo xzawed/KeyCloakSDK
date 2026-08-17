@@ -269,21 +269,21 @@ dev(테스트 csproj — **앵커 있음**):
 
 ## 현재 상태
 
-9개 언어 SDK 모두 `main` 병합 완료. **9개 언어 전부 첫 RC가 공개 레지스트리에 게시됐다**(좌표·버전은 아래 표) — 2026-08-16 Go 첫 태그로 9/9가 됐다. 배포는 여전히 전부 사람 승인 게이트다(사람이 태그를 민다). 정식(stable) 릴리스는 아직 어느 언어도 없다.
+9개 언어 SDK 모두 `main` 병합 완료. **9개 언어 전부 정식 `0.1.0`이 공개 레지스트리에 게시됐다**(좌표는 아래 표) — 2026-08-17, 각 언어가 RC를 한 번씩 태운 뒤다. 배포는 여전히 전부 사람 승인 게이트다(사람이 태그를 민다). 라인은 아직 pre-1.0이다.
 
 ⚠️ **Maven Central은 "워크플로 초록"과 "게시" 사이에 사람 클릭과 전파 지연이 둘 다 있다.** `release.yml`이 끝나도 Portal **스테이징**일 뿐이고, Publish 후에도 시차가 있다(실측: 첫 확인 404 → 3분 뒤 200, 검색 색인은 한참 뒤). **404로 "실패"를 결론내지 말 것** — 판정은 Portal 상태로 하고 repo1은 폴링한다. Kotlin도 같다.
 
 | 언어 | 배포명 | 태그 접두 | 배포 |
 |---|---|---|---|
-| Java | `io.github.xzawed:keycloak-sdk` (Maven Central) | `v*` | 게시됨(`0.1.0-RC1` RC) |
-| Python | `keycloak-sdk` (PyPI) | `py-v*` | 게시됨(`0.1.0rc1` RC) |
-| Node | `@xzawed/keycloak-sdk` (npm) | `node-v*` | 게시됨(`0.1.0-rc.2` RC) |
-| Go | `github.com/xzawed/KeyCloakSDK/go` (proxy.golang.org) | `go/v*` | 게시됨(`0.1.0-rc.1` RC) |
-| C#/.NET | `Xzawed.Keycloak.Sdk` (NuGet) | `dotnet-v*` | 게시됨(`0.1.0-rc.1` RC) |
-| PHP | `xzawed/keycloak-sdk` (Packagist) | `php-v*` | 게시됨(`0.1.0-rc.2` RC) |
-| Rust | `keycloak-sdk` (crates.io) | `rust-v*` | 게시됨(`0.1.0-rc.1` RC) |
-| Ruby | `keycloak-sdk` (RubyGems) | `ruby-v*` | 게시됨(`0.1.0.rc1` RC) |
-| Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` (Maven Central) | `kotlin-v*` | 게시됨(`0.1.0-RC1` RC · 하한 2.2+) |
+| Java | `io.github.xzawed:keycloak-sdk` (Maven Central) | `v*` | 게시됨(`0.1.0`) |
+| Python | `keycloak-sdk` (PyPI) | `py-v*` | 게시됨(`0.1.0`) |
+| Node | `@xzawed/keycloak-sdk` (npm) | `node-v*` | 게시됨(`0.1.0`) |
+| Go | `github.com/xzawed/KeyCloakSDK/go` (proxy.golang.org) | `go/v*` | 게시됨(`0.1.0`) |
+| C#/.NET | `Xzawed.Keycloak.Sdk` (NuGet) | `dotnet-v*` | 게시됨(`0.1.0`) |
+| PHP | `xzawed/keycloak-sdk` (Packagist) | `php-v*` | 게시됨(`0.1.0`) |
+| Rust | `keycloak-sdk` (crates.io) | `rust-v*` | 게시됨(`0.1.0`) |
+| Ruby | `keycloak-sdk` (RubyGems) | `ruby-v*` | 게시됨(`0.1.0`) |
+| Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` (Maven Central) | `kotlin-v*` | 게시됨(`0.1.0` · 하한 2.2+) |
 
 **릴리스-레디니스 감사**(`main` 병합, PR #104)로 릴리스 워크플로 불변식(태그↔매니페스트 가드·시크릿 미설정 시 fail-closed·발행 전 E2E 게이트·액션 SHA 핀·`permissions` 최소화)과 패키징 표면(LICENSE·영문 README·레지스트리 메타데이터, Rust 캐럿 전환 + `Cargo.lock` 커밋 + `keycloak::types` 재노출)을 갖췄다. PHP 선행작업(미러·`PHP_SPLIT_TOKEN`·Packagist 등록)도 끝났다.
 
@@ -311,5 +311,5 @@ dev(테스트 csproj — **앵커 있음**):
 
 - **README는 루트만 영한 미러**([`README.md`](README.md) ↔ [`README.ko.md`](README.ko.md), 동일 구조). 언어별 `<lang>/README.md`는 영문 단일이다.
 - **소비자 문서는 영문**([`docs/guides/`](docs/guides/)·[`CONTRIBUTING.md`](CONTRIBUTING.md)·[`DEPLOY.md`](DEPLOY.md)·`harness/`), **내부 문서는 한글**([`docs/governance/`](docs/governance/)·이 파일).
-- 게시된 것이 전부 프리릴리스이므로(9개 중 9개가 첫 RC 게시 · 정식 0) **라이브 레지스트리 배지 금지** — RC를 "최신 릴리스"로 보여준다.
+- 9개 중 9개가 정식 게시(`0.1.0`)이나 **라이브 레지스트리 배지는 여전히 금지** — 배지는 아홉 레지스트리를 실시간으로 물어 문서가 SSOT를 우회하게 만든다(버전 문자열의 SSOT는 `deploy-facts.sh`다).
 - ⚠️ 영문 문서 헤딩을 바꾸면 `#anchor`가 바뀐다. `getting-started.md`의 `## C# / .NET`(앵커 `#c--net`)은 양쪽 README가 링크한다.

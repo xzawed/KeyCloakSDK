@@ -4,7 +4,7 @@ An async-first Keycloak client library for .NET that covers both **Authenticatio
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **Pre-release** — the first release candidate (`0.1.0-rc.1`) is on NuGet (`dotnet add package Xzawed.Keycloak.Sdk --prerelease`); there is no stable release yet.
+> **`0.1.0` is on NuGet** — the first stable release. `dotnet add package Xzawed.Keycloak.Sdk` now resolves it without `--prerelease`.
 
 ## Requirements
 

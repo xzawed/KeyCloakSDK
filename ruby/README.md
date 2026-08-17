@@ -4,7 +4,7 @@ Authentication (OIDC / OAuth2) and the Admin REST API for [Keycloak](https://www
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) — one API surface, isomorphic across all of them: [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **Pre-release** — the first release candidate (`0.1.0.rc1`) is on RubyGems; there is no stable release yet. ⚠️ **RubyGems does not install a pre-release by default**: a bare `gem install keycloak-sdk` finds nothing until a stable version exists. Ask for it explicitly — `gem install keycloak-sdk --pre`, or pin the exact version as shown below.
+> **`0.1.0` is on RubyGems** — the first stable release. A bare `gem install keycloak-sdk` now resolves it. The earlier `0.1.0.rc1` is still there but, as before, RubyGems never picks a pre-release unless you ask with `--pre` or name it exactly.
 
 ## Requirements
 
@@ -14,16 +14,16 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · 
 ## Install
 
 ```bash
-gem install keycloak-sdk -v 0.1.0.rc1
+gem install keycloak-sdk -v 0.1.0
 ```
 
 Or in a `Gemfile`:
 
 ```ruby
-gem "keycloak-sdk", "0.1.0.rc1"
+gem "keycloak-sdk", "0.1.0"
 ```
 
-While `0.1.0.rc1` is the only release, the version must be explicit — `gem install keycloak-sdk` and a bare `gem "keycloak-sdk"` both skip pre-releases and resolve nothing. Drop the pin once a stable release exists.
+A bare `gem install keycloak-sdk` also works now that a stable release exists; the pin above just keeps the resolved version visible.
 
 > **Name mismatch, on purpose:** the gem is `keycloak-sdk` (hyphen) but the require path and module are `keycloak_sdk` / `KeycloakSdk` (underscore) — this avoids colliding with the existing `keycloak` gem's `Keycloak` module.
 

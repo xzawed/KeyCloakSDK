@@ -4,7 +4,7 @@ A coroutine-first Keycloak client library for Kotlin/JVM that covers both **Auth
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **Pre-release** — the first release candidate (`0.1.0-RC1`) is on Maven Central; there is no stable release yet. ⚠️ **Maven has no pre-release concept**: `0.1.0-RC1` is not "a prerelease of `0.1.0`", it is simply a different, lower-sorting coordinate — nothing filters it out and nothing falls back to it, so name the version explicitly as shown below. ⚠️ **Consumer floor: Kotlin 2.2+.** The published jar carries `@Metadata(mv=[2,2,0])` and declares `kotlin-stdlib 2.2.21`, so a Kotlin 2.2 project compiles against it — this is deliberately lower than the 2.4.10 toolchain used to build it. Maven Central is immutable: this RC stays there forever (no delete, no yank, no unlist).
+> **`0.1.0` is on Maven Central** — the first stable release. ⚠️ **Maven has no pre-release concept**, so the earlier `0.1.0-RC1` is a separate, lower-sorting coordinate rather than "a prerelease of `0.1.0`"; nothing filters it and nothing falls back to it, so name the version explicitly as shown below. ⚠️ **Consumer floor: Kotlin 2.2+.** The published jar carries `@Metadata(mv=[2,2,0])` and declares `kotlin-stdlib 2.2.21`, so a Kotlin 2.2 project compiles against it — deliberately lower than the 2.4.10 toolchain used to build it. Maven Central is immutable: every version published stays there forever (no delete, no yank, no unlist).
 
 ## Requirements
 
@@ -13,7 +13,7 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · 
 
 Every network call is a `suspend` function — blocking calls into the underlying JVM libraries run on `Dispatchers.IO` via `runInterruptible`. Only `createAuthorizationRequest` is synchronous, because it needs no network. Public API visibility is enforced with `explicitApi()`.
 
-The published `0.1.0-RC1` reuses the verified JVM stack of its sibling Java SDK — `org.keycloak:keycloak-admin-client` 26.0.11, `com.nimbusds:oauth2-oidc-sdk` 11.38.2, and `com.nimbusds:nimbus-jose-jwt` 10.9.1 — plus `kotlinx-coroutines-core` 1.11.0 for the coroutine boundary. Pins on `main` may already be ahead of this published artifact.
+The published `0.1.0` reuses the verified JVM stack of its sibling Java SDK — `org.keycloak:keycloak-admin-client`, `com.nimbusds:oauth2-oidc-sdk` and `com.nimbusds:nimbus-jose-jwt` — plus `kotlinx-coroutines-core` for the coroutine boundary. The exact pins are in the published POM; `main` may already be ahead of it.
 
 ## Install
 
@@ -21,7 +21,7 @@ Gradle Kotlin DSL:
 
 ```kotlin
 dependencies {
-    implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0-RC1")
+    implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0")
 }
 ```
 

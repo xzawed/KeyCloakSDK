@@ -8,12 +8,12 @@ English · [한국어](README.ko.md)
 
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Languages](https://img.shields.io/badge/languages-9-brightgreen)
-![Status](https://img.shields.io/badge/status-pre--release-orange)
+![Status](https://img.shields.io/badge/status-0.1.0%20(pre--1.0)-blue)
 ![Keycloak](https://img.shields.io/badge/Keycloak-26.6-informational)
 
 > "Polyglot" here means **programming languages**, not natural-language localization (i18n).
 >
-> ⚠️ **First release candidates are live for all nine languages** — every release is human-gated, and none of the nine has a stable release yet. Everything below also runs today from a clone: see [Try it today](#try-it-today).
+> ⚠️ **Stable `0.1.0` is live for all nine languages** — every release is human-gated, and the line is still pre-1.0. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
 
 ---
 
@@ -51,28 +51,52 @@ with KeycloakClient.create(config) as kc:
 
 ---
 
+## Install
+
+```bash
+pip install keycloak-sdk                              # Python
+npm install @xzawed/keycloak-sdk                      # Node
+go get github.com/xzawed/KeyCloakSDK/go@v0.1.0        # Go
+dotnet add package Xzawed.Keycloak.Sdk                # C# / .NET
+composer require xzawed/keycloak-sdk                  # PHP
+cargo add keycloak-sdk                                # Rust
+gem install keycloak-sdk                              # Ruby
+```
+
+JVM — add the coordinate to your build file:
+
+```
+io.github.xzawed:keycloak-sdk:0.1.0                   # Java   (Maven Central)
+io.github.xzawed:keycloak-sdk-kotlin:0.1.0            # Kotlin (Maven Central)
+```
+
+Full snippets per build tool (Maven XML, Gradle Kotlin DSL, `Gemfile`, `Cargo.toml`) are in the [getting-started guide](docs/guides/getting-started.md).
+
 ## Try it today
 
-Registry installs exist so far only as first RCs — either way, the whole path works from a clone:
+You need a Keycloak **server** to talk to — this is a client library, and the server is a separate product:
 
 ```bash
 # 1) a Keycloak server to talk to
 docker run -p 8080:8080 \
   -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
   quay.io/keycloak/keycloak:26.6 start-dev
+```
 
-# 2) the SDK, from source — Python shown, every language has an equivalent
+Then create a **confidential client with its service account enabled** in the realm — that pair is the `client_id` / `client_secret` the examples take. For a production server rather than a throwaway container, see [deploying a Keycloak server](docs/guides/deploying-keycloak-server.md).
+
+To develop against the SDK itself rather than a released version, install from a clone — Python shown, every language has an equivalent in the [getting-started guide](docs/guides/getting-started.md):
+
+```bash
 git clone https://github.com/xzawed/KeyCloakSDK.git
 pip install -e KeyCloakSDK/python
 ```
-
-Then create a confidential client with its service account enabled in the realm — that pair is the `client_id` / `client_secret` the examples take. Per-language local installs (Maven · Gradle · npm · go · dotnet · composer · cargo · bundler) and a runnable example for each are in the [getting-started guide](docs/guides/getting-started.md).
 
 ---
 
 ## Languages
 
-| Language | Runtime · idiom | Package *(registry availability: see [Status](#status))* | Example |
+| Language | Runtime · idiom | Package *(all on public registries at `0.1.0`)* | Example |
 |---|---|---|---|
 | **Java** | JDK 21+ · blocking | `io.github.xzawed:keycloak-sdk` (Maven Central) | [QuickStart.java](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) |
 | **Python** | 3.10+ · sync + async (`aio`) | `keycloak-sdk` (PyPI) | [quickstart.py](python/examples/quickstart.py) · [async](python/examples/async_quickstart.py) |
@@ -105,7 +129,7 @@ Secrets and tokens are masked in logs and serialization, and TLS verification is
 
 All nine SDKs are feature-complete and merged to `main`. Each is verified against a **real Keycloak 26.6 server** (Testcontainers; PHP and Ruby shell out to the docker CLI). Logic modules are held to a line ≥ 90% coverage gate; six languages also gate branch ≥ 85% (Go, PHP and Rust measure lines only). Security cores were reviewed adversarially. Configurable JWT signature algorithms and dependency CVE audits apply across all nine. OIDC nonce / `id_token` replay protection is in **all nine**: `create*` always issues a nonce and puts it on the authorization URL; `exchange*` fully validates the `id_token` (signature · `iss` · `aud` · `exp`) and compares the nonce claim when the caller passes that value back. Omitting the nonce argument still skips id_token validation — that opt-out is the shared pattern, not a Ruby-only exception.
 
-Everything is **pre-1.0 (`0.1.0` line)**. All nine have shipped their first release candidates to public registries — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.2 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 · crates.io `keycloak-sdk` 0.1.0-rc.1 · RubyGems `keycloak-sdk` 0.1.0.rc1 · npm `@xzawed/keycloak-sdk` 0.1.0-rc.2 · Maven Central `io.github.xzawed:keycloak-sdk` 0.1.0-RC1 · Maven Central `io.github.xzawed:keycloak-sdk-kotlin` 0.1.0-RC1 · Go module proxy `github.com/xzawed/KeyCloakSDK/go` 0.1.0-rc.1 — each one behind a human tag gate, and **no language has a stable release yet**. See [DEPLOY.md](DEPLOY.md) for that procedure, and [SECURITY.md](SECURITY.md) for the security policy and what pre-1.0 means here.
+Everything is **pre-1.0 (`0.1.0` line)**. All nine have shipped a stable release to public registries — Packagist `xzawed/keycloak-sdk` 0.1.0 · PyPI `keycloak-sdk` 0.1.0 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0 · crates.io `keycloak-sdk` 0.1.0 · RubyGems `keycloak-sdk` 0.1.0 · npm `@xzawed/keycloak-sdk` 0.1.0 · Maven Central `io.github.xzawed:keycloak-sdk` 0.1.0 · Maven Central `io.github.xzawed:keycloak-sdk-kotlin` 0.1.0 · Go module proxy `github.com/xzawed/KeyCloakSDK/go` v0.1.0 — each one behind a human tag gate, and each preceded by a release candidate that stays on its registry. See [DEPLOY.md](DEPLOY.md) for that procedure, and [SECURITY.md](SECURITY.md) for the security policy and what pre-1.0 means here.
 
 ---
 
