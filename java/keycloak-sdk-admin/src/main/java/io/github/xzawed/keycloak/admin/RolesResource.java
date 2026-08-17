@@ -33,6 +33,16 @@ public final class RolesResource {
     return AdminExceptions.call(delegate::list);
   }
 
+  /**
+   * 현재 이름으로 주소를 잡아 역할을 갱신한다. {@code representation.name}에 새 이름을 주면
+   * rename이다.
+   *
+   * <p>⚠️ 경로({@code name})와 body({@code representation})를 합치지 말 것.
+   */
+  public void update(String name, RoleRepresentation representation) {
+    AdminExceptions.run(() -> delegate.get(name).update(representation));
+  }
+
   public void delete(String name) {
     AdminExceptions.run(() -> delegate.deleteRole(name));
   }

@@ -41,6 +41,15 @@ public final class GroupsResource {
     return AdminExceptions.call(() -> delegate.groups(first, max));
   }
 
+  /**
+   * id로 주소를 잡아 그룹을 갱신한다. {@code representation.name}에 새 이름을 주면 rename이다.
+   *
+   * <p>⚠️ 경로({@code id})와 body({@code representation})를 합치지 말 것.
+   */
+  public void update(String id, GroupRepresentation representation) {
+    AdminExceptions.run(() -> delegate.group(id).update(representation));
+  }
+
   public void delete(String id) {
     AdminExceptions.run(() -> delegate.group(id).remove());
   }

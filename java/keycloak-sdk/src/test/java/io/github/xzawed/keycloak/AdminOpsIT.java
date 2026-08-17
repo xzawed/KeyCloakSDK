@@ -9,6 +9,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.keycloak.representations.idm.GroupRepresentation;
+import org.keycloak.representations.idm.RealmRepresentation;
+import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -62,6 +65,46 @@ class AdminOpsIT {
   void raw_exposesServerInfoEscapeHatch() {
     try (KeycloakClient client = KeycloakClient.create(config())) {
       assertNotNull(client.admin().raw().serverInfo().getInfo());
+    }
+  }
+
+  /**
+   * list·update가 실서버에 반영되는지. ⚠️ update 셋은 전부 경로(주소)와 body(새 값)를
+   * 분리해 넘긴다 — 합치면 rename이 조용한 no-op이 된다.
+   */
+  @Test
+  void rolesGroupsRealms_listAndUpdate() {
+    try (KeycloakClient client = KeycloakClient.create(config())) {
+      var admin = client.admin();
+
+      RoleRepresentation role = new RoleRepresentation();
+      role.setName("e2e-role");
+      admin.roles().create(role);
+      RoleRepresentation roleUpd = new RoleRepresentation();
+      roleUpd.setName("e2e-role");
+      roleUpd.setDescription("updated by e2e");
+      admin.roles().update("e2e-role", roleUpd);
+      assertEquals("updated by e2e", admin.roles().get("e2e-role").orElseThrow().getDescription());
+      admin.roles().delete("e2e-role");
+
+      GroupRepresentation group = new GroupRepresentation();
+      group.setName("e2e-group");
+      String gid = admin.groups().create(group);
+      GroupRepresentation groupUpd = new GroupRepresentation();
+      groupUpd.setName("e2e-group-renamed");
+      admin.groups().update(gid, groupUpd);
+      assertEquals("e2e-group-renamed", admin.groups().get(gid).orElseThrow().getName());
+      admin.groups().delete(gid);
+
+      // 서비스 계정은 보통 자기 렐름만 본다 — 포함 여부만 본다.
+      assertTrue(admin.realms().list().stream().anyMatch(r -> "it-realm".equals(r.getRealm())));
+
+      RealmRepresentation realmUpd = new RealmRepresentation();
+      realmUpd.setRealm("it-realm");
+      realmUpd.setDisplayName("updated by e2e");
+      admin.realms().update("it-realm", realmUpd);
+      assertEquals(
+          "updated by e2e", admin.realms().get("it-realm").orElseThrow().getDisplayName());
     }
   }
 }

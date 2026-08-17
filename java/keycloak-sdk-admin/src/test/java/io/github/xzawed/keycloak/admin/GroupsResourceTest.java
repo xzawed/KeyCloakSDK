@@ -86,4 +86,21 @@ class GroupsResourceTest {
     GroupsResource groups = new GroupsResource(kc);
     assertThrows(KeycloakNotFoundException.class, () -> groups.delete("missing"));
   }
+
+  /** 경로(id)와 body(새 이름)를 분리해야 rename이 된다. */
+  @Test void update_addressesByIdAndPassesBodyThrough() {
+    org.keycloak.admin.client.resource.GroupsResource kc =
+        mock(org.keycloak.admin.client.resource.GroupsResource.class);
+    org.keycloak.admin.client.resource.GroupResource gr =
+        mock(org.keycloak.admin.client.resource.GroupResource.class);
+    when(kc.group("g-1")).thenReturn(gr);
+    GroupRepresentation rep = new GroupRepresentation();
+    rep.setName("team-renamed");
+
+    new GroupsResource(kc).update("g-1", rep);
+
+    verify(kc).group("g-1");
+    verify(gr).update(rep);
+  }
+
 }

@@ -1,5 +1,6 @@
 package io.github.xzawed.keycloak.admin;
 
+import java.util.List;
 import java.util.Optional;
 import org.keycloak.representations.idm.RealmRepresentation;
 
@@ -28,6 +29,24 @@ public final class RealmsResource {
 
   public Optional<RealmRepresentation> get(String realmName) {
     return Optional.of(AdminExceptions.call(() -> delegate.realm(realmName).toRepresentation()));
+  }
+
+  /**
+   * 호출자가 볼 수 있는 렐름 전부. 서비스 계정은 보통 자기 렐름만 본다 — 전체를 가정하지 말 것.
+   */
+  public List<RealmRepresentation> list() {
+    return AdminExceptions.call(delegate::findAll);
+  }
+
+  /**
+   * 현재 이름으로 주소를 잡아 렐름을 갱신한다. {@code representation.realm}에 새 이름을 주면
+   * rename이다.
+   *
+   * <p>⚠️ 경로({@code realmName})와 body({@code representation})를 합치지 말 것 — 합치면 rename이
+   * 조용한 no-op이 된다.
+   */
+  public void update(String realmName, RealmRepresentation representation) {
+    AdminExceptions.run(() -> delegate.realm(realmName).update(representation));
   }
 
   public void delete(String realmName) {
