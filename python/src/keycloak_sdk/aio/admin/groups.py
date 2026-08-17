@@ -31,5 +31,9 @@ class AsyncGroupsResource:
     async def list(self, first: int = 0, max: int = 100) -> list[dict[str, Any]]:
         return await acall(self._admin.a_get_groups({"first": first, "max": max}))
 
+    async def update(self, group_id: str, rep: dict[str, Any]) -> None:
+        """id로 주소를 잡아 갱신한다(경로/body 분리 — rename 가능)."""
+        await acall(self._admin.a_update_group(group_id, rep))
+
     async def delete(self, group_id: str) -> None:
         await acall(self._admin.a_delete_group(group_id))

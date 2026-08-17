@@ -27,5 +27,12 @@ class RolesResource:
     def list(self) -> list[dict[str, Any]]:
         return call(lambda: self._admin.get_realm_roles())
 
+    def update(self, name: str, rep: dict[str, Any]) -> None:
+        """현재 이름으로 주소를 잡아 갱신한다. `rep["name"]`에 새 이름을 주면 rename이다.
+
+        경로(`name`)와 body(`rep`)를 합치지 말 것.
+        """
+        call(lambda: self._admin.update_realm_role(name, rep))
+
     def delete(self, name: str) -> None:
         call(lambda: self._admin.delete_realm_role(name))

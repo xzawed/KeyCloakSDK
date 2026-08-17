@@ -85,3 +85,21 @@ def test_delete_translates_notfound():
 
     with pytest.raises(KeycloakNotFoundError):
         GroupsResource(kc).delete("missing")
+
+
+def test_update_keeps_path_and_body_separate():
+    """경로(id)와 body(새 이름)를 분리해 넘겨야 rename이 된다."""
+    kc = _admin()
+
+    result = GroupsResource(kc).update("g-1", {"name": "team-renamed"})
+
+    kc.update_group.assert_called_once_with("g-1", {"name": "team-renamed"})
+    assert result is None
+
+
+def test_update_translates_notfound():
+    kc = _admin()
+    kc.update_group.side_effect = KeycloakGetError("no", response_code=404)
+
+    with pytest.raises(KeycloakNotFoundError):
+        GroupsResource(kc).update("missing", {})

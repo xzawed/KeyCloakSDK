@@ -24,5 +24,13 @@ class AsyncRealmsResource:
         전파된다(None을 반환하지 않음)."""
         return await acall(self._admin.a_get_realm(realm_name))
 
+    async def list(self) -> list[dict[str, Any]]:
+        """호출자가 볼 수 있는 realm 전부. sync `RealmsResource.list`와 동형."""
+        return await acall(self._admin.a_get_realms())
+
+    async def update(self, realm_name: str, rep: dict[str, Any]) -> None:
+        """현재 이름으로 주소를 잡아 갱신한다(경로/body 분리 — rename 가능)."""
+        await acall(self._admin.a_update_realm(realm_name, rep))
+
     async def delete(self, realm_name: str) -> None:
         await acall(self._admin.a_delete_realm(realm_name))

@@ -31,5 +31,12 @@ class GroupsResource:
     def list(self, first: int = 0, max: int = 100) -> list[dict[str, Any]]:
         return call(lambda: self._admin.get_groups({"first": first, "max": max}))
 
+    def update(self, group_id: str, rep: dict[str, Any]) -> None:
+        """id로 주소를 잡아 갱신한다. `rep["name"]`에 새 이름을 주면 rename이다.
+
+        경로(`group_id`)와 body(`rep`)를 합치지 말 것.
+        """
+        call(lambda: self._admin.update_group(group_id, rep))
+
     def delete(self, group_id: str) -> None:
         call(lambda: self._admin.delete_group(group_id))
