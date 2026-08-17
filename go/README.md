@@ -4,7 +4,7 @@ An idiomatic Go SDK for [Keycloak](https://www.keycloak.org/) covering both OIDC
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) — one API shape, nine idioms: [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **Pre-release** — the first release candidate (`v0.1.0-rc.1`) is on the Go module proxy; there is no stable release yet. Go has no registry: the `go/v0.1.0-rc.1` **tag** is the release, and `proxy.golang.org` cached it on first request. Measured, a bare `go get github.com/xzawed/KeyCloakSDK/go` (and `@latest`) resolves this RC today, because the `go` command falls back to a pre-release when a module has no stable version — pin explicitly as shown below if you mean to stay on it. ⚠️ The proxy cache is immutable: this RC stays fetchable by exact version forever, and the only remedy for a bad version is a `retract` directive in a *later* release.
+> **`v0.1.0` is on the Go module proxy** — the first stable release. Go has no registry: the `go/v0.1.0` **tag** is the release, and `proxy.golang.org` cached it on first request. A bare `go get github.com/xzawed/KeyCloakSDK/go` (and `@latest`) now resolves it rather than the earlier `v0.1.0-rc.1`, since the `go` command only falls back to a pre-release when a module has no stable version. ⚠️ The proxy cache is immutable: every published version stays fetchable by exact version forever, and the only remedy for a bad one is a `retract` directive in a *later* release.
 
 ## Requirements
 
@@ -12,10 +12,10 @@ Go **1.25+** (`go.mod` declares `go 1.25.0`; `golang.org/x/oauth2` v0.36 sets th
 
 ## Install
 
-Go modules have no registry — the VCS tag *is* the release. This SDK lives in the `go/` subdirectory of a monorepo, so its release tags are prefixed `go/v...` while the import path carries the `/go` suffix and the package name is `keycloak`. The first tag `go/v0.1.0-rc.1` is published, so the module resolves from the Go module proxy:
+Go modules have no registry — the VCS tag *is* the release. This SDK lives in the `go/` subdirectory of a monorepo, so its release tags are prefixed `go/v...` while the import path carries the `/go` suffix and the package name is `keycloak`. The `go/v0.1.0` tag is published, so the module resolves from the Go module proxy:
 
 ```bash
-go get github.com/xzawed/KeyCloakSDK/go@v0.1.0-rc.1
+go get github.com/xzawed/KeyCloakSDK/go@v0.1.0
 ```
 
 To work against a local checkout instead, clone the monorepo and build under `go/`, or add a `replace`:

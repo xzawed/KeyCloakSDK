@@ -30,7 +30,13 @@ for L in $DEPLOY_LANGS; do
   assert_ok test -f "$f"
 
   # 배너는 첫머리에 있어야 한다 — 소비자가 레지스트리 페이지에서 처음 보는 줄이다.
-  banner="$(sed -n '1,12p' "$f" | grep -m1 '^> \*\*Pre-release\*\*' || true)"
+  #
+  # ⚠️ **마커는 라벨을 보지 않는다.** 예전에는 `^> \*\*Pre-release\*\*`로 찾았는데, 아홉이
+  # 전부 정식 게시되면서 그 라벨 자체가 틀린 값이 됐고 배너를 고치면 가드가 배너를 **못 찾아**
+  # 실패했다(추출 실패는 "낡았다"와 구분되지 않는다). 지금은 첫머리의 **굵은 인용줄**을
+  # 배너로 본다 — 아홉 전부 7행에 정확히 하나이고(실측), 게시/미게시 판정은 아래 내용
+  # 어서션이 한다. 라벨을 다시 하드코딩하지 말 것.
+  banner="$(sed -n '1,12p' "$f" | grep -m1 '^> \*\*' || true)"
   assert_ok test -n "$banner"
   [ -n "$banner" ] || continue
 
@@ -119,7 +125,9 @@ fi
 # 시끄럽게 실패해야 한다).
 for f in README.md SECURITY.md docs/guides/getting-started.md; do
   # 앵커 줄 + 뒤 2줄. SECURITY.md는 그 문장이 하드랩돼 있어 한 줄로는 수사를 놓친다.
-  claim="$(grep -m1 -A2 -E 'on a public registry|shipped a first|shipped their first' "$ROOT/$f" || true)"
+  # ⚠️ 앵커 정규식에 **정식 수사도** 넣는다 — RC 문구만 겨누면 정식 전환 때 앵커를 못 찾아
+  # "낡았다"가 아니라 "추출 실패"로 떨어진다(배너 마커에서 겪은 것과 같은 부류).
+  claim="$(grep -m1 -A2 -E 'on a public registry|shipped a first|shipped their first|shipped a stable' "$ROOT/$f" || true)"
   assert_ok test -n "$claim"
   [ -n "$claim" ] || continue
   up="$(printf '%s' "$pub_en" | sed 's/^./\U&/')"
@@ -170,8 +178,54 @@ Pub_en="$(printf '%s' "$pub_en" | sed 's/^./\U&/')"
 # `the other one languages are …`를, 0개면 `나머지 0 언어`를 요구하게 되고, 문서를 옳은 말로
 # 쓰면 CI가 빨개진다(가드가 문서를 틀리게 만드는 상태 — `test-deploy-md.sh` 상단이 기록한
 # "zero tags" 실패와 같은 부류다).
-if [ "$unpub_n" -eq 0 ]; then
-  # 아홉 전부 게시. "나머지 N개" 수사는 **존재해선 안 되고**, 그 자리마다 "전부"를 요구한다.
+# ---- 2026-08-17(2): 갈래가 하나 더 늘었다 — 게시 여부만으로는 부족하다 ----
+#
+# 위 갈래는 **게시/미게시**만 본다. 아홉이 전부 `0.1.0` 정식으로 올라가자 그 이분법으로는
+# 잡히지 않는 상태가 생겼다: 게시 주장은 여전히 참인데 **"첫 RC"·"정식 없음" 수사가 거짓**이
+# 된다. 실제로 `claim_at`이 전부 초록인 채로 여덟 문서가 "no stable release yet"을 말하고
+# 있었다(가드가 문구 **접두**를 보기 때문이다).
+#
+# 그래서 판정을 SSOT에서 파생한다 — 하드코딩이 아니라 `df_published_version`이 프리릴리스
+# 표기인지 센다. 갈래를 **둘 다 남기는** 이유는 위와 같다: 열 번째 언어가 RC로 첫 게시되는
+# 순간 RC 수사가 다시 옳아지고 그 가지가 자동으로 재무장한다.
+prerel_n=0
+for _l in $DEPLOY_LANGS; do
+  _v="$(df_published_version "$_l")"
+  [ -n "$_v" ] || continue
+  if df_is_prerelease "$_v"; then prerel_n=$((prerel_n + 1)); fi
+done
+
+if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
+  # 아홉 전부 **정식** 게시. RC 수사와 "정식 없음"은 존재해선 안 된다.
+  claim_at README.md "Stable \`0.1.0\` is live for all $pub_en languages"        "상단 배너"
+  claim_at README.md "All $pub_en have shipped a stable release"                 "하단 서술"
+  claim_at SECURITY.md "All $pub_en SDKs have shipped a stable"                  "게시 열거"
+  claim_at docs/guides/getting-started.md "All $pub_en are on a public registry" "상단 배너"
+
+  claim_at CLAUDE.md "${pub_n}개 언어 전부 정식 \`0.1.0\`이 공개 레지스트리에 게시됐다" "현재 상태(게시 수)"
+  claim_at CLAUDE.md "9개 중 ${pub_n}개가 정식 게시"                                    "문서 언어 규칙 절"
+
+  claim_at DEPLOY.md "**all $pub_en languages are published"        "릴리스 워크플로 상태(게시 수)"
+  claim_at CHANGELOG.md "지금까지 ${pub_ko} 언어 전부가"             "폴리글랏 안내(게시 수)"
+
+  claim_at docs/roadmap/language-support.md "**All $pub_en are now live as stable releases**" "step-0(게시 수)"
+  claim_at DEPLOY.md "All $pub_en languages have now published"     "§7 첫 실행 경고(게시 수)"
+  claim_at docs/roadmap/language-support.md "all $pub_en have since shipped a stable release" "머리말(게시 수)"
+
+  # ⚠️ 부정 어서션 — 긍정만 걸면 정식 문장을 **추가**하고 옛 "정식 없음"을 **남겨둔** 자기모순이
+  # 통과한다. 위 published/unpublished 갈래가 「미게시」로 막는 것과 같은 부류다.
+  for _cf in README.md README.ko.md SECURITY.md DEPLOY.md CLAUDE.md \
+             docs/guides/getting-started.md docs/roadmap/language-support.md; do
+    _ct="$(cat "$ROOT/$_cf")"
+    assert_not_contains "$_ct" "no stable release yet" \
+      "$_cf 에 아홉 전부 정식 게시인데 「정식 없음」 수사가 남아 있다"
+    assert_not_contains "$_ct" "No language has a stable release" \
+      "$_cf 에 아홉 전부 정식 게시인데 「정식 없음」 수사가 남아 있다"
+    assert_not_contains "$_ct" "정식(stable) 릴리스는 아직" \
+      "$_cf 에 아홉 전부 정식 게시인데 「정식 없음」 수사가 남아 있다"
+  done
+elif [ "$unpub_n" -eq 0 ]; then
+  # 아홉 전부 게시됐으나 일부(또는 전부)가 프리릴리스. "나머지 N개" 수사는 존재해선 안 된다.
   claim_at README.md "First release candidates are live for all $pub_en languages" "상단 배너"
   claim_at README.md "All $pub_en have shipped their first release candidates"     "하단 서술"
   claim_at SECURITY.md "All $pub_en SDKs have shipped a first"                     "게시 열거"
@@ -263,9 +317,14 @@ assert_eq "$pub_n" "$((_rows_all - _rows_gated))" \
 
 # 한글 미러 — 영문과 같은 사실을 한글 수사로 말한다(README.md와 동일 구조의 미러라는 규칙).
 ko_t="$(cat "$ROOT/README.ko.md")"
-if [ "$unpub_n" -eq 0 ]; then
+if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
   # 두 자리를 **서로 다른 문자열**로 겨눈다 — 한쪽만 고치고 다른 쪽을 남기는 절반짜리 수정을
   # 막기 위해서다(영문 README와 같은 이유로 상단/하단이 나뉘어 있다).
+  assert_contains "$ko_t" "$pub_ko 언어 전부 정식 \`0.1.0\`이 공개 레지스트리에 게시됐습니다" \
+    "README.ko.md 상단 배너가 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
+  assert_contains "$ko_t" "$pub_ko 전부 정식 릴리스를 공개 레지스트리에 게시했습니다" \
+    "README.ko.md 하단 서술이 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
+elif [ "$unpub_n" -eq 0 ]; then
   assert_contains "$ko_t" "$pub_ko 언어 전부 첫 릴리스 후보(RC)가 공개 레지스트리에 게시됐습니다" \
     "README.ko.md 상단 배너가 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
   assert_contains "$ko_t" "$pub_ko 전부 첫 릴리스 후보(RC)를 공개 레지스트리에 게시했습니다" \

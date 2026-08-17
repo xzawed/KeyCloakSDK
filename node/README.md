@@ -4,7 +4,7 @@ A TypeScript SDK for [Keycloak](https://www.keycloak.org/) covering both **Authe
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .NET · PHP · Rust · Ruby · Kotlin) — idiomatic in each language, isomorphic across all of them. Monorepo: <https://github.com/xzawed/KeyCloakSDK>
 
-> **Pre-release** — the first release candidate (`0.1.0-rc.2`) is on npm; there is no stable release yet. It carries **both** the `rc` and `latest` dist-tags, because npm assigns `latest` to a package's first version regardless of `--tag` and then refuses to let that tag be removed. So a bare `npm install @xzawed/keycloak-sdk` gives you this RC today — ask for it explicitly instead: `npm install @xzawed/keycloak-sdk@rc`, or pin `0.1.0-rc.2`.
+> **`0.1.0` is on npm** — the first stable release, and it now holds the `latest` dist-tag. That matters here: npm had assigned `latest` to this package's first version (`0.1.0-rc.2`) regardless of `--tag` and then refused to let the tag be removed, so until `0.1.0` shipped a bare install handed you an RC. It no longer does. The `rc` tag still points at `0.1.0-rc.2`.
 
 ## Requirements
 
@@ -16,13 +16,13 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .
 ## Install
 
 ```bash
-npm install @xzawed/keycloak-sdk@rc
+npm install @xzawed/keycloak-sdk
 ```
 
-⚠️ **A bare `npm install @xzawed/keycloak-sdk` also resolves this release candidate right now — ask for `@rc` anyway.** The workflow published under the `rc` tag, but npm assigns `latest` on a package's *first* version regardless of `--tag`, and it refuses to let that tag be removed (`403` on `DELETE .../dist-tags/latest`). So `latest` and `rc` currently point at the same prerelease, and a bare install silently gives you an RC. ⚠️ A `^0.1.0` **range does not** — SemVer ranges exclude prereleases, so it fails with `ETARGET` (measured 2026-08-13: `npm install "@xzawed/keycloak-sdk@^0.1.0" --dry-run` → `notarget No matching version found`, while the bare install resolves `0.1.0-rc.2`). Being explicit keeps that choice visible — and it keeps working when a stable release takes over `latest`. Pin the exact version if you would rather not track the `rc` tag:
+A bare install now resolves `0.1.0`, and so does a `^0.1.0` range — that range used to fail with `ETARGET`, because SemVer ranges exclude prereleases and a prerelease was all that existed. Pin the exact version if you would rather not follow `latest`:
 
 ```bash
-npm install @xzawed/keycloak-sdk@0.1.0-rc.2
+npm install @xzawed/keycloak-sdk@0.1.0
 ```
 
 ## Quickstart

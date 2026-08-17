@@ -4,7 +4,7 @@ Authentication (OIDC / OAuth2) and the Admin REST API for [Keycloak](https://www
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) — one API surface, isomorphic across all of them: [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **Pre-release** — the first release candidate (`0.1.0rc1`) is on PyPI; there is no stable release yet. Note that a bare `pip install keycloak-sdk` currently resolves this RC, because pip falls back to pre-releases when only pre-releases exist.
+> **`0.1.0` is on PyPI** — the first stable release. A bare `pip install keycloak-sdk` now resolves it, and pip's default skip-prereleases behaviour is back in effect, so the earlier `0.1.0rc1` no longer installs unless you ask for it by name or with `--pre`.
 
 ## Requirements
 

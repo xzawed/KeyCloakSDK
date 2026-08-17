@@ -13,7 +13,7 @@ English · [한국어](README.ko.md)
 
 > "Polyglot" here means **programming languages**, not natural-language localization (i18n).
 >
-> ⚠️ **First release candidates are live for all nine languages** — every release is human-gated, and none of the nine has a stable release yet. Everything below also runs today from a clone: see [Try it today](#try-it-today).
+> ⚠️ **Stable `0.1.0` is live for all nine languages** — every release is human-gated, and the line is still pre-1.0. Everything below also runs today from a clone: see [Try it today](#try-it-today).
 
 ---
 
@@ -105,7 +105,7 @@ Secrets and tokens are masked in logs and serialization, and TLS verification is
 
 All nine SDKs are feature-complete and merged to `main`. Each is verified against a **real Keycloak 26.6 server** (Testcontainers; PHP and Ruby shell out to the docker CLI). Logic modules are held to a line ≥ 90% coverage gate; six languages also gate branch ≥ 85% (Go, PHP and Rust measure lines only). Security cores were reviewed adversarially. Configurable JWT signature algorithms and dependency CVE audits apply across all nine. OIDC nonce / `id_token` replay protection is in **all nine**: `create*` always issues a nonce and puts it on the authorization URL; `exchange*` fully validates the `id_token` (signature · `iss` · `aud` · `exp`) and compares the nonce claim when the caller passes that value back. Omitting the nonce argument still skips id_token validation — that opt-out is the shared pattern, not a Ruby-only exception.
 
-Everything is **pre-1.0 (`0.1.0` line)**. All nine have shipped their first release candidates to public registries — Packagist `xzawed/keycloak-sdk` 0.1.0-rc.2 · PyPI `keycloak-sdk` 0.1.0rc1 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0-rc.1 · crates.io `keycloak-sdk` 0.1.0-rc.1 · RubyGems `keycloak-sdk` 0.1.0.rc1 · npm `@xzawed/keycloak-sdk` 0.1.0-rc.2 · Maven Central `io.github.xzawed:keycloak-sdk` 0.1.0-RC1 · Maven Central `io.github.xzawed:keycloak-sdk-kotlin` 0.1.0-RC1 · Go module proxy `github.com/xzawed/KeyCloakSDK/go` 0.1.0-rc.1 — each one behind a human tag gate, and **no language has a stable release yet**. See [DEPLOY.md](DEPLOY.md) for that procedure, and [SECURITY.md](SECURITY.md) for the security policy and what pre-1.0 means here.
+Everything is **pre-1.0 (`0.1.0` line)**. All nine have shipped a stable release to public registries — Packagist `xzawed/keycloak-sdk` 0.1.0 · PyPI `keycloak-sdk` 0.1.0 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0 · crates.io `keycloak-sdk` 0.1.0 · RubyGems `keycloak-sdk` 0.1.0 · npm `@xzawed/keycloak-sdk` 0.1.0 · Maven Central `io.github.xzawed:keycloak-sdk` 0.1.0 · Maven Central `io.github.xzawed:keycloak-sdk-kotlin` 0.1.0 · Go module proxy `github.com/xzawed/KeyCloakSDK/go` v0.1.0 — each one behind a human tag gate, and each preceded by a release candidate that stays on its registry. See [DEPLOY.md](DEPLOY.md) for that procedure, and [SECURITY.md](SECURITY.md) for the security policy and what pre-1.0 means here.
 
 ---
 

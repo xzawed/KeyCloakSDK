@@ -318,7 +318,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   ```
   > ℹ️ The tag value **determines the release version** — match the tag exactly to the desired release version.
 - Deployment check: confirm GitHub Actions `release.yml` succeeded (through the staging upload) → verify in the [Central Portal](https://central.sonatype.com) Deployments, then **a human manually Publishes**. This staging step is your last chance to reject the build: once published, Maven Central is immutable (§6).
-- Install: `io.github.xzawed:keycloak-sdk:0.1.0-RC1` (+ BOM)
+- Install: `io.github.xzawed:keycloak-sdk:0.1.0` (+ BOM)
 
 ### 7. Kotlin
 
@@ -336,7 +336,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   ```
 - Deployment check: confirm GitHub Actions `kotlin-release.yml` (vanniktech `publishToMavenCentral`, Central Portal staging) succeeded → **a human manually Publishes** in the [Central Portal](https://central.sonatype.com) Deployments (same two steps as Java). A green run now also means all four secrets were present (§2-A step 5).
 - ⚠️ **Consumer floor**: the build pins `languageVersion`/`apiVersion` to `KOTLIN_2_2`, so the published jar carries `@Metadata(mv=[2,2,0])` and consumers need **Kotlin 2.2+** — not 2.4.10. Say so in the release notes; raising this floor later cuts consumers off.
-- Install: `io.github.xzawed:keycloak-sdk-kotlin:0.1.0-RC1`
+- Install: `io.github.xzawed:keycloak-sdk-kotlin:0.1.0`
 
 ### 8. Go
 
@@ -348,7 +348,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   git tag go/v0.1.0-rc.1 && git push origin go/v0.1.0-rc.1
   ```
 - Deployment check: confirm GitHub Actions `go-release.yml` succeeded. The proxy caches on the first `go get` request, so the version may not be queryable immediately.
-- Install: `go get github.com/xzawed/KeyCloakSDK/go@v0.1.0-rc.1`
+- Install: `go get github.com/xzawed/KeyCloakSDK/go@v0.1.0`
 - ⚠️ **The weakest recovery of the nine.** The tag alone makes the version fetchable — CI does not gate that — and once the proxy has cached it, it is immutable and cannot be yanked. Your only remedy is a `retract` directive in a later release (§6). Be correspondingly careful with the tag.
 
 ### 9. PHP

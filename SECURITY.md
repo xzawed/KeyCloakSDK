@@ -45,16 +45,13 @@ Issues in Keycloak itself (the server) should be reported to the
 
 ## Supported Versions
 
-This project is **pre-1.0**. All nine SDKs have shipped a first **release
-candidate** to a public registry — PHP (`0.1.0-rc.2`, Packagist), Python
-(`0.1.0rc1`, PyPI), .NET (`0.1.0-rc.1`, NuGet), Rust (`0.1.0-rc.1`, crates.io),
-Ruby (`0.1.0.rc1`, RubyGems), Node (`0.1.0-rc.2`, npm), Java
-(`0.1.0-RC1`, Maven Central), Kotlin
-(`0.1.0-RC1`, Maven Central) and Go
-(`0.1.0-rc.1`, the Go module proxy — for Go the git tag *is* the version, so the
-`go/v0.1.0-rc.1` tag is the release). **No language has a stable release yet**, so
-for every language the release candidate above is the only released version and
-the one that receives fixes. Each release is human-gated, see
+This project is **pre-1.0**. All nine SDKs have shipped a stable `0.1.0` to a
+public registry — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust
+(crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central), Kotlin (Maven
+Central) and Go (the Go module proxy — for Go the git tag *is* the version, so
+the `go/v0.1.0` tag is the release). `0.1.0` is the supported version in every
+language and the one that receives fixes; the release candidate that preceded it
+stays on its registry but is **not** supported. Each release is human-gated, see
 [DEPLOY.md](DEPLOY.md).
 
 What pre-1.0 means here:
