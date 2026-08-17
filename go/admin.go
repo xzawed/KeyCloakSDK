@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Nerzal/gocloak/v13"
@@ -17,10 +18,14 @@ import (
 // Network boundary: excluded from the coverage gate and verified by the
 // integration suite (Task 10).
 type AdminClient struct {
-	gc    *gocloak.GoCloak
-	tr    *http.Transport // 보관: Close에서 유휴 keep-alive 커넥션 드레인
-	realm string
-	tp    TokenProvider
+	gc *gocloak.GoCloak
+	tr *http.Transport // 보관: Close에서 유휴 keep-alive 커넥션 드레인
+	// baseURL: gocloak의 basePath와 **같은 규칙으로** 정규화해 보관한다
+	// (`strings.TrimRight(url, "/")`). realms.Update만 raw PUT을 쓰는데, 경로를 만드는
+	// gocloak의 getAdminRealmURL이 비공개라 여기서 같은 모양으로 조립해야 하기 때문이다.
+	baseURL string
+	realm   string
+	tp      TokenProvider
 
 	Users   *UsersResource
 	Clients *ClientsResource
@@ -50,7 +55,7 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 		return &TokenSet{AccessToken: jwt.AccessToken, ExpiresIn: int64(jwt.ExpiresIn)}, nil
 	}, cfg.ClockSkew)
 
-	a := &AdminClient{gc: gc, tr: tr, realm: cfg.Realm, tp: tp}
+	a := &AdminClient{gc: gc, tr: tr, baseURL: strings.TrimRight(cfg.ServerURL, "/"), realm: cfg.Realm, tp: tp}
 	a.Users = &UsersResource{a}
 	a.Clients = &ClientsResource{a}
 	a.Realms = &RealmsResource{a}

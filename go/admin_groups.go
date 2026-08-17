@@ -37,6 +37,20 @@ func (r *GroupsResource) List(ctx context.Context, first, max int) ([]*gocloak.G
 	return call(func() ([]*gocloak.Group, error) { return r.a.gc.GetGroups(ctx, tok, r.a.realm, params) })
 }
 
+// Update replaces the group identified by id (rename by giving the new name in group.Name).
+//
+// ⚠️ id를 body에 **주입해야 한다** — gocloak의 UpdateGroup은 경로를 body의 .ID에서 만들고,
+// 비어 있으면 HTTP 이전에 `errors.Wrap`(= APIError가 아님)으로 죽어 `toSDKError`가 이를
+// AdminError가 아니라 TransportError로 오분류한다. users/clients와 같은 모양이다.
+func (r *GroupsResource) Update(ctx context.Context, id string, group gocloak.Group) error {
+	tok, err := r.a.token(ctx)
+	if err != nil {
+		return err
+	}
+	group.ID = &id
+	return run(func() error { return r.a.gc.UpdateGroup(ctx, tok, r.a.realm, group) })
+}
+
 // Delete removes a group by id.
 func (r *GroupsResource) Delete(ctx context.Context, id string) error {
 	tok, err := r.a.token(ctx)

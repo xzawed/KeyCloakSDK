@@ -32,6 +32,8 @@ gofmt -l go                                                  # 출력 없으면 
 
 ## 게차
 
+- ⚠️ **`Realms.Update`만 gocloak을 거치지 않는다 — 그 한 자리에서 raw PUT을 쓴다.** gocloak의 `UpdateRealm`은 경로를 body의 `.Realm`에서 만들어(`Put(getAdminRealmURL(PString(realm.Realm)))`) 경로와 body를 분리할 수 없고, 그래서 **rename을 표현할 수 없다**(Ruby·.NET·PHP는 `PUT /admin/realms/{현재이름}` + body 그대로라 rename이 된다). §4 동형을 지키려고 여기만 직접 요청하고, 오류는 `*gocloak.APIError`로 되싸서 `toSDKError`가 **다른 메서드와 동일하게** 분류하게 한다. `AdminClient.baseURL`은 그 URL 조립용이고 gocloak의 `basePath`와 **같은 규칙**(`strings.TrimRight(url, "/")`)으로 정규화해 보관한다.
+- ⚠️ **`Roles.Update`에 `role.Name = &name`을 주입하지 말 것.** gocloak이 경로를 `name` 인자에서 만들고 body를 그대로 보내므로, 주입하면 **rename이 조용한 no-op**이 된다. 반대로 **`Groups.Update`는 `group.ID = &id`를 주입해야 한다** — gocloak이 경로를 body의 `.ID`에서 만들고, 비어 있으면 HTTP 이전에 `errors.Wrap`(= `APIError` 아님)으로 죽어 `toSDKError`가 `TransportError`로 오분류한다. 같은 `Update`라도 셋이 서로 다르다.
 - ⚠️ **gocloak은 네트워크 실패까지 `*gocloak.APIError`로 감싼다(`Code:0`).** `toSDKError`는 `Code==0`이면 `*TransportError`, `>0`이면 `*AdminError`로 나눈다 — 그러지 않으면 연결 거부·DNS 실패가 `AdminError{HTTP 0}`로 오분류되고 `errors.As(err, &TransportError)` 경로가 죽은 코드가 된다.
 - ⚠️ **go-jose는 `exp` 부재 시 만료 검사를 건너뛴다** — `jwt.Validate`에서 `claims.Expiry == nil`을 명시적으로 거부해야 한다(`ValidateWithLeeway`만으로는 불충분). JWKS 초기 로드는 `forcedAt`을 소모하지 않아 첫 키 회전 재조회를 허용하고, 동시 미스는 `singleflight`로 수렴한다.
 - ⚠️ **Validator의 JWKS `http.Client`에 `Config.ReadTimeout`을 주입하지 않으면 `http.DefaultClient`로 무한 대기한다.**

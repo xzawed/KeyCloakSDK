@@ -166,6 +166,17 @@ func TestE2E(t *testing.T) {
 	if rl, err := admin.Roles.List(ctx); err != nil || len(rl) == 0 {
 		t.Fatalf("roles.List: %d %v", len(rl), err)
 	}
+	// roles.Update는 **현재 이름으로 주소를 잡고 body가 새 이름을 나른다**(Keycloak rename 계약).
+	// 그래서 경로 인자를 body의 .Name으로 덮어쓰면 안 된다 — 덮으면 rename이 조용한 no-op이 된다.
+	if err := admin.Roles.Update(ctx, "e2e-role", gocloak.Role{
+		Name:        gocloak.StringP("e2e-role"),
+		Description: gocloak.StringP("updated by e2e"),
+	}); err != nil {
+		t.Fatalf("roles.Update: %v", err)
+	}
+	if r, err := admin.Roles.Get(ctx, "e2e-role"); err != nil || r.Description == nil || *r.Description != "updated by e2e" {
+		t.Fatalf("roles.Update did not take effect: %+v %v", r, err)
+	}
 	if err := admin.Roles.Delete(ctx, "e2e-role"); err != nil {
 		t.Fatalf("roles.Delete: %v", err)
 	}
@@ -179,8 +190,42 @@ func TestE2E(t *testing.T) {
 	if gl, err := admin.Groups.List(ctx, 0, 20); err != nil || len(gl) == 0 {
 		t.Fatalf("groups.List: %d %v", len(gl), err)
 	}
+	// groups.Update는 id로 주소를 잡고 body가 새 이름을 나른다(users/clients와 같은 모양).
+	if err := admin.Groups.Update(ctx, gid, gocloak.Group{Name: gocloak.StringP("e2e-group-renamed")}); err != nil {
+		t.Fatalf("groups.Update: %v", err)
+	}
+	if g, err := admin.Groups.Get(ctx, gid); err != nil || g.Name == nil || *g.Name != "e2e-group-renamed" {
+		t.Fatalf("groups.Update did not take effect: %+v %v", g, err)
+	}
 	if err := admin.Groups.Delete(ctx, gid); err != nil {
 		t.Fatalf("groups.Delete: %v", err)
+	}
+
+	// realms.List / realms.Update — `it-client`는 manage-realm을 갖는다(testdata/it-realm-realm.json).
+	// ⚠️ 서비스 계정은 보통 자기 realm만 본다 — 목록에 it-realm이 있는지만 본다(전체 목록을 가정하지 않는다).
+	if rls, err := admin.Realms.List(ctx); err != nil {
+		t.Fatalf("realms.List: %v", err)
+	} else {
+		found := false
+		for _, r := range rls {
+			if r != nil && r.Realm != nil && *r.Realm == "it-realm" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("realms.List: it-realm이 목록에 없다 (%d개)", len(rls))
+		}
+	}
+	// ⚠️ realms.Update는 **현재 이름으로 주소를 잡는다** — gocloak의 UpdateRealm은 경로를 body의
+	// .Realm에서 만들어 rename을 표현할 수 없어서, 이 메서드만 raw PUT으로 구현했다(§4 동형 유지).
+	if err := admin.Realms.Update(ctx, "it-realm", gocloak.RealmRepresentation{
+		Realm:       gocloak.StringP("it-realm"),
+		DisplayName: gocloak.StringP("updated by e2e"),
+	}); err != nil {
+		t.Fatalf("realms.Update: %v", err)
+	}
+	if r, err := admin.Realms.Get(ctx, "it-realm"); err != nil || r.DisplayName == nil || *r.DisplayName != "updated by e2e" {
+		t.Fatalf("realms.Update did not take effect: %+v %v", r, err)
 	}
 
 	// 5) Raw() escape hatch reaches endpoints the facade does not wrap.
