@@ -5,6 +5,12 @@
 // C/G/L 이름은 언어마다 갈린다(PHP import/all, Ruby list, Java findByClientId/search).
 // U는 update / Update / UpdateAsync / update_<resource> 로 수렴한다.
 //
+// ⚠️ **L열로 넓히는 것은 이미 기각됐다** — 되살릴 조건이 오기 전에 다시 만들지 않는다.
+// 판정과 되살릴 조건: docs/governance/process.md §3 기각 표.
+// 요지: 6개 PR·L셀 9개가 뒤집히는 동안 실제 드리프트 0건이었고, 225셀이 전부 ✅가 된 지금
+// 남는 실패 모드는 removal뿐인데 그건 단위·E2E가 같은 커밋에서 먼저 깬다.
+// 되살릴 조건은 **10번째 언어 행이 추가될 때**(손으로 25셀을 쓰는 그 순간).
+//
 // 기대값을 여기에 적지 않는다 — 표의 셀과 소스 선언을 같은 자리에서 읽어 비교한다.
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
