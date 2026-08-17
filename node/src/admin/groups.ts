@@ -32,6 +32,15 @@ export class GroupsResource {
     return call(() => this.kc.groups.find({ realm: this.realm, first, max }))
   }
 
+  /**
+   * id로 주소를 잡아 그룹을 갱신한다. `representation.name`에 새 이름을 주면 rename이다.
+   *
+   * ⚠️ 경로(`id`)와 body(`representation`)를 **합치지 말 것**.
+   */
+  async update(id: string, representation: GroupRepresentation): Promise<void> {
+    await call(() => this.kc.groups.update({ id, realm: this.realm }, representation))
+  }
+
   async delete(id: string): Promise<void> {
     await call(() => this.kc.groups.del({ id, realm: this.realm }))
   }

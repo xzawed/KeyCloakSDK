@@ -692,7 +692,7 @@ Every SDK also exposes a `raw` escape hatch that returns the underlying client. 
 | **Java** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
 | **Kotlin** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
 | **Python** (sync + `aio`) | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
-| **Node** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅—​—✅ | ✅✅✅—✅ | ✅✅✅—✅ |
+| **Node** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ |
 | **Go** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ |
 | **.NET** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ |
 | **PHP** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ |
@@ -700,7 +700,7 @@ Every SDK also exposes a `raw` escape hatch that returns the underlying client. 
 
 C=create G=get L=list/find U=update D=delete
 
-Four languages share exactly the same four gaps: `realms.list`, `realms.update`, `roles.update`, `groups.update`. Go used to be a fifth and is now 25/25 — `realms.update` is the one method in the Go facade that does not delegate to gocloak, because gocloak builds the request path from the representation and so cannot express a rename. (.NET used to be a sixth, but three of its gaps were unreachable even through the escape hatch, so they were filled directly rather than documented as workarounds.) PHP now matches .NET and Ruby at 25/25 — `update` on all five resources plus `realms.all` (the library already had both; the facade had not exposed them). Rust has no `update` and no `list` outside users.
+Three languages share exactly the same four gaps: `realms.list`, `realms.update`, `roles.update`, `groups.update`. Go and Node have since been filled. ⚠️ In Go, `realms.update` is the one method that does not delegate to gocloak — gocloak builds the request path from the representation and so cannot express a rename; every other language keeps path and body separate. (.NET used to be a sixth, but three of its gaps were unreachable even through the escape hatch, so they were filled directly rather than documented as workarounds.) PHP now matches .NET and Ruby at 25/25 — `update` on all five resources plus `realms.all` (the library already had both; the facade had not exposed them). Rust has no `update` and no `list` outside users.
 
 ### What you get back
 
@@ -716,7 +716,7 @@ This is a deliberate, documented decision: re-wrapping stable Keycloak represent
 |---|---|---|
 | Java · Kotlin | `raw()` → `org.keycloak.admin.client.Keycloak` | `raw().realm(name).update(rep)` |
 | Python | `raw` → `keycloak.KeycloakAdmin` | `raw.update_realm(name, rep)` (async: `a_update_realm`) |
-| Node | `raw()` → `KcAdminClient` | `raw().realms.update({ realm }, rep)` |
+| Node | `raw()` → `KcAdminClient` | no gaps; the facade's `realms.update(currentName, rep)` wraps exactly this call |
 | Go | `Raw()` → `*gocloak.GoCloak` | no gaps; ⚠️ do **not** reach for `Raw().UpdateRealm` — it builds the path from the representation and so cannot rename. The facade's `Realms.Update(ctx, currentName, rep)` issues the request directly for that reason |
 | PHP | `raw()` → `Fschmtt\Keycloak\Keycloak` | no gaps; the hatch is the typed fschmtt client |
 | Rust | `raw()` → `&KeycloakAdmin<SdkTokenSupplier>` | `raw().realm_put(&realm, rep).await` |

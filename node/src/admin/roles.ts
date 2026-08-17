@@ -28,6 +28,15 @@ export class RolesResource {
     return call(() => this.kc.roles.find({ realm: this.realm }))
   }
 
+  /**
+   * 현재 이름으로 주소를 잡아 역할을 갱신한다. `representation.name`에 새 이름을 주면 rename이다.
+   *
+   * ⚠️ 경로(`name`)와 body(`representation`)를 **합치지 말 것**.
+   */
+  async update(name: string, representation: RoleRepresentation): Promise<void> {
+    await call(() => this.kc.roles.updateByName({ name, realm: this.realm }, representation))
+  }
+
   async delete(name: string): Promise<void> {
     await call(() => this.kc.roles.delByName({ name, realm: this.realm }))
   }

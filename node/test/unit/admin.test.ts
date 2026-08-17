@@ -10,9 +10,15 @@ const h = vi.hoisted(() => {
     registerTokenProvider: vi.fn(),
     users: { create: vi.fn(), findOne: vi.fn(), find: vi.fn(), update: vi.fn(), del: vi.fn() },
     clients: { create: vi.fn(), findOne: vi.fn(), find: vi.fn(), update: vi.fn(), del: vi.fn() },
-    realms: { create: vi.fn(), findOne: vi.fn(), del: vi.fn() },
-    roles: { create: vi.fn(), findOneByName: vi.fn(), find: vi.fn(), delByName: vi.fn() },
-    groups: { create: vi.fn(), findOne: vi.fn(), find: vi.fn(), del: vi.fn() },
+    realms: { create: vi.fn(), findOne: vi.fn(), find: vi.fn(), update: vi.fn(), del: vi.fn() },
+    roles: {
+      create: vi.fn(),
+      findOneByName: vi.fn(),
+      find: vi.fn(),
+      updateByName: vi.fn(),
+      delByName: vi.fn(),
+    },
+    groups: { create: vi.fn(), findOne: vi.fn(), find: vi.fn(), update: vi.fn(), del: vi.fn() },
   }
   const ctor = vi.fn((config: Record<string, unknown>) => {
     Object.assign(kc, config)
@@ -239,6 +245,17 @@ describe('RolesResource 위임 (API 편차: findOneByName/delByName)', () => {
     await admin.roles.delete('admin')
     expect(h.kc.roles.delByName).toHaveBeenCalledWith({ name: 'admin', realm: 'demo' })
   })
+
+  // ⚠️ 경로(현재 이름)와 body(새 이름)를 **분리**해 넘겨야 rename이 된다.
+  // 경로 인자를 body의 name으로 덮어쓰면 rename이 조용한 no-op이 된다(Go에서 실제로 걸린 함정).
+  it('update는 현재 이름으로 주소를 잡고 body는 그대로 넘긴다(rename 가능)', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    await admin.roles.update('admin', { name: 'admin-renamed', description: 'x' })
+    expect(h.kc.roles.updateByName).toHaveBeenCalledWith(
+      { name: 'admin', realm: 'demo' },
+      { name: 'admin-renamed', description: 'x' },
+    )
+  })
 })
 
 describe('GroupsResource 위임', () => {
@@ -256,6 +273,30 @@ describe('GroupsResource 위임', () => {
     expect(h.kc.groups.find).toHaveBeenCalledWith({ realm: 'demo', first: 2, max: 20 })
     await admin.groups.delete('g-1')
     expect(h.kc.groups.del).toHaveBeenCalledWith({ id: 'g-1', realm: 'demo' })
+  })
+
+  it('update는 id로 주소를 잡고 body는 그대로 넘긴다(rename 가능)', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    await admin.groups.update('g-1', { name: 'team-renamed' })
+    expect(h.kc.groups.update).toHaveBeenCalledWith(
+      { id: 'g-1', realm: 'demo' },
+      { name: 'team-renamed' },
+    )
+  })
+})
+
+describe('RealmsResource — list/update', () => {
+  it('list→find, update는 현재 이름으로 주소를 잡고 body는 그대로 넘긴다(rename 가능)', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    h.kc.realms.find.mockResolvedValue([{ realm: 'demo' }, { realm: 'other' }])
+    expect(await admin.realms.list()).toHaveLength(2)
+    expect(h.kc.realms.find).toHaveBeenCalledWith()
+
+    await admin.realms.update('demo', { realm: 'demo-renamed', displayName: 'D' })
+    expect(h.kc.realms.update).toHaveBeenCalledWith(
+      { realm: 'demo' },
+      { realm: 'demo-renamed', displayName: 'D' },
+    )
   })
 })
 
