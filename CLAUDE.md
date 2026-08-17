@@ -1,5 +1,16 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=46531 max-lines=392 -->
+<!-- doc-budget: max-bytes=47278 max-lines=416 -->
+<!-- ⚠️ **2026-08-17(3): 46,531 → 47,278 · 392 → 416줄. 래칫을 올렸다 — 이유는 기계 커버리지다(#216).**
+     적재 46,247 → 46,838 B(+591) / 391 → 413줄(+22). dev 의존성이 산문으로만 있어 **어떤 가드도
+     보지 않던** 자리를 표 + `kind=dep` 앵커로 바꿨다: node `devDependencies` 8건 · dotnet 테스트
+     csproj 6건. 검증 사실이 **50 → 64 facts / 19 → 21 anchors**로 늘었고, `repo-hygiene.yml`의
+     `--min-facts`/`--min-anchors`도 같은 커밋에서 올렸다.
+     ⚠️ 이 자리가 실제로 낡는다는 것은 추측이 아니다 — 같은 날 PR #210이 `WireMock.Net` 2.14→2.15,
+     `Testcontainers.Keycloak` 4.13→4.14를 올렸는데 이 문서는 옛값을 적고 있었고 `doc-facts`는
+     초록이었다(사람이 손으로 잡았다). 지금은 같은 드리프트가 CI에서 죽는다.
+     ⚠️ **#215의 압축(−3,755 B)을 일부 되돌린 것이 맞다**(순 −3,164 B). 바이트를 되사서 기계
+     검증을 샀다 — 이 저장소가 산문 규칙보다 가드를 우위에 두는 것과 같은 교환이다. -->
+
 <!-- ⚠️ **2026-08-17(2): 50,286 → 46,531 · 396 → 392줄. 압축분만큼 래칫을 함께 내렸다(#215).**
      적재 49,846 → 46,091 B(**−3,755 B**) / 393 → 389줄. 여유는 440 B / 3줄 그대로 옮겼다.
      내린 곳 둘: (a) 「문서 유지 규칙」의 doc-guard 앵커 계약 해설 3문단 → `.claude/rules/ci.md`
@@ -328,7 +339,21 @@ dev(비앵커): `pytest`·`pytest-asyncio`·`pytest-cov`·`mypy`(strict)·`ruff`
 | 인증(OIDC/OAuth2) | `openid-client` | `^6` |
 | JWT(강화 검증) | `jose` | `^6` |
 
-dev(비앵커 — 버전이 셀 안 산문이라 기계 대조 밖): `typescript` 6 · `vitest`/`@vitest/coverage-v8` 3(v4는 `vi.mock` 시맨틱 변경으로 보류) · `testcontainers` 12 · `eslint` 10 + `typescript-eslint` 8 · `prettier` 3 · `@types/node` `^22`(engines 하한과 일치 — dependabot.yml에 메이저 ignore). 런타임 deps는 audit clean, devDeps 일부 moderate(`files:["dist"]`라 소비자 미배포).
+dev(`devDependencies` — **앵커 있음**):
+
+<!-- doc-guard: kind=dep source=node/package.json min=8 -->
+| 의존성 | 좌표 | 버전 |
+|---|---|---|
+| 타입 | `typescript` | ^6 |
+| 테스트 | `vitest` | ^3 |
+| 커버리지 | `@vitest/coverage-v8` | ^3 |
+| 통합 테스트 | `testcontainers` | ^12 |
+| 린트 | `eslint` | ^10 |
+| 린트(TS) | `typescript-eslint` | ^8 |
+| 포맷 | `prettier` | ^3 |
+| Node 타입 | `@types/node` | ^22 |
+
+⚠️ vitest는 v4를 보류한다(`vi.mock` 시맨틱 변경). `@types/node`는 "최신 Node"가 아니라 `engines` 하한을 따라가므로 dependabot이 메이저를 못 올린다. 런타임 deps는 audit clean, devDeps 일부 moderate(`files:["dist"]`라 소비자에게 배포되지 않는다).
 
 **Go 확정 의존성(go.mod, major 핀)**:
 
@@ -356,7 +381,17 @@ dev(비앵커 — 버전이 셀 안 산문이라 기계 대조 밖): `typescript
 | Admin | `Keycloak.AuthServices.Sdk` | 2.7.0 |
 | DI 추상화 | `Microsoft.Extensions.DependencyInjection.Abstractions` | 9.0.19 |
 
-dev(비앵커): `xUnit` 2.9.3 · `WireMock.Net` 2.15.0 · `coverlet.collector` 10.0.1 · `Testcontainers.Keycloak` 4.14.0(테스트 csproj).
+dev(테스트 csproj — **앵커 있음**):
+
+<!-- doc-guard: kind=dep source=dotnet/tests/Xzawed.Keycloak.Sdk.Tests/Xzawed.Keycloak.Sdk.Tests.csproj min=6 -->
+| 의존성 | 좌표 | 버전 |
+|---|---|---|
+| 테스트 호스트 | `Microsoft.NET.Test.Sdk` | 18.9.0 |
+| 단위 테스트 | `xunit` | 2.9.3 |
+| 테스트 어댑터 | `xunit.runner.visualstudio` | 4.0.0 |
+| 커버리지 수집 | `coverlet.collector` | 10.0.1 |
+| HTTP 목 | `WireMock.Net` | 2.15.0 |
+| 통합 테스트 | `Testcontainers.Keycloak` | 4.14.0 |
 
 전부 Apache-2.0/MIT(호환).
 
@@ -439,7 +474,7 @@ dev(비앵커): `xUnit` 2.9.3 · `WireMock.Net` 2.15.0 · `coverlet.collector` 1
 
 작업 완료(머지/main 반영) 후 프로젝트 전체 문서(`CLAUDE.md`, `docs/`, `README.md`)를 최신화·최적화하고 커밋한다. 언어별 빌드/테스트 명령(단일 테스트 실행 포함)을 툴체인 섹션에 유지한다(Java·Python·Node·Go·C#·PHP·Rust·Ruby·Kotlin).
 
-**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 앵커 스코프는 9개 언어 전부다** — `<!-- doc-guard: ... -->` 앵커가 의존성 표 9종(pom.xml/**pyproject.toml**/package.json/**go.mod**/csproj/composer.json/Cargo.toml/gemspec/build.gradle.kts)과 [docs/guides/getting-started.md](docs/guides/getting-started.md)의 언어별 "Required runtime" 문장(`kind=runtime`)을 합쳐 **50 facts / 19 anchors**를 기계 검증한다.
+**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 앵커 스코프는 9개 언어 전부다** — `<!-- doc-guard: ... -->` 앵커가 의존성 표 9종(pom.xml/**pyproject.toml**/package.json/**go.mod**/csproj/composer.json/Cargo.toml/gemspec/build.gradle.kts) + **dev 표 2종**(node `devDependencies` · dotnet 테스트 csproj)과 [docs/guides/getting-started.md](docs/guides/getting-started.md)의 언어별 "Required runtime" 문장(`kind=runtime`)을 합쳐 **64 facts / 21 anchors**를 기계 검증한다.
 
 표의 dev/도구 의존성 절은 버전이 셀 안 산문에 있어 구조적으로 스코프 밖이다.
 
