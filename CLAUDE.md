@@ -280,7 +280,7 @@ dev(테스트 csproj — **앵커 있음**):
 | Node | `@xzawed/keycloak-sdk` (npm) | `node-v*` | 게시됨(`0.1.0-rc.2` RC) |
 | Go | `github.com/xzawed/KeyCloakSDK/go` (proxy.golang.org) | `go/v*` | 게시됨(`0.1.0-rc.1` RC) |
 | C#/.NET | `Xzawed.Keycloak.Sdk` (NuGet) | `dotnet-v*` | 게시됨(`0.1.0-rc.1` RC) |
-| PHP | `xzawed/keycloak-sdk` (Packagist) | `php-v*` | 게시됨(`0.1.0-rc.1` RC) |
+| PHP | `xzawed/keycloak-sdk` (Packagist) | `php-v*` | 게시됨(`0.1.0-rc.2` RC) |
 | Rust | `keycloak-sdk` (crates.io) | `rust-v*` | 게시됨(`0.1.0-rc.1` RC) |
 | Ruby | `keycloak-sdk` (RubyGems) | `ruby-v*` | 게시됨(`0.1.0.rc1` RC) |
 | Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` (Maven Central) | `kotlin-v*` | 게시됨(`0.1.0-RC1` RC · 하한 2.2+) |

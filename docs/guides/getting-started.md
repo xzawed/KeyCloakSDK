@@ -410,15 +410,15 @@ cd php && composer install   # install dependencies (fschmtt/league/stevenmaguir
 
 The distribution name is `xzawed/keycloak-sdk`, and the root namespace is `Xzawed\Keycloak` (admin is the `Xzawed\Keycloak\Admin` sub-namespace).
 
-### 3) Installation from Packagist (first release candidate available)
+### 3) Installation from Packagist (release candidate available)
 
-The first release candidate, `v0.1.0-rc.1`, is live on Packagist; there is no stable release yet:
+The newest release candidate, `v0.1.0-rc.2`, is live on Packagist; there is no stable release yet:
 
 ```bash
-composer require "xzawed/keycloak-sdk:0.1.0-rc.1"
+composer require "xzawed/keycloak-sdk:0.1.0-rc.2"
 ```
 
-> ⚠️ A plain `composer require xzawed/keycloak-sdk` fails while only the RC exists (default `minimum-stability: stable` excludes it) — require the exact version, or `^0.1@rc`, to opt in. How publishing works here: PHP does not publish from this monorepo, and it never could — Composer's VCS driver reads only a `composer.json` at a repository **root**, and there is none here (only `php/composer.json`). When a human pushes a `php-v*` tag, [`.github/workflows/php-release.yml`](../../.github/workflows/php-release.yml) verifies, then splits `php/` out with `git subtree split` and pushes it to a separate read-only mirror repository, **`xzawed/keycloak-sdk-php`**, tagging it there with a **bare `vX.Y.Z`** (Composer cannot parse `php-vX.Y.Z` as a version). **That mirror — not this repository — is what is registered on Packagist**; the package name stays `xzawed/keycloak-sdk`, since it comes from `php/composer.json`, which the split carries along. The split job requires a `PHP_SPLIT_TOKEN` secret with write access to the mirror and **fails closed without it** (nothing is pushed, and no GitHub Release is created). The mirror and its Packagist registration exist and serve `v0.1.0-rc.1` today — for the full procedure, see [DEPLOY.md](../../DEPLOY.md) §2-D. For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> ⚠️ A plain `composer require xzawed/keycloak-sdk` fails while only the RC exists (default `minimum-stability: stable` excludes it) — require the exact version, or `^0.1@rc`, to opt in. How publishing works here: PHP does not publish from this monorepo, and it never could — Composer's VCS driver reads only a `composer.json` at a repository **root**, and there is none here (only `php/composer.json`). When a human pushes a `php-v*` tag, [`.github/workflows/php-release.yml`](../../.github/workflows/php-release.yml) verifies, then splits `php/` out with `git subtree split` and pushes it to a separate read-only mirror repository, **`xzawed/keycloak-sdk-php`**, tagging it there with a **bare `vX.Y.Z`** (Composer cannot parse `php-vX.Y.Z` as a version). **That mirror — not this repository — is what is registered on Packagist**; the package name stays `xzawed/keycloak-sdk`, since it comes from `php/composer.json`, which the split carries along. The split job requires a `PHP_SPLIT_TOKEN` secret with write access to the mirror and **fails closed without it** (nothing is pushed, and no GitHub Release is created). The mirror and its Packagist registration exist and serve `v0.1.0-rc.2` today — for the full procedure, see [DEPLOY.md](../../DEPLOY.md) §2-D. For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 
@@ -754,7 +754,7 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 | Node `0.1.0-rc.2` | 26.6.x (integration tests: actual **26.6**) | `@keycloak/keycloak-admin-client` **26.7.0** · `openid-client` **6.8.4** · `jose` **6.2.4** · Node 22+ |
 | Go `0.1.0-rc.1` | 26.6.x (integration tests: actual **26.6**) | `Nerzal/gocloak/v13` **13.9.0** · `golang.org/x/oauth2` **0.36.0** · `go-jose/v4` **4.1.4** · Go 1.25+ |
 | C#/.NET `0.1.0-rc.1` | 26.6.x (integration tests: actual **26.6**) | `Keycloak.AuthServices.Sdk` **2.7.0** · `Duende.IdentityModel` **8.1.0** · `Microsoft.IdentityModel.JsonWebTokens` **8.22.0** · .NET 8+ |
-| PHP `0.1.0-rc.1` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `fschmtt/keycloak-rest-api-client-php` **0.42.0** · `league/oauth2-client` **^2.8** · `stevenmaguire/oauth2-keycloak` **^6.1** · `firebase/php-jwt` **^7.1** · PHP 8.3+ |
+| PHP `0.1.0-rc.2` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `fschmtt/keycloak-rest-api-client-php` **0.42.0** · `league/oauth2-client` **^2.8** · `stevenmaguire/oauth2-keycloak` **^6.1** · `firebase/php-jwt` **^7.1** · PHP 8.3+ |
 | Rust `0.1.0-rc.1` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak` **~26.6.2** (`reqwest12` feature) · `openidconnect` **^4.0.1** · `jsonwebtoken` **^11.0.0** · Rust 1.88+ (edition 2024) |
 | Ruby `0.1.0.rc1` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `rack-oauth2` **~>2.3** · `faraday` **~>2.0** · `jwt` (ruby-jwt) **~>3.2** · Ruby 3.2+ |
 | Kotlin `0.1.0-RC1` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak-admin-client` **26.0.11** · `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.9.1** (same JVM stack as Java) · Kotlin 2.2+ consumers (built with 2.4.10, metadata pinned to 2.2) · JDK 21+ |
