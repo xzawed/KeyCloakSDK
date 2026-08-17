@@ -8,38 +8,39 @@ paths:
 
 # CI · 릴리스 · 하네스 규칙
 
-루트 `CLAUDE.md`의 CI 게차 스텁이 가리키는 상세다. 언어별 CI 게차는 `.claude/rules/<lang>.md`에 있다.
+언어별 CI 게차는 `.claude/rules/<lang>.md`에 있다.
 
-## 저장소 룰셋 (서버 상태)
+## 저장소 룰셋
 
-- ⚠️ **`main`은 룰셋 `PRIMARY`가 지킨다 — 정의는 `.github/rulesets/main.json`, 대조는 `node scripts/repo-config.mjs check`.** required 체크는 `doc-facts`·`shell-exec-bits` **둘뿐**이고 앞으로도 여기에 언어 CI를 넣으면 안 된다 — 언어 CI 9종은 워크플로 레벨 `paths:` 필터라 해당 경로를 안 건드리는 PR에서 체크가 **생성조차 되지 않아** required면 Pending 영구 차단이다(`bypass_actors: []`라 소유자도 못 푼다). 잡 레벨 `if:` skip은 반대로 체크가 생성돼 성공으로 인정된다 — 이 둘을 혼동하면 저장소가 잠긴다. 컨텍스트명 충돌 3쌍(`integration`=dotnet+php 등)과 `merge_group:` 트리거 부재(머지 큐 켜면 전부 데드락)도 함께 주의. 상세·해소 방안: [CONTRIBUTING.md §4](../../CONTRIBUTING.md)
-- ⚠️ **태그 룰셋 3종도 2026-08-04부터 적용됐다 — `PRIMARY`와 달리 이쪽은 소유자 bypass가 있다.** `RELEASE-TAGS-CREATE`(비-Go 8개 접두 creation)·`RELEASE-TAGS-CREATE-GO`(`go/v*` creation)·`RELEASE-TAGS-IMMUTABLE`(9개 전부 update+deletion)이 전부 `enforcement: active`이고 셋 다 admin bypass(`{"actor_id":5,"actor_type":"RepositoryRole"}`)를 가져 **사람이 손으로 태그를 미는 경로는 그대로 살아 있다**(적용 후 라이브 API로 확인). 막히는 것은 그 밖의 주체 — `contents: write` 자격증명이 임의로 릴리스 태그를 만드는 경로다. ✅ **태그 커팅 App은 2026-08-17에 들어갔고(PR #203 `85715ec`) `dispatch-release.yml`은 더 이상 fail-closed가 아니다** — `keycloaksdk-release-tagger`(App ID `4614080`)가 `tags-create.json`에만 `{"actor_id":4614080,"actor_type":"Integration"}`으로 있다(라이브 실측 `gh api repos/xzawed/KeyCloakSDK/rulesets/<id>`: `RELEASE-TAGS-CREATE [active] bypass=RepositoryRole:5, Integration:4614080` · `CREATE-GO`·`IMMUTABLE`은 `RepositoryRole:5` 단독). ⚠️ **App은 앞으로도 `tags-create.json`에만 있어야 한다** — 나머지 둘에 넣으면 Go 예외와 태그 불변성의 유일한 서버측 집행 지점이 무너진다. 이건 이제 장래 절차가 아니라 **지켜야 할 현재 상태**라 `scripts/test/test-repo-config.sh`가 세 파일의 Integration bypass 개수를 1/0/0으로 고정한다(커밋된 JSON이 SSOT — 산문이 아니라 파일을 본다). ⚠️ 웹 UI로 룰셋을 비활성화해도 **CI에서는 아무도 보고하지 않는다**(CI는 `check`가 아니라 가드 자가테스트를 돌린다 — admin 토큰 미보관). 웹 UI로 저장소 규칙을 건드렸다면 로컬에서 `check`를 다시 돌릴 것.
+정의는 `.github/rulesets/*.json`(커밋된 JSON이 SSOT), 대조는 `node scripts/repo-config.mjs check`.
 
-## 릴리스 워크플로
+- ⚠️ **`main`의 required 체크는 `doc-facts`·`shell-exec-bits` 둘뿐이고 여기에 언어 CI를 넣으면 저장소가 잠긴다.** 언어 CI 9종은 워크플로 레벨 `paths:` 필터라 해당 경로를 안 건드리는 PR에서는 체크가 **생성조차 되지 않아** Pending으로 영구 차단된다(`bypass_actors: []`라 소유자도 못 푼다). 잡 레벨 `if:` skip은 반대로 체크가 생성돼 성공으로 인정된다 — **이 둘을 혼동하지 말 것.**
+- 함께 주의: 컨텍스트명 충돌 3쌍(`integration` = dotnet + php 등), `merge_group:` 트리거 부재(머지 큐를 켜면 전부 데드락). 해소 방안은 [CONTRIBUTING.md §4](../../CONTRIBUTING.md).
+- **태그 룰셋 3종**(`RELEASE-TAGS-CREATE` · `-CREATE-GO` · `-IMMUTABLE`)은 active이되 admin bypass가 있어 **사람이 손으로 태그를 미는 경로는 살아 있다**. 막는 대상은 `contents: write` 자격증명이 임의로 릴리스 태그를 만드는 경로다.
+- ⚠️ **태그 커팅 App은 `tags-create.json`에만 둔다.** 나머지 둘에 넣으면 Go 예외와 태그 불변성의 유일한 서버측 집행 지점이 무너진다. `scripts/test/test-repo-config.sh`가 세 파일의 Integration bypass 개수를 **1/0/0**으로 고정한다.
+- ⚠️ 웹 UI로 룰셋을 바꾸면 **CI는 아무것도 보고하지 않는다**(CI는 가드 자가테스트만 돌린다 — admin 토큰 미보관). 웹 UI를 건드렸으면 로컬에서 `repo-config.mjs check`를 다시 돌린다.
 
-- ⚠️ **배포 시크릿 미설정은 "스킵"이 아니라 실패여야 한다.** 아무것도 게시하지 않고 green으로 끝난 실행은 성공한 실행과 구분되지 않아, 태그가 밀리고 GitHub Release까지 만들어졌는데 레지스트리에는 아무것도 없는 상태가 조용히 성립한다. 두 곳이 그랬다 — `dotnet-release.yml`은 `NUGET_API_KEY` 미설정 시 `exit 0`(Release는 그대로 생성), `kotlin-release.yml`은 4개 시크릿 중 **username 하나만** 검사해 서명키 없이도 통과 → **서명 없는 아티팩트가 Central Portal에 업로드될 수 있었다**. 지금은 둘 다 `::error::`+`exit 1`이고 kotlin은 누락된 시크릿 이름을 전부 나열한다. 같은 원칙으로 `dotnet nuget push`의 `--skip-duplicate`도 제거했다(이미 태워버린 버전을 성공으로 위장하므로). ⚠️ GitHub Actions는 job-level `if:`에 secrets 컨텍스트를 노출하지 않으므로 이 가드는 반드시 **스텝 안에서 env-매핑된 값**으로 해야 실제로 동작한다.
+## 릴리스
+
+- ⚠️ **배포 시크릿 미설정은 스킵이 아니라 실패다.** 아무것도 게시하지 않고 green으로 끝난 실행은 성공한 실행과 구분되지 않아, 태그·Release는 있는데 레지스트리는 빈 상태가 조용히 성립한다. 같은 이유로 `dotnet nuget push --skip-duplicate`도 쓰지 않는다(이미 태워버린 버전을 성공으로 위장한다).
+- ⚠️ **이 가드는 스텝 안에서 env-매핑된 값으로 해야 동작한다** — job-level `if:`는 secrets 컨텍스트를 읽지 못한다.
 
 ## Dependabot
 
-- ⚠️ **Dependabot 트리거 run에는 Actions 시크릿이 노출 안 됨**(별도 스토어, 이 저장소는 비어있음) — `SONAR_TOKEN`이 빈 문자열로 보간돼 SonarCloud가 반드시 실패(코드 신호 아님). `sonarcloud.yml`은 Dependabot PR만 skip(push는 항상 통과, main 스캔 스킵 불가 — PR0 fail-closed 불변). 토큰 복제안은 기각(미검토 패키지 코드가 토큰과 같은 잡에서 실행됨 우려).
-- ⚠️ **dependabot이 자동으로 올려서는 안 되는 핀이 두 종류 있다 — `.github/dependabot.yml`의 `ignore`가 근거와 함께 막는다.** (1) **ref 이름이 곧 의미인 액션**: `dtolnay/rust-toolchain`의 핀은 `stable` **브랜치** 헤드 SHA인데 dependabot은 `# stable` 주석을 semver 태그로만 읽어 기본 브랜치(master) 헤드로 갈아끼운다 — master 커밋에는 toolchain을 고를 ref 이름이 없어 액션이 `'toolchain' is a required input`으로 즉사한다(PR #111에서 rust 잡 3종 동시 실패). 올릴 때는 `gh api repos/dtolnay/rust-toolchain/branches/stable --jq .commit.sha`로 브랜치 헤드를 직접 확인한다. `taiki-e/install-action`은 ref가 **태그**(`cargo-llvm-cov`)라 dependabot이 손대지 않아 ignore 대상이 아니다. (2) **소비자 하한을 나타내는 버전**: `kotlin-stdlib`는 게시 아티팩트의 소비자 하한이라 `languageVersion`/`apiVersion`(=KOTLIN_2_2)과 **함께** 움직여야 하며, 마이너/메이저만 올라가면 메타데이터와 전이 요구가 조용히 갈라진다(PR #110 — `d6f1729`가 고친 상태로 회귀). 패치는 허용, 마이너/메이저는 차단.
-- ⚠️ **`pypa/gh-action-pypi-publish`도 ref가 브랜치다(`# release/v1`) — 같은 부류지만 실패 방식이 다르다.** 여기서 ref 이름은 액션의 입력이 아니라 **안정성 채널**이고 그 저장소의 기본 브랜치는 이름 그대로 `unstable/v1`이다. dependabot이 기본 브랜치 헤드로 갈아끼우면 액션이 죽는 대신 **PyPI 게시가 unstable 채널로 조용히 넘어간다** — rust-toolchain처럼 첫 스텝에서 즉사하지 않고, 훨씬 늦게 그리고 되돌릴 수 없는 자리(게시)에서 드러난다. ⚠️ **이건 예방 조치이고 dependabot이 실제로 그렇게 한다고 실측하지는 못했다** — 2026-08-08 시점에 `release/v1`과 `unstable/v1`의 헤드가 같은 커밋(dc37677)이라 PR #154가 제안한 SHA로는 어느 쪽을 따랐는지 구분되지 않는다. 근거는 같은 저장소에서 실측된 rust-toolchain 선례와, 두 브랜치가 갈리는 순간 손해가 비대칭이라는 점이다. 올릴 때: `gh api repos/pypa/gh-action-pypi-publish/branches/release/v1 --jq .commit.sha`.
+- ⚠️ **Dependabot 트리거 run에는 Actions 시크릿이 없다** — `SONAR_TOKEN`이 빈 문자열이 되어 SonarCloud가 반드시 실패한다(코드 신호가 아니다). `sonarcloud.yml`은 Dependabot PR만 skip한다. 토큰 복제안은 기각됐다(미검토 패키지 코드가 토큰과 같은 잡에서 돈다).
+- ⚠️ **dependabot이 올려서는 안 되는 핀 두 종류** — `.github/dependabot.yml`의 `ignore`가 근거와 함께 막는다.
+  1. **ref 이름이 곧 의미인 액션.** `dtolnay/rust-toolchain`의 핀은 `stable` **브랜치** 헤드 SHA인데 dependabot은 기본 브랜치 헤드로 갈아끼워 `'toolchain' is a required input`으로 즉사한다. `pypa/gh-action-pypi-publish`는 더 나쁘다 — 기본 브랜치가 `unstable/v1`이라 죽는 대신 **PyPI 게시가 unstable 채널로 조용히 넘어간다**. 올릴 때는 `gh api repos/<owner>/<repo>/branches/<branch> --jq .commit.sha`로 브랜치 헤드를 직접 확인한다.
+  2. **소비자 하한을 나타내는 버전.** `kotlin-stdlib`는 게시 아티팩트의 소비자 하한이라 `languageVersion`/`apiVersion`과 **함께** 움직여야 한다. 패치는 받고 마이너/메이저는 차단한다.
 
 ## 로컬 ↔ CI 발산
 
-- ⚠️ **하드닝 CI 게차**: Go `gofmt`·Node `prettier`·PHP `cs-fixer`는 Windows CRLF 워킹트리를 전부 flag(변경파일 LF-정규화 후 재확인) · 전역상태 테스트(Ruby rack-oauth2)는 flaky라 config 훅 mock 검증 · pip-audit는 editable skip에도 exit1(→ `pip freeze --exclude-editable`+`-r`) · SonarCloud "0% Coverage on New Code"는 Kotlin kover만 피드해 비-Kotlin PR마다 fail(비차단·UNSTABLE).
-- ⚠️ **java jacoco:check는 `verify` 페이즈 바인딩 — 로컬 `mvn test`로는 커버리지 게이트 미검증**(반드시 `mvn -pl … -am verify -DskipITs`). PR #71에서 `forRealm`에 `.rateLimited()` 1줄이 auth번들을 0.90→0.89로 떨어뜨려 CI 3잡 동시실패 — `JWKSourceBuilder` 지연특성 이용한 네트워크-프리 `forRealm` 단위테스트로 복원.
+- 포매터가 Windows CRLF 워킹트리를 전부 flag한다(Go `gofmt` · Node `prettier` · PHP `cs-fixer`) — 변경 파일을 LF로 정규화한 뒤 재확인한다.
+- `pip-audit`는 editable skip에도 exit 1 → `pip freeze --exclude-editable` + `-r`.
+- **java `jacoco:check`는 `verify` 페이즈 바인딩이라 `mvn test`로는 커버리지 게이트가 검증되지 않는다** — 반드시 `mvn -pl … -am verify -DskipITs`.
+- SonarCloud "0% Coverage on New Code"는 Kotlin kover만 피드해 비-Kotlin PR마다 실패한다(비차단).
 
-## doc-guard 앵커 계약 (`scripts/check-docs.mjs`)
+## 하네스
 
-루트 `CLAUDE.md`「문서 유지 규칙」이 앵커 **스코프**(9개 언어 · 50 facts / 19 anchors)를 선언한다. 여기는 그 계약의 **세부**다 — 앵커를 추가·이동하거나 핀 표기를 바꿀 때 읽는다.
-
-- ⚠️ **런타임 앵커는 "앵커 뒤 3줄 안의 *첫* 백틱 스팬 중 숫자를 포함한 것"을 문서의 주장으로 읽는다** — 그래서 버전보다 먼저 오는 백틱 토큰에 숫자가 있으면 그걸 주장으로 오인한다. 실제로 걸렸던 둘: Java의 `` `--release 21` ``과 Go의 `` `golang.org/x/oauth2` ``(둘 다 숫자를 품는다). 두 절은 버전을 문장 앞으로 옮겨 해결했다. ⚠️ **Kotlin 앵커는 `jvmToolchain(21)`, 즉 JDK 툴체인을 검증한다 — Kotlin 언어 버전(2.2)이 아니다.** 그래서 그 절은 JDK 절을 먼저 두고 그 사실을 본문에 명시했다. 이걸 모르고 "Kotlin 버전을 가리키도록 고치면" 앵커가 21 vs 2.2로 깨진다.
-- ⚠️ **앵커를 추가하면 `.github/workflows/repo-hygiene.yml`의 `--min-facts`/`--min-anchors`도 함께 올려야 한다.** 그 하한은 "앵커 주석만 지우고 표를 남기는" 자기기만을 막는 장치인데, 한때 `14/4`에 머물러 있고 실측은 이미 `28/7`이라 **앵커 절반이 사라져도 CI가 통과하는** 상태였다.
-- ✅ **버전 *제약 연산자* 사각지대는 닫혔다(2026-08-04).** 예전에는 `normalizeVersion()`이 비교 전에 선행 `=`/`^`/`~`/`>=`/`~>`를 떼어내 `=26.6.2`와 `26.6.2`를 같은 값으로 판정했고, Rust 3개 크레이트를 정확 핀에서 캐럿/틸드로 바꾼 변경에서 문서가 여전히 `=`를 주장하는데도 `doc-facts`가 통과한 실제 사례가 있었다 — **핀 방식 변경은 구조적으로 보이지 않는 드리프트**였다. 지금은 의존성 표(`kind=dep`)만 `normalizeRequirement()`로 **연산자까지 포함해** 대조한다. 최소 런타임(`kind=runtime`)은 그대로 연산자를 벗긴다 — 거기서는 `>=22`와 문서 관용 `22+`가 같은 말이라 연산자가 포맷이지만, 의존성에서는 `=`·`~`·`^`가 소비자에게 서로 다른 계약이라 값 자체이기 때문이다. ⚠️ **따라서 표 셀은 빌드 파일이 쓴 대로 적는다.** cargo에서 맨 `"4.0.1"`과 `"^4.0.1"`은 의미가 같지만 가드는 문자로 대조하므로, 매니페스트에 `^`를 명시하면 표도 함께 고쳐야 한다(npm은 맨 `22`와 `^22`가 실제로 다른 의미라 이 엄격함이 오히려 옳다). 전환 시 실측: 오탐 0건, 진짜 드리프트 1건(`keycloak` 셀이 `26.6.2`인데 `Cargo.toml`은 `~26.6.2`)만 잡혀 그 자리에서 고쳤다.
-
-## 하네스 컨테이너
-
-- ⚠️ **앱/레지스트리 전 컨테이너가 Alpine(musl) 베이스다.** Debian/glibc는 Docker Desktop(Windows) 내장 DNS프록시가 레지스트리 CNAME체인을 glibc 리졸버에 실패로 돌려줘 `dotnet restore`/`pip install`/Maven·npm 다운로드가 막힌다(musl은 정상, CI 네이티브 Docker 무해). install harness에서 재확인된 같은 근거다.
-- ✅ **go 공개프록시 폴스루는 닫혔다(2026-08-11, #167)** — 이제 `go-run.sh`가 file GOPROXY가 그 버전을 실제로 보유하는지 확인하고, 아니면 `installed.ok`를 쓰지 않는다(폴스루 = 실패). ⚠️ **격리 모델과 출처 단언은 서로 다른 축이다 — 한 문장에 묶지 말 것.** 격리는 6/3이다(소스-추가 6: python·java·kotlin·ruby·php·go / 구조 격리 3: node·rust·dotnet). 그러나 **출처를 기록하고 단언하는 것은 9개 전부다** — 구조 격리인 node·rust도 `PROVENANCE_OK` 게이트를 갖고(`5fe1c9c`·`d275579`), **dotnet이 마지막으로 채워졌다**(커밋 `b38f83c`). 실측: `grep -l PROVENANCE_OK harness/install/consume/*-run.sh | wc -l` → 9. 가드도 9를 안다(`test-harness-registries.sh:113`의 9언어 루프 `python java kotlin ruby php go node rust dotnet` + `:324`의 `assert_eq "9" "$prov_langs"`). 예전 서술이 "소스-추가 여섯만 단언한다"로 읽혀 node·rust에 게이트가 없는 것처럼 보였다. ⚠️ 이 부류는 "설정이 이렇다"가 아니라 **실제 다운로드 출처**를 본다 — 실측: 로컬 인덱스를 못 쓰는 상태에서 `pip install "keycloak-sdk==0.1.0rc1"`이 PyPI에서 받아 exit 0으로 끝났고(단언 도입 전이라면 초록), 단언 도입 후 같은 조건에서 `installed.ok`가 써지지 않는 것을 확인했다. 가드는 `scripts/test/test-harness-registries.sh`. ⚠️ **`install-verify.sh`의 언어별 버전 파생에 순서 의존성이 있었다** — `ver_for_lang`의 폴백이 루프가 덮어쓰는 전역 `PKG_VER`를 읽어 직전 언어의 버전이 go·php·java로 샜다(부분집합 실행 `java kotlin ruby php go`에서 go가 `go/v0.1.0.rc1`로 죽었다). `PKG_VER_DEFAULT`로 분리했다. 기본 순서에서는 go가 첫 번째라 야간은 초록이었다 — **부분집합 실행에서만 나타난다**.
-- ⚠️ **잔여 follow-up(marginal·미착수)**: 없음. **해소된 항목 둘은 목록에서 뺐다** — (a) rust closure의 `Cargo.lock` 커밋은 라이브러리 핀 완화의 재현성 근거로 `rust/Cargo.lock`이 저장소에 커밋됐고, (b) wait_healthy 크래시 조기감지는 `967d1ce`가 구현했다(`harness/install/lib.sh`의 `wait_healthy`가 `docker inspect`로 컨테이너 종료를 감지하면 남은 타임아웃을 태우지 않고 exit code + 마지막 로그 40줄과 함께 즉시 실패한다 — 단 컨테이너가 아직 안 생긴 경합은 판단 보류로 계속 대기한다).
+- ⚠️ **앱·레지스트리 컨테이너는 전부 Alpine(musl) 베이스다.** Debian/glibc는 Windows Docker Desktop 내장 DNS 프록시가 레지스트리 CNAME 체인을 glibc 리졸버에 실패로 돌려줘 `dotnet restore`/`pip install`/Maven·npm 다운로드가 막힌다(CI 네이티브 Docker는 무해).
+- ⚠️ **격리 모델과 출처 단언은 다른 축이다.** 격리는 6/3(소스-추가 6 / 구조 격리 3)이지만 **출처 기록·단언은 9개 언어 전부**다(`grep -l PROVENANCE_OK harness/install/consume/*-run.sh | wc -l` → 9). 이 부류는 설정이 아니라 **실제 다운로드 출처**를 본다 — 로컬 레지스트리가 아니면 `installed.ok`를 쓰지 않는다. 가드는 `scripts/test/test-harness-registries.sh`.
+- ⚠️ **`install-verify.sh`의 언어별 버전 파생은 전역 변수를 공유하지 않는다**(`PKG_VER_DEFAULT`로 분리). 이 부류의 순서 의존 버그는 **부분집합 실행에서만** 나타나 야간 CI는 초록이었다 — 테스트에 기본 순서와 사고 재현 순서를 **둘 다** 둔다.

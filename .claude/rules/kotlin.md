@@ -9,49 +9,49 @@ paths:
 
 # Kotlin 규칙
 
-## 툴체인 (빌드 명령)
+## 툴체인
 
-Kotlin은 JDK 21(Eclipse Temurin `jdk-21.0.11.10-hotspot`) + 포터블 Gradle `9.5.0`(로컬 실행용)을 사용한다(래퍼도 동일하게 `9.5.0` — `kotlin/gradle/wrapper/gradle-wrapper.properties`). 프리픽스를 인라인 지정하고 명령은 `gradle -p kotlin <task>`(또는 `kotlin/`에서 `./gradlew`)로 실행한다:
+JDK 21 + 포터블 Gradle `9.5.0`(래퍼도 동일). 명령은 `gradle -p kotlin <task>`.
+
 ```bash
-export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot}" PATH="${KCSDK_TOOLS:-$HOME/tools}/gradle-9.5.0/bin:$PATH" GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
-gradle -p kotlin build              # 빌드
-gradle -p kotlin test               # 단위테스트. Docker 불필요
-gradle -p kotlin integrationTest    # 통합 E2E 1개(Docker 필요 — Testcontainers/dasniko, 실제 Keycloak 26.6)
-gradle -p kotlin koverVerify        # 커버리지 게이트(로직 모듈 라인≥90%/브랜치≥85%, 네트워크 경계 omit)
-gradle -p kotlin ktlintCheck        # 린트(무경고; 수정은 ktlintFormat)
+export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot}" \
+       PATH="${KCSDK_TOOLS:-$HOME/tools}/gradle-9.5.0/bin:$PATH"
+gradle -p kotlin build
+gradle -p kotlin test                # 단위. Docker 불필요
+gradle -p kotlin integrationTest     # 통합 E2E 1개. Docker 필요(Testcontainers, KC 26.6)
+gradle -p kotlin koverVerify         # 커버리지 라인≥90/브랜치≥85, 네트워크 경계 omit
+gradle -p kotlin ktlintCheck         # 수정은 ktlintFormat
+gradle -p kotlin publishToMavenLocal # 배포 빌드 로컬 검증
 ```
-> 다른 PC에서는 `KCSDK_TOOLS`(포터블 툴 상위 디렉터리, 기본 `$HOME/tools`)·`KCSDK_JDK21`(JDK 21+ 경로)를 덮어쓰거나, 이미 PATH에 있으면 프리픽스를 생략한다. 설치·진단은 [development-setup.md](../../docs/guides/development-setup.md)(`node scripts/doctor.mjs kotlin`).
+
 - 단일 테스트: `gradle -p kotlin test --tests "*<ClassName>"`
-- 커버리지 게이트(Kover, 네트워크 경계 omit): `gradle -p kotlin koverVerify` — **실측 라인 99.24%/브랜치 85.71%**(omit 대상 `AuthClient*`/`admin.*`/`KeycloakClient*` — 통합 E2E로 검증). ⚠️ **이 수치는 CI 로그로 대조할 수 없다** — `koverVerify`는 통과/실패만 찍고 백분율을 출력하지 않는다(나머지 여덟 언어는 전부 수치를 찍어 문서와 기계 대조가 된다). 낡았는지 확인하려면 로컬에서 `gradle -p kotlin koverHtmlReport`를 돌려야 한다.
-- 로컬 배포 빌드 검증(업로드 없이): `gradle -p kotlin publishToMavenLocal` → 로컬 `~/.m2`에 `keycloak-sdk-kotlin-0.1.0-RC1.jar`(+`-sources.jar`/`-javadoc.jar`, Dokka) 생성 확인
-- 실제 Maven Central 배포는 로컬에서 실행하지 않는다 — `kotlin-v*` 태그 push 시 `.github/workflows/kotlin-release.yml`에서 vanniktech maven.publish로 `publishToMavenCentral`(Central Portal 스테이징) 실행(`ORG_GRADLE_PROJECT_` 접두 in-memory GPG 시크릿) 후, 사람이 Portal 콘솔에서 수동 release하는 2단계 승인 게이트(human-gated — `0.1.0-RC1`로 **실행 완료**, repo1 실측 200). `publish` 잡은 `verify`+별도 `integration` 잡(FullFlowIT)을 `needs:`로 요구하고, 첫 스텝에서 태그↔`build.gradle.kts` `version` 정합성을 검사하며(추출 실패도 실패), **4개 시크릿(`MAVEN_CENTRAL_USERNAME`/`_PASSWORD`·`SIGNING_IN_MEMORY_KEY`/`_PASSWORD`) 중 하나라도 없으면 건너뛰지 않고 실패한다**(아래 게차)
-- 좌표 `io.github.xzawed:keycloak-sdk-kotlin`. 빌드 KGP 2.4.10 · JDK 21 타깃(`jvmToolchain(21)`) · **`compilerOptions.languageVersion`/`apiVersion` = `KOTLIN_2_2`(소비자 Kotlin 하한 2.2+ — 아래 게차)** · `explicitApi()`로 public API 가시성 엄격 강제 — 소비자 측 코틀린 API 문서화 요구가 컴파일 타임에 강제됨
-- ⚠️ **`gradle --stop`을 빌드 인플라이트 중 실행 금지** — `--no-daemon`도 jvmargs 때문에 단일-사용 데몬을 fork하므로 진행 중 빌드를 죽인다(동일 프로젝트에 gradle 2개 동시 실행도 락 경합으로 금지). kill 후 stale 빌드 상태는 `gradle -p kotlin clean`으로 복구
-- ⚠️ ktlint의 소문자 다중선언 파일명(`errors.kt`/`masking.kt`/`tokens.kt`/`client.kt` 등, 모노레포 공통 관용) 규칙은 `kotlin/.editorconfig`의 `ktlint_standard_filename = disabled`로 비활성 — 커밋 전 `ktlintFormat`으로 나머지 포매팅 자동정렬
+- 좌표 `io.github.xzawed:keycloak-sdk-kotlin`. KGP 2.4.10 · `jvmToolchain(21)` · `languageVersion`/`apiVersion` = `KOTLIN_2_2`(소비자 하한) · `explicitApi()`.
+- 배포는 `kotlin-v*` 태그 → `kotlin-release.yml`(Central Portal 스테이징) → 사람이 Portal에서 release. 핀은 루트 `CLAUDE.md` 의존성 표가 SSOT(doc-guard 앵커가 `build.gradle.kts`와 대조 — 여기 숫자를 쓰지 않는다).
+- 커버리지 실측 라인 99.24%/브랜치 85.71%. ⚠️ `koverVerify`는 백분율을 출력하지 않아 CI 로그로 대조할 수 없다 — 확인하려면 `koverHtmlReport`.
 
-## 게차
+## 빌드·테스트 제약
 
-- ⚠️ **(Kotlin) `fun interface`+`suspend`는 컴파일된다(KT-40978 해소)** — 2.2.20에서 실증, 2.4.10에서도 유효. `TokenProvider`를 SAM 변환가능 함수형 인터페이스로 선언.
-- ⚠️ **(Kotlin) ktlint filename 규칙(다중선언 파일 PascalCase)은 이 모노레포와 충돌** — 소문자 공통파일(`errors.kt` 등) 자동수정 불가 → `ktlint_standard_filename = disabled`로 비활성. 나머지는 `ktlintFormat`(커밋전)+`ktlintCheck` 게이트. 근거: `kotlin/.editorconfig`.
-- ⚠️ **(Kotlin) `gradle --stop`을 빌드 인플라이트 중 실행 금지** — `--no-daemon`도 jvmargs로 단일사용 데몬 fork해 `--stop`이 죽임(테스트실패로 오인). 동일 프로젝트 gradle 2개 동시실행도 금지(락 경합). kill 후 stale은 `gradle -p kotlin clean`으로 복구.
-- ⚠️ **(Kotlin) MockK로 JAX-RS 추상클래스(`Response`·`WebApplicationException`)를 모킹하면 JDK21에서 무기한 hang한다** — byte-buddy가 RESTEasy 구현 클래스그래프를 계측하다 멈춤(단일테스트도 2.5분 타임아웃 실측, "non-final이라 안전"은 오판). `AdminBoundaryTest`는 실객체로 재작성: `WebApplicationException(msg,status)`·`Response.status(500).entity("body").build()`·익명서브클래스(`getResponse()=null`). **인터페이스**(`UsersResource` 등)는 MockK 프록시가 가벼워 안전.
-- ⚠️ **(Kotlin) 코루틴 스택트레이스 복구는 예외 identity를 보존 안 함** — suspend 경계를 넘는 예외는 새 인스턴스로 복사되므로 `assertSame` 대신 `assertIs<T>`+message 비교.
-- ⚠️ **(Kotlin) Kover 0.9.x는 와일드카드 없는 정확 클래스명 exclude를 무시한다** — `"AuthClient"` 정확명은 무시되고 브랜치집계에 섞임 → 네트워크경계 클래스는 전부 `*` 접미(`AuthClient*` 등)로 지정해야 top-level 함수클래스(`…Kt`)까지 제외.
-- ⚠️ **(Kotlin) jvm-test-suite 없이 수동 `creating` 소스셋으로 `integrationTest`를 만들면 "no tests discovered"** — Kotlin 컴파일출력이 `output.classesDirs`에 미등록. Gradle 표준 `jvm-test-suite`로 전환 필요, `dependencies`엔 `kotlin("test")` 대신 **`kotlin-test-junit5`** 명시(plain은 assertions만).
-- ⚠️ **(Kotlin) `= runBlocking {…}` 표현식-본문 `@Test`는 Jupiter가 발견 못 함** — 블록 마지막식이 non-Unit이면 메서드가 non-void가 됨 → `: Unit` 반환타입 명시 필요.
-- ⚠️ **(Kotlin) Kover 0.9.x는 jvm-test-suite `integrationTest`를 자동 계측대상에 포함** — `FullFlowIT` 미실행 시 0%로 총계 붕괴 + `koverVerify`가 Docker없는 단위CI를 파손 → `instrumentation.disabledForTestTasks.add("integrationTest")`+`sources.excludedSourceSets.add("integrationTest")` 둘 다 필요.
-- ⚠️ **(Kotlin) exchangeCode는 id_token을 nonce 비교 전에 완전 서명검증한다(Java와 동형)** — `JwtValidator`로 서명·iss·aud·exp를 먼저 검증하고 nonce를 그 다음에 대조한다. Java `AuthClient.requireValidNonce`도 `validate(idToken)` 후 nonce 비교다.
-- ⚠️ **(Kotlin) admin 파사드는 auth를 직접 알지 못한다(§4·Java 동형)** — `AdminClient`가 `KeycloakBuilder` 내장 client-credentials로 토큰 자체소유(TokenManager 자동 획득/갱신) — Java가 RESTEasy 필터충돌로 내린 결정을 상속.
-- ⚠️ **(Kotlin) 로컬 포터블 Gradle과 CI 래퍼 버전을 일치시켜 둔다(현재 둘다 9.5.0)** — 어긋나면 로컬에서 재현 안 되는 CI실패 발생. ⚠️ **다른 PC의 포터블 Gradle도 `gradle-9.5.0`으로 교체해야 한다**(아래 항목에서 래퍼를 되돌렸다).
-- ⚠️ **(Kotlin) Gradle 래퍼는 KGP의 완전지원 밴드 안에 둔다 — 2026-08-17에 `9.6.1`→`9.5.0`으로 되돌렸다(사용자 승인).** 실측(kotlinlang.org "Apply the plugin" 호환표 원문): `2.4.0-2.4.10 | 7.6.3–9.5.0 | AGP 8.5.2–9.1.0`, 본문 "the maximum fully supported version is 9.5.0". 같은 문서가 "You can also use Gradle … up to the latest releases, but … you might encounter deprecation warnings or some new features might not work"라 **밴드 밖이 곧 고장은 아니다**(밖에 있는 동안에도 CI는 초록이었다) — 그래서 이건 버그 수정이 아니라 **정책 복귀**다.
-  - ⚠️ **이 모듈은 첫 커밋부터 한 번도 밴드 안에 있던 적이 없다**(실측 — `git show <ref>:kotlin/...`). `bf38670`(스캐폴딩)이 KGP `2.2.20`(밴드 상한 **8.14**)에 래퍼 `9.5.0`을 얹었고, `723d0a4`(dependabot `kotlin-minor-patch` 그룹)가 KGP `2.2.20→2.4.10`과 래퍼 `9.5.0→9.6.1`을 **한 커밋에** 올렸다. 즉 **`723d0a4`는 밴드 밖으로 나간 사고가 아니라 간격을 좁힌 커밋**이었고(메이저 하나 → 0.1.1), 진짜 사고는 **아무도 이 짝을 확인한 적이 없다**는 것이다. 이번 되돌림으로 KGP 2.4.10 + 래퍼 9.5.0이 되어 **처음으로 밴드 안**에 들어왔다. 하네스 소비자앱(`harness/apps/kotlin`·`harness/install/consume/kotlin-app`)이 이미 `9.5.0`이라 리포의 Gradle도 한 버전으로 합쳐졌다.
-  - **재발 방지 둘**(하나는 격리, 하나는 단언 — 서로를 대체하지 않는다). (1) `.github/dependabot.yml`이 `gradle-wrapper`를 `kotlin-minor-patch` 그룹에서 `exclude-patterns`로 빼서 **단독 PR**로 오게 한다(KGP와 같은 diff에 섞이면 제약 관계가 안 보인다). (2) `scripts/check-versions.mjs`가 `kotlin/build.gradle.kts`의 `// kgp-gradle-band: kgp=<KGP> gradle=<min>-<max>` 선언을 **실제 KGP 선언·래퍼 배포 URL과 대조**한다 — 밴드 값은 외부 데이터라 CI가 못 가져오므로 하드코딩하되 `kgp=`로 KGP에 묶어, **KGP가 움직이면 기록이 무효가 되어 사람이 밴드를 다시 확인**하게 만든다. 같은 검사가 `build.gradle.kts` 1행의 미러 주석도 함께 본다(오래 아무도 안 보던 2차 정의 자리였다).
-  - **래퍼를 올릴 수 있는 조건**: KGP가 올라 그 KGP의 밴드 상한이 목표 Gradle 이상이 되었을 때 — 그때 **KGP·`kgp-gradle-band` 기록·래퍼·1행 미러 주석을 한 커밋에서 함께** 옮긴다(가드가 넷의 정합을 강제한다). 그 전에 래퍼만 올리지 않는다. 참고: dependabot #183(`9.6.1→9.7.0`)은 이 근거로 이미 기각됐다 — 9.7.0은 밴드를 좁히는 게 아니라 한 칸 더 벌린다(Gradle 9.7.0이 임베드하는 Kotlin은 2.4.0이지만 그건 빌드스크립트 DSL 축이라 KGP 지원과 별개다).
-- ⚠️ **(Kotlin) 신규 라이브러리 리스크 0** — Java SDK가 실Keycloak으로 이미 검증한 3개(admin-client·oauth2-oidc-sdk·nimbus-jose-jwt)를 그대로 재사용, Java의 게차를 코루틴 경계만 다르게 상속. **핀은 루트 `CLAUDE.md`의 Kotlin 의존성 표에만 적는다**(doc-guard 앵커가 `kotlin/build.gradle.kts`와 대조 — 여기 숫자를 쓰면 2차 정의 자리가 된다).
-- ⚠️ **(Kotlin) 게시 아티팩트의 바이너리 메타데이터 버전(`@Metadata(mv=…)`)은 KGP 버전이 아니라 `languageVersion`/`apiVersion`이 정한다** — 설정 없이 KGP 2.4.10으로 빌드하면 jar에 `mv=[2,4,0]`이 박히고, **Kotlin 2.4 미만 컴파일러는 그 클래스를 "compiled with an incompatible version of Kotlin"으로 거부해 소비자가 라이브러리를 아예 쓸 수 없다**(하네스 install 잡의 소비자앱이 Kotlin 2.2.20이라 7일 연속 RED였던 실제 원인). `kotlin { compilerOptions { languageVersion/apiVersion = KotlinVersion.KOTLIN_2_2 } }`를 넣으면 `mv=[2,2,0]`이 방출된다(`KOTLIN_2_0`도 `mv=[2,0,0]`으로 동작하나 KGP 2.4.10이 "Language version 2.0 is deprecated"를 경고하므로 2.2를 선택 — 이 설정으로 `test`+`ktlintCheck` BUILD SUCCESSFUL 확인). **하한을 올리면 그만큼 소비자를 잘라내는 것이므로 릴리스 노트에 명시할 것.**
-  - **측정 방법**: jar를 풀고(`unzip`) 클래스 하나를 `javap -v`로 덤프해 `kotlin/Metadata` 애노테이션의 `mv` 배열을 읽는다. ⚠️ **상수 풀(raw constant pool)만 grep하는 것으로는 판별할 수 없다** — 풀 엔트리가 중복 제거되어 `[2,2,0]`과 `[2,0,0]`이 동일하게 보인다. 반드시 애노테이션의 element 참조를 읽어야 한다.
-  - ⚠️ **`languageVersion`/`apiVersion`만으로는 부족하다 — 전이 `kotlin-stdlib`도 같이 내려야 한다.** KGP는 자기 버전(2.4.10)의 stdlib를 의존성으로 자동 추가하고 그 좌표가 게시 POM에 실린다. 우리 클래스를 `mv=[2,2,0]`으로 낮춰도 소비자는 stdlib 2.4.10을 해석하게 되고, 그 jar의 메타데이터가 2.4.0이라 **`Class 'kotlin.Unit' was compiled with an incompatible version of Kotlin`으로 여전히 컴파일 불가**다(첫 수정 후에도 install 잡이 같은 오류로 실패해 드러났다 — 우리 클래스가 아니라 stdlib가 범인이었다). `gradle.properties`에 `kotlin.stdlib.default.dependency=false`를 두고 `build.gradle.kts`에서 `api("org.jetbrains.kotlin:kotlin-stdlib:<하한>")`으로 명시 선언한다. 상위 Kotlin 소비자는 자기 KGP가 더 높은 stdlib를 가져오므로(Gradle이 최고 버전 선택) 손해가 없다. **`constraints`로는 낮출 수 없다** — 제약은 하한이라 자동주입된 2.4.10이 이긴다.
-  - **검증 방법**: `publishToMavenLocal` 후 게시 POM의 `kotlin-stdlib` 버전을 확인하고, `harness/apps/kotlin`(Kotlin 2.2.20 + `mavenLocal()`)에서 `./gradlew classes`가 통과하는지 본다 — install 잡과 동일 조건을 로컬에서 재현하는 가장 빠른 경로다.
-- ⚠️ **(Kotlin) 릴리스 시크릿 4개는 전부 있어야 하고, 하나라도 없으면 업로드를 건너뛰는 게 아니라 실패해야 한다** — 이전에는 `MAVEN_CENTRAL_USERNAME` 하나만 검사하고 `exit 0`으로 스킵해서, **서명키(`SIGNING_IN_MEMORY_KEY`) 없이도 green 실행에서 서명 없는 아티팩트가 Central Portal로 올라갈 수 있었다**. 지금은 누락된 이름을 전부 나열하고 `::error::`+`exit 1`. ⚠️ job-level `if:`는 secrets 컨텍스트를 읽지 못하므로(github/needs/vars/inputs만) 가드는 스텝 안에서 env-매핑된 값으로 해야 한다.
-- ⚠️ **(Java·Kotlin) `jwksMinRefetch`는 Nimbus 캐시 TTL(기본 5분)보다 작아야 한다 — 크면 `JWKSourceBuilder.build()`가 `IllegalStateException`을 던진다.** 캐시가 만료돼도 rate-limit이 재조회를 막아 JWKS를 영영 갱신할 수 없는 구성이라 Nimbus가 거부하는 것 자체는 정당하다. 문제는 그 foreign 예외가 `JwtValidator.forRealm`에서 **그대로 새어나와** 공개 API에 하위 라이브러리 타입이 노출됐다는 것(§4 위반)이다 — 지금은 두 언어 모두 경계에서 `KeycloakConfigException`으로 변환하고 한계값을 메시지에 담는다. 회귀 테스트: Java `jwksMinRefetch_atOrAboveCacheTtl_isRejectedAsConfigError`, Kotlin `jwksMinRefetch at or above cache ttl is rejected as config error`. **JWKS rate-limit을 테스트할 때는 반드시 대조군(간격 0 또는 검증기 재생성)을 함께 둘 것** — 캐시만으로도 "히트가 토큰 수보다 적다"가 성립해 `.rateLimited(...)` 한 줄을 지워도 통과한다(Node에서 먼저 겪은 함정).
-- ⚠️ **(Java·Kotlin) `resteasyClient(...)` 주입은 admin-client의 `JacksonProvider` 등록을 통째로 우회한다.** admin-client는 이 프로바이더를 자기가 만든 클라이언트에만 등록하므로, 타임아웃 주입용으로 우리 클라이언트를 넘기면 `NON_NULL`(null필드 미전송)과 `FAIL_ON_UNKNOWN_PROPERTIES=false`(미지필드 무시)를 둘 다 잃는다 — 버전스큐에서 양방향 파손(클라이언트가 앞서면 400 *Unrecognized field*, 서버가 앞서면 역직렬화 깨짐). **26.0.11의 `UserRepresentation.verifiableCredentials`에서 실제 발현(PR #84)**. `buildTimeoutClient`가 `.register(JacksonProvider.class,100)`+`.register(StreamMessageBodyReader.class)`를 직접 수행 — ⚠️ **`StreamMessageBodyReader`는 26.0.11에서 분리돼 생겼다(그 이후 버전에도 있다 — 26.0.12 컴파일로 확인)**(26.0.10까지는 JacksonProvider 내장 — 프로바이더의 stream 참조 26.0.10 **9건** → 26.0.11 **0건** 실측). `ClientBuilder.newBuilder()` 유지 필수 — `createClientBuilder()`로 바꾸면 커넥션풀이 50→10으로 조용히 축소. ⚠️ **동작 계약**: NON_NULL이 켜지면 부분 업데이트에서 null로 필드를 비우는 것이 불가능해진다(미설정 필드는 전송되지 않아 서버가 '변경 없음'으로 처리) — 공식 admin-client와 동일한 동작이다. 비우려면 빈 문자열/전용 API를 쓴다.
+- ⚠️ **`gradle --stop`을 빌드 중에 실행하지 않는다.** `--no-daemon`도 데몬을 fork하므로 진행 중 빌드가 죽고 테스트 실패로 오인된다. 같은 프로젝트에 gradle 2개 동시 실행도 금지(락 경합). 복구는 `gradle -p kotlin clean`.
+- ⚠️ **MockK로 JAX-RS 추상클래스(`Response`·`WebApplicationException`)를 모킹하면 JDK21에서 무기한 hang한다.** byte-buddy가 RESTEasy 클래스그래프를 계측하다 멈춘다. 실객체를 쓴다 — `WebApplicationException(msg, status)` · `Response.status(500).entity("body").build()` · 익명 서브클래스. **인터페이스**(`UsersResource` 등) 모킹은 안전하다.
+- ⚠️ **코루틴 스택트레이스 복구는 예외 identity를 보존하지 않는다.** suspend 경계를 넘은 예외는 새 인스턴스다 — `assertSame` 대신 `assertIs<T>` + message 비교.
+- ⚠️ **`= runBlocking { … }` 표현식 본문 `@Test`는 Jupiter가 발견하지 못한다.** 마지막 식이 non-Unit이면 메서드가 non-void가 된다 — `: Unit`을 명시한다.
+- ⚠️ **`integrationTest`는 Gradle `jvm-test-suite`로 만든다.** 수동 `creating` 소스셋은 Kotlin 컴파일 출력이 `output.classesDirs`에 등록되지 않아 "no tests discovered"가 된다. 의존성은 `kotlin("test")`가 아니라 **`kotlin-test-junit5`**.
+- ⚠️ **Kover 0.9.x 두 가지**: (1) 와일드카드 없는 정확 클래스명 exclude를 무시한다 — 네트워크 경계는 `AuthClient*`처럼 `*` 접미로 지정해야 top-level 함수 클래스(`…Kt`)까지 빠진다. (2) `integrationTest`를 자동 계측 대상에 넣어 Docker 없는 단위 CI를 파손한다 — `instrumentation.disabledForTestTasks.add("integrationTest")`와 `sources.excludedSourceSets.add("integrationTest")` **둘 다** 필요하다.
+- ktlint의 다중선언 파일명 규칙은 이 모노레포의 소문자 관용(`errors.kt` 등)과 충돌해 `kotlin/.editorconfig`에서 `ktlint_standard_filename = disabled`.
+
+## 게시 제약
+
+- ⚠️ **Gradle 래퍼는 KGP의 완전지원 밴드 안에 둔다**(KGP 2.4.10 → 7.6.3–9.5.0). 밴드 밖이 곧 고장은 아니지만 이 저장소의 정책이다. 래퍼만 올리지 말고 **KGP·`kgp-gradle-band` 기록·래퍼·`build.gradle.kts` 1행 미러 주석을 한 커밋에서 함께** 옮긴다 — `scripts/check-versions.mjs`가 넷의 정합을 강제한다. dependabot은 래퍼를 단독 PR로 올린다(`exclude-patterns`).
+- ⚠️ **게시 jar의 바이너리 메타데이터 버전은 KGP가 아니라 `languageVersion`/`apiVersion`이 정한다.** 설정 없이 KGP 2.4.10으로 빌드하면 `mv=[2,4,0]`이 박혀 **Kotlin 2.4 미만 소비자가 라이브러리를 아예 쓸 수 없다.**
+  - ⚠️ **전이 `kotlin-stdlib`도 함께 내려야 한다.** 클래스 메타데이터만 낮추면 소비자는 여전히 stdlib 2.4.10을 해석해 `Class 'kotlin.Unit' was compiled with an incompatible version of Kotlin`으로 실패한다. `gradle.properties`에 `kotlin.stdlib.default.dependency=false` + `api("org.jetbrains.kotlin:kotlin-stdlib:<하한>")` 명시. **`constraints`로는 낮출 수 없다**(제약은 하한이라 자동주입이 이긴다).
+  - 확인: `publishToMavenLocal` 후 POM의 stdlib 버전을 보고, `harness/apps/kotlin`(Kotlin 2.2.20 + `mavenLocal()`)에서 `./gradlew classes`가 통과하는지 본다. 메타데이터 자체는 `javap -v`로 `kotlin/Metadata`의 `mv` 배열을 읽는다(상수 풀 grep은 중복 제거 때문에 판별 불가).
+  - **하한을 올리면 그만큼 소비자를 잘라내는 것이므로 릴리스 노트에 명시한다.**
+- ⚠️ **릴리스 시크릿 4개(`MAVEN_CENTRAL_USERNAME`/`_PASSWORD`·`SIGNING_IN_MEMORY_KEY`/`_PASSWORD`)는 하나라도 없으면 실패시킨다.** 스킵하면 서명 없는 아티팩트가 green 실행에서 Portal로 올라간다. job-level `if:`는 secrets를 읽지 못하므로 가드는 **스텝 안에서 env-매핑된 값**으로 한다.
+
+## SDK 동작 (Java와 동형)
+
+- `exchangeCode`는 id_token을 **nonce 비교 전에** 완전 검증한다(서명·iss·aud·exp).
+- admin 파사드는 auth를 알지 못한다 — `KeycloakBuilder` 내장 client-credentials로 토큰을 자체 소유한다(§4).
+- `fun interface` + `suspend`는 컴파일된다(KT-40978 해소) — `TokenProvider`가 SAM 변환 가능하다.
+- ⚠️ **`jwksMinRefetch`는 Nimbus 캐시 TTL(기본 5분) 미만이어야 한다.** 넘으면 `JWKSourceBuilder.build()`가 던지고, 그 foreign 예외가 공개 API로 새면 §4 위반이다 — 경계에서 `KeycloakConfigException`으로 변환한다. ⚠️ **JWKS rate-limit 테스트에는 대조군(간격 0 또는 검증기 재생성)을 반드시 둔다** — 캐시만으로도 통과해 하드닝 한 줄을 지워도 초록이 된다.
+- ⚠️ **`resteasyClient(...)` 주입은 admin-client의 `JacksonProvider` 등록을 우회한다** — `NON_NULL`과 `FAIL_ON_UNKNOWN_PROPERTIES=false`를 함께 잃어 버전 스큐에서 양방향으로 깨진다. `buildTimeoutClient`가 `JacksonProvider`와 `StreamMessageBodyReader`를 직접 등록한다. `ClientBuilder.newBuilder()`를 유지할 것(`createClientBuilder()`는 커넥션풀을 50→10으로 줄인다). **동작 계약**: NON_NULL이 켜지면 부분 업데이트에서 null로 필드를 비울 수 없다(공식 admin-client와 동일) — 비우려면 빈 문자열이나 전용 API를 쓴다.
