@@ -155,6 +155,21 @@ internal class FullFlowIT {
                         .list()
                         .any { it.name == roleName },
                 )
+                // ⚠️ update는 경로(현재 이름)와 body(새 값)를 분리해 넘긴다 — 합치면 rename이 조용한 no-op이 된다.
+                kc.admin.roles().update(
+                    roleName,
+                    RoleRepresentation().apply {
+                        name = roleName
+                        description = "updated by e2e"
+                    },
+                )
+                assertEquals(
+                    "updated by e2e",
+                    kc.admin
+                        .roles()
+                        .get(roleName)
+                        .description,
+                )
                 kc.admin.roles().delete(roleName)
 
                 // 7) group CRUD.
@@ -173,15 +188,46 @@ internal class FullFlowIT {
                         .list(0, 20)
                         .any { it.id == groupId },
                 )
+                // rename — 경로는 id, body에 새 이름. 둘을 합치면 이 단언이 깨진다.
+                kc.admin.groups().update(groupId, GroupRepresentation().apply { name = "$groupName-renamed" })
+                assertEquals(
+                    "$groupName-renamed",
+                    kc.admin
+                        .groups()
+                        .get(groupId)
+                        .name,
+                )
                 kc.admin.groups().delete(groupId)
 
-                // 8) realms().get(현재 렐름) — it-client 자체 realm-management 스코프로 조회 가능.
+                // 8) realms().get/list/update — it-client 서비스계정의 realm-management 스코프
+                // (view-realm·manage-realm)로 자기 렐름은 조회·갱신 가능하다.
                 assertEquals(
                     "it-realm",
                     kc.admin
                         .realms()
                         .get("it-realm")
                         .realm,
+                )
+                // 서비스 계정은 보통 자기 렐름만 본다 — 포함 여부만 본다.
+                assertTrue(
+                    kc.admin
+                        .realms()
+                        .list()
+                        .any { it.realm == "it-realm" },
+                )
+                kc.admin.realms().update(
+                    "it-realm",
+                    RealmRepresentation().apply {
+                        realm = "it-realm"
+                        displayName = "updated by e2e"
+                    },
+                )
+                assertEquals(
+                    "updated by e2e",
+                    kc.admin
+                        .realms()
+                        .get("it-realm")
+                        .displayName,
                 )
 
                 // 8b) it-client 서비스계정으로 신규 렐름 생성 시도 → 403(master 전용, 실서버 확정 동작).

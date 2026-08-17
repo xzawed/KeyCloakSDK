@@ -31,6 +31,18 @@ public class GroupsResource internal constructor(
         max: Int,
     ): List<GroupRepresentation> = adminCall { delegate.groups(first, max) }
 
+    /**
+     * id로 주소를 잡아 그룹을 갱신한다. representation.name에 새 이름을 주면 rename이다.
+     *
+     * ⚠️ 경로(id)와 body(representation)를 합치지 말 것 — 합치면 rename이 조용한 no-op이 된다.
+     */
+    public suspend fun update(
+        id: String,
+        representation: GroupRepresentation,
+    ) {
+        adminCall { delegate.group(id).update(representation) }
+    }
+
     public suspend fun delete(id: String) {
         adminCall { delegate.group(id).remove() }
     }

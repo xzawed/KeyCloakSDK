@@ -12,6 +12,7 @@
 - **(Python) 게시된 휠이 자신을 `0.1.0`으로 보고했다** — `__version__`이 매니페스트와 어긋남. 이제 `importlib.metadata`에서 파생. 경위: [`.claude/rules/python.md`](.claude/rules/python.md). (2026-08-03)
 
 ### Added
+- **(Kotlin) admin 파사드가 25/25가 됐다 — `realms.list`·`realms.update`·`roles.update`·`groups.update` 추가.** Java와 같은 admin-client를 감싸므로 구현도 동형이되 전부 `suspend` + `adminCall {}` 경계 변환이다. 이로써 **Rust만 25/25 미만**으로 남는다.
 - **(Java) admin 파사드가 25/25가 됐다 — `realms.list`·`realms.update`·`roles.update`·`groups.update` 추가.** admin-client가 fluent 리소스 경로(`realm(name)`·`roles().get(name)`·`groups().group(id)`)로 주소를 잡고 representation을 따로 받으므로 경로/body가 구조적으로 분리돼 rename이 네이티브로 된다.
 - **(Python) admin 파사드가 25/25가 됐다 — `realms.list`·`realms.update`·`roles.update`·`groups.update` 추가(sync + `aio` 미러라 구현 단위는 8개).** python-keycloak이 경로 인자와 payload를 분리해 받으므로 rename이 네이티브로 된다. sync와 async가 갈리지 않도록 단위 테스트도 두 미러에 1:1로 넣었다.
 - **(Node) admin 파사드가 25/25가 됐다 — `realms.list`·`realms.update`·`roles.update`·`groups.update` 추가.** 시그니처는 자매 언어와 동형이다(`update(주소, representation): Promise<void>`). admin-client가 경로(query)와 body(payload)를 이미 분리해 받으므로 **rename이 네이티브로 된다** — Go처럼 raw REST로 우회할 필요가 없었다.
