@@ -8,12 +8,12 @@
 
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Languages](https://img.shields.io/badge/languages-9-brightgreen)
-![Status](https://img.shields.io/badge/status-pre--release-orange)
+![Status](https://img.shields.io/badge/status-0.1.0%20(pre--1.0)-blue)
 ![Keycloak](https://img.shields.io/badge/Keycloak-26.6-informational)
 
 > 여기서 "다국어/polyglot"은 **프로그래밍 언어**를 뜻하며, 자연어 현지화(i18n)와는 무관합니다.
 >
-> ⚠️ **아홉 언어 전부 정식 `0.1.0`이 공개 레지스트리에 게시됐습니다** — 모든 배포는 사람 승인 게이트이고, 라인은 아직 pre-1.0입니다. 아래 내용은 지금 당장 클론해서도 그대로 돌아갑니다: [지금 바로 써보기](#지금-바로-써보기) 참고.
+> ⚠️ **아홉 언어 전부 정식 `0.1.0`이 공개 레지스트리에 게시됐습니다** — 모든 배포는 사람 승인 게이트이고, 라인은 아직 pre-1.0입니다. 설치 명령은 [설치](#설치)에, 붙일 임시 서버는 [지금 바로 써보기](#지금-바로-써보기)에 있습니다.
 
 ---
 
@@ -21,7 +21,7 @@
 
 실제로 그것들을 계속 씁니다 — 이 SDK는 각 생태계에서 **가장 좋은 클라이언트를 대체하지 않고 감쌉니다**. 그 위에, 그 클라이언트들이 사용자에게 떠넘기는 세 가지를 더합니다:
 
-- **기본값부터 강화된 JWT 검증.** 감싸는 라이브러리들은 느슨한 기본값을 주거나 building block만 줍니다. 여기서는 알고리즘 핀닝·`iss` 정확일치·`aud` 검사·`exp` 필수·클록 스큐 제한·rate-limit JWKS 재조회가 아홉 언어 모두에서 기본값입니다(.NET의 재조회 트리거는 더 넓다 — [자세히](#기본이-안전한-설계)).
+- **기본값부터 강화된 JWT 검증.** 감싸는 라이브러리들은 느슨한 기본값을 주거나 building block만 줍니다. 여기서는 알고리즘 핀닝·`iss` 정확일치·`aud` 검사·`exp` 필수·클록 스큐 제한·rate-limit JWKS 재조회가 아홉 언어 모두에서 기본값입니다(.NET의 재조회 트리거는 더 넓습니다 — [자세히](#기본이-안전한-설계)).
 - **전체 서비스군에 걸친 하나의 사고 모델.** 동일한 `auth` / `admin` 파사드, 동일한 토큰·검증 타입, 동일한 오류 계층 — Go 서비스와 PHP 서비스를 같은 체크리스트로 리뷰할 수 있습니다.
 - **뺏어가는 것은 없음.** 파사드가 못 덮는 것이 있으면 `raw` 탈출구로 감싼 클라이언트에 그대로 접근합니다.
 
@@ -51,28 +51,52 @@ with KeycloakClient.create(config) as kc:
 
 ---
 
+## 설치
+
+```bash
+pip install keycloak-sdk                              # Python
+npm install @xzawed/keycloak-sdk                      # Node
+go get github.com/xzawed/KeyCloakSDK/go@v0.1.0        # Go
+dotnet add package Xzawed.Keycloak.Sdk                # C# / .NET
+composer require xzawed/keycloak-sdk                  # PHP
+cargo add keycloak-sdk                                # Rust
+gem install keycloak-sdk                              # Ruby
+```
+
+JVM은 빌드 파일에 좌표를 추가합니다:
+
+```
+io.github.xzawed:keycloak-sdk:0.1.0                   # Java   (Maven Central)
+io.github.xzawed:keycloak-sdk-kotlin:0.1.0            # Kotlin (Maven Central)
+```
+
+빌드 도구별 전체 스니펫(Maven XML · Gradle Kotlin DSL · `Gemfile` · `Cargo.toml`)은 [시작 가이드](docs/guides/getting-started.md)에 있습니다.
+
 ## 지금 바로 써보기
 
-레지스트리 설치는 아직 첫 RC뿐이지만 — 어느 쪽이든, 클론만 하면 전체 경로가 그대로 동작합니다:
+붙을 Keycloak **서버**가 먼저 필요합니다 — 이것은 클라이언트 라이브러리이고, 서버는 별개 제품입니다:
 
 ```bash
 # 1) 붙을 Keycloak 서버
 docker run -p 8080:8080 \
   -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
   quay.io/keycloak/keycloak:26.6 start-dev
+```
 
-# 2) SDK를 소스에서 설치 — Python 예시이며, 모든 언어에 동등한 절차가 있습니다
+그다음 realm에 **서비스 계정을 활성화한 confidential 클라이언트**를 만드세요 — 예제가 받는 `client_id` / `client_secret`이 바로 그 한 쌍입니다. 버리는 컨테이너가 아니라 실서버가 필요하면 [Keycloak 서버 배포](docs/guides/deploying-keycloak-server.md)를 보세요.
+
+릴리스본이 아니라 SDK 자체를 개발하려면 클론에서 설치합니다 — Python 예시이며, 모든 언어의 동등 절차는 [시작 가이드](docs/guides/getting-started.md)에 있습니다:
+
+```bash
 git clone https://github.com/xzawed/KeyCloakSDK.git
 pip install -e KeyCloakSDK/python
 ```
-
-그다음 realm에 서비스 계정을 활성화한 confidential 클라이언트를 만드세요 — 예제가 받는 `client_id` / `client_secret`이 바로 그 한 쌍입니다. 언어별 로컬 설치(Maven · Gradle · npm · go · dotnet · composer · cargo · bundler)와 실행 가능한 예제는 [시작 가이드](docs/guides/getting-started.md)에 있습니다.
 
 ---
 
 ## 지원 언어
 
-| 언어 | 런타임 · 관용 | 패키지 *(레지스트리 게시 여부: [현재 상태](#현재-상태) 참고)* | 예제 |
+| 언어 | 런타임 · 관용 | 패키지 *(아홉 전부 공개 레지스트리에 `0.1.0` 게시)* | 예제 |
 |---|---|---|---|
 | **Java** | JDK 21+ · 블로킹 | `io.github.xzawed:keycloak-sdk` (Maven Central) | [QuickStart.java](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) |
 | **Python** | 3.10+ · sync + async(`aio`) | `keycloak-sdk` (PyPI) | [quickstart.py](python/examples/quickstart.py) · [async](python/examples/async_quickstart.py) |
