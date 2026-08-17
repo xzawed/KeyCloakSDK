@@ -189,6 +189,27 @@ async fn full_flow() {
     assert_eq!(page.len(), 1, "max=1을 보냈으면 서버도 1건만 돌려줘야 한다");
     let got = client.admin().get_user(&uid).await.unwrap();
     assert_eq!(got.username.as_deref(), Some(uname.as_str()));
+
+    // 부분(sparse) 갱신 — first_name만 보내고 신원 필드가 보존되는지 본다.
+    client
+        .admin()
+        .update_user(
+            &uid,
+            UserRepresentation {
+                first_name: Some("Ada".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let after = client.admin().get_user(&uid).await.unwrap();
+    assert_eq!(after.first_name.as_deref(), Some("Ada"));
+    assert_eq!(
+        after.username.as_deref(),
+        Some(uname.as_str()),
+        "sparse update must not clobber username"
+    );
+
     client.admin().delete_user(&uid).await.unwrap();
 
     // ── 5) delete 후 조회 → NotFound ──
@@ -211,6 +232,39 @@ async fn full_flow() {
         .expect("create_client must return internal uuid via Location header");
     let gc = client.admin().get_client(&client_uuid).await.unwrap();
     assert_eq!(gc.client_id.as_deref(), Some(client_id.as_str()));
+    // ⚠️ update 넷은 전부 경로(주소)와 body(새 값)를 분리해 넘긴다 — 합치면 rename이 조용한 no-op이 된다.
+    client
+        .admin()
+        .update_client(
+            &client_uuid,
+            ClientRepresentation {
+                client_id: Some(client_id.clone()),
+                description: Some("updated by e2e".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        client
+            .admin()
+            .get_client(&client_uuid)
+            .await
+            .unwrap()
+            .description
+            .as_deref(),
+        Some("updated by e2e")
+    );
+    assert!(
+        client
+            .admin()
+            .list_clients(0, 200)
+            .await
+            .unwrap()
+            .iter()
+            .any(|c| c.id.as_deref() == Some(client_uuid.as_str())),
+        "list_clients must include the client we just created"
+    );
     client.admin().delete_client(&client_uuid).await.unwrap();
 
     // ── 7) role CRUD (realm role by name) ──
@@ -225,6 +279,38 @@ async fn full_flow() {
         .unwrap();
     let gr = client.admin().get_role(&role_name).await.unwrap();
     assert_eq!(gr.name.as_deref(), Some(role_name.as_str()));
+    client
+        .admin()
+        .update_role(
+            &role_name,
+            RoleRepresentation {
+                name: Some(role_name.clone()),
+                description: Some("updated by e2e".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        client
+            .admin()
+            .get_role(&role_name)
+            .await
+            .unwrap()
+            .description
+            .as_deref(),
+        Some("updated by e2e")
+    );
+    assert!(
+        client
+            .admin()
+            .list_roles(0, 200)
+            .await
+            .unwrap()
+            .iter()
+            .any(|r| r.name.as_deref() == Some(role_name.as_str())),
+        "list_roles must include the role we just created"
+    );
     client.admin().delete_role(&role_name).await.unwrap();
 
     // ── 8) group CRUD (create → get by id → delete) ──
@@ -240,7 +326,76 @@ async fn full_flow() {
         .expect("create_group must return id via Location header");
     let gg = client.admin().get_group(&gid).await.unwrap();
     assert_eq!(gg.name.as_deref(), Some(group_name.as_str()));
+    assert!(
+        client
+            .admin()
+            .list_groups(0, 200)
+            .await
+            .unwrap()
+            .iter()
+            .any(|g| g.id.as_deref() == Some(gid.as_str())),
+        "list_groups must include the group we just created"
+    );
+    // rename — 경로는 id, body에 **새** 이름. 둘을 합치는 구현에서는 이 단언이 깨진다.
+    let renamed = format!("{group_name}-renamed");
+    client
+        .admin()
+        .update_group(
+            &gid,
+            GroupRepresentation {
+                name: Some(renamed.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        client
+            .admin()
+            .get_group(&gid)
+            .await
+            .unwrap()
+            .name
+            .as_deref(),
+        Some(renamed.as_str()),
+        "rename must take effect — a no-op here means path was built from the body"
+    );
     client.admin().delete_group(&gid).await.unwrap();
+
+    // ── 8b) realms list/update — it-client 서비스계정은 픽스처에서 view-realm·manage-realm을 갖는다.
+    // (신규 realm **생성**만 master 전용이라 아래 10)에서 403을 확인한다.)
+    assert!(
+        client
+            .admin()
+            .list_realms()
+            .await
+            .unwrap()
+            .iter()
+            .any(|r| r.realm.as_deref() == Some("it-realm")),
+        "list_realms must include the realm this service account lives in"
+    );
+    client
+        .admin()
+        .update_realm(
+            "it-realm",
+            RealmRepresentation {
+                realm: Some("it-realm".into()),
+                display_name: Some("updated by e2e".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        client
+            .admin()
+            .get_realm()
+            .await
+            .unwrap()
+            .display_name
+            .as_deref(),
+        Some("updated by e2e")
+    );
 
     // ── 9) raw() 스모크 — 내부 KeycloakAdmin 노출(탈출구, 문서화된 은닉성 예외) ──
     let _raw = client.admin().raw();
