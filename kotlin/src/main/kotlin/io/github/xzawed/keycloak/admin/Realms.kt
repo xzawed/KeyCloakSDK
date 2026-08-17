@@ -18,6 +18,21 @@ public class RealmsResource internal constructor(
 
     public suspend fun get(realmName: String): RealmRepresentation = adminCall { delegate.realm(realmName).toRepresentation() }
 
+    /** 호출한 서비스 계정이 볼 수 있는 렐름만 돌아온다(보통 자기 렐름). */
+    public suspend fun list(): List<RealmRepresentation> = adminCall { delegate.findAll() }
+
+    /**
+     * 현재 이름으로 주소를 잡아 렐름을 갱신한다. representation.realm에 새 이름을 주면 rename이다.
+     *
+     * ⚠️ 경로(realmName)와 body(representation)를 합치지 말 것 — 합치면 rename이 조용한 no-op이 된다.
+     */
+    public suspend fun update(
+        realmName: String,
+        representation: RealmRepresentation,
+    ) {
+        adminCall { delegate.realm(realmName).update(representation) }
+    }
+
     public suspend fun delete(realmName: String) {
         adminCall { delegate.realm(realmName).remove() }
     }

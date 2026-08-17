@@ -18,6 +18,18 @@ public class RolesResource internal constructor(
 
     public suspend fun list(): List<RoleRepresentation> = adminCall { delegate.list() }
 
+    /**
+     * 현재 이름으로 주소를 잡아 롤을 갱신한다. representation.name에 새 이름을 주면 rename이다.
+     *
+     * ⚠️ 경로(name)와 body(representation)를 합치지 말 것 — 합치면 rename이 조용한 no-op이 된다.
+     */
+    public suspend fun update(
+        name: String,
+        representation: RoleRepresentation,
+    ) {
+        adminCall { delegate.get(name).update(representation) }
+    }
+
     public suspend fun delete(name: String) {
         adminCall { delegate.deleteRole(name) }
     }
