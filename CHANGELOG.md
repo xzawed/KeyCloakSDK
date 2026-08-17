@@ -2,7 +2,7 @@
 
 이 프로젝트의 주요 변경사항을 기록합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 [SemVer](https://semver.org/lang/ko/)를 지향합니다.
 
-> 이 리포지토리는 **폴리글랏 SDK**입니다. Java(`io.github.xzawed:keycloak-sdk`)·Python(`keycloak-sdk`)·Node(`@xzawed/keycloak-sdk`)·Go(`github.com/xzawed/KeyCloakSDK/go`)·C#/.NET(`Xzawed.Keycloak.Sdk`)·PHP(`xzawed/keycloak-sdk`)·Rust(`keycloak-sdk`)·Ruby(`keycloak-sdk`)·Kotlin(`io.github.xzawed:keycloak-sdk-kotlin`) 9개 언어가 독립 배포되며, 아래 항목은 언어 태그로 구분합니다. 아홉 언어 전부가 **첫 릴리스 후보(RC)**를 게시한 뒤(PHP `v0.1.0-rc.2` · Python `0.1.0rc1` · .NET `0.1.0-rc.1` · Rust `0.1.0-rc.1` · Ruby `0.1.0.rc1` · Node `0.1.0-rc.2` · Java `0.1.0-RC1` · Kotlin `0.1.0-RC1` · Go `0.1.0-rc.1`), 이 커밋에서 **첫 정식 `0.1.0`**의 태그를 커팅합니다. ⚠️ 어느 레지스트리에 실제로 올라갔는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh`의 `df_published_version`이 소유합니다 — 태그를 밀었다는 것과 게시됐다는 것은 다릅니다.
+> 이 리포지토리는 **폴리글랏 SDK**입니다. Java(`io.github.xzawed:keycloak-sdk`)·Python(`keycloak-sdk`)·Node(`@xzawed/keycloak-sdk`)·Go(`github.com/xzawed/KeyCloakSDK/go`)·C#/.NET(`Xzawed.Keycloak.Sdk`)·PHP(`xzawed/keycloak-sdk`)·Rust(`keycloak-sdk`)·Ruby(`keycloak-sdk`)·Kotlin(`io.github.xzawed:keycloak-sdk-kotlin`) 9개 언어가 독립 배포되며, 아래 항목은 언어 태그로 구분합니다. 지금까지 아홉 언어 전부가 **첫 릴리스 후보(RC)**를 게시했습니다(PHP `v0.1.0-rc.2` · Python `0.1.0rc1` · .NET `0.1.0-rc.1` · Rust `0.1.0-rc.1` · Ruby `0.1.0.rc1` · Node `0.1.0-rc.2` · Java `0.1.0-RC1` · Kotlin `0.1.0-RC1` · Go `0.1.0-rc.1`). 아래 `[0.1.0]`은 그 위에 커팅하는 **첫 정식(stable)** 릴리스입니다. ⚠️ 어느 레지스트리에 실제로 올라갔는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh`의 `df_published_version`이 소유합니다 — 태그를 밀었다는 것과 게시됐다는 것은 다릅니다.
 
 ## [Unreleased]
 
