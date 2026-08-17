@@ -21,7 +21,7 @@ gofmt -l go                # 포맷 검사(출력 없으면 OK; -w로 수정)
 ```
 > 다른 PC에서는 `KCSDK_TOOLS`(포터블 툴 상위 디렉터리, 기본 `$HOME/tools`)를 덮어쓰거나, 이미 PATH에 있으면 프리픽스를 생략한다. 설치·진단은 [development-setup.md](../../docs/guides/development-setup.md)(`node scripts/doctor.mjs go`).
 - 단일 테스트: `go -C go test -run TestValidateValidToken ./...`
-- 커버리지 게이트(로직 statement ≥90, 네트워크 경계 omit): `go test ./... -coverprofile=cover.out` → `grep -vE '/(auth|admin|admin_users|admin_clients|admin_realms|admin_roles|admin_groups|client)\.go:' cover.out`로 경계 제외 → `go tool cover -func`로 total 확인(실측 95.2%)
+- 커버리지 게이트(로직 statement ≥90, 네트워크 경계 omit): `go test ./... -coverprofile=cover.out` → `grep -vE '/(auth|admin|admin_users|admin_clients|admin_realms|admin_roles|admin_groups|client)\.go:' cover.out`로 경계 제외 → `go tool cover -func`로 total 확인(실측 95.7% — CI `go-ci` run `31957482073`, Go 1.25·1.26 동일)
 - ⚠️ **최소 Go는 1.25**(`golang.org/x/oauth2` v0.36이 요구 → `go.mod`의 `go 1.25`). CI matrix는 1.25·1.26. `golangci-lint`는 로컬 미설치(CI에서 `golangci/golangci-lint-action@v6`) — 로컬은 `go vet`·`gofmt`로 대체
 - **배포는 레지스트리 없음** — Go 모듈은 `go/v*` 태그가 곧 릴리스(`proxy.golang.org` 자동 캐시). `.github/workflows/go-release.yml`이 태그 push 시 verify + GitHub Release + 프록시 워밍(사람 승인 게이트). 소비자: `go get github.com/xzawed/KeyCloakSDK/go@vX.Y.Z`. ✅ **첫 게시 완료(2026-08-16, `go/v0.1.0-rc.1` → `c168de3`)** — 5잡 전부 success, 프록시가 `@v/v0.1.0-rc.1.info`·`.mod`를 200으로 서브하고 `Origin.Hash`가 태그 커밋과 일치. ⚠️ **모듈 경로에 대문자가 있어 프록시 URL은 `!` 이스케이프다**(`github.com/xzawed/!key!cloak!s!d!k/go`) — 소문자로 조회하면 404다. ⚠️ 실측: 정식 버전이 없으면 맨 `go get <module>`과 `@latest`가 **RC로 폴백**한다(pip·Cargo와 같고 RubyGems와 다르다). 프록시 캐시는 불변 — 회수 수단은 후속 릴리스의 `retract`뿐.
 
