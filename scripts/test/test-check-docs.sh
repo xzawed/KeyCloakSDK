@@ -965,6 +965,54 @@ assert_not_contains "$OUT" "files linked" "실패한 검사가 자기 초록 요
 rm -rf "$TMP/docs"
 printf '%s\n' '# unrelated' > "$TMP/x.md"
 assert_ok node "$GUARD" "$TMP"
+rm -f "$TMP/x.md"
+
+# ---- 회귀 15: 검사 9 — "미체크 0건인데 doc-status: active"(끝난 일이 「진행」을 가장) ----
+# 검사 9의 마커↔지도 대조는 **둘이 함께 틀리면 침묵한다.** 실제로 그랬다: 하네스 계획서가
+# 미체크 0 / 체크 69인 채 마커도 '진행' 지도도 '진행'이라 서로 정합이었고 가드는 초록이었다 —
+# 일이 다 끝난 45 KB 문서가 「진행」을 주장하는데 기계가 볼 수 있는 자리가 없었다.
+# 이 검사에는 외부 SSOT가 없다. 대신 `docs/README.md` 범례가 불변식을 **이미 선언한다**:
+# 「진행 | 아직 열려 있는 작업. **체크박스가 실제 할 일이다**」. 그 선언을 기계로 집행한다.
+mkdir -p "$TMP/docs/sub"
+printf '%s\n' '# plan' '<!-- doc-status: active -->' '- [x] 하나' '- [x] 둘' > "$TMP/docs/sub/a.md"
+printf '%s\n' '# map' '' '| 문서 | 상태 | 여기서만 알 수 있는 것 |' '|---|---|---|' '| [a](sub/a.md) | 진행 | 이 문서에만 있는 것을 충분히 길게 적어 둔 마지막 칸이다 |' > "$TMP/docs/README.md"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "미체크 항목이 0건" "전 항목이 닫힌 계획서가 '진행'을 주장하면 지목해야 한다"
+
+# 대조군 — 미체크가 하나라도 있으면 통과한다. 없으면 "active면 무조건 실패"인 전혀 다른
+# 가드가 된 것을 알 수 없다(이 파일의 다른 대조군들과 같은 이유).
+printf '%s\n' '# plan' '<!-- doc-status: active -->' '- [x] 하나' '- [ ] 둘' > "$TMP/docs/sub/a.md"
+assert_ok node "$GUARD" "$TMP"
+
+# ⚠️ **역방향은 구현하지 않는다** — "미체크 > 0 ⇒ 반드시 active"는 거짓이다. 기각한 항목은
+# 미체크로 남는 것이 정상이고(계획서 전례: B1·B2·B3·D2가 그렇게 남았다), 그것을 실패시키면
+# 가드가 "기각을 금지"하는 정책을 새로 만드는 셈이 된다. 미체크가 남은 'complete'는 통과다.
+printf '%s\n' '# plan' '<!-- doc-status: complete -->' '> For agentic workers: implement this plan task-by-task.' '- [x] 한 일' '- [ ] 기각한 항목' > "$TMP/docs/sub/a.md"
+printf '%s\n' '# map' '' '| 문서 | 상태 | 여기서만 알 수 있는 것 |' '|---|---|---|' '| [a](sub/a.md) | 완료 | 이 문서에만 있는 것을 충분히 길게 적어 둔 마지막 칸이다 |' > "$TMP/docs/README.md"
+assert_ok node "$GUARD" "$TMP"
+
+# ⚠️ 체크박스를 **전부 지우는 것**으로 우회할 수 없어야 한다. "체크된 것이 있는데 미체크가 0"만
+# 보면 최소저항 경로가 "체크박스를 지운다"가 되고, 그 순간 지도의 '진행'은 아무것도 뜻하지 않게
+# 된다 — 가드를 무력화하는 가장 쉬운 방법이 가드가 지키는 것을 지우는 것이어서는 안 된다.
+printf '%s\n' '# plan' '<!-- doc-status: active -->' '체크박스가 하나도 없는 산문 계획서다.' > "$TMP/docs/sub/a.md"
+printf '%s\n' '# map' '' '| 문서 | 상태 | 여기서만 알 수 있는 것 |' '|---|---|---|' '| [a](sub/a.md) | 진행 | 이 문서에만 있는 것을 충분히 길게 적어 둔 마지막 칸이다 |' > "$TMP/docs/README.md"
+assert_fails node "$GUARD" "$TMP"
+
+# ⚠️ 코드펜스 안의 **예시** 체크박스로 만족시킬 수 없어야 한다. doc-status 마커에서 이미 같은
+# 부류에 당했다 — 규약을 *설명하는* 문서의 예시가 배너보다 먼저 잡혀 검사가 공허하게 통과했다.
+# 여기서도 ``` 안의 `- [ ]` 하나면 끝난 계획서가 영원히 열린 것처럼 보일 수 있다.
+printf '%s\n' '# plan' '<!-- doc-status: active -->' '- [x] 하나' '' '```sh' '- [ ] 예시일 뿐이다' '```' > "$TMP/docs/sub/a.md"
+assert_fails node "$GUARD" "$TMP"
+# 대조군 — 펜스 **밖**의 같은 문자열은 여전히 유효한 미체크다(펜스 제거가 과잉이면 이게 깨진다).
+printf '%s\n' '# plan' '<!-- doc-status: active -->' '- [x] 하나' '' '```sh' 'echo 예시' '```' '- [ ] 진짜 남은 일' > "$TMP/docs/sub/a.md"
+assert_ok node "$GUARD" "$TMP"
+
+# 마커 없는 문서('운영')는 체크박스와 무관하다 — 이 검사는 'active'에만 건다. 운영 문서에
+# 체크박스를 요구하면 `docs/governance/working-loop.md` 부류가 통째로 빨개진다.
+printf '%s\n' '# living' '운영 문서에는 체크박스가 없어도 된다.' > "$TMP/docs/sub/a.md"
+printf '%s\n' '# map' '' '| 문서 | 상태 | 여기서만 알 수 있는 것 |' '|---|---|---|' '| [a](sub/a.md) | 운영 | 이 문서에만 있는 것을 충분히 길게 적어 둔 마지막 칸이다 |' > "$TMP/docs/README.md"
+assert_ok node "$GUARD" "$TMP"
 
 rm -rf "$TMP" && mkdir -p "$TMP"
 
