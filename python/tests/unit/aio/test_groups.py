@@ -87,3 +87,21 @@ async def test_delete_translates_notfound():
 
     with pytest.raises(KeycloakNotFoundError):
         await AsyncGroupsResource(kc).delete("missing")
+
+
+async def test_update_keeps_path_and_body_separate():
+    """경로(id)와 body(새 이름)를 분리해 넘겨야 rename이 된다."""
+    kc = _admin()
+
+    result = await AsyncGroupsResource(kc).update("g-1", {"name": "team-renamed"})
+
+    kc.a_update_group.assert_awaited_once_with("g-1", {"name": "team-renamed"})
+    assert result is None
+
+
+async def test_update_translates_notfound():
+    kc = _admin()
+    kc.a_update_group.side_effect = KeycloakGetError("no", response_code=404)
+
+    with pytest.raises(KeycloakNotFoundError):
+        await AsyncGroupsResource(kc).update("missing", {})

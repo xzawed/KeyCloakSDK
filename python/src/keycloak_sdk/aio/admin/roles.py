@@ -28,5 +28,9 @@ class AsyncRolesResource:
     async def list(self) -> list[dict[str, Any]]:
         return await acall(self._admin.a_get_realm_roles())
 
+    async def update(self, name: str, rep: dict[str, Any]) -> None:
+        """현재 이름으로 주소를 잡아 갱신한다(경로/body 분리 — rename 가능)."""
+        await acall(self._admin.a_update_realm_role(name, rep))
+
     async def delete(self, name: str) -> None:
         await acall(self._admin.a_delete_realm_role(name))

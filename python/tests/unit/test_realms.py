@@ -66,3 +66,35 @@ def test_delete_translates_notfound():
 
     with pytest.raises(KeycloakNotFoundError):
         RealmsResource(kc).delete("missing")
+
+
+def test_list_delegates():
+    kc = _admin()
+    kc.get_realms.return_value = [{"realm": "r1"}, {"realm": "r2"}]
+
+    result = RealmsResource(kc).list()
+
+    kc.get_realms.assert_called_once_with()
+    assert len(result) == 2
+
+
+def test_update_keeps_path_and_body_separate():
+    """경로(현재 이름)와 body(새 이름)를 분리해 넘겨야 rename이 된다.
+
+    경로 인자를 body의 이름으로 덮어쓰면 rename이 조용한 no-op이 된다 — 종료코드로는
+    구분되지 않으므로 어서션으로 못박는다.
+    """
+    kc = _admin()
+
+    result = RealmsResource(kc).update("r1", {"realm": "r1-renamed", "displayName": "D"})
+
+    kc.update_realm.assert_called_once_with("r1", {"realm": "r1-renamed", "displayName": "D"})
+    assert result is None
+
+
+def test_update_translates_notfound():
+    kc = _admin()
+    kc.update_realm.side_effect = KeycloakGetError("no", response_code=404)
+
+    with pytest.raises(KeycloakNotFoundError):
+        RealmsResource(kc).update("missing", {})

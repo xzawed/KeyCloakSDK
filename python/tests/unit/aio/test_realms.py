@@ -68,3 +68,31 @@ async def test_delete_translates_notfound():
 
     with pytest.raises(KeycloakNotFoundError):
         await AsyncRealmsResource(kc).delete("missing")
+
+
+async def test_list_delegates():
+    kc = _admin()
+    kc.a_get_realms.return_value = [{"realm": "r1"}, {"realm": "r2"}]
+
+    result = await AsyncRealmsResource(kc).list()
+
+    kc.a_get_realms.assert_awaited_once_with()
+    assert len(result) == 2
+
+
+async def test_update_keeps_path_and_body_separate():
+    """sync `test_realms.py`와 동형 — 경로/body 분리(rename 가능)."""
+    kc = _admin()
+
+    result = await AsyncRealmsResource(kc).update("r1", {"realm": "r1-renamed", "displayName": "D"})
+
+    kc.a_update_realm.assert_awaited_once_with("r1", {"realm": "r1-renamed", "displayName": "D"})
+    assert result is None
+
+
+async def test_update_translates_notfound():
+    kc = _admin()
+    kc.a_update_realm.side_effect = KeycloakGetError("no", response_code=404)
+
+    with pytest.raises(KeycloakNotFoundError):
+        await AsyncRealmsResource(kc).update("missing", {})

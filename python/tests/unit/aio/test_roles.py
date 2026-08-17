@@ -86,3 +86,23 @@ async def test_delete_translates_notfound():
 
     with pytest.raises(KeycloakNotFoundError):
         await AsyncRolesResource(kc).delete("missing")
+
+
+async def test_update_keeps_path_and_body_separate():
+    """경로(현재 이름)와 body(새 이름)를 분리해 넘겨야 rename이 된다."""
+    kc = _admin()
+
+    result = await AsyncRolesResource(kc).update("r1", {"name": "r1-renamed", "description": "d"})
+
+    kc.a_update_realm_role.assert_awaited_once_with(
+        "r1", {"name": "r1-renamed", "description": "d"}
+    )
+    assert result is None
+
+
+async def test_update_translates_notfound():
+    kc = _admin()
+    kc.a_update_realm_role.side_effect = KeycloakGetError("no", response_code=404)
+
+    with pytest.raises(KeycloakNotFoundError):
+        await AsyncRolesResource(kc).update("missing", {})
