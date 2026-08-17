@@ -174,6 +174,16 @@ impl AdminClient {
         }
         Ok(found.into_iter().next())
     }
+    /// id로 사용자 갱신. `user`는 **부분(sparse) representation**이어도 된다.
+    ///
+    /// ⚠️ 경로(`user_id`)와 body(`user`)는 별개다 — 합치지 말 것(아래 `update_realm` 참고).
+    pub async fn update_user(&self, user_id: &str, user: UserRepresentation) -> Result<()> {
+        self.admin
+            .realm_users_with_user_id_put(&self.realm, user_id, user)
+            .await
+            .map_err(map_admin)?;
+        Ok(())
+    }
     /// id로 사용자 삭제.
     pub async fn delete_user(&self, user_id: &str) -> Result<()> {
         self.admin
@@ -200,6 +210,38 @@ impl AdminClient {
             .await
             .map_err(map_admin)
     }
+    /// 클라이언트 목록. **페이지 경계는 호출자가 정한다**([`Self::search_users`]와 같은 이유로
+    /// `max`는 `Option`이 아니다 — 상한은 항상 호출부에 보이는 값이어야 한다).
+    ///
+    /// 반환 길이가 `max`와 같다면 다음 페이지가 있을 수 있다(총건수는 응답에 없다).
+    pub async fn list_clients(&self, first: i32, max: i32) -> Result<Vec<ClientRepresentation>> {
+        self.admin
+            .realm_clients_get(
+                &self.realm,
+                None,        // client_id — 필터 없음(clientId 정확일치 단건은 raw()로)
+                Some(first), // first
+                Some(max),   // max
+                None,        // q
+                None,        // search
+                None,        // viewable_only
+            )
+            .await
+            .map_err(map_admin)
+    }
+    /// uuid로 주소를 잡아 클라이언트를 갱신한다. `client.client_id`에 새 값을 주면 rename이다.
+    ///
+    /// ⚠️ 경로(`client_uuid`)와 body(`client`)는 별개다.
+    pub async fn update_client(
+        &self,
+        client_uuid: &str,
+        client: ClientRepresentation,
+    ) -> Result<()> {
+        self.admin
+            .realm_clients_with_client_uuid_put(&self.realm, client_uuid, client)
+            .await
+            .map_err(map_admin)?;
+        Ok(())
+    }
     /// uuid로 클라이언트 삭제.
     pub async fn delete_client(&self, client_uuid: &str) -> Result<()> {
         self.admin
@@ -220,6 +262,23 @@ impl AdminClient {
     /// 타입드 메서드는 런타임 권한과 무관하게 파사드에 존재한다.
     pub async fn create_realm(&self, realm: RealmRepresentation) -> Result<()> {
         self.admin.post(realm).await.map_err(map_admin)?;
+        Ok(())
+    }
+    /// 호출한 서비스 계정이 볼 수 있는 realm 목록(`GET /admin/realms` — realm-scoped가 아닌 전역).
+    /// 보통 자기 realm 하나만 돌아온다. 페이지네이션 파라미터는 이 엔드포인트에 없다.
+    pub async fn list_realms(&self) -> Result<Vec<RealmRepresentation>> {
+        self.admin.get(None).await.map_err(map_admin)
+    }
+    /// **현재 이름**으로 주소를 잡아 realm을 갱신한다(`PUT /admin/realms/{name}`).
+    /// `realm.realm`에 새 이름을 주면 rename이다.
+    ///
+    /// ⚠️ **경로(`name`)와 body(`realm`)를 합치지 말 것.** Keycloak의 rename은
+    /// "현재 주소에 새 값을 PUT"이므로, 경로를 representation에서 만들면 rename 요청이
+    /// 새 이름을 가리켜 **조용한 no-op**이 된다(응답은 2xx인데 아무것도 안 바뀐다).
+    /// 자매 Go SDK는 gocloak이 정확히 그렇게 동작해 이 한 자리만 raw REST로 우회해야 했다 —
+    /// `keycloak` crate의 `realm_put(realm, body)`는 둘을 분리해 받으므로 여기선 네이티브다.
+    pub async fn update_realm(&self, name: &str, realm: RealmRepresentation) -> Result<()> {
+        self.admin.realm_put(name, realm).await.map_err(map_admin)?;
         Ok(())
     }
     /// realm 삭제(`DELETE /admin/realms/{realm}`).
@@ -244,6 +303,29 @@ impl AdminClient {
             .realm_roles_with_role_name_get(&self.realm, name)
             .await
             .map_err(map_admin)
+    }
+    /// realm 롤 목록. 페이지 경계는 호출자가 정한다([`Self::list_clients`]와 같은 계약).
+    pub async fn list_roles(&self, first: i32, max: i32) -> Result<Vec<RoleRepresentation>> {
+        self.admin
+            .realm_roles_get(
+                &self.realm,
+                None,        // brief_representation
+                Some(first), // first
+                Some(max),   // max
+                None,        // search
+            )
+            .await
+            .map_err(map_admin)
+    }
+    /// **현재 이름**으로 주소를 잡아 realm 롤을 갱신한다. `role.name`에 새 이름을 주면 rename이다.
+    ///
+    /// ⚠️ 경로(`name`)와 body(`role`)를 합치지 말 것 — 사유는 [`Self::update_realm`].
+    pub async fn update_role(&self, name: &str, role: RoleRepresentation) -> Result<()> {
+        self.admin
+            .realm_roles_with_role_name_put(&self.realm, name, role)
+            .await
+            .map_err(map_admin)?;
+        Ok(())
     }
     /// name으로 realm 롤 삭제.
     pub async fn delete_role(&self, name: &str) -> Result<()> {
@@ -271,6 +353,33 @@ impl AdminClient {
             .await
             .map_err(map_admin)
     }
+    /// 그룹 목록(최상위). 페이지 경계는 호출자가 정한다([`Self::list_clients`]와 같은 계약).
+    pub async fn list_groups(&self, first: i32, max: i32) -> Result<Vec<GroupRepresentation>> {
+        self.admin
+            .realm_groups_get(
+                &self.realm,
+                None,        // brief_representation
+                None,        // exact
+                Some(first), // first
+                Some(max),   // max
+                None,        // populate_hierarchy
+                None,        // q
+                None,        // search
+                None,        // sub_groups_count
+            )
+            .await
+            .map_err(map_admin)
+    }
+    /// id로 주소를 잡아 그룹을 갱신한다. `group.name`에 새 이름을 주면 rename이다.
+    ///
+    /// ⚠️ 경로(`id`)와 body(`group`)를 합치지 말 것 — 사유는 [`Self::update_realm`].
+    pub async fn update_group(&self, id: &str, group: GroupRepresentation) -> Result<()> {
+        self.admin
+            .realm_groups_with_group_id_put(&self.realm, id, group)
+            .await
+            .map_err(map_admin)?;
+        Ok(())
+    }
     /// id로 그룹 삭제.
     pub async fn delete_group(&self, id: &str) -> Result<()> {
         self.admin
@@ -289,7 +398,9 @@ impl AdminClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::matchers::{method, path, query_param, query_param_is_missing};
+    use wiremock::matchers::{
+        body_partial_json, method, path, query_param, query_param_is_missing,
+    };
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     // 네트워크 경계는 omit이므로 CRUD는 Task 11 통합에서 검증. 여기선 map_admin 상태매핑만 단위테스트.
@@ -470,5 +581,224 @@ mod tests {
             Err(KeycloakError::Admin(AdminError::Conflict)) => {}
             other => panic!("중복 exact 매치는 Conflict여야 한다, got {other:?}"),
         }
+    }
+
+    // ── update_*: 경로(주소)와 body(새 값)가 분리되는지 ──
+    //
+    // Keycloak의 rename은 `PUT /{현재 주소}` + body에 **새** 이름이다. 경로를 body에서 만들면
+    // rename이 조용한 no-op이 된다(2xx인데 아무것도 안 바뀜). 아래 넷은 전부 body의 이름을
+    // 경로와 **다르게** 두어, 둘을 합치는 구현에서는 경로가 어긋나 wiremock이 404를 돌려주고
+    // map_admin이 Err로 바꾼다 — 즉 이 어서션은 합침을 구조적으로 잡는다.
+    // (자매 Go SDK는 gocloak이 경로를 body에서 만들어 realms.Update만 raw REST로 우회해야 했다.)
+
+    #[tokio::test]
+    async fn update_realm_addresses_by_current_name_not_by_the_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/admin/realms/it-realm")) // 현재 이름
+            .and(body_partial_json(serde_json::json!({"realm": "renamed"}))) // 새 이름은 body
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        admin_against(&server)
+            .update_realm(
+                "it-realm",
+                RealmRepresentation {
+                    realm: Some("renamed".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("경로는 현재 이름, body는 새 이름이어야 한다");
+    }
+
+    #[tokio::test]
+    async fn update_role_addresses_by_current_name_not_by_the_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/admin/realms/it-realm/roles/old-role"))
+            .and(body_partial_json(serde_json::json!({"name": "new-role"})))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        admin_against(&server)
+            .update_role(
+                "old-role",
+                RoleRepresentation {
+                    name: Some("new-role".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("경로는 현재 이름, body는 새 이름이어야 한다");
+    }
+
+    #[tokio::test]
+    async fn update_group_addresses_by_id_not_by_the_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/admin/realms/it-realm/groups/g-1"))
+            .and(body_partial_json(serde_json::json!({"name": "renamed"})))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        admin_against(&server)
+            .update_group(
+                "g-1",
+                GroupRepresentation {
+                    name: Some("renamed".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("경로는 id, body는 새 이름이어야 한다");
+    }
+
+    #[tokio::test]
+    async fn update_client_addresses_by_uuid_not_by_the_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/admin/realms/it-realm/clients/c-uuid"))
+            .and(body_partial_json(
+                serde_json::json!({"clientId": "renamed"}),
+            ))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        admin_against(&server)
+            .update_client(
+                "c-uuid",
+                ClientRepresentation {
+                    client_id: Some("renamed".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("경로는 uuid, body는 새 clientId여야 한다");
+    }
+
+    #[tokio::test]
+    async fn update_user_addresses_by_id_and_sends_the_sparse_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/admin/realms/it-realm/users/u-1"))
+            .and(body_partial_json(serde_json::json!({"firstName": "Ada"})))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        admin_against(&server)
+            .update_user(
+                "u-1",
+                UserRepresentation {
+                    first_name: Some("Ada".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("경로는 id, body는 부분 representation이어야 한다");
+    }
+
+    // ── list_*: 호출자의 페이지 경계가 와이어에 실리는지 ──
+    // search_users와 같은 이유로 `max`는 Option이 아니다 — 상한은 항상 호출부에 보여야 한다.
+
+    #[tokio::test]
+    async fn list_realms_hits_the_global_realms_endpoint() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/admin/realms")) // realm-scoped가 아니라 전역
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!([{"realm":"it-realm"}])),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let realms = admin_against(&server)
+            .list_realms()
+            .await
+            .expect("GET /admin/realms를 쳐야 한다");
+        assert_eq!(realms.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn list_clients_puts_caller_pagination_on_the_wire() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/admin/realms/it-realm/clients"))
+            .and(query_param("first", "10"))
+            .and(query_param("max", "5"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!([{"id":"c1"}])),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        assert_eq!(
+            admin_against(&server)
+                .list_clients(10, 5)
+                .await
+                .expect("first/max는 호출자 값이어야 한다")
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn list_roles_puts_caller_pagination_on_the_wire() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/admin/realms/it-realm/roles"))
+            .and(query_param("first", "10"))
+            .and(query_param("max", "5"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!([{"name":"r1"}])),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        assert_eq!(
+            admin_against(&server)
+                .list_roles(10, 5)
+                .await
+                .expect("first/max는 호출자 값이어야 한다")
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn list_groups_puts_caller_pagination_on_the_wire() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/admin/realms/it-realm/groups"))
+            .and(query_param("first", "10"))
+            .and(query_param("max", "5"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!([{"id":"g1"}])),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        assert_eq!(
+            admin_against(&server)
+                .list_groups(10, 5)
+                .await
+                .expect("first/max는 호출자 값이어야 한다")
+                .len(),
+            1
+        );
     }
 }

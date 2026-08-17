@@ -696,16 +696,17 @@ Every SDK also exposes a `raw` escape hatch that returns the underlying client. 
 | **Go** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ |
 | **.NET** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ |
 | **PHP** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ |
-| **Rust** | ✅✅✅—✅ | ✅✅—​—✅ | ✅✅—​—✅ | ✅✅—​—✅ | ✅✅—​—✅ |
+| **Rust** | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ | ✅✅✅✅✅ |
 
 C=create G=get L=list/find U=update D=delete
 
-Rust is the only language still short of 25/25: it has no `update` anywhere and no `list` outside users. Every other language covers all five operations on all five resources.
+**All nine are at 25/25.** What still differs is naming and argument shape, not coverage — see the notes below and [What you get back](#what-you-get-back).
 
-Two things worth knowing about `update`, both learned by filling these gaps:
+Three things worth knowing about these operations:
 
-- **Path and body stay separate.** Keycloak renames a resource with `PUT /{current address}` carrying the *new* name in the body. If an implementation derives the path from the representation, a rename silently becomes a no-op — same 2xx, nothing changed. ⚠️ Go is the one language where this forced a departure: gocloak builds the request path from the representation, so `realms.update` is the single method there that does not delegate to gocloak.
+- **Path and body stay separate on `update`.** Keycloak renames a resource with `PUT /{current address}` carrying the *new* name in the body. If an implementation derives the path from the representation, a rename silently becomes a no-op — same 2xx, nothing changed. ⚠️ Go is the one language where this forced a departure: gocloak builds the request path from the representation, so `realms.update` is the single method there that does not delegate to gocloak.
 - **Partial updates behave differently per library.** On Java and Kotlin the admin-client serializes with `NON_NULL`, so unset fields are not sent and the server leaves them alone — you cannot null a field out this way.
+- **Rust's facade is flat and its `list_*` take an explicit page.** Methods are `admin.update_role(name, rep)`, `admin.list_roles(first, max)` — not `admin.roles().update(…)`. `max` is deliberately not optional: Keycloak silently applies a default cap when the parameter is absent, so an optional argument would read as "no limit" while truncating. `list_realms()` is the exception — that endpoint takes no pagination.
 
 ### What you get back
 
@@ -725,7 +726,7 @@ This is a deliberate, documented decision: re-wrapping stable Keycloak represent
 | Node | `raw()` → `KcAdminClient` | no gaps; the facade's `realms.update(currentName, rep)` wraps exactly this call |
 | Go | `Raw()` → `*gocloak.GoCloak` | no gaps; ⚠️ do **not** reach for `Raw().UpdateRealm` — it builds the path from the representation and so cannot rename. The facade's `Realms.Update(ctx, currentName, rep)` issues the request directly for that reason |
 | PHP | `raw()` → `Fschmtt\Keycloak\Keycloak` | no gaps; the hatch is the typed fschmtt client |
-| Rust | `raw()` → `&KeycloakAdmin<SdkTokenSupplier>` | `raw().realm_put(&realm, rep).await` |
+| Rust | `raw()` → `&KeycloakAdmin<SdkTokenSupplier>` | no gaps; the facade's `update_realm(current_name, rep)` wraps exactly this call (`realm_put`) |
 | Ruby | `raw` → `Faraday::Connection` | no gaps; the hatch is a general bearer-authed connection |
 | .NET | `Raw` → `IKeycloakClient` (users, groups, realm-read only) | no gaps; for anything outside that typed surface the facade already uses raw Admin REST internally |
 

@@ -54,4 +54,6 @@ cd rust && cargo test --test integration_test -- --ignored    # 통합 E2E. Dock
 
 - ⚠️ **admin은 캐싱 `ClientCredentialsTokenProvider`를 쓴다 — 무캐시 `AuthClient` 직접 주입이 아니다.** 직접 주입하면 admin 호출마다 토큰이 재발급돼 §4 캐시/single-flight 불변식을 깬다. 공유 `http`는 재사용하되 provider 인스턴스는 별도다.
 - **admin 경계 변환은 `map_admin`이다** — `keycloak::KeycloakError`가 여기서 SDK 타입이 된다. `AuthClient`가 `TokenProvider`를 구현하고 `SdkTokenSupplier`가 그것을 crate의 `KeycloakTokenSupplier`로 어댑트한다. **두 단계가 §4 은닉의 전부라 어느 한쪽을 건너뛰면 foreign 타입이 샌다.**
-- 다섯 리소스에 `update`/`list`가 없는 것은 결정이다 — `raw()`가 전부 도달하므로 릴리스 차단요소가 아니다(v0.2 대상).
+- **파사드는 평평하다**(`update_role(name, rep)` — 나머지 여덟의 `roles().update(…)`와 다르다). 다섯 리소스 × 다섯 연산 25/25를 전부 노출한다.
+- ⚠️ **`list_*`의 `max`는 `Option`이 아니다** — `search_users`와 같은 이유다(위 게차). `list_realms()`만 예외인데, `GET /admin/realms`에 페이지네이션 파라미터 자체가 없다.
+- ⚠️ **`update_*`는 경로와 body를 분리해 넘긴다.** crate의 `realm_put(realm, body)`·`realm_roles_with_role_name_put(realm, role_name, body)` 등이 둘을 따로 받으므로 rename이 네이티브다. 경로를 representation에서 만들면 rename이 조용한 no-op이 된다(자매 Go SDK는 gocloak이 그렇게 동작해 `realms.Update`만 raw REST로 우회한다). 단위테스트가 body의 이름을 경로와 **다르게** 두어 이 합침을 wiremock 404로 잡는다.
