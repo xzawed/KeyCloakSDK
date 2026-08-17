@@ -195,9 +195,23 @@ for _l in $DEPLOY_LANGS; do
   if df_is_prerelease "$_v"; then prerel_n=$((prerel_n + 1)); fi
 done
 
+# 함대 버전 — 아홉이 **같은 버전**이면 그 값, 하나라도 다르면 빈 문자열.
+# 랜딩 배너("Stable `X` is live for all nine languages")는 함대 전체를 한 숫자로 말하므로,
+# 그 숫자는 SSOT에서 파생해야 한다. 예전에는 `0.1.0`이 이 테스트에 **리터럴로 박혀** 있어
+# 0.2.0에서 문서와 테스트를 각각 손으로 고쳐야 했다(= SSOT가 둘이 된다).
+fleet_ver=""
+for _l in $DEPLOY_LANGS; do
+  _v="$(df_published_version "$_l")"
+  if [ -z "$fleet_ver" ]; then fleet_ver="$_v"
+  elif [ "$fleet_ver" != "$_v" ]; then fleet_ver=""; break; fi
+done
+
 if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
   # 아홉 전부 **정식** 게시. RC 수사와 "정식 없음"은 존재해선 안 된다.
-  claim_at README.md "Stable \`0.1.0\` is live for all $pub_en languages"        "상단 배너"
+  # ⚠️ 버전은 SSOT 파생이다(리터럴 금지). 함대가 갈리면 이 문장 자체가 거짓이므로 시끄럽게 실패한다.
+  assert_ok test -n "$fleet_ver"
+  [ -n "$fleet_ver" ] && \
+    claim_at README.md "Stable \`$fleet_ver\` is live for all $pub_en languages" "상단 배너"
   claim_at README.md "All $pub_en have shipped a stable release"                 "하단 서술"
   claim_at SECURITY.md "All $pub_en SDKs have shipped a stable"                  "게시 열거"
   claim_at docs/guides/getting-started.md "All $pub_en are on a public registry" "상단 배너"
@@ -496,5 +510,39 @@ for L in $DEPLOY_LANGS; do
 done
 # ⚠️ 대조군 — H2 표기가 바뀌면 위 루프가 전부 `continue`로 빠져 **한 건도 안 돌고 통과**한다.
 assert_ok test "$body_seen" -ge 6
+
+# ---- 루트 README의 Install 펜스에 **핀된 버전** ----
+#
+# 루트 README는 GitHub 랜딩이고 `## Install` 펜스는 **소비자가 실제로 복사하는** 줄이다.
+# 언어별 `<lang>/README.md` 펜스는 이 파일 상단 루프가 이미 보지만 루트는 아무도 안 봤다.
+#
+# ⚠️ **containment로 하지 않는다 — 그러면 이 가드가 겨누는 바로 그 드리프트를 놓친다.**
+# 기대 문자열 `…keycloak-sdk:0.1.0`은 낡은 `…keycloak-sdk:0.1.0-RC1`의 **접두**라
+# `assert_contains`가 통과한다(RC→정식 전환이 정확히 그 모양이었다). 그래서 좌표로 값을
+# **뽑아내** `assert_eq`로 정확비교한다 — 상단 `<lang>/README.md` 펜스 루프와 같은 정책이다.
+#
+# 좌표를 키로 쓰는 이유: 레지스트리명은 유일하지 않고(java·kotlin 둘 다 Maven Central),
+# 패키지명도 유일하지 않다(python·rust·ruby 셋 다 `keycloak-sdk`). 좌표는 유일하다.
+# ⚠️ `io.github.xzawed:keycloak-sdk`는 `…-kotlin`의 접두이므로 **뒤의 `:`까지** 붙여 뽑는다.
+#
+# go만 표기가 다르다 — 문서는 `@v0.1.0`, SSOT는 `0.1.0`이다. `v`는 Go 태그 문법이라 뽑을 때
+# 떼어낸다(SSOT에 go 전용 표시 규칙을 새로 만들지 않는다).
+readme_pin() { # $1=파일 $2=sed식 → 못 찾으면 빈 문자열
+  awk '/^```/ { f = !f; next } f' "$ROOT/$1" | sed -n "$2" | head -1
+}
+for _rf in README.md README.ko.md; do
+  _go="$(readme_pin "$_rf" 's|.*github\.com/xzawed/KeyCloakSDK/go@v\([0-9][^ ]*\).*|\1|p')"
+  _jv="$(readme_pin "$_rf" 's|^io\.github\.xzawed:keycloak-sdk:\([0-9][^ ]*\).*|\1|p')"
+  _kt="$(readme_pin "$_rf" 's|^io\.github\.xzawed:keycloak-sdk-kotlin:\([0-9][^ ]*\).*|\1|p')"
+
+  # 못 뽑으면 조용히 통과하지 않는다 — 펜스 형식이 바뀌면 시끄럽게 실패해야 한다.
+  assert_ok test -n "$_go" -a -n "$_jv" -a -n "$_kt"
+  assert_eq "$(df_published_version go)" "$_go" \
+    "$_rf Install 펜스의 go 핀이 게시 SSOT와 다르다 — 소비자가 없는 좌표를 복사한다"
+  assert_eq "$(df_published_version java)" "$_jv" \
+    "$_rf Install 펜스의 java 핀이 게시 SSOT와 다르다 — 소비자가 없는 좌표를 복사한다"
+  assert_eq "$(df_published_version kotlin)" "$_kt" \
+    "$_rf Install 펜스의 kotlin 핀이 게시 SSOT와 다르다 — 소비자가 없는 좌표를 복사한다"
+done
 
 assert_report
