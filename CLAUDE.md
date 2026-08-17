@@ -333,7 +333,7 @@ dev(비앵커 — 버전이 셀 안 산문이라 기계 대조 밖): `typescript
 | Admin | `Keycloak.AuthServices.Sdk` | 2.7.0 |
 | DI 추상화 | `Microsoft.Extensions.DependencyInjection.Abstractions` | 9.0.19 |
 
-dev(비앵커): `xUnit` 2.9.3 · `WireMock.Net` 2.14.0 · `coverlet.collector` 10.0.1 · `Testcontainers.Keycloak` 4.13.0(테스트 csproj).
+dev(비앵커): `xUnit` 2.9.3 · `WireMock.Net` 2.15.0 · `coverlet.collector` 10.0.1 · `Testcontainers.Keycloak` 4.14.0(테스트 csproj).
 
 전부 Apache-2.0/MIT(호환).
 
