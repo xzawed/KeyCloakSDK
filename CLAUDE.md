@@ -1,146 +1,26 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=47278 max-lines=416 -->
-<!-- ⚠️ **2026-08-17(3): 46,531 → 47,278 · 392 → 416줄. 래칫을 올렸다 — 이유는 기계 커버리지다(#216).**
-     적재 46,247 → 46,838 B(+591) / 391 → 413줄(+22). dev 의존성이 산문으로만 있어 **어떤 가드도
-     보지 않던** 자리를 표 + `kind=dep` 앵커로 바꿨다: node `devDependencies` 8건 · dotnet 테스트
-     csproj 6건. 검증 사실이 **50 → 64 facts / 19 → 21 anchors**로 늘었고, `repo-hygiene.yml`의
-     `--min-facts`/`--min-anchors`도 같은 커밋에서 올렸다.
-     ⚠️ 이 자리가 실제로 낡는다는 것은 추측이 아니다 — 같은 날 PR #210이 `WireMock.Net` 2.14→2.15,
-     `Testcontainers.Keycloak` 4.13→4.14를 올렸는데 이 문서는 옛값을 적고 있었고 `doc-facts`는
-     초록이었다(사람이 손으로 잡았다). 지금은 같은 드리프트가 CI에서 죽는다.
-     ⚠️ **#215의 압축(−3,755 B)을 일부 되돌린 것이 맞다**(순 −3,164 B). 바이트를 되사서 기계
-     검증을 샀다 — 이 저장소가 산문 규칙보다 가드를 우위에 두는 것과 같은 교환이다. -->
+<!-- doc-budget: max-bytes=21750 max-lines=285 -->
 
-<!-- ⚠️ **2026-08-17(2): 50,286 → 46,531 · 396 → 392줄. 압축분만큼 래칫을 함께 내렸다(#215).**
-     적재 49,846 → 46,091 B(**−3,755 B**) / 393 → 389줄. 여유는 440 B / 3줄 그대로 옮겼다.
-     내린 곳 둘: (a) 「문서 유지 규칙」의 doc-guard 앵커 계약 해설 3문단 → `.claude/rules/ci.md`
-     (그 파일 `paths:`가 `scripts/**`를 포함해 가드를 고칠 때 자동으로 온다). (b) 포인터 없던
-     게차 16건 중 **280 B 초과 8건만** 스텁화 → 각 언어 rules + 신설 `.claude/rules/security.md`.
-     ⚠️ **나머지 8건은 일부러 남겼다** — 실측 평균 191 B로 포인터 있는 것의 평균(158 B)과 거의
-     같아, 옮겨도 절감이 노이즈이고 왕복 비용만 는다. 이슈 #215의 「16건 전부」는 그 점에서
-     과대추정이었다(예측 −2,484 B / 실제 −1,674 B가 게차분).
-     ⚠️ **게차 건수 96은 그대로다**(80+16 → 88+8). 「건수는 바닥이다」는 위 주석의 선언을 지킨다. -->
+Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·PHP·Rust·Ruby·Kotlin)가 같은 API 모양을 각 언어 관용으로 구현한다. 인증(OIDC/OAuth2)과 관리 REST API 두 표면을 모두 덮는다. Apache-2.0 · groupId `io.github.xzawed`.
 
-<!-- ⚠️ **2026-08-17: 계상 기준이 raw → 적재로 바뀌었다. 예산 인상이 아니라 같은 예산의 재표기다.**
-     블록 레벨 HTML 주석은 컨텍스트 주입 전에 제거되므로(code.claude.com/docs/en/memory
-     #how-claude-md-files-load) 토큰을 1바이트도 쓰지 않는데, 그동안 래칫이 raw를 재서 그 4,116 B
-     (41줄, 주석 13개)를 예산에 계상하고 있었다. 하필 이 저장소는 **가드·이관의 설계 근거를 블록
-     주석으로 남기는** 관용을 쓰므로, 기준이 틀린 채 여유가 440 B까지 좁아지면 "근거를 지우는 것"이
-     예산을 맞추는 최소저항 경로가 된다 — 이 저장소가 가장 값지게 여기는 바로 그것을.
-     실측(2026-08-17, `1f3d131` 기준): raw 53,962 B / 434줄 · **적재 49,846 B / 393줄**.
-     ⚠️ 상한은 **여유를 그대로 옮겼다**: 옛 54,402 − raw 53,962 = 440 B 여유 → 49,846 + 440 = 50,286.
-     그렇게 하지 않으면 이 커밋이 조용한 4,116 B 예산 인상이 된다.
-     `max-lines`는 새 축이다(공식 권고가 줄 기준이라 바이트만으로는 안 보인다). 여유를 바이트 축과
-     **같은 비율**(440/49,846 = 0.88%)로 맞춰 393 + 3 = 396으로 잡았다.
-     ⚠️ 공식 권고 target은 200줄이고 지금은 393줄이다. 그 격차를 어떤 목표로 대체할지는 **#217**
-     (사람 판정)이고, 이 앵커는 목표가 아니라 **래칫**이다 — 재성장만 막는다. -->
-<!-- ⚠️ **2026-08-07: 52,800 → 58,800(당시 raw 기준). 래칫을 올린 것이고, 그 자체가 리뷰 대상이라는 규칙에 따라
-     이유를 여기 적는다.** 「작업 규율」절(약 5 KB)을 추가했다. 그 절이 **반드시 여기 있어야 하는
-     이유**: `.claude/rules/*.md`는 경로 스코프 자동로드라 해당 경로를 건드릴 때만 들어온다 —
-     "파괴적 명령 전에 커밋한다" 같은 규칙은 **경로와 무관하게 항상** 적용돼야 한다. 실제로 그
-     교훈들은 커밋 메시지에만 있었고(실측: `CLAUDE.md`·`.claude/rules/*`에 grep 0건) 커밋 메시지는
-     세션에 로드되지 않으므로 **다음 세션에 존재하지 않았다.** 같은 사고가 반복될 조건이 그대로
-     남아 있었다는 뜻이다. 크기를 아끼려고 이 절을 rules 파일로 내리면 그 실패를 그대로 되풀이한다. -->
-<!-- ⚠️ 래칫이다(목표치 아님). 줄일 때마다 이 숫자를 함께 내린다. 올리는 PR은 그 자체가 리뷰 대상 —
-     이관 직후 44 KB였던 이 파일이 13일 만에 66 KB가 됐다(+50%). 산문 규칙으로는 막히지 않았다.
+> **이 파일은 "지금 이 코드에서 어떻게 일하는가"만 적는다.** 사고 이력·설계 경위·측정 로그는 git log와 [CHANGELOG.md](CHANGELOG.md)에 있고 여기 옮겨 적지 않는다. 규칙은 **무엇을 하라**로 쓰고, 왜 그런지는 한 절 이상 쓰지 않는다.
 
-     ⚠️ **2026-08-17(#217): 「34 KB 목표」는 supersede됐다. 대체 목표는 없다 — 래칫뿐이다.**
-     그 숫자(2026-07-23-docs-restructure-design.md §4.1)는 「작업 규율」 절이 예산 이후에
-     추가돼 **제약 안에서 도달 불가**였고, 새 숫자를 적어도 같은 상태를 재생산할 뿐이다.
-     대신 **올라갈 수 있는 조건**을 명문화한다:
+## 작업 순서
 
-       ⚖️ **래칫은 기계 커버리지와 교환될 때만 올라간다.** 문서를 늘리는 PR은 그 증가가
-          `check-docs`의 facts/anchors를 함께 늘리는지 보이고, `--min-facts`/`--min-anchors`를
-          같은 커밋에서 올려야 한다. 그 교환이 없으면 상한은 내려가기만 한다.
-          실례: #216이 +591 B / +22줄로 **14 facts · 2 anchors**를 샀다(dev 의존성 앵커).
-          반례: 산문 추가·설명 보강은 교환이 아니다 — 줄이거나, 블록 주석으로 남긴다
-          (블록 주석은 적재되지 않아 예산에 계상되지 않는다. 위 doc-budget 주석 참고).
+1. **언어 디렉터리에서 작업한다.** `java/`·`python/`·`node/`·`go/`·`dotnet/`·`php/`·`rust/`·`ruby/`·`kotlin/` 중 하나에 들어가면 `.claude/rules/<lang>.md`가 자동 로드된다(`paths:` 프론트매터). **그 파일이 그 언어의 빌드 명령·제약·게차의 진실 원천이다** — 이 파일에 다시 적지 않는다.
+2. **바꾸기 전에 테스트를 돌린다.** 아래 툴체인 표의 진입 명령. 통합 테스트는 Docker가 필요하다.
+3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21`.
+4. **가드를 만들거나 고쳤으면** 변이 3요건 (a) 변이 시 실패 (b) 복원 시 통과 (c) 가드 OFF 시 통과. 절차: [작업 루프](docs/governance/working-loop.md).
+5. **PR로 올린다.** `main` 직접 push 불가(룰셋 `PRIMARY`). required 체크는 `doc-facts`·`shell-exec-bits` 둘뿐이고 **언어 CI를 required에 넣으면 저장소가 잠긴다**(`paths:` 필터라 체크가 생성조차 안 된다).
 
-     ⚠️ 압축 여력은 사실상 소진됐다(#215 실측): 포인터 없던 게차 16건 중 **8건은 이미 스텁
-     크기**(평균 191 B, 포인터 있는 것 평균 158 B)라 더 옮겨도 절감이 노이즈다.
-     실측 바닥:
-       · 게차 스텁 ≈ 12 KB — **건수는 바닥이다**(바이트는 아니다). `.claude/rules/<lang>.md`는
-         경로 스코프 자동로드라 컨텍스트 압축 후 재주입되지 않는다. 항상 로드되는 이 파일의
-         한 줄이 "그런 게차가 있다"의 유일한 상주 지점이고, 지우면 게차 자체가 안 보인다(설계 §4.3).
-       · §4 계약 + §4(b) 은닉성 예외 ≈ 5.5 KB — 2026-07-03 보안감사 산출물이고
-         2026-07-03 보안감사가 "CLAUDE.md §4에 명문화"로 남긴 산출물이다.
-       · 「작업 규율」 ≈ 5 KB — 위 첫 주석의 이유로 경로와 무관하게 상주해야 한다.
-     ⚠️ **2026-08-14: 이 주석의 옛 셋째 항목("doc-guard 표 ≈ 11 KB — 줄일 수 없다 / 유일하게
-     기계 대조되는 문서 사실")은 실측으로 반증돼 삭제했다.** (a) `tableAt`(check-docs.mjs:436-453)이
-     읽는 것은 **행의 첫 백틱(좌표)과 마지막 셀(버전)** 뿐이라 "왜 이 선택인가" 열은 파서에
-     도달하지 않았다 — 격리 트리에서 원본 14,293 B와 최소형 2,144 B가 **똑같은 facts/anchors**를
-     내고 버전·핀연산자 변이를 동일하게 잡았다. (b) "유일하게"도 거짓이다
-     (`test-publication-claims.sh:159-161` · `checkCardinality`도 이 파일을 대조한다).
-     그 열 6,043 B를 지우고 상주가 필요한 사실 4건은 게차 스텁으로 옮겼다.
-     ⚠️ 위 바닥을 깎아 어떤 숫자를 맞추려 하지 말 것 — 목표가 아니라 바닥이 진실이다.
-     ⚠️ 한때 이 값이 48500이었는데, 그건 §4/§4(b)를 **실수로 지운 상태**에서 잰 수치였다.
-     삭제를 되돌린 뒤의 값이 지금 것이다 — 래칫을 올린 것이 아니라 잘못 잰 바닥을 고친 것이다. -->
+### 하지 말 것
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## 작업 규율 (반복 실수 방지) — 2026-08-07 포렌식 감사에서 도출
-
-⚠️ **이 절을 먼저 읽어라. 아래 규칙은 전부 이 저장소에서 실제로 일어난 사고에서 나왔다.**
-여기는 **무엇을 어기면 안 되는가**다. **어떤 순서로 하고 어디서 "만들지 않는다"로 나가는가**는
-[docs/governance/working-loop.md](docs/governance/working-loop.md).
-
-독립 감사(git 779커밋·reflog·dangling commit 대조)가 이 저장소 작업의 실수 20건을 분류했다.
-**자기검출률 35%, 고위험 6건만 보면 17%**였다. 그리고 자기검출 7건 중 검증 절차의 산물은 1건뿐
-— 나머지는 파일이 날아가거나 명령이 에러를 뱉은 **뒤에** 알았다(검증이 아니라 고장 알림 수신).
-
-여섯 갈래로 갈라진 기전이 **한 지점**에서 갈린다:
-
-> **"명령이 실행됐다"에서 "결과가 의도와 같다"로 건너뛴다. 빠진 단계는 언제나 — 실행 후 결과를 독립적으로 다시 읽기.**
-
-1. **파괴적 명령 전에 커밋한다.** `git status`가 clean이 아니면 `git checkout <file>`·`sed -i`·백업 복원을 실행하지 않는다. 변이검증은 반드시 커밋 뒤에.
-2. **복원은 덮어쓰기가 아니라 역연산으로.** `git checkout`도 백업 파일도 아니다 — 가한 변이의 **역-sed**를 쓰고, 복원 후 `git diff`가 **빈 출력**임을 확인하기 전에 다음 단계로 가지 않는다. ⚠️ `/tmp/<짧은이름>.bak`은 **세션 간 충돌한다** — 이틀 전 세션이 남긴 동명 파일이 `scripts/check-docs.mjs`를 덮어써 323줄이 날아간 적이 있다. 스크래치는 세션 전용 디렉터리만.
-3. **리포 파일 편집은 Edit 툴로 한다.** `node -e`·heredoc·`JSON.stringify` 왕복을 쓰지 않는다 — 백슬래시가 조용히 사라지고(`Fschmtt\Keycloak\*` → `FschmttKeycloak*`, 유효하지 않은 PHP FQCN), `package.json`이 26줄 재포맷된다. 불가피하면 커밋 전 `git diff --stat`이 **예상한 줄 수와 같은지** 확인한다. 다중 줄 치환은 **끝 경계를 명시**한다(다음 `## `까지 같은 열린 범위는 §4 문단 두 개를 통째로 삼킨 적이 있다).
-4. **변이는 내가 고르지 않는다.** 자기가 고른 변이는 자기 어서션이 잡도록 설계돼 **순환**이다 — 실제로 변이검증을 하고도 공허한 가드가 통과했고(`46 passed, 0 failed`), 적대적 검토가 *실제로 일어나는 드리프트*를 골라 즉시 반증했다. 변이는 **"이 문서·코드가 현실적으로 낡는 방식"** 에서 유도한다. 새 가드는 (a) 변이 시 실패 (b) **복원 시 통과** (c) **가드를 비활성화하면 N건 실패**(비공허성) 셋을 함께 보고한다. (c)가 0이면 그 가드는 아무것도 하지 않는다.
-5. **외부 세계에 대한 주장은 실측 출력과 함께.** 도구·레지스트리·라이브러리의 **동작**을 서술하기 전에 그 문장을 검증하는 명령을 돌리고 출력을 붙인다. 붙일 출력이 없으면 그 문장을 쓰지 않는다. ⚠️ **자매 생태계의 동작을 대칭으로 가정하지 않는다**(pip·Cargo는 프리릴리스로 폴백, RubyGems는 아무것도 해석 안 함, npm은 `ETARGET`으로 죽는다 — 셋 다 다르다). ⚠️ **합성 환경 측정을 실환경 사실로 일반화하지 않는다**(합성 레지스트리로 잰 npm 동작이 "첫 게시는 `latest`가 강제된다"를 빠뜨려 게시된 README가 거짓이 됐다). ⚠️ 문서·도구가 틀렸다고 결론 내리기 전에 **내 로컬 버전을 먼저 찍는다**.
-6. **지적받은 집합은 불완전하다고 가정한다.** 검토가 N건을 지적하면 고친 뒤 **같은 부류를 리포 전체에서 재스캔**하고 스캔 명령·히트 수를 커밋에 적는다. 재스캔 없이 **"전부"·"무손실"·"정확히 하나"를 쓰지 않는다**(셋 다 실제로 거짓이었다). 커밋 메시지의 모든 수치는 그것을 낸 명령과 함께 적는다("9종"이 실제로는 8종이었다).
-7. **비가역 행위 전에 "로컬 게이트가 볼 수 없는 것"을 열거한다** — 계정 상태·**토큰의 종류**·이메일 인증·2FA. `release-readiness.sh`의 `✅ 저장소측 OK`는 **게시 승인이 아니다**. 같은 부류로 태그를 두 번 태웠다(crates.io 이메일 미인증 · npm 토큰 종류).
-8. **자기 행위에 대한 주장은 명령 출력 없이 하지 않는다.** "PR을 만들었다"·"복원했다"·"전부 고쳤다"는 **리포에 흔적이 남지 않아 어떤 가드도 못 잡는다.** 이 저장소의 검증 장치는 전부 저장소를 겨누므로, 이 부류는 구조적으로 **사용자만 잡을 수 있다** — 확인 비용이 `git status`·`gh pr view`·`npm --version` 한 번인데도 그랬다.
-
-⚠️ **가장 무거운 교훈**: 한 가드의 설계 근거 문단이 "이 가드는 **두 번의 실패 이력을 알고 그걸 피했다**"로 시작했는데, 그 설계는 공허했고 **37분 뒤 같은 PR에서 반박됐다.** 과거 실패를 아는 것이 재발을 막지 못한다 — 과거를 참조해 **추론**하고 그 추론을 **시험하지 않았기** 때문이다. **추론은 검증이 아니고, 실행은 확인이 아니다.**
-
-## 프로젝트 개요
-
-Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프로그래밍 언어**(Java·Python·Node·Go·C#·PHP·Rust·Ruby·Kotlin·향후 확장)를 뜻하며 자연어 현지화(i18n)와 무관하다. Keycloak의 두 API 표면 — **인증(OIDC/OAuth2)** 과 **관리 REST API(Admin)** — 을 모두 다룬다. 언어마다 관용적이되 개념·계층·흐름은 **동형(isomorphic)** 이도록 설계한다.
-
-- **기준 언어**: Java 21 · Maven (첫 구현; 초기 Java 17 → 21 LTS 런타임 업그레이드 반영)
-- **2번째 언어**: Python 3.10+ · `python-keycloak` 래핑 + `joserfc` 자체 JWT 검증 (`main` 병합, PR #2)
-- **3번째 언어**: Node.js 22+ · TypeScript(ESM·async-only) · `@keycloak/keycloak-admin-client` + `openid-client` v6 래핑 + `jose` 자체 JWT 검증 (`main` 병합, PR #12)
-- **4번째 언어**: Go 1.25+ · sync + `context.Context` · `Nerzal/gocloak/v13` + `golang.org/x/oauth2` 래핑 + `go-jose/v4` 자체 JWT 검증 (`main` 병합, PR #13)
-- **5번째 언어**: C# / .NET 8+ · async-first(`Task<T>`+`CancellationToken`) · `Keycloak.AuthServices.Sdk` 2.7.0 + `Duende.IdentityModel` 래핑 + `Microsoft.IdentityModel.JsonWebTokens` 자체 JWT 검증 (`main` 병합, PR #14)
-- **6번째 언어**: PHP 8.3+ · `final readonly class` 값타입 · `fschmtt/keycloak-rest-api-client-php` 래핑(admin) + `league/oauth2-client`+`stevenmaguire/oauth2-keycloak` 래핑(auth, PKCE S256 오버라이드) + `firebase/php-jwt` 자체 JWT 검증 (`main` 병합, PR #17)
-- **7번째 언어**: Rust 1.88+(edition 2024) · async-only(tokio) · `keycloak` crate 래핑(admin, `reqwest12` feature로 reqwest 0.12 정렬) + `openidconnect` 래핑(auth, 수동 EndpointSet typestate) + `jsonwebtoken` 자체 JWT 검증 (`main` 병합, PR #18)
-- **8번째 언어**: Ruby 3.2+ · sync-only · gem 없이 `faraday`로 Admin REST 직접 래핑(admin) + `rack-oauth2` 래핑(auth, PKCE S256 손수) + `jwt`(ruby-jwt) 자체 JWT 검증 (`main` 병합, PR #19)
-- **9번째 언어**: Kotlin — 빌드는 KGP 2.4.10이되 **소비자 하한은 2.2+**(`languageVersion`/`apiVersion`=KOTLIN_2_2로 게시 아티팩트 메타데이터를 낮춤, 게차 참고) · JDK 21 · 단일 Gradle 모듈 · coroutines(`suspend`+`runInterruptible(Dispatchers.IO)`) · JVM 자매 Java SDK 라이브러리 스택(`keycloak-admin-client` + `oauth2-oidc-sdk`) 재사용 래핑 + `nimbus-jose-jwt` 자체 JWT 검증 (`main` 병합, PR #23)
-- **라이선스**: Apache-2.0 · **groupId**: `io.github.xzawed` (배포명·레지스트리는 「현재 상태」 표)
-
-**핵심 전략**: 언어마다 가장 좋은 기반을 사용한다 — 공식/성숙 클라이언트가 있으면 감싼다(어느 것인지는 위 목록, 핀은 「확정 의존성」). 그 위에 **일관된 파사드 + 인증 래퍼**를 언어 공통 설계로 얹는다. JWT 검증은 아홉 언어 모두 자체 강화 구현(algorithm pinning·iss 정확일치·aud 포함검사·`exp` 필수·클록 스큐·DoS-안전 JWKS 재조회)이다.
-
-## 현재 상태
-
-9개 언어 SDK 모두 `main` 병합 완료. **9개 언어 전부 첫 RC가 공개 레지스트리에 게시됐다**(좌표·버전은 아래 표) — 2026-08-16 Go 첫 태그로 9/9가 됐다. 배포는 여전히 전부 사람 승인 게이트다(사람이 태그를 민다). 정식(stable) 릴리스는 아직 어느 언어도 없다.
-
-⚠️ **Maven Central은 "워크플로 초록"과 "게시" 사이에 사람 클릭과 전파 지연이 둘 다 있다.** `release.yml`이 끝나도 Portal **스테이징**일 뿐이고, Publish 후에도 시차가 있다(실측: 첫 확인 404 → 3분 뒤 200, 검색 색인은 한참 뒤). **404로 "실패"를 결론내지 말 것** — 판정은 Portal 상태로 하고 repo1은 폴링한다. Kotlin도 같다.
-
-| 언어 | 배포명 | 태그 접두 | 배포 |
-|---|---|---|---|
-| Java | `io.github.xzawed:keycloak-sdk` (Maven Central) | `v*` | 게시됨(`0.1.0-RC1` RC) |
-| Python | `keycloak-sdk` (PyPI) | `py-v*` | 게시됨(`0.1.0rc1` RC) |
-| Node | `@xzawed/keycloak-sdk` (npm) | `node-v*` | 게시됨(`0.1.0-rc.2` RC) |
-| Go | `github.com/xzawed/KeyCloakSDK/go` (proxy.golang.org) | `go/v*` | 게시됨(`0.1.0-rc.1` RC) |
-| C#/.NET | `Xzawed.Keycloak.Sdk` (NuGet) | `dotnet-v*` | 게시됨(`0.1.0-rc.1` RC) |
-| PHP | `xzawed/keycloak-sdk` (Packagist) | `php-v*` | 게시됨(`0.1.0-rc.1` RC) |
-| Rust | `keycloak-sdk` (crates.io) | `rust-v*` | 게시됨(`0.1.0-rc.1` RC) |
-| Ruby | `keycloak-sdk` (RubyGems) | `ruby-v*` | 게시됨(`0.1.0.rc1` RC) |
-| Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` (Maven Central) | `kotlin-v*` | 게시됨(`0.1.0-RC1` RC · 하한 2.2+) |
-
-**릴리스-레디니스 감사**(`main` 병합, PR #104)로 릴리스 워크플로 불변식(태그↔매니페스트 가드·시크릿 미설정 시 fail-closed·발행 전 E2E 게이트·액션 SHA 핀·`permissions` 최소화)과 패키징 표면(LICENSE·영문 README·레지스트리 메타데이터, Rust 캐럿 전환 + `Cargo.lock` 커밋 + `keycloak::types` 재노출)을 갖췄다. PHP 선행작업(미러·`PHP_SPLIT_TOKEN`·Packagist 등록)도 끝났다.
-
-구현 경위: [CHANGELOG.md](CHANGELOG.md) · 배포 절차: [DEPLOY.md](DEPLOY.md) · **`docs/` 전체 지도(각 문서에만 있는 것까지): [docs/README.md](docs/README.md)**
+- **커밋 없이 파괴적 명령을 돌리지 않는다**(`sed -i`·`git checkout <file>`·변이검증). 복원은 역연산으로 하고 `git diff`가 빈 출력인지 확인한다.
+- **리포 파일 편집은 Edit 툴로 한다.** `node -e`·heredoc 왕복은 백슬래시를 조용히 지운다.
+- **외부 도구·레지스트리의 동작을 실측 없이 서술하지 않는다.** 붙일 출력이 없으면 그 문장을 쓰지 않는다. 자매 생태계가 같게 동작한다고 가정하지 않는다.
+- **"전부"·"무손실"·"정확히 하나"를 재스캔 없이 쓰지 않는다.** 지적받은 N건은 늘 불완전하다.
+- **자기 행위("PR을 만들었다"·"복원했다")를 명령 출력 없이 주장하지 않는다** — 저장소에 흔적이 남지 않아 어떤 가드도 못 잡는다.
+- **로컬 게이트가 볼 수 없는 것을 비가역 행위 전에 열거한다** — 계정 상태·토큰 종류·이메일 인증·2FA. `release-readiness.sh`의 초록은 게시 승인이 아니다.
 
 ## 툴체인 (빌드 명령)
 
@@ -160,164 +40,50 @@ Keycloak을 위한 **다국어(polyglot) SDK** — "다국어"는 **여러 프�
 | Ruby | `cd ruby && bundle exec rspec` | `.claude/rules/ruby.md` |
 | Kotlin | `gradle -p kotlin test` | `.claude/rules/kotlin.md` |
 
-## 아키텍처
+## 아키텍처 계약
 
-폴리글랏 모노레포. Java 구현이 `java/`에서, Python 구현이 `python/`에서, Node 구현이 `node/`에서, Go 구현이 `go/`에서, C#/.NET 구현이 `dotnet/`에서, PHP 구현이 `php/`에서, Rust 구현이 `rust/`에서, Ruby 구현이 `ruby/`에서, Kotlin 구현이 `kotlin/`에서 완료됐다(각각 독립 빌드).
+폴리글랏 모노레포 — 언어당 디렉터리 하나, 각각 독립 빌드.
 
-### 공통 모듈 구조
-
-모든 언어가 같은 모양이다 — 파일명·확장자·모듈 물리 배치만 언어 관용을 따른다.
+### 모듈 구조 (9개 언어 공통)
 
 ```
 config · errors/masking · tokens · oidc(엔드포인트 조립, 네트워크 없음)
 token_provider(캐시·single-flight) · jwks(DoS-safe) · jwt(자체 강화 검증)
-auth(하위 OIDC 라이브러리 래핑) · admin/(5리소스: users·clients·realms·roles·groups + raw 탈출구) · client(통합 진입점)
+auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles·groups + raw 탈출구) · client(진입점)
 ```
 
-`client`는 `auth`를 즉시 조립하고 `admin`은 최초 접근 시 지연 생성한다(언어별 세부는 각 SDK — Rust는 예외, 아래 결합 규칙 참고). close/dispose 계열은 실제 생성된 리소스만 정리한다.
+`client`가 `auth`를 즉시 조립하고 `admin`은 지연 생성한다(**Rust만 즉시**). close/dispose는 실제 생성된 것만 정리한다.
 
-### 언어별 차이
+물리 배치가 공통과 다른 넷: **Java** 6개 Maven 모듈 · **Python** `src/` 레이아웃 + `aio/` 비동기 미러 · **Go** 전체가 단일 `package keycloak`(admin을 서브패키지로 두면 import 순환) · **Kotlin** 단일 Gradle 모듈, 네트워크 메서드 전부 `suspend`.
 
-| 언어 | 차이 |
-|---|---|
-| Java | 6개 Maven 모듈로 물리 분리(`keycloak-sdk-{bom,core,auth,admin}` + `keycloak-sdk` + `-examples`, reactor 빌드) |
-| Python | 단일 패키지 `keycloak_sdk`(`src/` 레이아웃) + `aio/` 비동기 미러 추가(`AsyncKeycloakClient` 등, python-keycloak `a_*` 래핑) |
-| Go | 전체가 단일 `package keycloak`(사유는 아래 「언어별 결합 규칙」 표) |
-| Ruby | 단일 gem `keycloak-sdk`(모듈 `KeycloakSdk`) — admin 성숙한 gem 부재로 Faraday raw-REST를 직접 구현 |
-| Kotlin | 단일 Gradle 모듈 `keycloak-sdk-kotlin` — 네트워크 메서드 전부 `suspend`, JVM 자매 Java SDK 스택(`keycloak-admin-client`·`oauth2-oidc-sdk`) 재사용 |
+### §4 언어 중립 계약
 
-Node·C#/.NET·PHP·Rust는 공통 모양과 차이가 없다(단일 패키지/크레이트·표준 파일 배치 — 표 생략).
+**하위 라이브러리 타입은 파사드 뒤에 숨는다.** 개념·계층은 9개 언어 동형이고 표기만 갈린다(`TokenSet`·`ValidatedToken`·`IntrospectionResult`·`Client.auth/admin`). **하위 오류는 항상 경계에서 SDK 타입으로 변환**되어 공개 API로 새지 않는다. Go/Rust는 error 값(센티넬 `errors.Is` / `Result<T, KeycloakError>`), 나머지는 예외(Kotlin은 sealed class).
 
-### 언어별 결합 규칙
+**`admin`은 `auth`에 의존하지 않는다.** 독립을 이루는 방법이 둘로 갈린다 — Node·Rust·Ruby·.NET·Go는 `TokenProvider`가 유일한 접착제이고, **Java·Kotlin·PHP·Python은 admin이 토큰을 자체 소유**해 소비자가 토큰 소스를 주입할 수 없다.
 
-**아홉 언어 공통**: `admin`은 `auth`에 의존하지 않고, 하위 라이브러리 오류는 **경계에서** SDK 타입으로 변환된다. 그래서 내부 라이브러리 교체가 소비자에게 파급되지 않는다. ⚠️ **독립을 이루는 방법은 둘로 갈린다** — Node·Rust·Ruby·.NET·Go는 `TokenProvider` 계열이 유일한 접착제이고, **Java·Kotlin·PHP·Python은 admin이 토큰을 자체 소유해**(하위 라이브러리의 client-credentials 그랜트) 소비자가 토큰 소스를 주입할 수단이 없다.
+⚠️ **Node는 SDK provider를 `registerTokenProvider`로 배선한다**(`kc.auth()`를 호출하지 않는다) — admin-client 내장 TokenManager는 만료 시 refresh만 시도해 client_credentials에서 영구 실패한다.
 
-**공통에서 벗어나는 곳만 아래에 적는다**(각 언어의 상세는 `.claude/rules/<lang>.md`. `raw`/`Raw` 탈출구는 §4(b)에 일부만 있고 **9개 언어 전체 표는 [getting-started.md](docs/guides/getting-started.md)**에 있다):
+### §4(b) 문서화된 은닉성 예외
 
-| 언어 | 벗어나는 지점 |
-|---|---|
-| Go | **전체가 단일 `package keycloak`** — admin을 서브패키지로 두면 `Client.Admin`이 `*AdminClient`를 반환할 때 import 순환이 생긴다. 그래서 `admin_*.go`로 같은 패키지다. |
-| Rust | **admin도 `KeycloakClient::new`에서 즉시 조립된다** — 나머지 여덟 언어의 "최초 접근 시 지연 생성"과 다르다(공유 `http`·전용 캐싱 provider 재사용). |
-| Kotlin | 자체 소유 넷(Java·Kotlin·PHP·Python)은 파사드가 TokenProvider를 admin에 꽂지 않는다. Kotlin·Java·PHP에는 타입이 시임으로 남아 있고, Python에만 타입 자체가 없다. |
-| Node | **파사드가 주입한 캐싱 provider를 `registerTokenProvider`로 배선하고 `kc.auth()`는 호출하지 않는다**(PR #63) — admin-client 내장 TokenManager는 만료 시 refresh만 시도해 client_credentials에서 영구 실패한다(Rust `79ecf76`와 동형 결정). |
+완전 은닉이 아니다. 두 자리가 하위 타입을 노출한다 — **(a)** admin 파사드의 representation 타입(Java/Kotlin `org.keycloak.representations.idm.*` · Node `defs/*` · Go `gocloak.*` · C# `*Representation` · PHP `Fschmtt\…\Representation\*` · Rust `keycloak::types` — Python·Ruby는 plain dict/Hash라 노출 없음), **(b)** `raw()` 탈출구가 돌려주는 하위 클라이언트. **정상 소비 경로는 이들을 노출하지 않는다.**
 
+⚠️ Rust는 `keycloak_sdk::types`로 미러 재노출한다 — 없으면 소비자가 `keycloak` crate를 직접 의존해야 해서 게시된 퀵스타트가 컴파일되지 않는다.
 
-**언어 중립 계약(§4)**: 아홉 언어의 출발점이 서로 다르므로(무엇을 감쌌는지는 「프로젝트 개요」 목록) **언어 중립 API 계약을 진실 원천으로 두고 각 언어가 구현한다.** 아홉 전부 하위 라이브러리 타입을 **주 소비 경로(파사드) 뒤에 숨긴다** — 개념·계층은 동형이고 표기만 camelCase ↔ snake_case ↔ Go/C# PascalCase로 갈린다(`TokenSet`/`ValidatedToken`/`IntrospectionResult`·오류 계급·`Client.auth/admin`). **예외/오류 계층은 항상 경계에서 SDK 타입으로 변환**되어 `keycloak.exceptions.*`·`jakarta.ws.rs.*`·`NetworkError`·`gocloak.APIError`·`KeycloakHttpClientException`·Guzzle `RequestException`·`keycloak::KeycloakError`·`Faraday::Error`가 공개 API로 새지 않는다. Go/Rust는 예외 대신 **error 값**(Go 센티넬 `errors.Is`/`errors.As`, Rust `thiserror` 기반 `Result<T, KeycloakError>`), Ruby·Kotlin은 예외 기반(Kotlin은 sealed class로 exhaustive `when` 강제).
+9개 언어 전체 `raw` 표와 admin capability matrix: [getting-started.md](docs/guides/getting-started.md).
 
-**§4(b) 문서화된 은닉성 예외(의도적 — 2026-07-03 보안감사 산출물)**: 완전 은닉이 아니다. 아래 두 자리는 하위 타입을 노출한다 — 재래핑 비용이 과다하거나 보조 표면이기 때문이다. **정상 소비 경로(`Client.auth/admin` · `client.Auth.Validate(...)`)는 이들을 노출하지 않는다.**
+## 교차언어 제약
 
-| 언어 | (a) admin 파사드가 노출하는 representation | (b) 저수준 주입/구성 지점 |
-|---|---|---|
-| Java | `org.keycloak.representations.idm.*` | `JwtValidator.forRealm`의 Nimbus `JWSAlgorithm` · `AdminClient.raw()`의 `org.keycloak.admin.client.Keycloak` |
-| Kotlin | `org.keycloak.representations.idm.*` (Java와 동일 좌표 재사용) | `AdminClient.raw()`의 `org.keycloak.admin.client.Keycloak` |
-| Node | `@keycloak/keycloak-admin-client/lib/defs/*` | `new JwtValidator(keys, opts)`의 jose `JWTVerifyGetKey` · `raw()`의 `KcAdminClient` |
-| Go | `gocloak.User`/`Client`/`Role`/`Group`/`RealmRepresentation` | `admin.Raw()`의 `*gocloak.GoCloak` |
-| C# | `Keycloak.AuthServices.Sdk.Admin.Models.*Representation` | `AdminClient.Raw`의 `IKeycloakClient` |
-| PHP | `Fschmtt\Keycloak\Representation\*` | `AdminClient::raw()`의 `Fschmtt\Keycloak\Keycloak` |
-| Rust | `keycloak::types::{UserRepresentation, ClientRepresentation, RealmRepresentation, RoleRepresentation, GroupRepresentation}` — **크레이트 루트에서 `keycloak_sdk::types`로 미러 재노출** | `AdminClient::raw()`의 `&KeycloakAdmin<SdkTokenSupplier>`(소비자가 반환 타입에 이름을 붙일 수 있도록 `KeycloakAdmin`·`SdkTokenSupplier`를, 공유 HTTP 클라이언트를 넘기는 저수준 ctor를 위해 `reqwest`를 함께 재노출) |
-| Python | 노출 없음 — plain `dict[str, Any]` 통과(누출 아님) | `JwtValidator.validate`의 joserfc `KeySet` · `raw`의 `KeycloakAdmin` |
-| Ruby | 노출 없음 — plain `Hash` 통과(성숙한 admin gem이 없어 애초에 노출할 하위 representation 타입 자체가 없다) | `AdminClient#raw`의 `Faraday::Connection` |
+언어별 제약은 **전부 `.claude/rules/<lang>.md`에 있다**(그 경로에서 자동 로드). 여기에는 경로와 무관하게 걸리는 것만 둔다.
 
-⚠️ Rust의 `keycloak_sdk::types` 재노출이 없으면 소비자가 `keycloak` crate를 자기 `Cargo.toml`에 버전까지 맞춰 직접 추가해야만 admin 파사드를 호출할 수 있어 **게시된 퀵스타트가 컴파일되지 않는다**. 안정적 Keycloak 타입 재사용이 목적이고 SDK 자체 DTO 재래핑은 범위 밖이다.
-
-## 핵심 게차 (Gotchas) — 2026-07-02 검증
-
-- ⚠️ **(Java·Kotlin) admin-client와 Keycloak 서버는 독립 버전 트랙이다 — 서버 라인과 같은 번호의 admin-client는 존재하지 않는다**(핀은 「확정 의존성」). 상세: `.claude/rules/java.md`
-- ⚠️ **Maven Central은 Central Portal 경로만(구 OSSRH 2025-06-30 종료).** `central-publishing-maven-plugin:0.11.0` 사용 — 0.9.0 예제는 낡음.
-- ⚠️ **Testcontainers 2.0은 모듈명이 바뀌었다.** JUnit5 확장은 `testcontainers-junit-jupiter`(구 `junit-jupiter` 아님). `testcontainers-keycloak:4.3.1`이 KC 26.6 기본.
-- ⚠️ **JWT 검증 강화 필수(CVE-2026-11800).** 알고리즘 핀닝(`none` 거부)·iss/aud 검증·클록스큐 제한 — Nimbus는 building block만 제공, 안전한 기본값 없음.
-- ⚠️ **보안 기본선**: 토큰/시크릿 로깅 금지·완전 마스킹(`***`, 접두 노출 없음)·TLS 검증 기본 on·인메모리 토큰저장 + 교체 가능 `TokenStore` SPI.
-- ⚠️ **시크릿 메모리 위생은 경계가 있다 — end-to-end 소거 보장이 아니므로 과대광고 금지.** 상세: `.claude/rules/security.md`
-- ⚠️ **(Python) JWKS 재조회는 DoS-안전해야 한다 — 서명위조는 재조회를 유발하지 않고 kid 미해결에만 재조회한다**(위조 토큰마다 IdP를 때리는 증폭 차단). Java는 Nimbus가 이미 안전. 상세: `.claude/rules/python.md`
-- ⚠️ **(Java) admin 타임아웃·자원정리 — 타임아웃 미주입은 스레드고갈 DoS, close 누락은 FD/커넥션풀 누수다.** 상세: `.claude/rules/java.md`
-- ⚠️ **어떤 Java OIDC 라이브러리도 자체 인증("certified") 아니다.** 완성 제품을 필요 시 OIDF에 별도 인증.
-- ⚠️ **Java 17+ javadoc은 doclint 기본 엄격.** `release` 프로파일 `maven-javadoc-plugin`에 `<doclint>none</doclint>`+`<failOnError>false</failOnError>` 없으면 문서경고로 `-javadoc.jar` 생성 실패 가능.
-- ⚠️ **Java 런타임 타깃은 21 LTS.** `maven.compiler.release=21`+enforcer `requireJavaVersion=[21,)`로 JDK21 미만 fail-fast. `maven-compiler-plugin`은 `3.11.0` 명시 고정. CI 전부 JDK21 단일.
-- ⚠️ **(Java) jackson-databind는 2.22.1 고정이고, 자체 `ObjectMapper`·default/polymorphic typing은 금지다**(CVE 대응 이력의 산물). 상세: `.claude/rules/java.md`
-- ⚠️ **(Java) 퍼블릭/PKCE 클라이언트에서 `char[]` 시크릿을 무조건 문자열화하면 맨 NPE다.** 상세: `.claude/rules/java.md`
-- ⚠️ **(Node) admin-client `findOne`류는 404에서 `null` 반환(선언 타입은 `undefined`).** 상세: `.claude/rules/node.md`
-- ⚠️ **(Go) gocloak은 네트워크 실패까지 `*gocloak.APIError`로 감싼다(`Code:0`).** 상세: `.claude/rules/go.md`
-- ⚠️ **(Go) go-jose는 `exp` 부재 시 만료검사를 건너뛴다.** 상세: `.claude/rules/go.md`
-- ⚠️ **(Go) 최소 런타임 Go 1.25.** 상세: `.claude/rules/go.md`
-- ⚠️ **(Node) 타임아웃은 `Configuration.timeout`(초), admin-client는 `ConnectionConfig.timeout`(ms)로 주입.** 상세: `.claude/rules/node.md`
-- ⚠️ **(Node) PKCE `exchangeCode`는 `nonce` 필수 전달.** 상세: `.claude/rules/node.md`
-- ⚠️ **(Node) admin은 만료 시 재인증하려면 SDK provider를 `registerTokenProvider`로 배선한다 — `kc.auth()`는 호출하지 않는다(PR #63).** 상세: `.claude/rules/node.md`
-- ⚠️ **(Node) admin-client 핀 `~26.7.0`은 이력의 산물이다 — 좁히기로 되돌리기 전에 provider 배선을 먼저 볼 것.** 상세: `.claude/rules/node.md`
-- ⚠️ **(C#) `Keycloak.AuthServices.Sdk` 3.0.0은 net10 전용 → net8.0은 2.7.0 핀.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) `Microsoft.Extensions.DependencyInjection.Abstractions`의 10.x major는 net8 유지 정책으로 보류다 — 9.x 패치는 받고 10.x는 닫는다.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) `Raw`는 users/groups/realm-read만 커버 — 그 밖은 파사드가 raw Admin REST로 직접 구현한다(한때 3건이 도달 불가능했다).** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(Rust) `search_users`의 `max`에 `Option`을 두지 말 것 — Keycloak은 미전송 시 조용히 100을 적용한다(무제한 아님).** 상세: `.claude/rules/rust.md`
-- ⚠️ **(C#) admin 타입드 커버리지는 users/groups/realm-get뿐.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) 네임스페이스 셰도잉.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) `record` 자동 `ToString()`은 토큰/시크릿을 전체 노출.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) `HttpClient.Timeout` 만료는 `TaskCanceledException`이지 `HttpRequestException`이 아니다.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) 위조 서명은 JWKS 재조회를 유발한다 — 나머지 8개 언어와 달리 재조회 0회 불변식을 갖지 못하고 rate-limit 상한만 걸린다.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) `JsonWebTokenHandler.ValidateTokenAsync`는 실패해도 예외를 안 던진다.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) `POST /admin/realms`(신규 realm 생성)는 master realm 전용.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) Duende.IdentityModel 확장 메서드는 예외를 안 던진다.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) SDK10 기본 솔루션 포맷은 `.slnx`.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) `AddKeycloak(config)`는 `KeycloakConfig`도 싱글턴 등록.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) coverlet msbuild 통합은 히트 flush 유실 시 `0%`를 "커버리지 90 미만"으로 둔갑시킨다 — 컬렉터+자체 가드로 전환했다.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(C#) 브랜치 게이트 실제 여유는 개수로 읽어라 — 백분율로 읽지 말 것.** 상세: `.claude/rules/dotnet.md`
-- ⚠️ **(PHP) fschmtt는 pre-1.0이라 `0.42.0` 정확 핀이다 — 캐럿으로 넓히지 말 것**(0.x 마이너에 파괴적 변경이 온다). 유일한 성숙 admin 클라이언트라 대안이 없다.
-- ⚠️ **(PHP) fschmtt `Users::create()`는 void 반환.** 상세: `.claude/rules/php.md`
-- ⚠️ **(PHP) league/stevenmaguire의 `pkceMethod` 생성자 옵션은 no-op.** 상세: `.claude/rules/php.md`
-- ⚠️ **(PHP) firebase/php-jwt의 `&$headers` out-파라미터는 성공 디코드 후에만 채워진다.** 상세: `.claude/rules/php.md`
-- ⚠️ **(PHP) `JwksStore`의 rate-limit은 per-instance 메모리 상태.** 상세: `.claude/rules/php.md`
-- ⚠️ **(PHP) 시크릿 메모리 위생은 언어 차원에서 불가능.** 상세: `.claude/rules/php.md`
-- ⚠️ **(PHP) 통합테스트는 Testcontainers 아닌 docker CLI 셸아웃.** 상세: `.claude/rules/php.md`
-- ⚠️ **(PHP) 모노레포는 Packagist에 직접 게시할 수 없다 — subtree-split 미러가 필수다**(웹훅 전제는 성립한 적이 없다). 미러·토큰·Packagist 등록은 전부 완료됐고 순서는 뒤집을 수 없었다. 상세: `.claude/rules/php.md` · 절차: [DEPLOY.md §2-D](DEPLOY.md)
-- ⚠️ **(Rust) `keycloak` crate와 `openidconnect`는 reqwest 메이저를 정렬해야 함.** 상세: `.claude/rules/rust.md`
-- ⚠️ **(Rust) `openidconnect`의 `CoreClient`는 6개 엔드포인트 typestate 제네릭.** 상세: `.claude/rules/rust.md`
-- ⚠️ **(Rust) `jsonwebtoken`의 `Validation` 기본값은 안전하지 않다.** 상세: `.claude/rules/rust.md`
-- ⚠️ **(Rust) jsonwebtoken 11.0.0부터 기형 JWKS 거부가 파싱이 아니라 키 생성 단계에서 일어난다(`Transport`→`TokenValidation`) — fail-closed는 유지, 미지 kty 혼재 세트는 이제 죽지 않는다.** 상세: `.claude/rules/rust.md`
-- ⚠️ **(Rust) JWKS rate-limit은 재조회 *결정 시점*에 stamp(Go/Python 동형).** 상세: `.claude/rules/rust.md`
-- ⚠️ **(Rust) 공유 `reqwest::Client`는 `redirect::Policy::none()`으로 리다이렉트 전면차단(SSRF 하드닝).** 상세: `.claude/rules/rust.md`
-- ⚠️ **(Rust) MSRV 1.88.** 상세: `.claude/rules/rust.md`
-- ⚠️ **(Rust) dev-dep `testcontainers`는 pre-1.0이라 마이너에 파괴적 변경이 온다**(핀은 의존성 표). 상세: `.claude/rules/rust.md`
-- ⚠️ **(Rust) RUSTSEC-2023-0071(rsa crate Marvin Attack)은 무영향.** 상세: `.claude/rules/rust.md`
-- ⚠️ **(Rust) 로컬 Windows 빌드는 VS2019 BuildTools MSVC 환경 필요.** 상세: `.claude/rules/rust.md`
-- ⚠️ **(Rust) admin 파사드는 캐싱 `ClientCredentialsTokenProvider`를 쓴다 — 무캐시 `AuthClient` 직접주입 아님(`79ecf76`).** 상세: `.claude/rules/rust.md`
-- ⚠️ **(Ruby) `jwt`(ruby-jwt) 기본값은 안전하지 않다.** 상세: `.claude/rules/ruby.md`
-- ⚠️ **(Ruby) `JwtValidator.new`에 nil `issuer`/`audience`를 넘기면 ruby-jwt의 verify_iss/verify_aud가 조용히 no-op.** 상세: `.claude/rules/ruby.md`
-- ⚠️ **(Ruby) `JwksStore`의 rate-limit 가드는 nil 캐시(콜드스타트 IdP다운)에도 적용돼야 함.** 상세: `.claude/rules/ruby.md`
-- ⚠️ **(Ruby) `rack-oauth2`의 PKCE는 passthrough.** 상세: `.claude/rules/ruby.md`
-- ⚠️ **(Ruby) admin에 성숙한 gem이 없어 `faraday`로 Admin REST 직접구현.** 상세: `.claude/rules/ruby.md`
-- ⚠️ **(Ruby) SimpleCov `minimum_coverage`는 프로세스 전역 게이트.** 상세: `.claude/rules/ruby.md`
-- ⚠️ **(Ruby) 로컬 Windows 빌드는 MSYS2/DevKit 필요.** 상세: `.claude/rules/ruby.md`
-- ⚠️ **(Ruby) 최소 3.2, CI 상단 3.4.** 상세: `.claude/rules/ruby.md`
-- ⚠️ **(Ruby) `Config` 문자열 속성은 인스턴스만 freeze, deep-frozen 아님.** 상세: `.claude/rules/ruby.md`
-- ⚠️ **(Ruby) 시크릿 메모리 위생은 언어 차원에서 불가능.** 상세: `.claude/rules/ruby.md`
-- ⚠️ **(Ruby) `client.auth.validate`는 IdP 장애 시 `TransportError`를 raise할 수 있다(fail-closed, 의도).** 상세: `.claude/rules/ruby.md`
-- ⚠️ **(Ruby) `Faraday::SSLError`/`ParsingError`는 `Faraday::Error`의 직계형제.** 상세: `.claude/rules/ruby.md`
-- ⚠️ **(Kotlin) `fun interface`+`suspend`는 컴파일된다(KT-40978 해소).** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) ktlint filename 규칙(다중선언 파일 PascalCase)은 이 모노레포와 충돌.** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) `gradle --stop`을 빌드 인플라이트 중 실행 금지.** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) MockK로 JAX-RS 추상클래스(`Response`·`WebApplicationException`)를 모킹하면 JDK21에서 무기한 hang한다.** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) 코루틴 스택트레이스 복구는 예외 identity를 보존 안 함.** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) Kover 0.9.x는 와일드카드 없는 정확 클래스명 exclude를 무시한다.** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) jvm-test-suite 없이 수동 `creating` 소스셋으로 `integrationTest`를 만들면 "no tests discovered".** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) `= runBlocking {…}` 표현식-본문 `@Test`는 Jupiter가 발견 못 함.** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) Kover 0.9.x는 jvm-test-suite `integrationTest`를 자동 계측대상에 포함.** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) exchangeCode는 id_token을 nonce 비교 전에 완전 서명검증한다(Java와 동형).** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) admin 파사드는 auth를 직접 알지 못한다(§4·Java 동형).** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) Gradle 래퍼는 KGP 완전지원 밴드 안에 둔다(둘다 9.5.0으로 되돌림) — 가드가 `kgp=` 기록을 실제 KGP와 대조한다.** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) 신규 라이브러리 리스크 0.** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Kotlin) 게시 아티팩트의 바이너리 메타데이터 버전은 KGP 버전이 아니라 `languageVersion`/`apiVersion`이 정한다 — 설정 없이 KGP 2.4.10으로 빌드하면 Kotlin 2.4 미만 소비자는 라이브러리를 아예 쓸 수 없다.** 상세: `.claude/rules/kotlin.md`
-- ⚠️ **(Java·Kotlin) `jwksMinRefetch`는 Nimbus 캐시 TTL(기본 5분) 미만이어야 한다** — 크면 `JWKSourceBuilder.build()`가 던지고, 그 foreign 예외가 공개 API로 새면 §4 위반이다(지금은 경계에서 `KeycloakConfigException`으로 변환). ⚠️ **JWKS rate-limit 테스트에는 반드시 대조군을 둘 것** — 캐시만으로도 통과해 하드닝 한 줄을 지워도 초록이 된다. 상세: `.claude/rules/java.md`·`.claude/rules/kotlin.md`
-- ⚠️ **JWKS 재조회 최소 간격과 `clockSkew`는 아홉 언어 전부 30초다 — 하나만 바꾸지 말 것**(한 언어만 커지면 거기서만 DoS 증폭이 느슨해지거나 만료 토큰이 오래 산다). 정렬 경위·30초의 근거·"창이 좁아짐"을 "조여졌다"로 읽으면 안 되는 이유는 `.claude/rules/security.md` · 가드는 `test-security-defaults.sh`.
-- ⚠️ **(Java·Kotlin) `resteasyClient(...)` 주입은 admin-client의 `JacksonProvider` 등록을 통째로 우회한다** — `NON_NULL`과 `FAIL_ON_UNKNOWN_PROPERTIES=false`를 함께 잃어 버전 스큐에서 양방향으로 깨진다(26.0.11 `UserRepresentation.verifiableCredentials`에서 실제 발현). `buildTimeoutClient`가 프로바이더를 직접 등록한다. 상세: `.claude/rules/java.md`·`.claude/rules/kotlin.md`
-- ⚠️ **(Python) python-keycloak sync는 `allow_redirects`를 전달하지 않고, admin 세션이 둘(하나는 지연 생성)이라 바깥만 막으면 client_secret이 샌다.** 상세: `.claude/rules/python.md`
-- ⚠️ **(Python) joserfc는 기형 JWKS에서 joserfc 타입도 아닌 stdlib 예외를 던져 §4를 뚫는다** — SDK가 경계에서 변환한다. 상세: `.claude/rules/python.md`
-- ⚠️ **(Node) `tsconfig.json`의 `include: ["src"]`라 테스트 파일은 타입체크 안 됨.** 상세: `.claude/rules/node.md`
-- ⚠️ **(Node) JWKS rate-limit 회귀는 대조군 없이는 안 잡힌다.** 상세: `.claude/rules/node.md`
-- ⚠️ **(CI) `main`은 룰셋 `PRIMARY`가 지킨다 — required 체크에 언어 CI를 넣으면 저장소가 잠긴다**(`paths:` 필터는 체크를 *생성조차* 안 해 Pending 영구 차단, `bypass_actors: []`라 소유자도 못 푼다 — 잡 레벨 `if:` skip과 정반대다). 상세: `.claude/rules/ci.md` · [CONTRIBUTING.md §4](CONTRIBUTING.md)
-- ⚠️ **(CI) 태그 룰셋 3종은 active이되 admin bypass가 있다 — 사람이 손으로 미는 경로는 살아 있다.** 태그 커팅 App은 `tags-create.json` **에만** 들어갔고(#203) 나머지 둘에 넣으면 안 된다. 상세: `.claude/rules/ci.md`
-- ⚠️ **(CI) 배포 시크릿 미설정은 "스킵"이 아니라 실패여야 한다** — 아무것도 게시하지 않고 green으로 끝난 실행은 성공한 실행과 구분되지 않는다(태그·Release는 있는데 레지스트리는 빈 상태). 상세: `.claude/rules/ci.md`
-- ⚠️ **(CI) dependabot이 올려서는 안 되는 핀 두 종류**(**ref가 브랜치인 액션** — `rust-toolchain`·`gh-action-pypi-publish` · 소비자 하한 버전) — `.github/dependabot.yml`의 `ignore`가 근거와 함께 막는다. 상세: `.claude/rules/ci.md`
-- ⚠️ **(CI) Dependabot 트리거 run에는 Actions 시크릿이 노출되지 않는다** — `SONAR_TOKEN`이 빈 문자열이 되어 SonarCloud가 반드시 실패한다(코드 신호 아님). 상세: `.claude/rules/ci.md`
-- ⚠️ **(CI) 로컬↔CI 발산**(CRLF 포매터 오탐 · pip-audit editable · jacoco는 `verify` 바인딩이라 `mvn test`로 미검증 등). 상세: `.claude/rules/ci.md`
-- ⚠️ **(하네스) 앱/레지스트리 전 컨테이너 Alpine(musl)** — Windows Docker Desktop의 glibc-DNS 게차 회피. 잔여 follow-up도 함께. 상세: `.claude/rules/ci.md`
+- ⚠️ **JWT 검증은 자체 강화 구현이다** — 알고리즘 핀닝(`none` 거부)·`iss` 정확일치·`aud` 포함검사·`exp` 필수·클록 스큐 제한·DoS-safe JWKS 재조회. 라이브러리 기본값은 9개 언어 어디서도 안전하지 않다.
+- ⚠️ **JWKS 재조회 최소 간격과 `clockSkew`는 9개 언어 전부 30초다 — 하나만 바꾸지 말 것.** 상세: `.claude/rules/security.md` · 가드: `scripts/test/test-security-defaults.sh`.
+- ⚠️ **보안 기본선**: 토큰/시크릿 로깅 금지 · 완전 마스킹(`***`, 접두 노출 없음) · TLS 검증 기본 on · 인메모리 토큰저장 + 교체 가능 `TokenStore`.
+- ⚠️ **시크릿 메모리 위생은 end-to-end 보장이 아니다 — 과대광고 금지.** 상세: `.claude/rules/security.md`.
+- ⚠️ **admin-client와 Keycloak 서버는 독립 버전 트랙이다** — 서버 라인과 같은 번호의 admin-client는 없다. `representation` 필드는 실서버로 검증한다.
+- ⚠️ **Maven Central은 Central Portal 경로만**(구 OSSRH 종료). 워크플로 초록 ≠ 게시 — Publish 후에도 전파 지연이 있으니 **404로 실패를 결론내지 않는다**(Java·Kotlin 공통).
+- ⚠️ **배포 시크릿 미설정은 스킵이 아니라 실패다** — 아무것도 게시하지 않고 green으로 끝난 실행은 성공한 실행과 구분되지 않는다.
+- ⚠️ **dependabot이 올려서는 안 되는 핀 두 종류**: ref가 브랜치인 액션(`rust-toolchain`·`gh-action-pypi-publish`)과 소비자 하한 버전(`kotlin-stdlib`). `.github/dependabot.yml`의 `ignore`가 근거와 함께 막는다.
 
 ## 확정 의존성 (BOM으로 고정)
 
@@ -481,20 +247,49 @@ dev(테스트 csproj — **앵커 있음**):
 
 ⚠️ 위 표의 `Kotlin 2.4.10`은 **빌드 툴체인(KGP) 버전**이지 소비자 하한이 아니다 — 게시 jar의 메타데이터는 `languageVersion`/`apiVersion`(=`KOTLIN_2_2`)이 정하므로 **소비자 하한은 2.2+**다(전이 `kotlin-stdlib`까지 함께 내려야 하는 이유는 `.claude/rules/kotlin.md`).
 
-## 문서 유지 규칙
+## 현재 상태
 
-작업 완료(머지/main 반영) 후 프로젝트 전체 문서(`CLAUDE.md`, `docs/`, `README.md`)를 최신화·최적화하고 커밋한다. 언어별 빌드/테스트 명령(단일 테스트 실행 포함)을 툴체인 섹션에 9개 언어 전부 유지한다.
+9개 언어 SDK 모두 `main` 병합 완료. **9개 언어 전부 첫 RC가 공개 레지스트리에 게시됐다**(좌표·버전은 아래 표) — 2026-08-16 Go 첫 태그로 9/9가 됐다. 배포는 여전히 전부 사람 승인 게이트다(사람이 태그를 민다). 정식(stable) 릴리스는 아직 어느 언어도 없다.
 
-**`scripts/check-docs.mjs`(문서-소스 드리프트 가드)의 앵커 스코프는 9개 언어 전부다** — `<!-- doc-guard: ... -->` 앵커가 의존성 표 9종(pom.xml/**pyproject.toml**/package.json/**go.mod**/csproj/composer.json/Cargo.toml/gemspec/build.gradle.kts) + **dev 표 2종**(node `devDependencies` · dotnet 테스트 csproj)과 [docs/guides/getting-started.md](docs/guides/getting-started.md)의 언어별 "Required runtime" 문장(`kind=runtime`)을 합쳐 **64 facts / 21 anchors**를 기계 검증한다.
+⚠️ **Maven Central은 "워크플로 초록"과 "게시" 사이에 사람 클릭과 전파 지연이 둘 다 있다.** `release.yml`이 끝나도 Portal **스테이징**일 뿐이고, Publish 후에도 시차가 있다(실측: 첫 확인 404 → 3분 뒤 200, 검색 색인은 한참 뒤). **404로 "실패"를 결론내지 말 것** — 판정은 Portal 상태로 하고 repo1은 폴링한다. Kotlin도 같다.
 
-남은 dev 산문(Python · 각 언어 표의 테스트 행)은 셀 안 산문이라 스코프 밖이다(node·dotnet dev는 #216에서 앵커 안으로 들어왔다). ⚖️ **목표 바이트 수는 없다 — `doc-budget` 래칫뿐이고 상한은 증가분이 facts/anchors를 사 올 때만 올라간다**(옛 34 KB 목표는 #217에서 supersede). 교환 규칙: [작업 루프 §2-8](docs/governance/working-loop.md).
+| 언어 | 배포명 | 태그 접두 | 배포 |
+|---|---|---|---|
+| Java | `io.github.xzawed:keycloak-sdk` (Maven Central) | `v*` | 게시됨(`0.1.0-RC1` RC) |
+| Python | `keycloak-sdk` (PyPI) | `py-v*` | 게시됨(`0.1.0rc1` RC) |
+| Node | `@xzawed/keycloak-sdk` (npm) | `node-v*` | 게시됨(`0.1.0-rc.2` RC) |
+| Go | `github.com/xzawed/KeyCloakSDK/go` (proxy.golang.org) | `go/v*` | 게시됨(`0.1.0-rc.1` RC) |
+| C#/.NET | `Xzawed.Keycloak.Sdk` (NuGet) | `dotnet-v*` | 게시됨(`0.1.0-rc.1` RC) |
+| PHP | `xzawed/keycloak-sdk` (Packagist) | `php-v*` | 게시됨(`0.1.0-rc.1` RC) |
+| Rust | `keycloak-sdk` (crates.io) | `rust-v*` | 게시됨(`0.1.0-rc.1` RC) |
+| Ruby | `keycloak-sdk` (RubyGems) | `ruby-v*` | 게시됨(`0.1.0.rc1` RC) |
+| Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` (Maven Central) | `kotlin-v*` | 게시됨(`0.1.0-RC1` RC · 하한 2.2+) |
 
-⚠️ 앵커 계약의 **세부**는 `.claude/rules/ci.md` — 런타임 앵커가 무엇을 "주장"으로 읽는지(백틱 토큰 오인 2건·Kotlin은 JDK 툴체인을 본다) · 앵커 추가 시 `--min-facts`/`--min-anchors` 동반 인상 · `kind=dep`가 **제약 연산자까지** 대조하게 된 경위(그래서 표 셀은 빌드 파일이 쓴 대로 적는다).
+**릴리스-레디니스 감사**(`main` 병합, PR #104)로 릴리스 워크플로 불변식(태그↔매니페스트 가드·시크릿 미설정 시 fail-closed·발행 전 E2E 게이트·액션 SHA 핀·`permissions` 최소화)과 패키징 표면(LICENSE·영문 README·레지스트리 메타데이터, Rust 캐럿 전환 + `Cargo.lock` 커밋 + `keycloak::types` 재노출)을 갖췄다. PHP 선행작업(미러·`PHP_SPLIT_TOKEN`·Packagist 등록)도 끝났다.
 
-### 문서 언어 규칙 (bilingual README + 영문 사용자 문서, PR #31·#32)
+구현 경위: [CHANGELOG.md](CHANGELOG.md) · 배포 절차: [DEPLOY.md](DEPLOY.md) · **`docs/` 전체 지도(각 문서에만 있는 것까지): [docs/README.md](docs/README.md)**
 
-- **README는 영문 기본 + 한글 미러**: [`README.md`](README.md)(영문, 기본)와 [`README.ko.md`](README.ko.md)(한글)는 **동일 구조의 미러**다 — 한쪽을 고치면 다른 쪽도 함께 갱신해 동기 유지(상단 상호 링크 `English ↔ 한국어`). 둘 다 슬림 랜딩(정적 배지·9언어 표·30초 퀵스타트·보안·상태·링크)이며, 게시된 것이 전부 프리릴리스이므로(human-gated, 9개 중 9개가 첫 RC 게시 · 정식 릴리스 0) **라이브 레지스트리 배지 금지**(정적 배지만 — 라이브 배지는 RC를 "최신 릴리스"로 보여 정식 릴리스가 있는 것처럼 읽힌다).
-- **ko 미러는 루트에만 둔다** — 언어별 `<lang>/README.md`는 영문 단일이다(9개 중 2개만 갖던 비대칭을 #217에서 내렸다).
-- **사용자 대상 문서는 영문(in-place)**: [`docs/guides/`](docs/guides/) 3종 · [`docs/roadmap/language-support.md`](docs/roadmap/language-support.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`DEPLOY.md`](DEPLOY.md) · [`harness/README.md`](harness/README.md) · [`harness/install/README.md`](harness/install/README.md)는 영문으로 유지·갱신한다(한글 미러 없음).
-- **내부 산출물은 한글 유지**: [`docs/governance/`](docs/governance/)와 남은 진행 계획, 이 `CLAUDE.md`는 개발/거버넌스 내부 문서로 한글을 유지한다.
-- **앵커 주의**: 영문 문서에서 헤딩을 바꾸면 `#anchor`가 바뀐다. `getting-started.md`의 `## C# / .NET`(앵커 `#c--net`)은 양쪽 README가 링크하므로 **헤딩 텍스트를 바꾸지 말 것**.
+## 문서 규칙
+
+**어디에 무엇을 적는가**가 이 저장소 문서의 유일한 규칙이다.
+
+| 무엇 | 어디 | 형태 |
+|---|---|---|
+| 언어별 명령·제약·게차 | `.claude/rules/<lang>.md` | 그 언어 경로에서 자동 로드 |
+| 교차언어 계약·제약 | 이 파일 | 경로와 무관하게 상주 |
+| 작업 순서·기각 체크리스트 | [작업 루프](docs/governance/working-loop.md) | 절차 |
+| 소비자용 사용법 | [`docs/guides/`](docs/guides/) · 각 언어 README | **영문** |
+| 왜 그렇게 됐는가 | git log · [CHANGELOG.md](CHANGELOG.md) | **문서로 옮기지 않는다** |
+
+⚠️ **규칙은 한 줄로 쓴다.** 근거가 필요하면 한 절까지고, 재현 로그·PR 번호·측정표는 커밋 메시지에 남긴다 — 문서에 쌓으면 규칙 하나마다 문단 하나씩 늘어난다.
+
+⚠️ **같은 사실을 두 곳에 적지 않는다.** 버전·좌표의 SSOT는 매니페스트와 `scripts/lib/deploy-facts.sh`이고, 문서는 거기서 파생하거나 `<!-- doc-guard: ... -->` 앵커로 대조된다. 앵커·표를 늘리면 `.github/workflows/repo-hygiene.yml`의 `--min-facts`/`--min-anchors`도 함께 올린다.
+
+⚠️ **`doc-budget` 래칫은 증가분이 기계 검증(facts/anchors)을 사 올 때만 올라간다.** 목표 바이트 수는 없다. 산문 추가는 교환이 아니므로 줄이거나 블록 주석으로 남긴다(블록 주석은 컨텍스트에 주입되지 않아 계상되지 않는다).
+
+### 언어
+
+- **README는 루트만 영한 미러**([`README.md`](README.md) ↔ [`README.ko.md`](README.ko.md), 동일 구조). 언어별 `<lang>/README.md`는 영문 단일이다.
+- **소비자 문서는 영문**([`docs/guides/`](docs/guides/)·[`CONTRIBUTING.md`](CONTRIBUTING.md)·[`DEPLOY.md`](DEPLOY.md)·`harness/`), **내부 문서는 한글**([`docs/governance/`](docs/governance/)·이 파일).
+- 게시된 것이 전부 프리릴리스이므로(9개 중 9개가 첫 RC 게시 · 정식 0) **라이브 레지스트리 배지 금지** — RC를 "최신 릴리스"로 보여준다.
+- ⚠️ 영문 문서 헤딩을 바꾸면 `#anchor`가 바뀐다. `getting-started.md`의 `## C# / .NET`(앵커 `#c--net`)은 양쪽 README가 링크한다.
