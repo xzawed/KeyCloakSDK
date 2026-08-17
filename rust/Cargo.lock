@@ -1259,7 +1259,7 @@ dependencies = [
 
 [[package]]
 name = "keycloak-sdk"
-version = "0.1.0-rc.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",

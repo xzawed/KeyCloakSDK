@@ -17,7 +17,7 @@ plugins {
 }
 
 group = "io.github.xzawed"
-version = "0.1.0-RC1"
+version = "0.1.0"
 
 repositories {
     mavenCentral()
