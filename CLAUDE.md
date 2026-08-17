@@ -448,6 +448,7 @@ dev(비앵커): `xUnit` 2.9.3 · `WireMock.Net` 2.15.0 · `coverlet.collector` 1
 ### 문서 언어 규칙 (bilingual README + 영문 사용자 문서, PR #31·#32)
 
 - **README는 영문 기본 + 한글 미러**: [`README.md`](README.md)(영문, 기본)와 [`README.ko.md`](README.ko.md)(한글)는 **동일 구조의 미러**다 — 한쪽을 고치면 다른 쪽도 함께 갱신해 동기 유지(상단 상호 링크 `English ↔ 한국어`). 둘 다 슬림 랜딩(정적 배지·9언어 표·30초 퀵스타트·보안·상태·링크)이며, 게시된 것이 전부 프리릴리스이므로(human-gated, 9개 중 9개가 첫 RC 게시 · 정식 릴리스 0) **라이브 레지스트리 배지 금지**(정적 배지만 — 라이브 배지는 RC를 "최신 릴리스"로 보여 정식 릴리스가 있는 것처럼 읽힌다).
+- **ko 미러는 루트에만 둔다** — 언어별 `<lang>/README.md`는 영문 단일이다(9개 중 2개만 갖던 비대칭을 #217에서 내렸다).
 - **사용자 대상 문서는 영문(in-place)**: [`docs/guides/`](docs/guides/) 3종 · [`docs/roadmap/language-support.md`](docs/roadmap/language-support.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`DEPLOY.md`](DEPLOY.md) · [`harness/README.md`](harness/README.md) · [`harness/install/README.md`](harness/install/README.md)는 영문으로 유지·갱신한다(한글 미러 없음).
 - **내부 산출물은 한글 유지**: [`docs/governance/`](docs/governance/)와 남은 진행 계획, 이 `CLAUDE.md`는 개발/거버넌스 내부 문서로 한글을 유지한다.
 - **앵커 주의**: 영문 문서에서 헤딩을 바꾸면 `#anchor`가 바뀐다. `getting-started.md`의 `## C# / .NET`(앵커 `#c--net`)은 양쪽 README가 링크하므로 **헤딩 텍스트를 바꾸지 말 것**.

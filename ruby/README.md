@@ -2,8 +2,6 @@
 
 Authentication (OIDC / OAuth2) and the Admin REST API for [Keycloak](https://www.keycloak.org/) behind one consistent facade, with hardened JWT validation.
 
-English · [한국어](https://github.com/xzawed/KeyCloakSDK/blob/main/ruby/README.ko.md)
-
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) — one API surface, isomorphic across all of them: [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
 > **Pre-release** — the first release candidate (`0.1.0.rc1`) is on RubyGems; there is no stable release yet. ⚠️ **RubyGems does not install a pre-release by default**: a bare `gem install keycloak-sdk` finds nothing until a stable version exists. Ask for it explicitly — `gem install keycloak-sdk --pre`, or pin the exact version as shown below.

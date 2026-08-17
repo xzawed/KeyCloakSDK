@@ -222,8 +222,11 @@ sd_doc_axis() { # $1=라벨 $2=파라미터명 정규식 $3=기대값 $4=최소 
     "[$1] 기본값을 말하는 문서 줄을 $4건 미만 찾았다 — 탐지 패턴이 낡았나?"
 }
 
-# clock skew 문서 축 — 값을 말하는 자리는 실측 기준 java·node·dotnet·rust·kotlin의 "30s by
-# default"와 `ruby/README.ko.md`의 설정표 행, `add-a-language-playbook.md`의 "(default 30s)"다.
+# clock skew 문서 축 — 값을 말하는 자리는 **실측 8건**이다(2026-08-17 재측정):
+# java·node·dotnet·rust·kotlin·go·php README와 `add-a-language-playbook.md`.
+# ⚠️ 이 주석은 한때 `go`·`php`를 빠뜨리고 `ruby/README.ko.md`를 넣어 7건이라고 적고 있었다 —
+# 하한(6)이 실측보다 낮아 아무도 눈치채지 못했다. ko 미러를 내리며(#217) 다시 세어 고쳤다.
+# 하한을 6으로 두는 것은 여전히 옳다: 여유 2건이 문서 표현이 바뀔 여지를 준다.
 # ⚠️ dotnet은 "30s by default, **down from the library's 5 minutes**"라 한 줄에 다른 숫자가
 # 함께 있다 — 검사는 "코드값을 담고 있는가"라 통과한다(다른 숫자의 존재는 금지하지 않는다).
 # ⚠️ **값-서술 신호를 파라미터별로 좁힌다.** JWKS는 "default"·"기본값" 같은 낱말 신호로 충분했지만
@@ -251,10 +254,13 @@ for f in $SD_DOCS; do
   sd_hits=$((sd_hits + $(printf '%s\n' "$_lines" | grep -c . || true)))
 done
 
-# 대조군 — 문서 축이 실제로 무언가를 봤는가. 아홉 언어 README가 전부 이 값을 말하고
-# `ruby/README.ko.md`의 설정표 행이 하나 더 있어 실측 10건이다. 이 하한이 없으면 탐지
-# 정규식이 깨졌을 때 "볼 것이 없어서" 초록이 된다.
-_enough=1; [ "$sd_hits" -ge 10 ] && _enough=0
+# 대조군 — 문서 축이 실제로 무언가를 봤는가. **아홉 언어 README가 각 1건씩, 실측 9건**이다.
+# 이 하한이 없으면 탐지 정규식이 깨졌을 때 "볼 것이 없어서" 초록이 된다.
+# ⚠️ **2026-08-17: 10 → 9.** `ruby/README.ko.md`가 이 축에 1건을 기여하고 있었는데 그 파일을
+# 내렸다(#217 — 9개 언어 중 2개만 있던 ko 미러가 명문 규칙 밖이었다. `python/README.ko.md`는
+# 이 축에 0건이라 무관하다). **하한을 내린 것은 탐지 약화가 아니라 대상 집합이 줄어든 것**이고,
+# 지금은 "아홉 언어 = 아홉 건"이라 하한과 의미가 1:1로 붙어 오히려 읽기 쉬워졌다.
+_enough=1; [ "$sd_hits" -ge 9 ] && _enough=0
 assert_eq "ok" "$(ok_if "$_enough" "$sd_hits")" \
   "기본값을 말하는 문서 줄을 10건 미만 찾았다 — 탐지 패턴이 낡았나?"
 
