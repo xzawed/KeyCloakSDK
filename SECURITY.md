@@ -46,7 +46,7 @@ Issues in Keycloak itself (the server) should be reported to the
 ## Supported Versions
 
 This project is **pre-1.0**. All nine SDKs have shipped a first **release
-candidate** to a public registry — PHP (`0.1.0-rc.1`, Packagist), Python
+candidate** to a public registry — PHP (`0.1.0-rc.2`, Packagist), Python
 (`0.1.0rc1`, PyPI), .NET (`0.1.0-rc.1`, NuGet), Rust (`0.1.0-rc.1`, crates.io),
 Ruby (`0.1.0.rc1`, RubyGems), Node (`0.1.0-rc.2`, npm), Java
 (`0.1.0-RC1`, Maven Central), Kotlin

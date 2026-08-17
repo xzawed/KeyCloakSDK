@@ -136,7 +136,7 @@ df_coordinate() { case "$1" in   # 레지스트리상 패키지 식별자(사람
 # `DF_PUBLISHED`가 지켰지만 **버전 문자열은 아무도 지키지 않았다** — 같은 사실의 다른 축이고,
 # 소비자가 실제로 복사해 가는 쪽은 버전이다.
 df_published_version() { case "$1" in
-  php) echo "0.1.0-rc.1" ;; python) echo "0.1.0rc1" ;; dotnet) echo "0.1.0-rc.1" ;;
+  php) echo "0.1.0-rc.2" ;; python) echo "0.1.0rc1" ;; dotnet) echo "0.1.0-rc.1" ;;
   rust) echo "0.1.0-rc.1" ;; ruby) echo "0.1.0.rc1" ;; node) echo "0.1.0-rc.2" ;;
   java) echo "0.1.0-RC1" ;; kotlin) echo "0.1.0-RC1" ;; go) echo "0.1.0-rc.1" ;;
   *) echo "" ;; esac; }
