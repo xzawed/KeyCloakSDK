@@ -7,7 +7,7 @@
 //
 // 기대값을 여기에 적지 않는다 — 표의 셀과 소스 선언을 같은 자리에서 읽어 비교한다.
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 const PRESENT = "\u2705";
 const ABSENT = "\u2014";
@@ -43,9 +43,12 @@ const SINGULAR = {
 
 let rootArg = null;
 let docArg = null;
+let printSources = false;
 for (const arg of process.argv.slice(2)) {
   if (arg.startsWith("--doc=")) {
     docArg = arg.slice("--doc=".length);
+  } else if (arg === "--print-sources") {
+    printSources = true;
   } else if (!arg.startsWith("--") && rootArg === null) {
     rootArg = arg;
   }
@@ -116,87 +119,109 @@ function parseTable(text) {
   return rows;
 }
 
-function hasDecl(file, re, where) {
+function hasDecl({ file, re, where }) {
   if (!existsSync(file)) fail(`${where}: source file missing: ${file}`);
   return re.test(read(file));
 }
 
-function sourceHasUpdate(lang, resource) {
+// (lang, resource) → 이 셀의 U를 판정하는 프로브들.
+//
+// 경로를 여기 한 자리에만 둔다 — 자가테스트(`--print-sources`)가 같은 목록을 읽어
+// 임시 트리를 만들므로, 테스트가 경로를 손으로 다시 적는 2차 정의 자리가 생기지 않는다.
+// python만 프로브가 둘이다(sync + aio 미러는 표에서 한 행이라 갈리면 안 된다).
+function updateProbes(lang, resource) {
   const P = PASCAL[resource];
   const s = SINGULAR[resource];
+  const at = (rel, re, where) => ({ file: join(ROOT, rel), re, where });
   switch (lang) {
     case "php":
-      return hasDecl(
-        join(ROOT, `php/src/Admin/${P}Resource.php`),
-        /public function update\s*\(/,
-        `php ${resource}`,
-      );
+      return [
+        at(`php/src/Admin/${P}Resource.php`, /public function update\s*\(/, `php ${resource}`),
+      ];
     case "go":
-      return hasDecl(
-        join(ROOT, `go/admin_${resource}.go`),
-        new RegExp(`func \\([^)]*\\*${P}Resource\\) Update\\s*\\(`),
-        `go ${resource}`,
-      );
-    case "rust":
-      return hasDecl(
-        join(ROOT, "rust/src/admin.rs"),
-        new RegExp(`pub async fn update_${s}\\s*\\(`),
-        `rust ${resource}`,
-      );
-    case "java":
-      return hasDecl(
-        join(
-          ROOT,
-          `java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/${P}Resource.java`,
+      return [
+        at(
+          `go/admin_${resource}.go`,
+          new RegExp(`func \\([^)]*\\*${P}Resource\\) Update\\s*\\(`),
+          `go ${resource}`,
         ),
-        /public\s+\S+\s+update\s*\(/,
-        `java ${resource}`,
-      );
+      ];
+    case "rust":
+      return [
+        at(
+          "rust/src/admin.rs",
+          new RegExp(`pub async fn update_${s}\\s*\\(`),
+          `rust ${resource}`,
+        ),
+      ];
+    case "java":
+      return [
+        at(
+          `java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/${P}Resource.java`,
+          /public\s+\S+\s+update\s*\(/,
+          `java ${resource}`,
+        ),
+      ];
     case "kotlin":
-      return hasDecl(
-        join(ROOT, `kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/${P}.kt`),
-        /public suspend fun update\s*\(/,
-        `kotlin ${resource}`,
-      );
+      return [
+        at(
+          `kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/${P}.kt`,
+          /public suspend fun update\s*\(/,
+          `kotlin ${resource}`,
+        ),
+      ];
     case "node":
-      return hasDecl(
-        join(ROOT, `node/src/admin/${resource}.ts`),
-        /(?:async\s+)?update\s*\(/,
-        `node ${resource}`,
-      );
-    case "python": {
-      const sync = hasDecl(
-        join(ROOT, `python/src/keycloak_sdk/admin/${resource}.py`),
-        /^\s+def update\s*\(/m,
-        `python ${resource}`,
-      );
-      const aio = hasDecl(
-        join(ROOT, `python/src/keycloak_sdk/aio/admin/${resource}.py`),
-        /^\s+(?:async\s+)?def update\s*\(/m,
-        `python aio ${resource}`,
-      );
-      if (sync !== aio) {
-        fail(
-          `python ${resource}: sync update=${sync} but aio update=${aio} — the table is one row`,
-        );
-      }
-      return sync;
-    }
+      return [at(`node/src/admin/${resource}.ts`, /(?:async\s+)?update\s*\(/, `node ${resource}`)];
+    case "python":
+      return [
+        at(
+          `python/src/keycloak_sdk/admin/${resource}.py`,
+          /^\s+def update\s*\(/m,
+          `python ${resource}`,
+        ),
+        at(
+          `python/src/keycloak_sdk/aio/admin/${resource}.py`,
+          /^\s+(?:async\s+)?def update\s*\(/m,
+          `python aio ${resource}`,
+        ),
+      ];
     case "dotnet":
-      return hasDecl(
-        join(ROOT, `dotnet/src/Xzawed.Keycloak.Sdk/Admin/${P}Resource.cs`),
-        /public\s+(?:async\s+)?Task(?:<[^>]+>)?\s+UpdateAsync\s*\(/,
-        `dotnet ${resource}`,
-      );
+      return [
+        at(
+          `dotnet/src/Xzawed.Keycloak.Sdk/Admin/${P}Resource.cs`,
+          /public\s+(?:async\s+)?Task(?:<[^>]+>)?\s+UpdateAsync\s*\(/,
+          `dotnet ${resource}`,
+        ),
+      ];
     case "ruby":
-      return hasDecl(
-        join(ROOT, `ruby/lib/keycloak_sdk/admin/${resource}.rb`),
-        /^\s+def update\b/m,
-        `ruby ${resource}`,
-      );
+      return [at(`ruby/lib/keycloak_sdk/admin/${resource}.rb`, /^\s+def update\b/m, `ruby ${resource}`)];
     default:
-      fail(`no extractor for ${lang}`);
+      return fail(`no extractor for ${lang}`);
   }
+}
+
+function sourceHasUpdate(lang, resource) {
+  const results = updateProbes(lang, resource).map(hasDecl);
+  if (results.some((r) => r !== results[0])) {
+    fail(`${lang} ${resource}: 미러 소스가 갈렸다(${results.join(", ")}) — 표는 한 행이다`);
+  }
+  return results[0];
+}
+
+// --print-sources: 이 가드가 읽는 소스 파일 경로를 ROOT 상대로 한 줄씩 낸다.
+// 자가테스트가 소스측 변이(선언 삭제)를 표현하려면 임시 트리를 만들어야 하는데,
+// 그 목록을 손으로 적으면 2차 정의 자리가 된다. 여기서 파생시킨다.
+if (printSources) {
+  const rels = new Set();
+  for (const id of Object.values(LANGS)) {
+    for (const resource of RESOURCES) {
+      for (const { file } of updateProbes(id, resource)) {
+        rels.add(relative(ROOT, file).split("\\").join("/"));
+      }
+    }
+  }
+  for (const r of [...rels].sort()) console.log(r);
+  process.exit(0);
 }
 
 const table = parseTable(read(DOC));
