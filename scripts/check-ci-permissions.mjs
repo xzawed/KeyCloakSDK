@@ -242,6 +242,62 @@ const ruleEscalationDocumented = (wf, out) => {
   return count
 }
 
+// 잡이 차지하는 원본 줄 범위. 노드는 1-based `n`을 들고 있으므로 다음 잡의 시작 전까지가 이 잡이다.
+// 마지막 잡은 파일 끝까지. `run:` 본문을 **텍스트로** 훑어야 하는 규칙(아래 6·7)이 쓴다 —
+// 이 스캐너의 계약은 "구조만 키로 읽는다"이고, 여기서는 키로 읽는 게 아니라 범위 안의 원문을
+// 찾는 것이라 계약을 깨지 않는다.
+const jobLines = (wf, job) => {
+  const starts = wf.jobs.map((j) => j.node.n).sort((a, b) => a - b)
+  const next = starts.find((n) => n > job.node.n)
+  return wf.lines.slice(job.node.n - 1, next ? next - 1 : wf.lines.length)
+}
+
+// 규칙 6: `govulncheck`를 도는 잡의 `setup-go`에는 `check-latest: true`가 있어야 한다.
+//
+// 없으면 setup-go가 러너 툴캐시의 **낡은 패치**를 그대로 쓴다. 표준 라이브러리 취약점은 패치
+// 릴리스로 고쳐지므로 감사 잡이 낡은 툴체인을 감사하게 되고, 고쳐진 것을 "못 고쳐졌다"고 보고한다
+// (2026-08-17 실측: security-audit가 go1.26.5로 stdlib 5건, 같은 커밋을 1.26.6으로 재검사하면
+// `No vulnerabilities found.`). 이 불변식은 go-ci.yml 주석이 이미 선언했는데 **주석은 두 파일 중
+// 한쪽에만 지켜졌다** — 그래서 기계로 옮긴다.
+//
+// ⚠️ **빌드/테스트 잡에는 요구하지 않는다.** 그쪽은 소비자 하한을 재현하는 것이 목적이라 캐시를
+// 그대로 쓰는 것이 옳다. 조준점을 "govulncheck를 도는 잡"으로 좁게 유지할 것.
+// ⚠️ 탐지는 원문 범위 검색(fail-closed)이고 요구는 `check-latest: true` 문자열이다 — 블록 스칼라
+// 안에 govulncheck를 숨겨도 탐지되지만, 플래그를 다른 방식으로 준 경우는 잡지 못한다.
+const ruleGovulncheckChecksLatest = (wf, out) => {
+  for (const job of wf.jobs) {
+    // ⚠️ **주석은 걷어내고 본다.** go-ci.yml은 `vulncheck` 잡 바로 앞(= `build` 잡의 줄 범위 안)에
+    // govulncheck를 설명하는 주석을 두고 있어, 원문 그대로 찾으면 `build`가 오탐으로 걸린다(실측).
+    const body = jobLines(wf, job).map((l) => splitComment(l).body)
+    if (!body.some((l) => l.includes('govulncheck'))) continue
+    if (!body.some((l) => /^\s*check-latest:\s*true\s*(#.*)?$/.test(l)))
+      out.push(
+        `${wf.file}: 잡 \`${job.name}\`이 govulncheck를 도는데 setup-go에 \`check-latest: true\`가 없다 — 러너 툴캐시의 낡은 툴체인을 감사하게 된다`,
+      )
+  }
+}
+
+// 규칙 7: `govulncheck@<버전>` 핀은 워크플로 사이에서 같아야 한다.
+//
+// 같은 두 파일이 지고 있는 **두 번째** 주석뿐인 동기화 약속이다(security-audit.yml의
+// "⚠️ go-ci.yml의 버전과 함께 올린다"). 첫 번째(규칙 6)가 이미 한쪽만 고쳐진 채 굳었으므로
+// 이쪽도 주석에 맡기지 않는다.
+const GOVULN_PIN = /govulncheck@(v[\w.\-+]+)/g
+const ruleGovulncheckPinAligned = (wfs, out) => {
+  const seen = new Map()
+  for (const wf of wfs)
+    for (const raw of wf.lines)
+      // 주석에 적힌 버전은 핀이 아니다(규칙 6과 같은 이유로 주석을 걷어낸다).
+      for (const m of splitComment(raw).body.matchAll(GOVULN_PIN)) {
+        if (!seen.has(m[1])) seen.set(m[1], new Set())
+        seen.get(m[1]).add(wf.file)
+      }
+  if (seen.size > 1)
+    out.push(
+      `govulncheck 버전 핀이 워크플로마다 다르다: ${[...seen].map(([v, fs]) => `${v}(${[...fs].join(',')})`).join(' vs ')} — 한쪽만 올리지 말 것`,
+    )
+}
+
 // ── 실행 ────────────────────────────────────────────────────────────────────
 
 const dir = join(root, '.github', 'workflows')
@@ -266,11 +322,14 @@ if (releases.length < MIN_RELEASE)
     `릴리스 워크플로가 ${releases.length}개뿐이다(기대 ${MIN_RELEASE}개 이상) — 파일이 개명되어 이 가드의 검사 범위가 조용히 비었을 수 있다`,
   )
 
+ruleGovulncheckPinAligned(workflows, errors)
+
 let writeGrants = 0
 let jobCount = 0
 for (const wf of workflows) {
   jobCount += wf.jobs.length
   ruleNoBlanketGrant(wf, errors)
+  ruleGovulncheckChecksLatest(wf, errors)
   if (isRelease(wf.file)) {
     ruleJobLevelDeclared(wf, errors)
     ruleNoWorkflowLevelBlock(wf, errors)

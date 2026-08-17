@@ -32,3 +32,14 @@ jobs:
       id-token: write # OIDC Trusted Publishing에 필요 — 저장 시크릿 없음
     steps:
       - run: echo "픽스처 — 실행되지 않는다"
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-go@0000000000000000000000000000000000000000 # 픽스처
+        with:
+          go-version: '1.26'
+          check-latest: true
+      # 이 핀은 demo-ci.yml의 것과 같아야 한다 — 규칙 7의 대조 대상.
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...

@@ -27,7 +27,7 @@ assert_ok node "$GUARD" "$TMP"
 # 계수를 동시에 고정한다 — 특히 write 계수는 주석 제거(`write # 이유` → `write`)가 살아
 # 있어야만 1이 나온다. 주석을 안 걷어내면 값이 "write # ..."가 되어 상승이 보이지 않는다.
 out=$(node "$GUARD" "$TMP" 2>&1)
-assert_contains "$out" "릴리스 1개 · 잡 4개 · 릴리스 잡의 write 상승 1건" "잡·릴리스·권한상승을 실제로 센다"
+assert_contains "$out" "릴리스 1개 · 잡 7개 · 릴리스 잡의 write 상승 1건" "잡·릴리스·권한상승을 실제로 센다"
 
 # ── 변이 1(규칙 1): 릴리스 잡에서 permissions 선언을 지운다 ──
 # 이것이 이 가드를 만든 이유다. 릴리스 워크플로에는 워크플로 레벨 기본값이 없으므로
@@ -131,6 +131,35 @@ rm -rf "$TMP"; mkdir -p "$TMP/.github/workflows"
 assert_fails node "$GUARD" "$TMP"
 out=$(node "$GUARD" "$TMP" 2>&1 || true)
 assert_contains "$out" "워크플로가 하나도 없다" "빈 워크플로 디렉터리를 통과로 취급하지 않는다"
+
+# ── 규칙 6: govulncheck를 도는 잡은 setup-go에 `check-latest: true`가 있어야 한다 ──
+# 왜: `check-latest` 없이는 setup-go가 러너 툴캐시의 낡은 패치를 그대로 쓴다. stdlib 취약점은
+# 패치 릴리스로 고쳐지므로 **감사 잡이 낡은 툴체인을 감사**하게 되고, 고쳐진 것을 못 고쳐졌다고
+# 보고한다(2026-08-17 실측: security-audit가 go1.26.5로 5건, 같은 커밋을 1.26.6으로 재검사하면
+# `No vulnerabilities found.`).
+# ⚠️ **빌드/테스트 잡에는 요구하지 않는다** — 그쪽은 소비자 하한을 재현해야 하므로 캐시를 그대로
+# 쓴다. 이건 go-ci.yml이 선언한 정책이고 가드가 그 경계를 넘으면 안 된다(아래 대조군이 고정).
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i 's/^          check-latest: true$//' "$TMP/.github/workflows/demo-ci.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "check-latest: true" "govulncheck 잡의 check-latest 누락을 지목한다"
+assert_contains "$out" "audit" "어느 잡인지 이름으로 짚는다"
+
+# 대조군 — govulncheck를 돌지 않는 잡의 setup-go에는 요구하지 않는다. 없으면 "모든 setup-go에
+# check-latest를 요구"하는 전혀 다른(그리고 소비자 하한 재현을 깨는) 가드가 된 것을 알 수 없다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+assert_ok node "$GUARD" "$TMP"
+
+# ── 규칙 7: govulncheck 버전 핀은 워크플로 간에 같아야 한다 ──
+# 같은 두 파일이 지고 있는 **두 번째** 주석뿐인 동기화 약속이다
+# (security-audit.yml: "⚠️ go-ci.yml의 버전과 함께 올린다"). 첫 번째(check-latest)가 이미
+# 한쪽만 고쳐진 채 굳었으므로 이쪽도 기계로 잡는다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i 's|govulncheck@v1\.6\.0|govulncheck@v1.7.0|' "$TMP/.github/workflows/demo-release.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "govulncheck 버전 핀이 워크플로마다 다르다" "한쪽만 올린 버전 핀을 지목한다"
 
 # ── 오탐 대조군 3: 저장소 루트 실물에 대해 통과해야 한다 ──
 # 픽스처에서만 도는 가드는 실제 트리와 어긋난 채로 초록불을 유지할 수 있다.
