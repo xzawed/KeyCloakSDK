@@ -1,6 +1,6 @@
 # 하네스 판정 계층·출처 완결과 잔여 결함 정리 Implementation Plan
 
-> <!-- doc-status: active -->
+> <!-- doc-status: complete -->
 > **작업은 끝났다 — Phase A~D는 처리·기각됐고, Phase E(사람 게이트)도 닫혔다. 남은 미체크 0건.**
 > Phase A: A1 `7340402` · A2 `5fe1c9c` · A3 `d275579` · A4 `ca00b46`+`b9b3ce1` ·
 > A5 `a776213`+`2e58c44`+`bd12adb`. I1 `5a3a431` · I2 `bd12adb` · I4 `a96232c`.
