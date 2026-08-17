@@ -79,4 +79,21 @@ class RolesResourceTest {
     RolesResource roles = new RolesResource(kc);
     assertThrows(KeycloakNotFoundException.class, () -> roles.delete("missing"));
   }
+
+  /** 경로(현재 이름)와 body(새 이름)를 분리해야 rename이 된다. */
+  @Test void update_addressesByCurrentNameAndPassesBodyThrough() {
+    org.keycloak.admin.client.resource.RolesResource kc =
+        mock(org.keycloak.admin.client.resource.RolesResource.class);
+    org.keycloak.admin.client.resource.RoleResource rr =
+        mock(org.keycloak.admin.client.resource.RoleResource.class);
+    when(kc.get("r1")).thenReturn(rr);
+    RoleRepresentation rep = new RoleRepresentation();
+    rep.setName("r1-renamed");
+
+    new RolesResource(kc).update("r1", rep);
+
+    verify(kc).get("r1");
+    verify(rr).update(rep);
+  }
+
 }
