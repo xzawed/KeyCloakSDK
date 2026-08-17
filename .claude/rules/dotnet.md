@@ -50,3 +50,5 @@ cd dotnet && dotnet format Keycloak.Sdk.sln --verify-no-changes    # 포맷 검�
 - ⚠️ **(C#) `NUGET_API_KEY` 미설정은 스킵이 아니라 실패다 — 그리고 `dotnet nuget push --skip-duplicate`는 쓰지 않는다.** 이전에는 시크릿이 없으면 push 스텝이 `exit 0`으로 조용히 넘어가면서 **GitHub Release는 그대로 생성**돼, 게시되지 않은 버전이 게시된 것처럼 보였다(green 실행 = 아무것도 안 한 실행). 지금은 `::error::`+`exit 1`. `--skip-duplicate`도 같은 이유로 제거 — 이미 존재하는(= 태워버린) 버전에 대한 push를 성공으로 위장하므로, 중복이면 실패해서 사람이 알아채야 한다. ⚠️ job-level `if:`는 secrets 컨텍스트를 읽지 못하므로 가드는 스텝 안에서 env-매핑된 값으로 한다.
 - ⚠️ **(C#) `IHttpClientFactory`는 의도적으로 미채택** — 단일 장수명 `HttpClient` + `SocketsHttpHandler.PooledConnectionLifetime`(5분)으로 stale DNS를 회피하는 단일서버 SDK 관용을 쓴다. DI 컨테이너 없이 쓰이는 라이브러리라 팩토리 수명주기를 소비자에게 강요하지 않는다.
 - ⚠️ **(C#) `admin`↔`auth` 접착제는 `ITokenProvider` 하나다** — `AuthClient : ITokenSource`가 기본 소스이고, admin은 그 인터페이스만 안다(§4 동형). 예외는 경계에서 `KeycloakException` 계급으로 변환된다.
+
+- ⚠️ **`Microsoft.Extensions.DependencyInjection.Abstractions`의 10.x major는 net8 유지 정책으로 보류다**(PR #57 close). 9.x 안에 머무르되 AuthServices 2.7.0의 하한(9.0.8) 이상이어야 한다 — dependabot의 9.x 패치는 받고 10.x는 닫는다. **현재 핀은 루트 `CLAUDE.md`「확정 의존성」표에만 적는다**(2차 정의 자리를 만들지 않는다).
