@@ -96,7 +96,7 @@ pip install -e KeyCloakSDK/python
 
 ## 지원 언어
 
-| 언어 | 런타임 · 관용 | 패키지 *(아홉 전부 공개 레지스트리에 `0.1.0` 게시)* | 예제 |
+| 언어 | 런타임 · 관용 | 패키지 *(아홉 전부 공개 레지스트리에 게시됨)* | 예제 |
 |---|---|---|---|
 | **Java** | JDK 21+ · 블로킹 | `io.github.xzawed:keycloak-sdk` (Maven Central) | [QuickStart.java](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) |
 | **Python** | 3.10+ · sync + async(`aio`) | `keycloak-sdk` (PyPI) | [quickstart.py](python/examples/quickstart.py) · [async](python/examples/async_quickstart.py) |
@@ -129,7 +129,7 @@ pip install -e KeyCloakSDK/python
 
 아홉 개 SDK 전부 기능 완료·`main` 병합 상태입니다. 각각 **실제 Keycloak 26.6 서버**로 검증되며(Testcontainers, PHP·Ruby는 docker CLI 셸아웃), 로직 모듈에 라인 ≥ 90% 커버리지 게이트가 걸려 있습니다. 여섯 언어는 브랜치 ≥ 85%도 강제하고, Go·PHP·Rust는 라인만 봅니다. 각 SDK의 보안 핵심은 어드버서리얼 리뷰를 거쳤고, 설정 가능한 JWT 서명 알고리즘과 의존성 CVE 감사는 아홉 전부에 적용됐습니다. OIDC nonce/`id_token` 재생 방지는 **아홉 전부**입니다: `create*`는 항상 nonce를 만들어 인가 URL에 싣고, 호출자가 그 값을 `exchange*`에 넘기면 `id_token`을 서명·`iss`·`aud`·`exp`까지 검증한 뒤 nonce 클레임을 대조합니다. nonce 인자를 생략하면 id_token 검증을 건너뛰는 것은 아홉 공통 패턴이지 Ruby만의 예외가 아닙니다.
 
-전부 **pre-1.0(`0.1.0` 라인)** 입니다. 아홉 전부 정식 릴리스를 공개 레지스트리에 게시했습니다 — Packagist `xzawed/keycloak-sdk` 0.1.0 · PyPI `keycloak-sdk` 0.1.0 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0 · crates.io `keycloak-sdk` 0.1.0 · RubyGems `keycloak-sdk` 0.1.0 · npm `@xzawed/keycloak-sdk` 0.1.0 · Maven Central `io.github.xzawed:keycloak-sdk` 0.1.0 · Maven Central `io.github.xzawed:keycloak-sdk-kotlin` 0.1.0 · Go module proxy `github.com/xzawed/KeyCloakSDK/go` v0.1.0 — 하나하나가 사람 태그 게이트를 거쳤고, 각각 앞서 릴리스 후보를 한 번씩 태웠습니다(그 RC들은 레지스트리에 그대로 남습니다). 절차는 [DEPLOY.md](DEPLOY.md), 보안 정책과 여기서 pre-1.0이 뜻하는 바는 [SECURITY.md](SECURITY.md)를 보세요.
+전부 **pre-1.0** 입니다. 아홉 전부 정식 릴리스를 공개 레지스트리에 게시했습니다 — 하나하나가 사람 태그 게이트를 거쳤고, 각각 앞서 릴리스 후보를 한 번씩 태웠습니다(그 RC들은 레지스트리에 그대로 남습니다). 설치 명령은 [설치](#설치)에, 각 언어가 실제로 실은 버전과 감싸는 라이브러리는 [호환성 표](docs/guides/getting-started.md#compatibility)에 있습니다. 릴리스 절차는 [DEPLOY.md](DEPLOY.md), 보안 정책과 여기서 pre-1.0이 뜻하는 바는 [SECURITY.md](SECURITY.md)를 보세요.
 
 ---
 

@@ -96,7 +96,7 @@ pip install -e KeyCloakSDK/python
 
 ## Languages
 
-| Language | Runtime · idiom | Package *(all on public registries at `0.1.0`)* | Example |
+| Language | Runtime · idiom | Package *(all on public registries)* | Example |
 |---|---|---|---|
 | **Java** | JDK 21+ · blocking | `io.github.xzawed:keycloak-sdk` (Maven Central) | [QuickStart.java](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) |
 | **Python** | 3.10+ · sync + async (`aio`) | `keycloak-sdk` (PyPI) | [quickstart.py](python/examples/quickstart.py) · [async](python/examples/async_quickstart.py) |
@@ -129,7 +129,7 @@ Secrets and tokens are masked in logs and serialization, and TLS verification is
 
 All nine SDKs are feature-complete and merged to `main`. Each is verified against a **real Keycloak 26.6 server** (Testcontainers; PHP and Ruby shell out to the docker CLI). Logic modules are held to a line ≥ 90% coverage gate; six languages also gate branch ≥ 85% (Go, PHP and Rust measure lines only). Security cores were reviewed adversarially. Configurable JWT signature algorithms and dependency CVE audits apply across all nine. OIDC nonce / `id_token` replay protection is in **all nine**: `create*` always issues a nonce and puts it on the authorization URL; `exchange*` fully validates the `id_token` (signature · `iss` · `aud` · `exp`) and compares the nonce claim when the caller passes that value back. Omitting the nonce argument still skips id_token validation — that opt-out is the shared pattern, not a Ruby-only exception.
 
-Everything is **pre-1.0 (`0.1.0` line)**. All nine have shipped a stable release to public registries — Packagist `xzawed/keycloak-sdk` 0.1.0 · PyPI `keycloak-sdk` 0.1.0 · NuGet `Xzawed.Keycloak.Sdk` 0.1.0 · crates.io `keycloak-sdk` 0.1.0 · RubyGems `keycloak-sdk` 0.1.0 · npm `@xzawed/keycloak-sdk` 0.1.0 · Maven Central `io.github.xzawed:keycloak-sdk` 0.1.0 · Maven Central `io.github.xzawed:keycloak-sdk-kotlin` 0.1.0 · Go module proxy `github.com/xzawed/KeyCloakSDK/go` v0.1.0 — each one behind a human tag gate, and each preceded by a release candidate that stays on its registry. See [DEPLOY.md](DEPLOY.md) for that procedure, and [SECURITY.md](SECURITY.md) for the security policy and what pre-1.0 means here.
+Everything is **pre-1.0**. All nine have shipped a stable release to a public registry, each behind a human tag gate, and each preceded by a release candidate that stays on its registry. Commands are under [Install](#install); the exact version each language shipped, with the libraries it wraps, is the [compatibility table](docs/guides/getting-started.md#compatibility). See [DEPLOY.md](DEPLOY.md) for the release procedure, and [SECURITY.md](SECURITY.md) for the security policy and what pre-1.0 means here.
 
 ---
 
