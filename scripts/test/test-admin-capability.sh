@@ -35,9 +35,30 @@ flip_u() { # $1=언어표시 $2=present|absent  $3=out
 flip_u "PHP" absent "$TMP/php-u-absent.md"
 assert_fails node "$GUARD" "$ROOT" --doc="$TMP/php-u-absent.md"
 
-# 반대 방향: Rust users U 를 존재로 바꾸면 — 소스에는 update_user 가 없으므로 — 실패.
-flip_u "Rust" present "$TMP/rust-u-present.md"
-assert_fails node "$GUARD" "$ROOT" --doc="$TMP/rust-u-present.md"
+# (b) 반대 방향: 표가 present 인데 소스에 선언이 없으면 실패해야 한다.
+#
+# ⚠️ 예전엔 "Rust U를 present로 뒤집는다"로 이 방향을 냈다. Rust가 25/25가 되면서
+# 그 변이는 더 이상 거짓이 아니게 됐고 이 케이스가 조용히 공허해졌다(CI가 잡았다).
+# 아홉이 전부 25/25인 지금 이 방향은 **소스를 건드려야만** 표현된다 — 그래서 소스를
+# 임시 트리에 복제하고 거기서 선언을 지운다. 원본 트리는 만지지 않는다.
+#
+# 경로 목록은 가드가 스스로 낸다(--print-sources). 여기 손으로 적으면 2차 정의 자리가
+# 생겨, 소스가 옮겨갔을 때 테스트만 낡는다.
+FAKE="$TMP/root"
+node "$GUARD" "$ROOT" --print-sources | while IFS= read -r rel; do
+  mkdir -p "$FAKE/$(dirname "$rel")"
+  cp "$ROOT/$rel" "$FAKE/$rel"
+done
+
+# 대조군: 복제 자체는 변이가 아니다 — 손대지 않은 복제본은 통과해야 한다.
+# (이게 없으면 아래 실패가 "선언을 지워서"인지 "복제가 깨져서"인지 구분되지 않는다.)
+assert_ok node "$GUARD" "$FAKE" --doc="$DOC"
+
+# rust의 update_user 선언만 지운다 → Rust users.U 는 표=present, 소스=absent.
+sed -i.bak 's/pub async fn update_user/pub async fn update_user_REMOVED_BY_TEST/' \
+  "$FAKE/rust/src/admin.rs"
+rm -f "$FAKE/rust/src/admin.rs.bak"
+assert_fails node "$GUARD" "$FAKE" --doc="$DOC"
 
 # 대조군: U가 아닌 C 열만 뒤집으면 이 가드는 통과해야 한다(스코프가 U뿐임을 고정).
 node "$DIR/fixtures/admin-capability/flip-c.mjs" "$DOC" "Java" > "$TMP/java-c-absent.md"
