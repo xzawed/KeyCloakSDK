@@ -423,6 +423,23 @@ function extract(sourceRel) {
   throw new Error(`no extractor for ${sourceRel}`)
 }
 
+// 좌표의 **생태계**. 검사 2는 "같은 좌표를 여러 문서가 다르게 주장하는가"를 보는데, 좌표를
+// 맨 문자열로만 키하면 이름이 겹치는 **서로 다른 생태계의 패키지**가 충돌한다 — 실측으로
+// 걸린 것: npm `testcontainers`(^12)와 cargo `testcontainers`(0.28.0)는 이름만 같고 아무
+// 관계도 없는데 "문서마다 다름"으로 오탐이 났다. 생태계를 키에 넣어 그 부류를 분리한다.
+// ⚠️ 같은 생태계 안의 충돌은 그대로 잡힌다(그게 이 검사의 존재 이유다).
+function ecosystemOf(sourceRel) {
+  if (sourceRel.endsWith('pom.xml') || sourceRel.endsWith('.gradle.kts')) return 'maven'
+  if (sourceRel.endsWith('package.json') || sourceRel.endsWith('package-lock.json')) return 'npm'
+  if (sourceRel.endsWith('composer.json')) return 'composer'
+  if (sourceRel.endsWith('.csproj')) return 'nuget'
+  if (sourceRel.endsWith('.gemspec')) return 'rubygems'
+  if (sourceRel.endsWith('Cargo.toml')) return 'cargo'
+  if (sourceRel.endsWith('go.mod')) return 'gomod'
+  if (sourceRel.endsWith('pyproject.toml')) return 'pypi'
+  return 'unknown'
+}
+
 function parseAttrs(s) {
   const o = {}
   for (const m of s.matchAll(/([\w-]+)=(\S+)/g)) o[m[1]] = m[2]
@@ -783,8 +800,11 @@ for (const file of walk(ROOT)) {
     for (const { coord, ver } of rows) {
       // 검사 2용 수집 — 실제 소스 대조와 무관하게, 이 좌표를 이 문서가 무엇이라
       // 주장하는지 전부 기록해 둔다(전체 순회 종료 후 문서 간 대조에 사용).
-      if (!seen.has(coord)) seen.set(coord, [])
-      seen.get(coord).push({ rel, ver })
+      // ⚠️ 키는 **생태계 + 좌표**다. 맨 좌표로 키하면 이름이 겹치는 다른 생태계 패키지가
+      // 충돌한다(`ecosystemOf` 주석의 npm/cargo `testcontainers` 실측).
+      const key = `${ecosystemOf(attrs.source)} ${coord}`
+      if (!seen.has(key)) seen.set(key, [])
+      seen.get(key).push({ rel, ver, coord })
 
       const actual = source.get(coord)
       if (actual === undefined) {
@@ -814,10 +834,11 @@ for (const file of walk(ROOT)) {
 // 검사 2 — 같은 좌표를 여러 문서가 서로 다른 값으로 주장하면 실패한다. 각자
 // 자기 소스와는 일치해도(검사 1 GREEN) 문서끼리 모순되면 그 자체가 결함이다
 // (실제로 Java 표 11.37.2 ↔ Kotlin 표 11.38.1 불일치가 사람 손으로 발견됐다).
-for (const [coord, hits] of seen) {
+for (const [key, hits] of seen) {
   const vers = [...new Set(hits.map((h) => h.ver))]
   if (vers.length > 1) {
-    errors.push(`좌표 '${coord}' 가 문서마다 다름: ${hits.map((h) => `${h.rel}=${h.ver}`).join(' vs ')}`)
+    // 메시지에는 생태계 접두 없이 좌표만 — 사람이 찾을 문자열은 그것이다.
+    errors.push(`좌표 '${hits[0].coord}' (${key.split(' ')[0]}) 가 문서마다 다름: ${hits.map((h) => `${h.rel}=${h.ver}`).join(' vs ')}`)
   }
 }
 

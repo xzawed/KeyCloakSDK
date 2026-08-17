@@ -255,6 +255,51 @@ assert_contains "$OUT" "cross-b.md=2.0.0" "cross-doc conflict must name doc B's 
 assert_not_contains "$OUT" "실제=" "cross-doc conflict must be Check-2-only (no Check-1 mismatch noise)"
 assert_contains "$OUT" "문서 드리프트 1건" "cross-doc conflict must produce exactly one error (Check 2 only)"
 
+# ⚠️ **이름이 겹치는 다른 생태계 패키지는 충돌이 아니다.** 검사 2가 좌표를 맨 문자열로
+# 키하던 시절, npm `testcontainers`(^12)와 cargo `testcontainers`(0.28.0)가 "문서마다 다름"
+# 으로 **오탐**을 냈다(#216에서 node devDeps 앵커를 추가하다 실측으로 걸렸다). 둘은 이름만
+# 같고 아무 관계도 없다. 지금은 키가 생태계+좌표라 갈린다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+mkdir -p "$TMP/n" "$TMP/r"
+printf '%s\n' '{"devDependencies":{"testcontainers":"^12"}}' > "$TMP/n/package.json"
+printf '%s\n' '[dev-dependencies]' 'testcontainers = "0.28.0"' > "$TMP/r/Cargo.toml"
+cat > "$TMP/eco.md" <<'EOF'
+# 같은 이름, 다른 생태계
+
+<!-- doc-guard: kind=dep source=n/package.json min=1 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| npm | `testcontainers` | ^12 |
+
+<!-- doc-guard: kind=dep source=r/Cargo.toml min=1 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| cargo | `testcontainers` | 0.28.0 |
+EOF
+assert_ok node "$GUARD" "$TMP"
+
+# 대조군 — **같은 생태계** 안의 충돌은 여전히 잡아야 한다. 없으면 위 수정이 검사 2를
+# 통째로 무력화한 것과 구별되지 않는다(생태계를 키에 넣는 것으로 모든 충돌을 갈라버릴 수 있다).
+mkdir -p "$TMP/n2"
+# ⚠️ 이 매니페스트는 문서가 주장할 값(^11)과 **일치**해야 한다 — 어긋나면 검사 1이 함께 울려
+# 이 어서션이 검사 2가 아니라 검사 1에 얹혀 간다(위 cross-doc 블록이 같은 이유로 `실제=`를 배제한다).
+printf '%s\n' '{"devDependencies":{"testcontainers":"^11"}}' > "$TMP/n2/package.json"
+cat >> "$TMP/eco.md" <<'EOF'
+
+<!-- doc-guard: kind=dep source=n2/package.json min=1 -->
+
+| 이름 | 좌표 | 버전 |
+|---|---|---|
+| npm(둘째) | `testcontainers` | ^11 |
+EOF
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "(npm)" "같은 생태계 충돌은 생태계 이름과 함께 지목해야 한다"
+assert_not_contains "$OUT" "실제=" "같은 생태계 충돌은 검사 2만이어야 한다(검사 1이 얹혀 가면 안 된다)"
+assert_contains "$OUT" "문서 드리프트 1건" "에러는 검사 2의 1건뿐이어야 한다"
+
 # 이 블록이 만든 cross-*.md/cross/ 디렉터리는 cp -r로 지워지지 않고 남는다 —
 # 검사 3의 assert_ok를 오염시키지 않도록 다시 리셋한다.
 rm -rf "$TMP" && mkdir -p "$TMP"
