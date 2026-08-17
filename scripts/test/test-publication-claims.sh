@@ -78,6 +78,25 @@ for L in $DEPLOY_LANGS; do
     | grep -oE '0\.1\.0[A-Za-z0-9.-]*' | sort -u | grep -Fxv "$_want" || true)"
   assert_eq "" "$_bad" \
     "$L/README.md 코드펜스에 핀된 버전이 기대값($_want)과 다르다 — 소비자에게 없는 좌표를 권하게 된다"
+
+  # ---- 프리릴리스 **옵트인 플래그** ----
+  #
+  # ⚠️ 위 검사는 **버전 문자열만** 뽑으므로 플래그를 못 본다. `dotnet add package … --prerelease`
+  # 에는 버전이 없어서, 정식 게시 뒤에도 그 줄이 남으면 가드가 초록인 채로 소비자가 RC를 설치한다.
+  # 실제로 그 상태였다 — `dotnet/README.md`가 배너에서는 "resolves it without --prerelease"라고
+  # 하면서 바로 아래 펜스는 `--prerelease`를 시키고 있었다(같은 파일 안의 자기모순).
+  # 레지스트리는 README를 버전마다 고정하므로 이 실수는 좌표 하나를 더 태워야 고쳐진다.
+  #
+  # 판정은 SSOT 파생이다: 게시본이 프리릴리스면 옵트인이 **옳고**, 정식이면 **틀리다**.
+  _flag="$(awk '/^```/ { f = !f; next } f' "$f" \
+    | grep -oE -- '--prerelease|--pre|@rc|minimum-stability' | sort -u | tr '\n' ' ')"
+  if df_is_prerelease "$_want"; then
+    assert_ok test -n "$_flag" \
+      "$L/README.md 은 프리릴리스가 게시본인데 펜스에 옵트인 플래그가 없다 — 소비자가 아무것도 못 받는다"
+  else
+    assert_eq "" "$_flag" \
+      "$L/README.md 펜스가 정식($_want) 게시 뒤에도 프리릴리스 옵트인을 시킨다 — 소비자가 RC를 설치한다"
+  fi
 done
 
 # ⚠️ 대조군 — 위 루프가 실제로 언어를 돌았는지 확인한다. `DEPLOY_LANGS`가 비거나 파일 경로
