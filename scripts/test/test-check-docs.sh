@@ -848,6 +848,61 @@ assert_ok node "$GUARD" "$TMP"
 
 rm -rf "$TMP" && mkdir -p "$TMP"
 
+# ---- 회귀 13-b: 검사 8은 **적재되는 내용**을 재야 한다(블록 HTML 주석 제외) ----
+# 블록 레벨 HTML 주석은 컨텍스트 주입 **전에** 제거되므로 토큰을 1바이트도 쓰지 않는다
+# (code.claude.com/docs/en/memory#how-claude-md-files-load). 그런데 래칫이 raw를 재면 그 주석이
+# 예산을 잠식한다 — 그리고 이 저장소는 **가드·이관의 설계 근거를 블록 주석으로 남기는** 관용을
+# 쓴다. 즉 계상 기준이 틀리면 "근거를 지우는 것"이 예산을 맞추는 최소저항 경로가 된다.
+# 이 저장소가 가장 값지게 여기는 바로 그것을. (선례: Claude Code 자신이 v2.1.211에서 같은
+# 버그를 고쳤다 — raw를 재던 것을 적재분 기준으로 바꿨다.)
+printf '%s\n' '# f' '<!-- doc-budget: max-bytes=60 -->' '<!-- 이 주석은 길지만 적재되지 않는다. 설계 근거를 남기는 자리다. -->' 'x' > "$TMP/c.md"
+assert_ok node "$GUARD" "$TMP"
+
+# 대조군 — 같은 분량이 **본문**이면 여전히 실패한다(주석만 면제이지 예산이 헐거워진 것이 아니다).
+printf '%s\n' '# f' '<!-- doc-budget: max-bytes=60 -->' '이 문장은 주석이 아니라 본문이라 예산에 그대로 계상된다. 충분히 길게 적는다.' > "$TMP/c.md"
+assert_fails node "$GUARD" "$TMP"
+
+# ⚠️ 코드블록 **안**의 주석은 보존된다(같은 공식 문서). 펜스를 무시하고 지우면 예산이 조용히
+# 헐거워지고, 주석을 보여주는 문서일수록 더 헐거워진다.
+printf '%s\n' '# f' '<!-- doc-budget: max-bytes=40 -->' '```html' '<!-- 코드블록 안이라 보존된다 -->' '```' > "$TMP/c.md"
+assert_fails node "$GUARD" "$TMP"
+# 대조군 — 같은 주석이 펜스 **밖**이면 제거된다.
+printf '%s\n' '# f' '<!-- doc-budget: max-bytes=40 -->' '<!-- 코드블록 밖이라 제거된다 -->' > "$TMP/c.md"
+assert_ok node "$GUARD" "$TMP"
+
+# ⚠️ **인라인** 주석은 블록이 아니다 — 앞에 본문이 있으면 그 줄은 통째로 적재된다.
+printf '%s\n' '# f' '<!-- doc-budget: max-bytes=30 -->' '본문이 먼저 오고 <!-- 인라인 주석 --> 뒤에도 본문이 있다.' > "$TMP/c.md"
+assert_fails node "$GUARD" "$TMP"
+
+# 에러 메시지는 적재분과 raw를 **둘 다** 보여야 한다. 하나만 보이면 "왜 파일 크기와 숫자가
+# 다른가"를 사람이 추측하게 되고, 그 추측이 틀리면 상한을 엉뚱하게 올린다.
+printf '%s\n' '# f' '<!-- doc-budget: max-bytes=10 -->' '본문이 길다 본문이 길다 본문이 길다' '<!-- 주석 -->' > "$TMP/c.md"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "적재" "메시지가 적재 기준임을 밝혀야 한다"
+assert_contains "$OUT" "raw" "raw 크기도 함께 보여야 차이를 설명할 수 있다"
+
+# ---- 줄 수 축(`max-lines=N`) — 공식 권고가 줄 기준이므로 바이트만으로는 그 축을 못 본다 ----
+printf '%s\n' '# f' '<!-- doc-budget: max-bytes=100000 max-lines=3 -->' 'a' 'b' 'c' 'd' 'e' > "$TMP/c.md"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "max-lines" "줄 수 초과를 지목해야 한다"
+# 대조군 — 상한 안이면 통과한다.
+printf '%s\n' '# f' '<!-- doc-budget: max-bytes=100000 max-lines=10 -->' 'a' 'b' > "$TMP/c.md"
+assert_ok node "$GUARD" "$TMP"
+# 하위호환 — `max-lines`가 없으면 줄 수는 보지 않는다(기존 앵커를 깨지 않는다).
+printf '%s\n' '# f' '<!-- doc-budget: max-bytes=100000 -->' 'a' 'b' 'c' 'd' 'e' 'f' 'g' 'h' > "$TMP/c.md"
+assert_ok node "$GUARD" "$TMP"
+
+# ⚠️ 앵커는 있는데 `max-bytes`가 없으면 **실패**여야 한다. 오타 하나(`maxbytes=`)로 래칫이
+# 조용히 사라지는 것이 가드를 무력화하는 최소저항 경로가 되어서는 안 된다 — 검사 9가
+# "지도를 지우는 것으로 검사를 없앨 수 없다"를 고정한 것과 같은 이유다.
+printf '%s\n' '# f' '<!-- doc-budget: maxbytes=100 -->' 'x' > "$TMP/c.md"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "max-bytes" "앵커에 max-bytes가 없으면 지목해야 한다"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
 # ---- 회귀 14: 검사 9 — docs/ 지도 완전성 + 상태 대조 ----
 # 두 가지 드리프트가 실제로 일어난다: 문서를 추가하고 지도에 안 넣는 것, 문서를 지우고 지도를
 # 안 고치는 것. 한 방향만 검사하면 반대쪽이 그대로 통과하므로 양방향으로 본다. 세 번째로,
