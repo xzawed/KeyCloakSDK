@@ -26,7 +26,7 @@ gofmt -l go                                                  # no output means O
 - ⚠️ **The minimum Go is 1.25** (required by `golang.org/x/oauth2` v0.36 — lower `go.mod` and `go mod tidy` puts it back). The CI matrix is 1.25 and 1.26. `golangci-lint` is CI-only; locally `go vet` and `gofmt` stand in for it.
 - **There is no registry — the `go/v*` tag *is* the release** (`proxy.golang.org` caches it automatically). Consumers run `go get github.com/xzawed/KeyCloakSDK/go@vX.Y.Z`.
   - ⚠️ **The module path contains capitals, so the proxy URL is `!`-escaped** (`github.com/xzawed/!key!cloak!s!d!k/go`) — querying it in lowercase gives a 404.
-  - ⚠️ With no stable version out, a bare `go get <module>` and `@latest` **fall back to the RC** (same as pip and Cargo, unlike RubyGems).
+  - ⚠️ **If no stable version is published**, a bare `go get <module>` and `@latest` **fall back to the RC** (same as pip and Cargo, unlike RubyGems).
   - ⚠️ **The proxy cache is immutable** — the only way to withdraw something is `retract` in a later release.
 - ⚠️ **Do not read `// indirect` as "a dependency we chose".** Go has no notion of a dev dependency, so the dependency table carries only the modules we actually import. (For example: we never import `testify`; `testcontainers-go` drags it in.)
 

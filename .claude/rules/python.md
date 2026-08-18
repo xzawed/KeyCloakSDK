@@ -10,7 +10,7 @@ paths:
 
 ## Toolchain
 
-The virtualenv is `python/.venv` (not committed). `PY="${KCSDK_PY:-.venv/Scripts/python.exe}"`.
+The venv is `python/.venv` (not committed). `PY="${KCSDK_PY:-.venv/Scripts/python.exe}"`.
 
 ```bash
 cd python && "$PY" -m pytest -m "not integration" --cov=keycloak_sdk   # unit + coverage gate 100%
@@ -28,7 +28,7 @@ cd python && "$PY" -m build                                            # release
 
 ## Gotchas
 
-- ⚠️ **admin has two sessions, and one of them is created lazily** — `connection._s` (REST) and `connection.keycloak_openid.connection._s` (its own token grant). That doubled structure catches **both hardening and cleanup**.
+- ⚠️ **admin has two sessions, and one of them is created lazily** — `connection._s` (REST) and `connection.keycloak_openid.connection._s` (its own token grant). That doubled structure bears on **both hardening and cleanup**.
   - **Redirects**: python-keycloak's sync path does not forward `allow_redirects` (`raw_get`/`raw_post` leak kwargs into the query string), so overriding the session's `resolve_redirects` is the only point that cannot be bypassed. Block the outer session alone and the first admin call's grant hands the POST body — `client_secret` included — straight to the redirect target. ⚠️ **What leaks is not the `Authorization` header.** requests' `rebuild_auth` does strip that header across origins, but **a POST body survives a 307/308**, and the credential is in the body. A defence aimed at headers does not stop this one.
   - **Cleanup**: if `aclose()` closes only the outer session, the inner `httpx.AsyncClient` stays open and **one FD leaks per client that uses admin** (EMFILE in a long-lived async service). The auth-only path is clean, so a test that never exercises admin can never reveal it. A `finally` contract closes the outer session even when the nested close fails.
   - ⚠️ When building the mocks, `MagicMock(spec=KeycloakAdmin)` makes the nested `aclose` a **synchronous** MagicMock — in production it is a coroutine, so without an explicit `AsyncMock` you are asserting against a shape that never occurs.
