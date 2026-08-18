@@ -522,6 +522,29 @@ assert_not_contains "$OUT" '"8개 언어"' "relative count must not surface even
 
 rm -rf "$TMP" && mkdir -p "$TMP"
 
+# ---- 회귀 3-b: 검사 6의 영문 형태 — `all N languages` 만 총계 주장으로 읽는다 ----
+# 영어는 총계와 부분집합을 어순으로 구분하지 못한다. "eight languages ship a wheel"은 참인
+# 부분집합 서술이지 기수 드리프트가 아니다(운영 트리 실측 8건). 그래서 총계 마커(`all`/`across`)를
+# 매치 안에 넣었고, 이 테스트는 **양쪽을 한 실행에서** 본다 — 마커 없는 부분집합을 잡으면
+# 가드가 소음이 되어 꺼지고, 마커 있는 드리프트를 놓치면 확장이 공허하다.
+mkdir -p "$TMP/scripts/lib"
+printf '%s\n' 'DEPLOY_LANGS="a b c"' > "$TMP/scripts/lib/deploy-facts.sh"
+printf '%s\n' '# fixture' \
+  'Eight languages ship a wheel; Go differs.' \
+  'The same opt-out as the other eight languages.' \
+  'Coverage is enforced in all eight languages.' \
+  'The harness runs across 8 languages nightly.' > "$TMP/en-langs.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" '"all eight languages" ≠ DEPLOY_LANGS 3개' "spelled-out total claim must be flagged"
+assert_contains "$OUT" '"across 8 languages" ≠ DEPLOY_LANGS 3개' "numeric total claim must be flagged"
+assert_not_contains "$OUT" '"Eight languages ship' "bare subset prose must never be flagged"
+assert_not_contains "$OUT" 'other eight languages' "relative-count prose must never be flagged"
+# 일치하는 총계는 통과해야 한다 — 어긋남만 잡는다는 것을 같은 실행에서 확인한다.
+printf '%s\n' '# fixture' 'Enforced in all three languages.' > "$TMP/en-langs.md"
+assert_ok node "$GUARD" "$TMP" --strict
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
 # ---- 회귀 4(Fix 1): --strict 는 위치 인자(루트 경로)보다 앞에 오든 뒤에 오든 동일하게
 # 동작해야 한다 ----
 # 고치기 전 버전은 `process.argv[2]`를 무조건 루트로 가정했다 — 검사 4~6을 --strict로
