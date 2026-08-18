@@ -6,54 +6,54 @@ paths:
   - ".github/workflows/rust-*.yml"
 ---
 
-# Rust 규칙
+# Rust rules
 
-## 툴체인
+## Toolchain
 
-시스템 설치. MSRV **1.88**(edition 2024 + let-chain 문법). CI 매트릭스는 1.88·stable.
-⚠️ **Windows 로컬 빌드는 VS2019 BuildTools MSVC 환경(`vcvars64.bat`)이 필요하다**(`ring`·`rsa` 네이티브 컴파일 — CI ubuntu는 무관).
+System install. MSRV **1.88** (edition 2024 + let-chain syntax). The CI matrix is 1.88 and stable.
+⚠️ **A local Windows build needs the VS2019 BuildTools MSVC environment (`vcvars64.bat`)** — `ring` and `rsa` compile natively; CI on ubuntu is unaffected.
 
 ```bash
 cd rust && cargo build --all-targets
 cd rust && cargo fmt --all --check
 cd rust && cargo clippy --all-targets -- -D warnings
-cd rust && cargo test                                         # 단위. Docker 불필요
-cd rust && cargo test --test integration_test -- --ignored    # 통합 E2E. Docker 필요(KC 26.6)
+cd rust && cargo test                                         # unit. No Docker
+cd rust && cargo test --test integration_test -- --ignored    # integration E2E. Needs Docker (KC 26.6)
 ```
 
-- 단일 테스트: `cargo test <test_name>`
-- 커버리지(로직 라인 ≥90%, 네트워크 경계 omit): `rustup component add llvm-tools-preview` → `cargo llvm-cov --ignore-filename-regex '(auth|admin|client)\.rs' --fail-under-lines 90`. 실측 96.48%(993줄 중 35줄 미실행).
-  - ⚠️ **`llvm-tools-preview`를 먼저 설치한다** — 없으면 `cargo-llvm-cov`가 인터랙티브 확인을 띄우고 비대화형 셸에서 **무기한 hang**한다(CPU 시간 0으로 진단).
-  - ⚠️ PowerShell에서 정규식의 `|`가 파이프로 오인될 수 있다 — `--ignore-filename-regex="…"`로 값 전체를 묶는다.
-- 배포는 `rust-v*` 태그 → `rust-release.yml`(사람 승인 게이트). 태그↔`Cargo.toml` 정합 가드 + 통합 E2E가 `needs:`에 있다.
-- 크레이트 `keycloak-sdk`(루트 모듈 `keycloak_sdk`).
+- A single test: `cargo test <test_name>`
+- Coverage (logic lines ≥90%, network boundary omitted): `rustup component add llvm-tools-preview`, then `cargo llvm-cov --ignore-filename-regex '(auth|admin|client)\.rs' --fail-under-lines 90`. Measured 96.48% (35 of 993 lines unexecuted).
+  - ⚠️ **Install `llvm-tools-preview` first** — without it, `cargo-llvm-cov` raises an interactive confirmation and **hangs indefinitely** in a non-interactive shell (diagnose it by the zero CPU time).
+  - ⚠️ In PowerShell the `|` inside the regex can be taken for a pipe — wrap the whole value as `--ignore-filename-regex="…"`.
+- Releasing goes `rust-v*` tag → `rust-release.yml` (human approval gate). The tag ↔ `Cargo.toml` consistency guard and the integration E2E are both in `needs:`.
+- The crate is `keycloak-sdk` (root module `keycloak_sdk`).
 
-## 의존성 정책
+## Dependency policy
 
-- ⚠️ **라이브러리 크레이트에서 정확 핀(`=`)을 쓰지 않는다 — 소비자 의존성 해소를 하드 실패시킨다.** cargo는 semver 호환 요구를 하나로 통일하므로 `=26.6.2`로 박으면 같은 트리에서 26.6.3을 요구하는 크레이트와 만족 가능한 조합이 없고, 소비자에게 우회 수단이 없다.
-- **연산자가 크레이트마다 다르다**: `openidconnect`·`jsonwebtoken`은 평범한 semver라 **캐럿**, `keycloak`은 **틸드 `~26.6.2`** — 이 크레이트의 버전은 semver가 아니라 **Keycloak 서버 라인을 추종**해서 "26.7"이 곧 서버 마이너 업그레이드이고, 그 경계에서 reqwest feature 구성이 재편된 전례가 있다.
-- ⚠️ **커밋된 `Cargo.lock`은 소비자에게 닿지 않는다** — cargo는 의존 크레이트의 lockfile을 무시한다. lock이 고정하는 것은 CI·로컬·`--locked` 빌드뿐이고, 다운스트림을 실제로 보호하는 것은 위의 범위 선택이다. 메이저/마이너 상향은 lock 갱신 + 아래 게차 재확인을 동반해 **수동으로** 한다.
-- ⚠️ **`keycloak` crate와 `openidconnect`는 reqwest 메이저를 정렬해야 한다** — `keycloak`에 `reqwest12` feature(`default-features=false`)를 명시해야 같은 `reqwest::Client`를 공유한다. 안 맞으면 컴파일 실패.
-- dev-dep `testcontainers`는 pre-1.0이라 마이너에 파괴적 변경이 온다 — 범프 시 통합테스트를 반드시 돌린다. 핀은 루트 `CLAUDE.md` 의존성 표가 SSOT.
-- RUSTSEC-2023-0071(rsa Marvin Attack)은 무영향 — `rsa`는 dev-dep 테스트 키 생성 전용이고 런타임은 서명 검증만 한다.
+- ⚠️ **Never use an exact pin (`=`) in a library crate — it hard-fails dependency resolution for the consumer.** cargo unifies semver-compatible requirements into one, so pinning `=26.6.2` leaves no satisfiable combination with a crate in the same tree that asks for 26.6.3, and the consumer has no way around it.
+- **The operator differs per crate**: `openidconnect` and `jsonwebtoken` are ordinary semver, so **caret**; `keycloak` gets a **tilde, `~26.6.2`** — that crate's version is not semver but **tracks the Keycloak server line**, so "26.7" *is* a server minor upgrade, and the reqwest feature layout has been reshuffled at such a boundary before.
+- ⚠️ **The committed `Cargo.lock` does not reach the consumer** — cargo ignores the lockfile of a dependency crate. What the lock pins is CI, local and `--locked` builds; what actually protects downstream is the range choice above. Raise a major or minor **by hand**, refreshing the lock and re-checking the gotchas below.
+- ⚠️ **The `keycloak` crate and `openidconnect` have to agree on the reqwest major** — `keycloak` needs the `reqwest12` feature declared explicitly (`default-features=false`) for them to share the same `reqwest::Client`. Mismatched, it fails to compile.
+- The dev-dependency `testcontainers` is pre-1.0, so breaking changes arrive in minors — always run the integration tests when bumping it. The pins' SSOT is the dependency table in the root `CLAUDE.md`.
+- RUSTSEC-2023-0071 (the rsa Marvin Attack) does not apply — `rsa` is used only to generate test keys as a dev-dependency, and the runtime only verifies signatures.
 
-## 재노출 (§4(b))
+## Re-exports (§4(b))
 
-⚠️ **admin 파사드의 공개 시그니처가 foreign 타입이라, 재노출이 없으면 게시된 퀵스타트가 컴파일되지 않는다.** `keycloak::types`의 representation 5종을 `keycloak_sdk::types`로 미러 재노출하고, `AdminClient::raw()` 반환 타입을 이름 붙이는 데 필요한 `KeycloakAdmin`·`SdkTokenSupplier`와 저수준 ctor가 받는 `reqwest`를 크레이트 루트에서 재노출한다. **새 공개 시그니처에 foreign 타입을 들이면 재노출도 함께 늘린다.**
+⚠️ **The admin facade's public signatures use foreign types, so without re-exports the published quickstart does not compile.** The five representation types from `keycloak::types` are mirrored back out as `keycloak_sdk::types`, and `KeycloakAdmin`, `SdkTokenSupplier` (needed to name the return type of `AdminClient::raw()`) and the `reqwest` the low-level ctor takes are re-exported from the crate root. **Whenever a foreign type enters a new public signature, extend the re-exports with it.**
 
-## 라이브러리 게차
+## Library gotchas
 
-- ⚠️ **`search_users`의 `max`에 `Option`을 두지 않는다 — Keycloak은 미전송 시 조용히 100을 적용한다**(`Constants.DEFAULT_MAX_RESULTS`). `None`은 "무제한"이 아니라 "100에서 잘림"이고, 옵션이면 호출부에 상한이 보이지 않는다. "무제한"은 음수 `max`(-1)로 표현한다. 정확일치 단건은 `find_user_by_username`(`max=2`를 요청해 username 유일성 위반을 잘림과 구분하고 `Conflict`로 표면화 — `max=1`이면 둘을 구분할 수 없다).
-- ⚠️ **`openidconnect`의 `CoreClient`는 6개 엔드포인트 typestate 제네릭이다** — auth/introspection/token만 `EndpointSet`으로 타입별칭(`KcOidcClient`)을 만들어야 빌더를 `?` 없이 호출할 수 있다. id_token은 openidconnect 자체검증 대신 SDK `JwtValidator`가 검증한다(의도된 설계).
-- ⚠️ **`jsonwebtoken`의 `Validation` 기본값은 안전하지 않다** — `validate_nbf` false→true, `leeway` 60초→`config.clock_skew`(30초), `set_required_spec_claims(["exp","iss","aud"])`, `algorithms=[RS256]`(`Algorithm`에 `none` 변형 자체가 없어 구조적으로 거부).
-- ⚠️ **jsonwebtoken 11.0.0부터 기형 JWKS 거부가 파싱이 아니라 키 생성 단계에서 일어난다**(`Transport` → `TokenValidation`). fail-closed는 유지되고, 미지 kty가 섞여도 세트 전체가 죽지 않는다 — 10.x에서는 모르는 키 하나가 멀쩡한 RSA 키까지 못 쓰게 만드는 가용성 사고였다. ⚠️ **이 오류 계급을 되돌리려 `fetch` 뒤에 세트 검사를 넣지 말 것** — 방금 얻은 관용성을 버리는 것이다.
-- ⚠️ **JWKS rate-limit은 재조회 *결정 시점*에 stamp한다**(Go·Python 동형) — IdP 장애로 fetch가 실패해도 gate가 소모돼 장애 창에서의 위조 kid 연속 주입에도 상한이 걸린다.
-- ⚠️ **공유 `reqwest::Client`는 `redirect::Policy::none()`으로 리다이렉트를 전면 차단한다**(SSRF 하드닝). auth·admin·JWKS 전부 이 클라이언트를 재사용한다.
+- ⚠️ **Do not make `search_users`'s `max` an `Option` — Keycloak silently applies 100 when it is not sent** (`Constants.DEFAULT_MAX_RESULTS`). `None` does not mean "unlimited", it means "truncated at 100", and as an option the cap is invisible at the call site. "Unlimited" is expressed as a negative `max` (-1). For an exact single match use `find_user_by_username`, which asks for `max=2` so that a username-uniqueness violation is distinguishable from truncation and can surface as `Conflict` — with `max=1` the two are indistinguishable.
+- ⚠️ **`openidconnect`'s `CoreClient` is generic over the typestate of six endpoints** — only auth, introspection and token need to be marked `EndpointSet` in a type alias (`KcOidcClient`) for the builder to be callable without `?`. The id_token is validated by the SDK's `JwtValidator` rather than by openidconnect's own check (a deliberate design choice).
+- ⚠️ **`jsonwebtoken`'s `Validation` defaults are not safe** — `validate_nbf` false→true, `leeway` 60s→`config.clock_skew` (30 seconds), `set_required_spec_claims(["exp","iss","aud"])`, `algorithms=[RS256]` (`Algorithm` has no `none` variant at all, so it is structurally rejected).
+- ⚠️ **From jsonwebtoken 11.0.0 on, a malformed JWKS is rejected at key construction rather than at parsing** (`Transport` → `TokenValidation`). Fail-closed still holds, and an unknown `kty` mixed into the set no longer kills the whole set — on 10.x, one unrecognised key made the perfectly good RSA keys unusable too, which was an availability incident. ⚠️ **Do not add a set-wide check after `fetch` to restore the old error class** — that throws away the tolerance we just gained.
+- ⚠️ **The JWKS rate limit is stamped at the moment the refetch is *decided*** (isomorphic with Go and Python) — so even when the fetch fails because the IdP is down, the gate is consumed, which caps a stream of forged kids injected during the outage window.
+- ⚠️ **The shared `reqwest::Client` blocks redirects outright with `redirect::Policy::none()`** (SSRF hardening). auth, admin and JWKS all reuse this client.
 
-## SDK 구조
+## SDK structure
 
-- ⚠️ **admin은 캐싱 `ClientCredentialsTokenProvider`를 쓴다 — 무캐시 `AuthClient` 직접 주입이 아니다.** 직접 주입하면 admin 호출마다 토큰이 재발급돼 §4 캐시/single-flight 불변식을 깬다. 공유 `http`는 재사용하되 provider 인스턴스는 별도다.
-- **admin 경계 변환은 `map_admin`이다** — `keycloak::KeycloakError`가 여기서 SDK 타입이 된다. `AuthClient`가 `TokenProvider`를 구현하고 `SdkTokenSupplier`가 그것을 crate의 `KeycloakTokenSupplier`로 어댑트한다. **두 단계가 §4 은닉의 전부라 어느 한쪽을 건너뛰면 foreign 타입이 샌다.**
-- **파사드는 평평하다**(`update_role(name, rep)` — 나머지 여덟의 `roles().update(…)`와 다르다). 다섯 리소스 × 다섯 연산 25/25를 전부 노출한다.
-- ⚠️ **`list_*`의 `max`는 `Option`이 아니다** — `search_users`와 같은 이유다(위 게차). `list_realms()`만 예외인데, `GET /admin/realms`에 페이지네이션 파라미터 자체가 없다.
-- ⚠️ **`update_*`는 경로와 body를 분리해 넘긴다.** crate의 `realm_put(realm, body)`·`realm_roles_with_role_name_put(realm, role_name, body)` 등이 둘을 따로 받으므로 rename이 네이티브다. 경로를 representation에서 만들면 rename이 조용한 no-op이 된다(자매 Go SDK는 gocloak이 그렇게 동작해 `realms.Update`만 raw REST로 우회한다). 단위테스트가 body의 이름을 경로와 **다르게** 두어 이 합침을 wiremock 404로 잡는다.
+- ⚠️ **admin uses the caching `ClientCredentialsTokenProvider` — not a directly injected, uncached `AuthClient`.** Injecting it directly re-issues a token on every admin call and breaks the §4 cache and single-flight invariants. The shared `http` is reused, but the provider instance is separate.
+- **The admin boundary conversion is `map_admin`** — this is where `keycloak::KeycloakError` becomes an SDK type. `AuthClient` implements `TokenProvider` and `SdkTokenSupplier` adapts that to the crate's `KeycloakTokenSupplier`. **Those two steps are the whole of §4's hiding, so skipping either one leaks a foreign type.**
+- **The facade is flat** (`update_role(name, rep)` — unlike the `roles().update(…)` of the other eight). It exposes all 25 of the five resources × five operations.
+- ⚠️ **`list_*`'s `max` is not an `Option`** — the same reason as `search_users` (the gotcha above). `list_realms()` is the one exception, because `GET /admin/realms` has no pagination parameters at all.
+- ⚠️ **`update_*` passes the path and the body separately.** The crate's `realm_put(realm, body)`, `realm_roles_with_role_name_put(realm, role_name, body)` and friends take the two apart, so rename is native. Build the path out of the representation and rename becomes a silent no-op (in the sister Go SDK, gocloak works that way, which is why `realms.Update` alone routes around it with raw REST). A unit test sets the name in the body **differently** from the path so that wiremock catches such a merge as a 404.
