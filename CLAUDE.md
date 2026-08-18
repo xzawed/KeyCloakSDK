@@ -311,5 +311,6 @@ dev(테스트 csproj — **앵커 있음**):
 
 - **README는 루트만 영한 미러**([`README.md`](README.md) ↔ [`README.ko.md`](README.ko.md), 동일 구조). 언어별 `<lang>/README.md`는 영문 단일이다.
 - **소비자 문서는 영문**([`docs/guides/`](docs/guides/)·[`CONTRIBUTING.md`](CONTRIBUTING.md)·[`DEPLOY.md`](DEPLOY.md)·`harness/`), **내부 문서는 한글**([`docs/governance/`](docs/governance/)·이 파일).
+- ⚠️ **`.claude/rules/*.md`만 예외로 영문**(2026-08-18 판정) — 청중이 둘이다. 에이전트가 경로로 자동로드하고, 영문 문서 둘이 **인간 기여자**를 그리로 보낸다. 한글이면 빌드 명령을 영문 쪽에 복제할 수밖에 없다(실측 4곳·드리프트 3건).
 - 9개 중 9개가 정식 게시(`0.1.0`)이나 **라이브 레지스트리 배지는 여전히 금지** — 배지는 아홉 레지스트리를 실시간으로 물어 문서가 SSOT를 우회하게 만든다(버전 문자열의 SSOT는 `deploy-facts.sh`다).
 - ⚠️ 영문 문서 헤딩을 바꾸면 `#anchor`가 바뀐다. `getting-started.md`의 `## C# / .NET`(앵커 `#c--net`)은 양쪽 README가 링크한다.
