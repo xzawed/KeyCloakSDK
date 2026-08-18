@@ -9,7 +9,7 @@ All nine language SDKs have a **tag-driven release CI** wired up. Nine tags have
 > ⚠️ **What that harness does not prove.** It swaps only the *dependency-resolution source* — a local Verdaccio / pypiserver / BaGetter / Satis / staged `.m2` / file `GOPROXY` — for the real one. Every failure mode that is unique to a **public** registry is therefore outside its reach: PyPI, npm and RubyGems OIDC trusted publishing; GPG signing and Central Portal staging; Packagist's view of the repository; crates.io name ownership; npm provenance attestation; Go module-proxy immutability. It is **not** "isomorphic to real deployment", and passing it is not a release gate. (A real failure mode it *did* catch: a Kotlin jar built without `languageVersion`/`apiVersion` = 2.2 is unreadable by a 2.2 consumer — [`.claude/rules/kotlin.md`](.claude/rules/kotlin.md). **That fix then passed the harness**: run `30676364773` finished `install-all: success` with all nine rows ✓ in `INSTALL-MATRIX.md` (Kotlin included, conformance 26/26 · security 9/9). A green matrix is still only evidence about the *install path*.)
 >
 > 🛠️ **Helper scripts**: the tables and commands in this document come from `scripts/lib/deploy-facts.sh` (single source of truth). Rather than scanning the tables yourself, use the two helpers below to check status and obtain the commands.
-> - `./scripts/release-readiness.sh [lang ...]` — reports each language's secret/registry/tag readiness read-only (no values exposed; with no arguments, all nine).
+> - `./scripts/release-readiness.sh [--version <X.Y.Z>] [lang ...]` — reports each language's secret/registry/tag readiness read-only (no values exposed; with no arguments, all nine). ⚠️ **Pass `--version` for anything after a language's first publish.** Without it the tool asks "has this language ever been published?", and now that all nine have, both of its short-circuits are permanently true and every row reports only `ℹ️ 태그 이미 존재` — the secret verdict is never reached. With `--version` it checks that exact tag and skips the "already published" short-circuit, so you get the real answer for the release you are about to cut.
 > - `./scripts/release-trigger.sh <lang> <version>` — **only prints** the version-bump guidance + dry-run command + exact tag push command (human-gate — it never runs `git tag`/`push` itself).
 
 ---
@@ -65,7 +65,7 @@ Consumption was checked from outside the pipeline: a clean container installed `
 
 ⚠️ **npm stays on that list even though npm has published**, and the reason is easy to miss: `node-v0.1.0-rc.2` went out on the temporary `NPM_TOKEN`, and the trusted-publisher relationship was registered *afterwards* (the token and its secret are now deleted, §2-B). So the **next** npm release is the first one that will actually exercise OIDC — treat it as a first execution, exactly like an unpublished language. The same rule holds generally: treat every remaining first tag as a first execution, not a regression check.
 
-**Check the current status**: `./scripts/release-readiness.sh` (with no arguments, it reports all nine languages at once, in this order).
+**Check the current status**: `./scripts/release-readiness.sh --version <X.Y.Z>` (with no language argument it reports all nine at once, in this order). Now that every language has published, drop `--version` only when you genuinely mean "has this ever been published?" — see the caveat at the top of this file.
 
 ---
 
@@ -377,7 +377,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 
    ⚠️ **Node only**: `node/package-lock.json` records the root package's own version. Regenerate it in the same commit (`npm install --package-lock-only`) so the lock does not disagree with the manifest. Measured: `npm ci` does **not** fail on that drift today, so nothing will catch it for you.
 2. **dry-run** — locally confirm artifact generation without deploying (the relevant language in §3).
-3. **`./scripts/release-readiness.sh <lang>`** — check the secret/registry/tag readiness.
+3. **`./scripts/release-readiness.sh --version <X.Y.Z> <lang>`** — check the secret/registry/tag readiness for that exact version (omit `--version` only for a language that has never been published).
 4. **`./scripts/release-trigger.sh <lang> <ver>`** — prints the version-bump guidance, dry-run command, pre-checks, and exact tag command (does not execute them). ✅ It validates the version **per language**, so it accepts prereleases in each registry's own spelling (`0.1.0rc1` for Python, `0.1.0.rc1` for Ruby, `0.1.0-rc.1` for SemVer registries) and rejects the wrong one with the expected form in the error. **Do not skip it for an RC** — that is precisely when it earns its keep, because the tag↔manifest guard is literal string equality (§7).
 5. **A human approves** — either merge the release PR (step 1 is in the PR; steps 2–4 still happen
    before you open it), or, for Go, copy and run the printed `git tag ... && git push origin ...`

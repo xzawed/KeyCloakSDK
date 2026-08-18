@@ -22,6 +22,25 @@ assert_eq "ℹ️ 이미 게시됨" "$(rr_verdict set published none)" "이미 �
 assert_eq "✅ 저장소측 OK" "$(rr_verdict na exists none)" "OIDC(시크릿 na) → 저장소측 OK"
 assert_eq "ℹ️ 태그 이미 존재" "$(rr_verdict set exists present)" "태그존재 우선"
 
+# ---- 버전 인지 모드(4번째 인자) ----
+#
+# ⚠️ **이 갈래가 없으면 도구가 영구 무신호였다.** 단락 둘(tag·registry)은 "첫 게시인가?"를
+# 묻는데, 아홉 전부 게시된 뒤로는 tag(글롭)도 registry(좌표)도 항상 참이라 `rr_verdict`가
+# 첫 줄에서 반환했다 — 시크릿 판정에 영영 도달하지 못한다. 0.1.0 게시 직후 실측으로 아홉
+# 언어 전부가 `ℹ️ 태그 이미 존재`만 찍었다. 릴리스 직전에 보라는 도구가 0.2.0에서 아무것도
+# 말하지 않는 상태였다.
+#
+# 버전이 주어지면 registry 단락을 건너뛴다 — 이미 있는 좌표에 **새 버전**을 올리는 것이
+# 정상이므로 "이미 게시됨"은 정보가 아니다. tag는 호출부가 정확한 태그로 좁혀 넘긴다.
+assert_eq "✅ 저장소측 OK" "$(rr_verdict set published none 0.2.0)" \
+  "버전 지정 + 그 버전 태그 없음 → 좌표가 이미 게시돼 있어도 시크릿 판정에 도달해야 한다"
+assert_eq "⚠️ 설정필요: 시크릿" "$(rr_verdict unset published none 0.2.0)" \
+  "버전 지정 + 시크릿 미설정 → 설정필요(registry 단락이 삼키면 안 된다)"
+assert_eq "ℹ️ 태그 이미 존재" "$(rr_verdict set published present 0.2.0)" \
+  "버전 지정 + 그 버전 태그 존재 → 태그 단락은 버전 모드에서도 유효하다"
+assert_eq "ℹ️ 이미 게시됨" "$(rr_verdict set published none)" \
+  "버전 미지정(좌표 모드)은 예전 동작 그대로 — 하위호환"
+
 # 회귀 가드: `if cmd; then …; fi` **뒤**의 `$?`는 cmd가 아니라 if 문 자체의 코드(조건 거짓 +
 # else 없음 → POSIX가 0으로 정의)다. rr_url_exists가 그 실수를 갖고 있어 4xx에서 rc=0을 보고
 # `-eq 22` 분기를 못 타, **"미게시(exists)" 판정이 죽고** 모든 미게시 좌표가 unknown으로 나왔다.
