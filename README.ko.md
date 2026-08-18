@@ -96,17 +96,17 @@ pip install -e KeyCloakSDK/python
 
 ## 지원 언어
 
-| 언어 | 런타임 · 관용 | 패키지 *(아홉 전부 공개 레지스트리에 게시됨)* | 예제 |
-|---|---|---|---|
-| **Java** | JDK 21+ · 블로킹 | `io.github.xzawed:keycloak-sdk` (Maven Central) | [QuickStart.java](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) |
-| **Python** | 3.10+ · sync + async(`aio`) | `keycloak-sdk` (PyPI) | [quickstart.py](python/examples/quickstart.py) · [async](python/examples/async_quickstart.py) |
-| **Node** | 22+ · ESM · async-only | `@xzawed/keycloak-sdk` (npm) | [quickstart.ts](node/examples/quickstart.ts) |
-| **Go** | 1.25+ · sync + `context.Context` | `github.com/xzawed/KeyCloakSDK/go` | [example_test.go](go/example_test.go) |
-| **C# / .NET** | 8+ · async-first | `Xzawed.Keycloak.Sdk` (NuGet) | [getting-started](docs/guides/getting-started.md#c--net) |
-| **PHP** | 8.3+ · `final readonly class` | `xzawed/keycloak-sdk` (Packagist) | [quickstart.php](php/examples/quickstart.php) |
-| **Rust** | 1.88+ (edition 2024) · async(tokio) | `keycloak-sdk` (crates.io) | [quickstart.rs](rust/examples/quickstart.rs) |
-| **Ruby** | 3.2+ · sync-only | `keycloak-sdk` (RubyGems) | [quickstart.rb](ruby/examples/quickstart.rb) |
-| **Kotlin** | 2.2+ / JDK 21+ · 코루틴 | `io.github.xzawed:keycloak-sdk-kotlin` (Maven Central) | [quickstart.kt](kotlin/examples/quickstart.kt) |
+| 언어 | 런타임 · 관용 | 패키지 *(아홉 전부 공개 레지스트리에 게시됨)* | 패키지 README | 예제 |
+|---|---|---|---|---|
+| **Java** | JDK 21+ · 블로킹 | `io.github.xzawed:keycloak-sdk` (Maven Central) | [java/README.md](java/README.md) | [QuickStart.java](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) |
+| **Python** | 3.10+ · sync + async(`aio`) | `keycloak-sdk` (PyPI) | [python/README.md](python/README.md) | [quickstart.py](python/examples/quickstart.py) · [async](python/examples/async_quickstart.py) |
+| **Node** | 22+ · ESM · async-only | `@xzawed/keycloak-sdk` (npm) | [node/README.md](node/README.md) | [quickstart.ts](node/examples/quickstart.ts) |
+| **Go** | 1.25+ · sync + `context.Context` | `github.com/xzawed/KeyCloakSDK/go` | [go/README.md](go/README.md) | [example_test.go](go/example_test.go) |
+| **C# / .NET** | 8+ · async-first | `Xzawed.Keycloak.Sdk` (NuGet) | [dotnet/README.md](dotnet/README.md) | [getting-started](docs/guides/getting-started.md#c--net) |
+| **PHP** | 8.3+ · `final readonly class` | `xzawed/keycloak-sdk` (Packagist) | [php/README.md](php/README.md) | [quickstart.php](php/examples/quickstart.php) |
+| **Rust** | 1.88+ (edition 2024) · async(tokio) | `keycloak-sdk` (crates.io) | [rust/README.md](rust/README.md) | [quickstart.rs](rust/examples/quickstart.rs) |
+| **Ruby** | 3.2+ · sync-only | `keycloak-sdk` (RubyGems) | [ruby/README.md](ruby/README.md) | [quickstart.rb](ruby/examples/quickstart.rb) |
+| **Kotlin** | 2.2+ / JDK 21+ · 코루틴 | `io.github.xzawed:keycloak-sdk-kotlin` (Maven Central) | [kotlin/README.md](kotlin/README.md) | [quickstart.kt](kotlin/examples/quickstart.kt) |
 
 ---
 
