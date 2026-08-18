@@ -21,7 +21,7 @@ cd kotlin
 ./gradlew build
 ./gradlew test                # 단위. Docker 불필요
 ./gradlew integrationTest     # 통합 E2E 1개. Docker 필요(Testcontainers, KC 26.6)
-./gradlew koverVerify         # 커버리지 라인≥90/브랜치≥85, 네트워크 경계 omit
+./gradlew koverVerify         # 커버리지 게이트 라인≥90/브랜치≥85, 네트워크 경계 omit
 ./gradlew ktlintCheck         # 수정은 ktlintFormat
 ./gradlew publishToMavenLocal # 배포 빌드 로컬 검증
 ```
