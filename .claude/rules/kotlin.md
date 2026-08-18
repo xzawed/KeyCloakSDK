@@ -11,27 +11,29 @@ paths:
 
 ## 툴체인
 
-JDK 21 + 포터블 Gradle `9.5.0`(래퍼도 동일). 명령은 `gradle -p kotlin <task>`.
+JDK 21. **명령은 래퍼로 낸다** — `cd kotlin && ./gradlew <task>`.
+
+⚠️ **Gradle을 따로 설치하지 않는다.** 래퍼가 빌드에 맞는 배포판(`9.5.0`)을 스스로 받는다. 이 저장소는 한동안 `gradle -p kotlin <task>`를 적어 뒀는데, 그 명령은 **PATH에 gradle이 있는 기계에서만** 돈다 — 실측으로 이 PC에는 없었고(`~/tools`에 maven·php뿐) 래퍼로 전환해야 했다. `docs/guides/development-setup.md`가 처음부터 "Kotlin — do not install Gradle"이라고 옳게 적고 있었고, 어긋난 쪽은 이 파일이었다.
 
 ```bash
-export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot}" \
-       PATH="${KCSDK_TOOLS:-$HOME/tools}/gradle-9.5.0/bin:$PATH"
-gradle -p kotlin build
-gradle -p kotlin test                # 단위. Docker 불필요
-gradle -p kotlin integrationTest     # 통합 E2E 1개. Docker 필요(Testcontainers, KC 26.6)
-gradle -p kotlin koverVerify         # 커버리지 라인≥90/브랜치≥85, 네트워크 경계 omit
-gradle -p kotlin ktlintCheck         # 수정은 ktlintFormat
-gradle -p kotlin publishToMavenLocal # 배포 빌드 로컬 검증
+export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot}"
+cd kotlin
+./gradlew build
+./gradlew test                # 단위. Docker 불필요
+./gradlew integrationTest     # 통합 E2E 1개. Docker 필요(Testcontainers, KC 26.6)
+./gradlew koverVerify         # 커버리지 라인≥90/브랜치≥85, 네트워크 경계 omit
+./gradlew ktlintCheck         # 수정은 ktlintFormat
+./gradlew publishToMavenLocal # 배포 빌드 로컬 검증
 ```
 
-- 단일 테스트: `gradle -p kotlin test --tests "*<ClassName>"`
+- 단일 테스트: `./gradlew test --tests "*<ClassName>"`(kotlin/ 안에서)
 - 좌표 `io.github.xzawed:keycloak-sdk-kotlin`. KGP 2.4.10 · `jvmToolchain(21)` · `languageVersion`/`apiVersion` = `KOTLIN_2_2`(소비자 하한) · `explicitApi()`.
 - 배포는 `kotlin-v*` 태그 → `kotlin-release.yml`(Central Portal 스테이징) → 사람이 Portal에서 release. 핀은 루트 `CLAUDE.md` 의존성 표가 SSOT(doc-guard 앵커가 `build.gradle.kts`와 대조 — 여기 숫자를 쓰지 않는다).
 - 커버리지 실측 라인 99.24%/브랜치 85.71%. ⚠️ `koverVerify`는 백분율을 출력하지 않아 CI 로그로 대조할 수 없다 — 확인하려면 `koverHtmlReport`.
 
 ## 빌드·테스트 제약
 
-- ⚠️ **`gradle --stop`을 빌드 중에 실행하지 않는다.** `--no-daemon`도 데몬을 fork하므로 진행 중 빌드가 죽고 테스트 실패로 오인된다. 같은 프로젝트에 gradle 2개 동시 실행도 금지(락 경합). 복구는 `gradle -p kotlin clean`.
+- ⚠️ **`gradle --stop`을 빌드 중에 실행하지 않는다.** `--no-daemon`도 데몬을 fork하므로 진행 중 빌드가 죽고 테스트 실패로 오인된다. 같은 프로젝트에 gradle 2개 동시 실행도 금지(락 경합). 복구는 `./gradlew clean`.
 - ⚠️ **MockK로 JAX-RS 추상클래스(`Response`·`WebApplicationException`)를 모킹하면 JDK21에서 무기한 hang한다.** byte-buddy가 RESTEasy 클래스그래프를 계측하다 멈춘다. 실객체를 쓴다 — `WebApplicationException(msg, status)` · `Response.status(500).entity("body").build()` · 익명 서브클래스. **인터페이스**(`UsersResource` 등) 모킹은 안전하다.
 - ⚠️ **코루틴 스택트레이스 복구는 예외 identity를 보존하지 않는다.** suspend 경계를 넘은 예외는 새 인스턴스다 — `assertSame` 대신 `assertIs<T>` + message 비교.
 - ⚠️ **`= runBlocking { … }` 표현식 본문 `@Test`는 Jupiter가 발견하지 못한다.** 마지막 식이 non-Unit이면 메서드가 non-void가 된다 — `: Unit`을 명시한다.

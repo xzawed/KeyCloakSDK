@@ -58,7 +58,7 @@ Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·P
 | PHP | `cd php && vendor/bin/phpunit --testsuite unit` | `.claude/rules/php.md` |
 | Rust | `cd rust && cargo test` | `.claude/rules/rust.md` |
 | Ruby | `cd ruby && bundle exec rspec` | `.claude/rules/ruby.md` |
-| Kotlin | `gradle -p kotlin test` | `.claude/rules/kotlin.md` |
+| Kotlin | `cd kotlin && ./gradlew test` | `.claude/rules/kotlin.md` |
 
 ## 아키텍처 계약
 
