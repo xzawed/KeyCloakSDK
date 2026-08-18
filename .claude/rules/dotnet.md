@@ -7,55 +7,55 @@ paths:
   - ".github/workflows/dotnet-*.yml"
 ---
 
-# C#/.NET 규칙
+# C#/.NET rules
 
-## 툴체인
+## Toolchain
 
-시스템 설치 `C:\Program Files\dotnet`(SDK 10, net8.0 런타임 네이티브). 명령은 `dotnet/`에서.
+System install at `C:\Program Files\dotnet` (SDK 10, with the net8.0 runtime native). Commands run from `dotnet/`.
 
 ```bash
 cd dotnet && dotnet build                                       # warnaserror · Nullable · AnalysisLevel 8.0
-cd dotnet && dotnet test --filter "Category!=Integration"       # 단위. Docker 불필요
-cd dotnet && dotnet test --filter "Category=Integration"        # 통합 E2E. Docker 필요(KC 26.6)
+cd dotnet && dotnet test --filter "Category!=Integration"       # unit. No Docker
+cd dotnet && dotnet test --filter "Category=Integration"        # integration E2E. Needs Docker (KC 26.6)
 cd dotnet && dotnet format Keycloak.Sdk.sln --verify-no-changes
-cd dotnet && dotnet pack src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release   # 배포 빌드 검증
+cd dotnet && dotnet pack src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release   # release build check
 ```
 
-- 단일 테스트: `dotnet test --filter "FullyQualifiedName~<TestName>"`
-- **커버리지는 2단계다.** 수집은 coverlet **컬렉터**, 판정은 `scripts/check-coverage.mjs`(제외 필터 SSOT는 `dotnet/coverlet.runsettings`):
+- A single test: `dotnet test --filter "FullyQualifiedName~<TestName>"`
+- **Coverage happens in two stages.** Collection is the coverlet **collector**; the verdict is `scripts/check-coverage.mjs` (the SSOT for the exclusion filters is `dotnet/coverlet.runsettings`):
   ```bash
   cd dotnet && dotnet test --filter "Category!=Integration" \
     --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory /tmp/cov
   node ../scripts/check-coverage.mjs /tmp/cov --min-line 90 --min-branch 85
   ```
-  실측 라인 96.91%(188/194) · 브랜치 90.00%(45/50).
-- 배포는 `dotnet-v*` 태그 → `dotnet-release.yml`(사람 승인 게이트). 발행 전 `integration` 잡이 `needs:`에 있다.
-- 솔루션은 구 포맷 `Keycloak.Sdk.sln`(SDK 10 기본은 `.slnx`). `AnalysisLevel=8.0`으로 로컬(SDK 10)/CI(SDK 8) 애널라이저 밴드를 맞춘다. `GenerateDocumentationFile`·패키징 props는 `IsTestProject != true`로 게이트(안 하면 테스트 프로젝트 CS1591로 빌드 실패).
+  Measured 96.91% lines (188/194) and 90.00% branches (45/50).
+- Releasing goes `dotnet-v*` tag → `dotnet-release.yml` (human approval gate). The `integration` job is in `needs:` ahead of publishing.
+- The solution uses the old format, `Keycloak.Sdk.sln` (SDK 10 defaults to `.slnx`). `AnalysisLevel=8.0` aligns the analyzer band between local (SDK 10) and CI (SDK 8). `GenerateDocumentationFile` and the packaging props are conditioned on `IsTestProject != true` — without that, the test projects fail the build with CS1591.
 
-## 커버리지 함정 둘
+## Two coverage traps
 
-- ⚠️ **coverlet **msbuild** 통합은 쓰지 않는다.** 히트를 `ProcessExit`에서 flush하는데 VSTest가 종료를 짧게만 기다려서, 느린 실행에서는 분모는 살아있고 **분자만 0**인 리포트가 나온다. 내장 임계값 게이트는 그걸 진짜 하락과 **완전히 같은 문구**로 보고한다(같은 커밋 재실행은 통과했다). 컬렉터는 `SessionEnd`에 flush하므로 이 경로가 없고, `check-coverage.mjs`가 **분모와 분자를 따로 본다**(`lines-valid>0`인데 `lines-covered==0`이면 하락이 아니라 측정 실패).
-- ⚠️ **브랜치 게이트의 여유는 백분율이 아니라 개수로 읽는다.** 분모가 50이라 1개당 2.0%p다 — 45/50에서 임계 85%는 43개를 요구하므로 **실제 여유는 2개**다. else 없는 `if` 하나면 깨진다. `check-coverage.mjs`가 매 실행 `브랜치 여유: N개`를 찍는 이유다. **0%를 보고 임계값을 내리는 것이 정확히 하지 말아야 할 대응이다.**
+- ⚠️ **Do not use the coverlet **msbuild** integration.** It flushes hits on `ProcessExit`, and VSTest waits only briefly for the process to exit, so on a slow run you get a report where the denominator survives but **the numerator alone is 0**. Its built-in threshold gate reports that in **exactly the same words** as a genuine drop (re-running the same commit passed). The collector flushes on `SessionEnd`, so it has no such path, and `check-coverage.mjs` **looks at the numerator and the denominator separately** (`lines-valid>0` with `lines-covered==0` is a measurement failure, not a drop).
+- ⚠️ **Read the headroom on the branch gate as a count, not as a percentage.** The denominator is 50, so one branch is 2.0 percentage points — at 45/50 the 85% threshold demands 43, which means **the real headroom is 2**. A single `if` without an `else` breaks it. That is why `check-coverage.mjs` prints `브랜치 여유: N개` ("branch headroom: N") on every run. **Seeing 0% and lowering the threshold is precisely the wrong response.**
 
-## admin 표면
+## admin surface
 
-- ⚠️ **`Raw`는 타입드 클라이언트라 users/groups/realm-read만 덮는다.** 그 밖의 연산은 파사드가 raw Admin REST(`SendRawAsync`/`GetJsonAsync`)로 직접 구현하는 것이 이 SDK의 관용이다 — 새 admin 연산이 타입드에 없다고 멈추지 말 것. 현재 25/25.
-- ⚠️ **네임스페이스 셰도잉**: `Xzawed.Keycloak.Admin` 안에서 `new KeycloakClient(http)`는 파사드(private ctor)에 바인딩돼 CS1729 — `using KcAdminClient = Keycloak.AuthServices.Sdk.Admin.KeycloakClient;` 별칭이 필요하다.
-- `CreateUserAsync`는 void 반환이라 id는 `CreateUserWithResponseAsync` + `Location` 헤더에서 얻는다.
-- ⚠️ **`POST /admin/realms`(신규 realm 생성)는 master realm 전용이다** — 어떤 realm의 service account도 403. E2E는 master bootstrap admin으로 검증한다.
+- ⚠️ **`Raw` is a typed client, so it only covers users, groups and realm-read.** For every other operation, this SDK's idiom is for the facade to implement it directly against the raw Admin REST API (`SendRawAsync` / `GetJsonAsync`) — do not stop just because a new admin operation is missing from the typed client. Currently 25/25.
+- ⚠️ **Namespace shadowing**: inside `Xzawed.Keycloak.Admin`, `new KeycloakClient(http)` binds to the facade (whose ctor is private) and gives CS1729 — the alias `using KcAdminClient = Keycloak.AuthServices.Sdk.Admin.KeycloakClient;` is required.
+- `CreateUserAsync` returns void, so take the id from `CreateUserWithResponseAsync` plus the `Location` header.
+- ⚠️ **`POST /admin/realms` (creating a new realm) is master-realm only** — a service account in any realm gets a 403. The E2E verifies it with the master bootstrap admin.
 
-## 라이브러리 게차
+## Library gotchas
 
-- ⚠️ **`JsonWebTokenHandler.ValidateTokenAsync`는 실패해도 예외를 던지지 않는다** — `result.IsValid` 검사가 필수다. 기본값도 안전하지 않다: `ValidAlgorithms`가 `null`(전체 허용)이라 `["RS256"]` 핀, `ClockSkew` 5분 → 30초, `RequireExpirationTime=true`. **테스트 함정**: `CreateToken`이 `exp`를 자동 주입하므로 no-exp 테스트는 `SetDefaultTimesOnTokenCreation=false`가 필요하다.
-- ⚠️ **위조 서명이 JWKS 재조회를 유발한다 — 9개 언어 중 .NET만 그렇다.** `Microsoft.IdentityModel`이 서명 실패를 키 회전 신호로 보고 `RequestRefresh()` 후 재시도하는데, `ConfigurationManager`를 버리지 않는 한 끌 수 없다. 실제 피해를 막는 것은 `RefreshIntervalSeconds`(30초)뿐이다(실측: 위조 6건 → 추가 조회 1회). **테스트를 "0회"로 바꾸지 말 것** — 이 SDK가 하지 않는 것을 주장하게 된다.
-- ⚠️ **`HttpClient.Timeout` 만료는 `TaskCanceledException`이지 `HttpRequestException`이 아니다** — 경계에서 `catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)`로 잡아 변환한다.
-- ⚠️ **Duende.IdentityModel 확장 메서드는 예외를 던지지 않는다**(`resp.IsError` 검사). 잘못된 자격증명도 401(`ErrorType=Http`)이라 에러코드는 `resp.Json["error"]`에서 읽는다. PKCE는 미지원(수동 생성), logout은 수동 POST.
-- ⚠️ **`record`의 자동 `ToString()`은 토큰·시크릿을 전부 노출한다** — `TokenSet`/`KeycloakConfig`는 `ToString()` override + `JsonConverter<T>`로 마스킹한다. **단 Serilog `{@}` 구조분해는 raw 프로퍼티를 직접 읽어 마스킹을 우회하므로 두 타입을 `{@}`로 쓰지 않는다.**
-- ⚠️ **`AddKeycloak(config)`는 `KeycloakConfig`도 싱글턴 등록한다** — 소비자가 별도로 `AddSingleton<KeycloakConfig>`하면 해석이 모호해진다.
+- ⚠️ **`JsonWebTokenHandler.ValidateTokenAsync` does not throw on failure** — checking `result.IsValid` is mandatory. Its defaults are not safe either: `ValidAlgorithms` is `null` (everything allowed), so pin `["RS256"]`; `ClockSkew` 5 minutes → 30 seconds; `RequireExpirationTime=true`. **Test trap**: `CreateToken` injects `exp` automatically, so a no-exp test needs `SetDefaultTimesOnTokenCreation=false`.
+- ⚠️ **A forged signature triggers a JWKS refetch — of all nine languages, .NET is the only one where that happens.** `Microsoft.IdentityModel` reads a signature failure as a key-rotation signal, calls `RequestRefresh()` and retries, and it cannot be turned off short of abandoning `ConfigurationManager`. The only thing limiting the actual damage is `RefreshIntervalSeconds` (30 seconds) — measured: 6 forgeries → 1 extra fetch. **Do not change the test to "0 times"** — that would assert something this SDK does not do.
+- ⚠️ **An expiring `HttpClient.Timeout` raises `TaskCanceledException`, not `HttpRequestException`** — catch and convert it at the boundary with `catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)`.
+- ⚠️ **The Duende.IdentityModel extension methods do not throw** (check `resp.IsError`). Bad credentials also come back as a 401 (`ErrorType=Http`), so read the error code from `resp.Json["error"]`. PKCE is unsupported (generate it by hand), and logout is a manual POST.
+- ⚠️ **A `record`'s generated `ToString()` exposes every token and secret** — `TokenSet` and `KeycloakConfig` mask them with a `ToString()` override plus a `JsonConverter<T>`. **But Serilog's `{@}` destructuring reads the raw properties directly and bypasses the masking, so never write those two types with `{@}`.**
+- ⚠️ **`AddKeycloak(config)` also registers `KeycloakConfig` as a singleton** — a consumer who adds their own `AddSingleton<KeycloakConfig>` makes the resolution ambiguous.
 
-## 의존성·구조 결정
+## Dependency and structural decisions
 
-- ⚠️ **`Keycloak.AuthServices.Sdk` 3.0.0은 net10 전용이라 net8.0은 2.7.0 핀이다.** 2.7.0이 요구하는 `DI.Abstractions >= 9.0.8`보다 낮으면 NU1605로 하드 에러.
-- ⚠️ **`DI.Abstractions`의 10.x major는 net8 유지 정책으로 보류다** — 9.x 패치는 받고 10.x는 닫는다. 현재 핀은 루트 `CLAUDE.md` 의존성 표에만 적는다.
-- **`IHttpClientFactory`는 의도적으로 쓰지 않는다** — 단일 장수명 `HttpClient` + `PooledConnectionLifetime`(5분)으로 stale DNS를 피한다. DI 없이 쓰이는 라이브러리라 팩토리 수명주기를 소비자에게 강요하지 않는다.
-- `admin`↔`auth` 접착제는 `ITokenProvider` 하나다(`AuthClient : ITokenSource`가 기본 소스) — §4 동형.
+- ⚠️ **`Keycloak.AuthServices.Sdk` 3.0.0 is net10-only, so net8.0 pins 2.7.0.** Anything below the `DI.Abstractions >= 9.0.8` that 2.7.0 requires is a hard NU1605 error.
+- ⚠️ **The 10.x major of `DI.Abstractions` is on hold under the keep-net8 policy** — take the 9.x patches, close 10.x. The current pin is written only in the dependency table in the root `CLAUDE.md`.
+- **`IHttpClientFactory` is deliberately not used** — a single long-lived `HttpClient` plus `PooledConnectionLifetime` (5 minutes) avoids stale DNS. This is a library used without DI, so it does not force a factory lifecycle onto the consumer.
+- The glue between `admin` and `auth` is `ITokenProvider` alone (`AuthClient : ITokenSource` is the default source) — §4 isomorphic.
