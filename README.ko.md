@@ -1,6 +1,6 @@
 # Keycloak SDK
 
-**[Keycloak](https://www.keycloak.org/)을 다루는 하나의 SDK 모양, 아홉 개 언어로.** 토큰을 발급하고, 안전하게 검증하고, 관리 REST API(Admin)를 호출합니다 — 눈앞의 서비스가 Java든 Python이든 Node·Go·C#·PHP·Rust·Ruby·Kotlin이든 개념·계층·흐름은 동일합니다.
+**[Keycloak](https://www.keycloak.org/)을 다루는 하나의 SDK 모양, 9개 언어로.** 토큰을 발급하고, 안전하게 검증하고, 관리 REST API(Admin)를 호출합니다 — 눈앞의 서비스가 Java든 Python이든 Node·Go·C#·PHP·Rust·Ruby·Kotlin이든 개념·계층·흐름은 동일합니다.
 
 **누구를 위한 것인가:** 여러 언어로 된 서비스 뒤에서 Keycloak을 운영하면서, 스택마다 클라이언트를 새로 익히고 JWT 검증을 매번 다시 결정하고 싶지는 않은 팀.
 
