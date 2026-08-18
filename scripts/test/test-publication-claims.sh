@@ -168,6 +168,18 @@ claim_at() { # $1=파일 $2=기대 문자열 $3=자리 이름
 }
 Pub_en="$(printf '%s' "$pub_en" | sed 's/^./\U&/')"
 
+# ---- 2026-08-18: DEPLOY.md 의 게시-수 앵커를 폐기했다 ----
+#
+# ⚠️ 이 앵커들은 **결함을 방어하면서 동시에 공허했다**. `"**all nine languages are published"` 는
+# DEPLOY.md 의 "… all as prereleases" 문장의 **접두**라 채널이 썩는 동안 계속 초록이었다 —
+# `0.1.0` ⊂ `0.1.0rc1` 로 이미 기각한 그 설계가 여기 남아 있었다(실측 확인). 동시에 이 앵커는
+# 그 문장의 **존재를 요구**하므로, 런북에서 현재형 상태 스냅샷을 지우려면 먼저 이것을 지워야 했다.
+#
+# 판정: **런북은 fleet 상태를 말하지 않는다.** 개수·채널·버전 셋은 독립 축이고, 하나를 고정하면
+# 나머지가 자유롭게 썩는다. 그 셋의 소유자는 `deploy-facts.sh` 이고 소비자 문서(언어별 README·
+# getting-started)가 이미 추출+정확비교로 잠근다. 새 positive 앵커를 얹지 않는다 —
+# 그것이 같은 부류의 4번째 재발이 되기 때문이다(기각 근거: SDD §6 WBS 1.1).
+
 # ---- 게시 현황 수사를 자리마다 강제한다 ----
 #
 # 아래 자리 목록의 유래(왜 자리를 그냥 적는가, 왜 이만큼 많은가):
@@ -238,11 +250,9 @@ if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
   claim_at CLAUDE.md "${pub_n}개 언어 전부 정식 \`0.1.0\`이 공개 레지스트리에 게시됐다" "현재 상태(게시 수)"
   claim_at CLAUDE.md "9개 중 ${pub_n}개가 정식 게시"                                    "문서 언어 규칙 절"
 
-  claim_at DEPLOY.md "**all $pub_en languages are published"        "릴리스 워크플로 상태(게시 수)"
   claim_at CHANGELOG.md "지금까지 ${pub_ko} 언어 전부가"             "폴리글랏 안내(게시 수)"
 
   claim_at docs/roadmap/language-support.md "**All $pub_en are now live as stable releases**" "step-0(게시 수)"
-  claim_at DEPLOY.md "All $pub_en languages have now published"     "§7 첫 실행 경고(게시 수)"
   claim_at docs/roadmap/language-support.md "all $pub_en have since shipped a stable release" "머리말(게시 수)"
 
   # ⚠️ 부정 어서션 — 긍정만 걸면 정식 문장을 **추가**하고 옛 "정식 없음"을 **남겨둔** 자기모순이
@@ -267,11 +277,9 @@ elif [ "$unpub_n" -eq 0 ]; then
   claim_at CLAUDE.md "${pub_n}개 언어 전부 첫 RC가 공개 레지스트리에 게시됐다" "현재 상태(게시 수)"
   claim_at CLAUDE.md "9개 중 ${pub_n}개가 첫 RC 게시"                          "문서 언어 규칙 절"
 
-  claim_at DEPLOY.md "**all $pub_en languages are published"        "릴리스 워크플로 상태(게시 수)"
   claim_at CHANGELOG.md "지금까지 ${pub_ko} 언어 전부가"             "폴리글랏 안내(게시 수)"
 
   claim_at docs/roadmap/language-support.md "**All $pub_en are now live as release candidates**" "step-0(게시 수)"
-  claim_at DEPLOY.md "All $pub_en languages have now published"     "§7 첫 실행 경고(게시 수)"
   claim_at docs/roadmap/language-support.md "all $pub_en have since shipped a first release candidate" "머리말(게시 수)"
 
   # ⚠️ 부정 어서션 — 긍정만 걸면 "전부 게시" 문장을 **추가**하고 옛 "나머지 N개" 문장을 **남겨둔**
@@ -322,7 +330,6 @@ else
 fi
 
 # 상태와 무관하게 게시 **수**만 말하는 자리(수사 형태가 갈리지 않는다).
-claim_at DEPLOY.md "$Pub_en release workflows have now executed end to end" "§5 실행 워크플로 수"
 
 # ⚠️ 상태 매트릭스는 산문이 아니라 **행 개수**로 본다 — `getting-started`의 설치 절 개수 검사와
 # 같은 관용이다. 표현을 바꿔도 흔들리지 않고, 감사가 찾은 부류(게시됐는데 `🔒 human-gated`로 남은

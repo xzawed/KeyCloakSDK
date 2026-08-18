@@ -49,6 +49,16 @@ assert_not_contains "$body" "zero tags" "이미 태그가 밀렸는데 문서가
 assert_not_contains "$body" "has ever executed, not once" "릴리스 워크플로가 실행됐는데 '한 번도 없다'고 주장한다"
 assert_not_contains "$body" "nothing has ever been published to a public registry" \
   "PHP가 Packagist에 게시됐는데 문서가 '어디에도 게시된 적 없다'고 주장한다"
+# 2026-08-18: 정식 `0.1.0` 아홉 게시로 늘어난 영원-거짓 절대 표현 둘. 같은 단방향 원리다 —
+# 한번 정식이 나오면 "정식이 없다"·"전부 프리릴리스다"는 다시 참이 될 수 없다.
+# ⚠️ **이것은 blacklist이고 일반화하지 않는다.** 새 문구로 다시 쓴 현재형 상태 스냅샷은 못 잡는다
+# (실측: 삭제 전 문장을 되돌렸을 때 19종 자가테스트가 전부 초록이었다). 목록을 늘려 일반화를
+# 흉내내지 말 것 — 런북이 fleet 상태를 말하지 않는다는 규칙이 진짜 방어이고, 이 둘은 이미
+# 태워 본 문구에 대한 묘비일 뿐이다.
+assert_not_contains "$body" "none has a stable release" \
+  "아홉 전부 정식 게시인데 런북이 '정식이 없다'고 주장한다"
+assert_not_contains "$body" "all as prereleases" \
+  "아홉 전부 정식 게시인데 런북이 '전부 프리릴리스'라고 주장한다"
 # python(py-v0.1.0rc1 → PyPI)·dotnet(dotnet-v0.1.0-rc.1 → NuGet)이 게시되면서 늘어난
 # 영원-거짓 절대 표현들 — 같은 단방향 원리로 금지 목록에 추가한다.
 assert_not_contains "$body" "Exactly one tag has ever been pushed" \
@@ -73,17 +83,18 @@ assert_contains "$body" "rust-v0.1.0-rc.1" "Rust 첫 태그 기록"
 # "Rust가 언급된다"는 게시 여부와 무관하게 항상 참이라 초록불이 커버리지처럼 보일 뿐이었다.
 # 실제로 crates.io 문구를 라이브 목록에서 지우는 변이가 통과했다.
 #
-# 대신 **게시된 언어만 등장할 수 있는 자리**에 건다: DEPLOY.md 첫머리의 "무엇이 지금 레지스트리에
-# 살아있는가" 한 문장. 거기에 각 언어의 레지스트리명과 좌표가 있어야 한다.
-live="$(printf '%s\n' "$body" | grep -F 'live on public registries')"
-# 이 grep이 빈 값을 돌려주면(문구가 바뀌면) 아래 어서션이 전부 실패한다 — 조용히 통과하는
-# 것보다 시끄럽게 실패하는 쪽이 맞다. 다만 원인이 드러나도록 여기서 먼저 잡는다.
-assert_ok test -n "$live"
-for _dfl in $DF_PUBLISHED; do
-  assert_ok df_known "$_dfl"   # SSOT 오타 방지 — DEPLOY_LANGS에 없는 토큰은 모든 소비자를 조용히 망가뜨린다
-  assert_contains "$live" "$(df_registry "$_dfl")" "게시된 $_dfl 의 레지스트리가 라이브 목록에 없다"
-  assert_contains "$live" "$(df_coordinate "$_dfl")" "게시된 $_dfl 의 좌표가 라이브 목록에 없다"
-done
+# ---- 2026-08-18: 이 추출기는 **폐기했다** ----
+#
+# 여기 있던 검사는 DEPLOY.md 첫머리의 "무엇이 지금 레지스트리에 살아있는가" 한 문장을
+# `grep -F 'live on public registries'`로 뽑아 각 언어의 레지스트리명·좌표를 요구했다.
+# 그 문장이 **존재해서는 안 되는 것**으로 판정되면서(런북에 현재형 상태 스냅샷을 두지 않는다),
+# 이 어서션은 결함을 방어하는 anti-invariant가 됐다 — 낡은 lede를 지우면 테스트가 실패했다.
+# 게다가 `set -eu` 아래서 grep이 빈 결과를 내면 스크립트가 **출력 한 줄 없이 exit 1**로 죽어,
+# 이 파일 상단이 경고하는 바로 그 모양이 됐다(실측: exit=1, stdout 0줄).
+#
+# 게시 **버전**은 `df_published_version`이 소유하고 언어별 README·getting-started가 이미
+# 추출+정확비교로 잠근다. 런북이 그것을 다시 적을 이유가 없으므로 대조할 자리도 없다.
+# 아래 개수 대조는 남긴다 — 그건 문서가 여전히 말하는(그리고 말해도 되는) 축이다.
 
 # ⚠️ 미게시 언어는 **존재를 요구하지 않는다** — 그것이 (1)의 함정이다. 미게시는 되돌릴 수 있는
 # (게시하면 끝나는) 상태라, "미게시라고 적혀 있어야 한다"는 어서션은 게시하는 순간 낡은 주장을
@@ -110,8 +121,12 @@ assert_ok test -n "$_pw"
 # 파생해 대조한다(예전엔 그 수가 아무 가드도 없이 손으로만 맞춰져 있었다 — 강화다).
 # 열 번째 언어가 미게시로 추가되면 else 가지가 그대로 재무장한다.
 if [ "$unpub_n" -eq 0 ]; then
-  assert_contains "$body" "$(printf '%s' "$_pw" | sed 's/^./\U&/') tags have been pushed so far" \
-    "DEPLOY.md의 밀린 태그 수 문구가 DF_PUBLISHED에서 파생한 $pub_n 과 다르다"
+  # ---- 2026-08-18: 밀린 태그 수 어서션 폐기 ----
+  # "Nine tags have been pushed so far"를 pub_n(=게시 **언어** 수)에서 파생해 요구했다.
+  # **태그 수와 언어 수는 다른 축이다** — 실측 시점 릴리스 태그는 20개였고(아홉 언어 × RC+정식,
+  # node·php는 RC를 두 번 태웠다) 가드는 "Nine"을 요구했다. 처음부터 틀린 수를 고정했고,
+  # 언어당 두 번째 릴리스가 나오면 반드시 거짓이 된다. 태그 개수는 `git tag -l`이 소유한다.
+  :
   assert_not_contains "$body" "languages are unpublished" \
     "아홉 전부 게시인데 DEPLOY.md가 '나머지 N개 미게시'라고 주장한다"
   assert_not_contains "$body" "language is unpublished" \
