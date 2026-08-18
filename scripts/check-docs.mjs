@@ -640,6 +640,22 @@ function checkLinks(file, rel, lines) {
 // 숫자 바로 앞(공백 제외)이 이 마커 중 하나로 끝나면 검사 6에서 건너뛴다.
 const RELATIVE_COUNT_MARKERS = ['다른', '그 외', '나머지', '선행', '외']
 
+// 영문 문서의 언어 수 주장. 한글 "N개 언어"와 달리 영어는 **총계와 부분집합을 어순으로
+// 구분하지 못한다** — "eight languages ship a wheel, Go differs"는 참인 부분집합 서술이지
+// 기수 드리프트가 아니다(실측: 그런 문장이 저장소에 8개 있다). 그래서 앞말 마커를 빼는
+// 방식이 아니라 **총계 마커를 매치 안에 넣는다** — `all`/`across`가 붙은 것만 "전부 N개"
+// 주장으로 읽는다. 그 결과 오탐 0이고, 대신 `of the nine languages`처럼 총계를 다르게
+// 쓴 자리는 잡지 않는다. ⚠️ **언어 수를 문서에 적어야 한다면 `all N languages`로 쓴다** —
+// 그 표기만 이 가드가 본다.
+const EN_NUMBER_WORDS = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6,
+  seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+}
+const EN_COUNT_RE = new RegExp(
+  String.raw`\b(?:all|across)\s+(\d{1,2}|${Object.keys(EN_NUMBER_WORDS).join('|')})\s+languages\b`,
+  'gi',
+)
+
 // 검사 6 — "N개 언어" 기수가 scripts/lib/deploy-facts.sh 의 DEPLOY_LANGS 와 맞는가. 예방적
 // 검사라 기본은 경고. docs/superpowers/** 와 (자가테스트 픽스처가 합성하는)
 // docs/governance/history.md·docs/governance/verification-log*.md ·CHANGELOG.md 는
@@ -691,6 +707,12 @@ function checkCardinality() {
       const before = text.slice(Math.max(0, x.index - 8), x.index).trimEnd()
       if (RELATIVE_COUNT_MARKERS.some((mk) => before.endsWith(mk))) continue
       ;(STRICT ? errors : warnings).push(`${rel} "${x[1]}개 언어" ≠ DEPLOY_LANGS ${n}개`)
+    }
+    for (const x of text.matchAll(EN_COUNT_RE)) {
+      const raw = x[1].toLowerCase()
+      const claimed = EN_NUMBER_WORDS[raw] ?? Number(raw)
+      if (claimed === n) continue
+      ;(STRICT ? errors : warnings).push(`${rel} "${x[0]}" ≠ DEPLOY_LANGS ${n}개`)
     }
   }
 }
