@@ -645,14 +645,17 @@ const RELATIVE_COUNT_MARKERS = ['다른', '그 외', '나머지', '선행', '외
 // 기수 드리프트가 아니다(실측: 그런 문장이 저장소에 8개 있다). 그래서 앞말 마커를 빼는
 // 방식이 아니라 **총계 마커를 매치 안에 넣는다** — `all`/`across`가 붙은 것만 "전부 N개"
 // 주장으로 읽는다. 그 결과 오탐 0이고, 대신 `of the nine languages`처럼 총계를 다르게
-// 쓴 자리는 잡지 않는다. ⚠️ **언어 수를 문서에 적어야 한다면 `all N languages`로 쓴다** —
+// 쓴 자리는 잡지 않는다. ⚠️ **언어 수를 문서에 적어야 한다면 `all N language(s)`로 쓴다** —
 // 그 표기만 이 가드가 본다.
+// 뒤 명사는 단수도 받는다(`all nine language SDKs`·`all nine language directories`) —
+// 규약을 따랐는데도 가드를 피해가는 형태가 실제로 3곳 있었다(DEPLOY:3 · CONTRIBUTING:3 ·
+// security.md:18). 규약대로 썼는데 안 잡히는 것이 규약을 어긴 것보다 나쁘다.
 const EN_NUMBER_WORDS = {
   one: 1, two: 2, three: 3, four: 4, five: 5, six: 6,
   seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
 }
 const EN_COUNT_RE = new RegExp(
-  String.raw`\b(?:all|across)\s+(\d{1,2}|${Object.keys(EN_NUMBER_WORDS).join('|')})\s+languages\b`,
+  String.raw`\b(?:all|across)\s+(\d{1,2}|${Object.keys(EN_NUMBER_WORDS).join('|')})\s+language(?:s)?\b`,
   'gi',
 )
 
