@@ -40,14 +40,27 @@ rr_url_exists() { # <url> → exit 0=게시됨(2xx) 1=미게시(4xx/5xx, curl -f
   [ "$rc" -eq 22 ] && return 1
   return 2
 }
-rr_tag_exists() { # <glob> → 0 if any matching tag
+rr_tag_exists() { # <glob 또는 정확한 태그명> → 0 if any matching tag
   [ -n "$(git tag -l "$1" 2>/dev/null | head -1)" ]
 }
 
 # 순수 판정(단위테스트 대상): secrets∈{set,unset,na} registry∈{published,exists(미게시),unknown} tag∈{none,present}
-rr_verdict() { # <secrets> <registry> <tag>
+# <secrets> <registry> <tag> [version]
+#
+# ⚠️ **단락 둘은 "첫 게시인가?"를 묻는다 — 아홉 전부 게시된 뒤로는 둘 다 영구 참이다.**
+# `tag`는 예전에 글롭(`py-v*`)이라 태그가 하나라도 있으면 present였고, `registry`는 좌표
+# 단위라 그 좌표에 무엇이든 올라가 있으면 published였다. 그래서 0.1.0 게시 직후부터 이
+# 함수는 **아홉 언어 모두에서 첫 줄에서 반환**했고, 시크릿 판정(설정필요/저장소측 OK)에
+# 영영 도달하지 못했다 — 릴리스 직전에 보라고 만든 도구가 0.2.0에서 아무것도 말해주지 않는다.
+#
+# 그래서 `version`을 받는다. 버전이 주어지면:
+#   - `tag`는 그 버전의 **정확한 태그**만 본다(글롭 아님) → "이미 태그됨"이 진짜 신호가 된다
+#   - `registry` 단락은 **건너뛴다** — 이미 있는 좌표에 새 버전을 올리는 것이 정상이므로
+#     "이미 게시됨"은 정보가 아니다(레지스트리 상태는 출력 컬럼으로 계속 보인다)
+# 버전이 없으면 예전 동작 그대로다(= "이 언어를 처음 게시하는가?" 모드).
+rr_verdict() {
   if [ "$3" = present ]; then echo "ℹ️ 태그 이미 존재"; return; fi
-  if [ "$2" = published ]; then echo "ℹ️ 이미 게시됨"; return; fi
+  if [ -z "${4:-}" ] && [ "$2" = published ]; then echo "ℹ️ 이미 게시됨"; return; fi
   case "$1" in
     unset) echo "⚠️ 설정필요: 시크릿" ;;
     # ⚠️ "준비완료"가 아니라 "저장소측 OK"다. 이 스크립트는 시크릿 **이름**·공개 레지스트리 URL·
@@ -86,9 +99,14 @@ rr_row() { # <lang>
   L="$1"
   sec="$(rr_secrets_state "$L")"
   reg="$(rr_registry_state "$L")"
-  tagpat="$(printf "$(df_tag "$L")" '*')"
+  # RR_VERSION이 있으면 **그 버전의 정확한 태그**만, 없으면 예전처럼 글롭("아무 태그나").
+  if [ -n "${RR_VERSION:-}" ]; then
+    tagpat="$(printf "$(df_tag "$L")" "$RR_VERSION")"
+  else
+    tagpat="$(printf "$(df_tag "$L")" '*')"
+  fi
   if rr_tag_exists "$tagpat"; then tag=present; else tag=none; fi
-  verdict="$(rr_verdict "$sec" "$reg" "$tag")"
+  verdict="$(rr_verdict "$sec" "$reg" "$tag" "${RR_VERSION:-}")"
   # 스펙§4: 시크릿 상태만으로는 "준비완료"라 부를 수 없는 auth 모델이 있다 — 남은 사람 작업이
   # API로 확인 불가한 경우다. auth 값별 case로 두어 새 auth 값이 생기면 여기에 추가하게 한다
   # (이미 게시됨/태그존재 판정이 우선하면 그대로 둔다).
@@ -115,6 +133,27 @@ rr_row() { # <lang>
 }
 
 rr_main() {
+  # --version <X.Y.Z>: 이 버전을 밀 준비가 됐는가를 묻는다(권장). 생략하면 "첫 게시인가?" 모드.
+  RR_VERSION=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --version=*) RR_VERSION="${1#--version=}"; shift ;;
+      --version)
+        [ "$#" -ge 2 ] || { echo "--version에는 값이 필요하다" >&2; return 2; }
+        RR_VERSION="$2"; shift 2 ;;
+      *) break ;;
+    esac
+  done
+  # ⚠️ 오타를 조용히 통과시키지 않는다 — `0.2.O`(letter O)는 어떤 태그와도 안 맞아 tag=none이 되고
+  # 그러면 이 도구가 "저장소측 OK"라고 말한다. 비가역 행위 직전에 보는 도구라 그건 최악의 오답이다.
+  # 표기는 언어마다 다르므로(PEP 440 / RubyGems / Maven / SemVer) 아무 언어의 정규식에도 안 맞으면 거부한다.
+  if [ -n "$RR_VERSION" ]; then
+    _ok=0
+    for _l in $DEPLOY_LANGS; do
+      if printf '%s\n' "$RR_VERSION" | grep -qE "$(df_version_re "$_l")"; then _ok=1; break; fi
+    done
+    [ "$_ok" -eq 1 ] || { echo "error: '$RR_VERSION' is not a valid version for any language" >&2; return 2; }
+  fi
   langs="$*"; [ -z "$langs" ] && langs="$DEPLOY_LANGS"
   command -v gh   >/dev/null 2>&1 || echo "ℹ️ gh 미설치/미인증 — 시크릿 필요 언어는 'unset'(⚠️ 설정필요)로 표시됨" >&2
   command -v curl >/dev/null 2>&1 || echo "ℹ️ curl 미설치 — registry는 'unknown'으로 표시" >&2
