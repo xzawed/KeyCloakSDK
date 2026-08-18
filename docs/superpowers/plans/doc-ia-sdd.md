@@ -1,0 +1,193 @@
+# 문서 정보구조(IA) 재설계 — SDD
+
+<!-- doc-status: active -->
+
+> **이 문서가 사는 이유**: 문서 354 KB가 9개 언어 구현(243파일·17.4k줄)과 집행 장치(워크플로 24·가드 10·자가테스트 21) 위에서 유기적으로 자랐다. 이 SDD는 **무엇이 어긋나 있는지**를 실측으로 고정하고, 목표 IA와 이동 계획을 정한다. 전 항목이 닫히면 `doc-status`를 `complete`로 내리고 지도에서 뺀다.
+
+---
+
+## 1. 문제 정의 — 실측
+
+분석은 4개 에이전트(JVM+Go 구현 · Python계열 구현 · 집행 장치 · 문서 IA)와 Grok 독립 레그로 병렬 수행했고, **모든 판정 근거는 오케스트레이터가 명령으로 재현했다**. 아래 수치는 재현된 것만 싣는다.
+
+### 1.1 규모와 결합도
+
+```
+문서 354 KB — DEPLOY.md 75.6KB · getting-started 53.1KB · CLAUDE.md 23.9KB = 43%
+소스 243 파일 / 17.4k 줄 · 9개 언어
+집행 워크플로 24(3.1k줄) · 가드 10(3.1k줄) · 자가테스트 21(4.5k줄)
+```
+
+문서별 **가드 결합도**(가드가 파일명으로 겨누는 횟수) — 이동 비용의 대리 지표:
+
+| 강함(비쌈) | 중간 | 없음~약함(쌈) |
+|---|---|---|
+| README 55 · DEPLOY 40 · CLAUDE 33 · docs/README 30 | README.ko 17 · SECURITY 15 · CHANGELOG 15 · roadmap 10 · getting-started 9 | process 2 · CONTRIBUTING 2 · development-setup 1 · playbook 0 · harness 0 |
+
+⚠️ **집행이 질량과 반비례한다.** `doc-budget` 래칫은 1개 파일(CLAUDE.md)에만, `doc-guard` 앵커는 2개 파일에만(CLAUDE 13 · getting-started 9) 걸려 있다. 가장 큰 두 문서 DEPLOY(75.6KB)와 CONTRIBUTING(16.2KB)은 앵커 0 · 예산 0 · 지도 등재 0이다.
+
+### 1.2 확정된 결함 — 우선순위순
+
+**P0 · 릴리스 런북에 현재형 상태 스냅샷이 박혀 있고, 그것이 썩었다.**
+
+축을 셋으로 갈라야 한다 — **개수 · 채널(정식/RC) · 버전**. 셋은 독립이고, 하나를 고정하면 나머지 둘이 자유롭게 썩는다. 이번 결함이 정확히 그것이다.
+
+| 자리 | 문제 | 판정 |
+|---|---|---|
+| `DEPLOY.md:3` | 라이브 RC 로스터 + "none has a stable release" | **거짓** — 삭제 |
+| `DEPLOY.md:401` | "all nine languages are published … **all as prereleases**" | **거짓** — 절 삭제 |
+| `roadmap` 상태매트릭스 Publish 9셀 | 현재형 상태에 RC 표기 | **거짓** — 정정 |
+| `playbook:6` | "Kotlin is a published ninth SDK (`0.1.0-RC1`)" | **거짓** — 정정 |
+| `DEPLOY.md:371` | "첫 릴리스는 RC로, `0.1.0`이 아니라" | ✅ **참** — **미게시 언어에 대한 정책**이다. 아홉은 이미 첫 릴리스를 했으므로 해당 없음. 유지 |
+| `CHANGELOG:5` | RC 로스터 | ✅ **참** — **과거형 이력**이다(RC를 태웠고 그 위에 `[0.1.0]`). 유지 |
+
+⚠️ **가드가 못 잡은 이유 — 그리고 내가 쓴 코드에 재발 2가 살아 있다.**
+`test-publication-claims.sh`의 positive 앵커 `"**all nine languages are published"`는 `:401`의 "… all as prereleases" 문장의 **접두**라 통과한다. `0.1.0` ⊂ `0.1.0rc1`로 이미 기각했던 그 설계가 프로덕션에 남아 있었다. blacklist 셋(`no stable release yet`·`No language has a stable release`·`정식(stable) 릴리스는 아직`) 중 **어느 것도** `:3`의 실제 문구 `none has a stable release`를 잡지 못한다(히트 0/0). **재발 2와 3이 동시에 살아 있었다.**
+
+⚠️ **가드가 결함을 방어하고 있다.** `test-deploy-md.sh:78-81`이 `live on public registries` 줄의 **존재를 요구**한다(`assert_ok test -n "$live"`). 즉 낡은 lede를 지우면 그 테스트가 실패한다 — 문서와 가드를 한 단위로 옮겨야 하는 이유의 실례다.
+
+**P1 · 코드가 하는데 문서가 침묵 / 문서가 주장하는데 코드가 안 함.**
+
+| # | 사실 | 근거 |
+|---|---|---|
+| 1 | `CLAUDE.md:101`이 "교체 가능 `TokenStore`"를 **9언어 공통 보안 기본선**으로 선언 | `TokenStore`는 **Java에만** 존재하고, 그 Java조차 프로덕션 경로가 참조하지 않는다(테스트만) |
+| 2 | `python/README.md:34` "the `with` block cleans up the admin and auth sessions" | sync `AdminClient.close()`는 `return None` — no-op |
+| 3 | 가드가 강제하는데 문서 히트 **0** | `check-latest` · `assert_report` · `100755` · `min-release` · `prerelease-classify` |
+| 4 | 커버리지 판정기가 `.NET` 경로에만 존재 | `check-coverage.mjs` 호출처는 `dotnet-ci.yml` 하나, 그 워크플로는 `paths: ['dotnet/**']` |
+| 5 | 릴리스 PR 연속 머지 시 **가운데 릴리스가 조용히 유실** | `dispatch-release.yml:39-43`이 경고하나 가드 없음 |
+| 6 | 태그 룰셋 App 분할(1/0/0)을 고정하는 `test-repo-config.sh`가 **비-required 잡**에 배선 | required는 `doc-facts`·`shell-exec-bits` 둘뿐 |
+
+**P2 · 사실이 N곳에 복제** — 독트린(`같은 사실을 두 곳에 적지 않는다`)의 직접 위반.
+
+| 사실 | 서술 자리 | 선언된 소유자 |
+|---|---|---|
+| 버전·좌표·태그접두 | **11곳** | 매니페스트 + `deploy-facts.sh` |
+| 30초 JWKS/clockSkew | **13곳** | `.claude/rules/security.md` |
+| 게이트 임계값 90/85 | **12곳+** | 각 언어 빌드 설정 |
+| 언어별 빌드 진입 명령 | 4곳(**3건 이미 드리프트**) | `.claude/rules/<lang>.md` |
+| 릴리스 절차·룰셋 | 3~5곳 | `DEPLOY.md` |
+| 레지스트리 회수 표 | 2곳(전문 중복) | `DEPLOY.md` §6 |
+
+**P3 · 청중 혼재와 내비게이션 단절.**
+- 두 청중 이상을 동시에 섬기는 문서 **8개**(README·README.ko·CLAUDE·CONTRIBUTING·SECURITY·roadmap·harness·getting-started).
+- `<lang>/README.md` **9개 중 8개가 진입 문서에서 도달 불가**. 역방향도 끊겨 있어 PyPI·npm에서 들어온 소비자가 CHANGELOG(자신의 BREAKING 고지가 있는 곳)에 도달할 수 없다.
+- `docs/README.md`는 `docs/**`만 덮는데 `README.md:144`는 "모든 설계 스펙·계획·검증 로그의 색인"이라고 광고한다. DEPLOY·CONTRIBUTING·SECURITY·CHANGELOG·harness·rules는 등재 대상이 아니다.
+
+**P4 · 독트린 위반(서사·사고 이력이 규칙 문서에 상주)** — 25건 식별. 최다 집중은 DEPLOY.md(9건: 취소선으로 남긴 완료 로그, PR 번호·커밋 SHA, 두 건의 태그 소모 사후분석), 다음이 CONTRIBUTING(4건), `process.md` 자신(3건, 자기 §7이 금지한 것을 자기가 한다).
+
+---
+
+## 2. 목표 IA
+
+### 2.1 축
+
+**1차 축은 청중, 2차 축은 생애주기.** 언어를 1차 축으로 삼는 것은 **덫**이다 — 9개 언어가 같은 개념·계층·흐름을 공유하므로 언어를 1차로 두면 모든 교차 사실이 9번 복제된다(P2의 13곳·12곳이 정확히 그 결과다).
+
+```
+소비자     평가 → 설치 → 사용 → 업그레이드
+기여자     환경 구성 → 변경 → 게이트 통과 → PR
+릴리스 운영 준비도 확인 → 태그 → 게시 확인 → 사고 대응
+에이전트   상주 규칙(CLAUDE.md) + 경로별 규칙(.claude/rules/)
+```
+
+### 2.2 사실 소유권 — 단일 소유자 표
+
+| 사실 | 소유자 | 다른 곳은 |
+|---|---|---|
+| 버전·좌표 | `deploy-facts.sh` + 매니페스트 | 가드가 파생·대조. 산문에 숫자를 쓰지 않는다 |
+| 런타임 하한 | 각 빌드 파일(`doctor.mjs`가 파생) | `development-setup.md`의 방식을 전 문서에 확대 |
+| 보안 기본값(30초) | `.claude/rules/security.md` | 규칙만 서술, **숫자는 쓰지 않는다** |
+| 게이트 임계값 | 각 언어 빌드 설정 | `CONTRIBUTING.md:35-36`의 방식을 확대(메커니즘만 명명) |
+| 빌드 명령 | `.claude/rules/<lang>.md` | 다른 3곳에서 제거 |
+| 릴리스 절차 | `DEPLOY.md`(런북부) | CONTRIBUTING §4·`rules/ci.md`의 중복 제거 |
+| admin capability | `getting-started.md` 매트릭스 | CLAUDE.md §4(b)의 representation 목록 중복 제거 |
+
+### 2.3 목표 문서 집합
+
+**분할**
+- `DEPLOY.md` 75.6KB → **런북**(~30KB, 지금 릴리스하는 사람이 읽는 것) + **`docs/runbooks/registry-setup.md`**(§2 일회성 설정, 언어 추가·자격증명 분실 시에만) + **`docs/reference/registry-behavior.md`**(§6 회수 표 + §7 표기 표 + §5 계정 상태 — SECURITY.md의 중복본을 여기로 흡수).
+- `getting-started.md` 53.1KB → **설치·퀵스타트**(언어 절은 `<lang>/README.md`가 소유, 여기는 링크) + **`docs/reference/admin-capability.md`**(16.6%, 자립 API 레퍼런스, 인바운드 앵커 4개를 이쪽으로) + **`docs/reference/compatibility.md`**.
+
+**이동**
+- CONTRIBUTING §4(91줄) → DEPLOY 런북 또는 `docs/runbooks/repo-rulesets.md`. §5 자문 로드맵 → 삭제 또는 계획서.
+- 서사·사후분석 25건 → 커밋 메시지/CHANGELOG(독트린이 지정한 자리).
+
+**신설**
+- `<lang>/README.md` ↔ 루트 README 상호 링크(9×2). 비용 0에 가깝고 소비자 도달성을 즉시 고친다.
+
+**삭제 후보**
+- SECURITY.md의 회수 표 전문 중복 · CLAUDE.md §4(b)의 representation 목록 · 빌드 명령 3중복.
+
+### 2.4 `.claude/rules/` 계층
+
+**같은 IA의 다른 투영이다.** `.claude/rules/<lang>.md`는 **에이전트 대상·한글·경로 자동로드**이고, `<lang>/README.md`는 **소비자 대상·영문·레지스트리 랜딩**이다. 경계는 명확하다 — 전자는 *만드는 법*, 후자는 *쓰는 법*.
+
+⚠️ 지금 위반: `CONTRIBUTING.md:10`과 `development-setup.md:170`이 **인간 기여자**를 한글 에이전트 파일로 보낸다. 기여자용 명령 시트가 따로 필요하거나, 그 파일들이 이중 청중임을 인정해야 한다. **이 판정은 사람의 몫이므로 이 SDD에서 정하지 않는다.**
+
+---
+
+## 3. 이동 원칙
+
+1. **문서와 그것을 겨누는 가드를 한 단위로 옮긴다.** 문서만 옮기면 `claim_at`·앵커·지도가 깨진다.
+2. **결합도 낮은 것부터.** 초기 PR은 가드 변경 없이 나간다.
+3. **삭제가 먼저, 가드가 나중.** 중복은 지우는 것이 잠그는 것보다 싸다(#244에서 실증: 18자리 삭제·어서션 0 증가).
+4. **P0는 IA와 독립으로 즉시 나간다.** 거짓 서술을 설계 논의에 묶어 두지 않는다.
+5. **가드는 늘리지 않는다.** 신설 후보는 P1-5(릴리스 순차 머지) 하나뿐이고, 그것도 별도 판정 대상이다.
+
+---
+
+## 4. 범위 밖 (이 SDD에서 하지 않는 것)
+
+- 9개 언어 소스 수정. P1의 코드측 결함(Python admin close no-op, Rust logout 상태 무시 등)은 **별도 트랙**이며 여기서는 목록화만 한다.
+- 가드 신설. 조준점 재배치는 포함, 신규 장치는 제외.
+- `.claude/rules/`의 청중 판정(§2.4) — 사람 결정.
+- CLAUDE.md `doc-budget` 래칫 상향. 이 SDD는 CLAUDE.md를 **줄이는** 방향으로만 건드린다.
+
+---
+
+## 5. 기각 체크리스트 판정 (③ 검토)
+
+| # | 항목 | 판정 |
+|---|---|---|
+| 1 | 전제가 지금 트리에서 거짓인가? | **아니오.** P0~P4 전부 명령 출력으로 재현했다 |
+| 2 | 이미 덮는 것이 있는가? | **부분.** `doc-guard`·`claim_at`·지도 검사가 있으나 DEPLOY·CONTRIBUTING에는 0이고, 정식/RC 축 앵커가 없어 P0를 놓쳤다 |
+| 3 | 더 강한 것이 있는가? | **있고, 그것을 쓴다.** 문서끼리의 자기일치 대신 **삭제 + SSOT 파생**이 1순위다(원칙 3) |
+| 4 | 불변식이 선언돼 있는가? | **예.** `CLAUDE.md` 문서 규칙·`process.md` §7이 이미 선언한 것을 집행하는 작업이다. 새 정책을 만들지 않는다 |
+| 5 | 새 장치가 수렴하는가? | **해당 없음.** 신규 가드를 만들지 않는다. 조준점 재배치만 한다 |
+| 6 | 실패 표면이 주는가, 느는가? | **준다.** 중복 삭제가 주 작업이고 문서 수는 늘지만(분할) 각 문서의 청중이 하나가 된다 |
+| 7 | 격리가 단언을 대신하는가? | **아니오.** 분할한 문서에도 기존 앵커를 따라 옮긴다 |
+
+**결론: 진행.** 단 §4 범위 밖은 유지한다.
+
+---
+
+## 6. WBS
+
+상태: `[ ]` 미착수 · `[x]` 완료 · `[!]` 사람 승인 대기 · `[-]` 기각. **끝나는 조건은 명령이나 관측 가능한 산출물이어야 한다.**
+
+- [ ] **1 · P0 — 런북에서 현재형 상태 스냅샷을 삭제** (PR #A) — `DEPLOY.md:3` 라이브 로스터와 `:401` "all as prereleases" 절을 지운다. `roadmap` 9셀·`playbook:6`은 정정. `:371`(첫-게시 정책)과 `CHANGELOG:5`(과거형 이력)는 **유지**. **끝**: DEPLOY.md에 현재형 fleet 상태 주장 0건.
+- [x] **1.1 · `[-]` 정식/RC 축 `claim_at` 신설 — 기각** — Grok 독립 검토가 기각했고 재현으로 확인했다: 새 positive 앵커는 `:401`에 **접두 매치**되어 오늘 당장 공허하고(재발 2), blacklist 확장은 이미 실제 문구를 놓쳤다(재발 3). 되살릴 조건: 런북이 다시 상태를 서술해야 하는 이유가 생겼을 때(그때도 containment 금지, 추출+`assert_eq`).
+- [ ] **1.2 · 결함을 방어하는 추출기 폐기** (PR #A) — `test-deploy-md.sh:78-81`이 낡은 lede의 **존재를 요구**한다. 삭제와 같은 커밋에서 걷어낸다. **끝**: lede 삭제 후 19종 자가테스트 통과.
+- [ ] **1.3 · 접두 매치 앵커 정정** (PR #A) — `claim_at DEPLOY.md "**all nine languages are published"`가 `:401`의 접두다. 로스터 삭제와 함께 재조준한다. **끝**: 변이(문장 복원) 시 FAIL, 앵커만 끄면 통과.
+- [ ] **2 · P3 — `<lang>/README` ↔ 루트 상호 링크 9×2** (PR #B) — **끝**: 아홉 README에서 루트 도달, 루트 Languages 표에서 아홉 README 도달.
+- [ ] **3 · P2 — 빌드 명령 3중복 제거** (PR #B) — `CLAUDE.md`·`CONTRIBUTING.md`·`development-setup.md`에서 걷어내고 `.claude/rules/<lang>.md`만 소유. **끝**: Kotlin·Node·PHP 드리프트 3건 소멸, `grep`으로 명령 자리 1곳.
+- [ ] **4 · P1 — 문서 없는 가드 불변식 5건에 자리 부여** (PR #C) — `check-latest`·`assert_report`·`100755`·`min-release`·sentinel 마커. **끝**: 다섯 키워드가 각 1개 문서에서 히트.
+- [ ] **5 · P2 — 게이트 임계값·30초·런타임 숫자 제거** (PR #C) — `CONTRIBUTING.md:35-36` 방식(메커니즘만 명명)으로 통일. **끝**: 숫자는 SSOT에만.
+- [ ] **6 · getting-started 분할** (PR #D) — `admin-capability`·`compatibility`를 레퍼런스로 분리. **끝**: 인바운드 앵커 4개 재조준, 지도 등재.
+- [ ] **7 · DEPLOY 분할** (PR #E) — 런북 / 일회성 설정 / 레지스트리 동작. **끝**: SECURITY 회수표 중복 흡수, 지도 등재.
+- [ ] **8 · P4 — 서사·사후분석 25건 이관** (PR #E) — 커밋 메시지·CHANGELOG로. **끝**: 규칙 문서에 PR 번호·커밋 SHA·취소선 완료로그 0건.
+- [ ] **9 · `[!]` `.claude/rules` 청중 판정** — 사람 결정(§2.4). 인간 기여자를 한글 에이전트 파일로 보내는 것을 인정할지.
+- [ ] **10 · `[!]` P1-5 릴리스 순차머지 가드 신설 여부** — 사람 결정. 별도 실증 필요.
+- [x] **11 · `[-]` 9개 언어 소스 수정 — 기각** — 범위 밖(§4). 되살릴 조건: 코드측 결함 트랙이 별도로 열릴 때 목록을 인계한다.
+
+### PR 분할 (의존 위상정렬)
+
+| PR | 내용 | 가드 변경 | 선행 |
+|---|---|---|---|
+| **#A** | P0 정정 + 정식/RC 앵커 | 있음(앵커 1개 추가) | 없음 — **즉시** |
+| **#B** | 상호 링크 + 빌드 명령 중복 제거 | 없음 | #A |
+| **#C** | 가드 불변식 문서화 + 숫자 제거 | 없음 | #B |
+| **#D** | getting-started 분할 | 앵커 재조준 | #C |
+| **#E** | DEPLOY 분할 + 서사 이관 | `claim_at` 자리 이동 | #D |
+
+⚠️ **비가역 지점 없음.** 전부 문서·가드 변경이고 레지스트리·태그를 건드리지 않는다. 각 PR은 19종 자가테스트 + `check-docs`로 게이트한다.
