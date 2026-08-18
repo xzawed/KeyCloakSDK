@@ -1,6 +1,6 @@
 # Keycloak SDK
 
-**One SDK shape for [Keycloak](https://www.keycloak.org/), in nine languages.** Issue a token, validate it safely, and drive the Admin REST API — with the same concepts, layers and flows whether the service in front of you is Java, Python, Node, Go, C#, PHP, Rust, Ruby or Kotlin.
+**One SDK shape for [Keycloak](https://www.keycloak.org/), in all nine languages.** Issue a token, validate it safely, and drive the Admin REST API — with the same concepts, layers and flows whether the service in front of you is Java, Python, Node, Go, C#, PHP, Rust, Ruby or Kotlin.
 
 **Who it's for:** teams running Keycloak behind services written in more than one language, who would rather not re-learn a client — and re-decide JWT validation — in every stack.
 
