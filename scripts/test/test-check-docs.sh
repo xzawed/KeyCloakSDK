@@ -533,10 +533,16 @@ printf '%s\n' '# fixture' \
   'Eight languages ship a wheel; Go differs.' \
   'The same opt-out as the other eight languages.' \
   'Coverage is enforced in all eight languages.' \
-  'The harness runs across 8 languages nightly.' > "$TMP/en-langs.md"
+  'The harness runs across 8 languages nightly.' \
+  'The workflow spans all eight language SDKs.' > "$TMP/en-langs.md"
+# ⚠️ 어긋남은 --strict 에서 **실패**해야 한다. 경고로만 나가도 아래 assert_contains 는
+# 그대로 통과하므로(`::warning::` 안에도 같은 문자열이 있다) fail-closed 를 따로 못박는다.
+assert_fails node "$GUARD" "$TMP" --strict
 OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
 assert_contains "$OUT" '"all eight languages" ≠ DEPLOY_LANGS 3개' "spelled-out total claim must be flagged"
 assert_contains "$OUT" '"across 8 languages" ≠ DEPLOY_LANGS 3개' "numeric total claim must be flagged"
+# 규약(`all N language…`)을 따랐는데 뒤 명사가 단수라 빠져나가면 안 된다 — 실제로 3곳 있었다.
+assert_contains "$OUT" '"all eight language" ≠ DEPLOY_LANGS 3개' "singular noun form (…language SDKs) must be flagged"
 assert_not_contains "$OUT" '"Eight languages ship' "bare subset prose must never be flagged"
 assert_not_contains "$OUT" 'other eight languages' "relative-count prose must never be flagged"
 # 일치하는 총계는 통과해야 한다 — 어긋남만 잡는다는 것을 같은 실행에서 확인한다.
