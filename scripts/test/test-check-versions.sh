@@ -240,6 +240,38 @@ assert_fails node "$GUARD" "$TMP"
 OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
 assert_contains "$OUT" "주석이 아니라 검사되는 선언이다" "선언이 사라진 것을 지목해야 한다"
 
+# ---- 소비자 하한 정합 — languageVersion·apiVersion·전이 kotlin-stdlib ----
+# 이 셋이 게시 jar를 쓸 수 있는 최소 Kotlin을 함께 정한다. 갈라지면 **증상이 소비자 쪽에서만**
+# 난다(우리 CI는 그 조합을 빌드하지 않아 초록이다) — 그래서 자가테스트가 유일한 방어다.
+
+# 변이 6 — stdlib만 올린다. 클래스 메타데이터는 2.2인데 전이 stdlib는 2.4가 되어
+# 소비자가 `Class 'kotlin.Unit' was compiled with an incompatible version of Kotlin`으로 죽는다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|kotlin-stdlib:2\.2\.21|kotlin-stdlib:2.4.10|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "소비자 하한이 갈라졌다" "메타데이터와 stdlib 의 하한 불일치를 지목해야 한다"
+
+# 변이 7 — apiVersion만 올린다. 둘은 같은 하한을 가리켜야 한다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2)|apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_4)|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+
+# 변이 8 — 명시 stdlib 선언을 지운다. 자동주입에 맡기면 KGP 버전의 stdlib가 전이되어
+# 하한이 조용히 KGP 버전까지 올라간다. 선언줄은 "정리"에서 지워지기 쉬운 모양이다.
+cp -r "$FIX/." "$TMP/"
+sed -i '/kotlin-stdlib:/d' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "자동주입" "명시 선언이 사라진 것을 지목해야 한다"
+
+# 오탐 방지 — 셋을 **함께** 올리면 통과해야 한다(정상적인 하한 상향의 모양).
+# 이 대조군이 없으면 이 가드는 "하한을 영원히 올리지 마라"가 된다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|KotlinVersion.KOTLIN_2_2|KotlinVersion.KOTLIN_2_4|g' "$BGK"
+sed -i 's|kotlin-stdlib:2\.2\.21|kotlin-stdlib:2.4.10|' "$BGK"
+assert_ok node "$GUARD" "$TMP"
+
 # 오탐 방지 — KGP와 밴드 기록과 래퍼를 **함께** 옮기면 통과해야 한다(정상적인 KGP 범프의 모양).
 # 이 대조군이 없으면 이 가드는 "KGP를 영원히 올리지 마라"가 된다.
 cp -r "$FIX/." "$TMP/"
