@@ -57,8 +57,8 @@ Two styles work, and the repository supports both:
 
 - **System install** — the toolchain is on `PATH`. Nothing else to do; `doctor` finds it.
 - **Portable install** — the toolchain is unpacked under a tools directory and *not* on `PATH`.
-  This is how the maintainer machine is set up (Go, PHP, Ruby, Maven and Gradle live side by side
-  there, none of them committed to the repository).
+  This is how the maintainer machine is set up — the tools directory holds whichever portable
+  toolchains that machine actually needed, none of them committed to the repository.
 
 The per-language command sheets in [`.claude/rules/`](../../.claude/rules/) are written for the
 portable style, but parameterised so they work either way:
@@ -72,7 +72,7 @@ the tool is already on `PATH` — the commands after the prefix are identical in
 
 | Variable | Default | What it selects |
 |---|---|---|
-| `KCSDK_TOOLS` | `$HOME/tools` | parent directory of portable Go / PHP / Ruby / Maven / Gradle installs |
+| `KCSDK_TOOLS` | `$HOME/tools` | parent directory of the portable Go / PHP / Ruby / Maven installs |
 | `KCSDK_JDK21` | the maintainer machine's Temurin path | the JDK that `JAVA_HOME` is set to for Java and Kotlin builds |
 | `KCSDK_PY` | `python/.venv/Scripts/python.exe` | the virtualenv interpreter (see §4 for the POSIX path) |
 
@@ -93,8 +93,8 @@ the JDK from `JAVA_HOME`. An older `java` first on `PATH` is harmless as long as
 at a new enough JDK — `doctor` checks `JAVA_HOME` first for exactly this reason.
 
 **Kotlin — do not install Gradle.** `kotlin/gradlew` downloads the exact distribution the build
-declares. A separately installed Gradle only exists on the maintainer machine as a convenience;
-`./gradlew` is the portable form and is what CI uses.
+declares. There is no separately installed Gradle anywhere in this project — not on CI, not on the
+maintainer machine; `./gradlew` is the only form, and every documented Kotlin command uses it.
 
 **Python — create the virtualenv.** It is not committed:
 
@@ -130,20 +130,15 @@ run without it. Integration tests start a real Keycloak container.
 
 ## 5. Verify the setup
 
-Build one language end to end. These are the entry commands; the full command sheets (single-test
-invocations, coverage gates, lint) are in [`.claude/rules/`](../../.claude/rules/).
+Build one language end to end. **Its command sheet is [`.claude/rules/<lang>.md`](../../.claude/rules/)**
+— one file per language, opening with the toolchain block: the entry command, the single-test
+invocation, the coverage gate and the lint command. That sheet is the source of truth; this guide
+does not copy the commands, because a copy is what drifts.
 
-| Language | Entry command |
-|---|---|
-| Java | `mvn -f java/pom.xml verify` |
-| Python | `cd python && .venv/Scripts/python.exe -m pytest -m "not integration" --cov=keycloak_sdk` |
-| Node | `cd node && npm ci && npm test` |
-| Go | `go -C go test ./...` |
-| C# / .NET | `cd dotnet && dotnet test --filter "Category!=Integration"` |
-| PHP | `cd php && composer install && vendor/bin/phpunit --testsuite unit` |
-| Rust | `cd rust && cargo test` |
-| Ruby | `cd ruby && bundle install && bundle exec rspec` |
-| Kotlin | `cd kotlin && ./gradlew test` |
+⚠️ **Install the dependencies before the entry command.** For Node, PHP and Ruby the install is the
+**first line of the sheet itself** (`npm ci`, `composer install`, `bundle install`) — run the sheet
+from its top on a fresh clone. Python is the exception: its venv creation lives in §4 above, not in
+the sheet. Rust, Go and .NET resolve on build and need nothing extra.
 
 Repo-wide guards (no language toolchain needed, only Node):
 

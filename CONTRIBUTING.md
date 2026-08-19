@@ -32,20 +32,22 @@ what is installed. Fix whatever it reports before touching code — see
 CI runs per language (`.github/workflows/<lang>-ci.yml`, plus `ci.yml` for Java and
 `repo-hygiene.yml` repo-wide). **If any of them is red, do not merge.**
 
-Every language enforces the same *kinds* of gate. The thresholds themselves are declared in each
-language's build configuration — that is the source of truth, so this table does not repeat them.
+Every language enforces the same *kinds* of gate. This table names the **mechanisms**; it does not
+repeat the thresholds (each language's build configuration owns those) and it does not repeat the
+commands. **The command sheet for a language is [`.claude/rules/<lang>.md`](.claude/rules/)** — one
+file per language, opening with the entry command, the single-test invocation and the lint command.
 
-| Language | Runs every local gate | Compile | Unit | Coverage gate | Lint / format | Types | Integration (Docker) |
-|---|---|:--:|:--:|:--:|:--:|:--:|:--:|
-| Java | `mvn -f java/pom.xml verify` | ✓ | ✓ | JaCoCo `jacoco:check` | enforcer | — | failsafe `*IT` |
-| Python | `cd python && pytest -m "not integration" --cov=keycloak_sdk` | — | ✓ | `fail_under` | ruff (incl. bandit) | mypy strict | `pytest -m integration` |
-| Node | `cd node && npm test` | tsc | ✓ | vitest thresholds | eslint + prettier | `npm run typecheck` | `npm run test:it` |
-| Go | `go -C go test ./...` | ✓ | ✓ | `go tool cover` | `go vet` + `gofmt` | ✓ (compiler) | `-tags=integration` |
-| C#/.NET | `cd dotnet && dotnet test --filter "Category!=Integration"` | ✓ | ✓ | coverlet **collector** → `scripts/check-coverage.mjs` | `dotnet format` | ✓ (compiler) | `Category=Integration` |
-| PHP | `cd php && vendor/bin/phpunit --testsuite unit` | — | ✓ | clover + Xdebug | php-cs-fixer | PHPStan level max | `--testsuite integration` |
-| Rust | `cd rust && cargo test` | ✓ | ✓ | `cargo llvm-cov` | `cargo fmt` + clippy `-D warnings` | ✓ (compiler) | `--test integration_test -- --ignored` |
-| Ruby | `cd ruby && bundle exec rspec` | — | ✓ | SimpleCov `minimum_coverage` | rubocop | — | `RUN_INTEGRATION=1 … --tag integration` |
-| Kotlin | `cd kotlin && ./gradlew test` | ✓ | ✓ | Kover `koverVerify` | ktlint | ✓ (compiler) | `cd kotlin && ./gradlew integrationTest` |
+| Language | Compile | Unit | Coverage gate | Lint / format | Types | Integration (Docker) |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|
+| Java | ✓ | ✓ | JaCoCo `jacoco:check` | enforcer | — | failsafe `*IT` |
+| Python | — | ✓ | `fail_under` | ruff (incl. bandit) | mypy strict | `pytest -m integration` |
+| Node | tsc | ✓ | vitest thresholds | eslint + prettier | `npm run typecheck` | `npm run test:it` |
+| Go | ✓ | ✓ | `go tool cover` | `go vet` + `gofmt` | ✓ (compiler) | `-tags=integration` |
+| C#/.NET | ✓ | ✓ | coverlet **collector** → `scripts/check-coverage.mjs` | `dotnet format` | ✓ (compiler) | `Category=Integration` |
+| PHP | — | ✓ | clover + Xdebug | php-cs-fixer | PHPStan level max | `--testsuite integration` |
+| Rust | ✓ | ✓ | `cargo llvm-cov` | `cargo fmt` + clippy `-D warnings` | ✓ (compiler) | `--test integration_test -- --ignored` |
+| Ruby | — | ✓ | SimpleCov `minimum_coverage` | rubocop | — | `RUN_INTEGRATION=1 … --tag integration` |
+| Kotlin | ✓ | ✓ | Kover `koverVerify` | ktlint | ✓ (compiler) | `cd kotlin && ./gradlew integrationTest` |
 
 Repo-wide, on every push and PR (`repo-hygiene.yml`):
 
@@ -65,8 +67,8 @@ sh scripts/test/test-doctor.sh
 ### Dependency CVE gate (all nine languages)
 
 Every language CI workflow also fails on a **known-vulnerable dependency**. It is a hard gate, not a
-report. None of them is part of the "Runs every local gate" command in the table above, so a clean
-local run does not prove this gate green — **when you add or bump a dependency, expect this, not the
+report. None of them runs as part of a language's entry command, so a clean local run does not
+prove this gate green — **when you add or bump a dependency, expect this, not the
 test suite, to be what stops the PR.**
 
 Four run as their own CI job:
