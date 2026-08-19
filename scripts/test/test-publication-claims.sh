@@ -297,36 +297,30 @@ else
     _en_banner="the other language is not on a registry yet"
     _en_other="The other one"
     _ko_other="나머지 한 언어"
-    _dep_unpub="and $unpub_en is not.**"
   else
     _en_banner="the other $unpub_en languages are not on a registry yet"
     _en_other="The other $unpub_en"
     _ko_other="나머지 $unpub_ko 언어"
-    _dep_unpub="and $unpub_en are not.**"
   fi
-  Unpub_en="$(printf '%s' "$unpub_en" | sed 's/^./\U&/')"
 
+  # ⚠️ **여기서 거는 것은 "소비자가 착지하는 문서"뿐이다.** 이 분기는 한때 DEPLOY.md ·
+  # CHANGELOG.md · roadmap step-0 에도 게시/미게시 **개수 문장**을 요구했는데, 그 셋은
+  # 이후 그 사실을 말하지 않기로 결정된 자리다:
+  #   DEPLOY.md:3      "This document deliberately does not state what is live right now."
+  #                    (playbook 도 같은 판정 — 개수의 소유자는 DF_PUBLISHED 다)
+  #   CHANGELOG.md:5   과거형 이력이라 현재 개수를 말하지 않는다(문서 IA 판정에서 유지 결정)
+  #   roadmap:17       "This axis is closed" — step-0 산문은 닫힌 축이다
+  # 즉 **가드가 문서의 결정과 모순**이었고, 열 번째 미게시 언어가 들어오는 순간 그 PR 은
+  # 문서 정책과 이 가드 중 하나를 반드시 어겼다. 아홉 전부 게시라 도달 불가여서 초록으로
+  # 남아 있었을 뿐이다(2026-08-19 실측: 요구 문자열 넷 전부 0건).
+  # roadmap 의 커버리지는 사라지지 않는다 — 상태 매트릭스 행 수 검사가 분기와 무관하게 돈다.
+  # CLAUDE.md 의 "첫 RC" 문구도 함께 뺀다: 아홉이 정식이고 열 번째만 미게시인 상태에서
+  # RC 표현을 요구하면 **참인 문서를 막는다**(이 분기에는 정식+미게시 조합이 없었다).
   claim_at README.md "$_en_banner" "상단 배너"
   claim_at README.md "the remaining $unpub_en (" "하단 서술"
   claim_at SECURITY.md "$_en_other" "미게시 열거"
   claim_at docs/guides/getting-started.md "The other $unpub_en (" "상단 배너"
-
-  claim_at CLAUDE.md "${pub_n}개는 첫 RC가 공개 레지스트리에 게시됐다" "현재 상태(게시 수)"
-  claim_at CLAUDE.md "나머지 ${unpub_n}개("                            "현재 상태(미게시 수)"
-  claim_at CLAUDE.md "9개 중 ${pub_n}개만 첫 RC 게시"                  "문서 언어 규칙 절"
-
-  claim_at DEPLOY.md "**$pub_en of nine languages are published"       "릴리스 워크플로 상태(게시 수)"
-  claim_at DEPLOY.md "$_dep_unpub"                                     "릴리스 워크플로 상태(미게시 수)"
-
-  claim_at CHANGELOG.md "지금까지 ${pub_ko} 언어가"                     "폴리글랏 안내(게시 수)"
-  claim_at CHANGELOG.md "나머지 ${unpub_ko}("                           "폴리글랏 안내(미게시 수)"
-
-  claim_at docs/roadmap/language-support.md "**$Pub_en are now live as release candidates**" "step-0(게시 수)"
-  claim_at docs/roadmap/language-support.md "the remaining $unpub_en ("                      "step-0(미게시 수)"
-
-  claim_at DEPLOY.md "$Unpub_en of the nine languages"                 "§7 첫 실행 경고(미게시 수)"
-  claim_at DEPLOY.md "The $pub_en languages that have published"       "§7 RC 선례(게시 수)"
-  claim_at docs/roadmap/language-support.md "$pub_en of them (all except" "머리말(게시 수)"
+  claim_at CLAUDE.md "나머지 ${unpub_n}개(" "현재 상태(미게시 수)"
 fi
 
 # 상태와 무관하게 게시 **수**만 말하는 자리(수사 형태가 갈리지 않는다).
