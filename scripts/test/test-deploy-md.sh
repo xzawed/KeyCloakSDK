@@ -145,14 +145,13 @@ if [ "$unpub_n" -eq 0 ]; then
     "아홉 전부 게시인데 DEPLOY.md가 '나머지 N개 미게시'라고 주장한다"
   assert_not_contains "$body" "language is unpublished" \
     "아홉 전부 게시인데 DEPLOY.md가 '나머지 한 개 미게시'라고 주장한다"
-else
-  assert_ok test -n "$_w"
-  if [ "$unpub_n" -eq 1 ]; then
-    _phrase="The other $_w language is unpublished"
-  else
-    _phrase="The other $_w languages are unpublished"
-  fi
-  assert_contains "$body" "$_phrase" \
-    "DEPLOY.md의 미게시 개수 문구가 DF_PUBLISHED에서 파생한 $unpub_n 과 다르다"
 fi
+# ⚠️ **여기에 "미게시 N개" 문구를 요구하는 else 분기가 있었고, 그것은 문서의 결정과
+# 모순이었다.** `DEPLOY.md:3`이 "This document deliberately does not state what is live
+# right now."라고 선언한 뒤로, 이 가드가 요구하는 문장은 **써서는 안 되는 문장**이 됐다.
+# 아홉 전부 게시라 분기가 도달 불가여서 초록으로 남아 있었을 뿐이고, 열 번째 미게시 언어가
+# 들어오는 순간 그 PR은 문서 정책과 이 가드 중 하나를 반드시 어겼다.
+# 게시/미게시 **개수**의 소유자는 `DF_PUBLISHED`이고 `release-readiness.sh`가 출력한다.
+# 위 `assert_not_contains` 둘은 남는다 — 그쪽은 "말하지 않기로 한 것을 말하지 않는가"라서
+# 정책과 같은 방향이다.
 assert_report
