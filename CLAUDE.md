@@ -44,14 +44,14 @@ Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·P
 
 ## 툴체인 (빌드 명령)
 
-언어별 전체 빌드/테스트/린트/배포 명령(단일 테스트 실행 포함)은 `.claude/rules/<lang>.md`에 있다(해당 언어 경로 작업 시 자동 로드). 아래는 언어별 핵심 진입 명령 하나씩만 남긴 표다.
+언어별 전체 명령(빌드·테스트·린트·배포·단일 테스트)은 `.claude/rules/<lang>.md`에 있다(그 경로에서 자동 로드). 아래는 진입 명령 하나씩만 남긴 표다.
 
 **새 머신에서 시작한다면**: `node scripts/doctor.mjs [<lang>…]`이 각 언어의 빌드 파일에서 최소 런타임 선언을 읽어 이 PC에 무엇이 없는지 알려준다. 설치·환경변수 규약(`KCSDK_TOOLS`·`KCSDK_JDK21`·`KCSDK_PY`)은 [docs/guides/development-setup.md](docs/guides/development-setup.md). 툴체인 경로는 `.claude/rules/*.md`에 머신 기본값을 둔 채 이 변수들로 덮어쓸 수 있다(리포지토리에 특정 PC 경로를 못박지 않는다).
 
 | 언어 | 핵심 진입 명령 | 상세 |
 |---|---|---|
 | Java | `mvn -f java/pom.xml verify` | `.claude/rules/java.md` |
-| Python | `cd python && "$PY" -m pytest -m "not integration" --cov=keycloak_sdk` | `.claude/rules/python.md` |
+| Python | `cd python && "${KCSDK_PY:-.venv/Scripts/python.exe}" -m pytest -m "not integration" --cov=keycloak_sdk` | `.claude/rules/python.md` |
 | Node | `cd node && npm test` | `.claude/rules/node.md` |
 | Go | `go -C go test ./...` | `.claude/rules/go.md` |
 | C#/.NET | `cd dotnet && dotnet test --filter "Category!=Integration"` | `.claude/rules/dotnet.md` |

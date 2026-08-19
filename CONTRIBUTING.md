@@ -67,8 +67,8 @@ sh scripts/test/test-doctor.sh
 ### Dependency CVE gate (all nine languages)
 
 Every language CI workflow also fails on a **known-vulnerable dependency**. It is a hard gate, not a
-report. None of them is part of the "Runs every local gate" command in the table above, so a clean
-local run does not prove this gate green — **when you add or bump a dependency, expect this, not the
+report. None of them runs as part of a language's entry command, so a clean local run does not
+prove this gate green — **when you add or bump a dependency, expect this, not the
 test suite, to be what stops the PR.**
 
 Four run as their own CI job:
