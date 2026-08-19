@@ -29,7 +29,9 @@ cd kotlin
 - A single test: `./gradlew test --tests "*<ClassName>"` (from inside `kotlin/`)
 - Coordinate `io.github.xzawed:keycloak-sdk-kotlin`. KGP 2.4.10 · `jvmToolchain(21)` · `languageVersion`/`apiVersion` = `KOTLIN_2_2` (the consumer floor) · `explicitApi()`.
 - Releasing goes `kotlin-v*` tag → `kotlin-release.yml` (staging on the Central Portal) → a human releases it from the Portal. The pins' SSOT is the dependency table in the root `CLAUDE.md` (a doc-guard anchor cross-checks it against `build.gradle.kts` — do not write the numbers here).
-- Measured coverage is 99.24% lines / 85.71% branches. ⚠️ `koverVerify` prints no percentages, so it cannot be cross-checked from the CI log — use `koverHtmlReport` for that.
+- Measured coverage is 99.33% lines / 89.13% branches (41 of 46). ⚠️ `koverVerify` prints no percentages, so it cannot be cross-checked from the CI log — use `koverHtmlReport` for that.
+- ⚠️ **Read the branch gate's slack as a count, not a percentage.** The denominator is 46, so one branch is 2.2 points. It sat at **exactly zero slack** (40 covered, 40 required) until a test for a token carrying `iat` was added — the helper in `JwtValidatorTest` had never set `issueTime`, so `validatedTokenFrom` only ever took the null path. Slack is now 1.
+- ⚠️ **The five branches still uncovered in `validatedTokenFrom` are unreachable, not missing tests.** Nimbus's `JWTClaimsSet` returns an empty list from `getAudience()` and a non-null map from `getClaims()` — never null — and the processor rejects a token with no `exp` before this function runs. Reaching them needs a mock claims set, which buys a number and asserts nothing. **Do not chase 100% here.**
 
 ## Build and test constraints
 

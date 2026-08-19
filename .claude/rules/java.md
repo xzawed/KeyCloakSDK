@@ -22,6 +22,8 @@ PATH="${KCSDK_TOOLS:-$HOME/tools}/apache-maven-3.9.9/bin:$PATH" mvn -f java/pom.
 - The real release goes `v*` tag → `release.yml` (human approval gate).
 - ⚠️ **Do not write the exact patch versions here** — measure them with `java -version` and `node scripts/doctor.mjs java`. Two of them once drifted apart and set inside this very file.
 - ⚠️ **`jacoco:check` is bound to the `verify` phase, so `mvn test` never verifies the coverage gate at all.**
+- ⚠️ **JaCoCo checks each module separately, so the repository total hides the module that is actually at risk.** `keycloak-sdk-auth` sat at **exactly 85.00% branches** (17 of 20, gate 85) while the four modules summed to a comfortable 93.9%. Read the per-module figure, not the sum. It is now 18/20 with one branch of slack, after a test for the single-flight loser path in `ClientCredentialsTokenProvider`.
+- ⚠️ **The two branches still uncovered in that module are unreachable, not missing tests.** `ValidatedToken.from` guards `getAudience() == null`, which a real Nimbus `JWTClaimsSet` never returns, and `OidcMetadata.stripTrailingSlashes` guards an all-slash or empty server URL, which config validation rejects earlier. Both need a mock to reach. **Do not chase 100% here.**
 
 ## Gotchas
 
