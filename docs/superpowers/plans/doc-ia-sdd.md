@@ -170,7 +170,9 @@
 - [ ] **1.2 · 결함을 방어하는 추출기 폐기** (PR #A) — `test-deploy-md.sh:78-81`이 낡은 lede의 **존재를 요구**한다. 삭제와 같은 커밋에서 걷어낸다. **끝**: lede 삭제 후 19종 자가테스트 통과.
 - [ ] **1.3 · 접두 매치 앵커 정정** (PR #A) — `claim_at DEPLOY.md "**all nine languages are published"`가 `:401`의 접두다. 로스터 삭제와 함께 재조준한다. **끝**: 변이(문장 복원) 시 FAIL, 앵커만 끄면 통과.
 - [ ] **2 · P3 — `<lang>/README` ↔ 루트 상호 링크 9×2** (PR #B) — **끝**: 아홉 README에서 루트 도달, 루트 Languages 표에서 아홉 README 도달.
-- [ ] **3 · P2 — 빌드 명령 3중복 제거** (PR #B) — `CLAUDE.md`·`CONTRIBUTING.md`·`development-setup.md`에서 걷어내고 `.claude/rules/<lang>.md`만 소유. **끝**: Kotlin·Node·PHP 드리프트 3건 소멸, `grep`으로 명령 자리 1곳.
+- [x] **3 · P2 — 빌드 명령 중복 제거** (PR #C5) — `CONTRIBUTING.md`의 명령 열과 `development-setup.md`의 진입명령 표를 걷어내고 `.claude/rules/<lang>.md`가 소유한다. **끝난 상태**: 복제 4곳 → **2곳**(rules 소유 + `CLAUDE.md` 색인).
+  ⚠️ **끝 조건을 "명령 자리 1곳"에서 바꿨다.** `CLAUDE.md`의 표는 복제가 아니라 **항해 색인**이다 — rules는 언어 경로에서만 자동로드되므로 루트에 언어→시트 대응이 없으면 도달 경로가 끊긴다. 아홉 줄과 링크는 그 값을 한다. 대신 그 표에서도 드리프트를 없앴다(Python 행이 `.venv/Scripts/python.exe`를 박아 POSIX에서 틀렸고 rules의 `KCSDK_PY`와 어긋났다 → `"$PY"`).
+  실측 드리프트는 SDD가 적은 3건이 아니라 **4건**이었다: Python 인터프리터(2자리) · Node/PHP/Ruby 첫실행 prepend. `development-setup.md`는 §4에서 `KCSDK_PY`를 설명하면서 §5 표에서는 Windows 경로를 박아 **같은 파일 안에서 모순**이었다. prepend는 명령을 복제하는 대신 "첫 실행은 §4의 설치를 먼저"라는 **규칙 한 줄**로 일반화했다.
 - [ ] **4 · P1 — 문서 없는 가드 불변식 5건에 자리 부여** (PR #C) — `check-latest`·`assert_report`·`100755`·`min-release`·sentinel 마커. **끝**: 다섯 키워드가 각 1개 문서에서 히트.
 - [ ] **5 · P2 — 게이트 임계값·30초·런타임 숫자 제거** (PR #C) — `CONTRIBUTING.md:35-36` 방식(메커니즘만 명명)으로 통일. **끝**: 숫자는 SSOT에만.
 - [ ] **6 · getting-started 분할** (PR #D) — `admin-capability`·`compatibility`를 레퍼런스로 분리. **끝**: 인바운드 앵커 4개 재조준, 지도 등재.
@@ -182,7 +184,7 @@
 - [x] **9.2 · rules 영문화 — 배치 1** (PR #C2b) — python·go·node·java(17.9KB → 17.8KB). 조준점 3개 유지 확인(`node:17`·`java:19` = 90/85, python·go는 검사4 비대상). **부수 발견**: 검사 4의 **kotlin 분기는 한 번도 동작한 적이 없었다** — `kotlin.md`에 `게이트`/`gate` 낱말이 없어 파서가 주장을 못 찾았고, 값이 우연히 90/85로 맞아 아무도 몰랐다. 한 낱말 추가로 깨우고 변이검증했다(문서 90→80 → `::error::`).
 - [x] **9.3 · rules 영문화 — 배치 2** (PR #255 병합) — ci·php·ruby. **총계/부분집합 판정이 이 배치의 실질 위험**이었다 — `php.md`의 `자매 언어 여덟`은 한글 수사라 아라비아 숫자만 보는 탐색을 빠져나갔고, 그 자리는 총계가 아니라 부분집합이라 마커를 붙였으면 가드가 참인 문장을 막았을 것이다. 변이로 양방향 확인(총계는 잡히고, 부분집합에 마커를 붙이면 잡힌다).
 - [x] **9.4 · rules 영문화 — 배치 3** (PR #256 병합) — dotnet·kotlin·rust. `kotlin.md`가 검사 4의 실제 대상이라 조준점이 하중이었다(`:24 → [90,85]` 유지, 앞선 `gate` 부분일치 0건). `rust.md`의 `나머지 여덟`이 **또** 한글 수사 부분집합이었다.
-- [ ] **9.5 · WBS 3 재개 — 빌드 명령 3중복 제거** (PR #C5) — **선행 해제됨**(11개 rules 전부 영문). 이제 영문 문서에서 rules로 보낼 수 있다.
+- [x] **9.5 · WBS 3 재개** (PR #C5) — 선행(11개 rules 전부 영문)이 풀려 수행했다. 결과는 위 항목 3에 있다.
 
 ⚠️ **rules에 남는 한글은 둘뿐이고 둘 다 의도다** — `php.md`의 `ℹ️ 수동 확인`(`release-readiness.sh`가 출력하고 `test-release-readiness.sh`가 단언한다)과 `dotnet.md`의 `브랜치 여유: N개`(`check-coverage.mjs:133`이 출력한다). **스크립트가 내는 문자열은 번역하지 않는다** — 옮기면 인용이 아니라 창작이 된다.
 

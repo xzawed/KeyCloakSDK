@@ -130,20 +130,15 @@ run without it. Integration tests start a real Keycloak container.
 
 ## 5. Verify the setup
 
-Build one language end to end. These are the entry commands; the full command sheets (single-test
-invocations, coverage gates, lint) are in [`.claude/rules/`](../../.claude/rules/).
+Build one language end to end. **Its command sheet is [`.claude/rules/<lang>.md`](../../.claude/rules/)**
+— one file per language, opening with the toolchain block: the entry command, the single-test
+invocation, the coverage gate and the lint command. That sheet is the source of truth; this guide
+does not copy the commands, because a copy is what drifts.
 
-| Language | Entry command |
-|---|---|
-| Java | `mvn -f java/pom.xml verify` |
-| Python | `cd python && .venv/Scripts/python.exe -m pytest -m "not integration" --cov=keycloak_sdk` |
-| Node | `cd node && npm ci && npm test` |
-| Go | `go -C go test ./...` |
-| C# / .NET | `cd dotnet && dotnet test --filter "Category!=Integration"` |
-| PHP | `cd php && composer install && vendor/bin/phpunit --testsuite unit` |
-| Rust | `cd rust && cargo test` |
-| Ruby | `cd ruby && bundle install && bundle exec rspec` |
-| Kotlin | `cd kotlin && ./gradlew test` |
+⚠️ **The sheets assume the dependencies are already installed.** The first run in a language needs
+its install step from §4 first (`python -m venv` + `pip install -e`, `npm ci`, `composer install`,
+`bundle install`, `cargo`/`go`/`dotnet` resolve on build). Run the install once, then the sheet's
+entry command.
 
 Repo-wide guards (no language toolchain needed, only Node):
 

@@ -51,7 +51,7 @@ Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·P
 | 언어 | 핵심 진입 명령 | 상세 |
 |---|---|---|
 | Java | `mvn -f java/pom.xml verify` | `.claude/rules/java.md` |
-| Python | `cd python && .venv/Scripts/python.exe -m pytest -m "not integration" --cov=keycloak_sdk` | `.claude/rules/python.md` |
+| Python | `cd python && "$PY" -m pytest -m "not integration" --cov=keycloak_sdk` | `.claude/rules/python.md` |
 | Node | `cd node && npm test` | `.claude/rules/node.md` |
 | Go | `go -C go test ./...` | `.claude/rules/go.md` |
 | C#/.NET | `cd dotnet && dotnet test --filter "Category!=Integration"` | `.claude/rules/dotnet.md` |
