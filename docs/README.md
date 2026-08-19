@@ -27,7 +27,8 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 
 | 문서 | 상태 | 여기서만 알 수 있는 것 |
 |---|---|---|
-| [Getting Started](guides/getting-started.md) | 운영 | 언어마다 설치→퀵스타트를 한 흐름으로 밟는 유일한 자리. Python `aio` / Node / .NET / Rust **async 변형**을 나란히 둔 것. **호환성 표**(각 행 머리의 게시본이 실은 기반 라이브러리). |
+| [Getting Started](guides/getting-started.md) | 운영 | 언어마다 설치→퀵스타트를 한 흐름으로 밟는 유일한 자리. Python `aio` / Node / .NET / Rust **async 변형**을 나란히 둔 것. 언어별 런타임 하한이 `doc-guard`로 빌드 파일과 대조되는 자리이기도 하다. |
+| [Compatibility reference](reference/compatibility.md) | 운영 | 각 **게시본**이 실제로 어떤 Keycloak 서버 범위·기반 라이브러리·런타임으로 나갔는가. `main`이 아니라 그 릴리스의 값이라는 것이 이 표의 요지다. 버전 칸은 `df_published_version`과 기계 대조된다. |
 | [Admin capability reference](reference/admin-capability.md) | 운영 | 언어별 admin 직접 커버리지 5×5 표와, 편의 메서드가 없을 때 무엇을 대신 부르는가. **U 열은 아홉 소스와 기계 대조된다**(`check-admin-capability.mjs`) — 표를 찾는 세 줄은 문구가 곧 조준점이다. |
 | [Development environment setup](guides/development-setup.md) | 운영 | 새 PC에서 언어별 툴체인을 세우는 **절차**와 `node scripts/doctor.mjs` 사용법. 변수 이름(`KCSDK_*`)은 CLAUDE.md·rules에도 있으나, 설치 순서는 여기에만 있다. |
 | [Deploying a Keycloak server](guides/deploying-keycloak-server.md) | 운영 | SDK가 아니라 **상대편 서버**를 세우는 법 — 단일 VM + Docker Compose + Caddy 자동 TLS 프로덕션 구성. |

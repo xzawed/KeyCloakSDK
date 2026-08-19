@@ -398,11 +398,15 @@ gs_label() { case "$1" in
   dotnet) echo 'C#/.NET' ;; php) echo PHP ;; rust) echo Rust ;; ruby) echo Ruby ;;
   kotlin) echo Kotlin ;; esac; }
 
+# ⚠️ 호환성 표는 `docs/reference/compatibility.md` 로 옮겼다(WBS 6) — 설치 절 개수는 여전히
+# `$gs` 를 보고, 표만 `$compat` 를 본다. 한 변수로 둘을 겸하면 어느 한쪽이 옮겨갈 때
+# 나머지가 조용히 0건이 되어 통과한다.
+compat="$ROOT/docs/reference/compatibility.md"
 rows_seen=0
 for L in $DEPLOY_LANGS; do
   _lbl="$(gs_label "$L")"
   # `| <Label> `<version>` |` 의 백틱 안을 뽑는다.
-  _row="$(grep -m1 -F "| $_lbl \`" "$gs" || true)"
+  _row="$(grep -m1 -F "| $_lbl \`" "$compat" || true)"
   [ -n "$_row" ] && rows_seen=$((rows_seen + 1))
   _got="$(printf '%s' "$_row" | sed -n 's/^| [^`]*`\([^`]*\)`.*/\1/p')"
   _want="$(df_published_version "$L")"
