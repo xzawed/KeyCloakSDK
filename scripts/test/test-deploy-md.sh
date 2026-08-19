@@ -11,6 +11,20 @@ for L in $DEPLOY_LANGS; do
   assert_contains "$body" "$(printf "$(df_tag "$L")" X.Y.Z | sed 's/X.Y.Z/*/')" "태그포맷 $L"
   for s in $(df_secrets "$L"); do assert_contains "$body" "$s" "시크릿 $s"; done
 done
+# dry-run 명령은 `df_dryrun`이 SSOT인데 DEPLOY.md는 그것을 **손으로 베낀 9줄**이고, 여태 둘을
+# 대조하는 것이 없었다. 실제로 갈라진 적이 있다 — kotlin이 `gradle -p kotlin publishToMavenLocal`
+# 로 남아 있었고, 이 기계에는 gradle이 PATH에 없어 문서대로 하면 실행조차 되지 않았다. 래퍼로
+# 옮긴 커밋이 rules만 고치고 SSOT와 런북은 두고 갔다.
+# ⚠️ **이 검사의 사각지대**: 포함 검사라 "DEPLOY가 SSOT보다 **더** 말하는" 경우(뒤에 플래그를
+# 덧붙인 경우)는 잡지 못한다. 실현된 부류(복사본이 낡아 SSOT 명령을 더는 담지 않음)를 잡는다.
+# 추출·정확일치로 바꾸려면 `- dry-run:` 인라인과 펜스 블록 두 형식을 모두 파싱해야 하는데,
+# 그 파서가 조용히 빗나가면 이 검사 자체가 공허해진다 — 포함 검사 + 사각지대 명시가 낫다.
+for L in $DEPLOY_LANGS; do
+  _dr="$(df_dryrun "$L" 2>/dev/null || true)"
+  [ -n "$_dr" ] || continue   # dry-run이 없는 언어는 대조 대상이 아니다
+  assert_contains "$body" "$_dr" "DEPLOY.md의 $L dry-run이 df_dryrun(SSOT)과 다르다"
+done
+
 # 두 도우미 스크립트 참조
 assert_contains "$body" "scripts/release-readiness.sh" "readiness 참조"
 assert_contains "$body" "scripts/release-trigger.sh" "trigger 참조"
