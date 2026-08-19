@@ -134,18 +134,11 @@ secret, or to be dangerously broken, the response is always:
 2. file a **GitHub Security Advisory** on this repository, and
 3. apply the registry's own withdrawal mechanism, where one exists.
 
-What each registry actually allows:
-
-| Registry | Withdrawal mechanism |
-|---|---|
-| PyPI (`keycloak-sdk`) | **yank** — the version stops being selected by resolvers; an exact pin can still install it |
-| npm (`@xzawed/keycloak-sdk`) | **deprecate** — `unpublish` is possible only within 72 hours of publish and only if nothing depends on it; after that, deprecate is the only option |
-| crates.io (`keycloak-sdk`) | `cargo yank` — existing `Cargo.lock` files keep resolving, new resolutions skip it; nothing is deleted |
-| RubyGems (`keycloak-sdk`) | `gem yank` — same semantics; the version cannot be re-pushed afterwards |
-| NuGet (`Xzawed.Keycloak.Sdk`) | **unlist** — hidden from search and listings, still restorable by exact version |
-| Maven Central (`io.github.xzawed:keycloak-sdk`, `…-kotlin`) | **none — fully immutable.** Nothing can be withdrawn. A new version plus an advisory is the only response |
-| Go module proxy (`github.com/xzawed/KeyCloakSDK/go`) | **none once cached.** Publish a later version carrying a `retract` directive for the bad one — deleting the git tag does not remove it from the proxy |
-| Packagist (`xzawed/keycloak-sdk`) | Packagist tracks VCS rather than storing artifacts: delete the `vX.Y.Z` tag on the source repository (the split mirror `xzawed/keycloak-sdk-php`) and resync the package |
+What each registry actually allows — the withdrawal mechanism, the exact command,
+and **what it does not achieve** — is the four-column table in
+[DEPLOY.md §6](DEPLOY.md). That table is the single owner; this section states the
+policy and does not restate it. The short version: Maven Central and a cached Go
+module cannot be withdrawn at all, so a fixed version is the only remedy there.
 
 ⚠️ **Have the registry account credentials ready before the first release.**
 Yank / deprecate / unlist is generally an interactive, account-authenticated
