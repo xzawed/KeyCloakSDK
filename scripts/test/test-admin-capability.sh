@@ -13,7 +13,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
 ROOT="$DIR/../.."
 GUARD="$DIR/../check-admin-capability.mjs"
-DOC="$ROOT/docs/guides/getting-started.md"
+DOC="$ROOT/docs/reference/admin-capability.md"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -68,8 +68,11 @@ assert_ok node "$GUARD" "$ROOT" --doc="$TMP/java-c-absent.md"
 : > "$TMP/empty.md"
 assert_fails node "$GUARD" "$ROOT" --doc="$TMP/empty.md"
 
-# 언어 행이 빠지면 실패(9행 미만). Direct coverage 안의 행만 지운다 —
-# 파일 앞쪽 런타임 표에도 `**PHP**` 가 있어 첫 히트를 지우면 변이가 공허하다.
+# 언어 행이 빠지면 실패(9행 미만). Direct coverage 안의 행만 지운다.
+# ⚠️ 이 슬라이싱은 표가 `getting-started.md` 안에 있던 시절의 유산이 아니다 — 그때는 파일
+# 앞쪽 런타임 표에도 `**PHP**` 가 있어 첫 히트를 지우면 변이가 공허했다. 표를 전용 파일로
+# 옮긴 지금도 유지하는 이유는, 같은 파일에 두 번째 `**PHP**` 행이 생기는 순간 변이가 다시
+# 공허해지기 때문이다(조준을 위치가 아니라 구조에 건다).
 node -e "
 const fs = require('fs');
 const t = fs.readFileSync(process.argv[1], 'utf8');
