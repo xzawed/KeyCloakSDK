@@ -61,7 +61,7 @@ for (const arg of process.argv.slice(2)) {
 }
 
 const ROOT = resolve(rootArg ?? ".");
-const DOC = resolve(docArg ?? join(ROOT, "docs/guides/getting-started.md"));
+const DOC = resolve(docArg ?? join(ROOT, "docs/reference/admin-capability.md"));
 
 function fail(msg) {
   console.error(`admin-capability: ${msg}`);

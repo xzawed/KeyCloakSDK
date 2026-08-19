@@ -113,7 +113,7 @@ pip install -e KeyCloakSDK/python
 ## What's identical, and what isn't
 
 - **Auth: the same seven operations exist in all nine** — client-credentials token · authorization request (PKCE S256) · code exchange · refresh · introspect · logout · validate. Signatures are not identical: PHP and Rust take `redirectUri` from config rather than as an argument; Python names the start `authorization_url`. All nine issue a nonce on the authorization request; `exchange*` validates the `id_token` against it when the caller passes that nonce back (the parameter is optional on all nine — omit it and id_token validation is skipped). The types are named `TokenSet` / `ValidatedToken` / `IntrospectionResult` everywhere; a few fields differ (`expires_in` is not on Java/Python/Kotlin; PHP and Ruby treat a missing `expiresAt` as not-expired). Go and Rust return error values; the other seven raise a `Keycloak*` hierarchy.
-- **Admin: five resources everywhere, and now the same five operations.** All nine expose users · clients · realms · roles · groups with create · get · list · update · delete — **25/25 in every language** — plus a `raw` escape hatch for anything past that. What still differs is shape, not coverage: Rust's facade is flat (`admin.update_role(name, rep)`) where the rest nest (`admin.roles().update(…)`), and list pagination is explicit in Rust and Go. The exact table is the [Admin capability matrix](docs/guides/getting-started.md#admin-capability-matrix).
+- **Admin: five resources everywhere, and now the same five operations.** All nine expose users · clients · realms · roles · groups with create · get · list · update · delete — **25/25 in every language** — plus a `raw` escape hatch for anything past that. What still differs is shape, not coverage: Rust's facade is flat (`admin.update_role(name, rep)`) where the rest nest (`admin.roles().update(…)`), and list pagination is explicit in Rust and Go. The exact table is the [Admin capability matrix](docs/reference/admin-capability.md#admin-capability-matrix).
 
 ---
 
@@ -121,7 +121,7 @@ pip install -e KeyCloakSDK/python
 
 All nine ship **the same claim-check rules** (algorithm pinning, exact `iss`, `aud` containment, mandatory `exp`, bounded clock skew) — not the underlying library defaults. JWKS refetch is rate-limited on all nine; **“only on an unresolved key id” is eight languages**. .NET’s `Microsoft.IdentityModel` `ConfigurationManager` also refetches on a bad signature, so the rate-limit is the amplification cap — see [dotnet/README.md](dotnet/README.md).
 
-Secrets and tokens are masked in logs and serialization, and TLS verification is on by default. Auth-path types stay behind the facade; admin representations and `raw()` are documented exceptions ([Admin capability matrix](docs/guides/getting-started.md#admin-capability-matrix)).
+Secrets and tokens are masked in logs and serialization, and TLS verification is on by default. Auth-path types stay behind the facade; admin representations and `raw()` are documented exceptions ([Admin capability matrix](docs/reference/admin-capability.md#admin-capability-matrix)).
 
 ---
 
