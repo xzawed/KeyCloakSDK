@@ -100,7 +100,7 @@
 | 게이트 임계값 | 각 언어 빌드 설정 | `CONTRIBUTING.md:35-36`의 방식을 확대(메커니즘만 명명) |
 | 빌드 명령 | `.claude/rules/<lang>.md` | 다른 3곳에서 제거 |
 | 릴리스 절차 | `DEPLOY.md`(런북부) | CONTRIBUTING §4·`rules/ci.md`의 중복 제거 |
-| admin capability | `getting-started.md` 매트릭스 | CLAUDE.md §4(b)의 representation 목록 중복 제거 |
+| admin capability | `docs/reference/admin-capability.md` (WBS 6에서 이관) | CLAUDE.md §4(b)의 representation 목록 중복 제거 |
 
 ### 2.3 목표 문서 집합
 
@@ -192,7 +192,9 @@
   ⚠️ **가드 범위가 뒤집혀 있다.** 30초의 선언된 소유자 `.claude/rules/security.md`와 `CLAUDE.md`는 `SD_DOCS`에 **없다**(실측 0건). 소비자 복제본 아홉은 검사되고 **소유자는 무가드**다. 되살릴 조건: `SD_DOCS`에 소유자를 넣으려면 `security.md`의 문구가 JWKS 정규식(`jwks[_ ]?min[_ ]?refetch`)에 걸려야 한다 — 지금 문구는 걸리지 않는다. 가드 변경이므로 단독 PR.
 
   ⚠️ **가장 비싼 무가드 숫자는 90/85도 30초도 아니었다.** Kotlin 소비자 하한(`KOTLIN_2_2` ↔ 전이 `kotlin-stdlib`)이다 — `build.gradle.kts:66`이 스스로 "하나만 올리면 소비자 하한이 조용히 갈라진다"고 적어 두고 집행이 없었다. 갈라져도 증상이 소비자 쪽에서만 나므로 우리 CI는 초록이다. PR #260에서 가드 신설(변이 4 + 오탐 대조군 1).
-- [ ] **6 · getting-started 분할** (PR #D) — `admin-capability`·`compatibility`를 레퍼런스로 분리. **끝**: 인바운드 앵커 4개 재조준, 지도 등재.
+- [x] **6 · getting-started 분할** (PR #262·#263) — `admin-capability`·`compatibility`를 `docs/reference/`로 분리했다. 53.1KB → **41.2KB(-22%)**. 인바운드는 실측하면 4개가 아니라 **admin 4 + compat 3**이었고, 그 밖에 산문 참조가 **15곳**(아홉 `<lang>/README.md` · 양쪽 README · SECURITY · CLAUDE · playbook · SDD 자신 · `deploy-facts.sh` 주석) 더 있었다 — 링크는 파일이 존재해 초록인데 **문장이 거짓**이 되는 부류라 check 5가 못 본다.
+  ⚠️ **언어 절 아홉(65.7%)은 옮기지 않았다.** `doc-guard: kind=runtime` 앵커 9개가 전부 거기 있고 `test-publication-claims.sh`의 설치 절 루프가 그 헤딩에 걸린다. 표 하나 빼내기와 파일의 3분의 2를 링크로 바꾸기는 다른 작업이다 — 후자는 별도 판정 대상으로 남긴다.
+  ⚠️ **가장 비쌌던 잔여 거짓은 playbook이었다** — 10번째 언어에게 "호환성·capability 표를 getting-started에 쓰라"고 안내하고 있었다. 거기 쓰면 **어떤 가드도 읽지 않는다**. 그 줄을 레퍼런스 파일로 돌리고 이유를 붙였다.
 - [ ] **7 · DEPLOY 분할** (PR #E) — 런북 / 일회성 설정 / 레지스트리 동작. **끝**: SECURITY 회수표 중복 흡수, 지도 등재.
 - [ ] **8 · P4 — 서사·사후분석 25건 이관** (PR #E) — 커밋 메시지·CHANGELOG로. **끝**: 규칙 문서에 PR 번호·커밋 SHA·취소선 완료로그 0건.
 - [x] **9 · `.claude/rules` 청중 판정 — 결정됨(2026-08-18)** — 사람이 **영문화**를 골랐다(§2.4의 세 갈래 중 1번). 근거: 청중이 둘이고(에이전트 자동로드 + 영문 문서 둘이 인간 기여자를 그리로 보냄), 한글로 두는 한 빌드 명령 같은 사실을 영문 쪽에 복제할 수밖에 없다. `CLAUDE.md` 문서 언어 규칙에 예외를 명시했다.

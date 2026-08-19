@@ -135,7 +135,8 @@ pip install -e KeyCloakSDK/python
 
 ## 문서
 
-- 🚀 **[시작하기](docs/guides/getting-started.md)** — 언어별 설치·실행 가능한 예제·async·호환성 매트릭스
+- 🚀 **[시작하기](docs/guides/getting-started.md)** — 언어별 설치·실행 가능한 예제·async 변형
+- 📐 **[Admin capability](docs/reference/admin-capability.md)** · **[호환성](docs/reference/compatibility.md)** — 언어별 admin 파사드가 덮는 범위와, 각 게시본이 무엇으로 나갔는가
 - 🖥️ **[Keycloak 서버 배포](docs/guides/deploying-keycloak-server.md)** — SDK가 붙을 서버(단일 VM + Docker Compose)
 - 🔒 **[보안 정책](SECURITY.md)** — 취약점 신고·하드닝 범위·지원 버전
 - 🗺️ **[언어 지원 로드맵](docs/roadmap/language-support.md)** — 지금 있는 언어와 앞으로 올 수 있는 언어
