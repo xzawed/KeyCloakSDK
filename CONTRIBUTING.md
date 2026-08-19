@@ -203,8 +203,8 @@ permanently blocked with no way to unblock it.
 | `RELEASE-TAGS-CREATE-GO` | `go/v*` | `creation` | repository admin **only** — never the App |
 | `RELEASE-TAGS-IMMUTABLE` | all nine | `update`, `deletion` | repository admin **only** — never the App |
 
-✅ **The release App was added to `RELEASE-TAGS-CREATE` on 2026-08-17** (PR #203), so the automated
-release path is live. It is in that one file and no other: `tags-create-go.json` and
+**The release App belongs to `RELEASE-TAGS-CREATE` and to nothing else** — that is what makes the
+automated release path work. It is in that one file and no other: `tags-create-go.json` and
 `tags-immutable.json` still list the admin alone, which is what makes "Go is released by a human"
 and "a release tag cannot be moved or deleted" facts about server state rather than promises inside
 a workflow file. `scripts/test/test-repo-config.sh` pins the split (one `Integration` bypass in
@@ -214,9 +214,9 @@ why a web-UI edit is erased by the next `repo-config.mjs apply` (it sends a full
 committed file) — is [DEPLOY.md §2-F](DEPLOY.md). If a secret or ruleset ever goes missing,
 `dispatch-release.yml` fails closed again and releases fall back to hand-pushed tags.
 
-✅ **All four rulesets are applied and active as of 2026-08-04** (`PRIMARY` on `main`, plus the three
-tag rulesets above). `node scripts/repo-config.mjs check` reports no drift against the committed
-definitions. The hand-pushed release path is unaffected — every tag ruleset carries the repository
+**Whether all four rulesets are currently applied is answered by `node scripts/repo-config.mjs
+check`**, which compares the live repository against the committed definitions (`PRIMARY` on `main`,
+plus the three tag rulesets above). Read it from that command, not from a date written here. The hand-pushed release path is unaffected — every tag ruleset carries the repository
 admin as a bypass actor, verified against the live API after applying.
 
 ⚠️ **A committed ruleset is still not an applied ruleset**, and that asymmetry has not gone away.
