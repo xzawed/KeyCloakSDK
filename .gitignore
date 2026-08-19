@@ -54,8 +54,11 @@ node_modules/
 .vite/
 coverage/
 *.tsbuildinfo
-cover.out
-cover.logic.out
+# go — `go test -coverprofile`의 산출물. ⚠️ **이름을 하나씩 막지 않는다.** 한동안 `cover.out`과
+# `cover.logic.out` 둘만 막고 있었는데, 네트워크 경계를 걷어낸 사본을 `cover.filtered`로 쓰는
+# 순간 그 파일이 추적돼 커밋에 섞였다(실측). coverlet 형식에서 이미 같은 일을 겪었다 — 한
+# 이름만 막으면 나머지가 샌다. `cover.*`로 부류째 막는다.
+cover.*
 # rust — `cargo llvm-cov --lcov`가 SonarCloud에 먹일 리포트를 여기에 쓴다(CI가 매 실행마다 생성).
 lcov.info
 

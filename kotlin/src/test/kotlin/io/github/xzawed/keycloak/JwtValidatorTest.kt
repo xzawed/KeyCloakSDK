@@ -19,6 +19,8 @@ import com.nimbusds.jwt.PlainJWT
 import com.nimbusds.jwt.SignedJWT
 import kotlinx.coroutines.test.runTest
 import java.time.Duration
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.Base64
 import java.util.Date
 import kotlin.test.Test
@@ -48,6 +50,7 @@ internal class JwtValidatorTest {
         expiresInMillis: Long? = 60_000,
         subject: String = "user-1",
         notBeforeInMillis: Long? = null,
+        issuedAtMillis: Long? = null,
     ): JWTClaimsSet {
         val builder =
             JWTClaimsSet
@@ -57,6 +60,9 @@ internal class JwtValidatorTest {
                 .subject(subject)
         if (expiresInMillis != null) {
             builder.expirationTime(Date(System.currentTimeMillis() + expiresInMillis))
+        }
+        if (issuedAtMillis != null) {
+            builder.issueTime(Date(issuedAtMillis))
         }
         if (notBeforeInMillis != null) {
             builder.notBeforeTime(Date(System.currentTimeMillis() + notBeforeInMillis))
@@ -87,6 +93,24 @@ internal class JwtValidatorTest {
             assertEquals(issuer, result.issuer)
             assertEquals("user-1", result.subject)
             assertTrue(result.audience.contains(audience))
+        }
+
+    // ⚠️ **`iat`이 있는 토큰이 한 번도 검증된 적이 없었다.** 실제 Keycloak 토큰에는 `iat`이 늘
+    // 붙지만, 이 파일의 `claims()` 헬퍼가 `issueTime`을 한 번도 세팅하지 않아 `validatedTokenFrom`
+    // 의 `issueTime?.toInstant()` 는 **null 쪽만** 밟히고 있었다(실측: kover `jwt.kt:136` mb=1 cb=1).
+    // 즉 "iat을 그대로 노출한다"는 계약이 미검증이었다 — 이 분기가 조용히 뒤집혀도 아무도 못 잡는다.
+    @Test
+    fun `iat is exposed as issuedAt when the token carries one`() =
+        runTest {
+            val key = rsaKey()
+            // 초 단위로 자르는 이유: JWT `iat`은 NumericDate(초)라 밀리초가 보존되지 않는다.
+            val iat = Instant.now().minusSeconds(120).truncatedTo(ChronoUnit.SECONDS)
+            val token = signedRs256(key, claims(issuedAtMillis = iat.toEpochMilli()))
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, audience)
+
+            val result = validator.validate(token)
+
+            assertEquals(iat, result.issuedAt)
         }
 
     @Test
