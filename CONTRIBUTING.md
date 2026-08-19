@@ -61,6 +61,12 @@ sh scripts/test/test-doctor.sh
 > `jacoco:check`, so a change can pass locally and fail CI. Use
 > `mvn -pl <module> -am verify -DskipITs` when you want the gate without integration tests.
 
+> ⚠️ **Adding a shell script or a self-test?** Two invariants block the PR and neither is visible
+> from the code you are writing: a tracked `*.sh` needs the exec bit in the git index
+> (`git update-index --chmod=+x`), and a self-test must end with `assert_report` or its failures
+> never become an exit code. Those and three more are listed in
+> [`.claude/rules/ci.md`](.claude/rules/ci.md).
+
 > ⚠️ **`gofmt` / `prettier` / `php-cs-fixer` flag every file on a Windows CRLF working tree.**
 > Normalize the files you changed to LF and re-check, rather than reformatting the tree.
 
