@@ -131,7 +131,7 @@ df_coordinate() { case "$1" in   # 레지스트리상 패키지 식별자(사람
 # 매니페스트는 `0.1.0-SNAPSHOT`이다. 매니페스트 쪽 SSOT는 `scripts/check-versions.mjs`가 따로 본다.
 #
 # ⚠️ **왜 이 사실이 필요했나**: 이 값들은 문서 곳곳에 문자열로 복제돼 있는데(랜딩 README 좌표
-# 목록·SECURITY·DEPLOY 라이브 목록·getting-started 호환성 표) **어디에도 기계 대조가 없었다.**
+# 목록·SECURITY·DEPLOY 라이브 목록·docs/reference/compatibility.md) **어디에도 기계 대조가 없었다.**
 # 실제로 호환성 표는 아홉 행 중 일곱이 `0.1.0`에 멈춘 채 게시가 여섯 번 지나갔다. 게시 **개수**는
 # `DF_PUBLISHED`가 지켰지만 **버전 문자열은 아무도 지키지 않았다** — 같은 사실의 다른 축이고,
 # 소비자가 실제로 복사해 가는 쪽은 버전이다.

@@ -135,7 +135,8 @@ Everything is **pre-1.0**. All nine have shipped a stable release to a public re
 
 ## Docs
 
-- 🚀 **[Getting started](docs/guides/getting-started.md)** — per-language install, runnable example, async, compatibility matrix
+- 🚀 **[Getting started](docs/guides/getting-started.md)** — per-language install, runnable example, async variants
+- 📐 **[Admin capability](docs/reference/admin-capability.md)** · **[Compatibility](docs/reference/compatibility.md)** — what each language's admin facade covers, and what each published version shipped against
 - 🖥️ **[Deploying a Keycloak server](docs/guides/deploying-keycloak-server.md)** — the server your SDK connects to (single VM + Docker Compose)
 - 🔒 **[Security policy](SECURITY.md)** — reporting, hardening scope, supported versions
 - 🗺️ **[Language roadmap](docs/roadmap/language-support.md)** — what exists today and what may come next

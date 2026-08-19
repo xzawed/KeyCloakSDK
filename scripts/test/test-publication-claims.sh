@@ -459,7 +459,7 @@ assert_eq "9" "$status_seen" \
 
 # ---- DEPLOY.md `- Install:` 좌표의 **버전 문자열** ↔ df_published_version ----
 #
-# 같은 축(버전 문자열)인데 위 검사는 getting-started의 호환성 표만 봤다. DEPLOY.md의 설치 좌표
+# 같은 축(버전 문자열)인데 위 검사는 `docs/reference/compatibility.md`의 표만 봤다. DEPLOY.md의 설치 좌표
 # 아홉 줄 중 버전을 품는 것은 Maven 좌표 둘(java·kotlin)뿐이고, **그 둘 다 게시 후에도 `0.1.0`에
 # 멈춰 있었다**(2026-08-11 발견 — java는 08-10, kotlin은 08-11에 각각 `0.1.0-RC1`로 게시됐다).
 # 나머지 일곱 줄은 버전 없는 설치 명령(`pip install keycloak-sdk` 등)이라 드리프트할 값이 없다.

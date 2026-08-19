@@ -76,7 +76,7 @@ vulnerability fix. Expect the nine version numbers to diverge after any such fix
 
 **Keycloak server versions.** Integration tests run against **Keycloak 26.6**
 (the exact container tag per language is recorded in the compatibility matrix in
-[docs/guides/getting-started.md](docs/reference/compatibility.md#compatibility) —
+[docs/reference/compatibility.md](docs/reference/compatibility.md#compatibility) —
 `26.6.4` for Java and Python, `26.6` for the others). That is the only server
 range verified. Other server versions may work but are untested — do not read
 this as a claim about 25.x or 27.x.

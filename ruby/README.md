@@ -79,7 +79,8 @@ This SDK is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking 
 
 - [Project overview](https://github.com/xzawed/KeyCloakSDK) — all nine languages, what is identical and what is not
 - [Changelog](https://github.com/xzawed/KeyCloakSDK/blob/main/CHANGELOG.md) — **read this before upgrading**; breaking changes are listed per language
-- [Getting started](https://github.com/xzawed/KeyCloakSDK/blob/main/docs/guides/getting-started.md#ruby) — install, quickstart, and the compatibility matrix
+- [Getting started](https://github.com/xzawed/KeyCloakSDK/blob/main/docs/guides/getting-started.md#ruby) — install and quickstart for this language
+- [Compatibility](https://github.com/xzawed/KeyCloakSDK/blob/main/docs/reference/compatibility.md) — which Keycloak server range and base libraries each published version shipped against
 - [Deploying a Keycloak server](https://github.com/xzawed/KeyCloakSDK/blob/main/docs/guides/deploying-keycloak-server.md) — the server this SDK talks to
 - [Security policy](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md)
 - Full example: [`examples/quickstart.rb`](https://github.com/xzawed/KeyCloakSDK/blob/main/ruby/examples/quickstart.rb)

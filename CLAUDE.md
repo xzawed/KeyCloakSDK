@@ -90,7 +90,7 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 
 ⚠️ Rust는 `keycloak_sdk::types`로 미러 재노출한다 — 없으면 소비자가 `keycloak` crate를 직접 의존해야 해서 게시된 퀵스타트가 컴파일되지 않는다.
 
-9개 언어 전체 `raw` 표와 admin capability matrix: [getting-started.md](docs/guides/getting-started.md).
+9개 언어 전체 `raw` 표와 admin capability matrix: [admin-capability.md](docs/reference/admin-capability.md).
 
 ## 교차언어 제약
 
