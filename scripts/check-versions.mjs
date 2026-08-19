@@ -300,6 +300,40 @@ for (const [lang, p, re] of manifests) {
         )
       }
     }
+
+    // ── 소비자 하한 정합 — `languageVersion`·`apiVersion`·전이 `kotlin-stdlib` ──
+    // 이 셋이 **게시 jar를 쓸 수 있는 최소 Kotlin**을 함께 정한다. `build.gradle.kts`가 스스로
+    // "이 버전은 위 KOTLIN_2_2와 함께 움직여야 한다 — 하나만 올리면 소비자 하한이 조용히
+    // 갈라진다"고 적어 두고 **집행이 없었다**. 갈라지면 증상이 소비자 쪽에서만 난다:
+    // 클래스 메타데이터만 낮추면 소비자가 여전히 새 stdlib를 해석해
+    // `Class 'kotlin.Unit' was compiled with an incompatible version of Kotlin`으로 죽는다.
+    // 우리 CI는 그 조합을 빌드하지 않으므로 초록이다 — 경위는 `.claude/rules/kotlin.md` 게시 제약.
+    const bgkText = read(bgk) || ''
+    const kv = [...bgkText.matchAll(/(languageVersion|apiVersion)\s*\.set\([^)]*KotlinVersion\.KOTLIN_(\d+)_(\d+)\s*\)/g)]
+    const stdlib = /api\("org\.jetbrains\.kotlin:kotlin-stdlib:(\d+)\.(\d+)\.\d+"\)/.exec(bgkText)
+    if (kv.length !== 2) {
+      harnessErrors.push(
+        `${bgk} 에서 languageVersion·apiVersion 두 선언을 모두 읽지 못했다(읽은 것 ${kv.length}건) — ` +
+          `설정이 없으면 KGP 버전이 그대로 메타데이터에 박혀 소비자 하한이 조용히 올라간다`,
+      )
+    } else if (kv[0][2] !== kv[1][2] || kv[0][3] !== kv[1][3]) {
+      harnessErrors.push(
+        `${bgk} 의 languageVersion(KOTLIN_${kv[0][2]}_${kv[0][3]}) 과 apiVersion(KOTLIN_${kv[1][2]}_${kv[1][3]}) 이 다르다 — ` +
+          `둘은 같은 소비자 하한을 가리켜야 한다`,
+      )
+    }
+    if (!stdlib) {
+      harnessErrors.push(
+        `${bgk} 에서 명시 \`api("org.jetbrains.kotlin:kotlin-stdlib:<버전>")\` 선언을 읽지 못했다 — ` +
+          `자동주입(\`kotlin.stdlib.default.dependency\`)에 맡기면 KGP 버전의 stdlib가 전이되어 하한이 깨진다`,
+      )
+    } else if (kv.length === 2 && (stdlib[1] !== kv[0][2] || stdlib[2] !== kv[0][3])) {
+      harnessErrors.push(
+        `${bgk} 의 소비자 하한이 갈라졌다 — 클래스 메타데이터는 KOTLIN_${kv[0][2]}_${kv[0][3]} 인데 ` +
+          `전이 kotlin-stdlib 는 ${stdlib[1]}.${stdlib[2]}.x 다. 둘을 **한 커밋에서 함께** 옮길 것 ` +
+          `(하한을 올리면 그만큼 소비자를 잘라내므로 릴리스 노트에도 적는다). 근거: .claude/rules/kotlin.md`,
+      )
+    }
   }
 }
 
