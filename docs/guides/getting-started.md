@@ -607,7 +607,7 @@ client.close
 To build against your working copy, clone the repository and publish it to your local `~/.m2` with Gradle:
 
 ```bash
-gradle -p kotlin publishToMavenLocal   # installs keycloak-sdk-kotlin-0.1.0.jar (+ sources/javadoc) into ~/.m2
+cd kotlin && ./gradlew publishToMavenLocal   # installs keycloak-sdk-kotlin-0.1.0.jar (+ sources/javadoc) into ~/.m2
 ```
 
 Then reference it from a consuming Gradle project via `mavenLocal()` (Gradle Kotlin DSL):
@@ -617,7 +617,7 @@ repositories { mavenLocal(); mavenCentral() }
 dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0") }
 ```
 
-(To just build and test locally without publishing: `gradle -p kotlin build && gradle -p kotlin test` — unit tests + coverage gate, Docker-free.)
+(To just build and test locally without publishing: `cd kotlin && ./gradlew build && ./gradlew test` — unit tests + coverage gate, Docker-free.)
 
 ### 3) Installation from Maven Central (stable `0.1.0`)
 

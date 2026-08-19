@@ -104,7 +104,7 @@ df_dryrun() { case "$1" in
   node) echo "cd node && npm run build && npm pack --dry-run" ;;
   ruby) echo "cd ruby && gem build keycloak-sdk.gemspec" ;;
   java) echo "mvn -f java/pom.xml -Prelease -DskipTests -DskipITs=true -Dgpg.skip=true package" ;;
-  kotlin) echo "gradle -p kotlin publishToMavenLocal" ;; esac; }
+  kotlin) echo "cd kotlin && ./gradlew publishToMavenLocal" ;; esac; }
 
 df_install() { case "$1" in   # go/java/kotlin은 %s=버전
   go) echo "go get github.com/xzawed/KeyCloakSDK/go@v%s" ;;
