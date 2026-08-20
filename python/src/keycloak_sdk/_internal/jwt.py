@@ -15,8 +15,8 @@ from joserfc import jwt as _jwt
 from joserfc.errors import InvalidKeyIdError, MissingKeyError
 from joserfc.jwk import KeySet
 
-from .exceptions import TokenKeyError, TokenSignatureError, TokenValidationError
-from .tokens import ValidatedToken
+from ..exceptions import TokenKeyError, TokenSignatureError, TokenValidationError
+from ..tokens import ValidatedToken
 
 
 class JwtValidator:

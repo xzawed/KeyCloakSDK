@@ -21,6 +21,7 @@ from joserfc.jwk import KeySet, KeySetSerialization
 from keycloak import KeycloakOpenID
 from keycloak.exceptions import KeycloakError
 
+from ._internal.jwt import JwtValidator
 from ._internal.redirects import harden_openid
 from ._internal.secrets import mask
 from .config import KeycloakConfig
@@ -30,7 +31,6 @@ from .exceptions import (
     TokenKeyError,
     TokenValidationError,
 )
-from .jwt import JwtValidator
 from .oidc import OidcEndpoints
 from .tokens import IntrospectionResult, TokenSet, ValidatedToken
 
