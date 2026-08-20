@@ -52,13 +52,13 @@ kotlin {
 // ⚠️ java/pom.xml의 Jackson 버전을 올릴 때는 여기도 함께 올린다 — 두 JVM SDK가 같은 트리를 쓴다.
 dependencies {
     constraints {
-        implementation("com.fasterxml.jackson.core:jackson-core:2.22.1")
-        implementation("com.fasterxml.jackson.core:jackson-databind:2.22.1")
+        implementation("com.fasterxml.jackson.core:jackson-core:2.22.2")
+        implementation("com.fasterxml.jackson.core:jackson-databind:2.22.2")
         implementation("com.fasterxml.jackson.core:jackson-annotations:2.22") // 별도 버전 트랙
-        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.22.1")
-        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.1")
-        implementation("com.fasterxml.jackson.jakarta.rs:jackson-jakarta-rs-base:2.22.1")
-        implementation("com.fasterxml.jackson.module:jackson-module-jakarta-xmlbind-annotations:2.22.1")
+        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.22.2")
+        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.2")
+        implementation("com.fasterxml.jackson.jakarta.rs:jackson-jakarta-rs-base:2.22.2")
+        implementation("com.fasterxml.jackson.module:jackson-module-jakarta-xmlbind-annotations:2.22.2")
     }
 
     // stdlib는 KGP 자동주입을 끄고(gradle.properties `kotlin.stdlib.default.dependency=false`)
