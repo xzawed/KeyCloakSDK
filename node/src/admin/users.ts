@@ -8,6 +8,10 @@ import { call, requireFound } from './call.js'
  * (안정적 Keycloak 타입 재사용 — 문서화된 은닉성 예외, Java admin 파사드와 동형).
  */
 export class UsersResource {
+  /**
+   * @internal `AdminClient`가 조립한다 — 소비자 생성 경로가 아니다. `@internal` + `stripInternal`로
+   * 방출 `.d.ts`에서 지워, 하위 `KcAdminClient` 타입이 공개 표면에 오르지 않게 한다(§4).
+   */
   constructor(
     private readonly kc: KcAdminClient,
     private readonly realm: string,

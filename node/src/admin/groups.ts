@@ -6,6 +6,10 @@ import { call, requireFound } from './call.js'
  * 그룹 CRUD 파사드. 공식 admin-client의 `groups` 리소스를 감싸며 {@link call}로 경계 변환한다.
  */
 export class GroupsResource {
+  /**
+   * @internal `AdminClient`가 조립한다 — 소비자 생성 경로가 아니다. `@internal` + `stripInternal`로
+   * 방출 `.d.ts`에서 지워, 하위 `KcAdminClient` 타입이 공개 표면에 오르지 않게 한다(§4).
+   */
   constructor(
     private readonly kc: KcAdminClient,
     private readonly realm: string,

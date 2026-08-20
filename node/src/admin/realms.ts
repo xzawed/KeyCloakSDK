@@ -8,6 +8,10 @@ import { call, requireFound } from './call.js'
  * 리소스를 감싸며 {@link call}로 경계 변환한다.
  */
 export class RealmsResource {
+  /**
+   * @internal `AdminClient`가 조립한다 — 소비자 생성 경로가 아니다. `@internal` + `stripInternal`로
+   * 방출 `.d.ts`에서 지워, 하위 `KcAdminClient` 타입이 공개 표면에 오르지 않게 한다(§4).
+   */
   constructor(private readonly kc: KcAdminClient) {}
 
   /** 새 렐름을 생성한다. `representation.realm`이 새 렐름의 이름이다. */

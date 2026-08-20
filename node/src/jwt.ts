@@ -19,7 +19,13 @@ export interface JwtValidatorOptions {
  * 키 소스는 주입형이다(테스트는 로컬 JWKS, 실사용은 `forJwksUri`의 원격 JWKS).
  */
 export class JwtValidator {
-  constructor(
+  /**
+   * 생성은 {@link JwtValidator.forJwksUri}로 한다. `private`인 이유는 취향이 아니라 §4다 —
+   * 이 생성자가 public이면 jose의 `JWTVerifyGetKey`가 방출 `.d.ts`에 올라 하위 라이브러리 타입이
+   * 공개 API로 샌다. `private`면 tsc가 선언에서 파라미터를 지워 그 import가 함께 사라진다
+   * (같은 파일의 `forJwksUri`는 계속 호출할 수 있다 — Java `JwtValidator`·Go `newValidator`와 동형).
+   */
+  private constructor(
     private readonly keys: JWTVerifyGetKey,
     private readonly opts: JwtValidatorOptions,
   ) {}
