@@ -14,8 +14,8 @@ import pytest
 from joserfc import jwt as jjwt
 from joserfc.jwk import KeySet, OctKey, RSAKey
 
+from keycloak_sdk._internal.jwt import JwtValidator
 from keycloak_sdk.exceptions import TokenKeyError, TokenSignatureError, TokenValidationError
-from keycloak_sdk.jwt import JwtValidator
 
 ISSUER = "https://kc.example.com/realms/r"
 
