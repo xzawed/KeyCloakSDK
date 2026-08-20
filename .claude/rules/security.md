@@ -21,7 +21,15 @@ That is why `paths:` lists all nine language directories — whichever one you t
 
 ⚠️ **The JWKS minimum refetch interval defaults to 30 seconds in all nine languages** (aligned 2026-07-31). Before that it was split three ways — 10, 30 and 60 seconds — a **by-product** of PR #71 making the value configurable while leaving each language's hardcoded value in place (on the same burst of forged `kid`s, Ruby hit the IdP six times as often as Python). 30s equals Nimbus's `DEFAULT_RATE_LIMIT_MIN_INTERVAL`, which makes it **the only candidate with an external justification**.
 
-⚠️ **What dropping 60s cost.** 30s halves the key-rotation recovery window, but it also loosens the rate-limit ceiling from once per 60s to once per 30s — **twice the DoS amplification**. In a security context, do not read "the window got smaller" as "we tightened it".
+⚠️ **What dropping 60s cost.** 30s halves the key-rotation recovery window, but it also doubles how often the rate limit reopens — **twice the DoS amplification**. In a security context, do not read "the window got smaller" as "we tightened it".
+
+⚠️ **The ceiling is not "one refetch per window" everywhere.** The five languages that implement the gate themselves (python · go · rust · php · ruby) allow exactly one forced refetch per interval. **Java and Kotlin allow two**: Nimbus's `RateLimitedJWKSetSource` opens each window with one request already credited, so two pass before it starts rejecting. Measured on both — tighten each SDK's own rate-limit test to `<= 1` and it reports `실제 2` for a flood of 8 unresolved key ids. Write "no more than two" in the JVM consumer docs; the two `<lang>/README.md` files said "more than one" until this was measured.
+
+⚠️ **Do not "fix" the other seven — they were already right.** Node's test bounds hits at `<= 2`, which reads like the same defect, but tightening it to `== 1` **passes**: jose's cooldown allows exactly one. The five self-gating languages (python · go · rust · php · ruby) allow one by construction, and `.NET`'s README does not make the "one per interval" claim at all. Only the two Nimbus-backed SDKs overclaimed.
+
+⚠️ **`.NET` refetches on a bad signature too — the other eight do not.** `Microsoft.IdentityModel` treats a *recoverable* signature failure (an invalid signature, or a signature key that cannot be found) as a key-rotation signal and calls `RequestRefresh()`. It is not "any failed validation" — an `aud`/`exp` rejection does not trigger it — and it can be disabled only by setting `RefreshInterval` to its maximum, which also disables genuine rotation refresh. What bounds the damage is the same 30-second interval. The per-language detail and the "do not assert zero refetches" rule live in `.claude/rules/dotnet.md`; the consumer-facing wording is in `SECURITY.md` and `dotnet/README.md`.
+
+⚠️ **The interval is consumer-configurable in eight languages, not nine.** `.NET` exposes it on `JwtValidatorOptions` but not on `KeycloakConfig`, so a consumer going through the facade gets the 30-second default and cannot change it. Do not write "configurable in all nine".
 
 **`clockSkew` (the `exp`/`nbf` tolerance on a JWT) is the same invariant and is likewise 30 seconds** — if it grows in one language, expired tokens live longer in that language alone.
 

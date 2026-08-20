@@ -96,7 +96,7 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 
 언어별 제약은 **전부 `.claude/rules/<lang>.md`에 있다**(그 경로에서 자동 로드). 여기에는 경로와 무관하게 걸리는 것만 둔다.
 
-- ⚠️ **JWT 검증은 자체 강화 구현이다** — 알고리즘 핀닝(`none` 거부)·`iss` 정확일치·`aud` 포함검사·`exp` 필수·클록 스큐 제한·DoS-safe JWKS 재조회. 라이브러리 기본값은 9개 언어 어디서도 안전하지 않다.
+- ⚠️ **JWT 검증은 자체 강화 구현이다** — 알고리즘 핀닝(`none` 거부)·`iss` 정확일치·`aud` 포함검사·`exp` 필수·클록 스큐 제한·JWKS 재조회 rate-limit. 라이브러리 기본값은 9개 언어 어디서도 안전하지 않다.
 - ⚠️ **JWKS 재조회 최소 간격과 `clockSkew`는 9개 언어 전부 30초다 — 하나만 바꾸지 말 것.** 상세: `.claude/rules/security.md` · 가드: `scripts/test/test-security-defaults.sh`.
 - ⚠️ **보안 기본선**: 토큰/시크릿 로깅 금지 · 완전 마스킹(`***`, 접두 노출 없음) · TLS 검증 기본 on · 인메모리 토큰저장 + 교체 가능 `TokenStore`.
 - ⚠️ **시크릿 메모리 위생은 end-to-end 보장이 아니다 — 과대광고 금지.** 상세: `.claude/rules/security.md`.
