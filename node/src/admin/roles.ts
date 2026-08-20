@@ -7,6 +7,10 @@ import { call, requireFound } from './call.js'
  * 변환한다. ⚠️ API 편차: 역할은 이름으로 조회/삭제한다(`findOneByName`/`delByName`).
  */
 export class RolesResource {
+  /**
+   * @internal `AdminClient`가 조립한다 — 소비자 생성 경로가 아니다. `@internal` + `stripInternal`로
+   * 방출 `.d.ts`에서 지워, 하위 `KcAdminClient` 타입이 공개 표면에 오르지 않게 한다(§4).
+   */
   constructor(
     private readonly kc: KcAdminClient,
     private readonly realm: string,

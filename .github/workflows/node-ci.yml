@@ -28,6 +28,10 @@ jobs:
         run: npm run typecheck
       - name: Unit tests + 커버리지 게이트(로직 라인≥90 / 브랜치≥85)
         run: npm run test:unit
+      - name: 공개 타입 표면 — 하위 라이브러리 타입 누출 (§4)
+        # ⚠️ 소스가 아니라 **방출된 .d.ts** 를 본다. 소비자가 보는 것이 그것이고, tsc 가 무엇을
+        # 지우는지는 선언을 봐야 안다. 그래서 build 뒤에 돈다(가드는 dist 가 없으면 실패한다).
+        run: npm run build && node ../scripts/check-node-public-surface.mjs ..
       - name: npm audit (프로덕션 의존성 취약점 — high 이상)
         run: npm audit --audit-level=high --omit=dev
 

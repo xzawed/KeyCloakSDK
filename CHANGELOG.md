@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+### Changed
+- ⚠️ **BREAKING (Node) `JwtValidator`를 `new`로 만들 수 없습니다 — `JwtValidator.forJwksUri(...)`를 쓰세요.** 생성자가 `private`이 됐습니다. 런타임 동작은 그대로이고, 타입 수준에서만 막힙니다. 이유는 취향이 아니라 §4 은닉성입니다 — 공개 생성자가 jose의 `JWTVerifyGetKey`를 받는 바람에 방출된 `dist/jwt.d.ts`에 `from 'jose'`가 박혀 하위 라이브러리 타입이 공개 API로 새고 있었습니다. **정상 검증 경로(`kc.auth.validate(token)`)는 무변경**이고, 문서·예제·퀵스타트에 `new JwtValidator(...)`는 없었습니다(테스트만 쓰고 있었습니다).
+- ⚠️ **BREAKING (Node) admin 리소스 5종(`UsersResource` 등)의 생성자가 방출 선언에서 사라집니다.** `@internal` + `stripInternal`로 처리했습니다. 이들은 `AdminClient`가 조립하는 내부 이음매라 소비자 생성 경로가 아니었고, 그 생성자가 `KcAdminClient`를 공개 표면에 올리고 있었습니다. **`kc.admin.users.search(...)` 같은 정상 사용은 무변경**이며, 클래스 이름 자체는 계속 export합니다. .NET·Java·Kotlin·Go가 같은 이음매를 이미 `internal`/비공개로 봉인해 둔 것과 같은 처리입니다.
+- **(Node) 공개 타입 표면에 남는 하위 라이브러리 타입은 이제 문서화된 §4(b) 예외 둘뿐입니다** — admin representation 타입과 `raw()`가 돌려주는 하위 클라이언트. `scripts/check-node-public-surface.mjs`가 방출된 `.d.ts`를 훑어 이를 강제하며, Node CI의 build 뒤에 돕니다.
+
 ## [0.1.0] - 2026-08-17
 
 아홉 언어의 **첫 정식(stable) 릴리스**입니다. 아래 항목은 전부 첫 RC부터 이 릴리스까지 누적된 것이고, 그중 `⚠️ BREAKING` 셋은 **RC 라인 대비**입니다 — 정식은 이번이 처음이라 깨질 stable 소비자가 없습니다. RC를 쓰던 분만 해당하고, 셋 다 이미 게시된 RC에 들어 있어 정식으로 오면서 새로 깨지는 것은 없습니다(PHP는 `php-v0.1.0-rc.2`, Node는 `node-v0.1.0-rc.2`, Java는 `v0.1.0-RC1`).

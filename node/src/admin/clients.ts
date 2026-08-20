@@ -7,6 +7,10 @@ import { call, requireFound } from './call.js'
  * 변환한다. `id`는 클라이언트의 내부 UUID, `clientId`는 사람이 지정한 식별자다.
  */
 export class ClientsResource {
+  /**
+   * @internal `AdminClient`가 조립한다 — 소비자 생성 경로가 아니다. `@internal` + `stripInternal`로
+   * 방출 `.d.ts`에서 지워, 하위 `KcAdminClient` 타입이 공개 표면에 오르지 않게 한다(§4).
+   */
   constructor(
     private readonly kc: KcAdminClient,
     private readonly realm: string,
