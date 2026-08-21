@@ -439,14 +439,23 @@ cp -r "$FIX/." "$TMP/"
 printf '%s\n' \
   '[웹](https://example.com/nope.md)' \
   '[메일](mailto:dev@example.com)' \
-  '[앵커](#nope)' \
+  '[앵커](#fixture)' \
   '[식별자](SomeType)' \
   '[라이선스](LICENSE)' >> "$TMP/ok.md"
 assert_ok node "$GUARD" "$TMP" --strict
 OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
 assert_not_contains "$OUT" "nope.md" "http(s) dest must never be flagged"
 assert_not_contains "$OUT" "mailto:" "mailto dest must never be flagged"
-assert_not_contains "$OUT" "#nope" "pure anchor must never be flagged"
+assert_not_contains "$OUT" "링크 대상 없음: #" "pure anchor must never be flagged as a missing file"
+
+# ⚠️ 순수 앵커(`#…`)의 **소유자가 바뀌었다.** 검사 5 는 여전히 이것을 파일로 보지 않는다(위
+# 단언) — 그것이 원래 의도였다. 그런데 검사 10 이 생기면서 "같은 문서 안에 그 헤딩이 있는가"는
+# 이제 판정 가능하고, 없는 헤딩을 가리키는 앵커는 실제로 깨진 링크다. 그래서 아래를 더한다.
+# 실측: 리포지토리의 순수 앵커는 전부 성하므로 이 검사를 켜는 비용은 0 이다.
+rm -rf "$TMP" && mkdir -p "$TMP"
+cp -r "$FIX/." "$TMP/"
+printf '%s\n' '[없는 절](#no-such-heading)' >> "$TMP/ok.md"
+assert_fails node "$GUARD" "$TMP" --strict
 assert_not_contains "$OUT" "SomeType" "bare identifier without / or .md must never be flagged"
 assert_not_contains "$OUT" "LICENSE" "extensionless basename is not a path under the filter"
 
@@ -1142,6 +1151,52 @@ assert_ok node "$GUARD" "$TMP"
 printf '%s\n' '# living' '운영 문서에는 체크박스가 없어도 된다.' > "$TMP/docs/sub/a.md"
 printf '%s\n' '# map' '' '| 문서 | 상태 | 여기서만 알 수 있는 것 |' '|---|---|---|' '| [a](sub/a.md) | 운영 | 이 문서에만 있는 것을 충분히 길게 적어 둔 마지막 칸이다 |' > "$TMP/docs/README.md"
 assert_ok node "$GUARD" "$TMP"
+
+rm -rf "$TMP" && mkdir -p "$TMP"
+
+# ---- 검사 10: 링크의 `#앵커` ↔ 실제 헤딩 ----
+#
+# 검사 5는 링크 정규식이 `#` 에서 끊겨 조각을 **구조적으로** 못 본다. 아래 넷은 그 자리를
+# 지키는 동시에, 이 가드가 공허해지는 네 경로를 각각 막는다.
+# ⚠️ 파일을 `docs/` 아래에 두지 말 것 — 검사 9가 "docs/ 아래 문서가 있으면 docs/README.md
+# 지도가 있어야 한다"를 걸어, 앵커와 무관한 이유로 실패한다(처음에 그렇게 짰다가 6건이
+# 빨개졌고, 원인은 앵커가 아니었다). 픽스처 루트에 둔다.
+mk_anchor_fixture() { # $1=링크 href
+  rm -rf "$TMP" && mkdir -p "$TMP"
+  cp -r "$FIX/." "$TMP/"
+  printf '%s\n' '# target' '' '## C# / .NET' '' '본문.' > "$TMP/t.md"
+  printf '%s\n' '# src' '' "[link]($1)" > "$TMP/s.md"
+}
+
+# 정상 — `## C# / .NET` 의 GitHub 슬러그는 `c--net` 이다(구두점이 지워진 자리에 공백이 둘
+# 남아 하이픈이 둘). ⚠️ 공백을 `\s+` 로 뭉쳐 `c-net` 을 기대하면 이 줄이 깨진다.
+mk_anchor_fixture 't.md#c--net'
+assert_ok node "$GUARD" "$TMP"
+
+# 없는 앵커는 잡는다.
+mk_anchor_fixture 't.md#c-net'
+assert_fails node "$GUARD" "$TMP"
+
+# 절대 self-link 도 본다 — 언어별 README 가 레지스트리 랜딩 페이지라 상대 링크를 못 쓰고
+# 이 형태를 쓴다. 상대 링크만 보는 가드는 **정작 게시되는 쪽**을 통째로 놓친다.
+mk_anchor_fixture 'https://github.com/xzawed/KeyCloakSDK/blob/main/t.md#nope'
+assert_fails node "$GUARD" "$TMP"
+
+# 외부 URL 의 조각은 우리가 판정할 수 없다 — 오탐을 내면 안 된다(대조군).
+mk_anchor_fixture 'https://example.com/x#whatever'
+assert_ok node "$GUARD" "$TMP"
+
+# 펜스 안의 링크는 예시다 — 잡으면 안 된다(대조군).
+rm -rf "$TMP" && mkdir -p "$TMP"
+cp -r "$FIX/." "$TMP/"
+printf '%s\n' '# target' '' '## C# / .NET' > "$TMP/t.md"
+printf '%s\n' '# src' '' '```md' '[예시](t.md#does-not-exist)' '```' > "$TMP/s.md"
+assert_ok node "$GUARD" "$TMP"
+
+# 하한 — 링크를 하나도 못 뽑았는데 "불일치 0" 으로 통과하는 것이 이 부류의 공허함이다.
+mk_anchor_fixture 't.md#c--net'
+assert_fails node "$GUARD" "$TMP" --min-anchor-links=99
+assert_ok node "$GUARD" "$TMP" --min-anchor-links=1
 
 rm -rf "$TMP" && mkdir -p "$TMP"
 
