@@ -1,0 +1,23 @@
+{
+  // 타입검사 전용 — **테스트까지** 본다. 방출은 하지 않는다.
+  //
+  // ⚠️ 왜 tsconfig.json 에 `test` 를 더하지 않는가: 그쪽은 `rootDir: "src"` + `outDir: "dist"` 로
+  // 방출을 하므로, test 를 include 하면 `TS6059: File is not under rootDir` 가 13건 뜬다(실측).
+  // 즉 "테스트가 타입 오류투성이"가 아니라 **방출 설정과 검사 범위가 같은 파일에 묶여 있던 것**이
+  // 문제였다. 그래서 검사 전용 설정을 분리하고 rootDir 을 프로젝트 루트로 되돌린다.
+  //
+  // ⚠️ 이 설정이 없던 동안 실제로 가려져 있던 것(실측 17건):
+  //   - `new JwtValidator(...)` 12건 — 생성자가 `private` 이 된 뒤에도 테스트가 계속 호출했다.
+  //     vitest 는 esbuild 로 타입을 벗겨 실행하므로 런타임은 통과한다.
+  //   - `new TokenSet(...)` 5건 — 4번째 인자 `expiresAt` 이 빠져 있었다.
+  // 둘 다 타입 수준에서만 거짓이었고 어떤 게이트도 보지 못했다.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src", "test"]
+}

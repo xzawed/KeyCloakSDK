@@ -30,6 +30,20 @@ export class JwtValidator {
     private readonly opts: JwtValidatorOptions,
   ) {}
 
+  /**
+   * 주입된 키 소스로 만든다 — **테스트 전용 이음매**(로컬 JWKS로 서명 검증을 태우려면 원격
+   * URI가 아닌 키 소스가 필요하다).
+   *
+   * ⚠️ `@internal`이라 `stripInternal`이 방출 `.d.ts`에서 이 멤버를 지운다. 생성자를 `private`로
+   * 되돌린 것과 같은 이유이고(§4 — jose `JWTVerifyGetKey`가 공개 표면에 오르면 안 된다),
+   * admin 리소스 5종에 이미 쓴 처리와 동형이다. 소비자에게는 `forJwksUri`만 보인다.
+   *
+   * @internal
+   */
+  static forKeySource(keys: JWTVerifyGetKey, opts: JwtValidatorOptions): JwtValidator {
+    return new JwtValidator(keys, opts)
+  }
+
   /** 원격 JWKS URI로 검증기를 만든다. `createRemoteJWKSet`은 kid 미해결 시에만 재조회하고 cooldownDuration으로 rate-limit → 서명 위조로 인한 미인증 DoS 증폭을 차단한다. */
   static forJwksUri(jwksUri: string, opts: JwtValidatorOptions): JwtValidator {
     const keys = createRemoteJWKSet(new URL(jwksUri), {
