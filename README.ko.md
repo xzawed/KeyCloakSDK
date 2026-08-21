@@ -8,12 +8,12 @@
 
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Languages](https://img.shields.io/badge/languages-9-brightgreen)
-![Status](https://img.shields.io/badge/status-0.1.0%20(pre--1.0)-blue)
+![Status](https://img.shields.io/badge/status-pre--1.0-blue)
 ![Keycloak](https://img.shields.io/badge/Keycloak-26.6-informational)
 
 > 여기서 "다국어/polyglot"은 **프로그래밍 언어**를 뜻하며, 자연어 현지화(i18n)와는 무관합니다.
 >
-> ⚠️ **아홉 언어 전부 정식 `0.1.0`이 공개 레지스트리에 게시됐습니다** — 모든 배포는 사람 승인 게이트이고, 라인은 아직 pre-1.0입니다. 설치 명령은 [설치](#설치)에, 붙일 임시 서버는 [지금 바로 써보기](#지금-바로-써보기)에 있습니다.
+> ⚠️ **아홉 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다** — Node·Python·PHP는 `0.2.0`, 나머지 여섯은 `0.1.0`입니다. 버전은 함대가 아니라 언어별로 움직이므로, 소비자에게 보이는 변경이 있은 언어만 번호가 올라갑니다. 모든 배포는 사람 승인 게이트이고, 라인은 아직 pre-1.0입니다. 설치 명령은 [설치](#설치)에, 붙일 임시 서버는 [지금 바로 써보기](#지금-바로-써보기)에 있습니다.
 
 ---
 

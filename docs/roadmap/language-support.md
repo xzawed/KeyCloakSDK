@@ -14,7 +14,7 @@ This document defines the **language expansion strategy and priorities** for the
 
 ## step-0 — Real publish of the existing SDKs (human-gated)
 
-Before expanding to a new language, **actually publishing the 9 already-complete SDKs (Java, Python, Node, Go, .NET, PHP, Rust, Ruby, Kotlin)** was the top roadmap item, and it is now done. **All nine are now live as stable releases** — Packagist · PyPI · NuGet · crates.io · RubyGems · npm · Maven Central (Java and Kotlin) · the Go module proxy, all at `0.1.0`. Go went last on purpose: it needs no credential setup at all, but it has the weakest recovery of the nine — pushing the tag *is* the publish, the proxy cache is immutable, and the only remedy afterwards is a `retract` directive in a later release. **This axis is closed.** Each language spent a release candidate first, and each RC stays on its registry; what follows is ordinary versioning, not a first publish.
+Before expanding to a new language, **actually publishing the 9 already-complete SDKs (Java, Python, Node, Go, .NET, PHP, Rust, Ruby, Kotlin)** was the top roadmap item, and it is now done. **All nine are now live as stable releases** — Packagist · PyPI · NuGet · crates.io · RubyGems · npm · Maven Central (Java and Kotlin) · the Go module proxy. Versions are per language, not fleet-wide; the per-language numbers are in the matrix below. Go went last on purpose: it needs no credential setup at all, but it has the weakest recovery of the nine — pushing the tag *is* the publish, the proxy cache is immutable, and the only remedy afterwards is a `retract` directive in a later release. **This axis is closed.** Each language spent a release candidate first, and each RC stays on its registry; what follows is ordinary versioning, not a first publish.
 
 The procedure lives in **[DEPLOY.md](../../DEPLOY.md)** — do not copy checklists here. A previous copy in this file still said `git tag v0.1.0` / `py-v0.1.0` and "keycloak-sdk is not yet on PyPI" after those RCs had shipped. Use `scripts/release-readiness.sh [lang…]` and `scripts/release-trigger.sh <lang> <ver>` (both print only; they never push a tag).
 
@@ -39,11 +39,11 @@ The procedure lives in **[DEPLOY.md](../../DEPLOY.md)** — do not copy checklis
 | Language | Design | Impl | Unit | Integration | CI | Publish |
 |---|---|---|---|---|---|---|
 | **Java** | ✅ | ✅ | ✅ | ✅ (Testcontainers) | ✅ | 🚀 Maven Central `0.1.0` |
-| **Python** | ✅ | ✅ (+ `aio` async mirror) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 PyPI `0.1.0` |
-| **TypeScript / Node.js** | ✅ | ✅ (ESM · async-only) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 npm `0.1.0` |
+| **Python** | ✅ | ✅ (+ `aio` async mirror) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 PyPI `0.2.0` |
+| **TypeScript / Node.js** | ✅ | ✅ (ESM · async-only) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 npm `0.2.0` |
 | **Go** | ✅ | ✅ (sync + `context.Context`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 Go module proxy `0.1.0` |
 | **C# / .NET** | ✅ | ✅ (async-first `Task<T>`+`CancellationToken`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 NuGet `0.1.0` |
-| **PHP** | ✅ | ✅ (`readonly class` · exception-based) | ✅ | ✅ (docker CLI shell-out — real Keycloak 26.6) | ✅ | 🚀 Packagist `0.1.0` |
+| **PHP** | ✅ | ✅ (`readonly class` · exception-based) | ✅ | ✅ (docker CLI shell-out — real Keycloak 26.6) | ✅ | 🚀 Packagist `0.2.0` |
 | **Rust** | ✅ | ✅ (edition 2024 · async-only) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 crates.io `0.1.0` |
 | **Ruby** | ✅ | ✅ (sync-only · exception hierarchy) | ✅ | ✅ (E2E, docker CLI shell-out) | ✅ | 🚀 RubyGems `0.1.0` |
 | **Kotlin** | ✅ | ✅ (coroutines `suspend` · reuses JVM/Java stack) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 Maven Central `0.1.0` |
