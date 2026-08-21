@@ -45,6 +45,8 @@ let rootArg = null
 let STRICT = false
 let MIN_FACTS = 0
 let MIN_ANCHORS = 0
+// 검사 10의 공허함 방어 — 링크 표기가 바뀌어 추출이 0건이 되면 "불일치 0"이 통과로 보인다.
+let MIN_ANCHOR_LINKS = 0
 for (const arg of process.argv.slice(2)) {
   if (arg === '--strict') {
     STRICT = true
@@ -52,6 +54,8 @@ for (const arg of process.argv.slice(2)) {
     MIN_FACTS = Number(arg.slice('--min-facts='.length))
   } else if (/^--min-anchors=\d+$/.test(arg)) {
     MIN_ANCHORS = Number(arg.slice('--min-anchors='.length))
+  } else if (/^--min-anchor-links=\d+$/.test(arg)) {
+    MIN_ANCHOR_LINKS = Number(arg.slice('--min-anchor-links='.length))
   } else if (!arg.startsWith('--') && rootArg === null) {
     rootArg = arg
   }
@@ -634,6 +638,93 @@ function checkLinks(file, rel, lines) {
   }
 }
 
+// 검사 10 — 링크의 `#앵커`가 대상 문서의 실제 헤딩과 맞는가.
+//
+// ⚠️ 검사 5는 이것을 **구조적으로 못 본다** — 링크 정규식이 `([^)#\s]+)`라 `#`에서 끊긴다.
+// 그래서 파일 존재만 확인되고 조각은 한 번도 검증된 적이 없다(`doc-ia-sdd.md` WBS 7이
+// 그 사실을 기록해 두었으나 과제로 삼지는 않았다). CLAUDE.md는 그 위험을 명시한다 —
+// "영문 문서 헤딩을 바꾸면 `#anchor`가 바뀐다".
+//
+// ⚠️ **절대 self-link 도 본다.** 언어별 README는 레지스트리 랜딩 페이지가 되므로 상대
+// 링크를 쓸 수 없고 `https://github.com/xzawed/KeyCloakSDK/blob/main/…#frag` 형태를 쓴다
+// (실측 5건: dotnet·php·python·ruby·rust). 상대 링크만 보는 가드는 **정작 게시되는 쪽을
+// 통째로 놓친다** — 그리고 그쪽이 더 비싸다(README 수정은 새 버전을 태워야 한다).
+//
+// ⚠️ 슬러그 규칙은 사소해 보이지만 사람이 틀린다. 공백은 **하나씩** 하이픈이 된다 —
+// `## C# / .NET`은 구두점이 지워지며 공백이 둘 남아 `c--net`이다. 이것을 `\s+`로 뭉치면
+// `c-net`이 되어 멀쩡한 링크를 깨졌다고 보고한다(이 가드를 만들며 실제로 한 번 냈다).
+const SELF_BLOB = /^https:\/\/github\.com\/xzawed\/KeyCloakSDK\/blob\/[^/]+\/(.+)$/
+
+function gfmSlug(headingText) {
+  return headingText
+    .trim()
+    .replace(/`/g, '')
+    .replace(/\*\*/g, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // 링크는 표시 텍스트만 남는다
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .trim()
+    .replace(/ /g, '-') // ⚠️ 하나씩 — 위 주석 참조
+}
+
+const slugCache = new Map()
+function headingSlugs(absPath) {
+  if (slugCache.has(absPath)) return slugCache.get(absPath)
+  const set = new Set()
+  const seen = new Map()
+  let inFence = false
+  let text
+  try {
+    text = readFileSync(absPath, 'utf8')
+  } catch {
+    slugCache.set(absPath, null) // 파일 없음 — 검사 5가 소유하는 실패다
+    return null
+  }
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*```/.test(line)) { inFence = !inFence; continue }
+    if (inFence) continue
+    const m = /^(#{1,6})\s+(.*)$/.exec(line)
+    if (!m) continue
+    const base = gfmSlug(m[2])
+    const n = seen.get(base) ?? 0
+    seen.set(base, n + 1)
+    set.add(n === 0 ? base : `${base}-${n}`) // GitHub의 중복 접미(-1, -2)
+  }
+  slugCache.set(absPath, set)
+  return set
+}
+
+let anchorsChecked = 0
+function checkAnchors(file, rel, lines) {
+  let inFence = false
+  for (const line of lines) {
+    if (/^\s*```/.test(line)) { inFence = !inFence; continue }
+    if (inFence) continue
+    for (const m of line.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)) {
+      const href = m[1]
+      const hash = href.indexOf('#')
+      if (hash < 0) continue
+      const anchor = decodeURIComponent(href.slice(hash + 1))
+      if (!anchor) continue
+      const dest = href.slice(0, hash)
+      let target
+      if (dest === '') target = file // 같은 문서 안의 앵커
+      else if (SELF_BLOB.test(dest)) target = resolve(ROOT, SELF_BLOB.exec(dest)[1])
+      else if (looksLikeRepoPath(dest)) target = resolve(file, '..', dest)
+      else continue // 외부 URL — 우리가 판정할 수 없다
+      if (!/\.md$/i.test(target)) continue
+      const slugs = headingSlugs(target)
+      if (slugs === null) continue // 대상 부재는 검사 5가 보고한다
+      anchorsChecked++
+      if (!slugs.has(anchor)) {
+        errors.push(
+          `${rel} 앵커 대상 없음: ${href} — ${relative(ROOT, target).replace(/\\/g, '/')}에 그 헤딩이 없다`,
+        )
+      }
+    }
+  }
+}
+
 // "다른 8개 언어"·"선행 7개 언어"류는 전체 언어 수에 대한 주장이 아니라 "이 언어를 제외한
 // 나머지"·"이 언어보다 먼저 추가된 언어들"을 가리키는 상대 기수다 — 언어가 하나 늘 때마다
 // 이 문구도 전부 갱신해야 하는 건 아니므로(무의미한 수정 부담) 구조적으로 대조 대상이 아니다.
@@ -724,6 +815,7 @@ for (const file of walk(ROOT)) {
   const rel = relative(ROOT, file).replace(/\\/g, '/')
   const lines = readFileSync(file, 'utf8').split(/\r?\n/)
   checkLinks(file, rel, lines)
+  checkAnchors(file, rel, lines)
   let inFence = false
   for (let i = 0; i < lines.length; i++) {
     if (/^\s*```/.test(lines[i])) { inFence = !inFence; continue }
@@ -1175,6 +1267,12 @@ if (facts < MIN_FACTS) {
 if (anchors < MIN_ANCHORS) {
   errors.push(`anchors ${anchors} < --min-anchors=${MIN_ANCHORS} — 앵커 자체가 삭제되었을 수 있음`)
 }
+if (anchorsChecked < MIN_ANCHOR_LINKS) {
+  errors.push(
+    `앵커 링크 ${anchorsChecked} < --min-anchor-links=${MIN_ANCHOR_LINKS} — 검사 10이 아무것도 못 뽑았다면 ` +
+      `"불일치 0"은 통과가 아니라 무효 측정이다`,
+  )
+}
 
 for (const w of warnings) console.warn(`::warning::${w}`)
 
@@ -1183,4 +1281,4 @@ if (errors.length) {
   console.error(`문서 드리프트 ${errors.length}건`)
   process.exit(1)
 }
-console.log(`checked ${facts} facts across ${anchors} anchors`)
+console.log(`checked ${facts} facts across ${anchors} anchors · ${anchorsChecked} anchor links`)

@@ -1,8 +1,11 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=23085 max-lines=301 -->
+<!-- doc-budget: max-bytes=23125 max-lines=301 -->
 <!-- 21,750/285 → 23,085/301. 사람이 문서의 **역할**을 바꿨다: 「작업 프로세스」 6단계와 PM 역할이
      상주해야 한다는 판정(2026-08-17). 기계 검증 교환이 아니므로 그 사실을 여기 적는다.
-     상쇄로 process.md와 중복된 「하지 말 것」 2건은 걷어냈다. -->
+     상쇄로 process.md와 중복된 「하지 말 것」 2건은 걷어냈다.
+     23,085 → 23,125 (2026-08-21): 래칫 조건 (1) — 증가분 40B가 **기계 검증을 사 왔다**.
+     진입 명령에 `--min-anchor-links=23`이 붙었고, 그건 신설된 검사 10(링크 `#앵커` ↔ 실제 헤딩)의
+     공허함 방어 하한이다. 산문이 아니라 가드가 늘어난 자리라 교환이 성립한다. -->
 
 
 Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·PHP·Rust·Ruby·Kotlin)가 같은 API 모양을 각 언어 관용으로 구현한다. 인증(OIDC/OAuth2)과 관리 REST API 두 표면을 모두 덮는다. Apache-2.0 · groupId `io.github.xzawed`.
@@ -30,7 +33,7 @@ Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·P
 
 1. **언어 디렉터리에서 작업한다.** `java/`·`python/`·`node/`·`go/`·`dotnet/`·`php/`·`rust/`·`ruby/`·`kotlin/` 중 하나에 들어가면 `.claude/rules/<lang>.md`가 자동 로드된다(`paths:` 프론트매터). **그 파일이 그 언어의 빌드 명령·제약·게차의 진실 원천이다** — 이 파일에 다시 적지 않는다.
 2. **바꾸기 전에 테스트를 돌린다.** 아래 툴체인 표의 진입 명령. 통합 테스트는 Docker가 필요하다.
-3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21`.
+3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anchor-links=23`.
 4. **PR로 올린다.** `main` 직접 push 불가(룰셋 `PRIMARY`). required 체크는 `doc-facts`·`shell-exec-bits` 둘뿐이고 **언어 CI를 required에 넣으면 저장소가 잠긴다**(`paths:` 필터라 체크가 생성조차 안 된다).
 
 ### 하지 말 것
