@@ -74,8 +74,13 @@ for L in $DEPLOY_LANGS; do
     assert_ok false "$L 의 df_published_version 이 비어 있다 — 미게시 언어의 설치 스니펫 기대 버전은 사람이 정해야 한다"
     continue
   fi
+  # ⚠️ 패턴은 `0.1.0` 리터럴이었다 — 함대가 0.2.0 으로 갈리자 **0.2.x 오타를 못 보게** 됐다
+  # (기대값이 0.2.0 인데 펜스가 0.2.1 이어도 추출조차 안 된다). 라인 전체를 뽑도록 넓혔다.
+  # 실측으로 오탐이 없음을 확인하고 넓혔다: 아홉 README 의 펜스에서 `0.x.y` 로 잡히는 문자열은
+  # 전부 SDK 버전 핀이고, 다른 버전(Keycloak 26.6 · PHP 8.3 · Node 22 · fschmtt 0.42.0)은
+  # 펜스 안에 등장하지 않는다. `0.` 으로 시작하는 것만 보므로 26.x 류는 구조적으로도 안 걸린다.
   _bad="$(awk '/^```/ { f = !f; next } f' "$f" \
-    | grep -oE '0\.1\.0[A-Za-z0-9.-]*' | sort -u | grep -Fxv "$_want" || true)"
+    | grep -oE '0\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' | sort -u | grep -Fxv "$_want" || true)"
   assert_eq "" "$_bad" \
     "$L/README.md 코드펜스에 핀된 버전이 기대값($_want)과 다르다 — 소비자에게 없는 좌표를 권하게 된다"
 
@@ -239,15 +244,31 @@ done
 
 if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
   # 아홉 전부 **정식** 게시. RC 수사와 "정식 없음"은 존재해선 안 된다.
-  # ⚠️ 버전은 SSOT 파생이다(리터럴 금지). 함대가 갈리면 이 문장 자체가 거짓이므로 시끄럽게 실패한다.
-  assert_ok test -n "$fleet_ver"
-  [ -n "$fleet_ver" ] && \
+  #
+  # ---- 2026-08-21: 갈래가 셋이 됐다 — 함대가 **한 숫자로 말할 수 없게** 됐다 ----
+  #
+  # node·python·php 가 0.2.0 으로 올라가고 나머지 여섯이 0.1.0 에 남으면서, "아홉 전부 정식
+  # `X`" 라는 문장은 **참인 X 가 존재하지 않는** 상태가 됐다. 예전 코드는 여기서
+  # `assert_ok test -n "$fleet_ver"` 로 시끄럽게 죽었는데, 그건 의도된 신호였지 최종 상태가
+  # 아니다 — 언어별 독립 배포를 표방하는 리포에서 함대가 갈리는 것은 **정상**이고 영구적이다.
+  # 그래서 갈래를 하나 더 만든다. 합치는 쪽(한 숫자로 말하기)은 열 언어가 우연히 같은 번호일
+  # 때만 옳고, 그 우연은 다음 릴리스에 다시 깨진다.
+  #
+  # ⚠️ 두 갈래 모두 **버전 리터럴이 없다.** 예전에는 CLAUDE.md 줄 하나에 `0.1.0` 이 박혀 있어
+  # (이 파일이 바로 위에서 "리터럴 금지"라고 적어놓고도) 0.2.0 에서 문서와 테스트를 각각 손으로
+  # 고쳐야 했다 = SSOT 가 둘. 갈린 갈래의 문장은 **숫자를 아예 말하지 않는다** — 숫자는 표가
+  # 들고, 그 표는 아래 「현재 상태 표」 루프가 SSOT 와 대조한다.
+  if [ -n "$fleet_ver" ]; then
     claim_at README.md "Stable \`$fleet_ver\` is live for all $pub_en languages" "상단 배너"
+    claim_at CLAUDE.md "${pub_n}개 언어 전부 정식 \`$fleet_ver\`이 공개 레지스트리에 게시됐다" "현재 상태(게시 수)"
+  else
+    claim_at README.md "All $pub_en languages have shipped a stable release, and the numbers differ" "상단 배너(갈린 함대)"
+    claim_at CLAUDE.md "${pub_n}개 언어 전부 정식 릴리스를 냈고, 번호는 갈렸다" "현재 상태(갈린 함대)"
+  fi
   claim_at README.md "All $pub_en have shipped a stable release"                 "하단 서술"
   claim_at SECURITY.md "All $pub_en SDKs have shipped a stable"                  "게시 열거"
   claim_at docs/guides/getting-started.md "All $pub_en are on a public registry" "상단 배너"
 
-  claim_at CLAUDE.md "${pub_n}개 언어 전부 정식 \`0.1.0\`이 공개 레지스트리에 게시됐다" "현재 상태(게시 수)"
   claim_at CLAUDE.md "9개 중 ${pub_n}개가 정식 게시"                                    "문서 언어 규칙 절"
 
   claim_at CHANGELOG.md "지금까지 ${pub_ko} 언어 전부가"             "폴리글랏 안내(게시 수)"
@@ -354,8 +375,15 @@ ko_t="$(cat "$ROOT/README.ko.md")"
 if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
   # 두 자리를 **서로 다른 문자열**로 겨눈다 — 한쪽만 고치고 다른 쪽을 남기는 절반짜리 수정을
   # 막기 위해서다(영문 README와 같은 이유로 상단/하단이 나뉘어 있다).
-  assert_contains "$ko_t" "$pub_ko 언어 전부 정식 \`0.1.0\`이 공개 레지스트리에 게시됐습니다" \
-    "README.ko.md 상단 배너가 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
+  # ⚠️ 영문 쪽과 같은 이유로 갈래가 둘이다 — 함대가 갈리면 "전부 정식 `X`"라고 말할 X 가 없다.
+  # 여기에도 `0.1.0` 리터럴이 박혀 있었다(= SSOT 두 번째 정의 자리).
+  if [ -n "$fleet_ver" ]; then
+    assert_contains "$ko_t" "$pub_ko 언어 전부 정식 \`$fleet_ver\`이 공개 레지스트리에 게시됐습니다" \
+      "README.ko.md 상단 배너가 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
+  else
+    assert_contains "$ko_t" "$pub_ko 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다" \
+      "README.ko.md 상단 배너가 갈린 함대를 말하지 않는다(한 숫자로 말하면 거짓이다)"
+  fi
   assert_contains "$ko_t" "$pub_ko 전부 정식 릴리스를 공개 레지스트리에 게시했습니다" \
     "README.ko.md 하단 서술이 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
 elif [ "$unpub_n" -eq 0 ]; then
@@ -525,7 +553,7 @@ for L in $DEPLOY_LANGS; do
     inlang && /^### / { ins = ($0 ~ /^### 3\) Installation/) ? 1 : 0 }
     /^```/ { f = !f; next }
     inlang && ins && f { print }
-  ' "$gs" | grep -oE '0\.1\.0[A-Za-z0-9.-]*' | sort -u || true)"
+  ' "$gs" | grep -oE '0\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' | sort -u || true)"
   [ -n "$_vers" ] || continue   # 설치 명령에 버전을 안 쓰는 언어(node·rust)는 대조할 값이 없다
   body_seen=$((body_seen + 1))
   _bad="$(printf '%s\n' "$_vers" | grep -Fxv "$_want" || true)"
@@ -534,6 +562,35 @@ for L in $DEPLOY_LANGS; do
 done
 # ⚠️ 대조군 — H2 표기가 바뀌면 위 루프가 전부 `continue`로 빠져 **한 건도 안 돌고 통과**한다.
 assert_ok test "$body_seen" -ge 6
+
+# ---- language-support 상태 매트릭스의 **버전 문자열** ↔ df_published_version ----
+#
+# ⚠️ 이 표는 행 **개수**만 검사받고 있었다(게시/미게시 수). 버전은 아무도 안 봐서, node·python·
+# php 가 0.2.0 으로 올라간 뒤에도 아홉 행이 전부 `0.1.0` 인 채로 모든 가드가 초록이었다(실측).
+# 호환성 표에는 같은 검사가 이미 있었으므로, 없던 쪽이 드리프트한 것이다.
+ls_label() { case "$1" in
+  java) echo Java ;; python) echo Python ;; node) echo 'TypeScript / Node.js' ;;
+  go) echo Go ;; dotnet) echo 'C# / .NET' ;; php) echo PHP ;; rust) echo Rust ;;
+  ruby) echo Ruby ;; kotlin) echo Kotlin ;; esac; }
+
+lsup="$ROOT/docs/roadmap/language-support.md"
+ls_seen=0
+for L in $DEPLOY_LANGS; do
+  _lbl="$(ls_label "$L")"
+  # ⚠️ 라벨만으로 고르면 **다른 표의 동명 행**을 집는다 — 이 문서에는 언어별 각주 표가 따로
+  # 있고 거기에도 `| **Go** |` 가 있다(실측: Go·PHP·Rust 등 7 개가 그 행을 집어 빈 값이 나왔다).
+  # 그래서 Publish 열 표식(🚀)을 함께 요구해 상태 매트릭스 행으로 좁힌다.
+  _row="$(grep -F "| **$_lbl** |" "$lsup" | grep -m1 '🚀' || true)"
+  [ -n "$_row" ] && ls_seen=$((ls_seen + 1))
+  # 마지막 열의 `🚀 <레지스트리> \`<버전>\`` 에서 백틱 안을 뽑는다(행에 백틱이 여럿이므로 끝에서).
+  _got="$(printf '%s' "$_row" | sed -n 's/.*`\([^`]*\)` *|[^|]*$/\1/p')"
+  _want="$(df_published_version "$L")"
+  [ -n "$_want" ] || assert_ok false "$L 의 df_published_version 이 비어 있다 — 매트릭스 기대 버전은 사람이 정해야 한다"
+  assert_eq "$_want" "$_got" "language-support 매트릭스의 $_lbl 게시 버전이 SSOT와 다르다"
+done
+# ⚠️ 대조군 — 라벨 표기가 바뀌면 위 루프가 전부 "빈 값 == 빈 값"으로 조용히 통과한다.
+assert_eq "$(printf '%s\n' $DEPLOY_LANGS | wc -l | tr -d ' ')" "$ls_seen" \
+  "language-support 매트릭스에서 찾은 언어 행 수가 DEPLOY_LANGS 수와 다르다 — 라벨 표기가 바뀌었나?"
 
 # ---- 루트 README의 Install 펜스에 **핀된 버전** ----
 #
