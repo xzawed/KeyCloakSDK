@@ -4,7 +4,9 @@ Authentication (OIDC / OAuth2) and the Admin REST API for [Keycloak](https://www
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) — one API surface, isomorphic across all of them: [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`0.1.0` is on PyPI** — the first stable release. A bare `pip install keycloak-sdk` now resolves it, and pip's default skip-prereleases behaviour is back in effect, so the earlier `0.1.0rc1` no longer installs unless you ask for it by name or with `--pre`.
+> **`0.2.0` is on PyPI** — a bare `pip install keycloak-sdk` resolves it. pip skips prereleases by default, so the old `0.1.0rc1` installs only if you name it or pass `--pre`.
+>
+> ⚠️ **One breaking change since `0.1.0`, and it is narrow**: the `keycloak_sdk.jwt` module moved to `keycloak_sdk._internal.jwt`. Only code that imported `JwtValidator` **from that path directly** is affected — it was never in `__all__` and appears in no quickstart. The normal validation path, `kc.auth.validate(token)`, is unchanged. The move was structural: `py.typed` makes every module's signatures part of the public type surface, so a module under the top level was publishing joserfc's `KeySet` as part of this SDK's API.
 
 ## Requirements
 
