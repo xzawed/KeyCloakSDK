@@ -42,6 +42,23 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
     expect { admin.users.get("x") }.to raise_error(KeycloakSdk::TransportError)
   end
 
+  # ⚠️ rename은 PUT /roles/{현재 이름} + body의 **새** 이름이다. 경로를 representation에서
+  # 만들면 rename을 표현할 수 없다 — 자매 Go(#275)·PHP(#279) SDK에서 실제로 그랬고, 둘 다
+  # 이 테스트가 없어서 오래 살아남았다. 여기 구현은 처음부터 옳지만 그것을 붙잡는 것이 없었다.
+  #
+  # ⚠️ **경로가 이 예제를 지탱한다.** 병합 회귀는 경로를 새 이름으로 밀어내지 body는 건드리지
+  # 않는다(body는 어차피 새 이름이다). 자매 Go는 정반대라 body가 지탱한다 — 부류가 같다고
+  # 단언 위치를 복사하지 말 것.
+  it "addresses a role update by its current name and carries the new name in the body" do
+    stub = stub_request(:put, "https://kc.example.com/admin/realms/demo/roles/old-role")
+           .with(body: { name: "new-role" }.to_json)
+           .to_return(status: 204)
+
+    admin.roles.update("old-role", { name: "new-role" })
+
+    expect(stub).to have_been_requested.once
+  end
+
   it "exposes the raw Faraday connection as an escape hatch" do
     expect(admin.raw).to be_a(Faraday::Connection)
   end
