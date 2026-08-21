@@ -87,13 +87,13 @@
            per-property @JsonIgnoreProperties 우회, 취약범위 <2.21.5)를 모두 해소한다. keycloak-client-
            parent:26.0.10 관리값(2.21.2)보다 높게 고정하는 "picked higher" 전략(수렴 유지). 2.21.5는
            2.21.x 라인의 CVE-2026-54515 fix로, 2026-07-08 Maven Central 출시 확인 후 상향(issue #8). -->
-      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-core</artifactId><version>2.22.1</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>2.22.1</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-core</artifactId><version>2.22.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>2.22.2</version></dependency>
       <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-annotations</artifactId><version>2.22</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jdk8</artifactId><version>2.22.1</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId><version>2.22.1</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.jakarta.rs</groupId><artifactId>jackson-jakarta-rs-base</artifactId><version>2.22.1</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.module</groupId><artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId><version>2.22.1</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jdk8</artifactId><version>2.22.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId><version>2.22.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.jakarta.rs</groupId><artifactId>jackson-jakarta-rs-base</artifactId><version>2.22.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.module</groupId><artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId><version>2.22.2</version></dependency>
       <dependency><groupId>org.jboss.logging</groupId><artifactId>jboss-logging</artifactId><version>3.6.3.Final</version></dependency>
       <!-- jackson-databind 계열 6종은 CVE 대응으로 2.21.5(관리값 2.21.2보다 상향), jackson-annotations는
            별도 버전 트랙이라 2.21 유지(비취약), jboss-logging은 keycloak-client-parent:26.0.10 관리값과 일치. -->
