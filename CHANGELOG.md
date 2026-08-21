@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-21
+
+**아홉 중 셋만 올라갑니다 — Node · Python · PHP.** 나머지 여섯(Java·Kotlin·Go·Rust·Ruby·.NET)은 이번 구간에 소비자 영향 변경이 없어 `0.1.0`에 머뭅니다. 버전은 언어별로 독립이므로 번호가 갈리는 것이 정상입니다.
+
+세 언어가 함께 움직인 이유는 하나입니다: **§4(하위 라이브러리 타입은 파사드 뒤에 숨는다)를 실제로 지키지 못하던 자리를 닫았고**, 그 대가가 전부 시그니처 변경이었습니다. 셋 다 pre-1.0이고 **정상 사용 경로(`kc.auth.validate(...)` · `kc.admin.users.search(...)`)는 무변경**입니다.
+
+⚠️ **PHP를 쓰신다면 이번 것은 기능 복구입니다.** `0.1.0`의 `roles()->update(Role $role)`로는 **롤 rename을 표현할 수 없었습니다**(경로가 body에서 나와 PUT이 새 이름 쪽으로 갔습니다). 다른 여덟 언어에는 없던 결함이라, 고치는 방법이 시그니처 변경밖에 없었습니다.
+
 ### Changed
 - ⚠️ **BREAKING (PHP) `roles()->update()`가 인자를 둘 받습니다 — `update(string $name, Role $role)`.** 종전 `update(Role $role)`은 **롤 rename을 표현할 수 없었습니다**: 하위 fschmtt가 경로를 `$role->getName()`에서 만들어 경로와 body가 한 값에서 나왔고, 실측하면 PUT이 `/roles/{새 이름}`으로 나가 현재 이름은 요청 어디에도 실리지 않았습니다(존재하지 않는 롤에 대한 갱신이므로 rename이 아닙니다). 자매 8개 언어는 전부 `(이름, representation)` 두 인자라 이번 변경으로 §4 동형이 회복됩니다. 구현은 fschmtt의 **공개** 탈출구 `Keycloak::resource()`로 같은 `Command`를 경로/body 분리해 다시 냅니다 — 토큰·HTTP 클라이언트·직렬화기를 그대로 재사용하므로 **토큰 추가 발급이 없습니다**(테스트가 grant 횟수 1을 단언합니다). ⚠️ 이 우회로는 fschmtt가 `@internal`로 표시한 `CommandExecutor` 위에 서 있고, 그것을 안전하게 만드는 것은 `composer.json`의 **정확 핀 `0.42.0`** 하나뿐입니다 — 새 테스트가 실제 HTTP 스택을 태우므로 핀을 올릴 때의 드리프트 가드 역할도 합니다. 경위: [`.claude/rules/php.md`](.claude/rules/php.md).
 - ⚠️ **BREAKING (Node) `JwtValidator`를 `new`로 만들 수 없습니다 — `JwtValidator.forJwksUri(...)`를 쓰세요.** 생성자가 `private`이 됐습니다. 런타임 동작은 그대로이고, 타입 수준에서만 막힙니다. 이유는 취향이 아니라 §4 은닉성입니다 — 공개 생성자가 jose의 `JWTVerifyGetKey`를 받는 바람에 방출된 `dist/jwt.d.ts`에 `from 'jose'`가 박혀 하위 라이브러리 타입이 공개 API로 새고 있었습니다. **정상 검증 경로(`kc.auth.validate(token)`)는 무변경**이고, 문서·예제·퀵스타트에 `new JwtValidator(...)`는 없었습니다(테스트만 쓰고 있었습니다).
