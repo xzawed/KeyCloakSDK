@@ -43,7 +43,7 @@ describe('JwtValidator (강화 검증)', () => {
 
   it('정상 RS256 토큰 통과 + subject/audience/issuer/expiresAt/issuedAt 반환', async () => {
     const t = await sign({ sub: 'user1', aud: 'my-client' })
-    const v = await new JwtValidator(keys, OPTS).validate(t)
+    const v = await JwtValidator.forKeySource(keys, OPTS).validate(t)
     expect(v.subject).toBe('user1')
     expect(v.audience).toEqual(['my-client'])
     expect(v.issuer).toBe(ISS)
@@ -55,20 +55,20 @@ describe('JwtValidator (강화 검증)', () => {
 
   it('다중 aud 배열 — 포함검사로 통과', async () => {
     const t = await sign({ sub: 'u', aud: ['my-client', 'realm-management'] })
-    const v = await new JwtValidator(keys, OPTS).validate(t)
+    const v = await JwtValidator.forKeySource(keys, OPTS).validate(t)
     expect(v.audience).toEqual(['my-client', 'realm-management'])
   })
 
   it('기대 aud 미포함 → KeycloakTokenValidationError', async () => {
     const t = await sign({ sub: 'u', aud: 'other-client' })
-    await expect(new JwtValidator(keys, OPTS).validate(t)).rejects.toBeInstanceOf(
+    await expect(JwtValidator.forKeySource(keys, OPTS).validate(t)).rejects.toBeInstanceOf(
       KeycloakTokenValidationError,
     )
   })
 
   it('잘못된 issuer → 거부', async () => {
     const t = await sign({ sub: 'u', aud: 'my-client' }, 'https://evil.example.com/realms/test')
-    await expect(new JwtValidator(keys, OPTS).validate(t)).rejects.toBeInstanceOf(
+    await expect(JwtValidator.forKeySource(keys, OPTS).validate(t)).rejects.toBeInstanceOf(
       KeycloakTokenValidationError,
     )
   })
@@ -81,7 +81,7 @@ describe('JwtValidator (강화 검증)', () => {
       .setIssuedAt(now - 1000)
       .setExpirationTime(now - 100)
       .sign(priv)
-    await expect(new JwtValidator(keys, OPTS).validate(t)).rejects.toBeInstanceOf(
+    await expect(JwtValidator.forKeySource(keys, OPTS).validate(t)).rejects.toBeInstanceOf(
       KeycloakTokenValidationError,
     )
   })
@@ -95,14 +95,14 @@ describe('JwtValidator (강화 검증)', () => {
       .setIssuer(ISS)
       .setIssuedAt()
       .sign(priv)
-    await expect(new JwtValidator(keys, OPTS).validate(t)).rejects.toBeInstanceOf(
+    await expect(JwtValidator.forKeySource(keys, OPTS).validate(t)).rejects.toBeInstanceOf(
       KeycloakTokenValidationError,
     )
   })
 
   it('알고리즘 핀 위반(허용 목록 밖) → 거부', async () => {
     const t = await sign({ sub: 'u', aud: 'my-client' })
-    const strict = new JwtValidator(keys, { ...OPTS, allowedAlgs: ['ES256'] })
+    const strict = JwtValidator.forKeySource(keys, { ...OPTS, allowedAlgs: ['ES256'] })
     await expect(strict.validate(t)).rejects.toBeInstanceOf(KeycloakTokenValidationError)
   })
 
@@ -121,11 +121,11 @@ describe('JwtValidator (강화 검증)', () => {
       iat: now,
       exp: now + 300,
     })}.`
-    await expect(new JwtValidator(keys, OPTS).validate(unsigned)).rejects.toBeInstanceOf(
+    await expect(JwtValidator.forKeySource(keys, OPTS).validate(unsigned)).rejects.toBeInstanceOf(
       KeycloakTokenValidationError,
     )
     // 'none'을 명시적으로 허용해도 뚫리지 않는다 — 설정 실수에 대한 심층방어.
-    const permissive = new JwtValidator(keys, { ...OPTS, allowedAlgs: ['RS256', 'none'] })
+    const permissive = JwtValidator.forKeySource(keys, { ...OPTS, allowedAlgs: ['RS256', 'none'] })
     await expect(permissive.validate(unsigned)).rejects.toBeInstanceOf(KeycloakTokenValidationError)
   })
 
@@ -139,13 +139,13 @@ describe('JwtValidator (강화 검증)', () => {
       .setIssuedAt()
       .setExpirationTime('5m')
       .sign(new TextEncoder().encode(pubPem))
-    await expect(new JwtValidator(keys, OPTS).validate(forged)).rejects.toBeInstanceOf(
+    await expect(JwtValidator.forKeySource(keys, OPTS).validate(forged)).rejects.toBeInstanceOf(
       KeycloakTokenValidationError,
     )
     // alg 핀이 HS256을 허용하도록 잘못 구성되어도 뚫리지 않아야 한다 — 키 소스가 RSA JWKS라
     // HMAC 검증에 쓸 대칭키가 없기 때문이다. 이 두 번째 단언이 없으면 이 테스트는 alg 핀만
     // 확인하는 셈이라 '혼동 공격 방어'라는 이름값을 못 한다.
-    const permissive = new JwtValidator(keys, { ...OPTS, allowedAlgs: ['RS256', 'HS256'] })
+    const permissive = JwtValidator.forKeySource(keys, { ...OPTS, allowedAlgs: ['RS256', 'HS256'] })
     await expect(permissive.validate(forged)).rejects.toBeInstanceOf(KeycloakTokenValidationError)
   })
 

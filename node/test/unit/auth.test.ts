@@ -299,7 +299,7 @@ describe('validate — expectedAudience', () => {
   const authWithLocalJwks = (input: KeycloakConfigInput): AuthClient => {
     const spy = vi
       .spyOn(JwtValidator, 'forJwksUri')
-      .mockImplementation((_uri, opts) => new JwtValidator(keys, opts))
+      .mockImplementation((_uri, opts) => JwtValidator.forKeySource(keys, opts))
     try {
       return new AuthClient(defineConfig(input))
     } finally {
