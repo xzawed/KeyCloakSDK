@@ -4,7 +4,9 @@ A TypeScript SDK for [Keycloak](https://www.keycloak.org/) covering both **Authe
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .NET · PHP · Rust · Ruby · Kotlin) — idiomatic in each language, isomorphic across all of them. Monorepo: <https://github.com/xzawed/KeyCloakSDK>
 
-> **`0.1.0` is on npm** — the first stable release, and it now holds the `latest` dist-tag. That matters here: npm had assigned `latest` to this package's first version (`0.1.0-rc.2`) regardless of `--tag` and then refused to let the tag be removed, so until `0.1.0` shipped a bare install handed you an RC. It no longer does. The `rc` tag still points at `0.1.0-rc.2`.
+> **`0.2.0` is on npm** and holds the `latest` dist-tag, so a bare install resolves it. (The `rc` tag still points at `0.1.0-rc.2` — npm assigned `latest` to this package's first version regardless of `--tag` and then refused to let that tag be removed, which is why the `rc` label lingers.)
+>
+> ⚠️ **Two breaking changes since `0.1.0`, both at the type level only** — the runtime behaviour is unchanged and **the normal paths (`kc.auth.validate(token)`, `kc.admin.users.search(...)`) are untouched**. (1) `JwtValidator` can no longer be built with `new` — use `JwtValidator.forJwksUri(...)`. (2) The five admin resource classes no longer expose their constructors in the emitted declarations; `AdminClient` assembles them, and they were never a consumer construction path. Both existed because the constructors were putting `jose` and `@keycloak/keycloak-admin-client` types onto this package's public surface.
 
 ## Requirements
 
@@ -19,10 +21,10 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .
 npm install @xzawed/keycloak-sdk
 ```
 
-A bare install now resolves `0.1.0`, and so does a `^0.1.0` range — that range used to fail with `ETARGET`, because SemVer ranges exclude prereleases and a prerelease was all that existed. Pin the exact version if you would rather not follow `latest`:
+A bare install resolves `0.2.0`, and so does a `^0.2.0` range. ⚠️ **`^0.1.0` does not pick it up** — under SemVer a caret below `1.0.0` is locked to the minor, so `^0.1.0` stays on the `0.1.x` line. That is the correct behaviour for a line with breaking changes in it; move the range deliberately. Pin the exact version if you would rather not follow `latest`:
 
 ```bash
-npm install @xzawed/keycloak-sdk@0.1.0
+npm install @xzawed/keycloak-sdk@0.2.0
 ```
 
 ## Quickstart
