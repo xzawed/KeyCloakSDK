@@ -5,6 +5,7 @@ paths:
   - "harness/install/consume/ruby*"
   - ".github/workflows/ruby-*.yml"
 ---
+<!-- doc-budget: max-bytes=6305 -->
 
 # Ruby rules
 

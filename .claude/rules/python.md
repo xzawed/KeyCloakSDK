@@ -5,6 +5,7 @@ paths:
   - "harness/install/consume/python*"
   - ".github/workflows/python-*.yml"
 ---
+<!-- doc-budget: max-bytes=4430 -->
 
 # Python rules
 

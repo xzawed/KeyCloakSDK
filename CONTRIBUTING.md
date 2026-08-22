@@ -1,4 +1,5 @@
 # Contribution Guide (CONTRIBUTING)
+<!-- doc-budget: max-bytes=15838 -->
 
 This is the **single source of truth for the verification workflow** across all nine language SDKs
 (Java · Python · Node · Go · C#/.NET · PHP · Rust · Ruby · Kotlin). It covers the gates you must

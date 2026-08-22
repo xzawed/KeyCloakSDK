@@ -6,6 +6,7 @@ paths:
   - "harness/install/consume/dotnet/**"
   - ".github/workflows/dotnet-*.yml"
 ---
+<!-- doc-budget: max-bytes=7064 -->
 
 # C#/.NET rules
 

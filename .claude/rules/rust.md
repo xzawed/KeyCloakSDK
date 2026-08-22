@@ -5,6 +5,7 @@ paths:
   - "harness/install/consume/rust*"
   - ".github/workflows/rust-*.yml"
 ---
+<!-- doc-budget: max-bytes=8645 -->
 
 # Rust rules
 

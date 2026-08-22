@@ -5,6 +5,7 @@ paths:
   - "harness/**"
   - "DEPLOY.md"
 ---
+<!-- doc-budget: max-bytes=8037 -->
 
 # CI · release · harness rules
 

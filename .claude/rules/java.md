@@ -4,6 +4,7 @@ paths:
   - "harness/apps/java/**"
   - "harness/install/consume/java*"
 ---
+<!-- doc-budget: max-bytes=5788 -->
 
 # Java rules
 

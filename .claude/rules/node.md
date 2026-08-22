@@ -5,6 +5,7 @@ paths:
   - "harness/install/consume/node*"
   - ".github/workflows/node-*.yml"
 ---
+<!-- doc-budget: max-bytes=6255 -->
 
 # Node rules
 

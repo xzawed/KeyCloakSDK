@@ -5,6 +5,7 @@ paths:
   - "harness/install/consume/go*"
   - ".github/workflows/go-*.yml"
 ---
+<!-- doc-budget: max-bytes=6056 -->
 
 # Go rules
 
