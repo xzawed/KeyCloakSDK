@@ -5,7 +5,7 @@ paths:
   - "harness/install/consume/python*"
   - ".github/workflows/python-*.yml"
 ---
-<!-- doc-budget: max-bytes=4430 -->
+<!-- doc-budget: max-bytes=4643 -->
 
 # Python rules
 
@@ -27,6 +27,8 @@ cd python && "$PY" -m build                                            # release
 - The package `keycloak_sdk` (distribution name `keycloak-sdk`) ships PEP 561 `py.typed`.
 - ⚠️ **`py.typed` makes every module's signatures part of the public type surface, `__all__` or not.** Python has no `internal`, so the only structural way to keep a foreign type out of the consumer API is to put the module under `_internal/` — which is what `secrets`, `redirects` and `jwt` do. ⚠️ **Do not hide a foreign type by widening the annotation to `Any`.** Measured on `JwtValidator.validate(token, key_set)`: with the real `KeySet`, passing a wrong type is **2 mypy errors**; with `Any` it is **0**. That trades a working check for a cosmetic one, and `strict` does not warn about it, so the loss is invisible.
 - ⚠️ **The version constant lives in the manifest only — never keep a second copy.** `__version__` is derived from `importlib.metadata`. A hardcoded value in `__init__.py` once fell behind `pyproject.toml`, so **the published wheel reported its own version wrongly** — and the smoke test was green throughout, because it compared against that same constant.
+
+- ⚠️ **`pip-audit` exits 1 even when it merely skips an editable install** — feed it `pip freeze --exclude-editable` + `-r` instead. (This lived in `ci.md`, which is not loaded when you work in `python/`.)
 
 ## Gotchas
 

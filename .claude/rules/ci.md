@@ -5,7 +5,7 @@ paths:
   - "harness/**"
   - "DEPLOY.md"
 ---
-<!-- doc-budget: max-bytes=8037 -->
+<!-- doc-budget: max-bytes=7770 -->
 
 # CI · release · harness rules
 
@@ -36,8 +36,6 @@ The definitions are `.github/rulesets/*.json` (the committed JSON is the SSOT); 
 ## Local ↔ CI divergence
 
 - The formatters flag an entire Windows CRLF working tree (Go `gofmt` · Node `prettier` · PHP `cs-fixer`) — normalise the changed files to LF and check again.
-- `pip-audit` exits 1 even when it skips an editable install → `pip freeze --exclude-editable` + `-r`.
-- **java's `jacoco:check` is bound to the `verify` phase, so `mvn test` does not verify the coverage gate at all** — always `mvn -pl … -am verify -DskipITs`.
 - SonarCloud's "0% Coverage on New Code" is fed by Kotlin kover alone, so it fails on every non-Kotlin PR (non-blocking).
 
 ## Harness
