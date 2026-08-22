@@ -33,7 +33,7 @@ config = KeycloakConfig(
     client_secret="changeme",  # load the real value from an env var / secrets manager
 )
 
-# The `with` block cleans up the admin and auth sessions on exit.
+# The `with` block closes the auth session on exit (AdminClient owns no session, so its close() is a no-op).
 with KeycloakClient.create(config) as kc:
     # 1) Issue a client-credentials token. repr(TokenSet) masks every token value.
     token = kc.auth.client_credentials_token()

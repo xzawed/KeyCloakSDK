@@ -41,7 +41,7 @@ fun main() = runBlocking {
         clientSecret = "changeme".toCharArray(), // load from an env var / secret manager
     )
 
-    // use { }: close() releases the auth resources and, if used, the admin client.
+    // use { }: close() releases the admin client if it was created (AuthClient owns no closeable resource).
     KeycloakClient.create(config).use { client ->
         // 1. Get a token (client-credentials grant). TokenSet.toString() masks the tokens as "***".
         val token = client.auth.clientCredentialsToken()
