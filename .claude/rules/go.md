@@ -5,7 +5,10 @@ paths:
   - "harness/install/consume/go*"
   - ".github/workflows/go-*.yml"
 ---
-<!-- doc-budget: max-bytes=6056 -->
+<!-- doc-budget: max-bytes=6263 -->
+<!-- 6,056 → 6263 (2026-08-23): 래칫 조건 (1). 기각 사유가 목표보다 좁게 적혀 있어
+     조건 커버리지를 영영 안 재게 만들고 있었다. 정정하면서 실측 수치와 그 결과 닫은 테스트 이름을 넣었다 —
+     그 문장이 없으면 다음 사람이 같은 오해로 되돌린다. -->
 
 # Go rules
 
@@ -24,7 +27,7 @@ gofmt -l go                                                  # no output means O
 
 - A single test: `go -C go test -run TestValidateValidToken ./...`
 - Coverage (logic statements ≥90, network boundary omitted): `go test ./... -coverprofile=cover.out`, then drop the boundary with `grep -vE '/(auth|admin|admin_users|admin_clients|admin_realms|admin_roles|admin_groups|client)\.go:'` and read `go tool cover -func`. Measured 95.7%.
-- ⚠️ **There is no branch-coverage gate here, and there cannot be — the toolchain has no branch mode.** `go test -covermode` accepts `set`, `count` and `atomic` only; `-covermode=branch` is rejected as an invalid value. Six of the nine SDKs gate branches, so the gap looks like an omission and gets "fixed" every so often. It is not one. **Revival condition**: the Go toolchain grows a branch mode. Note what is actually missing: Go instruments basic blocks, so both arms of an `if` are already statements — what no percentage here can see is **condition coverage** (`&&` / `||`).
+- ⚠️ **There is no branch-coverage *gate* — but condition coverage is measurable, and it was measured.** `go test -covermode` takes `set`/`count`/`atomic` only, so there is no percentage comparable to the JaCoCo/Kover 85 the other six gate against; that is why there is no gate. It is **not** a reason to leave `&&`/`||` unmeasured. `gobco` instruments conditions — measured on this tree: 69 one-sided conditions, 14 on the JWT/token path, and one was a real gap (the JWKS rate-limit window was only ever tested **while it held**, never after it elapsed; `TestValidateRefetchAllowedAgainAfterRateLimitWindowElapses` closes it). **Revival condition** for a *gate*: a condition-coverage percentage comparable with the other six. Until then run `gobco` by hand when you touch security code.
 - ⚠️ **A rename test has to assert the body, not just the path** — `TestRolesUpdateAddressesByCurrentNameAndCarriesNewNameInBody` in `admin_test.go` is that test, and it exists because the hazard above was otherwise uncaught: the E2E puts `"e2e-role"` in the path *and* in the body, so injecting `role.Name = &name` still passed. Measured with the injection in place: asserting the path alone **passes**; asserting the body fails with `got old-role`. gocloak already puts the `name` argument on the path, so the path can never disagree — the body is the only thing the injection breaks. The test needs no login round-trip (`UpdateRealmRole` takes the bearer string), and its handler answers 404 by default so a wrong path cannot slip through on a lenient 2xx.
 - ⚠️ **The minimum Go is 1.25** (required by `golang.org/x/oauth2` v0.36 — lower `go.mod` and `go mod tidy` puts it back). The CI matrix is 1.25 and 1.26. `golangci-lint` is CI-only; locally `go vet` and `gofmt` stand in for it.
 - **There is no registry — the `go/v*` tag *is* the release** (`proxy.golang.org` caches it automatically). Consumers run `go get github.com/xzawed/KeyCloakSDK/go@vX.Y.Z`.
