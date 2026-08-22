@@ -17,6 +17,13 @@
 // 한 줄도 실행하지 않고 통과할 수는 없다) — 오탐 0의 판별자다.
 //
 // harness/suites/{ruby,rust,dotnet}.sh의 "측정 실패를 0으로 접지 않는다" 원칙과 같은 계열이다.
+//
+// ⚠️ **이것은 언어 빌드 설정을 읽는 교차언어 대조기가 아니다 — `.NET` 전용 게이트다.** 입력은
+// cobertura XML 하나이고 비교 대상은 CLI로 받은 `--min-line`/`--min-branch`뿐이다. `pyproject.toml`도
+// `pom.xml`도 읽지 않으므로 **다른 언어 CI에 그대로 배선해도 아무것도 대조하지 않는다.** 나머지 여덟은
+// G3 임계값을 각자의 네이티브 장치로 집행한다 — jacoco `check`(Java) · vitest `thresholds`(Node) ·
+// `fail_under`(Python) · `koverVerify`(Kotlin) · SimpleCov(Ruby) · 워크플로 내 산술(Go·PHP·Rust).
+// 문서 둘이 이 스크립트를 "커버리지 설정을 기계 대조한다"로 적고 있었다(PR #296에서 정정).
 import fs from "node:fs";
 import path from "node:path";
 

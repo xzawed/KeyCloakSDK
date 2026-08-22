@@ -101,7 +101,7 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 
 - ⚠️ **JWT 검증은 자체 강화 구현이다** — 알고리즘 핀닝(`none` 거부)·`iss` 정확일치·`aud` 포함검사·`exp` 필수·클록 스큐 제한·JWKS 재조회 rate-limit. 라이브러리 기본값은 9개 언어 어디서도 안전하지 않다.
 - ⚠️ **JWKS 재조회 최소 간격과 `clockSkew`는 9개 언어 전부 30초다 — 하나만 바꾸지 말 것.** 상세: `.claude/rules/security.md` · 가드: `scripts/test/test-security-defaults.sh`.
-- ⚠️ **보안 기본선**: 토큰/시크릿 로깅 금지 · 완전 마스킹(`***`, 접두 노출 없음) · TLS 검증 기본 on · 인메모리 토큰저장 + 교체 가능 `TokenStore`.
+- ⚠️ **보안 기본선**: 토큰/시크릿 로깅 금지 · 완전 마스킹(`***`, 접두 노출 없음) · TLS 검증 기본 on · 인메모리 토큰저장.
 - ⚠️ **시크릿 메모리 위생은 end-to-end 보장이 아니다 — 과대광고 금지.** 상세: `.claude/rules/security.md`.
 - ⚠️ **admin-client와 Keycloak 서버는 독립 버전 트랙이다** — 서버 라인과 같은 번호의 admin-client는 없다. `representation` 필드는 실서버로 검증한다.
 - ⚠️ **Maven Central은 Central Portal 경로만**(구 OSSRH 종료). 워크플로 초록 ≠ 게시 — Publish 후에도 전파 지연이 있으니 **404로 실패를 결론내지 않는다**(Java·Kotlin 공통).

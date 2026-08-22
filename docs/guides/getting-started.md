@@ -156,7 +156,7 @@ config = KeycloakConfig(
     client_secret="changeme",  # load the real value from an env var / secrets manager
 )
 
-# with block: __exit__ cleans up admin + auth sessions too.
+# with block: __exit__ closes the auth session (AdminClient owns no session, so its close() is a no-op).
 with KeycloakClient.create(config) as kc:
     # 1) Issue a client-credentials token. Never log the raw value — mask it.
     token = kc.auth.client_credentials_token()
@@ -233,7 +233,7 @@ try {
   const userId = await admin.users.create({ username: 'alice', enabled: true })
   console.log(`created user_id=${userId}`)
 } finally {
-  await client.close() // clean up admin + auth resources. Also possible via `await using` (Symbol.asyncDispose).
+  await client.close() // close protocol; both halves are no-ops today (global `fetch` holds no connections). Also possible via `await using` (Symbol.asyncDispose).
 }
 ```
 
@@ -649,7 +649,7 @@ fun main() = runBlocking {
         clientSecret = "changeme".toCharArray(), // load the real value from an env var / secrets manager (toString is auto-masked)
     )
 
-    // use { }: close() cleans up admin + auth resources too.
+    // use { }: close() releases the admin client if it was created (AuthClient owns no closeable resource).
     KeycloakClient.create(config).use { client ->
         // 1) Issue a token via the client-credentials grant. TokenSet.toString() masks access/refresh tokens as "***".
         val token = client.auth.clientCredentialsToken()

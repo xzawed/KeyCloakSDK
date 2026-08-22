@@ -55,7 +55,7 @@ try {
   const users = await admin.users.search(undefined, 0, 10)
   console.log(`users=${users.map((u) => u.username).join(', ')}`)
 } finally {
-  await client.close() // cleans up admin + auth resources
+  await client.close() // close protocol; both halves are no-ops today (global `fetch` holds no connections)
 }
 ```
 
