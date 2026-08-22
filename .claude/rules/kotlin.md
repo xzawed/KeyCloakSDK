@@ -6,6 +6,7 @@ paths:
   - "harness/install/consume/kotlin-app/**"
   - ".github/workflows/kotlin-*.yml"
 ---
+<!-- doc-budget: max-bytes=8455 -->
 
 # Kotlin rules
 

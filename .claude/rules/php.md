@@ -5,6 +5,7 @@ paths:
   - "harness/install/consume/php*"
   - ".github/workflows/php-*.yml"
 ---
+<!-- doc-budget: max-bytes=7155 -->
 
 # PHP rules
 

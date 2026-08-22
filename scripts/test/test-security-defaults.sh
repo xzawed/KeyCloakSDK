@@ -120,6 +120,20 @@ sd_expect="$SD_EXPECT"
 sd_code_axis "clock skew" sd_skew
 sd_skew_expect="$SD_EXPECT"
 
+# ⚠️ **일치만으로는 부족하다 — 값 자체를 핀한다.** 위 축은 "아홉이 서로 같은가"만 본다. 그래서
+# 아홉이 **함께** 60으로 움직이면 이 가드는 초록이고, 문서 축도 코드에서 뽑은 값을 쓰므로 함께
+# 따라간다. 즉 종전에는 리포지토리 어디에서도 `30`이라는 숫자를 지키는 곳이 없었다(리터럴 30은
+# 주석에만 있었다). CLAUDE.md 는 "아홉 전부 30초"라 말하며 **이 파일을 가드로 지목**하고 있었다.
+#
+# 30 은 측정이 아니라 **정책 제약**이다 — Nimbus 의 `DEFAULT_RATE_LIMIT_MIN_INTERVAL` 과 같게
+# 고른 보안 결정이고 근거는 `.claude/rules/security.md` 가 소유한다. 그러므로 규칙이 옳고
+# 가드가 그것을 집행해야 한다. 값을 바꾸려면 **이 줄과 그 문서를 함께** 고쳐야 한다.
+SD_POLICY=30
+assert_eq "$SD_POLICY" "$sd_expect" \
+  "JWKS 재조회 기본값이 정책값($SD_POLICY)과 다르다 — 아홉이 함께 움직였어도 정책이 바뀐 것은 아니다"
+assert_eq "$SD_POLICY" "$sd_skew_expect" \
+  "clock skew 기본값이 정책값($SD_POLICY)과 다르다 — 아홉이 함께 움직였어도 정책이 바뀐 것은 아니다"
+
 # ---------------------------------------------------------------------------
 # 1b) nonce 축 — 아홉 언어 auth 소스에 생성·검증이 있는가
 # ---------------------------------------------------------------------------
@@ -295,5 +309,33 @@ sd_no_literal ruby ruby/lib/keycloak_sdk/jwks_store.rb 'def initialize(jwks_url:
 # 있고, 두 자리가 갈리면 그 경로에서만 만료된 토큰이 더 오래 통과한다. 값은 아직 갈리지 않았지만
 # (둘 다 30) JWKS가 10.0/30.0으로 갈린 것과 **똑같은 모양**이라 같은 방식으로 닫았다.
 sd_no_literal ruby-skew ruby/lib/keycloak_sdk/jwt_validator.rb 'algorithms: ["RS256"], clock_skew:'
+
+# ---------------------------------------------------------------------------
+# 4) 소유자 문서 축 — 이 값을 **선언하는** 두 문서
+# ---------------------------------------------------------------------------
+#
+# ⚠️ 위 문서 축(`SD_DOCS`)은 **소비자 문서만** 겨눈다. 그건 옳은 스코프였지만 구멍이 하나
+# 있었다: 이 불변식을 선언하는 `CLAUDE.md` 와 `.claude/rules/security.md` 는 그 목록에 없다.
+# 그래서 아홉 소비자 사본은 검사받고, **정작 규칙의 소유자 둘은 아무도 안 봤다.**
+# (CLAUDE.md 는 그 줄에서 이 파일을 자기 가드로 지목까지 하고 있었다.)
+#
+# ⚠️ 파일 상단이 제외한 것은 `docs/governance/` 같은 **기록** 문서다. 이 둘은 기록이 아니라
+# 상주 규칙이고, 값이 어긋나면 그건 이력이 아니라 드리프트다. 그래서 여기서 정책값과 대조한다.
+sd_owner_axis() { # $1=파일 $2=값을 말하는 줄의 정규식
+  _f="$ROOT/$1"
+  _exists=1; [ -f "$_f" ] && _exists=0
+  assert_eq "ok" "$(ok_if "$_exists" MISSING)" "소유자 문서 $1 이 없다 — 경로가 바뀌었나?"
+  [ -f "$_f" ] || return 0
+  # 그 값을 말하는 줄만 뽑아, 정책값을 **자릿수 경계로** 담고 있는지 본다(`300` 이 `30` 으로
+  # 읽히지 않도록 — 위 문서 축이 같은 이유로 겪은 부류다).
+  _lines="$(grep -E "$2" "$_f" || true)"
+  _n="$(printf '%s\n' "$_lines" | grep -c . || true)"
+  assert_ok test "$_n" -ge 1
+  _bad="$(printf '%s\n' "$_lines" | grep -vE "(^|[^0-9])$SD_POLICY([^0-9]|$)" || true)"
+  assert_eq "" "$_bad" "$1 이 정책값 $SD_POLICY 을 말하지 않는 줄로 이 불변식을 서술한다"
+}
+sd_owner_axis "CLAUDE.md" 'JWKS 재조회 최소 간격'
+sd_owner_axis ".claude/rules/security.md" 'JWKS minimum refetch interval defaults'
+sd_owner_axis ".claude/rules/security.md" 'is the same invariant and is likewise'
 
 assert_report

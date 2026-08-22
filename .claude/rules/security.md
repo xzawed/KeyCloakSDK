@@ -10,6 +10,7 @@ paths:
   - "rust/**"
   - "ruby/**"
 ---
+<!-- doc-budget: max-bytes=4824 -->
 
 # Cross-language security invariants
 

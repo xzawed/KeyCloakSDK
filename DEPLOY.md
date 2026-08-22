@@ -1,4 +1,5 @@
 # Deployment Guide (DEPLOY)
+<!-- doc-budget: max-bytes=76070 -->
 
 All nine language SDKs have a **tag-driven release CI** wired up, and every one of them has published at least once. ⚠️ **This document deliberately does not state what is live right now.** That is a fact with three independent axes — how many languages, on which channel, at which version — and a snapshot pasted here rots on all three while reading correct on one. The authority is `scripts/lib/deploy-facts.sh`, and the way to ask is `./scripts/release-readiness.sh --version <X.Y.Z>` (§0). What this file owns is the **procedure**: which tag, which manifest, which secret, which gate — plus what each *named historical tag* proved (§5, §7). Actual deployment is a human-gated approval step triggered **only when a human pushes a tag**, and the prerequisites below (accounts, keys, tokens) can only be performed by the repository owner.
 

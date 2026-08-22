@@ -5,16 +5,16 @@ paths:
   - "harness/install/consume/ruby*"
   - ".github/workflows/ruby-*.yml"
 ---
+<!-- doc-budget: max-bytes=6305 -->
 
 # Ruby rules
 
 ## Toolchain
 
-Portable install at `${KCSDK_TOOLS:-$HOME/tools}/ruby`. Development on 3.4; `required_ruby_version >= 3.2` (CI runs 3.2, 3.3 and 3.4).
+System install — ask `node scripts/doctor.mjs ruby` where it is rather than assuming a path (⚠️ this line said `${KCSDK_TOOLS:-$HOME/tools}/ruby`, which does not exist on the development machine). Development on 3.4; `required_ruby_version >= 3.2` (CI runs 3.2, 3.3 and 3.4).
 
 ```bash
-export PATH="${KCSDK_TOOLS:-$HOME/tools}/ruby/bin:$PATH"
-cd ruby && bundle install
+cd ruby && bundle install   # ruby 는 PATH 에 있다. 없으면 `node scripts/doctor.mjs ruby`
 cd ruby && bundle exec rspec                    # unit + coverage gate 90 lines / 85 branches. No Docker
 cd ruby && RUN_INTEGRATION=1 bundle exec rspec spec/integration --tag integration   # needs Docker (KC 26.6)
 cd ruby && bundle exec rubocop

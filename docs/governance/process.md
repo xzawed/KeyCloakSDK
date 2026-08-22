@@ -1,4 +1,5 @@
 # 작업 프로세스 — 기획부터 검증까지
+<!-- doc-budget: max-bytes=17703 -->
 
 <!-- doc-status: living -->
 

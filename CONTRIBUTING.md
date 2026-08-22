@@ -1,4 +1,5 @@
 # Contribution Guide (CONTRIBUTING)
+<!-- doc-budget: max-bytes=15838 -->
 
 This is the **single source of truth for the verification workflow** across all nine language SDKs
 (Java · Python · Node · Go · C#/.NET · PHP · Rust · Ruby · Kotlin). It covers the gates you must
@@ -10,7 +11,7 @@ pass before merging, where tests go, and the PR checklist.
 | Full command sheet for one language (single-test, coverage, lint, gotchas) | [`.claude/rules/<lang>.md`](.claude/rules/) |
 | Architecture, cross-language contract, dependency choices | [CLAUDE.md](CLAUDE.md) |
 | Release / publish procedure | [DEPLOY.md](DEPLOY.md) |
-| Verification history | [docs/governance/](docs/governance/) |
+| How we work (phases · WBS · gates) | [docs/governance/process.md](docs/governance/process.md) |
 | Every document under `docs/`, and what only that one tells you | [docs/README.md](docs/README.md) |
 
 ---
@@ -52,7 +53,7 @@ file per language, opening with the entry command, the single-test invocation an
 Repo-wide, on every push and PR (`repo-hygiene.yml`):
 
 ```bash
-node scripts/check-docs.mjs .     # docs must not contradict the build files
+node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anchor-links=23   # exactly what CI runs
 sh scripts/test/test-check-docs.sh
 sh scripts/test/test-doctor.sh
 ```
@@ -142,7 +143,7 @@ assertions **non-vacuous** (sign the fixtures for real) so an accidental pass is
 - [ ] Docs updated where the *behaviour* changed. Do **not** hand-copy versions or test counts
       into prose — the build files and CI output are the source of truth, and
       `node scripts/check-docs.mjs .` enforces the anchored subset
-- [ ] (Governance tasks) verdict recorded in [docs/governance/](docs/governance/)
+- [ ] (Governance tasks) the verdict — and its revival condition, if rejected — is in the commit message
 
 ---
 
@@ -246,25 +247,10 @@ Skipped jobs then still report, so they can be required. Three things must be fi
 
 - ⚠️ A job skipped because a `needs:` dependency **failed** also reports `skipped` — so the `changes`
   job itself must be a required check, or a broken detector silently turns everything green.
-- ⚠️ Three check names currently collide across workflows, so requiring them is ambiguous:
-  `integration` (dotnet + php), `Integration (testcontainers, 실제 Keycloak 26.6)` (kotlin + rust),
-  and `Integration tests (testcontainers, 실제 Keycloak)` (node + python).
+- ⚠️ **Four** check names currently collide across workflows, so requiring them is ambiguous:
+  `build-test` and `integration` (both dotnet + php — neither job declares a `name:`, so the job id
+  becomes the context), `Integration (testcontainers, 실제 Keycloak 26.6)` (kotlin + rust), and
+  `Integration tests (testcontainers, 실제 Keycloak)` (node + python). This list said three until
+  2026-08-22; `build-test` was missing, and acting on it would have left one ambiguous context.
 - ⚠️ No workflow declares a `merge_group:` trigger. **Do not enable a merge queue** before adding it
   to at least `repo-hygiene.yml`, or every queued PR will deadlock.
-
----
-
-## 5. Advisory quality roadmap (optional · not enforced in CI)
-
-Coverage proves the code *ran*, not that the tests *catch defects*. These close part of that gap;
-adopt them as advisory first, gate them only once stable.
-
-- **Mutation testing** — Java: [pitest](https://pitest.org) (`org.pitest:pitest-maven`; confirm
-  `pitest-junit5-plugin` compatibility with the JUnit Platform version this project pins before
-  relying on it). Python: [mutmut](https://github.com/boxed/mutmut) — no native Windows support,
-  run it in CI or WSL. Priority targets are the security-critical modules (`jwt.*` / `JwtValidator`).
-- **Extended static analysis** — Python's ruff already enforces security (S/bandit), bugginess (B)
-  and modernization (UP). Java enforces only dependency rules today; [SpotBugs](https://spotbugs.github.io),
-  Checkstyle or Spotless would be the advisory addition.
-- **Widening type checking** — `mypy src` is strict; extending it to `tests` needs the test types
-  cleaned up first.
