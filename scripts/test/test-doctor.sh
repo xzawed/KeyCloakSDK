@@ -53,4 +53,39 @@ else
   assert_eq "적음" "$n_one/$n_all" '언어 필터가 결과를 좁힌다'
 fi
 
+# ── 5. 규약 경로(KCSDK_*)와 **버전 오탐** ────────────────────────────────────
+# 둘 다 실측된 결함이다:
+#  (a) doctor 가 PATH 와 JAVA_HOME 만 봐서, 저장소 규약(`${KCSDK_TOOLS:-$HOME/tools}`·
+#      `KCSDK_PY`·`KCSDK_JDK21`·`KCSDK_PHP`)대로 설치한 도구를 MISSING 으로 보고하고
+#      "설치 방법"을 가리켰다 — 이미 가진 것을 다시 설치하게 만드는 오진이다.
+#  (b) 그 규약 경로를 후보로 넣자 **경로에 박힌 숫자가 버전으로 읽혔다**. 실패 메시지가
+#      호출 경로를 되뇌기 때문이다(`…/php-8.3/composer` → `composer 8.3 ok`).
+#      MISSING 보다 나쁘다: 틀린 값이 초록으로 보고된다.
+#
+# ⚠️ 이 PC 의 설치 상태에 기대지 않는다 — "무엇이 있는가"가 아니라 **"없는 것을 있다고
+# 하지 않는가"**를 본다.
+T5="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$T5"' EXIT
+
+# (b) 버전이 박힌 디렉터리 안의 실행 불가 파일 — 후보로는 잡히나 실행은 실패한다.
+mkdir -p "$T5/tools/bogus-9.9"
+: > "$T5/tools/bogus-9.9/go"
+OUT5="$(KCSDK_TOOLS="$T5/tools" node "$DOC" go 2>&1 || true)"
+assert_not_contains "$OUT5" "9.9" '경로에 박힌 버전이 도구 버전으로 보고되면 안 된다'
+
+# 대조군 — 위 단언이 "9.9 는 어차피 안 나온다"로 공허해지지 않았는지. 같은 이름이
+# **실제로 출력한** 버전은 보고돼야 한다.
+mkdir -p "$T5/real/x"
+printf '%s\n' '#!/bin/sh' 'echo "go version go9.9.0"' > "$T5/real/x/go"
+chmod +x "$T5/real/x/go"
+OUT5b="$(KCSDK_TOOLS="$T5/real" node "$DOC" go 2>&1 || true)"
+assert_contains "$OUT5b" "9.9" '규약 경로의 도구가 실제로 출력한 버전은 보고돼야 한다'
+
+# (a) 규약 디렉터리가 비었거나 없어도 PATH 폴백으로 진단은 계속된다(죽지 않는다).
+mkdir -p "$T5/empty"
+OUT5c="$(KCSDK_TOOLS="$T5/empty" node "$DOC" node 2>&1 || true)"
+assert_contains "$OUT5c" "node" '빈 규약 디렉터리에서도 PATH 폴백으로 진단은 계속돼야 한다'
+OUT5d="$(KCSDK_TOOLS="$T5/does-not-exist" node "$DOC" node 2>&1 || true)"
+assert_contains "$OUT5d" "node" '없는 규약 디렉터리는 조용히 무시하고 PATH 로 넘어가야 한다'
+
 assert_report
