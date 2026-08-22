@@ -22,7 +22,7 @@ cd node && npm run build       # tsc → dist/
 ```
 
 - A single test: `npx vitest run test/unit/<name>.test.ts`
-- Coverage omits `src/auth.ts`, `src/admin/**` and `src/index.ts` (the network boundary — the integration tests cover it). Everything else is at 100% lines / 94% branches.
+- Coverage omits `src/auth.ts`, `src/admin/**`, `src/index.ts` and `src/transport.ts` (the network boundary — the integration tests cover it). The exclusion list's SSOT is `node/vitest.config.ts`; it had four entries while this line listed three.
 - Release check: `npm run build && npm pack --dry-run`. ⚠️ Even with `files:["dist"]`, npm **always** includes `package.json`, `README` and `LICENSE`, so without `node/README.md` and `node/LICENSE` the npmjs.com landing page ships empty. Write every README link as an absolute URL (relative links break on the registry page).
 - Releasing goes `node-v*` tag → npm **Trusted Publishing** (OIDC + provenance, no stored token). The tag ↔ `package.json` consistency guard and the integration E2E are both in `needs:`.
 - The package `@xzawed/keycloak-sdk` is ESM-only (`"type":"module"`) and ships `.d.ts`.

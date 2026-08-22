@@ -11,7 +11,7 @@ paths:
 
 ## Toolchain
 
-System install at `C:\Program Files\dotnet` (SDK 10, with the net8.0 runtime native). Commands run from `dotnet/`.
+System install — ask `node scripts/doctor.mjs dotnet` for the SDK actually present (⚠️ this line claimed SDK 10; measured 8.0.424). Commands run from `dotnet/`.
 
 ```bash
 cd dotnet && dotnet build                                       # warnaserror · Nullable · AnalysisLevel 8.0
@@ -28,14 +28,14 @@ cd dotnet && dotnet pack src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c R
     --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory /tmp/cov
   node ../scripts/check-coverage.mjs /tmp/cov --min-line 90 --min-branch 85
   ```
-  Measured 96.91% lines (188/194) and 90.00% branches (45/50).
+  ⚠️ **The numbers are not written here.** `check-coverage.mjs` prints lines, branches and the headroom on every run — read them from it. This line used to carry `96.91% (188/194)` / `90.00% (45/50)`; the denominators moved to 213 and 52 and every transcribed figure went false while the rule read as verified.
 - Releasing goes `dotnet-v*` tag → `dotnet-release.yml` (human approval gate). The `integration` job is in `needs:` ahead of publishing.
-- The solution uses the old format, `Keycloak.Sdk.sln` (SDK 10 defaults to `.slnx`). `AnalysisLevel=8.0` aligns the analyzer band between local (SDK 10) and CI (SDK 8). `GenerateDocumentationFile` and the packaging props are conditioned on `IsTestProject != true` — without that, the test projects fail the build with CS1591.
+- The solution uses the old format, `Keycloak.Sdk.sln` — newer SDKs default to `.slnx`. `AnalysisLevel=8.0` pins the analyzer band so a locally-installed SDK newer than CI's cannot introduce warnings CI never sees. ⚠️ This line used to justify both by "local is SDK 10", which was false; both settings are still right, the stated reason was not. `GenerateDocumentationFile` and the packaging props are conditioned on `IsTestProject != true` — without that, the test projects fail the build with CS1591.
 
 ## Two coverage traps
 
 - ⚠️ **Do not use the coverlet **msbuild** integration.** It flushes hits on `ProcessExit`, and VSTest waits only briefly for the process to exit, so on a slow run you get a report where the denominator survives but **the numerator alone is 0**. Its built-in threshold gate reports that in **exactly the same words** as a genuine drop (re-running the same commit passed). The collector flushes on `SessionEnd`, so it has no such path, and `check-coverage.mjs` **looks at the numerator and the denominator separately** (`lines-valid>0` with `lines-covered==0` is a measurement failure, not a drop).
-- ⚠️ **Read the headroom on the branch gate as a count, not as a percentage.** The denominator is 50, so one branch is 2.0 percentage points — at 45/50 the 85% threshold demands 43, which means **the real headroom is 2**. A single `if` without an `else` breaks it. That is why `check-coverage.mjs` prints `브랜치 여유: N개` ("branch headroom: N") on every run. **Seeing 0% and lowering the threshold is precisely the wrong response.**
+- ⚠️ **Read the headroom on the branch gate as a count, not as a percentage.** The denominator is small enough that one branch is worth about two percentage points, so a single `if` without an `else` can break the gate. That is why `check-coverage.mjs` prints `브랜치 여유: N개` ("branch headroom: N") on every run. **Seeing 0% and lowering the threshold is precisely the wrong response.**
 
 ## admin surface
 

@@ -10,10 +10,10 @@ paths:
 
 ## Toolchain
 
-Portable install at `${KCSDK_TOOLS:-$HOME/tools}/go`. Run it as `go -C go` (that leaves the cwd alone, so it never collides with git).
+System install — ask `node scripts/doctor.mjs go` where it is rather than assuming a path (⚠️ this line said `${KCSDK_TOOLS:-$HOME/tools}/go`, which does not exist on the development machine). Run it as `go -C go` (that leaves the cwd alone, so it never collides with git).
 
 ```bash
-export PATH="${KCSDK_TOOLS:-$HOME/tools}/go/bin:$PATH" GOTOOLCHAIN=local
+export GOTOOLCHAIN=local   # go 는 PATH 에 있다. 없으면 `node scripts/doctor.mjs go` 가 어디 있는지 말해준다
 go -C go build ./...
 go -C go test ./...                                          # unit (E2E excluded)
 go -C go test -tags=integration -run TestE2E -count=1 ./...   # integration E2E. Needs Docker
