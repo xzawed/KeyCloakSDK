@@ -287,6 +287,55 @@ func TestValidateUnknownKidRefetchOnceThenRateLimited(t *testing.T) {
 	}
 }
 
+// ⚠️ **rate-limit 은 걸리는 쪽만 테스트돼 있었다.** 위 테스트는 (1) 첫 미상 kid → 재조회 허용,
+// (2) 창 안의 두 번째 → 차단 을 본다. 그런데 **창이 지나 다시 허용되는 쪽**은 아무도 안 봤다.
+// 조건 커버리지로 실측해서 나온 것이다(gobco):
+//
+//	jwt.go:133:29: condition "time.Since(v.forcedAt) < v.opts.minRefetch"
+//	               was once true but never false
+//
+// 이쪽이 깨지면 rate-limit 이 **영구 잠금**이 된다 — 키 로테이션이 일어나도 SDK 가 새 JWKS 를
+// 영원히 못 가져오고, 증상은 "특정 시점 이후 모든 토큰이 no key for kid" 다. DoS 상한을 지키는
+// 것과 복구를 막는 것은 한 줄 차이이고, 그 한 줄이 여기다.
+func TestValidateRefetchAllowedAgainAfterRateLimitWindowElapses(t *testing.T) {
+	f := newJWTFixture(t)
+	const window = 40 * time.Millisecond
+	v := f.validator(t, window) // 실제로 만료시킬 수 있을 만큼 짧은 창
+
+	good := f.sign(t, f.priv, "k1", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
+	if _, err := v.Validate(context.Background(), good); err != nil {
+		t.Fatalf("initial: %v", err)
+	}
+	base := atomic.LoadInt32(f.fetches)
+
+	unknownKid := func(kid string) string {
+		return f.sign(t, f.priv, kid, claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
+	}
+
+	// 창 안 — 첫 번째는 허용(forcedAt 이 찍힌다), 두 번째는 차단.
+	if _, err := v.Validate(context.Background(), unknownKid("kX")); err == nil {
+		t.Fatal("unknown kid must be rejected")
+	}
+	if _, err := v.Validate(context.Background(), unknownKid("kY")); err == nil {
+		t.Fatal("unknown kid must be rejected")
+	}
+	if got := atomic.LoadInt32(f.fetches); got != base+1 {
+		t.Fatalf("창 안에서는 재조회가 한 번뿐이어야 한다: %d → %d", base, got)
+	}
+
+	// 창을 넉넉히 넘긴다(경계에 걸치지 않도록 2.5배).
+	time.Sleep(window * 5 / 2)
+
+	// 창이 지났으므로 재조회가 **다시 허용**돼야 한다 — 이것이 위 조건의 false 갈래다.
+	if _, err := v.Validate(context.Background(), unknownKid("kZ")); err == nil {
+		t.Fatal("unknown kid must be rejected")
+	}
+	if got := atomic.LoadInt32(f.fetches); got != base+2 {
+		t.Fatalf("창이 지나면 재조회가 다시 허용돼야 한다(영구 잠금이면 키 로테이션에서 복구 불가): "+
+			"got %d, want %d", got, base+2)
+	}
+}
+
 func TestValidateRejectsMissingExp(t *testing.T) {
 	f := newJWTFixture(t)
 	// A validly-signed token with no exp claim must be rejected (not treated as non-expiring).
