@@ -141,4 +141,57 @@ for f in tags-create tags-create-go tags-immutable; do
   " "$RS/$f.json")" "$f.json은 enforcement=active"
 done
 
+# ---- 보안 설정 SSOT (.github/security-config.json) ----
+# ⚠️ 라이브 대조는 관리자 토큰이 필요해 CI 에 없다(룰셋과 같다). 여기서는 **네트워크 없이**
+# 판정 함수와 정의 파일의 모양만 본다 — 그것이 없으면 `securityDrift` 가 늘 빈 배열을
+# 돌려주게 바뀌어도 아무도 모른다.
+SEC="$DIR/../../.github/security-config.json"
+assert_ok test -f "$SEC"
+assert_ok node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$SEC"
+
+# 정의가 실제로 두 축을 담고 있는가(파일이 비어도 위 파싱은 통과한다).
+assert_eq "enabled" "$(node -e "
+  const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
+  process.stdout.write(r.security_and_analysis.secret_scanning||'');" "$SEC")" 'secret scanning 이 enabled 로 선언돼 있다'
+assert_eq "enabled" "$(node -e "
+  const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
+  process.stdout.write(r.security_and_analysis.secret_scanning_push_protection||'');" "$SEC")" 'push protection 이 enabled 로 선언돼 있다'
+assert_eq "configured" "$(node -e "
+  const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
+  process.stdout.write(r.code_scanning_default_setup.state||'');" "$SEC")" 'CodeQL default setup 이 configured 로 선언돼 있다'
+# ⚠️ PHP·Rust 는 default setup 이 받지 않는 값이다(PATCH 가 422 로 거절 — 실측).
+# 목록에 섞여 들어가면 `check` 가 영영 불일치를 보고하므로 여기서 막는다.
+assert_eq "0" "$(node -e "
+  const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
+  const bad=(r.code_scanning_default_setup.languages||[]).filter(l=>['php','rust'].includes(l));
+  process.stdout.write(String(bad.length));" "$SEC")" 'default setup 언어 목록에 php·rust 가 없다'
+
+# 판정 함수 자체가 공허하지 않은가 — 어긋난 입력에 실제로 반응하는가.
+CFG="$DIR/../repo-config.mjs"
+assert_eq "1" "$(cd "$DIR/.." && node -e "
+  import('./repo-config.mjs').then(({securityDrift})=>{
+    const d=securityDrift({security_and_analysis:{secret_scanning:'enabled'}},
+                          {security_and_analysis:{secret_scanning:{status:'disabled'}}});
+    process.stdout.write(String(d.length));
+  });")" 'securityDrift 가 상태 불일치를 잡는다'
+assert_eq "0" "$(cd "$DIR/.." && node -e "
+  import('./repo-config.mjs').then(({securityDrift})=>{
+    const d=securityDrift({security_and_analysis:{secret_scanning:'enabled'}},
+                          {security_and_analysis:{secret_scanning:{status:'enabled'}}});
+    process.stdout.write(String(d.length));
+  });")" 'securityDrift 가 일치를 오탐하지 않는다'
+# 언어는 부분집합 비교라야 한다 — GET 이 javascript-typescript 를 펼쳐 담기 때문이다.
+assert_eq "0" "$(cd "$DIR/.." && node -e "
+  import('./repo-config.mjs').then(({securityDrift})=>{
+    const d=securityDrift({code_scanning_default_setup:{languages:['javascript-typescript']}},
+                          {code_scanning_default_setup:{languages:['javascript','javascript-typescript','typescript']}});
+    process.stdout.write(String(d.length));
+  });")" '언어 비교가 부분집합이다(펼쳐진 목록을 오탐하지 않는다)'
+# `_` 주석 키가 대조에 새어 들어가지 않는가.
+assert_eq "0" "$(cd "$DIR/.." && node -e "
+  import('./repo-config.mjs').then(({stripComments})=>{
+    const o=stripComments({_c:'x',a:{_d:'y',b:1}});
+    process.stdout.write(String(Object.keys(o).filter(k=>k.startsWith('_')).length + Object.keys(o.a).filter(k=>k.startsWith('_')).length));
+  });")" 'stripComments 가 _ 주석 키를 걷어낸다'
+
 assert_report

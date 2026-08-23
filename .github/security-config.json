@@ -1,0 +1,26 @@
+{
+  "_comment": "저장소 보안 기능의 SSOT. `node scripts/repo-config.mjs check`가 라이브 설정과 대조한다(관리자 토큰 필요 → 유지자 로컬 실행, 룰셋과 같은 방식). 2026-08-23 활성화.",
+  "security_and_analysis": {
+    "dependabot_security_updates": "enabled",
+    "secret_scanning": "enabled",
+    "secret_scanning_push_protection": "enabled",
+    "_off_comment": "아래 둘은 의도적으로 끈다. validity_checks는 탐지된 후보 시크릿을 해당 프로바이더에 보내 살아있는지 물어보는 바깥 방향 데이터 흐름이다. non_provider_patterns는 일반 패턴(커넥션 문자열·비밀번호 꼴)까지 잡아 9개 언어의 테스트 픽스처에서 오탐이 많다. 켜려면 사람이 판정하고 이 파일을 먼저 고친다.",
+    "secret_scanning_validity_checks": "disabled",
+    "secret_scanning_non_provider_patterns": "disabled"
+  },
+  "code_scanning_default_setup": {
+    "_comment": "CodeQL default setup. 워크플로 파일을 만들지 않으므로 check-ci-permissions.mjs(파일시스템 glob)의 대상이 아니고, required 체크가 되지도 않는다.",
+    "state": "configured",
+    "query_suite": "default",
+    "_languages_comment": "⚠️ GET /code-scanning/default-setup 의 `languages`는 **탐지된** 언어이지 **허용되는** 값이 아니다(실측: GET이 rust를 포함했지만 PATCH가 422로 거절했다). 허용값은 PATCH의 오류 메시지가 알려준다: actions, c-cpp, csharp, go, java-kotlin, javascript-typescript, python, ruby, swift. 즉 이 저장소 9개 언어 중 PHP와 Rust는 default setup으로 덮을 수 없다 — 그 둘의 보안 검사는 각 언어 CI(php-ci의 phpstan, rust-ci의 clippy/audit)와 security-audit.yml이 맡는다.",
+    "languages": [
+      "actions",
+      "csharp",
+      "go",
+      "java-kotlin",
+      "javascript-typescript",
+      "python",
+      "ruby"
+    ]
+  }
+}

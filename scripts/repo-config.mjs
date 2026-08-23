@@ -103,6 +103,68 @@ function liveRulesets(repo) {
   return byName
 }
 
+// ── 보안 기능 대조 ───────────────────────────────────────────────────────────
+// `_`로 시작하는 키는 이 JSON 안의 주석이다(JSON에 주석이 없으므로 이 규약을 쓴다).
+export function stripComments(o) {
+  if (Array.isArray(o)) return o.map(stripComments)
+  if (o && typeof o === 'object') {
+    return Object.fromEntries(
+      Object.entries(o)
+        .filter(([k]) => !k.startsWith('_'))
+        .map(([k, v]) => [k, stripComments(v)]),
+    )
+  }
+  return o
+}
+
+// ⚠️ 언어 목록은 **부분집합**으로 본다. GET이 돌려주는 목록은 `javascript-typescript`를
+// `javascript`·`typescript`로 펼쳐 담기 때문에 정확일치로 비교하면 항상 어긋난다(실측).
+export function securityDrift(want, have) {
+  const out = []
+  for (const [k, v] of Object.entries(want.security_and_analysis ?? {})) {
+    const got = have.security_and_analysis?.[k]?.status
+    if (got !== v) out.push(`security_and_analysis.${k}: want=${v} have=${got ?? '(없음)'}`)
+  }
+  const w = want.code_scanning_default_setup ?? {}
+  const h = have.code_scanning_default_setup ?? {}
+  for (const k of ['state', 'query_suite']) {
+    if (w[k] !== undefined && w[k] !== h[k]) out.push(`code_scanning.${k}: want=${w[k]} have=${h[k] ?? '(없음)'}`)
+  }
+  const live = new Set(h.languages ?? [])
+  for (const l of w.languages ?? []) if (!live.has(l)) out.push(`code_scanning.languages: ${l} 이 라이브에 없다`)
+  return out
+}
+
+function checkSecurity(repo, cmd) {
+  const file = '.github/security-config.json'
+  let want
+  try {
+    want = stripComments(JSON.parse(readFileSync(join(ROOT, file), 'utf8')))
+  } catch (e) {
+    console.log(`::error::${file} 을 읽지 못했다 — ${e.message}`)
+    return 1
+  }
+  const repoRes = gh(['api', `repos/${repo}`])
+  const csRes = gh(['api', `repos/${repo}/code-scanning/default-setup`])
+  if (!repoRes.ok || !csRes.ok) {
+    console.log(`::error::보안 설정을 조회하지 못했다(관리자 권한 토큰이 필요하다).`)
+    console.log(repoRes.ok ? csRes.out : repoRes.out)
+    return 1
+  }
+  const have = {
+    security_and_analysis: JSON.parse(repoRes.out).security_and_analysis,
+    code_scanning_default_setup: JSON.parse(csRes.out),
+  }
+  const diffs = securityDrift(want, have)
+  if (diffs.length === 0) {
+    console.log(`ok   ${file}`)
+    return 0
+  }
+  console.log(`::error::${file}: 라이브 보안 설정이 정의와 다르다 (${cmd})`)
+  for (const d of diffs) console.log(`  - ${d}`)
+  return 1
+}
+
 // ── 명령 ─────────────────────────────────────────────────────────────────────
 // 이 파일을 import해도 실행되지 않아야 한다 — 자가테스트가 네트워크·gh 없이
 // canonical()만 검증할 수 있어야 하기 때문이다.
@@ -163,6 +225,13 @@ function main() {
     console.log('--- 실제 GitHub 설정(have) ---')
     console.log(JSON.stringify(have, null, 2))
   }
+
+  // ── 보안 기능(secret scanning · CodeQL default setup) ────────────────────────
+  // 룰셋과 같은 부류다 — 웹 UI 토글 하나로 바뀌고 CI는 그것을 볼 수 없다. 그래서 원하는
+  // 상태를 `.github/security-config.json`에 두고 여기서 대조한다.
+  // ⚠️ `apply`는 하지 않는다. 보안 기능을 켜고 끄는 것은 스크립트가 아니라 사람의 판정이고,
+  //    특히 push protection은 기여자의 push 동작을 바꾼다.
+  drift += checkSecurity(repo, cmd)
 
   if (cmd === 'check' && drift) {
     console.log(`\n${drift}건 불일치. 정의를 적용하려면 \`node scripts/repo-config.mjs apply\`,`)

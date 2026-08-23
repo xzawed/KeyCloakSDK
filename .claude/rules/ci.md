@@ -5,7 +5,11 @@ paths:
   - "harness/**"
   - "DEPLOY.md"
 ---
-<!-- doc-budget: max-bytes=7770 -->
+<!-- doc-budget: max-bytes=8432 -->
+<!-- 7770 → 8432 (2026-08-23): 래칫 조건 (1). 이 줄이 사 오는 것은 산문이 아니라 **기계 검증**이다 —
+     `.github/security-config.json` 이 SSOT 가 되고 `repo-config.mjs check` 가 라이브와 대조한다(변이검증:
+     securityDrift 를 빈 배열로 만들면 자가테스트가 운다. 대조군 origin/main 판은 통과했다).
+     ⚠️ PHP·Rust 미지원은 실측으로만 알 수 있었다(GET 은 rust 를 포함했고 PATCH 가 422 로 거절했다). -->
 
 # CI · release · harness rules
 
@@ -19,6 +23,7 @@ The definitions are `.github/rulesets/*.json` (the committed JSON is the SSOT); 
 - Also watch for: **four** pairs of colliding context names (the enumeration lives in CONTRIBUTING §4 — do not copy it here) and the absence of a `merge_group:` trigger (turn the merge queue on and everything deadlocks). The resolutions are in [CONTRIBUTING.md §4](../../CONTRIBUTING.md).
 - **The three tag rulesets** (`RELEASE-TAGS-CREATE` · `-CREATE-GO` · `-IMMUTABLE`) are active but carry an admin bypass, so **the path where a human pushes a tag by hand is still open**. What they block is a `contents: write` credential creating release tags at will.
 - ⚠️ **Keep the tag-cutting App in `tags-create.json` only.** Adding it to the other two collapses the single server-side enforcement point for both the Go exception and tag immutability. `scripts/test/test-repo-config.sh` pins the Integration bypass counts across the three files at **1/0/0**.
+- ⚠️ **Secret scanning (+ push protection) and CodeQL default setup are on, and their desired state is `.github/security-config.json`** — `repo-config.mjs check` compares it with the live settings (admin token, so local like the rulesets). **CodeQL covers 7 of the 9 SDK languages: PHP and Rust cannot be selected in default setup** (the PATCH endpoint rejects them; its 422 lists the allowed values). ⚠️ Do not read the allowed set off `GET …/default-setup` — that `languages` field is what CodeQL *detected*, and it listed `rust` while PATCH refused it. Validity checks and non-provider patterns stay off deliberately (reasons are in that JSON).
 - ⚠️ **Ruleset drift is invisible to CI** — CI only runs the guards' own self-tests and holds no admin token, so `repo-config.mjs check` has to be run **locally**. Do not treat "I did not touch the web UI" as a reason to skip it: GitHub also grows **new parameters on an existing rule type**, which the committed JSON then lacks even though nobody edited anything (measured 2026-08-21 — `require_extra_approval_for_unattributed_changes` appeared on the `pull_request` rule while PRIMARY's `updated_at` still read 2026-07-27). ⚠️ **Do not fix that with `repo-config.mjs pull`** — it rewrites all four files, sorting keys and arrays, so a one-field change arrives as a 60-line diff and a real drift would hide inside it. `check` compares canonically, so **add the single field by hand** and the guard goes green.
 
 ## Release

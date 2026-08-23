@@ -1,10 +1,14 @@
 // 계약 v2 결정적 conformance. Node 20+ (전역 fetch). 결과를 /out/<LANG>.conformance.json에 기록.
+import { randomUUID } from "node:crypto";
 const BASE = process.env.BASE, LANG = process.env.LANG || "unknown";
 const U = process.env.KC_USER || "alice", P = process.env.KC_PASS || "alice-password";
 const checks = [];
 const rec = (name, ok, detail = "") => { checks.push({ name, ok, detail: String(detail).slice(0, 300) }); };
 const J = { "content-type": "application/json" };
-const rnd = () => Math.random().toString(36).slice(2, 10);
+// ⚠️ 이 값은 시크릿이 아니라 **테스트 리소스 이름의 충돌 회피용**이다(`cf-xxxx`). 그래도
+// `Math.random()`을 쓰지 않는다 — CodeQL `js/insecure-randomness`가 용도를 구분하지 못해
+// 매 실행마다 경보 2건을 내고, 그 경보를 계속 dismiss 하는 것보다 CSPRNG 한 줄이 싸다.
+const rnd = () => randomUUID().replace(/-/g, "").slice(0, 8);
 async function req(method, path, body) {
   const r = await fetch(BASE + path, { method, headers: J, body: body === undefined ? undefined : JSON.stringify(body) });
   let j = null; try { j = await r.json(); } catch { /* 204 등 */ }
