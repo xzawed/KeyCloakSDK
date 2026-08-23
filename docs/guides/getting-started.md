@@ -410,7 +410,7 @@ cd php && composer install   # install dependencies (fschmtt/league/stevenmaguir
 
 The distribution name is `xzawed/keycloak-sdk`, and the root namespace is `Xzawed\Keycloak` (admin is the `Xzawed\Keycloak\Admin` sub-namespace).
 
-### 3) Installation from Packagist (stable `0.1.0`)
+### 3) Installation from Packagist (stable `0.2.0`)
 
 `v0.1.0` is live on Packagist — the first stable release:
 

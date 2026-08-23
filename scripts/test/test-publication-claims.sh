@@ -626,4 +626,56 @@ for _rf in README.md README.ko.md; do
     "$_rf Install 펜스의 kotlin 핀이 게시 SSOT와 다르다 — 소비자가 없는 좌표를 복사한다"
 done
 
+
+# ---- 산문·헤딩의 버전 주장 ↔ df_published_version ----
+# ⚠️ **이 위의 검사들은 전부 코드펜스만 본다.** 그래서 같은 사실을 산문으로 되풀이하는 자리가
+# 무보호였고, 실제로 두 릴리스를 지나도록 낡은 채 살아남았다(실측, 2026-08-23 릴리스 준비 중 발견):
+#   getting-started 의 Python·Node 설치 헤딩이 「stable `0.1.0`」 — 0.2.0 게시 때부터 낡았다
+#   같은 파일의 Packagist 헤딩이 「stable `0.1.0`」 — PHP 는 0.2.0 이다(이 커밋에서 고쳤다)
+#   SECURITY.md · getting-started 리드 · 루트 README 둘의 「함대 요약」 문장
+# 펜스는 소비자가 **복사하는** 자리라 먼저 지켰지만, 산문은 소비자가 **읽고 믿는** 자리다.
+
+# 축 1 — 설치 절 헤딩. 언어 짝은 **위치**로 짓되 그 짝을 **레지스트리 이름**으로 검증한다.
+# 둘 중 하나만 쓰면 수렴하지 않는다: 이름만 쓰면 Maven Central 이 java·kotlin 둘이라 못 가르고,
+# 위치만 쓰면 문서를 재배열했을 때 조용히 엉뚱한 언어와 비교한다.
+_GS="$ROOT/docs/guides/getting-started.md"
+_GS_ORDER="java python node go dotnet php rust ruby kotlin"
+_HEADS="$(grep -E '^### [0-9]\) Installation from ' "$_GS" || true)"
+assert_eq "9" "$(printf '%s\n' "$_HEADS" | grep -c . || true)" \
+  'getting-started 의 설치 헤딩이 9개다(추출이 깨지면 아래가 전부 공허해진다)'
+_gn=0
+for _gl in $_GS_ORDER; do
+  _gn=$((_gn + 1))
+  _gh="$(printf '%s\n' "$_HEADS" | sed -n "${_gn}p")"
+  _gwant="$(df_published_version "$_gl")"
+  _ggot="$(printf '%s' "$_gh" | grep -oE '\(stable `[^`]+`\)' | tr -d '`()' | sed 's/^stable //' || true)"
+  assert_eq "$_gwant" "$_ggot" "getting-started 설치 헤딩($_gl)의 버전이 게시 SSOT와 같다"
+  _greg="$(df_registry "$_gl" | sed 's/ (.*//')"
+  assert_contains "$_gh" "$_greg" "그 헤딩이 $_gl 의 레지스트리($_greg)를 가리킨다 — 순서가 바뀌면 여기서 죽는다"
+done
+
+# 축 2 — 「함대 요약」 문장. 아홉의 버전 분포를 산문으로 되풀이하는 네 자리다.
+# 문장을 **집합**으로 본다: 어느 언어가 어느 값인지까지 정규식으로 가르려 하면 수렴하지 않고
+# (네 문장 중 하나는 한국어이고 문법이 제각각이다 — 기각 체크리스트 5번), 분포가 어긋나는
+# 순간(언어 하나가 올라갔는데 문장을 안 고친 순간) 집합이 달라진다.
+#
+# ⚠️ **이 축이 못 잡는 것 하나: 언어↔버전 맞바꿈.** "PHP is on 0.2.1, Node and Python on 0.2.0"
+# 처럼 짝만 뒤집으면 집합이 그대로라 통과한다(실측 프로브에서 확인 — 나머지 다섯 변이는 전부
+# 잡혔다). 그 부류는 정규식으로 쫓으면 수렴하지 않으므로 **가드가 아니라 리뷰가 잡는다.**
+# 되살릴 조건: 실제로 맞바꿈 드리프트가 관측될 때. 그때도 정규식이 아니라 문장을 SSOT에서
+# **생성**하는 쪽(마커 + 파생)을 먼저 검토한다.
+_VSET="$(for _vl in $DEPLOY_LANGS; do df_published_version "$_vl"; done | sort -u | tr '\n' ' ')"
+for _fs in \
+  "README.md|All nine languages have shipped" \
+  "README.ko.md|아홉 언어 전부 정식 릴리스를 냈고" \
+  "SECURITY.md|the other six on" \
+  "docs/guides/getting-started.md|All nine are on a public registry"; do
+  _ff="${_fs%%|*}"; _fa="${_fs#*|}"
+  _fl="$(grep -F "$_fa" "$ROOT/$_ff" || true)"
+  assert_eq "1" "$(printf '%s\n' "$_fl" | grep -c . || true)" \
+    "$_ff 의 함대 요약 문장을 정확히 하나 찾는다(못 찾으면 이 검사가 공허해진다)"
+  _fgot="$(printf '%s' "$_fl" | grep -oE '`[0-9]+\.[0-9]+\.[0-9]+`' | tr -d '`' | sort -u | tr '\n' ' ')"
+  assert_eq "$_VSET" "$_fgot" "$_ff 의 함대 요약 문장이 게시 SSOT의 버전 집합과 같다"
+done
+
 assert_report
