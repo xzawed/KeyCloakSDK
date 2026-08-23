@@ -8,8 +8,10 @@ English · [한국어](README.ko.md)
 
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Languages](https://img.shields.io/badge/languages-9-brightgreen)
+![Published](https://img.shields.io/badge/published-9%2F9%20registries-brightgreen)
 ![Status](https://img.shields.io/badge/status-pre--1.0-blue)
 ![Keycloak](https://img.shields.io/badge/Keycloak-26.6-informational)
+![Guards](https://github.com/xzawed/KeyCloakSDK/actions/workflows/repo-hygiene.yml/badge.svg?branch=main)
 
 > "Polyglot" here means **programming languages**, not natural-language localization (i18n).
 >
