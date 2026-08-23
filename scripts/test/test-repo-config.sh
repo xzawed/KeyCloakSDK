@@ -194,4 +194,42 @@ assert_eq "0" "$(cd "$DIR/.." && node -e "
     process.stdout.write(String(Object.keys(o).filter(k=>k.startsWith('_')).length + Object.keys(o.a).filter(k=>k.startsWith('_')).length));
   });")" 'stripComments 가 _ 주석 키를 걷어낸다'
 
+
+# ---- PHP 미러 룰셋 (mirrorRulesetDrift) ----
+# ⚠️ `--repo <미러>` 로는 대조할 수 없다 — 그 플래그는 **이 저장소의 정의를** 다른 저장소에
+# 들이대는 것이라 전부 불일치로 나온다(실측). 미러는 정의가 따로라 별도 경로로 본다.
+# ⚠️ 미러 main 에 `non_fast_forward` 를 넣으면 PHP 릴리스가 영구 차단된다 —
+# `php-release.yml` 이 `git push --force` 로 split 결과를 덮기 때문이다. 정의가 그걸 지킨다.
+MRS="$DIR/../../.github/rulesets-mirror"
+assert_ok test -d "$MRS"
+for f in tags-immutable main-no-delete; do
+  assert_ok node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$MRS/$f.json"
+done
+assert_eq "0" "$(node -e "
+  const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
+  process.stdout.write(String(r.rules.filter(x=>x.type==='non_fast_forward').length));
+" "$MRS/main-no-delete.json")" '미러 main 룰셋에 non_fast_forward 가 없다(split 이 force-push 한다)'
+assert_eq "1" "$(node -e "
+  const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
+  process.stdout.write(String(r.bypass_actors.filter(a=>a.actor_type==='RepositoryRole').length));
+" "$MRS/tags-immutable.json")" '미러 태그 룰셋에 admin bypass 가 있다(비면 아무도 못 푼다)'
+assert_eq "update,deletion" "$(node -e "
+  const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
+  process.stdout.write(r.rules.map(x=>x.type).join(','));
+" "$MRS/tags-immutable.json")" '미러 태그 룰셋이 update·deletion 을 막는다(creation 은 막지 않는다 — 새 릴리스가 태그를 만든다)'
+
+# 판정 함수가 공허하지 않은가.
+assert_eq "1" "$(cd "$DIR/.." && node -e "
+  import('./repo-config.mjs').then(({mirrorRulesetDrift})=>{
+    process.stdout.write(String(mirrorRulesetDrift({rulesets:['NOPE']},[]).length));});")" \
+  'mirrorRulesetDrift 가 없는 룰셋을 잡는다'
+assert_eq "1" "$(cd "$DIR/.." && node -e "
+  import('./repo-config.mjs').then(({mirrorRulesetDrift})=>{
+    process.stdout.write(String(mirrorRulesetDrift({rulesets:['X']},[{name:'X',enforcement:'disabled'}]).length));});")" \
+  'mirrorRulesetDrift 가 비활성 룰셋을 잡는다'
+assert_eq "0" "$(cd "$DIR/.." && node -e "
+  import('./repo-config.mjs').then(({mirrorRulesetDrift})=>{
+    process.stdout.write(String(mirrorRulesetDrift({rulesets:['X']},[{name:'X',enforcement:'active'}]).length));});")" \
+  'mirrorRulesetDrift 가 정상을 오탐하지 않는다'
+
 assert_report

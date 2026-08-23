@@ -90,6 +90,7 @@ jobs:
           sh scripts/test/test-deploy-md.sh
           sh scripts/test/test-publication-claims.sh
           sh scripts/test/test-readme-badges.sh
+          sh scripts/test/test-check-php-mirror.sh
           sh scripts/test/test-release-readiness.sh
           sh scripts/test/test-release-trigger.sh
           sh scripts/test/test-release-request.sh
@@ -214,3 +215,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: sh scripts/test/test-repo-config.sh
+
+  php-mirror:
+    # ⚠️ **비-required다, 그리고 그렇게 두는 것이 의도다.** 이 잡은 GitHub·Packagist 라는
+    # 바깥 상태를 조회하므로 그쪽이 흔들릴 때 저장소 머지를 막으면 안 된다. required 는
+    # 네트워크 없는 최소 집합으로 유지한다(.claude/rules/ci.md — PRIMARY 는 bypass_actors 가
+    # 비어 있어 멈춘 required 를 아무도 못 푼다).
+    #
+    # 왜 이 저장소에서 미러를 보는가: **아홉 중 php 만 게시 주체가 이 저장소가 아니다.**
+    # `php/` 가 subtree split 으로 xzawed/keycloak-sdk-php 에 밀리고 Packagist 는 그 미러를
+    # 서빙한다. 이 저장소의 가드가 전부 초록이어도 미러 쪽에서 벌어진 일은 아무것도 안 잡혔다.
+    # 검사 스크립트는 **확인된 불일치에만** 실패하고 조회 실패에는 통과한다(fail-open).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: PHP 미러·Packagist 가 아직 아는 상태인가
+        run: sh scripts/check-php-mirror.sh
