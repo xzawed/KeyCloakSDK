@@ -41,8 +41,15 @@ jobs:
       - name: Generate Kotlin Kover XML coverage
         working-directory: kotlin
         run: ./gradlew koverXmlReport
-      - name: Generate Java JaCoCo XML coverage (단위, -DskipITs)
-        run: mvn -B -f java/pom.xml verify -DskipITs=true
+      # ⚠️ `dependency:build-classpath`를 **같은 리액터 호출 안에서** 돌린다. 따로 부르면
+      # `keycloak-sdk-auth`가 형제 모듈 `keycloak-sdk-core:0.1.0-SNAPSHOT`을 로컬 저장소에서
+      # 찾다가 죽는다(실측: "Could not find artifact … keycloak-sdk-core:jar:0.1.0-SNAPSHOT").
+      # `verify`는 `install`이 아니라 형제 아티팩트를 저장소에 넣지 않기 때문이다 — 리액터
+      # 안에서만 해석된다.
+      - name: Generate Java JaCoCo XML coverage (단위, -DskipITs) + Sonar classpath
+        run: |
+          mvn -B -f java/pom.xml verify dependency:build-classpath -DskipITs=true \
+            -Dmdep.outputFile=target/sonar-cp.txt -Dmdep.includeScope=compile
 
       # Node(vitest v8 → lcov). vitest lcov의 SF 경로는 node/ 기준 상대라 SonarCloud(루트 baseDir)가
       # 못 찾는다 → `node/` 접두를 붙여 루트 기준으로 정규화한다(모노레포 lcov 경로 정합).
@@ -147,10 +154,8 @@ jobs:
       # 아무 버전에나 붙일 수 있는 클래스패스는 "상위집합이라 무방"하지 않다.
       # 리액터가 실제로 쓰는 compile 스코프 의존만 뽑아 준다. 빈 값이면 정밀도만 조용히
       # 떨어지므로 여기서 죽인다(fail-closed).
-      - name: Build Java dependency classpath for Sonar
+      - name: Collect Java dependency classpath for Sonar
         run: |
-          mvn -B -q -f java/pom.xml dependency:build-classpath \
-            -Dmdep.outputFile=target/sonar-cp.txt -Dmdep.includeScope=compile
           LIBS="$(cat java/*/target/sonar-cp.txt 2>/dev/null | tr ':' '\n' | grep -E '\.jar$' | sort -u | paste -sd, -)"
           [ -n "$LIBS" ] || { echo "::error::sonar.java.libraries 가 비었다 — 클래스패스 산출 실패"; exit 1; }
           echo "Java libraries for Sonar: $(printf '%s' "$LIBS" | tr ',' '\n' | wc -l) jars"
