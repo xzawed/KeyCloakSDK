@@ -8,8 +8,10 @@
 
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Languages](https://img.shields.io/badge/languages-9-brightgreen)
+![Published](https://img.shields.io/badge/published-9%2F9%20registries-brightgreen)
 ![Status](https://img.shields.io/badge/status-pre--1.0-blue)
 ![Keycloak](https://img.shields.io/badge/Keycloak-26.6-informational)
+![Guards](https://github.com/xzawed/KeyCloakSDK/actions/workflows/repo-hygiene.yml/badge.svg?branch=main)
 
 > 여기서 "다국어/polyglot"은 **프로그래밍 언어**를 뜻하며, 자연어 현지화(i18n)와는 무관합니다.
 >

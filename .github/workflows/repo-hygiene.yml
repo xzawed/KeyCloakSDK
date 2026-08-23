@@ -89,6 +89,7 @@ jobs:
           sh scripts/test/test-deploy-facts.sh
           sh scripts/test/test-deploy-md.sh
           sh scripts/test/test-publication-claims.sh
+          sh scripts/test/test-readme-badges.sh
           sh scripts/test/test-release-readiness.sh
           sh scripts/test/test-release-trigger.sh
           sh scripts/test/test-release-request.sh
