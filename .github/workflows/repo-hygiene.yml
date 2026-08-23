@@ -187,9 +187,14 @@ jobs:
     #
     # ⚠️ 이 잡은 **required 상태체크가 아니다**, 그리고 그렇게 두는 것이 의도다.
     # 룰셋 PRIMARY는 `bypass_actors: []`라 required 체크가 한 번 멈추면 소유자도
-    # 못 푼다. 그래서 required는 네트워크·외부 상태에 의존하지 않는 최소 집합
-    # (doc-facts·shell-exec-bits)으로 유지하고, gh API를 건드리는 이 검사는
-    # 눈에는 보이되 머지를 막지는 않는 자리에 둔다.
+    # 못 푼다. 그래서 required는 최소 집합(doc-facts·shell-exec-bits)으로 유지하고,
+    # gh API를 건드리는 이 검사는 눈에는 보이되 머지를 막지는 않는 자리에 둔다.
+    #
+    # ⚠️ 이 자리에 "required는 네트워크에 의존하지 않는다"고 적혀 있었는데 **거짓이었다** —
+    # doc-facts의 test-release-readiness.sh가 라이브 스모크로 실제 레지스트리를 curl한다.
+    # 그 curl에 상한이 없어 여기 적힌 잠금 위험이 required 안에 그대로 있었다(지금은
+    # release-readiness.sh의 RR_TIMEOUT이 상한을 걸고 자가테스트가 그것을 고정한다).
+    # 이 잡을 required로 올리지 않는 근거는 "네트워크 없음"이 아니라 **비가역 잠금**이다.
     #
     # 라이브 설정과의 실제 드리프트 대조(`repo-config.mjs check`)는 관리자 권한
     # 토큰이 필요해 CI에 넣지 않는다 — 이 저장소는 그런 토큰을 저장하지 않는다.

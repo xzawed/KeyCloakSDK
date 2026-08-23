@@ -26,15 +26,22 @@ rr_secret_set() { # <name> → 0 if a repo secret with this name exists
 # 되돌릴 수 없는 행위 직전에 보는 도구가 반대로 말한 것이라, UA는 선택이 아니라 정확성의 일부다.
 # ⚠️ 자가테스트는 curl을 스텁으로 대체해 **순수 판정 로직만** 보므로 이 부류를 구조적으로 못 잡는다.
 RR_UA="kcsdk-release-readiness (+https://github.com/xzawed/KeyCloakSDK)"
+# ⚠️ 시간 상한은 선택이 아니다 — 이 스크립트는 `test-release-readiness.sh`의 라이브 스모크를 통해
+# **required 체크인 `doc-facts` 안에서** 실행된다. 상한 없는 curl은 레지스트리가 응답을 끌 때 그 잡을
+# 잡 타임아웃까지 매달고, 룰셋 PRIMARY는 `bypass_actors: []`라 그동안 아무도 머지를 풀 수 없다.
+# 호출부의 `|| true`는 종료코드만 삼킬 뿐 시간은 삼키지 못한다.
+RR_TIMEOUT="--connect-timeout 5 --max-time 15"
 rr_url_exists() { # <url> → exit 0=게시됨(2xx) 1=미게시(4xx/5xx, curl -f rc=22) 2=unknown(curl 부재·네트워크/타임아웃 실패)
   command -v curl >/dev/null 2>&1 || return 2
-  if curl -sfI -A "$RR_UA" "$1" >/dev/null 2>&1; then return 0; fi
+  # shellcheck disable=SC2086  # RR_TIMEOUT은 의도적으로 단어분리되는 플래그 쌍이다
+  if curl $RR_TIMEOUT -sfI -A "$RR_UA" "$1" >/dev/null 2>&1; then return 0; fi
   # HEAD가 일부 레지스트리(405 등)에서 미지원일 수 있어 GET으로 재확인 — 최종 판정은 이 결과 기준.
   # ⚠️ `if curl …; then …; fi` 뒤에서 `$?`를 읽으면 안 된다 — 그건 curl이 아니라 **if 문 자체의**
   # 종료코드이고, 조건이 거짓이고 else가 없으면 POSIX는 그걸 0으로 정의한다. 그래서 예전 코드는
   # 4xx에서 rc=0을 보고 `-eq 22` 분기를 영영 타지 못했다 — **"미게시(exists)" 판정이 죽어 있었고**
   # 모든 미게시 좌표가 `unknown`으로 보고됐다(실측: 404 URL에 buggy rc=0 / fixed rc=22).
-  curl -sf -A "$RR_UA" "$1" >/dev/null 2>&1
+  # shellcheck disable=SC2086
+  curl $RR_TIMEOUT -sf -A "$RR_UA" "$1" >/dev/null 2>&1
   rc=$?
   [ "$rc" -eq 0 ] && return 0
   [ "$rc" -eq 22 ] && return 1

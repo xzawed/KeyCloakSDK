@@ -105,6 +105,15 @@ assert_eq "0" "$(grep -cE '^[[:space:]]*(git[[:space:]]+(tag|push|commit|add|che
 # 시크릿 값 출력 금지: gh secret list는 --json 없이 이름만; 값 echo 패턴 부재
 assert_eq "0" "$(grep -cE 'secret (view|get)|gh api.*secrets' "$SH" || true)" "시크릿 값 미조회"
 
+# ⚠️ 모든 curl 호출에 시간 상한이 붙어 있어야 한다. 위 _probe가 curl을 **함수로 스텁**하므로
+# 판정 로직 테스트는 플래그가 사라져도 전부 통과한다 — 이 부류는 소스 대조로만 잡힌다.
+# 이유: 이 스크립트는 아래 라이브 스모크를 통해 **required 체크 `doc-facts` 안에서** 돌고,
+# PRIMARY는 `bypass_actors: []`라 그 잡이 매달리면 아무도 머지를 풀 수 없다.
+assert_contains "$(grep -E '^RR_TIMEOUT=' "$SH")" "--max-time" "curl 시간 상한이 선언돼 있다"
+assert_contains "$(grep -E '^RR_TIMEOUT=' "$SH")" "--connect-timeout" "curl 연결 상한이 선언돼 있다"
+assert_eq "0" "$(grep -cE '^[[:space:]]*(if[[:space:]]+)?curl[[:space:]]+(-|-A)' "$SH" || true)" \
+  "상한 없이 곧바로 플래그로 시작하는 curl 호출이 없다(전부 \$RR_TIMEOUT 경유)"
+
 # df_check_url 검증(Task 1 리뷰 Minor — readiness가 df_check_url 소비)
 # ⚠️ 여기서 go만 빈값을 **요구**하던 시절이 있었다. 그 어서션은 "프록시 온디맨드"라는 설명을
 # 계약으로 굳혀, rr_registry_state가 조회 없이 exists(미게시)를 지어내는 것을 고정했다 —
