@@ -45,6 +45,10 @@ dist/
 build/
 *.egg-info/
 .coverage
+# ⚠️ `pytest --cov-report=xml`의 산출물. `.coverage`(SQLite 중간파일)와 **다른 파일**이라 위 줄이
+# 막지 못한다. 무시하지 않으면 SonarCloud가 이것을 XML **소스**로 색인해 blame 없는 파일로
+# 경고한다(실측: 커버리지 리포트 8개 중 이것만 미무시였고, 이것만 경고가 났다).
+coverage.xml
 htmlcov/
 .ruff_cache/
 .pytest_cache/
