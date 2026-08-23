@@ -6,6 +6,20 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-23
+
+**Node · Python 둘만 올라갑니다. 공개 API·타입 표면 변경은 없습니다.**
+
+⚠️ **정확히 적자면 Node는 「문서 전용」이 아닙니다.** `0.2.0` 이후 `node/src/jwt.ts`에 테스트 이음매 `JwtValidator.forKeySource(...)`가 들어갔고(`@internal`), `stripInternal`이 이를 방출 선언에서 지우므로 **`dist/jwt.d.ts`에는 없지만 `dist/jwt.js`에는 있습니다**(실측: `.d.ts` 히트 0 · `.js` 히트 1). 타입 표면은 그대로이나 런타임 번들에는 정적 메서드 하나가 늘어납니다 — 문서화되지 않았고 소비자 경로가 아닙니다. Python은 `python/src` 델타가 **0**이라 진짜 문서 전용입니다.
+
+레지스트리는 README를 **버전마다 고정**하므로, 게시된 페이지의 문장을 고치는 방법은 새 버전밖에 없습니다(`DEPLOY.md` §4 step 1). `0.2.0` 페이지가 `close()`에 대해 사실이 아닌 것을 말하고 있었습니다.
+
+### Fixed
+- **(Node) README의 `client.close()` 설명이 거짓이었습니다.** 「cleans up admin + auth resources」라고 적혀 있었는데 실측하면 **양쪽 다 no-op**입니다 — `auth.ts:203`·`admin/index.ts:93`이 둘 다 `return undefined`이고, openid-client 함수형 API와 admin-client가 전역 `fetch` 기반이라 보유 연결이 없기 때문입니다(각 소스의 주석이 그 이유를 적고 있습니다). 소비자가 그 문장을 읽고 커넥션 해제를 기대할 수 있어 고칩니다. **코드는 그대로입니다** — 닫을 자원이 없다는 사실이 맞고, 틀린 것은 문장이었습니다.
+- **(Python) README의 `with` 블록 설명이 절반만 참이었습니다.** 「cleans up the admin and auth sessions」 중 auth 쪽은 참이지만(`auth.py:279`가 requests 세션을 실제로 닫습니다) **admin 쪽은 no-op**입니다(`admin/__init__.py:83`이 `return None`이고 독스트링도 그렇게 적습니다). 참인 절반만 남기도록 좁혔습니다. ⚠️ `aio` 비동기 미러는 **다릅니다** — `aio/admin/__init__.py`는 실제로 `aclose()`합니다.
+
+⚠️ 아홉 언어 중 이 부류를 재스캔해 셋을 고쳤고(`node`·`python`·`kotlin`), **java·dotnet은 원래 정확했습니다.** `java/README.md`의 「releases the admin client **if it was created** (AuthClient holds no closeable session)」이 어느 절반이 실재인지 이름으로 밝히는 모범 문장이라 나머지를 그 형태로 맞췄습니다. Kotlin은 Maven Central이 README를 렌더링하지 않고 POM 링크가 저장소를 가리켜 **릴리스 없이 이미 반영**됐습니다.
+
 ## [0.2.0] - 2026-08-21
 
 **아홉 중 셋만 올라갑니다 — Node · Python · PHP.** 나머지 여섯(Java·Kotlin·Go·Rust·Ruby·.NET)은 이번 구간에 소비자 영향 변경이 없어 `0.1.0`에 머뭅니다. 버전은 언어별로 독립이므로 번호가 갈리는 것이 정상입니다.

@@ -2,7 +2,7 @@
 
 A guide to installing the Keycloak polyglot SDK locally and running your first token issuance, JWT validation, and Admin API call with minimal code. This SDK is provided in **multiple programming languages** (currently Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby · Kotlin), and while each language is idiomatic, the concepts, layers, and flows are isomorphic.
 
-> ℹ️ **All nine are on a public registry with a stable release** (Node, Python and PHP at `0.2.0`; the other six at `0.1.0` — versions move per language) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central), Kotlin (Maven Central) and Go (the Go module proxy). A bare install now resolves `0.1.0` everywhere, which was **not** true while only release candidates existed: pip, Cargo and the `go` command fell back to the prerelease, RubyGems resolved nothing, npm's `latest` pointed at it while a `^0.1.0` range failed with `ETARGET`, and Maven has no prerelease concept at all. Each RC remains on its registry — none of these ecosystems lets you delete a published version — but none of them prefers it any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. For the release procedure, see the unified nine-language [DEPLOY.md](../../DEPLOY.md) (check readiness with `scripts/release-readiness.sh` and tag commands with `scripts/release-trigger.sh <lang> <ver>` — both are human-gates that never push tags automatically).
+> ℹ️ **All nine are on a public registry with a stable release** (Node and Python at `0.2.1`, PHP at `0.2.0`; the other six at `0.1.0` — versions move per language) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central), Kotlin (Maven Central) and Go (the Go module proxy). A bare install now resolves `0.1.0` everywhere, which was **not** true while only release candidates existed: pip, Cargo and the `go` command fell back to the prerelease, RubyGems resolved nothing, npm's `latest` pointed at it while a `^0.1.0` range failed with `ETARGET`, and Maven has no prerelease concept at all. Each RC remains on its registry — none of these ecosystems lets you delete a published version — but none of them prefers it any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. For the release procedure, see the unified nine-language [DEPLOY.md](../../DEPLOY.md) (check readiness with `scripts/release-readiness.sh` and tag commands with `scripts/release-trigger.sh <lang> <ver>` — both are human-gates that never push tags automatically).
 
 > 🖥️ **You need a Keycloak *server* first.** This SDK is a client library, so it needs a **Keycloak server to connect to** in order to work (the server is a separate, standalone product not included in this SDK). For a local trial, use the one-line Docker command `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`; for a **production deployment**, see the [Keycloak server deployment guide](deploying-keycloak-server.md).
 
@@ -132,12 +132,12 @@ cd python && python -m build   # dist/keycloak_sdk-*-py3-none-any.whl + .tar.gz
 
 The distribution name is `keycloak-sdk` and the import package name is `keycloak_sdk`.
 
-### 3) Installation from PyPI (stable `0.1.0`)
+### 3) Installation from PyPI (stable `0.2.1`)
 
-`0.1.0` is live on PyPI — the first stable release:
+`0.2.1` is live on PyPI:
 
 ```bash
-pip install keycloak-sdk==0.2.0
+pip install keycloak-sdk==0.2.1
 ```
 
 > ⚠️ **pip skips prereleases again now that `0.1.0` exists.** A bare `pip install keycloak-sdk` resolves the stable release; the earlier `0.1.0rc1` now needs `--pre` or an exact pin. While the RC was the only release, pip fell back to it instead. Releases remain human-gated: a publish runs only when a human pushes a `py-v*` tag to trigger [`.github/workflows/python-release.yml`](../../.github/workflows/python-release.yml) (PyPI Trusted Publisher / OIDC). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
@@ -195,9 +195,9 @@ cd node && npm ci && npm run build   # generates dist/ (tsc). Consume via npm li
 
 The distribution name is `@xzawed/keycloak-sdk`, and the import path is the same.
 
-### 3) Installation from npm (stable `0.1.0`)
+### 3) Installation from npm (stable `0.2.1`)
 
-`0.1.0` is live on npm — the first stable release, and it holds the `latest` dist-tag:
+`0.2.1` is live on npm and holds the `latest` dist-tag:
 
 ```bash
 npm install @xzawed/keycloak-sdk
