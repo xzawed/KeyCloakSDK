@@ -135,6 +135,41 @@ export function securityDrift(want, have) {
   return out
 }
 
+// PHP 미러의 룰셋. ⚠️ `--repo <미러>` 로는 안 된다 — 그 플래그는 **이 저장소의 정의를** 다른
+// 저장소에 들이대는 것이라 룰셋 이름도 보안설정도 전부 불일치로 나온다(실측). 미러는 정의가
+// 따로(`.github/rulesets-mirror/`)이므로 여기서 따로 본다.
+// ⚠️ 미러 main 에 `non_fast_forward` 를 넣지 말 것 — `php-release.yml` 이 `git push --force` 로
+// split 결과를 덮으므로 그 규칙 하나가 PHP 릴리스를 영구 차단한다.
+export function mirrorRulesetDrift(want, live) {
+  const out = []
+  const byName = new Map((live ?? []).map((r) => [r.name, r]))
+  for (const name of want.rulesets ?? []) {
+    const l = byName.get(name)
+    if (!l) {
+      out.push(`php_mirror: 룰셋 "${name}" 이 미러에 없다`)
+      continue
+    }
+    if (l.enforcement !== 'active') out.push(`php_mirror: "${name}" 이 active 가 아니다(${l.enforcement})`)
+  }
+  return out
+}
+
+function mirrorDrift(want) {
+  const m = want.php_mirror
+  if (!m?.repo) return []
+  const r = gh(['api', `repos/${m.repo}/rulesets`])
+  if (!r.ok) return [`php_mirror: ${m.repo} 의 룰셋을 조회하지 못했다(관리자 권한 토큰이 필요하다)`]
+  let live
+  try {
+    live = JSON.parse(r.out)
+  } catch {
+    return [`php_mirror: ${m.repo} 룰셋 응답을 파싱하지 못했다`]
+  }
+  const d = mirrorRulesetDrift(m, live)
+  if (d.length === 0) console.log(`ok   ${m.repo} 룰셋 ${(m.rulesets ?? []).length}개`)
+  return d
+}
+
 function checkSecurity(repo, cmd) {
   const file = '.github/security-config.json'
   let want
@@ -156,6 +191,7 @@ function checkSecurity(repo, cmd) {
     code_scanning_default_setup: JSON.parse(csRes.out),
   }
   const diffs = securityDrift(want, have)
+  diffs.push(...mirrorDrift(want))
   if (diffs.length === 0) {
     console.log(`ok   ${file}`)
     return 0

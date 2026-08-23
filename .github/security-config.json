@@ -22,5 +22,13 @@
       "python",
       "ruby"
     ]
+  },
+  "php_mirror": {
+    "_comment": "PHP 미러 xzawed/keycloak-sdk-php 의 룰셋. 정의 원문은 .github/rulesets-mirror/*.json 이고 `node scripts/repo-config.mjs check --repo xzawed/keycloak-sdk-php` 로 대조한다(관리자 토큰 필요 → 유지자 로컬). ⚠️ main 에 non_fast_forward 를 걸면 안 된다 — php-release.yml:176 이 `git push --force` 로 split 결과를 덮는다(실측).",
+    "repo": "xzawed/keycloak-sdk-php",
+    "rulesets": [
+      "MIRROR-TAGS-IMMUTABLE",
+      "MIRROR-MAIN-NO-DELETE"
+    ]
   }
 }
