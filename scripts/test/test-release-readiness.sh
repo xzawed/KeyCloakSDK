@@ -114,6 +114,26 @@ assert_contains "$(grep -E '^RR_TIMEOUT=' "$SH")" "--connect-timeout" "curl 연�
 assert_eq "0" "$(grep -cE '^[[:space:]]*(if[[:space:]]+)?curl[[:space:]]+(-|-A)' "$SH" || true)" \
   "상한 없이 곧바로 플래그로 시작하는 curl 호출이 없다(전부 \$RR_TIMEOUT 경유)"
 
+# ⚠️ gh 도 같다 — 다만 등급이 다르다(required 경로에서 도달 불가). gh 에는 타임아웃 플래그가
+# 없어 `timeout` 래퍼가 유일한 수단이고, 그 래퍼를 우회한 직접 호출이 하나라도 생기면 무의미해진다.
+# ⚠️ 이 묶음은 **세 번 공허했다**(전부 변이검증·Grok 반증에서 발현). 남기는 이유는 같은 함정을
+# 세 번 다시 파지 않기 위해서다:
+#   1. `"timeout"` 부분문자열   → 가드절 `command -v timeout` 이 만족시켜 실호출의 상한을 떼도 통과
+#   2. `(^|\|[[:space:]]*)gh`   → 들여쓴 `  gh secret list` 를 못 잡음(공백이 파이프 안쪽에만 허용)
+#   3. rr_secret_set 안만 검사  → **다른 함수에 gh 를 새로 추가하면 무통과**. 그리고
+#      `timeout "$RR_GH_TIMEOUT" gh` 부분문자열은 `gtimeout …` 도 통과시킨다.
+# 그래서 (a) 파일 전체에서 직접 gh 호출 수를 세고, (b) 상한 호출을 **행머리로** 겨누고,
+# (c) 기본값이 양의 정수인지 본다 — ⚠️ `timeout 0` 은 GNU coreutils 에서 상한을 **해제**한다(실측: sleep 3 이 3초 걸림).
+_gh_all="$(grep -cE '(^|\|)[[:space:]]*gh[[:space:]]' "$SH" || true)"
+_gh_wrap="$(sed -n '/^rr_gh()/,/^}/p' "$SH" | grep -cE '(^|\|)[[:space:]]*gh[[:space:]]' || true)"
+assert_eq "1" "$_gh_all"  "직접 gh 호출은 파일 전체에 하나뿐(rr_gh 의 timeout 부재 폴백)"
+assert_eq "1" "$_gh_wrap" "그 하나가 rr_gh 안에 있다 — 다른 함수가 gh 를 직접 부르면 여기서 2가 된다"
+assert_eq "1" "$(sed -n '/^rr_gh()/,/^}/p' "$SH" | grep -cE '^[[:space:]]*timeout[[:space:]]+"\$RR_GH_TIMEOUT"[[:space:]]+gh[[:space:]]' || true)" \
+  "상한 호출이 행머리의 timeout 이다(gtimeout 같은 다른 명령이 아니다)"
+_gt="$(grep -E '^RR_GH_TIMEOUT=' "$SH" | grep -oE ':-[0-9]+' | grep -oE '[0-9]+' || true)"
+assert_ok test -n "$_gt"
+assert_ok test "${_gt:-0}" -ge 1
+
 # df_check_url 검증(Task 1 리뷰 Minor — readiness가 df_check_url 소비)
 # ⚠️ 여기서 go만 빈값을 **요구**하던 시절이 있었다. 그 어서션은 "프록시 온디맨드"라는 설명을
 # 계약으로 굳혀, rr_registry_state가 조회 없이 exists(미게시)를 지어내는 것을 고정했다 —
