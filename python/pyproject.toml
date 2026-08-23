@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "keycloak-sdk"
-version = "0.2.0"
+version = "0.2.1"
 description = "Keycloak SDK for Python — auth (OIDC/OAuth2) + Admin REST API, wrapping python-keycloak"
 readme = "README.md"
 requires-python = ">=3.10"
