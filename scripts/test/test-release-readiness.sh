@@ -82,14 +82,14 @@ assert_contains "$py_line" "ℹ️ 수동 확인" "python OIDC → pending-publi
 assert_contains "$py_line" "pending-publisher" "python OIDC → pending-publisher 문구 포함"
 
 # N2: split-token 언어(php)는 PHP_SPLIT_TOKEN이 있어도 실제 게시 주체가 미러 저장소
-# xzawed/keycloak-sdk-php이고, 미러·Packagist 등록 상태는 API로 확인 불가한 사람 확인 사항이라
-# "준비완료"를 자동표시하지 않는다. 시크릿이 있는 상태를 stub으로 재현해 다운그레이드를 고정한다.
+# xzawed/keycloak-sdk-php다. ⚠️ **이 주석은 오래 「API로 확인 불가한 사람 확인 사항」이라
+# 적혀 있었고 그 문장이 거짓이었다** — 미러 태그와 Packagist source 는 둘 다 공개 조회된다
+# (실측 2026-08-23). 이제 판정은 측정에서 나오고, 아래는 그 계약을 고정한다:
+# 시크릿만으로 "저장소측 OK"에 머물지 않으며, 결과가 무엇이든 **미러를 언급**한다.
 php_row="$(rr_row php)"
 assert_contains "$php_row" "secrets=set" "stub: php 시크릿 존재 상태 재현"
 assert_not_contains "$php_row" "✅ 저장소측 OK" "php는 시크릿만으로 저장소측 OK에 머물지 않음"
-assert_contains "$php_row" "ℹ️ 수동 확인" "php split-token → 수동확인 안내"
-assert_contains "$php_row" "xzawed/keycloak-sdk-php" "php split-token → 미러 저장소 명시"
-assert_contains "$php_row" "Packagist" "php split-token → Packagist 등록 명시"
+assert_contains "$php_row" "미러" "php split-token → 판정이 미러를 언급한다"
 # api-token(rust/dotnet)도 다운그레이드된다 — 시크릿 **이름**만 확인했을 뿐 토큰 유효성·스코프·
 # 계정 상태는 값 없이 볼 수 없다. rust가 실제로 여기서 걸렸다(crates.io 이메일 미인증, 400).
 assert_contains "$(rr_row rust)" "ℹ️ 수동 확인" "api-token(rust)도 수동확인으로 다운그레이드"
@@ -161,4 +161,35 @@ done
 # ⚠️ df_check_url을 여기서 덮어쓰므로 이 블록은 반드시 위 어서션들보다 뒤에 온다.
 df_check_url() { echo ""; }
 assert_eq "unknown" "$(rr_registry_state go)" "check_url이 비면 미게시가 아니라 unknown"
+
+# ---- PHP 미러·Packagist 판정 (네트워크 없이 스텁으로, **실제 코드 경로**를 태운다) ----
+# ⚠️ 이 자리는 오래 「조회 API가 없어 사람이 확인한다」였는데 **거짓이었다** — 둘 다 공개
+# 엔드포인트다(실측 2026-08-23: 미러 v0.2.0 존재 · Packagist source.url 이 그 미러).
+# ⚠️ **첫 판은 판정 if/elif 를 이 파일에 베껴 검사했고, 그건 스크립트가 아니라 사본을 본 것이라
+# 실제 분기를 지워도 통과했다**(변이검증에서 발현). 지금은 프로브만 스텁하고 `rr_row` 를 부른다.
+_php_verdict() { # <mirror_rc> <packagist_rc> → rr_row php 의 판정 부분
+  eval "rr_mirror_tag() { return $1; }"
+  eval "rr_packagist_source() { return $2; }"
+  RR_VERSION=9.9.9 rr_row php
+}
+assert_contains "$(_php_verdict 0 0)" "✅ 미러 v9.9.9" 'php: 미러 태그·Packagist 소스 둘 다 확인되면 초록'
+assert_contains "$(_php_verdict 1 0)" "미러에 v9.9.9 태그가 없다" 'php: 미러에 태그가 없으면 split 실패를 말한다'
+assert_contains "$(_php_verdict 0 1)" "Packagist" 'php: Packagist 가 다른 소스면 그렇게 말한다'
+# ⚠️ 이 둘이 이 묶음의 요지다 — **확인 불가를 「없음」으로 반올림하지 않는다.**
+assert_contains "$(_php_verdict 2 0)" "수동 확인" 'php: 미러 조회 실패는 「없음」이 아니라 「확인불가」다'
+assert_contains "$(_php_verdict 0 2)" "수동 확인" 'php: Packagist 조회 실패도 확인불가다'
+assert_not_contains "$(_php_verdict 2 0)" "태그가 없다" 'php: 조회 실패를 「태그 없음」으로 지어내지 않는다'
+unset -f rr_mirror_tag rr_packagist_source 2>/dev/null || true
+
+# 소스 대조 — 두 프로브가 상한을 거치는가(git·curl 둘 다 타임아웃 플래그 사정이 다르다).
+# ⚠️ `(^|\|)…git` 로 쓰면 `$(git …)` 를 놓친다(실측: 변이가 통과했다). 앞 문자가 식별자
+# 구성문자가 아닌 모든 자리를 본다 — `rr_git` 의 `_git` 은 그래서 걸리지 않는다.
+assert_eq "1" "$(sed -n '/^rr_git()/,/^}/p' "$SH" | grep -cE '^[[:space:]]*timeout[[:space:]]+"\$RR_GH_TIMEOUT"[[:space:]]+git[[:space:]]' || true)" \
+  'rr_git 의 실호출이 행머리의 timeout 이다'
+assert_eq "0" "$(sed -n '/^rr_mirror_tag()/,/^}/p' "$SH" | grep -cE '(^|[^_[:alnum:]])git[[:space:]]+ls-remote' || true)" \
+  'rr_mirror_tag 이 git 을 직접 부르지 않는다(rr_git 경유)'
+assert_eq "1" "$(sed -n '/^rr_packagist_source()/,/^}/p' "$SH" | grep -cE 'curl \$RR_TIMEOUT' || true)" \
+  'rr_packagist_source 의 curl 이 시간 상한을 쓴다'
+assert_contains "$(grep -E '^RR_PHP_MIRROR=' "$SH")" 'keycloak-sdk-php' 'RR_PHP_MIRROR 이 미러 저장소다'
+
 assert_report
