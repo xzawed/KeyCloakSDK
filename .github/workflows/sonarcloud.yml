@@ -133,10 +133,23 @@ jobs:
       # Dependabot PR은 위 `if:`로 애초에 스킵된다(시크릿 미노출 → 스캔은 반드시 실패한다).
       # 대기 타임아웃은 스캐너 기본값 300초를 쓴다 — 서버측 백그라운드 태스크가 그보다 오래 걸리면
       # 통과가 아니라 **실패**로 끝난다(fail-closed).
+      # ⚠️ `sonar.java.libraries`는 **여기에만** 둘 수 있다 — 값이 러너의 절대경로라
+      # `sonar-project.properties`(이식 가능해야 한다)에 박으면 안 된다. `sonar.java.binaries`를
+      # 넣은 뒤에도(#300) 남은 WARN 둘이 이것 때문이다:
+      #   "Unresolved imports/types have been detected during analysis."
+      #   "Use of preview features have been detected during analysis."
+      # 둘은 **같은 밀리초에 같은 분석기**가 냈고, 이 리포는 `--enable-preview`를 쓰지 않으며
+      # 스캐너 스스로 `enablePreview: false`라고 찍는다 — 즉 후자는 타입을 못 푼 데서 온 오탐이라는
+      # 가설이고, 이 스텝이 그 실험이다(둘 다 사라지면 뿌리가 하나였다는 뜻).
+      # 리액터 classpath를 뽑지 않고 로컬 저장소 전체를 와일드카드로 준다: 러너의 `~/.m2`는 이
+      # 빌드가 받은 것만 들어 있고, 타입 해석용 클래스패스는 상위집합이어도 무방하다.
+      - name: Expose Maven local repo for sonar.java.libraries
+        run: echo "SONAR_JAVA_LIBS=$HOME/.m2/repository/**/*.jar" >> "$GITHUB_ENV"
+
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8
         with:
-          args: -Dsonar.qualitygate.wait=true
+          args: -Dsonar.qualitygate.wait=true -Dsonar.java.libraries=${{ env.SONAR_JAVA_LIBS }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
