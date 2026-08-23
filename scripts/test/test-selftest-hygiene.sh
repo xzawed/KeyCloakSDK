@@ -32,15 +32,33 @@ done
 # ⚠️ **언급이 아니라 실행을 세야 한다.** 첫 구현은 `grep -q "$b"`였는데, 이 워크플로는 주석에서
 # `test-deploy-md.sh`를 사례로 인용하고 있어 **배선을 지워도 통과했다**(변이검증으로 발현).
 # 주석을 걷어내고 `sh scripts/test/<name>` 형태의 실제 호출만 본다.
+# ⚠️ **인터프리터까지 봐야 한다.** 첫 구현은 `grep -q "sh scripts/test/$b"`였는데 그 문자열은
+# `bash scripts/test/$b`의 **부분문자열**이라 둘을 구분하지 못했다. 그래서 두 방향이 다 새어나갔다 —
+# bash 전용 문법(`declare -A` 등)을 쓰는 테스트가 `sh`로 불려 CI에서 문법 에러로 죽는 쪽,
+# 그리고 `sh` 셰방 테스트가 `bash`로 불려 **dash 발산을 숨기는** 쪽(우분투의 /bin/sh는 dash다).
+# 셰방이 요구하는 인터프리터로 정확히 불리는지 단어 경계로 본다.
 if [ -f "$HYGIENE" ]; then
   RUNLINES="$(sed 's/#.*//' "$HYGIENE")"
   for f in "$DIR"/test-*.sh; do
     b="$(basename "$f")"
-    if printf '%s' "$RUNLINES" | grep -q "sh scripts/test/$b"; then
+    # ⚠️ `case … in *bash)` 는 **플래그가 붙은 셰방을 놓친다**(실측: `#!/bin/bash -eu` 와
+    # `#!/usr/bin/env -S bash -eu` 가 둘 다 sh 로 분류됐다) — 그러면 bash 전용 테스트가 sh 로
+    # 불려도 통과해 이 규칙의 존재 이유가 사라진다. 인터프리터 이름을 단어로 뽑는다.
+    sb="$(head -1 "$f")"
+    case "$sb" in
+      '#!'*) : ;;
+      *) _A_FAIL=$((_A_FAIL + 1))
+         printf 'FAIL %s: 셰방이 없다 — 인터프리터를 판정할 수 없다\n' "$b" >&2
+         continue ;;
+    esac
+    if printf '%s' "$sb" | grep -qE '[/ ]bash([[:space:]]|$)'; then want=bash; else want=sh; fi
+    # 파일명이 정규식으로 해석되지 않게 메타문자를 이스케이프한다(`test-a.b.sh` 의 `.` 가 임의문자가 되면 안 된다).
+    b_re="$(printf '%s' "$b" | sed 's/[].[^$*\\]/\\&/g')"
+    if printf '%s' "$RUNLINES" | grep -qE "(^|[^[:alnum:]_])$want scripts/test/$b_re([[:space:]]|$)"; then
       _A_PASS=$((_A_PASS + 1))
     else
       _A_FAIL=$((_A_FAIL + 1))
-      printf 'FAIL %s: repo-hygiene.yml에서 실행되지 않음 — 존재하지만 돌지 않는다\n' "$b" >&2
+      printf 'FAIL %s: repo-hygiene.yml에서 `%s`로 실행되지 않음 — 존재하지만 돌지 않거나, 셰방과 다른 인터프리터로 돈다\n' "$b" "$want" >&2
     fi
   done
 else
@@ -116,6 +134,22 @@ assert_ok grep -q 'sh scripts/test/test-selftest-hygiene.sh' "$HYGIENE"
 # ⚠️ 대조군 — 주석에만 등장하는 이름이 배선으로 오인되지 않는지. 이 어서션이 없었다면
 # 첫 구현의 결함(주석 매치)이 그대로 남았을 것이다.
 assert_fails sh -c 'printf "%s" "$(sed "s/#.*//" "$1")" | grep -q "sh scripts/test/test-does-not-exist.sh"' _ "$HYGIENE"
+
+# ⚠️ 대조군 — 인터프리터 구분이 실제로 되는가. `bash X`가 `sh X` 검색에 걸리던 것이 원래 결함이다.
+# 이것들이 없으면 위 루프의 정규식·셰방 판정이 느슨해져도 "전부 통과"로 보인다.
+assert_ok   sh -c 'printf "%s" "bash scripts/test/t.sh" | grep -qE "(^|[^[:alnum:]_])bash scripts/test/t\.sh"'
+assert_fails sh -c 'printf "%s" "bash scripts/test/t.sh" | grep -qE "(^|[^[:alnum:]_])sh scripts/test/t\.sh"'
+assert_ok   sh -c 'printf "%s" "  run: sh scripts/test/t.sh" | grep -qE "(^|[^[:alnum:]_])sh scripts/test/t\.sh"'
+# bash 셰방을 가진 유일한 테스트가 실제로 bash로 배선돼 있다(위 루프가 보는 그 짝).
+assert_ok grep -q 'bash scripts/test/test-install-verify.sh' "$HYGIENE"
+# ⚠️ 셰방 판정이 **플래그·env -S**까지 보는가. 이 넷이 위 루프가 쓰는 그 정규식이다 —
+# 느슨해지면 bash 전용 테스트가 sh 로 불려도 초록이 된다(Grok 반증에서 발현).
+for _sb in '#!/usr/bin/env bash' '#!/bin/bash' '#!/bin/bash -eu' '#!/usr/bin/env -S bash -eu'; do
+  assert_ok sh -c 'printf "%s" "$1" | grep -qE "[/ ]bash([[:space:]]|$)"' _ "$_sb"
+done
+assert_fails sh -c 'printf "%s" "#!/usr/bin/env sh" | grep -qE "[/ ]bash([[:space:]]|$)"'
+# 접두 일치로 인접 파일명을 주워오지 않는가(`test-doctor.sh` 검색이 `test-doctor.sh.disabled`에 걸리면 안 된다).
+assert_fails sh -c 'printf "%s" "  run: sh scripts/test/t.sh.disabled" | grep -qE "(^|[^[:alnum:]_])sh scripts/test/t\.sh([[:space:]]|$)"'
 
 # ---- 대조군: 규칙 3(harness *.test.mjs 배선)이 실제로 잡는가 ----
 # I1을 고치며 넣은 규칙 3이 공허하지 않음을 규칙 1·2와 같은 방식으로 보인다: 실제로 배선된

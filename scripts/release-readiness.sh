@@ -15,9 +15,22 @@ else
 fi
 
 # 외부호출 래퍼(테스트에서 override 가능) — 실패는 조용히 '?'로 격리.
+# ⚠️ `gh`에는 타임아웃 플래그가 없다 — coreutils `timeout`이 있으면 그것으로 감싼다.
+# curl 쪽과 같은 부류이나 **등급이 다르다**: 이 호출은 required 체크에서 도달 불가다(라이브
+# 스모크가 도는 go·python은 `df_secrets`가 비어 여기까지 오지 않는다). 그래도 비가역 행위
+# 직전에 보는 도구라 무기한 매달리게 두지 않는다. `timeout` 부재 환경에서는 그대로 부른다 —
+# 상한이 없는 것이 도구를 아예 못 쓰는 것보다 낫다.
+RR_GH_TIMEOUT="${RR_GH_TIMEOUT:-20}"
+rr_gh() { # <gh 인자…> — 시간 상한 안에서 gh 를 부른다
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$RR_GH_TIMEOUT" gh "$@"
+  else
+    gh "$@"
+  fi
+}
 rr_secret_set() { # <name> → 0 if a repo secret with this name exists
   command -v gh >/dev/null 2>&1 || return 2
-  gh secret list 2>/dev/null | awk '{print $1}' | grep -qx "$1"
+  rr_gh secret list 2>/dev/null | awk '{print $1}' | grep -qx "$1"
 }
 # ⚠️ **User-Agent가 없으면 crates.io가 403을 준다 — 그리고 403은 "미게시"로 읽힌다.**
 # crates.io API는 UA 없는 요청을 거절하는데(실측: UA 없음 403 / UA 있음 200 / 없는 크레이트 404),
