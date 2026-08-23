@@ -141,10 +141,20 @@ jobs:
       # 둘은 **같은 밀리초에 같은 분석기**가 냈고, 이 리포는 `--enable-preview`를 쓰지 않으며
       # 스캐너 스스로 `enablePreview: false`라고 찍는다 — 즉 후자는 타입을 못 푼 데서 온 오탐이라는
       # 가설이고, 이 스텝이 그 실험이다(둘 다 사라지면 뿌리가 하나였다는 뜻).
-      # 리액터 classpath를 뽑지 않고 로컬 저장소 전체를 와일드카드로 준다: 러너의 `~/.m2`는 이
-      # 빌드가 받은 것만 들어 있고, 타입 해석용 클래스패스는 상위집합이어도 무방하다.
-      - name: Expose Maven local repo for sonar.java.libraries
-        run: echo "SONAR_JAVA_LIBS=$HOME/.m2/repository/**/*.jar" >> "$GITHUB_ENV"
+      # ⚠️ 첫 판은 `$HOME/.m2/repository/**/*.jar` 와일드카드였다. **엉성한 계측기였다** —
+      # m2 에는 Maven 플러그인들이 끌어온 같은 아티팩트의 여러 버전이 함께 산다(로컬 실측:
+      # commons-io 8개 · plexus-utils 6개 · commons-lang3 5개 · asm 5개). 타입 해석을 그중
+      # 아무 버전에나 붙일 수 있는 클래스패스는 "상위집합이라 무방"하지 않다.
+      # 리액터가 실제로 쓰는 compile 스코프 의존만 뽑아 준다. 빈 값이면 정밀도만 조용히
+      # 떨어지므로 여기서 죽인다(fail-closed).
+      - name: Build Java dependency classpath for Sonar
+        run: |
+          mvn -B -q -f java/pom.xml dependency:build-classpath \
+            -Dmdep.outputFile=target/sonar-cp.txt -Dmdep.includeScope=compile
+          LIBS="$(cat java/*/target/sonar-cp.txt 2>/dev/null | tr ':' '\n' | grep -E '\.jar$' | sort -u | paste -sd, -)"
+          [ -n "$LIBS" ] || { echo "::error::sonar.java.libraries 가 비었다 — 클래스패스 산출 실패"; exit 1; }
+          echo "Java libraries for Sonar: $(printf '%s' "$LIBS" | tr ',' '\n' | wc -l) jars"
+          echo "SONAR_JAVA_LIBS=$LIBS" >> "$GITHUB_ENV"
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8
