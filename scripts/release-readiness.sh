@@ -60,6 +60,35 @@ rr_url_exists() { # <url> → exit 0=게시됨(2xx) 1=미게시(4xx/5xx, curl -f
   [ "$rc" -eq 22 ] && return 1
   return 2
 }
+# ── PHP 미러 (게시 주체가 이 저장소가 아닌 유일한 언어) ──────────────────────
+# ⚠️ 이 자리는 오래 「미러·Packagist 등록 상태는 **조회 API가 없어** 사람이 확인한다」고
+# 적혀 있었다. **거짓이다** — 둘 다 공개 엔드포인트로 확인된다(실측 2026-08-23):
+#   git ls-remote --tags https://github.com/xzawed/keycloak-sdk-php.git  → v0.2.0 존재
+#   https://repo.packagist.org/p2/xzawed/keycloak-sdk.json               → source.url 이 그 미러
+# 그래서 비가역 행위 직전에 사람이 눈으로 하던 확인 둘을 기계로 옮긴다. 확인 **불가**(네트워크
+# 실패)와 확인된 **불일치**는 끝까지 구분한다 — 모르는 것을 안전으로 반올림하지 않는다.
+RR_PHP_MIRROR="https://github.com/xzawed/keycloak-sdk-php.git"
+RR_PACKAGIST_P2="https://repo.packagist.org/p2/xzawed/keycloak-sdk.json"
+rr_git() { # git 을 시간 상한 안에서 부른다(rr_gh 와 같은 이유 — git 에는 타임아웃 플래그가 없다)
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$RR_GH_TIMEOUT" git "$@"
+  else
+    git "$@"
+  fi
+}
+rr_mirror_tag() { # <version> → 0 미러에 v<version> 있음 · 1 확인됨·없음 · 2 확인불가
+  command -v git >/dev/null 2>&1 || return 2
+  _mt="$(rr_git ls-remote --tags "$RR_PHP_MIRROR" "refs/tags/v$1" 2>/dev/null)" || return 2
+  [ -n "$_mt" ]
+}
+rr_packagist_source() { # → 0 Packagist 가 그 미러를 소스로 서빙 · 1 확인됨·아님 · 2 확인불가
+  command -v curl >/dev/null 2>&1 || return 2
+  # shellcheck disable=SC2086
+  _pj="$(curl $RR_TIMEOUT -sf -A "$RR_UA" "$RR_PACKAGIST_P2" 2>/dev/null)" || return 2
+  [ -n "$_pj" ] || return 2
+  printf '%s' "$_pj" | grep -q "keycloak-sdk-php"
+}
+
 rr_tag_exists() { # <glob 또는 정확한 태그명> → 0 if any matching tag
   [ -n "$(git tag -l "$1" 2>/dev/null | head -1)" ]
 }
@@ -135,9 +164,25 @@ rr_row() { # <lang>
       # OIDC(python/node/ruby): secrets=na라도 pending-publisher 사전등록은 조회 API가 없고
       # 미등록이면 배포가 실패한다.
       OIDC) verdict="ℹ️ 수동 확인: pending-publisher" ;;
-      # split-token(php): PHP_SPLIT_TOKEN이 있어도 실제 게시 주체는 이 저장소가 아니라 미러
-      # xzawed/keycloak-sdk-php다 — 미러·Packagist 등록 상태는 조회 API가 없어 사람이 확인한다(DEPLOY.md §2-D).
-      split-token) verdict="ℹ️ 수동 확인: 미러 xzawed/keycloak-sdk-php + Packagist 등록" ;;
+        # split-token(php): PHP_SPLIT_TOKEN이 있어도 실제 게시 주체는 이 저장소가 아니라 미러
+        # xzawed/keycloak-sdk-php다(DEPLOY.md §2-D). 그 미러와 Packagist는 **공개 엔드포인트라
+        # 확인된다** — 위 rr_mirror_tag·rr_packagist_source 참조. 확인 불가일 때만 사람에게 넘긴다.
+        split-token)
+          _mv="${RR_VERSION:-$(df_published_version "$L")}"
+          # ⚠️ `set -e` 아래서 함수를 맨 문장으로 부르면 비영 반환이 스크립트를 죽인다
+          # (실측: 미태그 버전으로 돌렸더니 행이 아예 안 찍혔다). 조건 문맥에서 부른다 —
+          # rr_registry_state 가 rr_url_exists 에 쓰는 것과 같은 관용구다.
+          if rr_mirror_tag "$_mv"; then _mrc=0; else _mrc=$?; fi
+          if rr_packagist_source; then _prc=0; else _prc=$?; fi
+          if [ "$_mrc" -eq 2 ] || [ "$_prc" -eq 2 ]; then
+            verdict="ℹ️ 수동 확인: 미러·Packagist 조회 실패(네트워크) — 눈으로 확인할 것"
+          elif [ "$_mrc" -eq 1 ]; then
+            verdict="⚠️ 미러에 v$_mv 태그가 없다 — split이 안 갔거나 실패했다"
+          elif [ "$_prc" -eq 1 ]; then
+            verdict="⚠️ Packagist가 이 미러를 소스로 서빙하지 않는다 — 등록 확인"
+          else
+            verdict="✅ 미러 v$_mv + Packagist 소스 확인됨"
+          fi ;;
       # api-token(rust/dotnet): 시크릿 **이름**이 있다는 것만 확인했다. 토큰이 유효한지, 스코프가
       # 맞는지, 그 토큰이 속한 계정이 게시 가능한 상태인지는 값 없이 볼 수 없다.
       # 실제로 rust가 여기서 걸렸다 — crates.io는 **이메일 인증**을 요구하고, 그건 계정 UI에만 있다.
