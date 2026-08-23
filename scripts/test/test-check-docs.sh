@@ -1200,4 +1200,38 @@ assert_ok node "$GUARD" "$TMP" --min-anchor-links=1
 
 rm -rf "$TMP" && mkdir -p "$TMP"
 
+
+# ---- 검사 10b: 절대 self-link 의 대상 파일 존재 ----
+# ⚠️ 이 부류는 **검사 5(상대 경로만)와 검사 10(`#` 있는 것만) 사이로 빠져 있었다** — 없는
+# 파일을 가리키는 절대 self-link 두 형태 모두 exit 0 이었다(실측). 아홉 `<lang>/README.md`
+# 는 레지스트리 랜딩 페이지라 상대 링크를 못 써 전부 이 형태이고(실측 72건), 레지스트리는
+# README 를 버전마다 고정하므로 깨진 링크는 **새 버전을 태워야** 고쳐진다.
+mk_selfblob_fixture() { # $1=href
+  rm -rf "$TMP" && mkdir -p "$TMP"
+  cp -r "$FIX/." "$TMP/"
+  printf '%s\n' '# target' '' '## Heading' '' '본문.' > "$TMP/t.md"
+  printf '%s\n' '# src' '' "[link]($1)" > "$TMP/s.md"
+}
+# 있는 대상 — 앵커 없음/있음 둘 다 통과.
+mk_selfblob_fixture 'https://github.com/xzawed/KeyCloakSDK/blob/main/t.md'
+assert_ok node "$GUARD" "$TMP"
+mk_selfblob_fixture 'https://github.com/xzawed/KeyCloakSDK/blob/main/t.md#heading'
+assert_ok node "$GUARD" "$TMP"
+# 없는 대상 — **앵커가 없어도** 잡아야 한다(그게 이 검사가 생긴 이유다).
+mk_selfblob_fixture 'https://github.com/xzawed/KeyCloakSDK/blob/main/NOPE.md'
+assert_fails node "$GUARD" "$TMP"
+mk_selfblob_fixture 'https://github.com/xzawed/KeyCloakSDK/blob/main/NOPE.md#x'
+assert_fails node "$GUARD" "$TMP"
+# 펜스 안의 예시 링크는 실제 링크가 아니다.
+rm -rf "$TMP" && mkdir -p "$TMP" && cp -r "$FIX/." "$TMP/"
+printf '%s\n' '# src' '' '```' '[x](https://github.com/xzawed/KeyCloakSDK/blob/main/NOPE.md)' '```' > "$TMP/s.md"
+assert_ok node "$GUARD" "$TMP"
+# 남의 저장소를 가리키는 절대 링크는 우리가 판정할 수 없다 — 건드리지 않는다.
+rm -rf "$TMP" && mkdir -p "$TMP" && cp -r "$FIX/." "$TMP/"
+printf '%s\n' '# src' '' '[x](https://github.com/other/repo/blob/main/NOPE.md)' > "$TMP/s.md"
+assert_ok node "$GUARD" "$TMP"
+# 보고 줄에 개수가 실린다 — 추출이 0건이 되면 "부재 0"이 통과로 보이는 것을 막는다.
+mk_selfblob_fixture 'https://github.com/xzawed/KeyCloakSDK/blob/main/t.md'
+assert_contains "$(node "$GUARD" "$TMP" 2>&1)" 'self-blob targets' '보고 줄이 self-blob 개수를 싣는다'
+
 assert_report
