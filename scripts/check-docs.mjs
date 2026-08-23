@@ -2,7 +2,7 @@
 // 문서-소스 드리프트 가드. 산문을 읽지 않는다 — HTML 주석 앵커가 선언한 좌표만
 // 읽고 값은 빌드 파일에서 추출해 대조한다. 기대값을 이 스크립트에 적지 않으므로
 // 가드 자신은 드리프트할 수 없다.
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join, resolve, relative, dirname } from 'node:path'
 
 // .superpowers는 gitignore된 작업 스크래치(실제 문서가 아님). .venv/venv/site-packages는
@@ -695,6 +695,35 @@ function headingSlugs(absPath) {
 }
 
 let anchorsChecked = 0
+let selfBlobLinks = 0
+// 검사 10b — 절대 self-link 의 **대상 파일**이 실제로 있는가.
+//
+// ⚠️ 왜 따로 필요한가: 검사 5 는 상대 경로만 보고, 검사 10 은 `#` 가 있는 링크만 본다.
+// 그 사이에 **앵커 없는 절대 self-link** 가 통째로 빠져 있었다(실측: 없는 파일을 가리키는
+// 링크를 넣어도 두 형태 모두 exit 0 이었다).
+//
+// ⚠️ 이 링크들이 특별한 이유: 아홉 `<lang>/README.md` 는 레지스트리 랜딩 페이지가 되므로
+// 상대 링크를 쓸 수 없어 전부 이 형태다(실측 72 건). 그리고 레지스트리는 README 를 **버전마다
+// 고정**한다 — 깨진 링크는 새 버전을 태워야 고쳐진다.
+function checkSelfBlobTargets(file, rel, lines) {
+  let inFence = false
+  for (const line of lines) {
+    if (/^\s*```/.test(line)) { inFence = !inFence; continue }
+    if (inFence) continue
+    for (const m of line.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)) {
+      const href = m[1]
+      const hash = href.indexOf('#')
+      const dest = hash < 0 ? href : href.slice(0, hash)
+      if (!SELF_BLOB.test(dest)) continue
+      const target = resolve(ROOT, decodeURIComponent(SELF_BLOB.exec(dest)[1]))
+      selfBlobLinks++
+      if (!existsSync(target)) {
+        errors.push(`${rel} 절대 self-link 의 대상이 없다: ${dest} — 게시된 README 에서 이 링크는 버전마다 고정된다`)
+      }
+    }
+  }
+}
+
 function checkAnchors(file, rel, lines) {
   let inFence = false
   for (const line of lines) {
@@ -714,7 +743,11 @@ function checkAnchors(file, rel, lines) {
       else continue // 외부 URL — 우리가 판정할 수 없다
       if (!/\.md$/i.test(target)) continue
       const slugs = headingSlugs(target)
-      if (slugs === null) continue // 대상 부재는 검사 5가 보고한다
+        // ⚠️ 여기 「대상 부재는 검사 5가 보고한다」고 적혀 있었는데 **거짓이었다** — 검사 5의
+        // 링크 정규식은 상대 경로만 대상으로 삼아 절대 self-link 를 아예 보지 않는다(실측:
+        // 없는 파일을 가리키는 절대 self-link 를 넣어도 exit 0 이었다). 아래 checkSelfBlobTargets
+        // 가 그 부재를 본다 — 앵커가 있든 없든.
+        if (slugs === null) continue
       anchorsChecked++
       if (!slugs.has(anchor)) {
         errors.push(
@@ -816,6 +849,7 @@ for (const file of walk(ROOT)) {
   const lines = readFileSync(file, 'utf8').split(/\r?\n/)
   checkLinks(file, rel, lines)
   checkAnchors(file, rel, lines)
+  checkSelfBlobTargets(file, rel, lines)
   let inFence = false
   for (let i = 0; i < lines.length; i++) {
     if (/^\s*```/.test(lines[i])) { inFence = !inFence; continue }
@@ -1281,4 +1315,4 @@ if (errors.length) {
   console.error(`문서 드리프트 ${errors.length}건`)
   process.exit(1)
 }
-console.log(`checked ${facts} facts across ${anchors} anchors · ${anchorsChecked} anchor links`)
+console.log(`checked ${facts} facts across ${anchors} anchors · ${anchorsChecked} anchor links · ${selfBlobLinks} self-blob targets`)
