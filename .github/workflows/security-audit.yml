@@ -233,3 +233,27 @@ jobs:
           bundler-cache: true
           working-directory: ruby
       - run: bundle exec bundler-audit check --update
+
+  # 위 아홉 잡이 보지 못하는 자리를 덮는다. 전부 `working-directory:`가 SDK 디렉터리라
+  # **하네스의 의존성은 어느 잡도 감사하지 않았고**, high 경보 2건이 51일간 열려 있어도
+  # 아무것도 빨개지지 않았다(harness/apps/ruby/Gemfile 의 puma).
+  #
+  # ⚠️ 하네스에 언어별 감사 잡을 아홉 개 더 다는 방식은 **실행 자체가 불가능하다** — 하네스 앱
+  # 매니페스트는 전부 이미지 안에만 있는 경로를 참조한다(`path: "/src/ruby"`·`replace => /sdk`·
+  # `{path="/src/rust"}`·`file:./*.tgz`). 스톡 러너에서 bundler/cargo/go 는 해석에 실패하고,
+  # 그 실패는 CVE 신호가 아니라 ENOENT 다. 그래서 GitHub 이 이미 만들어 둔 의존성 그래프를 읽는다.
+  dependabot-alerts:
+    name: Scheduled dependency audit — 전 매니페스트 (Dependabot alerts)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # ⚠️ 이 키가 아니면 403 이다. 실측(run 33079374320): 같은 요청을 보내는 두 잡 중 이걸
+      # 선언한 쪽은 200, 선언하지 않은 대조군은 403 "Resource not accessible by integration".
+      # `security-events: read` 는 code scanning 용이라 이 API 에 듣지 않는다.
+      vulnerability-alerts: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: 열린 Dependabot 경보 (조회 실패는 "경보 없음"이 아니라 exit 2)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-dependabot-alerts.mjs

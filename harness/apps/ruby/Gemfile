@@ -6,5 +6,11 @@ source "https://rubygems.org"
 gem "keycloak-sdk", path: "/src/ruby"
 gem "faraday", "~> 2.0" # ROPC(app-local 헬퍼)용 — keycloak-sdk의 전이 의존성이나 명시 고정
 gem "sinatra", "~> 4.0"
-gem "puma", "~> 6.4"
+# ⚠️ 상한을 두지 않는다. CVE-2026-47736·47737(PROXY protocol v1)의 패치는 **7.2.1과 8.0.2 두
+# 라인에만** 있고 6.x 최신은 6.6.1이라, 종전 `~> 6.4`(= >=6.4,<7.0)는 어떤 패치에도 닿지 못했다.
+# `~> 7.2`는 8.0.2를, `~> 8.0`은 7.2.1을 각각 거절하므로 두 라인을 함께 받는 표현은 `>=`뿐이다.
+# 상한 대신 화석화를 막는 것: 이 Gemfile은 위의 `path: "/src/ruby"` 때문에 **dependabot이 해석할
+# 수 없어**(그 경로는 이미지 안에만 있다) 버전 업데이트 PR이 오지 않는다 — 상한을 두면 아무도
+# 올려주지 않아 이번과 같은 상태로 돌아간다. 부동(floating)의 대가인 재현성은 야간 하네스가 갚는다.
+gem "puma", ">= 7.2.1"
 gem "rackup", "~> 2.1"
