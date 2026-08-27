@@ -1,0 +1,59 @@
+name: probe-vuln-alerts
+
+# ⚠️ 임시 프로브다. `vulnerability-alerts: read` 가 GITHUB_TOKEN 에 Dependabot 경보 읽기를
+# 실제로 주는지 **실측**하기 위해서만 존재하고, 측정이 끝나면 이 파일은 지운다.
+# 문서만 읽고 "된다/안 된다"를 쓰지 않는다는 규칙(CLAUDE.md) 때문에 필요하다.
+#
+# 실험 설계: 같은 요청을 두 잡이 보낸다 — 하나는 그 권한 키를 선언하고, 하나는 선언하지 않는다.
+# 대조군이 없으면 "토큰이 원래 읽을 수 있었다"와 "이 키가 읽게 해줬다"가 구분되지 않는다.
+on:
+  push:
+    branches: ['security/harness-alert-visibility']
+
+jobs:
+  with-permission:
+    name: probe A — vulnerability-alerts read 선언함
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      vulnerability-alerts: read
+    steps:
+      - name: GET /dependabot/alerts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -u
+          code=$(curl -sS -o /tmp/a.json -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPO/dependabot/alerts?state=open&per_page=100")
+          echo "PROBE_A_HTTP=$code"
+          echo "PROBE_A_BODY_HEAD<<EOF"
+          head -c 1200 /tmp/a.json
+          echo
+          echo "EOF"
+
+  without-permission:
+    name: probe B — 대조군(선언하지 않음)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: GET /dependabot/alerts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -u
+          code=$(curl -sS -o /tmp/b.json -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPO/dependabot/alerts?state=open&per_page=100")
+          echo "PROBE_B_HTTP=$code"
+          echo "PROBE_B_BODY_HEAD<<EOF"
+          head -c 1200 /tmp/b.json
+          echo
+          echo "EOF"
