@@ -32,17 +32,34 @@ verdict() { # <alerts-json> <"len"|"text"> -> 결과
 # ── 1. 열린 경보는 반드시 잡혀야 한다(침묵 금지) ─────────────────────────────
 # 픽스처는 실제 사건의 모양이다: harness/apps/ruby/Gemfile 의 puma, 6.x 에 패치가 없어
 # `~> 6.4` 가 어떤 수정에도 닿지 못했던 그 경보(GHSA-2vqw-3mp8-cgmx).
-OPEN='[{"number":13,"state":"open","dependency":{"package":{"ecosystem":"rubygems","name":"puma"},"manifest_path":"harness/apps/ruby/Gemfile"},"security_advisory":{"severity":"high","ghsa_id":"GHSA-2vqw-3mp8-cgmx","cve_id":"CVE-2026-47737"},"security_vulnerability":{"first_patched_version":{"identifier":"7.2.1"}}}]'
-assert_eq "1" "$(verdict "$OPEN" len)" '열린 경보 1건을 잡는다'
+# ⚠️ 픽스처는 **실제 응답의 모양**이다(실측: `gh api repos/…/dependabot/alerts/13`). 두 자리가
+# 서로 다른 것을 담는 것이 핵심이다 — `security_vulnerability` 는 지금 선언된 버전에 걸리는
+# **한 구간**만, `security_advisory.vulnerabilities` 는 **두 구간 전부**를 담는다.
+OPEN='[{"number":13,"state":"open",
+        "dependency":{"package":{"ecosystem":"rubygems","name":"puma"},"manifest_path":"harness/apps/ruby/Gemfile"},
+        "security_advisory":{"severity":"high","ghsa_id":"GHSA-2vqw-3mp8-cgmx","cve_id":"CVE-2026-47737",
+          "vulnerabilities":[
+            {"package":{"ecosystem":"rubygems","name":"puma"},"vulnerable_version_range":">= 8.0.0, < 8.0.2","first_patched_version":{"identifier":"8.0.2"}},
+            {"package":{"ecosystem":"rubygems","name":"puma"},"vulnerable_version_range":">= 5.5.0, < 7.2.1","first_patched_version":{"identifier":"7.2.1"}}]},
+        "security_vulnerability":{"vulnerable_version_range":">= 5.5.0, < 7.2.1","first_patched_version":{"identifier":"7.2.1"}}}]'
+assert_eq "1" "$(verdict "$OPEN" len)" '열린 경보 1건을 잡는다(구간이 여러 줄이어도 건수는 1)'
 
 # ── 2. 메시지가 실행 가능해야 한다 ───────────────────────────────────────────
 # 개수만 뱉는 게이트는 읽는 사람이 Security 탭을 다시 열어야 해서 결국 안 읽힌다.
-# 어느 매니페스트인지·무엇으로 고치는지가 출력 안에 있어야 한다.
 TEXT="$(verdict "$OPEN" text)"
 assert_contains "$TEXT" 'harness/apps/ruby/Gemfile' '출력이 어느 매니페스트인지 알려준다'
 assert_contains "$TEXT" 'GHSA-2vqw-3mp8-cgmx' '출력이 advisory 를 알려준다'
-assert_contains "$TEXT" '7.2.1' '출력이 패치 버전을 알려준다'
 assert_contains "$TEXT" 'high' '출력이 심각도를 알려준다'
+
+# ── 2b. **이 게이트가 낮은 패치 라인 하나만 불러 주면 안 된다** ───────────────
+# 이 저장소에서 실제로 일어난 일이다(7df7529). 경보의 `security_vulnerability` 는
+# `>= 5.5.0, < 7.2.1` / patched `7.2.1` 하나만 담고, 그 값을 그대로 믿고 `>= 7.2.1` 로 올리면
+# 8.0.0·8.0.1(둘 다 취약, 둘 다 7.2.1 보다 **높다**)이 그대로 허용된다. 게이트가 그 좁은 값을
+# 유일한 수정안으로 제시하면, **결함을 막으려고 만든 가드가 같은 결함을 권하게 된다.**
+assert_contains "$TEXT" '>= 8.0.0, < 8.0.2' '숨은 두 번째 취약 구간을 출력한다'
+assert_contains "$TEXT" '8.0.2' '위쪽 구간의 패치 버전을 출력한다'
+assert_contains "$TEXT" '>= 5.5.0, < 7.2.1' '아래쪽 취약 구간도 출력한다'
+assert_contains "$TEXT" '취약 구간이 2개다' '구간이 둘 이상이면 그것을 말로 경고한다'
 
 # ── 3. 닫힌 경보를 세면 게이트가 영구 빨강이 되어 무시당한다 ────────────────
 # 호출부가 `?state=open` 을 붙이지만 그 질의문자열은 오타 하나로 사라진다 — 판정 함수가
@@ -58,9 +75,19 @@ assert_eq "(비어있음)" "$(verdict '[]' text)" '경보가 없으면 아무것
 # ── 5. 패치가 없는 경보도 침묵하지 않는다 ───────────────────────────────────
 # first_patched_version 이 null 인 advisory 가 있다. 그때 undefined 를 문자열에 그냥 끼워
 # 넣으면 "패치: undefined" 같은 출력이 나가고, 더 나쁘게는 예외로 죽어 exit 2 가 된다.
-NOFIX='[{"number":9,"state":"open","dependency":{"package":{"ecosystem":"pip","name":"q"},"manifest_path":"python/pyproject.toml"},"security_advisory":{"severity":"critical","ghsa_id":"GHSA-q","cve_id":null},"security_vulnerability":{"first_patched_version":null}}]'
+NOFIX='[{"number":9,"state":"open",
+         "dependency":{"package":{"ecosystem":"pip","name":"q"},"manifest_path":"python/pyproject.toml"},
+         "security_advisory":{"severity":"critical","ghsa_id":"GHSA-q","cve_id":null,
+           "vulnerabilities":[{"package":{"ecosystem":"pip","name":"q"},"vulnerable_version_range":">= 0","first_patched_version":null}]},
+         "security_vulnerability":{"vulnerable_version_range":">= 0","first_patched_version":null}}]'
 assert_eq "1" "$(verdict "$NOFIX" len)" '패치 없는 경보도 잡는다'
 assert_contains "$(verdict "$NOFIX" text)" '패치 없음' '패치가 없으면 그렇게 적는다'
+assert_not_contains "$(verdict "$NOFIX" text)" '취약 구간이' '구간이 하나뿐이면 다구간 경고를 붙이지 않는다(늑대소년 방지)'
+
+# ⚠️ advisory 에 vulnerabilities 가 아예 없는 응답도 **조용히 넘기지 않는다** — 구간을 못 읽은
+# 것을 "구간 없음"으로 찍으면 사람이 그것을 안전으로 읽는다.
+NOVULNS='[{"number":8,"state":"open","dependency":{"package":{"ecosystem":"npm","name":"w"},"manifest_path":"node/package.json"},"security_advisory":{"severity":"high","ghsa_id":"GHSA-w","cve_id":null},"security_vulnerability":{}}]'
+assert_contains "$(verdict "$NOVULNS" text)" 'GitHub UI 에서 직접 확인' 'advisory 에 구간이 없으면 사람에게 넘긴다'
 
 # ── 6. 배열이 아닌 응답은 조용히 초록이 되면 안 된다 ────────────────────────
 # 이 게이트의 **유일한 거짓-초록 형태**였다(적대적 리뷰에서 발현). 200 응답이 `null`로

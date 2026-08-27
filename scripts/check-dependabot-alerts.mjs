@@ -65,12 +65,42 @@ export function alertsVerdict(alerts) {
     const where = a.dependency?.manifest_path ?? '?'
     const ghsa = a.security_advisory?.ghsa_id ?? '?'
     const cve = a.security_advisory?.cve_id ?? '-'
-    const fix = a.security_vulnerability?.first_patched_version?.identifier ?? '패치 없음'
-    out.push(
-      `#${a.number} [${sev}] ${pkg?.ecosystem ?? '?'}/${pkg?.name ?? '?'} @ ${where} — ${ghsa} / ${cve} → 패치: ${fix}`,
-    )
+    // ⚠️ 한 경보 = **배열 한 항목**이다(여러 줄이어도). 호출부가 `length` 를 경보 **건수**로
+    // 쓰므로 구간을 별도 항목으로 밀어 넣으면 "경보 5건" 같은 거짓 수치가 나간다.
+    const lines = [`#${a.number} [${sev}] ${pkg?.ecosystem ?? '?'}/${pkg?.name ?? '?'} @ ${where} — ${ghsa} / ${cve}`]
+    // ⚠️ **`security_vulnerability.first_patched_version` 을 고쳐야 할 버전으로 쓰지 말 것.**
+    // 그 객체는 advisory 의 여러 취약 구간 중 **지금 선언된 버전에 걸리는 하나**만 담는다.
+    // 실측(alert #13): `security_vulnerability` 는 `>= 5.5.0, < 7.2.1` / patched `7.2.1` 하나인데
+    // `security_advisory.vulnerabilities` 는 **둘**이다 — 위 구간과 `>= 8.0.0, < 8.0.2` / `8.0.2`.
+    // 그 좁은 값을 그대로 믿고 `>= 7.2.1` 로 올리면 8.0.0·8.0.1(둘 다 취약, 둘 다 7.2.1 보다 높다)이
+    // 그대로 허용된다 — 이 저장소에서 실제로 그렇게 했고 적대적 리뷰가 P0 으로 잡았다(7df7529).
+    // 그래서 좁은 값을 아예 출력하지 않고 **모든 구간**을 찍는다. 여기서 구간 산술은 하지 않는다
+    // (9개 생태계의 범위 문법을 파싱하는 것은 새 거짓-초록 표면이다) — 사람이 합집합을 보고 고른다.
+    for (const line of advisoryRanges(a)) lines.push(`    ${line}`)
+    out.push(lines.join('\n'))
   }
   return out
+}
+
+// advisory 가 이 패키지에 대해 선언한 **모든** 취약 구간. advisory 하나가 여러 패키지를 덮을 수
+// 있으므로 경보의 패키지로 거른다(거르지 않으면 남의 생태계 구간이 섞여 사람이 잘못 고른다).
+// ⚠️ 구간이 둘 이상이면 그것을 말로 적는다 — 이 사건의 함정이 정확히 "패치 라인이 둘"이었고,
+// 목록만 나열하면 읽는 사람이 다시 낮은 쪽 하나만 집는다.
+export function advisoryRanges(alert) {
+  const pkg = alert?.dependency?.package
+  const all = alert?.security_advisory?.vulnerabilities
+  if (!Array.isArray(all) || all.length === 0) return ['취약 구간: (advisory 에 없음 — GitHub UI 에서 직접 확인할 것)']
+  const mine = all.filter(
+    (v) => !pkg?.name || (v?.package?.name === pkg.name && v?.package?.ecosystem === pkg.ecosystem),
+  )
+  const use = mine.length ? mine : all
+  const lines = use.map(
+    (v) => `취약 ${v?.vulnerable_version_range ?? '?'} → 패치 ${v?.first_patched_version?.identifier ?? '없음'}`,
+  )
+  if (use.length > 1) {
+    lines.push(`⚠️ 취약 구간이 ${use.length}개다 — 하한 하나로 전부를 벗어나는지 확인할 것(낮은 패치 라인만 집으면 위쪽 구간이 열린다)`)
+  }
+  return lines
 }
 
 function repoSlug(argv) {
