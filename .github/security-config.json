@@ -8,6 +8,10 @@
     "secret_scanning_validity_checks": "disabled",
     "secret_scanning_non_provider_patterns": "disabled"
   },
+  "private_vulnerability_reporting": {
+    "_comment": "제보자용 비공개 채널. ⚠️ `security_and_analysis` 와 **다른 엔드포인트**다(GET/PUT/DELETE /repos/{o}/{r}/private-vulnerability-reporting) — `GET /repos/{o}/{r}` 응답에는 들어 있지 않아서, 이 키를 여기 적어도 checkSecurity 가 따로 조회하지 않으면 아무것도 대조되지 않는다. 2026-08-27 활성화: 공개 저장소에 SECURITY.md 가 있는데 이게 꺼져 있으면 제보자가 비공개로 알릴 길이 없어 공개 이슈로 올릴 수밖에 없다.",
+    "enabled": true
+  },
   "code_scanning_default_setup": {
     "_comment": "CodeQL default setup. 워크플로 파일을 만들지 않으므로 check-ci-permissions.mjs(파일시스템 glob)의 대상이 아니고, required 체크가 되지도 않는다.",
     "state": "configured",

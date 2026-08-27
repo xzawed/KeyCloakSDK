@@ -194,6 +194,32 @@ assert_eq "0" "$(cd "$DIR/.." && node -e "
     process.stdout.write(String(Object.keys(o).filter(k=>k.startsWith('_')).length + Object.keys(o.a).filter(k=>k.startsWith('_')).length));
   });")" 'stripComments 가 _ 주석 키를 걷어낸다'
 
+# private vulnerability reporting 은 **다른 엔드포인트**라 `security_and_analysis` 루프가
+# 잡지 못한다(GET /repos/{o}/{r} 응답에 없다). 정의에 적혀 있어도 checkSecurity 가 따로
+# 조회하지 않으면 아무것도 대조되지 않으므로, 선언·검출·오탐 세 방향을 다 고정한다.
+assert_eq "true" "$(node -e "
+  const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
+  process.stdout.write(String(r.private_vulnerability_reporting.enabled));" "$SEC")" 'private vulnerability reporting 이 enabled 로 선언돼 있다'
+assert_eq "1" "$(cd "$DIR/.." && node -e "
+  import('./repo-config.mjs').then(({securityDrift})=>{
+    const d=securityDrift({private_vulnerability_reporting:{enabled:true}},
+                          {private_vulnerability_reporting:{enabled:false}});
+    process.stdout.write(String(d.length));
+  });")" 'securityDrift 가 private vulnerability reporting 의 불일치를 잡는다'
+assert_eq "0" "$(cd "$DIR/.." && node -e "
+  import('./repo-config.mjs').then(({securityDrift})=>{
+    const d=securityDrift({private_vulnerability_reporting:{enabled:true}},
+                          {private_vulnerability_reporting:{enabled:true}});
+    process.stdout.write(String(d.length));
+  });")" 'securityDrift 가 일치하는 private vulnerability reporting 을 오탐하지 않는다'
+# ⚠️ 조회를 통째로 빠뜨리면(checkSecurity 의 pvrRes 줄을 지우면) have 가 undefined 가 된다.
+# 그때 **조용히 통과하면** 이 축은 있으나 마나가 되므로, 드리프트로 잡히는지 고정한다.
+assert_eq "1" "$(cd "$DIR/.." && node -e "
+  import('./repo-config.mjs').then(({securityDrift})=>{
+    const d=securityDrift({private_vulnerability_reporting:{enabled:true}}, {});
+    process.stdout.write(String(d.length));
+  });")" '조회가 빠지면 조용히 통과하지 않고 드리프트로 잡는다'
+
 
 # ---- PHP 미러 룰셋 (mirrorRulesetDrift) ----
 # ⚠️ `--repo <미러>` 로는 대조할 수 없다 — 그 플래그는 **이 저장소의 정의를** 다른 저장소에
