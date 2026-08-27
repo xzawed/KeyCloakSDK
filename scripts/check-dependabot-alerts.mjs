@@ -92,19 +92,29 @@ export function alertsVerdict(alerts) {
 // 있으므로 경보의 패키지로 거른다(거르지 않으면 남의 생태계 구간이 섞여 사람이 잘못 고른다).
 // ⚠️ 구간이 둘 이상이면 그것을 말로 적는다 — 이 사건의 함정이 정확히 "패치 라인이 둘"이었고,
 // 목록만 나열하면 읽는 사람이 다시 낮은 쪽 하나만 집는다.
+const handoff = (why) => `⚠️ ${why} — GitHub UI 에서 직접 확인할 것(여기서 추측하지 않는다)`
+
 export function advisoryRanges(alert) {
   const pkg = alert?.dependency?.package
   const all = alert?.security_advisory?.vulnerabilities
-  if (!Array.isArray(all) || all.length === 0) return ['취약 구간: (advisory 에 없음 — GitHub UI 에서 직접 확인할 것)']
-  const mine = all.filter(
-    (v) => !pkg?.name || (v?.package?.name === pkg.name && v?.package?.ecosystem === pkg.ecosystem),
-  )
-  const use = mine.length ? mine : all
-  const lines = use.map(
-    (v) => `취약 ${v?.vulnerable_version_range ?? '?'} → 패치 ${v?.first_patched_version?.identifier ?? '없음'}`,
-  )
-  if (use.length > 1) {
-    lines.push(`⚠️ 취약 구간이 ${use.length}개다 — 하한 하나로 전부를 벗어나는지 확인할 것(낮은 패치 라인만 집으면 위쪽 구간이 열린다)`)
+  if (!Array.isArray(all) || all.length === 0) return [handoff('advisory 에 취약 구간이 없다')]
+  // 경보에 패키지가 없으면 어느 구간이 이 경보의 것인지 고를 수 없다 — 고르지 않는다.
+  // (GitHub 스키마상 `dependency.package` 는 필수가 아니다.)
+  if (!pkg?.name || !pkg?.ecosystem) return [handoff('경보에 패키지 정보가 없어 구간을 고를 수 없다')]
+  const mine = all.filter((v) => v?.package?.name === pkg.name && v?.package?.ecosystem === pkg.ecosystem)
+  // ⚠️ 매치가 없어도 **전체로 되돌아가지 않는다.** advisory 하나가 여러 패키지를 덮으므로
+  // (실측: GHSA 하나에 `golang-jwt/jwt/v5`·`/v4`·`/jwt` 세 모듈) 되돌아가면 남의 구간을 이 경보의
+  // 것처럼 찍고, 다구간 경고까지 붙어 **"이 둘을 함께 벗어나는 하한을 골라라"** 라는 틀린 지시가
+  // 된다 — 실측: `npm/left-pad` 경보 아래에 puma·jackson 구간이 찍혔다. D1 과 같은 부류(주장보다
+  // 넓은 조언)라 초록이 아니라 **사람에게 넘긴다**.
+  if (mine.length === 0) return [handoff(`advisory 에 ${pkg.ecosystem}/${pkg.name} 의 구간이 없다`)]
+  const lines = mine.map((v) => {
+    const fix = v?.first_patched_version?.identifier ?? '패치 없음'
+    // ⚠️ 범위가 빠진 항목을 `취약 ?` 로 찍으면 실재하는 구간처럼 읽힌다 — 없는 것은 없다고 적는다.
+    return v?.vulnerable_version_range ? `취약 ${v.vulnerable_version_range} → 패치 ${fix}` : handoff(`구간이 빠진 항목이 있다(패치 ${fix})`)
+  })
+  if (mine.length > 1) {
+    lines.push(`⚠️ 취약 구간이 ${mine.length}개다 — 하한 하나로 전부를 벗어나는지 확인할 것(낮은 패치 라인만 집으면 위쪽 구간이 열린다)`)
   }
   return lines
 }

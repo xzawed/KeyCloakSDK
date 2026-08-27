@@ -89,6 +89,44 @@ assert_not_contains "$(verdict "$NOFIX" text)" '취약 구간이' '구간이 하
 NOVULNS='[{"number":8,"state":"open","dependency":{"package":{"ecosystem":"npm","name":"w"},"manifest_path":"node/package.json"},"security_advisory":{"severity":"high","ghsa_id":"GHSA-w","cve_id":null},"security_vulnerability":{}}]'
 assert_contains "$(verdict "$NOVULNS" text)" 'GitHub UI 에서 직접 확인' 'advisory 에 구간이 없으면 사람에게 넘긴다'
 
+# ── 5b. **남의 패키지 구간을 이 경보의 것으로 찍으면 안 된다** ────────────────
+# advisory 하나가 여러 패키지를 덮는다(실측: GHSA 하나에 golang-jwt/jwt/v5·/v4·/jwt 세 모듈).
+# 같은 패키지 매치가 0일 때 전체로 되돌아가면, 남의 구간이 이 경보의 것처럼 찍히고 다구간
+# 경고까지 붙어 **"이 둘을 함께 벗어나는 하한을 골라라"** 라는 틀린 지시가 된다. 초록이 아니라
+# 사람에게 넘긴다 — 적대적 리뷰가 잡은 결함이고, D1 과 같은 부류(주장보다 넓은 조언)다.
+OTHERPKG='[{"number":1,"state":"open",
+  "dependency":{"package":{"ecosystem":"npm","name":"left-pad"},"manifest_path":"node/package.json"},
+  "security_advisory":{"severity":"high","ghsa_id":"GHSA-zz","cve_id":null,
+    "vulnerabilities":[
+      {"package":{"ecosystem":"rubygems","name":"puma"},"vulnerable_version_range":">= 8.0.0, < 8.0.2","first_patched_version":{"identifier":"8.0.2"}},
+      {"package":{"ecosystem":"maven","name":"jackson-databind"},"vulnerable_version_range":">= 2.0, < 2.21.4","first_patched_version":{"identifier":"2.21.4"}}]},
+  "security_vulnerability":{}}]'
+OTEXT="$(verdict "$OTHERPKG" text)"
+assert_not_contains "$OTEXT" '>= 8.0.0, < 8.0.2' '남의 패키지(puma) 구간을 찍지 않는다'
+assert_not_contains "$OTEXT" '>= 2.0, < 2.21.4' '남의 패키지(jackson) 구간을 찍지 않는다'
+assert_not_contains "$OTEXT" '취약 구간이 2개다' '남의 구간으로 다구간 경고를 띄우지 않는다'
+assert_contains "$OTEXT" 'npm/left-pad 의 구간이 없다' '어느 패키지의 구간이 없는지 이름을 대고 넘긴다'
+assert_eq "1" "$(verdict "$OTHERPKG" len)" '넘기더라도 경보 1건으로 센다'
+
+# ── 5c. 경보에 패키지 정보가 없으면 구간을 고르지 않는다 ────────────────────
+# GitHub 스키마상 `dependency.package` 는 필수가 아니다. 없을 때 필터가 항등이 되면 위 5b 와
+# 같은 혼합이 `?/?` 헤더 아래에서 벌어진다.
+NOPKG='[{"number":2,"state":"open","dependency":{"manifest_path":"x"},
+  "security_advisory":{"severity":"high","ghsa_id":"GHSA-np","cve_id":null,
+    "vulnerabilities":[{"package":{"ecosystem":"rubygems","name":"puma"},"vulnerable_version_range":">= 8.0.0, < 8.0.2","first_patched_version":{"identifier":"8.0.2"}}]},
+  "security_vulnerability":{}}]'
+assert_not_contains "$(verdict "$NOPKG" text)" '>= 8.0.0, < 8.0.2' '패키지 정보가 없으면 아무 구간도 찍지 않는다'
+assert_contains "$(verdict "$NOPKG" text)" '패키지 정보가 없어' '왜 못 골랐는지 말한다'
+
+# ── 5d. 범위가 빠진 항목을 실재하는 구간처럼 찍지 않는다 ────────────────────
+NORANGE='[{"number":3,"state":"open",
+  "dependency":{"package":{"ecosystem":"rubygems","name":"puma"},"manifest_path":"harness/apps/ruby/Gemfile"},
+  "security_advisory":{"severity":"high","ghsa_id":"GHSA-nr","cve_id":null,
+    "vulnerabilities":[{"package":{"ecosystem":"rubygems","name":"puma"},"first_patched_version":{"identifier":"7.2.1"}}]},
+  "security_vulnerability":{}}]'
+assert_not_contains "$(verdict "$NORANGE" text)" '취약 ?' '구간이 빠진 항목을 `취약 ?` 로 찍지 않는다'
+assert_contains "$(verdict "$NORANGE" text)" '구간이 빠진 항목' '구간이 없다는 사실을 말한다'
+
 # ── 6. 배열이 아닌 응답은 조용히 초록이 되면 안 된다 ────────────────────────
 # 이 게이트의 **유일한 거짓-초록 형태**였다(적대적 리뷰에서 발현). 200 응답이 `null`로
 # 파싱되면 `alerts ?? []`가 걷어내 빈 배열이 되고, JSON 문자열이면 `for...of`가 글자를 훑어
