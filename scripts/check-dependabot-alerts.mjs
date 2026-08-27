@@ -6,10 +6,15 @@
 // 매니페스트를 파싱하지만(실측: 54개 중 harness/* 포함), 그 결과가 닿는 곳은 Security 탭뿐이라
 // 사람이 열어보지 않으면 침묵한다 — high 2건이 51일간 열려 있었고 아무것도 빨개지지 않았다.
 //
-// 이 게이트는 언어 툴체인을 쓰지 않는다. 하네스 앱 매니페스트는 전부 **이미지 안에만 있는
-// 경로**를 참조해서(`path: "/src/ruby"`·`replace => /sdk`·`{path="/src/rust"}`·`.tgz`) 스톡
-// 러너에서 `bundler-audit`·`cargo audit` 류를 돌릴 수 없다. 대신 GitHub이 이미 만들어 둔
-// 그래프를 읽는다.
+// 이 게이트는 언어 툴체인을 쓰지 않는다. 하네스 앱 매니페스트 13개 중 5개가 **이미지 안에만
+// 있는 경로**를 참조해서(`path: "/src/ruby"`·`replace => /sdk`·`url: "/src/php"`·`.tgz`·
+// `http://mvn-repo-kotlin/`) 스톡 러너에서 bundler·go·composer·npm 을 돌릴 수 없다. 대신
+// GitHub이 이미 만들어 둔 그래프를 읽는다.
+//
+// ⚠️ 이 게이트는 하네스 감사를 **대체하지 않는다** — 컨테이너 없이 실제로 도는 둘(rust·python)은
+// `security-audit.yml`의 `harness-rust`·`harness-python`이 직접 감사한다. 여기는 나머지다.
+// ⚠️ 그리고 이 게이트도 "전부"가 아니다: 의존성 그래프는 `replace`를 무시하고 Gradle 을 파싱하지
+// 않는다. 하네스 Go 의 SDK 엣지와 하네스 Kotlin 은 어느 게이트도 보지 않는다(security-audit.yml 주석).
 //
 // 사용:
 //   node scripts/check-dependabot-alerts.mjs            # 현재 저장소
@@ -45,8 +50,15 @@ function gh(args) {
 // ⚠️ `state`를 여기서 **다시** 거른다. 호출부가 `?state=open`을 붙이지만, 그 질의문자열이
 // 빠지거나 오타가 나면 fixed·dismissed까지 세어 게이트가 영구 빨강이 되고 곧 무시당한다.
 export function alertsVerdict(alerts) {
+  // ⚠️ 배열이 아니면 **던진다**. 이게 이 게이트의 유일한 거짓-초록 형태였다: 200 응답이
+  // `null`이나 JSON 문자열로 파싱되면 `alerts ?? []`는 null만 걷어내고, 문자열은 `for...of`가
+  // 글자 단위로 훑어 `.state`가 전부 undefined → 빈 배열 → exit 0. 즉 "읽었는데 아무것도
+  // 없었다"와 "읽은 것이 경보 목록이 아니었다"가 같은 초록이 된다. 던지면 main이 2로 받는다.
+  if (!Array.isArray(alerts)) {
+    throw new TypeError(`Dependabot 경보 응답이 배열이 아니다(${alerts === null ? 'null' : typeof alerts}) — 경보 없음으로 넘기지 않는다`)
+  }
   const out = []
-  for (const a of alerts ?? []) {
+  for (const a of alerts) {
     if (a?.state !== 'open') continue
     const sev = a.security_advisory?.severity ?? '?'
     const pkg = a.dependency?.package
@@ -82,14 +94,16 @@ function main() {
     console.log(res.out)
     process.exit(2)
   }
-  let alerts
+  // ⚠️ 파싱과 판정을 **같은 try 안에** 둔다. alertsVerdict는 배열이 아닌 입력에 던지는데,
+  // 그 throw가 밖으로 새면 node가 스택트레이스와 함께 1로 죽는다 — 그러면 "열린 경보 있음"과
+  // "응답이 경보 목록이 아님"이 같은 종료코드가 되어, 이 스크립트가 애써 나눈 1/2 구분이 무너진다.
+  let open
   try {
-    alerts = JSON.parse(res.out)
+    open = alertsVerdict(JSON.parse(res.out))
   } catch (e) {
-    console.log(`::error::Dependabot 경보 응답을 파싱하지 못했다 — ${e.message}`)
+    console.log(`::error::Dependabot 경보 응답을 읽지 못했다 — ${e.message}`)
     process.exit(2)
   }
-  const open = alertsVerdict(alerts)
   if (open.length === 0) {
     console.log(`ok   ${repo}: 열린 Dependabot 경보 없음`)
     process.exit(0)

@@ -62,7 +62,24 @@ NOFIX='[{"number":9,"state":"open","dependency":{"package":{"ecosystem":"pip","n
 assert_eq "1" "$(verdict "$NOFIX" len)" '패치 없는 경보도 잡는다'
 assert_contains "$(verdict "$NOFIX" text)" '패치 없음' '패치가 없으면 그렇게 적는다'
 
-# ── 6. 조회 실패는 "경보 없음"이 아니라 exit 2다 ─────────────────────────────
+# ── 6. 배열이 아닌 응답은 조용히 초록이 되면 안 된다 ────────────────────────
+# 이 게이트의 **유일한 거짓-초록 형태**였다(적대적 리뷰에서 발현). 200 응답이 `null`로
+# 파싱되면 `alerts ?? []`가 걷어내 빈 배열이 되고, JSON 문자열이면 `for...of`가 글자를 훑어
+# `.state`가 전부 undefined → 역시 빈 배열 → exit 0. 즉 "경보가 없다"와 "읽은 것이 경보
+# 목록이 아니다"가 같은 초록이 된다. 던져서 main이 2로 받게 한다.
+verdict_throws() { # <json> -> THREW|NO-THROW
+  (cd "$DIR/.." && VAL="$1" node -e '
+    import("./check-dependabot-alerts.mjs").then(({ alertsVerdict }) => {
+      try { alertsVerdict(JSON.parse(process.env.VAL)); process.stdout.write("NO-THROW") }
+      catch { process.stdout.write("THREW") }
+    })')
+}
+assert_eq "THREW" "$(verdict_throws 'null')" 'null 응답은 조용히 통과하지 않는다'
+assert_eq "THREW" "$(verdict_throws '"no alerts"')" 'JSON 문자열 응답은 글자로 훑어 빈 배열이 되지 않는다'
+assert_eq "THREW" "$(verdict_throws '{"message":"Not Found"}')" '객체 응답(오류 봉투)은 조용히 통과하지 않는다'
+assert_eq "NO-THROW" "$(verdict_throws '[]')" '정상적인 빈 배열은 던지지 않는다'
+
+# ── 7. 조회 실패는 "경보 없음"이 아니라 exit 2다 ─────────────────────────────
 # 이게 이 게이트에서 가장 비싼 실패다: 잡의 permissions 에서 `vulnerability-alerts: read`
 # 가 빠지면 API 는 403 을 준다(실측: 대조군 잡). 그걸 0으로 넘기면 게이트는 영원히
 # 초록이면서 아무것도 보지 않는다 — 있는 것이 없는 것보다 나쁜 상태다.
@@ -72,14 +89,18 @@ rc=$?
 set -e
 assert_eq 2 "$rc" '조회 불가는 exit 2(열린 경보 1과 구분한다)'
 
-# ── 7. 워크플로가 그 권한을 실제로 선언하고 있는가 ───────────────────────────
+# ── 8. 워크플로가 그 권한을 실제로 선언하고 있는가 ───────────────────────────
 # 실측(run 33079374320): 같은 요청을 보낸 두 잡 중 `vulnerability-alerts: read` 를 선언한
 # 쪽은 200, 선언하지 않은 대조군은 403 "Resource not accessible by integration" 이었다.
 # `security-events: read` 로 바꿔 달면 code scanning 용이라 듣지 않는다. 그 한 줄이 사라지면
 # 이 잡은 매주 exit 2 로 빨개지고, 빨간 게이트는 곧 꺼진다 — 그래서 리터럴을 못박는다.
 WF="$ROOT/.github/workflows/security-audit.yml"
 assert_ok test -f "$WF"
-assert_contains "$(cat "$WF")" 'vulnerability-alerts: read' 'security-audit.yml 이 vulnerability-alerts: read 를 선언한다'
-assert_contains "$(cat "$WF")" 'check-dependabot-alerts.mjs' 'security-audit.yml 이 이 가드를 실제로 호출한다'
+# ⚠️ 파일 전체에 대한 `assert_contains` 로는 부족하다 — 이 워크플로의 주석이 그 문자열을
+# 근거로 인용하고 있어서, **선언을 지우고 주석만 남겨도 통과**한다(test-selftest-hygiene 이
+# 같은 부류의 공허함으로 한 번 깨진 전례가 있다). 들여쓰기 + 줄끝으로 YAML 키만 센다.
+assert_eq "1" "$(grep -cE '^[[:space:]]+vulnerability-alerts: read[[:space:]]*$' "$WF")" \
+  'security-audit.yml 이 vulnerability-alerts: read 를 YAML 키로 선언한다(주석 아님)'
+assert_eq "1" "$(grep -cE 'node scripts/check-dependabot-alerts\.mjs' "$WF")" 'security-audit.yml 이 이 가드를 실제로 호출한다'
 
 assert_report

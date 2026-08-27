@@ -194,9 +194,14 @@ function checkSecurity(repo, cmd) {
   // 조용히 통과하는 쪽으로는 깨지지 않는다(자가테스트가 두 방향을 다 고정한다).
   const pvrRes = gh(['api', `repos/${repo}/private-vulnerability-reporting`])
   if (!repoRes.ok || !csRes.ok || !pvrRes.ok) {
+    // ⚠️ 조회 실패는 **2**다. 이 파일 헤더가 "인증/권한 문제는 2"라고 약속하고 `liveRulesets`는
+    // 실제로 `die(2, …)`인데, 이 경로만 1을 돌려주고 있었다 — 토큰이 없어서 못 읽은 것이
+    // "설정이 어긋났다"로 보고되면 그게 거짓 신호이고, 헤더의 약속이 여기서만 깨진다.
+    // `::error::` 는 stdout 으로 낸다 — die()는 stderr 를 쓰고, 워크플로 명령을 stderr 에서
+    // 집어주는지는 이 저장소가 실측한 적이 없다. 있는 관용(console.log)을 유지한다.
     console.log(`::error::보안 설정을 조회하지 못했다(관리자 권한 토큰이 필요하다).`)
     console.log(!repoRes.ok ? repoRes.out : !csRes.ok ? csRes.out : pvrRes.out)
-    return 1
+    die(2, '')
   }
   const have = {
     security_and_analysis: JSON.parse(repoRes.out).security_and_analysis,
