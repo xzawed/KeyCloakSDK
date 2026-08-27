@@ -215,6 +215,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: sh scripts/test/test-repo-config.sh
+      - name: Dependabot 경보 게이트 자가테스트(조회 실패를 "경보 없음"으로 넘기지 않는지)
+        # 위와 같은 이유로 GH_TOKEN을 준다 — 없으면 "조회 불가는 exit 2" 검사가 의도한 404
+        # 경로가 아니라 미인증 경로로 통과해 검사가 무의미해진다.
+        # ⚠️ 실제 경보 조회(`check-dependabot-alerts.mjs`)는 여기가 아니라 `security-audit.yml`
+        # 이 돈다 — 그 잡만 `vulnerability-alerts: read`를 갖는다(이 잡에 주면 required가 아닌
+        # 위생 잡이 보안 데이터를 읽게 되고, 권한은 쓰는 자리에만 둔다).
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/test/test-dependabot-alerts.sh
 
   php-mirror:
     # ⚠️ **비-required다, 그리고 그렇게 두는 것이 의도다.** 이 잡은 GitHub·Packagist 라는
