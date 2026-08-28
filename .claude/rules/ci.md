@@ -5,8 +5,15 @@ paths:
   - "harness/**"
   - "DEPLOY.md"
 ---
-<!-- doc-budget: max-bytes=9200 -->
-<!-- 8432 → 9200 (2026-08-29): 래칫 조건 (2) 사람이 문서의 역할을 바꿨다(판정 원문은
+<!-- doc-budget: max-bytes=9720 -->
+<!-- 9200 → 9720 (2026-08-29, 같은 날 두 번째): 주간 `schedule` 규약 한 줄. ⚠️ 하루에 두 번 올린
+     것을 그대로 적는다 — 래칫 크리프로 보일 수 있고, 실제로 다음 증가는 더 엄격히 봐야 한다.
+     그럼에도 올린 근거: 이 줄이 담은 넷이 전부 **수행 방법**이다 — (1) 주간 스케줄이 있다는 사실,
+     (2) `paths` 가 그것을 안 거른다는 성질, (3) 겨누는 것이 환경 드리프트라는 범위, (4) **크론을
+     기다리지 말고 `workflow_dispatch` 로 당겨서 재라**는 지시. 넷 중 하나를 빼면 다음 세션이
+     스케줄을 검증하지 못하거나 목적을 오해한다. 압축 대신 문장을 다듬어 506B → 477B 로 줄인 뒤
+     남은 만큼만 올렸다(목표 바이트가 아니라 필요 바이트).
+     8432 → 9200 (2026-08-29): 래칫 조건 (2) 사람이 문서의 역할을 바꿨다(판정 원문은
      docs/governance/process.md 머리의 같은 날짜 주석). 세 번째 핀 종류(**CI 매트릭스 하한**)와
      「막힌 범프는 스킵이 아니라 에러다」가 들어온다. ⚠️ 직전 세션은 예산이 0이라 이 둘을 한 줄로
      뭉개고 3번 항목을 아예 지웠는데, 그러면 `parallel < 2` 가 왜 있는지 아무 데서도 읽히지 않는다.
@@ -24,6 +31,7 @@ Per-language CI gotchas live in `.claude/rules/<lang>.md`.
 
 The definitions are `.github/rulesets/*.json` (the committed JSON is the SSOT); check them with `node scripts/repo-config.mjs check`.
 
+- ⚠️ **Every language CI also runs weekly on a `schedule`, and `paths:` does not filter that run** — that is the point. Dependency drift is already blocked by the locks/pins; what the weekly run hunts is **environment** drift (runner image, action, API). Measured in-repo: harness's scheduled run fired 6 days straight while its paths changed on 2. Slot table lives in `ci.yml`'s `on:` comment. Each lane also gained `workflow_dispatch`, so **measure the scheduled path by pulling it forward rather than waiting for the cron**.
 - ⚠️ **`main` has exactly two required checks — `doc-facts` and `shell-exec-bits` — and adding a language CI to that list locks the repository.** All nine language CI workflows sit behind a workflow-level `paths:` filter, so on a PR that does not touch those paths the check is **never even created** and blocks on Pending forever (`bypass_actors: []`, so not even the owner can clear it). A job-level `if:` skip does the opposite — the check *is* created and counts as a success. **Do not confuse the two.**
 - Also watch for: **four** pairs of colliding context names (the enumeration lives in CONTRIBUTING §4 — do not copy it here) and the absence of a `merge_group:` trigger (turn the merge queue on and everything deadlocks). The resolutions are in [CONTRIBUTING.md §4](../../CONTRIBUTING.md).
 - **The three tag rulesets** (`RELEASE-TAGS-CREATE` · `-CREATE-GO` · `-IMMUTABLE`) are active but carry an admin bypass, so **the path where a human pushes a tag by hand is still open**. What they block is a `contents: write` credential creating release tags at will.

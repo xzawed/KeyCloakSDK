@@ -4,6 +4,12 @@ on:
     paths: ['rust/**', '.github/workflows/rust-ci.yml']
   pull_request:
     paths: ['rust/**', '.github/workflows/rust-ci.yml']
+  # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
+  # ⚠️ 이 레인은 `stable` 레그가 floating clippy 를 무는 것이 **의도**다(process.md §3 기각) —
+  # 주간 실행이 그 조기경보를 실제로 울리게 하는 자리이기도 하다.
+  workflow_dispatch:
+  schedule:
+    - cron: '7 7 * * 1'
 permissions:
   contents: read
 jobs:
