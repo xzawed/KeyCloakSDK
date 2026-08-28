@@ -50,7 +50,7 @@ public registry — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust
 (crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central), Kotlin (Maven
 Central) and Go (the Go module proxy — for Go the git tag *is* the version, so
 the `go/v0.1.0` tag is the release). ⚠️ **The numbers differ per language** —
-Node and Python are on `0.2.1`, PHP on `0.2.0`, the other six on `0.1.0`, because a language
+Node and Python are on `0.2.1`, PHP on `0.2.0`, Go, .NET and Rust on `0.1.1`, Java, Kotlin and Ruby on `0.1.0`, because a language
 only moves when something consumer-visible changed in it. **The newest released
 version of each language is the supported one** and the only one that receives
 fixes; anything older, including the release candidates, stays on its registry

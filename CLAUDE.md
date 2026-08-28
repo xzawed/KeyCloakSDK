@@ -281,10 +281,10 @@ dev(테스트 csproj — **앵커 있음**):
 | Java | `io.github.xzawed:keycloak-sdk` (Maven Central) | `v*` | 게시됨(`0.1.0`) |
 | Python | `keycloak-sdk` (PyPI) | `py-v*` | 게시됨(`0.2.1`) |
 | Node | `@xzawed/keycloak-sdk` (npm) | `node-v*` | 게시됨(`0.2.1`) |
-| Go | `github.com/xzawed/KeyCloakSDK/go` (proxy.golang.org) | `go/v*` | 게시됨(`0.1.0`) |
-| C#/.NET | `Xzawed.Keycloak.Sdk` (NuGet) | `dotnet-v*` | 게시됨(`0.1.0`) |
+| Go | `github.com/xzawed/KeyCloakSDK/go` (proxy.golang.org) | `go/v*` | 게시됨(`0.1.1`) |
+| C#/.NET | `Xzawed.Keycloak.Sdk` (NuGet) | `dotnet-v*` | 게시됨(`0.1.1`) |
 | PHP | `xzawed/keycloak-sdk` (Packagist) | `php-v*` | 게시됨(`0.2.0`) |
-| Rust | `keycloak-sdk` (crates.io) | `rust-v*` | 게시됨(`0.1.0`) |
+| Rust | `keycloak-sdk` (crates.io) | `rust-v*` | 게시됨(`0.1.1`) |
 | Ruby | `keycloak-sdk` (RubyGems) | `ruby-v*` | 게시됨(`0.1.0`) |
 | Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` (Maven Central) | `kotlin-v*` | 게시됨(`0.1.0` · 하한 2.2+) |
 

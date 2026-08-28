@@ -15,7 +15,7 @@ English · [한국어](README.ko.md)
 
 > "Polyglot" here means **programming languages**, not natural-language localization (i18n).
 >
-> ⚠️ **All nine languages have shipped a stable release, and the numbers differ** — Node and Python are on `0.2.1`, PHP is on `0.2.0`, and the other six are on `0.1.0`. Versions move per language, not as a fleet, so a language only gets a new number when something consumer-visible changed in it. Every release is human-gated, and the line is still pre-1.0. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
+> ⚠️ **All nine languages have shipped a stable release, and the numbers differ** — Node and Python are on `0.2.1`, PHP is on `0.2.0`, Go, .NET and Rust are on `0.1.1`, and Java, Kotlin and Ruby are on `0.1.0`. Versions move per language, not as a fleet, so a language only gets a new number when something consumer-visible changed in it. Every release is human-gated, and the line is still pre-1.0. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
 
 ---
 
@@ -58,7 +58,7 @@ with KeycloakClient.create(config) as kc:
 ```bash
 pip install keycloak-sdk                              # Python
 npm install @xzawed/keycloak-sdk                      # Node
-go get github.com/xzawed/KeyCloakSDK/go@v0.1.0        # Go
+go get github.com/xzawed/KeyCloakSDK/go@v0.1.1        # Go
 dotnet add package Xzawed.Keycloak.Sdk                # C# / .NET
 composer require xzawed/keycloak-sdk                  # PHP
 cargo add keycloak-sdk                                # Rust

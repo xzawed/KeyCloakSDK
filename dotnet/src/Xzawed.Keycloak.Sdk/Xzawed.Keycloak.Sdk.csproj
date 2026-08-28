@@ -3,7 +3,7 @@
     <PackageId>Xzawed.Keycloak.Sdk</PackageId>
     <RootNamespace>Xzawed.Keycloak</RootNamespace>
     <AssemblyName>Xzawed.Keycloak.Sdk</AssemblyName>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Description>Async-first Keycloak SDK for .NET — OIDC/OAuth2 authentication with hardened JWT validation, plus the Admin REST API, behind one facade. The .NET implementation of a nine-language polyglot Keycloak SDK (Java, Python, Node, Go, C#, PHP, Rust, Ruby, Kotlin).</Description>
     <PackageTags>keycloak;oidc;oauth2;admin;jwt</PackageTags>
     <!-- 공개 멤버 XML 문서 미작성 경고를 오류로 승격하지 않음(문서는 점진적으로) -->

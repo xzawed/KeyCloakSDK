@@ -41,10 +41,10 @@ The procedure lives in **[DEPLOY.md](../../DEPLOY.md)** — do not copy checklis
 | **Java** | ✅ | ✅ | ✅ | ✅ (Testcontainers) | ✅ | 🚀 Maven Central `0.1.0` |
 | **Python** | ✅ | ✅ (+ `aio` async mirror) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 PyPI `0.2.1` |
 | **TypeScript / Node.js** | ✅ | ✅ (ESM · async-only) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 npm `0.2.1` |
-| **Go** | ✅ | ✅ (sync + `context.Context`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 Go module proxy `0.1.0` |
-| **C# / .NET** | ✅ | ✅ (async-first `Task<T>`+`CancellationToken`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 NuGet `0.1.0` |
+| **Go** | ✅ | ✅ (sync + `context.Context`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 Go module proxy `0.1.1` |
+| **C# / .NET** | ✅ | ✅ (async-first `Task<T>`+`CancellationToken`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 NuGet `0.1.1` |
 | **PHP** | ✅ | ✅ (`readonly class` · exception-based) | ✅ | ✅ (docker CLI shell-out — real Keycloak 26.6) | ✅ | 🚀 Packagist `0.2.0` |
-| **Rust** | ✅ | ✅ (edition 2024 · async-only) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 crates.io `0.1.0` |
+| **Rust** | ✅ | ✅ (edition 2024 · async-only) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 crates.io `0.1.1` |
 | **Ruby** | ✅ | ✅ (sync-only · exception hierarchy) | ✅ | ✅ (E2E, docker CLI shell-out) | ✅ | 🚀 RubyGems `0.1.0` |
 | **Kotlin** | ✅ | ✅ (coroutines `suspend` · reuses JVM/Java stack) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 Maven Central `0.1.0` |
 

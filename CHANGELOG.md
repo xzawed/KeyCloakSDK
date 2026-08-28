@@ -6,6 +6,35 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-28
+
+**Go · C#/.NET · Rust 셋만 올라갑니다. 라이브러리 코드 변경은 0입니다 — 문서 전용입니다.**
+
+게시된 랜딩 페이지가 소비자에게 **거짓 설치 안내**를 하고 있었습니다. 배너를 정식형으로 고친
+커밋 `ea4dce1`(2026-08-18 02:04)이 여섯 릴리스 태그보다 **뒤**에 와서, 그 태그가 실어 보낸
+README 는 여전히 「the first release candidate … there is no stable release yet」이었습니다.
+레지스트리는 README 를 **버전마다 고정**하므로 고치는 방법은 새 버전뿐입니다.
+
+실측(2026-08-28, 기본 랜딩 페이지 기준):
+
+| 레지스트리 | 낡은 문구를 서빙 | 근거 |
+|---|---|---|
+| crates.io | 예 | `GET /api/v1/crates/keycloak-sdk/0.1.0/readme` → 200, 「there is no stable release yet」 |
+| pkg.go.dev | 예 | `@v0.1.0` 페이지가 「the first release candidate (`v0.1.0-rc.1`)」 |
+| nuget.org | 예 | 게시 nuspec 의 `<readme>README.md`(출처는 `dotnet/Directory.Build.props`) |
+
+⚠️ **ruby 는 올리지 않습니다.** gem 파일 안에는 같은 텍스트가 있으나 rubygems.org 페이지는
+README 를 렌더하지 않아 소비자에게 닿지 않습니다 — 번호는 실제 변경에 씁니다.
+⚠️ **java·kotlin 도 아닙니다.** Maven Central 은 README 를 게시하지 않고 POM `<description>`
+은 정상입니다.
+⚠️ **`0.1.0` 페이지는 영원히 낡은 채로 남습니다.** 세 레지스트리 모두 append-only 이고,
+yank·unlist 는 해결이 아니라 악화입니다(정식이 사라지면 RC 가 다시 기본 설치가 됩니다).
+고쳐지는 것은 **기본 랜딩**이며, 그것이 소비자가 실제로 보는 자리입니다.
+
+절차는 이미 옳았습니다 — `DEPLOY.md` 가 「같은 커밋이 그 언어의 README 도 고쳐야 한다」고
+적습니다. 그 규칙이 쓰인 뒤 `main` 의 증상은 사라졌지만 **이미 게시된 여섯은 아무도 되돌아가
+보지 않았습니다.** 이번 릴리스가 그 셋을 갚습니다.
+
 ## [0.2.1] - 2026-08-23
 
 **Node · Python 둘만 올라갑니다. 공개 API·타입 표면 변경은 없습니다.**
