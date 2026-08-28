@@ -5,7 +5,12 @@ paths:
   - "harness/**"
   - "DEPLOY.md"
 ---
-<!-- doc-budget: max-bytes=8432 -->
+<!-- doc-budget: max-bytes=9200 -->
+<!-- 8432 → 9200 (2026-08-29): 래칫 조건 (2) 사람이 문서의 역할을 바꿨다(판정 원문은
+     docs/governance/process.md 머리의 같은 날짜 주석). 세 번째 핀 종류(**CI 매트릭스 하한**)와
+     「막힌 범프는 스킵이 아니라 에러다」가 들어온다. ⚠️ 직전 세션은 예산이 0이라 이 둘을 한 줄로
+     뭉개고 3번 항목을 아예 지웠는데, 그러면 `parallel < 2` 가 왜 있는지 아무 데서도 읽히지 않는다.
+     `ruby/` 어디에도 그 이유가 없기 때문이다 — 값이 낮은 원인이 코드가 아니라 테스트 매트릭스다. -->
 <!-- 7770 → 8432 (2026-08-23): 래칫 조건 (1). 이 줄이 사 오는 것은 산문이 아니라 **기계 검증**이다 —
      `.github/security-config.json` 이 SSOT 가 되고 `repo-config.mjs check` 가 라이브와 대조한다(변이검증:
      securityDrift 를 빈 배열로 만들면 자가테스트가 운다. 대조군 origin/main 판은 통과했다).
@@ -34,9 +39,10 @@ The definitions are `.github/rulesets/*.json` (the committed JSON is the SSOT); 
 ## Dependabot
 
 - ⚠️ **A Dependabot-triggered run has no Actions secrets** — `SONAR_TOKEN` becomes an empty string and SonarCloud is guaranteed to fail (that is not a signal about the code). `sonarcloud.yml` skips Dependabot PRs only. Duplicating the token was rejected: unreviewed package code would run in the same job as the token.
-- ⚠️ **Pins dependabot must not bump** — `.github/dependabot.yml`'s `ignore` blocks them with reasons. A blocked bump **errors, not skips**
+- ⚠️ **Three kinds of pin dependabot must not bump** — the `ignore` list in `.github/dependabot.yml` blocks them, with the reasoning attached. ⚠️ **A bump its constraint forbids makes dependabot *error*, not skip**, so leaving one out of `ignore` reddens that ecosystem's whole job every week — and the failure shows up only under Insights → Dependency graph → Dependabot, never in CI.
   1. **An action whose ref name *is* the meaning.** The pin for `dtolnay/rust-toolchain` is the head SHA of the `stable` **branch**, and dependabot swaps in the default-branch head, so the workflow dies on the spot with `'toolchain' is a required input`. `pypa/gh-action-pypi-publish` is worse — its default branch is `unstable/v1`, so instead of dying, **publishing to PyPI quietly moves to the unstable channel**. When bumping one, read the branch head directly with `gh api repos/<owner>/<repo>/branches/<branch> --jq .commit.sha`.
   2. **A version that expresses a consumer floor.** `kotlin-stdlib` is the consumer floor of the published artifact, so it has to move **together with** `languageVersion`/`apiVersion`. Take the patches, block minor and major.
+  3. **A version that expresses a CI-matrix floor.** `parallel` 2.x requires ruby `>= 3.3` while `ruby-ci` still runs a **3.2** leg, so the committed `Gemfile.lock` has to stay on 1.x — hence `gem "parallel", "< 2"` in the Gemfile. The value is low because of the *test matrix*, not because of the code, so nothing in `ruby/` explains it; the reason lives in `dependabot.yml` next to the ignore. Drop both together when the gemspec floor rises past 3.2.
 
 ## Local ↔ CI divergence
 
