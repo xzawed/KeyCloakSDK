@@ -13,7 +13,7 @@ repositories {
     mavenCentral()
 }
 
-val ktorVersion = "3.1.3"
+val ktorVersion = "3.5.2"
 
 dependencies {
     // ⚠️ 이 핀은 kotlin/build.gradle.kts 의 `version` 과 **문자열까지** 같아야 한다 —
@@ -25,7 +25,13 @@ dependencies {
     implementation("io.ktor:ktor-server-content-negotiation:$ktorVersion")
     implementation("io.ktor:ktor-serialization-jackson:$ktorVersion")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.18.2")
-    runtimeOnly("ch.qos.logback:logback-classic:1.5.12")
+    runtimeOnly("ch.qos.logback:logback-classic:1.5.34")
+    // ⚠️ **전이 의존을 여기서 끌어올린다.** ktor 3.5.2 가 netty 4.2.16 을 끌어오는데
+    // GHSA-8c42-7qj2-3j46(CORS 캐시 오염·정보노출)이 4.2.17.Final 에서 고쳐졌다. ktor 쪽이
+    // 따라올 때까지 BOM 으로 netty 전체를 함께 올린다(모듈 하나만 올리면 버전이 갈린다).
+    // 이 줄이 필요 없어지는 조건: ktor 가 4.2.17 이상을 끌어오게 되면 지운다 —
+    // `security-audit` 의 harness-kotlin 잡이 그때도 초록이면 지워도 안전하다.
+    implementation(platform("io.netty:netty-bom:4.2.17.Final"))
 }
 
 kotlin {

@@ -23,15 +23,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: 추적되는 *.sh 의 실행비트 확인
+      - name: 추적되는 실행 스크립트의 실행비트 확인 (*.sh · gradlew)
+        # ⚠️ 이 검사는 오래 `*.sh` 만 봤고, 그래서 **`gradlew` 가 조준 밖이었다.** 불변식은
+        # "*.sh 에 x 비트"가 아니라 "CI 가 `./<파일>` 로 부르는 것에 x 비트"인데 글롭이 그보다
+        # 좁았다. 실측(2026-08-28): `harness/apps/kotlin/gradlew` 와
+        # `harness/install/consume/kotlin-app/gradlew` 가 100644 였고 — `kotlin/gradlew` 만 100755 —
+        # 새 `harness-kotlin` 감사 잡이 러너에서 `Permission denied`(exit 126) 로 죽었다.
+        # 하네스 컨테이너에서는 Dockerfile 이 우회해 아무도 몰랐다.
         run: |
-          NON_EXEC="$(git ls-files -s -- '*.sh' | awk '$1 == "100644" { print $4 }')"
+          NON_EXEC="$(git ls-files -s -- '*.sh' 'gradlew' '*/gradlew' | awk '$1 == "100644" { print $4 }')"
           if [ -n "$NON_EXEC" ]; then
-            echo "::error::실행비트가 없는 셸 스크립트가 있습니다. \`git update-index --chmod=+x <file>\` 로 고치세요."
+            echo "::error::실행비트가 없는 실행 스크립트가 있습니다. \`git update-index --chmod=+x <file>\` 로 고치세요."
             echo "$NON_EXEC" | sed 's/^/  /'
             exit 1
           fi
-          echo "추적되는 *.sh $(git ls-files -- '*.sh' | wc -l)개 전부 실행비트 있음"
+          echo "추적되는 실행 스크립트 $(git ls-files -- '*.sh' 'gradlew' '*/gradlew' | wc -l)개 전부 실행비트 있음"
 
   doc-facts:
     # 문서가 주장하는 버전이 빌드 파일과 일치하는지 검사한다 — 그리고 이름과 달리 지금은
