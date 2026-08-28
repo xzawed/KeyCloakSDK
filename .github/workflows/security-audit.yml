@@ -279,11 +279,17 @@ jobs:
       - run: pip-audit --strict -r harness/apps/python/requirements.txt
 
   harness-kotlin:
-    name: Scheduled dependency audit — 하네스 Kotlin (OSV)
+    name: Scheduled dependency audit — 하네스 Kotlin ${{ matrix.app }} (OSV)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # ⚠️ 두 앱은 의존 집합이 같게 **유지돼야 하는** 것이지 같다고 보장된 것이 아니다 — 둘 다 건다.
+      # consume 쪽은 그래프도 못 보고(Gradle 미파싱) 이 잡이 하나뿐일 때는 조준 밖이었다.
+      matrix:
+        app: ['harness/apps/kotlin', 'harness/install/consume/kotlin-app']
     defaults:
       run:
-        working-directory: harness/apps/kotlin
+        working-directory: ${{ matrix.app }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
@@ -296,14 +302,27 @@ jobs:
       # `working-directory: kotlin` 이라 SDK 만 본다. 남는 것이 ktor 4종 + jackson-module-kotlin 인데
       # 그 둘은 하네스 앱이 **실제로 실행하는** 웹서버 표면이다.
       #
-      # ⚠️ 이것이 도는 이유: `build.gradle.kts` 가 `mavenLocal()` 다음에 `mavenCentral()` 을 선언하고
-      # SDK(`io.github.xzawed:keycloak-sdk-kotlin`)가 Central 에 게시돼 있어, 컨테이너의 mavenLocal
-      # 없이도 해석된다(실측 2026-08-28: 로컬에서 EXIT=0, 좌표 305줄). 다른 다섯 하네스 앱은
-      # 이미지 안에만 있는 경로를 참조해 이 방식이 불가능하다 — 그래서 그쪽은 그래프를 읽는다.
+      # ⚠️ 이것이 도는 이유: SDK(`io.github.xzawed:keycloak-sdk-kotlin`)가 Central 에 게시돼 있어
+      # 컨테이너 저장소 없이도 해석된다. `apps/kotlin` 은 `mavenLocal()` 다음에 `mavenCentral()` 이라
+      # 그대로 흘러가고(좌표 305줄), `consume/kotlin-app` 은 닿지 않는 nginx 저장소가 **먼저**라
+      # 전부 FAILED 가 되므로 위 `-I` init script 로 그것만 걷어낸다(좌표 129줄). 다른 다섯 하네스
+      # 앱은 이미지 안에만 있는 경로를 참조해 이 방식이 불가능하다 — 그래서 그쪽은 그래프를 읽는다.
       - name: 해석된 런타임 의존성 좌표 수집(runtimeClasspath)
         run: |
           set -euo pipefail
-          ./gradlew -q --no-daemon dependencies --configuration runtimeClasspath > dep-tree.txt
+          # `-I` 는 컨테이너 전용 저장소를 걷어낸다(consume 앱 전용, apps/kotlin 에서는 무동작).
+          ./gradlew -q --no-daemon -I "$GITHUB_WORKSPACE/scripts/gradle/osv-audit-init.gradle" \
+            dependencies --configuration runtimeClasspath > dep-tree.txt
+          # ⚠️ **fail-closed 지점.** `gradlew dependencies` 는 의존을 하나도 해석하지 못해도
+          # exit 0 이고, 그 트리의 `<좌표> FAILED` 를 아래 파이프라인이 버전 `"X FAILED"` 인
+          # 가짜 좌표로 통과시킨다. OSV 는 그런 좌표에 취약점이 없다고 답하므로 **아무것도
+          # 감사하지 않은 잡이 초록으로 끝난다**(실측 2026-08-28: 가짜 9좌표 → 취약 0건,
+          # 대조군 netty-codec-http 4.1.119.Final → 18건). 비어 있는지만 보는 검사로는 안 잡힌다.
+          if grep -q 'FAILED' dep-tree.txt; then
+            echo "::error::의존성 해석에 실패한 좌표가 있다 — 감사 실패(fail-closed)"
+            grep 'FAILED' dep-tree.txt | head -20
+            exit 1
+          fi
           grep -e '--- ' dep-tree.txt \
             | sed -e 's/^.*--- //' -e 's/ (\*)$//' -e 's/ (c)$//' -e 's/ (n)$//' \
             | awk -F' -> ' '{ if (NF == 2) { split($1, b, ":"); print b[1]":"b[2]":"$2 } else { print $0 } }' \
@@ -338,8 +357,11 @@ jobs:
   #     Dependency Submission API 로 밀어넣어야만 들어온다(이 저장소는 하지 않는다). 실측:
   #     그래프가 파싱한 54개 매니페스트 목록에 `build.gradle.kts` 두 개가 없다.
   # ⚠️ 다만 **그래프의 사각지대 ≠ 감사되지 않음**이다. `replace` 가 가리키는 `go/` 는 위 go 잡이
-  # `govulncheck` 로, `kotlin/` 은 kotlin 잡이, **`harness/apps/kotlin` 은 harness-kotlin 잡이**
-  # 각각 `runtimeClasspath` → OSV 로 덮는다. 즉 그래프가 못 보는 자리를 다른 잡이 전부 받는다.
+  # `govulncheck` 로, `kotlin/` 은 kotlin 잡이, **`build.gradle.kts` 두 개는 harness-kotlin 잡의
+  # 매트릭스 두 레그가** 각각 `runtimeClasspath` → OSV 로 덮는다.
+  # ⚠️ 「전부 받는다」고 쓰지 말 것 — 2026-08-28 까지 실제로 **`consume/kotlin-app` 은 아무도 안 봤다**
+  # (매트릭스 이전에는 이 잡이 `apps/kotlin` 하나만 봤다). 이 문장이 과장이었던 것이 #317 과 같은 부류다.
+  # 조준점을 넓힐 때는 이 목록도 함께 옮긴다 — 트리의 매니페스트 대조: `git ls-files | grep -E 'build\.gradle\.kts$'`.
   # 그 자리를 아는 채로 두는 것이지 덮었다고 적지 않는다 — 반대로 안 덮였다고 넓게 적지도 않는다.
   dependabot-alerts:
     name: Scheduled dependency audit — 의존성 그래프 전체 (Dependabot alerts)
