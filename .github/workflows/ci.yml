@@ -13,7 +13,7 @@ jobs:
       matrix: { java: ['21'] }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with: { distribution: 'temurin', java-version: '${{ matrix.java }}', cache: 'maven' }
       - name: Build & unit test (커버리지 게이트 90/85 포함)
         run: mvn -B -f java/pom.xml verify -DskipITs=true
@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest   # ubuntu 러너는 Docker 내장 → Testcontainers 동작
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
       - name: Full verify (단위 + 통합 IT)
         run: mvn -B -f java/pom.xml verify
@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
       - name: 해석된 런타임 의존성 좌표 수집(리액터 전체)
         # `compile`을 함께 도는 이유: dependency:list 단독 실행은 리액터 형제 모듈이 아직
