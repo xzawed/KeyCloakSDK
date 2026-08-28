@@ -1,6 +1,22 @@
 # Dependabot — dependency update monitoring for all nine language SDKs plus
 # GitHub Actions. Each ecosystem is scoped to its language directory. Weekly
 # schedule; minor/patch updates grouped to reduce PR noise.
+#
+# ⚠️ **`harness/` 는 의도적으로 없다 — 기각이지 누락이 아니다.** 하네스 경보가 51일간 침묵한
+# 뒤 이 목록에 `harness/apps/*` 를 더하는 안을 검토했고, 실측 후 기각했다:
+#   - 앱 매니페스트 13개 중 **5개는 dependabot 도 해석하지 못한다** — 이미지 안에만 있는 경로를
+#     참조한다(`path: "/src/ruby"` · `replace => /sdk` · `url: "/src/php"` · `file:./*.tgz` ·
+#     `http://mvn-repo-kotlin/`). 그 경로가 곧 하네스가 증명하려는 것이라 레지스트리 좌표로
+#     바꾸면 하네스의 존재 이유가 사라진다.
+#   - **2개는 Gradle 이라 의존성 그래프가 아예 안 본다**(공식 표의 Gradle 행은 비어 있다).
+#   - **2개(`install/*/dotnet`)는 선언된 의존성이 0개**다 — PackageReference 를 런타임에 붙인다.
+#   - 남는 자리(하네스 rust·python)는 `security-audit.yml` 의 `harness-rust`·`harness-python`
+#     잡이 **직접** 감사한다 — 버전 PR 을 기다리지 않고 락파일·requirements 를 그날 본다.
+#   - 화석화 걱정은 이번 원인이었으나(`~> 6.4` 가 패치 라인에 닿지 못했다) 그 Gemfile 은 이제
+#     상한이 없다. 상한 없는 제약은 dependabot 이 올릴 것이 없다.
+# 즉 이득은 거의 0인데, 이 파일은 **한 항목의 문법 오류가 파일 전체를 죽여** 아홉 SDK 의 버전
+# 업데이트가 통째로 멈춘다(실패는 Insights → Dependency graph → Dependabot 에만 뜨고 CI 는
+# 초록이다). 되살릴 조건: 하네스 매니페스트가 컨테이너 경로 없이 표현 가능해지면 다시 본다.
 version: 2
 updates:
   - package-ecosystem: maven # Java

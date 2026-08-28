@@ -132,6 +132,14 @@ export function securityDrift(want, have) {
   }
   const live = new Set(h.languages ?? [])
   for (const l of w.languages ?? []) if (!live.has(l)) out.push(`code_scanning.languages: ${l} 이 라이브에 없다`)
+  // ⚠️ 이것만 `security_and_analysis` 밖에 있다 — 엔드포인트가 다르다(GET …/private-vulnerability-
+  // reporting). 위 루프에 섞으면 `have` 에 영영 값이 없어 **매번 드리프트**가 나거나, 반대로
+  // 조회를 빠뜨린 채 조용히 통과한다. 그래서 별도로 본다.
+  const wp = want.private_vulnerability_reporting
+  if (wp?.enabled !== undefined) {
+    const hp = have.private_vulnerability_reporting?.enabled
+    if (hp !== wp.enabled) out.push(`private_vulnerability_reporting: want=${wp.enabled} have=${hp ?? '(조회 안 됨)'}`)
+  }
   return out
 }
 
@@ -181,14 +189,24 @@ function checkSecurity(repo, cmd) {
   }
   const repoRes = gh(['api', `repos/${repo}`])
   const csRes = gh(['api', `repos/${repo}/code-scanning/default-setup`])
-  if (!repoRes.ok || !csRes.ok) {
+  // ⚠️ 별도 엔드포인트다 — `repos/{o}/{r}` 응답에 private vulnerability reporting 은 없다.
+  // 이 줄을 지우면 위 securityDrift 가 `have` 를 못 받아 **매번 드리프트**를 외치게 되므로,
+  // 조용히 통과하는 쪽으로는 깨지지 않는다(자가테스트가 두 방향을 다 고정한다).
+  const pvrRes = gh(['api', `repos/${repo}/private-vulnerability-reporting`])
+  if (!repoRes.ok || !csRes.ok || !pvrRes.ok) {
+    // ⚠️ 조회 실패는 **2**다. 이 파일 헤더가 "인증/권한 문제는 2"라고 약속하고 `liveRulesets`는
+    // 실제로 `die(2, …)`인데, 이 경로만 1을 돌려주고 있었다 — 토큰이 없어서 못 읽은 것이
+    // "설정이 어긋났다"로 보고되면 그게 거짓 신호이고, 헤더의 약속이 여기서만 깨진다.
+    // `::error::` 는 stdout 으로 낸다 — die()는 stderr 를 쓰고, 워크플로 명령을 stderr 에서
+    // 집어주는지는 이 저장소가 실측한 적이 없다. 있는 관용(console.log)을 유지한다.
     console.log(`::error::보안 설정을 조회하지 못했다(관리자 권한 토큰이 필요하다).`)
-    console.log(repoRes.ok ? csRes.out : repoRes.out)
-    return 1
+    console.log(!repoRes.ok ? repoRes.out : !csRes.ok ? csRes.out : pvrRes.out)
+    die(2, '')
   }
   const have = {
     security_and_analysis: JSON.parse(repoRes.out).security_and_analysis,
     code_scanning_default_setup: JSON.parse(csRes.out),
+    private_vulnerability_reporting: JSON.parse(pvrRes.out),
   }
   const diffs = securityDrift(want, have)
   diffs.push(...mirrorDrift(want))
@@ -270,8 +288,13 @@ function main() {
   drift += checkSecurity(repo, cmd)
 
   if (cmd === 'check' && drift) {
-    console.log(`\n${drift}건 불일치. 정의를 적용하려면 \`node scripts/repo-config.mjs apply\`,`)
+    console.log(`\n${drift}건 불일치. **룰셋** 은 \`node scripts/repo-config.mjs apply\` 로 적용하고,`)
     console.log('실제 설정을 정답으로 받아들이려면 `node scripts/repo-config.mjs pull` 후 커밋하라.')
+    // ⚠️ 위 두 명령은 룰셋만 다룬다 — `apply`는 보안 기능을 건드리지 않는다(바로 위 주석의
+    // 판정). 그 사실을 여기 적지 않으면, 보안 축 드리프트를 본 사람이 `apply`를 돌리고
+    // "적용 완료"를 읽은 뒤 아무것도 바뀌지 않은 채 끝난다.
+    console.log('보안 기능(secret scanning · CodeQL · private vulnerability reporting)은 `apply` 대상이 아니다 —')
+    console.log('사람이 판정해 GitHub 설정에서 켜거나, `gh api -X PUT repos/<o>/<r>/private-vulnerability-reporting` 처럼 직접 바꾼다.')
     process.exit(1)
   }
   console.log(cmd === 'apply' ? '\n적용 완료.' : '\n설정 일치.')
