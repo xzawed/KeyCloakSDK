@@ -4,6 +4,12 @@ on:
     paths: ['ruby/**', '.github/workflows/ruby-ci.yml']
   pull_request:
     paths: ['ruby/**', '.github/workflows/ruby-ci.yml']
+  # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
+  # ⚠️ 이 레인이 이 장치가 생긴 이유다 — rubocop 1.90.0 파손이 08-24~08-28 나흘간 안 보였고,
+  # 태그 푸시가 아니었으면 릴리스 때 처음 드러났을 것이다.
+  workflow_dispatch:
+  schedule:
+    - cron: '27 7 * * 1'
 permissions:
   contents: read
 jobs:

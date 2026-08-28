@@ -2,6 +2,10 @@ name: Go CI
 on:
   push: { branches: [main], paths: ['go/**', '.github/workflows/go-ci.yml'] }
   pull_request: { branches: [main], paths: ['go/**', '.github/workflows/go-ci.yml'] }
+  # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
+  workflow_dispatch:
+  schedule:
+    - cron: '7 6 * * 1'
 # 최소권한: 이 워크플로의 잡은 소스를 읽고 빌드/검사만 한다(체크·코멘트·릴리스 쓰기 없음).
 permissions:
   contents: read

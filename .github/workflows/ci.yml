@@ -2,6 +2,19 @@ name: CI
 on:
   push: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml'] }
   pull_request: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml'] }
+  # 주간 레인 건강검진. ⚠️ `schedule` 은 `paths` 를 타지 않는다(실측: harness 스케줄이 6일 연속
+  # 돌았는데 그 경로가 바뀐 날은 2일뿐) — **그것이 목적이다.** 겨누는 것은 의존성 드리프트가
+  # 아니라(락·핀이 이미 막는다) 러너 이미지·액션 같은 **환경** 드리프트다. 상세: .claude/rules/ci.md
+  #
+  # 슬롯 표 — 전부 월요일, 20분 간격. harness(매일 03:00)·security-audit(월 04:00) 뒤에 둔다.
+  # 정시를 피한 것은 GitHub 스케줄러가 :00 에 몰려 지연되기 때문이다.
+  #   05:07 java(ci)   05:27 python   05:47 node
+  #   06:07 go         06:27 dotnet   06:47 php
+  #   07:07 rust       07:27 ruby     07:47 kotlin
+  # 대조 명령: `grep -h "cron:" .github/workflows/*-ci.yml .github/workflows/ci.yml`
+  workflow_dispatch:
+  schedule:
+    - cron: '7 5 * * 1'
 # 최소권한: 이 워크플로의 잡은 소스를 읽고 빌드/검사만 한다(체크·코멘트·릴리스 쓰기 없음).
 permissions:
   contents: read
