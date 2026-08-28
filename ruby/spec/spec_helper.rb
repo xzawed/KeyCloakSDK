@@ -12,12 +12,14 @@ SimpleCov.formatters = SimpleCov::Formatter::MultiFormatter.new(
 
 SimpleCov.start do
   enable_coverage :branch
-  add_filter %r{/spec/}
-  add_filter "lib/keycloak_sdk/version.rb"
+  # ⚠️ `add_filter`는 simplecov 1.1에서 폐기됐다(1.1.1 `filters.rb:105`가 경고 후 `skip`에 그대로 위임).
+  # 커버리지 게이트를 소유한 API라 다음 major에서 사라지면 게이트가 통째로 깨진다 — 미리 옮겼다.
+  skip %r{/spec/}
+  skip "lib/keycloak_sdk/version.rb"
   # 네트워크 경계(통합테스트로 검증) — 커버리지 게이트에서 omit
-  add_filter "lib/keycloak_sdk/auth_client.rb"
-  add_filter %r{lib/keycloak_sdk/admin/}
-  add_filter "lib/keycloak_sdk/client.rb"
+  skip "lib/keycloak_sdk/auth_client.rb"
+  skip %r{lib/keycloak_sdk/admin/}
+  skip "lib/keycloak_sdk/client.rb"
   # 통합잡(spec/integration만 실행)은 로직 브랜치 대부분을 안 타므로 게이트를 적용하면 안 된다 —
   # RUN_INTEGRATION 환경변수로 unit 실행만 게이트를 강제한다(단위 게이트는 약화하지 않음).
   minimum_coverage(line: 90, branch: 85) unless ENV["RUN_INTEGRATION"]
