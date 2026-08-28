@@ -4,7 +4,7 @@ require "spec_helper"
 require "jwt"
 require "openssl"
 
-# rubocop:disable RSpec/MultipleMemoizedHelpers -- fixture-heavy hardening spec (RSA key/kid/config/http/store)
+# rubocop:disable-next RSpec/MultipleMemoizedHelpers -- fixture-heavy hardening spec (RSA key/kid/config/http/store)
 RSpec.describe KeycloakSdk::JwtValidator do
   subject(:validator) { described_class.from_config(config: config, jwks_store: jwks_store) }
 
@@ -159,4 +159,3 @@ RSpec.describe KeycloakSdk::JwtValidator do
     end
   end
 end
-# rubocop:enable RSpec/MultipleMemoizedHelpers
