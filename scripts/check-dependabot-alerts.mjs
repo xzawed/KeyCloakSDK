@@ -25,7 +25,23 @@
 //      매니페스트에 적힌 범위가 아니다. 취약 버전을 허용하는 제약이라도 해석 결과가 패치 버전이면
 //      경보가 안 뜨고 여기는 초록이다(실측 근거: 이 저장소의 D1 이 정확히 그 형태였다 — `>= 7.2.1`
 //      은 취약한 8.0.0·8.0.1 을 허용하지만 bundler 는 8.0.2 를 골랐다). 제약 검증 가드는 검토 후
-//      기각했다 — 판정과 되살릴 조건은 커밋 875ecfe 본문에 있다.
+//      기각했다(판정 근거는 커밋 875ecfe 본문). **되살릴 조건은 아래 두 줄이 소유한다** —
+//      875ecfe 가 적은 (ii) 「그 패키지에 다구간 advisory 가 뜬다」는 **무용했다**: 실측상
+//      puma 의 GHSA 14건이 **전부** 다구간이라 조건이 상시 참이고, 상시 참인 트리거는
+//      트리거가 아니다. D1 의 모양은 「다구간이다」가 아니라 **「선언한 하한이 그 패키지의
+//      최대 패치 버전보다 낮다」**(`>= 7.2.1` vs `8.0.2`)이므로 그것으로 바꾼다.
+//
+//      되살릴 조건 (ii): 하네스의 상한 없는 하한 넷 중 하나가 그 패키지 GHSA 의
+//      `first_patched_version` **최댓값보다 낮아질 때**(패치 없는 구간이 있어도 참).
+//      판정 명령 — 히트가 있으면 이 기각을 다시 연다:
+//        for p in "rubygems puma" "pip fastapi" "pip uvicorn" "pip httpx"; do set -- $p
+//          max=$(gh api "advisories?ecosystem=$1&affects=$2&per_page=100" \
+//            --jq "[.[]|.vulnerabilities[]|select(.package.name==\"$2\")|.first_patched_version]
+//                  |map(select(.!=null))|.[]" | sort -V | tail -1)
+//          echo "$2 max_patched=$max"   # 하한은 harness/apps/{ruby/Gemfile,python/requirements.txt}
+//        done
+//      실측 2026-08-28: puma 8.0.2 = 하한 8.0.2 · fastapi 0.109.1 < 0.115 ·
+//      uvicorn 0.11.7 < 0.30 · httpx 0.23.0 < 0.27 → **히트 0, 기각 유지**.
 //
 // 사용:
 //   node scripts/check-dependabot-alerts.mjs            # 현재 저장소
