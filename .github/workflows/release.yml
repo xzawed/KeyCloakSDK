@@ -12,6 +12,16 @@ name: Release
 #   - MAVEN_GPG_PASSPHRASE  : 위 개인키의 패스프레이즈
 #   - CENTRAL_TOKEN_USER    : Central Portal(https://central.sonatype.com) 발급 토큰 username
 #   - CENTRAL_TOKEN_PW      : Central Portal 발급 토큰 password
+#
+# ⚠️ **미납 실측 — 이번 릴리스에서 갚을 것**(#316 이 약속했고 아직 아무 태그도 안 밀렸다).
+# setup-java 가 v5 → v6.0.0 으로 옮겨졌는데 이 경로는 `push: tags:` 전용이라 PR 체크가 한 번도
+# 건드리지 않았다. **초록만 보지 말고 GPG 임포트 로그를 직접 읽는다**:
+#   gh run view <run> --log | grep -E 'Importing private gpg key|Removing private key from isolated GPG home'
+# 판정: 뒤 문자열(post 스텝)이 **사후 성공 마커**다 — v6.0.0 은 임포트가 성공해야 STATE_GPG_HOME 을
+# 저장하고, cleanup 은 그 state 가 있을 때만 그 줄을 낸다(src/auth.ts:63-66 · cleanup-java.ts:12-17).
+# 앞 문자열은 임포트 **직전**에 찍히므로 그것만으로는 성공 증거가 아니다. 키 id·지문은 찍히지 않는다
+# (`gpg --batch --import` 를 `silent: true` 로 돌린다) — 지문을 grep 하려 들지 말 것.
+# 이 실측을 마치면 이 블록을 지운다.
 on:
   push:
     tags: ['v*']
