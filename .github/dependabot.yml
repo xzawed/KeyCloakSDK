@@ -116,6 +116,16 @@ updates:
     schedule: { interval: weekly }
     groups:
       ruby-minor-patch: { update-types: [minor, patch] }
+    ignore:
+      # parallel 2.x 는 `required_ruby_version >= 3.3` 인데 ruby-ci 매트릭스에는 **3.2** 가 있다.
+      # 락을 3.4 에서 뜨면 2.x 가 들어오고 frozen 모드의 3.2 레그가 `bundle install` 에서 죽는다
+      # (그래서 Gemfile 에 `gem "parallel", "< 2"`). dependabot 은 그 제약과 충돌하면 **스킵이 아니라
+      # 에러**로 끝나 bundler 잡 전체가 주간으로 빨개진다(실측 job 1544357846: parallel /
+      # dependency_file_not_resolvable). 여기서 막아 그 소음을 없앤다.
+      # 지우는 조건: `required_ruby_version` 하한(gemspec `>= 3.2`)이 3.3 이상으로 올라가고
+      # ruby-ci 매트릭스에서 3.2 가 빠질 때 — 그때 Gemfile 의 `< 2` 도 함께 지운다.
+      - dependency-name: 'parallel'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /

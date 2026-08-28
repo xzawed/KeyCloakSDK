@@ -34,7 +34,7 @@ The definitions are `.github/rulesets/*.json` (the committed JSON is the SSOT); 
 ## Dependabot
 
 - ⚠️ **A Dependabot-triggered run has no Actions secrets** — `SONAR_TOKEN` becomes an empty string and SonarCloud is guaranteed to fail (that is not a signal about the code). `sonarcloud.yml` skips Dependabot PRs only. Duplicating the token was rejected: unreviewed package code would run in the same job as the token.
-- ⚠️ **Two kinds of pin dependabot must not bump** — the `ignore` list in `.github/dependabot.yml` blocks them, with the reasoning attached.
+- ⚠️ **Pins dependabot must not bump** — `.github/dependabot.yml`'s `ignore` blocks them with reasons. A blocked bump **errors, not skips**
   1. **An action whose ref name *is* the meaning.** The pin for `dtolnay/rust-toolchain` is the head SHA of the `stable` **branch**, and dependabot swaps in the default-branch head, so the workflow dies on the spot with `'toolchain' is a required input`. `pypa/gh-action-pypi-publish` is worse — its default branch is `unstable/v1`, so instead of dying, **publishing to PyPI quietly moves to the unstable channel**. When bumping one, read the branch head directly with `gh api repos/<owner>/<repo>/branches/<branch> --jq .commit.sha`.
   2. **A version that expresses a consumer floor.** `kotlin-stdlib` is the consumer floor of the published artifact, so it has to move **together with** `languageVersion`/`apiVersion`. Take the patches, block minor and major.
 
