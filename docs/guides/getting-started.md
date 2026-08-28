@@ -2,7 +2,7 @@
 
 A guide to installing the Keycloak polyglot SDK locally and running your first token issuance, JWT validation, and Admin API call with minimal code. This SDK is provided in **multiple programming languages** (currently Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby · Kotlin), and while each language is idiomatic, the concepts, layers, and flows are isomorphic.
 
-> ℹ️ **All nine are on a public registry with a stable release** (Node and Python at `0.2.1`, PHP at `0.2.0`; the other six at `0.1.0` — versions move per language) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central), Kotlin (Maven Central) and Go (the Go module proxy). A bare install now resolves `0.1.0` everywhere, which was **not** true while only release candidates existed: pip, Cargo and the `go` command fell back to the prerelease, RubyGems resolved nothing, npm's `latest` pointed at it while a `^0.1.0` range failed with `ETARGET`, and Maven has no prerelease concept at all. Each RC remains on its registry — none of these ecosystems lets you delete a published version — but none of them prefers it any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. For the release procedure, see the unified nine-language [DEPLOY.md](../../DEPLOY.md) (check readiness with `scripts/release-readiness.sh` and tag commands with `scripts/release-trigger.sh <lang> <ver>` — both are human-gates that never push tags automatically).
+> ℹ️ **All nine are on a public registry with a stable release** (Node and Python at `0.2.1`, PHP at `0.2.0`, Go, .NET and Rust at `0.1.1`, Java, Kotlin and Ruby at `0.1.0` — versions move per language) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central), Kotlin (Maven Central) and Go (the Go module proxy). A bare install now resolves `0.1.0` everywhere, which was **not** true while only release candidates existed: pip, Cargo and the `go` command fell back to the prerelease, RubyGems resolved nothing, npm's `latest` pointed at it while a `^0.1.0` range failed with `ETARGET`, and Maven has no prerelease concept at all. Each RC remains on its registry — none of these ecosystems lets you delete a published version — but none of them prefers it any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. For the release procedure, see the unified nine-language [DEPLOY.md](../../DEPLOY.md) (check readiness with `scripts/release-readiness.sh` and tag commands with `scripts/release-trigger.sh <lang> <ver>` — both are human-gates that never push tags automatically).
 
 > 🖥️ **You need a Keycloak *server* first.** This SDK is a client library, so it needs a **Keycloak server to connect to** in order to work (the server is a separate, standalone product not included in this SDK). For a local trial, use the one-line Docker command `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`; for a **production deployment**, see the [Keycloak server deployment guide](deploying-keycloak-server.md).
 
@@ -257,10 +257,10 @@ cd go && go build ./... && go test ./...   # unit tests + coverage gate (logic �
 
 The module path is `github.com/xzawed/KeyCloakSDK/go` and the package name is `keycloak`.
 
-### 3) Installation from the Go module proxy (stable `0.1.0`)
+### 3) Installation from the Go module proxy (stable `0.1.1`)
 
 ```bash
-go get github.com/xzawed/KeyCloakSDK/go@v0.1.0
+go get github.com/xzawed/KeyCloakSDK/go@v0.1.1
 ```
 
 > Go modules are **published via VCS tags** with no separate registry, so **the tag *is* the release** — `go/v0.1.0` is published and `proxy.golang.org` has cached it. A bare `go get github.com/xzawed/KeyCloakSDK/go` (and `@latest`) now resolves it; while `go/v0.1.0-rc.1` was the only tag, the `go` command fell back to that prerelease instead. ⚠️ The proxy cache is immutable — a published version stays fetchable by exact version forever, and the only remedy for a bad one is a `retract` directive in a *later* release.
@@ -343,12 +343,12 @@ dotnet add reference ../KeyCloakSDK/dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keyclo
 
 The package ID is `Xzawed.Keycloak.Sdk`, and the root namespace is `Xzawed.Keycloak` (admin is the `Xzawed.Keycloak.Admin` sub-namespace).
 
-### 3) Installation from NuGet (stable `0.1.0`)
+### 3) Installation from NuGet (stable `0.1.1`)
 
 `0.1.0` is live on NuGet — the first stable release:
 
 ```bash
-dotnet add package Xzawed.Keycloak.Sdk --version 0.1.0   # or omit --version for latest
+dotnet add package Xzawed.Keycloak.Sdk --version 0.1.1   # or omit --version for latest
 ```
 
 > A plain `dotnet add package Xzawed.Keycloak.Sdk` now resolves `0.1.0`. While only the RC existed it failed outright ("There are no stable versions available") — opting in took `--prerelease` or the exact version. Releases remain human-gated: a publish runs only when a human pushes a `dotnet-v*` tag to trigger [`.github/workflows/dotnet-release.yml`](../../.github/workflows/dotnet-release.yml) (requires the `NUGET_API_KEY` secret). For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
@@ -479,7 +479,7 @@ cd rust && cargo build && cargo test   # Just verify a local build/test: unit te
 
 The crate name is `keycloak-sdk`, and the root module is `keycloak_sdk` (`keycloak_sdk::{KeycloakClient, KeycloakConfig, ...}`).
 
-### 3) Installation from crates.io (stable `0.1.0`)
+### 3) Installation from crates.io (stable `0.1.1`)
 
 `0.1.0` is live on crates.io — the first stable release:
 

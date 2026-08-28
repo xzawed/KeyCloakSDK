@@ -668,7 +668,7 @@ _VSET="$(for _vl in $DEPLOY_LANGS; do df_published_version "$_vl"; done | sort -
 for _fs in \
   "README.md|All nine languages have shipped" \
   "README.ko.md|아홉 언어 전부 정식 릴리스를 냈고" \
-  "SECURITY.md|the other six on" \
+  "SECURITY.md|because a language" \
   "docs/guides/getting-started.md|All nine are on a public registry"; do
   _ff="${_fs%%|*}"; _fa="${_fs#*|}"
   _fl="$(grep -F "$_fa" "$ROOT/$_ff" || true)"
