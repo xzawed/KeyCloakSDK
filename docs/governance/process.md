@@ -152,6 +152,23 @@ G1–G6(§4)를 돌린다. 그리고 **넷을 반드시 한다**:
 | `repo-config`를 required 체크로 | 그 잡의 유일한 외부 호출이 `gh api`라 GitHub API가 흔들리면 멈추는데, `PRIMARY`는 `bypass_actors: []`(라이브도 `current_user_can_bypass: never`)라 **멈춘 required는 소유자도 못 푼다** — 저장소가 비가역으로 잠긴다. 잡 주석이 이미 이 판정을 담고 있었다(내가 그걸 안 읽고 「사람 판정 대기」로 올렸다) | `node -e "const r=require('./.github/rulesets/main.json');process.exit(r.bypass_actors.length?0:1)"`가 **exit 0**이 될 때 — 즉 멈춘 required를 풀 수 있는 주체가 생겼을 때 |
 | capability matrix **L열** 가드 | 6개 PR·L셀 9개가 뒤집히는 동안 **실제 드리프트 0건** — 가드였다면 한 번도 안 울렸다. 225셀이 전부 ✅가 되어 "추가하고 표를 잊는" 모드는 구조적으로 사라졌고, 남은 removal은 단위·E2E가 같은 커밋에서 먼저 깬다. 체크리스트 ⑤도 걸린다: users.L은 `search`/`list`(Ruby)/`all`(PHP)로 **수렴하지 않는다**(내 최초 측정이 틀렸고 Grok이 반박, 소스로 확인) | **10번째 언어 행이 매트릭스에 추가될 때** — 손으로 25셀을 쓰는 그 순간이 유일한 실제 위험이다. 지금 로드맵의 확장 후보 표에는 대기 행이 0개이고 다음 축은 첫 stable 릴리스다 |
 
+<!-- 기각 2건 (2026-08-28, 린터 재현성 작업). 표가 아니라 여기 있는 이유: doc-budget 여유가 0이고
+     이 둘은 기계검증을 사 오지 않는다 — CLAUDE.md 「그 밖의 산문 추가는 … 블록 주석으로 남긴다」.
+     표로 올릴 이유가 생기면 앵커 max-bytes 를 함께 올리고 그 판정을 여기 적는다.
+
+     · Rust `stable` 레그의 clippy 고정 — `-D warnings` 를 무는 것이 그 레그의 **목적**이다
+       (매트릭스 주석 「stable = 최신 회귀 확인」). 고정하면 조기경보가 죽고, 의존은 `--locked` 가
+       이미 잡는다. 체크리스트 6: 실측 12실행 전부 초록이라 관측된 파손 0건인데 새 실패 모드만 는다.
+       되살릴 조건: `gh run list --workflow=rust-ci.yml --json conclusion` 이 clippy 새 lint 로
+       **stable 레그만** 실패한 것을 내고 그것이 무관한 PR 을 막을 때. 그때도 고정이 아니라
+       그 레그만 `continue-on-error`.
+
+     · `global.json` 으로 .NET SDK 밴드 고정 — major 는 이미 `dotnet-version: '8.0.x'` 가 잡는다.
+       밴드까지 조이면 러너에 그 밴드가 없을 때 죽는 새 실패 모드가 생기고(체크리스트 6),
+       net8.0 은 서비싱 라인이라 새 분석기가 밴드로 들어오지 않는다. 실측 10실행 전부 초록.
+       되살릴 조건: `dotnet-ci` 가 8.0 밴드 이동으로 실제 실패하거나,
+       `dotnet/Directory.Build.props` 의 `TargetFramework` 가 서비싱 밖 라인으로 올라갈 때. -->
+
 ---
 
 ## 4. 품질 게이트 (⑥ 검증 단계)
