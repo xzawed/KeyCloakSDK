@@ -106,7 +106,7 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 - ⚠️ **admin-client와 Keycloak 서버는 독립 버전 트랙이다** — 서버 라인과 같은 번호의 admin-client는 없다. `representation` 필드는 실서버로 검증한다.
 - ⚠️ **Maven Central은 Central Portal 경로만**(구 OSSRH 종료). 워크플로 초록 ≠ 게시 — Publish 후에도 전파 지연이 있으니 **404로 실패를 결론내지 않는다**(Java·Kotlin 공통).
 - ⚠️ **배포 시크릿 미설정은 스킵이 아니라 실패다** — 아무것도 게시하지 않고 green으로 끝난 실행은 성공한 실행과 구분되지 않는다.
-- ⚠️ **dependabot이 올려서는 안 되는 핀 두 종류**: ref가 브랜치인 액션(`rust-toolchain`·`gh-action-pypi-publish`)과 소비자 하한 버전(`kotlin-stdlib`). `.github/dependabot.yml`의 `ignore`가 근거와 함께 막는다.
+- ⚠️ **dependabot이 올려서는 안 되는 핀 세 종류**: ref가 브랜치인 액션(`rust-toolchain`·`gh-action-pypi-publish`)·소비자 하한 버전(`kotlin-stdlib`)·CI 매트릭스 하한(`parallel`). `.github/dependabot.yml`의 `ignore`가 근거와 함께 막는다.
 
 ## 확정 의존성 (BOM으로 고정)
 
