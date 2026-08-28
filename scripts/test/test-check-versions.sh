@@ -240,6 +240,41 @@ assert_fails node "$GUARD" "$TMP"
 OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
 assert_contains "$OUT" "주석이 아니라 검사되는 선언이다" "선언이 사라진 것을 지목해야 한다"
 
+# ---- `.claude/rules/kotlin.md` — 3차 정의 자리 ----
+# 왜 필요한가: 위 변이 1~5 를 전부 통과시켜도 **그 규칙 문서가 낡은 채로 남고 필수 체크 둘 다
+# 초록이었다**(2026-08-28 변이로 증명: 래퍼+미러를 9.4.0 으로 내려도 check-versions·check-docs 가
+# 통과했고 kotlin.md 만 9.5.0 을 계속 주장했다). check-docs 는 앵커 기반이라 산문을 읽지 않는다.
+# 그 파일은 정책 근거로 인용되는 자리라, 틀리면 다음 사람이 틀린 밴드로 판단한다.
+KMD="$TMP/.claude/rules/kotlin.md"
+
+# 대조군: 셋이 일치하면 통과해야 한다(이게 없으면 아래 실패가 이 검사 몫인지 알 수 없다).
+cp -r "$FIX/." "$TMP/"
+assert_ok node "$GUARD" "$TMP"
+
+# 변이 7 — 규칙 문서의 래퍼 값만 낡는다(래퍼·미러·밴드는 전부 정상).
+cp -r "$FIX/." "$TMP/"
+sed -i 's/the build needs (`9\.5\.0`)/the build needs (`9.4.0`)/' "$KMD"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" 'kotlin.md 가 래퍼를 "9.4.0" 로 적는데' "규칙 문서의 낡은 래퍼 값을 지목해야 한다"
+assert_not_contains "$OUT" "밴드 7.6.3–9.5.0 를 벗어났다" "밴드 검사가 대신 잡은 게 아니어야 한다(공허성 방지)"
+
+# 변이 8 — 규칙 문서의 밴드 값만 낡는다. ⚠️ 이것이 가장 비싼 자리다: 이 문장이 #314 류의
+# 판단 근거로 인용되므로, 여기 상한이 조용히 넓어지면 밴드 밖 래퍼가 정당해 보인다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's/(KGP 2\.4\.10 → 7\.6\.3–9\.5\.0)/(KGP 2.4.10 → 7.6.3–9.9.0)/' "$KMD"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "7.6.3–9.9.0" "규칙 문서의 낡은 밴드 값을 지목해야 한다"
+
+# 변이 9 — 문구를 갈아엎어 값이 안 읽히게 만든다. 조용히 통과하면 이 검사는 공허해진다
+# (값을 지우고 소스를 가리키는 것은 정답이지만, 값을 남긴 채 모양만 바꾸는 것은 아니다).
+cp -r "$FIX/." "$TMP/"
+sed -i 's/the build needs (`9\.5\.0`)/the build needs 9.5.0/' "$KMD"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "3차 정의 자리다" "읽지 못한 것을 통과로 넘기지 않아야 한다"
+
 # ---- 소비자 하한 정합 — languageVersion·apiVersion·전이 kotlin-stdlib ----
 # 이 셋이 게시 jar를 쓸 수 있는 최소 Kotlin을 함께 정한다. 갈라지면 **증상이 소비자 쪽에서만**
 # 난다(우리 CI는 그 조합을 빌드하지 않아 초록이다) — 그래서 자가테스트가 유일한 방어다.
@@ -272,13 +307,18 @@ sed -i 's|KotlinVersion.KOTLIN_2_2|KotlinVersion.KOTLIN_2_4|g' "$BGK"
 sed -i 's|kotlin-stdlib:2\.2\.21|kotlin-stdlib:2.4.10|' "$BGK"
 assert_ok node "$GUARD" "$TMP"
 
-# 오탐 방지 — KGP와 밴드 기록과 래퍼를 **함께** 옮기면 통과해야 한다(정상적인 KGP 범프의 모양).
-# 이 대조군이 없으면 이 가드는 "KGP를 영원히 올리지 마라"가 된다.
+# 오탐 방지 — 정상적인 KGP 범프의 모양이면 통과해야 한다. 이 대조군이 없으면 이 가드는
+# "KGP를 영원히 올리지 마라"가 된다.
+# ⚠️ 2026-08-28: 「함께」의 정의가 **넷에서 여섯으로** 늘었다 — `.claude/rules/kotlin.md` 의 두
+# 문장이 3차 정의 자리로 추가됐기 때문이다. 이 대조군이 낡은 넷만 옮기던 판이라 새 검사에서
+# 실패했고, 그 실패가 정확히 검사가 의도한 것이었다(불완전한 범프는 통과하면 안 된다).
 cp -r "$FIX/." "$TMP/"
 sed -i 's/kotlin("jvm") version "2\.4\.10"/kotlin("jvm") version "2.6.0"/' "$BGK"
 sed -i 's|^// kgp-gradle-band: .*$|// kgp-gradle-band: kgp=2.6.0 gradle=8.0-9.9.0|' "$BGK"
 sed -i 's|^// gradle/wrapper: 9\.5\.0$|// gradle/wrapper: 9.9.0|' "$BGK"
 sed -i 's/gradle-9\.5\.0-bin\.zip/gradle-9.9.0-bin.zip/' "$WPROPS"
+sed -i 's/the build needs (`9\.5\.0`)/the build needs (`9.9.0`)/' "$KMD"
+sed -i 's/(KGP 2\.4\.10 → 7\.6\.3–9\.5\.0)/(KGP 2.6.0 → 8.0–9.9.0)/' "$KMD"
 assert_ok node "$GUARD" "$TMP"
 
 # ⚠️ **밴드 위반이 `--list`를 죽이면 안 된다.** `--list`의 계약은 "언어별 매니페스트 버전"이고

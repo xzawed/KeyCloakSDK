@@ -284,8 +284,10 @@ jobs:
   #   - **Gradle 을 파싱하지 않는다** — 공식 표의 Gradle 행은 권장·지원 파일이 모두 비어 있고,
   #     Dependency Submission API 로 밀어넣어야만 들어온다(이 저장소는 하지 않는다). 실측:
   #     그래프가 파싱한 54개 매니페스트 목록에 `build.gradle.kts` 두 개가 없다.
-  # 즉 하네스 Kotlin 과 하네스 Go 의 SDK 엣지는 **어느 게이트도 보지 않는다**. 그 자리를 아는 채로
-  # 두는 것이지 덮었다고 적지 않는다.
+  # ⚠️ 다만 **그래프의 사각지대 ≠ 감사되지 않음**이다. `replace` 가 가리키는 `go/` 는 위 go 잡이
+  # `govulncheck` 로, `kotlin/` 은 위 kotlin 잡이 `runtimeClasspath` → OSV 로 실제로 덮는다.
+  # 남는 자리는 **`harness/apps/kotlin` 의 비-SDK 의존뿐이다**(ktor 4종 + jackson-module-kotlin).
+  # 그 자리를 아는 채로 두는 것이지 덮었다고 적지 않는다 — 반대로 안 덮였다고 넓게 적지도 않는다.
   dependabot-alerts:
     name: Scheduled dependency audit — 의존성 그래프 전체 (Dependabot alerts)
     runs-on: ubuntu-latest

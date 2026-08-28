@@ -14,8 +14,13 @@
 // ⚠️ 이 게이트는 하네스 감사를 **대체하지 않는다** — 컨테이너 없이 실제로 도는 둘(rust·python)은
 // `security-audit.yml`의 `harness-rust`·`harness-python`이 직접 감사한다. 여기는 나머지다.
 // ⚠️ 그리고 이 게이트도 "전부"가 아니다. 사각지대가 둘이다:
-//   1. 의존성 그래프는 `replace`를 무시하고 Gradle 을 파싱하지 않는다 — 하네스 Go 의 SDK 엣지와
-//      하네스 Kotlin 은 어느 게이트도 보지 않는다(security-audit.yml 주석).
+//   1. 의존성 그래프는 `replace`를 무시하고 Gradle 을 파싱하지 않는다. ⚠️ 그렇다고 그 대상이
+//      **감사되지 않는 것은 아니다** — 실측: `harness/apps/go/go.mod` 는 그래프에 있고(gocloak 이
+//      경보 대상), `replace` 가 가리키는 `go/` 는 `security-audit.yml` 의 go 잡이 `govulncheck` 로,
+//      `kotlin/` 은 kotlin 잡이 `runtimeClasspath` → OSV 로 덮는다. **실제로 아무도 안 보는 것은
+//      `harness/apps/kotlin` 의 비-SDK 의존뿐이다**(ktor 4종 + jackson-module-kotlin).
+//      ⚠️ 이 줄은 한 번 "하네스 Go 와 하네스 Kotlin 을 아무도 안 본다"고 과장돼 있었다 — 주장보다
+//      넓은 서술은 이 파일이 존재하는 이유가 된 결함 부류다. 좁혀 적는다.
 //   2. **선언한 제약이 안전한지는 검증하지 않는다.** 이 게이트가 세는 것은 GitHub 이 띄운 경보이지
 //      매니페스트에 적힌 범위가 아니다. 취약 버전을 허용하는 제약이라도 해석 결과가 패치 버전이면
 //      경보가 안 뜨고 여기는 초록이다(실측 근거: 이 저장소의 D1 이 정확히 그 형태였다 — `>= 7.2.1`
