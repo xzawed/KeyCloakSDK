@@ -6,6 +6,8 @@ gemspec
 
 group :development, :test do
   gem "bundler-audit", "~> 0.9"
+  # ⚠️ parallel 2.x needs ruby >= 3.3 — the lock is resolved on 3.4 but CI also runs the 3.2 floor.
+  gem "parallel", "< 2"
   gem "rake", "~> 13.0"
   gem "rspec", "~> 3.13"
   gem "rubocop", "~> 1.60"

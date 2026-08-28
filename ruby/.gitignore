@@ -2,5 +2,5 @@
 /vendor/bundle/
 /coverage/
 /pkg/
-Gemfile.lock
+# ⚠️ Gemfile.lock is committed — unlocked, CI resolves dev gems fresh and a new cop breaks the release path.
 *.gem

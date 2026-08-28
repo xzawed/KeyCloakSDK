@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-# rubocop:disable RSpec/DescribeClass -- 여러 예외 클래스로 구성된 계층을 검증하는 서술적 describe
+# rubocop:disable-next RSpec/DescribeClass -- 여러 예외 클래스로 구성된 계층을 검증하는 서술적 describe
 RSpec.describe "KeycloakSdk error hierarchy" do
   it "roots every error at KeycloakSdk::Error < StandardError" do
     expect(KeycloakSdk::Error.ancestors).to include(StandardError)
@@ -32,4 +32,3 @@ RSpec.describe "KeycloakSdk error hierarchy" do
     expect(other.status).to eq(500)
   end
 end
-# rubocop:enable RSpec/DescribeClass
