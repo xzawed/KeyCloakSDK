@@ -301,6 +301,35 @@ for (const [lang, p, re] of manifests) {
       }
     }
 
+    // ── `.claude/rules/kotlin.md` 의 3차 정의 자리 ────────────────────────────
+    // ⚠️ 위 네 값을 다 맞춰도 **여기 두 문장이 낡은 채로 남고 필수 체크 둘 다 초록이다**(변이로
+    // 증명: 래퍼+미러를 9.4.0 으로 내려도 check-versions·check-docs 가 전부 통과했고 이 파일만
+    // 9.5.0 을 계속 주장했다). `check-docs.mjs` 는 앵커 기반이라 산문을 읽지 않고, 이 파일의
+    // 유일한 앵커는 의존성 표를 덮는다. 그래서 **기존 가드의 조준점을 넓힌다**(신규 가드가 아니라).
+    // 이 파일이 정책 근거로 인용되는 자리라 여기가 틀리면 다음 사람이 틀린 밴드로 판단한다.
+    const krules = '.claude/rules/kotlin.md'
+    if (existsSync(join(root, krules))) {
+      const kt = read(krules)
+      const docWrap = /the distribution the build needs \(`(\d+(?:\.\d+)*)`\)/.exec(kt)
+      const docBand = /\(KGP (\S+) → (\d+(?:\.\d+)*)–(\d+(?:\.\d+)*)\)/.exec(kt)
+      // 부재와 불일치를 구분한다: 문구를 갈아엎어 값이 안 읽히면 이 검사가 조용히 공허해진다.
+      if (!docWrap || !docBand) {
+        harnessErrors.push(
+          `${krules} 에서 래퍼 버전 / KGP 밴드 문장을 읽지 못했다 — 이 파일은 두 값의 3차 정의 자리다. ` +
+            `문구를 바꿀 거면 값을 **지우고** 소스를 가리키게 할 것(남겨두면 아무도 안 보는 사본이 된다)`,
+        )
+      }
+      if (docWrap && wrapper && docWrap[1] !== wrapper) {
+        harnessErrors.push(`${krules} 가 래퍼를 "${docWrap[1]}" 로 적는데 ${wrapProps} 는 "${wrapper}" 다`)
+      }
+      if (docBand && band && (docBand[1] !== band[1] || docBand[2] !== band[2] || docBand[3] !== band[3])) {
+        harnessErrors.push(
+          `${krules} 가 밴드를 "KGP ${docBand[1]} → ${docBand[2]}–${docBand[3]}" 로 적는데 ` +
+            `${bgk} 의 kgp-gradle-band 는 "kgp=${band[1]} gradle=${band[2]}-${band[3]}" 다`,
+        )
+      }
+    }
+
     // ── 소비자 하한 정합 — `languageVersion`·`apiVersion`·전이 `kotlin-stdlib` ──
     // 이 셋이 **게시 jar를 쓸 수 있는 최소 Kotlin**을 함께 정한다. `build.gradle.kts`가 스스로
     // "이 버전은 위 KOTLIN_2_2와 함께 움직여야 한다 — 하나만 올리면 소비자 하한이 조용히
