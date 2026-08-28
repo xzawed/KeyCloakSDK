@@ -6,6 +6,9 @@
 // ⚠️ 이 build.gradle.kts는 harness/apps/kotlin/build.gradle.kts와 딱 한 가지만 다르다: SDK 의존성 소스가
 // mavenLocal(소스에서 publishToMavenLocal한 것)이 아니라 mvn-repo-kotlin 레지스트리(게시된 패키지)다 —
 // 그 외 Ktor·application 플러그인·app 소스는 동일하다("최대 재사용·단일 변수" 하네스 원칙).
+// gradle/wrapper: 8.14
+// ⚠️ KGP 2.2.20 · 래퍼 8.14 는 `harness/apps/kotlin` 과 **함께** 움직인다(밴드 7.6.3-8.14).
+// 근거와 되돌림 금지 사유는 그 파일 머리에 있다 — 여기 복제하지 않는다.
 plugins {
     kotlin("jvm") version "2.2.20"
     application

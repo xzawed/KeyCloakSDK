@@ -9,6 +9,8 @@
 #     `http://mvn-repo-kotlin/`). 그 경로가 곧 하네스가 증명하려는 것이라 레지스트리 좌표로
 #     바꾸면 하네스의 존재 이유가 사라진다.
 #   - **2개는 Gradle 이라 의존성 그래프가 아예 안 본다**(공식 표의 Gradle 행은 비어 있다).
+#     ⚠️ 그래프가 못 본다 ≠ 감사 안 된다 — 그 둘은 `security-audit.yml` 의 `harness-kotlin`
+#     매트릭스 두 레그가 `runtimeClasspath` → OSV 로 직접 본다(좌표 129개씩, 2026-08-28).
 #   - **2개(`install/*/dotnet`)는 선언된 의존성이 0개**다 — PackageReference 를 런타임에 붙인다.
 #   - 남는 자리(하네스 rust·python)는 `security-audit.yml` 의 `harness-rust`·`harness-python`
 #     잡이 **직접** 감사한다 — 버전 PR 을 기다리지 않고 락파일·requirements 를 그날 본다.
