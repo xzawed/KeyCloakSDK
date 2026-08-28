@@ -318,9 +318,13 @@ jobs:
           # 가짜 좌표로 통과시킨다. OSV 는 그런 좌표에 취약점이 없다고 답하므로 **아무것도
           # 감사하지 않은 잡이 초록으로 끝난다**(실측 2026-08-28: 가짜 9좌표 → 취약 0건,
           # 대조군 netty-codec-http 4.1.119.Final → 18건). 비어 있는지만 보는 검사로는 안 잡힌다.
-          if grep -q 'FAILED' dep-tree.txt; then
+          # ⚠️ 맨 `FAILED` 가 아니라 **` FAILED$`** 로 잡는다 — 그것이 Gradle 렌더러의 접미사이고
+          # (`+--- <group>:<artifact>:<version> FAILED`), Maven 좌표에는 공백이 못 들어가므로
+          # 정상 좌표가 이 패턴을 만들 수 없다. 탐지력은 같고 오탐 면적만 준다
+          # (실측: 실패 트리 9/9 동일 · 정상 트리 352줄에서 둘 다 0).
+          if grep -qE ' FAILED$' dep-tree.txt; then
             echo "::error::의존성 해석에 실패한 좌표가 있다 — 감사 실패(fail-closed)"
-            grep 'FAILED' dep-tree.txt | head -20
+            grep -E ' FAILED$' dep-tree.txt | head -20
             exit 1
           fi
           grep -e '--- ' dep-tree.txt \
