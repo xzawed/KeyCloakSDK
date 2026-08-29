@@ -75,7 +75,7 @@ jobs:
         # ⚠️ 이 값은 한때 14/4에 머물러 있었고 실측은 이미 28/7이었다 — **앵커 절반이
         # 사라져도 CI가 통과하는 상태**였다. 하한을 올리는 것을 잊으면 가드가 조용히
         # 헐거워지므로, 앵커를 추가하는 PR은 이 줄을 함께 고쳐야 한다.
-        run: node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anchor-links=23
+        run: node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anchor-links=24
 
       - name: 커버리지 게이트 가드 자가테스트(측정 실패와 하락을 구분하는지)
         # 이 가드의 가치는 임계값 비교가 아니라 판별이다 — 둘 다 exit 1이라 종료코드만 보는
