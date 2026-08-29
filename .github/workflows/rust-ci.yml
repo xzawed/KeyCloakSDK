@@ -71,6 +71,26 @@ jobs:
       # 문서화된 예외로 무시한다(게차 참조).
       - run: cargo audit --ignore RUSTSEC-2023-0071
 
+  semver:
+    name: cargo-semver-checks (공개 API 파괴적 변경)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    # ⚠️ **1.0 은 「파괴적 변경 없이는 major 를 올리지 않는다」는 약속이고, 지킬 수단 없이 하는
+    # 약속은 이 저장소가 거절하는 부류다**(「기계만 셀 수 있다」). 이 잡이 rust 레인에서 그
+    # 수단이다 — `check-release` 는 crates.io 의 **직전 게시 버전**을 기준선으로 받아 지금 트리의
+    # 공개 API 와 대조하고, 버전 범프가 변경의 크기에 못 미치면 실패한다.
+    # ⚠️ 0.x 에서는 minor 가 파괴적 변경 신호다 — 도구가 그 규칙을 알고 있으므로 1.0 이전에도
+    # 유효하다. 1.0 이후에는 그대로 major 게이트가 된다.
+    # ⚠️ ref 가 곧 설치대상인 액션이다(`# cargo-semver-checks` 태그의 SHA). 올릴 때는
+    # `gh api repos/taiki-e/install-action/git/ref/tags/cargo-semver-checks --jq .object.sha` 로 직접 확인한다.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - uses: taiki-e/install-action@6e25983f55915f81579b0dcdb5f56d345a177128 # cargo-semver-checks
+      - run: cargo semver-checks check-release
+
   integration:
     name: Integration (testcontainers, 실제 Keycloak 26.6)
     runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → testcontainers-rs 동작
