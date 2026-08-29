@@ -53,7 +53,10 @@ jobs:
   api-compat:
     name: griffe (공개 API 파괴적 변경)
     runs-on: ubuntu-latest
-    defaults: { run: { working-directory: python } }
+    # ⚠️ **이 잡만 `working-directory: python` 을 쓰지 않는다.** griffe 는 기준선 태그를 임시
+    # 워크트리로 꺼내고 `--search` 를 **그 워크트리 루트** 기준으로 해석한다 — `python` 안에서
+    # 돌리며 `--search src` 를 주면 `<워크트리>/src` 를 뒤져 패키지를 못 찾는다(실측:
+    # `ModuleNotFoundError: No module named 'keycloak_sdk'`). 양쪽 다 저장소 루트 기준이어야 맞다.
     # ⚠️ 1.0 은 「파괴적 변경 없이는 major 를 올리지 않는다」는 약속이고, 지킬 수단 없이 하는
     # 약속은 이 저장소가 거절하는 부류다(「기계만 셀 수 있다」). rust 의 cargo-semver-checks 와
     # 같은 자리다 — 기준선은 **직전 릴리스 태그**이고, 거기서 공개 시그니처가 사라지거나
@@ -66,4 +69,4 @@ jobs:
         with: { python-version: '3.12' }
       - run: python -m pip install griffe
       - name: griffe check (직전 릴리스 태그 대비)
-        run: griffe check keycloak_sdk --search src --against py-v0.2.1
+        run: griffe check keycloak_sdk --search python/src --against py-v0.2.1
