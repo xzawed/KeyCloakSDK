@@ -118,6 +118,36 @@ sd_code_axis() { # $1=라벨 $2=추출 함수명
 sd_code_axis "JWKS 재조회" sd_default
 sd_expect="$SD_EXPECT"
 sd_code_axis "clock skew" sd_skew
+
+# ⚠️ **둘째 정의 자리.** 위 축은 언어당 한 곳만 읽는데, 두 언어는 같은 파라미터를 **두 곳**에
+# 선언한다 — 그리고 dotnet 은 위 축이 읽는 쪽이 **소비자가 받는 값이 아니다**:
+#   dotnet  JwtValidator.cs(위 축) + KeycloakConfig.cs. 파사드가 `ClockSkewSeconds = cfg.ClockSkewSeconds`
+#           로 넘기므로(KeycloakClient.cs) 소비자 값은 **KeycloakConfig 쪽**이다.
+#   python  config.py(위 축) + _internal/jwt.py 의 파라미터 기본값.
+# 실측 2026-08-29: KeycloakConfig.cs 를 30 → 300 으로 바꿔도 이 가드는 **103/0 으로 통과했다**
+# (dotnet 단위테스트가 대신 잡았다). 값이 갈리는 자리를 가드가 안 보면 그 초록은 공허하다.
+sd_skew_secondary() { # $1=언어 → 둘째 정의 자리의 clock skew (해당 없으면 빈 문자열)
+  case "$1" in
+    dotnet) sed -n 's/.*ClockSkewSeconds *{ *get; *init; *} *= *\([0-9][0-9.]*\).*/\1/p' \
+              "$ROOT/dotnet/src/Xzawed.Keycloak.Sdk/KeycloakConfig.cs" | head -1 ;;
+    python) sed -n 's/.*clock_skew: *float *= *\([0-9][0-9.]*\).*/\1/p' \
+              "$ROOT/python/src/keycloak_sdk/_internal/jwt.py" | head -1 ;;
+  esac
+}
+
+_sec=0
+for L in dotnet python; do
+  _raw="$(sd_skew_secondary "$L" || true)"
+  _has=1; [ -n "$_raw" ] && _has=0
+  assert_eq "ok" "$(ok_if "$_has" MISSING)" \
+    "[clock skew·둘째 자리] $L 의 둘째 정의를 추출하지 못했다 — 파일이 옮겨졌거나 표기가 바뀌었나?"
+  [ -n "$_raw" ] || continue
+  _sec=$((_sec + 1))
+  assert_eq "$SD_EXPECT" "$(sd_norm "$_raw")" \
+    "[clock skew·둘째 자리] $L 의 둘째 정의가 첫째와 다르다 — 소비자가 받는 값이 갈렸다"
+done
+# 대조군 — 위 루프가 실제로 둘을 돌았는지. 표가 낡으면 0건 실행되고 조용히 통과한다.
+assert_eq "2" "$_sec" "[clock skew·둘째 자리] 읽은 둘째 자리 수가 2가 아니다 — 추출 표가 낡았나?"
 sd_skew_expect="$SD_EXPECT"
 
 # ⚠️ **일치만으로는 부족하다 — 값 자체를 핀한다.** 위 축은 "아홉이 서로 같은가"만 본다. 그래서
