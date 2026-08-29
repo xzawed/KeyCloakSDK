@@ -1,6 +1,11 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=23800 max-lines=304 -->
-<!-- 23,125/301 → 23,800/304 (2026-08-29): 래칫 조건 (2). 사람 판정 — 「작업문서는 지나친 압축보단
+<!-- doc-budget: max-bytes=24100 max-lines=304 -->
+<!-- 23,800 → 24,100 (2026-08-29, 5회 품질검증 결과): §4(b) 정정. 「두 자리」가 실제로는 **세 자리**였고
+     (Rust 저수준 생성자가 `reqwest::Client` 를 받는다 — lib.rs 주석이 이미 그렇게 적고 있었다),
+     마무리 문장 「정상 소비 경로는 이들을 노출하지 않는다」는 **자기모순**이었다: 노출 자리 (a)가
+     곧 admin 파사드이고 Go 예제가 스스로를 "the primary flow" 라 부른다. 계약 서술이 틀린 것은
+     압축 대상이 아니라 정정 대상이라 올린다.
+     23,125/301 → 23,800/304 (2026-08-29): 래칫 조건 (2). 사람 판정 — 「작업문서는 지나친 압축보단
      정확한 작업 수행이 우선」. 늘어난 한 문단은 **래칫 규칙 자신에 붙는 단서**다: 압축이 판정
      방법을 지우면 줄이지 말고 올려라. ⚠️ 이 문단을 압축하면 그 자체로 자기모순이므로,
      여기가 이 규칙의 예외 없는 최소 단위다. 실례(sonar 487)를 함께 남긴 것은 다음 세션이
@@ -94,7 +99,7 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 
 ### §4(b) 문서화된 은닉성 예외
 
-완전 은닉이 아니다. 두 자리가 하위 타입을 노출한다 — **(a)** admin 파사드의 representation 타입(Java/Kotlin `org.keycloak.representations.idm.*` · Node `defs/*` · Go `gocloak.*` · C# `*Representation` · PHP `Fschmtt\…\Representation\*` · Rust `keycloak::types` — Python·Ruby는 plain dict/Hash라 노출 없음), **(b)** `raw()` 탈출구가 돌려주는 하위 클라이언트. **정상 소비 경로는 이들을 노출하지 않는다.**
+완전 은닉이 아니다. 세 자리가 하위 타입을 노출한다 — **(a)** admin 파사드의 representation 타입(Java/Kotlin `org.keycloak.representations.idm.*` · Node `defs/*` · Go `gocloak.*` · C# `*Representation` · PHP `Fschmtt\…\Representation\*` · Rust `keycloak::types` — Python·Ruby는 plain dict/Hash라 노출 없음), **(b)** `raw()` 탈출구가 돌려주는 하위 클라이언트, **(c)** Rust 저수준 주입 생성자가 받는 `reqwest::Client`(`AdminClient`·`AuthClient`·`ClientCredentialsTokenProvider`·`JwksStore`의 `new`). ⚠️ **「정상 소비 경로는 노출하지 않는다」고 쓰지 말 것 — (a)가 곧 admin 파사드이고 그것이 정상 경로다.** 참인 진술은 **이 셋 밖에는 없다**이고, Node 만 기계 검증한다(`node scripts/check-node-public-surface.mjs` → 누출 0).
 
 ⚠️ Rust는 `keycloak_sdk::types`로 미러 재노출한다 — 없으면 소비자가 `keycloak` crate를 직접 의존해야 해서 게시된 퀵스타트가 컴파일되지 않는다.
 
