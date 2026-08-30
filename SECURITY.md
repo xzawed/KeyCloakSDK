@@ -63,8 +63,9 @@ What pre-1.0 means here:
   may contain breaking changes. Read the release notes before upgrading.
 - **Only the newest released version of each language SDK receives security
   fixes.** There are no long-term-support lines and older `0.x` releases are not
-  backported to. In practice that is each language's release candidate above,
-  since none of the nine has a later release yet.
+  backported to. In practice that is the version named for each language above:
+  six of the nine (PHP, Python, Node, Go, .NET, Rust) have already superseded
+  their first stable release, and those earlier versions are no longer supported.
 - A security fix ships as a new release of the affected SDK plus a
   [GitHub Security Advisory](https://github.com/xzawed/KeyCloakSDK/security/advisories)
   on this repository.
