@@ -6,7 +6,7 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · 
 
 > **`1.0.0` is on Packagist** — `composer require xzawed/keycloak-sdk` resolves `1.0.0` under Composer's default `minimum-stability: stable`.
 >
-> `1.0.0` is the first release carrying the stability guarantee: the public API is covered by SemVer, so a breaking change requires a **major** bump.
+> ⚠️ **Coming from `0.1.0`? `roles()->update()` changed signature.** It takes the current name as its first argument — `update(string $name, Role $role)` — because the old one-argument form **could not express a rename at all**. See [Upgrading from `0.1.0`](https://github.com/xzawed/KeyCloakSDK/blob/main/php/README.md#upgrading-from-010).
 
 ## Requirements
 
