@@ -95,3 +95,52 @@ jobs:
             exit 1
           fi
           echo "OK: Maven 좌표 ${n_q}개에 알려진 OSV 취약점 없음"
+
+  api-compat:
+    name: japicmp (공개 API 파괴적 변경)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kotlin
+    # ⚠️ **BCV 도 KGP 내장 abiValidation 도 쓰지 않는다** — 둘 다 기준선이 **커밋된 `.api` 덤프**라
+    # 「직전 게시본 대비」가 아니다(실측 확인). 덤프는 개발자가 다시 뜨면 그만이라, 나머지 여섯
+    # 레인과 **보증의 종류가 다르다**. 게다가 BCV 는 유지보수 모드다.
+    #
+    # 대신 java 레인과 **같은 도구**(japicmp)로 게시된 JAR 과 직접 대조한다. Gradle 플러그인
+    # (`me.champeau.gradle.japicmp`, 최종 릴리스 18개월 전)은 GAV 가 아니라 FileCollection 을 받아
+    # 기준선을 직접 해석해야 하므로, CLI 로 두 JAR 을 비교하는 쪽이 단순하고 의존이 없다.
+    #
+    # ⚠️ Kotlin JAR 은 `kotlin.Metadata` 어노테이션 변경 잡음을 낸다 — 실측으로 갈랐다:
+    # 그 잡음만으로는 실패하지 않고(복원 상태 `No changes` · exit 0), 공개 메서드가 사라지면
+    # `REMOVED METHOD` 로 exit 1 이다. 그래서 별도 exclude 가 필요 없다.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: 현재 JAR 빌드
+        run: ./gradlew --no-daemon jar
+      - name: 기준선(직전 정식 릴리스) JAR + japicmp CLI 내려받기
+        env:
+          # ⚠️ **직전 정식 릴리스**를 적는다(RC 가 아니다). 릴리스마다 함께 올린다.
+          # java 레인에서 실측된 함정이다 — 자동 추론에 맡기면 RC 를 고를 수 있다.
+          BASELINE: '0.1.0'
+          JAPICMP: '0.26.1'
+        run: |
+          set -euo pipefail
+          B="https://repo1.maven.org/maven2/io/github/xzawed/keycloak-sdk-kotlin/${BASELINE}/keycloak-sdk-kotlin-${BASELINE}.jar"
+          J="https://repo1.maven.org/maven2/com/github/siom79/japicmp/japicmp/${JAPICMP}/japicmp-${JAPICMP}-jar-with-dependencies.jar"
+          curl -sSfL -o "$RUNNER_TEMP/base.jar" "$B"
+          curl -sSfL -o "$RUNNER_TEMP/japicmp.jar" "$J"
+          # `-f` 로 404 는 실패다 — 기준선이 없으면 조용히 통과시키지 않는다.
+          ls -l "$RUNNER_TEMP/base.jar" "$RUNNER_TEMP/japicmp.jar"
+      - name: japicmp (게시본 대비 바이너리 비호환이면 실패)
+        run: |
+          set -euo pipefail
+          new=$(ls build/libs/keycloak-sdk-kotlin-*.jar | grep -vE -- '-(sources|javadoc)\.jar$' | head -1)
+          echo "현재 JAR: $new"
+          [ -n "$new" ] || { echo "::error::현재 JAR 을 찾지 못했다"; exit 1; }
+          java -jar "$RUNNER_TEMP/japicmp.jar" \
+            -o "$RUNNER_TEMP/base.jar" -n "$new" \
+            --only-modified --ignore-missing-classes --error-on-binary-incompatibility
