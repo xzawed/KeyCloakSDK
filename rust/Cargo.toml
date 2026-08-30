@@ -1,6 +1,6 @@
 [package]
 name = "keycloak-sdk"
-version = "0.1.1"
+version = "1.0.0"
 authors = ["xzawed <xzawed31@gmail.com>"]
 edition = "2024"
 rust-version = "1.88"

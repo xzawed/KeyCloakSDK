@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    keycloak-sdk (0.1.0)
+    keycloak-sdk (1.0.0)
       faraday (~> 2.0)
       jwt (~> 3.2)
       rack-oauth2 (~> 2.3)
