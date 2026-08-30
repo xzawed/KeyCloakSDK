@@ -23,7 +23,7 @@
       <!-- 로컬 .m2에 install된 aggregate(core+auth+admin 집약) -->
       <groupId>io.github.xzawed</groupId>
       <artifactId>keycloak-sdk</artifactId>
-      <version>0.1.0-SNAPSHOT</version>
+      <version>1.0.0-SNAPSHOT</version>
     </dependency>
   </dependencies>
   <build>
