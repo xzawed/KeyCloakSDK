@@ -8,6 +8,12 @@
     <PackageTags>keycloak;oidc;oauth2;admin;jwt</PackageTags>
     <!-- 공개 멤버 XML 문서 미작성 경고를 오류로 승격하지 않음(문서는 점진적으로) -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- ⚠️ 1.0 은 「파괴적 변경 없이는 major 를 올리지 않는다」는 약속이고, 지킬 수단 없이 하는
+         약속은 이 저장소가 거절하는 부류다. .NET 은 SDK 내장 Package Validation 이 그 수단이다 —
+         별도 도구(ApiCompat CLI)를 들이지 않고 `dotnet pack` 이 **NuGet 의 기준선 패키지를 받아**
+         공개 표면을 대조한다. rust `cargo-semver-checks` · python `griffe` · go `gorelease` 와 같은 자리. -->
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion>0.1.1</PackageValidationBaselineVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Duende.IdentityModel" Version="8.1.0" />
