@@ -52,6 +52,17 @@ jobs:
           report=$(dotnet list dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj package --vulnerable --include-transitive 2>&1)
           echo "$report"
           echo "$report" | grep -qi "no vulnerable packages" || { echo "::error::vulnerable packages in shipped SDK"; exit 1; }
+      # ⚠️ **공개 API 파괴적 변경 게이트.** SDK 내장 Package Validation 이 `dotnet pack` 시점에
+      # NuGet 의 기준선 패키지(`PackageValidationBaselineVersion`)를 받아 공개 표면을 대조한다 —
+      # 별도 도구(ApiCompat CLI)를 들이지 않는다. rust `cargo-semver-checks` · python `griffe` ·
+      # go `gorelease` 와 같은 자리이고, 1.0 의 「파괴적 변경 없이는 major 를 올리지 않는다」를
+      # 지킬 수단이다. ⚠️ **`pack` 없이는 이 검증이 돌지 않는다** — `dotnet test` 만으로는 조용히
+      # 건너뛴다. 그래서 이 스텝이 필요하다.
+      # 실측(변이 3요건): `JwtValidatorOptions.ClockSkewSeconds` 를 public → internal 로 바꾸면
+      # `error CP0002 … API 중단 변경` 으로 실패하고(exit 1), 되돌리면 오류 0 · exit 0 이다.
+      # 대조: **internal 멤버 변경은 통과**한다 — 공개 표면만 본다는 증거.
+      - name: 공개 API 파괴적 변경 (Package Validation, 기준선 = 직전 게시본)
+        run: dotnet pack dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release
   integration:
     runs-on: ubuntu-latest
     steps:
