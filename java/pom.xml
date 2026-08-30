@@ -67,6 +67,11 @@
     <mockito.version>5.23.0</mockito.version>
     <testcontainers.version>2.0.5</testcontainers.version>
     <testcontainers.keycloak.version>4.3.1</testcontainers.keycloak.version>
+    <!-- 공개 API 파괴적 변경 게이트. 클래스가 없는 모듈(bom)과 소비자 API 가 아닌 모듈
+         (examples)은 각 pom 에서 true 로 덮어 건너뛴다. -->
+    <japicmp.skip>false</japicmp.skip>
+    <!-- ⚠️ **직전 정식 릴리스**를 적는다(RC 가 아니다). 릴리스마다 함께 올린다. -->
+    <japicmp.baseline>0.1.0</japicmp.baseline>
   </properties>
 
   <dependencyManagement>
@@ -186,6 +191,42 @@
             </configuration>
           </execution>
         </executions>
+      </plugin>
+      <!-- ⚠️ 1.0 은 「파괴적 변경 없이는 major 를 올리지 않는다」는 약속이고, 지킬 수단 없이 하는
+           약속은 이 저장소가 거절하는 부류다. rust cargo-semver-checks · python griffe ·
+           go gorelease · dotnet Package Validation · php php-semver-checker 와 같은 자리다.
+           ⚠️ **`oldVersion` 을 명시 핀한다 — 자동 추론에 맡기지 않는다.** 생략하고 실측했더니
+           japicmp 가 **`0.1.0-RC1` 을 기준선으로 잡았다**(정식 `0.1.0` 이 아니라). 로컬 `.m2` 에
+           RC 만 캐시돼 있었기 때문인데, 그 말은 **기준선이 환경에 따라 달라진다**는 뜻이다 —
+           RC 대비 비교는 정식 대비보다 느슨하다. 릴리스마다 이 값을 올리는 비용을 택한다.
+           낡으면 조용히 통과하지 않는다: 없는 좌표는 해석 실패로 빌드를 깬다. -->
+      <plugin>
+        <groupId>com.github.siom79.japicmp</groupId>
+        <artifactId>japicmp-maven-plugin</artifactId>
+        <version>0.26.1</version>
+        <executions>
+          <execution>
+            <id>api-compat</id>
+            <phase>verify</phase>
+            <goals><goal>cmp</goal></goals>
+          </execution>
+        </executions>
+        <configuration>
+          <skip>${japicmp.skip}</skip>
+          <oldVersion>
+            <dependency>
+              <groupId>${project.groupId}</groupId>
+              <artifactId>${project.artifactId}</artifactId>
+              <version>${japicmp.baseline}</version>
+            </dependency>
+          </oldVersion>
+          <parameter>
+            <!-- 바이너리 비호환이면 빌드를 깬다 — 리포트만 내고 통과하면 공허하다. -->
+            <breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
+            <breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
+            <onlyModified>true</onlyModified>
+          </parameter>
+        </configuration>
       </plugin>
     </plugins>
   </build>

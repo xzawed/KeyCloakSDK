@@ -10,6 +10,10 @@
   <artifactId>keycloak-sdk-bom</artifactId>
   <packaging>pom</packaging>
   <name>Keycloak SDK :: BOM</name>
+  <properties>
+    <!-- packaging=pom 이라 비교할 클래스가 없다 — 공개 API 게이트 대상이 아니다. -->
+    <japicmp.skip>true</japicmp.skip>
+  </properties>
   <dependencyManagement>
     <dependencies>
       <dependency><groupId>io.github.xzawed</groupId><artifactId>keycloak-sdk-core</artifactId><version>${project.version}</version></dependency>
