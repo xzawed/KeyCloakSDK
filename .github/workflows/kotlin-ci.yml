@@ -131,8 +131,10 @@ jobs:
           set -euo pipefail
           B="https://repo1.maven.org/maven2/io/github/xzawed/keycloak-sdk-kotlin/${BASELINE}/keycloak-sdk-kotlin-${BASELINE}.jar"
           J="https://repo1.maven.org/maven2/com/github/siom79/japicmp/japicmp/${JAPICMP}/japicmp-${JAPICMP}-jar-with-dependencies.jar"
-          curl -sSfL -o "$RUNNER_TEMP/base.jar" "$B"
-          curl -sSfL -o "$RUNNER_TEMP/japicmp.jar" "$J"
+          # ⚠️ `--proto '=https'` 가 있어야 `-L` 이 HTTP 로 강등되는 리다이렉트를 거부한다
+          # (SonarCloud githubactions:S6506 이 잡은 실제 결함 — 억제하지 않고 고쳤다).
+          curl -sSfL --proto '=https' --tlsv1.2 -o "$RUNNER_TEMP/base.jar" "$B"
+          curl -sSfL --proto '=https' --tlsv1.2 -o "$RUNNER_TEMP/japicmp.jar" "$J"
           # `-f` 로 404 는 실패다 — 기준선이 없으면 조용히 통과시키지 않는다.
           ls -l "$RUNNER_TEMP/base.jar" "$RUNNER_TEMP/japicmp.jar"
       - name: japicmp (게시본 대비 바이너리 비호환이면 실패)
