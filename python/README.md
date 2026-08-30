@@ -4,9 +4,9 @@ Authentication (OIDC / OAuth2) and the Admin REST API for [Keycloak](https://www
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) — one API surface, isomorphic across all of them: [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`0.2.1` is on PyPI** — a bare `pip install keycloak-sdk` resolves it. It is a documentation-only patch over `0.2.0` — no runtime or type-surface change. pip skips prereleases by default, so the old `0.1.0rc1` installs only if you name it or pass `--pre`.
+> **`1.0.0` is on PyPI** — a bare `pip install keycloak-sdk` resolves it. It is the first release carrying the stability guarantee: from here, a breaking change to the public API requires a **major** bump.
 >
-> ⚠️ **One breaking change since `0.1.0`, and it is narrow**: the `keycloak_sdk.jwt` module moved to `keycloak_sdk._internal.jwt`. Only code that imported `JwtValidator` **from that path directly** is affected — it was never in `__all__` and appears in no quickstart. The normal validation path, `kc.auth.validate(token)`, is unchanged. The move was structural: `py.typed` makes every module's signatures part of the public type surface, so a module under the top level was publishing joserfc's `KeySet` as part of this SDK's API.
+> ⚠️ **One breaking change since `0.1.0`, and it is narrow** (it landed in `0.2.0`; `1.0.0` adds none): the `keycloak_sdk.jwt` module moved to `keycloak_sdk._internal.jwt`. Only code that imported `JwtValidator` **from that path directly** is affected — it was never in `__all__` and appears in no quickstart. The normal validation path, `kc.auth.validate(token)`, is unchanged. The move was structural: `py.typed` makes every module's signatures part of the public type surface, so a module under the top level was publishing joserfc's `KeySet` as part of this SDK's API.
 
 ## Requirements
 
@@ -80,7 +80,11 @@ Masking covers this SDK's own `repr()`; it cannot cover what your logging framew
 
 ## Versioning and support
 
-This SDK is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking changes, so read the release notes before upgrading. Only the newest released version of each language SDK receives security fixes — there are no LTS lines, and older `0.x` releases are not backported to. Full policy: [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
+This SDK is **`1.0`** and follows SemVer: a breaking change to the public API requires a **major** bump. That promise is machine-backed — CI diffs this lane's public API against the **previously published artifact** on every build (`griffe check`), and a removal or an incompatible change fails the build. ⚠️ **The gate compares the API _surface_.** A change that leaves the surface identical but alters behaviour is not caught by it, so read the release notes before upgrading.
+
+Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
+
+**Each of the nine languages versions independently.** All nine reached `1.0.0` on the same day because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
 
 ## Documentation
 

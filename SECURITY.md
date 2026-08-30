@@ -45,27 +45,35 @@ Issues in Keycloak itself (the server) should be reported to the
 
 ## Supported Versions
 
-This project is **pre-1.0**. All nine SDKs have shipped a stable release to a
-public registry — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust
-(crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central), Kotlin (Maven
-Central) and Go (the Go module proxy — for Go the git tag *is* the version, so
-the `go/v0.1.0` tag is the release). ⚠️ **The numbers differ per language** —
-Node and Python are on `0.2.1`, PHP on `0.2.0`, Go, .NET and Rust on `0.1.1`, Java, Kotlin and Ruby on `0.1.0`, because a language
-only moves when something consumer-visible changed in it. **The newest released
-version of each language is the supported one** and the only one that receives
-fixes; anything older, including the release candidates, stays on its registry
-but is **not** supported. Each release is human-gated, see
-[DEPLOY.md](DEPLOY.md).
+All nine SDKs have shipped a stable release to a public registry — PHP
+(Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems),
+Node (npm), Java (Maven Central), Kotlin (Maven Central) and Go (the Go module
+proxy — for Go the git tag *is* the version, so the `go/v1.0.0` tag is the
+release).
+⚠️ **Every language is on `1.0.0` today, and that alignment is not a policy** — they reached it together because they earned the same guarantee together; after this release a language moves only when something consumer-visible changed in it, so expect the numbers to diverge again.
+**The newest released version of each language is the supported one** and the
+only one that receives fixes; anything older, including every `0.x` release and
+the release candidates, stays on its registry but is **not** supported. Each
+release is human-gated, see [DEPLOY.md](DEPLOY.md).
 
-What pre-1.0 means here:
+What `1.0` means here:
 
-- **No cross-version compatibility guarantee.** Under SemVer a `0.x` minor bump
-  may contain breaking changes. Read the release notes before upgrading.
+- **A breaking change to the public API requires a major bump — and CI enforces
+  it.** Every lane diffs its public API against the **previously published**
+  artifact on each build (`japicmp` for Java and Kotlin, `cargo-semver-checks`,
+  `griffe`, `gorelease`, .NET Package Validation, `php-semver-checker`,
+  `api-extractor` for Node, `yard diff` for Ruby).
+- ⚠️ **The gates compare the API _surface_, so they do not see every break.**
+  A change that leaves the surface identical but alters behaviour is invisible
+  to them — of that class, only the aligned security defaults are separately
+  guarded. Two lanes are also narrower than their siblings: **Ruby** catches a
+  removed public object but not a changed signature (no equivalent tool exists
+  in that ecosystem), and **Node** compares the emitted type surface as text, so
+  adding a *required* field to an input interface passes. Review covers those
+  two cases, not machinery. **Read the release notes before upgrading.**
 - **Only the newest released version of each language SDK receives security
-  fixes.** There are no long-term-support lines and older `0.x` releases are not
-  backported to. In practice that is the version named for each language above:
-  six of the nine (PHP, Python, Node, Go, .NET, Rust) have already superseded
-  their first stable release, and those earlier versions are no longer supported.
+  fixes.** There are no long-term-support lines, and older releases — every
+  `0.x` and every release candidate — are not backported to.
 - A security fix ships as a new release of the affected SDK plus a
   [GitHub Security Advisory](https://github.com/xzawed/KeyCloakSDK/security/advisories)
   on this repository.

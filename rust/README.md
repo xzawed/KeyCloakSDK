@@ -4,7 +4,7 @@ An async Keycloak SDK for Rust — OIDC/OAuth2 authentication with hardened JWT 
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layering and flows are isomorphic across every language — monorepo: <https://github.com/xzawed/KeyCloakSDK>
 
-> **`0.1.1` is on crates.io** — a documentation-only patch over `0.1.0`; the library code is identical. It exists because the `0.1.0` page still renders a pre-release banner that was corrected only *after* that version was published, and crates.io pins a README per version. The bare `cargo add keycloak-sdk` below resolves `0.1.1`, and a hand-written `keycloak-sdk = "0.1"` matches it too. The earlier `0.1.0-rc.1` stays fetchable by exact version but no longer wins any range, since Cargo only falls back to a pre-release when a crate has no stable version.
+> **`1.0.0` is on crates.io** — the first release that carries the stability guarantee: from here on, a breaking change to the public API requires a major bump. The bare `cargo add keycloak-sdk` below resolves `1.0.0`, and a hand-written `keycloak-sdk = "1"` or `keycloak-sdk = "1.0"` matches it too.
 
 ## Requirements
 
@@ -80,7 +80,11 @@ Masking covers the SDK's own `Debug` impls; it cannot cover what your logging fr
 
 ## Versioning and support
 
-This crate is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking changes, so read the release notes before upgrading — and note that Cargo's default caret requirement treats `0.x` minors as incompatible, so `cargo update` will not cross one for you. Only the newest released version of each language SDK receives security fixes — there are no LTS lines, and older `0.x` releases are not backported to. Full policy: [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
+This SDK is **`1.0`** and follows SemVer: a breaking change to the public API requires a **major** bump. That promise is machine-backed — CI diffs this lane's public API against the **previously published artifact** on every build (`cargo-semver-checks`), and a removal or an incompatible change fails the build. ⚠️ **The gate compares the API _surface_.** A change that leaves the surface identical but alters behaviour is not caught by it, so read the release notes before upgrading.
+
+Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
+
+**Each of the nine languages versions independently.** All nine reached `1.0.0` on the same day because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
 
 ## Documentation
 

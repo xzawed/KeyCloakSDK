@@ -22,7 +22,8 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
-  "Development Status :: 4 - Beta",
+  # ⚠️ 게시 메타데이터는 버전마다 불변이다 — 1.0 을 Beta 로 올리면 PyPI 페이지가 영구히 그렇게 말한다.
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
 ]
 dependencies = [

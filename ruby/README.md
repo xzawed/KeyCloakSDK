@@ -4,7 +4,7 @@ Authentication (OIDC / OAuth2) and the Admin REST API for [Keycloak](https://www
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) — one API surface, isomorphic across all of them: [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`0.1.0` is on RubyGems** — the first stable release. A bare `gem install keycloak-sdk` now resolves it. The earlier `0.1.0.rc1` is still there but, as before, RubyGems never picks a pre-release unless you ask with `--pre` or name it exactly.
+> **`1.0.0` is on RubyGems** — the first release carrying the stability guarantee. A bare `gem install keycloak-sdk` resolves it.
 
 ## Requirements
 
@@ -14,16 +14,16 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · 
 ## Install
 
 ```bash
-gem install keycloak-sdk -v 0.1.0
+gem install keycloak-sdk
 ```
 
 Or in a `Gemfile`:
 
 ```ruby
-gem "keycloak-sdk", "0.1.0"
+gem "keycloak-sdk", "~> 1.0"
 ```
 
-A bare `gem install keycloak-sdk` also works now that a stable release exists; the pin above just keeps the resolved version visible.
+`~> 1.0` accepts every `1.x` release and stops before `2.0` — the boundary a breaking change has to cross under the promise below.
 
 > **Name mismatch, on purpose:** the gem is `keycloak-sdk` (hyphen) but the require path and module are `keycloak_sdk` / `KeycloakSdk` (underscore) — this avoids colliding with the existing `keycloak` gem's `Keycloak` module.
 
@@ -73,7 +73,11 @@ Masking covers this SDK's own `#inspect`; it cannot cover what your logging fram
 
 ## Versioning and support
 
-This SDK is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking changes, so read the release notes before upgrading. Only the newest released version of each language SDK receives security fixes — there are no LTS lines, and older `0.x` releases are not backported to. Full policy: [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
+This SDK is **`1.0`** and follows SemVer: a breaking change to the public API requires a **major** bump. That promise is machine-backed — CI diffs this lane's public API against the **previously published artifact** on every build (`yard diff`), and a removal or an incompatible change fails the build. ⚠️ **This lane’s gate is narrower than its siblings’**: Ruby has no equivalent of `japicmp`/`gorelease`, so the gate catches a **removed** public object but not a changed method signature — that case is caught by review, not by machine. ⚠️ **The gate compares the API _surface_.** A change that leaves the surface identical but alters behaviour is not caught by it, so read the release notes before upgrading.
+
+Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
+
+**Each of the nine languages versions independently.** All nine reached `1.0.0` on the same day because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
 
 ## Documentation
 

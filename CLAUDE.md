@@ -282,21 +282,21 @@ dev(테스트 csproj — **앵커 있음**):
 
 ## 현재 상태
 
-9개 언어 SDK 모두 `main` 병합 완료. **9개 언어 전부 정식 릴리스를 냈고, 번호는 갈렸다**(아래 표) — ⚠️ **버전은 언어별 독립이라 함대 번호로 말하지 말 것.** 배포는 여전히 전부 사람 승인 게이트다(사람이 태그를 민다). 라인은 아직 pre-1.0이다.
+9개 언어 SDK 모두 `main` 병합 완료. **9개 언어 전부 정식 `1.0.0`이 공개 레지스트리에 게시됐다**(아래 표). ⚠️ **정렬은 우연이다 — 다시 갈리므로 함대 번호로 말하지 말 것**(근거: [1.0 기준](docs/superpowers/plans/release-1.0.md)). 배포는 전부 사람 승인 게이트다(사람이 태그를 민다).
 
 ⚠️ **Maven Central은 "워크플로 초록"과 "게시" 사이에 사람 클릭과 전파 지연이 둘 다 있다.** `release.yml`이 끝나도 Portal **스테이징**일 뿐이고, Publish 후에도 시차가 있다(실측: 첫 확인 404 → 3분 뒤 200, 검색 색인은 한참 뒤). **404로 "실패"를 결론내지 말 것** — 판정은 Portal 상태로 하고 repo1은 폴링한다. Kotlin도 같다.
 
 | 언어 | 배포명 | 태그 접두 | 배포 |
 |---|---|---|---|
-| Java | `io.github.xzawed:keycloak-sdk` (Maven Central) | `v*` | 게시됨(`0.1.0`) |
-| Python | `keycloak-sdk` (PyPI) | `py-v*` | 게시됨(`0.2.1`) |
-| Node | `@xzawed/keycloak-sdk` (npm) | `node-v*` | 게시됨(`0.2.1`) |
-| Go | `github.com/xzawed/KeyCloakSDK/go` (proxy.golang.org) | `go/v*` | 게시됨(`0.1.1`) |
-| C#/.NET | `Xzawed.Keycloak.Sdk` (NuGet) | `dotnet-v*` | 게시됨(`0.1.1`) |
-| PHP | `xzawed/keycloak-sdk` (Packagist) | `php-v*` | 게시됨(`0.2.0`) |
-| Rust | `keycloak-sdk` (crates.io) | `rust-v*` | 게시됨(`0.1.1`) |
-| Ruby | `keycloak-sdk` (RubyGems) | `ruby-v*` | 게시됨(`0.1.0`) |
-| Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` (Maven Central) | `kotlin-v*` | 게시됨(`0.1.0` · 하한 2.2+) |
+| Java | `io.github.xzawed:keycloak-sdk` (Maven Central) | `v*` | 게시됨(`1.0.0`) |
+| Python | `keycloak-sdk` (PyPI) | `py-v*` | 게시됨(`1.0.0`) |
+| Node | `@xzawed/keycloak-sdk` (npm) | `node-v*` | 게시됨(`1.0.0`) |
+| Go | `github.com/xzawed/KeyCloakSDK/go` (proxy.golang.org) | `go/v*` | 게시됨(`1.0.0`) |
+| C#/.NET | `Xzawed.Keycloak.Sdk` (NuGet) | `dotnet-v*` | 게시됨(`1.0.0`) |
+| PHP | `xzawed/keycloak-sdk` (Packagist) | `php-v*` | 게시됨(`1.0.0`) |
+| Rust | `keycloak-sdk` (crates.io) | `rust-v*` | 게시됨(`1.0.0`) |
+| Ruby | `keycloak-sdk` (RubyGems) | `ruby-v*` | 게시됨(`1.0.0`) |
+| Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` (Maven Central) | `kotlin-v*` | 게시됨(`1.0.0` · 하한 2.2+) |
 
 **릴리스-레디니스 감사**(`main` 병합, PR #104)로 릴리스 워크플로 불변식(태그↔매니페스트 가드·시크릿 미설정 시 fail-closed·발행 전 E2E 게이트·액션 SHA 핀·`permissions` 최소화)과 패키징 표면(LICENSE·영문 README·레지스트리 메타데이터, Rust 캐럿 전환 + `Cargo.lock` 커밋 + `keycloak::types` 재노출)을 갖췄다. PHP 선행작업(미러·`PHP_SPLIT_TOKEN`·Packagist 등록)도 끝났다.
 

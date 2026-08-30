@@ -9,13 +9,13 @@
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Languages](https://img.shields.io/badge/languages-9-brightgreen)
 ![Published](https://img.shields.io/badge/published-9%2F9%20registries-brightgreen)
-![Status](https://img.shields.io/badge/status-pre--1.0-blue)
+![Status](https://img.shields.io/badge/status-1.0-brightgreen)
 ![Keycloak](https://img.shields.io/badge/Keycloak-26.6-informational)
 ![Guards](https://github.com/xzawed/KeyCloakSDK/actions/workflows/repo-hygiene.yml/badge.svg?branch=main)
 
 > 여기서 "다국어/polyglot"은 **프로그래밍 언어**를 뜻하며, 자연어 현지화(i18n)와는 무관합니다.
 >
-> ⚠️ **아홉 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다** — Node·Python은 `0.2.1`, PHP는 `0.2.0`, Go·.NET·Rust는 `0.1.1`, Java·Kotlin·Ruby는 `0.1.0`입니다. 버전은 함대가 아니라 언어별로 움직이므로, 소비자에게 보이는 변경이 있은 언어만 번호가 올라갑니다. 모든 배포는 사람 승인 게이트이고, 라인은 아직 pre-1.0입니다. 설치 명령은 [설치](#설치)에, 붙일 임시 서버는 [지금 바로 써보기](#지금-바로-써보기)에 있습니다.
+> ⚠️ **아홉 언어 전부 정식 `1.0.0`이 공개 레지스트리에 게시됐습니다.** 같은 보증을 같은 날 갖췄기에 같은 날 도달했습니다 — 이제 공개 API를 깨려면 **major**가 필요하고, CI가 각 레인의 API를 **직전 게시본**과 대조해 그것을 강제합니다. **이후에는 함대로 움직이지 않습니다**: 소비자에게 보이는 변경이 있은 언어만 번호가 올라가므로 번호는 다시 갈립니다. 모든 배포는 사람 승인 게이트입니다. 설치 명령은 [설치](#설치)에, 붙일 임시 서버는 [지금 바로 써보기](#지금-바로-써보기)에 있습니다.
 
 ---
 
@@ -58,7 +58,7 @@ with KeycloakClient.create(config) as kc:
 ```bash
 pip install keycloak-sdk                              # Python
 npm install @xzawed/keycloak-sdk                      # Node
-go get github.com/xzawed/KeyCloakSDK/go@v0.1.1        # Go
+go get github.com/xzawed/KeyCloakSDK/go@v1.0.0        # Go
 dotnet add package Xzawed.Keycloak.Sdk                # C# / .NET
 composer require xzawed/keycloak-sdk                  # PHP
 cargo add keycloak-sdk                                # Rust
@@ -68,8 +68,8 @@ gem install keycloak-sdk                              # Ruby
 JVM은 빌드 파일에 좌표를 추가합니다:
 
 ```
-io.github.xzawed:keycloak-sdk:0.1.0                   # Java   (Maven Central)
-io.github.xzawed:keycloak-sdk-kotlin:0.1.0            # Kotlin (Maven Central)
+io.github.xzawed:keycloak-sdk:1.0.0                   # Java   (Maven Central)
+io.github.xzawed:keycloak-sdk-kotlin:1.0.0            # Kotlin (Maven Central)
 ```
 
 빌드 도구별 전체 스니펫(Maven XML · Gradle Kotlin DSL · `Gemfile` · `Cargo.toml`)은 [시작 가이드](docs/guides/getting-started.md)에 있습니다.

@@ -2,9 +2,62 @@
 
 이 프로젝트의 주요 변경사항을 기록합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 [SemVer](https://semver.org/lang/ko/)를 지향합니다.
 
-> 이 리포지토리는 **폴리글랏 SDK**입니다. Java(`io.github.xzawed:keycloak-sdk`)·Python(`keycloak-sdk`)·Node(`@xzawed/keycloak-sdk`)·Go(`github.com/xzawed/KeyCloakSDK/go`)·C#/.NET(`Xzawed.Keycloak.Sdk`)·PHP(`xzawed/keycloak-sdk`)·Rust(`keycloak-sdk`)·Ruby(`keycloak-sdk`)·Kotlin(`io.github.xzawed:keycloak-sdk-kotlin`) 9개 언어가 독립 배포되며, 아래 항목은 언어 태그로 구분합니다. 지금까지 아홉 언어 전부가 **첫 릴리스 후보(RC)**를 게시했습니다(PHP `v0.1.0-rc.2` · Python `0.1.0rc1` · .NET `0.1.0-rc.1` · Rust `0.1.0-rc.1` · Ruby `0.1.0.rc1` · Node `0.1.0-rc.2` · Java `0.1.0-RC1` · Kotlin `0.1.0-RC1` · Go `0.1.0-rc.1`). 아래 `[0.1.0]`은 그 위에 커팅하는 **첫 정식(stable)** 릴리스입니다. ⚠️ 어느 레지스트리에 실제로 올라갔는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh`의 `df_published_version`이 소유합니다 — 태그를 밀었다는 것과 게시됐다는 것은 다릅니다.
+> 이 리포지토리는 **폴리글랏 SDK**입니다. Java(`io.github.xzawed:keycloak-sdk`)·Python(`keycloak-sdk`)·Node(`@xzawed/keycloak-sdk`)·Go(`github.com/xzawed/KeyCloakSDK/go`)·C#/.NET(`Xzawed.Keycloak.Sdk`)·PHP(`xzawed/keycloak-sdk`)·Rust(`keycloak-sdk`)·Ruby(`keycloak-sdk`)·Kotlin(`io.github.xzawed:keycloak-sdk-kotlin`) 9개 언어가 독립 배포되며, 아래 항목은 언어 태그로 구분합니다. 지금까지 아홉 언어 전부가 **`1.0.0`**을 게시했습니다 — 같은 날 도달한 것은 [1.0 기준](docs/superpowers/plans/release-1.0.md)의 A–G를 아홉 곳이 동시에 충족했기 때문이지 함대로 움직여서가 아닙니다(이후에는 다시 갈립니다). 그 아래 `[0.2.x]`·`[0.1.x]`·RC 항목은 그대로 역사로 남습니다. ⚠️ 어느 레지스트리에 실제로 올라갔는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh`의 `df_published_version`이 소유합니다 — 태그를 밀었다는 것과 게시됐다는 것은 다릅니다.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-08-30
+
+**아홉 언어 전부.** 라이브러리 코드 변경은 0입니다 — **1.0 은 기능이 아니라 약속**이고, 이
+릴리스는 그 약속을 **지킬 수단이 갖춰졌다**는 선언입니다.
+
+### 무엇이 1.0 을 가능하게 했나
+
+[1.0 릴리스 기준](docs/superpowers/plans/release-1.0.md)의 A–G 가 아홉 곳에서 동시에 충족됐습니다.
+결정적인 것은 **A — 공개 API 파괴적 변경을 기계가 막는다**로, 이번 사이클에 아홉 레인 전부에
+배선됐습니다(#331–#340):
+
+| 레인 | 도구 | 기준선 |
+|---|---|---|
+| java · kotlin | japicmp | 게시된 JAR |
+| rust | cargo-semver-checks | crates.io 직전판 |
+| python | griffe check | 직전 태그 |
+| dotnet | SDK Package Validation | NuGet 직전판 |
+| go | gorelease | 추론 기준선 |
+| php | php-semver-checker | 직전 태그 |
+| ruby | yard diff | 직전 태그 |
+| node | api-extractor ×2 | npm tarball |
+
+⚠️ **아홉 중 넷은 도구 종료코드가 거짓말한다**(go·php·ruby·node) — 파괴적 변경을 정확히
+출력하고도 `exit 0` 이라 리포트 **본문**을 근거로 삼습니다.
+
+### 감추지 않은 것
+
+- **ruby·node 는 커버리지가 좁습니다.** ruby 는 **삭제만** 잡고 시그니처 변경은 못 잡습니다
+  (생태계에 등가 도구가 없습니다). node 는 입력 인터페이스에 **필수 필드 추가**를 통과시킵니다
+  (위음성 — 실측 재현). 두 자리는 **리뷰가 막습니다.** 각 README 와 SECURITY.md 에 그대로 적었습니다.
+- **아홉 게이트 전부 「표면」만 봅니다.** 표면이 그대로인 채 동작이 바뀌는 파괴(예: `clockSkew`
+  기본값 30→300)는 못 봅니다. 그 부류 중 **보안 기본선만** 별도 가드가 덮습니다.
+
+### 게시되는 문서를 함께 고쳤습니다 — 이 저장소가 두 번 태워 먹은 부류
+
+`0.1.1`(#318)·`0.2.1`(a7629ef)이 **문서 전용 릴리스**였던 이유가 그것입니다: 레지스트리는 README 를
+**버전마다 고정**하므로, 게시 시점에 틀린 문장은 영구히 서빙됩니다. 이번에는 태그 **전에** 아홉
+README·루트 README(영/한)·`SECURITY.md`·`compatibility.md`·`getting-started.md`·`language-support.md`·
+`CLAUDE.md`·`DEPLOY.md` 와 SSOT(`df_published_version`)를 **한 커밋에서** 옮겼습니다.
+
+⚠️ 릴리스 전 감사에서 이 부류가 아홉 레인 전부에 살아 있었습니다 — rust 는 「`0.1.1` is on
+crates.io … this crate is **pre-1.0**」, node 는 「a bare install resolves `0.2.1`」, python 은
+`Development Status :: 4 - Beta`. 그대로 태그를 밀었다면 아홉 좌표가 「아직 pre-1.0」이라고
+말하는 페이지로 영구 고정됐을 것입니다.
+
+### 가드
+
+- `test-publication-claims.sh` 의 버전 추출이 `0\.` 만 보고 있었습니다 — **1.0 에서 통째로
+  공허해집니다**(펜스가 `1.0.0` 을 핀해도 추출 0건). `[01]\.` 로 넓혔습니다.
+- 함대 요약 앵커를 **정렬/갈림 두 갈래**로 나눴습니다. ⚠️ 그 루프를 `printf | while read` 로
+  쓰면 파이프 오른쪽이 서브셸이라 어서션 실패 카운터가 부모로 돌아오지 않습니다 — 평범한
+  `for` 로 씁니다.
 
 ## [0.1.1] - 2026-08-28
 

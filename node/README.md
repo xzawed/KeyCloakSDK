@@ -4,9 +4,9 @@ A TypeScript SDK for [Keycloak](https://www.keycloak.org/) covering both **Authe
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .NET · PHP · Rust · Ruby · Kotlin) — idiomatic in each language, isomorphic across all of them. Monorepo: <https://github.com/xzawed/KeyCloakSDK>
 
-> **`0.2.1` is on npm** and holds the `latest` dist-tag, so a bare install resolves it. It is a documentation-only patch over `0.2.0` — no runtime or type-surface change. (The `rc` tag still points at `0.1.0-rc.2` — npm assigned `latest` to this package's first version regardless of `--tag` and then refused to let that tag be removed, which is why the `rc` label lingers.)
+> **`1.0.0` is on npm** and holds the `latest` dist-tag, so a bare install resolves it. It is the first release carrying the stability guarantee: from here the public API is under SemVer, and a breaking change requires a major bump.
 >
-> ⚠️ **Two breaking changes since `0.1.0`, both at the type level only** — the runtime behaviour is unchanged and **the normal paths (`kc.auth.validate(token)`, `kc.admin.users.search(...)`) are untouched**. (1) `JwtValidator` can no longer be built with `new` — use `JwtValidator.forJwksUri(...)`. (2) The five admin resource classes no longer expose their constructors in the emitted declarations; `AdminClient` assembles them, and they were never a consumer construction path. Both existed because the constructors were putting `jose` and `@keycloak/keycloak-admin-client` types onto this package's public surface.
+> ⚠️ **Upgrading from `0.1.0`? Two breaking changes since then, both at the type level only** — the runtime behaviour is unchanged and **the normal paths (`kc.auth.validate(token)`, `kc.admin.users.search(...)`) are untouched**. (1) `JwtValidator` can no longer be built with `new` — use `JwtValidator.forJwksUri(...)`. (2) The five admin resource classes no longer expose their constructors in the emitted declarations; `AdminClient` assembles them, and they were never a consumer construction path. Both existed because the constructors were putting `jose` and `@keycloak/keycloak-admin-client` types onto this package's public surface.
 
 ## Requirements
 
@@ -21,10 +21,10 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .
 npm install @xzawed/keycloak-sdk
 ```
 
-A bare install resolves `0.2.1`, and so does a `^0.2.0` range. ⚠️ **`^0.1.0` does not pick it up** — under SemVer a caret below `1.0.0` is locked to the minor, so `^0.1.0` stays on the `0.1.x` line. That is the correct behaviour for a line with breaking changes in it; move the range deliberately. Pin the exact version if you would rather not follow `latest`:
+A bare install resolves `1.0.0`, and so does a `^1.0.0` range — at and above `1.0.0` a caret covers every `1.x`, so it picks up later minor and patch releases but never a `2.0.0`. Pin the exact version if you would rather not follow `latest`:
 
 ```bash
-npm install @xzawed/keycloak-sdk@0.2.1
+npm install @xzawed/keycloak-sdk@1.0.0
 ```
 
 ## Quickstart
@@ -78,7 +78,11 @@ Masking covers those three serialization paths, which is what most loggers reach
 
 ## Versioning and support
 
-This SDK is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking changes, so read the release notes before upgrading. Only the newest released version of each language SDK receives security fixes — there are no LTS lines, and older `0.x` releases are not backported to. Full policy: [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
+This SDK is **`1.0`** and follows SemVer: a breaking change to the public API requires a **major** bump. That promise is machine-backed — CI diffs this lane's public API against the **previously published artifact** on every build (api-extractor, whose report is diffed against the published tarball), and a removal or an incompatible change fails the build. ⚠️ **This lane's gate has a known gap**: it compares the emitted type surface as text, so adding a **required** field to an input interface passes it even though it breaks callers — that case is caught by review, not by machine. ⚠️ **The gate compares the API _surface_.** A change that leaves the surface identical but alters behaviour is not caught by it, so read the release notes before upgrading.
+
+Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
+
+**Each of the nine languages versions independently.** All nine reached `1.0.0` on the same day because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
 
 ## Documentation
 

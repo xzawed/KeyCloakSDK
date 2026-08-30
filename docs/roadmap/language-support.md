@@ -38,15 +38,15 @@ The procedure lives in **[DEPLOY.md](../../DEPLOY.md)** — do not copy checklis
 
 | Language | Design | Impl | Unit | Integration | CI | Publish |
 |---|---|---|---|---|---|---|
-| **Java** | ✅ | ✅ | ✅ | ✅ (Testcontainers) | ✅ | 🚀 Maven Central `0.1.0` |
-| **Python** | ✅ | ✅ (+ `aio` async mirror) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 PyPI `0.2.1` |
-| **TypeScript / Node.js** | ✅ | ✅ (ESM · async-only) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 npm `0.2.1` |
-| **Go** | ✅ | ✅ (sync + `context.Context`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 Go module proxy `0.1.1` |
-| **C# / .NET** | ✅ | ✅ (async-first `Task<T>`+`CancellationToken`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 NuGet `0.1.1` |
-| **PHP** | ✅ | ✅ (`readonly class` · exception-based) | ✅ | ✅ (docker CLI shell-out — real Keycloak 26.6) | ✅ | 🚀 Packagist `0.2.0` |
-| **Rust** | ✅ | ✅ (edition 2024 · async-only) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 crates.io `0.1.1` |
-| **Ruby** | ✅ | ✅ (sync-only · exception hierarchy) | ✅ | ✅ (E2E, docker CLI shell-out) | ✅ | 🚀 RubyGems `0.1.0` |
-| **Kotlin** | ✅ | ✅ (coroutines `suspend` · reuses JVM/Java stack) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 Maven Central `0.1.0` |
+| **Java** | ✅ | ✅ | ✅ | ✅ (Testcontainers) | ✅ | 🚀 Maven Central `1.0.0` |
+| **Python** | ✅ | ✅ (+ `aio` async mirror) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 PyPI `1.0.0` |
+| **TypeScript / Node.js** | ✅ | ✅ (ESM · async-only) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 npm `1.0.0` |
+| **Go** | ✅ | ✅ (sync + `context.Context`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 Go module proxy `1.0.0` |
+| **C# / .NET** | ✅ | ✅ (async-first `Task<T>`+`CancellationToken`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 NuGet `1.0.0` |
+| **PHP** | ✅ | ✅ (`readonly class` · exception-based) | ✅ | ✅ (docker CLI shell-out — real Keycloak 26.6) | ✅ | 🚀 Packagist `1.0.0` |
+| **Rust** | ✅ | ✅ (edition 2024 · async-only) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 crates.io `1.0.0` |
+| **Ruby** | ✅ | ✅ (sync-only · exception hierarchy) | ✅ | ✅ (E2E, docker CLI shell-out) | ✅ | 🚀 RubyGems `1.0.0` |
+| **Kotlin** | ✅ | ✅ (coroutines `suspend` · reuses JVM/Java stack) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 Maven Central `1.0.0` |
 
 **Legend**: ✅ done · 🚀 first release candidate published · 🔒 ready · human-gated (awaiting tag push). Test counts are not hand-maintained here — each language's CI job is the authority (this file previously carried stale, mutually inconsistent counts). Publish procedure, tag prefixes, and secrets: [DEPLOY.md](../../DEPLOY.md). PHP·Ruby integrate via docker CLI shell-out rather than Testcontainers — Windows native PHP/Ruby do not support the `unix://` transport those bindings need ([`.claude/rules/php.md`](../../.claude/rules/php.md) · [`.claude/rules/ruby.md`](../../.claude/rules/ruby.md)). A new language is "done" only after all six columns are filled (depth-first).
 
