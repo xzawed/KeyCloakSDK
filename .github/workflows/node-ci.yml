@@ -53,3 +53,71 @@ jobs:
       - run: npm ci
       - name: Integration E2E (Docker, 실제 Keycloak 26.6)
         run: npm run test:it
+
+  api-compat:
+    name: api-extractor (공개 API 파괴적 변경)
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: node } }
+    # 게시된 tarball 의 `dist/index.d.ts` 와 현재 빌드의 `dist/index.d.ts` 각각에 api-extractor 를
+    # 돌려 리포트 둘을 만들고, 그 둘을 비교한다.
+    #
+    # ⚠️ **커밋된 `.api.md` 를 기준선으로 삼지 않는다** — kotlin 에서 BCV 를 기각한 것과 같은
+    # 이유다(커밋 리포트는 개발자가 다시 뜨면 그만이라 「직전 게시본 대비」가 아니다). 그래서
+    # 설정 파일이 둘이다 — api-extractor 는 진입점을 CLI 인자로 받지 않는다.
+    #
+    # ⚠️ **`diff` 의 종료코드를 그대로 쓰면 기능 추가마다 막힌다.** 새 export 는 파괴적 변경이
+    # 아니다. 그래서 **`<` 줄(기준선에만 있는 줄)** 만 근거로 삼는다 — 삭제는 `<` 하나로,
+    # 시그니처 변경은 `<`+`>` 쌍으로 나타나므로 둘 다 잡히고 순수 추가는 `>` 뿐이라 통과한다.
+    #
+    # ⚠️ 그래서 **api-extractor 를 정확 버전으로 핀한다** — 마이너 업그레이드가 리포트 서식을
+    # 바꾸면 그 줄들이 전부 `<` 로 보여 무관한 PR 이 붉어진다.
+    #
+    # ⚠️ **줄 텍스트 비교라 타입 호환성을 모른다. 실측한 오차 둘을 그대로 적는다.**
+    #   위양성 — `close()` → `close(force?: boolean)` 는 호출자에게 **비파괴적인데 실패한다**
+    #            (옛 시그니처 줄이 사라지므로). 막는 쪽으로 틀리므로 리뷰에서 풀면 된다.
+    #   위음성 — 입력 인터페이스에 **필수 필드**를 더하면(`mandatoryNew: string`) `>` 줄만
+    #            나와 **통과한다**. 실제로는 파괴적이다. **이 자리는 게이트가 못 막는다 —
+    #            리뷰가 막는다.** (ruby 와 함께, 아홉 중 커버리지가 좁은 둘이다.)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: 기준선(직전 정식 릴리스) tarball 의 타입 표면 받기
+        env:
+          # ⚠️ **npm 에 게시된 직전 정식 버전**을 적는다. 릴리스마다 함께 올린다.
+          BASELINE: '0.2.1'
+        run: |
+          set -euo pipefail
+          rm -rf dist-base "$RUNNER_TEMP/nb"
+          mkdir -p "$RUNNER_TEMP/nb"
+          (cd "$RUNNER_TEMP/nb" && npm pack "@xzawed/keycloak-sdk@${BASELINE}" >/dev/null && tar -xzf ./*.tgz)
+          cp -r "$RUNNER_TEMP/nb/package/dist" dist-base
+          n=$(find dist-base -name '*.d.ts' | wc -l)
+          echo "기준선 d.ts $n 개"
+          # ⚠️ 기준선이 비면 diff 에 `<` 줄이 없어 **조용히 통과한다** — 공허성 검사.
+          [ "$n" -gt 0 ] || { echo "::error::기준선 d.ts 가 없다 — npm pack 실패?"; exit 1; }
+      - name: 리포트 둘 생성 후 기준선에만 있는 줄이 있으면 실패
+        env:
+          AE: '@microsoft/api-extractor@7.59.0'
+        run: |
+          set -euo pipefail
+          mkdir -p aeout
+          npx -y "$AE" run -c api-extractor.base.json    --local >/dev/null
+          npx -y "$AE" run -c api-extractor.current.json --local >/dev/null
+          wc -l aeout/base.api.md aeout/current.api.md
+          # ⚠️ 두 번째 공허성 검사: 기준선 리포트가 스텁이면 `<` 줄이 안 나온다.
+          # 줄 수가 아니라 **아는 심볼**로 판정한다(서식 변화에 흔들리지 않는다).
+          grep -q 'class KeycloakClient' aeout/base.api.md \
+            || { echo "::error::기준선 리포트에 KeycloakClient 가 없다 — 추출 실패"; exit 1; }
+          removed=$(diff aeout/base.api.md aeout/current.api.md | grep -c '^< ' || true)
+          if [ "$removed" -gt 0 ]; then
+            echo "::error::직전 릴리스의 공개 API 줄 ${removed}개가 사라지거나 바뀌었다"
+            diff aeout/base.api.md aeout/current.api.md | grep '^< '
+            exit 1
+          fi
+          echo "OK: 기준선에만 있는 줄 없음(추가는 허용)"

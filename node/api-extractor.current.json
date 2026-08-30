@@ -1,0 +1,20 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/api-extractor/v7/api-extractor.schema.json",
+
+  // 현재 빌드의 타입 표면. `api-extractor.base.json` 과 **이 한 줄만** 다르다 —
+  // api-extractor 는 진입점을 CLI 인자로 받지 않아 설정 파일이 둘이어야 한다.
+  "mainEntryPointFilePath": "<projectFolder>/dist/index.d.ts",
+
+  "apiReport": {
+    "enabled": true,
+    "reportFolder": "<projectFolder>/aeout/",
+    "reportFileName": "current.api.md"
+  },
+  "docModel": { "enabled": false },
+  "dtsRollup": { "enabled": false },
+
+  "messages": {
+    "extractorMessageReporting": { "default": { "logLevel": "none" } },
+    "compilerMessageReporting": { "default": { "logLevel": "none" } }
+  }
+}
