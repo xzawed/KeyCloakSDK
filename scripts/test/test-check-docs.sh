@@ -1234,4 +1234,20 @@ assert_ok node "$GUARD" "$TMP"
 mk_selfblob_fixture 'https://github.com/xzawed/KeyCloakSDK/blob/main/t.md'
 assert_contains "$(node "$GUARD" "$TMP" 2>&1)" 'self-blob targets' '보고 줄이 self-blob 개수를 싣는다'
 
+# ⚠️ **CLAUDE.md 가 적어 둔 명령의 최저치가 repo-hygiene.yml 의 것과 같아야 한다.**
+# 최저치(`--min-*`)는 opt-in 이라 **낮은 값은 오류가 아니라 조용히 덜 검사하는 것**이다. 그래서
+# 「로컬은 초록인데 CI 의 required `doc-facts` 는 빨강」이 만들어진다 — 실측(2026-08-30):
+# CLAUDE.md 가 `--min-anchor-links=23`, 워크플로가 `24` 였고 앵커 링크 하나를 잃은 PR 이
+# 로컬 통과 → CI 실패였다. 산문 규칙 대신 여기서 두 자리를 마주 보게 한다(문서 예산 0).
+# ⚠️ **`check-docs.mjs` 를 실행하는 줄로 한정한다** — 같은 파일에 다른 가드의 최저치
+# (`check-ci-permissions.mjs --min-release=…`)가 있어, 파일 전체에서 뽑으면 남의 숫자까지 비교한다.
+_REPO="$DIR/../.."
+_ci_flags="$(grep 'check-docs\.mjs' "$_REPO/.github/workflows/repo-hygiene.yml" | grep -o -- '--min-[a-z-]*=[0-9]*' | sort -u | tr '\n' ' ')"
+_md_flags="$(grep 'check-docs\.mjs' "$_REPO/CLAUDE.md" | grep -o -- '--min-[a-z-]*=[0-9]*' | sort -u | tr '\n' ' ')"
+# ⚠️ 추출이 0건이면 "같다"가 공허하게 참이 된다 — 양쪽 다 비었는지부터 본다.
+assert_ok test -n "$_ci_flags"
+assert_ok test -n "$_md_flags"
+assert_eq "$_ci_flags" "$_md_flags" \
+  'CLAUDE.md 의 check-docs 최저치가 repo-hygiene.yml 과 다르다 — 낮은 쪽은 조용히 덜 검사한다(로컬만 초록)'
+
 assert_report

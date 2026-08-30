@@ -4,7 +4,7 @@ An async-first Keycloak client library for .NET that covers both **Authenticatio
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`0.1.1` is on NuGet** — a documentation-only patch over `0.1.0`; the library code is identical. It exists because the `0.1.0` page still renders a pre-release banner that was corrected only *after* that version was published, and NuGet pins a README per version. `dotnet add package Xzawed.Keycloak.Sdk` resolves it without `--prerelease`.
+> **`1.0.0` is on NuGet** — the first release carrying the stability guarantee set out under *Versioning and support* below. A bare `dotnet add package Xzawed.Keycloak.Sdk` resolves it.
 
 ## Requirements
 
@@ -73,7 +73,11 @@ Masking covers `ToString()` and the types' JSON converters. It does **not** cove
 
 ## Versioning and support
 
-This SDK is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking changes, so read the release notes before upgrading. Only the newest released version of each language SDK receives security fixes — there are no LTS lines, and older `0.x` releases are not backported to. Full policy: [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
+This SDK is **`1.0`** and follows SemVer: a breaking change to the public API requires a **major** bump. That promise is machine-backed — CI diffs this lane's public API against the **previously published artifact** on every build (the .NET SDK’s **Package Validation**, run during `dotnet pack`), and a removal or an incompatible change fails the build. ⚠️ **The gate compares the API _surface_.** A change that leaves the surface identical but alters behaviour is not caught by it, so read the release notes before upgrading.
+
+Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
+
+**Each of the nine languages versions independently.** All nine reached `1.0.0` on the same day because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
 
 ## Documentation
 

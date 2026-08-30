@@ -78,9 +78,12 @@ for L in $DEPLOY_LANGS; do
   # (기대값이 0.2.0 인데 펜스가 0.2.1 이어도 추출조차 안 된다). 라인 전체를 뽑도록 넓혔다.
   # 실측으로 오탐이 없음을 확인하고 넓혔다: 아홉 README 의 펜스에서 `0.x.y` 로 잡히는 문자열은
   # 전부 SDK 버전 핀이고, 다른 버전(Keycloak 26.6 · PHP 8.3 · Node 22 · fschmtt 0.42.0)은
-  # 펜스 안에 등장하지 않는다. `0.` 으로 시작하는 것만 보므로 26.x 류는 구조적으로도 안 걸린다.
+  # 펜스 안에 등장하지 않는다.
+  # ⚠️ **`0\.` 만 뽑으면 1.0 에서 이 검사가 통째로 공허해진다** — 펜스가 `1.0.0` 을 핀해도 추출이
+  # 0건이라 `_bad` 가 항상 빈 문자열이다. `[01]\.` 로 넓혔다(같은 이유로 아래 getting-started 쪽도).
+  # 26.6(Keycloak)·8.3(PHP)·2.2(Kotlin) 류는 여전히 구조적으로 안 걸린다 — 첫 자리가 0 도 1 도 아니다.
   _bad="$(awk '/^```/ { f = !f; next } f' "$f" \
-    | grep -oE '0\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' | sort -u | grep -Fxv "$_want" || true)"
+    | grep -oE '[01]\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' | sort -u | grep -Fxv "$_want" || true)"
   assert_eq "" "$_bad" \
     "$L/README.md 코드펜스에 핀된 버전이 기대값($_want)과 다르다 — 소비자에게 없는 좌표를 권하게 된다"
 
@@ -553,7 +556,7 @@ for L in $DEPLOY_LANGS; do
     inlang && /^### / { ins = ($0 ~ /^### 3\) Installation/) ? 1 : 0 }
     /^```/ { f = !f; next }
     inlang && ins && f { print }
-  ' "$gs" | grep -oE '0\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' | sort -u || true)"
+  ' "$gs" | grep -oE '[01]\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' | sort -u || true)"
   [ -n "$_vers" ] || continue   # 설치 명령에 버전을 안 쓰는 언어(node·rust)는 대조할 값이 없다
   body_seen=$((body_seen + 1))
   _bad="$(printf '%s\n' "$_vers" | grep -Fxv "$_want" || true)"
@@ -665,12 +668,28 @@ done
 # 되살릴 조건: 실제로 맞바꿈 드리프트가 관측될 때. 그때도 정규식이 아니라 문장을 SSOT에서
 # **생성**하는 쪽(마커 + 파생)을 먼저 검토한다.
 _VSET="$(for _vl in $DEPLOY_LANGS; do df_published_version "$_vl"; done | sort -u | tr '\n' ' ')"
-for _fs in \
-  "README.md|All nine languages have shipped" \
-  "README.ko.md|아홉 언어 전부 정식 릴리스를 냈고" \
-  "SECURITY.md|because a language" \
-  "docs/guides/getting-started.md|All nine are on a public registry"; do
-  _ff="${_fs%%|*}"; _fa="${_fs#*|}"
+# ⚠️ **앵커는 함대 상태에 따라 갈린다.** 위 배너 갈래(`fleet_ver`)가 문장 자체를 갈아치우므로,
+# 한 벌만 두면 정렬된 순간 `grep` 이 0줄을 물어 와 이 축이 **공허가 아니라 실패**로 죽는다
+# (fail-closed 지만 원인이 안 읽힌다). ⚠️ 앵커에 **버전 리터럴을 넣지 않는다** — 넣는 순간
+# 이 파일이 SSOT 의 두 번째 정의 자리가 된다(이 파일이 위에서 스스로 금지한 것).
+# ⚠️ **`printf … | while read` 로 돌지 말 것** — 파이프 오른쪽은 서브셸이라 `assert_*` 가 올린
+# 실패 카운터가 부모로 돌아오지 않는다. 어서션이 빨갛게 찍히고도 `assert_report` 는 0 을 본다.
+for _ff in README.md README.ko.md SECURITY.md docs/guides/getting-started.md; do
+  if [ -n "$fleet_ver" ]; then
+    case "$_ff" in
+      README.md)    _fa="is live for all nine languages" ;;
+      README.ko.md) _fa="이 공개 레지스트리에 게시됐습니다" ;;
+      SECURITY.md)  _fa="and that alignment is not a policy" ;;
+      *)            _fa="All nine are on a public registry" ;;
+    esac
+  else
+    case "$_ff" in
+      README.md)    _fa="All nine languages have shipped" ;;
+      README.ko.md) _fa="아홉 언어 전부 정식 릴리스를 냈고" ;;
+      SECURITY.md)  _fa="because a language" ;;
+      *)            _fa="All nine are on a public registry" ;;
+    esac
+  fi
   _fl="$(grep -F "$_fa" "$ROOT/$_ff" || true)"
   assert_eq "1" "$(printf '%s\n' "$_fl" | grep -c . || true)" \
     "$_ff 의 함대 요약 문장을 정확히 하나 찾는다(못 찾으면 이 검사가 공허해진다)"

@@ -4,7 +4,7 @@ A coroutine-first Keycloak client library for Kotlin/JVM that covers both **Auth
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`0.1.0` is on Maven Central** — the first stable release. ⚠️ **Maven has no pre-release concept**, so the earlier `0.1.0-RC1` is a separate, lower-sorting coordinate rather than "a prerelease of `0.1.0`"; nothing filters it and nothing falls back to it, so name the version explicitly as shown below. ⚠️ **Consumer floor: Kotlin 2.2+.** The published jar carries `@Metadata(mv=[2,2,0])` and declares `kotlin-stdlib 2.2.21`, so a Kotlin 2.2 project compiles against it — deliberately lower than the 2.4.10 toolchain used to build it. Maven Central is immutable: every version published stays there forever (no delete, no yank, no unlist).
+> **`1.0.0` is on Maven Central** — the first release carrying this SDK's stability guarantee: from here on, a breaking change to the public API requires a **major** bump. ⚠️ **Neither Gradle nor Maven resolves a "latest" version**, so a coordinate written without one resolves nothing and nothing falls back — name `1.0.0` explicitly as shown below (Maven Central is immutable, so every earlier `0.x` stays published forever too: no delete, no yank, no unlist). ⚠️ **Consumer floor: Kotlin 2.2+** — the published jar carries `@Metadata(mv=[2,2,0])` and declares `kotlin-stdlib 2.2.21`, deliberately lower than the 2.4.10 toolchain used to build it.
 
 ## Requirements
 
@@ -13,7 +13,7 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · 
 
 Every network call is a `suspend` function — blocking calls into the underlying JVM libraries run on `Dispatchers.IO` via `runInterruptible`. Only `createAuthorizationRequest` is synchronous, because it needs no network. Public API visibility is enforced with `explicitApi()`.
 
-The published `0.1.0` reuses the verified JVM stack of its sibling Java SDK — `org.keycloak:keycloak-admin-client`, `com.nimbusds:oauth2-oidc-sdk` and `com.nimbusds:nimbus-jose-jwt` — plus `kotlinx-coroutines-core` for the coroutine boundary. The exact pins are in the published POM; `main` may already be ahead of it.
+The published `1.0.0` reuses the verified JVM stack of its sibling Java SDK — `org.keycloak:keycloak-admin-client`, `com.nimbusds:oauth2-oidc-sdk` and `com.nimbusds:nimbus-jose-jwt` — plus `kotlinx-coroutines-core` for the coroutine boundary. The exact pins are in the published POM; `main` may already be ahead of it.
 
 ## Install
 
@@ -21,7 +21,7 @@ Gradle Kotlin DSL:
 
 ```kotlin
 dependencies {
-    implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0")
+    implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.0")
 }
 ```
 
@@ -78,7 +78,11 @@ Masking covers this SDK's own `toString()` and serialization; it cannot cover wh
 
 ## Versioning and support
 
-This SDK is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking changes, so read the release notes before upgrading. Only the newest released version of each language SDK receives security fixes — there are no LTS lines, and older `0.x` releases are not backported to. Full policy: [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
+This SDK is **`1.0`** and follows SemVer: a breaking change to the public API requires a **major** bump. That promise is machine-backed — CI diffs this lane's public API against the **previously published artifact** on every build (japicmp against the published jar), and a removal or an incompatible change fails the build. ⚠️ **The gate compares the API _surface_.** A change that leaves the surface identical but alters behaviour is not caught by it, so read the release notes before upgrading.
+
+Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
+
+**Each of the nine languages versions independently.** All nine reached `1.0.0` on the same day because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
 
 ## Documentation
 

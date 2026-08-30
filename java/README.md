@@ -4,7 +4,7 @@ A Keycloak client library for Java that covers both **Authentication (OIDC / OAu
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`0.1.0` is on Maven Central** — the first stable release. ⚠️ **Maven has no pre-release concept**, so the earlier `0.1.0-RC1` is not "a prerelease of `0.1.0`" but a separate, lower-sorting coordinate that stays on Central forever (Central is immutable — no delete, no yank, no unlist). Nothing filters it and nothing falls back to it; you always name the version explicitly in Maven, so use the one below.
+> **`1.0.0` is on Maven Central** — the first release carrying the stability guarantee below. ⚠️ **Maven never picks a version for you**: a `<dependency>` with no `<version>` and no BOM managing it fails the build rather than resolving to the newest release, so name `1.0.0` explicitly as shown below.
 
 ## Requirements
 
@@ -20,7 +20,7 @@ The SDK ships as several Maven modules, but **most users need exactly one**: `io
 <dependency>
   <groupId>io.github.xzawed</groupId>
   <artifactId>keycloak-sdk</artifactId>
-  <version>0.1.0</version>
+  <version>1.0.0</version>
 </dependency>
 ```
 
@@ -40,7 +40,7 @@ If you depend on the modules individually, import the BOM so their versions stay
     <dependency>
       <groupId>io.github.xzawed</groupId>
       <artifactId>keycloak-sdk-bom</artifactId>
-      <version>0.1.0</version>
+      <version>1.0.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -97,7 +97,11 @@ Masking covers this SDK's own `toString()` and serialization; it cannot cover wh
 
 ## Versioning and support
 
-This SDK is **pre-1.0**. Under SemVer a `0.x` **minor** bump may carry breaking changes, so read the release notes before upgrading. Only the newest released version of each language SDK receives security fixes — there are no LTS lines, and older `0.x` releases are not backported to. Full policy: [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
+This SDK is **`1.0`** and follows SemVer: a breaking change to the public API requires a **major** bump. That promise is machine-backed — CI diffs this lane's public API against the **previously published artifact** on every build (`japicmp`, bound to `mvn verify`), and a removal or an incompatible change fails the build. ⚠️ **The gate compares the API _surface_.** A change that leaves the surface identical but alters behaviour is not caught by it, so read the release notes before upgrading.
+
+Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
+
+**Each of the nine languages versions independently.** All nine reached `1.0.0` on the same day because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
 
 ## Documentation
 

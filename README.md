@@ -9,13 +9,13 @@ English · [한국어](README.ko.md)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Languages](https://img.shields.io/badge/languages-9-brightgreen)
 ![Published](https://img.shields.io/badge/published-9%2F9%20registries-brightgreen)
-![Status](https://img.shields.io/badge/status-pre--1.0-blue)
+![Status](https://img.shields.io/badge/status-1.0-brightgreen)
 ![Keycloak](https://img.shields.io/badge/Keycloak-26.6-informational)
 ![Guards](https://github.com/xzawed/KeyCloakSDK/actions/workflows/repo-hygiene.yml/badge.svg?branch=main)
 
 > "Polyglot" here means **programming languages**, not natural-language localization (i18n).
 >
-> ⚠️ **All nine languages have shipped a stable release, and the numbers differ** — Node and Python are on `0.2.1`, PHP is on `0.2.0`, Go, .NET and Rust are on `0.1.1`, and Java, Kotlin and Ruby are on `0.1.0`. Versions move per language, not as a fleet, so a language only gets a new number when something consumer-visible changed in it. Every release is human-gated, and the line is still pre-1.0. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
+> ⚠️ **Stable `1.0.0` is live for all nine languages.** They reached it on the same day because they earned the same guarantee at the same time — a breaking change to the public API now requires a **major** bump, and CI enforces that by diffing each lane's API against its previously published artifact. **They do not move as a fleet afterwards**: a language gets a new number only when something consumer-visible changed in it, so expect the numbers to diverge again. Every release is human-gated. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
 
 ---
 
@@ -58,7 +58,7 @@ with KeycloakClient.create(config) as kc:
 ```bash
 pip install keycloak-sdk                              # Python
 npm install @xzawed/keycloak-sdk                      # Node
-go get github.com/xzawed/KeyCloakSDK/go@v0.1.1        # Go
+go get github.com/xzawed/KeyCloakSDK/go@v1.0.0        # Go
 dotnet add package Xzawed.Keycloak.Sdk                # C# / .NET
 composer require xzawed/keycloak-sdk                  # PHP
 cargo add keycloak-sdk                                # Rust
@@ -68,8 +68,8 @@ gem install keycloak-sdk                              # Ruby
 JVM — add the coordinate to your build file:
 
 ```
-io.github.xzawed:keycloak-sdk:0.1.0                   # Java   (Maven Central)
-io.github.xzawed:keycloak-sdk-kotlin:0.1.0            # Kotlin (Maven Central)
+io.github.xzawed:keycloak-sdk:1.0.0                   # Java   (Maven Central)
+io.github.xzawed:keycloak-sdk-kotlin:1.0.0            # Kotlin (Maven Central)
 ```
 
 Full snippets per build tool (Maven XML, Gradle Kotlin DSL, `Gemfile`, `Cargo.toml`) are in the [getting-started guide](docs/guides/getting-started.md).

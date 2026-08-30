@@ -104,9 +104,10 @@ node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anc
 ⚠️ **P-2·P-3 을 P-4 앞에 두면 안 된다. 초안이 그렇게 적혀 있었고 틀렸다.** 게이트 기준선은 「**게시된** 직전 버전」이라, 게시 전에 `1.0.0` 으로 올리면 존재하지 않는 것을 받으러 간다 — 실측: `npm pack @xzawed/keycloak-sdk@1.0.0` → `ETARGET no matching version`, `repo1…/1.0.0/…jar` → `HTTP 404`. **fail-closed 라 잡히기는 하지만, 잡히는 자리가 버전을 올리는 그 PR 이다.** 같은 이유로 `df_published_version` 과 그것에 매달린 문서(`compatibility.md`)도 게시 **뒤**에 움직인다.
 
 - [x] **P-1 정책 판정: 아홉을 언제 1.0 으로 올리는가.** → **아홉 전부 `1.0.0` 동시**(2026-08-30, 사람 판정). §2 A–G 가 아홉 곳에서 동시에 충족돼 자격이 같은 날 생겼고, 약속이 아홉에서 같으므로 번호도 같아진다. ⚠️ **이후에는 다시 각자 움직인다** — 이번 정렬은 우연이지 정책이 아니다.
-- [x] **P-2 매니페스트 버전을 올린다(게시 전에 하는 것은 이것뿐이다).** 일곱 언어에 자리가 있고 go·php 는 태그가 SSOT다. ⚠️ **하네스 앱 핀 둘과 락파일 셋이 같은 커밋에서 따라와야 한다** — `check-versions.mjs` 가 잡는다(실측: 이 범프에서 4건을 잡았다).
+- [x] **P-2 매니페스트 버전을 올린다.** 일곱 언어에 자리가 있고 go·php 는 태그가 SSOT다. ⚠️ **하네스 앱 핀 둘과 락파일 셋이 같은 커밋에서 따라와야 한다** — `check-versions.mjs` 가 잡는다(실측: 이 범프에서 4건을 잡았다).
+- [x] **P-2b 게시되는 문서를 태그 _전에_ 고친다.** ⚠️ **P-2 만 하고 태그를 밀면 아홉 좌표가 「아직 pre-1.0」이라고 말하는 페이지로 영구 고정된다** — 레지스트리는 README 를 **버전마다** 고정한다. 릴리스 전 감사에서 아홉 레인 전부가 그 상태였다(rust `0.1.1 is on crates.io … pre-1.0` · node `a bare install resolves 0.2.1` · python 분류자 `4 - Beta`). 이 저장소는 같은 부류로 **이미 두 번 문서 전용 릴리스를 냈다**(`0.1.1` #318 · `0.2.1` a7629ef). 옮길 자리: 아홉 `<lang>/README.md` · 루트 README 영·한 · `SECURITY.md` · `compatibility.md` · `getting-started.md` · `language-support.md` · `CLAUDE.md` · `DEPLOY.md` · `CHANGELOG.md` · `python/pyproject.toml` 분류자 · **SSOT `df_published_version`**. 판정은 `sh scripts/test/test-publication-claims.sh`(60 failed → 0 failed 로 몰아간다).
 - [ ] **P-3 태그 푸시(사람·비가역)** `[!]` — 좌표 하나당 버전 하나는 되돌릴 수 없다. Maven Central 은 워크플로 초록 뒤에도 Portal 클릭과 전파 지연이 남는다. **404 로 실패를 결론내지 않는다.**
-- [ ] **P-4 게시 확인 뒤에 「게시된 버전」을 따라 올린다.** `deploy-facts.sh:df_published_version` · `compatibility.md` · `SECURITY.md` 의 「What pre-1.0 means here」→「What 1.0 means here」(§1 의 두 칸을 영문으로) · **API 게이트 기준선 7자리**: `java/pom.xml`(`japicmp.baseline`) · `kotlin-ci.yml`(`BASELINE`) · `python-ci.yml`(`--against`) · `php-ci.yml`(태그) · `ruby-ci.yml`(`BASELINE`) · `node-ci.yml`(`BASELINE`) · `dotnet` csproj(`PackageValidationBaselineVersion`).
+- [ ] **P-4 게시 확인 뒤 API 게이트 기준선 7자리를 올린다.** `java/pom.xml`(`japicmp.baseline`) · `kotlin-ci.yml`(`BASELINE`) · `python-ci.yml`(`--against`) · `php-ci.yml`(태그) · `ruby-ci.yml`(`BASELINE`) · `node-ci.yml`(`BASELINE`) · `dotnet` csproj(`PackageValidationBaselineVersion`). ⚠️ **게시 전에는 못 올린다** — 없는 버전을 받으러 간다(위 경고). 안 올리면 각 README 의 「직전 게시본과 대조한다」가 다음 릴리스부터 거짓이 된다.
 
 ---
 
