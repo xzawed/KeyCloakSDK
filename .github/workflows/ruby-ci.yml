@@ -49,3 +49,56 @@ jobs:
       # RUN_INTEGRATION=1 → spec_helper의 SimpleCov minimum_coverage 게이트를 억제(통합 단독 실행 시
       # 브랜치 커버리지가 낮게 나와 process-wide 게이트가 오탐 실패하는 것을 방지 — unit 게이트는 불변).
       - run: RUN_INTEGRATION=1 bundle exec rspec spec/integration --tag integration
+
+  api-compat:
+    name: yard diff (공개 API 삭제 검출)
+    runs-on: ubuntu-latest
+    # ⚠️ **Ruby 에는 japicmp/gorelease 등가물이 없다** — 두 gem 버전을 받아 「공개 심볼 제거 +
+    # 시그니처 변경」을 파괴적 변경으로 판정하는 도구가 생태계에 존재하지 않는다(조사 결과).
+    # 남은 선택은 부분 도구뿐이라 **얻을 수 있는 만큼만 얻는다**:
+    #   yard diff  — 공개 객체의 추가(A)/삭제(D)를 잡는다. **시그니처·arity 변경은 못 잡는다**
+    #                (yard 가 "modified" 로 보는 것은 메서드 소스 텍스트다).
+    #   rbs diff   — 실험적이고 `--type-name` 을 하나씩 줘야 해서 게이트로 쓰기 어렵다.
+    # 그래서 이 게이트는 **다른 여덟 레인보다 약하다**. 1.0 문서에 그 한계를 그대로 적는다 —
+    # 「Ruby 는 삭제만 기계로 막고 시그니처 변경은 리뷰가 막는다」.
+    #
+    # ⚠️ **yard diff 의 종료코드는 게이트가 될 수 없다** — go gorelease · php php-semver-checker 에
+    # 이어 세 번째다. 실측(변이 `Masking#mask` → `mask_renamed`): `D KeycloakSdk::Masking#mask` 를
+    # 정확히 출력하고도 **exit 0** 이었다. 그래서 `^D ` 줄 수를 근거로 삼는다.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { fetch-depth: 0 }
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: ruby
+      - name: yard 설치 (gem 매니페스트를 건드리지 않는다)
+        run: gem install yard --no-document -v 0.9.45
+      - name: 기준선(직전 정식 릴리스)과 현재의 .yardoc 생성
+        env:
+          # ⚠️ **직전 정식 릴리스**를 적는다. 릴리스마다 함께 올린다.
+          BASELINE: 'ruby-v0.1.0'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/base"
+          git archive "$BASELINE" ruby/lib | tar -x -C "$RUNNER_TEMP/base"
+          n=$(find "$RUNNER_TEMP/base" -name '*.rb' | wc -l)
+          echo "기준선 파일 $n 개"
+          # ⚠️ 추출이 비면 「차이 없음」으로 조용히 통과한다 — 공허성 검사.
+          [ "$n" -gt 0 ] || { echo "::error::기준선 추출이 비었다 — 태그가 바뀌었나?"; exit 1; }
+          (cd "$RUNNER_TEMP/base/ruby" && yard doc --no-output --no-progress lib >/dev/null)
+          (cd ruby && yard doc --no-output --no-progress lib >/dev/null)
+          test -d "$RUNNER_TEMP/base/ruby/.yardoc" || { echo "::error::기준선 .yardoc 생성 실패"; exit 1; }
+          test -d ruby/.yardoc || { echo "::error::현재 .yardoc 생성 실패"; exit 1; }
+      - name: 공개 객체 삭제가 있으면 실패
+        run: |
+          set -euo pipefail
+          out="$(yard diff --compact "$RUNNER_TEMP/base/ruby/.yardoc" ruby/.yardoc 2>&1)"
+          echo "$out"
+          if printf '%s\n' "$out" | grep -q '^D '; then
+            echo "::error::직전 릴리스에 있던 공개 객체가 사라졌다 — 1.0 은 major 없이 허용하지 않는다"
+            printf '%s\n' "$out" | grep '^D '
+            exit 1
+          fi
+          echo "OK: 삭제된 공개 객체 없음"
