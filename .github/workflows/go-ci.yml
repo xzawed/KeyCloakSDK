@@ -82,3 +82,39 @@ jobs:
           cache-dependency-path: go/go.sum
       - name: Integration E2E (Docker, 실제 Keycloak 26.6)
         run: go test -tags=integration -run TestE2E -count=1 ./...
+
+  api-compat:
+    name: gorelease (공개 API 파괴적 변경)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    # ⚠️ **gorelease 의 종료코드를 게이트로 쓰면 안 된다 — 파괴적 변경을 찾아내고도 exit 0 이다.**
+    # 실측(변이: `(*Client).Close` 제거): 리포트에 `## incompatible changes / (*Client).Close: removed`
+    # 가 나왔는데도 rc=0 이었고, `-version v0.1.2` 를 줘도 "valid semantic version" 으로 통과했다.
+    # 이유는 Go 모듈 규약이 **v0.x 를 호환성 보증 대상에서 제외**하기 때문이다 — 즉 이 도구는
+    # 1.0 이전에는 종료코드로 아무것도 막지 못한다. 그래서 **리포트 본문**을 근거로 삼는다.
+    # 이 형태는 0.x 에서도 지금 바로 작동하고, 1.0 이후에도 그대로 유효하다.
+    steps:
+      # ⚠️ gorelease 는 더러운 트리를 거부하고(`repo has uncommitted changes`) 기준선 태그를
+      # 찾으려면 전체 이력이 필요하다.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26'
+          cache-dependency-path: go/go.sum
+      - run: go install golang.org/x/exp/cmd/gorelease@latest
+      - name: gorelease (직전 릴리스 자동 추론 → 비호환 변경 0건)
+        run: |
+          set -euo pipefail
+          # -base 를 주지 않으면 직전 릴리스를 자동 추론한다("Inferred base version") — 태그를
+          # 하드코딩하지 않으므로 릴리스마다 갱신할 자리가 없다.
+          out="$(gorelease 2>&1)" || true
+          echo "$out"
+          if printf '%s' "$out" | grep -q '^## incompatible changes'; then
+            echo "::error::직전 릴리스 대비 비호환 변경이 있다 — 1.0 은 이것을 major 없이 허용하지 않는다"
+            exit 1
+          fi
+          printf '%s' "$out" | grep -q 'Inferred base version' || {
+            echo "::error::기준선을 추론하지 못했다 — 비교가 일어나지 않았으므로 실패로 본다"; exit 1; }
