@@ -35,7 +35,7 @@
 | **go** | gorelease | 추론 기준선 | ⚠️ **본문**(`^## incompatible changes`) |
 | **php** | php-semver-checker | `php-v0.2.0` 태그 | ⚠️ **본문**(`… change: MAJOR`) |
 | **ruby** | yard diff | `ruby-v1.0.0` 태그 | ⚠️ **본문**(`^D `) |
-| **node** | api-extractor ×2 | npm `0.2.1` tarball | ⚠️ **본문**(`^< `) |
+| **node** | api-extractor ×2 | npm `1.0.0` tarball | ⚠️ **본문**(`^< `) |
 
 ⚠️ **아홉 중 넷은 도구 종료코드가 거짓말한다** — 파괴적 변경을 정확히 **출력하고도 exit 0** 이다. 그 넷은 리포트 본문을 근거로 삼는다. 새 레인을 붙일 때 가장 먼저 확인할 것이 이것이다.
 
@@ -109,7 +109,7 @@ node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anc
 - [x] **P-2 매니페스트 버전을 올린다.** 일곱 언어에 자리가 있고 go·php 는 태그가 SSOT다. ⚠️ **하네스 앱 핀 둘과 락파일 셋이 같은 커밋에서 따라와야 한다** — `check-versions.mjs` 가 잡는다(실측: 이 범프에서 4건을 잡았다).
 - [x] **P-2b 게시되는 문서를 태그 _전에_ 고친다.** ⚠️ **P-2 만 하고 태그를 밀면 아홉 좌표가 「아직 pre-1.0」이라고 말하는 페이지로 영구 고정된다** — 레지스트리는 README 를 **버전마다** 고정한다. 릴리스 전 감사에서 아홉 레인 전부가 그 상태였다(rust `0.1.1 is on crates.io … pre-1.0` · node `a bare install resolves 0.2.1` · python 분류자 `4 - Beta`). 이 저장소는 같은 부류로 **이미 두 번 문서 전용 릴리스를 냈다**(`0.1.1` #318 · `0.2.1` a7629ef). 옮길 자리: 아홉 `<lang>/README.md` · 루트 README 영·한 · `SECURITY.md` · `compatibility.md` · `getting-started.md` · `language-support.md` · `CLAUDE.md` · `DEPLOY.md` · `CHANGELOG.md` · `python/pyproject.toml` 분류자 · **SSOT `df_published_version`**. 판정은 `sh scripts/test/test-publication-claims.sh`(60 failed → 0 failed 로 몰아간다).
 - [ ] **P-3 태그 푸시(사람·비가역)** `[!]` — 좌표 하나당 버전 하나는 되돌릴 수 없다. Maven Central 은 워크플로 초록 뒤에도 Portal 클릭과 전파 지연이 남는다. **404 로 실패를 결론내지 않는다.**
-- [ ] **P-4 게시 확인 뒤 API 게이트 기준선 7자리를 올린다.** `python-ci.yml`(`--against`)·`dotnet` csproj(`PackageValidationBaselineVersion`)·`ruby-ci.yml`(`BASELINE`) **완료** — 그 셋만 `1.0.0` 이 실제 게시됐다. 남은 넷: `java/pom.xml`(`japicmp.baseline`) · `kotlin-ci.yml`(`BASELINE`) · `php-ci.yml`(태그) · `node-ci.yml`(`BASELINE`). ⚠️ **게시 전에는 못 올린다** — 없는 버전을 받으러 간다(위 경고). 안 올리면 각 README 의 「직전 게시본과 대조한다」가 다음 릴리스부터 거짓이 된다.
+- [ ] **P-4 게시 확인 뒤 API 게이트 기준선 7자리를 올린다.** `python-ci.yml`(`--against`)·`dotnet` csproj(`PackageValidationBaselineVersion`)·`ruby-ci.yml`(`BASELINE`)·`node-ci.yml`(`BASELINE`) **완료** — 그 넷만 `1.0.0` 이 실제 게시됐다. 남은 셋: `java/pom.xml`(`japicmp.baseline`) · `kotlin-ci.yml`(`BASELINE`) · `php-ci.yml`(태그). ⚠️ **게시 전에는 못 올린다** — 없는 버전을 받으러 간다(위 경고). 안 올리면 각 README 의 「직전 게시본과 대조한다」가 다음 릴리스부터 거짓이 된다.
   - ⚠️ **「기준선 == 현재 버전이면 게이트가 공허하다」는 틀렸다** — 감사 초안이 그렇게 적었고 **변이로 반증했다**. dotnet 은 `csproj` 의 `<Version>` 도 `1.0.0` 이라 둘이 같아지는데, `AuthClient.LogoutAsync` 를 `public` → `internal` 로 바꾸자 `error CP0002 … [기준선]에는 있지만 …에는 없습니다` 로 **rc=1** 이 났다. Package Validation 이 비교하는 것은 버전 번호가 아니라 **패키지 내용**이다.
   - ⚠️ **로컬에서 잴 때 NuGet HTTP 캐시를 먼저 비운다.** 게시 직후 `NU1102 … 3 버전을 찾았습니다` 가 나와 「미게시」로 오독했는데, 레지스트리는 이미 네 개를 서빙 중이었다. `dotnet nuget locals http-cache --clear` 뒤 rc=0.
   - ⚠️ **선행조건이 둘로 갈린다.** `php`·`ruby` 는 `git archive <태그>` 로 읽으므로 **태그만** 있으면 되고, `java`·`kotlin`·`node`·`dotnet` 은 **원격 아티팩트**가 실제로 받아져야 한다(전파 지연을 폴링한다). 태그 직후 여섯을 한 PR 로 묶으면 뒤 넷이 404 로 죽는다.

@@ -90,7 +90,7 @@ jobs:
       - name: 기준선(직전 정식 릴리스) tarball 의 타입 표면 받기
         env:
           # ⚠️ **npm 에 게시된 직전 정식 버전**을 적는다. 릴리스마다 함께 올린다.
-          BASELINE: '0.2.1'
+          BASELINE: '1.0.0'
         run: |
           set -euo pipefail
           rm -rf dist-base "$RUNNER_TEMP/nb"
