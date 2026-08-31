@@ -108,6 +108,19 @@ jobs:
       # 조용히 달라질 수 있다. crates.io는 되돌릴 수 없으므로(yank만 가능) 락이 갱신되어야 하는
       # 상태면 실패해야 한다.
       - run: cargo build --locked && cargo test --locked
+      # ⚠️ 시크릿 미설정은 "건너뛸 상황"이 아니라 실패다 — 시크릿 사전등록 전에 rust-v 태그가
+      # 밀렸다는 뜻이다. 빈 토큰을 그대로 넘기면 `cargo publish`가 인증 오류로 죽기는 하지만
+      # 그 메시지는 원인이 "미설정"임을 말해 주지 않는다. 나머지 넷(java·kotlin·dotnet·php)이
+      # 이미 이 가드를 갖고 있고 rust 만 빠져 있었다 — OIDC 레인 셋(node·python·ruby)과 go 는
+      # 볼 시크릿 자체가 없어 해당하지 않는다.
+      - name: Fail closed when CARGO_REGISTRY_TOKEN is unset
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::error::CARGO_REGISTRY_TOKEN 미설정 — 시크릿 사전등록 전에 rust-v 태그가 push되었다. 배포를 중단한다."
+            exit 1
+          fi
       - name: cargo publish (crates.io)
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

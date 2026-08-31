@@ -27,7 +27,7 @@ assert_ok node "$GUARD" "$TMP"
 # 계수를 동시에 고정한다 — 특히 write 계수는 주석 제거(`write # 이유` → `write`)가 살아
 # 있어야만 1이 나온다. 주석을 안 걷어내면 값이 "write # ..."가 되어 상승이 보이지 않는다.
 out=$(node "$GUARD" "$TMP" 2>&1)
-assert_contains "$out" "릴리스 1개 · 잡 7개 · 릴리스 잡의 write 상승 1건" "잡·릴리스·권한상승을 실제로 센다"
+assert_contains "$out" "릴리스 1개 · 잡 8개 · 릴리스 잡의 write 상승 1건" "잡·릴리스·권한상승을 실제로 센다"
 
 # ── 변이 1(규칙 1): 릴리스 잡에서 permissions 선언을 지운다 ──
 # 이것이 이 가드를 만든 이유다. 릴리스 워크플로에는 워크플로 레벨 기본값이 없으므로
@@ -160,6 +160,27 @@ sed -i 's|govulncheck@v1\.6\.0|govulncheck@v1.7.0|' "$TMP/.github/workflows/demo
 assert_fails node "$GUARD" "$TMP"
 out=$(node "$GUARD" "$TMP" 2>&1 || true)
 assert_contains "$out" "govulncheck 버전 핀이 워크플로마다 다르다" "한쪽만 올린 버전 핀을 지목한다"
+
+# ── 규칙 8: 배포 시크릿을 env로 받는 잡은 그 env마다 빈값 검사를 가져야 한다 ──
+# 아홉 레인 중 rust 하나가 이 가드 없이 굳어 있었다(2026-08-31). 미설정이 "스킵"이 되면
+# 아무것도 게시하지 않은 실행이 성공한 실행과 구분되지 않는다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i 's|^          if \[ -z "\$DEMO_TOKEN" \]; then$|          if false; then|' "$TMP/.github/workflows/demo-release.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "DEMO_TOKEN" "빈값 검사가 사라진 시크릿을 이름으로 지목한다"
+# ⚠️ **주석을 가드로 세지 않는지가 이 규칙의 핵심이다.** 픽스처는 망가뜨린 뒤에도 「미설정」을
+# 담은 주석과 `::error::DEMO_TOKEN 미설정` 문자열을 그대로 갖고 있다 — 실제 rust-release.yml 이
+# 정확히 그 상태(설명 주석만 있고 실행되는 검사는 없음)였으므로, 문자열을 찾는 규칙이었다면
+# 이 어서션이 초록으로 통과해 버린다. 그 위장이 살아 있음을 여기서 단언한다.
+assert_contains "$(cat "$TMP/.github/workflows/demo-release.yml")" "미설정" \
+  "망가뜨린 픽스처에 「미설정」 문자열이 남아 있어야 위장 대조군이 성립한다"
+
+# 대조군 — 이름을 바꿔 받는 시크릿(`RENAMED` ← `DEMO_RENAMED_SECRET`)과 시크릿 없는 OIDC 잡은
+# 요구 대상이 아니거나 이미 만족한다. 셋이 실제로 이름을 바꿔 받으므로(dispatch 의 `APP_ID`,
+# kotlin 의 `ORG_GRADLE_PROJECT_*`) 시크릿 이름으로 걸면 오탐이 난다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+assert_ok node "$GUARD" "$TMP"
 
 # ── 오탐 대조군 3: 저장소 루트 실물에 대해 통과해야 한다 ──
 # 픽스처에서만 도는 가드는 실제 트리와 어긋난 채로 초록불을 유지할 수 있다.

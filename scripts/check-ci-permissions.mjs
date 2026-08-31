@@ -298,6 +298,41 @@ const ruleGovulncheckPinAligned = (wfs, out) => {
     )
 }
 
+// 규칙 8: 배포 시크릿을 env로 받는 잡은 그 env마다 **실행되는** 빈값 검사를 가져야 한다.
+//
+// 「미설정은 스킵이 아니라 실패다」는 이 저장소가 이미 규칙으로 갖고 있는 문장인데(`ci.md`),
+// 아홉 레인 중 rust 하나가 빠져 있었다(2026-08-31 실측: java·kotlin·dotnet·php·dispatch 는
+// 있고 rust 만 없음). 아무것도 게시하지 않은 실행이 green 으로 끝나면 성공한 실행과 구분되지 않는다.
+//
+// ⚠️ **주석을 가드로 세지 않는다.** rust-release.yml:5 는 「CARGO_REGISTRY_TOKEN 시크릿 미설정
+// 시 …」라는 주석을 **갖고 있으면서** 가드가 없었다. `미설정` 문자열을 찾는 규칙이었다면 그
+// 구멍을 그대로 통과시켰을 것이다.
+// ⚠️ **시크릿 이름이 아니라 env 이름으로 건다.** 셋이 이름을 바꿔 받는다 — dispatch 는
+// `APP_ID: ${{ secrets.RELEASE_APP_ID }}`, kotlin 은 `ORG_GRADLE_PROJECT_signingInMemoryKey`.
+// 검사되는 것은 셸이 실제로 보는 변수이므로 조준점도 그쪽이어야 한다.
+// ⚠️ 모양은 둘 다 허용한다 — 단일은 `[ -z "$X" ]`, 복수는 `[ -n "$X" ] || missing=…` 누적형이다.
+// ⚠️ `GITHUB_TOKEN` 은 러너가 항상 주입하므로 제외한다(dotnet·php 의 `GH_TOKEN`).
+// ⚠️ **이 규칙이 못 보는 것**: 빈값 검사가 있다는 것만 보고 그것이 `exit 1` 로 이어지는지는
+// 보지 않는다. 그 배선까지 텍스트로 쫓으면 두 모양에서 수렴하지 않는다.
+const ENV_SECRET_BINDING = /^\s*([A-Za-z_][A-Za-z0-9_]*):\s*\$\{\{\s*secrets\.([A-Z_][A-Z0-9_]*)\s*\}\}/
+const ruleSecretPreflight = (wf, out) => {
+  for (const job of wf.jobs) {
+    const body = jobLines(wf, job).map((l) => splitComment(l).body)
+    const bound = new Map()
+    for (const l of body) {
+      const m = ENV_SECRET_BINDING.exec(l)
+      if (m && m[2] !== 'GITHUB_TOKEN') bound.set(m[1], m[2])
+    }
+    for (const [env, secret] of bound) {
+      const test = new RegExp(`\\[\\s+-[zn]\\s+"\\$${env}"\\s+\\]`)
+      if (!body.some((l) => test.test(l)))
+        out.push(
+          `${wf.file}: 잡 \`${job.name}\`이 배포 시크릿 \`${secret}\`을(를) \`$${env}\`로 받는데 미설정 빈값 검사가 없다 — 아무것도 게시하지 않은 실행이 green 으로 끝난다`,
+        )
+    }
+  }
+}
+
 // ── 실행 ────────────────────────────────────────────────────────────────────
 
 const dir = join(root, '.github', 'workflows')
@@ -333,6 +368,7 @@ for (const wf of workflows) {
   if (isRelease(wf.file)) {
     ruleJobLevelDeclared(wf, errors)
     ruleNoWorkflowLevelBlock(wf, errors)
+    ruleSecretPreflight(wf, errors)
     writeGrants += ruleEscalationDocumented(wf, errors)
   } else {
     // 규칙 3은 규칙 1의 일반형이다 — 릴리스 워크플로에서는 규칙 1이 더 구체적인 메시지로
