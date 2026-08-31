@@ -82,6 +82,10 @@ updates:
       # 취급하지 않는다) client.test.ts·admin.test.ts의 클래스 모킹이 전부 깨진다 — 4.1.10에서 재측정한
       # 결과 29건 실패(PR #52·#90에서 동일 수치). 받으려면 두 파일의 vi.mock 팩토리를 v4 시맨틱으로
       # 이관하는 선행 작업이 필요하다. 그때 이 항목을 지운다.
+      # ⚠️ **auth.test.ts 는 세지 말 것 — 「두 파일」이 맞다.** 그 파일의 유일한 `vi.mock(` 팩토리는
+      # `discovery: vi.fn()` 류 **함수 목**이라 이 시맨틱 변경에 걸리지 않는다. 나머지 19건은
+      # `vi.mocked(` 이고 `vi.mock` 이 그 부분문자열이라 `grep -c 'vi\.mock'` 이 20으로 부풀린다 —
+      # 이 오독으로 「주석이 파일 하나를 빠뜨렸다」는 오탐이 실제로 제기됐다. 셀 때 `vi\.mock\(` 로 센다.
       - dependency-name: 'vitest'
         update-types: ['version-update:semver-major']
       - dependency-name: '@vitest/coverage-v8'
