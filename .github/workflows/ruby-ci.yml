@@ -78,7 +78,7 @@ jobs:
       - name: 기준선(직전 정식 릴리스)과 현재의 .yardoc 생성
         env:
           # ⚠️ **직전 정식 릴리스**를 적는다. 릴리스마다 함께 올린다.
-          BASELINE: 'ruby-v0.1.0'
+          BASELINE: 'ruby-v1.0.0'
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/base"
