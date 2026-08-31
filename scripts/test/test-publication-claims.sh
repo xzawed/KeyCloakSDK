@@ -290,6 +290,14 @@ if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
       "$_cf 에 아홉 전부 정식 게시인데 「정식 없음」 수사가 남아 있다"
     assert_not_contains "$_ct" "정식(stable) 릴리스는 아직" \
       "$_cf 에 아홉 전부 정식 게시인데 「정식 없음」 수사가 남아 있다"
+    # ⚠️ 맨 토큰 `pre-1.0` 이 아니라 **강조를 포함한 완결 문장**으로 건다. 토큰은 수렴하지 않는다 —
+    # 같은 문단이 "what pre-1.0 means here" 처럼 **언급**으로도 쓰고, 리포 전체로는 pre-1.0 인
+    # 의존성(testcontainers·ruff·josekit)을 서술하는 참인 히트가 7건이다(금칙 문구 린트 기각 사유).
+    # 주장문은 문맥 없이 참/거짓이 갈리므로 그 기각의 되살릴 조건을 만족한다.
+    assert_not_contains "$_ct" "Everything is **pre-1.0**" \
+      "$_cf 에 아홉 전부 정식 게시인데 「전부 pre-1.0」 주장이 남아 있다"
+    assert_not_contains "$_ct" "전부 **pre-1.0** 입니다" \
+      "$_cf 에 아홉 전부 정식 게시인데 「전부 pre-1.0」 주장이 남아 있다"
   done
 elif [ "$unpub_n" -eq 0 ]; then
   # 아홉 전부 게시됐으나 일부(또는 전부)가 프리릴리스. "나머지 N개" 수사는 존재해선 안 된다.
