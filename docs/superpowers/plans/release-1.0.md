@@ -90,7 +90,7 @@ sh scripts/test/test-harness-registries.sh   → 65 passed, 0 failed
 ### G. 문서가 매니페스트와 기계 대조된다 — **충족**
 
 ```
-node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anchor-links=23
+node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anchor-links=24
 ```
 
 ⚠️ **숫자 없는 사실 주장은 이 가드의 사각지대다.** 실측 사례 — `SECURITY.md` 가 「아직 아홉 중 후속 릴리스를 낸 것이 없다」고 적고 있었고 여섯 레인에서 거짓이었는데, 문장에 숫자가 없어 앵커가 걸리지 않았다.
