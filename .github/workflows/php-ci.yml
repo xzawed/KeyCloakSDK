@@ -94,7 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/base"
-          git archive php-v0.2.0 php/src | tar -x -C "$RUNNER_TEMP/base"
+          git archive php-v1.0.0 php/src | tar -x -C "$RUNNER_TEMP/base"
           n=$(find "$RUNNER_TEMP/base" -name '*.php' | wc -l)
           echo "기준선 파일 $n 개"
           # ⚠️ 추출이 비면 비교가 「전부 동일」로 조용히 통과한다 — 공허성 검사.
