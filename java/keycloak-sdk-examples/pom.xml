@@ -12,8 +12,12 @@
   <description>실행 예제 모음 — Maven Central 배포 대상 아님 (WBS 7.3)</description>
 
   <properties>
-    <!-- 예제 모듈은 실사용 코드가 아니므로 Central 배포·커버리지 게이트에서 제외한다. -->
-    <maven.deploy.skip>true</maven.deploy.skip>
+    <!-- 예제 모듈은 실사용 코드가 아니므로 커버리지·API 게이트에서 제외한다.
+         ⚠️ **Central 배포 제외는 여기서 하지 않는다.** 예전에 `<maven.deploy.skip>true</maven.deploy.skip>`
+         이 여기 있었는데 **무효였다** — 그 속성은 `maven-deploy-plugin` 의 것이고 이 프로젝트는
+         `central-publishing-maven-plugin` 으로 배포한다. 그 결과 `keycloak-sdk-examples` 0.1.0-RC1·0.1.0
+         이 repo1 에 실제로 게시됐고(jar·sources·javadoc·pom 전부 200), **게시된 pom 안에 그 무효한
+         속성이 그대로 들어 있다**. 배포 제외의 유일한 자리는 부모의 `<excludeArtifacts>` 다. -->
     <jacoco.skip>true</jacoco.skip>
     <!-- 소비자 API 가 아니므로 공개 API 파괴적 변경 게이트도 제외(배포 제외와 같은 이유). -->
     <japicmp.skip>true</japicmp.skip>
