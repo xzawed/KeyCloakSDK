@@ -1234,7 +1234,7 @@ assert_ok node "$GUARD" "$TMP"
 mk_selfblob_fixture 'https://github.com/xzawed/KeyCloakSDK/blob/main/t.md'
 assert_contains "$(node "$GUARD" "$TMP" 2>&1)" 'self-blob targets' '보고 줄이 self-blob 개수를 싣는다'
 
-# ⚠️ **CLAUDE.md 가 적어 둔 명령의 최저치가 repo-hygiene.yml 의 것과 같아야 한다.**
+# ⚠️ **명령을 옮겨 적은 문서의 최저치가 repo-hygiene.yml 의 것과 같아야 한다.**
 # 최저치(`--min-*`)는 opt-in 이라 **낮은 값은 오류가 아니라 조용히 덜 검사하는 것**이다. 그래서
 # 「로컬은 초록인데 CI 의 required `doc-facts` 는 빨강」이 만들어진다 — 실측(2026-08-30):
 # CLAUDE.md 가 `--min-anchor-links=23`, 워크플로가 `24` 였고 앵커 링크 하나를 잃은 PR 이
@@ -1243,11 +1243,18 @@ assert_contains "$(node "$GUARD" "$TMP" 2>&1)" 'self-blob targets' '보고 줄�
 # (`check-ci-permissions.mjs --min-release=…`)가 있어, 파일 전체에서 뽑으면 남의 숫자까지 비교한다.
 _REPO="$DIR/../.."
 _ci_flags="$(grep 'check-docs\.mjs' "$_REPO/.github/workflows/repo-hygiene.yml" | grep -o -- '--min-[a-z-]*=[0-9]*' | sort -u | tr '\n' ' ')"
-_md_flags="$(grep 'check-docs\.mjs' "$_REPO/CLAUDE.md" | grep -o -- '--min-[a-z-]*=[0-9]*' | sort -u | tr '\n' ' ')"
 # ⚠️ 추출이 0건이면 "같다"가 공허하게 참이 된다 — 양쪽 다 비었는지부터 본다.
 assert_ok test -n "$_ci_flags"
-assert_ok test -n "$_md_flags"
-assert_eq "$_ci_flags" "$_md_flags" \
-  'CLAUDE.md 의 check-docs 최저치가 repo-hygiene.yml 과 다르다 — 낮은 쪽은 조용히 덜 검사한다(로컬만 초록)'
+# ⚠️ **자리를 손으로 적지 않는다.** CLAUDE.md 하나만 마주 보게 했더니 CONTRIBUTING.md 와
+# 계획서가 `23` 에 남아 **같은 드리프트를 되풀이했다**(실측 2026-08-31, 4자리 중 2자리).
+# 명령을 옮겨 적은 문서를 **발견**해서 전부 건다 — 새 문서가 명령을 복사해도 자동으로 걸린다.
+_doc_sites="$(cd "$_REPO" && git grep -l -- 'check-docs\.mjs.*--min-' -- '*.md' | tr '\n' ' ')"
+assert_ok test -n "$_doc_sites"
+for _ds in $_doc_sites; do
+  _md_flags="$(grep -- 'check-docs\.mjs.*--min-' "$_REPO/$_ds" | grep -o -- '--min-[a-z-]*=[0-9]*' | sort -u | tr '\n' ' ')"
+  assert_ok test -n "$_md_flags"
+  assert_eq "$_ci_flags" "$_md_flags" \
+    "$_ds 의 check-docs 최저치가 repo-hygiene.yml 과 다르다 — 낮은 쪽은 조용히 덜 검사한다(로컬만 초록)"
+done
 
 assert_report
