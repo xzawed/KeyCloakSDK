@@ -69,4 +69,4 @@ jobs:
         with: { python-version: '3.12' }
       - run: python -m pip install griffe
       - name: griffe check (직전 릴리스 태그 대비)
-        run: griffe check keycloak_sdk --search python/src --against py-v0.2.1
+        run: griffe check keycloak_sdk --search python/src --against py-v1.0.0
