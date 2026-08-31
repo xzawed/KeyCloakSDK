@@ -32,6 +32,25 @@ jobs:
       id-token: write # OIDC Trusted Publishing에 필요 — 저장 시크릿 없음
     steps:
       - run: echo "픽스처 — 실행되지 않는다"
+  # 규칙 8의 입력. 위 `publish`가 시크릿 없는 대조군(요구하지 않아야 한다)이고 이쪽이 요구 대상이다.
+  # ⚠️ 아래 주석이 「미설정」을 담고 있는 것은 의도다 — 규칙 8이 주석을 가드로 세지 않는지 본다.
+  # 실제 rust-release.yml이 정확히 그 상태였다(설명 주석은 있고 실행되는 검사는 없음).
+  publish-secret:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 시크릿 미설정이면 중단한다
+        env:
+          DEMO_TOKEN: ${{ secrets.DEMO_TOKEN }}
+          RENAMED: ${{ secrets.DEMO_RENAMED_SECRET }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$DEMO_TOKEN" ]; then
+            echo "::error::DEMO_TOKEN 미설정"
+            exit 1
+          fi
+          [ -n "$RENAMED" ] || missing="$missing DEMO_RENAMED_SECRET"
   audit:
     runs-on: ubuntu-latest
     permissions:
