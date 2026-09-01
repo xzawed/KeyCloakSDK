@@ -27,7 +27,7 @@ jobs:
       # ⚠️ dtolnay/rust-toolchain은 브랜치/태그 이름이 곧 기본 toolchain이다(`@master`는 toolchain
       # 입력을 요구하는 판, `@stable`은 stable 고정 판) — SHA는 그 **브랜치의 커밋**을 가리켜야
       # 의미가 보존된다. 뒤 주석의 ref 이름을 SHA와 함께 유지할 것.
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
           toolchain: '${{ matrix.rust }}'
           components: clippy,rustfmt
@@ -49,7 +49,7 @@ jobs:
         working-directory: rust
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
       # taiki-e/install-action도 ref 이름이 설치 대상을 고른다(`@cargo-llvm-cov`/`@cargo-audit`) —
       # 해당 브랜치의 SHA로 핀하고 ref 이름을 주석으로 남긴다.
       - uses: taiki-e/install-action@face1f3efc4b60bb08e253dcbd8306cbc8487e68 # cargo-llvm-cov
@@ -64,7 +64,7 @@ jobs:
         working-directory: rust
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
       - uses: taiki-e/install-action@3e67821ec5b3a2f80d412686dab9e9d496ea6a23 # cargo-audit
       # RUSTSEC-2023-0071(rsa "Marvin" 타이밍 사이드채널)은 dev-dependency rsa(테스트 키 생성
       # 전용)에 대한 것으로, 런타임(jsonwebtoken 공개키 서명검증만)에 영향 경로가 없다 —
@@ -87,7 +87,7 @@ jobs:
     # `gh api repos/taiki-e/install-action/git/ref/tags/cargo-semver-checks --jq .object.sha` 로 직접 확인한다.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
       - uses: taiki-e/install-action@6e25983f55915f81579b0dcdb5f56d345a177128 # cargo-semver-checks
       - run: cargo semver-checks check-release
 
@@ -99,5 +99,5 @@ jobs:
         working-directory: rust
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
       - run: cargo test --locked --test integration_test -- --ignored

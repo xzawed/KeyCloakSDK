@@ -212,7 +212,7 @@ jobs:
         working-directory: rust
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
       - uses: taiki-e/install-action@3e67821ec5b3a2f80d412686dab9e9d496ea6a23 # cargo-audit
       # RUSTSEC-2023-0071(rsa "Marvin" 타이밍 사이드채널)은 dev-dependency rsa(테스트 키 생성
       # 전용)에 대한 것으로, 런타임(jsonwebtoken 공개키 서명검증만)에 영향 경로가 없다 —
@@ -253,7 +253,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
       - uses: taiki-e/install-action@3e67821ec5b3a2f80d412686dab9e9d496ea6a23 # cargo-audit
       # ⚠️ `-f <lock>` 은 매니페스트를 해석하지 않고 락파일만 읽는다 — 그래서 `path = "/src/rust"`
       # 가 없어도 돈다. 하네스 앱 락파일은 **커밋된 유일한 하네스 락파일**이고(242 packages),
