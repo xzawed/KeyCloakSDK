@@ -705,4 +705,32 @@ for _ff in README.md README.ko.md SECURITY.md docs/guides/getting-started.md; do
   assert_eq "$_VSET" "$_fgot" "$_ff 의 함대 요약 문장이 게시 SSOT의 버전 집합과 같다"
 done
 
+# ---- 아홉 <lang>/README.md 배너의 버전 ↔ 게시 SSOT ----
+#
+# ⚠️ **이 아홉이 곧 레지스트리 랜딩 페이지다** — 레지스트리는 README 를 **버전마다** 고정하므로
+# 틀린 채 태그가 나가면 그 페이지가 영구히 굳는다. 이 저장소는 같은 부류로 **세 번** 문서 전용
+# 릴리스를 냈다(`0.1.1` #318 · `0.2.1` a7629ef · `1.0.0` #343).
+#
+# ⚠️ **그런데 이 자리는 무보호였다**(실측 2026-09-01): `node/README.md:7` 의 `1.0.0` 을 `9.9.9` 로
+# 바꿔도 publication-claims 206/0 · check-docs · check-versions 가 **전부 통과**했다. 루트 README
+# 배너는 위 `claim_at` 이 잡지만(같은 변이가 2 failed) 패키지 README 는 아무도 안 봤다.
+#
+# ⚠️ **전량 대조는 수렴하지 않는다.** 아홉 README 에는 **정당한 다른 버전**이 있다 — python 의
+# `0.1.0`·`0.2.0`, php 의 `0.1.0`(Upgrading 절), node 의 `2.0.0`(캐럿이 2.0 을 안 집는다는 설명).
+# 그래서 조준점은 **배너 한 줄**이다: `> **\`<ver>\` is on <레지스트리>**` — 게시 주장문이라
+# 문맥 없이 참/거짓이 갈린다.
+#
+# ⚠️ go 만 `v` 접두다(`v1.0.0`) — 그 레인은 태그가 곧 버전이라 표기 관용이 다르다.
+for _bl in $DEPLOY_LANGS; do
+  _bf="$_bl/README.md"
+  _bline="$(grep -m1 -E '^> \*\*`v?[0-9]+\.[0-9]+\.[0-9]+` is on ' "$ROOT/$_bf" || true)"
+  # 공허성: 배너를 못 찾으면 아래 비교가 ""=="" 로 조용히 참이 된다.
+  assert_eq "1" "$(printf '%s\n' "$_bline" | grep -c . || true)" \
+    "$_bf 의 게시 배너를 정확히 하나 찾는다(못 찾으면 이 검사가 공허해진다)"
+  _bgot="$(printf '%s' "$_bline" | grep -oE '`v?[0-9]+\.[0-9]+\.[0-9]+`' | head -1 | tr -d '`')"
+  case "$_bl" in go) _bwant="v$(df_published_version "$_bl")" ;; *) _bwant="$(df_published_version "$_bl")" ;; esac
+  assert_eq "$_bwant" "$_bgot" \
+    "$_bf 의 배너 버전이 게시 SSOT(df_published_version)와 다르다 — 이 파일이 레지스트리 랜딩 페이지다"
+done
+
 assert_report
