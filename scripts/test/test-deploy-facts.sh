@@ -140,4 +140,35 @@ done
 # ⚠️ 호출자의 루프 변수를 밟지 않아야 한다(POSIX sh에 이식 가능한 `local`이 없다).
 # 이 대조군이 없으면 함수가 `_l` 같은 흔한 이름을 쓰다가 호출자 이터레이터를 덮어써도 모른다.
 _l="sentinel"; df_unpublished > /dev/null; assert_eq "sentinel" "$_l" "df_unpublished 가 호출자의 _l 을 밟았다"
+
+# ---- df_api_baseline ↔ 일곱 사본 ----
+#
+# 공개 API 게이트의 기준선은 일곱 파일에 리터럴로 박혀 있었고 **그것을 보는 자리가 없었다**.
+# 안 올리면 각 `<lang>/README.md` 와 `SECURITY.md` 의 「직전 게시본과 대조한다」가 거짓이 되고,
+# 게이트는 옛 좌표와 비교하며 **조용히 통과**한다.
+#
+# ⚠️ **`df_published_version` 과 같다고 단언하지 않는다.** 둘은 반대 일정으로 움직인다 —
+# SSOT/배너는 태그 **전**(DEPLOY.md §4 step 1), 기준선은 게시 **후**(step 9). 순진한 등식은
+# 릴리스 준비 커밋마다 빨개진다. 여기서 보는 것은 **선언 ↔ 사본의 일치**뿐이다.
+_ab_root="$(cd "$DIR/../.." && pwd)"
+_ab_seen=0
+for _ab in $DEPLOY_LANGS; do
+  case "$_ab" in
+    java)   _ab_got="$(grep -oE '<japicmp\.baseline>[^<]*' "$_ab_root/java/pom.xml" | sed 's/.*>//')" ;;
+    kotlin) _ab_got="$(grep -oE "BASELINE: '[^']*'" "$_ab_root/.github/workflows/kotlin-ci.yml" | sed "s/.*'\\(.*\\)'/\\1/")" ;;
+    node)   _ab_got="$(grep -oE "BASELINE: '[^']*'" "$_ab_root/.github/workflows/node-ci.yml"   | sed "s/.*'\\(.*\\)'/\\1/")" ;;
+    ruby)   _ab_got="$(grep -oE "BASELINE: '[^']*'" "$_ab_root/.github/workflows/ruby-ci.yml"   | sed "s/.*'\\(.*\\)'/\\1/")" ;;
+    python) _ab_got="$(grep -oE -- '--against [A-Za-z0-9.-]*' "$_ab_root/.github/workflows/python-ci.yml" | sed 's/--against //')" ;;
+    php)    _ab_got="$(grep -oE 'git archive [A-Za-z0-9.-]*'  "$_ab_root/.github/workflows/php-ci.yml"    | sed 's/git archive //')" ;;
+    dotnet) _ab_got="$(grep -oE '<PackageValidationBaselineVersion>[^<]*' "$_ab_root/dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj" | sed 's/.*>//')" ;;
+    *)      _ab_got="" ;;   # rust·go — 자리 없음
+  esac
+  _ab_want="$(df_api_baseline "$_ab")"
+  [ -n "$_ab_want" ] && _ab_seen=$((_ab_seen + 1))
+  assert_eq "$_ab_want" "$_ab_got" \
+    "$_ab 의 API 게이트 기준선이 df_api_baseline 선언과 다르다 — 게이트가 옛 좌표와 비교하며 조용히 통과한다"
+done
+# ⚠️ 공허성 — 추출이 전부 빈 문자열이면 위 루프가 ""=="" 로 조용히 통과한다.
+assert_eq "7" "$_ab_seen" "df_api_baseline 이 선언한 자리가 정확히 일곱이어야 한다(rust·go 는 자리 없음)"
+
 assert_report

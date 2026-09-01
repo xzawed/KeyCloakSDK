@@ -141,6 +141,23 @@ df_published_version() { case "$1" in
   java) echo "1.0.0" ;; kotlin) echo "1.0.0" ;; go) echo "1.0.0" ;;
   *) echo "" ;; esac; }
 
+# 공개 API 게이트가 대조하는 **직전 게시본**. 일곱 레인이 이 값을 리터럴로 들고 있고
+# (java/pom.xml · kotlin·python·php·ruby·node CI · dotnet csproj) 여기가 그 SSOT다.
+# rust·go 는 자리가 없다 — cargo-semver-checks·gorelease 가 직전 릴리스를 자동 추론한다.
+#
+# ⚠️ **이 값은 `df_published_version` 과 같은 일정으로 움직이지 않는다.** SSOT/배너는 **태그 전**
+# 커밋에서 움직이고(DEPLOY.md §4 step 1), 기준선은 **게시 확인 뒤**에만 움직일 수 있다(step 9) —
+# 없는 좌표를 받으러 가면 CI 가 죽기 때문이다. 그래서 둘을 순진하게 같다고 단언하지 않는다.
+# 여기가 선언하고, `test-deploy-facts.sh` 가 일곱 사본이 이 선언과 일치하는지만 본다.
+#
+# ⚠️ 형태가 둘이다 — 넷은 맨 버전, 셋(python·php·ruby)은 **태그 문자열**이다. 그 레인들이
+# `git archive <태그>` 나 `--against <ref>` 로 읽기 때문이고, 사본과 글자 그대로 같아야 한다.
+df_api_baseline() { case "$1" in
+  java) echo "1.0.0" ;; kotlin) echo "1.0.0" ;; node) echo "1.0.0" ;; dotnet) echo "1.0.0" ;;
+  python) echo "py-v1.0.0" ;; php) echo "php-v1.0.0" ;; ruby) echo "ruby-v1.0.0" ;;
+  rust|go) echo "" ;;   # 자리 없음(자동 추론) — 빈 문자열이 곧 「자리가 없다」는 선언이다
+  *) echo "" ;; esac; }
+
 # 200이면 이미 게시됨(readiness). 아홉 전부 **좌표 단위**(버전이 아니라 패키지) 엔드포인트다 —
 # 묻는 것은 "이 좌표에 버전이 하나라도 올라가 있는가"이고, 버전 문자열은 df_published_version이
 # 따로 소유한다. 여기에 버전을 박으면 같은 사실의 두 번째 정의 자리가 생긴다.
