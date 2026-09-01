@@ -1,4 +1,4 @@
-<!-- doc-status: active -->
+<!-- doc-status: complete -->
 
 # 1.0 릴리스 기준
 
@@ -108,7 +108,7 @@ node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anc
 - [x] **P-1 정책 판정: 아홉을 언제 1.0 으로 올리는가.** → **아홉 전부 `1.0.0` 동시**(2026-08-30, 사람 판정). §2 A–G 가 아홉 곳에서 동시에 충족돼 자격이 같은 날 생겼고, 약속이 아홉에서 같으므로 번호도 같아진다. ⚠️ **이후에는 다시 각자 움직인다** — 이번 정렬은 우연이지 정책이 아니다.
 - [x] **P-2 매니페스트 버전을 올린다.** 일곱 언어에 자리가 있고 go·php 는 태그가 SSOT다. ⚠️ **하네스 앱 핀 둘과 락파일 셋이 같은 커밋에서 따라와야 한다** — `check-versions.mjs` 가 잡는다(실측: 이 범프에서 4건을 잡았다).
 - [x] **P-2b 게시되는 문서를 태그 _전에_ 고친다.** ⚠️ **P-2 만 하고 태그를 밀면 아홉 좌표가 「아직 pre-1.0」이라고 말하는 페이지로 영구 고정된다** — 레지스트리는 README 를 **버전마다** 고정한다. 릴리스 전 감사에서 아홉 레인 전부가 그 상태였다(rust `0.1.1 is on crates.io … pre-1.0` · node `a bare install resolves 0.2.1` · python 분류자 `4 - Beta`). 이 저장소는 같은 부류로 **이미 두 번 문서 전용 릴리스를 냈다**(`0.1.1` #318 · `0.2.1` a7629ef). 옮길 자리: 아홉 `<lang>/README.md` · 루트 README 영·한 · `SECURITY.md` · `compatibility.md` · `getting-started.md` · `language-support.md` · `CLAUDE.md` · `DEPLOY.md` · `CHANGELOG.md` · `python/pyproject.toml` 분류자 · **SSOT `df_published_version`**. 판정은 `sh scripts/test/test-publication-claims.sh`(60 failed → 0 failed 로 몰아간다).
-- [ ] **P-3 태그 푸시(사람·비가역)** `[!]` — 좌표 하나당 버전 하나는 되돌릴 수 없다. Maven Central 은 워크플로 초록 뒤에도 Portal 클릭과 전파 지연이 남는다. **404 로 실패를 결론내지 않는다.**
+- [x] **P-3 태그 푸시(사람·비가역)** `[!]` — 좌표 하나당 버전 하나는 되돌릴 수 없다. Maven Central 은 워크플로 초록 뒤에도 Portal 클릭과 전파 지연이 남는다. **404 로 실패를 결론내지 않는다.**
   - ⚠️ **게시 확인용 URL 을 푸시 _전에_ 찌르지 말 것 — go 프록시에 음성 캐시가 박힌다.** 실측(2026-09-01): `go/v1.0.0` 을 밀기 전에 `@v/v1.0.0.info` 를 조회해 `unknown revision` 이 캐시됐고, 푸시 뒤 **20분 넘게 404** 가 유지됐다. `go-release.yml` 의 워밍 스텝도 같은 404 를 맞았는데 `|| true` 라 워크플로는 초록으로 끝났다.
   - ⚠️ **그때 참인 판정은 `.info` 가 아니다.** 같은 시각 `@latest` 는 `{"Version":"v1.0.0","Ref":"refs/tags/go/v1.0.0"}`, `@v/list` 는 `v1.0.0` 포함, `sum.golang.org` 는 `h1:` 해시를 냈고, **깨끗한 모듈 캐시의 `go list -m …@v1.0.0` 이 성공**했다. 소비자 경로가 참인 판정이다 — 엔드포인트 하나의 404 로 미게시를 결론내지 않는다.
   - ⚠️ 「태그가 나쁜가 / 캐시가 낡았는가」는 `GOPROXY=direct go list -m …@v1.0.0` 로 가른다. 그것이 성공하면 태그는 정상이고 프록시 문제다.
