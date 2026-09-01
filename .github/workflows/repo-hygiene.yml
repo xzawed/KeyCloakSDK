@@ -188,7 +188,7 @@ jobs:
         # 그대로 침묵한다) 하한을 명시로 못박는다 — check-docs의 --min-facts/--min-anchors와
         # 같은 관용이다. 릴리스 워크플로를 늘리면 이 값도 함께 올린다(내리는 PR은 곧 커버리지
         # 축소라 리뷰 신호가 된다).
-        run: node scripts/check-ci-permissions.mjs . --min-release=10
+        run: node scripts/check-ci-permissions.mjs . --min-release=10 --min-publish=9 --min-uses=187
 
   # ⚠️ **이 잡은 `ci.yml` 에서 옮겨 왔다(2026-09-01).** 거기서는 워크플로 `paths:` 가
   # `java/**` 뿐이라 **kotlin-only PR 에서는 체크가 생성조차 되지 않았다** — 아래 스캔이
