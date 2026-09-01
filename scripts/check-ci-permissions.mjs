@@ -26,8 +26,14 @@ let rootArg = null
 // **대상이 0건이어도 통과한다** — 누가 릴리스 워크플로를 `*-publish.yml`로 개명하면 이 가드는
 // 아무것도 검사하지 않으면서 초록불을 낸다. CI는 실측치를 명시로 넘겨 그 침묵을 막는다.
 let MIN_RELEASE = 1
+// 같은 이유의 하한 둘 더 — 규칙 9(게시 잡)·규칙 10(비로컬 uses)도 발견 기반이라 조준점이
+// 사라지면 0건을 검사하고 초록을 낸다.
+let MIN_PUBLISH = 1
+let MIN_USES = 1
 for (const arg of process.argv.slice(2)) {
   if (/^--min-release=\d+$/.test(arg)) MIN_RELEASE = Number(arg.slice('--min-release='.length))
+  else if (/^--min-publish=\d+$/.test(arg)) MIN_PUBLISH = Number(arg.slice('--min-publish='.length))
+  else if (/^--min-uses=\d+$/.test(arg)) MIN_USES = Number(arg.slice('--min-uses='.length))
   else if (!arg.startsWith('--') && rootArg === null) rootArg = arg
 }
 const root = rootArg ?? DEFAULT_ROOT
@@ -333,6 +339,69 @@ const ruleSecretPreflight = (wf, out) => {
   }
 }
 
+// 규칙 9: 게시 잡은 통합 E2E 와 install-smoke 를 통과한 뒤에만 돈다.
+//
+// `CLAUDE.md` 가 릴리스 불변식으로 선언하는데 **`needs:` 를 읽는 자리가 없었다**(실측 2026-09-02:
+// rust-release 의 publish 를 `needs: [version]` 으로 강등해도 check-ci-permissions·
+// test-release-prerelease·test-dispatch-release 가 전부 초록이었다).
+//
+// ⚠️ **게시 「명령」으로 잡을 찾지 않는다** — 초안이 그랬고 두 자리를 놓쳤다: python 은 CLI 가
+// 아니라 `uses: pypa/gh-action-pypi-publish` 로 게시하고, go 는 `gh release create` 가 곧 게시다
+// (태그가 레지스트리다). 게다가 `dispatch-release.yml` 의 `cut-tag` 가 `git push … refs/tags` 를
+// 하므로 **오탐**한다 — 그 파일은 태그만 만들고 게시하지 않는다.
+//
+// 그래서 조준점은 **잡 키**다. 실측: 아홉이 `release`(6) · `publish`(2, kotlin·rust) ·
+// `split`(1, php) 셋 중 하나이고 `cut-tag` 는 그 집합 밖이다.
+// ⚠️ `verify` 는 요구하지 않는다 — java·dotnet·rust·ruby 넷이 그 잡을 갖지 않는다(실측).
+const PUBLISH_JOB_KEYS = new Set(['release', 'publish', 'split'])
+const NEEDS_REQUIRED = ['integration', 'install-smoke']
+const rulePublishGated = (wf, out) => {
+  if (/dispatch-release\.ya?ml$/.test(wf.file)) return 0
+  let seen = 0
+  for (const job of wf.jobs) {
+    if (!PUBLISH_JOB_KEYS.has(job.node.key)) continue
+    seen++
+    const line = jobLines(wf, job)
+      .map((l) => splitComment(l).body)
+      .find((l) => /^\s*needs:/.test(l))
+    if (!line) {
+      out.push(`${wf.file}: 게시 잡 \`${job.node.key}\`에 \`needs:\`가 없다 — 발행 전 게이트를 건너뛴다`)
+      continue
+    }
+    // 플로우 시퀀스(`needs: [a, b]`)와 스칼라(`needs: a`)만 읽는다. 블록 시퀀스는 fail-closed.
+    const m = /^\s*needs:\s*\[([^\]]*)\]/.exec(line)
+    const got = m ? m[1].split(',').map((s) => s.trim()) : [line.replace(/^\s*needs:\s*/, '').trim()]
+    for (const req of NEEDS_REQUIRED)
+      if (!got.includes(req))
+        out.push(
+          `${wf.file}: 게시 잡 \`${job.node.key}\`의 \`needs:\`에 \`${req}\`가 없다 — 발행 전 E2E 게이트가 끊겼다(현재: ${got.join(', ') || '(빈 값)'})`,
+        )
+  }
+  return seen
+}
+
+// 규칙 10: 비로컬 액션은 40자 SHA 로 핀한다.
+//
+// 현재 트리는 완전한데 **그것을 지키는 것이 없었다**(실측: `actions/checkout@v7` 로 강등해도 통과).
+// 이 저장소는 **ref 이름이 곧 의미**인 액션을 셋 쓴다 — `dtolnay/rust-toolchain`(stable/master 가
+// 서로 다른 `action.yml` 계약) · `pypa/gh-action-pypi-publish`(기본 브랜치가 `unstable/v1` 이라
+// 핀이 풀리면 **PyPI 게시가 조용히 unstable 채널로 간다**). `.claude/rules/ci.md` 가 dependabot 을
+// 막는 이유도 그것이다.
+const USES_REF = /^\s*-?\s*uses:\s*([^\s#]+)/
+const ruleActionsPinnedToSha = (wf, out) => {
+  let seen = 0
+  for (const raw of wf.lines) {
+    const m = USES_REF.exec(splitComment(raw).body)
+    if (!m) continue
+    const ref = m[1]
+    if (ref.startsWith('./')) continue // 로컬 재사용 워크플로 — 핀 대상이 아니다
+    seen++
+    if (!/@[0-9a-f]{40}$/.test(ref))
+      out.push(`${wf.file}: \`${ref}\` 가 40자 SHA 로 핀되지 않았다 — ref 이름이 곧 의미인 액션이 셋 있다`)
+  }
+  return seen
+}
+
 // ── 실행 ────────────────────────────────────────────────────────────────────
 
 const dir = join(root, '.github', 'workflows')
@@ -361,14 +430,18 @@ ruleGovulncheckPinAligned(workflows, errors)
 
 let writeGrants = 0
 let jobCount = 0
+let publishJobs = 0
+let usesRefs = 0
 for (const wf of workflows) {
   jobCount += wf.jobs.length
   ruleNoBlanketGrant(wf, errors)
   ruleGovulncheckChecksLatest(wf, errors)
+  usesRefs += ruleActionsPinnedToSha(wf, errors)
   if (isRelease(wf.file)) {
     ruleJobLevelDeclared(wf, errors)
     ruleNoWorkflowLevelBlock(wf, errors)
     ruleSecretPreflight(wf, errors)
+    publishJobs += rulePublishGated(wf, errors)
     writeGrants += ruleEscalationDocumented(wf, errors)
   } else {
     // 규칙 3은 규칙 1의 일반형이다 — 릴리스 워크플로에서는 규칙 1이 더 구체적인 메시지로
@@ -377,8 +450,20 @@ for (const wf of workflows) {
   }
 }
 
+// ⚠️ 공허성 — 규칙 9·10 은 **발견 기반**이라 조준점이 사라지면 0건을 검사하고 초록을 낸다.
+// 잡 키를 개명하거나(`release` → `deploy`) `uses:` 표기가 바뀌면 그렇게 된다. `--min-release`
+// 와 같은 이유로 실측치를 명시로 넘겨 그 침묵을 막는다.
+if (publishJobs < MIN_PUBLISH)
+  errors.push(
+    `게시 잡이 ${publishJobs}개뿐이다(기대 ${MIN_PUBLISH}개 이상) — 잡 키가 개명되어 규칙 9 가 조용히 비었을 수 있다`,
+  )
+if (usesRefs < MIN_USES)
+  errors.push(
+    `비로컬 \`uses:\` 가 ${usesRefs}개뿐이다(기대 ${MIN_USES}개 이상) — 규칙 10 이 조용히 비었을 수 있다`,
+  )
+
 console.log(
-  `  워크플로 ${workflows.length}개 · 릴리스 ${releases.length}개 · 잡 ${jobCount}개 · 릴리스 잡의 write 상승 ${writeGrants}건`,
+  `  워크플로 ${workflows.length}개 · 릴리스 ${releases.length}개 · 잡 ${jobCount}개 · 게시 잡 ${publishJobs}개 · 비로컬 uses ${usesRefs}개 · 릴리스 잡의 write 상승 ${writeGrants}건`,
 )
 if (errors.length) {
   for (const e of errors) console.log(`::error::${e}`)
