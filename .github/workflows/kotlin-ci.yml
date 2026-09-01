@@ -125,7 +125,7 @@ jobs:
         env:
           # ⚠️ **직전 정식 릴리스**를 적는다(RC 가 아니다). 릴리스마다 함께 올린다.
           # java 레인에서 실측된 함정이다 — 자동 추론에 맡기면 RC 를 고를 수 있다.
-          BASELINE: '0.1.0'
+          BASELINE: '1.0.0'
           JAPICMP: '0.26.1'
         run: |
           set -euo pipefail
