@@ -1,5 +1,17 @@
 # Deployment Guide (DEPLOY)
-<!-- doc-budget: max-bytes=76070 -->
+<!-- doc-budget: max-bytes=77374 -->
+<!-- 래칫 인상 76070 → 77374 (2026-09-01, +1304B). 근거는 CLAUDE.md 의 사유 (1) — 증가분이
+     **기계 검증을 사 왔다**. 두 자리다:
+       · §4 step 1 의 「배너 ↔ df_published_version 은 같은 커밋」  ← test-publication-claims.sh 가
+         아홉 <lang>/README.md 배너를 SSOT 와 대조한다(#369). 그 전까지 무보호였다(node 배너를
+         9.9.9 로 바꿔도 세 가드가 전부 통과했다).
+       · §4 step 9 의 「게시 후 API 게이트 기준선 일곱 자리」        ← deploy-facts.sh 의
+         df_api_baseline 이 SSOT 이고 test-deploy-facts.sh 가 일곱 사본을 대조한다.
+     이 지식은 계획서 아카이브(#365) 뒤 f4dcdb5 **커밋 메시지에만** 남아 있었다 — 절차 문서에
+     없으면 다음 릴리스가 같은 자리에서 헛짚는다(이번 세션이 두 번 그랬다). -->
+<!-- ⚠️ 사유 (2)(사람이 문서 역할 변경)로 올린 것이 **아니다.** 이 문서의 역할은 그대로 「절차」이고,
+     빠져 있던 두 단계를 채웠을 뿐이다. -->
+
 
 All nine language SDKs have a **tag-driven release CI** wired up, and every one of them has published at least once. ⚠️ **This document deliberately does not state what is live right now.** That is a fact with three independent axes — how many languages, on which channel, at which version — and a snapshot pasted here rots on all three while reading correct on one. The authority is `scripts/lib/deploy-facts.sh`, and the way to ask is `./scripts/release-readiness.sh --version <X.Y.Z>` (§0). What this file owns is the **procedure**: which tag, which manifest, which secret, which gate — plus what each *named historical tag* proved (§5, §7). Actual deployment is a human-gated approval step triggered **only when a human pushes a tag**, and the prerequisites below (accounts, keys, tokens) can only be performed by the repository owner.
 
@@ -372,8 +384,8 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 0. **Decide the version** — for a language's *first* release, make it a release candidate (§7), not `0.1.0`.
 1. **Version bump** (if the language is subject to manual bump — see the §1 table) — commit. The tag↔version guard will reject a mismatch, so this must land before the tag.
 
-   ⚠️ **The same commit must also fix that language's README.** Each `<lang>/README.md` ships inside the package and *becomes the registry landing page*. All nine now carry a published-form banner, so this applies to a **newly added** language: it opens with a "not yet published" banner that turns false the moment you publish. Fixing it afterwards costs a new version, because registries pin the README per version. Two things to correct:
-   - the banner — say the RC *is* published, as all nine existing ones do;
+   ⚠️ **The same commit must also move that language's README banner and its `df_published_version`.** Each `<lang>/README.md` ships inside the package and *becomes the registry landing page*, and its banner states a **version** — so **every** release moves it, not only a newly added language. Fixing it afterwards costs a new version, because registries pin the README per version; this repo has paid that three times (`0.1.1` #318 · `0.2.1` a7629ef · `1.0.0` #343). `test-publication-claims.sh` now asserts banner ↔ `df_published_version` for all nine, so the SSOT moves in this same commit. Two things to correct:
+   - the banner — state the version being released (for an RC, that it *is* published);
    - the install command — **a bare install does not get a prerelease in most ecosystems**, and the exceptions are not intuitive. Measured: pip *does* fall back to a prerelease when only prereleases exist; Cargo *does* too (`cargo add` picks it, though a hand-written `"0.1"` requirement never matches); RubyGems does **not** (`gem install` needs `--pre` or an exact version); npm does **not** (the workflow publishes a hyphenated version under dist-tag `rc`, and a bare `npm i` only reads `latest`). Check your ecosystem rather than copying another language's wording.
 
    ⚠️ **Node only**: `node/package-lock.json` records the root package's own version. Regenerate it in the same commit (`npm install --package-lock-only`) so the lock does not disagree with the manifest. Measured: `npm ci` does **not** fail on that drift today, so nothing will catch it for you.
@@ -392,6 +404,9 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 6. **Check GitHub Actions** — confirm the relevant release workflow ended green. Every secret-backed path now fails closed when its secret is unset, so green no longer hides a skipped publish (that was previously false for .NET and Kotlin — §2-C, §2-A step 5). Note the phrasing: Go has no secret at all, and the three OIDC languages authenticate by a registered publisher rather than a stored secret — for those, an unset/misregistered publisher fails at the publish call, not at a preflight. What green still does *not* tell you: for Java and Kotlin it means "uploaded to Central Portal staging", not "published" (step 7); for Go it means "tag and GitHub Release created", not "the proxy serves the module"; for PHP it means "pushed to the mirror", after which Packagist still has to pick the tag up.
 7. **(Maven Central family only) Portal manual release** — for Java and Kotlin, a human must click Publish in the Central Portal Deployments for the final public release.
 8. **Verify on the registry itself** — open the package page and confirm the version, the README rendering, and the file list. This is the only step that actually proves the release happened.
+9. **(after step 8 confirms) raise that lane's API-gate baseline** — the gate compares against the **previously published** artifact, which every `<lang>/README.md` and `SECURITY.md` promise consumers. Seven lanes carry a literal: `java/pom.xml` (`japicmp.baseline`) · `kotlin-ci.yml` (`BASELINE`) · `python-ci.yml` (`--against`) · `php-ci.yml` (the tag in `git archive`) · `ruby-ci.yml` (`BASELINE`) · `node-ci.yml` (`BASELINE`) · the .NET csproj (`PackageValidationBaselineVersion`). Rust and Go have none — their tools infer the previous release.
+
+   ⚠️ **This cannot move before step 8, and `df_published_version` cannot move after step 1.** The two SSOTs run on opposite schedules: the banner/SSOT commit precedes the tag, the baselines follow publication. Raising a baseline early makes CI fetch a version that does not exist yet; leaving it late makes the README's "previously published" claim false. Preconditions differ per lane — php and ruby need only the **tag** (`git archive`), while java, kotlin, node and .NET need the **remote artifact** and must be polled for propagation.
 
 ---
 
