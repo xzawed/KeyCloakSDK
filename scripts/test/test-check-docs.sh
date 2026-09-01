@@ -1257,4 +1257,22 @@ for _ds in $_doc_sites; do
     "$_ds 의 check-docs 최저치가 repo-hygiene.yml 과 다르다 — 낮은 쪽은 조용히 덜 검사한다(로컬만 초록)"
 done
 
+# ⚠️ **위 발견자는 `--min-` 이 붙은 줄만 본다 — 맨 명령은 못 본다.** 실측(2026-09-01):
+# `development-setup.md` 의 ```bash 블록이 `node scripts/check-docs.mjs .` 였다. 최저치는
+# **opt-in** 이고 `--strict` 없이는 링크 대상 부재도 경고에 그쳐 **exit 0** 이다 — 기여자가
+# 그 블록을 그대로 돌리면 로컬 초록·CI 빨강이 다시 만들어진다(#345 를 낳은 그 경로).
+#
+# 조준점은 **펜스 안**이다. 실측 분류: 펜스 2곳(CONTRIBUTING:56 · development-setup:146)은
+# 「따라 치는 명령」이고, 산문 4곳(CLAUDE.md:46 · CONTRIBUTING:145 · docs/README:64 ·
+# language-support:25)은 「이 스크립트가 무엇을 한다」는 **서술**이다. 산문까지 걸면 수렴하지
+# 않는다 — 서술은 플래그를 적을 이유가 없다.
+_fenced="$(cd "$_REPO" && git ls-files -- '*.md' | while read -r _f; do
+  awk -v F="$_f" '
+    /^[[:space:]]*```/ { inf = !inf; next }
+    inf && /check-docs\.mjs/ && !/--strict/ { print F ":" NR }
+  ' "$_f"
+done | tr '\n' ' ')"
+assert_eq "" "$_fenced" \
+  "펜스 안의 check-docs.mjs 가 --strict/최저치 없이 적혀 있다 — 기여자가 그대로 돌리면 exit 0 이다"
+
 assert_report
