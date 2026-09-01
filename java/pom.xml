@@ -71,7 +71,7 @@
          (examples)은 각 pom 에서 true 로 덮어 건너뛴다. -->
     <japicmp.skip>false</japicmp.skip>
     <!-- ⚠️ **직전 정식 릴리스**를 적는다(RC 가 아니다). 릴리스마다 함께 올린다. -->
-    <japicmp.baseline>0.1.0</japicmp.baseline>
+    <japicmp.baseline>1.0.0</japicmp.baseline>
   </properties>
 
   <dependencyManagement>

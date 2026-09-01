@@ -27,8 +27,8 @@
 
 | 레인 | 도구 | 기준선 | 판정 근거 |
 |---|---|---|---|
-| java | japicmp (maven `verify`) | 게시 JAR `0.1.0` | 플러그인 종료코드 |
-| kotlin | japicmp CLI | 게시 JAR `0.1.0` | `--error-on-binary-incompatibility` |
+| java | japicmp (maven `verify`) | 게시 JAR `1.0.0` | 플러그인 종료코드 |
+| kotlin | japicmp CLI | 게시 JAR `1.0.0` | `--error-on-binary-incompatibility` |
 | rust | cargo-semver-checks | crates.io 직전판 | 종료코드 |
 | python | griffe check | `py-v1.0.0` 태그 | 종료코드 |
 | dotnet | SDK Package Validation | NuGet `1.0.0` | `dotnet pack` 실패 |
@@ -112,7 +112,7 @@ node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anc
   - ⚠️ **게시 확인용 URL 을 푸시 _전에_ 찌르지 말 것 — go 프록시에 음성 캐시가 박힌다.** 실측(2026-09-01): `go/v1.0.0` 을 밀기 전에 `@v/v1.0.0.info` 를 조회해 `unknown revision` 이 캐시됐고, 푸시 뒤 **20분 넘게 404** 가 유지됐다. `go-release.yml` 의 워밍 스텝도 같은 404 를 맞았는데 `|| true` 라 워크플로는 초록으로 끝났다.
   - ⚠️ **그때 참인 판정은 `.info` 가 아니다.** 같은 시각 `@latest` 는 `{"Version":"v1.0.0","Ref":"refs/tags/go/v1.0.0"}`, `@v/list` 는 `v1.0.0` 포함, `sum.golang.org` 는 `h1:` 해시를 냈고, **깨끗한 모듈 캐시의 `go list -m …@v1.0.0` 이 성공**했다. 소비자 경로가 참인 판정이다 — 엔드포인트 하나의 404 로 미게시를 결론내지 않는다.
   - ⚠️ 「태그가 나쁜가 / 캐시가 낡았는가」는 `GOPROXY=direct go list -m …@v1.0.0` 로 가른다. 그것이 성공하면 태그는 정상이고 프록시 문제다.
-- [ ] **P-4 게시 확인 뒤 API 게이트 기준선 7자리를 올린다.** `python-ci.yml`(`--against`)·`dotnet` csproj(`PackageValidationBaselineVersion`)·`ruby-ci.yml`(`BASELINE`)·`node-ci.yml`(`BASELINE`)·`php-ci.yml`(태그) **완료** — 그 다섯이 `1.0.0` 을 실제로 게시했다. 남은 둘: `java/pom.xml`(`japicmp.baseline`) · `kotlin-ci.yml`(`BASELINE`) — 둘 다 Portal 수동 Publish 뒤 전파 확인이 선행조건이다. ⚠️ **게시 전에는 못 올린다** — 없는 버전을 받으러 간다(위 경고). 안 올리면 각 README 의 「직전 게시본과 대조한다」가 다음 릴리스부터 거짓이 된다.
+- [x] **P-4 게시 확인 뒤 API 게이트 기준선 7자리를 올린다.** 일곱 자리 전부 `1.0.0` 계열로 올렸다 — `python-ci.yml`(`--against py-v1.0.0`) · `dotnet` csproj(`1.0.0`) · `ruby-ci.yml`(`ruby-v1.0.0`) · `node-ci.yml`(`1.0.0`) · `php-ci.yml`(`php-v1.0.0`) · `java/pom.xml`(`japicmp.baseline` `1.0.0`) · `kotlin-ci.yml`(`1.0.0`). rust·go 는 자리가 없다(도구가 직전 릴리스를 자동 추론).
   - ⚠️ **「기준선 == 현재 버전이면 게이트가 공허하다」는 틀렸다** — 감사 초안이 그렇게 적었고 **변이로 반증했다**. dotnet 은 `csproj` 의 `<Version>` 도 `1.0.0` 이라 둘이 같아지는데, `AuthClient.LogoutAsync` 를 `public` → `internal` 로 바꾸자 `error CP0002 … [기준선]에는 있지만 …에는 없습니다` 로 **rc=1** 이 났다. Package Validation 이 비교하는 것은 버전 번호가 아니라 **패키지 내용**이다.
   - ⚠️ **로컬에서 잴 때 NuGet HTTP 캐시를 먼저 비운다.** 게시 직후 `NU1102 … 3 버전을 찾았습니다` 가 나와 「미게시」로 오독했는데, 레지스트리는 이미 네 개를 서빙 중이었다. `dotnet nuget locals http-cache --clear` 뒤 rc=0.
   - ⚠️ **선행조건이 둘로 갈린다.** `php`·`ruby` 는 `git archive <태그>` 로 읽으므로 **태그만** 있으면 되고, `java`·`kotlin`·`node`·`dotnet` 은 **원격 아티팩트**가 실제로 받아져야 한다(전파 지연을 폴링한다). 태그 직후 여섯을 한 PR 로 묶으면 뒤 넷이 404 로 죽는다.
