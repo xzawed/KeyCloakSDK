@@ -171,4 +171,26 @@ done
 # ⚠️ 공허성 — 추출이 전부 빈 문자열이면 위 루프가 ""=="" 로 조용히 통과한다.
 assert_eq "7" "$_ab_seen" "df_api_baseline 이 선언한 자리가 정확히 일곱이어야 한다(rust·go 는 자리 없음)"
 
+# ---- Central 수동 게시 스위치 두 자리 ----
+#
+# Maven Central 은 게시 후 철회 수단이 **전혀 없다**(DEPLOY.md §6 — 다른 여덟 레지스트리와
+# 다른 유일한 자리다). 두 JVM 레인의 회복 지점은 「Portal 스테이징에서 사람이 Publish 를
+# 누르기 전」 하나뿐이고, 그 성질을 소유하는 것이 이 두 스위치다:
+#
+#     java/pom.xml             <autoPublish>false</autoPublish>
+#     kotlin/build.gradle.kts  publishToMavenCentral(automaticRelease = false)
+#
+# ⚠️ 두 파일의 주석이 **「기본값 상속에 기대면 안 된다」고 이미 적어 놓았는데 그것을 보는
+# 자리가 없었다** — 변이 실측: 둘을 `true` 로 뒤집어도 가드 23/23 과 check-docs 가 전부 통과했다.
+# 값을 뒤집는 변이는 리뷰에서 한 글자로 보이고, 그 대가는 되돌릴 수 없는 게시다.
+#
+# 기대값을 리터럴 `false` 로 박는 것이 맞다 — 이것은 버전처럼 움직이는 값이 아니라 **정책**이고,
+# 바꾸려면 사람이 이 어서션을 함께 지워야 한다(그게 목적이다).
+_cp_java="$(grep -oE '<autoPublish>[^<]*' "$_ab_root/java/pom.xml" | sed 's/.*>//' | head -1)"
+_cp_kt="$(grep -oE 'publishToMavenCentral\(automaticRelease *= *[A-Za-z]+' "$_ab_root/kotlin/build.gradle.kts" | sed 's/.*= *//' | head -1)"
+assert_eq "false" "${_cp_java:-없음}" \
+  "java/pom.xml 의 <autoPublish> 가 false 가 아니다 — Central 은 게시 후 철회가 없고 사람의 Publish 클릭이 유일한 회복 지점이다"
+assert_eq "false" "${_cp_kt:-없음}" \
+  "kotlin/build.gradle.kts 의 automaticRelease 가 false 가 아니다 — 위와 같은 이유(자매 레인이라 함께 무너진다)"
+
 assert_report
