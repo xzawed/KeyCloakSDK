@@ -5,8 +5,16 @@ paths:
   - "harness/**"
   - "DEPLOY.md"
 ---
-<!-- doc-budget: max-bytes=9720 -->
-<!-- 9200 → 9720 (2026-08-29, 같은 날 두 번째): 주간 `schedule` 규약 한 줄. ⚠️ 하루에 두 번 올린
+<!-- doc-budget: max-bytes=9985 -->
+<!-- 9720 → 9985 (2026-09-02): 래칫 조건 (1) — 증가분이 **기계 검증을 사 온다**. 이 절의 규약이
+     「가드가 강제하는데 아무 데도 안 적힌 불변식을 한 줄씩」이고, 이번 줄이 가리키는
+     `test-selftest-hygiene.sh` 규칙 5 는 **이 PR 에서 새로 생긴 검사**다(그전에는 아무도 안 봤다).
+     ⚠️ 직전 주석이 「다음 증가는 더 엄격히 봐야 한다」고 적어 두었으므로 그 기준으로 잰다:
+     초안 373B → 문장을 다듬어 265B 로 줄인 뒤 **남은 만큼만** 올렸다(목표 바이트가 아니라
+     필요 바이트). 담은 것 셋이 전부 수행 방법이다 — (1) 규칙, (2) `paths:` 가 잡을 스킵하는 것이
+     아니라 **체크를 안 만든다**는 성질(그것이 왜 레인 배선으로는 부족한지), (3) 소유자와
+     그 소유자가 **전제부터 검사한다**는 사실. 하나를 빼면 다음 세션이 레인에 배선하고 끝낸다.
+     9200 → 9720 (2026-08-29, 같은 날 두 번째): 주간 `schedule` 규약 한 줄. ⚠️ 하루에 두 번 올린
      것을 그대로 적는다 — 래칫 크리프로 보일 수 있고, 실제로 다음 증가는 더 엄격히 봐야 한다.
      그럼에도 올린 근거: 이 줄이 담은 넷이 전부 **수행 방법**이다 — (1) 주간 스케줄이 있다는 사실,
      (2) `paths` 가 그것을 안 거른다는 성질, (3) 겨누는 것이 환경 드리프트라는 범위, (4) **크론을
@@ -71,4 +79,5 @@ Each of these was enforced by a guard and written down nowhere — so the only w
 - ⚠️ **Every self-test file must call `assert_report` as its last line.** That call is the *only* place the failure count becomes an exit code (`scripts/test/assert.sh`) — omit it and a file whose assertions all fail still exits 0, which reads as a passing guard.
 - ⚠️ **A job that runs `govulncheck` must pin `check-latest: true` on `setup-go`.** Without it the job can resolve a cached toolchain and scan against a stale vulnerability database — a green scan that proves nothing. `scripts/check-ci-permissions.mjs` requires the literal.
 - ⚠️ **`check-ci-permissions.mjs` takes a `--min-release=<n>` floor.** A guard that selects its targets by glob goes vacuous the moment the glob stops matching; the floor makes that failure loud instead. The number lives in `repo-hygiene.yml`, not here.
+- ⚠️ **A guard under `scripts/` must be exercised by `repo-hygiene.yml`** — directly or via a self-test it runs. That is the only workflow with no `paths:` filter, so a lane-only guard creates **no check** on the PR editing it. `test-selftest-hygiene.sh` rule 5 owns it and asserts that premise first.
 - ⚠️ **Release workflows carry `# >>> prerelease-classify` / `# <<< prerelease-classify` marker blocks.** `scripts/test/test-release-prerelease.sh` finds the classification logic by those markers, not by line position — delete or rename them and the prerelease/stable classification stops being checked.
