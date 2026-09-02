@@ -25,6 +25,31 @@ ROOT="$DIR/../.."
 # 언어가 다시 생기면 "기대값을 모른다"고 시끄럽게 실패하고, 사람이 그때 값을 정한다.
 # (같은 이유로 호환성 표 루프의 `0.1.0` 폴백도 함께 제거했다.)
 
+# ---- 코드펜스에서 버전을 뽑는 정규식 — SSOT 파생 ----
+#
+# 아래 두 자리(패키지 README 펜스 · getting-started 설치 절)가 같은 패턴으로 버전을 뽑는다.
+# ⚠️ 그 패턴은 **리터럴로 두 번 넓혀졌다**: `0\.` → 1.0 게시에서 공허해져 `[01]\.` 로.
+# 같은 실수의 세 번째 판은 **2.x** 다 — 그때 `[01]\.` 은 추출 0건이 되고 `_bad` 가 늘 빈
+# 문자열이라 **어서션이 통째로 조용해진다**(값이 틀려도 통과한다). 손으로 넓히는 대신 게시
+# SSOT 의 최대 major 에서 클래스를 만든다 — 기대값이 뽑히지 않는 상태가 구조적으로 불가능해진다.
+PIN_MAXMAJ=0
+for L in $DEPLOY_LANGS; do
+  _v="$(df_published_version "$L" 2>/dev/null || true)"
+  [ -n "$_v" ] || continue
+  _mj="${_v%%.*}"
+  case "$_mj" in ''|*[!0-9]*) continue ;; esac
+  [ "$_mj" -gt "$PIN_MAXMAJ" ] && PIN_MAXMAJ="$_mj"
+done
+# ⚠️ major 가 두 자리가 되면 이 구성 자체가 성립하지 않는다 — 문자클래스로 못 만들고,
+# `[0-9][0-9]?` 로 넓히면 Keycloak 26.x 를 삼킨다. 조용히 넘어가지 말고 여기서 운다.
+assert_ok test "$PIN_MAXMAJ" -ge 1
+assert_ok test "$PIN_MAXMAJ" -le 9
+PIN_RE="[0-$PIN_MAXMAJ]\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*"
+
+# ⚠️ 대조군 — 펜스에서 실제로 버전을 뽑은 언어 수. 아래 루프의 `_bad` 는 **추출이 0건이어도**
+# 빈 문자열이라 통과한다. 추출 자체가 죽으면(펜스 마커·경로 규칙·정규식) 이 수가 먼저 떨어진다.
+FENCE_SEEN=0
+
 for L in $DEPLOY_LANGS; do
   f="$ROOT/$L/README.md"
   assert_ok test -f "$f"
@@ -80,10 +105,13 @@ for L in $DEPLOY_LANGS; do
   # 전부 SDK 버전 핀이고, 다른 버전(Keycloak 26.6 · PHP 8.3 · Node 22 · fschmtt 0.42.0)은
   # 펜스 안에 등장하지 않는다.
   # ⚠️ **`0\.` 만 뽑으면 1.0 에서 이 검사가 통째로 공허해진다** — 펜스가 `1.0.0` 을 핀해도 추출이
-  # 0건이라 `_bad` 가 항상 빈 문자열이다. `[01]\.` 로 넓혔다(같은 이유로 아래 getting-started 쪽도).
-  # 26.6(Keycloak)·8.3(PHP)·2.2(Kotlin) 류는 여전히 구조적으로 안 걸린다 — 첫 자리가 0 도 1 도 아니다.
-  _bad="$(awk '/^```/ { f = !f; next } f' "$f" \
-    | grep -oE '[01]\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' | sort -u | grep -Fxv "$_want" || true)"
+  # 0건이라 `_bad` 가 항상 빈 문자열이다. 그래서 패턴은 리터럴이 아니라 **SSOT 파생 `$PIN_RE`** 다
+  # (위 블록). 26.6(Keycloak)·8.3(PHP)·2.2(Kotlin) 류는 첫 자리가 클래스 밖이라 안 걸린다 —
+  # ⚠️ 함대가 2.x 로 가면 kotlin 툴체인 `2.4.10` 류가 클래스 안으로 들어온다. 오탐은 시끄럽고
+  #    공허는 조용하니 그 교환은 의도한 것이다(실측 2026-09-02: 아홉 펜스에 major≥2 삼중항 0건).
+  _fence="$(awk '/^```/ { f = !f; next } f' "$f" | grep -oE "$PIN_RE" | sort -u || true)"
+  [ -n "$_fence" ] && FENCE_SEEN=$((FENCE_SEEN + 1))
+  _bad="$(printf '%s\n' "$_fence" | grep -v '^$' | grep -Fxv "$_want" || true)"
   assert_eq "" "$_bad" \
     "$L/README.md 코드펜스에 핀된 버전이 기대값($_want)과 다르다 — 소비자에게 없는 좌표를 권하게 된다"
 
@@ -112,6 +140,11 @@ done
 # 겪은 실패다). 개수를 SSOT에서 파생해 맞춘다.
 n=0
 for L in $DEPLOY_LANGS; do n=$((n + 1)); done
+
+# ⚠️ 두 번째 대조군 — 「루프가 돌았다」와 「펜스에서 버전이 뽑혔다」는 다르다. 하한은 실측치다
+# (2026-09-02: java·node·go·kotlin 넷이 펜스에 버전을 핀한다. 나머지 다섯은 리졸버가 고르게
+# 두는 것이 옳아 0건이다). 핀하던 언어가 조용히 핀을 잃으면 여기서 먼저 떨어진다.
+assert_ok test "$FENCE_SEEN" -ge 4
 assert_ok test "$n" -ge 9
 
 # ---- 루트 문서의 게시 현황 주장 ----
@@ -564,7 +597,7 @@ for L in $DEPLOY_LANGS; do
     inlang && /^### / { ins = ($0 ~ /^### 3\) Installation/) ? 1 : 0 }
     /^```/ { f = !f; next }
     inlang && ins && f { print }
-  ' "$gs" | grep -oE '[01]\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' | sort -u || true)"
+  ' "$gs" | grep -oE "$PIN_RE" | sort -u || true)"
   [ -n "$_vers" ] || continue   # 설치 명령에 버전을 안 쓰는 언어(node·rust)는 대조할 값이 없다
   body_seen=$((body_seen + 1))
   _bad="$(printf '%s\n' "$_vers" | grep -Fxv "$_want" || true)"
@@ -572,7 +605,10 @@ for L in $DEPLOY_LANGS; do
     "$L 의 getting-started 설치 절 코드펜스에 게시 SSOT($_want)와 다른 버전이 있다 — 소비자가 없는 좌표를 복사한다"
 done
 # ⚠️ 대조군 — H2 표기가 바뀌면 위 루프가 전부 `continue`로 빠져 **한 건도 안 돌고 통과**한다.
-assert_ok test "$body_seen" -ge 6
+# ⚠️ 하한은 **실측치**여야 한다 — `6` 이던 시절 실제는 7이었고, 그 1칸이 「한 언어가 조용히
+# 설치 절의 버전을 잃는」 변이를 통째로 통과시켰다(2026-09-02 실측: java·python·go·dotnet·
+# php·ruby·kotlin 일곱. node·rust 는 설치 명령에 버전을 안 써서 0건이 옳다).
+assert_ok test "$body_seen" -ge 7
 
 # ---- language-support 상태 매트릭스의 **버전 문자열** ↔ df_published_version ----
 #
