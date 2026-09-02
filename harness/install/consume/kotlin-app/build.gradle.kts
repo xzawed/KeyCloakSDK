@@ -1,6 +1,6 @@
 // 설치 검증용 소비자 Gradle 프로젝트(Kotlin 참조 구현) — kotlin/(SDK 소스 트리) 접근 없이,
 // nginx(compose 서비스 mvn-repo-kotlin)가 정적 서빙하는 staged .m2에서 저장소 해석으로 설치한
-// `io.github.xzawed:keycloak-sdk-kotlin:0.1.0`(게시된 릴리스 패키지)을 소비한다. harness/apps/kotlin/src의
+// `io.github.xzawed:keycloak-sdk-kotlin`(게시된 릴리스 패키지)을 소비한다. harness/apps/kotlin/src의
 // Application.kt(무변경)를 boot 앱으로 그대로 재사용하고, Quickstart.kt는 설치 스모크용 별도 main이다.
 //
 // ⚠️ 이 build.gradle.kts는 harness/apps/kotlin/build.gradle.kts와 딱 한 가지만 다르다: SDK 의존성 소스가
@@ -28,6 +28,11 @@ val ktorVersion = "3.5.2"
 
 dependencies {
     // ← 유일한 차이점: 소스 빌드(mavenLocal)가 아니라 레지스트리에서 설치된 게시 패키지.
+    // ⚠️ **이 숫자는 검증 대상 버전이 아니다.** `consume/kotlin-run.sh` 가 컨테이너 안에서
+    // `-e PKG_VER` 로 이 줄을 sed 치환하므로(그 스크립트 26행), 실제로 해석되는 버전은
+    // install-verify.sh 가 넘긴 값이다. 여기 남은 값은 **단독 실행용 기본값**이고, 그리고
+    // `security-audit.yml` 의 harness-kotlin 잡이 컨테이너 밖에서 해석하는 값이기도 하다 —
+    // 그래서 **Central 에 실재하는 버전이어야** 한다(그 잡은 미해결 좌표에 fail-closed 다).
     implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0")
     implementation("io.ktor:ktor-server-core:$ktorVersion")
     implementation("io.ktor:ktor-server-netty:$ktorVersion")
