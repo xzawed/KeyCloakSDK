@@ -193,4 +193,35 @@ assert_eq "false" "${_cp_java:-없음}" \
 assert_eq "false" "${_cp_kt:-없음}" \
   "kotlin/build.gradle.kts 의 automaticRelease 가 false 가 아니다 — 위와 같은 이유(자매 레인이라 함께 무너진다)"
 
+# ---- examples 모듈을 Central 번들에서 빼는 유일한 자리 ----
+#
+# `keycloak-sdk-examples` 는 소비자 좌표가 아닌데 `0.1.0-RC1`·`0.1.0` 이 실제로 repo1 에 올라갔다
+# (#357 — 모듈 쪽 `maven.deploy.skip` 은 이 플러그인의 속성이 아니라 **무효**였고, 게시된 pom 안에
+# 그 무효한 속성이 그대로 들어 있었다). Central 은 철회 수단이 없으므로 그 좌표는 영구다.
+# 지금 그것을 막는 것은 부모 POM 의 `<excludeArtifact>` **한 줄**뿐인데 보는 자리가 0 이었다.
+#
+# ⚠️ 리터럴로 박지 않는다 — 위험은 「지운다」보다 **「examples 를 개명한다」** 다. 플러그인은
+# `excludeArtifacts.contains(artifact.getArtifactId())` 로 **맨 artifactId** 를 매칭하므로
+# (`PublishMojo.java:374,409`), 모듈 이름이 바뀌면 제외가 조용히 안 걸리고 다음 릴리스에서
+# examples 가 다시 Central 로 간다. 그래서 기대값을 examples POM 에서 **파생**한다.
+_ex_pom="$_ab_root/java/keycloak-sdk-examples/pom.xml"
+# ⚠️ 첫 `<artifactId>` 는 `<parent>` 의 것이다 — `</parent>` 뒤부터 읽는다.
+_ex_id="$(sed -n '/<\/parent>/,$p' "$_ex_pom" 2>/dev/null | grep -oE '<artifactId>[^<]*' | head -1 | sed 's/.*>//')"
+_ex_excl="$(grep -oE '<excludeArtifact>[^<]*' "$_ab_root/java/pom.xml" | sed 's/.*>//' | head -1)"
+# ⚠️ 공허성 대조군은 **비었는가**만 본다 — 여기에 이름을 리터럴로 박으면 「모듈을 개명하고
+# 제외도 함께 고친」 정상 변경까지 막는다(첫 구현이 그랬고 변이검증에서 발현했다).
+# 이 가드가 겨누는 것은 이름이 아니라 **둘이 갈리는 것**이다.
+assert_eq "nonempty" "$([ -n "$_ex_id" ] && echo nonempty || echo empty)" \
+  "examples 모듈의 artifactId 를 읽지 못했다 — 추출이 비면 아래 대조가 공허해진다"
+assert_eq "${_ex_id:-없음}" "${_ex_excl:-없음}" \
+  "java/pom.xml 의 <excludeArtifact> 가 examples 모듈의 artifactId 와 다르다 — 제외가 매치되지 않아 examples 가 Central 에 게시된다(철회 불가)"
+
+# ⚠️ `#372` 가 기각 레지스트리에 적은 되살릴 조건을 **기계로** 건다: examples 모듈에
+# `<skipPublishing>` 을 거는 안을 채택하지 않은 근거가 「publish mojo 가 aggregator=false 이고
+# examples 가 `<modules>` 의 **마지막**이라 번들 publish 자체가 그 모듈에서 일어난다」였다.
+# 순서가 바뀌면 그 근거가 사라지므로 판정을 다시 해야 한다 — 산문이 아니라 여기서 운다.
+_last_mod="$(sed -n '/<modules>/,/<\/modules>/p' "$_ab_root/java/pom.xml" | grep -oE '<module>[^<]*' | sed 's/.*>//' | tail -1)"
+assert_eq "keycloak-sdk-examples" "${_last_mod:-없음}" \
+  "java/pom.xml 의 <modules> 마지막이 examples 가 아니다 — <skipPublishing> 미채택 판정의 전제가 깨졌다(기각 레지스트리의 되살릴 조건)"
+
 assert_report
