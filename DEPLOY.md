@@ -1,5 +1,13 @@
 # Deployment Guide (DEPLOY)
-<!-- doc-budget: max-bytes=78552 -->
+<!-- doc-budget: max-bytes=79274 -->
+<!-- 78552 → 79274 (2026-09-02, +722B). 사유 (2) — **측정을 잃지 않기 위해서다.** 잔여작업
+     등록부의 E2 는 「릴리스 PR 안에서 새로 쓴다」로 남아 있었고, 그 문장들은 두 분기가
+     상호배타라 미리 쓸 수 없다. 그래서 남길 수 있는 것은 **문장이 아니라 재는 방법**이다 —
+     샌드박스 SSOT 로 실제로 돌려 목록을 먼저 받는 절차. 이번 세션이 그것을 돌려 「16건 ·
+     절반은 분기 전환, 절반은 step 1 의 평범한 편집」을 얻었는데, 그 값을 여기 적지 않으면
+     #362 → #365 와 같은 부류가 된다(재고, 그다음 잃는다).
+     ⚠️ 압축 먼저 했다 — 초안 914B 를 721B 로 다듬은 뒤 남은 만큼만 올렸다. -->
+
 <!-- 래칫 인상 77374 → 78552 (2026-09-02, +1178B). 근거는 CLAUDE.md 의 사유 (2) — 사람이 이
      문서의 역할을 채우라고 지시했다(1.0 이후 잔여작업 등록부의 E4·A3). 둘 다 **이 문서에만 있을
      수 있는 판정 방법**인데 어디에도 없었다:
@@ -399,6 +407,8 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
    ⚠️ **The same commit must also move that language's README banner and its `df_published_version`.** Each `<lang>/README.md` ships inside the package and *becomes the registry landing page*, and its banner states a **version** — so **every** release moves it, not only a newly added language. Fixing it afterwards costs a new version, because registries pin the README per version; this repo has paid that three times (`0.1.1` #318 · `0.2.1` a7629ef · `1.0.0` #343). `test-publication-claims.sh` now asserts banner ↔ `df_published_version` for all nine, so the SSOT moves in this same commit. Two things to correct:
    - the banner — state the version being released (for an RC, that it *is* published);
    - the install command — **a bare install does not get a prerelease in most ecosystems**, and the exceptions are not intuitive. Measured: pip *does* fall back to a prerelease when only prereleases exist; Cargo *does* too (`cargo add` picks it, though a hand-written `"0.1"` requirement never matches); RubyGems does **not** (`gem install` needs `--pre` or an exact version); npm does **not** (the workflow publishes a hyphenated version under dist-tag `rc`, and a bare `npm i` only reads `latest`). Check your ecosystem rather than copying another language's wording.
+
+   ⚠️ **The release that first makes the numbers diverge flips sentences that cannot be written in advance** — the two branches are mutually exclusive, so the docs can only hold one. Get the list *before* the PR: bump one language's `df_published_version` in a scratch worktree and run `sh scripts/test/test-publication-claims.sh`. Measured 2026-09-02 (python `1.0.0` → `1.0.1`): **16 failures**, half the branch flip (the fleet-summary sentence in `README.md`, `README.ko.md`, `SECURITY.md`, `getting-started.md` + the banner in the first two and `CLAUDE.md`), half the per-language edits this step already asks for. Each failure names the exact string required, so it is a copy job — once you have the list.
 
    ⚠️ **Node only**: `node/package-lock.json` records the root package's own version. Regenerate it in the same commit (`npm install --package-lock-only`) so the lock does not disagree with the manifest. Measured: `npm ci` does **not** fail on that drift today, so nothing will catch it for you.
 2. **dry-run** — locally confirm artifact generation without deploying (the relevant language in §3).
