@@ -104,6 +104,49 @@ assert_fails node "$GUARD" "$TMP"
 rm -f "$TMP/node/package-lock.json"
 assert_ok node "$GUARD" "$TMP"
 
+# ---- ruby/Gemfile.lock 의 PATH spec 이 gemspec 버전과 어긋나면 실패해야 한다 ----
+#
+# node 와 같은 부류 — 락이 자기 패키지 버전을 적는다. 자기 버전을 담는 락 셋(node·rust·ruby)
+# 중 node 는 위 블록이, rust 는 `--locked` 가 지키고 **ruby 만 무보호였다**(실측 2026-09-02).
+rm -rf "$TMP" && mkdir -p "$TMP"
+cp -r "$FIX/." "$TMP/"
+rv="$(sed -n 's/.*VERSION = "\([^"]*\)".*/\1/p' "$TMP/ruby/lib/keycloak_sdk/version.rb")"
+assert_ok test -n "$rv"
+mklock() { # $1 = PATH 절에 적을 버전
+  printf '%s\n' 'PATH' '  remote: .' '  specs:' "    keycloak-sdk ($1)" '      faraday (~> 2.0)' \
+    '' 'GEM' '  remote: https://rubygems.org/' '  specs:' '    faraday (2.14.0)' \
+    '' 'DEPENDENCIES' '  keycloak-sdk!' > "$TMP/ruby/Gemfile.lock"
+}
+
+# 일치 → 통과(대조군: 없으면 "lock 이 있으면 무조건 실패"인 가드와 구분 못 한다)
+mklock "$rv"
+assert_ok node "$GUARD" "$TMP"
+
+# 락만 낡음 → 실패
+mklock "0.0.9"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" 'Gemfile.lock 의 PATH spec "0.0.9"' "PATH spec 드리프트를 지목해야 한다"
+
+# ⚠️ 절을 안 보면 `DEPENDENCIES` 의 `keycloak-sdk!` 를 집어 추출이 조용히 빈다. PATH 절을
+# 없애고 이름만 남긴 락 — 추출 0건은 통과가 아니라 **실패**여야 한다.
+printf '%s\n' 'GEM' '  remote: https://rubygems.org/' '  specs:' '    faraday (2.14.0)' \
+  '' 'DEPENDENCIES' '  keycloak-sdk!' > "$TMP/ruby/Gemfile.lock"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" '을 찾지 못했다' "PATH 절 추출 실패를 지목해야 한다"
+
+# ⚠️ 그리고 **다른 절의 같은 이름**에 속으면 안 된다 — GEM 절에 버전 붙은 동명 줄을 심는다.
+# 절 판정이 없으면 이 값(9.9.9)을 PATH spec 으로 읽고 gemspec 과 달라 "드리프트"로 오탐한다.
+printf '%s\n' 'PATH' '  remote: .' '  specs:' "    keycloak-sdk ($rv)" \
+  '' 'GEM' '  remote: https://rubygems.org/' '  specs:' '    keycloak-sdk (9.9.9)' \
+  '' 'DEPENDENCIES' '  keycloak-sdk!' > "$TMP/ruby/Gemfile.lock"
+assert_ok node "$GUARD" "$TMP"
+
+# 대조군 — 락이 아예 없는 트리는 검사 대상이 아니다(node 쪽과 같은 이유).
+rm -f "$TMP/ruby/Gemfile.lock"
+assert_ok node "$GUARD" "$TMP"
+
 # ---- 하네스 샘플 앱이 SDK를 **리터럴 버전으로** 핀한 자리 ----
 #
 # 왜 필요한가: 2026-08-11 야간 `score-all`이 빨개졌다 —
