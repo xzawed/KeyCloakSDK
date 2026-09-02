@@ -157,4 +157,66 @@ assert_fails sh -c 'printf "%s" "  run: sh scripts/test/t.sh.disabled" | grep -q
 assert_ok grep -q 'node harness/install/report/install-matrix.test.mjs' "$HYGIENE"
 assert_fails sh -c 'printf "%s" "$(sed "s/#.*//" "$1")" | grep -q "node harness/does/not/exist.test.mjs"' _ "$HYGIENE"
 
+# ---- 규칙 5: 가드 스크립트는 **자기가 바뀐 PR 에서 돈다** ----
+#
+# 규칙 1~3 은 「파일은 있는데 돌지 않는다」를 겨눈다. 이 규칙은 그 한 칸 옆이다 —
+# **돌긴 도는데 자기를 고친 PR 에서는 안 돈다.** `paths:` 필터는 잡을 스킵하는 것이 아니라
+# 체크를 **만들지 않으므로**(#368), 언어 레인에만 배선된 가드는 그 가드를 부수는 PR 에서
+# 아무 신호도 내지 않는다. 실측(2026-09-02): 저장소의 열세 개 `scripts/*.{mjs,sh}` 중
+# `check-node-public-surface.mjs` 한 자리가 그랬다(node-ci 의 `paths:` 밖에 있었다).
+#
+# 판정 기준을 「모든 PR 에서 도는 워크플로가 그 파일을 행사하는가」로 잡는다 —
+# `repo-hygiene.yml` 이 유일하게 `paths:` 필터가 없는 워크플로이므로 대상은 그것 하나다.
+# 직접 부르거나(`node scripts/check-x.mjs`), 그것이 돌리는 자가테스트가 부르면 충족이다.
+if [ -f "$HYGIENE" ]; then
+  # ⚠️ 전제부터 검사한다 — repo-hygiene 에 `paths:` 가 붙는 순간 이 규칙 전체가 조용히 약해진다.
+  if grep -qE '^[[:space:]]*paths:' "$HYGIENE"; then
+    _A_FAIL=$((_A_FAIL + 1))
+    printf 'FAIL repo-hygiene.yml 에 paths: 필터가 생겼다 — 규칙 5 의 전제가 깨졌다(모든 PR 에서 돌지 않는다)\n' >&2
+  else
+    _A_PASS=$((_A_PASS + 1))
+  fi
+  HY_RUN="$(sed 's/#.*//' "$HYGIENE")"
+  GUARDS="$(cd "$ROOT" && git ls-files -- 'scripts/' | grep -E '^scripts/[^/]+\.(mjs|sh)$' || true)"
+  # 스윕 공허성 — 목록이 비면 아래 루프가 0건을 돌고 통과한다(규칙 3·4 와 동형).
+  G_N="$(printf '%s\n' "$GUARDS" | grep -c . || true)"
+  if [ "$G_N" -ge 13 ]; then
+    _A_PASS=$((_A_PASS + 1))
+  else
+    _A_FAIL=$((_A_FAIL + 1))
+    printf 'FAIL scripts/ 최상위 가드 스크립트를 %s개만 찾았다(하한 13) — 스윕이 깨졌다\n' "$G_N" >&2
+  fi
+  # 간접 경로용 본문 — repo-hygiene 이 **실제로 돌리는** 자가테스트들의 주석 제거된 본문.
+  # ⚠️ **언급이 아니라 호출을 세야 한다** — 규칙 2 가 같은 실수를 이미 한 번 했다. 첫 구현은
+  # 주석까지 훑었고, 그래서 **이 파일 자신의 주석**이 `check-node-public-surface.mjs` 를
+  # 인용하고 있어 배선을 통째로 지운 변이가 통과했다(변이검증에서 발현). 주석을 걷어내고
+  # 경로 형태(`.../<파일>`)로만 인정한다.
+  # ⚠️ 가드마다 다시 훑지 않고 **한 번만** 모은다 — 13×23 스폰은 이 PC 에서 1분이 넘었다.
+  WIRED_BODY=""
+  for t in "$DIR"/test-*.sh; do
+    tb="$(basename "$t")"
+    printf '%s' "$HY_RUN" | grep -qF "scripts/test/$tb" || continue
+    WIRED_BODY="$WIRED_BODY
+$(sed 's/#.*//' "$t")"
+  done
+  for g in $GUARDS; do
+    gb="$(basename "$g")"
+    if printf '%s' "$HY_RUN" | grep -qF "$gb"; then
+      _A_PASS=$((_A_PASS + 1))
+      continue
+    fi
+    _hit=0
+    printf '%s' "$WIRED_BODY" | grep -qF "/$gb" && _hit=1
+    if [ "$_hit" -eq 1 ]; then
+      _A_PASS=$((_A_PASS + 1))
+    else
+      _A_FAIL=$((_A_FAIL + 1))
+      printf 'FAIL %s: 모든 PR 에서 도는 워크플로가 이 가드를 행사하지 않는다 — 이 파일을 고치는 PR 에서 체크가 생성조차 되지 않는다\n' "$g" >&2
+    fi
+  done
+else
+  _A_FAIL=$((_A_FAIL + 1))
+  printf 'FAIL repo-hygiene.yml을 찾지 못함(%s) — 규칙 5 검사 불가\n' "$HYGIENE" >&2
+fi
+
 assert_report

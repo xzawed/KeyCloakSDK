@@ -23,6 +23,17 @@ const FOREIGN = [/from ['"]jose['"]/, /from ['"]@keycloak\/keycloak-admin-client
 const ALLOWED_IMPORT = /keycloak-admin-client\/lib\/defs\//
 const RAW_ESCAPE = /\braw\(\)\s*:/
 
+// ⚠️ **`raw()` 예외는 파일 단위였다** — 파일 어딘가에 `raw():` 가 있으면 그 파일의 모든
+// admin-client 언급이 통과했다. 그러면 같은 파일에 **새 공개 멤버가 `KcAdminClient` 를
+// 노출해도 조용히 통과한다**(§4(b) 는 예외를 `raw()` 탈출구 하나로 못박는다).
+// 범위를 「그 import 로 들여온 **이름**이 `raw()` 선언 줄 밖에는 나타나지 않는다」로 좁힌다.
+// 실측(2026-09-02): 이 예외를 쓰는 파일은 `node/dist/admin/index.d.ts` 하나이고 그 안에서
+// `KcAdminClient` 는 import 줄과 `raw(): KcAdminClient;` 두 줄에만 나타난다 — 오탐 0.
+const ADMIN_IMPORT_BINDINGS =
+  /^\s*import\s+(?:type\s+)?(?:([A-Za-z_$][\w$]*)\s*,?\s*)?(?:\{([^}]*)\})?\s*from\s+['"]@keycloak\/keycloak-admin-client['"]/
+// 주석 줄은 이름을 언급만 할 수 있으므로 사용처로 세지 않는다.
+const COMMENT_LINE = /^\s*(\/\/|\/\*|\*)/
+
 function walk(dir, out = []) {
   let ents
   try {
@@ -51,16 +62,47 @@ if (files.length === 0) {
 for (const f of files) {
   const rel = relative(ROOT, f).replace(/\\/g, '/')
   const text = readFileSync(f, 'utf8')
+  const lines = text.split(/\r?\n/)
   const hasRawEscape = RAW_ESCAPE.test(text)
-  for (const line of text.split(/\r?\n/)) {
+
+  // `raw()` 예외로 통과시킨 import 가 들여온 이름들.
+  const rawBindings = new Set()
+
+  for (const line of lines) {
     if (!FOREIGN.some((re) => re.test(line))) continue
     if (ALLOWED_IMPORT.test(line)) continue // §4(b) — representation 타입
-    if (hasRawEscape && /keycloak-admin-client/.test(line)) continue // §4(b) — raw() 탈출구
+    if (hasRawEscape && /keycloak-admin-client/.test(line)) {
+      // §4(b) — raw() 탈출구. 이름을 기억해 두고 **사용처**를 아래에서 좁힌다.
+      const m = ADMIN_IMPORT_BINDINGS.exec(line)
+      if (m) {
+        if (m[1]) rawBindings.add(m[1])
+        for (const named of (m[2] ?? '').split(',')) {
+          const id = named.trim().split(/\s+as\s+/).pop()?.trim()
+          if (id) rawBindings.add(id)
+        }
+      }
+      continue
+    }
     errors.push(
       `${rel}: 공개 선언이 하위 라이브러리 타입을 노출한다 — ${line.trim()}\n` +
         `  §4(b) 예외는 둘뿐이다(admin representation · raw()). 생성자라면 \`private\` 이나 ` +
         `\`@internal\`(+ tsconfig \`stripInternal\`)로 선언에서 지운다.`,
     )
+  }
+
+  // ⚠️ 예외의 **범위**를 좁힌다 — import 를 통과시킨 것이 그 파일 전체를 통과시키는 것은 아니다.
+  for (const binding of rawBindings) {
+    const use = new RegExp(`\\b${binding.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+    for (const line of lines) {
+      if (!use.test(line)) continue
+      if (ADMIN_IMPORT_BINDINGS.test(line)) continue // import 줄 자체
+      if (COMMENT_LINE.test(line)) continue
+      if (RAW_ESCAPE.test(line)) continue // `raw(): KcAdminClient` — 유일하게 허용되는 사용처
+      errors.push(
+        `${rel}: \`raw()\` 예외로 들여온 \`${binding}\` 이 raw() 밖의 공개 선언에 쓰였다 — ${line.trim()}\n` +
+          `  §4(b) 의 예외는 **탈출구 하나**다. 같은 파일이라는 이유로 넓어지지 않는다.`,
+      )
+    }
   }
 }
 

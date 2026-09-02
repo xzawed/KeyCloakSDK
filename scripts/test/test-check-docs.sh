@@ -1257,4 +1257,57 @@ for _ds in $_doc_sites; do
     "$_ds 의 check-docs 최저치가 repo-hygiene.yml 과 다르다 — 낮은 쪽은 조용히 덜 검사한다(로컬만 초록)"
 done
 
+# ⚠️ **위 발견자는 `--min-` 이 붙은 줄만 본다 — 맨 명령은 못 본다.** 실측(2026-09-01):
+# `development-setup.md` 의 ```bash 블록이 `node scripts/check-docs.mjs .` 였다. 최저치는
+# **opt-in** 이고 `--strict` 없이는 링크 대상 부재도 경고에 그쳐 **exit 0** 이다 — 기여자가
+# 그 블록을 그대로 돌리면 로컬 초록·CI 빨강이 다시 만들어진다(#345 를 낳은 그 경로).
+#
+# 조준점은 **펜스 안**이다. 실측 분류: 펜스 2곳(CONTRIBUTING:56 · development-setup:146)은
+# 「따라 치는 명령」이고, 산문 4곳(CLAUDE.md:46 · CONTRIBUTING:145 · docs/README:64 ·
+# language-support:25)은 「이 스크립트가 무엇을 한다」는 **서술**이다. 산문까지 걸면 수렴하지
+# 않는다 — 서술은 플래그를 적을 이유가 없다.
+_fenced="$(cd "$_REPO" && git ls-files -- '*.md' | while read -r _f; do
+  awk -v F="$_f" '
+    /^[[:space:]]*```/ { inf = !inf; next }
+    inf && /check-docs\.mjs/ && !/--strict/ { print F ":" NR }
+  ' "$_f"
+done | tr '\n' ' ')"
+assert_eq "" "$_fenced" \
+  "펜스 안의 check-docs.mjs 가 --strict/최저치 없이 적혀 있다 — 기여자가 그대로 돌리면 exit 0 이다"
+
+# ---- 검사 10c: 아카이브 blob 참조(`git show <sha>:<path>`) ----
+#
+# 이 저장소는 계획서를 **아카이브하고 읽는 명령만 남기는** 규약을 쓴다(#365 · #373). 그 명령이
+# 판정 방법의 유일한 소재지인데, sha 한 글자가 틀려도 문서는 멀쩡해 보이고 지식만 사라진다.
+# 픽스처 안에 진짜 git 저장소를 만들어 **참인 참조와 거짓 참조를 나란히** 놓는다 —
+# 그래야 실패가 "참조가 틀렸다" 때문인지 "여기가 git 저장소가 아니다" 때문인지 갈린다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+( cd "$TMP" \
+  && git init -q . \
+  && git add -A \
+  && git -c user.email=t@example.invalid -c user.name=t commit -qm fixture ) >/dev/null 2>&1
+_sha="$(cd "$TMP" && git rev-parse --short=8 HEAD)"
+assert_ok test -n "$_sha"
+
+# (a) 실재하는 참조 → 통과. 최저치도 함께 켜서 추출이 실제로 1건 잡혔음을 고정한다.
+printf '\n아카이브: `git show %s:ok.md` 로 읽는다.\n' "$_sha" >> "$TMP/ok.md"
+assert_ok node "$GUARD" "$TMP" --min-blob-refs=1
+
+# (b) sha 를 존재하지 않는 값으로 → 실패해야 한다(문서는 그대로 멀쩡해 보인다).
+_out="$(node "$GUARD" "$TMP" --min-blob-refs=1 2>&1 || true)"
+assert_contains "$_out" "archive blob refs" "정상 경로에서 참조 수를 인쇄한다"
+sed -i "s/git show $_sha:ok.md/git show deadbeefdeadbeef:ok.md/" "$TMP/ok.md"
+assert_fails node "$GUARD" "$TMP" --min-blob-refs=1
+_out="$(node "$GUARD" "$TMP" --min-blob-refs=1 2>&1 || true)"
+assert_contains "$_out" "아카이브 참조가 해석되지 않는다" "죽은 sha 를 그 이유로 지목한다"
+
+# (c) 경로만 틀린 경우도 잡아야 한다 — sha 가 살아 있으면 통과하는 절반짜리 검사를 막는다.
+sed -i "s/git show deadbeefdeadbeef:ok.md/git show $_sha:does-not-exist.md/" "$TMP/ok.md"
+assert_fails node "$GUARD" "$TMP" --min-blob-refs=1
+
+# (d) 공허성 대조군 — 참조 표기가 바뀌어 추출이 0건이 되면 "해석 실패 0"이 통과로 보인다.
+sed -i "/아카이브:/d" "$TMP/ok.md"
+assert_ok    node "$GUARD" "$TMP"                      # 참조가 없으면 검사할 것도 없다
+assert_fails node "$GUARD" "$TMP" --min-blob-refs=1    # 그러나 최저치를 켜면 무효 측정으로 실패한다
+
 assert_report

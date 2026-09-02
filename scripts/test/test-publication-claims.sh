@@ -4,8 +4,8 @@
 # 왜 이 가드가 필요한가: 이 README들은 **레지스트리 랜딩 페이지**가 된다. 패키지 안에 담겨
 # 올라가고, 레지스트리는 README를 **버전마다 고정**한다 — 게시 후에 고치려면 새 버전을 태워야
 # 한다(DEPLOY.md §4 step 1의 경고). 그래서 "게시했는데 배너가 아직 미게시라고 말하는" 실수는
-# 되돌리는 데 좌표 하나가 든다. 9개 언어를 손으로 맞춰 왔고 지금은 전부 맞지만, 남은 5개를
-# 게시하는 동안 다섯 번 더 틀릴 기회가 있다.
+# 되돌리는 데 좌표 하나가 든다. 아홉이 전부 게시된 지금, 틀릴 기회는 「게시 전환」이 아니라
+# **릴리스마다** 온다 — 배너가 말하는 것은 게시 여부가 아니라 **버전**이기 때문이다(#343).
 #
 # ⚠️ 이 어서션은 **양방향이라야 의미가 있다**. "미게시면 '아직'이라고 적혀 있어야 한다"만
 # 검사하면 게시 후 배너를 안 고쳐도 통과하고, 그 반대만 검사하면 새 언어가 추가될 때 빈
@@ -24,6 +24,31 @@ ROOT="$DIR/../.."
 # 틀린 값을 단언**하게 된다. 그래서 조용한 폴백 대신 아래 `-n` 어서션으로 바꿨다 — 미게시
 # 언어가 다시 생기면 "기대값을 모른다"고 시끄럽게 실패하고, 사람이 그때 값을 정한다.
 # (같은 이유로 호환성 표 루프의 `0.1.0` 폴백도 함께 제거했다.)
+
+# ---- 코드펜스에서 버전을 뽑는 정규식 — SSOT 파생 ----
+#
+# 아래 두 자리(패키지 README 펜스 · getting-started 설치 절)가 같은 패턴으로 버전을 뽑는다.
+# ⚠️ 그 패턴은 **리터럴로 두 번 넓혀졌다**: `0\.` → 1.0 게시에서 공허해져 `[01]\.` 로.
+# 같은 실수의 세 번째 판은 **2.x** 다 — 그때 `[01]\.` 은 추출 0건이 되고 `_bad` 가 늘 빈
+# 문자열이라 **어서션이 통째로 조용해진다**(값이 틀려도 통과한다). 손으로 넓히는 대신 게시
+# SSOT 의 최대 major 에서 클래스를 만든다 — 기대값이 뽑히지 않는 상태가 구조적으로 불가능해진다.
+PIN_MAXMAJ=0
+for L in $DEPLOY_LANGS; do
+  _v="$(df_published_version "$L" 2>/dev/null || true)"
+  [ -n "$_v" ] || continue
+  _mj="${_v%%.*}"
+  case "$_mj" in ''|*[!0-9]*) continue ;; esac
+  [ "$_mj" -gt "$PIN_MAXMAJ" ] && PIN_MAXMAJ="$_mj"
+done
+# ⚠️ major 가 두 자리가 되면 이 구성 자체가 성립하지 않는다 — 문자클래스로 못 만들고,
+# `[0-9][0-9]?` 로 넓히면 Keycloak 26.x 를 삼킨다. 조용히 넘어가지 말고 여기서 운다.
+assert_ok test "$PIN_MAXMAJ" -ge 1
+assert_ok test "$PIN_MAXMAJ" -le 9
+PIN_RE="[0-$PIN_MAXMAJ]\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*"
+
+# ⚠️ 대조군 — 펜스에서 실제로 버전을 뽑은 언어 수. 아래 루프의 `_bad` 는 **추출이 0건이어도**
+# 빈 문자열이라 통과한다. 추출 자체가 죽으면(펜스 마커·경로 규칙·정규식) 이 수가 먼저 떨어진다.
+FENCE_SEEN=0
 
 for L in $DEPLOY_LANGS; do
   f="$ROOT/$L/README.md"
@@ -80,10 +105,13 @@ for L in $DEPLOY_LANGS; do
   # 전부 SDK 버전 핀이고, 다른 버전(Keycloak 26.6 · PHP 8.3 · Node 22 · fschmtt 0.42.0)은
   # 펜스 안에 등장하지 않는다.
   # ⚠️ **`0\.` 만 뽑으면 1.0 에서 이 검사가 통째로 공허해진다** — 펜스가 `1.0.0` 을 핀해도 추출이
-  # 0건이라 `_bad` 가 항상 빈 문자열이다. `[01]\.` 로 넓혔다(같은 이유로 아래 getting-started 쪽도).
-  # 26.6(Keycloak)·8.3(PHP)·2.2(Kotlin) 류는 여전히 구조적으로 안 걸린다 — 첫 자리가 0 도 1 도 아니다.
-  _bad="$(awk '/^```/ { f = !f; next } f' "$f" \
-    | grep -oE '[01]\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' | sort -u | grep -Fxv "$_want" || true)"
+  # 0건이라 `_bad` 가 항상 빈 문자열이다. 그래서 패턴은 리터럴이 아니라 **SSOT 파생 `$PIN_RE`** 다
+  # (위 블록). 26.6(Keycloak)·8.3(PHP)·2.2(Kotlin) 류는 첫 자리가 클래스 밖이라 안 걸린다 —
+  # ⚠️ 함대가 2.x 로 가면 kotlin 툴체인 `2.4.10` 류가 클래스 안으로 들어온다. 오탐은 시끄럽고
+  #    공허는 조용하니 그 교환은 의도한 것이다(실측 2026-09-02: 아홉 펜스에 major≥2 삼중항 0건).
+  _fence="$(awk '/^```/ { f = !f; next } f' "$f" | grep -oE "$PIN_RE" | sort -u || true)"
+  [ -n "$_fence" ] && FENCE_SEEN=$((FENCE_SEEN + 1))
+  _bad="$(printf '%s\n' "$_fence" | grep -v '^$' | grep -Fxv "$_want" || true)"
   assert_eq "" "$_bad" \
     "$L/README.md 코드펜스에 핀된 버전이 기대값($_want)과 다르다 — 소비자에게 없는 좌표를 권하게 된다"
 
@@ -112,6 +140,11 @@ done
 # 겪은 실패다). 개수를 SSOT에서 파생해 맞춘다.
 n=0
 for L in $DEPLOY_LANGS; do n=$((n + 1)); done
+
+# ⚠️ 두 번째 대조군 — 「루프가 돌았다」와 「펜스에서 버전이 뽑혔다」는 다르다. 하한은 실측치다
+# (2026-09-02: java·node·go·kotlin 넷이 펜스에 버전을 핀한다. 나머지 다섯은 리졸버가 고르게
+# 두는 것이 옳아 0건이다). 핀하던 언어가 조용히 핀을 잃으면 여기서 먼저 떨어진다.
+assert_ok test "$FENCE_SEEN" -ge 4
 assert_ok test "$n" -ge 9
 
 # ---- 루트 문서의 게시 현황 주장 ----
@@ -564,7 +597,7 @@ for L in $DEPLOY_LANGS; do
     inlang && /^### / { ins = ($0 ~ /^### 3\) Installation/) ? 1 : 0 }
     /^```/ { f = !f; next }
     inlang && ins && f { print }
-  ' "$gs" | grep -oE '[01]\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' | sort -u || true)"
+  ' "$gs" | grep -oE "$PIN_RE" | sort -u || true)"
   [ -n "$_vers" ] || continue   # 설치 명령에 버전을 안 쓰는 언어(node·rust)는 대조할 값이 없다
   body_seen=$((body_seen + 1))
   _bad="$(printf '%s\n' "$_vers" | grep -Fxv "$_want" || true)"
@@ -572,7 +605,10 @@ for L in $DEPLOY_LANGS; do
     "$L 의 getting-started 설치 절 코드펜스에 게시 SSOT($_want)와 다른 버전이 있다 — 소비자가 없는 좌표를 복사한다"
 done
 # ⚠️ 대조군 — H2 표기가 바뀌면 위 루프가 전부 `continue`로 빠져 **한 건도 안 돌고 통과**한다.
-assert_ok test "$body_seen" -ge 6
+# ⚠️ 하한은 **실측치**여야 한다 — `6` 이던 시절 실제는 7이었고, 그 1칸이 「한 언어가 조용히
+# 설치 절의 버전을 잃는」 변이를 통째로 통과시켰다(2026-09-02 실측: java·python·go·dotnet·
+# php·ruby·kotlin 일곱. node·rust 는 설치 명령에 버전을 안 써서 0건이 옳다).
+assert_ok test "$body_seen" -ge 7
 
 # ---- language-support 상태 매트릭스의 **버전 문자열** ↔ df_published_version ----
 #
@@ -703,6 +739,34 @@ for _ff in README.md README.ko.md SECURITY.md docs/guides/getting-started.md; do
     "$_ff 의 함대 요약 문장을 정확히 하나 찾는다(못 찾으면 이 검사가 공허해진다)"
   _fgot="$(printf '%s' "$_fl" | grep -oE '`[0-9]+\.[0-9]+\.[0-9]+`' | tr -d '`' | sort -u | tr '\n' ' ')"
   assert_eq "$_VSET" "$_fgot" "$_ff 의 함대 요약 문장이 게시 SSOT의 버전 집합과 같다"
+done
+
+# ---- 아홉 <lang>/README.md 배너의 버전 ↔ 게시 SSOT ----
+#
+# ⚠️ **이 아홉이 곧 레지스트리 랜딩 페이지다** — 레지스트리는 README 를 **버전마다** 고정하므로
+# 틀린 채 태그가 나가면 그 페이지가 영구히 굳는다. 이 저장소는 같은 부류로 **세 번** 문서 전용
+# 릴리스를 냈다(`0.1.1` #318 · `0.2.1` a7629ef · `1.0.0` #343).
+#
+# ⚠️ **그런데 이 자리는 무보호였다**(실측 2026-09-01): `node/README.md:7` 의 `1.0.0` 을 `9.9.9` 로
+# 바꿔도 publication-claims 206/0 · check-docs · check-versions 가 **전부 통과**했다. 루트 README
+# 배너는 위 `claim_at` 이 잡지만(같은 변이가 2 failed) 패키지 README 는 아무도 안 봤다.
+#
+# ⚠️ **전량 대조는 수렴하지 않는다.** 아홉 README 에는 **정당한 다른 버전**이 있다 — python 의
+# `0.1.0`·`0.2.0`, php 의 `0.1.0`(Upgrading 절), node 의 `2.0.0`(캐럿이 2.0 을 안 집는다는 설명).
+# 그래서 조준점은 **배너 한 줄**이다: `> **\`<ver>\` is on <레지스트리>**` — 게시 주장문이라
+# 문맥 없이 참/거짓이 갈린다.
+#
+# ⚠️ go 만 `v` 접두다(`v1.0.0`) — 그 레인은 태그가 곧 버전이라 표기 관용이 다르다.
+for _bl in $DEPLOY_LANGS; do
+  _bf="$_bl/README.md"
+  _bline="$(grep -m1 -E '^> \*\*`v?[0-9]+\.[0-9]+\.[0-9]+` is on ' "$ROOT/$_bf" || true)"
+  # 공허성: 배너를 못 찾으면 아래 비교가 ""=="" 로 조용히 참이 된다.
+  assert_eq "1" "$(printf '%s\n' "$_bline" | grep -c . || true)" \
+    "$_bf 의 게시 배너를 정확히 하나 찾는다(못 찾으면 이 검사가 공허해진다)"
+  _bgot="$(printf '%s' "$_bline" | grep -oE '`v?[0-9]+\.[0-9]+\.[0-9]+`' | head -1 | tr -d '`')"
+  case "$_bl" in go) _bwant="v$(df_published_version "$_bl")" ;; *) _bwant="$(df_published_version "$_bl")" ;; esac
+  assert_eq "$_bwant" "$_bgot" \
+    "$_bf 의 배너 버전이 게시 SSOT(df_published_version)와 다르다 — 이 파일이 레지스트리 랜딩 페이지다"
 done
 
 assert_report

@@ -140,4 +140,88 @@ done
 # ⚠️ 호출자의 루프 변수를 밟지 않아야 한다(POSIX sh에 이식 가능한 `local`이 없다).
 # 이 대조군이 없으면 함수가 `_l` 같은 흔한 이름을 쓰다가 호출자 이터레이터를 덮어써도 모른다.
 _l="sentinel"; df_unpublished > /dev/null; assert_eq "sentinel" "$_l" "df_unpublished 가 호출자의 _l 을 밟았다"
+
+# ---- df_api_baseline ↔ 일곱 사본 ----
+#
+# 공개 API 게이트의 기준선은 일곱 파일에 리터럴로 박혀 있었고 **그것을 보는 자리가 없었다**.
+# 안 올리면 각 `<lang>/README.md` 와 `SECURITY.md` 의 「직전 게시본과 대조한다」가 거짓이 되고,
+# 게이트는 옛 좌표와 비교하며 **조용히 통과**한다.
+#
+# ⚠️ **`df_published_version` 과 같다고 단언하지 않는다.** 둘은 반대 일정으로 움직인다 —
+# SSOT/배너는 태그 **전**(DEPLOY.md §4 step 1), 기준선은 게시 **후**(step 9). 순진한 등식은
+# 릴리스 준비 커밋마다 빨개진다. 여기서 보는 것은 **선언 ↔ 사본의 일치**뿐이다.
+_ab_root="$(cd "$DIR/../.." && pwd)"
+_ab_seen=0
+for _ab in $DEPLOY_LANGS; do
+  case "$_ab" in
+    java)   _ab_got="$(grep -oE '<japicmp\.baseline>[^<]*' "$_ab_root/java/pom.xml" | sed 's/.*>//')" ;;
+    kotlin) _ab_got="$(grep -oE "BASELINE: '[^']*'" "$_ab_root/.github/workflows/kotlin-ci.yml" | sed "s/.*'\\(.*\\)'/\\1/")" ;;
+    node)   _ab_got="$(grep -oE "BASELINE: '[^']*'" "$_ab_root/.github/workflows/node-ci.yml"   | sed "s/.*'\\(.*\\)'/\\1/")" ;;
+    ruby)   _ab_got="$(grep -oE "BASELINE: '[^']*'" "$_ab_root/.github/workflows/ruby-ci.yml"   | sed "s/.*'\\(.*\\)'/\\1/")" ;;
+    python) _ab_got="$(grep -oE -- '--against [A-Za-z0-9.-]*' "$_ab_root/.github/workflows/python-ci.yml" | sed 's/--against //')" ;;
+    php)    _ab_got="$(grep -oE 'git archive [A-Za-z0-9.-]*'  "$_ab_root/.github/workflows/php-ci.yml"    | sed 's/git archive //')" ;;
+    dotnet) _ab_got="$(grep -oE '<PackageValidationBaselineVersion>[^<]*' "$_ab_root/dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj" | sed 's/.*>//')" ;;
+    *)      _ab_got="" ;;   # rust·go — 자리 없음
+  esac
+  _ab_want="$(df_api_baseline "$_ab")"
+  [ -n "$_ab_want" ] && _ab_seen=$((_ab_seen + 1))
+  assert_eq "$_ab_want" "$_ab_got" \
+    "$_ab 의 API 게이트 기준선이 df_api_baseline 선언과 다르다 — 게이트가 옛 좌표와 비교하며 조용히 통과한다"
+done
+# ⚠️ 공허성 — 추출이 전부 빈 문자열이면 위 루프가 ""=="" 로 조용히 통과한다.
+assert_eq "7" "$_ab_seen" "df_api_baseline 이 선언한 자리가 정확히 일곱이어야 한다(rust·go 는 자리 없음)"
+
+# ---- Central 수동 게시 스위치 두 자리 ----
+#
+# Maven Central 은 게시 후 철회 수단이 **전혀 없다**(DEPLOY.md §6 — 다른 여덟 레지스트리와
+# 다른 유일한 자리다). 두 JVM 레인의 회복 지점은 「Portal 스테이징에서 사람이 Publish 를
+# 누르기 전」 하나뿐이고, 그 성질을 소유하는 것이 이 두 스위치다:
+#
+#     java/pom.xml             <autoPublish>false</autoPublish>
+#     kotlin/build.gradle.kts  publishToMavenCentral(automaticRelease = false)
+#
+# ⚠️ 두 파일의 주석이 **「기본값 상속에 기대면 안 된다」고 이미 적어 놓았는데 그것을 보는
+# 자리가 없었다** — 변이 실측: 둘을 `true` 로 뒤집어도 가드 23/23 과 check-docs 가 전부 통과했다.
+# 값을 뒤집는 변이는 리뷰에서 한 글자로 보이고, 그 대가는 되돌릴 수 없는 게시다.
+#
+# 기대값을 리터럴 `false` 로 박는 것이 맞다 — 이것은 버전처럼 움직이는 값이 아니라 **정책**이고,
+# 바꾸려면 사람이 이 어서션을 함께 지워야 한다(그게 목적이다).
+_cp_java="$(grep -oE '<autoPublish>[^<]*' "$_ab_root/java/pom.xml" | sed 's/.*>//' | head -1)"
+_cp_kt="$(grep -oE 'publishToMavenCentral\(automaticRelease *= *[A-Za-z]+' "$_ab_root/kotlin/build.gradle.kts" | sed 's/.*= *//' | head -1)"
+assert_eq "false" "${_cp_java:-없음}" \
+  "java/pom.xml 의 <autoPublish> 가 false 가 아니다 — Central 은 게시 후 철회가 없고 사람의 Publish 클릭이 유일한 회복 지점이다"
+assert_eq "false" "${_cp_kt:-없음}" \
+  "kotlin/build.gradle.kts 의 automaticRelease 가 false 가 아니다 — 위와 같은 이유(자매 레인이라 함께 무너진다)"
+
+# ---- examples 모듈을 Central 번들에서 빼는 유일한 자리 ----
+#
+# `keycloak-sdk-examples` 는 소비자 좌표가 아닌데 `0.1.0-RC1`·`0.1.0` 이 실제로 repo1 에 올라갔다
+# (#357 — 모듈 쪽 `maven.deploy.skip` 은 이 플러그인의 속성이 아니라 **무효**였고, 게시된 pom 안에
+# 그 무효한 속성이 그대로 들어 있었다). Central 은 철회 수단이 없으므로 그 좌표는 영구다.
+# 지금 그것을 막는 것은 부모 POM 의 `<excludeArtifact>` **한 줄**뿐인데 보는 자리가 0 이었다.
+#
+# ⚠️ 리터럴로 박지 않는다 — 위험은 「지운다」보다 **「examples 를 개명한다」** 다. 플러그인은
+# `excludeArtifacts.contains(artifact.getArtifactId())` 로 **맨 artifactId** 를 매칭하므로
+# (`PublishMojo.java:374,409`), 모듈 이름이 바뀌면 제외가 조용히 안 걸리고 다음 릴리스에서
+# examples 가 다시 Central 로 간다. 그래서 기대값을 examples POM 에서 **파생**한다.
+_ex_pom="$_ab_root/java/keycloak-sdk-examples/pom.xml"
+# ⚠️ 첫 `<artifactId>` 는 `<parent>` 의 것이다 — `</parent>` 뒤부터 읽는다.
+_ex_id="$(sed -n '/<\/parent>/,$p' "$_ex_pom" 2>/dev/null | grep -oE '<artifactId>[^<]*' | head -1 | sed 's/.*>//')"
+_ex_excl="$(grep -oE '<excludeArtifact>[^<]*' "$_ab_root/java/pom.xml" | sed 's/.*>//' | head -1)"
+# ⚠️ 공허성 대조군은 **비었는가**만 본다 — 여기에 이름을 리터럴로 박으면 「모듈을 개명하고
+# 제외도 함께 고친」 정상 변경까지 막는다(첫 구현이 그랬고 변이검증에서 발현했다).
+# 이 가드가 겨누는 것은 이름이 아니라 **둘이 갈리는 것**이다.
+assert_eq "nonempty" "$([ -n "$_ex_id" ] && echo nonempty || echo empty)" \
+  "examples 모듈의 artifactId 를 읽지 못했다 — 추출이 비면 아래 대조가 공허해진다"
+assert_eq "${_ex_id:-없음}" "${_ex_excl:-없음}" \
+  "java/pom.xml 의 <excludeArtifact> 가 examples 모듈의 artifactId 와 다르다 — 제외가 매치되지 않아 examples 가 Central 에 게시된다(철회 불가)"
+
+# ⚠️ `#372` 가 기각 레지스트리에 적은 되살릴 조건을 **기계로** 건다: examples 모듈에
+# `<skipPublishing>` 을 거는 안을 채택하지 않은 근거가 「publish mojo 가 aggregator=false 이고
+# examples 가 `<modules>` 의 **마지막**이라 번들 publish 자체가 그 모듈에서 일어난다」였다.
+# 순서가 바뀌면 그 근거가 사라지므로 판정을 다시 해야 한다 — 산문이 아니라 여기서 운다.
+_last_mod="$(sed -n '/<modules>/,/<\/modules>/p' "$_ab_root/java/pom.xml" | grep -oE '<module>[^<]*' | sed 's/.*>//' | tail -1)"
+assert_eq "keycloak-sdk-examples" "${_last_mod:-없음}" \
+  "java/pom.xml 의 <modules> 마지막이 examples 가 아니다 — <skipPublishing> 미채택 판정의 전제가 깨졌다(기각 레지스트리의 되살릴 조건)"
+
 assert_report

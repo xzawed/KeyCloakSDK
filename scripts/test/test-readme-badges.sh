@@ -60,12 +60,32 @@ for f in "$EN" "$KO"; do
   assert_eq "$PUB_N/$LANG_N" "${got:-없음}" "$b: published 배지가 실제 게시 개수/언어 수와 일치"
 done
 
-# ---- 규칙 4: status-pre--1.0 은 게시 버전이 전부 0.x 일 때만 참 ----
-# ⚠️ 한 언어라도 1.0 을 넘기면 이 배지는 거짓이 된다. 그 순간 이 어서션이 먼저 운다.
+# ---- 규칙 4: status 배지 ↔ 게시 SSOT ----
+#
+# ⚠️ 이 규칙은 오래 **부정형 한 쪽만** 봤다 — 「`status-pre--1.0` 이 있으면 안 된다」. 그래서
+# 1.0 이 나가고 배지가 `status-1.0` 으로 바뀐 순간 **아무것도 안 겨누게 됐다**(변이 실측:
+# 두 README 에서 배지 줄을 통째로 지워도 전 가드 통과, `status-0.9` 로 값을 바꿔도 통과.
+# 영/한 미러(규칙 2)가 한쪽만 지웠을 때 우는 것이 전부였다 — 자기일치는 둘 다 틀린 경우를
+# 통과시킨다). 양성 어서션으로 뒤집는다.
+#
+# 배지가 말하는 것은 **바닥**이다("아홉이 전부 이 선 위에 있다"). 그래서 기대값은 게시된
+# 버전들의 **최소 major.minor** 이고, 한 언어가 1.1 로 앞서가도 배지는 1.0 으로 남는 것이 옳다.
+# 값을 여기 박지 않는다 — `df_published_version` 이 소유한다.
 STABLE=0
+MIN_MM=""
 for L in $DEPLOY_LANGS; do
   v="$(df_published_version "$L" 2>/dev/null || true)"
-  case "$v" in 0.*|"") : ;; *) STABLE=$((STABLE + 1)) ;; esac
+  [ -n "$v" ] || continue
+  case "$v" in 0.*) : ;; *) STABLE=$((STABLE + 1)) ;; esac
+  _mm="$(printf '%s' "$v" | cut -d. -f1,2)"
+  if [ -z "$MIN_MM" ]; then
+    MIN_MM="$_mm"
+  else
+    # ⚠️ 문자열 비교가 아니라 수치 비교다 — 사전식이면 `1.10` 이 `1.9` 보다 작다고 나온다.
+    _c1="${MIN_MM%%.*}"; _c2="${MIN_MM#*.}"
+    _n1="${_mm%%.*}";    _n2="${_mm#*.}"
+    if [ "$_n1" -lt "$_c1" ] || { [ "$_n1" -eq "$_c1" ] && [ "$_n2" -lt "$_c2" ]; }; then MIN_MM="$_mm"; fi
+  fi
 done
 for f in "$EN" "$KO"; do
   b="$(basename "$f")"
@@ -74,6 +94,11 @@ for f in "$EN" "$KO"; do
     assert_eq "1" "$has_pre" "$b: 게시 버전이 전부 0.x 이므로 pre-1.0 배지가 있어야 한다"
   else
     assert_eq "0" "$has_pre" "$b: 1.0 이상이 $STABLE 개 있으므로 pre-1.0 배지는 거짓이다"
+    # ⚠️ 공허성 — 추출이 0건이면 `없음` 으로 떨어져 실패한다. 배지를 **지우는** 변이가
+    # 이 한 줄로 잡힌다(값 변조는 기대값 불일치로 잡힌다).
+    got="$(badges "$f" | grep -oE 'badge/status-[0-9]+\.[0-9]+-' | sed 's|.*badge/status-||;s|-$||' | head -1)"
+    assert_eq "$MIN_MM" "${got:-없음}" \
+      "$b: status 배지가 게시 SSOT 의 최소 major.minor 와 다르다 — 배지는 아홉의 바닥을 말한다"
   fi
 done
 

@@ -27,7 +27,7 @@ assert_ok node "$GUARD" "$TMP"
 # 계수를 동시에 고정한다 — 특히 write 계수는 주석 제거(`write # 이유` → `write`)가 살아
 # 있어야만 1이 나온다. 주석을 안 걷어내면 값이 "write # ..."가 되어 상승이 보이지 않는다.
 out=$(node "$GUARD" "$TMP" 2>&1)
-assert_contains "$out" "릴리스 1개 · 잡 8개 · 릴리스 잡의 write 상승 1건" "잡·릴리스·권한상승을 실제로 센다"
+assert_contains "$out" "릴리스 1개 · 잡 8개 · 게시 잡 1개 · 비로컬 uses 3개 · 릴리스 잡의 write 상승 1건" "잡·릴리스·게시잡·uses·권한상승을 실제로 센다"
 
 # ── 변이 1(규칙 1): 릴리스 잡에서 permissions 선언을 지운다 ──
 # 이것이 이 가드를 만든 이유다. 릴리스 워크플로에는 워크플로 레벨 기본값이 없으므로
@@ -181,6 +181,34 @@ assert_contains "$(cat "$TMP/.github/workflows/demo-release.yml")" "미설정" \
 # kotlin 의 `ORG_GRADLE_PROJECT_*`) 시크릿 이름으로 걸면 오탐이 난다.
 rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
 assert_ok node "$GUARD" "$TMP"
+
+# ── 규칙 9: 게시 잡은 통합 E2E + install-smoke 뒤에만 돈다 ──
+# CLAUDE.md 가 릴리스 불변식으로 선언하는데 `needs:` 를 읽는 자리가 없었다(실측 2026-09-02).
+# ⚠️ 조준점이 게시 **명령**이 아니라 **잡 키**인 이유는 규칙 9 주석에 있다 — 명령으로 찾으면
+# python(액션으로 게시)·go(`gh release create`)를 놓치고 dispatch-release 를 오탐한다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i 's/^    needs: \[version, integration, install-smoke\]$/    needs: [version]/' "$TMP/.github/workflows/demo-release.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "발행 전 E2E 게이트가 끊겼다" "게시 잡의 needs 강등을 지목한다"
+
+# ── 규칙 10: 비로컬 액션은 40자 SHA 로 핀한다 ──
+# 현재 트리는 완전했지만 그것을 지키는 것이 없었다 — `checkout@v7` 로 강등해도 통과했다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i 's|actions/setup-go@0000000000000000000000000000000000000000|actions/setup-go@v6|' "$TMP/.github/workflows/demo-ci.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "40자 SHA 로 핀되지 않았다" "SHA 아닌 액션 ref 를 지목한다"
+
+# ── 공허성: 조준점이 사라지면 하한이 운다 ──
+# 규칙 9·10 은 발견 기반이라 잡 키 개명이나 `uses:` 표기 변경으로 조용히 0건이 될 수 있다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+assert_fails node "$GUARD" "$TMP" --min-publish=99
+out=$(node "$GUARD" "$TMP" --min-publish=99 2>&1 || true)
+assert_contains "$out" "규칙 9 가 조용히 비었을 수 있다" "게시 잡 하한이 공허를 막는다"
+assert_fails node "$GUARD" "$TMP" --min-uses=999
+out=$(node "$GUARD" "$TMP" --min-uses=999 2>&1 || true)
+assert_contains "$out" "규칙 10 이 조용히 비었을 수 있다" "uses 하한이 공허를 막는다"
 
 # ── 오탐 대조군 3: 저장소 루트 실물에 대해 통과해야 한다 ──
 # 픽스처에서만 도는 가드는 실제 트리와 어긋난 채로 초록불을 유지할 수 있다.

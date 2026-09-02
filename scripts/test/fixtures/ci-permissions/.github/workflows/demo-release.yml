@@ -25,7 +25,9 @@ jobs:
     steps:
       - run: echo "픽스처 — 실행되지 않는다"
   publish:
-    needs: [version, integration]
+    # ⚠️ 규칙 9 의 입력 — 게시 잡(`publish`)은 통합 E2E 와 install-smoke 를 통과한 뒤에만 돈다.
+    #    이 픽스처는 실행되지 않으므로 `install-smoke` 잡 자체는 두지 않는다(규칙은 needs 텍스트만 읽는다).
+    needs: [version, integration, install-smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: read

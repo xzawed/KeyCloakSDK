@@ -143,6 +143,55 @@ for (const [lang, p, re] of manifests) {
   }
 }
 
+// ── ruby: Gemfile.lock 의 PATH spec 이 gemspec 버전과 같은가 ──
+//
+// node 와 같은 부류다 — 락이 **자기 패키지의 버전**을 적는다:
+//
+//     PATH
+//       remote: .
+//       specs:
+//         keycloak-sdk (1.0.0)      ← 이 값
+//
+// 자기 버전을 담는 락은 저장소에 셋이고(node·rust·ruby), 그중 둘만 지켜지고 있었다(실측
+// 2026-09-02): node 는 바로 위 블록이 대조하고, rust 는 `rust-ci.yml` 이 `--locked` 를 다섯 번
+// 써서 Cargo.toml 과 어긋나면 빌드가 죽는다. **ruby 만 대조도 강제도 없었다** —
+// `ruby-ci.yml` 은 `bundler-cache: true` 로 `bundle install` 을 돌리므로 락이 낡았으면
+// 조용히 갱신될 뿐이다(그 잡이 frozen 으로 도는지는 이 저장소에서 재지 못했다 — 그러니
+// 「돈다」에 기대지 않는다).
+//
+// ⚠️ 조준점은 **PATH 절 안의 spec 줄**이다. `keycloak-sdk` 는 락에 두 번 나오는데 다른 하나는
+// `DEPENDENCIES` 절의 `keycloak-sdk!` 라 버전이 없다(실측: 4행과 144행). 절을 보지 않고
+// 이름만 찾으면 그 줄을 집어 추출이 조용히 비게 된다.
+{
+  const rubyV = found.find(([l]) => l === 'ruby')?.[1]
+  const lockPath = 'ruby/Gemfile.lock'
+  if (rubyV && existsSync(join(root, lockPath))) {
+    const lines = read(lockPath).split(/\r?\n/)
+    let inPath = false
+    let got = null
+    for (const line of lines) {
+      if (/^\S/.test(line)) inPath = line.trim() === 'PATH' // 새 절이 시작될 때만 상태가 바뀐다
+      if (!inPath) continue
+      const m = /^ {4}keycloak-sdk \(([^)]+)\)\s*$/.exec(line)
+      if (m) {
+        got = m[1]
+        break
+      }
+    }
+    if (got === null) {
+      errors.push(
+        `${lockPath} 의 PATH 절에서 \`keycloak-sdk (<버전>)\` 을 찾지 못했다 — ` +
+          `락 형식이 바뀌었다면 이 가드도 함께 고칠 것(추출 0건은 통과가 아니라 실패다)`,
+      )
+    } else if (got !== rubyV) {
+      errors.push(
+        `${lockPath} 의 PATH spec "${got}" 이 ruby/lib/keycloak_sdk/version.rb 의 "${rubyV}" 와 다르다 — ` +
+          `같은 커밋에서 \`cd ruby && bundle install\` 로 재생성하라(ruby-ci 는 이 드리프트에 실패하지 않는다)`,
+      )
+    }
+  }
+}
+
 // ── 하네스 샘플 앱이 SDK를 **리터럴 버전으로** 핀한 자리 ──
 //
 // 왜 필요한가: 2026-08-11 야간 `score-all`이 이것 때문에 죽었다 —
