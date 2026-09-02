@@ -116,6 +116,13 @@ jobs:
       - name: Admin capability matrix U열(표 ↔ 9언어 소스)
         run: sh scripts/test/test-admin-capability.sh
 
+      # ⚠️ Node 공개 타입 표면 가드(§4 은닉성)의 자가테스트. 그 가드 자체는 `node/dist` 를 봐야
+      # 해서 `node-ci` 에만 배선돼 있고(빌드 뒤), 이 자가테스트는 픽스처만 쓰므로 빌드가 필요 없다.
+      # 겨누는 것 둘: (1) dist 부재를 통과가 아니라 실패로 만드는 안전장치가 실제로 사는가,
+      # (2) §4(b) raw 예외가 **파일 전체**로 넓어지지 않는가.
+      - name: Node 공개 타입 표면 가드 자가테스트(§4(b) 예외 범위 · dist 부재 공허성)
+        run: sh scripts/test/test-check-node-public-surface.sh
+
       # ⚠️ 출처 게이트를 **실행해** 판정한다(계획서 Task B0). 자매 가드
       # `test-harness-registries.sh`는 같은 스크립트를 정적으로 렉싱하는데, 그 방식으로 7종
       # 우회를 닫은 뒤에도 적대적 재리뷰가 4종을 더 찾았다 — 정적으로 임의 POSIX 셸의 의미를

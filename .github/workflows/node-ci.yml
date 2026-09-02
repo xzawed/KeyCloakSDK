@@ -1,7 +1,11 @@
 name: Node CI
 on:
-  push: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml'] }
-  pull_request: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml'] }
+  # ⚠️ `scripts/check-node-public-surface.mjs` 가 이 목록에 있는 이유: 이 워크플로가 그 가드를
+  # 돌리는 **유일한 자리**인데, 목록에 없으면 그 가드를 고치는 PR 에서 체크가 **생성조차 되지
+  # 않는다**(`paths:` 는 잡을 스킵하는 것이 아니라 체크를 안 만든다 — #368 과 같은 부류).
+  # 저장소의 열세 개 `scripts/*.{mjs,sh}` 중 자기 변경에 안 도는 자리가 여기 하나였다(실측).
+  push: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml', 'scripts/check-node-public-surface.mjs'] }
+  pull_request: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml', 'scripts/check-node-public-surface.mjs'] }
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:
