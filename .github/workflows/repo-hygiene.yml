@@ -55,6 +55,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # ⚠️ `fetch-depth: 0` 은 검사 10c(아카이브 blob 참조)를 위해서다. 이 저장소는 계획서를
+          # 아카이브하고 `git show <sha>:<path>` 만 남기는 규약을 쓰는데(#365 · #373), 기본
+          # 얕은 클론에서는 그 객체가 **없다**(실측: `git clone --depth=1` 트리에서 두 참조 모두
+          # `git cat-file -e` 실패). 검사는 스킵하지 않고 실패하므로 이 줄을 지우면 즉시 빨개진다.
+          # 비용: 저장소 전체가 6.43 MiB · 975 커밋이다.
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
@@ -75,7 +82,9 @@ jobs:
         # ⚠️ 이 값은 한때 14/4에 머물러 있었고 실측은 이미 28/7이었다 — **앵커 절반이
         # 사라져도 CI가 통과하는 상태**였다. 하한을 올리는 것을 잊으면 가드가 조용히
         # 헐거워지므로, 앵커를 추가하는 PR은 이 줄을 함께 고쳐야 한다.
-        run: node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anchor-links=24
+        # ⚠️ `--min-blob-refs` 는 검사 10c 의 공허성 하한이다(실측 4건 · 고유 2). 참조 표기가
+        # 바뀌어 추출이 0건이 되면 "해석 실패 0"이 통과처럼 보인다 — 다른 최저치들과 같은 이유다.
+        run: node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anchor-links=24 --min-blob-refs=4
 
       - name: 커버리지 게이트 가드 자가테스트(측정 실패와 하락을 구분하는지)
         # 이 가드의 가치는 임계값 비교가 아니라 판별이다 — 둘 다 exit 1이라 종료코드만 보는

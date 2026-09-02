@@ -1,5 +1,9 @@
 # Contribution Guide (CONTRIBUTING)
-<!-- doc-budget: max-bytes=15838 -->
+<!-- doc-budget: max-bytes=15856 -->
+<!-- 15838 → 15856 (2026-09-02): 래칫 조건 (1) — 18B 가 기계 검증을 사 온다. `--min-blob-refs=4`
+     는 신설된 검사 10c(아카이브 참조 `git show <sha>:<path>` 가 해석되는가)의 공허함 방어
+     하한이고, 이 줄은 「exactly what CI runs」라고 말한다. ⚠️ CI 와 **함께** 옮겨야 하는 이유가
+     A2 다 — 여기가 CI 문자열과 갈리면 로컬 초록·CI 빨강이 다시 만들어진다. -->
 
 This is the **single source of truth for the verification workflow** across all nine language SDKs
 (Java · Python · Node · Go · C#/.NET · PHP · Rust · Ruby · Kotlin). It covers the gates you must
@@ -53,7 +57,7 @@ file per language, opening with the entry command, the single-test invocation an
 Repo-wide, on every push and PR (`repo-hygiene.yml`):
 
 ```bash
-node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anchor-links=24   # exactly what CI runs
+node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anchor-links=24 --min-blob-refs=4   # exactly what CI runs
 sh scripts/test/test-check-docs.sh
 sh scripts/test/test-doctor.sh
 ```
