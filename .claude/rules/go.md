@@ -5,7 +5,11 @@ paths:
   - "harness/install/consume/go*"
   - ".github/workflows/go-*.yml"
 ---
-<!-- doc-budget: max-bytes=6263 -->
+<!-- doc-budget: max-bytes=7105 -->
+<!-- 래칫 인상 6263 → 7105 (2026-09-02). 사유 (1) 이 아니라 **판정 방법의 복원**이다 —
+     go 프록시 음성 캐시 교훈이 계획서(#362)에 적혔다가 그 계획서가 아카이브(#365)되면서
+     살아 있는 문서에서 **0건**이 됐다(실측). 다음 릴리스가 같은 404 앞에서 서고, 이 파일이
+     그 레인의 게차 소재지다. 압축이 판정 방법을 지우면 손실이라는 CLAUDE.md 규칙의 적용이다. -->
 <!-- 6,056 → 6263 (2026-08-23): 래칫 조건 (1). 기각 사유가 목표보다 좁게 적혀 있어
      조건 커버리지를 영영 안 재게 만들고 있었다. 정정하면서 실측 수치와 그 결과 닫은 테스트 이름을 넣었다 —
      그 문장이 없으면 다음 사람이 같은 오해로 되돌린다. -->
@@ -34,6 +38,8 @@ gofmt -l go                                                  # no output means O
   - ⚠️ **The module path contains capitals, so the proxy URL is `!`-escaped** (`github.com/xzawed/!key!cloak!s!d!k/go`) — querying it in lowercase gives a 404.
   - ⚠️ **If no stable version is published**, a bare `go get <module>` and `@latest` **fall back to the RC** (same as pip and Cargo, unlike RubyGems).
   - ⚠️ **The proxy cache is immutable** — the only way to withdraw something is `retract` in a later release.
+  - ⚠️ **Never probe `@v/<version>.info` *before* pushing the tag — it poisons a negative cache.** Measured (`go/v1.0.0`, 2026-09-01): that probe cached `unknown revision`, and after the push the endpoint stayed **404 for over 20 minutes** while the module was already published. `go-release.yml`'s warm step hit the same 404 and swallowed it (`|| true`), so the workflow went green regardless.
+  - ⚠️ **The true post-publish check is the consumer path, not one endpoint.** At the same moment `@latest` returned `{"Version":"v1.0.0","Ref":"refs/tags/go/v1.0.0"}`, `@v/list` contained it, `sum.golang.org/lookup/...` returned the `h1:` hash, and `go list -m <module>@vX.Y.Z` succeeded from a clean `GOMODCACHE`. To split "bad tag" from "stale cache": `GOPROXY=direct go list -m <module>@vX.Y.Z` — if that works, the tag is fine.
 - ⚠️ **Do not read `// indirect` as "a dependency we chose".** Go has no notion of a dev dependency, so the dependency table carries only the modules we actually import. (For example: we never import `testify`; `testcontainers-go` drags it in.)
 
 ## Gotchas
