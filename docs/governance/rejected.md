@@ -1,5 +1,11 @@
 # 기각 레지스트리
-<!-- doc-budget: max-bytes=9848 -->
+<!-- doc-budget: max-bytes=12548 -->
+<!-- 9848 → 12548 (2026-09-02, +2700B = 새 기각 **3건**). 이 문서의 규약대로다 — 「행을 더할 때
+     이 숫자도 함께 올리고, 근거는 그 PR 에 적는다」. 셋 다 1.0 이후 잔여작업 등록부의 항목이고
+     **사람이 2026-09-02 에 판정했다**(java 린트 게이트: 두지 않는다 · persist-credentials: 지금은
+     기재만 · 원격 태그 대조: 기각). 행이 긴 이유는 되살릴 조건을 **돌아가는 명령**으로 적기
+     때문이고, 그것이 이 레지스트리의 존재 이유다. -->
+
 <!-- ⚠️ 여기서는 래칫 인상이 **곧 새 기각 1건**이다 — 그래서 여유를 좁게 둔다. 다른 문서에서
      인상은 「산문이 늘었다」는 경고지만, 레지스트리에서는 「판정이 하나 늘었다」는 뜻이고 그것은
      PR 에서 반드시 보여야 하는 사건이다. 행을 더할 때 이 숫자도 함께 올리고, 근거는 그 PR 에 적는다. -->
@@ -37,6 +43,9 @@
 | GitHub Release를 아홉 언어로 대칭화 | 실측 23태그 중 **15개에 Release가 없다**(java·kotlin·node·python·ruby·rust). 그런데 Release를 만드는 워크플로 셋(dotnet·go·php)이 `contents: write`를 가진 **정확히 그 셋**이다 — 대칭화는 게시 잡 여섯에 쓰기 권한을 새로 주는 것이고, 얻는 것은 태그 페이지의 서식뿐이다. php에서 Release는 **미러 push 성공의 증거**로 쓰여 목적이 다르다(`DEPLOY.md:200`) | 릴리스 노트가 **기계 판독 대상**이 될 때(소비자 도구가 Release API로 변경점을 읽는 것이 실측될 때). 그때도 여섯에 쓰기 권한을 주는 대신 태그 push 하나로 도는 별도 잡을 검토한다 |
 | `repo-config`를 required 체크로 | 그 잡의 유일한 외부 호출이 `gh api`라 GitHub API가 흔들리면 멈추는데, `PRIMARY`는 `bypass_actors: []`(라이브도 `current_user_can_bypass: never`)라 **멈춘 required는 소유자도 못 푼다** — 저장소가 비가역으로 잠긴다. 잡 주석이 이미 이 판정을 담고 있었다(내가 그걸 안 읽고 「사람 판정 대기」로 올렸다) | `node -e "const r=require('./.github/rulesets/main.json');process.exit(r.bypass_actors.length?0:1)"`가 **exit 0**이 될 때 — 즉 멈춘 required를 풀 수 있는 주체가 생겼을 때 |
 | capability matrix **L열** 가드 | 6개 PR·L셀 9개가 뒤집히는 동안 **실제 드리프트 0건** — 가드였다면 한 번도 안 울렸다. 225셀이 전부 ✅가 되어 "추가하고 표를 잊는" 모드는 구조적으로 사라졌고, 남은 removal은 단위·E2E가 같은 커밋에서 먼저 깬다. 체크리스트 ⑤도 걸린다: users.L은 `search`/`list`(Ruby)/`all`(PHP)로 **수렴하지 않는다**(내 최초 측정이 틀렸고 Grok이 반박, 소스로 확인) | **10번째 언어 행이 매트릭스에 추가될 때** — 손으로 25셀을 쓰는 그 순간이 유일한 실제 위험이다. 지금 로드맵의 확장 후보 표에는 대기 행이 0개다(첫 stable 릴리스 축은 아홉 게시로 닫혔다) |
+| java 린트·정적분석 게이트 | 아홉 중 java 만 CI 게이트가 없다(실측: python `ruff`+`mypy` · node `eslint`+`prettier` · go `golangci`+`vet` · dotnet `format` · php `phpstan`+`cs-fixer` · rust `clippy`+`rustfmt` · ruby `rubocop` · kotlin `ktlint` · **java 0건**). 그러나 java 는 **분석되지 않는 상태가 아니다** — SonarCloud 가 `sonar.java.binaries` 로 리액터 4개 모듈의 바이트코드까지 읽는다. 새 도구가 사 오는 것은 PR 차단력뿐이고, 그 대가는 spotless 의 전면 리포맷 또는 errorprone 의 초기 억제 목록이다. **사람 판정(2026-09-02): 두지 않는다.** | `grep -c '^sonar.java.binaries=' sonar-project.properties` 가 **0** 이 될 때(= java 가 정적분석 밖으로 나갈 때), 또는 포맷·정적분석이 잡았을 java 결함이 실제로 머지된 것이 실측될 때 |
+| 전 워크플로 `persist-credentials: false` 강제 | 24개 중 10개에만 있고(`grep -rln persist-credentials .github/workflows \| wc -l` → 10, `ls .github/workflows/*.yml \| wc -l` → 24) **그 비대칭의 근거가 저장소 어디에도 없다.** 체크리스트 4 에 걸린다 — 선언된 불변식이 없으면 가드가 정책을 새로 만드는 셈이고 그건 사람의 몫이다. 규칙을 세우면 14곳을 손으로 맞춰야 하는데 무엇이 옳은지가 먼저 없다. **사람 판정(2026-09-02): 지금은 기재만.** | 사람이 정책을 정할 때, 또는 체크아웃한 자격증명을 가진 채 **신뢰할 수 없는 코드를 실행하는** 잡이 생길 때 — `git grep -l 'persist-credentials' .github/workflows` 와 `contents: write` 를 가진 잡 목록이 갈리는지가 그 신호다 |
+| `release-readiness.sh` 의 원격 태그 대조 | 태그 판정이 `rr_tag_exists`(`git tag -l` — **로컬 클론**)이고 원격을 실제로 조회하는 것은 php 미러의 `rr_mirror_tag`(`git ls-remote`) 하나뿐이다(`scripts/release-readiness.sh:93` vs `:81`). 그러나 이 스크립트의 계약이 **「읽기전용: 어떤 상태도 변경하지 않는다」**(2행)라 `fetch` 를 넣을 수 없고, 오답의 방향이 안전하다 — 로컬이 낡으면 「태그 없음」으로 답해 사람이 태그를 밀고, 그러면 릴리스 워크플로 첫 스텝의 태그↔매니페스트 가드가 다시 본다. 고치는 법도 `git fetch --tags` 하나다 | `git tag -l '<접두>*' \| wc -l` 과 `git ls-remote --tags origin '<접두>*' \| wc -l` 이 갈린 채로 이 도구가 「태그 없음」을 답한 일이 실측될 때. 그때는 fetch 를 넣지 말고 **두 값을 나란히 인쇄**하는 것이 계약을 지키는 최소 수정이다 |
 | Rust `stable` 레그의 clippy 고정 | `-D warnings`를 무는 것이 **그 레그의 목적**이다(매트릭스 주석 「stable = 최신 회귀 확인」). 고정하면 조기경보가 죽고, 의존 자체는 `--locked`가 이미 잡는다. 체크리스트 6 — 실측 12실행 전부 초록이라 관측된 파손이 0인데 새 실패 모드만 는다 | `gh run list --workflow=rust-ci.yml --json conclusion,headBranch`가 clippy 새 lint 때문에 **stable 레그만** 실패한 것을 내고, 그것이 무관한 PR을 막을 때. 그때도 고정이 아니라 그 레그만 `continue-on-error` |
 | 「천장 핀에는 `ignore` 도」 가드 | 「금지하려는 제약」인지가 구문으로 안 갈린다(`parallel "< 2"` vs `rspec "~> 3.13"`). ruby 는 「소스 히트 0 + CI 미호출」로 수렴하나 아홉 레인은 호출 규약이 제각각이라 탐지기가 아홉 개 필요하다 — 체크리스트 6(관측 파손 1건 대 새 실패 모드 아홉). 대응책은 이미 있다: dependabot 잡이 스스로 빨개지고 ⑥ 가 머지 후 확인을 요구한다 | **추론이 조인으로 바뀔 때** — 천장 핀이 따로 선언·게이트되어 `ignore` 와 집합 대조만 남으면(파서 아홉이 아니라 조인 하나). 또는 제약 오류가 머지 **전** 경로에서 관측될 때 |
 | `global.json`으로 .NET SDK 밴드 고정 | major는 이미 `dotnet-version: '8.0.x'`가 잡는다. 밴드까지 조이면 **러너에 그 밴드가 없을 때 죽는** 새 실패 모드가 생기고(체크리스트 6), net8.0은 서비싱 라인이라 새 분석기가 밴드로 들어오지 않는다. 실측 10실행 전부 초록 | `dotnet-ci`가 8.0 밴드 이동으로 실제 실패하거나, `dotnet/Directory.Build.props`의 `TargetFramework`가 서비싱 밖 라인으로 올라갈 때 |

@@ -96,7 +96,7 @@ The new language must verify the **same scenarios** as Java and Python. Counts m
 
 - [ ] **CI matrix** — build + unit + type + lint across every supported runtime version (e.g. a per-language matrix comparable to Java 21+, Python 3.10–3.13). Integration tests need Docker, so keep them in a separate job/local.
 - [ ] **Local install path** — consumers must be able to use it locally *before* it is published, and a new language always starts unpublished. Every existing language keeps this path working regardless of registry status:
-  - Java: `mvn -f java/pom.xml install -DskipITs=true` → coordinate `io.github.xzawed:keycloak-sdk:0.1.0-SNAPSHOT`
+  - Java: `mvn -f java/pom.xml install -DskipITs=true` → coordinate `io.github.xzawed:keycloak-sdk` at the `-SNAPSHOT` version `java/pom.xml` declares (do not restate the number here — it went stale once already)
   - Python: `pip install -e python` (or `cd python && python -m build`) → distribution name `keycloak-sdk`
   - Make sure the new language likewise supports "local install → run the example" without publishing.
   - Do not restate which languages are already on a public registry — it goes stale. That fact has one owner, `DF_PUBLISHED` in [`scripts/lib/deploy-facts.sh`](../../scripts/lib/deploy-facts.sh); `scripts/release-readiness.sh` prints it. [DEPLOY.md](../../DEPLOY.md) deliberately does **not** answer it.

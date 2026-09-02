@@ -1,6 +1,18 @@
 # Deployment Guide (DEPLOY)
-<!-- doc-budget: max-bytes=77374 -->
-<!-- 래칫 인상 76070 → 77374 (2026-09-01, +1304B). 근거는 CLAUDE.md 의 사유 (1) — 증가분이
+<!-- doc-budget: max-bytes=78552 -->
+<!-- 래칫 인상 77374 → 78552 (2026-09-02, +1178B). 근거는 CLAUDE.md 의 사유 (2) — 사람이 이
+     문서의 역할을 채우라고 지시했다(1.0 이후 잔여작업 등록부의 E4·A3). 둘 다 **이 문서에만 있을
+     수 있는 판정 방법**인데 어디에도 없었다:
+       · step 0 — 「1.0 이후 patch/minor/major 를 무엇으로 가르는가」. §4 가 릴리스 절차의 소유자인데
+         정작 **번호를 어떻게 고르는지**를 답하지 않았다. 게이트가 답을 주는 자리(step 9)와
+         **게이트가 못 보는 두 레인**(node 의 필수 필드 추가 · ruby 의 시그니처 변경)을 함께 적었다 —
+         후자를 빼면 다음 세션이 게이트 초록을 「비파괴 확인」으로 읽는다.
+       · step 8 — 「범프→게시 창에서 harness-kotlin 이 빨간 것은 정상이다」. 이 사실이 없으면
+         릴리스마다 사람이 그 빨강을 조사하거나, 더 나쁘게는 **그 잡을 무시하도록 배운다**.
+     ⚠️ 압축을 먼저 했다 — 초안 1384B 를 문장 다듬기로 1178B 로 낮춘 뒤 남은 만큼만 올렸다.
+     상쇄로 §7 의 낡은 문장 하나(「Until then, every install instruction for Node must say @rc」 —
+     node 1.0.0 이 `latest` 를 되찾아 거짓이 됐다)를 같은 길이로 고쳤다.
+     래칫 인상 76070 → 77374 (2026-09-01, +1304B). 근거는 CLAUDE.md 의 사유 (1) — 증가분이
      **기계 검증을 사 왔다**. 두 자리다:
        · §4 step 1 의 「배너 ↔ df_published_version 은 같은 커밋」  ← test-publication-claims.sh 가
          아홉 <lang>/README.md 배너를 SSOT 와 대조한다(#369). 그 전까지 무보호였다(node 배너를
@@ -381,7 +393,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 
 ## §4. Release Procedure Summary
 
-0. **Decide the version** — for a language's *first* release, make it a release candidate (§7), not `0.1.0`.
+0. **Decide the version** — for a language's *first* release, make it a release candidate (§7), not `0.1.0`. After 1.0 the number is SemVer against the **published** API surface, which is what step 9's baselines measure: *removed* is **major**, additions-only is **minor**, nothing visible is **patch**. ⚠️ **Two of the seven gated lanes see less, so there the call is human**: node's api-extractor diff reads only lines that *disappeared*, so a **new required field** on an input interface passes as additive though it breaks callers; ruby's `yard diff` looks for deletions (`^D `) alone, so a changed signature is invisible.
 1. **Version bump** (if the language is subject to manual bump — see the §1 table) — commit. The tag↔version guard will reject a mismatch, so this must land before the tag.
 
    ⚠️ **The same commit must also move that language's README banner and its `df_published_version`.** Each `<lang>/README.md` ships inside the package and *becomes the registry landing page*, and its banner states a **version** — so **every** release moves it, not only a newly added language. Fixing it afterwards costs a new version, because registries pin the README per version; this repo has paid that three times (`0.1.1` #318 · `0.2.1` a7629ef · `1.0.0` #343). `test-publication-claims.sh` now asserts banner ↔ `df_published_version` for all nine, so the SSOT moves in this same commit. Two things to correct:
@@ -404,6 +416,8 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 6. **Check GitHub Actions** — confirm the relevant release workflow ended green. Every secret-backed path now fails closed when its secret is unset, so green no longer hides a skipped publish (that was previously false for .NET and Kotlin — §2-C, §2-A step 5). Note the phrasing: Go has no secret at all, and the three OIDC languages authenticate by a registered publisher rather than a stored secret — for those, an unset/misregistered publisher fails at the publish call, not at a preflight. What green still does *not* tell you: for Java and Kotlin it means "uploaded to Central Portal staging", not "published" (step 7); for Go it means "tag and GitHub Release created", not "the proxy serves the module"; for PHP it means "pushed to the mirror", after which Packagist still has to pick the tag up.
 7. **(Maven Central family only) Portal manual release** — for Java and Kotlin, a human must click Publish in the Central Portal Deployments for the final public release.
 8. **Verify on the registry itself** — open the package page and confirm the version, the README rendering, and the file list. This is the only step that actually proves the release happened.
+
+   ⚠️ **(Kotlin) until this step succeeds the scheduled `harness-kotlin` audit is red — expected.** It pins the SDK by the *manifest* version (`check-versions.mjs` enforces that) and the runner's `mavenLocal` is empty, so it resolves from Central, which does not have it yet; it fails closed on any unresolved coordinate and now names this window in its own error. Measured 2026-08-31: `keycloak-sdk-kotlin:1.0.0` FAILED while the upload sat in Portal staging. After this step pull the run forward — `gh workflow run security-audit.yml` — rather than waiting for the Monday cron.
 9. **(after step 8 confirms) raise that lane's API-gate baseline** — the gate compares against the **previously published** artifact, which every `<lang>/README.md` and `SECURITY.md` promise consumers. Seven lanes carry a literal: `java/pom.xml` (`japicmp.baseline`) · `kotlin-ci.yml` (`BASELINE`) · `python-ci.yml` (`--against`) · `php-ci.yml` (the tag in `git archive`) · `ruby-ci.yml` (`BASELINE`) · `node-ci.yml` (`BASELINE`) · the .NET csproj (`PackageValidationBaselineVersion`). Rust and Go have none — their tools infer the previous release.
 
    ⚠️ **This cannot move before step 8, and `df_published_version` cannot move after step 1.** The two SSOTs run on opposite schedules: the banner/SSOT commit precedes the tag, the baselines follow publication. Raising a baseline early makes CI fetch a version that does not exist yet; leaving it late makes the README's "previously published" claim false. Preconditions differ per lane — php and ruby need only the **tag** (`git archive`), while java, kotlin, node and .NET need the **remote artifact** and must be polled for propagation.
@@ -495,7 +509,7 @@ All nine registries support prerelease versions, and most resolvers exclude them
 | `npm install @xzawed/keycloak-sdk@rc` | ✅ |
 | `npm install @xzawed/keycloak-sdk@0.1.0-rc.2` | ✅ |
 
-This is **not** the pip or Cargo behaviour (both fall back to a prerelease when no stable exists) and it is harsher than RubyGems (which resolves nothing rather than erroring). Once a stable `0.1.0` exists the bare form works again and resolves to it. Until then, every install instruction for Node must say `@rc` or pin the exact version. Nothing to do by hand — should you ever need to move the pointer yourself, it is `npm dist-tag add @xzawed/keycloak-sdk@<real-version> latest`.
+This is **not** the pip or Cargo behaviour (both fall back to a prerelease when no stable exists) and it is harsher than RubyGems (which resolves nothing rather than erroring). A stable release takes `latest` back and the bare form resolves to it again — which is where node is now. **While only a prerelease exists**, every install instruction for that package must say `@rc` or pin the exact version. Nothing to do by hand — should you ever need to move the pointer yourself, it is `npm dist-tag add @xzawed/keycloak-sdk@<real-version> latest`.
 
 **The GitHub Release prerelease flag is handled for you.** Only three workflows create a GitHub Release — `go-release.yml`, `dotnet-release.yml`, `php-release.yml`. The other six publish to their registries and create none. ⚠️ **That asymmetry is deliberate, so do not "fix" it.** Creating a Release requires `contents: write`; the six that skip it keep their publish job at `contents: read`, and each of `release.yml`, `rust-release.yml` and `kotlin-release.yml` says so on the `permissions:` block. The three that do have a reason the other six do not: Go has **no registry page at all** (the tag *is* the publication, so the Release is the only human-readable record), .NET **attaches the `.nupkg` artifacts**, and PHP publishes through a mirror, so its Release is the only trace left in *this* repository. Making the six symmetric would hand `contents: write` to six more publishing jobs in exchange for cosmetics. All three used to call `gh release create` without `--prerelease`, so GitHub presented `php-v0.1.0-rc.1` as the repository's **Latest release** on the first live run; every job in that pipeline was green, because this is not something a pipeline can fail on. They now derive the flag in the same `version` job that derives the version — one derivation, threaded like the version itself — and pass `--prerelease=true|false` explicitly, so a corrupted value makes `gh` exit rather than quietly defaulting to "release".
 

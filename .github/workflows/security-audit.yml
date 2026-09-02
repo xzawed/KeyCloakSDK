@@ -325,7 +325,22 @@ jobs:
           # 정상 좌표가 이 패턴을 만들 수 없다. 탐지력은 같고 오탐 면적만 준다
           # (실측: 실패 트리 9/9 동일 · 정상 트리 352줄에서 둘 다 0).
           if grep -qE ' FAILED$' dep-tree.txt; then
-            echo "::error::의존성 해석에 실패한 좌표가 있다 — 감사 실패(fail-closed)"
+            # ⚠️ **판정은 갈리지 않는다 — 아래 `exit 1` 은 어느 갈래에서도 돈다.** 메시지만 가른다.
+            #
+            # 왜 가르나: `apps/kotlin` 의 SDK 핀은 `kotlin/build.gradle.kts` 의 `version` 과
+            # **문자열까지** 같아야 하고(`check-versions.mjs`), 러너의 mavenLocal 은 비어 있어
+            # mavenCentral 로 흘러간다. 그래서 **릴리스 커밋이 머지된 뒤 Portal Publish 전까지**
+            # 그 좌표는 어디에도 없고 이 잡이 죽는다(실측 2026-08-31: keycloak-sdk-kotlin:1.0.0 —
+            # 게시 후 workflow_dispatch 로 당겨 전 잡 통과를 확인했다). 릴리스마다 오는 이 빨강을
+            # 「그 잡은 원래 빨갛다」로 배우면 **진짜 미해결 좌표를 같은 눈으로 넘긴다** —
+            # 그 신호 붕괴가 조용한 초록만큼 나쁘다. 그래서 창(window)을 이름으로 부른다.
+            _own_ver="$(grep -m1 -oE '^version = "[^"]+"' "$GITHUB_WORKSPACE/kotlin/build.gradle.kts" | sed 's/.*"\(.*\)"/\1/')"
+            _failed="$(grep -E ' FAILED$' dep-tree.txt | sed -e 's/^.*--- //' -e 's/ FAILED$//' | sort -u)"
+            if [ -n "$_own_ver" ] && [ "$_failed" = "io.github.xzawed:keycloak-sdk-kotlin:$_own_ver" ]; then
+              echo "::error::해석 실패가 **우리 좌표 하나뿐**이다(io.github.xzawed:keycloak-sdk-kotlin:$_own_ver) — 범프→게시 창이다. Central 에 게시된 뒤 이 워크플로를 workflow_dispatch 로 당겨 재라(DEPLOY.md §4 step 8). ⚠️ 조용한 초록으로 바꾸지 말 것: 해석 못 한 좌표를 통과시키면 이 잡은 아무것도 감사하지 않는다."
+            else
+              echo "::error::의존성 해석에 실패한 좌표가 있다 — 감사 실패(fail-closed)"
+            fi
             grep -E ' FAILED$' dep-tree.txt | head -20
             exit 1
           fi
