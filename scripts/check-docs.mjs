@@ -2,6 +2,7 @@
 // 문서-소스 드리프트 가드. 산문을 읽지 않는다 — HTML 주석 앵커가 선언한 좌표만
 // 읽고 값은 빌드 파일에서 추출해 대조한다. 기대값을 이 스크립트에 적지 않으므로
 // 가드 자신은 드리프트할 수 없다.
+import { execFileSync } from 'node:child_process'
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join, resolve, relative, dirname } from 'node:path'
 
@@ -47,6 +48,8 @@ let MIN_FACTS = 0
 let MIN_ANCHORS = 0
 // 검사 10의 공허함 방어 — 링크 표기가 바뀌어 추출이 0건이 되면 "불일치 0"이 통과로 보인다.
 let MIN_ANCHOR_LINKS = 0
+// 검사 10c(아카이브 blob 참조)의 같은 방어. 기본 0 = 미적용이라 픽스처에 영향이 없다.
+let MIN_BLOB_REFS = 0
 for (const arg of process.argv.slice(2)) {
   if (arg === '--strict') {
     STRICT = true
@@ -56,6 +59,8 @@ for (const arg of process.argv.slice(2)) {
     MIN_ANCHORS = Number(arg.slice('--min-anchors='.length))
   } else if (/^--min-anchor-links=\d+$/.test(arg)) {
     MIN_ANCHOR_LINKS = Number(arg.slice('--min-anchor-links='.length))
+  } else if (/^--min-blob-refs=\d+$/.test(arg)) {
+    MIN_BLOB_REFS = Number(arg.slice('--min-blob-refs='.length))
   } else if (!arg.startsWith('--') && rootArg === null) {
     rootArg = arg
   }
@@ -724,6 +729,50 @@ function checkSelfBlobTargets(file, rel, lines) {
   }
 }
 
+let blobRefs = 0
+const blobRefSeen = new Map() // "<sha>:<path>" → 처음 본 위치(같은 참조를 여러 번 확인하지 않는다)
+// 검사 10c — 아카이브 blob 참조(`git show <sha>:<path>`)가 실제로 해석되는가.
+//
+// ⚠️ 왜 필요한가: 이 저장소는 계획서를 **아카이브하고 읽는 명령만 남기는** 규약을 쓴다
+// (#365 · #373). 그 명령이 곧 판정 방법의 유일한 소재지인데, sha 한 글자만 틀려도 **문서는
+// 멀쩡해 보이고 지식만 사라진다**. 어떤 가드도 이 형태를 보지 않았다(실측: 참조 4건 · 고유 2건).
+//
+// ⚠️ **얕은 클론에서는 해석되지 않는다** — 실측: `git clone --depth=1` 로 만든 트리에서
+// 두 참조 모두 `git cat-file -e` 가 실패했다. 그래서 이 검사는 스킵하지 않고 **실패**하고,
+// 메시지가 고치는 법(doc-facts 잡 체크아웃의 `fetch-depth: 0`)을 말한다. 스킵으로 넘기면
+// CI 는 영원히 이 검사를 돌리지 않으면서 초록이 된다.
+//
+// ⚠️ **인용해도 되는 sha 는 `main` 의 조상뿐이다.** 이 저장소는 스쿼시 머지라(부모 1개) PR
+// 브랜치의 커밋은 머지 후 어떤 ref 에서도 도달할 수 없고, `fetch-depth: 0` 도 그것을 가져오지
+// 않는다(`refs/pull/*` 는 받지 않는다). 그런 sha 를 인용하면 **글쓴이 말고는 아무도 못 읽는다** —
+// 그때의 실패는 오탐이 아니라 참이다. 실측(2026-09-02): 현재 두 참조 모두
+// `git merge-base --is-ancestor <sha> origin/main` 통과.
+const ARCHIVE_BLOB = /git show ([0-9a-f]{7,40}):([^\s`'")]+)/g
+function checkArchiveBlobRefs(rel, lines) {
+  for (const [i, line] of lines.entries()) {
+    for (const m of line.matchAll(ARCHIVE_BLOB)) {
+      const ref = `${m[1]}:${m[2]}`
+      blobRefs++
+      if (blobRefSeen.has(ref)) continue
+      blobRefSeen.set(ref, `${rel}:${i + 1}`)
+      let ok = false
+      try {
+        execFileSync('git', ['-C', ROOT, 'cat-file', '-e', ref], { stdio: 'ignore' })
+        ok = true
+      } catch {
+        ok = false
+      }
+      if (!ok) {
+        errors.push(
+          `${rel}:${i + 1} 아카이브 참조가 해석되지 않는다: git show ${ref} — 이 명령이 그 판정의 ` +
+            `유일한 소재지다(계획서는 아카이브되고 읽는 명령만 남는다). sha·경로가 틀렸거나, ` +
+            `클론이 얕다(체크아웃에 fetch-depth: 0 이 필요하다 — 실측: depth=1 에서 두 참조 모두 실패).`,
+        )
+      }
+    }
+  }
+}
+
 function checkAnchors(file, rel, lines) {
   let inFence = false
   for (const line of lines) {
@@ -850,6 +899,7 @@ for (const file of walk(ROOT)) {
   checkLinks(file, rel, lines)
   checkAnchors(file, rel, lines)
   checkSelfBlobTargets(file, rel, lines)
+  checkArchiveBlobRefs(rel, lines)
   let inFence = false
   for (let i = 0; i < lines.length; i++) {
     if (/^\s*```/.test(lines[i])) { inFence = !inFence; continue }
@@ -1307,6 +1357,12 @@ if (anchorsChecked < MIN_ANCHOR_LINKS) {
       `"불일치 0"은 통과가 아니라 무효 측정이다`,
   )
 }
+if (blobRefs < MIN_BLOB_REFS) {
+  errors.push(
+    `아카이브 참조 ${blobRefs} < --min-blob-refs=${MIN_BLOB_REFS} — 표기가 바뀌어 추출이 0건이 되면 ` +
+      `"해석 실패 0"은 통과가 아니라 무효 측정이다(참조가 정말 줄었다면 이 값을 함께 내린다)`,
+  )
+}
 
 for (const w of warnings) console.warn(`::warning::${w}`)
 
@@ -1315,4 +1371,7 @@ if (errors.length) {
   console.error(`문서 드리프트 ${errors.length}건`)
   process.exit(1)
 }
-console.log(`checked ${facts} facts across ${anchors} anchors · ${anchorsChecked} anchor links · ${selfBlobLinks} self-blob targets`)
+console.log(
+  `checked ${facts} facts across ${anchors} anchors · ${anchorsChecked} anchor links · ` +
+    `${selfBlobLinks} self-blob targets · ${blobRefs} archive blob refs (고유 ${blobRefSeen.size})`,
+)

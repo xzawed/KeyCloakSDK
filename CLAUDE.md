@@ -1,5 +1,5 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=24100 max-lines=304 -->
+<!-- doc-budget: max-bytes=24115 max-lines=308 -->
 <!-- 23,800 → 24,100 (2026-08-29, 5회 품질검증 결과): §4(b) 정정. 「두 자리」가 실제로는 **세 자리**였고
      (Rust 저수준 생성자가 `reqwest::Client` 를 받는다 — lib.rs 주석이 이미 그렇게 적고 있었다),
      마무리 문장 「정상 소비 경로는 이들을 노출하지 않는다」는 **자기모순**이었다: 노출 자리 (a)가
@@ -15,7 +15,11 @@
      상쇄로 process.md와 중복된 「하지 말 것」 2건은 걷어냈다.
      23,085 → 23,125 (2026-08-21): 래칫 조건 (1) — 증가분 40B가 **기계 검증을 사 왔다**.
      진입 명령에 `--min-anchor-links=24`이 붙었고, 그건 신설된 검사 10(링크 `#앵커` ↔ 실제 헤딩)의
-     공허함 방어 하한이다. 산문이 아니라 가드가 늘어난 자리라 교환이 성립한다. -->
+     공허함 방어 하한이다. 산문이 아니라 가드가 늘어난 자리라 교환이 성립한다.
+     24,100 → 24,115 (2026-09-02): 같은 부류의 15B. 진입 명령에 `--min-blob-refs=4` 가 붙었고,
+     그건 신설된 검사 10c(아카이브 참조 `git show <sha>:<path>` 가 실제로 해석되는가)의 공허함
+     방어 하한이다. ⚠️ 이 줄을 CI 와 **함께** 옮겨야 하는 이유가 A2 다 — 여기가 「맨 명령」이 되면
+     로컬 초록·CI 빨강이 다시 만들어진다(CONTRIBUTING·development-setup 의 사본도 같다). -->
 
 
 Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·PHP·Rust·Ruby·Kotlin)가 같은 API 모양을 각 언어 관용으로 구현한다. 인증(OIDC/OAuth2)과 관리 REST API 두 표면을 모두 덮는다. Apache-2.0 · groupId `io.github.xzawed`.
@@ -43,7 +47,7 @@ Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·P
 
 1. **언어 디렉터리에서 작업한다.** `java/`·`python/`·`node/`·`go/`·`dotnet/`·`php/`·`rust/`·`ruby/`·`kotlin/` 중 하나에 들어가면 `.claude/rules/<lang>.md`가 자동 로드된다(`paths:` 프론트매터). **그 파일이 그 언어의 빌드 명령·제약·게차의 진실 원천이다** — 이 파일에 다시 적지 않는다.
 2. **바꾸기 전에 테스트를 돌린다.** 아래 툴체인 표의 진입 명령. 통합 테스트는 Docker가 필요하다.
-3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anchor-links=24`.
+3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anchor-links=24 --min-blob-refs=4`.
 4. **PR로 올린다.** `main` 직접 push 불가(룰셋 `PRIMARY`). required 체크는 `doc-facts`·`shell-exec-bits` 둘뿐이고 **언어 CI를 required에 넣으면 저장소가 잠긴다**(`paths:` 필터라 체크가 생성조차 안 된다).
 
 ### 하지 말 것
