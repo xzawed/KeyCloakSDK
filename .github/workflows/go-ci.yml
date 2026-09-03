@@ -14,9 +14,19 @@ jobs:
     name: Build + lint + unit (Go ${{ matrix.go }})
     runs-on: ubuntu-latest
     strategy:
-      # ⚠️ 주석이 낡아 있었다 — 「최신 마이너」가 1.26 이던 시절의 문장이고 1.27 이 나왔다.
+      # ⚠️ 주석이 낡아 있었다 — 「최신 마이너」가 1.26 이던 시절의 문장이고 1.27 이 이미 나왔다.
       # 1.25 는 go.mod 하한이라 유지한다(상류 지원창 밖이어도 소비자를 자르지 않는다).
-      matrix: { go: ['1.25', '1.26', '1.27'] } # 최소 지원(go.mod) · 중간 · 최신 마이너
+      #
+      # ⚠️ **1.27 레그는 넣었다가 뺐다 — 우리 코드가 아니라 `staticcheck` 가 막는다.** 실측
+      # (PR #388, 2026-09-03): 빌드와 단위테스트는 1.27 에서 통과했고 staticcheck 스텝만 죽었다 —
+      #   internal error in importing "internal/byteorder"
+      #   (cannot decode …, export data version 4 is greater than maximum supported version 2)
+      # 즉 핀된 staticcheck v0.7.0 이 Go 1.27 의 export data 를 못 읽는다. 도구를 `@latest` 로
+      # 푸는 것은 공급망 이유로 이 저장소가 이미 기각한 선택이라(아래 핀 주석) 레그를 뺀다.
+      # **되살릴 조건**(명령): `go run honnef.co/go/tools/cmd/staticcheck@<새 버전> ./...` 가
+      # Go 1.27 툴체인에서 `export data version` 오류 없이 끝날 때 — 그때 이 배열에 '1.27' 을
+      # 되넣고 위 핀 버전을 함께 올린다.
+      matrix: { go: ['1.25', '1.26'] } # 최소 지원(go.mod) + staticcheck 가 읽을 수 있는 최신 마이너
     defaults: { run: { working-directory: go } }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
