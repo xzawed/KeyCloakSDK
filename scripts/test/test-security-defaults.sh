@@ -234,6 +234,99 @@ done
 assert_eq "9" "$_nonce_seen" "[nonce] 훑은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
 
 # ---------------------------------------------------------------------------
+# 1c) 마스킹 축 — 아홉 언어의 **바닥 계약**이 살아있는가
+# ---------------------------------------------------------------------------
+#
+# 계약(교차언어): **비밀 보유 타입은 그 언어의 기본 문자열/디버그 표현에서 비밀을 `***` 로 낸다.**
+# 이것이 아홉 전부에서 참이면서 기계로 강제할 수 있는 **유일한 바닥**이다. 「JSON 도 마스킹한다」는
+# 계약이 될 수 없다 — Rust 는 Serialize 를 derive 하지 않아 그 경로가 아예 없고, Go 에 MarshalJSON 을
+# 달면 소비자의 세션·캐시 왕복이 조용히 마스킹된 값으로 저장된다(.NET 이 converter 의 Read 를
+# throw 로 막아야 했던 이유). 바닥 위의 훅(toJSON·JsonSerializable·LogValuer)은 언어마다 있고
+# 없고가 갈리므로 여기서 강제하지 않는다.
+#
+# ⚠️ **훅의 존재만 세면 이 축은 헛돈다.** 훅이 남은 채 본문이 `%+v` 덤프로 바뀌면 grep 은 그대로
+# 통과한다. 그래서 언어마다 **둘**을 본다 — (a) 구현 훅이 있고 (b) **행위 카나리아 테스트**가
+# 있다. (b) 가 실제 마스킹을 단언하는 자리이고, 각 언어 CI 가 그것을 돌린다. 이 축은 그 테스트가
+# **삭제되지 않았음**을 보장한다.
+#
+# 실측 배경(2026-09-03): 이 축을 세우기 전 go 는 바닥을 깨고 있었다 — `TokenSet.String()` 이
+# 포인터 리시버라 **값은 Stringer 가 아니었고**, `AuthorizationRequest` 에는 String() 자체가
+# 없었다(둘 다 `fmt.Printf("%v", …)` 로 원문 노출, 프로브로 확인).
+sd_mask_src() {
+  case "$1" in
+    java)   printf '%s' 'java/keycloak-sdk-core/src/main/java/io/github/xzawed/keycloak/core/TokenSet.java' ;;
+    kotlin) printf '%s' 'kotlin/src/main/kotlin/io/github/xzawed/keycloak/tokens.kt' ;;
+    python) printf '%s' 'python/src/keycloak_sdk/tokens.py' ;;
+    node)   printf '%s' 'node/src/tokens.ts' ;;
+    go)     printf '%s' 'go/tokens.go' ;;
+    dotnet) printf '%s' 'dotnet/src/Xzawed.Keycloak.Sdk/Tokens.cs' ;;
+    php)    printf '%s' 'php/src/Token/TokenSet.php' ;;
+    rust)   printf '%s' 'rust/src/tokens.rs' ;;
+    ruby)   printf '%s' 'ruby/lib/keycloak_sdk/tokens.rb' ;;
+  esac
+}
+# 구현 훅 앵커 — 그 언어에서 `fmt`/문자열화가 타는 자리.
+sd_mask_hook() {
+  case "$1" in
+    java)   printf '%s' 'public String toString()' ;;
+    kotlin) printf '%s' 'override fun toString()' ;;
+    python) printf '%s' '__repr__' ;;
+    node)   printf '%s' 'toString(): string' ;;
+    # ⚠️ 값 리시버여야 한다 — 포인터 리시버면 값이 Stringer 가 아니어서 필드가 그대로 찍힌다.
+    go)     printf '%s' 'func (t TokenSet) String() string' ;;
+    dotnet) printf '%s' 'public override string ToString()' ;;
+    php)    printf '%s' 'public function __toString()' ;;
+    rust)   printf '%s' 'impl std::fmt::Debug for TokenSet' ;;
+    ruby)   printf '%s' 'def inspect' ;;
+  esac
+}
+# 행위 카나리아 테스트 파일 — 마스킹을 **실행해서** 단언하는 자리.
+sd_mask_test() {
+  case "$1" in
+    java)   printf '%s' 'java/keycloak-sdk-core/src/test/java/io/github/xzawed/keycloak/core/TokenSetTest.java' ;;
+    kotlin) printf '%s' 'kotlin/src/test/kotlin/io/github/xzawed/keycloak/MaskingTest.kt' ;;
+    python) printf '%s' 'python/tests/unit/test_secrets.py' ;;
+    node)   printf '%s' 'node/test/unit/masking.test.ts' ;;
+    go)     printf '%s' 'go/masking_test.go' ;;
+    dotnet) printf '%s' 'dotnet/tests/Xzawed.Keycloak.Sdk.Tests/MaskingTests.cs' ;;
+    php)    printf '%s' 'php/tests/Unit/MaskingTest.php' ;;
+    rust)   printf '%s' 'rust/src/tokens.rs' ;;
+    ruby)   printf '%s' 'ruby/spec/unit/masking_spec.rb' ;;
+  esac
+}
+# 그 테스트가 **마스킹을 단언한다**는 앵커. java 는 `***` 리터럴을 쓰지 않고 「원문이 없다」로
+# 단언하므로 테스트 이름을 앵커로 잡는다(문구가 아니라 단언의 존재를 겨눈다).
+sd_mask_canary() {
+  case "$1" in
+    java)   printf '%s' 'toString_masksTokens' ;;
+    go)     printf '%s' 'assertMasked' ;;
+    rust)   printf '%s' 'fn debug_masks_tokens' ;;
+    *)      printf '%s' '***' ;;
+  esac
+}
+
+_mask_seen=0
+for L in $SD_LANGS; do
+  _ms="$(sd_mask_src "$L")"
+  _mt="$(sd_mask_test "$L")"
+  _e=1; [ -f "$ROOT/$_ms" ] && _e=0
+  assert_eq "ok" "$(ok_if "$_e" MISSING)" "[mask] $L 소스 파일이 없다($_ms)"
+  _e=1; [ -f "$ROOT/$_mt" ] && _e=0
+  assert_eq "ok" "$(ok_if "$_e" MISSING)" "[mask] $L 마스킹 테스트 파일이 없다($_mt)"
+  [ -f "$ROOT/$_ms" ] && [ -f "$ROOT/$_mt" ] || continue
+  _hp="$(sd_mask_hook "$L")"
+  _h=1; grep -qF -- "$_hp" "$ROOT/$_ms" && _h=0
+  assert_eq "ok" "$(ok_if "$_h" MISSING)" \
+    "[mask] $L 비밀 보유 타입에 기본 문자열표현 마스킹 훅이 없다 — 기대: $_hp"
+  _cp="$(sd_mask_canary "$L")"
+  _c=1; grep -qF -- "$_cp" "$ROOT/$_mt" && _c=0
+  assert_eq "ok" "$(ok_if "$_c" MISSING)" \
+    "[mask] $L 마스킹을 단언하는 행위 테스트가 없다 — 기대: $_cp (훅만 남고 본문이 바뀌면 이것만이 잡는다)"
+  _mask_seen=$((_mask_seen + 1))
+done
+assert_eq "9" "$_mask_seen" "[mask] 훑은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
+
+# ---------------------------------------------------------------------------
 # 2) 문서 축 — 그 값을 말하는 소비자 문서
 # ---------------------------------------------------------------------------
 #
