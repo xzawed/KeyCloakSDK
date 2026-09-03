@@ -14,7 +14,9 @@ jobs:
     name: Build + lint + unit (Go ${{ matrix.go }})
     runs-on: ubuntu-latest
     strategy:
-      matrix: { go: ['1.25', '1.26'] } # 최소 지원(go.mod) + 최신 마이너
+      # ⚠️ 주석이 낡아 있었다 — 「최신 마이너」가 1.26 이던 시절의 문장이고 1.27 이 나왔다.
+      # 1.25 는 go.mod 하한이라 유지한다(상류 지원창 밖이어도 소비자를 자르지 않는다).
+      matrix: { go: ['1.25', '1.26', '1.27'] } # 최소 지원(go.mod) · 중간 · 최신 마이너
     defaults: { run: { working-directory: go } }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

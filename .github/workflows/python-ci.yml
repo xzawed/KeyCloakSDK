@@ -14,7 +14,8 @@ jobs:
     name: Lint + unit test (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
     strategy:
-      matrix: { python: ['3.10', '3.11', '3.12', '3.13'] }
+      # 3.14 는 현 최신 안정판. 하한 3.10 은 그대로 둔다 — 상류 EOL 이 가까워도 소비자를 자르지 않는다.
+      matrix: { python: ['3.10', '3.11', '3.12', '3.13', '3.14'] }
     defaults: { run: { working-directory: python } }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
