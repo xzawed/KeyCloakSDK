@@ -69,10 +69,15 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
   #      §4「하위 오류는 경계에서 SDK 타입으로 변환된다」를 함께 깬다.
   # 참조 구현이 이 저장소 안에 있다 — go/admin_realms.go 가 url.PathEscape 를 쓴다.
   describe "경로 세그먼트 이스케이프" do
+    # 이 블록의 모든 stub 이 같은 모양이라 헬퍼 하나로 모은다.
+    def stub_ok(path)
+      stub_request(:get, "https://kc.example.com/#{path}")
+        .to_return(status: 200, body: "{}", headers: { "Content-Type" => "application/json" })
+    end
+
     it "../ 를 담은 id 가 경로를 재작성하지 못한다" do
       traversed = stub_request(:get, "https://kc.example.com/admin/foo")
-      escaped = stub_request(:get, "https://kc.example.com/admin/realms/demo/users/..%2F..%2F..%2Ffoo")
-                .to_return(status: 200, body: "{}", headers: { "Content-Type" => "application/json" })
+      escaped = stub_ok("admin/realms/demo/users/..%2F..%2F..%2Ffoo")
 
       admin.users.get("../../../foo")
 
@@ -80,32 +85,22 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
       expect(escaped).to have_been_requested.once
     end
 
-    it "공백이 든 role 이름이 stdlib 예외를 새지 않는다" do
-      stub = stub_request(:get, "https://kc.example.com/admin/realms/demo/roles/my%20role")
-             .to_return(status: 200, body: "{}", headers: { "Content-Type" => "application/json" })
-
-      expect { admin.roles.get("my role") }.not_to raise_error
-      expect(stub).to have_been_requested.once
-    end
-
-    it "다섯 리소스 전부에 적용된다 — 한 곳만 고치면 부류가 남는다" do
-      {
-        "users" => -> { admin.users.get("a b") },
-        "clients" => -> { admin.clients.get("a b") },
-        "groups" => -> { admin.groups.get("a b") },
-        "roles" => -> { admin.roles.get("a b") }
-      }.each do |segment, call|
-        stub = stub_request(:get, "https://kc.example.com/admin/realms/demo/#{segment}/a%20b")
-               .to_return(status: 200, body: "{}", headers: { "Content-Type" => "application/json" })
-        expect { call.call }.not_to raise_error, "#{segment}: 이스케이프 누락"
+    # 공백은 Keycloak 이 role/group 이름에 허용하는데 URI.parse 는 거부한다 —
+    # 이스케이프가 없으면 Faraday::Error 가 아닌 stdlib URI::InvalidURIError 가 새어
+    # §4 경계 변환까지 함께 깨진다. 다섯 리소스를 전부 도는 이유는 한 곳만 고치면
+    # 부류가 남기 때문이다(realms 는 realm 이름 자체가 세그먼트라 경로 모양이 다르다).
+    {
+      "users" => "admin/realms/demo/users/a%20b",
+      "clients" => "admin/realms/demo/clients/a%20b",
+      "groups" => "admin/realms/demo/groups/a%20b",
+      "roles" => "admin/realms/demo/roles/a%20b",
+      "realms" => "admin/realms/a%20b"
+    }.each do |resource, path|
+      it "#{resource}: 공백이 든 세그먼트를 이스케이프하고 stdlib 예외를 새지 않는다" do
+        stub = stub_ok(path)
+        expect { admin.public_send(resource).get("a b") }.not_to raise_error
         expect(stub).to have_been_requested.once
       end
-
-      # realms 는 realm 이름 자체가 세그먼트다.
-      realm_stub = stub_request(:get, "https://kc.example.com/admin/realms/a%20b")
-                   .to_return(status: 200, body: "{}", headers: { "Content-Type" => "application/json" })
-      expect { admin.realms.get("a b") }.not_to raise_error
-      expect(realm_stub).to have_been_requested.once
     end
   end
 end
