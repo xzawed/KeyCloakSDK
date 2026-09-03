@@ -102,11 +102,16 @@ jobs:
       - name: 비교 (MAJOR 면 실패)
         run: |
           set -euo pipefail
-          out="$(php "$RUNNER_TEMP/semver/bin/php-semver-checker" compare "$RUNNER_TEMP/base/php/src" php/src 2>&1)"
-          echo "$out"
-          printf '%s' "$out" | grep -q 'Suggested semantic versioning change:' || {
-            echo "::error::판정 줄이 없다 — 비교가 일어나지 않았다"; exit 1; }
-          if printf '%s' "$out" | grep -q 'Suggested semantic versioning change: MAJOR'; then
-            echo "::error::직전 릴리스 대비 파괴적 변경이 있다 — 1.0 은 major 없이 허용하지 않는다"
-            exit 1
-          fi
+          php "$RUNNER_TEMP/semver/bin/php-semver-checker" compare \
+            "$RUNNER_TEMP/base/php/src" php/src > "$RUNNER_TEMP/semver-report.txt" 2>&1 || true
+          cat "$RUNNER_TEMP/semver-report.txt"
+          # ⚠️ 도구의 종료코드는 게이트가 될 수 없다(위 주석의 실측) — 리포트 본문을 판정한다.
+          # 그리고 그 본문을 **그대로** 믿지도 않는다: 이 도구는 클래스에 `implements` 절이 하나
+          # 붙는 것만으로 손대지 않은 생성자를 「기본값이 바뀌었다」(V097)고 보고하고, `final`
+          # 클래스에 메서드가 느는 것(V015 · 상속 불가라 충돌할 수 없다)도 MAJOR 로 센다.
+          # check-php-api-compat.mjs 가 그 주장들을 **소스로 반증**한 뒤 남는 것만 실패로 만든다.
+          # 면제는 셋뿐이고 전부 반증 가능한 술어다 — 자가테스트가 그 대조군을 고정한다.
+          node scripts/check-php-api-compat.mjs \
+            --report "$RUNNER_TEMP/semver-report.txt" \
+            --base "$RUNNER_TEMP/base/php" \
+            --new php
