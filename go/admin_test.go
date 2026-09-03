@@ -126,6 +126,31 @@ func TestRolesUpdateAddressesByCurrentNameAndCarriesNewNameInBody(t *testing.T) 
 // 쓴다 — 즉 admin은 Go 기본값대로 3xx를 최대 10홉 따라갔고, LoginClient는 client_secret을 싣는다.
 // 두 가지를 함께 단언한다: (a) 리다이렉트 표적에 도달하지 않는다 (b) 3xx가 성공으로 보고되지 않는다.
 // (b)가 없으면 ErrUseLastResponse가 302 본문을 토큰으로 언마셜해 fail-open이 될 수 있다.
+// admin 레인이 실제 API 호출에서도 fail-closed 인지 — 토큰 발급은 성공시키고 그 다음 PUT 만
+// 3xx 로 답한다. `admin_realms.go` 의 raw PUT 은 이 파사드에서 유일하게 손으로 만든 요청이라
+// resty 의 `IsError()`(= status > 399)를 물려받으면 3xx 를 성공으로 읽는다.
+func TestAdminRawPutFailsClosedOnRedirect(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"tok","expires_in":300}`))
+			return
+		}
+		http.Redirect(w, r, "/elsewhere", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	cfg := Config{ServerURL: srv.URL, Realm: "r", ClientID: "c", ClientSecret: "s"}.withDefaults()
+	a, err := newAdminClient(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("newAdminClient(토큰은 정상): %v", err)
+	}
+	err = a.Realms.Update(context.Background(), "r", gocloak.RealmRepresentation{})
+	if err == nil {
+		t.Fatal("raw PUT 이 302 를 성공으로 읽었다 — realm 이 안 바뀌었는데 nil 이다")
+	}
+}
+
 // 302와 307을 함께 돈다. 실측(수정 전 RED)에서 **둘 다 표적에 도달했고 client_secret은 두 경우
 // 모두 빈 문자열이었다** — 302는 Go가 POST→GET으로 바꾸며 본문을 버리고, 307도 resty의 본문이
 // 재생되지 않았다. 그러므로 이 결함은 「자격증명 유출」이 아니라 **SSRF**다: SDK가 공격자가 고른

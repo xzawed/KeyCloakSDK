@@ -63,7 +63,11 @@ func (r *RealmsResource) Update(ctx context.Context, realmName string, realm goc
 		if err != nil {
 			return &gocloak.APIError{Code: 0, Message: err.Error()}
 		}
-		if resp.IsError() {
+		// ⚠️ Not resp.IsError() — that is resty's `StatusCode() > 399`, so a 3xx would read as
+		// success here. errOnRedirect already refuses redirects at the transport, but this is the
+		// one hand-rolled request in the facade: state the 2xx contract explicitly rather than
+		// inherit resty's.
+		if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
 			return &gocloak.APIError{Code: resp.StatusCode(), Message: string(resp.Body())}
 		}
 		return nil

@@ -48,10 +48,10 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 	gc.RestyClient().SetTimeout(time.Duration(cfg.ReadTimeout) * time.Millisecond).SetTransport(tr)
 	// SSRF hardening for the admin lane. resty owns its own *http.Client, so Config.httpClient()'s
 	// CheckRedirect never reached admin requests — including LoginClient, which carries the client
-	// secret. Assign the same single policy here. ⚠️ Do not call resty's SetRedirectPolicy instead:
-	// it installs a *second* policy definition with different semantics (it errors rather than
-	// surfacing the 3xx), and it would overwrite this assignment.
-	gc.RestyClient().GetClient().CheckRedirect = noFollowRedirect
+	// secret. ⚠️ This lane uses the **erroring** mode (see config.go): gocloak's error test is
+	// resty's IsError() == `StatusCode() > 399`, so a merely *surfaced* 3xx would read as success.
+	// ⚠️ Do not call resty's SetRedirectPolicy — it overwrites this assignment.
+	gc.RestyClient().GetClient().CheckRedirect = errOnRedirect
 
 	tp := NewClientCredentialsTokenProvider(func(ctx context.Context) (*TokenSet, error) {
 		jwt, err := gc.LoginClient(ctx, cfg.ClientID, cfg.ClientSecret, cfg.Realm)
