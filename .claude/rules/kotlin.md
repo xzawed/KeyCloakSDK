@@ -6,7 +6,16 @@ paths:
   - "harness/install/consume/kotlin-app/**"
   - ".github/workflows/kotlin-*.yml"
 ---
-<!-- doc-budget: max-bytes=8455 -->
+<!-- doc-budget: max-bytes=9145 -->
+<!-- 8455 → 9145 (2026-09-03, +690B). 규약 (1) — 증가분이 **기계 검증을 사 온다**: 소비자 JVM 하한을
+     21 → 17 로 내리면서 `scripts/check-jvm-bytecode-floor.mjs`(신규 가드)가 들어왔고
+     `check-docs.mjs` 의 runtime 추출기가 `jvmToolchain` → `JvmTarget` 으로 바뀌었다. 두 줄이 그
+     둘의 조준점이자 **실패 재현 방법**이다.
+     압축을 먼저 했다(+1087B → +689B). 더 줄이면 남는 것이 「jvmTarget 을 쓴다」는 결론뿐이고,
+     그것을 지우면 안 되는 이유(툴체인이 타깃을 끌고 가서 조용히 major 65 가 나간다 ·
+     `-Xjdk-release` 없이는 JDK 21 부트클래스패스에 링크된다)와 그 실측(HttpClient.use 실패)이
+     사라진다. CLAUDE.md 문서 규칙의 「압축이 판정 방법을 지우면 손실」에 해당한다. -->
+
 
 # Kotlin rules
 
@@ -28,7 +37,9 @@ cd kotlin
 ```
 
 - A single test: `./gradlew test --tests "*<ClassName>"` (from inside `kotlin/`)
-- Coordinate `io.github.xzawed:keycloak-sdk-kotlin`. KGP 2.4.10 · `jvmToolchain(21)` · `languageVersion`/`apiVersion` = `KOTLIN_2_2` (the consumer floor) · `explicitApi()`.
+- Coordinate `io.github.xzawed:keycloak-sdk-kotlin`. KGP 2.4.10 · `languageVersion`/`apiVersion` = `KOTLIN_2_2` (the Kotlin consumer floor) · `explicitApi()`.
+- ⚠️ **`jvmToolchain(21)` is the build JDK; the consumer floor is `jvmTarget = JVM_17` + `-Xjdk-release=17`.** The toolchain also drives the bytecode target, so **deleting `jvmTarget` silently ships major 65** — build green, CI (on 21) blind. `check-jvm-bytecode-floor.mjs` re-reads the class files, and `check-docs.mjs` extracts `JvmTarget.JVM_(\d+)`, **not** the toolchain.
+- ⚠️ **`-Xjdk-release` is load-bearing.** `jvmTarget` alone lowers the class-file version but still links against JDK 21's boot classpath, so a 17-absent API compiles and dies at runtime. Measured: enabling it immediately failed `AdminRedirectHardeningTest.kt` (`HttpClient.use {}` — `AutoCloseable` only since 21).
 - Releasing goes `kotlin-v*` tag → `kotlin-release.yml` (staging on the Central Portal) → a human releases it from the Portal. The pins' SSOT is the dependency table in the root `CLAUDE.md` (a doc-guard anchor cross-checks it against `build.gradle.kts` — do not write the numbers here).
 - Measured coverage is 99.33% lines / 89.13% branches (41 of 46). ⚠️ `koverVerify` prints no percentages, so it cannot be cross-checked from the CI log — use `koverHtmlReport` for that.
 - ⚠️ **Read the branch gate's slack as a count, not a percentage.** The denominator is 46, so one branch is 2.2 points. It sat at **exactly zero slack** (40 covered, 40 required) until a test for a token carrying `iat` was added — the helper in `JwtValidatorTest` had never set `issueTime`, so `validatedTokenFrom` only ever took the null path. Slack is now 1.

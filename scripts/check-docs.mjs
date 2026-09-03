@@ -525,7 +525,12 @@ function normalizeRequirement(s) {
 // 최소 런타임 — 언어별 고정 추출기(좌표가 없는 단일 값)
 const RUNTIME = {
   java: ['java/pom.xml', (t) => /<maven\.compiler\.release>([^<]+)</.exec(t)?.[1]],
-  kotlin: ['kotlin/build.gradle.kts', (t) => /jvmToolchain\((\d+)\)/.exec(t)?.[1]],
+  // ⚠️ `jvmToolchain(N)` 이 아니라 `jvmTarget` 을 읽는다 — 둘은 다른 것을 뜻한다.
+  // toolchain 은 **빌드에 쓰는 JDK**이고, 소비자가 실제로 마주하는 하한은 **방출되는 클래스파일
+  // 버전** = `jvmTarget` 이다. 이 저장소는 JDK 21 로 빌드하고 17 을 방출하므로, toolchain 을 읽으면
+  // 소비자 하한을 21 로 **거짓 보고**한다. `-Xjdk-release` 는 API 표면을 함께 묶는 짝이고
+  // 바이트코드 하한 자체는 `scripts/check-jvm-bytecode-floor.mjs` 가 산출물에서 다시 확인한다.
+  kotlin: ['kotlin/build.gradle.kts', (t) => /JvmTarget\.JVM_(\d+)/.exec(t)?.[1]],
   node: ['node/package.json', (t) => JSON.parse(t).engines?.node],
   go: ['go/go.mod', (t) => /^go\s+([\d.]+)/m.exec(t)?.[1]],
   dotnet: ['dotnet/Directory.Build.props', (t) => /<TargetFramework>([^<]+)</.exec(t)?.[1]],

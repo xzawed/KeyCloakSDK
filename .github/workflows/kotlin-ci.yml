@@ -27,6 +27,13 @@ jobs:
       # 단위테스트 100개 + 커버리지 게이트(로직 모듈 라인≥90/브랜치≥85 — 네트워크 경계
       # AuthClient/admin.*/KeycloakClient omit) + ktlint(무경고). Docker 불필요(integrationTest는 별도 잡).
       - run: ./gradlew build test koverVerify ktlintCheck
+      # ⚠️ kotlin 은 `jvmToolchain(21)` 로 **빌드**하고 `jvmTarget=17` + `-Xjdk-release=17` 로
+      # **방출**한다. 그 두 줄 중 하나만 지워도 빌드는 성공하고 major 65 가 나간다 — 툴체인이
+      # 바이트코드 타깃까지 21 로 끌고 가기 때문이다. CI 는 JDK 21 에서 도니 그 사고를 못 본다.
+      # 산출물을 직접 읽는 것만이 이 회귀를 잡는다.
+      - name: 바이트코드 하한 (JDK 17 = major 61)
+        working-directory: ${{ github.workspace }}
+        run: node scripts/check-jvm-bytecode-floor.mjs kotlin/build/classes/kotlin/main --max-major=61 --min-classes=40
 
   integration:
     name: Integration (testcontainers, 실제 Keycloak 26.6)

@@ -58,7 +58,7 @@
   </modules>
 
   <properties>
-    <maven.compiler.release>21</maven.compiler.release>
+    <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <keycloak.adminclient.version>26.0.12</keycloak.adminclient.version>
     <nimbus.oidc.version>11.38.2</nimbus.oidc.version>
@@ -185,7 +185,7 @@
             <configuration>
               <rules>
                 <dependencyConvergence/>
-                <requireJavaVersion><version>[21,)</version></requireJavaVersion>
+                <requireJavaVersion><version>[17,)</version></requireJavaVersion>
                 <requireMavenVersion><version>[3.9,)</version></requireMavenVersion>
               </rules>
             </configuration>

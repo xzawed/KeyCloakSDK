@@ -40,7 +40,26 @@ kotlin {
     compilerOptions {
         languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2)
         apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2)
+
+        // ⚠️ **소비자 JVM 하한 = 17.** Java SDK 와 반드시 **함께** 움직인다 — 한쪽만 내리면
+        // JDK 17 소비자가 두 아티팩트 중 하나에서 `UnsupportedClassVersionError` 를 맞는다.
+        //
+        // ⚠️ `jvmToolchain(21)` 은 **빌드 JDK**를 정하는 것이고 바이트코드 타깃까지 21 로 끌고 간다.
+        // 그래서 `jvmTarget` 을 명시하지 않으면 여기 설정과 무관하게 **major 65 가 그대로 나온다.**
+        // 빌드는 21 로 하되(툴체인 유지) 방출만 17 로 내린다.
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        // ⚠️ `jvmTarget` 만으로는 부족하다 — 그것은 클래스파일 버전만 내리고 **JDK 21 의
+        // 부트클래스패스에 링크된 채로** 남는다. 그러면 17 에는 없는 API 를 호출해도 컴파일이
+        // 통과하고, 실제 JDK 17 소비자가 런타임에 NoSuchMethodError 로 죽는다.
+        // `-Xjdk-release` 가 javac 의 `--release` 와 같은 역할을 해 API 표면까지 17 로 묶는다.
+        freeCompilerArgs.add("-Xjdk-release=17")
     }
+}
+
+// Kotlin 모듈에도 java 소스가 섞일 수 있고(현재는 없다) 그때 javac 가 툴체인 기본값(21)로
+// 컴파일하면 위 설정이 조용히 무력해진다. release 를 명시해 그 경로를 닫는다.
+tasks.withType<JavaCompile>().configureEach {
+    options.release.set(17)
 }
 
 // 🔒 Jackson 보안 핀 — java/pom.xml의 dependencyManagement와 동일한 불변식을 Kotlin에도 건다.

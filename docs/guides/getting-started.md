@@ -16,7 +16,7 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 
 | Language | Minimum runtime | Notes |
 |---|---|---|
-| **Java** | **JDK 21+** | Artifacts are compiled with `--release 21`, so older JDKs raise `UnsupportedClassVersionError` |
+| **Java** | **JDK 17+** | Artifacts are compiled with `--release 17`, so older JDKs raise `UnsupportedClassVersionError` |
 | **Python** | **3.10+** | Includes `py.typed` (PEP 561) — consumer-side mypy type checking possible |
 | **Node.js** | **22+** | ESM-only · async-only · includes `.d.ts` type declarations |
 | **Go** | **1.25+** | sync + `context.Context` · requires `x/oauth2` v0.36 |
@@ -24,17 +24,17 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 | **PHP** | **8.3+** | `final readonly class` value types · exception-based (`KeycloakException` hierarchy) |
 | **Rust** | **1.88+** | MSRV required by edition 2024 + let-chains · async-only (tokio) · `thiserror`-based `KeycloakError` |
 | **Ruby** | **3.2+** | sync-only · exception hierarchy (`KeycloakSdk::Error`) · gem `keycloak-sdk` / require `keycloak_sdk` |
-| **Kotlin** | **2.2+** (JDK 21+) | coroutines (`suspend`) · data-class value types · sealed `KeycloakException` · reuses the JVM Java SDK stack |
+| **Kotlin** | **2.2+** (JDK 17+) | coroutines (`suspend`) · data-class value types · sealed `KeycloakException` · reuses the JVM Java SDK stack |
 | (optional) Docker | — | **Needed only for integration tests (Testcontainers/docker CLI)**. Not required to use the SDK itself |
 
 ---
 
 ## Java
 
-### 1) Required runtime — JDK 21+
+### 1) Required runtime — JDK 17+
 
 <!-- doc-guard: kind=runtime lang=java -->
-JDK **`21` or newer** is required. Artifacts are compiled with `--release 21`. **Loading them under a JDK earlier than 21 raises `UnsupportedClassVersionError`**, so the consuming application must also be built and run on JDK 21 or newer. (Originally targeted Java 17, then raised to 21 LTS on 2026-07-03.)
+JDK **`17` or newer** is required. Artifacts are compiled with `--release 17`. **Loading them under a JDK earlier than 17 raises `UnsupportedClassVersionError`**, so the consuming application must also be built and run on JDK 17 or newer. (Targeted Java 17 originally, raised to 21 on 2026-07-03, and lowered back to 17 on 2026-09-03 to cover more consumers — the sources never required 21.)
 
 ### 2) Local installation (development)
 
@@ -597,10 +597,10 @@ client.close
 
 ## Kotlin
 
-### 1) Required runtime — Kotlin 2.2+ / JDK 21+
+### 1) Required runtime — Kotlin 2.2+ / JDK 17+
 
 <!-- doc-guard: kind=runtime lang=kotlin -->
-**JDK `21+`** is required (this anchor verifies the JDK toolchain, not the Kotlin language version). Kotlin **2.2 or newer** is also required on that JDK (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). The SDK is *built* with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so the published artifact’s binary metadata is readable by any Kotlin 2.2+ compiler — you do not need to be on 2.4 to consume it. All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
+**JDK `17+`** is required (this anchor verifies the emitted bytecode target, not the JDK used to build). Kotlin **2.2 or newer** is also required on that JDK (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). The SDK is *built* with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so the published artifact’s binary metadata is readable by any Kotlin 2.2+ compiler — you do not need to be on 2.4 to consume it. All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
 
 ### 2) Local installation (development)
 
