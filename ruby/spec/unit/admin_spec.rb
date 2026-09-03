@@ -62,4 +62,45 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
   it "exposes the raw Faraday connection as an escape hatch" do
     expect(admin.raw).to be_a(Faraday::Connection)
   end
+
+  # 다섯 admin 리소스가 전부 경로 세그먼트를 **날 문자열 보간**으로 만든다. 두 가지가 깨진다:
+  #  (1) "../" 를 담은 값이 경로를 재작성한다 — 서비스 계정 베어러를 실은 채 다른 엔드포인트로 간다.
+  #  (2) Keycloak 이 허용하는 공백 든 role/group 이름이 URI::InvalidURIError(stdlib)를 올려
+  #      §4「하위 오류는 경계에서 SDK 타입으로 변환된다」를 함께 깬다.
+  # 참조 구현이 이 저장소 안에 있다 — go/admin_realms.go 가 url.PathEscape 를 쓴다.
+  describe "경로 세그먼트 이스케이프" do
+    # 이 블록의 모든 stub 이 같은 모양이라 헬퍼 하나로 모은다.
+    def stub_ok(path)
+      stub_request(:get, "https://kc.example.com/#{path}")
+        .to_return(status: 200, body: "{}", headers: { "Content-Type" => "application/json" })
+    end
+
+    it "../ 를 담은 id 가 경로를 재작성하지 못한다" do
+      traversed = stub_request(:get, "https://kc.example.com/admin/foo")
+      escaped = stub_ok("admin/realms/demo/users/..%2F..%2F..%2Ffoo")
+
+      admin.users.get("../../../foo")
+
+      expect(traversed).not_to have_been_requested
+      expect(escaped).to have_been_requested.once
+    end
+
+    # 공백은 Keycloak 이 role/group 이름에 허용하는데 URI.parse 는 거부한다 —
+    # 이스케이프가 없으면 Faraday::Error 가 아닌 stdlib URI::InvalidURIError 가 새어
+    # §4 경계 변환까지 함께 깨진다. 다섯 리소스를 전부 도는 이유는 한 곳만 고치면
+    # 부류가 남기 때문이다(realms 는 realm 이름 자체가 세그먼트라 경로 모양이 다르다).
+    {
+      "users" => "admin/realms/demo/users/a%20b",
+      "clients" => "admin/realms/demo/clients/a%20b",
+      "groups" => "admin/realms/demo/groups/a%20b",
+      "roles" => "admin/realms/demo/roles/a%20b",
+      "realms" => "admin/realms/a%20b"
+    }.each do |resource, path|
+      it "#{resource}: 공백이 든 세그먼트를 이스케이프하고 stdlib 예외를 새지 않는다" do
+        stub = stub_ok(path)
+        expect { admin.public_send(resource).get("a b") }.not_to raise_error
+        expect(stub).to have_been_requested.once
+      end
+    end
+  end
 end

@@ -17,7 +17,7 @@ module KeycloakSdk
       end
 
       def get(realm)
-        request { @conn.get("admin/realms/#{realm}") }.body
+        request { @conn.get("admin/realms/#{esc(realm)}") }.body
       end
 
       def list
@@ -25,12 +25,12 @@ module KeycloakSdk
       end
 
       def update(realm, representation)
-        request { @conn.put("admin/realms/#{realm}", representation) }
+        request { @conn.put("admin/realms/#{esc(realm)}", representation) }
         nil
       end
 
       def delete(realm)
-        request { @conn.delete("admin/realms/#{realm}") }
+        request { @conn.delete("admin/realms/#{esc(realm)}") }
         nil
       end
     end
