@@ -14,6 +14,11 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+// jwksMaxBytes bounds a JWKS response body. 51200 is Nimbus's RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT
+// — the only value in this stack with an external justification, and the same bound the JVM SDKs
+// lose when they call the two-arg DefaultResourceRetriever constructor.
+const jwksMaxBytes = 51200
+
 type validatorOptions struct {
 	jwksURI      string
 	issuer       string
@@ -174,13 +179,28 @@ func (v *Validator) fetch(ctx context.Context) error {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
+	// A non-2xx body is not a key set. jose.JSONWebKeySet unmarshals **any** JSON object lacking a
+	// `keys` member into an empty set with no error, so an IdP/gateway error body ({"error":...})
+	// used to replace the live trust store — after which every previously valid token was rejected
+	// (measured: `no key for kid "k1"` right after a 503 refetch).
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return &TransportError{Msg: fmt.Sprintf("JWKS fetch failed (HTTP %d)", resp.StatusCode)}
+	}
+	// Bound the body: an unbounded ReadAll on an attacker-influenced endpoint is a memory DoS.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, jwksMaxBytes+1))
 	if err != nil {
 		return err
+	}
+	if len(body) > jwksMaxBytes {
+		return &TransportError{Msg: fmt.Sprintf("JWKS response exceeds %d bytes", jwksMaxBytes)}
 	}
 	var ks jose.JSONWebKeySet
 	if err := json.Unmarshal(body, &ks); err != nil {
 		return err
+	}
+	// An empty set is never a legitimate answer, and installing it would blind the validator.
+	if len(ks.Keys) == 0 {
+		return &TransportError{Msg: "JWKS response contains no keys"}
 	}
 	v.mu.Lock()
 	v.jwks = &ks

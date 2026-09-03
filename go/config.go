@@ -1,6 +1,7 @@
 package keycloak
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -123,9 +124,25 @@ func (c Config) httpClient() *http.Client {
 		// Isomorphic with Rust (`redirect::Policy::none()`) and Ruby (no follow_redirects middleware).
 		// ⚠️ This governs requests the SDK itself makes. The OIDC authorization-code `redirect_uri`
 		// is a browser front-channel concern and is unaffected.
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		CheckRedirect: noFollowRedirect,
 	}
 }
+
+// One invariant — never follow a back-channel redirect — in two reporting modes, because the two
+// lanes have different downstream consumers.
+//
+// noFollowRedirect surfaces the 3xx to the caller. That is safe for the auth/JWKS lane because
+// postForm and Validator.fetch check the status themselves (both reject anything outside 2xx).
+func noFollowRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+// errBackChannelRedirect / errOnRedirect is the admin lane's mode. It must **error** rather than
+// surface, because that lane's consumer is gocloak, and resty's error test is `IsError()` —
+// `StatusCode() > 399`. A surfaced 3xx therefore reads as SUCCESS all the way up.
+// Measured with the surfacing mode installed: `LoginClient` returned ("", nil) on a 302, and the
+// raw PUT in admin_realms.go returned nil. Erroring closes both at the source.
+var errBackChannelRedirect = errors.New("back-channel redirect refused")
+
+func errOnRedirect(*http.Request, []*http.Request) error { return errBackChannelRedirect }
 
 // transport mirrors http.DefaultTransport's defaults but injects ConnectTimeout
 // into the dial and TLS-handshake deadlines.

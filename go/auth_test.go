@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -268,5 +269,37 @@ func TestLogoutErrorStatus(t *testing.T) {
 	a := newAuthClient(cfg, nil)
 	if err := a.Logout(context.Background(), "RT"); err == nil || !strings.Contains(err.Error(), "HTTP 400") {
 		t.Fatalf("logout must surface HTTP 400: %v", err)
+	}
+}
+
+// postForm 은 `>= 400` 만 실패로 봤다. SDK 는 리다이렉트를 일부러 따라가지 않고
+// (`noFollowRedirect`) 3xx 를 **호출자에게 그대로 올리므로**, 그 판정은 302 를 성공으로 읽는다.
+// 결과: 세션이 살아 있는데 Logout 이 nil 을 돌려주고, Introspect 는 빈 본문을 파싱한다.
+// 성공은 2xx 다 — 그 밖은 전부 오류로 닫는다.
+func TestPostFormRejectsNon2xx(t *testing.T) {
+	// ⚠️ 1xx 는 넣지 않는다 — net/http 를 통해서는 도달할 수 없다. 실측(probe): 핸들러가
+	// `WriteHeader(100)` 을 써도 전송 계층이 informational 응답을 소비하고 클라이언트가 보는
+	// 최종 상태는 **200** 이다. 넣으면 코드가 아니라 테스트가 틀린 채로 빨개진다.
+	for _, code := range []int{
+		http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
+		http.StatusTemporaryRedirect, http.StatusPermanentRedirect,
+	} {
+		t.Run(http.StatusText(code), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Location", "/elsewhere")
+				w.WriteHeader(code)
+			}))
+			t.Cleanup(srv.Close)
+			cfg := Config{ServerURL: srv.URL, Realm: "test", ClientID: "app", ClientSecret: "x"}.withDefaults()
+			a := newAuthClient(cfg, nil)
+
+			err := a.Logout(context.Background(), "RT")
+			if err == nil {
+				t.Fatalf("Logout 이 HTTP %d 를 성공으로 읽었다 — 세션이 살아 있는데 nil 을 돌려준다", code)
+			}
+			if !strings.Contains(err.Error(), "HTTP "+strconv.Itoa(code)) {
+				t.Fatalf("오류는 실제 상태코드를 담아야 한다(HTTP %d): %v", code, err)
+			}
+		})
 	}
 }

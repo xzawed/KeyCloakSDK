@@ -91,6 +91,13 @@ jobs:
         # 테스트는 판별자를 지워도 통과한다. 자가테스트가 stderr 문구까지 고정하는 이유다.
         run: sh scripts/test/test-check-coverage.sh
 
+      - name: php API 호환성 가드 자가테스트(면제 술어가 거짓이면 면제되지 않는지)
+        # 이 가드는 php-semver-checker 의 주장을 **소스로 반증**해 오탐을 걷어낸다. 그런 장치의
+        # 위험은 하나다 — 면제가 넓어져 게이트를 통째로 무력화하는 것. 그래서 자가테스트의 무게는
+        # 「면제가 동작한다」가 아니라 **비-final 클래스·진짜 기본값 변경·메서드 제거는 그대로
+        # 거부한다**는 대조군에 있다.
+        run: sh scripts/test/test-check-php-api-compat.sh
+
       # ⚠️ 배포 문서·헬퍼의 자가테스트 6종. 이들은 오래 **어떤 워크플로에도 배선돼 있지 않았고**,
       # 그래서 DEPLOY.md가 실제와 어긋나도 아무도 몰랐다 — 첫 태그(`php-v0.1.0-rc.1`)를 민 뒤
       # 문서가 "zero tags"라고 주장하는 상태가 그대로 통과했다(오히려 test-deploy-md.sh의
@@ -204,7 +211,11 @@ jobs:
         # 그대로 침묵한다) 하한을 명시로 못박는다 — check-docs의 --min-facts/--min-anchors와
         # 같은 관용이다. 릴리스 워크플로를 늘리면 이 값도 함께 올린다(내리는 PR은 곧 커버리지
         # 축소라 리뷰 신호가 된다).
-        run: node scripts/check-ci-permissions.mjs . --min-release=10 --min-publish=9 --min-uses=187
+        # ⚠️ `--min-escalations` 는 규칙 5(권한 상승에 근거 주석)의 하한이다. 그 규칙은 상승을
+        # **발견해서** 검사하므로 상승이 스캐너에 안 보이면 0건을 검사하고 초록을 낸다 — 실측:
+        # 플로우 매핑 표기 하나로 인벤토리의 상승 수가 6 → 5 로 줄어드는데도 통과했다. 그 표기는
+        # 이제 fail-closed 로 막히고, 이 하한이 「줄어드는 것」 자체를 막는다.
+        run: node scripts/check-ci-permissions.mjs . --min-release=10 --min-publish=9 --min-uses=187 --min-escalations=6
 
   # ⚠️ **이 잡은 `ci.yml` 에서 옮겨 왔다(2026-09-01).** 거기서는 워크플로 `paths:` 가
   # `java/**` 뿐이라 **kotlin-only PR 에서는 체크가 생성조차 되지 않았다** — 아래 스캔이

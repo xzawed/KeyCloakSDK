@@ -30,10 +30,17 @@ let MIN_RELEASE = 1
 // 사라지면 0건을 검사하고 초록을 낸다.
 let MIN_PUBLISH = 1
 let MIN_USES = 1
+// ⚠️ 그리고 규칙 5(권한 상승에 근거 주석)에도 같은 하한이 필요하다. 이 규칙은 **상승을 발견해서**
+// 검사하므로, 상승이 스캐너에 안 보이게 되는 순간 0건을 검사하고 초록을 낸다. 실측: 플로우 매핑
+// 표기 하나로 인벤토리의 상승 수가 6 → 5 로 줄어드는데도 통과했다. 인쇄만 하고 하한이 없으면
+// 그 수가 줄어드는 것을 아무도 못 본다.
+let MIN_ESCALATIONS = 0
 for (const arg of process.argv.slice(2)) {
   if (/^--min-release=\d+$/.test(arg)) MIN_RELEASE = Number(arg.slice('--min-release='.length))
   else if (/^--min-publish=\d+$/.test(arg)) MIN_PUBLISH = Number(arg.slice('--min-publish='.length))
   else if (/^--min-uses=\d+$/.test(arg)) MIN_USES = Number(arg.slice('--min-uses='.length))
+  else if (/^--min-escalations=\d+$/.test(arg))
+    MIN_ESCALATIONS = Number(arg.slice('--min-escalations='.length))
   else if (!arg.startsWith('--') && rootArg === null) rootArg = arg
 }
 const root = rootArg ?? DEFAULT_ROOT
@@ -130,6 +137,24 @@ const parseWorkflow = (file, text) => {
   // 판단 불가는 통과가 아니라 실패다.
   if (MERGE_KEY.test(text))
     wf.fatal.push(`${file}: YAML 머지 키(<<:)가 있어 잡의 권한 선언 여부를 판단할 수 없다(fail-closed)`)
+
+  // ⚠️ 이 스캐너는 들여쓰기와 키만 읽는다 — 플로우 매핑 `permissions: {contents: write}` 는
+  // 자식 노드를 만들지 않으므로 **스코프가 통째로 보이지 않는다.** 실측(A/B, 실 워크플로 복사본):
+  // 근거 주석 없는 `{contents: write, id-token: write}` 를 넣었더니 인벤토리의
+  // 「릴리스 잡의 write 상승」이 6 → 5 로 **줄어들고** 가드는 그대로 통과했다. 즉 규칙 5 가
+  // 보지 못하는 표기가 하나 있었고, 이 파일의 헤더는 이미 「해석하지 못하는 모양은 통과가
+  // 아니라 오류」라고 적고 있었는데 코드가 그 약속을 지키지 않았다.
+  //
+  // `{}` 는 예외다 — 빈 매핑은 「권한 없음」이라 해석할 스코프가 없고, 실제로 네 릴리스
+  // 워크플로가 그 표기를 쓴다(dotnet/go/php-release · release). 여기서 막으면 즉시 전면 RED 다.
+  for (const n of nodes) {
+    if (n.key !== 'permissions') continue
+    const v = (n.value ?? '').trim()
+    if (v.startsWith('{') && v.replace(/\s/g, '') !== '{}')
+      wf.fatal.push(
+        `${file}:${n.n} \`permissions:\` 가 플로우 매핑으로 적혀 있어 스코프를 읽을 수 없다(fail-closed) — 블록 표기로 적을 것`,
+      )
+  }
 
   wf.workflowPerms = nodes.find((x) => x.indent === 0 && x.key === 'permissions') ?? null
   const jobsIdx = nodes.findIndex((x) => x.indent === 0 && x.key === 'jobs')
@@ -456,6 +481,12 @@ for (const wf of workflows) {
 if (publishJobs < MIN_PUBLISH)
   errors.push(
     `게시 잡이 ${publishJobs}개뿐이다(기대 ${MIN_PUBLISH}개 이상) — 잡 키가 개명되어 규칙 9 가 조용히 비었을 수 있다`,
+  )
+// 규칙 5 도 같은 부류다 — 상승을 **발견해서** 검사하므로 상승이 스캐너에 안 보이면 0건을
+// 검사하고 초록을 낸다. 이 수는 원래 인쇄만 되고 아무도 보지 않았다.
+if (writeGrants < MIN_ESCALATIONS)
+  errors.push(
+    `릴리스 잡의 write 상승이 ${writeGrants}건뿐이다(기대 ${MIN_ESCALATIONS}건 이상) — 표기가 바뀌어 규칙 5 가 상승을 못 보고 있을 수 있다`,
   )
 if (usesRefs < MIN_USES)
   errors.push(
