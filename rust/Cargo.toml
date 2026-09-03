@@ -36,7 +36,7 @@ exclude = ["/tests", "/rustfmt.toml"]
 #   a "26.7" is a Keycloak minor upgrade and has previously reshaped the reqwest feature set (the reqwest12
 #   feature this crate depends on is not guaranteed across it). Bump it deliberately, with the gotchas re-checked.
 #   `openidconnect`/`jsonwebtoken` are ordinary semver crates, so caret is correct for them.
-keycloak = { version = "~26.6.2", default-features = false, features = ["tags-all", "resource-builder", "reqwest12"] }
+keycloak = { version = "~26.7.200", default-features = false, features = ["tags-all", "resource-builder", "reqwest12"] }
 openidconnect = { version = "4.0.1", default-features = false, features = ["reqwest"] }
 jsonwebtoken = { version = "11.0.0", default-features = false, features = ["rust_crypto", "use_pem"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
