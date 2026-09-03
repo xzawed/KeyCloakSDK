@@ -3,6 +3,7 @@ import * as oidc from 'openid-client'
 import type { KeycloakConfig } from './config.js'
 import { KeycloakAuthError, KeycloakTransportError } from './errors.js'
 import { JwtValidator } from './jwt.js'
+import { mask } from './masking.js'
 import { oidcEndpoints, type OidcEndpoints } from './oidc-metadata.js'
 import { isTransportError } from './transport.js'
 import {
@@ -22,6 +23,47 @@ export interface AuthorizationRequest {
   readonly codeVerifier: string
   readonly state: string
   readonly nonce: string
+}
+
+const AR_INSPECT = Symbol.for('nodejs.util.inspect.custom')
+
+/**
+ * `AuthorizationRequest`의 런타임 구현. **공개 타입은 위 인터페이스 그대로**이고(호출자가 만든
+ * 객체 리터럴도 계속 그 타입을 만족한다) 이 클래스는 내보내지 않는다 — 바뀌는 것은 SDK가
+ * 돌려주는 값이 마스킹 훅 셋을 갖는다는 점뿐이다.
+ *
+ * 평범한 객체 리터럴을 돌려주면 `console.log`(util.inspect)와 `JSON.stringify`가 PKCE
+ * `codeVerifier`를 원문으로 찍는다. 그것은 코드 교환의 소유 증명 비밀이라, 코드를 훔친 공격자가
+ * 로그에서 verifier를 얻으면 흐름을 완성한다. 같은 패키지의 `TokenSet`은 이미 세 경로를 막는다.
+ * `url`/`state`/`nonce`는 그대로 둔다 — Rust의 Debug impl과 동형이다(거기서도 code_verifier만 가린다).
+ */
+class MaskedAuthorizationRequest implements AuthorizationRequest {
+  constructor(
+    readonly url: string,
+    readonly codeVerifier: string,
+    readonly state: string,
+    readonly nonce: string,
+  ) {}
+  #masked(): string {
+    return (
+      `AuthorizationRequest { url: ${this.url}, state: ${this.state}, ` +
+      `nonce: ${this.nonce}, codeVerifier: ${mask(this.codeVerifier)} }`
+    )
+  }
+  toString(): string {
+    return this.#masked()
+  }
+  toJSON(): Record<string, unknown> {
+    return {
+      url: this.url,
+      state: this.state,
+      nonce: this.nonce,
+      codeVerifier: mask(this.codeVerifier),
+    }
+  }
+  [AR_INSPECT](): string {
+    return this.#masked()
+  }
 }
 
 /** openid-client 그랜트 함수의 토큰 응답 형태(snake_case). */
@@ -84,7 +126,7 @@ export class AuthClient {
     url.searchParams.set('nonce', nonce)
     url.searchParams.set('code_challenge', codeChallenge)
     url.searchParams.set('code_challenge_method', 'S256')
-    return { url: url.href, codeVerifier, state, nonce }
+    return new MaskedAuthorizationRequest(url.href, codeVerifier, state, nonce)
   }
 
   /** `client_credentials` grant로 서비스 계정 토큰을 발급한다. 설정된 scopes를 명시 전달한다. */

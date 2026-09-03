@@ -62,8 +62,38 @@ public sealed record IntrospectionResult(
     IReadOnlyDictionary<string, object?> Claims);
 
 /// <summary>Returned by CreateAuthorizationRequest to start a PKCE authorization-code flow.
-/// The caller stores CodeVerifier/State/Nonce until the callback (the SDK is stateless).</summary>
-public sealed record AuthorizationRequest(string Url, string CodeVerifier, string State, string Nonce);
+/// The caller stores CodeVerifier/State/Nonce until the callback (the SDK is stateless).
+/// CodeVerifier is masked by ToString and by System.Text.Json — it is the proof-of-possession
+/// secret for the code exchange, so a stolen code plus a logged verifier completes the flow.
+/// ⚠️ Being a positional record, the compiler-generated ToString would otherwise print every
+/// property; the override below is what prevents that. Url/State/Nonce stay visible, matching
+/// Rust's Debug impl (only code_verifier is masked there too).</summary>
+[JsonConverter(typeof(AuthorizationRequestJsonConverter))]
+public sealed record AuthorizationRequest(string Url, string CodeVerifier, string State, string Nonce)
+{
+    public override string ToString() =>
+        $"AuthorizationRequest {{ Url = {Url}, State = {State}, Nonce = {Nonce}, " +
+        $"CodeVerifier = {Masking.Mask(CodeVerifier)} }}";
+}
+
+/// <summary>Masks the PKCE verifier when an AuthorizationRequest is JSON-serialized.
+/// NOTE: same caveat as TokenSet — reflection-based destructuring loggers (Serilog {@}) read raw
+/// properties and bypass this converter; do not @-destructure AuthorizationRequest.</summary>
+internal sealed class AuthorizationRequestJsonConverter : JsonConverter<AuthorizationRequest>
+{
+    public override AuthorizationRequest Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => throw new NotSupportedException("AuthorizationRequest is not deserializable from JSON.");
+
+    public override void Write(Utf8JsonWriter writer, AuthorizationRequest value, JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("url", value.Url);
+        writer.WriteString("state", value.State);
+        writer.WriteString("nonce", value.Nonce);
+        writer.WriteString("codeVerifier", Masking.Mask(value.CodeVerifier));
+        writer.WriteEndObject();
+    }
+}
 
 /// <summary>Masks access/refresh tokens when a TokenSet is JSON-serialized via System.Text.Json.
 /// NOTE: reflection-based destructuring loggers (Serilog {@}) read raw properties and bypass this
