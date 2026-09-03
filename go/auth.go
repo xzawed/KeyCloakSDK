@@ -207,7 +207,10 @@ func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Val
 	if err != nil {
 		return nil, &TransportError{Msg: err.Error(), Cause: err}
 	}
-	if resp.StatusCode >= 400 {
+	// Success is 2xx. `>= 400` alone read a 3xx as success, and the SDK deliberately does not follow
+	// redirects (noFollowRedirect surfaces the 3xx here), so that path was reachable: Logout returned
+	// nil while the session was still alive, and Introspect parsed an empty body.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, &AuthError{Msg: "request to " + endpoint + " failed (HTTP " + strconv.Itoa(resp.StatusCode) + ")"}
 	}
 	return body, nil

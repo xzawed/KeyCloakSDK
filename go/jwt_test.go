@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -369,6 +370,98 @@ func TestValidateInvalidJWKSJSON(t *testing.T) {
 	tok := f.sign(t, f.priv, "k1", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
 	if _, err := v.Validate(context.Background(), tok); err == nil {
 		t.Fatal("malformed JWKS body must surface as a validation error")
+	}
+}
+
+// Validator.fetch 는 resp.StatusCode 를 보지 않았고, jose.JSONWebKeySet 은 `keys` 가 없는 JSON
+// 오브젝트도 오류 없이 언마셜한다(빈 키셋). 그래서 게이트웨이/IdP 오류 본문(`{"error":...}`)이
+// **신뢰 키 캐시를 빈 것으로 덮어썼다** — 그 뒤로는 정상 토큰까지 전부 거부된다.
+// 두 축을 단언한다: (1) 비-2xx 는 오류다 (2) 실패한 재조회가 살아 있는 캐시를 오염시키지 않는다.
+func TestValidateJWKSNon2xxDoesNotPoisonCache(t *testing.T) {
+	f := newJWTFixture(t)
+	var failing int32
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		if atomic.LoadInt32(&failing) == 1 {
+			// 상태는 503 이지만 본문은 **유효한 JSON** 이다 — 이것이 정확히 위험한 모양이다.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":"upstream down"}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{
+			{Key: &f.priv.PublicKey, KeyID: "k1", Algorithm: "RS256", Use: "sig"},
+		}})
+	}))
+	t.Cleanup(srv.Close)
+
+	v := newValidator(validatorOptions{jwksURI: srv.URL, issuer: testISS, audience: "my-client",
+		allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: 30, minRefetch: time.Millisecond})
+
+	good := f.sign(t, f.priv, "k1", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
+	if _, err := v.Validate(context.Background(), good); err != nil {
+		t.Fatalf("최초 로드는 성공해야 한다: %v", err)
+	}
+
+	// IdP 가 죽는다. 알 수 없는 kid 로 강제 재조회를 유발한다.
+	atomic.StoreInt32(&failing, 1)
+	time.Sleep(3 * time.Millisecond)
+	unknown := f.sign(t, f.priv, "kZ", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
+	if _, err := v.Validate(context.Background(), unknown); err == nil {
+		t.Fatal("알 수 없는 kid + 503 은 거부돼야 한다")
+	}
+	if atomic.LoadInt32(&hits) < 2 {
+		t.Fatalf("재조회가 일어나야 이 테스트가 의미를 갖는다 — hits=%d", atomic.LoadInt32(&hits))
+	}
+
+	// 핵심: 살아 있던 키가 오류 본문으로 덮이면 안 된다.
+	if _, err := v.Validate(context.Background(), good); err != nil {
+		t.Fatalf("실패한 재조회가 신뢰 키 캐시를 오염시켰다 — 이전에 유효하던 토큰이 거부된다: %v", err)
+	}
+}
+
+// 크기 상한. 상한이 없으면 공격자가 영향을 줄 수 있는 엔드포인트에 대한 무제한 ReadAll 이
+// 메모리 DoS 다. 경계 양쪽을 함께 재서 상한이 실재함을 보인다(공허한 통과 방지).
+func TestValidateJWKSBodySizeCap(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		padding int
+		wantErr bool
+	}{
+		{"상한_이내", 0, false},
+		{"상한_초과", jwksMaxBytes, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newJWTFixture(t)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				ks := jose.JSONWebKeySet{Keys: []jose.JSONWebKey{
+					{Key: &f.priv.PublicKey, KeyID: "k1", Algorithm: "RS256", Use: "sig"},
+				}}
+				b, _ := json.Marshal(ks)
+				if tc.padding > 0 {
+					// `keys` 는 유효하게 두고 무시되는 멤버로만 부풀린다 — 파싱 실패가 아니라
+					// **크기**로 거부되는지를 재기 위해서다.
+					pad := strings.Repeat("A", tc.padding)
+					b = append([]byte(`{"pad":"`+pad+`",`), b[1:]...)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write(b)
+			}))
+			t.Cleanup(srv.Close)
+
+			v := newValidator(validatorOptions{jwksURI: srv.URL, issuer: testISS, audience: "my-client",
+				allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: 30})
+			tok := f.sign(t, f.priv, "k1", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
+			_, err := v.Validate(context.Background(), tok)
+
+			if tc.wantErr && err == nil {
+				t.Fatalf("%d 바이트 초과 응답은 거부돼야 한다", jwksMaxBytes)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("상한 이내 응답은 통과해야 한다 — 상한이 너무 낮으면 정상 JWKS 가 죽는다: %v", err)
+			}
+		})
 	}
 }
 
