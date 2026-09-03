@@ -134,11 +134,11 @@
         <!-- Java 21 컴파일 재현성: 컴파일러 플러그인 버전을 명시 고정(Maven 기본값 드리프트 방지). -->
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-compiler-plugin</artifactId><version>3.15.0</version>
+          <artifactId>maven-compiler-plugin</artifactId><version>3.16.0</version>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-surefire-plugin</artifactId><version>3.5.6</version>
+          <artifactId>maven-surefire-plugin</artifactId><version>3.6.0</version>
         </plugin>
       </plugins>
     </pluginManagement>
