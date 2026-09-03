@@ -46,11 +46,24 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 	// (injected via the transport — previously a silent no-op for admin calls).
 	tr := cfg.transport()
 	gc.RestyClient().SetTimeout(time.Duration(cfg.ReadTimeout) * time.Millisecond).SetTransport(tr)
+	// SSRF hardening for the admin lane. resty owns its own *http.Client, so Config.httpClient()'s
+	// CheckRedirect never reached admin requests — including LoginClient, which carries the client
+	// secret. Assign the same single policy here. ⚠️ Do not call resty's SetRedirectPolicy instead:
+	// it installs a *second* policy definition with different semantics (it errors rather than
+	// surfacing the 3xx), and it would overwrite this assignment.
+	gc.RestyClient().GetClient().CheckRedirect = noFollowRedirect
 
 	tp := NewClientCredentialsTokenProvider(func(ctx context.Context) (*TokenSet, error) {
 		jwt, err := gc.LoginClient(ctx, cfg.ClientID, cfg.ClientSecret, cfg.Realm)
 		if err != nil {
 			return nil, toSDKError(err)
+		}
+		// gocloak reports a non-2xx it can still unmarshal as success — a 3xx surfaced by
+		// noFollowRedirect, or any body without an access_token, yields a zero-value JWT and a
+		// nil error. Handing that upward would install an **empty bearer token** on every admin
+		// request. Measured: a 302 on the token endpoint returned ("", nil) before this check.
+		if jwt == nil || jwt.AccessToken == "" {
+			return nil, &AuthError{Msg: "client-credentials login returned no access token"}
 		}
 		return &TokenSet{AccessToken: jwt.AccessToken, ExpiresIn: int64(jwt.ExpiresIn)}, nil
 	}, cfg.ClockSkew)

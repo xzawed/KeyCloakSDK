@@ -123,9 +123,15 @@ func (c Config) httpClient() *http.Client {
 		// Isomorphic with Rust (`redirect::Policy::none()`) and Ruby (no follow_redirects middleware).
 		// ⚠️ This governs requests the SDK itself makes. The OIDC authorization-code `redirect_uri`
 		// is a browser front-channel concern and is unaffected.
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		CheckRedirect: noFollowRedirect,
 	}
 }
+
+// noFollowRedirect is the SDK's **single** back-channel redirect policy. It lives here rather
+// than inline so both lanes share one definition: the auth/JWKS lane through httpClient() above,
+// and the admin lane through gocloak's resty client (newAdminClient wires it explicitly — resty
+// owns its own *http.Client, so the policy above does not reach it on its own).
+func noFollowRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 // transport mirrors http.DefaultTransport's defaults but injects ConnectTimeout
 // into the dial and TLS-handshake deadlines.

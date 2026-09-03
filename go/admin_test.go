@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Nerzal/gocloak/v13"
@@ -117,5 +118,60 @@ func TestRolesUpdateAddressesByCurrentNameAndCarriesNewNameInBody(t *testing.T) 
 	if body["name"] != "new-role" {
 		t.Fatalf("body는 **새 이름**을 날라야 한다 — `role.Name = &name` 주입은 rename을 "+
 			"조용한 no-op으로 만든다. got %v", body["name"])
+	}
+}
+
+// admin 레인의 SSRF 하드닝. config.go의 CheckRedirect 주석은 「token/JWKS/**admin** 엔드포인트」를
+// 덮는다고 적지만 그 정책은 Config.httpClient()에만 있었고 admin은 gocloak의 resty 클라이언트를
+// 쓴다 — 즉 admin은 Go 기본값대로 3xx를 최대 10홉 따라갔고, LoginClient는 client_secret을 싣는다.
+// 두 가지를 함께 단언한다: (a) 리다이렉트 표적에 도달하지 않는다 (b) 3xx가 성공으로 보고되지 않는다.
+// (b)가 없으면 ErrUseLastResponse가 302 본문을 토큰으로 언마셜해 fail-open이 될 수 있다.
+// 302와 307을 함께 돈다. 실측(수정 전 RED)에서 **둘 다 표적에 도달했고 client_secret은 두 경우
+// 모두 빈 문자열이었다** — 302는 Go가 POST→GET으로 바꾸며 본문을 버리고, 307도 resty의 본문이
+// 재생되지 않았다. 그러므로 이 결함은 「자격증명 유출」이 아니라 **SSRF**다: SDK가 공격자가 고른
+// URL(사내망일 수 있다)로 우리 전송 설정을 태워 요청을 보낸다. 관측된 메서드·시크릿을 실패
+// 메시지에 함께 찍어, 다음 세션이 이 구분을 다시 재현할 수 있게 한다.
+func TestAdminLaneDoesNotFollowRedirects(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		code int
+	}{
+		{"302", http.StatusFound},
+		{"307", http.StatusTemporaryRedirect},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var reachedInternal int32
+			var gotMethod, gotSecret string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/internal" {
+					atomic.AddInt32(&reachedInternal, 1)
+					_ = r.ParseForm()
+					gotMethod, gotSecret = r.Method, r.PostFormValue("client_secret")
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"access_token":"attacker-token","expires_in":300}`))
+					return
+				}
+				http.Redirect(w, r, "/internal", tc.code)
+			}))
+			defer srv.Close()
+
+			cfg := Config{ServerURL: srv.URL, Realm: "r", ClientID: "c", ClientSecret: "s3cret"}.withDefaults()
+			// newAdminClient는 끝에서 eager 인증을 한다. 3xx면 여기서 이미 실패해야 하고,
+			// 혹시 구성이 통과하더라도 토큰 발급이 실패해야 한다 — 둘 중 어디서 막히든 fail-closed다.
+			var tok string
+			a, err := newAdminClient(context.Background(), cfg)
+			if err == nil {
+				tok, err = a.tp.Token(context.Background())
+			}
+
+			if n := atomic.LoadInt32(&reachedInternal); n != 0 {
+				t.Fatalf("SSRF: admin 레인이 %d를 따라갔다(%d회) — 요청이 리다이렉트 표적에 도달했다"+
+					"(표적이 받은 메서드=%q, client_secret=%q)", tc.code, n, gotMethod, gotSecret)
+			}
+			if err == nil {
+				t.Fatalf("토큰 엔드포인트의 %d는 성공으로 보고되면 안 된다 — fail-open. got token %q",
+					tc.code, tok)
+			}
+		})
 	}
 }
