@@ -204,7 +204,11 @@ jobs:
         # 그대로 침묵한다) 하한을 명시로 못박는다 — check-docs의 --min-facts/--min-anchors와
         # 같은 관용이다. 릴리스 워크플로를 늘리면 이 값도 함께 올린다(내리는 PR은 곧 커버리지
         # 축소라 리뷰 신호가 된다).
-        run: node scripts/check-ci-permissions.mjs . --min-release=10 --min-publish=9 --min-uses=187
+        # ⚠️ `--min-escalations` 는 규칙 5(권한 상승에 근거 주석)의 하한이다. 그 규칙은 상승을
+        # **발견해서** 검사하므로 상승이 스캐너에 안 보이면 0건을 검사하고 초록을 낸다 — 실측:
+        # 플로우 매핑 표기 하나로 인벤토리의 상승 수가 6 → 5 로 줄어드는데도 통과했다. 그 표기는
+        # 이제 fail-closed 로 막히고, 이 하한이 「줄어드는 것」 자체를 막는다.
+        run: node scripts/check-ci-permissions.mjs . --min-release=10 --min-publish=9 --min-uses=187 --min-escalations=6
 
   # ⚠️ **이 잡은 `ci.yml` 에서 옮겨 왔다(2026-09-01).** 거기서는 워크플로 `paths:` 가
   # `java/**` 뿐이라 **kotlin-only PR 에서는 체크가 생성조차 되지 않았다** — 아래 스캔이

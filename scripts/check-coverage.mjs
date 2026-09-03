@@ -29,18 +29,48 @@ import path from "node:path";
 
 const argv = process.argv.slice(2);
 const target = argv.find((a) => !a.startsWith("--"));
-const numArg = (name, dflt) => {
-  const i = argv.indexOf(name);
-  return i >= 0 && argv[i + 1] != null ? Number(argv[i + 1]) : dflt;
-};
-const minLine = numArg("--min-line", 0);
-const minBranch = numArg("--min-branch", 0);
 
 const fail = (code, lines) => {
   console.error(`::error::${code}`);
   for (const l of lines) console.error(`  ${l}`);
   process.exit(1);
 };
+
+// ⚠️ 이 가드의 최악은 미달 오판이 아니라 **임계값이 조용히 사라지는 것**이다. 예전 구현은
+// `argv.indexOf(name)` 하나만 봐서 세 경로가 전부 「임계 0」으로 떨어졌고, 그 상태에서
+// 회귀 리포트가 「커버리지 OK」로 통과했다(실측: 라인 82.87% 픽스처 + `--min-line=99` → exit 0):
+//   1. 등호 표기 `--min-line=99` — 이름과 매치되지 않아 기본값 0
+//   2. 비수치 `--min-line abc` — `Number("abc")` = NaN, 모든 비교가 거짓
+//   3. 값 누락 `--min-line`(마지막) 또는 뒤에 다른 플래그 — `undefined` → 기본값/NaN
+// 그래서 **파싱 실패는 통과가 아니라 설정 오류로 죽는다**. 플래그가 아예 없을 때만 기본값이다.
+const numArg = (name, dflt) => {
+  const eq = argv.find((a) => a.startsWith(`${name}=`));
+  let raw;
+  if (eq !== undefined) {
+    raw = eq.slice(name.length + 1);
+  } else {
+    const i = argv.indexOf(name);
+    if (i < 0) return dflt; // 플래그를 주지 않은 것은 설정 오류가 아니다.
+    const next = argv[i + 1];
+    raw = next === undefined || next.startsWith("--") ? "" : next;
+  }
+  if (raw.trim() === "") {
+    fail("threshold-invalid", [
+      `${name} 에 값이 없다.`,
+      "임계값이 사라지면 게이트가 조용히 꺼진다 — 통과가 아니라 설정 오류로 처리한다.",
+    ]);
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n)) {
+    fail("threshold-invalid", [
+      `${name} 의 값 ${JSON.stringify(raw)} 가 수치가 아니다.`,
+      "임계값이 사라지면 게이트가 조용히 꺼진다 — 통과가 아니라 설정 오류로 처리한다.",
+    ]);
+  }
+  return n;
+};
+const minLine = numArg("--min-line", 0);
+const minBranch = numArg("--min-branch", 0);
 
 if (!target) fail("coverage-measurement-failed", ["리포트 경로 인자가 없다."]);
 

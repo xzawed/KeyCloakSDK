@@ -219,4 +219,27 @@ else
   printf 'FAIL repo-hygiene.yml을 찾지 못함(%s) — 규칙 5 검사 불가\n' "$HYGIENE" >&2
 fi
 
+# ---- 규칙 6: 가드 워크플로의 어떤 스텝도 실패를 삼켜서는 안 된다 ----
+# 규칙 2 는 자가테스트가 **호출되는지**만 본다 — 호출된 채로 실패가 무시되면 그대로 통과한다.
+# 실측(A/B): `test-check-coverage.sh` 스텝에 `continue-on-error: true` 한 줄을 붙였더니
+# 규칙 1~5 도, `check-ci-permissions.mjs` 도 전부 초록이었다. 배선을 지우지 않고 **무력화**하는
+# 경로가 열려 있었던 것이다.
+#
+# 저장소 전체 실측: `continue-on-error` 는 24개 워크플로에 **0건**이다. 그래서 예외 목록 없이
+# 금지할 수 있다 — 예외 목록은 반드시 썩는다는 것이 이 저장소의 판단이다.
+#
+# ⚠️ `|| true` 는 **일부러 대상에서 뺐다.** 기각 체크리스트 5 에 걸린다 — 참/거짓이 문맥에
+# 달렸고 정규식이 수렴하지 않는다. 실제로 이 파일 안에 정당한 용례가 있다:
+# `xargs grep -lnE '...' || true` 는 「매치 없음(exit 1)」을 정상으로 만드는 관용이지 가드를
+# 끄는 것이 아니다. 되살릴 조건: 가드 호출 자체를 `|| true` 로 감싼 것이 실측될 때.
+if [ -f "$HYGIENE" ]; then
+  COE="$(grep -n 'continue-on-error' "$HYGIENE" || true)"
+  if [ -n "$COE" ]; then
+    _A_FAIL=$((_A_FAIL + 1))
+    printf 'FAIL repo-hygiene.yml 에 continue-on-error 가 있다 — 가드의 실패를 삼킨다:\n%s\n' "$COE" >&2
+  else
+    _A_PASS=$((_A_PASS + 1))
+  fi
+fi
+
 assert_report

@@ -42,4 +42,33 @@ assert_fails node "$GUARD" "$FIX/does-not-exist.xml" --min-line 90 --min-branch 
 # 아니라 `TestResults/<랜덤 guid>/coverage.cobertura.xml`에 쓰므로 경로를 못박을 수 없다.
 assert_ok node "$GUARD" "$FIX/nested" --min-line 90 --min-branch 85
 
+# ── 임계값 인자 파싱 ─────────────────────────────────────────────────────────
+# ⚠️ 이 가드의 최악은 미달 오판이 아니라 **임계값이 조용히 사라지는 것**이다. `numArg`가
+# `argv.indexOf(name)`만 보던 시절, 등호 표기 `--min-line=99`는 이름과 매치되지 않아 기본값
+# 0으로 떨어졌고, 회귀 픽스처(라인 82.87%)가 「커버리지 OK — 임계 0/0」으로 **통과**했다.
+# 비수치·값 누락도 각각 NaN·0이 되어 비교가 항상 거짓이 된다. 셋 다 exit 0이라
+# 종료코드만 보는 테스트로는 잡히지 않는다.
+
+# 등호 표기도 공백 표기와 **같은** 판정을 내야 한다(회귀 픽스처는 어느 표기로도 실패).
+assert_fails node "$GUARD" "$FIX/regression.xml" --min-line=99 --min-branch=99
+assert_fails node "$GUARD" "$FIX/regression.xml" --min-line 99 --min-branch 99
+# 그리고 등호 표기로 임계를 낮추면 통과해야 한다 — 값이 실제로 읽힌다는 대조군.
+# (이게 없으면 "등호 표기는 무조건 실패"로 퇴화해도 위 assert_fails가 통과한다.)
+assert_ok node "$GUARD" "$FIX/healthy.xml" --min-line=90 --min-branch=85
+assert_fails node "$GUARD" "$FIX/healthy.xml" --min-line=99 --min-branch=85
+
+# 비수치 임계값은 통과가 아니라 **설정 오류**다.
+assert_fails node "$GUARD" "$FIX/healthy.xml" --min-line abc --min-branch 85
+out=$(node "$GUARD" "$FIX/healthy.xml" --min-line abc --min-branch 85 2>&1 || true)
+assert_contains "$out" "threshold-invalid" "비수치 임계값은 threshold-invalid로 보고"
+assert_not_contains "$out" "커버리지 OK" "비수치 임계값을 통과로 읽지 않는다"
+
+# 값이 없는 플래그(마지막 위치)도 마찬가지다.
+assert_fails node "$GUARD" "$FIX/healthy.xml" --min-branch 85 --min-line
+out=$(node "$GUARD" "$FIX/healthy.xml" --min-branch 85 --min-line 2>&1 || true)
+assert_contains "$out" "threshold-invalid" "값 없는 플래그는 threshold-invalid로 보고"
+
+# 플래그 뒤에 **다른 플래그**가 오는 것도 값 누락이다.
+assert_fails node "$GUARD" "$FIX/healthy.xml" --min-line --min-branch 85
+
 assert_report
