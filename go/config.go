@@ -3,6 +3,7 @@ package keycloak
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -164,3 +165,7 @@ func (c Config) String() string {
 	return fmt.Sprintf("Config{ServerURL:%q, Realm:%q, ClientID:%q, ClientSecret:%s, Scopes:%v}",
 		c.ServerURL, c.Realm, c.ClientID, mask(c.ClientSecret), c.Scopes)
 }
+
+// LogValue is the `log/slog` masking hook — JSONHandler serialises fields by reflection and
+// never reaches String(), so without this a structured log writes the client secret verbatim.
+func (c Config) LogValue() slog.Value { return slog.StringValue(c.String()) }
