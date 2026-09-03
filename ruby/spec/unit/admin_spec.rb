@@ -62,4 +62,50 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
   it "exposes the raw Faraday connection as an escape hatch" do
     expect(admin.raw).to be_a(Faraday::Connection)
   end
+
+  # 다섯 admin 리소스가 전부 경로 세그먼트를 **날 문자열 보간**으로 만든다. 두 가지가 깨진다:
+  #  (1) "../" 를 담은 값이 경로를 재작성한다 — 서비스 계정 베어러를 실은 채 다른 엔드포인트로 간다.
+  #  (2) Keycloak 이 허용하는 공백 든 role/group 이름이 URI::InvalidURIError(stdlib)를 올려
+  #      §4「하위 오류는 경계에서 SDK 타입으로 변환된다」를 함께 깬다.
+  # 참조 구현이 이 저장소 안에 있다 — go/admin_realms.go 가 url.PathEscape 를 쓴다.
+  describe "경로 세그먼트 이스케이프" do
+    it "../ 를 담은 id 가 경로를 재작성하지 못한다" do
+      traversed = stub_request(:get, "https://kc.example.com/admin/foo")
+      escaped = stub_request(:get, "https://kc.example.com/admin/realms/demo/users/..%2F..%2F..%2Ffoo")
+                .to_return(status: 200, body: "{}", headers: { "Content-Type" => "application/json" })
+
+      admin.users.get("../../../foo")
+
+      expect(traversed).not_to have_been_requested
+      expect(escaped).to have_been_requested.once
+    end
+
+    it "공백이 든 role 이름이 stdlib 예외를 새지 않는다" do
+      stub = stub_request(:get, "https://kc.example.com/admin/realms/demo/roles/my%20role")
+             .to_return(status: 200, body: "{}", headers: { "Content-Type" => "application/json" })
+
+      expect { admin.roles.get("my role") }.not_to raise_error
+      expect(stub).to have_been_requested.once
+    end
+
+    it "다섯 리소스 전부에 적용된다 — 한 곳만 고치면 부류가 남는다" do
+      {
+        "users" => -> { admin.users.get("a b") },
+        "clients" => -> { admin.clients.get("a b") },
+        "groups" => -> { admin.groups.get("a b") },
+        "roles" => -> { admin.roles.get("a b") }
+      }.each do |segment, call|
+        stub = stub_request(:get, "https://kc.example.com/admin/realms/demo/#{segment}/a%20b")
+               .to_return(status: 200, body: "{}", headers: { "Content-Type" => "application/json" })
+        expect { call.call }.not_to raise_error, "#{segment}: 이스케이프 누락"
+        expect(stub).to have_been_requested.once
+      end
+
+      # realms 는 realm 이름 자체가 세그먼트다.
+      realm_stub = stub_request(:get, "https://kc.example.com/admin/realms/a%20b")
+                   .to_return(status: 200, body: "{}", headers: { "Content-Type" => "application/json" })
+      expect { admin.realms.get("a b") }.not_to raise_error
+      expect(realm_stub).to have_been_requested.once
+    end
+  end
 end
