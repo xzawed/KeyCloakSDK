@@ -18,7 +18,8 @@ jobs:
     name: Lint + typecheck + unit test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
-      matrix: { node: ['22', '24'] }
+      # 26 은 현 최신. package.json 의 engines 하한 ">=22" 는 그대로 둔다 — 넓히되 자르지 않는다.
+      matrix: { node: ['22', '24', '26'] }
     defaults: { run: { working-directory: node } }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

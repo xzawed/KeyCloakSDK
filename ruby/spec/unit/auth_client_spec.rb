@@ -3,8 +3,15 @@
 require "spec_helper"
 require "base64"
 require "digest"
-require "cgi"
 require "uri"
+
+# ⚠️ `CGI.parse` 를 쓰지 않는다 — **Ruby 4.0 에서 사라졌다**(`undefined method 'parse' for class CGI`).
+# CI 에 4.0 레그를 넣자마자 이 두 예제가 그것으로 죽었다. SDK 본체(`lib/`)는 CGI 를 전혀 쓰지
+# 않으므로 라이브러리는 4.0 에서 멀쩡하고, 깨진 것은 **테스트뿐**이었다.
+# `URI.decode_www_form` 은 3.2~4.0 전부에서 stdlib 이고 같은 것을 돌려준다(키당 값 배열).
+def query_params(url)
+  URI.decode_www_form(URI(url).query).each_with_object({}) { |(k, v), h| (h[k] ||= []) << v }
+end
 
 RSpec.describe KeycloakSdk::AuthClient do
   subject(:auth) { described_class.new(config: config, http: http, jwt_validator: jwt_validator) }
@@ -43,16 +50,14 @@ RSpec.describe KeycloakSdk::AuthClient do
     it "derives the S256 code_challenge as base64url(sha256(code_verifier))" do
       req = auth.create_authorization_request(redirect_uri: "https://app/cb")
       expected = Base64.urlsafe_encode64(Digest::SHA256.digest(req.code_verifier), padding: false)
-      challenge = CGI.parse(URI(req.url).query)["code_challenge"].first
-      expect(challenge).to eq(expected)
+      expect(query_params(req.url)["code_challenge"]).to eq([expected])
     end
 
     it "always issues a nonce and puts it on the authorization URL" do
       req = auth.create_authorization_request(redirect_uri: "https://app/cb")
       expect(req.nonce).to be_a(String)
       expect(req.nonce).not_to be_empty
-      parsed = CGI.parse(URI(req.url).query)
-      expect(parsed["nonce"]).to eq([req.nonce])
+      expect(query_params(req.url)["nonce"]).to eq([req.nonce])
     end
 
     it "issues a different nonce on every call" do

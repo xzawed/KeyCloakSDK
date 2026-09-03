@@ -13,11 +13,26 @@ permissions:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    strategy:
+      # ⚠️ 이 레인에는 매트릭스가 **없었다** — SDK 8.0.x 하나로만 돌아서, net8.0 패키지를
+      # .NET 10(현 LTS) 런타임에서 소비하는 사용자가 검증 0 이었다.
+      # TFM(`Directory.Build.props` 의 net8.0)은 **건드리지 않는다** — 소비자 하한은 그대로이고
+      # 여기서 넓히는 것은 「어떤 SDK 로 빌드·테스트해도 통과하는가」다.
+      # `AnalysisLevel 8.0` 이 분석기 밴드를 이미 고정해 두어 warnaserror 가 SDK 판올림으로
+      # 흔들리지 않는다(Directory.Build.props 주석이 그 의도를 명시한다).
+      fail-fast: false
+      matrix:
+        dotnet: ['8.0.x', '10.0.x']
+    name: build + test (.NET SDK ${{ matrix.dotnet }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
-          dotnet-version: '8.0.x'
+          # net8.0 타깃을 빌드·실행하려면 8.0 런타임이 필요하다 — SDK 10 만 깔면 테스트 호스트가
+          # `Microsoft.NETCore.App 8.0` 을 못 찾아 죽는다(조사 중 실측된 실패 모드).
+          dotnet-version: |
+            8.0.x
+            ${{ matrix.dotnet }}
       - name: Restore
         run: dotnet restore dotnet/Keycloak.Sdk.sln
       - name: Build (warnaserror)

@@ -18,7 +18,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        ruby: ['3.2', '3.3', '3.4']
+        # ⚠️ 하한 3.2 는 상류 EOL(2026-03-31)을 지났지만 **올리지 않는다** — 하한을 올리는 것은
+        # 소비자를 자르는 것이고, 사람 판정은 「자르지 말고 넓힌다」이다. 그 하한은 공짜가 아니라
+        # `gem "parallel", "< 2"` 핀으로 대가를 치르며 실제로 검증되고 있다(.claude/rules/ci.md).
+        # 4.0 은 현 최신 안정판이고 지금까지 검증 0 이었다.
+        ruby: ['3.2', '3.3', '3.4', '4.0']
     defaults:
       run:
         working-directory: ruby
