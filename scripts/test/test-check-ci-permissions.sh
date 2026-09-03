@@ -210,8 +210,35 @@ assert_fails node "$GUARD" "$TMP" --min-uses=999
 out=$(node "$GUARD" "$TMP" --min-uses=999 2>&1 || true)
 assert_contains "$out" "규칙 10 이 조용히 비었을 수 있다" "uses 하한이 공허를 막는다"
 
+# ── 플로우 매핑 `permissions:` 는 통과가 아니라 오류다 ──
+# 이 스캐너는 들여쓰기와 키만 읽으므로 `permissions: {contents: write}` 는 자식 노드를 만들지
+# 않아 **스코프가 통째로 안 보인다.** 실측(수정 전): 근거 주석 없는 상승을 그 표기로 넣었더니
+# 인벤토리의 상승 수가 6 → 5 로 **줄고** 가드는 통과했다. 파일 헤더는 이미 「해석하지 못하는
+# 모양은 통과가 아니라 오류」라고 약속하고 있었는데 코드가 그것을 지키지 않았다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i 's|^    permissions:$|    permissions: {contents: write, id-token: write}|' "$TMP/.github/workflows/demo-release.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "플로우 매핑으로 적혀 있어" "플로우 표기를 fail-closed 로 지목한다"
+
+# 대조군: `permissions: {}` 는 막지 않는다. 빈 매핑은 「권한 없음」이라 읽을 스코프가 없고,
+# 네 릴리스 워크플로가 실제로 그 표기를 쓴다 — 여기서 막으면 즉시 전면 RED 다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+assert_ok node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_not_contains "$out" "플로우 매핑" "빈 매핑 {} 를 오탐하지 않는다"
+
+# ── 공허성: 권한 상승 수에도 하한이 있다 ──
+# 규칙 5 는 상승을 **발견해서** 검사하므로, 상승이 스캐너에 안 보이면 0건을 검사하고 초록을 낸다.
+# 이 수는 오래 인쇄만 되고 아무도 보지 않았다.
+assert_fails node "$GUARD" "$TMP" --min-escalations=99
+out=$(node "$GUARD" "$TMP" --min-escalations=99 2>&1 || true)
+assert_contains "$out" "규칙 5 가 상승을 못 보고 있을 수 있다" "상승 하한이 공허를 막는다"
+
 # ── 오탐 대조군 3: 저장소 루트 실물에 대해 통과해야 한다 ──
 # 픽스처에서만 도는 가드는 실제 트리와 어긋난 채로 초록불을 유지할 수 있다.
 assert_ok node "$GUARD" "$DIR/../.."
+# 실측 하한과 함께 돌려도 통과해야 한다(CI 가 넘기는 값과 같은 모양).
+assert_ok node "$GUARD" "$DIR/../.." --min-escalations=6
 
 assert_report
