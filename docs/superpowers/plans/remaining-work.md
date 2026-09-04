@@ -15,7 +15,7 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **150** (원장 유래 104 · 원장 밖 46) — 열림 **137** · 닫힘 **13** |
+| 작업 패키지 | **151** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 1) — 열림 **133** · 닫힘 **18** |
 | 심각도 | high 27 · medium 76 · low 47 |
 | 작업량 | S 68 · M 70 · L 12 |
 
@@ -25,8 +25,13 @@
 
 ## 닫힌 항목 (2026-09-03)
 
-권장 우선순위 1~5번과 그 후속을 밟아 13건이 `main` 에 들어갔다. 체크박스만 두면 「어떻게 닫혔는지」가
+권장 우선순위 1~5번과 그 후속을 밟아 18건이 `main` 에 들어갔다. 체크박스만 두면 「어떻게 닫혔는지」가
 사라지므로 PR 을 함께 적는다.
+
+⚠️ **닫을 때마다 원장의 「범위」를 먼저 의심한다.** 2026-09-04 재검증에서 손댄 7항목이 **전부** 범위를
+틀리게 적고 있었고, 방향이 양쪽이었다 — 축소(`jwks-cold-cache-ungated` 1→7언어 · `boundary-…` 2→6 ·
+`selftest-…` 1→26)뿐 아니라 **과장**(`python-sync-admin-close-noop` 의 「영영 안 닫힌다」)도 있었다.
+지목 줄이 틀린 것도 둘이다(`kotlin-ci.yml:70` 은 `java-version`, `boundary-…` 의 Ruby 줄은 clean).
 
 | PR | 닫은 항목 | 한 줄 |
 |---|---|---|
@@ -39,6 +44,10 @@
 | #388 | (런타임 커버리지) | 하한을 건드리지 않고 위로 넓혔다 — php **8.5**(composer.json 이 이미 약속한 범위) · python 3.14 · node 26 · ruby 4.0 · JDK 25 · .NET SDK 10. ⚠️ CI 가 두 가지를 답했다: ruby 4.0 은 **SDK 가 아니라 테스트**가 `CGI.parse` 제거로 깨졌고, go 1.27 은 `staticcheck` 가 못 읽어 레그를 뺐다(되살릴 조건 워크플로 주석) |
 | #389 | `runtime-eol-support-window` | JVM 소비자 하한 21 → **17**. 2026-07-03 의 반대 판정을 되돌린 것이고, **그 커밋이 스스로 「소스 무변경」이라 적어** 21 이 기술적 필요가 아니었음을 증명한다. 가드 둘을 함께 세웠다 — 산출물 바이트코드 하한(`check-jvm-bytecode-floor.mjs`)과 `check-docs` 의 추출기(`jvmToolchain` → `JvmTarget`) |
 | #395 | (dependabot 정책) | rust `keycloak` 의 마이너 상향 차단 — 그 숫자는 semver 가 아니라 **대상 서버 라인**이다. ⚠️ #394 의 「실제 26.6 서버 integration」이 **초록이었는데도** 받지 않았다(그 초록은 테스트가 밟는 경로까지만 증명한다) |
+| #397 | `rust-logout-ignores-http-status` | `reqwest` 의 `send()` 는 전송 실패에만 `Err` 를 줘서 400/401/404 가 `Ok(())` 였다 — 세션이 살아있는데 호출자는 로그아웃 성공으로 믿는다. ⚠️ 지운 주석이 「다른 SDK와 동형」이라 적고 있었으나 자매 여덟을 읽으면 **Rust 만 혼자**였다. 상태코드를 특별대우하지 않는다(404 를 삼키면 오설정이 안 보이고, 400 을 통과시키면 진짜 클라이언트 오류도 함께 통과) |
+| #398 | `rust-rustdoc-jwks-refetch-says-60` · `python-config-comment-says-60` | 주석 3곳이 JWKS 기본값을 60 이라 말했다(실제 30). rust 둘은 **공개 rustdoc** 이라 docs.rs 에 렌더된다. ⚠️ 문서 축이 `SD_DOCS`(README·docs)만 봐서 **소스 파일이 목록에 없었다** — 아홉 언어 소스 전체를 훑는 2b 축을 세웠다(테스트 제외: `JwtValidatorTest.kt:515` 의 "캐시 TTL(기본 5분)" 이 실측 오탐) |
+| #399 | `php-tokenset-null-expiry-treated-as-fresh` (+ **Ruby**) | 만료 시각 미상을 「안 만료됨」으로 읽었다. ⚠️ 원장은 「PHP만」이라 적었으나 재스캔 결과 **7 fail-safe / 2 fail-open**. PHP 는 provider 캐시가 죽은 토큰을 무한 재사용하고, Ruby 는 공개 API 만 틀리다. ⚠️ **두 언어 다 테스트가 결함을 의도로 고정**하고 있었다(`…AndNeverExpired` · `"is never expired"`) |
+| #400 | `java-kotlin-jwks-response-size-unbounded` | SSRF 하드닝용 리트리버를 주입하는 **행위 자체가** Nimbus 의 51200 상한을 지웠다(바이트코드: 2-arg 가 `iconst_0`, 빌더는 `ldc 51200`). `JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT` 참조로 복원. ⚠️ 재스캔에서 **Go 가 이미 갖고 있었다** — 주석이 출처를 그 Nimbus 상수라 밝힌다 |
 
 곁가지로 **#384**(php API 게이트 정밀도)가 필요했다 — `php-semver-checker` 가 `implements`
 절 하나에 오탐을 내고 `final` 클래스의 메서드 추가를 파괴로 세어 #382 를 막았다. 사람 판정으로
@@ -68,7 +77,7 @@
 
 ---
 
-## A. 확정 결함 — 12건 (열림 6)
+## A. 확정 결함 — 12건 (열림 2)
 
 3렌즈 만장일치 + 오케스트레이터 재실행 확인.
 
@@ -76,18 +85,18 @@
 
 - [x] `dotnet-authzrequest-tostring-leaks-pkce-verifier` **[H/S]** .NET AuthorizationRequest가 positional record라 ToString이 PKCE code_verifier를 그대로 찍는다 · `dotnet/src/Xzawed.Keycloak.Sdk/Tokens.cs:66`
 - [x] `go-admin-lane-bypasses-redirect-ban` **[H/M]** Go admin 레인이 SDK의 리다이렉트 금지를 통째로 우회한다 — client_secret을 실은 로그인이 3xx를 따라간다 · `go/admin.go:47`
-- [ ] `rust-logout-ignores-http-status` **[H/S]** Rust logout이 응답 상태를 보지 않아 400/401/404에도 Ok(())를 돌려준다 — 「다른 SDK와 동형」 주석은 거짓 · `rust/src/auth.rs:236`
+- [x] `rust-logout-ignores-http-status` **[H/S]** Rust logout이 응답 상태를 보지 않아 400/401/404에도 Ok(())를 돌려준다 — 「다른 SDK와 동형」 주석은 거짓 · `rust/src/auth.rs:236`
 - [x] `ci-perms-flow-style-permissions-bypass` **[H/S]** 플로우 스타일 `permissions: {contents: write}`가 CI 권한 가드에 통째로 안 보인다 — 실측으로 「상승 1건」이 0건이 됐다 · `scripts/check-ci-permissions.mjs:100`
-- [ ] `rust-rustdoc-jwks-refetch-says-60` **[M/S]** Rust 공개 API의 doc 주석 두 곳이 JWKS 최소 재조회 기본값을 60초라 말한다(코드는 30) — 문서 축이 소스 주석을 안 본다 · `rust/src/config.rs:18`
-- [ ] `java-kotlin-jwks-response-size-unbounded` **[M/S]** Java·Kotlin의 NoRedirectResourceRetriever가 Nimbus의 51200바이트 상한을 지웠다 — JWKS 응답이 무제한으로 메모리에 들어온다 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/NoRedirectResourceRetriever.java:24`
-- [ ] `php-tokenset-null-expiry-treated-as-fresh` **[M/S]** PHP만 「만료 시각 미상 = 만료 안 됨」이다 — client-credentials 캐시가 죽은 토큰을 영원히 재사용한다 · `php/src/Token/TokenSet.php:59`
+- [x] `rust-rustdoc-jwks-refetch-says-60` **[M/S]** Rust 공개 API의 doc 주석 두 곳이 JWKS 최소 재조회 기본값을 60초라 말한다(코드는 30) — 문서 축이 소스 주석을 안 본다 · `rust/src/config.rs:18`
+- [x] `java-kotlin-jwks-response-size-unbounded` **[M/S]** Java·Kotlin의 NoRedirectResourceRetriever가 Nimbus의 51200바이트 상한을 지웠다 — JWKS 응답이 무제한으로 메모리에 들어온다 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/NoRedirectResourceRetriever.java:24`
+- [x] `php-tokenset-null-expiry-treated-as-fresh` **[M/S]** ⚠️ **원장이 「PHP만」이라 적었으나 Ruby 도 같았다**(실측: 9개 중 7 fail-safe / 2 fail-open). 만료 시각 미상을 「만료 안 됨」으로 읽어 PHP 는 client-credentials 캐시가 죽은 토큰을 영원히 재사용한다 · `php/src/Token/TokenSet.php:59` + `ruby/lib/keycloak_sdk/tokens.rb:21`
 - [x] `go-jwks-fetch-ignores-status-and-empty-keyset` **[M/S]** Go JWKS fetch가 상태코드도 키 유무도 안 본다 — 오류 본문 JSON이 빈 키셋으로 파싱돼 캐시를 덮는다 · `go/jwt.go:167`
 - [x] `check-coverage-arg-parsing-silently-disarms-gate` **[M/S]** check-coverage.mjs의 인자 파싱이 임계값을 조용히 0/NaN으로 만든다 — 실측으로 `--min-line=99`가 「임계 0/0」으로 통과했다 · `scripts/check-coverage.mjs:29`
 - [x] `php-default-serializers-bypass-masking` **[M/S]** [weak·채택] PHP는 마스킹을 __toString에만 걸어 json_encode()가 accessToken·refreshToken·clientSecret을 원문으로 뱉는다 · `php/src/Token/TokenSet.php:9`
 - [ ] `java-rules-close-scope-ambiguous` **[L/S]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
-## B. 재검증 대상 — 25건 (열림 21)
+## B. 재검증 대상 — 26건 (열림 21)
 
 3렌즈 통과, 원장은 개별 재실행을 하지 않았다. 이번 인벤토리에서 전량 파일 확인 — 기각 권고 0건.
 
@@ -96,24 +105,44 @@
 - [x] `jwks-fetch-ignores-http-status` **[H/S]** JWKS fetch가 HTTP 상태 코드를 보지 않는다 — Go는 게이트웨이 오류 JSON으로 키 캐시가 오염된다 · `go/jwt.go:181`
 - [x] `ruby-admin-path-segment-unescaped` **[H/M]** Ruby admin 5개 리소스가 경로 세그먼트를 무이스케이프 보간한다 — 엔드포인트 우회 + stdlib 예외 누출 · `ruby/lib/keycloak_sdk/admin/users.rb:18`
 - [x] `go-postform-treats-3xx-as-success` **[H/S]** Go postForm이 3xx를 성공으로 읽는다 — Logout이 세션이 살아있는데 nil을 돌려준다 · `go/auth.go:210`
-- [ ] `jwks-cold-cache-ungated` **[M/M]** 콜드 캐시 JWKS 로드가 rate-limit 게이트 밖 — 여섯 README의 "cold cache에서도 막힌다"가 거짓 · `rust/src/jwks.rs:61`
+- [ ] `jwks-cold-cache-ungated` **[M/M→재분류]** 콜드 캐시 JWKS 로드가 rate-limit 게이트 밖 · `rust/src/jwks.rs:61`
+  - ⚠️ **범위 정정(2026-09-04 실측)**: 원장은 「rust · 여섯 README」라 적었으나 **7개 언어 전부**다(java·kotlin 은 Nimbus 덕에 예외). 각 언어에서 「콜드 캐시 + JWKS 엔드포인트 503 + 20회 시도」로 IdP 도달 요청을 셌다 — **rust 20 · go 20 · python 20 · php 20 · node 20 · ruby 20 · dotnet 40**(호출당 2). 대조군(정상 엔드포인트 + 강제 재조회 20회)은 전부 1~4로 유계라 계측기는 건전하다.
+  - ⚠️ **부류가 다르다 — unknown-kid DoS 가 아니라 retry storm 이다.** 30초 게이트는 *캐시가 찬 뒤* 위조 kid 홍수를 막으려는 것이고 그 경로는 실제로 동작한다(rust 웜캐시 대조군 = 2). 무제한이 되는 것은 **캐시가 빈 채 fetch 가 계속 실패할 때**뿐이다. 그래서 심각도를 가용성 축으로 다시 읽어야 한다(Grok 독립 레그도 같은 결론).
+  - ⚠️ **콜드 로드에 같은 30초 게이트를 걸면 안 된다** — 일시적 503 한 번이 「30초간 어떤 토큰도 검증 불가」로 바뀐다. 권고 형태는 *실패한* fetch 에 대한 negative cache + 짧은 지수 백오프(수백 ms~5·10초)이고, unknown-kid 의 30초 게이트는 그대로 둔다.
+  - ⚠️ **문서가 먼저 틀렸다.** 8개 README 가 "no volume of forged tokens/kids makes the SDK issue more than one JWKS request per interval" 이라 적는데 콜드 캐시에서 거짓이다. rust 는 한술 더 떠 "an IdP outage cannot be used to reopen it" 이라 적지만, 실측상 장애는 게이트를 *reopen* 하는 정도가 아니라 캐시를 영원히 비워 **상시 우회**시킨다. `.claude/rules/security.md` 의 "python·go·rust·php·ruby allow one by construction" 도 캐시가 찼을 때만 참이다.
 - [ ] `openid-scope-fallback-empty-only` **[M/S]** openid 스코프 폴백이 "비었을 때"만 걸려 Nimbus IllegalArgumentException이 공개 API로 샌다 (Java·Kotlin) · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:81`
-- [ ] `boundary-exception-conversion-incomplete` **[M/M]** 경계 변환의 catch 목록이 하위 라이브러리가 실제로 던지는 예외 집합보다 좁다 (Kotlin·Ruby) · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt:91`
+- [ ] `boundary-exception-conversion-incomplete` **[M/M]** 경계 변환의 catch 목록이 하위 라이브러리가 실제로 던지는 예외 집합보다 좁다 · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt:91`
+  - ⚠️ **범위 정정**: 원장은 「Kotlin·Ruby」 2개라 적었으나 **Java·Node·.NET 을 빠뜨렸다**. ⚠️ 그리고 **원장이 지목한 Ruby 줄은 clean 이다** — `ruby/lib/keycloak_sdk/jwt_validator.rb:36` 의 `rescue JWT::DecodeError` 는 이미 JWKError 를 잡는다(실측: 설치된 `jwt-3.2.0/lib/jwt/error.rb:53` 이 `class JWKError < DecodeError`). **고치기 전에 지목부터 다시 잡을 것** — 안 그러면 clean 한 자리를 건드린다.
 - [ ] `rust-public-client-empty-secret` **[M/S]** Rust AuthClient가 퍼블릭 클라이언트에도 빈 시크릿을 강제해 Basic 인증을 켠다 · `rust/src/auth.rs:67`
-- [ ] `go-tokenprovider-injection-missing` **[M/M]** Go의 TokenProvider 주입점이 문서에만 있고 실제로는 존재하지 않는다 — CLAUDE.md §4 분류 오류 · `go/tokenprovider.go:11`
-- [ ] `python-sync-admin-close-noop` **[M/S]** Python 동기 admin의 close()가 no-op — requests 세션 두 개가 영영 안 닫힌다 (async 미러는 닫는다) · `python/src/keycloak_sdk/admin/__init__.py:83`
+- [ ] `go-tokenprovider-injection-missing` **[M/M]** Go의 TokenProvider 주입점이 문서에만 있고 실제로는 존재하지 않는다 · `go/tokenprovider.go:11`
+  - ⚠️ **§4 분류 오류는 약한 쪽이다. 게시된 소스가 거짓 약속을 담고 있다** — `go/tokenprovider.go:12` 의 godoc 이 "Consumers may inject a custom implementation." 이라 적는데, 실측상 `go/*.go` 에 **`TokenProvider` 를 받는 exported 함수가 0개**다(`grep -rnE "func [A-Z][A-Za-z]*\([^)]*TokenProvider" go/*.go` → 빈 결과). 이건 pkg.go.dev 에 그대로 렌더된다.
+  - ⚠️ **고칠 때 CLAUDE.md 를 늘리지 말 것** — doc-budget 여유가 **정확히 0**이다(실측: 1바이트만 더해도 `적재 24160B > doc-budget 24159B` 로 필수 체크 `doc-facts` 가 exit 1). 산문을 더하려면 압축으로 지불하거나 예산 인상을 근거와 함께 올려야 한다.
+- [ ] `python-sync-admin-close-noop` **[M/S]** Python 동기 admin의 close()가 no-op — async 미러는 닫는다 · `python/src/keycloak_sdk/admin/__init__.py:83`
+  - ⚠️ **원장이 과장했다 — 「영영 안 닫힌다」는 거짓.** `ConnectionManager.__del__` 이 GC 시점에 `_s` 를 닫는다. 참인 진술은 「`close()` 가 아무것도 안 하고, 해제 시점이 **GC 에 맡겨진다**」이다(결정적 해제가 없다). 이 문장 그대로 릴리스 노트에 올리면 사실이 아닌 심각도가 된다.
+  - ⚠️ **기존 테스트가 결함을 의도로 고정하고 있다** — `tests/unit/test_admin_client.py:81 test_close_is_noop` 의 docstring 이 "컨텍스트 매니저 프로토콜과 대칭을 맞추기 위한 no-op" 이라 적고 `client.raw is admin` 만 단언한다. #399(PHP·Ruby 만료)에 이어 **같은 패턴 세 번째**다.
 - [ ] `python-sync-authorization-url-unencoded` **[M/S]** Python 동기 authorization_url이 퍼센트 인코딩 없이 URL을 조립한다 — async 미러는 urlencode를 쓴다 · `python/src/keycloak_sdk/auth.py:148`
 - [ ] `php-sensitiveparameter-methods-missing` **[M/S]** PHP #[\SensitiveParameter]가 생성자에만 붙어 있다 — 비밀을 인자로 받는 여섯 메서드는 무보호 · `php/src/AuthClient.php:76`
 - [x] `authorization-request-verifier-unmasked` **[M/M]** AuthorizationRequest.codeVerifier가 마스킹 없이 평문 출력된다 (Go·Node) — 같은 파일의 TokenSet은 마스킹한다 · `go/tokens.go:86`
 - [ ] `coverage-exclusion-hides-untested-branches` **[M/M]** 네트워크 경계 커버리지 제외가 손으로 쓴 실패 분기와 미호출 공개 메서드를 숨긴다 (Kotlin·PHP) · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Users.kt:47`
 - [ ] `redirect-uri-signature-parity` **[L/M]** createAuthorizationRequest/exchangeCode의 redirectUri 시그니처가 Rust·PHP만 다르다 (계약 패리티) · `rust/src/auth.rs:96`
-- [ ] `python-config-comment-says-60` **[L/S]** python config 주석이 JWKS 재조회 기본값을 60초라고 적었다 — 두 줄 아래 실제 값은 30.0 · `python/src/keycloak_sdk/config.py:23`
+- [x] `python-config-comment-says-60` **[L/S]** python config 주석이 JWKS 재조회 기본값을 60초라고 적었다 — 두 줄 아래 실제 값은 30.0 · `python/src/keycloak_sdk/config.py:23`
 
 ### 재검증 · 가드/CI/문서 — 10
 
 - [ ] `selftest-enforcer-cannot-guard-itself` **[H/M]** 자가테스트 종료코드 규약의 집행자가 자기 자신과 '실패 삼킴'을 못 본다 · `scripts/test/test-selftest-hygiene.sh:19`
+  - ⚠️ **범위가 「자기 자신」보다 26배 넓다.** 규칙 1 은 `grep -q 'assert_report' "$f"` 라 **raw 텍스트**를 본다 — 주석 처리된 `# assert_report` 도 통과한다(실측: 그런 파일을 만들어 `grep -q` 를 돌리면 히트). 루프가 `test-*.sh` **26개 전부**를 도니 약점도 26개 전부에 걸린다.
 - [ ] `guard-detection-surface-hand-narrowed` **[H/M]** 가드의 탐지 표면이 손으로 좁혀져 있어 새 자리·새 문법이 조용히 통과한다 · `scripts/test/test-security-defaults.sh:311`
-- [ ] `kotlin-osv-audit-fail-open` **[H/S]** Kotlin OSV 감사 두 잡이 해석 실패 좌표를 통과시켜 아무것도 감사하지 않고 초록이 된다 · `.github/workflows/kotlin-ci.yml:70`
+  - ⚠️ **지목이 마스킹 축 하나를 가리키지만 체계적이다** — 가드의 **7축 중 5축**(1 코드/skew · 1b nonce · 1c 마스킹 · 3 2차자리 · 4 소유자)이 언어별 파일·앵커를 손으로 열거한다. 새 언어·새 자리가 생기면 `_seen == 9` 류의 대조군이 함께 늘지 않는 한 조용히 통과한다.
+  - 참고: 2026-09-04 에 추가한 2b(소스 주석) 축은 `git ls-files` 로 전체를 훑어 이 부류를 피했다 — 같은 형태가 나머지 축의 목표다.
+
+- [ ] `jwks-response-size-unbounded-non-jvm` **[M/M · 신규 2026-09-04]** JWKS 응답 크기 상한이 Go·Java·Kotlin 에만 있다 — rust `resp.json()` · php `(string) getBody()` · ruby `resp.body` 는 무제한 · `rust/src/jwks.rs:41`
+  - #400(JVM 상한 복원)의 부류 재스캔에서 나왔다. Go 는 `io.LimitReader(resp.Body, 51200+1)` 로 이미 갖고 있고 주석이 출처를 Nimbus `RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT` 이라 밝힌다.
+  - ⚠️ **node·python·dotnet 은 판정하지 않았다**(jose · python-keycloak `certs()` · `HttpDocumentRetriever` 로 위임). 라이브러리 실동작을 재기 전에는 무제한이라 적지 말 것.
+- [ ] `kotlin-osv-audit-fail-open` **[H/S]** Kotlin OSV 감사 두 잡이 해석 실패 좌표를 통과시켜 아무것도 감사하지 않고 초록이 된다 · `.github/workflows/kotlin-ci.yml:72-83` · `security-audit.yml:80-89`
+  - ⚠️ **지목 줄이 빗나가 있었다** — `kotlin-ci.yml:70` 은 `java-version: '21'` 이다. 실제 자리는 위 두 범위.
+  - **「두 잡」은 맞다**: `grep -e '--- '` 파이프라인이 3곳인데(`kotlin-ci.yml:78` · `security-audit.yml:86` · `:347`) ` FAILED$` 게이트는 harness 쪽 1곳(`:327`)에만 있다 — #320 이 3곳 중 1곳에만 적용됐다.
+  - ⚠️ **저장소 자신의 주석이 원인을 틀리게 적었다.** `security-audit.yml:318-322` 는 "OSV 가 그런 좌표에 취약점이 없다고 답하므로"라 하지만, 실측상 **OSV 는 ` FAILED` 접미사에 무감각**하다(netty-codec-http 4.1.119.Final → 접미사 유무 모두 18건). 진짜 원인은 **전이 폐포 붕괴** — FAILED 루트 하나가 서브트리를 통째로 날려 CVE 를 지닌 좌표가 아예 조회되지 않는다(실측 **좌표 72개 → 5개**, 루트 하나만 깨도 **72 → 14**로 jackson-databind·resteasy·httpclient 등 59개가 조용히 빠진다).
+  - ⚠️ **Java 쪽은 고치지 말 것** — 같은 셸 모양이지만 수집기가 Maven 이라 미해결 의존성에서 **도구 자체가 non-zero** 로 죽는다(실측 `MVN_EXIT=1`). 구조적으로 fail-closed 다.
 - [ ] `docs-commands-that-do-not-work` **[M/S]** 소비자 문서가 적은 명령·환경변수가 실제로는 동작하지 않는다 · `docs/guides/development-setup.md:77`
 - [ ] `deploy-md-omits-release-request` **[M/S]** DEPLOY.md §4 릴리스 절차가 태그를 만드는 트리거 파일을 열거하지 않는다 · `DEPLOY.md:403`
 - [ ] `stale-prose-contradicts-source` **[M/S]** 산문 주석이 자기가 서술하는 값·전제·코드보다 낡았고 대조가 없다 · `python/src/keycloak_sdk/config.py:23`
