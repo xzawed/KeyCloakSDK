@@ -78,16 +78,19 @@ internal class AdminRedirectHardeningTest {
             // ⚠️ 대조군을 지우지 말 것 — 위 단언이 프로브 고장으로 인한 공허한 통과가 아님을
             // 증명하는 유일한 수단이다(하드닝이 라이브러리 기본값이라 변이검증을 쓸 수 없다).
             paths.clear()
-            java.net.http.HttpClient
-                .newBuilder()
-                .followRedirects(java.net.http.HttpClient.Redirect.ALWAYS)
-                .build()
-                .use { follower ->
-                    follower.send(
-                        HttpRequest.newBuilder(URI("http://127.0.0.1:$port/start")).GET().build(),
-                        HttpResponse.BodyHandlers.ofString(),
-                    )
-                }
+            // ⚠️ `.use { }` 를 쓰지 않는다 — `java.net.http.HttpClient` 가 AutoCloseable 이 된 것은
+            // **Java 21 부터**이고, 이 SDK 의 소비자 하한은 17 이다. `-Xjdk-release=17` 을 켜자
+            // 정확히 이 줄이 죽었다(receiver type mismatch: `T : Closeable?`). 그 옵션이 없었다면
+            // JDK 21 의 API 에 링크된 채 컴파일이 통과하고, 실제 JDK 17 소비자만 런타임에 죽었을 것이다.
+            val follower =
+                java.net.http.HttpClient
+                    .newBuilder()
+                    .followRedirects(java.net.http.HttpClient.Redirect.ALWAYS)
+                    .build()
+            follower.send(
+                HttpRequest.newBuilder(URI("http://127.0.0.1:$port/start")).GET().build(),
+                HttpResponse.BodyHandlers.ofString(),
+            )
             assertTrue(
                 paths.contains("/internal"),
                 "추종하는 클라이언트는 /internal에 도달해야 한다 — 도달하지 않았다면 프로브가 고장난 것이다",

@@ -4,13 +4,19 @@ paths:
   - "harness/apps/java/**"
   - "harness/install/consume/java*"
 ---
-<!-- doc-budget: max-bytes=5788 -->
+<!-- doc-budget: max-bytes=6026 -->
+<!-- 5788 → 6026 (2026-09-03, +238B). 규약 (1) — 증가분이 **기계 검증을 사 온다**: 소비자 하한을
+     21 → 17 로 내리면서 `scripts/check-jvm-bytecode-floor.mjs`(신규 가드)와 `check-docs.mjs` 의
+     runtime 추출기 수정이 함께 들어왔고, 이 문단이 그 둘의 조준점을 가리킨다. 압축을 먼저 시도해
+     한 문단으로 줄였으나(초기 +367B → +237B) 더 줄이면 「빌드 JDK ≠ 소비자 하한」이라는 판정
+     자체가 사라져 다음 세션이 같은 실수를 반복한다. -->
+
 
 # Java rules
 
 ## Toolchain
 
-JDK 21 + Maven 3.9.x. The harness shell does not source a profile, so specify the environment inline.
+JDK 21 + Maven 3.9.x for **building**; the **consumer floor is JDK 17** (`maven.compiler.release=17`, enforcer `[17,)`) — do not read the build JDK as the floor. CI runs 17·21·25 and `check-jvm-bytecode-floor.mjs` re-reads the class files (major ≤ 61). The harness shell does not source a profile, so specify the environment inline.
 
 ```bash
 JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot}" \

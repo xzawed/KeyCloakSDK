@@ -28,13 +28,23 @@ jobs:
       # 여기서 넓히는 것은 「어떤 JDK 로 빌드·테스트해도 통과하는가」다.
       # enforcer 의 `requireJavaVersion [21,)` 은 하한이라 25 를 통과시킨다(실측).
       fail-fast: false
-      matrix: { java: ['21', '25'] }
+      matrix: { java: ['17', '21', '25'] }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with: { distribution: 'temurin', java-version: '${{ matrix.java }}', cache: 'maven' }
       - name: Build & unit test (커버리지 게이트 90/85 포함)
         run: mvn -B -f java/pom.xml verify -DskipITs=true
+      # ⚠️ 소비자 하한(JDK 17)이 **실제로 방출됐는지**를 바이트코드로 확인한다. `release` 설정이
+      # 빠져도 빌드는 성공하고 CI 도 초록인데 major 65 짜리 jar 가 나가서 **JDK 17 소비자만** 죽는다.
+      # CI 가 21·25 에서도 도는 한 그 사고는 CI 에 보이지 않으므로 산출물을 직접 본다.
+      - name: 바이트코드 하한 (JDK 17 = major 61)
+        run: >
+          node scripts/check-jvm-bytecode-floor.mjs
+          java/keycloak-sdk-core/target/classes
+          java/keycloak-sdk-auth/target/classes
+          java/keycloak-sdk-admin/target/classes
+          --max-major=61 --min-classes=25
 
   integration:
     name: Integration tests (Testcontainers, 실제 Keycloak)
