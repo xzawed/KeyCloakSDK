@@ -15,7 +15,7 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **151** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 1) — 열림 **132** · 닫힘 **19** |
+| 작업 패키지 | **152** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2) — 열림 **133** · 닫힘 **19** |
 | 심각도 | high 27 · medium 76 · low 47 |
 | 작업량 | S 68 · M 70 · L 12 |
 
@@ -96,7 +96,7 @@
 - [ ] `java-rules-close-scope-ambiguous` **[L/S]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
-## B. 재검증 대상 — 26건 (열림 20)
+## B. 재검증 대상 — 27건 (열림 21)
 
 3렌즈 통과, 원장은 개별 재실행을 하지 않았다. 이번 인벤토리에서 전량 파일 확인 — 기각 권고 0건.
 
