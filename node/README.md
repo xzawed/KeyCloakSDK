@@ -71,7 +71,7 @@ Hardened JWT validation, not the unsafe library defaults:
 
 - **Algorithm pinning** — signature algorithms are pinned by configuration (`RS256` by default); `alg: none` and header-supplied algorithms are rejected.
 - **Strict claim checks** — exact `iss` match, `aud` containment check, mandatory `exp`, and a bounded clock skew (30s by default).
-- **DoS-safe JWKS refetch** — the key set is refetched only on an unresolved key ID and never on a bad signature, and a cooldown rate-limits refetches to a minimum interval (`jwksMinRefetchSeconds`, 30s by default) — so no volume of forged tokens makes the SDK issue more than one JWKS request per interval.
+- **DoS-safe JWKS refetch** — the key set is refetched only on an unresolved key ID and never on a bad signature, and a cooldown rate-limits refetches to a minimum interval (`jwksMinRefetchSeconds`, 30s by default) — so **once the key set has been fetched**, no volume of forged tokens makes the SDK issue more than one JWKS request per interval. ⚠️ **The cooldown does not cover the initial load.** Until the first fetch succeeds the key set is empty, so while the JWKS endpoint is failing every validation attempt retries it (measured: 20 attempts → 20 requests). Read this as a bound on forged-key-ID amplification against a reachable IdP, not as an availability guarantee during an IdP outage.
 - **Secret handling** — `clientSecret` and tokens are masked as `***` in `toString`, `JSON.stringify`, and `util.inspect` output; TLS verification is on by default.
 
 Masking covers those three serialization paths, which is what most loggers reach for. It does not cover direct property access, so it is defence in depth rather than a guarantee about your logs.
