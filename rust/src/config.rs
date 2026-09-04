@@ -15,7 +15,7 @@ pub struct KeycloakConfig {
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
     pub clock_skew: u64,
-    /// 미해결 kid(키 회전)로 인한 JWKS 재조회의 최소 간격(초, 기본 60) — DoS 증폭 상한.
+    /// 미해결 kid(키 회전)로 인한 JWKS 재조회의 최소 간격(초, 기본 30) — DoS 증폭 상한.
     /// 위조 kid를 연속 주입해도 이 간격보다 자주 IdP를 때리지 못한다.
     pub jwks_min_refetch_secs: u64,
     /// `validate()`가 토큰 `aud`에서 찾을 값. `None`이면 `client_id`를 기대한다(기존 동작).
@@ -78,7 +78,7 @@ impl KeycloakConfig {
         self.signature_algorithms = algs;
         self
     }
-    /// 미해결 kid로 인한 JWKS 재조회의 최소 간격(초)을 설정한다(DoS 증폭 상한, 기본 60).
+    /// 미해결 kid로 인한 JWKS 재조회의 최소 간격(초)을 설정한다(DoS 증폭 상한, 기본 30).
     #[must_use]
     pub fn with_jwks_min_refetch_secs(mut self, secs: u64) -> Self {
         self.jwks_min_refetch_secs = secs;

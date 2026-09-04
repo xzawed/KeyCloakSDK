@@ -402,6 +402,58 @@ assert_eq "ok" "$(ok_if "$_enough" "$sd_hits")" \
   "기본값을 말하는 문서 줄을 10건 미만 찾았다 — 탐지 패턴이 낡았나?"
 
 # ---------------------------------------------------------------------------
+# 2b) **소스 주석** 축 — 공개 API 의 doc 주석도 기본값을 말한다
+# ---------------------------------------------------------------------------
+#
+# ⚠️ **2절(문서 축)은 README·docs 만 본다**(`SD_DOCS` = `git ls-files '*/README.md' 'docs/guides/*'…`).
+# 그래서 **소스의 doc 주석이 값을 틀리게 말해도 아무 가드가 못 봤다** — 실측으로 3건이 살아 있었다:
+#
+#     python/src/keycloak_sdk/config.py:23   "(초, 기본 60)"   실제 30.0 (두 줄 아래)
+#     rust/src/config.rs:18                  "(초, 기본 60)"   실제 30
+#     rust/src/config.rs:81                  "(… 기본 60)"     실제 30
+#
+# rust 의 둘은 **공개 API의 rustdoc** 이라 docs.rs 에 그대로 렌더된다 — 소비자가 읽는 자리다.
+# 값의 SSOT 는 코드이므로, 주석이 값을 말하면 그 말이 코드와 같은지 기계로 대조한다.
+#
+# ⚠️ **파일 목록을 손으로 열거하지 않는다.** config 파일만 훑도록 좁히면 새 자리가 조용히
+# 통과한다(원장 `guard-detection-surface-hand-narrowed` 와 같은 부류). 아홉 언어 소스 전체를
+# 훑되 **테스트를 뺀다** — 이 축이 겨누는 것은 *소비자가 읽는* 주석이고, 테스트 주석은 이웃한
+# 다른 값을 말한다(실측 오탐 1건: `JwtValidatorTest.kt:515` 의 "Nimbus 캐시 TTL(기본 5분)" —
+# 재조회 간격이 아니라 **상한** 이야기다).
+#
+# ⚠️ **"기본/default 뒤 6자 이내에 숫자"만 값 주장으로 본다.** 이 조건이 없으면 값을 말하지
+# 않는 산문까지 대상이 되어(`ruby/config.rb:41` "기본값은 위 상수." · `php/KeycloakConfig.php:20`)
+# "30을 안 담았다"는 이유로 전부 거짓 실패한다. 상수를 **참조**하는 주석은 드리프트할 수 없으니
+# 검사 대상이 아닌 것이 옳다.
+SD_SRC="$(cd "$ROOT" && git ls-files 'java/*.java' 'python/*.py' 'node/src/*.ts' 'go/*.go' \
+  'dotnet/*.cs' 'php/*.php' 'rust/src/*.rs' 'ruby/*.rb' 'kotlin/*.kt' 2>/dev/null \
+  | grep -viE '(^|/)(tests?|spec)/|[Tt]est[s]?\.(java|kt|ts|go|cs|php|rb|py|rs)$|_test\.go$|test_.*\.py$|_spec\.rb$|\.test\.ts$' || true)"
+_hassrc=1; [ -n "$SD_SRC" ] && _hassrc=0
+assert_eq "ok" "$(ok_if "$_hassrc" EMPTY)" "소스 목록이 비었다 — git ls-files 패턴이 바뀌었나?"
+
+sd_src_hits=0
+for f in $SD_SRC; do
+  _lines="$(grep -inE 'jwks[_ ]?min[_ ]?refetch|재조회|refetch' "$ROOT/$f" 2>/dev/null \
+    | grep -E '(//|#|\*|///)' \
+    | grep -iE '(기본|default)[^0-9]{0,6}[0-9]' || true)"
+  [ -n "$_lines" ] || continue
+  # 자릿수 경계로 대조(2절과 같은 이유 — `grep -F 30`이면 `300`도 통과한다).
+  _bad="$(printf '%s\n' "$_lines" | grep -vE "(^|[^0-9])$sd_expect([^0-9]|\$)" || true)"
+  assert_eq "" "$_bad" "$f 의 주석이 JWKS 최소 재조회 기본값을 코드값($sd_expect)과 다르게 말한다"
+  sd_src_hits=$((sd_src_hits + $(printf '%s\n' "$_lines" | grep -c . || true)))
+done
+
+# 대조군 — 이 축이 실제로 무언가를 봤는가. **실측 9건**(2026-09-04, 위 3건을 고친 뒤):
+#   go/config.go:42 · java JwtValidator.java:38 · java KeycloakConfig.java:40 ·
+#   kotlin config.kt:22 · node config.ts:26 · node jwt.ts:10 ·
+#   python config.py:23 · rust config.rs:18 · rust config.rs:81
+# ⚠️ 9는 **언어당 1건이 아니다**(6개 언어에 흩어져 있고 dotnet·php·ruby 는 0건) — 2절의 9와
+# 우연히 같을 뿐이니 같은 뜻으로 읽지 말 것. 하한을 8로 두어 표현이 한 줄 바뀔 여지를 남긴다.
+_enough=1; [ "$sd_src_hits" -ge 8 ] && _enough=0
+assert_eq "ok" "$(ok_if "$_enough" "$sd_src_hits")" \
+  "기본값을 말하는 소스 주석을 8건 미만 찾았다 — 탐지 패턴이 낡았나?"
+
+# ---------------------------------------------------------------------------
 # 3) 2차 정의 자리 금지 — 같은 값을 두 번 적지 않는다
 # ---------------------------------------------------------------------------
 #

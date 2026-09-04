@@ -20,7 +20,7 @@ class KeycloakConfig:
     # JWT 서명 검증 시 허용할 알고리즘(핀). 기본 RS256이나 ES256/PS256 서명 realm을 위해
     # 설정 가능하게 노출한다 — 하드코딩하면 그런 realm의 정상 토큰이 전부 거부된다.
     signature_algorithms: tuple[str, ...] = ("RS256",)
-    # 미해결 kid(키 회전)로 인한 JWKS 강제 재조회의 최소 간격(초, 기본 60) — DoS 증폭 상한.
+    # 미해결 kid(키 회전)로 인한 JWKS 강제 재조회의 최소 간격(초, 기본 30) — DoS 증폭 상한.
     # 위조 kid를 연속 주입해도 이 간격보다 자주 IdP를 때리지 못한다.
     jwks_min_refetch_seconds: float = 30.0
     # `validate()`가 토큰 `aud`에서 찾을 값. 미지정(None)이면 `client_id`를 기대한다(기존 동작).
