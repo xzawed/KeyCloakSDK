@@ -15,7 +15,7 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **152** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2) — 열림 **133** · 닫힘 **19** |
+| 작업 패키지 | **152** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2) — 열림 **131** · 닫힘 **21** |
 | 심각도 | high 27 · medium 76 · low 47 |
 | 작업량 | S 68 · M 70 · L 12 |
 
@@ -96,7 +96,7 @@
 - [ ] `java-rules-close-scope-ambiguous` **[L/S]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
-## B. 재검증 대상 — 27건 (열림 21)
+## B. 재검증 대상 — 27건 (열림 20)
 
 3렌즈 통과, 원장은 개별 재실행을 하지 않았다. 이번 인벤토리에서 전량 파일 확인 — 기각 권고 0건.
 
@@ -135,8 +135,13 @@
 
 ### 재검증 · 가드/CI/문서 — 10
 
-- [ ] `selftest-enforcer-cannot-guard-itself` **[H/M]** 자가테스트 종료코드 규약의 집행자가 자기 자신과 '실패 삼킴'을 못 본다 · `scripts/test/test-selftest-hygiene.sh:19`
+- [x] `selftest-enforcer-cannot-guard-itself` **[H/M]** 자가테스트 종료코드 규약의 집행자가 자기 자신과 '실패 삼킴'을 못 본다 · `scripts/test/test-selftest-hygiene.sh:19`
   - ⚠️ **범위가 「자기 자신」보다 26배 넓다.** 규칙 1 은 `grep -q 'assert_report' "$f"` 라 **raw 텍스트**를 본다 — 주석 처리된 `# assert_report` 도 통과한다(실측: 그런 파일을 만들어 `grep -q` 를 돌리면 히트). 루프가 `test-*.sh` **26개 전부**를 도니 약점도 26개 전부에 걸린다.
+  - **닫힘(#405).** 판정을 구조적으로 바꿨다 — 주석을 걷어낸 뒤 **단독 호출 줄**(`^\s*assert_report\s*$`)만 세고, 그것이 **마지막 실행 명령**인지까지 본다. 자기 제외(`continue`)를 지워 집행자도 같은 규칙을 받는다. 실측: 26개 파일 전부 통과(오탐 0) · 옛 판정이 통과시키던 4형태(주석 · `|| true` · 문자열 · 자기 인용) 전부 거부 · dash(`debian:stable-slim`)에서 동일.
+  - ⚠️ **활성 아니라 잠복이었다** — 실제 코퍼스에 위반 0건. 다만 `test-check-versions.sh`·`test-publication-claims.sh` 둘은 본문에 `assert_report` 를 주석으로도 인용해, **진짜 호출을 지워도 규칙 1이 초록**이었다(실측 2/25).
+  - ⚠️ **집행자 자신은 아무도 안 봤다** — 그 파일의 `assert_report` 를 주석 처리하면 **exit 0 · 출력 0줄**이었고, 저장소 전체 grep 으로 그것을 겨누는 다른 가드가 **0건**이었다.
+  - **재발 시 CI 가 잡는 자리**: `repo-hygiene.yml` 의 `sh scripts/test/test-selftest-hygiene.sh`(required `doc-facts` 잡). 가드 3요건 — 변이(집행자 자신의 호출 제거) → 2 FAIL · 복원 → 129 passed · 가드 OFF(이 커밋 이전 스크립트) + 같은 변이 → **exit 0**.
+  - ⚠️ **대조군을 사본으로 쓰면 공허하다** — 정규식을 대조군에 베껴 적었더니 본체를 옛 `grep -q` 로 되돌려도 **129 passed 0 failed 로 변이가 살아남았다**. 판정을 `mjs_wired()` 로 뽑아 대조군이 **본체를 부르게** 한 뒤에야 그 변이가 죽는다(127 passed 2 failed).
 - [ ] `guard-detection-surface-hand-narrowed` **[H/M]** 가드의 탐지 표면이 손으로 좁혀져 있어 새 자리·새 문법이 조용히 통과한다 · `scripts/test/test-security-defaults.sh:311`
   - ⚠️ **지목이 마스킹 축 하나를 가리키지만 체계적이다** — 가드의 **7축 중 5축**(1 코드/skew · 1b nonce · 1c 마스킹 · 3 2차자리 · 4 소유자)이 언어별 파일·앵커를 손으로 열거한다. 새 언어·새 자리가 생기면 `_seen == 9` 류의 대조군이 함께 늘지 않는 한 조용히 통과한다.
   - 참고: 2026-09-04 에 추가한 2b(소스 주석) 축은 `git ls-files` 로 전체를 훑어 이 부류를 피했다 — 같은 형태가 나머지 축의 목표다.
@@ -186,7 +191,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 테스트·커버리지 — 8
 
-- [ ] `selftest-hygiene-textual-rules` **[H/M]** '존재'가 아니라 '실행'을 센다던 규칙이 주석·비활성화·`|| true`를 실행으로 센다 · `scripts/test/test-selftest-hygiene.sh:20`
+- [x] `selftest-hygiene-textual-rules` **[H/M]** '존재'가 아니라 '실행'을 센다던 규칙이 주석·비활성화·`|| true`를 실행으로 센다 · `scripts/test/test-selftest-hygiene.sh:20`
+  - **닫힘(#405)** — `selftest-enforcer-cannot-guard-itself` 와 **같은 뿌리**이고 같은 커밋에서 함께 닫혔다(구조적 판정 + 마지막 실행 명령). 실측·가드는 그 항목에 적었다.
 - [ ] `coverage-exclusions-swallow-pure-logic` **[H/L]** '네트워크 경계' 커버리지 제외가 I/O 없는 순수 로직까지 삼켰다 — 다섯 언어 · `node/src/transport.ts:38`
 - [ ] `security-invariant-use-site-scope` **[H/M]** 보안 불변식의 '2차 정의 자리 금지'가 아홉 중 셋만 본다 — 미검사 언어에 리터럴 네 곳이 살아 있다 · `scripts/test/test-security-defaults.sh:297`
 - [ ] `selftest-assert-counter-subshell` **[M/M]** 어서션 카운터가 서브셸에서 증발한다 — 자가테스트 프레임워크의 구조적 맹점 · `scripts/test/assert.sh:10`
@@ -198,12 +204,16 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 ### 가드·CI — 16
 
 - [ ] `selftest-exit-code-contract-two-leaks` **[H/M]** 자가테스트의 「실패하면 비영 종료」 계약이 두 곳에서 샌다 — 탐지기도 계수기도 · `scripts/test/test-selftest-hygiene.sh:20`
+  - **절반 닫힘(#405) — 탐지기 쪽만.** 집행자가 「등장」을 「호출」로 세던 것을 구조적 판정으로 바꿨다(`selftest-enforcer-cannot-guard-itself` 참조).
+  - ⚠️ **계수기 쪽은 그대로 열려 있다** — `assert.sh` 의 `_A_FAIL` 이 서브셸에서 증발하는 문제이고, 아래 `selftest-assert-counter-subshell` 이 그 자리를 소유한다. **둘을 한 항목으로 읽어 닫지 말 것.**
 - [ ] `sweeps-without-vacuity-floor` **[H/M]** 세 개의 스윕/스캔이 0건을 훑고 통과한다 — 이 저장소의 하한 관용이 적용되지 않았다 · `.github/workflows/repo-hygiene.yml:234`
 - [ ] `seven-selftests-have-no-negative-control` **[H/L]** 일곱 자가테스트가 라이브 상태만 단언한다 — 검출기를 지워도 통과한다 · `scripts/test/test-deploy-md.sh:7`
 - [ ] `irreversible-publish-no-reentry` **[H/M]** 비가역 게시 뒤 재진입 경로가 없다 — 세 레인의 gh release create와 php 미러 순서 · `.github/workflows/go-release.yml:156`
 - [ ] `operator-commands-that-do-not-work` **[H/S]** 저장소가 사람에게 시키는 명령 둘이 실제로는 원하는 답을 주지 않는다 · `scripts/release-trigger.sh:53`
 - [x] `guard-neutering-wiring-unprotected` **[H/M]** [세션 발견·원장 밖] 가드 스텝을 무력화하는 배선이 무보호다 — 워킹트리에 continue-on-error가 살아 있다 · `.github/workflows/repo-hygiene.yml:119`
 - [ ] `guard-probes-count-mentions-not-declarations` **[M/S]** 가드 프로브가 「선언」이 아니라 「문자열 등장」을 센다 — 배선 규칙 3과 node update 프로브 · `scripts/test/test-selftest-hygiene.sh:84`
+  - **절반 닫힘(#405) — 배선 규칙 3 만.** `grep -q "node $m"` 의 두 누수를 규칙 2 와 같은 엄격도로 맞췄다(실측: 경로 미이스케이프로 `install-matrixXtest.mjs` 가 매치 · 단어경계 없어 `node <path>.disabled` 도 배선으로 계수 — 3파일 × 2형태 = 6건).
+  - ⚠️ **「node update 프로브」를 찾지 못했다 — 그래서 닫지 않는다.** 다음 검색이 전부 0건이다: `grep -rn "npm update\|node update" scripts/test/*.sh` · `grep -rn "grep -q \"" scripts/test/*.sh`(자가테스트 2건은 무관: LICENSE 문자열·주석). 원장의 그 절반이 **다른 파일을 가리키거나 서술이 부정확**하다 — 착수 전 기계용 원장(`ledger-dedup.json`)에서 이 항목의 원문을 먼저 볼 것.
 - [ ] `guards-outside-their-own-pr-signal` **[M/M]** 자기를 고친 PR에서 신호를 못 내는 가드 — 규칙 5의 스윕 글롭 밖과 harness의 paths 필터 · `scripts/gradle/osv-audit-init.gradle:1`
 - [ ] `selftests-miss-the-real-callsite` **[M/M]** 자가테스트가 CI의 실제 호출 형태를 타지 않는다 — 무인자 경로·다중 리포트·호출부 seam · `scripts/test/test-check-php-mirror.sh:29`
 - [ ] `stale-comments-nobody-collates` **[M/S]** 주석에 박힌 실측값·게이트 서술이 낡았고 대조 대상이 아니다 · `.github/workflows/dotnet-ci.yml:36`
