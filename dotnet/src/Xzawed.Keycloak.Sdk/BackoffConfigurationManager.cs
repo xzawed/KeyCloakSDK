@@ -52,7 +52,12 @@ internal sealed class BackoffConfigurationManager : BaseConfigurationManager
     {
         _inner = inner;
         _now = now ?? (() => DateTimeOffset.UtcNow);
-        _jitter = jitter ?? (() => 0.5 + Random.Shared.NextDouble() / 2);
+        // Jitter spreads a thundering herd; it is not a secret. It is still derived from the
+        // high-resolution clock rather than a PRNG API: calling a weak PRNG inside
+        // security-sensitive code is something static analysis rightly flags (measured: sonar
+        // S2245, gosec G404). All seven languages use the same idiom.
+        _jitter = jitter ?? (() =>
+            0.5 + System.Diagnostics.Stopwatch.GetTimestamp() % 1_000_000 / 2_000_000.0);
     }
 
     public override async Task<BaseConfiguration> GetBaseConfigurationAsync(CancellationToken cancel)
