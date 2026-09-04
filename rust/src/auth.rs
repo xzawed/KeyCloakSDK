@@ -232,7 +232,15 @@ impl AuthClient {
     }
 
     /// 백채널 로그아웃(refresh_token 무효화). openidconnect에 빌더가 없어 공유 http로 손수 POST.
-    /// 전송 실패만 오류로 표면화(back-channel best-effort — 다른 SDK와 동형).
+    ///
+    /// ⚠️ **상태코드를 반드시 본다.** `reqwest`의 `send()`는 **전송 실패에만** `Err`를 주고
+    /// 400/401/404 는 `Ok(Response)` 로 돌려준다 — 그래서 `send().await?; Ok(())` 로 쓰면
+    /// 세션이 그대로 살아있는데 호출자는 로그아웃이 성공했다고 믿는다. 자매 여덟 언어는
+    /// 전부 비-2xx 를 오류로 표면화한다(Node·.NET·Ruby·PHP·Go 실측). 여기만 그러지 않았다.
+    ///
+    /// ⚠️ **어떤 상태코드도 특별대우하지 않는다.** 404 는 대개 end-session 경로/realm 오설정이라
+    /// 삼키면 오설정이 영원히 안 보이고, 400("이미 무효화된 refresh_token")을 통과시키면 같은
+    /// 분류의 진짜 클라이언트 오류까지 함께 통과한다.
     pub async fn logout(&self, refresh_token: &str) -> Result<()> {
         let params = [
             ("client_id", self.config.client_id.as_str()),
@@ -242,12 +250,20 @@ impl AuthClient {
             ),
             ("refresh_token", refresh_token),
         ];
-        self.http
+        let resp = self
+            .http
             .post(self.endpoints.end_session())
             .form(&params)
             .send()
             .await
             .map_err(|e| KeycloakError::Transport(format!("logout: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(KeycloakError::Auth {
+                message: format!("logout failed (HTTP {})", status.as_u16()),
+                oauth_error: None,
+            });
+        }
         Ok(())
     }
 }
@@ -440,5 +456,54 @@ mod tests {
         assert!(r.active);
         assert_eq!(r.username.as_deref(), Some("alice"));
         assert_eq!(r.client_id.as_deref(), Some("it-client"));
+    }
+
+    // end_session 이 `status` 를 돌려주도록 mount 한 AuthClient.
+    async fn logout_fixture(status: u16) -> (AuthClient, MockServer) {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/logout"))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(&server)
+            .await;
+        let config = KeycloakConfig::new(server.uri(), "it-realm", "it-client")
+            .unwrap()
+            .with_client_secret("s");
+        let endpoints = OidcEndpoints::new(&config);
+        let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+        let validator = JwtValidator::new(&config, &endpoints, jwks).unwrap();
+        let auth = AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap();
+        (auth, server)
+    }
+
+    // `reqwest`의 send()는 4xx/5xx에 Err를 주지 않는다 — 상태코드를 직접 보지 않으면 이 셋이
+    // 전부 Ok(())가 되어 "세션이 살아있는데 로그아웃 성공"이 된다.
+    #[tokio::test]
+    async fn logout_surfaces_non_2xx_status() {
+        for status in [400_u16, 401, 404, 500] {
+            let (auth, _server) = logout_fixture(status).await;
+            let err = auth.logout("rt").await.expect_err(
+                "비-2xx 는 오류여야 한다 — Ok(())면 호출자가 무효화되지 않은 세션을 무효화됐다고 믿는다",
+            );
+            match err {
+                KeycloakError::Auth { message, .. } => assert!(
+                    message.contains(&status.to_string()),
+                    "오류 메시지가 실제 상태코드를 담아야 한다: {message}",
+                ),
+                other => panic!("Auth 오류를 기대했다(HTTP {status}), 실제: {other:?}"),
+            }
+        }
+    }
+
+    // ⚠️ 대조군을 지우지 말 것 — 위 테스트가 "logout이 늘 실패한다"로도 통과하는 것을 막는
+    // 유일한 수단이다. 204(Keycloak의 실제 성공 응답)와 200 둘 다 Ok여야 한다.
+    #[tokio::test]
+    async fn logout_accepts_2xx_status() {
+        for status in [200_u16, 204] {
+            let (auth, _server) = logout_fixture(status).await;
+            auth.logout("rt")
+                .await
+                .unwrap_or_else(|e| panic!("HTTP {status}는 성공이어야 한다, 실제: {e:?}"));
+        }
     }
 }
