@@ -497,3 +497,113 @@ func TestValidateKeyRotationRecovery(t *testing.T) {
 		t.Fatalf("key rotation must be recovered via refetch: %v", err)
 	}
 }
+
+// ⚠️ 여기부터가 콜드 캐시 + IdP 장애 축이다. minRefetch(30초) 게이트는 *캐시가 찬 뒤*
+// 미해결 kid 홍수만 막는다 — 캐시가 비어 있고 fetch 가 계속 실패하면 그 게이트에 닿지도
+// 못한다. 실측(2026-09-04): 20회 조회 → IdP 요청 **20건**, 7개 언어 동일.
+
+// failingJWKS returns a server that always answers 503, plus its hit counter.
+func failingJWKS(t *testing.T) (*httptest.Server, *int32) {
+	t.Helper()
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &hits
+}
+
+func TestJWKSFailedFetchBackoffBoundsColdRetries(t *testing.T) {
+	srv, hits := failingJWKS(t)
+	v := newValidator(validatorOptions{jwksURI: srv.URL, issuer: testISS, audience: "my-client",
+		allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: 30,
+		minRefetch: 30 * time.Second})
+
+	for i := 0; i < 20; i++ {
+		if _, err := v.resolveKey(context.Background(), "k1"); err == nil {
+			t.Fatalf("lookup %d must fail while the IdP is down", i)
+		}
+	}
+	if got := atomic.LoadInt32(hits); got != 1 {
+		t.Fatalf("cold cache + failing IdP: 20 lookups must collapse to one outbound request, got %d", got)
+	}
+}
+
+// ⚠️ **이 테스트를 지우지 말 것 — 위 단언은 「한 번 실패하면 영원히 차단」으로도 통과한다.**
+// 그 동작은 원래 결함보다 나쁘다(IdP 가 복구돼도 SDK 가 영영 못 쓴다).
+func TestJWKSBackoffExpiresAndAllowsRetry(t *testing.T) {
+	srv, hits := failingJWKS(t)
+	now := time.Now()
+	v := newValidator(validatorOptions{jwksURI: srv.URL, issuer: testISS, audience: "my-client",
+		allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: 30,
+		minRefetch: 30 * time.Second, now: func() time.Time { return now }})
+
+	if _, err := v.resolveKey(context.Background(), "k1"); err == nil {
+		t.Fatal("first lookup must fail")
+	}
+	if got := atomic.LoadInt32(hits); got != 1 {
+		t.Fatalf("first lookup must go out once, got %d", got)
+	}
+
+	// 창 안 — 네트워크로 나가지 않고 즉시 실패한다(sleep 하지 않는다).
+	_, err := v.resolveKey(context.Background(), "k1")
+	if err == nil || !strings.Contains(err.Error(), "backing off") {
+		t.Fatalf("inside the window the error must say backing off, got %v", err)
+	}
+	if got := atomic.LoadInt32(hits); got != 1 {
+		t.Fatalf("inside the window nothing may reach the IdP, got %d", got)
+	}
+
+	// 창을 넘기면(상한 5초보다 크게 민다) 다시 나간다.
+	now = now.Add(10 * time.Second)
+	if _, err := v.resolveKey(context.Background(), "k1"); err == nil {
+		t.Fatal("after the window the lookup still fails, but for transport reasons")
+	}
+	if got := atomic.LoadInt32(hits); got != 2 {
+		t.Fatalf("after the window one more request must go out, got %d", got)
+	}
+}
+
+// ⚠️ 대조군 둘째 — 성공이 실패 카운터를 되돌리지 않으면 오래 산 프로세스에서 백오프가
+// 상한까지 올라간 채 영영 내려오지 않는다.
+func TestJWKSSuccessResetsFailureCounter(t *testing.T) {
+	f := newJWTFixture(t)
+	now := time.Now()
+	var down int32 = 1
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.LoadInt32(&down) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		f.jwksSrv.Config.Handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	v := newValidator(validatorOptions{jwksURI: srv.URL, issuer: testISS, audience: "my-client",
+		allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: 30,
+		minRefetch: 30 * time.Second, now: func() time.Time { return now }})
+
+	if _, err := v.resolveKey(context.Background(), "k1"); err == nil {
+		t.Fatal("first lookup must fail")
+	}
+	v.mu.Lock()
+	failures := v.failures
+	v.mu.Unlock()
+	if failures != 1 {
+		t.Fatalf("a failed fetch must count, got %d", failures)
+	}
+
+	atomic.StoreInt32(&down, 0)
+	now = now.Add(10 * time.Second)
+	if _, err := v.resolveKey(context.Background(), "k1"); err != nil {
+		t.Fatalf("the IdP recovered, the lookup must succeed: %v", err)
+	}
+	v.mu.Lock()
+	failures, zero := v.failures, v.lastFailure.IsZero()
+	v.mu.Unlock()
+	if failures != 0 || !zero {
+		t.Fatalf("a successful fetch must reset the counter and the timestamp, got %d / zero=%v",
+			failures, zero)
+	}
+}

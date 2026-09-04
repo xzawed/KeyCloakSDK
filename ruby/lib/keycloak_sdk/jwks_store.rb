@@ -70,11 +70,19 @@ module KeycloakSdk
       backoff_delay - (monotonic - @last_failure)
     end
 
-    # 지수 백오프 + jitter. jitter 는 [0.5, 1.0] 배수 — 여러 인스턴스가 같은 순간에 복구를
+    # 지수 백오프 + jitter. jitter 는 [0.5, 1.0) 배수 — 여러 인스턴스가 같은 순간에 복구를
     # 시도해 IdP 를 다시 무너뜨리는 것(thundering herd)을 흩는다.
+    #
+    # ⚠️ **PRNG API 를 쓰지 않고 나노초 시계에서 뽑는다.** 이 값은 비밀이 아니지만, 보안 민감
+    # 코드에서 약한 PRNG 를 호출하면 정적분석이 정당하게 막는다(실측: sonar S2245 · gosec G404).
+    # 일곱 언어가 **같은 관용**을 쓴다 — 하나만 `rand` 로 남으면 그 자체가 드리프트다.
     def backoff_delay
       raw = FAILURE_BACKOFF_BASE * (2**([@failures, 1].max - 1))
-      [raw, FAILURE_BACKOFF_CAP].min * (0.5 + (rand * 0.5))
+      [raw, FAILURE_BACKOFF_CAP].min * jitter
+    end
+
+    def jitter
+      0.5 + ((Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond) % 1_000_000) / 2_000_000.0)
     end
 
     def fetch_recording_failure

@@ -15,13 +15,27 @@ import pytest
 from joserfc import jwt as jjwt
 from joserfc.jwk import ECKey, RSAKey
 from keycloak import KeycloakOpenID
-from keycloak.exceptions import KeycloakAuthenticationError, KeycloakGetError
+from keycloak.exceptions import KeycloakAuthenticationError, KeycloakError, KeycloakGetError
 
+from keycloak_sdk._internal.backoff import JwksFailureBackoff
 from keycloak_sdk.auth import AuthClient
 from keycloak_sdk.config import KeycloakConfig
 from keycloak_sdk.exceptions import KeycloakAuthError, KeycloakTransportError, TokenValidationError
 from keycloak_sdk.oidc import OidcEndpoints
 from keycloak_sdk.tokens import IntrospectionResult, TokenSet, ValidatedToken
+
+
+class _FakeClock:
+    """백오프 창을 결정적으로 넘기기 위한 시계 — sleep 하지 않는다."""
+
+    def __init__(self) -> None:
+        self.t = 1000.0
+
+    def __call__(self) -> float:
+        return self.t
+
+    def advance(self, seconds: float) -> None:
+        self.t += seconds
 
 
 def _config(**overrides: object) -> KeycloakConfig:
@@ -712,3 +726,66 @@ def test_malformed_jwks_yields_sdk_error_not_a_raw_library_exception():
 
     with pytest.raises(TokenValidationError):
         client.validate(token)
+
+
+# ⚠️ 여기부터가 콜드 캐시 + IdP 장애 축이다. 위 `test_forced_jwks_refetch_is_rate_limited`
+# 의 30초 게이트는 *캐시가 찬 뒤*에만 걸린다 — 캐시가 비어 있고 fetch 가 계속 실패하면
+# 그 게이트에 닿지도 못한다. 실측(2026-09-04): 20회 검증 → certs() 20회, 7개 언어 동일.
+# 상태 기계 자체는 `test_backoff.py` 가 재고, 여기서는 **배선**만 증명한다.
+def test_cold_cache_failing_idp_collapses_to_one_certs_call():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.certs.side_effect = KeycloakError("idp down")
+    client = _client(openid)
+
+    for _ in range(20):
+        with pytest.raises((KeycloakTransportError, KeycloakAuthError)):
+            client._load_jwks()
+
+    assert openid.certs.call_count == 1, (
+        "cold cache + failing IdP: 20 loads must collapse to one outbound request"
+    )
+
+
+# ⚠️ **이 테스트를 지우지 말 것 — 위 단언은 「한 번 실패하면 영원히 차단」으로도 통과한다.**
+def test_backoff_window_expires_and_the_next_load_reaches_the_idp():
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.certs.side_effect = KeycloakError("idp down")
+    client = _client(openid)
+    clock = _FakeClock()
+    client._jwks_backoff = JwksFailureBackoff(clock=clock, jitter=lambda: 1.0)
+
+    with pytest.raises((KeycloakTransportError, KeycloakAuthError)):
+        client._load_jwks()
+    assert openid.certs.call_count == 1
+
+    # 창 안 — 네트워크로 나가지 않고 즉시 실패한다(sleep 하지 않는다).
+    with pytest.raises(KeycloakTransportError, match="backing off"):
+        client._load_jwks()
+    assert openid.certs.call_count == 1
+
+    # 창을 넘기면(상한 5초보다 크게 민다) 다시 나간다.
+    clock.advance(10.0)
+    with pytest.raises((KeycloakTransportError, KeycloakAuthError)):
+        client._load_jwks()
+    assert openid.certs.call_count == 2
+
+
+def test_recovered_idp_resets_the_backoff():
+    """대조군 — 복구 후 성공이 카운터를 되돌린다(배선 확인)."""
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.certs.side_effect = [
+        KeycloakError("idp down"),
+        {"keys": [key.as_dict(private=False)]},
+    ]
+    client = _client(openid)
+    clock = _FakeClock()
+    client._jwks_backoff = JwksFailureBackoff(clock=clock, jitter=lambda: 1.0)
+
+    with pytest.raises((KeycloakTransportError, KeycloakAuthError)):
+        client._load_jwks()
+    clock.advance(10.0)
+    client._load_jwks()
+
+    assert client._jwks_backoff.failures == 0
+    assert client._jwks_backoff.remaining() == 0.0

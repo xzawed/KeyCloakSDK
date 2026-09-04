@@ -15,7 +15,7 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **151** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 1) — 열림 **133** · 닫힘 **18** |
+| 작업 패키지 | **152** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2) — 열림 **133** · 닫힘 **19** |
 | 심각도 | high 27 · medium 76 · low 47 |
 | 작업량 | S 68 · M 70 · L 12 |
 
@@ -96,7 +96,7 @@
 - [ ] `java-rules-close-scope-ambiguous` **[L/S]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
-## B. 재검증 대상 — 26건 (열림 21)
+## B. 재검증 대상 — 27건 (열림 21)
 
 3렌즈 통과, 원장은 개별 재실행을 하지 않았다. 이번 인벤토리에서 전량 파일 확인 — 기각 권고 0건.
 
@@ -105,11 +105,17 @@
 - [x] `jwks-fetch-ignores-http-status` **[H/S]** JWKS fetch가 HTTP 상태 코드를 보지 않는다 — Go는 게이트웨이 오류 JSON으로 키 캐시가 오염된다 · `go/jwt.go:181`
 - [x] `ruby-admin-path-segment-unescaped` **[H/M]** Ruby admin 5개 리소스가 경로 세그먼트를 무이스케이프 보간한다 — 엔드포인트 우회 + stdlib 예외 누출 · `ruby/lib/keycloak_sdk/admin/users.rb:18`
 - [x] `go-postform-treats-3xx-as-success` **[H/S]** Go postForm이 3xx를 성공으로 읽는다 — Logout이 세션이 살아있는데 nil을 돌려준다 · `go/auth.go:210`
-- [ ] `jwks-cold-cache-ungated` **[M/M→재분류]** 콜드 캐시 JWKS 로드가 rate-limit 게이트 밖 · `rust/src/jwks.rs:61`
+- [x] `jwks-cold-cache-ungated` **[M/M→재분류]** 콜드 캐시 JWKS 로드가 rate-limit 게이트 밖 · `rust/src/jwks.rs:61`
   - ⚠️ **범위 정정(2026-09-04 실측)**: 원장은 「rust · 여섯 README」라 적었으나 **7개 언어 전부**다(java·kotlin 은 Nimbus 덕에 예외). 각 언어에서 「콜드 캐시 + JWKS 엔드포인트 503 + 20회 시도」로 IdP 도달 요청을 셌다 — **rust 20 · go 20 · python 20 · php 20 · node 20 · ruby 20 · dotnet 40**(호출당 2). 대조군(정상 엔드포인트 + 강제 재조회 20회)은 전부 1~4로 유계라 계측기는 건전하다.
-  - ⚠️ **부류가 다르다 — unknown-kid DoS 가 아니라 retry storm 이다.** 30초 게이트는 *캐시가 찬 뒤* 위조 kid 홍수를 막으려는 것이고 그 경로는 실제로 동작한다(rust 웜캐시 대조군 = 2). 무제한이 되는 것은 **캐시가 빈 채 fetch 가 계속 실패할 때**뿐이다. 그래서 심각도를 가용성 축으로 다시 읽어야 한다(Grok 독립 레그도 같은 결론).
-  - ⚠️ **콜드 로드에 같은 30초 게이트를 걸면 안 된다** — 일시적 503 한 번이 「30초간 어떤 토큰도 검증 불가」로 바뀐다. 권고 형태는 *실패한* fetch 에 대한 negative cache + 짧은 지수 백오프(수백 ms~5·10초)이고, unknown-kid 의 30초 게이트는 그대로 둔다.
-  - ⚠️ **문서가 먼저 틀렸다.** 8개 README 가 "no volume of forged tokens/kids makes the SDK issue more than one JWKS request per interval" 이라 적는데 콜드 캐시에서 거짓이다. rust 는 한술 더 떠 "an IdP outage cannot be used to reopen it" 이라 적지만, 실측상 장애는 게이트를 *reopen* 하는 정도가 아니라 캐시를 영원히 비워 **상시 우회**시킨다. `.claude/rules/security.md` 의 "python·go·rust·php·ruby allow one by construction" 도 캐시가 찼을 때만 참이다.
+  - ⚠️ **부류가 다르다 — unknown-kid DoS 가 아니라 retry storm 이다.** 30초 게이트는 *캐시가 찬 뒤* 위조 kid 홍수를 막으려는 것이고 그 경로는 실제로 동작한다. 무제한이 되는 것은 **캐시가 빈 채 fetch 가 계속 실패할 때**뿐이다.
+  - **닫힘(#403 ruby 참조구현 → 나머지 여섯).** 실패한 fetch 에 지수 백오프(0.2s → 상한 5s, jitter)를 걸고 창 안에서는 IdP 를 때리지 않고 즉시 실패시킨다(negative cache · **sleep 금지**). 재측정: rust·go·python·php·node·ruby **20→1**, dotnet **40→2**(그 레인은 검증당 2요청이라 한 창이 2다). 웜 대조군은 전부 불변.
+  - ⚠️ **rust 는 두 번째 결함이 함께 드러났다** — 콜드 로드가 게이트 뮤텍스 **밖**이라 동시 첫 검증 20건이 요청 20건을 냈다. **정상(200) IdP 에서도** 그랬다(실측 20/20). 백오프만으로는 안 닫혔고, 게이트 락이 콜드 경로를 덮게 고쳤다(go 는 `singleflight`, ruby·python 은 락이 이미 있었다).
+  - ⚠️ **node 는 「과잉 수정」이 실제로 통과할 뻔했다** — 진입부 `cold` 게이트와 실패 계수의 `jwks()===undefined` 검사가 **서로를 가려**, 어느 한쪽을 지워도 동작이 안 변해 변이검증이 양쪽 다 초록이었다. 중복을 지우고 검사를 하나로 만든 뒤에야 대조군이 결함을 잡는다. **중복 게이트는 변이검증을 공허하게 만든다.**
+  - **재발 시 CI 가 잡는 자리**: 언어별 단위테스트(결함 1 + 대조군 2~3, 각 언어 레인) + 교차언어 대칭 가드 `scripts/test/test-security-defaults.sh` §1b2(일곱 언어의 상한 상수·잔여시간 계산 존재 · 훑은 수 7 대조군). 가드 3요건 실측: go 상한을 5→9초로 바꾸면 **1 failed**, 가드를 끄고 같은 변이면 **155 passed 0 failed**.
+  - ⚠️ **이 항목의 범위는 측정된 일곱이고, 그 일곱은 전부 닫혔다.** java·kotlin 은 **애초에 측정된 적이 없다**(Nimbus 가 그들의 fetch 를 소유) — 「예외」와 「미측정」은 다른 주장이고, 원장은 그 둘을 섞어 적고 있었다. 미측정은 이 항목의 잔여가 아니라 **별개의 열린 질문**이므로 아래 `jvm-cold-cache-unmeasured` 로 분리했다.
+- [ ] `jvm-cold-cache-unmeasured` **[M/S · 신규 2026-09-05]** java·kotlin 의 콜드 캐시 + IdP 장애 동작이 한 번도 측정되지 않았다 — 나머지 일곱은 20→1 로 닫혔는데 이 둘만 미지수다 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java`
+  - 재는 법은 이미 있다: 나머지 일곱에 쓴 프로브(요청을 세는 로컬 HTTP 서버 · JWKS 503 · 20회 검증)를 Nimbus `JWKSource` 에 물리면 된다. **먼저 재고, 그 다음에 고칠지 정한다** — Nimbus 의 `RateLimitedJWKSetSource`·`CachingJWKSetSource` 조합이 이미 막고 있을 수 있고, 그렇다면 고칠 것이 없다.
+  - ⚠️ 결과가 「이미 유계」로 나오면 그 사실을 `.claude/rules/security.md` 에 적어 다음 세션이 다시 묻지 않게 한다(지금은 "NOT measured" 라고만 적혀 있다).
 - [ ] `openid-scope-fallback-empty-only` **[M/S]** openid 스코프 폴백이 "비었을 때"만 걸려 Nimbus IllegalArgumentException이 공개 API로 샌다 (Java·Kotlin) · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:81`
 - [ ] `boundary-exception-conversion-incomplete` **[M/M]** 경계 변환의 catch 목록이 하위 라이브러리가 실제로 던지는 예외 집합보다 좁다 · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt:91`
   - ⚠️ **범위 정정**: 원장은 「Kotlin·Ruby」 2개라 적었으나 **Java·Node·.NET 을 빠뜨렸다**. ⚠️ 그리고 **원장이 지목한 Ruby 줄은 clean 이다** — `ruby/lib/keycloak_sdk/jwt_validator.rb:36` 의 `rescue JWT::DecodeError` 는 이미 JWKError 를 잡는다(실측: 설치된 `jwt-3.2.0/lib/jwt/error.rb:53` 이 `class JWKError < DecodeError`). **고치기 전에 지목부터 다시 잡을 것** — 안 그러면 clean 한 자리를 건드린다.

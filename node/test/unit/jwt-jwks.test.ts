@@ -191,3 +191,96 @@ describe('JWKS 재조회 rate-limit (cooldownDuration 실동작)', () => {
     }
   })
 })
+
+// ⚠️ 여기부터가 **콜드 캐시 + IdP 장애** 축이다. 위 `cooldownDuration` 은 *캐시가 찬 뒤*
+// 미해결 kid 재조회만 상한한다 — 캐시가 비어 있으면 jose `getKey` 가 매번 `reload()` 를 부르고,
+// 실패한 `reload()` 는 타임스탬프를 남기지 않아 쿨다운에 닿지도 못한다. 실측(2026-09-04):
+// 20회 검증 → IdP 요청 **20건**, 7개 언어 동일.
+describe('콜드 캐시 + IdP 장애 백오프', () => {
+  let down: Server
+  let downUri: string
+  let downHits = 0
+
+  beforeAll(async () => {
+    down = createServer((_req, res) => {
+      downHits += 1
+      res.writeHead(503, { 'content-type': 'application/json' })
+      res.end('{"error":"service unavailable"}')
+    })
+    await new Promise<void>((resolve) => down.listen(0, '127.0.0.1', resolve))
+    downUri = `http://127.0.0.1:${(down.address() as AddressInfo).port}/certs`
+  })
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => down.close(() => resolve()))
+  })
+
+  // ⚠️ 시계를 **주입**한다. 실시계로 두면 20회 루프(실 크립토 + 실 HTTP)가 base 창(100~200ms)을
+  // 넘어 히트가 2가 되는 flake 가 난다 — 실측으로 겪었다. 이 저장소는 벽시계에 매달린 테스트를
+  // 이미 결함 부류로 추적한다(`wall-clock-ordering-in-tests`). 실시계에서의 크기는 프로브가
+  // 따로 잰다(콜드 캐시 + 503 · 20회 → 요청 1건).
+  it('20회 검증이 IdP 요청 1건으로 접힌다', async () => {
+    const now = 1_000_000
+    const v = JwtValidator.forJwksUriWithSeams(
+      downUri,
+      { ...baseOpts, jwksMinRefetchSeconds: 30 },
+      { now: () => now, jitter: () => 1 },
+    )
+    downHits = 0
+    await attack(v, 20)
+    expect(downHits).toBe(1)
+  })
+
+  // ⚠️ **이 테스트를 지우지 말 것 — 위 단언은 「한 번 실패하면 영원히 차단」으로도 통과한다.**
+  // 그 동작은 원래 결함보다 나쁘다(IdP 가 복구돼도 SDK 가 영영 못 쓴다).
+  it('대조군 — 백오프 창이 지나면 다시 IdP 로 나간다', async () => {
+    let now = 1_000_000
+    const v = JwtValidator.forJwksUriWithSeams(
+      downUri,
+      { ...baseOpts, jwksMinRefetchSeconds: 30 },
+      { now: () => now, jitter: () => 1 },
+    )
+    downHits = 0
+
+    await expect(v.validate(await forgedToken())).rejects.toThrow()
+    expect(downHits).toBe(1)
+
+    // 창 안 — 네트워크로 나가지 않고 즉시 실패한다(sleep 하지 않는다).
+    await expect(v.validate(await forgedToken())).rejects.toThrow(/backing off/)
+    expect(downHits).toBe(1)
+
+    // 창을 넘기면(상한 5초보다 크게 민다) 다시 나간다.
+    now += 10_000
+    await expect(v.validate(await forgedToken())).rejects.toThrow()
+    expect(downHits).toBe(2)
+  })
+
+  // 기본 jitter(`Math.random`)를 실제로 태운다 — `now` 만 고정하면 경과가 0 이라 창은 항상
+  // 열려 있고, 그래서 결정적이면서도 기본 경로가 실행된다(주입 jitter 만 쓰면 그 줄이 영영
+  // 미실행으로 남는다).
+  it('기본 jitter 경로도 창을 연다', async () => {
+    const now = 2_000_000
+    const v = JwtValidator.forJwksUriWithSeams(
+      downUri,
+      { ...baseOpts, jwksMinRefetchSeconds: 30 },
+      { now: () => now },
+    )
+    downHits = 0
+    await expect(v.validate(await forgedToken())).rejects.toThrow()
+    await expect(v.validate(await forgedToken())).rejects.toThrow(/backing off/)
+    expect(downHits).toBe(1)
+  })
+
+  // ⚠️ 대조군 둘째 — **웜 캐시의 미해결 kid 홍수는 백오프를 올려서는 안 된다.** 그 경로의
+  // `JWKSNoMatchingKey` 는 fetch 실패가 아니고, 실패로 세면 위조 kid 홍수가 정상 토큰의
+  // 검증까지 막는다(원래 결함보다 나쁜 쪽으로 과잉 수정하는 자리).
+  it('대조군 — 정상 IdP 의 위조 kid 홍수는 백오프를 트리거하지 않는다', async () => {
+    const v = JwtValidator.forJwksUri(jwksUri, { ...baseOpts, jwksMinRefetchSeconds: 30 })
+    hits = 0
+    await attack(v, 12)
+
+    // 백오프가 걸렸다면 메시지가 'backing off' 가 된다. 여기서는 그러면 안 된다.
+    await expect(v.validate(await forgedToken())).rejects.not.toThrow(/backing off/)
+    expect(hits).toBeLessThanOrEqual(2)
+  })
+})

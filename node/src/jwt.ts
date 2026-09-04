@@ -1,6 +1,88 @@
-import { jwtVerify, createRemoteJWKSet, type JWTVerifyGetKey } from 'jose'
-import { KeycloakTokenValidationError } from './errors.js'
+import { jwtVerify, createRemoteJWKSet, type JWTVerifyGetKey, type RemoteJWKSet } from 'jose'
+import { KeycloakTokenValidationError, KeycloakTransportError } from './errors.js'
 import type { ValidatedToken } from './tokens.js'
+
+/**
+ * 실패한 JWKS fetch 의 백오프 — `jwksMinRefetchSeconds`(30초)와 **다른 축**이다.
+ *
+ * jose 의 `cooldownDuration` 은 *캐시가 찬 뒤* 미해결 kid 재조회만 상한한다. 캐시가 비어 있으면
+ * `getKey` 가 매번 `reload()` 를 부르고, `reload()` 는 실패 시 타임스탬프를 남기지 않으므로
+ * 쿨다운에 **닿지도 못한다** — 측정상 20회 검증이 IdP 요청 20건을 그대로 냈다
+ * (2026-09-04 · 7개 언어 동일. jose v6.2.9 `RemoteJWKSetImpl.getKey`/`reload` 실측).
+ *
+ * ⚠️ 여기에 30초를 재사용하면 안 된다 — 일시적 503 한 번이 「30초간 어떤 토큰도 검증 불가」가
+ * 된다. 짧게 시작해 지수적으로 늘리고 상한을 둔다. **sleep 하지 않는다**(negative cache).
+ */
+const FAILURE_BACKOFF_BASE_MS = 200
+const FAILURE_BACKOFF_CAP_MS = 5_000
+
+/**
+ * 시계·jitter 이음매 — 테스트가 창을 결정적으로 넘길 수 있어야 한다(sleep 금지).
+ *
+ * ⚠️ **export 하지 않는다.** 이것이 공개 시그니처에 오르면 방출 `.d.ts` 가 바뀌고
+ * `api-extractor` 게이트가 「직전 릴리스의 공개 API 줄이 바뀌었다」로 막는다(실측). 이음매는
+ * `@internal` 팩토리로만 닿는다 — `forKeySource` 와 같은 자리.
+ */
+interface BackoffSeams {
+  readonly now?: () => number
+  readonly jitter?: () => number
+}
+
+/**
+ * 키 소스를 감싸 **콜드 캐시일 때만** 실패 백오프를 건다.
+ *
+ * ⚠️ 조건이 「콜드 캐시」인 것이 핵심이다. 웜 캐시의 미해결 kid 경로는 jose 의 쿨다운이 이미
+ * 상한한다(실측 `== 1`), 그리고 그 경로의 `JWKSNoMatchingKey` 는 **fetch 실패가 아니다** —
+ * 그것을 실패로 세면 위조 kid 홍수가 백오프를 올려 정상 토큰까지 막는다.
+ */
+// ⚠️ **export 하지 않는다** — 시그니처에 jose 의 `RemoteJWKSet`/`JWTVerifyGetKey` 가 들어 있어
+// export 하면 방출 `.d.ts` 가 그 타입을 다시 import 하고 §4(b) 은닉이 깨진다(가드 실측:
+// `check-node-public-surface.mjs` 누출 1건). 배선은 `forJwksUri` 를 통해서만 닿는다.
+function withColdCacheBackoff(remote: RemoteJWKSet, seams: BackoffSeams = {}): JWTVerifyGetKey {
+  const now = seams.now ?? (() => Date.now())
+  // jitter 는 thundering herd 를 흩는다 — 비밀이 아니다. ⚠️ 그래도 **PRNG API 를 쓰지 않고**
+  // 나노초 시계에서 뽑는다: 보안 민감 코드에서 약한 PRNG 호출은 정적분석이 정당하게 막는다
+  // (실측: sonar S2245 · gosec G404). 일곱 언어가 같은 관용을 쓴다.
+  const jitter =
+    seams.jitter ?? (() => 0.5 + Number(process.hrtime.bigint() % 1_000_000n) / 2_000_000)
+  let failures = 0
+  let lastFailure: number | null = null
+
+  const delayMs = () =>
+    Math.min(FAILURE_BACKOFF_BASE_MS * 2 ** (Math.max(failures, 1) - 1), FAILURE_BACKOFF_CAP_MS) *
+    jitter()
+  const remainingMs = () =>
+    lastFailure === null ? 0 : Math.max(0, delayMs() - (now() - lastFailure))
+
+  return async (protectedHeader, token) => {
+    const remaining = remainingMs()
+    if (remaining > 0) {
+      throw new KeycloakTransportError(
+        `JWKS fetch backing off after ${failures} consecutive failures ` +
+          `(retry in ${(remaining / 1000).toFixed(2)}s)`,
+      )
+    }
+    try {
+      const key = await remote(protectedHeader, token)
+      failures = 0
+      lastFailure = null
+      return key
+    } catch (e) {
+      // ⚠️ **이 조건이 콜드 캐시 한정의 유일한 근거다.** 캐시가 여전히 비어 있으면 fetch 가
+      // 실패한 것이다. 캐시가 찼는데 던졌다면 그것은 미해결 kid(`JWKSNoMatchingKey`)이지 전송
+      // 실패가 아니므로 세지 않는다 — 세면 위조 kid 홍수가 백오프를 올려 정상 토큰까지 막는다.
+      //
+      // ⚠️ 진입부에 `if (cold)` 게이트를 **다시 넣지 말 것**. 넣으면 두 검사가 서로를 가려
+      // (한쪽만 지워도 동작이 안 변해) 변이검증이 **양쪽 다 통과**한다 — 실측으로 겪었다.
+      // 여기가 유일한 검사여야 대조군이 실제로 무언가를 겨눈다.
+      if (remote.jwks() === undefined) {
+        failures += 1
+        lastFailure = now()
+      }
+      throw e
+    }
+  }
+}
 
 export interface JwtValidatorOptions {
   readonly issuer: string
@@ -44,13 +126,36 @@ export class JwtValidator {
     return new JwtValidator(keys, opts)
   }
 
-  /** 원격 JWKS URI로 검증기를 만든다. `createRemoteJWKSet`은 kid 미해결 시에만 재조회하고 cooldownDuration으로 rate-limit → 서명 위조로 인한 미인증 DoS 증폭을 차단한다. */
+  /**
+   * 원격 JWKS URI로 검증기를 만든다. `createRemoteJWKSet`은 kid 미해결 시에만 재조회하고
+   * cooldownDuration으로 rate-limit → 서명 위조로 인한 미인증 DoS 증폭을 차단한다.
+   *
+   * ⚠️ 그 쿨다운은 **캐시가 찬 뒤에만** 걸린다 — 콜드 캐시 + IdP 장애는 실패 백오프가 막는다
+   * (측정 20 → 1).
+   */
   static forJwksUri(jwksUri: string, opts: JwtValidatorOptions): JwtValidator {
-    const keys = createRemoteJWKSet(new URL(jwksUri), {
+    return JwtValidator.forJwksUriWithSeams(jwksUri, opts, {})
+  }
+
+  /**
+   * `forJwksUri` 에 시계·jitter 이음매를 주입한다 — **테스트 전용**.
+   *
+   * ⚠️ `@internal` 이라 `stripInternal` 이 방출 `.d.ts` 에서 이 멤버를 지운다. 이음매를
+   * `forJwksUri` 의 세 번째 파라미터로 두면 **공개 시그니처가 바뀌어** `api-extractor` 게이트가
+   * 막는다(실측: 「공개 API 줄 1개가 바뀌었다」). `forKeySource` 와 같은 처리다.
+   *
+   * @internal
+   */
+  static forJwksUriWithSeams(
+    jwksUri: string,
+    opts: JwtValidatorOptions,
+    seams: BackoffSeams,
+  ): JwtValidator {
+    const remote = createRemoteJWKSet(new URL(jwksUri), {
       cooldownDuration: opts.jwksMinRefetchSeconds * 1000,
       cacheMaxAge: 600_000,
     })
-    return new JwtValidator(keys, opts)
+    return new JwtValidator(withColdCacheBackoff(remote, seams), opts)
   }
 
   async validate(token: string): Promise<ValidatedToken> {

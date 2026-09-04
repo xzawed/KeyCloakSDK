@@ -23,6 +23,7 @@ from joserfc.jwk import KeySet, KeySetSerialization
 from keycloak import KeycloakOpenID
 from keycloak.exceptions import KeycloakError
 
+from .._internal.backoff import JwksFailureBackoff
 from .._internal.jwt import JwtValidator
 from .._internal.redirects import harden_openid
 from ..auth import AuthorizationUrl, _generate_pkce_pair
@@ -77,6 +78,8 @@ class AsyncAuthClient:
         self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)
         # 강제 재조회 최소 간격(초) — DoS 증폭 상한
         self._jwks_min_refetch = config.jwks_min_refetch_seconds
+        # 실패한 fetch 의 백오프 — 위 30초와 **다른 축**이다(콜드 캐시 + IdP 장애).
+        self._jwks_backoff = JwksFailureBackoff()
 
     async def _awrap(self, awaitable: Awaitable[T]) -> T:
         """python-keycloak `a_*` 호출을 await하고 `KeycloakError`를 SDK 예외로 변환한다.
@@ -234,17 +237,31 @@ class AsyncAuthClient:
                 if now - self._jwks_forced_at < self._jwks_min_refetch:
                     return self._jwks_cache
                 self._jwks_forced_at = now
-            certs = await self._awrap(self._openid.a_certs())
-            certs_typed = cast(KeySetSerialization, cast(Any, certs))
-            # ⚠️ sync 미러와 동일 — 기형 JWKS에서 joserfc는 joserfc 타입도 아닌 stdlib
-            # `binascii.Error`를 던진다. 그대로 두면 `keycloak_sdk.exceptions`를 잡는 소비자가
-            # 아무것도 잡지 못한다(§4 위반). 두 미러가 갈라지지 않도록 같이 고친다.
+            # ⚠️ sync 미러와 동일 — 백오프 검사는 fetch **직전**이자 30초 게이트 **이후**다.
+            # 콜드 캐시에서는 위 분기가 통째로 건너뛰어지므로, 이 줄이 없으면 매 검증이 IdP 로
+            # 나간다(원래 결함). 상태 기계는 sync 와 **같은 클래스**를 쓴다.
+            remaining = self._jwks_backoff.remaining()
+            if remaining > 0:
+                raise KeycloakTransportError(
+                    f"JWKS fetch backing off after {self._jwks_backoff.failures} "
+                    f"consecutive failures (retry in {remaining:.2f}s)"
+                )
             try:
-                self._jwks_cache = KeySet.import_key_set(certs_typed)
-            except Exception as exc:
-                raise TokenValidationError(
-                    f"malformed JWKS from the identity provider: {exc}"
-                ) from exc
+                certs = await self._awrap(self._openid.a_certs())
+                certs_typed = cast(KeySetSerialization, cast(Any, certs))
+                # ⚠️ sync 미러와 동일 — 기형 JWKS에서 joserfc는 joserfc 타입도 아닌 stdlib
+                # `binascii.Error`를 던진다. 그대로 두면 `keycloak_sdk.exceptions`를 잡는
+                # 소비자가 아무것도 잡지 못한다(§4 위반). 두 미러가 갈라지지 않도록 같이 고친다.
+                try:
+                    self._jwks_cache = KeySet.import_key_set(certs_typed)
+                except Exception as exc:
+                    raise TokenValidationError(
+                        f"malformed JWKS from the identity provider: {exc}"
+                    ) from exc
+            except Exception:
+                self._jwks_backoff.record_failure()
+                raise
+            self._jwks_backoff.record_success()
         return self._jwks_cache
 
     async def aclose(self) -> None:

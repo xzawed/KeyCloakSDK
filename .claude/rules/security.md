@@ -25,23 +25,25 @@ paths:
 
 # Cross-language security invariants
 
-The detail behind the security gotcha stubs in the root `CLAUDE.md`. **A security fact that applies to only one language does not live here** — that belongs in `.claude/rules/<lang>.md`. What lives here is only what the nine languages must move **together**, so changing one language alone is itself the defect.
-
-That is why `paths:` lists all nine language directories — whichever one you touch, this file comes with it.
+The detail behind the security gotcha stubs in the root `CLAUDE.md`. **A security fact that applies to only one language does not live here** — that belongs in `.claude/rules/<lang>.md`. What lives here is only what the nine must move **together**, so changing one language alone is itself the defect. Hence `paths:` lists all nine directories — whichever you touch, this file comes with it.
 
 ## Aligned defaults — JWKS minimum refetch interval and `clockSkew` (both 30s)
 
-⚠️ **The JWKS minimum refetch interval defaults to 30 seconds in all nine languages** (aligned 2026-07-31). Before that it was split three ways — 10, 30 and 60 seconds — a **by-product** of PR #71 making the value configurable while leaving each language's hardcoded value in place (on the same burst of forged `kid`s, Ruby hit the IdP six times as often as Python). 30s equals Nimbus's `DEFAULT_RATE_LIMIT_MIN_INTERVAL`, which makes it **the only candidate with an external justification**.
+⚠️ **The JWKS minimum refetch interval defaults to 30 seconds in all nine languages** (aligned 2026-07-31, when it was split 10/30/60 and Ruby hit the IdP six times as often as Python). 30s equals Nimbus's `DEFAULT_RATE_LIMIT_MIN_INTERVAL`, which makes it **the only candidate with an external justification**.
 
-⚠️ **What dropping 60s cost.** 30s halves the key-rotation recovery window, but it also doubles how often the rate limit reopens — **twice the DoS amplification**. In a security context, do not read "the window got smaller" as "we tightened it".
+⚠️ **What dropping 60s cost.** 30s halves the key-rotation recovery window, but also doubles how often the rate limit reopens — **twice the DoS amplification**. Do not read "the window got smaller" as "we tightened it".
 
-⚠️ **The ceiling is not "one refetch per window" everywhere.** The five languages that implement the gate themselves (python · go · rust · php · ruby) allow exactly one forced refetch per interval. **Java and Kotlin allow two**: Nimbus's `RateLimitedJWKSetSource` opens each window with one request already credited, so two pass before it starts rejecting. Measured on both — tighten each SDK's own rate-limit test to `<= 1` and it reports `실제 2` for a flood of 8 unresolved key ids. Write "no more than two" in the JVM consumer docs; the two `<lang>/README.md` files said "more than one" until this was measured.
+⚠️ **The ceiling is not "one refetch per window" everywhere.** The five languages that gate it themselves (python · go · rust · php · ruby) allow exactly one. **Java and Kotlin allow two** — Nimbus's `RateLimitedJWKSetSource` opens each window with one request already credited. To reproduce: tighten each SDK's own rate-limit test to `<= 1` and it reports `실제 2` for a flood of 8 unresolved key ids. The JVM consumer docs must say "no more than two".
 
-⚠️ **Do not "fix" the other seven — they were already right.** Node's test bounds hits at `<= 2`, which reads like the same defect, but tightening it to `== 1` **passes**: jose's cooldown allows exactly one. `.NET`'s README does not make the "one per interval" claim at all. Only the two Nimbus-backed SDKs overclaimed.
+⚠️ **Do not "fix" the other seven — they were already right.** Node's test bounds hits at `<= 2`, which reads like the same defect, but tightening it to `== 1` **passes** (jose's cooldown allows exactly one). `.NET`'s README never makes the claim. Only the two Nimbus-backed SDKs overclaimed.
 
-⚠️ **Every count above is WARM-cache only — the 30s gate misses the initial load.** Probe (2026-09-04, cold cache · JWKS 503 · 20 validations, IdP requests): **rust 20 · go 20 · python 20 · php 20 · node 20 · dotnet 40**, **ruby 20 → 1 fixed**; controls (healthy, 20 forced) 1-4. Cause: the gate sits only on the *forced* (unresolved-kid) path, which needs a populated cache; a failing fetch leaves it empty. ⚠️ **java·kotlin NOT measured** (Nimbus owns their fetch). ⚠️ **Do not gate the cold load at the same 30s** — one transient 503 then means "no token validates for 30s". **Ruby is the reference fix**: backoff on *failed* fetches (0.2s → cap 5s, jitter), fail fast without hitting the IdP, **never sleep**. Item `jwks-cold-cache-ungated`.
+⚠️ **Every count above is WARM-cache only — the 30s gate never sees the initial load**, because it sits on the *forced* (unresolved-kid) path, which needs a populated cache. Probe (2026-09-04 · cold cache · JWKS 503 · 20 validations · IdP requests) **before → after**: rust·go·python·php·node·ruby all **20→1**; **dotnet 40→2** (two requests per validation there, so one window costs two). Healthy controls (20 forced) stayed 1-4. ⚠️ **java·kotlin were NOT measured** (Nimbus owns their fetch) — `jwks-cold-cache-ungated` stays open for those two.
 
-⚠️ **`.NET` refetches on a bad signature too — the other eight do not.** `Microsoft.IdentityModel` treats a *recoverable* signature failure (an invalid signature, or a signature key that cannot be found) as a key-rotation signal and calls `RequestRefresh()`. It is not "any failed validation" — an `aud`/`exp` rejection does not trigger it — and it can be disabled only by setting `RefreshInterval` to its maximum, which also disables genuine rotation refresh. What bounds the damage is the same 30-second interval. The per-language detail and the "do not assert zero refetches" rule live in `.claude/rules/dotnet.md`; the consumer-facing wording is in `SECURITY.md` and `dotnet/README.md`.
+**The fix, in all seven** (reference: `ruby/lib/keycloak_sdk/jwks_store.rb`): back off *failed* fetches — 0.2s doubling to a 5s cap, jitter ×[0.5, 1.0) — and inside the window fail immediately **without touching the IdP**. Four rules, each paid for by measurement: (1) ⚠️ **never reuse the 30s here** — one transient 503 would mean "no token validates for 30s", worse than the defect; (2) ⚠️ **never sleep** — pacing retries is the consumer's job, not a library's; (3) ⚠️ **success resets the counter**, or a long-lived process stays pinned at the cap; (4) ⚠️ **a warm-cache unresolved-kid rejection is not a fetch failure** — counting it lets a forged-kid flood raise the backoff and block legitimate tokens (node checks `remote.jwks() === undefined` for exactly this).
+
+⚠️ **Rust needed one more thing** — its cold load also sat outside the single-flight lock (`.claude/rules/rust.md`).
+
+⚠️ **`.NET` refetches on a bad signature too — the other eight do not.** `Microsoft.IdentityModel` reads a *recoverable* signature failure as a key-rotation signal and calls `RequestRefresh()` (an `aud`/`exp` rejection does not); disabling it means giving up genuine rotation refresh. The same 30-second interval is what bounds it. Detail and the "do not assert zero refetches" rule: `.claude/rules/dotnet.md`; consumer wording: `SECURITY.md` and `dotnet/README.md`.
 
 ⚠️ **The interval is consumer-configurable in eight languages, not nine.** `.NET` exposes it on `JwtValidatorOptions` but not on `KeycloakConfig`, so a consumer going through the facade gets the 30-second default and cannot change it. Do not write "configurable in all nine".
 
@@ -53,8 +55,6 @@ Change either one **in all nine at once**. The guard is `scripts/test/test-secur
 
 ## Secret memory hygiene — it has a boundary (do not oversell it)
 
-⚠️ **This is not an end-to-end erasure guarantee.** Java's `KeycloakConfig` holds the secret as a `char[]` (defensive copies), but the libraries underneath — Nimbus `Secret` and the admin client, Python's `str` — require a `String`, so **at the point of use it is copied into a `String` that cannot be erased**. The `char[]` is defence in depth, nothing more.
+⚠️ **This is not an end-to-end erasure guarantee.** Java's `KeycloakConfig` holds the secret as a `char[]` (defensive copies), but the libraries underneath — Nimbus `Secret`, the admin client, Python's `str` — require a `String`, so **at the point of use it is copied into a `String` that cannot be erased**. Defence in depth, nothing more. PHP and Ruby cannot do it at all at the language level (`.claude/rules/php.md` · `ruby.md`).
 
-PHP and Ruby cannot do it at all at the language level (`.claude/rules/php.md` · `.claude/rules/ruby.md` respectively).
-
-So **do not write "secrets are erased from memory" in consumer documentation.** Overselling this class makes a consumer skip the mitigations that actually work — short TTLs, process isolation.
+So **do not write "secrets are erased from memory" in consumer documentation.** Overselling makes a consumer skip the mitigations that work — short TTLs, process isolation.
