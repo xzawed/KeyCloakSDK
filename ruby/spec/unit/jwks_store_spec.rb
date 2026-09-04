@@ -82,4 +82,69 @@ RSpec.describe KeycloakSdk::JwksStore do
                                            headers: { "Content-Type" => "application/json" })
     expect { store.key_set }.to raise_error(KeycloakSdk::TransportError)
   end
+
+  # ⚠️ 여기부터가 콜드 캐시 + IdP 장애 축이다. `min_refetch`(30초) 게이트는 *캐시가 찬 뒤*
+  # 미해결 kid 홍수만 막는다 — 캐시가 비어 있고 fetch 가 계속 실패하면 그 게이트에 닿지도
+  # 못한다. 실측(2026-09-04): 20회 검증 → IdP 요청 **20건**, 7개 언어 동일.
+  describe "failed-fetch backoff (cold cache + failing IdP)" do
+    it "bounds retries while the IdP is failing — 20회 시도가 요청 1건이 된다" do
+      stub = stub_request(:get, jwks_url).to_return(status: 500, body: "err")
+      20.times do
+        store.key_set
+      rescue KeycloakSdk::TransportError
+        nil
+      end
+      expect(stub).to have_been_requested.once
+    end
+
+    # ⚠️ **이 예제를 지우지 말 것 — 위 단언은 「한 번 실패하면 영원히 차단」으로도 통과한다.**
+    # 그 동작은 원래 결함보다 나쁘다(IdP 가 복구돼도 SDK 가 영영 못 쓴다).
+    it "백오프가 지나면 다시 시도한다 (대조군)" do
+      stub = stub_request(:get, jwks_url).to_return(status: 500, body: "err")
+      now = 1000.0
+      # ⚠️ 대상 객체가 아니라 **stdlib 시계**를 스텁한다(RSpec/SubjectStub 회피). 인자를 좁혀
+      # 다른 clock_gettime 호출은 원본으로 흘린다.
+      allow(Process).to receive(:clock_gettime).and_call_original
+      allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC) { now }
+
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError)
+      expect(stub).to have_been_requested.once
+
+      # 창 안 — 네트워크로 나가지 않고 즉시 실패한다(sleep 하지 않는다).
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /backing off/)
+      expect(stub).to have_been_requested.once
+
+      # 창을 넘기면(상한 5초보다 크게 민다) 다시 나간다.
+      now += 10.0
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError)
+      expect(stub).to have_been_requested.times(2)
+    end
+
+    # ⚠️ 대조군 둘째 — 성공이 실패 카운터를 되돌리지 않으면 오래 산 프로세스에서 백오프가
+    # 상한까지 올라간 채 영영 내려오지 않는다.
+    it "성공하면 실패 카운터가 0으로 돌아간다 (대조군)" do
+      now = 1000.0
+      allow(Process).to receive(:clock_gettime).and_call_original
+      allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC) { now }
+      stub_request(:get, jwks_url).to_return({ status: 500, body: "err" },
+                                             { status: 200, body: body,
+                                               headers: { "Content-Type" => "application/json" } })
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError)
+      expect(store.send(:instance_variable_get, :@failures)).to eq(1)
+
+      now += 10.0
+      expect(store.key_set["keys"].first["kid"]).to eq("k1")
+      expect(store.send(:instance_variable_get, :@failures)).to eq(0)
+      expect(store.send(:backing_off?)).to be(false)
+    end
+
+    # 정상 경로가 백오프에 걸리지 않는다는 것을 못 박는다(위 "fetches once (cold)" 와 함께).
+    it "정상 IdP 에서는 백오프가 관여하지 않는다 (대조군)" do
+      stub = stub_request(:get, jwks_url).to_return(status: 200, body: body,
+                                                    headers: { "Content-Type" => "application/json" })
+      20.times { store.key_set }
+      expect(stub).to have_been_requested.once
+      expect(store.send(:backing_off?)).to be(false)
+    end
+  end
 end
