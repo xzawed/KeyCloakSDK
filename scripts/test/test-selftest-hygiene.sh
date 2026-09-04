@@ -10,18 +10,54 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
 HYGIENE="$DIR/../../.github/workflows/repo-hygiene.yml"
 
-# ---- 규칙 1: 모든 test-*.sh는 `assert_report`를 호출해야 한다 ----
+# ---- 규칙 1: 모든 test-*.sh는 `assert_report`를 **마지막 실행 명령으로** 호출해야 한다 ----
 # `assert.sh`의 어서션들은 `_A_FAIL`만 누적하고 종료코드를 바꾸지 않는다. 종료코드를 내는 것은
 # `assert_report`의 마지막 줄(`[ "$_A_FAIL" -eq 0 ]`)뿐이다. 빠뜨린 테스트는 **전부 실패해도
 # exit 0**으로 끝나 CI를 초록으로 만든다 — 가장 나쁜 실패 모드다(없는 것보다 나쁘다).
+#
+# ⚠️ **`grep -q 'assert_report'` 로는 부족하다 — 그것은 「등장」이지 「호출」이 아니다.**
+# 실측(2026-09-05): 그 검사는 아래 넷을 **전부 통과**시켰다.
+#     # assert_report              (주석)
+#     assert_report || true        (실패 삼킴)
+#     echo "assert_report"         (문자열)
+#     if grep -q "assert_report"   (자기 인용)
+# 그리고 실제 코퍼스에서 `test-check-versions.sh`·`test-publication-claims.sh` 둘은 본문에
+# `assert_report` 를 주석으로도 인용하고 있어, **진짜 호출을 지워도 규칙 1이 초록**이었다.
+#
+# ⚠️ **그래서 「마지막 실행 명령」까지 본다.** 호출이 있어도 그 뒤에 다른 명령이 오면 그 명령의
+# 종료코드가 스크립트의 종료코드가 되어 실패가 다시 삼켜진다(독립 검증 레그가 가장 현실적인
+# 잔여 구멍으로 지목했고, 이 저장소의 불변식은 이미 `.claude/rules/ci.md`·`assert.sh` 에서
+# **"as its last line"** 이라 선언돼 있다 — 가드가 그 선언에 못 미치고 있었다).
+# 실측: 새 판정으로 26개 파일 **전부 통과**(오탐 0), 위 넷은 전부 거부.
+#
+# ⚠️ **자기 자신을 제외하지 않는다.** 예전에는 `continue` 로 건너뛰었고, 그 결과 이 파일의
+# `assert_report` 를 주석 처리하면 **종료코드 0 · 출력 한 줄 없이** 끝났다(실측). 저장소 어디에도
+# 그것을 잡는 것이 없었다 — 집행자가 자기 계약만 면제받는 자리였다.
+sh_last_cmd() { # $1=파일 → 주석을 걷어낸 마지막 비어있지 않은 줄(양끝 공백 제거)
+  sed 's/#.*//' "$1" | grep -vE '^[[:space:]]*$' | tail -1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
+# ⚠️ **`grep -c` 는 0건일 때 exit 1 이고, `set -e` 아래의 명령치환 대입은 그대로 스크립트를
+# 죽인다** — 실측(2026-09-05): 이 가드가 위반 파일을 만나면 **진단 한 줄 없이 exit 1** 로 끝났다.
+# 그건 지금 고치려는 결함과 같은 부류(초록/빨강만 있고 이유가 없다)라, `|| true` 로 상태를 끊고
+# 세는 것과 판정하는 것을 분리한다.
+sd_calls() { sed 's/#.*//' "$1" | grep -cE '^[[:space:]]*assert_report[[:space:]]*$' || true; }
 for f in "$DIR"/test-*.sh; do
   b="$(basename "$f")"
-  [ "$b" = "test-selftest-hygiene.sh" ] && continue   # 자기 자신은 아래에서 따로 본다
-  if grep -q 'assert_report' "$f"; then
+  # 호출형(주석·문자열·`|| true` 가 아닌 단독 호출)이 하나라도 있는가.
+  _calls="$(sd_calls "$f")"
+  if [ "$_calls" -ge 1 ]; then
     _A_PASS=$((_A_PASS + 1))
   else
     _A_FAIL=$((_A_FAIL + 1))
-    printf 'FAIL %s: assert_report 미호출 — 어서션이 전부 실패해도 exit 0이 된다\n' "$b" >&2
+    printf 'FAIL %s: assert_report 호출이 없다(주석·문자열·`|| true` 는 호출이 아니다) — 어서션이 전부 실패해도 exit 0이 된다\n' "$b" >&2
+  fi
+  # 그리고 그것이 마지막 실행 명령인가 — 뒤에 명령이 오면 그 종료코드가 스크립트의 종료코드다.
+  if [ "$(sh_last_cmd "$f")" = "assert_report" ]; then
+    _A_PASS=$((_A_PASS + 1))
+  else
+    _A_FAIL=$((_A_FAIL + 1))
+    printf 'FAIL %s: assert_report 가 마지막 실행 명령이 아니다(마지막=[%s]) — 뒤 명령의 종료코드가 실패를 삼킨다\n' \
+      "$b" "$(sh_last_cmd "$f")" >&2
   fi
 done
 
@@ -73,6 +109,20 @@ fi
 # `scripts/test/test-*.sh`만 훑어 harness/ 아래는 애초에 스코프 밖이라 이 누락을 못 잡았다.
 # git으로 추적된 harness/**/*.test.mjs 전부가 repo-hygiene.yml에서 `node <path>` 형태로
 # 실제 실행되는지 본다(규칙 2와 동형 — 언급이 아니라 실행을 센다).
+#
+# ⚠️ **규칙 2와 같은 엄격도로 본다 — 예전에는 `grep -q "node $m"` 이었고 둘이 샜다**(실측):
+#   (a) 경로가 정규식으로 해석돼 `.` 가 임의문자였다 → `install-matrixXtest.mjs` 가
+#       `install-matrix.test.mjs` 검색에 걸린다(다른 파일이 배선을 위장한다).
+#   (b) 단어경계가 없어 `node <path>.disabled` 도 배선으로 계수됐다(비활성화가 안 보인다).
+#
+# ⚠️ **판정을 함수로 뽑은 것은 취향이 아니라 대조군 때문이다.** 처음에는 정규식을 대조군에
+# 그대로 **베껴 적었는데**, 그러면 본체를 옛 `grep -q` 로 되돌려도 대조군은 사본을 검사하느라
+# 초록이었다(변이검증 실측: 129 passed 0 failed — 변이가 살아남았다). 대조군이 본체와 같은
+# 함수를 불러야 그 변이가 죽는다.
+mjs_wired() { # $1=주석 걷어낸 워크플로 본문 $2=경로 → 배선돼 있으면 0
+  _mw_re="$(printf '%s' "$2" | sed 's/[].[^$*\\]/\\&/g')"
+  printf '%s' "$1" | grep -qE "(^|[^[:alnum:]_])node $_mw_re([[:space:]]|$)"
+}
 ROOT="$(cd "$DIR/../.." && pwd)"
 MJS_TESTS="$(cd "$ROOT" && git ls-files -- 'harness/**/*.test.mjs')"
 if [ -z "$MJS_TESTS" ]; then
@@ -81,11 +131,11 @@ if [ -z "$MJS_TESTS" ]; then
 elif [ -f "$HYGIENE" ]; then
   RUNLINES_MJS="$(sed 's/#.*//' "$HYGIENE")"
   for m in $MJS_TESTS; do
-    if printf '%s' "$RUNLINES_MJS" | grep -q "node $m"; then
+    if mjs_wired "$RUNLINES_MJS" "$m"; then
       _A_PASS=$((_A_PASS + 1))
     else
       _A_FAIL=$((_A_FAIL + 1))
-      printf 'FAIL %s: repo-hygiene.yml에서 실행되지 않음 — 존재하지만 돌지 않는다\n' "$m" >&2
+      printf 'FAIL %s: repo-hygiene.yml에서 `node %s`로 실행되지 않는다 — 존재하지만 돌지 않는다\n' "$m" "$m" >&2
     fi
   done
 else
@@ -128,6 +178,41 @@ printf '%s\n' '#!/usr/bin/env sh' 'assert_eq 1 2 "boom"' > "$TMP/test-noreport.s
 assert_fails grep -q 'assert_report' "$TMP/test-noreport.sh"
 printf '%s\n' '#!/usr/bin/env sh' 'assert_report' > "$TMP/test-hasreport.sh"
 assert_ok grep -q 'assert_report' "$TMP/test-hasreport.sh"
+
+# ⚠️ **여기부터가 규칙 1의 「등장 ≠ 호출」 대조군이다.** 위 두 줄은 옛 `grep -q` 판정만 재현하고,
+# 그 판정이 통과시키던 네 형태를 새 판정이 실제로 거부하는지는 증명하지 않는다. 넷을 각각 만든다.
+# 판정 함수(`sd_calls`·`sh_last_cmd`)는 규칙 1 이 쓰는 **그 함수 그대로** 부른다 — 대조군이
+# 사본을 검사하면 본체가 썩어도 초록이다.
+
+printf '%s\n' '#!/usr/bin/env sh' '# assert_report' > "$TMP/test-c1.sh"
+assert_eq "0" "$(sd_calls "$TMP/test-c1.sh")" '주석 처리된 assert_report 는 호출이 아니다'
+assert_ok grep -q 'assert_report' "$TMP/test-c1.sh"   # 옛 판정은 통과시켰다(이 대비가 요점)
+
+printf '%s\n' '#!/usr/bin/env sh' 'assert_report || true' > "$TMP/test-c2.sh"
+assert_eq "0" "$(sd_calls "$TMP/test-c2.sh")" '`assert_report || true` 는 실패를 삼키므로 호출로 세지 않는다'
+
+printf '%s\n' '#!/usr/bin/env sh' 'echo "assert_report"' > "$TMP/test-c3.sh"
+assert_eq "0" "$(sd_calls "$TMP/test-c3.sh")" '문자열 안의 assert_report 는 호출이 아니다'
+
+printf '%s\n' '#!/usr/bin/env sh' 'if grep -q "assert_report" x; then :; fi' > "$TMP/test-c4.sh"
+assert_eq "0" "$(sd_calls "$TMP/test-c4.sh")" '자기 인용(grep 인자)은 호출이 아니다'
+
+printf '%s\n' '#!/usr/bin/env sh' '  assert_report  ' > "$TMP/test-c5.sh"
+assert_eq "1" "$(sd_calls "$TMP/test-c5.sh")" '들여쓰기된 단독 호출은 호출로 센다(오탐 방지)'
+
+# ⚠️ 「마지막 실행 명령」 축의 대조군 — 호출이 있어도 뒤에 명령이 오면 실패가 삼켜진다.
+printf '%s\n' '#!/usr/bin/env sh' 'assert_report' 'echo done' > "$TMP/test-c6.sh"
+assert_eq "1" "$(sd_calls "$TMP/test-c6.sh")" '호출 자체는 있다'
+assert_eq "echo done" "$(sh_last_cmd "$TMP/test-c6.sh")" '그러나 마지막 실행 명령은 assert_report 가 아니다'
+printf '%s\n' '#!/usr/bin/env sh' 'assert_report' '' '# 끝' > "$TMP/test-c7.sh"
+assert_eq "assert_report" "$(sh_last_cmd "$TMP/test-c7.sh")" '뒤따르는 빈 줄·주석은 명령이 아니다(오탐 방지)'
+
+# ⚠️ 규칙 3의 두 누수 대조군 — **본체가 쓰는 `mjs_wired` 를 그대로 부른다.** 정규식을 여기
+# 베껴 적으면 본체를 옛 `grep -q` 로 되돌려도 이 대조군은 초록이다(실측으로 겪었다).
+_m3='harness/report/score.test.mjs'
+assert_fails mjs_wired 'node harness/report/scoreXtest.mjs' "$_m3"        # (a) `.` 가 임의문자면 통과했다
+assert_fails mjs_wired 'node harness/report/score.test.mjs.disabled' "$_m3" # (b) 단어경계가 없으면 통과했다
+assert_ok    mjs_wired 'node harness/report/score.test.mjs' "$_m3"          # 정상 배선은 통과해야 한다(오탐 방지)
 
 # 이 파일 자신도 규칙 1·2를 지켜야 한다(아래 assert_report 호출이 규칙 1을 만족시킨다).
 assert_ok grep -q 'sh scripts/test/test-selftest-hygiene.sh' "$HYGIENE"
