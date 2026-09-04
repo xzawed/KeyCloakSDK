@@ -5,7 +5,13 @@ paths:
   - "harness/install/consume/rust*"
   - ".github/workflows/rust-*.yml"
 ---
-<!-- doc-budget: max-bytes=8645 -->
+<!-- doc-budget: max-bytes=8877 -->
+<!--
+  8645 → 8877 (2026-09-04). 규약 (2). 52행의 「IdP 가 죽어도 게이트가 소모돼 위조 kid 흐름을
+  막는다」가 **캐시가 찼을 때만 참**임을 실측으로 확인했다(콜드 20→20, 웜 대조군 2). 그 조건을
+  안 적으면 이 줄은 장애 중 보장으로 읽힌다 — rust README 가 실제로 그렇게 적고 있었다.
+  되돌릴 자리는 52행 뒤 한 문장이다.
+-->
 
 # Rust rules
 
@@ -49,7 +55,7 @@ cd rust && cargo test --test integration_test -- --ignored    # integration E2E.
 - ⚠️ **`openidconnect`'s `CoreClient` is generic over the typestate of six endpoints** — only auth, introspection and token need to be marked `EndpointSet` in a type alias (`KcOidcClient`) for the builder to be callable without `?`. The id_token is validated by the SDK's `JwtValidator` rather than by openidconnect's own check (a deliberate design choice).
 - ⚠️ **`jsonwebtoken`'s `Validation` defaults are not safe** — `validate_nbf` false→true, `leeway` 60s→`config.clock_skew` (30 seconds), `set_required_spec_claims(["exp","iss","aud"])`, `algorithms=[RS256]` (`Algorithm` has no `none` variant at all, so it is structurally rejected).
 - ⚠️ **From jsonwebtoken 11.0.0 on, a malformed JWKS is rejected at key construction rather than at parsing** (`Transport` → `TokenValidation`). Fail-closed still holds, and an unknown `kty` mixed into the set no longer kills the whole set — on 10.x, one unrecognised key made the perfectly good RSA keys unusable too, which was an availability incident. ⚠️ **Do not add a set-wide check after `fetch` to restore the old error class** — that throws away the tolerance we just gained.
-- ⚠️ **The JWKS rate limit is stamped at the moment the refetch is *decided*** (isomorphic with Go and Python) — so even when the fetch fails because the IdP is down, the gate is consumed, which caps a stream of forged kids injected during the outage window.
+- ⚠️ **The JWKS rate limit is stamped at the moment the refetch is *decided*** (isomorphic with Go and Python) — so even when the fetch fails because the IdP is down, the gate is consumed, which caps a stream of forged kids injected during the outage window. ⚠️ **That cap needs a populated cache** — `get_key` serves a cold cache from an ungated branch *above* the gate, so if the first fetch never succeeds every validation retries (measured 20→20; warm control 2). `security.md`.
 - ⚠️ **The shared `reqwest::Client` blocks redirects outright with `redirect::Policy::none()`** (SSRF hardening). auth, admin and JWKS all reuse this client.
 
 ## SDK structure
