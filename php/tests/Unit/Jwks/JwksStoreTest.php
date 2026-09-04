@@ -14,6 +14,12 @@ use Xzawed\Keycloak\Jwks\JwksStore;
 use Xzawed\Keycloak\Exception\KeycloakTransportError;
 use Xzawed\Keycloak\Exception\TokenValidationError;
 
+/** 프로브가 IdP 도달 횟수를 **메서드로** 읽게 하는 이음매(참조 카운터를 쓰면 phpstan 이 좁힌다). */
+interface CallCounting
+{
+    public function callCount(): int;
+}
+
 final class JwksStoreTest extends TestCase
 {
     /** @param list<array<string,mixed>> $keys */
@@ -193,5 +199,129 @@ final class JwksStoreTest extends TestCase
         } catch (\Throwable) {
         }
         self::assertSame(2, $calls, '실패한 fetch도 게이트를 소모 — forged-2는 재조회 없이 rate-limited');
+    }
+
+    // ⚠️ 여기부터가 콜드 캐시 + IdP 장애 축이다. 위 30초 게이트는 *캐시가 찬 뒤*에만 걸린다 —
+    // 캐시가 비어 있고 fetch 가 계속 실패하면 그 게이트에 닿지도 못한다. 실측(2026-09-04):
+    // 20회 조회 → IdP 요청 **20건**, 7개 언어 동일.
+
+    /**
+     * 항상 503 을 내는 클라이언트.
+     *
+     * ⚠️ 카운터를 참조 인자(`int &$calls`)로 노출하지 않고 **메서드**로 읽는다 — phpstan 은 지역
+     * 스칼라를 좁혀서, 같은 변수에 대한 두 번째 `assertSame` 을 「항상 참/항상 거짓」으로 판정한다
+     * (실측: `staticMethod.alreadyNarrowedType` + `impossibleType`). 이 부류의 테스트는 창 안과
+     * 창 밖에서 **각각** 세어야 하므로 참조 카운터로는 쓸 수 없다.
+     */
+    private function failingHttp(): ClientInterface&CallCounting
+    {
+        return new class implements ClientInterface, CallCounting {
+            private int $calls = 0;
+
+            public function sendRequest(RequestInterface $request): ResponseInterface
+            {
+                $this->calls++;
+
+                return new Response(503, [], '{"error":"service unavailable"}');
+            }
+
+            public function callCount(): int
+            {
+                return $this->calls;
+            }
+        };
+    }
+
+    public function testColdCacheFailingIdpCollapsesToOneRequest(): void
+    {
+        $http = $this->failingHttp();
+        $store = new JwksStore('http://kc/certs', $http, new HttpFactory(), minRefetchIntervalSeconds: 30);
+
+        for ($i = 0; $i < 20; $i++) {
+            try {
+                $store->getKeyByKid('k1');
+                self::fail('IdP 가 죽어 있는 동안 조회가 성공해서는 안 된다');
+            } catch (KeycloakTransportError) {
+            }
+        }
+
+        self::assertSame(1, $http->callCount(), '콜드 캐시 + IdP 장애: 20회 조회가 요청 1건이어야 한다');
+    }
+
+    /**
+     * ⚠️ **이 테스트를 지우지 말 것 — 위 단언은 「한 번 실패하면 영원히 차단」으로도 통과한다.**
+     * 그 동작은 원래 결함보다 나쁘다(IdP 가 복구돼도 SDK 가 영영 못 쓴다).
+     */
+    public function testBackoffWindowExpiresAndAllowsRetry(): void
+    {
+        $http = $this->failingHttp();
+        $now = 1000.0;
+        $store = new JwksStore(
+            'http://kc/certs',
+            $http,
+            new HttpFactory(),
+            minRefetchIntervalSeconds: 30,
+            monotonic: static function () use (&$now): float { return $now; },
+        );
+
+        try {
+            $store->getKeyByKid('k1');
+        } catch (KeycloakTransportError) {
+        }
+        self::assertSame(1, $http->callCount());
+
+        // 창 안 — 네트워크로 나가지 않고 즉시 실패한다(sleep 하지 않는다).
+        try {
+            $store->getKeyByKid('k1');
+            self::fail('창 안에서는 실패해야 한다');
+        } catch (KeycloakTransportError $e) {
+            self::assertStringContainsString('backing off', $e->getMessage());
+        }
+        self::assertSame(1, $http->callCount(), '창 안에서는 IdP 에 도달하면 안 된다');
+
+        // 창을 넘기면(상한 5초보다 크게 민다) 다시 나간다.
+        $now += 10.0;
+        try {
+            $store->getKeyByKid('k1');
+        } catch (KeycloakTransportError) {
+        }
+        self::assertSame(2, $http->callCount(), '창을 넘기면 요청 1건이 더 나가야 한다');
+    }
+
+    /** ⚠️ 대조군 둘째 — 성공이 카운터를 되돌리지 않으면 백오프가 상한에 눌러붙는다. */
+    public function testSuccessResetsTheFailureCounter(): void
+    {
+        $now = 1000.0;
+        $http = new class implements ClientInterface {
+            private int $calls = 0;
+
+            public function sendRequest(RequestInterface $request): ResponseInterface
+            {
+                $this->calls++;
+                if ($this->calls === 1) {
+                    return new Response(503, [], '{"error":"down"}');
+                }
+
+                return new Response(200, [], json_encode(['keys' => [['kid' => 'k1', 'kty' => 'RSA']]], JSON_THROW_ON_ERROR));
+            }
+        };
+        $store = new JwksStore(
+            'http://kc/certs',
+            $http,
+            new HttpFactory(),
+            minRefetchIntervalSeconds: 30,
+            monotonic: static function () use (&$now): float { return $now; },
+        );
+
+        try {
+            $store->getKeyByKid('k1');
+        } catch (KeycloakTransportError) {
+        }
+        self::assertSame(1, (new \ReflectionProperty($store, 'failures'))->getValue($store));
+
+        $now += 10.0;
+        self::assertSame('k1', $store->getKeyByKid('k1')['kid']);
+        self::assertSame(0, (new \ReflectionProperty($store, 'failures'))->getValue($store));
+        self::assertNull((new \ReflectionProperty($store, 'lastFailureAt'))->getValue($store));
     }
 }

@@ -15,14 +15,28 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from joserfc import jwt as jjwt
 from joserfc.jwk import RSAKey
-from keycloak.exceptions import KeycloakAuthenticationError, KeycloakGetError
+from keycloak.exceptions import KeycloakAuthenticationError, KeycloakError, KeycloakGetError
 
+from keycloak_sdk._internal.backoff import JwksFailureBackoff
 from keycloak_sdk.aio.auth import AsyncAuthClient
 from keycloak_sdk.auth import AuthorizationUrl
 from keycloak_sdk.config import KeycloakConfig
 from keycloak_sdk.exceptions import KeycloakAuthError, KeycloakTransportError, TokenValidationError
 from keycloak_sdk.oidc import OidcEndpoints
 from keycloak_sdk.tokens import IntrospectionResult, TokenSet, ValidatedToken
+
+
+class _FakeClock:
+    """백오프 창을 결정적으로 넘기기 위한 시계 — sleep 하지 않는다."""
+
+    def __init__(self) -> None:
+        self.t = 1000.0
+
+    def __call__(self) -> float:
+        return self.t
+
+    def advance(self, seconds: float) -> None:
+        self.t += seconds
 
 
 def _config(**overrides: object) -> KeycloakConfig:
@@ -504,3 +518,42 @@ async def test_malformed_jwks_yields_sdk_error_not_a_raw_library_exception():
 
     with pytest.raises(TokenValidationError):
         await client.validate(token)
+
+
+# ⚠️ 콜드 캐시 + IdP 장애 축 — sync 미러와 **대칭으로** 둔다. 이 저장소는 「sync 에만 있는
+# 보안 테스트」를 이미 결함 부류로 추적한다(`python-aio-security-test-asymmetry`).
+# 상태 기계는 `tests/unit/test_backoff.py` 가 재고, 여기서는 배선만 증명한다.
+async def test_cold_cache_failing_idp_collapses_to_one_certs_call():
+    openid = MagicMock()
+    openid.a_certs = AsyncMock(side_effect=KeycloakError("idp down"))
+    client = _client(openid)
+
+    for _ in range(20):
+        with pytest.raises((KeycloakTransportError, KeycloakAuthError)):
+            await client._load_jwks()
+
+    assert openid.a_certs.await_count == 1, (
+        "cold cache + failing IdP: 20 loads must collapse to one outbound request"
+    )
+
+
+# ⚠️ **이 테스트를 지우지 말 것 — 위 단언은 「한 번 실패하면 영원히 차단」으로도 통과한다.**
+async def test_backoff_window_expires_and_the_next_load_reaches_the_idp():
+    openid = MagicMock()
+    openid.a_certs = AsyncMock(side_effect=KeycloakError("idp down"))
+    client = _client(openid)
+    clock = _FakeClock()
+    client._jwks_backoff = JwksFailureBackoff(clock=clock, jitter=lambda: 1.0)
+
+    with pytest.raises((KeycloakTransportError, KeycloakAuthError)):
+        await client._load_jwks()
+    assert openid.a_certs.await_count == 1
+
+    with pytest.raises(KeycloakTransportError, match="backing off"):
+        await client._load_jwks()
+    assert openid.a_certs.await_count == 1
+
+    clock.advance(10.0)
+    with pytest.raises((KeycloakTransportError, KeycloakAuthError)):
+        await client._load_jwks()
+    assert openid.a_certs.await_count == 2

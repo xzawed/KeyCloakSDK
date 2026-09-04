@@ -24,13 +24,26 @@ public sealed class JwtValidator
 
     /// <summary>Production: JWKS via ConfigurationManager (OIDC discovery), rate-limited refresh.</summary>
     public JwtValidator(string issuer, JwtValidatorOptions opts, HttpClient http)
+        : this(issuer, opts, http, null, null) { }
+
+    /// <param name="issuer">Realm issuer URL; discovery hangs off it.</param>
+    /// <param name="opts">Hardened validation options.</param>
+    /// <param name="http">Shared client (redirect-blocking, SSRF-hardened).</param>
+    /// <param name="now">Clock seam (tests only).</param>
+    /// <param name="jitter">Jitter seam (tests only).</param>
+    internal JwtValidator(
+        string issuer,
+        JwtValidatorOptions opts,
+        HttpClient http,
+        Func<DateTimeOffset>? now,
+        Func<double>? jitter)
     {
         _tvp = BuildParameters(issuer, opts);
         var docRetriever = new HttpDocumentRetriever(http)
         {
             RequireHttps = issuer.StartsWith("https", StringComparison.OrdinalIgnoreCase),
         };
-        _tvp.ConfigurationManager = new ConfigurationManager<OpenIdConnectConfiguration>(
+        var inner = new ConfigurationManager<OpenIdConnectConfiguration>(
             $"{issuer}/.well-known/openid-configuration",
             new OpenIdConnectConfigurationRetriever(),
             docRetriever)
@@ -38,6 +51,9 @@ public sealed class JwtValidator
             AutomaticRefreshInterval = TimeSpan.FromHours(12),
             RefreshInterval = TimeSpan.FromSeconds(opts.RefreshIntervalSeconds),
         };
+        // RefreshInterval above only caps refreshes once a configuration is cached. A cold cache
+        // against a failing IdP reaches it at all — measured 20 validations → 40 requests.
+        _tvp.ConfigurationManager = new BackoffConfigurationManager(inner, now, jitter);
     }
 
     internal JwtValidator(TokenValidationParameters tvp) => _tvp = tvp;

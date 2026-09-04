@@ -234,6 +234,73 @@ done
 assert_eq "9" "$_nonce_seen" "[nonce] 훑은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
 
 # ---------------------------------------------------------------------------
+# 1b2) 콜드 캐시 백오프 축 — 실패한 JWKS fetch 를 상한하는 장치가 일곱에 다 있는가
+# ---------------------------------------------------------------------------
+#
+# 1절의 30초는 **캐시가 찬 뒤**의 미해결 kid 홍수만 막는다. 캐시가 비어 있고 fetch 가 계속
+# 실패하면 그 게이트에 닿지도 못해, 실측상 20회 검증이 IdP 요청 20건을 그대로 냈다
+# (2026-09-04 · 7개 언어 동일 · dotnet 은 40). 그래서 **별도 축**이 필요하다.
+#
+# ⚠️ 이 축은 **일곱**이다(java·kotlin 제외 — Nimbus 가 그들의 fetch 를 소유해 이 자리가 없다).
+# `_seen`이 7이 아니면 표가 낡은 것이다. 언어별 동작은 각 언어 단위테스트가 증명하고, 여기서는
+# **대칭**만 본다 — 한 언어에서 장치를 지우면 그 언어 CI 와 이 가드가 함께 운다.
+SD_BACKOFF_LANGS="python node go dotnet php rust ruby"
+
+sd_backoff_file() {
+  case "$1" in
+    python) printf '%s' 'python/src/keycloak_sdk/_internal/backoff.py' ;;
+    node)   printf '%s' 'node/src/jwt.ts' ;;
+    go)     printf '%s' 'go/jwt.go' ;;
+    dotnet) printf '%s' 'dotnet/src/Xzawed.Keycloak.Sdk/BackoffConfigurationManager.cs' ;;
+    php)    printf '%s' 'php/src/Jwks/JwksStore.php' ;;
+    rust)   printf '%s' 'rust/src/jwks.rs' ;;
+    ruby)   printf '%s' 'ruby/lib/keycloak_sdk/jwks_store.rb' ;;
+  esac
+}
+# 상한(cap) 앵커 — 지우면 백오프가 무한히 자라거나 사라진다. 값 자체가 계약이라 리터럴로 겨눈다.
+sd_backoff_cap() {
+  case "$1" in
+    python) printf '%s' 'CAP_SECONDS = 5.0' ;;
+    node)   printf '%s' 'FAILURE_BACKOFF_CAP_MS = 5_000' ;;
+    go)     printf '%s' 'jwksFailureBackoffCap  = 5 * time.Second' ;;
+    dotnet) printf '%s' 'BackoffCap = TimeSpan.FromSeconds(5)' ;;
+    php)    printf '%s' 'FAILURE_BACKOFF_CAP_SECONDS  = 5.0' ;;
+    rust)   printf '%s' 'FAILURE_BACKOFF_CAP: Duration = Duration::from_secs(5)' ;;
+    ruby)   printf '%s' 'FAILURE_BACKOFF_CAP  = 5.0' ;;
+  esac
+}
+# 게이트 앵커 — 「창 안에서는 IdP 를 때리지 않고 즉시 실패」를 실제로 하는 줄.
+sd_backoff_gate() {
+  case "$1" in
+    python) printf '%s' 'def remaining(self)' ;;
+    node)   printf '%s' 'const remainingMs =' ;;
+    go)     printf '%s' 'func (v *Validator) backoffRemaining(' ;;
+    dotnet) printf '%s' 'private TimeSpan BackoffRemaining(' ;;
+    php)    printf '%s' 'private function backoffRemaining(' ;;
+    rust)   printf '%s' 'fn backoff_remaining(' ;;
+    ruby)   printf '%s' 'def backoff_remaining' ;;
+  esac
+}
+
+_backoff_seen=0
+for L in $SD_BACKOFF_LANGS; do
+  _bf="$(sd_backoff_file "$L")"
+  _exists=1; [ -f "$ROOT/$_bf" ] && _exists=0
+  assert_eq "ok" "$(ok_if "$_exists" MISSING)" "[backoff] $L 백오프 파일이 없다($_bf)"
+  [ -f "$ROOT/$_bf" ] || continue
+  _cp="$(sd_backoff_cap "$L")"
+  _gp="$(sd_backoff_gate "$L")"
+  _hasc=1; grep -qF -- "$_cp" "$ROOT/$_bf" && _hasc=0
+  assert_eq "ok" "$(ok_if "$_hasc" MISSING)" \
+    "[backoff] $L 실패 백오프 상한이 없다 — 기대: $_cp"
+  _hasg=1; grep -qF -- "$_gp" "$ROOT/$_bf" && _hasg=0
+  assert_eq "ok" "$(ok_if "$_hasg" MISSING)" \
+    "[backoff] $L 백오프 잔여시간 계산이 없다 — 기대: $_gp"
+  _backoff_seen=$((_backoff_seen + 1))
+done
+assert_eq "7" "$_backoff_seen" "[backoff] 훑은 언어 수가 7이 아니다 — 추출 표가 낡았나?"
+
+# ---------------------------------------------------------------------------
 # 1c) 마스킹 축 — 아홉 언어의 **바닥 계약**이 살아있는가
 # ---------------------------------------------------------------------------
 #

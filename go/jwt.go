@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"sync"
 	"time"
@@ -19,6 +20,22 @@ import (
 // lose when they call the two-arg DefaultResourceRetriever constructor.
 const jwksMaxBytes = 51200
 
+// Backoff for *failed* JWKS fetches — a different axis from minRefetch.
+//
+// minRefetch (30s) caps a flood of unresolved kids *after the cache is populated*. The two below
+// cap the case where the cache is **empty and the fetch keeps failing**: nothing gated that path,
+// and 20 lookups produced 20 outbound requests (measured 2026-09-04, identical in 7 languages).
+//
+// Do NOT reuse minRefetch here — one transient 503 would then mean "no token validates for 30
+// seconds", which is worse than the defect. Start short, grow exponentially, cap.
+//
+// This never sleeps: inside the window the lookup fails immediately without touching the IdP
+// (negative cache). Pacing retries is the caller's job, not a library's.
+const (
+	jwksFailureBackoffBase = 200 * time.Millisecond
+	jwksFailureBackoffCap  = 5 * time.Second
+)
+
 type validatorOptions struct {
 	jwksURI      string
 	issuer       string
@@ -27,6 +44,10 @@ type validatorOptions struct {
 	clockSkewSec int64
 	httpClient   *http.Client
 	minRefetch   time.Duration // DoS 증폭 상한(강제 재조회 최소 간격)
+	// now is a clock seam for tests. Nil means time.Now. It exists so the failure-backoff tests
+	// can cross the window deterministically instead of sleeping — this repo already tracks
+	// wall-clock-dependent tests as a defect class.
+	now func() time.Time
 }
 
 // Validator performs hardened JWT verification: it does not trust library
@@ -37,15 +58,50 @@ type validatorOptions struct {
 type Validator struct {
 	opts validatorOptions
 
-	mu       sync.Mutex
-	jwks     *jose.JSONWebKeySet
-	forcedAt time.Time          // last *forced* refetch (rotation); zero until the first one
-	group    singleflight.Group // collapses concurrent JWKS fetches
+	mu          sync.Mutex
+	jwks        *jose.JSONWebKeySet
+	forcedAt    time.Time          // last *forced* refetch (rotation); zero until the first one
+	failures    int                // consecutive fetch failures; reset to 0 on success
+	lastFailure time.Time          // when the last fetch failed; zero when healthy
+	group       singleflight.Group // collapses concurrent JWKS fetches
+}
+
+// backoffRemaining reports how long the caller must wait before another fetch is allowed.
+// Zero means "go ahead". Callers hold v.mu.
+func (v *Validator) backoffRemaining(now time.Time) time.Duration {
+	if v.lastFailure.IsZero() {
+		return 0
+	}
+	if r := v.backoffDelay() - now.Sub(v.lastFailure); r > 0 {
+		return r
+	}
+	return 0
+}
+
+// backoffDelay grows exponentially and is capped, with jitter in [0.5, 1.0). The jitter spreads
+// instances that failed at the same instant so their recovery attempts do not knock the IdP over
+// again (thundering herd). Callers hold v.mu.
+func (v *Validator) backoffDelay() time.Duration {
+	shift := v.failures - 1
+	if shift < 0 {
+		shift = 0
+	}
+	if shift > 62 {
+		shift = 62
+	}
+	d := jwksFailureBackoffBase << uint(shift)
+	if d > jwksFailureBackoffCap || d <= 0 {
+		d = jwksFailureBackoffCap
+	}
+	return time.Duration(float64(d) * (0.5 + rand.Float64()/2))
 }
 
 func newValidator(opts validatorOptions) *Validator {
 	if opts.httpClient == nil {
 		opts.httpClient = http.DefaultClient
+	}
+	if opts.now == nil {
+		opts.now = time.Now
 	}
 	if opts.minRefetch == 0 {
 		opts.minRefetch = time.Duration(defaultJwksMinRefetchSecs) * time.Second
@@ -152,8 +208,38 @@ func (v *Validator) resolveKey(ctx context.Context, kid string) (any, error) {
 }
 
 // singleFetch fetches the JWKS, collapsing concurrent callers into one request.
+//
+// The failure backoff is checked here rather than in fetch() so that it sits behind the
+// singleflight barrier: callers coalesced into one in-flight fetch share its outcome, and only the
+// leader consults the gate. Checking it in fetch() would be equivalent, but this keeps the "one
+// decision per outbound request" property visible in one place.
 func (v *Validator) singleFetch(ctx context.Context) error {
-	_, err, _ := v.group.Do("fetch", func() (any, error) { return nil, v.fetch(ctx) })
+	_, err, _ := v.group.Do("fetch", func() (any, error) {
+		// The backoff sits *before* the request and *after* the 30s forced-refetch gate. On a
+		// cold cache the branch above is skipped entirely, so without this every lookup goes out
+		// to the IdP — that is the original defect.
+		v.mu.Lock()
+		if r := v.backoffRemaining(v.opts.now()); r > 0 {
+			failures := v.failures
+			v.mu.Unlock()
+			return nil, &TransportError{Msg: fmt.Sprintf(
+				"JWKS fetch backing off after %d consecutive failures (retry in %.2fs)",
+				failures, r.Seconds())}
+		}
+		v.mu.Unlock()
+
+		err := v.fetch(ctx)
+		v.mu.Lock()
+		if err != nil {
+			v.failures++
+			v.lastFailure = v.opts.now()
+		} else {
+			v.failures = 0
+			v.lastFailure = time.Time{}
+		}
+		v.mu.Unlock()
+		return nil, err
+	})
 	return err
 }
 
