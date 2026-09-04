@@ -36,9 +36,11 @@ RSpec.describe KeycloakSdk do
       expect(ts.expires_at).to be_nil
     end
 
-    it "is never expired when expires_at is nil" do
+    # ⚠️ 이 예제는 한때 "is never expired" + `be(false)` 였다 — **결함을 고정하고 있었다.**
+    # 자매 여덟은 전부 만료 시각 미상을 "만료됨"으로 읽는다(fail-safe · Java 의 M.6).
+    it "is expired (fail-safe) when expires_at is nil" do
       ts = described_class.from_response({ "access_token" => "AT" }, received_at: 1000.0)
-      expect(ts.expired?).to be(false)
+      expect(ts.expired?).to be(true)
     end
 
     it "prints nil (unmasked) for absent refresh_token/id_token in inspect" do
