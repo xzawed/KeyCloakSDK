@@ -252,7 +252,7 @@ sd_backoff_file() {
     node)   printf '%s' 'node/src/jwt.ts' ;;
     go)     printf '%s' 'go/jwt.go' ;;
     dotnet) printf '%s' 'dotnet/src/Xzawed.Keycloak.Sdk/BackoffConfigurationManager.cs' ;;
-    php)    printf '%s' 'php/src/Jwks/JwksStore.php' ;;
+    php)    printf '%s' 'php/src/Jwks/FailureBackoff.php' ;;
     rust)   printf '%s' 'rust/src/jwks.rs' ;;
     ruby)   printf '%s' 'ruby/lib/keycloak_sdk/jwks_store.rb' ;;
   esac
@@ -264,7 +264,7 @@ sd_backoff_cap() {
     node)   printf '%s' 'FAILURE_BACKOFF_CAP_MS = 5_000' ;;
     go)     printf '%s' 'jwksFailureBackoffCap  = 5 * time.Second' ;;
     dotnet) printf '%s' 'BackoffCap = TimeSpan.FromSeconds(5)' ;;
-    php)    printf '%s' 'FAILURE_BACKOFF_CAP_SECONDS  = 5.0' ;;
+    php)    printf '%s' 'CAP_SECONDS  = 5.0' ;;
     rust)   printf '%s' 'FAILURE_BACKOFF_CAP: Duration = Duration::from_secs(5)' ;;
     ruby)   printf '%s' 'FAILURE_BACKOFF_CAP  = 5.0' ;;
   esac
@@ -276,7 +276,7 @@ sd_backoff_gate() {
     node)   printf '%s' 'const remainingMs =' ;;
     go)     printf '%s' 'func (v *Validator) backoffRemaining(' ;;
     dotnet) printf '%s' 'private TimeSpan BackoffRemaining(' ;;
-    php)    printf '%s' 'private function backoffRemaining(' ;;
+    php)    printf '%s' 'public function remaining(): float' ;;
     rust)   printf '%s' 'fn backoff_remaining(' ;;
     ruby)   printf '%s' 'def backoff_remaining' ;;
   esac
