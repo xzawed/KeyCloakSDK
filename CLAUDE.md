@@ -1,5 +1,12 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=24115 max-lines=308 -->
+<!-- doc-budget: max-bytes=24159 max-lines=308 -->
+<!-- 24,115 → 24,159 (2026-09-03, +44B): 래칫 조건 (1) — 증가분이 **기계 집행**을 사 온다.
+     dependabot 이 올려선 안 되는 핀에 **넷째 종류**(대상 서버 라인 = rust `keycloak`)가 생겼고,
+     `.github/dependabot.yml` 의 `ignore` 가 그것을 실제로 막는다. 근거·실측(PR #394: 서버 26.6
+     대상 integration 이 초록인데도 받지 않는 이유)은 그 파일 주석이 소유하고, 여기에는 「몇
+     종류이고 어느 것인가」만 남긴다 — 그 목록이 없으면 다음 세션이 ignore 를 오탐으로 지운다.
+     44B 는 항목 이름만큼이고 더 줄이면 어느 핀인지가 사라진다. -->
+
 <!-- 23,800 → 24,100 (2026-08-29, 5회 품질검증 결과): §4(b) 정정. 「두 자리」가 실제로는 **세 자리**였고
      (Rust 저수준 생성자가 `reqwest::Client` 를 받는다 — lib.rs 주석이 이미 그렇게 적고 있었다),
      마무리 문장 「정상 소비 경로는 이들을 노출하지 않는다」는 **자기모순**이었다: 노출 자리 (a)가
@@ -120,7 +127,7 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 - ⚠️ **admin-client와 Keycloak 서버는 독립 버전 트랙이다** — 서버 라인과 같은 번호의 admin-client는 없다. `representation` 필드는 실서버로 검증한다.
 - ⚠️ **Maven Central은 Central Portal 경로만**(구 OSSRH 종료). 워크플로 초록 ≠ 게시 — Publish 후에도 전파 지연이 있으니 **404로 실패를 결론내지 않는다**(Java·Kotlin 공통).
 - ⚠️ **배포 시크릿 미설정은 스킵이 아니라 실패다** — 아무것도 게시하지 않고 green으로 끝난 실행은 성공한 실행과 구분되지 않는다.
-- ⚠️ **dependabot이 올려서는 안 되는 핀 세 종류**: ref가 브랜치인 액션(`rust-toolchain`·`gh-action-pypi-publish`)·소비자 하한 버전(`kotlin-stdlib`)·CI 매트릭스 하한(`parallel`). `.github/dependabot.yml`의 `ignore`가 근거와 함께 막는다.
+- ⚠️ **dependabot이 올려서는 안 되는 핀 네 종류**: ref가 브랜치인 액션(`rust-toolchain`·`gh-action-pypi-publish`)·소비자 하한 버전(`kotlin-stdlib`)·CI 매트릭스 하한(`parallel`)·**대상 서버 라인**(rust `keycloak`). `.github/dependabot.yml`의 `ignore`가 근거와 함께 막는다.
 
 ## 확정 의존성 (BOM으로 고정)
 
