@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"net/http"
 	"sync"
 	"time"
@@ -81,6 +80,10 @@ func (v *Validator) backoffRemaining(now time.Time) time.Duration {
 // backoffDelay grows exponentially and is capped, with jitter in [0.5, 1.0). The jitter spreads
 // instances that failed at the same instant so their recovery attempts do not knock the IdP over
 // again (thundering herd). Callers hold v.mu.
+//
+// The jitter source is wall-clock nanoseconds rather than math/rand: this value spreads a herd, it
+// is not a secret, and gosec rightly rejects math/rand (G404) in a security-sensitive package. The
+// sister Rust implementation derives it the same way, for the same reason.
 func (v *Validator) backoffDelay() time.Duration {
 	shift := v.failures - 1
 	if shift < 0 {
@@ -93,7 +96,8 @@ func (v *Validator) backoffDelay() time.Duration {
 	if d > jwksFailureBackoffCap || d <= 0 {
 		d = jwksFailureBackoffCap
 	}
-	return time.Duration(float64(d) * (0.5 + rand.Float64()/2))
+	jitter := 0.5 + float64(time.Now().UnixNano()%1_000_000)/2_000_000.0
+	return time.Duration(float64(d) * jitter)
 }
 
 func newValidator(opts validatorOptions) *Validator {

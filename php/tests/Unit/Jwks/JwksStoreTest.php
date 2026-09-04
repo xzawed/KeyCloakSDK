@@ -10,6 +10,7 @@ use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\{RequestInterface, ResponseInterface};
 use GuzzleHttp\Psr7\{HttpFactory, Response};
 use Xzawed\Keycloak\KeycloakConfig;
+use Xzawed\Keycloak\Jwks\FailureBackoff;
 use Xzawed\Keycloak\Jwks\JwksStore;
 use Xzawed\Keycloak\Exception\KeycloakTransportError;
 use Xzawed\Keycloak\Exception\TokenValidationError;
@@ -215,7 +216,7 @@ final class JwksStoreTest extends TestCase
      */
     private function failingHttp(): ClientInterface&CallCounting
     {
-        return new class implements ClientInterface, CallCounting {
+        return new class () implements ClientInterface, CallCounting {
             private int $calls = 0;
 
             public function sendRequest(RequestInterface $request): ResponseInterface
@@ -249,79 +250,47 @@ final class JwksStoreTest extends TestCase
     }
 
     /**
-     * ⚠️ **이 테스트를 지우지 말 것 — 위 단언은 「한 번 실패하면 영원히 차단」으로도 통과한다.**
-     * 그 동작은 원래 결함보다 나쁘다(IdP 가 복구돼도 SDK 가 영영 못 쓴다).
+     * ⚠️ 대조군 — IdP 가 복구되면 다시 나가야 한다. 「한 번 실패하면 영원히 차단」은 원래 결함보다
+     * 나쁘고, 위 단언만으로는 그것도 통과한다. 창 만료 자체는 `FailureBackoffTest` 가 시계를
+     * 주입해 재고, 여기서는 **성공이 스토어의 백오프를 실제로 되돌리는가**(배선)를 본다.
      */
-    public function testBackoffWindowExpiresAndAllowsRetry(): void
+    public function testRecoveredIdpResetsTheBackoff(): void
     {
-        $http = $this->failingHttp();
-        $now = 1000.0;
-        $store = new JwksStore(
-            'http://kc/certs',
-            $http,
-            new HttpFactory(),
-            minRefetchIntervalSeconds: 30,
-            monotonic: static function () use (&$now): float { return $now; },
-        );
-
-        try {
-            $store->getKeyByKid('k1');
-        } catch (KeycloakTransportError) {
-        }
-        self::assertSame(1, $http->callCount());
-
-        // 창 안 — 네트워크로 나가지 않고 즉시 실패한다(sleep 하지 않는다).
-        try {
-            $store->getKeyByKid('k1');
-            self::fail('창 안에서는 실패해야 한다');
-        } catch (KeycloakTransportError $e) {
-            self::assertStringContainsString('backing off', $e->getMessage());
-        }
-        self::assertSame(1, $http->callCount(), '창 안에서는 IdP 에 도달하면 안 된다');
-
-        // 창을 넘기면(상한 5초보다 크게 민다) 다시 나간다.
-        $now += 10.0;
-        try {
-            $store->getKeyByKid('k1');
-        } catch (KeycloakTransportError) {
-        }
-        self::assertSame(2, $http->callCount(), '창을 넘기면 요청 1건이 더 나가야 한다');
-    }
-
-    /** ⚠️ 대조군 둘째 — 성공이 카운터를 되돌리지 않으면 백오프가 상한에 눌러붙는다. */
-    public function testSuccessResetsTheFailureCounter(): void
-    {
-        $now = 1000.0;
-        $http = new class implements ClientInterface {
+        $http = new class () implements ClientInterface, CallCounting {
             private int $calls = 0;
+            public bool $down = true;
 
             public function sendRequest(RequestInterface $request): ResponseInterface
             {
                 $this->calls++;
-                if ($this->calls === 1) {
+                if ($this->down) {
                     return new Response(503, [], '{"error":"down"}');
                 }
 
                 return new Response(200, [], json_encode(['keys' => [['kid' => 'k1', 'kty' => 'RSA']]], JSON_THROW_ON_ERROR));
             }
+
+            public function callCount(): int
+            {
+                return $this->calls;
+            }
         };
-        $store = new JwksStore(
-            'http://kc/certs',
-            $http,
-            new HttpFactory(),
-            minRefetchIntervalSeconds: 30,
-            monotonic: static function () use (&$now): float { return $now; },
-        );
+        $store = new JwksStore('http://kc/certs', $http, new HttpFactory(), minRefetchIntervalSeconds: 30);
 
         try {
             $store->getKeyByKid('k1');
+            self::fail('IdP 가 죽어 있는 동안 조회가 성공해서는 안 된다');
         } catch (KeycloakTransportError) {
         }
-        self::assertSame(1, (new \ReflectionProperty($store, 'failures'))->getValue($store));
+        $backoff = (new \ReflectionProperty($store, 'backoff'))->getValue($store);
+        self::assertInstanceOf(FailureBackoff::class, $backoff);
+        self::assertSame(1, $backoff->failures(), '실패한 fetch 는 카운터를 올려야 한다');
 
-        $now += 10.0;
+        // 창을 넘긴다(상한 5초보다 크게) — sleep 대신 백오프의 시계를 지나가게 만든다.
+        $http->down = false;
+        (new \ReflectionProperty($backoff, 'lastFailureAt'))->setValue($backoff, null);
         self::assertSame('k1', $store->getKeyByKid('k1')['kid']);
-        self::assertSame(0, (new \ReflectionProperty($store, 'failures'))->getValue($store));
-        self::assertNull((new \ReflectionProperty($store, 'lastFailureAt'))->getValue($store));
+        self::assertSame(0, $backoff->failures(), '성공은 카운터를 0으로 되돌려야 한다');
+        self::assertSame(2, $http->callCount());
     }
 }

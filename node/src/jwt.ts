@@ -16,8 +16,14 @@ import type { ValidatedToken } from './tokens.js'
 const FAILURE_BACKOFF_BASE_MS = 200
 const FAILURE_BACKOFF_CAP_MS = 5_000
 
-/** 시계·jitter 이음매 — 테스트가 창을 결정적으로 넘길 수 있어야 한다(sleep 금지). */
-export interface BackoffSeams {
+/**
+ * 시계·jitter 이음매 — 테스트가 창을 결정적으로 넘길 수 있어야 한다(sleep 금지).
+ *
+ * ⚠️ **export 하지 않는다.** 이것이 공개 시그니처에 오르면 방출 `.d.ts` 가 바뀌고
+ * `api-extractor` 게이트가 「직전 릴리스의 공개 API 줄이 바뀌었다」로 막는다(실측). 이음매는
+ * `@internal` 팩토리로만 닿는다 — `forKeySource` 와 같은 자리.
+ */
+interface BackoffSeams {
   readonly now?: () => number
   readonly jitter?: () => number
 }
@@ -120,15 +126,26 @@ export class JwtValidator {
    * 원격 JWKS URI로 검증기를 만든다. `createRemoteJWKSet`은 kid 미해결 시에만 재조회하고
    * cooldownDuration으로 rate-limit → 서명 위조로 인한 미인증 DoS 증폭을 차단한다.
    *
-   * ⚠️ 그 쿨다운은 **캐시가 찬 뒤에만** 걸린다 — 콜드 캐시 + IdP 장애는
-   * {@link withColdCacheBackoff} 가 막는다(측정 20 → 1).
-   *
-   * @param seams 시계·jitter 주입(테스트 전용). @internal
+   * ⚠️ 그 쿨다운은 **캐시가 찬 뒤에만** 걸린다 — 콜드 캐시 + IdP 장애는 실패 백오프가 막는다
+   * (측정 20 → 1).
    */
-  static forJwksUri(
+  static forJwksUri(jwksUri: string, opts: JwtValidatorOptions): JwtValidator {
+    return JwtValidator.forJwksUriWithSeams(jwksUri, opts, {})
+  }
+
+  /**
+   * `forJwksUri` 에 시계·jitter 이음매를 주입한다 — **테스트 전용**.
+   *
+   * ⚠️ `@internal` 이라 `stripInternal` 이 방출 `.d.ts` 에서 이 멤버를 지운다. 이음매를
+   * `forJwksUri` 의 세 번째 파라미터로 두면 **공개 시그니처가 바뀌어** `api-extractor` 게이트가
+   * 막는다(실측: 「공개 API 줄 1개가 바뀌었다」). `forKeySource` 와 같은 처리다.
+   *
+   * @internal
+   */
+  static forJwksUriWithSeams(
     jwksUri: string,
     opts: JwtValidatorOptions,
-    seams: BackoffSeams = {},
+    seams: BackoffSeams,
   ): JwtValidator {
     const remote = createRemoteJWKSet(new URL(jwksUri), {
       cooldownDuration: opts.jwksMinRefetchSeconds * 1000,

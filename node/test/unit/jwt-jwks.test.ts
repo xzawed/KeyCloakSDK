@@ -221,7 +221,7 @@ describe('콜드 캐시 + IdP 장애 백오프', () => {
   // 따로 잰다(콜드 캐시 + 503 · 20회 → 요청 1건).
   it('20회 검증이 IdP 요청 1건으로 접힌다', async () => {
     const now = 1_000_000
-    const v = JwtValidator.forJwksUri(
+    const v = JwtValidator.forJwksUriWithSeams(
       downUri,
       { ...baseOpts, jwksMinRefetchSeconds: 30 },
       { now: () => now, jitter: () => 1 },
@@ -235,7 +235,7 @@ describe('콜드 캐시 + IdP 장애 백오프', () => {
   // 그 동작은 원래 결함보다 나쁘다(IdP 가 복구돼도 SDK 가 영영 못 쓴다).
   it('대조군 — 백오프 창이 지나면 다시 IdP 로 나간다', async () => {
     let now = 1_000_000
-    const v = JwtValidator.forJwksUri(
+    const v = JwtValidator.forJwksUriWithSeams(
       downUri,
       { ...baseOpts, jwksMinRefetchSeconds: 30 },
       { now: () => now, jitter: () => 1 },
@@ -260,7 +260,7 @@ describe('콜드 캐시 + IdP 장애 백오프', () => {
   // 미실행으로 남는다).
   it('기본 jitter 경로도 창을 연다', async () => {
     const now = 2_000_000
-    const v = JwtValidator.forJwksUri(
+    const v = JwtValidator.forJwksUriWithSeams(
       downUri,
       { ...baseOpts, jwksMinRefetchSeconds: 30 },
       { now: () => now },
