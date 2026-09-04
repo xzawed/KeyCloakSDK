@@ -15,7 +15,7 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **150** (원장 유래 104 · 원장 밖 46) — 열림 **138** · 닫힘 **12** |
+| 작업 패키지 | **150** (원장 유래 104 · 원장 밖 46) — 열림 **137** · 닫힘 **13** |
 | 심각도 | high 27 · medium 76 · low 47 |
 | 작업량 | S 68 · M 70 · L 12 |
 
@@ -25,7 +25,7 @@
 
 ## 닫힌 항목 (2026-09-03)
 
-권장 우선순위 1~5번을 밟아 12건이 `main` 에 들어갔다. 체크박스만 두면 「어떻게 닫혔는지」가
+권장 우선순위 1~5번과 그 후속을 밟아 13건이 `main` 에 들어갔다. 체크박스만 두면 「어떻게 닫혔는지」가
 사라지므로 PR 을 함께 적는다.
 
 | PR | 닫은 항목 | 한 줄 |
@@ -35,6 +35,10 @@
 | #382 | `dotnet-authzrequest-tostring-leaks-pkce-verifier` · `authorization-request-verifier-unmasked` · `php-default-serializers-bypass-masking` | PKCE verifier 와 토큰이 기본 직렬화기로 샜다. 가리는 범위는 Rust `Debug` impl 과 동형으로 맞췄다 |
 | #383 | `ruby-admin-path-segment-unescaped` | `../` 가 경로를 재작성하고 공백이 stdlib 예외를 냈다. 부류 재스캔이 `@realm` 20곳을 더 찾아 총 35곳 |
 | #385 | `ci-perms-flow-style-permissions-bypass` · `check-coverage-arg-parsing-silently-disarms-gate` · `guard-neutering-wiring-unprotected` | 가드 셋이 「거짓말하는 방향」으로 고장나 있었다 — 임계값이 사라지고, 표기 하나로 상승이 안 보이고, `continue-on-error` 로 무력화됐다 |
+| #387 | (교차가드 신설) · `authorization-request-verifier-unmasked` 의 **Go 절반** | 마스킹 **바닥 계약**(기본 문자열/디버그 표현이 비밀을 `***` 로 낸다)을 9언어 축으로 켰다. ⚠️ #382 가 그 항목을 닫았다고 표시했으나 Go·Node 중 **Node 만** 고쳤었다 — Go 는 `TokenSet.String()` 이 포인터 리시버라 값이 새고 `AuthorizationRequest` 에는 String 이 없었다(프로브 실측). 기각돼 있던 `go-tokenset-json-unmasked` 는 **기각 사유가 지목한 대안**(`slog.LogValuer`)으로 구현했다 |
+| #388 | (런타임 커버리지) | 하한을 건드리지 않고 위로 넓혔다 — php **8.5**(composer.json 이 이미 약속한 범위) · python 3.14 · node 26 · ruby 4.0 · JDK 25 · .NET SDK 10. ⚠️ CI 가 두 가지를 답했다: ruby 4.0 은 **SDK 가 아니라 테스트**가 `CGI.parse` 제거로 깨졌고, go 1.27 은 `staticcheck` 가 못 읽어 레그를 뺐다(되살릴 조건 워크플로 주석) |
+| #389 | `runtime-eol-support-window` | JVM 소비자 하한 21 → **17**. 2026-07-03 의 반대 판정을 되돌린 것이고, **그 커밋이 스스로 「소스 무변경」이라 적어** 21 이 기술적 필요가 아니었음을 증명한다. 가드 둘을 함께 세웠다 — 산출물 바이트코드 하한(`check-jvm-bytecode-floor.mjs`)과 `check-docs` 의 추출기(`jvmToolchain` → `JvmTarget`) |
+| #395 | (dependabot 정책) | rust `keycloak` 의 마이너 상향 차단 — 그 숫자는 semver 가 아니라 **대상 서버 라인**이다. ⚠️ #394 의 「실제 26.6 서버 integration」이 **초록이었는데도** 받지 않았다(그 초록은 테스트가 밟는 경로까지만 증명한다) |
 
 곁가지로 **#384**(php API 게이트 정밀도)가 필요했다 — `php-semver-checker` 가 `implements`
 절 하나에 오탐을 내고 `final` 클래스의 메서드 추가를 파괴로 세어 #382 를 막았다. 사람 판정으로
@@ -64,7 +68,7 @@
 
 ---
 
-## A. 확정 결함 — 12건 (열림 10)
+## A. 확정 결함 — 12건 (열림 6)
 
 3렌즈 만장일치 + 오케스트레이터 재실행 확인.
 
@@ -83,7 +87,7 @@
 - [ ] `java-rules-close-scope-ambiguous` **[L/S]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
-## B. 재검증 대상 — 25건 (열림 23)
+## B. 재검증 대상 — 25건 (열림 21)
 
 3렌즈 통과, 원장은 개별 재실행을 하지 않았다. 이번 인벤토리에서 전량 파일 확인 — 기각 권고 0건.
 
@@ -118,7 +122,7 @@
 - [ ] `facade-wiring-close-contract-unasserted` **[M/S]** 파사드의 §4 계약(provider 배선·close)이 무단언 테스트 뒤에 있고 커버리지 게이트에서도 빠져 있다 · `rust/src/client.rs:65`
 - [ ] `python-aio-security-test-asymmetry` **[M/S]** JWKS 강제 재조회 rate-limit 이 sync 에만 테스트되고 aio 미러에는 없다 · `python/tests/unit/aio/test_auth.py:446`
 
-## C. 품질 부채 — 67건 (열림 67)
+## C. 품질 부채 — 67건 (열림 66)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -204,7 +208,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `H7-harness-readme-vs-tree` **[L/S]** harness/README.md 가 실제 트리와 갈렸다 — install/ 64파일이 지도에 없고 ruby 프레임워크가 틀렸다 · `harness/README.md:16`
 - [ ] `H8-root-config-never-rederived` **[L/M]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 46건 (열림 46)
+## D. 원장 밖 — 46건 (열림 44)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -268,7 +272,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 완전성 비평 신규 — 6
 
-- [ ] `runtime-eol-support-window` **[H/M]** 선언된 소비자 런타임 하한 둘이 상류 지원 종료다 — Ruby 3.2는 이미 EOL, .NET 8은 68일 뒤 · `ruby/keycloak-sdk.gemspec:20`
+- [x] `runtime-eol-support-window` **[H/M]** 선언된 소비자 런타임 하한 둘이 상류 지원 종료다 — Ruby 3.2는 이미 EOL, .NET 8은 68일 뒤 · `ruby/keycloak-sdk.gemspec:20`
 - [ ] `consumer-intake-surface-absent` **[M/S]** 9개 레지스트리에 게시했는데 소비자 유입 표면이 통째로 없다 — 이슈 템플릿·PR 템플릿·CODEOWNERS·행동강령 0건 · `.github/ISSUE_TEMPLATE:0`
 - [ ] `harness-base-images-unmanaged` **[M/M]** 하네스 Docker 베이스 이미지 20개가 dependabot·가드 양쪽 밖 — 무핀 태그와 갈린 alpine이 섞여 있다 · `.github/dependabot.yml:134`
 - [ ] `release-artifact-verification-undocumented` **[M/M]** 소비자가 게시물의 무결성을 확인할 방법이 문서에 0건 — 증명 수단이 레인마다 다른데 아무도 그 표를 쓰지 않았다 · `SECURITY.md:96`
