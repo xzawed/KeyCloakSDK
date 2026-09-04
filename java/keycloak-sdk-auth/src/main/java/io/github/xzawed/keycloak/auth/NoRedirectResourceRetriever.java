@@ -1,4 +1,5 @@
 package io.github.xzawed.keycloak.auth;
+import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.util.DefaultResourceRetriever;
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -18,10 +19,21 @@ import java.net.URL;
  * <p>⚠️ 이것은 SDK가 스스로 보내는 요청에 대한 것이다. OIDC authorization-code의
  * {@code redirect_uri}는 브라우저 front-channel 개념이라 무관하다.
  * Kotlin 자매 SDK도 같은 지점을 같은 방식으로 막는다.
+ *
+ * <p>⚠️ <b>응답 크기 상한(3번째 인자)을 반드시 넘긴다.</b> 이것을 빼면
+ * {@code DefaultResourceRetriever(int,int)}가 sizeLimit을 <b>0(무제한)</b>으로 넣는다(바이트코드
+ * 실측: 2-arg 생성자가 {@code iconst_0}을 밀어 3-arg를 호출한다). 그런데 우리가 리트리버를
+ * 주입하지 않았다면 {@code JWKSourceBuilder}는 자기 리트리버를 {@code (500, 500, 51200)}으로
+ * 만든다 — 즉 <b>하드닝을 주입하는 행위 자체가 Nimbus의 51200바이트 상한을 지운다</b>. 그
+ * 상태에서는 JWKS 엔드포인트(또는 그 자리를 차지한 무엇)가 무제한 응답을 흘려 메모리를 채울 수
+ * 있다. 상한은 {@code BoundedInputStream}으로 집행된다.
+ *
+ * <p>값은 하드코딩하지 않고 {@link JWKSourceBuilder#DEFAULT_HTTP_SIZE_LIMIT}을 참조한다 — 우리가
+ * 잃은 바로 그 값이고, 두 번째 정의 자리를 만들지 않는다.
  */
 final class NoRedirectResourceRetriever extends DefaultResourceRetriever {
   NoRedirectResourceRetriever(int connectTimeoutMs, int readTimeoutMs) {
-    super(connectTimeoutMs, readTimeoutMs);
+    super(connectTimeoutMs, readTimeoutMs, JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT);
   }
 
   // ⚠️ 캐스트가 안전한 이유: 이 메서드의 반환 타입 자체가 HttpURLConnection이라 Nimbus는 HTTP(S)

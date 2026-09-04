@@ -85,4 +85,56 @@ class AuthClientRedirectHardeningTest {
     }
   }
 
+  /**
+   * JWKS 응답 크기에 상한이 있어야 한다 — 없으면 무제한 응답이 그대로 힙에 들어온다.
+   *
+   * <p>왜 이 테스트가 필요한가: 리트리버를 <b>주입하는 행위 자체가</b> Nimbus의 상한을 지운다.
+   * {@code JWKSourceBuilder}는 리트리버를 안 주면 자기 것을 {@code (500, 500, 51200)}으로 만드는데,
+   * 우리가 SSRF 하드닝을 위해 리트리버를 주입하면 그 51200이 사라진다. 즉 <b>보안 하드닝 하나가
+   * 다른 보안 속성을 조용히 없앤 자리</b>다.
+   *
+   * <p>⚠️ 대조군을 지우지 말 것 — sizeLimit 0(무제한)인 리트리버는 <b>같은 서버에서 같은 응답을
+   * 성공적으로 받는다</b>. 그게 없으면 이 테스트는 "서버가 뭔가 잘못됐다"로도 통과한다.
+   */
+  @Test void jwksRetriever_boundsResponseSize() throws Exception {
+    int limit = com.nimbusds.jose.jwk.source.JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT;
+    // 상한보다 확실히 큰 JWKS. 파싱 가능한 형태일 필요는 없다 — 상한은 파싱 전에 걸린다.
+    StringBuilder sb = new StringBuilder("{\"keys\":[],\"pad\":\"");
+    while (sb.length() < limit * 2) sb.append('A');
+    sb.append("\"}");
+    byte[] huge = sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    assertTrue(huge.length > limit, "픽스처가 상한보다 커야 의미가 있다");
+
+    com.sun.net.httpserver.HttpServer server =
+        com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext("/certs", ex -> {
+      ex.getResponseHeaders().add("Content-Type", "application/json");
+      ex.sendResponseHeaders(200, huge.length);
+      try (java.io.OutputStream os = ex.getResponseBody()) { os.write(huge); }
+    });
+    server.start();
+    try {
+      java.net.URL certs = java.net.URI.create(
+          "http://127.0.0.1:" + server.getAddress().getPort() + "/certs").toURL();
+
+      // 대조군: 상한 없는(2-arg → sizeLimit 0) 리트리버는 같은 응답을 통째로 받아낸다.
+      // 이 단언이 이 테스트가 공허하지 않음을 보장한다.
+      assertEquals(0, new com.nimbusds.jose.util.DefaultResourceRetriever(2000, 2000).getSizeLimit(),
+          "2-arg 생성자는 sizeLimit을 0(무제한)으로 둔다 — 이 전제가 깨지면 상류가 바뀐 것이다");
+      assertTrue(
+          new com.nimbusds.jose.util.DefaultResourceRetriever(2000, 2000)
+              .retrieveResource(certs).getContent().length() > limit,
+          "대조군: 상한이 없으면 상한보다 큰 응답이 그대로 들어온다");
+
+      // 우리 리트리버: 상한을 넘기면 실패로 표면화된다.
+      assertEquals(limit, new NoRedirectResourceRetriever(2000, 2000).getSizeLimit(),
+          "JWKS 리트리버는 Nimbus의 기본 상한을 그대로 이어받아야 한다");
+      assertThrows(java.io.IOException.class,
+          () -> new NoRedirectResourceRetriever(2000, 2000).retrieveResource(certs),
+          "상한을 넘는 JWKS 응답은 조회 실패로 표면화되어야 한다 — 무제한으로 힙에 들이면 안 된다");
+    } finally {
+      server.stop(0);
+    }
+  }
+
 }
