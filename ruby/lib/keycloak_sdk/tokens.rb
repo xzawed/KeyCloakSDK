@@ -17,8 +17,12 @@ module KeycloakSdk
       )
     end
 
+    # ⚠️ **만료 시각을 모르면 "만료됨"이다**(fail-safe — 자매 여덟과 동형, Java 의 M.6).
+    # `false`(=아직 살아있다)를 돌려주면 만료 시각 미상인 토큰이 **영원히 유효**해진다.
+    # `expires_at` 이 nil 인 경우는 서버가 `expires_in` 을 안 보냈을 때뿐이라 정상 경로가
+    # 아니고, 그때 취할 안전한 쪽은 "재발급"이다.
     def expired?(skew: 0, now: Time.now.to_f)
-      return false if expires_at.nil?
+      return true if expires_at.nil?
 
       now >= (expires_at - skew)
     end
