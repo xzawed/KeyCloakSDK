@@ -398,4 +398,41 @@ _only=1
 grep -q 'the only workflow with no `paths:` filter' "$CIRULES" && _only=0
 assert_eq "1" "$_only" "ci.md 가 여전히 'the only workflow with no paths: filter' 라 적는다 — 집합은 둘이다"
 
+# ---- 규칙 8: 버전 매트릭스가 있으면 `fail-fast: false` 가 있어야 한다 ----
+# 왜: 기본값 `fail-fast: true` 에서는 한 레그가 깨지면 **나머지가 취소된다**. 이 리포의 매트릭스는
+# 「같은 테스트의 반복」이 아니라 레그마다 다른 계약이고, 그중 하나는 **매니페스트가 선언한
+# 소비자 하한**이다(java 17 · dotnet net8.0 · go 1.25 · node 22 · php 8.3 · python 3.10 ·
+# ruby 3.2 · rust 1.88 — 여덟 전부 실측 일치). 최신 레그가 먼저 깨지면 하한 레그가 취소되고,
+# 그 빨강은 「최신이 깨졌다」로 읽혀 하한과 무관해 보인다.
+# ⚠️ **하한 레그가 유일한 검증이다** — `check-docs.mjs` 의 하한 대조(`kind=runtime` 앵커)는
+# 「문서가 하한을 옳게 적었는가」만 본다. 코드가 그 하한에서 **실제로 도는지**는 이 레그뿐이다.
+# ⚠️ 머지 규칙은 안 바뀐다 — required 는 `doc-facts`·`shell-exec-bits` 둘뿐이라 언어 CI 는
+# 애초에 머지를 막지 않는다(`.github/rulesets/main.json`). 이 규칙이 사는 것은 **진단**이다.
+# ⚠️ 인라인 플로우 맵(`matrix: { java: [...] }`)이 절반이 넘으므로 줄단위 정규식으로 세지 않는다.
+_mx="$(node -e '
+  const fs = require("fs")
+  const d = ".github/workflows"
+  const hasMatrix = (L) =>
+    L.some((l) => { const s = l.replace(/#.*$/, ""); return /(^|\s)matrix:\s*\{/.test(s) || /^\s*matrix:\s*$/.test(s) })
+  const out = []
+  for (const f of fs.readdirSync(d).filter((x) => x.endsWith(".yml"))) {
+    const L = fs.readFileSync(d + "/" + f, "utf8").split(/\r?\n/)
+    if (hasMatrix(L) && !L.some((l) => /^\s*fail-fast\s*:/.test(l.replace(/#.*$/, "")))) out.push(f)
+  }
+  console.log(out.join(" "))
+' 2>/dev/null || true)"
+# 공허 방지 — 매트릭스를 가진 워크플로가 8개 미만으로 잡히면 파서가 깨진 것이지 「전부 있다」가 아니다.
+_mxall="$(node -e '
+  const fs = require("fs")
+  const d = ".github/workflows"
+  let n = 0
+  for (const f of fs.readdirSync(d).filter((x) => x.endsWith(".yml"))) {
+    const L = fs.readFileSync(d + "/" + f, "utf8").split(/\r?\n/)
+    if (L.some((l) => { const s = l.replace(/#.*$/, ""); return /(^|\s)matrix:\s*\{/.test(s) || /^\s*matrix:\s*$/.test(s) })) n++
+  }
+  console.log(n)
+' 2>/dev/null || echo 0)"
+assert_ok test "$_mxall" -ge 8
+assert_eq "" "$_mx" "매트릭스가 있는데 fail-fast: false 가 없는 워크플로가 생겼다 — 최신 레그가 깨지면 소비자 하한 레그가 취소되고 그날 하한 검증이 사라진다"
+
 assert_report

@@ -17,6 +17,10 @@ jobs:
     name: rubocop + rspec + bundler-audit (Ruby ${{ matrix.ruby }})
     runs-on: ubuntu-latest
     strategy:
+      # ⚠️ 하한 레그가 취소되면 그날 하한 검증이 사라진다 — 근거는 node-ci.yml 주석. 여기가
+      # 특히 아픈 자리다: 아래 3.2 레그는 `gem "parallel", "< 2"` 핀과 그 핀을 지키는
+      # dependabot `ignore` 가 **대가를 치르고 사는 것**인데, 4.0 이 먼저 깨지면 그 검증만 사라진다.
+      fail-fast: false
       matrix:
         # ⚠️ 하한 3.2 는 상류 EOL(2026-03-31)을 지났지만 **올리지 않는다** — 하한을 올리는 것은
         # 소비자를 자르는 것이고, 사람 판정은 「자르지 말고 넓힌다」이다. 그 하한은 공짜가 아니라

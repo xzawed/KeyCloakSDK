@@ -15,7 +15,7 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **159** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 7) — 열림 **133** · 닫힘 **26** |
+| 작업 패키지 | **160** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 8) — 열림 **133** · 닫힘 **27** |
 | 심각도 | high 27 · medium 76 · low 47 |
 | 작업량 | S 68 · M 70 · L 12 |
 
@@ -160,8 +160,14 @@
     - `java.md:19` 의 `17·21·25` 는 뒤 절의 **전제**다. `ci.yml:40` 이 「**CI 가 21·25 에서도 도는 한** 그 사고는 CI 에 보이지 않으므로 산출물을 직접 본다」라고 적는다 — 「CI 는 하한을 돈다」로 바꾸면 `check-jvm-bytecode-floor.mjs` 가 **중복 가드로 읽혀** 다음 세션이 지울 근거가 된다.
     - `ruby.md:14` 의 4레그 열거는 바로 아래 곁가지 위험의 **입력값**이다. 「하한 레그 하나」만 남기면 *다른 레그가 있다*는 사실이 사라져 「취소될 수 있다」를 ruby.md 만 읽고 재구성할 수 없다.
   - ⚠️ **그래서 남은 범위는 「지우기」가 아니라 「java·ruby 두 목록을 기계 대조」다.** 앵커를 만들면 **양쪽 YAML 형태를 다 파싱해야 한다** — 실측: 매트릭스 축 9개 중 **5개가 인라인 플로우 맵**(`matrix: { java: [...] }`)이고, 블록만 읽는 스캐너는 4개만 찾는다(내 첫 스캐너가 그랬다). `include`/`exclude`/`fromJSON` 은 현재 0건.
-  - ⚠️ 곁가지(별건): `ruby-ci.yml`·`go-ci.yml`·`rust-ci.yml` 에 `fail-fast: false` 가 **없다**(있는 곳은 `ci.yml:30`·`dotnet-ci.yml:23`·`security-audit.yml:287`). ruby 는 4.0 이 깨지면 3.2 레그가 **취소**되고, 3.2 하한 검증(`gem "parallel", "< 2"` 이 지키는 것)이 그날 사라진다.
-  - ⚠️ 곁가지(별건·선재): `ci.yml:27-28` 주석은 `maven.compiler.release=21`·`[21,)` 라 적는데 실제 pom 은 **17**·`[17,)` 다 — java.md 쪽이 옳고 워크플로 주석이 낡았다. 「값은 워크플로가 소유한다」로 넘길 때 독자가 만나는 첫 화면이라 함께 잡아야 한다.
+  - 곁가지 둘은 아래 `matrix-fail-fast-cancels-floor-leg` 로 분리해 **닫았다**.
+- [x] `matrix-fail-fast-cancels-floor-leg` **[M/S · 신규·닫힘 2026-09-05]** 매트릭스 워크플로 8개 중 **6개에 `fail-fast: false` 가 없어** 최신 레그가 깨지면 소비자 하한 레그가 취소된다 · `.github/workflows/`
+  - 실측: `fail-fast` 가 있던 곳은 `ci.yml`·`dotnet-ci.yml` **둘뿐**(등록부는 셋만 적었다 — 과소계수). 나머지 여섯(go·node·php·python·ruby·rust)은 GitHub 기본값 `fail-fast: true` 였다.
+  - **여덟 전부 하한 레그가 매니페스트 하한과 정확히 일치한다**: java 17(`maven.compiler.release`) · dotnet net8.0(TFM) · go 1.25(`go.mod`) · node 22(`engines`) · php 8.3(`composer.json`) · python 3.10(`requires-python`) · ruby 3.2(`gemspec`) · rust 1.88(`rust-version`).
+  - ⚠️ **하한 레그가 유일한 검증이다** — `check-docs.mjs:534-540` 이 하한을 읽지만 그건 `kind=runtime` 앵커용, 즉 **문서가 하한을 옳게 적었는가**만 본다. 코드가 그 하한에서 실제로 도는지는 이 레그뿐이다.
+  - ⚠️ **머지 규칙은 안 바뀐다** — required 는 `doc-facts`·`shell-exec-bits` 둘뿐이라(`.github/rulesets/main.json:43-49`) 언어 CI 는 애초에 머지를 막지 않는다. 이 변경이 사는 것은 **진단**이지 차단이 아니다.
+  - **회귀 가드**: `test-selftest-hygiene.sh` 규칙 8 — 매트릭스가 있는데 `fail-fast` 가 없으면 실패. 3요건 실측: 변이(rust-ci 의 줄 삭제) → `135 passed, 1 failed` · 복원 → `136/0` · 구 스크립트 + 같은 변이 → **`134 passed, 0 failed`**(새 규칙이 원인 확정). 공허 방지로 「매트릭스 보유 워크플로 ≥ 8」 하한을 함께 둔다.
+  - 함께: `ci.yml:27-28` 주석이 `maven.compiler.release=21`·`[21,)` 라 적었으나 pom 은 **17**(`java/pom.xml:61`)·`[17,)`(`:188`) 다 — 실측해 정정했다.
 - [ ] `openid-scope-fallback-empty-only` **[M/S]** openid 스코프 폴백이 "비었을 때"만 걸려 Nimbus IllegalArgumentException이 공개 API로 샌다 (Java·Kotlin) · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:81`
 - [ ] `boundary-exception-conversion-incomplete` **[M/M]** 경계 변환의 catch 목록이 하위 라이브러리가 실제로 던지는 예외 집합보다 좁다 · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt:91`
   - ⚠️ **범위 정정**: 원장은 「Kotlin·Ruby」 2개라 적었으나 **Java·Node·.NET 을 빠뜨렸다**. ⚠️ 그리고 **원장이 지목한 Ruby 줄은 clean 이다** — `ruby/lib/keycloak_sdk/jwt_validator.rb:36` 의 `rescue JWT::DecodeError` 는 이미 JWKError 를 잡는다(실측: 설치된 `jwt-3.2.0/lib/jwt/error.rb:53` 이 `class JWKError < DecodeError`). **고치기 전에 지목부터 다시 잡을 것** — 안 그러면 clean 한 자리를 건드린다.
