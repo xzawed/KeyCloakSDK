@@ -11,7 +11,7 @@
 // 레지스트리마다 다르기 때문이다(PEP 440 `0.1.0rc1` · RubyGems `0.1.0.rc1` · Maven `0.1.0-RC1` ·
 // SemVer `0.1.0-rc.1`). 표기를 통일하라고 요구하면 각 레지스트리가 거부한다.
 // ⚠️ go·php는 태그가 버전 SSOT라 매니페스트에 버전이 없다 — 검사 대상이 아니다(scripts/lib/deploy-facts.sh).
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 // 루트는 인자로 받는다(check-docs.mjs와 같은 관용) — 그래야 자가테스트가 픽스처 트리에 대해
@@ -314,9 +314,9 @@ for (const [lang, p, re] of manifests) {
     }
     // 래퍼의 실제 버전 SSOT는 배포 URL이다(`-bin`/`-all` 둘 다 허용).
     const wrapper = pick(wrapProps, /gradle-(\d+(?:\.\d+)*)-(?:bin|all)\.zip/, 'Gradle 래퍼 배포', harnessErrors)
-    // build.gradle.kts 1행의 미러 주석. 이것은 오래 **아무도 검사하지 않는 2차 정의 자리**였다 —
-    // 723d0a4는 래퍼를 9.6.1로 올리면서 이 줄도 같이 옮겼지만, 그건 우연이지 강제가 아니었다.
-    const mirror = pick(bgk, /^\/\/ gradle\/wrapper:\s*(\S+)\s*$/m, '래퍼 미러 주석(build.gradle.kts 1행)', harnessErrors)
+    // ⚠️ 미러 주석(`// gradle/wrapper:`) ↔ 래퍼 대조는 **여기 없다** — 아래 「래퍼 미러(트리 전체)」
+    // 블록이 소유한다. 여기에 남겨두면 같은 조건을 두 곳에서 검사하게 되어 어느 한쪽을 지워도
+    // 동작이 안 바뀌고, 그러면 두 변이가 **양쪽 다 통과**해 변이검증이 공허해진다.
     const kgpActual = pick(bgk, /kotlin\("jvm"\)\s+version\s+"([^"]+)"/, 'KGP 선언', harnessErrors)
     const bandRe = /^\/\/ kgp-gradle-band:\s*kgp=(\S+)\s+gradle=(\d+(?:\.\d+)*)-(\d+(?:\.\d+)*)\s*$/m
     const band = bandRe.exec(read(bgk))
@@ -324,12 +324,6 @@ for (const [lang, p, re] of manifests) {
       harnessErrors.push(
         `${bgk} 에서 \`// kgp-gradle-band: kgp=<KGP> gradle=<min>-<max>\` 선언을 읽지 못했다 — ` +
           `이 줄은 주석이 아니라 검사되는 선언이다(지우면 래퍼↔KGP 정합을 아무도 안 본다)`,
-      )
-    }
-    if (wrapper && mirror && wrapper !== mirror) {
-      harnessErrors.push(
-        `${bgk} 1행의 미러 주석이 "${mirror}" 인데 ${wrapProps} 는 "${wrapper}" 다 — ` +
-          `래퍼를 옮기면 같은 커밋에서 이 주석도 옮길 것(2차 정의 자리다)`,
       )
     }
     if (band && kgpActual && band[1] !== kgpActual) {
@@ -410,6 +404,69 @@ for (const [lang, p, re] of manifests) {
         `${bgk} 의 소비자 하한이 갈라졌다 — 클래스 메타데이터는 KOTLIN_${kv[0][2]}_${kv[0][3]} 인데 ` +
           `전이 kotlin-stdlib 는 ${stdlib[1]}.${stdlib[2]}.x 다. 둘을 **한 커밋에서 함께** 옮길 것 ` +
           `(하한을 올리면 그만큼 소비자를 잘라내므로 릴리스 노트에도 적는다). 근거: .claude/rules/kotlin.md`,
+      )
+    }
+  }
+}
+
+// ── 래퍼 미러 주석 ↔ 실제 래퍼 (트리 전체) ──────────────────────────────────
+//
+// 이 대조는 오래 `kotlin/` **하나만** 겨눴다. 실측(2026-09-05): 같은 모양의 미러가 하네스에도
+// 둘 더 있는데(`harness/apps/kotlin` · `harness/install/consume/kotlin-app`, 둘 다 8.14) 어느
+// 가드도 읽지 않았다. 변이로 증명 — 그 둘을 `7.0.0-FALSE` 로 바꿔도 이 스크립트는 rc=0 이었고,
+// 같은 변이를 `kotlin/` 에 하면 rc=1 이었다. 계측기는 정상이고 **범위만 하나**였던 것이다.
+//
+// 왜 지금 닫는가: 하네스 두 앱은 KGP 2.2.20 을 **의도적으로** 붙들고 있어(게시 jar 의 소비자
+// 하한을 실제로 검증하는 자리다) 언젠가 KGP 와 래퍼를 함께 올린다. 그날 그 미러들은
+// `install-verify.sh:906` 이 그랬듯 조용히 낡는다 — 그 줄은 앱 래퍼가 8.14 로 내려간 뒤에도
+// 「gradle 9.5.0 배포판」이라 적은 채 살아 있었다.
+//
+// ⚠️ **경로를 하드코딩하지 않는다.** 이 항목의 원인 자체가 「사본이 셋」이라 적었다가 실제로는
+// 다섯이었던 것이다. 트리를 훑어 짝을 찾고, **찾은 짝이 0이면 실패**시킨다(공허 방어) — 미러
+// 표기가 바뀌어 추출이 0건이 되면 "불일치 0"이 통과처럼 보이기 때문이다.
+// ⚠️ `scripts/test/fixtures/` 는 제외한다. 그쪽은 이 가드의 픽스처이고, 자가테스트는 픽스처를
+// **root 로 넘겨** 돌리므로 그때는 이 경로 조각이 나타나지 않아 제외에 걸리지 않는다.
+{
+  const found = []
+  const walk = (rel, depth) => {
+    if (depth > 6) return
+    let entries
+    try {
+      entries = readdirSync(join(root, rel || '.'), { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue
+      if (e.name === 'node_modules' || e.name === '.git' || e.name === 'target' || e.name === 'build') continue
+      const sub = rel ? `${rel}/${e.name}` : e.name
+      if (sub.includes('scripts/test/fixtures')) continue
+      if (existsSync(join(root, sub, 'gradle/wrapper/gradle-wrapper.properties'))) found.push(sub)
+      walk(sub, depth + 1)
+    }
+  }
+  walk('', 0)
+
+  // 공허 방어 — ⚠️ **「없음」과 「못 찾음」을 가른다.** 래퍼가 아예 없는 체크아웃(부분 클론)은
+  // 검사 대상이 **아니다**(기존 대조군이 그것을 고정한다). 실패로 삼는 것은 디스크에 분명히
+  // 있는 트리를 탐색이 **놓친** 경우뿐이다 — 그때 "불일치 0"이 통과처럼 보이기 때문이다.
+  const known = 'kotlin/gradle/wrapper/gradle-wrapper.properties'
+  if (existsSync(join(root, known)) && !found.includes('kotlin')) {
+    harnessErrors.push(
+      `${known} 가 있는데 트리 탐색이 그것을 못 찾았다 — \`<tree>/gradle/wrapper/\` 탐색이 깨졌다. ` +
+        `이 검사가 조용히 공허해지는 경로이므로 실패시킨다`,
+    )
+  }
+  for (const tree of found) {
+    const wp = `${tree}/gradle/wrapper/gradle-wrapper.properties`
+    const bg = `${tree}/build.gradle.kts`
+    if (!existsSync(join(root, bg))) continue // 래퍼만 있고 kts 가 없는 트리는 미러를 가질 수 없다
+    const w = pick(wp, /gradle-(\d+(?:\.\d+)*)-(?:bin|all)\.zip/, `Gradle 래퍼 배포(${tree})`, harnessErrors)
+    const m = pick(bg, /^\/\/ gradle\/wrapper:\s*(\S+)\s*$/m, `래퍼 미러 주석(${bg})`, harnessErrors)
+    if (w && m && w !== m) {
+      harnessErrors.push(
+        `${bg} 의 미러 주석이 "${m}" 인데 ${wp} 는 "${w}" 다 — ` +
+          `래퍼를 옮기면 같은 커밋에서 이 주석도 옮길 것(2차 정의 자리다)`,
       )
     }
   }

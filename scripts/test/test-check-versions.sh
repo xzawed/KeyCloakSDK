@@ -273,7 +273,24 @@ cp -r "$FIX/." "$TMP/"
 sed -i 's|^// gradle/wrapper: 9\.5\.0$|// gradle/wrapper: 9.4.0|' "$BGK"
 assert_fails node "$GUARD" "$TMP"
 OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
-assert_contains "$OUT" '1행의 미러 주석이 "9.4.0" 인데' "미러 주석의 낡은 값을 지목해야 한다"
+assert_contains "$OUT" 'kotlin/build.gradle.kts 의 미러 주석이 "9.4.0" 인데' "미러 주석의 낡은 값을 파일과 함께 지목해야 한다"
+
+# 변이 4b — ⚠️ **하네스 트리의 미러**. 이 대조는 오래 `kotlin/` 하나만 겨눴고, 같은 모양의 미러가
+# 하네스에 둘 더 있는데 아무도 안 읽었다(실측 2026-09-05: 그 둘을 거짓으로 바꿔도 rc=0).
+# 이 변이가 없으면 트리 순회가 실제로 여러 트리를 타는지 아무도 모른다 — 픽스처가 한 트리만
+# 가지면 루프는 있으나 검증되지 않은 채 초록이다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|^// gradle/wrapper: 8\.14$|// gradle/wrapper: 7.0.0-FALSE|' "$TMP/harness/apps/kotlin/build.gradle.kts"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" 'harness/apps/kotlin/build.gradle.kts 의 미러 주석이 "7.0.0-FALSE" 인데' "하네스 트리의 미러도 지목해야 한다"
+
+# 변이 4c — 하네스 트리의 미러 줄을 **지우면** 조용히 통과하면 안 된다(부재 = 실패).
+cp -r "$FIX/." "$TMP/"
+sed -i '/^\/\/ gradle\/wrapper:/d' "$TMP/harness/apps/kotlin/build.gradle.kts"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "래퍼 미러 주석(harness/apps/kotlin/build.gradle.kts)" "미러가 사라진 것을 지목해야 한다"
 
 # 변이 5 — 밴드 선언줄을 지우면 조용히 통과하면 안 된다(가드 무력화 방지).
 # 주석처럼 생겼기 때문에 정리 커밋에서 지워지기 가장 쉬운 줄이다.

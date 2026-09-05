@@ -15,7 +15,7 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **158** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 6) — 열림 **134** · 닫힘 **24** |
+| 작업 패키지 | **158** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 6) — 열림 **133** · 닫힘 **25** |
 | 심각도 | high 27 · medium 76 · low 47 |
 | 작업량 | S 68 · M 70 · L 12 |
 
@@ -133,7 +133,13 @@
   - ⚠️ **반박이 잡은 것 셋 — 제안을 그대로 넣었으면 결함을 새로 심었다.** (1) ruby 안이 「기계 국소 사실」을 **금지문**으로 뒤집어 `doctor.mjs:97-99` 가 정상이라 적은 이식형 설치 규약과 충돌했다. (2) dotnet 안이 「이력은 git 이 소유한다」에 기대 삭제했는데 실측하니 `git log -S'188/194'` 는 규칙 발생 커밋을 **안 잡는다**(그건 `-S'213 and 52'` → f19bda2). (3) kotlin 안의 「all six definition sites」는 **거짓 전수 주장**이었다.
   - ⚠️ **개수를 고칠 때 개수를 다시 쓰지 말 것.** kotlin 은 「넷 → 여섯」이 아니라 **개수를 빼고 이름으로** 갔다 — 가드가 세는 자리를 늘리면 그 낱말이 또 낡는다(fe28f54 가 고친 것과 같은 부류).
   - 예산: 전부 등가 교환 또는 음수. 래칫 인상 0건. `doc-facts` 가 도는 명령 8개 PASS.
-- [ ] `harness-gradle-version-copies-unguarded` **[M/S · 신규 2026-09-05]** 하네스의 gradle 버전 사본 셋이 어느 가드도 안 읽고, **그중 하나는 이미 낡았다** · `harness/install/install-verify.sh:906`
+- [x] `harness-gradle-version-copies-unguarded` **[M/S · 신규·닫힘 2026-09-05]** 하네스의 gradle 버전 사본이 어느 가드도 안 읽고, **그중 하나는 이미 낡았다** · `harness/install/install-verify.sh:906`
+  - **닫힘.** `check-versions.mjs` 의 미러↔래퍼 대조를 `kotlin/` 하드코딩에서 **발견 기반 트리 순회**로 바꿨다(`<tree>/gradle/wrapper/gradle-wrapper.properties` 를 훑어 짝을 찾는다). 이제 세 트리를 전부 본다: `kotlin/`(9.5.0) · `harness/apps/kotlin/`(8.14) · `harness/install/consume/kotlin-app/`(8.14).
+  - ⚠️ **경로를 박지 않았다** — 이 항목의 원인 자체가 「사본이 셋」이라 적었다가 다섯이었던 것이다. 넷째 짝(`scripts/test/fixtures/version-ssot/kotlin`)은 이 가드의 픽스처라 경로로 제외한다(자가테스트는 픽스처를 **root 로 넘겨** 돌리므로 그때는 그 경로 조각이 나타나지 않는다).
+  - 가드 3요건 실측: **(a)** 세 트리 각각 미러 변이 → `rc=1` · **(b)** 복원 → `rc=0` · **(c)** 구 스크립트 + 같은 하네스 변이 → `rc=0`(= 새 순회가 원인임을 확정). 부재도 실패로 잡는다(미러 줄 삭제 → 「래퍼 미러 주석(…) 을 읽지 못했다」).
+  - ⚠️ **중복 게이트를 만들지 않았다** — kotlin 블록에서 미러 검사를 **떼어냈다**. 남겨뒀으면 같은 조건이 두 곳에 있어 어느 한쪽을 지워도 동작이 안 바뀌고 변이가 양쪽 다 통과한다([[redundant-guards-void-mutation-testing]]).
+  - ⚠️ **공허 방어는 「없음」과 「못 찾음」을 가른다.** 래퍼가 아예 없는 부분 체크아웃은 대상이 아니다(기존 대조군이 그것을 고정한다 — 처음엔 여기서 오탐이 났다). 실패는 `kotlin/gradle/wrapper/…` 가 디스크에 있는데 순회가 **놓친** 경우뿐이다.
+  - ⚠️ **픽스처를 함께 넓혔다** — `fixtures/version-ssot/harness/apps/kotlin/` 에 래퍼+미러 짝이 없어 새 루프가 **한 트리만 태우고 있었다**. 짝을 넣어 두 트리를 태운다(자가테스트 74 → 80건).
   - 실측: `install-verify.sh:906` 은 `install-consume-kotlin` 컨테이너를 「gradle 9.5.0 배포판」이라 적는데, 그 앱의 래퍼는 `harness/install/consume/kotlin-app/gradle/wrapper/gradle-wrapper.properties` → **gradle-8.14** 다(`kotlin-run.sh:39` 이 `sh ./gradlew` 로 그 래퍼를 실제로 쓴다).
   - ⚠️ **`harness/suites/kotlin.sh:3,7` 은 낡지 않았다 — 세지 말 것.** 그쪽은 본체 `kotlin/gradlew`(실측 9.5.0)를 가리키므로 참이다. 「사본이 셋이니 셋 다 틀렸다」로 뭉뚱그리면 오탐이 된다.
   - **906줄은 고쳤다**(버전을 빼고 래퍼를 가리킨다). ⚠️ **항목은 닫히지 않는다 — 「셋」이 과소계수였다.** 재스캔으로 `// gradle/wrapper:` **미러 사본 둘**이 더 나왔고 둘 다 가드 밖이다: `harness/apps/kotlin/build.gradle.kts:4` · `harness/install/consume/kotlin-app/build.gradle.kts:9`(둘 다 `8.14`).
