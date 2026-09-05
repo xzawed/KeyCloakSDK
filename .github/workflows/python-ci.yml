@@ -14,6 +14,8 @@ jobs:
     name: Lint + unit test (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
     strategy:
+      # ⚠️ 하한 레그가 취소되면 그날 하한 검증이 사라진다 — 근거는 node-ci.yml 주석.
+      fail-fast: false
       # 3.14 는 현 최신 안정판. 하한 3.10 은 그대로 둔다 — 상류 EOL 이 가까워도 소비자를 자르지 않는다.
       matrix: { python: ['3.10', '3.11', '3.12', '3.13', '3.14'] }
     defaults: { run: { working-directory: python } }

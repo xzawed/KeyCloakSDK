@@ -14,6 +14,8 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
     strategy:
+      # ⚠️ 하한 레그가 취소되면 그날 하한 검증이 사라진다 — 근거는 node-ci.yml 주석.
+      fail-fast: false
       # ⚠️ 8.5 는 확장이 아니라 **이미 한 약속의 검증**이다 — composer.json 이 "php": "^8.3" 으로
       # 8.5 지원을 선언하는데 CI 가 8.3·8.4 만 돌았다. 즉 오늘 PHP 8.5 로 설치하는 소비자는
       # 정상 설치되지만 그 조합을 아무도 돌려본 적이 없었다. composer.lock 의 php 제약 102개를

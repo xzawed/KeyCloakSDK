@@ -24,9 +24,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       # ⚠️ 원소가 하나라 매트릭스 문법만 있고 사실상 없었다 — JDK 25(현 최신 LTS)에서 이 SDK 를
-      # 쓰는 소비자가 검증 0 이었다. 소비자 하한(`maven.compiler.release=21`)은 그대로 둔다;
+      # 쓰는 소비자가 검증 0 이었다. 소비자 하한(`maven.compiler.release=17`)은 그대로 둔다;
       # 여기서 넓히는 것은 「어떤 JDK 로 빌드·테스트해도 통과하는가」다.
-      # enforcer 의 `requireJavaVersion [21,)` 은 하한이라 25 를 통과시킨다(실측).
+      # enforcer 의 `requireJavaVersion [17,)` 은 하한이라 25 를 통과시킨다(실측).
       fail-fast: false
       matrix: { java: ['17', '21', '25'] }
     steps:

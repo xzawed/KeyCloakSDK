@@ -14,6 +14,8 @@ jobs:
     name: Build + lint + unit (Go ${{ matrix.go }})
     runs-on: ubuntu-latest
     strategy:
+      # ⚠️ 하한 레그가 취소되면 그날 하한 검증이 사라진다 — 근거는 node-ci.yml 주석.
+      fail-fast: false
       # ⚠️ 주석이 낡아 있었다 — 「최신 마이너」가 1.26 이던 시절의 문장이고 1.27 이 이미 나왔다.
       # 1.25 는 go.mod 하한이라 유지한다(상류 지원창 밖이어도 소비자를 자르지 않는다).
       #

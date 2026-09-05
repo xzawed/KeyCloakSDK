@@ -17,6 +17,9 @@ jobs:
     name: Build + fmt + clippy + test (Rust ${{ matrix.rust }})
     runs-on: ubuntu-latest
     strategy:
+      # ⚠️ 하한 레그가 취소되면 그날 하한 검증이 사라진다 — 근거는 node-ci.yml 주석.
+      # `stable` 은 정의상 움직이는 레그라 먼저 깨질 확률이 가장 높고, 그때 MSRV 가 취소된다.
+      fail-fast: false
       matrix:
         rust: ['1.88', 'stable'] # 1.88 = MSRV(Cargo.toml rust-version, edition 2024 + let-chains 요구) · stable = 최신 회귀 확인
     defaults:

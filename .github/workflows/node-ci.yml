@@ -18,6 +18,11 @@ jobs:
     name: Lint + typecheck + unit test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
+      # ⚠️ **하한 레그가 취소되면 그날 하한 검증이 사라진다.** 기본값 `fail-fast: true` 에서는
+      # 최신 레그가 먼저 깨지면 나머지가 **취소**되고, 그 빨강은 「최신이 깨졌다」로 읽혀 하한과
+      # 무관해 보인다. `check-docs.mjs` 의 하한 대조는 **문서가 하한을 옳게 적었는가**만 보므로
+      # (kind=runtime 앵커), 코드가 그 하한에서 실제로 도는지는 이 레그가 유일한 검증이다.
+      fail-fast: false
       # 26 은 현 최신. package.json 의 engines 하한 ">=22" 는 그대로 둔다 — 넓히되 자르지 않는다.
       matrix: { node: ['22', '24', '26'] }
     defaults: { run: { working-directory: node } }
