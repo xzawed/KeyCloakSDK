@@ -38,11 +38,11 @@ cd rust && cargo test --test integration_test -- --ignored    # integration E2E.
 
 ## Dependency policy
 
-- ⚠️ **Never use an exact pin (`=`) in a library crate — it hard-fails dependency resolution for the consumer.** cargo unifies semver-compatible requirements into one, so pinning `=26.6.2` leaves no satisfiable combination with a crate in the same tree that asks for 26.6.3, and the consumer has no way around it.
-- **The operator differs per crate**: `openidconnect` and `jsonwebtoken` are ordinary semver, so **caret**; `keycloak` gets a **tilde, `~26.6.2`** — that crate's version is not semver but **tracks the Keycloak server line**, so "26.7" *is* a server minor upgrade, and the reqwest feature layout has been reshuffled at such a boundary before.
+- ⚠️ **Never use an exact pin (`=`) in a library crate — it hard-fails dependency resolution for the consumer.** cargo unifies semver-compatible requirements into one, so an `=` pin leaves no satisfiable combination with a crate in the same tree that asks for a later patch, and the consumer has no way around it.
+- **The operator differs per crate**: `openidconnect` and `jsonwebtoken` are ordinary semver, so **caret**; `keycloak` gets a **tilde** — that crate's version is not semver but **tracks the Keycloak server line**, so a minor *is* a server minor upgrade, and the reqwest feature layout has been reshuffled at such a boundary before. The pins' SSOT is the dependency table in the root `CLAUDE.md`.
 - ⚠️ **The committed `Cargo.lock` does not reach the consumer** — cargo ignores the lockfile of a dependency crate. What the lock pins is CI, local and `--locked` builds; what actually protects downstream is the range choice above. Raise a major or a minor version **by hand**, refreshing the lock and re-checking the gotchas below.
 - ⚠️ **The `keycloak` crate and `openidconnect` have to agree on the reqwest major** — `keycloak` needs the `reqwest12` feature declared explicitly (`default-features=false`) for them to share the same `reqwest::Client`. Mismatched, it fails to compile.
-- The dev-dependency `testcontainers` is pre-1.0, so breaking changes arrive in minors — always run the integration tests when bumping it. The pins' SSOT is the dependency table in the root `CLAUDE.md`.
+- The dev-dependency `testcontainers` is pre-1.0, so breaking changes arrive in minors — always run the integration tests when bumping it.
 - RUSTSEC-2023-0071 (the rsa Marvin Attack) does not apply — `rsa` is used only to generate test keys as a dev-dependency, and the runtime only verifies signatures.
 
 ## Re-exports (§4(b))

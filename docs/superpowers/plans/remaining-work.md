@@ -15,7 +15,7 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **155** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 3) — 열림 **132** · 닫힘 **23** |
+| 작업 패키지 | **158** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 6) — 열림 **134** · 닫힘 **24** |
 | 심각도 | high 27 · medium 76 · low 47 |
 | 작업량 | S 68 · M 70 · L 12 |
 
@@ -128,6 +128,19 @@
 - [ ] `node-rules-history-prose` **[S/S · 신규 2026-09-05]** `.claude/rules/node.md` 에 「무엇이 일어났는가」형 사후분석 산문 약 800B(예산 6,255B 의 13%)가 행동 지침을 밀어내고 있다 · `.claude/rules/node.md:26,32,38`
   - 삭제 대상: `17 type errors passed CI: 12 × … 5 × …`(이미 고쳐진 과거 계수) · `is a product of its history` 로 시작하는 `26.7.0 → ~26.6.4 → ~26.7.0` 왕복 서술(마지막 행동 규칙 한 문장만 남긴다) · `it had four entries while this line listed three`(해소된 드리프트 기록).
   - ⚠️ **보존 대상과 섞지 말 것** — `13 × TS6059`(include 에 test 를 넣으면 무슨 일이 나는가)와 `~4.5 min / wait 45 seconds`(재현 절차)는 이력이 아니라 **다음 세션이 다시 잴 한계**다. 지우면 손실이다.
+- [x] `doc-audit-2026-09-05-confirmed-six` **[M/M · 신규·닫힘 2026-09-05]** 고정 스냅샷 문서감사가 확정한 6건 — 전부 「가드받는 SSOT 의 사본이 갈렸다」 부류다 · `.claude/rules/`
+  - **닫힘.** 6건 측정 → 렌즈 2개(손실 · 진실성/가드)로 적대 검증 12회, **3건 refuted 후 재작성**. 최종 반영: `rejected.md`↔`sonar-project.properties` 판정 분기 제거(사본→포인터, −423B) · `security.md:40` 낡은 원장 포인터(`jwks-cold-cache-ungated`→`jvm-cold-cache-unmeasured`) · `rust.md:41-45` 가드 없는 `~26.6.2` 사본 삭제 + SSOT 위임 문장 이동 · `ruby.md:14` CI 레그 3→4(4.0 은 차단 레그) · `kotlin.md:60` 「the four」→ 개수 없이 이름으로 · `dotnet.md:32,39,59` 전사 숫자 전부 삭제.
+  - ⚠️ **반박이 잡은 것 셋 — 제안을 그대로 넣었으면 결함을 새로 심었다.** (1) ruby 안이 「기계 국소 사실」을 **금지문**으로 뒤집어 `doctor.mjs:97-99` 가 정상이라 적은 이식형 설치 규약과 충돌했다. (2) dotnet 안이 「이력은 git 이 소유한다」에 기대 삭제했는데 실측하니 `git log -S'188/194'` 는 규칙 발생 커밋을 **안 잡는다**(그건 `-S'213 and 52'` → f19bda2). (3) kotlin 안의 「all six definition sites」는 **거짓 전수 주장**이었다.
+  - ⚠️ **개수를 고칠 때 개수를 다시 쓰지 말 것.** kotlin 은 「넷 → 여섯」이 아니라 **개수를 빼고 이름으로** 갔다 — 가드가 세는 자리를 늘리면 그 낱말이 또 낡는다(fe28f54 가 고친 것과 같은 부류).
+  - 예산: 전부 등가 교환 또는 음수. 래칫 인상 0건. `doc-facts` 가 도는 명령 8개 PASS.
+- [ ] `harness-gradle-version-copies-unguarded` **[M/S · 신규 2026-09-05]** 하네스의 gradle 버전 사본 셋이 어느 가드도 안 읽고, **그중 하나는 이미 낡았다** · `harness/install/install-verify.sh:906`
+  - 실측: `install-verify.sh:906` 은 `install-consume-kotlin` 컨테이너를 「gradle 9.5.0 배포판」이라 적는데, 그 앱의 래퍼는 `harness/install/consume/kotlin-app/gradle/wrapper/gradle-wrapper.properties` → **gradle-8.14** 다(`kotlin-run.sh:39` 이 `sh ./gradlew` 로 그 래퍼를 실제로 쓴다).
+  - ⚠️ **`harness/suites/kotlin.sh:3,7` 은 낡지 않았다 — 세지 말 것.** 그쪽은 본체 `kotlin/gradlew`(실측 9.5.0)를 가리키므로 참이다. 「사본이 셋이니 셋 다 틀렸다」로 뭉뚱그리면 오탐이 된다.
+  - 되살릴 조건이 아니라 **고칠 자리**: 906줄을 8.14 로 고치거나 버전을 빼고 래퍼를 가리킨다. `check-versions.mjs` 는 이 파일을 `--list` 소비자로만 알고 gradle 버전은 안 읽는다(실측 19·34·44·457줄).
+- [ ] `rulefile-matrix-vs-workflow-unguarded` **[M/M · 신규 2026-09-05]** 규칙 파일이 적는 CI 매트릭스를 워크플로의 `strategy.matrix` 와 대조하는 기계가 없다 · `.claude/rules/{java,go,rust,ruby}.md`
+  - 이번에 ruby 가 어긋난 채 발견됐고(3레그 ↔ 실제 4레그), 나머지 셋은 **지금은** 일치한다(전수 대조: java 17/21/25 · go 1.25/1.26 · rust 1.88/stable). 즉 오늘 참인 문장을 산문으로 다시 적었을 뿐이고 같은 방식으로 또 어긋난다.
+  - 모양이 기계검사 가능하다(배열 ↔ 문장) → `check-docs.mjs` 의 `kind=ignores`(fe28f54) 와 같은 앵커 한 종류로 넷을 덮을 수 있다. 착수 전 `[[drift-means-duplicate-not-missing-guard]]` 판정을 먼저 할 것 — **지울 수 있으면 지우는 쪽이 싸다**(규칙 파일이 매트릭스를 아예 안 적고 워크플로를 가리키면 된다).
+  - ⚠️ 곁가지(별건): `ruby-ci.yml` 에 `fail-fast: false` 가 없어 4.0 이 깨지면 3.2 레그가 **취소**되고, 3.2 하한 검증(`gem "parallel", "< 2"` 이 지키는 것)이 그날 사라진다.
 - [ ] `openid-scope-fallback-empty-only` **[M/S]** openid 스코프 폴백이 "비었을 때"만 걸려 Nimbus IllegalArgumentException이 공개 API로 샌다 (Java·Kotlin) · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:81`
 - [ ] `boundary-exception-conversion-incomplete` **[M/M]** 경계 변환의 catch 목록이 하위 라이브러리가 실제로 던지는 예외 집합보다 좁다 · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt:91`
   - ⚠️ **범위 정정**: 원장은 「Kotlin·Ruby」 2개라 적었으나 **Java·Node·.NET 을 빠뜨렸다**. ⚠️ 그리고 **원장이 지목한 Ruby 줄은 clean 이다** — `ruby/lib/keycloak_sdk/jwt_validator.rb:36` 의 `rescue JWT::DecodeError` 는 이미 JWKError 를 잡는다(실측: 설치된 `jwt-3.2.0/lib/jwt/error.rb:53` 이 `class JWKError < DecodeError`). **고치기 전에 지목부터 다시 잡을 것** — 안 그러면 clean 한 자리를 건드린다.
@@ -276,7 +289,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `sonar-tests-revive-instrument` **[M/M]** sonar.tests 되살릴 조건이 「색인 수가 유지되는가」인데 그 수를 아무도 기록하지 않는다 — 공허한 초록을 판별할 계측기가 없다 · `.github/workflows/sonarcloud.yml:22`
 - [ ] `dependabot-ignore-joins` **[M/M]** 조건부 `ignore` 셋의 해제 조건이 다른 파일의 사실에 묶여 있는데 조인이 없다 — kotlin 하나만 기계가 본다 · `.github/dependabot.yml:79`
 - [ ] `gate-substitutes-unasserted` **[M/L]** 기계 게이트가 없는 자리마다 「대신 이것이 본다」가 적혀 있는데, 그 대체물의 존재는 아무도 검사하지 않는다 · `sonar-project.properties:30`
-- [ ] `sonar-suppression-premises` **[M/M]** sonar 억제 셋의 근거가 트리 안의 다른 사실에 묶여 있는데, 그 사실이 바뀌면 억제가 오탐이 아니라 진짜를 숨긴다 · `sonar-project.properties:205`
+- [ ] `sonar-suppression-premises` **[M/M]** sonar 억제 셋의 근거가 트리 안의 다른 사실에 묶여 있는데, 그 사실이 바뀌면 억제가 오탐이 아니라 진짜를 숨긴다 · `sonar-project.properties:200`
 - [ ] `vitest-v4-migration` **[L/M]** vitest 3에 묶인 유일한 이유가 테스트 두 파일의 `vi.mock` 클래스 팩토리 셋이다 · `node/test/unit/client.test.ts:1`
 - [ ] `tenth-language-deferrals` **[L/S]** 「10번째 언어가 들어올 때」가 여러 유예의 공통 트리거인데, 그때 무엇을 함께 해야 하는지가 한 곳에 없다 · `docs/guides/add-a-language-playbook.md:105`
 - [ ] `release-readiness-remote-tag-print` **[L/S]** 릴리스 준비도 도구가 로컬 클론의 태그만 보고 「태그 없음」을 답한다 — 되살릴 조건은 두 값을 나란히 인쇄하는 것 · `scripts/release-readiness.sh:93`

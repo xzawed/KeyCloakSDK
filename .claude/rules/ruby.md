@@ -11,7 +11,7 @@ paths:
 
 ## Toolchain
 
-System install — ask `node scripts/doctor.mjs ruby` where it is rather than assuming a path (⚠️ this line said `${KCSDK_TOOLS:-$HOME/tools}/ruby`, which does not exist on the development machine). Development on 3.4; `required_ruby_version >= 3.2` (CI runs 3.2, 3.3 and 3.4).
+System install — ask `node scripts/doctor.mjs ruby` where it is rather than assuming a path (⚠️ this line said `${KCSDK_TOOLS:-$HOME/tools}/ruby`, which does not exist on this machine). Development on 3.4; `required_ruby_version >= 3.2` (CI runs 3.2, 3.3, 3.4 and 4.0).
 
 ```bash
 cd ruby && bundle install   # ruby 는 PATH 에 있다. 없으면 `node scripts/doctor.mjs ruby`
