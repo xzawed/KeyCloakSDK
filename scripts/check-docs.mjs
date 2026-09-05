@@ -976,6 +976,50 @@ for (const file of walk(ROOT)) {
       continue
     }
 
+    // kind=ignores는 dependabot.yml의 `ignore` 목록을 앵커 **바로 다음 문단**(빈 줄
+    // 전까지)의 인라인 코드 스팬과 대조한다. kind=dep의 표 처리가 닿지 않는 자리다 —
+    // 그 목록은 산문이고, 가드가 없는 동안 "네 종류"가 8건 중 5건만 덮은 채 살았다.
+    // 방향은 양쪽이다: ignore를 늘리면 문단이 빨개지고, ignore를 지우면 min이 빨개진다.
+    if (attrs.kind === 'ignores') {
+      let src
+      try {
+        src = readFileSync(join(ROOT, attrs.source), 'utf8')
+      } catch (e) {
+        errors.push(`${rel}:${i + 1} ${attrs.source} 읽기 실패: ${e.message}`)
+        continue
+      }
+      const names = [...src.matchAll(/^\s*-\s*dependency-name:\s*['"]?([^'"#\s]+)['"]?/gm)].map((m) => m[1])
+      const floor = attrs.min === undefined ? 1 : Number(attrs.min)
+      if (!Number.isInteger(floor) || floor < 1) {
+        errors.push(`${rel}:${i + 1} min='${attrs.min}' 은 1 이상의 정수가 아님 — fail-closed 탐지기가 무력화됨`)
+        continue
+      }
+      if (names.length < floor) {
+        errors.push(
+          `${rel}:${i + 1} ${attrs.source} 의 ignore ${names.length}건 < min=${floor} — 핀이 풀렸다면 이 문단과 min을 함께 줄여라`,
+        )
+        continue
+      }
+      const para = []
+      for (let j = i + 1; j < lines.length && lines[j].trim() !== ''; j++) para.push(lines[j])
+      const spans = new Set([...para.join('\n').matchAll(/`([^`]+)`/g)].map((m) => m[1]))
+      // 문서는 마지막 세그먼트로 줄여 쓸 수 있다(`dtolnay/rust-toolchain` → `rust-toolchain`).
+      // ⚠️ npm 스코프 이름(`@types/node`)은 예외다 — 거기서 `/` 뒤를 허용하면 `node` 같은
+      // 흔한 낱말 하나로 항목이 덮인 것처럼 보여 가드가 조용히 헐거워진다.
+      const missing = names.filter((n) => {
+        const forms = new Set([n, n.slice(n.lastIndexOf(':') + 1)])
+        if (!n.startsWith('@')) forms.add(n.slice(n.lastIndexOf('/') + 1))
+        return ![...forms].some((f) => spans.has(f))
+      })
+      facts += names.length
+      if (missing.length) {
+        errors.push(
+          `${rel}:${i + 1} ${attrs.source} 의 ignore 중 이 문단이 안 적은 것: ${missing.join(', ')} — 목록이 없으면 다음 세션이 오탐으로 지운다`,
+        )
+      }
+      continue
+    }
+
     let min
     if (attrs.min === undefined) {
       min = 1
