@@ -8,7 +8,7 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · 
 
 ## Requirements
 
-- **Kotlin 2.2+** on **JDK 21+** (the module targets `jvmToolchain(21)`). The SDK is built with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so its published metadata is consumable by any Kotlin 2.2+ compiler.
+- **Kotlin 2.2+** on **JDK 21+** — this is the floor of the **published** `1.0.0` (`kotlin-v1.0.0` carries only `jvmToolchain(21)`, no `jvmTarget`). ⚠️ The tree now targets 17, but that has **not shipped**; do not lower this line until a JVM release publishes it ([detail](../docs/guides/getting-started.md#kotlin)). The SDK is built with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so its published metadata is consumable by any Kotlin 2.2+ compiler.
 - A Keycloak server to connect to (integration-tested against Keycloak 26.6).
 
 Every network call is a `suspend` function — blocking calls into the underlying JVM libraries run on `Dispatchers.IO` via `runInterruptible`. Only `createAuthorizationRequest` is synchronous, because it needs no network. Public API visibility is enforced with `explicitApi()`.

@@ -17,6 +17,8 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 
 | SDK | Target Keycloak server | Base libraries · runtime |
 |---|---|---|
+⚠️ **The JVM rows state the floor of the *published* artifact, not of the source tree.** `v1.0.0`/`kotlin-v1.0.0` were compiled for **JDK 21**; the tree lowered that to 17 after the tag (#389) and no JVM release has shipped since. **Do not "correct" these to 17** by reading `java/pom.xml` — verify with `git show v1.0.0:java/pom.xml | grep maven.compiler.release`, and lower them only in the release that actually publishes 17. Detail: [getting-started.md](../guides/getting-started.md#java).
+
 | Java `1.0.0` | 26.6.x (integration tests: actual **26.6.4**) | `keycloak-admin-client` **26.0.12** (an independent version track from the server — there is no "26.6.x admin-client") · Nimbus `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.9.1** · JDK 21+ |
 | Python `1.0.0` | 26.6.x (integration tests: actual **26.6.4**) | `python-keycloak` **7.1.x** · `joserfc` **1.7.x** · Python 3.10+ |
 | Node `1.0.0` | 26.6.x (integration tests: actual **26.6**) | `@keycloak/keycloak-admin-client` **26.7.1** · `openid-client` **6.8.5** · `jose` **6.2.9** · Node 22+ |
