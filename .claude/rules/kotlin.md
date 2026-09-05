@@ -23,7 +23,7 @@ paths:
 
 JDK 21. **Issue every command through the wrapper** — `cd kotlin && ./gradlew <task>`.
 
-⚠️ **Do not install Gradle separately.** The wrapper fetches the distribution the build needs (`9.5.0`) by itself. This repository carried `gradle -p kotlin <task>` for a while, and that command only runs **on a machine that has gradle on its PATH** — measured, this PC did not (`~/tools` held only maven and php), and it had to move to the wrapper. `docs/guides/development-setup.md` had said "Kotlin — do not install Gradle" correctly from the start; this file was the one that had drifted.
+⚠️ **Do not install Gradle separately.** The wrapper fetches the distribution the build needs (`9.5.0`) by itself. This repository carried `gradle -p kotlin <task>` for a while, and that command only runs **on a machine that has gradle on its PATH** — measured, this PC did not (`~/tools` held only maven and php), and it had to move to the wrapper.
 
 ```bash
 export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot}"
@@ -57,7 +57,7 @@ cd kotlin
 
 ## Publishing constraints
 
-- ⚠️ **Keep the Gradle wrapper inside KGP's fully supported band** (KGP 2.4.10 → 7.6.3–9.5.0). Being outside the band is not automatically broken, but staying inside it is this repository's policy. Do not raise the wrapper alone — move **KGP, the `kgp-gradle-band` record, the wrapper, and the `// gradle/wrapper:` mirror comment on line 1 of `build.gradle.kts`, together in one commit**; `scripts/check-versions.mjs` enforces that the four agree. dependabot raises the wrapper in a PR of its own (`exclude-patterns`).
+- ⚠️ **Keep the Gradle wrapper inside KGP's fully supported band** (KGP 2.4.10 → 7.6.3–9.5.0). Being outside the band is not automatically broken, but staying inside it is this repository's policy. Do not raise the wrapper alone — move it with KGP, the `kgp-gradle-band` record, the `// gradle/wrapper:` mirror on line 1 of `build.gradle.kts`, **and the values this file itself states**, in one commit; `scripts/check-versions.mjs` cross-checks them all. dependabot raises the wrapper in a PR of its own (`exclude-patterns`).
 - ⚠️ **The binary metadata version of the published jar is decided by `languageVersion`/`apiVersion`, not by KGP.** If you build with KGP 2.4.10 and no settings, `mv=[2,4,0]` is stamped in, which means **a consumer below Kotlin 2.4 cannot use the library at all.**
   - ⚠️ **The transitive `kotlin-stdlib` has to be lowered along with it.** If you lower only the class metadata, the consumer still resolves stdlib 2.4.10 and fails with `Class 'kotlin.Unit' was compiled with an incompatible version of Kotlin`. Put `kotlin.stdlib.default.dependency=false` in `gradle.properties` and declare `api("org.jetbrains.kotlin:kotlin-stdlib:<floor>")` explicitly. **`constraints` cannot lower it** — a constraint is a floor, so the automatic injection wins.
   - To check: run `publishToMavenLocal`, read the stdlib version in the POM, and see whether `./gradlew classes` passes in `harness/apps/kotlin` (Kotlin 2.2.20 + `mavenLocal()`). For the metadata itself, read the `mv` array of `kotlin/Metadata` with `javap -v` (grepping the constant pool cannot decide it, because of deduplication).

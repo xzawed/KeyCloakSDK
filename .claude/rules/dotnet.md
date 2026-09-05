@@ -29,14 +29,14 @@ cd dotnet && dotnet pack src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c R
     --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory /tmp/cov
   node ../scripts/check-coverage.mjs /tmp/cov --min-line 90 --min-branch 85
   ```
-  ⚠️ **The numbers are not written here.** `check-coverage.mjs` prints lines, branches and the headroom on every run — read them from it. This line used to carry `96.91% (188/194)` / `90.00% (45/50)`; the denominators moved to 213 and 52 and every transcribed figure went false while the rule read as verified.
+  ⚠️ **The numbers are not written here.** `check-coverage.mjs` prints lines, branches and the headroom on every run — read them from it. Every figure ever transcribed into this line went false as the denominators moved, while the rule around it still read as verified.
 - Releasing goes `dotnet-v*` tag → `dotnet-release.yml` (human approval gate). The `integration` job is in `needs:` ahead of publishing.
 - The solution uses the old format, `Keycloak.Sdk.sln` — newer SDKs default to `.slnx`. `AnalysisLevel=8.0` pins the analyzer band so a locally-installed SDK newer than CI's cannot introduce warnings CI never sees. ⚠️ This line used to justify both by "local is SDK 10", which was false; both settings are still right, the stated reason was not. `GenerateDocumentationFile` and the packaging props are conditioned on `IsTestProject != true` — without that, the test projects fail the build with CS1591.
 
 ## Two coverage traps
 
 - ⚠️ **Do not use the coverlet **msbuild** integration.** It flushes hits on `ProcessExit`, and VSTest waits only briefly for the process to exit, so on a slow run you get a report where the denominator survives but **the numerator alone is 0**. Its built-in threshold gate reports that in **exactly the same words** as a genuine drop (re-running the same commit passed). The collector flushes on `SessionEnd`, so it has no such path, and `check-coverage.mjs` **looks at the numerator and the denominator separately** (`lines-valid>0` with `lines-covered==0` is a measurement failure, not a drop).
-- ⚠️ **Read the headroom on the branch gate as a count, not as a percentage.** The denominator is small enough that one branch is worth about two percentage points, so a single `if` without an `else` can break the gate. That is why `check-coverage.mjs` prints `브랜치 여유: N개` ("branch headroom: N") on every run. **Seeing 0% and lowering the threshold is precisely the wrong response.**
+- ⚠️ **Read the headroom on the branch gate as a count, not as a percentage.** The denominator is small enough that a single `if` without an `else` can break the gate. That is why `check-coverage.mjs` prints `브랜치 여유: N개` ("branch headroom: N") on every run. **Seeing 0% and lowering the threshold is precisely the wrong response.**
 
 ## admin surface
 
@@ -56,7 +56,7 @@ cd dotnet && dotnet pack src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c R
 
 ## Dependency and structural decisions
 
-- ⚠️ **`Keycloak.AuthServices.Sdk` 3.0.0 is net10-only, so net8.0 pins 2.7.0.** Anything below the `DI.Abstractions >= 9.0.8` that 2.7.0 requires is a hard NU1605 error.
+- ⚠️ **`Keycloak.AuthServices.Sdk` 3.0.0 is net10-only, so net8.0 stays on the 2.x line.** Anything below the `DI.Abstractions` floor that line requires is a hard NU1605 error; the floor and the reasoning are in the csproj comment beside the pin.
 - ⚠️ **The 10.x major of `DI.Abstractions` is on hold under the keep-net8 policy** — take the 9.x patches, close 10.x. The current pin is written only in the dependency table in the root `CLAUDE.md`.
 - **`IHttpClientFactory` is deliberately not used** — a single long-lived `HttpClient` plus `PooledConnectionLifetime` (5 minutes) avoids stale DNS. This is a library used without DI, so it does not force a factory lifecycle onto the consumer.
 - The glue between `admin` and `auth` is `ITokenProvider` alone (`AuthClient : ITokenSource` is the default source) — §4 isomorphic.
