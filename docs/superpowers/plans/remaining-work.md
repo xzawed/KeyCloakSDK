@@ -116,6 +116,18 @@
 - [ ] `jvm-cold-cache-unmeasured` **[M/S · 신규 2026-09-05]** java·kotlin 의 콜드 캐시 + IdP 장애 동작이 한 번도 측정되지 않았다 — 나머지 일곱은 20→1 로 닫혔는데 이 둘만 미지수다 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java`
   - 재는 법은 이미 있다: 나머지 일곱에 쓴 프로브(요청을 세는 로컬 HTTP 서버 · JWKS 503 · 20회 검증)를 Nimbus `JWKSource` 에 물리면 된다. **먼저 재고, 그 다음에 고칠지 정한다** — Nimbus 의 `RateLimitedJWKSetSource`·`CachingJWKSetSource` 조합이 이미 막고 있을 수 있고, 그렇다면 고칠 것이 없다.
   - ⚠️ 결과가 「이미 유계」로 나오면 그 사실을 `.claude/rules/security.md` 에 적어 다음 세션이 다시 묻지 않게 한다(지금은 "NOT measured" 라고만 적혀 있다).
+- [x] `dependabot-ignore-kinds-uncounted` **[M/S · 신규·닫힘 2026-09-05]** 「올려선 안 되는 핀 N 종류」가 두 곳에 손으로 적혀 이틀 만에 두 번 어긋났다(ci.md 셋 · CLAUDE.md 넷 · 실측 `ignore` 8건) · `.github/dependabot.yml`
+  - **닫힘.** `check-docs.mjs` 에 `kind=ignores` 앵커를 넣어 CLAUDE.md 문단을 dependabot.yml 과 **양방향** 대조한다(추가→문단이 빨강 · 삭제→`min` 이 빨강). facts 64→72 · anchors 21→22, 진입 명령 4곳 동기화.
+  - 변이검증 5건 전부 잡힘 + 대조군(앵커 제거) 통과: 이름 제거 · yml 추가 · yml 삭제 · `@types/node`→`node`(느슨해짐 방지, npm 스코프는 세그먼트 축약 불허) · `kind` 오타는 조용히 통과하지 않는다.
+  - ⚠️ **분류를 「다섯 종류」로 접지 말 것** — 초안이 그렇게 썼다가 되돌렸다. `vitest`·`@vitest/coverage-v8` 은 종류가 아니라 **일시적 이관 보류**다(실측: dependabot.yml 주석 중 「그때 이 항목을 지운다」는 이 둘뿐). 「네 종류 + 나머지」가 참이다.
+  - 같은 사실이 두 곳에 있던 것이 원인이므로 `.claude/rules/ci.md` 에서 개수·열거를 지웠다(해제 조건·`gh api` 명령은 이미 dependabot.yml 주석이 소유 · 8,870B/9,985B 로 여유 확보).
+- [x] `php-readiness-no-api-claim` **[M/S · 신규·닫힘 2026-09-05]** `.claude/rules/php.md` 가 「미러·Packagist 는 API 로 확인할 수 없다」고 적었으나 스크립트는 둘 다 조회한다 — 저장소가 스스로 「거짓이었다」고 기록한 문장이 정본 규칙에 남아 있었다 · `.claude/rules/php.md:38`
+  - **닫힘.** `rr_mirror_tag`(`git ls-remote`)·`rr_packagist_source`(Packagist p2)가 실재하고 둘 다 확인되면 `✅`, `ℹ️ 수동 확인` 은 **조회 실패(rc=2)일 때만**이다(`release-readiness.sh:176-185`). 정정 근거는 `scripts/test/test-release-readiness.sh:166`.
+  - 예산은 **등가 교환**으로 맞췄다 — 스냅샷 측정치(`measured 100.00%`)를 지우고 한계값(`≥90%`)만 남겼다. 래칫 없음.
+  - ⚠️ 이 부류는 명령 한 번으로 안 드러난다: `sh scripts/release-readiness.sh php` 는 `ℹ️ 태그 이미 존재`로 앞단에서 단락돼 이 분기를 안 탄다. 스텁 단위테스트가 유일한 현재성 증거다.
+- [ ] `node-rules-history-prose` **[S/S · 신규 2026-09-05]** `.claude/rules/node.md` 에 「무엇이 일어났는가」형 사후분석 산문 약 800B(예산 6,255B 의 13%)가 행동 지침을 밀어내고 있다 · `.claude/rules/node.md:26,32,38`
+  - 삭제 대상: `17 type errors passed CI: 12 × … 5 × …`(이미 고쳐진 과거 계수) · `is a product of its history` 로 시작하는 `26.7.0 → ~26.6.4 → ~26.7.0` 왕복 서술(마지막 행동 규칙 한 문장만 남긴다) · `it had four entries while this line listed three`(해소된 드리프트 기록).
+  - ⚠️ **보존 대상과 섞지 말 것** — `13 × TS6059`(include 에 test 를 넣으면 무슨 일이 나는가)와 `~4.5 min / wait 45 seconds`(재현 절차)는 이력이 아니라 **다음 세션이 다시 잴 한계**다. 지우면 손실이다.
 - [ ] `openid-scope-fallback-empty-only` **[M/S]** openid 스코프 폴백이 "비었을 때"만 걸려 Nimbus IllegalArgumentException이 공개 API로 샌다 (Java·Kotlin) · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:81`
 - [ ] `boundary-exception-conversion-incomplete` **[M/M]** 경계 변환의 catch 목록이 하위 라이브러리가 실제로 던지는 예외 집합보다 좁다 · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt:91`
   - ⚠️ **범위 정정**: 원장은 「Kotlin·Ruby」 2개라 적었으나 **Java·Node·.NET 을 빠뜨렸다**. ⚠️ 그리고 **원장이 지목한 Ruby 줄은 clean 이다** — `ruby/lib/keycloak_sdk/jwt_validator.rb:36` 의 `rescue JWT::DecodeError` 는 이미 JWKError 를 잡는다(실측: 설치된 `jwt-3.2.0/lib/jwt/error.rb:53` 이 `class JWKError < DecodeError`). **고치기 전에 지목부터 다시 잡을 것** — 안 그러면 clean 한 자리를 건드린다.

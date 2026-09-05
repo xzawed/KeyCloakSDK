@@ -57,7 +57,7 @@ file per language, opening with the entry command, the single-test invocation an
 Repo-wide, on every push and PR (`repo-hygiene.yml`):
 
 ```bash
-node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anchor-links=24 --min-blob-refs=4   # exactly what CI runs
+node scripts/check-docs.mjs . --strict --min-facts=72 --min-anchors=22 --min-anchor-links=24 --min-blob-refs=4   # exactly what CI runs
 sh scripts/test/test-check-docs.sh
 sh scripts/test/test-doctor.sh
 ```

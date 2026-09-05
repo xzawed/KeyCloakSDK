@@ -26,7 +26,7 @@ cd php && vendor/bin/php-cs-fixer fix --dry-run --allow-risky=yes
 - A single test: `vendor/bin/phpunit --filter <TestName> tests/Unit/<Path>Test.php`
 - ⚠️ **Do not write the exact patch version here** — measure it with `php -v` and `node scripts/doctor.mjs php`.
 - ⚠️ `OPENSSL_CONF` is required for local RSA key generation (`JwtValidatorTest`) — without it, key generation fails.
-- ⚠️ **This portable install has no coverage driver** (`php -m | grep -ciE 'xdebug|pcov'` → 0). The coverage gate (logic lines ≥90%, measured 100.00%) is actually enforced on CI; to measure it locally, install Xdebug or PCOV first.
+- ⚠️ **This portable install has no coverage driver** (`php -m | grep -ciE 'xdebug|pcov'` → 0). The coverage gate (logic lines ≥90%) is enforced on CI; to measure it locally, install Xdebug or PCOV first.
 - ⚠️ **The integration tests shell out to the docker CLI rather than using Testcontainers** (Windows-native PHP has no `unix://` support). The integration testsuite in `phpunit.xml` has to state `suffix="IT.php"` — leave it out and the default pattern `*Test.php` makes the ITs **skip silently**.
 
 ## Publishing (the mirror-repository path)
@@ -35,7 +35,7 @@ cd php && vendor/bin/php-cs-fixer fix --dry-run --allow-risky=yes
 
 - Mirror tags have to be **unprefixed `vX.Y.Z`** (Composer cannot parse `php-vX.Y.Z`). The mirror's `main` is force-pushed on every release, but **tags are never force-pushed** — a duplicate has to fail the push so that a human notices the burned version.
 - ⚠️ **An unset `PHP_SPLIT_TOKEN` is fail-closed** (neither the mirror push nor the GitHub Release happens). The value is a fine-grained PAT with Contents write on the mirror.
-- ⚠️ **Even with the secret set, `release-readiness.sh` does not report php green** — the mirror and Packagist states cannot be checked through an API, so it downgrades them to `ℹ️ 수동 확인` (the literal string the script prints, "manual check"). The procedure is in [DEPLOY.md §2-D](../../DEPLOY.md).
+- ⚠️ **`release-readiness.sh` checks the mirror (`git ls-remote`) and Packagist (p2) over the network** and reports php green when both answer; `ℹ️ 수동 확인` means the *lookup* failed, not that no API exists (`test-release-readiness.sh` pins this). [DEPLOY.md §2-D](../../DEPLOY.md).
 
 ## Library gotchas
 

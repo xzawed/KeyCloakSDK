@@ -1,5 +1,17 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=24159 max-lines=308 -->
+<!-- doc-budget: max-bytes=24380 max-lines=308 -->
+<!-- 24,159 → 24,380 (2026-09-05, +221B): 래칫 조건 (1) — 증가분이 **가드 자체**를 사 온다.
+     직전 래칫(+44B)이 「넷째 종류」를 손으로 적고 끝냈고, 가드가 없어서 이틀 만에 또 어긋났다 —
+     실측 `.github/dependabot.yml` 의 `ignore` 는 8건인데 그 목록은 5건만 덮었다. 이제
+     `kind=ignores` 앵커가 이 문단을 그 파일과 **양방향**으로 대조한다(항목이 늘면 문단이,
+     줄면 min 이 빨개진다 — 변이 5건 + 대조군으로 확인). facts 64→72.
+     ⚠️ **빠진 셋을 다섯째 종류로 접지 말 것**(초안이 그렇게 썼다가 되돌렸다): `@types/node` 는
+     소비자 하한이라 둘째 종류가 맞지만, `vitest`·`@vitest/coverage-v8` 은 **종류가 아니다** —
+     앞의 넷은 값이 *다른 결정*을 뜻해 영구히 사람이 올리는 것이고, 이 둘은 v4 이관만 끝나면
+     지울 **일시적 보류**다(실측: dependabot.yml 주석 중 「그때 이 항목을 지운다」는 이 둘뿐).
+     그래서 「네 종류 + 나머지」이고, 그 나머지 단서가 곧 다음 세션이 또 접는 것을 막는다.
+     같은 이유로 ci.md 에서 개수·열거를 **지웠다** — 두 곳에 있던 것이 두 번 어긋난 원인이고,
+     해제 조건도 `gh api` 명령도 이미 dependabot.yml 주석이 소유한다(ci.md 8,870B/9,985B). -->
 <!-- 24,115 → 24,159 (2026-09-03, +44B): 래칫 조건 (1) — 증가분이 **기계 집행**을 사 온다.
      dependabot 이 올려선 안 되는 핀에 **넷째 종류**(대상 서버 라인 = rust `keycloak`)가 생겼고,
      `.github/dependabot.yml` 의 `ignore` 가 그것을 실제로 막는다. 근거·실측(PR #394: 서버 26.6
@@ -54,7 +66,7 @@ Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·P
 
 1. **언어 디렉터리에서 작업한다.** `java/`·`python/`·`node/`·`go/`·`dotnet/`·`php/`·`rust/`·`ruby/`·`kotlin/` 중 하나에 들어가면 `.claude/rules/<lang>.md`가 자동 로드된다(`paths:` 프론트매터). **그 파일이 그 언어의 빌드 명령·제약·게차의 진실 원천이다** — 이 파일에 다시 적지 않는다.
 2. **바꾸기 전에 테스트를 돌린다.** 아래 툴체인 표의 진입 명령. 통합 테스트는 Docker가 필요하다.
-3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=64 --min-anchors=21 --min-anchor-links=24 --min-blob-refs=4`.
+3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=72 --min-anchors=22 --min-anchor-links=24 --min-blob-refs=4`.
 4. **PR로 올린다.** `main` 직접 push 불가(룰셋 `PRIMARY`). required 체크는 `doc-facts`·`shell-exec-bits` 둘뿐이고 **언어 CI를 required에 넣으면 저장소가 잠긴다**(`paths:` 필터라 체크가 생성조차 안 된다).
 
 ### 하지 말 것
@@ -127,7 +139,8 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 - ⚠️ **admin-client와 Keycloak 서버는 독립 버전 트랙이다** — 서버 라인과 같은 번호의 admin-client는 없다. `representation` 필드는 실서버로 검증한다.
 - ⚠️ **Maven Central은 Central Portal 경로만**(구 OSSRH 종료). 워크플로 초록 ≠ 게시 — Publish 후에도 전파 지연이 있으니 **404로 실패를 결론내지 않는다**(Java·Kotlin 공통).
 - ⚠️ **배포 시크릿 미설정은 스킵이 아니라 실패다** — 아무것도 게시하지 않고 green으로 끝난 실행은 성공한 실행과 구분되지 않는다.
-- ⚠️ **dependabot이 올려서는 안 되는 핀 네 종류**: ref가 브랜치인 액션(`rust-toolchain`·`gh-action-pypi-publish`)·소비자 하한 버전(`kotlin-stdlib`)·CI 매트릭스 하한(`parallel`)·**대상 서버 라인**(rust `keycloak`). `.github/dependabot.yml`의 `ignore`가 근거와 함께 막는다.
+<!-- doc-guard: kind=ignores source=.github/dependabot.yml min=8 -->
+- ⚠️ **dependabot이 올려서는 안 되는 핀 네 종류** — 값이 **다른 결정**을 뜻하는 것들: ref가 브랜치인 액션(`rust-toolchain`·`gh-action-pypi-publish`)·소비자에게 보이는 하한(`kotlin-stdlib`·`@types/node`)·CI 매트릭스 하한(`parallel`)·**대상 서버 라인**(rust `keycloak`). ⚠️ **분할이 아니다** — `vitest`·`@vitest/coverage-v8`은 종류가 아니라 **일시적 이관 보류**다. 근거·해제 조건·명령은 `.github/dependabot.yml`의 `ignore` 주석이 소유한다.
 
 ## 확정 의존성 (BOM으로 고정)
 
