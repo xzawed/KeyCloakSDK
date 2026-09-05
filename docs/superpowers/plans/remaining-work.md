@@ -15,7 +15,7 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **163** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 11) — 열림 **136** · 닫힘 **27** |
+| 작업 패키지 | **165** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 13) — 열림 **138** · 닫힘 **27** |
 | 심각도 | high 27 · medium 76 · low 47 |
 | 작업량 | S 68 · M 70 · L 12 |
 
@@ -181,6 +181,22 @@
 - [ ] `consumer-floor-change-needs-release-or-registered-gap` **[M/S · 신규 2026-09-06]** 소비자 가시 하한을 바꾸는 PR 이 릴리스 없이 머지되면 문서가 즉시 거짓이 된다 — 기각 체크리스트에 항목이 없다 · `docs/governance/process.md`
   - #389 가 그 경로로 갔다. 규칙안(독립 검증 레그 판정): 「소비자 가시 하한 변경은 **같은 체인지셋의 릴리스**를 동반하거나, **등록된 후속**이 게시본 값을 주장하는 모든 문서를 붙들어야 한다」. 선언 하나만으로는 과대제약이 아니다 — **선택지 둘 중 하나**라는 형태가 핵심이다(릴리스는 사람 게이트라 강제할 수 없다).
   - 소속 단계: **③ 기각 체크리스트**(머지 게이트) + **② WBS**(「트리 하향 ≠ 소비자 하향」을 짝 항목으로). ⑥ 검증은 백스톱이지 소유자가 아니다 — 기존 가드는 **검증을 했고, 오라클이 틀렸다**.
+- [ ] `doc-audit-batch1-remainder` **[H/L · 신규 2026-09-06]** 소비자 문서 배치 1(10개) 감사의 **잔여 9건** — 인용 181건 전건 실재(계측기 5/5 자가검증), 반박 10건 중 2건 refuted · `docs/guides/` · `docs/reference/`
+  - ⚠️ **착수 전 필독 — 반박자가 감사자의 수치를 여러 건 정정했다.** 특히 여러 감사자가 처방에 `--min-facts=64 --min-anchors=21` 을 전제로 썼는데 이 트리는 이미 **74/22** 다(`repo-hygiene.yml:87`·`CLAUDE.md:69`). 감사 처방의 숫자를 그대로 옮기지 말 것.
+  - **(1) `docs/guides/deploying-keycloak-server.md` [H]** §7 백업 절차 181행 주석 `# per-realm export (config-focused — user passwords excluded by default)` 이 26.6.4 서버에서 거짓 — 바로 아랫줄 명령을 그대로 돌리면 `--users` 관련 동작이 다르다. 반박 통과.
+  - **(2) `docs/guides/development-setup.md` [H]** §3 환경변수 표가 `KCSDK_PY` 를 저장소 루트 기준(`python/.venv/...`)으로 적으나 실제 해석 기준이 다르다. ⚠️ **반박자가 F2 는 채택하지 말라고 판정** — 75행 셀은 참이고, `KCSDK_TOOLS` 가 무엇을 고르는지는 `doctor.mjs:122-132` 의 `toolsChildDirs()` 가 정한다(실측으로 67행 레이아웃이 그대로 동작).
+  - **(3) `CONTRIBUTING.md` [H]** §4 254-258행 — `.claude/rules/ci.md:44` 가 **이 문서를 소유자로 명시**한 열거(「enumerated in CONTRIBUTING §4 — do not copy it here」)가 틀렸다. 개수가 4가 아니다. 반박자 처방: `**Four**`→`**Three**`, `build-test` 지목 삭제(php 는 인라인 matrix 라 맨 `build-test` 컨텍스트가 **존재조차 안 한다**), **같은 커밋에서** `ci.md:44` 의 `**four** pairs` 도 함께 고칠 것.
+  - **(4) `SECURITY.md` [M]** 90·92행이 존재하지 않는 분기를 가르친다 — 「`26.6.4` for Java and Python, `26.6` for the others」인데 실측하면 아홉이 전부 같은 태그다.
+  - **(5) `DEPLOY.md` [M]** §4 「릴리스 PR 머지」 경로가 **적힌 대로 따르면 작동하지 않는다** — 태그를 만드는 유일한 트리거는 `.github/release-request.json` 의 push 인데(`dispatch-release.yml:18`) §4 절차 어디에도 그 파일이 없다. ⚠️ 반박자 정정: 「블록쿼트 8개」는 과소계수, **9개**(71·143·206·266·354·421·490·559·630)이고 바이트도 8,733 이 아니라 **8,744**.
+  - **(6) `README.ko.md` [M]** = README.md 의 `expiresAt` 건과 같은 자리(117행). **PHP·Ruby 가 미만료로 본다**는 서술이 거짓 — #399 가 아홉 전부 「미상=만료」로 통일했다(`php TokenSet.php:75-76` · `ruby tokens.rb:25` · `java TokenSet.java:20`). ⚠️ 반박자: 대체 문구에 **미측정 단정을 넣지 말 것**(`ls php/vendor` 부재라 이 트리에서 못 잰다).
+  - **(7) `README.md` 잔여 [M]** 118행 `list pagination is explicit in Rust and Go` → 실제 **넷**(Rust·Go·Java·Kotlin). SSOT 는 `admin-capability.md:81`. 이 세션에 반복된 과소계수 부류.
+  - **(8) `docs/reference/admin-capability.md` [M]** 42행 「Partial updates behave differently per library」 — 이 문서의 존재 이유가 언어 간 포팅인데 그 서술이 어긋난다. ⚠️ 반박자: 사본 계수 정정 — 출처는 `kotlin-ci.yml:57` 이 아니라 **`ci.yml:62-63`**.
+  - **(9) `docs/guides/getting-started.md` 잔여 [M]** 538행 `(dev/CI top end 3.4)` — ruby CI 는 `['3.2','3.3','3.4','4.0']`. **반박됨**이나 DEPLOY.md 쪽 5건(F1~F5)이 실측으로 살아남았다: :95 가 npm OIDC 를 증명 완료라 하는데 :441 은 `still not evidenced … the one publish so far used a token` 이라 하고, `git tag -l 'node-*'` 는 **6개**를 보인다(「one publish」도 거짓). :186 `Node and Ruby remain.` 도 :188·:95 와 모순.
+  - 재현: 워크플로 `doc-audit-consumer-batch1`(run `wf_444f054c-58a`) · 핀 `3c306a0` · 인용 게이트 `scratchpad/citegate2.mjs`(계측기 자가검증 내장).
+- [ ] `doc-audit-batch2-3-not-started` **[M/L · 신규 2026-09-06]** 문서 41개 중 **20개가 현재 트리에서 미검증** — 배치 2(언어별 README 9 + `language-support.md`), 배치 3(하네스·내부 7 + 1차 확정 3건 재검증)
+  - ⚠️ **1차 확정 3건(`go.md`·`python.md`·`java.md`)도 재검증 대상이다** — 낡은 트리(4b40445)에서 판정됐고 그 뒤 커밋 7건·`.md` 12개가 움직였다. 자체 변경은 `go.md` 1건뿐이라 위험은 낮으니 배치 3 마지막에 둘 것.
+  - 방법은 배치 1과 동일: 고정 스냅샷(`git worktree` · **커밋된 상태로**) · 구조화 인용 `(path,line,exact_quote)` · 인용 게이트 선실행 · **렌즈 하나 + 실행강제**(「X 가 소유한다」·「N 개가 전부」는 조회를 실행해 출력을 붙일 것) · 서브에이전트에 `git config` 금지 명시.
+  - 회수율 실측: 배치 1 은 10개 문서에서 **H 4건 포함 전건 지적**, 그중 최고가치는 **가드가 소비자에게 거짓을 집행하던 것**이었다(`jvm-17-floor-never-shipped`). 소비자 문서가 내부 규칙 파일보다 안전할 것이라는 사전 가정은 **틀렸다**.
 - [ ] `openid-scope-fallback-empty-only` **[M/S]** openid 스코프 폴백이 "비었을 때"만 걸려 Nimbus IllegalArgumentException이 공개 API로 샌다 (Java·Kotlin) · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:81`
 - [ ] `boundary-exception-conversion-incomplete` **[M/M]** 경계 변환의 catch 목록이 하위 라이브러리가 실제로 던지는 예외 집합보다 좁다 · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt:91`
   - ⚠️ **범위 정정**: 원장은 「Kotlin·Ruby」 2개라 적었으나 **Java·Node·.NET 을 빠뜨렸다**. ⚠️ 그리고 **원장이 지목한 Ruby 줄은 clean 이다** — `ruby/lib/keycloak_sdk/jwt_validator.rb:36` 의 `rescue JWT::DecodeError` 는 이미 JWKError 를 잡는다(실측: 설치된 `jwt-3.2.0/lib/jwt/error.rb:53` 이 `class JWKError < DecodeError`). **고치기 전에 지목부터 다시 잡을 것** — 안 그러면 clean 한 자리를 건드린다.
