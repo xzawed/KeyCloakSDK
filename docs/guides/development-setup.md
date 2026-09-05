@@ -143,7 +143,7 @@ the sheet. Rust, Go and .NET resolve on build and need nothing extra.
 Repo-wide guards (no language toolchain needed, only Node):
 
 ```bash
-node scripts/check-docs.mjs . --strict --min-facts=72 --min-anchors=22 --min-anchor-links=24 --min-blob-refs=4   # exactly what CI runs
+node scripts/check-docs.mjs . --strict --min-facts=74 --min-anchors=22 --min-anchor-links=24 --min-blob-refs=4   # exactly what CI runs
 sh scripts/test/test-doctor.sh   # doctor's own self-test
 ```
 

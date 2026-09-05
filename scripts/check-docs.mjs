@@ -608,6 +608,134 @@ function checkCoverageGates() {
   }
 }
 
+// 검사 4b — 규칙 문서가 적는 **CI 매트릭스 레그 목록** ↔ 워크플로의 `strategy.matrix`.
+//
+// 왜 앵커가 아니라 표인가: 두 주장(java.md·ruby.md)은 문장 한가운데에 있고 백틱이 없다.
+// `kind=runtime` 관용(「첫 버전 모양 백틱 스팬」)을 그대로 쓰면 **매트릭스가 아니라 하한**을
+// 집는다(`maven.compiler.release=17` · `required_ruby_version >= 3.2`). 백틱을 새로 씌우면
+// java.md 는 여유가 정확히 0B 라 래칫이 필요하다. 표 구동은 문서 비용이 **0B** 이고,
+// 바로 위 `checkCoverageGates` 가 이미 같은 모양이다.
+//
+// ⚠️ **왜 지우지 않고 가드를 다는가**(이 저장소의 기본은 「사본은 지운다」다): 이 두 목록은
+// #409 가 **지울 수 없다고 확정한 사본**이다 — java 의 `17·21·25` 는 `check-jvm-bytecode-floor.mjs`
+// 가 존재하는 이유의 전제이고(`ci.yml`: CI 가 하한 위에서도 도니까 산출물을 직접 본다),
+// ruby 의 4레그는 `fail-fast: false` 부재 위험의 입력값이다. 지울 수 없는 사본이야말로 가드가
+// 있어야 할 자리다.
+//
+// ⚠️ lang→워크플로 암묵 규약을 쓰지 않는다 — 경로와 축 키를 둘 다 적는다.
+// (`security-audit.yml` 의 축은 `app` 이고 값이 디렉터리 경로다.)
+const MATRIX = {
+  java: ['.github/workflows/ci.yml', 'java'],
+  ruby: ['.github/workflows/ruby-ci.yml', 'ruby'],
+}
+
+// YAML 의 `#` 주석을 지운다 — ⚠️ **인용부호를 인식해야 한다.** 안 그러면 ruby-ci.yml 주석의
+// `gem "parallel", "< 2"` 가 값으로 섞인다(실측). 반대로 인용부호 안의 `#` 은 주석이 아니다.
+function stripYamlComment(line) {
+  let q = null
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i]
+    if (q) {
+      if (c === q) q = null
+    } else if (c === '"' || c === "'") q = c
+    else if (c === '#') return line.slice(0, i)
+  }
+  return line
+}
+
+// 워크플로에서 축의 값 배열을 뽑는다. ⚠️ **두 형태를 다 본다** — 실측: 이 리포의 매트릭스 축
+// 9개 중 **5개가 인라인 플로우 맵**(`matrix: { java: [...] }`)이라 블록만 읽으면 절반을 놓친다.
+// ⚠️ 탐색은 `matrix:` **키**로 한다 — `grep matrix` 는 `name: install-matrix`(harness.yml ·
+// install-smoke.yml)를 잡는 오탐이다.
+function matrixAxis(wfRel, axis) {
+  const lines = readFileSync(join(ROOT, wfRel), 'utf8').split(/\r?\n/).map(stripYamlComment)
+  const arr = (s) =>
+    s
+      .split(',')
+      .map((x) => x.trim().replace(/^['"]|['"]$/g, ''))
+      .filter(Boolean)
+  for (let i = 0; i < lines.length; i++) {
+    const inline = /(?:^|\s)matrix:\s*\{(.+)\}/.exec(lines[i])
+    if (inline) {
+      const m = new RegExp(`(?:^|[{,\\s])${axis}\\s*:\\s*\\[([^\\]]*)\\]`).exec(inline[1])
+      if (m) return arr(m[1])
+      continue
+    }
+    if (!/^\s*matrix:\s*$/.test(lines[i])) continue
+    const base = (lines[i].match(/^\s*/) || [''])[0].length
+    for (let j = i + 1; j < lines.length; j++) {
+      const ind = (lines[j].match(/^\s*/) || [''])[0].length
+      if (lines[j].trim() && ind <= base) break
+      const m = new RegExp(`^\\s*${axis}\\s*:\\s*\\[([^\\]]*)\\]`).exec(lines[j])
+      if (m) return arr(m[1])
+    }
+  }
+  return null
+}
+
+// 문서에서 「CI runs …」 뒤의 **버전 토큰 연속열만** 탐욕 소비하고 첫 비버전 토큰에서 멈춘다.
+// ⚠️ 줄끝까지 읽으면 java 가 `major ≤ 61` 의 61 을 먹고, 첫 마침표에서 끊으면 ruby 가
+// `3.2` 의 점에 걸려 `["3"]` 이 된다(둘 다 실측). 구분자는 `,`·`·`·`and`·`&`·`+` 를 허용한다.
+function matrixClaim(text) {
+  for (const line of text.split(/\r?\n/)) {
+    const idx = line.search(/CI runs/i)
+    if (idx < 0) continue
+    let rest = line.slice(idx + 'CI runs'.length)
+    const out = []
+    for (;;) {
+      const m = /^(\s*(?:,|·|and|&|\+)?\s*)(\d+(?:\.\d+)*)/.exec(rest)
+      if (!m) break
+      out.push(m[2])
+      rest = rest.slice(m[0].length)
+    }
+    if (out.length) return out
+  }
+  return null
+}
+
+function checkMatrixClaims() {
+  for (const [lang, [wfRel, axis]] of Object.entries(MATRIX)) {
+    const docRel = `.claude/rules/${lang}.md`
+    let docText
+    try {
+      docText = readFileSync(join(ROOT, docRel), 'utf8')
+    } catch {
+      continue // 이 언어의 정본 문서가 없는 트리 — 검사 대상 아님.
+    }
+    // ⚠️ **부재를 통과시키지 않는다**(`checkCoverageGates` 의 `if (!claim) continue` 를 베끼지 말 것).
+    // 이 표에 등재됐다는 것은 「그 목록은 지울 수 없다」는 #409 판정이 걸려 있다는 뜻이고,
+    // 그 판정을 기계로 고정하는 자리가 여기뿐이다 — 앵커류는 못 한다(앵커 하나 삭제는 하한을
+    // 함께 안 올리면 조용히 통과한다).
+    const claim = matrixClaim(docText)
+    if (!claim) {
+      ;(STRICT ? errors : warnings).push(
+        `${docRel} 에서 「CI runs …」 레그 목록을 읽지 못했다 — 이 목록은 지울 수 없다고 판정된 자리다(#409). ` +
+          `문구를 바꿀 거면 이 검사(${wfRel} 의 \`${axis}\` 축)를 함께 고칠 것`,
+      )
+      continue
+    }
+    let actual
+    try {
+      actual = matrixAxis(wfRel, axis)
+    } catch (e) {
+      ;(STRICT ? errors : warnings).push(`${docRel} 매트릭스 주장을 대조하려 했으나 ${wfRel} 읽기 실패: ${e.message}`)
+      continue
+    }
+    if (!actual || !actual.length) {
+      ;(STRICT ? errors : warnings).push(
+        `${wfRel} 에서 \`${axis}\` 매트릭스 축을 추출하지 못했다 — 인라인/블록 두 형태를 다 보는데도 0건이면 추출이 깨진 것이다`,
+      )
+      continue
+    }
+    facts++
+    if (claim.join(',') !== actual.join(',')) {
+      ;(STRICT ? errors : warnings).push(
+        `${docRel} 가 CI 레그를 [${claim.join(', ')}] 로 적는데 ${wfRel} 의 \`${axis}\` 는 [${actual.join(', ')}] 다`,
+      )
+    }
+  }
+}
+
 // 검사 5 — 상대 링크 대상이 실제로 디스크에 존재하는가. 예방적 검사라 기본은 경고.
 // `./`·`../`·선두 `/`뿐 아니라 맨상대경로(CHANGELOG.md, docs/…)도 본다 — 점·슬래시
 // 접두가 없으면 구버전은 죽어도 초록이었다(#193). 해석은 그 문서의 부모 디렉터리
@@ -1381,8 +1509,9 @@ function countOpenTasks(body) {
   return n
 }
 
-// 검사 4·6·8·9 — 파일별 순회와 무관한 전역 대조라 메인 루프 밖에서 한 번만 실행한다.
+// 검사 4·4b·6·8·9 — 파일별 순회와 무관한 전역 대조라 메인 루프 밖에서 한 번만 실행한다.
 checkCoverageGates()
+checkMatrixClaims()
 checkCardinality()
 checkDocBudget()
 checkDocsMap()

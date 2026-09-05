@@ -66,7 +66,7 @@ Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·P
 
 1. **언어 디렉터리에서 작업한다.** `java/`·`python/`·`node/`·`go/`·`dotnet/`·`php/`·`rust/`·`ruby/`·`kotlin/` 중 하나에 들어가면 `.claude/rules/<lang>.md`가 자동 로드된다(`paths:` 프론트매터). **그 파일이 그 언어의 빌드 명령·제약·게차의 진실 원천이다** — 이 파일에 다시 적지 않는다.
 2. **바꾸기 전에 테스트를 돌린다.** 아래 툴체인 표의 진입 명령. 통합 테스트는 Docker가 필요하다.
-3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=72 --min-anchors=22 --min-anchor-links=24 --min-blob-refs=4`.
+3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=74 --min-anchors=22 --min-anchor-links=24 --min-blob-refs=4`.
 4. **PR로 올린다.** `main` 직접 push 불가(룰셋 `PRIMARY`). required 체크는 `doc-facts`·`shell-exec-bits` 둘뿐이고 **언어 CI를 required에 넣으면 저장소가 잠긴다**(`paths:` 필터라 체크가 생성조차 안 된다).
 
 ### 하지 말 것

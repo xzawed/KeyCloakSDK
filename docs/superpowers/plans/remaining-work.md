@@ -15,7 +15,7 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **158** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 6) — 열림 **133** · 닫힘 **25** |
+| 작업 패키지 | **159** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 7) — 열림 **133** · 닫힘 **26** |
 | 심각도 | high 27 · medium 76 · low 47 |
 | 작업량 | S 68 · M 70 · L 12 |
 
@@ -146,7 +146,15 @@
   - 변이검증(격리 사본 · 대조군 포함): 미러 둘을 `7.0.0-FALSE` 로 바꿔도 `check-versions.mjs` **rc=0**(공허). 같은 변이를 본체 `kotlin/build.gradle.kts:1` 에 하면 **rc=1** 로 잡힌다(「미러 주석이 … 인데 gradle-wrapper.properties 는 …」) — 계측기는 정상이고 **범위만 `kotlin/` 하나**다.
   - ⚠️ **하네스 두 앱은 KGP 2.2.20 을 의도적으로 붙들고 있어**(소비자 하한 검증) 언젠가 래퍼를 함께 올린다. 그날 이 미러 둘은 906줄이 그랬듯 조용히 낡는다. **닫는 자리**: `scripts/check-versions.mjs:301-302` 의 `bgk`/`wrapProps` 를 세 쌍(`kotlin/` · `harness/apps/kotlin/` · `harness/install/consume/kotlin-app/`)을 도는 배열로 바꾼다.
   - ⚠️ **`harness/suites/kotlin.sh:3,7` 은 여전히 손대지 말 것.** 한 번 지웠다가 **되돌렸다** — 그 `9.5.0` 은 참이고(본체 `kotlin/gradlew`), `kotlin/build.gradle.kts:1` 에 가드받는 집이 있으며, 무엇보다 「본체 9.5.0 ↔ 하네스 8.14」라는 **두 래퍼 구분의 유일한 텍스트 단서**다. 지우면 906줄과 문장 모양이 같아져 그 구분이 사라진다.
-- [ ] `rulefile-matrix-vs-workflow-unguarded` **[M/M · 신규 2026-09-05]** 규칙 파일이 적는 CI 매트릭스를 워크플로의 `strategy.matrix` 와 대조하는 기계가 없다 · `.claude/rules/{java,go,rust,ruby}.md`
+- [x] `rulefile-matrix-vs-workflow-unguarded` **[M/M · 신규·닫힘 2026-09-05]** 규칙 파일이 적는 CI 매트릭스를 워크플로의 `strategy.matrix` 와 대조하는 기계가 없다 · `.claude/rules/{java,ruby}.md`
+  - **닫힘.** `check-docs.mjs` 검사 **4b**(`checkMatrixClaims`) — `MATRIX` 표가 lang → (워크플로 경로, 축 키)를 들고 문서의 「CI runs …」 목록과 대조한다. **문서 비용 0B**(앵커 없음, 바로 위 `checkCoverageGates` 와 같은 모양). facts 72 → 74, 진입 명령 4곳 동기화.
+  - ⚠️ **앵커(`kind=matrix`)를 만들지 않았다.** `kind=runtime` 관용(「첫 버전 모양 백틱 스팬」)을 그대로 쓰면 두 줄 다 **매트릭스가 아니라 하한**을 집는다(`maven.compiler.release=17` · `required_ruby_version >= 3.2`). 백틱을 새로 씌우려면 java.md 에 2B 가 드는데 여유가 정확히 **0B** 다.
+  - ⚠️ **부재를 통과시키지 않는다** — `checkCoverageGates` 의 `if (!claim) continue` 를 베끼지 않았다. 표에 등재됐다는 것은 「이 목록은 지울 수 없다」(#409)는 판정이 걸려 있다는 뜻이고, 그것을 기계로 고정하는 자리가 여기뿐이다(앵커류는 못 한다 — 앵커 하나 삭제는 `--min-anchors` 를 함께 안 올리면 조용히 통과한다).
+  - 세 함정을 실측으로 확인하고 막았다: **(i)** `#` 주석을 인용부호 인식으로 지운다(안 지우면 ruby-ci 주석의 `gem "parallel", "< 2"` 가 값으로 섞인다) · **(ii)** 탐색은 `matrix:` **키**로 한다(`grep matrix` 는 `name: install-matrix` 를 잡는다 — `harness.yml:91`·`install-smoke.yml:72`) · **(iii)** 주장 추출은 「CI runs」 뒤 **버전 토큰 연속열만** 탐욕 소비하고 첫 비버전에서 멈춘다(줄끝까지 읽으면 java 가 `major ≤ 61` 의 61 을 먹고, 첫 마침표에서 끊으면 ruby 가 `["3"]` 이 된다).
+  - 변이 5건 전부 양방향 검출 + 대조군: 워크플로 레그 추가 · 문서 레그 삭제 · 워크플로 하한 레그 삭제 · **문서 목록 문장 자체 삭제**(부재=실패) · java 값 변조 → 전부 `rc=1`. 구 스크립트 + 같은 변이 → **4b 에러 0**(새 검사가 원인 확정). 인용부호 딸린 디코이 주석 삽입 → **4b 에러 0**(면역).
+- [ ] `rust-msrv-leg-vs-manifest-unguarded` **[S/S · 신규 2026-09-05]** `rust-ci.yml:21` 의 `'1.88'` 레그가 `rust/Cargo.toml:6` 의 `rust-version = "1.88"` 과 대조되지 않는다 · `.github/workflows/rust-ci.yml:21`
+  - ⚠️ **「가드가 rust-version 을 안 읽는다」는 부정확하다** — `check-docs.mjs:538` 이 읽는다. 다만 그건 `kind=runtime` 앵커용(문서의 백틱 값 ↔ 매니페스트)이고, **워크플로 레그와의 대조는 없다**. 축이 다르다(문서↔매니페스트 vs 워크플로↔매니페스트).
+  - 검사 4b 로는 못 덮는다 — rust.md 는 #409 에서 매트릭스 주장을 지웠으므로 문서 쪽 주장이 없다. MSRV 를 올릴 때 워크플로 레그가 따라오지 않으면 「MSRV 라 적힌 값이 실제로는 검증되지 않는」 상태가 된다.
   - 이번에 ruby 가 어긋난 채 발견됐고(3레그 ↔ 실제 4레그), 나머지 셋은 **지금은** 일치한다(전수 대조: java 17/21/25 · go 1.25/1.26 · rust 1.88/stable). 즉 오늘 참인 문장을 산문으로 다시 적었을 뿐이고 같은 방식으로 또 어긋난다.
   - **넷 중 둘만 지웠다(go·rust). java·ruby 는 지우려다 되돌렸다 — 그 목록은 사본이 아니라 인접 판정의 입력이다.**
     - `java.md:19` 의 `17·21·25` 는 뒤 절의 **전제**다. `ci.yml:40` 이 「**CI 가 21·25 에서도 도는 한** 그 사고는 CI 에 보이지 않으므로 산출물을 직접 본다」라고 적는다 — 「CI 는 하한을 돈다」로 바꾸면 `check-jvm-bytecode-floor.mjs` 가 **중복 가드로 읽혀** 다음 세션이 지울 근거가 된다.
