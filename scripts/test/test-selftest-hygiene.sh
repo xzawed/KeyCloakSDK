@@ -251,7 +251,11 @@ assert_fails sh -c 'printf "%s" "$(sed "s/#.*//" "$1")" | grep -q "node harness/
 # `check-node-public-surface.mjs` 한 자리가 그랬다(node-ci 의 `paths:` 밖에 있었다).
 #
 # 판정 기준을 「모든 PR 에서 도는 워크플로가 그 파일을 행사하는가」로 잡는다 —
-# `repo-hygiene.yml` 이 유일하게 `paths:` 필터가 없는 워크플로이므로 대상은 그것 하나다.
+# ⚠️ `pull_request` 로 도는 워크플로 중 `paths:` 가 없는 것은 **둘**이다(`repo-hygiene.yml` ·
+# `sonarcloud.yml`). 이 규칙이 repo-hygiene 하나만 보는 것은 그것이 **유일해서가 아니라**
+# 가드를 행사하는 쪽이기 때문이다(sonarcloud 는 커버리지만 올린다). 예전 주석은 「유일하게」라
+# 적었고 그것은 거짓이다 — 24개 중 13개에 `paths:` 가 없고, 나머지 11개는 push/tag·schedule·
+# `workflow_call` 이다(YAML 파서로 실측. 줄단위 정규식은 인라인 플로우 맵을 놓친다).
 # 직접 부르거나(`node scripts/check-x.mjs`), 그것이 돌리는 자가테스트가 부르면 충족이다.
 if [ -f "$HYGIENE" ]; then
   # ⚠️ 전제부터 검사한다 — repo-hygiene 에 `paths:` 가 붙는 순간 이 규칙 전체가 조용히 약해진다.
@@ -325,6 +329,64 @@ if [ -f "$HYGIENE" ]; then
   else
     _A_PASS=$((_A_PASS + 1))
   fi
+fi
+
+# ---- 규칙 7: 문서가 말하는 CI 사실이 트리와 같은가 ----
+# 2026-09-05 실측: `.claude/rules/ci.md` 의 CI 서술 셋이 트리와 어긋나 있었다. 둘은 **개수**가
+# 틀렸고(핀 종류 3 vs 4), 하나는 **행동을 잘못 유도**했다("SonarCloud 커버리지는 kover 단독이니
+# 비-Kotlin PR 실패는 예상된 잡음") — 그 문장을 믿고 required 가 아닌 빨강을 두 번 흘려보냈다.
+#
+# ⚠️ **여기서 검사하는 것은 「종류 분류」가 아니라 「이름·집합」이다.** 종류는 사람의 분류라
+# 기계가 수렴시킬 수 없다(독립 검증 레그가 `# kind:` 태그 방식을 스스로 철회했다 — 손으로 다는
+# 태그는 두 번째 진실 원천이라, 태그가 틀리면 가드는 초록인데 문서는 틀린 채 남는다).
+# 그래서 셋 중 둘만 기계로 잡고, 「네 종류」의 **분류 정확성은 리뷰의 몫으로 남긴다**.
+
+# (7a) SonarCloud 커버리지 공급자 — 「단독」 주장이 리포트 경로 수와 모순되지 않는가.
+SONARP="$ROOT/sonar-project.properties"
+CIRULES="$ROOT/.claude/rules/ci.md"
+if [ -f "$SONARP" ] && [ -f "$CIRULES" ]; then
+  _cov_paths="$(grep -cE '^sonar\.[a-z]+\.(coverage|lcov)\.[a-zA-Z]*[Rr]eportPaths=' "$SONARP" || true)"
+  assert_ok test "$_cov_paths" -ge 2   # 스윕 공허 방지: 경로가 0~1이면 이 규칙 자체가 무의미하다
+  # 공급자가 둘 이상인데 문서가 "kover alone" 류의 단독 주장을 하면 거짓이다.
+  _sole=1
+  grep -qiE 'kover alone|fed by [A-Za-z]+ (kover )?alone|coverage is [A-Za-z]+ only' "$CIRULES" && _sole=0
+  assert_eq "1" "$_sole" \
+    "ci.md 가 커버리지 공급자를 '단독'이라 주장한다 — sonar-project.properties 의 리포트 경로는 $_cov_paths 개다"
+else
+  _A_FAIL=$((_A_FAIL + 1))
+  printf 'FAIL sonar-project.properties 또는 .claude/rules/ci.md 를 찾지 못함 — 7a 검사 불가\n' >&2
+fi
+
+# (7b) `pull_request` 로 도는데 `paths:` 가 없는 워크플로 집합이 문서가 적은 그대로인가.
+# ⚠️ **YAML 파서로 센다.** 줄단위 정규식은 이 저장소의 인라인 플로우 맵
+# (`push: { branches: [main], paths: [...] }`)을 놓친다 — 실측으로 ci.yml 을 오분류했다.
+# 같은 부류가 등록부에 이미 있다(`ci-perms-flow-style-permissions-bypass`).
+if [ -f "$ROOT/node/node_modules/yaml/dist/index.js" ]; then
+  _prnp="$(cd "$ROOT" && node -e '
+    const fs=require("fs"), path=require("path");
+    const {parse}=require("./node/node_modules/yaml/dist/index.js");
+    const d=".github/workflows";
+    const out=[];
+    for (const f of fs.readdirSync(d).filter(x=>/\.ya?ml$/.test(x))) {
+      const doc=parse(fs.readFileSync(path.join(d,f),"utf8"));
+      const on=(doc && (doc.on ?? doc.true)) || null;
+      if (!on || typeof on!=="object") continue;
+      const pr=on.pull_request;
+      if (pr===undefined) continue;
+      const hasPaths = pr && typeof pr==="object" && ("paths" in pr || "paths-ignore" in pr);
+      if (!hasPaths) out.push(f);
+    }
+    console.log(out.sort().join(" "));
+  ' 2>/dev/null || true)"
+  assert_eq "repo-hygiene.yml sonarcloud.yml" "$_prnp" \
+    "pull_request 로 돌면서 paths: 가 없는 워크플로 집합이 바뀌었다 — ci.md·CONTRIBUTING.md 의 서술을 함께 고쳐라"
+  # 문서 둘이 「유일한」이라 말하지 않는가(집합이 둘인데 하나라고 적으면 거짓이다).
+  _only=1
+  grep -q 'the only workflow with no `paths:` filter' "$CIRULES" && _only=0
+  assert_eq "1" "$_only" "ci.md 가 여전히 'the only workflow with no paths: filter' 라 적는다 — 집합은 둘이다"
+else
+  _A_FAIL=$((_A_FAIL + 1))
+  printf 'FAIL node/node_modules/yaml 가 없어 7b 를 YAML 파서로 잴 수 없다 — `npm ci` 후 다시 돌려라\n' >&2
 fi
 
 assert_report

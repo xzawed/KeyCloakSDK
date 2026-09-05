@@ -177,15 +177,15 @@ Required checks also block direct pushes, not just merges — `git push origin m
 
 ### ⚠️ Why the language CI jobs are *not* required
 
-Only `repo-hygiene.yml` and `sonarcloud.yml` run without a workflow-level `paths:` filter. All nine
+Among `pull_request` workflows only `repo-hygiene.yml` and `sonarcloud.yml` run without a
+workflow-level `paths:` filter (`test-selftest-hygiene.sh` 7b pins it). All nine
 language CI workflows are path-filtered, and a path-filtered workflow **never creates a check run at
-all** for a PR that misses its paths — GitHub's documentation is explicit: *"checks associated with
-that workflow will remain in a 'Pending' state. A pull request that requires those checks to be
-successful will be blocked from merging."* With `bypass_actors: []` nobody could clear it.
+all** for a PR that misses its paths — GitHub's docs are explicit: *"checks associated with that
+workflow will remain in a 'Pending' state. A pull request that requires those checks to be successful
+will be blocked from merging."* With `bypass_actors: []` nobody could clear it.
 
-This is not theoretical here: the merged docs-only PR #101 produced exactly six check runs
-(`doc-facts` ×2, `shell-exec-bits` ×2, `SonarCloud`, `SonarCloud Code Analysis`) and **zero** language
-CI checks. Requiring any language job would have deadlocked it permanently.
+Not theoretical: a merged docs-only PR produced six check runs (`doc-facts` ×2, `shell-exec-bits` ×2,
+`SonarCloud` ×2) and **zero** language CI checks. Requiring any language job would have deadlocked it.
 
 Note the contrast that decides the rule: a job skipped by a **job-level `if:`** does create a check
 run, reports `skipped`, and counts as success (this is why `SonarCloud` is mechanically safe to
