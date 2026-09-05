@@ -136,11 +136,18 @@
 - [ ] `harness-gradle-version-copies-unguarded` **[M/S · 신규 2026-09-05]** 하네스의 gradle 버전 사본 셋이 어느 가드도 안 읽고, **그중 하나는 이미 낡았다** · `harness/install/install-verify.sh:906`
   - 실측: `install-verify.sh:906` 은 `install-consume-kotlin` 컨테이너를 「gradle 9.5.0 배포판」이라 적는데, 그 앱의 래퍼는 `harness/install/consume/kotlin-app/gradle/wrapper/gradle-wrapper.properties` → **gradle-8.14** 다(`kotlin-run.sh:39` 이 `sh ./gradlew` 로 그 래퍼를 실제로 쓴다).
   - ⚠️ **`harness/suites/kotlin.sh:3,7` 은 낡지 않았다 — 세지 말 것.** 그쪽은 본체 `kotlin/gradlew`(실측 9.5.0)를 가리키므로 참이다. 「사본이 셋이니 셋 다 틀렸다」로 뭉뚱그리면 오탐이 된다.
-  - 되살릴 조건이 아니라 **고칠 자리**: 906줄을 8.14 로 고치거나 버전을 빼고 래퍼를 가리킨다. `check-versions.mjs` 는 이 파일을 `--list` 소비자로만 알고 gradle 버전은 안 읽는다(실측 19·34·44·457줄).
+  - **906줄은 고쳤다**(버전을 빼고 래퍼를 가리킨다). ⚠️ **항목은 닫히지 않는다 — 「셋」이 과소계수였다.** 재스캔으로 `// gradle/wrapper:` **미러 사본 둘**이 더 나왔고 둘 다 가드 밖이다: `harness/apps/kotlin/build.gradle.kts:4` · `harness/install/consume/kotlin-app/build.gradle.kts:9`(둘 다 `8.14`).
+  - 변이검증(격리 사본 · 대조군 포함): 미러 둘을 `7.0.0-FALSE` 로 바꿔도 `check-versions.mjs` **rc=0**(공허). 같은 변이를 본체 `kotlin/build.gradle.kts:1` 에 하면 **rc=1** 로 잡힌다(「미러 주석이 … 인데 gradle-wrapper.properties 는 …」) — 계측기는 정상이고 **범위만 `kotlin/` 하나**다.
+  - ⚠️ **하네스 두 앱은 KGP 2.2.20 을 의도적으로 붙들고 있어**(소비자 하한 검증) 언젠가 래퍼를 함께 올린다. 그날 이 미러 둘은 906줄이 그랬듯 조용히 낡는다. **닫는 자리**: `scripts/check-versions.mjs:301-302` 의 `bgk`/`wrapProps` 를 세 쌍(`kotlin/` · `harness/apps/kotlin/` · `harness/install/consume/kotlin-app/`)을 도는 배열로 바꾼다.
+  - ⚠️ **`harness/suites/kotlin.sh:3,7` 은 여전히 손대지 말 것.** 한 번 지웠다가 **되돌렸다** — 그 `9.5.0` 은 참이고(본체 `kotlin/gradlew`), `kotlin/build.gradle.kts:1` 에 가드받는 집이 있으며, 무엇보다 「본체 9.5.0 ↔ 하네스 8.14」라는 **두 래퍼 구분의 유일한 텍스트 단서**다. 지우면 906줄과 문장 모양이 같아져 그 구분이 사라진다.
 - [ ] `rulefile-matrix-vs-workflow-unguarded` **[M/M · 신규 2026-09-05]** 규칙 파일이 적는 CI 매트릭스를 워크플로의 `strategy.matrix` 와 대조하는 기계가 없다 · `.claude/rules/{java,go,rust,ruby}.md`
   - 이번에 ruby 가 어긋난 채 발견됐고(3레그 ↔ 실제 4레그), 나머지 셋은 **지금은** 일치한다(전수 대조: java 17/21/25 · go 1.25/1.26 · rust 1.88/stable). 즉 오늘 참인 문장을 산문으로 다시 적었을 뿐이고 같은 방식으로 또 어긋난다.
-  - 모양이 기계검사 가능하다(배열 ↔ 문장) → `check-docs.mjs` 의 `kind=ignores`(fe28f54) 와 같은 앵커 한 종류로 넷을 덮을 수 있다. 착수 전 `[[drift-means-duplicate-not-missing-guard]]` 판정을 먼저 할 것 — **지울 수 있으면 지우는 쪽이 싸다**(규칙 파일이 매트릭스를 아예 안 적고 워크플로를 가리키면 된다).
-  - ⚠️ 곁가지(별건): `ruby-ci.yml` 에 `fail-fast: false` 가 없어 4.0 이 깨지면 3.2 레그가 **취소**되고, 3.2 하한 검증(`gem "parallel", "< 2"` 이 지키는 것)이 그날 사라진다.
+  - **넷 중 둘만 지웠다(go·rust). java·ruby 는 지우려다 되돌렸다 — 그 목록은 사본이 아니라 인접 판정의 입력이다.**
+    - `java.md:19` 의 `17·21·25` 는 뒤 절의 **전제**다. `ci.yml:40` 이 「**CI 가 21·25 에서도 도는 한** 그 사고는 CI 에 보이지 않으므로 산출물을 직접 본다」라고 적는다 — 「CI 는 하한을 돈다」로 바꾸면 `check-jvm-bytecode-floor.mjs` 가 **중복 가드로 읽혀** 다음 세션이 지울 근거가 된다.
+    - `ruby.md:14` 의 4레그 열거는 바로 아래 곁가지 위험의 **입력값**이다. 「하한 레그 하나」만 남기면 *다른 레그가 있다*는 사실이 사라져 「취소될 수 있다」를 ruby.md 만 읽고 재구성할 수 없다.
+  - ⚠️ **그래서 남은 범위는 「지우기」가 아니라 「java·ruby 두 목록을 기계 대조」다.** 앵커를 만들면 **양쪽 YAML 형태를 다 파싱해야 한다** — 실측: 매트릭스 축 9개 중 **5개가 인라인 플로우 맵**(`matrix: { java: [...] }`)이고, 블록만 읽는 스캐너는 4개만 찾는다(내 첫 스캐너가 그랬다). `include`/`exclude`/`fromJSON` 은 현재 0건.
+  - ⚠️ 곁가지(별건): `ruby-ci.yml`·`go-ci.yml`·`rust-ci.yml` 에 `fail-fast: false` 가 **없다**(있는 곳은 `ci.yml:30`·`dotnet-ci.yml:23`·`security-audit.yml:287`). ruby 는 4.0 이 깨지면 3.2 레그가 **취소**되고, 3.2 하한 검증(`gem "parallel", "< 2"` 이 지키는 것)이 그날 사라진다.
+  - ⚠️ 곁가지(별건·선재): `ci.yml:27-28` 주석은 `maven.compiler.release=21`·`[21,)` 라 적는데 실제 pom 은 **17**·`[17,)` 다 — java.md 쪽이 옳고 워크플로 주석이 낡았다. 「값은 워크플로가 소유한다」로 넘길 때 독자가 만나는 첫 화면이라 함께 잡아야 한다.
 - [ ] `openid-scope-fallback-empty-only` **[M/S]** openid 스코프 폴백이 "비었을 때"만 걸려 Nimbus IllegalArgumentException이 공개 API로 샌다 (Java·Kotlin) · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:81`
 - [ ] `boundary-exception-conversion-incomplete` **[M/M]** 경계 변환의 catch 목록이 하위 라이브러리가 실제로 던지는 예외 집합보다 좁다 · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt:91`
   - ⚠️ **범위 정정**: 원장은 「Kotlin·Ruby」 2개라 적었으나 **Java·Node·.NET 을 빠뜨렸다**. ⚠️ 그리고 **원장이 지목한 Ruby 줄은 clean 이다** — `ruby/lib/keycloak_sdk/jwt_validator.rb:36` 의 `rescue JWT::DecodeError` 는 이미 JWKError 를 잡는다(실측: 설치된 `jwt-3.2.0/lib/jwt/error.rb:53` 이 `class JWKError < DecodeError`). **고치기 전에 지목부터 다시 잡을 것** — 안 그러면 clean 한 자리를 건드린다.
