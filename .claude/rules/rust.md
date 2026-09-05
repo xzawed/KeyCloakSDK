@@ -17,7 +17,7 @@ paths:
 
 ## Toolchain
 
-System install. MSRV **1.88** (edition 2024 + let-chain syntax). The CI matrix is 1.88 and stable.
+System install. MSRV **1.88** (edition 2024 + let-chain syntax). CI runs the MSRV and current stable.
 ⚠️ **A local Windows build needs the VS2019 BuildTools MSVC environment (`vcvars64.bat`)** — `ring` and `rsa` compile natively; CI on ubuntu is unaffected.
 
 ```bash

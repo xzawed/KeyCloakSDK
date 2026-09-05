@@ -903,7 +903,7 @@ run_lang_kotlin() {
     return
   fi
 
-  # 런타임 run.sh가 install(gradle classes — gradle 9.5.0 배포판 + SDK/Ktor/coroutines/nimbus 트리를 빈
+  # 런타임 run.sh가 install(gradle classes — 그 앱 래퍼의 배포판 + SDK/Ktor/coroutines/nimbus 트리를 빈
   # 캐시에서 매번 받으므로 mvn 콜드스타트보다 무겁다, 실측 약 3~5분)→quickstart→boot(installDist)를 수행 —
   # java(300s)보다 넉넉한 420s 타임아웃을 둔다.
   wait_healthy "http://localhost:${app_port_host}/healthz" 420 "$app_container" || true
