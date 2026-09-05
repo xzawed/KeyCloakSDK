@@ -19,6 +19,22 @@
 | 심각도 | high 27 · medium 76 · low 47 |
 | 작업량 | S 68 · M 70 · L 12 |
 
+### 다음 세션 진입점 (2026-09-06 기준)
+
+138건 중 어디부터인지가 안 보이므로 순서를 못박는다. **위에서부터 밟는다.**
+
+1. **`jvm-17-floor-never-shipped` [H]** — 게시된 `1.0.0` 이 JDK 21 을 요구하는데 트리는 17 이다. **문서 쪽은 #413 이 닫았고 남은 것은 릴리스뿐**(비가역·사람 승인 게이트). 착수 전 2번을 먼저 읽는다.
+2. **`registry-contract-claims-use-tree-oracle` [H]** — 1번을 낳은 구조. `kind=runtime` 이 **작업 트리**를 오라클로 써서, 트리가 맞는 동안 소비자에게 거짓을 **집행**했다. 부류를 찾는 시험: **「소비자가 틀릴 수 있는데 HEAD 는 맞다면, 오라클은 트리가 아니라 태그·레지스트리다.」**
+3. **`consumer-floor-change-needs-release-or-registered-gap` [M]** — 1번이 애초에 통과한 경로를 막는다(③ 기각 체크리스트).
+4. **`doc-audit-batch1-remainder` [H]** — 잔여 9건. ⚠️ **감사자 처방의 임계치를 그대로 옮기지 말 것**(여러 건이 `--min-facts=64 --min-anchors=21` 을 전제하나 이 트리는 **74/22**).
+5. **`doc-audit-batch2-3-not-started` [M]** — 미검증 20개. 방법·회수율 실측이 그 항목에 있다.
+
+⚠️ **이 세션이 반복해서 밟은 함정 넷**(전부 실측으로 잡혔다) — 착수 전 읽는다.
+   (a) **「사본이면 지운다」를 네 번 잘못 적용**했다. 지우려던 것이 **인접 판정의 입력**이었다(`18/20` 을 지우면 다음 줄의 「two branches」가 `20−18` 을 잃는다). 지우기 전에 앞뒤 문장의 유도 관계와 `git blame -L n-1,n+1` 로 같은 커밋인지 본다.
+   (b) **계측기가 네 번 고장났다.** 줄단위 정규식이 **인라인 플로우 맵**을 놓치고(`matrix: { java: [...] }`), `git log -S'<속성이름>'` 은 **값만 바뀐 커밋을 못 잡는다**(개수가 안 변한다). 「N 개가 전부」를 말하기 전에 전수를 세고, 알려진 정답으로 계측기를 먼저 잰다.
+   (c) **가드가 초록인 것은 삭제·안전의 근거가 못 된다.** 그 값을 읽는 스크립트가 0건이면 「안전」이 아니라 **「문서가 유일한 소재지」**다.
+   (d) **서브에이전트가 리포 git 을 하이재킹했다** — 실제 `.git/config` 에 `core.worktree` 를 써서 `git status` 가 거짓 clean 을 냈다. 워크플로 직후 `git rev-parse --show-toplevel` 을 먼저 찍는다.
+
 ⚠️ **기각 11건은 이 등록부에 없다 — 의도적이다.** 게시 잡의 `environment:` 부재 · `workflow_dispatch` 우회 · admin-capability D열 무보호는 문서화된 설계이거나 되살릴 조건이 적힌 기각이다. 착수 전 [기각 레지스트리](../../governance/rejected.md)를 먼저 읽는다.
 
 ⚠️ **되살리면 안 되는 것 둘.** `harness-consume-pin-unsupported` 의 `scripts/check-versions.mjs` 확장분과 `public-registry-install-smoke` 의 `harness/install/install-verify.sh:44` 는 각각 기각된 자리다. `rust-rustdoc-jwks-refetch-says-60` 은 **주석 문자열만** 고친다 — 두 줄 아래 `with_jwks_min_refetch_secs` 에 0 강제를 넣으면 또 다른 기각을 되살린다.
