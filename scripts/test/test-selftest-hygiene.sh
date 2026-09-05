@@ -361,32 +361,41 @@ fi
 # ⚠️ **YAML 파서로 센다.** 줄단위 정규식은 이 저장소의 인라인 플로우 맵
 # (`push: { branches: [main], paths: [...] }`)을 놓친다 — 실측으로 ci.yml 을 오분류했다.
 # 같은 부류가 등록부에 이미 있다(`ci-perms-flow-style-permissions-bypass`).
-if [ -f "$ROOT/node/node_modules/yaml/dist/index.js" ]; then
-  _prnp="$(cd "$ROOT" && node -e '
-    const fs=require("fs"), path=require("path");
-    const {parse}=require("./node/node_modules/yaml/dist/index.js");
-    const d=".github/workflows";
-    const out=[];
-    for (const f of fs.readdirSync(d).filter(x=>/\.ya?ml$/.test(x))) {
-      const doc=parse(fs.readFileSync(path.join(d,f),"utf8"));
-      const on=(doc && (doc.on ?? doc.true)) || null;
-      if (!on || typeof on!=="object") continue;
-      const pr=on.pull_request;
-      if (pr===undefined) continue;
-      const hasPaths = pr && typeof pr==="object" && ("paths" in pr || "paths-ignore" in pr);
-      if (!hasPaths) out.push(f);
+# ⚠️ **의존성 없이 판정한다.** 첫 구현은 `node/node_modules/yaml` 을 썼는데, `doc-facts` 잡은
+# `npm ci` 를 돌지 않아 CI 에서 **required 체크가 환경 이유로 빨개졌다**(실측). 가드가 자기 레인에서
+# 못 도는 것은 이 저장소가 규칙 5 로 막는 부류다. 그래서 `on:` 의 `pull_request` 트리거 범위만
+# 손으로 훑되, **블록 표기와 인라인 플로우 맵을 둘 다** 본다.
+_prnp="$(cd "$ROOT" && node -e '
+  const fs=require("fs"), path=require("path");
+  const d=".github/workflows";
+  const out=[];
+  for (const f of fs.readdirSync(d).filter(x=>/\.ya?ml$/.test(x)).sort()) {
+    const lines=fs.readFileSync(path.join(d,f),"utf8").split(/\r?\n/)
+      .map(l=>l.replace(/(^|\s)#.*$/,""));           // 주석 제거(따옴표 안 # 은 드물다)
+    let i=lines.findIndex(l=>/^\s{0,2}pull_request(_target)?\s*:/.test(l));
+    if (i<0) continue;
+    const head=lines[i];
+    const indent=head.match(/^(\s*)/)[1].length;
+    let scope=head;                                   // 인라인 플로우 맵이면 이 줄에 다 있다
+    if (!/\{/.test(head)) {                           // 블록 표기면 더 들여쓴 줄을 모은다
+      for (let j=i+1;j<lines.length;j++){
+        const l=lines[j];
+        if (!l.trim()) continue;
+        if (l.match(/^(\s*)/)[1].length<=indent) break;
+        scope+="\n"+l;
+      }
     }
-    console.log(out.sort().join(" "));
-  ' 2>/dev/null || true)"
-  assert_eq "repo-hygiene.yml sonarcloud.yml" "$_prnp" \
-    "pull_request 로 돌면서 paths: 가 없는 워크플로 집합이 바뀌었다 — ci.md·CONTRIBUTING.md 의 서술을 함께 고쳐라"
-  # 문서 둘이 「유일한」이라 말하지 않는가(집합이 둘인데 하나라고 적으면 거짓이다).
-  _only=1
-  grep -q 'the only workflow with no `paths:` filter' "$CIRULES" && _only=0
-  assert_eq "1" "$_only" "ci.md 가 여전히 'the only workflow with no paths: filter' 라 적는다 — 집합은 둘이다"
-else
-  _A_FAIL=$((_A_FAIL + 1))
-  printf 'FAIL node/node_modules/yaml 가 없어 7b 를 YAML 파서로 잴 수 없다 — `npm ci` 후 다시 돌려라\n' >&2
-fi
+    if (!/(^|\s|\{|,)paths(-ignore)?\s*:/.test(scope)) out.push(f);
+  }
+  console.log(out.join(" "));
+' 2>/dev/null || true)"
+# 스윕 공허 방지 — 목록이 비면 파서가 깨진 것이지 「전부 paths 가 있다」가 아니다.
+assert_ok test -n "$_prnp"
+assert_eq "repo-hygiene.yml sonarcloud.yml" "$_prnp" \
+  "pull_request 로 돌면서 paths: 가 없는 워크플로 집합이 바뀌었다 — ci.md·CONTRIBUTING.md 의 서술을 함께 고쳐라"
+# 문서 둘이 「유일한」이라 말하지 않는가(집합이 둘인데 하나라고 적으면 거짓이다).
+_only=1
+grep -q 'the only workflow with no `paths:` filter' "$CIRULES" && _only=0
+assert_eq "1" "$_only" "ci.md 가 여전히 'the only workflow with no paths: filter' 라 적는다 — 집합은 둘이다"
 
 assert_report
