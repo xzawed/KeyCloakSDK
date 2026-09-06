@@ -15,7 +15,7 @@ English · [한국어](README.ko.md)
 
 > "Polyglot" here means **programming languages**, not natural-language localization (i18n).
 >
-> ⚠️ **Stable `1.0.0` is live for all nine languages.** They reached it on the same day because they earned the same guarantee at the same time — a breaking change to the public API now requires a **major** bump, and CI enforces that by diffing each lane's API against its previously published artifact. **They do not move as a fleet afterwards**: a language gets a new number only when something consumer-visible changed in it, so expect the numbers to diverge again. Every release is human-gated. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
+> ⚠️ **Stable `1.0.0` is live for all nine languages.** They reached it in the same release wave because they earned the same guarantee at the same time — a breaking change to the public API now requires a **major** bump, and CI enforces that by diffing each lane's API against its previously published artifact. **They do not move as a fleet afterwards**: a language gets a new number only when something consumer-visible changed in it, so expect the numbers to diverge again. Every release is human-gated. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
 
 ---
 

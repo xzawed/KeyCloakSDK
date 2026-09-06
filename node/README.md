@@ -6,12 +6,12 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .
 
 > **`1.0.0` is on npm** and holds the `latest` dist-tag, so a bare install resolves it. It is the first release carrying the stability guarantee: from here the public API is under SemVer, and a breaking change requires a major bump.
 >
-> ⚠️ **Upgrading from `0.1.0`? Two breaking changes since then, both at the type level only** — the runtime behaviour is unchanged and **the normal paths (`kc.auth.validate(token)`, `kc.admin.users.search(...)`) are untouched**. (1) `JwtValidator` can no longer be built with `new` — use `JwtValidator.forJwksUri(...)`. (2) The five admin resource classes no longer expose their constructors in the emitted declarations; `AdminClient` assembles them, and they were never a consumer construction path. Both existed because the constructors were putting `jose` and `@keycloak/keycloak-admin-client` types onto this package's public surface.
+> ⚠️ **Upgrading from `0.1.0`? Two breaking changes since then, both at the type level only** — the runtime behaviour is unchanged and **the normal paths (`kc.auth.validate(token)`, `(await kc.admin()).users.search(...)`) are untouched**. (1) `JwtValidator` can no longer be built with `new` — use `JwtValidator.forJwksUri(...)`. (2) The five admin resource classes no longer expose their constructors in the emitted declarations; `AdminClient` assembles them, and they were never a consumer construction path. Both existed because the constructors were putting `jose` and `@keycloak/keycloak-admin-client` types onto this package's public surface.
 
 ## Requirements
 
 - **Node.js 22 or newer** (`engines: { "node": ">=22" }`)
-- **ESM-only** (`"type": "module"`) and **async-only** — every network method returns a `Promise` (`createAuthorizationRequest` is the one synchronous call)
+- **ESM-only** (`"type": "module"`) and **async-only** — every network method returns a `Promise` (`createAuthorizationRequest` is the one auth operation that is not; non-network calls such as `KeycloakClient.create` are synchronous too)
 - Ships `.d.ts` type declarations, so consumers get full type checking
 - A running Keycloak server (26.6 verified) to connect to
 
@@ -82,7 +82,7 @@ This SDK is **`1.0`** and follows SemVer: a breaking change to the public API re
 
 Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
 
-**Each of the nine languages versions independently.** All nine reached `1.0.0` on the same day because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
+**Each of the nine languages versions independently.** All nine reached `1.0.0` in the same release wave because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
 
 ## Documentation
 

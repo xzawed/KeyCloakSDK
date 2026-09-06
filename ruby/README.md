@@ -64,7 +64,7 @@ The five admin resources — `users` / `clients` / `roles` / `groups` / `realms`
 The SDK replaces the unsafe library defaults rather than inheriting them:
 
 - **Algorithm pinning** — the header-supplied `alg` is never trusted, so `alg: none` and HS/RS confusion are rejected structurally: the pin is applied before key lookup and signature verification, not after.
-- **Strict claim checks** — exact `iss` match, `aud` containment, mandatory `exp`, `nbf`, and a bounded clock skew.
+- **Strict claim checks** — exact `iss` match, `aud` containment, mandatory `exp`, `nbf` enforced when present, and a bounded clock skew.
 - **DoS-safe JWKS** — a refetch is triggered only by an unresolved key ID and never by a bad signature, and is rate-limited to a minimum interval (`jwks_min_refetch`, 30s by default) — so **once the key set has been fetched**, no volume of forged tokens makes the SDK issue more than one JWKS request per interval. A *failed* fetch is bounded separately: consecutive failures back off exponentially (0.2s, doubling, capped at 5s, with jitter), and inside that window the SDK **fails fast without contacting the IdP**. So a cold cache during an IdP outage no longer turns every validation into a request (measured: 20 attempts → 1 request, down from 20). ⚠️ The SDK never sleeps — it returns the error immediately, so retry pacing stays the caller's decision.
 - **OIDC nonce / `id_token` replay protection** — `create_authorization_request` always issues a nonce (same default as `state:`) and puts it on the authorization URL. Pass it back as `exchange_code(expected_nonce:)` and the SDK fully validates the `id_token` before comparing the nonce claim. Omit `expected_nonce:` and id_token validation is skipped (same opt-out as the other eight languages).
 - **Secret handling** — `Config`, `TokenSet`, and `AuthorizationRequest` mask secrets and tokens in `#inspect` (`***`, no prefix leak), TLS verification is on by default, timeouts are always applied, and redirect-following middleware is never installed (SSRF hardening).
@@ -73,11 +73,11 @@ Masking covers this SDK's own `#inspect`; it cannot cover what your logging fram
 
 ## Versioning and support
 
-This SDK is **`1.0`** and follows SemVer: a breaking change to the public API requires a **major** bump. That promise is machine-backed — CI diffs this lane's public API against the **previously published artifact** on every build (`yard diff`), and a removal or an incompatible change fails the build. ⚠️ **This lane’s gate is narrower than its siblings’**: Ruby has no equivalent of `japicmp`/`gorelease`, so the gate catches a **removed** public object but not a changed method signature — that case is caught by review, not by machine. ⚠️ **The gate compares the API _surface_.** A change that leaves the surface identical but alters behaviour is not caught by it, so read the release notes before upgrading.
+This SDK is **`1.0`** and follows SemVer: a breaking change to the public API requires a **major** bump. That promise is machine-backed — CI diffs this lane's public API against the **previously published artifact** on every build (`yard diff`), and a removal fails the build. ⚠️ **This lane’s gate is narrower than its siblings’**: Ruby has no equivalent of `japicmp`/`gorelease`, so the gate catches a **removed** public object but not a changed method signature — that case is caught by review, not by machine. ⚠️ **The gate compares the API _surface_.** A change that leaves the surface identical but alters behaviour is not caught by it, so read the release notes before upgrading.
 
 Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
 
-**Each of the nine languages versions independently.** All nine reached `1.0.0` on the same day because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
+**Each of the nine languages versions independently.** All nine reached `1.0.0` in the same release wave because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
 
 ## Documentation
 

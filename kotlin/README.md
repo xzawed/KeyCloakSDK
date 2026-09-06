@@ -4,14 +4,14 @@ A coroutine-first Keycloak client library for Kotlin/JVM that covers both **Auth
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`1.0.0` is on Maven Central** — the first release carrying this SDK's stability guarantee: from here on, a breaking change to the public API requires a **major** bump. ⚠️ **Neither Gradle nor Maven resolves a "latest" version**, so a coordinate written without one resolves nothing and nothing falls back — name `1.0.0` explicitly as shown below (Maven Central is immutable, so every earlier `0.x` stays published forever too: no delete, no yank, no unlist). ⚠️ **Consumer floor: Kotlin 2.2+** — the published jar carries `@Metadata(mv=[2,2,0])` and declares `kotlin-stdlib 2.2.21`, deliberately lower than the 2.4.10 toolchain used to build it.
+> **`1.0.0` is on Maven Central** — the first release carrying this SDK's stability guarantee: from here on, a breaking change to the public API requires a **major** bump. ⚠️ **A coordinate written without a version resolves nothing in Gradle or Maven**, and nothing falls back to the newest release — name `1.0.0` explicitly as shown below (Maven Central is immutable, so every earlier `0.x` stays published forever too: no delete, no yank, no unlist). ⚠️ **Consumer floor: Kotlin 2.2+** — the published jar carries `@Metadata(mv=[2,2,0])` and declares `kotlin-stdlib 2.2.21`, deliberately lower than the 2.4.10 toolchain used to build it.
 
 ## Requirements
 
 - **Kotlin 2.2+** on **JDK 21+** — this is the floor of the **published** `1.0.0` (`kotlin-v1.0.0` carries only `jvmToolchain(21)`, no `jvmTarget`). ⚠️ The tree now targets 17, but that has **not shipped**; do not lower this line until a JVM release publishes it ([detail](../docs/guides/getting-started.md#kotlin)). The SDK is built with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so its published metadata is consumable by any Kotlin 2.2+ compiler.
 - A Keycloak server to connect to (integration-tested against Keycloak 26.6).
 
-Every network call is a `suspend` function — blocking calls into the underlying JVM libraries run on `Dispatchers.IO` via `runInterruptible`. Only `createAuthorizationRequest` is synchronous, because it needs no network. Public API visibility is enforced with `explicitApi()`.
+Every network call is a `suspend` function — blocking calls into the underlying JVM libraries run on `Dispatchers.IO` via `runInterruptible`. `createAuthorizationRequest` is the one `AuthClient` call that is not, because it needs no network (the facade accessors such as `admin.users()` are synchronous too — they do no I/O). Public API visibility is enforced with `explicitApi()`.
 
 The published `1.0.0` reuses the verified JVM stack of its sibling Java SDK — `org.keycloak:keycloak-admin-client`, `com.nimbusds:oauth2-oidc-sdk` and `com.nimbusds:nimbus-jose-jwt` — plus `kotlinx-coroutines-core` for the coroutine boundary. The exact pins are in the published POM; `main` may already be ahead of it.
 
@@ -72,7 +72,7 @@ Admin failures surface as the sealed `KeycloakAdminException` (`NotFound` / `Con
 - **Algorithm pinning** — the accepted signature algorithms are fixed by config (`RS256` by default); `alg: none` and header-supplied algorithms are rejected.
 - **Strict claim checks** — exact `iss` match, `aud` containment check, mandatory `exp`, and a bounded clock skew (30s by default).
 - **DoS-safe JWKS refetch** — key sets are cached, a refetch is triggered only by an unresolved key ID and never by a bad signature, and refetches are rate-limited to a minimum interval (`jwksMinRefetch`, 30s by default) — so no volume of forged tokens makes this SDK issue more than **two** JWKS requests per interval. (Two, not one: the underlying Nimbus rate limiter opens each window with one request already credited. Measured against a flood of unresolved key ids.)
-- **Secret handling** — `KeycloakConfig.toString()` and `TokenSet.toString()` mask the client secret and tokens as `***` (no prefix), and the secret is held as a `CharArray`. TLS verification is on by default.
+- **Secret handling** — `KeycloakConfig.toString()`, `TokenSet.toString()` and `AuthorizationRequest.toString()` mask the client secret, tokens and the PKCE `codeVerifier` as `***` (no prefix), and the secret is held as a `CharArray`. TLS verification is on by default.
 
 Masking covers this SDK's own `toString()` and serialization; it cannot cover what your logging framework, a debugger, or a heap dump does with a value you hand it. The `CharArray` secret is defence in depth rather than an erasure guarantee — `keycloak-admin-client` and Nimbus both take `String`, so the secret is copied into an unerasable heap string at the point of use.
 
@@ -82,7 +82,7 @@ This SDK is **`1.0`** and follows SemVer: a breaking change to the public API re
 
 Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
 
-**Each of the nine languages versions independently.** All nine reached `1.0.0` on the same day because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
+**Each of the nine languages versions independently.** All nine reached `1.0.0` in the same release wave because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
 
 ## Documentation
 

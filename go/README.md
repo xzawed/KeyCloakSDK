@@ -91,9 +91,9 @@ Errors are values, not panics: match outcomes with `errors.Is` against `ErrNotFo
 - **Algorithm pinning** — the accepted JWT signature algorithms are pinned (`RS256` by default, configurable via `Config.SignatureAlgorithms`); the header-supplied `alg`, including `none`, is never trusted.
 - **Hardened claims** — exact `iss` match, `aud` containment check (against `Config.ExpectedAudience`, the client id by default), mandatory `exp` (a token without one is rejected — go-jose skips the expiry check when the claim is absent, so the SDK enforces it), and a bounded clock skew (`Config.ClockSkew`, default 30s).
 - **DoS-safe JWKS** — a refetch is triggered only by an unresolved key ID (rotation) and never by a bad signature, and is rate-limited by `Config.JwksMinRefetch` (default 30s) — so **once the key set has been fetched**, no volume of forged random `kid`s makes the SDK issue more than one JWKS request per interval. A *failed* fetch is bounded separately: consecutive failures back off exponentially (0.2s, doubling, capped at 5s, with jitter), and inside that window the SDK **fails fast without contacting the IdP**. So a cold cache during an IdP outage no longer turns every validation into a request (measured: 20 attempts → 1 request, down from 20). ⚠️ The SDK never sleeps — it returns the error immediately, so retry pacing stays the caller's decision.
-- **Secret handling** — `Config.String` and `TokenSet.String` mask secrets and tokens fully (`***`, no prefix); TLS verification is on by default and both connect and read timeouts are always applied.
+- **Secret handling** — `Config`, `TokenSet` and `AuthorizationRequest` mask secrets, tokens and the PKCE verifier fully (`***`, no prefix) in both `String()` and their `slog.LogValuer` hook; TLS verification is on by default and both connect and read timeouts are always applied.
 
-Masking covers this SDK's own `String()` methods, which is what `%v`/`%s` formatting reaches. It does not cover `%#v`, reflection-based structured loggers, or anything else that reads the fields directly — masking is defence in depth, not a guarantee about your logs.
+Masking covers this SDK's own `String()` methods, which is what `%v`/`%s` formatting reaches, and its `LogValue() slog.Value` hook, which is what `log/slog`'s JSON and Text handlers reach. It does not cover `%#v`, or a third-party structured logger that reflects over the struct fields without honouring `slog.LogValuer` — masking is defence in depth, not a guarantee about your logs.
 
 ## Versioning and support
 
@@ -101,7 +101,7 @@ This SDK is **`1.0`** and follows SemVer: a breaking change to the public API re
 
 Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
 
-**Each of the nine languages versions independently.** All nine reached `1.0.0` on the same day because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
+**Each of the nine languages versions independently.** All nine reached `1.0.0` in the same release wave because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
 
 ## Documentation
 
