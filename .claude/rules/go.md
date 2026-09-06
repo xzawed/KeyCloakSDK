@@ -5,7 +5,11 @@ paths:
   - "harness/install/consume/go*"
   - ".github/workflows/go-*.yml"
 ---
-<!-- doc-budget: max-bytes=7105 -->
+<!-- doc-budget: max-bytes=7272 -->
+<!-- 7105 → 7272 (2026-09-06, +167B). 규약 (1) — 증가분이 **다시 재는 명령**을 사 온다:
+     「golangci-lint 는 CI 전용」이 거꾸로였다(CI 는 그것을 아예 안 돌린다). 정정문이 실제
+     게이트 넷(gofmt·vet·staticcheck·gosec)과 별도 govulncheck 잡을 이름으로 대므로,
+     다음 세션이 `go-ci.yml` 을 열어 그대로 대조할 수 있다. 300B 이하라 사람 판정 불요. -->
 <!-- 래칫 인상 6263 → 7105 (2026-09-02). 사유 (1) 이 아니라 **판정 방법의 복원**이다 —
      go 프록시 음성 캐시 교훈이 계획서(#362)에 적혔다가 그 계획서가 아카이브(#365)되면서
      살아 있는 문서에서 **0건**이 됐다(실측). 다음 릴리스가 같은 404 앞에서 서고, 이 파일이
@@ -30,10 +34,10 @@ gofmt -l go                                                  # no output means O
 ```
 
 - A single test: `go -C go test -run TestValidateValidToken ./...`
-- Coverage (logic statements ≥90, network boundary omitted): `go test ./... -coverprofile=cover.out`, then drop the boundary with `grep -vE '/(auth|admin|admin_users|admin_clients|admin_realms|admin_roles|admin_groups|client)\.go:'` and read `go tool cover -func`. Measured 95.7%.
-- ⚠️ **There is no branch-coverage *gate* — but condition coverage is measurable, and it was measured.** `go test -covermode` takes `set`/`count`/`atomic` only, so there is no percentage comparable to the JaCoCo/Kover 85 the other six gate against; that is why there is no gate. It is **not** a reason to leave `&&`/`||` unmeasured. `gobco` instruments conditions — measured on this tree: 69 one-sided conditions, 14 on the JWT/token path, and one was a real gap (the JWKS rate-limit window was only ever tested **while it held**, never after it elapsed; `TestValidateRefetchAllowedAgainAfterRateLimitWindowElapses` closes it). **Revival condition** for a *gate*: a condition-coverage percentage comparable with the other six. Until then run `gobco` by hand when you touch security code.
+- Coverage (logic statements ≥90, network boundary omitted): `go test ./... -coverprofile=cover.out`, then drop the boundary with `grep -vE '/(auth|admin|admin_users|admin_clients|admin_realms|admin_roles|admin_groups|client)\.go:'` and read `go tool cover -func`. Measured 96.1%.
+- ⚠️ **There is no branch-coverage *gate* — but condition coverage is measurable, and it was measured.** `go test -covermode` takes `set`/`count`/`atomic` only, so there is no percentage comparable to the JaCoCo/Kover 85 the other six gate against; that is why there is no gate. It is **not** a reason to leave `&&`/`||` unmeasured. `gobco` instruments conditions — measured on this tree: 72 one-sided conditions, 14 on the JWT/token path, and one was a real gap (the JWKS rate-limit window was only ever tested **while it held**, never after it elapsed; `TestValidateRefetchAllowedAgainAfterRateLimitWindowElapses` closes it). **Revival condition** for a *gate*: a condition-coverage percentage comparable with the other six. Until then run `gobco` by hand when you touch security code.
 - ⚠️ **A rename test has to assert the body, not just the path** — `TestRolesUpdateAddressesByCurrentNameAndCarriesNewNameInBody` in `admin_test.go` is that test, and it exists because the hazard above was otherwise uncaught: the E2E puts `"e2e-role"` in the path *and* in the body, so injecting `role.Name = &name` still passed. Measured with the injection in place: asserting the path alone **passes**; asserting the body fails with `got old-role`. gocloak already puts the `name` argument on the path, so the path can never disagree — the body is the only thing the injection breaks. The test needs no login round-trip (`UpdateRealmRole` takes the bearer string), and its handler answers 404 by default so a wrong path cannot slip through on a lenient 2xx.
-- ⚠️ **The minimum Go is 1.25** (required by `golang.org/x/oauth2` v0.36 — lower `go.mod` and `go mod tidy` puts it back). CI runs this minimum as a leg. `golangci-lint` is CI-only; locally `go vet` and `gofmt` stand in for it.
+- ⚠️ **The minimum Go is 1.25** (required by `golang.org/x/oauth2` v0.36 — lower `go.mod` and `go mod tidy` puts it back). CI runs this minimum as a leg. ⚠️ **`golangci-lint` runs nowhere in CI** — `.golangci.yml` is a local-only config. The CI gates are `gofmt` · `go vet` · `staticcheck` · `gosec`, plus `govulncheck` in its own job, so vet and gofmt alone do **not** stand in for them.
 - **There is no registry — the `go/v*` tag *is* the release** (`proxy.golang.org` caches it automatically). Consumers run `go get github.com/xzawed/KeyCloakSDK/go@vX.Y.Z`.
   - ⚠️ **The module path contains capitals, so the proxy URL is `!`-escaped** (`github.com/xzawed/!key!cloak!s!d!k/go`) — querying it in lowercase gives a 404.
   - ⚠️ **If no stable version is published**, a bare `go get <module>` and `@latest` **fall back to the RC** (same as pip and Cargo, unlike RubyGems).

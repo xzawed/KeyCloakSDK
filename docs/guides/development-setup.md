@@ -73,7 +73,7 @@ the tool is already on `PATH` — the commands after the prefix are identical in
 | Variable | Default | What it selects |
 |---|---|---|
 | `KCSDK_TOOLS` | `$HOME/tools` | parent directory of the portable Go / PHP / Ruby / Maven installs |
-| `KCSDK_JDK21` | the maintainer machine's Temurin path | the JDK that `JAVA_HOME` is set to for Java and Kotlin builds |
+| `KCSDK_JDK21` | **none — required** | the JDK that `JAVA_HOME` is set to for Java and Kotlin builds. The JVM build snippets fail fast when it is unset rather than falling back to a hard-coded path that rots; `node scripts/doctor.mjs java` prints the JDK 21 it found on this machine |
 | `KCSDK_PY` | `python/.venv/Scripts/python.exe` | the virtualenv interpreter (see §4 for the POSIX path) |
 
 Set whichever ones differ on your machine — for example in `~/.bashrc`:

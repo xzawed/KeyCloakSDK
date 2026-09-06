@@ -15,9 +15,9 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **168** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 15 + 계수차 1) — 열림 **137** · 닫힘 **31** |
-| 심각도 | high 27 · medium 77 · low 48 |
-| 작업량 | S 69 · M 71 · L 12 |
+| 작업 패키지 | **169** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 16 + 계수차 1) — 열림 **137** · 닫힘 **32** |
+| 심각도 | high 27 · medium 78 · low 48 |
+| 작업량 | S 69 · M 72 · L 12 |
 
 ⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수(`grep -c '^- \[ \]'` · `'^- \[x\]'`)는 **168**(열림 137 · 닫힘 31)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.**
 
@@ -39,7 +39,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 135건 중 어디부터인지가 안 보이므로 순서를 못박는다. **위에서부터 밟는다.**
 
 1. **`doc-audit-batch2-3-not-started` [M]** — **배치 2 는 닫혔다(#421). 남은 것은 배치 3 의 10개**(하네스·내부 7 + rules 3 재검증). 방법·회수율 실측이 그 항목에 있다. ⚠️ **감사자 처방의 임계치를 그대로 옮기지 말 것**(배치 1 에서 여러 건이 `--min-facts=64 --min-anchors=21` 을 전제했으나 이 트리는 **74/22**).
-2. **A 절 잔여 2건**(`java-rules-close-scope-ambiguous` [L] · `auto-bump-manifest-crosscheck-skip` [L·보류]) — 확정 결함 12건 중 남은 전부다.
+2. **A 절 잔여 1건**(`auto-bump-manifest-crosscheck-skip` [L·보류]) — 확정 결함 12건 중 남은 전부다(`java-rules-close-scope-ambiguous` 는 #423 에서 닫혔다).
 
 ⚠️ **예산 정책은 정해졌다(#418) — 배치 2·3 은 그 위에서 돈다.** 문서 여럿이 상한에 붙어 있어 **정확성 수정 한 줄도 예산을 넘긴다**(배치 1 실측: 네 번, +300·236·120·84B). 이제 규칙은 「인상은 **교환**이고, 앵커 주석에 `옛값 → 새값` 을 적으며, **+300B 초과만 사람 판정**」이고 `check-docs.mjs` **검사 8b** 가 `main` 과 대조해 강제한다. **매 건 사람에게 올리지 말 것** — 상한 안이면 기록하고 진행한다. ⚠️ 반대로 **깎아서 맞추지도 말 것**: 압축이 「다시 재는 명령」을 지우면 그건 교환이 아니라 손실이고, 그때가 인상해야 하는 자리다.
 
@@ -134,7 +134,8 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `go-jwks-fetch-ignores-status-and-empty-keyset` **[M/S]** Go JWKS fetch가 상태코드도 키 유무도 안 본다 — 오류 본문 JSON이 빈 키셋으로 파싱돼 캐시를 덮는다 · `go/jwt.go:167`
 - [x] `check-coverage-arg-parsing-silently-disarms-gate` **[M/S]** check-coverage.mjs의 인자 파싱이 임계값을 조용히 0/NaN으로 만든다 — 실측으로 `--min-line=99`가 「임계 0/0」으로 통과했다 · `scripts/check-coverage.mjs:29`
 - [x] `php-default-serializers-bypass-masking` **[M/S]** [weak·채택] PHP는 마스킹을 __toString에만 걸어 json_encode()가 accessToken·refreshToken·clientSecret을 원문으로 뱉는다 · `php/src/Token/TokenSet.php:9`
-- [ ] `java-rules-close-scope-ambiguous` **[L/S]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
+- [x] `java-rules-close-scope-ambiguous` **[L/S · 닫힘 2026-09-06 #423]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
+  - ⚠️ **「모호」가 아니라 뒤집혀 있었다.** 실측: `KeycloakClient.close()`(`:47-51`)는 `admin != null` 일 때 `admin.close()` **하나만** 부르고, `AuthClient` 는 `AutoCloseable` 도 아니며 `close()` 자체가 없다(`grep -c 'close()' AuthClient.java` → 0). 규칙 파일이 「auth 세션도 함께 정리한다」고 적고 있었고, **`java/README.md:68` 이 맞는 쪽**이었다.
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
 ## B. 재검증 대상 — 27건 (열림 20)
@@ -257,7 +258,14 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [ ] `doc-audit-batch2-3-not-started` **[M/L · 신규 2026-09-06 · 배치 2 닫힘 2026-09-06 #421]** 문서 41개 중 20개가 미검증이었다 — **배치 2(언어별 README 9 + `language-support.md`) 완료, 배치 3(하네스·내부 7 + rules 3 재검증) 10개가 남았다**
   - **배치 2 결과**: 감사 20건 · 인용 게이트 20/20 실재(계측기 6/6 자가검증) · 독립 레그 반박 판정 **CONFIRMED 12 · PARTIAL 6 · 반박 1**. 수정 19건, 무변경 2건. 반박이 범위를 바로잡은 것 셋 — go 는 slog 가 마스킹하나 **`%#v` 는 여전히 샌다**(카나리아 프로브), php `isExpired` 뒤집힘은 **`php-v1.0.0` 이후** 커밋이라 「0.1.0 에서 올리기」 절의 결함이 아니며, `Done 행에 핀이 없다`(langsupport:25)는 **반박 성립**(`/v13` 은 Go 모듈 경로지 핀이 아니다 — 고치지 않았다).
   - ⚠️ **부류 재스캔이 문서별 감사가 놓친 넷째를 찾았다.** 「마스킹 타입 열거가 하나 모자람」은 감사가 go·dotnet·php 셋을 지목했으나, 9언어 재스캔에서 **kotlin 도 같았다**(`AuthorizationRequest.toString()` 이 `codeVerifier=***` 를 마스킹하는데 README 열거에 없었다). **문서 단위 감사만으로는 부류를 못 닫는다** — 닫기 전에 축으로 다시 훑을 것.
-  - ⚠️ **1차 확정 3건(`go.md`·`python.md`·`java.md`)도 재검증 대상이다** — 낡은 트리(4b40445)에서 판정됐고 그 뒤 커밋 7건·`.md` 12개가 움직였다. 자체 변경은 `go.md` 1건뿐이라 위험은 낮으니 배치 3 마지막에 둘 것.
+  - **배치 3 감사 완료(2026-09-06) · 발견 50건**(H 13 · M 22 · L 15) · 인용 게이트 **50/50 실재** · H 전건 독립 반박 **CONFIRMED 8 · PARTIAL 5 · 반박 0**. ⚠️ **대상이 등록부가 적던 것과 달랐다** — 하네스 리포트 셋(`RESULTS.md`·`SCORECARD.md`·`INSTALL-MATRIX.md`)은 **커밋되지 않는 생성물**이라 감사 대상이 아니다. 실제 10개는 하네스 3(`harness/README.md`·`contract/CONTRACT.md`·`install/README.md`) + 내부 4(`docs/README.md`·`process.md`·`rejected.md`·`add-a-language-playbook.md`) + rules 3.
+  - **#423 가 고친 것은 rules 3 + 그 파생 3자리뿐**(`kotlin.md`·`DEPLOY.md` 둘·`development-setup.md`). **나머지 7문서 40건은 열려 있다** — 아래 `doc-audit-batch3-fixes-outstanding`.
+  - ⚠️ **1차 확정 3건 재검증에서 전건 결함이 나왔다** — 「자체 변경이 `go.md` 1건뿐이라 위험이 낮다」는 사전 판단은 **틀렸다**. 드리프트는 그 파일이 바뀌어서가 아니라 **그 파일이 서술하는 대상이 바뀌어서** 생긴다(go 커버리지 95.7→96.1 · gobco 69→72 는 `go/` 커밋 셋이 만든 것이고, 낡은 JDK 경로는 머신이 바뀐 것이다). **재검증 대상은 「그 문서의 커밋 이력」이 아니라 「그 문서가 가리키는 것의 커밋 이력」으로 고른다.**
+- [ ] `doc-audit-batch3-fixes-outstanding` **[M/M · 신규 2026-09-06]** 배치 3 발견 50건 중 **40건 미수정**(문서별: 플레이북 10 · `rejected.md` 9 · `docs/README.md` 7 · `install/README.md` 5 · `harness/README.md` 4 · `process.md` 3 · `CONTRACT.md` 2)
+  - **가장 무거운 것 셋.** (a) **플레이북 H 5건** — Stage 3 게이트가 새 언어 CI 를 **required 로 만들라**고 지시하는데 그러면 `main` 이 잠긴다(`paths:` 필터라 체크가 생성되지 않는다). 나머지 넷은 아홉 언어가 이미 차지한 **등록처 누락**(`.claude/rules/<lang>.md` · `language-support.md` 상태 행렬 · `deploy-facts.sh` 의 `DEPLOY_LANGS`+`df_*` · **두 하네스 전체** — 플레이북의 `harness` 언급은 Testcontainers 한 곳뿐이다). (b) **`CONTRACT.md` 가 400 을 아예 안 적는다** — 반박이 범위를 정정했다: 아홉 중 **여섯이 400, 셋이 401** 이고(500 이 아니다) 프로브는 둘 다 거부로 받는다. (c) **`docs/README.md` 영문 배너**가 「소비자 문서는 `guides/`」라 하는데 지도 자신이 영문 소비자 문서 셋을 그 밖에 둔다.
+  - **교차 드리프트 셋은 두 감사가 독립으로 확증했다** — 「기각 체크리스트 **7**」(실제 8, `docs/README.md:46`+`rejected.md:29`) · 「**150** 개 작업 패키지」(실제 168) · go 의 golangci-lint 오서술(`rejected.md:51` 에도 있다).
+  - ⚠️ **예산이 수정을 막는다** — `process.md` 여유 **12B**, `rejected.md` 는 상한 근처다. 검사 8b 가 **+300B 초과를 하드 실패**시키므로(앵커 주석만으로는 못 지나간다) 인상 전에 압축할 자리를 먼저 정한다. #423 실측: 초안 +559B 를 두 번 압축해 +248B 로 넣었고, 보낸 것은 **git 이 소유한 이력 서술 둘**이지 판정 방법이 아니었다.
+  - 산출물: 감사 JSON 10개 + 병합본 · 인용 게이트 `citegate.mjs`(계측기 자가검증 6/6 내장). ⚠️ **세션 스크래치패드에만 있다** — 다음 세션은 재실행이 필요하다(배치 1 의 `citegate2.mjs` 가 같은 이유로 소실됐다).
   - ⚠️ **독립 레그(Grok)는 범위를 쪼개야 돈다** — 문서 5개 묶음은 **540초에 두 번 다 타임아웃**했고, 주장 3건 묶음은 전부 완주했다(함정 (f) 재현). 발견 후 **반박자로** 쓰는 편이 탐색보다 회수율이 높았다.
 - [ ] `masking-type-enumeration-has-no-oracle` **[M/M · 신규 2026-09-06]** 언어 README 가 **마스킹하는 타입을 손으로 열거**하는데 소스와 대조하는 가드가 없다 — 넷이 동시에 하나씩 모자랐다 · `scripts/test/test-security-defaults.sh:322`
   - `[mask]` 축은 **`TokenSet` 하나만** 겨눈다(`sd_mask_src` 가 언어당 파일 하나). `AuthorizationRequest` 는 어느 축도 안 본다 — 그래서 go·dotnet·php·kotlin 넷의 README 가 PKCE 검증자를 마스킹하는 타입을 빠뜨린 채 CI 초록이었다(#421 에서 문서만 고쳤다).
