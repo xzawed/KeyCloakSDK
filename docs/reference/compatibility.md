@@ -19,8 +19,8 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 |---|---|---|
 ⚠️ **The JVM rows state the floor of the *published* artifact, not of the source tree.** `v1.0.0`/`kotlin-v1.0.0` were compiled for **JDK 21**; the tree lowered that to 17 after the tag (#389) and no JVM release has shipped since. **Do not "correct" these to 17** by reading `java/pom.xml` — verify with `git show v1.0.0:java/pom.xml | grep maven.compiler.release`, and lower them only in the release that actually publishes 17. Detail: [getting-started.md](../guides/getting-started.md#java).
 
-| Java `1.0.0` | 26.6.x (integration tests: actual **26.6.4**) | `keycloak-admin-client` **26.0.12** (an independent version track from the server — there is no "26.6.x admin-client") · Nimbus `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.9.1** · JDK 21+ |
-| Python `1.0.0` | 26.6.x (integration tests: actual **26.6.4**) | `python-keycloak` **7.1.x** · `joserfc` **1.7.x** · Python 3.10+ |
+| Java `1.0.0` | 26.6.x (integration tests: actual **26.6**) | `keycloak-admin-client` **26.0.12** (an independent version track from the server — there is no "26.6.x admin-client") · Nimbus `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.9.1** · JDK 21+ |
+| Python `1.0.0` | 26.6.x (integration tests: actual **26.6**) | `python-keycloak` **7.1.x** · `joserfc` **1.7.x** · Python 3.10+ |
 | Node `1.0.0` | 26.6.x (integration tests: actual **26.6**) | `@keycloak/keycloak-admin-client` **26.7.1** · `openid-client` **6.8.5** · `jose` **6.2.9** · Node 22+ |
 | Go `1.0.0` | 26.6.x (integration tests: actual **26.6**) | `Nerzal/gocloak/v13` **13.9.0** · `golang.org/x/oauth2` **0.36.0** · `go-jose/v4` **4.1.4** · Go 1.25+ |
 | C#/.NET `1.0.0` | 26.6.x (integration tests: actual **26.6**) | `Keycloak.AuthServices.Sdk` **2.7.0** · `Duende.IdentityModel` **8.1.0** · `Microsoft.IdentityModel.JsonWebTokens` **8.22.0** · .NET 8+ |
@@ -29,6 +29,8 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 | Ruby `1.0.0` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `rack-oauth2` **~>2.3** · `faraday` **~>2.0** · `jwt` (ruby-jwt) **~>3.2** · Ruby 3.2+ |
 | Kotlin `1.0.0` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak-admin-client` **26.0.12** · `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.9.1** (same JVM stack as Java) · Kotlin 2.2+ consumers (built with 2.4.10, metadata pinned to 2.2) · JDK 21+ |
 
+> Note on the server column: all nine pin the **same** image tag, `quay.io/keycloak/keycloak:26.6` — there is no per-language branch, and this column used to claim one (`26.6.4` for Java and Python). `26.6` is a floating minor, so what a run pulls is whatever it resolved to that day; measured 2026-09-06, that container reports **Keycloak 26.6.4**. Write the pinned tag here, not a resolution — a resolution is a snapshot nobody can reproduce later.
+>
 > Note on the Rust row: those are **ranges, not exact `=` pins**. An exact pin in a *library* crate hard-fails dependency resolution for any consumer whose tree also wants a newer compatible version. `openidconnect`/`jsonwebtoken` are ordinary semver crates and take a caret; the `keycloak` crate takes a tilde (`>=26.6.2, <26.7.0`) because its version tracks the Keycloak **server** line rather than semver. Reproducibility of *our* builds comes from the committed [`rust/Cargo.lock`](../../rust/Cargo.lock) — cargo ignores a dependency's lockfile, so as a consumer you pin with your own.
 
 ---

@@ -178,8 +178,12 @@ docker compose exec -T postgres pg_dump -U keycloak keycloak | gzip > kc-$(date 
 # restore
 gunzip -c kc-YYYY-MM-DD.sql.gz | docker compose exec -T postgres psql -U keycloak keycloak
 
-# per-realm export (config-focused — user passwords excluded by default)
-docker compose exec keycloak /opt/keycloak/bin/kc.sh export --dir /tmp/exp --realm myapp
+# per-realm export — ⚠️ this INCLUDES users and their password hashes.
+# `--users` defaults to `different_files` (26.6.4: `kc.sh export --help-all`), so a
+# directory export writes <realm>-users-N.json next to <realm>-realm.json, each user
+# carrying its `credentials[].secretData` — the argon2 hash and salt in clear JSON.
+# Treat the output as a secret: never commit it. For config only, pass `--users skip`.
+docker compose exec keycloak /opt/keycloak/bin/kc.sh export --dir /tmp/exp --realm myapp --users skip
 ```
 
 ## 8. Upgrade Procedure

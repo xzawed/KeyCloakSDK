@@ -86,11 +86,12 @@ it is ready for that language and does not wait for the other eight.**
 Cross-language isomorphism is a design goal; it is never a reason to hold a
 vulnerability fix. Expect the nine version numbers to diverge after any such fix.
 
-**Keycloak server versions.** Integration tests run against **Keycloak 26.6**
-(the exact container tag per language is recorded in the compatibility matrix in
-[docs/reference/compatibility.md](docs/reference/compatibility.md#compatibility) —
-`26.6.4` for Java and Python, `26.6` for the others). That is the only server
-range verified. Other server versions may work but are untested — do not read
+**Keycloak server versions.** Integration tests run against **Keycloak 26.6**.
+All nine languages pin the same image tag — `quay.io/keycloak/keycloak:26.6` —
+so there is no per-language branch here; the tag is a floating minor, so the
+patch level a run actually pulls is whatever `26.6` resolved to that day
+(see [docs/reference/compatibility.md](docs/reference/compatibility.md#compatibility)).
+That is the only server range verified. Other server versions may work but are untested — do not read
 this as a claim about 25.x or 27.x.
 
 ## Dependency Security
