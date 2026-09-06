@@ -66,10 +66,12 @@ Nail down the security properties implemented in Stage 2 **so that CI prevents r
 - [ ] **DoS-safe JWKS** — pin Stage 2 jwt's refetch rate-limit and conditional refetch with unit tests (a forged signature does not trigger a refetch; only an unresolved kid refetches; the minimum interval is honored).
 - [ ] **admin timeout injection** — verify that config timeouts are actually passed to the real HTTP client.
 - [ ] **No default typing** — statically typed languages run in strict mode (e.g. `mypy --strict`, warnings escalated). CI rejects implicit any/loose types.
-- [ ] **Linter security ruleset** — make the language's security lint (bandit/`ruff S`, gosec, ESLint security, etc.) a required CI job.
+- [ ] **Linter security ruleset** — make the language's security lint (bandit/`ruff S`, gosec, ESLint security, etc.) a **mandatory step in that language's CI workflow** (not a ruleset-level required check — see the gate note below).
 
 **Deliverable:** A security unit-test set + linter, type-check, and format-check jobs integrated into CI.
-**Gate:** G6 (security) — zero token/secret logging and zero internal-type leakage. Strict typing, security lint, and masking tests are required (merge-blocking) jobs in CI.
+**Gate:** G6 (security) — zero token/secret logging and zero internal-type leakage. Strict typing, security lint, and masking tests run as steps in the language's CI workflow and must be GREEN before merge.
+
+> ⚠️ **Do not add that workflow to the repository's required status checks.** Every `<lang>-ci.yml` is `paths:`-filtered at workflow level, so on a PR that does not touch that language the check run is **never created** and a required check stays Pending forever — with `bypass_actors: []`, not even the owner clears it. The rule and the job-level-`if:` alternative are owned by [`.claude/rules/ci.md`](../../.claude/rules/ci.md); the resolutions are in [CONTRIBUTING §4](../../CONTRIBUTING.md).
 
 ---
 
@@ -80,7 +82,7 @@ The new language must verify the **same scenarios** as Java and Python. Counts m
 | Level | Content | Reference (Java / Python) |
 |---|---|---|
 | **Unit** | PKCE generation, config validation & defaults, token-response parsing (`from_response`), expiry & clock-skew decisions, JWT hardening (alg pin · reject none · iss · aud · exp/nbf), **exception boundary mapping** (404 → `KeycloakNotFoundError`/`KeycloakNotFoundException`, etc.), masking | see each language's CI job and coverage gate (counts are not hand-maintained) |
-| **Integration (Testcontainers)** | **Real Keycloak 26.6** container + realm import. client-credentials token issuance, `validate` (accept multiple aud), introspect, user/client CRUD, the `raw()` escape hatch, lookup after delete → `KeycloakNotFoundError`/`KeycloakNotFoundException` | Java `SmokeIT`·`AuthFlowIT`·`AdminOpsIT` / Python sync + async integration suites |
+| **Integration (Testcontainers)** | **Real Keycloak 26.6** container + realm import. client-credentials token issuance, `validate` (accept multiple aud), introspect, user/client CRUD, the `raw()` escape hatch, lookup after delete → `KeycloakNotFoundError`/`KeycloakNotFoundException` | Java `KeycloakContainerSmokeIT`·`AuthFlowIT`·`AdminOpsIT` / Python sync + async integration suites |
 | **Coverage gate** | Line/branch thresholds on logic modules. Network-boundary classes (`auth`/`admin` creation) are verified by integration and omit/excluded from coverage | Java line ≥90%/branch ≥85% (JaCoCo) · Python logic 100% enforced (`--cov-fail-under`, boundaries omit) |
 
 - [ ] Cover all the scenarios above with unit tests (isolate the network with mocks/stubs).
@@ -94,24 +96,31 @@ The new language must verify the **same scenarios** as Java and Python. Counts m
 
 ### Stage 5 — CI · publishing (tag-driven, human-gated) · docs
 
-- [ ] **CI matrix** — build + unit + type + lint across every supported runtime version (e.g. a per-language matrix comparable to Java 21+, Python 3.10–3.13). Integration tests need Docker, so keep them in a separate job/local.
+- [ ] **CI matrix** — build + unit + type + lint across every supported runtime version: the **declared consumer floor** plus the current stable releases. Do not copy another language's numbers here — read the existing matrices in [`ci.yml`](../../.github/workflows/ci.yml) / [`python-ci.yml`](../../.github/workflows/python-ci.yml), and take the floor itself from that language's build file (`scripts/doctor.mjs` reads it). Integration tests need Docker, so keep them in a separate job/local.
 - [ ] **Local install path** — consumers must be able to use it locally *before* it is published, and a new language always starts unpublished. Every existing language keeps this path working regardless of registry status:
   - Java: `mvn -f java/pom.xml install -DskipITs=true` → coordinate `io.github.xzawed:keycloak-sdk` at the `-SNAPSHOT` version `java/pom.xml` declares (do not restate the number here — it went stale once already)
   - Python: `pip install -e python` (or `cd python && python -m build`) → distribution name `keycloak-sdk`
   - Make sure the new language likewise supports "local install → run the example" without publishing.
-  - Do not restate which languages are already on a public registry — it goes stale. That fact has one owner, `DF_PUBLISHED` in [`scripts/lib/deploy-facts.sh`](../../scripts/lib/deploy-facts.sh); `scripts/release-readiness.sh` prints it. [DEPLOY.md](../../DEPLOY.md) deliberately does **not** answer it.
+  - Do not restate which languages are already on a public registry — it goes stale. That fact has one owner, `DF_PUBLISHED` in [`scripts/lib/deploy-facts.sh`](../../scripts/lib/deploy-facts.sh) — read it there. ⚠️ `scripts/release-readiness.sh` does **not** print it: its `registry=` column is a **live network query** (`df_check_url`), so it answers "is it on the registry right now", which is a different question and can disagree. [DEPLOY.md](../../DEPLOY.md) deliberately does **not** answer it either.
 - [ ] **Tag-driven release (human-gated)** — actual publishing runs only via a workflow triggered when a human pushes a tag. Existing examples: [`.github/workflows/release.yml`](../../.github/workflows/release.yml) (Java, `v*` tag → Maven Central), [`.github/workflows/python-release.yml`](../../.github/workflows/python-release.yml) (Python, `py-v*` tag → PyPI Trusted Publisher/OIDC). The new language follows the same pattern with a language-specific tag prefix + the appropriate registry (npm/Go proxy/NuGet/Packagist/crates.io/RubyGems). The full procedure is in [DEPLOY.md](../../DEPLOY.md).
   - ⚠️ **Never let an agent auto-run an irreversible publish** — credentials only via CI secrets/OIDC, and the tag push is done by a human.
-- [ ] **Docs** — a new-language section in getting-started (install · QuickStart · cross-language mapping table), a row in [`docs/reference/compatibility.md`](../reference/compatibility.md) and one in [`docs/reference/admin-capability.md`](../reference/admin-capability.md) (**both are machine-checked — the matrix row must go in the reference file, not in getting-started, or no guard reads it**), the README, and updates to the structure tree and build commands in [CLAUDE.md](../../CLAUDE.md) (do **not** hand-copy test counts — see the scenario table above). Gate history belongs in the PR / commit message — a separate verification-log file is **not** a required deliverable.
+  - [ ] **Register the language in the deploy SSOT.** A copied release workflow fires on its own tag glob, so the tag *works* — but the language stays invisible to every tool that reads the SSOT. Add it to `DEPLOY_LANGS` and to each `df_*` case arm in [`scripts/lib/deploy-facts.sh`](../../scripts/lib/deploy-facts.sh); `scripts/test/test-deploy-facts.sh` fails until the required keys resolve for it, and `release-trigger.sh` rejects an unknown language outright. Do not copy the key list here — that test owns it.
+  - [ ] **Add the tag prefix to the tag rulesets** ([`.github/rulesets/`](../../.github/rulesets/)). They *restrict* who may create and whether tags are immutable — a prefix that is missing is **unprotected**, not blocked, so nothing fails to warn you.
+- [ ] **Docs** — a new-language section in getting-started (install · QuickStart · cross-language mapping table), a row in [`docs/reference/compatibility.md`](../reference/compatibility.md) and one in [`docs/reference/admin-capability.md`](../reference/admin-capability.md) (**both are machine-checked — the matrix row must go in the reference file, not in getting-started, or no guard reads it**), the README, and updates to the structure tree in [CLAUDE.md](../../CLAUDE.md) (do **not** hand-copy test counts — see the scenario table above). Gate history belongs in the PR / commit message — a separate verification-log file is **not** a required deliverable.
+  - [ ] **`.claude/rules/<lang>.md`** — every existing language has one, and `CLAUDE.md` declares it the source of truth for that language's build commands, constraints and gotchas ("do not restate them here"). English, with `paths:` front-matter so it auto-loads inside the language directory. **The entry command goes in CLAUDE.md's toolchain table; everything else goes only here.**
+  - [ ] **[`docs/roadmap/language-support.md`](../roadmap/language-support.md)** — a status-matrix row and an expansion-table row. Machine-checked: `scripts/test/test-publication-claims.sh` compares the matrix row count against `DEPLOY_LANGS` and splits published vs human-gated, so a missing row fails that guard.
+  - [ ] **[SECURITY.md](../../SECURITY.md)** — its published-count sentence is checked by the same guard, and the dependency-audit table gains a row for the new language's CVE gate.
 
-**Deliverable:** A CI workflow + a release workflow (prepared, not executed) + updated docs.
+- [ ] **Register the language in both harnesses.** Every one of the nine is in both, and neither is optional for "done": the verify/scoring harness (its language list is `LANGS` in [`harness/verify.sh`](../../harness/verify.sh)) and the Install-&-Operate harness (`DEFAULT_LANGS` in [`harness/install/install-verify.sh`](../../harness/install/install-verify.sh)). Put the new language's files beside the nine existing ones rather than working from a list here — the shapes differ per language and only the tree is current.
+
+**Deliverable:** A CI workflow + a release workflow (prepared, not executed) + registration in the deploy SSOT and both harnesses + updated docs.
 **Gate:** CI GREEN. The release workflow is in a prepared state (human-gated, not executed). Docs match the actual implementation (do not hand-copy test counts — CI is the authority).
 
 ---
 
 ### Stage 6 — Governance G1–G6 + Codex dual verification + loop
 
-Every task follows the [work process](../governance/process.md) — six phases (plan → WBS → review → schedule → build → verify) with a WBS as the backbone. **Separation of duties**: implementer ≠ reviewer ≠ verifier, and the verifier uses a **different model (Codex/GPT-5)** to offset correlated blind spots.
+Every task follows the [work process](../governance/process.md) — six phases (plan → WBS → review → schedule → build → verify) with a WBS as the backbone. **Separation of duties**: implementer ≠ reviewer ≠ verifier, and the verifier uses a **different model (Codex/GPT-5)** to offset correlated blind spots. Substantive work additionally gets a **Grok independent leg** — the same input, with neither side shown the other's answer — which is a separate axis from the Codex cross-verification; the role table in the [work process](../governance/process.md) owns both.
 
 - [ ] **G1–G6 gates** — all must pass per task to be considered done:
   - **G1 Build** (0 compile errors) · **G2 Unit tests** (100%) · **G3 Coverage** (threshold) · **G4 Spec conformance** (0 unresolved Critical/Important, reviewer approval) · **G5 Codex cross-verification** (0 discrepancies, verdict "confirmed") · **G6 Security** (0 token/secret · internal-type leakage).
@@ -130,7 +139,7 @@ Every task follows the [work process](../governance/process.md) — six phases (
 |---|---|---|---|
 | 1. Reconfirm contract & select client | Language WBS draft, foundation-library decision | G4 (spec mapping) + human approval | §4 comparison table, human review |
 | 2. Layer implementation | config/auth/jwt/admin/client + unit | G1·G2·G4·G6 | build · unit · type-hiding/exception-translation review |
-| 3. Security invariants + CI enforcement | Security tests + strict/security lint jobs | **G6** | masking · JWKS DoS · timeout tests, required CI jobs |
+| 3. Security invariants + CI enforcement | Security tests + strict/security lint jobs | **G6** | masking · JWKS DoS · timeout tests, mandatory CI steps (Stage 3 note) |
 | 4. Test parity matrix | Unit + Testcontainers integration | G2·G3 + integration GREEN | coverage gate, scenario-parity table |
 | 5. CI · publishing · docs | CI + tag-driven release (not executed) + docs | CI GREEN + docs match | matrix build, local-install verification, docs comparison |
 | 6. Governance | Codex verdict, PR | **All of G1–G6** + Codex confirmed | gate measurement + loop + human approval |
