@@ -10,7 +10,13 @@ paths:
   - "rust/**"
   - "ruby/**"
 ---
-<!-- doc-budget: max-bytes=5500 -->
+<!-- doc-budget: max-bytes=5620 -->
+<!-- 5500 → 5620 (2026-09-06): 래칫 조건 (1) — 증가분이 **기계 검증을 사 온다.** 이 절은
+     「java·kotlin 은 NOT measured」라고 적고 있었고, 그것이 열린 항목의 근거였다. 이제 쟀고
+     (20 검증 → 요청 2) 그 값을 `JwksColdCacheOutageTest`(두 JVM 레인)가 대조군과 함께 고정한다.
+     ⚠️ 압축을 먼저 했다 — 초안 355B 를 113B 로 낮춘 뒤 남은 만큼만 올렸다. 그 아래로 깎으면
+     「왜 유계인가」(Nimbus 가 source 를 rate-limit 한다)가 사라져 다음 세션이 다시 연다.
+     ⚠️ 이 인상은 사람 리뷰 대상이다 — PR 본문에 명시했다. -->
 <!--
   4824 → 5500 (2026-09-04). 래칫 인상 사유는 규약 (2) — **이 문서의 역할이 넓어졌다.**
   여기까지 이 파일은 「아홉 언어가 함께 움직여야 하는 값」만 담았다. 이제 그 값들이 **캐시가 찬
@@ -37,7 +43,7 @@ The detail behind the security gotcha stubs in the root `CLAUDE.md`. **A securit
 
 ⚠️ **Do not "fix" the other seven — they were already right.** Node's test bounds hits at `<= 2`, which reads like the same defect, but tightening it to `== 1` **passes** (jose's cooldown allows exactly one). `.NET`'s README never makes the claim. Only the two Nimbus-backed SDKs overclaimed.
 
-⚠️ **Every count above is WARM-cache only — the 30s gate never sees the initial load**, because it sits on the *forced* (unresolved-kid) path, which needs a populated cache. Probe (2026-09-04 · cold cache · JWKS 503 · 20 validations · IdP requests) **before → after**: rust·go·python·php·node·ruby all **20→1**; **dotnet 40→2** (two requests per validation there, so one window costs two). Healthy controls (20 forced) stayed 1-4. ⚠️ **java·kotlin were NOT measured** (Nimbus owns their fetch) — open as `jvm-cold-cache-unmeasured`.
+⚠️ **Every count above is WARM-cache only — the 30s gate never sees the initial load**, because it sits on the *forced* (unresolved-kid) path, which needs a populated cache. Probe (2026-09-04 · cold cache · JWKS 503 · 20 validations · IdP requests) **before → after**: rust·go·python·php·node·ruby all **20→1**; **dotnet 40→2** (two requests per validation there, so one window costs two). Healthy controls (20 forced) stayed 1-4. ⚠️ **java·kotlin were already at 2 and were not changed** (2026-09-06): Nimbus rate-limits the *source*, so it covers the cold load the other seven missed. `JwksColdCacheOutageTest` pins both lanes — control interval 0 → **20**.
 
 **The fix, in all seven** (reference: `ruby/lib/keycloak_sdk/jwks_store.rb`): back off *failed* fetches — 0.2s doubling to a 5s cap, jitter ×[0.5, 1.0) — and inside the window fail immediately **without touching the IdP**. Four rules, each paid for by measurement: (1) ⚠️ **never reuse the 30s here** — one transient 503 would mean "no token validates for 30s", worse than the defect; (2) ⚠️ **never sleep** — pacing retries is the consumer's job, not a library's; (3) ⚠️ **success resets the counter**, or a long-lived process stays pinned at the cap; (4) ⚠️ **a warm-cache unresolved-kid rejection is not a fetch failure** — counting it lets a forged-kid flood raise the backoff and block legitimate tokens (node checks `remote.jwks() === undefined` for exactly this).
 

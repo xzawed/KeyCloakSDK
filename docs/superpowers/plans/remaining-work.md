@@ -15,16 +15,16 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **165** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 13) — 열림 **135** · 닫힘 **30** |
+| 작업 패키지 | **165** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 13) — 열림 **134** · 닫힘 **31** |
 | 심각도 | high 27 · medium 76 · low 47 |
 | 작업량 | S 68 · M 70 · L 12 |
 
-### 다음 세션 진입점 (2026-09-06 기준 · #415 · #416 반영)
+### 다음 세션 진입점 (2026-09-06 기준 · #415 · #416 · #417 반영)
 
-135건 중 어디부터인지가 안 보이므로 순서를 못박는다. **위에서부터 밟는다.**
+134건 중 어디부터인지가 안 보이므로 순서를 못박는다. **위에서부터 밟는다.**
 
 1. **`doc-audit-batch2-3-not-started` [M]** — 미검증 20개. 방법·회수율 실측이 그 항목에 있다. ⚠️ **감사자 처방의 임계치를 그대로 옮기지 말 것**(배치 1 에서 여러 건이 `--min-facts=64 --min-anchors=21` 을 전제했으나 이 트리는 **74/22**).
-2. **`jvm-cold-cache-unmeasured` [M]** — java·kotlin 만 미측정. **먼저 재고, 그 다음에 고칠지 정한다.**
+2. **A 절 잔여 2건**(`java-rules-close-scope-ambiguous` [L] · `auto-bump-manifest-crosscheck-skip` [L·보류]) — 확정 결함 12건 중 남은 전부다.
 
 ⚠️ **배치 1 이 남긴 것: 문서 셋이 예산에 붙어 있다.** `CLAUDE.md`(여유 0) · `CONTRIBUTING.md` · `DEPLOY.md` · `process.md` 는 **정확성 수정 한 줄도 예산을 넘긴다**. 배치 2·3 은 수정 건수가 더 많으므로 **착수 전에 예산 정책을 사람과 합의할 것** — 매 건 압축하다 보면 결론만 남고 판정 방법이 지워진다(배치 1 실측: CONTRIBUTING 306→71B · DEPLOY 1203→223B 로 깎고도 초과라 래칫을 올렸다).
 
@@ -66,6 +66,8 @@
 | #397 | `rust-logout-ignores-http-status` | `reqwest` 의 `send()` 는 전송 실패에만 `Err` 를 줘서 400/401/404 가 `Ok(())` 였다 — 세션이 살아있는데 호출자는 로그아웃 성공으로 믿는다. ⚠️ 지운 주석이 「다른 SDK와 동형」이라 적고 있었으나 자매 여덟을 읽으면 **Rust 만 혼자**였다. 상태코드를 특별대우하지 않는다(404 를 삼키면 오설정이 안 보이고, 400 을 통과시키면 진짜 클라이언트 오류도 함께 통과) |
 | #398 | `rust-rustdoc-jwks-refetch-says-60` · `python-config-comment-says-60` | 주석 3곳이 JWKS 기본값을 60 이라 말했다(실제 30). rust 둘은 **공개 rustdoc** 이라 docs.rs 에 렌더된다. ⚠️ 문서 축이 `SD_DOCS`(README·docs)만 봐서 **소스 파일이 목록에 없었다** — 아홉 언어 소스 전체를 훑는 2b 축을 세웠다(테스트 제외: `JwtValidatorTest.kt:515` 의 "캐시 TTL(기본 5분)" 이 실측 오탐) |
 | #399 | `php-tokenset-null-expiry-treated-as-fresh` (+ **Ruby**) | 만료 시각 미상을 「안 만료됨」으로 읽었다. ⚠️ 원장은 「PHP만」이라 적었으나 재스캔 결과 **7 fail-safe / 2 fail-open**. PHP 는 provider 캐시가 죽은 토큰을 무한 재사용하고, Ruby 는 공개 API 만 틀리다. ⚠️ **두 언어 다 테스트가 결함을 의도로 고정**하고 있었다(`…AndNeverExpired` · `"is never expired"`) |
+| #417 | `jvm-cold-cache-unmeasured` | 재고 나니 **고칠 것이 없었다** — java·kotlin 은 콜드 캐시 + IdP 503 에서 이미 요청 2건이다(일곱은 수정 전 20). Nimbus 가 *source* 를 rate-limit 해 콜드 로드까지 덮는다. ⚠️ **상한 단언만으로는 하드닝 삭제를 못 잡는다** — `.rateLimited(...)` 를 지워도 Nimbus 기본 30초가 대신 걸려 상한이 그대로 2고, 무너지는 것은 **대조군**(interval 0 이 20→2)이다 |
+| #416 | `doc-audit-batch1-remainder` | 7건 수정 · 2건 반박 확정. 최고가치는 문서 오류가 아니라 **보안 위험**이었다 — 백업 가이드가 realm export 를 「패스워드 제외」라 가르치는데 실서버 실측상 argon2 해시가 평문 JSON 으로 나온다(대조군 `--users skip` → 0건) |
 | #415 | `registry-contract-claims-use-tree-oracle` · `consumer-floor-change-needs-release-or-registered-gap` | 가드가 **작업 트리**만 오라클로 써서 소비자에게 거짓을 집행했다 — `kind=runtime` 에 최신 릴리스 태그를 두 번째 오라클로 붙였다. ⚠️ 공허 경로 둘을 실측으로 막았다: 빈 태그를 보간하면 `git show ":path"` 가 **인덱스**를 읽고, 버전 문자열 정렬은 **RC 를 정식 뒤에** 세운다. ⚠️ 본문 대조를 맨 `includes` 로 두면 `>=2` 가 `>=24` 에 걸린다(독립 검증 레그 지목) |
 | #400 | `java-kotlin-jwks-response-size-unbounded` | SSRF 하드닝용 리트리버를 주입하는 **행위 자체가** Nimbus 의 51200 상한을 지웠다(바이트코드: 2-arg 가 `iconst_0`, 빌더는 `ldc 51200`). `JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT` 참조로 복원. ⚠️ 재스캔에서 **Go 가 이미 갖고 있었다** — 주석이 출처를 그 Nimbus 상수라 밝힌다 |
 
@@ -133,9 +135,12 @@
   - ⚠️ **node 는 「과잉 수정」이 실제로 통과할 뻔했다** — 진입부 `cold` 게이트와 실패 계수의 `jwks()===undefined` 검사가 **서로를 가려**, 어느 한쪽을 지워도 동작이 안 변해 변이검증이 양쪽 다 초록이었다. 중복을 지우고 검사를 하나로 만든 뒤에야 대조군이 결함을 잡는다. **중복 게이트는 변이검증을 공허하게 만든다.**
   - **재발 시 CI 가 잡는 자리**: 언어별 단위테스트(결함 1 + 대조군 2~3, 각 언어 레인) + 교차언어 대칭 가드 `scripts/test/test-security-defaults.sh` §1b2(일곱 언어의 상한 상수·잔여시간 계산 존재 · 훑은 수 7 대조군). 가드 3요건 실측: go 상한을 5→9초로 바꾸면 **1 failed**, 가드를 끄고 같은 변이면 **155 passed 0 failed**.
   - ⚠️ **이 항목의 범위는 측정된 일곱이고, 그 일곱은 전부 닫혔다.** java·kotlin 은 **애초에 측정된 적이 없다**(Nimbus 가 그들의 fetch 를 소유) — 「예외」와 「미측정」은 다른 주장이고, 원장은 그 둘을 섞어 적고 있었다. 미측정은 이 항목의 잔여가 아니라 **별개의 열린 질문**이므로 아래 `jvm-cold-cache-unmeasured` 로 분리했다.
-- [ ] `jvm-cold-cache-unmeasured` **[M/S · 신규 2026-09-05]** java·kotlin 의 콜드 캐시 + IdP 장애 동작이 한 번도 측정되지 않았다 — 나머지 일곱은 20→1 로 닫혔는데 이 둘만 미지수다 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java`
+- [x] `jvm-cold-cache-unmeasured` **[M/S · 신규 2026-09-05 · 닫힘 2026-09-06 #417]** java·kotlin 의 콜드 캐시 + IdP 장애 동작이 한 번도 측정되지 않았다 — 나머지 일곱은 20→1 로 닫혔는데 이 둘만 미지수다 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java`
   - 재는 법은 이미 있다: 나머지 일곱에 쓴 프로브(요청을 세는 로컬 HTTP 서버 · JWKS 503 · 20회 검증)를 Nimbus `JWKSource` 에 물리면 된다. **먼저 재고, 그 다음에 고칠지 정한다** — Nimbus 의 `RateLimitedJWKSetSource`·`CachingJWKSetSource` 조합이 이미 막고 있을 수 있고, 그렇다면 고칠 것이 없다.
-  - ⚠️ 결과가 「이미 유계」로 나오면 그 사실을 `.claude/rules/security.md` 에 적어 다음 세션이 다시 묻지 않게 한다(지금은 "NOT measured" 라고만 적혀 있다).
+  - **측정 결과 — 이미 유계다. 고친 것이 없다.** 콜드 캐시 + JWKS 503 + 20회 검증 → IdP 요청 **2**(java·kotlin 동일). 대조군 정상 IdP + 미해결 kid 20회도 **2**. 나머지 일곱이 수정 전 20 이었던 것과 대비된다 — Nimbus 의 rate-limit 이 *source* 를 감싸 **콜드 로드까지 덮기** 때문이고, 일곱은 자기 게이트를 forced 경로에만 걸어 그 자리가 비어 있었다.
+  - **알려진-양성 대조군이 이 판정을 산다**: 같은 프로브를 `jwksMinRefetch=0` 으로 돌리면 **20**. 이게 없으면 「2」가 게이트 덕인지 프로브가 애초에 못 재는 것인지 갈리지 않는다.
+  - ⚠️ **상한 단언만으로는 하드닝 삭제를 못 잡는다(변이 실측).** `forRealm` 에서 `.rateLimited(...)` 를 지우면 `JWKSourceBuilder` **기본** 30초가 대신 걸려 상한은 **그대로 2**다. 무너지는 것은 **대조군**이다(interval 0 이 20→2). 변이 → **1 failed** · 복원 → **0 failed** · `git diff` 빈 출력. **대조군 레그를 지우면 이 테스트는 하드닝 삭제에 침묵한다.**
+  - 재발 시 CI 가 잡는 자리: `JwksColdCacheOutageTest`(java `keycloak-sdk-auth` · kotlin, 각 언어 레인). 판정은 `.claude/rules/security.md` 에 옮겨 적었다(그 줄은 "NOT measured" 였다).).
 - [x] `dependabot-ignore-kinds-uncounted` **[M/S · 신규·닫힘 2026-09-05]** 「올려선 안 되는 핀 N 종류」가 두 곳에 손으로 적혀 이틀 만에 두 번 어긋났다(ci.md 셋 · CLAUDE.md 넷 · 실측 `ignore` 8건) · `.github/dependabot.yml`
   - **닫힘.** `check-docs.mjs` 에 `kind=ignores` 앵커를 넣어 CLAUDE.md 문단을 dependabot.yml 과 **양방향** 대조한다(추가→문단이 빨강 · 삭제→`min` 이 빨강). facts 64→72 · anchors 21→22, 진입 명령 4곳 동기화.
   - 변이검증 5건 전부 잡힘 + 대조군(앵커 제거) 통과: 이름 제거 · yml 추가 · yml 삭제 · `@types/node`→`node`(느슨해짐 방지, npm 스코프는 세그먼트 축약 불허) · `kind` 오타는 조용히 통과하지 않는다.
