@@ -50,6 +50,10 @@ let MIN_ANCHORS = 0
 let MIN_ANCHOR_LINKS = 0
 // 검사 10c(아카이브 blob 참조)의 같은 방어. 기본 0 = 미적용이라 픽스처에 영향이 없다.
 let MIN_BLOB_REFS = 0
+// 검사 11(선언된 파생 계수)의 같은 방어. ⚠️ **상수로 두면 안 된다** — 실측(2026-09-06):
+// 상수 하한으로 처음 구현했더니 앵커가 0개인 픽스처가 전부 빨개져 자가테스트 75건이
+// 깨졌다. required 체크 안이라 그대로 나갔으면 모든 PR 이 막혔을 자리다.
+let MIN_COUNT_ANCHORS = 0
 for (const arg of process.argv.slice(2)) {
   if (arg === '--strict') {
     STRICT = true
@@ -61,6 +65,8 @@ for (const arg of process.argv.slice(2)) {
     MIN_ANCHOR_LINKS = Number(arg.slice('--min-anchor-links='.length))
   } else if (/^--min-blob-refs=\d+$/.test(arg)) {
     MIN_BLOB_REFS = Number(arg.slice('--min-blob-refs='.length))
+  } else if (/^--min-count-anchors=\d+$/.test(arg)) {
+    MIN_COUNT_ANCHORS = Number(arg.slice('--min-count-anchors='.length))
   } else if (!arg.startsWith('--') && rootArg === null) {
     rootArg = arg
   }
@@ -550,6 +556,47 @@ const RUNTIME = {
 // 태그·레지스트리다.**
 // ⚠️ 막는 것은 소스 하향이 아니라 **기록되지 않은 주장**이다. 격차를 앵커에
 // `published=<게시본 값>` 으로 적고 본문에 그 값을 쓰면 통과한다.
+// ── 검사 11 — **선언된 파생 계수** ────────────────────────────────────────────
+// 열거하면 답이 나오는 수를 여러 문서가 말하면, 그 수는 열거와 맞아야 한다.
+//
+// 실측 배경(2026-09-06 · 배치 3 감사): 기각 체크리스트가 #415 에서 7 → 8 이 됐는데
+// 원천(process.md §3)만 갱신되고 **원격 사본 둘은 7 로 남았다**(docs/README.md ·
+// rejected.md). 같은 부류로 작업 패키지 수가 지도에서 150, 등록부에서 169 였다.
+//
+// ⚠️ **일반형으로 넓히지 말 것 — 이미 기각된 제안이 된다.** `rejected.md` 는
+// 「문서 내부 수치 자기일치」를 기각했다(사유: 자기일치는 **둘 다 틀린 경우를 통과**).
+// 이 검사가 그것과 다른 점은 문서끼리 비교하지 않고 **열거를 오라클로** 삼는 것이다.
+// 그리고 앵커 없는 정규식은 수렴하지 않는다 — `체크리스트 5 번에` 는 항목 **번호**이지
+// 크기가 아니다(실측: rejected.md 에 그런 자리가 셋). 그래서 **선언된 자리만** 본다.
+// ⚠️ 축이 검사 6(언어 기수)과 겹치지 않는다 — 그쪽은 DEPLOY_LANGS 전용이다.
+//
+// 표기 규약: 앵커 뒤 3줄 안의 **정수만 담은 첫 백틱 스팬**이 주장이다. 검사 6 이
+// `all N language(s)` 표기를 강제한 것과 같은 이유 — 그 표기만 이 가드가 본다.
+const COUNTS = {
+  // 기각 체크리스트 항목 수 — process.md §3 의 번호 항목을 센다.
+  'rejection-checklist': [
+    'docs/governance/process.md',
+    (t) => {
+      const lines = t.split('\n')
+      const start = lines.findIndex((l) => /^##\s+3\./.test(l))
+      if (start < 0) return null
+      let n = 0
+      for (let i = start + 1; i < lines.length; i++) {
+        if (/^##\s/.test(lines[i])) break
+        if (/^\d+\.\s/.test(lines[i])) n++
+      }
+      return n || null
+    },
+  ],
+  // 잔여작업 등록부의 작업 패키지 수 — 체크박스 전수.
+  'work-packages': [
+    'docs/superpowers/plans/remaining-work.md',
+    (t) => {
+      const n = (t.match(/^- \[[ x]\]/gm) ?? []).length
+      return n || null
+    },
+  ],
+}
 const RELEASE_TAG_PREFIX = {
   java: 'v',
   python: 'py-v',
@@ -655,6 +702,7 @@ function proseBlockAt(lines, startIdx) {
 // 두 번째 오라클이 실제로 동작했는지 세는 계수기 — 0 이면 검사가 공허하다.
 let runtimeAnchors = 0
 let publishedOracleHits = 0
+let countAnchors = 0
 
 // 좌표 -> 그 좌표를 선언한 (문서, 버전) 목록. kind=dep 표에서 파싱된 모든 행을
 // 앵커·파일과 무관하게 모아, 전체 순회가 끝난 뒤 같은 좌표가 문서마다 다른
@@ -1256,6 +1304,59 @@ for (const file of walk(ROOT)) {
       continue
     }
 
+    // kind=count는 앵커 뒤 3줄 안의 **정수만 담은 첫 백틱 스팬**을, COUNTS가 지정한
+    // 열거의 결과와 대조한다. 표가 아니라 산문 속 한 수를 겨누므로 kind=dep의 표
+    // 처리와 무관하고, 여기서 갈라져 완결 처리한다.
+    if (attrs.kind === 'count') {
+      const spec = COUNTS[attrs.source]
+      if (!spec) {
+        errors.push(
+          `${rel}:${i + 1} 알 수 없는 source=${attrs.source} — 아는 것: ${Object.keys(COUNTS).join(' · ')}`,
+        )
+        continue
+      }
+      const [srcRel, count] = spec
+      let actual
+      try {
+        actual = count(readFileSync(join(ROOT, srcRel), 'utf8'))
+      } catch (e) {
+        errors.push(`${rel}:${i + 1} ${srcRel} 읽기 실패: ${e.message}`)
+        continue
+      }
+      if (actual === null) {
+        // 추출이 0을 냈다 = 열거 자체를 못 찾았다. 스킵하면 이 앵커가 조용히 무력화된다.
+        errors.push(`${rel}:${i + 1} ${srcRel} 에서 '${attrs.source}' 열거를 세지 못했다 — 스킵하지 않는다(공허 방지)`)
+        continue
+      }
+      // ⚠️ **첫 것만 보면 안 된다** — 검사된 수 옆에 두 번째 주장을 밀어 넣고 초록으로
+      // 지나갈 수 있다(독립 검토 레그가 실측으로 지목: `8`개인데 다른 곳은 `99` → 통과).
+      // 창 안의 정수 백틱은 **정확히 하나**여야 한다. 수를 둘 말하려면 앵커를 둘 둔다.
+      // 정수가 아닌 백틱(`process.md` 등)은 세지 않으므로 산문을 제약하지 않는다.
+      const claims = [...lines.slice(i + 1, i + 4).join('\n').matchAll(/`(\d+)`/g)]
+      if (claims.length === 0) {
+        errors.push(
+          `${rel}:${i + 1} count 앵커 뒤 3줄 안에 백틱으로 감싼 정수가 없다 — 이 가드가 보는 표기는 \`N\` 뿐이다`,
+        )
+        continue
+      }
+      if (claims.length > 1) {
+        errors.push(
+          `${rel}:${i + 1} count 앵커 뒤 3줄 안에 정수 백틱이 ${claims.length}개다(${claims.map((c) => c[1]).join(' · ')}) — ` +
+            `어느 것이 주장인지 가드가 고를 수 없다. 수를 둘 말하려면 앵커를 둘 둔다`,
+        )
+        continue
+      }
+      const claim = claims[0]
+      countAnchors++
+      facts++
+      if (Number(claim[1]) !== actual) {
+        errors.push(
+          `${rel}:${i + 1} '${attrs.source}' 문서=${claim[1]} 실제=${actual} (${srcRel} 를 세었다)`,
+        )
+      }
+      continue
+    }
+
     // kind=ignores는 dependabot.yml의 `ignore` 목록을 앵커 **바로 다음 문단**(빈 줄
     // 전까지)의 인라인 코드 스팬과 대조한다. kind=dep의 표 처리가 닿지 않는 자리다 —
     // 그 목록은 산문이고, 가드가 없는 동안 "네 종류"가 8건 중 5건만 덮은 채 살았다.
@@ -1784,6 +1885,13 @@ if (inGitRepo() && runtimeAnchors > 0 && publishedOracleHits === 0) {
   errors.push(
     `kind=runtime 앵커 ${runtimeAnchors}개인데 릴리스 태그가 하나도 해석되지 않았다 — 게시본 오라클이 통째로 공허하다. ` +
       `체크아웃이 태그를 가져왔는지 확인할 것(git tag -l 이 비어 있지 않아야 한다)`,
+  )
+}
+
+// 검사 11 의 공허 방지 — 앵커를 전부 지우면 "불일치 0"이 통과로 보인다.
+if (countAnchors < MIN_COUNT_ANCHORS) {
+  errors.push(
+    `kind=count 앵커 ${countAnchors} < --min-count-anchors=${MIN_COUNT_ANCHORS} — 선언된 파생 계수가 사라지면 검사 11 은 아무것도 안 보면서 초록이 된다`,
   )
 }
 
