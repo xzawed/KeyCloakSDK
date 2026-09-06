@@ -1470,4 +1470,65 @@ assert_contains "$_out" "검사 8b 가 통째로 공허하다" "기준 부재를
 rm -rf "$TMP/.git"
 assert_ok node "$GUARD" "$TMP"
 
+# ---- 검사 11 — 선언된 파생 계수 (kind=count) ----
+# 겨누는 것: 열거하면 답이 나오는 수를 문서가 말할 때, 그 수가 열거와 갈리는가.
+# ⚠️ 실측 배경 — 기각 체크리스트가 7 → 8 이 됐는데 원천만 갱신되고 원격 사본 둘이
+#    7 로 남았다. 두 사본은 서로 일치했으므로 「문서 내부 자기일치」로는 못 잡는다.
+count_fix() {
+  rm -rf "$TMP"; mkdir -p "$TMP/docs/governance" "$TMP/docs/superpowers/plans"
+  {
+    printf '<!-- doc-status: living -->\n# p\n\n## 3. 기각\n\n'
+    n=1; while [ "$n" -le "$1" ]; do printf '%d. item\n' "$n"; n=$((n + 1)); done
+    printf '\n## 4. next\n'
+  } > "$TMP/docs/governance/process.md"
+  printf '<!-- doc-status: active -->\n# r\n\n- [ ] a\n- [x] b\n- [ ] c\n' \
+    > "$TMP/docs/superpowers/plans/remaining-work.md"
+  {
+    printf '# map\n\n| 문서 | 상태 | 여기서만 알 수 있는 것 |\n|---|---|---|\n'
+    printf '| [p](governance/process.md) | 운영 | 이 문서에만 있는 설명이 여기 들어가고 길이 하한을 넘긴다 |\n'
+    printf '| [r](superpowers/plans/remaining-work.md) | 진행 | 이 문서에만 있는 설명이 여기 들어가고 길이 하한을 넘긴다 |\n'
+  } > "$TMP/docs/README.md"
+}
+# (a) 정상 — 주장이 열거와 같으면 통과한다.
+count_fix 8
+printf '# c\n\n<!-- doc-guard: kind=count source=rejection-checklist -->\n항목은 `8`개다.\n' > "$TMP/claim.md"
+assert_ok node "$GUARD" "$TMP"
+
+# (b) 주장이 열거와 갈리면 실패한다 — 이 검사의 본체.
+printf '# c\n\n<!-- doc-guard: kind=count source=rejection-checklist -->\n항목은 `7`개다.\n' > "$TMP/claim.md"
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "문서=7 실제=8" "갈린 값을 양쪽 다 찍는다"
+
+# (c) 열거가 늘면(원천만 바뀌면) 같은 주장이 실패한다 — 원격 사본 드리프트의 재현.
+count_fix 9
+printf '# c\n\n<!-- doc-guard: kind=count source=rejection-checklist -->\n항목은 `8`개다.\n' > "$TMP/claim.md"
+assert_fails node "$GUARD" "$TMP"
+
+# (d) 주장이 창(앵커 뒤 3줄) 밖으로 밀리면 **침묵이 아니라 실패**다.
+count_fix 8
+printf '# c\n\n<!-- doc-guard: kind=count source=rejection-checklist -->\n\n\n\n항목은 `8`개다.\n' > "$TMP/claim.md"
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "백틱으로 감싼 정수가 없다" "표기를 못 찾으면 fail-closed"
+
+# (e) 모르는 source 는 조용히 넘기지 않는다.
+printf '# c\n\n<!-- doc-guard: kind=count source=nope -->\n항목은 `8`개다.\n' > "$TMP/claim.md"
+assert_fails node "$GUARD" "$TMP"
+
+# (f) 열거를 못 찾으면(헤딩이 깨지면) 스킵이 아니라 실패다 — 공허 방지.
+count_fix 8
+sed -i 's/^## 3\. 기각/## 3x 기각/' "$TMP/docs/governance/process.md"
+printf '# c\n\n<!-- doc-guard: kind=count source=rejection-checklist -->\n항목은 `8`개다.\n' > "$TMP/claim.md"
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "열거를 세지 못했다" "추출 실패를 통과로 읽지 않는다"
+
+# (g) 앵커 개수 하한 — 기본 0 이라 픽스처에 영향이 없고(위 케이스들이 그 대조군),
+#     명시하면 문다. ⚠️ 상수로 박았다가 픽스처 75건을 깨뜨린 실측이 있다.
+count_fix 8
+printf '# c\n\n<!-- doc-guard: kind=count source=rejection-checklist -->\n항목은 `8`개다.\n' > "$TMP/claim.md"
+assert_ok node "$GUARD" "$TMP" --min-count-anchors=1
+assert_fails node "$GUARD" "$TMP" --min-count-anchors=2
+
 assert_report
