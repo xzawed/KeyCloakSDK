@@ -128,6 +128,17 @@ macOS need nothing extra.
 **Docker — required for integration tests only.** Every language's unit tests and coverage gate
 run without it. Integration tests start a real Keycloak container.
 
+⚠️ **Docker on Git Bash (Windows) — absolute paths in the *arguments* are rewritten.** MSYS
+translates any argument starting with `/` into a Windows path, and it does that to paths that only
+exist inside the container. Measured 2026-09-06: `docker run … keycloak:26.6 export --dir
+/opt/keycloak/data/exp` ran, inside the container, as `Exporting into directory /C:/Program
+Files/Git/opt/keycloak/data/exp` and then died with `master-realm.json (No such file or directory)`.
+**The error names the container application, not Docker**, so the first suspects are volumes and
+permissions — the wrong place to look. Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` before
+such commands, or write the argument with a leading double slash (`//opt/...`). The tell is a
+`C:/Program Files/Git/` prefix appearing where a container path belongs. The same applies to any
+tool invoked this way (`kubectl exec`, remote shells), not just Docker.
+
 ## 5. Verify the setup
 
 Build one language end to end. **Its command sheet is [`.claude/rules/<lang>.md`](../../.claude/rules/)**
