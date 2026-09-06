@@ -19,9 +19,22 @@
 | 심각도 | high 27 · medium 76 · low 47 |
 | 작업량 | S 68 · M 70 · L 12 |
 
-### 다음 세션 진입점 (2026-09-06 기준 · #415 · #416 · #417 반영)
+### 재개 절차 (다른 PC 포함)
 
-134건 중 어디부터인지가 안 보이므로 순서를 못박는다. **위에서부터 밟는다.**
+이 저장소 밖에 남는 상태는 없다 — 아래 넷이면 직전 세션과 같은 조건이 된다.
+
+```sh
+git clone https://github.com/xzawed/KeyCloakSDK && cd KeyCloakSDK
+node scripts/doctor.mjs                 # 이 PC에 무엇이 없는지. 설치·환경변수는 docs/guides/development-setup.md
+node scripts/check-docs.mjs . --strict --min-facts=74 --min-anchors=22 --min-anchor-links=24 --min-blob-refs=4
+git branch --show-current               # ⚠️ 아래 함정 (e)
+```
+
+⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
+
+### 다음 세션 진입점 (2026-09-06 기준 · #415–#419 반영)
+
+135건 중 어디부터인지가 안 보이므로 순서를 못박는다. **위에서부터 밟는다.**
 
 1. **`doc-audit-batch2-3-not-started` [M]** — 미검증 20개. 방법·회수율 실측이 그 항목에 있다. ⚠️ **감사자 처방의 임계치를 그대로 옮기지 말 것**(배치 1 에서 여러 건이 `--min-facts=64 --min-anchors=21` 을 전제했으나 이 트리는 **74/22**).
 2. **A 절 잔여 2건**(`java-rules-close-scope-ambiguous` [L] · `auto-bump-manifest-crosscheck-skip` [L·보류]) — 확정 결함 12건 중 남은 전부다.
@@ -34,11 +47,13 @@
 
 **#415 가 남긴 부류 시험**(다른 주장에도 적용한다): **「소비자가 틀릴 수 있는데 HEAD 는 맞다면, 오라클은 트리가 아니라 태그·레지스트리다.」** 후보 — 게시된 공개 API 표면 · 게시 매니페스트의 의존성 하한 · 릴리스 바이너리에 컴파일된 기능 · 배포 아티팩트의 라이선스 · 「vX 에 포함됨」류 CHANGELOG 결속.
 
-⚠️ **이 세션이 반복해서 밟은 함정 넷**(전부 실측으로 잡혔다) — 착수 전 읽는다.
+⚠️ **직전 세션들이 반복해서 밟은 함정**(전부 실측으로 잡혔다) — 착수 전 읽는다. (a)~(d) 는 2026-09-05, (e)(f) 는 2026-09-06.
    (a) **「사본이면 지운다」를 네 번 잘못 적용**했다. 지우려던 것이 **인접 판정의 입력**이었다(`18/20` 을 지우면 다음 줄의 「two branches」가 `20−18` 을 잃는다). 지우기 전에 앞뒤 문장의 유도 관계와 `git blame -L n-1,n+1` 로 같은 커밋인지 본다.
    (b) **계측기가 네 번 고장났다.** 줄단위 정규식이 **인라인 플로우 맵**을 놓치고(`matrix: { java: [...] }`), `git log -S'<속성이름>'` 은 **값만 바뀐 커밋을 못 잡는다**(개수가 안 변한다). 「N 개가 전부」를 말하기 전에 전수를 세고, 알려진 정답으로 계측기를 먼저 잰다.
    (c) **가드가 초록인 것은 삭제·안전의 근거가 못 된다.** 그 값을 읽는 스크립트가 0건이면 「안전」이 아니라 **「문서가 유일한 소재지」**다.
    (d) **서브에이전트가 리포 git 을 하이재킹했다** — 실제 `.git/config` 에 `core.worktree` 를 써서 `git status` 가 거짓 clean 을 냈다. 워크플로 직후 `git rev-parse --show-toplevel` 을 먼저 찍는다.
+   (e) **미머지 PR 브랜치 위에서 새 브랜치를 팠다.** 세션이 `main` 에서 시작한다고 가정했는데 HEAD 가 열린 PR(#414)의 브랜치였고, 그 diff 가 #415 에 통째로 실려 나갔다(무해했으나 **PR 본문이 자기 범위를 틀리게 말했다**). 파기 전에 `git branch --show-current` + `gh pr list --head "$(git branch --show-current)" --state open` 를 찍는다. ⚠️ **스쿼시 저장소라 `git merge-base --is-ancestor` 로는 판정할 수 없다** — 머지돼도 NOT ancestor 다. 답을 주는 것은 PR 머지 상태와 「내용이 트리에 있는지」(`git log -S'<고유 문자열>' origin/main`)다.
+   (f) **Grok 이 빈 디렉터리·150단어에서도 타임아웃했다.** `grok_build_verify` 가 붙이는 자가검증 체크리스트가 추론량을 배로 만든다. **진단 순서**: 타임아웃 → `grok_build_delegate` 로 `"PONG"` 한 번(연결과 추론량을 가른다) → 같은 질문을 delegate 로. 실측: verify 240s·300s 두 번 실패 → delegate 로 즉시 성공.
 
 ⚠️ **기각 11건은 이 등록부에 없다 — 의도적이다.** 게시 잡의 `environment:` 부재 · `workflow_dispatch` 우회 · admin-capability D열 무보호는 문서화된 설계이거나 되살릴 조건이 적힌 기각이다. 착수 전 [기각 레지스트리](../../governance/rejected.md)를 먼저 읽는다.
 
