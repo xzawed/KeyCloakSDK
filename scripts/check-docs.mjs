@@ -1328,13 +1328,25 @@ for (const file of walk(ROOT)) {
         errors.push(`${rel}:${i + 1} ${srcRel} 에서 '${attrs.source}' 열거를 세지 못했다 — 스킵하지 않는다(공허 방지)`)
         continue
       }
-      const claim = [...lines.slice(i + 1, i + 4).join('\n').matchAll(/`(\d+)`/g)][0]
-      if (!claim) {
+      // ⚠️ **첫 것만 보면 안 된다** — 검사된 수 옆에 두 번째 주장을 밀어 넣고 초록으로
+      // 지나갈 수 있다(독립 검토 레그가 실측으로 지목: `8`개인데 다른 곳은 `99` → 통과).
+      // 창 안의 정수 백틱은 **정확히 하나**여야 한다. 수를 둘 말하려면 앵커를 둘 둔다.
+      // 정수가 아닌 백틱(`process.md` 등)은 세지 않으므로 산문을 제약하지 않는다.
+      const claims = [...lines.slice(i + 1, i + 4).join('\n').matchAll(/`(\d+)`/g)]
+      if (claims.length === 0) {
         errors.push(
           `${rel}:${i + 1} count 앵커 뒤 3줄 안에 백틱으로 감싼 정수가 없다 — 이 가드가 보는 표기는 \`N\` 뿐이다`,
         )
         continue
       }
+      if (claims.length > 1) {
+        errors.push(
+          `${rel}:${i + 1} count 앵커 뒤 3줄 안에 정수 백틱이 ${claims.length}개다(${claims.map((c) => c[1]).join(' · ')}) — ` +
+            `어느 것이 주장인지 가드가 고를 수 없다. 수를 둘 말하려면 앵커를 둘 둔다`,
+        )
+        continue
+      }
+      const claim = claims[0]
       countAnchors++
       facts++
       if (Number(claim[1]) !== actual) {

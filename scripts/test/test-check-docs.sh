@@ -1524,7 +1524,20 @@ assert_fails node "$GUARD" "$TMP"
 _out="$(node "$GUARD" "$TMP" 2>&1 || true)"
 assert_contains "$_out" "열거를 세지 못했다" "추출 실패를 통과로 읽지 않는다"
 
-# (g) 앵커 개수 하한 — 기본 0 이라 픽스처에 영향이 없고(위 케이스들이 그 대조군),
+# (g) 창 안에 정수 백틱이 **둘 이상**이면 실패한다 — 「첫 것만 본다」로 두면 검사된 수
+#     옆에 두 번째 주장을 밀어 넣고 초록으로 지나갈 수 있다(독립 레그가 지목한 구멍).
+#     수 둘을 말하려면 앵커 둘을 둔다.
+count_fix 8
+printf '# c\n\n<!-- doc-guard: kind=count source=rejection-checklist -->\n항목은 `8`개인데 다른 곳은 `99` 라 적는다.\n' > "$TMP/claim.md"
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "정수 백틱이 2개" "여러 주장을 지목한다"
+
+# (h) 대조군 — 정수가 아닌 백틱은 방해가 되지 않는다.
+printf '# c\n\n<!-- doc-guard: kind=count source=rejection-checklist -->\n항목은 `8`개다(`process.md` 가 원천).\n' > "$TMP/claim.md"
+assert_ok node "$GUARD" "$TMP"
+
+# (i) 앵커 개수 하한 — 기본 0 이라 픽스처에 영향이 없고(위 케이스들이 그 대조군),
 #     명시하면 문다. ⚠️ 상수로 박았다가 픽스처 75건을 깨뜨린 실측이 있다.
 count_fix 8
 printf '# c\n\n<!-- doc-guard: kind=count source=rejection-checklist -->\n항목은 `8`개다.\n' > "$TMP/claim.md"
