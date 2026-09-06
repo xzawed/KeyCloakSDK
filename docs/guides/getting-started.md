@@ -33,12 +33,12 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 
 ### 1) Required runtime — JDK 17+
 
-<!-- doc-guard: kind=runtime lang=java -->
+<!-- doc-guard: kind=runtime lang=java published=21 -->
 The sources target JDK **`17`** (`--release 17`), and this anchor holds that value against `java/pom.xml`.
 
 ⚠️ **The published `1.0.0` on Maven Central does not have it yet — that artifact needs JDK 21.** The tag `v1.0.0` is from 2026-09-01; the lowering landed 2026-09-04 (#389) and **no JVM release has shipped since**, so what you download today is compiled with `--release 21`. Build against **21** until the next JVM release; loading a class file under an older JDK raises `UnsupportedClassVersionError`.
 
-⚠️ **This anchor cannot catch that gap.** `kind=runtime` compares this document against the **working tree**, not against the artifact a consumer downloads — it is green precisely while this paragraph and `java/pom.xml` agree on 17. Verify the shipped floor with `git show v1.0.0:java/pom.xml | grep maven.compiler.release`, and when the next JVM release goes out, lower this line to 17 **together with** the tables above and `README.md` · `README.ko.md` · `docs/reference/compatibility.md` · `kotlin/README.md`, which all say 21 today because that is what is published.
+⚠️ **The anchor now holds both numbers, so this gap cannot go unrecorded.** `kind=runtime` used to compare this document against the **working tree** alone, which is exactly why it stayed green while consumers downloaded a 21 artifact. It now also reads the newest release tag (`git show v1.0.0:java/pom.xml`) and **fails** unless the anchor carries `published=21` and this paragraph states it. When the next JVM release goes out, the same guard fails the other way — delete the `published=` attribute and lower this line to 17 **together with** the tables above and `README.md` · `README.ko.md` · `docs/reference/compatibility.md` · `kotlin/README.md`, which all say 21 today because that is what is published.
 
 ### 2) Local installation (development)
 
@@ -603,8 +603,8 @@ client.close
 
 ### 1) Required runtime — Kotlin 2.2+ / JDK 17+
 
-<!-- doc-guard: kind=runtime lang=kotlin -->
-**JDK `17+`** is the bytecode target **in the sources** (this anchor verifies the emitted target, not the JDK used to build). ⚠️ **The published `1.0.0` needs JDK 21** — `kotlin-v1.0.0` carries only `jvmToolchain(21)` with no `jvmTarget`/`-Xjdk-release`, so its bytecode is 21; the 17 target landed after the tag and has not shipped. Same gap as [Java](#java), same reason the anchor cannot see it. Kotlin **2.2 or newer** is also required on that JDK (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). The SDK is *built* with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so the published artifact’s binary metadata is readable by any Kotlin 2.2+ compiler — you do not need to be on 2.4 to consume it. All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
+<!-- doc-guard: kind=runtime lang=kotlin published=21 -->
+**JDK `17+`** is the bytecode target **in the sources** (this anchor verifies the emitted target, not the JDK used to build). ⚠️ **The published `1.0.0` needs JDK 21** — `kotlin-v1.0.0` carries only `jvmToolchain(21)` with no `jvmTarget`/`-Xjdk-release`, so its bytecode is 21; the 17 target landed after the tag and has not shipped. Same gap as [Java](#java), and the anchor now records it the same way (`published=21`; the guard reads `jvmToolchain` on that tag precisely because `jvmTarget` is absent there). Kotlin **2.2 or newer** is also required on that JDK (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). The SDK is *built* with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so the published artifact’s binary metadata is readable by any Kotlin 2.2+ compiler — you do not need to be on 2.4 to consume it. All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
 
 ### 2) Local installation (development)
 

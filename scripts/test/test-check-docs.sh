@@ -1310,4 +1310,101 @@ sed -i "/아카이브:/d" "$TMP/ok.md"
 assert_ok    node "$GUARD" "$TMP"                      # 참조가 없으면 검사할 것도 없다
 assert_fails node "$GUARD" "$TMP" --min-blob-refs=1    # 그러나 최저치를 켜면 무효 측정으로 실패한다
 
+# ---- kind=runtime 두 번째 오라클: 최신 릴리스 태그(= 소비자가 지금 받는 것) ----
+# 트리만 보는 가드는 "곧"과 "지금"이 갈리는 동안 문서의 거짓을 **초록으로 집행한다**
+# (실현: #389 가 JVM 하한을 21→17 로 내렸는데 릴리스가 없어 Maven Central 은 21 이었고,
+# 문서 17 ↔ pom 17 이 맞는다는 이유로 가드는 통과했다). 여기서는 픽스처 안에 진짜 저장소와
+# 태그를 만들어 **트리와 게시본이 갈린 상태**를 재현한다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+mkdir -p "$TMP/node"
+printf '{ "engines": { "node": ">=22" } }\n' > "$TMP/node/package.json"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node -->' 'Node `>=22` 이상이 필요하다.' > "$TMP/oracle.md"
+git init -q "$TMP" >/dev/null 2>&1
+git -C "$TMP" add -A >/dev/null 2>&1
+git -C "$TMP" -c user.email=t@example.invalid -c user.name=t commit -qm published >/dev/null 2>&1
+git -C "$TMP" tag node-v1.0.0 >/dev/null 2>&1
+assert_eq "node-v1.0.0" "$(git -C "$TMP" tag -l 'node-v*')" "픽스처에 게시본 태그가 실제로 생겼다"
+
+# (a) 트리 == 게시본 → 오늘과 같은 동작.
+assert_ok node "$GUARD" "$TMP"
+
+# (b) 트리만 하한을 올리고 게시본은 그대로 → 격차. 기록이 없으면 **실패**해야 한다.
+#     ⚠️ 이 변이는 문서와 트리를 함께 옮기므로 **기존 검사 1은 통과한다** — 즉 새 규칙만이
+#     원인이다. 구 스크립트는 여기서 초록이었다.
+printf '{ "engines": { "node": ">=24" } }\n' > "$TMP/node/package.json"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node -->' 'Node `24+` 이상이 필요하다.' > "$TMP/oracle.md"
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "게시본(node-v1.0.0)" "실패 이유가 게시본 오라클임을 지목한다"
+
+# (c) 격차를 앵커에 기록하고 본문이 그 값을 말하면 통과한다(막는 것은 하향이 아니라 침묵이다).
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node published=>=22 -->' \
+  'Node `24+` 이상이 필요하다 — 게시본은 아직 `>=22` 다.' > "$TMP/oracle.md"
+assert_ok node "$GUARD" "$TMP"
+
+# (d) 속성값이 게시본과 다르면 실패한다(아무 숫자나 적어 통과시키는 길을 막는다).
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node published=>=20 -->' \
+  'Node `24+` 이상이 필요하다 — 게시본은 아직 `>=20` 다.' > "$TMP/oracle.md"
+assert_fails node "$GUARD" "$TMP"
+
+# (e) 속성만 있고 본문이 그 값을 안 말하면 실패한다 — HTML 주석은 독자에게 보이지 않는다.
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node published=>=22 -->' \
+  'Node `24+` 이상이 필요하다.' > "$TMP/oracle.md"
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "본문에 안 보인다" "본문 부재를 그 이유로 지목한다"
+
+# (e2) 부분문자열 오탐부재 — 게시본 값이 **다른 버전 안에** 들어 있을 때 통과하면 안 된다.
+#      독립 검증 레그가 지목한 자리다: 맨 `includes` 면 게시본 `>=2` 가 본문의 `24` 에 걸려
+#      "본문이 격차를 말했다"로 읽힌다. 독자는 미출시 숫자만 보고 격차를 끝내 모른다.
+printf '{ "engines": { "node": ">=24" } }\n' > "$TMP/node/package.json"
+git -C "$TMP" tag -d node-v1.0.0 >/dev/null 2>&1
+git -C "$TMP" add -A >/dev/null 2>&1
+git -C "$TMP" -c user.email=t@example.invalid -c user.name=t commit -qm bump >/dev/null 2>&1
+printf '{ "engines": { "node": ">=2" } }\n' > "$TMP/node/package.json"
+git -C "$TMP" add -A >/dev/null 2>&1
+git -C "$TMP" -c user.email=t@example.invalid -c user.name=t commit -qm published2 >/dev/null 2>&1
+git -C "$TMP" tag node-v2.0.0 >/dev/null 2>&1
+printf '{ "engines": { "node": ">=24" } }\n' > "$TMP/node/package.json"
+# 본문은 게시본 값 ">=2" 를 **문자열로는 담고 있다** — ">=24" 안에. 맨 includes 면 통과한다.
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node published=>=2 -->' \
+  'Node `>=24` 이상이 필요하다.' > "$TMP/oracle.md"
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "본문에 안 보인다" '">=24" 안의 ">=2" 를 게시본 언급으로 세지 않는다'
+# 대조군: 같은 값을 경계가 선 자리에 쓰면 통과해야 한다(규칙이 과잉이 아님을 고정).
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node published=>=2 -->' \
+  'Node `>=24` 이상이 필요하다 — 게시본은 아직 `>=2` 다.' > "$TMP/oracle.md"
+assert_ok node "$GUARD" "$TMP"
+# 원상복구: 아래 (f)는 node-v1.0.0/`>=22` 조합을 전제한다.
+git -C "$TMP" tag -d node-v2.0.0 >/dev/null 2>&1
+printf '{ "engines": { "node": ">=22" } }\n' > "$TMP/node/package.json"
+git -C "$TMP" add -A >/dev/null 2>&1
+git -C "$TMP" -c user.email=t@example.invalid -c user.name=t commit -qm restore >/dev/null 2>&1
+git -C "$TMP" tag node-v1.0.0 >/dev/null 2>&1
+
+# (f) 반대 방향 — 릴리스로 격차가 닫혔는데 속성이 남아 있으면 실패한다.
+#     이게 없으면 `published=` 는 한 번 달고 영원히 통과시키는 면제 딱지가 된다.
+printf '{ "engines": { "node": ">=22" } }\n' > "$TMP/node/package.json"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node published=>=22 -->' \
+  'Node `>=22` 이상이 필요하다.' > "$TMP/oracle.md"
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "격차가 없는데" "닫힌 격차의 잔여 속성을 지목한다"
+
+# (g) 공허성 — 태그가 하나도 없으면 게시본 대조는 조용히 0건이 되고 "격차 없음"과
+#     구별되지 않는다. ⚠️ 가정이 아니다: 태그 변수가 비면 `git show ":path"` 가
+#     **인덱스**를 읽어 트리와 같은 값을 돌려준다(실측). 그래서 스킵이 아니라 실패다.
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=node -->' 'Node `>=22` 이상이 필요하다.' > "$TMP/oracle.md"
+assert_ok node "$GUARD" "$TMP"
+git -C "$TMP" tag -d node-v1.0.0 >/dev/null 2>&1
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "게시본 오라클이 통째로 공허하다" "태그 부재를 공허로 지목한다"
+
+# (h) 대조군 — 저장소가 아니면 두 번째 오라클은 아예 돌지 않는다(픽스처 전체가 그 상태다).
+#     이게 성립해야 위 (g)의 실패가 "태그가 없다"이지 "git 이 없다"가 아니다.
+rm -rf "$TMP/.git"
+assert_ok node "$GUARD" "$TMP"
+
 assert_report
