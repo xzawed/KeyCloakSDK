@@ -19,7 +19,8 @@
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수(`grep -c '^- \[ \]'` · `'^- \[x\]'`)는 **169**(열림 137 · 닫힘 32)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.**
+<!-- doc-guard: kind=count source=work-packages -->
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `169`(열림 137 · 닫힘 32)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.**
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -28,7 +29,7 @@
 ```sh
 git clone https://github.com/xzawed/KeyCloakSDK && cd KeyCloakSDK
 node scripts/doctor.mjs                 # 이 PC에 무엇이 없는지. 설치·환경변수는 docs/guides/development-setup.md
-node scripts/check-docs.mjs . --strict --min-facts=74 --min-anchors=22 --min-anchor-links=24 --min-blob-refs=4
+node scripts/check-docs.mjs . --strict --min-facts=78 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=4
 git branch --show-current               # ⚠️ 아래 함정 (e)
 ```
 
