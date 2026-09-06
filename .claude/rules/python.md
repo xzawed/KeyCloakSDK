@@ -5,7 +5,10 @@ paths:
   - "harness/install/consume/python*"
   - ".github/workflows/python-*.yml"
 ---
-<!-- doc-budget: max-bytes=4643 -->
+<!-- doc-budget: max-bytes=4690 -->
+<!-- 4643 → 4690 (2026-09-06, +47B). 규약 (1) — 증가분이 **실행 가능성**을 사 온다: 이 블록이
+     처방하던 `"$PY" -m build` 가 같은 블록이 전제하는 venv 에서 실행 불가였다(`build` 는
+     [dev] 에 없다). 설치 단계를 붙여 명령이 실제로 도는 것으로 바꿨다. 300B 이하. -->
 
 # Python rules
 
@@ -19,7 +22,7 @@ cd python && "$PY" -m pytest -m integration                            # needs D
 cd python && "$PY" -m ruff check src tests examples                    # includes the security S/bandit rules
 cd python && "$PY" -m ruff format --check src tests examples
 cd python && "$PY" -m mypy src                                         # strict
-cd python && "$PY" -m build                                            # release build check
+cd python && "$PY" -m pip install build && "$PY" -m build              # release build check (`build` is not in [dev])
 ```
 
 - The POSIX venv interpreter is `.venv/bin/python` — override it with `KCSDK_PY`.
@@ -37,4 +40,4 @@ cd python && "$PY" -m build                                            # release
   - **Cleanup**: if `aclose()` closes only the outer session, the inner `httpx.AsyncClient` stays open and **one FD leaks per client that uses admin** (EMFILE in a long-lived async service). The auth-only path is clean, so a test that never exercises admin can never reveal it. A `finally` contract closes the outer session even when the nested close fails.
   - ⚠️ When building the mocks, `MagicMock(spec=KeycloakAdmin)` makes the nested `aclose` a **synchronous** MagicMock — in production it is a coroutine, so without an explicit `AsyncMock` you are asserting against a shape that never occurs.
 - ⚠️ **joserfc's `KeySet.import_key_set` raises the stdlib `binascii.Error` on a malformed JWKS — not even a joserfc type** — so a consumer catching `keycloak_sdk.exceptions` **catches nothing** (a §4 violation). The parsing in `_load_jwks` is not covered by `_wrap`: `_wrap` is for transport errors, and this is a problem with the **content** of the response. Both the sync and the async mirror convert it to `TokenValidationError`. An IdP serving a malformed JWKS is not a hypothetical — proxy misconfiguration, a partial rollout, a man in the middle.
-- ⚠️ **JWKS refetching has to be DoS-safe.** A forged signature (`BadSignatureError`) **does not** trigger a refetch; only an unresolved key id (`InvalidKeyIdError`) does, and `_jwks_min_refetch` rate-limits it. The 30-second default and its rationale live in `.claude/rules/security.md`.
+- ⚠️ **JWKS refetching has to be DoS-safe.** A forged signature (`BadSignatureError`) **does not** trigger a refetch; only an unresolved key id (`InvalidKeyIdError` or `MissingKeyError`) does, and `_jwks_min_refetch` rate-limits it. The 30-second default and its rationale live in `.claude/rules/security.md`.

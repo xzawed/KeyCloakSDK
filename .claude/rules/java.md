@@ -4,7 +4,16 @@ paths:
   - "harness/apps/java/**"
   - "harness/install/consume/java*"
 ---
-<!-- doc-budget: max-bytes=6026 -->
+<!-- doc-budget: max-bytes=6274 -->
+<!-- 6026 → 6274 (2026-09-06, +248B). 규약 (1) — 증가분이 전부 **다시 재는 명령**을 사 온다:
+     (a) 단일 테스트 레시피가 `-am` 과 surefire 플래그 없이 실패했다(세 형태 다 실행해 확인),
+     (b) `close()` 서술이 뒤집혀 있었다(구현은 admin 만 닫는다), (c) CI 잡 이름이 `invariant`
+     가 아니라 `security-invariant` 이고 required 가 아니다, (d) admin-client 핀의 SSOT 는
+     pom 이고 CLAUDE.md 표가 파생본이다.
+     ⚠️ **두 번 압축했다** — 초안 +559B → 압축 +393B(검사 8b 가 300B 상한으로 막았다) →
+     이력 서술 두 개를 커밋 메시지로 보내 +248B. 보낸 것은 「단일플라이트 패자 경로 테스트
+     이후 18/20 이 됐다」와 「패치 버전 둘이 이 파일 안에서 갈렸다」로, **둘 다 git 이 소유한
+     경위**다. 판정 방법은 하나도 지우지 않았다(그건 손실이지 교환이 아니다). -->
 <!-- 5788 → 6026 (2026-09-03, +238B). 규약 (1) — 증가분이 **기계 검증을 사 온다**: 소비자 하한을
      21 → 17 로 내리면서 `scripts/check-jvm-bytecode-floor.mjs`(신규 가드)와 `check-docs.mjs` 의
      runtime 추출기 수정이 함께 들어왔고, 이 문단이 그 둘의 조준점을 가리킨다. 압축을 먼저 시도해
@@ -19,27 +28,27 @@ paths:
 JDK 21 + Maven 3.9.x for **building**; the **consumer floor is JDK 17** (`maven.compiler.release=17`, enforcer `[17,)`) — do not read the build JDK as the floor. CI runs 17·21·25 and `check-jvm-bytecode-floor.mjs` re-reads the class files (major ≤ 61). The harness shell does not source a profile, so specify the environment inline.
 
 ```bash
-JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot}" \
+JAVA_HOME="${KCSDK_JDK21:?see \`node scripts/doctor.mjs java\`}" \
 PATH="${KCSDK_TOOLS:-$HOME/tools}/apache-maven-3.9.9/bin:$PATH" mvn -f java/pom.xml <goal>
 ```
 
 - Full build and verification: `mvn -f java/pom.xml verify` (includes the coverage gate 90/85 and the integration tests; needs Docker)
-- Unit only: `mvn -f java/pom.xml test -DskipITs=true` · a single test: `-pl <module> -Dtest=<Class>#<method>`
+- Unit only: `mvn -f java/pom.xml test -DskipITs=true` · a single test: `-pl <module> -am -Dtest=<Class>#<method> -Dsurefire.failIfNoSpecifiedTests=false` (⚠️ **both extra flags are load-bearing** — `-pl` alone cannot resolve the sibling `1.0.0-SNAPSHOT`s, and `-am` alone dies on "no tests matching pattern" in the modules it pulled in)
 - Checking the release artifacts locally: `mvn -f java/pom.xml -Prelease -DskipTests -DskipITs=true -Dgpg.skip=true package`
 - The real release goes `v*` tag → `release.yml` (human approval gate).
-- ⚠️ **Do not write the exact patch versions here** — measure them with `java -version` and `node scripts/doctor.mjs java`. Two of them once drifted apart and set inside this very file.
+- ⚠️ **Do not write the exact patch versions here** — measure them with `java -version` and `node scripts/doctor.mjs java`.
 - ⚠️ **`jacoco:check` is bound to the `verify` phase, so `mvn test` never verifies the coverage gate at all.**
-- ⚠️ **JaCoCo checks each module separately, so the repository total hides the module that is actually at risk.** `keycloak-sdk-auth` sat at **exactly 85.00% branches** (17 of 20, gate 85) while the four modules summed to a comfortable 93.9%. Read the per-module figure, not the sum. It is now 18/20 with one branch of slack, after a test for the single-flight loser path in `ClientCredentialsTokenProvider`.
+- ⚠️ **JaCoCo checks each module separately, so the repository total hides the module that is actually at risk.** `keycloak-sdk-auth` sat at **exactly 85.00% branches** (17 of 20, gate 85) while the four modules summed to a comfortable 93.9%. Read the per-module figure, not the sum. It is now 18/20 with one branch of slack.
 - ⚠️ **The two branches still uncovered in that module are unreachable, not missing tests.** `ValidatedToken.from` guards `getAudience() == null`, which a real Nimbus `JWTClaimsSet` never returns, and `OidcMetadata.stripTrailingSlashes` guards an all-slash or empty server URL, which config validation rejects earlier. Both need a mock to reach. **Do not chase 100% here.**
 
 ## Gotchas
 
 - ⚠️ **Stringifying a `char[]` secret unconditionally is a bare NPE on a public/PKCE client.** `getClientSecret()` is null on a public client, and `AuthClient.clientAuth()` passed it straight into `new String(...)`, producing an undiagnosable NPE on all four paths — client-credentials, refresh, logout and introspect. It now takes the name of the calling flow and throws a `KeycloakConfigException` saying that this operation requires a confidential client. **Every point that stringifies a `char[]` secret must be preceded by a null guard.**
-- ⚠️ **admin-client and the Keycloak server are independent version tracks** — there is no admin-client numbered like the server line. `representation` fields can disagree with the server, so verify any field you depend on against a real server. The pin's SSOT is the dependency table in the root `CLAUDE.md`. Kotlin reuses the same coordinate.
-- ⚠️ **admin timeouts and resource cleanup.** `AdminClient` has to inject connect/read timeouts through `KeycloakBuilder.resteasyClient(...)` to stop an unbounded wait (not injecting = thread-exhaustion DoS). `close()` cleans up **the auth session as well as** admin (not cleaning up = FD and connection-pool leak).
+- ⚠️ **admin-client and the Keycloak server are independent version tracks** — there is no admin-client numbered like the server line. `representation` fields can disagree with the server, so verify any field you depend on against a real server. The pin's SSOT is `java/pom.xml`; the root `CLAUDE.md` table is the `doc-guard`-checked copy. Kotlin reuses the same coordinate.
+- ⚠️ **admin timeouts and resource cleanup.** `AdminClient` has to inject connect/read timeouts through `KeycloakBuilder.resteasyClient(...)` to stop an unbounded wait (not injecting = thread-exhaustion DoS). `KeycloakClient.close()` closes **admin only, and only if it was created** — `AuthClient` is not `AutoCloseable` (not closing admin = FD and connection-pool leak).
 - ⚠️ **But injecting `resteasyClient(...)` bypasses the admin-client's `JacksonProvider` registration entirely.** That loses `NON_NULL` (null fields not sent) together with `FAIL_ON_UNKNOWN_PROPERTIES=false`, which breaks version skew in both directions — client ahead gives a 400 *Unrecognized field*, server ahead breaks deserialization. `buildTimeoutClient` registers `JacksonProvider` and `StreamMessageBodyReader` itself. **Keep `ClientBuilder.newBuilder()`** — switching to `createClientBuilder()` silently drops the connection pool from 50 to 10.
   - **Behavioural contract**: with `NON_NULL` on, a partial update cannot blank a field by setting it to null (an unset field is not sent, so the server treats it as unchanged) — this matches the official admin-client. To blank one, use an empty string or the dedicated API.
-- ⚠️ **jackson-databind is fixed through `dependencyManagement`** (the pin lives in `java/pom.xml`'s `dependencyManagement`, mirrored in `kotlin/build.gradle.kts` — ⚠️ **not** in the root `CLAUDE.md` table, which carries no jackson row and no `doc-guard` anchor for it; nothing cross-checks the two manifests). **Security invariant**: we never use our own `ObjectMapper` or default/polymorphic typing, and only deserialize trusted Keycloak responses into fixed POJOs — enabling default typing, registering a custom JAX-RS Jackson provider, and introducing polymorphic deserialization of untrusted JSON are **all forbidden**, and the CI `invariant` job blocks them.
+- ⚠️ **jackson-databind is fixed through `dependencyManagement`** (the pin lives in `java/pom.xml`'s `dependencyManagement`, mirrored in `kotlin/build.gradle.kts` — ⚠️ **not** in the root `CLAUDE.md` table, which carries no jackson row and no `doc-guard` anchor for it; nothing cross-checks the two manifests). **Security invariant**: we never use our own `ObjectMapper` or default/polymorphic typing, and only deserialize trusted Keycloak responses into fixed POJOs — enabling default typing, registering a custom JAX-RS Jackson provider, and introducing polymorphic deserialization of untrusted JSON are **all forbidden**, and the `security-invariant` job (`repo-hygiene.yml`) blocks them — ⚠️ not a required check, so it reddens without blocking.
 - ⚠️ **`jwksMinRefetch` must stay below the Nimbus cache TTL (5 minutes by default)** — above it, `JWKSourceBuilder.build()` throws, and letting that foreign exception escape through the public API is a §4 violation. Convert it at the boundary to `KeycloakConfigException`. ⚠️ **A JWKS rate-limit test must always include a control case (interval 0, or a rebuilt validator)** — the cache alone makes it pass, so the test stays green even after a line of the hardening is deleted.
 - **admin owns its token** — `AdminClient(KeycloakConfig)` uses the admin-client's built-in client-credentials, and the `TokenProvider`-based constructor was removed because of a RESTEasy filter clash. admin does not know about auth directly (§4).
 - **No Java OIDC library is itself OIDF-certified** — if certification is needed, certify the finished product with the OIDF separately.

@@ -26,7 +26,7 @@ JDK 21. **Issue every command through the wrapper** — `cd kotlin && ./gradlew 
 ⚠️ **Do not install Gradle separately.** The wrapper fetches the distribution the build needs (`9.5.0`) by itself. This repository carried `gradle -p kotlin <task>` for a while, and that command only runs **on a machine that has gradle on its PATH** — measured, this PC did not (`~/tools` held only maven and php), and it had to move to the wrapper.
 
 ```bash
-export JAVA_HOME="${KCSDK_JDK21:-/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot}"
+export JAVA_HOME="${KCSDK_JDK21:?see \`node scripts/doctor.mjs kotlin\`}"
 cd kotlin
 ./gradlew build
 ./gradlew test                # unit. No Docker
