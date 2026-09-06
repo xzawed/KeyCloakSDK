@@ -1407,4 +1407,67 @@ assert_contains "$_out" "게시본 오라클이 통째로 공허하다" "태그 
 rm -rf "$TMP/.git"
 assert_ok node "$GUARD" "$TMP"
 
+# ---- 검사 8b: doc-budget 을 **올리는 것** 자체 ----
+# 검사 8 은 상한 초과만 본다. 상한을 올려 버리면 그 초과가 사라지므로 인상은 오래 무가드였다.
+# 규칙: 인상은 교환이어야 하고(앵커 주석에 `옛값 → 새값`), 300B 를 넘으면 사람 판정이다.
+# ⚠️ 오라클은 트리가 아니라 `main` 이다 — 트리끼리 비교하면 인상이 보이지 않는다.
+budget_doc() { # <max-bytes> [로그줄]
+  { printf '# fixture\n<!-- doc-budget: max-bytes=%s -->\n' "$1"
+    [ $# -ge 2 ] && printf '<!-- %s -->\n' "$2"
+    printf '\n본문.\n'; } > "$TMP/budget.md"
+}
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+budget_doc 1000
+git init -q -b main "$TMP" >/dev/null 2>&1
+git -C "$TMP" add -A >/dev/null 2>&1
+git -C "$TMP" -c user.email=t@example.invalid -c user.name=t commit -qm base >/dev/null 2>&1
+assert_eq "main" "$(git -C "$TMP" rev-parse --abbrev-ref HEAD)" "픽스처 기준 브랜치가 main 이다"
+
+# (a) 변화 없음 → 통과.
+assert_ok node "$GUARD" "$TMP"
+
+# (b) 인하 → 통과(조이는 방향은 묻지 않는다).
+budget_doc 900
+assert_ok node "$GUARD" "$TMP"
+
+# (c) 인상 + 기록 없음 → 실패.
+budget_doc 1100
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "앵커 주석에 그 기록이 없다" "인상을 기록 부재로 지목한다"
+
+# (d) 인상 + 기록 있음 + 상한 이내 → 통과. 이게 대조군이다 —
+#     없으면 (c)의 실패가 「인상이라서」인지 「기록이 없어서」인지 갈리지 않는다.
+budget_doc 1100 '1000 → 1100 (교환 기록)'
+assert_ok node "$GUARD" "$TMP"
+
+# (e) 쉼표·굵게 표기도 기록으로 인정한다(저장소 관용: `24,159 → **24,380**`).
+budget_doc 1100 '1,000 → **1,100** (교환 기록)'
+assert_ok node "$GUARD" "$TMP"
+
+# (f) 인상 301B — 기록이 있어도 무심사 상한을 넘으면 사람 판정이다.
+budget_doc 1301 '1000 → 1301 (교환 기록)'
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "사람 판정" "상한 초과를 사람 판정으로 지목한다"
+
+# (g) 경계 — 정확히 300B 는 통과한다(상한이 실제로 300 임을 고정한다).
+budget_doc 1300 '1000 → 1300 (교환 기록)'
+assert_ok node "$GUARD" "$TMP"
+
+# (h) 기록이 **다른 쌍**이면 인정하지 않는다 — 아무 화살표나 통과시키면 규칙이 장식이 된다.
+budget_doc 1100 '9999 → 8888 (무관한 기록)'
+assert_fails node "$GUARD" "$TMP"
+
+# (i) 공허 방지 — 기준(main)을 못 잡으면 스킵이 아니라 실패다.
+budget_doc 1000
+git -C "$TMP" branch -m main other >/dev/null 2>&1
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "검사 8b 가 통째로 공허하다" "기준 부재를 공허로 지목한다"
+
+# (j) 대조군 — 저장소가 아니면 검사 8b 는 아예 돌지 않는다(그래야 (i)가 「git 부재」가 아니다).
+rm -rf "$TMP/.git"
+assert_ok node "$GUARD" "$TMP"
+
 assert_report

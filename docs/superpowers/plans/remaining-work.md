@@ -26,7 +26,7 @@
 1. **`doc-audit-batch2-3-not-started` [M]** — 미검증 20개. 방법·회수율 실측이 그 항목에 있다. ⚠️ **감사자 처방의 임계치를 그대로 옮기지 말 것**(배치 1 에서 여러 건이 `--min-facts=64 --min-anchors=21` 을 전제했으나 이 트리는 **74/22**).
 2. **A 절 잔여 2건**(`java-rules-close-scope-ambiguous` [L] · `auto-bump-manifest-crosscheck-skip` [L·보류]) — 확정 결함 12건 중 남은 전부다.
 
-⚠️ **배치 1 이 남긴 것: 문서 셋이 예산에 붙어 있다.** `CLAUDE.md`(여유 0) · `CONTRIBUTING.md` · `DEPLOY.md` · `process.md` 는 **정확성 수정 한 줄도 예산을 넘긴다**. 배치 2·3 은 수정 건수가 더 많으므로 **착수 전에 예산 정책을 사람과 합의할 것** — 매 건 압축하다 보면 결론만 남고 판정 방법이 지워진다(배치 1 실측: CONTRIBUTING 306→71B · DEPLOY 1203→223B 로 깎고도 초과라 래칫을 올렸다).
+⚠️ **예산 정책은 정해졌다(#418) — 배치 2·3 은 그 위에서 돈다.** 문서 여럿이 상한에 붙어 있어 **정확성 수정 한 줄도 예산을 넘긴다**(배치 1 실측: 네 번, +300·236·120·84B). 이제 규칙은 「인상은 **교환**이고, 앵커 주석에 `옛값 → 새값` 을 적으며, **+300B 초과만 사람 판정**」이고 `check-docs.mjs` **검사 8b** 가 `main` 과 대조해 강제한다. **매 건 사람에게 올리지 말 것** — 상한 안이면 기록하고 진행한다. ⚠️ 반대로 **깎아서 맞추지도 말 것**: 압축이 「다시 재는 명령」을 지우면 그건 교환이 아니라 손실이고, 그때가 인상해야 하는 자리다.
 
 ⚠️ **`jvm-17-floor-never-shipped` [H] 는 여기 없다 — 남은 것이 릴리스뿐이기 때문이다**(비가역·사람 승인 게이트, 2026-09-06 사람 판정 「릴리스는 하지 않는다」). 문서는 #413 이, **가드는 #415 가** 닫았다: 이제 `kind=runtime` 이 트리와 최신 릴리스 태그를 함께 읽어 격차가 기록되지 않으면 fail-closed 한다. 릴리스가 나가면 `getting-started.md` 의 `published=21` 두 개를 **지워야** 통과한다(가드가 반대 방향으로도 실패한다).
 
@@ -236,7 +236,7 @@
 - [ ] `rust-public-client-empty-secret` **[M/S]** Rust AuthClient가 퍼블릭 클라이언트에도 빈 시크릿을 강제해 Basic 인증을 켠다 · `rust/src/auth.rs:67`
 - [ ] `go-tokenprovider-injection-missing` **[M/M]** Go의 TokenProvider 주입점이 문서에만 있고 실제로는 존재하지 않는다 · `go/tokenprovider.go:11`
   - ⚠️ **§4 분류 오류는 약한 쪽이다. 게시된 소스가 거짓 약속을 담고 있다** — `go/tokenprovider.go:12` 의 godoc 이 "Consumers may inject a custom implementation." 이라 적는데, 실측상 `go/*.go` 에 **`TokenProvider` 를 받는 exported 함수가 0개**다(`grep -rnE "func [A-Z][A-Za-z]*\([^)]*TokenProvider" go/*.go` → 빈 결과). 이건 pkg.go.dev 에 그대로 렌더된다.
-  - ⚠️ **고칠 때 CLAUDE.md 를 늘리지 말 것** — doc-budget 여유가 **정확히 0**이다(실측: 1바이트만 더해도 `적재 24160B > doc-budget 24159B` 로 필수 체크 `doc-facts` 가 exit 1). 산문을 더하려면 압축으로 지불하거나 예산 인상을 근거와 함께 올려야 한다.
+  - ⚠️ **고칠 때 CLAUDE.md 를 늘리지 말 것** — doc-budget 여유가 거의 없다. 늘려야 하면 #418 의 규칙을 탄다(교환 기록 + 300B 상한, 검사 8b 가 강제).
 - [ ] `python-sync-admin-close-noop` **[M/S]** Python 동기 admin의 close()가 no-op — async 미러는 닫는다 · `python/src/keycloak_sdk/admin/__init__.py:83`
   - ⚠️ **원장이 과장했다 — 「영영 안 닫힌다」는 거짓.** `ConnectionManager.__del__` 이 GC 시점에 `_s` 를 닫는다. 참인 진술은 「`close()` 가 아무것도 안 하고, 해제 시점이 **GC 에 맡겨진다**」이다(결정적 해제가 없다). 이 문장 그대로 릴리스 노트에 올리면 사실이 아닌 심각도가 된다.
   - ⚠️ **기존 테스트가 결함을 의도로 고정하고 있다** — `tests/unit/test_admin_client.py:81 test_close_is_noop` 의 docstring 이 "컨텍스트 매니저 프로토콜과 대칭을 맞추기 위한 no-op" 이라 적고 `client.raw is admin` 만 단언한다. #399(PHP·Ruby 만료)에 이어 **같은 패턴 세 번째**다.

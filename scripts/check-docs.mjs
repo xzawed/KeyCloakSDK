@@ -1391,7 +1391,60 @@ for (const [key, hits] of seen) {
 //
 // `max-lines`는 선택 축이다(공식 권고가 줄 기준이라 바이트만으로는 그 축이 안 보인다). 없으면
 // 줄 수를 보지 않아 기존 앵커를 깨지 않는다.
+// ── 검사 8b — 래칫을 **올리는 것** 자체를 본다 ─────────────────────────────────
+// 검사 8 은 상한 초과만 본다. 상한을 올려 버리면 그 초과가 사라지므로, 오래 이 가드에는
+// **인상 자체를 보는 눈이 없었다**. 실측(2026-09-06): 한 세션에서 거짓 문장을 고치다 예산을
+// 네 번 넘겼고(+300 · +236 · +120 · +84B) 네 번 다 사람이 판정해야 했다. 맞춰 깎으면
+// 지워지는 것은 **결론에 이르는 명령**이라(CLAUDE.md 문서 규칙) 깎는 것이 답이 아니다.
+//
+// 규칙(사람 판정 2026-09-06 · 독립 검증 레그 권고):
+//   · 인상은 **교환**이어야 한다 — 같은 앵커 주석에 `<옛값> → <새값>` 이 적혀 있어야 한다.
+//   · **300B 이하**면 그 기록만으로 통과하고, 넘으면 **사람 판정**이다.
+// ⚠️ 퍼센트가 아니라 **절대 바이트**다. 5% 는 가드를 뒤집는다 — 82KB 문서에 4,100B 를
+// 무심사로 주고 5.5KB 문서의 300B 인상은 막는다(실측 인상 넷은 84~300B, 파일 크기 15배 차).
+// ⚠️ **오라클은 트리가 아니라 `main`** 이다(#415 와 같은 부류) — 트리끼리 비교하면 인상이
+// 보이지 않는다. 기준을 못 잡으면 **스킵이 아니라 실패**다(공허 방지).
+const BUDGET_RAISE_CAP = 300
+
+let budgetBaselineRef = undefined
+function baselineRef() {
+  if (budgetBaselineRef !== undefined) return budgetBaselineRef
+  budgetBaselineRef = null
+  if (inGitRepo()) {
+    for (const ref of ['origin/main', 'main']) {
+      try {
+        gitOut(['rev-parse', '--verify', `${ref}^{commit}`])
+        budgetBaselineRef = ref
+        break
+      } catch {
+        /* 다음 후보 */
+      }
+    }
+  }
+  return budgetBaselineRef
+}
+function budgetAt(ref, rel) {
+  try {
+    const m = /<!--\s*doc-budget:([^>]*?)-->/.exec(gitOut(['show', `${ref}:${rel}`]))
+    const mb = m && /max-bytes=(\d+)/.exec(m[1])
+    return mb ? Number(mb[1]) : null
+  } catch {
+    return null // 그 ref 에 파일이 없다 = 새 문서
+  }
+}
+// 앵커 주석의 인상 기록. `24,159 → 24,380` · `19400 → **19700**` 둘 다 받는다.
+function raiseIsLogged(text, from, to) {
+  const n = (s) => Number(String(s).replace(/[^\d]/g, ''))
+  for (const m of text.matchAll(/([\d,]{3,})\s*B?\s*(?:→|->)\s*\*{0,2}\s*([\d,]{3,})/g)) {
+    if (n(m[1]) === from && n(m[2]) === to) return true
+  }
+  return false
+}
+
 function checkDocBudget() {
+  const ref = baselineRef()
+  let anchors8b = 0
+  let baselineHits = 0
   for (const f of walk(ROOT)) {
     const rel = relative(ROOT, f).replace(/\\/g, '/')
     const text = readFileSync(f, 'utf8')
@@ -1425,6 +1478,34 @@ function checkDocBudget() {
         )
       }
     }
+
+    // 검사 8b — 인상 자체를 본다.
+    anchors8b++
+    if (!ref) continue
+    const was = budgetAt(ref, rel)
+    if (was === null) continue // 그 ref 에 없던 새 문서 — 인상이 아니다
+    baselineHits++
+    if (max <= was) continue // 유지·인하는 조이는 방향이라 묻지 않는다
+    const delta = max - was
+    if (!raiseIsLogged(text, was, max)) {
+      errors.push(
+        `${rel}: doc-budget 을 ${was} → ${max} (+${delta}B) 로 올렸는데 앵커 주석에 그 기록이 없다 — ` +
+          `인상은 교환이어야 하고, 무엇과 바꿨는지가 남아야 한다(\`${was} → ${max}\` 를 담은 주석)`,
+      )
+    }
+    if (delta > BUDGET_RAISE_CAP) {
+      errors.push(
+        `${rel}: doc-budget 인상 +${delta}B 가 무심사 상한 ${BUDGET_RAISE_CAP}B 를 넘는다 — ` +
+          `**사람 판정**이 필요하다. 먼저 압축하고, 그래도 넘으면 판정을 앵커 주석에 적고 리뷰에 올려라`,
+      )
+    }
+  }
+  // 공허 방지 — 저장소 안이고 앵커가 있는데 기준을 하나도 못 잡았다면 이 검사는 통째로 안 돈 것이다.
+  if (inGitRepo() && anchors8b > 0 && baselineHits === 0) {
+    errors.push(
+      `doc-budget 앵커 ${anchors8b}개인데 기준(${ref ?? 'main 후보 없음'})에서 하나도 읽지 못했다 — ` +
+        `검사 8b 가 통째로 공허하다(체크아웃이 main 을 가져왔는지 확인할 것)`,
+    )
   }
 }
 
