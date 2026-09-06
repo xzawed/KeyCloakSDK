@@ -15,9 +15,11 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **165** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 13) — 열림 **135** · 닫힘 **31** |
-| 심각도 | high 27 · medium 76 · low 47 |
-| 작업량 | S 68 · M 70 · L 12 |
+| 작업 패키지 | **168** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 15 + 계수차 1) — 열림 **137** · 닫힘 **31** |
+| 심각도 | high 27 · medium 77 · low 48 |
+| 작업량 | S 69 · M 71 · L 12 |
+
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수(`grep -c '^- \[ \]'` · `'^- \[x\]'`)는 **168**(열림 137 · 닫힘 31)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.**
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -36,7 +38,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 135건 중 어디부터인지가 안 보이므로 순서를 못박는다. **위에서부터 밟는다.**
 
-1. **`doc-audit-batch2-3-not-started` [M]** — 미검증 20개. 방법·회수율 실측이 그 항목에 있다. ⚠️ **감사자 처방의 임계치를 그대로 옮기지 말 것**(배치 1 에서 여러 건이 `--min-facts=64 --min-anchors=21` 을 전제했으나 이 트리는 **74/22**).
+1. **`doc-audit-batch2-3-not-started` [M]** — **배치 2 는 닫혔다(#421). 남은 것은 배치 3 의 10개**(하네스·내부 7 + rules 3 재검증). 방법·회수율 실측이 그 항목에 있다. ⚠️ **감사자 처방의 임계치를 그대로 옮기지 말 것**(배치 1 에서 여러 건이 `--min-facts=64 --min-anchors=21` 을 전제했으나 이 트리는 **74/22**).
 2. **A 절 잔여 2건**(`java-rules-close-scope-ambiguous` [L] · `auto-bump-manifest-crosscheck-skip` [L·보류]) — 확정 결함 12건 중 남은 전부다.
 
 ⚠️ **예산 정책은 정해졌다(#418) — 배치 2·3 은 그 위에서 돈다.** 문서 여럿이 상한에 붙어 있어 **정확성 수정 한 줄도 예산을 넘긴다**(배치 1 실측: 네 번, +300·236·120·84B). 이제 규칙은 「인상은 **교환**이고, 앵커 주석에 `옛값 → 새값` 을 적으며, **+300B 초과만 사람 판정**」이고 `check-docs.mjs` **검사 8b** 가 `main` 과 대조해 강제한다. **매 건 사람에게 올리지 말 것** — 상한 안이면 기록하고 진행한다. ⚠️ 반대로 **깎아서 맞추지도 말 것**: 압축이 「다시 재는 명령」을 지우면 그건 교환이 아니라 손실이고, 그때가 인상해야 하는 자리다.
@@ -252,8 +254,17 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - **(8) `docs/reference/admin-capability.md` [M]** 42행 「Partial updates behave differently per library」 — 이 문서의 존재 이유가 언어 간 포팅인데 그 서술이 어긋난다. ⚠️ 반박자: 사본 계수 정정 — 출처는 `kotlin-ci.yml:57` 이 아니라 **`ci.yml:62-63`**.
   - **(9) `docs/guides/getting-started.md` 잔여 [M]** 538행 `(dev/CI top end 3.4)` — ruby CI 는 `['3.2','3.3','3.4','4.0']`. **반박됨**이나 DEPLOY.md 쪽 5건(F1~F5)이 실측으로 살아남았다: :95 가 npm OIDC 를 증명 완료라 하는데 :441 은 `still not evidenced … the one publish so far used a token` 이라 하고, `git tag -l 'node-*'` 는 **6개**를 보인다(「one publish」도 거짓). :186 `Node and Ruby remain.` 도 :188·:95 와 모순.
   - 재현: 워크플로 `doc-audit-consumer-batch1`(run `wf_444f054c-58a`) · 핀 `3c306a0` · 인용 게이트 `scratchpad/citegate2.mjs`(계측기 자가검증 내장).
-- [ ] `doc-audit-batch2-3-not-started` **[M/L · 신규 2026-09-06]** 문서 41개 중 **20개가 현재 트리에서 미검증** — 배치 2(언어별 README 9 + `language-support.md`), 배치 3(하네스·내부 7 + 1차 확정 3건 재검증)
+- [ ] `doc-audit-batch2-3-not-started` **[M/L · 신규 2026-09-06 · 배치 2 닫힘 2026-09-06 #421]** 문서 41개 중 20개가 미검증이었다 — **배치 2(언어별 README 9 + `language-support.md`) 완료, 배치 3(하네스·내부 7 + rules 3 재검증) 10개가 남았다**
+  - **배치 2 결과**: 감사 20건 · 인용 게이트 20/20 실재(계측기 6/6 자가검증) · 독립 레그 반박 판정 **CONFIRMED 12 · PARTIAL 6 · 반박 1**. 수정 19건, 무변경 2건. 반박이 범위를 바로잡은 것 셋 — go 는 slog 가 마스킹하나 **`%#v` 는 여전히 샌다**(카나리아 프로브), php `isExpired` 뒤집힘은 **`php-v1.0.0` 이후** 커밋이라 「0.1.0 에서 올리기」 절의 결함이 아니며, `Done 행에 핀이 없다`(langsupport:25)는 **반박 성립**(`/v13` 은 Go 모듈 경로지 핀이 아니다 — 고치지 않았다).
+  - ⚠️ **부류 재스캔이 문서별 감사가 놓친 넷째를 찾았다.** 「마스킹 타입 열거가 하나 모자람」은 감사가 go·dotnet·php 셋을 지목했으나, 9언어 재스캔에서 **kotlin 도 같았다**(`AuthorizationRequest.toString()` 이 `codeVerifier=***` 를 마스킹하는데 README 열거에 없었다). **문서 단위 감사만으로는 부류를 못 닫는다** — 닫기 전에 축으로 다시 훑을 것.
   - ⚠️ **1차 확정 3건(`go.md`·`python.md`·`java.md`)도 재검증 대상이다** — 낡은 트리(4b40445)에서 판정됐고 그 뒤 커밋 7건·`.md` 12개가 움직였다. 자체 변경은 `go.md` 1건뿐이라 위험은 낮으니 배치 3 마지막에 둘 것.
+  - ⚠️ **독립 레그(Grok)는 범위를 쪼개야 돈다** — 문서 5개 묶음은 **540초에 두 번 다 타임아웃**했고, 주장 3건 묶음은 전부 완주했다(함정 (f) 재현). 발견 후 **반박자로** 쓰는 편이 탐색보다 회수율이 높았다.
+- [ ] `masking-type-enumeration-has-no-oracle` **[M/M · 신규 2026-09-06]** 언어 README 가 **마스킹하는 타입을 손으로 열거**하는데 소스와 대조하는 가드가 없다 — 넷이 동시에 하나씩 모자랐다 · `scripts/test/test-security-defaults.sh:322`
+  - `[mask]` 축은 **`TokenSet` 하나만** 겨눈다(`sd_mask_src` 가 언어당 파일 하나). `AuthorizationRequest` 는 어느 축도 안 본다 — 그래서 go·dotnet·php·kotlin 넷의 README 가 PKCE 검증자를 마스킹하는 타입을 빠뜨린 채 CI 초록이었다(#421 에서 문서만 고쳤다).
+  - ⚠️ **가드를 손으로 짜지 말 것 — 이번에 두 번 실패했다.** `***` 리터럴 grep 은 마스킹 헬퍼·상수를 쓰는 언어(java·python·node·dotnet·php)를 전부 놓치고, 타입 선언 grep 은 node 의 `MaskedAuthorizationRequest` 같은 별칭에 걸린다. **탐지 표면을 검증하지 못한 가드는 `guard-detection-surface-hand-narrowed` 를 하나 더 만드는 것**이므로, 먼저 9언어의 마스킹 훅 표를 실측으로 세우고 그 위에 얹는다.
+- [ ] `php-upgrade-note-omits-isexpired-flip` **[L/S · 신규 2026-09-06]** PHP 의 「0.1.0 에서 올리기」는 옳으나, **`1.0.0` 이후의 소비자 가시 동작 변경이 어디에도 없다** · `php/README.md:97`
+  - 실측: `TokenSet::isExpired()` 가 만료 시각 미상을 `false`(유효) → `true`(만료)로 뒤집은 커밋 `0fde597` 은 **`php-v1.0.0` 뒤**다. 그래서 :97 의 「Nothing else changed」는 거짓이 아니고(문장이 admin 식별자 넷으로 한정된다), 빠진 것은 **아직 없는 「1.0.0 에서 올리기」 절**이다. `json_encode` 마스킹 확대도 같은 창에 있다.
+  - **다음 PHP 릴리스가 닫는다** — 그때 절을 새로 만들지 않으면 소비자는 API 표면이 같다는 이유로 이 변경을 못 본다(README 자신이 「게이트는 표면만 본다」고 적는 바로 그 경우다).
   - 방법은 배치 1과 동일: 고정 스냅샷(`git worktree` · **커밋된 상태로**) · 구조화 인용 `(path,line,exact_quote)` · 인용 게이트 선실행 · **렌즈 하나 + 실행강제**(「X 가 소유한다」·「N 개가 전부」는 조회를 실행해 출력을 붙일 것) · 서브에이전트에 `git config` 금지 명시.
   - 회수율 실측: 배치 1 은 10개 문서에서 **H 4건 포함 전건 지적**, 그중 최고가치는 **가드가 소비자에게 거짓을 집행하던 것**이었다(`jvm-17-floor-never-shipped`). 소비자 문서가 내부 규칙 파일보다 안전할 것이라는 사전 가정은 **틀렸다**.
 - [ ] `openid-scope-fallback-empty-only` **[M/S]** openid 스코프 폴백이 "비었을 때"만 걸려 Nimbus IllegalArgumentException이 공개 API로 샌다 (Java·Kotlin) · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:81`

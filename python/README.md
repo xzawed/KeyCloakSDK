@@ -51,7 +51,7 @@ with KeycloakClient.create(config) as kc:
 
 ### Async
 
-`keycloak_sdk.aio` is a complete async mirror — same method names, value types, and exceptions — so it never blocks the event loop (FastAPI and friends):
+`keycloak_sdk.aio` is a complete async mirror — same method names (the sync `close()` is `aclose()` here), value types, and exceptions — so it never blocks the event loop (FastAPI and friends):
 
 ```python
 from keycloak_sdk import KeycloakConfig
@@ -72,7 +72,7 @@ Only `authorization_url` stays synchronous — it assembles a URL and needs no n
 The SDK replaces the unsafe library defaults rather than inheriting them:
 
 - **Algorithm pinning** — the header-supplied `alg` is never trusted, so `alg: none` and HS/RS confusion are rejected structurally: joserfc decodes against the configured allowlist, and an empty allowlist is refused at construction rather than falling back to joserfc's permissive default set.
-- **Strict claim checks** — exact `iss` match, `aud` containment, mandatory `exp`, `nbf`, and a bounded clock skew.
+- **Strict claim checks** — exact `iss` match, `aud` containment, mandatory `exp`, `nbf` enforced when present, and a bounded clock skew.
 - **DoS-safe JWKS** — a refetch is triggered only by an unresolved key ID and never by a bad signature, and is rate-limited to a minimum interval (`jwks_min_refetch_seconds`, 30s by default) — so **once the key set has been fetched**, no volume of forged tokens makes the SDK issue more than one JWKS request per interval. A *failed* fetch is bounded separately: consecutive failures back off exponentially (0.2s, doubling, capped at 5s, with jitter), and inside that window the SDK **fails fast without contacting the IdP**. So a cold cache during an IdP outage no longer turns every validation into a request (measured: 20 attempts → 1 request, down from 20; the sync and async clients share the same state machine). ⚠️ The SDK never sleeps — it returns the error immediately, so retry pacing stays the caller's decision.
 - **Secret handling** — `repr()` of the config and token types masks secrets and tokens as `***` (no prefix leak), and TLS verification is on by default.
 
@@ -84,7 +84,7 @@ This SDK is **`1.0`** and follows SemVer: a breaking change to the public API re
 
 Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
 
-**Each of the nine languages versions independently.** All nine reached `1.0.0` on the same day because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
+**Each of the nine languages versions independently.** All nine reached `1.0.0` in the same release wave because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
 
 ## Documentation
 
