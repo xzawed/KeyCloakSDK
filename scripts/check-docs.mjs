@@ -539,6 +539,123 @@ const RUNTIME = {
   ruby: ['ruby/keycloak-sdk.gemspec', (t) => /required_ruby_version\s*=\s*["']([^"']+)["']/.exec(t)?.[1]],
   python: ['python/pyproject.toml', (t) => /^requires-python\s*=\s*"([^"]+)"/m.exec(t)?.[1]],
 }
+
+// ── kind=runtime 두 번째 오라클 ────────────────────────────────────────────────
+// 위 RUNTIME 은 **작업 트리**를 읽는다 = "곧". 소비자가 실제로 내려받는 것은 **최신
+// 릴리스 태그**가 방출한 것이다 = "지금". 둘이 갈리는 동안 트리만 보는 가드는 문서의
+// 거짓 주장을 **초록으로 집행한다** — 실현된 사례: #389 가 JVM 하한을 21→17 로 내렸으나
+// 릴리스가 없어 Maven Central 의 1.0.0 은 여전히 21 을 요구했고, 문서(17)와 pom(17)이
+// 일치한다는 이유로 이 가드는 초록이었다.
+// 부류를 찾는 시험: **소비자가 틀릴 수 있는데 HEAD 는 맞다면, 오라클은 트리가 아니라
+// 태그·레지스트리다.**
+// ⚠️ 막는 것은 소스 하향이 아니라 **기록되지 않은 주장**이다. 격차를 앵커에
+// `published=<게시본 값>` 으로 적고 본문에 그 값을 쓰면 통과한다.
+const RELEASE_TAG_PREFIX = {
+  java: 'v',
+  python: 'py-v',
+  node: 'node-v',
+  go: 'go/v',
+  dotnet: 'dotnet-v',
+  php: 'php-v',
+  rust: 'rust-v',
+  ruby: 'ruby-v',
+  kotlin: 'kotlin-v',
+}
+// 게시본에만 쓰는 폴백 추출기. kotlin-v1.0.0 의 build.gradle.kts 에는 `jvmTarget` 이
+// **없고** `jvmToolchain(21)` 만 있다 — jvmTarget 미선언이면 코틀린은 툴체인 JDK 를
+// 그대로 바이트코드 타깃으로 쓰므로 그 태그의 게시본 하한은 21 이다. 폴백이 없으면
+// 추출 실패가 되어 "격차 있음(값 미상)" 으로만 판정되고, 속성값을 대조할 수 없다.
+// ⚠️ HEAD 에서는 1차 추출기(`JvmTarget.JVM_17`)가 먼저 맞으므로 이 폴백은 닿지 않는다.
+const PUBLISHED_FALLBACK = {
+  kotlin: (t) => /jvmToolchain\((\d+)\)/.exec(t)?.[1],
+}
+
+function gitOut(args) {
+  return execFileSync('git', ['-C', ROOT, ...args], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  })
+}
+let _inRepo = null
+function inGitRepo() {
+  if (_inRepo === null) {
+    try {
+      _inRepo = gitOut(['rev-parse', '--is-inside-work-tree']).trim() === 'true'
+    } catch {
+      _inRepo = false
+    }
+  }
+  return _inRepo
+}
+// ⚠️ **버전 문자열 정렬로 "최신"을 고르지 말 것** — 실측: `localeCompare(…,{numeric:true})`
+// 는 `v1.0.0 < v1.0.0-RC1` 로 놓아 **RC 를 정식 릴리스보다 뒤에** 세운다. 이 저장소는
+// 버전을 태워 먹으면 앞으로만 가므로(DEPLOY §6) 생성 시각 순서가 곧 게시 순서다.
+const _tagCache = new Map()
+function newestReleaseTag(lang) {
+  if (_tagCache.has(lang)) return _tagCache.get(lang)
+  const prefix = RELEASE_TAG_PREFIX[lang]
+  let tag = null
+  if (prefix) {
+    try {
+      const out = gitOut([
+        'for-each-ref',
+        '--sort=-creatordate',
+        '--format=%(refname:short)',
+        `refs/tags/${prefix}*`,
+      ])
+      tag = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0] || null
+    } catch {
+      tag = null
+    }
+  }
+  _tagCache.set(lang, tag)
+  return tag
+}
+// 게시본 하한을 뽑는다. { tag, value } 또는 { tag, error }.
+function publishedRuntime(lang) {
+  const tag = newestReleaseTag(lang)
+  if (!tag) return { tag: null }
+  // ⚠️ **빈 태그를 절대 보간하지 않는다.** `git show ":java/pom.xml"` 은 에러가 아니라
+  // **인덱스**를 읽어 작업 트리와 같은 값을 돌려준다(실측). 태그가 하나도 안 잡힌 체크아웃
+  // (예: 태그를 안 가져온 CI)에서 이 검사가 통째로 공허해지는 정확한 경로다 — 그래서
+  // 태그 이름을 먼저 해석해 보고, 실패하면 스킵이 아니라 에러로 간다.
+  try {
+    gitOut(['rev-parse', '--verify', `refs/tags/${tag}^{}`])
+  } catch {
+    return { tag, error: `태그 ${tag} 를 해석하지 못했다` }
+  }
+  const [srcRel, pick] = RUNTIME[lang]
+  let text
+  try {
+    text = gitOut(['show', `${tag}:${srcRel}`])
+  } catch {
+    return { tag, error: `${tag} 에 ${srcRel} 가 없다` }
+  }
+  const value = pick(text) || PUBLISHED_FALLBACK[lang]?.(text) || null
+  return value ? { tag, value } : { tag, error: `${tag}:${srcRel} 에서 하한을 추출하지 못했다` }
+}
+// 본문이 게시본 값을 **정말로** 말하는가. 맨 `includes` 는 안 된다 — 짧은 하한은 다른
+// 버전의 부분문자열이라서다(독립 검증 레그가 지목: 게시본 `1.2` 가 본문 `1.21`·`1.2.3` 에
+// 그냥 걸린다. 그러면 독자는 미출시 숫자만 보고 격차를 끝내 모른다).
+// 경계는 비대칭이다 — 앞은 숫자·점을 막고, 뒤는 **숫자** 또는 **점+숫자**만 막는다.
+// 뒤에 점을 통째로 막으면 문장 끝(`… JDK 21.`)이 거짓 실패한다.
+function mentionsValue(text, value) {
+  const esc = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?<![\\d.])${esc}(?!\\d|\\.\\d)`).test(text)
+}
+// 앵커가 소유하는 "독자에게 보이는 문단" — 다음 헤딩이나 다음 앵커까지.
+function proseBlockAt(lines, startIdx) {
+  const out = []
+  for (let i = startIdx; i < lines.length && out.length < 20; i++) {
+    if (/^#{1,6}\s/.test(lines[i]) || /^<!--\s*doc-guard:/.test(lines[i].trim())) break
+    out.push(lines[i])
+  }
+  return out.join('\n')
+}
+// 두 번째 오라클이 실제로 동작했는지 세는 계수기 — 0 이면 검사가 공허하다.
+let runtimeAnchors = 0
+let publishedOracleHits = 0
+
 // 좌표 -> 그 좌표를 선언한 (문서, 버전) 목록. kind=dep 표에서 파싱된 모든 행을
 // 앵커·파일과 무관하게 모아, 전체 순회가 끝난 뒤 같은 좌표가 문서마다 다른
 // 값을 말하는지 대조한다(검사 2) — 실제 소스와의 대조(검사 1)와 독립적이라,
@@ -1101,6 +1218,41 @@ for (const file of walk(ROOT)) {
       if (normalizeVersion(claim[1]) !== normalizeVersion(actual)) {
         errors.push(`${rel}:${i + 1} ${attrs.lang} 최소 런타임 문서=${claim[1]} 실제=${actual} (${srcRel})`)
       }
+
+      // 오라클 B — 최신 릴리스 태그가 방출한 값(= 소비자가 지금 받는 것).
+      // ⚠️ facts 를 올리지 않는다. 격차는 릴리스로 닫히면 사라지므로, 여기서 세면
+      //    --min-facts 래칫이 "릴리스하면 CI 가 빨개진다"는 뒤틀린 유인을 만든다.
+      runtimeAnchors++
+      if (inGitRepo()) {
+        const declared = attrs.published
+        const pub = publishedRuntime(attrs.lang)
+        if (pub.tag) publishedOracleHits++
+        const where = `${rel}:${i + 1} ${attrs.lang}`
+        if (!pub.tag) {
+          // 아직 한 번도 게시되지 않은 언어 — 대조할 게시본이 없다.
+          if (declared) errors.push(`${where} published=${declared} 인데 릴리스 태그가 없다`)
+        } else if (pub.error) {
+          errors.push(`${where} 게시본 하한을 확인하지 못했다: ${pub.error} — 스킵하지 않는다(공허 방지)`)
+        } else if (normalizeVersion(pub.value) !== normalizeVersion(actual)) {
+          // 격차: 트리는 곧, 게시본은 지금. 문서가 그것을 **기록해야** 통과한다.
+          if (!declared) {
+            errors.push(
+              `${where} 트리=${actual} 인데 게시본(${pub.tag})=${pub.value} 다 — 이 문단은 소비자에게 거짓을 말한다. ` +
+                `격차를 기록하려면 앵커에 published=${pub.value} 를 달고 본문에 그 값을 적어라`,
+            )
+          } else if (normalizeVersion(declared) !== normalizeVersion(pub.value)) {
+            errors.push(`${where} published=${declared} 인데 게시본(${pub.tag})은 ${pub.value} 다`)
+          } else if (!mentionsValue(proseBlockAt(lines, i + 1), pub.value)) {
+            errors.push(
+              `${where} published=${pub.value} 가 본문에 안 보인다 — HTML 주석은 독자에게 보이지 않으므로 문단이 그 값을 말해야 한다`,
+            )
+          }
+        } else if (declared) {
+          errors.push(
+            `${where} 격차가 없는데(트리=게시본=${actual}) published=${declared} 가 남아 있다 — 릴리스로 닫혔으면 속성을 지운다`,
+          )
+        }
+      }
       continue
     }
 
@@ -1539,6 +1691,18 @@ if (blobRefs < MIN_BLOB_REFS) {
   errors.push(
     `아카이브 참조 ${blobRefs} < --min-blob-refs=${MIN_BLOB_REFS} — 표기가 바뀌어 추출이 0건이 되면 ` +
       `"해석 실패 0"은 통과가 아니라 무효 측정이다(참조가 정말 줄었다면 이 값을 함께 내린다)`,
+  )
+}
+
+// 검사 7b — kind=runtime 두 번째 오라클의 공허 방지. 태그를 하나도 못 잡으면 게시본
+// 대조는 조용히 0건이 되고 "격차 없음"과 구별되지 않는다. ⚠️ 이건 가정이 아니라 실측된
+// 경로다: 태그 변수가 비면 `git show ":path"` 가 **인덱스**를 읽어 트리와 같은 값을
+// 돌려준다. 저장소 안이고 런타임 앵커가 있는데 태그 해석이 0건이면 **실패**한다 —
+// 체크아웃이 태그를 안 가져왔다는 뜻이다(`actions/checkout` 의 `fetch-tags`).
+if (inGitRepo() && runtimeAnchors > 0 && publishedOracleHits === 0) {
+  errors.push(
+    `kind=runtime 앵커 ${runtimeAnchors}개인데 릴리스 태그가 하나도 해석되지 않았다 — 게시본 오라클이 통째로 공허하다. ` +
+      `체크아웃이 태그를 가져왔는지 확인할 것(git tag -l 이 비어 있지 않아야 한다)`,
   )
 }
 

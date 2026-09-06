@@ -62,6 +62,13 @@ jobs:
           # `git cat-file -e` 실패). 검사는 스킵하지 않고 실패하므로 이 줄을 지우면 즉시 빨개진다.
           # 비용: 저장소 전체가 6.43 MiB · 975 커밋이다.
           fetch-depth: 0
+          # ⚠️ `fetch-tags` 는 **별개 축이다** — `fetch-depth: 0` 이 태그까지 가져온다고 가정하지
+          # 않는다. `kind=runtime` 의 두 번째 오라클(최신 릴리스 태그 = 소비자가 지금 받는 것)이
+          # 태그를 못 잡으면 게시본 대조가 통째로 공허해진다. 그래서 check-docs 는 스킵이 아니라
+          # **실패**하고(「게시본 오라클이 통째로 공허하다」), 이 줄이 그 실패를 예방한다.
+          # ⚠️ 빈 태그를 보간하면 `git show ":path"` 가 **인덱스**를 읽어 트리와 같은 값을 돌려준다
+          # (실측) — 그래서 가드는 태그 이름을 `rev-parse --verify` 로 먼저 해석한다.
+          fetch-tags: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
