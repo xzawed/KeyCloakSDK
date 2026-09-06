@@ -1,5 +1,9 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=24641 max-lines=308 -->
+<!-- doc-budget: max-bytes=24663 max-lines=308 -->
+<!-- 24641 → 24663 (2026-09-06, +22B). 규약 (1) — 늘어난 것은 플래그 하나
+     (`--min-count-anchors=4`)이고, 그것이 **검사 11(선언된 파생 계수)의 공허 하한**을
+     켠다. 이 줄은 「CI 가 도는 명령」이라 CI 와 갈리면 로컬 초록·CI 빨강이 만들어진다.
+     ⚠️ 하한을 상수로 박았다가 픽스처 75건을 깨뜨린 실측이 있어 플래그로 뺐다. -->
 <!-- 24380 → 24641 (2026-09-06, +261B): 래칫 조건 (1) — 증가분이 **가드 자체**를 사 온다.
      이 문단이 정하는 규칙(래칫 인상 조건)에 오래 **가드가 없었다**. 검사 8 은 상한 초과만 보고
      상한을 올려 버리면 그 초과가 사라지므로, 인상은 사람이 눈으로 잡는 수밖에 없었다 — 실측
@@ -76,7 +80,7 @@ Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·P
 
 1. **언어 디렉터리에서 작업한다.** `java/`·`python/`·`node/`·`go/`·`dotnet/`·`php/`·`rust/`·`ruby/`·`kotlin/` 중 하나에 들어가면 `.claude/rules/<lang>.md`가 자동 로드된다(`paths:` 프론트매터). **그 파일이 그 언어의 빌드 명령·제약·게차의 진실 원천이다** — 이 파일에 다시 적지 않는다.
 2. **바꾸기 전에 테스트를 돌린다.** 아래 툴체인 표의 진입 명령. 통합 테스트는 Docker가 필요하다.
-3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=78 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=4`.
+3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=78 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=4 --min-count-anchors=4`.
 4. **PR로 올린다.** `main` 직접 push 불가(룰셋 `PRIMARY`). required 체크는 `doc-facts`·`shell-exec-bits` 둘뿐이고 **언어 CI를 required에 넣으면 저장소가 잠긴다**(`paths:` 필터라 체크가 생성조차 안 된다).
 
 ### 하지 말 것

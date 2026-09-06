@@ -1,5 +1,7 @@
 # Contribution Guide (CONTRIBUTING)
-<!-- doc-budget: max-bytes=15940 -->
+<!-- doc-budget: max-bytes=15950 -->
+<!-- 15940 → 15950 (2026-09-06, +10B). 규약 (1) — `--min-count-anchors=4` 를 붙였다.
+     이 블록은 「exactly what CI runs」라고 말하므로 CI 와 **함께** 옮겨야 한다. -->
 <!-- 15856 → 15940 (2026-09-06): 래칫 조건 (1) — **정확성 수정이 판정 방법을 사 온다.** §4 의
      「네 쌍이 충돌한다」가 거짓이었다(실측 세 쌍). 숫자만 3 으로 고치면 같은 드리프트가 세 번째로
      돌아오므로 **재는 법**을 함께 적었다 — 맨 잡 id 는 `name:` 도 `strategy.matrix` 도 없을 때만
@@ -63,7 +65,7 @@ file per language, opening with the entry command, the single-test invocation an
 Repo-wide, on every push and PR (`repo-hygiene.yml`):
 
 ```bash
-node scripts/check-docs.mjs . --strict --min-facts=78 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=4   # exactly what CI runs
+node scripts/check-docs.mjs . --strict --min-facts=78 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=4 --min-count-anchors=4   # exactly what CI runs
 sh scripts/test/test-check-docs.sh
 sh scripts/test/test-doctor.sh
 ```

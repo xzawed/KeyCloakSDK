@@ -50,6 +50,10 @@ let MIN_ANCHORS = 0
 let MIN_ANCHOR_LINKS = 0
 // 검사 10c(아카이브 blob 참조)의 같은 방어. 기본 0 = 미적용이라 픽스처에 영향이 없다.
 let MIN_BLOB_REFS = 0
+// 검사 11(선언된 파생 계수)의 같은 방어. ⚠️ **상수로 두면 안 된다** — 실측(2026-09-06):
+// 상수 하한으로 처음 구현했더니 앵커가 0개인 픽스처가 전부 빨개져 자가테스트 75건이
+// 깨졌다. required 체크 안이라 그대로 나갔으면 모든 PR 이 막혔을 자리다.
+let MIN_COUNT_ANCHORS = 0
 for (const arg of process.argv.slice(2)) {
   if (arg === '--strict') {
     STRICT = true
@@ -61,6 +65,8 @@ for (const arg of process.argv.slice(2)) {
     MIN_ANCHOR_LINKS = Number(arg.slice('--min-anchor-links='.length))
   } else if (/^--min-blob-refs=\d+$/.test(arg)) {
     MIN_BLOB_REFS = Number(arg.slice('--min-blob-refs='.length))
+  } else if (/^--min-count-anchors=\d+$/.test(arg)) {
+    MIN_COUNT_ANCHORS = Number(arg.slice('--min-count-anchors='.length))
   } else if (!arg.startsWith('--') && rootArg === null) {
     rootArg = arg
   }
@@ -591,9 +597,6 @@ const COUNTS = {
     },
   ],
 }
-// 공허 방지 — 앵커가 0개가 되면 "불일치 0"이 통과로 보인다. 실측 하한(2026-09-06: 4개).
-const COUNT_ANCHOR_MIN = 3
-
 const RELEASE_TAG_PREFIX = {
   java: 'v',
   python: 'py-v',
@@ -1873,11 +1876,10 @@ if (inGitRepo() && runtimeAnchors > 0 && publishedOracleHits === 0) {
   )
 }
 
-// 검사 11 의 공허 방지 — 앵커를 전부 지우면 "불일치 0"이 통과로 보인다. 이 저장소가
-// 반복해서 밟은 자리라, 개수 자체에 실측 하한을 둔다.
-if (countAnchors < COUNT_ANCHOR_MIN) {
+// 검사 11 의 공허 방지 — 앵커를 전부 지우면 "불일치 0"이 통과로 보인다.
+if (countAnchors < MIN_COUNT_ANCHORS) {
   errors.push(
-    `kind=count 앵커가 ${countAnchors}개다 — 하한 ${COUNT_ANCHOR_MIN}개. 선언된 파생 계수가 사라지면 검사 11 은 아무것도 안 보면서 초록이 된다`,
+    `kind=count 앵커 ${countAnchors} < --min-count-anchors=${MIN_COUNT_ANCHORS} — 선언된 파생 계수가 사라지면 검사 11 은 아무것도 안 보면서 초록이 된다`,
   )
 }
 
