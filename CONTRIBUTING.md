@@ -1,5 +1,11 @@
 # Contribution Guide (CONTRIBUTING)
-<!-- doc-budget: max-bytes=15856 -->
+<!-- doc-budget: max-bytes=15940 -->
+<!-- 15856 → 15940 (2026-09-06): 래칫 조건 (1) — **정확성 수정이 판정 방법을 사 온다.** §4 의
+     「네 쌍이 충돌한다」가 거짓이었다(실측 세 쌍). 숫자만 3 으로 고치면 같은 드리프트가 세 번째로
+     돌아오므로 **재는 법**을 함께 적었다 — 맨 잡 id 는 `name:` 도 `strategy.matrix` 도 없을 때만
+     컨텍스트다. 그 한 문장이 순증분이고, 원래 있던 경위 서술(2026-08-22 · build-test)은 지웠다.
+     ⚠️ 이 인상은 사람 리뷰 대상이다 — PR 본문에 명시했다. -->
+
 <!-- 15838 → 15856 (2026-09-02): 래칫 조건 (1) — 18B 가 기계 검증을 사 온다. `--min-blob-refs=4`
      는 신설된 검사 10c(아카이브 참조 `git show <sha>:<path>` 가 해석되는가)의 공허함 방어
      하한이고, 이 줄은 「exactly what CI runs」라고 말한다. ⚠️ CI 와 **함께** 옮겨야 하는 이유가
@@ -251,10 +257,11 @@ Skipped jobs then still report, so they can be required. Three things must be fi
 
 - ⚠️ A job skipped because a `needs:` dependency **failed** also reports `skipped` — so the `changes`
   job itself must be a required check, or a broken detector silently turns everything green.
-- ⚠️ **Four** check names currently collide across workflows, so requiring them is ambiguous:
-  `build-test` and `integration` (both dotnet + php — neither job declares a `name:`, so the job id
-  becomes the context), `Integration (testcontainers, 실제 Keycloak 26.6)` (kotlin + rust), and
-  `Integration tests (testcontainers, 실제 Keycloak)` (node + python). This list said three until
-  2026-08-22; `build-test` was missing, and acting on it would have left one ambiguous context.
+- ⚠️ **Three** check names currently collide across the `pull_request` workflows, so requiring them
+  is ambiguous: `integration` (dotnet + php — neither declares a `name:`, so the job id becomes the
+  context), `Integration (testcontainers, 실제 Keycloak 26.6)` (kotlin + rust), and `Integration
+  tests (testcontainers, 실제 Keycloak)` (node + python). ⚠️ **Re-measure before acting on that
+  number** (YAML parser, matrices expanded): a bare job id is the context only when the job has
+  neither `name:` nor `strategy.matrix`. It has drifted twice.
 - ⚠️ No workflow declares a `merge_group:` trigger. **Do not enable a merge queue** before adding it
   to at least `repo-hygiene.yml`, or every queued PR will deadlock.
