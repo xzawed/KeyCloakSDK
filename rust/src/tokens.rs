@@ -134,7 +134,10 @@ mod tests {
             nonce: "nc".into(),
         };
         let s = format!("{ar:?}");
-        assert!(!s.contains("secret-verifier"), "code_verifier 가 원문으로 샜다: {s}");
+        assert!(
+            !s.contains("secret-verifier"),
+            "code_verifier 가 원문으로 샜다: {s}"
+        );
         assert!(s.contains("***"));
         // url/state/nonce 는 비밀이 아니므로 가리지 않는다 — 자매 SDK 와 동형이다.
         assert!(s.contains("st") && s.contains("nc"));
