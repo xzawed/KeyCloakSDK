@@ -1,5 +1,18 @@
 # 기각 레지스트리
-<!-- doc-budget: max-bytes=13096 -->
+<!-- doc-budget: max-bytes=13285 -->
+<!-- 13096 → 13285 (2026-09-06, +189B). 규약 (1) — 증가분이 **다시 재는 명령**을 사 온다.
+     배치 3 감사가 이 문서에서 잡은 8건은 전부 **낡은 실측치·죽은 인용**이었다. 기각
+     레지스트리는 「제안 전에 반드시 읽는 문서」라, 여기 적힌 수가 낡으면 다음 세션이
+     **틀린 근거로 기각을 유지하거나 되살린다**. 이번에 전부 다시 쟀다:
+       mypy 295/258/37 → **308/270/38** · 태그 28/Release 10 → **37/13** ·
+       go 린트 게이트 `golangci` → **staticcheck+gosec**(CI 는 golangci 를 안 돌린다) ·
+       PHP `users.all()` → **`search`**(존재한 적 없다) · dotnet major 고정이 이제
+       **2-major 매트릭스** · readiness 인용 2행 → **3행** · `DEPLOY.md:200` 은 이제
+       npm 부트스트랩이라 §1 PHP 행으로 옮김 · pre-1.0 문단은 **아홉 어디에도 없다**(전제 소멸).
+     ⚠️ 오늘 이 파일의 **두 번째** 인상이라 「세 번이면 멈추고 묻는다」는 미발동이다.
+     ⚠️ **인상이 필요한지를 재고 나서 판단했다** — 이번 세션의 근본원인이 「어떤 수를 재지
+     않고 알려진 것으로 취급하는 것」이었고, 여덟 수정의 대부분은 자릿수가 같은 교체라
+     처음에는 바이트 중립일 가능성이 있었다. 실제 측정값이 +189B 였다. -->
 <!-- 13094 → 13096 (2026-09-06, +2B). 규약 (1) 의 가장 순한 형태 — 늘어난 두 바이트는
      백틱 한 쌍이고, 그것이 이 수를 **검사 11(kind=count)** 의 눈에 들어가게 한다.
      그전까지 이 줄은 「체크리스트 7」이라 적고 있었고 원천은 8 이었다(#415 가 8번을
@@ -42,28 +55,28 @@
 | 금칙 문구 린트 | 히트가 설명·캐비앳·주장이 섞여 정규식이 수렴하지 않음 | 문맥 없이 참/거짓이 갈리는 금칙이 실측될 때 |
 | 문서 내부 수치 자기일치 | 게시 개수는 `DF_PUBLISHED`가 덮고, 자기일치는 둘 다 틀린 경우를 통과 | SSOT 없는 수치가 여러 문서에 흩어져 드리프트가 실측될 때 |
 | 퀵스타트 「중복」 삭제 | README 펜스가 가드 조준점이고 레지스트리 페이지엔 getting-started가 없음 | 두 예제가 실제로 갈릴 때. 그때도 삭제가 아니라 한쪽 생성·한쪽 파생 |
-| pre-1.0 문단 통합 | 8개는 동일하나 Rust는 Cargo 캐럿 고유 사실을 담음 | 세 번째 자리까지 번져 손으로 맞추기 시작할 때 |
+| pre-1.0 문단 통합 | 8개는 동일하나 Rust는 Cargo 캐럿 고유 사실을 담음. ⚠️ **전제 소멸**(2026-09-06 실측: 아홉 README 어디에도 그 문단이 없다) | 문단이 되살아나 세 번째 자리까지 번질 때 |
 | 게차 그룹화 | 태그 라우팅이 이미 있고 Java·Python은 순손실 | 스텁 계약을 스펙 개정으로 바꾼 뒤 순손실 그룹이 사라졌을 때 |
 | CLAUDE.md 생성물화 | 마커 비용이 이득을 넘고, 매니페스트 파생은 doc-facts를 자기대조로 만듦 | doc-guard 사실이 매니페스트 **바깥** 원천으로 옮겨질 때 |
-| mypy를 `python/tests`로 확장 | 실측 295건 중 258이 `no-untyped-def`(테스트 함수 애너테이션)이고, 잡음을 걷은 37건 중 26은 `func-returns-value`인데 **§4 void 계약을 일부러 단언하는 관용**이라 오탐. 남는 실질 신호 11건은 픽스처 타입뿐 | `cd python && mypy tests --disable-error-code=no-untyped-def`가 **`call-arg`·`attr-defined`·private 접근** 중 하나라도 낼 때. 그것이 Node에서 17건을 숨겼던 API 드리프트 부류다(현재 0건) |
+| mypy를 `python/tests`로 확장 | 실측 308건 중 270이 `no-untyped-def`(테스트 함수 애너테이션)이고, 잡음을 걷은 38건 중 26은 `func-returns-value`인데 **§4 void 계약을 일부러 단언하는 관용**이라 오탐. 남는 실질 신호 11건은 픽스처 타입뿐 | `cd python && mypy tests --disable-error-code=no-untyped-def`가 **`call-arg`·`attr-defined`·private 접근** 중 하나라도 낼 때. 그것이 Node에서 17건을 숨겼던 API 드리프트 부류다(현재 0건) |
 | 정식/RC 축 `claim_at` 신설 | 새 positive 앵커가 `DEPLOY.md`의 기존 문장에 **접두 매치**되어 그날로 공허해진다(재발 2). blacklist 확장은 이미 실제 문구를 놓쳤다(재발 3) | 런북이 다시 「지금 무엇이 라이브인가」를 서술해야 할 이유가 생겼을 때. 그때도 containment 가 아니라 **추출 + `assert_eq`** 로 |
 | `DEPLOY.md` 3분할 | 측정한 결합이 분할을 정당화하지 않는다 — `doc-guard` 앵커 **0건**이라 앵커 위험이 없고, 위험은 **경로 고정**이며(`test-deploy-md.sh`가 파일 하나에 묶여 있다), §2-F 는 "일회성 설정"이 아니라 `dispatch-release.yml` 이 운영자에게 가리키는 **살아 있는 복구 절차**다. §-단위 인바운드 인용이 약 20 곳 | **10 번째 언어가 들어오거나 자격증명을 실제로 분실**해 §2 가 평소에 안 읽는 문서가 될 때. 그때 §6 만 먼저 떼는 것이 가장 싸다(스텁 + 링크 + 지도 등재) |
 | 릴리스 순차머지 가드 | 체크리스트 5 번에 걸린다 — **취소된 pending 실행은 스텝을 하나도 돌리지 않으므로** 저장소 안의 어떤 스크립트도 그것을 실패시킬 수 없고, 자가테스트가 GitHub 스케줄러를 흉내 낼 수도 없다 | `release-request.json` 이 `main` 에 닿은 뒤 **나중 push 가 pending Dispatch 를 취소하는 것**이 실측될 때 |
 | SonarCloud `sonar.tests` 설정 | 교과서 해법인데 **분석을 무너뜨린다**. 12개 테스트 디렉터리를 준 실측(PR #304): 색인 파일 **487 → 159**, 분석 소스 386/434/66/51 → 38/19/**0**, 커버리지가 프로덕션 파일을 못 찾는 WARN 50건 신규. 그런데 게이트는 **PASSED** — 볼 게 없어서 통과한 공허한 초록이라 색인 수를 세지 않으면 그대로 머지된다. `sonar.sources`를 함께 명시하면 되지만 9개 언어 프로덕션 루트를 손으로 이중 열거해야 하고 그 목록은 드리프트한다 | 같은 실험을 다시 돌려 **색인 수가 유지될 때** — `gh run view <run> --log \| grep -oE '[0-9]+ files indexed'`를 **`sonar.tests`를 넣은 실행과 넣지 않은 직전 실행에서 각각 재어 두 값이 같으면** 스캐너가 소스 집합을 보존하게 된 것이다(#304 때는 487 → 159로 무너졌다). ⚠️ **487을 상수로 박으면 이 조건은 영영 참이 되지 못한다** — 그 수는 #304 시점의 색인 수이고 트리에 파일이 늘면 함께 는다(실측 2026-08-28: 492). 또는 프로덕션 루트가 기계 생성될 때 |
-| GitHub Release를 아홉 언어로 대칭화 | 실측 23태그 중 **15개에 Release가 없다**(java·kotlin·node·python·ruby·rust). 그런데 Release를 만드는 워크플로 셋(dotnet·go·php)이 `contents: write`를 가진 **정확히 그 셋**이다 — 대칭화는 게시 잡 여섯에 쓰기 권한을 새로 주는 것이고, 얻는 것은 태그 페이지의 서식뿐이다. php에서 Release는 **미러 push 성공의 증거**로 쓰여 목적이 다르다(`DEPLOY.md:200`) | 릴리스 노트가 **기계 판독 대상**이 될 때(소비자 도구가 Release API로 변경점을 읽는 것이 실측될 때). 그때도 여섯에 쓰기 권한을 주는 대신 태그 push 하나로 도는 별도 잡을 검토한다 |
+| GitHub Release를 아홉 언어로 대칭화 | 실측 23태그 중 **15개에 Release가 없다**(java·kotlin·node·python·ruby·rust). 그런데 Release를 만드는 워크플로 셋(dotnet·go·php)이 `contents: write`를 가진 **정확히 그 셋**이다 — 대칭화는 게시 잡 여섯에 쓰기 권한을 새로 주는 것이고, 얻는 것은 태그 페이지의 서식뿐이다. php에서 Release는 **미러 push 성공의 증거**로 쓰여 목적이 다르다(`DEPLOY.md` §1 PHP 행 · 그 아래 「never could」 문단) | 릴리스 노트가 **기계 판독 대상**이 될 때(소비자 도구가 Release API로 변경점을 읽는 것이 실측될 때). 그때도 여섯에 쓰기 권한을 주는 대신 태그 push 하나로 도는 별도 잡을 검토한다 |
 | `repo-config`를 required 체크로 | 그 잡의 유일한 외부 호출이 `gh api`라 GitHub API가 흔들리면 멈추는데, `PRIMARY`는 `bypass_actors: []`(라이브도 `current_user_can_bypass: never`)라 **멈춘 required는 소유자도 못 푼다** — 저장소가 비가역으로 잠긴다. 잡 주석이 이미 이 판정을 담고 있었다(내가 그걸 안 읽고 「사람 판정 대기」로 올렸다) | `node -e "const r=require('./.github/rulesets/main.json');process.exit(r.bypass_actors.length?0:1)"`가 **exit 0**이 될 때 — 즉 멈춘 required를 풀 수 있는 주체가 생겼을 때 |
-| capability matrix **L열** 가드 | 6개 PR·L셀 9개가 뒤집히는 동안 **실제 드리프트 0건** — 가드였다면 한 번도 안 울렸다. 225셀이 전부 ✅가 되어 "추가하고 표를 잊는" 모드는 구조적으로 사라졌고, 남은 removal은 단위·E2E가 같은 커밋에서 먼저 깬다. 체크리스트 ⑤도 걸린다: users.L은 `search`/`list`(Ruby)/`all`(PHP)로 **수렴하지 않는다**(내 최초 측정이 틀렸고 Grok이 반박, 소스로 확인) | **10번째 언어 행이 매트릭스에 추가될 때** — 손으로 25셀을 쓰는 그 순간이 유일한 실제 위험이다. 지금 로드맵의 확장 후보 표에는 대기 행이 0개다(첫 stable 릴리스 축은 아홉 게시로 닫혔다) |
-| java 린트·정적분석 게이트 | 아홉 중 java 만 CI 게이트가 없다(실측: python `ruff`+`mypy` · node `eslint`+`prettier` · go `golangci`+`vet` · dotnet `format` · php `phpstan`+`cs-fixer` · rust `clippy`+`rustfmt` · ruby `rubocop` · kotlin `ktlint` · **java 0건**). 그러나 java 는 **분석되지 않는 상태가 아니다** — SonarCloud 가 `sonar.java.binaries` 로 리액터 4개 모듈의 바이트코드까지 읽는다. 새 도구가 사 오는 것은 PR 차단력뿐이고, 그 대가는 spotless 의 전면 리포맷 또는 errorprone 의 초기 억제 목록이다. **사람 판정(2026-09-02): 두지 않는다.** | `grep -c '^sonar.java.binaries=' sonar-project.properties` 가 **0** 이 될 때(= java 가 정적분석 밖으로 나갈 때), 또는 포맷·정적분석이 잡았을 java 결함이 실제로 머지된 것이 실측될 때 |
+| capability matrix **L열** 가드 | 6개 PR·L셀 9개가 뒤집히는 동안 **실제 드리프트 0건** — 가드였다면 한 번도 안 울렸다. 225셀이 전부 ✅가 되어 "추가하고 표를 잊는" 모드는 구조적으로 사라졌고, 남은 removal은 단위·E2E가 같은 커밋에서 먼저 깬다. 체크리스트 ⑤도 걸린다: users.L은 `search`/`list`(Ruby)/`search`(PHP)로 **수렴하지 않는다**(내 최초 측정이 틀렸고 Grok이 반박, 소스로 확인) | **10번째 언어 행이 매트릭스에 추가될 때** — 손으로 25셀을 쓰는 그 순간이 유일한 실제 위험이다. 지금 로드맵의 확장 후보 표에는 대기 행이 0개다(첫 stable 릴리스 축은 아홉 게시로 닫혔다) |
+| java 린트·정적분석 게이트 | 아홉 중 java 만 CI 게이트가 없다(실측: python `ruff`+`mypy` · node `eslint`+`prettier` · go `staticcheck`+`gosec`+`vet` · dotnet `format` · php `phpstan`+`cs-fixer` · rust `clippy`+`rustfmt` · ruby `rubocop` · kotlin `ktlint` · **java 0건**). 그러나 java 는 **분석되지 않는 상태가 아니다** — SonarCloud 가 `sonar.java.binaries` 로 리액터 4개 모듈의 바이트코드까지 읽는다. 새 도구가 사 오는 것은 PR 차단력뿐이고, 그 대가는 spotless 의 전면 리포맷 또는 errorprone 의 초기 억제 목록이다. **사람 판정(2026-09-02): 두지 않는다.** | `grep -c '^sonar.java.binaries=' sonar-project.properties` 가 **0** 이 될 때(= java 가 정적분석 밖으로 나갈 때), 또는 포맷·정적분석이 잡았을 java 결함이 실제로 머지된 것이 실측될 때 |
 | 전 워크플로 `persist-credentials: false` 강제 | 24개 중 10개에만 있고(`grep -rln persist-credentials .github/workflows \| wc -l` → 10, `ls .github/workflows/*.yml \| wc -l` → 24) **그 비대칭의 근거가 저장소 어디에도 없다.** 체크리스트 4 에 걸린다 — 선언된 불변식이 없으면 가드가 정책을 새로 만드는 셈이고 그건 사람의 몫이다. 규칙을 세우면 14곳을 손으로 맞춰야 하는데 무엇이 옳은지가 먼저 없다. **사람 판정(2026-09-02): 지금은 기재만.** | 사람이 정책을 정할 때, 또는 체크아웃한 자격증명을 가진 채 **신뢰할 수 없는 코드를 실행하는** 잡이 생길 때 — `git grep -l 'persist-credentials' .github/workflows` 와 `contents: write` 를 가진 잡 목록이 갈리는지가 그 신호다 |
-| `release-readiness.sh` 의 원격 태그 대조 | 태그 판정이 `rr_tag_exists`(`git tag -l` — **로컬 클론**)이고 원격을 실제로 조회하는 것은 php 미러의 `rr_mirror_tag`(`git ls-remote`) 하나뿐이다(`scripts/release-readiness.sh:93` vs `:81`). 그러나 이 스크립트의 계약이 **「읽기전용: 어떤 상태도 변경하지 않는다」**(2행)라 `fetch` 를 넣을 수 없고, 오답의 방향이 안전하다 — 로컬이 낡으면 「태그 없음」으로 답해 사람이 태그를 밀고, 그러면 릴리스 워크플로 첫 스텝의 태그↔매니페스트 가드가 다시 본다. 고치는 법도 `git fetch --tags` 하나다 | `git tag -l '<접두>*' \| wc -l` 과 `git ls-remote --tags origin '<접두>*' \| wc -l` 이 갈린 채로 이 도구가 「태그 없음」을 답한 일이 실측될 때. 그때는 fetch 를 넣지 말고 **두 값을 나란히 인쇄**하는 것이 계약을 지키는 최소 수정이다 |
+| `release-readiness.sh` 의 원격 태그 대조 | 태그 판정이 `rr_tag_exists`(`git tag -l` — **로컬 클론**)이고 원격을 실제로 조회하는 것은 php 미러의 `rr_mirror_tag`(`git ls-remote`) 하나뿐이다(`scripts/release-readiness.sh:93` vs `:81`). 그러나 이 스크립트의 계약이 **「읽기전용: 어떤 상태도 변경하지 않는다」**(3행)라 `fetch` 를 넣을 수 없고, 오답의 방향이 안전하다 — 로컬이 낡으면 「태그 없음」으로 답해 사람이 태그를 밀고, 그러면 릴리스 워크플로 첫 스텝의 태그↔매니페스트 가드가 다시 본다. 고치는 법도 `git fetch --tags` 하나다 | `git tag -l '<접두>*' \| wc -l` 과 `git ls-remote --tags origin '<접두>*' \| wc -l` 이 갈린 채로 이 도구가 「태그 없음」을 답한 일이 실측될 때. 그때는 fetch 를 넣지 말고 **두 값을 나란히 인쇄**하는 것이 계약을 지키는 최소 수정이다 |
 | Rust `stable` 레그의 clippy 고정 | `-D warnings`를 무는 것이 **그 레그의 목적**이다(매트릭스 주석 「stable = 최신 회귀 확인」). 고정하면 조기경보가 죽고, 의존 자체는 `--locked`가 이미 잡는다. 체크리스트 6 — 실측 12실행 전부 초록이라 관측된 파손이 0인데 새 실패 모드만 는다 | `gh run list --workflow=rust-ci.yml --json conclusion,headBranch`가 clippy 새 lint 때문에 **stable 레그만** 실패한 것을 내고, 그것이 무관한 PR을 막을 때. 그때도 고정이 아니라 그 레그만 `continue-on-error` |
 | 「천장 핀에는 `ignore` 도」 가드 | 「금지하려는 제약」인지가 구문으로 안 갈린다(`parallel "< 2"` vs `rspec "~> 3.13"`). ruby 는 「소스 히트 0 + CI 미호출」로 수렴하나 아홉 레인은 호출 규약이 제각각이라 탐지기가 아홉 개 필요하다 — 체크리스트 6(관측 파손 1건 대 새 실패 모드 아홉). 대응책은 이미 있다: dependabot 잡이 스스로 빨개지고 ⑥ 가 머지 후 확인을 요구한다 | **추론이 조인으로 바뀔 때** — 천장 핀이 따로 선언·게이트되어 `ignore` 와 집합 대조만 남으면(파서 아홉이 아니라 조인 하나). 또는 제약 오류가 머지 **전** 경로에서 관측될 때 |
-| `global.json`으로 .NET SDK 밴드 고정 | major는 이미 `dotnet-version: '8.0.x'`가 잡는다. 밴드까지 조이면 **러너에 그 밴드가 없을 때 죽는** 새 실패 모드가 생기고(체크리스트 6), net8.0은 서비싱 라인이라 새 분석기가 밴드로 들어오지 않는다. 실측 10실행 전부 초록 | `dotnet-ci`가 8.0 밴드 이동으로 실제 실패하거나, `dotnet/Directory.Build.props`의 `TargetFramework`가 서비싱 밖 라인으로 올라갈 때 |
+| `global.json`으로 .NET SDK 밴드 고정 | major는 CI 매트릭스가 잡는다(`dotnet: ['8.0.x','10.0.x']` — 둘을 함께 돌린다). 밴드까지 조이면 **러너에 그 밴드가 없을 때 죽는** 새 실패 모드가 생기고(체크리스트 6), net8.0은 서비싱 라인이라 새 분석기가 밴드로 들어오지 않는다. 실측 10실행 전부 초록 | `dotnet-ci`가 8.0 밴드 이동으로 실제 실패하거나, `dotnet/Directory.Build.props`의 `TargetFramework`가 서비싱 밖 라인으로 올라갈 때 |
 | examples 모듈에 `<skipPublishing>` | publish mojo 가 `aggregator=false`·`phase=deploy` 이고 examples 가 `<modules>` 의 **마지막**이라 번들 publish 자체가 그 모듈에서 일어난다 — 거기서 스킵하면 번들 전체가 안 나갈 개연성이 있다. 부모의 `<excludeArtifacts>` 로 갔다(#357, 실제 번들로 검증: 제거 20파일 · 복원 0파일) | publish mojo 가 `aggregator=true` 가 되거나 examples 가 `<modules>` 의 마지막이 아니게 될 때 |
 | php-semver V154 면제 | 「클래스명 대소문자가 바뀌었다」는 `implements` 절 추가만으로 나오는 오탐이나(최소 A/B 로 재현), 도구가 그것을 **PATCH** 로 내므로 MAJOR 만 보는 게이트에 애초에 닿지 않는다. 닿지 않는 면제는 시험되지 않는 코드다 | 리포트에서 V154 가 **MAJOR** 로 나오는 것이 실측될 때 — `grep -cE '^\| MAJOR .*V154' <리포트>` 가 0 이 아니면 그때 술어(선언 토큰 동일성)를 넣는다. 그전까지는 fail-closed 가 옳다 |
 | `with:` 시크릿에 빈값 검사 | 규칙 8 은 **셸** 테스트(`[ -z "$X" ]`)인데 kebab-case `with:` 입력은 환경에 없다 — 그 이름으로 검사를 붙이면 main 에서 실패한다. 세 자리(`gpg-private-key`·`app-id`·`private-key`) 전부 같은 잡에 env 형제가 있어 규칙 8 이 이미 본다. 위험 부류도 다르다(빈 `with:` 는 조용한 스킵이 아니라 불투명한 실패) | `with:` 시크릿을 **env 형제 없이** 받는 자리가 생길 때 |
 
-<!-- GitHub Release 대칭화 행의 「23태그 중 15개」재판정 (2026-08-28): 지금은 28태그 / Release 10개
+<!-- GitHub Release 대칭화 행의 「23태그 중 15개」재판정 (2026-08-28): 지금은 37태그 / Release 13개(2026-09-06 재측정)
      = 18개 없음이다(`git ls-remote --tags origin | grep -v '\^{}' | grep -vc archive/` = 28 ·
      `gh release list --limit 60 | wc -l` = 10). 비율도 성격도 그대로라 **기각은 유지된다** —
      전제가 뒤집힌 것이 아니므로 표의 수는 판정 당시 스냅샷으로 남긴다. -->
