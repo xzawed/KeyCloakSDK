@@ -50,8 +50,16 @@ assert_eq "ok" "$([ "$_files" -ge 2 ] && printf ok || printf "TOO-FEW($_files)")
 for WF in $(git ls-files '.github/workflows/*.yml'); do
   _g="$(osv_gates "$WF")"; _g=${_g:-0}
   [ "$_g" -gt 0 ] || continue
-  # 게이트 블록마다 그 뒤에 `exit 1` 이 하나씩 있어야 한다(블록 밖 exit 는 세지 않는다).
-  _e="$(awk "/if grep -qE ' FAILED\\\$' dep-tree.txt; then/{d=1} d&&/^[[:space:]]*exit 1\$/{n++; d=0} END{print n+0}" "$WF")"
+  # 게이트 블록마다 그 **안에** `exit 1` 이 있어야 한다.
+  # ⚠️ 앞을 향해 무한정 찾으면 안 된다 — 초판이 그랬고, 게이트의 `exit 1` 을 지웠는데 같은 스텝
+  # **뒤쪽**(OSV 대조 스텝)의 `exit 1` 이 셈을 채워 변이가 `SILENT` 로 통과했다(실측 2026-09-07).
+  # 그래서 닫는 `fi` 를 경계로 삼는다. 패턴은 `index()` 로 문자열 비교해 정규식 이스케이프를 없앤다.
+  _e="$(awk -v pat="if grep -qE ' FAILED\$' dep-tree.txt; then" '
+    index($0, pat) { d = 1; found = 0; next }
+    d && /^[[:space:]]*fi$/ { if (found) n++; d = 0; next }
+    d && /^[[:space:]]*exit 1$/ { found = 1 }
+    END { print n + 0 }
+  ' "$WF")"
   assert_eq "$_g" "$_e" \
     "[osv] $(basename "$WF") 의 fail-closed 게이트 $_g 개 중 $_e 개만 exit 1 로 끝난다 — 메시지만 가르고 판정은 가르지 않아야 한다"
 done
