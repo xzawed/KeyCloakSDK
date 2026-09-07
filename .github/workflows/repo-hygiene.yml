@@ -144,6 +144,13 @@ jobs:
       - name: 보안 기본값 자가테스트(9언어 코드 ↔ 문서 정합)
         run: sh scripts/test/test-security-defaults.sh
 
+      # ⚠️ OSV 감사의 fail-closed 지점이 **사본 전부**에 있는가. `gradlew dependencies` 는 아무것도
+      # 해석하지 못해도 exit 0 이라, 게이트 없는 자리는 가짜 좌표를 OSV 에 물어 "취약점 없음"으로
+      # 초록이 된다. 실측 2026-09-07: 생산자 3 · 게이트 1(하네스 잡에만) — 사본 셋 중 하나만 고쳐진
+      # 상태였다. 이 가드는 잡 이름을 손으로 적지 않고 워크플로 트리를 훑으므로 새 잡도 범위에 든다.
+      - name: OSV 감사 fail-closed 게이트 자가테스트
+        run: sh scripts/test/test-osv-audit-gate.sh
+
       # ⚠️ Admin capability matrix의 U(update) 열. 이 표가 권위인데 자기는 무보호였다 —
       # 루트 README가 "Rust와 PHP만 update()가 없다"고 거짓을 말했을 때 정답을 갖고 있던
       # 것이 이 표이고, PHP가 25/25가 되며(#190) 또 손으로 고쳤다. C/G/L은 이름이 언어마다

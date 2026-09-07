@@ -83,6 +83,18 @@ jobs:
         run: |
           set -euo pipefail
           ./gradlew -q dependencies --configuration runtimeClasspath > dep-tree.txt
+          # ⚠️ **fail-closed 지점** — 아래 `harness-kotlin` 잡의 같은 게이트와 **함께 움직인다**.
+          # `gradlew dependencies` 는 의존을 하나도 해석하지 못해도 exit 0 이고, 그 트리의
+          # `<좌표> FAILED` 를 아래 파이프라인이 가짜 좌표로 통과시킨다. OSV 는 그런 좌표에
+          # 취약점이 없다고 답하므로 **아무것도 감사하지 않은 잡이 초록으로 끝난다**
+          # (실측 2026-08-28: 가짜 9좌표 → 취약 0건 · 대조군 netty-codec-http 4.1.119.Final → 18건).
+          # ⚠️ 이 잡은 `paths:` 필터가 없는 일정 감사다 — 아무도 안 건드리는 언어의 CVE 를 여기서만
+          # 보므로, 여기의 거짓 초록은 어디서도 상쇄되지 않는다.
+          if grep -qE ' FAILED$' dep-tree.txt; then
+            echo "::error::의존성 해석에 실패한 좌표가 있다 — 감사 실패(fail-closed). 해석 못 한 좌표를 통과시키면 이 잡은 아무것도 감사하지 않는다."
+            grep -E ' FAILED$' dep-tree.txt | head -20
+            exit 1
+          fi
           grep -e '--- ' dep-tree.txt \
             | sed -e 's/^.*--- //' -e 's/ (\*)$//' -e 's/ (c)$//' -e 's/ (n)$//' \
             | awk -F' -> ' '{ if (NF == 2) { split($1, b, ":"); print b[1]":"b[2]":"$2 } else { print $0 } }' \
