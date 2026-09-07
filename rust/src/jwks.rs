@@ -17,6 +17,12 @@ use tokio::sync::{Mutex, RwLock};
 const FAILURE_BACKOFF_BASE: Duration = Duration::from_millis(200);
 const FAILURE_BACKOFF_CAP: Duration = Duration::from_secs(5);
 
+/// JWKS 본문의 바이트 상한. ⚠️ **이 수는 우리가 고른 것이 아니다** — Nimbus 의
+/// `RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT` 이고 java·kotlin 이 그 상수를 직접 참조하며 go 는
+/// 같은 값을 리터럴로 둔다(`go/jwt.go` 의 `jwksMaxBytes`). 아홉 언어가 함께 움직여야 하는 값이라
+/// 여기만 바꾸지 말 것. 상한이 없으면 적대적·거대 JWKS 가 그대로 메모리에 올라온다.
+const JWKS_MAX_BYTES: usize = 51200;
+
 /// 게이트 상태. **하나의 뮤텍스가 두 축을 함께 소유한다** — 강제 재조회의 30초 rate-limit 과
 /// 실패 fetch 의 백오프. 잠금을 나누면 「검사 후 fetch」 사이에 다른 태스크가 끼어들 수 있다.
 #[derive(Default)]
@@ -85,9 +91,34 @@ impl JwksStore {
             .send()
             .await
             .map_err(|e| KeycloakError::Transport(format!("JWKS fetch: {e}")))?;
-        let set: JwkSet = resp
-            .json()
+        // ⚠️ **상태를 먼저 본다.** 안 보면 IdP 의 오류 응답이 JSON 이기만 하면 파싱되고, 빈
+        // 키셋이 캐시된 뒤 rate-limit 게이트가 재조회를 막아 모든 검증이 「알 수 없는 kid」로
+        // 죽는다. php(`getStatusCode() !== 200`)·ruby(`resp.success?`)·go 는 이미 본다.
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(KeycloakError::Transport(format!(
+                "JWKS fetch failed: HTTP {}",
+                status.as_u16()
+            )));
+        }
+        // ⚠️ **본문을 통째로 읽기 전에 상한을 건다.** `resp.json()`/`resp.bytes()` 는 서버가
+        // 보내는 만큼 다 받는다. 청크 단위로 받으며 상한+1 을 넘는 순간 끊는다 — `Content-Length`
+        // 로만 판정하면 그 헤더가 없거나 거짓인 응답을 놓친다.
+        let mut resp = resp;
+        let mut body: Vec<u8> = Vec::new();
+        while let Some(chunk) = resp
+            .chunk()
             .await
+            .map_err(|e| KeycloakError::Transport(format!("JWKS read: {e}")))?
+        {
+            body.extend_from_slice(&chunk);
+            if body.len() > JWKS_MAX_BYTES {
+                return Err(KeycloakError::Transport(format!(
+                    "JWKS response exceeds {JWKS_MAX_BYTES} bytes"
+                )));
+            }
+        }
+        let set: JwkSet = serde_json::from_slice(&body)
             .map_err(|e| KeycloakError::Transport(format!("JWKS parse: {e}")))?;
         let arc = Arc::new(set);
         *self.cache.write().await = Some(arc.clone());
@@ -413,6 +444,82 @@ mod tests {
             certs_hits(&server).await,
             1,
             "20 concurrent cold-start lookups must collapse to one fetch"
+        );
+    }
+
+    // ⚠️ HTTP 상태를 안 보면 **500 본문이 JSON 이기만 하면 파싱된다.** IdP 의 오류 페이지가
+    // `{"keys":[]}` 든 무엇이든 JSON 이면 빈 키셋이 캐시되고, 그 뒤 모든 검증이 「알 수 없는
+    // kid」로 실패한다 — 그리고 rate-limit 게이트가 재조회를 막는다. php(`getStatusCode() !== 200`)·
+    // ruby(`resp.success?`)·go 는 이미 상태를 본다. rust 만 안 봤다.
+    #[tokio::test]
+    async fn non_2xx_is_transport_error_not_parsed() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(500).set_body_json(serde_json::json!({"keys":[]})))
+            .mount(&server)
+            .await;
+        let store = JwksStore::new(
+            format!("{}/certs", server.uri()),
+            reqwest::Client::new(),
+            60,
+        );
+        let err = store
+            .get_key("k1")
+            .await
+            .expect_err("500 must not be parsed");
+        assert!(
+            matches!(err, KeycloakError::Transport(ref m) if m.contains("500")),
+            "expected Transport carrying the status, got {err:?}"
+        );
+    }
+
+    // ⚠️ 본문 크기 상한이 없으면 적대적·거대 JWKS 가 그대로 메모리에 올라온다. 상한값은 go 와
+    // 같은 51200 이고, 그것은 Nimbus 의 `RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT` 다(java·kotlin 이
+    // 그 상수를 직접 참조한다) — 아홉 언어가 같은 수를 쓰게 하려고 여기서도 그 값을 쓴다.
+    #[tokio::test]
+    async fn oversized_body_is_rejected() {
+        let server = MockServer::start().await;
+        // 유효한 JSON 이되 상한을 넘는 본문 — 「파싱 실패」가 아니라 「크기 초과」로 죽어야 한다.
+        let big = "x".repeat(JWKS_MAX_BYTES + 1024);
+        let body = serde_json::json!({ "keys": [], "padding": big });
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&server)
+            .await;
+        let store = JwksStore::new(
+            format!("{}/certs", server.uri()),
+            reqwest::Client::new(),
+            60,
+        );
+        let err = store
+            .get_key("k1")
+            .await
+            .expect_err("oversized JWKS must not be parsed");
+        assert!(
+            matches!(err, KeycloakError::Transport(ref m) if m.contains("exceeds")),
+            "expected a size-limit Transport error, got {err:?}"
+        );
+    }
+
+    // 대조군 — 상한 바로 아래는 통과해야 한다. 없으면 위 테스트가 「늘 실패한다」와 구분되지 않는다.
+    #[tokio::test]
+    async fn body_under_the_cap_still_parses() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(jwks_json("k1")))
+            .mount(&server)
+            .await;
+        let store = JwksStore::new(
+            format!("{}/certs", server.uri()),
+            reqwest::Client::new(),
+            60,
+        );
+        assert_eq!(
+            store.get_key("k1").await.unwrap().common.key_id.as_deref(),
+            Some("k1")
         );
     }
 }
