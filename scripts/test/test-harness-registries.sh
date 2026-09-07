@@ -21,6 +21,9 @@
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
+# 언어 목록은 SSOT 에서 파생한다 — 이 루프는 파일 존재·문자열 포함만 보므로 순서가
+# 무관하고, 손으로 적으면 열 번째 언어가 여기 빠진 채 초록이 된다.
+. "$DIR/../lib/deploy-facts.sh"
 ROOT="$DIR/../.."
 CFG="$ROOT/harness/install/registries/verdaccio.yaml"
 PKG="$ROOT/node/package.json"
@@ -110,7 +113,7 @@ assert_eq "1" "$(proxy_of '**')"    "** 에 proxy가 없다 — 비스코프 전
 # 격리 설정과 달리 이 단언은 "설정이 이렇다"가 아니라 "실제로 어디서 받았나"를 겨눈다.
 CONSUME="$ROOT/harness/install/consume"
 prov_langs=0
-for L in python java kotlin ruby php go node rust dotnet; do
+for L in $DEPLOY_LANGS; do
   f="$CONSUME/$L-run.sh"
   assert_ok test -f "$f"
   [ -f "$f" ] || continue
