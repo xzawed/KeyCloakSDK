@@ -54,9 +54,16 @@ for WF in $(git ls-files '.github/workflows/*.yml'); do
   # ⚠️ 앞을 향해 무한정 찾으면 안 된다 — 초판이 그랬고, 게이트의 `exit 1` 을 지웠는데 같은 스텝
   # **뒤쪽**(OSV 대조 스텝)의 `exit 1` 이 셈을 채워 변이가 `SILENT` 로 통과했다(실측 2026-09-07).
   # 그래서 닫는 `fi` 를 경계로 삼는다. 패턴은 `index()` 로 문자열 비교해 정규식 이스케이프를 없앤다.
+  # ⚠️ 첫 `fi` 로 닫으면 안 된다 — `harness-kotlin` 게이트는 **중첩 if/fi** 를 품고 있어서
+  # 안쪽 `fi` 에서 멈추면 그 뒤의 `exit 1` 을 못 본다(실측 2026-09-07: 2개 중 1개만 셌다).
+  # 게이트와 **같은 들여쓰기**의 `fi` 가 그 블록의 닫는 자리다.
   _e="$(awk -v pat="if grep -qE ' FAILED\$' dep-tree.txt; then" '
-    index($0, pat) { d = 1; found = 0; next }
-    d && /^[[:space:]]*fi$/ { if (found) n++; d = 0; next }
+    index($0, pat) {
+      d = 1; found = 0
+      match($0, /^[[:space:]]*/); close_re = "^" substr($0, 1, RLENGTH) "fi$"
+      next
+    }
+    d && $0 ~ close_re { if (found) n++; d = 0; next }
     d && /^[[:space:]]*exit 1$/ { found = 1 }
     END { print n + 0 }
   ' "$WF")"
