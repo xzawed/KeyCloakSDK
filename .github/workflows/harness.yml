@@ -55,7 +55,10 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with: { node-version: '22' }
       - name: 9언어 종합 검증·스코어링
-        run: cd harness && ./verify.sh go dotnet node python java php rust ruby kotlin
+        # ⚠️ 언어를 인자로 넘기지 않는다 — 스크립트의 기본값이 곧 아홉 언어이고, 여기 다시
+        # 적으면 열 번째 언어가 한쪽에만 들어가 **조용히 안 돌아간다**. 인자 문자열이
+        # 기본값과 바이트 동일임을 확인하고 지웠다(2026-09-06).
+        run: cd harness && ./verify.sh
       - name: 스코어카드 업로드
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -83,7 +86,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with: { node-version: '22' }
       - name: 9언어 설치·동작 검증
-        run: cd harness/install && ./install-verify.sh go dotnet node python java php rust ruby kotlin
+        # ⚠️ 위와 같은 이유로 인자를 넘기지 않는다(기본값과 바이트 동일임을 확인했다).
+        run: cd harness/install && ./install-verify.sh
       - name: 설치 매트릭스 업로드
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

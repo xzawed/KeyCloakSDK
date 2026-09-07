@@ -224,4 +224,49 @@ _last_mod="$(sed -n '/<modules>/,/<\/modules>/p' "$_ab_root/java/pom.xml" | grep
 assert_eq "keycloak-sdk-examples" "${_last_mod:-없음}" \
   "java/pom.xml 의 <modules> 마지막이 examples 가 아니다 — <skipPublishing> 미채택 판정의 전제가 깨졌다(기각 레지스트리의 되살릴 조건)"
 
+# ---------------------------------------------------------------------------
+# 언어 목록 사본 ↔ SSOT — **집합**으로 같은가
+# ---------------------------------------------------------------------------
+#
+# 실측 배경(2026-09-06): 아홉 언어 목록이 트리에 **9곳**에 손으로 적혀 있었고, SSOT 는
+# `DEPLOY_LANGS` 하나인데 그것을 **아무도 다른 사본과 대조하지 않았다**. 열 번째 언어가
+# 여섯 곳에만 들어가면 나머지 셋은 그 언어를 **조용히 건너뛴다** — 야간 하네스가 그
+# 언어를 아예 돌리지 않고 초록으로 끝난다. 시끄럽게 죽는 부류가 아니라서 가드가 필요하다.
+#
+# ⚠️ **순서가 아니라 집합만 본다.** 하네스의 실행 순서와 SSOT 의 순서는 다르고, 그 차이는
+# 정당하다 — SSOT 의 순서축은 **복구가능성**(위 첫 어서션)이고 하네스의 것은 실행 순서다.
+# 사본을 SSOT 순서로 다시 쓰면 Docker 파이프라인의 실행 순서가 바뀌고, 이 저장소는
+# `install-verify.sh` 에서 **순서 의존 버그 부류**를 이미 겪었다(`.claude/rules/ci.md`).
+#
+# ⚠️ 사본을 지울 수 있는 곳은 이 커밋에서 지웠다(CI 인자 2곳은 기본값과 바이트 동일이라
+# 무위험, `test-harness-registries.sh` 의 루프는 순서 무관이라 SSOT 파생). 남은 넷은
+# **실행 순서를 갖거나 그것을 설명하는 산문**이라 지울 수 없어서 대조한다.
+_LANG_RE='^(go|dotnet|node|python|java|php|rust|ruby|kotlin)$'
+_ssot_set="$(printf '%s\n' $DEPLOY_LANGS | sort | tr '\n' ' ')"
+
+# 파일에서 패턴에 맞는 **첫 줄**을 골라 언어 토큰만 뽑아 정렬된 집합으로 돌려준다.
+langset_of() {
+  grep -E -- "$2" "$DIR/../../$1" 2>/dev/null | head -1 \
+    | tr -c 'a-z' '\n' | grep -Ex "$_LANG_RE" | sort -u | tr '\n' ' '
+}
+
+_copy_sites=0
+check_langset() { # $1=파일 $2=패턴 $3=설명
+  _got="$(langset_of "$1" "$2")"
+  # 공허 방지 — 패턴이 낡아 0건이 되면 "불일치 0"이 통과로 보인다.
+  assert_ok test -n "$_got"
+  [ -n "$_got" ] || return 0
+  _copy_sites=$((_copy_sites + 1))
+  assert_eq "$_ssot_set" "$_got" \
+    "$1 의 $3 이 DEPLOY_LANGS 와 집합으로 다르다 — 열 번째 언어가 여기 빠지면 조용히 건너뛴다"
+}
+
+check_langset harness/verify.sh '^LANGS=' '기본 언어 배열'
+check_langset harness/verify.sh '^# 종합 검증 파이프라인' 'Usage 주석'
+check_langset harness/install/install-verify.sh '^DEFAULT_LANGS=' '기본 언어 목록'
+check_langset harness/install/install-verify.sh '^# Usage:' 'Usage 주석'
+
+# 공허 방지 — 대조한 자리가 줄면 이 검사는 아무것도 안 보면서 초록이 된다.
+assert_eq "4" "$_copy_sites" "언어 목록 사본을 4곳 대조해야 한다 — 자리가 줄었으면 패턴이 낡았거나 사본이 옮겨갔다"
+
 assert_report
