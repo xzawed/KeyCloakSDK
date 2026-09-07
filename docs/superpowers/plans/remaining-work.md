@@ -29,7 +29,7 @@
 ```sh
 git clone https://github.com/xzawed/KeyCloakSDK && cd KeyCloakSDK
 node scripts/doctor.mjs                 # 이 PC에 무엇이 없는지. 설치·환경변수는 docs/guides/development-setup.md
-node scripts/check-docs.mjs . --strict --min-facts=78 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=4 --min-count-anchors=4
+node scripts/check-docs.mjs . --strict --min-facts=78 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=5 --min-count-anchors=4
 git branch --show-current               # ⚠️ 아래 함정 (e)
 ```
 
@@ -262,7 +262,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - **배치 3 감사 완료(2026-09-06) · 발견 50건**(H 13 · M 22 · L 15) · 인용 게이트 **50/50 실재** · H 전건 독립 반박 **CONFIRMED 8 · PARTIAL 5 · 반박 0**. ⚠️ **대상이 등록부가 적던 것과 달랐다** — 하네스 리포트 셋(`RESULTS.md`·`SCORECARD.md`·`INSTALL-MATRIX.md`)은 **커밋되지 않는 생성물**이라 감사 대상이 아니다. 실제 10개는 하네스 3(`harness/README.md`·`contract/CONTRACT.md`·`install/README.md`) + 내부 4(`docs/README.md`·`process.md`·`rejected.md`·`add-a-language-playbook.md`) + rules 3.
   - **#423 가 고친 것은 rules 3 + 그 파생 3자리뿐**(`kotlin.md`·`DEPLOY.md` 둘·`development-setup.md`). **나머지 7문서 40건은 열려 있다** — 아래 `doc-audit-batch3-fixes-outstanding`.
   - ⚠️ **1차 확정 3건 재검증에서 전건 결함이 나왔다** — 「자체 변경이 `go.md` 1건뿐이라 위험이 낮다」는 사전 판단은 **틀렸다**. 드리프트는 그 파일이 바뀌어서가 아니라 **그 파일이 서술하는 대상이 바뀌어서** 생긴다(go 커버리지 95.7→96.1 · gobco 69→72 는 `go/` 커밋 셋이 만든 것이고, 낡은 JDK 경로는 머신이 바뀐 것이다). **재검증 대상은 「그 문서의 커밋 이력」이 아니라 「그 문서가 가리키는 것의 커밋 이력」으로 고른다.**
-- [x] `doc-audit-batch3-fixes-outstanding` **[M/M · 신규 2026-09-06 · 닫힘 2026-09-06 #433]** 배치 3 발견 **50건 전부 처리**. rules 10(#423) · 계수 3(#425) · 플레이북 11(#426, 재스캔 1 포함) · 지도 7 + 하네스 9(#429) · 계약 2(#431) · `process.md` 3(#432) · `rejected.md` 8(#433). 방법·전제·기각 판정은 [문서 사실에 오라클 붙이기](2026-09-06-doc-fact-oracles.md)가 소유한다
+- [x] `doc-audit-batch3-fixes-outstanding` **[M/M · 신규 2026-09-06 · 닫힘 2026-09-06 #433]** 배치 3 발견 **50건 전부 처리**. rules 10(#423) · 계수 3(#425) · 플레이북 11(#426, 재스캔 1 포함) · 지도 7 + 하네스 9(#429) · 계약 2(#431) · `process.md` 3(#432) · `rejected.md` 8(#433). 방법·전제·기각 판정은 `git show b273f67:docs/superpowers/plans/2026-09-06-doc-fact-oracles.md`
   - **닫힘 판정은 인용 게이트가 냈다**(손으로 세지 않는다 — 이 항목에서만 계수를 세 번 틀렸다): 50건 전건에 게이트를 돌려 **PASS 1 · DRIFT 5 · FAIL 44**. PASS·DRIFT 6건은 전부 **「빠뜨림」 유형**이라 원문을 유지하고 항목을 덧붙인 자리다(인용이 살아남는 것이 정상).
   - ⚠️ **예산 인상 둘이 필요했고, 둘 다 재고 나서 판단했다** — `process.md` +110B(오늘 **세 번째**라 정지 규칙 발동 → 사람 판정 「인상하고 진행」) · `rejected.md` +189B(두 번째라 미발동). **재기 전이었다면 「11건은 300B 를 넘을 것」이라는 추측으로 잘못된 구조 결정을 물었을 것이다.**
   - ⚠️ **이 수를 손으로 세다 두 번 틀렸다**(37 → 40 → 27 → 13). 남은 것을 셀 때는 **인용 게이트를 그 부분집합에 돌린다** — 옛 인용이 그 줄에 살아 있으면 미수정, 사라졌으면 수정이다. 손계수는 「어느 PR 이 무엇을 닫았는지」를 기억에 의존하게 만든다.
