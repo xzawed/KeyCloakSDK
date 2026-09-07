@@ -1,8 +1,10 @@
 # 문서 지도 (Documentation Map)
 
-> **Looking for user documentation?** It is in English and lives in [`guides/`](guides/) — start with
-> [Getting Started](guides/getting-started.md). The rest of this directory is the project's internal
-> record and is written in Korean.
+> **Looking for user documentation?** It is in English. Start with
+> [Getting Started](guides/getting-started.md) in [`guides/`](guides/) — but three more English
+> consumer documents live **outside** it: the compatibility table, the admin capability matrix and
+> the language roadmap. §1 below lists all of them together, so read that section rather than the
+> directory names. Everything else here is the project's internal record and is written in Korean.
 
 이 저장소의 `docs/` 아래 문서 **전부**를 한 곳에서 본다. 각 줄의 마지막 칸이 이 지도의 존재 이유다 —
 **"여기서만 알 수 있는 것"**, 즉 그 문서를 열지 않으면 어디서도 얻을 수 없는 정보다. 다른 문서에도
@@ -44,7 +46,7 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 | 문서 | 상태 | 여기서만 알 수 있는 것 |
 |---|---|---|
 | [작업 프로세스](governance/process.md) | 운영 | **모든 작업의 6단계**(기획→계획→검토→일정→수행→검증)와 각 단계의 나가는 조건. **WBS 규약**(상태 표기·계층·"끝나는 조건은 명령이어야 한다"). **PM의 중재 규칙** — 라우팅·Grok 독립 레그·결과 재검증·갈릴 때의 재정. 품질 게이트 G1–G6. **기각 체크리스트**(판정 기준 — 내려진 판정 목록은 아래 레지스트리). 변이 3요건 (a)(b)(c)가 각각 무엇을 답하는지도. |
-| [기각 레지스트리](governance/rejected.md) | 운영 | **이미 기각된 제안과 그 되살릴 조건**(여기에만 있다). 제안을 만들기 전에 여기서 같은 것이 이미 기각됐는지 본다 — 되살릴 조건은 산문이 아니라 **돌아가는 명령**이라 다음 세션이 판정을 재현할 수 있다. 구조상 단조 증가해서 `process.md`에서 떼어 냈다. |
+| [기각 레지스트리](governance/rejected.md) | 운영 | **이미 기각된 제안과 그 되살릴 조건**(판정 **목록**은 여기가 유일하다 — 개별 되살릴 조건은 그 결정이 사는 자리에도 적혀 있다, 예: `go-ci.yml` 의 staticcheck 레그). 제안을 만들기 전에 여기서 같은 것이 이미 기각됐는지 본다 — 되살릴 조건은 산문이 아니라 **돌아가는 명령**이라 다음 세션이 판정을 재현할 수 있다. 구조상 단조 증가해서 `process.md`에서 떼어 냈다. |
 
 <!-- doc-guard: kind=count source=rejection-checklist -->
 그 기각 체크리스트는 `8`항목이고, 이 수는 `process.md` §3 의 열거와 기계 대조된다(검사 11).
@@ -53,7 +55,7 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 
 | 문서 | 날짜 | 상태 | 여기서만 알 수 있는 것 |
 |---|---|---|---|
-| [잔여작업 등록부](superpowers/plans/remaining-work.md) | 2026-09-03 | 진행 | **전수 감사가 남긴 209건이 어떤 150개 작업 패키지로 접히는지, 그리고 무엇이 아직 열려 있는지**(여기에만 있다). 감사는 아무것도 커밋하지 않아 원장이 저장소 밖에만 있었다 — 이 문서가 그 복원본이자 열린 항목의 진실 원천이다. 착수 순서와 그 순서를 정한 근거(잠복 결함보다 게시본에서 활성인 것이 먼저), 그리고 **되살리면 안 되는 기각 자리 셋**도 여기 적혀 있다. |
+| [잔여작업 등록부](superpowers/plans/remaining-work.md) | 2026-09-03 | 진행 | **전수 감사가 남긴 209건이 어떤 작업 패키지로 접히는지, 그리고 무엇이 아직 열려 있는지**(여기에만 있다 — 패키지 수는 그 문서가 자기 체크박스로 세고 검사 11 이 대조하므로 여기 옮겨 적지 않는다). 감사는 아무것도 커밋하지 않아 원장이 저장소 밖에만 있었다 — 이 문서가 그 복원본이자 열린 항목의 진실 원천이다. 착수 순서와 그 순서를 정한 근거(잠복 결함보다 게시본에서 활성인 것이 먼저), 그리고 **되살리면 안 되는 기각 자리 둘**도 여기 적혀 있다. |
 | [문서 사실에 오라클 붙이기](superpowers/plans/2026-09-06-doc-fact-oracles.md) | 2026-09-06 | 진행 | **배치 3 감사 잔여 40건을 어떤 순서로, 어떤 가드를 먼저 세우고 닫는가**(여기에만 있다). 배치 1~3 결함이 압도적으로 **계수와 열거**였다는 실측 위에서, 「세면 답이 나오는 사실에 오라클을 붙인다」를 스펙으로 삼는다. 불변식 여섯의 채택·기각 판정과 **기각 둘의 되살릴 조건**(계약↔상태코드 · 소유권 주장 유일성), 그리고 이 저장소에서 **문서 수정의 red-green 이 무엇인지**(가드를 먼저 쓰고 3요건으로 원인을 확정한다)가 여기 있다. ⚠️ **초안은 여섯 중 넷이 틀렸고 독립 검토가 뒤집었다** — 그 기록(무엇을 왜 좁혔는가)이 스펙 표의 마지막 열에 남아 있다. |
 
 열린 계획서는 `docs/superpowers/plans/`에 두고 여기 한 줄을 넣는다 —
@@ -66,7 +68,7 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 
 ## 이 지도의 유지
 
-`scripts/check-docs.mjs`(검사 9)가 **양방향**으로 대조한다:
+`scripts/check-docs.mjs`(검사 9)가 대조한다. **양방향 링크는 그중 둘일 뿐이다** — 어서션은 열둘이고, 각 문서가 **첫 칸이 링크인 표 행**으로 실려 있는지, `운영/완료/진행` 상태 칸이 있는지, 그것이 문서 자신의 `doc-status` 마커와 맞는지, 마지막 칸이 최소 길이를 넘는지, `진행`이면 미체크 항목이 남아 있는지까지 본다. ⚠️ **마지막 칸의 *내용*은 안 본다** — 이 문서의 감사 발견이 전부 거기 있었다. 링크 축은 이렇다:
 
 - `docs/**/*.md` 중 이 지도에 링크되지 않은 파일이 있으면 실패 — 문서를 추가하고 지도에 안 넣는 것을 막는다.
 - 이 지도의 링크가 존재하지 않는 파일을 가리키면 실패 — 문서를 지우거나 옮기고 지도를 안 고치는 것을 막는다.
