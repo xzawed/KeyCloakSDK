@@ -44,15 +44,18 @@ impl ClientCredentialsTokenProvider {
         } else {
             self.config.scopes.join(" ")
         };
-        let params = [
+        // ⚠️ 공개 클라이언트에는 `client_secret` 를 **싣지 않는다**(빈 값도 아니다). `auth.rs` 의
+        // 같은 계약과 함께 움직인다 — 사본 중 하나만 고치는 것이 이 저장소가 반복해 겪은 부류다.
+        // (client_credentials 자체는 기밀 클라이언트용이지만, 빈 시크릿을 보내면 서버가 내는
+        //  오류가 「시크릿이 틀렸다」로 바뀌어 오설정 진단이 어긋난다.)
+        let mut params: Vec<(&str, &str)> = vec![
             ("grant_type", "client_credentials"),
             ("client_id", self.config.client_id.as_str()),
-            (
-                "client_secret",
-                self.config.client_secret.as_deref().unwrap_or(""),
-            ),
             ("scope", scope.as_str()),
         ];
+        if let Some(secret) = self.config.client_secret.as_deref() {
+            params.push(("client_secret", secret));
+        }
         let resp = self
             .http
             .post(&self.token_url)
@@ -192,5 +195,55 @@ mod tests {
             }
             other => panic!("expected Auth with mapped oauth_error, got {other:?}"),
         }
+    }
+
+    // ⚠️ `auth.rs` 의 같은 계약과 함께 움직인다 — 사본 중 하나만 고치면 그쪽만 초록이 된다.
+    // 빈 `client_secret=` 를 보내면 서버가 내는 오류가 「시크릿이 틀렸다」로 바뀌어, 실제 원인인
+    // 「이 클라이언트는 client_credentials 를 쓸 수 없다」가 가려진다.
+    #[tokio::test]
+    async fn public_client_omits_client_secret_field() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "AT", "token_type": "Bearer", "expires_in": 300
+            })))
+            .mount(&server)
+            .await;
+        // ⚠️ `with_client_secret` 를 부르지 않는다 — 그것이 공개 클라이언트다.
+        let config = KeycloakConfig::new(server.uri(), "it-realm", "it-client").unwrap();
+        let p = ClientCredentialsTokenProvider::new(config, reqwest::Client::new());
+        assert_eq!(p.access_token().await.unwrap(), "AT");
+        let reqs = server
+            .received_requests()
+            .await
+            .expect("received_requests available");
+        let body = String::from_utf8_lossy(&reqs[0].body).to_string();
+        assert!(
+            !body.contains("client_secret"),
+            "공개 클라이언트 본문에 client_secret 이 실렸다: {body}"
+        );
+        assert!(body.contains("client_id=it-client"), "본문: {body}");
+    }
+
+    // 대조군 — 시크릿이 있으면 그대로 실려야 한다.
+    #[tokio::test]
+    async fn confidential_client_still_sends_client_secret_field() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "AT", "token_type": "Bearer", "expires_in": 300
+            })))
+            .mount(&server)
+            .await;
+        let p = ClientCredentialsTokenProvider::new(cfg(&server.uri()), reqwest::Client::new());
+        assert_eq!(p.access_token().await.unwrap(), "AT");
+        let reqs = server
+            .received_requests()
+            .await
+            .expect("received_requests available");
+        let body = String::from_utf8_lossy(&reqs[0].body).to_string();
+        assert!(body.contains("client_secret=s"), "본문: {body}");
     }
 }
