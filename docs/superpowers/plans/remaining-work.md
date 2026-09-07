@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **170** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1) — 열림 **137** · 닫힘 **33** |
+| 작업 패키지 | **170** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1) — 열림 **133** · 닫힘 **37** (2026-09-07 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `170`(열림 137 · 닫힘 33)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.**
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `170`(2026-09-07 기준 열림 133 · 닫힘 37)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -35,12 +35,21 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-09-06 기준 · #415–#419 반영)
+### 다음 세션 진입점 (2026-09-07 재측정 · #421–#438 반영)
 
-135건 중 어디부터인지가 안 보이므로 순서를 못박는다. **위에서부터 밟는다.**
+⚠️ **이 절은 2026-09-07 에 통째로 다시 썼다 — 이전 판은 이미 닫힌 배치 3 으로 다음 세션을 보내고 있었다.** 등록부 작성(2026-09-03) 이후 46건이 병합돼 추적파일 110개가 바뀌었고, **인용 파일이 그 사이 바뀐 열린 항목이 70/137** 이었다(재측정 시점). 그중 **20건을 재판정**한 결과 **11건(55%)이 변동**했다 — 닫힘 2 · 서술이 넓어짐 7 · 계수 어긋남 3(둘은 악화). 그 셋에 #438·#440 이 닫은 것까지 반영해 열림은 **133** 이다. **나머지 50건은 아직 재판정하지 않았다** — 「열려 있다」를 액면가로 읽지 말고, 손대기 전에 그 항목의 주장을 먼저 재라.
 
-1. **`doc-audit-batch2-3-not-started` [M]** — **배치 2 는 닫혔다(#421). 남은 것은 배치 3 의 10개**(하네스·내부 7 + rules 3 재검증). 방법·회수율 실측이 그 항목에 있다. ⚠️ **감사자 처방의 임계치를 그대로 옮기지 말 것**(배치 1 에서 여러 건이 `--min-facts=64 --min-anchors=21` 을 전제했으나 이 트리는 **74/22**).
-2. **A 절 잔여 1건**(`auto-bump-manifest-crosscheck-skip` [L·보류]) — 확정 결함 12건 중 남은 전부다(`java-rules-close-scope-ambiguous` 는 #423 에서 닫혔다).
+순서는 **① 지금 초록이 거짓인 것 → ② 게시본에서 소비자가 겪는 것 → ③ 잠복 → ④ 완결성** 이다(2026-09-07, 독립 레그 둘이 1~5위에서 일치).
+
+1. ✅ **`kotlin-osv-audit-fail-open` [H] — #438 이 닫았다.** 유일하게 **활성**이던 fail-open 이었다(dep-tree 생산자 3 · 게이트 1). 가드 `test-osv-audit-gate.sh` 가 사본 갈림을 대신 센다.
+2. **rust JWKS 두 건** — `jwks-response-not-validated` 의 잔여(HTTP 상태 미검사, `error_for_status` 0건)와 `jwks-response-size-unbounded-non-jvm`. 같은 파일이라 한 PR 이다. 게시된 `rust-v1.0.0` 에 있다.
+3. **`rust-public-client-empty-secret`** — 공개 클라이언트에 `client_secret=""` 를 보낸다. `auth.rs` 라 2 와 분리한다.
+4. **`python-sync-authorization-url-unencoded`** — sync 만 퍼센트 인코딩을 안 한다(async 는 한다). **선행 실측**: 인용 줄번호가 148→151 로 드리프트했다.
+5. **`sweeps-without-vacuity-floor` [H]** — 잠복이나 required 경로다. 남은 것은 **둘**(Jackson 스캔 · `shell-exec-bits`). 셋 중 하나는 `--min-escalations=6`(#385)이 이미 닫았다.
+6. **`security-invariant-use-site-scope` [H]** — 미검사 2차 리터럴이 **4 → 5** 로 늘었다(kotlin 3 · python 1 · dotnet 1). ⚠️ **required 손 표에 다섯 줄을 더하는 것이 답이 아니다** — 그것이 `guard-detection-surface-hand-narrowed` 를 악화시킨다. **언어 로컬 테스트**로 닫는다.
+7. **A 절 잔여 1건**(`auto-bump-manifest-crosscheck-skip` [L·보류]).
+
+**PR 이 아닌 것**(선행이 빠져 있다): `jvm-17-floor-never-shipped`(사람 승인 릴리스) · `guard-detection-surface-hand-narrowed` 의 파생화(required **밖**에서 오탐 0 선행) · admin 표면 3건(등형성 스펙) · `integration-coverage-never-measured`(9개 설계) · `security-invariant-not-required`(룰셋 apply, **5 이후**에).
 
 ⚠️ **예산 정책은 정해졌다(#418) — 배치 2·3 은 그 위에서 돈다.** 문서 여럿이 상한에 붙어 있어 **정확성 수정 한 줄도 예산을 넘긴다**(배치 1 실측: 네 번, +300·236·120·84B). 이제 규칙은 「인상은 **교환**이고, 앵커 주석에 `옛값 → 새값` 을 적으며, **+300B 초과만 사람 판정**」이고 `check-docs.mjs` **검사 8b** 가 `main` 과 대조해 강제한다. **매 건 사람에게 올리지 말 것** — 상한 안이면 기록하고 진행한다. ⚠️ 반대로 **깎아서 맞추지도 말 것**: 압축이 「다시 재는 명령」을 지우면 그건 교환이 아니라 손실이고, 그때가 인상해야 하는 자리다.
 
@@ -256,7 +265,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - **(8) `docs/reference/admin-capability.md` [M]** 42행 「Partial updates behave differently per library」 — 이 문서의 존재 이유가 언어 간 포팅인데 그 서술이 어긋난다. ⚠️ 반박자: 사본 계수 정정 — 출처는 `kotlin-ci.yml:57` 이 아니라 **`ci.yml:62-63`**.
   - **(9) `docs/guides/getting-started.md` 잔여 [M]** 538행 `(dev/CI top end 3.4)` — ruby CI 는 `['3.2','3.3','3.4','4.0']`. **반박됨**이나 DEPLOY.md 쪽 5건(F1~F5)이 실측으로 살아남았다: :95 가 npm OIDC 를 증명 완료라 하는데 :441 은 `still not evidenced … the one publish so far used a token` 이라 하고, `git tag -l 'node-*'` 는 **6개**를 보인다(「one publish」도 거짓). :186 `Node and Ruby remain.` 도 :188·:95 와 모순.
   - 재현: 워크플로 `doc-audit-consumer-batch1`(run `wf_444f054c-58a`) · 핀 `3c306a0` · 인용 게이트 `scratchpad/citegate2.mjs`(계측기 자가검증 내장).
-- [ ] `doc-audit-batch2-3-not-started` **[M/L · 신규 2026-09-06 · 배치 2 닫힘 2026-09-06 #421]** 문서 41개 중 20개가 미검증이었다 — **배치 2(언어별 README 9 + `language-support.md`) 완료, 배치 3(하네스·내부 7 + rules 3 재검증) 10개가 남았다**
+- [x] `doc-audit-batch2-3-not-started` **[M/L · 신규 2026-09-06 · 닫힘 2026-09-07]** 문서 41개 중 20개가 미검증이었다 — 배치 2(언어별 README 9 + `language-support.md`) #421 · **배치 3 의 10문서도 감사·수정이 끝났다**. ⚠️ **재측정(2026-09-07)에서 이 항목이 낡은 채 열려 있는 것이 드러났다** — 하위 `doc-audit-batch3-fixes-outstanding` 은 이미 `[x]`(50/50, #433)인데 상위가 열려 있어 진입점이 **이미 끝난 일**로 다음 세션을 보내고 있었다. 남은 범위 **0**
   - **배치 2 결과**: 감사 20건 · 인용 게이트 20/20 실재(계측기 6/6 자가검증) · 독립 레그 반박 판정 **CONFIRMED 12 · PARTIAL 6 · 반박 1**. 수정 19건, 무변경 2건. 반박이 범위를 바로잡은 것 셋 — go 는 slog 가 마스킹하나 **`%#v` 는 여전히 샌다**(카나리아 프로브), php `isExpired` 뒤집힘은 **`php-v1.0.0` 이후** 커밋이라 「0.1.0 에서 올리기」 절의 결함이 아니며, `Done 행에 핀이 없다`(langsupport:25)는 **반박 성립**(`/v13` 은 Go 모듈 경로지 핀이 아니다 — 고치지 않았다).
   - ⚠️ **부류 재스캔이 문서별 감사가 놓친 넷째를 찾았다.** 「마스킹 타입 열거가 하나 모자람」은 감사가 go·dotnet·php 셋을 지목했으나, 9언어 재스캔에서 **kotlin 도 같았다**(`AuthorizationRequest.toString()` 이 `codeVerifier=***` 를 마스킹하는데 README 열거에 없었다). **문서 단위 감사만으로는 부류를 못 닫는다** — 닫기 전에 축으로 다시 훑을 것.
   - **배치 3 감사 완료(2026-09-06) · 발견 50건**(H 13 · M 22 · L 15) · 인용 게이트 **50/50 실재** · H 전건 독립 반박 **CONFIRMED 8 · PARTIAL 5 · 반박 0**. ⚠️ **대상이 등록부가 적던 것과 달랐다** — 하네스 리포트 셋(`RESULTS.md`·`SCORECARD.md`·`INSTALL-MATRIX.md`)은 **커밋되지 않는 생성물**이라 감사 대상이 아니다. 실제 10개는 하네스 3(`harness/README.md`·`contract/CONTRACT.md`·`install/README.md`) + 내부 4(`docs/README.md`·`process.md`·`rejected.md`·`add-a-language-playbook.md`) + rules 3.
@@ -302,7 +311,8 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [ ] `python-sync-admin-close-noop` **[M/S]** Python 동기 admin의 close()가 no-op — async 미러는 닫는다 · `python/src/keycloak_sdk/admin/__init__.py:83`
   - ⚠️ **원장이 과장했다 — 「영영 안 닫힌다」는 거짓.** `ConnectionManager.__del__` 이 GC 시점에 `_s` 를 닫는다. 참인 진술은 「`close()` 가 아무것도 안 하고, 해제 시점이 **GC 에 맡겨진다**」이다(결정적 해제가 없다). 이 문장 그대로 릴리스 노트에 올리면 사실이 아닌 심각도가 된다.
   - ⚠️ **기존 테스트가 결함을 의도로 고정하고 있다** — `tests/unit/test_admin_client.py:81 test_close_is_noop` 의 docstring 이 "컨텍스트 매니저 프로토콜과 대칭을 맞추기 위한 no-op" 이라 적고 `client.raw is admin` 만 단언한다. #399(PHP·Ruby 만료)에 이어 **같은 패턴 세 번째**다.
-- [ ] `python-sync-authorization-url-unencoded` **[M/S]** Python 동기 authorization_url이 퍼센트 인코딩 없이 URL을 조립한다 — async 미러는 urlencode를 쓴다 · `python/src/keycloak_sdk/auth.py:148`
+- [ ] `python-sync-authorization-url-unencoded` **[M/S]** Python 동기 authorization_url이 퍼센트 인코딩 없이 URL을 조립한다 — async 미러는 urlencode를 쓴다 · `python/src/keycloak_sdk/auth.py:151`
+  - 재측정 2026-09-07: 주장은 참이나 **인용 줄번호가 148 → 151 로 드리프트**했다(sync 는 python-keycloak `auth_url()` 위임, async 는 `urlencode`). 손대기 전에 상류 헬퍼가 지금도 인코딩을 안 하는지 먼저 잰다 — 그 판정의 소유자는 설치된 `python-keycloak` 이다.
 - [ ] `php-sensitiveparameter-methods-missing` **[M/S]** PHP #[\SensitiveParameter]가 생성자에만 붙어 있다 — 비밀을 인자로 받는 여섯 메서드는 무보호 · `php/src/AuthClient.php:76`
 - [x] `authorization-request-verifier-unmasked` **[M/M]** AuthorizationRequest.codeVerifier가 마스킹 없이 평문 출력된다 (Go·Node) — 같은 파일의 TokenSet은 마스킹한다 · `go/tokens.go:86`
 - [ ] `coverage-exclusion-hides-untested-branches` **[M/M]** 네트워크 경계 커버리지 제외가 손으로 쓴 실패 분기와 미호출 공개 메서드를 숨긴다 (Kotlin·PHP) · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Users.kt:47`
@@ -318,21 +328,29 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - ⚠️ **집행자 자신은 아무도 안 봤다** — 그 파일의 `assert_report` 를 주석 처리하면 **exit 0 · 출력 0줄**이었고, 저장소 전체 grep 으로 그것을 겨누는 다른 가드가 **0건**이었다.
   - **재발 시 CI 가 잡는 자리**: `repo-hygiene.yml` 의 `sh scripts/test/test-selftest-hygiene.sh`(required `doc-facts` 잡). 가드 3요건 — 변이(집행자 자신의 호출 제거) → 2 FAIL · 복원 → 129 passed · 가드 OFF(이 커밋 이전 스크립트) + 같은 변이 → **exit 0**.
   - ⚠️ **대조군을 사본으로 쓰면 공허하다** — 정규식을 대조군에 베껴 적었더니 본체를 옛 `grep -q` 로 되돌려도 **129 passed 0 failed 로 변이가 살아남았다**. 판정을 `mjs_wired()` 로 뽑아 대조군이 **본체를 부르게** 한 뒤에야 그 변이가 죽는다(127 passed 2 failed).
-- [ ] `guard-detection-surface-hand-narrowed` **[H/M]** 가드의 탐지 표면이 손으로 좁혀져 있어 새 자리·새 문법이 조용히 통과한다 · `scripts/test/test-security-defaults.sh:311`
+- [ ] `guard-detection-surface-hand-narrowed` **[H/M · 계수 정정 2026-09-07 · 악화]** 가드의 탐지 표면이 손으로 좁혀져 있어 새 자리·새 문법이 조용히 통과한다 · `scripts/test/test-security-defaults.sh:311`
+  - **축 7 중 손 표 5 → 축 9 중 손 표 7 로 늘었다**(실측 2026-09-07, 독립 레그 둘). 그 사이 추가된 축 둘 — 1b2 콜드캐시 백오프 · 1d 형제 마스킹(#437) — 이 **둘 다 손 표**다. 파생은 여전히 `git ls-files` 둘(문서 축·소스 주석 축)뿐이다.
+  - ⚠️ **그런데 지금 파생으로 바꾸는 것이 옳은 수가 아니다.** 이 파일은 required 체크 `doc-facts` 안에서 `paths:` 필터 없이 돌고 룰셋은 `bypass_actors: []` 다 — 오탐 하나가 모든 PR 을 막고 소유자도 못 푼다. **되살릴 조건**: required **밖**(nightly 등)에서 먼저 돌려 오탐 0 을 실측할 것. 노이즈는 이미 쟀다 — 9언어 비테스트 소스에서 비밀 이름을 언급하는 파일이 **83개**라 그 신호를 그대로 쓸 수 없다.
+  - ⚠️ **당장의 처방은 「이 파일에 축을 더 늘리지 않는 것」이다** — 두 번 늘어난 것이 그 증거다. 새 불변식은 별도 가드로 내고(예: `test-osv-audit-gate.sh`), 언어별 값은 언어 로컬 테스트로 민다.
   - ⚠️ **지목이 마스킹 축 하나를 가리키지만 체계적이다** — 가드의 **7축 중 5축**(1 코드/skew · 1b nonce · 1c 마스킹 · 3 2차자리 · 4 소유자)이 언어별 파일·앵커를 손으로 열거한다. 새 언어·새 자리가 생기면 `_seen == 9` 류의 대조군이 함께 늘지 않는 한 조용히 통과한다.
   - 참고: 2026-09-04 에 추가한 2b(소스 주석) 축은 `git ls-files` 로 전체를 훑어 이 부류를 피했다 — 같은 형태가 나머지 축의 목표다.
 
-- [ ] `jwks-response-size-unbounded-non-jvm` **[M/M · 신규 2026-09-04]** JWKS 응답 크기 상한이 Go·Java·Kotlin 에만 있다 — rust `resp.json()` · php `(string) getBody()` · ruby `resp.body` 는 무제한 · `rust/src/jwks.rs:41`
+- [ ] `jwks-response-size-unbounded-non-jvm` **[M/M · 신규 2026-09-04 · rust 닫힘 2026-09-07 #440]** JWKS 응답 크기 상한이 Go·Java·Kotlin 에만 있었다 — **rust 는 #440 이 닫았고 php `(string) getBody()` · ruby `resp.body` 가 남았다** · `php/src/Jwks/JwksStore.php:105` · `ruby/lib/keycloak_sdk/jwks_store.rb:103`
+  - rust 는 청크로 받으며 `JWKS_MAX_BYTES`(51200 — Nimbus `DEFAULT_HTTP_SIZE_LIMIT`, go 와 같은 값)를 넘는 순간 끊는다. ⚠️ **`Content-Length` 로만 판정하지 말 것** — 그 헤더가 없거나 거짓인 응답을 놓친다.
+  - ⚠️ php 는 **상태 검사보다 먼저 본문을 통째로 슬러프한다**(`(string) $response->getBody()` 가 `getStatusCode()` 검사보다 앞) — 500 + 거대 본문이 그대로 메모리에 올라온다. 고칠 때 순서도 함께 뒤집는다.
   - #400(JVM 상한 복원)의 부류 재스캔에서 나왔다. Go 는 `io.LimitReader(resp.Body, 51200+1)` 로 이미 갖고 있고 주석이 출처를 Nimbus `RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT` 이라 밝힌다.
   - ⚠️ **node·python·dotnet 은 판정하지 않았다**(jose · python-keycloak `certs()` · `HttpDocumentRetriever` 로 위임). 라이브러리 실동작을 재기 전에는 무제한이라 적지 말 것.
-- [ ] `kotlin-osv-audit-fail-open` **[H/S]** Kotlin OSV 감사 두 잡이 해석 실패 좌표를 통과시켜 아무것도 감사하지 않고 초록이 된다 · `.github/workflows/kotlin-ci.yml:72-83` · `security-audit.yml:80-89`
+- [x] `kotlin-osv-audit-fail-open` **[H/S · 닫힘 2026-09-07 #438]** Kotlin OSV 감사 두 잡이 해석 실패 좌표를 통과시켜 아무것도 감사하지 않고 초록이 됐다 · `.github/workflows/kotlin-ci.yml:72-83` · `security-audit.yml:80-89`
+  - **실측(2026-09-07)**: dep-tree 생산자 **3** · fail-closed 게이트 **1**(`harness-kotlin` 에만). 게이트를 이식하고, 사람이 눈으로 세던 것을 `scripts/test/test-osv-audit-gate.sh` 가 트리를 훑어 대신 센다(생산자 수 = 게이트 수 · 게이트 블록마다 `exit 1` · 공허 하한 둘). 변이 5종 `CAUGHT` · 대조군 `SILENT`
   - ⚠️ **지목 줄이 빗나가 있었다** — `kotlin-ci.yml:70` 은 `java-version: '21'` 이다. 실제 자리는 위 두 범위.
   - **「두 잡」은 맞다**: `grep -e '--- '` 파이프라인이 3곳인데(`kotlin-ci.yml:78` · `security-audit.yml:86` · `:347`) ` FAILED$` 게이트는 harness 쪽 1곳(`:327`)에만 있다 — #320 이 3곳 중 1곳에만 적용됐다.
   - ⚠️ **저장소 자신의 주석이 원인을 틀리게 적었다.** `security-audit.yml:318-322` 는 "OSV 가 그런 좌표에 취약점이 없다고 답하므로"라 하지만, 실측상 **OSV 는 ` FAILED` 접미사에 무감각**하다(netty-codec-http 4.1.119.Final → 접미사 유무 모두 18건). 진짜 원인은 **전이 폐포 붕괴** — FAILED 루트 하나가 서브트리를 통째로 날려 CVE 를 지닌 좌표가 아예 조회되지 않는다(실측 **좌표 72개 → 5개**, 루트 하나만 깨도 **72 → 14**로 jackson-databind·resteasy·httpclient 등 59개가 조용히 빠진다).
   - ⚠️ **Java 쪽은 고치지 말 것** — 같은 셸 모양이지만 수집기가 Maven 이라 미해결 의존성에서 **도구 자체가 non-zero** 로 죽는다(실측 `MVN_EXIT=1`). 구조적으로 fail-closed 다.
-- [ ] `docs-commands-that-do-not-work` **[M/S]** 소비자 문서가 적은 명령·환경변수가 실제로는 동작하지 않는다 · `docs/guides/development-setup.md:77`
+- [ ] `docs-commands-that-do-not-work` **[M/S · 범위 축소 2026-09-07]** 소비자 문서가 적은 명령·환경변수가 실제로는 동작하지 않는다 · `docs/guides/development-setup.md:77`
+  - **인용한 자리는 저장소 루트에서 동작한다**(실측 2026-09-07: `KCSDK_PY` 기본값 `python/.venv/Scripts/python.exe` 는 루트 기준 실재). 같은 표의 썩은 JDK 폴백과 `.claude/rules` 의 죽는 명령 셋은 **#423 이 닫았다**. **남은 것은 부류가 비었음이 증명되지 않은 것**이다 — `docs/guides/` 와 아홉 README 의 명령을 전수로 돌린 적이 없다. 형제 `docs-kcsdk-env-ssot` 와 함께 본다.
 - [ ] `deploy-md-omits-release-request` **[M/S]** DEPLOY.md §4 릴리스 절차가 태그를 만드는 트리거 파일을 열거하지 않는다 · `DEPLOY.md:403`
-- [ ] `stale-prose-contradicts-source` **[M/S]** 산문 주석이 자기가 서술하는 값·전제·코드보다 낡았고 대조가 없다 · `python/src/keycloak_sdk/config.py:23`
+- [ ] `stale-prose-contradicts-source` **[M/S · 절반 닫힘 2026-09-07]** 산문 주석이 자기가 서술하는 값·전제·코드보다 낡았고 대조가 없다 · `python/src/keycloak_sdk/config.py:23`
+  - **인용한 주석 셋은 #398 이 고쳤다** — 그 자리는 지금 「기본 30」이라 적고 축 2b 가 소스 주석의 JWKS 기본값을 대조한다(실측 2026-09-07). **남은 것은 부류다**: JWKS 기본값 **밖의** 산문에는 오라클이 없다. 형제 항목 `stale-comments-nobody-collates` 와 함께 본다.
 - [ ] `compat-table-library-cells-drift` **[M/M]** compatibility.md Node 행의 라이브러리 셀 세 개가 태그 시점 락파일과 다르다 · `docs/reference/compatibility.md:22`
 - [ ] `tokenprovider-cache-contract-untested` **[M/M]** TokenProvider 캐시 계약(만료 재조회·single-flight)이 Rust·Ruby 에서 단언되지 않는다 · `rust/src/token_provider.rs:113`
 - [ ] `facade-wiring-close-contract-unasserted` **[M/S]** 파사드의 §4 계약(provider 배선·close)이 무단언 테스트 뒤에 있고 커버리지 게이트에서도 빠져 있다 · `rust/src/client.rs:65`
@@ -344,8 +362,10 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 9언어 소스 — 20
 
-- [ ] `jwks-refetch-budget-overclaimed` **[M/M]** JWKS 재조회 예산 문서가 실제보다 강하게 약속한다 — cold 로드가 예산을 안 쓴다 · `rust/src/jwks.rs:34-49`
-- [ ] `jwks-response-not-validated` **[M/M]** JWKS 응답을 검증 없이 신뢰한다 — Rust는 상태코드 미확인, JVM 둘은 본문 크기 무제한 · `rust/src/jwks.rs:34`
+- [x] `jwks-refetch-budget-overclaimed` **[M/M · 닫힘 2026-09-07]** JWKS 재조회 예산 문서가 실제보다 강하게 약속했다 — cold 로드가 예산을 안 쓴다 · `rust/src/jwks.rs:34-49`
+  - **재측정(2026-09-07, 독립 레그 둘)**: #402 가 비JVM **7개 README** 에 「캐시가 찬 뒤」 조건을 달았고(dotnet 은 「cold cache」 표현이라 warm 문구 grep 으로는 안 잡힌다 — 문구가 아니라 **조건의 존재**로 판정하라), JVM 둘은 「**두 번**」이라 적는다. 콜드 경로는 #403·#404 의 백오프로 별도 한정된다. 코드의 `if !cold` 는 그대로이나 그것이 더는 **과대약속이 아니다**
+- [x] `jwks-response-not-validated` **[M/M · 닫힘 2026-09-07 #440]** JWKS 응답을 검증 없이 신뢰했다 — JVM 둘의 본문 크기 무제한은 #400 이 `DEFAULT_HTTP_SIZE_LIMIT` 를 되살려 닫았고, **Rust 의 상태코드 미확인은 #440 이 닫았다**(그 전 실측: `error_for_status`·`.status()` **0건**) · `rust/src/jwks.rs:34`
+  - ⚠️ **상태를 안 보면 왜 나쁜가**: IdP 의 오류 응답이 JSON 이기만 하면 파싱돼 **빈 키셋이 캐시되고**, rate-limit 게이트가 재조회를 막아 장애가 지나간 뒤에도 모든 검증이 「알 수 없는 kid」로 죽는다. go 에서 #380 이 고친 것과 같은 부류다.
 - [ ] `authcode-flow-verification-defeated` **[M/L]** 인가 코드 흐름의 검증이 무력하거나 오적용된다 — azp 미검증·iss 자기주입·공유 검증기 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:135-149`
 - [ ] `lenient-parsing-yields-false-success` **[M/M]** 응답 파싱이 관대해서 없는 값·틀린 타입을 성공으로 통과시킨다 · `rust/src/token_provider.rs:68-85`
 - [ ] `nimbus-type-on-public-surface` **[L/M]** JWSAlgorithm이 두 JVM SDK의 공개 팩토리 시그니처에 올라 있다 — §4 은닉 위반 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java:27-28`
@@ -370,7 +390,9 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `selftest-hygiene-textual-rules` **[H/M]** '존재'가 아니라 '실행'을 센다던 규칙이 주석·비활성화·`|| true`를 실행으로 센다 · `scripts/test/test-selftest-hygiene.sh:20`
   - **닫힘(#405)** — `selftest-enforcer-cannot-guard-itself` 와 **같은 뿌리**이고 같은 커밋에서 함께 닫혔다(구조적 판정 + 마지막 실행 명령). 실측·가드는 그 항목에 적었다.
 - [ ] `coverage-exclusions-swallow-pure-logic` **[H/L]** '네트워크 경계' 커버리지 제외가 I/O 없는 순수 로직까지 삼켰다 — 다섯 언어 · `node/src/transport.ts:38`
-- [ ] `security-invariant-use-site-scope` **[H/M]** 보안 불변식의 '2차 정의 자리 금지'가 아홉 중 셋만 본다 — 미검사 언어에 리터럴 네 곳이 살아 있다 · `scripts/test/test-security-defaults.sh:297`
+- [ ] `security-invariant-use-site-scope` **[H/M · 계수 정정 2026-09-07]** 보안 불변식의 '2차 정의 자리 금지'가 아홉 중 셋만 본다 — 미검사 언어에 리터럴 **다섯** 곳이 살아 있다 · `scripts/test/test-security-defaults.sh:297`
+  - ⚠️ **넷이 아니라 다섯이고, 그 하나는 등록부를 쓴 뒤에 생겼다** — 이 부류는 **지금도 늘고 있다**(실측 2026-09-07, 독립 레그 둘): kotlin 3(`tokens.kt:18`·`tokenprovider.kt:18`·`jwt.kt:126`) · python 1(`_internal/jwt.py:43`) · dotnet 1(`KeycloakConfig.cs:29`). 축 3 은 `sd_no_literal` 호출 **4**(go·php·ruby·ruby-skew)로 그대로다. 값이 아직 안 갈렸다고 안전한 것이 아니다 — **자리가 늘고 있는 것**이 JWKS 가 10/30/60 으로 갈리기 직전과 같은 모양이다.
+  - ⚠️ **required 손 표에 다섯 줄을 더하는 것이 답이 아니다** — 그것이 곧 `guard-detection-surface-hand-narrowed` 를 악화시킨다(그 파일은 `doc-facts` 안에서 `paths:` 없이 돈다). **언어 로컬 테스트**(그 언어의 2차 기본값이 config 값과 같은가)로 닫고, `test-security-defaults.sh` 는 건드리지 않는다.
 - [ ] `selftest-assert-counter-subshell` **[M/M]** 어서션 카운터가 서브셸에서 증발한다 — 자가테스트 프레임워크의 구조적 맹점 · `scripts/test/assert.sh:10`
 - [ ] `guard-paths-never-exercised` **[M/M]** 자가테스트가 가드의 한 경로만 태워, 나머지 경로를 지워도 초록이다 · `scripts/test/test-check-coverage.sh:41`
 - [ ] `selftests-with-no-negative-case` **[M/L]** 일곱 자가테스트가 라이브 상태만 단언한다 — 판정기가 나쁜 입력을 거부한다는 증거가 없다 · `scripts/test/test-deploy-md.sh:7`
@@ -379,15 +401,20 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 가드·CI — 16
 
-- [ ] `selftest-exit-code-contract-two-leaks` **[H/M]** 자가테스트의 「실패하면 비영 종료」 계약이 두 곳에서 샌다 — 탐지기도 계수기도 · `scripts/test/test-selftest-hygiene.sh:20`
+- [ ] `selftest-exit-code-contract-two-leaks` **[H/M · 계수 정정 2026-09-07]** 자가테스트의 「실패하면 비영 종료」 계약이 **한 곳**에서 샌다 — 탐지기는 #405 가 닫았고 **계수기가 남았다** · `scripts/test/test-selftest-hygiene.sh:20`
+  - **남은 절반의 재현(2026-09-07)**: `assert.sh` 가 `_A_FAIL` 을 현재 셸에만 두므로 서브셸 안에서 실패한 단언은 `FAIL` 을 찍고도 부모가 `0 passed, 0 failed` 로 끝난다(종료코드 **0**).
+  - ⚠️ **다만 지금은 잠복이다 — 도달 경로가 0건이다.** 어느 자가테스트에도 파이프 오른쪽·`$( )`·`( )` 그룹 안의 단언이 없고, `test-publication-claims.sh:719` 에 그 함정을 경고하는 주석이 이미 있다. 그래서 **활성 fail-open 뒤로 밀린다**. 닫을 때는 `assert.sh` 를 다시 쓰기보다 **정적 금지**(집행자가 서브셸 문맥의 단언을 거부)를 먼저 본다 — 계수기를 갈아엎으면 모든 `test-*.sh` 가 한 번에 빨개질 수 있다.
   - **절반 닫힘(#405) — 탐지기 쪽만.** 집행자가 「등장」을 「호출」로 세던 것을 구조적 판정으로 바꿨다(`selftest-enforcer-cannot-guard-itself` 참조).
   - ⚠️ **계수기 쪽은 그대로 열려 있다** — `assert.sh` 의 `_A_FAIL` 이 서브셸에서 증발하는 문제이고, 아래 `selftest-assert-counter-subshell` 이 그 자리를 소유한다. **둘을 한 항목으로 읽어 닫지 말 것.**
-- [ ] `sweeps-without-vacuity-floor` **[H/M]** 세 개의 스윕/스캔이 0건을 훑고 통과한다 — 이 저장소의 하한 관용이 적용되지 않았다 · `.github/workflows/repo-hygiene.yml:234`
+- [ ] `sweeps-without-vacuity-floor` **[H/M · 계수 정정 2026-09-07]** **두** 개의 스윕/스캔이 0건을 훑고 통과한다 — 이 저장소의 하한 관용이 적용되지 않았다 · `.github/workflows/repo-hygiene.yml:234`
+  - **셋 중 하나는 닫혔다(#385)** — 권한 상승 인벤토리에 `--min-escalations=6` 이 붙었다. 남은 둘(실측 2026-09-07): Jackson default-typing 스캔(`find … | xargs grep … || true` — 파일이 0개면 `hits` 가 비고 `OK` 를 찍는다)과 **required `shell-exec-bits`**(`N개 전부 실행비트 있음` 을 N=0 에서도 찍는다).
+  - ⚠️ **하한은 코퍼스에서 세어 박는다** — 높은 상수를 지어내면 required 체크가 `bypass_actors: []` 인 채로 모든 PR 을 막는다(실측: 상수 하나로 픽스처 75건을 깬 적이 있다).
 - [ ] `seven-selftests-have-no-negative-control` **[H/L]** 일곱 자가테스트가 라이브 상태만 단언한다 — 검출기를 지워도 통과한다 · `scripts/test/test-deploy-md.sh:7`
 - [ ] `irreversible-publish-no-reentry` **[H/M]** 비가역 게시 뒤 재진입 경로가 없다 — 세 레인의 gh release create와 php 미러 순서 · `.github/workflows/go-release.yml:156`
 - [ ] `operator-commands-that-do-not-work` **[H/S]** 저장소가 사람에게 시키는 명령 둘이 실제로는 원하는 답을 주지 않는다 · `scripts/release-trigger.sh:53`
 - [x] `guard-neutering-wiring-unprotected` **[H/M]** [세션 발견·원장 밖] 가드 스텝을 무력화하는 배선이 무보호다 — 워킹트리에 continue-on-error가 살아 있다 · `.github/workflows/repo-hygiene.yml:119`
-- [ ] `guard-probes-count-mentions-not-declarations` **[M/S]** 가드 프로브가 「선언」이 아니라 「문자열 등장」을 센다 — 배선 규칙 3과 node update 프로브 · `scripts/test/test-selftest-hygiene.sh:84`
+- [ ] `guard-probes-count-mentions-not-declarations` **[M/S · 절반 닫힘 2026-09-07]** 가드 프로브가 「선언」이 아니라 「문자열 등장」을 센다 — **배선 규칙 3 은 #405 가 닫았고 node update 프로브가 남았다** · `scripts/test/test-selftest-hygiene.sh:84`
+  - 재측정 2026-09-07: 규칙 3 의 `mjs_wired` 는 이제 단어 경계 정규식이고 대조군이 같은 함수를 부른다(`scoreXtest.mjs`·`score.test.mjs.disabled` 를 거부). **`npm update` 프로브는 여전히 히트 0** — 그 자리가 어디였는지 원 감사에서도 특정되지 않았다. ⚠️ 규칙 3 에 남은 `grep -q` 를 옛 「등장 계수기」로 오인하지 말 것 — 단어 경계 패턴이거나 주석이다.
   - **절반 닫힘(#405) — 배선 규칙 3 만.** `grep -q "node $m"` 의 두 누수를 규칙 2 와 같은 엄격도로 맞췄다(실측: 경로 미이스케이프로 `install-matrixXtest.mjs` 가 매치 · 단어경계 없어 `node <path>.disabled` 도 배선으로 계수 — 3파일 × 2형태 = 6건).
   - ⚠️ **「node update 프로브」를 찾지 못했다 — 그래서 닫지 않는다.** 다음 검색이 전부 0건이다: `grep -rn "npm update\|node update" scripts/test/*.sh` · `grep -rn "grep -q \"" scripts/test/*.sh`(자가테스트 2건은 무관: LICENSE 문자열·주석). 원장의 그 절반이 **다른 파일을 가리키거나 서술이 부정확**하다 — 착수 전 기계용 원장(`ledger-dedup.json`)에서 이 항목의 원문을 먼저 볼 것.
 - [ ] `guards-outside-their-own-pr-signal` **[M/M]** 자기를 고친 PR에서 신호를 못 내는 가드 — 규칙 5의 스윕 글롭 밖과 harness의 paths 필터 · `scripts/gradle/osv-audit-init.gradle:1`
@@ -482,7 +509,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 ### 1.0 이후 운영 — 9
 
 - [ ] `registry-truth-check` **[H/M]** 게시 SSOT가 문서하고만 대조되고 실제 레지스트리와는 한 번도 대조되지 않는다 · `scripts/lib/deploy-facts.sh:138`
-- [ ] `stale-release-comments` **[H/S]** 릴리스 경로의 주석 다섯이 낡았고, 그중 하나는 다음 릴리스를 정반대로 오도한다 · `F:/DEVELOPMENT/SOURCE/CLAUDE/KeyCloakSDK/.github/workflows/install-smoke.yml:57`
+- [ ] `stale-release-comments` **[H/S]** 릴리스 경로의 주석 다섯이 낡았고, 그중 하나는 다음 릴리스를 정반대로 오도한다 · `.github/workflows/install-smoke.yml:57`
+  - ⚠️ **인용이 다른 PC 의 절대경로였다**(`F:/DEVELOPMENT/SOURCE/CLAUDE/KeyCloakSDK/…`) — 2026-09-07 재측정에서 H 17건 중 유일하게 걸린 자리라 저장소 상대경로로 고쳤다. 감사가 다른 체크아웃에서 돌면 이 부류가 또 나온다.
 - [x] `post-1-0-registry-missing` **[M/S]** 1.0 이후 잔여작업 등록부가 저장소 어디에도 없다 — 안 닫힌 항목은 복원 불가능하다 · `docs/README.md:49`
 - [ ] `public-registry-install-smoke` **[M/L]** 게시된 1.0.0 을 공개 레지스트리에서 받아 설치·컴파일해 보는 정기 검증이 없다 · `harness/install/install-verify.sh:11`
 - [ ] `advisory-path-never-run` **[M/M]** 보안 권고·회수 경로가 문서에만 있고 한 번도 실행된 적 없다 · `SECURITY.md:141`
