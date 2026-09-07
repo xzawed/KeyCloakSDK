@@ -272,6 +272,10 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - 산출물: 감사 JSON 10개 + 병합본 · 인용 게이트 `citegate.mjs`(계측기 자가검증 6/6 내장). ⚠️ **세션 스크래치패드에만 있다** — 다음 세션은 재실행이 필요하다(배치 1 의 `citegate2.mjs` 가 같은 이유로 소실됐다).
   - ⚠️ **독립 레그(Grok)는 범위를 쪼개야 돈다** — 문서 5개 묶음은 **540초에 두 번 다 타임아웃**했고, 주장 3건 묶음은 전부 완주했다(함정 (f) 재현). 발견 후 **반박자로** 쓰는 편이 탐색보다 회수율이 높았다.
 - [ ] `masking-type-enumeration-has-no-oracle` **[M/M · 신규 2026-09-06]** 언어 README 가 **마스킹하는 타입을 손으로 열거**하는데 소스와 대조하는 가드가 없다 — 넷이 동시에 하나씩 모자랐다 · `scripts/test/test-security-defaults.sh:322`
+  - **선행 실측 완료(2026-09-06) — 부모는 `guard-detection-surface-hand-narrowed` 이고 그 주장은 아직 참이다.** `test-security-defaults.sh` 의 마스킹 축(1c)은 **`sd_mask_src` 에 `TokenSet` 경로 아홉을 손으로** 적는다. 그 파일 전체에서 **리터럴 11 : 파생 2**(파생은 `SD_DOCS`·`SD_SRC` 의 `git ls-files` 둘뿐이고, `DEPLOY_LANGS` 언급은 **0**).
+  - **구멍의 실증**: `php/src/Token/AuthorizationRequest.php` 는 `TokenSet` 과 **같은 바닥 계약**(`__toString` 으로 PKCE 검증자를 `***`)인데 `sd_mask_src` 에 없다(`git grep` 그 경로 → 0건). go 는 `AuthorizationRequest.String()` 이 있는데 `sd_mask_hook` 은 `func (t TokenSet) String() string` 만 안다. **그 훅을 지워도 `_mask_seen` 은 9 라 초록이다.**
+  - ⚠️ **하한이 방향을 하나만 본다** — `assert_eq "9" "$_mask_seen"` 은 **목록이 줄면** 잡지만 **새 타입·새 파일이 늘어야 할 때는 침묵**한다. 다른 축의 `9`·`7`·`2`·`-ge 8` 도 같다.
+  - ⚠️ **손으로 짠 프로브가 또 틀렸다(2026-09-06)** — 「가드가 그 파일을 아는가」를 파일 경로 문자열로 물었더니 **다른 축**(nonce 의 `auth.ts` · config 의 `config.go`)에 걸려 12개 중 11개를 「가드가 안다」로 보고했다. **축을 지정하지 않은 포함검사는 이 가드에서 무효다** — `sd_mask_src` 의 `case` 표만 물어야 한다.
 - [ ] `rules-command-reference-existence-guard` **[M/M · 신규 2026-09-06 · 계획서에서 이관]** `.claude/rules/*.md` 의 펜스 블록이 부르는 대상(`npm run X` · `./gradlew X` · `"$PY" -m X` · `mvn -pl M` · `cargo test --test T` · `bundle exec X`)이 매니페스트에 **실재하는지** 보는 가드가 없다
   - **채택 근거**: 실행하지 않고도 참조 실재성은 툴체인 없이 판정된다. `-m build` 가 그 부류였고 #423 은 그것을 **사람이** 잡았다(그 셋은 이미 고쳐졌으므로 이 가드가 사는 것은 **예방**이다).
   - ⚠️ **보류 사유(독립 레그, 두 번 같은 판정)**: 아홉 rules 파일의 **펜스-명령 파서**는 저장소의 **유일한 required 체크 안**에서 돌고 그 룰셋은 `bypass_actors: []` 다 — **오탐 하나가 모든 PR 을 막는다.** 이번 세션에 상수 하나로 픽스처 75건을 깨 그 직전까지 간 실측이 있다.
