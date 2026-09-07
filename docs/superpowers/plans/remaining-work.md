@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **170** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1) — 열림 **133** · 닫힘 **37** (2026-09-07 재측정) |
+| 작업 패키지 | **171** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 1) — 열림 **133** · 닫힘 **38** (2026-09-07 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `170`(2026-09-07 기준 열림 133 · 닫힘 37)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `171`(2026-09-07 기준 열림 133 · 닫힘 38)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -43,7 +43,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 1. ✅ **`kotlin-osv-audit-fail-open` [H] — #438 이 닫았다.** 유일하게 **활성**이던 fail-open 이었다(dep-tree 생산자 3 · 게이트 1). 가드 `test-osv-audit-gate.sh` 가 사본 갈림을 대신 센다.
 2. **rust JWKS 두 건** — `jwks-response-not-validated` 의 잔여(HTTP 상태 미검사, `error_for_status` 0건)와 `jwks-response-size-unbounded-non-jvm`. 같은 파일이라 한 PR 이다. 게시된 `rust-v1.0.0` 에 있다.
-3. **`rust-public-client-empty-secret`** — 공개 클라이언트에 `client_secret=""` 를 보낸다. `auth.rs` 라 2 와 분리한다.
+3. ✅ **`rust-public-client-empty-secret` — #441 이 닫았다.** 세 자리였다(생성부·logout·`token_provider`). 남은 파생은 `public-client-confidential-grants-not-refused` 이고 **실 Keycloak 실측이 선행**이다.
 4. **`python-sync-authorization-url-unencoded`** — sync 만 퍼센트 인코딩을 안 한다(async 는 한다). **선행 실측**: 인용 줄번호가 148→151 로 드리프트했다.
 5. **`sweeps-without-vacuity-floor` [H]** — 잠복이나 required 경로다. 남은 것은 **둘**(Jackson 스캔 · `shell-exec-bits`). 셋 중 하나는 `--min-escalations=6`(#385)이 이미 닫았다.
 6. **`security-invariant-use-site-scope` [H]** — 미검사 2차 리터럴이 **4 → 5** 로 늘었다(kotlin 3 · python 1 · dotnet 1). ⚠️ **required 손 표에 다섯 줄을 더하는 것이 답이 아니다** — 그것이 `guard-detection-surface-hand-narrowed` 를 악화시킨다. **언어 로컬 테스트**로 닫는다.
@@ -304,7 +304,13 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [ ] `openid-scope-fallback-empty-only` **[M/S]** openid 스코프 폴백이 "비었을 때"만 걸려 Nimbus IllegalArgumentException이 공개 API로 샌다 (Java·Kotlin) · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:81`
 - [ ] `boundary-exception-conversion-incomplete` **[M/M]** 경계 변환의 catch 목록이 하위 라이브러리가 실제로 던지는 예외 집합보다 좁다 · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt:91`
   - ⚠️ **범위 정정**: 원장은 「Kotlin·Ruby」 2개라 적었으나 **Java·Node·.NET 을 빠뜨렸다**. ⚠️ 그리고 **원장이 지목한 Ruby 줄은 clean 이다** — `ruby/lib/keycloak_sdk/jwt_validator.rb:36` 의 `rescue JWT::DecodeError` 는 이미 JWKError 를 잡는다(실측: 설치된 `jwt-3.2.0/lib/jwt/error.rb:53` 이 `class JWKError < DecodeError`). **고치기 전에 지목부터 다시 잡을 것** — 안 그러면 clean 한 자리를 건드린다.
-- [ ] `rust-public-client-empty-secret` **[M/S]** Rust AuthClient가 퍼블릭 클라이언트에도 빈 시크릿을 강제해 Basic 인증을 켠다 · `rust/src/auth.rs:67`
+- [x] `rust-public-client-empty-secret` **[M/S · 닫힘 2026-09-07 #441]** Rust AuthClient가 퍼블릭 클라이언트에도 빈 시크릿을 강제해 Basic 인증을 켰다 · `rust/src/auth.rs:67`
+  - **빈 시크릿은 「시크릿 없음」이 아니다** — `oauth2` 5.0.0 은 `Some(ClientSecret(""))` 을 기본 `AuthType::BasicAuth` 로 처리해 `Authorization: Basic base64(client_id:)` 를 붙이고 `client_id` 를 **본문에서 뺀다**(`endpoint.rs` 의 `match (auth_type, client_secret)`). 빨강이 그것을 그대로 찍었다: `Basic aXQtY2xpZW50Og==` = `base64("it-client:")`.
+  - **세 자리였다** — 생성부(이것 하나가 token·refresh·client_credentials·introspect 를 함께 덮는다) · `logout` 폼 · `token_provider.rs` 폼. 변이 3종 전부 `CAUGHT`.
+- [ ] `public-client-confidential-grants-not-refused` **[M/M · 신규 2026-09-07]** 공개 클라이언트가 기밀 그랜트를 부를 때 **아홉이 갈린다** — java·kotlin 만 거부하고 나머지 일곱은 그냥 보낸다 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:279`
+  - **실측(2026-09-07, 독립 레그 + 재현)**: java·kotlin 은 `clientAuth()` 가 `KeycloakConfigException` 을 던져 `clientCredentials`·`refresh`·`introspect`·`logout` 을 **거부**한다. rust·go·node·python·php·ruby·dotnet 은 요청을 보내고 서버 오류를 그대로 올린다.
+  - ⚠️ **이것은 「rust 를 java 에 맞춘다」가 아니라 계약을 정하는 문제다** — 어느 쪽이든 **일곱 언어의 소비자에게 보이는 동작이 바뀐다**(성공하던 호출이 로컬 예외가 되거나, 그 반대). #441 은 「빈 시크릿을 보내지 않는다」까지만 하고 여기서 멈췄다.
+  - **착수 조건**: 실 Keycloak 으로 공개 클라이언트가 그 넷을 불렀을 때 서버가 무엇을 돌려주는지 먼저 잰다. 서버가 이미 명확한 오류를 준다면 로컬 거부는 **진단을 좋게 할 뿐 필수가 아니고**, 그렇다면 아홉을 흔들 값이 아니다.
 - [ ] `go-tokenprovider-injection-missing` **[M/M]** Go의 TokenProvider 주입점이 문서에만 있고 실제로는 존재하지 않는다 · `go/tokenprovider.go:11`
   - ⚠️ **§4 분류 오류는 약한 쪽이다. 게시된 소스가 거짓 약속을 담고 있다** — `go/tokenprovider.go:12` 의 godoc 이 "Consumers may inject a custom implementation." 이라 적는데, 실측상 `go/*.go` 에 **`TokenProvider` 를 받는 exported 함수가 0개**다(`grep -rnE "func [A-Z][A-Za-z]*\([^)]*TokenProvider" go/*.go` → 빈 결과). 이건 pkg.go.dev 에 그대로 렌더된다.
   - ⚠️ **고칠 때 CLAUDE.md 를 늘리지 말 것** — doc-budget 여유가 거의 없다. 늘려야 하면 #418 의 규칙을 탄다(교환 기록 + 300B 상한, 검사 8b 가 강제).
