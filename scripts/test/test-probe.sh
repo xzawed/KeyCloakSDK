@@ -57,6 +57,24 @@ assert_eq "1" "$(code_of "sed -i s/hello/bye/ f.txt" true)" \
 assert_eq "2" "$(code_of "true" true)" \
   "변이가 트리를 안 바꿨으면 INVALID(2) — SILENT 로 읽으면 거짓 구멍이 된다"
 
+# (c2) ⚠️ **줄끝만 바뀐 것은 변경이 아니다.** `core.autocrlf=true` 인 체크아웃에서 워킹트리 파일은
+# CRLF 인데 MSYS `sed -i` 는 **매치가 하나도 없어도** 파일을 다시 쓰며 CR 을 떨어뜨린다. 그러면
+# `git status --porcelain` 은 ` M f.txt` 를 내고 `git diff` 는 **빈다** — 실측 2026-09-07 에 그
+# 어긋남으로 게이트 삭제 프로브 셋이 전부 거짓 `SILENT`(진짜 구멍) 을 냈다. 이 러너가 막으려고
+# 만들어진 바로 그 부류라, 내용이 같으면 INVALID 여야 한다.
+#
+# ⚠️ 이 조건은 **CRLF 로 체크아웃된 파일**에서만 생긴다 — 위 샌드박스의 `f.txt` 는 만든 그대로
+# LF 라 재현되지 않는다. 그래서 여기서만 `autocrlf` 를 켜고 다시 받아 CRLF 로 만든다.
+(
+  cd "$SANDBOX"
+  git config core.autocrlf true
+  rm -f f.txt
+  git checkout -q -- f.txt
+) >/dev/null 2>&1
+assert_eq "2" "$(code_of "sed -i s/zzz/yyy/ f.txt" true)" \
+  "줄끝만 바뀐 변이는 INVALID(2) — status 는 M 을 내지만 내용은 같다. SILENT 로 읽으면 거짓 구멍이 된다"
+( cd "$SANDBOX" && git config --unset core.autocrlf && rm -f f.txt && git checkout -q -- f.txt ) >/dev/null 2>&1
+
 # (d) 기준선이 이미 빨갛다 — 그 상태에서 '잡았다'는 변이 때문인지 알 수 없다.
 assert_eq "2" "$(code_of "sed -i s/hello/bye/ f.txt" grep -q nope f.txt)" \
   "기준선이 실패하면 INVALID(2)"

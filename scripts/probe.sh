@@ -62,9 +62,16 @@ fi
 
 # (4) 변이가 실제로 트리를 바꿨는지 본다 — 안 바꿨으면 「침묵」이 아니라 무효다.
 ( cd "$WT" && eval "$MUTATION" ) >/dev/null 2>&1 || fail_invalid "변이 명령이 비영으로 끝났다: $MUTATION"
-CHANGED="$(cd "$WT" && git status --porcelain)"
+# ⚠️ **`git status --porcelain` 으로 재면 안 된다 — 줄끝만 바뀌어도 비지 않는다.** Windows 에서
+# `sed -i` 는 매치가 하나도 없어도 파일을 다시 쓰고, 그 과정에서 CRLF 가 LF 로(또는 그 반대로)
+# 바뀐다. `status` 는 그것을 「변경」으로 보고하므로 **아무것도 안 바뀐 변이가 `SILENT`(진짜 구멍)
+# 로 보고된다** — 이 러너가 막으려고 만들어진 바로 그 부류다(실측 2026-09-07: sed 패턴에 점이
+# 하나 많아 매치 0건이었는데 게이트 삭제 프로브 셋이 전부 거짓 `SILENT` 을 냈다).
+# `git diff` 는 `.gitattributes`/`autocrlf` 의 정규화를 거치므로 줄끝만 바뀐 것은 비어 있다.
+# 새로 만들어진 파일은 `diff` 가 못 보므로 untracked 를 따로 더한다.
+CHANGED="$(cd "$WT" && { git diff --name-only; git ls-files --others --exclude-standard; })"
 if [ -z "$CHANGED" ]; then
-  fail_invalid "변이가 트리를 바꾸지 않았다 — 이스케이프·패턴을 의심하라. 이것을 '가드가 침묵했다'로 읽으면 거짓 구멍이 된다."
+  fail_invalid "변이가 트리의 **내용**을 바꾸지 않았다(줄끝만 바뀐 것은 변경으로 세지 않는다) — 이스케이프·패턴을 의심하라. 이것을 '가드가 침묵했다'로 읽으면 거짓 구멍이 된다."
 fi
 echo "변이가 바꾼 파일:"
 printf '%s\n' "$CHANGED" | sed 's/^/  /'
