@@ -120,4 +120,26 @@ mod tests {
         let s = format!("{ts:?}");
         assert!(!s.contains("secret-at") && !s.contains("secret-rt") && s.contains("***"));
     }
+
+    // PKCE 검증자는 코드 교환의 소유 증명 비밀이라, 인가 코드를 훔친 공격자가 로그에서 이 값을
+    // 얻으면 흐름을 완성한다. `AuthorizationRequest` 는 `#[derive(Debug)]` 가 아니라 손으로 쓴
+    // impl 이고, 그 impl 이 지워지거나 `&self.code_verifier` 로 바뀌면 `{:?}` 가 원문을 찍는다.
+    // 자매 여덟 언어에는 이 단언이 이미 있었고 rust 만 없었다(실측 2026-09-06).
+    #[test]
+    fn debug_masks_code_verifier() {
+        let ar = AuthorizationRequest {
+            url: "https://kc.example/auth?x=1".into(),
+            state: "st".into(),
+            code_verifier: "secret-verifier".into(),
+            nonce: "nc".into(),
+        };
+        let s = format!("{ar:?}");
+        assert!(
+            !s.contains("secret-verifier"),
+            "code_verifier 가 원문으로 샜다: {s}"
+        );
+        assert!(s.contains("***"));
+        // url/state/nonce 는 비밀이 아니므로 가리지 않는다 — 자매 SDK 와 동형이다.
+        assert!(s.contains("st") && s.contains("nc"));
+    }
 }

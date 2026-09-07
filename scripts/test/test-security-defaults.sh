@@ -394,6 +394,119 @@ done
 assert_eq "9" "$_mask_seen" "[mask] 훑은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
 
 # ---------------------------------------------------------------------------
+# 1d) 마스킹 축 (2) — 비밀 보유 타입은 `TokenSet` **하나가 아니다**
+# ---------------------------------------------------------------------------
+#
+# 위 1c 는 `TokenSet` 만 겨눈다. 같은 바닥 계약을 지는 형제가 아홉 언어에 하나 더 있다 —
+# PKCE `code_verifier` 를 쥔 인가요청 타입이다(`AuthorizationRequest`·`AuthorizationUrl`·
+# `AuthorizationUrlRequest`). 검증자는 코드 교환의 소유 증명 비밀이라, 인가 코드를 훔친
+# 공격자가 로그에서 이 값을 얻으면 흐름을 완성한다.
+#
+# 실측(2026-09-06, `scripts/probe.sh` 8회): 이 축을 세우기 전, 형제의 마스킹을 **원문 노출로
+# 되돌리는** 변이를 여덟 언어에 넣었더니 **8/8 이 `SILENT`** 였다. 소스 경로가 이미 1c 목록 안인
+# 다섯(kotlin·go·dotnet·rust·ruby)도 못 잡았다 — 1c 의 훅 앵커가 `TokenSet` 전용이거나
+# generic(`def inspect`·`override fun toString()`)이라 **`TokenSet` 의 훅 하나가 그 grep 을
+# 만족**시키기 때문이다. **「파일이 목록에 있으니 덮인다」는 이 축에서 거짓이다.**
+#
+# ⚠️ **앵커는 마스킹 자체를 포함해야 한다.** `override fun toString()` 같은 훅 이름은 실격이다 —
+# 훅이 남은 채 본문이 원문을 찍어도 통과한다. 그래서 아래 앵커는 전부 `***` 이거나
+# **그 필드에 대한 mask 호출**이다. 각 앵커는 위 프로브로 `SILENT → CAUGHT` 를 확인했다.
+#
+# ⚠️ **손으로 적힌 표다 — 파생으로 바꾸지 말 것(지금은).** 이 자가테스트는 저장소의 required
+# 체크 `doc-facts` 안에서 `paths:` 필터 없이 돌고 룰셋 `PRIMARY` 는 `bypass_actors: []` 다.
+# 오탐 하나가 **모든 PR** 을 막는다. 파생 열거의 되살릴 조건은 등록부가 소유한다.
+sd_mask2_src() {
+  case "$1" in
+    java)   printf '%s' 'java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthorizationUrlRequest.java' ;;
+    kotlin) printf '%s' 'kotlin/src/main/kotlin/io/github/xzawed/keycloak/tokens.kt' ;;
+    python) printf '%s' 'python/src/keycloak_sdk/auth.py' ;;
+    node)   printf '%s' 'node/src/auth.ts' ;;
+    go)     printf '%s' 'go/tokens.go' ;;
+    dotnet) printf '%s' 'dotnet/src/Xzawed.Keycloak.Sdk/Tokens.cs' ;;
+    php)    printf '%s' 'php/src/Token/AuthorizationRequest.php' ;;
+    rust)   printf '%s' 'rust/src/tokens.rs' ;;
+    ruby)   printf '%s' 'ruby/lib/keycloak_sdk/tokens.rb' ;;
+  esac
+}
+# 마스킹 **자체**를 담은 앵커. 훅 이름이 아니다(위 ⚠️).
+# java 는 여기 없다 — 훅이 **없어서 안전**하기 때문이다(아래 별도 판정).
+sd_mask2_hook() {
+  case "$1" in
+    kotlin) printf '%s' 'codeVerifier=***' ;;
+    python) printf '%s' 'code_verifier={mask(self.code_verifier)!r}' ;;
+    node)   printf '%s' 'codeVerifier: ${mask(this.codeVerifier)}' ;;
+    go)     printf '%s' 'mask(a.CodeVerifier)' ;;
+    dotnet) printf '%s' 'Masking.Mask(CodeVerifier)' ;;
+    php)    printf '%s' 'Masking::mask($this->codeVerifier)' ;;
+    rust)   printf '%s' '.field("code_verifier", &"***")' ;;
+    ruby)   printf '%s' 'code_verifier=\"***\"' ;;
+  esac
+}
+# 형제의 마스킹을 **실행해서** 단언하는 자리. 1c 의 테스트 파일과 다른 언어가 넷이다
+# (kotlin·python·ruby 는 `TokenSet` 카나리아가 형제를 안 본다).
+sd_mask2_test() {
+  case "$1" in
+    kotlin) printf '%s' 'kotlin/src/test/kotlin/io/github/xzawed/keycloak/TokensTest.kt' ;;
+    python) printf '%s' 'python/tests/unit/test_auth.py' ;;
+    node)   printf '%s' 'node/test/unit/masking.test.ts' ;;
+    go)     printf '%s' 'go/masking_test.go' ;;
+    dotnet) printf '%s' 'dotnet/tests/Xzawed.Keycloak.Sdk.Tests/MaskingTests.cs' ;;
+    php)    printf '%s' 'php/tests/Unit/MaskingTest.php' ;;
+    rust)   printf '%s' 'rust/src/tokens.rs' ;;
+    ruby)   printf '%s' 'ruby/spec/unit/tokens_spec.rb' ;;
+  esac
+}
+sd_mask2_canary() {
+  case "$1" in
+    kotlin) printf '%s' 'AuthorizationRequest toString masks codeVerifier' ;;
+    python) printf '%s' 'test_authorization_url_repr_masks_verifier' ;;
+    node)   printf '%s' 'not.toContain(req.codeVerifier)' ;;
+    go)     printf '%s' 'AuthorizationRequest' ;;
+    dotnet) printf '%s' 'AuthorizationRequest_ToString_masks_code_verifier' ;;
+    php)    printf '%s' 'testJsonEncodeAndStringMaskAuthorizationRequest' ;;
+    rust)   printf '%s' 'fn debug_masks_code_verifier' ;;
+    ruby)   printf '%s' 'masks code_verifier in inspect' ;;
+  esac
+}
+
+_mask2_seen=0
+for L in $SD_LANGS; do
+  _m2s="$(sd_mask2_src "$L")"
+  _e=1; [ -f "$ROOT/$_m2s" ] && _e=0
+  assert_eq "ok" "$(ok_if "$_e" MISSING)" "[mask2] $L 인가요청 타입 소스가 없다($_m2s)"
+  [ -f "$ROOT/$_m2s" ] || continue
+  if [ "$L" = java ]; then
+    # ⚠️ java 만 **음성 앵커**다. `AuthorizationUrlRequest` 는 `record` 가 아닌 plain final
+    # class 라 `Object.toString()` 이 필드를 애초에 안 찍는다 — 마스킹 훅이 **없어서 안전**하다.
+    # 그래서 겨눌 것은 훅의 존재가 아니라 「record 로 바뀌지 않았다」다. record 가 되면
+    # 컴파일러가 만든 toString 이 codeVerifier 를 원문으로 찍는다(.NET 이 positional record 라
+    # ToString 을 손으로 덮어야 했던 것의 뒷면).
+    _r=0; grep -qE 'record[[:space:]]+AuthorizationUrlRequest' "$ROOT/$_m2s" && _r=1
+    assert_eq "ok" "$(ok_if "$_r" IS-RECORD)" \
+      "[mask2] java AuthorizationUrlRequest 가 record 다 — 컴파일러 toString 이 codeVerifier 를 원문으로 찍는다. 마스킹 toString 을 손으로 덮거나 final class 로 되돌려라"
+    _c=1; grep -qF -- 'final class AuthorizationUrlRequest' "$ROOT/$_m2s" && _c=0
+    assert_eq "ok" "$(ok_if "$_c" MISSING)" \
+      "[mask2] java AuthorizationUrlRequest 의 선언 형태가 바뀌었다 — 이 축의 안전 근거(필드를 안 찍는 기본 toString)가 무너졌는지 다시 판정하라"
+    _mask2_seen=$((_mask2_seen + 1))
+    continue
+  fi
+  _m2t="$(sd_mask2_test "$L")"
+  _e=1; [ -f "$ROOT/$_m2t" ] && _e=0
+  assert_eq "ok" "$(ok_if "$_e" MISSING)" "[mask2] $L 형제 마스킹 테스트 파일이 없다($_m2t)"
+  [ -f "$ROOT/$_m2t" ] || continue
+  _h2="$(sd_mask2_hook "$L")"
+  _h=1; grep -qF -- "$_h2" "$ROOT/$_m2s" && _h=0
+  assert_eq "ok" "$(ok_if "$_h" MISSING)" \
+    "[mask2] $L 인가요청 타입이 PKCE 검증자를 가리지 않는다 — 기대: $_h2"
+  _c2="$(sd_mask2_canary "$L")"
+  _c=1; grep -qF -- "$_c2" "$ROOT/$_m2t" && _c=0
+  assert_eq "ok" "$(ok_if "$_c" MISSING)" \
+    "[mask2] $L 형제 마스킹을 단언하는 행위 테스트가 없다 — 기대: $_c2"
+  _mask2_seen=$((_mask2_seen + 1))
+done
+assert_eq "9" "$_mask2_seen" "[mask2] 훑은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
+
+# ---------------------------------------------------------------------------
 # 2) 문서 축 — 그 값을 말하는 소비자 문서
 # ---------------------------------------------------------------------------
 #
