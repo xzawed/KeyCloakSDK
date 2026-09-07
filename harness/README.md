@@ -13,7 +13,7 @@ Each app consumes the SDK through that language's **idiomatic framework** — so
 | java | Spring Boot | [`apps/java/`](apps/java/) | 8094 |
 | php | Slim 4 | [`apps/php/`](apps/php/) | 8095 |
 | rust | axum | [`apps/rust/`](apps/rust/) | 8096 |
-| ruby | Rack(Puma) | [`apps/ruby/`](apps/ruby/) | 8097 |
+| ruby | Sinatra 4 (Puma) | [`apps/ruby/`](apps/ruby/) | 8097 |
 | kotlin | Ktor(Netty) | [`apps/kotlin/`](apps/kotlin/) | 8098 |
 
 Every app uses container-**internal 8090** (to simplify the contract), and only maps differently to the host as 8090–8098.
@@ -37,7 +37,7 @@ harness/
 │  ├─ java/               # Java sample app (Spring Boot)
 │  ├─ php/                # PHP sample app (Slim 4)
 │  ├─ rust/               # Rust sample app (axum)
-│  ├─ ruby/               # Ruby sample app (Rack/Puma)
+│  ├─ ruby/               # Ruby sample app (Sinatra 4, served by Puma)
 │  └─ kotlin/             # Kotlin sample app (Ktor/Netty)
 ├─ driver/                # k6 load driver (scenarios.js)
 ├─ conformance/
@@ -52,7 +52,9 @@ harness/
 │  ├─ aggregate.mjs       # (for the legacy run.sh) k6 results → RESULTS.md
 │  └─ signals/            # conformance/security/suite signal JSON (generated, not committed)
 ├─ run.sh                 # legacy: k6 performance comparison only (one command) → report/RESULTS.md
-└─ verify.sh              # comprehensive pipeline: KC→apps→conformance+security+k6→suites→score → report/SCORECARD.md
+├─ verify.sh              # comprehensive pipeline: KC→apps→conformance+security+k6→suites→score → report/SCORECARD.md
+└─ install/               # the Install-&-Operate harness — its own README, compose.install.yml,
+                          # install-verify.sh, publish/, consume/, registries/ (committed; see below)
 ```
 
 ## Usage (legacy — k6 performance comparison only)
@@ -89,7 +91,7 @@ cd harness
 cat report/SCORECARD.md
 ```
 
-Pipeline stages (repeated per language): bring up Keycloak once (wait for health) → build and start each language app (wait for healthz) → **conformance** ([`conformance/conformance.mjs`](conformance/conformance.mjs), per-endpoint asserts from CONTRACT.md v2) → **security** ([`security/probe.mjs`](security/probe.mjs), JWT-validation hardening attack probes — alg=none · HS/RS confusion · unknown/missing kid · malformed · flood, etc.) → **k6 performance** (`driver/scenarios.js`, inside the compose network) → stop the app → after all languages complete, **suites** ([`suites/run-suite.sh`](suites/run-suite.sh), runs each SDK's own unit tests + coverage + lint in the language toolchain image — not a reimplementation) → **score** ([`report/score.mjs`](report/score.mjs)). A single language's app-build/health-check/probe failure is isolated into `report/signals/<lang>.error.json` and the remaining languages continue (`|| true` applied throughout).
+Pipeline stages (repeated per language): bring up Keycloak once (wait for health) → build and start each language app (wait for healthz) → **conformance** ([`conformance/conformance.mjs`](conformance/conformance.mjs), per-endpoint asserts from CONTRACT.md v2) → **security** ([`security/probe.mjs`](security/probe.mjs), JWT-validation hardening attack probes — alg=none · HS/RS confusion · unknown/missing kid · malformed · flood, etc.) → **k6 performance** (`driver/scenarios.js`, inside the compose network) → stop the app → after all languages complete, **suites** ([`suites/run-suite.sh`](suites/run-suite.sh), runs each SDK's own unit tests + coverage + lint in the language toolchain image — not a reimplementation) → **score** ([`report/score.mjs`](report/score.mjs)). A single language's failure does not stop the others, but read the two halves precisely. **`<lang>.error.json` is written only for a build/up failure or a healthz timeout** — a conformance or security probe failure leaves no `error.json` and shows up in that language's signal file instead. And `|| true` is on three lines (cleanup, chmod, k6), not "throughout": since the fail-closed pass, **`verify.sh` exits 1 if any language failed**, which is what makes the nightly `score-all` job go red.
 
 ### 4-dimensional Scorecard
 
