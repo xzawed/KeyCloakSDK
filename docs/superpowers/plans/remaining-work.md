@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **172** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 2) — 열림 **131** · 닫힘 **41** (2026-09-09 재측정) |
+| 작업 패키지 | **173** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3) — 열림 **131** · 닫힘 **42** (2026-09-09 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `172`(2026-09-09 기준 열림 131 · 닫힘 41)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `173`(2026-09-09 기준 열림 131 · 닫힘 42)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -406,8 +406,13 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **`config.kt` 의 리터럴은 상수로 바꾸지 말 것** — 축 1 이 `clockSkew: Duration = Duration.ofSeconds\(…\)` 정규식으로 값을 뽑는다. 상수로 바꾸면 추출이 실패해 **required 가 MISSING 으로 죽는다**.
   - ⚠️ **코틀린 기본 인자는 호출하지 않고는 읽을 수 없다** — 합성 `$default` 브리지에 들어가고 `KParameter` 는 `isOptional` 만 준다. `kotlin-reflect` 는 테스트 클래스패스에 없다(확인함). 인자를 생략해 **호출하고 경계를 본다**.
   - ⏸ **남은 것 둘**(실측 2026-09-09): `node/src/token-provider.ts:23` 의 `private readonly skewSeconds = 30` 과 `php/src/Token/TokenSet.php:73` 의 `isExpired(?int $now = null, int $skew = 30)`. 축 1 은 node 를 `config.ts`, php 를 `KeycloakConfig.php` 에서만 읽으므로 이 둘은 밖이다. 같은 방식(언어 로컬 **파생** 테스트)으로 민다 — 새 항목 `node-php-use-site-skew-defaults`.
-- [ ] `node-php-use-site-skew-defaults` **[M/S · 신규 2026-09-09]** node·php 의 사용처 skew 기본값이 config 값과 대조되지 않는다 · `node/src/token-provider.ts:23` · `php/src/Token/TokenSet.php:73`
-  - #444 가 kotlin 셋에 쓴 방식을 그대로 쓴다: 값을 **config 에서 파생**해 인자를 생략한 호출의 경계 동작을 본다. ⚠️ 테스트에 `30` 을 다시 적으면 정의 자리를 한 층 위에 만드는 것이다.
+- [x] `node-php-use-site-skew-defaults` **[M/S · 신규·닫힘 2026-09-09 #445]** node·php 의 사용처 skew 기본값이 config 값과 대조되지 않았다 · `node/src/token-provider.ts:23` · `php/src/Token/TokenSet.php:73`
+  - ⚠️ **테스트 갭인 줄 알았는데 node 는 동작 결함이었다** — `client.ts` 가 provider 를 만들며 skew 를 **생략**해, 소비자가 `clockSkewSeconds: 60` 을 줘도 admin 토큰 캐시만 30 으로 돌았다. 자매 다섯(rust·php·go·dotnet·ruby)은 전부 config 값을 넘긴다. 배선도 **동작으로** 잰다(필드를 들여다보면 private 을 깨고, 그 값이 실제로 쓰이는지는 여전히 안 보인다).
+  - ⚠️ **판별력 없는 경계값을 쓰면 한쪽 방향을 못 잡는다** — 초판 node 테스트가 `expiresIn = skew + 60` 이라 기본값이 30→60 으로 커져도 캐시가 30초 남아 통과했다(변이가 `SILENT`). `skew + 1` 로 바꿔 양방향을 잡는다.
+- [ ] `probe-cannot-run-node-php-in-worktree` **[M/S · 신규 2026-09-09]** `scripts/probe.sh` 가 node·php 변이를 못 잰다 — 워크트리에 `node_modules`·`vendor` 가 없어 기준선이 실패한다 · `scripts/probe.sh:57`
+  - **우회는 확인했다**(2026-09-09): 워크트리를 **같은 드라이브**에 만들고 `node_modules` 는 정션으로 붙이면 된다. ⚠️ `vendor` 는 **정션이면 안 된다** — composer autoload 의 `$baseDir = dirname($vendorDir)` 가 본 트리를 가리켜 **워크트리 변이가 로드되지 않는다**(실측: php 변이 셋이 전부 거짓 `SILENT`). php 는 `vendor` 를 **복사**해야 한다.
+  - ⚠️ `cmd /c mklink /J` 는 MSYS 가 `/J` 를 경로로 바꿔 깨진다 — `MSYS_NO_PATHCONV=1` 과 **단일 슬래시** `cmd /c` 를 함께 써야 한다(`//c` 는 그 변수와 같이 쓰면 거부된다).
+  - **되살릴 조건**: 위 우회를 `probe.sh` 에 옵션으로 넣을지, 언어별 프로브 러너를 따로 둘지 판정. 지금은 그 절차를 손으로 밟았고 본 트리 불변·기준선·변이 적용 셋을 같은 방식으로 지켰다.
   - ⚠️ **넷이 아니라 다섯이고, 그 하나는 등록부를 쓴 뒤에 생겼다** — 이 부류는 **지금도 늘고 있다**(실측 2026-09-07, 독립 레그 둘): kotlin 3(`tokens.kt:18`·`tokenprovider.kt:18`·`jwt.kt:126`) · python 1(`_internal/jwt.py:43`) · dotnet 1(`KeycloakConfig.cs:29`). 축 3 은 `sd_no_literal` 호출 **4**(go·php·ruby·ruby-skew)로 그대로다. 값이 아직 안 갈렸다고 안전한 것이 아니다 — **자리가 늘고 있는 것**이 JWKS 가 10/30/60 으로 갈리기 직전과 같은 모양이다.
   - ⚠️ **required 손 표에 다섯 줄을 더하는 것이 답이 아니다** — 그것이 곧 `guard-detection-surface-hand-narrowed` 를 악화시킨다(그 파일은 `doc-facts` 안에서 `paths:` 없이 돈다). **언어 로컬 테스트**(그 언어의 2차 기본값이 config 값과 같은가)로 닫고, `test-security-defaults.sh` 는 건드리지 않는다.
 - [ ] `selftest-assert-counter-subshell` **[M/M]** 어서션 카운터가 서브셸에서 증발한다 — 자가테스트 프레임워크의 구조적 맹점 · `scripts/test/assert.sh:10`
