@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **171** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 1) — 열림 **131** · 닫힘 **40** (2026-09-08 재측정) |
+| 작업 패키지 | **172** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 2) — 열림 **131** · 닫힘 **41** (2026-09-09 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `171`(2026-09-08 기준 열림 131 · 닫힘 40)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `172`(2026-09-09 기준 열림 131 · 닫힘 41)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -46,7 +46,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 3. ✅ **`rust-public-client-empty-secret` — #441 이 닫았다.** 세 자리였다(생성부·logout·`token_provider`). 남은 파생은 `public-client-confidential-grants-not-refused` 이고 **실 Keycloak 실측이 선행**이다.
 4. ✅ **`python-sync-authorization-url-unencoded` — #442 가 닫았다.** 상류 `auth_url` 이 `format()` 한 줄이라 `redirect_uri` 의 `&` 가 파라미터를 주입했다. sync 를 `aio` 미러와 동형으로 맞췄다.
 5. ✅ **`sweeps-without-vacuity-floor` [H] — #443 이 닫았다.** 하한은 **60일 창 최저 실측치**(44/47)다 — 오늘 값에 래칫으로 붙이면 정당한 삭제가 우회 불가 required 를 막는다.
-6. **`security-invariant-use-site-scope` [H]** — 미검사 2차 리터럴이 **4 → 5** 로 늘었다(kotlin 3 · python 1 · dotnet 1). ⚠️ **required 손 표에 다섯 줄을 더하는 것이 답이 아니다** — 그것이 `guard-detection-surface-hand-narrowed` 를 악화시킨다. **언어 로컬 테스트**로 닫는다.
+6. ✅ **`security-invariant-use-site-scope` [H] — #444 가 닫았다.** 다섯 중 둘(python·dotnet)은 축 1b 가 이미 값으로 잡고 있었고, **진짜 무보호는 kotlin 셋**이었다. required 손 표를 늘리지 않고 **언어 로컬 파생 테스트**로 닫았다. 남은 부류는 `node-php-use-site-skew-defaults`.
 7. **A 절 잔여 1건**(`auto-bump-manifest-crosscheck-skip` [L·보류]).
 
 **PR 이 아닌 것**(선행이 빠져 있다): `jvm-17-floor-never-shipped`(사람 승인 릴리스) · `guard-detection-surface-hand-narrowed` 의 파생화(required **밖**에서 오탐 0 선행) · admin 표면 3건(등형성 스펙) · `integration-coverage-never-measured`(9개 설계) · `security-invariant-not-required`(룰셋 apply, **5 이후**에).
@@ -399,7 +399,15 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `selftest-hygiene-textual-rules` **[H/M]** '존재'가 아니라 '실행'을 센다던 규칙이 주석·비활성화·`|| true`를 실행으로 센다 · `scripts/test/test-selftest-hygiene.sh:20`
   - **닫힘(#405)** — `selftest-enforcer-cannot-guard-itself` 와 **같은 뿌리**이고 같은 커밋에서 함께 닫혔다(구조적 판정 + 마지막 실행 명령). 실측·가드는 그 항목에 적었다.
 - [ ] `coverage-exclusions-swallow-pure-logic` **[H/L]** '네트워크 경계' 커버리지 제외가 I/O 없는 순수 로직까지 삼켰다 — 다섯 언어 · `node/src/transport.ts:38`
-- [ ] `security-invariant-use-site-scope` **[H/M · 계수 정정 2026-09-07]** 보안 불변식의 '2차 정의 자리 금지'가 아홉 중 셋만 본다 — 미검사 언어에 리터럴 **다섯** 곳이 살아 있다 · `scripts/test/test-security-defaults.sh:297`
+- [x] `security-invariant-use-site-scope` **[H/M · 닫힘 2026-09-09 #444]** 보안 불변식의 '2차 정의 자리 금지'가 아홉 중 셋만 봤다 · `scripts/test/test-security-defaults.sh:297`
+  - ⚠️ **다섯 중 둘은 이미 잡히고 있었다**(실측 2026-09-08 · 재판정이 이 계수를 과대평가했다): dotnet `KeycloakConfig.cs` 와 python `_internal/jwt.py` 는 축 1b(`sd_skew_secondary`)가 **값 동등성**으로 본다. 「리터럴 금지」 규칙 밖일 뿐 드리프트는 잡힌다.
+  - **진짜 무보호는 kotlin 셋이었다** — 축 1 이 언어당 파일 하나(`config.kt`)만 읽어 `tokens.kt:18`·`tokenprovider.kt:18`·`jwt.kt:126` 이 어느 축에도 안 걸렸다. 기존 kotlin 테스트도 못 잡는다: 경계 테스트가 전부 `skew` 를 **넘겨서** 재고, provider 캐시 테스트는 유효기간 300초라 기본값이 0·10·60 이어도 통과한다.
+  - **언어 로컬 행위 테스트로 닫았다** — required 손 표를 늘리지 않았다. 값은 `KeycloakConfig` 를 인자 없이 만들어 **파생**한다(테스트에 30 을 또 적으면 정의 자리를 한 층 위에 만드는 것이다). 변이 5종(양방향) `CAUGHT` · 대조군 `SILENT`.
+  - ⚠️ **`config.kt` 의 리터럴은 상수로 바꾸지 말 것** — 축 1 이 `clockSkew: Duration = Duration.ofSeconds\(…\)` 정규식으로 값을 뽑는다. 상수로 바꾸면 추출이 실패해 **required 가 MISSING 으로 죽는다**.
+  - ⚠️ **코틀린 기본 인자는 호출하지 않고는 읽을 수 없다** — 합성 `$default` 브리지에 들어가고 `KParameter` 는 `isOptional` 만 준다. `kotlin-reflect` 는 테스트 클래스패스에 없다(확인함). 인자를 생략해 **호출하고 경계를 본다**.
+  - ⏸ **남은 것 둘**(실측 2026-09-09): `node/src/token-provider.ts:23` 의 `private readonly skewSeconds = 30` 과 `php/src/Token/TokenSet.php:73` 의 `isExpired(?int $now = null, int $skew = 30)`. 축 1 은 node 를 `config.ts`, php 를 `KeycloakConfig.php` 에서만 읽으므로 이 둘은 밖이다. 같은 방식(언어 로컬 **파생** 테스트)으로 민다 — 새 항목 `node-php-use-site-skew-defaults`.
+- [ ] `node-php-use-site-skew-defaults` **[M/S · 신규 2026-09-09]** node·php 의 사용처 skew 기본값이 config 값과 대조되지 않는다 · `node/src/token-provider.ts:23` · `php/src/Token/TokenSet.php:73`
+  - #444 가 kotlin 셋에 쓴 방식을 그대로 쓴다: 값을 **config 에서 파생**해 인자를 생략한 호출의 경계 동작을 본다. ⚠️ 테스트에 `30` 을 다시 적으면 정의 자리를 한 층 위에 만드는 것이다.
   - ⚠️ **넷이 아니라 다섯이고, 그 하나는 등록부를 쓴 뒤에 생겼다** — 이 부류는 **지금도 늘고 있다**(실측 2026-09-07, 독립 레그 둘): kotlin 3(`tokens.kt:18`·`tokenprovider.kt:18`·`jwt.kt:126`) · python 1(`_internal/jwt.py:43`) · dotnet 1(`KeycloakConfig.cs:29`). 축 3 은 `sd_no_literal` 호출 **4**(go·php·ruby·ruby-skew)로 그대로다. 값이 아직 안 갈렸다고 안전한 것이 아니다 — **자리가 늘고 있는 것**이 JWKS 가 10/30/60 으로 갈리기 직전과 같은 모양이다.
   - ⚠️ **required 손 표에 다섯 줄을 더하는 것이 답이 아니다** — 그것이 곧 `guard-detection-surface-hand-narrowed` 를 악화시킨다(그 파일은 `doc-facts` 안에서 `paths:` 없이 돈다). **언어 로컬 테스트**(그 언어의 2차 기본값이 config 값과 같은가)로 닫고, `test-security-defaults.sh` 는 건드리지 않는다.
 - [ ] `selftest-assert-counter-subshell` **[M/M]** 어서션 카운터가 서브셸에서 증발한다 — 자가테스트 프레임워크의 구조적 맹점 · `scripts/test/assert.sh:10`
