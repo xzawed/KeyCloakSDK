@@ -110,4 +110,27 @@ describe('close / asyncDispose', () => {
     expect(h.adminClose).toHaveBeenCalledTimes(1)
     expect(h.authClose).toHaveBeenCalledTimes(1)
   })
+
+  // ⚠️ **설정된 clockSkewSeconds 가 admin 토큰 provider 까지 도달해야 한다.** 넘기지 않으면
+  // provider 의 생성자 기본값(30)이 쓰여, 소비자가 60 을 줘도 admin 캐시만 30 으로 돈다.
+  // 자매 다섯(rust·php·go·dotnet·ruby)은 전부 config 값을 넘기는데 node 만 빠져 있었다
+  // (실측 2026-09-09). 여기서는 **동작**으로 잰다 — 필드를 들여다보면 private 을 깨는 것이고
+  // 그 값이 실제로 쓰이는지는 여전히 안 보인다.
+  it('설정된 clockSkewSeconds가 admin token provider까지 전달된다', async () => {
+    const skew = 120
+    const token = vi.fn().mockResolvedValue({ accessToken: 'at', expiresIn: skew })
+    ;(h.authInstance as { clientCredentialsToken?: unknown }).clientCredentialsToken = token
+
+    const client = KeycloakClient.create({ ...input, clockSkewSeconds: skew })
+    await client.admin()
+
+    const provider = h.adminCreate.mock.calls[0]?.[1] as { getAccessToken(): Promise<string> }
+    // 유효기간 == skew 이므로 캐시 수명은 0 — 두 번째 호출은 반드시 재발급이다.
+    // 배선이 빠져 기본값 30 이 쓰이면 수명이 90초라 캐시되어 1회로 끝난다.
+    await provider.getAccessToken()
+    await provider.getAccessToken()
+    expect(token).toHaveBeenCalledTimes(2)
+
+    delete (h.authInstance as { clientCredentialsToken?: unknown }).clientCredentialsToken
+  })
 })

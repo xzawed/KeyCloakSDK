@@ -50,9 +50,14 @@ export class KeycloakClient implements AsyncDisposable {
     // admin 전용 캐싱 TokenProvider를 주입한다(§4 접착제). 토큰 소스는 facade의 AuthClient지만
     // admin은 TokenProvider 인터페이스만 알 뿐 auth 모듈에 의존하지 않는다. provider가 만료 시
     // client_credentials로 재인증하므로 장수명 서버에서 admin이 토큰 만료로 영구 실패하지 않는다.
+    // ⚠️ **설정된 clockSkewSeconds 를 반드시 넘긴다.** 생략하면 provider 의 생성자 기본값(30)이
+    // 쓰여, 소비자가 `clockSkewSeconds: 60` 을 줘도 admin 토큰 캐시만 30 으로 돈다. 자매 다섯이
+    // 전부 config 값을 넘긴다(rust `config.clock_skew` · php `$this->config->clockSkew` ·
+    // go `cfg.ClockSkew` · dotnet `_config.ClockSkewSeconds` · ruby `@config.clock_skew`) —
+    // node 만 빠져 있었다(실측 2026-09-09).
     this.#adminInflight = AdminClient.create(
       this.#config,
-      new ClientCredentialsTokenProvider(this.auth),
+      new ClientCredentialsTokenProvider(this.auth, this.#config.clockSkewSeconds),
     )
     try {
       this.#admin = await this.#adminInflight
