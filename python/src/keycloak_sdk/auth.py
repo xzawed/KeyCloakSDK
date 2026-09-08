@@ -16,6 +16,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeVar, cast
+from urllib.parse import urlencode
 
 from joserfc.jwk import KeySet, KeySetSerialization
 from keycloak import KeycloakOpenID
@@ -153,20 +154,30 @@ class AuthClient:
 
         `code_verifier`는 이후 `exchange_code`에 전달돼야 하므로 호출자가 세션에
         보관한다(SDK는 무상태). `state`/`nonce`는 CSRF/재생 공격 방어용 난수.
+
+        ⚠️ **`openid.auth_url()`에 위임하지 않는다 — 그 헬퍼는 퍼센트 인코딩을 하지 않는다.**
+        python-keycloak 7.1.1의 `auth_url`은 `URL_AUTH.format(...)` 한 줄이라 값을 그대로
+        이어 붙인다(그 함수를 직접 실행해 확인). 그래서 `redirect_uri` 안의 `&`가 뒤따르는
+        값을 **최상위 쿼리 파라미터로 주입**했고 공백도 원문으로 남아 URL이 못 쓰게 됐다.
+        덤으로 그 경로는 `well_known()` discovery 왕복을 한 번 더 탔다. 여기서는 `aio`
+        미러와 **동형으로** `OidcEndpoints`에서 직접 조립한다 — 네트워크가 필요 없다.
         """
         code_verifier, code_challenge = _generate_pkce_pair()
         state = secrets.token_urlsafe(16)
         nonce = secrets.token_urlsafe(16)
-        url = self._wrap(
-            lambda: self._openid.auth_url(
-                redirect_uri,
-                scope=" ".join(self._config.scopes),
-                state=state,
-                nonce=nonce,
-                code_challenge=code_challenge,
-                code_challenge_method="S256",
-            )
+        params = urlencode(
+            {
+                "response_type": "code",
+                "client_id": self._config.client_id,
+                "redirect_uri": redirect_uri,
+                "scope": " ".join(self._config.scopes),
+                "state": state,
+                "nonce": nonce,
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+            }
         )
+        url = f"{self._endpoints.authorization}?{params}"
         return AuthorizationUrl(url=url, code_verifier=code_verifier, state=state, nonce=nonce)
 
     def exchange_code(
