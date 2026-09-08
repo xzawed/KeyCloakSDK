@@ -121,4 +121,57 @@ internal class TokenProviderTest {
             assertEquals(1, calls.get())
             assertEquals(List(10) { "token-1" }, results)
         }
+
+    // ⚠️ 이 생성자의 `skew` 기본값은 `TokenSet.isExpired` 의 기본값과 **별개의 사본**이다 —
+    // provider 는 자기 필드를 `isExpired(clock, skew)` 로 항상 넘기므로 `TokensTest` 의 핀이
+    // 여기를 덮지 않는다. 그래서 같은 계약을 여기서 따로 잰다(둘 다 어느 가드도 안 보던 자리다).
+    //
+    // ⚠️ **`30` 을 다시 적지 않는다** — `KeycloakConfig` 를 인자 없이 만들어 파생한다.
+    private fun derivedClockSkew(): Duration = KeycloakConfig(serverUrl = "http://kc.example", realm = "r", clientId = "c").clockSkew
+
+    @Test
+    fun `constructor default skew equals KeycloakConfig clockSkew`() =
+        runTest {
+            val skew = derivedClockSkew()
+            val start = Instant.parse("2026-01-01T00:00:00Z")
+            var now = start
+            val movingClock =
+                object : Clock() {
+                    override fun getZone() = ZoneOffset.UTC
+
+                    override fun withZone(zone: java.time.ZoneId?): Clock = this
+
+                    override fun instant(): Instant = now
+                }
+
+            // (1) 기본값이 **커지면** 잡는다 — 만료까지 skew+1ms 남은 토큰은 아직 캐시여야 한다.
+            val tightCalls = AtomicInteger(0)
+            val tight =
+                ClientCredentialsTokenProvider(
+                    fetch = {
+                        tightCalls.incrementAndGet()
+                        tokenSet("tight", start.plus(skew).plusMillis(1))
+                    },
+                    clock = movingClock,
+                )
+            tight.accessToken()
+            tight.accessToken()
+            assertEquals(1, tightCalls.get(), "기본 skew 가 config.clockSkew($skew) 보다 크다 — 너무 일찍 재발급한다")
+
+            // (2) 기본값이 **작아지면** 잡는다 — skew+1ms 를 지나면 재발급이어야 한다.
+            val wideCalls = AtomicInteger(0)
+            val wide =
+                ClientCredentialsTokenProvider(
+                    fetch = {
+                        wideCalls.incrementAndGet()
+                        tokenSet("wide", start.plus(skew).plus(skew))
+                    },
+                    clock = movingClock,
+                )
+            now = start
+            wide.accessToken()
+            now = start.plus(skew).plusMillis(1)
+            wide.accessToken()
+            assertEquals(2, wideCalls.get(), "기본 skew 가 config.clockSkew($skew) 보다 작다 — 만료 직전 토큰을 계속 쓴다")
+        }
 }

@@ -561,6 +561,35 @@ internal class JwtValidatorTest {
         return server.findAll(getRequestedFor(urlPathEqualTo(JWKS_PATH))).size
     }
 
+    // ⚠️ `withStaticJwks` 의 `skew` 기본값은 `config.clockSkew` 의 **세 번째 사본**이다. 위 경계
+    // 테스트들은 전부 `skew = Duration.ofSeconds(30)` 을 **넘겨서** 재므로 기본값을 하나도 안 본다 —
+    // 그 기본값이 300 이 돼도 이 파일은 전부 초록이다(실측 2026-09-08). 여기서만 인자를 생략한다.
+    //
+    // ⚠️ **`30` 을 다시 적지 않는다** — `KeycloakConfig` 를 인자 없이 만들어 파생한다. Nimbus 는
+    // skew 를 **정수 초**로 저장하므로 경계는 초 단위로 잡는다.
+    @Test
+    fun `withStaticJwks default skew equals KeycloakConfig clockSkew`() =
+        runTest {
+            val skew = KeycloakConfig(serverUrl = "http://kc.example", realm = "r", clientId = "c").clockSkew
+            val key = rsaKey()
+            // skew 를 **생략**한다 — 그것이 이 테스트의 요점이다.
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, audience)
+
+            // 기본값이 **작아지면** 잡는다 — skew 의 절반만큼 지난 토큰은 통과해야 한다.
+            val within = signedRs256(key, claims(expiresInMillis = -(skew.toMillis() / 2)))
+            assertEquals(
+                issuer,
+                validator.validate(within).issuer,
+                "기본 skew 가 config.clockSkew($skew) 보다 작다 — 정상 토큰이 거부된다",
+            )
+
+            // 기본값이 **커지면** 잡는다 — skew 를 20초 넘긴 토큰은 거부돼야 한다.
+            val beyond = signedRs256(key, claims(expiresInMillis = -skew.plusSeconds(20).toMillis()))
+            assertFailsWith<TokenValidationException>(
+                "기본 skew 가 config.clockSkew($skew) 보다 크다 — 만료된 토큰이 통과한다",
+            ) { validator.validate(beyond) }
+        }
+
     private companion object {
         const val JWKS_PATH = "/realms/r/protocol/openid-connect/certs"
     }
