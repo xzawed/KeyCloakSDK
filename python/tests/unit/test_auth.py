@@ -10,6 +10,7 @@ import base64
 import hashlib
 import time
 from unittest.mock import MagicMock
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from joserfc import jwt as jjwt
@@ -181,33 +182,66 @@ def test_client_credentials_token_wraps_auth_error():
 
 
 def test_authorization_url_contains_pkce_state_and_nonce():
+    """sync도 async 미러와 동형으로 `OidcEndpoints`에서 직접 조립한다(네트워크 없음).
+
+    ⚠️ 예전에는 `openid.auth_url()`에 위임했다. 그 헬퍼는 `URL_AUTH.format()`뿐이라
+    **퍼센트 인코딩을 하지 않는다**(python-keycloak 7.1.1을 직접 실행해 확인:
+    공백이 원문으로 남고 `redirect_uri` 안의 `&`가 그대로 나가 뒤따르는 값이 별도
+    파라미터로 주입됐다). 덤으로 그 경로는 discovery 왕복을 한 번 더 탔다.
+    """
     openid = MagicMock(spec=KeycloakOpenID)
-    openid.auth_url.return_value = "https://kc.example.com/auth?mocked=1"
     config = _config(scopes=("openid", "profile"))
     client = _client(openid, config=config)
 
     result = client.authorization_url("https://app.example.com/callback")
 
-    assert result.url == "https://kc.example.com/auth?mocked=1"
     assert result.code_verifier and result.state and result.nonce
     # PKCE verifier/state/nonce are unpredictable secrets — ensure the client
     # doesn't degenerate to fixed/empty values.
     assert len(result.code_verifier) >= 43  # RFC 7636 minimum length
     assert result.state != result.nonce
 
+    endpoints = OidcEndpoints.for_realm(config)
+    assert result.url.startswith(endpoints.authorization)
+    qs = parse_qs(urlparse(result.url).query)
+    assert qs["response_type"] == ["code"]
+    assert qs["client_id"] == ["app"]
+    assert qs["redirect_uri"] == ["https://app.example.com/callback"]
+    assert qs["scope"] == ["openid profile"]
+    assert qs["state"] == [result.state]
+    assert qs["nonce"] == [result.nonce]
+    assert qs["code_challenge_method"] == ["S256"]
+
     expected_challenge = (
         base64.urlsafe_b64encode(hashlib.sha256(result.code_verifier.encode()).digest())
         .rstrip(b"=")
         .decode()
     )
-    openid.auth_url.assert_called_once_with(
-        "https://app.example.com/callback",
-        scope="openid profile",
-        state=result.state,
-        nonce=result.nonce,
-        code_challenge=expected_challenge,
-        code_challenge_method="S256",
-    )
+    assert qs["code_challenge"] == [expected_challenge]
+
+    # 조립은 네트워크를 타지 않는다 — 주입된 openid 목이 손대지지 않아야 한다.
+    assert not openid.mock_calls
+
+
+def test_authorization_url_percent_encodes_and_resists_param_injection():
+    """인코딩이 없으면 `redirect_uri` 안의 `&`가 **별도 파라미터를 주입**한다.
+
+    실측(python-keycloak 7.1.1 직접 실행): `auth_url`이
+    `redirect_uri=https://app.example/cb?x=1 y&z=2` 를 그대로 이어 붙여 `z=2`가
+    최상위 쿼리 파라미터가 됐고 공백도 원문으로 남았다.
+    """
+    openid = MagicMock(spec=KeycloakOpenID)
+    client = _client(openid, config=_config(scopes=("openid",)))
+
+    hostile = "https://app.example.com/cb?x=1 y&z=2"
+    result = client.authorization_url(hostile)
+
+    assert " " not in result.url, f"원문 공백이 남았다: {result.url}"
+    qs = parse_qs(urlparse(result.url).query)
+    # 왕복해서 원래 값 그대로 읽혀야 한다.
+    assert qs["redirect_uri"] == [hostile]
+    # 그리고 주입된 파라미터가 없어야 한다.
+    assert "z" not in qs, f"redirect_uri 의 &가 파라미터를 주입했다: {sorted(qs)}"
 
 
 def test_authorization_url_repr_masks_verifier():
@@ -239,13 +273,21 @@ def test_authorization_url_generates_distinct_verifiers_per_call():
     assert first.nonce != second.nonce
 
 
-def test_authorization_url_wraps_transport_error():
+def test_authorization_url_makes_no_network_call():
+    """⚠️ 이 테스트는 전에 「전송 오류를 감싼다」였다 — 그 자체가 결함의 증거였다.
+
+    조립에 네트워크가 필요했던 이유는 `openid.auth_url()`이 `well_known()` discovery를
+    지연 로드했기 때문이다. 이제 `OidcEndpoints`에서 직접 조립하므로 감쌀 전송 오류가
+    없다(`aio` 미러와 동형). IdP가 죽어 있어도 인가 URL은 만들어져야 한다.
+    """
     openid = MagicMock(spec=KeycloakOpenID)
     openid.auth_url.side_effect = KeycloakGetError(error_message="dns failure")
     client = _client(openid)
 
-    with pytest.raises(KeycloakTransportError):
-        client.authorization_url("https://app/cb")
+    result = client.authorization_url("https://app/cb")
+
+    assert result.url.startswith("https://")
+    assert not openid.mock_calls, f"네트워크를 탔다: {openid.mock_calls}"
 
 
 # --- 3.4: exchange_code / refresh / logout / introspect --------------------------
