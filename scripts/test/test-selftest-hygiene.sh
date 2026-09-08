@@ -447,14 +447,29 @@ assert_eq "" "$_mx" "매트릭스가 있는데 fail-fast: false 가 없는 워�
 # 규칙 4 는 `*.sh` **만** 보고(오늘 68) 워크플로 스윕은 `gradlew` 셋을 더 본다(오늘 71). 게다가
 # 규칙 4 가 빨개지면 `doc-facts` 가 죽지 `shell-exec-bits` 는 초록이다 — **다른 잡, 다른 코퍼스**다.
 #
-# 여기서는 「하한이 **있는가**」만 본다. 값 자체는 그 스텝의 주석이 소유한다.
+# ⚠️ **「하한이 있는가」만 보면 안 된다 — 초판이 그랬고 변이가 그것을 잡아냈다**(실측 2026-09-08):
+# `-lt 44` 를 `-lt 0` 으로 바꿔 하한을 **무력화**해도 마커 주석은 그대로라 통과했다. 그래서
+# 값을 뽑아 **살아 있는 코퍼스와 대조**한다 — 0 이면 공허하고, 오늘 값보다 크면 CI 가 늘 빨갛다.
+# 값 자체(왜 44/47 인지)는 그 스텝의 주석이 소유하고, 여기서는 **범위**만 판정한다.
 if [ -f "$HYGIENE" ]; then
-  # (B) required 스윕: 추적 스크립트 수에 하한이 걸려 있는가.
-  _b_floor=$(grep -cE 'SWEEP_FLOOR_EXEC_BITS' "$HYGIENE" || true); _b_floor=${_b_floor:-0}
-  assert_ok test "$_b_floor" -ge 1
-  # (A) Jackson 스윕: 훑은 파일 수에 하한이 걸려 있는가.
-  _a_floor=$(grep -cE 'SWEEP_FLOOR_JACKSON' "$HYGIENE" || true); _a_floor=${_a_floor:-0}
-  assert_ok test "$_a_floor" -ge 1
+  # (B) required 스윕 — 추적되는 실행 스크립트 수.
+  _b_floor="$(grep -oE '"\$N_EXEC" -lt [0-9]+' "$HYGIENE" | grep -oE '[0-9]+$' | head -1)"
+  _b_now="$(cd "$ROOT" && git ls-files -- '*.sh' 'gradlew' '*/gradlew' | wc -l | tr -d ' ')"
+  if [ -n "$_b_floor" ] && [ "$_b_floor" -gt 0 ] && [ "$_b_floor" -le "$_b_now" ]; then
+    _A_PASS=$((_A_PASS + 1))
+  else
+    _A_FAIL=$((_A_FAIL + 1))
+    printf 'FAIL shell-exec-bits 의 공허 하한이 유효하지 않다(하한=%s · 오늘 코퍼스=%s) — 0 이면 스윕이 0건을 훑고도 통과하고, 오늘보다 크면 required 가 늘 빨갛다\n' "${_b_floor:-없음}" "$_b_now" >&2
+  fi
+  # (A) Jackson 스윕 — 훑는 JVM 메인 소스 수.
+  _a_floor="$(grep -oE '"\$\{N_SRC:-0\}" -lt [0-9]+' "$HYGIENE" | grep -oE '[0-9]+$' | head -1)"
+  _a_now="$(cd "$ROOT" && { find java -path '*/src/main/*' -name '*.java'; find kotlin -path '*/src/main/*' -name '*.kt'; } | wc -l | tr -d ' ')"
+  if [ -n "$_a_floor" ] && [ "$_a_floor" -gt 0 ] && [ "$_a_floor" -le "$_a_now" ]; then
+    _A_PASS=$((_A_PASS + 1))
+  else
+    _A_FAIL=$((_A_FAIL + 1))
+    printf 'FAIL Jackson 스윕의 공허 하한이 유효하지 않다(하한=%s · 오늘 코퍼스=%s)\n' "${_a_floor:-없음}" "$_a_now" >&2
+  fi
 fi
 
 assert_report
