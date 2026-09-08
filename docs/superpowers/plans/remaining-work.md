@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **171** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 1) — 열림 **132** · 닫힘 **39** (2026-09-07 재측정) |
+| 작업 패키지 | **171** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 1) — 열림 **131** · 닫힘 **40** (2026-09-08 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `171`(2026-09-07 기준 열림 132 · 닫힘 39)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `171`(2026-09-08 기준 열림 131 · 닫힘 40)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -45,7 +45,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 2. **rust JWKS 두 건** — `jwks-response-not-validated` 의 잔여(HTTP 상태 미검사, `error_for_status` 0건)와 `jwks-response-size-unbounded-non-jvm`. 같은 파일이라 한 PR 이다. 게시된 `rust-v1.0.0` 에 있다.
 3. ✅ **`rust-public-client-empty-secret` — #441 이 닫았다.** 세 자리였다(생성부·logout·`token_provider`). 남은 파생은 `public-client-confidential-grants-not-refused` 이고 **실 Keycloak 실측이 선행**이다.
 4. ✅ **`python-sync-authorization-url-unencoded` — #442 가 닫았다.** 상류 `auth_url` 이 `format()` 한 줄이라 `redirect_uri` 의 `&` 가 파라미터를 주입했다. sync 를 `aio` 미러와 동형으로 맞췄다.
-5. **`sweeps-without-vacuity-floor` [H]** — 잠복이나 required 경로다. 남은 것은 **둘**(Jackson 스캔 · `shell-exec-bits`). 셋 중 하나는 `--min-escalations=6`(#385)이 이미 닫았다.
+5. ✅ **`sweeps-without-vacuity-floor` [H] — #443 이 닫았다.** 하한은 **60일 창 최저 실측치**(44/47)다 — 오늘 값에 래칫으로 붙이면 정당한 삭제가 우회 불가 required 를 막는다.
 6. **`security-invariant-use-site-scope` [H]** — 미검사 2차 리터럴이 **4 → 5** 로 늘었다(kotlin 3 · python 1 · dotnet 1). ⚠️ **required 손 표에 다섯 줄을 더하는 것이 답이 아니다** — 그것이 `guard-detection-surface-hand-narrowed` 를 악화시킨다. **언어 로컬 테스트**로 닫는다.
 7. **A 절 잔여 1건**(`auto-bump-manifest-crosscheck-skip` [L·보류]).
 
@@ -415,7 +415,11 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **다만 지금은 잠복이다 — 도달 경로가 0건이다.** 어느 자가테스트에도 파이프 오른쪽·`$( )`·`( )` 그룹 안의 단언이 없고, `test-publication-claims.sh:719` 에 그 함정을 경고하는 주석이 이미 있다. 그래서 **활성 fail-open 뒤로 밀린다**. 닫을 때는 `assert.sh` 를 다시 쓰기보다 **정적 금지**(집행자가 서브셸 문맥의 단언을 거부)를 먼저 본다 — 계수기를 갈아엎으면 모든 `test-*.sh` 가 한 번에 빨개질 수 있다.
   - **절반 닫힘(#405) — 탐지기 쪽만.** 집행자가 「등장」을 「호출」로 세던 것을 구조적 판정으로 바꿨다(`selftest-enforcer-cannot-guard-itself` 참조).
   - ⚠️ **계수기 쪽은 그대로 열려 있다** — `assert.sh` 의 `_A_FAIL` 이 서브셸에서 증발하는 문제이고, 아래 `selftest-assert-counter-subshell` 이 그 자리를 소유한다. **둘을 한 항목으로 읽어 닫지 말 것.**
-- [ ] `sweeps-without-vacuity-floor` **[H/M · 계수 정정 2026-09-07]** **두** 개의 스윕/스캔이 0건을 훑고 통과한다 — 이 저장소의 하한 관용이 적용되지 않았다 · `.github/workflows/repo-hygiene.yml:234`
+- [x] `sweeps-without-vacuity-floor` **[H/M · 닫힘 2026-09-08 #443]** 스윕/스캔이 0건을 훑고 통과했다 — 이 저장소의 하한 관용이 적용되지 않았다 · `.github/workflows/repo-hygiene.yml:234`
+  - **하한 값은 60일 창의 최저 실측치다** — 2026-07-10 이후 **618 커밋 전수**를 훑어 셌다: (B) `*.sh`+`gradlew` 오늘 71·창 최저 **44** · (A) java/kotlin main 오늘 49·창 최저 **47**. ⚠️ **오늘 값에 래칫으로 붙이지 않았다** — `.sh` 하나를 정당하게 지우는 PR 이 **우회 불가 required** 를 빨갛게 만들고, 그 창에 실제로 한 번 있었다(`.scamanager/install-hook.sh`). 다시 재는 명령은 두 스텝의 주석이 소유한다.
+  - ⚠️ **계측기를 알려진 정답으로 먼저 검증하라** — 초판 정규식이 `.*/src/main/` 이라 중간 디렉터리를 강제해 `kotlin/src/main/…` 을 통째로 놓쳤고 (A) 최저가 47 대신 32(java 만)로 나왔다. 오늘의 `find` 결과와 대조해 잡았다.
+  - ⚠️ **규칙 4 가 덮는다고 생각하지 말 것** — 규칙 4 는 `*.sh` 만 보고(68) 워크플로 스윕은 `gradlew` 셋을 더 본다(71). 빨개졌을 때 죽는 잡도 다르다(`doc-facts` vs `shell-exec-bits`).
+  - ⚠️ **가드가 하한의 「존재」만 보면 무력화를 놓친다** — 초판 규칙 9 는 마커 주석만 봐서 `-lt 44` → `-lt 0` 변이에 침묵했다. 값을 뽑아 **살아 있는 코퍼스와 대조**하도록 고쳤다(0 이면 공허, 오늘값 초과면 상시 빨강).
   - **셋 중 하나는 닫혔다(#385)** — 권한 상승 인벤토리에 `--min-escalations=6` 이 붙었다. 남은 둘(실측 2026-09-07): Jackson default-typing 스캔(`find … | xargs grep … || true` — 파일이 0개면 `hits` 가 비고 `OK` 를 찍는다)과 **required `shell-exec-bits`**(`N개 전부 실행비트 있음` 을 N=0 에서도 찍는다).
   - ⚠️ **하한은 코퍼스에서 세어 박는다** — 높은 상수를 지어내면 required 체크가 `bypass_actors: []` 인 채로 모든 PR 을 막는다(실측: 상수 하나로 픽스처 75건을 깬 적이 있다).
 - [ ] `seven-selftests-have-no-negative-control` **[H/L]** 일곱 자가테스트가 라이브 상태만 단언한다 — 검출기를 지워도 통과한다 · `scripts/test/test-deploy-md.sh:7`
