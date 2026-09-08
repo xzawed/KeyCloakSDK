@@ -57,32 +57,41 @@ impl AuthClient {
         validator: JwtValidator,
     ) -> Result<Self> {
         let base = endpoints.issuer();
-        let oidc = CoreClient::new(
+        let core = CoreClient::new(
             ClientId::new(config.client_id.clone()),
             IssuerUrl::new(base.clone())
                 .map_err(|e| KeycloakError::Config(format!("issuer url: {e}")))?,
             // 비어있는 JWKS: id_token 검증에 미사용(자체 JwtValidator가 access_token을 강화 검증).
             JsonWebKeySet::<CoreJsonWebKey>::new(Vec::new()),
-        )
-        .set_client_secret(ClientSecret::new(
-            config.client_secret.clone().unwrap_or_default(),
-        ))
-        .set_auth_uri(
-            AuthUrl::new(endpoints.authorization())
-                .map_err(|e| KeycloakError::Config(format!("auth url: {e}")))?,
-        )
-        .set_token_uri(
-            TokenUrl::new(endpoints.token())
-                .map_err(|e| KeycloakError::Config(format!("token url: {e}")))?,
-        )
-        .set_introspection_url(
-            IntrospectionUrl::new(endpoints.introspection())
-                .map_err(|e| KeycloakError::Config(format!("introspect url: {e}")))?,
-        )
-        .set_redirect_uri(
-            RedirectUrl::new(config.redirect_uri.clone().unwrap_or_else(|| base.clone()))
-                .map_err(|e| KeycloakError::Config(format!("redirect uri: {e}")))?,
         );
+        // ⚠️ **빈 시크릿은 「시크릿 없음」이 아니다 — 공개 클라이언트를 기밀처럼 인증시킨다.**
+        // `oauth2` 5.0.0 은 `Some(ClientSecret(""))` 을 기본 `AuthType::BasicAuth` 로 처리해
+        // `Authorization: Basic base64(client_id:)` 를 붙이고 `client_id` 를 본문에서 뺀다
+        // (`endpoint.rs` 의 `match (auth_type, client_secret)`). 호출하지 않으면 그 크레이트가
+        // 스스로 RequestBody 로 떨어져 `client_id` 만 싣는다 — 그것이 공개 클라이언트의 계약이다.
+        // 자매 구현 동형: java 는 `getClientSecret() != null` 로 갈라 `ClientID` 만 싣고,
+        // go 는 `if a.cfg.ClientSecret != ""` 로 감싼다.
+        let core = match config.client_secret.as_deref() {
+            Some(s) => core.set_client_secret(ClientSecret::new(s.to_string())),
+            None => core,
+        };
+        let oidc = core
+            .set_auth_uri(
+                AuthUrl::new(endpoints.authorization())
+                    .map_err(|e| KeycloakError::Config(format!("auth url: {e}")))?,
+            )
+            .set_token_uri(
+                TokenUrl::new(endpoints.token())
+                    .map_err(|e| KeycloakError::Config(format!("token url: {e}")))?,
+            )
+            .set_introspection_url(
+                IntrospectionUrl::new(endpoints.introspection())
+                    .map_err(|e| KeycloakError::Config(format!("introspect url: {e}")))?,
+            )
+            .set_redirect_uri(
+                RedirectUrl::new(config.redirect_uri.clone().unwrap_or_else(|| base.clone()))
+                    .map_err(|e| KeycloakError::Config(format!("redirect uri: {e}")))?,
+            );
         Ok(Self {
             config,
             endpoints,
@@ -242,14 +251,15 @@ impl AuthClient {
     /// 삼키면 오설정이 영원히 안 보이고, 400("이미 무효화된 refresh_token")을 통과시키면 같은
     /// 분류의 진짜 클라이언트 오류까지 함께 통과한다.
     pub async fn logout(&self, refresh_token: &str) -> Result<()> {
-        let params = [
+        // ⚠️ 공개 클라이언트에는 `client_secret` 를 **싣지 않는다**(빈 값도 아니다) — go 의
+        // `if a.cfg.ClientSecret != ""` · .NET 의 `if (_cfg.ClientSecret is { } secret)` 와 동형.
+        let mut params: Vec<(&str, &str)> = vec![
             ("client_id", self.config.client_id.as_str()),
-            (
-                "client_secret",
-                self.config.client_secret.as_deref().unwrap_or(""),
-            ),
             ("refresh_token", refresh_token),
         ];
+        if let Some(secret) = self.config.client_secret.as_deref() {
+            params.push(("client_secret", secret));
+        }
         let resp = self
             .http
             .post(self.endpoints.end_session())
@@ -505,5 +515,123 @@ mod tests {
                 .await
                 .unwrap_or_else(|e| panic!("HTTP {status}는 성공이어야 한다, 실제: {e:?}"));
         }
+    }
+
+    // ── 공개 클라이언트(시크릿 없음)는 클라이언트 인증을 **보내지 않는다** ──────────────
+    //
+    // ⚠️ 빈 시크릿은 「시크릿 없음」이 아니다. `oauth2` 5.0.0 은 `Some(ClientSecret(""))` 을
+    // 받으면 기본 `AuthType::BasicAuth` 분기를 타 `Authorization: Basic base64(client_id:)` 를
+    // 붙이고 `client_id` 를 **본문에서 뺀다**(`oauth2-5.0.0/src/endpoint.rs` 의
+    // `match (auth_type, client_secret)`). `None` 이면 그 크레이트가 스스로 RequestBody 로
+    // 떨어져 `client_id` 만 싣는다. 즉 `unwrap_or_default()` 한 줄이 공개 클라이언트를
+    // **기밀 클라이언트처럼 인증시킨다**.
+    //
+    // 자매 구현: java 는 `getClientSecret() != null` 로 갈라 `ClientID` 만 싣고
+    // (`AuthClientPublicClientTest` 가 `assertNull(req.getAuthorization())` 로 못박는다),
+    // go 는 `if a.cfg.ClientSecret != ""` 로 감싼다. rust 만 강제하고 있었다.
+    async fn public_client_token_fixture() -> (AuthClient, MockServer) {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "AT", "token_type": "Bearer", "expires_in": 300
+            })))
+            .mount(&server)
+            .await;
+        // ⚠️ `with_client_secret` 를 **부르지 않는다** — 그것이 공개 클라이언트다.
+        let config = KeycloakConfig::new(server.uri(), "it-realm", "it-client").unwrap();
+        let endpoints = OidcEndpoints::new(&config);
+        let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+        let validator = JwtValidator::new(&config, &endpoints, jwks).unwrap();
+        let auth = AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap();
+        (auth, server)
+    }
+
+    #[tokio::test]
+    async fn public_client_sends_no_client_authentication() {
+        let (auth, server) = public_client_token_fixture().await;
+        let _ = auth.client_credentials_token().await;
+        let reqs = server
+            .received_requests()
+            .await
+            .expect("received_requests available");
+        let token = reqs
+            .iter()
+            .find(|r| r.url.path().ends_with("/token"))
+            .expect("token endpoint must have been called");
+        assert!(
+            token.headers.get("authorization").is_none(),
+            "공개 클라이언트에 Authorization 이 붙었다: {:?}",
+            token.headers.get("authorization")
+        );
+        let body = String::from_utf8_lossy(&token.body);
+        assert!(
+            !body.contains("client_secret"),
+            "공개 클라이언트 본문에 client_secret 이 실렸다: {body}"
+        );
+        assert!(
+            body.contains("client_id=it-client"),
+            "인증을 안 보내면 client_id 는 본문에 실려야 한다: {body}"
+        );
+    }
+
+    // 대조군 — 시크릿이 있으면 Basic 이 **붙어야** 한다. 없으면 위 테스트가
+    // 「이 코드가 인증을 아예 안 보낸다」와 구분되지 않는다.
+    #[tokio::test]
+    async fn confidential_client_still_sends_basic_auth() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "AT", "token_type": "Bearer", "expires_in": 300
+            })))
+            .mount(&server)
+            .await;
+        let config = KeycloakConfig::new(server.uri(), "it-realm", "it-client")
+            .unwrap()
+            .with_client_secret("s");
+        let endpoints = OidcEndpoints::new(&config);
+        let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+        let validator = JwtValidator::new(&config, &endpoints, jwks).unwrap();
+        let auth = AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap();
+        let _ = auth.client_credentials_token().await;
+        let reqs = server
+            .received_requests()
+            .await
+            .expect("received_requests available");
+        let token = reqs
+            .iter()
+            .find(|r| r.url.path().ends_with("/token"))
+            .expect("token endpoint must have been called");
+        assert!(
+            token.headers.get("authorization").is_some(),
+            "기밀 클라이언트에는 Basic 이 붙어야 한다"
+        );
+    }
+
+    #[tokio::test]
+    async fn public_client_logout_omits_client_secret() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/logout"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        let config = KeycloakConfig::new(server.uri(), "it-realm", "it-client").unwrap();
+        let endpoints = OidcEndpoints::new(&config);
+        let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+        let validator = JwtValidator::new(&config, &endpoints, jwks).unwrap();
+        let auth = AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap();
+        auth.logout("rt").await.expect("204 는 성공이어야 한다");
+        let reqs = server
+            .received_requests()
+            .await
+            .expect("received_requests available");
+        let body = String::from_utf8_lossy(&reqs[0].body).to_string();
+        assert!(
+            !body.contains("client_secret"),
+            "공개 클라이언트 로그아웃에 client_secret 이 실렸다: {body}"
+        );
+        assert!(body.contains("refresh_token=rt"), "본문: {body}");
     }
 }
