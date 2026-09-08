@@ -435,4 +435,26 @@ _mxall="$(node -e '
 assert_ok test "$_mxall" -ge 8
 assert_eq "" "$_mx" "매트릭스가 있는데 fail-fast: false 가 없는 워크플로가 생겼다 — 최신 레그가 깨지면 소비자 하한 레그가 취소되고 그날 하한 검증이 사라진다"
 
+# ---- 규칙 9: `repo-hygiene.yml` 의 인라인 스윕은 **공허 하한**을 가져야 한다 ----
+# 이 저장소의 스크립트 가드는 전부 하한을 갖는다(`--min-facts`·`--min-uses`·`--min-escalations`·
+# `--min-classes`…). 그런데 워크플로에 **인라인으로 적힌** 스윕 둘은 그 관용 밖에 있어서, 선택이
+# 0건이 되면 「위반 없음」을 찍고 통과한다 — 목록이 비었는지와 위반이 없는지가 구분되지 않는다.
+#
+# ⚠️ 그중 하나는 `shell-exec-bits`, 즉 `main` 의 required 체크 **둘 중 하나**다(룰셋 `PRIMARY`,
+# `bypass_actors: []`). 그 자리가 공허해지면 **아무도 모르는 채 required 가 아무것도 안 본다**.
+#
+# ⚠️ **`test-selftest-hygiene.sh` 규칙 4 가 이미 덮는다고 생각하기 쉬우나 아니다**(실측 2026-09-08):
+# 규칙 4 는 `*.sh` **만** 보고(오늘 68) 워크플로 스윕은 `gradlew` 셋을 더 본다(오늘 71). 게다가
+# 규칙 4 가 빨개지면 `doc-facts` 가 죽지 `shell-exec-bits` 는 초록이다 — **다른 잡, 다른 코퍼스**다.
+#
+# 여기서는 「하한이 **있는가**」만 본다. 값 자체는 그 스텝의 주석이 소유한다.
+if [ -f "$HYGIENE" ]; then
+  # (B) required 스윕: 추적 스크립트 수에 하한이 걸려 있는가.
+  _b_floor=$(grep -cE 'SWEEP_FLOOR_EXEC_BITS' "$HYGIENE" || true); _b_floor=${_b_floor:-0}
+  assert_ok test "$_b_floor" -ge 1
+  # (A) Jackson 스윕: 훑은 파일 수에 하한이 걸려 있는가.
+  _a_floor=$(grep -cE 'SWEEP_FLOOR_JACKSON' "$HYGIENE" || true); _a_floor=${_a_floor:-0}
+  assert_ok test "$_a_floor" -ge 1
+fi
+
 assert_report
