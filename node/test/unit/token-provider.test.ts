@@ -92,10 +92,11 @@ describe('ClientCredentialsTokenProvider', () => {
     expect(await pa.getAccessToken()).toBe('a2')
     expect(atSkew.clientCredentialsToken).toHaveBeenCalledTimes(2)
 
-    // 유효기간이 skew 보다 넉넉히 크면 캐시여야 한다. 기본값이 **커지면** 캐시 수명이 0이 되어
-    // 재발급이 일어나 여기서 깨진다.
+    // ⚠️ 여기서 `skew + 60` 같은 여유값을 쓰면 **증가 방향을 못 잡는다** — 기본값이 60 이어도
+    // 수명이 30초 남아 캐시되기 때문이다(실측: 그렇게 썼더니 30→60 변이가 SILENT 였다).
+    // `skew + 1` 이면 수명이 정확히 1초라, 기본값이 1이라도 커지는 순간 0이 되어 재발급한다.
     const beyond = {
-      clientCredentialsToken: vi.fn().mockResolvedValue(tokenSet('b1', skew + 60)),
+      clientCredentialsToken: vi.fn().mockResolvedValue(tokenSet('b1', skew + 1)),
     }
     const pb = new ClientCredentialsTokenProvider(beyond)
     expect(await pb.getAccessToken()).toBe('b1')
