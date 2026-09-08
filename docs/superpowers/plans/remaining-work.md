@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **171** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 1) — 열림 **133** · 닫힘 **38** (2026-09-07 재측정) |
+| 작업 패키지 | **171** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 1) — 열림 **132** · 닫힘 **39** (2026-09-07 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `171`(2026-09-07 기준 열림 133 · 닫힘 38)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `171`(2026-09-07 기준 열림 132 · 닫힘 39)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -37,14 +37,14 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ### 다음 세션 진입점 (2026-09-07 재측정 · #421–#438 반영)
 
-⚠️ **이 절은 2026-09-07 에 통째로 다시 썼다 — 이전 판은 이미 닫힌 배치 3 으로 다음 세션을 보내고 있었다.** 등록부 작성(2026-09-03) 이후 46건이 병합돼 추적파일 110개가 바뀌었고, **인용 파일이 그 사이 바뀐 열린 항목이 70/137** 이었다(재측정 시점). 그중 **20건을 재판정**한 결과 **11건(55%)이 변동**했다 — 닫힘 2 · 서술이 넓어짐 7 · 계수 어긋남 3(둘은 악화). 그 셋에 #438·#440 이 닫은 것까지 반영해 열림은 **133** 이다. **나머지 50건은 아직 재판정하지 않았다** — 「열려 있다」를 액면가로 읽지 말고, 손대기 전에 그 항목의 주장을 먼저 재라.
+⚠️ **이 절은 2026-09-07 에 통째로 다시 썼다 — 이전 판은 이미 닫힌 배치 3 으로 다음 세션을 보내고 있었다.** 등록부 작성(2026-09-03) 이후 46건이 병합돼 추적파일 110개가 바뀌었고, **인용 파일이 그 사이 바뀐 열린 항목이 70/137** 이었다(재측정 시점). 그중 **20건을 재판정**한 결과 **11건(55%)이 변동**했다 — 닫힘 2 · 서술이 넓어짐 7 · 계수 어긋남 3(둘은 악화). 그 셋에 #438·#440·#442 가 닫은 것까지 반영해 열림은 **132** 다. **나머지 50건은 아직 재판정하지 않았다** — 「열려 있다」를 액면가로 읽지 말고, 손대기 전에 그 항목의 주장을 먼저 재라.
 
 순서는 **① 지금 초록이 거짓인 것 → ② 게시본에서 소비자가 겪는 것 → ③ 잠복 → ④ 완결성** 이다(2026-09-07, 독립 레그 둘이 1~5위에서 일치).
 
 1. ✅ **`kotlin-osv-audit-fail-open` [H] — #438 이 닫았다.** 유일하게 **활성**이던 fail-open 이었다(dep-tree 생산자 3 · 게이트 1). 가드 `test-osv-audit-gate.sh` 가 사본 갈림을 대신 센다.
 2. **rust JWKS 두 건** — `jwks-response-not-validated` 의 잔여(HTTP 상태 미검사, `error_for_status` 0건)와 `jwks-response-size-unbounded-non-jvm`. 같은 파일이라 한 PR 이다. 게시된 `rust-v1.0.0` 에 있다.
 3. ✅ **`rust-public-client-empty-secret` — #441 이 닫았다.** 세 자리였다(생성부·logout·`token_provider`). 남은 파생은 `public-client-confidential-grants-not-refused` 이고 **실 Keycloak 실측이 선행**이다.
-4. **`python-sync-authorization-url-unencoded`** — sync 만 퍼센트 인코딩을 안 한다(async 는 한다). **선행 실측**: 인용 줄번호가 148→151 로 드리프트했다.
+4. ✅ **`python-sync-authorization-url-unencoded` — #442 가 닫았다.** 상류 `auth_url` 이 `format()` 한 줄이라 `redirect_uri` 의 `&` 가 파라미터를 주입했다. sync 를 `aio` 미러와 동형으로 맞췄다.
 5. **`sweeps-without-vacuity-floor` [H]** — 잠복이나 required 경로다. 남은 것은 **둘**(Jackson 스캔 · `shell-exec-bits`). 셋 중 하나는 `--min-escalations=6`(#385)이 이미 닫았다.
 6. **`security-invariant-use-site-scope` [H]** — 미검사 2차 리터럴이 **4 → 5** 로 늘었다(kotlin 3 · python 1 · dotnet 1). ⚠️ **required 손 표에 다섯 줄을 더하는 것이 답이 아니다** — 그것이 `guard-detection-surface-hand-narrowed` 를 악화시킨다. **언어 로컬 테스트**로 닫는다.
 7. **A 절 잔여 1건**(`auto-bump-manifest-crosscheck-skip` [L·보류]).
@@ -317,8 +317,11 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [ ] `python-sync-admin-close-noop` **[M/S]** Python 동기 admin의 close()가 no-op — async 미러는 닫는다 · `python/src/keycloak_sdk/admin/__init__.py:83`
   - ⚠️ **원장이 과장했다 — 「영영 안 닫힌다」는 거짓.** `ConnectionManager.__del__` 이 GC 시점에 `_s` 를 닫는다. 참인 진술은 「`close()` 가 아무것도 안 하고, 해제 시점이 **GC 에 맡겨진다**」이다(결정적 해제가 없다). 이 문장 그대로 릴리스 노트에 올리면 사실이 아닌 심각도가 된다.
   - ⚠️ **기존 테스트가 결함을 의도로 고정하고 있다** — `tests/unit/test_admin_client.py:81 test_close_is_noop` 의 docstring 이 "컨텍스트 매니저 프로토콜과 대칭을 맞추기 위한 no-op" 이라 적고 `client.raw is admin` 만 단언한다. #399(PHP·Ruby 만료)에 이어 **같은 패턴 세 번째**다.
-- [ ] `python-sync-authorization-url-unencoded` **[M/S]** Python 동기 authorization_url이 퍼센트 인코딩 없이 URL을 조립한다 — async 미러는 urlencode를 쓴다 · `python/src/keycloak_sdk/auth.py:151`
-  - 재측정 2026-09-07: 주장은 참이나 **인용 줄번호가 148 → 151 로 드리프트**했다(sync 는 python-keycloak `auth_url()` 위임, async 는 `urlencode`). 손대기 전에 상류 헬퍼가 지금도 인코딩을 안 하는지 먼저 잰다 — 그 판정의 소유자는 설치된 `python-keycloak` 이다.
+- [x] `python-sync-authorization-url-unencoded` **[M/S · 닫힘 2026-09-07 #442]** Python 동기 authorization_url이 퍼센트 인코딩 없이 URL을 조립했다 — async 미러는 `urlencode`를 쓴다 · `python/src/keycloak_sdk/auth.py:151`
+  - **상류를 직접 실행해 확정했다** — python-keycloak 7.1.1 의 `auth_url` 은 `URL_AUTH.format(...)` 한 줄이고 본체에 `quote`/`urlencode` 가 **없다**. 적대적 입력을 넣으니 `redirect_uri` 안의 `&` 가 뒤따르는 값을 **최상위 쿼리 파라미터로 주입**했고 공백도 원문으로 남았다. ⚠️ `auth_url` 은 discovery 를 타므로 **`well_known` 만 스텁하고 본체는 실행**해야 잴 수 있다.
+  - sync 를 `aio` 미러와 동형(`urlencode` + `OidcEndpoints`)으로 맞춰 닫았다. 덤으로 discovery 왕복 한 번이 사라진다.
+  - ⚠️ **기존 테스트 둘이 낡은 계약을 단언하고 있었다** — 「`openid.auth_url` 을 호출한다」(위임 자체가 결함)와 「전송 오류를 감싼다」(조립에 네트워크가 필요했다는 증거). 뒤엣것은 **「네트워크를 타지 않는다」**로 뒤집었다.
+  - ⚠️ **파이썬 변이 프로브는 워크트리에 venv 가 없어 그냥은 안 돈다** — 본 트리 인터프리터 + `PYTHONPATH="$PWD/src"` 로 돌려야 워크트리 소스가 이긴다(확인함). 그것 없이는 본 트리 소스를 재게 되어 프로브가 무효다.
 - [ ] `php-sensitiveparameter-methods-missing` **[M/S]** PHP #[\SensitiveParameter]가 생성자에만 붙어 있다 — 비밀을 인자로 받는 여섯 메서드는 무보호 · `php/src/AuthClient.php:76`
 - [x] `authorization-request-verifier-unmasked` **[M/M]** AuthorizationRequest.codeVerifier가 마스킹 없이 평문 출력된다 (Go·Node) — 같은 파일의 TokenSet은 마스킹한다 · `go/tokens.go:86`
 - [ ] `coverage-exclusion-hides-untested-branches` **[M/M]** 네트워크 경계 커버리지 제외가 손으로 쓴 실패 분기와 미호출 공개 메서드를 숨긴다 (Kotlin·PHP) · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Users.kt:47`
