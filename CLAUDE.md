@@ -80,7 +80,7 @@ Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·P
 
 1. **언어 디렉터리에서 작업한다.** `java/`·`python/`·`node/`·`go/`·`dotnet/`·`php/`·`rust/`·`ruby/`·`kotlin/` 중 하나에 들어가면 `.claude/rules/<lang>.md`가 자동 로드된다(`paths:` 프론트매터). **그 파일이 그 언어의 빌드 명령·제약·게차의 진실 원천이다** — 이 파일에 다시 적지 않는다.
 2. **바꾸기 전에 테스트를 돌린다.** 아래 툴체인 표의 진입 명령. 통합 테스트는 Docker가 필요하다.
-3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=78 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=5 --min-count-anchors=4`.
+3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=76 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=5 --min-count-anchors=4`.
 4. **PR로 올린다.** `main` 직접 push 불가(룰셋 `PRIMARY`). required 체크는 `doc-facts`·`shell-exec-bits` 둘뿐이고 **언어 CI를 required에 넣으면 저장소가 잠긴다**(`paths:` 필터라 체크가 생성조차 안 된다).
 
 ### 하지 말 것
@@ -152,8 +152,12 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 - ⚠️ **admin-client와 Keycloak 서버는 독립 버전 트랙이다** — 서버 라인과 같은 번호의 admin-client는 없다. `representation` 필드는 실서버로 검증한다.
 - ⚠️ **Maven Central은 Central Portal 경로만**(구 OSSRH 종료). 워크플로 초록 ≠ 게시 — Publish 후에도 전파 지연이 있으니 **404로 실패를 결론내지 않는다**(Java·Kotlin 공통).
 - ⚠️ **배포 시크릿 미설정은 스킵이 아니라 실패다** — 아무것도 게시하지 않고 green으로 끝난 실행은 성공한 실행과 구분되지 않는다.
-<!-- doc-guard: kind=ignores source=.github/dependabot.yml min=8 -->
-- ⚠️ **dependabot이 올려서는 안 되는 핀 네 종류** — 값이 **다른 결정**을 뜻하는 것들: ref가 브랜치인 액션(`rust-toolchain`·`gh-action-pypi-publish`)·소비자에게 보이는 하한(`kotlin-stdlib`·`@types/node`)·CI 매트릭스 하한(`parallel`)·**대상 서버 라인**(rust `keycloak`). ⚠️ **분할이 아니다** — `vitest`·`@vitest/coverage-v8`은 종류가 아니라 **일시적 이관 보류**다. 근거·해제 조건·명령은 `.github/dependabot.yml`의 `ignore` 주석이 소유한다.
+<!-- min 8 → 6 (2026-09-10): vitest·@vitest/coverage-v8 의 **일시적** 이관 보류 두 항목을 지웠다.
+     그것은 「종류」가 아니라 보류였고, v4 이관이 끝나 해제했다(GHSA 패치가 4.1.11 뿐이라 3.x 에는
+     백포트가 없었다). 남은 6 이 곧 네 종류다 — 문단과 min 이 함께 움직였다.
+     ⚠️ 이 주석은 앵커 **앞**에 둔다 — 검사는 앵커 바로 다음 줄을 문단으로 읽는다. -->
+<!-- doc-guard: kind=ignores source=.github/dependabot.yml min=6 -->
+- ⚠️ **dependabot이 올려서는 안 되는 핀 네 종류** — 값이 **다른 결정**을 뜻하는 것들: ref가 브랜치인 액션(`rust-toolchain`·`gh-action-pypi-publish`)·소비자에게 보이는 하한(`kotlin-stdlib`·`@types/node`)·CI 매트릭스 하한(`parallel`)·**대상 서버 라인**(rust `keycloak`). 근거·해제 조건·명령은 `.github/dependabot.yml`의 `ignore` 주석이 소유한다.
 
 ## 확정 의존성 (BOM으로 고정)
 
@@ -192,15 +196,15 @@ dev(`devDependencies` — **앵커 있음**):
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | 타입 | `typescript` | ^6 |
-| 테스트 | `vitest` | ^3 |
-| 커버리지 | `@vitest/coverage-v8` | ^3 |
+| 테스트 | `vitest` | ~4.1.11 |
+| 커버리지 | `@vitest/coverage-v8` | ~4.1.11 |
 | 통합 테스트 | `testcontainers` | ^12 |
 | 린트 | `eslint` | ^10 |
 | 린트(TS) | `typescript-eslint` | ^8 |
 | 포맷 | `prettier` | ^3 |
 | Node 타입 | `@types/node` | ^22 |
 
-⚠️ vitest는 v4를 보류한다(`vi.mock` 시맨틱 변경). `@types/node`는 "최신 Node"가 아니라 `engines` 하한을 따라가므로 dependabot이 메이저를 못 올린다. 런타임 deps는 audit clean, devDeps 일부 moderate(`files:["dist"]`라 소비자에게 배포되지 않는다).
+⚠️ vitest 는 v4 다 — 두 핀은 **함께** 움직이고 5.x 가 묻어오지 않게 틸드다. `@types/node`는 "최신 Node"가 아니라 `engines` 하한을 따라가므로 dependabot이 메이저를 못 올린다. 런타임 deps는 audit clean, devDeps 일부 moderate(`files:["dist"]`라 소비자에게 배포되지 않는다).
 
 **Go 확정 의존성(go.mod, major 핀)**:
 

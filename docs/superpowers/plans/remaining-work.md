@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **173** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3) — 열림 **128** · 닫힘 **45** (2026-09-09 재측정) |
+| 작업 패키지 | **173** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3) — 열림 **127** · 닫힘 **46** (2026-09-10 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `173`(2026-09-09 기준 열림 128 · 닫힘 45)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `173`(2026-09-10 기준 열림 127 · 닫힘 46)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -29,7 +29,7 @@
 ```sh
 git clone https://github.com/xzawed/KeyCloakSDK && cd KeyCloakSDK
 node scripts/doctor.mjs                 # 이 PC에 무엇이 없는지. 설치·환경변수는 docs/guides/development-setup.md
-node scripts/check-docs.mjs . --strict --min-facts=78 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=5 --min-count-anchors=4
+node scripts/check-docs.mjs . --strict --min-facts=76 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=5 --min-count-anchors=4
 git branch --show-current               # ⚠️ 아래 함정 (e)
 ```
 
@@ -420,7 +420,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **테스트 갭인 줄 알았는데 node 는 동작 결함이었다** — `client.ts` 가 provider 를 만들며 skew 를 **생략**해, 소비자가 `clockSkewSeconds: 60` 을 줘도 admin 토큰 캐시만 30 으로 돌았다. 자매 다섯(rust·php·go·dotnet·ruby)은 전부 config 값을 넘긴다. 배선도 **동작으로** 잰다(필드를 들여다보면 private 을 깨고, 그 값이 실제로 쓰이는지는 여전히 안 보인다).
   - ⚠️ **판별력 없는 경계값을 쓰면 한쪽 방향을 못 잡는다** — 초판 node 테스트가 `expiresIn = skew + 60` 이라 기본값이 30→60 으로 커져도 캐시가 30초 남아 통과했다(변이가 `SILENT`). `skew + 1` 로 바꿔 양방향을 잡는다.
 - [ ] `probe-cannot-run-node-php-in-worktree` **[M/S · 신규 2026-09-09]** `scripts/probe.sh` 가 node·php 변이를 못 잰다 — 워크트리에 `node_modules`·`vendor` 가 없어 기준선이 실패한다 · `scripts/probe.sh:57`
-  - **우회는 확인했다**(2026-09-09): 워크트리를 **같은 드라이브**에 만들고 `node_modules` 는 정션으로 붙이면 된다. ⚠️ `vendor` 는 **정션이면 안 된다** — composer autoload 의 `$baseDir = dirname($vendorDir)` 가 본 트리를 가리켜 **워크트리 변이가 로드되지 않는다**(실측: php 변이 셋이 전부 거짓 `SILENT`). php 는 `vendor` 를 **복사**해야 한다.
+  - ⚠️⚠️ **정션을 만들었으면 `git worktree remove --force` 가 그 대상까지 지운다.** 실측 2026-09-10: 그렇게 본 트리의 `node/node_modules` 가 **비었다**(추적 파일은 무사, `npm ci` 로 복구). 이 저장소가 이미 기록한 `git checkout -- .` 사고와 같은 부류다 — **가능하면 정션 대신 워크트리에서 직접 설치하라**.
+  - **우회는 확인했다**(2026-09-09): 워크트리를 **같은 드라이브**에 만들고 `node_modules` 는 정션으로 붙이면 된다(위 위험을 감수할 때만). ⚠️ `vendor` 는 **정션이면 안 된다** — composer autoload 의 `$baseDir = dirname($vendorDir)` 가 본 트리를 가리켜 **워크트리 변이가 로드되지 않는다**(실측: php 변이 셋이 전부 거짓 `SILENT`). php 는 `vendor` 를 **복사**해야 한다.
   - ⚠️ `cmd /c mklink /J` 는 MSYS 가 `/J` 를 경로로 바꿔 깨진다 — `MSYS_NO_PATHCONV=1` 과 **단일 슬래시** `cmd /c` 를 함께 써야 한다(`//c` 는 그 변수와 같이 쓰면 거부된다).
   - **되살릴 조건**: 위 우회를 `probe.sh` 에 옵션으로 넣을지, 언어별 프로브 러너를 따로 둘지 판정. 지금은 그 절차를 손으로 밟았고 본 트리 불변·기준선·변이 적용 셋을 같은 방식으로 지켰다.
   - ⚠️ **넷이 아니라 다섯이고, 그 하나는 등록부를 쓴 뒤에 생겼다** — 이 부류는 **지금도 늘고 있다**(실측 2026-09-07, 독립 레그 둘): kotlin 3(`tokens.kt:18`·`tokenprovider.kt:18`·`jwt.kt:126`) · python 1(`_internal/jwt.py:43`) · dotnet 1(`KeycloakConfig.cs:29`). 축 3 은 `sd_no_literal` 호출 **4**(go·php·ruby·ruby-skew)로 그대로다. 값이 아직 안 갈렸다고 안전한 것이 아니다 — **자리가 늘고 있는 것**이 JWKS 가 10/30/60 으로 갈리기 직전과 같은 모양이다.
@@ -513,7 +514,11 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `dependabot-ignore-joins` **[M/M]** 조건부 `ignore` 셋의 해제 조건이 다른 파일의 사실에 묶여 있는데 조인이 없다 — kotlin 하나만 기계가 본다 · `.github/dependabot.yml:79`
 - [ ] `gate-substitutes-unasserted` **[M/L]** 기계 게이트가 없는 자리마다 「대신 이것이 본다」가 적혀 있는데, 그 대체물의 존재는 아무도 검사하지 않는다 · `sonar-project.properties:30`
 - [ ] `sonar-suppression-premises` **[M/M]** sonar 억제 셋의 근거가 트리 안의 다른 사실에 묶여 있는데, 그 사실이 바뀌면 억제가 오탐이 아니라 진짜를 숨긴다 · `sonar-project.properties:200`
-- [ ] `vitest-v4-migration` **[L/M]** vitest 3에 묶인 유일한 이유가 테스트 두 파일의 `vi.mock` 클래스 팩토리 셋이다 · `node/test/unit/client.test.ts:1`
+- [x] `vitest-v4-migration` **[L/M · 닫힘 2026-09-10 #450]** vitest 3에 묶인 유일한 이유가 테스트 두 파일의 `vi.mock` 클래스 팩토리 셋이었다 · `node/test/unit/client.test.ts:1`
+  - ⚠️ **보류가 보안 비용을 갖게 돼 해제했다** — GHSA(경로 순회/임의 파일 읽기)의 패치가 **4.1.11 뿐**이고 3.x 에 백포트가 없다. 보류를 유지하는 것이 곧 무패치 메이저에 머무는 것이 됐다.
+  - **고친 자리는 셋뿐이었다**: `client.test.ts` 의 `AuthClientMock` · `admin.test.ts` 의 `ctor` 와 `beforeEach` 의 `mockImplementation`. 화살표 함수는 `[[Construct]]` 가 없어 v4 가 생성자로 쓰지 않는다 — `function` 으로 바꾸면 끝이다.
+  - 실측: 3.2.7 **107 통과** → 4.1.11 **33 실패**(admin 22 · client 11, 주석의 29 는 4.1.10 시점) → 세 자리 수정 후 **107 통과** · 커버리지 100%/94.5% · typecheck 0 · lint clean.
+  - ⚠️ **npm 10.9.3 은 vitest 4 의 lockfile 을 못 만든다** — arborist `#loadPeerSet` 이 `@vitest/browser-playwright@5` 에서 `edgesOut` NPE 로 죽는다. `npx --yes npm@11 install` 로 생성했고(lockfileVersion 3 · `@vitest/*@5` 없음), `npm ci` 는 그 경로를 타지 않아 CI 는 무관하다. ⚠️ `--legacy-peer-deps` 로 만든 lock 을 커밋하지 말 것.
 - [ ] `tenth-language-deferrals` **[L/S]** 「10번째 언어가 들어올 때」가 여러 유예의 공통 트리거인데, 그때 무엇을 함께 해야 하는지가 한 곳에 없다 · `docs/guides/add-a-language-playbook.md:105`
 - [ ] `release-readiness-remote-tag-print` **[L/S]** 릴리스 준비도 도구가 로컬 클론의 태그만 보고 「태그 없음」을 답한다 — 되살릴 조건은 두 값을 나란히 인쇄하는 것 · `scripts/release-readiness.sh:93`
 

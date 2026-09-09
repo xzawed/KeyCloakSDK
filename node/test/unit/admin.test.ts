@@ -20,7 +20,8 @@ const h = vi.hoisted(() => {
     },
     groups: { create: vi.fn(), findOne: vi.fn(), find: vi.fn(), update: vi.fn(), del: vi.fn() },
   }
-  const ctor = vi.fn((config: Record<string, unknown>) => {
+  // ⚠️ vitest 4: 생성자로 쓰이는 목은 `function`/`class` 여야 한다(화살표 함수 불가).
+  const ctor = vi.fn(function (config: Record<string, unknown>) {
     Object.assign(kc, config)
     return kc
   })
@@ -67,7 +68,7 @@ beforeEach(() => {
   // resetAllMocks: 호출 기록 + 구현 모두 초기화(테스트 간 mockRejectedValue 오염 방지).
   // 이후 ctor/auth 기본 구현을 재확립한다.
   vi.resetAllMocks()
-  h.ctor.mockImplementation((config: Record<string, unknown>) => {
+  h.ctor.mockImplementation(function (config: Record<string, unknown>) {
     Object.assign(h.kc, config)
     return h.kc
   })

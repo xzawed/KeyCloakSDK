@@ -4,7 +4,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const h = vi.hoisted(() => {
   const authClose = vi.fn().mockResolvedValue(undefined)
   const authInstance = { close: authClose }
-  const AuthClientMock = vi.fn(() => authInstance)
+  // ⚠️ vitest 4 는 `vi.fn()` 구현이 `function`/`class` 가 아니면 **생성자로 취급하지 않는다**
+  // (화살표 함수는 `[[Construct]]` 가 없다). v3 에서는 통했다.
+  const AuthClientMock = vi.fn(function () {
+    return authInstance
+  })
   const adminClose = vi.fn().mockResolvedValue(undefined)
   const adminInstance = { close: adminClose }
   const adminCreate = vi.fn().mockResolvedValue(adminInstance)

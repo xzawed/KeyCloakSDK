@@ -78,18 +78,12 @@ updates:
       # 타입 bump가 그 결정을 대신 끌고 가서는 안 된다. engines를 올릴 때 이 핀도 같이 올린다.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
-      # vitest 4는 `vi.mock` 팩토리 시맨틱이 바뀌어(팩토리가 돌려주는 모킹 클래스를 더 이상 생성자로
-      # 취급하지 않는다) client.test.ts·admin.test.ts의 클래스 모킹이 전부 깨진다 — 4.1.10에서 재측정한
-      # 결과 29건 실패(PR #52·#90에서 동일 수치). 받으려면 두 파일의 vi.mock 팩토리를 v4 시맨틱으로
-      # 이관하는 선행 작업이 필요하다. 그때 이 항목을 지운다.
-      # ⚠️ **auth.test.ts 는 세지 말 것 — 「두 파일」이 맞다.** 그 파일의 유일한 `vi.mock(` 팩토리는
-      # `discovery: vi.fn()` 류 **함수 목**이라 이 시맨틱 변경에 걸리지 않는다. 나머지 19건은
-      # `vi.mocked(` 이고 `vi.mock` 이 그 부분문자열이라 `grep -c 'vi\.mock'` 이 20으로 부풀린다 —
-      # 이 오독으로 「주석이 파일 하나를 빠뜨렸다」는 오탐이 실제로 제기됐다. 셀 때 `vi\.mock\(` 로 센다.
-      - dependency-name: 'vitest'
-        update-types: ['version-update:semver-major']
-      - dependency-name: '@vitest/coverage-v8'
-        update-types: ['version-update:semver-major']
+      # ⚠️ **vitest 보류는 2026-09-10 에 해제됐다 — 다시 넣지 말 것.** 그 보류는 v4 의 `vi.fn()`
+      # 생성자 시맨틱 때문이었고(화살표 함수 목은 `[[Construct]]` 가 없어 더는 생성자로 안 쓰인다),
+      # `client.test.ts`·`admin.test.ts` 의 목 **세 자리**를 `function` 으로 바꾸자 107 전부 통과했다.
+      # 보류를 유지할 수 없게 된 이유: 그 사이 GHSA(경로 순회/임의 파일 읽기)가 나왔고 **패치가
+      # 4.1.11 뿐**이라 3.x 에는 백포트가 없다 — 보류가 곧 무패치 메이저에 머무는 것이 됐다.
+      # ⚠️ 두 핀은 **함께 움직인다**(`vitest` · `@vitest/coverage-v8`). 5.x 가 묻어오지 않도록 틸드다.
 
   - package-ecosystem: gomod # Go
     directory: /go
