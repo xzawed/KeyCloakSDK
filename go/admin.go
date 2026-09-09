@@ -37,10 +37,12 @@ type AdminClient struct {
 // newAdminClient builds the gocloak client, injects the read timeout, and
 // authenticates via client-credentials (single-flight cached). clientSecret is
 // required; without it the call fails before any network access.
-func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
-	if cfg.ClientSecret == "" {
-		return nil, &ConfigError{Msg: "clientSecret is required for admin client-credentials"}
-	}
+// newAdminTransport builds the hardened gocloak client both construction paths share.
+//
+// ⚠️ **This must stay the single place that applies the hardening.** The default path and the
+// consumer-injected path (NewAdminClient) both go through it — duplicate it and the two paths
+// drift, which is exactly how one of them ends up weaker than the other.
+func newAdminTransport(cfg Config) (*gocloak.GoCloak, *http.Transport) {
 	gc := gocloak.NewClient(cfg.ServerURL)
 	// ReadTimeout = overall deadline; ConnectTimeout = dial/TLS-handshake deadline
 	// (injected via the transport — previously a silent no-op for admin calls).
@@ -52,6 +54,55 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 	// resty's IsError() == `StatusCode() > 399`, so a merely *surfaced* 3xx would read as success.
 	// ⚠️ Do not call resty's SetRedirectPolicy — it overwrites this assignment.
 	gc.RestyClient().GetClient().CheckRedirect = errOnRedirect
+	return gc, tr
+}
+
+// assembleAdmin wires the resource facades onto a hardened client. Shared by both paths.
+func assembleAdmin(gc *gocloak.GoCloak, tr *http.Transport, cfg Config, tp TokenProvider) *AdminClient {
+	a := &AdminClient{gc: gc, tr: tr, baseURL: strings.TrimRight(cfg.ServerURL, "/"), realm: cfg.Realm, tp: tp}
+	a.Users = &UsersResource{a}
+	a.Clients = &ClientsResource{a}
+	a.Realms = &RealmsResource{a}
+	a.Roles = &RolesResource{a}
+	a.Groups = &GroupsResource{a}
+	return a
+}
+
+// NewAdminClient assembles the admin facade around a caller-supplied TokenProvider.
+//
+// This is the inlet the TokenProvider godoc promises. Until now `TokenProvider`, `TokenSource` and
+// `NewClientCredentialsTokenProvider` were all exported while **no exported function accepted a
+// TokenProvider**, so a consumer could build a provider and had nowhere to hand it. The sibling
+// SDKs all expose this seam (node `AdminClient.create(config, tokenProvider)`, ruby
+// `Admin::AdminClient.new(config:, token_provider:)`, dotnet `AdminClient.CreateAsync(cfg, ITokenProvider)`).
+//
+// The SDK still owns the HTTP stack: timeouts, transport and the erroring redirect policy come from
+// the same helper the default path uses. **Only the token source is replaced.**
+//
+// ⚠️ clientSecret is NOT required here — replacing client-credentials is the point of injecting.
+// ⚠️ Caching and single-flight live on the *provider*, not on AdminClient: a provider that does not
+// cache will issue a grant on every admin call. Wrap yours in NewClientCredentialsTokenProvider (or
+// cache it yourself) unless you mean that.
+func NewAdminClient(ctx context.Context, cfg Config, tp TokenProvider) (*AdminClient, error) {
+	if tp == nil {
+		return nil, &ConfigError{Msg: "tokenProvider is required"}
+	}
+	cfg = cfg.withDefaults()
+	gc, tr := newAdminTransport(cfg)
+	a := assembleAdmin(gc, tr, cfg, tp)
+	// Eager authentication — same contract as the default path: a provider that cannot mint a token
+	// fails at construction, not at the first admin call.
+	if _, err := tp.Token(ctx); err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
+	if cfg.ClientSecret == "" {
+		return nil, &ConfigError{Msg: "clientSecret is required for admin client-credentials"}
+	}
+	gc, tr := newAdminTransport(cfg)
 
 	tp := NewClientCredentialsTokenProvider(func(ctx context.Context) (*TokenSet, error) {
 		jwt, err := gc.LoginClient(ctx, cfg.ClientID, cfg.ClientSecret, cfg.Realm)
@@ -68,12 +119,7 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 		return &TokenSet{AccessToken: jwt.AccessToken, ExpiresIn: int64(jwt.ExpiresIn)}, nil
 	}, cfg.ClockSkew)
 
-	a := &AdminClient{gc: gc, tr: tr, baseURL: strings.TrimRight(cfg.ServerURL, "/"), realm: cfg.Realm, tp: tp}
-	a.Users = &UsersResource{a}
-	a.Clients = &ClientsResource{a}
-	a.Realms = &RealmsResource{a}
-	a.Roles = &RolesResource{a}
-	a.Groups = &GroupsResource{a}
+	a := assembleAdmin(gc, tr, cfg, tp)
 
 	// Eager authentication: fail fast on bad credentials (matches Java/Python/Node).
 	if _, err := tp.Token(ctx); err != nil {
