@@ -45,7 +45,7 @@
   },
   "devDependencies": {
     "@types/node": "^22",
-    "@vitest/coverage-v8": "~4.1.11",
+    "@vitest/coverage-v8": "~5.0.0",
     "eslint": "^10",
     "prettier": "^3",
     "testcontainers": "^12",
