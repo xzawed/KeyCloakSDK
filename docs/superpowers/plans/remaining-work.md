@@ -516,7 +516,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `sonar-suppression-premises` **[M/M]** sonar 억제 셋의 근거가 트리 안의 다른 사실에 묶여 있는데, 그 사실이 바뀌면 억제가 오탐이 아니라 진짜를 숨긴다 · `sonar-project.properties:200`
 - [x] `vitest-v4-migration` **[L/M · 닫힘 2026-09-10 #450]** vitest 3에 묶인 유일한 이유가 테스트 두 파일의 `vi.mock` 클래스 팩토리 셋이었다 · `node/test/unit/client.test.ts:1`
   - ⚠️ **보류가 보안 비용을 갖게 돼 해제했다** — GHSA(경로 순회/임의 파일 읽기)의 패치가 **4.1.11 뿐**이고 3.x 에 백포트가 없다. 보류를 유지하는 것이 곧 무패치 메이저에 머무는 것이 됐다.
-  - **고친 자리는 셋뿐이었다**: `client.test.ts` 의 `AuthClientMock` · `admin.test.ts` 의 `ctor` 와 `beforeEach` 의 `mockImplementation`. 화살표 함수는 `[[Construct]]` 가 없어 v4 가 생성자로 쓰지 않는다 — `function` 으로 바꾸면 끝이다.
+  - **고친 자리는 셋, 그중 하중은 둘이다**(변이로 판정): `client.test.ts` 의 `AuthClientMock` **CAUGHT** · `admin.test.ts` 의 `beforeEach` 재바인딩 **CAUGHT** · hoisted `ctor` 는 **SILENT** — `beforeEach` 가 매 테스트 전에 덮어써서 hoisted 쪽은 생성자로 쓰이지 않는다. 그래도 `function` 으로 둔 것은 **방어**다(그 `beforeEach` 를 지우면 hoisted 가 살아난다).
+  - 화살표 함수는 `[[Construct]]` 가 없어 v4 가 생성자로 쓰지 않는다(`[vitest] The vi.fn() mock did not use 'function' or 'class'`) — `function` 으로 바꾸면 끝이다.
   - 실측: 3.2.7 **107 통과** → 4.1.11 **33 실패**(admin 22 · client 11, 주석의 29 는 4.1.10 시점) → 세 자리 수정 후 **107 통과** · 커버리지 100%/94.5% · typecheck 0 · lint clean.
   - ⚠️ **npm 10.9.3 은 vitest 4 의 lockfile 을 못 만든다** — arborist `#loadPeerSet` 이 `@vitest/browser-playwright@5` 에서 `edgesOut` NPE 로 죽는다. `npx --yes npm@11 install` 로 생성했고(lockfileVersion 3 · `@vitest/*@5` 없음), `npm ci` 는 그 경로를 타지 않아 CI 는 무관하다. ⚠️ `--legacy-peer-deps` 로 만든 lock 을 커밋하지 말 것.
 - [ ] `tenth-language-deferrals` **[L/S]** 「10번째 언어가 들어올 때」가 여러 유예의 공통 트리거인데, 그때 무엇을 함께 해야 하는지가 한 곳에 없다 · `docs/guides/add-a-language-playbook.md:105`
