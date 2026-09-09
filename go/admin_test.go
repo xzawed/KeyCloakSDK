@@ -200,3 +200,97 @@ func TestAdminLaneDoesNotFollowRedirects(t *testing.T) {
 		})
 	}
 }
+
+// ── 소비자 주입 경로 ────────────────────────────────────────────────────────────
+//
+// ⚠️ `TokenProvider`·`TokenSource`·`NewClientCredentialsTokenProvider` 는 v1.0.0 에서 **이미
+// 공개**인데(godoc: "Consumers may inject a custom implementation.") 그것을 admin 에 넘길
+// exported 함수가 **0개**였다 — 소비자는 provider 를 만들 수는 있고 넣을 데가 없었다.
+// 게시된 소스가 없는 것을 약속하고 있었다(실측 2026-09-09).
+//
+// ⚠️ **주입 경로가 기본 경로보다 약하면 안 된다.** 아래 셋은 그 하드닝이 함께 따라오는지를 본다 —
+// 그 넷(타임아웃·transport·`errOnRedirect`·eager 인증)을 빠뜨린 생성자도 컴파일되고 godoc 을
+// 만족시킨다.
+
+func TestNewAdminClientUsesInjectedProvider(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	cfg := Config{ServerURL: srv.URL, Realm: "it-realm", ClientID: "c"}.withDefaults()
+	a, err := NewAdminClient(context.Background(), cfg, staticToken("injected-token"))
+	if err != nil {
+		t.Fatalf("주입 생성자가 실패했다: %v", err)
+	}
+	defer a.Close()
+
+	// ⚠️ ClientSecret 을 요구하면 안 된다 — 주입의 요점이 client-credentials 를 대체하는 것이다.
+	if err := a.Groups.Delete(context.Background(), "gid"); err != nil {
+		t.Fatalf("주입된 provider 로 admin 호출이 실패했다: %v", err)
+	}
+	if want := "Bearer injected-token"; gotAuth != want {
+		t.Fatalf("주입된 토큰이 쓰이지 않았다 — Authorization=%q, want %q", gotAuth, want)
+	}
+}
+
+func TestNewAdminClientRejectsNilProvider(t *testing.T) {
+	cfg := Config{ServerURL: "https://kc.example", Realm: "r", ClientID: "c"}.withDefaults()
+	_, err := NewAdminClient(context.Background(), cfg, nil)
+	if err == nil {
+		t.Fatal("nil provider 는 거부돼야 한다")
+	}
+	var ce *ConfigError
+	if !errors.As(err, &ce) {
+		t.Fatalf("ConfigError 여야 한다, got %T: %v", err, err)
+	}
+}
+
+func TestNewAdminClientFailsFastWhenProviderErrors(t *testing.T) {
+	// 기본 경로의 eager 인증(admin.go)이 주입 경로에도 있어야 한다 — 없으면 나쁜 자격증명이
+	// 첫 admin 호출까지 미뤄져, 생성 성공을 인증 성공으로 오독한다.
+	cfg := Config{ServerURL: "https://kc.example", Realm: "r", ClientID: "c"}.withDefaults()
+	_, err := NewAdminClient(context.Background(), cfg, errProvider{})
+	if err == nil {
+		t.Fatal("provider 가 실패하면 생성자가 실패해야 한다(eager 인증)")
+	}
+}
+
+type errProvider struct{}
+
+func (errProvider) Token(context.Context) (string, error) {
+	return "", &AuthError{Msg: "boom"}
+}
+
+func TestNewAdminClientKeepsSSRFHardening(t *testing.T) {
+	// ⚠️ 주입 경로가 `errOnRedirect` 를 빠뜨려도 위 세 테스트는 전부 통과한다 — 그래서 여기서
+	// 따로 잰다. auth 레인의 `noFollowRedirect`(3xx 를 그대로 올림)를 쓰면 gocloak 의 IsError 가
+	// `StatusCode() > 399` 라 3xx 를 **성공으로 읽는다**.
+	var reachedInternal int32
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&reachedInternal, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer internal.Close()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, internal.URL+"/stolen", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	cfg := Config{ServerURL: srv.URL, Realm: "r", ClientID: "c"}.withDefaults()
+	a, err := NewAdminClient(context.Background(), cfg, staticToken("t"))
+	if err != nil {
+		t.Fatalf("생성 자체는 성공해야 한다(주입된 토큰은 네트워크를 안 탄다): %v", err)
+	}
+	defer a.Close()
+
+	if err := a.Groups.Delete(context.Background(), "gid"); err == nil {
+		t.Fatal("302 는 성공으로 보고되면 안 된다 — fail-open")
+	}
+	if n := atomic.LoadInt32(&reachedInternal); n != 0 {
+		t.Fatalf("SSRF: 주입 경로가 리다이렉트를 따라갔다(%d회)", n)
+	}
+}

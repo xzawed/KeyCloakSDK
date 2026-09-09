@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **173** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3) — 열림 **129** · 닫힘 **44** (2026-09-09 재측정) |
+| 작업 패키지 | **173** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3) — 열림 **128** · 닫힘 **45** (2026-09-09 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `173`(2026-09-09 기준 열림 129 · 닫힘 44)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `173`(2026-09-09 기준 열림 128 · 닫힘 45)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -52,8 +52,8 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 **⟶ 2차 재판정(2026-09-09 · 앞의 20건과 겹치지 않는 10건)으로 다시 짠 순서.** 위 1~7 이 전부 닫혀 다음을 잇는다. ⚠️ **여기서도 계수가 셋 어긋났다** — 아래 각 항목이 그 정정을 담는다.
 
 8. ✅ **`stale-release-comments` [H] — #447 이 닫았다.** 다섯이 아니라 **여섯**이었고, 가장 비싼 하나는 「락스텝을 강제한다」는 문단이었다(실제로는 경고 + exit 0). 규칙 7c 가 양방향으로 대조한다.
-9. **`irreversible-publish-no-reentry` [H/M]** — `gh release create` 를 부르는 **3/3 레인**에 재진입 처리가 없다. php 는 그 앞에 비가역 미러 태그를, dotnet 은 `--skip-duplicate` 없는 NuGet push 를 먼저 한다. ⚠️ `--skip-duplicate` 는 **기각된 답**이다(태운 버전을 성공으로 위장한다).
-10. **`go-tokenprovider-injection-missing` [M/M]** — `TokenProvider` 를 받는 exported 함수가 **0** 인데 게시된 godoc 은 "Consumers may inject a custom implementation." 이라 적는다. ⚠️ **문장 철회는 PR 크기이고, 주입 생성자 추가는 API 결정**이다 — 둘을 섞지 말 것.
+9. ⏸ **`irreversible-publish-no-reentry` [H/M] — 지금 하지 않기로 판정했다(2026-09-09, 독립 레그 + 재현).** 그 항목 본문에 근거를 적었다.
+10. ✅ **`go-tokenprovider-injection-missing` — #449 이 닫았다.** 철회가 아니라 **구현**이었다 — SPI 셋이 이미 공개라 문장만 지우면 넣을 데 없는 공개 API 가 남는다.
 
 **PR 이 아닌 것**(선행이 빠져 있다): `jvm-17-floor-never-shipped`(사람 승인 릴리스) · `guard-detection-surface-hand-narrowed` 의 파생화(required **밖**에서 오탐 0 선행) · `integration-admin-surface-uneven`(9×capability 결정 — php 가 roles/groups/realms 를 **0/3 계열** 부른다) · `integration-coverage-never-measured`(9개 설계) · `registry-truth-check`(레지스트리별 **버전** 오라클 + 전파 404 규칙 — ⚠️ 순진한 라이브 폴링은 「첫 404 로 실패 결론」 함정을 되살린다) · `published-bytes-have-no-oracle`(Portal 게시 후 실제 jar 페치) · `security-invariant-not-required`(룰셋 apply — ⚠️ **required 이름을 늘리지 말고** `doc-facts` 안으로 접는 쪽이 PR 크기다).
 
@@ -317,7 +317,10 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - **실측(2026-09-07, 독립 레그 + 재현)**: java·kotlin 은 `clientAuth()` 가 `KeycloakConfigException` 을 던져 `clientCredentials`·`refresh`·`introspect`·`logout` 을 **거부**한다. rust·go·node·python·php·ruby·dotnet 은 요청을 보내고 서버 오류를 그대로 올린다.
   - ⚠️ **이것은 「rust 를 java 에 맞춘다」가 아니라 계약을 정하는 문제다** — 어느 쪽이든 **일곱 언어의 소비자에게 보이는 동작이 바뀐다**(성공하던 호출이 로컬 예외가 되거나, 그 반대). #441 은 「빈 시크릿을 보내지 않는다」까지만 하고 여기서 멈췄다.
   - **착수 조건**: 실 Keycloak 으로 공개 클라이언트가 그 넷을 불렀을 때 서버가 무엇을 돌려주는지 먼저 잰다. 서버가 이미 명확한 오류를 준다면 로컬 거부는 **진단을 좋게 할 뿐 필수가 아니고**, 그렇다면 아홉을 흔들 값이 아니다.
-- [ ] `go-tokenprovider-injection-missing` **[M/M]** Go의 TokenProvider 주입점이 문서에만 있고 실제로는 존재하지 않는다 · `go/tokenprovider.go:11`
+- [x] `go-tokenprovider-injection-missing` **[M/M · 닫힘 2026-09-09 #449]** Go의 TokenProvider 주입점이 문서에만 있고 실제로는 존재하지 않았다 · `go/tokenprovider.go:11`
+  - **철회가 아니라 구현으로 닫았다.** `TokenProvider`·`TokenSource`·`NewClientCredentialsTokenProvider` 셋 다 **게시된 v1.0.0 에서 이미 공개**라, 문장만 지우면 넣을 데 없는 공개 SPI 가 남고 그것을 비공개로 되돌리는 것은 **breaking major** 다. 자매 넷(node·ruby·dotnet·rust)이 전부 이 seam 을 연다.
+  - ⚠️ **주입 경로가 기본 경로보다 약해지기 쉽다** — 타임아웃·transport·`errOnRedirect`·eager 인증 넷을 빠뜨린 생성자도 컴파일되고 godoc 을 만족시킨다. 하드닝을 `newAdminTransport`/`assembleAdmin` 한 곳으로 모아 두 경로가 같은 것을 쓰게 했고, **주입 경로의 SSRF 만 겨누는 테스트**를 따로 뒀다(나머지 넷은 그게 빠져도 통과한다).
+  - ⚠️ auth 레인의 `noFollowRedirect` 를 쓰면 안 된다 — gocloak 의 IsError 가 `StatusCode() > 399` 라 3xx 를 성공으로 읽는다.
   - ⚠️ **§4 분류 오류는 약한 쪽이다. 게시된 소스가 거짓 약속을 담고 있다** — `go/tokenprovider.go:12` 의 godoc 이 "Consumers may inject a custom implementation." 이라 적는데, 실측상 `go/*.go` 에 **`TokenProvider` 를 받는 exported 함수가 0개**다(`grep -rnE "func [A-Z][A-Za-z]*\([^)]*TokenProvider" go/*.go` → 빈 결과). 이건 pkg.go.dev 에 그대로 렌더된다.
   - ⚠️ **고칠 때 CLAUDE.md 를 늘리지 말 것** — doc-budget 여유가 거의 없다. 늘려야 하면 #418 의 규칙을 탄다(교환 기록 + 300B 상한, 검사 8b 가 강제).
 - [ ] `python-sync-admin-close-noop` **[M/S]** Python 동기 admin의 close()가 no-op — async 미러는 닫는다 · `python/src/keycloak_sdk/admin/__init__.py:83`
@@ -445,7 +448,11 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `seven-selftests-have-no-negative-control` **[H/L · 계수 정정 2026-09-09]** **여섯** 자가테스트가 라이브 상태만 단언한다 — 검출기를 지워도 통과한다 · `scripts/test/test-deploy-md.sh:7`
   - ⚠️ **일곱이 아니라 여섯이다**(재판정 2026-09-09): `test-deploy-md` · `test-harness-registries` · `test-provenance-gate` · `test-publication-claims` · `test-release-prerelease` · `test-security-defaults`. 엄격히 「라이브 grep 만」으로 좁히면 **넷**이다(뒤의 둘은 `assert_eq` 로 케이스를 먹인다). 이름이 말하는 7 은 어느 셈에도 맞지 않는다.
   - ⚠️ `test-osv-audit-gate.sh`(#438)는 이 부류가 **아니다** — 라이브 grep 이지만 게이트를 지우면 실패한다(변이로 확인).
-- [ ] `irreversible-publish-no-reentry` **[H/M]** 비가역 게시 뒤 재진입 경로가 없다 — 세 레인의 gh release create와 php 미러 순서 · `.github/workflows/go-release.yml:156`
+- [ ] `irreversible-publish-no-reentry` **[H/M · 착수 보류 판정 2026-09-09]** 비가역 게시 뒤 재진입 경로가 없다 — 세 레인의 gh release create와 php 미러 순서 · `.github/workflows/go-release.yml:156`
+  - ⏸ **지금 하지 않기로 판정했다**(독립 레그 + 재현). 근거: **13/13 성공**(`gh run list` — dotnet 4 · go 4 · php 5, 실패 0 · 재실행 0). 릴리스는 사람이 태그를 미는 저빈도 경로이고, **소비자 설치는 GitHub Release 를 거치지 않는다**(php 는 Packagist, dotnet 은 nuget.org, go 는 태그 자체가 게시). 실패해도 잃는 것은 Release **페이지**뿐이고 손으로 하나 만들면 된다.
+  - ⚠️ **잘못 고치면 닫힌 설계를 다시 연다.** `--skip-duplicate` 는 이미 기각(DEPLOY.md §2-C: 「이미 태워버린 버전을 성공으로 위장」). 「존재하면 계속」을 자동화하려면 **이 실행이 게시한 것**과 **남이 태운 것**을 가르는 판정이 있어야 한다 — 가능한 신호는 잰다: NuGet nuspec 의 SourceLink `commit` 이 `dotnet-v1.0.0` SHA 와 일치 · php 미러 태그 SHA(단, subtree split 재현성 미확인) · GitHub Release 는 **커밋에 묶이지 않는다**(`target_commitish` 는 태그가 이미 있으면 무시된다).
+  - **PR 크기인 조각은 있다**: 비가역 스텝과 `gh release create` 를 **잡으로 분리**하면 「실패한 잡만 재실행」이 create 만 재시도한다. ⚠️ 다만 `gh release create` 멱등화만 떼어내면 php·dotnet 은 여전히 nuget/태그에서 죽어 **거짓 닫힘**이 된다 — 그 조각을 이 항목의 종결로 팔지 말 것.
+  - ⚠️ **실제로 물린 것은 반대 부류다** — 게시 **전** fail-closed(rust 이메일 미인증 · node 403 2FA: 태그는 썼고 좌표는 살았다)와 파이프라인 초록인데 GitHub 플래그가 틀린 것(`php-v0.1.0-rc.1` Latest 오표기). 「게시 후 create 실패」 기록은 **0건**이다.
 - [x] `operator-commands-that-do-not-work` **[H/S · 닫힘 2026-09-09 #446]** 저장소가 사람에게 시키는 명령 둘이 실제로는 원하는 답을 주지 않았다 · `scripts/release-trigger.sh:53` · `DEPLOY.md:231`
   - **`--version` 이 없으면 `release-readiness.sh` 는 이미 게시된 버전을 읽는다**(실측): 바로 치면 `tag=present 「태그 이미 존재」`, `--version 1.0.1` 을 주면 `tag=none` + 실제 수동 절차. 앞엣것은 1.0.0 이야기이고, 그 인쇄를 읽는 사람은 **비가역 직전**이다.
   - ⚠️ **왜 살아남았나 — 가드가 「이름의 등장」만 봤다.** `assert_contains "scripts/release-readiness.sh"` 는 **깨진 명령에도 참**이다. 가드를 먼저 고쳐 빨강(53/1 · 14/1)을 본 뒤 명령을 고쳤다(54/0 · 15/0). 이번 세션 세 번째 같은 부류다(#438 `exit 1` · #443 하한 존재).
