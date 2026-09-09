@@ -1,5 +1,10 @@
 # Deployment Guide (DEPLOY)
-<!-- doc-budget: max-bytes=79510 -->
+<!-- doc-budget: max-bytes=79700 -->
+<!-- 79510 → 79700 (2026-09-09, +190B · 상한 300B 안이므로 사람 판정 아님). 조건 (1) 교환:
+     같은 PR 이 「`release-readiness.sh <lang>` 을 치라」는 **거짓 안내를 지우고**, 그 주장을
+     다시 재는 가드를 붙였다(`test-deploy-md.sh` 가 `--version` 없는 호출을 거부한다).
+     `--version` 을 빼면 스크립트가 **이미 게시된** 버전의 상태를 읽는다(실측: 바로 치면
+     `tag=present`, `--version 1.0.1` 을 주면 `tag=none` + 실제 수동 절차). -->
 <!-- 79274 → 79510 (2026-09-06): 래칫 조건 (1) — **정확성 수정이 판정 방법을 사 온다.** §4 의 PR
      경로가 적힌 대로 따르면 작동하지 않았다: 태그를 만드는 유일한 트리거는
      `.github/release-request.json` 의 push 인데(`dispatch-release.yml` 의 `on.push.paths`) §4 어디에도
@@ -228,7 +233,7 @@ What `php-release.yml` does instead: once `verify` passes, the `split` job runs 
 ⚠️ **The Packagist registration cannot come before the first release.** Packagist reads a `composer.json` from the default branch of the repository you submit; the mirror starts out empty, with no default branch and no files, so a submission at that point has nothing to read. The workable order is therefore **create → token → first release (this populates the mirror) → register**, not create → register → token.
 
 1. ✅ **Create the mirror repository `xzawed/keycloak-sdk-php`** — public and empty (no README, no license, no initial commit; the split force-pushes over `main`). It is a generated artifact: never commit to it directly. *(Done — public, empty.)*
-2. ✅ **Create the `PHP_SPLIT_TOKEN` secret in *this* repository** (Settings → Secrets and variables → Actions) — a token with write access to the mirror (a fine-grained PAT scoped to `xzawed/keycloak-sdk-php` with Contents: read and write suffices; `Workflows` is **not** needed, because the split carries no workflow files — `php/vendor/` is untracked). If it is unset, the `split` job emits `::error::` and exits 1; nothing is pushed and no GitHub Release is created. *(Done — verify with `./scripts/release-readiness.sh php`, which reports `secrets=set`.)*
+2. ✅ **Create the `PHP_SPLIT_TOKEN` secret in *this* repository** (Settings → Secrets and variables → Actions) — a token with write access to the mirror (a fine-grained PAT scoped to `xzawed/keycloak-sdk-php` with Contents: read and write suffices; `Workflows` is **not** needed, because the split carries no workflow files — `php/vendor/` is untracked). If it is unset, the `split` job emits `::error::` and exits 1; nothing is pushed and no GitHub Release is created. *(Done — verify with `./scripts/release-readiness.sh --version <X.Y.Z> php`, which reports `secrets=set`.)* ⚠️ **Always pass `--version`.** Without it the script reports the state of the version that is *already published* (`tag=present`), not the one you are about to cut.
 3. ✅ **Register the mirror on Packagist**, *after* the first `php-v*` release has populated it — https://packagist.org → Submit → `https://github.com/xzawed/keycloak-sdk-php`. Register the **mirror**, not this monorepo. *(Done — the `php-v0.1.0-rc.1` release populated the mirror, the registration went through, and Packagist serves `xzawed/keycloak-sdk` v0.1.0-rc.1.)*
 
 > One consequence worth knowing: until step 3 was done, a push to the mirror published nothing consumable — no registry was watching it, and the mirror's `main` is force-pushed on every release anyway. That made the first PHP release the one language whose "publish" step was genuinely reversible, which is why it was chosen for the §0 Step 0 rehearsal. With the registration in place this is no longer true: mirror pushes are now consumed by Packagist, and withdrawal means deleting the mirror tag and triggering a Packagist update (§6).
