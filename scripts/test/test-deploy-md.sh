@@ -28,6 +28,21 @@ done
 # 두 도우미 스크립트 참조
 assert_contains "$body" "scripts/release-readiness.sh" "readiness 참조"
 assert_contains "$body" "scripts/release-trigger.sh" "trigger 참조"
+
+# ⚠️ **참조가 있다는 것과 그 명령이 맞는 답을 준다는 것은 다르다.** 위 `assert_contains` 는
+# 스크립트 **이름의 등장**만 보므로, `--version` 이 빠져 엉뚱한 답을 주는 호출에도 참이다 —
+# 그래서 이 결함이 살아남았다(실측 2026-09-09).
+#
+# `release-readiness.sh` 는 `--version` 이 없으면 **이미 게시된 버전**의 상태를 읽는다:
+#     ./scripts/release-readiness.sh java                 → tag=present  「태그 이미 존재」
+#     ./scripts/release-readiness.sh --version 1.0.1 java → tag=none     + 실제 수동 절차
+# 릴리스를 앞둔 사람이 앞엣것을 치면 **다른 질문의 답**을 받는다. 그 순간은 비가역 직전이다.
+#
+# 그래서 「사람에게 시키는 호출에는 `--version` 이 붙어 있다」를 본다. `--version` 을 설명하는
+# 문법 안내(`[--version <X.Y.Z>]`)는 대상이 아니므로, **언어 인자가 곧바로 붙은 호출**만 센다.
+_bad_calls="$(printf '%s\n' "$body" | grep -oE 'release-readiness\.sh +[a-z]+' || true)"
+assert_eq "" "$_bad_calls" \
+  "DEPLOY.md 가 --version 없이 release-readiness.sh 를 치라고 한다 — 그 호출은 이미 게시된 버전을 읽는다"
 # 인증모델 그룹 헤딩 존재
 # ⚠️ DEPLOY.md는 사용자 대상 문서라 영문이다(문서 언어 규칙). 예전 이 어서션은 한글 "준비상태
 # 매트릭스"를 찾고 있었는데 문서가 영문으로 번역되면서 계속 실패하고 있었다(이 테스트는 어떤 CI

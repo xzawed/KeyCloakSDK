@@ -50,7 +50,11 @@ esac
 
 printf '\n2) dry-run (배포 없이 로컬 산출물 검증)\n   %s\n' "$(df_dryrun "$LANG_")"
 
-printf '\n3) 사전 점검\n   ./scripts/release-readiness.sh %s   # 시크릿·레지스트리·태그 상태 확인\n' "$LANG_"
+# ⚠️ **`--version` 을 빼고 인쇄하면 안 된다.** 없으면 `release-readiness.sh` 는 **이미 게시된**
+# 버전의 상태를 읽어 `tag=present 「태그 이미 존재」` 를 내놓는다 — 지금 자르려는 버전에 대한
+# 답이 아니다(실측 2026-09-09: `--version` 을 주면 `tag=none` + 실제 수동 절차가 나온다).
+# 이 인쇄를 읽는 사람은 비가역 직전이다. 가드: `scripts/test/test-release-trigger.sh`.
+printf '\n3) 사전 점검\n   ./scripts/release-readiness.sh --version %s %s   # 시크릿·레지스트리·태그 상태 확인\n' "$VER" "$LANG_"
 case "$AUTH" in
   OIDC) printf '   ℹ️ OIDC: pending-publisher가 %s에 사전등록돼 있어야 함(owner=xzawed/repo=KeyCloakSDK/workflow=%s)\n' "$(df_registry "$LANG_")" "$(basename "$(df_workflow_hint "$LANG_")")" ;;
   maven-gpg) printf '   ℹ️ Maven: 배포는 Central Portal 스테이징까지만 자동 — 이후 Portal 콘솔에서 사람이 수동 Publish(2단계)\n' ;;

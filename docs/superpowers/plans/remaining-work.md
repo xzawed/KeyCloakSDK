@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **173** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3) — 열림 **131** · 닫힘 **42** (2026-09-09 재측정) |
+| 작업 패키지 | **173** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3) — 열림 **130** · 닫힘 **43** (2026-09-09 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `173`(2026-09-09 기준 열림 131 · 닫힘 42)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `173`(2026-09-09 기준 열림 130 · 닫힘 43)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -47,9 +47,15 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 4. ✅ **`python-sync-authorization-url-unencoded` — #442 가 닫았다.** 상류 `auth_url` 이 `format()` 한 줄이라 `redirect_uri` 의 `&` 가 파라미터를 주입했다. sync 를 `aio` 미러와 동형으로 맞췄다.
 5. ✅ **`sweeps-without-vacuity-floor` [H] — #443 이 닫았다.** 하한은 **60일 창 최저 실측치**(44/47)다 — 오늘 값에 래칫으로 붙이면 정당한 삭제가 우회 불가 required 를 막는다.
 6. ✅ **`security-invariant-use-site-scope` [H] — #444 가 닫았다.** 다섯 중 둘(python·dotnet)은 축 1b 가 이미 값으로 잡고 있었고, **진짜 무보호는 kotlin 셋**이었다. required 손 표를 늘리지 않고 **언어 로컬 파생 테스트**로 닫았다. 남은 부류는 `node-php-use-site-skew-defaults`.
-7. **A 절 잔여 1건**(`auto-bump-manifest-crosscheck-skip` [L·보류]).
+7. ✅ **`operator-commands-that-do-not-work` [H] — #446 이 닫았다.** 릴리스 도구가 인쇄하던 사전점검이 **이미 게시된 버전**의 답을 주고 있었다.
 
-**PR 이 아닌 것**(선행이 빠져 있다): `jvm-17-floor-never-shipped`(사람 승인 릴리스) · `guard-detection-surface-hand-narrowed` 의 파생화(required **밖**에서 오탐 0 선행) · admin 표면 3건(등형성 스펙) · `integration-coverage-never-measured`(9개 설계) · `security-invariant-not-required`(룰셋 apply, **5 이후**에).
+**⟶ 2차 재판정(2026-09-09 · 앞의 20건과 겹치지 않는 10건)으로 다시 짠 순서.** 위 1~7 이 전부 닫혀 다음을 잇는다. ⚠️ **여기서도 계수가 셋 어긋났다** — 아래 각 항목이 그 정정을 담는다.
+
+8. **`stale-release-comments` [H/S]** — 다섯 caller 주석이 `version` 의 없는 기본값을 말한다. ⚠️ **진짜 문제는 그 다섯이 아니라 `install-smoke.yml:57-59`** 다 — 가드가 락스텝을 **강제한다**고 적는데 `check-versions.mjs` 는 경고로 강등됐다(`35028d3`). **다음 릴리스를 정반대로 오도한다.**
+9. **`irreversible-publish-no-reentry` [H/M]** — `gh release create` 를 부르는 **3/3 레인**에 재진입 처리가 없다. php 는 그 앞에 비가역 미러 태그를, dotnet 은 `--skip-duplicate` 없는 NuGet push 를 먼저 한다. ⚠️ `--skip-duplicate` 는 **기각된 답**이다(태운 버전을 성공으로 위장한다).
+10. **`go-tokenprovider-injection-missing` [M/M]** — `TokenProvider` 를 받는 exported 함수가 **0** 인데 게시된 godoc 은 "Consumers may inject a custom implementation." 이라 적는다. ⚠️ **문장 철회는 PR 크기이고, 주입 생성자 추가는 API 결정**이다 — 둘을 섞지 말 것.
+
+**PR 이 아닌 것**(선행이 빠져 있다): `jvm-17-floor-never-shipped`(사람 승인 릴리스) · `guard-detection-surface-hand-narrowed` 의 파생화(required **밖**에서 오탐 0 선행) · `integration-admin-surface-uneven`(9×capability 결정 — php 가 roles/groups/realms 를 **0/3 계열** 부른다) · `integration-coverage-never-measured`(9개 설계) · `registry-truth-check`(레지스트리별 **버전** 오라클 + 전파 404 규칙 — ⚠️ 순진한 라이브 폴링은 「첫 404 로 실패 결론」 함정을 되살린다) · `published-bytes-have-no-oracle`(Portal 게시 후 실제 jar 페치) · `security-invariant-not-required`(룰셋 apply — ⚠️ **required 이름을 늘리지 말고** `doc-facts` 안으로 접는 쪽이 PR 크기다).
 
 ⚠️ **예산 정책은 정해졌다(#418) — 배치 2·3 은 그 위에서 돈다.** 문서 여럿이 상한에 붙어 있어 **정확성 수정 한 줄도 예산을 넘긴다**(배치 1 실측: 네 번, +300·236·120·84B). 이제 규칙은 「인상은 **교환**이고, 앵커 주석에 `옛값 → 새값` 을 적으며, **+300B 초과만 사람 판정**」이고 `check-docs.mjs` **검사 8b** 가 `main` 과 대조해 강제한다. **매 건 사람에게 올리지 말 것** — 상한 안이면 기록하고 진행한다. ⚠️ 반대로 **깎아서 맞추지도 말 것**: 압축이 「다시 재는 명령」을 지우면 그건 교환이 아니라 손실이고, 그때가 인상해야 하는 자리다.
 
@@ -398,7 +404,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 - [x] `selftest-hygiene-textual-rules` **[H/M]** '존재'가 아니라 '실행'을 센다던 규칙이 주석·비활성화·`|| true`를 실행으로 센다 · `scripts/test/test-selftest-hygiene.sh:20`
   - **닫힘(#405)** — `selftest-enforcer-cannot-guard-itself` 와 **같은 뿌리**이고 같은 커밋에서 함께 닫혔다(구조적 판정 + 마지막 실행 명령). 실측·가드는 그 항목에 적었다.
-- [ ] `coverage-exclusions-swallow-pure-logic` **[H/L]** '네트워크 경계' 커버리지 제외가 I/O 없는 순수 로직까지 삼켰다 — 다섯 언어 · `node/src/transport.ts:38`
+- [ ] `coverage-exclusions-swallow-pure-logic` **[H/L · 계수 정정 2026-09-09]** '네트워크 경계' 커버리지 제외가 I/O 없는 순수 로직까지 삼켰다 — **세 언어** · `node/src/transport.ts:38`
+  - ⚠️ **다섯이 아니라 셋이다**(재판정 2026-09-09): node(`transport.ts` + `admin/call.ts`) · php(`ErrorTranslation.php`) · ruby(`version.rb`). 인용한 node 사례는 여전히 참이고 `isTransportError` 를 겨누는 테스트 파일은 **0** 이다.
 - [x] `security-invariant-use-site-scope` **[H/M · 닫힘 2026-09-09 #444]** 보안 불변식의 '2차 정의 자리 금지'가 아홉 중 셋만 봤다 · `scripts/test/test-security-defaults.sh:297`
   - ⚠️ **다섯 중 둘은 이미 잡히고 있었다**(실측 2026-09-08 · 재판정이 이 계수를 과대평가했다): dotnet `KeycloakConfig.cs` 와 python `_internal/jwt.py` 는 축 1b(`sd_skew_secondary`)가 **값 동등성**으로 본다. 「리터럴 금지」 규칙 밖일 뿐 드리프트는 잡힌다.
   - **진짜 무보호는 kotlin 셋이었다** — 축 1 이 언어당 파일 하나(`config.kt`)만 읽어 `tokens.kt:18`·`tokenprovider.kt:18`·`jwt.kt:126` 이 어느 축에도 안 걸렸다. 기존 kotlin 테스트도 못 잡는다: 경계 테스트가 전부 `skew` 를 **넘겨서** 재고, provider 캐시 테스트는 유효기간 300초라 기본값이 0·10·60 이어도 통과한다.
@@ -435,9 +442,14 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **가드가 하한의 「존재」만 보면 무력화를 놓친다** — 초판 규칙 9 는 마커 주석만 봐서 `-lt 44` → `-lt 0` 변이에 침묵했다. 값을 뽑아 **살아 있는 코퍼스와 대조**하도록 고쳤다(0 이면 공허, 오늘값 초과면 상시 빨강).
   - **셋 중 하나는 닫혔다(#385)** — 권한 상승 인벤토리에 `--min-escalations=6` 이 붙었다. 남은 둘(실측 2026-09-07): Jackson default-typing 스캔(`find … | xargs grep … || true` — 파일이 0개면 `hits` 가 비고 `OK` 를 찍는다)과 **required `shell-exec-bits`**(`N개 전부 실행비트 있음` 을 N=0 에서도 찍는다).
   - ⚠️ **하한은 코퍼스에서 세어 박는다** — 높은 상수를 지어내면 required 체크가 `bypass_actors: []` 인 채로 모든 PR 을 막는다(실측: 상수 하나로 픽스처 75건을 깬 적이 있다).
-- [ ] `seven-selftests-have-no-negative-control` **[H/L]** 일곱 자가테스트가 라이브 상태만 단언한다 — 검출기를 지워도 통과한다 · `scripts/test/test-deploy-md.sh:7`
+- [ ] `seven-selftests-have-no-negative-control` **[H/L · 계수 정정 2026-09-09]** **여섯** 자가테스트가 라이브 상태만 단언한다 — 검출기를 지워도 통과한다 · `scripts/test/test-deploy-md.sh:7`
+  - ⚠️ **일곱이 아니라 여섯이다**(재판정 2026-09-09): `test-deploy-md` · `test-harness-registries` · `test-provenance-gate` · `test-publication-claims` · `test-release-prerelease` · `test-security-defaults`. 엄격히 「라이브 grep 만」으로 좁히면 **넷**이다(뒤의 둘은 `assert_eq` 로 케이스를 먹인다). 이름이 말하는 7 은 어느 셈에도 맞지 않는다.
+  - ⚠️ `test-osv-audit-gate.sh`(#438)는 이 부류가 **아니다** — 라이브 grep 이지만 게이트를 지우면 실패한다(변이로 확인).
 - [ ] `irreversible-publish-no-reentry` **[H/M]** 비가역 게시 뒤 재진입 경로가 없다 — 세 레인의 gh release create와 php 미러 순서 · `.github/workflows/go-release.yml:156`
-- [ ] `operator-commands-that-do-not-work` **[H/S]** 저장소가 사람에게 시키는 명령 둘이 실제로는 원하는 답을 주지 않는다 · `scripts/release-trigger.sh:53`
+- [x] `operator-commands-that-do-not-work` **[H/S · 닫힘 2026-09-09 #446]** 저장소가 사람에게 시키는 명령 둘이 실제로는 원하는 답을 주지 않았다 · `scripts/release-trigger.sh:53` · `DEPLOY.md:231`
+  - **`--version` 이 없으면 `release-readiness.sh` 는 이미 게시된 버전을 읽는다**(실측): 바로 치면 `tag=present 「태그 이미 존재」`, `--version 1.0.1` 을 주면 `tag=none` + 실제 수동 절차. 앞엣것은 1.0.0 이야기이고, 그 인쇄를 읽는 사람은 **비가역 직전**이다.
+  - ⚠️ **왜 살아남았나 — 가드가 「이름의 등장」만 봤다.** `assert_contains "scripts/release-readiness.sh"` 는 **깨진 명령에도 참**이다. 가드를 먼저 고쳐 빨강(53/1 · 14/1)을 본 뒤 명령을 고쳤다(54/0 · 15/0). 이번 세션 세 번째 같은 부류다(#438 `exit 1` · #443 하한 존재).
+  - ⚠️ 문법 안내(`[--version <X.Y.Z>]`)는 대상이 아니므로 **언어 인자가 곧바로 붙은 호출**만 센다 — 그 구분이 없으면 가드가 자기 설명에 걸린다.
 - [x] `guard-neutering-wiring-unprotected` **[H/M]** [세션 발견·원장 밖] 가드 스텝을 무력화하는 배선이 무보호다 — 워킹트리에 continue-on-error가 살아 있다 · `.github/workflows/repo-hygiene.yml:119`
 - [ ] `guard-probes-count-mentions-not-declarations` **[M/S · 절반 닫힘 2026-09-07]** 가드 프로브가 「선언」이 아니라 「문자열 등장」을 센다 — **배선 규칙 3 은 #405 가 닫았고 node update 프로브가 남았다** · `scripts/test/test-selftest-hygiene.sh:84`
   - 재측정 2026-09-07: 규칙 3 의 `mjs_wired` 는 이제 단어 경계 정규식이고 대조군이 같은 함수를 부른다(`scoreXtest.mjs`·`score.test.mjs.disabled` 를 거부). **`npm update` 프로브는 여전히 히트 0** — 그 자리가 어디였는지 원 감사에서도 특정되지 않았다. ⚠️ 규칙 3 에 남은 `grep -q` 를 옛 「등장 계수기」로 오인하지 말 것 — 단어 경계 패턴이거나 주석이다.
@@ -517,7 +529,9 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 ### CI·릴리스 미결 — 6
 
 - [ ] `dependabot-updater-failure-blind` **[M/M]** dependabot updater 잡의 실패가 어떤 CI 에도 안 보인다 — 실측 실패 2건 전부 무성 · `.github/dependabot.yml:123`
-- [ ] `security-invariant-not-required` **[M/S]** Jackson 보안 불변식 잡이 required 밖이고, 그 grep 은 오류를 삼킨다 · `.github/workflows/repo-hygiene.yml:219`
+- [ ] `security-invariant-not-required` **[M/S · 절반 닫힘 2026-09-09]** Jackson 보안 불변식 잡이 required 밖이다 — **0건 스윕을 삼키던 절반은 #443 이 닫았다**(`-lt 47` 하한) · `.github/workflows/repo-hygiene.yml:277`
+  - ⚠️ 인용 줄번호가 `:219` → `:277` 로 드리프트했다(재판정 2026-09-09). required 컨텍스트는 여전히 정확히 둘이다.
+  - ⚠️ **required 이름을 늘리는 것이 답이 아니다** — `bypass_actors: []` 에서 생성되지 않는 체크 하나가 `main` 을 잠근다. 이 잡을 **`doc-facts` 안으로 접는** 쪽이 PR 크기다.
 - [ ] `post-publish-version-verify` **[M/M]** 게시 후 「이 버전이 라이브인가」를 답하는 도구가 없다 — readiness 는 좌표 단위이고 태그가 있으면 즉시 return 한다 · `DEPLOY.md:428`
 - [ ] `ci-lane-trigger-branch-filter` **[L/S]** 언어 CI 6개가 `branches:` 없이 push 트리거 — 태그·아카이브 ref·PR 브랜치에서 중복으로 돈다 · `.github/workflows/dotnet-ci.yml:3`
 - [ ] `orphan-active-workflows` **[L/S]** 파일이 없는 워크플로 2개가 Actions 에 `active` 로 남아 있다 — 라이브 26 vs 커밋 24 · `.github/workflows/repo-hygiene.yml:207`
@@ -526,7 +540,9 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 ### 테스트 실행 갭 — 6
 
 - [ ] `integration-coverage-never-measured` **[H/L]** 9개 언어가 "경계는 통합으로 검증"이라 적고 omit했지만, 통합 실행에서 커버리지를 재는 언어가 0개다 · `.github/workflows/ci.yml:42`
-- [ ] `integration-admin-surface-uneven` **[H/M]** 9개 통합 스위트가 덮는 admin 표면이 제각각이다 — clients.update는 1/9, realms.create/delete는 4/9, PHP는 roles·groups·realms를 하나도 안 부른다 · `java/keycloak-sdk/src/test/java/io/github/xzawed/keycloak/AdminOpsIT.java:48`
+- [ ] `integration-admin-surface-uneven` **[H/M · 계수 정정 2026-09-09]** 9개 통합 스위트가 덮는 admin 표면이 제각각이다 — **clients.update 는 2/9**, realms.create/delete 는 4/9, PHP 는 roles·groups·realms 를 하나도 안 부른다
+  - ⚠️ **1/9 이 아니라 2/9**(php·rust). 두 자리 다 등록부 작성보다 앞선다(`59c7916` #190 · `dc9efd7` #240) — 즉 **처음부터 틀린 계수**였다. 함께 잰 것: `users.update` 7/9(java·python 빠짐) · `clients.create` 6/9 · `roles.update`·`groups.update` 각 7/9(php·ruby 빠짐).
+  - ⚠️ **PR 크기가 아니다** — php 가 roles/groups/realms 를 **0/3 계열** 부르는 것을 「구현할지 건너뛸지」가 9×capability 결정이고, 그 위에 Docker E2E 가 붙는다. · `java/keycloak-sdk/src/test/java/io/github/xzawed/keycloak/AdminOpsIT.java:48`
 - [ ] `coverage-omit-overreach` **[M/M]** omit의 근거("단위테스트 불가한 네트워크 경계")가 실측으로 거짓이다 — Node는 이미 96.93%, Python은 98%인 코드를 게이트 밖에 두고 있다 · `node/vitest.config.ts:14`
 - [ ] `coverage-threshold-parity` **[M/M]** 커버리지 임계값이 9언어에서 갈리고(브랜치 게이트가 아예 없는 곳 셋), 문서↔설정 대조 가드는 3개 언어만 본다 · `scripts/check-docs.mjs:552`
 - [ ] `coverage-omit-no-ssot` **[M/M]** omit 목록이 열 곳에 손으로 중복 기재돼 있고 대조 가드가 0건 — Rust 제외 정규식은 앵커도 없다 · `java/pom.xml:151`
