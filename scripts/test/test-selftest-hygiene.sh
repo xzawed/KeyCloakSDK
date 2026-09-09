@@ -398,6 +398,43 @@ _only=1
 grep -q 'the only workflow with no `paths:` filter' "$CIRULES" && _only=0
 assert_eq "1" "$_only" "ci.md 가 여전히 'the only workflow with no paths: filter' 라 적는다 — 집합은 둘이다"
 
+# (7c) 릴리스 워크플로 주석이 말하는 **게이트의 행동**이 트리와 같은가.
+# ⚠️ 이 부류는 7a 와 같은 뿌리다 — 「문장이 행동을 잘못 유도한다」. 여기서 잡는 둘은 실측으로
+# 확인된 것이고(2026-09-09), 둘 다 **양방향**이다: 트리가 다시 그 문장을 참으로 만들면 통과한다.
+_SMOKE="$ROOT/.github/workflows/install-smoke.yml"
+_CV="$ROOT/scripts/check-versions.mjs"
+if [ -f "$_SMOKE" ] && [ -f "$_CV" ]; then
+  # (i) 다섯 caller 주석이 「version 을 안 넘기면 게이트가 기본 버전을 검증한다」고 말한다.
+  #     그런데 그 입력은 `required: true` 에 **기본값이 없어** 그 상황이 애초에 생기지 않는다
+  #     (호출 자체가 실패한다). install-smoke.yml 자신은 「왜 기본값을 두지 않는가」를 설명하므로
+  #     대상에서 뺀다 — 그 문장은 반사실이고 참이다.
+  _has_default="$(awk '/^      version:/{d=1;next} d&&/^      [a-z]/{d=0} d&&/^ *default:/{n++} END{print n+0}' "$_SMOKE")"
+  _claims="$(cd "$ROOT" && git grep -l '기본 버전을 검증한다' -- '.github/workflows/*.yml' 2>/dev/null | grep -cv 'install-smoke.yml' || true)"
+  if [ "${_has_default:-0}" -eq 0 ] && [ "${_claims:-0}" -gt 0 ]; then
+    _A_FAIL=$((_A_FAIL + 1))
+    printf 'FAIL 릴리스 워크플로 %s개가 「version 을 안 넘기면 기본 버전을 검증한다」고 적는다 — 그 입력은 required 이고 기본값이 없어 호출 자체가 실패한다\n' "$_claims" >&2
+  else
+    _A_PASS=$((_A_PASS + 1))
+  fi
+
+  # (ii) `install-smoke.yml` 이 「락스텝 정책을 강제한다」고 적는데, `check-versions.mjs` 는 언어 간
+  #      기저 버전 갈림을 **경고로 밀고 exit 0** 이다(자기 요약도 「차단하지 않는다」라고 쓴다).
+  #      ⚠️ 이 거짓은 방향이 반대라 더 비싸다 — 그 문장을 믿은 다음 세션이 「독립 버저닝으로
+  #      전환하는 날」을 아직 안 왔다고 읽거나, 하드 실패를 **되살려** 독립 릴리스를 막는다.
+  _warns=0
+  grep -q 'warnings.push(' "$_CV" && grep -q '언어 간 기저 버전이 갈렸다' "$_CV" && _warns=1
+  _lockstep="$(grep -c '락스텝 정책을 강제한다' "$_SMOKE" || true)"
+  if [ "$_warns" -eq 1 ] && [ "${_lockstep:-0}" -gt 0 ]; then
+    _A_FAIL=$((_A_FAIL + 1))
+    printf 'FAIL install-smoke.yml 이 「락스텝 정책을 강제한다」고 적는다 — check-versions.mjs 는 기저 버전 갈림을 경고로 내고 exit 0 이다\n' >&2
+  else
+    _A_PASS=$((_A_PASS + 1))
+  fi
+else
+  _A_FAIL=$((_A_FAIL + 1))
+  printf 'FAIL install-smoke.yml 또는 check-versions.mjs 를 찾지 못함 — 7c 검사 불가\n' >&2
+fi
+
 # ---- 규칙 8: 버전 매트릭스가 있으면 `fail-fast: false` 가 있어야 한다 ----
 # 왜: 기본값 `fail-fast: true` 에서는 한 레그가 깨지면 **나머지가 취소된다**. 이 리포의 매트릭스는
 # 「같은 테스트의 반복」이 아니라 레그마다 다른 계약이고, 그중 하나는 **매니페스트가 선언한
