@@ -53,7 +53,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 8. ✅ **`stale-release-comments` [H] — #447 이 닫았다.** 다섯이 아니라 **여섯**이었고, 가장 비싼 하나는 「락스텝을 강제한다」는 문단이었다(실제로는 경고 + exit 0). 규칙 7c 가 양방향으로 대조한다.
 9. ⏸ **`irreversible-publish-no-reentry` [H/M] — 지금 하지 않기로 판정했다(2026-09-09, 독립 레그 + 재현).** 그 항목 본문에 근거를 적었다.
-10. ✅ **`go-tokenprovider-injection-missing` — #448 이 닫았다.** 철회가 아니라 **구현**이었다 — SPI 셋이 이미 공개라 문장만 지우면 넣을 데 없는 공개 API 가 남는다.
+10. ✅ **`go-tokenprovider-injection-missing` — #449 이 닫았다.** 철회가 아니라 **구현**이었다 — SPI 셋이 이미 공개라 문장만 지우면 넣을 데 없는 공개 API 가 남는다.
 
 **PR 이 아닌 것**(선행이 빠져 있다): `jvm-17-floor-never-shipped`(사람 승인 릴리스) · `guard-detection-surface-hand-narrowed` 의 파생화(required **밖**에서 오탐 0 선행) · `integration-admin-surface-uneven`(9×capability 결정 — php 가 roles/groups/realms 를 **0/3 계열** 부른다) · `integration-coverage-never-measured`(9개 설계) · `registry-truth-check`(레지스트리별 **버전** 오라클 + 전파 404 규칙 — ⚠️ 순진한 라이브 폴링은 「첫 404 로 실패 결론」 함정을 되살린다) · `published-bytes-have-no-oracle`(Portal 게시 후 실제 jar 페치) · `security-invariant-not-required`(룰셋 apply — ⚠️ **required 이름을 늘리지 말고** `doc-facts` 안으로 접는 쪽이 PR 크기다).
 
@@ -317,7 +317,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - **실측(2026-09-07, 독립 레그 + 재현)**: java·kotlin 은 `clientAuth()` 가 `KeycloakConfigException` 을 던져 `clientCredentials`·`refresh`·`introspect`·`logout` 을 **거부**한다. rust·go·node·python·php·ruby·dotnet 은 요청을 보내고 서버 오류를 그대로 올린다.
   - ⚠️ **이것은 「rust 를 java 에 맞춘다」가 아니라 계약을 정하는 문제다** — 어느 쪽이든 **일곱 언어의 소비자에게 보이는 동작이 바뀐다**(성공하던 호출이 로컬 예외가 되거나, 그 반대). #441 은 「빈 시크릿을 보내지 않는다」까지만 하고 여기서 멈췄다.
   - **착수 조건**: 실 Keycloak 으로 공개 클라이언트가 그 넷을 불렀을 때 서버가 무엇을 돌려주는지 먼저 잰다. 서버가 이미 명확한 오류를 준다면 로컬 거부는 **진단을 좋게 할 뿐 필수가 아니고**, 그렇다면 아홉을 흔들 값이 아니다.
-- [x] `go-tokenprovider-injection-missing` **[M/M · 닫힘 2026-09-09 #448]** Go의 TokenProvider 주입점이 문서에만 있고 실제로는 존재하지 않았다 · `go/tokenprovider.go:11`
+- [x] `go-tokenprovider-injection-missing` **[M/M · 닫힘 2026-09-09 #449]** Go의 TokenProvider 주입점이 문서에만 있고 실제로는 존재하지 않았다 · `go/tokenprovider.go:11`
   - **철회가 아니라 구현으로 닫았다.** `TokenProvider`·`TokenSource`·`NewClientCredentialsTokenProvider` 셋 다 **게시된 v1.0.0 에서 이미 공개**라, 문장만 지우면 넣을 데 없는 공개 SPI 가 남고 그것을 비공개로 되돌리는 것은 **breaking major** 다. 자매 넷(node·ruby·dotnet·rust)이 전부 이 seam 을 연다.
   - ⚠️ **주입 경로가 기본 경로보다 약해지기 쉽다** — 타임아웃·transport·`errOnRedirect`·eager 인증 넷을 빠뜨린 생성자도 컴파일되고 godoc 을 만족시킨다. 하드닝을 `newAdminTransport`/`assembleAdmin` 한 곳으로 모아 두 경로가 같은 것을 쓰게 했고, **주입 경로의 SSRF 만 겨누는 테스트**를 따로 뒀다(나머지 넷은 그게 빠져도 통과한다).
   - ⚠️ auth 레인의 `noFollowRedirect` 를 쓰면 안 된다 — gocloak 의 IsError 가 `StatusCode() > 399` 라 3xx 를 성공으로 읽는다.
