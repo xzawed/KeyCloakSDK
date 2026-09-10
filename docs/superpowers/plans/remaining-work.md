@@ -455,7 +455,10 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - **베낄 모형**: 가드 바이너리가 따로 있으면 `test-check-jvm-bytecode-floor.sh:40-45`(나쁜 픽스처 + `assert_fails` + 메시지 핀), 자가테스트 자신이 검출기면 `test-osv-audit-gate.sh:36-44`(파생 대조 + 공허 하한). ⚠️ 메시지 핀 없는 `assert_fails` 는 그 자체가 다시 「존재 검사」다.
   - ✅ **첫 조각은 #459 가 했다** — `test-security-defaults.sh` 에 음성 대조군을 붙였다(213 → 217). **요건 (c) 실증**: 옛 스크립트는 추출기를 `sd_default() { echo 30; }` 상수로 바꿔도 **213 전부 통과**했다. 즉 그 파일은 아무것도 안 보면서 초록일 수 있었다.
   - **베낀 모양**: 트리 전체가 아니라 **추출기가 읽는 파일 하나**만 값을 바꿔 같은 상대경로로 TMP 에 놓고 `SD_ROOT` 로 가리킨다(트리 복사는 required 체크 안에서 실패할 자리를 늘린다). **양성 대조**를 함께 둬 「늘 다른 값을 낸다」와 구분한다.
-  - ⏸ **남은 대상은 셋 이하다**: `test-deploy-md` · `test-harness-registries` · `test-publication-claims`(그리고 이 파일의 **다른 축들** — 이번 조각은 코드 축 둘만 덮었다). ⚠️ **여섯을 한 PR 로 묶지 말 것** · ⚠️ 그 파일에 라이브 grep 행을 더 늘리지 말 것(`guard-detection-surface-hand-narrowed`).
+  - ⏸ **남은 대상을 다시 쟀다(2026-09-10) — 남은 둘은 이 부류가 아니다.** 입력 문서를 빈 파일로 바꾸면 `test-deploy-md`·`test-harness-registries` 둘 다 **실패한다**(변이 `CAUGHT`). 즉 「빈 입력이 통과한다」는 공허는 없다.
+  - ⚠️ **그래서 항목의 서술이 너무 거칠다.** 실제 위험은 「라이브 상태만 단언한다」가 아니라 **「깨진 대상에 대해서도 참인 단언」**이다 — #446 이 그 실물이었다(`assert_contains "scripts/release-readiness.sh"` 가 `--version` 빠진 **깨진 명령**에도 참이었다). 그 부류는 일반 프로브로 못 가리고 **단언마다** 「이 문장이 참이면서 대상이 깨져 있을 수 있는가」를 물어야 한다.
+  - **다음 조각의 올바른 형태**: 파일 단위가 아니라 **단언 단위**로 고른다. 후보는 `assert_contains` 로 **이름·문자열의 등장**만 보는 자리들이다(#438 `exit 1` · #443 하한 마커 · #446 스크립트 이름 · 그리고 내 `assert_fails` 계수와 `isTransportError` 이름 grep — 이 세션에만 다섯 번이다). ⚠️ **이 파일의 남은 축들**(문서 축·소유자 문서 축)이 바로 그 모양이다.
+  - ⏸ 이번 조각(#459)은 **코드 축 둘**만 덮었다. ⚠️ **여섯을 한 PR 로 묶지 말 것** · ⚠️ 그 파일에 라이브 grep 행을 더 늘리지 말 것(`guard-detection-surface-hand-narrowed`).
   - ⚠️ **음성 대조군 자체를 지우면 아무도 안 잡는다**(변이 `SILENT`, 실측). 그것을 「존재 검사」로 막으면 같은 병을 한 층 위에 만드는 것이라 **하지 않았다** — 대신 양성 대조로 대조군이 무의미해지는 쪽을 막았다.
 - [ ] `irreversible-publish-no-reentry` **[H/M · 착수 보류 판정 2026-09-09]** 비가역 게시 뒤 재진입 경로가 없다 — 세 레인의 gh release create와 php 미러 순서 · `.github/workflows/go-release.yml:156`
   - ⏸ **지금 하지 않기로 판정했다**(독립 레그 + 재현). 근거: **13/13 성공**(`gh run list` — dotnet 4 · go 4 · php 5, 실패 0 · 재실행 0). 릴리스는 사람이 태그를 미는 저빈도 경로이고, **소비자 설치는 GitHub Release 를 거치지 않는다**(php 는 Packagist, dotnet 은 nuget.org, go 는 태그 자체가 게시). 실패해도 잃는 것은 Release **페이지**뿐이고 손으로 하나 만들면 된다.
