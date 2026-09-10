@@ -343,9 +343,30 @@ const ruleGovulncheckPinAligned = (wfs, out) => {
 // 검사되는 것은 셸이 실제로 보는 변수이므로 조준점도 그쪽이어야 한다.
 // ⚠️ 모양은 둘 다 허용한다 — 단일은 `[ -z "$X" ]`, 복수는 `[ -n "$X" ] || missing=…` 누적형이다.
 // ⚠️ `GITHUB_TOKEN` 은 러너가 항상 주입하므로 제외한다(dotnet·php 의 `GH_TOKEN`).
-// ⚠️ **이 규칙이 못 보는 것**: 빈값 검사가 있다는 것만 보고 그것이 `exit 1` 로 이어지는지는
-// 보지 않는다. 그 배선까지 텍스트로 쫓으면 두 모양에서 수렴하지 않는다.
+// ⚠️ **검사가 있다는 것과 그것이 배포를 멈춘다는 것은 다르다.** 예전 이 규칙은 빈값 검사의
+// **존재**만 봤고, 그 배선을 쫓으면 두 모양에서 수렴하지 않는다고 적혀 있었다. 실측(2026-09-10)
+// 결과 **수렴한다** — 빈값 검사를 담은 `run:` 블록 **28개 전부**가 같은 블록 안에 `exit 1` 을
+// 갖는다(오탐 0). 그래서 판정을 그 블록으로 좁힌다.
+//
+// 그 전에는 `exit 1` 한 줄만 지우면 시크릿 미설정이 **경고로 끝나고 잡이 초록**이었다
+// (변이 프로브 `SILENT`) — 태그는 남고 레지스트리는 비는, `ci.md` 가 이미 이름 붙인 그 실패다.
+//
+// ⚠️ `exit 1` 은 **같은 줄 인라인 형태**도 세야 한다(`[ -n "$X" ] || { echo …; exit 1; }`).
+// 줄 단독으로만 세면 정당한 두 자리를 거짓 양성으로 잡는다(실측으로 겪었다).
 const ENV_SECRET_BINDING = /^\s*([A-Za-z_][A-Za-z0-9_]*):\s*\$\{\{\s*secrets\.([A-Z_][A-Z0-9_]*)\s*\}\}/
+const EXITS_NONZERO = /(^|\s|;|&&|\|\|)exit\s+1(\s|;|\}|$)/
+// 그 줄을 품은 `run: |` 블록(들여쓰기가 더 깊은 연속 줄)을 돌려준다.
+const runBlockAround = (lines, idx) => {
+  for (let i = idx; i >= 0; i--) {
+    const m = /^(\s*)(?:- )?run:\s*\|/.exec(lines[i])
+    if (!m) continue
+    const indent = m[1].length
+    let j = i + 1
+    while (j < lines.length && (lines[j].trim() === '' || lines[j].search(/\S/) > indent)) j++
+    return j > idx ? lines.slice(i + 1, j) : null
+  }
+  return null
+}
 const ruleSecretPreflight = (wf, out) => {
   for (const job of wf.jobs) {
     const body = jobLines(wf, job).map((l) => splitComment(l).body)
@@ -356,9 +377,17 @@ const ruleSecretPreflight = (wf, out) => {
     }
     for (const [env, secret] of bound) {
       const test = new RegExp(`\\[\\s+-[zn]\\s+"\\$${env}"\\s+\\]`)
-      if (!body.some((l) => test.test(l)))
+      const at = body.findIndex((l) => test.test(l))
+      if (at < 0) {
         out.push(
           `${wf.file}: 잡 \`${job.name}\`이 배포 시크릿 \`${secret}\`을(를) \`$${env}\`로 받는데 미설정 빈값 검사가 없다 — 아무것도 게시하지 않은 실행이 green 으로 끝난다`,
+        )
+        continue
+      }
+      const block = runBlockAround(body, at)
+      if (!block || !block.some((l) => EXITS_NONZERO.test(l)))
+        out.push(
+          `${wf.file}: 잡 \`${job.name}\`의 \`${secret}\` 빈값 검사가 **배포를 멈추지 않는다** — 그 \`run:\` 블록에 \`exit 1\` 이 없다. 검사만 있고 판정이 없으면 미설정이 경고로 끝나고 잡은 초록이다`,
         )
     }
   }
