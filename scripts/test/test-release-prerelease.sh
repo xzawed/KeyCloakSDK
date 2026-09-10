@@ -65,11 +65,31 @@ assert_contains "$(cat "$TMP/classify.sh")" 'CORE="${VERSION%%+*}"' "블록이 �
 
 # ── (3) 판정이 gh로 배선됐는가 ────────────────────────────────────────────────
 # 판정만 하고 `gh release create`에 안 넘기면 버그는 그대로다. 세 파일 각각에서 확인한다.
+#
+# ⚠️ **파일 어딘가에 플래그가 있다」로 보면 안 된다.** 예전에는 그랬고, 변이 프로브가 그것을
+# 잡아냈다(실측 2026-09-10 `SILENT`): `gh release create` 줄에서 플래그를 떼고 그 문자열을
+# **주석에 남기기만** 해도 통과했다. 그러면 RC 가 Latest 로 나간다 — `php-v0.1.0-rc.1` 에서
+# 실제로 일어난 그 사고다.
+#
+# 그래서 **그 명령 하나**를 연속행까지 이어 붙여 뽑고 거기서 찾는다. 세 모양이 다르지만 수렴한다
+# (실측: `run:` 한 줄 · 백슬래시 연속행 · 인자만 한 줄 — 3/3, 오탐 0).
+gh_create_cmd() { # $1=워크플로 파일 → `gh release create "` 명령 한 줄(연속행 이어붙임)
+  awk '
+    /^[[:space:]]*#/ { next }                        # 셸 주석 줄은 명령이 아니다
+    !p && !/gh release create "/ { next }
+    { p = 1; line = $0; sub(/[[:space:]]+$/, "", line)
+      if (substr(line, length(line)) == "\\") { acc = acc substr(line, 1, length(line) - 1) " "; next }
+      acc = acc line; print acc; exit }
+  ' "$1"
+}
 for f in $callers; do
   base="$(basename "$f")"
   assert_contains "$(cat "$f")" 'prerelease: ${{ steps.derive.outputs.prerelease }}' "$base: version 잡이 판정을 출력한다"
   assert_contains "$(cat "$f")" 'PRERELEASE: ${{ needs.version.outputs.prerelease }}' "$base: 릴리스 잡이 그 출력을 받는다"
-  assert_contains "$(cat "$f")" '--prerelease="${PRERELEASE}"' "$base: gh release create에 실제로 넘긴다"
+  _cmd="$(gh_create_cmd "$f")"
+  assert_ok test -n "$_cmd"   # 공허 방지: 명령을 못 뽑으면 아래 검사가 무의미하다
+  assert_contains "$_cmd" '--prerelease="${PRERELEASE}"' \
+    "$base: gh release create **명령 자체**에 플래그가 없다 — 주석에만 남기면 RC 가 Latest 로 나간다"
 done
 
 # ── (4) 분류표 ────────────────────────────────────────────────────────────────
