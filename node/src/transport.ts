@@ -24,8 +24,12 @@ const TRANSPORT_CODES = new Set([
  * `AbortError`/`TimeoutError`로 던진다. cause 없는 순수 `TypeError`(프로그래밍 버그)는 전송 오류가 아니다.
  *
  * auth(discovery)·admin(호출) 두 네트워크 경계가 공유하는 순수 분류 헬퍼다 — 경계별 중복을 없애고
- * 전송/인증(또는 상태) 분류를 일관되게 유지한다. 자체가 네트워크 경계 지원 유틸이라 커버리지 게이트에서
- * 제외된다(vitest exclude · sonar coverage.exclusions); 실동작은 auth/admin 경계 테스트가 검증한다.
+ * 전송/인증(또는 상태) 분류를 일관되게 유지한다.
+ *
+ * ⚠️ **네트워크를 타지 않으므로 커버리지 게이트에서 빼지 말 것**(2026-09-10 에 제외에서 뺐다).
+ * 예전 주석은 「실동작은 auth/admin 경계 테스트가 검증한다」였으나 거짓이었다 — 그 테스트가 치는
+ * 팔은 `AbortError`·`ECONNREFUSED` 둘뿐이고, 제외 때문에 나머지가 측정되지도 않아 **TLS 만료 코드를
+ * 지워도 전부 초록**이었다. 전수는 `test/unit/transport.test.ts` 가 친다.
  */
 export function isTransportError(err: unknown): boolean {
   if (typeof err !== 'object' || err === null) return false
