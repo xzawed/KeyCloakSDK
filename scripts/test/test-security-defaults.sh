@@ -349,28 +349,41 @@ sd_mask_hook() {
     ruby)   printf '%s' 'def inspect' ;;
   esac
 }
-# 행위 카나리아 테스트 파일 — 마스킹을 **실행해서** 단언하는 자리.
+# 행위 카나리아 테스트 파일 — `TokenSet` 의 **기본 문자열/디버그 표현**이 비밀을 가리는지
+# 실행해서 단언하는 자리.
+#
+# ⚠️ **여섯 언어가 엉뚱한 파일을 가리키고 있었다**(실측 2026-09-10). kotlin·python·node·dotnet·
+# php·ruby 가 `Masking*` 파일을 가리켰는데 그 파일들이 단언하는 것은 `mask()` **헬퍼**이거나
+# `AuthorizationRequest` 이지 `TokenSet` 의 기본 표현이 아니다. 앵커도 그냥 `***` 였으므로
+# **그 파일의 아무 마스킹 테스트나** 만족시켰다 — `TokenSet` 카나리아를 통째로 지워도 초록이다
+# (변이 프로브 `SILENT`). 파일과 앵커를 **함께** 실제 테스트로 옮겼다.
 sd_mask_test() {
   case "$1" in
     java)   printf '%s' 'java/keycloak-sdk-core/src/test/java/io/github/xzawed/keycloak/core/TokenSetTest.java' ;;
-    kotlin) printf '%s' 'kotlin/src/test/kotlin/io/github/xzawed/keycloak/MaskingTest.kt' ;;
-    python) printf '%s' 'python/tests/unit/test_secrets.py' ;;
-    node)   printf '%s' 'node/test/unit/masking.test.ts' ;;
+    kotlin) printf '%s' 'kotlin/src/test/kotlin/io/github/xzawed/keycloak/TokensTest.kt' ;;
+    python) printf '%s' 'python/tests/unit/test_tokens.py' ;;
+    node)   printf '%s' 'node/test/unit/tokens.test.ts' ;;
     go)     printf '%s' 'go/masking_test.go' ;;
-    dotnet) printf '%s' 'dotnet/tests/Xzawed.Keycloak.Sdk.Tests/MaskingTests.cs' ;;
-    php)    printf '%s' 'php/tests/Unit/MaskingTest.php' ;;
+    dotnet) printf '%s' 'dotnet/tests/Xzawed.Keycloak.Sdk.Tests/TokensTests.cs' ;;
+    php)    printf '%s' 'php/tests/Unit/Token/TokenSetTest.php' ;;
     rust)   printf '%s' 'rust/src/tokens.rs' ;;
-    ruby)   printf '%s' 'ruby/spec/unit/masking_spec.rb' ;;
+    ruby)   printf '%s' 'ruby/spec/unit/tokens_spec.rb' ;;
   esac
 }
-# 그 테스트가 **마스킹을 단언한다**는 앵커. java 는 `***` 리터럴을 쓰지 않고 「원문이 없다」로
-# 단언하므로 테스트 이름을 앵커로 잡는다(문구가 아니라 단언의 존재를 겨눈다).
+# 그 테스트가 **마스킹을 단언한다**는 앵커 — **아홉 전부 테스트 이름**이다.
+# ⚠️ `***` 같은 리터럴을 앵커로 쓰면 안 된다: 그 파일의 **다른 테스트**가 그 문자열을 갖고 있으면
+# 겨누던 카나리아가 사라져도 참이다(실측으로 겪었다). 문구가 아니라 **그 단언의 존재**를 겨눈다.
 sd_mask_canary() {
   case "$1" in
     java)   printf '%s' 'toString_masksTokens' ;;
     go)     printf '%s' 'assertMasked' ;;
     rust)   printf '%s' 'fn debug_masks_tokens' ;;
-    *)      printf '%s' '***' ;;
+    kotlin) printf '%s' 'TokenSet toString masks accessToken' ;;
+    python) printf '%s' 'def test_repr_masks' ;;
+    node)   printf '%s' 'toString/toJSON/inspect' ;;
+    dotnet) printf '%s' 'ToString_masks_access_and_refresh' ;;
+    php)    printf '%s' 'testToStringMasksTokens' ;;
+    ruby)   printf '%s' 'masks tokens in inspect' ;;
   esac
 }
 
