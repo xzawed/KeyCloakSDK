@@ -23,7 +23,9 @@
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
-ROOT="$DIR/../.."
+# ⚠️ **루트는 덮어쓸 수 있어야 한다** — 아래 음성 대조군이 값 하나만 바꾼 TMP 트리를 가리켜
+# 「추출기가 정말 파일을 읽는가」를 잰다. 이 변수가 고정이면 그 대조군을 쓸 수 없다.
+ROOT="${SD_ROOT:-$DIR/../..}"
 
 # ⚠️ `assert_ok`는 **명령만** 받는다(메시지 인자를 주면 그것까지 명령으로 해석해 실패한다).
 # 메시지를 남기려면 "ok" 여부를 문자열로 만들어 `assert_eq`에 넘긴다.
@@ -692,5 +694,42 @@ sd_owner_axis() { # $1=파일 $2=값을 말하는 줄의 정규식
 sd_owner_axis "CLAUDE.md" 'JWKS 재조회 최소 간격'
 sd_owner_axis ".claude/rules/security.md" 'JWKS minimum refetch interval defaults'
 sd_owner_axis ".claude/rules/security.md" 'is the same invariant and is likewise'
+
+# ---------------------------------------------------------------------------
+# 음성 대조군 — 이 파일이 **라이브 상태만** 단언하고 있지 않은가
+# ---------------------------------------------------------------------------
+#
+# ⚠️ 위 축들은 전부 「지금 트리가 일치한다」를 본다. 그 형태의 검사는 **추출기가 no-op 이어도**
+# 통과한다 — `sd_default() { echo 30; }` 로 바꿔도 아홉이 전부 30 이라 초록이다. 그러면 이 파일은
+# 있으나 마나가 되고, 그 사실을 아무도 모른다(`seven-selftests-have-no-negative-control`).
+#
+# 그래서 값 하나만 바꾼 TMP 트리를 만들어 **추출기가 그 변화를 실제로 본다**는 것을 확인한다.
+# ⚠️ 트리 전체를 복사하지 않는다 — 추출기가 읽는 **그 파일 하나**만 같은 상대경로로 놓는다.
+# 트리 복사는 CI 에서 실패할 자리를 늘리고, 이 파일은 required 체크 안에서 돈다.
+#
+# ⚠️ 라이브 루트가 여전히 기대값을 낸다는 **양성 대조**를 함께 둔다 — 없으면 「추출기가 늘 빈
+# 문자열을 낸다」와 구분되지 않는다.
+sd_negative_control() { # $1=라벨 $2=추출함수 $3=언어 $4=상대경로 $5=sed표현식 $6=기대(바뀐값)
+  _nc_tmp="$(mktemp -d)"
+  mkdir -p "$_nc_tmp/$(dirname "$4")"
+  sed "$5" "$ROOT/$4" > "$_nc_tmp/$4"
+  _nc_got="$(SD_ROOT="$_nc_tmp" ROOT="$_nc_tmp" "$2" "$3" || true)"
+  rm -rf "$_nc_tmp"
+  assert_eq "$6" "$(sd_norm "$_nc_got")" \
+    "[음성대조] $1: 값을 바꾼 트리에서도 $6 이 안 나온다 — 추출기가 파일을 안 읽거나(no-op) 표기가 바뀌었다"
+}
+
+# JWKS 재조회 간격: java 의 30 → 11 로 바꾼 사본에서 추출기가 11 을 내야 한다.
+sd_negative_control "JWKS 재조회" sd_default java \
+  'java/keycloak-sdk-core/src/main/java/io/github/xzawed/keycloak/core/KeycloakConfig.java' \
+  's/jwksMinRefetch = Duration.ofSeconds(30)/jwksMinRefetch = Duration.ofSeconds(11)/' 11
+# clock skew: python 의 30.0 → 12.0.
+sd_negative_control "clock skew" sd_skew python \
+  'python/src/keycloak_sdk/config.py' \
+  's/clock_skew: float = 30.0/clock_skew: float = 12.0/' 12
+
+# 양성 대조 — 라이브 루트는 여전히 못박힌 값을 낸다(위가 「늘 다른 값을 낸다」가 아님을 보인다).
+assert_eq "$sd_expect" "$(sd_norm "$(sd_default java)")" "[음성대조·양성] 라이브 java JWKS 값이 바뀌었다"
+assert_eq "$sd_skew_expect" "$(sd_norm "$(sd_skew python)")" "[음성대조·양성] 라이브 python skew 값이 바뀌었다"
 
 assert_report
