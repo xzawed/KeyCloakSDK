@@ -1,15 +1,15 @@
 module github.com/xzawed/KeyCloakSDK/go
 
-go 1.25.0
+go 1.26.0
 
 require (
-	golang.org/x/oauth2 v0.36.0
-	golang.org/x/sync v0.22.0
+	golang.org/x/oauth2 v0.37.0
+	golang.org/x/sync v0.23.0
 )
 
 require (
 	github.com/Nerzal/gocloak/v13 v13.9.0
-	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/testcontainers/testcontainers-go v0.44.0
 )
 
