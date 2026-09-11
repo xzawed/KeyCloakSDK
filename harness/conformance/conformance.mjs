@@ -1,5 +1,6 @@
 // 계약 v2 결정적 conformance. Node 20+ (전역 fetch). 결과를 /out/<LANG>.conformance.json에 기록.
 import { randomUUID } from "node:crypto";
+import { judgeAuthzUrl } from "./authz-url.mjs";
 const BASE = process.env.BASE, LANG = process.env.LANG || "unknown";
 const U = process.env.KC_USER || "alice", P = process.env.KC_PASS || "alice-password";
 const checks = [];
@@ -34,12 +35,14 @@ const run = async () => {
   await check("validate rejects garbage 401", async () => { const r = await req("POST", "/validate", { token: "not.a.jwt" }); rec("validate rejects garbage 401", r.status === 401, r.status); });
   await check("introspect active", async () => { const r = await req("POST", "/introspect", { token }); rec("introspect active", r.status === 200 && r.j?.active === true, r.status); });
 
-  // authz-url (오프라인 PKCE S256 + state-in-url + code_verifier 비노출)
+  // authz-url (오프라인 PKCE S256 + state 교차대조 + 요청한 redirect_uri 반향 + verifier 비노출)
+  // ⚠️ 보내는 값은 앱 폴백(`http://x/cb`)과 **달라야 한다** — 같으면 「앱이 요청을 무시했다」와
+  // 「앱이 요청을 지켰다」가 구분되지 않는다. 그것이 이 검사가 오래 공허했던 이유다.
   await check("authz-url S256", async () => {
-    const r = await req("GET", "/authz-url?redirect_uri=http://x/cb");
-    const u = r.j?.url || "";
-    const okUrl = /code_challenge_method=S256/.test(u) && /code_challenge=/.test(u) && /[?&]state=/.test(u) && !/code_verifier/.test(u);
-    rec("authz-url S256", r.status === 200 && okUrl && !!r.j?.state, u.slice(0, 120));
+    const probeRedirect = `http://probe-${rnd()}.invalid/cb`;
+    const r = await req("GET", `/authz-url?redirect_uri=${encodeURIComponent(probeRedirect)}`);
+    const v = judgeAuthzUrl({ status: r.status, body: r.j, requestedRedirectUri: probeRedirect });
+    rec("authz-url S256", v.ok, v.detail);
   });
 
   // ROPC → refresh → logout (무조건 실행 — hasRefresh 거짓통과 가드 제거)

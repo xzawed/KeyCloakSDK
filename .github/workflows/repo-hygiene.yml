@@ -107,6 +107,12 @@ jobs:
         # 하드코딩하지 않고 빌드 파일에서 읽는가 + 좌표가 깨졌을 때 침묵 통과하지
         # 않는가다 — check-docs와 같은 종류의 자기기만 방지다.
         run: sh scripts/test/test-doctor.sh
+      - name: conformance authz-url 판정 자가테스트(요청↔응답을 실제로 대조하는지)
+        # ⚠️ 이 판정은 Docker 전체 런 없이는 시험할 수 없어서 **아무도 재보지 않은 채** 아홉
+        # 언어에 초록을 발급했다(실측: 요청한 redirect_uri를 무시한 응답도 통과, 빈
+        # code_challenge도 통과, URL state와 돌려준 state가 달라도 통과). 판정을 모듈로
+        # 뽑아 픽스처로 재고, 그 픽스처를 여기서 돌린다 — Docker 없이 도는 것이 요점이다.
+        run: sh scripts/test/test-conformance-authz-url.sh
       - name: 문서-소스 대조
         # --min-facts/--min-anchors는 저장소 루트의 현재 실측치(76 facts / 26 anchors)를
         # 하한으로 강제한다 — 앵커 주석을 지우면서 그 표를 남겨두면(검사 대상 자체가

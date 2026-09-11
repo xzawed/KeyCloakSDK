@@ -1,0 +1,9 @@
+{
+  "_why": "state가 양쪽 다 빈 값이다. 옛 판정도 이건 잡았다(`!!r.j?.state`) — 강화하면서 잃지 않았는지 보는 대조군이고, 새로 잡는 것은 위의 state-mismatch다.",
+  "requestedRedirectUri": "http://probe.example/cb",
+  "status": 200,
+  "body": {
+    "url": "https://idp.example/realms/it-realm/protocol/openid-connect/auth?response_type=code&client_id=it-client&redirect_uri=http%3A%2F%2Fprobe.example%2Fcb&scope=openid+profile&state=&nonce=N0123456789&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+    "state": ""
+  }
+}

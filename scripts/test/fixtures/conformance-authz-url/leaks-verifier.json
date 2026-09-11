@@ -1,0 +1,9 @@
+{
+  "_why": "code_verifier가 인가 URL에 실렸다(= PKCE 무력화). 옛 검사도 이건 잡았다 — 강화하면서 잃지 않았는지 보는 대조군이다.",
+  "requestedRedirectUri": "http://probe.example/cb",
+  "status": 200,
+  "body": {
+    "url": "https://idp.example/realms/it-realm/protocol/openid-connect/auth?response_type=code&client_id=it-client&redirect_uri=http%3A%2F%2Fprobe.example%2Fcb&scope=openid+profile&state=S1234567890abcdef&code_verifier=dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+    "state": "S1234567890abcdef"
+  }
+}
