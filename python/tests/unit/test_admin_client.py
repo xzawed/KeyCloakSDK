@@ -78,12 +78,71 @@ def test_raw_passes_subsecond_timeout_without_truncating_to_zero(monkeypatch):
     assert captured["timeout"] == 0.5
 
 
-def test_close_is_noop():
-    """`close()`는 `KeycloakClient`(WBS 5.1)의 컨텍스트 매니저 프로토콜과 대칭을
-    맞추기 위한 no-op — 호출해도 예외가 없고 `raw` 캐시를 건드리지 않는다."""
+def _admin_with_sessions() -> tuple[MagicMock, MagicMock, MagicMock]:
+    """`KeycloakAdmin` 목 — 실 구조와 같이 **ConnectionManager 둘**을 단다.
+
+    ⚠️ 둘째(`connection.keycloak_openid.connection`)는 admin 자신의 client-credentials
+    토큰 그랜트가 쓰는 **지연 프로퍼티**라 눈에 잘 띄지 않는다. 하나만 닫으면 나머지
+    `requests.Session`이 열린 채 남아 admin을 쓰는 클라이언트마다 FD가 하나씩 샌다.
+    aio 미러(`aio/admin/__init__.py:aclose`)가 이미 그 구조를 다루고 둘 다 닫는다.
+    """
     admin = MagicMock(spec=KeycloakAdmin)
+    outer, nested = MagicMock(), MagicMock()
+    admin.connection = outer
+    outer.keycloak_openid.connection = nested
+    return admin, outer, nested
+
+
+def test_close_closes_both_sync_sessions():
+    """⚠️ 이 예제는 예전에 `test_close_is_noop`이었다 — **결함을 의도로 고정**하고 있었다.
+
+    sync `close()`가 `return None`이라 `requests.Session`이 GC까지 살아 있었고, aio
+    미러는 같은 자리에서 닫고 있었다(sync/aio 비대칭).
+    """
+    admin, outer, nested = _admin_with_sessions()
+    client = AdminClient(_config(), admin=admin)
+
+    client.close()
+
+    outer._s.close.assert_called_once()
+    nested._s.close.assert_called_once()
+
+
+def test_close_keeps_the_raw_cache():
+    """정리 훅이 `raw` 캐시를 버리지는 않는다(기존 계약을 깨지 않는다)."""
+    admin, _outer, _nested = _admin_with_sessions()
     client = AdminClient(_config(), admin=admin)
 
     client.close()
 
     assert client.raw is admin
+
+
+def test_close_without_raw_ever_created_does_not_build_admin():
+    """⚠️ 대조군 — `close()` 호출 자체가 admin 생성(네트워크 연결)을 유발하면 안 된다.
+    aio `aclose()`와 같은 계약이다."""
+    client = AdminClient(_config())
+
+    client.close()
+
+    assert client._admin is None
+
+
+def test_close_still_closes_outer_when_nested_close_raises():
+    """⚠️ 대조군 — 둘 중 하나가 깨졌다고 나머지 FD까지 함께 잃으면 안 된다.
+    실패 자체는 숨기지 않는다(조용한 누수보다 시끄러운 실패가 낫다)."""
+    admin, outer, nested = _admin_with_sessions()
+    nested._s.close.side_effect = RuntimeError("boom")
+    client = AdminClient(_config(), admin=admin)
+
+    with pytest.raises(RuntimeError):
+        client.close()
+
+    outer._s.close.assert_called_once()
+
+
+# ⚠️ **「중첩 매니저가 없을 때」는 테스트하지 않는다 — 도달 불가능하기 때문이다.**
+# `harden_admin`(생성자에서 호출)이 `keycloak_openid` 지연 프로퍼티를 **강제로 실체화**하고,
+# 없으면 `KeycloakConfigError`로 fail-closed 한다. 그래서 `close()`가 도는 시점에는 둘 다
+# 반드시 있다. 이 예제를 만들어 보니 `AdminClient(...)` 생성 자체가 거부됐다 — 그래서 뺐다.
+# (`close()` 구현의 `getattr` 방어는 그럼에도 남겨 둔다: admin 미생성 경로가 있다.)

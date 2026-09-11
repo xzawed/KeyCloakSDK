@@ -81,8 +81,41 @@ class AdminClient:
         return GroupsResource(self.raw)
 
     def close(self) -> None:
-        """자원 정리 훅(현재 no-op). `KeycloakAdmin`(python-keycloak)은 명시적
-        close가 필요 없으나, `KeycloakClient`(WBS 5.1)의 컨텍스트 매니저 프로토콜과
-        대칭을 이루기 위해 인터페이스를 유지한다(향후 커넥션 풀 등에 대비).
+        """하위 `KeycloakAdmin`의 sync `requests.Session`을 **둘 다** 닫는다.
+
+        ⚠️ 예전에는 `return None`(no-op)이었다. 그런데 aio 미러(`aio/admin/__init__.py`의
+        `aclose()`)는 같은 자리에서 실제로 닫고 있었다 — **sync/aio 비대칭**이고, 그 비대칭을
+        `test_close_is_noop`이 「의도」로 고정하고 있었다.
+
+        `ConnectionManager`에는 공개 `close()`가 없다 — `aclose()`(async `httpx` 전용)와
+        `__del__`뿐이라, sync 세션은 **GC 될 때까지** 열려 있었다. 장기 서비스에서는 그
+        시점이 보장되지 않는다.
+
+        ⚠️ 매니저가 **둘**이다(`_internal/redirects.py`의 `harden_admin`이 다루는 바로 그 구조):
+
+        1. `connection._s` — admin REST 호출.
+        2. `connection.keycloak_openid.connection._s` — admin 자신의 client-credentials
+           토큰 그랜트.
+
+        `raw` 미생성이면 `self._admin`이 None이라 no-op이다(굳이 생성하지 않는다 — aio
+        `aclose()`와 같은 계약). 중첩 정리가 실패해도 바깥 정리는 `finally`로 반드시
+        수행한다: 둘 중 하나가 깨졌다고 나머지 FD까지 함께 잃는 것이 최악이다. 실패 자체는
+        숨기지 않는다(조용한 누수보다 시끄러운 실패가 낫다).
+
+        ⚠️ **`async_s`는 여기서 닫지 못한다 — 과대광고하지 말 것.** sync `ConnectionManager`도
+        `httpx.AsyncClient`를 함께 만들지만 그것을 닫으려면 `await`가 필요하다. sync 경로에서
+        회수 가능한 자원은 `requests.Session`이고, 이 훅이 닫는 것은 그것뿐이다.
         """
-        return None
+        conn = getattr(self._admin, "connection", None)
+        if conn is None:
+            return
+        nested = getattr(conn, "keycloak_openid", None)
+        nested_conn = getattr(nested, "connection", None) if nested is not None else None
+        nested_session = getattr(nested_conn, "_s", None) if nested_conn is not None else None
+        try:
+            if nested_session is not None:
+                nested_session.close()
+        finally:
+            session = getattr(conn, "_s", None)
+            if session is not None:
+                session.close()
