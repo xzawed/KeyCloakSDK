@@ -65,6 +65,18 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **⟶ 다음 대상은 아직 측정되지 않았다(2026-09-10 기준).** 이 갈래가 닫혔고 진입점 1~13 이 전부 해소됐다. ⚠️ **등록부의 「열려 있다」를 액면가로 읽지 말 것** — 이 세션에서 재판정한 30건 중 **절반 이상이 변동**했다(닫힘·서술 과대·계수 오류). 다음 세션은 **재판정부터** 시작한다. 아직 재판정하지 않은 항목이 다수다.
 
+**⟶ 4차(2026-09-11) — 「게시본에서 소비자가 겪는 것」 갈래.** 독립 레그(Grok)와 순서를 교차검토해 ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축을 그대로 쓰되, **두 곳에서 레그를 실측으로 기각**했다: `go-release-persist-credentials` 의 「10/24 수치가 낡았다」는 틀렸고(`git grep -l persist-credentials .github/workflows` → **정확히 10**, `ls *.yml` → **24**, 그리고 `contents: write` 릴리스 넷 중 **go 하나만** 0) `php-sensitiveparameter-methods-missing` 는 4위가 아니라 2위였다.
+
+14. ✅ **JWKS 응답 크기 상한이 php·ruby 에 없었다 — PR #466.** php 는 **상태 검사보다 먼저** 본문을 슬러프했다. 교차언어 축 신설(변이 6/6 `CAUGHT`). ⚠️ node·python·dotnet 은 **하위 라이브러리에 위임**해 미측정으로 남았다 — 그 축의 초록을 「셋도 안전」으로 읽지 말 것.
+15. ✅ **php 의 비밀 인자가 스택트레이스에 원문으로 샜다 — PR #467.** 등록부는 「여섯 메서드」라 했으나 **아홉 파라미터**였다(반사 가드가 `TokenSet::__construct($idToken)` 을 찾아냈다 — 생성자인데도 빠져 있었다). **손 목록을 쓰지 않은 것이 그 계수를 고쳤다.**
+16. ✅ **공백 스코프 하나가 Nimbus 예외를 공개 API 로 흘렸다(java·kotlin) — PR #468.** `Scope.isEmpty()` 가 원소 **수**를 센다. `KeycloakConfig` 에 scope 검증이 0건이라 도달 가능하다.
+17. ✅ **python sync `admin.close()` 가 no-op 이었다 — PR #469.** `test_close_is_noop` 이 **결함을 의도로 고정**하고 있어 테스트를 먼저 뒤집었다. ⚠️ `async_s` 는 sync 경로에서 못 닫는다 — 과대광고하지 않았다.
+18. ✅ **재판정 두 건은 이미 참이 아니었다 — 이 PR.** `deploy-md-omits-release-request`(#416 이 닫음) · `keycloak-image-tag-fiction`(두 문서 정정 + 트리 9/9 실측).
+
+⚠️ **이 세션이 또 확인한 계측 함정 셋** — 다음 세션은 이것부터 읽는다. (g) **`sed` 변이가 착지하지 않았는데 `SILENT` 로 보였다**(백슬래시 이스케이프). `git diff` 가 비어 있는 것으로 잡았다 — 「침묵」을 읽기 전에 **변이가 실제로 착지했는지**를 먼저 본다. (h) **gradle 을 연속으로 돌리면 데몬 락 경합(「3 busy and 3 incompatible」)으로 빌드가 죽고, 그 비영 종료가 「변이를 잡았다」와 구분되지 않는다** — 복원 뒤 **기준선까지 False** 로 나와서 들켰다. 하나씩 돌려 **명명된 테스트 실패**를 확인한다. (i) **컴파일되지 않는 변이는 `CAUGHT` 가 아니라 `INVALID` 다**(kotlin `scope = scope`). ⚠️ 그리고 **`scripts/probe.sh` 는 php·node 를 못 잰다**(워크트리에 `vendor/`·`node_modules` 가 없어 기준선 실패 → `INVALID`) — 열린 항목 `probe-cannot-run-node-php-in-worktree` 가 **여전히 참**임을 실행으로 확인했다.
+
+**⟶ 다음 대상(2026-09-11 기준).** 위 순서의 5~9위가 아직 열려 있다: `go-release-persist-credentials`(위 실측으로 되살릴 신호가 **참**) · `H1-conformance-authz-vacuous` · `lenient-parsing-yields-false-success`(rust) · `rust-msrv-leg-vs-manifest-unguarded` · `python-aio-security-test-asymmetry`. ⚠️ 여전히 **재판정부터** 시작한다.
+
 **PR 이 아닌 것**(선행이 빠져 있다): `jvm-17-floor-never-shipped`(사람 승인 릴리스) · `guard-detection-surface-hand-narrowed` 의 파생화(required **밖**에서 오탐 0 선행) · `integration-admin-surface-uneven`(9×capability 결정 — php 가 roles/groups/realms 를 **0/3 계열** 부른다) · `integration-coverage-never-measured`(9개 설계) · `registry-truth-check`(레지스트리별 **버전** 오라클 + 전파 404 규칙 — ⚠️ 순진한 라이브 폴링은 「첫 404 로 실패 결론」 함정을 되살린다) · `published-bytes-have-no-oracle`(Portal 게시 후 실제 jar 페치) · `security-invariant-not-required`(룰셋 apply — ⚠️ **required 이름을 늘리지 말고** `doc-facts` 안으로 접는 쪽이 PR 크기다).
 
 ⚠️ **예산 정책은 정해졌다(#418) — 배치 2·3 은 그 위에서 돈다.** 문서 여럿이 상한에 붙어 있어 **정확성 수정 한 줄도 예산을 넘긴다**(배치 1 실측: 네 번, +300·236·120·84B). 이제 규칙은 「인상은 **교환**이고, 앵커 주석에 `옛값 → 새값` 을 적으며, **+300B 초과만 사람 판정**」이고 `check-docs.mjs` **검사 8b** 가 `main` 과 대조해 강제한다. **매 건 사람에게 올리지 말 것** — 상한 안이면 기록하고 진행한다. ⚠️ 반대로 **깎아서 맞추지도 말 것**: 압축이 「다시 재는 명령」을 지우면 그건 교환이 아니라 손실이고, 그때가 인상해야 하는 자리다.
@@ -374,9 +386,9 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - **「두 잡」은 맞다**: `grep -e '--- '` 파이프라인이 3곳인데(`kotlin-ci.yml:78` · `security-audit.yml:86` · `:347`) ` FAILED$` 게이트는 harness 쪽 1곳(`:327`)에만 있다 — #320 이 3곳 중 1곳에만 적용됐다.
   - ⚠️ **저장소 자신의 주석이 원인을 틀리게 적었다.** `security-audit.yml:318-322` 는 "OSV 가 그런 좌표에 취약점이 없다고 답하므로"라 하지만, 실측상 **OSV 는 ` FAILED` 접미사에 무감각**하다(netty-codec-http 4.1.119.Final → 접미사 유무 모두 18건). 진짜 원인은 **전이 폐포 붕괴** — FAILED 루트 하나가 서브트리를 통째로 날려 CVE 를 지닌 좌표가 아예 조회되지 않는다(실측 **좌표 72개 → 5개**, 루트 하나만 깨도 **72 → 14**로 jackson-databind·resteasy·httpclient 등 59개가 조용히 빠진다).
   - ⚠️ **Java 쪽은 고치지 말 것** — 같은 셸 모양이지만 수집기가 Maven 이라 미해결 의존성에서 **도구 자체가 non-zero** 로 죽는다(실측 `MVN_EXIT=1`). 구조적으로 fail-closed 다.
-- [ ] `docs-commands-that-do-not-work` **[M/S · 범위 축소 2026-09-07]** 소비자 문서가 적은 명령·환경변수가 실제로는 동작하지 않는다 · `docs/guides/development-setup.md:77`
+- [ ] `docs-commands-that-do-not-work` **[M/S · 범위 축소 2026-09-07 · php 한 건 닫힘 2026-09-11]** 소비자 문서가 적은 명령·환경변수가 실제로는 동작하지 않는다 · `docs/guides/development-setup.md:77`. ⚠️ **php 한 건은 실사용 중 잡혔다** — `.claude/rules/php.md` 가 「디렉터리 이름에 버전 접미사가 붙는다(`php-8.3`)」고 적고 `KCSDK_PHP` 기본값도 그 경로였는데, 이 PC 의 실제 디렉터리는 `~/tools/php` 다(ruby.md 가 이미 같은 정정을 안고 있다 — **부류다**). 남은 것을 찾는 방법은 산문 검토가 아니라 **그 명령을 돌려 보는 것**이고, 그 일반형은 `rules-command-reference-existence-guard` 가 소유한다.
   - **인용한 자리는 저장소 루트에서 동작한다**(실측 2026-09-07: `KCSDK_PY` 기본값 `python/.venv/Scripts/python.exe` 는 루트 기준 실재). 같은 표의 썩은 JDK 폴백과 `.claude/rules` 의 죽는 명령 셋은 **#423 이 닫았다**. **남은 것은 부류가 비었음이 증명되지 않은 것**이다 — `docs/guides/` 와 아홉 README 의 명령을 전수로 돌린 적이 없다. 형제 `docs-kcsdk-env-ssot` 와 함께 본다.
-- [ ] `deploy-md-omits-release-request` **[M/S]** DEPLOY.md §4 릴리스 절차가 태그를 만드는 트리거 파일을 열거하지 않는다 · `DEPLOY.md:403`
+- [x] `deploy-md-omits-release-request` **[M/S · 재판정으로 닫힘 2026-09-11]** **이미 참이 아니었다** — #416(`aab1d67`)이 닫았는데 체크박스만 남아 있었다. §4 는 `DEPLOY.md:415–451` 이고 그 안 `:433`·`:440` 이 `.github/release-request.json` 을 트리거로 명시하며 「머지가 트리거가 아니다」까지 경고한다. 재현: `git log -S'Merging is not the trigger' -- DEPLOY.md`.
 - [ ] `stale-prose-contradicts-source` **[M/S · 절반 닫힘 2026-09-07]** 산문 주석이 자기가 서술하는 값·전제·코드보다 낡았고 대조가 없다 · `python/src/keycloak_sdk/config.py:23`
   - **인용한 주석 셋은 #398 이 고쳤다** — 그 자리는 지금 「기본 30」이라 적고 축 2b 가 소스 주석의 JWKS 기본값을 대조한다(실측 2026-09-07). **남은 것은 부류다**: JWKS 기본값 **밖의** 산문에는 오라클이 없다. 형제 항목 `stale-comments-nobody-collates` 와 함께 본다.
 - [ ] `compat-table-library-cells-drift` **[M/M]** compatibility.md Node 행의 라이브러리 셀 세 개가 태그 시점 락파일과 다르다 · `docs/reference/compatibility.md:22`
@@ -503,7 +515,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 ### 문서·규칙 — 15
 
 - [ ] `docs-kcsdk-env-ssot` **[M/S]** KCSDK_* 환경변수 규약이 세 곳으로 갈려 있고 두 곳이 실측으로 부정된 경로를 가리킨다 · `CLAUDE.md:66`
-- [ ] `keycloak-image-tag-fiction` **[M/M]** 9언어가 전부 같은 태그를 핀하는데 문서 셋이 '언어별로 다르다'고 적는다 · `SECURITY.md:92`
+- [x] `keycloak-image-tag-fiction` **[M/M · 재판정으로 닫힘 2026-09-11]** **이미 참이 아니었다** — `SECURITY.md:90` 과 `docs/reference/compatibility.md:32` 가 둘 다 「아홉이 같은 태그를 핀한다 · 언어별 분기는 없다」로 정정돼 있고, 후자는 「예전에 그렇게 주장했다」까지 적는다. 트리 실측 2026-09-11: 아홉 언어 **9/9** 가 `keycloak:26.6` 을 핀한다(이탈 0 — `keycloak:25.0.4` 히트는 `python/.venv` 안 라이브러리 문서화 문자열이라 우리 소스가 아니다). ⚠️ **다만 그 사실을 보는 가드는 없다**(두 문장 어디에도 `doc-guard` 앵커가 없다) — 한 언어가 드리프트하면 두 문서가 조용히 거짓이 된다. 그 구멍은 이 항목이 아니라 `keycloak-server-tag-ssot` 가 소유한다.
 - [ ] `php-jwt-headers-rationale` **[M/S]** 세 곳이 반복하는 firebase/php-jwt 근거가 핀된 원본과 정반대다 · `.claude/rules/php.md:49`
 - [ ] `deploy-narrative-stale` **[M/M]** DEPLOY.md 본문 다섯 자리가 워크플로·룰셋 개정을 못 따라갔다 · `DEPLOY.md:36`
 - [ ] `deploy-php-mirror-gap` **[M/S]** PHP 미러 쪽 장치가 저장소에 실재하는데 런북이 그것을 모른다 · `DEPLOY.md:212`

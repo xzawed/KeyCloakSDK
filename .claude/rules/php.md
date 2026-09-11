@@ -11,10 +11,10 @@ paths:
 
 ## Toolchain
 
-Portable PHP 8.3 + Composer (not committed). **The directory name carries a version suffix** (`php-8.3`).
+Portable PHP 8.3 + Composer (not committed). ⚠️ The directory is `php` — this said `php-8.3`, which does not exist; ask `node scripts/doctor.mjs php`.
 
 ```bash
-export KCSDK_PHP="${KCSDK_PHP:-${KCSDK_TOOLS:-$HOME/tools}/php-8.3}"
+export KCSDK_PHP="${KCSDK_PHP:-${KCSDK_TOOLS:-$HOME/tools}/php}"
 export PATH="$KCSDK_PHP:$PATH" OPENSSL_CONF="${KCSDK_OPENSSL_CNF:-$KCSDK_PHP/extras/ssl/openssl.cnf}"
 cd php && composer install
 cd php && vendor/bin/phpunit --testsuite unit          # no Docker
