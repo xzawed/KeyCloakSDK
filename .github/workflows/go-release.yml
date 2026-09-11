@@ -137,7 +137,14 @@ jobs:
     permissions:
       contents: write # GitHub Release 생성에 필요
     steps:
+      # ⚠️ 이 잡만 `contents: write` 를 쥔다 — 체크아웃이 그 토큰을 워크스페이스의 git
+      # 설정에 남기면 이후 스텝(setup-go · `go list` · 서드파티 액션)이 저장소에 쓸 수
+      # 있다. 이 잡은 git 으로 쓰지 않는다: `gh release create` 는 `GH_TOKEN` 환경변수를
+      # 쓰고, 프록시 워밍은 공개 모듈을 HTTPS 로 받는다. 형제 릴리스 워크플로 셋은 이미
+      # 이 줄을 갖고 있었고 go 만 빠져 있었다(`check-ci-permissions.mjs` 규칙 1b).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.26'

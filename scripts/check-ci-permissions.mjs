@@ -29,6 +29,10 @@ let MIN_RELEASE = 1
 // 같은 이유의 하한 둘 더 — 규칙 9(게시 잡)·규칙 10(비로컬 uses)도 발견 기반이라 조준점이
 // 사라지면 0건을 검사하고 초록을 낸다.
 let MIN_PUBLISH = 1
+// ⚠️ 규칙 1b 의 하한은 **0 이 기본**이다(규칙 5 와 같은 이유) — 자가테스트 픽스처 트리에는
+// `contents: write` + 체크아웃 잡이 없을 수 있고, 기본값 1 이면 그 정당한 경우가 빨개진다.
+// 실측치는 CI 가 명시로 넘긴다.
+let MIN_WRITE_CHECKOUT = 0
 let MIN_USES = 1
 // ⚠️ 그리고 규칙 5(권한 상승에 근거 주석)에도 같은 하한이 필요하다. 이 규칙은 **상승을 발견해서**
 // 검사하므로, 상승이 스캐너에 안 보이게 되는 순간 0건을 검사하고 초록을 낸다. 실측: 플로우 매핑
@@ -38,6 +42,8 @@ let MIN_ESCALATIONS = 0
 for (const arg of process.argv.slice(2)) {
   if (/^--min-release=\d+$/.test(arg)) MIN_RELEASE = Number(arg.slice('--min-release='.length))
   else if (/^--min-publish=\d+$/.test(arg)) MIN_PUBLISH = Number(arg.slice('--min-publish='.length))
+  else if (/^--min-write-checkout=\d+$/.test(arg))
+    MIN_WRITE_CHECKOUT = Number(arg.slice('--min-write-checkout='.length))
   else if (/^--min-uses=\d+$/.test(arg)) MIN_USES = Number(arg.slice('--min-uses='.length))
   else if (/^--min-escalations=\d+$/.test(arg))
     MIN_ESCALATIONS = Number(arg.slice('--min-escalations='.length))
@@ -195,6 +201,40 @@ const ruleJobLevelDeclared = (wf, out) => {
       out.push(
         `${wf.file}:${job.node.n} 잡 \`${job.name}\`에 \`permissions:\`가 없다 — 릴리스 워크플로에는 워크플로 레벨 기본값이 없어서 이 잡은 **저장소 기본 권한**(Settings → Actions, 이 저장소 바깥에서 바뀜)을 물려받는다`,
       )
+}
+
+// 규칙 1b(저장소 전체): `contents: write` 를 가진 잡의 checkout 은 자격증명을 워크스페이스에
+// 남기지 않는다(`persist-credentials: false`).
+//
+// ⚠️ **이것은 「전 워크플로에 강제한다」가 아니다.** 그 제안은 기각돼 있다(기각 레지스트리 —
+// 24개 중 10개에만 있고 그 비대칭의 근거가 저장소 어디에도 없어서, 가드가 정책을 새로 만드는
+// 셈이 되기 때문). 그 기각이 적어 둔 **되살릴 신호**는 「`persist-credentials` 를 가진 목록과
+// `contents: write` 를 가진 잡 목록이 갈릴 때」이고, 2026-09-11 실측에서 그것이 참이 됐다:
+// `contents: write` 를 가진 릴리스 잡 넷 중 `go-release.yml` 의 `release` 하나만 빠져 있었다.
+//
+// 그래서 규칙의 범위를 **기각이 지목한 그 조인**으로 좁힌다 — 쓰기 토큰을 쥔 잡만. 읽기 전용
+// 잡은 이 규칙의 대상이 아니다(그것까지 걸면 기각된 제안을 되살리는 것이다).
+//
+// ⚠️ 발견 기반이라 조준점이 사라지면 조용히 0건을 검사한다 — 아래 호출부가 검사한 잡 수를
+// 세어 `--min-write-checkout` 하한과 대조한다.
+const ruleWriteJobDropsCheckoutCreds = (wf, out) => {
+  let seen = 0
+  for (const [i, job] of wf.jobs.entries()) {
+    const write = job.scopes.some(
+      (s) => s.key === 'contents' && (s.value ?? '').trim().replace(/#.*$/, '').trim() === 'write',
+    )
+    if (!write) continue
+    const start = job.node.n
+    const end = wf.jobs[i + 1]?.node.n ?? wf.lines.length + 1
+    const body = wf.lines.slice(start, end - 1).join('\n')
+    if (!/uses: *actions\/checkout@/.test(body)) continue // 체크아웃이 없으면 남길 자격증명도 없다
+    seen += 1
+    if (!/persist-credentials: *false/.test(body))
+      out.push(
+        `${wf.file}:${start} 잡 \`${job.name}\` 은 \`contents: write\` 를 쥐고 체크아웃하면서 \`persist-credentials: false\` 가 없다 — 그 토큰이 워크스페이스의 git 설정에 남아 이후 스텝(빌드·테스트·서드파티 액션)이 저장소에 쓸 수 있다. 형제 릴리스 워크플로들은 이미 이 줄을 갖고 있다`,
+      )
+  }
+  return seen
 }
 
 // 규칙 2(릴리스 전용): 워크플로 레벨 `permissions:` 블록 금지.
@@ -486,8 +526,10 @@ let writeGrants = 0
 let jobCount = 0
 let publishJobs = 0
 let usesRefs = 0
+let writeCheckouts = 0
 for (const wf of workflows) {
   jobCount += wf.jobs.length
+  writeCheckouts += ruleWriteJobDropsCheckoutCreds(wf, errors)
   ruleNoBlanketGrant(wf, errors)
   ruleGovulncheckChecksLatest(wf, errors)
   usesRefs += ruleActionsPinnedToSha(wf, errors)
@@ -517,13 +559,19 @@ if (writeGrants < MIN_ESCALATIONS)
   errors.push(
     `릴리스 잡의 write 상승이 ${writeGrants}건뿐이다(기대 ${MIN_ESCALATIONS}건 이상) — 표기가 바뀌어 규칙 5 가 상승을 못 보고 있을 수 있다`,
   )
+// 규칙 1b 도 발견 기반이다 — `contents: write` 표기가 바뀌거나 체크아웃 액션이 개명되면
+// 0건을 검사하고 초록을 낸다. 실측치를 명시로 넘겨 그 침묵을 막는다.
+if (writeCheckouts < MIN_WRITE_CHECKOUT)
+  errors.push(
+    `\`contents: write\` + 체크아웃 잡이 ${writeCheckouts}개뿐이다(기대 ${MIN_WRITE_CHECKOUT}개 이상) — 표기가 바뀌어 규칙 1b 가 조용히 비었을 수 있다`,
+  )
 if (usesRefs < MIN_USES)
   errors.push(
     `비로컬 \`uses:\` 가 ${usesRefs}개뿐이다(기대 ${MIN_USES}개 이상) — 규칙 10 이 조용히 비었을 수 있다`,
   )
 
 console.log(
-  `  워크플로 ${workflows.length}개 · 릴리스 ${releases.length}개 · 잡 ${jobCount}개 · 게시 잡 ${publishJobs}개 · 비로컬 uses ${usesRefs}개 · 릴리스 잡의 write 상승 ${writeGrants}건`,
+  `  워크플로 ${workflows.length}개 · 릴리스 ${releases.length}개 · 잡 ${jobCount}개 · 게시 잡 ${publishJobs}개 · 비로컬 uses ${usesRefs}개 · 릴리스 잡의 write 상승 ${writeGrants}건 · write+체크아웃 잡 ${writeCheckouts}개`,
 )
 if (errors.length) {
   for (const e of errors) console.log(`::error::${e}`)

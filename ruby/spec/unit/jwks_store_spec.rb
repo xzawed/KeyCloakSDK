@@ -77,6 +77,37 @@ RSpec.describe KeycloakSdk::JwksStore do
     expect(stub).to have_been_requested.times(2)
   end
 
+  # ⚠️ **크기 상한 축.** go·rust·java·kotlin 은 51200(Nimbus `RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT`)
+  # 을 가지고 있었고 ruby 만 `resp.body` 로 서버가 보내는 만큼 다 받았다. 상한이 없으면 손상된
+  # IdP 하나가 검증 경로 전체를 메모리로 죽인다.
+  describe "response size cap" do
+    it "상한을 넘는 본문에서 TransportError 를 내고 파싱하지 않는다" do
+      oversized = { keys: [{ kty: "RSA", kid: "k1", n: "A" * (KeycloakSdk::JwksStore::JWKS_MAX_BYTES + 1) }] }
+      stub_request(:get, jwks_url).to_return(status: 200, body: oversized.to_json,
+                                             headers: { "Content-Type" => "application/json" })
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /exceeds/)
+    end
+
+    # ⚠️ **대조군을 지우지 말 것** — 위 단언만 두면 「어떤 본문이든 거부한다」로도 통과한다.
+    it "상한 아래 본문은 그대로 통과한다 (대조군)" do
+      stub_request(:get, jwks_url).to_return(status: 200, body: body,
+                                             headers: { "Content-Type" => "application/json" })
+      expect(store.key_set["keys"].first["kid"]).to eq("k1")
+    end
+
+    # ⚠️ 200 만 겨누면 오류 응답의 거대 본문이 그대로 들어온다 — php 가 정확히 그 순서였다.
+    it "오류 응답의 거대 본문도 상한에 걸린다" do
+      stub_request(:get, jwks_url).to_return(status: 500,
+                                             body: "x" * (KeycloakSdk::JwksStore::JWKS_MAX_BYTES + 1))
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError)
+    end
+
+    # ⚠️ 값을 여기 리터럴로 다시 적으면 2차 정의 자리가 된다 — 자매 넷과 같은 수임만 고정한다.
+    it "상한은 Nimbus DEFAULT_HTTP_SIZE_LIMIT 과 같은 51200 이다 (go·rust·java·kotlin 동형)" do
+      expect(KeycloakSdk::JwksStore::JWKS_MAX_BYTES).to eq(51_200)
+    end
+  end
+
   it "raises TransportError on non-Hash body (array)" do
     stub_request(:get, jwks_url).to_return(status: 200, body: [1, 2, 3].to_json,
                                            headers: { "Content-Type" => "application/json" })
