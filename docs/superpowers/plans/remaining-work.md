@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **173** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3) — 열림 **127** · 닫힘 **46** (2026-09-10 재측정) |
+| 작업 패키지 | **175** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · **후속 분할 신규 2**) — 열림 **122** · 닫힘 **53** (2026-09-11 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `173`(2026-09-10 기준 열림 127 · 닫힘 46)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `175`(2026-09-11 기준 열림 122 · 닫힘 53)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -375,7 +375,9 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - ⚠️ **지목이 마스킹 축 하나를 가리키지만 체계적이다** — 가드의 **7축 중 5축**(1 코드/skew · 1b nonce · 1c 마스킹 · 3 2차자리 · 4 소유자)이 언어별 파일·앵커를 손으로 열거한다. 새 언어·새 자리가 생기면 `_seen == 9` 류의 대조군이 함께 늘지 않는 한 조용히 통과한다.
   - 참고: 2026-09-04 에 추가한 2b(소스 주석) 축은 `git ls-files` 로 전체를 훑어 이 부류를 피했다 — 같은 형태가 나머지 축의 목표다.
 
-- [x] `jwks-response-size-unbounded-non-jvm` **[M/M · php·ruby 닫힘 2026-09-11]** JWKS 응답 크기 상한이 Go·Java·Kotlin 에만 있었다(rust 는 #440). php·ruby 에 51200 상한을 넣고, php 는 **상태 검사보다 먼저 본문을 슬러프하던 순서**도 함께 뒤집었다. 가드는 `test-security-defaults.sh` 의 「JWKS 크기상한」 축 — 변이 6/6 `CAUGHT`. ⚠️ **node(jose)·python(python-keycloak)·dotnet(Microsoft.IdentityModel) 은 아직 측정되지 않았다** — 셋은 fetch 를 하위 라이브러리에 위임해 우리 소스에 선언이 없다. 그 축이 초록인 것을 「셋도 안전하다」로 읽지 말 것(측정 방법은 그 축의 주석).
+- [x] `jwks-response-size-unbounded-non-jvm` **[M/M · php·ruby 닫힘 2026-09-11]** JWKS 응답 크기 상한이 Go·Java·Kotlin 에만 있었다(rust 는 #440). php·ruby 에 51200 상한을 넣고, php 는 **상태 검사보다 먼저 본문을 슬러프하던 순서**도 함께 뒤집었다. 가드는 `test-security-defaults.sh` 의 「JWKS 크기상한」 축 — 변이 6/6 `CAUGHT`. ⚠️ **미측정으로 남겼던 셋을 그 다음에 쟀고, 둘이 실제 구멍이었다** — node 는 닫혔고(아래) python 은 열려 있다: `jwks-response-size-unbounded-python` 참조. **「측정되지 않았다」를 「아마 괜찮다」로 읽지 말 것 — 재 보니 2/2 가 구멍이었다.**
+- [x] `node-jwks-response-size-unbounded` **[M/S · 닫힘 2026-09-11]** jose 에는 상한이 **없다**(6.2.12 실측 · `dist/webapi/jwks/remote.js:10-26`: `GET` → status 200 → `response.json()` 이 전부. `Content-Length` 검사도 최대 바이트 옵션도 없고 유일한 중단은 `AbortSignal.timeout` 5초). `createRemoteJWKSet` 의 `[customFetch]` 이음매로 우리가 상한을 건다 — **JWKS 전용**이라 토큰·introspect 경로는 그대로다. 변이 4/4 `CAUGHT`. ⚠️ **첫 판 테스트가 거짓 초록이었다** — 거대 본문을 쓰레기 바이트로 만들었더니 상한이 없어도 JSON 파싱이 실패해 「거부됐다」가 통과했다. 본문을 **유효한 JWKS + 패딩**으로 바꿔야 상한 없이는 검증이 성공하고, 그때 비로소 거부가 증거가 된다.
+- [ ] `jwks-response-size-unbounded-python` **[M/M · 신규 2026-09-11]** python 은 JWKS 본문에 상한이 없다 — `keycloak_openid.certs()` → `ConnectionManager.raw_get` → `self._s.get(...)`(`.venv/.../keycloak/connection.py:336`)가 `stream=True` 없이 본문을 통째로 올린 뒤 `.json()` 한다. ⚠️ **이음매가 node 와 다르다**: jose 의 `[customFetch]` 는 JWKS 전용인데 python 의 그 세션은 token·introspect·logout 이 함께 쓰므로 상한의 폭발반경이 넓다(admin 세션은 별개지만, 그쪽은 `users.search()` 같은 정당한 대용량 응답이 있어 같은 상한을 걸면 안 된다). 그래서 #471 에서 닫지 않았다 — **어디에 거는가가 이 항목의 실제 내용**이다. ⚠️ **dotnet 은 여전히 미측정**이다(`Microsoft.IdentityModel` 이 컴파일된 DLL 이라 트리에 소스가 없다) — 참조 소스 확인 또는 상한+1 바이트 목 IdP 실측이 필요하다.
   - rust 는 청크로 받으며 `JWKS_MAX_BYTES`(51200 — Nimbus `DEFAULT_HTTP_SIZE_LIMIT`, go 와 같은 값)를 넘는 순간 끊는다. ⚠️ **`Content-Length` 로만 판정하지 말 것** — 그 헤더가 없거나 거짓인 응답을 놓친다.
   - ⚠️ php 는 **상태 검사보다 먼저 본문을 통째로 슬러프한다**(`(string) $response->getBody()` 가 `getStatusCode()` 검사보다 앞) — 500 + 거대 본문이 그대로 메모리에 올라온다. 고칠 때 순서도 함께 뒤집는다.
   - #400(JVM 상한 복원)의 부류 재스캔에서 나왔다. Go 는 `io.LimitReader(resp.Body, 51200+1)` 로 이미 갖고 있고 주석이 출처를 Nimbus `RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT` 이라 밝힌다.
