@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **177** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · **후속 분할 신규 4**) — 열림 **122** · 닫힘 **55** (2026-09-11 재측정) |
+| 작업 패키지 | **178** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · 후속 분할 신규 4 · **H1 파생 신규 1**) — 열림 **122** · 닫힘 **56** (2026-09-12 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `177`(2026-09-11 기준 열림 122 · 닫힘 55)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `178`(2026-09-12 기준 열림 122 · 닫힘 56)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -92,7 +92,12 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 5. ⚠️ **변이의 diff 가 「의도한 자리」를 담는지 본다** — 착지 여부만으로는 부족하다. #472 1차 프로브는 파일의 *첫* `persist-credentials: false` 를 지웠는데 그것이 대상 잡의 것이 아니어서 셋이 `SILENT` 로 보였다. 변이는 착지했으므로 함정 (g)로는 안 걸린다. **잡·함수 이름으로 범위를 좁혀 변이하고, diff 에 그 심볼이 있는지 확인한다.**
 
 **C. 유지할 것** — 독립 레그는 값을 했다. 이 세션에서 레그가 **내 주장을 실제로 반증**한 것이 셋이다(「10/24 수치가 낡았다」는 틀렸고 · 검사 8b 의 통과 경로가 거짓임을 지목했고 · dotnet 라이브러리 내부를 **추측하지 않고** 「미측정」이라 답했다). ⚠️ 반대로 레그의 제안을 **실측으로 기각**한 것도 둘이다(`rejected.md` 블록 주석 우회 · python `certs()` 이탈 비용 과소평가). **레그를 액면가로 받지 않는 것이 레그를 쓰는 것과 같은 무게다.**
-**⟶ 다음 대상(2026-09-11 기준).** 위 순서의 5~9위가 아직 열려 있다: `go-release-persist-credentials`(위 실측으로 되살릴 신호가 **참**) · `H1-conformance-authz-vacuous` · `lenient-parsing-yields-false-success`(rust) · `rust-msrv-leg-vs-manifest-unguarded` · `python-aio-security-test-asymmetry`. ⚠️ 여전히 **재판정부터** 시작한다.
+**⟶ 5차(2026-09-12) — 후보 다섯을 재판정하고 「거짓 초록」 하나를 쳤다.** 독립 레그와 **순위에서 갈렸고 실측이 갈랐다**: 나는 python JWKS 를 먼저 봤으나, JWKS 크기상한 축은 `assert_eq "6"` 으로 **여섯만 단언**하고 주석이 python 미완을 명시한다(`test-security-defaults.sh:140,184`) — 그 초록은 **정직**하다. 반면 H1 의 초록은 거짓이었다. 축 ①이 ②를 이기고, 레그가 옳았다. ⚠️ 반대로 레그를 **실측으로 기각**한 것도 하나 — 「aio 백채널이 무보호」라는 함의는 틀렸다(httpx 기본 `follow_redirects=False` + 저장소가 이미 **행동으로** 고정).
+
+19. ✅ **`H1-conformance-authz-vacuous` — 이 PR 이 닫았다.** 공허가 셋이었고 파생 신규 하나(`authz-redirect-uri-not-per-call`)가 나왔다.
+20. ⚠️ **재판정이 셋을 고쳤다**(전부 그 항목 본문에): python JWKS 비용 「70곳」은 **단어 언급 줄** 수였다(실제 목 30·단언 20·고유 테스트 **28**) · 그 항목의 aio 설계는 **세션을 잘못 지목**했다(`_s` 아니라 `async_s`) · `python-aio-security-test-asymmetry` 는 테스트 하나가 아니라 **보안 단언 여섯**이다.
+
+**⟶ 다음 대상(2026-09-12 기준).** ①이 비었으므로 ②로 내려간다: `jwks-response-size-unbounded-python`(9언어 보안 부류의 마지막 이음매 — 설계는 위 정정 반영본을 쓴다) · `lenient-parsing-yields-false-success`(rust — 실측으로 좁혀졌다: `token_provider.rs:71,86-89` 가 **문자열이 아닌 `access_token` 을 빈 토큰 성공으로 캐시**한다. `auth.rs` 는 `CoreTokenResponse` 라 fail-safe이고 **`expires_in` 누락만** 공유한다) · `python-aio-security-test-asymmetry`(범위 6 으로 확대됨) · `rust-msrv-leg-vs-manifest-unguarded`(⚠️ **한 방향만 침묵**이다 — 매니페스트를 내리면 `check-docs` 가 잡고, **CI 레그만 올리면** 아무도 안 잡아 MSRV 레그가 조용히 사라진다) · `authz-redirect-uri-not-per-call`(사람 판정 선행). ⚠️ 여전히 **재판정부터** 시작한다.
 
 **PR 이 아닌 것**(선행이 빠져 있다): `jvm-17-floor-never-shipped`(사람 승인 릴리스) · `guard-detection-surface-hand-narrowed` 의 파생화(required **밖**에서 오탐 0 선행) · `integration-admin-surface-uneven`(9×capability 결정 — php 가 roles/groups/realms 를 **0/3 계열** 부른다) · `integration-coverage-never-measured`(9개 설계) · `registry-truth-check`(레지스트리별 **버전** 오라클 + 전파 404 규칙 — ⚠️ 순진한 라이브 폴링은 「첫 404 로 실패 결론」 함정을 되살린다) · `published-bytes-have-no-oracle`(Portal 게시 후 실제 jar 페치) · `security-invariant-not-required`(룰셋 apply — ⚠️ **required 이름을 늘리지 말고** `doc-facts` 안으로 접는 쪽이 PR 크기다).
 
@@ -394,7 +399,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 - [x] `jwks-response-size-unbounded-non-jvm` **[M/M · php·ruby 닫힘 2026-09-11]** JWKS 응답 크기 상한이 Go·Java·Kotlin 에만 있었다(rust 는 #440). php·ruby 에 51200 상한을 넣고, php 는 **상태 검사보다 먼저 본문을 슬러프하던 순서**도 함께 뒤집었다. 가드는 `test-security-defaults.sh` 의 「JWKS 크기상한」 축 — 변이 6/6 `CAUGHT`. ⚠️ **미측정으로 남겼던 셋을 그 다음에 쟀고, 둘이 실제 구멍이었다** — node 는 닫혔고(아래) python 은 열려 있다: `jwks-response-size-unbounded-python` 참조. **「측정되지 않았다」를 「아마 괜찮다」로 읽지 말 것 — 재 보니 2/2 가 구멍이었다.**
 - [x] `node-jwks-response-size-unbounded` **[M/S · 닫힘 2026-09-11]** jose 에는 상한이 **없다**(6.2.12 실측 · `dist/webapi/jwks/remote.js:10-26`: `GET` → status 200 → `response.json()` 이 전부. `Content-Length` 검사도 최대 바이트 옵션도 없고 유일한 중단은 `AbortSignal.timeout` 5초). `createRemoteJWKSet` 의 `[customFetch]` 이음매로 우리가 상한을 건다 — **JWKS 전용**이라 토큰·introspect 경로는 그대로다. 변이 4/4 `CAUGHT`. ⚠️ **첫 판 테스트가 거짓 초록이었다** — 거대 본문을 쓰레기 바이트로 만들었더니 상한이 없어도 JSON 파싱이 실패해 「거부됐다」가 통과했다. 본문을 **유효한 JWKS + 패딩**으로 바꿔야 상한 없이는 검증이 성공하고, 그때 비로소 거부가 증거가 된다.
-- [ ] `jwks-response-size-unbounded-python` **[M/M · 신규 2026-09-11 · 설계 확정, 실행만 남음]** python 은 JWKS 본문에 상한이 없다 — `certs()` → `raw_get` → `self._s.get(...)`(`connection.py:336`)가 `stream=True` 없이 본문을 올린 뒤 `.json()` 한다. **설계는 실측으로 정해졌다**: (i) `certs()` 를 스트리밍으로 못 만든다 — `raw_get` 이 `**kwargs` 를 `params=` 로 보내므로 `stream=True` 가 **쿼리 파라미터**가 된다(`connection.py:338`). (ii) 세션 전체에 거는 것은 안 된다 — 그 `_s` 는 token·introspect·logout 이 함께 쓰고(`redirects.py:95`) 역할 많은 토큰은 정당하게 크다. (iii) 그래서 `auth.py:286`(+`aio/auth.py:250`)의 `_load_jwks` 에서 **기존 하드닝된 세션으로 `_endpoints.jwks` 를 직접 스트리밍 GET** 한다 — 세션을 그대로 쓰므로 `resolve_redirects` SSRF 훅과 retry 어댑터가 유지된다. ⚠️ **비용이 이 항목의 실제 크기다**: `certs()` 를 떠나면 `openid.certs.return_value` 로 목하는 테스트 **70곳**(test_auth 40 · aio/test_auth 30)이 깨진다. ⚠️ 그리고 `raw_get` 의 `except Exception` 이 상한 예외를 「Can't connect to server」로 삼키므로(`connection.py:344`) **세션 래핑 방식은 메시지가 뭉개진다**. 상한을 실제로 태우는 테스트는 `conftest.py:55-78` 의 실 HTTP 서버 하네스로 쓴다(목 경계 아래라 기존 목으로는 못 잰다).
+- [ ] `jwks-response-size-unbounded-python` **[M/M · 신규 2026-09-11 · 설계 확정, 실행만 남음]** python 은 JWKS 본문에 상한이 없다 — `certs()` → `raw_get` → `self._s.get(...)`(`connection.py:336`)가 `stream=True` 없이 본문을 올린 뒤 `.json()` 한다. **설계는 실측으로 정해졌다**: (i) `certs()` 를 스트리밍으로 못 만든다 — `raw_get` 이 `**kwargs` 를 `params=` 로 보내므로 `stream=True` 가 **쿼리 파라미터**가 된다(`connection.py:338`). (ii) 세션 전체에 거는 것은 안 된다 — 그 `_s` 는 token·introspect·logout 이 함께 쓰고(`redirects.py:95`) 역할 많은 토큰은 정당하게 크다. (iii) ⚠️ **이 설계는 sync 에만 성립한다 — aio 는 세션이 다르다**(정정 2026-09-12, 독립 레그 지목 + 실측). `harden_openid` 가 겨누는 것은 `connection._s`(requests) 하나이고(`_internal/redirects.py:45` 의 `_SESSION_ATTR = "_s"`), **aio 의 JWKS 는 `async_s`(httpx)로 나간다**(상류 `connection.py:135,460`). aio 쪽 하드닝은 우리가 건 훅이 아니라 **httpx 기본값 `follow_redirects=False`** 이고, 저장소는 그것을 속성이 아니라 **행동으로** 고정해 뒀다(`python/tests/unit/aio/test_redirects_async.py`, 대조군 포함). 따라서 aio 구현은 `async_s` 로 스트리밍 GET 하되 **`follow_redirects` 를 켜지 않는 것이 계약**이고, 그 한 줄이 sync 와 다른 이음매다. sync 는 원안대로 `auth.py:286` 의 `_load_jwks` 에서 **기존 하드닝된 세션으로 `_endpoints.jwks` 를 직접 스트리밍 GET** 한다 — 세션을 그대로 쓰므로 `resolve_redirects` SSRF 훅과 retry 어댑터가 유지된다. ⚠️ **비용은 「70곳」이 아니다 — 그 수는 `certs` 라는 *단어가 나오는 줄* 을 센 것이었다**(정정 2026-09-12, 독립 레그 둘이 따로 셈). 실측: 목 설정 **30**(sync 18 `openid.certs.return_value`/`side_effect` + aio 12 `openid.a_certs = AsyncMock`) · 단언 **20**(`call_count`/`await_count`/`assert_*`) · **재배선이 필요한 고유 테스트 28**. ⚠️ sync 만 보고 정규식을 쓰면 aio 가 **0 으로 나온다**(aio 는 `return_value` 가 아니라 `AsyncMock` 대입형이다) — 세는 방법이 언어별로 갈리는 것이 이 계수 오류의 원인이다. ⚠️ 그리고 `raw_get` 의 `except Exception` 이 상한 예외를 「Can't connect to server」로 삼키므로(`connection.py:344`) **세션 래핑 방식은 메시지가 뭉개진다**. 상한을 실제로 태우는 테스트는 `conftest.py:55-78` 의 실 HTTP 서버 하네스로 쓴다(목 경계 아래라 기존 목으로는 못 잰다).
 - [x] `jwks-response-size-unbounded-dotnet` **[M/M · 닫힘 2026-09-11]** `IDocumentRetriever` 를 직접 구현해(`BoundedDocumentRetriever`) discovery·JWKS 만 51200B 로 묶었다. ⚠️ **`MaxResponseContentBufferSize` 를 쓰지 않은 이유**: 그 `HttpClient` 은 `AuthClient` 와 **공유**라(`KeycloakClient.cs:10`) 토큰·introspect 응답까지 함께 묶인다 — 역할이 많은 액세스 토큰은 정당하게 크다. 라이브러리 내부 상한 여부는 **여전히 미측정**이나(컴파일된 패키지) 우리가 거는 상한은 그것과 무관하다. 대체한 `HttpDocumentRetriever` 에서 이 SDK 가 쓰던 유일한 옵션 `RequireHttps` 는 테스트로 고정했다. 변이 4/4 `CAUGHT`(상한 상향 · 상태검사를 상한보다 앞으로 · RequireHttps 제거 · 교차언어 축).
   - rust 는 청크로 받으며 `JWKS_MAX_BYTES`(51200 — Nimbus `DEFAULT_HTTP_SIZE_LIMIT`, go 와 같은 값)를 넘는 순간 끊는다. ⚠️ **`Content-Length` 로만 판정하지 말 것** — 그 헤더가 없거나 거짓인 응답을 놓친다.
   - ⚠️ php 는 **상태 검사보다 먼저 본문을 통째로 슬러프한다**(`(string) $response->getBody()` 가 `getStatusCode()` 검사보다 앞) — 500 + 거대 본문이 그대로 메모리에 올라온다. 고칠 때 순서도 함께 뒤집는다.
@@ -414,13 +419,15 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [ ] `compat-table-library-cells-drift` **[M/M]** compatibility.md Node 행의 라이브러리 셀 세 개가 태그 시점 락파일과 다르다 · `docs/reference/compatibility.md:22`
 - [ ] `tokenprovider-cache-contract-untested` **[M/M]** TokenProvider 캐시 계약(만료 재조회·single-flight)이 Rust·Ruby 에서 단언되지 않는다 · `rust/src/token_provider.rs:113`
 - [ ] `facade-wiring-close-contract-unasserted` **[M/S]** 파사드의 §4 계약(provider 배선·close)이 무단언 테스트 뒤에 있고 커버리지 게이트에서도 빠져 있다 · `rust/src/client.rs:65`
-- [ ] `python-aio-security-test-asymmetry` **[M/S]** JWKS 강제 재조회 rate-limit 이 sync 에만 테스트되고 aio 미러에는 없다 · `python/tests/unit/aio/test_auth.py:446`
+- [ ] `python-aio-security-test-asymmetry` **[M/M · 범위 정정 2026-09-12 · 악화]** ⚠️ **「rate-limit 하나」가 아니라 보안 단언 여섯**이다. 독립 레그 둘이 별칭(`wrap`/`awrap`·`close`/`aclose`·`certs`/`a_certs`)과 시나리오 겹침을 반영해 짝 없는 sync 테스트 12 를 추렸고, 그중 보안이 여섯이다 — **alg 핀닝 둘**(`validate_rejects_algorithm_not_in_configured_set`·`..._accepts_...`) · **파라미터 주입**(`authorization_url_percent_encodes_and_resists_param_injection` — #442 회귀 테스트가 aio 에만 없다) · **verifier 마스킹**(`authorization_url_repr_masks_verifier`) · **nonce 부재 경로**(`exchange_code_skips_id_token_validation_without_nonce`) · **rate-limit**(원래 지목). ⚠️ alg 핀닝은 CLAUDE.md 가 교차언어 불변식으로 못박은 것이고 aio 에는 단언이 **0** 이다(실측: `alg` 히트 둘 다 토큰 위조 헬퍼) · `python/tests/unit/aio/test_auth.py`
 
 ## C. 품질 부채 — 67건 (열림 66)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 20
+### 9언어 소스 — 21
+
+- [ ] `authz-redirect-uri-not-per-call` **[M/M · 신규 2026-09-12 · H1 파생]** **php·rust 만 인가요청의 `redirect_uri` 를 호출당 받지 못한다** — 나머지 일곱은 인자로 받는다(java `URI` · kotlin/node/python/go/dotnet `string` · ruby 키워드). php 는 `createAuthorizationRequest()` 가 **인자 0**(`php/src/AuthClient.php:48`), rust 는 `create_authorization_request(&self)` 가 생성 시 config 값을 쓴다(`rust/src/auth.rs:106` · `:91`). 소비자가 겪는 것: 콜백 URL 이 여럿인 앱(멀티테넌트·환경별 콜백)이 그 둘에서만 **클라이언트를 다시 만들어야** 한다. ⚠️ **H1 의 conformance 가 이제 이 둘을 빨갛게 낸다** — 하네스 결함이 아니라 이 비대칭이 드러난 것이고, 초록으로 되돌리려면 **검사를 약하게 하지 말고 API 를 맞춘다**(rust 는 인자 추가가 불가능하므로 새 메서드, php 는 선택적 인자 — 둘 다 가산적이라 semver 파괴 아님). ⚠️ 착수 전 §4 가 「표기만 갈린다」고 말하는 것과 이 차이가 양립하는지 사람 판정이 먼저다.
 
 - [x] `jwks-refetch-budget-overclaimed` **[M/M · 닫힘 2026-09-07]** JWKS 재조회 예산 문서가 실제보다 강하게 약속했다 — cold 로드가 예산을 안 쓴다 · `rust/src/jwks.rs:34-49`
   - **재측정(2026-09-07, 독립 레그 둘)**: #402 가 비JVM **7개 README** 에 「캐시가 찬 뒤」 조건을 달았고(dotnet 은 「cold cache」 표현이라 warm 문구 grep 으로는 안 잡힌다 — 문구가 아니라 **조건의 존재**로 판정하라), JVM 둘은 「**두 번**」이라 적는다. 콜드 경로는 #403·#404 의 백오프로 별도 한정된다. 코드의 `if !cold` 는 그대로이나 그것이 더는 **과대약속이 아니다**
@@ -552,7 +559,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### harness 사각지대 — 8
 
-- [ ] `H1-conformance-authz-vacuous` **[M/M]** conformance 의 authz-url 판정이 헛돈다 — 요청값이 앱 폴백과 같고 응답을 대조조차 하지 않는다 · `harness/conformance/conformance.mjs:39`
+- [x] `H1-conformance-authz-vacuous` **[M/M · 닫힘 2026-09-12 · 범위 확대]** ⚠️ **공허가 하나가 아니라 셋이었다.** 요청↔응답 미대조 외에 `/code_challenge=/` 가 **빈 값**을 통과시켰고, URL 의 `state` 와 돌려준 `state` 를 **존재만 따로** 보고 대조하지 않았다. 판정을 `harness/conformance/authz-url.mjs` 로 뽑아 **Docker 없이** 픽스처로 재게 했다(그 판정이 오래 공허했던 이유가 「시험할 수 없다」였다). 가드 `scripts/test/test-conformance-authz-url.sh`(픽스처 8종, `doc-facts` 배선). 변이 6/6 `CAUGHT` + OFF 짝 3/3. ⚠️ **프로브가 구멍 하나를 실제로 찾았다** — 모듈을 부르되 `v.ok` 를 버리면 침묵했다(같은 PR 에서 닫음). ⚠️ 파생 신규: `authz-redirect-uri-not-per-call`(php·rust).
 - [ ] `H3-harness-image-and-lock-pins` **[M/S]** 하네스 컨테이너의 이미지·락파일 핀이 세 자리에서 새어 감사한 것과 도는 것이 다르다 · `harness/apps/rust/Dockerfile:3`
 - [ ] `H2-harness-judgment-module-no-test` **[L/M]** harness 판정 모듈에 「테스트가 있어야 한다」 규칙이 없다 — conformance.mjs 는 Docker 전체 런 없이는 시험 불가 · `harness/conformance/conformance.mjs:1`
 - [ ] `H4-runsh-network-divergence` **[L/S]** verify.sh 가 배운 것을 run.sh 는 못 받았다 — compose 네트워크명을 아직 리터럴로 박는다 · `harness/run.sh:6`
