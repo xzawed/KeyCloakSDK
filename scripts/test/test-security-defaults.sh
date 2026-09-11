@@ -131,25 +131,33 @@ sd_code_axis "clock skew" sd_skew
 #
 # ⚠️ **이 축의 스코프는 아홉이 아니다 — 그 이유를 여기 적는다**(적지 않으면 다음 세션이
 # 「아홉을 본다」로 잘못 읽는다):
-#   · 리터럴을 **자기 소스에** 선언하는 넷 = go · rust · php · ruby → 값까지 대조한다.
+#   · 리터럴을 **자기 소스에** 선언하는 다섯 = go · rust · php · ruby · node → 값까지 대조한다.
+#     ⚠️ node 는 `jose` 에 위임하지만 **jose 에 상한이 없어**(6.2.12 실측: `fetchJwks` 가
+#     `response.json()` 뿐) `[customFetch]` 이음매로 우리가 건다 — 그래서 값이 우리 소스에 있다.
 #   · java · kotlin 은 Nimbus 상수를 **심볼로 참조**한다(`NoRedirectResourceRetriever`). 리터럴이
 #     없는 것이 옳으므로 값이 아니라 **참조의 존재**를 본다 — 그 인자를 빼면 Nimbus 가 상한을
 #     지운다는 것이 #400 의 실측이다.
-#   · node(jose) · python(python-keycloak) · dotnet(Microsoft.IdentityModel) 은 JWKS fetch 를
-#     **하위 라이브러리에 위임**해 우리 소스에 상한 선언 자체가 없다. ⚠️ **그 셋이 상한을
-#     가졌는지는 아직 측정되지 않았다** — 여기서 초록인 것을 「셋도 안전하다」로 읽지 말 것.
-#     측정 방법: 각 라이브러리의 JWKS fetch 구현에서 바이트 상한/`Content-Length` 처리를 찾고,
-#     없으면 상한+1 바이트 본문을 주는 목 IdP 로 실측한다.
+#   · **python 은 상한이 없고 아직 안 닫혔다**(2026-09-11 실측): `keycloak_openid.certs()` →
+#     `ConnectionManager.raw_get` → `self._s.get(...)`(`connection.py:336`)는 `stream=True` 가
+#     아니라 본문을 통째로 올린 뒤 `.json()` 한다 — 바이트 상한도 `Content-Length` 검사도 없다.
+#     ⚠️ 이음매가 node 와 **다르다**: jose 의 `[customFetch]` 는 JWKS 전용인데, python 의 그
+#     세션은 token·introspect·logout 이 함께 쓰므로 거기에 상한을 걸면 폭발반경이 넓다.
+#     그래서 이 PR 에서 닫지 않았다 — 열린 항목이 소유한다.
+#   · **dotnet 은 여전히 미측정**이다(`Microsoft.IdentityModel` 은 컴파일된 DLL 이라 트리에
+#     소스가 없다). ⚠️ 여기서 초록인 것을 「dotnet 도 안전하다」로 읽지 말 것. 측정 방법:
+#     참조 소스에서 `HttpDocumentRetriever` 의 본문 읽기를 확인하거나, 상한+1 바이트를 주는
+#     목 IdP 로 실측한다.
 sd_jwks_cap() { # $1=언어 → 상한 리터럴(정규화 전)
   case "$1" in
     go)   sed -n 's/.*jwksMaxBytes *= *\([0-9_]*\).*/\1/p' "$ROOT/go/jwt.go" | head -1 ;;
     rust) sed -n 's/.*JWKS_MAX_BYTES: *usize *= *\([0-9_]*\).*/\1/p' "$ROOT/rust/src/jwks.rs" | head -1 ;;
     php)  sed -n 's/.*const JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' "$ROOT/php/src/Jwks/JwksStore.php" | head -1 ;;
     ruby) sed -n 's/.*JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' "$ROOT/ruby/lib/keycloak_sdk/jwks_store.rb" | head -1 ;;
+    node) sed -n 's/.*JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' "$ROOT/node/src/jwt.ts" | head -1 ;;
   esac
 }
 
-SD_CAP_LANGS='go rust php ruby'
+SD_CAP_LANGS='go rust php ruby node'
 sd_cap_expect=''
 sd_cap_seen=0
 for L in $SD_CAP_LANGS; do
@@ -166,11 +174,11 @@ for L in $SD_CAP_LANGS; do
     sd_cap_expect="$_raw"
   else
     assert_eq "$sd_cap_expect" "$_raw" \
-      "[JWKS 크기상한] $L 의 상한이 다른 언어와 다르다 — 넷이 함께 움직여야 하는 값이다"
+      "[JWKS 크기상한] $L 의 상한이 다른 언어와 다르다 — 다섯이 함께 움직여야 하는 값이다"
   fi
 done
 # 대조군 — 위 루프가 실제로 넷을 돌았는지. 목록이 비면 어서션이 0건 실행되고 조용히 통과한다.
-assert_eq "4" "$sd_cap_seen" "[JWKS 크기상한] 상한을 읽은 언어 수가 4가 아니다 — 추출 표가 낡았나?"
+assert_eq "5" "$sd_cap_seen" "[JWKS 크기상한] 상한을 읽은 언어 수가 5가 아니다 — 추출 표가 낡았나?"
 # 값은 Nimbus 의 기본 상한이다. 자매 JVM 둘이 그것을 **심볼로** 참조하므로, 여기서만 수를 고정한다.
 assert_eq "51200" "$sd_cap_expect" "[JWKS 크기상한] 51200(Nimbus DEFAULT_HTTP_SIZE_LIMIT)이 아니다"
 
