@@ -341,7 +341,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - sync 를 `aio` 미러와 동형(`urlencode` + `OidcEndpoints`)으로 맞춰 닫았다. 덤으로 discovery 왕복 한 번이 사라진다.
   - ⚠️ **기존 테스트 둘이 낡은 계약을 단언하고 있었다** — 「`openid.auth_url` 을 호출한다」(위임 자체가 결함)와 「전송 오류를 감싼다」(조립에 네트워크가 필요했다는 증거). 뒤엣것은 **「네트워크를 타지 않는다」**로 뒤집었다.
   - ⚠️ **파이썬 변이 프로브는 워크트리에 venv 가 없어 그냥은 안 돈다** — 본 트리 인터프리터 + `PYTHONPATH="$PWD/src"` 로 돌려야 워크트리 소스가 이긴다(확인함). 그것 없이는 본 트리 소스를 재게 되어 프로브가 무효다.
-- [ ] `php-sensitiveparameter-methods-missing` **[M/S]** PHP #[\SensitiveParameter]가 생성자에만 붙어 있다 — 비밀을 인자로 받는 여섯 메서드는 무보호 · `php/src/AuthClient.php:76`
+- [x] `php-sensitiveparameter-methods-missing` **[M/S · 닫힘 2026-09-11 · 계수 정정]** PHP `#[\SensitiveParameter]` 가 생성자에만 붙어 있었다. ⚠️ **「여섯 메서드」가 아니라 아홉 파라미터였다** — 손 목록 대신 반사 가드를 세우자 `TokenSet::__construct($idToken)` 이 드러났다(생성자인데도 빠져 있었다). 가드 `tests/Unit/SensitiveParameterTest.php` 는 `php/src` 를 반사해 **문자열 타입 + 비밀 이름** 파라미터를 스스로 찾으므로 새 자리가 생겨도 목록을 고칠 필요가 없다. 변이 5/5 `CAUGHT`(공허 대조군 포함). 실측: 속성 없는 인자는 스택트레이스에 원문(`refresh('SUPER-SECRET-RE...')`), 있으면 `Object(SensitiveParameterValue)`.
 - [x] `authorization-request-verifier-unmasked` **[M/M]** AuthorizationRequest.codeVerifier가 마스킹 없이 평문 출력된다 (Go·Node) — 같은 파일의 TokenSet은 마스킹한다 · `go/tokens.go:86`
 - [ ] `coverage-exclusion-hides-untested-branches` **[M/M]** 네트워크 경계 커버리지 제외가 손으로 쓴 실패 분기와 미호출 공개 메서드를 숨긴다 (Kotlin·PHP) · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Users.kt:47`
 - [ ] `redirect-uri-signature-parity` **[L/M]** createAuthorizationRequest/exchangeCode의 redirectUri 시그니처가 Rust·PHP만 다르다 (계약 패리티) · `rust/src/auth.rs:96`
