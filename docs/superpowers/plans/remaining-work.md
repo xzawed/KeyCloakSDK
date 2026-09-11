@@ -363,7 +363,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - ⚠️ **지목이 마스킹 축 하나를 가리키지만 체계적이다** — 가드의 **7축 중 5축**(1 코드/skew · 1b nonce · 1c 마스킹 · 3 2차자리 · 4 소유자)이 언어별 파일·앵커를 손으로 열거한다. 새 언어·새 자리가 생기면 `_seen == 9` 류의 대조군이 함께 늘지 않는 한 조용히 통과한다.
   - 참고: 2026-09-04 에 추가한 2b(소스 주석) 축은 `git ls-files` 로 전체를 훑어 이 부류를 피했다 — 같은 형태가 나머지 축의 목표다.
 
-- [ ] `jwks-response-size-unbounded-non-jvm` **[M/M · 신규 2026-09-04 · rust 닫힘 2026-09-07 #440]** JWKS 응답 크기 상한이 Go·Java·Kotlin 에만 있었다 — **rust 는 #440 이 닫았고 php `(string) getBody()` · ruby `resp.body` 가 남았다** · `php/src/Jwks/JwksStore.php:105` · `ruby/lib/keycloak_sdk/jwks_store.rb:103`
+- [x] `jwks-response-size-unbounded-non-jvm` **[M/M · php·ruby 닫힘 2026-09-11]** JWKS 응답 크기 상한이 Go·Java·Kotlin 에만 있었다(rust 는 #440). php·ruby 에 51200 상한을 넣고, php 는 **상태 검사보다 먼저 본문을 슬러프하던 순서**도 함께 뒤집었다. 가드는 `test-security-defaults.sh` 의 「JWKS 크기상한」 축 — 변이 6/6 `CAUGHT`. ⚠️ **node(jose)·python(python-keycloak)·dotnet(Microsoft.IdentityModel) 은 아직 측정되지 않았다** — 셋은 fetch 를 하위 라이브러리에 위임해 우리 소스에 선언이 없다. 그 축이 초록인 것을 「셋도 안전하다」로 읽지 말 것(측정 방법은 그 축의 주석).
   - rust 는 청크로 받으며 `JWKS_MAX_BYTES`(51200 — Nimbus `DEFAULT_HTTP_SIZE_LIMIT`, go 와 같은 값)를 넘는 순간 끊는다. ⚠️ **`Content-Length` 로만 판정하지 말 것** — 그 헤더가 없거나 거짓인 응답을 놓친다.
   - ⚠️ php 는 **상태 검사보다 먼저 본문을 통째로 슬러프한다**(`(string) $response->getBody()` 가 `getStatusCode()` 검사보다 앞) — 500 + 거대 본문이 그대로 메모리에 올라온다. 고칠 때 순서도 함께 뒤집는다.
   - #400(JVM 상한 복원)의 부류 재스캔에서 나왔다. Go 는 `io.LimitReader(resp.Body, 51200+1)` 로 이미 갖고 있고 주석이 출처를 Nimbus `RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT` 이라 밝힌다.
