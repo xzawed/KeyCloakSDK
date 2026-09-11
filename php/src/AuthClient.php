@@ -77,8 +77,7 @@ final class AuthClient
         #[\SensitiveParameter] string $code,
         #[\SensitiveParameter] string $codeVerifier,
         ?string $expectedNonce = null,
-    ): TokenSet
-    {
+    ): TokenSet {
         $this->provider->setPkceCode($codeVerifier);
         $tokens = $this->toTokenSet($this->getAccessToken('authorization_code', ['code' => $code]));
         if ($expectedNonce !== null) {
