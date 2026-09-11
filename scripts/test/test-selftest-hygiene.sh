@@ -509,4 +509,31 @@ if [ -f "$HYGIENE" ]; then
   fi
 fi
 
+# ── 규칙 6 — 주석이 제 옆의 값을 **다시 말할 때**, 둘이 갈리는지 본다 ──────────────
+#
+# 이 저장소가 반복해 겪는 부류다: **기계가 읽는 주장은 맞고 사람이 읽는 주장이 틀린다.**
+# 실측(2026-09-11) — 같은 수량이 세 자리에 있었고 **하나만 맞았다**:
+#   argv `--min-facts=76 --min-anchors=26`(맞음) · 바로 위 주석 「78 facts / 26 anchors」(틀림)
+#   · 등록부의 「74/22」(둘 다 틀림). 가드 230개 중 어느 것도 이것을 보지 않았다 —
+#   argv 는 `check-docs` 가 쓰지만 **그것을 서술하는 주석은 아무도 안 읽는다.**
+#
+# ⚠️ 여기서 「값이 옳은가」는 묻지 않는다(그건 `check-docs` 가 실측으로 판정한다). 묻는 것은
+# **같은 파일 안에서 주석과 명령이 같은 수를 말하는가** 하나다 — 조인이 없으면 둘 중 하나가
+# 조용히 낡고, 다음 세션이 낡은 쪽을 베낀다(실제로 등록부가 그렇게 74/22 를 들고 있었다).
+if [ -f "$HYGIENE" ]; then
+  _f_argv="$(grep -oE '\-\-min-facts=[0-9]+' "$HYGIENE" | grep -oE '[0-9]+' | head -1)"
+  _a_argv="$(grep -oE '\-\-min-anchors=[0-9]+' "$HYGIENE" | grep -oE '[0-9]+' | head -1)"
+  _f_doc="$(grep -oE '[0-9]+ facts / [0-9]+ anchors' "$HYGIENE" | grep -oE '^[0-9]+' | head -1)"
+  _a_doc="$(grep -oE '[0-9]+ facts / [0-9]+ anchors' "$HYGIENE" | grep -oE '[0-9]+ anchors' | grep -oE '^[0-9]+' | head -1)"
+  # 대조군 — 넷 중 하나라도 못 뽑으면 이 규칙은 **아무것도 안 보면서 초록**이 된다.
+  if [ -z "$_f_argv" ] || [ -z "$_a_argv" ] || [ -z "$_f_doc" ] || [ -z "$_a_doc" ]; then
+    _A_FAIL=$((_A_FAIL + 1))
+    printf 'FAIL doc-facts 하한의 argv/주석 중 하나를 못 뽑았다(argv=%s/%s · 주석=%s/%s) — 표기가 바뀌었으면 이 규칙이 공허해진다
+'       "${_f_argv:-없음}" "${_a_argv:-없음}" "${_f_doc:-없음}" "${_a_doc:-없음}" >&2
+  else
+    assert_eq "$_f_argv" "$_f_doc" "doc-facts 스텝의 주석이 말하는 facts 하한이 그 명령의 --min-facts 와 다르다"
+    assert_eq "$_a_argv" "$_a_doc" "doc-facts 스텝의 주석이 말하는 anchors 하한이 그 명령의 --min-anchors 와 다르다"
+  fi
+fi
+
 assert_report

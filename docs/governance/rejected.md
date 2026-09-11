@@ -1,5 +1,11 @@
 # 기각 레지스트리
-<!-- doc-budget: max-bytes=13285 -->
+<!-- doc-budget: max-bytes=13580 -->
+<!-- 13285 → 13580 (2026-09-11, +295B = 새 기각 **1건**: KGP 2.4.20). 규약대로 행과 함께
+     올렸고 **여유는 다시 0** 이다 — 다음 행도 반드시 이 숫자를 건드리게 하기 위해서다.
+     ⚠️ **초안은 +654B 였고 검사 8b 가 막았다(무심사 상한 300B).** 깎은 것은 근거의 산문
+     (밴드·POM·jar 메타데이터 실측)이고 **되살릴 조건은 한 글자도 건드리지 않았다** — 그
+     상세는 #465 코멘트가 소유한다. 이 기각의 특이점은 우리가 통제하는 축이 전부 정상인데
+     **외부 도구의 지원 지연**이 막았다는 것이라, 되살릴 조건도 트리가 아니라 그 도구를 겨눈다. -->
 <!-- 13096 → 13285 (2026-09-06, +189B). 규약 (1) — 증가분이 **다시 재는 명령**을 사 온다.
      배치 3 감사가 이 문서에서 잡은 8건은 전부 **낡은 실측치·죽은 인용**이었다. 기각
      레지스트리는 「제안 전에 반드시 읽는 문서」라, 여기 적힌 수가 낡으면 다음 세션이
@@ -67,6 +73,7 @@
 | `repo-config`를 required 체크로 | 그 잡의 유일한 외부 호출이 `gh api`라 GitHub API가 흔들리면 멈추는데, `PRIMARY`는 `bypass_actors: []`(라이브도 `current_user_can_bypass: never`)라 **멈춘 required는 소유자도 못 푼다** — 저장소가 비가역으로 잠긴다. 잡 주석이 이미 이 판정을 담고 있었다(내가 그걸 안 읽고 「사람 판정 대기」로 올렸다) | `node -e "const r=require('./.github/rulesets/main.json');process.exit(r.bypass_actors.length?0:1)"`가 **exit 0**이 될 때 — 즉 멈춘 required를 풀 수 있는 주체가 생겼을 때 |
 | capability matrix **L열** 가드 | 6개 PR·L셀 9개가 뒤집히는 동안 **실제 드리프트 0건** — 가드였다면 한 번도 안 울렸다. 225셀이 전부 ✅가 되어 "추가하고 표를 잊는" 모드는 구조적으로 사라졌고, 남은 removal은 단위·E2E가 같은 커밋에서 먼저 깬다. 체크리스트 ⑤도 걸린다: users.L은 `search`/`list`(Ruby)/`search`(PHP)로 **수렴하지 않는다**(내 최초 측정이 틀렸고 Grok이 반박, 소스로 확인) | **10번째 언어 행이 매트릭스에 추가될 때** — 손으로 25셀을 쓰는 그 순간이 유일한 실제 위험이다. 지금 로드맵의 확장 후보 표에는 대기 행이 0개다(첫 stable 릴리스 축은 아홉 게시로 닫혔다) |
 | java 린트·정적분석 게이트 | 아홉 중 java 만 CI 게이트가 없다(실측: python `ruff`+`mypy` · node `eslint`+`prettier` · go `staticcheck`+`gosec`+`vet` · dotnet `format` · php `phpstan`+`cs-fixer` · rust `clippy`+`rustfmt` · ruby `rubocop` · kotlin `ktlint` · **java 0건**). 그러나 java 는 **분석되지 않는 상태가 아니다** — SonarCloud 가 `sonar.java.binaries` 로 리액터 4개 모듈의 바이트코드까지 읽는다. 새 도구가 사 오는 것은 PR 차단력뿐이고, 그 대가는 spotless 의 전면 리포맷 또는 errorprone 의 초기 억제 목록이다. **사람 판정(2026-09-02): 두지 않는다.** | `grep -c '^sonar.java.binaries=' sonar-project.properties` 가 **0** 이 될 때(= java 가 정적분석 밖으로 나갈 때), 또는 포맷·정적분석이 잡았을 java 결함이 실제로 머지된 것이 실측될 때 |
+| KGP 2.4.20 | CodeQL 추출기가 못 읽어(`KotlinVersionTooRecentError … below 2.4.20`) `Analyze (java-kotlin)` 이 상시 빨강이 된다. 범프는 완성·검증했다(#465) | CodeQL 이 2.4.20+ 지원 시 — KGP 를 올려 그 잡 로그에서 그 오류가 사라지는지 본다 |
 | 전 워크플로 `persist-credentials: false` 강제 | 24개 중 10개에만 있고(`grep -rln persist-credentials .github/workflows \| wc -l` → 10, `ls .github/workflows/*.yml \| wc -l` → 24) **그 비대칭의 근거가 저장소 어디에도 없다.** 체크리스트 4 에 걸린다 — 선언된 불변식이 없으면 가드가 정책을 새로 만드는 셈이고 그건 사람의 몫이다. 규칙을 세우면 14곳을 손으로 맞춰야 하는데 무엇이 옳은지가 먼저 없다. **사람 판정(2026-09-02): 지금은 기재만.** | 사람이 정책을 정할 때, 또는 체크아웃한 자격증명을 가진 채 **신뢰할 수 없는 코드를 실행하는** 잡이 생길 때 — `git grep -l 'persist-credentials' .github/workflows` 와 `contents: write` 를 가진 잡 목록이 갈리는지가 그 신호다 |
 | `release-readiness.sh` 의 원격 태그 대조 | 태그 판정이 `rr_tag_exists`(`git tag -l` — **로컬 클론**)이고 원격을 실제로 조회하는 것은 php 미러의 `rr_mirror_tag`(`git ls-remote`) 하나뿐이다(`scripts/release-readiness.sh:93` vs `:81`). 그러나 이 스크립트의 계약이 **「읽기전용: 어떤 상태도 변경하지 않는다」**(3행)라 `fetch` 를 넣을 수 없고, 오답의 방향이 안전하다 — 로컬이 낡으면 「태그 없음」으로 답해 사람이 태그를 밀고, 그러면 릴리스 워크플로 첫 스텝의 태그↔매니페스트 가드가 다시 본다. 고치는 법도 `git fetch --tags` 하나다 | `git tag -l '<접두>*' \| wc -l` 과 `git ls-remote --tags origin '<접두>*' \| wc -l` 이 갈린 채로 이 도구가 「태그 없음」을 답한 일이 실측될 때. 그때는 fetch 를 넣지 말고 **두 값을 나란히 인쇄**하는 것이 계약을 지키는 최소 수정이다 |
 | Rust `stable` 레그의 clippy 고정 | `-D warnings`를 무는 것이 **그 레그의 목적**이다(매트릭스 주석 「stable = 최신 회귀 확인」). 고정하면 조기경보가 죽고, 의존 자체는 `--locked`가 이미 잡는다. 체크리스트 6 — 실측 12실행 전부 초록이라 관측된 파손이 0인데 새 실패 모드만 는다 | `gh run list --workflow=rust-ci.yml --json conclusion,headBranch`가 clippy 새 lint 때문에 **stable 레그만** 실패한 것을 내고, 그것이 무관한 PR을 막을 때. 그때도 고정이 아니라 그 레그만 `continue-on-error` |
