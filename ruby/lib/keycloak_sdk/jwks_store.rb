@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "faraday"
+require "json" # ⚠️ `on_data` 를 쓰면 json 미들웨어가 돌지 않아 여기서 직접 파싱한다
 
 module KeycloakSdk
   # DoS-safe JWKS 스토어. Mutex 캐시 + rate-limit + single-flight.
@@ -20,6 +21,14 @@ module KeycloakSdk
     # 안에서는 **IdP 를 때리지 않고 즉시 실패**시킨다(negative cache). 재시도 정책은 소비자 몫이다.
     FAILURE_BACKOFF_BASE = 0.2 # 초 — 첫 실패 후 대기
     FAILURE_BACKOFF_CAP  = 5.0 # 초 — 지수 증가의 상한
+
+    # ⚠️ **본문을 통째로 읽기 전에 상한을 건다.** 예전에는 `resp.body`(json 미들웨어가 이미
+    # 파싱한 값)를 그대로 받아 서버가 보내는 만큼 다 받았다 — 손상된 IdP 하나가 검증 경로를
+    # 메모리로 죽일 수 있었다. 51200 은 Nimbus `RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT` 이고
+    # go(`jwksMaxBytes`)·rust(`JWKS_MAX_BYTES`)·java·kotlin 이 같은 수를 쓴다.
+    # ⚠️ `Content-Length` 로만 판정하면 그 헤더가 없거나 거짓인 응답을 놓친다 — 청크를 받으며
+    # 누적치가 상한을 넘는 순간 읽기를 끊는다(`on_data` 안에서 raise 하면 어댑터가 중단한다).
+    JWKS_MAX_BYTES = 51_200
 
     # ⚠️ 기본값을 여기 숫자로 적지 말 것 — `Config`가 유일한 정의 자리다. 이 클래스는 평범한
     # public 클래스라 소비자가 파사드를 거치지 않고 직접 생성할 수 있고, 예전에는 그 경로가
@@ -97,10 +106,24 @@ module KeycloakSdk
     end
 
     def fetch
-      resp = @http.get(@jwks_url)
+      # ⚠️ 상한은 **상태와 무관하게** 건다. 200 만 겨누면 오류 응답의 거대 본문이 그대로
+      # 들어온다 — php 가 정확히 그 순서였다(상태 검사 전에 `json_decode`).
+      buf = +""
+      resp = @http.get(@jwks_url) do |req|
+        req.options.on_data = proc do |chunk, _received|
+          buf << chunk
+          raise TransportError, "JWKS response exceeds #{JWKS_MAX_BYTES} bytes" if buf.bytesize > JWKS_MAX_BYTES
+        end
+      end
       raise TransportError, "JWKS fetch failed: HTTP #{resp.status}" unless resp.success?
 
-      body = resp.body
+      # ⚠️ `on_data` 를 쓰면 Faraday 는 본문을 누적하지 않으므로 json 미들웨어가 돌지 않는다 —
+      # 파싱은 여기서 한다. 파싱 실패도 경계에서 SDK 타입이 되어야 한다(§4).
+      body = begin
+        JSON.parse(buf)
+      rescue JSON::ParserError => e
+        raise TransportError, "JWKS response unparsable: #{e.message}"
+      end
       raise TransportError, "JWKS response malformed" unless body.is_a?(Hash) && body["keys"].is_a?(Array)
 
       body

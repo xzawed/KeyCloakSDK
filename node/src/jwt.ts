@@ -1,6 +1,64 @@
-import { jwtVerify, createRemoteJWKSet, type JWTVerifyGetKey, type RemoteJWKSet } from 'jose'
+import {
+  jwtVerify,
+  createRemoteJWKSet,
+  customFetch,
+  type FetchImplementation,
+  type JWTVerifyGetKey,
+  type RemoteJWKSet,
+} from 'jose'
 import { KeycloakTokenValidationError, KeycloakTransportError } from './errors.js'
 import type { ValidatedToken } from './tokens.js'
+
+/**
+ * JWKS 응답 본문의 바이트 상한. 51200 은 Nimbus `JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT` 이고
+ * go(`jwksMaxBytes`)·rust·php·ruby 가 같은 수를 쓴다.
+ *
+ * ⚠️ **jose 에는 상한이 없다.** 실측(2026-09-11 · jose 6.2.12 ·
+ * `node_modules/jose/dist/webapi/jwks/remote.js:10-26`): `fetchJwks` 는 `GET` → status 200
+ * 확인 → `response.json()` 이 전부다. `Content-Length` 검사도, 최대 바이트 옵션도, 읽기를
+ * 끊는 스트리밍도 없다 — 유일한 중단은 시간(`AbortSignal.timeout`, 기본 5초)이다. 즉 손상된
+ * IdP 하나가 검증 경로를 메모리로 죽일 수 있었다.
+ */
+export const JWKS_MAX_BYTES = 51_200
+
+/**
+ * 상한을 건 JWKS fetch. `createRemoteJWKSet` 의 `[customFetch]` 이음매로 주입한다 —
+ * **JWKS 전용**이라 토큰·introspect·logout 경로에는 영향이 없다.
+ *
+ * ⚠️ `Content-Length` 로만 판정하면 그 헤더가 없거나(chunked) 거짓인 응답을 놓친다. 청크를
+ * 받으며 누적치가 상한을 넘는 순간 **스트림을 취소**한다 — 다 읽고 나서 길이를 재면 이미
+ * 메모리를 내준 뒤다.
+ */
+const fetchJwksBounded: FetchImplementation = async (url, options) => {
+  const response = await fetch(url, options)
+  const stream = response.body
+  if (stream === null) return response
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > JWKS_MAX_BYTES) {
+      await reader.cancel()
+      throw new KeycloakTransportError(`JWKS response exceeds ${JWKS_MAX_BYTES} bytes`)
+    }
+    chunks.push(value)
+  }
+  const body = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  // 상태·헤더를 보존해 되돌려 준다 — 비-200 판정은 jose 가 그대로 수행한다.
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  })
+}
 
 /**
  * 실패한 JWKS fetch 의 백오프 — `jwksMinRefetchSeconds`(30초)와 **다른 축**이다.
@@ -154,6 +212,7 @@ export class JwtValidator {
     const remote = createRemoteJWKSet(new URL(jwksUri), {
       cooldownDuration: opts.jwksMinRefetchSeconds * 1000,
       cacheMaxAge: 600_000,
+      [customFetch]: fetchJwksBounded,
     })
     return new JwtValidator(withColdCacheBackoff(remote, seams), opts)
   }

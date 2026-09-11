@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **173** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3) — 열림 **127** · 닫힘 **46** (2026-09-10 재측정) |
+| 작업 패키지 | **176** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · **후속 분할 신규 3**) — 열림 **122** · 닫힘 **54** (2026-09-11 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `173`(2026-09-10 기준 열림 127 · 닫힘 46)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `176`(2026-09-11 기준 열림 122 · 닫힘 54)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -64,6 +64,18 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 **⟶ 그리고 이 세션에서 함께 닫힌 것**: #450 vitest 4 이관(경보 2건 해소 · `main` open **0**) · #458 전송오류 분류기 무측정 · #459 보안 기본값 자가테스트 **음성 대조군**(옛 스크립트는 추출기를 `echo 30` 상수로 바꿔도 213 전부 통과했다) · #460 이 항목의 조준 정정.
 
 **⟶ 다음 대상은 아직 측정되지 않았다(2026-09-10 기준).** 이 갈래가 닫혔고 진입점 1~13 이 전부 해소됐다. ⚠️ **등록부의 「열려 있다」를 액면가로 읽지 말 것** — 이 세션에서 재판정한 30건 중 **절반 이상이 변동**했다(닫힘·서술 과대·계수 오류). 다음 세션은 **재판정부터** 시작한다. 아직 재판정하지 않은 항목이 다수다.
+
+**⟶ 4차(2026-09-11) — 「게시본에서 소비자가 겪는 것」 갈래.** 독립 레그(Grok)와 순서를 교차검토해 ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축을 그대로 쓰되, **두 곳에서 레그를 실측으로 기각**했다: `go-release-persist-credentials` 의 「10/24 수치가 낡았다」는 틀렸고(`git grep -l persist-credentials .github/workflows` → **정확히 10**, `ls *.yml` → **24**, 그리고 `contents: write` 릴리스 넷 중 **go 하나만** 0) `php-sensitiveparameter-methods-missing` 는 4위가 아니라 2위였다.
+
+14. ✅ **JWKS 응답 크기 상한이 php·ruby 에 없었다 — PR #466.** php 는 **상태 검사보다 먼저** 본문을 슬러프했다. 교차언어 축 신설(변이 6/6 `CAUGHT`). ⚠️ node·python·dotnet 은 **하위 라이브러리에 위임**해 미측정으로 남았다 — 그 축의 초록을 「셋도 안전」으로 읽지 말 것.
+15. ✅ **php 의 비밀 인자가 스택트레이스에 원문으로 샜다 — PR #467.** 등록부는 「여섯 메서드」라 했으나 **아홉 파라미터**였다(반사 가드가 `TokenSet::__construct($idToken)` 을 찾아냈다 — 생성자인데도 빠져 있었다). **손 목록을 쓰지 않은 것이 그 계수를 고쳤다.**
+16. ✅ **공백 스코프 하나가 Nimbus 예외를 공개 API 로 흘렸다(java·kotlin) — PR #468.** `Scope.isEmpty()` 가 원소 **수**를 센다. `KeycloakConfig` 에 scope 검증이 0건이라 도달 가능하다.
+17. ✅ **python sync `admin.close()` 가 no-op 이었다 — PR #469.** `test_close_is_noop` 이 **결함을 의도로 고정**하고 있어 테스트를 먼저 뒤집었다. ⚠️ `async_s` 는 sync 경로에서 못 닫는다 — 과대광고하지 않았다.
+18. ✅ **재판정 두 건은 이미 참이 아니었다 — 이 PR.** `deploy-md-omits-release-request`(#416 이 닫음) · `keycloak-image-tag-fiction`(두 문서 정정 + 트리 9/9 실측).
+
+⚠️ **이 세션이 또 확인한 계측 함정 셋** — 다음 세션은 이것부터 읽는다. (g) **`sed` 변이가 착지하지 않았는데 `SILENT` 로 보였다**(백슬래시 이스케이프). `git diff` 가 비어 있는 것으로 잡았다 — 「침묵」을 읽기 전에 **변이가 실제로 착지했는지**를 먼저 본다. (h) **gradle 을 연속으로 돌리면 데몬 락 경합(「3 busy and 3 incompatible」)으로 빌드가 죽고, 그 비영 종료가 「변이를 잡았다」와 구분되지 않는다** — 복원 뒤 **기준선까지 False** 로 나와서 들켰다. 하나씩 돌려 **명명된 테스트 실패**를 확인한다. (i) **컴파일되지 않는 변이는 `CAUGHT` 가 아니라 `INVALID` 다**(kotlin `scope = scope`). ⚠️ 그리고 **`scripts/probe.sh` 는 php·node 를 못 잰다**(워크트리에 `vendor/`·`node_modules` 가 없어 기준선 실패 → `INVALID`) — 열린 항목 `probe-cannot-run-node-php-in-worktree` 가 **여전히 참**임을 실행으로 확인했다.
+
+**⟶ 다음 대상(2026-09-11 기준).** 위 순서의 5~9위가 아직 열려 있다: `go-release-persist-credentials`(위 실측으로 되살릴 신호가 **참**) · `H1-conformance-authz-vacuous` · `lenient-parsing-yields-false-success`(rust) · `rust-msrv-leg-vs-manifest-unguarded` · `python-aio-security-test-asymmetry`. ⚠️ 여전히 **재판정부터** 시작한다.
 
 **PR 이 아닌 것**(선행이 빠져 있다): `jvm-17-floor-never-shipped`(사람 승인 릴리스) · `guard-detection-surface-hand-narrowed` 의 파생화(required **밖**에서 오탐 0 선행) · `integration-admin-surface-uneven`(9×capability 결정 — php 가 roles/groups/realms 를 **0/3 계열** 부른다) · `integration-coverage-never-measured`(9개 설계) · `registry-truth-check`(레지스트리별 **버전** 오라클 + 전파 404 규칙 — ⚠️ 순진한 라이브 폴링은 「첫 404 로 실패 결론」 함정을 되살린다) · `published-bytes-have-no-oracle`(Portal 게시 후 실제 jar 페치) · `security-invariant-not-required`(룰셋 apply — ⚠️ **required 이름을 늘리지 말고** `doc-facts` 안으로 접는 쪽이 PR 크기다).
 
@@ -317,7 +329,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - **다음 PHP 릴리스가 닫는다** — 그때 절을 새로 만들지 않으면 소비자는 API 표면이 같다는 이유로 이 변경을 못 본다(README 자신이 「게이트는 표면만 본다」고 적는 바로 그 경우다).
   - 방법은 배치 1과 동일: 고정 스냅샷(`git worktree` · **커밋된 상태로**) · 구조화 인용 `(path,line,exact_quote)` · 인용 게이트 선실행 · **렌즈 하나 + 실행강제**(「X 가 소유한다」·「N 개가 전부」는 조회를 실행해 출력을 붙일 것) · 서브에이전트에 `git config` 금지 명시.
   - 회수율 실측: 배치 1 은 10개 문서에서 **H 4건 포함 전건 지적**, 그중 최고가치는 **가드가 소비자에게 거짓을 집행하던 것**이었다(`jvm-17-floor-never-shipped`). 소비자 문서가 내부 규칙 파일보다 안전할 것이라는 사전 가정은 **틀렸다**.
-- [ ] `openid-scope-fallback-empty-only` **[M/S]** openid 스코프 폴백이 "비었을 때"만 걸려 Nimbus IllegalArgumentException이 공개 API로 샌다 (Java·Kotlin) · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:81`
+- [x] `openid-scope-fallback-empty-only` **[M/S · 닫힘 2026-09-11]** `Scope.isEmpty()` 는 **원소 수**를 세므로 공백 원소 하나가 폴백을 건너뛰고 `IllegalArgumentException("The value must not be null or empty string")` 이 §4 경계를 넘었다. 도달 가능: `KeycloakConfig` 에 scope 값 검증이 **0건**이다. 생성 전에 공백 원소를 거르도록 Java·Kotlin 을 함께 고쳤다. 변이 3/3 `CAUGHT`(명명된 테스트 실패로 확인). ⚠️ **`scope = scope` 변이는 컴파일이 안 돼 `INVALID` 였다** — 「BUILD FAILED」를 「가드가 잡았다」로 읽으면 안 된다.
 - [ ] `boundary-exception-conversion-incomplete` **[M/M]** 경계 변환의 catch 목록이 하위 라이브러리가 실제로 던지는 예외 집합보다 좁다 · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt:91`
   - ⚠️ **범위 정정**: 원장은 「Kotlin·Ruby」 2개라 적었으나 **Java·Node·.NET 을 빠뜨렸다**. ⚠️ 그리고 **원장이 지목한 Ruby 줄은 clean 이다** — `ruby/lib/keycloak_sdk/jwt_validator.rb:36` 의 `rescue JWT::DecodeError` 는 이미 JWKError 를 잡는다(실측: 설치된 `jwt-3.2.0/lib/jwt/error.rb:53` 이 `class JWKError < DecodeError`). **고치기 전에 지목부터 다시 잡을 것** — 안 그러면 clean 한 자리를 건드린다.
 - [x] `rust-public-client-empty-secret` **[M/S · 닫힘 2026-09-07 #441]** Rust AuthClient가 퍼블릭 클라이언트에도 빈 시크릿을 강제해 Basic 인증을 켰다 · `rust/src/auth.rs:67`
@@ -333,7 +345,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - ⚠️ auth 레인의 `noFollowRedirect` 를 쓰면 안 된다 — gocloak 의 IsError 가 `StatusCode() > 399` 라 3xx 를 성공으로 읽는다.
   - ⚠️ **§4 분류 오류는 약한 쪽이다. 게시된 소스가 거짓 약속을 담고 있다** — `go/tokenprovider.go:12` 의 godoc 이 "Consumers may inject a custom implementation." 이라 적는데, 실측상 `go/*.go` 에 **`TokenProvider` 를 받는 exported 함수가 0개**다(`grep -rnE "func [A-Z][A-Za-z]*\([^)]*TokenProvider" go/*.go` → 빈 결과). 이건 pkg.go.dev 에 그대로 렌더된다.
   - ⚠️ **고칠 때 CLAUDE.md 를 늘리지 말 것** — doc-budget 여유가 거의 없다. 늘려야 하면 #418 의 규칙을 탄다(교환 기록 + 300B 상한, 검사 8b 가 강제).
-- [ ] `python-sync-admin-close-noop` **[M/S]** Python 동기 admin의 close()가 no-op — async 미러는 닫는다 · `python/src/keycloak_sdk/admin/__init__.py:83`
+- [x] `python-sync-admin-close-noop` **[M/S · 닫힘 2026-09-11]** sync `close()` 가 `return None` 이라 `requests.Session` 둘이 GC 까지 살아 있었다(aio 미러는 같은 자리에서 닫는다). ⚠️ **`test_close_is_noop` 이 그 결함을 「의도」로 고정**하고 있었으므로 테스트를 먼저 뒤집었다. 매니저 둘(`connection._s` · `connection.keycloak_openid.connection._s`)을 `finally` 계약으로 닫는다. ⚠️ **`async_s` 는 닫지 못한다** — sync 경로에서 `await` 가 불가하므로 과대광고하지 않는다. 변이 3/3 `CAUGHT`. ⚠️ 「중첩 매니저 부재」는 **도달 불가**라 테스트하지 않는다 — `harden_admin` 이 생성자에서 지연 프로퍼티를 실체화하며 fail-closed 한다(그 예제를 써 보니 `AdminClient(...)` 생성 자체가 거부됐다).
   - ⚠️ **원장이 과장했다 — 「영영 안 닫힌다」는 거짓.** `ConnectionManager.__del__` 이 GC 시점에 `_s` 를 닫는다. 참인 진술은 「`close()` 가 아무것도 안 하고, 해제 시점이 **GC 에 맡겨진다**」이다(결정적 해제가 없다). 이 문장 그대로 릴리스 노트에 올리면 사실이 아닌 심각도가 된다.
   - ⚠️ **기존 테스트가 결함을 의도로 고정하고 있다** — `tests/unit/test_admin_client.py:81 test_close_is_noop` 의 docstring 이 "컨텍스트 매니저 프로토콜과 대칭을 맞추기 위한 no-op" 이라 적고 `client.raw is admin` 만 단언한다. #399(PHP·Ruby 만료)에 이어 **같은 패턴 세 번째**다.
 - [x] `python-sync-authorization-url-unencoded` **[M/S · 닫힘 2026-09-07 #442]** Python 동기 authorization_url이 퍼센트 인코딩 없이 URL을 조립했다 — async 미러는 `urlencode`를 쓴다 · `python/src/keycloak_sdk/auth.py:151`
@@ -341,7 +353,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - sync 를 `aio` 미러와 동형(`urlencode` + `OidcEndpoints`)으로 맞춰 닫았다. 덤으로 discovery 왕복 한 번이 사라진다.
   - ⚠️ **기존 테스트 둘이 낡은 계약을 단언하고 있었다** — 「`openid.auth_url` 을 호출한다」(위임 자체가 결함)와 「전송 오류를 감싼다」(조립에 네트워크가 필요했다는 증거). 뒤엣것은 **「네트워크를 타지 않는다」**로 뒤집었다.
   - ⚠️ **파이썬 변이 프로브는 워크트리에 venv 가 없어 그냥은 안 돈다** — 본 트리 인터프리터 + `PYTHONPATH="$PWD/src"` 로 돌려야 워크트리 소스가 이긴다(확인함). 그것 없이는 본 트리 소스를 재게 되어 프로브가 무효다.
-- [ ] `php-sensitiveparameter-methods-missing` **[M/S]** PHP #[\SensitiveParameter]가 생성자에만 붙어 있다 — 비밀을 인자로 받는 여섯 메서드는 무보호 · `php/src/AuthClient.php:76`
+- [x] `php-sensitiveparameter-methods-missing` **[M/S · 닫힘 2026-09-11 · 계수 정정]** PHP `#[\SensitiveParameter]` 가 생성자에만 붙어 있었다. ⚠️ **「여섯 메서드」가 아니라 아홉 파라미터였다** — 손 목록 대신 반사 가드를 세우자 `TokenSet::__construct($idToken)` 이 드러났다(생성자인데도 빠져 있었다). 가드 `tests/Unit/SensitiveParameterTest.php` 는 `php/src` 를 반사해 **문자열 타입 + 비밀 이름** 파라미터를 스스로 찾으므로 새 자리가 생겨도 목록을 고칠 필요가 없다. 변이 5/5 `CAUGHT`(공허 대조군 포함). 실측: 속성 없는 인자는 스택트레이스에 원문(`refresh('SUPER-SECRET-RE...')`), 있으면 `Object(SensitiveParameterValue)`.
 - [x] `authorization-request-verifier-unmasked` **[M/M]** AuthorizationRequest.codeVerifier가 마스킹 없이 평문 출력된다 (Go·Node) — 같은 파일의 TokenSet은 마스킹한다 · `go/tokens.go:86`
 - [ ] `coverage-exclusion-hides-untested-branches` **[M/M]** 네트워크 경계 커버리지 제외가 손으로 쓴 실패 분기와 미호출 공개 메서드를 숨긴다 (Kotlin·PHP) · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Users.kt:47`
 - [ ] `redirect-uri-signature-parity` **[L/M]** createAuthorizationRequest/exchangeCode의 redirectUri 시그니처가 Rust·PHP만 다르다 (계약 패리티) · `rust/src/auth.rs:96`
@@ -363,7 +375,10 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - ⚠️ **지목이 마스킹 축 하나를 가리키지만 체계적이다** — 가드의 **7축 중 5축**(1 코드/skew · 1b nonce · 1c 마스킹 · 3 2차자리 · 4 소유자)이 언어별 파일·앵커를 손으로 열거한다. 새 언어·새 자리가 생기면 `_seen == 9` 류의 대조군이 함께 늘지 않는 한 조용히 통과한다.
   - 참고: 2026-09-04 에 추가한 2b(소스 주석) 축은 `git ls-files` 로 전체를 훑어 이 부류를 피했다 — 같은 형태가 나머지 축의 목표다.
 
-- [ ] `jwks-response-size-unbounded-non-jvm` **[M/M · 신규 2026-09-04 · rust 닫힘 2026-09-07 #440]** JWKS 응답 크기 상한이 Go·Java·Kotlin 에만 있었다 — **rust 는 #440 이 닫았고 php `(string) getBody()` · ruby `resp.body` 가 남았다** · `php/src/Jwks/JwksStore.php:105` · `ruby/lib/keycloak_sdk/jwks_store.rb:103`
+- [x] `jwks-response-size-unbounded-non-jvm` **[M/M · php·ruby 닫힘 2026-09-11]** JWKS 응답 크기 상한이 Go·Java·Kotlin 에만 있었다(rust 는 #440). php·ruby 에 51200 상한을 넣고, php 는 **상태 검사보다 먼저 본문을 슬러프하던 순서**도 함께 뒤집었다. 가드는 `test-security-defaults.sh` 의 「JWKS 크기상한」 축 — 변이 6/6 `CAUGHT`. ⚠️ **미측정으로 남겼던 셋을 그 다음에 쟀고, 둘이 실제 구멍이었다** — node 는 닫혔고(아래) python 은 열려 있다: `jwks-response-size-unbounded-python` 참조. **「측정되지 않았다」를 「아마 괜찮다」로 읽지 말 것 — 재 보니 2/2 가 구멍이었다.**
+- [x] `node-jwks-response-size-unbounded` **[M/S · 닫힘 2026-09-11]** jose 에는 상한이 **없다**(6.2.12 실측 · `dist/webapi/jwks/remote.js:10-26`: `GET` → status 200 → `response.json()` 이 전부. `Content-Length` 검사도 최대 바이트 옵션도 없고 유일한 중단은 `AbortSignal.timeout` 5초). `createRemoteJWKSet` 의 `[customFetch]` 이음매로 우리가 상한을 건다 — **JWKS 전용**이라 토큰·introspect 경로는 그대로다. 변이 4/4 `CAUGHT`. ⚠️ **첫 판 테스트가 거짓 초록이었다** — 거대 본문을 쓰레기 바이트로 만들었더니 상한이 없어도 JSON 파싱이 실패해 「거부됐다」가 통과했다. 본문을 **유효한 JWKS + 패딩**으로 바꿔야 상한 없이는 검증이 성공하고, 그때 비로소 거부가 증거가 된다.
+- [ ] `jwks-response-size-unbounded-python` **[M/M · 신규 2026-09-11]** python 은 JWKS 본문에 상한이 없다 — `keycloak_openid.certs()` → `ConnectionManager.raw_get` → `self._s.get(...)`(`.venv/.../keycloak/connection.py:336`)가 `stream=True` 없이 본문을 통째로 올린 뒤 `.json()` 한다. ⚠️ **이음매가 node 와 다르다**: jose 의 `[customFetch]` 는 JWKS 전용인데 python 의 그 세션은 token·introspect·logout 이 함께 쓰므로 상한의 폭발반경이 넓다(admin 세션은 별개지만, 그쪽은 `users.search()` 같은 정당한 대용량 응답이 있어 같은 상한을 걸면 안 된다). 그래서 #471 에서 닫지 않았다 — **어디에 거는가가 이 항목의 실제 내용**이다. 
+- [ ] `jwks-response-size-unbounded-dotnet` **[M/M · 신규 2026-09-11 · 부분 측정]** ⚠️ **우리 쪽에는 상한이 없다는 것까지가 측정됐고, 라이브러리 내부는 미측정이다** — 둘을 섞어 읽지 말 것. 측정된 것: `JwtValidator.cs:42-45` 가 `HttpDocumentRetriever` 에 **`RequireHttps` 하나만** 설정한다 · `ConfigurationManager` 는 `AutomaticRefreshInterval`/`RefreshInterval`(시간)만 설정한다 · **`MaxResponseContentBufferSize` 는 `dotnet/src/` 전체에서 0건**(그게 걸렸다면 라이브러리와 무관하게 바이트 상한이 됐을 자리다) · `HttpClient.Timeout` 은 시간 경계지 바이트 경계가 아니다. 미측정: `HttpDocumentRetriever.GetDocumentAsync` 가 본문을 어떻게 읽는가(`Microsoft.IdentityModel` 8.22.0 은 컴파일된 패키지라 트리에 소스가 없다). ⚠️ **이음매에 python 과 같은 문제가 있다** — `KeycloakClient.cs:10` 의 `HttpClient` 은 **Auth 와 JwtValidator 가 공유**하므로 거기에 `MaxResponseContentBufferSize` 를 걸면 토큰·introspect 응답까지 함께 묶인다. 깨끗한 선택지는 **JWKS/discovery 전용 `HttpClient` 을 따로 두는 것**이고, 그건 커넥션 풀이 하나 더 생기는 설계 변경이라 사람 판정이 필요하다.
   - rust 는 청크로 받으며 `JWKS_MAX_BYTES`(51200 — Nimbus `DEFAULT_HTTP_SIZE_LIMIT`, go 와 같은 값)를 넘는 순간 끊는다. ⚠️ **`Content-Length` 로만 판정하지 말 것** — 그 헤더가 없거나 거짓인 응답을 놓친다.
   - ⚠️ php 는 **상태 검사보다 먼저 본문을 통째로 슬러프한다**(`(string) $response->getBody()` 가 `getStatusCode()` 검사보다 앞) — 500 + 거대 본문이 그대로 메모리에 올라온다. 고칠 때 순서도 함께 뒤집는다.
   - #400(JVM 상한 복원)의 부류 재스캔에서 나왔다. Go 는 `io.LimitReader(resp.Body, 51200+1)` 로 이미 갖고 있고 주석이 출처를 Nimbus `RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT` 이라 밝힌다.
@@ -374,9 +389,9 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - **「두 잡」은 맞다**: `grep -e '--- '` 파이프라인이 3곳인데(`kotlin-ci.yml:78` · `security-audit.yml:86` · `:347`) ` FAILED$` 게이트는 harness 쪽 1곳(`:327`)에만 있다 — #320 이 3곳 중 1곳에만 적용됐다.
   - ⚠️ **저장소 자신의 주석이 원인을 틀리게 적었다.** `security-audit.yml:318-322` 는 "OSV 가 그런 좌표에 취약점이 없다고 답하므로"라 하지만, 실측상 **OSV 는 ` FAILED` 접미사에 무감각**하다(netty-codec-http 4.1.119.Final → 접미사 유무 모두 18건). 진짜 원인은 **전이 폐포 붕괴** — FAILED 루트 하나가 서브트리를 통째로 날려 CVE 를 지닌 좌표가 아예 조회되지 않는다(실측 **좌표 72개 → 5개**, 루트 하나만 깨도 **72 → 14**로 jackson-databind·resteasy·httpclient 등 59개가 조용히 빠진다).
   - ⚠️ **Java 쪽은 고치지 말 것** — 같은 셸 모양이지만 수집기가 Maven 이라 미해결 의존성에서 **도구 자체가 non-zero** 로 죽는다(실측 `MVN_EXIT=1`). 구조적으로 fail-closed 다.
-- [ ] `docs-commands-that-do-not-work` **[M/S · 범위 축소 2026-09-07]** 소비자 문서가 적은 명령·환경변수가 실제로는 동작하지 않는다 · `docs/guides/development-setup.md:77`
+- [ ] `docs-commands-that-do-not-work` **[M/S · 범위 축소 2026-09-07 · php 한 건 닫힘 2026-09-11]** 소비자 문서가 적은 명령·환경변수가 실제로는 동작하지 않는다 · `docs/guides/development-setup.md:77`. ⚠️ **php 한 건은 실사용 중 잡혔다** — `.claude/rules/php.md` 가 「디렉터리 이름에 버전 접미사가 붙는다(`php-8.3`)」고 적고 `KCSDK_PHP` 기본값도 그 경로였는데, 이 PC 의 실제 디렉터리는 `~/tools/php` 다(ruby.md 가 이미 같은 정정을 안고 있다 — **부류다**). 남은 것을 찾는 방법은 산문 검토가 아니라 **그 명령을 돌려 보는 것**이고, 그 일반형은 `rules-command-reference-existence-guard` 가 소유한다.
   - **인용한 자리는 저장소 루트에서 동작한다**(실측 2026-09-07: `KCSDK_PY` 기본값 `python/.venv/Scripts/python.exe` 는 루트 기준 실재). 같은 표의 썩은 JDK 폴백과 `.claude/rules` 의 죽는 명령 셋은 **#423 이 닫았다**. **남은 것은 부류가 비었음이 증명되지 않은 것**이다 — `docs/guides/` 와 아홉 README 의 명령을 전수로 돌린 적이 없다. 형제 `docs-kcsdk-env-ssot` 와 함께 본다.
-- [ ] `deploy-md-omits-release-request` **[M/S]** DEPLOY.md §4 릴리스 절차가 태그를 만드는 트리거 파일을 열거하지 않는다 · `DEPLOY.md:403`
+- [x] `deploy-md-omits-release-request` **[M/S · 재판정으로 닫힘 2026-09-11]** **이미 참이 아니었다** — #416(`aab1d67`)이 닫았는데 체크박스만 남아 있었다. §4 는 `DEPLOY.md:415–451` 이고 그 안 `:433`·`:440` 이 `.github/release-request.json` 을 트리거로 명시하며 「머지가 트리거가 아니다」까지 경고한다. 재현: `git log -S'Merging is not the trigger' -- DEPLOY.md`.
 - [ ] `stale-prose-contradicts-source` **[M/S · 절반 닫힘 2026-09-07]** 산문 주석이 자기가 서술하는 값·전제·코드보다 낡았고 대조가 없다 · `python/src/keycloak_sdk/config.py:23`
   - **인용한 주석 셋은 #398 이 고쳤다** — 그 자리는 지금 「기본 30」이라 적고 축 2b 가 소스 주석의 JWKS 기본값을 대조한다(실측 2026-09-07). **남은 것은 부류다**: JWKS 기본값 **밖의** 산문에는 오라클이 없다. 형제 항목 `stale-comments-nobody-collates` 와 함께 본다.
 - [ ] `compat-table-library-cells-drift` **[M/M]** compatibility.md Node 행의 라이브러리 셀 세 개가 태그 시점 락파일과 다르다 · `docs/reference/compatibility.md:22`
@@ -503,7 +518,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 ### 문서·규칙 — 15
 
 - [ ] `docs-kcsdk-env-ssot` **[M/S]** KCSDK_* 환경변수 규약이 세 곳으로 갈려 있고 두 곳이 실측으로 부정된 경로를 가리킨다 · `CLAUDE.md:66`
-- [ ] `keycloak-image-tag-fiction` **[M/M]** 9언어가 전부 같은 태그를 핀하는데 문서 셋이 '언어별로 다르다'고 적는다 · `SECURITY.md:92`
+- [x] `keycloak-image-tag-fiction` **[M/M · 재판정으로 닫힘 2026-09-11]** **이미 참이 아니었다** — `SECURITY.md:90` 과 `docs/reference/compatibility.md:32` 가 둘 다 「아홉이 같은 태그를 핀한다 · 언어별 분기는 없다」로 정정돼 있고, 후자는 「예전에 그렇게 주장했다」까지 적는다. 트리 실측 2026-09-11: 아홉 언어 **9/9** 가 `keycloak:26.6` 을 핀한다(이탈 0 — `keycloak:25.0.4` 히트는 `python/.venv` 안 라이브러리 문서화 문자열이라 우리 소스가 아니다). ⚠️ **다만 그 사실을 보는 가드는 없다**(두 문장 어디에도 `doc-guard` 앵커가 없다) — 한 언어가 드리프트하면 두 문서가 조용히 거짓이 된다. 그 구멍은 이 항목이 아니라 `keycloak-server-tag-ssot` 가 소유한다.
 - [ ] `php-jwt-headers-rationale` **[M/S]** 세 곳이 반복하는 firebase/php-jwt 근거가 핀된 원본과 정반대다 · `.claude/rules/php.md:49`
 - [ ] `deploy-narrative-stale` **[M/M]** DEPLOY.md 본문 다섯 자리가 워크플로·룰셋 개정을 못 따라갔다 · `DEPLOY.md:36`
 - [ ] `deploy-php-mirror-gap` **[M/S]** PHP 미러 쪽 장치가 저장소에 실재하는데 런북이 그것을 모른다 · `DEPLOY.md:212`
@@ -535,7 +550,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 유예·되살릴 조건 — 9
 
-- [ ] `go-release-persist-credentials` **[M/S]** `contents: write` 릴리스 잡 넷 중 go 하나만 checkout 자격증명을 워크스페이스에 남긴다 — 기각의 되살릴 신호가 지금 참이다 · `.github/workflows/go-release.yml:138`
+- [x] `go-release-persist-credentials` **[M/S · 닫힘 2026-09-11 · 계수 정정]** ⚠️ **「넷」이 아니라 셋이었다** — `contents: write` **이면서 체크아웃하는** 잡은 `dotnet-release:release` · `go-release:release` · `php-release:split` 뿐이다. ruby-release 의 `contents: write` 두 히트는 **헤더 주석의 산문**이고(「불필요하다」는 설명), 그것을 세는 것이 바로 열린 항목 `guard-probes-count-mentions-not-declarations` 가 말하는 부류다 — **등록부 자신이 그 오류를 저질렀다.** 기각은 살아 있다(전 워크플로 강제는 여전히 기각): 규칙 1b 의 범위를 기각이 지목한 **그 조인**(write 토큰 + 체크아웃)으로만 좁혔다. 가드 `check-ci-permissions.mjs` 규칙 1b + 공허 하한 `--min-write-checkout=3`. 변이 3/3 `CAUGHT`.
 - [ ] `revive-conditions-unmeasured` **[M/M]** 되살릴 조건을 「돌아가는 명령」으로 적어 두고, 그 명령을 아무도 돌리지 않는다 — 기각 22건이 전부 수동 감시다 · `docs/governance/rejected.md:44`
 - [ ] `sonar-tests-revive-instrument` **[M/M]** sonar.tests 되살릴 조건이 「색인 수가 유지되는가」인데 그 수를 아무도 기록하지 않는다 — 공허한 초록을 판별할 계측기가 없다 · `.github/workflows/sonarcloud.yml:22`
 - [ ] `dependabot-ignore-joins` **[M/M]** 조건부 `ignore` 셋의 해제 조건이 다른 파일의 사실에 묶여 있는데 조인이 없다 — kotlin 하나만 기계가 본다 · `.github/dependabot.yml:79`
