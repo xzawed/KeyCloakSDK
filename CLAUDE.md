@@ -230,19 +230,19 @@ dev(`devDependencies` — **앵커 있음**):
 | JWT(강화 검증) | `Microsoft.IdentityModel.JsonWebTokens` | 8.22.0 |
 | JWT(JWKS/디스커버리) | `Microsoft.IdentityModel.Protocols.OpenIdConnect` | 8.22.0 |
 | Admin | `Keycloak.AuthServices.Sdk` | 2.7.0 |
-| DI 추상화 | `Microsoft.Extensions.DependencyInjection.Abstractions` | 9.0.19 |
+| DI 추상화 | `Microsoft.Extensions.DependencyInjection.Abstractions` | 9.0.20 |
 
 dev(테스트 csproj — **앵커 있음**):
 
 <!-- doc-guard: kind=dep source=dotnet/tests/Xzawed.Keycloak.Sdk.Tests/Xzawed.Keycloak.Sdk.Tests.csproj min=6 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
-| 테스트 호스트 | `Microsoft.NET.Test.Sdk` | 18.9.0 |
+| 테스트 호스트 | `Microsoft.NET.Test.Sdk` | 18.10.0 |
 | 단위 테스트 | `xunit` | 2.9.3 |
 | 테스트 어댑터 | `xunit.runner.visualstudio` | 4.0.0 |
 | 커버리지 수집 | `coverlet.collector` | 10.0.1 |
 | HTTP 목 | `WireMock.Net` | 2.15.0 |
-| 통합 테스트 | `Testcontainers.Keycloak` | 4.14.0 |
+| 통합 테스트 | `Testcontainers.Keycloak` | 4.15.0 |
 
 전부 Apache-2.0/MIT(호환).
 
