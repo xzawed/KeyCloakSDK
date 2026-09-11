@@ -21,15 +21,31 @@ export function judgeAuthzUrl({ status, body, requestedRedirectUri }) {
 
   const raw = body?.url;
   if (typeof raw !== "string" || raw === "") return fail("url-missing");
-  let q;
+  let parsed;
   try {
-    q = new URL(raw).searchParams;
+    parsed = new URL(raw);
   } catch {
     return fail("url-unparseable", raw.slice(0, 80));
   }
+  const q = parsed.searchParams;
+
+  // 인가 URL이 http(s)가 아니면 그 뒤의 모든 단언이 무의미하다.
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    return fail("scheme-not-http", parsed.protocol);
+  }
+
+  // ⚠️ **중복 파라미터는 대조를 통째로 우회한다** — `URLSearchParams.get()`은 **첫 값**을
+  // 돌려주므로 `?redirect_uri=<요청값>&redirect_uri=<공격자>`가 우리 대조를 통과하고,
+  // 마지막 값을 쓰는 IdP는 공격자 쪽을 쓴다. 판정하는 파라미터는 정확히 하나여야 한다.
+  for (const k of ["redirect_uri", "code_challenge", "code_challenge_method", "state"]) {
+    if (q.getAll(k).length > 1) return fail("duplicate-param", k);
+  }
 
   // PKCE verifier는 인가 URL에 실려서는 안 된다(앞단계부터 본다 — 누출이 가장 비싸다).
-  if (raw.includes("code_verifier")) return fail("code-verifier-leaked");
+  // ⚠️ 원문 부분문자열만 보면 **퍼센트 인코딩으로 빠져나간다**(`code%5Fverifier=` — 키는
+  // 디코드되어 `code_verifier`가 된다). 그래서 디코드된 **키 이름**도 함께 본다.
+  const verifierKey = [...q.keys()].some((k) => /code[_-]?verifier/i.test(k));
+  if (verifierKey || raw.toLowerCase().includes("code_verifier")) return fail("code-verifier-leaked");
 
   const method = q.get("code_challenge_method");
   if (method !== "S256") return fail("challenge-method-not-s256", String(method));

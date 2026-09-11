@@ -1,0 +1,9 @@
+{
+  "_why": "redirect_uri가 두 번 실렸다. `URLSearchParams.get()`은 **첫 값**을 돌려주므로 우리 대조는 통과하는데, 마지막 값을 쓰는 IdP는 공격자 쪽을 쓴다 — 대조가 있는데도 우회되는 자리다(독립 레그 지목).",
+  "requestedRedirectUri": "http://probe.example/cb",
+  "status": 200,
+  "body": {
+    "url": "https://idp.example/realms/it-realm/protocol/openid-connect/auth?response_type=code&client_id=it-client&redirect_uri=http%3A%2F%2Fprobe.example%2Fcb&redirect_uri=https%3A%2F%2Fevil.example%2Fsteal&scope=openid+profile&state=S1234567890abcdef&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+    "state": "S1234567890abcdef"
+  }
+}

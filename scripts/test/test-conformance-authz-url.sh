@@ -37,6 +37,20 @@ assert_contains "$out" "state-mismatch" "state 불일치를 state-mismatch로 �
 # 3b) state가 빈 값인 응답 — `/[?&]state=/`가 통과시키던 같은 부류.
 assert_fails node "$MOD" "$FIX/empty-state.json"
 
+# ── 독립 레그가 찾은 우회로 셋(대조가 있는데도 빠져나가는 자리) ────────────
+# 4) 중복 파라미터: get()이 첫 값을 돌려주므로 대조는 통과하고 IdP는 마지막 값을 쓸 수 있다.
+assert_fails node "$MOD" "$FIX/duplicate-redirect-uri.json"
+out=$(node "$MOD" "$FIX/duplicate-redirect-uri.json" 2>&1 || true)
+assert_contains "$out" "duplicate-param" "중복 파라미터를 duplicate-param으로 보고"
+
+# 5) 퍼센트 인코딩된 verifier 키: 원문 부분문자열 검사를 빠져나간다.
+assert_fails node "$MOD" "$FIX/encoded-verifier-leak.json"
+out=$(node "$MOD" "$FIX/encoded-verifier-leak.json" 2>&1 || true)
+assert_contains "$out" "code-verifier-leaked" "인코딩된 verifier 누출도 잡는다"
+
+# 6) http(s)가 아닌 인가 URL.
+assert_fails node "$MOD" "$FIX/non-http-scheme.json"
+
 # ── 옛 판정이 이미 잡던 것들 — 강화하면서 잃지 않았는가(회귀 대조군). ──────
 assert_fails node "$MOD" "$FIX/leaks-verifier.json"
 out=$(node "$MOD" "$FIX/leaks-verifier.json" 2>&1 || true)
@@ -60,21 +74,28 @@ fi
 # ── conformance.mjs가 실제로 이 모듈을 쓰는가. ──────────────────────────────
 # 모듈만 고치고 호출부가 옛 인라인 정규식을 그대로 두면 이 테스트 전부가 공허하다.
 CONF="$DIR/../../harness/conformance/conformance.mjs"
-if grep -q 'judgeAuthzUrl' "$CONF"; then
+# ⚠️ **import 는 호출이 아니다.** `judgeAuthzUrl` 이라는 토큰만 찾으면 import 줄이 그것을
+# 만족시키고, 호출을 `const v = { ok: r.status === 200 };` 로 갈아치워도 초록이다(독립 레그
+# 지목). 그래서 **호출 형태**를 찾는다.
+if grep -q 'const v = judgeAuthzUrl({' "$CONF"; then
   _A_PASS=$((_A_PASS+1))
 else
-  printf 'FAIL conformance.mjs가 판정 모듈을 쓰지 않는다 — 모듈만 고치고 호출부가 옛 정규식이면 위 전부가 공허하다\n' >&2
+  printf 'FAIL conformance.mjs가 판정을 호출하지 않는다(import 만으로는 부족하다)\n' >&2
   _A_FAIL=$((_A_FAIL+1))
 fi
 # ⚠️ **부르는 것과 쓰는 것은 다르다.** 변이 프로브가 실제로 찾아낸 구멍이다(M5): 모듈을
 # 그대로 부르면서 기록만 `r.status === 200` 로 되돌리면 위 `judgeAuthzUrl` 검사는 통과하고
 # 판정은 통째로 버려진다 — 등록부가 이름 붙인 「단언이 속성이 아니라 존재를 센다」 부류다.
 # 그래서 기록하는 그 줄이 판정 결과를 쓰는지 본다.
+#
+# ⚠️ 글롭 `*v.ok*` 로는 부족하다 — `v.ok || r.status === 200` 이 그것을 만족시키면서 200 을
+# 우회로로 만든다(독립 레그 지목). 기록 줄을 **그 모양 그대로** 못박는다. 서식을 바꾸면
+# 빨개지는데, 그때 다시 읽어야 하는 줄이 정확히 이 줄이므로 그 비용은 의도한 것이다.
 rec_line=$(grep 'rec("authz-url S256"' "$CONF" || true)
 case "$rec_line" in
-  *v.ok*) _A_PASS=$((_A_PASS+1)) ;;
+  *'rec("authz-url S256", v.ok, v.detail);'*) _A_PASS=$((_A_PASS+1)) ;;
   *)
-    printf 'FAIL conformance.mjs가 판정 결과(v.ok)를 기록하지 않는다 — 판정을 부르고 버린다\n  [%s]\n' "$rec_line" >&2
+    printf 'FAIL conformance.mjs의 기록 줄이 판정 결과 그대로가 아니다 — 판정을 버리거나 우회로를 달았다\n  [%s]\n' "$rec_line" >&2
     _A_FAIL=$((_A_FAIL+1))
     ;;
 esac
