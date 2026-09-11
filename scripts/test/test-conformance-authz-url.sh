@@ -66,6 +66,18 @@ else
   printf 'FAIL conformance.mjs가 판정 모듈을 쓰지 않는다 — 모듈만 고치고 호출부가 옛 정규식이면 위 전부가 공허하다\n' >&2
   _A_FAIL=$((_A_FAIL+1))
 fi
+# ⚠️ **부르는 것과 쓰는 것은 다르다.** 변이 프로브가 실제로 찾아낸 구멍이다(M5): 모듈을
+# 그대로 부르면서 기록만 `r.status === 200` 로 되돌리면 위 `judgeAuthzUrl` 검사는 통과하고
+# 판정은 통째로 버려진다 — 등록부가 이름 붙인 「단언이 속성이 아니라 존재를 센다」 부류다.
+# 그래서 기록하는 그 줄이 판정 결과를 쓰는지 본다.
+rec_line=$(grep 'rec("authz-url S256"' "$CONF" || true)
+case "$rec_line" in
+  *v.ok*) _A_PASS=$((_A_PASS+1)) ;;
+  *)
+    printf 'FAIL conformance.mjs가 판정 결과(v.ok)를 기록하지 않는다 — 판정을 부르고 버린다\n  [%s]\n' "$rec_line" >&2
+    _A_FAIL=$((_A_FAIL+1))
+    ;;
+esac
 if grep -q 'code_challenge_method=S256' "$CONF"; then
   printf 'FAIL conformance.mjs에 옛 인라인 정규식이 남아 있다\n' >&2
   _A_FAIL=$((_A_FAIL+1))
