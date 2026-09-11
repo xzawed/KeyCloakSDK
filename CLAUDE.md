@@ -314,12 +314,12 @@ dev(테스트 csproj — **앵커 있음**):
 
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
-| 단위 테스트 | JUnit 6.1.3 · MockK 1.14.11 · WireMock 3.13.2 · `kotlinx-coroutines-test` 1.11.0 · `kotlin-test-junit5` 2.4.10 | — |
-| 빌드/배포 플러그인 | Kotlin 2.4.10 · vanniktech `maven.publish` 0.37.0(Central Portal) · Kover 0.9.9 · ktlint gradle 14.2.0 · Dokka 2.2.0 | — |
+| 단위 테스트 | JUnit 6.1.3 · MockK 1.14.11 · WireMock 3.13.2 · `kotlinx-coroutines-test` 1.11.0 · `kotlin-test-junit5` 2.4.20 | — |
+| 빌드/배포 플러그인 | Kotlin 2.4.20 · vanniktech `maven.publish` 0.37.0(Central Portal) · Kover 0.9.9 · ktlint gradle 14.2.0 · Dokka 2.2.0 | — |
 
 전부 Apache-2.0/EPL-2.0(호환). Admin·인증·JWT 3좌표는 Java SDK가 실 Keycloak으로 이미 검증한 것과 동일해 **신규 라이브러리 리스크 0** — 차이는 코루틴 래핑뿐이다.
 
-⚠️ 위 표의 `Kotlin 2.4.10`은 **빌드 툴체인(KGP) 버전**이지 소비자 하한이 아니다 — 게시 jar의 메타데이터는 `languageVersion`/`apiVersion`(=`KOTLIN_2_2`)이 정하므로 **소비자 하한은 2.2+**다(전이 `kotlin-stdlib`까지 함께 내려야 하는 이유는 `.claude/rules/kotlin.md`).
+⚠️ 위 표의 `Kotlin 2.4.20`은 **빌드 툴체인(KGP) 버전**이지 소비자 하한이 아니다 — 게시 jar의 메타데이터는 `languageVersion`/`apiVersion`(=`KOTLIN_2_2`)이 정하므로 **소비자 하한은 2.2+**다(전이 `kotlin-stdlib`까지 함께 내려야 하는 이유는 `.claude/rules/kotlin.md`).
 
 ## 현재 상태
 

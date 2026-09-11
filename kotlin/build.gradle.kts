@@ -1,5 +1,5 @@
 // gradle/wrapper: 9.5.0
-// kgp-gradle-band: kgp=2.4.10 gradle=7.6.3-9.5.0
+// kgp-gradle-band: kgp=2.4.20 gradle=7.6.3-9.7.0
 //   ⚠️ 이 줄은 주석이 아니라 **검사되는 선언**이다(scripts/check-versions.mjs). kotlinlang.org의
 //   KGP↔Gradle 완전지원 밴드를 그 KGP 버전과 **묶어서** 기록한다 — `kgp=`가 아래 `kotlin("jvm")`과
 //   어긋나면 가드가 실패하므로, KGP를 올리는 사람은 밴드를 반드시 다시 확인하게 된다(밴드 값은
@@ -28,12 +28,12 @@ kotlin {
     explicitApi() // JDK21 + public API 엄격
 
     // ⚠️ 소비자 Kotlin 하한선 — 게시 아티팩트의 바이너리 메타데이터 버전을 결정한다.
-    // KGP 2.4.10로 그냥 빌드하면 @Metadata(mv=[2,4,…])가 박혀 **Kotlin 2.4 미만 소비자는
+    // KGP 2.4.20로 그냥 빌드하면 @Metadata(mv=[2,4,…])가 박혀 **Kotlin 2.4 미만 소비자는
     // "compiled with an incompatible version of Kotlin"으로 컴파일 자체가 불가능**하다
     // (하네스 install 소비자앱이 2.2.20이라 7일 연속 CI RED였던 실제 원인).
     // languageVersion/apiVersion을 내리면 그만큼 낮은 mv가 방출돼 더 넓은 소비자가 쓸 수 있다
     // (컨테이너 실측: 미설정 → mv=[2,4], KOTLIN_2_0 → mv=[2,0], 둘 다 test+ktlintCheck BUILD SUCCESSFUL).
-    // 2.0이 아니라 2.2를 고른 이유: KGP 2.4.10이 "Language version 2.0 is deprecated ... Update the
+    // 2.0이 아니라 2.2를 고른 이유: KGP 2.4.20이 "Language version 2.0 is deprecated ... Update the
     // version to 2.2"를 경고한다 — 신규 라이브러리를 폐기예정 버전에 묶으면 다음 KGP 상향에서 빌드가 깨진다.
     // 2.2는 경고 없이 지원되며 하네스 install 소비자앱(2.2.20)도 충족한다.
     // ⚠️ 이 하한을 올리면 그만큼 소비자를 잘라내는 것이므로 릴리스 노트에 반드시 명시할 것.
