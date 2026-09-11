@@ -121,6 +121,70 @@ sd_code_axis "JWKS 재조회" sd_default
 sd_expect="$SD_EXPECT"
 sd_code_axis "clock skew" sd_skew
 
+# ---------------------------------------------------------------------------
+# 1b) JWKS 응답 **크기 상한** — 같은 계급의 DoS 파라미터인데 축이 없었다
+# ---------------------------------------------------------------------------
+#
+# 상한이 없으면 손상된 IdP 하나가 검증 경로를 메모리로 죽인다. 값 51200 은 우리가 고른 수가
+# 아니라 Nimbus `JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT` 이고, 자체 fetch 를 하는 언어들이
+# 그 수를 따라간다.
+#
+# ⚠️ **이 축의 스코프는 아홉이 아니다 — 그 이유를 여기 적는다**(적지 않으면 다음 세션이
+# 「아홉을 본다」로 잘못 읽는다):
+#   · 리터럴을 **자기 소스에** 선언하는 넷 = go · rust · php · ruby → 값까지 대조한다.
+#   · java · kotlin 은 Nimbus 상수를 **심볼로 참조**한다(`NoRedirectResourceRetriever`). 리터럴이
+#     없는 것이 옳으므로 값이 아니라 **참조의 존재**를 본다 — 그 인자를 빼면 Nimbus 가 상한을
+#     지운다는 것이 #400 의 실측이다.
+#   · node(jose) · python(python-keycloak) · dotnet(Microsoft.IdentityModel) 은 JWKS fetch 를
+#     **하위 라이브러리에 위임**해 우리 소스에 상한 선언 자체가 없다. ⚠️ **그 셋이 상한을
+#     가졌는지는 아직 측정되지 않았다** — 여기서 초록인 것을 「셋도 안전하다」로 읽지 말 것.
+#     측정 방법: 각 라이브러리의 JWKS fetch 구현에서 바이트 상한/`Content-Length` 처리를 찾고,
+#     없으면 상한+1 바이트 본문을 주는 목 IdP 로 실측한다.
+sd_jwks_cap() { # $1=언어 → 상한 리터럴(정규화 전)
+  case "$1" in
+    go)   sed -n 's/.*jwksMaxBytes *= *\([0-9_]*\).*/\1/p' "$ROOT/go/jwt.go" | head -1 ;;
+    rust) sed -n 's/.*JWKS_MAX_BYTES: *usize *= *\([0-9_]*\).*/\1/p' "$ROOT/rust/src/jwks.rs" | head -1 ;;
+    php)  sed -n 's/.*const JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' "$ROOT/php/src/Jwks/JwksStore.php" | head -1 ;;
+    ruby) sed -n 's/.*JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' "$ROOT/ruby/lib/keycloak_sdk/jwks_store.rb" | head -1 ;;
+  esac
+}
+
+SD_CAP_LANGS='go rust php ruby'
+sd_cap_expect=''
+sd_cap_seen=0
+for L in $SD_CAP_LANGS; do
+  # ruby 는 `51_200` 으로 적는다 — 자릿수 구분자는 표기일 뿐이므로 지운 뒤 비교한다.
+  _raw="$(sd_jwks_cap "$L" | tr -d '_' || true)"
+  # ⚠️ 추출 실패를 통과로 읽지 않는다 — 선언 표기가 바뀌면 sed 가 빈 문자열을 내고, 그걸
+  # 넘기면 이 축은 **아무것도 안 보면서 초록**이 된다.
+  _has=1; [ -n "$_raw" ] && _has=0
+  assert_eq "ok" "$(ok_if "$_has" MISSING)" \
+    "[JWKS 크기상한] $L 의 상한을 소스에서 추출하지 못했다 — 선언이 지워졌거나 표기가 바뀌었다"
+  [ -n "$_raw" ] || continue
+  sd_cap_seen=$((sd_cap_seen + 1))
+  if [ -z "$sd_cap_expect" ]; then
+    sd_cap_expect="$_raw"
+  else
+    assert_eq "$sd_cap_expect" "$_raw" \
+      "[JWKS 크기상한] $L 의 상한이 다른 언어와 다르다 — 넷이 함께 움직여야 하는 값이다"
+  fi
+done
+# 대조군 — 위 루프가 실제로 넷을 돌았는지. 목록이 비면 어서션이 0건 실행되고 조용히 통과한다.
+assert_eq "4" "$sd_cap_seen" "[JWKS 크기상한] 상한을 읽은 언어 수가 4가 아니다 — 추출 표가 낡았나?"
+# 값은 Nimbus 의 기본 상한이다. 자매 JVM 둘이 그것을 **심볼로** 참조하므로, 여기서만 수를 고정한다.
+assert_eq "51200" "$sd_cap_expect" "[JWKS 크기상한] 51200(Nimbus DEFAULT_HTTP_SIZE_LIMIT)이 아니다"
+
+# JVM 둘 — 리터럴이 아니라 **참조의 존재**를 본다. 이 인자를 빼면 `JWKSourceBuilder` 가 자기
+# 리트리버를 만들며 상한을 지운다(#400 의 바이트코드 실측).
+for _f in \
+  "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/NoRedirectResourceRetriever.java" \
+  "kotlin/src/main/kotlin/io/github/xzawed/keycloak/NoRedirectResourceRetriever.kt"
+do
+  _hits="$(grep -c 'DEFAULT_HTTP_SIZE_LIMIT' "$ROOT/$_f" 2>/dev/null || printf '0')"
+  assert_eq "ok" "$(ok_if "$([ "$_hits" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
+    "[JWKS 크기상한] $_f 가 JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT 을 더 이상 참조하지 않는다"
+done
+
 # ⚠️ **둘째 정의 자리.** 위 축은 언어당 한 곳만 읽는데, 두 언어는 같은 파라미터를 **두 곳**에
 # 선언한다 — 그리고 dotnet 은 위 축이 읽는 쪽이 **소비자가 받는 값이 아니다**:
 #   dotnet  JwtValidator.cs(위 축) + KeycloakConfig.cs. 파사드가 `ClockSkewSeconds = cfg.ClockSkewSeconds`
