@@ -63,7 +63,12 @@ public class AuthClient internal constructor(
         val codeVerifier = CodeVerifier()
         val state = State()
         val nonce = Nonce()
-        var scope = Scope(*config.scopes.toTypedArray())
+        // ⚠️ `Scope.isEmpty()` 는 **원소 수**를 센다 — 원소가 하나라도 있으면 그 값이 공백이든
+        // 빈 문자열이든 폴백이 발동하지 않고, Nimbus 가 `IllegalArgumentException("The value must
+        // not be null or empty string")` 을 던져 §4 경계를 넘어 공개 API 로 샌다. config 는 scope
+        // 값을 검증하지 않으므로 도달 가능하다. 그래서 **생성 전에** 공백 원소를 거른다.
+        // Java 자매(`AuthClient.createAuthorizationRequest`)도 같은 모양이다.
+        var scope = Scope(*config.scopes.filter { it.isNotBlank() }.toTypedArray())
         if (scope.isEmpty()) {
             scope = Scope("openid")
         }

@@ -78,7 +78,16 @@ public class AuthClient {
   public AuthorizationUrlRequest createAuthorizationRequest(URI redirectUri) {
     Pkce pkce = Pkce.generate();
     State state = new State(); Nonce nonce = new Nonce();
-    Scope scope = new Scope(config.getScopes().toArray(new String[0]));
+    // ⚠️ `Scope.isEmpty()`는 **원소 수**를 센다 — 원소가 하나라도 있으면 그 값이 공백이든 빈
+    // 문자열이든 폴백이 발동하지 않고, Nimbus 가 `IllegalArgumentException("The value must not be
+    // null or empty string")` 을 던져 §4 경계를 넘어 공개 API 로 샌다. `KeycloakConfig.Builder`
+    // 는 scope 값을 검증하지 않으므로(그 클래스에 scope 검증 0건) 도달 가능하다.
+    // 그래서 **생성 전에** 공백 원소를 거른다. Kotlin 자매도 같은 모양이다.
+    Scope scope =
+        new Scope(
+            config.getScopes().stream()
+                .filter(s -> s != null && !s.isBlank())
+                .toArray(String[]::new));
     if (scope.isEmpty()) scope = new Scope("openid");
     com.nimbusds.openid.connect.sdk.AuthenticationRequest ar =
         new com.nimbusds.openid.connect.sdk.AuthenticationRequest.Builder(
