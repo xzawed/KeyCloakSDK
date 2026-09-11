@@ -108,7 +108,7 @@ jobs:
         # 않는가다 — check-docs와 같은 종류의 자기기만 방지다.
         run: sh scripts/test/test-doctor.sh
       - name: 문서-소스 대조
-        # --min-facts/--min-anchors는 저장소 루트의 현재 실측치(78 facts / 26 anchors)를
+        # --min-facts/--min-anchors는 저장소 루트의 현재 실측치(76 facts / 26 anchors)를
         # 하한으로 강제한다 — 앵커 주석을 지우면서 그 표를 남겨두면(검사 대상 자체가
         # 조용히 사라지면) 위쪽 검사들만으로는 잡히지 않고 exit 0이 새 나간다. 앵커·
         # 표를 늘리면 이 값도 함께 올려야 한다(내리는 PR은 곧 커버리지 축소이므로
