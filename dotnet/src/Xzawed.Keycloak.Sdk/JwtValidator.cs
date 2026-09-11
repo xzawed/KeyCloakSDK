@@ -39,10 +39,12 @@ public sealed class JwtValidator
         Func<double>? jitter)
     {
         _tvp = BuildParameters(issuer, opts);
-        var docRetriever = new HttpDocumentRetriever(http)
-        {
-            RequireHttps = issuer.StartsWith("https", StringComparison.OrdinalIgnoreCase),
-        };
+        // ⚠️ Not HttpDocumentRetriever: it imposes no byte cap, and the obvious .NET-level bound
+        // (HttpClient.MaxResponseContentBufferSize) would also bound token/introspect traffic on
+        // this shared client. BoundedDocumentRetriever caps only discovery and JWKS.
+        var docRetriever = new BoundedDocumentRetriever(
+            http,
+            requireHttps: issuer.StartsWith("https", StringComparison.OrdinalIgnoreCase));
         var inner = new ConfigurationManager<OpenIdConnectConfiguration>(
             $"{issuer}/.well-known/openid-configuration",
             new OpenIdConnectConfigurationRetriever(),
