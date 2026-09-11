@@ -9,7 +9,7 @@ require (
 
 require (
 	github.com/Nerzal/gocloak/v13 v13.9.0
-	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/testcontainers/testcontainers-go v0.44.0
 )
 

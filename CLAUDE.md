@@ -213,7 +213,7 @@ dev(`devDependencies` — **앵커 있음**):
 |---|---|---|
 | Admin | `github.com/Nerzal/gocloak/v13` | `v13.9.0` |
 | 인증(OAuth2 흐름) | `golang.org/x/oauth2` | `v0.36.0` |
-| JWT(강화 검증) | `github.com/go-jose/go-jose/v4` | `v4.1.4` |
+| JWT(강화 검증) | `github.com/go-jose/go-jose/v4` | `v4.1.5` |
 | single-flight | `golang.org/x/sync` | `v0.22.0` |
 | 통합 테스트 | `github.com/testcontainers/testcontainers-go` | `v0.44.0` |
 
