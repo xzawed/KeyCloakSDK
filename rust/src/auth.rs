@@ -145,7 +145,7 @@ impl AuthClient {
             .request_async(&self.http)
             .await
             .map_err(map_token_err)?;
-        let token_set = to_token_set(&resp);
+        let token_set = to_token_set(&resp)?;
         if let Some(nonce) = expected_nonce {
             self.verify_nonce(token_set.id_token.as_deref(), nonce)
                 .await?;
@@ -204,7 +204,7 @@ impl AuthClient {
             .request_async(&self.http)
             .await
             .map_err(map_token_err)?;
-        Ok(to_token_set(&resp))
+        to_token_set(&resp)
     }
 
     /// Refresh Token → 새 토큰 셋.
@@ -216,7 +216,7 @@ impl AuthClient {
             .request_async(&self.http)
             .await
             .map_err(map_token_err)?;
-        Ok(to_token_set(&resp))
+        to_token_set(&resp)
     }
 
     /// access_token 검증을 강화된 `JwtValidator`에 위임(RS256 핀·iss·aud·exp·nbf·스큐·DoS-safe JWKS).
@@ -279,10 +279,20 @@ impl AuthClient {
 }
 
 /// openidconnect 토큰 응답 → SDK `TokenSet`(하위 타입을 공개 API에서 은닉).
-fn to_token_set(resp: &CoreTokenResponse) -> TokenSet {
+/// ⚠️ **타입이 안전해도 빈 값은 남는다.** `CoreTokenResponse` 는 `access_token` 이 문자열이
+/// 아니면 역직렬화에서 떨어지지만 **빈 문자열은 통과**시킨다. `token_provider` 와 같은 계약을
+/// 여기서도 건다 — 쓸 수 없는 토큰으로 성공을 돌려주지 않는다.
+fn to_token_set(resp: &CoreTokenResponse) -> Result<TokenSet> {
+    let access_token = resp.access_token().secret();
+    if access_token.is_empty() {
+        return Err(KeycloakError::Auth {
+            message: "token response has no usable access_token".into(),
+            oauth_error: None,
+        });
+    }
     let expires_in = resp.expires_in().map(|d| d.as_secs()).unwrap_or(0);
-    TokenSet {
-        access_token: resp.access_token().secret().clone(),
+    Ok(TokenSet {
+        access_token: access_token.clone(),
         token_type: format!("{:?}", resp.token_type()),
         expires_in,
         refresh_token: resp.refresh_token().map(|r| r.secret().clone()),
@@ -295,7 +305,7 @@ fn to_token_set(resp: &CoreTokenResponse) -> TokenSet {
         } else {
             None
         },
-    }
+    })
 }
 
 /// openidconnect `RequestTokenError` → `KeycloakError`. 서버 OAuth 오류는 `Auth`, 전송/파싱은 `Transport`.
@@ -437,6 +447,35 @@ mod tests {
         let forged = sign_id_token(&other_pem, &issuer, "it-client", "server-nonce");
         assert!(matches!(
             auth.verify_nonce(Some(&forged), "server-nonce").await,
+            Err(KeycloakError::Auth { .. })
+        ));
+    }
+
+    /// ⚠️ **타입이 안전해도 빈 값은 남는다.** `CoreTokenResponse` 는 `access_token` 이
+    /// 문자열이 아니면 역직렬화에서 떨어지지만 **빈 문자열은 통과**시킨다 — 그러면
+    /// `refresh()`/`exchange_code()` 가 쓸 수 없는 토큰으로 성공을 돌려주고, 소비자는
+    /// 그것을 Bearer 로 실어 보내 매번 401 을 받는다. `token_provider` 와 같은 계약이다.
+    #[tokio::test]
+    async fn refresh_rejects_empty_access_token() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "", "token_type": "bearer", "expires_in": 300
+            })))
+            .mount(&server)
+            .await;
+
+        let config = KeycloakConfig::new(server.uri(), "it-realm", "it-client")
+            .unwrap()
+            .with_client_secret("s");
+        let endpoints = OidcEndpoints::new(&config);
+        let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+        let validator = JwtValidator::new(&config, &endpoints, jwks).unwrap();
+        let auth = AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap();
+
+        assert!(matches!(
+            auth.refresh("RT").await,
             Err(KeycloakError::Auth { .. })
         ));
     }

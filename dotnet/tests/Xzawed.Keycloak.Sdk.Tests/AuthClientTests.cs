@@ -73,6 +73,28 @@ public class AuthClientTests : IDisposable
         Assert.NotNull(ts.ExpiresAt);
     }
 
+    /// <summary>
+    /// ⚠️ <b>존재 검사는 타입 검사가 아니다.</b> Duende 는 JSON 값을 <b>강제변환</b>한다 —
+    /// 실측: <c>access_token: 12345</c> → <c>"12345"</c>, <c>{"a":1}</c> → 그 문자열.
+    /// 그래서 SDK 의 <c>string.IsNullOrEmpty</c> 검사를 통과하고, 소비자는 쓸 수 없는 토큰을
+    /// Bearer 로 실어 보내 매번 401 을 받는다(조용한 반복 실패).
+    /// 아홉 언어 전수 측정에서 다섯이 이 부류였다(java·kotlin·node·go 는 이미 거부).
+    /// </summary>
+    [Theory]
+    [InlineData("12345")]
+    [InlineData("null")]
+    [InlineData("{\"a\":1}")]
+    [InlineData("[1,2]")]
+    [InlineData("true")]
+    public async Task ClientCredentialsToken_rejects_non_string_access_token(string rawJsonValue)
+    {
+        var auth = Build(out _);
+        _mock.Given(Request.Create().WithPath("/realms/r/protocol/openid-connect/token").UsingPost())
+             .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                 .WithBody($"{{\"access_token\":{rawJsonValue},\"token_type\":\"Bearer\",\"expires_in\":300}}"));
+        await Assert.ThrowsAsync<KeycloakAuthException>(() => auth.ClientCredentialsTokenAsync());
+    }
+
     [Fact]
     public async Task ClientCredentialsToken_error_wrapped()
     {

@@ -68,7 +68,15 @@ impl ClientCredentialsTokenProvider {
             .json()
             .await
             .map_err(|e| KeycloakError::Transport(format!("token response: {e}")))?;
-        if !status.is_success() || body.get("access_token").is_none() {
+        // ⚠️ **존재 검사는 타입 검사가 아니다.** 예전에는 `is_none()` 만 봐서 `access_token`
+        // 이 숫자·객체·null 이어도 통과했고, 아래 `as_str().unwrap_or_default()` 가 그것을
+        // **빈 문자열**로 만들어 호출자에게 성공을 돌려줬다. 그 빈 토큰은 `expires_at` 까지
+        // 캐시되므로 그 창 내내 admin 호출마다 401 이 난다.
+        let access_token = body
+            .get("access_token")
+            .and_then(serde_json::Value::as_str)
+            .filter(|s| !s.is_empty());
+        let Some(access_token) = access_token.filter(|_| status.is_success()) else {
             let oauth = body
                 .get("error")
                 .and_then(|v| v.as_str())
@@ -77,16 +85,13 @@ impl ClientCredentialsTokenProvider {
                 message: "client-credentials failed".into(),
                 oauth_error: oauth,
             });
-        }
+        };
         let expires_in = body
             .get("expires_in")
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0);
         Ok(TokenSet {
-            access_token: body["access_token"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
+            access_token: access_token.to_string(),
             token_type: body
                 .get("token_type")
                 .and_then(|v| v.as_str())
@@ -195,6 +200,51 @@ mod tests {
             }
             other => panic!("expected Auth with mapped oauth_error, got {other:?}"),
         }
+    }
+
+    /// ⚠️ **존재 검사는 타입 검사가 아니다.** `access_token` 이 문자열이 아니면
+    /// `as_str().unwrap_or_default()` 가 그것을 **빈 문자열**로 만들고, 호출자는 성공을
+    /// 받는다 — 그 빈 토큰이 `expires_at` 까지 캐시되므로 그 창 내내 admin 호출마다 401 이
+    /// 난다(패닉도 재시도도 아니라 조용한 반복 실패다).
+    ///
+    /// 아홉 언어 전수 측정에서 **다섯이 이 부류**였다(java·kotlin·node·go 는 이미 거부).
+    #[tokio::test]
+    async fn non_string_access_token_is_rejected() {
+        for bad in [
+            serde_json::json!(12345),
+            serde_json::json!(null),
+            serde_json::json!({"a": 1}),
+            serde_json::json!(""),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/realms/it-realm/protocol/openid-connect/token"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "access_token": bad, "token_type": "Bearer", "expires_in": 300
+                })))
+                .mount(&server)
+                .await;
+            let p = ClientCredentialsTokenProvider::new(cfg(&server.uri()), reqwest::Client::new());
+            match p.access_token().await {
+                Err(KeycloakError::Auth { .. }) => {}
+                other => panic!("expected Auth error for access_token={bad}, got {other:?}"),
+            }
+        }
+    }
+
+    /// 음성 대조군 — 정상 응답은 그대로 통과한다(위 거부가 과녁을 넘지 않았다).
+    #[tokio::test]
+    async fn valid_access_token_still_accepted() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "AT", "token_type": "Bearer", "expires_in": 300
+            })))
+            .mount(&server)
+            .await;
+        let p = ClientCredentialsTokenProvider::new(cfg(&server.uri()), reqwest::Client::new());
+        assert_eq!(p.access_token().await.unwrap(), "AT");
     }
 
     // ⚠️ `auth.rs` 의 같은 계약과 함께 움직인다 — 사본 중 하나만 고치면 그쪽만 초록이 된다.

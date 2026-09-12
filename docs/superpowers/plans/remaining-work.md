@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **178** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · 후속 분할 신규 4 · **H1 파생 신규 1**) — 열림 **121** · 닫힘 **57** (2026-09-12 재측정) |
+| 작업 패키지 | **178** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · 후속 분할 신규 4 · **H1 파생 신규 1**) — 열림 **120** · 닫힘 **58** (2026-09-12 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `178`(2026-09-12 기준 열림 121 · 닫힘 57)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `178`(2026-09-12 기준 열림 120 · 닫힘 58)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -99,7 +99,11 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 21. ✅ **`jwks-response-size-unbounded-python` — 같은 세션이 닫았다.** 9언어 JWKS 크기상한 부류가 **완결**됐다(축 6 → 7). ⚠️ 여기서도 등록부의 서술이 틀렸다 — aio 설계가 세션을 잘못 지목했고, 비용 「70곳」은 단어 언급 수였다(실제 33곳 재배선). 대량 재배선은 독립 레그가 하고 내가 diff 를 검수했다(단언 계수 1:1 보존).
 
-**⟶ 다음 대상(2026-09-12 기준, python JWKS 닫힌 뒤).** ①이 비었으므로 ②를 잇는다: `lenient-parsing-yields-false-success`(rust — 실측으로 좁혀졌다: `token_provider.rs:71,86-89` 가 **문자열이 아닌 `access_token` 을 빈 토큰 성공으로 캐시**한다. `auth.rs` 는 `CoreTokenResponse` 라 fail-safe이고 **`expires_in` 누락만** 공유한다) · `python-aio-security-test-asymmetry`(범위 6 으로 확대됨) · `rust-msrv-leg-vs-manifest-unguarded`(⚠️ **한 방향만 침묵**이다 — 매니페스트를 내리면 `check-docs` 가 잡고, **CI 레그만 올리면** 아무도 안 잡아 MSRV 레그가 조용히 사라진다) · `authz-redirect-uri-not-per-call`(사람 판정 선행). ⚠️ 여전히 **재판정부터** 시작한다.
+22. ✅ **`lenient-parsing-yields-false-success` — 같은 세션이 닫았다.** ⚠️ **rust 하나가 아니라 다섯**이었다(rust·python·ruby·php·dotnet). 회고 B4 대로 **먼저 아홉을 다 재고** 착수했고, 그 측정이 없었다면 dotnet 을 통째로 놓쳤을 것이다 — 읽기로는 「SDK 가 빈값을 거부한다」로 보이는데 **Duende 가 그 앞에서 강제변환**하기 때문이다. 축 1c 신설(9언어·하한 9).
+
+⚠️ **이 세션이 세 번 어긴 것 하나 — 「편집한 뒤 그 게이트를 다시 돌린다」.** (1) 규칙 파일을 고치고 `check-docs` 를 안 돌려 예산 위반 커밋을 push 했고, (2) 압축 수정을 미커밋 상태에서 변이 돌려 잃었고, (3) ruby 생성자를 **추가한 뒤** rubocop 을 안 돌려 CI 를 빨갛게 만들었다(로컬은 추가 **전에** 돌린 초록이었다). 셋 다 「초록을 봤다」와 「지금 초록이다」를 혼동한 것이다. **게이트 결과는 마지막 편집 뒤의 것이어야 한다.**
+
+**⟶ 다음 대상(2026-09-12 기준, 토큰 타입검증까지 닫힌 뒤).** 옛 목록: `lenient-parsing-yields-false-success`(rust — 실측으로 좁혀졌다: `token_provider.rs:71,86-89` 가 **문자열이 아닌 `access_token` 을 빈 토큰 성공으로 캐시**한다. `auth.rs` 는 `CoreTokenResponse` 라 fail-safe이고 **`expires_in` 누락만** 공유한다) · `python-aio-security-test-asymmetry`(범위 6 으로 확대됨) · `rust-msrv-leg-vs-manifest-unguarded`(⚠️ **한 방향만 침묵**이다 — 매니페스트를 내리면 `check-docs` 가 잡고, **CI 레그만 올리면** 아무도 안 잡아 MSRV 레그가 조용히 사라진다) · `authz-redirect-uri-not-per-call`(사람 판정 선행). ⚠️ 여전히 **재판정부터** 시작한다.
 
 **PR 이 아닌 것**(선행이 빠져 있다): `jvm-17-floor-never-shipped`(사람 승인 릴리스) · `guard-detection-surface-hand-narrowed` 의 파생화(required **밖**에서 오탐 0 선행) · `integration-admin-surface-uneven`(9×capability 결정 — php 가 roles/groups/realms 를 **0/3 계열** 부른다) · `integration-coverage-never-measured`(9개 설계) · `registry-truth-check`(레지스트리별 **버전** 오라클 + 전파 404 규칙 — ⚠️ 순진한 라이브 폴링은 「첫 404 로 실패 결론」 함정을 되살린다) · `published-bytes-have-no-oracle`(Portal 게시 후 실제 jar 페치) · `security-invariant-not-required`(룰셋 apply — ⚠️ **required 이름을 늘리지 말고** `doc-facts` 안으로 접는 쪽이 PR 크기다).
 
@@ -436,9 +440,22 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `jwks-response-not-validated` **[M/M · 닫힘 2026-09-07 #440]** JWKS 응답을 검증 없이 신뢰했다 — JVM 둘의 본문 크기 무제한은 #400 이 `DEFAULT_HTTP_SIZE_LIMIT` 를 되살려 닫았고, **Rust 의 상태코드 미확인은 #440 이 닫았다**(그 전 실측: `error_for_status`·`.status()` **0건**) · `rust/src/jwks.rs:34`
   - ⚠️ **상태를 안 보면 왜 나쁜가**: IdP 의 오류 응답이 JSON 이기만 하면 파싱돼 **빈 키셋이 캐시되고**, rate-limit 게이트가 재조회를 막아 장애가 지나간 뒤에도 모든 검증이 「알 수 없는 kid」로 죽는다. go 에서 #380 이 고친 것과 같은 부류다.
 - [ ] `authcode-flow-verification-defeated` **[M/L]** 인가 코드 흐름의 검증이 무력하거나 오적용된다 — azp 미검증·iss 자기주입·공유 검증기 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:135-149`
-- [ ] `lenient-parsing-yields-false-success` **[M/M · 실측 2026-09-12 · 착수 전 부류 측정 필요]** 응답 파싱이 관대해서 틀린 타입을 성공으로 통과시킨다 · `rust/src/token_provider.rs:71,86-89`
+- [x] `lenient-parsing-yields-false-success` **[M/M · 닫힘 2026-09-12 · 부류 다섯]** ⚠️ **rust 하나가 아니라 다섯이었다** — 아홉 전수 측정 뒤 rust·python·ruby·php·**dotnet** 을 함께 고쳤다(아래 표가 근거). 불변식: **`access_token` 이 비어 있지 않은 JSON 문자열이 아니면 TokenSet 을 만들지 않는다.** ⚠️ **dotnet 은 문자열 검사로 못 잡는다** — Duende 가 이미 강제변환한 뒤라 원본 JSON 의 `ValueKind` 를 봐야 한다. ⚠️ **`expires_in` 의 문자열 허용은 건드리지 않았다**(php·ruby 가 테스트로 고정한 의도된 관용). ⚠️ **팩토리만 지키면 우회된다 — 재스캔이 이음매를 셋 더 찾았다**(독립 레그가 첫 둘을 지목): **ruby·php 의 AuthClient 경로는 팩토리를 지나지 않고 생성자를 직접 부른다**(`auth_client.rb` 의 `to_token_set` · `AuthClient.php` 의 `toTokenSet`) → 검증을 **생성자로** 내렸다. 그리고 **rust `auth.rs:to_token_set` 은 타입은 안전하나 빈 문자열을 통과**시켜 `exchange_code`/`refresh` 가 쓸 수 없는 토큰으로 성공했다 → `Result` 로 바꿨다. python·dotnet 은 생성 자리가 하나뿐임을 재스캔으로 확인했다. 가드: `test-security-defaults.sh` 축 1c(9언어·공허 하한 9). 변이 7/7 `CAUGHT`. ⚠️ **축 앵커가 두 종류인 것은 의도다** — 고친 다섯은 행동 테스트, 이미 옳던 넷은 집행 기제(소스 철자를 겨누면 동작이 같은 리팩터에도 빨개진다: 실측 rust `Value::as_str` → `|v| v.as_str()`).
   - **소비자가 겪는 것(실측, 독립 레그 둘)**: 존재 검사가 `body.get("access_token").is_none()` 뿐이라 **문자열이 아닌 값**(숫자·`null`·객체)이 통과하고, `as_str().unwrap_or_default()` 가 그것을 **빈 문자열**로 만든다. 성공으로 캐시되므로(`:116-126`) `expires_at` 까지 그 창 내내 admin 호출이 `Bearer `(빈 값)로 나가 **매번 401**이 된다(`admin.rs:29-39` 의 401 매핑은 `Err` 에만 돈다 — 패닉도 재시도 루프도 아니다). `auth.rs` 는 `CoreTokenResponse` 로 역직렬화해 **fail-safe** 이고, 둘이 공유하는 것은 `expires_in` 누락뿐이다.
-  - ⚠️ **rust 만이 아니다 — 착수 전에 아홉을 다 재라**(회고 B4 가 #466 에서 산 교훈이다). 실측: **node 는 거부**(`node/src/tokens.ts:60-63` 타입+빈값) · **go 는 거부**(`go/admin.go:116-118` 타입 역직렬화 후 빈값 검사) · **python 은 타입 검사 없음**(`python/src/keycloak_sdk/tokens.py:39`) · **php 는 스칼라를 강제변환**(`php/src/Token/TokenSet.php:45-51`). **java·kotlin·ruby·dotnet 은 미측정.** 이음매별로 항목을 쪼갠 뒤 착수한다.
+  - ✅ **아홉 전수 측정 완료(2026-09-12)** — 회고 B4 가 요구한 그것이다. **다섯이 fail-open** 이고 넷은 이미 거부한다.
+
+    | 언어 | 판정 | 근거 |
+    |---|---|---|
+    | java · kotlin | 거부 | **실험**: Nimbus `TokenResponse.parse(HTTPResponse)` 가 숫자·null·객체·누락·빈문자열을 전부 `ParseException`. `token_type` 누락도 거부 |
+    | node | 거부 | `node/src/tokens.ts:60-63` 타입 + 빈값 |
+    | go | 거부 | `go/admin.go:116-118` 타입 언마샬 + 빈값 |
+    | **rust** | fail-open | `rust/src/token_provider.rs:71,86-89` — 빈 토큰이 `expires_at` 까지 캐시 |
+    | **python** | fail-open | `python/src/keycloak_sdk/tokens.py:39` 무검사. ⚠️ **누락이면 raw `KeyError`** 가 샌다(§4, 별개 이음매) |
+    | **ruby** | fail-open | `ruby/lib/keycloak_sdk/tokens.rb:10` 무검사 → `nil` |
+    | **php** | fail-open | `php/src/Token/TokenSet.php:45-51` `toStr` 가 스칼라를 강제변환 |
+    | **dotnet** | fail-open | **실험**: Duende 가 `12345` → `"12345"`, `{"a":1}` → 그 문자열로 강제변환해 SDK 의 `IsNullOrEmpty`(`Tokens.cs:25-26`)를 통과한다. null·누락은 거부된다 |
+
+    ⚠️ **읽기로는 JVM·dotnet 을 못 닫는다 — 라이브러리가 컴파일된 것이라 실행해야 답이 나온다.** 그리고 ⚠️ **오버로드를 맞춰야 한다**: 1차 프로브가 `parse(JSONObject)` 를 썼는데 SDK 는 `parse(HTTPResponse)` 를 쓴다. 전자에서는 「access_token 누락」이 **오류응답**으로 갈렸고 후자에서는 `ParseException` 이다 — 그 차이로 하마터면 java 에 없는 NPE 결함을 기록할 뻔했다(`ErrorObject` 는 null 이 아니고 **코드만** null 이다).
   - ⚠️ 회귀를 잡을 기존 테스트가 **없다** — rust 의 `fetches_and_caches`·`oauth_error_mapped` 는 문자열 `"AT"` 만 쓴다.
 - [ ] `nimbus-type-on-public-surface` **[L/M]** JWSAlgorithm이 두 JVM SDK의 공개 팩토리 시그니처에 올라 있다 — §4 은닉 위반 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java:27-28`
 - [ ] `configured-timeout-not-propagated` **[L/M]** 설정한 타임아웃·취소 토큰이 JWKS/검증 경로에 도달하지 않는다 · `node/src/jwt.ts:47-51`

@@ -4,10 +4,30 @@ module KeycloakSdk
   # OAuth 토큰 응답의 불변 값타입. access/refresh/id 토큰은 inspect에서 마스킹.
   TokenSet = Data.define(:access_token, :token_type, :expires_in, :refresh_token,
                          :id_token, :scope, :expires_at) do
+    # ⚠️ **검증은 팩토리가 아니라 생성자에 있다.** `from_response` 에만 두면 `AuthClient`
+    # 가 `TokenSet.new` 을 직접 부르는 경로(`auth_client.rb` 의 `to_token_set`)가 그것을
+    # 통째로 우회한다 — 독립 레그가 그 구멍을 지목했다. 생성자는 어떤 경로도 지나므로
+    # 여기 두면 우회가 불가능하다.
+    def initialize(access_token:, **rest)
+      unless access_token.is_a?(String) && !access_token.empty?
+        raise AuthError, "token response has no usable access_token"
+      end
+
+      super
+    end
+
     def self.from_response(body, received_at: Time.now.to_f)
+      # ⚠️ **존재 검사는 타입 검사가 아니다.** 예전에는 값을 그대로 담아 숫자·해시·nil 이
+      # `access_token` 이 됐고, 소비자는 그것을 Bearer 로 실어 보내 매번 401 을 받았다
+      # (조용한 반복 실패). `expires_in` 의 문자열 허용은 **의도된 것**이라 건드리지 않는다.
+      access_token = body["access_token"]
+      unless access_token.is_a?(String) && !access_token.empty?
+        raise AuthError, "token response has no usable access_token"
+      end
+
       expires_in = body["expires_in"] && Integer(body["expires_in"])
       new(
-        access_token: body["access_token"],
+        access_token: access_token,
         token_type: body["token_type"],
         expires_in: expires_in,
         refresh_token: body["refresh_token"],

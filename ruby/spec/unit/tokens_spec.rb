@@ -48,6 +48,33 @@ RSpec.describe KeycloakSdk do
       expect(s).to include("refresh_token=nil")
       expect(s).to include("id_token=nil")
     end
+
+    # ⚠️ **존재 검사는 타입 검사가 아니다.** 예전에는 `body["access_token"]` 을 그대로 담아
+    # 숫자·해시·nil 이 `access_token` 이 됐다. 소비자는 그것을 Bearer 로 실어 보내고 매번
+    # 401 을 받는다 — 조용한 반복 실패다. 아홉 언어 전수 측정에서 다섯이 이 부류였다.
+    [12_345, nil, { "a" => 1 }, [], ""].each do |bad|
+      it "rejects a non-string access_token (#{bad.inspect})" do
+        expect do
+          described_class.from_response({ "access_token" => bad }, received_at: 0.0)
+        end.to raise_error(KeycloakSdk::AuthError)
+      end
+    end
+
+    it "rejects a response with no access_token at all" do
+      expect do
+        described_class.from_response({ "token_type" => "Bearer" }, received_at: 0.0)
+      end.to raise_error(KeycloakSdk::AuthError)
+    end
+
+    # ⚠️ **팩토리만 지키면 우회된다.** `AuthClient#to_token_set` 은 `from_response` 가 아니라
+    # `TokenSet.new` 을 직접 부른다(독립 레그가 지목한 구멍) — 그래서 검증이 생성자에 있고,
+    # 이 테스트가 그 자리를 못박는다.
+    it "rejects a bad access_token even when constructed directly (factory bypass)" do
+      expect do
+        described_class.new(access_token: nil, token_type: "Bearer", expires_in: 300,
+                            refresh_token: nil, id_token: nil, scope: nil, expires_at: nil)
+      end.to raise_error(KeycloakSdk::AuthError)
+    end
   end
 
   describe KeycloakSdk::IntrospectionResult do
