@@ -96,7 +96,7 @@ function loadRefreshToken(string $file): ?string
 }
 
 // ---- SDK 조립(앱 기동 시 1회. redirectUri는 config에서 고정 —
-// PHP SDK의 createAuthorizationRequest()는 인자를 받지 않는다. 하네스는 오프라인 URL 조립만
+// 호출당 redirect_uri를 받는다(나머지 여덟 SDK와 동형). 하네스는 오프라인 URL 조립만
 // 검증하므로 고정값으로 충분하다) ----
 $config = new KeycloakConfig(
     serverUrl: getenv('KC_SERVER_URL') ?: 'http://localhost:8080',
@@ -201,7 +201,12 @@ $app->post('/logout', function (Request $req, Response $res) use ($kc, $refreshF
 
 $app->get('/authz-url', function (Request $req, Response $res) use ($kc): Response {
     try {
-        $r = $kc->auth()->createAuthorizationRequest();
+        // 호출당 redirect_uri — 없으면 하네스 기본값. node 앱과 같은 모양이다.
+        $q = $req->getQueryParams();
+        $redirectUri = isset($q['redirect_uri']) && is_string($q['redirect_uri'])
+            ? $q['redirect_uri']
+            : 'http://x/cb';
+        $r = $kc->auth()->createAuthorizationRequest($redirectUri);
 
         return jsonResponse($res, ['url' => $r->url, 'state' => $r->state]);
     } catch (\Throwable $e) {

@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **178** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · 후속 분할 신규 4 · **H1 파생 신규 1**) — 열림 **117** · 닫힘 **61** (2026-09-12 6차 재측정) |
+| 작업 패키지 | **178** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · 후속 분할 신규 4 · **H1 파생 신규 1**) — 열림 **115** · 닫힘 **63** (2026-09-12 7차 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `178`(2026-09-12 6차 기준 열림 117 · 닫힘 61)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `178`(2026-09-12 7차 기준 열림 115 · 닫힘 63)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -395,7 +395,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `php-sensitiveparameter-methods-missing` **[M/S · 닫힘 2026-09-11 · 계수 정정]** PHP `#[\SensitiveParameter]` 가 생성자에만 붙어 있었다. ⚠️ **「여섯 메서드」가 아니라 아홉 파라미터였다** — 손 목록 대신 반사 가드를 세우자 `TokenSet::__construct($idToken)` 이 드러났다(생성자인데도 빠져 있었다). 가드 `tests/Unit/SensitiveParameterTest.php` 는 `php/src` 를 반사해 **문자열 타입 + 비밀 이름** 파라미터를 스스로 찾으므로 새 자리가 생겨도 목록을 고칠 필요가 없다. 변이 5/5 `CAUGHT`(공허 대조군 포함). 실측: 속성 없는 인자는 스택트레이스에 원문(`refresh('SUPER-SECRET-RE...')`), 있으면 `Object(SensitiveParameterValue)`.
 - [x] `authorization-request-verifier-unmasked` **[M/M]** AuthorizationRequest.codeVerifier가 마스킹 없이 평문 출력된다 (Go·Node) — 같은 파일의 TokenSet은 마스킹한다 · `go/tokens.go:86`
 - [ ] `coverage-exclusion-hides-untested-branches` **[M/M]** 네트워크 경계 커버리지 제외가 손으로 쓴 실패 분기와 미호출 공개 메서드를 숨긴다 (Kotlin·PHP) · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Users.kt:47`
-- [ ] `redirect-uri-signature-parity` **[L/M]** createAuthorizationRequest/exchangeCode의 redirectUri 시그니처가 Rust·PHP만 다르다 (계약 패리티) · `rust/src/auth.rs:96`
+- [x] `redirect-uri-signature-parity` **[L/M · 닫힘 2026-09-12 · 중복이었다]** ⚠️ **이 항목은 `authz-redirect-uri-not-per-call` 과 같은 것을 다른 이름으로 적은 것이다** — 등록부에 한 부류가 두 행으로 있었고(이름·심각도·지목줄이 달라 서로를 못 알아봤다: 여기는 `rust/src/auth.rs:96` · 저기는 `:106`), 그래서 **한쪽만 보면 범위를 절반으로 읽는다**. 실제로 그렇게 됐다 — 「다음 대상」에 오른 쪽은 인가요청만 적었고 `exchangeCode` 비대칭은 이 행에만 있었다. 같은 PR 이 둘을 닫는다. ⚠️ **교훈**: 새 항목을 적기 전에 **부류로** 검색할 것(이름으로만 찾으면 중복이 남는다).
 - [x] `python-config-comment-says-60` **[L/S]** python config 주석이 JWKS 재조회 기본값을 60초라고 적었다 — 두 줄 아래 실제 값은 30.0 · `python/src/keycloak_sdk/config.py:23`
 
 ### 재검증 · 가드/CI/문서 — 10
@@ -446,7 +446,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 9언어 소스 — 21
 
-- [ ] `authz-redirect-uri-not-per-call` **[M/M · 신규 2026-09-12 · H1 파생]** **php·rust 만 인가요청의 `redirect_uri` 를 호출당 받지 못한다** — 나머지 일곱은 인자로 받는다(java `URI` · kotlin/node/python/go/dotnet `string` · ruby 키워드). php 는 `createAuthorizationRequest()` 가 **인자 0**(`php/src/AuthClient.php:48`), rust 는 `create_authorization_request(&self)` 가 생성 시 config 값을 쓴다(`rust/src/auth.rs:106` · `:91`). 소비자가 겪는 것: 콜백 URL 이 여럿인 앱(멀티테넌트·환경별 콜백)이 그 둘에서만 **클라이언트를 다시 만들어야** 한다. ⚠️ **실측(2026-09-12, 실제 하네스 런)**: `./verify.sh node php` → **node 26/26** · **php 25/26**, 실패는 정확히 그 검사 하나이고 이유가 자명하다 — `redirect-uri-mismatch requested=http://probe-5eb764ec.invalid/cb got=http://x/cb`. node 는 무작위 프로브 값을 그대로 반향했다(강화한 검사가 정상 앱에 오탐을 내지 않는다는 양성 대조군). ⚠️ **rust 는 아직 실물로 안 돌렸다** — 소스상 같은 모양이나(`Query(_params)` 폐기) 측정은 php 하나뿐이다. ⚠️ **H1 의 conformance 가 이제 이 둘을 빨갛게 낸다** — 하네스 결함이 아니라 이 비대칭이 드러난 것이고, 초록으로 되돌리려면 **검사를 약하게 하지 말고 API 를 맞춘다**(rust 는 인자 추가가 불가능하므로 새 메서드, php 는 선택적 인자 — 둘 다 가산적이라 semver 파괴 아님). ⚠️ 착수 전 §4 가 「표기만 갈린다」고 말하는 것과 이 차이가 양립하는지 사람 판정이 먼저다.
+- [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청의 `redirect_uri` 를 호출당 받지 못했다(나머지 일곱은 인자로 받는다). ⚠️ **범위가 두 배였다 — 비대칭은 `exchangeCode` 에도 있었다.** OAuth 는 토큰 교환의 `redirect_uri` 가 인가 때 쓴 값과 **같기를** 요구하므로(RFC 6749 §4.1.3) 인가 URL 만 고치면 교환이 config 값을 보내 Keycloak 이 거부한다. 등록부는 인가요청만 적었다. **§4 사람 판정(2026-09-12): API 를 맞춘다.** 근거 — §4 가 「개념·계층은 동형이고 **표기만** 갈린다」고 하는데 이것은 표기가 아니라 **능력**의 차이다(일곱은 클라이언트 하나가 콜백 N 개를 섬기고 둘은 1 개만). ⚠️ §4 에 선례가 있으나(admin 토큰 소유 비대칭) 그것은 **하위 라이브러리가 강제한** 것이고 이건 우리 파사드가 인자를 안 받기로 한 것뿐이라 고칠 수 있다. 구현은 **둘 다 가산적**이다 — php `?string $redirectUri = null`(두 메서드 후행 인자) · rust `create_authorization_request_with_redirect` / `exchange_code_with_redirect`(기본 인자가 없으므로 새 메서드). ⚠️ rust 는 §4 대로 하위 타입을 숨긴다 — `&str` 을 받고 `RedirectUrl` 파싱 실패는 `KeycloakError::Config` 로 번역한다(경계 테스트로 고정). 하네스 앱 둘도 함께 고쳤다 — rust 앱은 주석이 「**쿼리파라미터는 받되 사용하지 않는다**」라고 적고 있었다(H1 이 드러낸 그 공허). php 138 tests/phpstan 0/cs-fixer 0 · rust 82 tests/clippy/fmt 통과.
 
 - [x] `jwks-refetch-budget-overclaimed` **[M/M · 닫힘 2026-09-07]** JWKS 재조회 예산 문서가 실제보다 강하게 약속했다 — cold 로드가 예산을 안 쓴다 · `rust/src/jwks.rs:34-49`
   - **재측정(2026-09-07, 독립 레그 둘)**: #402 가 비JVM **7개 README** 에 「캐시가 찬 뒤」 조건을 달았고(dotnet 은 「cold cache」 표현이라 warm 문구 grep 으로는 안 잡힌다 — 문구가 아니라 **조건의 존재**로 판정하라), JVM 둘은 「**두 번**」이라 적는다. 콜드 경로는 #403·#404 의 백오프로 별도 한정된다. 코드의 `if !cold` 는 그대로이나 그것이 더는 **과대약속이 아니다**

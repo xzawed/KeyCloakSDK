@@ -103,13 +103,41 @@ impl AuthClient {
 
     /// Authorization Code + PKCE(S256) 요청 조립. CSRF state·PKCE verifier를 호출자에게 돌려준다.
     /// state 검증(콜백 대조)은 무상태이므로 호출자 책임(다른 SDK와 동형).
+    ///
+    /// `redirect_uri`는 config 값을 쓴다 — 콜백이 여럿인 앱은
+    /// [`Self::create_authorization_request_with_redirect`]를 쓴다.
     pub fn create_authorization_request(&self) -> AuthorizationRequest {
+        self.authorization_request(None)
+    }
+
+    /// 이 요청에만 쓸 콜백 URL을 받는 판. 콜백이 여럿인 앱(멀티테넌트·환경별)이 클라이언트
+    /// 하나로 그것을 섬기기 위한 자리이고, 나머지 여덟 SDK와 동형이다.
+    ///
+    /// ⚠️ **같은 값을 [`Self::exchange_code_with_redirect`]에 넘겨야 한다** — OAuth는 토큰
+    /// 교환의 `redirect_uri`가 인가 때 쓴 값과 같기를 요구한다(RFC 6749 §4.1.3).
+    ///
+    /// ⚠️ 잘못된 URL은 `KeycloakError::Config`다 — §4대로 하위 타입(`RedirectUrl`)과 그
+    /// 파싱 오류는 파사드 밖으로 새지 않는다.
+    pub fn create_authorization_request_with_redirect(
+        &self,
+        redirect_uri: &str,
+    ) -> Result<AuthorizationRequest> {
+        Ok(self.authorization_request(Some(Self::redirect_url(redirect_uri)?)))
+    }
+
+    /// 상류 `RedirectUrl` 조립 — 파싱 오류를 경계에서 SDK 타입으로 바꾼다(§4).
+    fn redirect_url(redirect_uri: &str) -> Result<RedirectUrl> {
+        RedirectUrl::new(redirect_uri.to_string())
+            .map_err(|e| KeycloakError::Config(format!("invalid redirect_uri: {e}")))
+    }
+
+    fn authorization_request(&self, redirect_uri: Option<RedirectUrl>) -> AuthorizationRequest {
         let (challenge, verifier) = PkceCodeChallenge::new_random_sha256();
         // nonce는 openidconnect가 auth URL에 실어 Keycloak이 id_token에 담아 돌려준다. 호출자에게
         // 함께 돌려줘 콜백 후 exchange_code(expected_nonce)로 넘기면 id_token 재생을 막는다.
         // config.scopes를 반영(사용자 커스텀 스코프). 비면 "openid" 폴백.
         let scopes = self.scopes();
-        let (url, csrf, nonce) = self
+        let mut builder = self
             .oidc
             .authorize_url(
                 AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
@@ -117,8 +145,12 @@ impl AuthClient {
                 Nonce::new_random,
             )
             .add_scopes(scopes)
-            .set_pkce_challenge(challenge)
-            .url();
+            .set_pkce_challenge(challenge);
+        // ⚠️ `None`이면 **건드리지 않는다** — 상류가 생성 시 값(config)을 그대로 쓴다.
+        if let Some(uri) = redirect_uri {
+            builder = builder.set_redirect_uri(std::borrow::Cow::Owned(uri));
+        }
+        let (url, csrf, nonce) = builder.url();
         AuthorizationRequest {
             url: url.to_string(),
             state: csrf.secret().clone(),
@@ -138,13 +170,43 @@ impl AuthClient {
         code_verifier: &str,
         expected_nonce: Option<&str>,
     ) -> Result<TokenSet> {
-        let resp = self
+        self.code_exchange(code, code_verifier, None, expected_nonce)
+            .await
+    }
+
+    /// 인가 때 쓴 콜백 URL을 그대로 넘기는 판 — [`Self::create_authorization_request_with_redirect`]
+    /// 와 짝이다.
+    ///
+    /// ⚠️ **짝을 맞춰야 한다.** OAuth는 토큰 교환의 `redirect_uri`가 인가 때 쓴 값과 같기를
+    /// 요구하고(RFC 6749 §4.1.3), 다르면 Keycloak이 `invalid_grant`로 거부한다.
+    pub async fn exchange_code_with_redirect(
+        &self,
+        code: &str,
+        code_verifier: &str,
+        redirect_uri: &str,
+        expected_nonce: Option<&str>,
+    ) -> Result<TokenSet> {
+        let uri = Self::redirect_url(redirect_uri)?;
+        self.code_exchange(code, code_verifier, Some(uri), expected_nonce)
+            .await
+    }
+
+    async fn code_exchange(
+        &self,
+        code: &str,
+        code_verifier: &str,
+        redirect_uri: Option<RedirectUrl>,
+        expected_nonce: Option<&str>,
+    ) -> Result<TokenSet> {
+        let mut req = self
             .oidc
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .set_pkce_verifier(PkceCodeVerifier::new(code_verifier.to_string()))
-            .request_async(&self.http)
-            .await
-            .map_err(map_token_err)?;
+            .set_pkce_verifier(PkceCodeVerifier::new(code_verifier.to_string()));
+        // ⚠️ `None`이면 건드리지 않는다 — 상류가 생성 시 값(config)을 그대로 쓴다.
+        if let Some(uri) = redirect_uri {
+            req = req.set_redirect_uri(std::borrow::Cow::Owned(uri));
+        }
+        let resp = req.request_async(&self.http).await.map_err(map_token_err)?;
         let token_set = to_token_set(&resp)?;
         if let Some(nonce) = expected_nonce {
             self.verify_nonce(token_set.id_token.as_deref(), nonce)
@@ -398,6 +460,61 @@ mod tests {
         (auth, priv_pem, issuer)
     }
 
+    // ── 인가요청·토큰교환의 redirect_uri 를 호출당 받는가 (나머지 여덟 SDK 와 동형) ──
+    //
+    // 왜: 콜백이 여럿인 앱(멀티테넌트·환경별)이 클라이언트 하나로 그것을 섬겨야 한다. rust 와 php
+    // 만 생성 시 config 값에 묶여 있었고, 하네스 conformance 가 그 비대칭을 빨갛게 냈다.
+    // ⚠️ rust 는 기본 인자가 없으므로 **새 메서드**다(가산적 — semver 파괴 아님).
+    fn test_auth() -> AuthClient {
+        let config = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client").unwrap();
+        let endpoints = OidcEndpoints::new(&config);
+        let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+        let validator = JwtValidator::new(&config, &endpoints, jwks).unwrap();
+        AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap()
+    }
+
+    #[tokio::test]
+    async fn authorization_request_uses_per_call_redirect_uri() {
+        let auth = test_auth();
+        let req = auth
+            .create_authorization_request_with_redirect("https://tenant-b.app/callback")
+            .expect("valid redirect uri must be accepted");
+        assert!(
+            req.url
+                .contains("redirect_uri=https%3A%2F%2Ftenant-b.app%2Fcallback"),
+            "per-call redirect_uri must land on the authorization URL, got: {}",
+            req.url
+        );
+    }
+
+    #[tokio::test]
+    async fn authorization_request_without_redirect_keeps_config_value() {
+        // 기존 메서드는 그대로다 — 가산적 변경임을 고정한다.
+        let auth = test_auth();
+        let req = auth.create_authorization_request();
+        assert!(
+            req.url.contains("redirect_uri="),
+            "config redirect_uri must still be used by the existing method"
+        );
+        assert!(
+            !req.url.contains("tenant-b"),
+            "existing method must not pick up a per-call value"
+        );
+    }
+
+    #[tokio::test]
+    async fn per_call_redirect_uri_is_validated_at_the_boundary() {
+        // ⚠️ §4 — 하위 타입(`RedirectUrl`)은 파사드 뒤에 숨는다. 잘못된 URL 은 상류 오류가
+        // 새지 않고 `KeycloakError::Config` 로 변환돼야 한다.
+        let auth = test_auth();
+        let err = auth
+            .create_authorization_request_with_redirect("not a url")
+            .expect_err("invalid redirect uri must be rejected");
+        assert!(
+            matches!(err, KeycloakError::Config(_)),
+            "boundary must translate to KeycloakError::Config, got: {err:?}"
+        );
+    }
     #[tokio::test]
     async fn create_authorization_request_returns_nonce() {
         let config = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client").unwrap();
