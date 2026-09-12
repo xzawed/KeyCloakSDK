@@ -843,14 +843,24 @@ assert_eq "$sd_skew_expect" "$(sd_norm "$(sd_skew python)")" "[음성대조·양
 #
 # ⚠️ `expires_in` 의 문자열 허용은 이 축이 겨누지 않는다 — php·ruby 가 테스트로 고정해 둔
 # 의도된 관용이다.
-sd_token_type_guard() { # $1=언어 → 그 언어에서 불변식을 집행하는 코드 조각(없으면 빈 문자열)
-  case "$1" in
-    rust)   grep -c 'and_then(serde_json::Value::as_str)' "$ROOT/rust/src/token_provider.rs" ;;
-    python) grep -c 'isinstance(access_token, str)' "$ROOT/python/src/keycloak_sdk/tokens.py" ;;
-    ruby)   grep -c 'access_token.is_a?(String)' "$ROOT/ruby/lib/keycloak_sdk/tokens.rb" ;;
-    php)    grep -c '\\is_string($accessToken)' "$ROOT/php/src/Token/TokenSet.php" ;;
-    dotnet) grep -c 'rawAccessToken.ValueKind != JsonValueKind.String' \
-              "$ROOT/dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs" ;;
+# ⚠️ **앵커가 두 종류인 것은 의도다.**
+#   · 이번에 고친 다섯은 **행동을 단언하는 테스트**를 앵커로 쓴다. 검증을 지우면 그 언어의
+#     테스트가 먼저 빨개지므로 축은 「그 테스트가 사라지지 않았는가」만 지키면 된다.
+#     소스 철자를 겨누면 **동작이 같은 리팩터에도 빨개진다**(실측: rust 의
+#     `serde_json::Value::as_str` → `|v| v.as_str()` 로 바꿨을 뿐인데 걸렸다).
+#   · 이미 옳던 넷은 그런 테스트가 **없다**. 그래서 그쪽은 집행 기제 자체를 겨눈다 —
+#     JVM 둘은 우리 코드가 아니라 Nimbus `TokenResponse.parse` 가 타입을 강제하므로
+#     **그 호출의 존재**가 앵커다. (넷에 테스트를 붙이면 그때 이쪽으로 옮긴다.)
+sd_token_type_guard() { # $1=언어 → 불변식을 지키는 앵커의 히트 수(없으면 0/빈 문자열)
+    case "$1" in
+    rust)   grep -c 'non_string_access_token_is_rejected' "$ROOT/rust/src/token_provider.rs" ;;
+    python) grep -c 'test_non_string_access_token_is_rejected' \
+              "$ROOT/python/tests/unit/test_tokens.py" ;;
+    ruby)   grep -c 'rejects a non-string access_token' "$ROOT/ruby/spec/unit/tokens_spec.rb" ;;
+    php)    grep -c 'testNonStringAccessTokenIsRejected' \
+              "$ROOT/php/tests/Unit/Token/TokenSetTest.php" ;;
+    dotnet) grep -c 'ClientCredentialsToken_rejects_non_string_access_token' \
+              "$ROOT/dotnet/tests/Xzawed.Keycloak.Sdk.Tests/AuthClientTests.cs" ;;
     node)   grep -c "typeof at !== 'string'" "$ROOT/node/src/tokens.ts" ;;
     go)     grep -c 'jwt.AccessToken == ""' "$ROOT/go/admin.go" ;;
     java)   grep -c 'TokenResponse.parse(' \
