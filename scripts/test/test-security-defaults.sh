@@ -131,18 +131,19 @@ sd_code_axis "clock skew" sd_skew
 #
 # ⚠️ **이 축의 스코프는 아홉이 아니다 — 그 이유를 여기 적는다**(적지 않으면 다음 세션이
 # 「아홉을 본다」로 잘못 읽는다):
-#   · 리터럴을 **자기 소스에** 선언하는 여섯 = go · rust · php · ruby · node · dotnet → 값까지 대조한다.
+#   · 리터럴을 **자기 소스에** 선언하는 일곱 = go · rust · php · ruby · node · dotnet · python
+#     → 값까지 대조한다.
 #     ⚠️ node 는 `jose` 에 위임하지만 **jose 에 상한이 없어**(6.2.12 실측: `fetchJwks` 가
 #     `response.json()` 뿐) `[customFetch]` 이음매로 우리가 건다 — 그래서 값이 우리 소스에 있다.
 #   · java · kotlin 은 Nimbus 상수를 **심볼로 참조**한다(`NoRedirectResourceRetriever`). 리터럴이
 #     없는 것이 옳으므로 값이 아니라 **참조의 존재**를 본다 — 그 인자를 빼면 Nimbus 가 상한을
 #     지운다는 것이 #400 의 실측이다.
-#   · **python 은 상한이 없고 아직 안 닫혔다**(2026-09-11 실측): `keycloak_openid.certs()` →
-#     `ConnectionManager.raw_get` → `self._s.get(...)`(`connection.py:336`)는 `stream=True` 가
-#     아니라 본문을 통째로 올린 뒤 `.json()` 한다 — 바이트 상한도 `Content-Length` 검사도 없다.
-#     ⚠️ 이음매가 node 와 **다르다**: jose 의 `[customFetch]` 는 JWKS 전용인데, python 의 그
-#     세션은 token·introspect·logout 이 함께 쓰므로 거기에 상한을 걸면 폭발반경이 넓다.
-#     그래서 이 PR 에서 닫지 않았다 — 열린 항목이 소유한다.
+#   · **python 도 닫혔다**(2026-09-12) — 상류 `certs()` 에는 상한을 끼울 이음매가 **없다**
+#     (`raw_get` 이 `**kwargs` 를 `params=` 로 보내 `stream=True` 가 쿼리 파라미터가 된다).
+#     그래서 `_internal/jwks_fetch.py` 가 JWKS **요청 하나만** 직접 스트리밍 GET 한다 —
+#     세션 전체에 걸면 token·introspect·logout 까지 묶이고 역할 많은 토큰은 정당하게 크다.
+#     ⚠️ 그 모듈은 `requests`/`httpx` 예외를 **스스로** SDK 타입으로 번역한다: `_wrap` 은
+#     상류 `KeycloakError` 하나만 잡아서, 직접 HTTP 를 부르면 하위 타입이 그대로 샌다(§4).
 #   · **dotnet 은 닫혔다**(2026-09-11) — `Microsoft.IdentityModel` 이 컴파일된 패키지라 내부
 #     상한 여부는 **여전히 미측정**이지만, 그것과 무관하게 우리가 `IDocumentRetriever` 를
 #     직접 구현해 상한을 건다(`BoundedDocumentRetriever`). ⚠️ `MaxResponseContentBufferSize`
@@ -157,10 +158,12 @@ sd_jwks_cap() { # $1=언어 → 상한 리터럴(정규화 전)
     node) sed -n 's/.*JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' "$ROOT/node/src/jwt.ts" | head -1 ;;
     dotnet) sed -n 's/.*const int MaxBytes *= *\([0-9_]*\).*/\1/p' \
               "$ROOT/dotnet/src/Xzawed.Keycloak.Sdk/BoundedDocumentRetriever.cs" | head -1 ;;
+    python) sed -n 's/.*JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' \
+              "$ROOT/python/src/keycloak_sdk/_internal/jwks_fetch.py" | head -1 ;;
   esac
 }
 
-SD_CAP_LANGS='go rust php ruby node dotnet'
+SD_CAP_LANGS='go rust php ruby node dotnet python'
 sd_cap_expect=''
 sd_cap_seen=0
 for L in $SD_CAP_LANGS; do
@@ -181,7 +184,7 @@ for L in $SD_CAP_LANGS; do
   fi
 done
 # 대조군 — 위 루프가 실제로 여섯을 돌았는지. 목록이 비면 어서션이 0건 실행되고 조용히 통과한다.
-assert_eq "6" "$sd_cap_seen" "[JWKS 크기상한] 상한을 읽은 언어 수가 6이 아니다 — 추출 표가 낡았나?"
+assert_eq "7" "$sd_cap_seen" "[JWKS 크기상한] 상한을 읽은 언어 수가 7이 아니다 — 추출 표가 낡았나?"
 # 값은 Nimbus 의 기본 상한이다. 자매 JVM 둘이 그것을 **심볼로** 참조하므로, 여기서만 수를 고정한다.
 assert_eq "51200" "$sd_cap_expect" "[JWKS 크기상한] 51200(Nimbus DEFAULT_HTTP_SIZE_LIMIT)이 아니다"
 

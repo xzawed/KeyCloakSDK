@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from joserfc import jwt as jjwt
 from joserfc.jwk import RSAKey
-from keycloak.exceptions import KeycloakAuthenticationError, KeycloakError, KeycloakGetError
+from keycloak.exceptions import KeycloakAuthenticationError, KeycloakGetError
 
 from keycloak_sdk._internal.backoff import JwksFailureBackoff
 from keycloak_sdk.aio.auth import AsyncAuthClient
@@ -185,46 +185,46 @@ async def test_exchange_code_wraps_auth_error():
         await client.exchange_code("bad-code", "https://app/cb", "verifier")
 
 
-def _exchange_openid_with_id_token(key: RSAKey, id_token: str | None) -> MagicMock:
+def _exchange_openid_with_id_token(key: RSAKey, id_token: str | None, ajwks) -> MagicMock:
     openid = MagicMock()
     response: dict[str, object] = {"access_token": "acc", "token_type": "Bearer", "expires_in": 60}
     if id_token is not None:
         response["id_token"] = id_token
     openid.a_token = AsyncMock(return_value=response)
-    openid.a_certs = AsyncMock(return_value={"keys": [key.as_dict(private=False)]})
+    ajwks.return_value = {"keys": [key.as_dict(private=False)]}
     return openid
 
 
-async def test_exchange_code_validates_id_token_and_accepts_matching_nonce():
+async def test_exchange_code_validates_id_token_and_accepts_matching_nonce(ajwks):
     config = _config()
     endpoints = OidcEndpoints.for_realm(config)
     key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
     id_token = _signed_token(
         key, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce"
     )
-    client = _client(_exchange_openid_with_id_token(key, id_token), config=config)
+    client = _client(_exchange_openid_with_id_token(key, id_token, ajwks), config=config)
 
     result = await client.exchange_code("code", "https://app/cb", "verifier", nonce="server-nonce")
 
     assert result.access_token == "acc"
 
 
-async def test_exchange_code_rejects_mismatched_nonce():
+async def test_exchange_code_rejects_mismatched_nonce(ajwks):
     config = _config()
     endpoints = OidcEndpoints.for_realm(config)
     key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
     id_token = _signed_token(
         key, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce"
     )
-    client = _client(_exchange_openid_with_id_token(key, id_token), config=config)
+    client = _client(_exchange_openid_with_id_token(key, id_token, ajwks), config=config)
 
     with pytest.raises(KeycloakAuthError, match="nonce"):
         await client.exchange_code("code", "https://app/cb", "verifier", nonce="attacker-nonce")
 
 
-async def test_exchange_code_rejects_missing_id_token_when_nonce_expected():
+async def test_exchange_code_rejects_missing_id_token_when_nonce_expected(ajwks):
     key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
-    client = _client(_exchange_openid_with_id_token(key, id_token=None))
+    client = _client(_exchange_openid_with_id_token(key, id_token=None, ajwks=ajwks))
 
     with pytest.raises(KeycloakAuthError, match="id_token"):
         await client.exchange_code("code", "https://app/cb", "verifier", nonce="server-nonce")
@@ -306,7 +306,7 @@ async def test_introspect_maps_inactive_token_with_missing_fields():
     assert result == IntrospectionResult(active=False, username=None, client_id=None)
 
 
-# --- validate() — a_certs 로드 후 JwtValidator(sync)에 위임 -------------------------
+# --- validate() — JWKS fetch 로드 후 JwtValidator(sync)에 위임 -------------------------
 
 
 def _signed_token(key: RSAKey, issuer: str, audience: str, **extra_claims: object) -> str:
@@ -315,10 +315,10 @@ def _signed_token(key: RSAKey, issuer: str, audience: str, **extra_claims: objec
     return jjwt.encode({"alg": "RS256", "kid": key.kid}, claims, key)
 
 
-async def test_validate_loads_jwks_and_delegates_to_jwt_validator():
+async def test_validate_loads_jwks_and_delegates_to_jwt_validator(ajwks):
     key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
     openid = MagicMock()
-    openid.a_certs = AsyncMock(return_value={"keys": [key.as_dict(private=False)]})
+    ajwks.return_value = {"keys": [key.as_dict(private=False)]}
     config = _config()
     endpoints = OidcEndpoints.for_realm(config)
     client = _client(openid, config=config)
@@ -326,17 +326,17 @@ async def test_validate_loads_jwks_and_delegates_to_jwt_validator():
 
     result = await client.validate(token)
 
-    openid.a_certs.assert_awaited_once_with()
+    ajwks.assert_awaited_once()
     assert isinstance(result, ValidatedToken)
     assert result.issuer == endpoints.issuer
     assert result.subject == "user-1"
     assert config.client_id in result.audience
 
 
-async def test_validate_caches_jwks_across_calls():
+async def test_validate_caches_jwks_across_calls(ajwks):
     key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
     openid = MagicMock()
-    openid.a_certs = AsyncMock(return_value={"keys": [key.as_dict(private=False)]})
+    ajwks.return_value = {"keys": [key.as_dict(private=False)]}
     config = _config()
     endpoints = OidcEndpoints.for_realm(config)
     client = _client(openid, config=config)
@@ -345,23 +345,23 @@ async def test_validate_caches_jwks_across_calls():
     await client.validate(token)
     await client.validate(token)
 
-    assert openid.a_certs.await_count == 1
+    assert ajwks.call_count == 1
 
 
-async def test_validate_concurrent_cold_cache_single_flights_a_certs():
-    """동시성 하드닝: 콜드 캐시에서 두 `validate()`가 동시에 실행돼도 `a_certs()`는
-    한 번만 호출돼야 한다(`asyncio.Lock` 단일화). `a_certs` side_effect에 진짜
+async def test_validate_concurrent_cold_cache_single_flights_a_certs(ajwks):
+    """동시성 하드닝: 콜드 캐시에서 두 `validate()`가 동시에 실행돼도 JWKS fetch는
+    한 번만 호출돼야 한다(`asyncio.Lock` 단일화). JWKS fetch side_effect에 진짜
     `await asyncio.sleep(0)` 지점을 둬 실제 컨텍스트 스위치를 강제한다 — 그렇지 않으면
     목이 동기적으로 완료돼 두 번째 호출이 이미 채워진 캐시를 보게 되어(잠금 유무와
     무관하게) 테스트가 아무것도 증명하지 못한다."""
     key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
     openid = MagicMock()
 
-    async def _certs_with_yield() -> dict[str, object]:
+    async def _certs_with_yield(*_args: object, **_kwargs: object) -> dict[str, object]:
         await asyncio.sleep(0)
         return {"keys": [key.as_dict(private=False)]}
 
-    openid.a_certs = AsyncMock(side_effect=_certs_with_yield)
+    ajwks.side_effect = _certs_with_yield
     config = _config()
     endpoints = OidcEndpoints.for_realm(config)
     client = _client(openid, config=config)
@@ -369,16 +369,16 @@ async def test_validate_concurrent_cold_cache_single_flights_a_certs():
 
     results = await asyncio.gather(client.validate(token), client.validate(token))
 
-    assert openid.a_certs.await_count == 1
+    assert ajwks.call_count == 1
     for result in results:
         assert isinstance(result, ValidatedToken)
         assert result.subject == "user-1"
 
 
-async def test_validate_rejects_token_with_wrong_audience():
+async def test_validate_rejects_token_with_wrong_audience(ajwks):
     key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
     openid = MagicMock()
-    openid.a_certs = AsyncMock(return_value={"keys": [key.as_dict(private=False)]})
+    ajwks.return_value = {"keys": [key.as_dict(private=False)]}
     config = _config()
     endpoints = OidcEndpoints.for_realm(config)
     client = _client(openid, config=config)
@@ -388,16 +388,18 @@ async def test_validate_rejects_token_with_wrong_audience():
         await client.validate(token)
 
 
-def _validate_client(config: KeycloakConfig) -> tuple[AsyncAuthClient, RSAKey, OidcEndpoints]:
+def _validate_client(
+    config: KeycloakConfig, ajwks
+) -> tuple[AsyncAuthClient, RSAKey, OidcEndpoints]:
     key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
     openid = MagicMock()
-    openid.a_certs = AsyncMock(return_value={"keys": [key.as_dict(private=False)]})
+    ajwks.return_value = {"keys": [key.as_dict(private=False)]}
     return _client(openid, config=config), key, OidcEndpoints.for_realm(config)
 
 
-async def test_validate_defaults_expected_audience_to_client_id():
+async def test_validate_defaults_expected_audience_to_client_id(ajwks):
     """`expected_audience` 미지정 시 기대 audience는 client_id다(sync 동형·기존 동작 유지)."""
-    client, key, endpoints = _validate_client(_config())
+    client, key, endpoints = _validate_client(_config(), ajwks)
     client_id_token = _signed_token(key, issuer=endpoints.issuer, audience="app")
     api_token = _signed_token(key, issuer=endpoints.issuer, audience="some-api")
 
@@ -408,9 +410,9 @@ async def test_validate_defaults_expected_audience_to_client_id():
         await client.validate(api_token)
 
 
-async def test_validate_uses_configured_expected_audience():
+async def test_validate_uses_configured_expected_audience(ajwks):
     """`expected_audience`를 설정하면 client_id 대신 그 값을 `aud`에서 찾는다(sync 동형)."""
-    client, key, endpoints = _validate_client(_config(expected_audience="some-api"))
+    client, key, endpoints = _validate_client(_config(expected_audience="some-api"), ajwks)
     api_token = _signed_token(key, issuer=endpoints.issuer, audience="some-api")
     client_id_token = _signed_token(key, issuer=endpoints.issuer, audience="app")
 
@@ -421,18 +423,16 @@ async def test_validate_uses_configured_expected_audience():
         await client.validate(client_id_token)
 
 
-async def test_validate_refetches_jwks_and_retries_once_on_signature_failure():
-    """키 회전 시나리오: sync와 동형 — 서명 실패(TokenSignatureError) 시 a_certs()를
+async def test_validate_refetches_jwks_and_retries_once_on_signature_failure(ajwks):
+    """키 회전 시나리오: sync와 동형 — 서명 실패(TokenSignatureError) 시 JWKS fetch를
     한 번 재조회한 뒤 재시도해 성공해야 한다."""
     old_key = RSAKey.generate_key(2048, {"kid": "old-kid", "use": "sig"})
     new_key = RSAKey.generate_key(2048, {"kid": "new-kid", "use": "sig"})
     openid = MagicMock()
-    openid.a_certs = AsyncMock(
-        side_effect=[
-            {"keys": [old_key.as_dict(private=False)]},
-            {"keys": [old_key.as_dict(private=False), new_key.as_dict(private=False)]},
-        ]
-    )
+    ajwks.side_effect = [
+        {"keys": [old_key.as_dict(private=False)]},
+        {"keys": [old_key.as_dict(private=False), new_key.as_dict(private=False)]},
+    ]
     config = _config()
     endpoints = OidcEndpoints.for_realm(config)
     client = _client(openid, config=config)
@@ -442,12 +442,12 @@ async def test_validate_refetches_jwks_and_retries_once_on_signature_failure():
 
     assert isinstance(result, ValidatedToken)
     assert result.subject == "user-1"
-    assert openid.a_certs.await_count == 2
+    assert ajwks.call_count == 2
 
 
-async def test_validate_wraps_certs_transport_error():
+async def test_validate_wraps_certs_transport_error(ajwks):
     openid = MagicMock()
-    openid.a_certs = AsyncMock(side_effect=KeycloakGetError(error_message="conn reset"))
+    ajwks.side_effect = KeycloakTransportError("conn reset")
     client = _client(openid)
 
     with pytest.raises(KeycloakTransportError):
@@ -457,13 +457,13 @@ async def test_validate_wraps_certs_transport_error():
 # --- 보안: JWKS 강제 재조회 DoS 증폭 방지 + 자원 정리 (감사 후속) -------------------
 
 
-async def test_signature_forgery_does_not_refetch_jwks():
-    """서명 위조(kid는 캐시에 있으나 서명 불일치)는 a_certs() 재조회를 유발하지 않는다 —
+async def test_signature_forgery_does_not_refetch_jwks(ajwks):
+    """서명 위조(kid는 캐시에 있으나 서명 불일치)는 JWKS fetch 재조회를 유발하지 않는다 —
     sync와 동형의 미인증 DoS 증폭 방어."""
     cached_key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
     forger_key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
     openid = MagicMock()
-    openid.a_certs = AsyncMock(return_value={"keys": [cached_key.as_dict(private=False)]})
+    ajwks.return_value = {"keys": [cached_key.as_dict(private=False)]}
     config = _config()
     endpoints = OidcEndpoints.for_realm(config)
     client = _client(openid, config=config)
@@ -472,7 +472,7 @@ async def test_signature_forgery_does_not_refetch_jwks():
     with pytest.raises(TokenValidationError):
         await client.validate(token)
 
-    assert openid.a_certs.await_count == 1
+    assert ajwks.call_count == 1
 
 
 async def test_aclose_closes_underlying_connection():
@@ -487,7 +487,7 @@ async def test_aclose_closes_underlying_connection():
     openid.connection.aclose.assert_awaited_once_with()
 
 
-async def test_malformed_jwks_yields_sdk_error_not_a_raw_library_exception():
+async def test_malformed_jwks_yields_sdk_error_not_a_raw_library_exception(ajwks):
     """sync 미러와 동일한 계약 — 기형 JWKS는 SDK 오류로 나와야 한다(동형 최소집합 5번).
 
     두 미러가 갈라지지 않도록 async에도 같은 프로브를 둔다. 고치기 전에는 joserfc가 joserfc
@@ -500,20 +500,18 @@ async def test_malformed_jwks_yields_sdk_error_not_a_raw_library_exception():
     token = _signed_token(key, issuer=endpoints.issuer, audience=config.client_id)
 
     openid = MagicMock()
-    openid.a_certs = AsyncMock(
-        return_value={
-            "keys": [
-                {
-                    "kty": "RSA",
-                    "kid": "k1",
-                    "use": "sig",
-                    "alg": "RS256",
-                    "n": "!!!not-base64!!!",
-                    "e": "AQAB",
-                }
-            ]
-        }
-    )
+    ajwks.return_value = {
+        "keys": [
+            {
+                "kty": "RSA",
+                "kid": "k1",
+                "use": "sig",
+                "alg": "RS256",
+                "n": "!!!not-base64!!!",
+                "e": "AQAB",
+            }
+        ]
+    }
     client = _client(openid, config=config)
 
     with pytest.raises(TokenValidationError):
@@ -523,37 +521,37 @@ async def test_malformed_jwks_yields_sdk_error_not_a_raw_library_exception():
 # ⚠️ 콜드 캐시 + IdP 장애 축 — sync 미러와 **대칭으로** 둔다. 이 저장소는 「sync 에만 있는
 # 보안 테스트」를 이미 결함 부류로 추적한다(`python-aio-security-test-asymmetry`).
 # 상태 기계는 `tests/unit/test_backoff.py` 가 재고, 여기서는 배선만 증명한다.
-async def test_cold_cache_failing_idp_collapses_to_one_certs_call():
+async def test_cold_cache_failing_idp_collapses_to_one_certs_call(ajwks):
     openid = MagicMock()
-    openid.a_certs = AsyncMock(side_effect=KeycloakError("idp down"))
+    ajwks.side_effect = KeycloakTransportError("idp down")
     client = _client(openid)
 
     for _ in range(20):
         with pytest.raises((KeycloakTransportError, KeycloakAuthError)):
             await client._load_jwks()
 
-    assert openid.a_certs.await_count == 1, (
+    assert ajwks.call_count == 1, (
         "cold cache + failing IdP: 20 loads must collapse to one outbound request"
     )
 
 
 # ⚠️ **이 테스트를 지우지 말 것 — 위 단언은 「한 번 실패하면 영원히 차단」으로도 통과한다.**
-async def test_backoff_window_expires_and_the_next_load_reaches_the_idp():
+async def test_backoff_window_expires_and_the_next_load_reaches_the_idp(ajwks):
     openid = MagicMock()
-    openid.a_certs = AsyncMock(side_effect=KeycloakError("idp down"))
+    ajwks.side_effect = KeycloakTransportError("idp down")
     client = _client(openid)
     clock = _FakeClock()
     client._jwks_backoff = JwksFailureBackoff(clock=clock, jitter=lambda: 1.0)
 
     with pytest.raises((KeycloakTransportError, KeycloakAuthError)):
         await client._load_jwks()
-    assert openid.a_certs.await_count == 1
+    assert ajwks.call_count == 1
 
     with pytest.raises(KeycloakTransportError, match="backing off"):
         await client._load_jwks()
-    assert openid.a_certs.await_count == 1
+    assert ajwks.call_count == 1
 
     clock.advance(10.0)
     with pytest.raises((KeycloakTransportError, KeycloakAuthError)):
         await client._load_jwks()
-    assert openid.a_certs.await_count == 2
+    assert ajwks.call_count == 2

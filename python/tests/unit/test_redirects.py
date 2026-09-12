@@ -23,6 +23,7 @@ from keycloak_sdk.exceptions import (
     KeycloakAdminError,
     KeycloakAuthError,
     KeycloakConfigError,
+    KeycloakTransportError,
 )
 from keycloak_sdk.oidc import OidcEndpoints
 from tests.unit.conftest import ACCESS_TOKEN, CLIENT_SECRET, REFRESH_TOKEN, Trap
@@ -70,42 +71,48 @@ def test_control_group_stock_python_keycloak_does_follow_and_leak(trap: Trap) ->
 
 
 @pytest.mark.parametrize(
-    ("operation", "control", "subject"),
+    ("operation", "control", "subject", "expected"),
     [
         pytest.param(
             "introspect",
             lambda o: o.introspect(ACCESS_TOKEN),
             lambda c: c.introspect(ACCESS_TOKEN),
+            KeycloakAuthError,
             id="introspect",
         ),
         pytest.param(
             "logout",
             lambda o: o.logout(REFRESH_TOKEN),
             lambda c: c.logout(REFRESH_TOKEN),
+            KeycloakAuthError,
             id="logout",
         ),
         pytest.param(
             "token",
             lambda o: o.token(grant_type="client_credentials"),
             lambda c: c.client_credentials_token(),
+            KeycloakAuthError,
             id="client_credentials_token",
         ),
         pytest.param(
             "refresh",
             lambda o: o.refresh_token(REFRESH_TOKEN),
             lambda c: c.refresh(REFRESH_TOKEN),
+            KeycloakAuthError,
             id="refresh",
         ),
         pytest.param(
             "exchange_code",
             lambda o: o.token(grant_type="authorization_code", code="c", redirect_uri="/cb"),
             lambda c: c.exchange_code("c", "/cb", "verifier"),
+            KeycloakAuthError,
             id="exchange_code",
         ),
         pytest.param(
             "certs",
             lambda o: o.certs(),
             lambda c: c.validate("not.a.real.token"),
+            KeycloakTransportError,
             id="jwks_load",
         ),
     ],
@@ -115,7 +122,16 @@ def test_auth_backchannel_refuses_redirects(
     operation: str,
     control: Any,
     subject: Any,
+    expected: type[Exception],
 ) -> None:
+    """⚠️ **기대 타입이 레인마다 다르다 — 공통 베이스로 뭉뚱그리지 말 것.**
+
+    다섯 레인은 상류 `raw_*` → `raise_error_from_response` 를 지나 `response_code=307` 을
+    실은 오류가 되고, 경계가 그것을 `KeycloakAuthError` 로 옮긴다. **JWKS 레인만 다르다** —
+    바이트 상한을 걸려고 상류를 우회해 직접 GET 하므로(`_internal/jwks_fetch.py`) 3xx 는
+    거기서 `KeycloakTransportError` 가 된다. 차단 자체는 양쪽 다 같다(훅이 빈 반복자를
+    돌려주므로 리다이렉트를 따라가지 않는다) — 아래 `trap.hits == []` 가 그것을 잰다.
+    """
     # --- 대조군: 하드닝 없는 stock은 따라가고, 리다이렉트 대상의 답을 받아들인다 ---
     control(_stock_openid(trap))
     assert len(trap.hits) == 1, f"{operation}: 덫이 무장되지 않았다(stock이 따라가지 않음)"
@@ -123,7 +139,7 @@ def test_auth_backchannel_refuses_redirects(
     trap.reset()
 
     # --- 대상: SDK는 따라가지 않고, 성공을 반환하지도 않는다 ---
-    with pytest.raises(KeycloakAuthError) as exc_info:
+    with pytest.raises(expected) as exc_info:
         subject(_auth(trap))
 
     assert trap.hits == [], f"{operation}: SDK가 리다이렉트 대상으로 요청을 보냈다"
@@ -141,7 +157,9 @@ def test_jwks_is_not_poisoned_by_a_redirect(trap: Trap) -> None:
     trap.reset()
 
     client = _auth(trap)
-    with pytest.raises(KeycloakAuthError):
+    # JWKS 레인은 상류를 우회해 직접 GET 하므로 3xx 가 KeycloakTransportError 가 된다
+    # (위 파라미터 테스트의 주석 참조). 차단 여부는 아래 두 단언이 잰다.
+    with pytest.raises(KeycloakTransportError):
         client.validate("not.a.real.token")
 
     assert trap.hits == []

@@ -15,7 +15,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TypeVar, cast
+from typing import Any, TypeVar, cast
 from urllib.parse import urlencode
 
 from joserfc.jwk import KeySet, KeySetSerialization
@@ -23,6 +23,7 @@ from keycloak import KeycloakOpenID
 from keycloak.exceptions import KeycloakError
 
 from ._internal.backoff import JwksFailureBackoff
+from ._internal.jwks_fetch import fetch_jwks
 from ._internal.jwt import JwtValidator
 from ._internal.redirects import harden_openid
 from ._internal.secrets import mask
@@ -283,9 +284,10 @@ class AuthClient:
                     f"consecutive failures (retry in {remaining:.2f}s)"
                 )
             try:
-                certs = self._wrap(lambda: self._openid.certs())
-                # python-keycloak types certs() as a bare `dict`; the realm JWKS endpoint
-                # (RFC 7517) always returns `{"keys": [...]}`, matching joserfc's shape.
+                certs = self._fetch_jwks()
+                # 상류 `certs()` 와 달리 이 경로는 바이트 상한을 건다(`_internal/jwks_fetch.py`).
+                # 반환 모양은 같다 — realm JWKS 엔드포인트(RFC 7517)는 `{"keys": [...]}` 이고
+                # 그것이 joserfc 가 받는 모양이다.
                 # ⚠️ 파싱은 `_wrap`이 덮지 않는다 — `_wrap`은 전송 오류용이고 여기는 **응답
                 # 내용**이 문제인 경우다. base64url이 아닌 modulus 같은 기형 JWKS에서 joserfc는
                 # joserfc 타입도 아닌 `binascii.Error`(stdlib)를 던지며, 그대로 두면
@@ -303,6 +305,22 @@ class AuthClient:
                 raise
             self._jwks_backoff.record_success()
         return self._jwks_cache
+
+    def _fetch_jwks(self) -> dict[str, Any]:
+        """하드닝된 세션으로 JWKS 를 상한 안에서 가져온다.
+
+        세션·전송 설정은 상류 `ConnectionManager` 에서 그대로 읽는다 — `raw_get` 이 쓰는
+        것과 같은 값이라 TLS 검증·클라이언트 인증서·타임아웃 동작이 갈리지 않는다.
+        `connection._s` 의 존재는 생성 시 `harden_openid` 가 이미 강제했다.
+        """
+        conn = self._openid.connection
+        return fetch_jwks(
+            conn._s,
+            self._endpoints.jwks,
+            timeout=getattr(conn, "timeout", None),
+            verify=getattr(conn, "verify", True),
+            cert=getattr(conn, "cert", None),
+        )
 
     def close(self) -> None:
         """하위 `KeycloakOpenID`의 requests 세션을 닫는다.

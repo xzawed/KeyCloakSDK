@@ -18,7 +18,7 @@ from keycloak import KeycloakOpenID
 
 from keycloak_sdk.aio.auth import AsyncAuthClient
 from keycloak_sdk.config import KeycloakConfig
-from keycloak_sdk.exceptions import KeycloakAuthError
+from keycloak_sdk.exceptions import KeycloakAuthError, KeycloakTransportError
 from keycloak_sdk.oidc import OidcEndpoints
 from tests.unit.conftest import ACCESS_TOKEN, CLIENT_SECRET, Trap
 
@@ -58,5 +58,36 @@ async def test_async_backchannel_does_not_follow_redirects(trap: Trap) -> None:
         await client.introspect(ACCESS_TOKEN)
 
     assert trap.hits == []
+    assert "307" in str(exc_info.value)
+    await client.aclose()
+
+
+async def test_async_jwks_is_not_poisoned_by_a_redirect(trap: Trap) -> None:
+    """aio 의 **JWKS 레인**도 3xx 를 따라가지 않는다.
+
+    ⚠️ 이 테스트는 **변이 프로브가 찾아내서** 생겼다: `afetch_jwks` 의
+    `follow_redirects=False` 를 `True` 로 바꿔도 스위트 전체가 초록이었다. 위 introspect
+    테스트는 상류 `a_introspect` 경로를 재는데, JWKS 는 바이트 상한을 걸려고 상류를
+    우회해 **직접 GET** 하므로 그 보장이 이쪽에 자동으로 오지 않는다.
+
+    따라가면 무엇을 잃는가: 공격자가 돌려준 JWKS 가 **검증 키로 캐시된다**(인증 전면 우회).
+    """
+    certs_url = f"{trap.idp_url}/realms/t/protocol/openid-connect/certs"
+
+    # 대조군: 따라가는 클라이언트는 공격자 JWKS 를 받아온다 — 덫이 무장돼 있음을 증명한다.
+    async with httpx.AsyncClient(follow_redirects=True) as leaky:
+        stolen = await leaky.get(certs_url)
+    assert stolen.json() == {"keys": [{"kid": "ATTACKER-KEY", "kty": "oct"}]}
+    assert len(trap.hits) == 1, "덫이 무장되지 않았다"
+    trap.reset()
+
+    # 대상: SDK 는 따라가지 않고, 성공을 반환하지도 않으며, 캐시도 채우지 않는다.
+    config = _config(trap)
+    client = AsyncAuthClient(config, OidcEndpoints.for_realm(config))
+    with pytest.raises(KeycloakTransportError) as exc_info:
+        await client.validate("not.a.real.token")
+
+    assert trap.hits == [], "SDK 가 리다이렉트 대상으로 요청을 보냈다"
+    assert client._jwks_cache is None, "공격자 JWKS 가 캐시됐다"
     assert "307" in str(exc_info.value)
     await client.aclose()
