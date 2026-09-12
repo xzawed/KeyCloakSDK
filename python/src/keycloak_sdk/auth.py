@@ -315,7 +315,7 @@ class AuthClient:
         """
         conn = self._openid.connection
         return fetch_jwks(
-            conn._s,  # noqa: SLF001 (상류가 공개 접근자를 주지 않는다 — close()도 같은 자리를 쓴다)
+            conn._s,
             self._endpoints.jwks,
             timeout=getattr(conn, "timeout", None),
             verify=getattr(conn, "verify", True),

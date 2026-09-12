@@ -137,6 +137,7 @@ class JwksServer:
     body: bytes = b'{"keys": []}'
     status: int = 200
     chunked: bool = False  # Content-Length 없이 보낸다 — 헤더만 믿는 상한을 걸러내는 대조군
+    truncate: bool = False  # 약속한 길이보다 적게 보내고 끊는다 — 읽는 도중 실패 재현
     hits: int = 0
 
 
@@ -147,7 +148,7 @@ def _make_jwks_handler(box: dict[str, JwksServer]) -> type[BaseHTTPRequestHandle
         def log_message(self, *_args: Any) -> None:
             pass
 
-        def do_GET(self) -> None:  # noqa: N802 (BaseHTTPRequestHandler API)
+        def do_GET(self) -> None:
             srv = box["server"]
             srv.hits += 1
             self.send_response(srv.status)
@@ -160,6 +161,12 @@ def _make_jwks_handler(box: dict[str, JwksServer]) -> type[BaseHTTPRequestHandle
                     self.wfile.write(f"{len(chunk):X}\r\n".encode())
                     self.wfile.write(chunk + b"\r\n")
                 self.wfile.write(b"0\r\n\r\n")
+            elif srv.truncate:
+                # 길이는 크게 약속하고 조금만 보낸 뒤 끊는다 — 클라이언트는 읽는 도중 실패한다.
+                self.send_header("Content-Length", str(len(srv.body) + 1024))
+                self.end_headers()
+                self.wfile.write(srv.body)
+                self.close_connection = True
             else:
                 self.send_header("Content-Length", str(len(srv.body)))
                 self.end_headers()

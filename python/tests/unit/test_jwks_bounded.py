@@ -17,11 +17,11 @@ from typing import Any
 import pytest
 from joserfc.jwk import RSAKey
 
+from keycloak_sdk._internal.jwks_fetch import JWKS_MAX_BYTES
 from keycloak_sdk.auth import AuthClient
 from keycloak_sdk.config import KeycloakConfig
-from keycloak_sdk.oidc import OidcEndpoints
 from keycloak_sdk.exceptions import KeycloakTransportError
-from keycloak_sdk._internal.jwks_fetch import JWKS_MAX_BYTES
+from keycloak_sdk.oidc import OidcEndpoints
 
 
 def _config(jwks_server: Any) -> KeycloakConfig:
@@ -82,7 +82,7 @@ def test_jwks_within_cap_is_accepted(jwks_server: Any) -> None:
     cfg = _config(jwks_server)
     client = AuthClient(cfg, OidcEndpoints.for_realm(cfg))
 
-    with pytest.raises(Exception) as excinfo:  # noqa: PT011 (검증 실패 자체는 이 테스트의 관심이 아니다)
+    with pytest.raises(Exception) as excinfo:
         client.validate("irrelevant.token.here")
     assert "exceeds" not in str(excinfo.value)
     assert jwks_server.hits == 1
@@ -97,6 +97,48 @@ def test_non_200_jwks_is_an_sdk_error(jwks_server: Any) -> None:
 
     with pytest.raises(KeycloakTransportError):
         client.validate("irrelevant.token.here")
+
+
+def test_non_json_body_is_an_sdk_error(jwks_server: Any) -> None:
+    """§4 — 하위 파서 예외가 아니라 SDK 타입으로 나온다."""
+    jwks_server.body = b"<html>not json</html>"
+    cfg = _config(jwks_server)
+
+    with pytest.raises(KeycloakTransportError, match="not JSON"):
+        AuthClient(cfg, OidcEndpoints.for_realm(cfg)).validate("irrelevant.token.here")
+
+
+def test_json_that_is_not_an_object_is_an_sdk_error(jwks_server: Any) -> None:
+    jwks_server.body = b"[1, 2, 3]"
+    cfg = _config(jwks_server)
+
+    with pytest.raises(KeycloakTransportError, match="not a JSON object"):
+        AuthClient(cfg, OidcEndpoints.for_realm(cfg)).validate("irrelevant.token.here")
+
+
+def test_transport_failure_is_translated() -> None:
+    """⚠️ requests 예외는 `_wrap` 이 잡지 않는다 — 이 모듈이 스스로 번역하지 않으면
+    `requests.ConnectionError` 가 소비자에게 그대로 샌다(§4 위반)."""
+    cfg = KeycloakConfig(
+        server_url="http://127.0.0.1:1",  # 아무도 듣지 않는 포트
+        realm="t",
+        client_id="app",
+        client_secret="s3cret",
+        read_timeout=2.0,
+    )
+
+    with pytest.raises(KeycloakTransportError, match="fetch failed"):
+        AuthClient(cfg, OidcEndpoints.for_realm(cfg)).validate("irrelevant.token.here")
+
+
+def test_read_failure_midstream_is_translated(jwks_server: Any) -> None:
+    """읽는 도중 끊기는 경우도 SDK 타입이다 — 서버가 약속한 길이보다 적게 보내고 끊는다."""
+    jwks_server.body = b'{"keys": []}'
+    jwks_server.truncate = True
+    cfg = _config(jwks_server)
+
+    with pytest.raises(KeycloakTransportError, match="fetch failed"):
+        AuthClient(cfg, OidcEndpoints.for_realm(cfg)).validate("irrelevant.token.here")
 
 
 def test_oversize_error_body_is_also_capped(jwks_server: Any) -> None:
