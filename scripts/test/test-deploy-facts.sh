@@ -269,4 +269,32 @@ check_langset harness/install/install-verify.sh '^# Usage:' 'Usage 주석'
 # 공허 방지 — 대조한 자리가 줄면 이 검사는 아무것도 안 보면서 초록이 된다.
 assert_eq "4" "$_copy_sites" "언어 목록 사본을 4곳 대조해야 한다 — 자리가 줄었으면 패턴이 낡았거나 사본이 옮겨갔다"
 
+# ⚠️ **뿌리를 트리에 못 박는다.** 위 `check_langset` 넷은 사본을 `DEPLOY_LANGS` 와 대조할 뿐이라,
+# 열 번째 언어가 들어와도 **다섯이 서로 정합한 채 조용하다**(실측 2026-09-12: 추적된 `zig/` 를
+# 심고 아무 목록도 고치지 않으니 `scripts/probe.sh` → `SILENT`). 그래서 뿌리 자신을 트리에서
+# 파생한 집합과 대조한다.
+_tree_set="$(df_tree_langs "$DIR/../..")"
+# 공허 방지 — 파생이 0건이면 "불일치 없음"이 통과처럼 보인다(git 없는 트리·패턴 파손).
+assert_ok test -n "$_tree_set"
+assert_eq "$_ssot_set" "$_tree_set" \
+  "DEPLOY_LANGS 가 트리에서 파생한 언어 집합과 다르다 — 언어가 들고 났는데 SSOT 가 안 따라왔다(사본 넷도 함께 낡는다)"
+
+# ⚠️ **음성 대조군 — 파생이 트리를 실제로 읽는가.** 위 단언은 「지금 일치한다」만 본다. 그 형태는
+# **파생이 no-op 이어도 통과한다** — `df_tree_langs` 를 정답 상수로 바꾸면 초록이다(실측
+# 2026-09-12: `scripts/probe.sh` → `SILENT`, 즉 진짜 구멍이었다. 자매 가드에서도 같은 구멍이
+# 같은 방식으로 났다). 그래서 **언어 집합이 다른** 임시 저장소에서 다른 답을 내는지 본다.
+_dfn_tmp="$(mktemp -d)"
+(
+  cd "$_dfn_tmp" \
+    && git init -q -b main . >/dev/null 2>&1 \
+    && mkdir -p alpha beta notalang \
+    && : > alpha/Cargo.toml && : > beta/composer.json && : > notalang/README.md \
+    && git add -A >/dev/null 2>&1
+) && {
+  # 기대: 매니페스트를 가진 둘만. `notalang` 이 들어오면 「최상위 전부를 언어로 읽는다」는 뜻이다.
+  assert_eq "alpha beta " "$(df_tree_langs "$_dfn_tmp")" \
+    "[음성대조] 언어가 다른 트리에서도 같은 답을 낸다 — df_tree_langs 가 트리를 안 읽는다(no-op)"
+}
+rm -rf "$_dfn_tmp"
+
 assert_report
