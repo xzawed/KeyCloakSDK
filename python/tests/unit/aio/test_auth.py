@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 from joserfc import jwt as jjwt
-from joserfc.jwk import RSAKey
+from joserfc.jwk import ECKey, RSAKey
 from keycloak.exceptions import KeycloakAuthenticationError, KeycloakGetError
 
 from keycloak_sdk._internal.backoff import JwksFailureBackoff
@@ -555,3 +555,157 @@ async def test_backoff_window_expires_and_the_next_load_reaches_the_idp(ajwks):
     with pytest.raises((KeycloakTransportError, KeycloakAuthError)):
         await client._load_jwks()
     assert ajwks.call_count == 2
+
+
+# --- 보안 단언 미러 — sync 에만 있던 여덟 -------------------------------------
+#
+# ⚠️ **두 미러가 갈리면 한쪽만 고쳐지고 나머지는 조용히 남는다.** 아래 여덟은 sync 에만
+# 있던 **보안** 단언이다(2026-09-12 대칭 diff). 프로덕션 aio 코드는 이미 이 성질들을
+# 갖고 있으므로 이 테스트들은 **행동을 바꾸지 않고 고정**한다 — 그러나 고정되지 않은
+# 성질은 다음 리팩터에서 조용히 사라진다. alg 핀닝은 CLAUDE.md 가 교차언어 불변식으로
+# 못박은 것인데 aio 에는 단언이 **0** 이었다.
+
+
+def _es256_setup(config: KeycloakConfig, ajwks) -> tuple[AsyncAuthClient, str]:
+    key = ECKey.generate_key("P-256", {"kid": "k1", "use": "sig"})
+    endpoints = OidcEndpoints.for_realm(config)
+    ajwks.return_value = {"keys": [key.as_dict(private=False)]}
+    client = _client(MagicMock(), config=config)
+    token = jjwt.encode(
+        {"alg": "ES256", "kid": key.kid},
+        {
+            "iss": endpoints.issuer,
+            "aud": config.client_id,
+            "sub": "user-1",
+            "exp": int(time.time()) + 60,
+        },
+        key,
+    )
+    return client, token
+
+
+async def test_validate_accepts_token_signed_with_configured_algorithm(ajwks):
+    """signature_algorithms 를 ES256 으로 설정한 realm 의 ES256 토큰은 통과한다."""
+    client, token = _es256_setup(_config(signature_algorithms=("ES256",)), ajwks)
+
+    result = await client.validate(token)
+
+    assert result.subject == "user-1"
+
+
+async def test_validate_rejects_algorithm_not_in_configured_set(ajwks):
+    """⚠️ **alg 핀닝** — 기본(RS256만)에서 ES256 토큰은 거부된다. 라이브러리 기본값은
+    아홉 언어 어디서도 안전하지 않다(CLAUDE.md 교차언어 불변식)."""
+    client, token = _es256_setup(_config(), ajwks)
+
+    with pytest.raises(TokenValidationError):
+        await client.validate(token)
+
+
+async def test_validate_does_not_refetch_jwks_on_claim_failure(ajwks):
+    """클레임 실패는 서명 실패가 아니므로 재조회를 트리거하지 않는다 — 그렇지 않으면
+    무효 토큰 하나마다 IdP 왕복이 생긴다(DoS 증폭)."""
+    client, key, endpoints = _validate_client(_config(), ajwks)
+    token = _signed_token(key, issuer=endpoints.issuer, audience="someone-else")
+
+    with pytest.raises(TokenValidationError):
+        await client.validate(token)
+
+    assert ajwks.call_count == 1
+
+
+async def test_forced_jwks_refetch_is_rate_limited(ajwks):
+    """kid 를 무작위로 바꾼 위조 토큰이 연속 도착해도 강제 재조회는 rate-limit 되어
+    JWKS fetch 가 상한(최초 로드 1 + 최초 강제 재조회 1 = 2)을 넘지 않는다."""
+    cached_key = RSAKey.generate_key(2048, {"kid": "cached", "use": "sig"})
+    ajwks.return_value = {"keys": [cached_key.as_dict(private=False)]}
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    client = _client(MagicMock(), config=config)
+    tokens = [
+        _signed_token(
+            RSAKey.generate_key(2048, {"kid": kid, "use": "sig"}),
+            issuer=endpoints.issuer,
+            audience=config.client_id,
+        )
+        for kid in ("x1", "x2")
+    ]
+
+    for tok in tokens:
+        with pytest.raises(TokenValidationError):
+            await client.validate(tok)
+
+    assert ajwks.call_count == 2
+
+
+async def test_recovered_idp_resets_the_backoff(ajwks):
+    """대조군 — 복구 후 성공이 카운터를 되돌린다. 되돌리지 않으면 장수 프로세스가
+    상한에 고정된다(`security.md` 규칙 3)."""
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    ajwks.side_effect = [
+        KeycloakTransportError("idp down"),
+        {"keys": [key.as_dict(private=False)]},
+    ]
+    client = _client(MagicMock())
+    clock = _FakeClock()
+    client._jwks_backoff = JwksFailureBackoff(clock=clock, jitter=lambda: 1.0)
+
+    with pytest.raises((KeycloakTransportError, KeycloakAuthError)):
+        await client._load_jwks()
+    clock.advance(10.0)
+    await client._load_jwks()
+
+    assert client._jwks_backoff.failures == 0
+    assert client._jwks_backoff.remaining() == 0.0
+
+
+async def test_exchange_code_skips_id_token_validation_without_nonce(ajwks):
+    """nonce 를 주지 않으면 id_token 검증을 건너뛴다 — JWKS 를 부르지 않는 것으로 잰다."""
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    id_token = _signed_token(
+        key, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce"
+    )
+    openid = MagicMock()
+    openid.a_token = AsyncMock(
+        return_value={
+            "access_token": "acc",
+            "id_token": id_token,
+            "token_type": "Bearer",
+            "expires_in": 60,
+        }
+    )
+    ajwks.return_value = {"keys": [key.as_dict(private=False)]}
+    client = _client(openid, config=config)
+
+    result = await client.exchange_code("code", "https://app/cb", "verifier")
+
+    assert result.access_token == "acc"
+    ajwks.assert_not_called()
+
+
+def test_authorization_url_repr_masks_verifier():
+    """⚠️ **마스킹** — 기본 dataclass repr 은 평문 PKCE verifier 를 로그·트레이스에 흘린다."""
+    client = _client(MagicMock())
+
+    result = client.authorization_url("https://app.example.com/callback")
+
+    rendered = repr(result)
+    assert result.code_verifier not in rendered
+    assert result.url in rendered
+    assert result.state in rendered
+    assert result.nonce in rendered
+
+
+def test_authorization_url_percent_encodes_and_resists_param_injection():
+    """⚠️ **#442 의 회귀 테스트가 aio 에만 없었다.** 인코딩이 없으면 `redirect_uri` 안의
+    `&` 가 별도 파라미터를 **주입**한다(그 결함은 sync 에서 실제로 배포돼 있었다)."""
+    client = _client(MagicMock(), config=_config(scopes=("openid",)))
+
+    hostile = "https://app.example.com/cb?x=1 y&z=2"
+    result = client.authorization_url(hostile)
+
+    assert " " not in result.url, f"원문 공백이 남았다: {result.url}"
+    qs = parse_qs(urlparse(result.url).query)
+    assert qs["redirect_uri"] == [hostile]
