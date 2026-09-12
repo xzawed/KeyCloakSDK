@@ -135,11 +135,19 @@ async fn logout(State(state): State<AppState>) -> Response {
 }
 
 /// 오프라인 URL 조립만(브라우저 왕복·code 교환 없음).
-/// ⚠️ Rust SDK의 `create_authorization_request()`는 인자를 받지 않는다 — redirect_uri는
-/// `KeycloakConfig` 구성 시점에 고정된다(Ruby/Node/Go는 호출별 override 가능 — SDK 표면 차이,
-/// task-1.4-report.md 참고). 계약 호환을 위해 쿼리파라미터는 받되 사용하지 않는다.
-async fn authz_url(State(state): State<AppState>, Query(_params): Query<HashMap<String, String>>) -> Response {
-    let r = state.kc.auth().create_authorization_request();
+/// 호출당 `redirect_uri`를 받는다(나머지 여덟 SDK와 동형) — 없으면 `KeycloakConfig` 값.
+async fn authz_url(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let auth = state.kc.auth();
+    let r = match params.get("redirect_uri") {
+        Some(uri) => match auth.create_authorization_request_with_redirect(uri) {
+            Ok(r) => r,
+            Err(e) => return err_json(StatusCode::BAD_REQUEST, e),
+        },
+        None => auth.create_authorization_request(),
+    };
     (StatusCode::OK, Json(json!({ "url": r.url, "state": r.state }))).into_response()
 }
 

@@ -459,7 +459,7 @@ echo "created userId={$userId}\n";
 
 > Error handling: admin failures are classified as `KeycloakNotFoundError`/`KeycloakConflictError`/`KeycloakForbiddenError` (all of which carry `KeycloakAdminError::getStatusCode()`), or `KeycloakTransportError` on a network failure. `admin()->raw()` is the escape hatch to the underlying `Fschmtt\Keycloak\Keycloak` typed client.
 
-> **Authorization code (PKCE) flow**: `$req = $client->auth()->createAuthorizationRequest()` always issues a nonce (on `$req->nonce` and on the authorization URL). Exchange with `$client->auth()->exchangeCode($code, $req->codeVerifier, $req->nonce)` so the `id_token` is signature-verified and the nonce claim is checked. The third argument is optional — omit it and id_token validation is skipped, matching the other eight languages.
+> **Authorization code (PKCE) flow**: `$req = $client->auth()->createAuthorizationRequest()` always issues a nonce (on `$req->nonce` and on the authorization URL). Exchange with `$client->auth()->exchangeCode($code, $req->codeVerifier, $req->nonce)` so the `id_token` is signature-verified and the nonce claim is checked. The third argument is optional — omit it and id_token validation is skipped, matching the other eight languages. Both methods take an optional trailing `$redirectUri` for apps with more than one callback URL (multi-tenant, per-environment); pass the **same** value to both, as OAuth requires the token request's `redirect_uri` to match the one used for authorization.
 
 ## Rust
 

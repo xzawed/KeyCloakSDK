@@ -131,6 +131,39 @@ const methodParams = (src, method) => {
     .replace(/\s+/g, '')
 }
 
+
+// 파라미터를 **깊이 인지**로 쪼갠다 — 기본값 안의 콤마(`[1, 2]`·`f(a, b)`)에 속지 않는다.
+// ⚠️ `methodParams` 가 공백을 이미 전부 제거하므로 원소 비교가 바이트 단위로 정확하다.
+const splitParams = (list) => {
+  if (list == null) return null
+  if (list === '') return []
+  const out = []
+  let depth = 0
+  let cur = ''
+  let quote = null
+  for (const c of list) {
+    if (quote) {
+      cur += c
+      if (c === quote) quote = null
+      continue
+    }
+    if (c === '"' || c === "'") {
+      quote = c
+      cur += c
+      continue
+    }
+    if (c === '(' || c === '[' || c === '{') depth++
+    else if (c === ')' || c === ']' || c === '}') depth--
+    if (c === ',' && depth === 0) {
+      out.push(cur)
+      cur = ''
+      continue
+    }
+    cur += c
+  }
+  if (cur !== '') out.push(cur)
+  return out
+}
 const shortOf = (target) => {
   const cls = target.split('::')[0]
   return cls.split('\\').pop()
@@ -173,6 +206,49 @@ for (const r of majors) {
       remaining.push({ r, why: `${method}() 의 파라미터 목록이 실제로 다르다` })
       continue
     }
+  }
+
+  // (3) V010 — final 클래스의 메서드에 **후행 선택적** 파라미터가 늘었다 = MINOR.
+  //
+  // ⚠️ 네 연언 **전부**를 통과해야 면제다. 하나라도 거짓이거나 **불확실하면 MAJOR 로 남긴다**
+  // (fail-closed). 특히 「접두」 조건이 없으면 이 술어는 진짜 파괴를 축복한다 — 독립 레그가
+  // 지목한 구멍이다. 1.0 이 (code, verifier, nonce=null) 인데 나중에
+  // (code, verifier, redirectUri=null, nonce=null) 로 **중간 삽입**하면 둘 다 기본값이 있고
+  // 클래스는 final 이라 「final + 추가분에 기본값」만 보면 통과한다. 그런데 기존 위치인자 호출은
+  // nonce 를 redirectUri 로 넘기게 된다 — 하드 실패보다 나쁜 **조용한 동작 변경**이다.
+  //
+  // 도구가 이 구분을 구현하지 않는다: php-semver-checker 는 파라미터 추가를 선택/필수와 무관하게
+  // MAJOR 로 내고, 상속이 없는 자유함수(V002)도 같다. PHP 의 실제 계약은 Symfony BC 규칙과 같다 —
+  // 「기본값 있는 후행 인자 추가」는 파괴가 아니고, final 이면 오버라이드 경로조차 없다.
+  if (r.code === 'V010' && /parameter added/i.test(r.reason)) {
+    const method = r.target.includes('::') ? r.target.split('::')[1] : null
+    // ⚠️ 정규식을 쓰지 않는다 — 선언 행이 'final' 과 'class <이름>' 을 함께 담는지만 본다.
+    const NL = String.fromCharCode(10)
+    const isFinal =
+      newSrc != null &&
+      newSrc.split(NL).some((ln) => ln.includes('final') && ln.includes('class ' + short))
+    const a = method ? splitParams(methodParams(oldSrc, method)) : null
+    const b = method ? splitParams(methodParams(newSrc, method)) : null
+    if (!isFinal) {
+      remaining.push({ r, why: `클래스 ${short} 가 final 이 아니다 — 하위 클래스의 오버라이드가 깨진다` })
+    } else if (a == null || b == null) {
+      remaining.push({ r, why: `${method}() 의 파라미터 목록을 읽지 못했다 — 불확실하면 MAJOR 로 둔다` })
+    } else if (b.length <= a.length) {
+      remaining.push({ r, why: `${method}() 에서 늘어난 파라미터를 찾지 못했다(${a.length} → ${b.length})` })
+    } else if (!a.every((p, i) => p === b[i])) {
+      remaining.push({
+        r,
+        why: `${method}() 의 기존 파라미터가 새 목록의 접두가 아니다 — 중간 삽입이면 위치인자가 조용히 밀린다`,
+      })
+    } else if (!b.slice(a.length).every((p) => p.includes('='))) {
+      remaining.push({ r, why: `${method}() 에 추가된 파라미터에 기본값이 없다 — 기존 호출이 깨진다` })
+    } else {
+      exemptions.push({
+        r,
+        why: `final class ${short} + ${method}() 에 후행 선택적 파라미터만 늘었다 — 기존 호출·오버라이드가 깨질 수 없다 (MINOR)`,
+      })
+    }
+    continue
   }
 
   remaining.push({ r, why: '면제 술어에 해당하지 않는다' })
