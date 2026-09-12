@@ -1,0 +1,8 @@
+name: rust-ci
+jobs:
+  test:
+    strategy:
+      matrix:
+        rust: ['1.88', 'stable']
+    steps:
+      - run: cargo test

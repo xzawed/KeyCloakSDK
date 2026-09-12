@@ -235,6 +235,8 @@ jobs:
       - name: 자가테스트 위생(assert_report 호출 · CI 배선)
         run: sh scripts/test/test-selftest-hygiene.sh
 
+      - name: 하네스 rust 락 재생성기 자가테스트(MSRV 인지 해석 · path 재기입 · 실패 시 락 보존)
+        run: sh scripts/test/test-regen-harness-rust-lock.sh
       - name: 버전 SSOT 가드 자가테스트(반쯤 적용된 범프를 잡는지 + 오탐 없는지)
         run: sh scripts/test/test-check-versions.sh
       - name: 버전 SSOT 대조

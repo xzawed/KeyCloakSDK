@@ -1,0 +1,10 @@
+[package]
+name = "app-rust"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+
+[dependencies]
+keycloak-sdk = { path = "/src/rust" }
+keycloak = { version = "~26.6.2", default-features = false }
