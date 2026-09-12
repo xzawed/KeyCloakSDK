@@ -823,4 +823,52 @@ sd_negative_control "clock skew" sd_skew python \
 assert_eq "$sd_expect" "$(sd_norm "$(sd_default java)")" "[음성대조·양성] 라이브 java JWKS 값이 바뀌었다"
 assert_eq "$sd_skew_expect" "$(sd_norm "$(sd_skew python)")" "[음성대조·양성] 라이브 python skew 값이 바뀌었다"
 
+# ---------------------------------------------------------------------------
+# 1c) 토큰응답 `access_token` **타입 검증** — 아홉 언어 축
+# ---------------------------------------------------------------------------
+#
+# 불변식: **`access_token` 이 비어 있지 않은 JSON 문자열이 아니면 TokenSet 을 만들지 않는다.**
+# 아니면 소비자가 쓸 수 없는 값을 Bearer 로 실어 보내고 매번 401 을 받는다 — 패닉도 재시도도
+# 아니라 조용한 반복 실패다(rust 는 캐시 때문에 만료까지 지속된다).
+#
+# ⚠️ **존재 검사는 타입 검사가 아니다.** 2026-09-12 전수 측정에서 **다섯**이 이 부류였다:
+# rust(`unwrap_or_default` → 빈 문자열) · python(무검사) · ruby(무검사) · php(`toStr` 강제변환)
+# · dotnet(**Duende 가 강제변환**해 `IsNullOrEmpty` 를 통과 — 그래서 원본 JSON 의 `ValueKind`
+# 를 본다). java·kotlin·node·go 는 이미 거부하고 있었다.
+#
+# ⚠️ **언어마다 「거부하는 기제」가 다르므로 값이 아니라 그 기제를 겨눈다.** JVM 둘은 우리
+# 코드가 아니라 Nimbus `TokenResponse.parse` 가 타입을 강제한다(실험 확인: 숫자·null·객체·
+# 누락·빈문자열 전부 `ParseException`). 그 호출을 다른 것으로 바꾸면 보호가 사라지므로 **그
+# 호출의 존재**가 이 언어들의 앵커다.
+#
+# ⚠️ `expires_in` 의 문자열 허용은 이 축이 겨누지 않는다 — php·ruby 가 테스트로 고정해 둔
+# 의도된 관용이다.
+sd_token_type_guard() { # $1=언어 → 그 언어에서 불변식을 집행하는 코드 조각(없으면 빈 문자열)
+  case "$1" in
+    rust)   grep -c 'and_then(serde_json::Value::as_str)' "$ROOT/rust/src/token_provider.rs" ;;
+    python) grep -c 'isinstance(access_token, str)' "$ROOT/python/src/keycloak_sdk/tokens.py" ;;
+    ruby)   grep -c 'access_token.is_a?(String)' "$ROOT/ruby/lib/keycloak_sdk/tokens.rb" ;;
+    php)    grep -c '\\is_string($accessToken)' "$ROOT/php/src/Token/TokenSet.php" ;;
+    dotnet) grep -c 'rawAccessToken.ValueKind != JsonValueKind.String' \
+              "$ROOT/dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs" ;;
+    node)   grep -c "typeof at !== 'string'" "$ROOT/node/src/tokens.ts" ;;
+    go)     grep -c 'jwt.AccessToken == ""' "$ROOT/go/admin.go" ;;
+    java)   grep -c 'TokenResponse.parse(' \
+              "$ROOT/java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java" ;;
+    kotlin) grep -c 'TokenResponse.parse(' "$ROOT/kotlin/src/main/kotlin/io/github/xzawed/keycloak/auth.kt" ;;
+  esac
+}
+
+SD_TOKEN_TYPE_LANGS='rust python ruby php dotnet node go java kotlin'
+sd_tt_seen=0
+for L in $SD_TOKEN_TYPE_LANGS; do
+  _hits="$(sd_token_type_guard "$L" 2>/dev/null || printf '0')"
+  [ -n "$_hits" ] || _hits=0
+  assert_eq "ok" "$(ok_if "$([ "$_hits" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
+    "[토큰 타입검증] $L 에서 access_token 타입 검증 기제가 사라졌다 — 쓸 수 없는 토큰이 성공으로 나간다"
+  [ "$_hits" -ge 1 ] && sd_tt_seen=$((sd_tt_seen + 1))
+done
+# 공허 하한 — 목록이 비거나 case 가 낡으면 어서션이 0건 실행되고 조용히 통과한다.
+assert_eq "9" "$sd_tt_seen" "[토큰 타입검증] 확인한 언어 수가 9가 아니다 — 추출 표가 낡았나?"
+
 assert_report
