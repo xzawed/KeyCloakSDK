@@ -1,0 +1,6 @@
+{
+  "_why": "앱이 500을 냈다. 옛 검사도 잡았다(대조군).",
+  "requestedRedirectUri": "http://probe.example/cb",
+  "status": 500,
+  "body": { "error": "boom" }
+}

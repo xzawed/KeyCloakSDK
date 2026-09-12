@@ -1,0 +1,9 @@
+{
+  "_why": "인가 URL이 http(s)가 아니다. 파라미터가 전부 맞아도 이 URL로는 사용자를 보낼 수 없다.",
+  "requestedRedirectUri": "http://probe.example/cb",
+  "status": 200,
+  "body": {
+    "url": "ftp://idp.example/auth?response_type=code&client_id=it-client&redirect_uri=http%3A%2F%2Fprobe.example%2Fcb&state=S1234567890abcdef&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+    "state": "S1234567890abcdef"
+  }
+}

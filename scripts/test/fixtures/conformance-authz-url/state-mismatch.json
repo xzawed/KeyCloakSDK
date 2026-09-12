@@ -1,0 +1,9 @@
+{
+  "_why": "URL에 실린 state와 소비자에게 돌려준 state가 다르다. 소비자는 돌려받은 값으로 콜백을 대조하므로, 이 둘이 갈리면 CSRF 방어가 통째로 헛돈다. 옛 검사는 둘의 **존재**만 따로 보고 대조하지 않았다.",
+  "requestedRedirectUri": "http://probe.example/cb",
+  "status": 200,
+  "body": {
+    "url": "https://idp.example/realms/it-realm/protocol/openid-connect/auth?response_type=code&client_id=it-client&redirect_uri=http%3A%2F%2Fprobe.example%2Fcb&scope=openid+profile&state=URL-SIDE-STATE&nonce=N0123456789&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+    "state": "BODY-SIDE-STATE"
+  }
+}

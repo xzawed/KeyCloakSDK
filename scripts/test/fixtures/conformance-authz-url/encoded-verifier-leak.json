@@ -1,0 +1,9 @@
+{
+  "_why": "code_verifier가 퍼센트 인코딩된 키(`code%5Fverifier`)로 실렸다. 원문 부분문자열 검사는 빠져나가지만 `searchParams`는 키를 디코드하므로 실제로는 누출이다(독립 레그 지목).",
+  "requestedRedirectUri": "http://probe.example/cb",
+  "status": 200,
+  "body": {
+    "url": "https://idp.example/realms/it-realm/protocol/openid-connect/auth?response_type=code&client_id=it-client&redirect_uri=http%3A%2F%2Fprobe.example%2Fcb&state=S1234567890abcdef&code%5Fverifier=dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+    "state": "S1234567890abcdef"
+  }
+}

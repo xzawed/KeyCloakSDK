@@ -1,0 +1,9 @@
+{
+  "_why": "code_challenge가 빈 값이다. `/code_challenge=/` 정규식은 이것도 통과시킨다 — PKCE가 사실상 꺼진 URL이 초록을 받는다.",
+  "requestedRedirectUri": "http://probe.example/cb",
+  "status": 200,
+  "body": {
+    "url": "https://idp.example/realms/it-realm/protocol/openid-connect/auth?response_type=code&client_id=it-client&redirect_uri=http%3A%2F%2Fprobe.example%2Fcb&scope=openid+profile&state=S1234567890abcdef&nonce=N0123456789&code_challenge=&code_challenge_method=S256",
+    "state": "S1234567890abcdef"
+  }
+}

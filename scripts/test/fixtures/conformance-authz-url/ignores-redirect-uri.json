@@ -1,0 +1,9 @@
+{
+  "_why": "앱이 요청한 redirect_uri를 무시하고 자기 폴백을 썼다. 이것이 이 가드가 겨누는 부류다 — 검사가 보낸 값과 같은 폴백을 쓰면 무시와 준수가 구분되지 않는다.",
+  "requestedRedirectUri": "http://probe.example/cb",
+  "status": 200,
+  "body": {
+    "url": "https://idp.example/realms/it-realm/protocol/openid-connect/auth?response_type=code&client_id=it-client&redirect_uri=http%3A%2F%2Fx%2Fcb&scope=openid+profile&state=S1234567890abcdef&nonce=N0123456789&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+    "state": "S1234567890abcdef"
+  }
+}
