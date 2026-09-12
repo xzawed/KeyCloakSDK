@@ -202,6 +202,16 @@ public sealed class AuthClient : ITokenSource
                 throw new KeycloakTransportException($"{failureMessage} (transport)", resp.Exception);
             throw new KeycloakAuthException($"{failureMessage}: {resp.Error}", resp.Exception) { OAuthError = OAuthErrorOf(resp.Json, resp.Error) };
         }
+        // ⚠️ **존재 검사는 타입 검사가 아니다 — Duende 는 JSON 값을 강제변환한다.** 실측:
+        // `access_token: 12345` → `"12345"`, `{"a":1}` → 그 문자열. 그래서 아래
+        // `TokenSet.Create` 의 `IsNullOrEmpty` 검사를 통과하고, 소비자는 쓸 수 없는 토큰을
+        // Bearer 로 실어 보내 매번 401 을 받는다. 원본 JSON 의 **종류**를 여기서 본다.
+        if (resp.Json is { } body
+            && body.TryGetProperty("access_token", out var rawAccessToken)
+            && rawAccessToken.ValueKind != JsonValueKind.String)
+        {
+            throw new KeycloakAuthException($"{failureMessage}: access_token is not a JSON string");
+        }
         return TokenSet.Create(resp.AccessToken!, resp.TokenType, resp.ExpiresIn,
                                resp.RefreshToken, resp.IdentityToken, resp.Scope, issuedAtSeconds);
     }

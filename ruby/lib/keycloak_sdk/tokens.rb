@@ -5,9 +5,17 @@ module KeycloakSdk
   TokenSet = Data.define(:access_token, :token_type, :expires_in, :refresh_token,
                          :id_token, :scope, :expires_at) do
     def self.from_response(body, received_at: Time.now.to_f)
+      # ⚠️ **존재 검사는 타입 검사가 아니다.** 예전에는 값을 그대로 담아 숫자·해시·nil 이
+      # `access_token` 이 됐고, 소비자는 그것을 Bearer 로 실어 보내 매번 401 을 받았다
+      # (조용한 반복 실패). `expires_in` 의 문자열 허용은 **의도된 것**이라 건드리지 않는다.
+      access_token = body["access_token"]
+      unless access_token.is_a?(String) && !access_token.empty?
+        raise AuthError, "token response has no usable access_token"
+      end
+
       expires_in = body["expires_in"] && Integer(body["expires_in"])
       new(
-        access_token: body["access_token"],
+        access_token: access_token,
         token_type: body["token_type"],
         expires_in: expires_in,
         refresh_token: body["refresh_token"],

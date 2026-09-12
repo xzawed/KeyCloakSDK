@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Xzawed\Keycloak\Token;
 
+use Xzawed\Keycloak\Exception\KeycloakAuthError;
 use Xzawed\Keycloak\Masking;
 
 /**
@@ -28,10 +29,20 @@ final readonly class TokenSet implements \JsonSerializable
     public static function fromArray(array $r, ?int $now = null): self
     {
         $now ??= \time();
+
+        // ⚠️ **존재 검사는 타입 검사가 아니다.** `toStr` 가 스칼라를 강제변환해 `12345` 가
+        // `"12345"` 라는 **쓸 수 없는 토큰**으로 통과했고, 소비자는 그것을 Bearer 로 실어
+        // 보내 매번 401 을 받았다(조용한 반복 실패). `expires_in` 의 문자열 허용은
+        // **의도된 것**이라 그대로 둔다 — 좁히는 것은 `access_token` 하나다.
+        $accessToken = $r['access_token'] ?? null;
+        if (!\is_string($accessToken) || '' === $accessToken) {
+            throw new KeycloakAuthError('token response has no usable access_token');
+        }
+
         $expiresIn = isset($r['expires_in']) ? self::toInt($r['expires_in']) : 0;
 
         return new self(
-            accessToken: self::toStr($r['access_token'] ?? null),
+            accessToken: $accessToken,
             tokenType: isset($r['token_type']) ? self::toStr($r['token_type']) : 'Bearer',
             expiresIn: $expiresIn,
             refreshToken: isset($r['refresh_token']) ? self::toStr($r['refresh_token']) : null,

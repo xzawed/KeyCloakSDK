@@ -8,6 +8,7 @@ from types import MappingProxyType
 from typing import Any
 
 from ._internal.secrets import mask
+from .exceptions import KeycloakAuthError
 
 
 @dataclass(frozen=True)
@@ -33,10 +34,17 @@ class TokenSet:
 
     @staticmethod
     def from_response(data: dict[str, Any], issued_at: float) -> TokenSet:
+        # ⚠️ **존재 검사는 타입 검사가 아니다.** 예전에는 `data["access_token"]` 이라
+        # 숫자·객체가 그대로 들어왔고(타입 힌트는 `str`), 소비자는 그것을 Bearer 로 실어
+        # 보내 매번 401 을 받았다. 키가 없으면 raw `KeyError` 가 새서 `keycloak_sdk.
+        # exceptions` 를 잡는 소비자가 **아무것도 잡지 못했다**(§4).
+        access_token = data.get("access_token")
+        if not isinstance(access_token, str) or not access_token:
+            raise KeycloakAuthError("token response has no usable access_token")
         expires_in = data.get("expires_in")
         expires_at = issued_at + float(expires_in) if expires_in is not None else None
         return TokenSet(
-            access_token=data["access_token"],
+            access_token=access_token,
             refresh_token=data.get("refresh_token"),
             id_token=data.get("id_token"),
             token_type=data.get("token_type", "Bearer"),
