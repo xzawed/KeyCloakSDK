@@ -400,4 +400,98 @@ cp -r "$FIX/." "$TMP/"
 rm -rf "$TMP/kotlin/gradle"
 assert_ok node "$GUARD" "$TMP"
 
+# ── rust: 감사한 것 ↔ 빌드한 것 · 툴체인 리터럴 ─────────────────────────────
+# 실측 사고(2026-09-12): 락이 keycloak-sdk 0.1.0 을 고정한 채 SDK 는 1.0.0 이었고, 야간 감사는
+# 1.0 이전 그래프를 6주째 감사하며 초록을 냈다. Dockerfile 이 그 락을 COPY 하지 않았기 때문이다.
+RCI="$TMP/.github/workflows/rust-ci.yml"
+RDF="$TMP/harness/apps/rust/Dockerfile"
+
+# 변이: 락이 낡았다(SDK 는 범프됐는데 락은 옛 버전). 실제로 일어난 그 사고다.
+cp -r "$FIX/." "$TMP/"
+sed -i '1s|^version = "0.1.0"$|version = "0.2.0"|' "$TMP/rust/Cargo.toml"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "cargo audit" "낡은 락은 야간 감사가 헛돈다는 것을 지목해야 한다"
+
+# 변이: Dockerfile 이 락을 COPY 하지 않는다 — 커밋된 락이 빌드에 안 쓰이는 상태.
+cp -r "$FIX/." "$TMP/"
+grep -v 'Cargo.lock' "$RDF" > "$RDF.tmp" && mv "$RDF.tmp" "$RDF"
+assert_fails node "$GUARD" "$TMP"
+
+# 변이: --locked 를 뗀다 — 락을 COPY 해도 cargo 가 조용히 재해석한다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|cargo build --locked --release|cargo build --release|' "$RDF"
+assert_fails node "$GUARD" "$TMP"
+
+# 변이: **CI 매트릭스 레그만** 올린다 — 이 항목(rust-msrv-leg-vs-manifest-unguarded)의 핵심이다.
+# 매니페스트를 내리는 방향은 check-docs 가 잡지만, 이 방향은 아무도 안 잡아 MSRV 레그가 조용히 사라졌다.
+cp -r "$FIX/." "$TMP/"
+sed -i "s|'1.88'|'1.95'|" "$RCI"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "매트릭스 레그" "어느 자리가 갈렸는지 지목해야 한다"
+
+# 변이: 하네스 이미지 태그만 올린다 — 감사한 rustc 와 빌드한 rustc 가 갈라지는 자리.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|FROM rust:1.88-alpine|FROM rust:1.95-alpine|' "$RDF"
+assert_fails node "$GUARD" "$TMP"
+
+# 오탐 방지 — `stable` 레그는 **의도적으로 다른** 레그다(매트릭스 주석: 최신 회귀 확인).
+# 이 대조군이 없으면 이 가드는 "stable 레그를 두지 마라"가 된다.
+cp -r "$FIX/." "$TMP/"
+assert_ok node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_not_contains "$OUT" "stable" "stable 레그를 불일치로 지목하면 안 된다"
+
+# 오탐 방지 — MSRV 를 **전부 함께** 올리는 것이 정상적인 범프의 모양이다.
+# 이 대조군이 없으면 이 가드는 "MSRV 를 영원히 올리지 마라"가 된다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|rust-version = "1.88"|rust-version = "1.95"|' "$TMP/rust/Cargo.toml" "$TMP/harness/apps/rust/Cargo.toml"
+sed -i "s|'1.88'|'1.95'|" "$RCI"
+sed -i 's|FROM rust:1.88-alpine|FROM rust:1.95-alpine|' "$RDF" \
+  "$TMP/harness/install/consume/rust.Dockerfile" "$TMP/harness/install/publish/rust.Dockerfile"
+assert_ok node "$GUARD" "$TMP"
+
+# 공허 방어 — 자리가 하한 아래로 줄면 실패해야 한다. 검사가 아무것도 안 보게 되는 경로다.
+cp -r "$FIX/." "$TMP/"
+rm -f "$TMP/harness/install/consume/rust.Dockerfile" "$TMP/harness/install/publish/rust.Dockerfile"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "공허" "공허 하한이 이유로 나와야 한다"
+
+# 오탐 방지 — **더 정밀한 핀은 불일치가 아니다**. `rust-version = "1.88"` 과 태그 `1.88.0` 은
+# 같은 툴체인이고, 그것을 막으면 required 체크가 정당한 핀을 쓰는 PR 을 전부 막는다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|FROM rust:1.88-alpine|FROM rust:1.88.0-alpine|' "$RDF"
+assert_ok node "$GUARD" "$TMP"
+
+# 변이: 하네스 **앱 매니페스트의** rust-version 만 올린다. 이 값은 락 재생성기가 MSRV 인지
+# 해석에 쓰는 값이라, 혼자 움직이면 락이 더 높은 MSRV 로 재생성되고 `FROM` 은 그대로라
+# `--locked` 빌드가 깨진다. (독립 레그가 잡은 누락 — 한때 이 자리는 대조 대상이 아니었다.)
+cp -r "$FIX/." "$TMP/"
+sed -i 's|rust-version = "1.88"|rust-version = "1.95"|' "$TMP/harness/apps/rust/Cargo.toml"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "rust-version" "앱 매니페스트 자리를 지목해야 한다"
+
+# 오탐 방지 — `FROM` 에 플래그가 붙어도 자리로 세어야 한다(놓치면 공허 하한이 대신 터진다).
+cp -r "$FIX/." "$TMP/"
+sed -i 's|FROM rust:1.88-alpine AS build|FROM --platform=$BUILDPLATFORM rust:1.88-alpine AS build|' "$RDF"
+assert_ok node "$GUARD" "$TMP"
+
+# …그리고 플래그가 붙은 자리의 **드리프트도** 잡아야 한다(위가 단지 무시한 것이 아님을 가른다).
+cp -r "$FIX/." "$TMP/"
+sed -i 's|FROM rust:1.88-alpine AS build|FROM --platform=$BUILDPLATFORM rust:1.95-alpine AS build|' "$RDF"
+assert_fails node "$GUARD" "$TMP"
+
+# ⚠️ 대조군 — 하네스 앱이 없는 체크아웃에서 **조용히 통과하지 않는다**. 락·COPY 검사는 대상이
+# 없어 건너뛰지만, 그때 남는 자리가 하한 아래이므로 공허 하한이 대신 말해야 한다.
+# (rust/ 자체가 없는 트리는 이 가드의 대상이 아니다 — 언어 표 추출이 그보다 먼저 실패한다.)
+cp -r "$FIX/." "$TMP/"
+rm -rf "$TMP/harness/apps/rust"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "공허" "자리가 줄면 조용히 통과하지 않고 하한이 말해야 한다"
+
+
 assert_report

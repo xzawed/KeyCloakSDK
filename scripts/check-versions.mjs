@@ -278,6 +278,162 @@ for (const [lang, p, re] of manifests) {
   }
 }
 
+// ── Rust: 하네스가 **감사한 것**과 **빌드한 것**이 같은가 + 툴체인 리터럴은 하나에서 파생되는가 ──
+//
+// 왜 필요한가(실측 2026-09-12): `security-audit.yml`이 `cargo audit -f harness/apps/rust/Cargo.lock`
+// 으로 그 락을 감사하는데 `harness/apps/rust/Dockerfile`은 그 락을 **COPY하지 않는다**. 즉 감사
+// 대상과 빌드 대상이 다른 그래프였다. 그리고 실제로 갈라져 있었다 — 락의 `keycloak-sdk`가 **0.1.0**
+// 인데 `rust/Cargo.toml`은 **1.0.0**이다(4ed3298, 2026-08-30 릴리스 범프). 락은 2026-08-01 이후
+// 움직이지 않았으므로 야간 감사는 **1.0 이전의 의존 그래프**를 6주째 감사하고 초록을 냈다.
+//
+// ⚠️ 셋을 **함께** 봐야 닫힌다. 락 신선도만 보면 Dockerfile이 락을 안 쓰는 상태가 남고, 락 사용만
+// 보면 낡은 락을 충실히 쓰는 상태가 남는다. 툴체인 핀이 없으면 감사한 rustc와 빌드한 rustc가 다르다.
+{
+  const msrvPath = 'rust/Cargo.toml'
+  if (existsSync(join(root, msrvPath))) {
+    const sdkVer = pick(msrvPath, /^version\s*=\s*"([^"]+)"/m, 'rust SDK', harnessErrors)
+    const msrv = pick(msrvPath, /^rust-version\s*=\s*"([^"]+)"/m, 'rust MSRV(rust-version)', harnessErrors)
+
+    // (1) 락 신선도 — 락이 기록한 `keycloak-sdk`가 매니페스트의 현재 버전인가.
+    // ⚠️ path 의존이라 락 항목에 `source`가 없다. 이름 블록을 찾고 그 **다음** version 행을 읽는다.
+    const lockRel = 'harness/apps/rust/Cargo.lock'
+    if (sdkVer && existsSync(join(root, lockRel))) {
+      const lockVer = pick(
+        lockRel,
+        /^\[\[package\]\]\r?\nname = "keycloak-sdk"\r?\nversion = "([^"]+)"/m,
+        '하네스 락의 keycloak-sdk',
+        harnessErrors,
+      )
+      if (lockVer && lockVer !== sdkVer) {
+        harnessErrors.push(
+          `${lockRel} 이 keycloak-sdk "${lockVer}" 를 고정하는데 ${msrvPath} 는 "${sdkVer}" 다 — ` +
+            `이 락은 \`security-audit.yml\` 이 \`cargo audit -f\` 로 **감사하는 대상**이라, 낡으면 ` +
+            `야간 감사가 배포본과 다른 그래프를 감사하고 초록을 낸다. 재생성: \`sh scripts/regen-harness-rust-lock.sh\``,
+        )
+      }
+    }
+
+    // (2) 락이 실제로 빌드에 쓰이는가 — COPY 되고 `--locked` 로 빌드되는가.
+    // ⚠️ 존재가 아니라 **사용**을 본다. 락을 커밋해 두고 안 쓰는 것이 바로 (1)을 만든 상태다.
+    const appDockerRel = 'harness/apps/rust/Dockerfile'
+    if (existsSync(join(root, appDockerRel))) {
+      const df = read(appDockerRel)
+      if (!/^COPY\s+harness\/apps\/rust\/Cargo\.lock\s/m.test(df)) {
+        harnessErrors.push(
+          `${appDockerRel} 이 \`COPY harness/apps/rust/Cargo.lock\` 을 하지 않는다 — ` +
+            `락을 커밋해 두고 빌드에 쓰지 않으면 \`cargo audit\` 이 감사하는 그래프와 ` +
+            `컨테이너가 빌드하는 그래프가 달라진다(실측 사고: keycloak-sdk 0.1.0 vs 1.0.0)`,
+        )
+      }
+      if (!/cargo build[^\n]*--locked/.test(df)) {
+        harnessErrors.push(
+          `${appDockerRel} 의 \`cargo build\` 에 \`--locked\` 가 없다 — ` +
+            `락을 COPY해도 \`--locked\` 없이는 cargo 가 조용히 재해석해 락을 덮어쓴다(감사 대상 ≠ 빌드 대상)`,
+        )
+      }
+    }
+
+    // (3) 툴체인 리터럴 — `rust-version` 하나에서 파생되는가.
+    // ⚠️ **지시어 행만 본다.** 산문을 스캔하면 required 체크에서 오탐이 터진다(실측한 후보 둘:
+    // CHANGELOG 의 「MSRV 1.88 그대로」는 **이력**이라 MSRV 가 올라도 바뀌면 안 되고, README·
+    // getting-started 의 「1.88+」는 `check-docs.mjs` 의 kind=runtime 앵커가 이미 소유한다 —
+    // 여기서 또 보면 이중 가드다). 그래서 대상은 둘뿐이다: 매트릭스 축 · `FROM rust:<ver>`.
+    // ⚠️ `stable`(·`beta`·`nightly`)은 **의도적으로 다른** 레그다 — 숫자 레그만 대조한다.
+    if (msrv) {
+      const sites = []
+      const ciRel = '.github/workflows/rust-ci.yml'
+      if (existsSync(join(root, ciRel))) {
+        const m = /^\s*rust:\s*\[([^\]]*)\]/m.exec(read(ciRel))
+        if (!m) {
+          harnessErrors.push(`${ciRel} 에서 매트릭스 \`rust:\` 축을 읽지 못했다 — 추출 실패도 실패다`)
+        } else {
+          for (const raw of m[1].split(',')) {
+            const v = raw.trim().replace(/^['"]|['"]$/g, '')
+            if (/^\d+(\.\d+)*$/.test(v)) sites.push([`${ciRel} (매트릭스 레그)`, v])
+          }
+        }
+      }
+      // Dockerfile 탐색 — ⚠️ 경로를 하드코딩하지 않는다(위 Gradle 블록과 같은 근거: 「사본이 셋」이
+      // 실제로는 다섯이었다). `scripts/test/fixtures` 는 이 가드의 픽스처라 제외한다.
+      const dockerfiles = []
+      const walkDf = (rel, depth) => {
+        if (depth > 6) return
+        let entries
+        try {
+          entries = readdirSync(join(root, rel || '.'), { withFileTypes: true })
+        } catch {
+          return
+        }
+        for (const e of entries) {
+          const sub = rel ? `${rel}/${e.name}` : e.name
+          if (sub.includes('scripts/test/fixtures')) continue
+          if (e.isDirectory()) {
+            if (['node_modules', '.git', 'target', 'build', 'dist', 'vendor'].includes(e.name)) continue
+            walkDf(sub, depth + 1)
+          } else if (/(^|\/|\.)Dockerfile$/.test(sub)) {
+            dockerfiles.push(sub)
+          }
+        }
+      }
+      walkDf('', 0)
+      for (const p of dockerfiles) {
+        for (const line of read(p).split(/\r?\n/)) {
+          // ⚠️ `FROM` 뒤에 플래그가 올 수 있다(`--platform=$BUILDPLATFORM`) — 독립 레그가
+          // 지목한 놓침이다. 플래그를 건너뛰고 이미지 참조를 본다.
+          const m = /^FROM\s+(?:--\S+\s+)*rust:(\d+(?:\.\d+)*)/.exec(line)
+          if (m) sites.push([`${p} (FROM)`, m[1]])
+        }
+      }
+      // 하네스 앱의 `rust-version` — ⚠️ **독립 레그가 잡은 누락이다.** 이 값은 락 재생성기가
+      // MSRV 인지 해석에 쓰는 바로 그 값인데(`regen-harness-rust-lock.sh`) 대조 대상이 아니었다.
+      // 앱 매니페스트만 올리면 락이 조용히 더 높은 MSRV 로 재생성되고, Dockerfile 의 `FROM` 은
+      // 그대로라 `--locked` 빌드가 깨진다. 그 자리를 여기서 함께 본다.
+      const appManifest = 'harness/apps/rust/Cargo.toml'
+      if (existsSync(join(root, appManifest))) {
+        const appMsrv = pick(appManifest, /^rust-version\s*=\s*"([^"]+)"/m, `${appManifest} 의 rust-version`, harnessErrors)
+        if (appMsrv) sites.push([`${appManifest} (rust-version)`, appMsrv])
+      }
+      // 공허 하한 — 코퍼스에서 센 실측치다(매트릭스 레그 1 + `FROM rust:<ver>` 3). 자리가 줄면
+      // 이 검사는 조용히 아무것도 안 보게 되므로, 줄이는 변경이 이 수를 함께 내리게 만든다.
+      // ⚠️ **부재와 축소를 가른다**(위 Gradle 블록과 같은 관용). `harness/` 가 아예 없는 체크아웃은
+      // 검사 대상이 아니다 — 거기에 하한을 걸면 부분 체크아웃이 전부 실패한다(기존 대조군이
+      // 그것을 고정하고 있다). 하한이 말해야 하는 것은 **있는 트리에서 자리가 사라진** 경우뿐이다.
+      const fromSites = sites.filter(([where]) => where.endsWith('(FROM)'))
+      const legSites = sites.filter(([where]) => where.endsWith('(매트릭스 레그)'))
+      if (legSites.length < 1) {
+        harnessErrors.push(
+          `rust 매트릭스 레그에서 숫자 레그를 하나도 못 찾았다 — MSRV 레그가 사라지면 ` +
+            `이 검사가 공허해진다(\`stable\` 만 남은 매트릭스는 MSRV 를 검증하지 않는다)`,
+        )
+      }
+      const FROM_SITES_MIN = 3
+      if (existsSync(join(root, 'harness')) && fromSites.length < FROM_SITES_MIN) {
+        harnessErrors.push(
+          `\`FROM rust:<ver>\` 자리가 ${fromSites.length}건뿐이다(하한 ${FROM_SITES_MIN}) — ` +
+            `자리가 사라지면 이 검사가 공허해진다. 의도한 삭제면 하한을 같이 내린다`,
+        )
+      }
+      // ⚠️ **문자 비교가 아니라 성분 비교다.** `rust-version = "1.88"` 과 이미지 태그
+      // `rust:1.88.0-alpine` 은 **같은 툴체인**인데 문자로는 다르다 — 더 정밀한 핀을 쓰는 것은
+      // 정당한 선택이고, 그것을 불일치로 내면 required 체크가 모든 PR 을 막는다(독립 레그 지목).
+      // 빠진 성분은 0 으로 채워 비교한다: 1.88 == 1.88.0, 1.88 != 1.89.
+      const norm = (v) => {
+        const p = v.split('.').map(Number)
+        while (p.length < 3) p.push(0)
+        return p.join('.')
+      }
+      for (const [where, v] of sites) {
+        if (norm(v) !== norm(msrv)) {
+          harnessErrors.push(
+            `${where} 가 rust "${v}" 를 쓰는데 ${msrvPath} 의 rust-version 은 "${msrv}" 다 — ` +
+              `MSRV 레그/이미지가 매니페스트와 갈리면 「MSRV 라 적힌 값」이 실제로는 검증되지 않는다`,
+          )
+        }
+      }
+    }
+  }
+}
+
 // ── Kotlin: Gradle 래퍼가 KGP의 **완전지원 밴드** 안에 있는가 ──
 //
 // 왜 필요한가: 이 저장소의 Kotlin 모듈은 **첫 커밋부터 한 번도 밴드 안에 있던 적이 없다**(실측).

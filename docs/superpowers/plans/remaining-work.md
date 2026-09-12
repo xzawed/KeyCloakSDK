@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **178** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · 후속 분할 신규 4 · **H1 파생 신규 1**) — 열림 **119** · 닫힘 **59** (2026-09-12 재측정) |
+| 작업 패키지 | **178** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · 후속 분할 신규 4 · **H1 파생 신규 1**) — 열림 **117** · 닫힘 **61** (2026-09-12 6차 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `178`(2026-09-12 기준 열림 119 · 닫힘 59)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `178`(2026-09-12 6차 기준 열림 117 · 닫힘 61)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -106,6 +106,13 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 23. ✅ **`python-aio-security-test-asymmetry` — 같은 세션이 닫았다.** 재판정이 **또** 넓혔다(6 → 8). aio 프로덕션은 이미 옳았고 **고정**만 없었다. 변이 6/6 `CAUGHT`.
 
 **⟶ 다음 대상(2026-09-12 기준).** `rust-msrv-leg-vs-manifest-unguarded`(⚠️ **한 방향만 침묵** — 매니페스트를 내리면 `check-docs` 가 잡고, **CI 레그만 올리면** 아무도 안 잡아 MSRV 레그가 조용히 사라진다. S/S) · `authz-redirect-uri-not-per-call`(php·rust — **§4 와 양립하는지 사람 판정이 선행**) · `H3-harness-image-and-lock-pins` · `guard-detection-surface-hand-narrowed`[H](required **밖**에서 오탐 0 선행). ⚠️ **재판정부터** 시작한다 — 이 세션에서 손댄 항목 넷 중 **넷 다** 등록부 서술이 틀렸다(범위 셋·계수 하나).
+
+**⟶ 6차(2026-09-12) — 「감사한 것과 도는 것이 다르다」 갈래.** 5차가 남긴 넷을 재판정했고 **또 서술이 틀렸다**(아래 24). 순서는 축 ①(지금 초록이 거짓인 것)이 정했다 — 넷 중 **거짓 초록은 하나뿐**이었고 그것이 1위였다. ⚠️ 독립 레그와 **순위에서 일치**했으나, 레그가 「세 자리」로 센 것 중 **둘은 설계였다**(install 경로의 락 재기입) — 실측이 갈랐다.
+
+24. ✅ **`H3-harness-image-and-lock-pins` + `rust-msrv-leg-vs-manifest-unguarded` — 이 PR 이 둘을 함께 닫았다.** 같은 불변식이라 가드가 하나다. 야간 `cargo audit` 이 **빌드되지 않는 락**을 6주째 감사하고 있었다(락 `keycloak-sdk` 0.1.0 ↔ 매니페스트 1.0.0).
+25. ⚠️ **재판정이 넷 중 넷을 고쳤다** — `H3` 는 「세 자리」가 아니라 한 파일의 둘(install 둘은 설계) · `rust-msrv` 는 지목 줄이 `:21`→**`:24`** · `guard-detection-surface-hand-narrowed` 는 「축 9 중 손 표 7」이 아니라 **축 11 중 손 표 9**(또 늘었다 — 그 항목 참조) · `authz-redirect-uri-not-per-call` 만 서술이 정확했다(7:2 그대로).
+
+**⟶ 다음 대상(2026-09-12 6차 기준).** `authz-redirect-uri-not-per-call`(⚠️ **§4 사람 판정은 아직 열려 있다** — 2026-09-12 세션은 **범위에서 뺀** 것이지 판정한 것이 아니다. 재판정 결과 서술은 정확했다: 인가요청에 `redirect_uri` 를 호출당 받는 것이 **일곱**, 못 받는 것이 **둘**(php `AuthClient.php:48` 인자 0 · rust `auth.rs:106` 생성 시 config 값). 하네스 conformance 가 php 25/26 으로 이미 빨갛고, 초록으로 되돌리는 길은 **검사를 약하게 하는 것이 아니라 API 를 맞추는 것**이다 — php 선택적 인자 · rust 새 메서드로 둘 다 가산적이라 semver 파괴는 아니다) · `guard-detection-surface-hand-narrowed`[H](required **밖**에서 오탐 0 선행 — ⚠️ 이번 재측정에서 **축이 또 늘었다**) · `H2-harness-judgment-module-no-test` · `H4`~`H8`. ⚠️ **재판정부터** 시작한다 — 5차·6차 연속으로 손댄 항목 넷 중 넷이 틀렸다.
 
 **⟶ 옛 목록(이제 닫힘): ~~`lenient-parsing-yields-false-success`~~(닫힘 — rust 하나가 아니라 다섯이었다: `token_provider.rs:71,86-89` 가 **문자열이 아닌 `access_token` 을 빈 토큰 성공으로 캐시**한다. `auth.rs` 는 `CoreTokenResponse` 라 fail-safe이고 **`expires_in` 누락만** 공유한다) · `python-aio-security-test-asymmetry`(범위 6 으로 확대됨) · `rust-msrv-leg-vs-manifest-unguarded`(⚠️ **한 방향만 침묵**이다 — 매니페스트를 내리면 `check-docs` 가 잡고, **CI 레그만 올리면** 아무도 안 잡아 MSRV 레그가 조용히 사라진다) · `authz-redirect-uri-not-per-call`(사람 판정 선행). ⚠️ 여전히 **재판정부터** 시작한다.
 
@@ -267,7 +274,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - ⚠️ **부재를 통과시키지 않는다** — `checkCoverageGates` 의 `if (!claim) continue` 를 베끼지 않았다. 표에 등재됐다는 것은 「이 목록은 지울 수 없다」(#409)는 판정이 걸려 있다는 뜻이고, 그것을 기계로 고정하는 자리가 여기뿐이다(앵커류는 못 한다 — 앵커 하나 삭제는 `--min-anchors` 를 함께 안 올리면 조용히 통과한다).
   - 세 함정을 실측으로 확인하고 막았다: **(i)** `#` 주석을 인용부호 인식으로 지운다(안 지우면 ruby-ci 주석의 `gem "parallel", "< 2"` 가 값으로 섞인다) · **(ii)** 탐색은 `matrix:` **키**로 한다(`grep matrix` 는 `name: install-matrix` 를 잡는다 — `harness.yml:91`·`install-smoke.yml:72`) · **(iii)** 주장 추출은 「CI runs」 뒤 **버전 토큰 연속열만** 탐욕 소비하고 첫 비버전에서 멈춘다(줄끝까지 읽으면 java 가 `major ≤ 61` 의 61 을 먹고, 첫 마침표에서 끊으면 ruby 가 `["3"]` 이 된다).
   - 변이 5건 전부 양방향 검출 + 대조군: 워크플로 레그 추가 · 문서 레그 삭제 · 워크플로 하한 레그 삭제 · **문서 목록 문장 자체 삭제**(부재=실패) · java 값 변조 → 전부 `rc=1`. 구 스크립트 + 같은 변이 → **4b 에러 0**(새 검사가 원인 확정). 인용부호 딸린 디코이 주석 삽입 → **4b 에러 0**(면역).
-- [ ] `rust-msrv-leg-vs-manifest-unguarded` **[S/S · 신규 2026-09-05]** `rust-ci.yml:21` 의 `'1.88'` 레그가 `rust/Cargo.toml:6` 의 `rust-version = "1.88"` 과 대조되지 않는다 · `.github/workflows/rust-ci.yml:21`
+- [x] `rust-msrv-leg-vs-manifest-unguarded` **[S/S · 닫힘 2026-09-12]** ⚠️ **지목 줄이 빗나가 있었다** — `rust-ci.yml:21` 은 주석이고 실제 레그는 **`:24`** 다. 주장 자체는 참이었다(실측: 매트릭스 레그만 올리면 **아무 검사도 실패하지 않는다** — `check-docs.mjs` 의 `MATRIX` 는 java·ruby 둘뿐이라 rust 는 표에 없다). `H3-harness-image-and-lock-pins` 와 **같은 불변식**이라 한 가드로 닫았다(`check-versions.mjs` 의 툴체인 리터럴 축). ⚠️ **산문을 조준하지 않는 것이 이 가드가 required 안에서 사는 조건이다** — CHANGELOG 의 「MSRV 1.88 그대로」는 **이력**이라 MSRV 가 올라도 바뀌면 안 되고, README·getting-started 의 「1.88+」는 `check-docs.mjs:544` 의 kind=runtime 앵커가 이미 소유한다. 그래서 대상은 **지시어 행 둘**뿐이다(매트릭스 축 · `^FROM rust:<ver>`). 변이 M3/M4 양방향 `CAUGHT` + OFF 짝 `SILENT`.
   - ⚠️ **「가드가 rust-version 을 안 읽는다」는 부정확하다** — `check-docs.mjs:538` 이 읽는다. 다만 그건 `kind=runtime` 앵커용(문서의 백틱 값 ↔ 매니페스트)이고, **워크플로 레그와의 대조는 없다**. 축이 다르다(문서↔매니페스트 vs 워크플로↔매니페스트).
   - 검사 4b 로는 못 덮는다 — rust.md 는 #409 에서 매트릭스 주장을 지웠으므로 문서 쪽 주장이 없다. MSRV 를 올릴 때 워크플로 레그가 따라오지 않으면 「MSRV 라 적힌 값이 실제로는 검증되지 않는」 상태가 된다.
   - 이번에 ruby 가 어긋난 채 발견됐고(3레그 ↔ 실제 4레그), 나머지 셋은 **지금은** 일치한다(전수 대조: java 17/21/25 · go 1.25/1.26 · rust 1.88/stable). 즉 오늘 참인 문장을 산문으로 다시 적었을 뿐이고 같은 방식으로 또 어긋난다.
@@ -401,6 +408,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - **재발 시 CI 가 잡는 자리**: `repo-hygiene.yml` 의 `sh scripts/test/test-selftest-hygiene.sh`(required `doc-facts` 잡). 가드 3요건 — 변이(집행자 자신의 호출 제거) → 2 FAIL · 복원 → 129 passed · 가드 OFF(이 커밋 이전 스크립트) + 같은 변이 → **exit 0**.
   - ⚠️ **대조군을 사본으로 쓰면 공허하다** — 정규식을 대조군에 베껴 적었더니 본체를 옛 `grep -q` 로 되돌려도 **129 passed 0 failed 로 변이가 살아남았다**. 판정을 `mjs_wired()` 로 뽑아 대조군이 **본체를 부르게** 한 뒤에야 그 변이가 죽는다(127 passed 2 failed).
 - [ ] `guard-detection-surface-hand-narrowed` **[H/M · 계수 정정 2026-09-07 · 악화]** 가드의 탐지 표면이 손으로 좁혀져 있어 새 자리·새 문법이 조용히 통과한다 · `scripts/test/test-security-defaults.sh:311`
+  - ⚠️ **또 늘었다 — 축 9 중 손 표 7 → 축 11 중 손 표 9**(재측정 2026-09-12, 독립 레그와 일치). 그 사이 추가된 축 둘(JWKS 크기상한 · 토큰응답 타입검증)이 **둘 다 손 표**다. 파생은 여전히 `git ls-files` 둘뿐. 배너 전수: `grep -cE '^# [0-9]+[a-z0-9]*\) ' scripts/test/test-security-defaults.sh` → **11**. ⚠️ `'^# [0-9]'` 로 세면 **15** 가 나온다 — 숫자로 시작하는 산문 넉 줄(「30초로…」 등)이 섞인다. ⚠️ 그리고 **축 이름이 이미 충돌한다**(`1b` 셋 · `1c` 둘) — 「축 N」으로 지목하지 말고 줄번호로 지목할 것. ⚠️ **처방은 그대로다**(이 파일에 축을 더하지 않는다) — 이번 PR 도 새 불변식을 여기가 아니라 `check-versions.mjs` 로 냈다.
   - **축 7 중 손 표 5 → 축 9 중 손 표 7 로 늘었다**(실측 2026-09-07, 독립 레그 둘). 그 사이 추가된 축 둘 — 1b2 콜드캐시 백오프 · 1d 형제 마스킹(#437) — 이 **둘 다 손 표**다. 파생은 여전히 `git ls-files` 둘(문서 축·소스 주석 축)뿐이다.
   - ⚠️ **그런데 지금 파생으로 바꾸는 것이 옳은 수가 아니다.** 이 파일은 required 체크 `doc-facts` 안에서 `paths:` 필터 없이 돌고 룰셋은 `bypass_actors: []` 다 — 오탐 하나가 모든 PR 을 막고 소유자도 못 푼다. **되살릴 조건**: required **밖**(nightly 등)에서 먼저 돌려 오탐 0 을 실측할 것. 노이즈는 이미 쟀다 — 9언어 비테스트 소스에서 비밀 이름을 언급하는 파일이 **83개**라 그 신호를 그대로 쓸 수 없다.
   - ⚠️ **당장의 처방은 「이 파일에 축을 더 늘리지 않는 것」이다** — 두 번 늘어난 것이 그 증거다. 새 불변식은 별도 가드로 내고(예: `test-osv-audit-gate.sh`), 언어별 값은 언어 로컬 테스트로 민다.
@@ -588,7 +596,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 ### harness 사각지대 — 8
 
 - [x] `H1-conformance-authz-vacuous` **[M/M · 닫힘 2026-09-12 · 범위 확대]** ⚠️ **공허가 하나가 아니라 셋이었다.** 요청↔응답 미대조 외에 `/code_challenge=/` 가 **빈 값**을 통과시켰고, URL 의 `state` 와 돌려준 `state` 를 **존재만 따로** 보고 대조하지 않았다. 판정을 `harness/conformance/authz-url.mjs` 로 뽑아 **Docker 없이** 픽스처로 재게 했다(그 판정이 오래 공허했던 이유가 「시험할 수 없다」였다). 가드 `scripts/test/test-conformance-authz-url.sh`(픽스처 8종, `doc-facts` 배선). 변이 6/6 `CAUGHT` + OFF 짝 3/3. ⚠️ **프로브가 구멍 하나를 실제로 찾았다** — 모듈을 부르되 `v.ok` 를 버리면 침묵했다(같은 PR 에서 닫음). ⚠️ 파생 신규: `authz-redirect-uri-not-per-call`(php·rust).
-- [ ] `H3-harness-image-and-lock-pins` **[M/S]** 하네스 컨테이너의 이미지·락파일 핀이 세 자리에서 새어 감사한 것과 도는 것이 다르다 · `harness/apps/rust/Dockerfile:3`
+- [x] `H3-harness-image-and-lock-pins` **[M/S · 닫힘 2026-09-12 · 범위 정정]** ⚠️ **「세 자리」가 아니라 한 파일의 두 결함이었고, 그중 하나는 거짓 초록이었다.** (1) `security-audit.yml:277` 이 `cargo audit -f harness/apps/rust/Cargo.lock` 으로 감사하는 그 락을 `harness/apps/rust/Dockerfile` 은 **COPY 하지 않았다** — 게다가 락이 `keycloak-sdk` **0.1.0** 을 고정한 채였고 매니페스트는 **1.0.0** 이다(4ed3298, 2026-08-30). 락은 2026-08-01 이후 안 움직였으므로 야간 감사는 **1.0 이전 그래프**를 6주째 감사하며 초록을 냈다. (2) `FROM rust:alpine` 은 하네스 아홉 앱 중 **유일한 무버전 태그**였다(install 경로 둘은 이미 `rust:1.88-alpine`). ⚠️ **install 경로의 락 처리는 결함이 아니다** — consume 은 registry 의존으로 재기입하고 publish 는 클로저 미러링용으로 `generate-lockfile` 하는 것이 설계다(주석이 그렇게 적는다). 부류 재스캔: `git ls-files harness/apps | grep -Ei 'lock|\.sum$'` → **1건** · `cargo audit -f` 전수 → **1건** · 무버전 `FROM` 전수(9앱) → **1건**. 형제 언어에 같은 결함 없음. ⚠️ **락 재생성에 MSRV 인지 해석이 필요했다** — cargo 가 `Locking 253 packages to latest Rust 1.88 compatible versions` 로 reqwest 0.13·matchit 0.8.6 을 눌렀다. edition 2021 은 resolver v2 라 기본이 아니고, 플래그 없이 재생성했으면 `--locked` 빌드가 1.88 에서 깨졌다(`scripts/regen-harness-rust-lock.sh` 가 소유). **Docker 실빌드로 확인**(107s, `rust:1.88-alpine` + `--locked`). 변이 6/6 `CAUGHT` + OFF 짝 6/6 `SILENT`.
 - [ ] `H2-harness-judgment-module-no-test` **[L/M]** harness 판정 모듈에 「테스트가 있어야 한다」 규칙이 없다 — conformance.mjs 는 Docker 전체 런 없이는 시험 불가 · `harness/conformance/conformance.mjs:1`
 - [ ] `H4-runsh-network-divergence` **[L/S]** verify.sh 가 배운 것을 run.sh 는 못 받았다 — compose 네트워크명을 아직 리터럴로 박는다 · `harness/run.sh:6`
 - [ ] `H5-install-version-class-drift` **[L/M]** install 하네스의 「버전을 무엇이 정하는가」 분류가 코드·산문·SSOT 셋에서 갈렸다 — dotnet 이 정반대 · `harness/install/lib/verify-lib.sh:56`
