@@ -58,4 +58,25 @@ assert_fails node "$GUARD" --report "$FIX/report-none.txt" --base "$FIX/base" --
 assert_fails node "$GUARD" --report "$FIX/report-none.txt" --base "$FIX/base"
 assert_fails node "$GUARD" --report "$FIX/does-not-exist.txt" --base "$FIX/base" --new "$FIX/base"
 
+
+# ── V010: final 클래스에 후행 선택적 파라미터가 늘었다 ───────────────────────
+# 도구는 파라미터 추가를 선택/필수 무관하게 MAJOR 로 낸다. PHP 의 실제 계약은 다르다 —
+# final 클래스에 **후행 선택적** 인자를 더하는 것은 기존 호출도 오버라이드도 깨지 않는다.
+assert_ok node "$GUARD" --report "$FIX/report-v010-trailing.txt" --base "$FIX/v010-base" --new "$FIX/v010-trailing"
+
+# ⚠️ 대조군 셋 — 술어의 네 연언이 각각 살아있는지. 하나라도 빠지면 이 면제는 진짜 파괴를 축복한다.
+# (1) 추가된 파라미터가 **필수**면 기존 호출이 깨진다 → MAJOR.
+assert_fails node "$GUARD" --report "$FIX/report-v010-required.txt" --base "$FIX/v010-base" --new "$FIX/v010-required"
+out=$(node "$GUARD" --report "$FIX/report-v010-required.txt" --base "$FIX/v010-base" --new "$FIX/v010-required" 2>&1 || true)
+assert_contains "$out" "기본값이 없다" "필수 파라미터 추가는 기본값 부재를 사유로 거부"
+
+# (2) ⚠️ **중간 삽입** — 둘 다 기본값이고 final 이라 「final + 기본값」만 보면 통과한다. 그런데
+# 기존 위치인자가 조용히 밀린다(하드 실패보다 나쁘다). 이 대조군이 이 PR 의 핵심 교정이다.
+assert_fails node "$GUARD" --report "$FIX/report-v010-middle.txt" --base "$FIX/v010-base" --new "$FIX/v010-middle"
+out=$(node "$GUARD" --report "$FIX/report-v010-middle.txt" --base "$FIX/v010-base" --new "$FIX/v010-middle" 2>&1 || true)
+assert_contains "$out" "접두가 아니다" "중간 삽입은 접두 조건으로 거부(위치인자가 밀린다)"
+
+# (3) 비-final 이면 하위 클래스의 오버라이드가 깨진다 → MAJOR.
+assert_fails node "$GUARD" --report "$FIX/report-v010-open.txt" --base "$FIX/v010-base" --new "$FIX/v010-open"
+out=$(node "$GUARD" --report "$FIX/report-v010-open.txt" --base "$FIX/v010-open" --new "$FIX/v010-open" 2>&1 || true)
 assert_report
