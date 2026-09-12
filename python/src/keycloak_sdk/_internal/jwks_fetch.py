@@ -29,6 +29,13 @@ JWKS_MAX_BYTES = 51_200
 
 _CHUNK = 8192
 
+# ⚠️ **압축을 받지 않는다 — 상한만으로는 압축폭탄을 못 막는다.** 두 라이브러리 모두 우리에게
+# **팽창된** 바이트를 주므로, 상한을 팽창 뒤에 재면 이미 메모리를 내준 뒤다. 실측(독립 레그):
+# httpx 의 `aiter_bytes()` 는 인자 없이 부르면 디코드된 덩어리를 통째로 주고 `GZipDecoder` 는
+# `decompress(data)` 라 상한이 없다 — 2MB 가 한 덩어리로 왔다. `identity` 를 요구하면
+# **세는 바이트가 곧 전송 바이트**가 된다. JWKS 는 정의상 상한 안이라 압축을 포기할 비용이 없다.
+_NO_COMPRESSION = {"Accept-Encoding": "identity"}
+
 
 class _TooBig(Exception):
     """상한 초과를 전송 오류와 구분해 올리기 위한 내부 신호."""
@@ -61,7 +68,14 @@ def fetch_jwks(session: Any, url: str, *, timeout: Any, verify: Any, cert: Any) 
     세션을 그대로 쓰므로 `harden_openid` 의 리다이렉트 거부 훅과 재시도 어댑터가 유지된다.
     """
     try:
-        response = session.get(url, stream=True, timeout=timeout, verify=verify, cert=cert)
+        response = session.get(
+            url,
+            stream=True,
+            headers=_NO_COMPRESSION,
+            timeout=timeout,
+            verify=verify,
+            cert=cert,
+        )
     except Exception as exc:
         raise KeycloakTransportError(f"JWKS fetch failed: {exc}") from exc
 
@@ -94,9 +108,17 @@ async def afetch_jwks(client: Any, url: str, *, timeout: Any) -> dict[str, Any]:
     따라가지 않는다. (행동 고정: `tests/unit/aio/test_redirects_async.py`)
     """
     try:
-        async with client.stream("GET", url, timeout=timeout, follow_redirects=False) as response:
+        async with client.stream(
+            "GET",
+            url,
+            headers=_NO_COMPRESSION,
+            timeout=timeout,
+            follow_redirects=False,
+        ) as response:
             body = bytearray()
-            async for chunk in response.aiter_bytes():
+            # ⚠️ `aiter_bytes()` 를 **인자 없이** 부르면 덩어리 크기에 상한이 없다(실측: 2MB
+            # 한 덩어리). 크기를 넘겨 재청크한다.
+            async for chunk in response.aiter_bytes(_CHUNK):
                 body += chunk
                 if len(body) > JWKS_MAX_BYTES:
                     raise _TooBig

@@ -103,3 +103,38 @@ async def test_transport_failure_is_translated(jwks_server: Any) -> None:
         with pytest.raises(KeycloakTransportError, match="fetch failed"):
             # 아무도 듣지 않는 포트 — 연결 자체가 실패한다.
             await afetch_jwks(client, "http://127.0.0.1:1/certs", timeout=2.0)
+
+
+async def test_gzip_bomb_does_not_inflate_past_the_cap(jwks_server: Any) -> None:
+    """⚠️ **압축폭탄** — 전송 바이트는 작고 팽창 후가 거대하다.
+
+    독립 레그가 실측으로 지목했다: httpx 의 `aiter_bytes()` 를 인자 없이 부르면 **디코드된
+    덩어리를 통째로** 주고, `GZipDecoder.decode` 는 `decompress(data)` 라 상한이 없다.
+    그러면 상한을 「팽창 뒤」에 재는 우리 코드는 **이미 메모리를 내준 뒤에** 거부한다.
+
+    ⚠️ 그래서 상한만으로는 부족하고 **압축을 아예 받지 않아야** 한다(`Accept-Encoding:
+    identity`) — 그러면 세는 바이트가 곧 전송 바이트다. JWKS 는 정의상 상한 안이라
+    압축을 포기하는 비용이 없다.
+    """
+    jwks_server.body = _valid_jwks(pad_to=JWKS_MAX_BYTES * 40)  # 팽창 후 2MB 급
+    jwks_server.gzip = True
+
+    with pytest.raises(KeycloakTransportError):
+        await _fetch(jwks_server)
+
+
+async def test_jwks_request_refuses_compression(jwks_server: Any) -> None:
+    """⚠️ **상한만으로는 압축폭탄을 못 막는다 — 압축을 아예 받지 않아야 한다.**
+
+    두 라이브러리 모두 우리에게 **팽창된** 바이트를 준다. 상한을 팽창 뒤에 재면 이미
+    메모리를 내준 뒤다(독립 레그 실측: httpx `aiter_bytes()` 가 2MB 를 한 덩어리로 줬다).
+    `identity` 를 요구하면 **세는 바이트가 곧 전송 바이트**가 된다.
+
+    이 단언이 그 속성을 **관측**한다 — 「예외가 났다」는 상한의 증거가 아니다(압축폭탄도
+    결국 예외를 내지만 그때는 이미 팽창한 뒤다).
+    """
+    jwks_server.body = _valid_jwks()
+
+    await _fetch(jwks_server)
+
+    assert jwks_server.accept_encoding == "identity"

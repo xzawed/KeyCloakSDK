@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import threading
 from dataclasses import dataclass, field
@@ -138,7 +139,9 @@ class JwksServer:
     status: int = 200
     chunked: bool = False  # Content-Length 없이 보낸다 — 헤더만 믿는 상한을 걸러내는 대조군
     truncate: bool = False  # 약속한 길이보다 적게 보내고 끊는다 — 읽는 도중 실패 재현
+    gzip: bool = False  # gzip 으로 보낸다 — 압축폭탄(작은 본문 → 거대 팽창) 재현
     hits: int = 0
+    accept_encoding: str | None = None  # 마지막 요청이 실어 온 값 — 압축 거부를 관측한다
 
 
 def _make_jwks_handler(box: dict[str, JwksServer]) -> type[BaseHTTPRequestHandler]:
@@ -151,6 +154,18 @@ def _make_jwks_handler(box: dict[str, JwksServer]) -> type[BaseHTTPRequestHandle
         def do_GET(self) -> None:
             srv = box["server"]
             srv.hits += 1
+            srv.accept_encoding = self.headers.get("Accept-Encoding")
+            if srv.gzip:
+                # 압축폭탄: 전송 바이트는 작고 팽창 후가 거대하다. 상한을 **팽창 뒤**에만
+                # 재는 구현은 이미 메모리를 내준 뒤에야 거부한다.
+                payload = gzip.compress(srv.body)
+                self.send_response(srv.status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Encoding", "gzip")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             self.send_response(srv.status)
             self.send_header("Content-Type", "application/json")
             if srv.chunked:

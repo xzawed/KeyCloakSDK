@@ -20,7 +20,7 @@ from joserfc.jwk import RSAKey
 from keycloak_sdk._internal.jwks_fetch import JWKS_MAX_BYTES
 from keycloak_sdk.auth import AuthClient
 from keycloak_sdk.config import KeycloakConfig
-from keycloak_sdk.exceptions import KeycloakTransportError
+from keycloak_sdk.exceptions import KeycloakTransportError, TokenValidationError
 from keycloak_sdk.oidc import OidcEndpoints
 
 
@@ -154,3 +154,30 @@ def test_oversize_error_body_is_also_capped(jwks_server: Any) -> None:
 
     with pytest.raises(KeycloakTransportError, match="exceeds"):
         client.validate("irrelevant.token.here")
+
+
+def test_gzip_bomb_does_not_inflate_past_the_cap(jwks_server: Any) -> None:
+    """압축폭탄 — 서버가 우리의 `identity` 요구를 **무시하고** 압축해 보내도 거부한다.
+
+    ⚠️ 이 테스트만으로는 「메모리가 묶였다」를 증명하지 못한다(예외는 팽창 뒤에도 난다).
+    그 속성을 관측하는 것은 `test_jwks_request_refuses_compression` 이고, 이쪽은 그 헤더가
+    무시당한 경우까지 상한이 남아 있는지를 본다.
+    """
+    jwks_server.body = _valid_jwks(pad_to=JWKS_MAX_BYTES * 40)
+    jwks_server.gzip = True
+    cfg = _config(jwks_server)
+
+    with pytest.raises(KeycloakTransportError):
+        AuthClient(cfg, OidcEndpoints.for_realm(cfg)).validate("irrelevant.token.here")
+
+
+def test_jwks_request_refuses_compression(jwks_server: Any) -> None:
+    """압축 거부 — aio 미러와 같은 주장(그 파일의 주석이 근거를 소유한다)."""
+    jwks_server.body = _valid_jwks()
+    cfg = _config(jwks_server)
+
+    # 토큰이 가짜라 검증에서 떨어진다 — 이 테스트의 관심은 그 앞에 나간 **요청 헤더**다.
+    with pytest.raises(TokenValidationError):
+        AuthClient(cfg, OidcEndpoints.for_realm(cfg)).validate("irrelevant.token.here")
+
+    assert jwks_server.accept_encoding == "identity"
