@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **178** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · 후속 분할 신규 4 · **H1 파생 신규 1**) — 열림 **120** · 닫힘 **58** (2026-09-12 재측정) |
+| 작업 패키지 | **178** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · 후속 분할 신규 4 · **H1 파생 신규 1**) — 열림 **119** · 닫힘 **59** (2026-09-12 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `178`(2026-09-12 기준 열림 120 · 닫힘 58)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `178`(2026-09-12 기준 열림 119 · 닫힘 59)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -103,7 +103,11 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **이 세션이 세 번 어긴 것 하나 — 「편집한 뒤 그 게이트를 다시 돌린다」.** (1) 규칙 파일을 고치고 `check-docs` 를 안 돌려 예산 위반 커밋을 push 했고, (2) 압축 수정을 미커밋 상태에서 변이 돌려 잃었고, (3) ruby 생성자를 **추가한 뒤** rubocop 을 안 돌려 CI 를 빨갛게 만들었다(로컬은 추가 **전에** 돌린 초록이었다). 셋 다 「초록을 봤다」와 「지금 초록이다」를 혼동한 것이다. **게이트 결과는 마지막 편집 뒤의 것이어야 한다.**
 
-**⟶ 다음 대상(2026-09-12 기준, 토큰 타입검증까지 닫힌 뒤).** 옛 목록: `lenient-parsing-yields-false-success`(rust — 실측으로 좁혀졌다: `token_provider.rs:71,86-89` 가 **문자열이 아닌 `access_token` 을 빈 토큰 성공으로 캐시**한다. `auth.rs` 는 `CoreTokenResponse` 라 fail-safe이고 **`expires_in` 누락만** 공유한다) · `python-aio-security-test-asymmetry`(범위 6 으로 확대됨) · `rust-msrv-leg-vs-manifest-unguarded`(⚠️ **한 방향만 침묵**이다 — 매니페스트를 내리면 `check-docs` 가 잡고, **CI 레그만 올리면** 아무도 안 잡아 MSRV 레그가 조용히 사라진다) · `authz-redirect-uri-not-per-call`(사람 판정 선행). ⚠️ 여전히 **재판정부터** 시작한다.
+23. ✅ **`python-aio-security-test-asymmetry` — 같은 세션이 닫았다.** 재판정이 **또** 넓혔다(6 → 8). aio 프로덕션은 이미 옳았고 **고정**만 없었다. 변이 6/6 `CAUGHT`.
+
+**⟶ 다음 대상(2026-09-12 기준).** `rust-msrv-leg-vs-manifest-unguarded`(⚠️ **한 방향만 침묵** — 매니페스트를 내리면 `check-docs` 가 잡고, **CI 레그만 올리면** 아무도 안 잡아 MSRV 레그가 조용히 사라진다. S/S) · `authz-redirect-uri-not-per-call`(php·rust — **§4 와 양립하는지 사람 판정이 선행**) · `H3-harness-image-and-lock-pins` · `guard-detection-surface-hand-narrowed`[H](required **밖**에서 오탐 0 선행). ⚠️ **재판정부터** 시작한다 — 이 세션에서 손댄 항목 넷 중 **넷 다** 등록부 서술이 틀렸다(범위 셋·계수 하나).
+
+**⟶ 옛 목록(이제 닫힘): ~~`lenient-parsing-yields-false-success`~~(닫힘 — rust 하나가 아니라 다섯이었다: `token_provider.rs:71,86-89` 가 **문자열이 아닌 `access_token` 을 빈 토큰 성공으로 캐시**한다. `auth.rs` 는 `CoreTokenResponse` 라 fail-safe이고 **`expires_in` 누락만** 공유한다) · `python-aio-security-test-asymmetry`(범위 6 으로 확대됨) · `rust-msrv-leg-vs-manifest-unguarded`(⚠️ **한 방향만 침묵**이다 — 매니페스트를 내리면 `check-docs` 가 잡고, **CI 레그만 올리면** 아무도 안 잡아 MSRV 레그가 조용히 사라진다) · `authz-redirect-uri-not-per-call`(사람 판정 선행). ⚠️ 여전히 **재판정부터** 시작한다.
 
 **PR 이 아닌 것**(선행이 빠져 있다): `jvm-17-floor-never-shipped`(사람 승인 릴리스) · `guard-detection-surface-hand-narrowed` 의 파생화(required **밖**에서 오탐 0 선행) · `integration-admin-surface-uneven`(9×capability 결정 — php 가 roles/groups/realms 를 **0/3 계열** 부른다) · `integration-coverage-never-measured`(9개 설계) · `registry-truth-check`(레지스트리별 **버전** 오라클 + 전파 404 규칙 — ⚠️ 순진한 라이브 폴링은 「첫 404 로 실패 결론」 함정을 되살린다) · `published-bytes-have-no-oracle`(Portal 게시 후 실제 jar 페치) · `security-invariant-not-required`(룰셋 apply — ⚠️ **required 이름을 늘리지 말고** `doc-facts` 안으로 접는 쪽이 PR 크기다).
 
@@ -425,7 +429,8 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [ ] `compat-table-library-cells-drift` **[M/M]** compatibility.md Node 행의 라이브러리 셀 세 개가 태그 시점 락파일과 다르다 · `docs/reference/compatibility.md:22`
 - [ ] `tokenprovider-cache-contract-untested` **[M/M]** TokenProvider 캐시 계약(만료 재조회·single-flight)이 Rust·Ruby 에서 단언되지 않는다 · `rust/src/token_provider.rs:113`
 - [ ] `facade-wiring-close-contract-unasserted` **[M/S]** 파사드의 §4 계약(provider 배선·close)이 무단언 테스트 뒤에 있고 커버리지 게이트에서도 빠져 있다 · `rust/src/client.rs:65`
-- [ ] `python-aio-security-test-asymmetry` **[M/M · 범위 정정 2026-09-12 · 악화]** ⚠️ **「rate-limit 하나」가 아니라 보안 단언 여섯**이다. 독립 레그 둘이 별칭(`wrap`/`awrap`·`close`/`aclose`·`certs`/`a_certs`)과 시나리오 겹침을 반영해 짝 없는 sync 테스트 12 를 추렸고, 그중 보안이 여섯이다 — **alg 핀닝 둘**(`validate_rejects_algorithm_not_in_configured_set`·`..._accepts_...`) · **파라미터 주입**(`authorization_url_percent_encodes_and_resists_param_injection` — #442 회귀 테스트가 aio 에만 없다) · **verifier 마스킹**(`authorization_url_repr_masks_verifier`) · **nonce 부재 경로**(`exchange_code_skips_id_token_validation_without_nonce`) · **rate-limit**(원래 지목). ⚠️ alg 핀닝은 CLAUDE.md 가 교차언어 불변식으로 못박은 것이고 aio 에는 단언이 **0** 이다(실측: `alg` 히트 둘 다 토큰 위조 헬퍼) · `python/tests/unit/aio/test_auth.py`
+- [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
+  - 옛 서술(범위 정정 2026-09-12): **[M/M · 범위 정정 2026-09-12 · 악화]** ⚠️ **「rate-limit 하나」가 아니라 보안 단언 여섯**이다. 독립 레그 둘이 별칭(`wrap`/`awrap`·`close`/`aclose`·`certs`/`a_certs`)과 시나리오 겹침을 반영해 짝 없는 sync 테스트 12 를 추렸고, 그중 보안이 여섯이다 — **alg 핀닝 둘**(`validate_rejects_algorithm_not_in_configured_set`·`..._accepts_...`) · **파라미터 주입**(`authorization_url_percent_encodes_and_resists_param_injection` — #442 회귀 테스트가 aio 에만 없다) · **verifier 마스킹**(`authorization_url_repr_masks_verifier`) · **nonce 부재 경로**(`exchange_code_skips_id_token_validation_without_nonce`) · **rate-limit**(원래 지목). ⚠️ alg 핀닝은 CLAUDE.md 가 교차언어 불변식으로 못박은 것이고 aio 에는 단언이 **0** 이다(실측: `alg` 히트 둘 다 토큰 위조 헬퍼) · `python/tests/unit/aio/test_auth.py`
 
 ## C. 품질 부채 — 67건 (열림 66)
 
