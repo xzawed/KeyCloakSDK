@@ -459,6 +459,31 @@ assert_fails node "$GUARD" "$TMP"
 OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
 assert_contains "$OUT" "공허" "공허 하한이 이유로 나와야 한다"
 
+# 오탐 방지 — **더 정밀한 핀은 불일치가 아니다**. `rust-version = "1.88"` 과 태그 `1.88.0` 은
+# 같은 툴체인이고, 그것을 막으면 required 체크가 정당한 핀을 쓰는 PR 을 전부 막는다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|FROM rust:1.88-alpine|FROM rust:1.88.0-alpine|' "$RDF"
+assert_ok node "$GUARD" "$TMP"
+
+# 변이: 하네스 **앱 매니페스트의** rust-version 만 올린다. 이 값은 락 재생성기가 MSRV 인지
+# 해석에 쓰는 값이라, 혼자 움직이면 락이 더 높은 MSRV 로 재생성되고 `FROM` 은 그대로라
+# `--locked` 빌드가 깨진다. (독립 레그가 잡은 누락 — 한때 이 자리는 대조 대상이 아니었다.)
+cp -r "$FIX/." "$TMP/"
+sed -i 's|rust-version = "1.88"|rust-version = "1.95"|' "$TMP/harness/apps/rust/Cargo.toml"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "rust-version" "앱 매니페스트 자리를 지목해야 한다"
+
+# 오탐 방지 — `FROM` 에 플래그가 붙어도 자리로 세어야 한다(놓치면 공허 하한이 대신 터진다).
+cp -r "$FIX/." "$TMP/"
+sed -i 's|FROM rust:1.88-alpine AS build|FROM --platform=$BUILDPLATFORM rust:1.88-alpine AS build|' "$RDF"
+assert_ok node "$GUARD" "$TMP"
+
+# …그리고 플래그가 붙은 자리의 **드리프트도** 잡아야 한다(위가 단지 무시한 것이 아님을 가른다).
+cp -r "$FIX/." "$TMP/"
+sed -i 's|FROM rust:1.88-alpine AS build|FROM --platform=$BUILDPLATFORM rust:1.95-alpine AS build|' "$RDF"
+assert_fails node "$GUARD" "$TMP"
+
 # ⚠️ 대조군 — 하네스 앱이 없는 체크아웃에서 **조용히 통과하지 않는다**. 락·COPY 검사는 대상이
 # 없어 건너뛰지만, 그때 남는 자리가 하한 아래이므로 공허 하한이 대신 말해야 한다.
 # (rust/ 자체가 없는 트리는 이 가드의 대상이 아니다 — 언어 표 추출이 그보다 먼저 실패한다.)

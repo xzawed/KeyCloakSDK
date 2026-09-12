@@ -35,8 +35,10 @@ cp "$APP/Cargo.toml" "$TMP/Cargo.toml"
 mkdir -p "$TMP/src"
 cp -R "$APP/src/." "$TMP/src/"
 
-# path 의존을 호스트에서 해석 가능한 경로로. ⚠️ 행 전문이 아니라 값만 바꾼다.
-sed -i "s#path = \"/src/rust\"#path = \"$HOSTROOT/rust\"#" "$TMP/Cargo.toml"
+# ⚠️ `sed -i` 를 쓰지 않는다 — BSD sed(macOS)는 `-i` 다음 인자를 **백업 접미사**로 읽어 거기서
+# 죽는다(독립 레그 지목). 리다이렉트 + mv 는 GNU·BSD·MSYS 에서 같게 돈다.
+sed "s#path = \"/src/rust\"#path = \"$HOSTROOT/rust\"#" "$TMP/Cargo.toml" > "$TMP/Cargo.toml.new"
+mv "$TMP/Cargo.toml.new" "$TMP/Cargo.toml"
 
 ( cd "$TMP" && cargo generate-lockfile --config 'resolver.incompatible-rust-versions="fallback"' )
 

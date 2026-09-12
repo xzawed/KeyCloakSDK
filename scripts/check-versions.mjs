@@ -378,9 +378,20 @@ for (const [lang, p, re] of manifests) {
       walkDf('', 0)
       for (const p of dockerfiles) {
         for (const line of read(p).split(/\r?\n/)) {
-          const m = /^FROM\s+rust:(\d+(?:\.\d+)*)/.exec(line)
+          // ⚠️ `FROM` 뒤에 플래그가 올 수 있다(`--platform=$BUILDPLATFORM`) — 독립 레그가
+          // 지목한 놓침이다. 플래그를 건너뛰고 이미지 참조를 본다.
+          const m = /^FROM\s+(?:--\S+\s+)*rust:(\d+(?:\.\d+)*)/.exec(line)
           if (m) sites.push([`${p} (FROM)`, m[1]])
         }
+      }
+      // 하네스 앱의 `rust-version` — ⚠️ **독립 레그가 잡은 누락이다.** 이 값은 락 재생성기가
+      // MSRV 인지 해석에 쓰는 바로 그 값인데(`regen-harness-rust-lock.sh`) 대조 대상이 아니었다.
+      // 앱 매니페스트만 올리면 락이 조용히 더 높은 MSRV 로 재생성되고, Dockerfile 의 `FROM` 은
+      // 그대로라 `--locked` 빌드가 깨진다. 그 자리를 여기서 함께 본다.
+      const appManifest = 'harness/apps/rust/Cargo.toml'
+      if (existsSync(join(root, appManifest))) {
+        const appMsrv = pick(appManifest, /^rust-version\s*=\s*"([^"]+)"/m, `${appManifest} 의 rust-version`, harnessErrors)
+        if (appMsrv) sites.push([`${appManifest} (rust-version)`, appMsrv])
       }
       // 공허 하한 — 코퍼스에서 센 실측치다(매트릭스 레그 1 + `FROM rust:<ver>` 3). 자리가 줄면
       // 이 검사는 조용히 아무것도 안 보게 되므로, 줄이는 변경이 이 수를 함께 내리게 만든다.
@@ -388,8 +399,8 @@ for (const [lang, p, re] of manifests) {
       // 검사 대상이 아니다 — 거기에 하한을 걸면 부분 체크아웃이 전부 실패한다(기존 대조군이
       // 그것을 고정하고 있다). 하한이 말해야 하는 것은 **있는 트리에서 자리가 사라진** 경우뿐이다.
       const fromSites = sites.filter(([where]) => where.endsWith('(FROM)'))
-      const legSites = sites.length - fromSites.length
-      if (legSites < 1) {
+      const legSites = sites.filter(([where]) => where.endsWith('(매트릭스 레그)'))
+      if (legSites.length < 1) {
         harnessErrors.push(
           `rust 매트릭스 레그에서 숫자 레그를 하나도 못 찾았다 — MSRV 레그가 사라지면 ` +
             `이 검사가 공허해진다(\`stable\` 만 남은 매트릭스는 MSRV 를 검증하지 않는다)`,
@@ -402,8 +413,17 @@ for (const [lang, p, re] of manifests) {
             `자리가 사라지면 이 검사가 공허해진다. 의도한 삭제면 하한을 같이 내린다`,
         )
       }
+      // ⚠️ **문자 비교가 아니라 성분 비교다.** `rust-version = "1.88"` 과 이미지 태그
+      // `rust:1.88.0-alpine` 은 **같은 툴체인**인데 문자로는 다르다 — 더 정밀한 핀을 쓰는 것은
+      // 정당한 선택이고, 그것을 불일치로 내면 required 체크가 모든 PR 을 막는다(독립 레그 지목).
+      // 빠진 성분은 0 으로 채워 비교한다: 1.88 == 1.88.0, 1.88 != 1.89.
+      const norm = (v) => {
+        const p = v.split('.').map(Number)
+        while (p.length < 3) p.push(0)
+        return p.join('.')
+      }
       for (const [where, v] of sites) {
-        if (v !== msrv) {
+        if (norm(v) !== norm(msrv)) {
           harnessErrors.push(
             `${where} 가 rust "${v}" 를 쓰는데 ${msrvPath} 의 rust-version 은 "${msrv}" 다 — ` +
               `MSRV 레그/이미지가 매니페스트와 갈리면 「MSRV 라 적힌 값」이 실제로는 검증되지 않는다`,
