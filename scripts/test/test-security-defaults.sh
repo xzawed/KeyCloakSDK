@@ -134,6 +134,28 @@ assert_eq "$(sd_sorted "$_sd_tree")" "$(sd_sorted "$SD_LANGS")" \
 # ⚠️ 부분집합만 본다 — `SD_CAP_LANGS`·`SD_BACKOFF_LANGS` 는 **의도적으로 일곱**이다
 # (java·kotlin 은 JWKS fetch 를 Nimbus 가 소유해 이 축의 대상이 아니다). 전체집합과 같기를
 # 요구하면 그 설계를 깨뜨린다. 여기서 잡는 것은 **오타·유령 이름**이다.
+
+# ⚠️ **음성 대조군 — 파생이 트리를 실제로 읽는가.** 위 단언은 「지금 일치한다」만 본다. 그 형태는
+# **파생이 no-op 이어도 통과한다** — `sd_tree_langs() { printf '%s ' java python … kotlin; }` 로
+# 바꾸면 정답 상수라 초록이고, 그러면 이 축은 있으나 마나가 된다. 실측으로 확인했다
+# (`scripts/probe.sh` → **SILENT**, 즉 진짜 구멍이었다). 그래서 **언어 집합이 다른** 트리를
+# 만들어 파생이 그 다른 답을 내는지 본다.
+# ⚠️ 값 하나짜리 픽스처가 아니라 git 저장소여야 한다 — 파생이 `git ls-files` 로 돌기 때문이다.
+sd_universe_negative_control() {
+  _uc_tmp="$(mktemp -d)"
+  ( cd "$_uc_tmp" \
+    && git init -q -b main . >/dev/null 2>&1 \
+    && mkdir -p alpha beta notalang \
+    && : > alpha/Cargo.toml && : > beta/composer.json && : > notalang/README.md \
+    && git add -A >/dev/null 2>&1 ) || { rm -rf "$_uc_tmp"; return 0; }
+  _uc_got="$(ROOT="$_uc_tmp" sd_tree_langs)"
+  rm -rf "$_uc_tmp"
+  # 기대: 매니페스트를 가진 둘만. `notalang` 은 매니페스트가 없으므로 들어오면 안 된다
+  # (그 한 자리가 「최상위 디렉터리를 전부 언어로 읽는다」와 이 파생을 가른다).
+  assert_eq "alpha beta " "$_uc_got" \
+    "[음성대조·언어집합] 언어가 다른 트리에서도 같은 답을 낸다 — 파생이 트리를 안 읽는다(no-op)"
+}
+sd_universe_negative_control
 sd_subset_of_langs() { # $1=라벨 $2=목록
   _ss_bad=''
   for _l in $2; do
