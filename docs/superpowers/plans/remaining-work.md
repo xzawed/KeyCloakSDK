@@ -438,7 +438,20 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `authcode-flow-verification-defeated` **[M/L]** 인가 코드 흐름의 검증이 무력하거나 오적용된다 — azp 미검증·iss 자기주입·공유 검증기 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:135-149`
 - [ ] `lenient-parsing-yields-false-success` **[M/M · 실측 2026-09-12 · 착수 전 부류 측정 필요]** 응답 파싱이 관대해서 틀린 타입을 성공으로 통과시킨다 · `rust/src/token_provider.rs:71,86-89`
   - **소비자가 겪는 것(실측, 독립 레그 둘)**: 존재 검사가 `body.get("access_token").is_none()` 뿐이라 **문자열이 아닌 값**(숫자·`null`·객체)이 통과하고, `as_str().unwrap_or_default()` 가 그것을 **빈 문자열**로 만든다. 성공으로 캐시되므로(`:116-126`) `expires_at` 까지 그 창 내내 admin 호출이 `Bearer `(빈 값)로 나가 **매번 401**이 된다(`admin.rs:29-39` 의 401 매핑은 `Err` 에만 돈다 — 패닉도 재시도 루프도 아니다). `auth.rs` 는 `CoreTokenResponse` 로 역직렬화해 **fail-safe** 이고, 둘이 공유하는 것은 `expires_in` 누락뿐이다.
-  - ⚠️ **rust 만이 아니다 — 착수 전에 아홉을 다 재라**(회고 B4 가 #466 에서 산 교훈이다). 실측: **node 는 거부**(`node/src/tokens.ts:60-63` 타입+빈값) · **go 는 거부**(`go/admin.go:116-118` 타입 역직렬화 후 빈값 검사) · **python 은 타입 검사 없음**(`python/src/keycloak_sdk/tokens.py:39`) · **php 는 스칼라를 강제변환**(`php/src/Token/TokenSet.php:45-51`). **java·kotlin·ruby·dotnet 은 미측정.** 이음매별로 항목을 쪼갠 뒤 착수한다.
+  - ✅ **아홉 전수 측정 완료(2026-09-12)** — 회고 B4 가 요구한 그것이다. **다섯이 fail-open** 이고 넷은 이미 거부한다.
+
+    | 언어 | 판정 | 근거 |
+    |---|---|---|
+    | java · kotlin | 거부 | **실험**: Nimbus `TokenResponse.parse(HTTPResponse)` 가 숫자·null·객체·누락·빈문자열을 전부 `ParseException`. `token_type` 누락도 거부 |
+    | node | 거부 | `node/src/tokens.ts:60-63` 타입 + 빈값 |
+    | go | 거부 | `go/admin.go:116-118` 타입 언마샬 + 빈값 |
+    | **rust** | fail-open | `rust/src/token_provider.rs:71,86-89` — 빈 토큰이 `expires_at` 까지 캐시 |
+    | **python** | fail-open | `python/src/keycloak_sdk/tokens.py:39` 무검사. ⚠️ **누락이면 raw `KeyError`** 가 샌다(§4, 별개 이음매) |
+    | **ruby** | fail-open | `ruby/lib/keycloak_sdk/tokens.rb:10` 무검사 → `nil` |
+    | **php** | fail-open | `php/src/Token/TokenSet.php:45-51` `toStr` 가 스칼라를 강제변환 |
+    | **dotnet** | fail-open | **실험**: Duende 가 `12345` → `"12345"`, `{"a":1}` → 그 문자열로 강제변환해 SDK 의 `IsNullOrEmpty`(`Tokens.cs:25-26`)를 통과한다. null·누락은 거부된다 |
+
+    ⚠️ **읽기로는 JVM·dotnet 을 못 닫는다 — 라이브러리가 컴파일된 것이라 실행해야 답이 나온다.** 그리고 ⚠️ **오버로드를 맞춰야 한다**: 1차 프로브가 `parse(JSONObject)` 를 썼는데 SDK 는 `parse(HTTPResponse)` 를 쓴다. 전자에서는 「access_token 누락」이 **오류응답**으로 갈렸고 후자에서는 `ParseException` 이다 — 그 차이로 하마터면 java 에 없는 NPE 결함을 기록할 뻔했다(`ErrorObject` 는 null 이 아니고 **코드만** null 이다).
   - ⚠️ 회귀를 잡을 기존 테스트가 **없다** — rust 의 `fetches_and_caches`·`oauth_error_mapped` 는 문자열 `"AT"` 만 쓴다.
 - [ ] `nimbus-type-on-public-surface` **[L/M]** JWSAlgorithm이 두 JVM SDK의 공개 팩토리 시그니처에 올라 있다 — §4 은닉 위반 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java:27-28`
 - [ ] `configured-timeout-not-propagated` **[L/M]** 설정한 타임아웃·취소 토큰이 JWKS/검증 경로에 도달하지 않는다 · `node/src/jwt.ts:47-51`
