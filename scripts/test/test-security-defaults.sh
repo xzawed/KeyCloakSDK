@@ -774,11 +774,29 @@ assert_eq "ok" "$(ok_if "$_enough" "$sd_hits")" \
 # 않는 산문까지 대상이 되어(`ruby/config.rb:41` "기본값은 위 상수." · `php/KeycloakConfig.php:20`)
 # "30을 안 담았다"는 이유로 전부 거짓 실패한다. 상수를 **참조**하는 주석은 드리프트할 수 없으니
 # 검사 대상이 아닌 것이 옳다.
-SD_SRC="$(cd "$ROOT" && git ls-files 'java/*.java' 'python/*.py' 'node/src/*.ts' 'go/*.go' \
-  'dotnet/*.cs' 'php/*.php' 'rust/src/*.rs' 'ruby/*.rb' 'kotlin/*.kt' 2>/dev/null \
-  | grep -viE '(^|/)(tests?|spec)/|[Tt]est[s]?\.(java|kt|ts|go|cs|php|rb|py|rs)$|_test\.go$|test_.*\.py$|_spec\.rb$|\.test\.ts$' || true)"
+# ⚠️ **글롭을 손으로 적지 않는다.** 예전에는 아홉 개 경로 글롭이었고, 그중 **하나를 지워도
+# 조용했다**(실측: kotlin 글롭 제거 → `scripts/probe.sh` **SILENT**). 총 히트 하한(아래 8)은
+# 아홉이 기여하는 상태에서 하나가 빠지는 것을 못 본다 — 셋을 지워야 비로소 걸렸다.
+# 그래서 스캔 집합을 **위 언어 집합에서 파생**하고 **언어별 기여**를 따로 단언한다.
+#
+# ⚠️ 이 파생은 `node/src`·`rust/src` 로 좁혀 두었던 비대칭도 없앤다 — 그 둘만 `src/` 밖의
+# 소스를 못 봤다. 확장으로 더해지는 것은 examples·vitest 설정 **넷**이고, 실측으로 그 넷은
+# 이 축의 대상 패턴(`refetch`·`재조회`)을 **한 번도 담지 않는다**(required 체크라 확인했다).
+# ⚠️ 정규식에 역슬래시를 쓰지 않는다 — `[.]` 로 적는다(세 겹 이스케이프에서 먹힌 이력).
+SD_SRC="$(cd "$ROOT" && git ls-files $(for _l in $SD_LANGS; do printf '%s/ ' "$_l"; done) 2>/dev/null \
+  | grep -E '[.](java|py|ts|go|cs|php|rs|rb|kt)$' \
+  | grep -viE '(^|/)(tests?|spec)/|[Tt]est[s]?[.](java|kt|ts|go|cs|php|rb|py|rs)$|_test[.]go$|test_.*[.]py$|_spec[.]rb$|[.]test[.]ts$' || true)"
 _hassrc=1; [ -n "$SD_SRC" ] && _hassrc=0
-assert_eq "ok" "$(ok_if "$_hassrc" EMPTY)" "소스 목록이 비었다 — git ls-files 패턴이 바뀌었나?"
+assert_eq "ok" "$(ok_if "$_hassrc" EMPTY)" "소스 목록이 비었다 — 언어 집합 파생이나 확장자 필터가 깨졌나?"
+
+# ⚠️ **언어별 기여** — 총 히트 하한과 **다른 양**을 센다(스캔된 파일 vs 값을 말하는 주석 줄).
+# 이것이 위 구멍을 닫는 단언이고, 하한을 올리는 것으로는 닫히지 않는다(정당한 삭제에 오탐이 난다).
+_srcmiss=''
+for L in $SD_LANGS; do
+  printf '%s\n' "$SD_SRC" | grep -q "^$L/" || _srcmiss="$_srcmiss $L"
+done
+assert_eq "" "$_srcmiss" \
+  "[소스 주석 축] 스캔 집합에 이 언어의 소스가 하나도 없다 —$_srcmiss (그 언어는 이 축에서 조용히 빠진다)"
 
 sd_src_hits=0
 for f in $SD_SRC; do
