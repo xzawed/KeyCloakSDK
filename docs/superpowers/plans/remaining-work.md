@@ -101,6 +101,8 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 22. ✅ **`lenient-parsing-yields-false-success` — 같은 세션이 닫았다.** ⚠️ **rust 하나가 아니라 다섯**이었다(rust·python·ruby·php·dotnet). 회고 B4 대로 **먼저 아홉을 다 재고** 착수했고, 그 측정이 없었다면 dotnet 을 통째로 놓쳤을 것이다 — 읽기로는 「SDK 가 빈값을 거부한다」로 보이는데 **Duende 가 그 앞에서 강제변환**하기 때문이다. 축 1c 신설(9언어·하한 9).
 
+⚠️ **이 세션이 세 번 어긴 것 하나 — 「편집한 뒤 그 게이트를 다시 돌린다」.** (1) 규칙 파일을 고치고 `check-docs` 를 안 돌려 예산 위반 커밋을 push 했고, (2) 압축 수정을 미커밋 상태에서 변이 돌려 잃었고, (3) ruby 생성자를 **추가한 뒤** rubocop 을 안 돌려 CI 를 빨갛게 만들었다(로컬은 추가 **전에** 돌린 초록이었다). 셋 다 「초록을 봤다」와 「지금 초록이다」를 혼동한 것이다. **게이트 결과는 마지막 편집 뒤의 것이어야 한다.**
+
 **⟶ 다음 대상(2026-09-12 기준, 토큰 타입검증까지 닫힌 뒤).** 옛 목록: `lenient-parsing-yields-false-success`(rust — 실측으로 좁혀졌다: `token_provider.rs:71,86-89` 가 **문자열이 아닌 `access_token` 을 빈 토큰 성공으로 캐시**한다. `auth.rs` 는 `CoreTokenResponse` 라 fail-safe이고 **`expires_in` 누락만** 공유한다) · `python-aio-security-test-asymmetry`(범위 6 으로 확대됨) · `rust-msrv-leg-vs-manifest-unguarded`(⚠️ **한 방향만 침묵**이다 — 매니페스트를 내리면 `check-docs` 가 잡고, **CI 레그만 올리면** 아무도 안 잡아 MSRV 레그가 조용히 사라진다) · `authz-redirect-uri-not-per-call`(사람 판정 선행). ⚠️ 여전히 **재판정부터** 시작한다.
 
 **PR 이 아닌 것**(선행이 빠져 있다): `jvm-17-floor-never-shipped`(사람 승인 릴리스) · `guard-detection-surface-hand-narrowed` 의 파생화(required **밖**에서 오탐 0 선행) · `integration-admin-surface-uneven`(9×capability 결정 — php 가 roles/groups/realms 를 **0/3 계열** 부른다) · `integration-coverage-never-measured`(9개 설계) · `registry-truth-check`(레지스트리별 **버전** 오라클 + 전파 404 규칙 — ⚠️ 순진한 라이브 폴링은 「첫 404 로 실패 결론」 함정을 되살린다) · `published-bytes-have-no-oracle`(Portal 게시 후 실제 jar 페치) · `security-invariant-not-required`(룰셋 apply — ⚠️ **required 이름을 늘리지 말고** `doc-facts` 안으로 접는 쪽이 PR 크기다).
