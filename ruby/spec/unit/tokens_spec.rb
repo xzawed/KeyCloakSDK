@@ -65,6 +65,16 @@ RSpec.describe KeycloakSdk do
         described_class.from_response({ "token_type" => "Bearer" }, received_at: 0.0)
       end.to raise_error(KeycloakSdk::AuthError)
     end
+
+    # ⚠️ **팩토리만 지키면 우회된다.** `AuthClient#to_token_set` 은 `from_response` 가 아니라
+    # `TokenSet.new` 을 직접 부른다(독립 레그가 지목한 구멍) — 그래서 검증이 생성자에 있고,
+    # 이 테스트가 그 자리를 못박는다.
+    it "rejects a bad access_token even when constructed directly (factory bypass)" do
+      expect do
+        described_class.new(access_token: nil, token_type: "Bearer", expires_in: 300,
+                            refresh_token: nil, id_token: nil, scope: nil, expires_at: nil)
+      end.to raise_error(KeycloakSdk::AuthError)
+    end
   end
 
   describe KeycloakSdk::IntrospectionResult do

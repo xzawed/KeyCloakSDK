@@ -23,7 +23,14 @@ final readonly class TokenSet implements \JsonSerializable
         #[\SensitiveParameter] public ?string $idToken = null,
         public ?string $scope = null,
         public ?int $expiresAt = null,
-    ) {}
+    ) {
+        // ⚠️ **검증은 팩토리가 아니라 생성자에 있다.** `fromArray` 에만 두면 `AuthClient`
+        // 의 `toTokenSet()` 이 `new TokenSet(...)` 를 직접 불러 그것을 통째로 우회한다
+        // (독립 레그가 지목한 구멍). 타입은 PHP 가 강제하므로 여기서 막는 것은 **빈 값**이다.
+        if ('' === $this->accessToken) {
+            throw new KeycloakAuthError('token response has no usable access_token');
+        }
+    }
 
     /** @param array<string,mixed> $r OAuth 토큰 응답 */
     public static function fromArray(array $r, ?int $now = null): self

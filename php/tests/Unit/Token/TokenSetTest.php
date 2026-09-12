@@ -130,4 +130,15 @@ final class TokenSetTest extends TestCase
         $this->expectException(KeycloakAuthError::class);
         TokenSet::fromArray(['token_type' => 'Bearer']);
     }
+
+    /**
+     * ⚠️ **팩토리만 지키면 우회된다.** `AuthClient::toTokenSet()` 은 `fromArray` 가 아니라
+     * `new TokenSet(...)` 를 직접 부른다(독립 레그가 지목한 구멍) — 그래서 검증이 생성자에
+     * 있고, 이 테스트가 그 자리를 못박는다.
+     */
+    public function testEmptyAccessTokenIsRejectedByTheConstructor(): void
+    {
+        $this->expectException(KeycloakAuthError::class);
+        new TokenSet(accessToken: '');
+    }
 }
