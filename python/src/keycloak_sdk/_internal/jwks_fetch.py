@@ -19,6 +19,7 @@ introspect 가 함께 쓰고(`redirects.py` 의 `harden_openid` 참조), **역�
 from __future__ import annotations
 
 import json
+import zlib
 from typing import Any
 
 from ..exceptions import KeycloakTransportError
@@ -29,11 +30,10 @@ JWKS_MAX_BYTES = 51_200
 
 _CHUNK = 8192
 
-# ⚠️ **압축을 받지 않는다 — 상한만으로는 압축폭탄을 못 막는다.** 두 라이브러리 모두 우리에게
-# **팽창된** 바이트를 주므로, 상한을 팽창 뒤에 재면 이미 메모리를 내준 뒤다. 실측(독립 레그):
-# httpx 의 `aiter_bytes()` 는 인자 없이 부르면 디코드된 덩어리를 통째로 주고 `GZipDecoder` 는
-# `decompress(data)` 라 상한이 없다 — 2MB 가 한 덩어리로 왔다. `identity` 를 요구하면
-# **세는 바이트가 곧 전송 바이트**가 된다. JWKS 는 정의상 상한 안이라 압축을 포기할 비용이 없다.
+# ⚠️ **압축을 요구하지 않는다** — 그러면 정상 서버에서는 **세는 바이트가 곧 전송 바이트**가
+# 되어 상한의 의미가 분명해진다. JWKS 는 정의상 상한 안이라 압축을 포기할 비용이 없다.
+# ⚠️ 이 헤더는 **1차 방어일 뿐**이다. 무시하는 서버가 있으므로 팽창분에도 상한을 건다
+# (`_inflate`) — 헤더 하나에 기대면 그것이 곧 압축폭탄 경로다.
 _NO_COMPRESSION = {"Accept-Encoding": "identity"}
 
 
@@ -43,6 +43,25 @@ class _TooBig(Exception):
 
 def _too_big() -> KeycloakTransportError:
     return KeycloakTransportError(f"JWKS response exceeds {JWKS_MAX_BYTES} bytes")
+
+
+def _inflate(data: bytes, encoding: str) -> bytes:
+    """`aiter_raw` 가 준 원문을 필요하면 **상한 안에서** 푼다.
+
+    우리는 `identity` 를 요구했으므로 정상 서버는 압축하지 않는다. 그것을 무시하는 서버가
+    있으므로 여기서 풀되, **팽창분에도 같은 상한**을 건다 — 그러지 않으면 상한을 통과한
+    작은 gzip 하나가 100MB 로 부푼다(압축폭탄).
+    """
+    if encoding in ("", "identity"):
+        return data
+    if encoding not in ("gzip", "deflate"):
+        # 요구하지 않은 인코딩을 이해하는 척하지 않는다(fail-closed).
+        raise KeycloakTransportError(f"JWKS response uses unsupported encoding {encoding!r}")
+    obj = zlib.decompressobj(31 if encoding == "gzip" else 15)
+    out = obj.decompress(data, JWKS_MAX_BYTES + 1)
+    if len(out) > JWKS_MAX_BYTES or obj.unconsumed_tail:
+        raise _too_big()
+    return out
 
 
 def _decode(body: bytes, status: int) -> dict[str, Any]:
@@ -116,16 +135,20 @@ async def afetch_jwks(client: Any, url: str, *, timeout: Any) -> dict[str, Any]:
             follow_redirects=False,
         ) as response:
             body = bytearray()
-            # ⚠️ `aiter_bytes()` 를 **인자 없이** 부르면 덩어리 크기에 상한이 없다(실측: 2MB
-            # 한 덩어리). 크기를 넘겨 재청크한다.
-            async for chunk in response.aiter_bytes(_CHUNK):
+            # ⚠️ **`aiter_bytes` 가 아니라 `aiter_raw` 다 — 압축 해제 *전* 바이트를 센다.**
+            # 실측: `aiter_bytes` 로는 우리가 상한을 보기 전에 httpx 의 `GZipDecoder` 가
+            # 통째로 팽창시킨다(`decompress(data)` 에 상한이 없다). 20MB 폭탄에서 피크
+            # **84MB** 를 쟀다. 청크 크기를 넘겨도 소용없다 — 디코더가 청킹보다 앞이다.
+            # sync 미러는 이 문제가 없다(urllib3 이 `max_length` 를 gzip 에 넘긴다).
+            async for chunk in response.aiter_raw(_CHUNK):
                 body += chunk
                 if len(body) > JWKS_MAX_BYTES:
                     raise _TooBig
             status = response.status_code
+            encoding = response.headers.get("content-encoding", "").strip().lower()
     except _TooBig as exc:
         raise _too_big() from exc
     except Exception as exc:
         raise KeycloakTransportError(f"JWKS fetch failed: {exc}") from exc
 
-    return _decode(bytes(body), status)
+    return _decode(_inflate(bytes(body), encoding), status)

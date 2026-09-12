@@ -11,6 +11,7 @@ httpx 기본값이라, 여기서는 `afetch_jwks` 가 `follow_redirects=False` �
 from __future__ import annotations
 
 import json
+import tracemalloc
 from typing import Any
 
 import httpx
@@ -138,3 +139,55 @@ async def test_jwks_request_refuses_compression(jwks_server: Any) -> None:
     await _fetch(jwks_server)
 
     assert jwks_server.accept_encoding == "identity"
+
+
+async def test_hostile_compressed_body_does_not_blow_up_memory(jwks_server: Any) -> None:
+    """⚠️ **「예외가 났다」는 상한의 증거가 아니다 — 피크 메모리를 직접 잰다.**
+
+    변이 프로브가 이 테스트를 요구했다: `aiter_bytes(_CHUNK)` 에서 크기 인자를 빼도
+    위의 폭탄 테스트는 그대로 통과했다(팽창 뒤에도 예외는 나니까). 크기 인자가 없으면
+    httpx 가 디코드된 덩어리를 **통째로** 주므로, 우리 요구를 무시하고 압축해 보내는
+    서버 하나가 20MB 를 메모리에 올린다.
+
+    임계값은 넉넉하다(4MB) — 재려는 것은 「정확히 몇 바이트」가 아니라 **자릿수**다.
+    """
+    huge = 20 * 1024 * 1024
+    jwks_server.body = b'{"keys": [], "_pad": "' + b"A" * huge + b'"}'
+    jwks_server.gzip = True  # 서버가 우리의 identity 요구를 무시한다
+
+    tracemalloc.start()
+    try:
+        with pytest.raises(KeycloakTransportError):
+            await _fetch(jwks_server)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert peak < 4 * 1024 * 1024, f"팽창된 본문이 메모리에 올라왔다: 피크 {peak} 바이트"
+
+
+async def test_compressed_but_small_body_is_accepted(jwks_server: Any) -> None:
+    """서버가 `identity` 를 무시하고 압축해도, **상한 안이면 받아들인다.**
+
+    거부하는 쪽이 더 엄격해 보이지만 그러면 강제로 압축하는 프록시 하나가 JWKS 로딩을
+    통째로 끊는다 — 방어가 가용성을 깨는 자리다. 상한은 팽창분에 걸리므로 안전하다.
+    """
+    jwks_server.body = _valid_jwks()
+    jwks_server.gzip = True
+
+    result = await _fetch(jwks_server)
+
+    assert "keys" in result
+
+
+async def test_unsupported_content_encoding_is_refused(jwks_server: Any) -> None:
+    """이해하지 못하는 인코딩을 이해하는 척하지 않는다(fail-closed).
+
+    그냥 원문으로 파싱하면 `br` 같은 인코딩에서 **압축 바이트를 JSON 으로 읽으려다** 엉뚱한
+    오류가 나고, 최악의 경우 우연히 파싱되는 무언가를 키셋으로 받아들인다.
+    """
+    jwks_server.body = _valid_jwks()
+    jwks_server.fake_encoding = "br"
+
+    with pytest.raises(KeycloakTransportError, match="unsupported encoding"):
+        await _fetch(jwks_server)

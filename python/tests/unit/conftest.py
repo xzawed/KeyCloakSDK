@@ -140,6 +140,7 @@ class JwksServer:
     chunked: bool = False  # Content-Length 없이 보낸다 — 헤더만 믿는 상한을 걸러내는 대조군
     truncate: bool = False  # 약속한 길이보다 적게 보내고 끊는다 — 읽는 도중 실패 재현
     gzip: bool = False  # gzip 으로 보낸다 — 압축폭탄(작은 본문 → 거대 팽창) 재현
+    fake_encoding: str | None = None  # 본문은 그대로 두고 Content-Encoding 만 붙인다
     hits: int = 0
     accept_encoding: str | None = None  # 마지막 요청이 실어 온 값 — 압축 거부를 관측한다
 
@@ -168,6 +169,8 @@ def _make_jwks_handler(box: dict[str, JwksServer]) -> type[BaseHTTPRequestHandle
                 return
             self.send_response(srv.status)
             self.send_header("Content-Type", "application/json")
+            if srv.fake_encoding is not None:
+                self.send_header("Content-Encoding", srv.fake_encoding)
             if srv.chunked:
                 self.send_header("Transfer-Encoding", "chunked")
                 self.end_headers()
