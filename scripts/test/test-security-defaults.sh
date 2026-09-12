@@ -90,6 +90,80 @@ sd_skew() { # $1=언어 → clock skew 기본값
 
 SD_LANGS='java python node go dotnet php rust ruby kotlin'
 
+# ---------------------------------------------------------------------------
+# 0) 언어 집합 축 — 손 목록이 트리보다 짧아지는 것을 막는다
+# ---------------------------------------------------------------------------
+#
+# 왜 필요한가: 아래 축들이 전부 `SD_LANGS` 를 돈다. 그런데 그 목록은 **손으로 적혀 있고**,
+# 그것을 지키던 대조군은 `assert_eq "9" "$_seen"` 이라 `_seen` 이 `SD_LANGS` 자신을 센 수다 —
+# **9 == 9 가 구조적으로 보장**돼 열 번째 언어를 잡을 수 없었다(실측 2026-09-12: 최상위에
+# 빌드파일을 가진 디렉터리를 하나 주입해도 `244 passed, 0 failed`). 그 언어는 보안 기본값
+# 커버리지가 0 인 채로 들어오고 아무도 모른다.
+#
+# ⚠️ 파생 원천은 **최상위 디렉터리 중 자기 루트에 빌드 매니페스트를 가진 것**이다.
+# 다른 후보는 전부 required 체크에서 오탐을 낸다(셋 다 실측):
+#   · `.claude/rules/*.md` — 이미 **비언어 둘**을 얻었다(`ci.md` 2026-08-06 · `security.md`
+#     2026-08-17, 삭제 이력 0). 다음 횡단 규칙 파일 하나가 모든 PR 을 막는다.
+#   · `harness/apps/*/` — 플레이북 Stage 5 라 **구조적으로 늦다**. 아홉 전부 SDK 디렉터리가
+#     먼저였다(kotlin 하루 · java 사흘).
+#   · `check-versions.mjs --list` — 설계상 **7** 이다(go·php 는 태그가 SSOT). 오늘 main 을 빨갛게 한다.
+#
+# **오탐 실측**: 이 파생을 `main` 이력 전수에 돌렸다 — 커밋 475 중 `SD_LANGS` 가 존재한
+# **281 건에서 불일치 0**(kotlin 이 아홉째로 들어온 구간 포함). 재현:
+# `sh scripts/measure-lang-universe-fp.sh`
+#
+# ⚠️ 잔여 **오탐**은 하나다 — 최상위에 위 매니페스트를 가진 **비언어** 디렉터리가 생기는 것
+# (`website/package.json` 류). 그 PR 이 같은 커밋에서 `SD_LANGS` 를 늘리면 된다.
+# ⚠️ 잔여 **거짓음성**도 적어 둔다 — 매니페스트가 이 목록에 없는 언어(Swift `Package.swift` ·
+# Elixir `mix.exs`)는 못 잡는다. 목록을 늘리는 것이 그 언어를 들이는 작업의 일부다.
+SD_MANIFEST='pom\.xml|pyproject\.toml|package\.json|go\.mod|composer\.json|Cargo\.toml|build\.gradle\.kts|[^/]+\.gemspec|[^/]+\.sln'
+sd_tree_langs() {
+  ( cd "$ROOT" && git ls-files ) | sed -n 's#^\([^/]*\)/.*#\1#p' | sort -u | while read -r d; do
+    if ( cd "$ROOT" && git ls-files "$d/" ) | grep -qE "^$d/($SD_MANIFEST)\$"; then printf '%s\n' "$d"; fi
+  done | sort | tr '\n' ' '
+}
+sd_sorted() { printf '%s' "$1" | tr ' ' '\n' | sed '/^$/d' | sort | tr '\n' ' '; }
+
+_sd_tree="$(sd_tree_langs)"
+# 공허 방어 — 파생이 0 건이면 「불일치 없음」이 통과처럼 보인다(git 이 없는 트리·글롭 파손).
+assert_eq "ok" "$(ok_if "$([ -n "$_sd_tree" ] && echo 0 || echo 1)" 'EMPTY')" \
+  "[언어집합] 트리에서 언어를 하나도 파생하지 못했다 — 이 축이 조용히 공허해진다"
+assert_eq "$(sd_sorted "$_sd_tree")" "$(sd_sorted "$SD_LANGS")" \
+  "[언어집합] SD_LANGS 가 트리와 다르다 — 언어가 들고 났는데 이 파일의 손 목록이 안 따라왔다(아래 축 전부가 그 언어를 건너뛴다)"
+
+# ⚠️ 부분집합만 본다 — `SD_CAP_LANGS`·`SD_BACKOFF_LANGS` 는 **의도적으로 일곱**이다
+# (java·kotlin 은 JWKS fetch 를 Nimbus 가 소유해 이 축의 대상이 아니다). 전체집합과 같기를
+# 요구하면 그 설계를 깨뜨린다. 여기서 잡는 것은 **오타·유령 이름**이다.
+
+# ⚠️ **음성 대조군 — 파생이 트리를 실제로 읽는가.** 위 단언은 「지금 일치한다」만 본다. 그 형태는
+# **파생이 no-op 이어도 통과한다** — `sd_tree_langs() { printf '%s ' java python … kotlin; }` 로
+# 바꾸면 정답 상수라 초록이고, 그러면 이 축은 있으나 마나가 된다. 실측으로 확인했다
+# (`scripts/probe.sh` → **SILENT**, 즉 진짜 구멍이었다). 그래서 **언어 집합이 다른** 트리를
+# 만들어 파생이 그 다른 답을 내는지 본다.
+# ⚠️ 값 하나짜리 픽스처가 아니라 git 저장소여야 한다 — 파생이 `git ls-files` 로 돌기 때문이다.
+sd_universe_negative_control() {
+  _uc_tmp="$(mktemp -d)"
+  ( cd "$_uc_tmp" \
+    && git init -q -b main . >/dev/null 2>&1 \
+    && mkdir -p alpha beta notalang \
+    && : > alpha/Cargo.toml && : > beta/composer.json && : > notalang/README.md \
+    && git add -A >/dev/null 2>&1 ) || { rm -rf "$_uc_tmp"; return 0; }
+  _uc_got="$(ROOT="$_uc_tmp" sd_tree_langs)"
+  rm -rf "$_uc_tmp"
+  # 기대: 매니페스트를 가진 둘만. `notalang` 은 매니페스트가 없으므로 들어오면 안 된다
+  # (그 한 자리가 「최상위 디렉터리를 전부 언어로 읽는다」와 이 파생을 가른다).
+  assert_eq "alpha beta " "$_uc_got" \
+    "[음성대조·언어집합] 언어가 다른 트리에서도 같은 답을 낸다 — 파생이 트리를 안 읽는다(no-op)"
+}
+sd_universe_negative_control
+sd_subset_of_langs() { # $1=라벨 $2=목록
+  _ss_bad=''
+  for _l in $2; do
+    case " $SD_LANGS " in *" $_l "*) ;; *) _ss_bad="$_ss_bad $_l" ;; esac
+  done
+  assert_eq "" "$_ss_bad" "[언어집합] $1 에 SD_LANGS 에 없는 이름이 있다 —$_ss_bad"
+}
+
 # 코드 축을 파라미터별로 돈다. 결과 기대값은 `SD_EXPECT`에 남긴다(문서 축이 그걸 쓴다).
 sd_code_axis() { # $1=라벨 $2=추출 함수명
   SD_EXPECT=''
@@ -164,6 +238,7 @@ sd_jwks_cap() { # $1=언어 → 상한 리터럴(정규화 전)
 }
 
 SD_CAP_LANGS='go rust php ruby node dotnet python'
+sd_subset_of_langs "SD_CAP_LANGS" "$SD_CAP_LANGS"
 sd_cap_expect=''
 sd_cap_seen=0
 for L in $SD_CAP_LANGS; do
@@ -325,6 +400,7 @@ assert_eq "9" "$_nonce_seen" "[nonce] 훑은 언어 수가 9가 아니다 — �
 # `_seen`이 7이 아니면 표가 낡은 것이다. 언어별 동작은 각 언어 단위테스트가 증명하고, 여기서는
 # **대칭**만 본다 — 한 언어에서 장치를 지우면 그 언어 CI 와 이 가드가 함께 운다.
 SD_BACKOFF_LANGS="python node go dotnet php rust ruby"
+sd_subset_of_langs "SD_BACKOFF_LANGS" "$SD_BACKOFF_LANGS"
 
 sd_backoff_file() {
   case "$1" in
