@@ -13,7 +13,7 @@ module KeycloakSdk
         raise AuthError, "token response has no usable access_token"
       end
 
-      super(access_token: access_token, **rest)
+      super
     end
 
     def self.from_response(body, received_at: Time.now.to_f)
