@@ -10,6 +10,31 @@
 # ⚠️ go가 인증설정은 가장 쉽지만 복구는 가장 약하다 — 옛 순서(쉬운 인증순)는 이 축을 반대로 봤다.
 DEPLOY_LANGS="python dotnet ruby node rust java kotlin go php"
 
+# ── 언어 집합의 트리 파생 ────────────────────────────────────────────────────
+# `DEPLOY_LANGS` 는 손 목록이고, 그 사본 넷(harness/verify.sh · install-verify.sh 의 목록과
+# Usage 주석)은 `test-deploy-facts.sh` 의 `check_langset` 이 이미 이것과 대조한다. 그런데
+# **뿌리 자신이 트리와 대조되지 않았다** — 열 번째 언어가 들어와도 다섯이 서로 정합한 채
+# 조용하다(실측 2026-09-12: `scripts/probe.sh` → `SILENT`).
+#
+# ⚠️ 파생 원천은 **최상위 디렉터리 중 자기 루트에 빌드 매니페스트를 가진 것**이다. 다른 후보
+# (`.claude/rules/*.md` · `harness/apps/*/` · `check-versions.mjs --list`)를 기각한 근거와
+# 이력 전수 오탐 측정(커밋 475 중 281 건에서 불일치 0)은 `test-security-defaults.sh` 의
+# 「언어 집합 축」 주석과 `scripts/measure-lang-universe-fp.sh` 가 소유한다.
+# ⚠️ 정규식에 역슬래시를 쓰지 않고 `[.]` 로 적는다.
+DF_MANIFEST='(pom[.]xml|pyproject[.]toml|package[.]json|go[.]mod|composer[.]json|Cargo[.]toml|build[.]gradle[.]kts|[^/]+[.]gemspec|[^/]+[.]sln)$'
+# ⚠️ `git ls-files`(index 인지)로 본다 — `ls-tree HEAD` 는 **커밋된 것만** 보아 스테이징된 새
+# 언어를 놓친다(실측: `git add -N` 한 열 번째 언어를 못 봤다). 자매 가드
+# `test-security-defaults.sh` 의 언어집합 축과 같은 관용이어야 둘이 같은 순간에 말한다.
+# 작업 트리 나열(`ls`)은 쓰지 않는다 — `bin/`·`build/` 같은 미추적을 집는다.
+df_tree_langs() { # $1=저장소 루트(생략하면 현재 디렉터리)
+  _dfu_root="${1:-.}"
+  ( cd "$_dfu_root" && git ls-files ) 2>/dev/null \
+    | sed -n 's#^\([^/]*\)/.*#\1#p' | sort -u | while read -r _dfu_d; do
+    if ( cd "$_dfu_root" && git ls-files "$_dfu_d/" ) 2>/dev/null \
+      | grep -qE "^$_dfu_d/$DF_MANIFEST"; then printf '%s\n' "$_dfu_d"; fi
+  done | sort | tr '\n' ' '
+}
+
 # 첫 게시(RC 포함)를 실제로 마친 언어. **문서가 게시 현황을 말할 때의 유일 원천이다.**
 #
 # 왜 SSOT가 필요한가: 이 사실은 매니페스트 같은 기계가독 원천이 없어 손으로 N곳에 복제돼 있었고,
