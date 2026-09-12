@@ -24,6 +24,7 @@ from keycloak import KeycloakOpenID
 from keycloak.exceptions import KeycloakError
 
 from .._internal.backoff import JwksFailureBackoff
+from .._internal.jwks_fetch import afetch_jwks
 from .._internal.jwt import JwtValidator
 from .._internal.redirects import harden_openid
 from ..auth import AuthorizationUrl, _generate_pkce_pair
@@ -247,7 +248,9 @@ class AsyncAuthClient:
                     f"consecutive failures (retry in {remaining:.2f}s)"
                 )
             try:
-                certs = await self._awrap(self._openid.a_certs())
+                # 상류 `a_certs()` 와 달리 이 경로는 바이트 상한을 건다
+                # (`_internal/jwks_fetch.py`). sync 미러와 **같은 모듈**을 쓴다.
+                certs = await self._afetch_jwks()
                 certs_typed = cast(KeySetSerialization, cast(Any, certs))
                 # ⚠️ sync 미러와 동일 — 기형 JWKS에서 joserfc는 joserfc 타입도 아닌 stdlib
                 # `binascii.Error`를 던진다. 그대로 두면 `keycloak_sdk.exceptions`를 잡는
@@ -263,6 +266,20 @@ class AsyncAuthClient:
                 raise
             self._jwks_backoff.record_success()
         return self._jwks_cache
+
+    async def _afetch_jwks(self) -> dict[str, Any]:
+        """httpx 클라이언트로 JWKS 를 상한 안에서 가져온다.
+
+        ⚠️ **sync 미러와 세션이 다르다** — 그쪽은 `connection._s`(requests), 여기는
+        `connection.async_s`(httpx)다. 리다이렉트 방어도 갈린다(그쪽은 훅, 여기는 httpx
+        기본값)이라 `jwks_fetch.afetch_jwks` 가 `follow_redirects=False` 를 명시한다.
+        """
+        conn = self._openid.connection
+        return await afetch_jwks(
+            conn.async_s,
+            self._endpoints.jwks,
+            timeout=getattr(conn, "timeout", None),
+        )
 
     async def aclose(self) -> None:
         """하위 `KeycloakOpenID`의 async httpx 클라이언트(및 sync 세션)를 닫는다.

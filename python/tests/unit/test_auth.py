@@ -696,12 +696,12 @@ def test_signature_forgery_does_not_refetch_jwks():
     assert openid.certs.call_count == 1  # 재조회 없음(서명 위조는 TokenKeyError가 아님)
 
 
-def test_forced_jwks_refetch_is_rate_limited():
+def test_forced_jwks_refetch_is_rate_limited(jwks):
     """kid를 무작위로 바꾼 위조 토큰이 연속 도착해도 강제 재조회는 rate-limit되어
-    certs() 호출이 상한(최초 로드 1 + 최초 강제 재조회 1 = 2)을 넘지 않는다."""
+    JWKS fetch 가 상한(최초 로드 1 + 최초 강제 재조회 1 = 2)을 넘지 않는다."""
     cached_key = RSAKey.generate_key(2048, {"kid": "cached", "use": "sig"})
     openid = MagicMock(spec=KeycloakOpenID)
-    openid.certs.return_value = {"keys": [cached_key.as_dict(private=False)]}  # 항상 'cached'만
+    jwks.return_value = {"keys": [cached_key.as_dict(private=False)]}  # 항상 'cached'만
     config = _config()
     endpoints = OidcEndpoints.for_realm(config)
     client = _client(openid, config=config)
@@ -721,7 +721,7 @@ def test_forced_jwks_refetch_is_rate_limited():
             client.validate(tok)
 
     # tok1이 1회 강제 재조회, tok2의 강제 재조회는 rate-limit되어 발생하지 않음
-    assert openid.certs.call_count == 2
+    assert jwks.call_count == 2
 
 
 def test_close_closes_underlying_requests_session():
