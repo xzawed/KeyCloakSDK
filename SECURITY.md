@@ -36,7 +36,18 @@ not limited to:
   optional on all nine — omit it and id_token validation is skipped (custom
   no-nonce flows). State is returned to the caller on all nine (the SDK is
   stateless; the caller compares it).
-- **Secret handling** — client-secret masking in logs/serialization.
+- **Secret handling** — client-secret and token masking in the default string /
+  debug representation of every value type, on all nine languages. Some
+  languages additionally mask named dump APIs (PHP `var_dump`/`print_r` via
+  `__debugInfo`, Go `%#v` via `GoStringer`, Ruby `pp` via `pretty_print`).
+  ⚠️ **This is defence in depth against accidental logging, not a
+  confidentiality boundary.** The raw value is still reachable through public
+  fields/getters, reflection, and language dump paths that offer no library-side
+  hook — measured examples: Python `dataclasses.asdict`, Node object spread
+  (`{...tokenSet}`), .NET Serilog destructuring (`{@TokenSet}`), PHP
+  `var_export`, Java/Kotlin Jackson or Gson serialization of getters. Masked
+  JSON hooks are **dump-only**: they must not be used as round-trip
+  serialization, because they persist `***`.
 - **Transport** — TLS verification on by default, timeouts, SSRF hardening (no
   automatic redirect following where applicable).
 

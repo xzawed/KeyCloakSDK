@@ -38,6 +38,12 @@ func (t TokenSet) String() string {
 		t.TokenType, t.ExpiresIn, mask(t.AccessToken), mask(t.RefreshToken))
 }
 
+// GoString 은 `%#v` 의 훅이다(`GoStringer`). ⚠️ `%#v` 는 `Stringer` 를 **쓰지 않고** Go 문법
+// 표현을 만들어 필드를 직접 찍으므로, 위 `String()` 의 마스킹이 닿지 않는다(실측 2026-09-12).
+// ⚠️ 이 훅은 `%#v` **만** 바꾼다 — `%v`·`%+v`·`%s` 는 그대로 `String()` 을 탄다(대조군이 고정).
+// ⚠️ `json.Marshal` 은 별개 경로이고 여기서 막지 않는다(왕복이라 `***` 저장이 더 나쁘다).
+func (t TokenSet) GoString() string { return t.String() }
+
 // LogValue 는 `log/slog` 의 마스킹 훅이다. JSONHandler 는 Stringer 를 타지 않고 리플렉션으로
 // 필드를 직렬화하므로 String() 만으로는 구조화 로그가 원문을 낸다(실측 확인).
 //
@@ -111,5 +117,11 @@ func (a AuthorizationRequest) String() string {
 	return fmt.Sprintf("AuthorizationRequest{URL:%q, State:%q, Nonce:%q, CodeVerifier:%s}",
 		a.URL, a.State, a.Nonce, mask(a.CodeVerifier))
 }
+
+// GoString 은 `%#v` 의 훅이다(`GoStringer`). ⚠️ `%#v` 는 `Stringer` 를 **쓰지 않고** Go 문법
+// 표현을 만들어 필드를 직접 찍으므로, 위 `String()` 의 마스킹이 닿지 않는다(실측 2026-09-12).
+// ⚠️ 이 훅은 `%#v` **만** 바꾼다 — `%v`·`%+v`·`%s` 는 그대로 `String()` 을 탄다(대조군이 고정).
+// ⚠️ `json.Marshal` 은 별개 경로이고 여기서 막지 않는다(왕복이라 `***` 저장이 더 나쁘다).
+func (a AuthorizationRequest) GoString() string { return a.String() }
 
 func (a AuthorizationRequest) LogValue() slog.Value { return slog.StringValue(a.String()) }
