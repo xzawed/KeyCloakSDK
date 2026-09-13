@@ -104,4 +104,33 @@ class KeycloakConfigTest {
     assertEquals(Duration.ofSeconds(15), c.getReadTimeout());
     assertEquals(Duration.ofSeconds(60), c.getClockSkew());
   }
+
+  // ── toString 검열 ──────────────────────────────────────────────────────────
+  // ⚠️ 이 타입들은 **생략으로 안전**하다 — toString 을 선언하지 않아 `Object.toString()` 이
+  // `클래스@해시` 만 찍는다. 그 안전 근거는 **선언의 부재**라서, 누가 toString 을 손으로 쓰거나
+  // record 로 바꾸면 조용히 사라진다.
+  //
+  // ⚠️ **모양(record 인가)이 아니라 행위(비밀이 찍히는가)를 단언한다.** 모양 단언은 대리지표라
+  // 틀린 양쪽을 만든다 — 실측(JDK 21, 2026-09-13):
+  //   · `record R(char[] s)` 는 `Arrays.toString` 이 아니라 **배열 identity**(`[C@7c41…`)를 찍는다
+  //     → char[] 비밀을 가진 타입은 record 가 돼도 **안 샌다**(모양 단언은 거짓 양성)
+  //   · `record R(String s)` 는 **원문을 찍는다** → 이쪽만 진짜 위험
+  //   · 마스킹 toString 을 가진 타입을 담은 record 도 **안 샌다**(TokenSet 보유 타입들)
+  // 행위 단언은 그 셋을 자동으로 옳게 가른다. 게다가 「record + 마스킹 toString」이라는
+  // **정당한 해법**을 모양 단언은 막지만 행위 단언은 통과시킨다.
+  @Test void toString_doesNotLeakClientSecret() {
+    KeycloakConfig c = KeycloakConfig.builder()
+        .serverUrl("https://kc").realm("r").clientId("app")
+        .clientSecret("SECRET-CENSUS".toCharArray()).build();
+    assertFalse(String.valueOf(c).contains("SECRET-CENSUS"),
+        "KeycloakConfig 의 기본 문자열 표현이 clientSecret 을 원문으로 찍는다");
+  }
+
+  @Test void builderToString_doesNotLeakClientSecret() {
+    KeycloakConfig.Builder b = KeycloakConfig.builder()
+        .serverUrl("https://kc").realm("r").clientId("app")
+        .clientSecret("SECRET-CENSUS".toCharArray());
+    assertFalse(String.valueOf(b).contains("SECRET-CENSUS"),
+        "Builder 의 기본 문자열 표현이 clientSecret 을 원문으로 찍는다(가변이라 record 는 안 되지만 손으로 쓴 toString 은 가능하다)");
+  }
 }
