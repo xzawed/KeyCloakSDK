@@ -37,7 +37,9 @@ chmod +x "$SANDBOX/scripts/probe.sh"
 #    그러면 「INVALID 을 못 낸다」와 「함수가 죽었다」가 구분되지 않는다.
 code_of() {
   set +e
-  ( cd "$SANDBOX" && sh scripts/probe.sh "$@" ) >/dev/null 2>&1
+  # ⚠️ 기존 케이스는 **자리 선언을 쓰지 않는다** — 이 자가테스트가 겨누는 것은 세 결과를
+  # 가르는 능력이지 자리 검사가 아니다. 자리 검사는 아래 전용 케이스가 따로 본다.
+  ( cd "$SANDBOX" && sh scripts/probe.sh --no-site "$@" ) >/dev/null 2>&1
   _c=$?
   set -e
   echo "$_c"
@@ -94,4 +96,39 @@ assert_eq "0" "$(code_of "sed -i s/hello/bye/ f.txt" grep -q hello f.txt)" \
 assert_eq "hello" "$(cat "$SANDBOX/f.txt")" "러너가 본 트리의 파일을 바꿨다"
 assert_eq "" "$(cd "$SANDBOX" && git status --porcelain)" "러너가 본 트리를 더럽혔다"
 
+
+# ── 선언한 자리 검사 ────────────────────────────────────────────────────────
+# ⚠️ **이 러너가 못 잡던 마지막 부류다**: 변이가 **착지했는데 다른 것이 됐고**, 엉뚱한 단언에
+# 걸려 `CAUGHT` 으로 기록된 사고 둘(2026-09-12). 「diff 를 눈으로 본다」는 첫 단계에 대한
+# 희망이지 두 번째 단계가 아니었다.
+code_site() {
+  # ⚠️ 위치인자를 고정하지 말 것 — 검사 명령의 인자 수는 호출마다 다르다.
+  # 고정했다가 `f.txt` 가 잘려 `grep` 이 **stdin 을 기다리며 멈췄다**(실측).
+  _site="$1"; _mut="$2"; shift 2
+  set +e
+  ( cd "$SANDBOX" && sh scripts/probe.sh --site "$_site" "$_mut" "$@" ) >/dev/null 2>&1 </dev/null
+  _c=$?
+  set -e
+  echo "$_c"
+}
+
+# 선언한 자리를 실제로 친 변이 → 정상 판정(CAUGHT).
+assert_eq "0" "$(code_site "bye" "sed -i s/hello/bye/ f.txt" grep -q hello f.txt)" \
+  "선언한 자리를 담은 변이는 그대로 판정된다"
+
+# ⚠️ 대조군 — 변이는 **착지했지만** 선언한 자리를 안 담았다 → INVALID(2).
+# 이것이 없으면 `--site` 는 「아무 값이나 받는 장식」이 된다.
+assert_eq "2" "$(code_site "NOT-IN-THE-DIFF" "sed -i s/hello/bye/ f.txt" grep -q hello f.txt)" \
+  "착지했어도 선언한 자리를 안 담으면 INVALID — 그 CAUGHT 은 다른 변이에 대한 답이다"
+
+# ⚠️ 대조군 — 선언 패턴이 **문맥 줄**에만 있으면 통과하면 안 된다(실측: 첫 구현이 그랬다).
+# f.txt 는 'hello' 를 담고, 변이는 그것을 'bye' 로 바꾼다. 'world' 는 바뀌지 않는 줄에만 있다.
+printf 'hello\nworld\n' > "$SANDBOX/f2.txt"
+( cd "$SANDBOX" && git add f2.txt && git -c user.email=t@t -c user.name=t commit -qm f2 ) >/dev/null 2>&1
+assert_eq "2" "$(code_site "world" "sed -i s/hello/bye/ f2.txt" grep -q hello f2.txt)" \
+  "문맥 줄에만 있는 패턴은 「쳤다」가 아니다 — 추가/삭제 줄만 본다"
+
+# 인자를 안 주면 아예 돌지 않는다(생략을 기본값으로 두면 아무도 안 쓴다).
+_noarg() { set +e; ( cd "$SANDBOX" && sh scripts/probe.sh "sed -i s/hello/bye/ f.txt" true ) >/dev/null 2>&1; _c=$?; set -e; echo "$_c"; }
+assert_eq "2" "$(_noarg)" "--site/--no-site 를 안 주면 거부한다"
 assert_report
