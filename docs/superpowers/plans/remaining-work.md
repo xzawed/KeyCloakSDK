@@ -15,12 +15,12 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **179** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · 후속 분할 신규 4 · **H1 파생 신규 1** · 하네스 신규 1) — 열림 **116** · 닫힘 **63** (2026-09-12 8차 재측정) |
+| 작업 패키지 | **181** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · 후속 분할 신규 4 · **H1 파생 신규 1** · 하네스 신규 1 · 프로세스감사 신규 2) — 열림 **117** · 닫힘 **64** (2026-09-12 9차 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `179`(2026-09-12 8차 기준 열림 116 · 닫힘 63)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `181`(2026-09-12 9차 기준 열림 117 · 닫힘 64)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -604,6 +604,12 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 - [x] `H1-conformance-authz-vacuous` **[M/M · 닫힘 2026-09-12 · 범위 확대]** ⚠️ **공허가 하나가 아니라 셋이었다.** 요청↔응답 미대조 외에 `/code_challenge=/` 가 **빈 값**을 통과시켰고, URL 의 `state` 와 돌려준 `state` 를 **존재만 따로** 보고 대조하지 않았다. 판정을 `harness/conformance/authz-url.mjs` 로 뽑아 **Docker 없이** 픽스처로 재게 했다(그 판정이 오래 공허했던 이유가 「시험할 수 없다」였다). 가드 `scripts/test/test-conformance-authz-url.sh`(픽스처 8종, `doc-facts` 배선). 변이 6/6 `CAUGHT` + OFF 짝 3/3. ⚠️ **프로브가 구멍 하나를 실제로 찾았다** — 모듈을 부르되 `v.ok` 를 버리면 침묵했다(같은 PR 에서 닫음). ⚠️ 파생 신규: `authz-redirect-uri-not-per-call`(php·rust).
 - [x] `H3-harness-image-and-lock-pins` **[M/S · 닫힘 2026-09-12 · 범위 정정]** ⚠️ **「세 자리」가 아니라 한 파일의 두 결함이었고, 그중 하나는 거짓 초록이었다.** (1) `security-audit.yml:277` 이 `cargo audit -f harness/apps/rust/Cargo.lock` 으로 감사하는 그 락을 `harness/apps/rust/Dockerfile` 은 **COPY 하지 않았다** — 게다가 락이 `keycloak-sdk` **0.1.0** 을 고정한 채였고 매니페스트는 **1.0.0** 이다(4ed3298, 2026-08-30). 락은 2026-08-01 이후 안 움직였으므로 야간 감사는 **1.0 이전 그래프**를 6주째 감사하며 초록을 냈다. (2) `FROM rust:alpine` 은 하네스 아홉 앱 중 **유일한 무버전 태그**였다(install 경로 둘은 이미 `rust:1.88-alpine`). ⚠️ **install 경로의 락 처리는 결함이 아니다** — consume 은 registry 의존으로 재기입하고 publish 는 클로저 미러링용으로 `generate-lockfile` 하는 것이 설계다(주석이 그렇게 적는다). 부류 재스캔: `git ls-files harness/apps | grep -Ei 'lock|\.sum$'` → **1건** · `cargo audit -f` 전수 → **1건** · 무버전 `FROM` 전수(9앱) → **1건**. 형제 언어에 같은 결함 없음. ⚠️ **락 재생성에 MSRV 인지 해석이 필요했다** — cargo 가 `Locking 253 packages to latest Rust 1.88 compatible versions` 로 reqwest 0.13·matchit 0.8.6 을 눌렀다. edition 2021 은 resolver v2 라 기본이 아니고, 플래그 없이 재생성했으면 `--locked` 빌드가 1.88 에서 깨졌다(`scripts/regen-harness-rust-lock.sh` 가 소유). **Docker 실빌드로 확인**(107s, `rust:1.88-alpine` + `--locked`). 변이 6/6 `CAUGHT` + OFF 짝 6/6 `SILENT`.
+- [x] `ruby-token-provider-inspect-leaks-token` **[M/S · 닫힘 2026-09-12 · 실행 재현]** ⚠️ **가드 부재가 아니라 실제 노출이었다.** `ClientCredentialsTokenProvider` 의 기본 `inspect` 가 캐시된 **액세스 토큰을 원문으로** 찍었다 — `@cached` 가 `ts.access_token`(원시 String)이라 `TokenSet#inspect` 의 마스킹이 닿지 않는다. 형제인 `Config`·`TokenSet` 은 `inspect` 재정의가 있는데 **이 타입만 없던** 불일치다. **실행으로 재현**했다(읽기 아님): `p provider` → `@cached="AT-CENSUS-TOKEN-…"`. 고친 뒤 재측정 → `cached="***"`. ⚠️ 캐시 **유무는 남긴다**(빈 캐시에 `***` 를 찍으면 「토큰이 있다」는 거짓 신호다 — 대조군 spec 이 고정). ruby 123/123 · 커버리지 99.61/96.72 · rubocop 청정 · 변이 `CAUGHT`(수정 전 상태로 되돌리는 변이). ⚠️ **아홉 전수는 실행으로 갈랐다** — node 는 안전(`#cached` 비노출 실측) · python 은 공개 캐싱 provider 없음 · java·kotlin·dotnet·rust 는 기본 표현이 필드를 안 찍음 · go 는 provider 가 미노출 타입.
+- [ ] `php-var-dump-bypasses-all-masking` **[M/M · 신규 2026-09-12 · 사람 판정 선행]** php 의 `var_dump`/`print_r` 이 **모든 비밀 보유 타입의 마스킹을 우회**한다 · `php/src/ClientCredentialsTokenProvider.php:18`
+  - 실측(실행): `var_dump($provider)` 가 캐시된 액세스 토큰 **과** 중첩 config 의 `clientSecret` 을 **둘 다 원문**으로 찍는다. `__toString`·`jsonSerialize` 는 정상 마스킹한다 — 우회되는 것은 그 둘이 아니라 **덤프 계열**이다.
+  - ⚠️ **provider 만의 문제가 아니다** — `grep -rln __debugInfo php/src/` → **0건**. 즉 `TokenSet`·`KeycloakConfig`·`AuthorizationRequest` 전부 같은 상태다. provider 하나만 고치면 비대칭이 된다.
+  - ⚠️ **이것은 「축의 바닥을 넓히는가」 판정이다.** 1c/1d 와 `test-config-masking.sh` 가 정한 바닥은 **기본 문자열/디버그 표현**이고, `var_dump` 는 그 밖이다. 같은 계급의 바닥 밖 경로가 다른 언어에도 있다 — python `asdict` · go `%#v`/`json.Marshal` · .NET Serilog `{@}`. **한 언어만 넓히면 아홉의 계약이 갈린다.**
+  - 되살릴 조건: 사람이 「바닥을 덤프 계열까지 넓힌다」를 판정하면, php 는 `__debugInfo()` 를 **비밀 보유 타입 전부**에 넣고 나머지 여덟의 대응 훅을 같은 PR 에서 함께 정한다.
 - [ ] `harness-orphan-container-reads-as-build-failure` **[L/S · 신규 2026-09-12]** 중단된 하네스 런이 남긴 컨테이너가 다음 런을 막는데, 신호가 **원인을 잘못 가리킨다** · `harness/verify.sh:30`
   - 실측: `docker compose --profile apps up -d --build app-rust` 가 `Conflict. The container name "/harness-app-rust-1" is already in use` 로 실패하면 `verify.sh` 는 `{"lang":"rust","error":"build/up failed"}` 를 쓴다. 그런데 **빌드는 성공했다**(로그에 `#25 CACHED` · `Image harness-app-rust Built`). 「빌드 실패」로 읽고 코드를 뒤지게 된다 — 실제로 이 세션이 그렇게 한 번 헛돌았다.
   - 되살릴 조건이 아니라 처방이 분명하다: `up` 앞에 `--remove-orphans` 를 붙이거나, 실패 시 `docker compose ps` 를 신호에 함께 남겨 **원인과 증상을 가른다**.

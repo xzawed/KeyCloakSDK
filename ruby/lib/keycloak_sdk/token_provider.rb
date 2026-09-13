@@ -20,6 +20,17 @@ module KeycloakSdk
       @expires_at = 0.0
     end
 
+    # ⚠️ 기본 `inspect` 는 인스턴스 변수를 전부 찍는데, 이 클래스는 **원시 액세스 토큰 문자열**을
+    # `@cached` 에 들고 있다(`ts.access_token` — TokenSet 이 아니라서 `TokenSet#inspect` 가 안 탄다).
+    # 실측(2026-09-12): 재정의 전 `p provider` 가 `@cached="AT-CENSUS-TOKEN-…"` 를 원문으로 찍었다.
+    # `Config`·`TokenSet` 은 재정의가 있는데 이 타입만 없어 생긴 **형제 간 불일치**였다.
+    # ⚠️ 캐시 유무는 남긴다 — 빈 캐시에 `***` 를 찍으면 「토큰이 있다」는 거짓 신호가 된다.
+    def inspect
+      "#<KeycloakSdk::ClientCredentialsTokenProvider config=#{@config.inspect} " \
+        "cached=#{@cached ? '"***"' : 'nil'} expires_at=#{@expires_at.inspect}>"
+    end
+    alias to_s inspect
+
     def access_token
       @mutex.synchronize do
         now = Time.now.to_f
