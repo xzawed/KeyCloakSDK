@@ -894,6 +894,37 @@ sd_owner_axis ".claude/rules/security.md" 'is the same invariant and is likewise
 #
 # ⚠️ 라이브 루트가 여전히 기대값을 낸다는 **양성 대조**를 함께 둔다 — 없으면 「추출기가 늘 빈
 # 문자열을 낸다」와 구분되지 않는다.
+
+# ⚠️ **음성 대조군 — 문서 축이 값을 실제로 대조하는가.** 위 `sd_doc_axis` 는 「지금 문서가 맞다」만
+# 본다. 그 형태는 **비교가 no-op 이어도 통과한다** — 실측(2026-09-13, `scripts/probe.sh`):
+# `_bad=""` 로 비교를 무력화하니 **SILENT** 였다(하한은 **히트 수**만 세므로 통과한다).
+# #459 가 코드 축에 세운 것과 같은 모양을, 이 항목이 「다음 조각」으로 지목한 문서 축에 세운다.
+#
+# ⚠️ 트리 전체를 복사하지 않는다 — 값을 바꾼 **문서 하나**만 같은 상대경로로 TMP 에 놓는다
+# (required 체크 안이라 실패할 자리를 늘리지 않는다).
+sd_doc_negative_control() { # $1=라벨 $2=상대경로 $3=sed표현식 $4=기대값(바뀐 값)
+  _dnc_tmp="$(mktemp -d)"
+  mkdir -p "$_dnc_tmp/$(dirname "$2")"
+  sed "$3" "$ROOT/$2" > "$_dnc_tmp/$2"
+  # 그 파일 하나만 훑어 「기본값을 말하는 줄」을 뽑고, 그것이 **바뀐 값**을 말하는지 본다.
+  _dnc_lines="$(grep -inE 'jwks[_ ]?min[_ ]?refetch|재조회|refetch' "$_dnc_tmp/$2" 2>/dev/null \
+    | grep -iE '(기본|default)[^0-9]{0,6}[0-9]' || true)"
+  _dnc_hit=1
+  printf '%s\n' "$_dnc_lines" | grep -qE "(^|[^0-9])$4([^0-9]|\$)" && _dnc_hit=0
+  rm -rf "$_dnc_tmp"
+  assert_eq "ok" "$(ok_if "$_dnc_hit" "NOT-SEEN:$4")" \
+    "[음성대조·문서축] $1: 값을 $4 로 바꾼 사본에서 그 값을 못 읽었다 — 탐지 패턴이 문서를 안 읽거나 낡았다"
+}
+
+# ⚠️ **양성 대조도 함께** — 「늘 뭔가 찾는다」와 구분한다. 라이브 문서는 코드값을 말해야 한다.
+sd_doc_positive_control() { # $1=상대경로 $2=기대값
+  _dpc_lines="$(grep -inE 'jwks[_ ]?min[_ ]?refetch|재조회|refetch' "$ROOT/$1" 2>/dev/null \
+    | grep -iE '(기본|default)[^0-9]{0,6}[0-9]' || true)"
+  _dpc_hit=1
+  printf '%s\n' "$_dpc_lines" | grep -qE "(^|[^0-9])$2([^0-9]|\$)" && _dpc_hit=0
+  assert_eq "ok" "$(ok_if "$_dpc_hit" "NOT-SEEN:$2")" \
+    "[음성대조·문서축·양성] 라이브 $1 이 코드값 $2 를 말하지 않는다"
+}
 sd_negative_control() { # $1=라벨 $2=추출함수 $3=언어 $4=상대경로 $5=sed표현식 $6=기대(바뀐값)
   _nc_tmp="$(mktemp -d)"
   mkdir -p "$_nc_tmp/$(dirname "$4")"
@@ -915,6 +946,11 @@ sd_negative_control "clock skew" sd_skew python \
 
 # 양성 대조 — 라이브 루트는 여전히 못박힌 값을 낸다(위가 「늘 다른 값을 낸다」가 아님을 보인다).
 assert_eq "$sd_expect" "$(sd_norm "$(sd_default java)")" "[음성대조·양성] 라이브 java JWKS 값이 바뀌었다"
+
+# 문서 축 음성 대조군 — go README 의 30 을 47 로 바꾼 사본에서 탐지가 47 을 읽어야 한다.
+sd_doc_negative_control 'JWKS 재조회(문서)' 'go/README.md' 's/(default 30s)/(default 47s)/' 47
+# 양성 대조 — 라이브 문서는 코드값을 말한다(위가 「늘 뭔가 찾는다」가 아님을 보인다).
+sd_doc_positive_control 'go/README.md' "$sd_expect"
 assert_eq "$sd_skew_expect" "$(sd_norm "$(sd_skew python)")" "[음성대조·양성] 라이브 python skew 값이 바뀌었다"
 
 # ---------------------------------------------------------------------------
