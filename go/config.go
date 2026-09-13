@@ -166,6 +166,12 @@ func (c Config) String() string {
 		c.ServerURL, c.Realm, c.ClientID, mask(c.ClientSecret), c.Scopes)
 }
 
+// GoString 은 `%#v` 의 훅이다(`GoStringer`). ⚠️ `%#v` 는 `Stringer` 를 **쓰지 않고** Go 문법
+// 표현을 만들어 필드를 직접 찍으므로, 위 `String()` 의 마스킹이 닿지 않는다(실측 2026-09-12).
+// ⚠️ 이 훅은 `%#v` **만** 바꾼다 — `%v`·`%+v`·`%s` 는 그대로 `String()` 을 탄다(대조군이 고정).
+// ⚠️ `json.Marshal` 은 별개 경로이고 여기서 막지 않는다(왕복이라 `***` 저장이 더 나쁘다).
+func (c Config) GoString() string { return c.String() }
+
 // LogValue is the `log/slog` masking hook — JSONHandler serialises fields by reflection and
 // never reaches String(), so without this a structured log writes the client secret verbatim.
 func (c Config) LogValue() slog.Value { return slog.StringValue(c.String()) }
