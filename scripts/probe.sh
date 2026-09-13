@@ -20,15 +20,44 @@
 #   2 = INVALID 프로브가 성립하지 않았다(더러운 트리 · 빨간 기준선 · 변이 미적용)
 #
 # 사용:
-#   scripts/probe.sh '<변이 명령>' <검사 명령...>
+#   scripts/probe.sh --site '<의도한 자리 패턴>' '<변이 명령>' <검사 명령...>
+#   scripts/probe.sh --no-site                  '<변이 명령>' <검사 명령...>
 # 예:
-#   scripts/probe.sh "sed -i 's/ kotlin//' harness/verify.sh" sh scripts/test/test-deploy-facts.sh
+#   scripts/probe.sh --site "SD_LANGS='java" "sed -i ... " sh scripts/test/test-deploy-facts.sh
+#
+# ⚠️ **`--site` 는 「변이가 의도한 자리를 쳤는가」를 기계가 거부하게 만든다.** 이것이 없을 때
+# 무슨 일이 났는지는 실측돼 있다(2026-09-12): perl 이 치환문의 `$SD_LANGS` 를 **자기 변수로**
+# 보간해 변이가 「상수 반환」이 아니라 「빈 문자열 반환」이 됐는데, 변이는 **착지했고** 가드가
+# 그 빈 값을 잡아 `CAUGHT` 이 났다 — 의도한 변이는 한 번도 시험되지 않은 채 성공으로 기록됐다.
+# 두 번째 시도는 perl 문법(`q{}`)을 셸 파일에 그대로 써 넣고 또 `CAUGHT` 이었다.
+# 「diff 를 눈으로 본다」는 **첫 단계에 대한 희망**이지 두 번째 단계가 아니다.
+#
+# ⚠️ 둘 중 하나는 **반드시** 줘야 한다. 생략을 기본값으로 두면 아무도 안 쓴다 —
+# `--no-site` 는 「이번엔 안 본다」를 **보이는 선택**으로 만든다(경고를 찍는다).
 #
 # 변이 명령과 검사 명령은 **워크트리 안에서** 돈다. 본 트리는 손대지 않는다.
 set -eu
 
+SITE=''
+SITE_MODE=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --site)    [ "$#" -ge 2 ] || { echo "usage: --site 에 패턴이 없다" >&2; exit 2; }
+               SITE="$2"; SITE_MODE=declared; shift 2 ;;
+    --no-site) SITE_MODE=waived; shift ;;
+    *)         break ;;
+  esac
+done
+
+if [ -z "$SITE_MODE" ]; then
+  echo "usage: $0 --site '<의도한 자리 패턴>' | --no-site   '<변이 명령>' <검사 명령...>" >&2
+  echo "  ⚠️ 의도한 자리를 선언하거나, 안 보겠다고 명시하라 — 둘 다 안 하면 돌지 않는다." >&2
+  echo "     (근거: 변이가 착지했지만 **다른 것이 된** 채 CAUGHT 으로 기록된 사고 2건, 2026-09-12)" >&2
+  exit 2
+fi
+
 if [ "$#" -lt 2 ]; then
-  echo "usage: $0 '<mutation command>' <check command...>" >&2
+  echo "usage: $0 [--site <pattern>|--no-site] '<mutation command>' <check command...>" >&2
   exit 2
 fi
 
@@ -72,6 +101,26 @@ fi
 CHANGED="$(cd "$WT" && { git diff --name-only; git ls-files --others --exclude-standard; })"
 if [ -z "$CHANGED" ]; then
   fail_invalid "변이가 트리의 **내용**을 바꾸지 않았다(줄끝만 바뀐 것은 변경으로 세지 않는다) — 이스케이프·패턴을 의심하라. 이것을 '가드가 침묵했다'로 읽으면 거짓 구멍이 된다."
+fi
+# ⚠️ **선언한 자리를 실제로 쳤는가** — 착지(파일이 바뀜)와 의미(의도한 것이 됨)는 다르다.
+# 여기서 거부하지 않으면, 다른 것이 된 변이가 엉뚱한 단언에 걸려 `CAUGHT` 으로 기록된다.
+if [ "$SITE_MODE" = declared ]; then
+  # ⚠️ **추가/삭제된 줄만 본다.** 문맥 줄까지 보면 「근처에 있었다」가 「쳤다」로 통과한다 —
+  # 실측(이 커밋을 만들다가): 선언 패턴이 diff 문맥에 있어 거짓 통과했다. `+++`/`---` 헤더는 뺀다.
+  _diff="$( (cd "$WT" && git diff -- .) | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' )"
+  # 신규 파일은 diff 에 안 나오므로 본문을 더한다(그래야 「새 파일에 심는 변이」도 선언할 수 있다).
+  for _nf in $( (cd "$WT" && git ls-files --others --exclude-standard) 2>/dev/null); do
+    _diff="$_diff
+$(cat "$WT/$_nf" 2>/dev/null || true)"
+  done
+  if ! printf '%s' "$_diff" | grep -qF -- "$SITE"; then
+    fail_invalid "변이가 착지했지만 **선언한 자리를 담지 않는다**: [$SITE]
+  변이는 파일을 바꿨으나 의도한 것이 되지 않았다(이스케이프·정규식·인터프리터를 의심하라).
+  이 상태의 CAUGHT/SILENT 는 **다른 변이에 대한 답**이므로 판정하지 않는다."
+  fi
+  echo "선언한 자리 확인: [$SITE] ✓"
+else
+  echo "⚠️ --no-site — 변이가 의도한 것이 됐는지 **기계가 안 봤다**. 아래 diff 를 직접 읽어라."
 fi
 echo "변이가 바꾼 파일:"
 printf '%s\n' "$CHANGED" | sed 's/^/  /'
