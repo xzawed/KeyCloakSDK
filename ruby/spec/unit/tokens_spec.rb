@@ -94,4 +94,29 @@ RSpec.describe KeycloakSdk do
       expect(s).to include("n-public")
     end
   end
+
+  # ⚠️ `pp`/`pretty_inspect` 는 `inspect` 와 **같은 계급의 표시 경로**다. 그런데 `Data` 타입은
+  # PP 가 멤버를 직접 찍어 `inspect` 재정의를 **건너뛴다**(실측 2026-09-12: `ts.pretty_inspect`
+  # 가 access_token 원문을 찍었다. 일반 클래스인 `Config` 는 PP 가 `inspect` 로 폴백해 안전하다).
+  # 즉 이것은 「바닥 밖」이 아니라 **바닥 안의 구멍**이다.
+  describe "pretty-print (pp / pretty_inspect)" do
+    it "TokenSet 이 토큰 셋을 원문으로 찍지 않는다" do
+      ts = KeycloakSdk::TokenSet.new(access_token: "RAW-AT", token_type: "Bearer", expires_in: 60,
+                                     refresh_token: "RAW-RT", id_token: "RAW-ID",
+                                     scope: nil, expires_at: nil)
+      out = ts.pretty_inspect
+      expect(out).not_to include("RAW-AT")
+      expect(out).not_to include("RAW-RT")
+      expect(out).not_to include("RAW-ID")
+      expect(out).to include("***")
+    end
+
+    it "AuthorizationRequest 가 code_verifier 를 원문으로 찍지 않는다" do
+      ar = KeycloakSdk::AuthorizationRequest.new(url: "http://x", state: "s",
+                                                 code_verifier: "RAW-VERIFIER", nonce: "n")
+      out = ar.pretty_inspect
+      expect(out).not_to include("RAW-VERIFIER")
+      expect(out).to include("***")
+    end
+  end
 end

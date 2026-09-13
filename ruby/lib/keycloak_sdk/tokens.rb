@@ -53,6 +53,13 @@ module KeycloakSdk
         "id_token=#{id_token ? '"***"' : 'nil'} scope=#{scope.inspect} expires_at=#{expires_at.inspect}>"
     end
     alias_method :to_s, :inspect
+
+    # ⚠️ `pp`/`pretty_inspect` 는 `inspect` 와 같은 계급의 **표시 경로**인데, `Data` 타입은 PP 가
+    # 멤버를 직접 찍어 위 `inspect` 를 **건너뛴다**(실측: access_token 원문이 나왔다). 일반
+    # 클래스인 `Config` 는 PP 가 `inspect` 로 폴백해 안전하다 — 그래서 `Data` 만 이 훅이 필요하다.
+    def pretty_print(pp)
+      pp.text(inspect)
+    end
   end
 
   # 검증된 access token의 관심 클레임.
@@ -78,5 +85,12 @@ module KeycloakSdk
         "nonce=#{nonce.inspect} code_verifier=\"***\">"
     end
     alias_method :to_s, :inspect
+
+    # ⚠️ `pp`/`pretty_inspect` 는 `inspect` 와 같은 계급의 **표시 경로**인데, `Data` 타입은 PP 가
+    # 멤버를 직접 찍어 위 `inspect` 를 **건너뛴다**(실측: access_token 원문이 나왔다). 일반
+    # 클래스인 `Config` 는 PP 가 `inspect` 로 폴백해 안전하다 — 그래서 `Data` 만 이 훅이 필요하다.
+    def pretty_print(pp)
+      pp.text(inspect)
+    end
   end
 end
