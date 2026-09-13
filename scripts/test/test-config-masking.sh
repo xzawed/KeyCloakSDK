@@ -72,10 +72,21 @@ for L in $_cm_langs; do
   [ "$_e" = 0 ] || continue
 
   if [ "$L" = java ]; then
-    # java 는 훅이 없다. 안전 근거가 「필드를 안 찍는 기본 toString」이므로 그 근거를 겨눈다.
+    # java 는 마스킹 훅이 없다 — 안전 근거가 **선언의 부재**다(`toString` 을 안 써서 `Object`
+    # 의 `클래스@해시`가 나온다). 그래서 여기서는 **모양**을 잠근다.
+    #
+    # ⚠️ **모양 단언의 근거를 정정한다(실측 JDK 21, 2026-09-13).** 예전 문구는 「record 가 되면
+    # 컴파일러 toString 이 clientSecret 을 찍는다」였는데 **거짓이다** — `clientSecret` 은
+    # `char[]` 이고, record 의 toString 은 `Arrays.toString` 이 아니라 **배열 identity**
+    # (`[C@7c41…`)를 찍는다. 즉 record 화만으로는 안 샌다.
+    # ⚠️ 그렇다고 이 단언이 쓸모없지는 않다 — 진짜 위험은 **조합**이다(record + 비밀을 `String`
+    # 으로 바꾸기). 모양 변화가 그 조합의 **보이는 절반**이라 여기서 잠근다.
+    # ⚠️ **행위 자체는 여기서 안 본다** — `KeycloakConfigTest#toString_doesNotLeakClientSecret`
+    # 과 `#builderToString_doesNotLeakClientSecret` 이 언어 로컬에서 본다(프로브 확인: 손으로 쓴
+    # 누출 toString 을 그쪽이 잡는다. 모양 단언은 그것을 **못 잡는다**).
     _r=0; grep -qE 'record[[:space:]]+KeycloakConfig' "$ROOT/$_src" && _r=1
     assert_eq "ok" "$(ok_if "$_r" IS-RECORD)" \
-      "[config-mask] java KeycloakConfig 가 record 다 — 컴파일러 toString 이 clientSecret 을 찍는다. 마스킹 toString 을 손으로 덮거나 final class 로 되돌려라"
+      "[config-mask] java KeycloakConfig 가 record 다 — 지금은 char[] 라 안 새지만, 비밀을 String 으로 바꾸는 순간 컴파일러 toString 이 원문을 찍는다. 마스킹 toString 을 손으로 덮거나 final class 로 되돌려라"
     _c=1; grep -qF -- 'final class KeycloakConfig' "$ROOT/$_src" && _c=0
     assert_eq "ok" "$(ok_if "$_c" MISSING)" \
       "[config-mask] java KeycloakConfig 의 선언 형태가 바뀌었다 — 이 축의 안전 근거가 무너졌는지 다시 판정하라"
