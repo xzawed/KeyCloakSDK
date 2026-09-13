@@ -168,6 +168,8 @@ jobs:
       # 재조회 간격)은 DoS 증폭 상한이라 문서가 틀리면 소비자가 틀린 전제로 자기 rate-limit을
       # 설계한다. 실제로 `ruby/README.ko.md`가 `10.0`(코드는 30)이라고 3배 낮게 알려주고 있었고
       # 리포에 이 불변식을 겨누는 가드는 0건이었다(2026-08-12 문서 감사).
+      - name: 설정 타입 마스킹 축(아홉 언어 · java 는 모양 판정)
+        run: sh scripts/test/test-config-masking.sh
       - name: 보안 기본값 자가테스트(9언어 코드 ↔ 문서 정합)
         run: sh scripts/test/test-security-defaults.sh
 
