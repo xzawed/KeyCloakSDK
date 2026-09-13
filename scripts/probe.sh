@@ -75,11 +75,25 @@ if [ -z "$CHANGED" ]; then
 fi
 echo "변이가 바꾼 파일:"
 printf '%s\n' "$CHANGED" | sed 's/^/  /'
+# ⚠️ **파일명만으로는 부족하다 — 내용을 보여야 한다.** 「맞는 파일에 틀린 내용」이 이 러너의
+# 가장 비싼 사각이었다(실측 2026-09-12): perl 이 치환문의 `$VAR` 를 자기 변수로 보간해 변이가
+# 「상수 반환」이 아니라 「빈 문자열 반환」이 됐고, 다른 한 번은 perl 문법(`q{}`)이 셸 파일에
+# 그대로 들어갔다. **둘 다 `CAUGHT` 로 위장했다** — 파일명은 맞았기 때문이다. diff 를 보면
+# 두 경우 다 한눈에 틀렸다.
+echo "변이 diff:"
+( cd "$WT" && git diff -- . ; git -C "$WT" ls-files --others --exclude-standard \
+  | while read -r _f; do printf '+++ (신규) %s\n' "$_f"; sed 's/^/+/' "$WT/$_f" 2>/dev/null | head -20; done ) \
+  | head -80 | sed 's/^/  /'
 
 # 판정.
-if ( cd "$WT" && "$@" ) >/dev/null 2>&1; then
+# ⚠️ 검사 명령의 출력을 **버리지 않는다.** 「계측기가 죽은 것」과 「가드가 잡은 것」은 종료코드가
+# 같다(실측: 가드 사본을 인자 없이 돌려 ENOENT 로 죽은 것을 `CAUGHT` 으로 읽었다). 잡혔다면
+# **무엇이 잡았는지**가 화면에 있어야 한다.
+_out="$(cd "$WT" && "$@" 2>&1)" && _rc=0 || _rc=$?
+if [ "$_rc" = 0 ]; then
   echo "SILENT — 변이가 적용됐는데 검사 명령이 통과했다(진짜 구멍)."
   exit 1
 fi
-echo "CAUGHT — 검사 명령이 변이를 잡았다."
+echo "CAUGHT — 검사 명령이 변이를 잡았다. 잡은 근거(검사 출력 끝):"
+printf '%s\n' "$_out" | tail -12 | sed 's/^/  /'
 exit 0
