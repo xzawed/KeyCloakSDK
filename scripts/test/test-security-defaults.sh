@@ -881,7 +881,10 @@ sd_owner_axis ".claude/rules/security.md" 'is the same invariant and is likewise
 sd_owner_probe() { # $1=TMP루트 $2=파일 $3=정규식 → 실패가 늘었으면 0
   _op_f="$_A_FAIL"; _op_p="$_A_PASS"; _op_root="$ROOT"
   ROOT="$1"
-  sd_owner_axis "$2" "$3" >/dev/null 2>&1
+  # ⚠️ `|| true` 는 지금은 불필요하다(실측: `assert_*` 는 if/fi 로 끝나 항상 0 을 낸다).
+  # 미래에 `assert_*` 가 비교 결과를 반환하게 되면 `set -e` 가 아래 원복을 건너뛴다 — 독립
+  # 레그가 지목한 자리라 값싼 보험으로 둔다(원복이 새면 계수와 ROOT 가 함께 샌다).
+  sd_owner_axis "$2" "$3" >/dev/null 2>&1 || true
   ROOT="$_op_root"
   _op_grew=1; [ "$_A_FAIL" -gt "$_op_f" ] && _op_grew=0
   _A_FAIL="$_op_f"; _A_PASS="$_op_p"
@@ -899,8 +902,11 @@ sd_owner_value_control() { # $1=파일 $2=정규식 $3=sed표현식
     "[값대조·소유자축] $1: 정책값을 다르게 말하는 사본에서도 축이 통과했다 — 값 비교가 no-op 이다"
 }
 
-# (2) **히트 하한** — 그 줄만 지운 사본. 훑을 줄이 없어 값 비교는 아예 안 돌고(빈 `_lines` 는
-#     `_bad` 를 비운다), 하한만 울 수 있다.
+# (2) **히트 하한** — 그 줄만 지운 사본. ⚠️ **값 단언은 「안 도는」 것이 아니라 「돌지만 침묵」한다**
+#     — 독립 레그가 내 첫 주석을 반박했고 실측이 그쪽을 편들었다: `_lines=""` 이면
+#     `printf` 가 빈 줄 하나를 내고 `grep -v` 가 그것을 고르지만 명령치환이 끝 개행을
+#     깎아 `_bad=""` 가 된다(`_n=0` · `_bad` 길이 0). 결과적으로 **하한만 울 수 있다**는 결론은
+#     같지만, 이유가 다르면 다음 사람이 틀린 모형으로 이 자리를 고친다.
 sd_owner_floor_control() { # $1=파일 $2=정규식
   _ofc_tmp="$(mktemp -d)"; mkdir -p "$_ofc_tmp/$(dirname "$1")"
   grep -vE "$2" "$ROOT/$1" > "$_ofc_tmp/$1" || true
