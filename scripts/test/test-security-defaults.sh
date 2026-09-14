@@ -860,7 +860,12 @@ sd_owner_axis() { # $1=파일 $2=값을 말하는 줄의 정규식
   # 읽히지 않도록 — 위 문서 축이 같은 이유로 겪은 부류다).
   _lines="$(grep -E "$2" "$_f" || true)"
   _n="$(printf '%s\n' "$_lines" | grep -c . || true)"
-  assert_ok test "$_n" -ge 1
+  # ⚠️ **메시지 없는 `assert_ok` 는 실패해도 무엇이 틀렸는지 안 알려준다** — 실측(2026-09-14):
+  # 하한을 `-ge 2` 로 올린 변이가 낸 전부가 `FAIL expected success: test 1 -ge 2` 세 줄이었고,
+  # **어느 파일인지 어느 축인지가 없다**(호출이 셋이라 세 줄이 똑같다).
+  _ohit=1; [ "$_n" -ge 1 ] && _ohit=0
+  assert_eq "ok" "$(ok_if "$_ohit" "$_n")" \
+    "[소유자축] $1 에서 이 불변식을 말하는 줄을 못 찾았다 — 정규식이 낡았나? (/$2/)"
   _bad="$(printf '%s\n' "$_lines" | grep -vE "(^|[^0-9])$SD_POLICY([^0-9]|$)" || true)"
   assert_eq "" "$_bad" "$1 이 정책값 $SD_POLICY 을 말하지 않는 줄로 이 불변식을 서술한다"
 }
