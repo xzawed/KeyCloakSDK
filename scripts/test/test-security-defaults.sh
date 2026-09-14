@@ -867,6 +867,71 @@ sd_owner_axis() { # $1=파일 $2=값을 말하는 줄의 정규식
 sd_owner_axis "CLAUDE.md" 'JWKS 재조회 최소 간격'
 sd_owner_axis ".claude/rules/security.md" 'JWKS minimum refetch interval defaults'
 sd_owner_axis ".claude/rules/security.md" 'is the same invariant and is likewise'
+
+# ⚠️ **소유자 축은 단언이 셋이고 셋 다 공허했다** — 실측(2026-09-14, `scripts/probe.sh --site`):
+# 존재 검사(`_exists=0`)·히트 하한(`-ge 0`)·값 비교(`_bad=""`) 를 각각 무력화하니 **셋 다 SILENT**.
+# 그래서 대조군도 셋이다. **한 대조군이 단언 둘을 덮을 수 없다** — 「실패가 늘었는가」만 보는
+# 대조군은 *어느* 단언이 울었는지 구분하지 않아, 살아 있는 단언 하나가 죽은 단언을 가린다
+# (#495 가 문서 축에서 실측한 부류다). 그래서 각 대조군은 **그 단언만 울릴 수 있는 입력**을 쓴다.
+#
+# ⚠️ 트리를 복사하지 않는다 — 파일 하나만 같은 상대경로로 TMP 에 놓고 `ROOT` 를 그리로 돌린다.
+# 여기서 나는 실패는 **기대된 실패**라 계수를 원복한다(스위트를 빨갛게 만들면 안 된다).
+# ⚠️ **`set -eu` 아래다 — 반환값을 `cmd; v=$?` 로 받지 말 것.** 비제로가 곧 스크립트 종료라
+# 스위트가 **출력 한 줄 없이 exit 1** 로 죽는다(실측). 반드시 `|| v=1` 조건 문맥으로 받는다.
+sd_owner_probe() { # $1=TMP루트 $2=파일 $3=정규식 → 실패가 늘었으면 0
+  _op_f="$_A_FAIL"; _op_p="$_A_PASS"; _op_root="$ROOT"
+  ROOT="$1"
+  sd_owner_axis "$2" "$3" >/dev/null 2>&1
+  ROOT="$_op_root"
+  _op_grew=1; [ "$_A_FAIL" -gt "$_op_f" ] && _op_grew=0
+  _A_FAIL="$_op_f"; _A_PASS="$_op_p"
+  return "$_op_grew"
+}
+
+# (1) **값 비교** — 정책값만 다른 사본. 그 줄은 여전히 있으므로 존재·하한은 통과하고,
+#     값 비교만 울 수 있다.
+sd_owner_value_control() { # $1=파일 $2=정규식 $3=sed표현식
+  _ovc_tmp="$(mktemp -d)"; mkdir -p "$_ovc_tmp/$(dirname "$1")"
+  sed "$3" "$ROOT/$1" > "$_ovc_tmp/$1"
+  _ovc_grew=0; sd_owner_probe "$_ovc_tmp" "$1" "$2" || _ovc_grew=1
+  rm -rf "$_ovc_tmp"
+  assert_eq "ok" "$(ok_if "$_ovc_grew" DID-NOT-FAIL)" \
+    "[값대조·소유자축] $1: 정책값을 다르게 말하는 사본에서도 축이 통과했다 — 값 비교가 no-op 이다"
+}
+
+# (2) **히트 하한** — 그 줄만 지운 사본. 훑을 줄이 없어 값 비교는 아예 안 돌고(빈 `_lines` 는
+#     `_bad` 를 비운다), 하한만 울 수 있다.
+sd_owner_floor_control() { # $1=파일 $2=정규식
+  _ofc_tmp="$(mktemp -d)"; mkdir -p "$_ofc_tmp/$(dirname "$1")"
+  grep -vE "$2" "$ROOT/$1" > "$_ofc_tmp/$1" || true
+  _ofc_grew=0; sd_owner_probe "$_ofc_tmp" "$1" "$2" || _ofc_grew=1
+  rm -rf "$_ofc_tmp"
+  assert_eq "ok" "$(ok_if "$_ofc_grew" DID-NOT-FAIL)" \
+    "[하한대조·소유자축] $1: 그 줄이 하나도 없는 사본에서도 축이 통과했다 — 히트 하한이 no-op 이다"
+}
+
+# (3) **존재 검사** — 파일이 없는 빈 루트. 존재가 실패하면 축은 거기서 `return` 하므로
+#     뒤의 둘은 안 돌고, 존재만 울 수 있다.
+sd_owner_exists_control() { # $1=파일 $2=정규식
+  _oec_tmp="$(mktemp -d)"
+  _oec_grew=0; sd_owner_probe "$_oec_tmp" "$1" "$2" || _oec_grew=1
+  rm -rf "$_oec_tmp"
+  assert_eq "ok" "$(ok_if "$_oec_grew" DID-NOT-FAIL)" \
+    "[존재대조·소유자축] $1: 파일이 없는 루트에서도 축이 통과했다 — 존재 검사가 no-op 이다"
+}
+
+# ⚠️ **양성 대조** — 라이브 루트에서는 셋 다 조용해야 한다. 없으면 「늘 운다」와 구분되지 않는다.
+sd_owner_positive_control() { # $1=파일 $2=정규식
+  _opc_grew=0; sd_owner_probe "$ROOT" "$1" "$2" || _opc_grew=1
+  _opc_quiet=1; [ "$_opc_grew" -eq 1 ] && _opc_quiet=0
+  assert_eq "ok" "$(ok_if "$_opc_quiet" CRIED)" \
+    "[양성대조·소유자축] $1: 라이브 루트에서 축이 실패했다 — 문서가 정책값을 안 말하거나 정규식이 낡았다"
+}
+
+sd_owner_value_control  'CLAUDE.md' 'JWKS 재조회 최소 간격' 's/9개 언어 전부 30초/9개 언어 전부 47초/'
+sd_owner_floor_control  'CLAUDE.md' 'JWKS 재조회 최소 간격'
+sd_owner_exists_control 'CLAUDE.md' 'JWKS 재조회 최소 간격'
+sd_owner_positive_control 'CLAUDE.md' 'JWKS 재조회 최소 간격'
 sd_negative_control() { # $1=라벨 $2=추출함수 $3=언어 $4=상대경로 $5=sed표현식 $6=기대(바뀐값)
   _nc_tmp="$(mktemp -d)"
   mkdir -p "$_nc_tmp/$(dirname "$4")"
