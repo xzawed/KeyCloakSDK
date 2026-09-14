@@ -785,12 +785,41 @@ assert_eq "ok" "$(ok_if "$_hassrc" EMPTY)" "소스 목록이 비었다 — 언�
 
 # ⚠️ **언어별 기여** — 총 히트 하한과 **다른 양**을 센다(스캔된 파일 vs 값을 말하는 주석 줄).
 # 이것이 위 구멍을 닫는 단언이고, 하한을 올리는 것으로는 닫히지 않는다(정당한 삭제에 오탐이 난다).
-_srcmiss=''
-for L in $SD_LANGS; do
-  printf '%s\n' "$SD_SRC" | grep -q "^$L/" || _srcmiss="$_srcmiss $L"
-done
-assert_eq "" "$_srcmiss" \
-  "[소스 주석 축] 스캔 집합에 이 언어의 소스가 하나도 없다 —$_srcmiss (그 언어는 이 축에서 조용히 빠진다)"
+# ⚠️ **함수로 뺀 이유는 대조군 때문이다.** 최상위 인라인이면 「이 검사가 no-op 이 아니다」를
+# 보일 방법이 없다 — 실측(2026-09-14): 루프를 `:` 로 죽여도 **SILENT** 였다.
+sd_lang_contribution_axis() { # $1=라벨 $2=파일목록
+  _lc_miss=''
+  for L in $SD_LANGS; do
+    printf '%s\n' "$2" | grep -q "^$L/" || _lc_miss="$_lc_miss $L"
+  done
+  assert_eq "" "$_lc_miss" \
+    "[$1] 스캔 집합에 이 언어의 소스가 하나도 없다 —$_lc_miss (그 언어는 이 축에서 조용히 빠진다)"
+}
+sd_lang_contribution_axis "소스 주석 축" "$SD_SRC"
+
+# ⚠️ **음성 대조군 — 이 검사가 실제로 언어를 세는가.** 한 언어의 파일을 전부 뺀 목록을 주면
+# 반드시 울어야 한다. 축 **자신**을 태운다(대조군 안에 세기를 다시 구현하지 않는다 — #495 가
+# 그렇게 해서 같은 변이를 놓쳤다).
+sd_lang_contribution_control() { # $1=빠뜨릴 언어
+  _lcc_f="$_A_FAIL"; _lcc_p="$_A_PASS"
+  _lcc_list="$(printf '%s\n' "$SD_SRC" | grep -v "^$1/" || true)"
+  sd_lang_contribution_axis "음성대조-내부" "$_lcc_list" >/dev/null 2>&1 || true
+  _lcc_grew=1; [ "$_A_FAIL" -gt "$_lcc_f" ] && _lcc_grew=0
+  _A_FAIL="$_lcc_f"; _A_PASS="$_lcc_p"
+  assert_eq "ok" "$(ok_if "$_lcc_grew" DID-NOT-FAIL)" \
+    "[음성대조·언어기여] $1 의 파일을 전부 뺀 목록에서도 통과했다 — 언어별 기여 검사가 no-op 이다"
+}
+# ⚠️ **양성 대조** — 라이브 목록에서는 조용해야 한다(「늘 운다」와 구분한다).
+sd_lang_contribution_positive() {
+  _lcp_f="$_A_FAIL"; _lcp_p="$_A_PASS"
+  sd_lang_contribution_axis "양성대조-내부" "$SD_SRC" >/dev/null 2>&1 || true
+  _lcp_quiet=1; [ "$_A_FAIL" -eq "$_lcp_f" ] && _lcp_quiet=0
+  _A_FAIL="$_lcp_f"; _A_PASS="$_lcp_p"
+  assert_eq "ok" "$(ok_if "$_lcp_quiet" CRIED)" \
+    "[양성대조·언어기여] 라이브 목록에서 언어별 기여 검사가 실패했다 — 파생이나 확장자 필터가 깨졌나?"
+}
+sd_lang_contribution_control go
+sd_lang_contribution_positive
 
 # 소스 주석 축 — **실측 9건**(2026-09-04, 위 3건을 고친 뒤):
 #   go/config.go:42 · java JwtValidator.java:38 · java KeycloakConfig.java:40 ·
@@ -969,34 +998,30 @@ assert_eq "$sd_expect" "$(sd_norm "$(sd_default java)")" "[음성대조·양성]
 # 였다 — 축의 비교가 아니라 나란한 grep 을 태웠기 때문이다(실측). 그래서 이 대조군은
 # **`sd_doc_axis` 자신**을 값이 틀린 사본 트리에 대고 돌리고, 실패 계수가 늘었는지 본다.
 # 계수는 되돌린다 — 여기서 나는 실패는 **기대된 실패**라 스위트를 빨갛게 만들면 안 된다.
-sd_doc_negative_control() { # $1=라벨 $2=상대경로 $3=sed표현식 $4=파라미터re $5=기대값 $6=신호re
+sd_doc_negative_control() { # $1=라벨 $2=상대경로 $3=sed $4=파라미터re $5=기대값 $6=신호re $7=중간필터re
   _dnc_tmp="$(mktemp -d)"
   mkdir -p "$_dnc_tmp/$(dirname "$2")"
   sed "$3" "$ROOT/$2" > "$_dnc_tmp/$2"
   _dnc_f="$_A_FAIL"; _dnc_p="$_A_PASS"
-  _dnc_docs="$SD_DOCS"; _dnc_root="$ROOT"
-  SD_DOCS="$2"; ROOT="$_dnc_tmp"
-  sd_doc_axis "음성대조-내부" "$4" "$5" 1 "$6" >/dev/null 2>&1
-  SD_DOCS="$_dnc_docs"; ROOT="$_dnc_root"
+  _dnc_root="$ROOT"; ROOT="$_dnc_tmp"
+  sd_doc_axis "음성대조-내부" "$4" "$5" 1 "$6" "$2" "${7:-.}" >/dev/null 2>&1 || true
+  ROOT="$_dnc_root"
   _dnc_grew=1; [ "$_A_FAIL" -gt "$_dnc_f" ] && _dnc_grew=0
   _A_FAIL="$_dnc_f"; _A_PASS="$_dnc_p"
   rm -rf "$_dnc_tmp"
   assert_eq "ok" "$(ok_if "$_dnc_grew" DID-NOT-FAIL)" \
-    "[음성대조·문서축] $1: 문서가 코드값과 **다른 값**을 말하는 사본에서도 축이 통과했다 — 비교가 no-op 이거나 탐지 패턴이 낡았다"
+    "[음성대조·값비교] $1: 코드값과 **다른 값**을 말하는 사본에서도 축이 통과했다 — 비교가 no-op 이거나 탐지 패턴이 낡았다"
 }
 
 # ⚠️ **양성 대조도 함께** — 「늘 뭔가 찾는다」와 구분한다. 같은 축을 **라이브** 트리에 대고
 # 돌려 실패가 **안 늘어야** 한다. 둘을 합치면 축은 "틀리면 운다 · 맞으면 안 운다"를 다 보인다.
-sd_doc_positive_control() { # $1=라벨 $2=상대경로 $3=파라미터re $4=기대값 $5=신호re
+sd_doc_positive_control() { # $1=라벨 $2=상대경로 $3=파라미터re $4=기대값 $5=신호re $6=중간필터re
   _dpc_f="$_A_FAIL"; _dpc_p="$_A_PASS"
-  _dpc_docs="$SD_DOCS"
-  SD_DOCS="$2"
-  sd_doc_axis "양성대조-내부" "$3" "$4" 1 "$5" >/dev/null 2>&1
-  SD_DOCS="$_dpc_docs"
+  sd_doc_axis "양성대조-내부" "$3" "$4" 1 "$5" "$2" "${6:-.}" >/dev/null 2>&1 || true
   _dpc_quiet=1; [ "$_A_FAIL" -eq "$_dpc_f" ] && _dpc_quiet=0
   _A_FAIL="$_dpc_f"; _A_PASS="$_dpc_p"
   assert_eq "ok" "$(ok_if "$_dpc_quiet" CRIED)" \
-    "[양성대조·문서축] $1: 라이브 $2 에서 축이 실패했다 — 문서가 코드값을 안 말하거나 신호가 낡았다"
+    "[양성대조·값비교] $1: 라이브 $2 에서 축이 실패했다 — 코드값을 안 말하거나 신호가 낡았다"
 }
 
 sd_dnc_param='jwks[_ ]?min[_ ]?refetch|RefreshIntervalSeconds'
@@ -1027,6 +1052,16 @@ sd_doc_floor_control() { # $1=라벨 $2=파라미터re $3=기대값 $4=신호re
     "[하한대조·문서축] $1: 아무 줄도 못 찾은 트리에서도 축이 통과했다 — 히트 하한이 no-op 이다"
 }
 sd_doc_floor_control 'JWKS 재조회' "$sd_dnc_param" "$sd_expect" "$sd_dnc_signal"
+
+# ⚠️ **소스 주석 축도 같은 축을 쓰므로 같은 대조군을 코퍼스만 바꿔 태운다.** 히트 하한은 축에
+# 한 벌뿐이라 위 `sd_doc_floor_control` 하나가 두 코퍼스를 다 덮는다(복제를 지운 값이다).
+sd_src_param='jwks[_ ]?min[_ ]?refetch|재조회|refetch'
+sd_src_signal='(기본|default)[^0-9]{0,6}[0-9]'
+sd_src_mid='(//|#|\*|///)'
+sd_doc_negative_control '소스 주석' 'go/config.go' 's/default 30)/default 45)/' \
+  "$sd_src_param" "$sd_expect" "$sd_src_signal" "$sd_src_mid"
+sd_doc_positive_control '소스 주석' 'go/config.go' \
+  "$sd_src_param" "$sd_expect" "$sd_src_signal" "$sd_src_mid"
 assert_eq "$sd_skew_expect" "$(sd_norm "$(sd_skew python)")" "[음성대조·양성] 라이브 python skew 값이 바뀌었다"
 
 # ---------------------------------------------------------------------------
