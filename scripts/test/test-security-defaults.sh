@@ -934,6 +934,28 @@ sd_dnc_signal='default|기본값|minimum interval|throttled|cooldown|^[0-9]+:\|'
 sd_doc_negative_control 'JWKS 재조회' 'go/README.md' 's/(default 30s)/(default 47s)/' \
   "$sd_dnc_param" "$sd_expect" "$sd_dnc_signal"
 sd_doc_positive_control 'JWKS 재조회' 'go/README.md' "$sd_dnc_param" "$sd_expect" "$sd_dnc_signal"
+
+# ⚠️ **하한 전용 음성 대조군 — 축에는 단언이 둘이고 대조군은 하나만 덮었다.** 위 음성 대조군은
+# 「값이 틀리면 운다」만 보인다. 실측(2026-09-14, `scripts/probe.sh`): 하한 대입을 `_enough=0` 으로
+# 무력화하니 **SILENT** 였다 — 위 대조군은 *어느* 단언이 울었는지 구분하지 않아 값 비교가 살아
+# 있으면 그것만으로 통과한다. 독립 레그(Grok)도 같은 자리를 지목했다.
+# 그래서 **하한만 울 수 있는 입력**으로 한 번 더 태운다: 빈 문서 → 히트 0 → 하한(1) 미달.
+# 값 단언은 훑을 줄이 없어 아예 돌지 않으므로, 여기서 나는 실패는 **하한의 것뿐**이다.
+sd_doc_floor_control() { # $1=라벨 $2=파라미터re $3=기대값 $4=신호re
+  _dfc_tmp="$(mktemp -d)"
+  : > "$_dfc_tmp/EMPTY.md"
+  _dfc_f="$_A_FAIL"; _dfc_p="$_A_PASS"
+  _dfc_docs="$SD_DOCS"; _dfc_root="$ROOT"
+  SD_DOCS="EMPTY.md"; ROOT="$_dfc_tmp"
+  sd_doc_axis "하한대조-내부" "$2" "$3" 1 "$4" >/dev/null 2>&1
+  SD_DOCS="$_dfc_docs"; ROOT="$_dfc_root"
+  _dfc_grew=1; [ "$_A_FAIL" -gt "$_dfc_f" ] && _dfc_grew=0
+  _A_FAIL="$_dfc_f"; _A_PASS="$_dfc_p"
+  rm -rf "$_dfc_tmp"
+  assert_eq "ok" "$(ok_if "$_dfc_grew" DID-NOT-FAIL)" \
+    "[하한대조·문서축] $1: 아무 줄도 못 찾은 트리에서도 축이 통과했다 — 히트 하한이 no-op 이다"
+}
+sd_doc_floor_control 'JWKS 재조회' "$sd_dnc_param" "$sd_expect" "$sd_dnc_signal"
 assert_eq "$sd_skew_expect" "$(sd_norm "$(sd_skew python)")" "[음성대조·양성] 라이브 python skew 값이 바뀌었다"
 
 # ---------------------------------------------------------------------------
