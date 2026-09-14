@@ -694,7 +694,7 @@ assert_eq "ok" "$(ok_if "$_hasdocs" EMPTY)" "소비자 문서 목록이 비었�
 sd_doc_axis() { # $1=라벨 $2=파라미터명 정규식 $3=기대값 $4=최소 히트 $5=값-서술 신호 정규식
   _hits=0
   for f in $SD_DOCS; do
-    _lines="$(grep -inE "$2" "$ROOT/$f" 2>/dev/null | grep -E "$5" || true)"
+    _lines="$(grep -inE "$2" "$ROOT/$f" 2>/dev/null | grep -iE "$5" || true)"
     [ -n "$_lines" ] || continue
     # ⚠️ **자릿수 경계로 대조한다 — 부분문자열이면 안 된다.** `grep -F "30"`으로 했더니 문서가
     # `300s by default`라고 말해도 "30을 포함한다"는 이유로 통과했다(변이 MS3가 실측으로 잡았다).
@@ -723,32 +723,20 @@ sd_doc_axis() { # $1=라벨 $2=파라미터명 정규식 $3=기대값 $4=최소 
 sd_doc_axis "clock skew" 'clock.?skew' "$sd_skew_expect" 6 \
   '[0-9]+ ?s\b|[0-9]+ ?(초|seconds)|\| *`?[0-9][0-9.]*`? *\|'
 
-sd_hits=0
-for f in $SD_DOCS; do
-  # ⚠️ **설정표 행(`^N:|`)을 신호에 반드시 포함할 것.** 이 가드를 만든 바로 그 결함
-  # (`ruby/README.ko.md:72`의 `10.0`)은 한글 표 행이라 "default"도 "기본값"도 없다 —
-  # 산문 신호만 요구했더니 **변이검증에서 그 줄이 그대로 통과했다**(MC2: 29 passed, 0 failed).
-  # 가드가 겨눈 실물을 변이로 재현해 보지 않았으면 공허한 채로 커밋될 뻔했다.
-  _lines="$(grep -inE 'jwks[_ ]?min[_ ]?refetch|RefreshIntervalSeconds' "$ROOT/$f" 2>/dev/null \
-    | grep -iE 'default|기본값|minimum interval|throttled|cooldown|^[0-9]+:\|' || true)"
-  [ -n "$_lines" ] || continue
-  # ⚠️ **자릿수 경계로 대조한다**(위 `sd_doc_axis`와 같은 이유). 고정문자열 `grep -F "30"`이면
-  # 문서가 `300s by default`라 해도 "30을 포함한다"는 이유로 통과한다 — clock skew 변이 MS3가
-  # 그 구멍을 실측으로 드러냈고, 이 자리도 같은 구멍이었다.
-  _bad="$(printf '%s\n' "$_lines" | grep -vE "(^|[^0-9])$sd_expect([^0-9]|\$)" || true)"
-  assert_eq "" "$_bad" "$f 가 JWKS 최소 재조회 기본값을 코드값($sd_expect)과 다르게 말한다"
-  sd_hits=$((sd_hits + $(printf '%s\n' "$_lines" | grep -c . || true)))
-done
-
-# 대조군 — 문서 축이 실제로 무언가를 봤는가. **아홉 언어 README가 각 1건씩, 실측 9건**이다.
-# 이 하한이 없으면 탐지 정규식이 깨졌을 때 "볼 것이 없어서" 초록이 된다.
-# ⚠️ **2026-08-17: 10 → 9.** `ruby/README.ko.md`가 이 축에 1건을 기여하고 있었는데 그 파일을
-# 내렸다(#217 — 9개 언어 중 2개만 있던 ko 미러가 명문 규칙 밖이었다. `python/README.ko.md`는
-# 이 축에 0건이라 무관하다). **하한을 내린 것은 탐지 약화가 아니라 대상 집합이 줄어든 것**이고,
-# 지금은 "아홉 언어 = 아홉 건"이라 하한과 의미가 1:1로 붙어 오히려 읽기 쉬워졌다.
-_enough=1; [ "$sd_hits" -ge 9 ] && _enough=0
-assert_eq "ok" "$(ok_if "$_enough" "$sd_hits")" \
-  "기본값을 말하는 문서 줄을 10건 미만 찾았다 — 탐지 패턴이 낡았나?"
+# JWKS 재조회 문서 축 — **아홉 언어 README 가 각 1건씩, 실측 9건**이다.
+# ⚠️ **이 블록은 한때 `sd_doc_axis` 를 복사한 인라인 루프였다.** 같은 비교가 두 벌이었고, 음성
+# 대조군이 세 번째 벌이 되면서 **셋 중 하나를 무력화해도 아무도 못 봤다**(실측 2026-09-13:
+# 인라인의 `_bad=""` → SILENT). 복제를 지우는 것이 곧 수정이다 — 축은 한 벌만 존재하고,
+# 아래 음성 대조군이 **그 한 벌을** 태운다.
+# ⚠️ **설정표 행(`^N:|`)을 신호에 반드시 포함할 것.** 이 가드가 겨눈 실물(`ruby/README.ko.md:72`
+# 의 `10.0`)은 한글 표 행이라 "default"도 "기본값"도 없다 — 산문 신호만 요구했더니 변이검증에서
+# 그 줄이 그대로 통과했다(MC2: 29 passed, 0 failed).
+# ⚠️ **하한 9의 뜻**: 2026-08-17 에 10 → 9(ko 미러 `ruby/README.ko.md` 를 #217 로 내렸다 —
+# 대상 집합이 준 것이지 탐지가 약해진 것이 아니다). 지금은 "아홉 언어 = 아홉 건"이라 1:1 이다.
+# ⚠️ 인라인일 때 실패 문구가 `9` 가 아니라 **`10건 미만`** 이라고 말하고 있었다(하한을 내리며
+# 상수만 고치고 문구를 안 고쳤다). 축은 문구를 `$4` 에서 만들므로 그 부류가 사라진다.
+sd_doc_axis "JWKS 재조회" 'jwks[_ ]?min[_ ]?refetch|RefreshIntervalSeconds' "$sd_expect" 9 \
+  'default|기본값|minimum interval|throttled|cooldown|^[0-9]+:\|'
 
 # ---------------------------------------------------------------------------
 # 2b) **소스 주석** 축 — 공개 API 의 doc 주석도 기본값을 말한다
@@ -879,52 +867,6 @@ sd_owner_axis() { # $1=파일 $2=값을 말하는 줄의 정규식
 sd_owner_axis "CLAUDE.md" 'JWKS 재조회 최소 간격'
 sd_owner_axis ".claude/rules/security.md" 'JWKS minimum refetch interval defaults'
 sd_owner_axis ".claude/rules/security.md" 'is the same invariant and is likewise'
-
-# ---------------------------------------------------------------------------
-# 음성 대조군 — 이 파일이 **라이브 상태만** 단언하고 있지 않은가
-# ---------------------------------------------------------------------------
-#
-# ⚠️ 위 축들은 전부 「지금 트리가 일치한다」를 본다. 그 형태의 검사는 **추출기가 no-op 이어도**
-# 통과한다 — `sd_default() { echo 30; }` 로 바꿔도 아홉이 전부 30 이라 초록이다. 그러면 이 파일은
-# 있으나 마나가 되고, 그 사실을 아무도 모른다(`seven-selftests-have-no-negative-control`).
-#
-# 그래서 값 하나만 바꾼 TMP 트리를 만들어 **추출기가 그 변화를 실제로 본다**는 것을 확인한다.
-# ⚠️ 트리 전체를 복사하지 않는다 — 추출기가 읽는 **그 파일 하나**만 같은 상대경로로 놓는다.
-# 트리 복사는 CI 에서 실패할 자리를 늘리고, 이 파일은 required 체크 안에서 돈다.
-#
-# ⚠️ 라이브 루트가 여전히 기대값을 낸다는 **양성 대조**를 함께 둔다 — 없으면 「추출기가 늘 빈
-# 문자열을 낸다」와 구분되지 않는다.
-
-# ⚠️ **음성 대조군 — 문서 축이 값을 실제로 대조하는가.** 위 `sd_doc_axis` 는 「지금 문서가 맞다」만
-# 본다. 그 형태는 **비교가 no-op 이어도 통과한다** — 실측(2026-09-13, `scripts/probe.sh`):
-# `_bad=""` 로 비교를 무력화하니 **SILENT** 였다(하한은 **히트 수**만 세므로 통과한다).
-# #459 가 코드 축에 세운 것과 같은 모양을, 이 항목이 「다음 조각」으로 지목한 문서 축에 세운다.
-#
-# ⚠️ 트리 전체를 복사하지 않는다 — 값을 바꾼 **문서 하나**만 같은 상대경로로 TMP 에 놓는다
-# (required 체크 안이라 실패할 자리를 늘리지 않는다).
-sd_doc_negative_control() { # $1=라벨 $2=상대경로 $3=sed표현식 $4=기대값(바뀐 값)
-  _dnc_tmp="$(mktemp -d)"
-  mkdir -p "$_dnc_tmp/$(dirname "$2")"
-  sed "$3" "$ROOT/$2" > "$_dnc_tmp/$2"
-  # 그 파일 하나만 훑어 「기본값을 말하는 줄」을 뽑고, 그것이 **바뀐 값**을 말하는지 본다.
-  _dnc_lines="$(grep -inE 'jwks[_ ]?min[_ ]?refetch|재조회|refetch' "$_dnc_tmp/$2" 2>/dev/null \
-    | grep -iE '(기본|default)[^0-9]{0,6}[0-9]' || true)"
-  _dnc_hit=1
-  printf '%s\n' "$_dnc_lines" | grep -qE "(^|[^0-9])$4([^0-9]|\$)" && _dnc_hit=0
-  rm -rf "$_dnc_tmp"
-  assert_eq "ok" "$(ok_if "$_dnc_hit" "NOT-SEEN:$4")" \
-    "[음성대조·문서축] $1: 값을 $4 로 바꾼 사본에서 그 값을 못 읽었다 — 탐지 패턴이 문서를 안 읽거나 낡았다"
-}
-
-# ⚠️ **양성 대조도 함께** — 「늘 뭔가 찾는다」와 구분한다. 라이브 문서는 코드값을 말해야 한다.
-sd_doc_positive_control() { # $1=상대경로 $2=기대값
-  _dpc_lines="$(grep -inE 'jwks[_ ]?min[_ ]?refetch|재조회|refetch' "$ROOT/$1" 2>/dev/null \
-    | grep -iE '(기본|default)[^0-9]{0,6}[0-9]' || true)"
-  _dpc_hit=1
-  printf '%s\n' "$_dpc_lines" | grep -qE "(^|[^0-9])$2([^0-9]|\$)" && _dpc_hit=0
-  assert_eq "ok" "$(ok_if "$_dpc_hit" "NOT-SEEN:$2")" \
-    "[음성대조·문서축·양성] 라이브 $1 이 코드값 $2 를 말하지 않는다"
-}
 sd_negative_control() { # $1=라벨 $2=추출함수 $3=언어 $4=상대경로 $5=sed표현식 $6=기대(바뀐값)
   _nc_tmp="$(mktemp -d)"
   mkdir -p "$_nc_tmp/$(dirname "$4")"
@@ -947,10 +889,51 @@ sd_negative_control "clock skew" sd_skew python \
 # 양성 대조 — 라이브 루트는 여전히 못박힌 값을 낸다(위가 「늘 다른 값을 낸다」가 아님을 보인다).
 assert_eq "$sd_expect" "$(sd_norm "$(sd_default java)")" "[음성대조·양성] 라이브 java JWKS 값이 바뀌었다"
 
-# 문서 축 음성 대조군 — go README 의 30 을 47 로 바꾼 사본에서 탐지가 47 을 읽어야 한다.
-sd_doc_negative_control 'JWKS 재조회(문서)' 'go/README.md' 's/(default 30s)/(default 47s)/' 47
-# 양성 대조 — 라이브 문서는 코드값을 말한다(위가 「늘 뭔가 찾는다」가 아님을 보인다).
-sd_doc_positive_control 'go/README.md' "$sd_expect"
+
+# ⚠️ **음성 대조군 — 축의 *비교*가 실제로 도는가.** `sd_doc_axis` 는 「지금 문서가 맞다」만 본다.
+# 그 형태는 **비교가 no-op 이어도 통과한다** — 실측(2026-09-13, `scripts/probe.sh`): `_bad=""` 로
+# 무력화하니 **SILENT** 였다(하한은 히트 **수**만 세므로 그대로 통과한다).
+#
+# ⚠️ **대조군 안에 탐지를 다시 구현하지 말 것.** 첫 판이 그랬고 같은 변이가 **여전히 SILENT**
+# 였다 — 축의 비교가 아니라 나란한 grep 을 태웠기 때문이다(실측). 그래서 이 대조군은
+# **`sd_doc_axis` 자신**을 값이 틀린 사본 트리에 대고 돌리고, 실패 계수가 늘었는지 본다.
+# 계수는 되돌린다 — 여기서 나는 실패는 **기대된 실패**라 스위트를 빨갛게 만들면 안 된다.
+sd_doc_negative_control() { # $1=라벨 $2=상대경로 $3=sed표현식 $4=파라미터re $5=기대값 $6=신호re
+  _dnc_tmp="$(mktemp -d)"
+  mkdir -p "$_dnc_tmp/$(dirname "$2")"
+  sed "$3" "$ROOT/$2" > "$_dnc_tmp/$2"
+  _dnc_f="$_A_FAIL"; _dnc_p="$_A_PASS"
+  _dnc_docs="$SD_DOCS"; _dnc_root="$ROOT"
+  SD_DOCS="$2"; ROOT="$_dnc_tmp"
+  sd_doc_axis "음성대조-내부" "$4" "$5" 1 "$6" >/dev/null 2>&1
+  SD_DOCS="$_dnc_docs"; ROOT="$_dnc_root"
+  _dnc_grew=1; [ "$_A_FAIL" -gt "$_dnc_f" ] && _dnc_grew=0
+  _A_FAIL="$_dnc_f"; _A_PASS="$_dnc_p"
+  rm -rf "$_dnc_tmp"
+  assert_eq "ok" "$(ok_if "$_dnc_grew" DID-NOT-FAIL)" \
+    "[음성대조·문서축] $1: 문서가 코드값과 **다른 값**을 말하는 사본에서도 축이 통과했다 — 비교가 no-op 이거나 탐지 패턴이 낡았다"
+}
+
+# ⚠️ **양성 대조도 함께** — 「늘 뭔가 찾는다」와 구분한다. 같은 축을 **라이브** 트리에 대고
+# 돌려 실패가 **안 늘어야** 한다. 둘을 합치면 축은 "틀리면 운다 · 맞으면 안 운다"를 다 보인다.
+sd_doc_positive_control() { # $1=라벨 $2=상대경로 $3=파라미터re $4=기대값 $5=신호re
+  _dpc_f="$_A_FAIL"; _dpc_p="$_A_PASS"
+  _dpc_docs="$SD_DOCS"
+  SD_DOCS="$2"
+  sd_doc_axis "양성대조-내부" "$3" "$4" 1 "$5" >/dev/null 2>&1
+  SD_DOCS="$_dpc_docs"
+  _dpc_quiet=1; [ "$_A_FAIL" -eq "$_dpc_f" ] && _dpc_quiet=0
+  _A_FAIL="$_dpc_f"; _A_PASS="$_dpc_p"
+  assert_eq "ok" "$(ok_if "$_dpc_quiet" CRIED)" \
+    "[양성대조·문서축] $1: 라이브 $2 에서 축이 실패했다 — 문서가 코드값을 안 말하거나 신호가 낡았다"
+}
+
+sd_dnc_param='jwks[_ ]?min[_ ]?refetch|RefreshIntervalSeconds'
+sd_dnc_signal='default|기본값|minimum interval|throttled|cooldown|^[0-9]+:\|'
+
+sd_doc_negative_control 'JWKS 재조회' 'go/README.md' 's/(default 30s)/(default 47s)/' \
+  "$sd_dnc_param" "$sd_expect" "$sd_dnc_signal"
+sd_doc_positive_control 'JWKS 재조회' 'go/README.md' "$sd_dnc_param" "$sd_expect" "$sd_dnc_signal"
 assert_eq "$sd_skew_expect" "$(sd_norm "$(sd_skew python)")" "[음성대조·양성] 라이브 python skew 값이 바뀌었다"
 
 # ---------------------------------------------------------------------------
