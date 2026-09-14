@@ -780,6 +780,14 @@ sd_doc_axis "JWKS 재조회" 'jwks[_ ]?min[_ ]?refetch|RefreshIntervalSeconds' "
 SD_SRC="$(cd "$ROOT" && git ls-files $(for _l in $SD_LANGS; do printf '%s/ ' "$_l"; done) 2>/dev/null \
   | grep -E '[.](java|py|ts|go|cs|php|rs|rb|kt)$' \
   | grep -viE '(^|/)(tests?|spec)/|[Tt]est[s]?[.](java|kt|ts|go|cs|php|rb|py|rs)$|_test[.]go$|test_.*[.]py$|_spec[.]rb$|[.]test[.]ts$' || true)"
+# ⚠️ **이 단언에는 대조군을 세울 수 없다 — 격리 입력이 존재하지 않는다.** 실측(2026-09-14):
+# 코퍼스를 비우면 **셋이 동시에** 운다(이 단언 · 언어별 기여 · 히트 하한). 즉 이 단언이 우는
+# 입력은 전부 다른 둘도 우는 입력이라, 「이 단언이 no-op 이 아니다」를 보일 방법이 없다.
+# 실제로 이 줄을 `_hassrc=0` 으로 죽여도 **SILENT** 다 — 그러나 그것은 구멍이 아니라 **중복**이다
+# (이 단언이 막아야 할 상태는 다른 둘이 이미 막는다). **남겨 두는 이유는 메시지다** — 파생이
+# 깨졌을 때 「하한 미달」보다 「목록이 비었다」가 원인을 곧장 가리킨다.
+# ⚠️ **「변이가 SILENT」와 「그 단언이 불필요」를 같은 말로 쓰지 말 것.** 판정은 변이가 아니라
+# **그 단언이 막는 상태를 만들어** 무엇이 우는지로 한다.
 _hassrc=1; [ -n "$SD_SRC" ] && _hassrc=0
 assert_eq "ok" "$(ok_if "$_hassrc" EMPTY)" "소스 목록이 비었다 — 언어 집합 파생이나 확장자 필터가 깨졌나?"
 
