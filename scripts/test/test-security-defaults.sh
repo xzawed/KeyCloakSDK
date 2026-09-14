@@ -691,10 +691,16 @@ SD_DOCS="$(cd "$ROOT" && git ls-files '*/README.md' '*/README.ko.md' 'README.md'
 _hasdocs=1; [ -n "$SD_DOCS" ] && _hasdocs=0
 assert_eq "ok" "$(ok_if "$_hasdocs" EMPTY)" "소비자 문서 목록이 비었다 — git ls-files 패턴이 바뀌었나?"
 
-sd_doc_axis() { # $1=라벨 $2=파라미터명 정규식 $3=기대값 $4=최소 히트 $5=값-서술 신호 정규식
+sd_doc_axis() { # $1=라벨 $2=파라미터명re $3=기대값 $4=최소히트 $5=값-서술 신호re $6=코퍼스 $7=중간필터re
+  # $6 생략 시 `$SD_DOCS`(문서 코퍼스) · $7 생략 시 `.`(모든 줄 통과 = 필터 없음).
+  # ⚠️ **소스 주석 축이 이 함수의 복사본이었다** — 다른 점은 코퍼스(`SD_SRC`)와 주석 줄만 남기는
+  # 중간 필터(`(//|#|\*|///)`) 둘뿐이었다. 문서 축에서 복제가 곧 구멍이었던 것과 같은 모양이라
+  # (#495 실측) 인자 둘로 접었다. 이제 값 비교와 히트 하한이 **한 벌**이고, 대조군도 한 벌이다.
   _hits=0
-  for f in $SD_DOCS; do
-    _lines="$(grep -inE "$2" "$ROOT/$f" 2>/dev/null | grep -iE "$5" || true)"
+  _ax_corpus="${6:-$SD_DOCS}"
+  _ax_mid="${7:-.}"
+  for f in $_ax_corpus; do
+    _lines="$(grep -inE "$2" "$ROOT/$f" 2>/dev/null | grep -E "$_ax_mid" | grep -iE "$5" || true)"
     [ -n "$_lines" ] || continue
     # ⚠️ **자릿수 경계로 대조한다 — 부분문자열이면 안 된다.** `grep -F "30"`으로 했더니 문서가
     # `300s by default`라고 말해도 "30을 포함한다"는 이유로 통과했다(변이 MS3가 실측으로 잡았다).
@@ -705,7 +711,7 @@ sd_doc_axis() { # $1=라벨 $2=파라미터명 정규식 $3=기대값 $4=최소 
   done
   _enough=1; [ "$_hits" -ge "$4" ] && _enough=0
   assert_eq "ok" "$(ok_if "$_enough" "$_hits")" \
-    "[$1] 기본값을 말하는 문서 줄을 $4건 미만 찾았다 — 탐지 패턴이 낡았나?"
+    "[$1] 기본값을 말하는 줄을 $4건 미만 찾았다 — 탐지 패턴이 낡았나?"
 }
 
 # clock skew 문서 축 — 값을 말하는 자리는 **실측 8건**이다(2026-08-17 재측정):
@@ -786,27 +792,16 @@ done
 assert_eq "" "$_srcmiss" \
   "[소스 주석 축] 스캔 집합에 이 언어의 소스가 하나도 없다 —$_srcmiss (그 언어는 이 축에서 조용히 빠진다)"
 
-sd_src_hits=0
-for f in $SD_SRC; do
-  _lines="$(grep -inE 'jwks[_ ]?min[_ ]?refetch|재조회|refetch' "$ROOT/$f" 2>/dev/null \
-    | grep -E '(//|#|\*|///)' \
-    | grep -iE '(기본|default)[^0-9]{0,6}[0-9]' || true)"
-  [ -n "$_lines" ] || continue
-  # 자릿수 경계로 대조(2절과 같은 이유 — `grep -F 30`이면 `300`도 통과한다).
-  _bad="$(printf '%s\n' "$_lines" | grep -vE "(^|[^0-9])$sd_expect([^0-9]|\$)" || true)"
-  assert_eq "" "$_bad" "$f 의 주석이 JWKS 최소 재조회 기본값을 코드값($sd_expect)과 다르게 말한다"
-  sd_src_hits=$((sd_src_hits + $(printf '%s\n' "$_lines" | grep -c . || true)))
-done
-
-# 대조군 — 이 축이 실제로 무언가를 봤는가. **실측 9건**(2026-09-04, 위 3건을 고친 뒤):
+# 소스 주석 축 — **실측 9건**(2026-09-04, 위 3건을 고친 뒤):
 #   go/config.go:42 · java JwtValidator.java:38 · java KeycloakConfig.java:40 ·
 #   kotlin config.kt:22 · node config.ts:26 · node jwt.ts:10 ·
 #   python config.py:23 · rust config.rs:18 · rust config.rs:81
 # ⚠️ 9는 **언어당 1건이 아니다**(6개 언어에 흩어져 있고 dotnet·php·ruby 는 0건) — 2절의 9와
 # 우연히 같을 뿐이니 같은 뜻으로 읽지 말 것. 하한을 8로 두어 표현이 한 줄 바뀔 여지를 남긴다.
-_enough=1; [ "$sd_src_hits" -ge 8 ] && _enough=0
-assert_eq "ok" "$(ok_if "$_enough" "$sd_src_hits")" \
-  "기본값을 말하는 소스 주석을 8건 미만 찾았다 — 탐지 패턴이 낡았나?"
+# ⚠️ **이 블록은 `sd_doc_axis` 를 복사한 인라인 루프였다**(값 비교 + 히트 하한이 두 벌). 다른 점은
+# 코퍼스와 주석-줄 필터 둘뿐이라 인자로 접었다 — 이제 대조군 한 벌이 두 축을 다 덮는다.
+sd_doc_axis "소스 주석" 'jwks[_ ]?min[_ ]?refetch|재조회|refetch' "$sd_expect" 8 \
+  '(기본|default)[^0-9]{0,6}[0-9]' "$SD_SRC" '(//|#|\*|///)'
 
 # ---------------------------------------------------------------------------
 # 3) 2차 정의 자리 금지 — 같은 값을 두 번 적지 않는다
