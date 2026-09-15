@@ -48,6 +48,44 @@ PIN_RE="[0-$PIN_MAXMAJ]\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*"
 
 # ⚠️ 대조군 — 펜스에서 실제로 버전을 뽑은 언어 수. 아래 루프의 `_bad` 는 **추출이 0건이어도**
 # 빈 문자열이라 통과한다. 추출 자체가 죽으면(펜스 마커·경로 규칙·정규식) 이 수가 먼저 떨어진다.
+# ⚠️ **추출을 함수로 둔다 — 최상위 인라인이면 대조군이 자기 자신을 태울 수 없다.**
+# 실측(2026-09-15, `scripts/probe.sh --site`): 아래 둘을 각각 `_bad=""`·`_flag=""` 로 죽이면
+# **둘 다 SILENT** 다. 기존 대조군 `FENCE_SEEN >= 4` 는 **추출 건수**만 세고 값 일치는 안 본다.
+# ⚠️ **다만 「가드가 실물을 못 잡는다」는 아니다** — 같은 러너로 잰 실측: 펜스 핀을
+# `1.0.0 → 1.0.1` 로 바꾸면 **CAUGHT**, 정식 게시 뒤 `--prerelease` 를 넣어도 **CAUGHT**.
+# 공허는 **가드 자신을 고칠 때만** 열린다. 그래서 대조군은 이 함수들을 결함 사본에 태운다.
+pc_fence_versions() { # $1=파일 → 펜스 안에서 뽑은 버전들
+  awk '/^```/ { f = !f; next } f' "$1" | grep -oE "$PIN_RE" | sort -u || true
+}
+pc_fence_flags() {    # $1=파일 → 펜스 안 프리릴리스 옵트인 플래그들
+  awk '/^```/ { f = !f; next } f' "$1" \
+    | grep -oE -- '--prerelease|--pre|@rc|minimum-stability' | sort -u | tr '\n' ' '
+}
+
+# ⚠️ **비교까지 함수에 둔다 — 추출만 빼면 대조군이 비교를 못 태운다.** 실측(2026-09-15):
+# 추출만 함수화하고 대조군을 붙였더니 **추출 고정 변이는 CAUGHT** 인데 **비교 무력화 둘은
+# 그대로 SILENT** 였다. 대조군은 **자기가 겨눈 단언 자체**를 태워야 한다(#495 와 같은 부류).
+pc_fence_axis() { # $1=이름표 $2=파일 $3=기대 버전
+  _pfa_v="$(pc_fence_versions "$2")"
+  _pfa_bad="$(printf '%s\n' "$_pfa_v" | grep -v '^$' | grep -Fxv "$3" || true)"
+  assert_eq "" "$_pfa_bad" \
+    "$1 코드펜스에 핀된 버전이 기대값($3)과 다르다 — 소비자에게 없는 좌표를 권하게 된다"
+  # ⚠️ 위 검사는 **버전 문자열만** 뽑으므로 플래그를 못 본다. `dotnet add package … --prerelease`
+  # 에는 버전이 없어서, 정식 게시 뒤에도 그 줄이 남으면 가드가 초록인 채로 소비자가 RC를 설치한다.
+  # 실제로 그 상태였다 — `dotnet/README.md`가 배너에서는 "resolves it without --prerelease"라고
+  # 하면서 바로 아래 펜스는 `--prerelease`를 시키고 있었다(같은 파일 안의 자기모순).
+  # 판정은 SSOT 파생이다: 게시본이 프리릴리스면 옵트인이 **옳고**, 정식이면 **틀리다**.
+  _pfa_flag="$(pc_fence_flags "$2")"
+  if df_is_prerelease "$3"; then
+    _pfa_ok=1; [ -n "$_pfa_flag" ] && _pfa_ok=0
+    assert_eq "ok" "$(ok_if "$_pfa_ok" MISSING)" \
+      "$1 은 프리릴리스가 게시본인데 펜스에 옵트인 플래그가 없다 — 소비자가 아무것도 못 받는다"
+  else
+    assert_eq "" "$_pfa_flag" \
+      "$1 펜스가 정식($3) 게시 뒤에도 프리릴리스 옵트인을 시킨다 — 소비자가 RC를 설치한다"
+  fi
+}
+
 FENCE_SEEN=0
 
 for L in $DEPLOY_LANGS; do
@@ -109,30 +147,9 @@ for L in $DEPLOY_LANGS; do
   # (위 블록). 26.6(Keycloak)·8.3(PHP)·2.2(Kotlin) 류는 첫 자리가 클래스 밖이라 안 걸린다 —
   # ⚠️ 함대가 2.x 로 가면 kotlin 툴체인 `2.4.10` 류가 클래스 안으로 들어온다. 오탐은 시끄럽고
   #    공허는 조용하니 그 교환은 의도한 것이다(실측 2026-09-02: 아홉 펜스에 major≥2 삼중항 0건).
-  _fence="$(awk '/^```/ { f = !f; next } f' "$f" | grep -oE "$PIN_RE" | sort -u || true)"
+  _fence="$(pc_fence_versions "$f")"
   [ -n "$_fence" ] && FENCE_SEEN=$((FENCE_SEEN + 1))
-  _bad="$(printf '%s\n' "$_fence" | grep -v '^$' | grep -Fxv "$_want" || true)"
-  assert_eq "" "$_bad" \
-    "$L/README.md 코드펜스에 핀된 버전이 기대값($_want)과 다르다 — 소비자에게 없는 좌표를 권하게 된다"
-
-  # ---- 프리릴리스 **옵트인 플래그** ----
-  #
-  # ⚠️ 위 검사는 **버전 문자열만** 뽑으므로 플래그를 못 본다. `dotnet add package … --prerelease`
-  # 에는 버전이 없어서, 정식 게시 뒤에도 그 줄이 남으면 가드가 초록인 채로 소비자가 RC를 설치한다.
-  # 실제로 그 상태였다 — `dotnet/README.md`가 배너에서는 "resolves it without --prerelease"라고
-  # 하면서 바로 아래 펜스는 `--prerelease`를 시키고 있었다(같은 파일 안의 자기모순).
-  # 레지스트리는 README를 버전마다 고정하므로 이 실수는 좌표 하나를 더 태워야 고쳐진다.
-  #
-  # 판정은 SSOT 파생이다: 게시본이 프리릴리스면 옵트인이 **옳고**, 정식이면 **틀리다**.
-  _flag="$(awk '/^```/ { f = !f; next } f' "$f" \
-    | grep -oE -- '--prerelease|--pre|@rc|minimum-stability' | sort -u | tr '\n' ' ')"
-  if df_is_prerelease "$_want"; then
-    assert_ok test -n "$_flag" \
-      "$L/README.md 은 프리릴리스가 게시본인데 펜스에 옵트인 플래그가 없다 — 소비자가 아무것도 못 받는다"
-  else
-    assert_eq "" "$_flag" \
-      "$L/README.md 펜스가 정식($_want) 게시 뒤에도 프리릴리스 옵트인을 시킨다 — 소비자가 RC를 설치한다"
-  fi
+  pc_fence_axis "$L/README.md" "$f" "$_want"
 done
 
 # ⚠️ 대조군 — 위 루프가 실제로 언어를 돌았는지 확인한다. `DEPLOY_LANGS`가 비거나 파일 경로
@@ -146,6 +163,86 @@ for L in $DEPLOY_LANGS; do n=$((n + 1)); done
 # 두는 것이 옳아 0건이다). 핀하던 언어가 조용히 핀을 잃으면 여기서 먼저 떨어진다.
 assert_ok test "$FENCE_SEEN" -ge 4
 assert_ok test "$n" -ge 9
+
+# ⚠️ **음성 대조군 — 두 추출이 실제로 파일을 읽는가.** 기존 대조군(`FENCE_SEEN >= 4` · `n >= 9`)은
+# **건수**만 세므로 비교가 no-op 이어도 통과한다(실측 SILENT 2건). 여기서는 **결함이 있는 사본**을
+# 만들어 그 추출을 태우고, 결함이 **보이는지**를 본다. 대조군 안에 추출을 다시 구현하지 않는다 —
+# 그렇게 하면 나란한 제3의 경로를 재게 되어 대조군이 통째로 공허해진다(#495 에서 실측했다).
+pc_negative_controls() {
+  _pnc_tmp="$(mktemp -d)"
+
+  # (1) 값 비교 — 펜스 핀을 한 자리 올린 사본. 추출이 그 값을 봐야 한다.
+  _pnc_v="$(df_published_version java 2>/dev/null || true)"
+  if [ -n "$_pnc_v" ]; then
+    awk -v old="$_pnc_v" -v new="${_pnc_v%.*}.$(( ${_pnc_v##*.} + 1 ))" '
+      /^```/ { f = !f; print; next }
+      f { gsub(old, new) } { print }
+    ' "$ROOT/java/README.md" > "$_pnc_tmp/v.md"
+    _pnc_got="$(pc_fence_versions "$_pnc_tmp/v.md")"
+    _pnc_hit=1
+    printf '%s\n' "$_pnc_got" | grep -qvFx "$_pnc_v" && _pnc_hit=0
+    assert_eq "ok" "$(ok_if "$_pnc_hit" "NOT-SEEN")" \
+      "[음성대조·펜스핀] 핀을 바꾼 사본에서도 추출이 기대값만 낸다 — 펜스 추출이 파일을 안 읽거나 PIN_RE 가 낡았다"
+  fi
+
+  # (2) 플래그 — 펜스에 옵트인을 넣은 사본. 추출이 그것을 봐야 한다.
+  printf '%s\n' '```sh' 'dotnet add package X --prerelease' '```' > "$_pnc_tmp/f.md"
+  _pnc_flag="$(pc_fence_flags "$_pnc_tmp/f.md")"
+  _pnc_fhit=1; [ -n "$_pnc_flag" ] && _pnc_fhit=0
+  assert_eq "ok" "$(ok_if "$_pnc_fhit" "NOT-SEEN")" \
+    "[음성대조·옵트인플래그] 옵트인이 들어 있는 사본에서도 추출이 빈 값을 낸다 — 플래그 목록이 낡았다"
+
+  # (3) ⚠️ **양성 대조** — 펜스가 **없는** 사본에서는 둘 다 빈 값이어야 한다(「늘 뭔가 낸다」와 구분).
+  printf '%s\n' 'dotnet add package X --prerelease' '버전 1.0.1 은 펜스 밖이다' > "$_pnc_tmp/n.md"
+  assert_eq "" "$(pc_fence_versions "$_pnc_tmp/n.md")" \
+    "[양성대조·펜스핀] 펜스가 없는데 버전을 뽑았다 — 펜스 경계를 안 보고 파일 전체를 훑는다"
+  assert_eq "" "$(pc_fence_flags "$_pnc_tmp/n.md" | tr -d ' ')" \
+    "[양성대조·옵트인플래그] 펜스가 없는데 플래그를 뽑았다 — 펜스 경계를 안 보고 파일 전체를 훑는다"
+
+  rm -rf "$_pnc_tmp"
+}
+pc_negative_controls
+
+# ⚠️ **음성 대조군 — 축의 *비교*가 실제로 도는가.** 기존 대조군(`FENCE_SEEN >= 4` · `n >= 9`)은
+# **건수**만 세므로 비교가 no-op 이어도 통과한다 — 실측(2026-09-15): `_bad=""`·`_flag=""` 둘 다
+# **SILENT** 였다. ⚠️ **추출만 함수화하고 대조군을 붙인 첫 판은 이 둘을 못 잡았다**(추출 고정은
+# 잡고 비교 무력화는 놓쳤다) — 대조군은 **자기가 겨눈 단언 자체**를 태워야 한다.
+# ⚠️ **다만 「가드가 실물을 못 잡는다」는 아니다** — 실측: 펜스 핀 `1.0.0 → 1.0.1` **CAUGHT**,
+# 정식 뒤 `--prerelease` **CAUGHT**. 공허는 **가드 자신을 고칠 때만** 열린다.
+pc_axis_control() { # $1=라벨 $2=결함 사본 경로 $3=기대 버전
+  _pac_f="$_A_FAIL"; _pac_p="$_A_PASS"
+  pc_fence_axis "음성대조-내부" "$2" "$3" >/dev/null 2>&1 </dev/null || true
+  _pac_grew=1; [ "$_A_FAIL" -gt "$_pac_f" ] && _pac_grew=0
+  _A_FAIL="$_pac_f"; _A_PASS="$_pac_p"
+  assert_eq "ok" "$(ok_if "$_pac_grew" DID-NOT-FAIL)" \
+    "[음성대조·펜스축] $1: 결함이 있는 사본에서도 축이 통과했다 — 비교가 no-op 이거나 추출이 낡았다"
+}
+pc_axis_positive() { # $1=라벨 $2=라이브 파일 $3=기대 버전
+  _pap_f="$_A_FAIL"; _pap_p="$_A_PASS"
+  pc_fence_axis "양성대조-내부" "$2" "$3" >/dev/null 2>&1 </dev/null || true
+  _pap_quiet=1; [ "$_A_FAIL" -eq "$_pap_f" ] && _pap_quiet=0
+  _A_FAIL="$_pap_f"; _A_PASS="$_pap_p"
+  assert_eq "ok" "$(ok_if "$_pap_quiet" CRIED)" \
+    "[양성대조·펜스축] $1: 라이브 파일에서 축이 실패했다 — 추출이나 기대값이 낡았다"
+}
+pc_run_axis_controls() {
+  _prc_tmp="$(mktemp -d)"
+  _prc_v="$(df_published_version java 2>/dev/null || true)"
+  if [ -n "$_prc_v" ]; then
+    _prc_wrong="${_prc_v%.*}.$(( ${_prc_v##*.} + 1 ))"
+    # (1) 펜스 안 핀만 한 자리 올린 사본 → **값 비교**가 울어야 한다.
+    printf '%s\n' '```xml' "<version>$_prc_wrong</version>" '```' > "$_prc_tmp/v.md"
+    pc_axis_control "펜스 핀" "$_prc_tmp/v.md" "$_prc_v"
+    # (2) 정식인데 옵트인이 든 사본 → **플래그 단언**이 울어야 한다.
+    printf '%s\n' '```sh' "install pkg@$_prc_v --prerelease" '```' > "$_prc_tmp/f.md"
+    pc_axis_control "옵트인 플래그" "$_prc_tmp/f.md" "$_prc_v"
+    # (3) 양성 — 올바른 사본에서는 조용해야 한다(「늘 운다」와 구분).
+    printf '%s\n' '```xml' "<version>$_prc_v</version>" '```' > "$_prc_tmp/ok.md"
+    pc_axis_positive "펜스 축" "$_prc_tmp/ok.md" "$_prc_v"
+  fi
+  rm -rf "$_prc_tmp"
+}
+pc_run_axis_controls
 
 # ---- 루트 문서의 게시 현황 주장 ----
 #
