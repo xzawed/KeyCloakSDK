@@ -55,7 +55,11 @@ for f in $callers; do
   if [ -z "$first" ]; then
     first="$TMP/$base.block"
   else
-    assert_ok cmp -s "$first" "$TMP/$base.block"
+    # 메시지 없는 assert_ok 는 실패해도 어느 워크플로가 갈라졌는지 안 말한다
+    # (실측 2026-09-15: 실제 갈라짐 변이가 낸 것은 tmp 경로 두 줄뿐이었다).
+    _rp_same=0; cmp -s "$first" "$TMP/$base.block" || _rp_same=1
+    assert_eq "ok" "$(ok_if "$_rp_same" DIFFERS)" \
+      "$base 의 판정 블록이 다른 워크플로와 글자 그대로 같지 않다 — 셋이 함께 움직여야 하는 계약이다"
   fi
 done
 cp "$first" "$TMP/classify.sh"
@@ -92,12 +96,68 @@ for f in $callers; do
     "$base: gh release create **명령 자체**에 플래그가 없다 — 주석에만 남기면 RC 가 Latest 로 나간다"
 done
 
+
+# ⚠️ **두 추출기가 인자를 실제로 읽는가.** 위 공허 방지선은 **비었는지**만 본다
+# (`test -s` · `test -n "$_cmd"`) — 실측(2026-09-15, `scripts/probe.sh --site`):
+#   · `gh_create_cmd` 를 **플래그가 든 고정 문자열**로 바꾸니 **SILENT**
+#   · `extract` 가 인자를 무시하고 **한 파일만** 읽게 하니 **SILENT**
+#     (그러면 세 블록이 구조적으로 같아져 `cmp -s` 가 무의미해진다 — dotnet·php 블록이
+#      갈라져도 안 보인다)
+# ⚠️ **다만 「가드가 실물을 못 잡는다」는 아니다** — 같은 러너로 잰 실측: dotnet 블록을 실제로
+# 갈라놓으면 **CAUGHT**, php 명령에서 플래그를 떼면 **CAUGHT**. 공허는 **가드 자신을 고칠 때만**
+# 열린다. 그래서 대조군은 **그 추출기 자신**을 결함 사본에 태워 결함이 **보이는지** 본다.
+rp_extract_control() {
+  _rpe_tmp="$(mktemp -d)"
+  _rpe_src="$(printf '%s\n' $callers | head -1)"
+  # 블록 안에 표식 한 줄을 넣은 사본. 추출이 인자를 읽으면 그 표식이 결과에 나와야 한다.
+  awk '{ print } /# >>> prerelease-classify/ { print "          # CONTROL-MARK" }' \
+    "$_rpe_src" > "$_rpe_tmp/w.yml"
+  _rpe_hit=1
+  extract "$_rpe_tmp/w.yml" | grep -q 'CONTROL-MARK' && _rpe_hit=0
+  # 양성 — 표식이 없는 사본에서는 안 나와야 한다(「늘 참」과 구분).
+  cp "$_rpe_src" "$_rpe_tmp/clean.yml"
+  _rpe_clean=0
+  extract "$_rpe_tmp/clean.yml" | grep -q 'CONTROL-MARK' && _rpe_clean=1
+  rm -rf "$_rpe_tmp"
+  assert_eq "ok" "$(ok_if "$_rpe_hit" NOT-SEEN)" \
+    "[음성대조·블록추출] 블록에 표식을 넣은 사본에서도 추출이 그것을 못 봤다 — extract 가 인자를 안 읽거나 센티널이 낡았다"
+  assert_eq "ok" "$(ok_if "$_rpe_clean" SEEN)" \
+    "[양성대조·블록추출] 표식이 없는 사본에서 표식을 봤다 — 추출이 인자와 무관한 값을 낸다"
+}
+rp_ghcmd_control() {
+  _rpg_tmp="$(mktemp -d)"
+  _rpg_src="$(printf '%s\n' $callers | head -1)"
+  # 명령에서 플래그만 떼어낸 사본. 추출이 인자를 읽으면 결과에 플래그가 없어야 한다.
+  sed 's/--prerelease="${PRERELEASE}"/DROPPED-BY-CONTROL/' "$_rpg_src" > "$_rpg_tmp/w.yml"
+  _rpg_cmd="$(gh_create_cmd "$_rpg_tmp/w.yml")"
+  _rpg_gone=1
+  case "$_rpg_cmd" in *'--prerelease='*) ;; *) _rpg_gone=0 ;; esac
+  # 양성 — 손대지 않은 사본에서는 플래그가 그대로 보여야 한다.
+  cp "$_rpg_src" "$_rpg_tmp/clean.yml"
+  _rpg_kept=1
+  case "$(gh_create_cmd "$_rpg_tmp/clean.yml")" in *'--prerelease='*) _rpg_kept=0 ;; esac
+  rm -rf "$_rpg_tmp"
+  assert_eq "ok" "$(ok_if "$_rpg_gone" STILL-THERE)" \
+    "[음성대조·명령추출] 플래그를 뗀 사본에서도 추출 결과에 플래그가 있다 — gh_create_cmd 가 인자를 안 읽는다(고정 문자열)"
+  assert_eq "ok" "$(ok_if "$_rpg_kept" NOT-SEEN)" \
+    "[양성대조·명령추출] 손대지 않은 사본에서 플래그를 못 봤다 — 연속행 이어붙임이 낡았다"
+}
+rp_extract_control
+rp_ghcmd_control
+
 # ── (4) 분류표 ────────────────────────────────────────────────────────────────
 # 워크플로에서 떼어낸 블록을 그대로 실행한다. 판정 불가는 exit 1이므로 UNDECIDABLE로 접는다.
 # ⚠️ 블록의 출력은 **stdout으로** 버린다 — `::error::`는 GitHub 워크플로 명령이라 stderr가 아니라
 # stdout으로 나간다(2>/dev/null만 걸면 진단 문구가 판정값에 섞여 들어온다).
+# ⚠️ **classify 는 기대값을 볼 수 없어야 한다 — 서브셸이라 루프 변수를 상속한다.**
+# 실측(2026-09-15, `scripts/probe.sh --site`): `printf '%s' "$PRERELEASE"` 를 `"$want"` 로
+# 바꾸니 표가 **자기 자신과 대조**하게 돼 열다섯 행이 전부 통과했다(**SILENT**).
+# 행수 하한(`rows == 15`)도 모두 돌기는 했으므로 잡지 못한다 — **공허한 것은 행수가
+# 아니라 오라클이다**. 독립 레그(Grok)가 코드만 읽고 이 자리를 지목했고 프로브가 확인했다.
+# 그래서 기대값을 담은 변수를 **비우고** 부른다 — 이제 `"$want"` 로 바꿔도 빈 문자열이 나온다.
 classify() {
   (
+    want=''; ROWS=''          # 오라클 결합 차단 — 기대값을 볼 수 없다
     VERSION="$1"
     . "$TMP/classify.sh" >/dev/null 2>&1
     printf '%s' "$PRERELEASE"
@@ -144,5 +204,16 @@ for row in $ROWS; do
 done
 # 표가 조용히 비면(변수명을 잘못 고치는 등) 위 루프는 0회 돌고 통과한다. 행수를 못박는다.
 assert_eq "15" "$rows" "분류표 행수(줄이는 변경은 곧 커버리지 축소다)"
+
+# ⚠️ **음성 대조군 — 오라클이 입력에 반응하는가.** 행수 하한은 **몇 번 돌았는지**만 센다 —
+# 분류기가 입력과 무관하게 기대값을 되돌려도 그 수는 그대로다(실측 SILENT).
+# 정식과 프리릴리스는 반드시 **다른** 답이 나와야 한다 — 같으면 분류가 아니다.
+_rp_a="$(classify 1.0.0)"; _rp_b="$(classify 0.1.0-rc.1)"
+_rp_disc=1; [ "$_rp_a" != "$_rp_b" ] && _rp_disc=0
+assert_eq "ok" "$(ok_if "$_rp_disc" SAME)" \
+  "[음성대조·분류기] 정식(1.0.0)과 프리릴리스(0.1.0-rc.1)에 **같은 답**을 낸다 — 분류기가 입력을 안 보거나 기대값을 되돌려준다"
+_rp_ok=1; [ "$_rp_a" = "false" ] && _rp_ok=0
+assert_eq "ok" "$(ok_if "$_rp_ok" "$_rp_a")" \
+  "[양성대조·분류기] 정식 1.0.0 을 false 로 안 봄 — 분류 블록이나 실행 경로가 낛았다"
 
 assert_report
