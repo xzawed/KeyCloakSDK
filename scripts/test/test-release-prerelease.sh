@@ -55,7 +55,11 @@ for f in $callers; do
   if [ -z "$first" ]; then
     first="$TMP/$base.block"
   else
-    assert_ok cmp -s "$first" "$TMP/$base.block"
+    # 메시지 없는 assert_ok 는 실패해도 어느 워크플로가 갈라졌는지 안 말한다
+    # (실측 2026-09-15: 실제 갈라짐 변이가 낸 것은 tmp 경로 두 줄뿐이었다).
+    _rp_same=0; cmp -s "$first" "$TMP/$base.block" || _rp_same=1
+    assert_eq "ok" "$(ok_if "$_rp_same" DIFFERS)" \
+      "$base 의 판정 블록이 다른 워크플로와 글자 그대로 같지 않다 — 셋이 함께 움직여야 하는 계약이다"
   fi
 done
 cp "$first" "$TMP/classify.sh"
@@ -91,6 +95,55 @@ for f in $callers; do
   assert_contains "$_cmd" '--prerelease="${PRERELEASE}"' \
     "$base: gh release create **명령 자체**에 플래그가 없다 — 주석에만 남기면 RC 가 Latest 로 나간다"
 done
+
+
+# ⚠️ **두 추출기가 인자를 실제로 읽는가.** 위 공허 방지선은 **비었는지**만 본다
+# (`test -s` · `test -n "$_cmd"`) — 실측(2026-09-15, `scripts/probe.sh --site`):
+#   · `gh_create_cmd` 를 **플래그가 든 고정 문자열**로 바꾸니 **SILENT**
+#   · `extract` 가 인자를 무시하고 **한 파일만** 읽게 하니 **SILENT**
+#     (그러면 세 블록이 구조적으로 같아져 `cmp -s` 가 무의미해진다 — dotnet·php 블록이
+#      갈라져도 안 보인다)
+# ⚠️ **다만 「가드가 실물을 못 잡는다」는 아니다** — 같은 러너로 잰 실측: dotnet 블록을 실제로
+# 갈라놓으면 **CAUGHT**, php 명령에서 플래그를 떼면 **CAUGHT**. 공허는 **가드 자신을 고칠 때만**
+# 열린다. 그래서 대조군은 **그 추출기 자신**을 결함 사본에 태워 결함이 **보이는지** 본다.
+rp_extract_control() {
+  _rpe_tmp="$(mktemp -d)"
+  _rpe_src="$(printf '%s\n' $callers | head -1)"
+  # 블록 안에 표식 한 줄을 넣은 사본. 추출이 인자를 읽으면 그 표식이 결과에 나와야 한다.
+  awk '{ print } /# >>> prerelease-classify/ { print "          # CONTROL-MARK" }' \
+    "$_rpe_src" > "$_rpe_tmp/w.yml"
+  _rpe_hit=1
+  extract "$_rpe_tmp/w.yml" | grep -q 'CONTROL-MARK' && _rpe_hit=0
+  # 양성 — 표식이 없는 사본에서는 안 나와야 한다(「늘 참」과 구분).
+  cp "$_rpe_src" "$_rpe_tmp/clean.yml"
+  _rpe_clean=0
+  extract "$_rpe_tmp/clean.yml" | grep -q 'CONTROL-MARK' && _rpe_clean=1
+  rm -rf "$_rpe_tmp"
+  assert_eq "ok" "$(ok_if "$_rpe_hit" NOT-SEEN)" \
+    "[음성대조·블록추출] 블록에 표식을 넣은 사본에서도 추출이 그것을 못 봤다 — extract 가 인자를 안 읽거나 센티널이 낡았다"
+  assert_eq "ok" "$(ok_if "$_rpe_clean" SEEN)" \
+    "[양성대조·블록추출] 표식이 없는 사본에서 표식을 봤다 — 추출이 인자와 무관한 값을 낸다"
+}
+rp_ghcmd_control() {
+  _rpg_tmp="$(mktemp -d)"
+  _rpg_src="$(printf '%s\n' $callers | head -1)"
+  # 명령에서 플래그만 떼어낸 사본. 추출이 인자를 읽으면 결과에 플래그가 없어야 한다.
+  sed 's/--prerelease="${PRERELEASE}"/DROPPED-BY-CONTROL/' "$_rpg_src" > "$_rpg_tmp/w.yml"
+  _rpg_cmd="$(gh_create_cmd "$_rpg_tmp/w.yml")"
+  _rpg_gone=1
+  case "$_rpg_cmd" in *'--prerelease='*) ;; *) _rpg_gone=0 ;; esac
+  # 양성 — 손대지 않은 사본에서는 플래그가 그대로 보여야 한다.
+  cp "$_rpg_src" "$_rpg_tmp/clean.yml"
+  _rpg_kept=1
+  case "$(gh_create_cmd "$_rpg_tmp/clean.yml")" in *'--prerelease='*) _rpg_kept=0 ;; esac
+  rm -rf "$_rpg_tmp"
+  assert_eq "ok" "$(ok_if "$_rpg_gone" STILL-THERE)" \
+    "[음성대조·명령추출] 플래그를 뗀 사본에서도 추출 결과에 플래그가 있다 — gh_create_cmd 가 인자를 안 읽는다(고정 문자열)"
+  assert_eq "ok" "$(ok_if "$_rpg_kept" NOT-SEEN)" \
+    "[양성대조·명령추출] 손대지 않은 사본에서 플래그를 못 봤다 — 연속행 이어붙임이 낡았다"
+}
+rp_extract_control
+rp_ghcmd_control
 
 # ── (4) 분류표 ────────────────────────────────────────────────────────────────
 # 워크플로에서 떼어낸 블록을 그대로 실행한다. 판정 불가는 exit 1이므로 UNDECIDABLE로 접는다.
