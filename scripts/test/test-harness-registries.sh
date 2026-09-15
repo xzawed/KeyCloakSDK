@@ -48,7 +48,7 @@ assert_ok test -n "$SCOPE"
 #
 # 판정을 정규식이 아니라 substr로 하는 것도 같은 이유다 — 방언·앵커 해석에 기대지 않으면
 # 이 부류가 애초에 생기지 않는다. 이걸 잡아낸 것은 아래 대조군(`blocks >= 3`)이다.
-TBL="$(awk '
+hr_table() { awk '
   substr($0, 1, 9) == "packages:" { inpkg = 1; next }
   { if (substr($0, length($0), 1) == "\r") $0 = substr($0, 1, length($0) - 1) }
   inpkg == 0 { next }
@@ -66,7 +66,8 @@ TBL="$(awk '
     n++; order[n] = name; proxy[name] = 0; cur = name
   }
   END { for (i = 1; i <= n; i++) printf "%d\t%s\t%d\n", i, order[i], proxy[order[i]] }
-' "$CFG")"
+' "$1"; }
+TBL="$(hr_table "$CFG")"
 
 idx_of()   { printf '%s\n' "$TBL" | awk -F'\t' -v n="$1" '$2 == n { print $1 }'; }
 proxy_of() { printf '%s\n' "$TBL" | awk -F'\t' -v n="$1" '$2 == n { print $3 }'; }
@@ -93,6 +94,33 @@ fi
 # (jose·openid-client·@keycloak/keycloak-admin-client 등)이 해석되지 않는다.
 assert_eq "1" "$(proxy_of '@*/*')"  "@*/* 에 proxy가 없다 — 스코프 전이 의존성이 해석되지 않는다"
 assert_eq "1" "$(proxy_of '**')"    "** 에 proxy가 없다 — 비스코프 전이 의존성이 해석되지 않는다"
+
+# ⚠️ **대조군 — 이 표가 정말 그 yaml 에서 나왔는가.** `blocks >= 3` 은 **행 수**만 세므로,
+# 파서를 고정 3행을 찍는 것으로 바꿔도 통과한다 — 실측(2026-09-15, `scripts/probe.sh --site`):
+# awk `END` 를 고정 행으로 교체하니 **SILENT** 였다(독립 레그가 코드만 읽고 같은 자리를 지목했다).
+# ⚠️ **다만 이것은 「가드가 실물을 못 잡는다」가 아니다** — 같은 러너로 잰 실측: 자기 스코프에
+# `proxy:` 를 실제로 붙이면 **CAUGHT**(의도한 단언 1건). 공허는 **가드 자신을 고칠 때만** 열린다.
+# 그래서 대조군은 **파서 자신**을 결함 있는 사본에 태워 표가 **따라 바뀌는지** 본다.
+hr_negative_control() {
+  _hnc_tmp="$(mktemp -d)"
+  # 자기 스코프 블록에 proxy 를 넣은 사본 — 표의 그 행이 0 → 1 로 바뀌어야 한다.
+  awk -v own="  '$SCOPE/*':" '
+    { print }
+    $0 == own { print "    proxy: npmjs" }
+  ' "$CFG" > "$_hnc_tmp/v.yaml"
+  _hnc_tbl="$(hr_table "$_hnc_tmp/v.yaml")"
+  _hnc_got="$(printf '%s\n' "$_hnc_tbl" | awk -F'\t' -v n="$SCOPE/*" '$2 == n { print $3 }')"
+  rm -rf "$_hnc_tmp"
+  assert_eq "1" "$_hnc_got" \
+    "[음성대조·레지스트리표] proxy 를 넣은 사본에서도 표가 0 을 말한다 — 파서가 파일을 안 읽거나(고정 행) 블록 판정이 낡았다"
+}
+# ⚠️ **양성 대조** — 라이브 파일에서는 0 이어야 한다(「늘 1 을 낸다」와 구분한다).
+hr_positive_control() {
+  assert_eq "0" "$(proxy_of "$SCOPE/*")" \
+    "[양성대조·레지스트리표] 라이브 파일에서 자기 스코프가 0 이 아니다"
+}
+hr_negative_control
+hr_positive_control
 
 # ---- 소스 **추가** 언어들: 출처를 기록하고 단언하는가 (이슈 #167) ----
 #

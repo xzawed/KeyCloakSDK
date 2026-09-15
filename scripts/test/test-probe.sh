@@ -50,8 +50,29 @@ assert_eq "0" "$(code_of "sed -i s/hello/bye/ f.txt" grep -q hello f.txt)" \
   "적용된 변이를 검사가 잡으면 CAUGHT(0)"
 
 # (b) 구멍 — 변이가 적용됐는데 검사가 통과한다.
-assert_eq "1" "$(code_of "sed -i s/hello/bye/ f.txt" true)" \
+# ⚠️ **검사 명령은 그 파일을 실제로 읽는 것이라야 한다.** 예전 이 케이스는 `true` 였는데,
+# `true` 는 아무것도 안 읽으므로 「가드가 침묵했다」가 아니라 **아무 일도 없었다**이다 —
+# 2026-09-15 에 러너가 그 구분을 갖추면서 이 케이스는 INVALID 로 넘어갔다(아래 (b2)).
+# `test -f` 는 파일을 **보되 내용을 안 보는** 가드라, 겨누던 「보는데 못 본다」를 그대로 나타낸다.
+assert_eq "1" "$(code_of "sed -i s/hello/bye/ f.txt" test -f f.txt)" \
   "적용된 변이를 검사가 놓치면 SILENT(1)"
+
+# (b2) ⚠️ **검사가 바뀐 파일을 읽지 않으면 SILENT 가 아니라 INVALID.** 실측 2026-09-15:
+#      `DEPLOY_LANGS` 를 비우는 변이를 그 변수를 **아예 안 쓰는** 자가테스트로 검사해 SILENT 를
+#      얻었다. 자리 검사는 통과했다(변이가 선언한 줄을 쳤으므로) — 착지·의미에 이어 **세 번째**
+#      사각이었다. 읽지 않는 것을 바꾼 뒤의 통과를 구멍으로 쓰면 **없는 결함**을 보고하게 된다.
+assert_eq "2" "$(code_of "sed -i s/hello/bye/ f.txt" true)" \
+  "검사가 바뀐 파일을 읽지 않으면 INVALID(2) — SILENT 로 읽으면 없는 구멍이 된다"
+
+# (b3) 면제는 **명시적으로만** — `--no-site` 와 같은 관용이다(런타임 조립 경로용).
+_relwaive() {
+  set +e
+  ( cd "$SANDBOX" && sh scripts/probe.sh --no-site --assume-relevant "sed -i s/hello/bye/ f.txt" true ) >/dev/null 2>&1
+  _c=$?
+  set -e
+  echo "$_c"
+}
+assert_eq "1" "$(_relwaive)" "--assume-relevant 를 주면 관련성 검사를 면제하고 SILENT(1) 로 판정한다"
 
 # (c) ⚠️ **이 러너의 존재 이유** — 변이가 트리를 바꾸지 않았으면 SILENT 가 아니라 INVALID.
 #     실측 두 건이 이 자리였다: `sed` 개행 이스케이프가 깨져 변이가 안 붙었는데
