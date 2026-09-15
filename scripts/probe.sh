@@ -139,11 +139,13 @@ echo "변이 diff:"
 # ⚠️ **SILENT 를 선언하기 전에 「검사가 이 파일을 읽기는 하는가」를 본다.** 착지·의미에 이어
 # 세 번째 사각이다 — 실측 2026-09-15: `DEPLOY_LANGS` 를 비우는 변이를
 # `test-release-prerelease.sh` 로 검사해 **SILENT** 를 얻었는데, 그 파일은 `DEPLOY_LANGS` 를
-# **아예 쓰지 않는다**. 자리 검사는 통과했다(변이가 `deploy-facts.sh` 의 선언한 줄을 쳤으므로).
-# 읽지 않는 것을 바꾼 뒤 「가드가 침묵했다」고 쓰면 **없는 구멍을 보고**하게 된다.
+# **아예 쓰지 않는다**(`deploy-facts` 언급 0건). 자리 검사는 통과했다 — 변이가 `deploy-facts.sh`
+# 의 선언한 줄을 쳤으므로. 읽지 않는 것을 바꾼 뒤의 통과는 「가드가 침묵했다」가 아니라
+# **아무 일도 없었다**이고, 그것을 구멍으로 쓰면 **없는 결함**을 보고하게 된다.
 #
-# 근사 방법: 검사 명령의 인자 중 실재하는 파일을 씨앗으로 두고, 그 파일들이 **문자열로 언급하는**
-# 파일명·디렉터리를 따라 3단계까지 넓힌다. 바뀐 파일이 그 집합에 없으면 판정하지 않는다.
+# ⚠️ **전이는 소싱(`.`/`source`)만 따라간다.** 처음엔 「파일명 언급」을 3단계 전이시켰는데,
+# 가드 전부를 돌리는 워크플로 하나를 거쳐 **모든 파일이 서로 연결돼** 이 검사가 통째로 공허해졌다
+# (실측: 같은 무관 변이가 그대로 SILENT 로 통과했다). 언급은 **씨앗 집합 안에서만** 본다.
 # ⚠️ **동적으로 조립되는 경로는 이 근사가 못 본다**(`"$CONSUME/$1-run.sh"` 류). 그때는
 # `--assume-relevant` 로 **명시적으로 면제**하라 — `--no-site` 와 같은 관용이다.
 probe_relevant() {
@@ -152,12 +154,14 @@ probe_relevant() {
     [ -f "$WT/$_a" ] && _rl_set="$_rl_set $_a"
   done
   [ -n "$_rl_set" ] || return 1      # 씨앗조차 없다 = 파일을 하나도 안 읽는 검사
+  # 소싱을 따라 닫는다(셸 스크립트가 실제로 읽는 것).
   _rl_i=0
-  while [ "$_rl_i" -lt 3 ]; do
+  while [ "$_rl_i" -lt 5 ]; do
     _rl_new=''
     for _f in $_rl_set; do
-      _rl_names="$(grep -oE '[A-Za-z0-9_.-]+[.](sh|mjs|js|json|yml|yaml|toml|md|txt)' "$WT/$_f" 2>/dev/null | sort -u || true)"
-      for _n in $_rl_names; do
+      _rl_srcs="$(grep -oE '^[[:space:]]*(\.|source)[[:space:]]+"?[^"]*"?' "$WT/$_f" 2>/dev/null \
+        | grep -oE '[A-Za-z0-9_.-]+[.](sh|bash)' | sort -u || true)"
+      for _n in $_rl_srcs; do
         for _c in $( (cd "$WT" && git ls-files) | grep -E "(^|/)$_n\$" || true); do
           case " $_rl_set $_rl_new " in *" $_c "*) ;; *) _rl_new="$_rl_new $_c" ;; esac
         done
@@ -167,13 +171,15 @@ probe_relevant() {
     _rl_set="$_rl_set $_rl_new"
     _rl_i=$((_rl_i + 1))
   done
-  # 바뀐 파일이 집합에 있거나, 그 **디렉터리**가 집합의 어느 파일에 문자열로 등장하면 관련 있다
-  # (글롭으로 읽는 자리 — `.github/workflows/*.yml` 류 — 를 거짓 무관으로 버리지 않기 위해).
+  # 바뀐 파일이 그 집합에 있거나, 집합의 어느 파일이 그 **경로·파일명·디렉터리**를 문자열로
+  # 언급하면 관련 있다(글롭으로 읽는 자리 — `.github/workflows/*.yml` 류 — 를 버리지 않기 위해).
   for _ch in $CHANGED; do
     case " $_rl_set " in *" $_ch "*) return 0 ;; esac
+    _rl_base="$(basename "$_ch")"
     _rl_dir="$(dirname "$_ch")"
-    [ "$_rl_dir" = "." ] && continue
     for _f in $_rl_set; do
+      grep -qF -- "$_rl_base" "$WT/$_f" 2>/dev/null && return 0
+      [ "$_rl_dir" = "." ] && continue
       grep -qF -- "$_rl_dir" "$WT/$_f" 2>/dev/null && return 0
     done
   done
