@@ -17,7 +17,7 @@ COPY harness/apps/rust/src /app/src
 COPY harness/apps/rust/Cargo.lock /app/Cargo.lock
 RUN cargo build --locked --release && strip target/release/app-rust
 
-FROM alpine:3.20
+FROM alpine:3.21
 RUN apk add --no-cache ca-certificates && adduser -D -u 10001 app
 COPY --from=build /app/target/release/app-rust /usr/local/bin/app-rust
 USER app

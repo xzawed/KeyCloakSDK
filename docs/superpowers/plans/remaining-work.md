@@ -772,7 +772,14 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 - [x] `runtime-eol-support-window` **[H/M]** 선언된 소비자 런타임 하한 둘이 상류 지원 종료다 — Ruby 3.2는 이미 EOL, .NET 8은 68일 뒤 · `ruby/keycloak-sdk.gemspec:20`
 - [ ] `consumer-intake-surface-absent` **[M/S]** 9개 레지스트리에 게시했는데 소비자 유입 표면이 통째로 없다 — 이슈 템플릿·PR 템플릿·CODEOWNERS·행동강령 0건 · `.github/ISSUE_TEMPLATE:0`
-- [ ] `harness-base-images-unmanaged` **[M/M]** 하네스 Docker 베이스 이미지 20개가 dependabot·가드 양쪽 밖 — 무핀 태그와 갈린 alpine이 섞여 있다 · `.github/dependabot.yml:134`
+- [ ] `harness-base-images-unmanaged` **[M/M · 절반 닫힘 2026-09-15]** 하네스 Docker 베이스 이미지 20개가 dependabot·가드 양쪽 밖 — 무핀 태그와 갈린 alpine이 섞여 있다 · `.github/dependabot.yml:134`
+  - ✅ **절반 닫힘 2026-09-15 — 일관성 가드는 섰고 dependabot 은 열어 둔다.** ⚠️ **먼저 세었더니 수가 달랐다**: 「20개」는 **파일 수**이고 실제는 **20 파일 · 26 `FROM` · 13종**이다(픽스처 3개를 빼야 한다 — 처음 집계에 섞여 23/30/13 이 나왔다). 「무핀 태그」는 **`latest` 가 아니라 digest 미핀**을 뜻한다(모두 태그는 있다).
+  - **주장 둘 다 실측으로 확인됐다**: dependabot 10 생태계에 **docker 없음**(0건) · 갈림을 잡는 가드 **0건**(프로브: 한 파일의 `alpine:3.20` → `3.22` 가 `check-versions.mjs`·`check-docs.mjs` **둘 다 SILENT**).
+  - ⚠️ **다만 「가드 밖」은 절반만 참이다** — `check-versions.mjs` 는 `FROM` 을 읽는다. 단 **`rust:` 만**(`/^FROM\s+(?:--\S+\s+)*rust:(\d+(?:\.\d+)*)/`) 이고 `Cargo.toml` 의 `rust-version` 과 대조한다. 그래서 **rust 태그를 한 파일만 올리면 잡힌다**(MSRV 불일치로). 독립 레그가 그 정규식을 짚었고 실측이 일치했다. 가족 내 태그 통일·digest 핀은 어디에도 없다(`sha256` 검색 0건).
+  - **실물 결함 하나를 고쳤다**: `alpine` 이 **3.20 둘(go·rust 앱) · 3.21 하나(php consume)** 로 갈려 있었다. 올려서 통일했다 — go·rust 의 alpine 단계는 `ca-certificates`+`adduser`+정적 바이너리 복사뿐이라 위험이 낮고, php 쪽은 `php83` 패키지 집합이 걸려 내리면 위험하다. ⚠️ **Docker 빌드는 여기서 돌리지 않았다**(하네스는 별도 게이트다).
+  - **가드**: `scripts/test/test-base-images.sh`(repo-hygiene 배선, 5 단언) — 같은 저장소는 한 태그 · 떠다니는 태그 금지 · 공허 하한(`BI_MIN`) · 면제표(이유 강제 + 낡으면 실패). 변이 **3/3 CAUGHT**(갈림·떠다님·파싱 무력화, 각각 **격리해서**). ⚠️ `eclipse-temurin` 은 **jdk/jre 가 정당하게 갈려** 면제표에 이유와 함께 있다.
+  - ⚠️ **하한을 짐작으로 15 를 박았다가 가드가 자기 자신을 빨갛게 했다**(실측 12). 등록부가 이미 경고한 부류다 — **세어서 박는다**. 그리고 상수를 검사와 문구 **두 곳**에 적어 갈렸다(조건 10 · 문구 15) — `BI_MIN` 변수 하나로 묶었다.
+  - ⏸ **열어 두는 절반 — dependabot 의 `docker` 생태계.** 이 저장소는 전부 `directory:` 단수를 쓰고 Dockerfile 이 20개 디렉터리에 흩어져 있다. 추가하면 **주간 봇 PR 양**이 바뀌고, 이 리포는 이미 dependabot 잡이 빨개지는 소음을 겪었다(ruby `parallel` 사례). **봇 설정은 사람 판단이 붙는 자리**라 측정만 남기고 연다.
 - [ ] `release-artifact-verification-undocumented` **[M/M]** 소비자가 게시물의 무결성을 확인할 방법이 문서에 0건 — 증명 수단이 레인마다 다른데 아무도 그 표를 쓰지 않았다 · `SECURITY.md:96`
 - [ ] `dependency-license-claims-unverified` **[L/M]** CLAUDE.md가 아홉 스택 전부의 라이선스 호환을 단언하는데 CI에 라이선스 검사가 0건 · `CLAUDE.md:150`
 - [ ] `repo-topics-omit-four-languages` **[L/S]** 저장소 topics가 아홉 언어 중 다섯만 담고 20개 한도를 소진했다 — 그리고 topics는 SSOT 밖이다 · `.github/security-config.json:2`
