@@ -96,3 +96,7 @@ coverage.info
 
 # Playwright MCP 브라우저 세션 산출물(스냅샷·콘솔 로그) — 진단용 임시 파일이다.
 .playwright-mcp/
+
+# ⚠️ Cygwin/MSYS crash dumps — a runaway shell (infinite recursion) drops these in the repo root
+# and `git add -A` sweeps them in. One reached `main` this way (2026-09-15).
+*.stackdump
