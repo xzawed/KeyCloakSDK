@@ -180,6 +180,15 @@ jobs:
       - name: .dockerignore 파생 대조(.gitignore 가 산출물이라 말한 것을 덮는가)
         run: sh scripts/test/test-dockerignore-derived.sh
 
+      # ⚠️ 하네스 **베이스 이미지**가 조용히 갈리는 것을 막는다. 실측 2026-09-15: 20 파일·26 `FROM`
+      # ·12종인데 **dependabot 10 생태계에 docker 가 없고** 갈림을 잡는 가드도 0건이었다 —
+      # 프로브로 확인했다(한 파일의 `alpine:3.20` → `3.22` 가 `check-versions.mjs`·`check-docs.mjs`
+      # **둘 다 SILENT**). 실제로 `alpine` 이 3.20 둘 · 3.21 하나로 갈려 있었다(같은 PR 에서 통일).
+      # ⚠️ `check-versions.mjs` 는 `FROM` 을 읽지만 **`rust:` 만** 본다(MSRV 대조) — 독립 레그가
+      # 그 정규식을 짚었고 실측이 일치했다. 가족 내 태그 통일·digest 핀은 어디에도 없다.
+      - name: 하네스 베이스 이미지 일관성(같은 저장소는 한 태그로 · 떠다니는 태그 금지)
+        run: sh scripts/test/test-base-images.sh
+
       # ⚠️ OSV 감사의 fail-closed 지점이 **사본 전부**에 있는가. `gradlew dependencies` 는 아무것도
       # 해석하지 못해도 exit 0 이라, 게이트 없는 자리는 가짜 좌표를 OSV 에 물어 "취약점 없음"으로
       # 초록이 된다. 실측 2026-09-07: 생산자 3 · 게이트 1(하네스 잡에만) — 사본 셋 중 하나만 고쳐진
