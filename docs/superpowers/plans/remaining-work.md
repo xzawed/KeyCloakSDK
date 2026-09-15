@@ -676,7 +676,13 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `H5-install-version-class-drift` **[L/M]** install 하네스의 「버전을 무엇이 정하는가」 분류가 코드·산문·SSOT 셋에서 갈렸다 — dotnet 이 정반대 · `harness/install/lib/verify-lib.sh:56`
 - [ ] `H6-kotlin-consume-pin-audits-old-artifact` **[L/S]** kotlin 소비자 앱의 0.1.0 리터럴이 야간 OSV 감사가 실제로 해석하는 좌표다 · `harness/install/consume/kotlin-app/build.gradle.kts:36`
 - [ ] `H7-harness-readme-vs-tree` **[L/S]** harness/README.md 가 실제 트리와 갈렸다 — install/ 64파일이 지도에 없고 ruby 프레임워크가 틀렸다 · `harness/README.md:16`
-- [ ] `H8-root-config-never-rederived` **[L/M]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
+- [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
+  - ✅ **닫힘 2026-09-15 — 실측이 주장을 확인했고 규모는 예상보다 컸다.** 하네스 Docker 컨텍스트가 **70.8MB 였고 그중 34MB(48%)가 빌드·캐시 산출물**이었다: `harness/apps/kotlin/build` 31M · `kotlin/build` 12.5M · `python/.mypy_cache` 12.2M · `kotlin/.gradle` 4.3M · `.superpowers/sdd` 4.7M. 아홉째 언어(kotlin)의 Gradle 산출물과 mypy 캐시가 **한 번도 반영된 적이 없다**. 고친 뒤 **5.2MB(−93%)**.
+  - ⚠️ **다른 한 짝(`.gitignore`)은 문제가 아니었다** — 루트에 빈 자리가 있어도 **언어별 `.gitignore` 14개**가 메운다(독립 레그와 실측 일치). 실타격은 `.dockerignore` 뿐이다.
+  - ⚠️ **`python/.mypy_cache` 를 「git 이 안 무시한다」고 잠정 판독했다가 철회했다** — mypy 가 `python/.mypy_cache/.gitignore`(`*`)를 **스스로 쓴다**. `git check-ignore` 를 디렉터리 경로로만 물으면 안쪽 규칙을 못 본다.
+  - **처방은 손 목록이 아니라 파생이다** — `scripts/test/test-dockerignore-derived.sh`(repo-hygiene 배선, 4 단언): 추적된 **모든 `.gitignore`** 에서 디렉터리 패턴을 뽑아(실측 43) `.dockerignore` 가 덮거나 **이유가 적힌 면제표**에 있어야 한다. 열 번째 언어가 `.gitignore` 를 들고 오면 여기서 먼저 빨개진다. 변이: 실제 결함(`**/build/` 제거) `CAUGHT`(이름까지 말한다) · 파생 무력화 `CAUGHT`(공허 하한 30).
+  - ⚠️ **트리에 실재하는 디렉터리로 파생하지 않았다** — CI 는 새 체크아웃이라 그것들이 없고, 그러면 가드가 **CI 에서만 조용히 공허해진다**. 규칙에서 파생해야 양쪽에서 산다.
+  - ⚠️ **면제표에 이유를 강제한다**(탭 뒤가 비면 실패) **+ 면제가 파생 집합에 없으면 실패**한다 — 없어진 패턴을 면제한 채 두면 표가 거짓말이 된다.
 
 ## D. 원장 밖 — 46건 (열림 44)
 

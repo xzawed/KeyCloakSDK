@@ -173,6 +173,13 @@ jobs:
       - name: 보안 기본값 자가테스트(9언어 코드 ↔ 문서 정합)
         run: sh scripts/test/test-security-defaults.sh
 
+      # ⚠️ `.dockerignore` 가 **손 목록으로 썩는 것**을 막는다. 실측 2026-09-15: 아홉째 언어
+      # (kotlin)의 Gradle 산출물과 mypy 캐시가 한 번도 반영되지 않아 하네스 Docker 컨텍스트
+      # **70.8MB 중 34MB(48%)가 빌드·캐시 산출물**이었다(고친 뒤 5.2MB). 오라클은 파생이다 —
+      # 추적된 모든 `.gitignore` 가 「이건 산출물이다」라고 이미 말하고, 이 가드가 그것을 대조한다.
+      - name: .dockerignore 파생 대조(.gitignore 가 산출물이라 말한 것을 덮는가)
+        run: sh scripts/test/test-dockerignore-derived.sh
+
       # ⚠️ OSV 감사의 fail-closed 지점이 **사본 전부**에 있는가. `gradlew dependencies` 는 아무것도
       # 해석하지 못해도 exit 0 이라, 게이트 없는 자리는 가짜 좌표를 OSV 에 물어 "취약점 없음"으로
       # 초록이 된다. 실측 2026-09-07: 생산자 3 · 게이트 1(하네스 잡에만) — 사본 셋 중 하나만 고쳐진
