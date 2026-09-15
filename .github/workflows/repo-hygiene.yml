@@ -189,6 +189,14 @@ jobs:
       - name: 하네스 베이스 이미지 일관성(같은 저장소는 한 태그로 · 떠다니는 태그 금지)
         run: sh scripts/test/test-base-images.sh
 
+      # ⚠️ 하네스가 **compose 네트워크 이름을 박지 않게** 한다. 실측 2026-09-15: `verify.sh` 는
+      # keycloak 기동 뒤 실제 네트워크를 조회하는데 `run.sh` 는 `NET=harness_default` 를 박아 뒀다 —
+      # 그 이름은 디렉터리 이름에서 오는 compose 기본값이라, `COMPOSE_PROJECT_NAME` 을 바꾸거나
+      # 디렉터리를 리네임하면 컨테이너가 keycloak 을 DNS 로 못 찾아 **조용히 전부 실패**한다.
+      # `verify.sh` 주석이 그 실패 모드를 이미 적고 있었는데 **사본이 그것을 못 받았다**.
+      - name: 하네스 compose 네트워크 파생(이름을 박지 않는가 · 폴백이 있는가)
+        run: sh scripts/test/test-harness-network.sh
+
       # ⚠️ OSV 감사의 fail-closed 지점이 **사본 전부**에 있는가. `gradlew dependencies` 는 아무것도
       # 해석하지 못해도 exit 0 이라, 게이트 없는 자리는 가짜 좌표를 OSV 에 물어 "취약점 없음"으로
       # 초록이 된다. 실측 2026-09-07: 생산자 3 · 게이트 1(하네스 잡에만) — 사본 셋 중 하나만 고쳐진
