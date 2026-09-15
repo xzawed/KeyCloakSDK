@@ -40,11 +40,13 @@ set -eu
 
 SITE=''
 SITE_MODE=''
+RELEVANCE_MODE=''
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --site)    [ "$#" -ge 2 ] || { echo "usage: --site 에 패턴이 없다" >&2; exit 2; }
                SITE="$2"; SITE_MODE=declared; shift 2 ;;
     --no-site) SITE_MODE=waived; shift ;;
+    --assume-relevant) RELEVANCE_MODE=waived; shift ;;
     *)         break ;;
   esac
 done
@@ -134,12 +136,66 @@ echo "변이 diff:"
   | while read -r _f; do printf '+++ (신규) %s\n' "$_f"; sed 's/^/+/' "$WT/$_f" 2>/dev/null | head -20; done ) \
   | head -80 | sed 's/^/  /'
 
+# ⚠️ **SILENT 를 선언하기 전에 「검사가 이 파일을 읽기는 하는가」를 본다.** 착지·의미에 이어
+# 세 번째 사각이다 — 실측 2026-09-15: `DEPLOY_LANGS` 를 비우는 변이를
+# `test-release-prerelease.sh` 로 검사해 **SILENT** 를 얻었는데, 그 파일은 `DEPLOY_LANGS` 를
+# **아예 쓰지 않는다**. 자리 검사는 통과했다(변이가 `deploy-facts.sh` 의 선언한 줄을 쳤으므로).
+# 읽지 않는 것을 바꾼 뒤 「가드가 침묵했다」고 쓰면 **없는 구멍을 보고**하게 된다.
+#
+# 근사 방법: 검사 명령의 인자 중 실재하는 파일을 씨앗으로 두고, 그 파일들이 **문자열로 언급하는**
+# 파일명·디렉터리를 따라 3단계까지 넓힌다. 바뀐 파일이 그 집합에 없으면 판정하지 않는다.
+# ⚠️ **동적으로 조립되는 경로는 이 근사가 못 본다**(`"$CONSUME/$1-run.sh"` 류). 그때는
+# `--assume-relevant` 로 **명시적으로 면제**하라 — `--no-site` 와 같은 관용이다.
+probe_relevant() {
+  _rl_set=''
+  for _a in "$@"; do
+    [ -f "$WT/$_a" ] && _rl_set="$_rl_set $_a"
+  done
+  [ -n "$_rl_set" ] || return 1      # 씨앗조차 없다 = 파일을 하나도 안 읽는 검사
+  _rl_i=0
+  while [ "$_rl_i" -lt 3 ]; do
+    _rl_new=''
+    for _f in $_rl_set; do
+      _rl_names="$(grep -oE '[A-Za-z0-9_.-]+[.](sh|mjs|js|json|yml|yaml|toml|md|txt)' "$WT/$_f" 2>/dev/null | sort -u || true)"
+      for _n in $_rl_names; do
+        for _c in $( (cd "$WT" && git ls-files) | grep -E "(^|/)$_n\$" || true); do
+          case " $_rl_set $_rl_new " in *" $_c "*) ;; *) _rl_new="$_rl_new $_c" ;; esac
+        done
+      done
+    done
+    [ -n "$_rl_new" ] || break
+    _rl_set="$_rl_set $_rl_new"
+    _rl_i=$((_rl_i + 1))
+  done
+  # 바뀐 파일이 집합에 있거나, 그 **디렉터리**가 집합의 어느 파일에 문자열로 등장하면 관련 있다
+  # (글롭으로 읽는 자리 — `.github/workflows/*.yml` 류 — 를 거짓 무관으로 버리지 않기 위해).
+  for _ch in $CHANGED; do
+    case " $_rl_set " in *" $_ch "*) return 0 ;; esac
+    _rl_dir="$(dirname "$_ch")"
+    [ "$_rl_dir" = "." ] && continue
+    for _f in $_rl_set; do
+      grep -qF -- "$_rl_dir" "$WT/$_f" 2>/dev/null && return 0
+    done
+  done
+  return 1
+}
+
 # 판정.
 # ⚠️ 검사 명령의 출력을 **버리지 않는다.** 「계측기가 죽은 것」과 「가드가 잡은 것」은 종료코드가
 # 같다(실측: 가드 사본을 인자 없이 돌려 ENOENT 로 죽은 것을 `CAUGHT` 으로 읽었다). 잡혔다면
 # **무엇이 잡았는지**가 화면에 있어야 한다.
 _out="$(cd "$WT" && "$@" 2>&1)" && _rc=0 || _rc=$?
 if [ "$_rc" = 0 ]; then
+  if [ "$RELEVANCE_MODE" = waived ]; then
+    echo "⚠️ --assume-relevant — 검사가 이 파일을 읽는지 **기계가 안 봤다**."
+  elif ! probe_relevant "$@"; then
+    fail_invalid "변이가 착지했고 자리도 맞지만, **검사 명령이 바뀐 파일을 읽지 않는다**.
+  바뀐 파일: $(printf '%s' "$CHANGED" | tr '\n' ' ')
+  검사 명령: $*
+  읽지 않는 것을 바꾼 뒤의 통과는 '가드가 침묵했다'가 아니라 **아무 일도 없었다**이다 —
+  이것을 SILENT 로 읽으면 **없는 구멍**을 보고하게 된다(실측 2026-09-15).
+  경로가 동적으로 조립되면(\"\\$D/\\$1-run.sh\" 류) --assume-relevant 로 명시적으로 면제하라."
+  fi
   echo "SILENT — 변이가 적용됐는데 검사 명령이 통과했다(진짜 구멍)."
   exit 1
 fi
