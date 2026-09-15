@@ -6,11 +6,38 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 DOC="$DIR/../../DEPLOY.md"
 body="$(cat "$DOC")"
 
-# 9개 언어 섹션·태그·시크릿·설치좌표가 모두 문서에 존재
-for L in $DEPLOY_LANGS; do
-  assert_contains "$body" "$(printf "$(df_tag "$L")" X.Y.Z | sed 's/X.Y.Z/*/')" "태그포맷 $L"
-  for s in $(df_secrets "$L"); do assert_contains "$body" "$s" "시크릿 $s"; done
+# ⚠️ **`assert_contains "$body" ""` 는 항상 참이다 — 그래서 이 파일은 자기 전제를 못 지켰다.**
+# 실측(2026-09-15, `scripts/probe.sh`): `df_tag`·`df_secrets` 를 빈 값으로, `DEPLOY_LANGS` 를 빈
+# 문자열로 만드는 변이가 **셋 다 `SILENT`** 였다(기대값이 비면 포함 검사가 무조건 통과하고,
+# 언어 목록이 비면 루프가 아예 안 돈다). 셋 다 자매 가드 `test-deploy-facts.sh` 는 잡는다 —
+# 즉 **구멍이 아니라 「비공허성을 옆 파일에서 빌려 쓴다」**이고, 이 파일만 돌리면 공허하다.
+# 아래 둘이 그 빚을 갚는다.
+
+# (1) **언어 우주는 트리에서 파생해 대조한다**(비순환). `DEPLOY_LANGS` 자신을 세면 그것이 비었을
+# 때 하한도 0 이 되어 같이 무너진다 — 그래서 원천을 `df_tree_langs`(빌드 매니페스트를 가진
+# 최상위 디렉터리)로 둔다. 열 번째 언어가 들어오면 여기서 먼저 빨개진다.
+_dm_miss=''
+for L in $(df_tree_langs "$DIR/../.."); do
+  printf '%s\n' $DEPLOY_LANGS | grep -qx "$L" || _dm_miss="$_dm_miss $L"
 done
+assert_eq "" "$_dm_miss" \
+  "[배포 문서] 트리에 있는 언어가 DEPLOY_LANGS 에 없다 —$_dm_miss (그 언어는 이 파일에서 조용히 빠진다)"
+
+# (2) **기대값이 비면 그 대조는 아무것도 안 한 것이다** — 값을 쓰기 전에 값이 있는지 단언한다.
+for L in $DEPLOY_LANGS; do
+  _dm_tag="$(printf "$(df_tag "$L")" X.Y.Z | sed 's/X.Y.Z/*/')"
+  _dm_ok=1; [ -n "$_dm_tag" ] && _dm_ok=0
+  assert_eq "ok" "$(ok_if "$_dm_ok" EMPTY)" "[배포 문서] df_tag $L 이 빈 값이다 — 대조가 공허해진다"
+  assert_contains "$body" "$_dm_tag" "태그포맷 $L"
+  _dm_sec="$(df_secrets "$L")"
+  # ⚠️ 시크릿이 **정당하게 0개**인 언어가 있다(OIDC/none) — 그래서 여기는 「비었나」가 아니라
+  # 「셋 중 몇이 비었나」를 센다. 전부 비면 SSOT 가 죽은 것이다.
+  [ -n "$_dm_sec" ] && _dm_sec_any=0
+  for s in $_dm_sec; do assert_contains "$body" "$s" "시크릿 $s"; done
+done
+# 시크릿을 하나라도 낸 언어가 있어야 한다(전부 빈 값 = `df_secrets` 가 죽었다).
+assert_eq "ok" "$(ok_if "${_dm_sec_any:-1}" NONE)" \
+  "[배포 문서] 아홉 언어 어디에서도 시크릿 이름이 안 나왔다 — df_secrets 가 죽었나?"
 # dry-run 명령은 `df_dryrun`이 SSOT인데 DEPLOY.md는 그것을 **손으로 베낀 9줄**이고, 여태 둘을
 # 대조하는 것이 없었다. 실제로 갈라진 적이 있다 — kotlin이 `gradle -p kotlin publishToMavenLocal`
 # 로 남아 있었고, 이 기계에는 gradle이 PATH에 없어 문서대로 하면 실행조차 되지 않았다. 래퍼로

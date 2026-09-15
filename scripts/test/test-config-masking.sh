@@ -25,7 +25,6 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/../lib/deploy-facts.sh"
 ROOT="${CM_ROOT:-$DIR/../..}"
 
-ok_if() { if [ "$1" = 0 ]; then printf 'ok'; else printf '%s' "${2:-NOT-OK}"; fi; }
 
 # 설정 타입의 소스 자리.
 cm_src() {

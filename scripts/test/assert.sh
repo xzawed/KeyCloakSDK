@@ -24,3 +24,9 @@ assert_fails() { # cmd... (expect non-zero)
   if "$@" >/dev/null 2>&1; then _A_FAIL=$((_A_FAIL+1)); printf 'FAIL expected failure: %s\n' "$*" >&2; else _A_PASS=$((_A_PASS+1)); fi
 }
 assert_report() { printf '\n%s passed, %s failed\n' "$_A_PASS" "$_A_FAIL"; [ "$_A_FAIL" -eq 0 ]; }
+
+# ⚠️ `assert_ok`는 **명령만** 받는다(메시지 인자를 주면 그것까지 명령으로 해석해 실패한다).
+# 메시지를 남기려면 "ok" 여부를 문자열로 만들어 `assert_eq`에 넘긴다.
+# ⚠️ **이 헬퍼는 두 자가테스트에 복제돼 있었다**(`test-security-defaults.sh`·`test-config-masking.sh`)
+# — 세 번째 파일이 필요해지자 없는 채로 쓰다 `actual: []` 로 열 건이 거짓 실패했다. 여기가 원본이다.
+ok_if() { if [ "$1" = 0 ]; then printf 'ok'; else printf '%s' "${2:-NOT-OK}"; fi; }
