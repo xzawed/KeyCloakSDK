@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { call, requireFound } from '../../src/admin/call.js'
-import {
-  KeycloakNotFoundError,
-  KeycloakTransportError,
-  KeycloakError,
-} from '../../src/errors.js'
+import { KeycloakNotFoundError, KeycloakTransportError, KeycloakError } from '../../src/errors.js'
 
 // ⚠️ **이 파일이 있는 이유 — `src/admin/**` 커버리지 제외가 순수 로직을 삼켰다.**
 // `call.ts` 는 네트워크를 타지 않는다: `call` 은 호출자가 넘긴 `fn` 을 부를 뿐이고,
@@ -51,7 +47,9 @@ describe('statusOf — 상태는 **숫자일 때만** 상태다', () => {
     })
   }
   it('숫자 상태는 SDK 예외로 변환한다', async () => {
-    await expect(call(() => Promise.reject(withResponse(404)))).rejects.toBeInstanceOf(KeycloakError)
+    await expect(call(() => Promise.reject(withResponse(404)))).rejects.toBeInstanceOf(
+      KeycloakError,
+    )
   })
   it('response 자체가 없으면 재전파한다', async () => {
     const raw = new Error('plain')
