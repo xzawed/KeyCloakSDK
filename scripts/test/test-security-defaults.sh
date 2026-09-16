@@ -271,35 +271,18 @@ do
     "[JWKS 크기상한] $_f 가 JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT 을 더 이상 참조하지 않는다"
 done
 
-# ⚠️ **둘째 정의 자리.** 위 축은 언어당 한 곳만 읽는데, 두 언어는 같은 파라미터를 **두 곳**에
-# 선언한다 — 그리고 dotnet 은 위 축이 읽는 쪽이 **소비자가 받는 값이 아니다**:
-#   dotnet  JwtValidator.cs(위 축) + KeycloakConfig.cs. 파사드가 `ClockSkewSeconds = cfg.ClockSkewSeconds`
-#           로 넘기므로(KeycloakClient.cs) 소비자 값은 **KeycloakConfig 쪽**이다.
-#   python  config.py(위 축) + _internal/jwt.py 의 파라미터 기본값.
-# 실측 2026-08-29: KeycloakConfig.cs 를 30 → 300 으로 바꿔도 이 가드는 **103/0 으로 통과했다**
+# ⚠️ **둘째 정의 자리는 이제 손 표가 아니라 파생이 본다 — 아래 3절.** 여기 있던
+# `sd_skew_secondary`(dotnet·python 두 줄짜리 표)는 **중복이 되어 지웠다**(2026-09-16):
+# 3절의 파생이 같은 두 자리를 값으로 잡는다(실측 — 손 표를 죽이고 python 을 60 으로 바꿔도
+# 파생이 `CAUGHT`). 반대로 **손 표만 죽이면 아무도 울지 않았다**(`SILENT`) — 그것이 중복 게이트의
+# 정의이고, 중복은 변이검증을 공허하게 만든다(이 저장소가 node 콜드캐시에서 이미 치른 값).
+#
+# ⚠️ **그 표가 갖고 있던 지식은 여기 남긴다 — dotnet 은 1절이 읽는 쪽이 소비자 값이 아니다.**
+#   dotnet  1절은 `JwtValidator.cs` 를 읽지만, 파사드가 `ClockSkewSeconds = cfg.ClockSkewSeconds`
+#           로 넘기므로(`KeycloakClient.cs`) **소비자가 받는 값은 `KeycloakConfig.cs` 쪽**이다.
+#   python  `config.py`(1절) + `_internal/jwt.py` 의 파라미터 기본값.
+# 실측 2026-08-29: `KeycloakConfig.cs` 를 30 → 300 으로 바꿔도 당시 가드는 **103/0 으로 통과**했다
 # (dotnet 단위테스트가 대신 잡았다). 값이 갈리는 자리를 가드가 안 보면 그 초록은 공허하다.
-sd_skew_secondary() { # $1=언어 → 둘째 정의 자리의 clock skew (해당 없으면 빈 문자열)
-  case "$1" in
-    dotnet) sed -n 's/.*ClockSkewSeconds *{ *get; *init; *} *= *\([0-9][0-9.]*\).*/\1/p' \
-              "$ROOT/dotnet/src/Xzawed.Keycloak.Sdk/KeycloakConfig.cs" | head -1 ;;
-    python) sed -n 's/.*clock_skew: *float *= *\([0-9][0-9.]*\).*/\1/p' \
-              "$ROOT/python/src/keycloak_sdk/_internal/jwt.py" | head -1 ;;
-  esac
-}
-
-_sec=0
-for L in dotnet python; do
-  _raw="$(sd_skew_secondary "$L" || true)"
-  _has=1; [ -n "$_raw" ] && _has=0
-  assert_eq "ok" "$(ok_if "$_has" MISSING)" \
-    "[clock skew·둘째 자리] $L 의 둘째 정의를 추출하지 못했다 — 파일이 옮겨졌거나 표기가 바뀌었나?"
-  [ -n "$_raw" ] || continue
-  _sec=$((_sec + 1))
-  assert_eq "$SD_EXPECT" "$(sd_norm "$_raw")" \
-    "[clock skew·둘째 자리] $L 의 둘째 정의가 첫째와 다르다 — 소비자가 받는 값이 갈렸다"
-done
-# 대조군 — 위 루프가 실제로 둘을 돌았는지. 표가 낡으면 0건 실행되고 조용히 통과한다.
-assert_eq "2" "$_sec" "[clock skew·둘째 자리] 읽은 둘째 자리 수가 2가 아니다 — 추출 표가 낡았나?"
 sd_skew_expect="$SD_EXPECT"
 
 # ⚠️ **일치만으로는 부족하다 — 값 자체를 핀한다.** 위 축은 "아홉이 서로 같은가"만 본다. 그래서
@@ -868,6 +851,157 @@ sd_no_literal ruby ruby/lib/keycloak_sdk/jwks_store.rb 'def initialize(jwks_url:
 # 있고, 두 자리가 갈리면 그 경로에서만 만료된 토큰이 더 오래 통과한다. 값은 아직 갈리지 않았지만
 # (둘 다 30) JWKS가 10.0/30.0으로 갈린 것과 **똑같은 모양**이라 같은 방식으로 닫았다.
 sd_no_literal ruby-skew ruby/lib/keycloak_sdk/jwt_validator.rb 'algorithms: ["RS256"], clock_skew:'
+
+# --- 파생 반쪽 — 손 앵커 **밖**의 2차 자리를 트리에서 찾는다 -------------------
+#
+# ⚠️ **위 앵커 넷은 「이미 아는 자리」만 본다.** 원장 `guard-detection-surface-hand-narrowed`
+# 의 (B) 부류가 이것이다 — **기존 언어에 새 자리가 생기면** 아무도 안 본다. 실측 2026-09-16:
+# `node/src/jwt.ts` 에 `probeJwksMinRefetchSeconds = 60` 을 심고 이 가드를 돌리면 **SILENT**
+# (`scripts/probe.sh`). 1절은 언어당 **한 파일 한 줄**만 `sed | head -1` 로 읽으므로 둘째 줄을
+# 구조적으로 못 본다.
+#
+# 그래서 **값을 비교한다**: 트리의 SDK 소스 전체에서 이 두 파라미터에 **숫자 리터럴을 대입하는**
+# 자리를 찾아, 그 값이 1절이 합의시킨 값과 같은지 본다. 「정의 자리는 하나」가 아니라
+# 「어디에 적히든 값은 같다」를 요구하므로 정당한 2차 자리(내부 기본값·검증 분기)를 막지 않는다.
+#
+# ⚠️ **합의값을 여기 숫자로 적지 않는다** — 그러면 이 축 자신이 2차 정의 자리가 된다.
+# `sd_expect`(JWKS 재조회) · `SD_EXPECT`(clock skew)는 1절이 아홉 언어에서 뽑아 서로 같음을
+# 단언한 뒤 남긴 값이다.
+#
+# **오탐 실측(2026-09-16)**: `main` 최근 **300 커밋**(2026-08-14 ~ 오늘 = clock skew 30 합의
+# 이후 전 구간)에서 합의값과 다른 값 **0 건**. 계측기가 실제로 잡는다는 대조군도 있다 —
+# 전 이력 1102 커밋으로 넓히면 **664 커밋이 60 으로 걸린다**(30 합의 이전 시기). 즉 이 축은
+# 침묵하는 것이 아니라 오늘 갈림이 없는 것이다.
+#
+# ⚠️ **정규식에 역슬래시를 쓰지 않는다** — `[.]` 로 적는다. 이번에도 `[A-Za-z0-9_?<>\[\]]` 가
+# 세 겹 이스케이프에서 먹혀 python 의 `clock_skew: float = 30.0` 을 놓쳤다(실측).
+# ⚠️ **꼬리를 `[A-Za-z_]*` 로 열어 두지 않는다 — 단위가 다른 이름이 걸린다.** 독립 레그가
+# 지목했고 실측으로 재현했다: `jwksMinRefetchMs = 30_000` 은 **옳은 값인데** 30 과 달라
+# required 체크를 빨갛게 한다. 그래서 꼬리를 **초 단위 접미사만** 받는 화이트리스트로 닫는다.
+# ⚠️ 그 대가는 **거짓음성**이다 — 밀리초로 적힌 자리는 이 축이 안 본다. required 체크에서는
+# 그쪽이 안전한 실패 방향이다(오탐 하나가 모든 PR 을 막는다). 새 접미사가 생기면 여기 더한다.
+SD_2ND_SFX='([Ss]ec(ond)?s?|_sec(ond)?s?|SECONDS|SECS|IntervalSeconds)?'
+SD_2ND_ID="([Jj]wks[_]?[Mm]in[_]?[Rr]efetch${SD_2ND_SFX}|JWKS_MIN_REFETCH(_SECONDS)?|[Mm]in[_]?[Rr]efetch${SD_2ND_SFX}|[Cc]lock[_]?[Ss]kew${SD_2ND_SFX}|CLOCK_SKEW|RefreshIntervalSeconds)"
+# 식별자와 대입 사이에 낄 수 있는 것: 타입 표기(`: float` · ` int64`)와 C# 접근자(`{ get; init; }`).
+# ⚠️ **토큰 시작 가드 — 이것이 없으면 다른 파라미터가 부분문자열로 걸린다.** 독립 레그가 두 번
+# 블로킹으로 짚었고, 실측이 그 손을 들어 줬다: `AllowedClockSkew`·`MaxClockSkew`·`derivedClockSkew`
+# ·`setMaxClockSkew`·`getClockSkew` 가 **오늘 트리에 이미 있다**(숫자 대입이 없어 아직 안 걸릴 뿐).
+# ⚠️ 단순한 단어 경계로는 못 고친다 — `defaultJwksMinRefetchSecs` 가 정당한 camelCase 앞머리라
+# 같은 모양이다. 그래서 **허용 앞머리를 열거**한다(`default`·`DEFAULT_`). 실측: 진짜 20 히트의
+# 토큰 여덟 종은 전부 통과하고 위 다섯은 전부 차단된다.
+# ⚠️ **이 가드가 사는 대가 — 거짓음성 하나를 안다.** 다른 앞머리를 단 토큰
+# (`adminClockSkewSeconds = 60` · `probeJwksMinRefetchSeconds = 60`)은 **안 본다**. 실측
+# (`scripts/probe.sh`): 그런 이름은 `SILENT`, **같은 토큰**(`jwksMinRefetchSeconds = 60`)은
+# `CAUGHT`. 그 둘은 **어휘로 구분되지 않는다** — 앞머리가 붙은 이름은 「우리 값의 둘째 자리」일
+# 수도 「다른 파라미터」일 수도 있고(오늘 트리의 `setMaxClockSkew`·`derivedClockSkew` 가 후자다),
+# 판정할 수 없는 것을 required 체크가 판정하면 그 대가는 **모든 PR 차단**이다. 그래서 **모르는
+# 것은 안 본다**. 같은 토큰을 다시 적는 것이 실제 2차 자리의 모양이고, 그것은 잡는다.
+SD_2ND_GUARD='(^|[^A-Za-z0-9_])(default|DEFAULT_)?'
+SD_2ND_MID='([[:space:]]*:[[:space:]]*[A-Za-z0-9_?<>.]+|[[:space:]]+[A-Za-z0-9_.]+)?([[:space:]]*[{][^}]*[}])?'
+# 대입 우변: 벌거벗은 숫자 · TS 의 `?? 30` · JVM/.NET 의 `Duration.ofSeconds(30)`/`TimeSpan.FromSeconds(30)`.
+SD_2ND_RHS='[[:space:]]*(=|:=|:|[?][?])[[:space:]]*("?[0-9][0-9._]*|(Duration[.]ofSeconds|TimeSpan[.]FromSeconds)[(][0-9][0-9._]*[)])'
+
+# ⚠️ **`|while read` 를 쓰지 않는다** — 파이프의 오른쪽은 서브셸이라 `assert.sh` 의 실패 카운터가
+# 증발한다(원장 `selftest-assert-counter-subshell`). 파일로 받아 리다이렉트로 읽는다.
+# ⚠️ **`??` 는 대입이 아니라 「사용」일 수 있다** — 독립 레그가 지목했고 실측으로 재현했다:
+# `const delay = clockSkew ?? 0` 은 옳은 코드인데 0 을 합의값과 비교당한다. 받는 것은 TS 의
+# **정규화 관용**(`clockSkewSeconds: input.clockSkewSeconds ?? 30`)뿐이고, 그 모양은 한 줄에
+# 식별자가 **두 번** 나온다. 나머지 대입 기호는 그대로 둔다.
+# ⚠️ 필터를 함수로 둔 이유는 **대조군이 같은 경로를 타게** 하기 위함이다 — 아래 음성 대조군이
+# 정규식만 시험하면 이 필터의 퇴화를 못 본다.
+# ⚠️ **삼항 연산자의 `:` 는 대입이 아니다** — 독립 레그가 지목했고 실측으로 재현했다:
+# `const v = enabled ? clockSkew : 0` 은 옳은 코드인데 0 을 합의값과 비교당한다. `??` 가 아닌
+# 줄에서 `?` 를 담은 것은 전부 삼항(또는 TS 선택 프로퍼티)이라 뺀다 — 실측 2026-09-16:
+# 오늘 히트 20 중 `?` 를 담은 줄은 **둘뿐이고 그 둘은 `??` 관용**이라 아래 분기로 간다.
+sd_2nd_scan() { # stdin=파일 목록 → 필터를 거친 히트(`경로:줄:내용`)
+  _a="$(mktemp)"
+  xargs grep -nE "${SD_2ND_GUARD}${SD_2ND_ID}${SD_2ND_MID}${SD_2ND_RHS}" 2>/dev/null \
+    | grep -vE ':[0-9]+:[[:space:]]*(//|#|\*|/\*|--)' > "$_a" || true
+  # ⚠️ **`?` 를 담았다고 다 빼면 거짓음성이 생긴다** — 실측: 꼬리 주석에 `? :` 가 있는 진짜
+  # 2차 자리(`... = 60; // a ? b : c`)가 통째로 **SILENT** 였다. 삼항은 `?` 가 식별자 **앞**에
+  # 오므로 그 모양만 뺀다.
+  grep -vE '[?][?]' "$_a" | grep -vE "[[:space:]][?][[:space:]][^?]*${SD_2ND_ID}" || true
+  grep -E '[?][?]' "$_a" | grep -E "${SD_2ND_GUARD}${SD_2ND_ID}.*${SD_2ND_ID}" || true
+  rm -f "$_a"
+}
+
+# ⚠️ **면제표를 두지 않는다 — 한 번 뒀다가 지웠다.** 부분문자열 오탐을 표로 빠져나가게 하려
+# 했는데, 위 **토큰 시작 가드**가 그 부류를 구조로 막자 표가 **한 번도 실행되지 않는 분기**로
+# 남았다. required 체크 안의 죽은 분기는 자산이 아니라 부채다 — 빈 표라 매치가 0 이라 그 분기가
+# 옳은지 아무도 모르고, 잘못 쓰면 **전부 면제**가 된다. 정당한 예외가 실제로 나타나면 그때
+# **시험과 함께** 만든다.
+
+# 음성 대조군 — 레그가 지목한 오탐 **둘**이 실제로 걸러지는가. 이 축은 required 체크 안에서
+# 돌므로 오탐 하나가 모든 PR 을 막는다. 「안 걸린다」를 주석이 아니라 실행으로 고정한다.
+sd_2nd_negative_control() {
+  _nc="$(mktemp -d)"
+  printf '  private static final long jwksMinRefetchMs = 30_000;\n' > "$_nc/Fp1.java"
+  printf '  const delay = clockSkew ?? 0;\n' > "$_nc/fp2.ts"
+  printf '  const v = enabled ? clockSkew : 0;\n' > "$_nc/fp3.ts"
+  # 다른 파라미터가 부분문자열로 걸리는 자리 — 토큰 시작 가드가 막는다.
+  printf '  public static readonly TimeSpan AllowedClockSkew = TimeSpan.FromSeconds(300);\n' > "$_nc/Fp4.cs"
+  printf '  private const int MaxClockSkew = 300;\n  var derivedClockSkew = 300;\n' > "$_nc/Fp5.cs"
+  _nc_hits="$(printf '%s\n%s\n%s\n%s\n%s\n' "$_nc/Fp1.java" "$_nc/fp2.ts" "$_nc/fp3.ts" "$_nc/Fp4.cs" "$_nc/Fp5.cs" | sd_2nd_scan | grep -c . || true)"
+  rm -rf "$_nc"
+  printf '%s' "$_nc_hits"
+}
+assert_eq "0" "$(sd_2nd_negative_control)" \
+  "[2차 정의 자리] 오탐 대조군이 걸렸다 — 밀리초 이름(...Ms = 30_000) · 널병합 사용처(clockSkew ?? 0) · 삼항(enabled ? clockSkew : 0) 중 하나를 정의 자리로 읽는다(required 체크가 정당한 변경을 막는다)"
+
+# 양성 대조군 — **진짜 모양은 걸려야 한다.** 위 음성 대조군만 있으면 「아무것도 안 잡는 패턴」이
+# 만점을 받는다. 네 언어 관용을 모두 태워, 오탐을 막는다며 패턴을 좁히다가 진짜를 잃는 것을 막는다.
+sd_2nd_positive_control() {
+  _pc="$(mktemp -d)"
+  printf '  public int clockSkewSeconds = 300;\n' > "$_pc/Pc.cs"
+  printf '  const defaultJwksMinRefetchSecs int64 = 300\n' > "$_pc/pc.go"
+  printf '    clock_skew: float = 300.0\n' > "$_pc/pc.py"
+  printf '    clockSkewSeconds: input.clockSkewSeconds ?? 300,\n' > "$_pc/pc.ts"
+  _pc_hits="$(printf '%s\n%s\n%s\n%s\n' "$_pc/Pc.cs" "$_pc/pc.go" "$_pc/pc.py" "$_pc/pc.ts" | sd_2nd_scan | grep -c . || true)"
+  rm -rf "$_pc"
+  printf '%s' "$_pc_hits"
+}
+assert_eq "4" "$(sd_2nd_positive_control)" \
+  "[2차 정의 자리] 양성 대조군이 안 걸렸다 — 패턴이 좁아져 진짜 2차 자리를 못 본다(네 언어 관용: C# 대입 · Go 타입선언 · Python 타입주석 · TS 널병합)"
+
+_2nd_tmp="$(mktemp)"
+printf '%s\n' "$SD_SRC" | sd_2nd_scan > "$_2nd_tmp" || true
+
+_2nd_n="$(grep -c . "$_2nd_tmp" || true)"
+# 공허 하한 — 글롭·정규식이 깨지면 「갈림 없음」이 통과처럼 보인다. ⚠️ **오늘 값이 아니라
+# 창 최저값을 박는다**(#443 의 판정): 최근 300 커밋에서 최소·최대 모두 **20**이었다.
+SD_2ND_MIN=20
+_2nd_enough=1; [ "$_2nd_n" -ge "$SD_2ND_MIN" ] && _2nd_enough=0
+assert_eq "ok" "$(ok_if "$_2nd_enough" "$_2nd_n")" \
+  "[2차 정의 자리] 대입 자리를 ${SD_2ND_MIN}개 미만 찾았다($_2nd_n) — 정규식이나 소스 목록이 깨졌나?"
+
+# 언어별 기여 — 한 언어가 통째로 빠지는 것을 총합 하한은 못 본다(2b 축이 같은 이유로 배운 것).
+_2nd_langs="$(cut -d/ -f1 "$_2nd_tmp" | sort -u | tr '\n' ' ')"
+_2nd_missing=''
+for L in $SD_LANGS; do
+  case " $_2nd_langs " in *" $L "*) ;; *) _2nd_missing="$_2nd_missing $L" ;; esac
+done
+assert_eq "" "$_2nd_missing" \
+  "[2차 정의 자리] 대입 자리를 하나도 못 찾은 언어가 있다 —$_2nd_missing (그 언어의 표기가 바뀌었나?)"
+
+while IFS= read -r _2nd_line; do
+  [ -n "$_2nd_line" ] || continue
+  _2nd_where="$(printf '%s' "$_2nd_line" | cut -d: -f1,2)"
+  _2nd_raw="$(printf '%s' "$_2nd_line" | grep -oE "${SD_2ND_ID}${SD_2ND_MID}${SD_2ND_RHS}" \
+    | grep -oE '[0-9][0-9._]*[)]?$' | tr -d ')' | head -1)"
+  # ⚠️ **추출 실패를 통과로 읽지 않는다**(독립 레그 지목 · 1b 축이 같은 이유로 이미 배운 것).
+  # 조용히 `continue` 하면 그 줄이 공허 하한과 언어별 기여에는 **세어지면서** 값은 안 본다.
+  _2nd_got=1; [ -n "$_2nd_raw" ] && _2nd_got=0
+  assert_eq "ok" "$(ok_if "$_2nd_got" 'NO-VALUE')" \
+    "[2차 정의 자리] $_2nd_where 에서 값을 못 뽑았다 — 이 줄이 하한에는 세어지고 값은 안 보인다"
+  [ -n "$_2nd_raw" ] || continue
+  case "$_2nd_line" in
+    *[Ss]kew*|*SKEW*) _2nd_exp="$SD_EXPECT"; _2nd_fam='clock skew' ;;
+    *)                _2nd_exp="$sd_expect"; _2nd_fam='JWKS 재조회' ;;
+  esac
+  assert_eq "$(sd_norm "$_2nd_exp")" "$(sd_norm "$_2nd_raw")" \
+    "[2차 정의 자리] $_2nd_where 의 $_2nd_fam 리터럴이 1절이 합의시킨 값과 다르다 — 한 자리만 갈려도 그 경로에서만 동작이 달라진다"
+done < "$_2nd_tmp"
+rm -f "$_2nd_tmp"
 
 # ---------------------------------------------------------------------------
 # 4) 소유자 문서 축 — 이 값을 **선언하는** 두 문서
