@@ -30,9 +30,17 @@ FAILED_LANGS=""
 # 예외 문장이 어디에도 없어, 원인 규명에 로컬 재빌드와 통제 실험이 필요했다. 업로드되는 것은
 # report/signals/ 뿐이므로(harness.yml) 증거도 그곳에 쓴다.
 capture_app_log() { # $1=lang — 성공·실패 무관하게 남긴다(분기가 없으면 분기를 틀릴 일도 없다)
-  docker compose logs --no-color --tail 300 "app-$1" > "report/signals/$1.app.log" 2>&1 || true
-  # ⚠️ 빈 파일은 「증거 없음」과 구분되지 않는다 — 비었으면 비었다고 적는다.
-  [ -s "report/signals/$1.app.log" ] || printf '(빈 로그 — app-%s 가 stdout/stderr 에 아무것도 쓰지 않았다)\n' "$1" > "report/signals/$1.app.log"
+  if docker compose logs --no-color --tail 300 "app-$1" > "report/signals/$1.app.log" 2>&1; then
+    # ⚠️ 빈 파일은 「증거 없음」과 구분되지 않는다 — 비었으면 비었다고 적는다.
+    [ -s "report/signals/$1.app.log" ] || printf '(빈 로그 — app-%s 가 stdout/stderr 에 아무것도 쓰지 않았다)\n' "$1" > "report/signals/$1.app.log"
+  else
+    # ⚠️ `2>&1` 이라 실패하면 파일에 든 것은 **앱 출력이 아니라 CLI 오류**다(실측: 없는 서비스 →
+    # `no such service: app-x` 28B). 비어 있지 않으므로 위 표시가 안 붙고, 28B 가 「증거가 있다」로
+    # 읽힌다 — 그래서 무엇인지 적는다. ⚠️ **프로필 때문은 아니다**: `--profile apps` 없이도
+    # `logs`·`ps -a` 는 앱 컨테이너를 본다(실측 2026-09-16 — 기동·정지·삭제 세 상태 전부).
+    _cli="$(cat "report/signals/$1.app.log" 2>/dev/null || true)"
+    printf '(docker compose logs 실패 — 아래는 앱 출력이 아니라 CLI 오류다)\n%s\n' "$_cli" > "report/signals/$1.app.log"
+  fi
 }
 # 컨테이너 목록 — 빌드·기동 실패의 원인과 증상을 가른다. 중단된 런이 남긴 이름 충돌
 # (`Conflict. The container name ... is already in use`)은 빌드가 성공해도 up을 실패시키는데,

@@ -49,14 +49,22 @@ _empty="$(grep -cE '\[ -s "report/signals/\$[A-Za-z0-9_]+\.app\.log" \]' "$V" ||
 assert_eq "ok" "$(ok_if "$([ "$_empty" -ge 1 ] && echo 0 || echo 1)" "$_empty")" \
   "[하네스 증거] 빈 로그를 그대로 올린다 — 빈 파일은 「증거 없음」과 구분되지 않는다"
 
-# (5) 빌드·기동 실패 자리는 **컨테이너 목록**을 함께 남긴다. 등록부 실측: 중단된 런이 남긴
+# (5) 캡처 명령 자체가 실패한 경우도 표시해야 한다. `2>&1` 이라 CLI 오류가 파일에 담기고,
+#     비어 있지 않으므로 (4)의 표시가 안 붙는다 — 그 28B 가 「증거가 있다」로 읽힌다.
+#     ⚠️ 독립 레그가 이 자리를 지목했고, 같은 레그의 다른 주장(프로필이 컨테이너를 가린다)은
+#     실측이 기각했다: `--profile apps` 없이도 `logs`·`ps -a` 가 앱을 본다(기동·정지·삭제 전부).
+_clierr="$(grep -cE 'docker compose logs 실패' "$V" || true)"
+assert_eq "ok" "$(ok_if "$([ "$_clierr" -ge 1 ] && echo 0 || echo 1)" "$_clierr")" \
+  "[하네스 증거] logs 명령 실패를 표시하지 않는다 — CLI 오류가 앱 로그로 읽힌다"
+
+# (6) 빌드·기동 실패 자리는 **컨테이너 목록**을 함께 남긴다. 등록부 실측: 중단된 런이 남긴
 #     컨테이너 이름 충돌(`Conflict. The container name ... is already in use`)이 「build/up failed」로
 #     기록돼, 빌드는 성공했는데도 코드를 뒤지게 만든다.
 _psdump="$(grep -cE 'docker compose ps[^|]*report/signals/' "$V" || true)"
 assert_eq "ok" "$(ok_if "$([ "$_psdump" -ge 1 ] && echo 0 || echo 1)" "$_psdump")" \
   "[하네스 증거] build/up 실패에 컨테이너 목록을 안 남긴다 — 이름 충돌과 진짜 빌드 실패가 구분되지 않는다"
 
-# (6) 남기는 증거 파일은 **gitignore 안**이어야 한다. 아니면 런마다 워킹트리가 더러워지고,
+# (7) 남기는 증거 파일은 **gitignore 안**이어야 한다. 아니면 런마다 워킹트리가 더러워지고,
 #     언젠가 실수로 커밋된다. ⚠️ 이 단언은 실제 구멍을 잡았다 — 증거 캡처를 넣은 그 커밋이
 #     `*.app.log`·`*.compose-ps.txt` 를 무시 목록에 안 넣어 둘 다 추적 대상으로 떴다(2026-09-16).
 _targets="$(grep -oE 'report/signals/\$[A-Za-z0-9_]+\.[A-Za-z0-9.-]+' "$V" | sed -E 's/\$[A-Za-z0-9_]+/probe/' | sort -u)"
@@ -67,9 +75,9 @@ done
 assert_eq "" "$_notig" \
   "[하네스 증거] 생성 증거 파일이 gitignore 밖이다 —$_notig (런마다 워킹트리가 더러워진다)"
 
-# (7) 공허 하한 — 위 검색들이 전부 깨져도 「대상이 없어서」 초록이 되면 안 된다.
-#     ⚠️ **세어서 박는다**: verify.sh 가 report/signals/ 를 적는 자리 실측 6(2026-09-16).
-HFE_MIN=6
+# (8) 공허 하한 — 위 검색들이 전부 깨져도 「대상이 없어서」 초록이 되면 안 된다.
+#     ⚠️ **세어서 박는다**: verify.sh 가 report/signals/ 를 적는 자리 실측 8(2026-09-16).
+HFE_MIN=8
 _writes="$(grep -cE 'report/signals/' "$V" || true)"
 _enough=1; [ "$_writes" -ge "$HFE_MIN" ] && _enough=0
 assert_eq "ok" "$(ok_if "$_enough" "$_writes")" \
