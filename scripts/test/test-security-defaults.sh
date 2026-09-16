@@ -869,6 +869,73 @@ sd_no_literal ruby ruby/lib/keycloak_sdk/jwks_store.rb 'def initialize(jwks_url:
 # (둘 다 30) JWKS가 10.0/30.0으로 갈린 것과 **똑같은 모양**이라 같은 방식으로 닫았다.
 sd_no_literal ruby-skew ruby/lib/keycloak_sdk/jwt_validator.rb 'algorithms: ["RS256"], clock_skew:'
 
+# --- 파생 반쪽 — 손 앵커 **밖**의 2차 자리를 트리에서 찾는다 -------------------
+#
+# ⚠️ **위 앵커 넷은 「이미 아는 자리」만 본다.** 원장 `guard-detection-surface-hand-narrowed`
+# 의 (B) 부류가 이것이다 — **기존 언어에 새 자리가 생기면** 아무도 안 본다. 실측 2026-09-16:
+# `node/src/jwt.ts` 에 `probeJwksMinRefetchSeconds = 60` 을 심고 이 가드를 돌리면 **SILENT**
+# (`scripts/probe.sh`). 1절은 언어당 **한 파일 한 줄**만 `sed | head -1` 로 읽으므로 둘째 줄을
+# 구조적으로 못 본다.
+#
+# 그래서 **값을 비교한다**: 트리의 SDK 소스 전체에서 이 두 파라미터에 **숫자 리터럴을 대입하는**
+# 자리를 찾아, 그 값이 1절이 합의시킨 값과 같은지 본다. 「정의 자리는 하나」가 아니라
+# 「어디에 적히든 값은 같다」를 요구하므로 정당한 2차 자리(내부 기본값·검증 분기)를 막지 않는다.
+#
+# ⚠️ **합의값을 여기 숫자로 적지 않는다** — 그러면 이 축 자신이 2차 정의 자리가 된다.
+# `sd_expect`(JWKS 재조회) · `SD_EXPECT`(clock skew)는 1절이 아홉 언어에서 뽑아 서로 같음을
+# 단언한 뒤 남긴 값이다.
+#
+# **오탐 실측(2026-09-16)**: `main` 최근 **300 커밋**(2026-08-14 ~ 오늘 = clock skew 30 합의
+# 이후 전 구간)에서 합의값과 다른 값 **0 건**. 계측기가 실제로 잡는다는 대조군도 있다 —
+# 전 이력 1102 커밋으로 넓히면 **664 커밋이 60 으로 걸린다**(30 합의 이전 시기). 즉 이 축은
+# 침묵하는 것이 아니라 오늘 갈림이 없는 것이다.
+#
+# ⚠️ **정규식에 역슬래시를 쓰지 않는다** — `[.]` 로 적는다. 이번에도 `[A-Za-z0-9_?<>\[\]]` 가
+# 세 겹 이스케이프에서 먹혀 python 의 `clock_skew: float = 30.0` 을 놓쳤다(실측).
+SD_2ND_ID='([Jj]wks[_]?[Mm]in[_]?[Rr]efetch[A-Za-z_]*|JWKS_MIN_REFETCH[A-Z_]*|[Mm]in[_]?[Rr]efetch[A-Za-z_]*|[Cc]lock[_]?[Ss]kew[A-Za-z_]*|CLOCK_SKEW[A-Z_]*|RefreshIntervalSeconds)'
+# 식별자와 대입 사이에 낄 수 있는 것: 타입 표기(`: float` · ` int64`)와 C# 접근자(`{ get; init; }`).
+SD_2ND_MID='([[:space:]]*:[[:space:]]*[A-Za-z0-9_?<>.]+|[[:space:]]+[A-Za-z0-9_.]+)?([[:space:]]*[{][^}]*[}])?'
+# 대입 우변: 벌거벗은 숫자 · TS 의 `?? 30` · JVM/.NET 의 `Duration.ofSeconds(30)`/`TimeSpan.FromSeconds(30)`.
+SD_2ND_RHS='[[:space:]]*(=|:=|:|[?][?])[[:space:]]*("?[0-9][0-9._]*|(Duration[.]ofSeconds|TimeSpan[.]FromSeconds)[(][0-9][0-9._]*[)])'
+
+# ⚠️ **`|while read` 를 쓰지 않는다** — 파이프의 오른쪽은 서브셸이라 `assert.sh` 의 실패 카운터가
+# 증발한다(원장 `selftest-assert-counter-subshell`). 파일로 받아 리다이렉트로 읽는다.
+_2nd_tmp="$(mktemp)"
+printf '%s\n' "$SD_SRC" | xargs grep -nE "${SD_2ND_ID}${SD_2ND_MID}${SD_2ND_RHS}" 2>/dev/null \
+  | grep -vE ':[0-9]+:[[:space:]]*(//|#|\*|/\*|--)' > "$_2nd_tmp" || true
+
+_2nd_n="$(grep -c . "$_2nd_tmp" || true)"
+# 공허 하한 — 글롭·정규식이 깨지면 「갈림 없음」이 통과처럼 보인다. ⚠️ **오늘 값이 아니라
+# 창 최저값을 박는다**(#443 의 판정): 최근 300 커밋에서 최소·최대 모두 **20**이었다.
+SD_2ND_MIN=20
+_2nd_enough=1; [ "$_2nd_n" -ge "$SD_2ND_MIN" ] && _2nd_enough=0
+assert_eq "ok" "$(ok_if "$_2nd_enough" "$_2nd_n")" \
+  "[2차 정의 자리] 대입 자리를 ${SD_2ND_MIN}개 미만 찾았다($_2nd_n) — 정규식이나 소스 목록이 깨졌나?"
+
+# 언어별 기여 — 한 언어가 통째로 빠지는 것을 총합 하한은 못 본다(2b 축이 같은 이유로 배운 것).
+_2nd_langs="$(cut -d/ -f1 "$_2nd_tmp" | sort -u | tr '\n' ' ')"
+_2nd_missing=''
+for L in $SD_LANGS; do
+  case " $_2nd_langs " in *" $L "*) ;; *) _2nd_missing="$_2nd_missing $L" ;; esac
+done
+assert_eq "" "$_2nd_missing" \
+  "[2차 정의 자리] 대입 자리를 하나도 못 찾은 언어가 있다 —$_2nd_missing (그 언어의 표기가 바뀌었나?)"
+
+while IFS= read -r _2nd_line; do
+  [ -n "$_2nd_line" ] || continue
+  _2nd_where="$(printf '%s' "$_2nd_line" | cut -d: -f1,2)"
+  _2nd_raw="$(printf '%s' "$_2nd_line" | grep -oE "${SD_2ND_ID}${SD_2ND_MID}${SD_2ND_RHS}" \
+    | grep -oE '[0-9][0-9._]*[)]?$' | tr -d ')' | head -1)"
+  [ -n "$_2nd_raw" ] || continue
+  case "$_2nd_line" in
+    *[Ss]kew*|*SKEW*) _2nd_exp="$SD_EXPECT"; _2nd_fam='clock skew' ;;
+    *)                _2nd_exp="$sd_expect"; _2nd_fam='JWKS 재조회' ;;
+  esac
+  assert_eq "$(sd_norm "$_2nd_exp")" "$(sd_norm "$_2nd_raw")" \
+    "[2차 정의 자리] $_2nd_where 의 $_2nd_fam 리터럴이 1절이 합의시킨 값과 다르다 — 한 자리만 갈려도 그 경로에서만 동작이 달라진다"
+done < "$_2nd_tmp"
+rm -f "$_2nd_tmp"
+
 # ---------------------------------------------------------------------------
 # 4) 소유자 문서 축 — 이 값을 **선언하는** 두 문서
 # ---------------------------------------------------------------------------
