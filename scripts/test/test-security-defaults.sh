@@ -271,35 +271,18 @@ do
     "[JWKS 크기상한] $_f 가 JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT 을 더 이상 참조하지 않는다"
 done
 
-# ⚠️ **둘째 정의 자리.** 위 축은 언어당 한 곳만 읽는데, 두 언어는 같은 파라미터를 **두 곳**에
-# 선언한다 — 그리고 dotnet 은 위 축이 읽는 쪽이 **소비자가 받는 값이 아니다**:
-#   dotnet  JwtValidator.cs(위 축) + KeycloakConfig.cs. 파사드가 `ClockSkewSeconds = cfg.ClockSkewSeconds`
-#           로 넘기므로(KeycloakClient.cs) 소비자 값은 **KeycloakConfig 쪽**이다.
-#   python  config.py(위 축) + _internal/jwt.py 의 파라미터 기본값.
-# 실측 2026-08-29: KeycloakConfig.cs 를 30 → 300 으로 바꿔도 이 가드는 **103/0 으로 통과했다**
+# ⚠️ **둘째 정의 자리는 이제 손 표가 아니라 파생이 본다 — 아래 3절.** 여기 있던
+# `sd_skew_secondary`(dotnet·python 두 줄짜리 표)는 **중복이 되어 지웠다**(2026-09-16):
+# 3절의 파생이 같은 두 자리를 값으로 잡는다(실측 — 손 표를 죽이고 python 을 60 으로 바꿔도
+# 파생이 `CAUGHT`). 반대로 **손 표만 죽이면 아무도 울지 않았다**(`SILENT`) — 그것이 중복 게이트의
+# 정의이고, 중복은 변이검증을 공허하게 만든다(이 저장소가 node 콜드캐시에서 이미 치른 값).
+#
+# ⚠️ **그 표가 갖고 있던 지식은 여기 남긴다 — dotnet 은 1절이 읽는 쪽이 소비자 값이 아니다.**
+#   dotnet  1절은 `JwtValidator.cs` 를 읽지만, 파사드가 `ClockSkewSeconds = cfg.ClockSkewSeconds`
+#           로 넘기므로(`KeycloakClient.cs`) **소비자가 받는 값은 `KeycloakConfig.cs` 쪽**이다.
+#   python  `config.py`(1절) + `_internal/jwt.py` 의 파라미터 기본값.
+# 실측 2026-08-29: `KeycloakConfig.cs` 를 30 → 300 으로 바꿔도 당시 가드는 **103/0 으로 통과**했다
 # (dotnet 단위테스트가 대신 잡았다). 값이 갈리는 자리를 가드가 안 보면 그 초록은 공허하다.
-sd_skew_secondary() { # $1=언어 → 둘째 정의 자리의 clock skew (해당 없으면 빈 문자열)
-  case "$1" in
-    dotnet) sed -n 's/.*ClockSkewSeconds *{ *get; *init; *} *= *\([0-9][0-9.]*\).*/\1/p' \
-              "$ROOT/dotnet/src/Xzawed.Keycloak.Sdk/KeycloakConfig.cs" | head -1 ;;
-    python) sed -n 's/.*clock_skew: *float *= *\([0-9][0-9.]*\).*/\1/p' \
-              "$ROOT/python/src/keycloak_sdk/_internal/jwt.py" | head -1 ;;
-  esac
-}
-
-_sec=0
-for L in dotnet python; do
-  _raw="$(sd_skew_secondary "$L" || true)"
-  _has=1; [ -n "$_raw" ] && _has=0
-  assert_eq "ok" "$(ok_if "$_has" MISSING)" \
-    "[clock skew·둘째 자리] $L 의 둘째 정의를 추출하지 못했다 — 파일이 옮겨졌거나 표기가 바뀌었나?"
-  [ -n "$_raw" ] || continue
-  _sec=$((_sec + 1))
-  assert_eq "$SD_EXPECT" "$(sd_norm "$_raw")" \
-    "[clock skew·둘째 자리] $L 의 둘째 정의가 첫째와 다르다 — 소비자가 받는 값이 갈렸다"
-done
-# 대조군 — 위 루프가 실제로 둘을 돌았는지. 표가 낡으면 0건 실행되고 조용히 통과한다.
-assert_eq "2" "$_sec" "[clock skew·둘째 자리] 읽은 둘째 자리 수가 2가 아니다 — 추출 표가 낡았나?"
 sd_skew_expect="$SD_EXPECT"
 
 # ⚠️ **일치만으로는 부족하다 — 값 자체를 핀한다.** 위 축은 "아홉이 서로 같은가"만 본다. 그래서
