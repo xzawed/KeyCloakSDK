@@ -15,12 +15,19 @@
 | | |
 |---|---|
 | 원장 고유 발견 | **209** (conf 12 · pend 37 · weak 3 · low 157) — 감사 시점 전부 미수정 |
-| 작업 패키지 | **181** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · 후속 분할 신규 4 · **H1 파생 신규 1** · 하네스 신규 1 · 프로세스감사 신규 2) — 열림 **116** · 닫힘 **65** (2026-09-12 10차 재측정) |
+| 작업 패키지 | **182** (원장 유래 104 · 원장 밖 46 · 재스캔 신규 2 · 문서감사 신규 17 + 계수차 1 · 재판정 신규 3 · 후속 분할 신규 4 · **H1 파생 신규 1** · 하네스 신규 1 · 프로세스감사 신규 2 · **야간 사고 신규 1**) — 열림 **114** · 닫힘 **68** (2026-09-16 재측정) |
 | 심각도 | high 27 · medium 78 · low 48 |
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `181`(2026-09-12 10차 기준 열림 116 · 닫힘 65)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. **수를 알아야 하면 위 두 명령을 돌린다.** ⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `182`(2026-09-16 기준 열림 114 · 닫힘 68)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+
+```sh
+grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
+grep -c '^- \[x\]' docs/superpowers/plans/remaining-work.md   # 닫힘
+```
+
+⚠️ 그리고 **「열려 있다」가 「아직 참이다」는 아니다** — 2026-09-07 재판정에서 20건 중 11건이 변동했다(진입점 참조).
 
 ### 재개 절차 (다른 PC 포함)
 
@@ -130,7 +137,13 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 24. ✅ **`H3-harness-image-and-lock-pins` + `rust-msrv-leg-vs-manifest-unguarded` — 이 PR 이 둘을 함께 닫았다.** 같은 불변식이라 가드가 하나다. 야간 `cargo audit` 이 **빌드되지 않는 락**을 6주째 감사하고 있었다(락 `keycloak-sdk` 0.1.0 ↔ 매니페스트 1.0.0).
 25. ⚠️ **재판정이 넷 중 넷을 고쳤다** — `H3` 는 「세 자리」가 아니라 한 파일의 둘(install 둘은 설계) · `rust-msrv` 는 지목 줄이 `:21`→**`:24`** · `guard-detection-surface-hand-narrowed` 는 「축 9 중 손 표 7」이 아니라 **축 11 중 손 표 9**(또 늘었다 — 그 항목 참조) · `authz-redirect-uri-not-per-call` 만 서술이 정확했다(7:2 그대로).
 
-**⟶ 다음 대상(2026-09-12 6차 기준).** `authz-redirect-uri-not-per-call`(⚠️ **§4 사람 판정은 아직 열려 있다** — 2026-09-12 세션은 **범위에서 뺀** 것이지 판정한 것이 아니다. 재판정 결과 서술은 정확했다: 인가요청에 `redirect_uri` 를 호출당 받는 것이 **일곱**, 못 받는 것이 **둘**(php `AuthClient.php:48` 인자 0 · rust `auth.rs:106` 생성 시 config 값). 하네스 conformance 가 php 25/26 으로 이미 빨갛고, 초록으로 되돌리는 길은 **검사를 약하게 하는 것이 아니라 API 를 맞추는 것**이다 — php 선택적 인자 · rust 새 메서드로 둘 다 가산적이라 semver 파괴는 아니다) · `guard-detection-surface-hand-narrowed`[H](required **밖**에서 오탐 0 선행 — ⚠️ 이번 재측정에서 **축이 또 늘었다**) · `H2-harness-judgment-module-no-test` · `H4`~`H8`. ⚠️ **재판정부터** 시작한다 — 5차·6차 연속으로 손댄 항목 넷 중 넷이 틀렸다.
+**⟶ 7차(2026-09-16) — 「야간이 여드레 빨갰는데 아무도 몰랐다」 갈래.** 이 세션은 등록부의 항목이 아니라 **지금 빨간 것**에서 시작했다. 축 ①(지금 초록이 거짓인 것)의 극단이다 — 초록이 거짓인 것보다 **빨강이 읽히지 않는 것**이 먼저다.
+
+26. ✅ **`harness-orphan-container-reads-as-build-failure` — PR #506 이 닫았다(부류를 넓혀서).** 항목은 「이름 충돌 하나」를 적었으나 참인 부류는 **「실패 신호가 증상만 담고 원인을 안 담는다」**였다. 사고 자체는 상류가 냈고 상류가 닫았다(`json` 3.0.0 → `faraday` 2.14.3 불일치 → 2.14.4 가 수정). 그 항목 본문에 타임라인·통제 실험·실측을 적었다.
+27. ⚠️ **신규 `nightly-failure-reaches-nobody` [H/M]** — 여드레 동안 **두 개의 독립 실패**가 같은 창에서 나고 사라졌는데 둘 다 조치가 없었다. 아래 그 항목.
+28. ⚠️ **이 「다음 대상」 문단이 또 낡아 있었다 — 세 번째다.** 아래 6차 목록의 다섯 중 셋이 이미 닫혔고(`authz-redirect-uri-not-per-call` #485 · `H4` · `H8`), 그중 한 문장은 **쓰인 그날 참이었다가 같은 날 거짓이 됐다**: 「하네스 conformance 가 php 25/26 으로 이미 빨갛다」는 #483(09-12)이 쓸 때 참이었고(09-12 야간 install 실측 php·rust **25/26**), 같은 날 #485 가 고쳐 **09-13 밤부터 26/26**이다. ⚠️ **살아 있는 다음 대상은 다섯**이다 — `guard-detection-surface-hand-narrowed`[H] · `H2` · `H5` · `H6` · `H7`. 나머지는 아래에서 읽지 말 것.
+
+**⟶ 다음 대상(2026-09-12 6차 기준 · ⚠️ 위 28 이 이 목록의 셋을 지웠다).** `authz-redirect-uri-not-per-call`(⚠️ **§4 사람 판정은 아직 열려 있다** — 2026-09-12 세션은 **범위에서 뺀** 것이지 판정한 것이 아니다. 재판정 결과 서술은 정확했다: 인가요청에 `redirect_uri` 를 호출당 받는 것이 **일곱**, 못 받는 것이 **둘**(php `AuthClient.php:48` 인자 0 · rust `auth.rs:106` 생성 시 config 값). 하네스 conformance 가 php 25/26 으로 이미 빨갛고, 초록으로 되돌리는 길은 **검사를 약하게 하는 것이 아니라 API 를 맞추는 것**이다 — php 선택적 인자 · rust 새 메서드로 둘 다 가산적이라 semver 파괴는 아니다) · `guard-detection-surface-hand-narrowed`[H](required **밖**에서 오탐 0 선행 — ⚠️ 이번 재측정에서 **축이 또 늘었다**) · `H2-harness-judgment-module-no-test` · `H4`~`H8`. ⚠️ **재판정부터** 시작한다 — 5차·6차 연속으로 손댄 항목 넷 중 넷이 틀렸다.
 
 **⟶ 옛 목록(이제 닫힘): ~~`lenient-parsing-yields-false-success`~~(닫힘 — rust 하나가 아니라 다섯이었다: `token_provider.rs:71,86-89` 가 **문자열이 아닌 `access_token` 을 빈 토큰 성공으로 캐시**한다. `auth.rs` 는 `CoreTokenResponse` 라 fail-safe이고 **`expires_in` 누락만** 공유한다) · `python-aio-security-test-asymmetry`(범위 6 으로 확대됨) · `rust-msrv-leg-vs-manifest-unguarded`(⚠️ **한 방향만 침묵**이다 — 매니페스트를 내리면 `check-docs` 가 잡고, **CI 레그만 올리면** 아무도 안 잡아 MSRV 레그가 조용히 사라진다) · `authz-redirect-uri-not-per-call`(사람 판정 선행). ⚠️ 여전히 **재판정부터** 시작한다.
 
@@ -694,7 +707,11 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **이것은 「한 곳이 배운 것을 사본이 못 받았다」 부류다** — `verify.sh:14-22` 가 실패 모드를 **이미 적고 있었다**. 주석이 있어도 사본은 안 읽는다. 가드만 읽는다.
 - [ ] `H5-install-version-class-drift` **[L/M]** install 하네스의 「버전을 무엇이 정하는가」 분류가 코드·산문·SSOT 셋에서 갈렸다 — dotnet 이 정반대 · `harness/install/lib/verify-lib.sh:56`
 - [ ] `H6-kotlin-consume-pin-audits-old-artifact` **[L/S]** kotlin 소비자 앱의 0.1.0 리터럴이 야간 OSV 감사가 실제로 해석하는 좌표다 · `harness/install/consume/kotlin-app/build.gradle.kts:36`
+  - ⚠️ **재판정 2026-09-15 — 서술 둘이 틀렸다(실측).** (1) **「야간」이 아니라 주간**이다: `.github/workflows/security-audit.yml:20` 이 `cron: '0 4 * * 1'`(매주 월 04:00 UTC)이고, 주석이 「harness 야간 03:00 과 겹치지 않게」라 적고 있다 — **야간인 것은 harness 쪽**이고 OSV 감사가 아니다. (2) 나머지는 **참이다**: `build.gradle.kts:36` 의 `implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0")` 이 그 잡이 컨테이너 **밖**에서 해석하는 좌표이고(`kotlin-run.sh` 의 `sed` 치환을 안 탄다), SDK SSOT 는 `1.0.0` 이다. 즉 **주간 감사가 옛 좌표를 잰다**.
+  - ⚠️ **다만 「그냥 1.0.0 으로 바꾸면 된다」가 아니다** — 그 줄 바로 위 주석이 「**Central 에 실재하는 버전이어야** 한다(그 잡은 미해결 좌표에 fail-closed 다)」고 적는다. 바꾸기 전에 `1.0.0` 이 Central 에 있는지 **재고**, 소비자 앱이 그 버전으로 **빌드되는지**도 재야 한다(형제 항목 `harness-consume-pin-unsupported` 와 같은 자리다 — 둘을 함께 본다).
 - [ ] `H7-harness-readme-vs-tree` **[L/S]** harness/README.md 가 실제 트리와 갈렸다 — install/ 64파일이 지도에 없고 ruby 프레임워크가 틀렸다 · `harness/README.md:16`
+  - ⚠️ **재판정 2026-09-15 — 절반이 거짓이다(실측).** **「ruby 프레임워크가 틀렸다」는 거짓**이다: `harness/README.md:16` 이 `| ruby | Sinatra 4 (Puma) |`, 40행이 `Sinatra 4, served by Puma` 이고, `harness/apps/ruby/Gemfile` 이 `sinatra "~> 4.0"`·`puma ">= 8.0.2"` 다 — **일치한다**. 독립 레그가 먼저 짚었고 실측이 확인했다. ⚠️ **내 세션 메모리도 같은 오류(「Rack/Puma」)를 들고 있었고 함께 고쳤다.**
+  - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
   - ✅ **닫힘 2026-09-15 — 실측이 주장을 확인했고 규모는 예상보다 컸다.** 하네스 Docker 컨텍스트가 **70.8MB 였고 그중 34MB(48%)가 빌드·캐시 산출물**이었다: `harness/apps/kotlin/build` 31M · `kotlin/build` 12.5M · `python/.mypy_cache` 12.2M · `kotlin/.gradle` 4.3M · `.superpowers/sdd` 4.7M. 아홉째 언어(kotlin)의 Gradle 산출물과 mypy 캐시가 **한 번도 반영된 적이 없다**. 고친 뒤 **5.2MB(−93%)**.
   - ⚠️ **다른 한 짝(`.gitignore`)은 문제가 아니었다** — 루트에 빈 자리가 있어도 **언어별 `.gitignore` 14개**가 메운다(독립 레그와 실측 일치). 실타격은 `.dockerignore` 뿐이다.
@@ -765,6 +782,12 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 1.0 이후 운영 — 9
 
+- [ ] `nightly-failure-reaches-nobody` **[H/M · 신규 2026-09-16]** 야간이 여드레 빨간 동안 아무 조치가 없었다 — 저장소 안에 **실패가 사람에게 가는 경로가 0건**이다 · `.github/workflows/harness.yml:8`
+  - **실측(2026-09-16)**: `score-all` 이 2026-09-08~09-15 **여덟 밤** 연속 실패(마지막 초록 09-07 · 복귀 09-16). 그 창에서 저장소는 아무것도 하지 않았다. 워크플로 전수 검색 — `gh issue create`·`actions/github-script`·webhook·slack **0건**. `schedule:` 를 가진 워크플로는 **11개**다.
+  - ⚠️ **「사람에게 닿았는가」는 저장소 밖 사실이라 여기서 못 잰다**(알림 설정·받은편지함). 재는 것은 **조치가 없었다**는 것과 **저장소 안에 경로가 없다**는 것 둘이다. 그 둘만으로 항목이 선다.
+  - ⚠️ **더 나쁜 성질 — 두 번째 실패가 첫 번째 빨강에 묻힌다.** 같은 창에서 `install-all` 이 **09-12 하룻밤** 실패했다(php·rust conformance **25/26** — `authz-redirect-uri-not-per-call` 의 그 결함이 install 하네스에 드러난 것). #485 가 같은 날 고쳐 09-13 밤부터 26/26 이다. 즉 **독립 실패 둘이 나고 사라졌는데 둘 다 읽히지 않았다.**
+  - **처방 후보(사람 판정 선행)**: 독립 레그 안은 **끈적한 이슈 하나**다 — 마지막 잡에 `if: failure()` + `issues: write`(새 시크릿·새 액션 없음, 러너의 `gh`), 고정 제목으로 열거나 코멘트하고 성공하면 닫는다. ⚠️ **연속 N회 실패에만 열어야 한다** — 하룻밤 플레이크에 열면 그 다음은 dependabot 이 된다(이 저장소가 이미 겪은 소음이고, 레그도 그것을 유일한 실패 모드로 짚었다).
+  - ⚠️ **`check-ci-permissions.mjs` 와 먼저 만난다** — `issues: write` 를 추가하는 것이 그 가드의 최소권한 규칙과 어떻게 만나는지 보고 나서 착수한다.
 - [ ] `registry-truth-check` **[H/M]** 게시 SSOT가 문서하고만 대조되고 실제 레지스트리와는 한 번도 대조되지 않는다 · `scripts/lib/deploy-facts.sh:138`
 - [x] `stale-release-comments` **[H/S · 닫힘 2026-09-09 #447]** 릴리스 경로의 주석 **여섯**이 낡았고, 그중 하나는 다음 릴리스를 정반대로 오도했다 · `.github/workflows/install-smoke.yml:57`
   - ⚠️ **다섯이 아니라 여섯이다** — caller 다섯(python·node·rust·kotlin·ruby)에 `install-smoke.yml` 자신의 락스텝 문단이 더해진다. 그 문단이 **가장 비싼 하나**다.
