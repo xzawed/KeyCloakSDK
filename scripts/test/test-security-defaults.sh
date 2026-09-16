@@ -883,6 +883,13 @@ sd_no_literal ruby-skew ruby/lib/keycloak_sdk/jwt_validator.rb 'algorithms: ["RS
 SD_2ND_SFX='([Ss]ec(ond)?s?|_sec(ond)?s?|SECONDS|SECS|IntervalSeconds)?'
 SD_2ND_ID="([Jj]wks[_]?[Mm]in[_]?[Rr]efetch${SD_2ND_SFX}|JWKS_MIN_REFETCH(_SECONDS)?|[Mm]in[_]?[Rr]efetch${SD_2ND_SFX}|[Cc]lock[_]?[Ss]kew${SD_2ND_SFX}|CLOCK_SKEW|RefreshIntervalSeconds)"
 # 식별자와 대입 사이에 낄 수 있는 것: 타입 표기(`: float` · ` int64`)와 C# 접근자(`{ get; init; }`).
+# ⚠️ **토큰 시작 가드 — 이것이 없으면 다른 파라미터가 부분문자열로 걸린다.** 독립 레그가 두 번
+# 블로킹으로 짚었고, 실측이 그 손을 들어 줬다: `AllowedClockSkew`·`MaxClockSkew`·`derivedClockSkew`
+# ·`setMaxClockSkew`·`getClockSkew` 가 **오늘 트리에 이미 있다**(숫자 대입이 없어 아직 안 걸릴 뿐).
+# ⚠️ 단순한 단어 경계로는 못 고친다 — `defaultJwksMinRefetchSecs` 가 정당한 camelCase 앞머리라
+# 같은 모양이다. 그래서 **허용 앞머리를 열거**한다(`default`·`DEFAULT_`). 실측: 진짜 20 히트의
+# 토큰 여덟 종은 전부 통과하고 위 다섯은 전부 차단된다.
+SD_2ND_GUARD='(^|[^A-Za-z0-9_])(default|DEFAULT_)?'
 SD_2ND_MID='([[:space:]]*:[[:space:]]*[A-Za-z0-9_?<>.]+|[[:space:]]+[A-Za-z0-9_.]+)?([[:space:]]*[{][^}]*[}])?'
 # 대입 우변: 벌거벗은 숫자 · TS 의 `?? 30` · JVM/.NET 의 `Duration.ofSeconds(30)`/`TimeSpan.FromSeconds(30)`.
 SD_2ND_RHS='[[:space:]]*(=|:=|:|[?][?])[[:space:]]*("?[0-9][0-9._]*|(Duration[.]ofSeconds|TimeSpan[.]FromSeconds)[(][0-9][0-9._]*[)])'
@@ -901,13 +908,13 @@ SD_2ND_RHS='[[:space:]]*(=|:=|:|[?][?])[[:space:]]*("?[0-9][0-9._]*|(Duration[.]
 # 오늘 히트 20 중 `?` 를 담은 줄은 **둘뿐이고 그 둘은 `??` 관용**이라 아래 분기로 간다.
 sd_2nd_scan() { # stdin=파일 목록 → 필터를 거친 히트(`경로:줄:내용`)
   _a="$(mktemp)"
-  xargs grep -nE "${SD_2ND_ID}${SD_2ND_MID}${SD_2ND_RHS}" 2>/dev/null \
+  xargs grep -nE "${SD_2ND_GUARD}${SD_2ND_ID}${SD_2ND_MID}${SD_2ND_RHS}" 2>/dev/null \
     | grep -vE ':[0-9]+:[[:space:]]*(//|#|\*|/\*|--)' > "$_a" || true
   # ⚠️ **`?` 를 담았다고 다 빼면 거짓음성이 생긴다** — 실측: 꼬리 주석에 `? :` 가 있는 진짜
   # 2차 자리(`... = 60; // a ? b : c`)가 통째로 **SILENT** 였다. 삼항은 `?` 가 식별자 **앞**에
   # 오므로 그 모양만 뺀다.
-  grep -vE '[?][?]' "$_a" | grep -vE "[?][^?]*${SD_2ND_ID}" || true
-  grep -E '[?][?]' "$_a" | grep -E "${SD_2ND_ID}.*${SD_2ND_ID}" || true
+  grep -vE '[?][?]' "$_a" | grep -vE "[[:space:]][?][[:space:]][^?]*${SD_2ND_ID}" || true
+  grep -E '[?][?]' "$_a" | grep -E "${SD_2ND_GUARD}${SD_2ND_ID}.*${SD_2ND_ID}" || true
   rm -f "$_a"
 }
 
@@ -929,24 +936,30 @@ sd_2nd_negative_control() {
   printf '  private static final long jwksMinRefetchMs = 30_000;\n' > "$_nc/Fp1.java"
   printf '  const delay = clockSkew ?? 0;\n' > "$_nc/fp2.ts"
   printf '  const v = enabled ? clockSkew : 0;\n' > "$_nc/fp3.ts"
-  _nc_hits="$(printf '%s\n%s\n%s\n' "$_nc/Fp1.java" "$_nc/fp2.ts" "$_nc/fp3.ts" | sd_2nd_scan | grep -c . || true)"
+  # 다른 파라미터가 부분문자열로 걸리는 자리 — 토큰 시작 가드가 막는다.
+  printf '  public static readonly TimeSpan AllowedClockSkew = TimeSpan.FromSeconds(300);\n' > "$_nc/Fp4.cs"
+  printf '  private const int MaxClockSkew = 300;\n  var derivedClockSkew = 300;\n' > "$_nc/Fp5.cs"
+  _nc_hits="$(printf '%s\n%s\n%s\n%s\n%s\n' "$_nc/Fp1.java" "$_nc/fp2.ts" "$_nc/fp3.ts" "$_nc/Fp4.cs" "$_nc/Fp5.cs" | sd_2nd_scan | grep -c . || true)"
   rm -rf "$_nc"
   printf '%s' "$_nc_hits"
 }
 assert_eq "0" "$(sd_2nd_negative_control)" \
   "[2차 정의 자리] 오탐 대조군이 걸렸다 — 밀리초 이름(...Ms = 30_000) · 널병합 사용처(clockSkew ?? 0) · 삼항(enabled ? clockSkew : 0) 중 하나를 정의 자리로 읽는다(required 체크가 정당한 변경을 막는다)"
 
-# 양성 대조군 — **부분문자열 이름은 걸려야 한다.** 그것이 면제표가 존재하는 이유이고, 여기서
-# 0 이 나오면 누군가 오탐을 막는다며 패턴을 무력화한 것이다(그러면 진짜 2차 자리도 안 보인다).
+# 양성 대조군 — **진짜 모양은 걸려야 한다.** 위 음성 대조군만 있으면 「아무것도 안 잡는 패턴」이
+# 만점을 받는다. 네 언어 관용을 모두 태워, 오탐을 막는다며 패턴을 좁히다가 진짜를 잃는 것을 막는다.
 sd_2nd_positive_control() {
   _pc="$(mktemp -d)"
-  printf '  public static readonly TimeSpan AllowedClockSkew = TimeSpan.FromSeconds(300);\n' > "$_pc/Pc.cs"
-  _pc_hits="$(printf '%s\n' "$_pc/Pc.cs" | sd_2nd_scan | grep -c . || true)"
+  printf '  public int clockSkewSeconds = 300;\n' > "$_pc/Pc.cs"
+  printf '  const defaultJwksMinRefetchSecs int64 = 300\n' > "$_pc/pc.go"
+  printf '    clock_skew: float = 300.0\n' > "$_pc/pc.py"
+  printf '    clockSkewSeconds: input.clockSkewSeconds ?? 300,\n' > "$_pc/pc.ts"
+  _pc_hits="$(printf '%s\n%s\n%s\n%s\n' "$_pc/Pc.cs" "$_pc/pc.go" "$_pc/pc.py" "$_pc/pc.ts" | sd_2nd_scan | grep -c . || true)"
   rm -rf "$_pc"
   printf '%s' "$_pc_hits"
 }
-assert_eq "1" "$(sd_2nd_positive_control)" \
-  "[2차 정의 자리] 양성 대조군이 안 걸렸다 — 패턴이 무력화돼 진짜 2차 자리도 못 본다"
+assert_eq "4" "$(sd_2nd_positive_control)" \
+  "[2차 정의 자리] 양성 대조군이 안 걸렸다 — 패턴이 좁아져 진짜 2차 자리를 못 본다(네 언어 관용: C# 대입 · Go 타입선언 · Python 타입주석 · TS 널병합)"
 
 _2nd_tmp="$(mktemp)"
 printf '%s\n' "$SD_SRC" | sd_2nd_scan > "$_2nd_tmp" || true
