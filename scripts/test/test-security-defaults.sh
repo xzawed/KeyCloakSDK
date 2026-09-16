@@ -895,14 +895,29 @@ SD_2ND_RHS='[[:space:]]*(=|:=|:|[?][?])[[:space:]]*("?[0-9][0-9._]*|(Duration[.]
 # 식별자가 **두 번** 나온다. 나머지 대입 기호는 그대로 둔다.
 # ⚠️ 필터를 함수로 둔 이유는 **대조군이 같은 경로를 타게** 하기 위함이다 — 아래 음성 대조군이
 # 정규식만 시험하면 이 필터의 퇴화를 못 본다.
+# ⚠️ **삼항 연산자의 `:` 는 대입이 아니다** — 독립 레그가 지목했고 실측으로 재현했다:
+# `const v = enabled ? clockSkew : 0` 은 옳은 코드인데 0 을 합의값과 비교당한다. `??` 가 아닌
+# 줄에서 `?` 를 담은 것은 전부 삼항(또는 TS 선택 프로퍼티)이라 뺀다 — 실측 2026-09-16:
+# 오늘 히트 20 중 `?` 를 담은 줄은 **둘뿐이고 그 둘은 `??` 관용**이라 아래 분기로 간다.
 sd_2nd_scan() { # stdin=파일 목록 → 필터를 거친 히트(`경로:줄:내용`)
   _a="$(mktemp)"
   xargs grep -nE "${SD_2ND_ID}${SD_2ND_MID}${SD_2ND_RHS}" 2>/dev/null \
     | grep -vE ':[0-9]+:[[:space:]]*(//|#|\*|/\*|--)' > "$_a" || true
-  grep -vE '[?][?]' "$_a" || true
+  grep -vE '[?]' "$_a" || true
   grep -E '[?][?]' "$_a" | grep -E "${SD_2ND_ID}.*${SD_2ND_ID}" || true
   rm -f "$_a"
 }
+
+# 면제표 — **부분문자열로 걸리는 정당한 이름**을 이유와 함께 적는 자리. `[Cc]lock[_]?[Ss]kew` 는
+# 단어 경계를 요구할 수 없다(`defaultJwksMinRefetchSecs` 처럼 camelCase 앞머리가 정당하기 때문)
+# — 그래서 `AllowedClockSkew = TimeSpan.FromSeconds(300)` 같은 **다른 파라미터**가 생기면 이 축이
+# 빨개진다(독립 레그 지목 · 실측 재현). 그때 길은 둘이다: 이름을 바꾸거나, 여기 한 줄을
+# **이유와 함께** 더한다. 그 diff 가 사람 판정이다.
+# ⚠️ 키는 **전체 토큰**이다(`AllowedClockSkew`) — 매치된 조각(`ClockSkew`)으로 면제하면
+# 그 이름을 쓰는 자리가 통째로 빠진다.
+# ⚠️ **오늘은 비어 있다**(실측: 면제가 필요한 줄 0). 비어 있는 것이 정상이고, 늘어나면 그만큼
+# 파생이 손 목록으로 되돌아가는 것이므로 리뷰에서 그것을 본다.
+SD_2ND_EXEMPT=''
 
 # 음성 대조군 — 레그가 지목한 오탐 **둘**이 실제로 걸러지는가. 이 축은 required 체크 안에서
 # 돌므로 오탐 하나가 모든 PR 을 막는다. 「안 걸린다」를 주석이 아니라 실행으로 고정한다.
@@ -910,12 +925,25 @@ sd_2nd_negative_control() {
   _nc="$(mktemp -d)"
   printf '  private static final long jwksMinRefetchMs = 30_000;\n' > "$_nc/Fp1.java"
   printf '  const delay = clockSkew ?? 0;\n' > "$_nc/fp2.ts"
-  _nc_hits="$(printf '%s\n%s\n' "$_nc/Fp1.java" "$_nc/fp2.ts" | sd_2nd_scan | grep -c . || true)"
+  printf '  const v = enabled ? clockSkew : 0;\n' > "$_nc/fp3.ts"
+  _nc_hits="$(printf '%s\n%s\n%s\n' "$_nc/Fp1.java" "$_nc/fp2.ts" "$_nc/fp3.ts" | sd_2nd_scan | grep -c . || true)"
   rm -rf "$_nc"
   printf '%s' "$_nc_hits"
 }
 assert_eq "0" "$(sd_2nd_negative_control)" \
-  "[2차 정의 자리] 오탐 대조군이 걸렸다 — 밀리초 이름(...Ms = 30_000)이나 널병합 사용처(clockSkew ?? 0)를 정의 자리로 읽는다(required 체크가 정당한 변경을 막는다)"
+  "[2차 정의 자리] 오탐 대조군이 걸렸다 — 밀리초 이름(...Ms = 30_000) · 널병합 사용처(clockSkew ?? 0) · 삼항(enabled ? clockSkew : 0) 중 하나를 정의 자리로 읽는다(required 체크가 정당한 변경을 막는다)"
+
+# 양성 대조군 — **부분문자열 이름은 걸려야 한다.** 그것이 면제표가 존재하는 이유이고, 여기서
+# 0 이 나오면 누군가 오탐을 막는다며 패턴을 무력화한 것이다(그러면 진짜 2차 자리도 안 보인다).
+sd_2nd_positive_control() {
+  _pc="$(mktemp -d)"
+  printf '  public static readonly TimeSpan AllowedClockSkew = TimeSpan.FromSeconds(300);\n' > "$_pc/Pc.cs"
+  _pc_hits="$(printf '%s\n' "$_pc/Pc.cs" | sd_2nd_scan | grep -c . || true)"
+  rm -rf "$_pc"
+  printf '%s' "$_pc_hits"
+}
+assert_eq "1" "$(sd_2nd_positive_control)" \
+  "[2차 정의 자리] 양성 대조군이 안 걸렸다 — 패턴이 무력화돼 진짜 2차 자리도 못 본다"
 
 _2nd_tmp="$(mktemp)"
 printf '%s\n' "$SD_SRC" | sd_2nd_scan > "$_2nd_tmp" || true
@@ -940,8 +968,22 @@ assert_eq "" "$_2nd_missing" \
 while IFS= read -r _2nd_line; do
   [ -n "$_2nd_line" ] || continue
   _2nd_where="$(printf '%s' "$_2nd_line" | cut -d: -f1,2)"
+  # 전체 토큰 — 면제 키이자 메시지에 쓰는 이름이다.
+  _2nd_tok="$(printf '%s' "$_2nd_line" | grep -oE "[A-Za-z0-9_]*${SD_2ND_ID}[A-Za-z0-9_]*" | head -1)"
+  # 면제 — 이유가 비면 실패한다(표가 거짓말이 되는 것을 막는다).
+  _2nd_why="$(printf '%s\n' "$SD_2ND_EXEMPT" | grep -E "^${_2nd_tok}	" | head -1 | cut -f2- || true)"
+  if printf '%s\n' "$SD_2ND_EXEMPT" | grep -qE "^${_2nd_tok}	"; then
+    assert_eq "ok" "$(ok_if "$([ -n "$_2nd_why" ] && echo 0 || echo 1)" 'NO-REASON')" \
+      "[2차 정의 자리] 면제표의 $_2nd_tok 에 이유가 없다 — 이유 없는 면제는 표를 거짓말로 만든다"
+    continue
+  fi
   _2nd_raw="$(printf '%s' "$_2nd_line" | grep -oE "${SD_2ND_ID}${SD_2ND_MID}${SD_2ND_RHS}" \
     | grep -oE '[0-9][0-9._]*[)]?$' | tr -d ')' | head -1)"
+  # ⚠️ **추출 실패를 통과로 읽지 않는다**(독립 레그 지목 · 1b 축이 같은 이유로 이미 배운 것).
+  # 조용히 `continue` 하면 그 줄이 공허 하한과 언어별 기여에는 **세어지면서** 값은 안 본다.
+  _2nd_got=1; [ -n "$_2nd_raw" ] && _2nd_got=0
+  assert_eq "ok" "$(ok_if "$_2nd_got" 'NO-VALUE')" \
+    "[2차 정의 자리] $_2nd_where 에서 값을 못 뽑았다 — 이 줄이 하한에는 세어지고 값은 안 보인다"
   [ -n "$_2nd_raw" ] || continue
   case "$_2nd_line" in
     *[Ss]kew*|*SKEW*) _2nd_exp="$SD_EXPECT"; _2nd_fam='clock skew' ;;
