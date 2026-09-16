@@ -6,3 +6,6 @@ RESULTS.md
 SCORECARD.md
 # suites/run-suite.sh의 언어별 원본 로그(마지막 줄만 *.suite.json으로 추출) — 생성 아티팩트, 커밋 제외
 *.raw
+# verify.sh가 실패 원인으로 남기는 증거(앱 로그·컨테이너 목록) — 생성 아티팩트, 커밋 제외
+*.app.log
+*.compose-ps.txt
