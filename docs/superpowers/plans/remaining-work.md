@@ -164,6 +164,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
    (d) **서브에이전트가 리포 git 을 하이재킹했다** — 실제 `.git/config` 에 `core.worktree` 를 써서 `git status` 가 거짓 clean 을 냈다. 워크플로 직후 `git rev-parse --show-toplevel` 을 먼저 찍는다.
    (e) **미머지 PR 브랜치 위에서 새 브랜치를 팠다.** 세션이 `main` 에서 시작한다고 가정했는데 HEAD 가 열린 PR(#414)의 브랜치였고, 그 diff 가 #415 에 통째로 실려 나갔다(무해했으나 **PR 본문이 자기 범위를 틀리게 말했다**). 파기 전에 `git branch --show-current` + `gh pr list --head "$(git branch --show-current)" --state open` 를 찍는다. ⚠️ **스쿼시 저장소라 `git merge-base --is-ancestor` 로는 판정할 수 없다** — 머지돼도 NOT ancestor 다. 답을 주는 것은 PR 머지 상태와 「내용이 트리에 있는지」(`git log -S'<고유 문자열>' origin/main`)다.
    (f) **Grok 이 빈 디렉터리·150단어에서도 타임아웃했다.** `grok_build_verify` 가 붙이는 자가검증 체크리스트가 추론량을 배로 만든다. **진단 순서**: 타임아웃 → `grok_build_delegate` 로 `"PONG"` 한 번(연결과 추론량을 가른다) → 같은 질문을 delegate 로. 실측: verify 240s·300s 두 번 실패 → delegate 로 즉시 성공.
+   ⚠️ **「delegate 면 된다」는 틀렸다(2026-09-16 정정).** delegate 도 **300s·420s 두 번 타임아웃**했다 — 둘 다 「파일 여럿을 읽고 판단하라」였다(첫 번째는 8개 파일 목록, 두 번째는 `git diff main...HEAD` + 5파일). 같은 세션에서 PONG 은 즉답했고, **읽을 파일을 하나로 못박은 질문**과 **사실을 프롬프트에 넣고 아무것도 안 읽게 한 질문**은 셋 다 완주했다. 즉 비용은 도구가 아니라 **탐색량**이다. 규약: 레그에게는 (i) 읽을 파일을 열거하고 그 수를 1~2로 묶거나, (ii) 사실을 인라인으로 주고 「읽지 말라」고 쓰고, (iii) 답 길이를 단어 수로 못박는다.
 
 ⚠️ **기각 11건은 이 등록부에 없다 — 의도적이다.** 게시 잡의 `environment:` 부재 · `workflow_dispatch` 우회 · admin-capability D열 무보호는 문서화된 설계이거나 되살릴 조건이 적힌 기각이다. 착수 전 [기각 레지스트리](../../governance/rejected.md)를 먼저 읽는다.
 
