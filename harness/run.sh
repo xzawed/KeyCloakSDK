@@ -3,7 +3,6 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 LANGS=("${@:-go}")
-NET=harness_default
 # Windows Git Bash의 MSYS 경로변환이 -v 컨테이너 경로를 망가뜨리는 것 방지(Linux CI엔 무해).
 export MSYS_NO_PATHCONV=1
 
@@ -16,6 +15,15 @@ trap cleanup EXIT
 echo "== Keycloak 기동 =="
 docker compose up -d keycloak
 timeout 240 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" "$(docker compose ps -q keycloak)")" = healthy ]; do sleep 3; done'
+
+# ⚠️ **compose 네트워크 이름을 박지 말 것 — `verify.sh` 가 이미 배운 것이다.**
+# 예전엔 `NET=harness_default` 를 위에 박아 뒀다. 그 이름은 **디렉터리 이름에서 오는 기본값**이라,
+# `COMPOSE_PROJECT_NAME` 을 바꾸거나 이 디렉터리를 리네임하면 가정이 깨지고 k6 컨테이너가
+# keycloak 을 DNS 로 못 찾아 **조용히 전부 실패**한다(`verify.sh:14-22` 가 그 실패 모드를 적고 있다).
+# keycloak 이 기동된 **뒤** 실제 네트워크를 조회하고, 실패할 때만 기본값으로 폴백한다.
+# ⚠️ 두 스크립트가 다시 갈리지 않게 `scripts/test/test-harness-network.sh` 가 대조한다.
+NET="$(docker compose ps --format '{{.Networks}}' keycloak 2>/dev/null | head -1)"
+[ -z "$NET" ] && NET=harness_default
 
 # k6 컨테이너(비-root uid 12345)가 호스트 마운트 report/에 handleSummary JSON을 쓸 수 있도록(Linux CI 권한). Windows엔 무해.
 mkdir -p report && chmod -R 777 report 2>/dev/null || true

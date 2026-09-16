@@ -678,7 +678,12 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - 되살릴 조건이 아니라 처방이 분명하다: `up` 앞에 `--remove-orphans` 를 붙이거나, 실패 시 `docker compose ps` 를 신호에 함께 남겨 **원인과 증상을 가른다**.
   - ⚠️ 함께 적어 둘 것 — `docker-compose.yml:14` 가 Keycloak 호스트 포트를 `"8080:8080"` 으로 **못박는다**. 그 포트를 다른 프로세스가 쥔 PC 에서는 하네스가 아예 못 뜬다(실측). 검증 경로는 전부 compose 네트워크 안(`http://keycloak:8080`)이라 **호스트 퍼블리시는 사람 편의일 뿐**이므로, 포트를 변수로 빼거나 override 를 문서화하면 된다. ⚠️ Windows 에서 `COMPOSE_FILE` 구분자는 `;` 이고(`:` 는 드라이브 문자와 충돌), `ports` 는 기본이 **리스트 병합**이라 `!override` 없이는 8080 이 그대로 남는다(둘 다 실측).
 - [ ] `H2-harness-judgment-module-no-test` **[L/M]** harness 판정 모듈에 「테스트가 있어야 한다」 규칙이 없다 — conformance.mjs 는 Docker 전체 런 없이는 시험 불가 · `harness/conformance/conformance.mjs:1`
-- [ ] `H4-runsh-network-divergence` **[L/S]** verify.sh 가 배운 것을 run.sh 는 못 받았다 — compose 네트워크명을 아직 리터럴로 박는다 · `harness/run.sh:6`
+- [x] `H4-runsh-network-divergence` **[L/S · 닫힘 2026-09-15]** verify.sh 가 배운 것을 run.sh 는 못 받았다 — compose 네트워크명을 아직 리터럴로 박는다 · `harness/run.sh:6`
+  - ✅ **닫힘 2026-09-15 — 주장이 정확했고 범위는 딱 둘이었다.** `--network "$NET"` 를 쓰는 하네스 스크립트는 **`run.sh`·`verify.sh` 둘뿐**이고, `verify.sh` 만 `docker compose ps --format '{{.Networks}}' keycloak` 으로 조회했다. `run.sh` 는 `NET=harness_default` 를 **파일 6행에** 박아 뒀다(compose 를 띄우기도 전이다).
+  - ⚠️ **`install-net` 은 이 규칙 밖이다** — install 하네스는 그 네트워크를 **자기가 만든다**. 자기가 만든 이름을 쓰는 것은 가정이 아니라 사실이라 리터럴이 옳다. 규칙을 넓게 잡았으면 정당한 자리 20여 곳을 오탐으로 잡았을 것이다.
+  - **파생을 keycloak 기동 뒤로 옮겼다**(verify.sh 와 같은 자리) — 조회는 컨테이너가 떠 있어야 답한다. 폴백은 남긴다.
+  - **가드** `scripts/test/test-harness-network.sh`(repo-hygiene 배선, 3 단언): 이름을 박지 않는가 · 폴백이 있는가 · 공허 하한(**세어서 박았다**: 실측 2). 변이 **3/3 CAUGHT**, 각각 격리되고 **파일명을 말한다**.
+  - ⚠️ **이것은 「한 곳이 배운 것을 사본이 못 받았다」 부류다** — `verify.sh:14-22` 가 실패 모드를 **이미 적고 있었다**. 주석이 있어도 사본은 안 읽는다. 가드만 읽는다.
 - [ ] `H5-install-version-class-drift` **[L/M]** install 하네스의 「버전을 무엇이 정하는가」 분류가 코드·산문·SSOT 셋에서 갈렸다 — dotnet 이 정반대 · `harness/install/lib/verify-lib.sh:56`
 - [ ] `H6-kotlin-consume-pin-audits-old-artifact` **[L/S]** kotlin 소비자 앱의 0.1.0 리터럴이 야간 OSV 감사가 실제로 해석하는 좌표다 · `harness/install/consume/kotlin-app/build.gradle.kts:36`
 - [ ] `H7-harness-readme-vs-tree` **[L/S]** harness/README.md 가 실제 트리와 갈렸다 — install/ 64파일이 지도에 없고 ruby 프레임워크가 틀렸다 · `harness/README.md:16`
