@@ -925,16 +925,11 @@ sd_2nd_scan() { # stdin=파일 목록 → 필터를 거친 히트(`경로:줄:�
   rm -f "$_a"
 }
 
-# 면제표 — **부분문자열로 걸리는 정당한 이름**을 이유와 함께 적는 자리. `[Cc]lock[_]?[Ss]kew` 는
-# 단어 경계를 요구할 수 없다(`defaultJwksMinRefetchSecs` 처럼 camelCase 앞머리가 정당하기 때문)
-# — 그래서 `AllowedClockSkew = TimeSpan.FromSeconds(300)` 같은 **다른 파라미터**가 생기면 이 축이
-# 빨개진다(독립 레그 지목 · 실측 재현). 그때 길은 둘이다: 이름을 바꾸거나, 여기 한 줄을
-# **이유와 함께** 더한다. 그 diff 가 사람 판정이다.
-# ⚠️ 키는 **전체 토큰**이다(`AllowedClockSkew`) — 매치된 조각(`ClockSkew`)으로 면제하면
-# 그 이름을 쓰는 자리가 통째로 빠진다.
-# ⚠️ **오늘은 비어 있다**(실측: 면제가 필요한 줄 0). 비어 있는 것이 정상이고, 늘어나면 그만큼
-# 파생이 손 목록으로 되돌아가는 것이므로 리뷰에서 그것을 본다.
-SD_2ND_EXEMPT=''
+# ⚠️ **면제표를 두지 않는다 — 한 번 뒀다가 지웠다.** 부분문자열 오탐을 표로 빠져나가게 하려
+# 했는데, 위 **토큰 시작 가드**가 그 부류를 구조로 막자 표가 **한 번도 실행되지 않는 분기**로
+# 남았다. required 체크 안의 죽은 분기는 자산이 아니라 부채다 — 빈 표라 매치가 0 이라 그 분기가
+# 옳은지 아무도 모르고, 잘못 쓰면 **전부 면제**가 된다. 정당한 예외가 실제로 나타나면 그때
+# **시험과 함께** 만든다.
 
 # 음성 대조군 — 레그가 지목한 오탐 **둘**이 실제로 걸러지는가. 이 축은 required 체크 안에서
 # 돌므로 오탐 하나가 모든 PR 을 막는다. 「안 걸린다」를 주석이 아니라 실행으로 고정한다.
@@ -991,15 +986,6 @@ assert_eq "" "$_2nd_missing" \
 while IFS= read -r _2nd_line; do
   [ -n "$_2nd_line" ] || continue
   _2nd_where="$(printf '%s' "$_2nd_line" | cut -d: -f1,2)"
-  # 전체 토큰 — 면제 키이자 메시지에 쓰는 이름이다.
-  _2nd_tok="$(printf '%s' "$_2nd_line" | grep -oE "[A-Za-z0-9_]*${SD_2ND_ID}[A-Za-z0-9_]*" | head -1)"
-  # 면제 — 이유가 비면 실패한다(표가 거짓말이 되는 것을 막는다).
-  _2nd_why="$(printf '%s\n' "$SD_2ND_EXEMPT" | grep -E "^${_2nd_tok}	" | head -1 | cut -f2- || true)"
-  if printf '%s\n' "$SD_2ND_EXEMPT" | grep -qE "^${_2nd_tok}	"; then
-    assert_eq "ok" "$(ok_if "$([ -n "$_2nd_why" ] && echo 0 || echo 1)" 'NO-REASON')" \
-      "[2차 정의 자리] 면제표의 $_2nd_tok 에 이유가 없다 — 이유 없는 면제는 표를 거짓말로 만든다"
-    continue
-  fi
   _2nd_raw="$(printf '%s' "$_2nd_line" | grep -oE "${SD_2ND_ID}${SD_2ND_MID}${SD_2ND_RHS}" \
     | grep -oE '[0-9][0-9._]*[)]?$' | tr -d ')' | head -1)"
   # ⚠️ **추출 실패를 통과로 읽지 않는다**(독립 레그 지목 · 1b 축이 같은 이유로 이미 배운 것).
