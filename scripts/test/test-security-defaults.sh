@@ -875,7 +875,13 @@ sd_no_literal ruby-skew ruby/lib/keycloak_sdk/jwt_validator.rb 'algorithms: ["RS
 #
 # ⚠️ **정규식에 역슬래시를 쓰지 않는다** — `[.]` 로 적는다. 이번에도 `[A-Za-z0-9_?<>\[\]]` 가
 # 세 겹 이스케이프에서 먹혀 python 의 `clock_skew: float = 30.0` 을 놓쳤다(실측).
-SD_2ND_ID='([Jj]wks[_]?[Mm]in[_]?[Rr]efetch[A-Za-z_]*|JWKS_MIN_REFETCH[A-Z_]*|[Mm]in[_]?[Rr]efetch[A-Za-z_]*|[Cc]lock[_]?[Ss]kew[A-Za-z_]*|CLOCK_SKEW[A-Z_]*|RefreshIntervalSeconds)'
+# ⚠️ **꼬리를 `[A-Za-z_]*` 로 열어 두지 않는다 — 단위가 다른 이름이 걸린다.** 독립 레그가
+# 지목했고 실측으로 재현했다: `jwksMinRefetchMs = 30_000` 은 **옳은 값인데** 30 과 달라
+# required 체크를 빨갛게 한다. 그래서 꼬리를 **초 단위 접미사만** 받는 화이트리스트로 닫는다.
+# ⚠️ 그 대가는 **거짓음성**이다 — 밀리초로 적힌 자리는 이 축이 안 본다. required 체크에서는
+# 그쪽이 안전한 실패 방향이다(오탐 하나가 모든 PR 을 막는다). 새 접미사가 생기면 여기 더한다.
+SD_2ND_SFX='([Ss]ec(ond)?s?|_sec(ond)?s?|SECONDS|SECS|IntervalSeconds)?'
+SD_2ND_ID="([Jj]wks[_]?[Mm]in[_]?[Rr]efetch${SD_2ND_SFX}|JWKS_MIN_REFETCH(_SECONDS)?|[Mm]in[_]?[Rr]efetch${SD_2ND_SFX}|[Cc]lock[_]?[Ss]kew${SD_2ND_SFX}|CLOCK_SKEW|RefreshIntervalSeconds)"
 # 식별자와 대입 사이에 낄 수 있는 것: 타입 표기(`: float` · ` int64`)와 C# 접근자(`{ get; init; }`).
 SD_2ND_MID='([[:space:]]*:[[:space:]]*[A-Za-z0-9_?<>.]+|[[:space:]]+[A-Za-z0-9_.]+)?([[:space:]]*[{][^}]*[}])?'
 # 대입 우변: 벌거벗은 숫자 · TS 의 `?? 30` · JVM/.NET 의 `Duration.ofSeconds(30)`/`TimeSpan.FromSeconds(30)`.
@@ -883,9 +889,36 @@ SD_2ND_RHS='[[:space:]]*(=|:=|:|[?][?])[[:space:]]*("?[0-9][0-9._]*|(Duration[.]
 
 # ⚠️ **`|while read` 를 쓰지 않는다** — 파이프의 오른쪽은 서브셸이라 `assert.sh` 의 실패 카운터가
 # 증발한다(원장 `selftest-assert-counter-subshell`). 파일로 받아 리다이렉트로 읽는다.
+# ⚠️ **`??` 는 대입이 아니라 「사용」일 수 있다** — 독립 레그가 지목했고 실측으로 재현했다:
+# `const delay = clockSkew ?? 0` 은 옳은 코드인데 0 을 합의값과 비교당한다. 받는 것은 TS 의
+# **정규화 관용**(`clockSkewSeconds: input.clockSkewSeconds ?? 30`)뿐이고, 그 모양은 한 줄에
+# 식별자가 **두 번** 나온다. 나머지 대입 기호는 그대로 둔다.
+# ⚠️ 필터를 함수로 둔 이유는 **대조군이 같은 경로를 타게** 하기 위함이다 — 아래 음성 대조군이
+# 정규식만 시험하면 이 필터의 퇴화를 못 본다.
+sd_2nd_scan() { # stdin=파일 목록 → 필터를 거친 히트(`경로:줄:내용`)
+  _a="$(mktemp)"
+  xargs grep -nE "${SD_2ND_ID}${SD_2ND_MID}${SD_2ND_RHS}" 2>/dev/null \
+    | grep -vE ':[0-9]+:[[:space:]]*(//|#|\*|/\*|--)' > "$_a" || true
+  grep -vE '[?][?]' "$_a" || true
+  grep -E '[?][?]' "$_a" | grep -E "${SD_2ND_ID}.*${SD_2ND_ID}" || true
+  rm -f "$_a"
+}
+
+# 음성 대조군 — 레그가 지목한 오탐 **둘**이 실제로 걸러지는가. 이 축은 required 체크 안에서
+# 돌므로 오탐 하나가 모든 PR 을 막는다. 「안 걸린다」를 주석이 아니라 실행으로 고정한다.
+sd_2nd_negative_control() {
+  _nc="$(mktemp -d)"
+  printf '  private static final long jwksMinRefetchMs = 30_000;\n' > "$_nc/Fp1.java"
+  printf '  const delay = clockSkew ?? 0;\n' > "$_nc/fp2.ts"
+  _nc_hits="$(printf '%s\n%s\n' "$_nc/Fp1.java" "$_nc/fp2.ts" | sd_2nd_scan | grep -c . || true)"
+  rm -rf "$_nc"
+  printf '%s' "$_nc_hits"
+}
+assert_eq "0" "$(sd_2nd_negative_control)" \
+  "[2차 정의 자리] 오탐 대조군이 걸렸다 — 밀리초 이름(...Ms = 30_000)이나 널병합 사용처(clockSkew ?? 0)를 정의 자리로 읽는다(required 체크가 정당한 변경을 막는다)"
+
 _2nd_tmp="$(mktemp)"
-printf '%s\n' "$SD_SRC" | xargs grep -nE "${SD_2ND_ID}${SD_2ND_MID}${SD_2ND_RHS}" 2>/dev/null \
-  | grep -vE ':[0-9]+:[[:space:]]*(//|#|\*|/\*|--)' > "$_2nd_tmp" || true
+printf '%s\n' "$SD_SRC" | sd_2nd_scan > "$_2nd_tmp" || true
 
 _2nd_n="$(grep -c . "$_2nd_tmp" || true)"
 # 공허 하한 — 글롭·정규식이 깨지면 「갈림 없음」이 통과처럼 보인다. ⚠️ **오늘 값이 아니라
