@@ -889,6 +889,13 @@ SD_2ND_ID="([Jj]wks[_]?[Mm]in[_]?[Rr]efetch${SD_2ND_SFX}|JWKS_MIN_REFETCH(_SECON
 # ⚠️ 단순한 단어 경계로는 못 고친다 — `defaultJwksMinRefetchSecs` 가 정당한 camelCase 앞머리라
 # 같은 모양이다. 그래서 **허용 앞머리를 열거**한다(`default`·`DEFAULT_`). 실측: 진짜 20 히트의
 # 토큰 여덟 종은 전부 통과하고 위 다섯은 전부 차단된다.
+# ⚠️ **이 가드가 사는 대가 — 거짓음성 하나를 안다.** 다른 앞머리를 단 토큰
+# (`adminClockSkewSeconds = 60` · `probeJwksMinRefetchSeconds = 60`)은 **안 본다**. 실측
+# (`scripts/probe.sh`): 그런 이름은 `SILENT`, **같은 토큰**(`jwksMinRefetchSeconds = 60`)은
+# `CAUGHT`. 그 둘은 **어휘로 구분되지 않는다** — 앞머리가 붙은 이름은 「우리 값의 둘째 자리」일
+# 수도 「다른 파라미터」일 수도 있고(오늘 트리의 `setMaxClockSkew`·`derivedClockSkew` 가 후자다),
+# 판정할 수 없는 것을 required 체크가 판정하면 그 대가는 **모든 PR 차단**이다. 그래서 **모르는
+# 것은 안 본다**. 같은 토큰을 다시 적는 것이 실제 2차 자리의 모양이고, 그것은 잡는다.
 SD_2ND_GUARD='(^|[^A-Za-z0-9_])(default|DEFAULT_)?'
 SD_2ND_MID='([[:space:]]*:[[:space:]]*[A-Za-z0-9_?<>.]+|[[:space:]]+[A-Za-z0-9_.]+)?([[:space:]]*[{][^}]*[}])?'
 # 대입 우변: 벌거벗은 숫자 · TS 의 `?? 30` · JVM/.NET 의 `Duration.ofSeconds(30)`/`TimeSpan.FromSeconds(30)`.
