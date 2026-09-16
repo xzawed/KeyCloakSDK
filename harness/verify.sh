@@ -25,11 +25,27 @@ NET="$(docker compose ps --format '{{.Networks}}' keycloak 2>/dev/null | head -1
 # 최종 종료코드에만 반영한다. k6(성능)는 게이트가 아니다 — 언어간 상대 점수일 뿐 절대 임계가 없다.
 FAILED_LANGS=""
 
+# 실패의 **원인**을 아티팩트에 남긴다. 신호 JSON은 증상만 담는다 — `{"ok":false,"detail":"500"}`는
+# 500을 낸 이유를 말하지 않는다. 실측 2026-09-16: 야간 score-all이 여덟 밤 빨갰는데 앱이 던진
+# 예외 문장이 어디에도 없어, 원인 규명에 로컬 재빌드와 통제 실험이 필요했다. 업로드되는 것은
+# report/signals/ 뿐이므로(harness.yml) 증거도 그곳에 쓴다.
+capture_app_log() { # $1=lang — 성공·실패 무관하게 남긴다(분기가 없으면 분기를 틀릴 일도 없다)
+  docker compose logs --no-color --tail 300 "app-$1" > "report/signals/$1.app.log" 2>&1 || true
+  # ⚠️ 빈 파일은 「증거 없음」과 구분되지 않는다 — 비었으면 비었다고 적는다.
+  [ -s "report/signals/$1.app.log" ] || printf '(빈 로그 — app-%s 가 stdout/stderr 에 아무것도 쓰지 않았다)\n' "$1" > "report/signals/$1.app.log"
+}
+# 컨테이너 목록 — 빌드·기동 실패의 원인과 증상을 가른다. 중단된 런이 남긴 이름 충돌
+# (`Conflict. The container name ... is already in use`)은 빌드가 성공해도 up을 실패시키는데,
+# 신호에는 "build/up failed"로만 남아 코드를 뒤지게 만든다.
+capture_compose_ps() { # $1=lang
+  docker compose ps -a > "report/signals/$1.compose-ps.txt" 2>&1 || true
+}
+
 for L in "${LANGS[@]}"; do
   echo "== [$L] 앱 빌드·기동 =="
-  if ! docker compose --profile apps up -d --build "app-$L"; then echo "{\"lang\":\"$L\",\"error\":\"build/up failed\"}" > "report/signals/$L.error.json"; FAILED_LANGS="$FAILED_LANGS $L"; continue; fi
+  if ! docker compose --profile apps up -d --build "app-$L"; then capture_compose_ps "$L"; capture_app_log "$L"; echo "{\"lang\":\"$L\",\"error\":\"build/up failed\"}" > "report/signals/$L.error.json"; FAILED_LANGS="$FAILED_LANGS $L"; continue; fi
   PORT=$(docker compose port "app-$L" 8090 2>/dev/null | sed 's/.*://')
-  if ! timeout 120 bash -c "until curl -fsS http://localhost:$PORT/healthz >/dev/null 2>&1; do sleep 2; done"; then echo "{\"lang\":\"$L\",\"error\":\"healthz timeout\"}" > "report/signals/$L.error.json"; FAILED_LANGS="$FAILED_LANGS $L"; docker compose --profile apps stop "app-$L" >/dev/null 2>&1; continue; fi
+  if ! timeout 120 bash -c "until curl -fsS http://localhost:$PORT/healthz >/dev/null 2>&1; do sleep 2; done"; then capture_app_log "$L"; capture_compose_ps "$L"; echo "{\"lang\":\"$L\",\"error\":\"healthz timeout\"}" > "report/signals/$L.error.json"; FAILED_LANGS="$FAILED_LANGS $L"; docker compose --profile apps stop "app-$L" >/dev/null 2>&1; continue; fi
 
   echo "== [$L] conformance =="
   docker run --rm --network "$NET" -v "$PWD/conformance:/c" -v "$PWD/report/signals:/out" \
@@ -42,6 +58,8 @@ for L in "${LANGS[@]}"; do
   # 측정 실패는 perf=null로 폴백되어 동형성 차원만 반영된다(무벌점).
   docker run --rm --network "$NET" -v "$PWD/driver:/scripts" -v "$PWD/report:/report" \
     -e "BASE_URL=http://app-$L:8090" -e KC_URL=http://keycloak:8080 -e "LANG=$L" grafana/k6 run /scripts/scenarios.js || true
+  # ⚠️ stop 앞에서 남긴다 — EXIT 트랩의 `down -v` 뒤에는 읽을 컨테이너가 없다.
+  capture_app_log "$L"
   docker compose --profile apps stop "app-$L" >/dev/null 2>&1
 done
 

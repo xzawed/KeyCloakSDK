@@ -11,7 +11,7 @@ services:
       # it-realm-realm.json이어야 한다(호스트 측 파일명 harness-realm.json과는 무관 — 실측 검증됨).
       - ./keycloak/harness-realm.json:/opt/keycloak/data/import/it-realm-realm.json:ro
     ports:
-      - "8080:8080"
+      - "${HARNESS_KC_PORT:-8080}:8080"
     healthcheck:
       # 26.6은 관리 포트 9000의 /health/ready 제공; curl 미포함 이미지라 bash TCP로 대체
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -qi '\"status\"[[:space:]]*:[[:space:]]*\"UP\"'"]
@@ -31,7 +31,7 @@ services:
       KC_CLIENT_SECRET: it-secret
       APP_PORT: "8090"
     ports:
-      - "8090:8090"
+      - "${HARNESS_PORT_GO:-8090}:8090"
     depends_on:
       keycloak:
         condition: service_healthy
@@ -46,7 +46,7 @@ services:
       KC_CLIENT_SECRET: it-secret
       APP_PORT: "8090"
     ports:
-      - "8091:8090"
+      - "${HARNESS_PORT_DOTNET:-8091}:8090"
     depends_on:
       keycloak:
         condition: service_healthy
@@ -61,7 +61,7 @@ services:
       KC_CLIENT_SECRET: it-secret
       APP_PORT: "8090"
     ports:
-      - "8092:8090"
+      - "${HARNESS_PORT_NODE:-8092}:8090"
     depends_on:
       keycloak:
         condition: service_healthy
@@ -76,7 +76,7 @@ services:
       KC_CLIENT_SECRET: it-secret
       APP_PORT: "8090"
     ports:
-      - "8093:8090"
+      - "${HARNESS_PORT_PYTHON:-8093}:8090"
     depends_on:
       keycloak:
         condition: service_healthy
@@ -91,7 +91,7 @@ services:
       KC_CLIENT_SECRET: it-secret
       APP_PORT: "8090"
     ports:
-      - "8094:8090"
+      - "${HARNESS_PORT_JAVA:-8094}:8090"
     depends_on:
       keycloak:
         condition: service_healthy
@@ -106,7 +106,7 @@ services:
       KC_CLIENT_SECRET: it-secret
       APP_PORT: "8090"
     ports:
-      - "8095:8090"
+      - "${HARNESS_PORT_PHP:-8095}:8090"
     depends_on:
       keycloak:
         condition: service_healthy
@@ -121,7 +121,7 @@ services:
       KC_CLIENT_SECRET: it-secret
       APP_PORT: "8090"
     ports:
-      - "8096:8090"
+      - "${HARNESS_PORT_RUST:-8096}:8090"
     depends_on:
       keycloak:
         condition: service_healthy
@@ -136,7 +136,7 @@ services:
       KC_CLIENT_SECRET: it-secret
       APP_PORT: "8090"
     ports:
-      - "8097:8090"
+      - "${HARNESS_PORT_RUBY:-8097}:8090"
     depends_on:
       keycloak:
         condition: service_healthy
@@ -151,7 +151,7 @@ services:
       KC_CLIENT_SECRET: it-secret
       APP_PORT: "8090"
     ports:
-      - "8098:8090"
+      - "${HARNESS_PORT_KOTLIN:-8098}:8090"
     depends_on:
       keycloak:
         condition: service_healthy

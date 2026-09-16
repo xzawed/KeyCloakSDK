@@ -18,6 +18,8 @@ Each app consumes the SDK through that language's **idiomatic framework** — so
 
 Every app uses container-**internal 8090** (to simplify the contract), and only maps differently to the host as 8090–8098.
 
+> **Host ports are overridable, and the defaults above are what you get when you override nothing.** Keycloak publishes `HARNESS_KC_PORT` (default 8080) and each app publishes `HARNESS_PORT_<LANG>` (defaults 8090–8098). Set them when another process already holds a port: `HARNESS_KC_PORT=18080 ./verify.sh ruby`. Nothing in the verification path depends on the host port — conformance, security probes and k6 all reach the apps over the compose network (`http://app-<lang>:8090`), and `run.sh`/`verify.sh` read the actual host port back with `docker compose port`. Publishing exists for humans with a browser.
+
 > ⚠️ **App build images use an Alpine (musl) base.** With Debian/glibc build images, Docker Desktop's (Windows) built-in DNS proxy returns the package registries (nuget/pypi/maven, and npm's Fastly CNAME chain) to the glibc resolver as failures, so `dotnet restore`/`pip install`/Maven downloads get blocked by DNS errors. The musl resolver works fine in the same environment and has no problems on Linux-native Docker (CI) either, making this the fundamental fix that works portably without per-host `extra_hosts`/IP pinning (the shared compose file has no hardcoded IPs).
 
 ## Layout
