@@ -903,7 +903,10 @@ sd_2nd_scan() { # stdin=파일 목록 → 필터를 거친 히트(`경로:줄:�
   _a="$(mktemp)"
   xargs grep -nE "${SD_2ND_ID}${SD_2ND_MID}${SD_2ND_RHS}" 2>/dev/null \
     | grep -vE ':[0-9]+:[[:space:]]*(//|#|\*|/\*|--)' > "$_a" || true
-  grep -vE '[?]' "$_a" || true
+  # ⚠️ **`?` 를 담았다고 다 빼면 거짓음성이 생긴다** — 실측: 꼬리 주석에 `? :` 가 있는 진짜
+  # 2차 자리(`... = 60; // a ? b : c`)가 통째로 **SILENT** 였다. 삼항은 `?` 가 식별자 **앞**에
+  # 오므로 그 모양만 뺀다.
+  grep -vE '[?][?]' "$_a" | grep -vE "[?][^?]*${SD_2ND_ID}" || true
   grep -E '[?][?]' "$_a" | grep -E "${SD_2ND_ID}.*${SD_2ND_ID}" || true
   rm -f "$_a"
 }
