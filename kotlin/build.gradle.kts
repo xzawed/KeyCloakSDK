@@ -8,7 +8,7 @@
 // settings.gradle.kts: plugins { id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0" }
 
 plugins {
-    kotlin("jvm") version "2.4.10"
+    kotlin("jvm") version "2.4.20"
     `java-library`
     id("org.jetbrains.dokka") version "2.2.0"
     id("com.vanniktech.maven.publish") version "0.37.0"
@@ -146,7 +146,7 @@ testing {
                 // `kotlin.test.Test` typealias(→org.junit.jupiter.api.Test)는 plain kotlin-test가 아니라
                 // kotlin-test-junit5 변형이 제공한다 — 단위 test는 Kotlin 플러그인의 variant-aware 해석이 이를
                 // 자동 선택하나 jvm-test-suite 구성엔 그 해석이 없어 junit5 변형을 직접 지정한다(assertions 포함).
-                implementation("org.jetbrains.kotlin:kotlin-test-junit5:2.4.10")
+                implementation("org.jetbrains.kotlin:kotlin-test-junit5:2.4.20")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
                 implementation("org.testcontainers:testcontainers:2.0.5")
