@@ -1,5 +1,5 @@
 # build context = repo root (docker-compose.yml의 context: ..)
-FROM golang:1.25-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /app
 # SDK 소스를 /sdk로 복사(go.mod의 replace 대상)
 COPY go/ /sdk/

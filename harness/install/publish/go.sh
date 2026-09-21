@@ -54,7 +54,7 @@ if ! docker run --rm \
     -e PKG_VER="$PKG_VER" \
     -v "$(hostpath "$SRC_DIR"):/src:ro" \
     -v "$(hostpath "$PROXY_DIR"):/out" \
-    golang:1.25-alpine sh -euc '
+    golang:1.26-alpine sh -euc '
       apk add --no-cache git >/dev/null
       export HOME=/tmp/home GOPATH=/tmp/gopath GOSUMDB=off GOPROXY=direct GOTOOLCHAIN=local GIT_TERMINAL_PROMPT=0
       mkdir -p "$HOME" "$GOPATH"

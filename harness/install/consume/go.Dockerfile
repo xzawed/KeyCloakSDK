@@ -10,12 +10,12 @@
 # 컨테이너가 아니라 볼륨이므로 compose 서비스가 없다 — run_lang_go()가 docker run -v로 마운트한다.
 # 상태(installed/quickstartOk)는 호스트 마운트 /status의 마커 파일로 회수한다(컨테이너 생존 여부와
 # 무관하게 오케스트레이터가 읽는다).
-FROM golang:1.25-alpine AS app
+FROM golang:1.26-alpine AS app
 WORKDIR /app
 
 # 의존성 없는 최소 go.mod — SDK/gocloak은 런타임에 실제 소비자 명령
 # `go get github.com/xzawed/KeyCloakSDK/go@v0.1.0 github.com/Nerzal/gocloak/v13@v13.9.0`로 설치한다(go-run.sh).
-RUN printf 'module harness-app-go-installed\n\ngo 1.25\n' > go.mod
+RUN printf 'module harness-app-go-installed\n\ngo 1.26\n' > go.mod
 
 COPY harness/install/quickstart/go/main.go ./quickstart/main.go
 COPY harness/apps/go/main.go ./main.go
