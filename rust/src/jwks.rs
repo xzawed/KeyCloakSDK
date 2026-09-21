@@ -618,4 +618,31 @@ mod tests {
             "비어 있지 않은 회전 집합은 반영되어야 한다"
         );
     }
+
+    // ⚠️ **적대적·고장난 IdP 가 빈 200 을 영원히 줘도 요청이 무한해지면 안 된다.** 새 거부는
+    // `fetch()` 안에서 Err 로 나가고, `get_key` 의 Err 분기가 실패 카운터를 올리고 백오프를
+    // 찍는다 — 즉 기존 실패 경로를 그대로 탄다. 그 사실을 읽기가 아니라 **세어서** 단언한다
+    // (거부를 실패로 기록하지 않는 구현은 여기서 20 번 나간다).
+    #[tokio::test]
+    async fn empty_keyset_flood_is_bounded_like_any_other_failure() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"keys":[]})))
+            .mount(&server)
+            .await;
+        let store = JwksStore::new(
+            format!("{}/certs", server.uri()),
+            reqwest::Client::new(),
+            30,
+        );
+        for _ in 0..20 {
+            assert!(store.get_key("k1").await.is_err());
+        }
+        assert_eq!(
+            certs_hits(&server).await,
+            1,
+            "빈 200 을 주는 IdP 에 20 회 조회가 요청 1 건으로 접혀야 한다 — 거부가 백오프를 찍지 않으면 20 건이 나간다"
+        );
+    }
 }
