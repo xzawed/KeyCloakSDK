@@ -33,7 +33,7 @@ config = KeycloakConfig(
     client_secret="changeme",  # load the real value from an env var / secrets manager
 )
 
-# The `with` block closes the auth session on exit (AdminClient owns no session, so its close() is a no-op).
+# The `with` block closes both sessions on exit — the auth session and, since the admin facade owns its own `requests.Session` pair, those too (`AdminClient.close()` is not a no-op).
 with KeycloakClient.create(config) as kc:
     # 1) Issue a client-credentials token. repr(TokenSet) masks every token value.
     token = kc.auth.client_credentials_token()

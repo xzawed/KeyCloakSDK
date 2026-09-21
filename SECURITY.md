@@ -125,8 +125,12 @@ and ignored.
 
 Java and Kotlin query [OSV.dev](https://osv.dev) rather than running OWASP
 dependency-check: dependency-check needs an NVD API key to fetch CVE data at a
-usable rate, and this repository holds no Actions secrets, so such a job would
-fail for environmental reasons on every run and become noise instead of signal.
+usable rate, and this repository holds no such key, so such a job would fail for
+environmental reasons on every run and become noise instead of signal.
+(⚠️ This used to read "holds no Actions secrets", which is false — the repository
+holds 15, all of them release/publish credentials. Re-measure with
+`gh secret list`; the argument above stands only on the *absence of an NVD key*,
+so adding one is the condition that reopens this choice.)
 Both OSV jobs are **fail-closed** — an empty coordinate list, or a response whose
 length does not match the query, fails the job instead of reporting "no
 vulnerabilities found".
