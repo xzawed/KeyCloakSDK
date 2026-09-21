@@ -3,7 +3,7 @@
 // installDist(bin/lib 배포)를 쓴다 — Dockerfile이 그 산출물을 실행한다.
 // gradle/wrapper: 8.14
 // ⚠️ **KGP 2.2.20 은 의도된 값이다 — 올리지 말 것.** 게시 jar 의 소비자 하한(languageVersion/
-// apiVersion = KOTLIN_2_2)을 실제로 검증하는 자리라 여기를 SDK 의 KGP 2.4.10 으로 맞추면
+// apiVersion = KOTLIN_2_2)을 실제로 검증하는 자리라 여기를 SDK 의 KGP 2.4.20 으로 맞추면
 // 그 검증이 사라진다(`.claude/rules/kotlin.md` 의 publishToMavenLocal 확인 절차).
 // ⚠️ 그래서 **래퍼를 9.5.0 → 8.14 로 내렸다**: KGP 2.2.20 의 완전지원 밴드는 7.6.3-8.14 이고
 // (kotlinlang.org 표의 `2.2.20–2.2.21` 행) 9.5.0 은 밖이었다. 밴드 안에 두는 것이 이 저장소
