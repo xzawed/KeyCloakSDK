@@ -160,7 +160,7 @@ config = KeycloakConfig(
     client_secret="changeme",  # load the real value from an env var / secrets manager
 )
 
-# with block: __exit__ closes the auth session (AdminClient owns no session, so its close() is a no-op).
+# with block: __exit__ closes the auth session and the admin facade's own two `requests.Session` objects (`AdminClient.close()` is not a no-op).
 with KeycloakClient.create(config) as kc:
     # 1) Issue a client-credentials token. Never log the raw value — mask it.
     token = kc.auth.client_credentials_token()
