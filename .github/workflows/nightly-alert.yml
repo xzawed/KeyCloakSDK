@@ -52,11 +52,20 @@ jobs:
         run: |
           set -eu
           export TITLE="🌙 야간 실패 — $WF_NAME"
-          num=$(gh issue list --state open --limit 100 --json number,title \
-                  --jq 'map(select(.title == env.TITLE)) | .[0].number // empty')
+          # ⚠️ 조회를 **서버쪽에서도** 좁힌다(`in:title`). `--limit` 만 믿으면 열린 이슈가 그 수를
+          #    넘는 순간 우리 이슈가 창 밖으로 밀려 중복 생성·미닫힘이 된다(독립 레그 지목).
+          # ⚠️ **조회 실패를 삼키는 것이 의도다.** `set -e` 아래에서 `num=$(gh …)` 가 죽으면 아래
+          #    create 에 닿지 못해 **경보 자체가 사라진다** — 경보 도구에서 그 방향은 틀렸다.
+          #    실패하면 `num` 이 비고 최악이 「이슈 하나 더」다. **침묵보다 중복이 낫다.**
+          num=$(gh issue list --state open --limit 100 \
+                  --search "in:title \"$WF_NAME\"" \
+                  --json number,title \
+                  --jq 'map(select(.title == env.TITLE)) | .[0].number // empty' || true)
 
           case "$WF_CONCLUSION" in
-            failure|timed_out)
+            # ⚠️ `startup_failure` 도 실패다 — 워크플로 YAML 이 깨지면 이 결과가 오고, 그것이야말로
+            #    사람이 알아야 하는 자리다. `cancelled`·`skipped`·`neutral` 만 신호가 아니다.
+            failure|timed_out|startup_failure)
               body=$(printf '예약 실행이 실패했다.\n\n- 워크플로: **%s**\n- 결과: `%s`\n- 실행 로그: %s\n- 커밋: `%s`\n\n같은 워크플로의 예약 실행이 다시 성공하면 이 이슈는 자동으로 닫힌다.\n' \
                        "$WF_NAME" "$WF_CONCLUSION" "$WF_URL" "$WF_SHA")
               if [ -n "$num" ]; then
