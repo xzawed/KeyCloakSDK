@@ -243,7 +243,7 @@ dev(테스트 csproj — **앵커 있음**):
 <!-- doc-guard: kind=dep source=dotnet/tests/Xzawed.Keycloak.Sdk.Tests/Xzawed.Keycloak.Sdk.Tests.csproj min=6 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
-| 테스트 호스트 | `Microsoft.NET.Test.Sdk` | 18.10.0 |
+| 테스트 호스트 | `Microsoft.NET.Test.Sdk` | 18.10.1 |
 | 단위 테스트 | `xunit` | 2.9.3 |
 | 테스트 어댑터 | `xunit.runner.visualstudio` | 4.0.0 |
 | 커버리지 수집 | `coverlet.collector` | 10.0.1 |
