@@ -210,6 +210,14 @@ jobs:
       - name: 하네스 호스트 포트 변수화(박힌 포트 금지 · 기본값 고유)
         run: sh scripts/test/test-harness-host-ports.sh
 
+      # ⚠️ 야간 실패가 **사람에게 가는가**. 실측 2026-09-21: `rust-ci`·`security-audit` 이
+      # RUSTSEC-2026-0285 로 이레, `sonarcloud` Quality Gate 가 닷새 빨간 채였는데 저장소 안에
+      # 실패가 사람에게 가는 경로가 **0건**이었다(등록부 `nightly-failure-reaches-nobody`).
+      # `nightly-alert.yml` 이 그 경로이고, 이 테스트는 그 감시 목록이 **예약 워크플로 전부**를
+      # 덮는지 본다 — 목록은 파일명이 아니라 `name:` 로 맞추므로 이름을 바꾸면 조용히 빠진다.
+      - name: 야간 실패 알림 커버리지(schedule 워크플로 ↔ 감시 목록)
+        run: sh scripts/test/test-nightly-alert.sh
+
       # ⚠️ OSV 감사의 fail-closed 지점이 **사본 전부**에 있는가. `gradlew dependencies` 는 아무것도
       # 해석하지 못해도 exit 0 이라, 게이트 없는 자리는 가짜 좌표를 OSV 에 물어 "취약점 없음"으로
       # 초록이 된다. 실측 2026-09-07: 생산자 3 · 게이트 1(하네스 잡에만) — 사본 셋 중 하나만 고쳐진

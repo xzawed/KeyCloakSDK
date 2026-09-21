@@ -1,0 +1,81 @@
+name: nightly-alert
+# 예약 실행(schedule)이 실패하면 **저장소 안에** 사람이 보는 자리를 만든다.
+#
+# 왜: 이 저장소에는 실패가 사람에게 가는 경로가 0건이었다(등록부 `nightly-failure-reaches-nobody`).
+# 실측 2026-09-21 — `rust-ci` 와 `security-audit` 의 cargo audit 이 RUSTSEC-2026-0285 로 09-14 초록
+# → 09-21 빨강이 된 채 이레, `sonarcloud` Quality Gate 가 09-16 부터 닷새 빨간 채였고 **아무 신호도
+# 없었다**. GitHub 의 기본 메일 알림은 저장소 밖이고, 그것만으로는 실제로 아무도 알아채지 못했다.
+#
+# ⚠️ **schedule 만 본다.** push·PR 실패는 민 사람이 그 자리에서 본다 — 거기까지 이슈를 만들면 소음이
+# 되고, 소음이 되는 순간 이 장치는 「아무도 안 읽는 목록」으로 되돌아간다. 고치려던 것과 같은 실패다.
+#
+# ⚠️ **자기 실패는 못 잡는다.** 이 워크플로가 죽으면 알릴 주체가 없다 — `workflow_run` 은 자기를
+# 감시할 수 없다. 남는 구멍이고, 숨기지 않고 여기 적어 둔다.
+#
+# ⚠️ `workflows:` 는 파일명이 아니라 **`name:` 값**으로 맞춘다. 어느 워크플로의 `name:` 을 바꾸면
+# 이 목록에서 **조용히** 빠진다 — 그래서 `scripts/test/test-nightly-alert.sh` 가 schedule 을 가진
+# 워크플로의 name 집합과 이 목록을 대조한다. 산문이 아니라 그 가드가 이 문장을 집행한다.
+on:
+  workflow_run:
+    workflows:
+      - CI
+      - dotnet-ci
+      - Go CI
+      - harness
+      - kotlin-ci
+      - Node CI
+      - php-ci
+      - Python CI
+      - ruby-ci
+      - rust-ci
+      - security-audit
+    types: [completed]
+permissions:
+  contents: read
+  issues: write
+jobs:
+  alert:
+    # 성공도 받는다 — 다시 초록이 되면 열어 둔 이슈를 닫아야 목록이 신호로 남는다.
+    if: github.event.workflow_run.event == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 실패면 이슈를 열거나 덧붙이고, 다시 성공하면 닫는다
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          # ⚠️ `${{ }}` 를 셸 본문에 직접 끼우지 않는다 — env 로 건네야 스크립트 주입이 되지 않는다.
+          # 같은 이유로 jq 도 셸 보간 대신 `env.TITLE` 을 읽는다(따옴표가 섞이면 조용히 오매칭된다).
+          WF_NAME: ${{ github.event.workflow_run.name }}
+          WF_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WF_URL: ${{ github.event.workflow_run.html_url }}
+          WF_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -eu
+          export TITLE="🌙 야간 실패 — $WF_NAME"
+          num=$(gh issue list --state open --limit 100 --json number,title \
+                  --jq 'map(select(.title == env.TITLE)) | .[0].number // empty')
+
+          case "$WF_CONCLUSION" in
+            failure|timed_out)
+              body=$(printf '예약 실행이 실패했다.\n\n- 워크플로: **%s**\n- 결과: `%s`\n- 실행 로그: %s\n- 커밋: `%s`\n\n같은 워크플로의 예약 실행이 다시 성공하면 이 이슈는 자동으로 닫힌다.\n' \
+                       "$WF_NAME" "$WF_CONCLUSION" "$WF_URL" "$WF_SHA")
+              if [ -n "$num" ]; then
+                gh issue comment "$num" --body "$body"
+                echo "기존 이슈 #$num 에 덧붙였다"
+              else
+                gh issue create --title "$TITLE" --body "$body"
+              fi
+              ;;
+            success)
+              if [ -n "$num" ]; then
+                gh issue close "$num" --comment "예약 실행이 다시 성공했다 — $WF_URL"
+                echo "이슈 #$num 을 닫았다"
+              else
+                echo "조치 없음 — 초록이고 열린 이슈도 없다"
+              fi
+              ;;
+            *)
+              # cancelled·skipped·neutral 은 신호가 아니다.
+              echo "조치 없음 — conclusion=$WF_CONCLUSION"
+              ;;
+          esac
