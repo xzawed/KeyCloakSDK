@@ -132,13 +132,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with: { python-version: '3.12' }
-      - run: python -m pip install -e ".[dev]"
+      - run: 'python -m pip install --only-binary :all: -e ".[dev]"'
       - name: pip-audit (의존성 취약점 감사)
         # editable 로컬 패키지(keycloak-sdk, PyPI 미배포)는 감사 불가로 skip되고, pip-audit는
         # skip이 하나라도 있으면 종료코드 1(불완전 감사 신호)을 낸다(--skip-editable도 라벨만 바꿈).
         # 환경 대신 editable을 제외한 frozen requirements를 감사해 실 의존성만 커버한다.
         run: |
-          python -m pip install pip-audit
+          python -m pip install --only-binary :all: pip-audit
           python -m pip freeze --exclude-editable > audit-reqs.txt
           pip-audit -r audit-reqs.txt
 
@@ -286,7 +286,7 @@ jobs:
       # ⚠️ 이 파일은 SDK 를 담지 않는다 — Dockerfile 이 `pip install /sdk` 로 따로 넣는다. 즉 이
       # 잡이 덮는 것은 하네스 웹서버 표면(fastapi·uvicorn·httpx)뿐이고 SDK 표면은 위 python 잡이
       # 덮는다. 셋 다 상한 없는 `>=` 라 감사 대상은 그날 PyPI 가 주는 버전이다.
-      - run: python -m pip install pip-audit
+      - run: 'python -m pip install --only-binary :all: pip-audit'
       # ⚠️ `--strict` 없으면 **의존성 수집에 실패한 패키지를 건너뛰고 나머지가 깨끗하면 exit 0**
       # 이다(기본값 False). 그러면 "감사했는데 취약점이 없다"와 "감사하지 못했다"가 같은 초록이
       # 된다 — 이 워크플로가 곳곳에서 막는 바로 그 부류다. 건너뛰면 실패로 받는다.
