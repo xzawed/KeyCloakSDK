@@ -271,6 +271,54 @@ do
     "[JWKS 크기상한] $_f 가 JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT 을 더 이상 참조하지 않는다"
 done
 
+# ---------------------------------------------------------------------------
+# 빈 키셋 거부 — 자체 JWKS 스토어를 가진 넷
+# ---------------------------------------------------------------------------
+# ⚠️ go 의 #380 픽스는 **두 절반**이었다 — 상태코드 거부와 `len(ks.Keys) == 0` 거부. 자매 SDK
+# 로는 **앞 절반만** 복제됐고, 뒤 절반이 없는 rust·ruby·php 는 200 + `{"keys":[]}` 하나로 좋은
+# 캐시가 덮였다(실행 가능한 프로브로 재현, 2026-09-22). 더 나쁜 것은 go 자신도 **뒤 절반에
+# 테스트가 없었다**는 점이다 — 그 줄을 지워도 아무도 울지 않았다(변이 실측: 지우면 새 테스트만
+# 운다). 그래서 이 축은 **거부 지점**과 **그것을 잡는 테스트**를 함께 본다. 한쪽만 보면 코드를
+# 지우고 테스트만 남기거나 그 반대가 통과한다.
+#
+# ⚠️ 여기 없는 다섯의 이유: python 은 joserfc 가 빈 키셋에서 `MissingKeyError` 를 던져 대입
+# 전에 막는다(실측). node·java·kotlin·dotnet 은 하위 라이브러리가 fetch·캐시를 소유해 이 자리가
+# 우리 코드에 없다 — 그쪽은 별도 항목이고, 목록에 넣으면 추출 실패가 곧 빨강이 된다.
+sd_empty_reject() {
+  case "$1" in
+    go) printf '%s\n' "go/jwt.go" ;;
+    rust) printf '%s\n' "rust/src/jwks.rs" ;;
+    ruby) printf '%s\n' "ruby/lib/keycloak_sdk/jwks_store.rb" ;;
+    php) printf '%s\n' "php/src/Jwks/JwksStore.php" ;;
+  esac
+}
+sd_empty_test() {
+  case "$1" in
+    go) printf '%s\t%s\n' "go/jwt_test.go" "TestValidateJWKSEmpty200DoesNotPoisonCache" ;;
+    rust) printf '%s\t%s\n' "rust/src/jwks.rs" "empty_keyset_200_does_not_clobber_a_good_cache" ;;
+    ruby) printf '%s\t%s\n' "ruby/spec/unit/jwks_store_spec.rb" "좋은 캐시를 덮지 않는다" ;;
+    php) printf '%s\t%s\n' "php/tests/Unit/Jwks/JwksStoreTest.php" "testEmptyKeySetDoesNotClobberAGoodCache" ;;
+  esac
+}
+
+SD_EMPTY_LANGS='go rust ruby php'
+sd_subset_of_langs "SD_EMPTY_LANGS" "$SD_EMPTY_LANGS"
+sd_empty_seen=0
+for L in $SD_EMPTY_LANGS; do
+  _src="$(sd_empty_reject "$L")"
+  _n="$(grep -c 'contains no keys' "$ROOT/$_src" 2>/dev/null || printf '0')"
+  assert_eq "ok" "$(ok_if "$([ "$_n" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
+    "[빈 키셋] $L 이 빈 JWKS 를 거부하지 않는다 — $_src 에 'contains no keys' 가 없다(go #380 의 나머지 절반)"
+  _t="$(sd_empty_test "$L")"
+  _tf="${_t%%	*}"; _tn="${_t##*	}"
+  _tn_hits="$(grep -c -- "$_tn" "$ROOT/$_tf" 2>/dev/null || printf '0')"
+  assert_eq "ok" "$(ok_if "$([ "$_tn_hits" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
+    "[빈 키셋] $L 의 회귀 테스트가 사라졌다 — $_tf 에 '$_tn' 이 없다(코드만 남고 증명이 없다)"
+  [ "$_n" -ge 1 ] && [ "$_tn_hits" -ge 1 ] && sd_empty_seen=$((sd_empty_seen + 1))
+done
+# 대조군 — 목록이 비면 어서션이 0건 실행되고 조용히 통과한다.
+assert_eq "4" "$sd_empty_seen" "[빈 키셋] 거부+테스트를 함께 가진 언어 수가 4가 아니다 — 추출 표가 낡았나?"
+
 # ⚠️ **둘째 정의 자리는 이제 손 표가 아니라 파생이 본다 — 아래 3절.** 여기 있던
 # `sd_skew_secondary`(dotnet·python 두 줄짜리 표)는 **중복이 되어 지웠다**(2026-09-16):
 # 3절의 파생이 같은 두 자리를 값으로 잡는다(실측 — 손 표를 죽이고 python 을 60 으로 바꿔도
