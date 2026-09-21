@@ -8,7 +8,7 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · 
 
 ## Requirements
 
-Go **1.25+** (`go.mod` declares `go 1.25.0`; `golang.org/x/oauth2` v0.36 sets the floor), against a Keycloak 26.6.x server.
+Go **1.25+** for the published `1.0.0` (the `go.mod` on that tag declares `go 1.25.0`), against a Keycloak 26.6.x server. ⚠️ The tree has moved to `go 1.26.0` — `golang.org/x/oauth2` v0.37 and `golang.org/x/sync` v0.23 set that floor — so the **next** release will require 1.26+.
 
 ## Install
 

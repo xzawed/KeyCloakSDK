@@ -19,7 +19,7 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 | **Java** | **JDK 21+** for the published `1.0.0` | ⚠️ The sources target 17, but that lowering has **not shipped yet** — see [Java](#java). Older JDKs raise `UnsupportedClassVersionError` |
 | **Python** | **3.10+** | Includes `py.typed` (PEP 561) — consumer-side mypy type checking possible |
 | **Node.js** | **22+** | ESM-only · async-only · includes `.d.ts` type declarations |
-| **Go** | **1.25+** | sync + `context.Context` · requires `x/oauth2` v0.36 |
+| **Go** | **1.25+** for the published `1.0.0` | ⚠️ The tree now requires 1.26 (`x/oauth2` v0.37 · `x/sync` v0.23) — not shipped yet, see [Go](#go) · sync + `context.Context` |
 | **C# / .NET** | **8+** | async-first (`Task<T>` + `CancellationToken`) · targets `net8.0` |
 | **PHP** | **8.3+** | `final readonly class` value types · exception-based (`KeycloakException` hierarchy) |
 | **Rust** | **1.88+** | MSRV required by edition 2024 + let-chains · async-only (tokio) · `thiserror`-based `KeycloakError` |
@@ -245,10 +245,14 @@ try {
 
 ## Go
 
-### 1) Required runtime — Go 1.25+
+### 1) Required runtime — Go 1.26+
 
-<!-- doc-guard: kind=runtime lang=go -->
-Go **`1.25` or newer** is required (its dependency `golang.org/x/oauth2` v0.36 requires it). The idiom is sync + `context.Context` (every network method takes `ctx` as its first argument, and only `CreateAuthorizationRequest` is synchronous). Docker is needed only for integration tests.
+<!-- doc-guard: kind=runtime lang=go published=1.25.0 -->
+The tree requires Go **`1.26`** (`go/go.mod` declares `go 1.26.0`), and this anchor holds that value.
+
+⚠️ **The published `go/v1.0.0` still declares `go 1.25.0`.** A Go consumer resolves the *tag's* `go.mod`, so `go get github.com/xzawed/KeyCloakSDK/go@v1.0.0` works on 1.25 today — the raise reaches consumers at the **next** tag. It was not our choice: `golang.org/x/oauth2` v0.37 and `golang.org/x/sync` v0.23 both declare `go 1.26.0`, and taking either raises our directive (reproduce: `cd go && go get golang.org/x/oauth2@v0.37.0 && grep '^go ' go.mod`). Go's own support window already excludes 1.25 — current stable is 1.27.x — so the new floor is the oldest *supported* Go.
+
+The idiom is sync + `context.Context` (every network method takes `ctx` as its first argument, and only `CreateAuthorizationRequest` is synchronous). Docker is needed only for integration tests.
 
 ### 2) Local installation (development)
 
