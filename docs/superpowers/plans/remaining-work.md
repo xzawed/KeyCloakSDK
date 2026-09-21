@@ -20,7 +20,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `183`(2026-09-16 기준 열림 115 · 닫힘 68)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `185`(2026-09-21 기준 열림 115 · 닫힘 70)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -790,12 +790,17 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 1.0 이후 운영 — 9
 
-- [ ] `nightly-failure-reaches-nobody` **[H/M · 신규 2026-09-16]** 야간이 여드레 빨간 동안 아무 조치가 없었다 — 저장소 안에 **실패가 사람에게 가는 경로가 0건**이다 · `.github/workflows/harness.yml:8`
+- [x] `nightly-failure-reaches-nobody` **[H/M · 신규 2026-09-16 · 닫힘 2026-09-21 #518]** 야간이 여드레 빨간 동안 아무 조치가 없었다 — 저장소 안에 **실패가 사람에게 가는 경로가 0건**이다 · `.github/workflows/harness.yml:8`
+  - **이 구멍이 닫히기 전에 한 번 더 물었다(2026-09-21)**: `rust-ci`·`security-audit` 이 RUSTSEC-2026-0285 로 **이레**, `sonarcloud` Quality Gate 가 **닷새** 빨간 채였고 둘 다 무성이었다. 항목이 예측한 그대로다.
+  - **처방**: `.github/workflows/nightly-alert.yml` — `workflow_run` 으로 예약 워크플로 열하나를 받아 실패하면 이슈를 열거나 덧붙이고 **다시 초록이면 닫는다**(항목이 적어 둔 「끈적한 이슈 하나」). 커버리지는 `scripts/test/test-nightly-alert.sh` 가 `name:` 집합과 대조하고 음성 대조를 든다 — 변이 둘(목록에서 제거 · 새 `schedule:` 추가) 모두 exit 1 로 잡혔다. 항목이 미리 경고한 `check-ci-permissions` 충돌은 없었다(53 passed).
+  - ⚠️ **남은 구멍 둘**: (a) `nightly-alert` **자기 실패는 못 잡는다**(`workflow_run` 은 자기를 감시 못 한다). (b) `push` 트리거 실패는 대상 밖이다 — 소음을 피한 판정이고, `sonarcloud` 처럼 push 로만 도는 레인의 빨강은 여전히 무성이다. 둘 다 워크플로 헤더에 적어 뒀다.
   - **실측(2026-09-16)**: `score-all` 이 2026-09-08~09-15 **여덟 밤** 연속 실패(마지막 초록 09-07 · 복귀 09-16). 그 창에서 저장소는 아무것도 하지 않았다. 워크플로 전수 검색 — `gh issue create`·`actions/github-script`·webhook·slack **0건**. `schedule:` 를 가진 워크플로는 **11개**다.
   - ⚠️ **「사람에게 닿았는가」는 저장소 밖 사실이라 여기서 못 잰다**(알림 설정·받은편지함). 재는 것은 **조치가 없었다**는 것과 **저장소 안에 경로가 없다**는 것 둘이다. 그 둘만으로 항목이 선다.
   - ⚠️ **더 나쁜 성질 — 두 번째 실패가 첫 번째 빨강에 묻힌다.** 같은 창에서 `install-all` 이 **09-12 하룻밤** 실패했다(php·rust conformance **25/26** — `authz-redirect-uri-not-per-call` 의 그 결함이 install 하네스에 드러난 것). #485 가 같은 날 고쳐 09-13 밤부터 26/26 이다. 즉 **독립 실패 둘이 나고 사라졌는데 둘 다 읽히지 않았다.**
   - **처방 후보(사람 판정 선행)**: 독립 레그 안은 **끈적한 이슈 하나**다 — 마지막 잡에 `if: failure()` + `issues: write`(새 시크릿·새 액션 없음, 러너의 `gh`), 고정 제목으로 열거나 코멘트하고 성공하면 닫는다. ⚠️ **연속 N회 실패에만 열어야 한다** — 하룻밤 플레이크에 열면 그 다음은 dependabot 이 된다(이 저장소가 이미 겪은 소음이고, 레그도 그것을 유일한 실패 모드로 짚었다).
   - ⚠️ **`check-ci-permissions.mjs` 와 먼저 만난다** — `issues: write` 를 추가하는 것이 그 가드의 최소권한 규칙과 어떻게 만나는지 보고 나서 착수한다.
+- [ ] `codeql-kotlin-extractor-lags-kgp` **[M/M · 신규 2026-09-21]** CodeQL 의 Kotlin 추출기가 KGP 를 못 따라와 **JVM 두 언어의 코드 스캐닝이 통째로 멈춘다** — KGP 2.4.20 에서 `KotlinVersionTooRecentError: Kotlin version 2.4.20 is too recent. CodeQL currently supports versions below 2.4.20` 로 autobuild 의 `:compileKotlin` 이 죽고, `java-kotlin` 은 Java 와 Kotlin 이 **한 데이터베이스**라 Java 분석까지 함께 사라진다 · PR #515 가 이것으로 막혀 있다(doc-facts 는 초록, CodeQL 만 빨강 — main 과 다른 PR 은 초록이라 원인이 KGP 범프임이 대조로 확정됐다). ⚠️ **CodeQL 은 required 가 아니라 병합은 된다** — 병합하면 main 이 조용히 빨개지고 아무도 스캔하지 않는 상태가 남는다(배포 시크릿 미설정을 스킵으로 끝내던 것과 같은 모양). ⚠️ 이 저장소의 CodeQL 은 `.github/workflows/` 에 파일이 없는 **default setup** 이라 번들을 핀하거나 앞당길 수 없다(실패 번들: CodeQL CLI 2.27.0). 되살릴 조건(명령): `gh run list --workflow=340524379 --limit 20 --json headBranch,conclusion --jq '.[]|select(.headBranch=="refs/pull/515/head")|.conclusion'` 가 `success` 를 낼 때 — 그때 #515 를 그대로 병합한다(문서 작업은 `e7f18f6` 에 이미 올라가 있다).
+- [ ] `push-lane-failures-still-silent` **[M/S · 신규 2026-09-21]** `nightly-alert` 은 **`schedule` 만** 본다 — `sonarcloud` 처럼 push 로만 도는 레인의 빨강은 여전히 아무에게도 안 간다(실측: 09-16~09-21 닷새 무성, 그 창은 `nightly-failure-reaches-nobody` 의 야간 창과 **겹치지 않는다**) · `.github/workflows/nightly-alert.yml:38`. ⚠️ 그리고 `nightly-alert` **자기 실패는 못 잡는다**(`workflow_run` 은 자기를 감시 못 한다). schedule 로 넓힌 판정은 소음을 피하려던 것이라, 넓히려면 「민 사람이 이미 보는 실패」와 「main 에서 조용히 빨간 실패」를 가르는 기준이 먼저 필요하다.
 - [ ] `registry-truth-check` **[H/M]** 게시 SSOT가 문서하고만 대조되고 실제 레지스트리와는 한 번도 대조되지 않는다 · `scripts/lib/deploy-facts.sh:138`
 - [x] `stale-release-comments` **[H/S · 닫힘 2026-09-09 #447]** 릴리스 경로의 주석 **여섯**이 낡았고, 그중 하나는 다음 릴리스를 정반대로 오도했다 · `.github/workflows/install-smoke.yml:57`
   - ⚠️ **다섯이 아니라 여섯이다** — caller 다섯(python·node·rust·kotlin·ruby)에 `install-smoke.yml` 자신의 락스텝 문단이 더해진다. 그 문단이 **가장 비싼 하나**다.
