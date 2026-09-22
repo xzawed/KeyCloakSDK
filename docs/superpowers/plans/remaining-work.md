@@ -1,5 +1,15 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=192335 -->
+<!-- doc-budget: max-bytes=192593 -->
+<!-- 192335 → 192593 (2026-09-22, +258B). 규약 (1) — 증가분이 **기계 검증**을 사 온다.
+     `## A–D` 네 절 헤더의 「N건 (열림 M)」이 **넷 다 틀렸다**(A 12/2→12/1 · B 27/20→49/15 ·
+     C 67/66→74/56 · D 46/44→56/49). 같은 커밋이 `test-remaining-work-shape.sh` 에 헤더↔체크박스
+     대조를 넣어 그 수가 다시 썩지 못하게 했고(기대 상수 없음 — 항목 하나가 닫히면 양변이
+     함께 움직인다 · 절을 0 개 세면 공허 실패), 실제로 **이 커밋의 새 항목을 그 가드가 즉시
+     잡았다**(D 55→56).
+     교환: 초안은 +4,802B 였다. 닫힌 high 여섯의 사후 서사(3,052B)를 **PR 번호로 갈음**하고
+     (규칙: 완료 서사는 git 이 소유한다 — 이 파일이 246 KB 까지 자란 원인이 그것이다),
+     2 라운드 항목을 4,387 → 2,906B 로 압축했다. 남긴 것은 **열린 6 건의 착수 정보**와
+     「에이전트가 더티 워킹트리를 읽는다」는 다음 감사용 단서뿐이다. -->
 <!--
   신규(2026-09-22). 이 파일에는 예산이 **없었다** — 그래서 256,624 B 까지 자랐고, 전체 문서
   바이트의 31%(2 위의 3 배)를 차지했다. 옵트인이라 한 번도 안 덮인 것이 원인이므로 이 경로에는
@@ -40,7 +50,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `190`(2026-09-22 기준 열림 120 · 닫힘 70)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `191`(2026-09-22 기준 열림 120 · 닫힘 70)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -247,7 +257,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ---
 
-## A. 확정 결함 — 12건 (열림 2)
+## A. 확정 결함 — 12건 (열림 1)
 
 3렌즈 만장일치 + 오케스트레이터 재실행 확인.
 
@@ -266,7 +276,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `java-rules-close-scope-ambiguous` **[L/S · 닫힘 2026-09-06 #423]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
-## B. 재검증 대상 — 27건 (열림 20)
+## B. 재검증 대상 — 49건 (열림 15)
 
 3렌즈 통과, 원장은 개별 재실행을 하지 않았다. 이번 인벤토리에서 전량 파일 확인 — 기각 권고 0건.
 
@@ -384,7 +394,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [ ] `facade-wiring-close-contract-unasserted` **[M/S]** 파사드의 §4 계약(provider 배선·close)이 무단언 테스트 뒤에 있고 커버리지 게이트에서도 빠져 있다 · `rust/src/client.rs:65`
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 67건 (열림 66)
+## C. 품질 부채 — 74건 (열림 56)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -568,7 +578,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 46건 (열림 44)
+## D. 원장 밖 — 56건 (열림 49)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -625,19 +635,22 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 1.0 이후 운영 — 9
 
-- [ ] `audit-2026-09-22-doc-code` **[H/L · 신규 2026-09-22]** 전체 코드·문서 감사(17 독립 레그 + 3렌즈 반증) 결과 **91 건 중 57 건이 과반 반증을 견뎠고**, 그중 **11 건이 닫혔다** — 나머지 46 건이 열려 있다 · `docs/superpowers/plans/remaining-work.md:1`
-  - **방법과 계수**: 발견 레그 17(횡단 8 + 언어별 9) → 91 건. 렌즈 3(증거 재도출 · 기지사실 · 오탐)이 각 건을 독립 판정 → **생존 57**(high 14 · medium 31 · low 12), **기각 34**. high 14 중 8 건은 5 렌즈(재도출 · 반대근거 · 결과 · 등록부 · 범위) 심층 반증을 **전건 통과**했고, 나머지 6 건은 사람이 명령으로 직접 확인했다. 범주별 생존: drift-fact 23 · guard-gap 9 · drift-api 8 · drift-command 7 · orphan 3 · code-dup 2 · mirror 2 · code-dead 2 · volume 1.
-  - **닫힌 11 건**: 빈 JWKS 키셋이 좋은 캐시를 덮던 결함(#520, rust·ruby·php 코드 + go 테스트 + 교차언어 가드) · 소비자 문서의 거짓 보안 문장 6 자리(#521 — java/kotlin "and serialization" · go `%#v` · php `var_dump`/`print_r` · SECURITY.md "no Actions secrets" · python `close()` no-op ×2) · 열린 high 넷(#523 — rust 재노출 위반 둘 + `rust/tests/reexport_surface.rs` 로 **집행**까지 · node 커버리지 제외 목록 · java jackson 산문 / #524 — 루트 README 영↔한 **구조** 미러 가드 `scripts/test/test-readme-mirror.sh`, 네 축·변이 넷).
-  - **열린 high 2 건**(넷은 #523·#524 로 닫혔다 — 목록에서 지우지 않고 표시만 남긴다: 무엇이 어떻게 닫혔는지가 다음 감사의 대조군이다):
-    - **[닫힘]** `.claude/rules/node.md:26` 커버리지 제외 목록이 자기가 SSOT 라 부르는 `node/vitest.config.ts` 와 두 항목에서 모순한다(둘 다 그 설정이 "do not put back" 이라 적은 것).
-    - **[닫힘]** `.claude/rules/rust.md:50` 의 재노출 불변식이 살아 있는 공개 표면 세 자리에서 깨진다 — `pub mod jwks` 라 `JwksStore::get_key() -> Result<Jwk>` 가 `jsonwebtoken::jwk::Jwk` 를 루트 재노출 없이 노출한다(실측).
-    - **[닫힘]** `kotlin/build.gradle.kts:67` · `java/pom.xml:89` — Jackson 핀은 둘 다 `2.22.2` 로 **일치**하나 java 쪽 산문이 `2.21.5` 라 말한다(핀 1 개 vs 산문 1 개의 불일치. 「세 숫자」라는 원 서술은 과장이었다).
-    - **[닫힘]** `scripts/test/test-readme-badges.sh:40` — 루트 README 영↔한 「동일 구조」 규약이 **배지 집합에만** 기계 집행된다(그 테스트 주석이 스스로 그렇게 적는다). 언어 행 하나를 지워도 전 가드가 초록이다.
-    - `scripts/check-docs.mjs` — `doc-budget` 래칫이 옵트인이라 **41 개 중 16 개**(272,403 / 801,916 B = **34 %**)만 덮는다. 덮는 쪽이 정확히 에이전트 적재 표면(CLAUDE.md·DEPLOY.md·process·rejected·CONTRIBUTING + rules 10)이고, 안 덮는 쪽이 **소비자 표면**(getting-started 44 KB · CHANGELOG · playbook · 루트 README 둘 · 아홉 언어 README · reference · roadmap · harness)이다. ⚠️ 원 서술의 「가장 큰 두 문서에 앵커가 없다」는 **틀렸다** — 최대(`remaining-work.md` 246 KB)는 맞고 2 위(`DEPLOY.md`)는 앵커가 있다.
-    - `CHANGELOG.md:8` — `## [Unreleased]` 가 비어 있는 동안 `v1.0.0` 이후 **150 커밋**이 main 에 들어왔다(실측 `git rev-list --count v1.0.0..origin/main`). CLAUDE.md 가 완료 서사의 목적지로 지목한 자리가 아무것도 받지 않아, 그 서사가 246 KB 등록부에 쌓인다.
+- [ ] `audit-2026-09-22-doc-code` **[H/L · 신규 2026-09-22]** 전체 코드·문서 감사(17 독립 레그 + 3렌즈 반증) 결과 **91 건 중 57 건이 과반 반증을 견뎠고**, 그중 **13 건이 닫혔다(high 는 6/6 전부)** — 나머지 44 건(medium 31 · low 12 · 계수 1)이 열려 있다 · `docs/superpowers/plans/remaining-work.md:1`
+  - **방법과 계수**: 발견 레그 17(횡단 8 + 언어별 9) → 91 건. 렌즈 3(증거 재도출 · 기지사실 · 오탐)이 각 건을 독립 판정 → **생존 57**(high 14 · medium 31 · low 12), **기각 34**. high 14 는 5 렌즈 심층 반증 또는 사람의 직접 확인을 거쳤다. 범주 분포와 레그별 산출은 이 항목을 만든 PR 이 소유한다.
+  - **닫힌 13 건 — high 는 6/6**: #520(빈 JWKS 키셋) · #521(소비자 문서의 거짓 보안 문장 6 자리) · #523(rust 재노출 위반 둘 + 컴파일 집행 · node 커버리지 목록 · java jackson 산문) · #524(루트 README 영↔한 **구조** 미러 가드) · #527(예산 커버리지를 **부류 규칙**으로 — 숫자 하한은 마커를 지우는 PR 이 같은 diff 에서 내리면 그만이라 쓰지 않았다) · #528(CHANGELOG 착지 게이트 + `[Unreleased]` 28 건 복원). ⚠️ 무엇이 어떻게 닫혔는지는 **그 PR 의 커밋 메시지가 소유한다** — 여기 옮겨 적지 않는다(이 파일이 246 KB 까지 자란 원인이 그것이다).
   - **열린 medium 31 · low 12**: 언어별 drift 가 다수이고 **아홉 전부에서 최소 1 건**이 나왔다(범위 1–6). 대표: getting-started 의 「coverage gate」 주장이 go·rust·dotnet 세 곳에서 거짓(그 명령은 커버리지를 재지도 게이트하지도 않는다) · `php/composer.json:41` 의 `cs`/`cs:fix` 가 `--allow-risky=yes` 누락으로 **항상 실패** · `.claude/rules/{dotnet,ruby,php,rust}.md` 의 전사된 실측값이 낡아 다음 세션을 틀린 판단으로 이끈다 · PHP·Ruby 의 기본 `readTimeout` 이 10 초로 나머지 일곱(30 초)과 갈린다.
-  - ⚠️ **완전성 비평 6 각도는 돌지 못했다**(세션 한도). 「무엇을 놓쳤는가」는 답이 없으므로 위 계수는 **하한**이다 — 재개는 `Workflow({scriptPath:…kcsdk-audit-round2…, resumeFromRunId:'wf_c93308dc-67f'})` 로 캐시 재사용이 된다.
-  - 착수 순서 근거: 실동작 결함 → 소비자에게 거짓을 말하는 문서 → 에이전트를 틀리게 만드는 rules → 가드 조준점. 앞의 둘은 닫혔다.
+  - ✅ 위 계수가 **하한**이었던 이유는 아래 `critic-2026-09-22-round2` 가 소유한다(완전성 비평 6 각도, 2026-09-22).
+- [ ] `critic-2026-09-22-round2` **[H/L · 신규 2026-09-22]** 1 라운드가 **무엇을 못 봤는가**를 6 각도로 찾고 3 렌즈로 반증(24 에이전트) → **32 건 중 24 건 생존**. **16 건을 닫고 2 건을 반증했으며 6 건이 열려 있다** · `docs/superpowers/plans/remaining-work.md:1`
+  - **1 라운드가 못 본 부류가 실재했다** — 17 레그는 「문서 ↔ 코드」를 훑었고, 2 라운드는 **가드가 스스로 거짓말하는 자리**(미러 룰셋·doctor·`tableAt`)와 **소비자가 문서대로 따라 하면 막히는 자리**(퀵스타트 403 등)를 찾았다. 닫은 16 건은 #529·#530·#531·#532·#533 과 이 PR 이 소유한다.
+  - ⚠️ **반증 2 건은 더티 워킹트리를 읽은 결과였다.** 에이전트는 **주 작업트리**를 읽는데 거기엔 미커밋 WIP(Java 17→25)가 있었다 — 「세 문서가 다른 `--release` 를 말한다」는 그 `25` 대 커밋된 `17` 이고(`git show origin/main:java/pom.xml` → 17), 「9 레그를 6/3 과 5/4 로 쪼갠다」는 `5/4` 를 말하는 살아있는 문서가 없다. **다음 감사는 발견을 `git show origin/main:<path>` 로 되재고 시작한다.**
+  - **열린 6 건**:
+    - `scripts/check-docs.mjs` — `kind=dep` 가 **단방향**이다. 문서가 적은 좌표만 매니페스트에서 찾고, **매니페스트에만 있고 문서에 없는 의존**은 아무도 세지 않는다(`min=N` 은 문서 쪽 행 수라 못 잡는다). 역방향 열거 + 의도적 미기재 표기 규약이 필요하다.
+    - `.github/workflows/*-release.yml` — 아홉 전부 `concurrency:` 가 **없다**(`grep -L 'concurrency:' .github/workflows/*-release.yml`). 같은 접두 태그 둘이면 publish 가 동시에 돌고, php 는 `git push --force` 로 미러를 덮는다.
+    - `harness/contract/CONTRACT.md` — CLAUDE.md 가 `harness/` 를 **영문** 소비자 문서로 선언하는데 이 파일은 한글이다. 아홉 앱이 구현하는 교차언어 계약이라 청중이 갈린다 — 규칙을 고치거나 문서를 옮긴다.
+    - **게시 패키지 안의 API 문서가 한글이다**(npm·PyPI·crates.io — docs.rs 가 렌더링하고 IDE 호버에 뜨는 그 텍스트). 범위가 크므로 「어디까지를 소비자 표면으로 보는가」 판정이 먼저다.
+    - `docs/guides/getting-started.md` PHP 「Minimal usage example」이 Packagist 설치 바로 아래에서 **리포지토리 내부 오토로더 경로**로 시작한다 — 붙여넣으면 안 된다.
+    - `.claude/rules/go.md` — Windows 체크아웃에서 포매터 게이트 셋이 **깨끗한 트리 전체**를 지적하는데, 그 설명이 `paths:` 로 go/ 에서만 로드되는 파일에 있다.
+  - 재개: `resumeFromRunId:'wf_6e357bb5-d55'`.
 - [ ] `remaining-work-split-to-archive-tag` **[H/M · 신규 2026-09-22 · 설계 완료]** 이 파일이 246 KB — 전체 문서 바이트의 **31 %**, 2 위의 3 배 — 이고 그중 41~59 %가 **이미 닫힌 70 건의 사후 서사**다. 예산 앵커도 없다 · `docs/superpowers/plans/remaining-work.md:1`. **설계는 끝났고(독립 레그 판정) 실행만 남았다:**
   - **어디로**: 닫힌 항목 본문은 **아카이브 git 태그**로 간다 — 이 저장소가 이미 완료 WBS·검증로그에 쓰는 장치다(`archive/docs-history-2026-08{,b,c}`). ⚠️ **`docs/` 아래 형제 문서(`remaining-work-closed.md`)로 빼면 안 된다** — 검사 9 가 그것을 `docs/README.md` 지도에 올리라고 강제하므로 세션이 여전히 적재하고 파일은 다시 자란다. CHANGELOG 도 아니다(그것은 릴리스 로그이지 검증 기록이 아니다). 삭제도 아니다 — 규약이 「이관, 삭제 아님」이다.
   - **무엇을 어디로**(한 부분을 두 집에 복사하지 않는다): **되살릴 조건**만 살아 남아 `docs/governance/rejected.md` 로 가되 **돌아가는 명령**으로만(산문 "reopen if X" 는 되살릴 조건이 아니다 — 명령으로 못 쓰면 본문과 함께 태그로 간다) · **닫힘을 정당화한 실측**은 항목과 함께 태그로 · **사후 서사**(PR 번호·경위)도 태그로. 살아 있는 등록부에는 태그를 가리키는 **포인터 한 줄**만.
