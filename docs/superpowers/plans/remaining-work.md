@@ -1,5 +1,9 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=192677 -->
+<!-- doc-budget: max-bytes=192725 -->
+<!-- 192677 → 192725 (2026-09-23, +48B). 규약 (1) — 가드 무결성 셋을 닫으면서 **다음 세션이
+     재현할 판정 방법**만 남긴다. 순증은 두 항목의 진행 기록이고(어느 프로브가 SILENT 였고
+     무엇을 넣어 CAUGHT 이 됐는가), 닫은 둘의 사후 서사 1,218B 는 **PR 번호로 갈음했다**
+     (#540 — 완료 서사는 git 이 소유한다). 그래서 −1,218 +1,266 = +48 이다. -->
 <!-- 192593 → 192677 (2026-09-22, +84B). 규약 (1) — 2 라운드 21 건이 닫히면서 **열린 1 건을
      별건 항목으로 분리**했다(사람 판정: 「등록만 하고 별건으로」). 늘어난 것은 그 항목의
      **착수 정보**뿐이다 — 언어별 실측(7 언어 1,214 줄 · java·dotnet 은 0), 왜 언어당 PR 이
@@ -363,7 +367,8 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 ### 재검증 · 가드/CI/문서 — 10
 
 - [x] `selftest-enforcer-cannot-guard-itself` **[H/M]** 자가테스트 종료코드 규약의 집행자가 자기 자신과 '실패 삼킴'을 못 본다 · `scripts/test/test-selftest-hygiene.sh:19`
-- [ ] `guard-detection-surface-hand-narrowed` **[H/M · 계수 정정 2026-09-07 · 악화]** 가드의 탐지 표면이 손으로 좁혀져 있어 새 자리·새 문법이 조용히 통과한다 · `scripts/test/test-security-defaults.sh:311`
+- [ ] `guard-detection-surface-hand-narrowed` **[H/M · 계수 정정 2026-09-07 · 손 목록 셋 닫힘 2026-09-23]** 가드의 탐지 표면이 손으로 좁혀져 있어 새 자리·새 문법이 조용히 통과한다 · `scripts/test/test-security-defaults.sh:311`
+  - ✅ **대조 없는 손 목록 셋을 닫았다(#542).** `scripts/` 의 9 언어 손 목록을 전수로 재니 파생과 대조되는 것은 `SD_LANGS` 하나뿐이었다. 나머지 셋(`SD_TOKEN_TYPE_LANGS` · `_GS_ORDER` · 출처 게이트 루프)은 **아무와도 대조되지 않아 열 번째 언어가 그 축을 조용히 건너뛴다**. 각각 `SD_LANGS`·`DEPLOY_LANGS`·(consume 파생 ↔ `DEPLOY_LANGS`)와 대조하게 했다. ⚠️ 출처 게이트를 **파생 하나로만** 두지 않았다 — 그러면 스크립트를 지우는 것이 곧 축을 줄이는 길이 된다. 변이 3/3 CAUGHT.
   - ⚠️ **파생으로 바꾼 첫 축 — 「언어 집합」(2026-09-12).** 되살릴 조건이 요구한 오탐 실측을 **nightly 한 창이 아니라 `main` 이력 전수로** 답했다: 커밋 475 중 `SD_LANGS` 가 존재한 **281 건에서 불일치 0**(kotlin 이 아홉째로 들어온 구간 포함). 재현 `sh scripts/measure-lang-universe-fp.sh`(자가테스트 양성·음성·공허 8/8, repo-hygiene 배선). ⚠️ **대조군이 `9 == 9` 라 구조적으로 공허했다** — `assert_eq "9" "$_seen"` 의 `_seen` 은 `SD_LANGS` 자신을 센 수다. 실측 프로브: 최상위에 빌드파일을 가진 디렉터리를 하나 주입해도 `244 passed, 0 failed`(열 번째 언어는 보안 기본값 커버리지 0 으로 들어온다). ⚠️ **파생 원천 선택이 이 항목의 핵심이고, 내 첫 직관이 틀렸다** — 독립 레그가 `.claude/rules/*.md` 를 기각했다(이미 비언어 둘을 얻었다: `ci.md` 2026-08-06 · `security.md` 2026-08-17 · 삭제 이력 0 — 다음 횡단 규칙 파일 하나가 **모든 PR 을 막는다**). `harness/apps/*/` 는 플레이북 Stage 5 라 구조적으로 늦고(아홉 전부 SDK 디렉터리가 먼저 · kotlin 하루·java 사흘), `check-versions.mjs --list` 는 설계상 **7** 이라 오늘 main 을 빨갛게 한다. 채택은 **최상위 디렉터리 중 자기 루트에 빌드 매니페스트를 가진 것**(오늘 정확히 아홉). 잔여 오탐 하나(`website/package.json` 류 — 같은 커밋에서 목록을 늘리면 된다)와 잔여 거짓음성(매니페스트가 목록에 없는 Swift·Elixir)은 축 주석이 적는다.
   - ⚠️ **재도전 결과(2026-09-13) — 다섯 주장 모두 실재하나, 내가 기록한 증거는 위치 편향이었다.** 감사가 「구조적으로 볼 수 없다」고 한 모드를 표본으로 쳤다. `assert.sh` 는 fail-fast 가 아니라 **누적**하고 `probe.sh` 는 꼬리만 찍었으므로, 한 변이가 여러 축을 넘어뜨릴 때 **물리적으로 마지막** 단언이 범인으로 기록됐다. 실측: `SD_LANGS` 에서 java 를 빼면 **7건**이 함께 실패하는데(새 단언은 132행, 마스킹 축은 563행) 꼬리는 마스킹만 보여 **과소** 평가했고, `DEPLOY_LANGS` 에서 php 를 빼면 **10건**이 실패하는데 새 단언이 280행(마지막)이라 9행이 잡은 것을 새 단언의 공으로 **과대** 평가했다. **양방향 편향이다.** ⚠️ 그래서 중간에 「다른 단언이 잡았다」고 낸 내 결론도 **같은 깨진 계측기로 낸 과잉 정정**이었다. 고친 뒤 격리 변이로 다시 재니 **6/7 이 실패 단언 정확히 1건**이고 그것이 의도한 단언이었다(⑦ ruby 는 `assert.sh` 형식이 아니라 계수 없음 — probe 가 그것을 명시한다). **다섯 축은 전부 실재한다.**
   - ✅ **(A) 부류의 마지막 손 목록도 닫았다 — 소스 주석 축의 글롭 아홉(2026-09-12).** ⚠️ **독립 레그가 지목했고 실측이 맞다고 했다** — `SD_LANGS` 를 파생으로 바꿔도 `SD_SRC` 는 `git ls-files 'java/*.java' … 'kotlin/*.kt'` 로 **경로 글롭 아홉을 손으로** 적고 있어 열 번째 언어의 소스는 이 축에 못 들어왔다. **더 나쁜 것은 기존 언어도 조용히 빠졌다는 것**이다: `scripts/probe.sh` 로 kotlin 글롭 하나를 지우니 **SILENT**(셋을 지워야 비로소 걸렸다 — 총 히트 하한이 `-ge 8` 인데 아홉이 기여하므로 하나가 빠져도 8 이 남는다). 처방은 하한을 올리는 것이 **아니다**(정당한 삭제에 오탐이 난다) — 스캔 집합을 `SD_LANGS` 에서 파생하고 **언어별 기여(파일 ≥ 1)** 를 따로 단언한다. 총 히트 하한 8 은 **그대로 둔다**(다른 양을 센다: 스캔된 파일 vs 값을 말하는 주석 줄 — 레그의 지적). 변이 재측정: 확장자 필터에서 `kt` 제거 `CAUGHT` · 파생 루프가 kotlin 건너뜀 `CAUGHT`(수정 전 같은 계급은 `SILENT`). 파생은 `node/src`·`rust/src` 로만 좁혀 두었던 비대칭도 없앤다 — 확장으로 더해지는 넷(examples 둘 · vitest 설정 둘)은 축의 대상 패턴을 **한 번도 담지 않는다**(required 체크라 확인).
@@ -400,7 +405,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [ ] `facade-wiring-close-contract-unasserted` **[M/S]** 파사드의 §4 계약(provider 배선·close)이 무단언 테스트 뒤에 있고 커버리지 게이트에서도 빠져 있다 · `rust/src/client.rs:65`
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 74건 (열림 56)
+## C. 품질 부채 — 74건 (열림 54)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -452,7 +457,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - **되살릴 조건**: 위 우회를 `probe.sh` 에 옵션으로 넣을지, 언어별 프로브 러너를 따로 둘지 판정. 지금은 그 절차를 손으로 밟았고 본 트리 불변·기준선·변이 적용 셋을 같은 방식으로 지켰다.
   - ⚠️ **넷이 아니라 다섯이고, 그 하나는 등록부를 쓴 뒤에 생겼다** — 이 부류는 **지금도 늘고 있다**(실측 2026-09-07, 독립 레그 둘): kotlin 3(`tokens.kt:18`·`tokenprovider.kt:18`·`jwt.kt:126`) · python 1(`_internal/jwt.py:43`) · dotnet 1(`KeycloakConfig.cs:29`). 축 3 은 `sd_no_literal` 호출 **4**(go·php·ruby·ruby-skew)로 그대로다. 값이 아직 안 갈렸다고 안전한 것이 아니다 — **자리가 늘고 있는 것**이 JWKS 가 10/30/60 으로 갈리기 직전과 같은 모양이다.
   - ⚠️ **required 손 표에 다섯 줄을 더하는 것이 답이 아니다** — 그것이 곧 `guard-detection-surface-hand-narrowed` 를 악화시킨다(그 파일은 `doc-facts` 안에서 `paths:` 없이 돈다). **언어 로컬 테스트**(그 언어의 2차 기본값이 config 값과 같은가)로 닫고, `test-security-defaults.sh` 는 건드리지 않는다.
-- [ ] `selftest-assert-counter-subshell` **[M/M]** 어서션 카운터가 서브셸에서 증발한다 — 자가테스트 프레임워크의 구조적 맹점 · `scripts/test/assert.sh:10`
+- [x] `selftest-assert-counter-subshell` **[M/M · 닫힘 2026-09-23 #540]** 어서션 카운터가 서브셸에서 증발한다 — 자가테스트 프레임워크의 구조적 맹점 · `scripts/test/assert.sh:10`
 - [ ] `guard-paths-never-exercised` **[M/M]** 자가테스트가 가드의 한 경로만 태워, 나머지 경로를 지워도 초록이다 · `scripts/test/test-check-coverage.sh:41`
 - [ ] `selftests-with-no-negative-case` **[M/L]** 일곱 자가테스트가 라이브 상태만 단언한다 — 판정기가 나쁜 입력을 거부한다는 증거가 없다 · `scripts/test/test-deploy-md.sh:7`
 - [ ] `probes-that-discard-the-result` **[M/M]** 프로브가 결과를 버린다 — 예외 타입 미단언·반환값 미단언 · `php/tests/Unit/Jwks/JwksStoreTest.php:188`
@@ -460,13 +465,10 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 가드·CI — 16
 
-- [ ] `selftest-exit-code-contract-two-leaks` **[H/M · 계수 정정 2026-09-07]** 자가테스트의 「실패하면 비영 종료」 계약이 **한 곳**에서 샌다 — 탐지기는 #405 가 닫았고 **계수기가 남았다** · `scripts/test/test-selftest-hygiene.sh:20`
-  - **남은 절반의 재현(2026-09-07)**: `assert.sh` 가 `_A_FAIL` 을 현재 셸에만 두므로 서브셸 안에서 실패한 단언은 `FAIL` 을 찍고도 부모가 `0 passed, 0 failed` 로 끝난다(종료코드 **0**).
-  - ⚠️ **다만 지금은 잠복이다 — 도달 경로가 0건이다.** 어느 자가테스트에도 파이프 오른쪽·`$( )`·`( )` 그룹 안의 단언이 없고, `test-publication-claims.sh:719` 에 그 함정을 경고하는 주석이 이미 있다. 그래서 **활성 fail-open 뒤로 밀린다**. 닫을 때는 `assert.sh` 를 다시 쓰기보다 **정적 금지**(집행자가 서브셸 문맥의 단언을 거부)를 먼저 본다 — 계수기를 갈아엎으면 모든 `test-*.sh` 가 한 번에 빨개질 수 있다.
-  - **절반 닫힘(#405) — 탐지기 쪽만.** 집행자가 「등장」을 「호출」로 세던 것을 구조적 판정으로 바꿨다(`selftest-enforcer-cannot-guard-itself` 참조).
-  - ⚠️ **계수기 쪽은 그대로 열려 있다** — `assert.sh` 의 `_A_FAIL` 이 서브셸에서 증발하는 문제이고, 아래 `selftest-assert-counter-subshell` 이 그 자리를 소유한다. **둘을 한 항목으로 읽어 닫지 말 것.**
+- [x] `selftest-exit-code-contract-two-leaks` **[H/M · 닫힘 2026-09-23 #540]** 자가테스트의 「실패하면 비영 종료」 계약이 한 곳에서 샜다 — 탐지기는 #405, 계수기는 #540(파일 눈금 오라클) · `scripts/test/test-selftest-hygiene.sh:20`
 - [x] `sweeps-without-vacuity-floor` **[H/M · 닫힘 2026-09-08 #443]** 스윕/스캔이 0건을 훑고 통과했다 — 이 저장소의 하한 관용이 적용되지 않았다 · `.github/workflows/repo-hygiene.yml:234`
-- [ ] `seven-selftests-have-no-negative-control` **[H/L · 계수 정정 2026-09-09]** **여섯** 자가테스트가 라이브 상태만 단언한다 — 검출기를 지워도 통과한다 · `scripts/test/test-deploy-md.sh:7`
+- [ ] `seven-selftests-have-no-negative-control` **[H/L · 계수 정정 2026-09-09 · 조각 셋째 2026-09-23]** **여섯** 자가테스트가 라이브 상태만 단언한다 — 검출기를 지워도 통과한다 · `scripts/test/test-deploy-md.sh:7`
+  - ✅ **셋째 조각(#541) — 게시-수 축의 수사 변환기.** 항목이 처방한 대로 세지 않고 `scripts/probe.sh` 로 쟀다: `en() { echo nine; }` · `ko() { echo 아홉; }` 둘 다 **SILENT**(240 단언 전부 통과) — 랜딩 문서 축이 「문서가 그 낱말을 담는가」만 보므로 변환기가 상수가 되면 **자기충족**이었다. 점 고정 + **서로 다른 입력이 서로 다른 낱말을 내는가**까지 넣어 둘 다 CAUGHT. ⚠️ 점 고정만 두면 `case` 를 지우고 `echo nine` 으로 바꿔도 통과한다.
   - ⚠️ **일곱이 아니라 여섯이다**(재판정 2026-09-09): `test-deploy-md` · `test-harness-registries` · `test-provenance-gate` · `test-publication-claims` · `test-release-prerelease` · `test-security-defaults`. 엄격히 「라이브 grep 만」으로 좁히면 **넷**이다(뒤의 둘은 `assert_eq` 로 케이스를 먹인다). 이름이 말하는 7 은 어느 셈에도 맞지 않는다.
   - ⚠️ `test-osv-audit-gate.sh`(#438)는 이 부류가 **아니다** — 라이브 grep 이지만 게이트를 지우면 실패한다(변이로 확인).
   - ⚠️ **`assert_fails` 개수로 세지 말 것 — 내가 그렇게 재서 또 틀렸다**(2026-09-10). 그것은 「별도 실패 서브프로세스가 있는가」를 셀 뿐 「알려진 나쁜 입력을 거부하는가」가 아니다. 여섯 중 둘은 **이미 음성 케이스를 먹인다**: `test-release-prerelease.sh:94-126` 이 15행 표(`1.0.0+incompatible=false` 등)를, `test-provenance-gate.sh:100-103` 이 합성 provenance(공개 레지스트리 한 줄 · 빈 파일)를 넣는다. 실제 대상은 **넷 이하**다.
