@@ -1,4 +1,9 @@
-<!-- doc-budget: max-bytes=43980 -->
+<!-- doc-budget: max-bytes=43971 -->
+<!-- 43980 → 43971 (2026-09-22, −9B). **인하** — `npm pack --dry-run` 기대 출력에서 크기를
+     뺐다. 파일 수(75)는 지금도 맞지만 크기는 38.7 kB 가 아니라 **47.3 kB** 였다(실측,
+     `cd node && npm pack --dry-run`). 다시 맞춰 적는 대신 **뺀다** — 소비자가 확인하려는
+     것은 「dist 와 README·LICENSE 가 들어갔는가」이고, tarball 바이트는 의존성 하나
+     바뀔 때마다 조용히 거짓이 되는 수다(이 줄이 그 실례다). -->
 <!-- 43700 → 43980 (2026-09-22, +280B). 규약 (1) — 증가분이 **거짓 절차를 참으로** 바꾼다.
      이 가이드의 아홉 퀵스타트는 전부 `admin.users.create(...)` 로 끝나는데, 문서 어디에도
      서비스 계정에 `realm-management` 롤을 주라는 말이 없어 **3 단계가 403 으로 죽는다**
@@ -205,7 +210,7 @@ To build against your working copy, clone the repository and build under `node/`
 
 ```bash
 cd node && npm ci && npm run build   # generates dist/ (tsc). Consume via npm link or a file reference.
-# Verify the distributable artifact (without uploading): npm pack --dry-run   # 75 files, 38.7 kB — dist/ plus README.md and LICENSE
+# Verify the distributable artifact (without uploading): npm pack --dry-run   # 75 files — dist/ plus README.md and LICENSE
 ```
 
 The distribution name is `@xzawed/keycloak-sdk`, and the import path is the same.

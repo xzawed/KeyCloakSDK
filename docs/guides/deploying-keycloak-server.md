@@ -1,4 +1,10 @@
-<!-- doc-budget: max-bytes=9761 -->
+<!-- doc-budget: max-bytes=9911 -->
+<!-- 9761 → 9911 (2026-09-22, +150B). 규약 (1) — **문서가 자기 예제와 모순**이었다. 「이미지
+     태그를 패치 버전까지 핀하라」고 지시하면서 바로 두 줄 위의 Dockerfile 은
+     `quay.io/keycloak/keycloak:26.6`(마이너)를 쓴다. 저장소 전체가 `26.6` 하나로 통일돼
+     있으므로(실측: 문서·워크플로·Dockerfile 히트 9/9 전부 `26.6`) 고칠 것은 예제가 아니라
+     지시다. 지시를 실제와 맞추고, 더 강한 선택지(다이제스트 핀)를 **특정 패치를 지어내지
+     않고** 이름만 준다. -->
 <!-- 9549 → 9761 (2026-09-22, +212B). 규약 (1) — 거짓 절차를 참으로. 2 단계가 「*Service
      accounts roles* 를 켜고 clientId/clientSecret 을 얻어라」에서 끝나 있었다. 그 토글은
      **토큰을 줄 뿐 권한을 주지 않아**, 이 가이드대로 세운 서버에서 아홉 퀵스타트의 Admin
@@ -63,7 +69,7 @@ COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 ```
 
-> ⚠️ Pin the image tag **down to the patch version**, matching the version this SDK is verified against (26.6.x). `KC_HEALTH_ENABLED` / `KC_METRICS_ENABLED` / `KC_DB` are **build-time** options, so they get baked into the image.
+> ⚠️ Pin the image tag to the minor line this SDK is verified against (`26.6`, as above) — never `latest`. That tag still floats across patches, so if your policy needs byte-identical rebuilds, pin the digest (`…/keycloak@sha256:…`) of the image you tested. `KC_HEALTH_ENABLED` / `KC_METRICS_ENABLED` / `KC_DB` are **build-time** options, so they get baked into the image.
 
 ## 3. `docker-compose.yml`
 
