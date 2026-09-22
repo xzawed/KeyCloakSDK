@@ -20,7 +20,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `185`(2026-09-21 기준 열림 115 · 닫힘 70)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `188`(2026-09-22 기준 열림 118 · 닫힘 70)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -790,6 +790,21 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 1.0 이후 운영 — 9
 
+- [ ] `audit-2026-09-22-doc-code` **[H/L · 신규 2026-09-22]** 전체 코드·문서 감사(17 독립 레그 + 3렌즈 반증) 결과 **91 건 중 57 건이 과반 반증을 견뎠고**, 그중 **7 건만 닫혔다** — 나머지 50 건이 열려 있다 · `docs/superpowers/plans/remaining-work.md:1`
+  - **방법과 계수**: 발견 레그 17(횡단 8 + 언어별 9) → 91 건. 렌즈 3(증거 재도출 · 기지사실 · 오탐)이 각 건을 독립 판정 → **생존 57**(high 14 · medium 31 · low 12), **기각 34**. high 14 중 8 건은 5 렌즈(재도출 · 반대근거 · 결과 · 등록부 · 범위) 심층 반증을 **전건 통과**했고, 나머지 6 건은 사람이 명령으로 직접 확인했다. 범주별 생존: drift-fact 23 · guard-gap 9 · drift-api 8 · drift-command 7 · orphan 3 · code-dup 2 · mirror 2 · code-dead 2 · volume 1.
+  - **닫힌 7 건**: 빈 JWKS 키셋이 좋은 캐시를 덮던 결함(#520, rust·ruby·php 코드 + go 테스트 + 교차언어 가드) · 소비자 문서의 거짓 보안 문장 6 자리(#521 — java/kotlin "and serialization" · go `%#v` · php `var_dump`/`print_r` · SECURITY.md "no Actions secrets" · python `close()` no-op ×2).
+  - **열린 high 6 건**(전부 실측 증거 있음):
+    - `.claude/rules/node.md:26` 커버리지 제외 목록이 자기가 SSOT 라 부르는 `node/vitest.config.ts` 와 두 항목에서 모순한다(둘 다 그 설정이 "do not put back" 이라 적은 것).
+    - `.claude/rules/rust.md:50` 의 재노출 불변식이 살아 있는 공개 표면 세 자리에서 깨진다 — `pub mod jwks` 라 `JwksStore::get_key() -> Result<Jwk>` 가 `jsonwebtoken::jwk::Jwk` 를 루트 재노출 없이 노출한다(실측).
+    - `kotlin/build.gradle.kts:67` · `java/pom.xml:89` — Jackson 핀은 둘 다 `2.22.2` 로 **일치**하나 java 쪽 산문이 `2.21.5` 라 말한다(핀 1 개 vs 산문 1 개의 불일치. 「세 숫자」라는 원 서술은 과장이었다).
+    - `scripts/test/test-readme-badges.sh:40` — 루트 README 영↔한 「동일 구조」 규약이 **배지 집합에만** 기계 집행된다(그 테스트 주석이 스스로 그렇게 적는다). 언어 행 하나를 지워도 전 가드가 초록이다.
+    - `scripts/check-docs.mjs` — `doc-budget` 래칫이 옵트인이라 **41 개 중 16 개**(272,403 / 801,916 B = **34 %**)만 덮는다. 덮는 쪽이 정확히 에이전트 적재 표면(CLAUDE.md·DEPLOY.md·process·rejected·CONTRIBUTING + rules 10)이고, 안 덮는 쪽이 **소비자 표면**(getting-started 44 KB · CHANGELOG · playbook · 루트 README 둘 · 아홉 언어 README · reference · roadmap · harness)이다. ⚠️ 원 서술의 「가장 큰 두 문서에 앵커가 없다」는 **틀렸다** — 최대(`remaining-work.md` 246 KB)는 맞고 2 위(`DEPLOY.md`)는 앵커가 있다.
+    - `CHANGELOG.md:8` — `## [Unreleased]` 가 비어 있는 동안 `v1.0.0` 이후 **150 커밋**이 main 에 들어왔다(실측 `git rev-list --count v1.0.0..origin/main`). CLAUDE.md 가 완료 서사의 목적지로 지목한 자리가 아무것도 받지 않아, 그 서사가 246 KB 등록부에 쌓인다.
+  - **열린 medium 31 · low 12**: 언어별 drift 가 다수이고 **아홉 전부에서 최소 1 건**이 나왔다(범위 1–6). 대표: getting-started 의 「coverage gate」 주장이 go·rust·dotnet 세 곳에서 거짓(그 명령은 커버리지를 재지도 게이트하지도 않는다) · `php/composer.json:41` 의 `cs`/`cs:fix` 가 `--allow-risky=yes` 누락으로 **항상 실패** · `.claude/rules/{dotnet,ruby,php,rust}.md` 의 전사된 실측값이 낡아 다음 세션을 틀린 판단으로 이끈다 · PHP·Ruby 의 기본 `readTimeout` 이 10 초로 나머지 일곱(30 초)과 갈린다.
+  - ⚠️ **완전성 비평 6 각도는 돌지 못했다**(세션 한도). 「무엇을 놓쳤는가」는 답이 없으므로 위 계수는 **하한**이다 — 재개는 `Workflow({scriptPath:…kcsdk-audit-round2…, resumeFromRunId:'wf_c93308dc-67f'})` 로 캐시 재사용이 된다.
+  - 착수 순서 근거: 실동작 결함 → 소비자에게 거짓을 말하는 문서 → 에이전트를 틀리게 만드는 rules → 가드 조준점. 앞의 둘은 닫혔다.
+- [ ] `jwks-empty-keyset-node` **[M/M · 신규 2026-09-22]** node 만 빈 JWKS 키셋 거부가 없다 — fetch·캐시를 jose 가 소유하기 때문이다 · `node/src/jwt.ts:55`. jose v6 의 reload 는 `local = createLocalJWKSet(json)` 를 무조건 실행하고 `isJwkSet()` 은 `{"keys":[]}` 를 받는다(실측: 좋은 토큰 검증 → 빈 200 → 같은 토큰 거부). ⚠️ **독립 레그 판정 — 래핑도 프리플라이트도 보장을 못 준다**: 반환된 `JWTVerifyGetKey` 를 감싸면 이미 덮인 **뒤에** 보게 되고(빈 집합과 「그 kid 가 없는 정상 집합」이 같은 오류로 나와 구분 불가), 우리가 따로 프리플라이트하면 **덮는 응답과 다른 응답**을 검사하게 된다. 같은 보장을 얻는 길은 `createRemoteJWKSet` 대신 `createLocalJWKSet` 위에 원격 집합을 **우리가 드는 것**뿐이고, 그러면 쿨다운·캐시수명·kid-miss 재조회를 우리가 소유한다(jose 의 원격 수정도 더는 상속하지 않는다). 구조 변경이라 #520 에서 분리했다. 되살릴 조건: 이 교환을 받아들일지 사람이 판정.
+- [ ] `jwks-empty-keyset-jvm-dotnet-undetermined` **[M/S · 신규 2026-09-22]** java·kotlin(Nimbus `JWKSourceBuilder`)·dotnet(`ConfigurationManager`)이 빈 200 에 오염되는지 **판정되지 않았다** · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt:29`. 캐시가 라이브러리 내부라 코드 읽기로는 결정할 수 없다. 실험(독립 레그 설계): **프로덕션 빌더를 그대로 태우고**(테스트용 캐시로 바꾸지 말 것) 리트리버 호출을 세며, 좋은 문서 → kid 해석 → 빈 200 → 카운터 증가 확인 → 같은 kid 재해석. ⚠️ **판정 행렬** — 두 번째 요청이 아예 없었으면 「면역」이 아니라 **판정 불가**다. dotnet 은 `BackoffConfigurationManager` 를 거치고 `RefreshInterval = 0` 으로 두 번째 호출이 삼켜지지 않게 한다. python 은 실측으로 면역이다(joserfc 가 대입 전에 `MissingKeyError`).
 - [x] `nightly-failure-reaches-nobody` **[H/M · 신규 2026-09-16 · 닫힘 2026-09-21 #518]** 야간이 여드레 빨간 동안 아무 조치가 없었다 — 저장소 안에 **실패가 사람에게 가는 경로가 0건**이다 · `.github/workflows/harness.yml:8`
   - **이 구멍이 닫히기 전에 한 번 더 물었다(2026-09-21)**: `rust-ci`·`security-audit` 이 RUSTSEC-2026-0285 로 **이레**, `sonarcloud` Quality Gate 가 **닷새** 빨간 채였고 둘 다 무성이었다. 항목이 예측한 그대로다.
   - **처방**: `.github/workflows/nightly-alert.yml` — `workflow_run` 으로 예약 워크플로 열하나를 받아 실패하면 이슈를 열거나 덧붙이고 **다시 초록이면 닫는다**(항목이 적어 둔 「끈적한 이슈 하나」). 커버리지는 `scripts/test/test-nightly-alert.sh` 가 `name:` 집합과 대조하고 음성 대조를 든다 — 변이 둘(목록에서 제거 · 새 `schedule:` 추가) 모두 exit 1 로 잡혔다. 항목이 미리 경고한 `check-ci-permissions` 충돌은 없었다(53 passed).
