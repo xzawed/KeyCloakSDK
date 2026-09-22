@@ -5,7 +5,15 @@ paths:
   - "harness/install/consume/php*"
   - ".github/workflows/php-*.yml"
 ---
-<!-- doc-budget: max-bytes=7155 -->
+<!-- doc-budget: max-bytes=7388 -->
+<!-- 7155 → 7388 (2026-09-22). 규약 (1) — **세션이 못 보는 경고**를 보는 자리로 옮긴다.
+     Windows 체크아웃에서 포매터가 **깨끗한 트리 전체**를 지적한다(출처: `.claude/rules/ci.md:62`
+     가 go·node·php 셋을 같은 문장으로 적는다. 오늘 다시 잰 것은 go 뿐이다 — `gofmt -l go` → 29
+     파일. php 는 로컬에 커버리지 드라이버·vendor 가 없어 재측정하지 않았고, 그래서 이 줄은
+     ci.md 를 출처로 단다). 그 설명이 있던 파일의 `paths:` 는
+     `.github/**`·`scripts/**`·`harness/**`·`DEPLOY.md` 라 **이 언어 디렉터리에서는 로드되지
+     않는다** — 즉 증상을 만나는 세션은 그 문장을 영원히 못 본다. 한 줄만 이리로 온다(교차언어
+     판본은 ci.md 가 계속 소유한다). -->
 
 # PHP rules
 
@@ -23,6 +31,7 @@ cd php && vendor/bin/phpstan analyse                   # level max + strict-rule
 cd php && vendor/bin/php-cs-fixer fix --dry-run --allow-risky=yes
 ```
 
+- ⚠️ **On Windows `php-cs-fixer --dry-run` names the whole clean tree** — that is CRLF, not formatting. Normalise only what you changed to LF and re-check those; committed blobs stay LF (`.gitattributes`), so CI never sees it.
 - A single test: `vendor/bin/phpunit --filter <TestName> tests/Unit/<Path>Test.php`
 - ⚠️ **Do not write the exact patch version here** — measure it with `php -v` and `node scripts/doctor.mjs php`.
 - ⚠️ `OPENSSL_CONF` is required for local RSA key generation (`JwtValidatorTest`) — without it, key generation fails.

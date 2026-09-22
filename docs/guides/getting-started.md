@@ -1,4 +1,10 @@
-<!-- doc-budget: max-bytes=43971 -->
+<!-- doc-budget: max-bytes=44032 -->
+<!-- 43971 → 44032 (2026-09-22, +61B). 규약 (1) — 거짓 절차를 참으로. PHP 「Minimal usage
+     example」이 **Packagist 설치 바로 아래**에서 `require __DIR__ . '/../vendor/autoload.php'`
+     로 시작했다. 그 경로는 링크된 저장소 내부 예제(`php/examples/`)에서만 맞고, 소비자가
+     붙여넣으면 틀린다. ⚠️ 같은 부류를 아홉 언어에 재스캔했다 — 다른 저장소 상대경로 다섯은
+     전부 「클론에서 설치」 절이라 **옳다**(go replace · dotnet add reference · composer path
+     repository · cargo path · gem path). PHP 만 소비 예제 안에 있었다. -->
 <!-- 43980 → 43971 (2026-09-22, −9B). **인하** — `npm pack --dry-run` 기대 출력에서 크기를
      뺐다. 파일 수(75)는 지금도 맞지만 크기는 38.7 kB 가 아니라 **47.3 kB** 였다(실측,
      `cd node && npm pack --dry-run`). 다시 맞춰 적는 대신 **뺀다** — 소비자가 확인하려는
@@ -451,7 +457,7 @@ Full example: [`php/examples/quickstart.php`](../../php/examples/quickstart.php)
 ```php
 <?php
 declare(strict_types=1);
-require __DIR__ . '/../vendor/autoload.php';
+require 'vendor/autoload.php'; // your project's autoloader — the linked in-repo example uses ../vendor
 
 use Xzawed\Keycloak\{KeycloakClient, KeycloakConfig};
 use Fschmtt\Keycloak\Representation\User;
