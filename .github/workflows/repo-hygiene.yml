@@ -226,6 +226,15 @@ jobs:
       - name: 야간 실패 알림 커버리지(schedule 워크플로 ↔ 감시 목록)
         run: sh scripts/test/test-nightly-alert.sh
 
+      # ⚠️ 게시 소스를 고친 PR 은 `CHANGELOG.md` 의 `[Unreleased]` 절을 **자라게** 해야 한다.
+      # 실측 2026-09-22: 아홉 패키지가 1.0.0 으로 게시된 뒤 `main` 에 157 커밋이 쌓였고 그중
+      # **31 건이 게시 소스**(대부분 토큰 누출·JWKS 상한·SSRF 같은 보안 수정)를 고쳤는데
+      # `[Unreleased]` 는 **0 줄**이었다. 산문 규칙은 이미 있었고 지켜지지 않았다 — 착지 시점에
+      # 걸지 않으면 다음 릴리스에서 커밋 제목을 베껴 이력을 복원하게 되고 그것은 반드시 틀린다.
+      # ⚠️ 이 스텝은 `fetch-depth: 0`(위)에 의존한다 — 기준점을 못 잡으면 **실패**한다(스킵 아님).
+      - name: 착지 시점 CHANGELOG 게이트(게시 소스 ↔ [Unreleased])
+        run: sh scripts/test/test-changelog-landing.sh
+
       # ⚠️ OSV 감사의 fail-closed 지점이 **사본 전부**에 있는가. `gradlew dependencies` 는 아무것도
       # 해석하지 못해도 exit 0 이라, 게이트 없는 자리는 가짜 좌표를 OSV 에 물어 "취약점 없음"으로
       # 초록이 된다. 실측 2026-09-07: 생산자 3 · 게이트 1(하네스 잡에만) — 사본 셋 중 하나만 고쳐진
