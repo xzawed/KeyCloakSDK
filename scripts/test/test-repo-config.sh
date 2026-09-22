@@ -245,17 +245,61 @@ assert_eq "update,deletion" "$(node -e "
 " "$MRS/tags-immutable.json")" '미러 태그 룰셋이 update·deletion 을 막는다(creation 은 막지 않는다 — 새 릴리스가 태그를 만든다)'
 
 # 판정 함수가 공허하지 않은가.
+# ⚠️ 세 번째 인자(정의)가 **필수**다. 2026-09-22 감사 전까지 이 함수는 이름과 enforcement 만
+# 봤고, 그래서 라이브 룰셋이 이름을 유지한 채 `update`/`deletion` 을 잃거나 bypass actor 를
+# 얻어도 `ok` 를 찍었다 — 커밋된 정의는 아무도 라이브와 대조하지 않았다.
+MRD="import('./repo-config.mjs').then(({mirrorRulesetDrift})=>{"
+DEFX="[{file:'d/x.json',body:{name:'X',enforcement:'active',rules:[{type:'deletion'}]}}]"
+LIVEX="[{name:'X',enforcement:'active',rules:[{type:'deletion'}]}]"
+
+# ⚠️ 축을 섞지 않는다 — 정의와 목록을 일치시켜 두고 **한 축만** 어긋나게 한다. 그러지
+# 않으면 기대치가 「몇 건이 동시에 발동하는가」가 되어, 검출 하나를 지워도 수가 맞아 통과한다.
 assert_eq "1" "$(cd "$DIR/.." && node -e "
-  import('./repo-config.mjs').then(({mirrorRulesetDrift})=>{
-    process.stdout.write(String(mirrorRulesetDrift({rulesets:['NOPE']},[]).length));});")" \
+  $MRD process.stdout.write(String(mirrorRulesetDrift({rulesets:['NOPE']},[],[{file:'d/n.json',body:{name:'NOPE',enforcement:'active'}}]).length));});")" \
   'mirrorRulesetDrift 가 없는 룰셋을 잡는다'
 assert_eq "1" "$(cd "$DIR/.." && node -e "
-  import('./repo-config.mjs').then(({mirrorRulesetDrift})=>{
-    process.stdout.write(String(mirrorRulesetDrift({rulesets:['X']},[{name:'X',enforcement:'disabled'}]).length));});")" \
-  'mirrorRulesetDrift 가 비활성 룰셋을 잡는다'
+  $MRD process.stdout.write(String(mirrorRulesetDrift({rulesets:['X']},[{name:'X',enforcement:'disabled',rules:[{type:'deletion'}]}],[{file:'d/x.json',body:{name:'X',enforcement:'disabled',rules:[{type:'deletion'}]}}]).length));});")" \
+  'mirrorRulesetDrift 가 비활성 룰셋을 잡는다(정의와 라이브가 같아도 active 가 아니면 잡는다)'
 assert_eq "0" "$(cd "$DIR/.." && node -e "
-  import('./repo-config.mjs').then(({mirrorRulesetDrift})=>{
-    process.stdout.write(String(mirrorRulesetDrift({rulesets:['X']},[{name:'X',enforcement:'active'}]).length));});")" \
+  $MRD process.stdout.write(String(mirrorRulesetDrift({rulesets:['X']},$LIVEX,$DEFX).length));});")" \
   'mirrorRulesetDrift 가 정상을 오탐하지 않는다'
+
+# 실제 결함의 모양 — 이름도 그대로, active 도 그대로, **규칙만 사라졌다**.
+assert_eq "1" "$(cd "$DIR/.." && node -e "
+  $MRD process.stdout.write(String(mirrorRulesetDrift({rulesets:['X']},[{name:'X',enforcement:'active',rules:[]}],$DEFX).length));});")" \
+  '규칙이 사라진 룰셋을 잡는다(이름·active 는 그대로다 — 이것이 실제 결함의 모양이다)'
+
+# 같은 부류 — bypass actor 가 늘어난 경우.
+assert_eq "1" "$(cd "$DIR/.." && node -e "
+  $MRD process.stdout.write(String(mirrorRulesetDrift({rulesets:['X']},[{name:'X',enforcement:'active',rules:[{type:'deletion'}],bypass_actors:[{actor_id:1,actor_type:'Integration',bypass_mode:'always'}]}],$DEFX).length));});")" \
+  'bypass actor 가 늘어난 룰셋을 잡는다'
+
+# 서버 필드(id·created_at…)는 드리프트가 아니다 — 본체 대조와 같은 canonical 규칙을 쓴다.
+assert_eq "0" "$(cd "$DIR/.." && node -e "
+  $MRD process.stdout.write(String(mirrorRulesetDrift({rulesets:['X']},[{id:9,created_at:'x',source:'y',name:'X',enforcement:'active',rules:[{type:'deletion'}]}],$DEFX).length));});")" \
+  '서버 생성 필드는 드리프트가 아니다'
+
+# 공허 방지 — 정의가 0개면 이 함수는 다시 「이름만 보는 검사」다. 통과로 보고하면 안 된다.
+# ⚠️ **개수로 단언하지 않는다.** 개수만 보면 공허 방지 절을 지워도 「정의 파일이 없다」 에러가
+# 대신 1 건 나와 수가 맞는다(실측 — 첫 판본이 그 변이를 놓쳤다). 어느 판정이 울렸는지를 본다.
+assert_contains "$(cd "$DIR/.." && node -e "
+  $MRD process.stdout.write(mirrorRulesetDrift({rulesets:['X']},$LIVEX,[]).join('|'));});")" \
+  '정의가 0 개다' \
+  '정의가 0개면 fail-closed 여야 한다(이름만 보는 검사로 되돌아간 것을 통과로 찍지 않는다)'
+
+# 조준선 대조 — 정의 파일을 두고 security-config 목록에 안 적으면 그 룰셋은 안 보인다.
+assert_eq "1" "$(cd "$DIR/.." && node -e "
+  $MRD process.stdout.write(String(mirrorRulesetDrift({rulesets:[]},[],$DEFX).length));});")" \
+  '정의는 있는데 목록에 없는 룰셋을 잡는다'
+
+# 실물 대조 — 커밋된 두 정의가 security-config.json 의 목록과 정확히 같은 집합인가.
+assert_eq "" "$(cd "$DIR/.." && node -e "
+  import('./repo-config.mjs').then(async ({mirrorDesiredFiles})=>{
+    const fs=await import('node:fs');
+    const cfg=JSON.parse(fs.readFileSync('../.github/security-config.json','utf8'));
+    const want=(cfg.php_mirror.rulesets||[]).slice().sort();
+    const have=mirrorDesiredFiles().map(d=>d.body.name).sort();
+    process.stdout.write(JSON.stringify(want)===JSON.stringify(have)?'':want+' != '+have);});")" \
+  '커밋된 미러 정의 이름 집합 = security-config.json 의 rulesets 목록'
 
 assert_report
