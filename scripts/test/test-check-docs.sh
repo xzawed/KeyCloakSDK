@@ -872,7 +872,7 @@ EOF
 cat > "$TMP/pyproject.md" <<'EOF'
 # pyproject fixture
 
-<!-- doc-guard: kind=dep source=python/pyproject.toml min=5 -->
+<!-- doc-guard: kind=dep source=python/pyproject.toml min=5 undocumented=1 -->
 
 | 이름 | 좌표 | 버전 |
 |---|---|---|
@@ -1544,6 +1544,50 @@ printf '# c\n\n<!-- doc-guard: kind=count source=rejection-checklist -->\n항목
 assert_ok node "$GUARD" "$TMP" --min-count-anchors=1
 assert_fails node "$GUARD" "$TMP" --min-count-anchors=2
 
+# ---- 역방향: 매니페스트에만 있고 문서에 없는 의존성 ----
+# 실측 결함(2026-09-22): `kind=dep` 는 **단방향**이었다 — 문서가 적은 좌표만 매니페스트에서
+# 찾아 값을 대조했고, 매니페스트에만 있는 것은 아무도 세지 않았다. `rust/Cargo.toml` 에
+# 문서에 없는 의존성 한 줄을 넣어도 exit 0 이었다. `min=N` 은 **문서 쪽 행 수**의 하한이라
+# 매니페스트가 자라도 안 움직인다.
+# ⚠️ 앞 블록(`count_fix`)이 `$TMP` 에 `docs/` 트리를 남긴다 — 그대로 두면 검사 9(지도)가
+# 울어 이 블록의 **통과 케이스**가 엉뚱한 이유로 빨개진다(실측). 자기완결로 만든다.
+_reset() { rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"; }
+
+_reset
+printf '%s\n' '    implementation("org.example:gamma:7.8.9")' >> "$TMP/src/build.gradle.kts"
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "문서에 없는 좌표" "매니페스트에만 있는 좌표를 지목한다"
+assert_contains "$_out" "org.example:gamma" "어느 좌표인지 이름으로 말한다"
+
+# 대조군 (a) — `undocumented=N` 으로 선언하면 통과한다(강제하는 것은 「전부 문서화」가
+# 아니라 **수가 맞는가**다 — 표를 키우거나 그 수를 올리거나, 둘 다 diff 에 보인다).
+# ⚠️ `assert_ok` 는 실패해도 **왜**인지 안 찍는다 — 통과 케이스가 엉뚱한 검사 때문에 빨개지면
+# 원인을 못 찾는다(실측: 앞 블록이 남긴 `docs/` 트리로 검사 9 가 울었다). 에러를 보여 준다.
+_okmsg() { # $1 = 설명
+  _o="$(node "$GUARD" "$TMP" 2>&1 || true)"
+  assert_eq "" "$(printf '%s\n' "$_o" | grep '::error' | head -3 || true)" "$1"
+}
+
+_reset
+printf '%s\n' '    implementation("org.example:gamma:7.8.9")' >> "$TMP/src/build.gradle.kts"
+sed -i 's/kind=dep source=src\/build.gradle.kts min=2/kind=dep source=src\/build.gradle.kts min=2 undocumented=1/' "$TMP/ok.md"
+_okmsg 'undocumented=N 으로 선언하면 통과한다'
+
+# 대조군 (b) — 선언한 수가 실제와 다르면 다시 실패한다(선언이 만능 면제가 아니다).
+_reset
+sed -i 's/kind=dep source=src\/build.gradle.kts min=2/kind=dep source=src\/build.gradle.kts min=2 undocumented=1/' "$TMP/ok.md"
+assert_fails node "$GUARD" "$TMP"
+
+# 대조군 (c) — 음수·비정수는 거부한다(공허한 면제를 못 만든다).
+_reset
+sed -i 's/kind=dep source=src\/build.gradle.kts min=2/kind=dep source=src\/build.gradle.kts min=2 undocumented=-1/' "$TMP/ok.md"
+assert_fails node "$GUARD" "$TMP"
+
+# 대조군 (d) — 기준 픽스처는 그대로 통과한다(위 `_reset` 이 상태를 남기지 않았는지).
+_reset
+_okmsg '기준 픽스처는 그대로 통과한다'
+
 # ---- 앵커 아래의 **산문 버전 주장** ----
 # 실측 결함(2026-09-22): 추출기는 백틱 좌표가 없는 행을 `continue` 로 통째로 버렸다.
 # 그래서 `| 단위 테스트 | JUnit 6.1.3 · Mockito 5.23.0 | — |` 같은 행의 숫자는 앵커 아래
@@ -1556,14 +1600,14 @@ _out="$(node "$GUARD" "$TMP" 2>&1 || true)"
 assert_contains "$_out" "아무도 검증하지 않는다" "버려지는 행을 지목한다"
 
 # 대조군 (a) — 숫자가 없는 설명 행은 주장이 아니다(예: ruby 의 「성숙한 gem 부재」 행).
-cp -r "$FIX/." "$TMP/"
+_reset
 printf '%s\n' '| Admin | (성숙한 gem 부재 — faraday로 직접 래핑) | — |' >> "$TMP/ok.md"
-assert_ok node "$GUARD" "$TMP"
+_okmsg '숫자 없는 설명 행은 주장이 아니다'
 
 # 대조군 (b) — 헤더 행에는 주장이 없다. 픽스처의 `| 이름 | 좌표 | 버전 |` 이 매번
 # 걸렸다면 위 (a)와 기준 픽스처가 이미 빨갰을 것이므로 이 단언은 그 사실을 못 박는다.
-cp -r "$FIX/." "$TMP/"
-assert_ok node "$GUARD" "$TMP"
+_reset
+_okmsg '헤더 행에는 주장이 없다'
 
 # 대조군 (c) — 괄호가 바로 붙는 버전도 잡아야 한다(`wiremock 0.6(HTTP 목)` 이 뒤쪽
 # 구분자를 요구하던 정규식에서 빠져나갔다 — 실측).

@@ -737,6 +737,17 @@ let countAnchors = 0
 // 서로 모순되는 주장이면 잡아낸다.
 const seen = new Map()
 
+// 검사 2b — **역방향**. `kind=dep` 는 오래 단방향이었다: 문서가 적은 좌표만 매니페스트에서
+// 찾아 값을 대조했고, **매니페스트에만 있고 문서에 없는 의존성**은 아무도 세지 않았다.
+// 실측 변이(2026-09-22): `rust/Cargo.toml` 에 문서에 없는 의존성 한 줄을 넣어도 exit 0.
+// ⚠️ `min=N` 은 이걸 못 잡는다 — 그것은 **문서 쪽 행 수**의 하한이라 매니페스트가 자라도
+// 안 움직인다.
+// 아래 둘은 소스 파일 단위로 모은다(앵커 단위가 아니다 — `node/package.json` 처럼 한 파일을
+// 두 앵커가 나눠 덮는 경우가 있어, 앵커별로는 「이 앵커가 덮어야 할 범위」가 정의되지 않는다).
+const depCovered = new Map() // source path -> Set(문서가 덮은 좌표)
+const depUndoc = new Map() // source path -> 앵커들이 선언한 `undocumented=` 합
+const depSources = new Map() // source path -> extract() 결과(매니페스트 전체 좌표)
+
 const errors = []
 let facts = 0
 let anchors = 0
@@ -1446,6 +1457,18 @@ for (const file of walk(ROOT)) {
       errors.push(`${rel}:${i + 1} 소스 추출 실패 (${attrs.source}): ${e.message}`)
       continue
     }
+    depSources.set(attrs.source, source)
+    if (!depCovered.has(attrs.source)) depCovered.set(attrs.source, new Set())
+    // `undocumented=N` — 이 매니페스트에서 **일부러 문서에 싣지 않는** 항목 수. 한 파일을
+    // 여러 앵커가 나눠 덮으므로 파일 단위로 합산한다. 없으면 0(= 전부 문서화한다는 선언).
+    if (attrs.undocumented !== undefined) {
+      const u = Number(attrs.undocumented)
+      if (!Number.isInteger(u) || u < 0) {
+        errors.push(`${rel}:${i + 1} undocumented='${attrs.undocumented}' 은 0 이상의 정수가 아니다`)
+      } else {
+        depUndoc.set(attrs.source, (depUndoc.get(attrs.source) ?? 0) + u)
+      }
+    }
 
     const rows = tableAt(lines, i + 1)
     if (rows === null) {
@@ -1476,6 +1499,7 @@ for (const file of walk(ROOT)) {
         errors.push(`${rel}:${i + 1} 좌표 '${coord}' 를 ${attrs.source} 에서 찾지 못함`)
         continue
       }
+      depCovered.get(attrs.source).add(coord)
       const unresolved = /^\$\{([\w.\-]+)\}$/.exec(actual)
       if (unresolved) {
         errors.push(`${rel}:${i + 1} '${coord}' 버전 속성 \${${unresolved[1]}} 을 ${attrs.source} 리액터에서 해석하지 못함`)
@@ -1505,6 +1529,48 @@ for (const [key, hits] of seen) {
     // 메시지에는 생태계 접두 없이 좌표만 — 사람이 찾을 문자열은 그것이다.
     errors.push(`좌표 '${hits[0].coord}' (${key.split(' ')[0]}) 가 문서마다 다름: ${hits.map((h) => `${h.rel}=${h.ver}`).join(' vs ')}`)
   }
+}
+
+// 검사 2b — 역방향. 매니페스트에 있는데 어느 문서도 안 적은 좌표의 **수**가, 앵커들이
+// `undocumented=N` 으로 선언한 수와 같아야 한다.
+//
+// ⚠️ **왜 「전부 문서화하라」가 아닌가**: 매니페스트에는 문서 표에 실을 이유가 없는 항목이
+// 있다(플러그인·전이 고정·도구 전용). 그것을 강제하면 규칙이 무시되는 쪽으로 끝난다.
+// 그래서 강제하는 것은 **숫자가 맞는가**다 — 의존성이 하나 늘면 표가 자라거나 `undocumented`
+// 가 오르거나 둘 중 하나가 diff 에 보인다. 조용히 늘 수 있는 길이 없다.
+// ⚠️ 그 수는 「다시 맞추는 상수」가 아니라 **래칫**이다(doc-budget 과 같은 꼴) — 바꾸는
+// 행위 자체가 사람 판정이고, 바꾸지 않으면 가드가 먼저 운다.
+// 역방향에서 **애초에 세지 않는** 부류. 둘 다 「우리가 고른 의존성이 아니다」가 이유이고,
+// 세면 수가 남의 결정에 따라 흔들려 `undocumented` 가 다시 맞추는 상수로 전락한다.
+//   (a) go.mod 의 `// indirect` — CLAUDE.md 가 「우리가 고른 것이 아니다」라고 못 박는다.
+//       실측 2026-09-22: require 58 중 **56 이 indirect** 다. 세면 dependabot 이 전이 하나만
+//       올려도 이 가드가 울고, 그때 사람이 하는 일은 숫자를 다시 맞추는 것뿐이다.
+//   (b) pom.xml 리액터의 `${project.groupId}:${project.artifactId}` — 모듈 자기 참조이지
+//       의존성이 아니다(해석되지 않은 좌표 자리표시자).
+function reverseSkip(src, coord, raw) {
+  if (src.endsWith('go.mod')) {
+    const re = new RegExp(`^\\s*${coord.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\s+\\S+\\s*//\\s*indirect`, 'm')
+    return re.test(raw)
+  }
+  if (src.endsWith('pom.xml')) return coord.includes('${')
+  return false
+}
+
+for (const [src, map] of depSources) {
+  const covered = depCovered.get(src) ?? new Set()
+  let raw = ''
+  try {
+    raw = readFileSync(join(ROOT, src), 'utf8')
+  } catch {
+    raw = ''
+  }
+  const missing = [...map.keys()].filter((c) => !covered.has(c) && !reverseSkip(src, c, raw)).sort()
+  const declared = depUndoc.get(src) ?? 0
+  if (missing.length === declared) continue
+  const shown = missing.slice(0, 12).join(' · ')
+  errors.push(
+    `${src}: 문서에 없는 좌표가 ${missing.length}개인데 앵커는 undocumented=${declared} 라 말한다 — 표에 넣거나 그 수를 고쳐라(kind=dep 앵커의 \`undocumented=N\`). 미기재: ${shown}${missing.length > 12 ? ` … 외 ${missing.length - 12}` : ''}`,
+  )
 }
 
 // 검사 8 — 크기 래칫. `<!-- doc-budget: max-bytes=N [max-lines=M] -->`를 담은 문서가 상한을

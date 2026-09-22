@@ -180,7 +180,7 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 
 ## 확정 의존성 (BOM으로 고정)
 
-<!-- doc-guard: kind=dep source=java/pom.xml min=5 -->
+<!-- doc-guard: kind=dep source=java/pom.xml min=5 undocumented=18 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | Keycloak admin-client | `org.keycloak:keycloak-admin-client` | 26.0.12 |
@@ -192,7 +192,7 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 
 **Python 확정 의존성(pyproject.toml, major 상한 고정)**:
 
-<!-- doc-guard: kind=dep source=python/pyproject.toml min=2 -->
+<!-- doc-guard: kind=dep source=python/pyproject.toml min=2 undocumented=6 -->
 | 의존성 | 배포명 | 버전 |
 |---|---|---|
 | Admin + 인증 | `python-keycloak` | `>=7.1,<8` |
@@ -242,7 +242,7 @@ dev(`devDependencies` — **앵커 있음**):
 
 **C#/.NET 확정 의존성(csproj, major 핀)**:
 
-<!-- doc-guard: kind=dep source=dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj min=5 -->
+<!-- doc-guard: kind=dep source=dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj min=5 undocumented=1 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | 인증(OIDC/OAuth2) | `Duende.IdentityModel` | 8.1.0 |
@@ -267,7 +267,7 @@ dev(테스트 csproj — **앵커 있음**):
 
 **PHP 확정 의존성(composer.json, 정확 핀/범위 지정)**:
 
-<!-- doc-guard: kind=dep source=php/composer.json min=6 -->
+<!-- doc-guard: kind=dep source=php/composer.json min=6 undocumented=10 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | Admin | `fschmtt/keycloak-rest-api-client-php` | **0.42.0** |
@@ -286,7 +286,7 @@ dev(테스트 csproj — **앵커 있음**):
 
 **Rust 확정 의존성(Cargo.toml, 정확 핀 없음 — 크레이트별로 캐럿/틸드 + 커밋된 `Cargo.lock`)**:
 
-<!-- doc-guard: kind=dep source=rust/Cargo.toml min=5 -->
+<!-- doc-guard: kind=dep source=rust/Cargo.toml min=5 undocumented=9 -->
 | 의존성 | 크레이트 | 버전 |
 |---|---|---|
 | Admin | `keycloak`(`default-features = false`, features: `tags-all`·`resource-builder`·`reqwest12`) | `~26.6.2` |
@@ -321,7 +321,7 @@ dev(테스트 csproj — **앵커 있음**):
 
 **Kotlin 확정 의존성(build.gradle.kts, JVM 자매 Java SDK 스택 재사용 + 코루틴 경계 신규)**:
 
-<!-- doc-guard: kind=dep source=kotlin/build.gradle.kts min=6 -->
+<!-- doc-guard: kind=dep source=kotlin/build.gradle.kts min=6 undocumented=14 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | Admin(재사용, api) | `org.keycloak:keycloak-admin-client` | 26.0.12 |
