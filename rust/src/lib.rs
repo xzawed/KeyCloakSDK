@@ -44,3 +44,10 @@ pub use keycloak::KeycloakAdmin;
 // 저수준 주입 지점(`AdminClient::new`·`AuthClient::new`·`ClientCredentialsTokenProvider::new`·
 // `JwksStore::new`)이 받는 공유 HTTP 클라이언트 — SDK가 실제로 쓰는 crate를 그대로 재노출한다.
 pub use reqwest;
+// `raw()` 로 얻은 `KeycloakAdmin` 의 **모든** 메서드가 돌려주는 오류다. 루트의 `KeycloakError`
+// 는 **우리 타입**이라 이름이 겹치므로 별칭으로 낸다 — 별칭이 없으면 `raw()` 소비자는 오류를
+// 이름 붙일 수 없어 `keycloak` crate 를 자기 Cargo.toml 에 직접 넣어야 한다(재노출이 막으려던 그것).
+pub use keycloak::KeycloakError as RawKeycloakError;
+// `JwksStore::get_key()` 가 돌려주는 JWK. `jwks` 는 `pub mod` 이고 `JwksStore::new` 는 문서화된
+// 저수준 주입 지점이라, 이 타입은 공개 표면에 실재한다(감사 실측 2026-09-22).
+pub use jsonwebtoken::jwk::Jwk;

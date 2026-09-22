@@ -1,5 +1,12 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=24863 max-lines=308 -->
+<!-- doc-budget: max-bytes=25087 max-lines=308 -->
+<!-- 24863 → 25087 (2026-09-22, +224B). 규약 (1) — 증가분이 **기계 검증**을 사 온다.
+     §4(b) 가 「세 자리 · 이 셋 밖에는 없다」였는데 감사 실측이 **넷째**를 찾았다(Rust
+     `JwksStore::get_key()` 가 돌려주는 `jsonwebtoken::jwk::Jwk` — 루트 재노출이 없어 소비자가
+     이름 붙일 수 없었다). 2026-08-29 의 「두 → 세」 정정과 같은 부류이고, 이번엔 **산문으로
+     끝내지 않는다**: 같은 커밋이 `rust/tests/reexport_surface.rs` 를 들여와 루트 재노출만으로
+     전부 이름 붙는지 **컴파일로** 시험한다(변이 실측: 재노출 한 줄을 지우면 E0432). 기계 검증
+     언어가 Node 하나에서 둘이 됐다. -->
 <!-- 24663 → 24863 (2026-09-11, +200B). 규약 (1) 의 가장 순한 형태 — **거짓 문장을 지우는**
      교환이다. 이 파일이 「+300B 초과는 사람 판정」이라 적었는데 검사 8b 에는 기록된 판정을
      받는 분기가 **없어** 실제로는 하드 실패였고(실측: 8b 이후 착지한 인상 전부 ≤300B —
@@ -141,9 +148,9 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 
 ### §4(b) 문서화된 은닉성 예외
 
-완전 은닉이 아니다. 세 자리가 하위 타입을 노출한다 — **(a)** admin 파사드의 representation 타입(Java/Kotlin `org.keycloak.representations.idm.*` · Node `defs/*` · Go `gocloak.*` · C# `*Representation` · PHP `Fschmtt\…\Representation\*` · Rust `keycloak::types` — Python·Ruby는 plain dict/Hash라 노출 없음), **(b)** `raw()` 탈출구가 돌려주는 하위 클라이언트, **(c)** Rust 저수준 주입 생성자가 받는 `reqwest::Client`(`AdminClient`·`AuthClient`·`ClientCredentialsTokenProvider`·`JwksStore`의 `new`). ⚠️ **「정상 소비 경로는 노출하지 않는다」고 쓰지 말 것 — (a)가 곧 admin 파사드이고 그것이 정상 경로다.** 참인 진술은 **이 셋 밖에는 없다**이고, Node 만 기계 검증한다(`node scripts/check-node-public-surface.mjs` → 누출 0).
+완전 은닉이 아니다. **네** 자리가 하위 타입을 노출한다 — **(a)** admin 파사드의 representation 타입(Java/Kotlin `org.keycloak.representations.idm.*` · Node `defs/*` · Go `gocloak.*` · C# `*Representation` · PHP `Fschmtt\…\Representation\*` · Rust `keycloak::types` — Python·Ruby는 plain dict/Hash라 노출 없음), **(b)** `raw()` 탈출구가 돌려주는 하위 클라이언트**와 그것이 돌려주는 오류**(Rust `keycloak::KeycloakError`), **(c)** Rust 저수준 주입 생성자가 받는 `reqwest::Client`(`AdminClient`·`AuthClient`·`ClientCredentialsTokenProvider`·`JwksStore`의 `new`), **(d)** Rust `JwksStore::get_key()` 가 돌려주는 `jsonwebtoken::jwk::Jwk`. ⚠️ **「정상 소비 경로는 노출하지 않는다」고 쓰지 말 것 — (a)가 곧 admin 파사드이고 그것이 정상 경로다.** 참인 진술은 **이 넷 밖에는 없다**이고, **둘**이 기계 검증한다 — Node(`node scripts/check-node-public-surface.mjs` → 누출 0)와 Rust(`cargo test --test reexport_surface`).
 
-⚠️ Rust는 `keycloak_sdk::types`로 미러 재노출한다 — 없으면 소비자가 `keycloak` crate를 직접 의존해야 해서 게시된 퀵스타트가 컴파일되지 않는다.
+⚠️ Rust는 그 넷을 `keycloak_sdk` 루트로 재노출한다 — 없으면 소비자가 `keycloak`·`jsonwebtoken` 을 직접 의존해야 해서 게시된 퀵스타트가 컴파일되지 않는다.
 
 9개 언어 전체 `raw` 표와 admin capability matrix: [admin-capability.md](docs/reference/admin-capability.md).
 

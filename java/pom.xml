@@ -91,7 +91,11 @@
            @JsonIgnore 우회) 6건 + CVE-2026-54515(GHSA-5jmj-h7xm-6q6v, 대소문자 무시 역직렬화가
            per-property @JsonIgnoreProperties 우회, 취약범위 <2.21.5)를 모두 해소한다. keycloak-client-
            parent:26.0.10 관리값(2.21.2)보다 높게 고정하는 "picked higher" 전략(수렴 유지). 2.21.5는
-           2.21.x 라인의 CVE-2026-54515 fix로, 2026-07-08 Maven Central 출시 확인 후 상향(issue #8). -->
+           2.21.x 라인의 CVE-2026-54515 fix로, 2026-07-08 Maven Central 출시 확인 후 상향(issue #8).
+           ⚠️ **위 서사는 2.21.5 에서 멈춰 있고 실제 핀은 아래 `2.22.2` 다** — 그 뒤 dependabot 이
+           2.22 라인으로 올렸는데 이 주석만 남았다(감사 실측 2026-09-22). 핀을 읽어야 할 자리는
+           아래 `<version>` 이고, 이 문단은 **왜 parent 관리값보다 높게 잡는가**(picked higher)만
+           설명한다. kotlin/build.gradle.kts 가 같은 값을 손으로 미러하므로 함께 움직인다. -->
       <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-core</artifactId><version>2.22.2</version></dependency>
       <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>2.22.2</version></dependency>
       <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-annotations</artifactId><version>2.22</version></dependency>

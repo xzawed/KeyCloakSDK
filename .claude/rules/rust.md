@@ -5,7 +5,15 @@ paths:
   - "harness/install/consume/rust*"
   - ".github/workflows/rust-*.yml"
 ---
-<!-- doc-budget: max-bytes=8877 -->
+<!-- doc-budget: max-bytes=9160 -->
+<!--
+  8877 → 9160 (2026-09-22, +283B). 규약 (1) — 증가분이 **기계 집행**을 사 온다.
+  §4(b) 의 「foreign 타입이 새 공개 시그니처에 들어오면 재노출을 늘려라」는 산문으로만
+  있었고, 감사 실측이 **두 자리에서 깨져 있는 것**을 찾았다(`jsonwebtoken::jwk::Jwk` ·
+  `keycloak::KeycloakError`). 같은 커밋이 `rust/tests/reexport_surface.rs` 를 들여와
+  루트 재노출만으로 전부 이름 붙는지 **컴파일로** 시험한다(변이: 한 줄 지우면 E0432).
+  거짓 목록을 지우고 집행을 얻는 교환이다.
+-->
 <!--
   8645 → 8877 (2026-09-04). 규약 (2). 52행의 「IdP 가 죽어도 게이트가 소모돼 위조 kid 흐름을
   막는다」가 **캐시가 찼을 때만 참**임을 실측으로 확인했다(콜드 20→20, 웜 대조군 2). 그 조건을
@@ -47,7 +55,7 @@ cd rust && cargo test --test integration_test -- --ignored    # integration E2E.
 
 ## Re-exports (§4(b))
 
-⚠️ **The admin facade's public signatures use foreign types, so without re-exports the published quickstart does not compile.** The five representation types from `keycloak::types` are mirrored back out as `keycloak_sdk::types`, and `KeycloakAdmin`, `SdkTokenSupplier` (needed to name the return type of `AdminClient::raw()`) and the `reqwest` the low-level ctor takes are re-exported from the crate root. **Whenever a foreign type enters a new public signature, extend the re-exports with it.**
+⚠️ **The admin facade's public signatures use foreign types, so without re-exports the published quickstart does not compile.** The five representation types from `keycloak::types` are mirrored back out as `keycloak_sdk::types`, and four more come out of the crate root: `KeycloakAdmin` + `SdkTokenSupplier` (to name `AdminClient::raw()`'s return type), `RawKeycloakError` (alias — every `raw()` method returns `keycloak::KeycloakError`, and the root's own `KeycloakError` is ours), `Jwk` (from `JwksStore::get_key()`), and the `reqwest` the low-level ctors take. **Whenever a foreign type enters a new public signature, extend the re-exports with it** — enforced by `cargo test --test reexport_surface`, which names each one through the root, so a dropped re-export fails to compile (`E0432`).
 
 ## Library gotchas
 

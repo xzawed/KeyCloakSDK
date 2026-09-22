@@ -5,7 +5,12 @@ paths:
   - "harness/install/consume/node*"
   - ".github/workflows/node-*.yml"
 ---
-<!-- doc-budget: max-bytes=6255 -->
+<!-- doc-budget: max-bytes=6534 -->
+<!-- 6255 → 6534 (2026-09-22, +279B). 규약 (1) — 증가분이 **그 주장을 다시 재는 명령**을 사 온다.
+     이 줄은 커버리지 제외 목록을 전사하다가 두 곳에서 거짓이 됐다(감사 실측: `src/transport.ts`
+     와 `src/admin/call.ts` 는 **측정되는** 쪽인데 제외로 적혀 있었고, 「네 항목」은 실제 여덟이다).
+     교환이다 — 거짓 목록을 지우고, 대신 SSOT 를 **읽는 sed 한 줄**을 남겼다. 다음 세션은 이 줄을
+     믿지 않고 그 명령을 돌리면 된다. -->
 
 # Node rules
 
@@ -23,7 +28,7 @@ cd node && npm run build       # tsc → dist/
 ```
 
 - A single test: `npx vitest run test/unit/<name>.test.ts`
-- Coverage omits `src/auth.ts`, `src/admin/**`, `src/index.ts` and `src/transport.ts` (the network boundary — the integration tests cover it). The exclusion list's SSOT is `node/vitest.config.ts`; it had four entries while this line listed three.
+- Coverage omits `src/index.ts`, `src/auth.ts` and the six `src/admin/*.ts` resource files — **eight** entries, and the SSOT is `node/vitest.config.ts` (a hand list, deliberately not a glob, so a new file lands on the *measured* side). ⚠️ **`src/transport.ts` and `src/admin/call.ts` are measured, not omitted** — do not add them back; the config says so in-line and this line used to claim the opposite (audit 2026-09-22). Re-read the list rather than transcribing it: `sed -n '/exclude:/,/]/p' node/vitest.config.ts`.
 - Release check: `npm run build && npm pack --dry-run`. ⚠️ Even with `files:["dist"]`, npm **always** includes `package.json`, `README` and `LICENSE`, so without `node/README.md` and `node/LICENSE` the npmjs.com landing page ships empty. Write every README link as an absolute URL (relative links break on the registry page).
 - Releasing goes `node-v*` tag → npm **Trusted Publishing** (OIDC + provenance, no stored token). The tag ↔ `package.json` consistency guard and the integration E2E are both in `needs:`.
 - The package `@xzawed/keycloak-sdk` is ESM-only (`"type":"module"`) and ships `.d.ts`.
