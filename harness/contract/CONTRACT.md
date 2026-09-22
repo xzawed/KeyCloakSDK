@@ -1,11 +1,23 @@
-<!-- doc-budget: max-bytes=4313 -->
-# 공통 HTTP 계약 (모든 언어 샘플 앱 동일 노출)
+<!-- doc-budget: max-bytes=4561 -->
+<!-- 4313 → 4561 (2026-09-22, +248B). 규약 (1) — **선언된 규칙을 실제로** 만든다.
+     CLAUDE.md 의 언어 규칙이 `harness/` 를 **영문** 소비자 문서로 선언하는데 이 파일만
+     한글이었다(46 줄 중 18). 형제 둘(`harness/README.md`·`harness/install/README.md`)은 이미
+     영문이라 이 파일이 유일한 예외였고, 청중은 「새 언어의 하네스 앱을 구현하는 사람」으로
+     영문인 add-a-language playbook 과 같다.
+     ⚠️ **번역만 했다** — 엔드포인트 표 22 행, 오류 매핑, 400 관련 실측(2026-09-06 의 6:3
+     분기와 `REJECT_STATUSES`), realm SA 403 단서까지 한 항목도 빼거나 더하지 않았다.
+     +248B 는 같은 내용을 영어로 쓴 비용이다(한글이 바이트당 정보밀도가 높다) — 내용 추가가
+     아니므로 교환할 거짓 문장이 없고, 그래서 이 기록이 판정이다.
+     ⚠️ `CONTRIBUTING.md`(13 줄)·`DEPLOY.md`(44 줄)도 한글로 잡히지만 **규칙 위반이 아니다** —
+     전부 이 파일과 같은 **예산 판정 HTML 주석**(적재되지 않는다)이거나, GitHub 체크명
+     `Integration (testcontainers, 실제 Keycloak 26.6)` 의 **리터럴 인용**이다. 고치지 않았다. -->
+# Common HTTP contract (every language's sample app exposes the same surface)
 
-Base: `http://<host>:<APP_PORT>`. 모든 body는 JSON. admin 엔드포인트는 앱이 SDK client-credentials로 자체 인증(호출자 토큰 불요).
+Base: `http://<host>:<APP_PORT>`. All bodies are JSON. The admin endpoints authenticate themselves with the SDK's client-credentials grant — the caller sends no token.
 
-| 메서드·경로 | 요청 body | 성공 | 실패 |
+| Method · path | Request body | Success | Failure |
 |---|---|---|---|
-| `GET /healthz` | — | 200 `{"status":"ok"}` | — (⚠️ 아홉 앱 모두 **무조건 200** 이다. 실패 상태를 내는 앱은 없으므로 계약도 약속하지 않는다 — 의존성 검사를 붙이려면 여기에 그 상태를 먼저 적는다) |
+| `GET /healthz` | — | 200 `{"status":"ok"}` | — (⚠️ all nine apps return **200 unconditionally**. None of them reports a failure state, so the contract does not promise one — to add a dependency check, write its state here first) |
 | `POST /token` | — | 200 `{"tokenType":"Bearer","expiresIn":<int>}` | 500 `{"error":".."}` |
 | `POST /validate` | `{"token":"<jwt>"}` | 200 `{"subject":"..","audience":[".."],"issuer":"..","expiresAt":<int>}` | 401 `{"error":".."}` |
 | `POST /introspect` | `{"token":"<jwt>"}` | 200 `{"active":<bool>,"username":"..","clientId":".."}` | 500 |
@@ -14,34 +26,34 @@ Base: `http://<host>:<APP_PORT>`. 모든 body는 JSON. admin 엔드포인트는 
 | `GET /admin/users?username=<u>` | — | 200 `[{"id":"..","username":".."}]` | 500 |
 | `DELETE /admin/users/{id}` | — | 204 | 404 |
 
-**오류 매핑 규약(동형성)**: SDK NotFound류 → 404 · SDK Conflict류(중복 username 등) → 409 · SDK Forbidden류 → 403 · **요청 모양이 틀림(필수 필드 누락·빈 값) → 400** · JWT 검증 실패 → 401 · 기타 → 500 `{"error":"<message>"}`. 토큰/시크릿은 응답·로그에 노출 금지(`/token`은 메타만).
+**Error-mapping rule (isomorphism)**: SDK NotFound-family → 404 · SDK Conflict-family (duplicate username and the like) → 409 · SDK Forbidden-family → 403 · **malformed request (missing required field, empty value) → 400** · JWT validation failure → 401 · anything else → 500 `{"error":"<message>"}`. Tokens and secrets must never appear in a response or a log (`/token` returns metadata only).
 
-⚠️ **400 은 오래 이 표에 없었고, 그래서 아홉이 갈렸다**(실측 2026-09-06): `token` 이 비었을 때 **여섯**(go·node·python·dotnet·java·kotlin)은 `400 {"error":"token required"}` 를, **셋**(php·ruby·rust)은 빈 문자열을 그대로 검증에 넣어 `401` 을 낸다. **보안 프로브는 둘 다 거부로 받으므로**(`verdict.mjs` 의 `REJECT_STATUSES = [400, 401]`) 어느 쪽도 실패가 아니다 — 다만 **계약이 400 을 적지 않은 채 「기타 → 500」만 두면, 계약대로 구현한 앱은 프로브에서 `crashed`(≥500)로 떨어진다.** 새 언어는 400 을 택하라.
+⚠️ **400 was missing from this table for a long time, and that is why the nine diverged** (measured 2026-09-06): with an empty `token`, **six** (go · node · python · dotnet · java · kotlin) answer `400 {"error":"token required"}` while **three** (php · ruby · rust) feed the empty string straight into validation and answer `401`. **The security probe accepts either as a rejection** (`REJECT_STATUSES = [400, 401]` in `verdict.mjs`), so neither is a failure — but **if the contract lists only "anything else → 500" and omits 400, an app that follows the contract literally is scored `crashed` (≥500) by the probe.** A new language should choose 400.
 
-## v2 확장 (모든 앱 동일 노출)
+## v2 extensions (every app exposes these too)
 
-### auth 확장
-| 메서드·경로 | 요청 body | 성공 | 실패 |
+### auth extensions
+| Method · path | Request body | Success | Failure |
 |---|---|---|---|
 | `POST /token/password` | `{"username":"..","password":".."}` | 200 `{"tokenType":"Bearer","expiresIn":<int>,"hasRefresh":<bool>}` | 401 `{"error":".."}` |
-| `POST /refresh` | `{}` (앱이 직전 password-grant refresh 토큰 서버측 보관) | 200 `{"tokenType":"Bearer","expiresIn":<int>}` | 401 |
-| `POST /logout` | `{}` (앱 서버측 세션) | 204 | 500 |
-| `GET /authz-url?redirect_uri=<u>` | — | 200 `{"url":"..","state":".."}` (url은 `code_challenge_method=S256`·`code_challenge`·`state` 포함, code_verifier 미노출) — **오프라인 URL 조립만**(브라우저 왕복·code 교환 없음) | 500 |
+| `POST /refresh` | `{}` (the app keeps the last password-grant refresh token server-side) | 200 `{"tokenType":"Bearer","expiresIn":<int>}` | 401 |
+| `POST /logout` | `{}` (server-side session in the app) | 204 | 500 |
+| `GET /authz-url?redirect_uri=<u>` | — | 200 `{"url":"..","state":".."}` (the url carries `code_challenge_method=S256`, `code_challenge` and `state`; the code_verifier is not exposed) — **offline URL assembly only** (no browser round trip, no code exchange) | 500 |
 
-### admin 5리소스 확장
-| 메서드·경로 | 요청 body | 성공 | 실패 |
+### admin five-resource extensions
+| Method · path | Request body | Success | Failure |
 |---|---|---|---|
 | `POST /admin/clients` | `{"clientId":".."}` | 201 `{"id":".."}` | 409/500 |
 | `GET /admin/clients/{id}` | — | 200 `{"id":"..","clientId":".."}` | 404 |
 | `DELETE /admin/clients/{id}` | — | 204 | 404 |
-| `POST /admin/roles`(realm role — client role 아님·name 키) | `{"name":".."}` | 201 `{"name":".."}` | 409/500 |
-| `GET /admin/roles/{name}`(realm role) | — | 200 `{"name":".."}` | 404 |
-| `DELETE /admin/roles/{name}`(realm role) | — | 204 | 404 |
+| `POST /admin/roles` (realm role — not a client role · keyed by name) | `{"name":".."}` | 201 `{"name":".."}` | 409/500 |
+| `GET /admin/roles/{name}` (realm role) | — | 200 `{"name":".."}` | 404 |
+| `DELETE /admin/roles/{name}` (realm role) | — | 204 | 404 |
 | `POST /admin/groups` | `{"name":".."}` | 201 `{"id":".."}` | 409/500 |
 | `GET /admin/groups/{id}` | — | 200 `{"id":"..","name":".."}` | 404 |
 | `DELETE /admin/groups/{id}` | — | 204 | 404 |
-| `POST /admin/realms` | `{"realm":".."}` | — (realm 생성은 master 전용; 하네스 앱은 realm SA라 도달 불가) | 403 `{"error":".."}`(realm SA 권한 부족) |
+| `POST /admin/realms` | `{"realm":".."}` | — (realm creation is master-only; a harness app holds a realm SA, so it cannot get there) | 403 `{"error":".."}` (realm SA lacks the permission) |
 
-> ⚠️ `POST /admin/realms`: 하네스 앱은 realm 서비스계정이라 항상 403(동형 Forbidden 매핑 검증용). master 토큰으로의 실제 realm 생성(201)은 SDK 통합테스트가 커버 — 하네스는 403 경로만.
+> ⚠️ `POST /admin/realms`: a harness app runs as a realm service account, so this is **always** 403 — that is the point (it verifies the isomorphic Forbidden mapping). Real realm creation (201) with a master token is covered by the SDK integration tests; the harness covers only the 403 path.
 
-**오류경로 검증 계약**: 중복 `POST /admin/users`(같은 username 2회) → 2번째 409. `POST /admin/realms`(realm SA 토큰) → 항상 403. `POST /validate`(위조 토큰) → 401.
+**Error-path verification contract**: duplicate `POST /admin/users` (same username twice) → the second is 409. `POST /admin/realms` (realm SA token) → always 403. `POST /validate` (forged token) → 401.
