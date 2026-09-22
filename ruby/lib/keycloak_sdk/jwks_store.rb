@@ -124,11 +124,25 @@ module KeycloakSdk
       rescue JSON::ParserError => e
         raise TransportError, "JWKS response unparsable: #{e.message}"
       end
-      raise TransportError, "JWKS response malformed" unless body.is_a?(Hash) && body["keys"].is_a?(Array)
-
-      body
+      validate_key_set!(body)
     rescue Faraday::Error => e
       raise TransportError, "JWKS transport error: #{e.message}"
+    end
+
+    # 파싱된 본문이 **캐시에 올려도 되는 집합인가**. 통과하면 그 본문을 돌려준다.
+    #
+    # ⚠️ **빈 집합은 정상 답이 아니고, 설치하면 검증기가 눈이 먼다**(go/jwt.go 와 동형 — 그쪽
+    # #380 픽스의 나머지 절반이다). `[]` 는 Array 라 malformed 검사를 그대로 통과한다.
+    # 200 + `{"keys":[]}` 를 주는 것은 키를 전부 회수한 IdP 가 아니라 프록시·WAF·반쯤 뜬
+    # realm 이고, 좋은 캐시를 그것으로 덮으면 방금 검증되던 토큰이 거부되며 refetch 게이트가
+    # 복구까지 막는다. 그래서 쓰기 **전에** 거부한다.
+    #
+    # ⚠️ 여기서 멈춘다 — `kty`·`n`·`e` 같은 필드 검증으로 번지면 JWKS 스키마 검사가 된다.
+    def validate_key_set!(body)
+      raise TransportError, "JWKS response malformed" unless body.is_a?(Hash) && body["keys"].is_a?(Array)
+      raise TransportError, "JWKS response contains no keys" if body["keys"].empty?
+
+      body
     end
 
     def monotonic

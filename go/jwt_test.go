@@ -421,6 +421,53 @@ func TestValidateJWKSNon2xxDoesNotPoisonCache(t *testing.T) {
 	}
 }
 
+// ⚠️ **빈 키셋 200 은 좋은 캐시를 덮어서는 안 된다 — 위 테스트의 나머지 절반이다.**
+// #380 은 상태코드 축과 `len(ks.Keys) == 0` 축을 **둘 다** 고쳤는데 테스트는 앞의 것만 덮었다.
+// 200 + `{"keys":[]}` 를 주는 것은 키를 전부 회수한 IdP 가 아니라 프록시·WAF·반쯤 뜬 realm 이고,
+// 그 절반을 지워도 이 파일의 어떤 테스트도 울지 않았다(감사 실측 2026-09-22). 자매 SDK
+// (rust·ruby·php)는 그 절반이 아예 없어 실제로 캐시가 오염됐다 — 같은 커밋이 넷을 함께 고친다.
+func TestValidateJWKSEmpty200DoesNotPoisonCache(t *testing.T) {
+	f := newJWTFixture(t)
+	var empty int32
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		if atomic.LoadInt32(&empty) == 1 {
+			// 상태는 200 이고 본문도 유효한 JWKS JSON 이다 — 키만 없다.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"keys":[]}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{
+			{Key: &f.priv.PublicKey, KeyID: "k1", Algorithm: "RS256", Use: "sig"},
+		}})
+	}))
+	t.Cleanup(srv.Close)
+
+	v := newValidator(validatorOptions{jwksURI: srv.URL, issuer: testISS, audience: "my-client",
+		allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: 30, minRefetch: time.Millisecond})
+
+	good := f.sign(t, f.priv, "k1", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
+	if _, err := v.Validate(context.Background(), good); err != nil {
+		t.Fatalf("최초 로드는 성공해야 한다: %v", err)
+	}
+
+	atomic.StoreInt32(&empty, 1)
+	time.Sleep(3 * time.Millisecond)
+	unknown := f.sign(t, f.priv, "kZ", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
+	if _, err := v.Validate(context.Background(), unknown); err == nil {
+		t.Fatal("알 수 없는 kid + 빈 키셋은 거부돼야 한다")
+	}
+	if atomic.LoadInt32(&hits) < 2 {
+		t.Fatalf("재조회가 일어나야 이 테스트가 의미를 갖는다 — hits=%d", atomic.LoadInt32(&hits))
+	}
+
+	// 핵심: 빈 200 이 신뢰 키 캐시를 덮으면 안 된다.
+	if _, err := v.Validate(context.Background(), good); err != nil {
+		t.Fatalf("빈 키셋 200 이 신뢰 키 캐시를 오염시켰다 — 이전에 유효하던 토큰이 거부된다: %v", err)
+	}
+}
+
 // 크기 상한. 상한이 없으면 공격자가 영향을 줄 수 있는 엔드포인트에 대한 무제한 ReadAll 이
 // 메모리 DoS 다. 경계 양쪽을 함께 재서 상한이 실재함을 보인다(공허한 통과 방지).
 func TestValidateJWKSBodySizeCap(t *testing.T) {

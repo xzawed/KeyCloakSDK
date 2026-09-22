@@ -120,6 +120,15 @@ impl JwksStore {
         }
         let set: JwkSet = serde_json::from_slice(&body)
             .map_err(|e| KeycloakError::Transport(format!("JWKS parse: {e}")))?;
+        // ⚠️ **빈 집합은 정상 답이 아니고, 설치하면 검증기가 눈이 먼다**(go/jwt.go 와 동형 —
+        // 그쪽 #380 픽스의 나머지 절반이다). 200 + `{"keys":[]}` 를 주는 것은 키를 전부 회수한
+        // IdP 가 아니라 프록시·WAF·반쯤 뜬 realm 이고, 좋은 캐시를 그것으로 덮으면 방금 검증되던
+        // 토큰이 거부되며 refetch 게이트가 복구까지 막는다. 쓰기 **전에** 거부한다.
+        if set.keys.is_empty() {
+            return Err(KeycloakError::Transport(
+                "JWKS response contains no keys".to_string(),
+            ));
+        }
         let arc = Arc::new(set);
         *self.cache.write().await = Some(arc.clone());
         Ok(arc)
@@ -520,6 +529,120 @@ mod tests {
         assert_eq!(
             store.get_key("k1").await.unwrap().common.key_id.as_deref(),
             Some("k1")
+        );
+    }
+
+    // ⚠️ **빈 키셋 200 은 좋은 캐시를 덮어서는 안 된다.** go 의 #380 픽스는 절반이 상태코드,
+    // 나머지 절반이 `len(ks.Keys) == 0` 거부였는데 자매 SDK 로는 앞 절반만 복제됐다. 프록시·WAF·
+    // 반쯤 뜬 realm 이 200 + `{"keys":[]}` 를 주면 검증기가 눈이 멀고, 30 초 refetch 게이트가
+    // 복구까지 막는다(실측 재현). 「키가 0 개인 정상 IdP」는 이 부류가 아니다 — 키를 전부 회수한
+    // 발급자는 교체 집합을 주거나 HTTP 로 실패한다.
+    #[tokio::test]
+    async fn empty_keyset_200_does_not_clobber_a_good_cache() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(jwks_json("k1")))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        // min_refetch=0 — 게이트가 아니라 **빈 집합 거부**가 캐시를 지키는지 본다.
+        let store = JwksStore::new(format!("{}/certs", server.uri()), reqwest::Client::new(), 0);
+        assert_eq!(
+            store.get_key("k1").await.unwrap().common.key_id.as_deref(),
+            Some("k1"),
+            "사전조건: 좋은 캐시가 올라가야 한다"
+        );
+
+        // 이제부터 빈 200 만 준다.
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"keys":[]})))
+            .mount(&server)
+            .await;
+
+        // 미해결 kid 는 재조회를 유발한다 — 그 재조회가 빈 200 을 받는다.
+        let miss = store.get_key("k2").await;
+        assert!(miss.is_err(), "없는 kid 는 실패해야 한다");
+
+        // 핵심: 방금 검증되던 k1 이 살아 있어야 한다.
+        assert_eq!(
+            store.get_key("k1").await.unwrap().common.key_id.as_deref(),
+            Some("k1"),
+            "빈 200 이 좋은 캐시를 덮었다 — go 의 len(keys)==0 절반이 빠졌다"
+        );
+    }
+
+    // 콜드 스타트에서 빈 200 은 **SDK 오류 타입**으로 실패해야 한다(하위 타입 누출 금지, §4).
+    #[tokio::test]
+    async fn empty_keyset_200_on_cold_start_is_transport_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"keys":[]})))
+            .mount(&server)
+            .await;
+        let store = JwksStore::new(format!("{}/certs", server.uri()), reqwest::Client::new(), 0);
+        let err = store
+            .get_key("k1")
+            .await
+            .expect_err("빈 키셋은 성공이 아니다");
+        assert!(
+            matches!(err, KeycloakError::Transport(ref m) if m.contains("no keys")),
+            "expected Transport('…no keys…'), got {err:?}"
+        );
+    }
+
+    // ⚠️ 반대 방향 — 「캐시를 영원히 얼린다」는 가짜 픽스를 죽인다. 비어 있지 않은 새 집합은
+    // 여전히 교체되어야 한다.
+    #[tokio::test]
+    async fn non_empty_keyset_still_replaces_the_cache() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(jwks_json("k1")))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        let store = JwksStore::new(format!("{}/certs", server.uri()), reqwest::Client::new(), 0);
+        assert!(store.get_key("k1").await.is_ok(), "사전조건");
+
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(jwks_json("k9")))
+            .mount(&server)
+            .await;
+        assert_eq!(
+            store.get_key("k9").await.unwrap().common.key_id.as_deref(),
+            Some("k9"),
+            "비어 있지 않은 회전 집합은 반영되어야 한다"
+        );
+    }
+
+    // ⚠️ **적대적·고장난 IdP 가 빈 200 을 영원히 줘도 요청이 무한해지면 안 된다.** 새 거부는
+    // `fetch()` 안에서 Err 로 나가고, `get_key` 의 Err 분기가 실패 카운터를 올리고 백오프를
+    // 찍는다 — 즉 기존 실패 경로를 그대로 탄다. 그 사실을 읽기가 아니라 **세어서** 단언한다
+    // (거부를 실패로 기록하지 않는 구현은 여기서 20 번 나간다).
+    #[tokio::test]
+    async fn empty_keyset_flood_is_bounded_like_any_other_failure() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"keys":[]})))
+            .mount(&server)
+            .await;
+        let store = JwksStore::new(
+            format!("{}/certs", server.uri()),
+            reqwest::Client::new(),
+            30,
+        );
+        for _ in 0..20 {
+            assert!(store.get_key("k1").await.is_err());
+        }
+        assert_eq!(
+            certs_hits(&server).await,
+            1,
+            "빈 200 을 주는 IdP 에 20 회 조회가 요청 1 건으로 접혀야 한다 — 거부가 백오프를 찍지 않으면 20 건이 나간다"
         );
     }
 }

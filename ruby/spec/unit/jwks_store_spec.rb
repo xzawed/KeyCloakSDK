@@ -178,4 +178,42 @@ RSpec.describe KeycloakSdk::JwksStore do
       expect(store.send(:backing_off?)).to be(false)
     end
   end
+
+  # ⚠️ **빈 키셋 200 은 좋은 캐시를 덮어서는 안 된다.** go 의 #380 픽스는 절반이 상태코드,
+  # 나머지 절반이 `len(ks.Keys) == 0` 거부였는데 자매 SDK 로는 앞 절반만 복제됐다. 프록시·WAF·
+  # 반쯤 뜬 realm 이 200 + `{"keys":[]}` 를 주면 검증기가 눈이 멀고 refetch 게이트가 복구까지
+  # 막는다(실측 재현). `[]` 는 Array 라 위의 malformed 검사를 그대로 통과한다.
+  describe "빈 키셋 거부(go 동형)" do
+    let(:empty_body) { { keys: [] }.to_json }
+
+    it "콜드 스타트의 빈 200 은 TransportError 다(하위 타입 누출 없이)" do
+      stub_request(:get, jwks_url).to_return(status: 200, body: empty_body,
+                                             headers: { "Content-Type" => "application/json" })
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /no keys/)
+    end
+
+    it "빈 200 이 이미 올라간 좋은 캐시를 덮지 않는다" do
+      stub_request(:get, jwks_url).to_return(
+        { status: 200, body: body, headers: { "Content-Type" => "application/json" } },
+        { status: 200, body: empty_body, headers: { "Content-Type" => "application/json" } }
+      )
+      expect(store.key_set["keys"].first["kid"]).to eq("k1") # 사전조건: 좋은 캐시
+
+      # 미해결 kid 재조회가 빈 200 을 받는다 — 실패해야 하고, 캐시는 살아야 한다.
+      expect { store.key_set(force: true) }.to raise_error(KeycloakSdk::TransportError, /no keys/)
+      expect(store.key_set["keys"].first["kid"]).to eq("k1")
+    end
+
+    # 반대 방향 — 「캐시를 영원히 얼린다」는 가짜 픽스를 죽인다.
+    it "비어 있지 않은 새 집합은 여전히 캐시를 교체한다" do
+      rotated = { keys: [{ kty: "RSA", kid: "k9", n: "AQAB", e: "AQAB" }] }.to_json
+      stub_request(:get, jwks_url).to_return(
+        { status: 200, body: body, headers: { "Content-Type" => "application/json" } },
+        { status: 200, body: rotated, headers: { "Content-Type" => "application/json" } }
+      )
+      expect(store.key_set["keys"].first["kid"]).to eq("k1")
+      store.key_set(force: true)
+      expect(store.key_set["keys"].first["kid"]).to eq("k9")
+    end
+  end
 end
