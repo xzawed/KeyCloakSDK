@@ -22,6 +22,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const DIR = join(ROOT, '.github', 'rulesets')
+// PHP 미러의 정의. 본체와 디렉터리가 갈리는 이유는 `mirrorRulesetDrift` 위 주석에 있다.
+const MIRROR_DIR = join(ROOT, '.github', 'rulesets-mirror')
 
 // GitHub이 생성·관리하는 필드. 원하는 상태의 일부가 아니므로 대조에서 제외한다
 // (커밋된 파일에 id/updated_at을 넣으면 그 자체가 매번 드리프트로 잡힌다).
@@ -148,9 +150,33 @@ export function securityDrift(want, have) {
 // 따로(`.github/rulesets-mirror/`)이므로 여기서 따로 본다.
 // ⚠️ 미러 main 에 `non_fast_forward` 를 넣지 말 것 — `php-release.yml` 이 `git push --force` 로
 // split 결과를 덮으므로 그 규칙 하나가 PHP 릴리스를 영구 차단한다.
-export function mirrorRulesetDrift(want, live) {
+// 미러 정의 파일. 본체 `desiredFiles()` 와 같은 모양이되 **없어도 죽지 않는다** — 판정은
+// `mirrorRulesetDrift` 의 공허 방지 절이 한다(여기서 die 하면 미러가 없는 포크에서 못 돈다).
+export function mirrorDesiredFiles() {
+  if (!existsSync(MIRROR_DIR)) return []
+  return readdirSync(MIRROR_DIR)
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => ({ file: `.github/rulesets-mirror/${f}`, body: JSON.parse(readFileSync(join(MIRROR_DIR, f), 'utf8')) }))
+}
+
+// ⚠️ **이름과 enforcement 만 보면 안 된다.** 2026-09-22 감사 전까지 이 함수가 딱 그 둘만
+// 봤고, 그래서 `MIRROR-TAGS-IMMUTABLE` 이 **이름을 유지한 채** `update`/`deletion` 규칙을
+// 잃거나 bypass actor 를 얻어도 `ok` 를 찍었다 — 즉 커밋된 정의(`.github/rulesets-mirror/`)는
+// 아무도 라이브와 대조하지 않았다. `security-config.json` 은 그 대조가 이뤄진다고 적고 있었고,
+// 거기 적힌 명령(`--repo <미러>`)은 이 파일 스스로 「안 된다」고 적는 것이었다.
+// 이제 본체 룰셋과 **같은 방식**(`canonical()` 비교)으로 rules·bypass_actors·conditions 까지 본다.
+export function mirrorRulesetDrift(want, live, defs) {
   const out = []
   const byName = new Map((live ?? []).map((r) => [r.name, r]))
+  const defByName = new Map((defs ?? []).map((d) => [d.body?.name, d]))
+  // 공허 방지 — 정의가 0 개면 아래 비교는 아무것도 하지 않고, 이 함수는 다시 「이름만 보는
+  // 검사」로 되돌아간다. 그 상태를 통과로 보고하지 않는다(fail-closed).
+  if (defByName.size === 0) {
+    out.push(
+      'php_mirror: `.github/rulesets-mirror/*.json` 정의가 0 개다 — 대조할 원문이 없으면 이 검사는 이름 존재만 보는 셈이다',
+    )
+    return out
+  }
   for (const name of want.rulesets ?? []) {
     const l = byName.get(name)
     if (!l) {
@@ -158,6 +184,21 @@ export function mirrorRulesetDrift(want, live) {
       continue
     }
     if (l.enforcement !== 'active') out.push(`php_mirror: "${name}" 이 active 가 아니다(${l.enforcement})`)
+    const d = defByName.get(name)
+    if (!d) {
+      out.push(`php_mirror: "${name}" 의 정의 파일이 \`.github/rulesets-mirror/\` 에 없다 — 이름만 보고 통과시키지 않는다`)
+      continue
+    }
+    if (JSON.stringify(canonical(l)) !== JSON.stringify(canonical(d.body))) {
+      out.push(`php_mirror: "${name}" 이 정의와 다르다(${d.file}) — rules·bypass_actors·conditions 를 보라`)
+    }
+  }
+  // 역방향. 정의 파일을 두고 `security-config.json` 의 목록에 이름을 안 적으면 그 룰셋은
+  // 조준 밖이 된다 — 목록이 곧 조준선이므로 둘이 갈리는 것 자체를 드리프트로 본다.
+  for (const [name, d] of defByName) {
+    if (!(want.rulesets ?? []).includes(name)) {
+      out.push(`php_mirror: 정의 ${d.file} 의 "${name}" 이 security-config.json 의 rulesets 목록에 없다 — 대조되지 않는다`)
+    }
   }
   return out
 }
@@ -167,14 +208,27 @@ function mirrorDrift(want) {
   if (!m?.repo) return []
   const r = gh(['api', `repos/${m.repo}/rulesets`])
   if (!r.ok) return [`php_mirror: ${m.repo} 의 룰셋을 조회하지 못했다(관리자 권한 토큰이 필요하다)`]
-  let live
+  let summary
   try {
-    live = JSON.parse(r.out)
+    summary = JSON.parse(r.out)
   } catch {
     return [`php_mirror: ${m.repo} 룰셋 응답을 파싱하지 못했다`]
   }
-  const d = mirrorRulesetDrift(m, live)
-  if (d.length === 0) console.log(`ok   ${m.repo} 룰셋 ${(m.rulesets ?? []).length}개`)
+  // ⚠️ **목록 응답에는 `rules`·`bypass_actors` 가 없다** — 개별 조회로 전체를 가져와야
+  // 대조가 성립한다(본체 `liveRulesets()` 가 같은 이유로 같은 일을 한다). 상세를 못 읽으면
+  // 이름만 보고 통과시키지 않고 드리프트로 낸다.
+  const live = []
+  for (const rs of summary) {
+    const one = gh(['api', `repos/${m.repo}/rulesets/${rs.id}`])
+    if (!one.ok) return [`php_mirror: ${m.repo} 룰셋 ${rs.id}("${rs.name}") 상세를 조회하지 못했다`]
+    try {
+      live.push(JSON.parse(one.out))
+    } catch {
+      return [`php_mirror: ${m.repo} 룰셋 ${rs.id} 상세 응답을 파싱하지 못했다`]
+    }
+  }
+  const d = mirrorRulesetDrift(m, live, mirrorDesiredFiles())
+  if (d.length === 0) console.log(`ok   ${m.repo} 룰셋 ${(m.rulesets ?? []).length}개 — 정의와 일치(rules·bypass_actors 포함)`)
   return d
 }
 
