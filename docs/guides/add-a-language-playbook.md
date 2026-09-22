@@ -1,3 +1,4 @@
+<!-- doc-budget: max-bytes=22305 -->
 # Add-a-Language Playbook
 
 > **Audience:** Implementation agents, reviewers, and human approvers who want to add a **new-language implementation** to the Keycloak polyglot SDK at the same quality bar as Java and Python.

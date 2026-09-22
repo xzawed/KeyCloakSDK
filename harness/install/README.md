@@ -1,3 +1,4 @@
+<!-- doc-budget: max-bytes=9837 -->
 # Install-&-Operate Harness
 
 Without a real release (public registry), this harness **installs each language's SDK "as if it were a published package" from a local registry and verifies that it actually operates against a real Keycloak**. Unlike the existing harness (`harness/`), which consumes the SDK via a **source path**, this harness verifies the **install path** of the actual release artifact (manifest, file list, entrypoint, metadata, dependency resolution).

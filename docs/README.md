@@ -1,3 +1,4 @@
+<!-- doc-budget: max-bytes=7873 -->
 # 문서 지도 (Documentation Map)
 
 > **Looking for user documentation?** It is in English. Start with

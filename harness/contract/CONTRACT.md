@@ -1,3 +1,4 @@
+<!-- doc-budget: max-bytes=4313 -->
 # 공통 HTTP 계약 (모든 언어 샘플 앱 동일 노출)
 
 Base: `http://<host>:<APP_PORT>`. 모든 body는 JSON. admin 엔드포인트는 앱이 SDK client-credentials로 자체 인증(호출자 토큰 불요).

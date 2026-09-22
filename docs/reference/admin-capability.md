@@ -1,3 +1,4 @@
+<!-- doc-budget: max-bytes=10842 -->
 # Admin capability reference
 
 > Extracted from [Getting Started](../guides/getting-started.md) — that guide is the install and

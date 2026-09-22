@@ -1,3 +1,4 @@
+<!-- doc-budget: max-bytes=9859 -->
 # Development environment setup
 
 How to get a **new machine** building this repository. Nine SDKs live here, each with its own

@@ -1625,6 +1625,79 @@ function checkDocBudget() {
   }
 }
 
+// 검사 8c — 예산 **커버리지**. 래칫이 옵트인이라 「앵커를 안 달면 안 걸린다」가 되고, 실제로
+// 가장 큰 문서(`remaining-work.md`)가 한 번도 안 덮인 채 256 KB 까지 자랐다(2026-09-22 감사).
+//
+// ⚠️ **숫자 하한(「N개 이상이 예산을 가진다」)은 쓰지 않는다** — 마커를 지우는 PR 이 같은
+// diff 에서 N 도 내리면 그만이라 공허하다. 대신 **분류 규칙 자체**를 단언한다: 추적되는
+// 비픽스처 `.md` 는 전부 예산을 가지며, 예외는 두 **부류**뿐이다.
+//   (1) 부속 원장 — `CHANGELOG.md`. 릴리스마다 자라는 것이 정상이라 예산을 걸면 매 릴리스가
+//       상한을 올리고, 그러면 리뷰가 고무도장이 된다.
+//   (2) 레지스트리에 **게시되는** 언어 패키지 README(`<lang>/README.md`). 이 아홉의 위험은
+//       크기가 아니라 **서로/코드와 어긋나는 것**이라 바이트 상한이 맞는 계측기가 아니다.
+// ⚠️ 예외는 경로 열거가 아니라 **부류**다. `**/README.md` 로 쓰면 `docs/README.md` 와 harness
+// README 까지 빠진다 — 그건 예외가 아니라 구멍이다.
+const BUDGET_EXEMPT_LEDGER = new Set(['CHANGELOG.md'])
+const BUDGET_EXEMPT_PKG_README = /^(java|python|node|go|dotnet|php|rust|ruby|kotlin)\/README\.md$/
+// ⚠️ 부류와 무관한 **전역 트립와이어**. 예외 부류도 무한히 자라서는 안 된다. 값은 타이트한
+// 상한이 아니라 **실제 사고 크기**다 — `remaining-work.md` 가 도달했던 256 KB. 정상적인
+// CHANGELOG 나 패키지 README 는 여기 닿지 않는다(실측 2026-09-22: CHANGELOG 27,309 B = 10.4%).
+// ⚠️ **이것이 예산보다 세다** — 래칫이 승인한 `max-bytes` 라도 이 수를 넘으면 실패한다.
+// 두 기제가 조용히 어긋나지 않도록 아래에서 `max-bytes > 이 수` 자체를 실패로 잡는다
+// (현재 최대 예산 192,335 B 라 여유는 69,809 B 뿐이다 — 래칫이 먼저 여기 닿는다).
+const DOC_TRIPWIRE_BYTES = 256 * 1024
+function checkBudgetCoverage() {
+  // ⚠️ **이 저장소에서만 돈다.** 이 가드의 자가테스트는 임시 디렉터리에 작은 픽스처 트리를
+  // 만들어 check-docs 를 그 위에서 돌린다 — 거기엔 예산 규약이 없으므로 8c 가 발동하면 안 된다.
+  // 조건은 「가드 자신이 그 트리 안에 있는가」다(검사 9 가  존재로 같은 일을 한다).
+  if (!existsSync(join(ROOT, 'scripts/check-docs.mjs'))) return
+  // ⚠️ `walk` 는 `SKIP`/`SKIP_PATHS`(node_modules·vendor·`scripts/test/fixtures`…)를 뺀다 —
+  // 그리로 옮긴 문서는 8c 도 못 본다. 이 파일의 **모든** 검사가 같은 순회를 쓰므로 8c 만의
+  // 구멍이 아니고, 그 경로로 옮기면 링크·지도 검사가 먼저 깨진다. 여기서 따로 막지 않는다.
+  const all = walk(ROOT).map((f) => relative(ROOT, f).replace(/\\/g, '/'))
+  // 공허 방지 — 순회가 깨지면 0 개를 돌고 조용히 통과한다. 실측 41(2026-09-22).
+  if (all.length < 30) {
+    errors.push(
+      `검사 8c: .md 를 ${all.length}개만 찾았다 — 순회가 깨졌나? (0 개를 돌고 통과시키지 않는다)`,
+    )
+    return
+  }
+  let exempt = 0
+  for (const rel of all) {
+    const text = readFileSync(join(ROOT, rel), 'utf8')
+    const raw = Buffer.byteLength(text, 'utf8')
+    if (raw > DOC_TRIPWIRE_BYTES) {
+      // ⚠️ 나가는 길을 **명시한다**. 이 수에 닿았을 때 「상수를 올린다」만 떠올리면 그건
+      // 우리가 숫자 하한에서 기각한 재보정과 같은 실패다. 우선순위는 이관이고(#526 이
+      // 한 일이다), 그래도 안 되면 이 상수를 같은 PR 에서 올린다 — 그 diff 가 사람 판정이다.
+      errors.push(
+        `${rel}: ${raw}B > 전역 상한 ${DOC_TRIPWIRE_BYTES}B — 예산 부류와 무관하게 이 크기는 허용하지 않는다(이 수는 remaining-work.md 가 실제로 도달했던 사고 크기다). 길은 둘 — 완료된 서사를 이력/아카이브 태그로 이관하거나(#526 참조), 그래도 안 들어가면 같은 PR 에서 DOC_TRIPWIRE_BYTES 를 올려라(그 diff 가 사람 판정이다)`,
+      )
+    }
+    if (BUDGET_EXEMPT_LEDGER.has(rel) || BUDGET_EXEMPT_PKG_README.test(rel)) {
+      exempt++
+      continue
+    }
+    const budget = /<!--\s*doc-budget:[^>]*max-bytes=(\d+)/.exec(text)
+    if (!budget) {
+      errors.push(
+        `${rel}: doc-budget 앵커가 없다 — 예외는 부속 원장(CHANGELOG.md)과 게시되는 언어 패키지 README 둘뿐이다. 새 문서라면 현재 적재 크기로 앵커를 달아라(옵트인이라 안 달면 영원히 안 걸린다 — 그래서 256 KB 짜리가 나왔다)`,
+      )
+    } else if (Number(budget[1]) > DOC_TRIPWIRE_BYTES) {
+      // 래칫(검사 8b)과 트립와이어가 **어긋나는 지점**. 래칫만 보면 이 예산은 승인됐는데
+      // 트립와이어는 그 크기를 금지한다 — 파일이 실제로 커진 뒤에야 알면 메시지가 서로를
+      // 부정한다. 승인된 수 자체를 여기서 잡아, 판정을 **예산을 올리는 PR 에서** 받게 한다.
+      errors.push(
+        `${rel}: 예산 ${budget[1]}B 가 전역 상한 ${DOC_TRIPWIRE_BYTES}B 를 넘는다 — 래칫이 승인할 수 있는 수와 트립와이어가 금지하는 수가 어긋난다. 둘 중 하나를 고쳐라(예산을 낮추거나, 같은 PR 에서 DOC_TRIPWIRE_BYTES 를 올려라)`,
+      )
+    }
+  }
+  // 예외 **부류**가 비면 규칙이 무의미해진 것이다(부류를 지우고 통과하는 길을 막는다).
+  if (exempt === 0) {
+    errors.push(`검사 8c: 예외 부류에 해당하는 문서가 하나도 없다 — 부류 정의가 낡았나?`)
+  }
+}
+
 // 이 문서에서 **실제로 컨텍스트에 주입되는** 부분. 블록 레벨 HTML 주석은 주입 전에 제거되므로
 // 토큰을 1바이트도 쓰지 않는다(code.claude.com/docs/en/memory#how-claude-md-files-load).
 // ⚠️ **코드블록 안의 주석은 보존된다**(같은 문서) — 펜스를 무시하고 지우면 예산이 조용히
@@ -1863,6 +1936,7 @@ checkCoverageGates()
 checkMatrixClaims()
 checkCardinality()
 checkDocBudget()
+checkBudgetCoverage()
 checkDocsMap()
 
 // 검사 7 — fact/anchor 최저치(floor, --min-facts/--min-anchors로 opt-in). 앵커 주석 하나를

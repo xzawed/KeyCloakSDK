@@ -1,3 +1,4 @@
+<!-- doc-budget: max-bytes=10907 -->
 # Security Policy
 
 ## Reporting a Vulnerability

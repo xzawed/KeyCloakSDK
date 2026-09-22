@@ -1,3 +1,4 @@
+<!-- doc-budget: max-bytes=11989 -->
 # Language Support Roadmap
 
 This document defines the **language expansion strategy and priorities** for the Keycloak polyglot SDK. The languages currently supported are the nine — **Java**, **Python**, **TypeScript/Node**, **Go**, **C#/.NET**, **PHP**, **Rust**, **Ruby**, and **Kotlin** — and for all nine, design, implementation, unit tests, integration tests, and CI are complete, and all nine have since shipped a stable release through the human-gated publish step. This roadmap lays out (1) the principles of language expansion, (2) the prerequisite step-0 for actually publishing the existing SDKs, (3) the expansion-priority table — which currently holds **no pending candidate rows**: it records the auth·admin clients each shipped language settled on and the alternatives rejected on the way — and (4) a per-language status matrix.
