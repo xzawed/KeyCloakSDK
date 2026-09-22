@@ -1,4 +1,8 @@
-<!-- doc-budget: max-bytes=12322 -->
+<!-- doc-budget: max-bytes=12435 -->
+<!-- 12322 → 12435 (2026-09-22, +113B). 규약 (1) — 거짓 절차를 참으로. 「서비스 계정을 켠
+     confidential 클라이언트를 만들라」로 끝나 있었는데, 그것만으로는 Admin 호출이 전부
+     403 이다(토큰은 나오고 권한이 없다). `realm-management` 롤 부여를 같은 문장에 넣는다.
+     ↔ README.ko.md 도 같은 문장을 받는다(미러 가드가 구조를 대조한다). -->
 # Keycloak SDK
 
 **One SDK shape for [Keycloak](https://www.keycloak.org/), in all nine languages.** Issue a token, validate it safely, and drive the Admin REST API — with the same concepts, layers and flows whether the service in front of you is Java, Python, Node, Go, C#, PHP, Rust, Ruby or Kotlin.
@@ -86,7 +90,7 @@ docker run -p 8080:8080 \
   quay.io/keycloak/keycloak:26.6 start-dev
 ```
 
-Then create a **confidential client with its service account enabled** in the realm — that pair is the `client_id` / `client_secret` the examples take. For a production server rather than a throwaway container, see [deploying a Keycloak server](docs/guides/deploying-keycloak-server.md).
+Then create a **confidential client with its service account enabled** — that pair is the `client_id` / `client_secret` the examples take — and assign that service account the `realm-management` roles (`manage-users`, `view-users`), or every Admin call is `403`. For a production server rather than a throwaway container, see [deploying a Keycloak server](docs/guides/deploying-keycloak-server.md).
 
 To develop against the SDK itself rather than a released version, install from a clone — Python shown, every language has an equivalent in the [getting-started guide](docs/guides/getting-started.md):
 

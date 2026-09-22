@@ -1,17 +1,27 @@
-<!-- doc-budget: max-bytes=43700 -->
+<!-- doc-budget: max-bytes=43980 -->
+<!-- 43700 → 43980 (2026-09-22, +280B). 규약 (1) — 증가분이 **거짓 절차를 참으로** 바꾼다.
+     이 가이드의 아홉 퀵스타트는 전부 `admin.users.create(...)` 로 끝나는데, 문서 어디에도
+     서비스 계정에 `realm-management` 롤을 주라는 말이 없어 **3 단계가 403 으로 죽는다**
+     (「Service accounts roles 를 켜라」는 토큰을 줄 뿐 권한을 주지 않는다). 그리고 Kotlin 의
+     로컬 설치는 게시본과 **같은 좌표**를 `~/.m2` 에 써서 `mavenLocal()` 이 Central 을 조용히
+     가린다(Java 는 `1.0.0-SNAPSHOT` 이라 해당 없음 — 그 비대칭을 이 문서가 말하지 않았다).
+     교환: 같은 커밋이 RC 시절 산문(지금은 참이 아닌 「pip·Cargo·go 가 프리릴리스로 떨어진다」
+     열거)과 소비자 가이드에 섞여 있던 유지보수자용 릴리스 절차 괄호를 **지웠다**. -->
 # Getting Started
 
 A guide to installing the Keycloak polyglot SDK locally and running your first token issuance, JWT validation, and Admin API call with minimal code. This SDK is provided in **multiple programming languages** (currently Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby · Kotlin), and while each language is idiomatic, the concepts, layers, and flows are isomorphic.
 
-> ℹ️ **All nine are on a public registry with a stable release** (every language is at `1.0.0` today; that alignment is not a policy, so expect the numbers to diverge again) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central), Kotlin (Maven Central) and Go (the Go module proxy). A bare install now resolves `1.0.0` everywhere, which was **not** true while only release candidates existed: pip, Cargo and the `go` command fell back to the prerelease, RubyGems resolved nothing, npm's `latest` pointed at it while a `^0.1.0` range failed with `ETARGET`, and Maven has no prerelease concept at all. Each RC remains on its registry — none of these ecosystems lets you delete a published version — but none of them prefers it any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. For the release procedure, see the unified nine-language [DEPLOY.md](../../DEPLOY.md) (check readiness with `scripts/release-readiness.sh` and tag commands with `scripts/release-trigger.sh <lang> <ver>` — both are human-gates that never push tags automatically).
+> ℹ️ **All nine are on a public registry with a stable release** (every language is at `1.0.0` today; that alignment is not a policy, so expect the numbers to diverge again) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central), Kotlin (Maven Central) and Go (the Go module proxy). A bare install now resolves `1.0.0` everywhere; the release candidates that preceded it are still on their registries (none of these ecosystems lets you delete a published version) but none of them prefers one any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. Releasing is a maintainer task — see [DEPLOY.md](../../DEPLOY.md).
 
 > 🖥️ **You need a Keycloak *server* first.** This SDK is a client library, so it needs a **Keycloak server to connect to** in order to work (the server is a separate, standalone product not included in this SDK). For a local trial, use the one-line Docker command `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`; for a **production deployment**, see the [Keycloak server deployment guide](deploying-keycloak-server.md).
 
-> ⚠️ **The validation step of every quickstart below fails on a stock realm — this is expected, and here is why.** Each *Minimal usage example* does three things in order: get a token, `validate()` it, call the Admin API. `validate()` requires the token's `aud` to contain the expected audience, which defaults to your client id. **A stock Keycloak realm does not put the client id into a client-credentials token's `aud`.** So the token issues fine and then validation rejects it. Two ways out, both correct:
+> ⚠️ **Two of the three steps in every quickstart below fail on a stock realm — this is expected, and here is why.** Each *Minimal usage example* does three things in order: get a token, `validate()` it, call the Admin API. `validate()` requires the token's `aud` to contain the expected audience, which defaults to your client id. **A stock Keycloak realm does not put the client id into a client-credentials token's `aud`.** So the token issues fine and then validation rejects it. Two ways out, both correct:
 > - set the expected audience to what your realm actually issues — the right choice when the token targets a *resource server* rather than the requesting client (`expectedAudience` in Java/Kotlin/Node/PHP, `ExpectedAudience` in .NET/Go, `expected_audience` in Python/Ruby, `.with_expected_audience(…)` in Rust);
 > - or add an **Audience** protocol mapper to the client in Keycloak, so the realm issues the audience you expect.
 >
 > This is a deliberate default, not a rough edge: accepting a token minted for a different audience is the failure the check exists to prevent. Each language's package README repeats it with that language's spelling.
+>
+> **Then the Admin call returns `403`** until the service account holds a role: *Service accounts roles* gets you a token, not permission. In the client's **Service account roles** tab assign the `realm-management` roles the example uses (`manage-users`, `view-users`) — or `realm-admin` on a throwaway realm.
 
 ## Required runtime
 
@@ -625,6 +635,8 @@ Then reference it from a consuming Gradle project via `mavenLocal()` (Gradle Kot
 repositories { mavenLocal(); mavenCentral() }
 dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.0") }
 ```
+
+⚠️ **Same coordinate as the released artifact** — unlike [Java](#java)'s `1.0.0-SNAPSHOT` working copy, Kotlin's `build.gradle.kts` declares the release version (the release workflow checks the tag against it). With `mavenLocal()` first, your local build shadows Maven Central silently; to undo, drop `mavenLocal()` or delete `~/.m2/repository/io/github/xzawed/keycloak-sdk-kotlin/1.0.0`.
 
 (To just build and test locally without publishing: `cd kotlin && ./gradlew build && ./gradlew test` — unit tests + coverage gate, Docker-free.)
 

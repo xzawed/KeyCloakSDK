@@ -1,4 +1,6 @@
-<!-- doc-budget: max-bytes=13329 -->
+<!-- doc-budget: max-bytes=13479 -->
+<!-- 13329 → 13479 (2026-09-22, +150B). 규약 (1) — [README.md](README.md) 와 같은 정정의
+     한글 쪽. 영↔한은 「동일 구조」라 한쪽만 고치면 미러 가드가 문다. -->
 # Keycloak SDK
 
 **[Keycloak](https://www.keycloak.org/)을 다루는 하나의 SDK 모양, 9개 언어로.** 토큰을 발급하고, 안전하게 검증하고, 관리 REST API(Admin)를 호출합니다 — 눈앞의 서비스가 Java든 Python이든 Node·Go·C#·PHP·Rust·Ruby·Kotlin이든 개념·계층·흐름은 동일합니다.
@@ -86,7 +88,7 @@ docker run -p 8080:8080 \
   quay.io/keycloak/keycloak:26.6 start-dev
 ```
 
-그다음 realm에 **서비스 계정을 활성화한 confidential 클라이언트**를 만드세요 — 예제가 받는 `client_id` / `client_secret`이 바로 그 한 쌍입니다. 버리는 컨테이너가 아니라 실서버가 필요하면 [Keycloak 서버 배포](docs/guides/deploying-keycloak-server.md)를 보세요.
+그다음 **서비스 계정을 활성화한 confidential 클라이언트**를 만드세요 — 예제가 받는 `client_id` / `client_secret`이 바로 그 한 쌍입니다 — 그리고 그 서비스 계정에 `realm-management` 롤(`manage-users`·`view-users`)을 부여하세요. 없으면 Admin 호출이 전부 `403`입니다. 버리는 컨테이너가 아니라 실서버가 필요하면 [Keycloak 서버 배포](docs/guides/deploying-keycloak-server.md)를 보세요.
 
 릴리스본이 아니라 SDK 자체를 개발하려면 클론에서 설치합니다 — Python 예시이며, 모든 언어의 동등 절차는 [시작 가이드](docs/guides/getting-started.md)에 있습니다:
 

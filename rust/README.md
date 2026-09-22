@@ -16,7 +16,10 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · 
 
 ```bash
 cargo add keycloak-sdk
+cargo add tokio --features rt-multi-thread,macros   # the quickstart's #[tokio::main]
 ```
+
+The SDK does not re-export a runtime: `tokio` is your dependency, not a transitive one, so the quickstart below does not compile without that second line.
 
 ## Quickstart
 
