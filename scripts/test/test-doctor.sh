@@ -88,4 +88,43 @@ assert_contains "$OUT5c" "node" '빈 규약 디렉터리에서도 PATH 폴백으
 OUT5d="$(KCSDK_TOOLS="$T5/does-not-exist" node "$DOC" node 2>&1 || true)"
 assert_contains "$OUT5d" "node" '없는 규약 디렉터리는 조용히 무시하고 PATH 로 넘어가야 한다'
 
+# ── 6. shim 이 **형제를 맨 이름으로** 부르는 경우 ────────────────────────────
+# 실측된 결함(2026-09-22): 이 저장소의 `composer` 는 `exec php "$(dirname "$0")/composer.phar"`
+# 인 POSIX shim 이고, 그 `php` 는 문서가 시키는 `export PATH="$KCSDK_PHP:$PATH"` 를 했을
+# 때만 풀린다. 그 export 없이 doctor 를 돌리면 shim 이 죽어 **설치돼 있는 composer 가
+# MISSING** 으로 보고됐다(`::error::` + exit 1). doctor 의 존재 이유가 「환경 export 없이도
+# 이 PC 에 무엇이 있는지 말한다」이므로, 후보를 부를 때 그 디렉터리를 PATH 앞에 둔다.
+mkdir -p "$T5/shim/xyz"
+printf '%s\n' '#!/bin/sh' 'exec sibling "$@"' > "$T5/shim/xyz/go"
+printf '%s\n' '#!/bin/sh' 'echo "go version go9.9.9"' > "$T5/shim/xyz/sibling"
+chmod +x "$T5/shim/xyz/go" "$T5/shim/xyz/sibling"
+OUT6="$(KCSDK_TOOLS="$T5/shim" node "$DOC" go 2>&1 || true)"
+assert_contains "$OUT6" "9.9.9" 'shim 이 형제를 맨 이름으로 불러도 잡혀야 한다(자기 디렉터리가 PATH 앞)'
+
+# 음성 대조 — 「shim 은 어차피 통과한다」로 공허해지지 않았는가. 형제가 **없으면** 잡히면 안 된다.
+mkdir -p "$T5/noshim/xyz"
+printf '%s\n' '#!/bin/sh' 'exec nothing-here "$@"' > "$T5/noshim/xyz/go"
+chmod +x "$T5/noshim/xyz/go"
+OUT6b="$(KCSDK_TOOLS="$T5/noshim" node "$DOC" go 2>&1 || true)"
+assert_not_contains "$OUT6b" "9.9.9" '형제가 없는 shim 이 버전을 보고하면 안 된다'
+
+# ── 7. 요구를 **만족하는** 후보를 끝까지 찾는가 ─────────────────────────────
+# 실측된 결함(2026-09-22): `evaluate` 가 첫 성공에서 `break` 해서, JAVA_HOME 이 17 을
+# 가리키면 이 PC 에 실재하는 JDK 21 을 **보지도 않고** `TOO OLD` 라며 설치 가이드를
+# 가리켰다 — 이미 가진 것을 또 설치하라는 오진이다.
+# ⚠️ 디렉터리 이름으로 순서를 고정한다(`aaa` 가 먼저 훑힌다) — 낡은 것이 먼저 잡혀도
+# 만족하는 뒤쪽이 이겨야 한다는 것이 이 단언의 요지다.
+T7a="$T5/pref"
+mkdir -p "$T7a/aaa" "$T7a/zzz"
+printf '%s\n' '#!/bin/sh' 'echo "go version go1.0.0"' > "$T7a/aaa/go"
+printf '%s\n' '#!/bin/sh' 'echo "go version go99.0.0"' > "$T7a/zzz/go"
+chmod +x "$T7a/aaa/go" "$T7a/zzz/go"
+OUT7="$(KCSDK_TOOLS="$T7a" node "$DOC" go 2>&1 || true)"
+assert_contains "$OUT7" "99.0.0" '요구를 만족하는 후보가 낡은 것을 이겨야 한다'
+# 짝 단언 — 위가 「99 가 어디선가 보인다」로 공허해지지 않게, **낡은 값에 눌러앉지
+# 않았는지**를 같이 본다. 이것이 실제 결함의 모양이다(첫 성공에서 멈춰 17 을 보고).
+# ⚠️ 환경·순서에 기대지 않는다: readdir 순서는 OS 마다 다르고(NTFS 는 사전순, ext4 는
+# 해시순) PATH 에 진짜 go 가 있을 수도 없을 수도 있다. 두 단언 다 그 어느 쪽에도 안 걸린다.
+assert_not_contains "$OUT7" "1.0.0" '낡은 후보에 눌러앉아 보고하면 안 된다'
+
 assert_report

@@ -15,7 +15,7 @@
 // (docker는 통합테스트 전용이라 없어도 실패로 치지 않는다 — 경고만.)
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { resolve, dirname, join } from 'node:path'
+import { resolve, dirname, join, isAbsolute, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -73,11 +73,30 @@ const stripPaths = (s) =>
     .split(/\s+/)
     .filter((t) => !t.includes('/') && !t.includes('\\') && !/^[A-Za-z]:/.test(t))
     .join(' ')
+// 규약 경로 후보를 부를 때는 **그 디렉터리를 PATH 맨 앞에 둔다.** 이식형 설치의 shim 은
+// 형제 실행파일을 **맨 이름**으로 부르고(이 저장소의 `composer` 가 정확히 그렇다:
+// `exec php "$(dirname "$0")/composer.phar"`), 그 이름은 문서가 시키는
+// `export PATH="$KCSDK_PHP:$PATH"`(`.claude/rules/php.md`)를 했을 때만 풀린다.
+// ⚠️ 그 export 없이 doctor 를 돌리면 shim 이 `php: Is a directory` 로 죽고 doctor 는
+// **설치돼 있는 composer 를 MISSING 으로 보고했다**(실측 2026-09-22 — 그 상태로
+// `::error::` 와 exit 1 까지 냈다). doctor 의 존재 이유가 「환경 export 없이도 이 PC 에
+// 무엇이 있는지 말한다」이므로, 그 export 가 하는 일을 spawn 단위로 재현한다.
+const withToolDirOnPath = (cmd) => {
+  if (!isAbsolute(cmd)) return undefined
+  return { ...process.env, PATH: `${dirname(cmd)}${delimiter}${process.env.PATH || ''}` }
+}
 function run(cmd, args) {
   let lastOut = ''
+  const env = withToolDirOnPath(cmd)
   for (const build of ATTEMPTS) {
     const [c, a, opt] = build(cmd, args)
-    const r = spawnSync(c, a, { encoding: 'utf8', windowsHide: true, timeout: 30_000, ...opt })
+    const r = spawnSync(c, a, {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 30_000,
+      ...(env ? { env } : {}),
+      ...opt,
+    })
     if (r.error || r.status === null) continue
     // 판정과 추출을 **둘 다** 경로 제거 후에 한다(위 stripPaths 주석 참조).
     const out = stripPaths(`${r.stdout || ''}${r.stderr || ''}`).trim()
@@ -162,11 +181,52 @@ const phpDirCandidates = (cmd) => (process.env.KCSDK_PHP ? [join(winPath(process
 // "JDK 17이라 빌드 불가"라는 거짓 경보를 낸다.
 // ⚠️ `KCSDK_JDK21`이 JAVA_HOME보다 앞선다 — CLAUDE.md·rules가 이 저장소 전용 JDK 지정으로
 // 그 변수를 문서화하고, 명령 예시도 `JAVA_HOME="${KCSDK_JDK21:-…}"` 꼴로 그것을 우선한다.
+// OS 관용 JDK 설치 루트. ⚠️ **버전은 적지 않는다** — 디렉터리를 훑어 `bin/java` 가 있는
+// 것만 후보로 낸다(`toolsChildDirs` 와 같은 원칙). 벤더 디렉터리명은 이 저장소의 사실이
+// 아니라 OS·설치기의 규약이라 SSOT 규칙에 걸리지 않는다.
+//
+// ⚠️ 이것이 없으면 doctor 는 **이 PC 에 있는 JDK 21 을 못 보고** `TOO OLD` 라며 설치
+// 가이드를 가리킨다 — 이미 가진 것을 또 설치하라는 오진이다(실측 2026-09-22:
+// `C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot` 가 실재하는데 JAVA_HOME 이
+// 17 을 가리켜 17 에서 멈췄다). `.claude/rules/java.md` 가 처방하는 유일한 해법이
+// 「doctor 가 찾아준 JDK 21 을 KCSDK_JDK21 로 export 하라」인데, 찾지 못하면 그 처방은
+// 순환이 된다.
+function jdkRootProbes() {
+  const roots =
+    process.platform === 'win32'
+      ? [process.env.ProgramFiles, process.env['ProgramFiles(x86)']]
+          .filter(Boolean)
+          .flatMap((pf) => ['Eclipse Adoptium', 'Java', 'Microsoft', 'Amazon Corretto', 'Zulu', 'BellSoft'].map((v) => join(pf, v)))
+      : process.platform === 'darwin'
+        ? ['/Library/Java/JavaVirtualMachines']
+        : ['/usr/lib/jvm']
+  const out = []
+  for (const root of roots) {
+    if (!existsSync(root)) continue
+    let kids
+    try {
+      kids = readdirSync(root, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const d of kids) {
+      if (!d.isDirectory()) continue
+      // macOS 번들은 `<jdk>/Contents/Home/bin/java` 다.
+      for (const mid of ['', 'Contents/Home']) {
+        const base = join(root, d.name, mid, 'bin', 'java')
+        if (existsExe(base)) out.push([base, ['-version']])
+      }
+    }
+  }
+  return out
+}
+
 function jdkProbes() {
   const home = process.env.KCSDK_JDK21 || process.env.JAVA_HOME
-  if (!home) return probes('java', ['-version'])
+  const rest = [...probes('java', ['-version']), ...jdkRootProbes()]
+  if (!home) return rest
   // Git Bash에서 export하면 `/c/Program Files/...` 꼴로 들어온다(winPath가 되돌린다).
-  return [[join(winPath(home), 'bin', 'java'), ['-version']], ...probes('java', ['-version'])]
+  return [[join(winPath(home), 'bin', 'java'), ['-version']], ...rest]
 }
 
 function langs() {
@@ -243,16 +303,38 @@ const COMMON = [
 ]
 const OPTIONAL = new Set(['docker'])
 
+// 요구를 만족시킨 실행파일이 **환경변수가 가리키는 것이 아닐 때** 그 자리를 못 박는 줄.
+// 지금은 JDK 만 해당한다 — 나머지 도구는 버전 하한이 없거나(`composer`) PATH 로 충분하다.
+function exportHint(c, win) {
+  if (!c.name.startsWith('java') || !win || !isAbsolute(win)) return null
+  const home = dirname(dirname(win)) // <jdk>/bin/java → <jdk>
+  const declared = process.env.KCSDK_JDK21 || process.env.JAVA_HOME
+  if (declared && winPath(declared).replace(/[\\/]+$/, '') === home.replace(/[\\/]+$/, '')) return null
+  return `export KCSDK_JDK21="${home}"`
+}
+
 function evaluate(c) {
   if (c.name.startsWith('kotlin/gradlew')) {
     const ok = existsSync(join(ROOT, 'kotlin', 'gradlew'))
     return { ...c, status: ok ? 'ok' : 'MISSING', found: ok ? '있음' : null }
   }
+  // ⚠️ **첫 성공에서 멈추지 않는다.** 종전에는 `break` 였고, 그래서 JAVA_HOME 이 17 을
+  // 가리키면 이 PC 에 있는 JDK 21 을 **보지도 않고** `TOO OLD` 를 냈다(실측 2026-09-22).
+  // 요구 버전이 있으면 그것을 **만족하는** 후보를 끝까지 찾고, 없을 때만 처음 찾은 것으로
+  // 답한다 — 첫 후보가 이미 만족하면 종전과 같은 자리에서 멈추므로 비용도 그대로다.
   let out = null
+  let win = null
   for (const [cmd, args] of c.probes) {
     const r = run(cmd, args)
-    if (r.ok) {
+    if (!r.ok) continue
+    if (out === null) {
       out = r.out
+      win = cmd
+    }
+    const v = firstVersion(r.out)
+    if (!c.required || (v && gte(v, c.required.version))) {
+      out = r.out
+      win = cmd
       break
     }
   }
@@ -260,7 +342,11 @@ function evaluate(c) {
   const found = firstVersion(out)
   if (!found) return { ...c, status: 'UNKNOWN', found: out.split('\n')[0].slice(0, 60) }
   if (c.required && !gte(found, c.required.version)) return { ...c, status: 'TOO OLD', found }
-  return { ...c, status: 'ok', found }
+  // 요구를 만족시킨 것이 **환경변수가 가리키는 것이 아니라 doctor 가 찾아낸 경로**라면,
+  // 그 자리를 못 박는 export 줄을 그대로 준다 — 「doctor 가 찾아준 것을 export 하라」는
+  // 처방이 실제로 수행 가능해진다(`.claude/rules/java.md`·`kotlin.md`).
+  const hint = exportHint(c, win)
+  return { ...c, status: 'ok', found, ...(hint ? { hint } : {}) }
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
@@ -324,6 +410,9 @@ for (const r of results) {
   }
   const mark = r.status === 'ok' ? 'ok' : OPTIONAL.has(r.name) ? `${r.status} (선택)` : r.status
   console.log(`  ${w(r.name, 20)}${w(r.required?.version, 10)}${w(r.found, 14)}${mark}`)
+  // ⚠️ 찾아낸 자리를 **그대로 붙여 넣을 수 있는 줄**로 준다. 「doctor 가 찾아준 JDK 21 을
+  // export 하라」는 처방이 수행 가능해지는 지점이 여기다.
+  if (r.hint) console.log(`  ${' '.repeat(20)}↳ ${r.hint}`)
 }
 
 if (failed.length) {
