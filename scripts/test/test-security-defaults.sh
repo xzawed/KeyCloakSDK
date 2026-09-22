@@ -1298,6 +1298,11 @@ sd_token_type_guard() { # $1=언어 → 불변식을 지키는 앵커의 히트 
 }
 
 SD_TOKEN_TYPE_LANGS='rust python ruby php dotnet node go java kotlin'
+# ⚠️ **손 목록은 파생과 대조돼야 한다.** `SD_LANGS` 는 위에서 트리 파생(`sd_tree_langs`)과
+# 대조되지만 이 목록은 아무와도 대조되지 않았다 — 열 번째 언어가 들어오면 이 축을 **조용히**
+# 건너뛴다(루프가 그 이름을 모르니 토큰 타입 계약이 없어도 통과한다). 두 목록이 같아야 한다.
+assert_eq "$(sd_sorted "$SD_LANGS")" "$(sd_sorted "$SD_TOKEN_TYPE_LANGS")" \
+  "[토큰타입] SD_TOKEN_TYPE_LANGS 가 SD_LANGS 와 다르다 — 언어가 들고 났는데 이 축의 손 목록이 안 따라왔다"
 sd_tt_seen=0
 for L in $SD_TOKEN_TYPE_LANGS; do
   _hits="$(sd_token_type_guard "$L" 2>/dev/null || printf '0')"

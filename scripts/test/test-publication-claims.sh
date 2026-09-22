@@ -806,9 +806,16 @@ done
 # 위치만 쓰면 문서를 재배열했을 때 조용히 엉뚱한 언어와 비교한다.
 _GS="$ROOT/docs/guides/getting-started.md"
 _GS_ORDER="java python node go dotnet php rust ruby kotlin"
+# ⚠️ **순서는 문서의 것이지만 집합은 파생과 같아야 한다.** 이 목록은 아무와도 대조되지 않아,
+# 열 번째 언어가 생기면 이 축이 그 언어를 **조용히** 건너뛴다(헤딩 하한도 손으로 적은 `9` 라
+# 함께 낡는다). 집합을 배포 레인(`DEPLOY_LANGS`)과 대조하고, 헤딩 수 하한도 거기서 파생한다.
+_gs_sorted() { printf '%s\n' $1 | sed '/^$/d' | sort | tr '\n' ' '; }
+assert_eq "$(_gs_sorted "$DEPLOY_LANGS")" "$(_gs_sorted "$_GS_ORDER")" \
+  '[설치절] _GS_ORDER 의 언어 집합이 배포 레인(DEPLOY_LANGS)과 다르다 — 언어가 들고 났는데 이 축의 손 목록이 안 따라왔다'
+_gs_n=0; for _t in $DEPLOY_LANGS; do _gs_n=$((_gs_n + 1)); done
 _HEADS="$(grep -E '^### [0-9]\) Installation from ' "$_GS" || true)"
-assert_eq "9" "$(printf '%s\n' "$_HEADS" | grep -c . || true)" \
-  'getting-started 의 설치 헤딩이 9개다(추출이 깨지면 아래가 전부 공허해진다)'
+assert_eq "$_gs_n" "$(printf '%s\n' "$_HEADS" | grep -c . || true)" \
+  'getting-started 의 설치 헤딩 수가 배포 레인 수와 다르다(추출이 깨지면 아래가 전부 공허해진다)'
 _gn=0
 for _gl in $_GS_ORDER; do
   _gn=$((_gn + 1))
