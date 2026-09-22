@@ -20,7 +20,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `188`(2026-09-22 기준 열림 118 · 닫힘 70)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `190`(2026-09-22 기준 열림 120 · 닫힘 70)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -790,19 +790,26 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 1.0 이후 운영 — 9
 
-- [ ] `audit-2026-09-22-doc-code` **[H/L · 신규 2026-09-22]** 전체 코드·문서 감사(17 독립 레그 + 3렌즈 반증) 결과 **91 건 중 57 건이 과반 반증을 견뎠고**, 그중 **7 건만 닫혔다** — 나머지 50 건이 열려 있다 · `docs/superpowers/plans/remaining-work.md:1`
+- [ ] `audit-2026-09-22-doc-code` **[H/L · 신규 2026-09-22]** 전체 코드·문서 감사(17 독립 레그 + 3렌즈 반증) 결과 **91 건 중 57 건이 과반 반증을 견뎠고**, 그중 **11 건이 닫혔다** — 나머지 46 건이 열려 있다 · `docs/superpowers/plans/remaining-work.md:1`
   - **방법과 계수**: 발견 레그 17(횡단 8 + 언어별 9) → 91 건. 렌즈 3(증거 재도출 · 기지사실 · 오탐)이 각 건을 독립 판정 → **생존 57**(high 14 · medium 31 · low 12), **기각 34**. high 14 중 8 건은 5 렌즈(재도출 · 반대근거 · 결과 · 등록부 · 범위) 심층 반증을 **전건 통과**했고, 나머지 6 건은 사람이 명령으로 직접 확인했다. 범주별 생존: drift-fact 23 · guard-gap 9 · drift-api 8 · drift-command 7 · orphan 3 · code-dup 2 · mirror 2 · code-dead 2 · volume 1.
-  - **닫힌 7 건**: 빈 JWKS 키셋이 좋은 캐시를 덮던 결함(#520, rust·ruby·php 코드 + go 테스트 + 교차언어 가드) · 소비자 문서의 거짓 보안 문장 6 자리(#521 — java/kotlin "and serialization" · go `%#v` · php `var_dump`/`print_r` · SECURITY.md "no Actions secrets" · python `close()` no-op ×2).
-  - **열린 high 6 건**(전부 실측 증거 있음):
-    - `.claude/rules/node.md:26` 커버리지 제외 목록이 자기가 SSOT 라 부르는 `node/vitest.config.ts` 와 두 항목에서 모순한다(둘 다 그 설정이 "do not put back" 이라 적은 것).
-    - `.claude/rules/rust.md:50` 의 재노출 불변식이 살아 있는 공개 표면 세 자리에서 깨진다 — `pub mod jwks` 라 `JwksStore::get_key() -> Result<Jwk>` 가 `jsonwebtoken::jwk::Jwk` 를 루트 재노출 없이 노출한다(실측).
-    - `kotlin/build.gradle.kts:67` · `java/pom.xml:89` — Jackson 핀은 둘 다 `2.22.2` 로 **일치**하나 java 쪽 산문이 `2.21.5` 라 말한다(핀 1 개 vs 산문 1 개의 불일치. 「세 숫자」라는 원 서술은 과장이었다).
-    - `scripts/test/test-readme-badges.sh:40` — 루트 README 영↔한 「동일 구조」 규약이 **배지 집합에만** 기계 집행된다(그 테스트 주석이 스스로 그렇게 적는다). 언어 행 하나를 지워도 전 가드가 초록이다.
+  - **닫힌 11 건**: 빈 JWKS 키셋이 좋은 캐시를 덮던 결함(#520, rust·ruby·php 코드 + go 테스트 + 교차언어 가드) · 소비자 문서의 거짓 보안 문장 6 자리(#521 — java/kotlin "and serialization" · go `%#v` · php `var_dump`/`print_r` · SECURITY.md "no Actions secrets" · python `close()` no-op ×2) · 열린 high 넷(#523 — rust 재노출 위반 둘 + `rust/tests/reexport_surface.rs` 로 **집행**까지 · node 커버리지 제외 목록 · java jackson 산문 / #524 — 루트 README 영↔한 **구조** 미러 가드 `scripts/test/test-readme-mirror.sh`, 네 축·변이 넷).
+  - **열린 high 2 건**(넷은 #523·#524 로 닫혔다 — 목록에서 지우지 않고 표시만 남긴다: 무엇이 어떻게 닫혔는지가 다음 감사의 대조군이다):
+    - **[닫힘]** `.claude/rules/node.md:26` 커버리지 제외 목록이 자기가 SSOT 라 부르는 `node/vitest.config.ts` 와 두 항목에서 모순한다(둘 다 그 설정이 "do not put back" 이라 적은 것).
+    - **[닫힘]** `.claude/rules/rust.md:50` 의 재노출 불변식이 살아 있는 공개 표면 세 자리에서 깨진다 — `pub mod jwks` 라 `JwksStore::get_key() -> Result<Jwk>` 가 `jsonwebtoken::jwk::Jwk` 를 루트 재노출 없이 노출한다(실측).
+    - **[닫힘]** `kotlin/build.gradle.kts:67` · `java/pom.xml:89` — Jackson 핀은 둘 다 `2.22.2` 로 **일치**하나 java 쪽 산문이 `2.21.5` 라 말한다(핀 1 개 vs 산문 1 개의 불일치. 「세 숫자」라는 원 서술은 과장이었다).
+    - **[닫힘]** `scripts/test/test-readme-badges.sh:40` — 루트 README 영↔한 「동일 구조」 규약이 **배지 집합에만** 기계 집행된다(그 테스트 주석이 스스로 그렇게 적는다). 언어 행 하나를 지워도 전 가드가 초록이다.
     - `scripts/check-docs.mjs` — `doc-budget` 래칫이 옵트인이라 **41 개 중 16 개**(272,403 / 801,916 B = **34 %**)만 덮는다. 덮는 쪽이 정확히 에이전트 적재 표면(CLAUDE.md·DEPLOY.md·process·rejected·CONTRIBUTING + rules 10)이고, 안 덮는 쪽이 **소비자 표면**(getting-started 44 KB · CHANGELOG · playbook · 루트 README 둘 · 아홉 언어 README · reference · roadmap · harness)이다. ⚠️ 원 서술의 「가장 큰 두 문서에 앵커가 없다」는 **틀렸다** — 최대(`remaining-work.md` 246 KB)는 맞고 2 위(`DEPLOY.md`)는 앵커가 있다.
     - `CHANGELOG.md:8` — `## [Unreleased]` 가 비어 있는 동안 `v1.0.0` 이후 **150 커밋**이 main 에 들어왔다(실측 `git rev-list --count v1.0.0..origin/main`). CLAUDE.md 가 완료 서사의 목적지로 지목한 자리가 아무것도 받지 않아, 그 서사가 246 KB 등록부에 쌓인다.
   - **열린 medium 31 · low 12**: 언어별 drift 가 다수이고 **아홉 전부에서 최소 1 건**이 나왔다(범위 1–6). 대표: getting-started 의 「coverage gate」 주장이 go·rust·dotnet 세 곳에서 거짓(그 명령은 커버리지를 재지도 게이트하지도 않는다) · `php/composer.json:41` 의 `cs`/`cs:fix` 가 `--allow-risky=yes` 누락으로 **항상 실패** · `.claude/rules/{dotnet,ruby,php,rust}.md` 의 전사된 실측값이 낡아 다음 세션을 틀린 판단으로 이끈다 · PHP·Ruby 의 기본 `readTimeout` 이 10 초로 나머지 일곱(30 초)과 갈린다.
   - ⚠️ **완전성 비평 6 각도는 돌지 못했다**(세션 한도). 「무엇을 놓쳤는가」는 답이 없으므로 위 계수는 **하한**이다 — 재개는 `Workflow({scriptPath:…kcsdk-audit-round2…, resumeFromRunId:'wf_c93308dc-67f'})` 로 캐시 재사용이 된다.
   - 착수 순서 근거: 실동작 결함 → 소비자에게 거짓을 말하는 문서 → 에이전트를 틀리게 만드는 rules → 가드 조준점. 앞의 둘은 닫혔다.
+- [ ] `remaining-work-split-to-archive-tag` **[H/M · 신규 2026-09-22 · 설계 완료]** 이 파일이 246 KB — 전체 문서 바이트의 **31 %**, 2 위의 3 배 — 이고 그중 41~59 %가 **이미 닫힌 70 건의 사후 서사**다. 예산 앵커도 없다 · `docs/superpowers/plans/remaining-work.md:1`. **설계는 끝났고(독립 레그 판정) 실행만 남았다:**
+  - **어디로**: 닫힌 항목 본문은 **아카이브 git 태그**로 간다 — 이 저장소가 이미 완료 WBS·검증로그에 쓰는 장치다(`archive/docs-history-2026-08{,b,c}`). ⚠️ **`docs/` 아래 형제 문서(`remaining-work-closed.md`)로 빼면 안 된다** — 검사 9 가 그것을 `docs/README.md` 지도에 올리라고 강제하므로 세션이 여전히 적재하고 파일은 다시 자란다. CHANGELOG 도 아니다(그것은 릴리스 로그이지 검증 기록이 아니다). 삭제도 아니다 — 규약이 「이관, 삭제 아님」이다.
+  - **무엇을 어디로**(한 부분을 두 집에 복사하지 않는다): **되살릴 조건**만 살아 남아 `docs/governance/rejected.md` 로 가되 **돌아가는 명령**으로만(산문 "reopen if X" 는 되살릴 조건이 아니다 — 명령으로 못 쓰면 본문과 함께 태그로 간다) · **닫힘을 정당화한 실측**은 항목과 함께 태그로 · **사후 서사**(PR 번호·경위)도 태그로. 살아 있는 등록부에는 태그를 가리키는 **포인터 한 줄**만.
+  - **계수 앵커는 총계를 다시 맞추지 말 것** — 118 은 오늘의 열린 작업이라 매번 움직인다. 분할 후 단언할 것은 **`닫힘 = 0`** 이다. 그것은 이 파일의 **규칙**이므로 올리는 것이 재보정이 아니라 규칙 변경이 된다. (지도의 `진행` 규칙이 이미 「미체크가 하나는 남아야 한다」를 강제하므로 두 번째 수를 더 넣지 않는다.)
+  - **재성장 방지**: 분할 커밋이 `doc-budget: max-bytes` 를 **이동 후 크기**로 박는다(246 KB 가 아니라). 이후 `main` 대비로 검사하고 **조일 수는 있어도 올릴 수는 없게** 한다 — 옵트인이라 이 파일이 한 번도 안 덮였던 것이 원인이므로, 이 경로만은 선택 사항이 아니다.
+  - ⚠️ **`CHANGELOG.md` 의 빈 `[Unreleased]` 를 이 작업으로 채우지 말 것** — 다른 실패다(아래 항목). 70 건 본문이나 150 커밋에서 역으로 만들어 넣으면 그때 기록되지 않았던 이력을 **지어내는** 것이 된다.
+- [ ] `changelog-unreleased-never-written` **[M/S · 신규 2026-09-22]** `## [Unreleased]` 가 빈 채 `v1.0.0` 이후 **150 커밋**이 main 에 들어왔다(실측 `git rev-list --count v1.0.0..origin/main`) · `CHANGELOG.md:8`. CLAUDE.md 가 완료 서사의 목적지로 지목한 자리가 아무것도 받지 않아 그 서사가 246 KB 등록부에 쌓인다. ⚠️ **150 건을 역채우지 않는다**(독립 레그 판정) — 그 절은 「착지할 때 적는 소비자 가시 변경」이지 커밋 제목 모음이 아니다. 이미 들어간 150 은 git 에 두고, 격차를 인정해야 한다면 `v1.0.0..HEAD` 를 가리키는 **헤딩 한 줄**만 두되 **재구성한 항목은 넣지 않는다**. 진짜 고칠 것은 「착지할 때 쓰게 만드는 장치」가 없다는 쪽이다.
 - [ ] `jwks-empty-keyset-node` **[M/M · 신규 2026-09-22]** node 만 빈 JWKS 키셋 거부가 없다 — fetch·캐시를 jose 가 소유하기 때문이다 · `node/src/jwt.ts:55`. jose v6 의 reload 는 `local = createLocalJWKSet(json)` 를 무조건 실행하고 `isJwkSet()` 은 `{"keys":[]}` 를 받는다(실측: 좋은 토큰 검증 → 빈 200 → 같은 토큰 거부). ⚠️ **독립 레그 판정 — 래핑도 프리플라이트도 보장을 못 준다**: 반환된 `JWTVerifyGetKey` 를 감싸면 이미 덮인 **뒤에** 보게 되고(빈 집합과 「그 kid 가 없는 정상 집합」이 같은 오류로 나와 구분 불가), 우리가 따로 프리플라이트하면 **덮는 응답과 다른 응답**을 검사하게 된다. 같은 보장을 얻는 길은 `createRemoteJWKSet` 대신 `createLocalJWKSet` 위에 원격 집합을 **우리가 드는 것**뿐이고, 그러면 쿨다운·캐시수명·kid-miss 재조회를 우리가 소유한다(jose 의 원격 수정도 더는 상속하지 않는다). 구조 변경이라 #520 에서 분리했다. 되살릴 조건: 이 교환을 받아들일지 사람이 판정.
 - [ ] `jwks-empty-keyset-jvm-dotnet-undetermined` **[M/S · 신규 2026-09-22]** java·kotlin(Nimbus `JWKSourceBuilder`)·dotnet(`ConfigurationManager`)이 빈 200 에 오염되는지 **판정되지 않았다** · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt:29`. 캐시가 라이브러리 내부라 코드 읽기로는 결정할 수 없다. 실험(독립 레그 설계): **프로덕션 빌더를 그대로 태우고**(테스트용 캐시로 바꾸지 말 것) 리트리버 호출을 세며, 좋은 문서 → kid 해석 → 빈 200 → 카운터 증가 확인 → 같은 kid 재해석. ⚠️ **판정 행렬** — 두 번째 요청이 아예 없었으면 「면역」이 아니라 **판정 불가**다. dotnet 은 `BackoffConfigurationManager` 를 거치고 `RefreshInterval = 0` 으로 두 번째 호출이 삼켜지지 않게 한다. python 은 실측으로 면역이다(joserfc 가 대입 전에 `MissingKeyError`).
 - [x] `nightly-failure-reaches-nobody` **[H/M · 신규 2026-09-16 · 닫힘 2026-09-21 #518]** 야간이 여드레 빨간 동안 아무 조치가 없었다 — 저장소 안에 **실패가 사람에게 가는 경로가 0건**이다 · `.github/workflows/harness.yml:8`
