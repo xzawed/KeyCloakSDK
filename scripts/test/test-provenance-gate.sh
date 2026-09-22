@@ -56,13 +56,30 @@ pg_case() {
 
 # 대조군 — 추출이 실제로 무언가를 뽑았는가. 센티널이 사라지거나 이름이 바뀌면 블록이 빈 문자열이
 # 되고, 그러면 `PROVENANCE_OK`가 `x`로 남아 모든 행이 실패한다(조용한 통과가 아니라 시끄러운 실패).
+# ⚠️ **언어 목록을 손으로 적지 않는다.** 예전에는 아홉을 나열하고 `pg_blocks == 9` 를 단언했다 —
+# 그러면 **열 번째 언어는 이 축을 조용히 건너뛴다**(루프가 그 이름을 모르니 게이트가 없어도
+# `9 == 9` 로 통과한다). 목록을 `consume/*-run.sh` 에서 파생하고, 그 파생이 실제 레인 집합과
+# 같은지는 **독립 원천**(`deploy-facts.sh` 의 `DEPLOY_LANGS`)으로 대조한다 — 파생 하나만 쓰면
+# 스크립트를 지우는 것이 곧 축을 줄이는 길이 된다(자기충족).
+_pg_langs="$(ls "$ROOT"/harness/install/consume/*-run.sh 2>/dev/null | sed 's#.*/##; s#-run\.sh$##' | sort | tr '\n' ' ')"
+# shellcheck source=/dev/null
+. "$ROOT/scripts/lib/deploy-facts.sh"
+_pg_lanes="$(printf '%s\n' $DEPLOY_LANGS | sort | tr '\n' ' ')"
+# 공허 방지 — 파생이 0 건이면 아래 루프가 아무것도 안 돌고 통과한다.
+assert_eq "ok" "$(ok_if "$([ -n "$_pg_langs" ] && echo 0 || echo 1)" EMPTY)" \
+  "[출처게이트] consume/*-run.sh 에서 언어를 하나도 파생하지 못했다 — 이 축이 통째로 공허해진다"
+assert_eq "$_pg_lanes" "$_pg_langs" \
+  "[출처게이트] consume 스크립트의 언어 집합이 배포 레인(DEPLOY_LANGS)과 다르다 — 레인이 생겼는데 게이트가 없거나, 그 반대다"
+
 pg_blocks=0
-for L in go java kotlin node php python ruby rust dotnet; do
+_pg_n=0
+for L in $_pg_langs; do
+  _pg_n=$((_pg_n + 1))
   _n="$(pg_extract "$L" | grep -c . || true)"
   assert_ok test "$_n" -ge 3
   [ "$_n" -ge 3 ] && pg_blocks=$((pg_blocks + 1))
 done
-assert_eq "9" "$pg_blocks" "센티널로 게이트 블록을 뽑은 언어 수가 9가 아니다 — 센티널이 지워졌나?"
+assert_eq "$_pg_n" "$pg_blocks" "센티널로 게이트 블록을 뽑지 못한 언어가 있다 — 센티널이 지워졌나?"
 
 # ---------------------------------------------------------------------------
 # 근거 변수의 **정의 자리** — 두 가드 사이의 이음매
