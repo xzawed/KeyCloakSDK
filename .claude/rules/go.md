@@ -5,7 +5,13 @@ paths:
   - "harness/install/consume/go*"
   - ".github/workflows/go-*.yml"
 ---
-<!-- doc-budget: max-bytes=7272 -->
+<!-- doc-budget: max-bytes=7541 -->
+<!-- 7272 → 7541 (2026-09-22). 규약 (1) — **세션이 못 보는 경고**를 보는 자리로 옮긴다.
+     Windows 체크아웃에서 이 언어의 포매터는 **깨끗한 트리 전체**를 지적한다(실측: `gofmt -l go`
+     가 29 파일). 그 설명은 `.claude/rules/ci.md:62` 에만 있었는데 그 파일의 `paths:` 는
+     `.github/**`·`scripts/**`·`harness/**`·`DEPLOY.md` 라 **이 언어 디렉터리에서는 로드되지
+     않는다** — 즉 증상을 만나는 세션은 그 문장을 영원히 못 본다. 한 줄만 이리로 온다(교차언어
+     판본은 ci.md 가 계속 소유한다). -->
 <!-- 7105 → 7272 (2026-09-06, +167B). 규약 (1) — 증가분이 **다시 재는 명령**을 사 온다:
      「golangci-lint 는 CI 전용」이 거꾸로였다(CI 는 그것을 아예 안 돌린다). 정정문이 실제
      게이트 넷(gofmt·vet·staticcheck·gosec)과 별도 govulncheck 잡을 이름으로 대므로,
@@ -30,9 +36,10 @@ go -C go build ./...
 go -C go test ./...                                          # unit (E2E excluded)
 go -C go test -tags=integration -run TestE2E -count=1 ./...   # integration E2E. Needs Docker
 go -C go vet ./...
-gofmt -l go                                                  # no output means OK
+gofmt -l go                                                  # no output means OK (see the CRLF note below)
 ```
 
+- ⚠️ **On Windows `gofmt -l go` names the whole clean tree** (measured: 29 files) — that is CRLF, not formatting. Normalise only what you changed to LF and re-check those; committed blobs stay LF (`.gitattributes`), so CI never sees it.
 - A single test: `go -C go test -run TestValidateValidToken ./...`
 - Coverage (logic statements ≥90, network boundary omitted): `go test ./... -coverprofile=cover.out`, then drop the boundary with `grep -vE '/(auth|admin|admin_users|admin_clients|admin_realms|admin_roles|admin_groups|client)\.go:'` and read `go tool cover -func`. Measured 96.6%.
 - ⚠️ **There is no branch-coverage *gate* — but condition coverage is measurable, and it was measured.** `go test -covermode` takes `set`/`count`/`atomic` only, so there is no percentage comparable to the JaCoCo/Kover 85 the other six gate against; that is why there is no gate. It is **not** a reason to leave `&&`/`||` unmeasured. `gobco` instruments conditions — measured on this tree: 72 one-sided conditions, 14 on the JWT/token path, and one was a real gap (the JWKS rate-limit window was only ever tested **while it held**, never after it elapsed; `TestValidateRefetchAllowedAgainAfterRateLimitWindowElapses` closes it). **Revival condition** for a *gate*: a condition-coverage percentage comparable with the other six. Until then run `gobco` by hand when you touch security code.

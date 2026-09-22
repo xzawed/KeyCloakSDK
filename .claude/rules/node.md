@@ -5,7 +5,14 @@ paths:
   - "harness/install/consume/node*"
   - ".github/workflows/node-*.yml"
 ---
-<!-- doc-budget: max-bytes=6534 -->
+<!-- doc-budget: max-bytes=6761 -->
+<!-- 6534 → 6761 (2026-09-22). 규약 (1) — **세션이 못 보는 경고**를 보는 자리로 옮긴다.
+     Windows 체크아웃에서 포매터가 **깨끗한 트리 전체**를 지적한다(출처: `.claude/rules/ci.md:62`
+     가 go·node·php 셋을 같은 문장으로 적는다. 오늘 다시 잰 것은 go 뿐이다 — `gofmt -l go` → 29
+     파일. node 는 재측정하지 않았고, 그래서 이 줄은 ci.md 를 출처로 단다). 그 파일의 `paths:` 는
+     `.github/**`·`scripts/**`·`harness/**`·`DEPLOY.md` 라 **이 언어 디렉터리에서는 로드되지
+     않는다** — 즉 증상을 만나는 세션은 그 문장을 영원히 못 본다. 한 줄만 이리로 온다(교차언어
+     판본은 ci.md 가 계속 소유한다). -->
 <!-- 6255 → 6534 (2026-09-22, +279B). 규약 (1) — 증가분이 **그 주장을 다시 재는 명령**을 사 온다.
      이 줄은 커버리지 제외 목록을 전사하다가 두 곳에서 거짓이 됐다(감사 실측: `src/transport.ts`
      와 `src/admin/call.ts` 는 **측정되는** 쪽인데 제외로 적혀 있었고, 「네 항목」은 실제 여덟이다).
@@ -27,6 +34,7 @@ cd node && npm run lint
 cd node && npm run build       # tsc → dist/
 ```
 
+- ⚠️ **On Windows `prettier --check` names the whole clean tree** — that is CRLF, not formatting. Normalise only what you changed to LF and re-check those; committed blobs stay LF (`.gitattributes`), so CI never sees it.
 - A single test: `npx vitest run test/unit/<name>.test.ts`
 - Coverage omits `src/index.ts`, `src/auth.ts` and the six `src/admin/*.ts` resource files — **eight** entries, and the SSOT is `node/vitest.config.ts` (a hand list, deliberately not a glob, so a new file lands on the *measured* side). ⚠️ **`src/transport.ts` and `src/admin/call.ts` are measured, not omitted** — do not add them back; the config says so in-line and this line used to claim the opposite (audit 2026-09-22). Re-read the list rather than transcribing it: `sed -n '/exclude:/,/]/p' node/vitest.config.ts`.
 - Release check: `npm run build && npm pack --dry-run`. ⚠️ Even with `files:["dist"]`, npm **always** includes `package.json`, `README` and `LICENSE`, so without `node/README.md` and `node/LICENSE` the npmjs.com landing page ships empty. Write every README link as an absolute URL (relative links break on the registry page).
