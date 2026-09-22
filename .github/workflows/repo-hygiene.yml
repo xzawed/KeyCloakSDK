@@ -226,6 +226,13 @@ jobs:
       - name: 야간 실패 알림 커버리지(schedule 워크플로 ↔ 감시 목록)
         run: sh scripts/test/test-nightly-alert.sh
 
+      # ⚠️ 태그 트리거 워크플로가 겹쳐 돌면 게시가 경합한다. 실측 2026-09-22: 릴리스 워크플로
+      # 10 개 중 **9 개에 `concurrency:` 가 없었다**. php 는 subtree split 결과를 미러의
+      # `refs/heads/main` 에 `git push --force` 로 덮으므로 늦게 끝난 쪽이 이긴다.
+      # 목록을 손으로 적지 않고 `tags:` 트리거로 범위를 잡으므로 열 번째 언어도 자동으로 든다.
+      - name: 릴리스 동시성(태그 트리거 ↔ concurrency · 게시 중 취소 금지)
+        run: sh scripts/test/test-release-concurrency.sh
+
       # ⚠️ 게시 소스를 고친 PR 은 `CHANGELOG.md` 의 `[Unreleased]` 절을 **자라게** 해야 한다.
       # 실측 2026-09-22: 아홉 패키지가 1.0.0 으로 게시된 뒤 `main` 에 157 커밋이 쌓였고 그중
       # **31 건이 게시 소스**(대부분 토큰 누출·JWKS 상한·SSRF 같은 보안 수정)를 고쳤는데
