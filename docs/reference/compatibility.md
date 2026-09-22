@@ -1,3 +1,4 @@
+<!-- doc-budget: max-bytes=5138 -->
 # Compatibility reference
 
 > Extracted from [Getting Started](../guides/getting-started.md) — that guide installs and runs one

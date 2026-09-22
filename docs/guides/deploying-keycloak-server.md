@@ -1,3 +1,4 @@
+<!-- doc-budget: max-bytes=9549 -->
 # Keycloak Server Deployment Guide — Single VM + Docker Compose (Production)
 
 > **This document is about standing up the Keycloak *server*, not this SDK.** This SDK (`keycloak-sdk`) is only a **client library** — it does not include a Keycloak server. Keycloak is a **finished, open-source server** built by Red Hat: we don't *implement* the server, we simply **pull it in and run (deploy)** it (the same way you run PostgreSQL or nginx without coding them). For the conceptual overview, see [getting-started](getting-started.md).

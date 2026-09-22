@@ -1,3 +1,4 @@
+<!-- doc-budget: max-bytes=13260 -->
 # Virtual-User Test Harness
 
 A **virtual-user load / regression testing + comprehensive verification & scoring harness** for the polyglot Keycloak SDK (Go/C#/Node/Python/Java/PHP/Rust/Ruby/Kotlin — 9 languages). It brings up a real Keycloak 26.6 (`it-realm` — the same realm as the per-language integration tests) via Docker Compose, and exposes sample apps written with each language's SDK to the same spec (all 9 languages complete, [`contract/CONTRACT.md`](contract/CONTRACT.md) v2) over a common HTTP contract, verifying along two axes: (1) a k6-based driver measures and compares isomorphic load scenarios (legacy `run.sh`), and (2) it runs contract conformance, security-hardening probes, and each SDK's own suite (unit + coverage + lint) per language and aggregates them into a 4-dimensional score (`verify.sh` → `report/SCORECARD.md` — see the "Verification & Scoring" section below).

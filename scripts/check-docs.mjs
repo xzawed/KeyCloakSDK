@@ -1625,6 +1625,62 @@ function checkDocBudget() {
   }
 }
 
+// 검사 8c — 예산 **커버리지**. 래칫이 옵트인이라 「앵커를 안 달면 안 걸린다」가 되고, 실제로
+// 가장 큰 문서(`remaining-work.md`)가 한 번도 안 덮인 채 256 KB 까지 자랐다(2026-09-22 감사).
+//
+// ⚠️ **숫자 하한(「N개 이상이 예산을 가진다」)은 쓰지 않는다** — 마커를 지우는 PR 이 같은
+// diff 에서 N 도 내리면 그만이라 공허하다. 대신 **분류 규칙 자체**를 단언한다: 추적되는
+// 비픽스처 `.md` 는 전부 예산을 가지며, 예외는 두 **부류**뿐이다.
+//   (1) 부속 원장 — `CHANGELOG.md`. 릴리스마다 자라는 것이 정상이라 예산을 걸면 매 릴리스가
+//       상한을 올리고, 그러면 리뷰가 고무도장이 된다.
+//   (2) 레지스트리에 **게시되는** 언어 패키지 README(`<lang>/README.md`). 이 아홉의 위험은
+//       크기가 아니라 **서로/코드와 어긋나는 것**이라 바이트 상한이 맞는 계측기가 아니다.
+// ⚠️ 예외는 경로 열거가 아니라 **부류**다. `**/README.md` 로 쓰면 `docs/README.md` 와 harness
+// README 까지 빠진다 — 그건 예외가 아니라 구멍이다.
+const BUDGET_EXEMPT_LEDGER = new Set(['CHANGELOG.md'])
+const BUDGET_EXEMPT_PKG_README = /^(java|python|node|go|dotnet|php|rust|ruby|kotlin)\/README\.md$/
+// ⚠️ 부류와 무관한 **전역 트립와이어**. 예외 부류도 무한히 자라서는 안 된다. 값은 타이트한
+// 상한이 아니라 **실제 사고 크기**다 — `remaining-work.md` 가 도달했던 256 KB. 정상적인
+// CHANGELOG 나 패키지 README 는 여기 닿지 않는다.
+const DOC_TRIPWIRE_BYTES = 256 * 1024
+function checkBudgetCoverage() {
+  // ⚠️ **이 저장소에서만 돈다.** 이 가드의 자가테스트는 임시 디렉터리에 작은 픽스처 트리를
+  // 만들어 check-docs 를 그 위에서 돌린다 — 거기엔 예산 규약이 없으므로 8c 가 발동하면 안 된다.
+  // 조건은 「가드 자신이 그 트리 안에 있는가」다(검사 9 가  존재로 같은 일을 한다).
+  if (!existsSync(join(ROOT, 'scripts/check-docs.mjs'))) return
+  const all = walk(ROOT).map((f) => relative(ROOT, f).replace(/\\/g, '/'))
+  // 공허 방지 — 순회가 깨지면 0 개를 돌고 조용히 통과한다. 실측 41(2026-09-22).
+  if (all.length < 30) {
+    errors.push(
+      `검사 8c: .md 를 ${all.length}개만 찾았다 — 순회가 깨졌나? (0 개를 돌고 통과시키지 않는다)`,
+    )
+    return
+  }
+  let exempt = 0
+  for (const rel of all) {
+    const text = readFileSync(join(ROOT, rel), 'utf8')
+    const raw = Buffer.byteLength(text, 'utf8')
+    if (raw > DOC_TRIPWIRE_BYTES) {
+      errors.push(
+        `${rel}: ${raw}B > 전역 상한 ${DOC_TRIPWIRE_BYTES}B — 예산 부류와 무관하게 이 크기는 허용하지 않는다(이 수는 remaining-work.md 가 실제로 도달했던 사고 크기다)`,
+      )
+    }
+    if (BUDGET_EXEMPT_LEDGER.has(rel) || BUDGET_EXEMPT_PKG_README.test(rel)) {
+      exempt++
+      continue
+    }
+    if (!/<!--\s*doc-budget:[^>]*max-bytes=\d+/.test(text)) {
+      errors.push(
+        `${rel}: doc-budget 앵커가 없다 — 예외는 부속 원장(CHANGELOG.md)과 게시되는 언어 패키지 README 둘뿐이다. 새 문서라면 현재 적재 크기로 앵커를 달아라(옵트인이라 안 달면 영원히 안 걸린다 — 그래서 256 KB 짜리가 나왔다)`,
+      )
+    }
+  }
+  // 예외 **부류**가 비면 규칙이 무의미해진 것이다(부류를 지우고 통과하는 길을 막는다).
+  if (exempt === 0) {
+    errors.push(`검사 8c: 예외 부류에 해당하는 문서가 하나도 없다 — 부류 정의가 낡았나?`)
+  }
+}
+
 // 이 문서에서 **실제로 컨텍스트에 주입되는** 부분. 블록 레벨 HTML 주석은 주입 전에 제거되므로
 // 토큰을 1바이트도 쓰지 않는다(code.claude.com/docs/en/memory#how-claude-md-files-load).
 // ⚠️ **코드블록 안의 주석은 보존된다**(같은 문서) — 펜스를 무시하고 지우면 예산이 조용히
@@ -1863,6 +1919,7 @@ checkCoverageGates()
 checkMatrixClaims()
 checkCardinality()
 checkDocBudget()
+checkBudgetCoverage()
 checkDocsMap()
 
 // 검사 7 — fact/anchor 최저치(floor, --min-facts/--min-anchors로 opt-in). 앵커 주석 하나를
