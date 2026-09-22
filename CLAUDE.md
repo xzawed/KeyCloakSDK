@@ -1,5 +1,11 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=25087 max-lines=308 -->
+<!-- doc-budget: max-bytes=24990 max-lines=308 -->
+<!-- 25087 → 24990 (2026-09-22, −97B). **인하**다 — 판정을 요구하지 않는 방향이고, 남는
+     여유를 그대로 두면 그만큼이 무심사 사전승인이 된다. 뺀 것은 `kind=dep` 앵커 표
+     안팎의 **아무도 검증하지 않던 버전 숫자**다(`JUnit 6.1.3 · Mockito 5.23.0`,
+     `thiserror 2.0 …`, `wiremock 0.6 …`, `rspec 3 …`, kotlin dev 표 둘, php dev 표 둘 —
+     추출기가 백틱 좌표만 보므로 산문 숫자는 조준 밖이었다). 이름은 남기고 숫자는
+     매니페스트가 소유한다. 같은 커밋의 `tableAt` 변경이 재발을 **기계로** 막는다. -->
 <!-- 24863 → 25087 (2026-09-22, +224B). 규약 (1) — 증가분이 **기계 검증**을 사 온다.
      §4(b) 가 「세 자리 · 이 셋 밖에는 없다」였는데 감사 실측이 **넷째**를 찾았다(Rust
      `JwksStore::get_key()` 가 돌려주는 `jsonwebtoken::jwk::Jwk` — 루트 재노출이 없어 소비자가
@@ -182,7 +188,7 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 | JOSE/JWT | `com.nimbusds:nimbus-jose-jwt` | 10.9.1 |
 | 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 4.3.1 |
 | Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0.5 |
-| 단위 테스트 | JUnit 6.1.3 · Mockito 5.23.0 | — |
+| 단위 테스트 | JUnit · Mockito | — |
 
 **Python 확정 의존성(pyproject.toml, major 상한 고정)**:
 
@@ -273,8 +279,8 @@ dev(테스트 csproj — **앵커 있음**):
 
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
-| 단위 테스트 | `phpunit/phpunit` 12 · `phpstan/phpstan` 2.2(+ strict-rules·phpunit 확장) · `friendsofphp/php-cs-fixer` 3.95 | — |
-| 통합 테스트 | (docker CLI 셸아웃 — `testcontainers/testcontainers` ^1.0은 dev 의존이나 Windows native PHP 미지원으로 실사용 안 함) | — |
+| 단위 테스트 | `phpunit/phpunit` · `phpstan/phpstan`(+ strict-rules·phpunit 확장) · `friendsofphp/php-cs-fixer` | — |
+| 통합 테스트 | (docker CLI 셸아웃 — `testcontainers/testcontainers` 는 dev 의존이나 Windows native PHP 미지원으로 실사용 안 함) | — |
 
 전부 MIT/BSD-3(Apache-2.0 호환).
 
@@ -292,9 +298,9 @@ dev(테스트 csproj — **앵커 있음**):
 <!-- doc-guard: kind=dep source=rust/Cargo.toml min=1 -->
 | 의존성 | 크레이트 | 버전 |
 |---|---|---|
-| 오류/직렬화 | thiserror 2.0 · async-trait 0.1 · serde+serde_json 1 · url 2 | — |
-| 단위 테스트 | wiremock 0.6(HTTP 목) · rsa 0.9+rand 0.8+base64 0.23(JWKS 공격 프로브 픽스처 생성) | — |
-| 통합 테스트 | `testcontainers` — pre-1.0, base `GenericImage`(언어별 편의 모듈 없음) | `0.28.0` |
+| 오류/직렬화 | thiserror · async-trait · serde+serde_json · url | — |
+| 단위 테스트 | wiremock(HTTP 목) · rsa+rand+base64(JWKS 공격 프로브 픽스처 생성) | — |
+| 통합 테스트 | `testcontainers` — 안정화 전, base `GenericImage`(언어별 편의 모듈 없음) | `0.28.0` |
 
 전부 Apache-2.0/MIT(호환). ⚠️ **셋 다 정확 핀(`=`)이 아니다** — `openidconnect`/`jsonwebtoken`은 캐럿, `keycloak`은 틸드 `~26.6.2`(버전이 semver가 아니라 Keycloak 서버 라인을 추종). 라이브러리에서 정확 핀이 왜 소비자 빌드를 하드 실패시키는지, 커밋된 `Cargo.lock`이 소비자에게 왜 닿지 않는지는 `.claude/rules/rust.md`.
 
@@ -307,7 +313,7 @@ dev(테스트 csproj — **앵커 있음**):
 | Admin | (성숙한 gem 부재 — faraday로 Admin REST 직접 래핑) | — |
 | HTTP | `faraday` | `~> 2.0` |
 | JWT(강화 검증) | `jwt`(ruby-jwt) | `~> 3.2` |
-| 단위 테스트 | rspec 3 · webmock · simplecov · rubocop(+ rubocop-rspec) | — |
+| 단위 테스트 | rspec · webmock · simplecov · rubocop(+ rubocop-rspec) | — |
 | 통합 테스트 | (docker CLI 셸아웃 — Windows native Ruby가 testcontainers-ruby 소켓 트랜스포트 미지원, PHP와 동일 패턴) | — |
 | 의존성 감사 | bundler-audit | — |
 
@@ -327,12 +333,12 @@ dev(테스트 csproj — **앵커 있음**):
 
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
-| 단위 테스트 | JUnit 6.1.3 · MockK 1.14.11 · WireMock 3.13.2 · `kotlinx-coroutines-test` 1.11.0 · `kotlin-test-junit5` 2.4.10 | — |
-| 빌드/배포 플러그인 | Kotlin 2.4.10 · vanniktech `maven.publish` 0.37.0(Central Portal) · Kover 0.9.9 · ktlint gradle 14.2.0 · Dokka 2.2.0 | — |
+| 단위 테스트 | JUnit · MockK · WireMock · `kotlinx-coroutines-test` · `kotlin-test-junit5` | — |
+| 빌드/배포 플러그인 | Kotlin · vanniktech `maven.publish`(Central Portal) · Kover · ktlint gradle · Dokka | — |
 
 전부 Apache-2.0/EPL-2.0(호환). Admin·인증·JWT 3좌표는 Java SDK가 실 Keycloak으로 이미 검증한 것과 동일해 **신규 라이브러리 리스크 0** — 차이는 코루틴 래핑뿐이다.
 
-⚠️ 위 표의 `Kotlin 2.4.10`은 **빌드 툴체인(KGP) 버전**이지 소비자 하한이 아니다 — 게시 jar의 메타데이터는 `languageVersion`/`apiVersion`(=`KOTLIN_2_2`)이 정하므로 **소비자 하한은 2.2+**다(전이 `kotlin-stdlib`까지 함께 내려야 하는 이유는 `.claude/rules/kotlin.md`).
+⚠️ 위 표의 Kotlin 플러그인 버전(`build.gradle.kts`)은 **빌드 툴체인(KGP)** 이지 소비자 하한이 아니다 — 게시 jar의 메타데이터는 `languageVersion`/`apiVersion`(=`KOTLIN_2_2`)이 정하므로 **소비자 하한은 2.2+**다(전이 `kotlin-stdlib`까지 함께 내려야 하는 이유는 `.claude/rules/kotlin.md`).
 
 ## 현재 상태
 

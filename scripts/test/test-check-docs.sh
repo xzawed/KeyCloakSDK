@@ -1544,4 +1544,36 @@ printf '# c\n\n<!-- doc-guard: kind=count source=rejection-checklist -->\n항목
 assert_ok node "$GUARD" "$TMP" --min-count-anchors=1
 assert_fails node "$GUARD" "$TMP" --min-count-anchors=2
 
+# ---- 앵커 아래의 **산문 버전 주장** ----
+# 실측 결함(2026-09-22): 추출기는 백틱 좌표가 없는 행을 `continue` 로 통째로 버렸다.
+# 그래서 `| 단위 테스트 | JUnit 6.1.3 · Mockito 5.23.0 | — |` 같은 행의 숫자는 앵커 아래
+# 있으면서도 아무도 대조하지 않았다(CLAUDE.md 네 행 · 숫자 10 개). `min=N` 하한도
+# 못 잡는다 — 그 N 은 **살아남은 행**을 세어 맞춰 놓은 값이기 때문이다.
+cp -r "$FIX/." "$TMP/"
+printf '%s\n' '| 단위 테스트 | JUnit 6.1.3 · Mockito 5.23.0 | — |' >> "$TMP/ok.md"
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "아무도 검증하지 않는다" "버려지는 행을 지목한다"
+
+# 대조군 (a) — 숫자가 없는 설명 행은 주장이 아니다(예: ruby 의 「성숙한 gem 부재」 행).
+cp -r "$FIX/." "$TMP/"
+printf '%s\n' '| Admin | (성숙한 gem 부재 — faraday로 직접 래핑) | — |' >> "$TMP/ok.md"
+assert_ok node "$GUARD" "$TMP"
+
+# 대조군 (b) — 헤더 행에는 주장이 없다. 픽스처의 `| 이름 | 좌표 | 버전 |` 이 매번
+# 걸렸다면 위 (a)와 기준 픽스처가 이미 빨갰을 것이므로 이 단언은 그 사실을 못 박는다.
+cp -r "$FIX/." "$TMP/"
+assert_ok node "$GUARD" "$TMP"
+
+# 대조군 (c) — 괄호가 바로 붙는 버전도 잡아야 한다(`wiremock 0.6(HTTP 목)` 이 뒤쪽
+# 구분자를 요구하던 정규식에서 빠져나갔다 — 실측).
+cp -r "$FIX/." "$TMP/"
+printf '%s\n' '| 단위 테스트 | wiremock 0.6(HTTP 목) · rsa 0.9+rand 0.8 | — |' >> "$TMP/ok.md"
+assert_fails node "$GUARD" "$TMP"
+
+# 대조군 (d) — 홀로 선 정수도 버전 주장이다(`rspec 3`).
+cp -r "$FIX/." "$TMP/"
+printf '%s\n' '| 단위 테스트 | rspec 3 · webmock | — |' >> "$TMP/ok.md"
+assert_fails node "$GUARD" "$TMP"
+
 assert_report

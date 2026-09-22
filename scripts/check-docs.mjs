@@ -470,17 +470,43 @@ function tableAt(lines, startIdx) {
   while (i < lines.length && !lines[i].trim()) i++
   if (i >= lines.length || !lines[i].trimStart().startsWith('|')) return null
   const rows = []
+  // ⚠️ **버려지는 행을 조용히 넘기지 않는다.** 종전에는 백틱 좌표가 없으면 그냥
+  // `continue` 였고, 그래서 좌표를 **산문으로** 적은 행의 버전 주장은 아무도 검증하지
+  // 않았다(실측 2026-09-22 — `JUnit 6.1.3 · Mockito 5.23.0` · `thiserror 2.0 …` ·
+  // `wiremock 0.6 …` · `rspec 3 …` 네 행에 숫자 10 개가 조준 밖이었다).
+  // ⚠️ `min=N` 하한은 이걸 못 잡는다 — 그 N 은 **살아남은 행**을 세어 맞춰 놓은 값이라
+  // 버려지는 행이 늘어도 줄어도 움직이지 않는다.
+  const proseClaims = []
+  let bodyRow = 0 // 0 = 아직 헤더 전. 헤더 행에는 주장이 없으므로 세지 않는다.
   for (; i < lines.length; i++) {
     const l = lines[i]
     if (!l.trim()) break
     if (!l.trimStart().startsWith('|')) break
     const cells = l.split('|').slice(1, -1).map((c) => c.trim())
     if (cells.every((c) => /^:?-+:?$/.test(c))) continue
+    bodyRow++
     const coord = /`([^`]+)`/.exec(l)
+    // ⚠️ 규칙은 **행 단위가 아니라 숫자 단위**다: 좌표가 하나 있다고 그 행의 나머지 숫자가
+    // 면제되지 않는다. 실측(2026-09-22) — `| 단위 테스트 | JUnit 6.1.3 · MockK 1.14.11 ·
+    // WireMock 3.13.2 · \`kotlinx-coroutines-test\` 1.11.0 … |` 은 백틱이 **있어서** 추출은
+    // 되지만 추출되는 것은 첫 좌표 하나뿐이고, 그 행의 다른 숫자 다섯은 아무도 안 본다.
+    // 그래서 **백틱 밖 · 마지막 칸 밖**의 버전 숫자를 전부 주장으로 본다.
+    //   (a) 점 버전 — 단어문자/점 뒤가 아닌 곳의 `1.2`·`v2.0.1`(`base64` 의 `64` 는 제외된다)
+    //   (b) 홀로 선 정수 — `phpunit 12`·`rspec 3`(`9언어`·`2026-09-22` 는 뒤가 공백/끝이 아니라 제외)
+    // ⚠️ 뒤쪽 구분자를 요구하지 않는다 — `wiremock 0.6(HTTP 목)` 처럼 괄호가 바로 붙는
+    // 실제 행이 빠져나갔다(실측). 숫자를 산문으로 써야 하면 백틱에 넣어라(추출되는 좌표는
+    // 여전히 **첫** 스팬이므로 대조 대상은 바뀌지 않는다).
+    if (bodyRow > 1) {
+      const bare = cells.slice(0, -1).map((c) => c.replace(/`[^`]*`/g, ' '))
+      if (bare.some((c) => /(?:^|[^\w.])v?\d+(?:\.\d+)+/.test(c) || /(?:^|\s)\d+(?:\s|$)/.test(c))) {
+        proseClaims.push(l.trim())
+      }
+    }
     if (!coord) continue
     const ver = cells[cells.length - 1].replace(/[`*]/g, '').trim()
     rows.push({ coord: coord[1], ver })
   }
+  rows.proseClaims = proseClaims
   return rows
 }
 
@@ -1425,6 +1451,14 @@ for (const file of walk(ROOT)) {
     if (rows === null) {
       errors.push(`${rel}:${i + 1} 앵커 뒤에 표가 없다`)
       continue
+    }
+    // 백틱 좌표가 없어 **추출기가 통째로 버린** 행 중 숫자를 담은 것. 그 숫자는 이 앵커
+    // 아래 있으면서도 대조되지 않는다 — 저장소 규칙이 「숫자는 기계 검증 가능한 형태로
+    // 두고, 그럴 수 없으면 두지 않는다」이므로 둘 중 하나를 고르게 한다.
+    for (const claim of rows.proseClaims) {
+      errors.push(
+        `${rel}:${i + 1} 앵커 아래 행의 버전이 아무도 검증하지 않는다(좌표가 백틱이 아니라 산문이라 추출기가 행을 통째로 버린다): ${claim} — 좌표를 \`백틱\`으로 적어 행을 나누거나, 숫자를 빼고 이름만 남겨라(원천은 ${attrs.source} 다)`,
+      )
     }
 
     let checked = 0
