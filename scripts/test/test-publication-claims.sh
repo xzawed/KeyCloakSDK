@@ -210,18 +210,18 @@ pc_negative_controls
 # ⚠️ **다만 「가드가 실물을 못 잡는다」는 아니다** — 실측: 펜스 핀 `1.0.0 → 1.0.1` **CAUGHT**,
 # 정식 뒤 `--prerelease` **CAUGHT**. 공허는 **가드 자신을 고칠 때만** 열린다.
 pc_axis_control() { # $1=라벨 $2=결함 사본 경로 $3=기대 버전
-  _pac_f="$_A_FAIL"; _pac_p="$_A_PASS"
+  _a_save
   pc_fence_axis "음성대조-내부" "$2" "$3" >/dev/null 2>&1 </dev/null || true
-  _pac_grew=1; [ "$_A_FAIL" -gt "$_pac_f" ] && _pac_grew=0
-  _A_FAIL="$_pac_f"; _A_PASS="$_pac_p"
+  _pac_grew=1; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && _pac_grew=0
+  _a_restore
   assert_eq "ok" "$(ok_if "$_pac_grew" DID-NOT-FAIL)" \
     "[음성대조·펜스축] $1: 결함이 있는 사본에서도 축이 통과했다 — 비교가 no-op 이거나 추출이 낡았다"
 }
 pc_axis_positive() { # $1=라벨 $2=라이브 파일 $3=기대 버전
-  _pap_f="$_A_FAIL"; _pap_p="$_A_PASS"
+  _a_save
   pc_fence_axis "양성대조-내부" "$2" "$3" >/dev/null 2>&1 </dev/null || true
-  _pap_quiet=1; [ "$_A_FAIL" -eq "$_pap_f" ] && _pap_quiet=0
-  _A_FAIL="$_pap_f"; _A_PASS="$_pap_p"
+  _pap_quiet=1; [ "$_A_FAIL" -eq "$_A_SAVE_F" ] && _pap_quiet=0
+  _a_restore
   assert_eq "ok" "$(ok_if "$_pap_quiet" CRIED)" \
     "[양성대조·펜스축] $1: 라이브 파일에서 축이 실패했다 — 추출이나 기대값이 낡았다"
 }

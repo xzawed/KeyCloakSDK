@@ -837,20 +837,20 @@ sd_lang_contribution_axis "소스 주석 축" "$SD_SRC"
 # 반드시 울어야 한다. 축 **자신**을 태운다(대조군 안에 세기를 다시 구현하지 않는다 — #495 가
 # 그렇게 해서 같은 변이를 놓쳤다).
 sd_lang_contribution_control() { # $1=빠뜨릴 언어
-  _lcc_f="$_A_FAIL"; _lcc_p="$_A_PASS"
+  _a_save
   _lcc_list="$(printf '%s\n' "$SD_SRC" | grep -v "^$1/" || true)"
   sd_lang_contribution_axis "음성대조-내부" "$_lcc_list" >/dev/null 2>&1 || true
-  _lcc_grew=1; [ "$_A_FAIL" -gt "$_lcc_f" ] && _lcc_grew=0
-  _A_FAIL="$_lcc_f"; _A_PASS="$_lcc_p"
+  _lcc_grew=1; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && _lcc_grew=0
+  _a_restore
   assert_eq "ok" "$(ok_if "$_lcc_grew" DID-NOT-FAIL)" \
     "[음성대조·언어기여] $1 의 파일을 전부 뺀 목록에서도 통과했다 — 언어별 기여 검사가 no-op 이다"
 }
 # ⚠️ **양성 대조** — 라이브 목록에서는 조용해야 한다(「늘 운다」와 구분한다).
 sd_lang_contribution_positive() {
-  _lcp_f="$_A_FAIL"; _lcp_p="$_A_PASS"
+  _a_save
   sd_lang_contribution_axis "양성대조-내부" "$SD_SRC" >/dev/null 2>&1 || true
-  _lcp_quiet=1; [ "$_A_FAIL" -eq "$_lcp_f" ] && _lcp_quiet=0
-  _A_FAIL="$_lcp_f"; _A_PASS="$_lcp_p"
+  _lcp_quiet=1; [ "$_A_FAIL" -eq "$_A_SAVE_F" ] && _lcp_quiet=0
+  _a_restore
   assert_eq "ok" "$(ok_if "$_lcp_quiet" CRIED)" \
     "[양성대조·언어기여] 라이브 목록에서 언어별 기여 검사가 실패했다 — 파생이나 확장자 필터가 깨졌나?"
 }
@@ -1095,15 +1095,15 @@ sd_owner_axis ".claude/rules/security.md" 'is the same invariant and is likewise
 # ⚠️ **`set -eu` 아래다 — 반환값을 `cmd; v=$?` 로 받지 말 것.** 비제로가 곧 스크립트 종료라
 # 스위트가 **출력 한 줄 없이 exit 1** 로 죽는다(실측). 반드시 `|| v=1` 조건 문맥으로 받는다.
 sd_owner_probe() { # $1=TMP루트 $2=파일 $3=정규식 → 실패가 늘었으면 0
-  _op_f="$_A_FAIL"; _op_p="$_A_PASS"; _op_root="$ROOT"
+  _a_save; _op_root="$ROOT"
   ROOT="$1"
   # ⚠️ `|| true` 는 지금은 불필요하다(실측: `assert_*` 는 if/fi 로 끝나 항상 0 을 낸다).
   # 미래에 `assert_*` 가 비교 결과를 반환하게 되면 `set -e` 가 아래 원복을 건너뛴다 — 독립
   # 레그가 지목한 자리라 값싼 보험으로 둔다(원복이 새면 계수와 ROOT 가 함께 샌다).
   sd_owner_axis "$2" "$3" >/dev/null 2>&1 || true
   ROOT="$_op_root"
-  _op_grew=1; [ "$_A_FAIL" -gt "$_op_f" ] && _op_grew=0
-  _A_FAIL="$_op_f"; _A_PASS="$_op_p"
+  _op_grew=1; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && _op_grew=0
+  _a_restore
   return "$_op_grew"
 }
 
@@ -1189,12 +1189,12 @@ sd_doc_negative_control() { # $1=라벨 $2=상대경로 $3=sed $4=파라미터re
   _dnc_tmp="$(mktemp -d)"
   mkdir -p "$_dnc_tmp/$(dirname "$2")"
   sed "$3" "$ROOT/$2" > "$_dnc_tmp/$2"
-  _dnc_f="$_A_FAIL"; _dnc_p="$_A_PASS"
+  _a_save
   _dnc_root="$ROOT"; ROOT="$_dnc_tmp"
   sd_doc_axis "음성대조-내부" "$4" "$5" 1 "$6" "$2" "${7:-.}" >/dev/null 2>&1 || true
   ROOT="$_dnc_root"
-  _dnc_grew=1; [ "$_A_FAIL" -gt "$_dnc_f" ] && _dnc_grew=0
-  _A_FAIL="$_dnc_f"; _A_PASS="$_dnc_p"
+  _dnc_grew=1; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && _dnc_grew=0
+  _a_restore
   rm -rf "$_dnc_tmp"
   assert_eq "ok" "$(ok_if "$_dnc_grew" DID-NOT-FAIL)" \
     "[음성대조·값비교] $1: 코드값과 **다른 값**을 말하는 사본에서도 축이 통과했다 — 비교가 no-op 이거나 탐지 패턴이 낡았다"
@@ -1203,10 +1203,10 @@ sd_doc_negative_control() { # $1=라벨 $2=상대경로 $3=sed $4=파라미터re
 # ⚠️ **양성 대조도 함께** — 「늘 뭔가 찾는다」와 구분한다. 같은 축을 **라이브** 트리에 대고
 # 돌려 실패가 **안 늘어야** 한다. 둘을 합치면 축은 "틀리면 운다 · 맞으면 안 운다"를 다 보인다.
 sd_doc_positive_control() { # $1=라벨 $2=상대경로 $3=파라미터re $4=기대값 $5=신호re $6=중간필터re
-  _dpc_f="$_A_FAIL"; _dpc_p="$_A_PASS"
+  _a_save
   sd_doc_axis "양성대조-내부" "$3" "$4" 1 "$5" "$2" "${6:-.}" >/dev/null 2>&1 || true
-  _dpc_quiet=1; [ "$_A_FAIL" -eq "$_dpc_f" ] && _dpc_quiet=0
-  _A_FAIL="$_dpc_f"; _A_PASS="$_dpc_p"
+  _dpc_quiet=1; [ "$_A_FAIL" -eq "$_A_SAVE_F" ] && _dpc_quiet=0
+  _a_restore
   assert_eq "ok" "$(ok_if "$_dpc_quiet" CRIED)" \
     "[양성대조·값비교] $1: 라이브 $2 에서 축이 실패했다 — 코드값을 안 말하거나 신호가 낡았다"
 }
@@ -1227,13 +1227,13 @@ sd_doc_positive_control 'JWKS 재조회' 'go/README.md' "$sd_dnc_param" "$sd_exp
 sd_doc_floor_control() { # $1=라벨 $2=파라미터re $3=기대값 $4=신호re
   _dfc_tmp="$(mktemp -d)"
   : > "$_dfc_tmp/EMPTY.md"
-  _dfc_f="$_A_FAIL"; _dfc_p="$_A_PASS"
+  _a_save
   _dfc_docs="$SD_DOCS"; _dfc_root="$ROOT"
   SD_DOCS="EMPTY.md"; ROOT="$_dfc_tmp"
   sd_doc_axis "하한대조-내부" "$2" "$3" 1 "$4" >/dev/null 2>&1
   SD_DOCS="$_dfc_docs"; ROOT="$_dfc_root"
-  _dfc_grew=1; [ "$_A_FAIL" -gt "$_dfc_f" ] && _dfc_grew=0
-  _A_FAIL="$_dfc_f"; _A_PASS="$_dfc_p"
+  _dfc_grew=1; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && _dfc_grew=0
+  _a_restore
   rm -rf "$_dfc_tmp"
   assert_eq "ok" "$(ok_if "$_dfc_grew" DID-NOT-FAIL)" \
     "[하한대조·문서축] $1: 아무 줄도 못 찾은 트리에서도 축이 통과했다 — 히트 하한이 no-op 이다"
