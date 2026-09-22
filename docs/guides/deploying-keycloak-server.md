@@ -1,4 +1,8 @@
-<!-- doc-budget: max-bytes=9549 -->
+<!-- doc-budget: max-bytes=9761 -->
+<!-- 9549 → 9761 (2026-09-22, +212B). 규약 (1) — 거짓 절차를 참으로. 2 단계가 「*Service
+     accounts roles* 를 켜고 clientId/clientSecret 을 얻어라」에서 끝나 있었다. 그 토글은
+     **토큰을 줄 뿐 권한을 주지 않아**, 이 가이드대로 세운 서버에서 아홉 퀵스타트의 Admin
+     호출이 전부 403 이다(실측: 소비자 문서 어디에도 롤 부여가 없었다). -->
 # Keycloak Server Deployment Guide — Single VM + Docker Compose (Production)
 
 > **This document is about standing up the Keycloak *server*, not this SDK.** This SDK (`keycloak-sdk`) is only a **client library** — it does not include a Keycloak server. Keycloak is a **finished, open-source server** built by Red Hat: we don't *implement* the server, we simply **pull it in and run (deploy)** it (the same way you run PostgreSQL or nginx without coding them). For the conceptual overview, see [getting-started](getting-started.md).
@@ -153,7 +157,7 @@ docker compose logs -f keycloak          # look for "Running the server in produ
 ```
 
 1. Open the `https://auth.example.com` admin console → log in as `admin` with the temporary password (from `.env`).
-2. **Create a realm** (e.g. `myapp`) → **register a client** (confidential, *Service accounts roles* on → obtain `clientId`/`clientSecret`) → create a user.
+2. **Create a realm** (e.g. `myapp`) → **register a client** (confidential, *Service accounts roles* on → obtain `clientId`/`clientSecret`) → on the client's **Service account roles** tab assign the `realm-management` roles it needs (`manage-users`, `view-users`; the toggle grants a token, not permission — without them every Admin call is `403`) → create a user.
 3. **Replace the bootstrap admin**: create a personal admin account in the master realm → delete the temporary `admin` account → remove `KC_BOOTSTRAP_ADMIN_*` from compose (it's for the first-run only).
 
 ## 6. Production Must-Do Checklist
