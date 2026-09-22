@@ -1,4 +1,11 @@
-<!-- doc-budget: max-bytes=22305 -->
+<!-- doc-budget: max-bytes=22520 -->
+<!-- 22305 → 22520 (2026-09-22, +215B). 규약 (1) — **거짓 계약을 참으로** 바꾼다. 체크리스트가
+     「close() 는 admin 뿐 아니라 auth 세션도 정리해야 한다」를 필수 계약으로 걸어 놨는데,
+     Java 의 `AuthClient` 에는 닫을 세션이 **없고**(java/README.md 가 그렇게 적는다) Node 는
+     양쪽 다 no-op 이다. 즉 새 언어가 이 항목을 「충족」하려면 없는 것을 정리한다고 써야 하고,
+     그 거짓 문장이 바로 `0.2.1` 이 릴리스를 내서 고친 결함이다. 항목을 실제 규칙
+     (「그 언어의 스택이 실제로 쥔 것을 놓고, 어느 절반이 실재인지 README 에 적어라」)으로
+     바꾸고 그 선례를 가리킨다. -->
 # Add-a-Language Playbook
 
 > **Audience:** Implementation agents, reviewers, and human approvers who want to add a **new-language implementation** to the Keycloak polyglot SDK at the same quality bar as Java and Python.
@@ -46,7 +53,7 @@ Build up **layers isomorphic** to Java's `core`/`auth`/`admin`/`keycloak-sdk` an
   - **exp/nbf + clock skew** (default 30s).
   - **DoS-safe JWKS refetch** — signature forgery does not trigger a certs refetch; only an unresolved kid triggers a refetch; and the refetch itself is rate-limited to a minimum interval. Block the unauthenticated DoS amplification of hitting the IdP on every forged Bearer.
 - [ ] **admin (facade + raw())** — a resource facade wrapping the foundation admin client (`users`/`clients`/`realms`/`roles`/`groups`). Expose the underlying client via the **`raw()` escape hatch** (for advanced users). Admin calls **must inject config's timeouts** (not injecting them = unbounded waits and thread-exhaustion DoS).
-- [ ] **client (unified entry point)** — initialize `auth` **eagerly** and `admin` **lazily** (a public client can use `auth` alone without a secret). Provide `close()`/`aclose()` via a context manager/`AutoCloseable` — cleaning up not just admin but **the auth session (HTTP connection pool) as well** (not cleaning up = FD/connection leaks).
+- [ ] **client (unified entry point)** — initialize `auth` **eagerly** and `admin` **lazily** (a public client can use `auth` alone without a secret). Provide `close()`/`aclose()` via a context manager/`AutoCloseable` — releasing **whatever that language's stack actually holds**, and say in the README which half is real. ⚠️ Not every language holds anything: Java's `AuthClient` has no closeable session, and Node's two halves are both no-ops (the sub-libraries are `fetch`-based). Claiming otherwise is the defect `0.2.1` had to ship a release to fix.
 
 **Rules common to all layers:**
 - **Hide underlying types** — keep foundation-library types behind the primary consumption path (the facade). Only the documented hiding exceptions ([CLAUDE.md](../../CLAUDE.md) §architecture) are allowed (reusing stable representation types; low-level injection/configuration points).
