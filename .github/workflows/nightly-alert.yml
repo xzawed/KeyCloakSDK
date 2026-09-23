@@ -25,6 +25,7 @@ on:
       - kotlin-ci
       - Node CI
       - php-ci
+      - published-floor
       - Python CI
       - ruby-ci
       - rust-ci
