@@ -1,4 +1,9 @@
-<!-- doc-budget: max-bytes=44032 -->
+<!-- doc-budget: max-bytes=44110 -->
+<!-- 44032 → 44110 (2026-09-23). 규약 (1) — **함대 정렬 분기가 뒤집혔다.** JVM 짝이
+     `1.0.1` 로 가면서 「아홉이 모두 1.0.0」이 거짓이 되고, `test-publication-claims.sh` 가
+     요구하는 문장 자체가 **다른 갈래**로 바뀐다(정렬 갈래 ↔ 갈림 갈래는 상호배타라 문서가
+     하나만 들 수 있다). 늘어난 것은 「어느 쪽이 어느 번호인가」 한 구절뿐이다 —
+     DEPLOY.md §4 step 1 이 예고한 「미리 쓸 수 없는 문장 뒤집기」가 이것이다. -->
 <!-- 43971 → 44032 (2026-09-22, +61B). 규약 (1) — 거짓 절차를 참으로. PHP 「Minimal usage
      example」이 **Packagist 설치 바로 아래**에서 `require __DIR__ . '/../vendor/autoload.php'`
      로 시작했다. 그 경로는 링크된 저장소 내부 예제(`php/examples/`)에서만 맞고, 소비자가
@@ -22,7 +27,7 @@
 
 A guide to installing the Keycloak polyglot SDK locally and running your first token issuance, JWT validation, and Admin API call with minimal code. This SDK is provided in **multiple programming languages** (currently Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby · Kotlin), and while each language is idiomatic, the concepts, layers, and flows are isomorphic.
 
-> ℹ️ **All nine are on a public registry with a stable release** (every language is at `1.0.0` today; that alignment is not a policy, so expect the numbers to diverge again) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central), Kotlin (Maven Central) and Go (the Go module proxy). A bare install now resolves `1.0.0` everywhere; the release candidates that preceded it are still on their registries (none of these ecosystems lets you delete a published version) but none of them prefers one any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. Releasing is a maintainer task — see [DEPLOY.md](../../DEPLOY.md).
+> ℹ️ **All nine are on a public registry with a stable release** (the JVM pair is at `1.0.1`, the other seven at `1.0.0` — alignment was never a policy) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central), Kotlin (Maven Central) and Go (the Go module proxy). A bare install resolves the current release in every ecosystem that picks one for you (Maven and Gradle never do — name the version); the release candidates that preceded 1.0 are still on their registries (none of these ecosystems lets you delete a published version) but none of them prefers one any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. Releasing is a maintainer task — see [DEPLOY.md](../../DEPLOY.md).
 
 > 🖥️ **You need a Keycloak *server* first.** This SDK is a client library, so it needs a **Keycloak server to connect to** in order to work (the server is a separate, standalone product not included in this SDK). For a local trial, use the one-line Docker command `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`; for a **production deployment**, see the [Keycloak server deployment guide](deploying-keycloak-server.md).
 
@@ -80,19 +85,19 @@ After installation, adding just the single facade artifact to your consuming pro
 </dependency>
 ```
 
-### 3) Installation from Maven Central (stable `1.0.0`)
+### 3) Installation from Maven Central (stable `1.0.1`)
 
-`1.0.0` is live on Maven Central — the first release under the 1.0 stability guarantee. No local `install` is needed:
+`1.0.1` is live on Maven Central — a patch release (two security fixes · JDK floor 21 → 17). No local `install` is needed:
 
 ```xml
 <dependency>
   <groupId>io.github.xzawed</groupId>
   <artifactId>keycloak-sdk</artifactId>
-  <version>1.0.0</version>
+  <version>1.0.1</version>
 </dependency>
 ```
 
-If you depend on the modules individually rather than through the facade, import the BOM (`io.github.xzawed:keycloak-sdk-bom:1.0.0`, `<type>pom</type>` `<scope>import</scope>`) so their versions stay aligned.
+If you depend on the modules individually rather than through the facade, import the BOM (`io.github.xzawed:keycloak-sdk-bom:1.0.1`, `<type>pom</type>` `<scope>import</scope>`) so their versions stay aligned.
 
 > ⚠️ **Maven has no prerelease concept — and that made it the odd one out during the RC.** `0.1.0-RC1` was never "a prerelease of `0.1.0`"; it is a different, lower-sorting coordinate. Nothing filtered it out the way RubyGems does, and nothing fell back to it the way pip and Cargo do, because in Maven you always name the version yourself. `0.1.0` is a **separate** artifact, and the RC stays on Central forever — Central is immutable, with no delete, no yank and no unlist. Releases remain human-gated: a publish runs only when a human pushes a `v*` tag to trigger [`.github/workflows/release.yml`](../../.github/workflows/release.yml), and even then the workflow only stages to the Central Portal until a human clicks Publish. For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
@@ -644,19 +649,19 @@ Then reference it from a consuming Gradle project via `mavenLocal()` (Gradle Kot
 
 ```kotlin
 repositories { mavenLocal(); mavenCentral() }
-dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.0") }
+dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.1") }
 ```
 
 ⚠️ **Same coordinate as the released artifact** — unlike [Java](#java)'s `1.0.0-SNAPSHOT` working copy, Kotlin's `build.gradle.kts` declares the release version (the release workflow checks the tag against it). With `mavenLocal()` first, your local build shadows Maven Central silently; to undo, drop `mavenLocal()` or delete `~/.m2/repository/io/github/xzawed/keycloak-sdk-kotlin/1.0.0`.
 
 (To just build and test locally without publishing: `cd kotlin && ./gradlew build && ./gradlew test` — unit tests + coverage gate, Docker-free.)
 
-### 3) Installation from Maven Central (stable `1.0.0`)
+### 3) Installation from Maven Central (stable `1.0.1`)
 
 `1.0.0` is live on Maven Central — the first release under the 1.0 stability guarantee. No local publish is needed:
 
 ```kotlin
-dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.0") }
+dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.1") }
 ```
 
 > ⚠️ **Consumer floor is Kotlin 2.2+, and that is a deliberate choice you can verify.** The published jar carries `@Metadata(mv=[2,2,0])` and its POM declares `kotlin-stdlib 2.2.21` — both lower than the 2.4.10 toolchain that built it, because a jar built without pinning `languageVersion`/`apiVersion` is unreadable to any compiler older than the one that produced it. (Measured on the published artifact: `javap -v` on a class shows `mv=[2,2,0]`, and a clean `mvn dependency:get` resolves `kotlin-stdlib 2.2.21`, not 2.4.x.)

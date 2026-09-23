@@ -4,11 +4,11 @@ A Keycloak client library for Java that covers both **Authentication (OIDC / OAu
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`1.0.0` is on Maven Central** — the first release carrying the stability guarantee below. ⚠️ **Maven never picks a version for you**: a `<dependency>` with no `<version>` and no BOM managing it fails the build rather than resolving to the newest release, so name `1.0.0` explicitly as shown below.
+> **`1.0.1` is on Maven Central** — a patch release: two security fixes and a **lowered JDK floor** (21 → 17). No public API changed. ⚠️ **Maven never picks a version for you**: a `<dependency>` with no `<version>` and no BOM managing it fails the build rather than resolving to the newest release, so name `1.0.1` explicitly as shown below.
 
 ## Requirements
 
-- **JDK 21+** — artifacts are compiled with `--release 21`, so an older JDK raises `UnsupportedClassVersionError`.
+- **JDK 17+** — artifacts are compiled with `--release 17`, so an older JDK raises `UnsupportedClassVersionError`. ⚠️ **`1.0.0` needed JDK 21**; this release is what lowers the floor.
 - Maven 3.9+.
 - A Keycloak server to connect to (integration-tested against Keycloak 26.6).
 
@@ -20,7 +20,7 @@ The SDK ships as several Maven modules, but **most users need exactly one**: `io
 <dependency>
   <groupId>io.github.xzawed</groupId>
   <artifactId>keycloak-sdk</artifactId>
-  <version>1.0.0</version>
+  <version>1.0.1</version>
 </dependency>
 ```
 
@@ -40,7 +40,7 @@ If you depend on the modules individually, import the BOM so their versions stay
     <dependency>
       <groupId>io.github.xzawed</groupId>
       <artifactId>keycloak-sdk-bom</artifactId>
-      <version>1.0.0</version>
+      <version>1.0.1</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -101,7 +101,7 @@ This SDK is **`1.0`** and follows SemVer: a breaking change to the public API re
 
 Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
 
-**Each of the nine languages versions independently.** All nine reached `1.0.0` in the same release wave because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
+**Each of the nine languages versions independently.** All nine reached `1.0.0` together because they earned the same guarantee at the same time — and they have since diverged: the JVM pair is on `1.0.1`, the other seven on `1.0.0`. They do **not** move in lockstep.
 
 ## Documentation
 

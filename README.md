@@ -1,4 +1,9 @@
-<!-- doc-budget: max-bytes=12435 -->
+<!-- doc-budget: max-bytes=12476 -->
+<!-- 12435 → 12476 (2026-09-23). 규약 (1) — **함대 정렬 분기가 뒤집혔다.** JVM 짝이
+     `1.0.1` 로 가면서 「아홉이 모두 1.0.0」이 거짓이 되고, `test-publication-claims.sh` 가
+     요구하는 문장 자체가 **다른 갈래**로 바뀐다(정렬 갈래 ↔ 갈림 갈래는 상호배타라 문서가
+     하나만 들 수 있다). 늘어난 것은 「어느 쪽이 어느 번호인가」 한 구절뿐이다 —
+     DEPLOY.md §4 step 1 이 예고한 「미리 쓸 수 없는 문장 뒤집기」가 이것이다. -->
 <!-- 12322 → 12435 (2026-09-22, +113B). 규약 (1) — 거짓 절차를 참으로. 「서비스 계정을 켠
      confidential 클라이언트를 만들라」로 끝나 있었는데, 그것만으로는 Admin 호출이 전부
      403 이다(토큰은 나오고 권한이 없다). `realm-management` 롤 부여를 같은 문장에 넣는다.
@@ -20,7 +25,7 @@ English · [한국어](README.ko.md)
 
 > "Polyglot" here means **programming languages**, not natural-language localization (i18n).
 >
-> ⚠️ **Stable `1.0.0` is live for all nine languages.** They reached it in the same release wave because they earned the same guarantee at the same time — a breaking change to the public API now requires a **major** bump, and CI enforces that by diffing each lane's API against its previously published artifact. **They do not move as a fleet afterwards**: a language gets a new number only when something consumer-visible changed in it, so expect the numbers to diverge again. Every release is human-gated. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
+> ⚠️ **All nine languages have shipped a stable release, and the numbers differ** — the JVM pair (Java · Kotlin) is on `1.0.1`, the other seven on `1.0.0`. They reached 1.0 in the same wave because they earned the same guarantee at the same time — a breaking change to the public API requires a **major** bump, and CI enforces that by diffing each lane's API against its previously published artifact. **They do not move as a fleet**: a language gets a new number only when something consumer-visible changed in it. Every release is human-gated. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
 
 ---
 
@@ -73,8 +78,8 @@ gem install keycloak-sdk                              # Ruby
 JVM — add the coordinate to your build file:
 
 ```
-io.github.xzawed:keycloak-sdk:1.0.0                   # Java   (Maven Central)
-io.github.xzawed:keycloak-sdk-kotlin:1.0.0            # Kotlin (Maven Central)
+io.github.xzawed:keycloak-sdk:1.0.1                   # Java   (Maven Central)
+io.github.xzawed:keycloak-sdk-kotlin:1.0.1            # Kotlin (Maven Central)
 ```
 
 Full snippets per build tool (Maven XML, Gradle Kotlin DSL, `Gemfile`, `Cargo.toml`) are in the [getting-started guide](docs/guides/getting-started.md).

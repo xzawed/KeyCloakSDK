@@ -163,7 +163,7 @@ df_coordinate() { case "$1" in   # 레지스트리상 패키지 식별자(사람
 df_published_version() { case "$1" in
   php) echo "1.0.0" ;; python) echo "1.0.0" ;; dotnet) echo "1.0.0" ;;
   rust) echo "1.0.0" ;; ruby) echo "1.0.0" ;; node) echo "1.0.0" ;;
-  java) echo "1.0.0" ;; kotlin) echo "1.0.0" ;; go) echo "1.0.0" ;;
+  java) echo "1.0.1" ;; kotlin) echo "1.0.1" ;; go) echo "1.0.0" ;;
   *) echo "" ;; esac; }
 
 # 공개 API 게이트가 대조하는 **직전 게시본**. 일곱 레인이 이 값을 리터럴로 들고 있고

@@ -62,7 +62,7 @@ All nine SDKs have shipped a stable release to a public registry — PHP
 Node (npm), Java (Maven Central), Kotlin (Maven Central) and Go (the Go module
 proxy — for Go the git tag *is* the version, so the `go/v1.0.0` tag is the
 release).
-⚠️ **Every language is on `1.0.0` today, and that alignment is not a policy** — they reached it together because they earned the same guarantee together; after this release a language moves only when something consumer-visible changed in it, so expect the numbers to diverge again.
+⚠️ **The numbers have diverged, because a language moves only when something consumer-visible changed in it** — the JVM pair is on `1.0.1`, the other seven on `1.0.0`. They reached 1.0 together because they earned the same guarantee together; alignment was never a policy.
 **The newest released version of each language is the supported one** and the
 only one that receives fixes; anything older, including every `0.x` release and
 the release candidates, stays on its registry but is **not** supported. Each
