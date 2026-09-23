@@ -1,4 +1,10 @@
-<!-- doc-budget: max-bytes=13497 -->
+<!-- doc-budget: max-bytes=13505 -->
+<!-- 13497 → 13505 (2026-09-23). 규약 (1) — 태그 `v1.0.1` 이 생기면서 `kind=runtime` 오라클이
+     **반대 방향으로** 실패했다(「격차가 없는데 published=21 가 남아 있다」). 그 속성과 격차 서술을
+     지우고, 소비자에게 21 을 말하던 java 자리를 17 로 내린다.
+     ⚠️ **kotlin 은 그대로 21 이다** — `kotlin-v1.0.1` 이 아직 없다. 늘어난 것은 **어느 쪽이 아직
+     안 내려갔는지**와 그것을 다시 재는 명령(`git show kotlin-v1.0.0:…`)이다. 그 한 줄이 없으면
+     다음 세션이 kotlin 행을 읽고 17 로 「고쳐」 게시본에 대해 거짓을 말하게 된다. -->
 <!-- 13479 → 13497 (2026-09-23). 규약 (1) — **함대 정렬 분기가 뒤집혔다.** JVM 짝이
      `1.0.1` 로 가면서 「아홉이 모두 1.0.0」이 거짓이 되고, `test-publication-claims.sh` 가
      요구하는 문장 자체가 **다른 갈래**로 바뀐다(정렬 갈래 ↔ 갈림 갈래는 상호배타라 문서가
@@ -108,7 +114,7 @@ pip install -e KeyCloakSDK/python
 
 | 언어 | 런타임 · 관용 | 패키지 *(아홉 전부 공개 레지스트리에 게시됨)* | 패키지 README | 예제 |
 |---|---|---|---|---|
-| **Java** | JDK 21+ (게시본) · 블로킹 | `io.github.xzawed:keycloak-sdk` (Maven Central) | [java/README.md](java/README.md) | [QuickStart.java](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) |
+| **Java** | JDK 17+ (게시본 `1.0.1`) · 블로킹 | `io.github.xzawed:keycloak-sdk` (Maven Central) | [java/README.md](java/README.md) | [QuickStart.java](java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java) |
 | **Python** | 3.10+ · sync + async(`aio`) | `keycloak-sdk` (PyPI) | [python/README.md](python/README.md) | [quickstart.py](python/examples/quickstart.py) · [async](python/examples/async_quickstart.py) |
 | **Node** | 22+ · ESM · async-only | `@xzawed/keycloak-sdk` (npm) | [node/README.md](node/README.md) | [quickstart.ts](node/examples/quickstart.ts) |
 | **Go** | 1.25+ (published `1.0.0`; tree 1.26+) · sync + `context.Context` | `github.com/xzawed/KeyCloakSDK/go` | [go/README.md](go/README.md) | [example_test.go](go/example_test.go) |

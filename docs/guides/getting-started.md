@@ -43,7 +43,7 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 
 | Language | Minimum runtime | Notes |
 |---|---|---|
-| **Java** | **JDK 21+** for the published `1.0.0` | ⚠️ The sources target 17, but that lowering has **not shipped yet** — see [Java](#java). Older JDKs raise `UnsupportedClassVersionError` |
+| **Java** | **JDK 17+** | Lowered from 21 by `1.0.1` — see [Java](#java). Older JDKs raise `UnsupportedClassVersionError` |
 | **Python** | **3.10+** | Includes `py.typed` (PEP 561) — consumer-side mypy type checking possible |
 | **Node.js** | **22+** | ESM-only · async-only · includes `.d.ts` type declarations |
 | **Go** | **1.25+** for the published `1.0.0` | ⚠️ The tree now requires 1.26 (`x/oauth2` v0.37 · `x/sync` v0.23) — not shipped yet, see [Go](#go) · sync + `context.Context` |
@@ -60,12 +60,12 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 
 ### 1) Required runtime — JDK 17+
 
-<!-- doc-guard: kind=runtime lang=java published=21 -->
+<!-- doc-guard: kind=runtime lang=java -->
 The sources target JDK **`17`** (`--release 17`), and this anchor holds that value against `java/pom.xml`.
 
-⚠️ **The published `1.0.0` on Maven Central does not have it yet — that artifact needs JDK 21.** The tag `v1.0.0` is from 2026-09-01; the lowering landed 2026-09-04 (#389) and **no JVM release has shipped since**, so what you download today is compiled with `--release 21`. Build against **21** until the next JVM release; loading a class file under an older JDK raises `UnsupportedClassVersionError`.
+⚠️ **`1.0.0` needed JDK 21 — `1.0.1` is the release that closed that gap.** The lowering landed 2026-09-04 (#389) but no JVM release carried it until `v1.0.1` (2026-09-23), so anyone still pinned to `1.0.0` is running a `--release 21` artifact and must build against 21.
 
-⚠️ **The anchor now holds both numbers, so this gap cannot go unrecorded.** `kind=runtime` used to compare this document against the **working tree** alone, which is exactly why it stayed green while consumers downloaded a 21 artifact. It now also reads the newest release tag (`git show v1.0.0:java/pom.xml`) and **fails** unless the anchor carries `published=21` and this paragraph states it. When the next JVM release goes out, the same guard fails the other way — delete the `published=` attribute and lower this line to 17 **together with** the tables above and `README.md` · `README.ko.md` · `docs/reference/compatibility.md` · `kotlin/README.md`, which all say 21 today because that is what is published.
+⚠️ **The gap is closed, so the anchor carries no `published=` attribute any more.** `kind=runtime` reads both the working tree and the newest release tag; while they differ it **fails** unless the anchor records the published value and this paragraph states it, and once a release closes the difference it fails the other way until the attribute is deleted. That is why this edit could not ship in the release PR — the tag did not exist yet when its CI ran. **Kotlin's anchor still carries `published=21`**: `kotlin-v1.0.1` has not been cut.
 
 ### 2) Local installation (development)
 
