@@ -114,7 +114,14 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      # ⚠️ **`persist-credentials: false` 가 이 잡에만 빠져 있었다**(같은 두 파일의 나머지 체크아웃
+      # 넷은 전부 갖고 있다). 기본값은 잡 토큰을 `.git/config` 의 `http.extraheader` 로 남기는데,
+      # 이 잡은 그 상태로 `mvn -Prelease deploy` 를 돌린다 — Central 에서 받은 **서드파티 플러그인
+      # 코드를 실행**하는 단계다. 그 토큰이 `contents: read` 일 때도 좋지 않았지만, 이 PR 이
+      # `attestations: write` 를 얹는 순간 **빌드 안의 무엇이든 저장소 증명을 발행할 수 있게 된다.**
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # ⚠️ 4개 시크릿 중 하나라도 미설정이면 아무것도 하기 전에 **실패**한다(스킵 아님). 서명키가
       # 없는 채로 진행되면 setup-java는 GPG 임포트를 조용히 건너뛰고, 한참 뒤 deploy 스텝이 인증/서명
