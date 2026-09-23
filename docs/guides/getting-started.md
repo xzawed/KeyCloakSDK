@@ -51,7 +51,7 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 | **PHP** | **8.3+** | `final readonly class` value types · exception-based (`KeycloakException` hierarchy) |
 | **Rust** | **1.88+** | MSRV required by edition 2024 + let-chains · async-only (tokio) · `thiserror`-based `KeycloakError` |
 | **Ruby** | **3.2+** | sync-only · exception hierarchy (`KeycloakSdk::Error`) · gem `keycloak-sdk` / require `keycloak_sdk` |
-| **Kotlin** | **2.2+** (JDK 21+ for the published `1.0.0`) | ⚠️ Same as Java — the 17 target has not shipped. coroutines (`suspend`) · data-class value types · sealed `KeycloakException` · reuses the JVM Java SDK stack |
+| **Kotlin** | **2.2+** on **JDK 17+** | Lowered from 21 by `1.0.1`, same as Java. coroutines (`suspend`) · data-class value types · sealed `KeycloakException` · reuses the JVM Java SDK stack |
 | (optional) Docker | — | **Needed only for integration tests (Testcontainers/docker CLI)**. Not required to use the SDK itself |
 
 ---
@@ -634,8 +634,8 @@ client.close
 
 ### 1) Required runtime — Kotlin 2.2+ / JDK 17+
 
-<!-- doc-guard: kind=runtime lang=kotlin published=21 -->
-**JDK `17+`** is the bytecode target **in the sources** (this anchor verifies the emitted target, not the JDK used to build). ⚠️ **The published `1.0.0` needs JDK 21** — `kotlin-v1.0.0` carries only `jvmToolchain(21)` with no `jvmTarget`/`-Xjdk-release`, so its bytecode is 21; the 17 target landed after the tag and has not shipped. Same gap as [Java](#java), and the anchor now records it the same way (`published=21`; the guard reads `jvmToolchain` on that tag precisely because `jvmTarget` is absent there). Kotlin **2.2 or newer** is also required on that JDK (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). The SDK is *built* with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so the published artifact’s binary metadata is readable by any Kotlin 2.2+ compiler — you do not need to be on 2.4 to consume it. All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
+<!-- doc-guard: kind=runtime lang=kotlin -->
+**JDK `17+`** is the bytecode target **in the sources** (this anchor verifies the emitted target, not the JDK used to build). ⚠️ **`1.0.0` needed JDK 21 — `1.0.1` is the release that closed that gap.** `kotlin-v1.0.0` carried only `jvmToolchain(21)` with no `jvmTarget`/`-Xjdk-release`, so its bytecode was 21; anyone still pinned to `1.0.0` must build against 21. Same story as [Java](#java), and the anchor no longer carries `published=` because tree and published now agree. Kotlin **2.2 or newer** is also required on that JDK (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). The SDK is *built* with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so the published artifact’s binary metadata is readable by any Kotlin 2.2+ compiler — you do not need to be on 2.4 to consume it. All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
 
 ### 2) Local installation (development)
 

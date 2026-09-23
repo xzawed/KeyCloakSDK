@@ -1,4 +1,9 @@
-<!-- doc-budget: max-bytes=12484 -->
+<!-- doc-budget: max-bytes=12492 -->
+<!-- 12484 → 12492 (2026-09-23). 규약 (1) — 태그 `kotlin-v1.0.1` 이 생겨 kotlin 앵커의
+     `published=21` 도 반대 방향으로 실패했다. java 와 같은 정정을 kotlin 자리에 한다.
+     이제 **JVM 둘 다 17** 이므로 「어느 쪽이 아직 안 내려갔는가」 단서는 필요 없어졌고,
+     대신 **다음 격차에서 무엇을 읽어야 하는가**(매니페스트가 아니라 태그)를 남긴다 —
+     그 지침이 없으면 다음 세션이 같은 실수를 반복한다. -->
 <!-- 12476 → 12484 (2026-09-23). 규약 (1) — 태그 `v1.0.1` 이 생기면서 `kind=runtime` 오라클이
      **반대 방향으로** 실패했다(「격차가 없는데 published=21 가 남아 있다」). 그 속성과 격차 서술을
      지우고, 소비자에게 21 을 말하던 java 자리를 17 로 내린다.
@@ -124,7 +129,7 @@ pip install -e KeyCloakSDK/python
 | **PHP** | 8.3+ · `final readonly class` | `xzawed/keycloak-sdk` (Packagist) | [php/README.md](php/README.md) | [quickstart.php](php/examples/quickstart.php) |
 | **Rust** | 1.88+ (edition 2024) · async (tokio) | `keycloak-sdk` (crates.io) | [rust/README.md](rust/README.md) | [quickstart.rs](rust/examples/quickstart.rs) |
 | **Ruby** | 3.2+ · sync-only | `keycloak-sdk` (RubyGems) | [ruby/README.md](ruby/README.md) | [quickstart.rb](ruby/examples/quickstart.rb) |
-| **Kotlin** | 2.2+ / JDK 21+ (published) · coroutines | `io.github.xzawed:keycloak-sdk-kotlin` (Maven Central) | [kotlin/README.md](kotlin/README.md) | [quickstart.kt](kotlin/examples/quickstart.kt) |
+| **Kotlin** | 2.2+ / JDK 17+ (published `1.0.1`) · coroutines | `io.github.xzawed:keycloak-sdk-kotlin` (Maven Central) | [kotlin/README.md](kotlin/README.md) | [quickstart.kt](kotlin/examples/quickstart.kt) |
 
 ---
 
