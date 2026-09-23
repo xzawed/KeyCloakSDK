@@ -217,21 +217,43 @@ const ruleJobLevelDeclared = (wf, out) => {
 //
 // ⚠️ 발견 기반이라 조준점이 사라지면 조용히 0건을 검사한다 — 아래 호출부가 검사한 잡 수를
 // 세어 `--min-write-checkout` 하한과 대조한다.
+// ⚠️ **2026-09-23: 범위를 `contents: write` → 「GITHUB_TOKEN 으로 행사되는 쓰기 스코프」로 넓혔다.**
+// 기각이 막은 것은 「전 워크플로에 강제」(읽기 전용 잡까지)였지 **쓰기 토큰의 정의**가 아니었다.
+// 새 신호가 왔다 — `release.yml` 의 `release` 잡이 `contents: read` 인 채로 `attestations: write`
+// 를 얻었고(출처 증명), 그 잡은 **두 파일의 체크아웃 다섯 중 유일하게** `persist-credentials: false`
+// 가 없었다. 좁은 규칙은 그것을 **구조적으로 못 본다**(실측: 그 줄을 지워도 이 가드는 초록이었다).
+// 근거는 스코프 **이름**이 아니라 「남은 토큰이 그 권한을 행사할 수 있는가」다 — 워크스페이스에
+// 남은 GITHUB_TOKEN 은 그 잡의 모든 API 스코프를 이후 스텝(서드파티 Maven 플러그인 포함)에
+// 넘긴다. `attestations: write` 면 증명을 발행할 수 있다.
+//
+// ⚠️ **`id-token` 은 제외한다 — 실측으로 갈렸다.** 처음엔 「쓰기면 전부」로 넓혔더니
+// `node-release.yml`·`python-release.yml` 의 `release` 잡 둘이 걸렸는데, 그 둘은
+// `contents: read` + `id-token: write`(npm·PyPI Trusted Publishing)다. OIDC 토큰은 git 자격증명이
+// 아니라 `ACTIONS_ID_TOKEN_REQUEST_*` 환경변수로 받는다 — 남은 git 토큰은 그 능력을 주지 않는다.
+// 그 둘을 걸면 **거짓 양성**이고, 거짓 양성은 규칙을 꺼지게 만든다.
+const NON_TOKEN_SCOPES = new Set(['id-token'])
 const ruleWriteJobDropsCheckoutCreds = (wf, out) => {
   let seen = 0
   for (const [i, job] of wf.jobs.entries()) {
-    const write = job.scopes.some(
-      (s) => s.key === 'contents' && (s.value ?? '').trim().replace(/#.*$/, '').trim() === 'write',
+    const writes = job.scopes.filter(
+      (s) => !NON_TOKEN_SCOPES.has(s.key) && (s.value ?? '').trim().replace(/#.*$/, '').trim() === 'write',
     )
-    if (!write) continue
+    if (writes.length === 0) continue
     const start = job.node.n
     const end = wf.jobs[i + 1]?.node.n ?? wf.lines.length + 1
-    const body = wf.lines.slice(start, end - 1).join('\n')
+    // ⚠️ **주석을 걷고 본다 — 안 걷으면 주석이 설정 행세를 한다.** 실측으로 걸렸다(2026-09-23):
+    // 이 규칙을 넓히면서 `release.yml` 에 「`persist-credentials: false` 가 이 잡에만 빠져 있었다」는
+    // 경위 주석을 달았는데, 그 **글자 때문에** 실제 설정 줄을 지워도 규칙이 침묵했다.
+    // 즉 이 가드를 무력화하는 데 필요한 것이 설정 변경이 아니라 **주석 한 줄**이었다.
+    const body = wf.lines
+      .slice(start, end - 1)
+      .map((l) => l.replace(/#.*$/, ''))
+      .join('\n')
     if (!/uses: *actions\/checkout@/.test(body)) continue // 체크아웃이 없으면 남길 자격증명도 없다
     seen += 1
     if (!/persist-credentials: *false/.test(body))
       out.push(
-        `${wf.file}:${start} 잡 \`${job.name}\` 은 \`contents: write\` 를 쥐고 체크아웃하면서 \`persist-credentials: false\` 가 없다 — 그 토큰이 워크스페이스의 git 설정에 남아 이후 스텝(빌드·테스트·서드파티 액션)이 저장소에 쓸 수 있다. 형제 릴리스 워크플로들은 이미 이 줄을 갖고 있다`,
+        `${wf.file}:${start} 잡 \`${job.name}\` 은 \`${writes.map((s) => `${s.key}: write`).join('`·`')}\` 를 쥐고 체크아웃하면서 \`persist-credentials: false\` 가 없다 — 그 토큰이 워크스페이스의 git 설정에 남아 이후 스텝(빌드·테스트·서드파티 액션)이 그 권한을 그대로 쓸 수 있다. 형제 릴리스 워크플로들은 이미 이 줄을 갖고 있다`,
       )
   }
   return seen

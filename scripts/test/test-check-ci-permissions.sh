@@ -27,7 +27,39 @@ assert_ok node "$GUARD" "$TMP"
 # 계수를 동시에 고정한다 — 특히 write 계수는 주석 제거(`write # 이유` → `write`)가 살아
 # 있어야만 1이 나온다. 주석을 안 걷어내면 값이 "write # ..."가 되어 상승이 보이지 않는다.
 out=$(node "$GUARD" "$TMP" 2>&1)
-assert_contains "$out" "릴리스 1개 · 잡 8개 · 게시 잡 1개 · 비로컬 uses 3개 · 릴리스 잡의 write 상승 1건" "잡·릴리스·게시잡·uses·권한상승을 실제로 센다"
+assert_contains "$out" "릴리스 1개 · 잡 9개 · 게시 잡 1개 · 비로컬 uses 4개 · 릴리스 잡의 write 상승 2건 · write+체크아웃 잡 1개" "잡·릴리스·게시잡·uses·권한상승·write+체크아웃을 실제로 센다"
+
+# ── 변이 1b: 쓰기 토큰을 쥔 잡이 체크아웃 자격증명을 남긴다 ──
+# ⚠️ **이 규칙은 오래 자가테스트가 전혀 덮지 않았다**(픽스처에 write+체크아웃 잡이 없었다).
+# 실제 트리에서만 돌았고, 그래서 아래 두 구멍이 둘 다 실측으로 드러났다(2026-09-23).
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i '/^          persist-credentials: false$/d' "$TMP/.github/workflows/demo-release.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "attestations: write" "⚠️ `contents: write` 가 아닌 쓰기 스코프도 대상이다 — 실제 스코프 이름을 짚는다"
+assert_contains "$out" "persist-credentials: false\` 가 없다" "자격증명을 남기는 쓰기 잡을 잡는다"
+
+# ⚠️ **주석이 설정 행세를 하면 안 된다.** 실측: 이 규칙을 넓히면서 `release.yml` 에 경위 주석을
+# 달았더니 그 **글자 때문에** 실제 설정 줄을 지워도 규칙이 침묵했다 — 가드를 무력화하는 데
+# 필요한 것이 설정 변경이 아니라 주석 한 줄이었다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i 's|^          persist-credentials: false$|          # persist-credentials: false 는 여기 있었다|' \
+  "$TMP/.github/workflows/demo-release.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "persist-credentials: false\` 가 없다" "주석 안의 같은 글자를 설정으로 세지 않는다"
+
+# ⚠️ `id-token: write` 만 가진 잡은 **대상이 아니다**(거짓 양성 대조군). OIDC 토큰은 git
+# 자격증명이 아니라 `ACTIONS_ID_TOKEN_REQUEST_*` 로 받으므로 남은 토큰이 그 능력을 주지 않는다.
+# 이것이 없으면 규칙을 「쓰기면 전부」로 넓혀도 테스트가 통과한다(실측: 그렇게 넓혔더니
+# node/python 릴리스 잡 둘이 거짓 양성으로 걸렸다).
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i 's|^  publish:$|  publish:\n    # (아래 스텝에 체크아웃을 더해 id-token 전용 잡을 만든다)|' "$TMP/.github/workflows/demo-release.yml"
+sed -i 's|^      - run: echo "픽스처 — 실행되지 않는다"$|      - uses: actions/checkout@0000000000000000000000000000000000000000 # 픽스처|' \
+  "$TMP/.github/workflows/demo-release.yml"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_eq "" "$(printf '%s' "$out" | grep 'publish\`' | grep 'persist-credentials' || true)" \
+  "id-token: write 만 가진 잡은 이 규칙의 대상이 아니다"
 
 # ── 변이 1(규칙 1): 릴리스 잡에서 permissions 선언을 지운다 ──
 # 이것이 이 가드를 만든 이유다. 릴리스 워크플로에는 워크플로 레벨 기본값이 없으므로

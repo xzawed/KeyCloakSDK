@@ -105,11 +105,23 @@ jobs:
   release:
     needs: [version, integration, install-smoke]
     runs-on: ubuntu-latest
-    # 체크아웃 + Central Portal 업로드 — GitHub Release를 만들지 않으므로 write는 불필요하다
+    # 체크아웃 + Central Portal 업로드 — GitHub Release를 만들지 않으므로 contents write는 불필요하다.
+    # ⚠️ `id-token: write`·`attestations: write`는 **출처 증명(attestation)** 에만 쓴다. 둘은 내용·태그·
+    # 패키지를 못 건드리며, 같은 목적을 Release 자산으로 하려면 `contents: write`가 필요해 **더 큰 권한**이
+    # 된다. 그래서 이 둘이 최소권한이다(경위: PR #550).
     permissions:
       contents: read
+      id-token: write
+      attestations: write
     steps:
+      # ⚠️ **`persist-credentials: false` 가 이 잡에만 빠져 있었다**(같은 두 파일의 나머지 체크아웃
+      # 넷은 전부 갖고 있다). 기본값은 잡 토큰을 `.git/config` 의 `http.extraheader` 로 남기는데,
+      # 이 잡은 그 상태로 `mvn -Prelease deploy` 를 돌린다 — Central 에서 받은 **서드파티 플러그인
+      # 코드를 실행**하는 단계다. 그 토큰이 `contents: read` 일 때도 좋지 않았지만, 이 PR 이
+      # `attestations: write` 를 얹는 순간 **빌드 안의 무엇이든 저장소 증명을 발행할 수 있게 된다.**
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # ⚠️ 4개 시크릿 중 하나라도 미설정이면 아무것도 하기 전에 **실패**한다(스킵 아님). 서명키가
       # 없는 채로 진행되면 setup-java는 GPG 임포트를 조용히 건너뛰고, 한참 뒤 deploy 스텝이 인증/서명
@@ -163,3 +175,25 @@ jobs:
           CENTRAL_TOKEN_PW: ${{ secrets.CENTRAL_TOKEN_PW }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
         run: mvn -B -f java/pom.xml -Prelease deploy
+
+      # ⚠️ **deploy 뒤에 건다.** `package` 뒤에 걸고 나서 `deploy`를 부르면 Maven이 라이프사이클을
+      # 다시 돌아 **서명한 바이트와 올라간 바이트가 갈릴 수 있다**(두 빌드 다 재현 가능하지 않다).
+      # deploy가 업로드하는 것은 `target/`의 그 파일이므로, 그 파일을 그대로 증명한다.
+      # 실패해도 Portal은 **스테이징**일 뿐이고 공개는 사람이 누른다 — 빨간 워크플로를 보고
+      # 누르지 않으면 되므로 이 순서가 fail-closed다.
+      #
+      # 무엇을 증명하는가: 「Central의 이 바이트는 이 워크플로가 이 태그에서 만든 것」. 지금까지
+      # 저장소가 증명할 수 있던 것은 **태그까지**였다(게시 바이트 오라클 `published-floor.yml`이
+      # 클래스 버전은 읽지만, 그 바이트가 우리가 빌드한 것인지는 못 읽는다).
+      # ⚠️ **이 글롭은 배포 집합의 상위집합이다 — 의도한 것이다.** `keycloak-sdk-examples` 는 jar 를
+      # 만들지만 루트 pom 의 `<excludeArtifacts>` 로 **배포에서 빠진다**. 그것까지 증명되지만
+      # Central 에 없는 좌표라 소비자가 혼동할 대상이 없고, 「이 바이트는 이 워크플로가 만들었다」는
+      # 진술은 그대로 참이다. ⚠️ 배포 집합을 런타임에 파생해 정확히 맞추는 안은 **채택하지 않았다** —
+      # 릴리스 경로에 다음 릴리스 전까지 시험할 수 없는 단계를 하나 더 얹는 값이 정밀도보다 비싸다.
+      # (`-bom` 은 `<packaging>pom</packaging>` 이라 jar 가 없어 애초에 안 걸린다. shade 는 쓰지
+      # 않으므로 `original-*.jar` 도 없다 — 둘 다 실측.)
+      # ⚠️ 글롭이 아무것도 못 찾으면 이 액션은 **실패한다** — 조용한 통과가 되지 않는다.
+      - name: Attest build provenance (배포한 그 바이트)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: 'java/*/target/*.jar'
