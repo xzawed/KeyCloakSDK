@@ -1,6 +1,9 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=193275 -->
-<!-- 193187 → 193275 (2026-09-23 밤, +88B). 규약 (1) — 독립 리뷰가 **BLOCK** 을 냈고 다섯 구멍이
+<!-- doc-budget: max-bytes=193253 -->
+<!-- ⚠️ **오라클의 기준은 `main` 이라 PR 전체 누적으로 본다** — 중간 커밋 대비가 아니다.
+     이 PR 의 누적은 **192968 → 193253 (+285B)** 이고 무심사 상한 300B 안이다. 아래 두 줄은
+     그 안의 단계별 기록이다(합이 285B 가 되도록 산문을 깎았다). -->
+<!-- 193187 → 193253 (2026-09-23 밤, +66B). 규약 (1) — 독립 리뷰가 **BLOCK** 을 냈고 다섯 구멍이
      실측으로 확인됐다(그중 둘: 한 레인이 통째로 죽어도 exit 0 · `JVM_1_8` 이 feature 1 로 읽혀
      정당한 Java 8 릴리스를 전부 위반으로 찍음). 늘어난 것은 **그 판정이 어떻게 났는지**와
      변이 수(7→15)다. 이 문서가 「가드가 있다」가 아니라 「무엇이 시험됐는가」를 말해야
@@ -335,7 +338,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - **레지스트리 오라클로 확정(2026-09-06).** 지금까지 이 주장의 근거는 **태그의 빌드 설정**이었다(추론). Maven Central 에서 게시본을 직접 받아 클래스파일 major 를 읽었다 — `keycloak-sdk` · `-core` · `-auth` · `-admin` · `-kotlin` 다섯 jar, **클래스 91개 전부 major 65(JDK 21)**. `major > 61` 이 **91/91** 이므로 JDK 17 소비자는 한 클래스도 못 읽는다. 나머지 셋은 **서로 다른 이유로** jar 가 없다(독립 검증 레그가 「404 는 pom-only 의 증거가 아니다」로 지목해 pom 을 직접 읽었다): `-bom`·`-parent` 는 `<packaging>pom</packaging>` 이고, **`-examples` 는 `1.0.0` 자체가 없다**(그 좌표에는 `0.1.0`·`0.1.0-RC1` 뿐 — 부모의 `<excludeArtifacts>` 가 그때부터 걸렸다. 경위는 `java/keycloak-sdk-examples/pom.xml` 주석). 재현: `curl -sSL $B/<artifact>/1.0.0/<artifact>-1.0.0.jar` 후 각 `.class` 의 6~7바이트를 읽고, jar 가 없으면 **pom 의 `<packaging>` 과 버전 목록을 함께 본다**.
   - ⚠️ **kotlin 은 이 측정으로 추론이 사실이 됐다** — 그전 근거는 「`kotlin-v1.0.0` 에 `jvmTarget` 이 없으니 툴체인 21 이 타깃일 것」이었고, 이제 배포된 바이트가 그렇다고 말한다.
 - [x] `jvm-api-surface-pin-unguarded` **[H/S · 신규·닫힘 2026-09-23]** `-Xjdk-release`·`options.release` 를 읽는 가드가 0 개였다(부르는 다섯 자리가 **전부 주석**) — 지우면 major 는 61 그대로라 바이트코드 가드도 초록인데 JDK 17 소비자만 런타임에 죽는다 · `scripts/check-jvm-api-surface-pins.mjs`(변이 7/7 CAUGHT + OFF 짝 · 그중 둘은 독립 레그가 낸 구멍)
-- [x] `published-jar-bytes-never-read` **[H/M · 신규·닫힘 2026-09-23]** 게시된 jar 를 받아 바이트를 읽는 호출 지점이 **0 개**였다 — 사슬이 태그에서 끊겨, 릴리스가 다른 JDK 로 빌드했거나 업로드가 부분 실패해도 저장소는 전부 초록이었다 · `scripts/check-published-jvm-floor.mjs` + `published-floor.yml`(예약·required 밖 · 변이 15/15 CAUGHT + OFF 짝 · 그중 하나는 **실제 repo1 바이트**로 CAUGHT · 실측 274 클래스, 1.0.0 부분만 세면 91 로 손측정과 일치 · ⚠️ 독립 리뷰가 **BLOCK** 을 내 다섯 구멍을 고친 뒤 병합했다)
+- [x] `published-jar-bytes-never-read` **[H/M · 신규·닫힘 2026-09-23]** 게시된 jar 를 받아 바이트를 읽는 호출 지점이 **0 개**였다 — 사슬이 태그에서 끊겨, 릴리스가 다른 JDK 로 빌드했거나 업로드가 부분 실패해도 저장소는 전부 초록이었다 · `scripts/check-published-jvm-floor.mjs` + `published-floor.yml`(예약·required 밖 · 변이 15/15 CAUGHT + OFF 짝 · 그중 하나는 **실제 repo1 바이트**로 CAUGHT · 실측 274 클래스, 1.0.0 부분만 세면 91 로 손측정과 일치 · ⚠️ 독립 리뷰 **BLOCK** 뒤 다섯 구멍 수정)
 - [ ] `published-bytes-have-no-oracle` **[M/M · 신규 2026-09-06 · 범위 축소 2026-09-23]** 남은 것은 **다이제스트 동일성**이다 — 게시 바이트를 읽는 것은 위 항목이 닫았고, 「우리가 올린 그 바이트인가」는 못 닫았다 · `scripts/check-published-jvm-floor.mjs`
   - ⚠️ **선행이 있다 — 봉인 단계 없이는 못 닫는다.** 설계 판정 2026-09-23(바로 아래 블록 주석 · 경위는 PR #548·#549).
 
