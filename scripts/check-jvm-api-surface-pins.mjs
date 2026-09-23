@@ -108,8 +108,11 @@ if (poms.length === 0) {
 
 for (const p of poms) {
   const t = readFileSync(p, 'utf8')
+  // ⚠️ 정규식을 **문자열로 짓지 않는다** — `.` 하나만 이스케이프하는 `replace` 는 백슬래시를
+  // 놓쳐서 CodeQL `js/incomplete-sanitization` 이 high 로 잡는다(실제로 잡혔다). 여기서는
+  // 찾는 것이 리터럴 태그이므로 정규식 자체가 필요 없다.
   for (const weak of ['maven.compiler.source', 'maven.compiler.target']) {
-    if (new RegExp(`<${weak.replace(/\./g, '\\.')}>`).test(t)) {
+    if (t.includes(`<${weak}>`)) {
       fail('weaker-pin', `${rel(p)} 가 \`${weak}\` 를 쓴다 — \`maven.compiler.release\` 로만 핀해야 API 표면이 함께 묶인다.`)
     }
   }
@@ -119,8 +122,12 @@ for (const p of poms) {
   while (i !== -1) {
     const end = t.indexOf('</plugin>', i)
     const block = end === -1 ? t.slice(i) : t.slice(i, end)
-    for (const weak of ['source', 'target']) {
-      if (new RegExp(`<${weak}>\\s*\\d`).test(block)) {
+    // 같은 이유로 리터럴 정규식이다 — 이름을 끼워 넣어 만들지 않는다.
+    for (const [weak, re] of [
+      ['source', /<source>\s*\d/],
+      ['target', /<target>\s*\d/],
+    ]) {
+      if (re.test(block)) {
         fail('weaker-pin', `${rel(p)} 의 maven-compiler-plugin 설정이 \`<${weak}>\` 를 쓴다 — \`<release>\` 여야 API 표면이 묶인다.`)
       }
     }
