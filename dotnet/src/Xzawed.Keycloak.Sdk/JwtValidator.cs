@@ -48,7 +48,14 @@ public sealed class JwtValidator
         var inner = new ConfigurationManager<OpenIdConnectConfiguration>(
             $"{issuer}/.well-known/openid-configuration",
             new OpenIdConnectConfigurationRetriever(),
-            docRetriever)
+            docRetriever,
+            // A 200 with {"keys":[]} would otherwise replace a good configuration. The handler's
+            // last-known-good fallback only hides that until the LKG entry expires (1h) — measured:
+            // JwksEmptyKeysetTests.
+            new Microsoft.IdentityModel.Protocols.OpenIdConnect.Configuration.OpenIdConnectConfigurationValidator
+            {
+                MinimumNumberOfKeys = 1,
+            })
         {
             AutomaticRefreshInterval = TimeSpan.FromHours(12),
             RefreshInterval = TimeSpan.FromSeconds(opts.RefreshIntervalSeconds),
