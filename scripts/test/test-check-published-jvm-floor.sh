@@ -114,16 +114,76 @@ mkrepo "$R21" 21 'jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
 tagit "$R21" v9.9.0; tagit "$R21" kotlin-v9.9.0
 assert_ok node "$GUARD" "--root=$R21" "--base=$FIX/b-over"
 
-# ── ⚠️ kotlin 에 jvmTarget 이 없으면 툴체인이 실효 하한이다 ─────────────────
-# `kotlin-v1.0.0` 이 실제로 그 상태였고 게시본이 major 65 였다. 21 로 **가정**하지 않고
-# `jvmToolchain(n)` 을 읽는다는 것을 픽스처가 시험한다.
-RTC="$FIX/repo-tc"
-mkrepo "$RTC" 21 'freeCompilerArgs.add("-Xnothing")' keycloak-sdk keycloak-sdk-core
-printf '%s\n' 'kotlin { jvmToolchain(21) }' > "$RTC/kotlin/build.gradle.kts"
-git -C "$RTC" add -A && git -C "$RTC" -c user.email=t@t -c user.name=t commit -qm tc
-tagit "$RTC" v9.9.0; tagit "$RTC" kotlin-v9.9.0
+# ── ⚠️ kotlin 하한 파생 — **라벨이 아니라 값**을 단언한다 ───────────────────
+# 독립 리뷰가 낸 구멍이다: 예전 케이스는 `assert_contains "$out" "jvmToolchain"` 하나였는데
+# `floor.how` 는 **통과 메시지와 실패 메시지 양쪽에** 들어간다. 게다가 `|| true` 로 종료코드를
+# 버려서, 파생값을 `-8` 해도(21→13, cap 57) 이 테스트는 그대로 통과했다 — **값이 한 번도
+# 시험되지 않았다.** 그래서 종료코드와 **환산된 상한 숫자**를 함께 고정한다.
+kt_repo() { # kt_repo <디렉터리> <kotlin/build.gradle.kts 내용 한 줄…>
+  d="$1"; shift
+  mkrepo "$d" 21 'freeCompilerArgs.add("-Xnothing")' keycloak-sdk keycloak-sdk-core
+  printf '%s\n' "$@" > "$d/kotlin/build.gradle.kts"
+  git -C "$d" add -A
+  git -C "$d" -c user.email=t@t -c user.name=t commit -qm kt
+  tagit "$d" v9.9.0; tagit "$d" kotlin-v9.9.0
+}
+
+RTC="$FIX/repo-tc"; kt_repo "$RTC" 'kotlin { jvmToolchain(21) }'
+assert_ok node "$GUARD" "--root=$RTC" "--base=$B" "--lang=kotlin"
 out=$(node "$GUARD" "--root=$RTC" "--base=$B" "--lang=kotlin" 2>&1 || true)
 assert_contains "$out" "jvmToolchain" "jvmTarget 부재 시 툴체인을 실효 하한으로 읽는다"
+assert_contains "$out" "major ≤ 65" "**파생한 값**을 단언한다(툴체인 21 → 상한 65)"
+
+# 같은 픽스처(major 61)가 툴체인 17 선언 아래에서도 통과하고, 66 짜리는 걸린다 — 값이 실제로
+# 쓰인다는 양방향 대조.
+RTC17="$FIX/repo-tc17"; kt_repo "$RTC17" 'kotlin { jvmToolchain(17) }'
+out=$(node "$GUARD" "--root=$RTC17" "--base=$B" "--lang=kotlin" 2>&1 || true)
+assert_contains "$out" "major ≤ 61" "툴체인 17 → 상한 61 로 환산한다"
+
+# `jvmToolchain(JavaLanguageVersion.of(21))` 은 **같은 선언**이다 — 표기 하나 때문에 레인이
+# 통째로 꺼지면 안 된다(그것이 F1 의 실제 방아쇠였다).
+RTCJ="$FIX/repo-tc-jlv"; kt_repo "$RTCJ" 'kotlin { jvmToolchain(JavaLanguageVersion.of(21)) }'
+assert_ok node "$GUARD" "--root=$RTCJ" "--base=$B" "--lang=kotlin"
+
+# ⚠️ **`JVM_1_8` 은 feature 8 이다.** `JVM_(\d+)` 로 읽으면 **1**(상한 45)이 되어 정당한 Java 8
+# 릴리스를 전부 위반으로 찍는다. 8 → 상한 52 이므로 major 52 는 통과해야 한다.
+RJ8="$FIX/repo-jvm18"; kt_repo "$RJ8" 'kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_1_8) } }'
+cp -r "$B" "$FIX/b-j8"; reg_jar "$FIX/b-j8" keycloak-sdk-kotlin 9.9.0 52:2
+assert_ok node "$GUARD" "--root=$RJ8" "--base=$FIX/b-j8" "--lang=kotlin"
+out=$(node "$GUARD" "--root=$RJ8" "--base=$FIX/b-j8" "--lang=kotlin" 2>&1 || true)
+assert_contains "$out" "major ≤ 52" "JVM_1_8 → feature 8 → 상한 52"
+
+# ⚠️ **주석 안의 표기를 선언으로 읽지 않는다.** 비-전역 exec 는 첫 텍스트 일치를 취하므로,
+# 위쪽 주석이 JVM_21 을 언급하면 그것이 하한이 된다(올리면 나쁜 바이트가 통과한다).
+RCM="$FIX/repo-kt-cmt"
+kt_repo "$RCM" '// 예전엔 JvmTarget.JVM_21 이었다' 'kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }'
+out=$(node "$GUARD" "--root=$RCM" "--base=$B" "--lang=kotlin" 2>&1 || true)
+assert_contains "$out" "major ≤ 61" "주석의 JVM_21 이 아니라 살아 있는 JVM_17 을 읽는다"
+
+# ── ⚠️ 레인 단위 공허 — 한쪽이 살아 있으면 다른 쪽의 죽음이 가려진다 ───────
+# 독립 리뷰가 낸 구멍이고 **실측으로 확인됐다**: 전역 카운터 하나뿐이라 kotlin 하한 선언을
+# 못 읽게 만들자 kotlin `ok` 줄이 0 개인데 **exit 0** 이었다. 방아쇠는 평범하다 —
+# `jvmToolchain(JavaLanguageVersion.of(21))` 표기 하나면 된다.
+RDEAD="$FIX/repo-lane-dead"; kt_repo "$RDEAD" 'kotlin { someUnknownSpelling(21) }'
+assert_fails node "$GUARD" "--root=$RDEAD" "--base=$B"
+out=$(node "$GUARD" "--root=$RDEAD" "--base=$B" 2>&1 || true)
+assert_contains "$out" "vacuous-lane" "한 레인이 통째로 죽으면 vacuous-lane 으로 실패"
+assert_contains "$out" "keycloak-sdk-core" "다른 레인은 그대로 검사된다(전부 멈추지 않는다)"
+
+# ── ⚠️ java 하한을 플러그인 설정으로 옮겨도 읽는다 ──────────────────────────
+# 프로퍼티만 읽으면 평범한 pom 리팩터 하나로 java 레인이 통째로 조용히 꺼진다.
+RPC="$FIX/repo-plugincfg"
+mkrepo "$RPC" '' "$K17" keycloak-sdk keycloak-sdk-core
+{ printf '%s\n' '<project><properties></properties><modules>' \
+    '  <module>keycloak-sdk</module>' '  <module>keycloak-sdk-core</module>' '</modules>' \
+    '<build><plugins><plugin><artifactId>maven-compiler-plugin</artifactId>' \
+    '<configuration><release>17</release></configuration></plugin></plugins></build></project>'
+} > "$RPC/java/pom.xml"
+git -C "$RPC" add -A && git -C "$RPC" -c user.email=t@t -c user.name=t commit -qm pc
+tagit "$RPC" v9.9.0; tagit "$RPC" kotlin-v9.9.0
+assert_ok node "$GUARD" "--root=$RPC" "--base=$B" "--lang=java"
+out=$(node "$GUARD" "--root=$RPC" "--base=$B" "--lang=java" 2>&1 || true)
+assert_contains "$out" "maven-compiler-plugin <release>" "플러그인 설정의 release 도 하한 선언이다"
 
 # ── pom 패키징은 jar 가 **없는 것이 정상**이다 ──────────────────────────────
 # ⚠️ 404 를 「jar 없음」의 증거로 쓰면 정당한 BOM 을 위반으로 읽는다 — 2026-09-06 손측정에서
@@ -169,7 +229,11 @@ RNT="$FIX/repo-notag"
 mkrepo "$RNT" 17 "$K17" keycloak-sdk keycloak-sdk-core   # 태그를 달지 않는다
 assert_fails node "$GUARD" "--root=$RNT" "--base=$FIX/b-notag"
 out=$(node "$GUARD" "--root=$RNT" "--base=$FIX/b-notag" 2>&1 || true)
-assert_contains "$out" "vacuous-run" "하나도 대조하지 못한 실행은 vacuous-run 으로 실패"
+# ⚠️ 여기서 나오는 것은 `vacuous-run` 이 **아니라** 레인별 `vacuous-lane` 이다 — 두 레인이 각각
+# 울기 때문이다. 레인 단위가 더 구체적이라 그쪽이 먼저 잡는 것이 맞고, `vacuous-run` 은 그것이
+# 선점하지 못하는 미래의 경로를 위한 백스톱으로 남는다(**오늘은 도달하지 않는다** — 테스트가
+# 그것을 덮는다고 주장하지 않는다).
+assert_contains "$out" "vacuous-lane" "하나도 대조하지 못한 레인은 vacuous-lane 으로 실패"
 
 # jar 안에 클래스가 0 개면 「위반 없음」이 아니다.
 cp -r "$B" "$FIX/b-empty"
@@ -197,6 +261,81 @@ assert_contains "$out" "vacuous-scan" "repo1 좌표를 못 읽으면 vacuous-sca
 # SSOT 파일 자체가 없으면 통과로 읽지 않는다.
 mkdir -p "$FIX/bare"
 assert_fails node "$GUARD" "--root=$FIX/bare" "--base=$B"
+
+# ── ⚠️ 형제가 **조용히 증발**하면 안 된다 ──────────────────────────────────
+# 독립 리뷰가 낸 구멍: `no-siblings` 는 목록이 비었는지만 봤고, 목록에 있는 형제가 **해결되지
+# 않는 것**은 전부 메모였다. 최악의 경우 형제 전부가 건너뛰어지고 집합 모듈의 **1 클래스**만
+# 읽혀 `ok … 클래스 1개` 가 나온다 — 이 파일 머리말이 막겠다고 적은 바로 그 상태다.
+mkmod() { # mkmod <repo> <디렉터리> <artifactId> <packaging>
+  mkdir -p "$1/java/$2"
+  printf '%s\n' '<project>' '  <parent><artifactId>keycloak-sdk-parent</artifactId></parent>' \
+    "  <artifactId>$3</artifactId>" "  <packaging>$4</packaging>" '</project>' > "$1/java/$2/pom.xml"
+}
+
+# (a) 태그가 모듈이라 말하는데 레지스트리에 그 좌표가 아예 없다 → 실패다(메모가 아니다).
+RGONE="$FIX/repo-gone"
+mkrepo "$RGONE" 17 "$K17" keycloak-sdk keycloak-sdk-core keycloak-sdk-ghost
+mkmod "$RGONE" keycloak-sdk-ghost keycloak-sdk-ghost jar
+git -C "$RGONE" add -A && git -C "$RGONE" -c user.email=t@t -c user.name=t commit -qm ghost
+tagit "$RGONE" v9.9.0; tagit "$RGONE" kotlin-v9.9.0
+assert_fails node "$GUARD" "--root=$RGONE" "--base=$B" "--lang=java"
+out=$(node "$GUARD" "--root=$RGONE" "--base=$B" "--lang=java" 2>&1 || true)
+assert_contains "$out" "unknown-module-artifact" "레지스트리에 없는 모듈 좌표는 실패다"
+
+# (b) 단, 루트 pom 의 `<excludeArtifacts>` 가 뺀 모듈이면 없는 것이 정상이다 — **태그가 말한다.**
+REX="$FIX/repo-excl"
+mkrepo "$REX" 17 "$K17" keycloak-sdk keycloak-sdk-core keycloak-sdk-ghost
+mkmod "$REX" keycloak-sdk-ghost keycloak-sdk-ghost jar
+{ printf '%s\n' '<project><properties>' '  <maven.compiler.release>17</maven.compiler.release>' \
+    '</properties><modules>' '  <module>keycloak-sdk</module>' '  <module>keycloak-sdk-core</module>' \
+    '  <module>keycloak-sdk-ghost</module>' '</modules>' \
+    '<excludeArtifacts><excludeArtifact>keycloak-sdk-ghost</excludeArtifact></excludeArtifacts>' '</project>'
+} > "$REX/java/pom.xml"
+git -C "$REX" add -A && git -C "$REX" -c user.email=t@t -c user.name=t commit -qm excl
+tagit "$REX" v9.9.0; tagit "$REX" kotlin-v9.9.0
+assert_ok node "$GUARD" "--root=$REX" "--base=$B" "--lang=java"
+out=$(node "$GUARD" "--root=$REX" "--base=$B" "--lang=java" 2>&1 || true)
+assert_contains "$out" "excludeArtifacts" "게시 제외는 태그에서 파생해 정당한 건너뜀으로 읽는다"
+
+# (c) ⚠️ **`<module>` 은 디렉터리이지 artifactId 가 아니다.** 지금은 같지만 강제하는 것이 없다 —
+# 디렉터리만 바꾸면 그 모듈이 영영 조용히 빠진다. 모듈 pom 의 artifactId 를 읽어야 한다.
+# ⚠️ 그 pom 의 **첫 `<artifactId>` 는 `<parent>` 의 것**이므로 parent 를 먼저 지워야 한다
+# (실측: `keycloak-sdk-core/pom.xml` 의 첫 값은 `keycloak-sdk-parent` 다). mkmod 가 그 모양이다.
+RDIR="$FIX/repo-dirname"
+mkrepo "$RDIR" 17 "$K17" keycloak-sdk core
+mkmod "$RDIR" core keycloak-sdk-core jar
+git -C "$RDIR" add -A && git -C "$RDIR" -c user.email=t@t -c user.name=t commit -qm dir
+tagit "$RDIR" v9.9.0; tagit "$RDIR" kotlin-v9.9.0
+assert_ok node "$GUARD" "--root=$RDIR" "--base=$B" "--lang=java"
+out=$(node "$GUARD" "--root=$RDIR" "--base=$B" "--lang=java" 2>&1 || true)
+assert_contains "$out" "keycloak-sdk-core" "디렉터리명이 달라도 pom 의 artifactId 로 찾는다"
+
+# (d) pom 패키징 모듈은 jar 를 요청하지 않는다 — 태그의 pom 에서 읽는다.
+RPOM="$FIX/repo-pompkg"
+mkrepo "$RPOM" 17 "$K17" keycloak-sdk keycloak-sdk-core keycloak-sdk-bom
+mkmod "$RPOM" keycloak-sdk-bom keycloak-sdk-bom pom
+git -C "$RPOM" add -A && git -C "$RPOM" -c user.email=t@t -c user.name=t commit -qm bom
+tagit "$RPOM" v9.9.0; tagit "$RPOM" kotlin-v9.9.0
+assert_ok node "$GUARD" "--root=$RPOM" "--base=$B" "--lang=java"
+
+# ── ⚠️ preview 바이트 — major 는 하한 안인데 소비자가 못 읽는다 ────────────
+# 독립 리뷰가 낸 구멍. `--enable-preview` 로 컴파일된 클래스는 major 가 정직하게 61 이면서
+# minor 가 0xFFFF 이고, JDK 18+ 과 `--enable-preview` 없는 JDK 17 양쪽에서 로드되지 않는다.
+# 태그는 preview 를 선언한 적이 없으므로 **선언과 다른 바이트**의 교과서적 사례다.
+cp -r "$B" "$FIX/b-preview"
+reg_jar "$FIX/b-preview" keycloak-sdk-core 9.9.0 61:2 --preview
+assert_fails node "$GUARD" "--root=$R" "--base=$FIX/b-preview"
+out=$(node "$GUARD" "--root=$R" "--base=$FIX/b-preview" 2>&1 || true)
+assert_contains "$out" "published-preview-class" "preview 클래스는 major 가 하한 안이어도 실패"
+
+# ── ⚠️ `.class` 인데 CAFEBABE 가 아니면 major 를 **지어내지** 않는다 ───────
+# zip 오프셋 해석이 어긋나면 임의 바이트의 6~7 을 major 로 읽는다. 매직을 보면 그 부류가
+# 조용한 오답이 아니라 예외가 된다.
+cp -r "$B" "$FIX/b-magic"
+reg_jar "$FIX/b-magic" keycloak-sdk-core 9.9.0 61:2 --bad-magic
+assert_fails node "$GUARD" "--root=$R" "--base=$FIX/b-magic"
+out=$(node "$GUARD" "--root=$R" "--base=$FIX/b-magic" 2>&1 || true)
+assert_contains "$out" "매직 불일치" "클래스파일이 아니면 매직 불일치로 실패"
 
 # ── ⚠️ 아카이브 주석 안의 가짜 EOCD 서명 ───────────────────────────────────
 # zip 의 아카이브 주석은 임의 바이트다. 그 안에 EOCD 4바이트가 들어 있으면 **뒤에서부터 서명만

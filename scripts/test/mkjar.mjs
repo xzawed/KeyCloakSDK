@@ -25,6 +25,12 @@ const EMPTY = argv.includes('--empty')
 // 리더는 그 가짜를 먼저 만나 엉뚱한 곳을 중앙 디렉터리로 읽는다(실측으로 예외가 났다).
 // 진짜 EOCD 는 「주석 길이 == 남은 바이트」를 만족하므로 그 조건이 가짜를 걸러야 한다.
 const TRAP = argv.includes('--trap-comment')
+// ⚠️ `--preview` 는 minor 를 0xFFFF 로 쓴다 — major 는 하한 안인데 **JDK 18+ 과
+// `--enable-preview` 없는 하한 JDK 양쪽에서 로드되지 않는** 클래스다. major 만 보면 못 본다.
+const PREVIEW = argv.includes('--preview')
+// ⚠️ `--bad-magic` 은 `.class` 이름인데 CAFEBABE 가 아닌 항목을 넣는다 — zip 오프셋 해석이
+// 어긋났을 때 **임의 바이트에서 major 를 지어내는** 상황을 흉내 낸다.
+const BADMAGIC = argv.includes('--bad-magic')
 if (!out) {
   console.error('usage: node scripts/test/mkjar.mjs <출력.jar> <major>[:<개수>] [--mr=<major>] [--empty]')
   process.exit(1)
@@ -47,10 +53,10 @@ const crc32 = (buf) => {
 }
 
 // 최소 클래스파일: CAFEBABE(4) + minor(2) + major(2). 가드가 읽는 것이 정확히 그 두 바이트다.
-const cls = (major) => {
+const cls = (major, minor = 0) => {
   const b = Buffer.alloc(10)
   b.writeUInt32BE(0xcafebabe, 0)
-  b.writeUInt16BE(0, 4)
+  b.writeUInt16BE(minor, 4)
   b.writeUInt16BE(major, 6)
   return b
 }
@@ -60,8 +66,9 @@ if (!EMPTY) {
   const [majStr, cntStr] = spec.split(':')
   const major = Number(majStr)
   const count = Number(cntStr ?? '1')
-  for (let i = 0; i < count; i++) entries.push({ name: `io/x/C${i}.class`, data: cls(major) })
+  for (let i = 0; i < count; i++) entries.push({ name: `io/x/C${i}.class`, data: cls(major, PREVIEW ? 0xffff : 0) })
   if (mrArg) entries.push({ name: `META-INF/versions/21/io/x/M.class`, data: cls(Number(mrArg.slice('--mr='.length))) })
+  if (BADMAGIC) entries.push({ name: 'io/x/NotAClass.class', data: Buffer.from('this is not a class file') })
 }
 // 클래스가 아닌 항목도 하나 넣는다 — 리더가 확장자로 거른다는 것을 픽스처가 시험한다.
 entries.push({ name: 'META-INF/MANIFEST.MF', data: Buffer.from('Manifest-Version: 1.0\n') })

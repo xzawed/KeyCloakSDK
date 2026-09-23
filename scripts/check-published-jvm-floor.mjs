@@ -65,16 +65,33 @@ if (targets.length === 0) {
 }
 
 // ── 가져오기 ────────────────────────────────────────────────────────────────
+// ⚠️ **일시적 레지스트리 장애를 「하한 위반」과 같은 종료코드로 내보내지 않는다.** 한 번 실행에
+// 40건 넘게 GET 하므로 503·429·소켓 리셋은 드물지 않다. 예전 구현은 `throw` 로 끝나 Node 가
+// 스택트레이스만 찍었고, 그러면 (a) 당번이 「진짜 나쁜 게시」와 구분하지 못하고 (b) 다시 재는
+// 명령이 **출력되지 않았다**(그 안내는 errors 경로 안에 있다). 재시도하고, 그래도 안 되면
+// `registry-unreachable` 이라는 **다른 이름**으로 실패한다. 타임아웃이 없으면 멈춰 버린다.
+const FETCH_TIMEOUT_MS = 20000
+const RETRIES = 3
+class Unreachable extends Error {}
 const get = async (rel) => {
   if (OFFLINE) {
     const p = join(BASE, rel)
     if (!existsSync(p) || !statSync(p).isFile()) return null
     return readFileSync(p)
   }
-  const r = await fetch(`${BASE}/${rel}`)
-  if (r.status === 404) return null
-  if (!r.ok) throw new Error(`HTTP ${r.status} — ${rel}`)
-  return Buffer.from(await r.arrayBuffer())
+  let last = ''
+  for (let attempt = 1; attempt <= RETRIES; attempt++) {
+    try {
+      const r = await fetch(`${BASE}/${rel}`, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+      if (r.status === 404) return null
+      if (r.ok) return Buffer.from(await r.arrayBuffer())
+      last = `HTTP ${r.status}`
+    } catch (e) {
+      last = e.name === 'TimeoutError' ? `${FETCH_TIMEOUT_MS}ms 타임아웃` : String(e.message || e)
+    }
+    if (attempt < RETRIES) await new Promise((res) => setTimeout(res, attempt * 1500))
+  }
+  throw new Unreachable(`${rel} — ${RETRIES}회 시도 후에도 실패(${last})`)
 }
 
 // ── 태그가 선언한 하한 ──────────────────────────────────────────────────────
@@ -88,19 +105,40 @@ const showAtTag = (tag, path) => {
     return null
   }
 }
+// ⚠️ **주석을 먼저 지운다.** 비-전역 `exec` 는 **첫 텍스트 일치**를 취하므로, 위쪽 주석이나
+// 문서 문자열이 `JvmTarget.JVM_21` 을 언급하면 그것이 선언된 하한이 된다 — 올리면 나쁜 바이트가
+// 통과하고 내리면 거짓 빨강이다. `://` 는 건드리지 않는다(`https://…`).
+const stripKt = (s) => s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+const stripXml = (s) => s.replace(/<!--[\s\S]*?-->/g, ' ')
+
+// ⚠️ Kotlin 의 열거자는 **`JVM_1_8`** 이다(9 이상만 `JVM_9`·`JVM_17` 꼴). `JVM_(\d+)` 로 읽으면
+// `JVM_1_8` 이 **feature 1(cap 45)** 이 되어 정당한 Java 8 릴리스를 전부 위반으로 찍는다.
+const jvmFeature = (token) => {
+  const t = token.replace(/^1_/, '') // 1_8 → 8
+  return /^\d+$/.test(t) ? Number(t) : null
+}
 const floorAtTag = (lang, tag) => {
   if (lang === 'java') {
-    const t = showAtTag(tag, 'java/pom.xml')
-    if (t === null) return null
-    const m = /<maven\.compiler\.release>\s*(\d+)\s*</.exec(t)
-    return m ? { feature: Number(m[1]), how: 'maven.compiler.release' } : null
+    const raw = showAtTag(tag, 'java/pom.xml')
+    if (raw === null) return null
+    const t = stripXml(raw)
+    // 프로퍼티와 플러그인 설정 **둘 다** 본다 — 하한을 `<configuration><release>` 로 옮기는 것은
+    // 평범한 pom 리팩터인데, 프로퍼티만 읽으면 그때 java 레인이 통째로 조용히 꺼진다.
+    const prop = /<maven\.compiler\.release>\s*(\d+)\s*</.exec(t)
+    if (prop) return { feature: Number(prop[1]), how: 'maven.compiler.release' }
+    const cfg = /maven-compiler-plugin[\s\S]{0,2000}?<release>\s*(\d+)\s*</.exec(t)
+    return cfg ? { feature: Number(cfg[1]), how: 'maven-compiler-plugin <release>' } : null
   }
-  const t = showAtTag(tag, 'kotlin/build.gradle.kts')
-  if (t === null) return null
-  const jt = /JvmTarget\.JVM_(\d+)/.exec(t)
-  if (jt) return { feature: Number(jt[1]), how: 'jvmTarget' }
-  const tc = /jvmToolchain\((\d+)\)/.exec(t)
-  return tc ? { feature: Number(tc[1]), how: 'jvmToolchain(=jvmTarget 부재 시 실효 하한)' } : null
+  const raw = showAtTag(tag, 'kotlin/build.gradle.kts')
+  if (raw === null) return null
+  const t = stripKt(raw)
+  const jt = /JvmTarget\.JVM_([\d_]+)/.exec(t)
+  if (jt && jvmFeature(jt[1]) !== null) return { feature: jvmFeature(jt[1]), how: 'jvmTarget' }
+  // `jvmToolchain(21)` 과 `jvmToolchain(JavaLanguageVersion.of(21))` 은 **같은 선언**이다.
+  const tc = /jvmToolchain\(\s*(?:JavaLanguageVersion\.of\(\s*)?(\d+)/.exec(t)
+  if (tc) return { feature: Number(tc[1]), how: 'jvmToolchain(=jvmTarget 부재 시 실효 하한)' }
+  const jtc = /toolchain\s*\{[\s\S]{0,300}?JavaLanguageVersion\.of\(\s*(\d+)/.exec(t)
+  return jtc ? { feature: Number(jtc[1]), how: 'java toolchain(=실효 하한)' } : null
 }
 const tagFor = (lang, version) => (lang === 'kotlin' ? `kotlin-v${version}` : `v${version}`)
 const majorOf = (feature) => feature + 44 // Java 17 → 61 · Java 21 → 65
@@ -109,13 +147,34 @@ const majorOf = (feature) => feature + 44 // Java 17 → 61 · Java 21 → 65
 // 버전당 클래스가 **1개**다. 진짜 코드는 `-core`·`-auth`·`-admin` 에 있고, 2026-09-06 손측정이
 // jar 를 다섯 개 받은 이유가 그것이다. 형제 목록은 **그 버전의 태그**가 소유한다(손으로 적으면
 // 모듈이 하나 늘 때 조용히 조준 밖이 된다).
+// ⚠️ **`<module>` 은 디렉터리 경로이지 artifactId 가 아니다.** 지금은 우연히 같지만 그것을
+// 강제하는 것이 없다 — 디렉터리만 바꾸면 그 모듈이 **영영 조용히 빠진다**. 그래서 각 모듈의
+// pom 에서 artifactId 와 packaging 을 읽는다(둘 다 태그가 소유한다).
+// ⚠️ 게시에서 빠지는 모듈도 **태그가 말한다** — 루트 pom 의 `<excludeArtifacts>` 다. 그것으로
+// 「없는 게 정상」과 「있어야 하는데 없다」를 가른다(손으로 이름을 적으면 그 목록이 썩는다).
 const siblingsAtTag = (lang, tag) => {
-  if (lang !== 'java') return []
-  const t = showAtTag(tag, 'java/pom.xml')
-  if (t === null) return []
+  if (lang !== 'java') return { mods: [], excluded: [] }
+  const raw = showAtTag(tag, 'java/pom.xml')
+  if (raw === null) return { mods: [], excluded: [] }
+  const t = stripXml(raw)
   const block = /<modules>([\s\S]*?)<\/modules>/.exec(t)
-  if (!block) return []
-  return [...block[1].matchAll(/<module>\s*([^<\s]+)\s*<\/module>/g)].map((m) => m[1])
+  if (!block) return { mods: [], excluded: [] }
+  const ex = /<excludeArtifacts>([\s\S]*?)<\/excludeArtifacts>/.exec(t)
+  const excluded = ex ? [...ex[1].matchAll(/<[^>]+>\s*([^<\s]+)\s*<\//g)].map((m) => m[1]) : []
+  const mods = []
+  for (const m of block[1].matchAll(/<module>\s*([^<\s]+)\s*<\/module>/g)) {
+    const dir = m[1]
+    const pom = showAtTag(tag, `java/${dir}/pom.xml`)
+    // ⚠️ **`<parent>` 를 먼저 지운다** — 자식 pom 의 첫 `<artifactId>` 는 거의 언제나 부모의
+    // 것이다(실측: `keycloak-sdk-core/pom.xml` 의 첫 값은 `keycloak-sdk-parent`). 그대로 읽으면
+    // 모든 모듈이 부모 좌표를 가리켜 형제 검사가 통째로 엉뚱한 곳을 본다.
+    const body = pom === null ? null : stripXml(pom).replace(/<parent>[\s\S]*?<\/parent>/, ' ')
+    // pom 을 못 읽으면 디렉터리 이름으로 떨어지되 **그 사실을 남긴다**(조용히 가정하지 않는다).
+    const id = body ? (/<artifactId>\s*([^<\s]+)\s*<\/artifactId>/.exec(body)?.[1] ?? dir) : dir
+    const packaging = body ? (/<packaging>\s*([\w-]+)\s*<\/packaging>/.exec(body)?.[1] ?? 'jar') : 'jar'
+    mods.push({ dir, id, packaging, derivedFromPom: pom !== null })
+  }
+  return { mods, excluded }
 }
 
 // ── jar 안의 클래스파일 버전 ────────────────────────────────────────────────
@@ -160,8 +219,16 @@ const readJarMajors = (buf, label) => {
     const start = local + 30 + lnLen + leLen
     const raw = buf.subarray(start, start + csize)
     const data = method === 0 ? raw : inflateRawSync(raw)
-    if (data.length < 8) continue
-    out.push({ name, major: data.readUInt16BE(6) })
+    // ⚠️ **바이트 6~7 을 그냥 믿지 않는다.** 로컬 헤더 오프셋은 중앙 디렉터리 말을 그대로 쓴 것이고,
+    // STORED 항목은 inflate 가 없어 던질 기회도 없다 — 어긋나면 **임의 바이트에서 major 를 지어낸다**.
+    // 매직을 확인하면 그 부류가 「조용한 오답」이 아니라 예외가 된다.
+    if (data.length < 8 || data.readUInt32BE(0) !== 0xcafebabe) {
+      throw new Error(`${label}: ${name} 이 클래스파일이 아니다(매직 불일치) — zip 오프셋 해석이 어긋났다`)
+    }
+    // ⚠️ **minor 0xFFFF 는 preview 다.** major 는 정직하게 61 이어도 그 클래스는 JDK 18+ 에서,
+    // 그리고 `--enable-preview` 없는 JDK 17 에서도 로드되지 않는다 — 태그는 preview 를 선언한 적이
+    // 없으므로 이것은 「선언과 다른 바이트」의 교과서적 사례다. major 만 보면 영영 못 본다.
+    out.push({ name, major: data.readUInt16BE(6), preview: data.readUInt16BE(4) === 0xffff })
   }
   return { classes: out, skippedMR }
 }
@@ -169,9 +236,14 @@ const readJarMajors = (buf, label) => {
 // ── 본체 ────────────────────────────────────────────────────────────────────
 let versionsChecked = 0
 let classesRead = 0
-const pending = []
 
+// ⚠️ **레지스트리 장애를 「하한 위반」과 같은 모양으로 내보내지 않는다.** `get` 은 재시도 후
+// `Unreachable` 을 던지는데, 그것을 여기서 받지 않으면 Node 가 스택트레이스만 찍고 끝난다 —
+// 그러면 (a) 당번이 진짜 나쁜 게시와 구분하지 못하고 (b) 아래 「다시 재는 법」이 **출력되지
+// 않는다**(그 안내는 errors 경로 안에 있다). 이름을 나눠 errors 로 보낸다.
+try {
 for (const { lang, path } of targets) {
+  let checkedInLane = 0
   const meta = await get(`${path}/maven-metadata.xml`)
   if (meta === null) {
     fail('no-metadata', `${lang}: ${path}/maven-metadata.xml 이 404 다 — 좌표가 바뀌었거나 아직 아무것도 게시되지 않았다.`)
@@ -202,19 +274,27 @@ for (const { lang, path } of targets) {
       continue
     }
     const coordArtifact = path.split('/').pop()
-    const siblings = siblingsAtTag(lang, tag)
+    const { mods, excluded } = siblingsAtTag(lang, tag)
     // 공허 방지 — java 인데 형제를 0 개 뽑았다면 파생이 깨진 것이다(집합 모듈 jar 는
     // 클래스가 1 개뿐이라 그대로 두면 「전부 통과」가 거짓 안심이 된다).
-    if (lang === 'java' && siblings.length === 0) {
+    if (lang === 'java' && mods.length === 0) {
       fail('no-siblings', `${lang} ${v}: ${tag} 의 java/pom.xml 에서 <module> 을 하나도 못 뽑았다 — 집합 모듈 하나만 보면 이 레인은 공허하다.`)
       continue
     }
-    const artifacts = [...new Set([coordArtifact, ...siblings])]
+    const artifacts = [...new Set([coordArtifact, ...mods.filter((m) => m.packaging !== 'pom').map((m) => m.id)])]
+    let readThisVersion = 0
 
     for (const artifact of artifacts) {
       const av = await metaVersions(artifact)
       if (av === null) {
-        notes.push(`skip ${lang} ${artifact} — maven-metadata 가 없다(게시된 적 없는 모듈)`)
+        // ⚠️ **이것을 메모로 넘기면 「형제가 전부 사라졌는데 집합 모듈 1 클래스로 초록」이 된다.**
+        // 태그가 모듈이라 말하고 게시 제외 목록에도 없는데 레지스트리에 그 좌표가 아예 없다면,
+        // 우리 파생이 틀렸거나 그 모듈이 한 번도 안 올라간 것이다 — 둘 다 봐야 하는 상태다.
+        if (excluded.includes(artifact)) {
+          notes.push(`skip ${lang} ${artifact} — ${tag} 의 <excludeArtifacts> 가 게시에서 뺀 모듈이다`)
+        } else {
+          fail('unknown-module-artifact', `${lang} ${artifact} (${v}): ${tag} 가 모듈이라 말하는데 레지스트리에 그 좌표의 maven-metadata 가 없다 — 좌표 파생이 틀렸거나 게시된 적이 없다.`)
+        }
         continue
       }
       if (!av.includes(v)) {
@@ -255,10 +335,20 @@ for (const { lang, path } of targets) {
         continue
       }
       versionsChecked++
+      readThisVersion++
       classesRead += read.classes.length
       const cap = majorOf(floor.feature)
       const over = read.classes.filter((c) => c.major > cap)
+      const prev = read.classes.filter((c) => c.preview)
       const mr = read.skippedMR > 0 ? ` · MR 제외 ${read.skippedMR}` : ''
+      if (prev.length > 0) {
+        fail(
+          'published-preview-class',
+          `${lang} ${artifact} ${v}: preview 로 컴파일된 클래스가 ${prev.length}/${read.classes.length} 개다(minor 0xFFFF).`,
+          ...prev.slice(0, 5).map((c) => `  ${c.name}`),
+          'major 는 하한 안이어도 그 클래스는 JDK 18+ 에서, 그리고 `--enable-preview` 없는 하한 JDK 에서도 로드되지 않는다.',
+        )
+      }
       if (over.length > 0) {
         fail(
           'published-above-floor',
@@ -272,10 +362,33 @@ for (const { lang, path } of targets) {
         notes.push(`ok   ${lang} ${artifact} ${v} — 클래스 ${read.classes.length}개 전부 major ≤ ${cap} (${floor.how}=${floor.feature})${mr}`)
       }
     }
+    // ⚠️ **버전 단위 공허** — 그 버전에서 아티팩트를 하나도 못 읽었으면 「위반 없음」이 아니다.
+    if (readThisVersion === 0) {
+      fail('vacuous-version', `${lang} ${v}: 대조 대상 ${artifacts.length}개 중 **하나도 읽지 못했다** — 건너뛴 이유가 전부 정당한지 위 skip 줄을 확인하라.`)
+    }
+    checkedInLane += readThisVersion
   }
 
-  // 이 좌표에서 검사한 버전이 0 이면, 그 사실을 **보이게** 남긴다(조용한 초록 금지).
-  if (versions.length > 0 && versionsChecked === 0) pending.push(`${lang}: ${versions.length}개 버전 중 대조 가능한 것이 0개`)
+  // ⚠️ **레인 단위 공허** — 전역 카운터 하나로는 「java 는 돌고 kotlin 은 통째로 죽었다」를 못
+  // 본다(실측: kotlin 선언을 못 읽게 만들자 kotlin ok 줄 0 개인데 **exit 0** 이었다).
+  // 좌표마다 따로 센다. 개수를 박지 않는다 — 규칙은 「버전이 있으면 하나 이상 읽는다」다.
+  if (versions.length > 0 && checkedInLane === 0) {
+    fail(
+      'vacuous-lane',
+      `${lang}: metadata 가 ${versions.length}개 버전을 싣는데 **하나도 대조하지 못했다** — 이 레인은 통째로 검사되지 않았다.`,
+      `${lang} 의 태그 이름 규칙이나 하한 선언 위치가 바뀌었을 수 있다(예: kotlin 의 jvmTarget/jvmToolchain 표기, java 의 release 를 플러그인 설정으로 이동).`,
+    )
+  }
+}
+
+} catch (e) {
+  if (!(e instanceof Unreachable)) throw e
+  fail(
+    'registry-unreachable',
+    e.message,
+    '이것은 **하한 위반이 아니다** — 레지스트리에 닿지 못했다. 검사는 아무것도 판정하지 못했다.',
+    '되돌아보는 곳: https://status.maven.org/ · 같은 URL 을 curl 로 직접 쳐 볼 것.',
+  )
 }
 
 for (const n of notes) console.log(n)
@@ -284,11 +397,13 @@ for (const n of notes) console.log(n)
 // ⚠️ **아무것도 읽지 않고 끝난 실행은 성공한 실행과 구분되지 않는다.** 독립 레그가 이 검사의
 // 가장 그럴듯한 죽는 법으로 지목한 것이 정확히 이것이다(404·타임아웃 경로가 조용히 0 을 낸다).
 // 규칙: 좌표가 하나라도 있으면 **버전 하나 이상을 실제로 읽어야** 한다. 개수를 박지 않는다.
+// ⚠️ **오늘은 이 분기에 도달하지 않는다** — 레인 단위 `vacuous-lane` 이 모든 경로를 선점한다.
+// 그래도 남기는 이유는 이것이 마지막 fail-closed 불변식이기 때문이다(레인 회계를 건드리는
+// 미래의 편집이 구멍을 내면 여기서 걸린다). 자가테스트는 이것을 덮는다고 주장하지 않는다.
 if (errors.length === 0 && versionsChecked === 0) {
   fail(
     'vacuous-run',
     `좌표 ${targets.length}개를 훑고 **버전을 하나도 대조하지 못했다** — 「위반 없음」이 아니라 검사가 안 돈 것이다.`,
-    ...pending.map((p) => `  ${p}`),
     '태그 이름 규칙이 바뀌었거나(git fetch --tags 가 안 돌았거나) 좌표가 옮겨졌다.',
   )
 }
