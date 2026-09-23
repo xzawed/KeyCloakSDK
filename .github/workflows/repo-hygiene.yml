@@ -144,6 +144,18 @@ jobs:
         # 읽는 것만이 잡는 부류다. 이 자가테스트는 픽스처만 쓰므로 빌드가 필요 없다.
         run: sh scripts/test/test-check-jvm-bytecode-floor.sh
 
+      - name: JVM API 표면 핀 가드 자가테스트(지시어가 사라진 것을 잡는지 · 하한 숫자를 박지 않았는지)
+        # 위 바이트코드 가드가 **구조적으로 볼 수 없는** 절반이다. `jvmTarget`/`-target` 은 클래스
+        # 파일 버전만 내리고 API 표면은 빌드 JDK 에 묶인 채로 남는다 — major 는 정직하게 61 이라
+        # 바이트코드 가드도 초록인데 JDK 17 소비자만 런타임에 NoSuchMethodError 로 죽는다.
+        run: sh scripts/test/test-check-jvm-api-surface-pins.sh
+
+      - name: JVM API 표면 핀 — 실제 저장소
+        # 실측 2026-09-23: `-Xjdk-release` 를 부르는 자리가 scripts/·.github/ 에 다섯 군데 있었는데
+        # **전부 주석**이었고 `options.release` 는 0건이었다. 즉 그 줄을 지워도 아무것도 실패하지
+        # 않았다. 네트워크도 빌드도 필요 없으므로 여기(required 안)에서 돈다.
+        run: node scripts/check-jvm-api-surface-pins.mjs
+
       - name: php API 호환성 가드 자가테스트(면제 술어가 거짓이면 면제되지 않는지)
         # 이 가드는 php-semver-checker 의 주장을 **소스로 반증**해 오탐을 걷어낸다. 그런 장치의
         # 위험은 하나다 — 면제가 넓어져 게이트를 통째로 무력화하는 것. 그래서 자가테스트의 무게는
