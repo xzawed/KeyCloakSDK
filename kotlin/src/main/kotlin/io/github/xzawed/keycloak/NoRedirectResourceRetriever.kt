@@ -61,7 +61,7 @@ internal class NoRedirectResourceRetriever(
             } catch (_: java.text.ParseException) {
                 return res
             }
-        if (parsed.keys.isEmpty()) throw IOException("JWKS response contains no usable keys")
+        if (parsed.keys.isEmpty()) throw IOException("JWKS response contains no keys")
         return res
     }
 }
