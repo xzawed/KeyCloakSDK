@@ -318,6 +318,23 @@ git -C "$RPOM" add -A && git -C "$RPOM" -c user.email=t@t -c user.name=t commit 
 tagit "$RPOM" v9.9.0; tagit "$RPOM" kotlin-v9.9.0
 assert_ok node "$GUARD" "--root=$RPOM" "--base=$B" "--lang=java"
 
+# (e) ⚠️ **버전 하나만 조용히 빠지는 경우** — 레인 단위 검사로는 못 본다(다른 버전이 읽히므로
+# 레인은 공허하지 않다). 변이 증명이 낸 구멍이다(P12: `readThisVersion === 0` 무력화가 **SILENT**
+# 이었다). 여기서는 9.9.1 의 집합 모듈이 pom 패키징이고 형제 metadata 에 9.9.1 이 없어,
+# **그 버전에서 읽히는 것이 0 개**가 된다.
+RV2="$FIX/repo-ver2"
+mkrepo "$RV2" 17 "$K17" keycloak-sdk keycloak-sdk-core
+tagit "$RV2" v9.9.0; tagit "$RV2" v9.9.1; tagit "$RV2" kotlin-v9.9.0
+BV="$FIX/b-ver2"; cp -r "$B" "$BV"
+reg_meta "$BV" keycloak-sdk 9.9.0 9.9.1
+reg_pom  "$BV" keycloak-sdk 9.9.1 pom          # 집합 모듈이 그 버전에선 pom 패키징
+# keycloak-sdk-core 의 metadata 는 9.9.0 만 싣는다(위 $B 복사본 그대로) → 9.9.1 은 건너뛴다
+assert_fails node "$GUARD" "--root=$RV2" "--base=$BV" "--lang=java"
+out=$(node "$GUARD" "--root=$RV2" "--base=$BV" "--lang=java" 2>&1 || true)
+assert_contains "$out" "vacuous-version" "한 버전에서 아무것도 못 읽으면 vacuous-version"
+assert_contains "$out" "9.9.1" "어느 버전이 비었는지 지목한다"
+assert_contains "$out" "9.9.0" "다른 버전은 그대로 검사된다"
+
 # ── ⚠️ preview 바이트 — major 는 하한 안인데 소비자가 못 읽는다 ────────────
 # 독립 리뷰가 낸 구멍. `--enable-preview` 로 컴파일된 클래스는 major 가 정직하게 61 이면서
 # minor 가 0xFFFF 이고, JDK 18+ 과 `--enable-preview` 없는 JDK 17 양쪽에서 로드되지 않는다.
