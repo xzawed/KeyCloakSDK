@@ -241,7 +241,14 @@ const ruleWriteJobDropsCheckoutCreds = (wf, out) => {
     if (writes.length === 0) continue
     const start = job.node.n
     const end = wf.jobs[i + 1]?.node.n ?? wf.lines.length + 1
-    const body = wf.lines.slice(start, end - 1).join('\n')
+    // ⚠️ **주석을 걷고 본다 — 안 걷으면 주석이 설정 행세를 한다.** 실측으로 걸렸다(2026-09-23):
+    // 이 규칙을 넓히면서 `release.yml` 에 「`persist-credentials: false` 가 이 잡에만 빠져 있었다」는
+    // 경위 주석을 달았는데, 그 **글자 때문에** 실제 설정 줄을 지워도 규칙이 침묵했다.
+    // 즉 이 가드를 무력화하는 데 필요한 것이 설정 변경이 아니라 **주석 한 줄**이었다.
+    const body = wf.lines
+      .slice(start, end - 1)
+      .map((l) => l.replace(/#.*$/, ''))
+      .join('\n')
     if (!/uses: *actions\/checkout@/.test(body)) continue // 체크아웃이 없으면 남길 자격증명도 없다
     seen += 1
     if (!/persist-credentials: *false/.test(body))
