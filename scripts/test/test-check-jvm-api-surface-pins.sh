@@ -127,8 +127,71 @@ mk_kotlin "$FIX/bump" 'jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.J
                       'freeCompilerArgs.add("-Xjdk-release=21")' 'options.release.set(21)'
 assert_ok node "$GUARD" "--root=$FIX/bump"
 
+# ── ⚠️ 주석은 컴파일러에 닿지 않는다 ────────────────────────────────────────
+# 독립 리뷰 레그(2026-09-23)가 낸 구멍이고 **실측으로 확인됐다** — 첫 구현은 지시어를
+# 문자열로만 찾아서 `// freeCompilerArgs.add("-Xjdk-release=17")` 을 살아 있는 핀으로 읽었다.
+# ⚠️ **이것이 이 가드가 존재하는 이유 그 자체다**: 지우는 대신 주석 처리하는 것이 가장 흔한
+# 「일단 꺼 보자」이고, 그때 바이트코드는 여전히 major 61 이라 형제 가드도 초록이다.
+mk_java   "$FIX/cmt-kt" '<maven.compiler.release>17</maven.compiler.release>'
+mk_kotlin "$FIX/cmt-kt" "$K_TARGET" "// $K_JDKREL" "$K_JAVAC"
+assert_fails node "$GUARD" "--root=$FIX/cmt-kt"
+out=$(node "$GUARD" "--root=$FIX/cmt-kt" 2>&1 || true)
+assert_contains "$out" "missing-pin" "주석 처리된 지시어는 없는 것으로 읽는다"
+
+# 블록 주석도 같다.
+mk_java   "$FIX/cmt-blk" '<maven.compiler.release>17</maven.compiler.release>'
+mk_kotlin "$FIX/cmt-blk" "$K_TARGET" "/* $K_JDKREL */" "$K_JAVAC"
+assert_fails node "$GUARD" "--root=$FIX/cmt-blk"
+
+# XML 주석도 같다 — pom 쪽 지시어가 주석 안에만 있으면 없는 것이다.
+mkdir -p "$FIX/cmt-xml/java"
+printf '%s\n' '<project><properties>' \
+  '<!-- <maven.compiler.release>17</maven.compiler.release> -->' \
+  '</properties></project>' > "$FIX/cmt-xml/java/pom.xml"
+mk_kotlin "$FIX/cmt-xml" "$K_TARGET" "$K_JDKREL" "$K_JAVAC"
+assert_fails node "$GUARD" "--root=$FIX/cmt-xml"
+out=$(node "$GUARD" "--root=$FIX/cmt-xml" 2>&1 || true)
+assert_contains "$out" "missing-pin" "XML 주석 안의 지시어도 없는 것으로 읽는다"
+
+# ⚠️ 뒤집힌 짝: 살아 있는 지시어 **옆**의 주석이 다른 숫자를 말해도 갈렸다고 하면 안 된다.
+# (이 저장소의 실제 파일이 바로 그렇다 — 한글 주석이 21 과 17 을 함께 설명한다.)
+mk_java   "$FIX/cmt-near" '<maven.compiler.release>17</maven.compiler.release>'
+mk_kotlin "$FIX/cmt-near" "$K_TARGET // 옛날엔 JvmTarget.JVM_21 이었다" \
+                          "$K_JDKREL // -Xjdk-release=21 로 되돌리지 말 것" "$K_JAVAC"
+assert_ok node "$GUARD" "--root=$FIX/cmt-near"
+
+# ── ⚠️ 플러그인 설정의 <release> 가 프로퍼티를 **덮는다** ────────────────────
+# 같은 레그가 낸 둘째 구멍, 역시 실측 확인. `<maven.compiler.release>` 는 플러그인 파라미터의
+# **기본값**일 뿐이라 `<configuration><release>` 가 있으면 그쪽이 이긴다. 프로퍼티만 읽으면
+# 「17 로 핀돼 있다」고 보고하면서 실제로는 21 로 컴파일된다.
+mkdir -p "$FIX/plugin-rel/java"
+printf '%s\n' '<project><properties>' '<maven.compiler.release>17</maven.compiler.release>' '</properties>' \
+  '<build><plugins><plugin><artifactId>maven-compiler-plugin</artifactId>' \
+  '<configuration><release>21</release></configuration></plugin></plugins></build></project>' \
+  > "$FIX/plugin-rel/java/pom.xml"
+mk_kotlin "$FIX/plugin-rel" "$K_TARGET" "$K_JDKREL" "$K_JAVAC"
+assert_fails node "$GUARD" "--root=$FIX/plugin-rel"
+out=$(node "$GUARD" "--root=$FIX/plugin-rel" 2>&1 || true)
+assert_contains "$out" "floor-disagreement" "플러그인 <release> 가 프로퍼티와 갈리면 실패"
+
+# 같은 값이면 통과한다 — 플러그인 설정을 쓰는 것 자체는 정당하다.
+mkdir -p "$FIX/plugin-ok/java"
+printf '%s\n' '<project><properties>' '<maven.compiler.release>17</maven.compiler.release>' '</properties>' \
+  '<build><plugins><plugin><artifactId>maven-compiler-plugin</artifactId>' \
+  '<configuration><release>17</release></configuration></plugin></plugins></build></project>' \
+  > "$FIX/plugin-ok/java/pom.xml"
+mk_kotlin "$FIX/plugin-ok" "$K_TARGET" "$K_JDKREL" "$K_JAVAC"
+assert_ok node "$GUARD" "--root=$FIX/plugin-ok"
+
 # ── 공허성 ──────────────────────────────────────────────────────────────────
 # 빌드 파일이 옮겨지거나 이름이 바뀌면 「위반 없음」이 된다 — 이 저장소의 단골 실패다.
+
+# ⚠️ 주석만 있는 파일도 공허다 — 같은 레그가 지목한 부류(네 정규식이 전부 주석에 맞는다).
+mkdir -p "$FIX/all-cmt/java"
+printf '%s\n' '<project><!-- <maven.compiler.release>17</maven.compiler.release> --></project>' \
+  > "$FIX/all-cmt/java/pom.xml"
+mk_kotlin "$FIX/all-cmt" "// $K_TARGET" "// $K_JDKREL" "// $K_JAVAC"
+assert_fails node "$GUARD" "--root=$FIX/all-cmt"
 mkdir -p "$FIX/nofiles"
 assert_fails node "$GUARD" "--root=$FIX/nofiles"
 out=$(node "$GUARD" "--root=$FIX/nofiles" 2>&1 || true)

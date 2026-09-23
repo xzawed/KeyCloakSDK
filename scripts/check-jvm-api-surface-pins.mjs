@@ -47,6 +47,16 @@ const readIf = (p) => (existsSync(p) && statSync(p).isFile() ? readFileSync(p, '
 const JAVA_POM = join(ROOT, 'java', 'pom.xml')
 const KOTLIN_BUILD = join(ROOT, 'kotlin', 'build.gradle.kts')
 
+// ⚠️ **주석은 컴파일러에 닿지 않는다 — 읽기 전에 지운다.** 독립 리뷰 레그가 낸 구멍이고
+// 실측으로 확인됐다: 첫 구현은 `// freeCompilerArgs.add("-Xjdk-release=17")` 을 살아 있는 핀으로
+// 읽었다. 지우는 대신 **주석 처리하는 것**이 가장 흔한 「일단 꺼 보자」이고, 그때 바이트코드는
+// 여전히 major 61 이라 형제 가드도 초록이다 — 정확히 이 가드가 막아야 할 사고다.
+// 뒤집힌 짝도 같은 수정으로 닫힌다: 이 저장소의 한글 주석은 21 과 17 을 함께 설명하는데,
+// 주석을 남겨 두면 그것이 `floor-disagreement` 오탐이 된다.
+// ⚠️ `://` 는 건드리지 않는다 — `https://…` 를 줄 주석으로 읽으면 엉뚱한 자리가 잘린다.
+const stripKt = (s) => s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+const stripXml = (s) => s.replace(/<!--[\s\S]*?-->/g, ' ')
+
 const javaPom = readIf(JAVA_POM)
 const kotlinBuild = readIf(KOTLIN_BUILD)
 
@@ -56,11 +66,13 @@ if (errors.length) process.exit(1)
 
 // ── 네 지시어 ───────────────────────────────────────────────────────────────
 // 각 항목: 어디서 · 무엇을 · 어떤 정규식으로. 「없으면 missing-pin」이 규칙이다.
+const pomLive = stripXml(javaPom)
+const ktLive = stripKt(kotlinBuild)
 const PINS = [
-  { file: rel(JAVA_POM), text: javaPom, label: 'maven.compiler.release', re: /<maven\.compiler\.release>\s*(\d+)\s*<\/maven\.compiler\.release>/g },
-  { file: rel(KOTLIN_BUILD), text: kotlinBuild, label: 'jvmTarget', re: /jvmTarget[^\n]*?JVM_(\d+)/g },
-  { file: rel(KOTLIN_BUILD), text: kotlinBuild, label: '-Xjdk-release', re: /-Xjdk-release=(\d+)/g },
-  { file: rel(KOTLIN_BUILD), text: kotlinBuild, label: 'options.release', re: /options\.release[^\n]*?\(\s*(\d+)\s*\)/g },
+  { file: rel(JAVA_POM), text: pomLive, label: 'maven.compiler.release', re: /<maven\.compiler\.release>\s*(\d+)\s*<\/maven\.compiler\.release>/g },
+  { file: rel(KOTLIN_BUILD), text: ktLive, label: 'jvmTarget', re: /jvmTarget[^\n]*?JVM_(\d+)/g },
+  { file: rel(KOTLIN_BUILD), text: ktLive, label: '-Xjdk-release', re: /-Xjdk-release=(\d+)/g },
+  { file: rel(KOTLIN_BUILD), text: ktLive, label: 'options.release', re: /options\.release[^\n]*?\(\s*(\d+)\s*\)/g },
 ]
 
 const seen = new Map() // 값 → 그 값을 말한 자리들
@@ -107,7 +119,7 @@ if (poms.length === 0) {
 }
 
 for (const p of poms) {
-  const t = readFileSync(p, 'utf8')
+  const t = stripXml(readFileSync(p, 'utf8'))
   // ⚠️ 정규식을 **문자열로 짓지 않는다** — `.` 하나만 이스케이프하는 `replace` 는 백슬래시를
   // 놓쳐서 CodeQL `js/incomplete-sanitization` 이 high 로 잡는다(실제로 잡혔다). 여기서는
   // 찾는 것이 리터럴 태그이므로 정규식 자체가 필요 없다.
@@ -130,6 +142,14 @@ for (const p of poms) {
       if (re.test(block)) {
         fail('weaker-pin', `${rel(p)} 의 maven-compiler-plugin 설정이 \`<${weak}>\` 를 쓴다 — \`<release>\` 여야 API 표면이 묶인다.`)
       }
+    }
+    // ⚠️ **플러그인 설정의 `<release>` 가 프로퍼티를 덮는다.** `<maven.compiler.release>` 는
+    // 플러그인 파라미터의 **기본값**일 뿐이라 `<configuration><release>` 가 있으면 그쪽이 이긴다.
+    // 프로퍼티만 읽으면 「17 로 핀돼 있다」고 보고하면서 실제로는 21 로 컴파일된다(레그 지목,
+    // 실측 확인). 그래서 이것도 **핀 자리**로 세어 값 불일치에 걸리게 한다.
+    for (const m of block.matchAll(/<release>\s*(\d+)\s*<\/release>/g)) {
+      if (!seen.has(m[1])) seen.set(m[1], [])
+      seen.get(m[1]).push(`${rel(p)}:maven-compiler-plugin <release>`)
     }
     i = t.indexOf('maven-compiler-plugin', i + 1)
   }
