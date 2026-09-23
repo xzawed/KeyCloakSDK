@@ -1,7 +1,7 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=192923 -->
-<!-- 192725 → 192923 (2026-09-23, +198B). 규약 (1) — 새 가드 하나(`check-jvm-api-surface-pins.mjs`,
-     변이 5/5 CAUGHT + OFF 짝)가 검증 가능성을 사 왔고, **같은 커밋이 오늘 릴리스가 거짓으로
+<!-- doc-budget: max-bytes=192968 -->
+<!-- 192725 → 192968 (2026-09-23, +243B). 규약 (1) — 새 가드 하나(`check-jvm-api-surface-pins.mjs`,
+     변이 7/7 CAUGHT + OFF 짝)가 검증 가능성을 사 왔고, **같은 커밋이 오늘 릴리스가 거짓으로
      만든 문장들을 지웠다** — 「릴리스는 하지 않는다」(2026-09-06 판정) · 「compatibility.md 와
      양쪽 README 는 21 을 게시본 값으로 명시한다」 · 릴리스 시 내려야 할 자리 목록(전부 내렸다) ·
      「PR 이 아닌 것」 목록의 이 항목(선행이 도착했다).
@@ -322,7 +322,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - ⚠️ 이 항목을 닫기 전에 아래 `registry-contract-claims-use-tree-oracle` 를 먼저 볼 것 — 같은 부류가 다른 주장에도 있다.
   - **레지스트리 오라클로 확정(2026-09-06).** 지금까지 이 주장의 근거는 **태그의 빌드 설정**이었다(추론). Maven Central 에서 게시본을 직접 받아 클래스파일 major 를 읽었다 — `keycloak-sdk` · `-core` · `-auth` · `-admin` · `-kotlin` 다섯 jar, **클래스 91개 전부 major 65(JDK 21)**. `major > 61` 이 **91/91** 이므로 JDK 17 소비자는 한 클래스도 못 읽는다. 나머지 셋은 **서로 다른 이유로** jar 가 없다(독립 검증 레그가 「404 는 pom-only 의 증거가 아니다」로 지목해 pom 을 직접 읽었다): `-bom`·`-parent` 는 `<packaging>pom</packaging>` 이고, **`-examples` 는 `1.0.0` 자체가 없다**(그 좌표에는 `0.1.0`·`0.1.0-RC1` 뿐 — 부모의 `<excludeArtifacts>` 가 그때부터 걸렸다. 경위는 `java/keycloak-sdk-examples/pom.xml` 주석). 재현: `curl -sSL $B/<artifact>/1.0.0/<artifact>-1.0.0.jar` 후 각 `.class` 의 6~7바이트를 읽고, jar 가 없으면 **pom 의 `<packaging>` 과 버전 목록을 함께 본다**.
   - ⚠️ **kotlin 은 이 측정으로 추론이 사실이 됐다** — 그전 근거는 「`kotlin-v1.0.0` 에 `jvmTarget` 이 없으니 툴체인 21 이 타깃일 것」이었고, 이제 배포된 바이트가 그렇다고 말한다.
-- [x] `jvm-api-surface-pin-unguarded` **[H/S · 신규·닫힘 2026-09-23]** `-Xjdk-release`·`options.release` 를 읽는 가드가 0 개였다(부르는 다섯 자리가 **전부 주석**) — 지우면 major 는 61 그대로라 바이트코드 가드도 초록인데 JDK 17 소비자만 런타임에 죽는다 · `scripts/check-jvm-api-surface-pins.mjs`(변이 5/5 CAUGHT + OFF 짝)
+- [x] `jvm-api-surface-pin-unguarded` **[H/S · 신규·닫힘 2026-09-23]** `-Xjdk-release`·`options.release` 를 읽는 가드가 0 개였다(부르는 다섯 자리가 **전부 주석**) — 지우면 major 는 61 그대로라 바이트코드 가드도 초록인데 JDK 17 소비자만 런타임에 죽는다 · `scripts/check-jvm-api-surface-pins.mjs`(변이 7/7 CAUGHT + OFF 짝 · 그중 둘은 독립 레그가 낸 구멍)
 - [ ] `published-bytes-have-no-oracle` **[M/M · 신규 2026-09-06]** 아무 가드도 **게시된 바이트**를 읽지 않는다 — 태그까지가 한계다 · `scripts/check-jvm-bytecode-floor.mjs` · `scripts/check-docs.mjs:검사 8b/kind=runtime`
   - ⚠️ **선행이 있다 — 봉인 단계 없이는 못 닫는다.** 설계 판정 2026-09-23(바로 아래 블록 주석 · 경위는 PR #548).
 
