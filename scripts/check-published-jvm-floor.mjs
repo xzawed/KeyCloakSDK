@@ -127,7 +127,15 @@ const readJarMajors = (buf, label) => {
   const EOCD = 0x06054b50
   let eocd = -1
   for (let i = buf.length - 22; i >= 0 && i >= buf.length - 66000; i--) {
-    if (buf.readUInt32LE(i) === EOCD) { eocd = i; break }
+    if (buf.readUInt32LE(i) !== EOCD) continue
+    // ⚠️ **서명만 보고 잡으면 안 된다.** zip 의 아카이브 주석은 임의 바이트이고, 그 안에
+    // 이 4바이트가 들어 있으면 뒤에서부터 훑는 이 루프가 **가짜를 먼저 만난다**(실측: 그때
+    // 중앙 디렉터리 오프셋이 1094795585 로 읽혀 예외가 났다 — 큰 소리로 죽으니 조용한 통과는
+    // 아니지만, 정상 jar 가 우연히 그 바이트를 품으면 **거짓 경보**다).
+    // 진짜 EOCD 는 「주석 길이 필드 == 실제 남은 바이트」를 만족한다. 그것으로 가린다.
+    if (buf.readUInt16LE(i + 20) !== buf.length - (i + 22)) continue
+    eocd = i
+    break
   }
   if (eocd < 0) throw new Error(`${label}: zip 끝 레코드를 못 찾았다(jar 가 아니거나 잘렸다)`)
   const count = buf.readUInt16LE(eocd + 10)

@@ -198,6 +198,25 @@ assert_contains "$out" "vacuous-scan" "repo1 좌표를 못 읽으면 vacuous-sca
 mkdir -p "$FIX/bare"
 assert_fails node "$GUARD" "--root=$FIX/bare" "--base=$B"
 
+# ── ⚠️ 아카이브 주석 안의 가짜 EOCD 서명 ───────────────────────────────────
+# zip 의 아카이브 주석은 임의 바이트다. 그 안에 EOCD 4바이트가 들어 있으면 **뒤에서부터 서명만
+# 찾는 리더가 가짜를 먼저 만난다**(실측: 중앙 디렉터리 오프셋이 1094795585 로 읽혀 예외가 났다).
+# 조용한 통과는 아니지만 **정상 jar 가 우연히 그 바이트를 품으면 화요일 새벽 거짓 경보**다.
+# 진짜 EOCD 는 「주석 길이 == 남은 바이트」를 만족하므로 그것으로 가린다 — 이 케이스가 그 필터를
+# 고정한다(필터를 지우면 아래 assert_ok 가 예외로 깨진다).
+cp -r "$B" "$FIX/b-trap"
+reg_jar "$FIX/b-trap" keycloak-sdk-core 9.9.0 61:2 --trap-comment
+assert_ok node "$GUARD" "--root=$R" "--base=$FIX/b-trap"
+out=$(node "$GUARD" "--root=$R" "--base=$FIX/b-trap" 2>&1 || true)
+assert_contains "$out" "keycloak-sdk-core" "주석 함정이 있어도 진짜 EOCD 를 찾아 읽는다"
+
+# 함정이 있으면서 **실제로 하한을 넘는** 경우 — 함정 때문에 검사가 건너뛰어지면 안 된다.
+cp -r "$B" "$FIX/b-trap-over"
+reg_jar "$FIX/b-trap-over" keycloak-sdk-core 9.9.0 65:2 --trap-comment
+assert_fails node "$GUARD" "--root=$R" "--base=$FIX/b-trap-over"
+out=$(node "$GUARD" "--root=$R" "--base=$FIX/b-trap-over" 2>&1 || true)
+assert_contains "$out" "published-above-floor" "주석 함정이 위반을 가리지 않는다"
+
 # ── Multi-Release jar 는 **의도적으로** 높다 ────────────────────────────────
 # 제외하지 않으면 정당한 MR-jar 를 막게 되고, 그러면 이 가드는 꺼지게 된다.
 cp -r "$B" "$FIX/b-mr"

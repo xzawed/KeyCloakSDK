@@ -21,6 +21,10 @@ const out = argv[0]
 const spec = argv[1] ?? '61:1'
 const mrArg = argv.find((a) => a.startsWith('--mr='))
 const EMPTY = argv.includes('--empty')
+// ⚠️ `--trap-comment` 는 **아카이브 주석 안에 EOCD 서명을 심는다.** 뒤에서부터 서명만 찾는
+// 리더는 그 가짜를 먼저 만나 엉뚱한 곳을 중앙 디렉터리로 읽는다(실측으로 예외가 났다).
+// 진짜 EOCD 는 「주석 길이 == 남은 바이트」를 만족하므로 그 조건이 가짜를 걸러야 한다.
+const TRAP = argv.includes('--trap-comment')
 if (!out) {
   console.error('usage: node scripts/test/mkjar.mjs <출력.jar> <major>[:<개수>] [--mr=<major>] [--empty]')
   process.exit(1)
@@ -118,6 +122,11 @@ eocd.writeUInt16LE(entries.length, 8)
 eocd.writeUInt16LE(entries.length, 10)
 eocd.writeUInt32LE(cdBuf.length, 12)
 eocd.writeUInt32LE(offset, 16)
-eocd.writeUInt16LE(0, 20)
+let comment = Buffer.alloc(0)
+if (TRAP) {
+  comment = Buffer.alloc(40, 0x41)
+  Buffer.from([0x50, 0x4b, 0x05, 0x06]).copy(comment, 10) // 주석 안의 가짜 EOCD 서명
+}
+eocd.writeUInt16LE(comment.length, 20)
 
-writeFileSync(out, Buffer.concat([...locals, cdBuf, eocd]))
+writeFileSync(out, Buffer.concat([...locals, cdBuf, eocd, comment]))
