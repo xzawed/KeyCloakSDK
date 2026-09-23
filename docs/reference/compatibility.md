@@ -1,4 +1,9 @@
-<!-- doc-budget: max-bytes=5220 -->
+<!-- doc-budget: max-bytes=5329 -->
+<!-- 5220 → 5329 (2026-09-23). 규약 (1) — 태그 `kotlin-v1.0.1` 이 생겨 kotlin 앵커의
+     `published=21` 도 반대 방향으로 실패했다. java 와 같은 정정을 kotlin 자리에 한다.
+     이제 **JVM 둘 다 17** 이므로 「어느 쪽이 아직 안 내려갔는가」 단서는 필요 없어졌고,
+     대신 **다음 격차에서 무엇을 읽어야 하는가**(매니페스트가 아니라 태그)를 남긴다 —
+     그 지침이 없으면 다음 세션이 같은 실수를 반복한다. -->
 <!-- 5138 → 5220 (2026-09-23, +82B). 규약 (1) — 태그 `v1.0.1` 이 생기면서 `kind=runtime` 오라클이
      **반대 방향으로** 실패했다(「격차가 없는데 published=21 가 남아 있다」). 그 속성과 격차 서술을
      지우고, 소비자에게 21 을 말하던 java 자리를 17 로 내린다.
@@ -25,7 +30,7 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 
 > ⚠️ **Each row describes what that row's published version actually shipped.** The library versions in a cell are the values in the release named in the first column, not whatever `main` happens to pin today. `main` can already be ahead; the next release of that language is when this table should move. Java and Kotlin have no lockfile — their published POM / `build.gradle.kts` pins are the source; Go has no lockfile either, so its row is the `go/go.mod` of the tagged commit (`go/v1.0.0`, which the proxy serves as the module's `.mod`). Every row now names a published version — there is no "current `main`" row left. The contract a *new* consumer resolves is still the range in each manifest; read the manifest, not this table, when that difference matters.
 
-> ⚠️ **The JVM rows state the floor of the *published* artifact, not of the source tree.** Java `1.0.1` is the release that lowered it to **JDK 17** (`v1.0.0` was compiled for 21). Kotlin is **still on 21** — the lowering is in the tree but `kotlin-v1.0.1` has not been cut, so **do not "correct" that row to 17** by reading `kotlin/build.gradle.kts`; verify with `git show kotlin-v1.0.0:kotlin/build.gradle.kts | grep -E 'jvmTarget|jvmToolchain'`, and lower it only in the release that actually publishes 17. Detail: [getting-started.md](../guides/getting-started.md#java).
+> ⚠️ **The JVM rows state the floor of the *published* artifact, not of the source tree.** Both are **JDK 17** as of `1.0.1` — that pair of releases is what lowered it; `v1.0.0`/`kotlin-v1.0.0` were compiled for 21, so anyone still pinned there must build against 21. ⚠️ **When the tree and the published artifact next diverge, do not "correct" these rows from the manifest** — read the tag (`git show v1.0.1:java/pom.xml | grep maven.compiler.release`, `git show kotlin-v1.0.1:kotlin/build.gradle.kts | grep -E 'jvmTarget|jvmToolchain'`) and lower them only in the release that actually publishes the new floor. Detail: [getting-started.md](../guides/getting-started.md#java).
 
 
 | SDK | Target Keycloak server | Base libraries · runtime |
@@ -38,7 +43,7 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 | PHP `1.0.0` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `fschmtt/keycloak-rest-api-client-php` **0.42.0** · `league/oauth2-client` **^2.8** · `stevenmaguire/oauth2-keycloak` **^6.1** · `firebase/php-jwt` **^7.1** · PHP 8.3+ |
 | Rust `1.0.0` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak` **~26.6.2** (`reqwest12` feature) · `openidconnect` **4.0.1** · `jsonwebtoken` **11.0.0** · Rust 1.88+ (edition 2024) |
 | Ruby `1.0.0` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `rack-oauth2` **~>2.3** · `faraday` **~>2.0** · `jwt` (ruby-jwt) **~>3.2** · Ruby 3.2+ |
-| Kotlin `1.0.1` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak-admin-client` **26.0.12** · `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.9.1** (same JVM stack as Java) · Kotlin 2.2+ consumers (built with 2.4.10, metadata pinned to 2.2) · JDK 21+ |
+| Kotlin `1.0.1` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak-admin-client` **26.0.12** · `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.9.1** (same JVM stack as Java) · Kotlin 2.2+ consumers (built with 2.4.10, metadata pinned to 2.2) · JDK 17+ |
 
 > Note on the server column: all nine pin the **same** image tag, `quay.io/keycloak/keycloak:26.6` — there is no per-language branch, and this column used to claim one (`26.6.4` for Java and Python). `26.6` is a floating minor, so what a run pulls is whatever it resolved to that day; measured 2026-09-06, that container reports **Keycloak 26.6.4**. Write the pinned tag here, not a resolution — a resolution is a snapshot nobody can reproduce later.
 >
