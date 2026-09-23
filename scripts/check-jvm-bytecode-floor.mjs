@@ -94,4 +94,7 @@ if (over.length > 0) {
   console.error('  java: maven.compiler.release · kotlin: jvmTarget + -Xjdk-release 를 확인하라.')
   process.exit(1)
 }
+// ⚠️ 여기서 초록이어도 **절반만** 본 것이다 — major 가 61 이어도 API 표면이 빌드 JDK 에 묶인 채면
+// 소비자는 런타임에 죽는다(상수풀을 읽지 않으므로 이 가드는 그것을 볼 수 없다).
+// 나머지 절반은 `scripts/check-jvm-api-surface-pins.mjs` 가 본다.
 console.log('하한 위반 없음')

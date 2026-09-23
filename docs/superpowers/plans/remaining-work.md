@@ -1,5 +1,14 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=192725 -->
+<!-- doc-budget: max-bytes=192923 -->
+<!-- 192725 → 192923 (2026-09-23, +198B). 규약 (1) — 새 가드 하나(`check-jvm-api-surface-pins.mjs`,
+     변이 5/5 CAUGHT + OFF 짝)가 검증 가능성을 사 왔고, **같은 커밋이 오늘 릴리스가 거짓으로
+     만든 문장들을 지웠다** — 「릴리스는 하지 않는다」(2026-09-06 판정) · 「compatibility.md 와
+     양쪽 README 는 21 을 게시본 값으로 명시한다」 · 릴리스 시 내려야 할 자리 목록(전부 내렸다) ·
+     「PR 이 아닌 것」 목록의 이 항목(선행이 도착했다).
+     ⚠️ 순증이 1,071B 였다가 198B 로 줄어든 것은 **판정 방법을 깎아서가 아니다** — 새 항목의
+     설계 판정 (a)~(e)를 **블록 주석**으로 옮겼다(주입되지 않아 계상되지 않는다). 그 판정을
+     실제로 읽어야 하는 것은 그 항목을 착수하는 세션 하나뿐이고, 상시 표면에 필요한 것은
+     「봉인 단계 없이는 못 닫는다」 한 줄이다. 경위 산문은 PR #548 로 보냈다. -->
 <!-- 192677 → 192725 (2026-09-23, +48B). 규약 (1) — 가드 무결성 셋을 닫으면서 **다음 세션이
      재현할 판정 방법**만 남긴다. 순증은 두 항목의 진행 기록이고(어느 프로브가 SILENT 였고
      무엇을 넣어 CAUGHT 이 됐는가), 닫은 둘의 사후 서사 1,218B 는 **PR 번호로 갈음했다**
@@ -60,7 +69,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `192`(2026-09-22 기준 열림 120 · 닫힘 70)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `193`(2026-09-23 기준 열림 120 · 닫힘 71)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -187,13 +196,13 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **⟶ 옛 목록(이제 닫힘): ~~`lenient-parsing-yields-false-success`~~(닫힘 — rust 하나가 아니라 다섯이었다: `token_provider.rs:71,86-89` 가 **문자열이 아닌 `access_token` 을 빈 토큰 성공으로 캐시**한다. `auth.rs` 는 `CoreTokenResponse` 라 fail-safe이고 **`expires_in` 누락만** 공유한다) · `python-aio-security-test-asymmetry`(범위 6 으로 확대됨) · `rust-msrv-leg-vs-manifest-unguarded`(⚠️ **한 방향만 침묵**이다 — 매니페스트를 내리면 `check-docs` 가 잡고, **CI 레그만 올리면** 아무도 안 잡아 MSRV 레그가 조용히 사라진다) · `authz-redirect-uri-not-per-call`(사람 판정 선행). ⚠️ 여전히 **재판정부터** 시작한다.
 
-**PR 이 아닌 것**(선행이 빠져 있다): `jvm-17-floor-never-shipped`(사람 승인 릴리스) · `guard-detection-surface-hand-narrowed` 의 파생화(required **밖**에서 오탐 0 선행) · `integration-admin-surface-uneven`(9×capability 결정 — php 가 roles/groups/realms 를 **0/3 계열** 부른다) · `integration-coverage-never-measured`(9개 설계) · `registry-truth-check`(레지스트리별 **버전** 오라클 + 전파 404 규칙 — ⚠️ 순진한 라이브 폴링은 「첫 404 로 실패 결론」 함정을 되살린다) · `published-bytes-have-no-oracle`(Portal 게시 후 실제 jar 페치) · `security-invariant-not-required`(룰셋 apply — ⚠️ **required 이름을 늘리지 말고** `doc-facts` 안으로 접는 쪽이 PR 크기다).
+**PR 이 아닌 것**(선행이 빠져 있다): `guard-detection-surface-hand-narrowed` 의 파생화(required **밖**에서 오탐 0 선행) · `integration-admin-surface-uneven`(9×capability 결정 — php 가 roles/groups/realms 를 **0/3 계열** 부른다) · `integration-coverage-never-measured`(9개 설계) · `registry-truth-check`(레지스트리별 **버전** 오라클 + 전파 404 규칙 — ⚠️ 순진한 라이브 폴링은 「첫 404 로 실패 결론」 함정을 되살린다) · `published-bytes-have-no-oracle`(Portal 게시 후 실제 jar 페치) · `security-invariant-not-required`(룰셋 apply — ⚠️ **required 이름을 늘리지 말고** `doc-facts` 안으로 접는 쪽이 PR 크기다).
 
 ⚠️ **예산 정책은 정해졌다(#418) — 배치 2·3 은 그 위에서 돈다.** 문서 여럿이 상한에 붙어 있어 **정확성 수정 한 줄도 예산을 넘긴다**(배치 1 실측: 네 번, +300·236·120·84B). 이제 규칙은 「인상은 **교환**이고, 앵커 주석에 `옛값 → 새값` 을 적으며, **+300B 초과만 사람 판정**」이고 `check-docs.mjs` **검사 8b** 가 `main` 과 대조해 강제한다. **매 건 사람에게 올리지 말 것** — 상한 안이면 기록하고 진행한다. ⚠️ 반대로 **깎아서 맞추지도 말 것**: 압축이 「다시 재는 명령」을 지우면 그건 교환이 아니라 손실이고, 그때가 인상해야 하는 자리다.
 
-⚠️ **`jvm-17-floor-never-shipped` [H] 는 여기 없다 — 남은 것이 릴리스뿐이기 때문이다**(비가역·사람 승인 게이트, 2026-09-06 사람 판정 「릴리스는 하지 않는다」). 문서는 #413 이, **가드는 #415 가** 닫았다: 이제 `kind=runtime` 이 트리와 최신 릴리스 태그를 함께 읽어 격차가 기록되지 않으면 fail-closed 한다. 릴리스가 나가면 `getting-started.md` 의 `published=21` 두 개를 **지워야** 통과한다(가드가 반대 방향으로도 실패한다).
+⚠️ **`jvm-17-floor-never-shipped` [H] 는 여기 없다 — 남은 것이 릴리스뿐이었기 때문이다**(2026-09-06 사람 판정 「릴리스는 하지 않는다」 → **2026-09-23 사람 판정으로 뒤집혀 태그 둘이 나갔다**). 문서는 #413 이, **가드는 #415 가** 닫았다: `kind=runtime` 이 트리와 최신 릴리스 태그를 함께 읽어 격차가 기록되지 않으면 fail-closed 한다. **그 가드가 설계대로 반대 방향으로 실패했다** — 태그가 생기자 `published=21` 두 개를 지워야 통과했고, 자리를 정확히 한 건씩 지목했다(#545·#547).
 
-⚠️ **다만 「릴리스뿐」이 곧 「릴리스하면 끝」은 아니다.** 2026-09-06 레지스트리 실측으로 게시본이 **91/91 major 65** 임을 확정했고(그 항목), 같은 확인에서 **아무 가드도 게시된 바이트를 읽지 않는다**는 것이 드러났다 — `published-bytes-have-no-oracle`. **JVM 릴리스를 내는 세션은 그 항목을 함께 연다.**
+⚠️ **다만 「릴리스뿐」이 곧 「릴리스하면 끝」이 아니었다.** 2026-09-06 실측(게시본 **91/91 major 65**)이 같은 자리에서 **아무 가드도 게시된 바이트를 읽지 않는다**를 드러냈다 — `published-bytes-have-no-oracle`. 그 항목은 2026-09-23 릴리스 세션이 설계까지 열었다.
 
 **#415 가 남긴 부류 시험**(다른 주장에도 적용한다): **「소비자가 틀릴 수 있는데 HEAD 는 맞다면, 오라클은 트리가 아니라 태그·레지스트리다.」** 후보 — 게시된 공개 API 표면 · 게시 매니페스트의 의존성 하한 · 릴리스 바이너리에 컴파일된 기능 · 배포 아티팩트의 라이선스 · 「vX 에 포함됨」류 CHANGELOG 결속.
 
@@ -286,7 +295,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `java-rules-close-scope-ambiguous` **[L/S · 닫힘 2026-09-06 #423]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
-## B. 재검증 대상 — 49건 (열림 15)
+## B. 재검증 대상 — 50건 (열림 15)
 
 3렌즈 통과, 원장은 개별 재실행을 하지 않았다. 이번 인벤토리에서 전량 파일 확인 — 기각 권고 0건.
 
@@ -307,14 +316,46 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `rulefile-matrix-vs-workflow-unguarded` **[M/M · 신규·닫힘 2026-09-05]** 규칙 파일이 적는 CI 매트릭스를 워크플로의 `strategy.matrix` 와 대조하는 기계가 없다 · `.claude/rules/{java,ruby}.md`
 - [x] `rust-msrv-leg-vs-manifest-unguarded` **[S/S · 닫힘 2026-09-12]** ⚠️ **지목 줄이 빗나가 있었다** — `rust-ci.yml:21` 은 주석이고 실제 레그는 **`:24`** 다. 주장 자체는 참이었다(실측: 매트릭스 레그만 올리면 **아무 검사도 실패하지 않는다** — `check-docs.mjs` 의 `MATRIX` 는 java·ruby 둘뿐이라 rust 는 표에 없다). `H3-harness-image-and-lock-pins` 와 **같은 불변식**이라 한 가드로 닫았다(`check-versions.mjs` 의 툴체인 리터럴 축). ⚠️ **산문을 조준하지 않는 것이 이 가드가 required 안에서 사는 조건이다** — CHANGELOG 의 「MSRV 1.88 그대로」는 **이력**이라 MSRV 가 올라도 바뀌면 안 되고, README·getting-started 의 「1.88+」는 `check-docs.mjs:544` 의 kind=runtime 앵커가 이미 소유한다. 그래서 대상은 **지시어 행 둘**뿐이다(매트릭스 축 · `^FROM rust:<ver>`). 변이 M3/M4 양방향 `CAUGHT` + OFF 짝 `SILENT`.
 - [x] `matrix-fail-fast-cancels-floor-leg` **[M/S · 신규·닫힘 2026-09-05]** 매트릭스 워크플로 8개 중 **6개에 `fail-fast: false` 가 없어** 최신 레그가 깨지면 소비자 하한 레그가 취소된다 · `.github/workflows/`
-- [ ] `jvm-17-floor-never-shipped` **[H/M · 신규 2026-09-06]** #389 가 소비자 하한을 21→17 로 내렸으나 **게시된 적이 없다** — Maven Central 의 `1.0.0` 은 여전히 JDK 21 을 요구한다 · `java/pom.xml:61` · `kotlin/build.gradle.kts:50`
+- [ ] `jvm-17-floor-never-shipped` **[H/M · 신규 2026-09-06 · 2026-09-23 태그 나감, 게시 미확인]** 하한 21→17 이 게시된 적이 없었다. 태그 둘이 나가고 워크플로도 둘 다 초록이나 **Portal Publish 는 사람 클릭이라 아직 안 눌렸다** — repo1 실측 둘 다 404 · `java/pom.xml:61` · `kotlin/build.gradle.kts:50`
   - 실측: `git show v1.0.0:java/pom.xml` → `<maven.compiler.release>21`. `kotlin-v1.0.0` 은 `jvmToolchain(21)` 만 있고 `jvmTarget`·`-Xjdk-release` 가 **없어** 바이트코드도 21(트리 주석 `kotlin/build.gradle.kts:47` 이 그 인과를 적는다). 태그 `v1.0.0` 2026-09-01 · 하향 커밋 `6a9d620` 2026-09-04 · **그 뒤 JVM 릴리스 0건**(`git tag -l 'v*' 'kotlin-v*'`).
-  - **문서 쪽은 닫았다**(이 항목이 남긴 것은 릴리스뿐): `getting-started.md` 의 java·kotlin 절이 「트리 17 / 게시본 21」을 함께 말하고 재확인 명령을 든다. `compatibility.md`·`kotlin/README.md`·양쪽 README 는 21 을 **게시본 값으로 명시**해, 다음 세션이 트리를 보고 「고치려다」 거짓으로 만드는 것을 막는다.
-  - ⚠️ **비가역 · 사람 승인 게이트.** JVM 패치 릴리스(`v1.0.1`·`kotlin-v1.0.1`)를 내야 17 이 소비자에게 닿는다. 릴리스 시 **함께** 내려야 하는 자리: `getting-started.md`(표 2행 + 가드 문단 2개) · `compatibility.md`(경고 문단 + JVM 2행) · `kotlin/README.md:11` · `README.md:103,111` · `README.ko.md:103,111`.
+  - ⚠️ **남은 둘, 이 순서로.** (a) 사람이 Portal 에서 **Publish 를 누른다**(java·kotlin 각각). (b) repo1 에서 실물을 본 **뒤에야** API 기저선(`japicmp.baseline`·kotlin-ci `BASELINE`)을 올린다(DEPLOY §4 8→9). 태그가 무엇을 핀했는지 다시 재는 명령은 `compatibility.md` 의 JVM 경고가 소유한다.
   - ⚠️ 이 항목을 닫기 전에 아래 `registry-contract-claims-use-tree-oracle` 를 먼저 볼 것 — 같은 부류가 다른 주장에도 있다.
   - **레지스트리 오라클로 확정(2026-09-06).** 지금까지 이 주장의 근거는 **태그의 빌드 설정**이었다(추론). Maven Central 에서 게시본을 직접 받아 클래스파일 major 를 읽었다 — `keycloak-sdk` · `-core` · `-auth` · `-admin` · `-kotlin` 다섯 jar, **클래스 91개 전부 major 65(JDK 21)**. `major > 61` 이 **91/91** 이므로 JDK 17 소비자는 한 클래스도 못 읽는다. 나머지 셋은 **서로 다른 이유로** jar 가 없다(독립 검증 레그가 「404 는 pom-only 의 증거가 아니다」로 지목해 pom 을 직접 읽었다): `-bom`·`-parent` 는 `<packaging>pom</packaging>` 이고, **`-examples` 는 `1.0.0` 자체가 없다**(그 좌표에는 `0.1.0`·`0.1.0-RC1` 뿐 — 부모의 `<excludeArtifacts>` 가 그때부터 걸렸다. 경위는 `java/keycloak-sdk-examples/pom.xml` 주석). 재현: `curl -sSL $B/<artifact>/1.0.0/<artifact>-1.0.0.jar` 후 각 `.class` 의 6~7바이트를 읽고, jar 가 없으면 **pom 의 `<packaging>` 과 버전 목록을 함께 본다**.
   - ⚠️ **kotlin 은 이 측정으로 추론이 사실이 됐다** — 그전 근거는 「`kotlin-v1.0.0` 에 `jvmTarget` 이 없으니 툴체인 21 이 타깃일 것」이었고, 이제 배포된 바이트가 그렇다고 말한다.
+- [x] `jvm-api-surface-pin-unguarded` **[H/S · 신규·닫힘 2026-09-23]** `-Xjdk-release`·`options.release` 를 읽는 가드가 0 개였다(부르는 다섯 자리가 **전부 주석**) — 지우면 major 는 61 그대로라 바이트코드 가드도 초록인데 JDK 17 소비자만 런타임에 죽는다 · `scripts/check-jvm-api-surface-pins.mjs`(변이 5/5 CAUGHT + OFF 짝)
 - [ ] `published-bytes-have-no-oracle` **[M/M · 신규 2026-09-06]** 아무 가드도 **게시된 바이트**를 읽지 않는다 — 태그까지가 한계다 · `scripts/check-jvm-bytecode-floor.mjs` · `scripts/check-docs.mjs:검사 8b/kind=runtime`
+  - ⚠️ **선행이 있다 — 봉인 단계 없이는 못 닫는다.** 설계 판정 2026-09-23(바로 아래 블록 주석 · 경위는 PR #548).
+
+<!-- 설계 판정 2026-09-23 (독립 레그 + 재판정). 예산에 계상되지 않는 자리에 둔다 — 이 항목을
+     실제로 착수하는 세션만 읽으면 되는 판정이고, 상시 표면에 둘 것은 위 한 줄이면 족하다.
+
+     (a) **이 이름이 뜻하는 것은 다이제스트 동일성이다.** 업로드한 바이트의 다이제스트를 남기는
+         릴리스 워크플로가 없고 두 빌드 다 `outputTimestamp` 가 없어(재현 불가) **대조 대상
+         자체가 없다.** 다시 재는 법:
+             grep -rn 'outputTimestamp\|sha256sum\|sha512sum' .github/workflows java/pom.xml kotlin/build.gradle.kts
+         ⚠️ 봉인 단계를 먼저 넣지 않으면 이 이름은 닫히지 않는다. 「게시 jar 를 받아 클래스
+         major 를 읽는다」는 **더 약한 별건**이므로 그것으로 이 항목을 닫지 말 것.
+
+     (b) **404·5xx·타임아웃은 실패가 아니라 미결.** 단 ⚠️ **미결을 초록으로 저장하면 「아무것도
+         게시 안 하고 green 으로 끝난 실행」과 구분되지 않는다**(CLAUDE.md 가 배포 시크릿에 대해
+         쓰는 바로 그 부류). 판정 규칙: SSOT(`df_published_version`)가 「게시됨」이라 말하는
+         좌표가 **전파 창을 넘겨서도** 404 면 그것은 미결이 아니라 **SSOT 가 거짓**이므로 실패다.
+         (독립 레그는 「영구 미결, 절대 실패 금지」를 제안했고 그 지점은 기각했다 — 그러면
+         아무것도 게시되지 않은 저장소에서 이 오라클이 영원히 초록이다.)
+
+     (c) **어디서 도는가**: required 밖 · 스케줄 워크플로. 릴리스 워크플로 안의 단계로 넣으면
+         Publish 가 사람 클릭이라 **언제나 스테이징을 보고 공허해진다**. required 에 넣으면
+         네트워크 의존 검사가 저장소를 잠근다(CLAUDE.md).
+
+     (d) **공허 하한은 상수가 아니라 규칙**: jar 패키징 좌표마다 non-MR 클래스 ≥1 이고, 검사한
+         좌표 집합이 SSOT 가 선언한 집합과 같아야 한다. `-bom`·`-parent` 는
+         `<packaging>pom</packaging>` 이라 jar 를 **요청하지 않는다**(404 를 세면 안 된다).
+         `-examples` 는 그 좌표에 `1.0.0` 자체가 없다.
+
+     (e) ⚠️ **이 오라클은 상수풀을 끝내 읽지 않으므로 `jvm-api-surface-pin-unguarded` 를 대신할
+         수 없다** — major 가 61 이어도 `--release` 없이 컴파일하면 상수풀이 빌드 JDK 의 API 를
+         가리키고, 그 사고는 바이트를 아무리 받아 봐도 안 보인다. -->
+
   - 독립 검증 레그(Grok)가 「릴리스만 남았다」를 검증하다 낸 것이고, 셋은 실측으로 확인했다.
   - ⚠️ **독립 검증 레그가 (1)을 「오버스테이트」로 판정했으나 그건 맥락 부족이었다** — 「릴리스 후 `published=21` 을 **지워야** 통과한다」는 규칙은 실제로 구현돼 있다(`check-docs.mjs:1252` + 자가테스트 (f)). 나머지 둘(위 (2)의 「어떤 가드도」, `-examples` 의 「pom-only」)은 **레그가 옳았고 고쳤다**. 레그의 판정도 액면가로 받지 않는다 — 양방향이다.
   - **(1) 태그 ≠ Central.** `kind=runtime` 의 오라클 B 는 `git show <태그>:<매니페스트>` 다. 사람이 태그를 밀면 트리·태그가 함께 17 이 되어 `published=21` 을 **지워야 통과**하는데, 그 시점에 Portal Publish 가 안 됐거나 실패했거나 일부 모듈만 올라갔어도 가드는 초록이다 — 소비자는 여전히 21 짜리 `1.0.0` 을 받는다. ⚠️ `CLAUDE.md` 가 이미 「워크플로 초록 ≠ 게시」를 경고하나 **그 경고를 집행하는 것은 없다**.
