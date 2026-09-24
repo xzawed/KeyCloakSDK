@@ -681,7 +681,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 57건 (열림 49)
+## D. 원장 밖 — 57건 (열림 47)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -720,7 +720,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `security-invariant-not-required` **[M/S · 절반 닫힘 2026-09-09]** Jackson 보안 불변식 잡이 required 밖이다 — **0건 스윕을 삼키던 절반은 #443 이 닫았다**(`-lt 47` 하한) · `.github/workflows/repo-hygiene.yml:277`
   - ⚠️ 인용 줄번호가 `:219` → `:277` 로 드리프트했다(재판정 2026-09-09). required 컨텍스트는 여전히 정확히 둘이다.
   - ⚠️ **required 이름을 늘리는 것이 답이 아니다** — `bypass_actors: []` 에서 생성되지 않는 체크 하나가 `main` 을 잠근다. 이 잡을 **`doc-facts` 안으로 접는** 쪽이 PR 크기다.
-- [ ] `post-publish-version-verify` **[M/M]** 게시 후 「이 버전이 라이브인가」를 답하는 도구가 없다 — readiness 는 좌표 단위이고 태그가 있으면 즉시 return 한다 · `DEPLOY.md:428`
+- [x] `post-publish-version-verify` **[M/M · 닫힘 2026-09-24]** `registry-truth-check` 와 한 도구로 닫았다 — `node scripts/check-registry-truth.mjs --lang=<lang>` 이 LIVE/PENDING 을 답한다(DEPLOY §4 step 8)
 - [ ] `ci-lane-trigger-branch-filter` **[L/S]** 언어 CI 6개가 `branches:` 없이 push 트리거 — 태그·아카이브 ref·PR 브랜치에서 중복으로 돈다 · `.github/workflows/dotnet-ci.yml:3`
 - [ ] `orphan-active-workflows` **[L/S]** 파일이 없는 워크플로 2개가 Actions 에 `active` 로 남아 있다 — 라이브 26 vs 커밋 24 · `.github/workflows/repo-hygiene.yml:207`
 - [ ] `repo-settings-ssot-gap` **[L/S]** 브랜치 자동삭제 등 저장소 설정이 SSOT 밖 — 원격이 깨끗한 이유가 어디에도 안 적혀 있다 · `.github/security-config.json:2`
@@ -764,7 +764,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `nightly-failure-reaches-nobody` **[H/M · 신규 2026-09-16 · 닫힘 2026-09-21 #518]** 야간이 여드레 빨간 동안 아무 조치가 없었다 — 저장소 안에 **실패가 사람에게 가는 경로가 0건**이다 · `.github/workflows/harness.yml:8`
 - [ ] `codeql-kotlin-extractor-lags-kgp` **[M/M · 신규 2026-09-21]** CodeQL 의 Kotlin 추출기가 KGP 를 못 따라와 **JVM 두 언어의 코드 스캐닝이 통째로 멈춘다** — KGP 2.4.20 에서 `KotlinVersionTooRecentError: Kotlin version 2.4.20 is too recent. CodeQL currently supports versions below 2.4.20` 로 autobuild 의 `:compileKotlin` 이 죽고, `java-kotlin` 은 Java 와 Kotlin 이 **한 데이터베이스**라 Java 분석까지 함께 사라진다 · PR #515 가 이것으로 막혀 있다(doc-facts 는 초록, CodeQL 만 빨강 — main 과 다른 PR 은 초록이라 원인이 KGP 범프임이 대조로 확정됐다). ⚠️ **CodeQL 은 required 가 아니라 병합은 된다** — 병합하면 main 이 조용히 빨개지고 아무도 스캔하지 않는 상태가 남는다(배포 시크릿 미설정을 스킵으로 끝내던 것과 같은 모양). ⚠️ 이 저장소의 CodeQL 은 `.github/workflows/` 에 파일이 없는 **default setup** 이라 번들을 핀하거나 앞당길 수 없다(실패 번들: CodeQL CLI 2.27.0). 되살릴 조건(명령): `gh run list --workflow=340524379 --limit 20 --json headBranch,conclusion --jq '.[]|select(.headBranch=="refs/pull/515/head")|.conclusion'` 가 `success` 를 낼 때 — 그때 #515 를 그대로 병합한다(문서 작업은 `e7f18f6` 에 이미 올라가 있다).
 - [ ] `push-lane-failures-still-silent` **[M/S · 신규 2026-09-21]** `nightly-alert` 은 **`schedule` 만** 본다 — `sonarcloud` 처럼 push 로만 도는 레인의 빨강은 여전히 아무에게도 안 간다(실측: 09-16~09-21 닷새 무성, 그 창은 `nightly-failure-reaches-nobody` 의 야간 창과 **겹치지 않는다**) · `.github/workflows/nightly-alert.yml:38`. ⚠️ 그리고 `nightly-alert` **자기 실패는 못 잡는다**(`workflow_run` 은 자기를 감시 못 한다). schedule 로 넓힌 판정은 소음을 피하려던 것이라, 넓히려면 「민 사람이 이미 보는 실패」와 「main 에서 조용히 빨간 실패」를 가르는 기준이 먼저 필요하다.
-- [ ] `registry-truth-check` **[H/M]** 게시 SSOT가 문서하고만 대조되고 실제 레지스트리와는 한 번도 대조되지 않는다 · `scripts/lib/deploy-facts.sh:138`
+- [x] `registry-truth-check` **[H/M · 닫힘 2026-09-24]** `scripts/check-registry-truth.mjs` — 유예(Maven 72h·나머지 24h, 시계=태그 또는 SSOT 커밋)로 「첫 404 로 실패 결론」을 피하고, Maven 은 metadata 가 아니라 pom 200 으로 판정 · 주간 `published-floor.yml` · 자가테스트 47/0 · 변이 8/8 CAUGHT
 - [x] `stale-release-comments` **[H/S · 닫힘 2026-09-09 #447]** 릴리스 경로의 주석 **여섯**이 낡았고, 그중 하나는 다음 릴리스를 정반대로 오도했다 · `.github/workflows/install-smoke.yml:57`
 - [x] `post-1-0-registry-missing` **[M/S]** 1.0 이후 잔여작업 등록부가 저장소 어디에도 없다 — 안 닫힌 항목은 복원 불가능하다 · `docs/README.md:49`
 - [ ] `public-registry-install-smoke` **[M/L]** 게시된 1.0.0 을 공개 레지스트리에서 받아 설치·컴파일해 보는 정기 검증이 없다 · `harness/install/install-verify.sh:11`
