@@ -39,18 +39,22 @@ class AuthClientPublicClientTest {
     assertActionable(e, "client_credentials grant");
   }
 
-  @Test void refresh_publicClient_throwsActionableConfigException() {
-    AuthClient a = publicClient();
-    KeycloakConfigException e =
-        assertThrows(KeycloakConfigException.class, () -> a.refresh(REFRESH_TOKEN));
-    assertActionable(e, "token refresh");
+  // ⚠️ refresh·logout 은 **거부 대상이 아니다** — 이 두 테스트가 예전엔 거부를 의도로 고정하고
+  // 있었다. 실측(2026-09-24, KC 26.6): 공개 클라이언트의 refresh_token 그랜트 200 · logout 204
+  // (이후 같은 토큰은 "Session not active"). 서버가 거부하는 것은 client_credentials(401)와
+  // introspect(403)뿐이라 그 둘만 로컬에서 먼저 막는다. 실서버 대조는 AuthFlowIT.
+  @Test void buildRefreshRequest_publicClient_sendsClientIdInBody_noAuthHeader() {
+    HTTPRequest req = publicClient().buildRefreshRequest(REFRESH_TOKEN);
+    assertNull(req.getAuthorization());
+    assertTrue(req.getBody().contains("client_id=public-app"), req.getBody());
+    assertTrue(req.getBody().contains("grant_type=refresh_token"), req.getBody());
   }
 
-  @Test void logout_publicClient_throwsActionableConfigException() {
-    AuthClient a = publicClient();
-    KeycloakConfigException e =
-        assertThrows(KeycloakConfigException.class, () -> a.logout(REFRESH_TOKEN));
-    assertActionable(e, "logout");
+  @Test void buildLogoutRequest_publicClient_sendsClientIdInBody_noAuthHeader() {
+    HTTPRequest req = publicClient().buildLogoutRequest(REFRESH_TOKEN);
+    assertNull(req.getAuthorization());
+    assertTrue(req.getBody().contains("client_id=public-app"), req.getBody());
+    assertTrue(req.getBody().contains("refresh_token=" + REFRESH_TOKEN), req.getBody());
   }
 
   @Test void introspect_publicClient_throwsActionableConfigException() {
@@ -60,12 +64,7 @@ class AuthClientPublicClientTest {
     assertActionable(e, "token introspection");
   }
 
-  // 요청 조립 헬퍼도 동일하게 실패해야 한다(logout/introspect의 send()는 이 지점을 넘지 못한다).
-  @Test void buildLogoutRequest_publicClient_throwsBeforeAssemblingRequest() {
-    AuthClient a = publicClient();
-    assertThrows(KeycloakConfigException.class, () -> a.buildLogoutRequest(REFRESH_TOKEN));
-  }
-
+  // 요청 조립 헬퍼도 동일하게 실패해야 한다(introspect 의 send()는 이 지점을 넘지 못한다).
   @Test void buildIntrospectionRequest_publicClient_throwsBeforeAssemblingRequest() {
     AuthClient a = publicClient();
     assertThrows(KeycloakConfigException.class, () -> a.buildIntrospectionRequest(ACCESS_TOKEN));

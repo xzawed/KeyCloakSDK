@@ -4,6 +4,15 @@
   "sslRequired": "none",
   "clients": [
     {
+      "clientId": "it-public",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "fullScopeAllowed": true
+    },
+    {
       "clientId": "it-client",
       "enabled": true,
       "protocol": "openid-connect",

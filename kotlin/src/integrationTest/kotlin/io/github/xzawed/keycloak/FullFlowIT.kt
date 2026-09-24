@@ -10,6 +10,10 @@ import org.keycloak.representations.idm.GroupRepresentation
 import org.keycloak.representations.idm.RealmRepresentation
 import org.keycloak.representations.idm.RoleRepresentation
 import org.keycloak.representations.idm.UserRepresentation
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -267,4 +271,50 @@ internal class FullFlowIT {
                 assertFailsWith<jakarta.ws.rs.WebApplicationException> { master.realm(newRealm).toRepresentation() }
             }
         }
+
+    /**
+     * 공개(시크릿 없는) 클라이언트도 refresh 와 logout 을 할 수 있어야 한다 — 서버가 허용한다.
+     *
+     * 실측(2026-09-24, KC 26.6): 공개 클라이언트의 refresh_token 그랜트 200 · logout 204 후 같은
+     * refresh 토큰은 "Session not active". 토큰은 SDK 밖에서(비밀번호 그랜트, raw HTTP) 얻는다 —
+     * SDK 에 ROPC 가 없다.
+     */
+    @Test
+    fun `public client can refresh and logout against real server`(): Unit =
+        runBlocking {
+            val pub =
+                KeycloakConfig(
+                    serverUrl = container.authServerUrl,
+                    realm = "it-realm",
+                    clientId = "it-public",
+                    scopes = listOf("openid"),
+                )
+            AuthClient(pub).use { publicAuth ->
+                val refreshToken = passwordGrantRefreshToken("it-public")
+
+                val refreshed = publicAuth.refresh(refreshToken)
+                assertTrue(refreshed.accessToken.isNotBlank())
+
+                val rotated = assertNotNull(refreshed.refreshToken)
+                publicAuth.logout(rotated)
+                // 로그아웃이 실제로 세션을 끝냈는가 — 같은 refresh 토큰은 이제 거부돼야 한다.
+                assertFailsWith<KeycloakAuthException> { publicAuth.refresh(rotated) }
+            }
+        }
+
+    private fun passwordGrantRefreshToken(clientId: String): String {
+        val body = "grant_type=password&client_id=$clientId&username=alice&password=alice-password&scope=openid"
+        val response =
+            HttpClient.newHttpClient().send(
+                HttpRequest
+                    .newBuilder(URI.create("${container.authServerUrl}/realms/it-realm/protocol/openid-connect/token"))
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build(),
+                HttpResponse.BodyHandlers.ofString(),
+            )
+        assertEquals(200, response.statusCode(), response.body())
+        val match = assertNotNull(Regex("\"refresh_token\":\"([^\"]+)\"").find(response.body()), response.body())
+        return match.groupValues[1]
+    }
 }
