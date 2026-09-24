@@ -73,7 +73,7 @@ class AuthFlowIT {
    * <p>토큰은 SDK 밖에서(비밀번호 그랜트, raw HTTP) 얻는다 — SDK 에 ROPC 가 없다.
    */
   @Test
-  void publicClient_canRefreshAndLogout_againstRealServer() throws Exception {
+  void publicClientCanRefreshAndLogoutAgainstRealServer() throws java.io.IOException {
     KeycloakConfig pub =
         KeycloakConfig.builder()
             .serverUrl(KC.getAuthServerUrl())
@@ -94,20 +94,20 @@ class AuthFlowIT {
         () -> publicAuth.refresh(refreshed.getRefreshToken()));
   }
 
-  private static String passwordGrantRefreshToken(String clientId) throws Exception {
-    String body = "grant_type=password&client_id=" + clientId
-        + "&username=alice&password=alice-password&scope=openid";
-    java.net.http.HttpResponse<String> r = java.net.http.HttpClient.newHttpClient().send(
-        java.net.http.HttpRequest.newBuilder(java.net.URI.create(
-                KC.getAuthServerUrl() + "/realms/it-realm/protocol/openid-connect/token"))
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .POST(java.net.http.HttpRequest.BodyPublishers.ofString(body))
-            .build(),
-        java.net.http.HttpResponse.BodyHandlers.ofString());
-    assertEquals(200, r.statusCode(), r.body());
+  // ⚠️ java.net.http.HttpClient 가 아니라 Nimbus HTTPRequest 다 — HttpClient.close() 는 JDK 21 에서
+  // 생겼고 이 모듈은 테스트까지 --release 17 로 컴파일하므로 try-with-resources 를 쓸 수 없다.
+  private static String passwordGrantRefreshToken(String clientId) throws java.io.IOException {
+    com.nimbusds.oauth2.sdk.http.HTTPRequest req = new com.nimbusds.oauth2.sdk.http.HTTPRequest(
+        com.nimbusds.oauth2.sdk.http.HTTPRequest.Method.POST,
+        java.net.URI.create(KC.getAuthServerUrl() + "/realms/it-realm/protocol/openid-connect/token"));
+    req.setEntityContentType(com.nimbusds.common.contenttype.ContentType.APPLICATION_URLENCODED);
+    req.setBody("grant_type=password&client_id=" + clientId
+        + "&username=alice&password=alice-password&scope=openid");
+    com.nimbusds.oauth2.sdk.http.HTTPResponse r = req.send();
+    assertEquals(200, r.getStatusCode(), r.getBody());
     java.util.regex.Matcher m =
-        java.util.regex.Pattern.compile("\"refresh_token\":\"([^\"]+)\"").matcher(r.body());
-    assertTrue(m.find(), r.body());
+        java.util.regex.Pattern.compile("\"refresh_token\":\"([^\"]+)\"").matcher(r.getBody());
+    assertTrue(m.find(), r.getBody());
     return m.group(1);
   }
 }
