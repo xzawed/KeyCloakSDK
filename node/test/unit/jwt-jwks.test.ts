@@ -321,7 +321,9 @@ describe('빈 JWKS 키셋(200)이 좋은 캐시를 덮지 않는다', () => {
 
       served = '{"keys":[]}'
       const hitsBeforeRefetch = hits
-      await expect(v.validate(await sign('k2'))).rejects.toBeInstanceOf(KeycloakTokenValidationError)
+      await expect(v.validate(await sign('k2'))).rejects.toBeInstanceOf(
+        KeycloakTokenValidationError,
+      )
       // ⚠️ 이 단언이 빠지면 재조회가 없었는지를 모르고, 아래 k1 통과는 아무것도 증명하지 못한다.
       expect(hits).toBeGreaterThan(hitsBeforeRefetch)
 
