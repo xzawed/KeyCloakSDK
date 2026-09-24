@@ -88,8 +88,12 @@ gh_create_cmd() { # $1=워크플로 파일 → `gh release create "` 명령 한 
 }
 for f in $callers; do
   base="$(basename "$f")"
-  assert_contains "$(cat "$f")" 'prerelease: ${{ steps.derive.outputs.prerelease }}' "$base: version 잡이 판정을 출력한다"
-  assert_contains "$(cat "$f")" 'PRERELEASE: ${{ needs.version.outputs.prerelease }}' "$base: 릴리스 잡이 그 출력을 받는다"
+  # ⚠️ 주석 줄을 벗긴 본문으로 본다 — 배선 줄을 `# prerelease: …` 로 막아도 파일 전체 포함
+  # 검사는 참이었다(probe.sh SILENT 둘, 2026-09-24). 그때 PRERELEASE 는 빈 값이 되고
+  # `--prerelease=""` 로 RC 가 Latest 가 된다 — 아래 (3) 이 막으려던 바로 그 사고다.
+  _live="$(grep -v '^[[:space:]]*#' "$f")"
+  assert_contains "$_live" 'prerelease: ${{ steps.derive.outputs.prerelease }}' "$base: version 잡이 판정을 출력한다"
+  assert_contains "$_live" 'PRERELEASE: ${{ needs.version.outputs.prerelease }}' "$base: 릴리스 잡이 그 출력을 받는다"
   _cmd="$(gh_create_cmd "$f")"
   assert_ok test -n "$_cmd"   # 공허 방지: 명령을 못 뽑으면 아래 검사가 무의미하다
   assert_contains "$_cmd" '--prerelease="${PRERELEASE}"' \
