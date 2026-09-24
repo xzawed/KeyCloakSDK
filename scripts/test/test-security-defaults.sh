@@ -281,15 +281,20 @@ done
 # 운다). 그래서 이 축은 **거부 지점**과 **그것을 잡는 테스트**를 함께 본다. 한쪽만 보면 코드를
 # 지우고 테스트만 남기거나 그 반대가 통과한다.
 #
-# ⚠️ 여기 없는 다섯의 이유: python 은 joserfc 가 빈 키셋에서 `MissingKeyError` 를 던져 대입
-# 전에 막는다(실측). node·java·kotlin·dotnet 은 하위 라이브러리가 fetch·캐시를 소유해 이 자리가
-# 우리 코드에 없다 — 그쪽은 별도 항목이고, 목록에 넣으면 추출 실패가 곧 빨강이 된다.
+# ⚠️ 여기 없는 둘의 이유: python 은 joserfc 가 빈 키셋에서 `MissingKeyError` 를 던져 대입
+# 전에 막는다(실측). node 는 jose 가 fetch·캐시를 소유해 이 자리가 우리 코드에 없다 — 별도
+# 항목(`jwks-empty-keyset-node`)이고, 목록에 넣으면 추출 실패가 곧 빨강이 된다.
+# java·kotlin·dotnet 도 캐시는 라이브러리 것이지만 **거부 지점은 우리 코드다**(JWKS 전용
+# 리트리버 · ConfigurationManager 의 설정 검증기). dotnet 은 표지가 메시지가 아니라 검증기 설정이다.
 sd_empty_reject() {
   case "$1" in
-    go) printf '%s\n' "go/jwt.go" ;;
-    rust) printf '%s\n' "rust/src/jwks.rs" ;;
-    ruby) printf '%s\n' "ruby/lib/keycloak_sdk/jwks_store.rb" ;;
-    php) printf '%s\n' "php/src/Jwks/JwksStore.php" ;;
+    go) printf '%s\t%s\n' "go/jwt.go" "contains no keys" ;;
+    rust) printf '%s\t%s\n' "rust/src/jwks.rs" "contains no keys" ;;
+    ruby) printf '%s\t%s\n' "ruby/lib/keycloak_sdk/jwks_store.rb" "contains no keys" ;;
+    php) printf '%s\t%s\n' "php/src/Jwks/JwksStore.php" "contains no keys" ;;
+    java) printf '%s\t%s\n' "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/NoRedirectResourceRetriever.java" "contains no keys" ;;
+    kotlin) printf '%s\t%s\n' "kotlin/src/main/kotlin/io/github/xzawed/keycloak/NoRedirectResourceRetriever.kt" "contains no keys" ;;
+    dotnet) printf '%s\t%s\n' "dotnet/src/Xzawed.Keycloak.Sdk/JwtValidator.cs" "MinimumNumberOfKeys = 1" ;;
   esac
 }
 sd_empty_test() {
@@ -298,17 +303,21 @@ sd_empty_test() {
     rust) printf '%s\t%s\n' "rust/src/jwks.rs" "empty_keyset_200_does_not_clobber_a_good_cache" ;;
     ruby) printf '%s\t%s\n' "ruby/spec/unit/jwks_store_spec.rb" "좋은 캐시를 덮지 않는다" ;;
     php) printf '%s\t%s\n' "php/tests/Unit/Jwks/JwksStoreTest.php" "testEmptyKeySetDoesNotClobberAGoodCache" ;;
+    java) printf '%s\t%s\n' "java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/JwksEmptyKeysetTest.java" "empty200_doesNotPoisonGoodCache" ;;
+    kotlin) printf '%s\t%s\n' "kotlin/src/test/kotlin/io/github/xzawed/keycloak/JwksEmptyKeysetTest.kt" "empty200DoesNotPoisonGoodCache" ;;
+    dotnet) printf '%s\t%s\n' "dotnet/tests/Xzawed.Keycloak.Sdk.Tests/JwksEmptyKeysetTests.cs" "Empty_200_does_not_poison_good_cache" ;;
   esac
 }
 
-SD_EMPTY_LANGS='go rust ruby php'
+SD_EMPTY_LANGS='go rust ruby php java kotlin dotnet'
 sd_subset_of_langs "SD_EMPTY_LANGS" "$SD_EMPTY_LANGS"
 sd_empty_seen=0
 for L in $SD_EMPTY_LANGS; do
-  _src="$(sd_empty_reject "$L")"
-  _n="$(grep -c 'contains no keys' "$ROOT/$_src" 2>/dev/null || printf '0')"
+  _r="$(sd_empty_reject "$L")"
+  _src="${_r%%	*}"; _mark="${_r##*	}"
+  _n="$(grep -c -F -- "$_mark" "$ROOT/$_src" 2>/dev/null || printf '0')"
   assert_eq "ok" "$(ok_if "$([ "$_n" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
-    "[빈 키셋] $L 이 빈 JWKS 를 거부하지 않는다 — $_src 에 'contains no keys' 가 없다(go #380 의 나머지 절반)"
+    "[빈 키셋] $L 이 빈 JWKS 를 거부하지 않는다 — $_src 에 '$_mark' 가 없다(go #380 의 나머지 절반)"
   _t="$(sd_empty_test "$L")"
   _tf="${_t%%	*}"; _tn="${_t##*	}"
   _tn_hits="$(grep -c -- "$_tn" "$ROOT/$_tf" 2>/dev/null || printf '0')"
@@ -317,7 +326,7 @@ for L in $SD_EMPTY_LANGS; do
   [ "$_n" -ge 1 ] && [ "$_tn_hits" -ge 1 ] && sd_empty_seen=$((sd_empty_seen + 1))
 done
 # 대조군 — 목록이 비면 어서션이 0건 실행되고 조용히 통과한다.
-assert_eq "4" "$sd_empty_seen" "[빈 키셋] 거부+테스트를 함께 가진 언어 수가 4가 아니다 — 추출 표가 낡았나?"
+assert_eq "7" "$sd_empty_seen" "[빈 키셋] 거부+테스트를 함께 가진 언어 수가 7이 아니다 — 추출 표가 낡았나?"
 
 # ⚠️ **둘째 정의 자리는 이제 손 표가 아니라 파생이 본다 — 아래 3절.** 여기 있던
 # `sd_skew_secondary`(dotnet·python 두 줄짜리 표)는 **중복이 되어 지웠다**(2026-09-16):

@@ -1,6 +1,8 @@
 package io.github.xzawed.keycloak.auth;
+import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.util.DefaultResourceRetriever;
+import com.nimbusds.jose.util.Resource;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -45,5 +47,23 @@ final class NoRedirectResourceRetriever extends DefaultResourceRetriever {
     HttpURLConnection con = (HttpURLConnection) url.openConnection();
     con.setInstanceFollowRedirects(false); // SSRF 하드닝 — 인스턴스 단위로만 끈다(전역 상태 불변)
     return con;
+  }
+
+  // 200 + {"keys":[]} 를 조회 실패로 돌린다 — Nimbus 캐시는 파싱에 성공한 집합이면 빈 것도 올려
+  // 좋은 키를 덮는다(JwksEmptyKeysetTest). 판정은 배열 길이가 아니라 Nimbus 가 **실제로 올릴
+  // 집합**의 크기다(같은 파서). 파싱 자체가 실패하면 판정을 Nimbus 에 그대로 맡긴다.
+  @Override
+  public Resource retrieveResource(URL url) throws IOException {
+    Resource res = super.retrieveResource(url);
+    JWKSet parsed;
+    try {
+      parsed = JWKSet.parse(res.getContent());
+    } catch (java.text.ParseException e) {
+      return res;
+    }
+    if (parsed.getKeys().isEmpty()) {
+      throw new IOException("JWKS response contains no keys");
+    }
+    return res;
   }
 }
