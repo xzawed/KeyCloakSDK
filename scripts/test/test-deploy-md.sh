@@ -24,11 +24,24 @@ assert_eq "" "$_dm_miss" \
   "[배포 문서] 트리에 있는 언어가 DEPLOY_LANGS 에 없다 —$_dm_miss (그 언어는 이 파일에서 조용히 빠진다)"
 
 # (2) **기대값이 비면 그 대조는 아무것도 안 한 것이다** — 값을 쓰기 전에 값이 있는지 단언한다.
+#
+# ⚠️ 태그 대조는 **본문이 아니라 준비 매트릭스의 그 언어 행**을 본다. 본문 포함 검사였을 때 java
+# 의 `v*` 는 형제 태그(`kotlin-v*`·`py-v*`…) 안에 늘 들어 있어(14 회 중 단독 1 회) 행을
+# `java-v*` 로 틀리게 적어도, 지워도 통과했다(변이 둘 다 SILENT, 2026-09-24). 셀 경계까지 넣어야
+# 부분 문자열로 흡수되지 않고, 행으로 좁혀야 두 행의 태그가 뒤바뀐 것도 잡힌다.
+_dm_row_label() { case "$1" in
+  python) echo Python ;; dotnet) echo .NET ;; ruby) echo Ruby ;; node) echo Node ;;
+  rust) echo Rust ;; java) echo Java ;; kotlin) echo Kotlin ;; go) echo Go ;; php) echo PHP ;;
+  *) echo "" ;;
+esac; }
 for L in $DEPLOY_LANGS; do
   _dm_tag="$(printf "$(df_tag "$L")" X.Y.Z | sed 's/X.Y.Z/*/')"
   _dm_ok=1; [ -n "$_dm_tag" ] && _dm_ok=0
   assert_eq "ok" "$(ok_if "$_dm_ok" EMPTY)" "[배포 문서] df_tag $L 이 빈 값이다 — 대조가 공허해진다"
-  assert_contains "$body" "$_dm_tag" "태그포맷 $L"
+  _dm_label="$(_dm_row_label "$L")"
+  _dm_row="$(printf '%s\n' "$body" | grep -F "| **${_dm_label:-?}** |" | head -1 || true)"
+  assert_contains "$_dm_row" "| \`$_dm_tag\` |" \
+    "태그포맷 $L — 준비 매트릭스의 '${_dm_label:-?}' 행에 '$_dm_tag' 셀이 없다(행 라벨 표에 없는 언어면 여기 추가)"
   _dm_sec="$(df_secrets "$L")"
   # ⚠️ 시크릿이 **정당하게 0개**인 언어가 있다(OIDC/none) — 그래서 여기는 「비었나」가 아니라
   # 「셋 중 몇이 비었나」를 센다. 전부 비면 SSOT 가 죽은 것이다.
