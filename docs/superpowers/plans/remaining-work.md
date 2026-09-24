@@ -320,7 +320,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `java-rules-close-scope-ambiguous` **[L/S · 닫힘 2026-09-06 #423]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
-## B. 재검증 대상 — 52건 (열림 15)
+## B. 재검증 대상 — 52건 (열림 14)
 
 3렌즈 통과, 원장은 개별 재실행을 하지 않았다. 이번 인벤토리에서 전량 파일 확인 — 기각 권고 0건.
 
@@ -341,12 +341,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `rulefile-matrix-vs-workflow-unguarded` **[M/M · 신규·닫힘 2026-09-05]** 규칙 파일이 적는 CI 매트릭스를 워크플로의 `strategy.matrix` 와 대조하는 기계가 없다 · `.claude/rules/{java,ruby}.md`
 - [x] `rust-msrv-leg-vs-manifest-unguarded` **[S/S · 닫힘 2026-09-12]** ⚠️ **지목 줄이 빗나가 있었다** — `rust-ci.yml:21` 은 주석이고 실제 레그는 **`:24`** 다. 주장 자체는 참이었다(실측: 매트릭스 레그만 올리면 **아무 검사도 실패하지 않는다** — `check-docs.mjs` 의 `MATRIX` 는 java·ruby 둘뿐이라 rust 는 표에 없다). `H3-harness-image-and-lock-pins` 와 **같은 불변식**이라 한 가드로 닫았다(`check-versions.mjs` 의 툴체인 리터럴 축). ⚠️ **산문을 조준하지 않는 것이 이 가드가 required 안에서 사는 조건이다** — CHANGELOG 의 「MSRV 1.88 그대로」는 **이력**이라 MSRV 가 올라도 바뀌면 안 되고, README·getting-started 의 「1.88+」는 `check-docs.mjs:544` 의 kind=runtime 앵커가 이미 소유한다. 그래서 대상은 **지시어 행 둘**뿐이다(매트릭스 축 · `^FROM rust:<ver>`). 변이 M3/M4 양방향 `CAUGHT` + OFF 짝 `SILENT`.
 - [x] `matrix-fail-fast-cancels-floor-leg` **[M/S · 신규·닫힘 2026-09-05]** 매트릭스 워크플로 8개 중 **6개에 `fail-fast: false` 가 없어** 최신 레그가 깨지면 소비자 하한 레그가 취소된다 · `.github/workflows/`
-- [ ] `jvm-17-floor-never-shipped` **[H/M · 신규 2026-09-06 · 2026-09-23 태그 나감, 게시 미확인]** 하한 21→17 이 게시된 적이 없었다. 태그 둘이 나가고 워크플로도 둘 다 초록이나 **Portal Publish 는 사람 클릭이라 아직 안 눌렸다** — repo1 실측 둘 다 404 · `java/pom.xml:61` · `kotlin/build.gradle.kts:50`
-  - 실측: `git show v1.0.0:java/pom.xml` → `<maven.compiler.release>21`. `kotlin-v1.0.0` 은 `jvmToolchain(21)` 만 있고 `jvmTarget`·`-Xjdk-release` 가 **없어** 바이트코드도 21(트리 주석 `kotlin/build.gradle.kts:47` 이 그 인과를 적는다). 태그 `v1.0.0` 2026-09-01 · 하향 커밋 `6a9d620` 2026-09-04 · **그 뒤 JVM 릴리스 0건**(`git tag -l 'v*' 'kotlin-v*'`).
-  - ⚠️ **남은 둘, 이 순서로.** (a) 사람이 Portal 에서 **Publish 를 누른다**(java·kotlin 각각). (b) repo1 에서 실물을 본 **뒤에야** API 기저선(`japicmp.baseline`·kotlin-ci `BASELINE`)을 올린다(DEPLOY §4 8→9). 태그가 무엇을 핀했는지 다시 재는 명령은 `compatibility.md` 의 JVM 경고가 소유한다.
-  - ⚠️ 이 항목을 닫기 전에 아래 `registry-contract-claims-use-tree-oracle` 를 먼저 볼 것 — 같은 부류가 다른 주장에도 있다.
-  - **레지스트리 오라클로 확정(2026-09-06).** 지금까지 이 주장의 근거는 **태그의 빌드 설정**이었다(추론). Maven Central 에서 게시본을 직접 받아 클래스파일 major 를 읽었다 — `keycloak-sdk` · `-core` · `-auth` · `-admin` · `-kotlin` 다섯 jar, **클래스 91개 전부 major 65(JDK 21)**. `major > 61` 이 **91/91** 이므로 JDK 17 소비자는 한 클래스도 못 읽는다. 나머지 셋은 **서로 다른 이유로** jar 가 없다(독립 검증 레그가 「404 는 pom-only 의 증거가 아니다」로 지목해 pom 을 직접 읽었다): `-bom`·`-parent` 는 `<packaging>pom</packaging>` 이고, **`-examples` 는 `1.0.0` 자체가 없다**(그 좌표에는 `0.1.0`·`0.1.0-RC1` 뿐 — 부모의 `<excludeArtifacts>` 가 그때부터 걸렸다. 경위는 `java/keycloak-sdk-examples/pom.xml` 주석). 재현: `curl -sSL $B/<artifact>/1.0.0/<artifact>-1.0.0.jar` 후 각 `.class` 의 6~7바이트를 읽고, jar 가 없으면 **pom 의 `<packaging>` 과 버전 목록을 함께 본다**.
-  - ⚠️ **kotlin 은 이 측정으로 추론이 사실이 됐다** — 그전 근거는 「`kotlin-v1.0.0` 에 `jvmTarget` 이 없으니 툴체인 21 이 타깃일 것」이었고, 이제 배포된 바이트가 그렇다고 말한다.
+- [x] `jvm-17-floor-never-shipped` **[H/M · 신규 2026-09-06 · 닫힘 2026-09-24]** 1.0.1 게시(Portal Publish 후 repo1 첫 404 → 약 10 분 뒤 200)로 닫았다 — 게시 바이트 **전부 major ≤ 61**(`node scripts/check-published-jvm-floor.mjs`; metadata 가 늦은 `-core` 는 jar 직접 16/16). API 기저선 1.0.0 → 1.0.1 은 같은 PR(DEPLOY §4 step 9)
 - [x] `jvm-api-surface-pin-unguarded` **[H/S · 신규·닫힘 2026-09-23]** `-Xjdk-release`·`options.release` 를 읽는 가드가 0 개였다(부르는 다섯 자리가 **전부 주석**) — 지우면 major 는 61 그대로라 바이트코드 가드도 초록인데 JDK 17 소비자만 런타임에 죽는다 · `scripts/check-jvm-api-surface-pins.mjs`(변이 7/7 CAUGHT + OFF 짝 · 그중 둘은 독립 레그가 낸 구멍)
 - [x] `write-token-persists-into-build` **[H/S · 신규·닫힘 2026-09-23]** 규칙 1b 가 `contents: write` 에만 걸려 `attestations: write` 잡의 자격증명 잔류를 못 봤고, ⚠️ **그 규칙은 자가테스트가 전혀 안 덮고 있었다** · `check-ci-permissions.mjs`(변이 4/4 · PR #550)
 - [x] `published-jar-bytes-never-read` **[H/M · 신규·닫힘 2026-09-23]** 게시된 jar 를 받아 바이트를 읽는 호출 지점이 **0 개**였다 — 사슬이 태그에서 끊겨, 릴리스가 다른 JDK 로 빌드했거나 업로드가 부분 실패해도 저장소는 전부 초록이었다 · `scripts/check-published-jvm-floor.mjs` + `published-floor.yml`(예약·required 밖 · 변이 15/15 CAUGHT + OFF 짝 · 그중 하나는 **실제 repo1 바이트**로 CAUGHT · 실측 274 클래스, 1.0.0 부분만 세면 91 로 손측정과 일치 · ⚠️ 독립 리뷰 **BLOCK** 뒤 다섯 구멍 수정)
