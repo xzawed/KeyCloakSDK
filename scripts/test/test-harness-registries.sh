@@ -281,7 +281,10 @@ for L in $DEPLOY_LANGS; do
       # 이상의 셸 렉싱은 추가하지 않는다 — 위 절 엔진이 이미 조건절 blob을 뽑아 놓았다).
       # go는 grep을 안 쓰고(GOPROXY 메커니즘, 위에서 이미 accept로 빠짐) 이 둘에서 제외된다.
       if (index(blob, PROV_STAT) == 0) return "reject"
-      if (index(blob, "grep -v") == 0) return "reject"
+      # ⚠️ `grep -v` 의 **존재**가 아니라 그 **부정**(`! grep -v`)을 본다. 존재만 보면 `!` 하나를
+      #   지워 극성을 뒤집어도 통과했다 — 그때 게이트는 「로컬 아닌 줄이 **있으면** OK」가 되어
+      #   공개 레지스트리 출처가 섞인 설치를 통과시킨다(probe.sh 실측 SILENT, 2026-09-24).
+      if (index(blob, "! grep -v") == 0) return "reject"
       # 근거 grep — provenance.txt를 읽는 grep 구간(파이프 앞까지)에 로컬-소스 변수가 있어야 한다.
       if (match(blob, /grep[^|]*provenance\.txt/)) {
         seg = substr(blob, RSTART, RLENGTH)
