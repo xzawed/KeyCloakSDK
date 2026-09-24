@@ -52,6 +52,21 @@ const fetchJwksBounded: FetchImplementation = async (url, options) => {
     body.set(chunk, offset)
     offset += chunk.byteLength
   }
+  // ⚠️ 200 `{"keys":[]}` 를 넘기면 jose 가 좋은 캐시를 빈 셋으로 덮는다. `reload` 는
+  // `fetchJwks` 가 성공한 뒤 `.then` 안에서만 캐시를 대입하므로, 여기서 던지면 옛 키가
+  // 남는다. JSON 파싱 실패는 던지지 않는다 — 그 판정은 jose 몫이다.
+  if (response.status === 200) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(body))
+    } catch {
+      parsed = undefined
+    }
+    const keys = (parsed as { keys?: unknown } | null)?.keys
+    if (Array.isArray(keys) && keys.length === 0) {
+      throw new KeycloakTransportError('JWKS response contains no keys')
+    }
+  }
   // 상태·헤더를 보존해 되돌려 준다 — 비-200 판정은 jose 가 그대로 수행한다.
   return new Response(body, {
     status: response.status,

@@ -284,3 +284,51 @@ describe('콜드 캐시 + IdP 장애 백오프', () => {
     expect(hits).toBeLessThanOrEqual(2)
   })
 })
+
+// jose `reload` 는 `fetchJwks` 가 성공한 뒤 `.then` 안에서만 캐시를 대입한다. 200 `{"keys":[]}` 는
+// 성공이라 방금 검증된 키셋을 빈 셋으로 덮고, 직전 k1 토큰까지 거절한다. 히트 증가를 잠그지
+// 않으면 cooldown 이 재조회를 삼켜 결함이 있어도 아래 통과가 공허해진다.
+describe('빈 JWKS 키셋(200)이 좋은 캐시를 덮지 않는다', () => {
+  it('미해결 kid 재조회가 200 빈 키셋을 받아도 기존 k1 검증은 유지된다', async () => {
+    const pair = await generateKeyPair('RS256')
+    const jwk = await exportJWK(pair.publicKey)
+    const good = JSON.stringify({
+      keys: [{ ...jwk, kid: 'k1', use: 'sig', alg: 'RS256' }],
+    })
+
+    let served = good
+    let hits = 0
+    const srv = createServer((_req, res) => {
+      hits += 1
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(served)
+    })
+    await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve))
+    try {
+      const uri = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/certs`
+      const v = JwtValidator.forJwksUri(uri, { ...baseOpts, jwksMinRefetchSeconds: 0 })
+
+      const sign = (kid: string) =>
+        new SignJWT({ sub: 'u', aud: 'my-client' })
+          .setProtectedHeader({ alg: 'RS256', kid })
+          .setIssuer(ISS)
+          .setIssuedAt()
+          .setExpirationTime('5m')
+          .sign(pair.privateKey)
+
+      const k1 = await sign('k1')
+      await expect(v.validate(k1)).resolves.toMatchObject({ subject: 'u' })
+
+      served = '{"keys":[]}'
+      const hitsBeforeRefetch = hits
+      await expect(v.validate(await sign('k2'))).rejects.toBeInstanceOf(KeycloakTokenValidationError)
+      // ⚠️ 이 단언이 빠지면 재조회가 없었는지를 모르고, 아래 k1 통과는 아무것도 증명하지 못한다.
+      expect(hits).toBeGreaterThan(hitsBeforeRefetch)
+
+      await expect(v.validate(k1)).resolves.toMatchObject({ subject: 'u' })
+      await expect(v.validate(await sign('k1'))).resolves.toMatchObject({ subject: 'u' })
+    } finally {
+      await new Promise<void>((resolve) => srv.close(() => resolve()))
+    }
+  })
+})
