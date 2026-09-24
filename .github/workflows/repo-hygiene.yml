@@ -168,6 +168,11 @@ jobs:
         # 워크플로 `published-floor.yml` 이 지나간다(required 밖).
         run: sh scripts/test/test-check-published-jvm-floor.sh
 
+      - name: 레지스트리 진실 오라클 자가테스트(유예·판정 불가·metadata 지연을 제 칸에 넣는지)
+        # 게시 SSOT 를 살아 있는 아홉 레지스트리와 대조하는 가드. 자가테스트는 URL 을 픽스처 파일로
+        # 읽으므로 네트워크가 필요 없다 — 실제 네트워크는 `published-floor.yml` 이 지나간다.
+        run: sh scripts/test/test-check-registry-truth.sh
+
       - name: php API 호환성 가드 자가테스트(면제 술어가 거짓이면 면제되지 않는지)
         # 이 가드는 php-semver-checker 의 주장을 **소스로 반증**해 오탐을 걷어낸다. 그런 장치의
         # 위험은 하나다 — 면제가 넓어져 게이트를 통째로 무력화하는 것. 그래서 자가테스트의 무게는

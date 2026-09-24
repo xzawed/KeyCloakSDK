@@ -45,3 +45,20 @@ jobs:
           node-version: '22'
       - name: 게시본 대조
         run: node scripts/check-published-jvm-floor.mjs
+
+  registry-truth:
+    name: 게시 SSOT ↔ 살아 있는 레지스트리(아홉 언어)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # ⚠️ 유예의 시계가 **태그 시각**과 SSOT 커밋 시각이다 — 태그가 없으면 게시 전 구간이
+          # 전부 UNTAGGED 로 읽혀 거짓 빨강이 난다.
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: '22'
+      - name: 레지스트리 대조
+        # 종료코드 2(판정 불가)도 실패로 둔다 — 통과로 읽지 않는다는 것이 이 가드의 계약이다.
+        run: node scripts/check-registry-truth.mjs
