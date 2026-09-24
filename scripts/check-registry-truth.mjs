@@ -67,8 +67,10 @@ const tagTime = (tag) => {
   return t ? Number(t.split('\n')[0]) : null
 }
 // SSOT 가 그 값으로 바뀐 커밋 — 태그가 아직 없을 때의 시계.
+// git -G 는 ERE 다 — 값의 메타문자를 **전부** 이스케이프한다(`.` 만 막으면 `+`·`(` 가 새다).
+const escapeRe = (s) => s.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
 const ssotTime = (lang, ver) => {
-  const t = git('log', '-1', '--format=%ct', '-G', `${lang}\\) echo "${ver.replace(/\./g, '\\.')}"`, '--', 'scripts/lib/deploy-facts.sh')
+  const t = git('log', '-1', '--format=%ct', '-G', `${escapeRe(lang)}\\) echo "${escapeRe(ver)}"`, '--', 'scripts/lib/deploy-facts.sh')
   return t ? Number(t) : null
 }
 
@@ -142,7 +144,7 @@ const ADAPTERS = {
         .filter(([, files]) => files.length === 0 || files.some((f) => !f.yanked))
         .map(([v]) => v),
     ),
-  node: (c) => fetchList(`https://registry.npmjs.org/${c.replace('/', '%2f')}`, (j) => Object.keys(j.versions ?? {})),
+  node: (c) => fetchList(`https://registry.npmjs.org/${c.replaceAll('/', '%2f')}`, (j) => Object.keys(j.versions ?? {})),
   dotnet: (c) =>
     fetchList(`https://api.nuget.org/v3-flatcontainer/${c.toLowerCase()}/index.json`, (j) => j.versions ?? []),
   rust: (c) =>
