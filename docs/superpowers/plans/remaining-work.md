@@ -561,6 +561,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `selftest-exit-code-contract-two-leaks` **[H/M · 닫힘 2026-09-23 #540]** 자가테스트의 「실패하면 비영 종료」 계약이 한 곳에서 샜다 — 탐지기는 #405, 계수기는 #540(파일 눈금 오라클) · `scripts/test/test-selftest-hygiene.sh:20`
 - [x] `sweeps-without-vacuity-floor` **[H/M · 닫힘 2026-09-08 #443]** 스윕/스캔이 0건을 훑고 통과했다 — 이 저장소의 하한 관용이 적용되지 않았다 · `.github/workflows/repo-hygiene.yml:234`
 - [ ] `seven-selftests-have-no-negative-control` **[H/L · 계수 정정 2026-09-09 · 조각 셋째 2026-09-23]** **여섯** 자가테스트가 라이브 상태만 단언한다 — 검출기를 지워도 통과한다 · `scripts/test/test-deploy-md.sh:7`
+  - ✅ **다섯째 조각 — `test-harness-registries` 출처 게이트.** `grep -v` 존재만 봐 `!` 삭제·`&&`→`||`·`! !` 가 SILENT → 조건 **모양**(공백 정규화 후)으로 좁혀 6/6 CAUGHT · 공백 대조 SILENT.
   - ✅ **넷째 조각(#552) — `test-deploy-md` 태그 대조.** java `v*` 는 형제 태그의 부분 문자열(14 회 중 단독 1 회)이라 오기·삭제 둘 다 SILENT 였다 → 매트릭스 **행·셀** 대조로 좁혀 오기·삭제·행 맞바꿈 4/4 CAUGHT. 같은 파일의 이름 검사 `release-trigger.sh` 는 무인자 시 exit 1 이라 안전.
   - ✅ **셋째 조각(#541) — 게시-수 축의 수사 변환기.** 항목이 처방한 대로 세지 않고 `scripts/probe.sh` 로 쟀다: `en() { echo nine; }` · `ko() { echo 아홉; }` 둘 다 **SILENT**(240 단언 전부 통과) — 랜딩 문서 축이 「문서가 그 낱말을 담는가」만 보므로 변환기가 상수가 되면 **자기충족**이었다. 점 고정 + **서로 다른 입력이 서로 다른 낱말을 내는가**까지 넣어 둘 다 CAUGHT. ⚠️ 점 고정만 두면 `case` 를 지우고 `echo nine` 으로 바꿔도 통과한다.
   - ⚠️ **일곱이 아니라 여섯이다**(재판정 2026-09-09): `test-deploy-md` · `test-harness-registries` · `test-provenance-gate` · `test-publication-claims` · `test-release-prerelease` · `test-security-defaults`. 엄격히 「라이브 grep 만」으로 좁히면 **넷**이다(뒤의 둘은 `assert_eq` 로 케이스를 먹인다). 이름이 말하는 7 은 어느 셈에도 맞지 않는다.

@@ -280,8 +280,16 @@ for L in $DEPLOY_LANGS; do
       # 그래서 조건절이 (a) 빈검사와 (b) grep -v 형태를 **직접** 포함하는지 문자열로 본다(더
       # 이상의 셸 렉싱은 추가하지 않는다 — 위 절 엔진이 이미 조건절 blob을 뽑아 놓았다).
       # go는 grep을 안 쓰고(GOPROXY 메커니즘, 위에서 이미 accept로 빠짐) 이 둘에서 제외된다.
+      # ⚠️ 부품의 **존재**가 아니라 조건의 **모양**을 본다(2026-09-24). 존재만 볼 때 probe.sh 로
+      #   SILENT 였던 것: `!` 삭제(극성 반전 — 「로컬 아닌 줄이 **있으면** OK」) · `&&`→`||` ·
+      #   `! !` 이중 부정. 여덟 조건절은 전부 `&&` 만의 연언이라 아래가 불변식이다. 공백은 먼저
+      #   접는다 — 셸은 IFS 를 접으므로 `!  grep` 은 합법이고, 접지 않으면 거짓 빨강이 난다.
+      gsub(/[ \t]+/, " ", blob)
       if (index(blob, PROV_STAT) == 0) return "reject"
-      if (index(blob, "grep -v") == 0) return "reject"
+      if (index(blob, "[ ! -s") > 0) return "reject"
+      if (index(blob, "||") > 0) return "reject"
+      if (blob ~ /! !/) return "reject"
+      if (blob !~ /(^|&& )! grep -v -F [^|]*provenance\.txt" \| grep -q \.( |$)/) return "reject"
       # 근거 grep — provenance.txt를 읽는 grep 구간(파이프 앞까지)에 로컬-소스 변수가 있어야 한다.
       if (match(blob, /grep[^|]*provenance\.txt/)) {
         seg = substr(blob, RSTART, RLENGTH)
