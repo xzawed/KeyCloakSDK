@@ -134,11 +134,7 @@ public class AuthClient internal constructor(
     /** `refresh_token` 그랜트로 액세스 토큰을 갱신한다. */
     public suspend fun refresh(refreshToken: String): TokenSet {
         val issuedAt = Instant.now().epochSecond
-        val tr =
-            TokenRequest
-                .Builder(URI(endpoints.token), clientAuth("token refresh"), RefreshTokenGrant(RefreshToken(refreshToken)))
-                .build()
-        return mapTokenResponse(authSend(tr.toHTTPRequest()), issuedAt, "Token refresh failed")
+        return mapTokenResponse(authSend(buildRefreshRequest(refreshToken)), issuedAt, "Token refresh failed")
     }
 
     /** RFC 7662 토큰 introspection. 비활성 토큰은 active 외 클레임이 생략될 수 있다. */
@@ -287,8 +283,9 @@ public class AuthClient internal constructor(
             followRedirects = false
         }
 
-    // 기밀 클라이언트(clientSecret 설정됨)를 요구하는 그랜트(client-credentials/refresh/introspect/logout)의
-    // 공용 클라이언트 인증. ⚠️ 타입은 KeycloakAuthException이 아니라 **KeycloakConfigException**이다 —
+    // 기밀 클라이언트(clientSecret 설정됨)를 요구하는 흐름(client-credentials/introspect — 서버도 공개
+    // 클라이언트에게 401/403 으로 거부한다)의 공용 클라이언트 인증. refresh/logout/code 교환은 시크릿이
+    // 없으면 여기 오지 않는다. ⚠️ 타입은 KeycloakAuthException이 아니라 **KeycloakConfigException**이다 —
     // 이 실패는 IdP가 거절한 것이 아니라 요청이 IdP에 닿기도 전의 로컬 구성 오류이고, 같은 조건을
     // Java `AuthClient.clientAuth`/`AdminClient.requireClientSecret`·Python `KeycloakConfigError`·
     // Go `*ConfigError`가 모두 그렇게 분류한다(오류 분류 체계는 첫 배포에서 고정되므로 지금 맞춘다).
@@ -304,11 +301,32 @@ public class AuthClient internal constructor(
         return ClientSecretBasic(ClientID(config.clientId), Secret(String(secret)))
     }
 
+    // refresh()의 send() 이전 요청 구성. ⚠️ 공개 클라이언트도 refresh 할 수 있다 — Keycloak 이
+    // 허용한다(실측 2026-09-24, KC 26.6: 200). exchangeCode 와 같이 시크릿이 없으면 client_id 를
+    // 본문에 싣는다(예전엔 clientAuth() 가 로컬에서 거부해 공개 클라이언트가 갱신을 못 했다).
+    private fun buildRefreshRequest(refreshToken: String): HTTPRequest {
+        val grant = RefreshTokenGrant(RefreshToken(refreshToken))
+        val tr =
+            if (config.clientSecret != null) {
+                TokenRequest.Builder(URI(endpoints.token), clientAuth("token refresh"), grant).build()
+            } else {
+                TokenRequest.Builder(URI(endpoints.token), ClientID(config.clientId), grant).build()
+            }
+        return tr.toHTTPRequest()
+    }
+
     private fun buildLogoutRequest(refreshToken: String): HTTPRequest {
         val req = HTTPRequest(HTTPRequest.Method.POST, URI(endpoints.logout))
         req.setEntityContentType(ContentType.APPLICATION_URLENCODED)
-        clientAuth("logout").applyTo(req)
-        val params = linkedMapOf("refresh_token" to listOf(refreshToken))
+        val params = linkedMapOf<String, List<String>>()
+        // 공개 클라이언트도 로그아웃할 수 있다(실측: 204, 이후 같은 토큰 "Session not active") —
+        // 시크릿이 없으면 Basic 대신 client_id 를 본문에 싣는다.
+        if (config.clientSecret != null) {
+            clientAuth("logout").applyTo(req)
+        } else {
+            params["client_id"] = listOf(config.clientId)
+        }
+        params["refresh_token"] = listOf(refreshToken)
         req.setBody(URLUtils.serializeParameters(params))
         return req
     }
