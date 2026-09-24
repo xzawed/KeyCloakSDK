@@ -196,11 +196,8 @@ public class AuthClient {
       throw new IllegalArgumentException("refreshToken must not be null");
     }
     try {
-      TokenRequest tr = new TokenRequest.Builder(metadata.getTokenEndpoint(), clientAuth("token refresh"),
-          new RefreshTokenGrant(new RefreshToken(refreshToken)))
-          .build();
       long issuedAt = Instant.now().getEpochSecond();
-      TokenResponse resp = TokenResponse.parse(applyTimeouts(tr.toHTTPRequest()).send());
+      TokenResponse resp = TokenResponse.parse(applyTimeouts(buildRefreshRequest(refreshToken)).send());
       if (!resp.indicatesSuccess()) {
         var err = resp.toErrorResponse().getErrorObject();
         throw new KeycloakAuthException("Token refresh failed: " + err.getDescription(),
@@ -212,6 +209,17 @@ public class AuthClient {
     } catch (com.nimbusds.oauth2.sdk.ParseException e) {
       throw new KeycloakAuthException("Token refresh request error", null, e);
     }
+  }
+
+  // refresh()의 send() 이전 요청 구성. ⚠️ 공개 클라이언트도 refresh 할 수 있다 — Keycloak 이
+  // 허용한다(실측 2026-09-24, KC 26.6: 200). exchangeCode 와 같이 시크릿이 없으면 client_id 를
+  // 본문에 싣는다(예전엔 clientAuth() 가 로컬에서 거부해 공개 클라이언트가 갱신을 못 했다).
+  HTTPRequest buildRefreshRequest(String refreshToken) {
+    RefreshTokenGrant grant = new RefreshTokenGrant(new RefreshToken(refreshToken));
+    TokenRequest tr = config.getClientSecret() != null
+        ? new TokenRequest.Builder(metadata.getTokenEndpoint(), clientAuth("token refresh"), grant).build()
+        : new TokenRequest.Builder(metadata.getTokenEndpoint(), new ClientID(config.getClientId()), grant).build();
+    return tr.toHTTPRequest();
   }
 
   public void logout(String refreshToken) {
@@ -234,8 +242,14 @@ public class AuthClient {
     try {
       HTTPRequest req = new HTTPRequest(HTTPRequest.Method.POST, metadata.getEndSessionEndpoint().toURL());
       req.setEntityContentType(ContentType.APPLICATION_URLENCODED);
-      clientAuth("logout").applyTo(req);
       Map<String, List<String>> params = new LinkedHashMap<>();
+      // 공개 클라이언트도 로그아웃할 수 있다(실측: 204, 이후 같은 토큰 "Session not active") —
+      // 시크릿이 없으면 Basic 대신 client_id 를 본문에 싣는다.
+      if (config.getClientSecret() != null) {
+        clientAuth("logout").applyTo(req);
+      } else {
+        params.put("client_id", Collections.singletonList(config.getClientId()));
+      }
       params.put("refresh_token", Collections.singletonList(refreshToken));
       req.setBody(URLUtils.serializeParameters(params));
       return req;
@@ -278,7 +292,8 @@ public class AuthClient {
         java.util.Optional.ofNullable(s.getClientID()).map(ClientID::getValue));
   }
 
-  // 기밀 클라이언트(clientSecret 설정됨)를 요구하는 흐름(client-credentials/refresh/logout/introspect)의
+  // 기밀 클라이언트(clientSecret 설정됨)를 요구하는 흐름(client-credentials/introspect — 서버도 공개
+  // 클라이언트에게 401/403 으로 거부한다)의. refresh/logout/code 교환은 시크릿이 없으면 여기 오지 않는다.
   // 공용 클라이언트 인증. 퍼블릭/PKCE 클라이언트는 getClientSecret()이 null이라 예전에는
   // new String((char[]) null)이 맨 NPE로 터졌다 — 어떤 작업이 기밀 클라이언트를 요구하는지 알려주는
   // SDK 예외로 대체한다(실패 조건은 동일, 진단만 개선).

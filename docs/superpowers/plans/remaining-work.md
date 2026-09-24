@@ -320,7 +320,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `java-rules-close-scope-ambiguous` **[L/S · 닫힘 2026-09-06 #423]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
-## B. 재검증 대상 — 52건 (열림 14)
+## B. 재검증 대상 — 52건 (열림 13)
 
 3렌즈 통과, 원장은 개별 재실행을 하지 않았다. 이번 인벤토리에서 전량 파일 확인 — 기각 권고 0건.
 
@@ -444,10 +444,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [ ] `boundary-exception-conversion-incomplete` **[M/M]** 경계 변환의 catch 목록이 하위 라이브러리가 실제로 던지는 예외 집합보다 좁다 · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt:91`
   - ⚠️ **범위 정정**: 원장은 「Kotlin·Ruby」 2개라 적었으나 **Java·Node·.NET 을 빠뜨렸다**. ⚠️ 그리고 **원장이 지목한 Ruby 줄은 clean 이다** — `ruby/lib/keycloak_sdk/jwt_validator.rb:36` 의 `rescue JWT::DecodeError` 는 이미 JWKError 를 잡는다(실측: 설치된 `jwt-3.2.0/lib/jwt/error.rb:53` 이 `class JWKError < DecodeError`). **고치기 전에 지목부터 다시 잡을 것** — 안 그러면 clean 한 자리를 건드린다.
 - [x] `rust-public-client-empty-secret` **[M/S · 닫힘 2026-09-07 #441]** Rust AuthClient가 퍼블릭 클라이언트에도 빈 시크릿을 강제해 Basic 인증을 켰다 · `rust/src/auth.rs:67`
-- [ ] `public-client-confidential-grants-not-refused` **[M/M · 신규 2026-09-07]** 공개 클라이언트가 기밀 그랜트를 부를 때 **아홉이 갈린다** — java·kotlin 만 거부하고 나머지 일곱은 그냥 보낸다 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:279`
-  - **실측(2026-09-07, 독립 레그 + 재현)**: java·kotlin 은 `clientAuth()` 가 `KeycloakConfigException` 을 던져 `clientCredentials`·`refresh`·`introspect`·`logout` 을 **거부**한다. rust·go·node·python·php·ruby·dotnet 은 요청을 보내고 서버 오류를 그대로 올린다.
-  - ⚠️ **이것은 「rust 를 java 에 맞춘다」가 아니라 계약을 정하는 문제다** — 어느 쪽이든 **일곱 언어의 소비자에게 보이는 동작이 바뀐다**(성공하던 호출이 로컬 예외가 되거나, 그 반대). #441 은 「빈 시크릿을 보내지 않는다」까지만 하고 여기서 멈췄다.
-  - **착수 조건**: 실 Keycloak 으로 공개 클라이언트가 그 넷을 불렀을 때 서버가 무엇을 돌려주는지 먼저 잰다. 서버가 이미 명확한 오류를 준다면 로컬 거부는 **진단을 좋게 할 뿐 필수가 아니고**, 그렇다면 아홉을 흔들 값이 아니다.
+- [x] `public-client-confidential-grants-not-refused` **[M/M · 신규 2026-09-07 · 닫힘 2026-09-24]** 착수 조건대로 쟀더니(KC 26.6) **결함은 java·kotlin 쪽이었다** — 공개 클라이언트의 refresh 200 · logout 204(세션 실제 종료)인데 둘이 로컬에서 거부했다. 서버가 거부하는 client_credentials(401)·introspect(403)만 로컬 거부를 남겼다(진단 개선, 일곱은 흔들지 않는다) · 실서버 `AuthFlowIT`·`FullFlowIT` · 변이 java·kotlin CAUGHT
 - [x] `go-tokenprovider-injection-missing` **[M/M · 닫힘 2026-09-09 #449]** Go의 TokenProvider 주입점이 문서에만 있고 실제로는 존재하지 않았다 · `go/tokenprovider.go:11`
 - [x] `python-sync-admin-close-noop` **[M/S · 닫힘 2026-09-11]** sync `close()` 가 `return None` 이라 `requests.Session` 둘이 GC 까지 살아 있었다(aio 미러는 같은 자리에서 닫는다). ⚠️ **`test_close_is_noop` 이 그 결함을 「의도」로 고정**하고 있었으므로 테스트를 먼저 뒤집었다. 매니저 둘(`connection._s` · `connection.keycloak_openid.connection._s`)을 `finally` 계약으로 닫는다. ⚠️ **`async_s` 는 닫지 못한다** — sync 경로에서 `await` 가 불가하므로 과대광고하지 않는다. 변이 3/3 `CAUGHT`. ⚠️ 「중첩 매니저 부재」는 **도달 불가**라 테스트하지 않는다 — `harden_admin` 이 생성자에서 지연 프로퍼티를 실체화하며 fail-closed 한다(그 예제를 써 보니 `AdminClient(...)` 생성 자체가 거부됐다).
 - [x] `python-sync-authorization-url-unencoded` **[M/S · 닫힘 2026-09-07 #442]** Python 동기 authorization_url이 퍼센트 인코딩 없이 URL을 조립했다 — async 미러는 `urlencode`를 쓴다 · `python/src/keycloak_sdk/auth.py:151`
