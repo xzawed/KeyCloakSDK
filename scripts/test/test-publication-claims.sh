@@ -626,12 +626,15 @@ for L in $DEPLOY_LANGS; do
   _coord="$(df_coordinate "$L")"
   _tag="$(printf "$(df_tag "$L")" '*')"
   _ver="$(df_published_version "$L")"
-  assert_contains "$_row" "$_coord" \
+  # ⚠️ 셀 경계(백틱)까지 넣어 대조한다 — 맨 부분 문자열이면 java 의 `v*` 는 `java-v*` 안에,
+  # 좌표 `…:keycloak-sdk` 는 `…:keycloak-sdk-core` 안에 흡수돼 오기가 통과했다(probe.sh SILENT
+  # 둘, 2026-09-24 — 그때는 check-docs 가 대신 잡고 있었다. 이 파일 혼자서도 잡게 한다).
+  assert_contains "$_row" "\`$_coord\`" \
     "CLAUDE.md 현재 상태 표의 $_lbl 배포명이 SSOT($_coord)와 다르다"
-  assert_contains "$_row" "$_tag" \
+  assert_contains "$_row" "| \`$_tag\` |" \
     "CLAUDE.md 현재 상태 표의 $_lbl 태그 접두가 SSOT($_tag)와 다르다"
   if [ -n "$_ver" ]; then
-    assert_contains "$_row" "$_ver" \
+    assert_contains "$_row" "\`$_ver\`" \
       "CLAUDE.md 현재 상태 표의 $_lbl 게시 버전이 SSOT($_ver)와 다르다"
   else
     assert_contains "$_row" "미실행" \
