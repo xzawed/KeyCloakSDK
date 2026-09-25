@@ -117,6 +117,40 @@ class AuthClientInputBoundaryTest {
     assertDoesNotThrow(() -> client.createAuthorizationRequest(CB));
   }
 
+  // scope 에 정확한 "openid" 가 없으면 Nimbus AuthenticationRequest.Builder 가 IAE 로 샜다. 자매 일곱은 scope 를
+  // 그대로 보내므로(실측 2026-09-25) 그 경우는 플레인 OAuth2 인가 요청으로 만든다 — nonce 는 파라미터로 싣는다.
+  // 경로의 `openid-connect` 와 구분하려고 쿼리만 본다.
+  @Test void createAuthorizationRequest_scopeWithoutOpenid_isPassedThrough() throws Exception {
+    AuthorizationUrlRequest req = clientServing(400, "{}", "profile").createAuthorizationRequest(CB);
+    String query = req.getAuthorizationUrl().getRawQuery();
+    assertTrue(query.contains("scope=profile"), query);
+    assertTrue(query.contains("nonce=" + req.getNonce()), query);
+    assertTrue(query.contains("state=" + req.getState()), query);
+    assertTrue(query.contains("code_challenge_method=S256"), query);
+    assertFalse(query.contains("openid"), query);
+    assertEquals(0, hits.get());
+  }
+
+  @Test void createAuthorizationRequest_upperCaseOpenid_isPassedThroughUnchanged() throws Exception {
+    String query = clientServing(400, "{}", "OPENID").createAuthorizationRequest(CB).getAuthorizationUrl().getRawQuery();
+    assertTrue(query.contains("scope=OPENID"), query);
+    assertFalse(query.contains("scope=openid"), query);
+  }
+
+  // 대조군 — scope 미설정은 여전히 openid 폴백이고 OIDC 경로를 탄다.
+  @Test void createAuthorizationRequest_defaultScopes_stillOpenid() throws Exception {
+    String query = clientServing(400, "{}").createAuthorizationRequest(CB).getAuthorizationUrl().getRawQuery();
+    assertTrue(query.contains("scope=openid"), query);
+  }
+
+  // OAuth2 경로의 build() 도 redirect_uri 를 검사한다 — 그 ISE 도 SDK 타입이어야 한다.
+  @Test void createAuthorizationRequest_withoutOpenid_rejectedRedirect_isSdkConfigError() throws Exception {
+    AuthClient client = clientServing(400, "{}", "profile");
+    KeycloakConfigException e = assertThrows(KeycloakConfigException.class,
+        () -> client.createAuthorizationRequest(URI.create("http://localhost/cb#frag")));
+    assertTrue(e.getMessage().startsWith("invalid redirect_uri: "), e.getMessage());
+  }
+
   // 공백 scope 전례(`AuthClientScopeFallbackTest`)는 createAuthorizationRequest 만 고쳤다 — 같은 설정이
   // client_credentials 에서는 그대로 샜다. 공백 원소만 버리고, 남는 것이 없으면 scope 를 싣지 않는다.
   @Test void clientCredentials_blankScopes_areDroppedNotLeaked() throws Exception {

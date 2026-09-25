@@ -1,5 +1,8 @@
 package io.github.xzawed.keycloak
 
+import java.net.MalformedURLException
+import java.net.URI
+import java.net.URISyntaxException
 import java.time.Duration
 
 // config = 일반 class(⚠️ data class 금지: CharArray identity + 시크릿 누출)·named-arg·init 검증·trimEnd·방어복사
@@ -33,6 +36,59 @@ public class KeycloakConfig(
         if (realm.isBlank()) throw KeycloakConfigException("Missing required config: realm")
         if (clientId.isBlank()) throw KeycloakConfigException("Missing required config: clientId")
         if (signatureAlgorithms.isEmpty()) throw KeycloakConfigException("signatureAlgorithms must be non-empty")
+        // ⚠️ 상대 serverUrl 은 첫 호출에서 Nimbus SerializeException, 공백이 섞인 값은 URISyntaxException
+        // 으로 공개 API 에 샌다(실측). 절대 http(s) 와 authority 만 받고 입력 전체는 메시지에 넣지 않는다.
+        // 언더스코어 호스트는 registry-based authority 라 getHost() 가 null — host 를 요구하지 않는다.
+        validateServerUrl(this.serverUrl)
+        // ⚠️ 음수·Int 초과는 Nimbus HTTPRequest 가 IllegalArgumentException, long 을 넘는 Duration 은
+        // toMillis() 가 ArithmeticException 으로 샌다(실측). 1ms 미만은 0(=무한 대기)이 되므로 구성 시점에
+        // 필드 이름으로 거부한다.
+        requireTimeoutMillis("connectTimeout", connectTimeout)
+        requireTimeoutMillis("readTimeout", readTimeout)
+    }
+
+    // serverUrl 검증. 사유만 싣는다 — URISyntaxException.message 는 입력 전체를 되울린다.
+    private fun validateServerUrl(serverUrl: String) {
+        val uri =
+            try {
+                URI(serverUrl)
+            } catch (e: URISyntaxException) {
+                throw badServerUrl(e.reason, e)
+            }
+        if (!uri.isAbsolute) throw badServerUrl("not absolute")
+        if (!isHttpOrHttps(uri.scheme)) throw badServerUrl("scheme must be http or https")
+        // "http:foo" 는 스킴이 http 인 불투명 URI 라 toURL() 도 성공한다 — authority 부재를 따로 본다.
+        if (uri.rawAuthority == null) throw badServerUrl("missing authority")
+        try {
+            uri.toURL()
+        } catch (e: MalformedURLException) {
+            // 예: "http://::1" — URI 는 파싱되지만 toURL() 이 MalformedURLException 으로 실패한다(실측).
+            throw badServerUrl(e.message, e)
+        }
+    }
+
+    private fun badServerUrl(
+        reason: String?,
+        cause: Throwable? = null,
+    ): KeycloakConfigException = KeycloakConfigException("serverUrl must be an absolute http(s) URL: $reason", cause)
+
+    // 절대 URI 만 여기 온다 — 스킴은 null 이 아니다.
+    private fun isHttpOrHttps(scheme: String): Boolean =
+        scheme.equals("http", ignoreCase = true) || scheme.equals("https", ignoreCase = true)
+
+    private fun requireTimeoutMillis(
+        field: String,
+        timeout: Duration,
+    ) {
+        val millis =
+            try {
+                timeout.toMillis()
+            } catch (e: ArithmeticException) {
+                throw KeycloakConfigException("$field must be between 1 ms and ${Int.MAX_VALUE} ms", e)
+            }
+        if (millis < 1L || millis > Int.MAX_VALUE.toLong()) {
+            throw KeycloakConfigException("$field must be between 1 ms and ${Int.MAX_VALUE} ms")
+        }
     }
 
     override fun toString(): String = "KeycloakConfig(serverUrl=$serverUrl, realm=$realm, clientId=$clientId, clientSecret=${mask(secret)})"

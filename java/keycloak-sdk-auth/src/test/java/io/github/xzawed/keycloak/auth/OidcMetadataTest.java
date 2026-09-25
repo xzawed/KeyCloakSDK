@@ -57,4 +57,32 @@ class OidcMetadataTest {
     assertEquals(oc + "/logout", m.getEndSessionEndpoint().toString());
     assertEquals(oc + "/certs", m.getJwksUri().toString());
   }
+
+  // realm 은 URL 경로의 한 세그먼트다 — 그대로 이으면 공백 등이 URI.create 의 IAE 로 샜다(실측). 자매 다섯처럼
+  // 엔드포인트에서만 퍼센트 인코딩하고, issuer 는 토큰 iss 와 대조하므로 원문 그대로 둔다(Kotlin 자매 동형).
+  @Test
+  void forRealm_realmIsPercentEncodedInEndpoints_issuerStaysRaw() {
+    OidcMetadata m = OidcMetadata.forRealm(
+        KeycloakConfig.builder().serverUrl("https://kc.example.com").realm("my realm").clientId("app").build());
+    assertEquals("https://kc.example.com/realms/my realm", m.getIssuer());
+    String oc = "https://kc.example.com/realms/my%20realm/protocol/openid-connect";
+    assertEquals(oc + "/auth", m.getAuthorizationEndpoint().toString());
+    assertEquals(oc + "/token", m.getTokenEndpoint().toString());
+    assertEquals(oc + "/token/introspect", m.getIntrospectionEndpoint().toString());
+    assertEquals(oc + "/logout", m.getEndSessionEndpoint().toString());
+    assertEquals(oc + "/certs", m.getJwksUri().toString());
+  }
+
+  // unreserved(A-Z a-z 0-9 - . _ ~)만 그대로, 나머지는 UTF-8 바이트마다 대문자 %XX.
+  @Test
+  void forRealm_nonAsciiAndReservedRealmChars_areUtf8PercentEncoded() {
+    OidcMetadata accented = OidcMetadata.forRealm(
+        KeycloakConfig.builder().serverUrl("https://kc.example.com").realm("réalm").clientId("app").build());
+    assertEquals("https://kc.example.com/realms/r%C3%A9alm/protocol/openid-connect/token",
+        accented.getTokenEndpoint().toString());
+    OidcMetadata mixed = OidcMetadata.forRealm(
+        KeycloakConfig.builder().serverUrl("https://kc.example.com").realm("A-b_c.d~e9!").clientId("app").build());
+    assertEquals("https://kc.example.com/realms/A-b_c.d~e9%21/protocol/openid-connect/token",
+        mixed.getTokenEndpoint().toString());
+  }
 }

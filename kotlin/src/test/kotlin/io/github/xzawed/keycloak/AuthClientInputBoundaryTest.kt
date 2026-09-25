@@ -186,4 +186,50 @@ internal class AuthClientInputBoundaryTest {
         }
 
     private fun lastBody(): String = server.findAll(anyRequestedFor(anyUrl())).single().bodyAsString
+
+    /**
+     * scope 에 정확한 "openid" 가 없으면 Nimbus AuthenticationRequest.Builder 가 IllegalArgumentException
+     * 으로 샌다(실측). 자매 SDK 처럼 그 값은 그대로 두고 플레인 OAuth2 인가 요청을 만든다. 경로의
+     * `openid-connect` 와 구분하려고 쿼리만 본다.
+     */
+    @Test
+    fun `scope without openid is passed through on the authorization url`() {
+        val auth = serving(400, """{"error":"invalid_request"}""", listOf("profile"))
+        val req = auth.createAuthorizationRequest("http://localhost/cb")
+        val query = req.authorizationUrl.substringAfter('?')
+        assertTrue(query.contains("scope=profile"), req.authorizationUrl)
+        assertTrue(query.contains("nonce=${req.nonce}"), req.authorizationUrl)
+        assertTrue(query.contains("code_challenge_method=S256"), req.authorizationUrl)
+        assertTrue(query.contains("state=${req.state}"), req.authorizationUrl)
+        assertFalse(query.contains("openid"), query)
+        assertTrue(req.codeVerifier.isNotEmpty())
+    }
+
+    @Test
+    fun `OPENID scope is passed through unchanged`() {
+        val auth = serving(400, """{"error":"invalid_request"}""", listOf("OPENID"))
+        val query = auth.createAuthorizationRequest("http://localhost/cb").authorizationUrl.substringAfter('?')
+        assertTrue(query.contains("scope=OPENID"), query)
+        assertFalse(query.contains("scope=openid"), query)
+    }
+
+    /** 대조군 — 기본(빈) scopes 는 여전히 openid 폴백이다. */
+    @Test
+    fun `default scopes still produce scope openid`() {
+        val auth = serving(400, """{"error":"invalid_request"}""", emptyList())
+        val query = auth.createAuthorizationRequest("http://localhost/cb").authorizationUrl.substringAfter('?')
+        assertTrue(query.contains("scope=openid"), query)
+    }
+
+    /**
+     * OAuth2 경로의 build() 도 redirect_uri 를 검사한다(실측: fragment 를 IllegalStateException 으로 거부) —
+     * 그 ISE 도 OIDC 경로와 같은 SDK 타입이어야 한다. Java 자매와 같은 단언이다.
+     */
+    @Test
+    fun `fragment redirect without openid is an SDK config error`() {
+        val auth = serving(400, """{"error":"invalid_request"}""", listOf("profile"))
+        val e = assertFailsWith<KeycloakConfigException> { auth.createAuthorizationRequest("http://localhost/cb#frag") }
+        assertTrue(e.message!!.startsWith("invalid redirect_uri: "), e.message)
+        assertIs<IllegalStateException>(e.cause)
+    }
 }

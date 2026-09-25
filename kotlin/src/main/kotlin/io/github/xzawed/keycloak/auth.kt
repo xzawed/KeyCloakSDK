@@ -69,24 +69,38 @@ public class AuthClient internal constructor(
         if (scope.isEmpty()) {
             scope = Scope("openid")
         }
-        val builder =
-            AuthenticationRequest
-                .Builder(ResponseType(ResponseType.Value.CODE), scope, ClientID(config.clientId), redirect)
-                .endpointURI(URI(endpoints.authorization))
-                .state(state)
-                .nonce(nonce)
-                .codeChallenge(codeVerifier, CodeChallengeMethod.S256)
+        // ⚠️ scope 에 정확한 "openid" 가 없으면 AuthenticationRequest.Builder 가
+        // IllegalArgumentException 으로 샌다(실측). 자매 SDK 는 scope 를 그대로 통과시키므로, 그 경우는
+        // 플레인 OAuth2 AuthorizationRequest 로 만든다.
         // ⚠️ 파싱을 통과한 URI 도 Nimbus 가 build() 에서 다시 검사한다 — fragment(RFC 6749 §3.1.2)·금지
         // scheme(javascript·data 등)·금지 쿼리 파라미터(code·state 등)를 IllegalStateException 으로 거부한다.
-        // [redirectUri] 와 같은 분류로 바꾼다. 여기서는 Nimbus 사유(`message`)를 싣는다 — 입력 URI 전체를
-        // 되울리지 않는다. Java 자매와 동형.
-        val request =
+        // 두 경로의 build() 를 같은 try 로 감싸 [redirectUri] 와 같은 분류로 바꾼다. Nimbus 사유(`message`)만
+        // 싣고 입력 URI 전체는 되울리지 않는다.
+        val built =
             try {
-                builder.build()
+                if (scope.contains("openid")) {
+                    AuthenticationRequest
+                        .Builder(ResponseType(ResponseType.Value.CODE), scope, ClientID(config.clientId), redirect)
+                        .endpointURI(URI(endpoints.authorization))
+                        .state(state)
+                        .nonce(nonce)
+                        .codeChallenge(codeVerifier, CodeChallengeMethod.S256)
+                        .build()
+                } else {
+                    com.nimbusds.oauth2.sdk.AuthorizationRequest
+                        .Builder(ResponseType(ResponseType.Value.CODE), ClientID(config.clientId))
+                        .redirectionURI(redirect)
+                        .scope(scope)
+                        .state(state)
+                        .codeChallenge(codeVerifier, CodeChallengeMethod.S256)
+                        .customParameter("nonce", nonce.value)
+                        .endpointURI(URI(endpoints.authorization))
+                        .build()
+                }
             } catch (e: IllegalStateException) {
                 throw KeycloakConfigException("invalid redirect_uri: ${e.message}", e)
             }
-        return AuthorizationRequest(request.toURI().toString(), codeVerifier.value, state.value, nonce.value)
+        return AuthorizationRequest(built.toURI().toString(), codeVerifier.value, state.value, nonce.value)
     }
 
     /** `client_credentials` 그랜트로 서비스계정 토큰을 발급한다. `config.scopes`를 명시 전달한다(부록 §auth exactConfig). */
