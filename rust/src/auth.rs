@@ -568,6 +568,112 @@ mod tests {
         ));
     }
 
+    // `verify_nonce` 단위 테스트는 `code_exchange` 안의 호출을 지우면 그대로 통과한다.
+    // 토큰 응답의 id_token(있으면 서명)까지 거친 `exchange_code`가 nonce를 강제하는지 고정한다.
+    /// 토큰 응답에 실을 id_token 의 모양.
+    enum IdTok<'a> {
+        Absent,
+        Nonce(&'a str),
+        /// 서명은 유효하지만 `nonce` 클레임이 **없다** — 「있고 다를 때만 거부」로 약해지면 통과한다.
+        NoNonceClaim,
+    }
+
+    /// 거부가 **nonce 판정 때문**인지까지 본다 — 다른 `Auth` 실패가 초록을 대신 채우지 못하게.
+    fn assert_auth_err(r: Result<TokenSet>, needle: &str) {
+        match r {
+            Err(KeycloakError::Auth { message, .. }) => {
+                assert!(message.contains(needle), "{message}")
+            }
+            other => panic!("expected Auth error containing {needle:?}, got {other:?}"),
+        }
+    }
+
+    async fn exchange_fixture(id_token: IdTok<'_>) -> AuthClient {
+        let (priv_pem, jwk) = make_rsa();
+        let server = Box::leak(Box::new(MockServer::start().await));
+        Mock::given(method("GET"))
+            .and(path("/realms/it-realm/protocol/openid-connect/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"keys": [jwk]})))
+            .mount(server)
+            .await;
+        let config = KeycloakConfig::new(server.uri(), "it-realm", "it-client")
+            .unwrap()
+            .with_client_secret("s");
+        let endpoints = OidcEndpoints::new(&config);
+        let mut body = json!({
+            "access_token": "AT",
+            "token_type": "Bearer",
+            "expires_in": 300,
+        });
+        match id_token {
+            IdTok::Absent => {}
+            IdTok::Nonce(nonce) => {
+                body["id_token"] = json!(sign_id_token(
+                    &priv_pem,
+                    &endpoints.issuer(),
+                    "it-client",
+                    nonce
+                ));
+            }
+            IdTok::NoNonceClaim => {
+                let mut h = Header::new(Algorithm::RS256);
+                h.kid = Some("test-kid".into());
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                let claims = json!({"sub":"u","iss":endpoints.issuer(),"aud":"it-client","exp":now+300,"iat":now});
+                let ek = EncodingKey::from_rsa_pem(priv_pem.as_bytes()).unwrap();
+                body["id_token"] = json!(encode(&h, &claims, &ek).unwrap());
+            }
+        }
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(server)
+            .await;
+        let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+        let validator = JwtValidator::new(&config, &endpoints, jwks).unwrap();
+        AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap()
+    }
+
+    #[tokio::test]
+    async fn exchange_code_rejects_mismatched_nonce_end_to_end() {
+        let auth = exchange_fixture(IdTok::Nonce("attacker-nonce")).await;
+        assert_auth_err(
+            auth.exchange_code("c", "v", Some("expected-nonce")).await,
+            "unexpected nonce",
+        );
+    }
+
+    #[tokio::test]
+    async fn exchange_code_rejects_missing_id_token_when_nonce_expected() {
+        let auth = exchange_fixture(IdTok::Absent).await;
+        assert_auth_err(
+            auth.exchange_code("c", "v", Some("expected-nonce")).await,
+            "missing id_token",
+        );
+    }
+
+    #[tokio::test]
+    async fn exchange_code_rejects_id_token_without_nonce_claim() {
+        let auth = exchange_fixture(IdTok::NoNonceClaim).await;
+        assert_auth_err(
+            auth.exchange_code("c", "v", Some("expected-nonce")).await,
+            "unexpected nonce",
+        );
+    }
+
+    #[tokio::test]
+    async fn exchange_code_accepts_matching_nonce_end_to_end() {
+        let auth = exchange_fixture(IdTok::Nonce("expected-nonce")).await;
+        let ts = auth
+            .exchange_code("c", "v", Some("expected-nonce"))
+            .await
+            .expect("matching nonce must be accepted");
+        assert!(ts.id_token.is_some());
+    }
+
     /// ⚠️ **타입이 안전해도 빈 값은 남는다.** `CoreTokenResponse` 는 `access_token` 이
     /// 문자열이 아니면 역직렬화에서 떨어지지만 **빈 문자열은 통과**시킨다 — 그러면
     /// `refresh()`/`exchange_code()` 가 쓸 수 없는 토큰으로 성공을 돌려주고, 소비자는
