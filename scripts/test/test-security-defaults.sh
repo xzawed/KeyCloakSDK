@@ -599,22 +599,78 @@ sd_mask_test() {
     ruby)   printf '%s' 'ruby/spec/unit/tokens_spec.rb' ;;
   esac
 }
-# 그 테스트가 **마스킹을 단언한다**는 앵커 — **아홉 전부 테스트 이름**이다.
+# 그 테스트가 **마스킹을 단언한다**는 앵커 — 테스트 이름, 또는 표 기반 테스트면 **그 행의 라벨**.
 # ⚠️ `***` 같은 리터럴을 앵커로 쓰면 안 된다: 그 파일의 **다른 테스트**가 그 문자열을 갖고 있으면
 # 겨누던 카나리아가 사라져도 참이다(실측으로 겪었다). 문구가 아니라 **그 단언의 존재**를 겨눈다.
+# ⚠️ **「아홉 전부 테스트 이름」은 거짓이었다(2026-09-25)** — go 는 헬퍼 이름 `assertMasked`
+# 였고 주석 밖에서 **8 회** 나온다. `TokenSet` 행을 전부 지워도 초록이었다(probe.sh). 그래서
+# 카나리아는 **주석 밖에서 정확히 1 회**여야 하고(`sd_canary_ok`), 한 줄에 하나씩 여럿을 둘 수 있다.
 sd_mask_canary() {
   case "$1" in
     java)   printf '%s' 'toString_masksTokens' ;;
-    go)     printf '%s' 'assertMasked' ;;
+    go)     printf '%s\n' 'assertMasked(t, "TokenSet(값) "+verb' 'assertMasked(t, "TokenSet(포인터) "+verb' \
+              '{"TokenSet(값)", ts,' '{"TokenSet(포인터)", &ts,' ;;
     rust)   printf '%s' 'fn debug_masks_tokens' ;;
     kotlin) printf '%s' 'TokenSet toString masks accessToken' ;;
     python) printf '%s' 'def test_repr_masks' ;;
     node)   printf '%s' 'toString/toJSON/inspect' ;;
     dotnet) printf '%s' 'ToString_masks_access_and_refresh' ;;
     php)    printf '%s' 'testToStringMasksTokens' ;;
-    ruby)   printf '%s' 'masks tokens in inspect' ;;
+    ruby)   printf '%s' 'it "masks tokens in inspect"' ;;
   esac
 }
+
+# 훅과 카나리아의 판정 — **주석을 뺀 줄**에서 센다(`sd_code_lines`). 훅은 ≥ 1, 카나리아는 == 1.
+# 카나리아가 2 회 이상이면 형제 테스트나 사본이 그 자리를 대신 채운다(go `assertMasked` 8 회 ·
+# node `not.toContain(req.codeVerifier)` 3 회가 그 실물이었다). 0 회면 그 경로의 행위 테스트가 없다.
+# ⚠️ 등장은 **앞 글자가 식별자·`.` 가 아닐 때만** 센다 — 그렇지 않으면 `xit('…'` 가 카나리아
+# `it('…'` 를 담아 **건너뛴 테스트**가 1 회로 세어진다(독립 레그 지목 · 재현). 값은 `ENVIRON` 으로
+# 넘긴다 — `awk -v` 는 `\"` 를 이스케이프로 먹어 ruby 훅 `code_verifier=\"***\"` 이 안 맞게 된다.
+# ⚠️ 잔여(줄 단위라 못 본다): 다음 줄의 skip 표지(`#[ignore]`·`@Disabled`·skip 데코레이터) ·
+# `/* … */` 안쪽의 맨 줄 · 꼬리 주석 속 훅 사본. 훅은 구조 확인이고 동작은 카나리아의 테스트가 본다.
+sd_code_count() {
+  sd_code_lines "$1" | SD_NEEDLE="$2" awk '
+    BEGIN { n = ENVIRON["SD_NEEDLE"]; c = 0 }
+    {
+      s = $0; off = 0
+      while ((i = index(s, n)) > 0) {
+        p = (off + i > 1) ? substr($0, off + i - 1, 1) : ""
+        if (p !~ /[A-Za-z0-9_.]/) c++
+        off += i; s = substr(s, i + 1)
+      }
+    }
+    END { print c }'
+}
+sd_hook_ok() { _sn="$(sd_code_count "$1" "$2")"; [ "$_sn" -ge 1 ] && printf ok || printf MISSING; }
+sd_canary_ok() { _sn="$(sd_code_count "$1" "$2")"; [ "$_sn" = 1 ] && printf ok || printf 'COUNT=%s' "$_sn"; }
+
+# 대조군 — 위 두 판정이 **알려진 나쁜 입력을 거부하는가**. 판정을 `grep -qF` 로 되돌려도 라이브
+# 파일로는 초록이다(그것이 이 절이 고친 판이다). 각 행은 그 모양 하나만 다르다.
+_mc="$(mktemp -d)"
+printf '  // codeVerifier: ${mask(this.codeVerifier)}\n  x = `codeVerifier: ${this.codeVerifier}`\n' > "$_mc/hook_comment_only.ts"
+printf '  x = `codeVerifier: ${mask(this.codeVerifier)}`\n' > "$_mc/hook_code.ts"
+printf "  it('a', () => { expect(s).not.toContain(v) })\n  it('a', () => { expect(j).not.toContain(v) })\n" > "$_mc/canary_twice.ts"
+printf "  // it('a', () => { expect(s).not.toContain(v) })\n" > "$_mc/canary_comment_only.ts"
+printf "  it('a', () => { expect(s).not.toContain(v) })\n" > "$_mc/canary_once.ts"
+printf "  xit('a', () => { expect(s).not.toContain(v) })\n" > "$_mc/canary_skipped.ts"
+printf '    xit "masks tokens in inspect" do\n' > "$_mc/canary_skipped.rb"
+printf '    it "masks code_verifier=\\"***\\"" do\n' > "$_mc/hook_escaped.rb"
+assert_eq "COUNT=0" "$(sd_canary_ok "$_mc/canary_skipped.ts" "it('a'")" \
+  "[mask 대조군] xit( 로 건너뛴 테스트를 카나리아로 셌다(Grok)"
+assert_eq "COUNT=0" "$(sd_canary_ok "$_mc/canary_skipped.rb" 'it "masks tokens in inspect"')" \
+  "[mask 대조군] rspec xit 로 건너뛴 예시를 카나리아로 셌다"
+assert_eq "ok" "$(sd_hook_ok "$_mc/hook_escaped.rb" 'code_verifier=\"***\"')" \
+  "[mask 대조군] 역슬래시가 든 훅(ruby)을 못 읽는다 — 값이 awk 이스케이프를 탔나?"
+assert_eq "MISSING" "$(sd_hook_ok "$_mc/hook_comment_only.ts" 'codeVerifier: ${mask(this.codeVerifier)}')" \
+  "[mask 대조군] 주석에만 있는 훅을 있다고 읽었다 — 실제 코드는 원문을 찍는다"
+assert_eq "ok" "$(sd_hook_ok "$_mc/hook_code.ts" 'codeVerifier: ${mask(this.codeVerifier)}')" \
+  "[mask 대조군] 코드 줄의 훅을 못 읽는다"
+assert_eq "COUNT=2" "$(sd_canary_ok "$_mc/canary_twice.ts" "it('a'")" \
+  "[mask 대조군] 두 번 나오는 카나리아를 받았다 — 한 테스트를 지워도 다른 테스트가 채운다"
+assert_eq "COUNT=0" "$(sd_canary_ok "$_mc/canary_comment_only.ts" "it('a'")" \
+  "[mask 대조군] 주석 속 카나리아를 테스트로 읽었다"
+assert_eq "ok" "$(sd_canary_ok "$_mc/canary_once.ts" "it('a'")" "[mask 대조군] 한 번 나오는 카나리아를 못 받는다"
+rm -rf "$_mc"
 
 _mask_seen=0
 for L in $SD_LANGS; do
@@ -626,13 +682,15 @@ for L in $SD_LANGS; do
   assert_eq "ok" "$(ok_if "$_e" MISSING)" "[mask] $L 마스킹 테스트 파일이 없다($_mt)"
   [ -f "$ROOT/$_ms" ] && [ -f "$ROOT/$_mt" ] || continue
   _hp="$(sd_mask_hook "$L")"
-  _h=1; grep -qF -- "$_hp" "$ROOT/$_ms" && _h=0
-  assert_eq "ok" "$(ok_if "$_h" MISSING)" \
-    "[mask] $L 비밀 보유 타입에 기본 문자열표현 마스킹 훅이 없다 — 기대: $_hp"
-  _cp="$(sd_mask_canary "$L")"
-  _c=1; grep -qF -- "$_cp" "$ROOT/$_mt" && _c=0
-  assert_eq "ok" "$(ok_if "$_c" MISSING)" \
-    "[mask] $L 마스킹을 단언하는 행위 테스트가 없다 — 기대: $_cp (훅만 남고 본문이 바뀌면 이것만이 잡는다)"
+  assert_eq "ok" "$(sd_hook_ok "$ROOT/$_ms" "$_hp")" \
+    "[mask] $L 비밀 보유 타입에 기본 문자열표현 마스킹 훅이 없다(주석 밖) — 기대: $_hp"
+  while IFS= read -r _cp; do
+    [ -n "$_cp" ] || continue
+    assert_eq "ok" "$(sd_canary_ok "$ROOT/$_mt" "$_cp")" \
+      "[mask] $L 마스킹을 단언하는 행위 테스트가 주석 밖에 정확히 하나가 아니다 — 기대: $_cp (훅만 남고 본문이 바뀌면 이것만이 잡는다)"
+  done <<EOF
+$(sd_mask_canary "$L")
+EOF
   _mask_seen=$((_mask_seen + 1))
 done
 assert_eq "9" "$_mask_seen" "[mask] 훑은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
@@ -678,7 +736,8 @@ sd_mask2_hook() {
   case "$1" in
     kotlin) printf '%s' 'codeVerifier=***' ;;
     python) printf '%s' 'code_verifier={mask(self.code_verifier)!r}' ;;
-    node)   printf '%s' 'codeVerifier: ${mask(this.codeVerifier)}' ;;
+    # node 는 경로가 둘이다 — toString/inspect 가 공유하는 문자열과 toJSON 의 필드.
+    node)   printf '%s\n' 'codeVerifier: ${mask(this.codeVerifier)}' 'codeVerifier: mask(this.codeVerifier),' ;;
     go)     printf '%s' 'mask(a.CodeVerifier)' ;;
     dotnet) printf '%s' 'Masking.Mask(CodeVerifier)' ;;
     php)    printf '%s' 'Masking::mask($this->codeVerifier)' ;;
@@ -704,12 +763,16 @@ sd_mask2_canary() {
   case "$1" in
     kotlin) printf '%s' 'AuthorizationRequest toString masks codeVerifier' ;;
     python) printf '%s' 'test_authorization_url_repr_masks_verifier' ;;
-    node)   printf '%s' 'not.toContain(req.codeVerifier)' ;;
-    go)     printf '%s' 'AuthorizationRequest' ;;
+    # ⚠️ node·go 는 경로마다 하나다 — 예전 판(`not.toContain(req.codeVerifier)` 3 회 ·
+    # `AuthorizationRequest` 주석 포함 7 회)은 한 경로의 테스트를 지워도 초록이었다(probe.sh).
+    node)   printf '%s\n' "it('util.inspect(=console.log) 가 codeVerifier 를 찍지 않는다'" \
+              "it('JSON.stringify 가 codeVerifier 를 찍지 않는다'" "it('String() 이 codeVerifier 를 찍지 않는다'" ;;
+    go)     printf '%s\n' 'assertMasked(t, "AuthorizationRequest(값) "+verb' \
+              'assertMasked(t, "AuthorizationRequest(포인터) "+verb' '{"AuthorizationRequest(값)", ar,' ;;
     dotnet) printf '%s' 'AuthorizationRequest_ToString_masks_code_verifier' ;;
     php)    printf '%s' 'testJsonEncodeAndStringMaskAuthorizationRequest' ;;
     rust)   printf '%s' 'fn debug_masks_code_verifier' ;;
-    ruby)   printf '%s' 'masks code_verifier in inspect' ;;
+    ruby)   printf '%s' 'it "masks code_verifier in inspect"' ;;
   esac
 }
 
@@ -738,14 +801,20 @@ for L in $SD_LANGS; do
   _e=1; [ -f "$ROOT/$_m2t" ] && _e=0
   assert_eq "ok" "$(ok_if "$_e" MISSING)" "[mask2] $L 형제 마스킹 테스트 파일이 없다($_m2t)"
   [ -f "$ROOT/$_m2t" ] || continue
-  _h2="$(sd_mask2_hook "$L")"
-  _h=1; grep -qF -- "$_h2" "$ROOT/$_m2s" && _h=0
-  assert_eq "ok" "$(ok_if "$_h" MISSING)" \
-    "[mask2] $L 인가요청 타입이 PKCE 검증자를 가리지 않는다 — 기대: $_h2"
-  _c2="$(sd_mask2_canary "$L")"
-  _c=1; grep -qF -- "$_c2" "$ROOT/$_m2t" && _c=0
-  assert_eq "ok" "$(ok_if "$_c" MISSING)" \
-    "[mask2] $L 형제 마스킹을 단언하는 행위 테스트가 없다 — 기대: $_c2"
+  while IFS= read -r _h2; do
+    [ -n "$_h2" ] || continue
+    assert_eq "ok" "$(sd_hook_ok "$ROOT/$_m2s" "$_h2")" \
+      "[mask2] $L 인가요청 타입이 PKCE 검증자를 가리지 않는다(주석 밖) — 기대: $_h2"
+  done <<EOF
+$(sd_mask2_hook "$L")
+EOF
+  while IFS= read -r _c2; do
+    [ -n "$_c2" ] || continue
+    assert_eq "ok" "$(sd_canary_ok "$ROOT/$_m2t" "$_c2")" \
+      "[mask2] $L 형제 마스킹을 단언하는 행위 테스트가 주석 밖에 정확히 하나가 아니다 — 기대: $_c2"
+  done <<EOF
+$(sd_mask2_canary "$L")
+EOF
   _mask2_seen=$((_mask2_seen + 1))
 done
 assert_eq "9" "$_mask2_seen" "[mask2] 훑은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
