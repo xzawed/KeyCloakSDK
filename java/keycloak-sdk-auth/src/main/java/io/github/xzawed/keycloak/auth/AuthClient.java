@@ -83,16 +83,25 @@ public class AuthClient {
     State state = new State(); Nonce nonce = new Nonce();
     Scope scope = configuredScope();
     if (scope.isEmpty()) scope = new Scope("openid");
-    com.nimbusds.openid.connect.sdk.AuthenticationRequest.Builder builder =
-        new com.nimbusds.openid.connect.sdk.AuthenticationRequest.Builder(
-            new ResponseType(ResponseType.Value.CODE), scope,
-            new ClientID(config.getClientId()), redirectUri)
-          .endpointURI(metadata.getAuthorizationEndpoint())
-          .state(state).nonce(nonce)
-          .codeChallenge(pkce.nimbusVerifier(), CodeChallengeMethod.S256);
-    com.nimbusds.openid.connect.sdk.AuthenticationRequest ar;
+    // ⚠️ scope 에 정확한 "openid" 가 없으면 Nimbus AuthenticationRequest.Builder 가 IAE 로 공개 API 에 샜다(실측).
+    // 자매 일곱은 scope 를 그대로 보내므로(실측 2026-09-25) 그 경우만 플레인 OAuth2 인가 요청으로 만든다 —
+    // nonce 는 파라미터로 싣는다. openid 가 있으면 지금까지의 OIDC 경로 그대로다. Kotlin 자매와 동형.
+    URI authorizationUrl;
     try {
-      ar = builder.build();
+      authorizationUrl = scope.contains("openid")
+          ? new com.nimbusds.openid.connect.sdk.AuthenticationRequest.Builder(
+                new ResponseType(ResponseType.Value.CODE), scope,
+                new ClientID(config.getClientId()), redirectUri)
+              .endpointURI(metadata.getAuthorizationEndpoint())
+              .state(state).nonce(nonce)
+              .codeChallenge(pkce.nimbusVerifier(), CodeChallengeMethod.S256)
+              .build().toURI()
+          : new AuthorizationRequest.Builder(new ResponseType(ResponseType.Value.CODE), new ClientID(config.getClientId()))
+              .redirectionURI(redirectUri).scope(scope)
+              .endpointURI(metadata.getAuthorizationEndpoint())
+              .state(state).customParameter("nonce", nonce.getValue())
+              .codeChallenge(pkce.nimbusVerifier(), CodeChallengeMethod.S256)
+              .build().toURI();
     } catch (IllegalStateException e) {
       // ⚠️ Nimbus 는 build() 에서 redirect_uri 를 검사한다 — fragment(RFC 6749 §3.1.2)·금지 scheme
       // (javascript·data 등)·금지 쿼리 파라미터(code·state 등)를 IllegalStateException 으로 거부하고,
@@ -101,7 +110,7 @@ public class AuthClient {
       // 전체를 되울리지 않고, 다른 원인이 섞여도 진단이 남는다).
       throw new KeycloakConfigException("invalid redirect_uri: " + e.getMessage(), e);
     }
-    return new AuthorizationUrlRequest(ar.toURI(), pkce.getVerifier(), state.getValue(), nonce.getValue());
+    return new AuthorizationUrlRequest(authorizationUrl, pkce.getVerifier(), state.getValue(), nonce.getValue());
   }
   // Authorization Code 그랜트로 토큰 교환 (I.2). PKCE code_verifier를 포함해 토큰 엔드포인트에
   // POST한다. 기밀 클라이언트(clientSecret 설정됨)는 ClientSecretBasic, 퍼블릭 클라이언트는

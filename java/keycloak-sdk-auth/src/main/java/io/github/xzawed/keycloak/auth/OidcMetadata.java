@@ -24,13 +24,31 @@ public final class OidcMetadata {
     return s.substring(0, end);
   }
 
+  // ⚠️ realm 은 URL 경로의 한 세그먼트다 — 그대로 이으면 공백 등이 URI.create 의 IAE 로 공개 API 에 샜다(실측
+  // 2026-09-25). 자매 다섯(node·dotnet·python·go·rust)은 같은 realm 을 인코딩해 보낸다. 그래서 엔드포인트에서만
+  // 퍼센트 인코딩하고, issuer 는 토큰 iss 와 대조하므로 원문 그대로 둔다(Kotlin `OidcEndpoints` 동형).
   public static OidcMetadata forRealm(KeycloakConfig c) {
-    String base = stripTrailingSlashes(c.getServerUrl()) + "/realms/" + c.getRealm();
-    String oc = base + "/protocol/openid-connect";
+    String root = stripTrailingSlashes(c.getServerUrl());
+    String base = root + "/realms/" + c.getRealm();
+    String oc = root + "/realms/" + encodePathSegment(c.getRealm()) + "/protocol/openid-connect";
     return new OidcMetadata(base,
         URI.create(oc + "/auth"), URI.create(oc + "/token"),
         URI.create(oc + "/token/introspect"), URI.create(oc + "/logout"),
         URI.create(oc + "/certs"));
+  }
+  // RFC 3986 unreserved(A-Z a-z 0-9 - . _ ~)만 그대로 두고, 나머지 UTF-8 바이트는 대문자 %XX.
+  private static String encodePathSegment(String segment) {
+    StringBuilder out = new StringBuilder();
+    for (byte b : segment.getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+      int c = b & 0xFF;
+      if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+          || c == '-' || c == '.' || c == '_' || c == '~') {
+        out.append((char) c);
+      } else {
+        out.append('%').append("0123456789ABCDEF".charAt(c >> 4)).append("0123456789ABCDEF".charAt(c & 0xF));
+      }
+    }
+    return out.toString();
   }
   public String getIssuer() { return issuer; }
   public URI getAuthorizationEndpoint() { return authorizationEndpoint; }
