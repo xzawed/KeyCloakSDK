@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `195`(2026-09-23 기준 열림 120 · 닫힘 73)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `197`(2026-09-25 기준 열림 113 · 닫힘 84)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,16 +116,16 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-09-25 오후 · #560–#575 반영)
+### 다음 세션 진입점 (2026-09-25 저녁 · #560–#582 반영)
 
 **지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. JVM `1.0.1` 은 **게시·바이트 확인 완료**(`node scripts/check-published-jvm-floor.mjs` 전부 major ≤ 61)이고 API 기저선도 1.0.1 이다. 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. **`coverage-exclusions-swallow-pure-logic` 의 ⏸ 미측정 후보를 변이로 잰다** — 언어당 PR. 위험순(독립 레그 순위): node `auth.ts` 마스킹 → python JWKS 백오프. ⚠️ 제외 ≠ 구멍(ruby·kotlin 3/3 CAUGHT).
-2. **`guard-detection-surface-hand-narrowed` [H/M]** — 남은 손 표 다섯(nonce · 백오프 · 마스킹 둘 · 토큰타입). 모형은 크기상한 축(#575): 주석 뺀 줄 · 쓰임의 자리 · 값 동형 파생 + **이력 오탐 실측**.
+1. **`java-short-code-verifier-leaks-iae` [M/S]** — 이 세션이 측정 중에 낸 신규. 작다. **먼저 아홉을 잰다**(짧은 verifier 를 받은 교환이 SDK 타입으로 실패하는가). 짝 신규 `token-type-library-behaviour-unpinned` 는 #581 이 닫았다 — 그 뒤 토큰타입 축의 go·java·kotlin 앵커를 **훅에서 카나리아로** 옮길 수 있다.
+2. **`guard-detection-surface-hand-narrowed` [H/M]** — 여섯 축 앵커는 비공허해졌다(#575·#578·#580·#582). 남은 것은 「새 자리」를 트리에서 파생할 술어다 — **설계부터**(그 항목의 ⏸).
 3. `integration-coverage-never-measured` [H/L] — 크다. 설계부터.
-4. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 재판정 둘 중 둘이 뒤집혔다 — `seven-selftests` 의 「이미 합성 입력」은 추출기만의 참이었고, `coverage-exclusions` 는 셋이 아니라 아홉이었다.
+4. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다.
 
 **사람 판정 대기** — 주 작업 트리의 stash 둘(`git stash list`: JDK 17→25 실험, 출처 미상 · 1.0.1 하한과 정반대)은 **커밋하지 말고** 폐기 여부를 사람이 정한다. `irreversible-publish-no-reentry` 는 보류 유지.
 
@@ -141,6 +141,8 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - (q) **레그의 우회 목록은 정적으로 재현한 뒤 런타임에서 한 번 더 거른다** — 6/6 이 정적으로 재현됐지만 둘(빈 기본값 · `unset`)은 빈 근거 거부와 `set -u` 로 fail-closed 라 약화가 아니었다(#571). 받을 것은 「통과하면서 약해지는 것」뿐이다.
 - (r) **게이트를 `| tail` 로 보면 종료코드가 사라진다** — `check-docs … | tail -2; … && git commit && git push` 가 예산 초과를 push 했다(#574). `${PIPESTATUS[0]}` 로 받아 그 값으로 분기한다.
 - (s) **dependabot 은 JVM 짝의 같은 좌표를 두 생태계로 따로 올린다** — doc-facts 가 문서 간 좌표를 한 버전으로 강제해 둘 다 빨갛다. 한 PR 로 합치고(#562) 남은 쪽은 `@dependabot rebase` 가 다시 만든다(#569 → #572). KGP 가 움직이면 `kgp-gradle-band` 도 kotlinlang.org 표로 다시 확인한다(가드가 요구한다).
+- (t) **「앞 글자가 식별자·`.` 면 세지 않는다」 경계는 카나리아(테스트 선언)용이다** — 구조 표지에 걸면 멤버 접근(`url.searchParams.set('nonce'`)이 0 이 되어 required 체크가 정당한 코드를 막는다(#580 이 계수를 둘로 나눴다).
+- (u) **변이 SILENT 가 곧 구멍은 아니다 — 관찰 가능한 행동이 남는지 먼저 따진다.** node 백오프 성공 리셋은 지워도 드러날 행동이 없고(콜드 캐시가 다시 안 빈다), go 의 id_token 누락 검사는 지워도 `Validate("")` 가 같은 오류 타입으로 거부한다 — 둘 다 동치 변이로 판정했다. 반대로 **컴파일이 깨지는 변이는 INVALID** 다(go `vt` 미사용 — (i)).
 
 ### 재발 원인 분석 — 2026-09-13 (독립 레그와 공동, 산출물 기반)
 
@@ -458,6 +460,8 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - ⚠️ **같은 PR 이 손 표 하나를 지웠다 — 중복이 됐기 때문이다.** `sd_skew_secondary`(dotnet·python)는 파생이 같은 두 자리를 값으로 잡는다(손 표를 죽이고 python 을 60 으로 → `CAUGHT`). 반대로 **손 표만 죽이면 `SILENT`** 였고 그것이 중복 게이트의 정의다. 그 표의 지식(**dotnet 은 1절이 읽는 `JwtValidator.cs` 가 아니라 `KeycloakConfig.cs` 가 소비자 값**)은 주석으로 남겼다.
   - ⏸ **(B) 의 잔여** — 닫은 것은 **1절·3절이 소유한 두 파라미터**(JWKS 재조회 · clock skew)뿐이다. 나머지 축(크기상한·nonce·백오프·마스킹 둘·토큰타입)은 **여전히 손 표**라 같은 부류가 그대로 있다. 다음 자리는 그 축들에 같은 「값 동형」 파생을 적용할 수 있는지다.
   - ✅ **크기상한 축을 닫았다(2026-09-25).** 실측 `main` 에서 넷 다 SILENT: JVM 두 줄은 `grep -c 'DEFAULT_HTTP_SIZE_LIMIT'` 인데 그 토큰이 **바로 위 doc 주석에도** 있어 생성자 인자를 `0` 으로 바꿔도(#400 결함 그대로) 초록 · `sed | head -1` 은 주석 속 옛 선언을 먼저 읽음 · 다른 파일의 둘째 선언은 안 봄. → 주석 뺀 줄 · 인자 **자리** · 3절식 값 동형 파생(오탐 이력 122 커밋 0 건, 하한 6 은 창 최저값). 독립 레그가 우회 넷(`…LIMIT * 100` · 인자 안 블록 주석 · `51200 << 10` · `*=`)과 오탐 하나(꼬리 주석 속 대입)를 냈고 다섯 다 재현 → 대조군. ⚠️ 빈 키셋 축은 주석 줄만 걸렀다(꼬리 주석은 못 거른다). **남은 손 표: nonce · 백오프 · 마스킹 둘 · 토큰타입.**
+  - ✅ **남은 넷도 비공허 앵커로 옮겼다(2026-09-25, #578 · #580 · #582).** 모형 하나로 수렴했다: 구조 표지는 **주석 밖 ≥ 1**, 행위 테스트 카나리아는 **주석 밖 정확히 1 회**(`파일|선언`, 경로마다 한 줄). `main` 실측 SILENT 였던 것: 카나리아가 형제에 흡수(go `assertMasked` 8 회 · node 3 회 · go 인가요청 7 회) · 주석 속 훅 사본 · `xit` 로 건너뛴 테스트 · 선언 이름 표지라 **호출 삭제**가 통과(nonce·백오프). ⚠️ 호출 삭제 자체는 이 가드가 아니라 **언어 CI 의 행위 테스트**가 잡는다 — 그 테스트가 없던 java·rust nonce(#577)·토큰타입(node #579 · go·java·kotlin #581)을 먼저 세웠다.
+  - ⏸ **열린 채 남는 것** — 이 부류의 (B) 「기존 언어에 **새 자리**가 생겼다」는 값 동형이 서는 숫자 축(재조회·skew·크기상한)만 파생으로 닫혔다. 마스킹·nonce·백오프·토큰타입은 앵커가 비공허해졌을 뿐 **새 비밀 보유 타입·새 교환 경로**를 스스로 찾지 못한다. 줄 단위라 다음 줄의 skip 표지(`#[ignore]`·`@Disabled`·데코레이터)도 못 본다. 닫으려면 「새 자리」를 트리에서 파생할 술어가 필요하다(예: 공개 타입 중 비밀 필드를 가진 것 전수).
   - ⚠️ **또 늘었다 — 축 9 중 손 표 7 → 축 11 중 손 표 9 → 축 12 중 파생 3 · 혼합 1 · 손 8**(재측정 2026-09-16 · 직전 판 2026-09-12 는 독립 레그와 일치했다). 그 사이 추가된 축 둘(JWKS 크기상한 · 토큰응답 타입검증)이 **둘 다 손 표**다. 파생은 여전히 `git ls-files` 둘뿐. 배너 전수: `grep -cE '^# [0-9]+[a-z0-9]*\) ' scripts/test/test-security-defaults.sh` → **11**. ⚠️ `'^# [0-9]'` 로 세면 **15** 가 나온다 — 숫자로 시작하는 산문 넉 줄(「30초로…」 등)이 섞인다. ⚠️ 그리고 **축 이름이 이미 충돌한다**(`1b` 셋 · `1c` 둘) — 「축 N」으로 지목하지 말고 줄번호로 지목할 것. ⚠️ **처방은 그대로다**(이 파일에 축을 더하지 않는다) — 이번 PR 도 새 불변식을 여기가 아니라 `check-versions.mjs` 로 냈다.
   - **축 7 중 손 표 5 → 축 9 중 손 표 7 로 늘었다**(실측 2026-09-07, 독립 레그 둘). 그 사이 추가된 축 둘 — 1b2 콜드캐시 백오프 · 1d 형제 마스킹(#437) — 이 **둘 다 손 표**다. 파생은 여전히 `git ls-files` 둘(문서 축·소스 주석 축)뿐이다.
   - ⚠️ **그런데 지금 파생으로 바꾸는 것이 옳은 수가 아니다.** 이 파일은 required 체크 `doc-facts` 안에서 `paths:` 필터 없이 돌고 룰셋은 `bypass_actors: []` 다 — 오탐 하나가 모든 PR 을 막고 소유자도 못 푼다. **되살릴 조건**: required **밖**(nightly 등)에서 먼저 돌려 오탐 0 을 실측할 것. 노이즈는 이미 쟀다 — 9언어 비테스트 소스에서 비밀 이름을 언급하는 파일이 **83개**라 그 신호를 그대로 쓸 수 없다.
@@ -480,7 +484,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [ ] `facade-wiring-close-contract-unasserted` **[M/S]** 파사드의 §4 계약(provider 배선·close)이 무단언 테스트 뒤에 있고 커버리지 게이트에서도 빠져 있다 · `rust/src/client.rs:65`
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 74건 (열림 53)
+## C. 품질 부채 — 74건 (열림 52)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -512,20 +516,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 ### 테스트·커버리지 — 8
 
 - [x] `selftest-hygiene-textual-rules` **[H/M]** '존재'가 아니라 '실행'을 센다던 규칙이 주석·비활성화·`|| true`를 실행으로 센다 · `scripts/test/test-selftest-hygiene.sh:20`
-- [ ] `coverage-exclusions-swallow-pure-logic` **[H/L · 계수 정정 2026-09-09 · 재판정 2026-09-25: 셋 → 아홉]** '네트워크 경계' 커버리지 제외가 I/O 없는 순수 로직까지 삼켰다 — **아홉 언어 전부**(제외 목록이 순수·주입형 함수를 담는다) · `node/src/transport.ts:38`
-  - ⚠️ **재판정(2026-09-25) — 「제외됨」과 「구멍」은 다르다. 지도는 전수 조사가, 구멍 여부는 변이가 정한다.** 9언어 전수(에이전트, 파일:줄 인용)를 받아 **실측한 것만** 적는다: php `ErrorTranslation.php` 는 「이미 전수」가 **틀렸다** — `default` 팔·SDK 예외 통과 분기 변이 **2/2 SILENT** → #573(디렉터리 제외를 파일 손 목록으로, 291→310 문장). ruby `admin/call.rb` 는 제외돼 있어도 변이 **3/3 CAUGHT**(`esc` 항등 6 실패 · 무예외 3 · Location 통째 1) — 조치 없음. rust 정규식 `(auth|admin|client)\.rs` 는 양끝이 없어 미래 `oauth.rs` 를 삼킨다 → #574(오늘 파일 집합 불변: TOTAL 동일). ⚠️ 조사의 「SonarCloud 가 node `transport.ts`·`admin/**` 를 뺀다」는 **거짓**이었다(`sonar.cpd.exclusions` 를 coverage 로 읽었다).
-  - ✅ kotlin `admin.*` 가 `translateAdminException` 까지 빼지만(java 쌍둥이는 측정 — JVM 비대칭) 변이 **3/3 CAUGHT**(409·403→Other · 본문 폴백→null, 단위 140 중 1~4 실패) — 조치 없음.
-  - **판정 규칙**(독립 레그와 합의): 변이 SILENT → 테스트 + (순수부가 분리되면) 제외를 좁힌다 · 좁히면 게이트가 I/O 까지 떠안는 경우(python 100%) → 테스트만. ⚠️ **CAUGHT 여도 「그대로」가 공짜는 아니다** — 제외된 파일은 그 테스트가 **지워져도** 게이트가 모른다. 분리 가능하면 좁히는 쪽이 낫다.
-  - ⏸ **미측정 후보**(위험순, 레그 순위): node `auth.ts` 마스킹 클래스(PKCE verifier 로그 유출) · python `auth.py` `_load_jwks` 레이트리밋·백오프(:263-307, 게이트 100% 라 비용 큼) · dotnet `ToTokenSet`·`OAuthErrorOf` · java `AuthClient` 헬퍼 · rust `auth.rs`/`admin.rs` 인라인 테스트가 게이트에 안 셈.
-  - ⚠️ **다섯이 아니라 셋이다**(재판정 2026-09-09): node(`transport.ts` + `admin/call.ts`) · php(`ErrorTranslation.php`) · ruby(`version.rb`).
-  - ✅ **node `transport.ts` 는 #458 이 닫았다**(2026-09-10). ⚠️ **그리고 「테스트 파일 0」이라던 내 계측이 틀렸다** — `git grep -l isTransportError -- node/test` 는 **이름 grep** 이고, 실동작은 호출 자리(auth·admin 경계)에서 이미 구동되고 있었다. 진짜 결함은 「테스트 없음」이 아니라 **「측정되지 않아 일부 팔이 죽어도 초록」**이었다: 경계 테스트가 치는 팔은 `AbortError`·`ECONNREFUSED` **둘뿐**이고 나머지 15개 코드는 커버리지 제외 때문에 측정되지 않아, `CERT_HAS_EXPIRED` 를 지워도 **107 전부 통과**했다(변이 `SILENT`). 전수 표 테스트 + 제외 해제로 셋 다 `CAUGHT`.
-  - ⏸ **남은 둘은 부류가 다르다**(실측 2026-09-10): php `ErrorTranslation.php` 는 `tests/Unit/Admin/ErrorTranslationTest.php` 가 이미 전수를 치고 있고 제외를 풀면 **실 I/O 가 게이트에 딸려 들어온다**. ruby `version.rb` 는 상수 한 줄이다. ⚠️ **node `admin/call.ts` 의 `requireFound` 는 여전히 순수 헬퍼이고 테스트 언급 0** — 그것이 이 항목의 진짜 잔여다.
-  - ✅ **node `admin/call.ts` 를 닫았다(2026-09-15). ⚠️ 그런데 이 항목이 지목한 잔여가 틀렸다.** 등록부는 「`requireFound` 는 순수 헬퍼이고 테스트 언급 0 — 그것이 진짜 잔여」라고 적고 있었다. 실측: `requireFound` 의 널 검사를 무력화하면 **admin 위임 테스트 다섯이 실패한다**(`CAUGHT`). ⚠️ **`transport.ts` 때와 똑같은 「이름 grep」 오류다** — #458 이 그 함정을 적어 뒀는데 같은 항목의 다음 줄에서 또 밟았다.
-  - **진짜 잔여는 `statusOf`·`messageOf` 였고 독립 레그가 지목했다.** Grok 이 코드만 읽고 순수 함수를 **셋**으로 세고(`requireFound`·`statusOf`·`messageOf`) `call` 도 `fn` 을 주입받아 catch 분기가 단위테스트 가능하다고 했다. 실측 3/3 `SILENT`: `statusOf` 의 `typeof status === 'number'` 제거 · `messageOf` 의 `?? record['error']` 폴백 제거 · 기본 문구 변경. 전수 표 테스트(`test/unit/admin-call.test.ts`, 21 케이스) + 제외에서 `call.ts` 를 빼 **3/3 `CAUGHT`** · 가드 OFF `SILENT`. 커버리지 분모 144 → 164 줄, 35 → 39 함수.
-  - ⚠️ **제외는 글롭이 아니라 손 목록으로 남겼다** — 새 `src/admin/*.ts` 는 목록에 없어 **측정되는** 쪽으로 빠진다(글롭이면 조용히 제외된다). 측정이 시끄럽고 제외가 조용하니 이 방향이 옳다.
-  - ⚠️ **워크트리에 `node_modules` 가 없다 — 프로비저닝은 변이가 아니라 검사 명령이 해야 한다.** 변이 쪽에 두면 기준선만 없는 채로 돌아 `INVALID: 기준선이 이미 실패한다` 가 난다(실측).
-  - ⚠️ **`--assume-relevant` 가 필요한 첫 실제 사례였다** — 검사 스크립트가 워크트리 밖에 있고 `npm test` 는 `src/**` 를 **런타임에** 로드하므로 정적 근사가 의존성을 못 본다. 계측기가 `INVALID` 로 막았고 면제를 **명시적으로** 선언해야 통과했다(#499 가 의도한 동작).
-  - ⚠️ **내 첫 단언이 틀렸고 테스트가 그것을 잡았다** — `toThrow('')` 는 빈 문자열을 `/^$/` 로 해석해 실제 문구 `HTTP 500: ` 와 안 맞는다. 표를 **정확일치**(`err.message === 'HTTP 500: ' + want`)로 바꿔 더 강해졌다.
+- [x] `coverage-exclusions-swallow-pure-logic` **[H/L · 닫힘 2026-09-25 #573 #574 #577 #579]** '네트워크 경계' 커버리지 제외가 순수 로직까지 삼켰다 — **아홉 언어를 변이로 전수 측정**: node 3 · python 10 · dotnet 4 · java 5 · kotlin 3 · ruby 3 · go 4 CAUGHT(제외돼도 시험됨), php 2/2 SILENT → #573, rust 제외 정규식 무앵커 → #574. 측정 중 드러난 **교환 경로 nonce 무시험**(java·rust, #577)·**node 토큰 타입 무시험**(#579)은 제외와 무관한 테스트 구멍이었다. 사후 서사는 `git show ef040af:docs/superpowers/plans/remaining-work.md` 515–528행 · `php/phpunit.xml:13`
 - [x] `security-invariant-use-site-scope` **[H/M · 닫힘 2026-09-09 #444]** 보안 불변식의 '2차 정의 자리 금지'가 아홉 중 셋만 봤다 · `scripts/test/test-security-defaults.sh:297`
 - [x] `node-php-use-site-skew-defaults` **[M/S · 신규·닫힘 2026-09-09 #445]** node·php 의 사용처 skew 기본값이 config 값과 대조되지 않았다 · `node/src/token-provider.ts:23` · `php/src/Token/TokenSet.php:73`
 - [ ] `probe-cannot-run-node-php-in-worktree` **[M/S · 범위 정정 2026-09-12 · 악화]** `scripts/probe.sh` 가 node·php **·python** 변이를 못 잰다 — 워크트리에 `node_modules`·`vendor`·`.venv` 가 없어 기준선이 실패한다(`INVALID`) · `scripts/probe.sh:57`
@@ -608,7 +599,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 57건 (열림 46)
+## D. 원장 밖 — 59건 (열림 47)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -660,7 +651,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **PR 크기가 아니다** — php 가 roles/groups/realms 를 **0/3 계열** 부르는 것을 「구현할지 건너뛸지」가 9×capability 결정이고, 그 위에 Docker E2E 가 붙는다. · `java/keycloak-sdk/src/test/java/io/github/xzawed/keycloak/AdminOpsIT.java:48`
 - [ ] `coverage-omit-overreach` **[M/M]** omit의 근거("단위테스트 불가한 네트워크 경계")가 실측으로 거짓이다 — Node는 이미 96.93%, Python은 98%인 코드를 게이트 밖에 두고 있다 · `node/vitest.config.ts:14`
 - [ ] `coverage-threshold-parity` **[M/M]** 커버리지 임계값이 9언어에서 갈리고(브랜치 게이트가 아예 없는 곳 셋), 문서↔설정 대조 가드는 3개 언어만 본다 · `scripts/check-docs.mjs:552`
-- [ ] `coverage-omit-no-ssot` **[M/M]** omit 목록이 열 곳에 손으로 중복 기재돼 있고 대조 가드가 0건 — Rust 제외 정규식은 앵커도 없다 · `java/pom.xml:151`
+- [ ] `coverage-omit-no-ssot` **[M/M]** omit 목록이 열 곳에 손으로 중복 기재돼 있고 대조 가드가 0건(Rust 정규식 무앵커는 #574 가 고쳤다 — 세 자리가 같은 값인지는 여전히 아무도 안 본다) · `java/pom.xml:151`
 - [ ] `readme-quickstarts-ungated` **[M/M]** README가 정본이라 부르는 quickstart 예제가 어떤 게이트에도 안 걸린다 — 하네스가 실제로 돌리는 것은 별도 사본이다 · `node/examples/quickstart.ts:1`
 
 ### 1.0 이후 운영 — 9
@@ -716,6 +707,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `release-artifact-verification-undocumented` **[M/M]** 소비자가 게시물의 무결성을 확인할 방법이 문서에 0건 — 증명 수단이 레인마다 다른데 아무도 그 표를 쓰지 않았다 · `SECURITY.md:96`
 - [ ] `dependency-license-claims-unverified` **[L/M]** CLAUDE.md가 아홉 스택 전부의 라이선스 호환을 단언하는데 CI에 라이선스 검사가 0건 · `CLAUDE.md:150`
 - [ ] `repo-topics-omit-four-languages` **[L/S]** 저장소 topics가 아홉 언어 중 다섯만 담고 20개 한도를 소진했다 — 그리고 topics는 SSOT 밖이다 · `.github/security-config.json:2`
+- [ ] `java-short-code-verifier-leaks-iae` **[M/S · 신규 2026-09-25]** java `exchangeCode` 에 43 자 미만 verifier 를 넘기면 Nimbus `CodeVerifier` 의 `IllegalArgumentException` 이 SDK 타입으로 번역되지 않고 샌다(§4) — #577 테스트를 쓰다 실측(`"v"` → IAE). 공백 scope 가 같은 모양으로 판정돼 고쳐진 전례가 있다. ⚠️ **먼저 아홉을 잰다** — 자매 여덟의 짧은 verifier 처리는 미측정 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:163`
+- [x] `token-type-library-behaviour-unpinned` **[M/S · 신규·닫힘 2026-09-25 #581]** go·java·kotlin 이 비문자열 `access_token` 거절을 라이브러리(x/oauth2 · Nimbus)에 맡기면서 그 행동을 고정한 테스트가 0 이었다 — go 는 전제부터 미측정(실측: 여섯 다 `*AuthError`). 셋 다 표 테스트로 고정, 파싱 실패를 삼키는 변이에 go·java CAUGHT(kotlin 미측정) · `go/auth_test.go`
 
 ---
 
