@@ -40,7 +40,7 @@ jobs:
           # 그러면 `vacuous-run` 으로 실패한다(조용한 초록이 되지 않는다).
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
       - name: 게시본 대조
@@ -56,7 +56,7 @@ jobs:
           # 전부 UNTAGGED 로 읽혀 거짓 빨강이 난다.
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
       - name: 레지스트리 대조
