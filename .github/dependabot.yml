@@ -71,6 +71,10 @@ updates:
     directory: /node
     schedule: { interval: weekly }
     groups:
+      # vitest 짝은 메이저까지 한 PR 로 온다 — 따로 오면 각자 상대의 peer(정확 버전)를 못 풀어
+      # 둘 다 `npm ci` 에서 ERESOLVE 로 빨갛다(#565·#566 실측). 먼저 매칭된 그룹이 이기므로
+      # 이 그룹은 `node-minor-patch` 보다 **위**에 있어야 한다.
+      vitest: { patterns: ['vitest', '@vitest/*'] }
       node-minor-patch: { update-types: [minor, patch] }
     ignore:
       # @types/node는 "최신 Node"가 아니라 package.json의 engines 하한을 따라간다. 하한을 올리는 것은
@@ -83,7 +87,7 @@ updates:
       # `client.test.ts`·`admin.test.ts` 의 목 **세 자리**를 `function` 으로 바꾸자 107 전부 통과했다.
       # 보류를 유지할 수 없게 된 이유: 그 사이 GHSA(경로 순회/임의 파일 읽기)가 나왔고 **패치가
       # 4.1.11 뿐**이라 3.x 에는 백포트가 없다 — 보류가 곧 무패치 메이저에 머무는 것이 됐다.
-      # ⚠️ 두 핀은 **함께 움직인다**(`vitest` · `@vitest/coverage-v8`). 5.x 가 묻어오지 않도록 틸드다.
+      # ⚠️ 두 핀은 **함께 움직인다**(`vitest` · `@vitest/coverage-v8`) — 위 `vitest` 그룹이 그것을 강제한다.
 
   - package-ecosystem: gomod # Go
     directory: /go
