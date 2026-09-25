@@ -15,17 +15,34 @@ import com.nimbusds.openid.connect.sdk.token.OIDCTokens;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
 import io.github.xzawed.keycloak.core.TokenSet;
 import io.github.xzawed.keycloak.core.exception.KeycloakAuthException;
+import com.sun.net.httpserver.HttpServer;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Date;
 import java.util.Set;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 // OIDC nonce 재생 방지 회귀 테스트: exchangeCode가 id_token을 보존하고(현재는 null 폐기),
 // expectedNonce가 주어지면 응답 id_token을 강화 JwtValidator로 서명검증한 뒤 nonce를 대조하는지
-// 검증한다. 토큰 엔드포인트 send()는 브라우저 로그인이 필요해 IT 밖이므로, nonce 로직은 정적
-// JWKS 검증기를 주입(테스트 시임)해 실 RSA 서명 id_token으로 직접 검증한다.
+// 검증한다. 검증기는 정적 JWKS를 주입(테스트 시임)해 실 RSA 서명 id_token으로 검증한다.
+// ⚠️ 「토큰 엔드포인트 send()는 브라우저 로그인이 필요해 단위로 못 간다」는 틀렸다 — code 를
+// 검사하는 것은 서버이므로, 토큰 엔드포인트만 JDK 내장 HttpServer 로 세우면 exchangeCode 전체가
+// 돈다(아래 exchangeCode_* 셋). 헬퍼만 시험하던 동안 exchangeCode 안의 requireValidNonce 호출을
+// 지워도 이 파일 전부가 통과했다(변이 실측 2026-09-25).
 class AuthClientNonceTest {
   private static final String ISSUER = "https://kc.example.com/realms/r";
+  // Nimbus CodeVerifier 는 43~128 자를 요구한다(RFC 7636 §4.1). 서버(목)는 이 값을 검사하지 않는다.
+  private static final String VERIFIER = "v".repeat(43);
+  private HttpServer server;
+
+  @AfterEach void stopServer() {
+    if (server != null) server.stop(0);
+  }
 
   private KeycloakConfig config() {
     return KeycloakConfig.builder()
@@ -96,6 +113,54 @@ class AuthClientNonceTest {
         .serverUrl("https://kc.example.com").realm("r").clientId("app").build();
     AuthClient client = new AuthClient(cfg, OidcMetadata.forRealm(cfg));
     assertEquals(Set.of(JWSAlgorithm.RS256), client.allowedAlgorithms());
+  }
+
+  // ── exchangeCode 전체 경로 ── 거부 둘은 **메시지까지** 본다: 다른 인증 실패가 초록을 대신 채우지
+  // 못하게. 양성 대조(일치 → 성공)가 같은 파이프라인이 통과함을 보여, 거부의 원인이 nonce 뿐임을 고정한다.
+  @Test void exchangeCode_rejectsMismatchedNonce_endToEnd() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    AuthClient client = clientServingToken(key, signIdToken(key, ISSUER, "app", "attacker-nonce"));
+    KeycloakAuthException e = assertThrows(KeycloakAuthException.class,
+        () -> client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, "expected-nonce"));
+    assertTrue(e.getMessage().contains("unexpected nonce"), e.getMessage());
+  }
+
+  @Test void exchangeCode_rejectsMissingIdToken_whenNonceExpected() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    AuthClient client = clientServingToken(key, null);
+    KeycloakAuthException e = assertThrows(KeycloakAuthException.class,
+        () -> client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, "expected-nonce"));
+    assertTrue(e.getMessage().contains("missing id_token"), e.getMessage());
+  }
+
+  @Test void exchangeCode_acceptsMatchingNonce_endToEnd() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String idToken = signIdToken(key, ISSUER, "app", "expected-nonce");
+    AuthClient client = clientServingToken(key, idToken);
+    TokenSet ts = client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, "expected-nonce");
+    assertEquals(idToken, ts.getIdToken());
+  }
+
+  // 토큰 엔드포인트 하나만 서는 로컬 서버. idTokenOrNull 이 null 이면 응답에 id_token 이 없다.
+  private AuthClient clientServingToken(RSAKey key, String idTokenOrNull) throws Exception {
+    String body = "{\"access_token\":\"AT\",\"token_type\":\"Bearer\",\"expires_in\":300"
+        + (idTokenOrNull == null ? "" : ",\"id_token\":\"" + idTokenOrNull + "\"") + "}";
+    byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+    server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+    server.createContext("/realms/r/protocol/openid-connect/token", ex -> {
+      ex.getResponseHeaders().add("Content-Type", "application/json");
+      ex.sendResponseHeaders(200, bytes.length);
+      try (OutputStream os = ex.getResponseBody()) {
+        os.write(bytes);
+      }
+    });
+    server.start();
+    KeycloakConfig cfg = KeycloakConfig.builder()
+        .serverUrl("http://127.0.0.1:" + server.getAddress().getPort()).realm("r").clientId("app")
+        .build();
+    JwtValidator v = JwtValidator.withStaticJwks(new JWKSet(key.toPublicJWK()), ISSUER, "app",
+        Set.of(JWSAlgorithm.RS256), Duration.ofSeconds(30));
+    return new AuthClient(cfg, OidcMetadata.forRealm(cfg), v);
   }
 
   private AuthClient clientWithValidator(RSAKey key) throws Exception {
