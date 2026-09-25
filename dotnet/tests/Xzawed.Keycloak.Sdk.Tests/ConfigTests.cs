@@ -31,6 +31,30 @@ public class ConfigTests
         Assert.Equal(new[] { "RS256" }, c.SignatureAlgorithms);
     }
 
+    [Theory]
+    [InlineData("kc.example.com")]
+    [InlineData("http://kc example.com")]
+    [InlineData("ftp://kc.example.com")]
+    [InlineData("http://127.0.0.1:65536")]
+    public void Normalized_rejects_server_url_that_is_not_absolute_http(string serverUrl)
+    {
+        var ex = Assert.Throws<KeycloakConfigException>(() => (Base() with { ServerUrl = serverUrl }).Normalized());
+        Assert.StartsWith("ServerUrl must be an absolute http(s) URL", ex.Message);
+        Assert.DoesNotContain(serverUrl, ex.Message);
+    }
+
+    [Theory]
+    [InlineData("http://keycloak_server:8080")] // docker compose 서비스명 — 호스트의 '_'
+    [InlineData("https://kc.example.com/auth")]
+    [InlineData("http://127.0.0.1:8080")]
+    [InlineData("HTTP://kc.example.com")]
+    [InlineData("http://127.0.0.1:65535")]
+    public void Normalized_accepts_absolute_http_server_url(string serverUrl)
+    {
+        var c = (Base() with { ServerUrl = serverUrl }).Normalized();
+        Assert.Equal(serverUrl, c.ServerUrl);
+    }
+
     [Fact]
     public void SignatureAlgorithms_custom_values_are_preserved()
     {

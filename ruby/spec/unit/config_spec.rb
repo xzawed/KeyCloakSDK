@@ -3,6 +3,13 @@
 require "spec_helper"
 
 RSpec.describe KeycloakSdk::Config do
+  def config_error_for(url)
+    described_class.new(server_url: url, realm: "demo", client_id: "app")
+    raise "expected ConfigError for #{url.inspect}"
+  rescue KeycloakSdk::ConfigError => e
+    e
+  end
+
   def valid(**over)
     described_class.new(
       server_url: "https://kc.example.com/", realm: "demo", client_id: "app",
@@ -83,5 +90,37 @@ RSpec.describe KeycloakSdk::Config do
 
   it "rejects empty signature_algorithms" do
     expect { valid(signature_algorithms: []) }.to raise_error(KeycloakSdk::ConfigError)
+  end
+
+  # 상대·비-http·파싱 불가·범위 밖 포트는 요청 시점의 RuntimeError "No Host Info" /
+  # URI::InvalidURIError가 아니라 생성 시 ConfigError. 메시지는 입력을 되울리지 않는다.
+  # "http://" 는 host가 빈 URI::HTTP라 "missing host" 분기를 탄다(스펙의 네 사유 중 하나).
+  {
+    "kc.example.com" => "scheme must be http or https",
+    "http://kc example.com" => "unparseable",
+    "ftp://kc.example.com" => "scheme must be http or https",
+    "http://127.0.0.1:65536" => "port out of range",
+    "http://" => "missing host"
+  }.each do |url, reason|
+    it "rejects server_url #{url.inspect} without echoing it" do
+      error = config_error_for(url)
+      expect(error).to be_a(KeycloakSdk::ConfigError)
+      expect(error.message).to start_with("server_url must be an absolute http(s) URL: ")
+      expect(error.message).to end_with(reason)
+      expect(error.message).not_to include(url)
+    end
+  end
+
+  [
+    "http://keycloak_server:8080",
+    "https://kc.example.com/auth",
+    "http://127.0.0.1:8080",
+    "HTTP://kc.example.com",
+    "http://127.0.0.1:65535"
+  ].each do |url|
+    it "accepts absolute server_url #{url.inspect}" do
+      config = described_class.new(server_url: url, realm: "demo", client_id: "app")
+      expect(config.server_url).to eq(url)
+    end
   end
 end

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "uri"
+
 module KeycloakSdk
   # 불변 설정. 생성 시 검증하고 freeze한다. client_secret은 inspect에서 마스킹.
   class Config
@@ -19,6 +21,10 @@ module KeycloakSdk
     # 않았으나 JWKS가 10.0/30.0으로 갈린 것과 똑같은 모양이다). 그 자리는 이제 이 상수를 참조한다.
     DEFAULT_CLOCK_SKEW = 30
 
+    # 깨진 server_url의 ConfigError 접두사. 뒤에 짧은 사유만 붙인다(입력·파서 메시지 금지).
+    SERVER_URL_ERROR_PREFIX = "server_url must be an absolute http(s) URL: "
+    private_constant :SERVER_URL_ERROR_PREFIX
+
     attr_reader :server_url, :realm, :client_id, :client_secret,
                 :scopes, :signature_algorithms, :connect_timeout, :read_timeout, :clock_skew,
                 :jwks_min_refetch, :expected_audience
@@ -28,6 +34,11 @@ module KeycloakSdk
                    connect_timeout: 10, read_timeout: 10, clock_skew: DEFAULT_CLOCK_SKEW,
                    jwks_min_refetch: DEFAULT_JWKS_MIN_REFETCH, expected_audience: nil)
       @server_url = strip_trailing_slashes(normalize_required("server_url", server_url))
+      # 정규화 직후. 상대 URL("kc.example.com")은 첫 토큰 요청에서 RuntimeError "No Host Info"로,
+      # 공백이 섞인 URL("http://kc example.com")은 URI::InvalidURIError로 나간다. 둘 다
+      # ConfigError가 아니라 공개 API 밖으로 새는 예외라 생성 시점에 닫는다.
+      # InvalidURIError#message는 입력을 그대로 에코하므로 사유만 남긴다.
+      require_absolute_http_url!(@server_url)
       @realm = normalize_required("realm", realm)
       @client_id = normalize_required("client_id", client_id)
       @client_secret = client_secret
@@ -65,6 +76,19 @@ module KeycloakSdk
       i = str.length
       i -= 1 while i.positive? && str[i - 1] == "/"
       str[0, i]
+    end
+
+    # URI::HTTP(HTTPS는 하위 클래스)이고 host가 비어 있지 않으며 port <= 65535.
+    # 스킴 대소문자는 URI.parse가 가린다("HTTP://" → URI::HTTP). 언더스코어 host
+    # ("keycloak_server")도 이 파서가 받으므로 따로 거부하지 않는다.
+    def require_absolute_http_url!(url)
+      uri = URI.parse(url)
+      raise ConfigError, "#{SERVER_URL_ERROR_PREFIX}scheme must be http or https" unless uri.is_a?(URI::HTTP)
+      raise ConfigError, "#{SERVER_URL_ERROR_PREFIX}missing host" if uri.host.to_s.empty?
+      raise ConfigError, "#{SERVER_URL_ERROR_PREFIX}port out of range" if uri.port > 65_535
+    rescue URI::InvalidURIError
+      # cause를 끊지 않으면 InvalidURIError#message(입력 에코)가 예외 사슬에 남는다.
+      raise ConfigError, "#{SERVER_URL_ERROR_PREFIX}unparseable", cause: nil
     end
 
     def normalize_required(name, value)
