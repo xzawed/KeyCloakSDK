@@ -1,5 +1,5 @@
 // gradle/wrapper: 9.5.0
-// kgp-gradle-band: kgp=2.4.10 gradle=7.6.3-9.5.0
+// kgp-gradle-band: kgp=2.4.20 gradle=7.6.3-9.7.0
 //   ⚠️ 이 줄은 주석이 아니라 **검사되는 선언**이다(scripts/check-versions.mjs). kotlinlang.org의
 //   KGP↔Gradle 완전지원 밴드를 그 KGP 버전과 **묶어서** 기록한다 — `kgp=`가 아래 `kotlin("jvm")`과
 //   어긋나면 가드가 실패하므로, KGP를 올리는 사람은 밴드를 반드시 다시 확인하게 된다(밴드 값은
