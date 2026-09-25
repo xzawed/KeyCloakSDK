@@ -570,7 +570,25 @@ mod tests {
 
     // `verify_nonce` 단위 테스트는 `code_exchange` 안의 호출을 지우면 그대로 통과한다.
     // 토큰 응답의 id_token(있으면 서명)까지 거친 `exchange_code`가 nonce를 강제하는지 고정한다.
-    async fn exchange_fixture(id_token_nonce: Option<&str>) -> AuthClient {
+    /// 토큰 응답에 실을 id_token 의 모양.
+    enum IdTok<'a> {
+        Absent,
+        Nonce(&'a str),
+        /// 서명은 유효하지만 `nonce` 클레임이 **없다** — 「있고 다를 때만 거부」로 약해지면 통과한다.
+        NoNonceClaim,
+    }
+
+    /// 거부가 **nonce 판정 때문**인지까지 본다 — 다른 `Auth` 실패가 초록을 대신 채우지 못하게.
+    fn assert_auth_err(r: Result<TokenSet>, needle: &str) {
+        match r {
+            Err(KeycloakError::Auth { message, .. }) => {
+                assert!(message.contains(needle), "{message}")
+            }
+            other => panic!("expected Auth error containing {needle:?}, got {other:?}"),
+        }
+    }
+
+    async fn exchange_fixture(id_token: IdTok<'_>) -> AuthClient {
         let (priv_pem, jwk) = make_rsa();
         let server = Box::leak(Box::new(MockServer::start().await));
         Mock::given(method("GET"))
@@ -587,13 +605,27 @@ mod tests {
             "token_type": "Bearer",
             "expires_in": 300,
         });
-        if let Some(nonce) = id_token_nonce {
-            body["id_token"] = json!(sign_id_token(
-                &priv_pem,
-                &endpoints.issuer(),
-                "it-client",
-                nonce
-            ));
+        match id_token {
+            IdTok::Absent => {}
+            IdTok::Nonce(nonce) => {
+                body["id_token"] = json!(sign_id_token(
+                    &priv_pem,
+                    &endpoints.issuer(),
+                    "it-client",
+                    nonce
+                ));
+            }
+            IdTok::NoNonceClaim => {
+                let mut h = Header::new(Algorithm::RS256);
+                h.kid = Some("test-kid".into());
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                let claims = json!({"sub":"u","iss":endpoints.issuer(),"aud":"it-client","exp":now+300,"iat":now});
+                let ek = EncodingKey::from_rsa_pem(priv_pem.as_bytes()).unwrap();
+                body["id_token"] = json!(encode(&h, &claims, &ek).unwrap());
+            }
         }
         Mock::given(method("POST"))
             .and(path("/realms/it-realm/protocol/openid-connect/token"))
@@ -607,25 +639,34 @@ mod tests {
 
     #[tokio::test]
     async fn exchange_code_rejects_mismatched_nonce_end_to_end() {
-        let auth = exchange_fixture(Some("attacker-nonce")).await;
-        assert!(matches!(
+        let auth = exchange_fixture(IdTok::Nonce("attacker-nonce")).await;
+        assert_auth_err(
             auth.exchange_code("c", "v", Some("expected-nonce")).await,
-            Err(KeycloakError::Auth { .. })
-        ));
+            "unexpected nonce",
+        );
     }
 
     #[tokio::test]
     async fn exchange_code_rejects_missing_id_token_when_nonce_expected() {
-        let auth = exchange_fixture(None).await;
-        assert!(matches!(
+        let auth = exchange_fixture(IdTok::Absent).await;
+        assert_auth_err(
             auth.exchange_code("c", "v", Some("expected-nonce")).await,
-            Err(KeycloakError::Auth { .. })
-        ));
+            "missing id_token",
+        );
+    }
+
+    #[tokio::test]
+    async fn exchange_code_rejects_id_token_without_nonce_claim() {
+        let auth = exchange_fixture(IdTok::NoNonceClaim).await;
+        assert_auth_err(
+            auth.exchange_code("c", "v", Some("expected-nonce")).await,
+            "unexpected nonce",
+        );
     }
 
     #[tokio::test]
     async fn exchange_code_accepts_matching_nonce_end_to_end() {
-        let auth = exchange_fixture(Some("expected-nonce")).await;
+        let auth = exchange_fixture(IdTok::Nonce("expected-nonce")).await;
         let ts = auth
             .exchange_code("c", "v", Some("expected-nonce"))
             .await

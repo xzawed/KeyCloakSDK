@@ -133,6 +133,16 @@ class AuthClientNonceTest {
     assertTrue(e.getMessage().contains("missing id_token"), e.getMessage());
   }
 
+  // 서명은 유효하지만 nonce 클레임이 **없는** id_token — 「있고 다를 때만 거부」로 약해지면 통과한다
+  // (독립 레그 지목). OIDC Core §3.1.3.7 은 요청에 nonce 를 보냈으면 클레임이 있어야 한다고 요구한다.
+  @Test void exchangeCode_rejectsIdTokenWithoutNonceClaim() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    AuthClient client = clientServingToken(key, signIdToken(key, ISSUER, "app", null));
+    KeycloakAuthException e = assertThrows(KeycloakAuthException.class,
+        () -> client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, "expected-nonce"));
+    assertTrue(e.getMessage().contains("unexpected nonce"), e.getMessage());
+  }
+
   @Test void exchangeCode_acceptsMatchingNonce_endToEnd() throws Exception {
     RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
     String idToken = signIdToken(key, ISSUER, "app", "expected-nonce");
