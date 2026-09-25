@@ -1546,9 +1546,9 @@ assert_eq "$sd_skew_expect" "$(sd_norm "$(sd_skew python)")" "[음성대조·양
 #     테스트가 먼저 빨개지므로 축은 「그 테스트가 사라지지 않았는가」만 지키면 된다.
 #     소스 철자를 겨누면 **동작이 같은 리팩터에도 빨개진다**(실측: rust 의
 #     `serde_json::Value::as_str` → `|v| v.as_str()` 로 바꿨을 뿐인데 걸렸다).
-#   · 그런 테스트가 **없는** 셋(go·java·kotlin)은 집행 기제 자체를 겨눈다 — JVM 둘은 우리
-#     코드가 아니라 Nimbus `TokenResponse.parse` 가 타입을 강제하므로 **그 호출의 존재**가
-#     앵커다. (테스트를 붙이면 그때 이쪽으로 옮긴다 — node 가 그렇게 옮겨 왔다.)
+#   · **이제 아홉 전부 행위 테스트 앵커다**(2026-09-25). 그런 테스트가 없던 넷 중 node 는 #579,
+#     go·java·kotlin 은 #581 이 세웠다 — 그 전에는 집행 기제(소스 조각·호출의 존재)를 겨눴다.
+#     `hook` 종류는 **다시 필요해지면** 쓰라고 루프에 남겨 둔다.
 # ⚠️ **node 는 #579 로 옮겨 왔다.** 소스 조각 `typeof at !== 'string'` 을 앵커로 쓰던 동안, 그 검사를
 #   `at === undefined || at === null` 로 약화해도 node 테스트 177 전부가 통과했다(변이 실측) —
 #   테스트가 「키 없음」만 봤기 때문이다. 이제 표 테스트가 그 약화를 5 건 실패로 잡는다.
@@ -1561,9 +1561,11 @@ sd_token_type_anchor() { # $1=언어 → `종류|파일|문자열` (종류: cana
     php)    printf '%s\n' 'canary|php/tests/Unit/Token/TokenSetTest.php|public function testNonStringAccessTokenIsRejected(' ;;
     dotnet) printf '%s\n' 'canary|dotnet/tests/Xzawed.Keycloak.Sdk.Tests/AuthClientTests.cs|public async Task ClientCredentialsToken_rejects_non_string_access_token(' ;;
     node)   printf '%s\n' 'canary|node/test/unit/tokens.test.ts|access_token 이 비문자열·빈 문자열이면 throw' ;;
-    go)     printf '%s\n' 'hook|go/admin.go|jwt.AccessToken == ""' ;;
-    java)   printf '%s\n' 'hook|java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java|TokenResponse.parse(' ;;
-    kotlin) printf '%s\n' 'hook|kotlin/src/main/kotlin/io/github/xzawed/keycloak/auth.kt|TokenResponse.parse(' ;;
+    # go·java·kotlin 은 거절이 라이브러리(x/oauth2 · Nimbus) 몫이다 — #581 이 그 **행동**을 표 테스트로 고정했다.
+    # 그 전에는 호출의 존재(`TokenResponse.parse(`)만 봤고, 라이브러리가 관용해지면 아무도 몰랐다.
+    go)     printf '%s\n' 'canary|go/auth_test.go|func TestClientCredentialsRejectsNonStringAccessToken(' ;;
+    java)   printf '%s\n' 'canary|java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/AuthClientTokenTypeTest.java|void clientCredentialsToken_rejectsNonStringOrEmptyAccessToken(' ;;
+    kotlin) printf '%s\n' 'canary|kotlin/src/test/kotlin/io/github/xzawed/keycloak/AuthClientTest.kt|fun `clientCredentialsToken rejects non-string or empty access_token`(' ;;
   esac
 }
 
