@@ -226,6 +226,34 @@ sd_code_axis "clock skew" sd_skew
 # (#400 의 결함 그대로) 초록이었다 — probe.sh 실측 java·kotlin 둘 다 SILENT(2026-09-25). 같은
 # 이유로 `sed | head -1` 은 주석 속 옛 선언을 먼저 읽는다. 꼬리 주석은 못 거른다(줄 시작 주석만).
 sd_code_lines() { grep -vE '^[[:space:]]*(//|#|\*|/\*|--)' "$1" 2>/dev/null || true; }
+
+# 훅과 카나리아의 판정 — **주석을 뺀 줄**에서 센다. **훅은 ≥ 1, 카나리아는 == 1.**
+# 카나리아가 2 회 이상이면 형제 테스트나 사본이 그 자리를 대신 채운다(go `assertMasked` 8 회 ·
+# node `not.toContain(req.codeVerifier)` 3 회가 그 실물이었다). 0 회면 그 경로의 행위 테스트가 없다.
+# ⚠️ **카나리아는 앞 글자가 식별자·`.` 가 아닐 때만** 센다(`sd_code_count`) — 그렇지 않으면
+# `xit('…'` 가 카나리아 `it('…'` 를 담아 **건너뛴 테스트**가 1 회로 세어진다(독립 레그 지목 · 재현).
+# ⚠️ **훅은 그 경계를 쓰지 않는다**(`sd_code_count_raw`) — 구조 표지는 흔히 멤버 접근이다
+# (`url.searchParams.set('nonce'` · `oauth2.SetAuthURLParam("nonce"`). 경계를 걸면 앞의 `.` 때문에
+# 0 이 되어 required 체크가 정당한 코드를 막는다(실측: node 둘 · go 하나가 0 이었다).
+# 값은 `ENVIRON` 으로 넘긴다 — `awk -v` 는 `\"` 를 이스케이프로 먹는다(ruby 훅 `code_verifier=\"***\"`).
+# ⚠️ 잔여(줄 단위라 못 본다): 다음 줄의 skip 표지(`#[ignore]`·`@Disabled`·skip 데코레이터) ·
+# `/* … */` 안쪽의 맨 줄 · 꼬리 주석 속 훅 사본. 훅은 구조 확인이고 동작은 카나리아의 테스트가 본다.
+sd_code_count_raw() { sd_code_lines "$1" | grep -cF -- "$2" || true; }
+sd_code_count() {
+  sd_code_lines "$1" | SD_NEEDLE="$2" awk '
+    BEGIN { n = ENVIRON["SD_NEEDLE"]; c = 0 }
+    {
+      s = $0; off = 0
+      while ((i = index(s, n)) > 0) {
+        p = (off + i > 1) ? substr($0, off + i - 1, 1) : ""
+        if (p !~ /[A-Za-z0-9_.]/) c++
+        off += i; s = substr(s, i + 1)
+      }
+    }
+    END { print c }'
+}
+sd_hook_ok() { _sn="$(sd_code_count_raw "$1" "$2")"; [ "$_sn" -ge 1 ] && printf ok || printf MISSING; }
+sd_canary_ok() { _sn="$(sd_code_count "$1" "$2")"; [ "$_sn" = 1 ] && printf ok || printf 'COUNT=%s' "$_sn"; }
 sd_jwks_cap() { # $1=언어 → 상한 리터럴(정규화 전)
   case "$1" in
     go)   sd_code_lines "$ROOT/go/jwt.go" | sed -n 's/.*jwksMaxBytes *= *\([0-9_]*\).*/\1/p' | head -1 ;;
@@ -444,6 +472,42 @@ sd_nonce_verify() {
     kotlin) printf '%s' 'unexpected nonce' ;;
   esac
 }
+# 행위 카나리아 — **교환 경로를 통과해** nonce 거부를 단언하는 테스트(`파일|선언`, 한 줄에 하나).
+# ⚠️ 위 두 표지는 **이름·문구의 존재**라 검증 **호출**을 지워도 선언이 남아 참이다 — java 에서
+# `exchangeCode` 안의 호출을 지우니 이 축도, 그 언어의 단위 테스트도 전부 통과했다(probe.sh
+# SILENT 2026-09-25 · rust 도 같았다 → #577 이 교환 경로 테스트를 세웠다). 그래서 그 경로를
+# **실행으로** 치는 테스트가 살아 있는지를 여기서 본다.
+# node 만 거부를 openid-client 에 맡긴다 — 우리 몫은 `expectedNonce` 전달이고 그 배선 테스트를 본다.
+sd_nonce_canary() {
+  case "$1" in
+    java)   printf '%s\n' \
+              'java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/AuthClientNonceTest.java|void exchangeCode_rejectsMismatchedNonce_endToEnd(' \
+              'java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/AuthClientNonceTest.java|void exchangeCode_rejectsMissingIdToken_whenNonceExpected(' \
+              'java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/AuthClientNonceTest.java|void exchangeCode_rejectsIdTokenWithoutNonceClaim(' ;;
+    python) printf '%s\n' \
+              'python/tests/unit/test_auth.py|def test_exchange_code_rejects_mismatched_nonce(' \
+              'python/tests/unit/test_auth.py|def test_exchange_code_rejects_missing_id_token_when_nonce_expected(' \
+              'python/tests/unit/aio/test_auth.py|async def test_exchange_code_rejects_mismatched_nonce(' \
+              'python/tests/unit/aio/test_auth.py|async def test_exchange_code_rejects_missing_id_token_when_nonce_expected(' ;;
+    node)   printf '%s\n' "node/test/unit/auth.test.ts|it('nonce를 넘기면 expectedNonce로 전달한다" ;;
+    go)     printf '%s\n' 'go/auth_test.go|func TestExchangeCodeNonceValidation(' ;;
+    dotnet) printf '%s\n' \
+              'dotnet/tests/Xzawed.Keycloak.Sdk.Tests/AuthClientTests.cs|public async Task ExchangeCode_nonce_mismatch_throws(' \
+              'dotnet/tests/Xzawed.Keycloak.Sdk.Tests/AuthClientTests.cs|public async Task ExchangeCode_missing_idtoken_with_nonce_throws(' ;;
+    php)    printf '%s\n' \
+              'php/tests/Unit/AuthClientNonceTest.php|public function testExchangeCodeRejectsMismatchedNonce(' \
+              'php/tests/Unit/AuthClientNonceTest.php|public function testExchangeCodeRejectsMissingIdTokenWhenNonceExpected(' ;;
+    rust)   printf '%s\n' \
+              'rust/src/auth.rs|async fn exchange_code_rejects_mismatched_nonce_end_to_end(' \
+              'rust/src/auth.rs|async fn exchange_code_rejects_missing_id_token_when_nonce_expected(' \
+              'rust/src/auth.rs|async fn exchange_code_rejects_id_token_without_nonce_claim(' ;;
+    ruby)   printf '%s\n' \
+              'ruby/spec/unit/auth_client_spec.rb|it "rejects a mismatched nonce"' \
+              'ruby/spec/unit/auth_client_spec.rb|it "rejects a response missing the id_token when a nonce is expected"' ;;
+    kotlin) printf '%s\n' \
+              'kotlin/src/test/kotlin/io/github/xzawed/keycloak/AuthClientTest.kt|fun `exchangeCode with mismatched nonce throws KeycloakAuthException`(' ;;
+  esac
+}
 
 _nonce_seen=0
 for L in $SD_LANGS; do
@@ -453,12 +517,17 @@ for L in $SD_LANGS; do
   [ -f "$ROOT/$_nf" ] || continue
   _cp="$(sd_nonce_create "$L")"
   _vp="$(sd_nonce_verify "$L")"
-  _hasc=1; grep -qF -- "$_cp" "$ROOT/$_nf" && _hasc=0
-  assert_eq "ok" "$(ok_if "$_hasc" MISSING)" \
-    "[nonce] $L 인가 요청에 nonce 생성이 없다 — 기대: $_cp"
-  _hasv=1; grep -qF -- "$_vp" "$ROOT/$_nf" && _hasv=0
-  assert_eq "ok" "$(ok_if "$_hasv" MISSING)" \
-    "[nonce] $L exchange nonce 검증이 없다 — 기대: $_vp"
+  assert_eq "ok" "$(sd_hook_ok "$ROOT/$_nf" "$_cp")" \
+    "[nonce] $L 인가 요청에 nonce 생성이 없다(주석 밖) — 기대: $_cp"
+  assert_eq "ok" "$(sd_hook_ok "$ROOT/$_nf" "$_vp")" \
+    "[nonce] $L exchange nonce 검증이 없다(주석 밖) — 기대: $_vp"
+  while IFS='|' read -r _ntf _ntc; do
+    [ -n "$_ntc" ] || continue
+    assert_eq "ok" "$(sd_canary_ok "$ROOT/$_ntf" "$_ntc")" \
+      "[nonce] $L 교환 경로의 nonce 거부를 실행으로 단언하는 테스트가 주석 밖에 정확히 하나가 아니다 — 기대: $_ntc ($_ntf)"
+  done <<EOF
+$(sd_nonce_canary "$L")
+EOF
   _nonce_seen=$((_nonce_seen + 1))
 done
 assert_eq "9" "$_nonce_seen" "[nonce] 훑은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
@@ -620,29 +689,8 @@ sd_mask_canary() {
   esac
 }
 
-# 훅과 카나리아의 판정 — **주석을 뺀 줄**에서 센다(`sd_code_lines`). 훅은 ≥ 1, 카나리아는 == 1.
-# 카나리아가 2 회 이상이면 형제 테스트나 사본이 그 자리를 대신 채운다(go `assertMasked` 8 회 ·
-# node `not.toContain(req.codeVerifier)` 3 회가 그 실물이었다). 0 회면 그 경로의 행위 테스트가 없다.
-# ⚠️ 등장은 **앞 글자가 식별자·`.` 가 아닐 때만** 센다 — 그렇지 않으면 `xit('…'` 가 카나리아
-# `it('…'` 를 담아 **건너뛴 테스트**가 1 회로 세어진다(독립 레그 지목 · 재현). 값은 `ENVIRON` 으로
-# 넘긴다 — `awk -v` 는 `\"` 를 이스케이프로 먹어 ruby 훅 `code_verifier=\"***\"` 이 안 맞게 된다.
-# ⚠️ 잔여(줄 단위라 못 본다): 다음 줄의 skip 표지(`#[ignore]`·`@Disabled`·skip 데코레이터) ·
-# `/* … */` 안쪽의 맨 줄 · 꼬리 주석 속 훅 사본. 훅은 구조 확인이고 동작은 카나리아의 테스트가 본다.
-sd_code_count() {
-  sd_code_lines "$1" | SD_NEEDLE="$2" awk '
-    BEGIN { n = ENVIRON["SD_NEEDLE"]; c = 0 }
-    {
-      s = $0; off = 0
-      while ((i = index(s, n)) > 0) {
-        p = (off + i > 1) ? substr($0, off + i - 1, 1) : ""
-        if (p !~ /[A-Za-z0-9_.]/) c++
-        off += i; s = substr(s, i + 1)
-      }
-    }
-    END { print c }'
-}
-sd_hook_ok() { _sn="$(sd_code_count "$1" "$2")"; [ "$_sn" -ge 1 ] && printf ok || printf MISSING; }
-sd_canary_ok() { _sn="$(sd_code_count "$1" "$2")"; [ "$_sn" = 1 ] && printf ok || printf 'COUNT=%s' "$_sn"; }
+# 훅·카나리아 판정 함수(`sd_code_count`·`sd_hook_ok`·`sd_canary_ok`)는 1b 크기상한 절의
+# `sd_code_lines` 옆에 있다 — nonce 축(1b)이 이 절보다 앞에서 쓰기 때문이다.
 
 # 대조군 — 위 두 판정이 **알려진 나쁜 입력을 거부하는가**. 판정을 `grep -qF` 로 되돌려도 라이브
 # 파일로는 초록이다(그것이 이 절이 고친 판이다). 각 행은 그 모양 하나만 다르다.
@@ -655,6 +703,9 @@ printf "  it('a', () => { expect(s).not.toContain(v) })\n" > "$_mc/canary_once.t
 printf "  xit('a', () => { expect(s).not.toContain(v) })\n" > "$_mc/canary_skipped.ts"
 printf '    xit "masks tokens in inspect" do\n' > "$_mc/canary_skipped.rb"
 printf '    it "masks code_verifier=\\"***\\"" do\n' > "$_mc/hook_escaped.rb"
+printf "    url.searchParams.set('nonce', nonce)\n" > "$_mc/hook_member.ts"
+assert_eq "ok" "$(sd_hook_ok "$_mc/hook_member.ts" "searchParams.set('nonce'")" \
+  "[mask 대조군] 멤버 접근(앞 글자 .)으로 쓰인 훅을 못 읽는다 — 훅에 카나리아용 경계를 걸었나?"
 assert_eq "COUNT=0" "$(sd_canary_ok "$_mc/canary_skipped.ts" "it('a'")" \
   "[mask 대조군] xit( 로 건너뛴 테스트를 카나리아로 셌다(Grok)"
 assert_eq "COUNT=0" "$(sd_canary_ok "$_mc/canary_skipped.rb" 'it "masks tokens in inspect"')" \
