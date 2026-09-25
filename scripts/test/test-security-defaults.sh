@@ -220,18 +220,32 @@ sd_code_axis "clock skew" sd_skew
 #     직접 구현해 상한을 건다(`BoundedDocumentRetriever`). ⚠️ `MaxResponseContentBufferSize`
 #     를 쓰지 않은 이유: 그 `HttpClient` 은 `AuthClient` 와 **공유**라(`KeycloakClient.cs:10`)
 #     토큰·introspect 응답까지 함께 묶인다 — 역할이 많은 액세스 토큰은 정당하게 크다.
+#
+# ⚠️ **선언·표지는 주석을 뺀 줄에서만 찾는다(`sd_code_lines`).** 이 축의 JVM 두 줄은 토큰을
+# `grep -c` 로 셌는데 그 토큰이 바로 위 **doc 주석에도** 있어, 생성자 인자를 `0` 으로 바꿔도
+# (#400 의 결함 그대로) 초록이었다 — probe.sh 실측 java·kotlin 둘 다 SILENT(2026-09-25). 같은
+# 이유로 `sed | head -1` 은 주석 속 옛 선언을 먼저 읽는다. 꼬리 주석은 못 거른다(줄 시작 주석만).
+sd_code_lines() { grep -vE '^[[:space:]]*(//|#|\*|/\*|--)' "$1" 2>/dev/null || true; }
 sd_jwks_cap() { # $1=언어 → 상한 리터럴(정규화 전)
   case "$1" in
-    go)   sed -n 's/.*jwksMaxBytes *= *\([0-9_]*\).*/\1/p' "$ROOT/go/jwt.go" | head -1 ;;
-    rust) sed -n 's/.*JWKS_MAX_BYTES: *usize *= *\([0-9_]*\).*/\1/p' "$ROOT/rust/src/jwks.rs" | head -1 ;;
-    php)  sed -n 's/.*const JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' "$ROOT/php/src/Jwks/JwksStore.php" | head -1 ;;
-    ruby) sed -n 's/.*JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' "$ROOT/ruby/lib/keycloak_sdk/jwks_store.rb" | head -1 ;;
-    node) sed -n 's/.*JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' "$ROOT/node/src/jwt.ts" | head -1 ;;
-    dotnet) sed -n 's/.*const int MaxBytes *= *\([0-9_]*\).*/\1/p' \
-              "$ROOT/dotnet/src/Xzawed.Keycloak.Sdk/BoundedDocumentRetriever.cs" | head -1 ;;
-    python) sed -n 's/.*JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' \
-              "$ROOT/python/src/keycloak_sdk/_internal/jwks_fetch.py" | head -1 ;;
+    go)   sd_code_lines "$ROOT/go/jwt.go" | sed -n 's/.*jwksMaxBytes *= *\([0-9_]*\).*/\1/p' | head -1 ;;
+    rust) sd_code_lines "$ROOT/rust/src/jwks.rs" | sed -n 's/.*JWKS_MAX_BYTES: *usize *= *\([0-9_]*\).*/\1/p' | head -1 ;;
+    php)  sd_code_lines "$ROOT/php/src/Jwks/JwksStore.php" | sed -n 's/.*const JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' | head -1 ;;
+    ruby) sd_code_lines "$ROOT/ruby/lib/keycloak_sdk/jwks_store.rb" | sed -n 's/.*JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' | head -1 ;;
+    node) sd_code_lines "$ROOT/node/src/jwt.ts" | sed -n 's/.*JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' | head -1 ;;
+    dotnet) sd_code_lines "$ROOT/dotnet/src/Xzawed.Keycloak.Sdk/BoundedDocumentRetriever.cs" \
+              | sed -n 's/.*const int MaxBytes *= *\([0-9_]*\).*/\1/p' | head -1 ;;
+    python) sd_code_lines "$ROOT/python/src/keycloak_sdk/_internal/jwks_fetch.py" \
+              | sed -n 's/.*JWKS_MAX_BYTES *= *\([0-9_]*\).*/\1/p' | head -1 ;;
   esac
+}
+# JVM — 상수가 **상위 생성자의 마지막 인자 그 자체**인가(참조의 존재가 아니라 쓰임의 자리).
+# ⚠️ 독립 레그가 「토큰이 괄호 안 어딘가」 판을 둘로 뚫었다(재현): `…LIMIT * 100` 과
+# `0 /* JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT */` — 그래서 쉼표 바로 뒤, 닫는 괄호 바로 앞으로 못박는다.
+# 대가: 인자를 여러 줄로 접으면 0 이 되어 빨갛다 — 그 PR 자신만 막는 시끄러운 방향이다.
+sd_jvm_cap_hits() {
+  sd_code_lines "$1" \
+    | grep -cE '(super|DefaultResourceRetriever)[(][^)]*,[[:space:]]*JWKSourceBuilder[.]DEFAULT_HTTP_SIZE_LIMIT[[:space:]]*[)]' || true
 }
 
 SD_CAP_LANGS='go rust php ruby node dotnet python'
@@ -266,10 +280,32 @@ for _f in \
   "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/NoRedirectResourceRetriever.java" \
   "kotlin/src/main/kotlin/io/github/xzawed/keycloak/NoRedirectResourceRetriever.kt"
 do
-  _hits="$(grep -c 'DEFAULT_HTTP_SIZE_LIMIT' "$ROOT/$_f" 2>/dev/null || printf '0')"
+  _hits="$(sd_jvm_cap_hits "$ROOT/$_f")"
   assert_eq "ok" "$(ok_if "$([ "$_hits" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
-    "[JWKS 크기상한] $_f 가 JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT 을 더 이상 참조하지 않는다"
+    "[JWKS 크기상한] $_f 가 상위 생성자에 JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT 을 넘기지 않는다"
 done
+
+# 대조군 — 위 두 판정이 **주석 속 사본을 거부하는가**. 라이브 파일만 보면 판정을 `grep -c` 로
+# 되돌려도 초록이다(그것이 바로 이 절이 고친 판이다). 각 행은 **그 모양 하나만** 다르다.
+_cap_nc="$(mktemp -d)"
+printf '  /** {@link JWKSourceBuilder#DEFAULT_HTTP_SIZE_LIMIT} */\n  super(connectTimeoutMs, readTimeoutMs, 0);\n' > "$_cap_nc/Neg.java"
+printf '  super(connectTimeoutMs, readTimeoutMs, JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT);\n' > "$_cap_nc/Pos.java"
+printf ') : DefaultResourceRetriever(connectTimeoutMs, readTimeoutMs, JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT) {\n' > "$_cap_nc/Pos.kt"
+printf '  super(connectTimeoutMs, readTimeoutMs, JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT * 100);\n' > "$_cap_nc/Mul.java"
+printf ') : DefaultResourceRetriever(connectTimeoutMs, readTimeoutMs, 0 /* JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT */) {\n' > "$_cap_nc/Inl.kt"
+assert_eq "0" "$(sd_jvm_cap_hits "$_cap_nc/Neg.java")" \
+  "[JWKS 크기상한 대조군] 주석에만 있는 상수를 인자로 셌다 — 인자가 0 이어도 통과한다"
+assert_eq "0" "$(sd_jvm_cap_hits "$_cap_nc/Mul.java")" \
+  "[JWKS 크기상한 대조군] 상수를 곱한 인자(…LIMIT * 100)를 상한 그대로로 셌다(Grok)"
+assert_eq "0" "$(sd_jvm_cap_hits "$_cap_nc/Inl.kt")" \
+  "[JWKS 크기상한 대조군] 인자 안 블록 주석 속 상수를 셌다 — 실제 인자는 0 이다(Grok)"
+assert_eq "1" "$(sd_jvm_cap_hits "$_cap_nc/Pos.java")" "[JWKS 크기상한 대조군] java 의 super(...) 인자 모양을 못 본다"
+assert_eq "1" "$(sd_jvm_cap_hits "$_cap_nc/Pos.kt")" "[JWKS 크기상한 대조군] kotlin 의 상위 생성자 인자 모양을 못 본다"
+mkdir -p "$_cap_nc/go"
+printf '// jwksMaxBytes = 51200 (Nimbus)\nconst jwksMaxBytes = 999999\n' > "$_cap_nc/go/jwt.go"
+assert_eq "999999" "$(ROOT="$_cap_nc" sd_jwks_cap go)" \
+  "[JWKS 크기상한 대조군] 주석 속 옛 선언을 값으로 읽었다 — 실제 선언이 바뀌어도 모른다"
+rm -rf "$_cap_nc"
 
 # ---------------------------------------------------------------------------
 # 빈 키셋 거부 — 자체 JWKS 스토어를 가진 넷
@@ -317,7 +353,7 @@ sd_empty_seen=0
 for L in $SD_EMPTY_LANGS; do
   _r="$(sd_empty_reject "$L")"
   _src="${_r%%	*}"; _mark="${_r##*	}"
-  _n="$(grep -c -F -- "$_mark" "$ROOT/$_src" 2>/dev/null || printf '0')"
+  _n="$(sd_code_lines "$ROOT/$_src" | grep -c -F -- "$_mark" || true)"
   assert_eq "ok" "$(ok_if "$([ "$_n" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
     "[빈 키셋] $L 이 빈 JWKS 를 거부하지 않는다 — $_src 에 '$_mark' 가 없다(go #380 의 나머지 절반)"
   _t="$(sd_empty_test "$L")"
@@ -1061,6 +1097,64 @@ while IFS= read -r _2nd_line; do
     "[2차 정의 자리] $_2nd_where 의 $_2nd_fam 리터럴이 1절이 합의시킨 값과 다르다 — 한 자리만 갈려도 그 경로에서만 동작이 달라진다"
 done < "$_2nd_tmp"
 rm -f "$_2nd_tmp"
+
+# --- 파생 반쪽 — 손 표 **밖**의 둘째 상한 자리 -----------------------------------
+#
+# 1b 의 손 표(`sd_jwks_cap`)는 언어당 **한 파일 한 줄**만 읽는다 — 위 3절이 JWKS 재조회·clock skew 에서 고친 (B) 부류
+# (「기존 언어에 새 자리가 생겼다」)와 같은 모양이다. 그래서 SDK 소스 전체에서 상한 이름에 숫자를
+# **대입하는** 자리를 찾아 합의값과 대조한다(「어디에 적히든 값은 같다」).
+# **오탐 실측(2026-09-25)**: 이 이름이 처음 생긴 `872678f`(2026-09-08)부터 `main` 122 커밋에서
+# 합의값과 다른 대입 **0 건**. 히트 수는 1→2→4→5→6 으로만 늘었고 `55a27cb`(2026-09-12) 이후 6 이다 —
+# 창 최저값을 하한으로 박는다(#443 의 판정).
+# ⚠️ **dotnet 은 이 반쪽이 못 본다** — 이름이 맨 `MaxBytes` 라 넣으면 다른 용도의 같은 이름이 required
+# 체크를 빨갛게 한다. dotnet 의 둘째 자리는 알려진 거짓음성이다(모르는 것은 안 본다 — 3절과 같은 판정).
+# ⚠️ **우변은 맨 리터럴이어야 한다** — 앞 정수만 읽으면 `51200 << 10` 이 51200 으로 보이고, `=` 만
+# 보면 `*= 100` 을 못 본다(독립 레그 지목 · 재현). 그래서 대입을 **통째로** 뽑아 맨 리터럴이면 값을,
+# 아니면 `NONLITERAL:<원문>` 을 내고 그것은 합의값과 달라 운다. `50 * 1024` 같은 정당한 식도
+# 울지만 그 변경을 한 PR 만 막는 시끄러운 방향이다. 꼬리 주석(단어 앞 `//`·`#`)은 먼저 벗긴다 —
+# `= 51_200  # … = 0` 의 주석 속 대입을 값으로 읽는 오탐을 레그가 함께 짚었다.
+SD_CAP_TOK='(JWKS_MAX_BYTES|[Jj]wksMaxBytes)'
+SD_CAP_TYPE='([[:space:]]*:[[:space:]]*[A-Za-z0-9_]+)?'
+sd_cap_scan() { # stdin=파일 목록(ROOT 기준 상대 또는 절대) → 대입 한 건당 한 줄: 값(`_` 제거) | NONLITERAL:<원문>
+  while IFS= read -r _f; do
+    [ -n "$_f" ] || continue
+    case "$_f" in /*) ;; *) _f="$ROOT/$_f" ;; esac
+    sd_code_lines "$_f" | sed -E 's/[[:space:]](\/\/|#).*$//'
+  done \
+    | grep -oE "(^|[^A-Za-z0-9_])${SD_CAP_TOK}${SD_CAP_TYPE}[[:space:]]*([*+/%-]|<<|>>)?=([^=>][^;]*|$)" \
+    | sed -E 's/^[^A-Za-z0-9_]//; s/[[:space:]]+$//' \
+    | while IFS= read -r _a; do
+        _v="$(printf '%s' "$_a" | sed -nE "s/^${SD_CAP_TOK}${SD_CAP_TYPE}[[:space:]]*=[[:space:]]*([0-9][0-9_]*)\$/\\3/p")"
+        if [ -n "$_v" ]; then printf '%s\n' "$_v" | tr -d '_'; else printf 'NONLITERAL:%s\n' "$_a"; fi
+      done || true
+}
+# 대조군 — 같은 함수를 태운다. 각 행은 **그 모양 하나만** 다르다.
+_cap_sc="$(mktemp -d)"
+printf 'export const JWKS_MAX_BYTES = 1_000_000\n' > "$_cap_sc/pos.ts"
+printf '    if (total > JWKS_MAX_BYTES) {\n  x = JWKS_MAX_BYTES + 1\n// JWKS_MAX_BYTES = 1\nconst jwksMaxBytesLimit = 5\nconst maxJwksMaxBytes = 5\n  if (JWKS_MAX_BYTES == n) {}\n  h = { JWKS_MAX_BYTES => 1 }\n' > "$_cap_sc/neg.ts"
+printf 'const jwksMaxBytes = 51200 << 10\n' > "$_cap_sc/shift.go"
+printf 'JWKS_MAX_BYTES *= 100\n' > "$_cap_sc/compound.py"
+printf 'JWKS_MAX_BYTES = 51_200  # never set JWKS_MAX_BYTES = 0\nconst JWKS_MAX_BYTES: usize = 51200; // Nimbus\n' > "$_cap_sc/tail.rb"
+assert_eq "1000000" "$(printf '%s\n' "$_cap_sc/pos.ts" | sd_cap_scan)" \
+  "[JWKS 크기상한·파생 대조군] 다른 파일의 둘째 선언을 못 본다"
+assert_eq "" "$(printf '%s\n' "$_cap_sc/neg.ts" | sd_cap_scan)" \
+  "[JWKS 크기상한·파생 대조군] 사용처·주석·다른 이름·비교를 대입 자리로 읽는다(required 체크가 정당한 변경을 막는다)"
+assert_eq "NONLITERAL:jwksMaxBytes = 51200 << 10" "$(printf '%s\n' "$_cap_sc/shift.go" | sd_cap_scan)" \
+  "[JWKS 크기상한·파생 대조군] 리터럴 뒤의 연산(<< 10)을 버리고 앞 정수만 읽는다(Grok)"
+assert_eq "NONLITERAL:JWKS_MAX_BYTES *= 100" "$(printf '%s\n' "$_cap_sc/compound.py" | sd_cap_scan)" \
+  "[JWKS 크기상한·파생 대조군] 복합 대입(*=)을 못 본다(Grok)"
+assert_eq "51200 51200" "$(printf '%s\n' "$_cap_sc/tail.rb" | sd_cap_scan | tr '\n' ' ' | sed 's/ $//')" \
+  "[JWKS 크기상한·파생 대조군] 꼬리 주석 속 대입을 값으로 읽었거나 타입 표기·세미콜론 모양을 못 읽는다(Grok)"
+rm -rf "$_cap_sc"
+
+_cap_vals="$(printf '%s\n' "$SD_SRC" | sd_cap_scan)"
+_cap_n="$(printf '%s\n' "$_cap_vals" | grep -c . || true)"
+SD_CAP_SCAN_MIN=6
+assert_eq "ok" "$(ok_if "$([ "$_cap_n" -ge "$SD_CAP_SCAN_MIN" ] && printf 0 || printf 1)" "$_cap_n")" \
+  "[JWKS 크기상한·파생] 상한 대입 자리를 ${SD_CAP_SCAN_MIN}개 미만 찾았다 — 정규식이나 소스 목록이 깨졌나?"
+_cap_bad="$(printf '%s\n' "$_cap_vals" | grep . | grep -v -x -F "$sd_cap_expect" | tr '\n' ' ' || true)"
+assert_eq "" "$_cap_bad" \
+  "[JWKS 크기상한·파생] 손 표 밖에서 합의값($sd_cap_expect)과 다른 상한을 대입한다: $_cap_bad"
 
 # ---------------------------------------------------------------------------
 # 4) 소유자 문서 축 — 이 값을 **선언하는** 두 문서
