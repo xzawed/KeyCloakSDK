@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `197`(2026-09-25 기준 열림 114 · 닫힘 83)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `197`(2026-09-25 기준 열림 113 · 닫힘 84)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -122,7 +122,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. **`token-type-library-behaviour-unpinned` [M/S]** · **`java-short-code-verifier-leaks-iae` [M/S]** — 이 세션이 측정 중에 낸 두 신규. 둘 다 작다. 후자는 **먼저 아홉을 잰다**.
+1. **`java-short-code-verifier-leaks-iae` [M/S]** — 이 세션이 측정 중에 낸 신규. 작다. **먼저 아홉을 잰다**(짧은 verifier 를 받은 교환이 SDK 타입으로 실패하는가). 짝 신규 `token-type-library-behaviour-unpinned` 는 #581 이 닫았다 — 그 뒤 토큰타입 축의 go·java·kotlin 앵커를 **훅에서 카나리아로** 옮길 수 있다.
 2. **`guard-detection-surface-hand-narrowed` [H/M]** — 여섯 축 앵커는 비공허해졌다(#575·#578·#580·#BTPR). 남은 것은 「새 자리」를 트리에서 파생할 술어다 — **설계부터**(그 항목의 ⏸).
 3. `integration-coverage-never-measured` [H/L] — 크다. 설계부터.
 4. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다.
@@ -599,7 +599,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 59건 (열림 48)
+## D. 원장 밖 — 59건 (열림 47)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -708,7 +708,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `dependency-license-claims-unverified` **[L/M]** CLAUDE.md가 아홉 스택 전부의 라이선스 호환을 단언하는데 CI에 라이선스 검사가 0건 · `CLAUDE.md:150`
 - [ ] `repo-topics-omit-four-languages` **[L/S]** 저장소 topics가 아홉 언어 중 다섯만 담고 20개 한도를 소진했다 — 그리고 topics는 SSOT 밖이다 · `.github/security-config.json:2`
 - [ ] `java-short-code-verifier-leaks-iae` **[M/S · 신규 2026-09-25]** java `exchangeCode` 에 43 자 미만 verifier 를 넘기면 Nimbus `CodeVerifier` 의 `IllegalArgumentException` 이 SDK 타입으로 번역되지 않고 샌다(§4) — #577 테스트를 쓰다 실측(`"v"` → IAE). 공백 scope 가 같은 모양으로 판정돼 고쳐진 전례가 있다. ⚠️ **먼저 아홉을 잰다** — 자매 여덟의 짧은 verifier 처리는 미측정 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:163`
-- [ ] `token-type-library-behaviour-unpinned` **[M/S · 신규 2026-09-25]** go·java·kotlin 은 비문자열 `access_token` 거절을 라이브러리(x/oauth2 · Nimbus `TokenResponse.parse`)에 맡기는데 그 **행동을 고정하는 테스트가 0** 이다 — 교차언어 가드는 호출의 존재만 본다. 라이브러리가 관용해지면(Duende 가 실제로 그랬다) 조용히 빠진다. node 가 같은 자리였고 #579 가 표 테스트로 닫았다 · `scripts/test/test-security-defaults.sh` 토큰타입 축
+- [x] `token-type-library-behaviour-unpinned` **[M/S · 신규·닫힘 2026-09-25 #581]** go·java·kotlin 이 비문자열 `access_token` 거절을 라이브러리(x/oauth2 · Nimbus)에 맡기면서 그 행동을 고정한 테스트가 0 이었다 — go 는 전제부터 미측정(실측: 여섯 다 `*AuthError`). 셋 다 표 테스트로 고정, 파싱 실패를 삼키는 변이에 go·java CAUGHT(kotlin 미측정) · `go/auth_test.go`
 
 ---
 
