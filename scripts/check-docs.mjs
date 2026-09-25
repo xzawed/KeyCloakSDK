@@ -767,8 +767,50 @@ const COVERAGE = {
 // 문서 텍스트에서 "게이트"/"gate" 낱말이 등장하는 첫 줄을 찾아, 그 낱말 뒤에 나오는 첫 두
 // 숫자를 [라인%, 브랜치%] 주장으로 삼는다 — 세 소스 모두 라인 임계값을 브랜치보다 먼저
 // 선언하므로(java pom의 LINE limit, kotlin의 LINE rule, node의 `lines:`) 순서가 맞는다.
+// ⚠️ **주장·헤딩은 HTML 주석을 벗긴 뒤에 읽는다** — 주석은 주입되지도 렌더되지도 않으므로 주장이
+// 아니다. 이 헬퍼를 쓰는 셋(게이트·매트릭스 주장 · 앵커 대상 헤딩)은 모두 「문서에서 무엇을 찾는」
+// 추출이라, 주석 속 사본이 첫 매치를 가로채면 드리프트를 가리거나(거짓 초록) 맞는 본문을 빨갛게
+// 했다(거짓 빨강). 셋 다 자가테스트로 실측했다. ⚠️ doc-guard 앵커 스캐너는 쓰지 말 것 — 앵커가
+// 곧 주석이다.
+// ⚠️ **문서 전체에 `/<!--[\s\S]*?-->/` 를 걸지 말 것**(첫 판이 그랬다 — 독립 레그가 짚고 실측이
+// 확인). 코드 스팬 `` `<!--` `` 에서 다음 줄의 `-->` 까지를 삼켜 그 사이 주장이 사라지면 게이트 검사가
+// **조용히 건너뛰고**(fail-open), 사이에 낀 펜스 표지가 지워지면 펜스 안 헤딩이 앵커로 잡힌다.
+// 블록 주석은 CommonMark 규칙 그대로인 `loadedText`(줄 머리 `<!--` · 펜스 안은 코드)에 맡기고,
+// 남은 것은 **같은 줄에서 닫히는** 주석뿐이라 줄마다 따로 벗긴다.
+function withoutHtmlComments(text) {
+  return loadedText(text).split('\n').map(stripClosedComments).join('\n')
+}
+
+// 한 줄 안에서 닫히는 `<!-- … -->` 만 벗긴다 — 같은 줄에서 안 닫히는 `<!--` 는 그대로 둔다(줄을 넘지
+// 않는다). 정규식이 아니라 indexOf 인 것은 의도다: 이 스크립트는 HTML 을 살균해 내보내지 않는데,
+// 주석을 지우는 정규식은 CodeQL 이 보안 살균기로 읽어 high 경고를 낸다(의미는 같다).
+function stripClosedComments(line) {
+  let out = ''
+  let from = 0
+  for (;;) {
+    const open = line.indexOf('<!--', from)
+    const close = open < 0 ? -1 : line.indexOf('-->', open + 4)
+    if (close < 0) return out + line.slice(from)
+    out += line.slice(from, open)
+    from = close + 3
+  }
+}
+
+// 줄 머리의 `<!--` 가 끝내 닫히지 않으면 그 뒤 문서 전부가 렌더·주입에서 사라진다 — 그 안의 주장·
+// 헤딩·링크를 보는 검사는 전부 **조용히** 건너뛴다(주장 없음 = 대조할 것 없음). 문서마다 따로 잡는다.
+function checkUnclosedComment(rel, text) {
+  const at = scanLoaded(text).unclosedAt
+  if (at) {
+    ;(STRICT ? errors : warnings).push(
+      `${rel}:${at} 닫히지 않은 HTML 주석 — 그 뒤 문서 전부가 렌더·주입에서 사라지고, 그 안을 보는 검사는 조용히 건너뛴다`,
+    )
+  }
+}
+
+// 실측(#586): 예산 판정 주석의 「게이트 85% → 41」 이 kotlin 게이트를 85/41 로 읽혀 빨갛게 했고,
+// 반대로 본문을 드리프트시킨 뒤 앞에 `<!-- gate 90 85 -->` 를 두면 통과했다.
 function firstGateClaim(text) {
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of withoutHtmlComments(text).split(/\r?\n/)) {
     const idx = line.search(/게이트|gate/i)
     if (idx < 0) continue
     const nums = [...line.slice(idx).matchAll(/\d{1,3}/g)].map((m) => m[0])
@@ -878,8 +920,9 @@ function matrixAxis(wfRel, axis) {
 // 문서에서 「CI runs …」 뒤의 **버전 토큰 연속열만** 탐욕 소비하고 첫 비버전 토큰에서 멈춘다.
 // ⚠️ 줄끝까지 읽으면 java 가 `major ≤ 61` 의 61 을 먹고, 첫 마침표에서 끊으면 ruby 가
 // `3.2` 의 점에 걸려 `["3"]` 이 된다(둘 다 실측). 구분자는 `,`·`·`·`and`·`&`·`+` 를 허용한다.
+// ⚠️ 첫 매치 줄 추출이라 주석 속 「CI runs 17·21·25」 가 본문 드리프트를 가렸다(`withoutHtmlComments`).
 function matrixClaim(text) {
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of withoutHtmlComments(text).split(/\r?\n/)) {
     const idx = line.search(/CI runs/i)
     if (idx < 0) continue
     let rest = line.slice(idx + 'CI runs'.length)
@@ -1020,7 +1063,9 @@ function headingSlugs(absPath) {
     slugCache.set(absPath, null) // 파일 없음 — 검사 5가 소유하는 실패다
     return null
   }
-  for (const line of text.split(/\r?\n/)) {
+  // 주석 속 헤딩은 렌더되지 않는다 — 세면 없는 앵커가 통과하고, 같은 제목이면 GitHub 중복
+  // 접미(-1)까지 밀린다(`withoutHtmlComments`).
+  for (const line of withoutHtmlComments(text).split(/\r?\n/)) {
     if (/^\s*```/.test(line)) { inFence = !inFence; continue }
     if (inFence) continue
     const m = /^(#{1,6})\s+(.*)$/.exec(line)
@@ -1230,7 +1275,9 @@ function checkCardinality() {
 
 for (const file of walk(ROOT)) {
   const rel = relative(ROOT, file).replace(/\\/g, '/')
-  const lines = readFileSync(file, 'utf8').split(/\r?\n/)
+  const raw = readFileSync(file, 'utf8')
+  const lines = raw.split(/\r?\n/)
+  checkUnclosedComment(rel, raw)
   checkLinks(file, rel, lines)
   checkAnchors(file, rel, lines)
   checkSelfBlobTargets(file, rel, lines)
@@ -1805,11 +1852,20 @@ function checkBudgetCoverage() {
 // ⚠️ **인라인 주석은 블록이 아니다** — 앞에 본문이 있는 줄은 통째로 적재된다.
 // 애매한 경계에서는 전부 **과대계상 쪽**으로 붙였다(그 방향이 예산을 조이는 쪽이다).
 function loadedText(text) {
+  return scanLoaded(text).text
+}
+
+// `loadedText` 의 상태기계 본체. `unclosedAt` 은 끝내 닫히지 않은 블록 주석이 시작한 줄(1-기준, 없으면 0) —
+// CommonMark 는 그 뒤 문서 전부를 HTML 블록으로 삼키고 주입도 같다. 한 상태기계를 두 용도가 같이 쓴다
+// (따로 두면 규칙이 갈린다).
+function scanLoaded(text) {
   const lines = text.split('\n')
   const out = []
   let inFence = false
   let inComment = false
-  for (const line of lines) {
+  let openedAt = 0
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
     const bare = line.replace(/\r$/, '')
     if (inComment) {
       const end = bare.indexOf('-->')
@@ -1832,11 +1888,12 @@ function loadedText(text) {
         continue
       }
       inComment = true
+      openedAt = i + 1
       continue
     }
     out.push(line)
   }
-  return out.join('\n')
+  return { text: out.join('\n'), unclosedAt: inComment ? openedAt : 0 }
 }
 
 // 내용 줄 수. 끝개행이 만드는 빈 마지막 원소는 줄이 아니다.

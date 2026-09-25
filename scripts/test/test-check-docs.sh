@@ -390,6 +390,46 @@ EOF
 assert_ok node "$GUARD" "$TMP"             # 기본은 경고
 assert_fails node "$GUARD" "$TMP" --strict # --strict 는 실패(문서 90/85 ≠ 실제 50/40)
 
+# ---- 검사 4 · 주석은 주장이 아니다 — 판정 전에 벗긴다. 양방향 다 실측됐다(#586 작업 중):
+# (가) 거짓 초록 — 본문을 드리프트시키고 그 앞에 `<!-- gate … -->` 한 줄(실제 값과 같은 수)을
+#      두면 통과했다. 주석이 「첫 게이트 줄」을 가로채 본문 드리프트를 가린다.
+# (나) 거짓 빨강 — 예산 판정 주석의 「게이트 85% → 41」 이 맞는 본문보다 먼저 걸려 빨갛게 했다.
+printf '%s\n' '<!-- gate 50 40 -->' '- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 90/85 포함)' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" "커버리지 게이트 문서=라인90/브랜치85" "주석 속 게이트 표기가 본문 드리프트를 가리면 안 된다(거짓 초록)"
+printf '%s\n' '<!-- 게이트 85% → 41 -->' '- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 50/40 포함)' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_not_contains "$OUT" "커버리지 게이트 문서=" "주석 속 게이트 표기가 맞는 본문을 빨갛게 하면 안 된다(거짓 빨강)"
+# (다) 첫 판(`/<!--[\s\S]*?-->/` 를 문서 전체에)의 역방향 사고 — 코드 스팬 `<!--` 에서 다음 줄의 `-->`
+#      까지를 삼켜 사이의 본문 주장이 사라지면 게이트 검사가 **조용히 건너뛰었다**(fail-open).
+#      독립 레그(Grok)가 짚고 이 단언이 재현했다. 주장은 드리프트(90/85 ≠ 50/40)라 잡혀야 한다.
+printf '%s\n' 'See `<!--` in templates.' '- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 90/85 포함)' 'Then `-->`.' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" "커버리지 게이트 문서=라인90/브랜치85" "코드 스팬 속 주석 표지가 사이의 주장을 삼키면 안 된다(fail-open)"
+# (라) 줄 중간의 인라인 주석은 블록이 아니라 `loadedText` 가 남긴다 — 같은 줄의 첫 「gate」 가 주석 안이면
+#      그것이 주장이 됐다. 같은 줄에서 닫히는 주석을 따로 벗기는 이유다.
+printf '%s\n' '- 전체 빌드+검증 <!-- gate 50 40 --> `mvn -f java/pom.xml verify` (커버리지 게이트 90/85 포함)' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" "커버리지 게이트 문서=라인90/브랜치85" "줄 중간 인라인 주석 속 게이트 표기가 주장을 가로채면 안 된다"
+# 대조군 — 주석 없이 맞는 본문은 원래부터 조용했다(위 단언이 다른 원인으로 통과한 게 아님을 보인다).
+printf '%s\n' '- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 50/40 포함)' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_not_contains "$OUT" "커버리지 게이트" "주석 없는 맞는 본문은 게이트 오류가 없어야 한다(대조군)"
+
+# ---- 매트릭스 주장(「CI runs …」 ↔ 워크플로 matrix 축) — 이 검사는 자가테스트가 0 이었다.
+# 게이트 검사와 같은 「첫 매치 줄」 추출이라 같은 구멍(주석이 첫 매치를 가로챈다)을 가졌다.
+mkdir -p "$TMP/.github/workflows"
+printf '%s\n' 'jobs:' '  build:' "    strategy:" "      matrix: { java: ['17', '21', '25'] }" > "$TMP/.github/workflows/ci.yml"
+printf '%s\n' 'JDK 21 builds; CI runs 17·21·25 and more.' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_not_contains "$OUT" "CI 레그를" "맞는 매트릭스 주장은 조용해야 한다(대조군)"
+printf '%s\n' 'JDK 21 builds; CI runs 17·21 and more.' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" "CI 레그를 [17, 21] 로 적는데" "매트릭스 드리프트는 잡혀야 한다"
+printf '%s\n' '<!-- CI runs 17·21·25 -->' 'JDK 21 builds; CI runs 17·21 and more.' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" "CI 레그를 [17, 21] 로 적는데" "주석 속 「CI runs」 가 본문 드리프트를 가리면 안 된다(거짓 초록)"
+
 # 이 블록의 .claude/·java/는 cp -r로 지워지지 않고 남는다 — 다음 블록을 오염시키지
 # 않도록 다시 리셋한다.
 rm -rf "$TMP" && mkdir -p "$TMP"
@@ -1192,6 +1232,34 @@ cp -r "$FIX/." "$TMP/"
 printf '%s\n' '# target' '' '## C# / .NET' > "$TMP/t.md"
 printf '%s\n' '# src' '' '```md' '[예시](t.md#does-not-exist)' '```' > "$TMP/s.md"
 assert_ok node "$GUARD" "$TMP"
+
+# 주석 속 헤딩은 렌더되지 않는다 — 앵커 대상으로 세면 안 된다. 거짓 초록 실측: 주석 안에
+# `## Ghost` 가 있으면 `t.md#ghost` 가 통과했다(대조군은 위의 「없는 앵커는 잡는다」).
+printf '%s\n' '# target' '' '<!--' '## Ghost' '-->' '' '본문.' > "$TMP/t.md"
+printf '%s\n' '# src' '' '[link](t.md#ghost)' > "$TMP/s.md"
+assert_fails node "$GUARD" "$TMP"
+# 같은 뿌리의 둘째 결과 — 주석 속 같은 제목이 GitHub 중복 접미(-1)를 밀어, 렌더에는 없는
+# `#c--net-1` 을 통과시켰다.
+printf '%s\n' '# target' '' '<!--' '## C# / .NET' '-->' '' '## C# / .NET' > "$TMP/t.md"
+printf '%s\n' '# src' '' '[link](t.md#c--net-1)' > "$TMP/s.md"
+assert_fails node "$GUARD" "$TMP"
+# 벗기기가 펜스를 망가뜨리면 안 된다 — 코드 스팬 `<!--`/`-->` 사이에 낀 펜스 여는 줄이 지워지면
+# 펜스 안 `## Ghost` 가 앵커로 잡혔다(첫 판, 독립 레그가 짚음). GitHub 에서 그것은 코드다.
+printf '%s\n' '# target' '' '`<!--`' '```md' '`-->`' '## Ghost' '```' > "$TMP/t.md"
+printf '%s\n' '# src' '' '[link](t.md#ghost)' > "$TMP/s.md"
+assert_fails node "$GUARD" "$TMP"
+
+# ---- 닫히지 않은 블록 주석 — 줄 머리 `<!--` 가 끝내 안 닫히면 CommonMark 는 그 뒤 문서 전부를
+# HTML 블록으로 삼키고 주입도 같다. 그 안의 주장·헤딩·링크를 보는 검사는 전부 조용히 건너뛰므로
+# 문서마다 따로 잡는다.
+printf '%s\n' '# x' '' '<!-- 닫는 표지를 잊었다' '' '## 사라진 절' > "$TMP/u.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" "u.md:3 닫히지 않은 HTML 주석" "닫히지 않은 블록 주석은 잡혀야 한다"
+# 대조군 — 닫힌 주석과 펜스 안의 여는 표지(예시)는 잡지 않는다.
+printf '%s\n' '# x' '' '<!-- 닫았다 -->' '' '```html' '<!-- 예시' '```' > "$TMP/u.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_not_contains "$OUT" "닫히지 않은 HTML 주석" "닫힌 주석·펜스 안 예시는 잡지 않는다(대조군)"
+rm -f "$TMP/u.md"
 
 # 하한 — 링크를 하나도 못 뽑았는데 "불일치 0" 으로 통과하는 것이 이 부류의 공허함이다.
 mk_anchor_fixture 't.md#c--net'

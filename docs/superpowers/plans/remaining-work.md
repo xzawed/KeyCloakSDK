@@ -116,7 +116,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-09-25 밤 · #560–#585 반영)
+### 다음 세션 진입점 (2026-09-25 밤 · #560–#587 반영)
 
 **지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. JVM `1.0.1` 은 **게시·바이트 확인 완료**(`node scripts/check-published-jvm-floor.mjs` 전부 major ≤ 61)이고 API 기저선도 1.0.1 이다. 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
 
@@ -136,7 +136,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - (l) **커밋을 다른 브랜치로 옮기거나 `main` 을 합친 뒤에는 깨끗한 워크트리에서 `check-docs` 를 다시 돈다.** 옮기기 전 기준에서의 통과가 거짓이었고(#552 예산 초과가 그렇게 CI 로 샜다), 주 트리의 추적 안 되는 산출물(`.pytest_cache`·`harness/report`·`.github/modernize`)은 거짓 오류를 낸다: `git worktree add --detach <tmp> HEAD` 에서 돌린다.
 - (m) **브랜치 전환에 `git stash`/`pop` 을 짝지어 쓰지 않는다** — 넣을 것이 없으면(추적 안 되는 파일뿐) `pop` 이 **옛 stash 를 푼다**. 실제로 위 JDK 실험 diff 가 풀려 다시 보관했다.
 - (n) **`target/` 에 major 69 클래스가 남아 있으면 surefire 가 `UnsupportedClassVersionError`** — 위 실험의 잔재다. `mvn clean` 부터.
-- (o) **YAML·문서를 grep 하는 가드는 주석을 먼저 벗기고, 값은 셀 경계까지 대조한다** — 맨 부분 문자열은 형제 값(`v*` ⊂ `kotlin-v*`, `…:keycloak-sdk` ⊂ `…-core`)과 주석 속 사본에 흡수된다(#552·#558).
+- (o) **YAML·문서를 grep 하는 가드는 주석을 먼저 벗기고, 값은 셀 경계까지 대조한다** — 맨 부분 문자열은 형제 값(`v*` ⊂ `kotlin-v*`, `…:keycloak-sdk` ⊂ `…-core`)과 주석 속 사본에 흡수된다(#552·#558). 문서 주석은 `check-docs.mjs` 의 `withoutHtmlComments`(CommonMark 블록 규칙 + 같은 줄 주석)로 벗긴다 — 문서 전체에 `/<!--[\s\S]*?-->/` 를 걸면 코드 스팬 `` `<!--` `` 에서 다음 줄까지 삼켜 주장이 사라지고 검사가 **조용히 건너뛴다**(#587).
 - (p) **독립 레그(Grok)의 「면역·안전」 판정은 대조군으로 다시 잰다** — dotnet 빈 JWKS 를 「면역」이라 했으나 LKG 폴백이 가린 오염이었다(#551). 반대로 설계 비판·변이 목록 실행은 신뢰도가 높았다(주장 표본 전부 재현).
 - (q) **레그의 우회 목록은 정적으로 재현한 뒤 런타임에서 한 번 더 거른다** — 6/6 이 정적으로 재현됐지만 둘(빈 기본값 · `unset`)은 빈 근거 거부와 `set -u` 로 fail-closed 라 약화가 아니었다(#571). 받을 것은 「통과하면서 약해지는 것」뿐이다.
 - (r) **게이트를 `| tail` 로 보면 종료코드가 사라진다** — `check-docs … | tail -2; … && git commit && git push` 가 예산 초과를 push 했다(#574). `${PIPESTATUS[0]}` 로 받아 그 값으로 분기한다.
