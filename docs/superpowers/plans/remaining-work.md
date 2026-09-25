@@ -116,16 +116,16 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-09-25 · #551–#558 반영)
+### 다음 세션 진입점 (2026-09-25 오후 · #560–#575 반영)
 
-**지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. JVM `1.0.1` 은 **게시·바이트 확인 완료**(`node scripts/check-published-jvm-floor.mjs` 전부 major ≤ 61)이고 API 기저선도 1.0.1 이다. 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 이전 세션들이 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..77bdf1b` 와 아카이브 태그가 소유한다.
+**지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. JVM `1.0.1` 은 **게시·바이트 확인 완료**(`node scripts/check-published-jvm-floor.mjs` 전부 major ≤ 61)이고 API 기저선도 1.0.1 이다. 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. ~~`seven-selftests-have-no-negative-control`~~ **닫힘(2026-09-25)** — 「이미 합성 입력을 먹인다」는 추출기에 대해서만 참이었다. 근거 정의 단언이 SILENT 3/3 이었다(그 항목 한 줄).
-2. **`guard-detection-surface-hand-narrowed` [H/M]** — 이 세션의 두 조각(#552 형제 값 흡수 · #558 주석 속 문자열)이 바로 그 부류의 실례다.
-3. **`coverage-exclusions-swallow-pure-logic` [H/L]** · `integration-coverage-never-measured` [H/L] — 크다. 설계부터.
-4. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션 재판정 세 건 중 둘이 **전제부터 뒤집혔다** — `jwks-empty-keyset-node` 의 「구조 변경뿐」은 거짓(이미 배선된 `[customFetch]` 가 답이었다), `public-client-confidential-grants-not-refused` 는 결함이 **반대편**(java·kotlin)에 있었다. 둘 다 실측 한 번으로 드러났다.
+1. **`coverage-exclusions-swallow-pure-logic` 의 ⏸ 미측정 후보를 변이로 잰다** — 언어당 PR. 위험순(독립 레그 순위): node `auth.ts` 마스킹 → python JWKS 백오프. ⚠️ 제외 ≠ 구멍(ruby·kotlin 3/3 CAUGHT).
+2. **`guard-detection-surface-hand-narrowed` [H/M]** — 남은 손 표 다섯(nonce · 백오프 · 마스킹 둘 · 토큰타입). 모형은 크기상한 축(#575): 주석 뺀 줄 · 쓰임의 자리 · 값 동형 파생 + **이력 오탐 실측**.
+3. `integration-coverage-never-measured` [H/L] — 크다. 설계부터.
+4. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 재판정 둘 중 둘이 뒤집혔다 — `seven-selftests` 의 「이미 합성 입력」은 추출기만의 참이었고, `coverage-exclusions` 는 셋이 아니라 아홉이었다.
 
 **사람 판정 대기** — 주 작업 트리의 stash 둘(`git stash list`: JDK 17→25 실험, 출처 미상 · 1.0.1 하한과 정반대)은 **커밋하지 말고** 폐기 여부를 사람이 정한다. `irreversible-publish-no-reentry` 는 보류 유지.
 
@@ -138,6 +138,9 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - (n) **`target/` 에 major 69 클래스가 남아 있으면 surefire 가 `UnsupportedClassVersionError`** — 위 실험의 잔재다. `mvn clean` 부터.
 - (o) **YAML·문서를 grep 하는 가드는 주석을 먼저 벗기고, 값은 셀 경계까지 대조한다** — 맨 부분 문자열은 형제 값(`v*` ⊂ `kotlin-v*`, `…:keycloak-sdk` ⊂ `…-core`)과 주석 속 사본에 흡수된다(#552·#558).
 - (p) **독립 레그(Grok)의 「면역·안전」 판정은 대조군으로 다시 잰다** — dotnet 빈 JWKS 를 「면역」이라 했으나 LKG 폴백이 가린 오염이었다(#551). 반대로 설계 비판·변이 목록 실행은 신뢰도가 높았다(주장 표본 전부 재현).
+- (q) **레그의 우회 목록은 정적으로 재현한 뒤 런타임에서 한 번 더 거른다** — 6/6 이 정적으로 재현됐지만 둘(빈 기본값 · `unset`)은 빈 근거 거부와 `set -u` 로 fail-closed 라 약화가 아니었다(#571). 받을 것은 「통과하면서 약해지는 것」뿐이다.
+- (r) **게이트를 `| tail` 로 보면 종료코드가 사라진다** — `check-docs … | tail -2; … && git commit && git push` 가 예산 초과를 push 했다(#574). `${PIPESTATUS[0]}` 로 받아 그 값으로 분기한다.
+- (s) **dependabot 은 JVM 짝의 같은 좌표를 두 생태계로 따로 올린다** — doc-facts 가 문서 간 좌표를 한 버전으로 강제해 둘 다 빨갛다. 한 PR 로 합치고(#562) 남은 쪽은 `@dependabot rebase` 가 다시 만든다(#569 → #572). KGP 가 움직이면 `kgp-gradle-band` 도 kotlinlang.org 표로 다시 확인한다(가드가 요구한다).
 
 ### 재발 원인 분석 — 2026-09-13 (독립 레그와 공동, 산출물 기반)
 
@@ -454,6 +457,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - ✅ **(B) 부류의 첫 자리를 닫았다 — 2차 정의 자리를 파생으로(2026-09-16).** 축 3 은 앵커 **넷**(go·php·ruby·ruby-skew)만 봤고, 1절은 언어당 한 파일 한 줄을 `sed | head -1` 로 읽어 **둘째 줄을 구조적으로 못 본다**. 실측: `node/src/jwt.ts` 에 `probeJwksMinRefetchSeconds = 60` 을 심으면 **SILENT**. 처방은 「정의 자리는 하나」가 아니라 **「어디에 적히든 값은 같다」**다 — SDK 소스 전체에서 두 파라미터에 숫자 리터럴을 대입하는 자리를 찾아 1절이 합의시킨 값과 대조한다(정당한 2차 자리를 막지 않는다). 합의값은 숫자로 안 적는다 — 그러면 **이 축 자신이 2차 정의 자리**가 된다. **오탐 실측**: 최근 **300 커밋**(2026-08-14~09-16 = 30 합의 이후 전 구간) **0 건**. **계측기 대조군**: 전 이력 1102 커밋으로 넓히면 **664 커밋이 60 으로 걸린다**(합의 이전 시기) — 침묵이 아니라 오늘 갈림이 없는 것이다. 오늘 히트 **20**(9언어 전부 기여), 공허 하한은 **창 최저값 20**(오늘 값이 아니다 — #443 판정). 변이 4/4 `CAUGHT` + OFF 짝(main 판 가드) `SILENT`.
   - ⚠️ **같은 PR 이 손 표 하나를 지웠다 — 중복이 됐기 때문이다.** `sd_skew_secondary`(dotnet·python)는 파생이 같은 두 자리를 값으로 잡는다(손 표를 죽이고 python 을 60 으로 → `CAUGHT`). 반대로 **손 표만 죽이면 `SILENT`** 였고 그것이 중복 게이트의 정의다. 그 표의 지식(**dotnet 은 1절이 읽는 `JwtValidator.cs` 가 아니라 `KeycloakConfig.cs` 가 소비자 값**)은 주석으로 남겼다.
   - ⏸ **(B) 의 잔여** — 닫은 것은 **1절·3절이 소유한 두 파라미터**(JWKS 재조회 · clock skew)뿐이다. 나머지 축(크기상한·nonce·백오프·마스킹 둘·토큰타입)은 **여전히 손 표**라 같은 부류가 그대로 있다. 다음 자리는 그 축들에 같은 「값 동형」 파생을 적용할 수 있는지다.
+  - ✅ **크기상한 축을 닫았다(2026-09-25).** 실측 `main` 에서 넷 다 SILENT: JVM 두 줄은 `grep -c 'DEFAULT_HTTP_SIZE_LIMIT'` 인데 그 토큰이 **바로 위 doc 주석에도** 있어 생성자 인자를 `0` 으로 바꿔도(#400 결함 그대로) 초록 · `sed | head -1` 은 주석 속 옛 선언을 먼저 읽음 · 다른 파일의 둘째 선언은 안 봄. → 주석 뺀 줄 · 인자 **자리** · 3절식 값 동형 파생(오탐 이력 122 커밋 0 건, 하한 6 은 창 최저값). 독립 레그가 우회 넷(`…LIMIT * 100` · 인자 안 블록 주석 · `51200 << 10` · `*=`)과 오탐 하나(꼬리 주석 속 대입)를 냈고 다섯 다 재현 → 대조군. ⚠️ 빈 키셋 축은 주석 줄만 걸렀다(꼬리 주석은 못 거른다). **남은 손 표: nonce · 백오프 · 마스킹 둘 · 토큰타입.**
   - ⚠️ **또 늘었다 — 축 9 중 손 표 7 → 축 11 중 손 표 9 → 축 12 중 파생 3 · 혼합 1 · 손 8**(재측정 2026-09-16 · 직전 판 2026-09-12 는 독립 레그와 일치했다). 그 사이 추가된 축 둘(JWKS 크기상한 · 토큰응답 타입검증)이 **둘 다 손 표**다. 파생은 여전히 `git ls-files` 둘뿐. 배너 전수: `grep -cE '^# [0-9]+[a-z0-9]*\) ' scripts/test/test-security-defaults.sh` → **11**. ⚠️ `'^# [0-9]'` 로 세면 **15** 가 나온다 — 숫자로 시작하는 산문 넉 줄(「30초로…」 등)이 섞인다. ⚠️ 그리고 **축 이름이 이미 충돌한다**(`1b` 셋 · `1c` 둘) — 「축 N」으로 지목하지 말고 줄번호로 지목할 것. ⚠️ **처방은 그대로다**(이 파일에 축을 더하지 않는다) — 이번 PR 도 새 불변식을 여기가 아니라 `check-versions.mjs` 로 냈다.
   - **축 7 중 손 표 5 → 축 9 중 손 표 7 로 늘었다**(실측 2026-09-07, 독립 레그 둘). 그 사이 추가된 축 둘 — 1b2 콜드캐시 백오프 · 1d 형제 마스킹(#437) — 이 **둘 다 손 표**다. 파생은 여전히 `git ls-files` 둘(문서 축·소스 주석 축)뿐이다.
   - ⚠️ **그런데 지금 파생으로 바꾸는 것이 옳은 수가 아니다.** 이 파일은 required 체크 `doc-facts` 안에서 `paths:` 필터 없이 돌고 룰셋은 `bypass_actors: []` 다 — 오탐 하나가 모든 PR 을 막고 소유자도 못 푼다. **되살릴 조건**: required **밖**(nightly 등)에서 먼저 돌려 오탐 0 을 실측할 것. 노이즈는 이미 쟀다 — 9언어 비테스트 소스에서 비밀 이름을 언급하는 파일이 **83개**라 그 신호를 그대로 쓸 수 없다.
@@ -508,7 +512,11 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 ### 테스트·커버리지 — 8
 
 - [x] `selftest-hygiene-textual-rules` **[H/M]** '존재'가 아니라 '실행'을 센다던 규칙이 주석·비활성화·`|| true`를 실행으로 센다 · `scripts/test/test-selftest-hygiene.sh:20`
-- [ ] `coverage-exclusions-swallow-pure-logic` **[H/L · 계수 정정 2026-09-09]** '네트워크 경계' 커버리지 제외가 I/O 없는 순수 로직까지 삼켰다 — **세 언어** · `node/src/transport.ts:38`
+- [ ] `coverage-exclusions-swallow-pure-logic` **[H/L · 계수 정정 2026-09-09 · 재판정 2026-09-25: 셋 → 아홉]** '네트워크 경계' 커버리지 제외가 I/O 없는 순수 로직까지 삼켰다 — **아홉 언어 전부**(제외 목록이 순수·주입형 함수를 담는다) · `node/src/transport.ts:38`
+  - ⚠️ **재판정(2026-09-25) — 「제외됨」과 「구멍」은 다르다. 지도는 전수 조사가, 구멍 여부는 변이가 정한다.** 9언어 전수(에이전트, 파일:줄 인용)를 받아 **실측한 것만** 적는다: php `ErrorTranslation.php` 는 「이미 전수」가 **틀렸다** — `default` 팔·SDK 예외 통과 분기 변이 **2/2 SILENT** → #573(디렉터리 제외를 파일 손 목록으로, 291→310 문장). ruby `admin/call.rb` 는 제외돼 있어도 변이 **3/3 CAUGHT**(`esc` 항등 6 실패 · 무예외 3 · Location 통째 1) — 조치 없음. rust 정규식 `(auth|admin|client)\.rs` 는 양끝이 없어 미래 `oauth.rs` 를 삼킨다 → #574(오늘 파일 집합 불변: TOTAL 동일). ⚠️ 조사의 「SonarCloud 가 node `transport.ts`·`admin/**` 를 뺀다」는 **거짓**이었다(`sonar.cpd.exclusions` 를 coverage 로 읽었다).
+  - ✅ kotlin `admin.*` 가 `translateAdminException` 까지 빼지만(java 쌍둥이는 측정 — JVM 비대칭) 변이 **3/3 CAUGHT**(409·403→Other · 본문 폴백→null, 단위 140 중 1~4 실패) — 조치 없음.
+  - **판정 규칙**(독립 레그와 합의): 변이 SILENT → 테스트 + (순수부가 분리되면) 제외를 좁힌다 · 좁히면 게이트가 I/O 까지 떠안는 경우(python 100%) → 테스트만. ⚠️ **CAUGHT 여도 「그대로」가 공짜는 아니다** — 제외된 파일은 그 테스트가 **지워져도** 게이트가 모른다. 분리 가능하면 좁히는 쪽이 낫다.
+  - ⏸ **미측정 후보**(위험순, 레그 순위): node `auth.ts` 마스킹 클래스(PKCE verifier 로그 유출) · python `auth.py` `_load_jwks` 레이트리밋·백오프(:263-307, 게이트 100% 라 비용 큼) · dotnet `ToTokenSet`·`OAuthErrorOf` · java `AuthClient` 헬퍼 · rust `auth.rs`/`admin.rs` 인라인 테스트가 게이트에 안 셈.
   - ⚠️ **다섯이 아니라 셋이다**(재판정 2026-09-09): node(`transport.ts` + `admin/call.ts`) · php(`ErrorTranslation.php`) · ruby(`version.rb`).
   - ✅ **node `transport.ts` 는 #458 이 닫았다**(2026-09-10). ⚠️ **그리고 「테스트 파일 0」이라던 내 계측이 틀렸다** — `git grep -l isTransportError -- node/test` 는 **이름 grep** 이고, 실동작은 호출 자리(auth·admin 경계)에서 이미 구동되고 있었다. 진짜 결함은 「테스트 없음」이 아니라 **「측정되지 않아 일부 팔이 죽어도 초록」**이었다: 경계 테스트가 치는 팔은 `AbortError`·`ECONNREFUSED` **둘뿐**이고 나머지 15개 코드는 커버리지 제외 때문에 측정되지 않아, `CERT_HAS_EXPIRED` 를 지워도 **107 전부 통과**했다(변이 `SILENT`). 전수 표 테스트 + 제외 해제로 셋 다 `CAUGHT`.
   - ⏸ **남은 둘은 부류가 다르다**(실측 2026-09-10): php `ErrorTranslation.php` 는 `tests/Unit/Admin/ErrorTranslationTest.php` 가 이미 전수를 치고 있고 제외를 풀면 **실 I/O 가 게이트에 딸려 들어온다**. ruby `version.rb` 는 상수 한 줄이다. ⚠️ **node `admin/call.ts` 의 `requireFound` 는 여전히 순수 헬퍼이고 테스트 언급 0** — 그것이 이 항목의 진짜 잔여다.
