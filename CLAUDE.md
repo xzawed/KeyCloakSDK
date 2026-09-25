@@ -220,15 +220,15 @@ dev(`devDependencies` — **앵커 있음**):
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | 타입 | `typescript` | ^6 |
-| 테스트 | `vitest` | ~4.1.11 |
-| 커버리지 | `@vitest/coverage-v8` | ~4.1.11 |
+| 테스트 | `vitest` | ~5.0.1 |
+| 커버리지 | `@vitest/coverage-v8` | ~5.0.1 |
 | 통합 테스트 | `testcontainers` | ^12 |
 | 린트 | `eslint` | ^10 |
 | 린트(TS) | `typescript-eslint` | ^8 |
 | 포맷 | `prettier` | ^3 |
 | Node 타입 | `@types/node` | ^22 |
 
-⚠️ vitest 는 v4 다 — 두 핀은 **함께** 움직이고 5.x 가 묻어오지 않게 틸드다. `@types/node`는 "최신 Node"가 아니라 `engines` 하한을 따라가므로 dependabot이 메이저를 못 올린다. 런타임 deps는 audit clean, devDeps 일부 moderate(`files:["dist"]`라 소비자에게 배포되지 않는다).
+⚠️ vitest 는 v5 다 — 두 핀은 **함께** 움직인다(dependabot `vitest` 그룹). `@types/node`는 "최신 Node"가 아니라 `engines` 하한을 따라가므로 dependabot이 메이저를 못 올린다. 런타임 deps는 audit clean, devDeps 일부 moderate(`files:["dist"]`라 소비자에게 배포되지 않는다).
 
 **Go 확정 의존성(go.mod, major 핀)**:
 
