@@ -767,8 +767,11 @@ const COVERAGE = {
 // 문서 텍스트에서 "게이트"/"gate" 낱말이 등장하는 첫 줄을 찾아, 그 낱말 뒤에 나오는 첫 두
 // 숫자를 [라인%, 브랜치%] 주장으로 삼는다 — 세 소스 모두 라인 임계값을 브랜치보다 먼저
 // 선언하므로(java pom의 LINE limit, kotlin의 LINE rule, node의 `lines:`) 순서가 맞는다.
+// ⚠️ HTML 주석을 **먼저 벗긴다** — 주석은 주입되지 않으므로 주장이 아니다. 안 벗기면 주석 속 「gate」
+// 줄이 첫 매치를 가로챈다: 실제 값과 같은 수면 본문 드리프트를 가리고(거짓 초록), 다른 수면 맞는
+// 본문을 빨갛게 한다(거짓 빨강 — 예산 판정 주석의 「게이트 85% → 41」 이 그랬다). 둘 다 실측(#586).
 function firstGateClaim(text) {
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of text.replace(/<!--[\s\S]*?-->/g, '').split(/\r?\n/)) {
     const idx = line.search(/게이트|gate/i)
     if (idx < 0) continue
     const nums = [...line.slice(idx).matchAll(/\d{1,3}/g)].map((m) => m[0])

@@ -390,6 +390,21 @@ EOF
 assert_ok node "$GUARD" "$TMP"             # 기본은 경고
 assert_fails node "$GUARD" "$TMP" --strict # --strict 는 실패(문서 90/85 ≠ 실제 50/40)
 
+# ---- 검사 4 · 주석은 주장이 아니다 — 판정 전에 벗긴다. 양방향 다 실측됐다(#586 작업 중):
+# (가) 거짓 초록 — 본문을 드리프트시키고 그 앞에 `<!-- gate … -->` 한 줄(실제 값과 같은 수)을
+#      두면 통과했다. 주석이 「첫 게이트 줄」을 가로채 본문 드리프트를 가린다.
+# (나) 거짓 빨강 — 예산 판정 주석의 「게이트 85% → 41」 이 맞는 본문보다 먼저 걸려 빨갛게 했다.
+printf '%s\n' '<!-- gate 50 40 -->' '- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 90/85 포함)' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" "커버리지 게이트 문서=라인90/브랜치85" "주석 속 게이트 표기가 본문 드리프트를 가리면 안 된다(거짓 초록)"
+printf '%s\n' '<!-- 게이트 85% → 41 -->' '- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 50/40 포함)' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_not_contains "$OUT" "커버리지 게이트 문서=" "주석 속 게이트 표기가 맞는 본문을 빨갛게 하면 안 된다(거짓 빨강)"
+# 대조군 — 주석 없이 맞는 본문은 원래부터 조용했다(위 단언이 다른 원인으로 통과한 게 아님을 보인다).
+printf '%s\n' '- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 50/40 포함)' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_not_contains "$OUT" "커버리지 게이트" "주석 없는 맞는 본문은 게이트 오류가 없어야 한다(대조군)"
+
 # 이 블록의 .claude/·java/는 cp -r로 지워지지 않고 남는다 — 다음 블록을 오염시키지
 # 않도록 다시 리셋한다.
 rm -rf "$TMP" && mkdir -p "$TMP"
