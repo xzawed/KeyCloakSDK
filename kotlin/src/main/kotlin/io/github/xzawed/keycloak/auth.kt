@@ -31,6 +31,7 @@ import com.nimbusds.openid.connect.sdk.token.OIDCTokens
 import kotlinx.coroutines.CancellationException
 import java.io.IOException
 import java.net.URI
+import java.net.URISyntaxException
 import java.time.Instant
 
 // auth.kt — AuthClient: Java SDK의 io.github.xzawed.keycloak.auth.AuthClient와 동형인 흐름(client-credentials·
@@ -60,21 +61,17 @@ public class AuthClient internal constructor(
      * 동형 — 직접 SHA-256 계산 불필요). `config.scopes`가 비어 있으면 Java와 동일하게 `openid`로 대체한다.
      */
     public fun createAuthorizationRequest(redirectUri: String): AuthorizationRequest {
+        val redirect = redirectUri(redirectUri)
         val codeVerifier = CodeVerifier()
         val state = State()
         val nonce = Nonce()
-        // ⚠️ `Scope.isEmpty()` 는 **원소 수**를 센다 — 원소가 하나라도 있으면 그 값이 공백이든
-        // 빈 문자열이든 폴백이 발동하지 않고, Nimbus 가 `IllegalArgumentException("The value must
-        // not be null or empty string")` 을 던져 §4 경계를 넘어 공개 API 로 샌다. config 는 scope
-        // 값을 검증하지 않으므로 도달 가능하다. 그래서 **생성 전에** 공백 원소를 거른다.
-        // Java 자매(`AuthClient.createAuthorizationRequest`)도 같은 모양이다.
-        var scope = Scope(*config.scopes.filter { it.isNotBlank() }.toTypedArray())
+        var scope = configuredScope()
         if (scope.isEmpty()) {
             scope = Scope("openid")
         }
         val request =
             AuthenticationRequest
-                .Builder(ResponseType(ResponseType.Value.CODE), scope, ClientID(config.clientId), URI(redirectUri))
+                .Builder(ResponseType(ResponseType.Value.CODE), scope, ClientID(config.clientId), redirect)
                 .endpointURI(URI(endpoints.authorization))
                 .state(state)
                 .nonce(nonce)
@@ -89,7 +86,7 @@ public class AuthClient internal constructor(
         val tr =
             TokenRequest
                 .Builder(URI(endpoints.token), clientAuth("the client_credentials grant"), ClientCredentialsGrant())
-                .scope(Scope(*config.scopes.toTypedArray()))
+                .scope(configuredScope())
                 .build()
         return mapTokenResponse(authSend(tr.toHTTPRequest()), issuedAt, "Client credentials failed")
     }
@@ -110,7 +107,12 @@ public class AuthClient internal constructor(
         expectedNonce: String? = null,
     ): TokenSet {
         val issuedAt = Instant.now().epochSecond
-        val grant = AuthorizationCodeGrant(AuthorizationCode(code), URI(redirectUri), CodeVerifier(codeVerifier))
+        val grant =
+            AuthorizationCodeGrant(
+                requestValue("Authorization code exchange", "code") { AuthorizationCode(code) },
+                redirectUri(redirectUri),
+                requestValue("Authorization code exchange", "code_verifier") { CodeVerifier(codeVerifier) },
+            )
         val builder =
             if (config.clientSecret != null) {
                 TokenRequest.Builder(URI(endpoints.token), clientAuth("authorization code exchange"), grant)
@@ -139,7 +141,12 @@ public class AuthClient internal constructor(
 
     /** RFC 7662 토큰 introspection. 비활성 토큰은 active 외 클레임이 생략될 수 있다. */
     public suspend fun introspect(token: String): IntrospectionResult {
-        val req = TokenIntrospectionRequest(URI(endpoints.introspection), clientAuth("token introspection"), TypelessAccessToken(token))
+        val req =
+            TokenIntrospectionRequest(
+                URI(endpoints.introspection),
+                clientAuth("token introspection"),
+                requestValue("Introspection", "token") { TypelessAccessToken(token) },
+            )
         val resp =
             try {
                 onIo { TokenIntrospectionResponse.parse(applyTimeouts(req.toHTTPRequest()).send()) }
@@ -305,7 +312,7 @@ public class AuthClient internal constructor(
     // 허용한다(실측 2026-09-24, KC 26.6: 200). exchangeCode 와 같이 시크릿이 없으면 client_id 를
     // 본문에 싣는다(예전엔 clientAuth() 가 로컬에서 거부해 공개 클라이언트가 갱신을 못 했다).
     private fun buildRefreshRequest(refreshToken: String): HTTPRequest {
-        val grant = RefreshTokenGrant(RefreshToken(refreshToken))
+        val grant = RefreshTokenGrant(requestValue("Token refresh", "refresh_token") { RefreshToken(refreshToken) })
         val tr =
             if (config.clientSecret != null) {
                 TokenRequest.Builder(URI(endpoints.token), clientAuth("token refresh"), grant).build()
@@ -314,6 +321,41 @@ public class AuthClient internal constructor(
             }
         return tr.toHTTPRequest()
     }
+
+    // ⚠️ `Scope.isEmpty()` 는 **원소 수**를 센다 — 원소가 하나라도 있으면 그 값이 공백이든
+    // 빈 문자열이든 폴백이 발동하지 않고, Nimbus 가 `IllegalArgumentException("The value must
+    // not be null or empty string")` 을 던져 §4 경계를 넘어 공개 API 로 샌다. config 는 scope
+    // 값을 검증하지 않으므로 도달 가능하다. 그래서 **생성 전에** 공백 원소를 거른다 — 인가 요청과
+    // client_credentials 가 이 한 곳을 지난다(한때 인가 요청만 걸러 client_credentials 가 같은 설정으로
+    // 샜다). Java 자매(`AuthClient.configuredScope`)도 같은 모양이다.
+    private fun configuredScope(): Scope = Scope(*config.scopes.filter { it.isNotBlank() }.toTypedArray())
+
+    // ⚠️ Nimbus 값 타입(AuthorizationCode·CodeVerifier·RefreshToken·TypelessAccessToken)은 생성자에서 값을
+    // 검사한다 — 빈·공백 문자열과 RFC 7636 §4.1 밖의 verifier(43–128 자, [A-Za-z0-9-._~])를
+    // `IllegalArgumentException` 으로 거부하고, 그대로 두면 §4 경계를 넘어 공개 API 로 샌다(공백 scope 와
+    // 같은 모양). 자매 일곱은 같은 값을 서버로 보내 400 → SDK 인증 오류를 받으므로(실측 2026-09-25),
+    // 요청을 보내지 않은 채 같은 분류인 KeycloakAuthException 으로 바꾼다. Java 자매와 동형.
+    private inline fun <T> requestValue(
+        operation: String,
+        param: String,
+        build: () -> T,
+    ): T =
+        try {
+            build()
+        } catch (e: IllegalArgumentException) {
+            throw KeycloakAuthException("$operation request error: invalid $param", c = e)
+        }
+
+    // 호출자 문자열을 URI 로 파싱한다 — `URISyntaxException` 이 §4 경계를 넘어 새지 않게 SDK 타입으로
+    // 바꾼다. 분류는 Rust `redirect_url()` 과 같은 KeycloakConfigException 이다(잘못된 콜백 URL 은 IdP 가
+    // 거절한 것이 아니라 앱 구성 오류다). 메시지에는 `reason` 만 싣는다 — `message` 는 입력을 되울린다.
+    // Java 는 `URI` 를 받으므로 이 파싱이 호출자 쪽에 있다.
+    private fun redirectUri(value: String): URI =
+        try {
+            URI(value)
+        } catch (e: URISyntaxException) {
+            throw KeycloakConfigException("invalid redirect_uri: ${e.reason}", e)
+        }
 
     private fun buildLogoutRequest(refreshToken: String): HTTPRequest {
         val req = HTTPRequest(HTTPRequest.Method.POST, URI(endpoints.logout))
