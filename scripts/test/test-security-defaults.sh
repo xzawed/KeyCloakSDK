@@ -582,6 +582,46 @@ sd_backoff_gate() {
   esac
 }
 
+# 행위 카나리아 — 백오프를 **실행으로** 치는 테스트(`파일|선언`, 한 줄에 하나): 실패 N 회 → IdP 요청 1 건 ·
+# 창이 지나면 다시 나간다 · 성공하면 카운터가 돌아간다. ⚠️ 위 두 표지는 상수·게이트 함수의 **선언**이라
+# 그 호출을 지워도 참이다(nonce 축과 같은 모양 — #580). 동작의 증명은 이 테스트들이 진다.
+# ⚠️ node 의 「성공 리셋」 테스트는 없다 — 지워도 드러날 행동이 없다(실패 카운트는 콜드 캐시에서만 오르고,
+# 한 번 성공하면 jose 캐시가 다시 비지 않는다 · #556). 변이 SILENT 이지만 **동치 변이**로 판정했다.
+sd_backoff_canary() {
+  case "$1" in
+    python) printf '%s\n' \
+              'python/tests/unit/test_auth.py|def test_cold_cache_failing_idp_collapses_to_one_certs_call(' \
+              'python/tests/unit/test_auth.py|def test_backoff_window_expires_and_the_next_load_reaches_the_idp(' \
+              'python/tests/unit/test_auth.py|def test_recovered_idp_resets_the_backoff(' \
+              'python/tests/unit/aio/test_auth.py|async def test_cold_cache_failing_idp_collapses_to_one_certs_call(' \
+              'python/tests/unit/aio/test_auth.py|async def test_backoff_window_expires_and_the_next_load_reaches_the_idp(' \
+              'python/tests/unit/aio/test_auth.py|async def test_recovered_idp_resets_the_backoff(' ;;
+    node)   printf '%s\n' \
+              "node/test/unit/jwt-jwks.test.ts|it('20회 검증이 IdP 요청 1건으로 접힌다'" \
+              "node/test/unit/jwt-jwks.test.ts|it('대조군 — 백오프 창이 지나면 다시 IdP 로 나간다'" ;;
+    go)     printf '%s\n' \
+              'go/jwt_test.go|func TestJWKSFailedFetchBackoffBoundsColdRetries(' \
+              'go/jwt_test.go|func TestJWKSBackoffExpiresAndAllowsRetry(' \
+              'go/jwt_test.go|func TestJWKSSuccessResetsFailureCounter(' ;;
+    dotnet) printf '%s\n' \
+              'dotnet/tests/Xzawed.Keycloak.Sdk.Tests/BackoffConfigurationManagerTests.cs|public async Task ColdCacheFailingIdp_CollapsesToOneFetch(' \
+              'dotnet/tests/Xzawed.Keycloak.Sdk.Tests/BackoffConfigurationManagerTests.cs|public async Task BackoffWindowExpires_AndAllowsARetry(' \
+              'dotnet/tests/Xzawed.Keycloak.Sdk.Tests/BackoffConfigurationManagerTests.cs|public async Task SuccessResetsTheFailureCounter(' ;;
+    php)    printf '%s\n' \
+              'php/tests/Unit/Jwks/JwksStoreTest.php|public function testColdCacheFailingIdpCollapsesToOneRequest(' \
+              'php/tests/Unit/Jwks/FailureBackoffTest.php|public function testWindowExpiresAndAllowsARetry(' \
+              'php/tests/Unit/Jwks/JwksStoreTest.php|public function testRecoveredIdpResetsTheBackoff(' ;;
+    rust)   printf '%s\n' \
+              'rust/src/jwks.rs|async fn failing_idp_bounds_cold_retries_to_one_request(' \
+              'rust/src/jwks.rs|async fn backoff_expires_and_allows_a_retry(' \
+              'rust/src/jwks.rs|async fn success_resets_the_failure_counter(' ;;
+    ruby)   printf '%s\n' \
+              'ruby/spec/unit/jwks_store_spec.rb|it "bounds retries while the IdP is failing — 20회 시도가 요청 1건이 된다"' \
+              'ruby/spec/unit/jwks_store_spec.rb|it "백오프가 지나면 다시 시도한다 (대조군)"' \
+              'ruby/spec/unit/jwks_store_spec.rb|it "성공하면 실패 카운터가 0으로 돌아간다 (대조군)"' ;;
+  esac
+}
+
 _backoff_seen=0
 for L in $SD_BACKOFF_LANGS; do
   _bf="$(sd_backoff_file "$L")"
@@ -590,12 +630,17 @@ for L in $SD_BACKOFF_LANGS; do
   [ -f "$ROOT/$_bf" ] || continue
   _cp="$(sd_backoff_cap "$L")"
   _gp="$(sd_backoff_gate "$L")"
-  _hasc=1; grep -qF -- "$_cp" "$ROOT/$_bf" && _hasc=0
-  assert_eq "ok" "$(ok_if "$_hasc" MISSING)" \
-    "[backoff] $L 실패 백오프 상한이 없다 — 기대: $_cp"
-  _hasg=1; grep -qF -- "$_gp" "$ROOT/$_bf" && _hasg=0
-  assert_eq "ok" "$(ok_if "$_hasg" MISSING)" \
-    "[backoff] $L 백오프 잔여시간 계산이 없다 — 기대: $_gp"
+  assert_eq "ok" "$(sd_hook_ok "$ROOT/$_bf" "$_cp")" \
+    "[backoff] $L 실패 백오프 상한이 없다(주석 밖) — 기대: $_cp"
+  assert_eq "ok" "$(sd_hook_ok "$ROOT/$_bf" "$_gp")" \
+    "[backoff] $L 백오프 잔여시간 계산이 없다(주석 밖) — 기대: $_gp"
+  while IFS='|' read -r _btf _btc; do
+    [ -n "$_btc" ] || continue
+    assert_eq "ok" "$(sd_canary_ok "$ROOT/$_btf" "$_btc")" \
+      "[backoff] $L 백오프를 실행으로 단언하는 테스트가 주석 밖에 정확히 하나가 아니다 — 기대: $_btc ($_btf)"
+  done <<EOF
+$(sd_backoff_canary "$L")
+EOF
   _backoff_seen=$((_backoff_seen + 1))
 done
 assert_eq "7" "$_backoff_seen" "[backoff] 훑은 언어 수가 7이 아니다 — 추출 표가 낡았나?"
@@ -1501,24 +1546,24 @@ assert_eq "$sd_skew_expect" "$(sd_norm "$(sd_skew python)")" "[음성대조·양
 #     테스트가 먼저 빨개지므로 축은 「그 테스트가 사라지지 않았는가」만 지키면 된다.
 #     소스 철자를 겨누면 **동작이 같은 리팩터에도 빨개진다**(실측: rust 의
 #     `serde_json::Value::as_str` → `|v| v.as_str()` 로 바꿨을 뿐인데 걸렸다).
-#   · 이미 옳던 넷은 그런 테스트가 **없다**. 그래서 그쪽은 집행 기제 자체를 겨눈다 —
-#     JVM 둘은 우리 코드가 아니라 Nimbus `TokenResponse.parse` 가 타입을 강제하므로
-#     **그 호출의 존재**가 앵커다. (넷에 테스트를 붙이면 그때 이쪽으로 옮긴다.)
-sd_token_type_guard() { # $1=언어 → 불변식을 지키는 앵커의 히트 수(없으면 0/빈 문자열)
-    case "$1" in
-    rust)   grep -c 'non_string_access_token_is_rejected' "$ROOT/rust/src/token_provider.rs" ;;
-    python) grep -c 'test_non_string_access_token_is_rejected' \
-              "$ROOT/python/tests/unit/test_tokens.py" ;;
-    ruby)   grep -c 'rejects a non-string access_token' "$ROOT/ruby/spec/unit/tokens_spec.rb" ;;
-    php)    grep -c 'testNonStringAccessTokenIsRejected' \
-              "$ROOT/php/tests/Unit/Token/TokenSetTest.php" ;;
-    dotnet) grep -c 'ClientCredentialsToken_rejects_non_string_access_token' \
-              "$ROOT/dotnet/tests/Xzawed.Keycloak.Sdk.Tests/AuthClientTests.cs" ;;
-    node)   grep -c "typeof at !== 'string'" "$ROOT/node/src/tokens.ts" ;;
-    go)     grep -c 'jwt.AccessToken == ""' "$ROOT/go/admin.go" ;;
-    java)   grep -c 'TokenResponse.parse(' \
-              "$ROOT/java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java" ;;
-    kotlin) grep -c 'TokenResponse.parse(' "$ROOT/kotlin/src/main/kotlin/io/github/xzawed/keycloak/auth.kt" ;;
+#   · 그런 테스트가 **없는** 셋(go·java·kotlin)은 집행 기제 자체를 겨눈다 — JVM 둘은 우리
+#     코드가 아니라 Nimbus `TokenResponse.parse` 가 타입을 강제하므로 **그 호출의 존재**가
+#     앵커다. (테스트를 붙이면 그때 이쪽으로 옮긴다 — node 가 그렇게 옮겨 왔다.)
+# ⚠️ **node 는 #579 로 옮겨 왔다.** 소스 조각 `typeof at !== 'string'` 을 앵커로 쓰던 동안, 그 검사를
+#   `at === undefined || at === null` 로 약화해도 node 테스트 177 전부가 통과했다(변이 실측) —
+#   테스트가 「키 없음」만 봤기 때문이다. 이제 표 테스트가 그 약화를 5 건 실패로 잡는다.
+# 카나리아는 주석 밖 **정확히 1 회**(`sd_canary_ok`), 집행 기제 훅은 주석 밖 ≥ 1(`sd_hook_ok`).
+sd_token_type_anchor() { # $1=언어 → `종류|파일|문자열` (종류: canary=행위 테스트 선언 · hook=집행 기제)
+  case "$1" in
+    rust)   printf '%s\n' 'canary|rust/src/token_provider.rs|async fn non_string_access_token_is_rejected(' ;;
+    python) printf '%s\n' 'canary|python/tests/unit/test_tokens.py|def test_non_string_access_token_is_rejected(' ;;
+    ruby)   printf '%s\n' 'canary|ruby/spec/unit/tokens_spec.rb|it "rejects a non-string access_token (#{bad.inspect})"' ;;
+    php)    printf '%s\n' 'canary|php/tests/Unit/Token/TokenSetTest.php|public function testNonStringAccessTokenIsRejected(' ;;
+    dotnet) printf '%s\n' 'canary|dotnet/tests/Xzawed.Keycloak.Sdk.Tests/AuthClientTests.cs|public async Task ClientCredentialsToken_rejects_non_string_access_token(' ;;
+    node)   printf '%s\n' 'canary|node/test/unit/tokens.test.ts|access_token 이 비문자열·빈 문자열이면 throw' ;;
+    go)     printf '%s\n' 'hook|go/admin.go|jwt.AccessToken == ""' ;;
+    java)   printf '%s\n' 'hook|java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java|TokenResponse.parse(' ;;
+    kotlin) printf '%s\n' 'hook|kotlin/src/main/kotlin/io/github/xzawed/keycloak/auth.kt|TokenResponse.parse(' ;;
   esac
 }
 
@@ -1530,11 +1575,18 @@ assert_eq "$(sd_sorted "$SD_LANGS")" "$(sd_sorted "$SD_TOKEN_TYPE_LANGS")" \
   "[토큰타입] SD_TOKEN_TYPE_LANGS 가 SD_LANGS 와 다르다 — 언어가 들고 났는데 이 축의 손 목록이 안 따라왔다"
 sd_tt_seen=0
 for L in $SD_TOKEN_TYPE_LANGS; do
-  _hits="$(sd_token_type_guard "$L" 2>/dev/null || printf '0')"
-  [ -n "$_hits" ] || _hits=0
-  assert_eq "ok" "$(ok_if "$([ "$_hits" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
-    "[토큰 타입검증] $L 에서 access_token 타입 검증 기제가 사라졌다 — 쓸 수 없는 토큰이 성공으로 나간다"
-  [ "$_hits" -ge 1 ] && sd_tt_seen=$((sd_tt_seen + 1))
+  _tt_n=0
+  while IFS='|' read -r _ttk _ttf _tts; do
+    [ -n "$_tts" ] || continue
+    if [ "$_ttk" = canary ]; then _ttr="$(sd_canary_ok "$ROOT/$_ttf" "$_tts")"
+    else _ttr="$(sd_hook_ok "$ROOT/$_ttf" "$_tts")"; fi
+    assert_eq "ok" "$_ttr" \
+      "[토큰 타입검증] $L 의 $_ttk 앵커가 주석 밖에 기대만큼 없다 — 쓸 수 없는 토큰이 성공으로 나갈 수 있다(기대: $_tts · $_ttf)"
+    [ "$_ttr" = ok ] && _tt_n=$((_tt_n + 1))
+  done <<EOF
+$(sd_token_type_anchor "$L")
+EOF
+  [ "$_tt_n" -ge 1 ] && sd_tt_seen=$((sd_tt_seen + 1))
 done
 # 공허 하한 — 목록이 비거나 case 가 낡으면 어서션이 0건 실행되고 조용히 통과한다.
 assert_eq "9" "$sd_tt_seen" "[토큰 타입검증] 확인한 언어 수가 9가 아니다 — 추출 표가 낡았나?"
