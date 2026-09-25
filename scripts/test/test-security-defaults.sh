@@ -616,14 +616,31 @@ sd_mask_canary() {
     node)   printf '%s' 'toString/toJSON/inspect' ;;
     dotnet) printf '%s' 'ToString_masks_access_and_refresh' ;;
     php)    printf '%s' 'testToStringMasksTokens' ;;
-    ruby)   printf '%s' 'masks tokens in inspect' ;;
+    ruby)   printf '%s' 'it "masks tokens in inspect"' ;;
   esac
 }
 
 # 훅과 카나리아의 판정 — **주석을 뺀 줄**에서 센다(`sd_code_lines`). 훅은 ≥ 1, 카나리아는 == 1.
 # 카나리아가 2 회 이상이면 형제 테스트나 사본이 그 자리를 대신 채운다(go `assertMasked` 8 회 ·
 # node `not.toContain(req.codeVerifier)` 3 회가 그 실물이었다). 0 회면 그 경로의 행위 테스트가 없다.
-sd_code_count() { sd_code_lines "$1" | grep -cF -- "$2" || true; }
+# ⚠️ 등장은 **앞 글자가 식별자·`.` 가 아닐 때만** 센다 — 그렇지 않으면 `xit('…'` 가 카나리아
+# `it('…'` 를 담아 **건너뛴 테스트**가 1 회로 세어진다(독립 레그 지목 · 재현). 값은 `ENVIRON` 으로
+# 넘긴다 — `awk -v` 는 `\"` 를 이스케이프로 먹어 ruby 훅 `code_verifier=\"***\"` 이 안 맞게 된다.
+# ⚠️ 잔여(줄 단위라 못 본다): 다음 줄의 skip 표지(`#[ignore]`·`@Disabled`·skip 데코레이터) ·
+# `/* … */` 안쪽의 맨 줄 · 꼬리 주석 속 훅 사본. 훅은 구조 확인이고 동작은 카나리아의 테스트가 본다.
+sd_code_count() {
+  sd_code_lines "$1" | SD_NEEDLE="$2" awk '
+    BEGIN { n = ENVIRON["SD_NEEDLE"]; c = 0 }
+    {
+      s = $0; off = 0
+      while ((i = index(s, n)) > 0) {
+        p = (off + i > 1) ? substr($0, off + i - 1, 1) : ""
+        if (p !~ /[A-Za-z0-9_.]/) c++
+        off += i; s = substr(s, i + 1)
+      }
+    }
+    END { print c }'
+}
 sd_hook_ok() { _sn="$(sd_code_count "$1" "$2")"; [ "$_sn" -ge 1 ] && printf ok || printf MISSING; }
 sd_canary_ok() { _sn="$(sd_code_count "$1" "$2")"; [ "$_sn" = 1 ] && printf ok || printf 'COUNT=%s' "$_sn"; }
 
@@ -632,14 +649,23 @@ sd_canary_ok() { _sn="$(sd_code_count "$1" "$2")"; [ "$_sn" = 1 ] && printf ok |
 _mc="$(mktemp -d)"
 printf '  // codeVerifier: ${mask(this.codeVerifier)}\n  x = `codeVerifier: ${this.codeVerifier}`\n' > "$_mc/hook_comment_only.ts"
 printf '  x = `codeVerifier: ${mask(this.codeVerifier)}`\n' > "$_mc/hook_code.ts"
-printf "  it('a', () => { expect(s).not.toContain(v) })\n  it('b', () => { expect(j).not.toContain(v) })\n" > "$_mc/canary_twice.ts"
+printf "  it('a', () => { expect(s).not.toContain(v) })\n  it('a', () => { expect(j).not.toContain(v) })\n" > "$_mc/canary_twice.ts"
 printf "  // it('a', () => { expect(s).not.toContain(v) })\n" > "$_mc/canary_comment_only.ts"
 printf "  it('a', () => { expect(s).not.toContain(v) })\n" > "$_mc/canary_once.ts"
+printf "  xit('a', () => { expect(s).not.toContain(v) })\n" > "$_mc/canary_skipped.ts"
+printf '    xit "masks tokens in inspect" do\n' > "$_mc/canary_skipped.rb"
+printf '    it "masks code_verifier=\\"***\\"" do\n' > "$_mc/hook_escaped.rb"
+assert_eq "COUNT=0" "$(sd_canary_ok "$_mc/canary_skipped.ts" "it('a'")" \
+  "[mask 대조군] xit( 로 건너뛴 테스트를 카나리아로 셌다(Grok)"
+assert_eq "COUNT=0" "$(sd_canary_ok "$_mc/canary_skipped.rb" 'it "masks tokens in inspect"')" \
+  "[mask 대조군] rspec xit 로 건너뛴 예시를 카나리아로 셌다"
+assert_eq "ok" "$(sd_hook_ok "$_mc/hook_escaped.rb" 'code_verifier=\"***\"')" \
+  "[mask 대조군] 역슬래시가 든 훅(ruby)을 못 읽는다 — 값이 awk 이스케이프를 탔나?"
 assert_eq "MISSING" "$(sd_hook_ok "$_mc/hook_comment_only.ts" 'codeVerifier: ${mask(this.codeVerifier)}')" \
   "[mask 대조군] 주석에만 있는 훅을 있다고 읽었다 — 실제 코드는 원문을 찍는다"
 assert_eq "ok" "$(sd_hook_ok "$_mc/hook_code.ts" 'codeVerifier: ${mask(this.codeVerifier)}')" \
   "[mask 대조군] 코드 줄의 훅을 못 읽는다"
-assert_eq "COUNT=2" "$(sd_canary_ok "$_mc/canary_twice.ts" 'not.toContain(')" \
+assert_eq "COUNT=2" "$(sd_canary_ok "$_mc/canary_twice.ts" "it('a'")" \
   "[mask 대조군] 두 번 나오는 카나리아를 받았다 — 한 테스트를 지워도 다른 테스트가 채운다"
 assert_eq "COUNT=0" "$(sd_canary_ok "$_mc/canary_comment_only.ts" "it('a'")" \
   "[mask 대조군] 주석 속 카나리아를 테스트로 읽었다"
@@ -746,7 +772,7 @@ sd_mask2_canary() {
     dotnet) printf '%s' 'AuthorizationRequest_ToString_masks_code_verifier' ;;
     php)    printf '%s' 'testJsonEncodeAndStringMaskAuthorizationRequest' ;;
     rust)   printf '%s' 'fn debug_masks_code_verifier' ;;
-    ruby)   printf '%s' 'masks code_verifier in inspect' ;;
+    ruby)   printf '%s' 'it "masks code_verifier in inspect"' ;;
   esac
 }
 
