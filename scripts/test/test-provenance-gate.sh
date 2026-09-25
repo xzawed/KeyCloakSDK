@@ -99,13 +99,33 @@ assert_eq "$_pg_n" "$pg_blocks" "센티널로 게이트 블록을 뽑지 못한 
 # 읽는 것은 등장한 문자열이 아니라 **마지막으로 대입된 값**이다. 그래서 센티널 **앞** 구간에서
 # 주석을 벗긴 뒤, 그 변수에 대한 **마지막** 대입의 우변이 기대 형태인지 본다. 센티널 **안**의
 # 재대입(`REG="${REG%/}/"` 정규화)은 런타임 행이 스텁으로 실행해 보므로 여기서 세지 않는다.
+# 독립 레그(Grok)가 이 판에 우회 여섯을 냈고 여섯 다 정적으로 재현됐다 — 둘을 받아 닫았다:
+# 기대 형태가 읽는 **원천**(`REGISTRY_URL=.` 을 정의 앞에) · 따옴표 **안**의 ` #` 를 주석으로 오인해
+# 뒤의 `; REG=.` 를 버리는 것. 빈 기본값(`:-}`)·`unset REG` 는 약화가 아니다 — 빈 값은 런타임 행
+# 「빈 근거 그림자」가 0 으로 잡고, 미설정은 일곱 스크립트 전부의 `set -u` 가 죽인다(fail-closed).
 # ⚠️ 잔여 — 이것도 셸 의미의 정적 근사다: 실행되지 않는 분기 안의 대입·`eval`·`read` 는 못 본다.
 pg_last_assign() { # $1=파일 $2=변수 → 센티널 앞, 주석 제외, 마지막 대입의 `VAR=` 부터 끝까지
   awk -v v="$2" '
+    # 셸 주석을 벗긴다 — 따옴표 밖, 단어 시작의 `#` 부터. 따옴표 안의 ` #` 는 값이다.
+    function nocomment(line,   i, n, c, q, out, prev, sq) {
+      sq = "\047"; q = ""; out = ""; prev = " "; n = length(line)
+      for (i = 1; i <= n; i++) {
+        c = substr(line, i, 1)
+        if (q == "") {
+          if (c == "#" && (prev == " " || prev == "\t")) break
+          if (c == sq || c == "\"") q = c
+        } else if (c == q) {
+          q = ""
+        } else if (q == "\"" && c == "\\" && i < n) {
+          out = out c; i++; c = substr(line, i, 1)
+        }
+        out = out c; prev = c
+      }
+      return out
+    }
     /# >>> provenance-gate/ { exit }
-    { sub(/^[ \t]*#.*/, ""); sub(/[ \t]#.*/, "") }
     {
-      s = " " $0
+      s = " " nocomment($0)
       re = "[ \t;)&|](export[ \t]+|readonly[ \t]+|local[ \t]+)?" v "="
       while (match(s, re)) {
         t = substr(s, RSTART + 1)
@@ -118,7 +138,11 @@ pg_last_assign() { # $1=파일 $2=변수 → 센티널 앞, 주석 제외, 마�
 }
 pg_defn_file() { # $1=파일 $2=기대 정의(「VAR=…」 접두) → ok | MISSING
   _last="$(pg_last_assign "$1" "${2%%=*}")"
-  case "$_last" in "$2"*) echo ok ;; *) echo MISSING ;; esac
+  case "$_last" in "$2"*) ;; *) echo MISSING; return ;; esac
+  # 기대 형태가 `${SRC:-…}` 로 원천을 읽으면, 그 원천도 센티널 앞에서 대입돼선 안 된다(주입 전용).
+  _src="$(printf '%s' "$2" | sed -n 's/.*\${\([A-Za-z_][A-Za-z0-9_]*\):-.*/\1/p')"
+  if [ -n "$_src" ] && [ -n "$(pg_last_assign "$1" "$_src")" ]; then echo MISSING; return; fi
+  echo ok
 }
 pg_defn() { # $1=언어 $2=기대하는 정의 문자열
   assert_eq "ok" "$(pg_defn_file "$CONSUME/$1-run.sh" "$2")" \
@@ -161,6 +185,16 @@ export REG="."
 X
 _pgd_case MISSING "음성: 대입이 아예 없다" <<'X'
 echo 'REG="${REGISTRY_URL:-http://x:1}"'
+X
+_pgd_case ok "양성: 진짜 꼬리 주석 속 대입은 세지 않는다" <<'X'
+REG="${REGISTRY_URL:-http://x:1}"  # 여기서 REG="." 로 바꾸지 말 것
+X
+_pgd_case MISSING "음성: 따옴표 안의 ' #' 뒤에 숨긴 재대입(Grok)" <<'X'
+REG="${REGISTRY_URL:-http://x:1} #"; REG=.
+X
+_pgd_case MISSING "음성: 정의가 읽는 원천을 앞에서 덮기(Grok)" <<'X'
+REGISTRY_URL=.
+REG="${REGISTRY_URL:-http://x:1}"
 X
 pg_defn python 'REG="${REGISTRY_URL:-'
 pg_defn node   'REG="${REGISTRY_URL:-'
