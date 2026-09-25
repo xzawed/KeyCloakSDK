@@ -120,7 +120,7 @@ jobs:
       - name: Generate Rust lcov coverage
         working-directory: rust
         run: |
-          cargo llvm-cov --ignore-filename-regex '(auth|admin|client)\.rs' --lcov --output-path lcov.info
+          cargo llvm-cov --ignore-filename-regex '(^|[\\/])(auth|admin|client)\.rs$' --lcov --output-path lcov.info
           # llvm-cov는 SF에 절대경로를 쓰고 그 경로는 baseDir 하위 실파일이라 SonarQube가 그대로
           # 해석한다(ruby JSON과 동일) → 그 판에서 아래 sed는 no-op다. 크레이트 루트 기준 상대경로
           # (`src/...`)로 나오는 판이면 Node lcov와 같이 `rust/` 접두를 붙여 루트 기준으로 만든다.
