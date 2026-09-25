@@ -87,6 +87,31 @@ internal class AuthClientTest {
             auth.close()
         }
 
+    // 비문자열·빈 access_token 거절은 우리 코드가 아니라 **Nimbus `TokenResponse.parse`** 가 한다. 교차언어
+    // 가드는 그 호출의 존재만 봤다 — 라이브러리가 관용해지면(.NET 의 Duende 가 실제로 강제변환했다) 쓸 수
+    // 없는 토큰이 성공으로 나가도 아무도 모른다. 그 행동을 고정한다(양성 대조는 위 성공 테스트).
+    @Test
+    fun `clientCredentialsToken rejects non-string or empty access_token`() =
+        runTest {
+            for (raw in listOf("12345", """{"a":1}""", "[]", "true", "null", "\"\"")) {
+                server.resetAll()
+                server.stubFor(
+                    post(urlEqualTo(tokenPath))
+                        .willReturn(
+                            aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody("""{"access_token":$raw,"token_type":"Bearer","expires_in":300}"""),
+                        ),
+                )
+                val auth = AuthClient(config())
+                val ex = assertFailsWith<KeycloakAuthException>("access_token $raw") { auth.clientCredentialsToken() }
+                assertEquals("Malformed auth response", ex.message, "access_token $raw")
+                assertTrue(ex.cause is com.nimbusds.oauth2.sdk.ParseException, "access_token $raw")
+                auth.close()
+            }
+        }
+
     @Test
     fun `clientCredentialsToken maps OAuth error response to KeycloakAuthException with error code`() =
         runTest {
