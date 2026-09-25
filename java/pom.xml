@@ -62,7 +62,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <keycloak.adminclient.version>26.0.12</keycloak.adminclient.version>
     <nimbus.oidc.version>11.38.2</nimbus.oidc.version>
-    <nimbus.jose.version>10.9.1</nimbus.jose.version>
+    <nimbus.jose.version>10.10</nimbus.jose.version>
     <junit.version>6.1.3</junit.version>
     <mockito.version>5.23.0</mockito.version>
     <testcontainers.version>2.0.5</testcontainers.version>
@@ -96,13 +96,13 @@
            2.22 라인으로 올렸는데 이 주석만 남았다(감사 실측 2026-09-22). 핀을 읽어야 할 자리는
            아래 `<version>` 이고, 이 문단은 **왜 parent 관리값보다 높게 잡는가**(picked higher)만
            설명한다. kotlin/build.gradle.kts 가 같은 값을 손으로 미러하므로 함께 움직인다. -->
-      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-core</artifactId><version>2.22.2</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>2.22.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-core</artifactId><version>2.22.3</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>2.22.3</version></dependency>
       <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-annotations</artifactId><version>2.22</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jdk8</artifactId><version>2.22.2</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId><version>2.22.2</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.jakarta.rs</groupId><artifactId>jackson-jakarta-rs-base</artifactId><version>2.22.2</version></dependency>
-      <dependency><groupId>com.fasterxml.jackson.module</groupId><artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId><version>2.22.2</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jdk8</artifactId><version>2.22.3</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId><version>2.22.3</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.jakarta.rs</groupId><artifactId>jackson-jakarta-rs-base</artifactId><version>2.22.3</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.module</groupId><artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId><version>2.22.3</version></dependency>
       <dependency><groupId>org.jboss.logging</groupId><artifactId>jboss-logging</artifactId><version>3.6.3.Final</version></dependency>
       <!-- jackson-databind 계열 6종은 CVE 대응으로 2.21.5(관리값 2.21.2보다 상향), jackson-annotations는
            별도 버전 트랙이라 2.21 유지(비취약), jboss-logging은 keycloak-client-parent:26.0.10 관리값과 일치. -->
