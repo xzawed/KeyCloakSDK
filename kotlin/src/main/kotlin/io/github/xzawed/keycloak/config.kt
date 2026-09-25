@@ -45,6 +45,9 @@ public class KeycloakConfig(
         // 필드 이름으로 거부한다.
         requireTimeoutMillis("connectTimeout", connectTimeout)
         requireTimeoutMillis("readTimeout", readTimeout)
+        // 음수는 의미가 없어 자매(go·dotnet·node·python·php)와 Java 처럼 생성 시 거부한다(null 은 타입이 막는다).
+        if (clockSkew.isNegative) throw KeycloakConfigException("clockSkew must be >= 0")
+        if (jwksMinRefetch.isNegative) throw KeycloakConfigException("jwksMinRefetch must be >= 0")
     }
 
     // serverUrl 검증. 사유만 싣는다 — URISyntaxException.message 는 입력 전체를 되울린다.
@@ -59,12 +62,16 @@ public class KeycloakConfig(
         if (!isHttpOrHttps(uri.scheme)) throw badServerUrl("scheme must be http or https")
         // "http:foo" 는 스킴이 http 인 불투명 URI 라 toURL() 도 성공한다 — authority 부재를 따로 본다.
         if (uri.rawAuthority == null) throw badServerUrl("missing authority")
-        try {
-            uri.toURL()
-        } catch (e: MalformedURLException) {
-            // 예: "http://::1" — URI 는 파싱되지만 toURL() 이 MalformedURLException 으로 실패한다(실측).
-            throw badServerUrl(e.message, e)
-        }
+        val url =
+            try {
+                uri.toURL()
+            } catch (e: MalformedURLException) {
+                // 예: "http://::1" — URI 는 파싱되지만 toURL() 이 MalformedURLException 으로 실패한다(실측).
+                throw badServerUrl(e.message, e)
+            }
+        // ⚠️ 포트 범위는 URI·URL 어느 쪽도 보지 않는다 — :65536 은 여기까지 통과하고 연결 시점에 IAE("port out
+        // of range")로 샜다(독립 레그 실측, Java 자매). URL 의 포트를 본다 — 밑줄 호스트는 URI 가 포트를 못 읽는다.
+        if (url.port > 65535) throw badServerUrl("port out of range")
     }
 
     private fun badServerUrl(

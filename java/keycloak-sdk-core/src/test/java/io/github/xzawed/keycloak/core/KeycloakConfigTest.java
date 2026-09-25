@@ -140,7 +140,10 @@ class KeycloakConfigTest {
   // (상대 URL 은 Nimbus SerializeException 자체, 공백은 URI.create 의 IAE, `http://::1` 은 SerializeException —
   // 실측 2026-09-25). 메시지는 입력을 되울리지 않는다. Kotlin 자매(`ConfigTest`)와 같은 계약이다.
   @Test void malformedServerUrl_throwsConfigExceptionWithoutEchoingInput() {
-    for (String url : List.of("kc.example.com", "http://kc example.com", "ftp://kc.example.com", "http:foo", "http://::1")) {
+    // 범위 밖 포트는 URI·URL 어느 쪽도 보지 않아 연결 시점에 IAE("port out of range")로 샜다 — 독립 레그 실측.
+    // 밑줄 호스트는 URI 가 포트를 읽지 못하므로(registry-based) 그쪽도 함께 본다.
+    for (String url : List.of("kc.example.com", "http://kc example.com", "ftp://kc.example.com", "http:foo", "http://::1",
+        "http://127.0.0.1:65536", "http://kc_server:70000")) {
       KeycloakConfigException e = assertThrows(KeycloakConfigException.class,
           () -> base().serverUrl(url).build(), url);
       assertTrue(e.getMessage().startsWith("serverUrl must be an absolute http(s) URL: "), e.getMessage());
@@ -152,7 +155,7 @@ class KeycloakConfigTest {
   // compose 서비스 이름이 흔히 그 모양이라 받아야 한다(host 를 요구하면 회귀다).
   @Test void absoluteHttpServerUrl_isAccepted_includingUnderscoreHost() {
     for (String url : List.of("http://keycloak_server:8080", "https://kc.example.com/auth", "http://127.0.0.1:8080",
-        "HTTP://kc.example.com", "https://kc.example.com////")) {
+        "HTTP://kc.example.com", "https://kc.example.com////", "http://127.0.0.1:65535")) {
       assertEquals(url, base().serverUrl(url).build().getServerUrl());
     }
   }
@@ -174,6 +177,35 @@ class KeycloakConfigTest {
       assertEquals(d, base().connectTimeout(d).build().getConnectTimeout());
       assertEquals(d, base().readTimeout(d).build().getReadTimeout());
     }
+  }
+
+  // null 배열·null 원소는 build() 에서 거부한다 — 전에는 Arrays.asList·List.copyOf 가 JDK NPE 로 공개 API 에
+  // 샜다(독립 레그 실측). 설정값이므로 다른 builder 검증과 같은 KeycloakConfigException 이다.
+  @Test void nullScopesOrSignatureAlgorithms_throwConfigException() {
+    java.util.List<java.util.function.Supplier<KeycloakConfig.Builder>> bad = List.of(
+        () -> base().scopes((String[]) null), () -> base().scopes((String) null), () -> base().scopes("openid", null),
+        () -> base().signatureAlgorithms((String[]) null), () -> base().signatureAlgorithms((String) null),
+        () -> base().signatureAlgorithms("RS256", null));
+    for (int i = 0; i < bad.size(); i++) {
+      java.util.function.Supplier<KeycloakConfig.Builder> b = bad.get(i);
+      KeycloakConfigException e = assertThrows(KeycloakConfigException.class, () -> b.get().build(), "case " + i);
+      assertTrue(e.getMessage().endsWith("must not be null or contain null"), e.getMessage());
+    }
+  }
+
+  // null 은 첫 validate() 에서 JDK NPE 로 샜다(실측 2026-09-25: clockSkew · jwksMinRefetch 둘 다). 음수는 새지
+  // 않지만 의미가 없어 자매(go·dotnet·node·python·php)처럼 생성 시 거부한다. 0 은 허용한다.
+  @Test void clockSkewAndJwksMinRefetch_nullOrNegative_throwConfigException() {
+    for (Duration d : Arrays.asList(null, Duration.ofSeconds(-1))) {
+      KeycloakConfigException skew = assertThrows(KeycloakConfigException.class,
+          () -> base().clockSkew(d).build(), "clockSkew " + d);
+      assertEquals("clockSkew must be >= 0", skew.getMessage());
+      KeycloakConfigException refetch = assertThrows(KeycloakConfigException.class,
+          () -> base().jwksMinRefetch(d).build(), "jwksMinRefetch " + d);
+      assertEquals("jwksMinRefetch must be >= 0", refetch.getMessage());
+    }
+    assertEquals(Duration.ZERO, base().clockSkew(Duration.ZERO).build().getClockSkew());
+    assertEquals(Duration.ZERO, base().jwksMinRefetch(Duration.ZERO).build().getJwksMinRefetch());
   }
 
   private static KeycloakConfig.Builder base() {
