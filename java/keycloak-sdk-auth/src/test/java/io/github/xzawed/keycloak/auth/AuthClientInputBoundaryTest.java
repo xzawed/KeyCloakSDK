@@ -3,6 +3,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.sun.net.httpserver.HttpServer;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
 import io.github.xzawed.keycloak.core.exception.KeycloakAuthException;
+import io.github.xzawed.keycloak.core.exception.KeycloakConfigException;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -97,6 +98,23 @@ class AuthClientInputBoundaryTest {
         () -> client.createAuthorizationRequest(null));
     assertEquals("redirectUri must not be null", redirect.getMessage());
     assertEquals(0, hits.get());
+  }
+
+  // Nimbus 는 인가 요청을 build() 할 때 redirect_uri 를 검사한다 — fragment(RFC 6749 §3.1.2)·금지 scheme·
+  // 금지 쿼리 파라미터를 IllegalStateException 으로 거부한다. 잘못된 콜백 URL 은 IdP 가 거절한 것이 아니라
+  // 앱 구성 오류다(Rust `redirect_url()`·Kotlin 과 같은 분류).
+  @Test void createAuthorizationRequest_redirectRejectedByNimbus_isSdkConfigError() {
+    KeycloakConfig cfg = KeycloakConfig.builder()
+        .serverUrl("https://kc.example.com").realm("r").clientId("app").build();
+    AuthClient client = new AuthClient(cfg, OidcMetadata.forRealm(cfg));
+    for (String uri : List.of("http://localhost/cb#frag", "javascript:alert(1)", "http://localhost/cb?code=1")) {
+      KeycloakConfigException e = assertThrows(KeycloakConfigException.class,
+          () -> client.createAuthorizationRequest(URI.create(uri)), uri);
+      assertTrue(e.getMessage().startsWith("invalid redirect_uri: "), e.getMessage());
+      assertInstanceOf(IllegalStateException.class, e.getCause(), uri);
+    }
+    // 대조군 — 평범한 콜백은 그대로 URL 이 된다(위 거부가 모든 URI 를 막는 것이 아님을 보인다).
+    assertDoesNotThrow(() -> client.createAuthorizationRequest(CB));
   }
 
   // 공백 scope 전례(`AuthClientScopeFallbackTest`)는 createAuthorizationRequest 만 고쳤다 — 같은 설정이

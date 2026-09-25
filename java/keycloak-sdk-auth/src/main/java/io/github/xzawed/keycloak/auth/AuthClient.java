@@ -83,14 +83,24 @@ public class AuthClient {
     State state = new State(); Nonce nonce = new Nonce();
     Scope scope = configuredScope();
     if (scope.isEmpty()) scope = new Scope("openid");
-    com.nimbusds.openid.connect.sdk.AuthenticationRequest ar =
+    com.nimbusds.openid.connect.sdk.AuthenticationRequest.Builder builder =
         new com.nimbusds.openid.connect.sdk.AuthenticationRequest.Builder(
             new ResponseType(ResponseType.Value.CODE), scope,
             new ClientID(config.getClientId()), redirectUri)
           .endpointURI(metadata.getAuthorizationEndpoint())
           .state(state).nonce(nonce)
-          .codeChallenge(pkce.nimbusVerifier(), CodeChallengeMethod.S256)
-          .build();
+          .codeChallenge(pkce.nimbusVerifier(), CodeChallengeMethod.S256);
+    com.nimbusds.openid.connect.sdk.AuthenticationRequest ar;
+    try {
+      ar = builder.build();
+    } catch (IllegalStateException e) {
+      // ⚠️ Nimbus 는 build() 에서 redirect_uri 를 검사한다 — fragment(RFC 6749 §3.1.2)·금지 scheme
+      // (javascript·data 등)·금지 쿼리 파라미터(code·state 등)를 IllegalStateException 으로 거부하고,
+      // 그대로 두면 §4 경계를 넘어 공개 API 로 샌다. 잘못된 콜백 URL 은 IdP 가 거절한 것이 아니라 앱 구성
+      // 오류다 — Rust `redirect_url()`·Kotlin 과 같은 분류. Nimbus 사유를 메시지에 그대로 싣는다(입력 URI
+      // 전체를 되울리지 않고, 다른 원인이 섞여도 진단이 남는다).
+      throw new KeycloakConfigException("invalid redirect_uri: " + e.getMessage(), e);
+    }
     return new AuthorizationUrlRequest(ar.toURI(), pkce.getVerifier(), state.getValue(), nonce.getValue());
   }
   // Authorization Code 그랜트로 토큰 교환 (I.2). PKCE code_verifier를 포함해 토큰 엔드포인트에

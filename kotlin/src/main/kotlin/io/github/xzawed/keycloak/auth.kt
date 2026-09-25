@@ -69,14 +69,23 @@ public class AuthClient internal constructor(
         if (scope.isEmpty()) {
             scope = Scope("openid")
         }
-        val request =
+        val builder =
             AuthenticationRequest
                 .Builder(ResponseType(ResponseType.Value.CODE), scope, ClientID(config.clientId), redirect)
                 .endpointURI(URI(endpoints.authorization))
                 .state(state)
                 .nonce(nonce)
                 .codeChallenge(codeVerifier, CodeChallengeMethod.S256)
-                .build()
+        // ⚠️ 파싱을 통과한 URI 도 Nimbus 가 build() 에서 다시 검사한다 — fragment(RFC 6749 §3.1.2)·금지
+        // scheme(javascript·data 등)·금지 쿼리 파라미터(code·state 등)를 IllegalStateException 으로 거부한다.
+        // [redirectUri] 와 같은 분류로 바꾼다. 여기서는 Nimbus 사유(`message`)를 싣는다 — 입력 URI 전체를
+        // 되울리지 않는다. Java 자매와 동형.
+        val request =
+            try {
+                builder.build()
+            } catch (e: IllegalStateException) {
+                throw KeycloakConfigException("invalid redirect_uri: ${e.message}", e)
+            }
         return AuthorizationRequest(request.toURI().toString(), codeVerifier.value, state.value, nonce.value)
     }
 

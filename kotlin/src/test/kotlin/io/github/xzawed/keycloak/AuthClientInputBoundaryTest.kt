@@ -148,6 +148,22 @@ internal class AuthClientInputBoundaryTest {
         }
 
     /**
+     * 파싱은 통과해도 Nimbus 가 인가 요청을 build() 할 때 redirect_uri 를 다시 검사한다 — fragment
+     * (RFC 6749 §3.1.2)·금지 scheme·금지 쿼리 파라미터를 IllegalStateException 으로 거부한다. 같은 분류로 바꾼다.
+     */
+    @Test
+    fun `redirect uri rejected by Nimbus is an SDK config error`() {
+        val auth = serving(400, """{"error":"invalid_grant"}""")
+        for (uri in listOf("http://localhost/cb#frag", "javascript:alert(1)", "http://localhost/cb?code=1")) {
+            val e = assertFailsWith<KeycloakConfigException>(uri) { auth.createAuthorizationRequest(uri) }
+            assertTrue(e.message!!.startsWith("invalid redirect_uri: "), e.message)
+            assertIs<IllegalStateException>(e.cause, uri)
+        }
+        // 대조군 — 평범한 콜백은 그대로 URL 이 된다(위 거부가 모든 URI 를 막는 것이 아님을 보인다).
+        auth.createAuthorizationRequest("http://localhost/cb")
+    }
+
+    /**
      * 공백 scope 전례(`AuthClientScopeFallbackTest`)는 createAuthorizationRequest 만 고쳤다 — 같은 설정이
      * client_credentials 에서는 그대로 샜다. 공백 원소만 버리고, 남는 것이 없으면 scope 를 싣지 않는다.
      */
