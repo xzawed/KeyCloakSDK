@@ -405,6 +405,20 @@ printf '%s\n' '- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리�
 OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
 assert_not_contains "$OUT" "커버리지 게이트" "주석 없는 맞는 본문은 게이트 오류가 없어야 한다(대조군)"
 
+# ---- 매트릭스 주장(「CI runs …」 ↔ 워크플로 matrix 축) — 이 검사는 자가테스트가 0 이었다.
+# 게이트 검사와 같은 「첫 매치 줄」 추출이라 같은 구멍(주석이 첫 매치를 가로챈다)을 가졌다.
+mkdir -p "$TMP/.github/workflows"
+printf '%s\n' 'jobs:' '  build:' "    strategy:" "      matrix: { java: ['17', '21', '25'] }" > "$TMP/.github/workflows/ci.yml"
+printf '%s\n' 'JDK 21 builds; CI runs 17·21·25 and more.' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_not_contains "$OUT" "CI 레그를" "맞는 매트릭스 주장은 조용해야 한다(대조군)"
+printf '%s\n' 'JDK 21 builds; CI runs 17·21 and more.' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" "CI 레그를 [17, 21] 로 적는데" "매트릭스 드리프트는 잡혀야 한다"
+printf '%s\n' '<!-- CI runs 17·21·25 -->' 'JDK 21 builds; CI runs 17·21 and more.' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" "CI 레그를 [17, 21] 로 적는데" "주석 속 「CI runs」 가 본문 드리프트를 가리면 안 된다(거짓 초록)"
+
 # 이 블록의 .claude/·java/는 cp -r로 지워지지 않고 남는다 — 다음 블록을 오염시키지
 # 않도록 다시 리셋한다.
 rm -rf "$TMP" && mkdir -p "$TMP"
@@ -1207,6 +1221,17 @@ cp -r "$FIX/." "$TMP/"
 printf '%s\n' '# target' '' '## C# / .NET' > "$TMP/t.md"
 printf '%s\n' '# src' '' '```md' '[예시](t.md#does-not-exist)' '```' > "$TMP/s.md"
 assert_ok node "$GUARD" "$TMP"
+
+# 주석 속 헤딩은 렌더되지 않는다 — 앵커 대상으로 세면 안 된다. 거짓 초록 실측: 주석 안에
+# `## Ghost` 가 있으면 `t.md#ghost` 가 통과했다(대조군은 위의 「없는 앵커는 잡는다」).
+printf '%s\n' '# target' '' '<!--' '## Ghost' '-->' '' '본문.' > "$TMP/t.md"
+printf '%s\n' '# src' '' '[link](t.md#ghost)' > "$TMP/s.md"
+assert_fails node "$GUARD" "$TMP"
+# 같은 뿌리의 둘째 결과 — 주석 속 같은 제목이 GitHub 중복 접미(-1)를 밀어, 렌더에는 없는
+# `#c--net-1` 을 통과시켰다.
+printf '%s\n' '# target' '' '<!--' '## C# / .NET' '-->' '' '## C# / .NET' > "$TMP/t.md"
+printf '%s\n' '# src' '' '[link](t.md#c--net-1)' > "$TMP/s.md"
+assert_fails node "$GUARD" "$TMP"
 
 # 하한 — 링크를 하나도 못 뽑았는데 "불일치 0" 으로 통과하는 것이 이 부류의 공허함이다.
 mk_anchor_fixture 't.md#c--net'

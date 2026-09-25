@@ -767,11 +767,19 @@ const COVERAGE = {
 // 문서 텍스트에서 "게이트"/"gate" 낱말이 등장하는 첫 줄을 찾아, 그 낱말 뒤에 나오는 첫 두
 // 숫자를 [라인%, 브랜치%] 주장으로 삼는다 — 세 소스 모두 라인 임계값을 브랜치보다 먼저
 // 선언하므로(java pom의 LINE limit, kotlin의 LINE rule, node의 `lines:`) 순서가 맞는다.
-// ⚠️ HTML 주석을 **먼저 벗긴다** — 주석은 주입되지 않으므로 주장이 아니다. 안 벗기면 주석 속 「gate」
-// 줄이 첫 매치를 가로챈다: 실제 값과 같은 수면 본문 드리프트를 가리고(거짓 초록), 다른 수면 맞는
-// 본문을 빨갛게 한다(거짓 빨강 — 예산 판정 주석의 「게이트 85% → 41」 이 그랬다). 둘 다 실측(#586).
+// ⚠️ **주장·헤딩은 HTML 주석을 벗긴 뒤에 읽는다** — 주석은 주입되지도 렌더되지도 않으므로 주장이
+// 아니다. 이 헬퍼를 쓰는 셋(게이트·매트릭스 주장 · 앵커 대상 헤딩)은 모두 「문서에서 무엇을 찾는」
+// 추출이라, 주석 속 사본이 첫 매치를 가로채면 드리프트를 가리거나(거짓 초록) 맞는 본문을 빨갛게
+// 했다(거짓 빨강). 셋 다 자가테스트로 실측했다. ⚠️ doc-guard 앵커 스캐너는 쓰지 말 것 — 앵커가
+// 곧 주석이다. 적재 예산은 별도 규칙(`loadedText`: 펜스 보존·과대계상)을 쓴다.
+function withoutHtmlComments(text) {
+  return text.replace(/<!--[\s\S]*?-->/g, '')
+}
+
+// 실측(#586): 예산 판정 주석의 「게이트 85% → 41」 이 kotlin 게이트를 85/41 로 읽혀 빨갛게 했고,
+// 반대로 본문을 드리프트시킨 뒤 앞에 `<!-- gate 90 85 -->` 를 두면 통과했다.
 function firstGateClaim(text) {
-  for (const line of text.replace(/<!--[\s\S]*?-->/g, '').split(/\r?\n/)) {
+  for (const line of withoutHtmlComments(text).split(/\r?\n/)) {
     const idx = line.search(/게이트|gate/i)
     if (idx < 0) continue
     const nums = [...line.slice(idx).matchAll(/\d{1,3}/g)].map((m) => m[0])
@@ -881,8 +889,9 @@ function matrixAxis(wfRel, axis) {
 // 문서에서 「CI runs …」 뒤의 **버전 토큰 연속열만** 탐욕 소비하고 첫 비버전 토큰에서 멈춘다.
 // ⚠️ 줄끝까지 읽으면 java 가 `major ≤ 61` 의 61 을 먹고, 첫 마침표에서 끊으면 ruby 가
 // `3.2` 의 점에 걸려 `["3"]` 이 된다(둘 다 실측). 구분자는 `,`·`·`·`and`·`&`·`+` 를 허용한다.
+// ⚠️ 첫 매치 줄 추출이라 주석 속 「CI runs 17·21·25」 가 본문 드리프트를 가렸다(`withoutHtmlComments`).
 function matrixClaim(text) {
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of withoutHtmlComments(text).split(/\r?\n/)) {
     const idx = line.search(/CI runs/i)
     if (idx < 0) continue
     let rest = line.slice(idx + 'CI runs'.length)
@@ -1023,7 +1032,9 @@ function headingSlugs(absPath) {
     slugCache.set(absPath, null) // 파일 없음 — 검사 5가 소유하는 실패다
     return null
   }
-  for (const line of text.split(/\r?\n/)) {
+  // 주석 속 헤딩은 렌더되지 않는다 — 세면 없는 앵커가 통과하고, 같은 제목이면 GitHub 중복
+  // 접미(-1)까지 밀린다(`withoutHtmlComments`).
+  for (const line of withoutHtmlComments(text).split(/\r?\n/)) {
     if (/^\s*```/.test(line)) { inFence = !inFence; continue }
     if (inFence) continue
     const m = /^(#{1,6})\s+(.*)$/.exec(line)
