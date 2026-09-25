@@ -4,7 +4,14 @@ paths:
   - "harness/apps/java/**"
   - "harness/install/consume/java*"
 ---
-<!-- doc-budget: max-bytes=6274 -->
+<!-- doc-budget: max-bytes=6572 -->
+<!-- 6274 → 6572 (2026-09-25, +298B). 규약 (1) — 증가분이 **다시 재는 테스트**를 사 온다: Nimbus 로컬 검증
+     함정 한 줄이 `AuthClientInputBoundaryTest`(거부 케이스마다 요청 적중 0 까지 단언, #585)를 가리킨다.
+     같은 커밋이 거짓 문장 하나를 고친다 — 「It is now 18/20」 은 실측 20/22 였다(auth 모듈 `jacoco.xml`
+     의 BRANCH 카운터 missed=2 covered=20, 미커버 둘은 여전히 `ValidatedToken.from`·`stripTrailingSlashes`).
+     수를 지우지 않고 고친 것은 다음 문장의 「two branches」 가 그 차로 유도되기 때문이다(등록부 함정 (a)).
+     문구는 독립 레그(Grok) 검토로 좁혔다 — 「caller/config」 는 과대(설정값은 아직 열림), `configuredScope`
+     는 catch 가 아니라 사전 필터, `build()` catch 가 처방에서 빠져 있었다. 초안 +317B → 압축 +298B. -->
 <!-- 6026 → 6274 (2026-09-06, +248B). 규약 (1) — 증가분이 전부 **다시 재는 명령**을 사 온다:
      (a) 단일 테스트 레시피가 `-am` 과 surefire 플래그 없이 실패했다(세 형태 다 실행해 확인),
      (b) `close()` 서술이 뒤집혀 있었다(구현은 admin 만 닫는다), (c) CI 잡 이름이 `invariant`
@@ -38,7 +45,7 @@ PATH="${KCSDK_TOOLS:-$HOME/tools}/apache-maven-3.9.9/bin:$PATH" mvn -f java/pom.
 - The real release goes `v*` tag → `release.yml` (human approval gate).
 - ⚠️ **Do not write the exact patch versions here** — measure them with `java -version` and `node scripts/doctor.mjs java`.
 - ⚠️ **`jacoco:check` is bound to the `verify` phase, so `mvn test` never verifies the coverage gate at all.**
-- ⚠️ **JaCoCo checks each module separately, so the repository total hides the module that is actually at risk.** `keycloak-sdk-auth` sat at **exactly 85.00% branches** (17 of 20, gate 85) while the four modules summed to a comfortable 93.9%. Read the per-module figure, not the sum. It is now 18/20 with one branch of slack.
+- ⚠️ **JaCoCo checks each module separately, so the repository total hides the module that is actually at risk.** `keycloak-sdk-auth` sat at **exactly 85.00% branches** (17 of 20, gate 85) while the four modules summed to a comfortable 93.9%. Read the per-module figure, not the sum. It is now 20/22 with one branch of slack.
 - ⚠️ **The two branches still uncovered in that module are unreachable, not missing tests.** `ValidatedToken.from` guards `getAudience() == null`, which a real Nimbus `JWTClaimsSet` never returns, and `OidcMetadata.stripTrailingSlashes` guards an all-slash or empty server URL, which config validation rejects earlier. Both need a mock to reach. **Do not chase 100% here.**
 
 ## Gotchas
@@ -50,6 +57,7 @@ PATH="${KCSDK_TOOLS:-$HOME/tools}/apache-maven-3.9.9/bin:$PATH" mvn -f java/pom.
   - **Behavioural contract**: with `NON_NULL` on, a partial update cannot blank a field by setting it to null (an unset field is not sent, so the server treats it as unchanged) — this matches the official admin-client. To blank one, use an empty string or the dedicated API.
 - ⚠️ **jackson-databind is fixed through `dependencyManagement`** (the pin lives in `java/pom.xml`'s `dependencyManagement`, mirrored in `kotlin/build.gradle.kts` — ⚠️ **not** in the root `CLAUDE.md` table, which carries no jackson row and no `doc-guard` anchor for it; nothing cross-checks the two manifests). **Security invariant**: we never use our own `ObjectMapper` or default/polymorphic typing, and only deserialize trusted Keycloak responses into fixed POJOs — enabling default typing, registering a custom JAX-RS Jackson provider, and introducing polymorphic deserialization of untrusted JSON are **all forbidden**, and the `security-invariant` job (`repo-hygiene.yml`) blocks them — ⚠️ not a required check, so it reddens without blocking.
 - ⚠️ **`jwksMinRefetch` must stay below the Nimbus cache TTL (5 minutes by default)** — above it, `JWKSourceBuilder.build()` throws, and letting that foreign exception escape through the public API is a §4 violation. Convert it at the boundary to `KeycloakConfigException`. ⚠️ **A JWKS rate-limit test must always include a control case (interval 0, or a rebuilt validator)** — the cache alone makes it pass, so the test stays green even after a line of the hardening is deleted.
+- ⚠️ **Nimbus rejects bad input locally** (value-type constructors: IAE · `AuthenticationRequest.Builder.build()`: ISE) — neither may escape (§4). Wrap call-site strings in `AuthClient.requestValue`, keep the `build()` catch, take scopes from `configuredScope` (`AuthClientInputBoundaryTest`); config values: still open.
 - **admin owns its token** — `AdminClient(KeycloakConfig)` uses the admin-client's built-in client-credentials, and the `TokenProvider`-based constructor was removed because of a RESTEasy filter clash. admin does not know about auth directly (§4).
 - **No Java OIDC library is itself OIDF-certified** — if certification is needed, certify the finished product with the OIDF separately.
 - **The `release` profile's `maven-javadoc-plugin` needs `<doclint>none</doclint>`** — doclint is strict by default on Java 17+, so a documentation warning alone fails the `-javadoc.jar` build.
