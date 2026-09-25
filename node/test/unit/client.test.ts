@@ -46,6 +46,16 @@ describe('KeycloakClient.create', () => {
     )
   })
 
+  // 형식이 틀린 serverUrl 은 조립 전에 KeycloakConfigError — 전에는 `new URL()` 의 TypeError 가 샜다(실측).
+  it('형식이 틀린 serverUrl 은 조립 전에 KeycloakConfigError 로 실패한다', () => {
+    for (const serverUrl of ['kc.example.com', 'http://kc example.com']) {
+      expect(() => KeycloakClient.create({ serverUrl, realm: 'r', clientId: 'c' })).toThrowError(
+        KeycloakConfigError,
+      )
+    }
+    expect(h.AuthClientMock).not.toHaveBeenCalled()
+  })
+
   it('admin은 create 시점에 생성되지 않는다(지연)', () => {
     KeycloakClient.create(input)
     expect(h.adminCreate).not.toHaveBeenCalled()

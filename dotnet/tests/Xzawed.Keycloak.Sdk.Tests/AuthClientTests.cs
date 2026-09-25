@@ -35,6 +35,23 @@ public class AuthClientTests : IDisposable
     // 남아 프로세스 종료가 느려지고, 그 지연이 커버리지 히트 flush 실패의 가중 요인이 된다).
     public void Dispose() { _mock.Dispose(); _http.Dispose(); }
 
+    // 공백이 섞인 ServerUrl은 첫 토큰 호출의 UriFormatException이 아니라 생성 시점에 거절된다.
+    [Fact]
+    public void Create_with_space_in_server_url_fails_at_construction()
+    {
+        const string serverUrl = "http://kc example.com";
+        var ex = Assert.Throws<KeycloakConfigException>(() =>
+            KeycloakClient.Create(new KeycloakConfig
+            {
+                ServerUrl = serverUrl,
+                Realm = "r",
+                ClientId = "c",
+                ClientSecret = "s",
+            }));
+        Assert.StartsWith("ServerUrl must be an absolute http(s) URL", ex.Message);
+        Assert.DoesNotContain(serverUrl, ex.Message);
+    }
+
     [Fact]
     public void CreateAuthorizationRequest_builds_s256_url_with_all_params()
     {

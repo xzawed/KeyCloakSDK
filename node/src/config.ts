@@ -71,12 +71,31 @@ function stripTrailingSlashes(s: string): string {
   return s.slice(0, end)
 }
 
+// ⚠️ 형식이 틀린 serverUrl 은 여기서 거부한다 — 상대 URL·공백이 든 URL 은 클라이언트 조립 중 `new URL()` 의
+// TypeError 로 공개 API 에 샜다(실측 2026-09-25). JVM 짝·ruby·dotnet 과 같은 분류(KeycloakConfigError)다.
+// 범위 밖 포트는 URL 파서가 거절하고, 밑줄 호스트(docker compose 서비스 이름)는 받는다. 메시지에는 사유만
+// 싣는다 — TypeError 의 message 는 입력을 되울린다.
+function requireAbsoluteHttpUrl(value: string): void {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new KeycloakConfigError('serverUrl must be an absolute http(s) URL: unparseable')
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new KeycloakConfigError(
+      'serverUrl must be an absolute http(s) URL: scheme must be http or https',
+    )
+  }
+}
+
 export function defineConfig(input: KeycloakConfigInput): KeycloakConfig {
   for (const key of ['serverUrl', 'realm', 'clientId'] as const) {
     if (!input[key] || input[key].trim().length === 0) {
       throw new KeycloakConfigError(`Missing required config: ${key}`)
     }
   }
+  requireAbsoluteHttpUrl(stripTrailingSlashes(input.serverUrl))
   if (input.signatureAlgorithms && input.signatureAlgorithms.length === 0) {
     // 빈 집합은 알고리즘 핀을 무력화한다(핀 없이는 alg 혼동 공격에 노출).
     throw new KeycloakConfigError('signatureAlgorithms must be non-empty')

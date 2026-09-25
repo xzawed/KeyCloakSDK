@@ -193,6 +193,25 @@ RSpec.describe KeycloakSdk::AuthClient do
       expect(stub).to have_been_requested
       expect(ts.access_token).to eq("AT")
     end
+
+    # realm "my realm"을 그대로 token URL에 넣으면 URI::InvalidURIError가 SDK 경계를 뚫는다.
+    # 퍼센트 인코딩된 URL로 요청이 나가야 하고, 나오는 예외는 KeycloakSdk::Error뿐이어야 한다.
+    it "requests the percent-encoded token URL when the realm contains a space" do
+      cc_config = KeycloakSdk::Config.new(
+        server_url: "https://kc.example.com", realm: "my realm",
+        client_id: "app", client_secret: "sekret"
+      )
+      cc_auth = described_class.new(config: cc_config, http: http, jwt_validator: jwt_validator)
+      encoded = "https://kc.example.com/realms/my%20realm/protocol/openid-connect/token"
+      stub = stub_request(:post, encoded)
+             .to_return(status: 200, body: {
+               access_token: "AT", token_type: "Bearer", expires_in: 300
+             }.to_json, headers: { "Content-Type" => "application/json" })
+
+      ts = cc_auth.client_credentials_token
+      expect(stub).to have_been_requested
+      expect(ts.access_token).to eq("AT")
+    end
   end
 
   describe "rack-oauth2 timeout configuration" do

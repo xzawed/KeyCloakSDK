@@ -28,7 +28,8 @@ public sealed record KeycloakConfig
     public int ReadTimeoutMs { get; init; } = 30_000;
     public int ClockSkewSeconds { get; init; } = 30;
 
-    /// <summary>Validates required fields and returns a normalized copy (trailing '/' stripped from ServerUrl).</summary>
+    /// <summary>Validates required fields and ServerUrl, and returns a normalized copy
+    /// (trailing '/' stripped from ServerUrl).</summary>
     public KeycloakConfig Normalized()
     {
         Require(ServerUrl, nameof(ServerUrl));
@@ -43,7 +44,12 @@ public sealed record KeycloakConfig
         RequirePositive(ReadTimeoutMs, nameof(ReadTimeoutMs));
         if (ClockSkewSeconds < 0)
             throw new KeycloakConfigException($"{nameof(ClockSkewSeconds)} must be >= 0");
-        return this with { ServerUrl = ServerUrl.TrimEnd('/') };
+        var serverUrl = ServerUrl.TrimEnd('/');
+        // 실측: 공백이 섞인 ServerUrl("http://kc example.com")은 생성을 통과한 뒤
+        // ClientCredentialsTokenAsync에서 System.UriFormatException으로 공개 API를 빠져나간다.
+        // 후행 슬래시를 뗀 값이 절대 http(s) URL이 아니면 KeycloakConfigException으로 fail-fast한다.
+        RequireAbsoluteHttpUrl(serverUrl);
+        return this with { ServerUrl = serverUrl };
     }
 
     private static void Require(string value, string name)
@@ -51,6 +57,18 @@ public sealed record KeycloakConfig
         if (string.IsNullOrWhiteSpace(value))
             throw new KeycloakConfigException($"Missing required config: {name}");
     }
+
+    private static void RequireAbsoluteHttpUrl(string value)
+    {
+        // 65536 처럼 범위 밖 포트도 여기서 거절된다 — net8 의 TryCreate 가 false 를 돌려준다(실측).
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+            throw InvalidServerUrl("not an absolute URI");
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            throw InvalidServerUrl("scheme must be http or https");
+    }
+
+    private static KeycloakConfigException InvalidServerUrl(string reason) =>
+        new($"ServerUrl must be an absolute http(s) URL: {reason}");
 
     private static void RequirePositive(int value, string name)
     {

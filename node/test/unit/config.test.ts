@@ -123,4 +123,35 @@ describe('defineConfig', () => {
     const c = defineConfig({ serverUrl: 'https://kc', realm: 'r', clientId: 'c' })
     expect(JSON.stringify(c)).not.toContain('***')
   })
+
+  // 형식이 틀린 serverUrl 은 생성 시 KeycloakConfigError — 전에는 클라이언트 조립 중 `new URL()` 의
+  // TypeError 가 공개 API 로 샜다(실측 2026-09-25). 메시지는 입력을 되울리지 않는다. JVM 짝·ruby·dotnet 과 같다.
+  it.each([
+    'kc.example.com',
+    'http://kc example.com',
+    'ftp://kc.example.com',
+    'http://127.0.0.1:65536',
+  ])('형식이 틀린 serverUrl(%s) → KeycloakConfigError, 입력은 되울리지 않는다', (serverUrl) => {
+    let caught: unknown
+    try {
+      defineConfig({ serverUrl, realm: 'r', clientId: 'c' })
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(KeycloakConfigError)
+    const message = (caught as Error).message
+    expect(message.startsWith('serverUrl must be an absolute http(s) URL: ')).toBe(true)
+    expect(message).not.toContain(serverUrl)
+  })
+
+  // 대조군 — 밑줄 호스트(docker compose 서비스 이름)와 경계 포트는 받아야 한다.
+  it.each([
+    'http://keycloak_server:8080',
+    'https://kc.example.com/auth',
+    'http://127.0.0.1:8080',
+    'HTTP://kc.example.com',
+    'http://127.0.0.1:65535',
+  ])('절대 http(s) serverUrl(%s)은 받는다', (serverUrl) => {
+    expect(defineConfig({ serverUrl, realm: 'r', clientId: 'c' }).serverUrl).toBe(serverUrl)
+  })
 })
