@@ -58,4 +58,26 @@ describe('TokenSet', () => {
   it('access_token 없으면 throw', () => {
     expect(() => tokenSetFromResponse({ token_type: 'Bearer' })).toThrow()
   })
+
+  // `at === undefined || at === null` 로 약화해도 키 부재만 보면 오늘 스위트가 통과한다.
+  // 비문자열·빈 문자열도 같은 오류로 거절되는지 표로 고정한다.
+  it.each([
+    ['number', 12345],
+    ['object', { a: 1 }],
+    ['array', []],
+    ['boolean', true],
+    ['null', null],
+    ['empty string', ''],
+  ])('access_token 이 비문자열·빈 문자열이면 throw: %s', (_label, value) => {
+    expect(() =>
+      tokenSetFromResponse({ access_token: value, token_type: 'Bearer', expires_in: 300 }),
+    ).toThrow('token response missing access_token')
+  })
+
+  it('대조군 — 문자열 access_token 은 통과한다', () => {
+    expect(
+      tokenSetFromResponse({ access_token: 'AT', token_type: 'Bearer', expires_in: 300 })
+        .accessToken,
+    ).toBe('AT')
+  })
 })
