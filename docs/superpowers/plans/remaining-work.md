@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `197`(2026-09-25 기준 열림 113 · 닫힘 84)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `198`(2026-09-25 기준 열림 114 · 닫힘 84)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -127,7 +127,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 3. `integration-coverage-never-measured` [H/L] — 크다. 설계부터.
 4. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다.
 
-**사람 판정 대기** — 주 작업 트리의 stash 둘(`git stash list`: JDK 17→25 실험, 출처 미상 · 1.0.1 하한과 정반대)은 **커밋하지 말고** 폐기 여부를 사람이 정한다. `irreversible-publish-no-reentry` 는 보류 유지.
+**사람 판정 대기** — 없음. 2026-09-25 사용자 판정: 출처 미상 stash 둘(JDK 17→25)과 빈 `snap*` 워크트리 셋은 **폐기**했다(실측·검증되지 않은 산출물은 확인 후 폐기) · `irreversible-publish-no-reentry` 는 **보류 유지**(근거는 그 항목).
 
 **이 세션이 새로 확인한 함정** — 앞 세션의 (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 는 그대로 유효하다.
 
@@ -538,7 +538,9 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `selftest-exit-code-contract-two-leaks` **[H/M · 닫힘 2026-09-23 #540]** 자가테스트의 「실패하면 비영 종료」 계약이 한 곳에서 샜다 — 탐지기는 #405, 계수기는 #540(파일 눈금 오라클) · `scripts/test/test-selftest-hygiene.sh:20`
 - [x] `sweeps-without-vacuity-floor` **[H/M · 닫힘 2026-09-08 #443]** 스윕/스캔이 0건을 훑고 통과했다 — 이 저장소의 하한 관용이 적용되지 않았다 · `.github/workflows/repo-hygiene.yml:234`
 - [x] `seven-selftests-have-no-negative-control` **[H/L · 닫힘 2026-09-25 #571]** 자가테스트가 **깨진 대상에도 참인 단언**을 가졌다 — 지목한 여섯 파일을 단언 단위로 전부 봤다(조각 1–8). 마지막 조각: `test-provenance-gate` 의 근거 정의 검사가 「문자열이 어딘가 있다」라 주석 속 사본·센티널 앞 재대입에 SILENT(3/3) → 「센티널 앞 마지막 대입」 판정 + 음성 대조군. 사후 서사는 `git show ed3ef3b:docs/superpowers/plans/remaining-work.md` 541–602행 · `scripts/test/test-provenance-gate.sh:107`
-- [ ] `irreversible-publish-no-reentry` **[H/M · 착수 보류 판정 2026-09-09]** 비가역 게시 뒤 재진입 경로가 없다 — 세 레인의 gh release create와 php 미러 순서 · `.github/workflows/go-release.yml:156`
+- [ ] `irreversible-publish-no-reentry` **[H/M · 착수 보류 판정 2026-09-09 · 재판정 2026-09-25: 보류 유지]** 비가역 게시 뒤 재진입 경로가 없다 — **두 레인**(dotnet·php)의 게시 뒤 `gh release create` · `.github/workflows/dotnet-release.yml:160`
+  - ✅ **재판정(2026-09-25) — 보류 유지. Claude·Grok 독립 일치, 사용자 수용.** 실측: 릴리스 워크플로 10 개 53 회, 실패한 시도 4 회는 전부 게시 전·게시 단계 자체(게시 **뒤** 0) · 실패 모드는 **dotnet·php 둘뿐** — go 는 게시(태그)가 워크플로 앞이라 재실행으로 복구되고(옛 인용 `go-release.yml:156` 은 줄이 밀린 것), JVM 은 스테이징 + 사람 클릭 · 잃는 것은 Release 페이지뿐(Release 는 원래 3/9 레인, 대칭화는 기각). **09-09 에 미확인이던 신호 둘을 쟀다**: php `git subtree split` 은 결정적(로컬 `php-v1.0.0` → `7169b1c` = CI 가 미러에 올린 SHA) · dotnet nuspec `commit=` == 태그 커밋(음성 대조 0.1.1). 그래서 **출처 확인 후 계속**(409·태그 존재 시 SHA 대조)이 기술적으로 열렸다. 손 복구 절차는 DEPLOY §4 6단계(#RRPR).
+  - **뒤집을 조건**: 게시 뒤 단계가 실제로 실패해 손 복구가 무언가를 잃었거나 릴리스를 막았다 · Release 자산·노트가 설치/기계 판독 경로가 된다 · 릴리스가 자동화·고빈도가 된다 — 그때 잡 분리(+ 출처 확인). ⏸ **미측정**: NuGet 부분 게시(nupkg 성공·snupkg 실패) · Central Portal 에 같은 버전 스테이징이 둘일 때 · nuget.org 색인 지연 중의 출처 판정.
   - ⏸ **지금 하지 않기로 판정했다**(독립 레그 + 재현). 근거: **13/13 성공**(`gh run list` — dotnet 4 · go 4 · php 5, 실패 0 · 재실행 0). 릴리스는 사람이 태그를 미는 저빈도 경로이고, **소비자 설치는 GitHub Release 를 거치지 않는다**(php 는 Packagist, dotnet 은 nuget.org, go 는 태그 자체가 게시). 실패해도 잃는 것은 Release **페이지**뿐이고 손으로 하나 만들면 된다.
   - ⚠️ **잘못 고치면 닫힌 설계를 다시 연다.** `--skip-duplicate` 는 이미 기각(DEPLOY.md §2-C: 「이미 태워버린 버전을 성공으로 위장」). 「존재하면 계속」을 자동화하려면 **이 실행이 게시한 것**과 **남이 태운 것**을 가르는 판정이 있어야 한다 — 가능한 신호는 잰다: NuGet nuspec 의 SourceLink `commit` 이 `dotnet-v1.0.0` SHA 와 일치 · php 미러 태그 SHA(단, subtree split 재현성 미확인) · GitHub Release 는 **커밋에 묶이지 않는다**(`target_commitish` 는 태그가 이미 있으면 무시된다).
   - **PR 크기인 조각은 있다**: 비가역 스텝과 `gh release create` 를 **잡으로 분리**하면 「실패한 잡만 재실행」이 create 만 재시도한다. ⚠️ 다만 `gh release create` 멱등화만 떼어내면 php·dotnet 은 여전히 nuget/태그에서 죽어 **거짓 닫힘**이 된다 — 그 조각을 이 항목의 종결로 팔지 말 것.
@@ -599,7 +601,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 59건 (열림 47)
+## D. 원장 밖 — 60건 (열림 48)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -708,6 +710,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `dependency-license-claims-unverified` **[L/M]** CLAUDE.md가 아홉 스택 전부의 라이선스 호환을 단언하는데 CI에 라이선스 검사가 0건 · `CLAUDE.md:150`
 - [ ] `repo-topics-omit-four-languages` **[L/S]** 저장소 topics가 아홉 언어 중 다섯만 담고 20개 한도를 소진했다 — 그리고 topics는 SSOT 밖이다 · `.github/security-config.json:2`
 - [ ] `java-short-code-verifier-leaks-iae` **[M/S · 신규 2026-09-25]** java `exchangeCode` 에 43 자 미만 verifier 를 넘기면 Nimbus `CodeVerifier` 의 `IllegalArgumentException` 이 SDK 타입으로 번역되지 않고 샌다(§4) — #577 테스트를 쓰다 실측(`"v"` → IAE). 공백 scope 가 같은 모양으로 판정돼 고쳐진 전례가 있다. ⚠️ **먼저 아홉을 잰다** — 자매 여덟의 짧은 verifier 처리는 미측정 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:163`
+- [ ] `release-publish-job-holds-contents-write` **[M/S · 신규 2026-09-25]** dotnet·php 에서 레지스트리 자격증명(`NUGET_API_KEY` · `PHP_SPLIT_TOKEN`)을 쥔 잡이 `gh release create` 때문에 저장소 `contents: write` 도 쥔다 — 게시와 Release 를 잡으로 나누면 풀리지만 그것은 `irreversible-publish-no-reentry` 의 보류된 안이라, **권한만을 위한 분리**가 값을 하는지는 별도 판정이다 · `.github/workflows/dotnet-release.yml`
 - [x] `token-type-library-behaviour-unpinned` **[M/S · 신규·닫힘 2026-09-25 #581]** go·java·kotlin 이 비문자열 `access_token` 거절을 라이브러리(x/oauth2 · Nimbus)에 맡기면서 그 행동을 고정한 테스트가 0 이었다 — go 는 전제부터 미측정(실측: 여섯 다 `*AuthError`). 셋 다 표 테스트로 고정, 파싱 실패를 삼키는 변이에 go·java CAUGHT(kotlin 미측정) · `go/auth_test.go`
 
 ---
