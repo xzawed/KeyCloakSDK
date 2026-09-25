@@ -87,7 +87,7 @@ dependencies {
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0") // 공개 suspend → api
     api("org.keycloak:keycloak-admin-client:26.0.12") // representation 노출 → api
     implementation("com.nimbusds:oauth2-oidc-sdk:11.38.2")
-    implementation("com.nimbusds:nimbus-jose-jwt:10.9.1")
+    implementation("com.nimbusds:nimbus-jose-jwt:10.10")
 
     testImplementation(kotlin("test"))
     testImplementation(platform("org.junit:junit-bom:6.1.3"))
