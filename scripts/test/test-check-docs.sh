@@ -400,6 +400,17 @@ assert_contains "$OUT" "커버리지 게이트 문서=라인90/브랜치85" "주
 printf '%s\n' '<!-- 게이트 85% → 41 -->' '- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 50/40 포함)' > "$TMP/.claude/rules/java.md"
 OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
 assert_not_contains "$OUT" "커버리지 게이트 문서=" "주석 속 게이트 표기가 맞는 본문을 빨갛게 하면 안 된다(거짓 빨강)"
+# (다) 첫 판(`/<!--[\s\S]*?-->/` 를 문서 전체에)의 역방향 사고 — 코드 스팬 `<!--` 에서 다음 줄의 `-->`
+#      까지를 삼켜 사이의 본문 주장이 사라지면 게이트 검사가 **조용히 건너뛰었다**(fail-open).
+#      독립 레그(Grok)가 짚고 이 단언이 재현했다. 주장은 드리프트(90/85 ≠ 50/40)라 잡혀야 한다.
+printf '%s\n' 'See `<!--` in templates.' '- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 90/85 포함)' 'Then `-->`.' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" "커버리지 게이트 문서=라인90/브랜치85" "코드 스팬 속 주석 표지가 사이의 주장을 삼키면 안 된다(fail-open)"
+# (라) 줄 중간의 인라인 주석은 블록이 아니라 `loadedText` 가 남긴다 — 같은 줄의 첫 「gate」 가 주석 안이면
+#      그것이 주장이 됐다. 같은 줄에서 닫히는 주석을 따로 벗기는 이유다.
+printf '%s\n' '- 전체 빌드+검증 <!-- gate 50 40 --> `mvn -f java/pom.xml verify` (커버리지 게이트 90/85 포함)' > "$TMP/.claude/rules/java.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" "커버리지 게이트 문서=라인90/브랜치85" "줄 중간 인라인 주석 속 게이트 표기가 주장을 가로채면 안 된다"
 # 대조군 — 주석 없이 맞는 본문은 원래부터 조용했다(위 단언이 다른 원인으로 통과한 게 아님을 보인다).
 printf '%s\n' '- 전체 빌드+검증: `mvn -f java/pom.xml verify` (커버리지 게이트 50/40 포함)' > "$TMP/.claude/rules/java.md"
 OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
@@ -1232,6 +1243,23 @@ assert_fails node "$GUARD" "$TMP"
 printf '%s\n' '# target' '' '<!--' '## C# / .NET' '-->' '' '## C# / .NET' > "$TMP/t.md"
 printf '%s\n' '# src' '' '[link](t.md#c--net-1)' > "$TMP/s.md"
 assert_fails node "$GUARD" "$TMP"
+# 벗기기가 펜스를 망가뜨리면 안 된다 — 코드 스팬 `<!--`/`-->` 사이에 낀 펜스 여는 줄이 지워지면
+# 펜스 안 `## Ghost` 가 앵커로 잡혔다(첫 판, 독립 레그가 짚음). GitHub 에서 그것은 코드다.
+printf '%s\n' '# target' '' '`<!--`' '```md' '`-->`' '## Ghost' '```' > "$TMP/t.md"
+printf '%s\n' '# src' '' '[link](t.md#ghost)' > "$TMP/s.md"
+assert_fails node "$GUARD" "$TMP"
+
+# ---- 닫히지 않은 블록 주석 — 줄 머리 `<!--` 가 끝내 안 닫히면 CommonMark 는 그 뒤 문서 전부를
+# HTML 블록으로 삼키고 주입도 같다. 그 안의 주장·헤딩·링크를 보는 검사는 전부 조용히 건너뛰므로
+# 문서마다 따로 잡는다.
+printf '%s\n' '# x' '' '<!-- 닫는 표지를 잊었다' '' '## 사라진 절' > "$TMP/u.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_contains "$OUT" "u.md:3 닫히지 않은 HTML 주석" "닫히지 않은 블록 주석은 잡혀야 한다"
+# 대조군 — 닫힌 주석과 펜스 안의 여는 표지(예시)는 잡지 않는다.
+printf '%s\n' '# x' '' '<!-- 닫았다 -->' '' '```html' '<!-- 예시' '```' > "$TMP/u.md"
+OUT="$(node "$GUARD" "$TMP" --strict 2>&1)" || true
+assert_not_contains "$OUT" "닫히지 않은 HTML 주석" "닫힌 주석·펜스 안 예시는 잡지 않는다(대조군)"
+rm -f "$TMP/u.md"
 
 # 하한 — 링크를 하나도 못 뽑았는데 "불일치 0" 으로 통과하는 것이 이 부류의 공허함이다.
 mk_anchor_fixture 't.md#c--net'
