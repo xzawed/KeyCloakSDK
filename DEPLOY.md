@@ -84,12 +84,6 @@ Rows are in the recommended deployment order explained below.
 python → dotnet → ruby → node → rust → java → kotlin → go → php
 ```
 
-### Step 0 — the first tag was spent on PHP as a rehearsal, before that order started
-
-⚠️ **It was not a real publish at the time, which is exactly why it went first.** Until the mirror was registered on Packagist (§2-D step 3), the `split` job pushed to a GitHub repository that **no registry was watching**, and `main` is force-pushed on every release anyway — so nothing consumable was created and the whole thing was undoable with a tag delete. What it *did* exercise, for real, was the machinery every other language depends on: a human tag push → `verify` → `integration` against a live Keycloak → `install-smoke` → **a real stored credential** (`PHP_SPLIT_TOKEN`) → an authenticated push to an external repository → `gh release create`. None of that had ever run before it. Spending the first execution on the one language where a failure cost nothing was worth more than the ordering purity of going by recoverability alone.
-
-**The rehearsal has since happened and passed end to end** (`php-v0.1.0-rc.1` — §5 records exactly what it proved), the mirror is registered on Packagist, and PHP takes its normal place in the order above (last in the list — though with the registration done, its *recovery* story is now group 1's, see below).
-
 ### Why that order
 
 The first publish of a coordinate is irreversible everywhere, so the axis that actually matters is "if this version turns out to be broken, what can I do about it?" (§6 has the per-registry detail):
@@ -97,7 +91,7 @@ The first publish of a coordinate is irreversible everywhere, so the axis that a
 1. **python · dotnet · ruby · node · rust** — the registry supports yank / unlist / deprecate, so a bad version can at least be pulled out of resolution.
 2. **java · kotlin** — Maven Central is immutable once released, but the Central Portal puts a human staging step in front of it: a bad upload can be dropped *before* it is published, at zero cost.
 3. **go** — nothing to set up, and the weakest recovery of all nine. Once `proxy.golang.org` has cached the version it is immutable and there is no yank; the only remedy is a `retract` directive in a *later* release.
-4. **php** — recovery was the *best* of the nine while Packagist registration was still pending (see the rehearsal note above), which is why it moved to the front rather than the back. The mirror **is** now registered, so PHP has joined group 1: withdrawal is a tag delete on the mirror plus a Packagist update.
+4. **php** — recovery was the *best* of the nine while Packagist registration was still pending (§2-D), which is why it moved to the front rather than the back. The mirror **is** now registered, so PHP has joined group 1: withdrawal is a tag delete on the mirror plus a Packagist update.
 
 > The order this document used to recommend ("easy auth → hard auth", starting with Go) optimised for the wrong axis: Go is the easiest to *set up* and the hardest to *undo*. A later revision put PHP last for a reason that has since expired — the mirror repository did not exist then; it does now.
 
@@ -182,7 +176,7 @@ Since the same auth model has the same setup procedure, it is explained once per
 
 5. **Behavior when a secret is unset — both languages fail closed, and both now name the missing secret**: each job checks **all four** of its own secrets in a step and, if any are missing, emits `::error::` naming exactly which ones and exits 1. Java (`MAVEN_GPG_PRIVATE_KEY` · `MAVEN_GPG_PASSPHRASE` · `CENTRAL_TOKEN_USER` · `CENTRAL_TOKEN_PW`) does this in a preflight right after checkout, before `setup-java` even imports the GPG key; Kotlin (`MAVEN_CENTRAL_USERNAME` · `MAVEN_CENTRAL_PASSWORD` · `SIGNING_IN_MEMORY_KEY` · `SIGNING_IN_MEMORY_KEY_PASSWORD`) does it immediately before the upload. Java previously failed later instead, inside `mvn -Prelease deploy` — fail-closed either way, but a noisier error that never said the cause was an unset secret.
 
-   > ⚠️ **This used to be much worse.** The old Kotlin guard checked only `MAVEN_CENTRAL_USERNAME` and exited 0 when it was missing — a silent skip that ended green — and it did not check the signing key at all, which permitted an **unsigned** Central Portal upload on a green run. That is fixed. (Note that a job-level `if:` cannot read the `secrets` context in GitHub Actions, which is why the guard has to live inside the step, on env-mapped values.)
+   > A job-level `if:` cannot read the `secrets` context in GitHub Actions, which is why the guard has to live inside the step, on env-mapped values.
 6. **Two-step manual release**: the workflow only auto-uploads **as far as Central Portal staging**. The actual public release (Publish) is completed only when **a human manually Publishes** from the Deployments screen in the [Central Portal](https://central.sonatype.com) (when autoPublish is not configured).
 
 ### B. OIDC / Trusted Publisher (Python · Node · Ruby)
@@ -208,7 +202,7 @@ Since the same auth model has the same setup procedure, it is explained once per
    4. Delete the secret and the env mapping, then let `0.1.0` go out over pure OIDC. ✅ Done — npmjs.com token deleted and the `NPM_TOKEN` secret removed.
 3. Since this is OIDC, no stored secrets are needed **after** the bootstrap above (the workflow exchanges directly with the registry using a GitHub Actions OIDC token).
 
-> This section previously said the opposite for two of the three: that pending registration worked for all three (wrong for npm), and that RubyGems required a manual API-key publish first (wrong, and wrong in the costly direction — a hand-pushed `gem push` bypasses `install-smoke`, the integration gate and the tag↔version guard, and burns the coordinate outside the pipeline).
+> ⚠️ Do not hand-push a first `gem push` — it bypasses `install-smoke`, the integration gate and the tag↔version guard, and burns the coordinate outside the pipeline.
 
 ### C. API Token (.NET · Rust)
 
@@ -218,7 +212,7 @@ Since the same auth model has the same setup procedure, it is explained once per
    - Rust: `CARGO_REGISTRY_TOKEN`
    - ⚠️ **crates.io additionally requires a verified email on the publishing account** — <https://crates.io/settings/profile>. Setting the address is not enough; the confirmation link must be clicked. A registered secret tells you nothing about this: the first `rust-v0.1.0-rc.1` attempt passed every gate and then died on `400 Bad Request: A verified email address is required to publish crates to crates.io`. Nothing was published, but the tag was spent. See §5 for the full list of account-state preconditions no local check can reach.
 3. **Behavior when unset — both fail closed now**:
-   - .NET: if `NUGET_API_KEY` is missing, the publish step emits `::error::` and exits 1. **This changed.** It used to exit 0 (a silent skip) while the workflow went on to create a GitHub Release anyway — a green run and a release page for a version that had never reached NuGet.
+   - .NET: if `NUGET_API_KEY` is missing, the publish step emits `::error::` and exits 1.
    - Rust: if `CARGO_REGISTRY_TOKEN` is missing, `cargo publish` hard-fails, as it always has.
 4. **`--skip-duplicate` has been removed from `dotnet nuget push`.** It reported a push of an already-published version as success, which is exactly the signal you need when a version has been burned. A duplicate now fails the job.
 
@@ -438,8 +432,14 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
    > queued. Merge three release PRs back to back and the middle one is silently dropped: no tag,
    > no error, and no way to replay it, because the next PR has already overwritten
    > `.github/release-request.json` and an unchanged file does not re-trigger the `push` path.
-6. **Check GitHub Actions** — confirm the relevant release workflow ended green. Every secret-backed path now fails closed when its secret is unset, so green no longer hides a skipped publish (that was previously false for .NET and Kotlin — §2-C, §2-A step 5). Note the phrasing: Go has no secret at all, and the three OIDC languages authenticate by a registered publisher rather than a stored secret — for those, an unset/misregistered publisher fails at the publish call, not at a preflight. What green still does *not* tell you: for Java and Kotlin it means "uploaded to Central Portal staging", not "published" (step 7); for Go it means "tag and GitHub Release created", not "the proxy serves the module"; for PHP it means "pushed to the mirror", after which Packagist still has to pick the tag up.
-7. **(Maven Central family only) Portal manual release** — for Java and Kotlin, a human must click Publish in the Central Portal Deployments for the final public release.
+6. **Check GitHub Actions** — confirm the relevant release workflow ended green. Every secret-backed path now fails closed when its secret is unset, so green no longer hides a skipped publish. Note the phrasing: Go has no secret at all, and the three OIDC languages authenticate by a registered publisher rather than a stored secret — for those, an unset/misregistered publisher fails at the publish call, not at a preflight. What green still does *not* tell you: for Java and Kotlin it means "uploaded to Central Portal staging", not "published" (step 7); for Go it means "tag and GitHub Release created", not "the proxy serves the module"; for PHP it means "pushed to the mirror", after which Packagist still has to pick the tag up.
+
+   ⚠️ **.NET or PHP red at or after its publish step** (a `409`/tag-exists at publish, or the `GitHub Release` step failed): **do not re-run**. A re-run restarts the whole job and fails at publish again (NuGet `409`; the mirror tag is never force-pushed) — and PHP's first force-pushes mirror `main`, rewinding it if a newer release exists. The Release is a page, not an install source; finish it by hand:
+   1. Prove the published bytes came from this tag. .NET: the `commit=` in `https://api.nuget.org/v3-flatcontainer/xzawed.keycloak.sdk/<ver>/xzawed.keycloak.sdk.nuspec` vs `git rev-parse 'dotnet-v<ver>^{commit}'`. PHP: the SHA column of `git ls-remote https://github.com/xzawed/keycloak-sdk-php.git refs/tags/v<ver>` vs `git subtree split --prefix=php php-v<ver>` (deterministic; takes minutes). **Registry side missing**: wait (NuGet can lag an hour); if it appears, go to 2 — only if it never does was nothing published, so re-run. **Both present and different**: the version is burned — go forward (§6).
+   2. `gh release view <tag>` (the triggering tag, e.g. `php-v1.0.0`) — if it exists, finish it (`gh release upload`, `gh release edit --draft=false`). Otherwise `gh release create <tag> --prerelease=<p> --title <tag>` with `--generate-notes` (.NET; the `.nupkg` is in the flat container) or `--notes-file` holding the four `printf` lines of `php-release.yml`'s `GitHub Release` step (PHP). `<p>` is `false` when the version minus any `+…` is digits and dots only, else `true` — never omit it.
+
+   Other lanes re-run. Node · Python · Ruby · Rust publish as their last step; Go's first write is the Release (if it exists, you are done); Java/Kotlin only stage, then attest — first drop the red run's deployment once it reads `VALIDATED` or `FAILED` (Portal Deployments, or `DELETE /api/v1/publisher/deployment/<id>`).
+7. **(Maven Central family only) Portal manual release** — for Java and Kotlin, a human must click Publish in the Central Portal Deployments for the final public release. **Only for a run that is green through its last step** — `Attest build provenance` runs *after* the upload, so a red run can still have staged a deployment; do not publish that one.
 8. **Verify on the registry itself** — `node scripts/check-registry-truth.mjs --lang=<lang>` must print `LIVE` (`PENDING` = inside the 72h Maven / 24h grace; a first 404 is not failure), then check the package page's README and file list.
 
    ⚠️ **(Kotlin) until this step succeeds the scheduled `harness-kotlin` audit is red — expected.** It pins the SDK by the *manifest* version (`check-versions.mjs` enforces that) and the runner's `mavenLocal` is empty, so it resolves from Central, which does not have it yet; it fails closed on any unresolved coordinate and now names this window in its own error. Measured 2026-08-31: `keycloak-sdk-kotlin:1.0.0` FAILED while the upload sat in Portal staging. After this step pull the run forward — `gh workflow run security-audit.yml` — rather than waiting for the Monday cron.
@@ -541,9 +541,6 @@ This is **not** the pip or Cargo behaviour (both fall back to a prerelease when 
 The rule is deliberately not a list of suffixes, because the nine registries spell prereleases four different ways (see the table above) and a list is silently wrong the moment a spelling shifts. Instead: build metadata (`+…`) is stripped first — `1.0.0+incompatible` is a *release* in Go — then a version that is only digits and dots (`0.1.0`, `0.10.0`, `1.2.3.4`) is a release, one containing a hyphen or a letter (`0.1.0-rc.1`, `0.1.0-RC1`, `0.1.0rc1`, `0.1.0.rc1`, `0.1.0-SNAPSHOT`) is a prerelease, and anything matching neither **fails the job** instead of guessing. Failing closed is the right trade here: marking a real `0.1.0` as a prerelease would hide it from `releases/latest`, which is worse than the bug this replaces. `scripts/test/test-release-prerelease.sh` lifts the block straight out of the three workflows, asserts they are byte-identical, and runs it against that table — verifying the shipped logic without burning a tag.
 
 **✅ `release-trigger.sh` handles prereleases — use it, do not skip it.** It validates the version against a **per-language** pattern (`df_version_re` in `scripts/lib/deploy-facts.sh`), so it accepts `0.1.0rc1` for Python and rejects `0.1.0-rc.1` with the expected spelling in the error message. Since the tag↔manifest guard is literal string equality (next note), getting that spelling right is exactly the failure this helper prevents — it is the *most* useful for an RC, not the least. Verified by running it: `sh scripts/release-trigger.sh python 0.1.0rc1` prints an RC advisory block and the `git tag py-v0.1.0rc1` command.
-
-> This paragraph used to say the opposite — that the helper rejected all prereleases and should be skipped for an RC. That was stale, and it pointed the operator away from the one tool that gives the correct per-registry spelling.
-
 **⚠️ The tag↔version guard is literal string equality** (§1), so for the five manual-bump languages the manifest must carry exactly the spelling in the "Version to write" column — `0.1.0rc1` for Python, not `0.1.0-rc1`; `0.1.0.rc1` for Ruby, not `0.1.0-rc.1`.
 
 **⚠️ An RC still burns its own coordinate.** `0.1.0-rc.1` is as unrepublishable as `0.1.0` — if the RC needs a fix, go to `-rc.2`. And on Maven Central an RC is a permanent public artifact like any other; it protects `0.1.0`, it does not make the upload reversible.
