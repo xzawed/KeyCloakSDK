@@ -208,6 +208,16 @@ class KeycloakConfigTest {
     assertEquals(Duration.ZERO, base().jwksMinRefetch(Duration.ZERO).build().getJwksMinRefetch());
   }
 
+  // 밀리초로 못 나타내는 jwksMinRefetch 는 첫 validate() 의 toMillis() 에서 ArithmeticException 으로 샜다(독립
+  // 레그의 927 사례 표에서 남은 둘, 실측). 5 분 이상은 JwtValidator 가 이미 KeycloakConfigException 으로 거부한다.
+  @Test void jwksMinRefetchBeyondMillis_throwsConfigException() {
+    for (Duration d : List.of(Duration.ofSeconds(Long.MAX_VALUE), Duration.ofSeconds(Long.MAX_VALUE / 1000 + 1))) {
+      KeycloakConfigException e = assertThrows(KeycloakConfigException.class,
+          () -> base().jwksMinRefetch(d).build(), "jwksMinRefetch " + d);
+      assertEquals("jwksMinRefetch is too large", e.getMessage());
+    }
+  }
+
   private static KeycloakConfig.Builder base() {
     return KeycloakConfig.builder().serverUrl("https://kc.example.com").realm("r").clientId("app");
   }

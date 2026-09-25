@@ -48,6 +48,11 @@ public class KeycloakConfig(
         // 음수는 의미가 없어 자매(go·dotnet·node·python·php)와 Java 처럼 생성 시 거부한다(null 은 타입이 막는다).
         if (clockSkew.isNegative) throw KeycloakConfigException("clockSkew must be >= 0")
         if (jwksMinRefetch.isNegative) throw KeycloakConfigException("jwksMinRefetch must be >= 0")
+        // 밀리초로 못 나타내는 값은 첫 validate() 의 toMillis() 에서 ArithmeticException 으로 샜다(독립 레그 실측,
+        // Java 자매). 5 분 이상은 JwtValidator 가 이미 거부한다 — 여기서는 표현 가능성만 본다(이 상한 이하면 안 넘친다).
+        if (jwksMinRefetch > Duration.ofMillis(Long.MAX_VALUE)) {
+            throw KeycloakConfigException("jwksMinRefetch is too large")
+        }
     }
 
     // serverUrl 검증. 사유만 싣는다 — URISyntaxException.message 는 입력 전체를 되울린다.

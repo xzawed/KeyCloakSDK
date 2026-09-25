@@ -289,4 +289,19 @@ internal class ConfigTest {
         assertEquals(Duration.ZERO, zero.clockSkew)
         assertEquals(Duration.ZERO, zero.jwksMinRefetch)
     }
+
+    /** 밀리초로 못 나타내는 jwksMinRefetch 는 첫 validate() 의 toMillis() 에서 ArithmeticException 으로 샜다(Java 자매 실측). */
+    @Test
+    fun `jwksMinRefetch beyond millis throws KeycloakConfigException`() {
+        val e =
+            assertFailsWith<KeycloakConfigException> {
+                KeycloakConfig(
+                    serverUrl = "http://x",
+                    realm = "r",
+                    clientId = "c",
+                    jwksMinRefetch = Duration.ofSeconds(Long.MAX_VALUE),
+                )
+            }
+        assertEquals("jwksMinRefetch is too large", e.message)
+    }
 }

@@ -77,6 +77,7 @@ public final class KeycloakConfig {
       requireTimeout(readTimeout, "readTimeout");
       requireNonNegative(clockSkew, "clockSkew");
       requireNonNegative(jwksMinRefetch, "jwksMinRefetch");
+      requireMillis(jwksMinRefetch, "jwksMinRefetch");
       return new KeycloakConfig(this);
     }
     private static void require(String v, String name) {
@@ -136,6 +137,14 @@ public final class KeycloakConfig {
     private static void requireNonNegative(Duration v, String name) {
       if (v == null || v.isNegative())
         throw new KeycloakConfigException(name + " must be >= 0", null);
+    }
+    // ⚠️ 밀리초로 못 나타내는 값은 첫 validate() 의 toMillis() 에서 ArithmeticException 으로 샜다(독립 레그 실측).
+    // 5 분 이상은 JwtValidator 가 이미 KeycloakConfigException 으로 거부한다 — 여기서는 표현 가능성만 본다.
+    // 이 상한 이하면 toMillis() 가 넘치지 않는다(예외로 흐름을 잡지 않는다).
+    private static final Duration MAX_MILLIS = Duration.ofMillis(Long.MAX_VALUE);
+    private static void requireMillis(Duration v, String name) {
+      if (v.compareTo(MAX_MILLIS) > 0)
+        throw new KeycloakConfigException(name + " is too large", null);
     }
   }
 }
