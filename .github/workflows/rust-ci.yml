@@ -57,7 +57,9 @@ jobs:
       # 해당 브랜치의 SHA로 핀하고 ref 이름을 주석으로 남긴다.
       - uses: taiki-e/install-action@face1f3efc4b60bb08e253dcbd8306cbc8487e68 # cargo-llvm-cov
       # 네트워크 경계(auth.rs/admin.rs/client.rs)는 통합테스트로 검증 → 커버리지 게이트에서 제외.
-      - run: cargo llvm-cov --ignore-filename-regex '(auth|admin|client)\.rs' --fail-under-lines 90
+      # ⚠️ 정규식은 **전체 경로**에 맞춰진다 — 양끝을 고정하지 않으면 미래의 oauth.rs·superadmin.rs 가
+      # 조용히 게이트 밖으로 빠진다. [\\/] 는 로컬 Windows 경로용(sonarcloud.yml · rust.md 와 같은 값).
+      - run: cargo llvm-cov --ignore-filename-regex '(^|[\\/])(auth|admin|client)\.rs$' --fail-under-lines 90
 
   audit:
     name: cargo audit (의존성 취약점)
