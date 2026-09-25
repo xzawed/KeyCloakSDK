@@ -122,7 +122,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. **`coverage-exclusions-swallow-pure-logic` 의 ⏸ 미측정 후보를 변이로 잰다** — 언어당 PR. kotlin `translateAdminException`(JVM 비대칭)부터. ⚠️ 제외 ≠ 구멍(ruby 3/3 CAUGHT).
+1. **`coverage-exclusions-swallow-pure-logic` 의 ⏸ 미측정 후보를 변이로 잰다** — 언어당 PR. 위험순(독립 레그 순위): node `auth.ts` 마스킹 → python JWKS 백오프. ⚠️ 제외 ≠ 구멍(ruby·kotlin 3/3 CAUGHT).
 2. **`guard-detection-surface-hand-narrowed` [H/M]** — 남은 손 표 다섯(nonce · 백오프 · 마스킹 둘 · 토큰타입). 모형은 크기상한 축(#575): 주석 뺀 줄 · 쓰임의 자리 · 값 동형 파생 + **이력 오탐 실측**.
 3. `integration-coverage-never-measured` [H/L] — 크다. 설계부터.
 4. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 재판정 둘 중 둘이 뒤집혔다 — `seven-selftests` 의 「이미 합성 입력」은 추출기만의 참이었고, `coverage-exclusions` 는 셋이 아니라 아홉이었다.
@@ -514,7 +514,9 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `selftest-hygiene-textual-rules` **[H/M]** '존재'가 아니라 '실행'을 센다던 규칙이 주석·비활성화·`|| true`를 실행으로 센다 · `scripts/test/test-selftest-hygiene.sh:20`
 - [ ] `coverage-exclusions-swallow-pure-logic` **[H/L · 계수 정정 2026-09-09 · 재판정 2026-09-25: 셋 → 아홉]** '네트워크 경계' 커버리지 제외가 I/O 없는 순수 로직까지 삼켰다 — **아홉 언어 전부**(제외 목록이 순수·주입형 함수를 담는다) · `node/src/transport.ts:38`
   - ⚠️ **재판정(2026-09-25) — 「제외됨」과 「구멍」은 다르다. 지도는 전수 조사가, 구멍 여부는 변이가 정한다.** 9언어 전수(에이전트, 파일:줄 인용)를 받아 **실측한 것만** 적는다: php `ErrorTranslation.php` 는 「이미 전수」가 **틀렸다** — `default` 팔·SDK 예외 통과 분기 변이 **2/2 SILENT** → #573(디렉터리 제외를 파일 손 목록으로, 291→310 문장). ruby `admin/call.rb` 는 제외돼 있어도 변이 **3/3 CAUGHT**(`esc` 항등 6 실패 · 무예외 3 · Location 통째 1) — 조치 없음. rust 정규식 `(auth|admin|client)\.rs` 는 양끝이 없어 미래 `oauth.rs` 를 삼킨다 → #574(오늘 파일 집합 불변: TOTAL 동일). ⚠️ 조사의 「SonarCloud 가 node `transport.ts`·`admin/**` 를 뺀다」는 **거짓**이었다(`sonar.cpd.exclusions` 를 coverage 로 읽었다).
-  - ⏸ **미측정 후보**(조사 순위, 변이로 재야 한다): python `auth.py` `_load_jwks` 레이트리밋·백오프(:263-307, 게이트 100% 라 비용 큼) · java `AuthClient` 헬퍼 · rust `auth.rs`/`admin.rs` 인라인 테스트가 게이트에 안 셈 · kotlin `admin.*` 가 `translateAdminException` 까지 뺀다(java 쌍둥이 `AdminExceptions` 는 측정 — **JVM 비대칭**) · dotnet `ToTokenSet`·`OAuthErrorOf` · node `auth.ts` 마스킹 클래스.
+  - ✅ kotlin `admin.*` 가 `translateAdminException` 까지 빼지만(java 쌍둥이는 측정 — JVM 비대칭) 변이 **3/3 CAUGHT**(409·403→Other · 본문 폴백→null, 단위 140 중 1~4 실패) — 조치 없음.
+  - **판정 규칙**(독립 레그와 합의): 변이 SILENT → 테스트 + (순수부가 분리되면) 제외를 좁힌다 · 좁히면 게이트가 I/O 까지 떠안는 경우(python 100%) → 테스트만. ⚠️ **CAUGHT 여도 「그대로」가 공짜는 아니다** — 제외된 파일은 그 테스트가 **지워져도** 게이트가 모른다. 분리 가능하면 좁히는 쪽이 낫다.
+  - ⏸ **미측정 후보**(위험순, 레그 순위): node `auth.ts` 마스킹 클래스(PKCE verifier 로그 유출) · python `auth.py` `_load_jwks` 레이트리밋·백오프(:263-307, 게이트 100% 라 비용 큼) · dotnet `ToTokenSet`·`OAuthErrorOf` · java `AuthClient` 헬퍼 · rust `auth.rs`/`admin.rs` 인라인 테스트가 게이트에 안 셈.
   - ⚠️ **다섯이 아니라 셋이다**(재판정 2026-09-09): node(`transport.ts` + `admin/call.ts`) · php(`ErrorTranslation.php`) · ruby(`version.rb`).
   - ✅ **node `transport.ts` 는 #458 이 닫았다**(2026-09-10). ⚠️ **그리고 「테스트 파일 0」이라던 내 계측이 틀렸다** — `git grep -l isTransportError -- node/test` 는 **이름 grep** 이고, 실동작은 호출 자리(auth·admin 경계)에서 이미 구동되고 있었다. 진짜 결함은 「테스트 없음」이 아니라 **「측정되지 않아 일부 팔이 죽어도 초록」**이었다: 경계 테스트가 치는 팔은 `AbortError`·`ECONNREFUSED` **둘뿐**이고 나머지 15개 코드는 커버리지 제외 때문에 측정되지 않아, `CERT_HAS_EXPIRED` 를 지워도 **107 전부 통과**했다(변이 `SILENT`). 전수 표 테스트 + 제외 해제로 셋 다 `CAUGHT`.
   - ⏸ **남은 둘은 부류가 다르다**(실측 2026-09-10): php `ErrorTranslation.php` 는 `tests/Unit/Admin/ErrorTranslationTest.php` 가 이미 전수를 치고 있고 제외를 풀면 **실 I/O 가 게이트에 딸려 들어온다**. ruby `version.rb` 는 상수 한 줄이다. ⚠️ **node `admin/call.ts` 의 `requireFound` 는 여전히 순수 헬퍼이고 테스트 언급 0** — 그것이 이 항목의 진짜 잔여다.
