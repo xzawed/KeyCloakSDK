@@ -110,6 +110,63 @@ func TestClientCredentialsToken(t *testing.T) {
 	}
 }
 
+// TestClientCredentialsRejectsNonStringAccessToken pins the client-credentials
+// lane: token-endpoint access_token must be a non-empty JSON string. The
+// "string" subtest is the positive control (raw value "AT").
+//
+// The rejection is golang.org/x/oauth2's, not ours (non-strings fail its JSON
+// unmarshal; null and "" hit "server response missing access_token"). Nothing
+// pinned that until now, so a more lenient oauth2 release would have let an
+// unusable token out as success — .NET's Duende did exactly that. Measured on
+// 2026-09-25: all six are *AuthError, so that is what this pins.
+func TestClientCredentialsRejectsNonStringAccessToken(t *testing.T) {
+	tests := []struct {
+		name        string
+		raw         string
+		accessToken string
+	}{
+		{name: "number", raw: "12345"},
+		{name: "object", raw: `{"a":1}`},
+		{name: "array", raw: "[]"},
+		{name: "boolean", raw: "true"},
+		{name: "null", raw: "null"},
+		{name: "empty string", raw: `""`},
+		{name: "string", raw: `"AT"`, accessToken: "AT"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := `{"access_token":` + tt.raw + `,"token_type":"Bearer","expires_in":300}`
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(body))
+			}))
+			t.Cleanup(srv.Close)
+			cfg := Config{ServerURL: srv.URL, Realm: "test", ClientID: "app", ClientSecret: "sekret",
+				ReadTimeout: 30000}.withDefaults()
+			a := newAuthClient(cfg, nil)
+
+			ts, err := a.ClientCredentialsToken(context.Background())
+			if tt.accessToken != "" {
+				if err != nil {
+					t.Fatalf("string access_token: %v", err)
+				}
+				if ts == nil || ts.AccessToken != tt.accessToken {
+					t.Fatalf("AccessToken = %+v, want %q", ts, tt.accessToken)
+				}
+				return
+			}
+			if err == nil || ts != nil {
+				t.Fatalf("access_token %s must be rejected with a nil TokenSet; ts=%+v err=%v", tt.raw, ts, err)
+			}
+			var ae *AuthError
+			if !errors.As(err, &ae) {
+				t.Fatalf("want *AuthError, got %T: %v", err, err)
+			}
+		})
+	}
+}
+
 func TestExchangeCodeAndRefresh(t *testing.T) {
 	f := newAuthFixture(t, "sekret")
 	var form url.Values
