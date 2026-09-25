@@ -776,9 +776,24 @@ const COVERAGE = {
 // 확인). 코드 스팬 `` `<!--` `` 에서 다음 줄의 `-->` 까지를 삼켜 그 사이 주장이 사라지면 게이트 검사가
 // **조용히 건너뛰고**(fail-open), 사이에 낀 펜스 표지가 지워지면 펜스 안 헤딩이 앵커로 잡힌다.
 // 블록 주석은 CommonMark 규칙 그대로인 `loadedText`(줄 머리 `<!--` · 펜스 안은 코드)에 맡기고,
-// 남은 것은 **같은 줄에서 닫히는** 주석뿐이라 줄을 넘지 않는 정규식으로 벗긴다.
+// 남은 것은 **같은 줄에서 닫히는** 주석뿐이라 줄마다 따로 벗긴다.
 function withoutHtmlComments(text) {
-  return loadedText(text).replace(/<!--.*?-->/g, '')
+  return loadedText(text).split('\n').map(stripClosedComments).join('\n')
+}
+
+// 한 줄 안에서 닫히는 `<!-- … -->` 만 벗긴다 — 같은 줄에서 안 닫히는 `<!--` 는 그대로 둔다(줄을 넘지
+// 않는다). 정규식이 아니라 indexOf 인 것은 의도다: 이 스크립트는 HTML 을 살균해 내보내지 않는데,
+// 주석을 지우는 정규식은 CodeQL 이 보안 살균기로 읽어 high 경고를 낸다(의미는 같다).
+function stripClosedComments(line) {
+  let out = ''
+  let from = 0
+  for (;;) {
+    const open = line.indexOf('<!--', from)
+    const close = open < 0 ? -1 : line.indexOf('-->', open + 4)
+    if (close < 0) return out + line.slice(from)
+    out += line.slice(from, open)
+    from = close + 3
+  }
 }
 
 // 줄 머리의 `<!--` 가 끝내 닫히지 않으면 그 뒤 문서 전부가 렌더·주입에서 사라진다 — 그 안의 주장·
