@@ -76,27 +76,31 @@ public class AuthClient {
     return req;
   }
   public AuthorizationUrlRequest createAuthorizationRequest(URI redirectUri) {
+    if (redirectUri == null) {
+      throw new IllegalArgumentException("redirectUri must not be null");
+    }
     Pkce pkce = Pkce.generate();
     State state = new State(); Nonce nonce = new Nonce();
-    // ⚠️ `Scope.isEmpty()`는 **원소 수**를 센다 — 원소가 하나라도 있으면 그 값이 공백이든 빈
-    // 문자열이든 폴백이 발동하지 않고, Nimbus 가 `IllegalArgumentException("The value must not be
-    // null or empty string")` 을 던져 §4 경계를 넘어 공개 API 로 샌다. `KeycloakConfig.Builder`
-    // 는 scope 값을 검증하지 않으므로(그 클래스에 scope 검증 0건) 도달 가능하다.
-    // 그래서 **생성 전에** 공백 원소를 거른다. Kotlin 자매도 같은 모양이다.
-    Scope scope =
-        new Scope(
-            config.getScopes().stream()
-                .filter(s -> s != null && !s.isBlank())
-                .toArray(String[]::new));
+    Scope scope = configuredScope();
     if (scope.isEmpty()) scope = new Scope("openid");
-    com.nimbusds.openid.connect.sdk.AuthenticationRequest ar =
+    com.nimbusds.openid.connect.sdk.AuthenticationRequest.Builder builder =
         new com.nimbusds.openid.connect.sdk.AuthenticationRequest.Builder(
             new ResponseType(ResponseType.Value.CODE), scope,
             new ClientID(config.getClientId()), redirectUri)
           .endpointURI(metadata.getAuthorizationEndpoint())
           .state(state).nonce(nonce)
-          .codeChallenge(pkce.nimbusVerifier(), CodeChallengeMethod.S256)
-          .build();
+          .codeChallenge(pkce.nimbusVerifier(), CodeChallengeMethod.S256);
+    com.nimbusds.openid.connect.sdk.AuthenticationRequest ar;
+    try {
+      ar = builder.build();
+    } catch (IllegalStateException e) {
+      // ⚠️ Nimbus 는 build() 에서 redirect_uri 를 검사한다 — fragment(RFC 6749 §3.1.2)·금지 scheme
+      // (javascript·data 등)·금지 쿼리 파라미터(code·state 등)를 IllegalStateException 으로 거부하고,
+      // 그대로 두면 §4 경계를 넘어 공개 API 로 샌다. 잘못된 콜백 URL 은 IdP 가 거절한 것이 아니라 앱 구성
+      // 오류다 — Rust `redirect_url()`·Kotlin 과 같은 분류. Nimbus 사유를 메시지에 그대로 싣는다(입력 URI
+      // 전체를 되울리지 않고, 다른 원인이 섞여도 진단이 남는다).
+      throw new KeycloakConfigException("invalid redirect_uri: " + e.getMessage(), e);
+    }
     return new AuthorizationUrlRequest(ar.toURI(), pkce.getVerifier(), state.getValue(), nonce.getValue());
   }
   // Authorization Code 그랜트로 토큰 교환 (I.2). PKCE code_verifier를 포함해 토큰 엔드포인트에
@@ -160,9 +164,16 @@ public class AuthClient {
   // exchangeCode()의 send() 이전 요청 구성만 분리: send() 없이 grant_type/code/code_verifier/
   // 엔드포인트를 빠른 단위 테스트로 검증하기 위한 패키지 가시성 헬퍼 (buildLogoutRequest와 동일 패턴).
   HTTPRequest buildExchangeCodeRequest(String code, URI redirectUri, String codeVerifier) {
+    if (code == null) {
+      throw new IllegalArgumentException("code must not be null");
+    }
+    if (codeVerifier == null) {
+      throw new IllegalArgumentException("codeVerifier must not be null");
+    }
     AuthorizationCodeGrant grant = new AuthorizationCodeGrant(
-        new AuthorizationCode(code), redirectUri,
-        new com.nimbusds.oauth2.sdk.pkce.CodeVerifier(codeVerifier));
+        requestValue("Authorization code exchange", "code", () -> new AuthorizationCode(code)), redirectUri,
+        requestValue("Authorization code exchange", "code_verifier",
+            () -> new com.nimbusds.oauth2.sdk.pkce.CodeVerifier(codeVerifier)));
     TokenRequest tr = config.getClientSecret() != null
         ? new TokenRequest.Builder(metadata.getTokenEndpoint(),
             clientAuth("authorization code exchange"), grant).build()
@@ -174,7 +185,7 @@ public class AuthClient {
     try {
       TokenRequest tr = new TokenRequest.Builder(metadata.getTokenEndpoint(),
           clientAuth("the client_credentials grant"), new ClientCredentialsGrant())
-          .scope(new Scope(config.getScopes().toArray(new String[0])))
+          .scope(configuredScope())
           .build();
       long issuedAt = Instant.now().getEpochSecond();
       TokenResponse resp = TokenResponse.parse(applyTimeouts(tr.toHTTPRequest()).send());
@@ -215,7 +226,8 @@ public class AuthClient {
   // 허용한다(실측 2026-09-24, KC 26.6: 200). exchangeCode 와 같이 시크릿이 없으면 client_id 를
   // 본문에 싣는다(예전엔 clientAuth() 가 로컬에서 거부해 공개 클라이언트가 갱신을 못 했다).
   HTTPRequest buildRefreshRequest(String refreshToken) {
-    RefreshTokenGrant grant = new RefreshTokenGrant(new RefreshToken(refreshToken));
+    RefreshTokenGrant grant = new RefreshTokenGrant(
+        requestValue("Token refresh", "refresh_token", () -> new RefreshToken(refreshToken)));
     TokenRequest tr = config.getClientSecret() != null
         ? new TokenRequest.Builder(metadata.getTokenEndpoint(), clientAuth("token refresh"), grant).build()
         : new TokenRequest.Builder(metadata.getTokenEndpoint(), new ClientID(config.getClientId()), grant).build();
@@ -282,8 +294,36 @@ public class AuthClient {
       throw new IllegalArgumentException("token must not be null");
     }
     TokenIntrospectionRequest req = new TokenIntrospectionRequest(
-        metadata.getIntrospectionEndpoint(), clientAuth("token introspection"), new TypelessAccessToken(token));
+        metadata.getIntrospectionEndpoint(), clientAuth("token introspection"),
+        requestValue("Introspection", "token", () -> new TypelessAccessToken(token)));
     return req.toHTTPRequest();
+  }
+
+  // ⚠️ `Scope.isEmpty()`는 **원소 수**를 센다 — 원소가 하나라도 있으면 그 값이 공백이든 빈
+  // 문자열이든 폴백이 발동하지 않고, Nimbus 가 `IllegalArgumentException("The value must not be
+  // null or empty string")` 을 던져 §4 경계를 넘어 공개 API 로 샌다. `KeycloakConfig.Builder`
+  // 는 scope 값을 검증하지 않으므로(그 클래스에 scope 검증 0건) 도달 가능하다.
+  // 그래서 **생성 전에** 공백 원소를 거른다 — 인가 요청과 client_credentials 가 이 한 곳을 지난다
+  // (한때 인가 요청만 걸러 client_credentials 가 같은 설정으로 샜다). Kotlin 자매도 같은 모양이다.
+  private Scope configuredScope() {
+    return new Scope(
+        config.getScopes().stream()
+            .filter(s -> s != null && !s.isBlank())
+            .toArray(String[]::new));
+  }
+
+  // ⚠️ Nimbus 값 타입(AuthorizationCode·CodeVerifier·RefreshToken·TypelessAccessToken)은 생성자에서
+  // 값을 검사한다 — 빈·공백 문자열과 RFC 7636 §4.1 밖의 verifier(43–128 자, [A-Za-z0-9-._~])를
+  // `IllegalArgumentException` 으로 거부하고, 그대로 두면 §4 경계를 넘어 공개 API 로 샌다(공백 scope 와
+  // 같은 모양). 자매 일곱은 같은 값을 서버로 보내 400 → SDK 인증 오류를 받으므로(실측 2026-09-25),
+  // 요청을 보내지 않은 채 같은 분류인 KeycloakAuthException 으로 바꾼다. null 은 여기 오기 전에 각
+  // 호출부가 SDK 소유의 IllegalArgumentException 으로 거부한다(호출 계약 위반이지 값 오류가 아니다).
+  private static <T> T requestValue(String operation, String param, java.util.function.Supplier<T> ctor) {
+    try {
+      return ctor.get();
+    } catch (IllegalArgumentException e) {
+      throw new KeycloakAuthException(operation + " request error: invalid " + param, null, e);
+    }
   }
 
   static IntrospectionResult toIntrospectionResult(TokenIntrospectionSuccessResponse s) {

@@ -34,6 +34,7 @@
 
 ### Fixed
 - **(Java · Kotlin)** 공개(시크릿 없는) 클라이언트가 `refresh`·`logout` 을 할 수 없었습니다 — Keycloak 은 둘 다 허용합니다. 로컬 거부는 서버도 거부하는 `clientCredentials`·`introspect` 에만 남았습니다. (#557)
+- **(Java · Kotlin)** 호출 인자를 Nimbus 가 로컬에서 거부하면 그 예외가 SDK 타입으로 번역되지 않고 샜습니다 — 잘못된 PKCE verifier·빈 code·빈 refresh/introspect 토큰은 이제 `KeycloakAuthException`, 잘못된 `redirect_uri` 는 `KeycloakConfigException` 입니다(나머지 일곱은 같은 값을 서버가 거절해 이미 SDK 인증 오류였습니다). `clientCredentialsToken` 은 공백 scope 로 실패하지 않습니다. Java 의 null `code`·`codeVerifier`·`redirectUri` 는 SDK 메시지의 `IllegalArgumentException` 입니다. (#585)
 - **(Rust)** `logout` 이 400/401/404 에도 `Ok(())` 를 돌려줬습니다 — 세션이 살아있는데 성공입니다. (#397)
 - **(Ruby)** 콜드 캐시 + IdP 장애에서 매 검증이 IdP 를 때렸습니다 — 참조 구현(20 → 1). (#403)
 - **(.NET · Go · Node · PHP · Python · Rust)** 같은 결함을 나머지 여섯에 복제했습니다(Ruby 는 #403 의 참조 구현 + 보강). (#404)
