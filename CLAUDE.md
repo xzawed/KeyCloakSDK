@@ -251,8 +251,8 @@ dev(`devDependencies` — **앵커 있음**):
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | 인증(OIDC/OAuth2) | `Duende.IdentityModel` | 8.1.0 |
-| JWT(강화 검증) | `Microsoft.IdentityModel.JsonWebTokens` | 8.22.0 |
-| JWT(JWKS/디스커버리) | `Microsoft.IdentityModel.Protocols.OpenIdConnect` | 8.22.0 |
+| JWT(강화 검증) | `Microsoft.IdentityModel.JsonWebTokens` | 8.23.0 |
+| JWT(JWKS/디스커버리) | `Microsoft.IdentityModel.Protocols.OpenIdConnect` | 8.23.0 |
 | Admin | `Keycloak.AuthServices.Sdk` | 2.7.0 |
 | DI 추상화 | `Microsoft.Extensions.DependencyInjection.Abstractions` | 9.0.20 |
 
@@ -265,7 +265,7 @@ dev(테스트 csproj — **앵커 있음**):
 | 단위 테스트 | `xunit` | 2.9.3 |
 | 테스트 어댑터 | `xunit.runner.visualstudio` | 4.0.0 |
 | 커버리지 수집 | `coverlet.collector` | 10.0.1 |
-| HTTP 목 | `WireMock.Net` | 2.15.0 |
+| HTTP 목 | `WireMock.Net` | 2.18.0 |
 | 통합 테스트 | `Testcontainers.Keycloak` | 4.15.0 |
 
 전부 Apache-2.0/MIT(호환).
