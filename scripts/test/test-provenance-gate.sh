@@ -92,11 +92,76 @@ assert_eq "$_pg_n" "$pg_blocks" "센티널로 게이트 블록을 뽑지 못한 
 # URL을 "로컬"로 보아 공개 레지스트리에서 받아도 통과한다.
 # 그래서 정의가 **주입 가능한 출처에서 파생되는지**를 여기서 문자로 확인한다. 값 자체가 아니라
 # 정의의 모양을 보는 것이라 오케스트레이터가 URL을 바꿔도 흔들리지 않는다.
-pg_defn() { # $1=언어 $2=기대하는 정의 문자열
-  _line="$(grep -m1 -F "$2" "$CONSUME/$1-run.sh" || true)"
-  _got="$( [ -n "$_line" ] && echo ok || echo MISSING )"
-  assert_eq "ok" "$_got" "[$1] 근거 변수 정의가 기대 형태가 아니다 — 약한 값으로 바뀌었나? (기대: $2)"
+#
+# ⚠️ **「그 문자열이 파일 어딘가에 있다」로 보지 않는다 — 그 판이 세 번 SILENT 였다**(probe.sh 실측):
+# 정의를 `REG="."` 로 바꾸고 옛 줄을 **주석으로 남기면** 통과했고, 정의는 그대로 둔 채 센티널
+# 바로 위에 `REG="."`(python) · `_kreg="."`(kotlin)를 **한 줄 더** 넣어도 통과했다 — 게이트가
+# 읽는 것은 등장한 문자열이 아니라 **마지막으로 대입된 값**이다. 그래서 센티널 **앞** 구간에서
+# 주석을 벗긴 뒤, 그 변수에 대한 **마지막** 대입의 우변이 기대 형태인지 본다. 센티널 **안**의
+# 재대입(`REG="${REG%/}/"` 정규화)은 런타임 행이 스텁으로 실행해 보므로 여기서 세지 않는다.
+# ⚠️ 잔여 — 이것도 셸 의미의 정적 근사다: 실행되지 않는 분기 안의 대입·`eval`·`read` 는 못 본다.
+pg_last_assign() { # $1=파일 $2=변수 → 센티널 앞, 주석 제외, 마지막 대입의 `VAR=` 부터 끝까지
+  awk -v v="$2" '
+    /# >>> provenance-gate/ { exit }
+    { sub(/^[ \t]*#.*/, ""); sub(/[ \t]#.*/, "") }
+    {
+      s = " " $0
+      re = "[ \t;)&|](export[ \t]+|readonly[ \t]+|local[ \t]+)?" v "="
+      while (match(s, re)) {
+        t = substr(s, RSTART + 1)
+        sub(/^(export|readonly|local)[ \t]+/, "", t)
+        last = t
+        s = substr(s, RSTART + RLENGTH)
+      }
+    }
+    END { print last }' "$1"
 }
+pg_defn_file() { # $1=파일 $2=기대 정의(「VAR=…」 접두) → ok | MISSING
+  _last="$(pg_last_assign "$1" "${2%%=*}")"
+  case "$_last" in "$2"*) echo ok ;; *) echo MISSING ;; esac
+}
+pg_defn() { # $1=언어 $2=기대하는 정의 문자열
+  assert_eq "ok" "$(pg_defn_file "$CONSUME/$1-run.sh" "$2")" \
+    "[$1] 근거 변수의 마지막 대입이 기대 형태가 아니다 — 약한 값으로 바뀌었거나 뒤에서 덮였나? (기대: $2)"
+}
+
+# 대조군 — 위 판정이 **알려진 나쁜 입력을 거부하는가**. 라이브 파일만 보면 판정을 `grep -F` 로
+# 되돌려도 초록이다(그것이 바로 이 절이 고친 판이다). 각 행은 **그 모양 하나만** 다르다.
+_pgd="$TMP/defn.sh"
+_pgd_case() { # $1=기대(ok|MISSING) $2=설명 / stdin=픽스처
+  cat > "$_pgd"
+  assert_eq "$1" "$(pg_defn_file "$_pgd" 'REG="${REGISTRY_URL:-')" "[정의 대조군] $2"
+}
+_pgd_case ok "양성: 정의 한 줄" <<'X'
+REG="${REGISTRY_URL:-http://x:1}"
+X
+_pgd_case ok "양성: 센티널 안의 재대입은 세지 않는다" <<'X'
+REG="${REGISTRY_URL:-http://x:1}"
+  # >>> provenance-gate
+  REG="."
+X
+_pgd_case ok "양성: 줄 중간 대입(java 의 case 가지 모양)" <<'X'
+  http://*) _a="1"; REG="${REGISTRY_URL:-http://x:1}" ;;
+X
+_pgd_case MISSING "음성: 약한 정의 + 옛 줄은 주석으로" <<'X'
+# REG="${REGISTRY_URL:-http://x:1}"
+REG="."
+X
+_pgd_case MISSING "음성: 약한 정의 + 옛 줄은 꼬리 주석으로" <<'X'
+REG="." # REG="${REGISTRY_URL:-http://x:1}"
+X
+_pgd_case MISSING "음성: 정의 뒤, 센티널 앞의 재대입" <<'X'
+REG="${REGISTRY_URL:-http://x:1}"
+REG="."
+  # >>> provenance-gate
+X
+_pgd_case MISSING "음성: export 로 덮기" <<'X'
+REG="${REGISTRY_URL:-http://x:1}"
+export REG="."
+X
+_pgd_case MISSING "음성: 대입이 아예 없다" <<'X'
+echo 'REG="${REGISTRY_URL:-http://x:1}"'
+X
 pg_defn python 'REG="${REGISTRY_URL:-'
 pg_defn node   'REG="${REGISTRY_URL:-'
 pg_defn php    'REG="${REGISTRY_URL:-'
@@ -105,6 +170,8 @@ pg_defn rust   'LOCAL_REG="/opt/local-registry"'
 # kotlin·java는 리터럴이 아니라 빌드파일/settings.xml에서 **파생**한다 — 그 파생 자체가 근거이므로
 # 정의 문자열이 아니라 파생 명령이 남아 있는지 본다.
 pg_defn kotlin '_kreg_candidates="$(sed -n '
+# ⚠️ kotlin 게이트가 읽는 것은 후보가 아니라 `_kreg` 다 — 후보만 보면 그 사이의 `_kreg="."` 가 샌다(실측 SILENT).
+pg_defn kotlin '_kreg="$(printf '"'"'%s\n'"'"' "$_kreg_candidates"'
 pg_defn java   '_local_url="$_exc_url"'
 
 # ---------------------------------------------------------------------------
