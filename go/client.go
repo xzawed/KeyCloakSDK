@@ -20,6 +20,14 @@ type Client struct {
 	group singleflight.Group
 }
 
+// String keeps the client secret out of `%v`/`%+v`/`%s`/`%q`. ⚠️ Without it fmt dumps the unexported
+// cfg field by reflection and never reaches Config.String() — measured 2026-09-26: every verb printed
+// the secret. Pointer receiver: Client holds a mutex, so a value cannot be copied (go vet copylocks).
+func (c *Client) String() string { return "Client{" + c.cfg.String() + "}" }
+
+// GoString is the `%#v` hook — `%#v` does not use Stringer.
+func (c *Client) GoString() string { return c.String() }
+
 // New validates the config and assembles the auth facade. Admin is deferred, so
 // a public/PKCE client without a secret can still use Auth.
 func New(cfg Config) (*Client, error) {

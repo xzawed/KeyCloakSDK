@@ -3,6 +3,7 @@ package keycloak
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -33,6 +34,14 @@ type AdminClient struct {
 	Roles   *RolesResource
 	Groups  *GroupsResource
 }
+
+// String keeps the cached bearer token out of fmt. ⚠️ `%s`/`%q` re-expand the unexported tp field
+// at depth 0 and printed the provider's cached access token (measured 2026-09-26); `%v` happened to
+// stop at an address. Value receiver so a value and a pointer are both Stringers.
+func (a AdminClient) String() string { return fmt.Sprintf("AdminClient{Realm:%q}", a.realm) }
+
+// GoString is the `%#v` hook — `%#v` does not use Stringer.
+func (a AdminClient) GoString() string { return a.String() }
 
 // newAdminClient builds the gocloak client, injects the read timeout, and
 // authenticates via client-credentials (single-flight cached). clientSecret is
