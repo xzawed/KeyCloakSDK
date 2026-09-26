@@ -1,7 +1,7 @@
 import pytest
 
 from keycloak_sdk.exceptions import KeycloakAuthError
-from keycloak_sdk.tokens import TokenSet
+from keycloak_sdk.tokens import IntrospectionResult, TokenSet, _introspection_result
 
 
 def test_is_expired_respects_skew():
@@ -98,3 +98,40 @@ def test_unusable_expires_in_is_rejected_without_quoting_it(bad: object) -> None
 
     assert str(excinfo.value) == "token response has an invalid expires_in"
     assert excinfo.value.__context__ is None
+
+
+# --- introspection (RFC 7662) --------------------------------------------------------------
+
+
+def test_introspection_maps_fields() -> None:
+    result = _introspection_result({"active": True, "username": "svc", "client_id": "app"})
+    assert result == IntrospectionResult(active=True, username="svc", client_id="app")
+
+
+@pytest.mark.parametrize("data", [{}, {"active": None}, {"active": False, "username": None}])
+def test_absent_or_null_active_is_inactive(data: dict[str, object]) -> None:
+    """예전과 같다 — 없거나 null 이면 비활성(fail-closed)."""
+    assert _introspection_result(data) == IntrospectionResult(False, None, None)
+
+
+@pytest.mark.parametrize("bad", ["false", "true", 1, 0, [], {"v": True}])
+def test_non_boolean_active_is_rejected(bad: object) -> None:
+    """⚠️ 예전 `bool(response.get("active"))` 는 문자열 `"false"` 를 **활성**으로 읽었다(fail-open).
+    RFC 7662 의 `active` 는 JSON boolean 이다 — 그 밖의 모양은 추측하지 않고 거부한다."""
+    with pytest.raises(KeycloakAuthError) as excinfo:
+        _introspection_result({"active": bad})
+
+    assert str(excinfo.value) == "introspection response has an invalid active"
+
+
+@pytest.mark.parametrize(
+    ("name", "bad"), [("username", {"echo": _CANARY}), ("client_id", [_CANARY])]
+)
+def test_introspection_field_of_wrong_type_is_rejected_by_name_only(name: str, bad: object) -> None:
+    """객체 모양 `username`·`client_id` 는 기본 dataclass repr 이 그 안의 토큰을 찍었다(Grok 레그,
+    실측). 거부 메시지에는 필드 이름만 싣는다."""
+    with pytest.raises(KeycloakAuthError) as excinfo:
+        _introspection_result({"active": True, name: bad})
+
+    assert str(excinfo.value) == f"introspection response has an invalid {name}"
+    assert _CANARY not in repr(excinfo.value)

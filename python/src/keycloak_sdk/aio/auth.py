@@ -35,7 +35,7 @@ from ..exceptions import (
     TokenValidationError,
 )
 from ..oidc import OidcEndpoints
-from ..tokens import IntrospectionResult, TokenSet, ValidatedToken
+from ..tokens import IntrospectionResult, TokenSet, ValidatedToken, _introspection_result
 
 T = TypeVar("T")
 
@@ -180,11 +180,7 @@ class AsyncAuthClient:
     async def introspect(self, token: str) -> IntrospectionResult:
         """RFC 7662 토큰 인트로스펙션. 비활성 토큰은 `active` 외 필드가 생략될 수 있다."""
         response = await self._awrap(self._openid.a_introspect(token))
-        return IntrospectionResult(
-            active=bool(response.get("active", False)),
-            username=response.get("username"),
-            client_id=response.get("client_id"),
-        )
+        return _introspection_result(response)
 
     async def validate(self, access_token: str) -> ValidatedToken:
         """realm JWKS로 서명을 검증하고 issuer/audience/exp/nbf를 강제한다(sync `JwtValidator`).

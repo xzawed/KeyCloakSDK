@@ -55,11 +55,11 @@ class TokenSet:
         )
 
 
-def _optional_str(data: dict[str, Any], name: str) -> str | None:
+def _optional_str(data: dict[str, Any], name: str, what: str = "token response") -> str | None:
     value = data.get(name)
     if value is None or isinstance(value, str):
         return value
-    raise KeycloakAuthError(f"token response has an invalid {name}")
+    raise KeycloakAuthError(f"{what} has an invalid {name}")
 
 
 def _expires_at(expires_in: Any, issued_at: float) -> float | None:
@@ -97,3 +97,23 @@ class IntrospectionResult:
     active: bool
     username: str | None
     client_id: str | None
+
+
+def _introspection_result(data: dict[str, Any]) -> IntrospectionResult:
+    """introspect 응답 → `IntrospectionResult`. sync·aio 미러가 같이 쓴다(RFC 7662).
+
+    ⚠️ `active` 는 JSON boolean 만 받는다 — 예전 `bool(...)` 은 문자열 `"false"` 를 **활성**으로
+    읽었다(fail-open, 실측 2026-09-26). 없거나 null 이면 비활성이다(예전과 같다). `username`·
+    `client_id` 는 str|None 이다 — 객체 모양은 기본 dataclass repr 이 그 안의 토큰을 찍었다(Grok
+    레그가 찾음). 거부 메시지에는 필드 이름만 싣는다."""
+    what = "introspection response"
+    active = data.get("active")
+    if active is None:
+        active = False
+    if not isinstance(active, bool):
+        raise KeycloakAuthError(f"{what} has an invalid active")
+    return IntrospectionResult(
+        active=active,
+        username=_optional_str(data, "username", what),
+        client_id=_optional_str(data, "client_id", what),
+    )

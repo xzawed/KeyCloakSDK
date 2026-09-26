@@ -7,7 +7,7 @@
 ## [Unreleased]
 
 ### Security
-- **(Python)** 형식이 틀리거나 요청을 되돌리는 토큰·introspect·logout 응답에서 난 오류가 메시지와 원인 사슬로 그 응답의 토큰과 되돌린 `client_secret` 을 찍었습니다 — python-keycloak 은 오류 메시지에 응답 본문을 싣고 200 인데 JSON 객체가 아니면 본문을 인용한 `TypeError` 를 던지는데, SDK 가 그 메시지를 옮기고 원본을 원인으로 달았습니다(admin 토큰 그랜트도 같았고, `expires_in` 의 raw `ValueError` 는 값을 인용했습니다). 이제 메시지는 HTTP 상태와 OAuth 오류 코드뿐이고 원인은 하위 오류의 타입·상태·던진 자리만 담은 요약입니다. 전에 raw 로 새던 `TypeError`·`ValueError` 는 auth 에서 `KeycloakAuthError`, admin 에서 `KeycloakTransportError` 이고, 타입이 틀린 `refresh_token`·`id_token`·`token_type`·`scope`·`expires_in` 은 거부합니다. **게시본 `1.0.0`·`1.0.1` 에 들어 있습니다.** (#TBD)
+- **(Python)** 형식이 틀리거나 요청을 되돌리는 토큰·introspect·logout 응답에서 난 오류가 메시지와 원인 사슬로 그 응답의 토큰과 되돌린 `client_secret` 을 찍었습니다 — python-keycloak 은 오류 메시지에 응답 본문을 싣고 200 인데 JSON 객체가 아니면 본문을 인용한 `TypeError` 를 던지는데, SDK 가 그 메시지를 옮기고 원본을 원인으로 달았습니다(admin 토큰 그랜트도 같았고, `expires_in` 의 raw `ValueError` 는 값을 인용했으며, HTTP 로 파싱되지 않는 상태·헤더 줄은 전송 오류의 원인 사슬로 찍혔습니다). 이제 메시지는 HTTP 상태와 OAuth 오류 코드뿐이고 원인은 하위 오류의 타입·상태·던진 자리만 담은 요약입니다. 전에 raw 로 새던 `TypeError`·`ValueError` 는 auth 에서 `KeycloakAuthError`, admin 에서 `KeycloakTransportError` 이고, 타입이 틀린 `refresh_token`·`id_token`·`token_type`·`scope`·`expires_in` 과 introspect 의 `username`·`client_id` 는 거부합니다. ⚠️ introspect 의 `active` 가 JSON boolean 이 아니면(예: 문자열 `"false"`) **활성**으로 읽던 것도 이제 거부합니다. **게시본 `1.0.0`·`1.0.1` 에 들어 있습니다.** (#TBD)
 
 ## [1.1.0] - 2026-09-26 (Go · PHP · Rust)
 

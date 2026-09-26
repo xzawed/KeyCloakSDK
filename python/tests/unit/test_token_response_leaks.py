@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import socket
 import threading
 import traceback
 from collections.abc import Awaitable, Callable, Iterator
@@ -188,6 +189,19 @@ VARIANTS: dict[str, _Variant] = {
     # (e''''') OAuth 오류 **코드** 자리에 토큰 — 코드는 메시지에 싣는 유일한 본문 조각이다.
     "e''''' 400 error 코드 자리에 토큰": _Variant(
         lambda _: _json(400, {"error": ACCESS, "error_description": "x"}), ALL_CALLS
+    ),
+    # (f) introspect 필드가 객체 — 예전에는 **성공**했고 돌려받은 `IntrospectionResult` 의 기본
+    # repr 이 그 안의 토큰을 찍었다(Grok 레그가 찾음, 실측). 토큰 JSON 이 아니라 나머지도 실패한다.
+    "f introspect username·client_id 가 객체": _Variant(
+        lambda _: _json(
+            200, {"active": True, "username": {"echo": ACCESS}, "client_id": [REFRESH]}
+        ),
+        ALL_CALLS,
+    ),
+    # (f') introspect `active` 가 문자열 — 예전 `bool("false")` 는 **활성**으로 읽었다(fail-open).
+    # 누출이 아니라 흐름 검사가 잰다: introspect 가 실패해야 한다.
+    "f' introspect active 가 문자열": _Variant(
+        lambda _: _json(200, {"active": "false"}), ALL_CALLS
     ),
 }
 
@@ -464,3 +478,118 @@ def test_hostile_token_responses_do_not_print_secrets(
     assert not leaks, f"비밀이 찍힌다 ({len(leaks)}):\n" + "\n".join(leaks)
     stale = sorted(set(KNOWN_LEAKS) - seen_known)
     assert not stale, f"알려진 누출이 더 안 난다 — KNOWN_LEAKS 에서 지워라: {stale}"
+
+
+# --- HTTP 로 파싱되지도 않는 응답 -----------------------------------------------------------
+
+LINE = "HX7q2w9e-status-line-canary"
+#: 모양 → 그 모양에서 전송 오류가 나야 하는 파사드. requests 는 헤더 줄의 형식을 봐주고(성공),
+#: httpx(h11)는 거부한다 — 둘 다 **실측**이다. 오류가 나면 그 하위 예외가 줄을 인용한다
+#: (`BadStatusLine('XYZ …')`·h11 `illegal header line`) — 예전에는 `from exc` 사슬로 찍혔다.
+_RAW = {
+    "상태 줄이 HTTP 가 아님": (f"XYZ {LINE}\r\n\r\n".encode(), {"sync", "aio"}),
+    "헤더 줄에 콜론이 없음": (
+        (
+            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n"
+            f"X-Echo {LINE}\r\n\r\n{{}}"
+        ).encode(),
+        {"aio"},
+    ),
+}
+
+
+def _read_request(conn: socket.socket) -> None:
+    """요청을 **끝까지** 읽는다 — 덜 읽고 닫으면 Windows 가 RST 를 보내 클라이언트는 응답 줄을
+    읽기 전에 연결 리셋을 본다(실측: 그러면 인용할 줄이 없어 이 테스트가 공허해진다)."""
+    data = b""
+    while b"\r\n\r\n" not in data:
+        chunk = conn.recv(65536)
+        if not chunk:
+            return
+        data += chunk
+    head, _, body = data.partition(b"\r\n\r\n")
+    length = 0
+    for line in head.split(b"\r\n")[1:]:
+        name, _, value = line.partition(b":")
+        if name.strip().lower() == b"content-length":
+            length = int(value.strip())
+    while len(body) < length:
+        chunk = conn.recv(65536)
+        if not chunk:
+            return
+        body += chunk
+
+
+@contextmanager
+def _raw_server(payload: dict[str, bytes]) -> Iterator[str]:
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    sock.listen(8)
+
+    def serve() -> None:
+        while True:
+            try:
+                conn, _ = sock.accept()
+            except OSError:
+                return
+            with conn:
+                try:
+                    conn.settimeout(2)
+                    _read_request(conn)
+                    conn.sendall(payload["now"])
+                    conn.shutdown(socket.SHUT_WR)
+                    while conn.recv(65536):  # 클라이언트가 닫을 때까지 비운다(RST 방지)
+                        pass
+                except OSError:
+                    pass
+
+    threading.Thread(target=serve, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
+    finally:
+        sock.close()
+
+
+async def _raw_outcomes(url: str, payload: dict[str, bytes]) -> list[tuple[str, str, object]]:
+    cfg = KeycloakConfig(server_url=url, realm="r", client_id="c", client_secret=SECRET)
+    found: list[tuple[str, str, object]] = []
+    with KeycloakClient.create(cfg) as kc:
+        for shape, (raw, _) in _RAW.items():
+            payload["now"] = raw
+            try:
+                found.append(("sync", shape, kc.auth.introspect(TOKEN_IN)))
+            except Exception as exc:
+                found.append(("sync", shape, exc))
+    async with AsyncKeycloakClient.create(cfg) as akc:
+        for shape, (raw, _) in _RAW.items():
+            payload["now"] = raw
+            try:
+                found.append(("aio", shape, await akc.auth.introspect(TOKEN_IN)))
+            except Exception as exc:
+                found.append(("aio", shape, exc))
+    return found
+
+
+def test_unparseable_response_line_is_not_quoted_through_the_cause_chain() -> None:
+    """전송 레인도 같은 부류다 — 상태 줄·헤더 줄이 HTTP 가 아니면 requests·httpx 가 그 줄을 인용한
+    예외를 내고, python-keycloak 은 그것을 `__cause__` 로 단 `KeycloakConnectionError` 를 던진다.
+    SDK 메시지(`Can't connect to server`)는 깨끗했지만 `from exc` 사슬로 `logging.exception` 이
+    줄을 찍었다(실측: 바꾸지 않은 소스에서 sync 1 · aio 2)."""
+    payload: dict[str, bytes] = {}
+    with _raw_server(payload) as url:
+        found = asyncio.run(_raw_outcomes(url, payload))
+
+    problems = []
+    for facade, shape, got in found:
+        expected = facade in _RAW[shape][1]
+        if isinstance(got, BaseException) != expected:
+            problems.append(f"{facade}|{shape}: 흐름이 기대와 다르다 — {got!r}")
+            continue
+        if not isinstance(got, BaseException):
+            continue
+        if not isinstance(got, KeycloakTransportError):
+            problems.append(f"{facade}|{shape}: 전송 오류가 아니다 — {type(got)}")
+        printed = "".join(traceback.format_exception(got)) + str(got) + repr(got)
+        if LINE[:_PREFIX] in printed:
+            problems.append(f"{facade}|{shape}: 응답 줄이 찍혔다")
+    assert not problems, "\n".join(problems)
