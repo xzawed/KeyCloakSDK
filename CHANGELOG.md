@@ -33,6 +33,7 @@
 - **(Node)** 사용처 skew 기본값이 무보호였고, 설정값이 아예 도달하지 않았습니다. (#445)
 - **(Node)** `jose` 에는 JWKS 크기 상한이 없습니다 — 「미측정」이 「괜찮다」가 아니었습니다. (#471)
 - **(.NET)** JWKS·discovery 에 바이트 상한을 걸었습니다 — 공유 `HttpClient` 은 묶지 않습니다. (#477)
+- **(.NET)** 토큰 provider 가 캐시한 액세스 토큰을 내부 레코드의 `ToString` 이 원문으로 찍었습니다 — 디버거 조사식·리플렉션 덤프로만 닿는 private 타입입니다. (#594)
 
 ### Fixed
 - **(Java · Kotlin)** 공개(시크릿 없는) 클라이언트가 `refresh`·`logout` 을 할 수 없었습니다 — Keycloak 은 둘 다 허용합니다. 로컬 거부는 서버도 거부하는 `clientCredentials`·`introspect` 에만 남았습니다. (#557)

@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `208`(2026-09-26 기준 열림 116 · 닫힘 92)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `208`(2026-09-26 기준 열림 115 · 닫힘 93)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,7 +116,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-09-26 · #560–#593 반영)
+### 다음 세션 진입점 (2026-09-26 · #560–#594 반영)
 
 **지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. JVM `1.0.1` 은 **게시·바이트 확인 완료**(`node scripts/check-published-jvm-floor.mjs` 전부 major ≤ 61)이고 API 기저선도 1.0.1 이다. 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
 
@@ -604,7 +604,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 70건 (열림 50)
+## D. 원장 밖 — 70건 (열림 49)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -722,7 +722,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `php-jwtvalidator-trace-arg` **[M/S · 신규·닫힘 2026-09-26 #593]** `JwtValidator::validate`·`decodeHeader` 에 `#[\SensitiveParameter]` — #467 의 파생 정규식이 이름 `jwt` 를 못 골라 빠졌다. 정규식에 더하자 정확히 그 둘이 RED, `$jwt` 선택을 대조군으로 고정 · `php/src/JwtValidator.php`
 - [ ] `php-exception-trace-third-party-args` **[L/M · 신규 2026-09-26]** `introspect`·`logout` 이 Guzzle `request()` 옵션으로 넘긴 토큰·Basic 헤더·클라이언트 시크릿이 `previous` 예외의 **Guzzle 프레임 인자**로 `var_dump`·`print_r` 에 찍힌다(실측, `zend.exception_ignore_args=0` — 운영 php.ini 는 1). `#[\SensitiveParameter]` 는 제3자 프레임에 못 닿는다. PSR-7 요청 + `send()` 면 본문은 스트림이라 안 찍히나 introspect 의 Basic 헤더는 남는다 — `FacadeDumpTest` 의 `KNOWN_LEAKS` 넷이 고정한다(고치면 낡은 항목으로 실패) · `php/src/AuthClient.php`
 - [ ] `go-nonstring-verb-bypasses-stringer` **[L/S · 신규 2026-09-26]** go 의 `%d` 류(비문자열 동사)는 `Stringer` 를 안 타 `Config`·`TokenSet`·`AuthorizationRequest`·파사드·provider 가 비밀을 찍는다(Grok 레그 818 사례 중 92, 재현). 바닥(`%v %+v %#v %s %q`) 밖이고 `go vet` printf 가 그 호출을 경고한다 — `fmt.Formatter` 로 닫을 수 있다. ⚠️ 같은 레그의 `json.Marshal`·slog JSON(컨테이너 안) 누출은 **설계 경계**다(`MarshalJSON` 은 왕복을 `***` 로 오염시킨다) · `go/config.go`
-- [ ] `dotnet-cached-record-tostring` **[L/S · 신규 2026-09-26]** `ClientCredentialsTokenProvider.Cached` 가 `sealed record` 라 컴파일러 `ToString` 이 캐시된 액세스 토큰을 찍는다 — private 이라 리플렉션·디버거로만 닿는다 · `dotnet/src/Xzawed.Keycloak.Sdk/ITokenProvider.cs:27`
+- [x] `dotnet-cached-record-tostring` **[L/S · 신규·닫힘 2026-09-26 #594]** `ClientCredentialsTokenProvider.Cached` 레코드의 컴파일러 `ToString` 이 캐시된 액세스 토큰을 찍었다(실측) — 모양은 두고 `ToString` 만 덮었다. Grok 레그가 명세대로 구현(RED → 104), 변이 CAUGHT · `dotnet/src/Xzawed.Keycloak.Sdk/ITokenProvider.cs`
 - [x] `probe-new-file-mutation-dies-silent` **[M/S · 신규·닫힘 2026-09-26 #591]** 새 파일만 만드는 변이에서 `probe.sh` 가 판정 없이 1(SILENT 의 코드)로 죽었다 — diff 가 비면 자리 검사의 `grep` 파이프가 1 을 내 `set -e` 가 끝냈다(실측: 0 바이트 · exit 1). `|| true` 한 곳 + 판정 줄을 보는 자가테스트 둘(RED → 18/18) · `scripts/probe.sh`
 - [x] `token-type-library-behaviour-unpinned` **[M/S · 신규·닫힘 2026-09-25 #581]** go·java·kotlin 이 비문자열 `access_token` 거절을 라이브러리(x/oauth2 · Nimbus)에 맡기면서 그 행동을 고정한 테스트가 0 이었다 — go 는 전제부터 미측정(실측: 여섯 다 `*AuthError`). 셋 다 표 테스트로 고정, 파싱 실패를 삼키는 변이에 go·java CAUGHT(kotlin 미측정) · `go/auth_test.go`
 

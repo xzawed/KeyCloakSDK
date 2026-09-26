@@ -24,7 +24,11 @@ public sealed class ClientCredentialsTokenProvider : ITokenProvider
     // reference read — no tearing of the multi-word DateTimeOffset on weak memory models (ARM64).
     private volatile Cached? _cache;
 
-    private sealed record Cached(string Token, DateTimeOffset ExpiresAt);
+    private sealed record Cached(string Token, DateTimeOffset ExpiresAt)
+    {
+        // A record's generated ToString() prints every member, so Token would appear in plain text.
+        public override string ToString() => $"Cached {{ Token = ***, ExpiresAt = {ExpiresAt:O} }}";
+    }
 
     public ClientCredentialsTokenProvider(ITokenSource source, int skewSeconds = 30, TimeProvider? clock = null)
     {
