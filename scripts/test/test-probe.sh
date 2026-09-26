@@ -169,6 +169,14 @@ _newfile_silent() {
   set -e
   printf '%s %s' "$_c" "$(printf '%s\n' "$_o" | grep -oE '^(CAUGHT|SILENT) —' | head -1)"
 }
+# ⚠️ **끝 개행이 없는 새 파일** — 미리보기의 마지막 줄이 안 닫혀 판정이 그 줄 뒤에 붙었다
+# (`+plantedCAUGHT — …`). 종료코드는 맞지만 `^CAUGHT` 로 읽는 쪽은 판정이 없다고 본다(실측 2026-09-26,
+# Grok 레그의 퍼저 193 사례 중 둘).
+assert_eq "0 CAUGHT —" "$(verdict_site "planted" "printf 'planted' > new.txt" sh -c '! test -f new.txt')" \
+  "끝 개행 없는 새 파일도 판정 줄이 줄 머리에 온다"
+# ⚠️ **이름에 공백이 든 새 파일** — 목록을 단어로 쪼개 본문을 못 읽고, 선언한 자리가 없다며 INVALID 로 갔다.
+assert_eq "0 CAUGHT —" "$(verdict_site "planted" "printf 'planted\n' > 'new file.txt'" sh -c '! test -f "new file.txt"')" \
+  "이름에 공백이 든 새 파일의 자리도 읽는다"
 assert_eq "1 SILENT —" "$(_newfile_silent)" \
   "새 파일만 만드는 변이의 SILENT(1) 은 판정 줄을 찍는다 — 줄 없는 1 은 러너가 죽은 것이다"
 

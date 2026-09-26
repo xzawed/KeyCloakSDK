@@ -113,10 +113,12 @@ if [ "$SITE_MODE" = declared ]; then
   # 러너를 **판정 없이 종료코드 1(SILENT 의 코드)** 로 죽인다(실측 2026-09-26, `test-probe.sh`).
   _diff="$( (cd "$WT" && git diff -- .) | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' || true)"
   # 신규 파일은 diff 에 안 나오므로 본문을 더한다(그래야 「새 파일에 심는 변이」도 선언할 수 있다).
-  for _nf in $( (cd "$WT" && git ls-files --others --exclude-standard) 2>/dev/null); do
-    _diff="$_diff
-$(cat "$WT/$_nf" 2>/dev/null || true)"
-  done
+  # ⚠️ 줄 단위로 읽는다 — `for … in $(…)` 는 이름의 공백에서 쪼개 본문을 못 읽고 자리가 없다며 INVALID 로
+  # 갔다(실측 2026-09-26, Grok 레그의 퍼저).
+  _newbody="$( (cd "$WT" && git ls-files --others --exclude-standard) 2>/dev/null \
+    | while IFS= read -r _nf; do cat "$WT/$_nf" 2>/dev/null || true; echo; done)"
+  _diff="$_diff
+$_newbody"
   if ! printf '%s' "$_diff" | grep -qF -- "$SITE"; then
     fail_invalid "변이가 착지했지만 **선언한 자리를 담지 않는다**: [$SITE]
   변이는 파일을 바꿨으나 의도한 것이 되지 않았다(이스케이프·정규식·인터프리터를 의심하라).
@@ -135,7 +137,7 @@ printf '%s\n' "$CHANGED" | sed 's/^/  /'
 # 두 경우 다 한눈에 틀렸다.
 echo "변이 diff:"
 ( cd "$WT" && git diff -- . ; git -C "$WT" ls-files --others --exclude-standard \
-  | while read -r _f; do printf '+++ (신규) %s\n' "$_f"; sed 's/^/+/' "$WT/$_f" 2>/dev/null | head -20; done ) \
+  | while IFS= read -r _f; do printf '+++ (신규) %s\n' "$_f"; awk 'NR <= 20 { print "+" $0 }' "$WT/$_f" 2>/dev/null; done ) \
   | head -80 | sed 's/^/  /'
 
 # ⚠️ **SILENT 를 선언하기 전에 「검사가 이 파일을 읽기는 하는가」를 본다.** 착지·의미에 이어
