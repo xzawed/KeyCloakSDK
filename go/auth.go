@@ -28,6 +28,14 @@ type AuthClient struct {
 	client *http.Client
 }
 
+// String keeps the client secret out of fmt — the unexported cfg field is otherwise dumped by
+// reflection, bypassing Config.String() (measured 2026-09-26: every verb printed the secret).
+// Value receiver so a value and a pointer are both Stringers (AuthClient holds no lock).
+func (a AuthClient) String() string { return "AuthClient{" + a.cfg.String() + "}" }
+
+// GoString is the `%#v` hook — `%#v` does not use Stringer.
+func (a AuthClient) GoString() string { return a.String() }
+
 func newAuthClient(cfg Config, v *Validator) *AuthClient {
 	return &AuthClient{
 		cfg: cfg, ep: oidcEndpoints(cfg), val: v,

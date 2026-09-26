@@ -27,6 +27,17 @@ type clientCredentialsProvider struct {
 	expireAt int64 // epoch sec, skew-adjusted
 }
 
+// String keeps the cached access token out of fmt — NewClientCredentialsTokenProvider hands this type
+// out as a TokenProvider, and printing that interface dumped the token field under every verb
+// (measured 2026-09-26). It does not read the token, so it needs no lock. Pointer receiver: the type
+// holds a mutex.
+func (p *clientCredentialsProvider) String() string {
+	return "ClientCredentialsTokenProvider{token:***}"
+}
+
+// GoString is the `%#v` hook — `%#v` does not use Stringer.
+func (p *clientCredentialsProvider) GoString() string { return p.String() }
+
 // NewClientCredentialsTokenProvider caches a token and refreshes it before
 // expiry, collapsing concurrent refreshes via single-flight.
 func NewClientCredentialsTokenProvider(src TokenSource, skewSec int64) TokenProvider {
