@@ -122,11 +122,11 @@ module KeycloakSdk
       body = begin
         JSON.parse(buf)
       rescue JSON::ParserError => e
-        raise TransportError, "JWKS response unparsable: #{e.message}"
+        raise TransportError, "JWKS response unparsable (JSON::ParserError)", cause: RedactedCause.new(e)
       end
       validate_key_set!(body)
     rescue Faraday::Error => e
-      raise TransportError, "JWKS transport error: #{e.message}"
+      raise TransportError, "JWKS transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
     end
 
     # 파싱된 본문이 **캐시에 올려도 되는 집합인가**. 통과하면 그 본문을 돌려준다.

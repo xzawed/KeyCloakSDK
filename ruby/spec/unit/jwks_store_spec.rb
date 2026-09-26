@@ -59,6 +59,20 @@ RSpec.describe KeycloakSdk::JwksStore do
     expect { store.key_set }.to raise_error(KeycloakSdk::TransportError)
   end
 
+  # 원인 사슬에 원본 하위 예외를 달지 않는다(§4) — JSON 파서는 본문을, 깨진 상태 줄은 그 줄을 인용한다.
+  # 경로 전수는 `hostile_token_response_spec.rb`; 이 둘은 거기서 안 밟는 JWKS 의 두 경계다.
+  { "a non-JSON body" => ->(s) { s.to_return(status: 200, body: "JW-CANARY-BODY") },
+    "a garbled status line" => ->(s) { s.to_raise(Net::HTTPBadResponse.new("wrong status line: JW-CANARY-LINE")) } }
+    .each do |name, reply|
+      it "does not quote #{name} or attach the lower exception" do
+        reply.call(stub_request(:get, jwks_url))
+        expect { store.key_set }.to raise_error(KeycloakSdk::TransportError) { |e|
+          expect(e.cause).to be_a(KeycloakSdk::RedactedCause)
+          expect(e.full_message(highlight: false)).not_to include("JW-CANARY")
+        }
+      end
+    end
+
   it "keeps the rate-limit gate stamped even when a forced re-fetch fails (bounded flood, nil cache)" do
     stub = stub_request(:get, jwks_url).to_return(status: 500, body: "err")
     # cold-cache forced fetch fails but must stamp the gate at the decision point

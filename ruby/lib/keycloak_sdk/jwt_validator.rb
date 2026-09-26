@@ -34,7 +34,9 @@ module KeycloakSdk
       payload, = JWT.decode(token, nil, true, decode_options)
       to_validated(payload)
     rescue JWT::DecodeError => e
-      raise TokenValidationError, "JWT validation failed: #{e.message}"
+      # ruby-jwt 메시지는 입력을 인용하지 않는다. 그 **원인**은 인용한다 — 조각이 JSON 이 아니면 JSON::ParserError 가
+      # 디코드한 토큰 조각을 싣는다(실측) — 그래서 사슬은 `RedactedCause` 로 끊는다.
+      raise TokenValidationError, "JWT validation failed: #{e.message}", cause: RedactedCause.new(e)
     end
 
     private
