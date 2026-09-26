@@ -116,13 +116,13 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-09-27 · #560–#636 반영)
+### 다음 세션 진입점 (2026-09-27 · #560–#639 반영)
 
-**지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. **2026-09-26 릴리스 물결 둘**: 첫째(#604–#616)로 아홉 전부 게시, 둘째(#626–#634)로 원인 사슬 수정(#617–#624)을 게시 — go·php `1.2.0` · ruby `1.1.0` · rust `1.1.1` · python·dotnet `1.0.2` LIVE·기준선 상향(#634). ⚠️ java·kotlin `1.0.3` 은 **Portal 스테이징 — 사람이 Publish 한 뒤** JVM 기준선(`java/pom.xml`·`kotlin-ci.yml`·`df_api_baseline`)을 올리고 `node scripts/check-published-jvm-floor.mjs` 로 바이트를 다시 잰다. 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
+**지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. **2026-09-26 릴리스 물결 둘**: 첫째(#604–#616)로 아홉 전부 게시, 둘째(#626–#634)로 원인 사슬 수정(#617–#624)을 게시 — go·php `1.2.0` · ruby `1.1.0` · rust `1.1.1` · python·dotnet `1.0.2` LIVE·기준선 상향(#634). java·kotlin `1.0.3` 도 사람이 Portal 에서 Publish 해 LIVE 이고, 게시 바이트는 major ≤ 61 이며, JVM 기준선도 올렸다(#638). 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. **`guard-detection-surface-hand-narrowed` [H/M]** — 마스킹 축의 「새 자리」는 아홉 언어 전부 파생으로 닫혔다(#592–#602). 남은 것은 **새 교환 경로**(nonce·백오프·토큰타입)와 줄 단위 skip 표지. 설계는 섰고 Go 분류표가 첫 걸음이다 — 다음은 계급별 적대 변형(항목의 ⏳ 줄).
+1. **`guard-detection-surface-hand-narrowed` [H/M]** — 마스킹 축의 「새 자리」는 아홉 언어 전부 파생으로 닫혔다(#592–#602). 남은 것은 **새 교환 경로**(nonce·백오프·토큰타입)와 줄 단위 skip 표지. Go 파일럿(분류 · 손 목록 포함 · 계급별 변형)은 섰다 — 다음은 여덟 언어로 옮기기(항목의 ⏳ 줄).
 2. `integration-code-exchange-never-run` [H/M] — 코드 교환이 통합 9/9 에서 0. 이것이 `integration-coverage-never-measured` 판정의 첫 걸음이다(그 항목의 순서).
 3. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다. 반대 방향도 있다 — #585 는 「verifier 하나」로 등록됐지만 부류는 호출 인자 다섯 갈래였다.
 
@@ -445,10 +445,15 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 - [x] `selftest-enforcer-cannot-guard-itself` **[H/M]** 자가테스트 종료코드 규약의 집행자가 자기 자신과 '실패 삼킴'을 못 본다 · `scripts/test/test-selftest-hygiene.sh:19`
 - [ ] `guard-detection-surface-hand-narrowed` **[H/M · 계수 정정 2026-09-07 · 손 목록 셋 닫힘 2026-09-23]** 가드의 탐지 표면이 손으로 좁혀져 있어 새 자리·새 문법이 조용히 통과한다 · `scripts/test/test-security-defaults.sh:311`
-  - ⏳ **새 교환 경로 축 — 설계 확정, 첫 걸음 Go 분류표(2026-09-27).**
+  - ⏳ **새 교환 경로 축 — 설계 확정, Go 파일럿 완료(2026-09-27).**
     - **모양.** 언어마다 `HostilePathMatrix` 단위 테스트를 둔다. 덤프 걷기가 닿는 타입의 공개 메서드 전부와 소스에 선언된 공개 메서드의 합집합을 기록하는 가짜 IdP 위에서 부른다. 그리고 실제로 보낸 요청으로 가른다: `CODE_EXCHANGE`·`TOKEN_GRANT`·`JWKS_FETCH`·`OTHER`·`NONE`. 요청 없이 실패하면 `UNDETERMINED` 이고, 이유 없는 면제는 실패다.
-    - **다음 걸음.** 첫째는 계급별 적대 변형이다: 토큰타입 거부, 서명으로 가른 nonce 대상, 콜드캐시 백오프 `1 ≤ hits ≤ k−1`. 그다음 나머지 여덟 언어로 옮기고, 마지막으로 skip 표지를 닫는 attest 파일을 둔다(실행 ID nonce, 비-required 단계).
-    - **Go 첫 걸음.** 재는 명령은 `go -C go test -run TestHostilePathMatrix -v ./...` 다. 분류가 사라지는 변이와 선언 집합에서 타입이 빠지는 변이는 `CAUGHT` 였다.
+    - **계급별 적대 변형(W3).** 붙이는 곳은 손 목록이 아니라 계급이다.
+      - 토큰 부여·코드 교환 행: 형식이 깨진 토큰 응답을 받으면 SDK 오류로 끝나야 한다. 카나리아가 새면 안 되고, 토큰 뒤로 나아가도 안 되며, 정상 응답 대조보다 토큰 요청이 많아서도 안 된다.
+      - nonce 파라미터가 있는 교환 행: 대상은 go/parser 로 서명에서 파생한다. nonce 가 다름 · 다른 키(같은 kid·다른 kid) · id_token 없음 · nonce 클레임 없음을 모두 거부해야 한다. nonce 이름이 아닌 교환 행은 이유 있는 면제가 있어야만 빠진다.
+      - JWKS 조회 행: 콜드 캐시에서 503 을 5 번 받는 동안 `/certs` 요청이 `1 ≤ hits ≤ 4` 여야 한다.
+    - **손 목록 포함(W1).** 파생 집합은 기존 손 테스트와 보안 기본값 가드의 Go 앵커를 전부 담아야 한다. 알려진 틈(`hpKnownGaps`)은 0 이고, 낡은 항목은 실패한다.
+    - **다음 걸음.** 나머지 여덟 언어로 옮긴다(PHP · Python · Ruby · .NET · Java · Node · Kotlin → Rust). 그다음 skip 표지를 닫는 attest 파일을 둔다(실행 ID nonce, 비-required 단계).
+    - **Go 재는 명령.** `go -C go test -run TestHostilePathMatrix -v ./...` — 판정표와 요약이 찍힌다. 변이는 모두 `CAUGHT` 였다: nonce 비교 삭제 · 백오프 우회 · 빈 access_token 검사 삭제 · 캐시 선가열 · 적대 응답을 정상으로 교체 · 검사 없는 새 grant 메서드 · 서명 검증 생략 · 원인 스크럽 우회 · nonce 클레임 누락 허용.
     - ⚠️ **잴 때 함정 둘.**
       - 문자열 인자는 가짜 IdP 키로 **서명한 JWS** 여야 한다. 평문이면 `Validate` 가 요청 전에 실패해 `JWKS_FETCH` 가 빈다.
       - 토큰 응답의 `expires_in` 은 skew(30s)보다 짧아야 한다. 300 이면 캐시가 부여 경로를 가려 `TOKEN_GRANT` 29→3 이 된다.
