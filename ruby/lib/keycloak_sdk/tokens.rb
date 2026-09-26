@@ -30,7 +30,7 @@ module KeycloakSdk
 
       expires_in = begin
         body["expires_in"] && Integer(body["expires_in"])
-      rescue ArgumentError, TypeError
+      rescue ArgumentError, TypeError, RangeError # RangeError: JSON 1e400 = Infinity → FloatDomainError
         # `cause: nil` — ArgumentError 는 그 값을 인용한다(`invalid value for Integer(): "…"`).
         raise AuthError, "token response has an unusable expires_in", cause: nil
       end

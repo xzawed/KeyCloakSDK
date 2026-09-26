@@ -93,6 +93,13 @@ RSpec.describe KeycloakSdk do
         expect(e.full_message).not_to include("TS-CANARY")
       }
     end
+
+    # JSON `1e400` 은 Infinity 로 읽힌다 — Integer(Infinity) 는 FloatDomainError(RangeError)라 위 둘에 안 걸렸다.
+    it "rejects an infinite expires_in with AuthError" do
+      expect do
+        described_class.from_response({ "access_token" => "AT", "expires_in" => Float::INFINITY }, received_at: 0.0)
+      end.to raise_error(KeycloakSdk::AuthError)
+    end
   end
 
   describe KeycloakSdk::IntrospectionResult do

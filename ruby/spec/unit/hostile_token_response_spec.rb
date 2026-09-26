@@ -63,6 +63,7 @@ module HostileTokenResponseSpec
     transport = KeycloakSdk::TransportError
     header = "aHD8k-decoded-header-canary"
     payload = "aPL8k-decoded-payload-canary"
+    infinite = '{"access_token":"cAT9k-access-token-canary","token_type":"Bearer","expires_in":1e400}'
     # 변형 — realm 이름 => 응답·그 응답이 품은 카나리아·호출별 기대 SDK 오류(흐름 검사).
     # ⚠️ 기대에 없는 (변형, 호출) 쌍은 SDK 가 그 응답을 **받아들이는** 경우다(예: id_token 은 nonce 검증에서만 읽힌다).
     VARIANTS = {
@@ -87,6 +88,11 @@ module HostileTokenResponseSpec
                 reply: json(200, access_token: "cAT7k-access-token-canary", token_type: "Bearer", expires_in: "soon",
                                  refresh_token: "cRT7k-refresh-token-canary", id_token: "cID7k-id-token-canary"),
                 expect: expect_all(TOKEN, auth) },
+      # JSON 1e400 은 Infinity 로 읽히고 Integer(Infinity) 는 FloatDomainError 다(ArgumentError·TypeError 가 아니다).
+      "c3" => { note: "200 JSON — expires_in 이 1e400(Infinity), 토큰은 카나리아",
+                reply: { status: 200, headers: JSON_TYPE,
+                         body: infinite },
+                expect: expect_all(TOKEN, auth) },
       "c2" => { note: "200 JSON — token_type 이 문자열이 아니다, 토큰은 카나리아(provider 는 token_type 을 안 본다)",
                 reply: json(200, access_token: "cAT8k-access-token-canary", token_type: 5, expires_in: 300,
                                  refresh_token: "cRT8k-refresh-token-canary"),
@@ -107,6 +113,10 @@ module HostileTokenResponseSpec
                 expect: expect_all(ALL, auth) },
       "e2" => { note: "401 JSON — error_description 이 보낸 클라이언트 시크릿을 되울린다",
                 reply: json(401, error: "invalid_client", error_description: "Invalid client secret #{SECRET}"),
+                expect: expect_all(ALL, auth) },
+      # Grok 레그: 코드 자리 자체가 비밀을 싣는다 — 코드는 남기되 코드 모양일 때만 메시지에 싣는다.
+      "e5" => { note: "400 JSON — error 필드 자체가 토큰을 되울린다",
+                reply: json(400, error: "eER7k-error-field-canary", error_description: "x"),
                 expect: expect_all(ALL, auth) },
       "e3" => { note: "400 text/html — 요청을 되울리는 WAF 차단 페이지",
                 reply: { status: 400, headers: { "Content-Type" => "text/html" },
@@ -283,6 +293,9 @@ RSpec.describe KeycloakSdk::AuthClient do
       run = ->(key, call) { HostileTokenResponseSpec::Scene.new(key).run(call) }
       oauth = run.call("e1", "auth.refresh")
       expect([oauth.message, oauth.oauth_error]).to eq(["refresh failed: invalid_grant (HTTP 400)", "invalid_grant"])
+      odd = run.call("e5", "auth.refresh") # 코드 모양이 아니면 메시지에서만 뺀다 — 프로그램용 속성은 그대로
+      expect([odd.message, odd.oauth_error])
+        .to eq(["refresh failed: non-standard error code (HTTP 400)", "eER7k-error-field-canary"])
       parse = run.call("d1", "auth.client_credentials_token")
       expect(parse.message).to eq("token endpoint transport error: Faraday::ParsingError")
       expect(parse.cause.lower_classes).to eq(%w[Faraday::ParsingError JSON::ParserError])
