@@ -24,7 +24,7 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// <para>⚠️ <b>새 자리를 스스로 찾는 것이 요점이다</b>(등록부 <c>guard-detection-surface-hand-narrowed</c>).
 /// 검사 대상은 (1) 공개 API 로 만든 뿌리에서 리플렉션으로 <b>닿는 SDK 어셈블리의 객체 전부</b>이고(비공개 필드까지),
 /// (2) <c>typeof(KeycloakClient).Assembly.GetTypes()</c> 로 얻은 <b>선언 타입 전수</b>가 그 걷기에 걸렸는지
-/// 대조한다. 인스턴스 필드가 계층 어디에도 없는 타입(정적 도우미·인터페이스)은 규칙으로 빠지고, 그 밖의 면제는
+/// 대조한다. 인스턴스가 있을 수 없는 타입(정적 클래스·인터페이스)은 규칙으로 빠지고, 그 밖의 면제는
 /// 이유와 함께 <see cref="Exempt"/> 에 적는다.</para>
 /// <para>바닥 경로는 <c>obj.ToString()</c> 과 보간 <c>$"{obj}"</c> 둘이다. JSON·Serilog <c>{@}</c> 는 바닥
 /// 밖이다(<c>.claude/rules/dotnet.md</c> 가 그 경계를 적는다).</para>
@@ -57,7 +57,7 @@ public sealed class FacadeDumpTests
     /// </summary>
     private const int ForeignHopBudget = 3;
 
-    /// <summary>걷기에 안 닿아도 되는 상태 있는 타입과 그 이유. ⚠️ 이유 없는 면제는 넣지 않는다.</summary>
+    /// <summary>걷기에 안 닿아도 되는 (인스턴스가 있을 수 있는) 타입과 그 이유. ⚠️ 이유 없는 면제는 넣지 않는다.</summary>
     private static readonly Dictionary<string, string> Exempt = new(StringComparer.Ordinal)
     {
         // 셋 다 같은 이유다 — [JsonConverter] 특성을 보고 System.Text.Json 이 만들어 자기 캐시에 둔다. SDK 객체는
@@ -122,13 +122,13 @@ public sealed class FacadeDumpTests
         var declared = sdk.GetTypes().Where(t => !IsCompilerGenerated(t))
             .OrderBy(t => t.FullName, StringComparer.Ordinal).ToList();
         Assert.Contains(typeof(KeycloakClient), declared);
-        var stateless = declared.Where(IsStateless).ToList();
+        var noInstances = declared.Where(HasNoInstances).ToList();
         _out.WriteLine($"선언 {declared.Count} · 닿음 {declared.Count(walker.Reached.ContainsKey)} · " +
-                       $"무상태(규칙) {stateless.Count} · 면제 {Exempt.Count}");
+                       $"인스턴스 없음(규칙) {noInstances.Count} · 면제 {Exempt.Count}");
         foreach (var t in declared)
         {
             var how = walker.Reached.TryGetValue(t, out var path) ? path
-                : stateless.Contains(t) ? "(무상태)" : Exempt.ContainsKey(t.FullName!) ? "(면제)" : "(안 닿음)";
+                : noInstances.Contains(t) ? "(인스턴스 없음)" : Exempt.ContainsKey(t.FullName!) ? "(면제)" : "(안 닿음)";
             _out.WriteLine($"  {t.FullName} ← {how}");
         }
 
@@ -140,10 +140,10 @@ public sealed class FacadeDumpTests
             var exempt = Exempt.ContainsKey(name);
             if (reached && exempt)
                 problems.Add($"{name}: 걷기에 닿는데 면제 표에도 있다 — 면제를 지워라");
-            else if (exempt && stateless.Contains(t))
-                problems.Add($"{name}: 인스턴스 상태가 없어 규칙으로 빠지는데 면제 표에도 있다 — 면제를 지워라");
-            else if (!reached && !exempt && !stateless.Contains(t))
-                problems.Add($"{name}: 공개 API 뿌리에서 닿지 않는 상태 있는 타입이다 — 만드는 경로를 뿌리에 더하거나, 이유와 함께 면제하라");
+            else if (exempt && noInstances.Contains(t))
+                problems.Add($"{name}: 인스턴스가 있을 수 없어 규칙으로 빠지는데 면제 표에도 있다 — 면제를 지워라");
+            else if (!reached && !exempt && !noInstances.Contains(t))
+                problems.Add($"{name}: 공개 API 뿌리에서 닿지 않는 타입이다 — 만드는 경로를 뿌리에 더하거나, 이유와 함께 면제하라");
         }
         foreach (var name in Exempt.Keys.Where(n => declared.All(t => t.FullName != n)))
             problems.Add($"{name}: 면제 표에 있지만 선언이 없다 — 낡은 면제다");
@@ -345,16 +345,12 @@ public sealed class FacadeDumpTests
         return false;
     }
 
-    /// <summary>계층 어디에도 인스턴스 필드가 없다 — 비밀을 쥘 자리가 없으니 렌더링할 인스턴스도 필요 없다.</summary>
-    private static bool IsStateless(Type t)
-    {
-        for (var c = t; c is not null; c = c.BaseType)
-        {
-            if (c.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly).Length > 0)
-                return false;
-        }
-        return true;
-    }
+    /// <summary>
+    /// 인스턴스가 있을 수 없는 타입(인터페이스·정적 클래스) — 바닥 경로로 렌더링할 객체가 애초에 없다.
+    /// ⚠️ 「인스턴스 필드가 없다」로 넓히지 말 것 — 필드 없는 클래스도 ToString 이 정적 상태를 찍을 수 있다
+    /// (변이 실측 2026-09-26: 정적 필드를 찍는 ToString 을 가진 무필드 공개 클래스가 그 규칙으로 빠져 SILENT 였다).
+    /// </summary>
+    private static bool HasNoInstances(Type t) => t.IsInterface || (t.IsAbstract && t.IsSealed);
 
     // ── 걷기 ────────────────────────────────────────────────────────────────────────────────────
 
@@ -416,8 +412,9 @@ public sealed class FacadeDumpTests
                     return;
                 owner = type;
                 foreignHops = 0;
+                // 닫힌 제네릭은 GetTypes() 가 내놓는 열린 정의로 센다 — 안 그러면 대조가 영영 「안 닿음」이라 한다.
                 for (var t = type; t is not null && t.Assembly == _sdk; t = t.BaseType)
-                    Reached.TryAdd(t, path);
+                    Reached.TryAdd(t.IsGenericType ? t.GetGenericTypeDefinition() : t, path);
                 Render(root, path, value);
             }
             else
