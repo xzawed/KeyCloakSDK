@@ -12,7 +12,6 @@ sync `keycloak_sdk.auth.AuthClient`의 async 미러다. 값 타입(`TokenSet`/`V
 from __future__ import annotations
 
 import asyncio
-import json
 import secrets
 import time
 from collections.abc import Awaitable
@@ -21,11 +20,11 @@ from urllib.parse import urlencode
 
 from joserfc.jwk import KeySet, KeySetSerialization
 from keycloak import KeycloakOpenID
-from keycloak.exceptions import KeycloakError
 
 from .._internal.backoff import JwksFailureBackoff
 from .._internal.jwks_fetch import afetch_jwks
 from .._internal.jwt import JwtValidator
+from .._internal.lower import auth_failure, is_lower_failure, summarize
 from .._internal.redirects import harden_openid
 from ..auth import AuthorizationUrl, _generate_pkce_pair
 from ..config import KeycloakConfig
@@ -83,32 +82,19 @@ class AsyncAuthClient:
         self._jwks_backoff = JwksFailureBackoff()
 
     async def _awrap(self, awaitable: Awaitable[T]) -> T:
-        """python-keycloak `a_*` 호출을 await하고 `KeycloakError`를 SDK 예외로 변환한다.
+        """python-keycloak `a_*` 호출을 await하고 그 실패를 SDK 예외로 변환한다.
 
-        sync `AuthClient._wrap`과 동일한 규칙: `response_code`가 있으면 인증/토큰 흐름
-        실패로 간주해 `KeycloakAuthError`로, 없으면 `KeycloakTransportError`로 변환한다.
+        sync `AuthClient._wrap`과 동일한 규칙(같은 `_internal/lower.py` 를 쓴다): `response_code`가
+        있으면 인증/토큰 흐름 실패로 간주해 `KeycloakAuthError`로, 없으면 `KeycloakTransportError`로
+        변환한다. ⚠️ 상류 메시지도 원본 예외도 옮기지 않는다 — 응답 본문을 싣는다.
         """
         try:
             return await awaitable
-        except KeycloakError as exc:
-            status = getattr(exc, "response_code", None)
-            if status is None:
-                raise KeycloakTransportError(str(exc)) from exc
-            raise KeycloakAuthError(str(exc), error=self._extract_oauth_error(exc)) from exc
-
-    @staticmethod
-    def _extract_oauth_error(exc: KeycloakError) -> str | None:
-        body = getattr(exc, "response_body", None)
-        if not body:
-            return None
-        try:
-            data = json.loads(body)
-        except (ValueError, TypeError):
-            return None
-        if not isinstance(data, dict):
-            return None
-        error = data.get("error")
-        return str(error) if error is not None else None
+        except Exception as exc:
+            if not is_lower_failure(exc):
+                raise
+            error, cause = auth_failure(exc), summarize(exc)
+        raise error from cause
 
     def authorization_url(self, redirect_uri: str) -> AuthorizationUrl:
         """PKCE(S256) 인가 코드 흐름의 시작 URL을 만든다.

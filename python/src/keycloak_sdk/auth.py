@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
 import secrets
 import threading
 import time
@@ -20,11 +19,11 @@ from urllib.parse import urlencode
 
 from joserfc.jwk import KeySet, KeySetSerialization
 from keycloak import KeycloakOpenID
-from keycloak.exceptions import KeycloakError
 
 from ._internal.backoff import JwksFailureBackoff
 from ._internal.jwks_fetch import fetch_jwks
 from ._internal.jwt import JwtValidator
+from ._internal.lower import auth_failure, is_lower_failure, summarize
 from ._internal.redirects import harden_openid
 from ._internal.secrets import mask
 from .config import KeycloakConfig
@@ -108,33 +107,23 @@ class AuthClient:
         self._jwks_backoff = JwksFailureBackoff()
 
     def _wrap(self, fn: Callable[[], T]) -> T:
-        """python-keycloak 호출을 실행하고 `KeycloakError`를 SDK 예외로 변환한다.
+        """python-keycloak 호출을 실행하고 그 실패를 SDK 예외로 변환한다.
 
         `response_code`가 있으면(HTTP 응답을 받았으나 실패) 인증/토큰 흐름 실패로
         간주해 `KeycloakAuthError`로, 없으면(네트워크/전송 계층 실패) `KeycloakTransportError`로
         변환한다. OAuth `error` 코드는 response_body(JSON)에서 best-effort로 추출한다.
+
+        ⚠️ **상류 메시지도 원본 예외도 옮기지 않는다** — python-keycloak 은 거기에 응답 본문을
+        싣는다(토큰·되돌린 `client_secret`). 규칙과 실측은 `_internal/lower.py`. 원본은 `except`
+        **밖에서** 다시 던져 `__context__` 로도 닿지 않게 한다.
         """
         try:
             return fn()
-        except KeycloakError as exc:
-            status = getattr(exc, "response_code", None)
-            if status is None:
-                raise KeycloakTransportError(str(exc)) from exc
-            raise KeycloakAuthError(str(exc), error=self._extract_oauth_error(exc)) from exc
-
-    @staticmethod
-    def _extract_oauth_error(exc: KeycloakError) -> str | None:
-        body = getattr(exc, "response_body", None)
-        if not body:
-            return None
-        try:
-            data = json.loads(body)
-        except (ValueError, TypeError):
-            return None
-        if not isinstance(data, dict):
-            return None
-        error = data.get("error")
-        return str(error) if error is not None else None
+        except Exception as exc:
+            if not is_lower_failure(exc):
+                raise
+            error, cause = auth_failure(exc), summarize(exc)
+        raise error from cause
 
     def client_credentials_token(self) -> TokenSet:
         """`client_credentials` grant로 서비스 계정 토큰을 발급받는다.

@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Security
+- **(Python)** 형식이 틀리거나 요청을 되돌리는 토큰·introspect·logout 응답에서 난 오류가 메시지와 원인 사슬로 그 응답의 토큰과 되돌린 `client_secret` 을 찍었습니다 — python-keycloak 은 오류 메시지에 응답 본문을 싣고 200 인데 JSON 객체가 아니면 본문을 인용한 `TypeError` 를 던지는데, SDK 가 그 메시지를 옮기고 원본을 원인으로 달았습니다(admin 토큰 그랜트도 같았고, `expires_in` 의 raw `ValueError` 는 값을 인용했습니다). 이제 메시지는 HTTP 상태와 OAuth 오류 코드뿐이고 원인은 하위 오류의 타입·상태·던진 자리만 담은 요약입니다. 전에 raw 로 새던 `TypeError`·`ValueError` 는 auth 에서 `KeycloakAuthError`, admin 에서 `KeycloakTransportError` 이고, 타입이 틀린 `refresh_token`·`id_token`·`token_type`·`scope`·`expires_in` 은 거부합니다. **게시본 `1.0.0`·`1.0.1` 에 들어 있습니다.** (#TBD)
+
 ## [1.1.0] - 2026-09-26 (Go · PHP · Rust)
 
 **2026-09-26 릴리스 물결 — 아홉 언어가 세 번호로 갈립니다.** 새 공개 API 가 들어간 Go · PHP · Rust 는 minor(`1.1.0`, 이 절), 나머지는 patch 입니다 — Java · Kotlin `1.0.2`, Python · .NET · Ruby · Node `1.0.1`(아래 두 절). 대부분이 보안 수정이라 권장 업그레이드입니다. 실제로 어디까지 게시됐는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh` 의 `df_published_version` 이 소유합니다.
