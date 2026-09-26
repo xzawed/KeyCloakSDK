@@ -223,6 +223,9 @@ type dumpWalker struct {
 	canaries []string
 	seen     map[uintptr]bool
 	types    map[string]bool
+	// found 가 있으면 타입마다 처음 닿은 값을 남긴다 — hostile_path_matrix_test.go 가 그 타입의 메서드
+	// 집합과 수신자를 이 걷기에서 얻는다(두 번째 걷기를 두면 둘이 갈라진다).
+	found map[string]reflect.Value
 }
 
 // 비공개 필드도 읽는다 — fmt 가 바로 그 필드를 찍기 때문이다.
@@ -285,6 +288,9 @@ func (w *dumpWalker) render(v reflect.Value, path string) {
 		base = base.Elem()
 	}
 	w.types[base.Name()] = true
+	if _, ok := w.found[base.Name()]; w.found != nil && !ok {
+		w.found[base.Name()] = v
+	}
 	x := v.Interface()
 	outs := map[string]string{}
 	for _, verb := range []string{"%v", "%+v", "%#v", "%s", "%q"} {
