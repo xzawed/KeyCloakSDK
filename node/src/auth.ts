@@ -151,6 +151,9 @@ export class AuthClient {
    * 주지 않으면 "unexpected nonce"로 **거부**한다 — 따라서 `createAuthorizationRequest`가 돌려준
    * `nonce`를 여기로 넘겨야 한다(재생 공격 방어이자 정상 흐름의 필수 조건). nonce 없이 시작한
    * 커스텀 흐름을 위해 인자는 선택적이다.
+   *
+   * nonce를 넘기면 id_token을 강화 {@link JwtValidator}로도 검증한다(서명 · `signatureAlgorithms` 핀 ·
+   * iss · aud · exp) — 다른 여덟 언어와 같은 계약이다. id_token이 없으면 거부한다.
    */
   async exchangeCode(
     code: string,
@@ -167,10 +170,36 @@ export class AuthClient {
     if (nonce !== undefined) {
       checks.expectedNonce = nonce
     }
-    return this.#grant(
+    const tokens = await this.#grant(
       () => oidc.authorizationCodeGrant(config, currentUrl, checks),
       'Authorization code exchange failed',
     )
+    if (nonce !== undefined) {
+      await this.#verifyIdToken(tokens.idToken)
+    }
+    return tokens
+  }
+
+  /**
+   * ⚠️ openid-client v6는 토큰 엔드포인트가 준 id_token의 **서명을 보지 않는다** — OIDC Core §3.1.3.7이
+   * 그 경우 TLS로 갈음하는 것을 허용하고, JWS 검사는 `enableNonRepudiationChecks`를 켤 때만 돈다. alg도
+   * 서버 메타데이터(`id_token_signing_alg_values_supported`, Keycloak은 HS256 포함)로만 거른다. 그래서
+   * JWKS 밖 키(HS256)나 위조 RS256 id_token도 nonce만 맞으면 통과했다(통합·단위 실측). SDK 검증기에 태워
+   * 서명·alg 핀·iss·aud·exp를 강제한다.
+   */
+  async #verifyIdToken(idToken: string | undefined): Promise<void> {
+    if (idToken === undefined) {
+      throw new KeycloakAuthError(
+        'Authorization code exchange failed: missing id_token for nonce validation',
+      )
+    }
+    try {
+      await this.#validator.validate(idToken)
+    } catch (e) {
+      throw new KeycloakAuthError('Authorization code exchange failed: invalid id_token', {
+        cause: e,
+      })
+    }
   }
 
   /** `refresh_token` grant로 액세스 토큰을 갱신한다. */

@@ -8,11 +8,10 @@
  * ⚠️ `auth.test.ts` 는 openid-client 를 **목킹**한다 — 그 파일로는 서명도 nonce 도 실제로 검사되지 않는다.
  * 이 파일은 목 없이 진짜 openid-client 를 로컬 가짜 IdP(discovery·token·certs)에 붙인다.
  *
- * ⚠️ **알려진 결함(KNOWN DEFECT)**: node 의 `exchangeCode` 는 id_token 서명을 검증하지 않는다 — openid-client v6
- * 는 토큰 엔드포인트가 준 id_token 의 서명을 `enableNonRepudiationChecks` 없이는 보지 않고, SDK 는 그것도
- * 자신의 `JwtValidator` 도 부르지 않는다. 그래서 위조 토큰 케이스는 `it.fails` 다 — 고쳐져 거부가 일어나면
- * 빨개지고, 그때 `.fails` 를 지운다. 같은 가짜 IdP 로 도는 대조군 둘(정상 서명 수락 · nonce 불일치 거부)이
- * 그 `it.fails` 가 설정 고장으로 초록이 되는 것을 막는다.
+ * ⚠️ 이 파일이 처음 섰을 때 위조 토큰은 **수락됐다** — openid-client v6 는 토큰 엔드포인트가 준 id_token 의
+ * 서명을 `enableNonRepudiationChecks` 없이는 보지 않는다(OIDC Core §3.1.3.7). `exchangeCode` 가 nonce 를 받으면
+ * id_token 을 SDK `JwtValidator` 에 태워 고쳤다. 같은 가짜 IdP 로 도는 대조군 둘(정상 서명 수락 · nonce 불일치
+ * 거부)이 이 파일의 거부가 설정 고장 때문이 아님을 보인다.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -54,7 +53,7 @@ async function startIdp(jwks: unknown): Promise<Idp> {
         token_type: 'Bearer',
         expires_in: 300,
         refresh_token: 'refresh',
-        id_token: idp.idToken,
+        ...(idp.idToken === '' ? {} : { id_token: idp.idToken }),
       })
     }
     if (path === '/realms/r/protocol/openid-connect/certs') return json(res, jwks)
@@ -124,17 +123,6 @@ async function refusal(call: Promise<unknown>): Promise<Error> {
   return outcome
 }
 
-/**
- * 수락됐는가 — `it.fails` 몸통은 **수락될 때만** 실패해야 한다. 거부 사유를 단언하면 전송 오류 같은 엉뚱한
- * 거부가 그 단언을 깨뜨려 `it.fails` 가 초록이 된다(Grok 레그 주장 2 — 죽은 포트로 실측).
- */
-function accepted(call: Promise<unknown>): Promise<boolean> {
-  return call.then(
-    () => true,
-    () => false,
-  )
-}
-
 function innermost(error: Error): Error {
   let link = error
   while (link.cause instanceof Error) link = link.cause
@@ -154,11 +142,16 @@ describe('exchangeCode — 진짜 openid-client 로 id_token 을 잰다', () => 
     expect(innermost(refused).message).toBe('unexpected ID Token "nonce" claim value')
   })
 
-  it.fails(
-    'KNOWN DEFECT: JWKS 밖 키로 서명된 RS256 id_token 은 nonce 가 맞아도 거부한다(현재는 수락)',
-    async () => {
-      idp.idToken = await idToken(forger, NONCE)
-      expect(await accepted(exchange())).toBe(false)
-    },
-  )
+  it('JWKS 밖 키로 서명된 RS256 id_token 은 nonce 가 맞아도 SDK 검증기에서 거부한다', async () => {
+    idp.idToken = await idToken(forger, NONCE)
+    const refused = await refusal(exchange())
+    expect(refused).toBeInstanceOf(KeycloakAuthError)
+    expect(refused.message).toBe('Authorization code exchange failed: invalid id_token')
+  })
+
+  it('nonce 를 기대하는데 id_token 이 없으면 거부한다(fail-closed)', async () => {
+    idp.idToken = ''
+    const refused = await refusal(exchange())
+    expect(refused).toBeInstanceOf(KeycloakAuthError)
+  })
 })

@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Security
+- **(Node)** `exchangeCode(…, nonce)` 가 id_token 의 **서명을 검증하지 않았습니다** — openid-client v6 는 토큰 엔드포인트가 준 id_token 의 서명을 `enableNonRepudiationChecks` 없이는 보지 않고(OIDC Core §3.1.3.7 이 TLS 로 갈음하는 것을 허용), alg 도 SDK 의 `signatureAlgorithms` 가 아니라 서버 메타데이터로만 거릅니다. 그래서 realm JWKS 밖 키(HS256 클라이언트)나 위조 RS256 으로 서명된 id_token 도 nonce 만 맞으면 통과했습니다(실제 Keycloak 과 단위 가짜 IdP 로 실측). 이제 nonce 를 넘기면 id_token 을 SDK 강화 검증기에 태워 서명 · `signatureAlgorithms` 핀 · iss · aud · exp 를 강제하고, id_token 이 없으면 거부합니다 — `SECURITY.md` 가 아홉 언어에 약속한 계약이고, 다른 여덟 언어는 이미 그렇게 합니다. nonce 없이 부르는 교환은 지금처럼 id_token 을 검증하지 않습니다.
+
 ## [1.2.0] - 2026-09-26 (Go · PHP)
 
 **2026-09-26 둘째 릴리스 물결 — 여덟 언어가 다섯 번호로 올라갑니다.** 첫 물결(아래 `[1.1.0] (Go · PHP · Rust)` · `[1.0.2] (Java · Kotlin)` · `[1.0.1] (Python · .NET · Ruby · Node)`) 뒤에 착지한 원인 사슬 누출 수정(#617–#624)을 싣습니다. 새 공개 API 가 들어간 Go(`AuthError.GoString`) · PHP(`SanitizedCause`)는 minor(`1.2.0`, 이 절)이고 Ruby(`RedactedCause`)도 minor(`1.1.0`), 나머지는 patch 입니다 — Rust `1.1.1`, Java · Kotlin `1.0.3`, Python · .NET `1.0.2`(아래 절들). Node 는 `node-v1.0.1` 뒤 게시 소스 변경이 없어 `1.0.1` 그대로입니다. 실제로 어디까지 게시됐는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh` 의 `df_published_version` 이 소유합니다.

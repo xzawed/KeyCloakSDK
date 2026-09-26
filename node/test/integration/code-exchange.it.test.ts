@@ -247,22 +247,19 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
   })
 
   /**
-   * ⚠️ **알려진 결함(KNOWN DEFECT) — `exchangeCode` 는 id_token 의 서명을 검증하지 않는다.**
+   * JWKS 밖 키(HS256)로 서명된 id_token 은 핀을 열어도 거부된다 — `exchangeCode` 가 id_token 을 SDK 검증기에
+   * 태우기 때문이다.
    *
-   * `SECURITY.md` 는 nonce 를 넘기면 `exchange*` 가 id_token 을 **서명**·iss·aud·exp 까지 검증한다고 9 언어
-   * 전부에 대해 약속한다. node 는 그 검증을 openid-client 에 맡기는데, openid-client v6 는 토큰 엔드포인트에서
-   * 직접 받은 id_token 의 서명을 `enableNonRepudiationChecks` 없이는 보지 않는다(`build/index.js` 의
-   * `nonRepudiation?.(response)` — SDK 는 그것을 켜지 않는다). alg 도 SDK 의 `signatureAlgorithms` 가 아니라
-   * 서버 메타데이터의 `id_token_signing_alg_values_supported` 로만 거른다 — Keycloak 은 거기에 HS256 을 싣는다.
-   * 그래서 JWKS 에 없는 HMAC 키로 서명된 id_token 이 **핀이 RS256 인데도** 통과한다(실측: 두 변형 모두 수락).
+   * ⚠️ 이 테스트가 처음 섰을 때 node 는 **둘 다 수락했다.** openid-client v6 는 토큰 엔드포인트에서 직접 받은
+   * id_token 의 서명을 `enableNonRepudiationChecks` 없이는 보지 않고(OIDC Core §3.1.3.7 — TLS 로 갈음), alg 도
+   * 서버 메타데이터의 `id_token_signing_alg_values_supported`(Keycloak 은 HS256 을 싣는다)로만 거른다.
+   * `SECURITY.md` 의 아홉 언어 계약(서명·iss·aud·exp)을 어긴 것이라 `#verifyIdToken` 이 고쳤다.
    *
-   * `it.fails` 는 그 결함이 있는 동안 초록이고, 고쳐져 거부가 일어나는 순간 **빨개진다** — 그때 `.fails` 를
-   * 지운다. 수락 외의 이유로 초록이 되지 않도록 로그인은 `beforeAll` 에서 하고(거기서의 실패는 스위트를
-   * 깨뜨린다 — 헬퍼 state 변이로 실측), 서버가 정말 HS256 으로 서명한다는 전제도 SDK 를 거치지 않는 토큰
-   * 엔드포인트 호출로 거기서 잰다. 몸통은 **수락 여부만** 본다(아래 주석).
+   * 로그인은 `beforeAll` 에서 한다(거기서의 실패는 스위트를 깨뜨린다 — 헬퍼 state 변이로 실측). 서버가 정말
+   * HS256 으로 서명한다는 전제도 SDK 를 거치지 않는 토큰 엔드포인트 호출로 거기서 잰다.
    */
   describe.each([[['RS256']], [['RS256', 'HS256']]])(
-    'KNOWN DEFECT: JWKS 밖 키(HS256)로 서명된 id_token — signatureAlgorithms=%j',
+    'JWKS 밖 키(HS256)로 서명된 id_token — signatureAlgorithms=%j',
     (algorithms: string[]) => {
       let hs: KeycloakClient
       let pending: { request: AuthorizationRequest; code: string }
@@ -297,18 +294,19 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
         await hs?.close()
       })
 
-      it.fails('교환이 id_token 을 거부한다(현재는 수락 — 고쳐지면 .fails 를 지운다)', async () => {
+      it('교환이 id_token 을 SDK 검증기에서 거부한다', async () => {
         const { request, code } = pending
-        // ⚠️ 이 몸통은 **수락될 때만** 실패해야 한다 — `it.fails` 는 어떤 실패든 초록으로 친다. 거부 사유를
-        // 여기서 단언하면 코드 만료·invalid_client·전송 오류 같은 엉뚱한 거부가 그 단언을 깨뜨려 초록이 된다
-        // (Grok 레그 주장 2 — 코드를 미리 태워 실측). 사유 단언은 고친 뒤 `.fails` 를 지울 때 더한다.
-        const accepted = await hs.auth
+        // 사유까지 본다 — 코드 만료·invalid_client·전송 오류 같은 엉뚱한 거부는 이 메시지가 아니다.
+        const refused = await hs.auth
           .exchangeCode(code, REDIRECT_URI, request.codeVerifier, request.nonce)
           .then(
-            () => true,
-            () => false,
+            () => undefined,
+            (e: unknown) => e,
           )
-        expect(accepted).toBe(false)
+        expect(refused).toBeInstanceOf(KeycloakAuthError)
+        expect((refused as Error).message).toBe(
+          'Authorization code exchange failed: invalid id_token',
+        )
       })
     },
   )
