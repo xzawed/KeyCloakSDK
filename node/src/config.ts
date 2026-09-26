@@ -100,8 +100,24 @@ export function defineConfig(input: KeycloakConfigInput): KeycloakConfig {
     // 빈 집합은 알고리즘 핀을 무력화한다(핀 없이는 alg 혼동 공격에 노출).
     throw new KeycloakConfigError('signatureAlgorithms must be non-empty')
   }
-  if (input.jwksMinRefetchSeconds !== undefined && input.jwksMinRefetchSeconds < 0) {
-    throw new KeycloakConfigError('jwksMinRefetchSeconds must be >= 0')
+  // ⚠️ 0 이하·NaN·Infinity·2^31 이상의 타임아웃은 여기서 거부한다 — 조용히 받으면 쓸 수 없는 클라이언트가
+  // 된다(실측 2026-09-26: -1 은 logout 이 항상 실패(AbortSignal.timeout 범위 오류), 0 은 즉시 abort,
+  // 2^31 이상은 Node 타이머가 TimeoutOverflowWarning 과 함께 1ms 로 바꿔 즉시 abort, cc·introspect 는 1 초로
+  // 클램프). ruby·dotnet·JVM 과 같이 생성 시 KeycloakConfigError 다. connectTimeoutMs 는 fetch 경로에
+  // 배선되지 않지만(위 인터페이스 주석) 설정 대칭을 위해 같이 본다.
+  for (const key of ['connectTimeoutMs', 'readTimeoutMs'] as const) {
+    const v = input[key]
+    if (v !== undefined && !(Number.isFinite(v) && v > 0 && v <= 2_147_483_647)) {
+      throw new KeycloakConfigError(`${key} must be > 0 and <= 2147483647`)
+    }
+  }
+  // 음수·NaN·Infinity 는 의미가 없다 — 자매(go·ruby·dotnet·JVM)처럼 생성 시 거부한다. NaN 은 `< 0` 비교를
+  // 통과하므로 유한성을 따로 본다.
+  for (const key of ['clockSkewSeconds', 'jwksMinRefetchSeconds'] as const) {
+    const v = input[key]
+    if (v !== undefined && !(Number.isFinite(v) && v >= 0)) {
+      throw new KeycloakConfigError(`${key} must be >= 0`)
+    }
   }
   const config: KeycloakConfig = {
     serverUrl: stripTrailingSlashes(input.serverUrl),
