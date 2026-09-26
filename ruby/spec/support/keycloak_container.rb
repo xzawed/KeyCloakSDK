@@ -10,6 +10,23 @@ class KeycloakContainer
   IMAGE = "quay.io/keycloak/keycloak:26.6"
   attr_reader :base_url
 
+  # 한 rspec 프로세스의 통합 스펙 파일들이 컨테이너 **하나**를 나눠 쓴다 — 파일마다 띄우면 기동이 파일 수만큼
+  # 곱해진다. 정리는 아래 `after(:suite)` 가 한다. 기동이 한 번 실패하면 다음 파일이 또 띄우지 않고 바로 실패한다.
+  def self.shared_base_url(fixtures_dir:)
+    @shared_base_url ||= begin
+      raise "the shared Keycloak container already failed to start" if @shared
+
+      @shared = new(fixtures_dir: fixtures_dir)
+      @shared.start
+    end
+  end
+
+  def self.stop_shared
+    @shared&.stop
+    @shared = nil
+    @shared_base_url = nil
+  end
+
   def initialize(fixtures_dir:)
     @fixtures_dir = fixtures_dir
     @name = "kc-ruby-it-#{Process.pid}-#{rand(10_000)}"
@@ -66,3 +83,5 @@ class KeycloakContainer
     path.tr("\\", "/").sub(%r{\A([A-Za-z]):/}) { "//#{Regexp.last_match(1).downcase}/" }
   end
 end
+
+RSpec.configure { |config| config.after(:suite) { KeycloakContainer.stop_shared } }
