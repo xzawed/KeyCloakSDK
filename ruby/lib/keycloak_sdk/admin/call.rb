@@ -32,7 +32,8 @@ module KeycloakSdk
 
         raise AdminError.from_status(resp.status, "admin request failed: HTTP #{resp.status}")
       rescue Faraday::Error => e
-        raise TransportError, "admin transport error: #{e.message}"
+        # 원본을 달면 `Faraday::ParsingError#inspect` 가 요청의 베어러 토큰을, 메시지가 응답 앞부분을 찍는다(실측).
+        raise TransportError, "admin transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
       end
 
       def id_from_location(resp)

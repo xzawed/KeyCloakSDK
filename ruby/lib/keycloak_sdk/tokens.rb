@@ -17,6 +17,9 @@ module KeycloakSdk
     end
 
     def self.from_response(body, received_at: Time.now.to_f)
+      # 배열 본문은 `Array#[]` 의 TypeError 로 경계를 뚫었다 — 객체가 아니면 SDK 오류다.
+      raise AuthError, "token response is not a JSON object" unless body.is_a?(Hash)
+
       # ⚠️ **존재 검사는 타입 검사가 아니다.** 예전에는 값을 그대로 담아 숫자·해시·nil 이
       # `access_token` 이 됐고, 소비자는 그것을 Bearer 로 실어 보내 매번 401 을 받았다
       # (조용한 반복 실패). `expires_in` 의 문자열 허용은 **의도된 것**이라 건드리지 않는다.
@@ -25,7 +28,12 @@ module KeycloakSdk
         raise AuthError, "token response has no usable access_token"
       end
 
-      expires_in = body["expires_in"] && Integer(body["expires_in"])
+      expires_in = begin
+        body["expires_in"] && Integer(body["expires_in"])
+      rescue ArgumentError, TypeError
+        # `cause: nil` — ArgumentError 는 그 값을 인용한다(`invalid value for Integer(): "…"`).
+        raise AuthError, "token response has an unusable expires_in", cause: nil
+      end
       new(
         access_token: access_token,
         token_type: body["token_type"],
@@ -67,7 +75,10 @@ module KeycloakSdk
 
   # RFC 7662 introspection 결과.
   IntrospectionResult = Data.define(:active, :username, :client_id, :claims) do
+    # 객체가 아닌 본문은 SDK 오류다 — 배열은 TypeError 로 경계를 뚫었고, 문자열은 `claims` 가 문자열인 결과가 됐다.
     def self.from_response(body)
+      raise AuthError, "introspection response is not a JSON object" unless body.is_a?(Hash)
+
       new(active: body["active"] == true, username: body["username"],
           client_id: body["client_id"], claims: body)
     end

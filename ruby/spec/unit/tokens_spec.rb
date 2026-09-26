@@ -75,9 +75,34 @@ RSpec.describe KeycloakSdk do
                             refresh_token: nil, id_token: nil, scope: nil, expires_at: nil)
       end.to raise_error(KeycloakSdk::AuthError)
     end
+
+    # 형식이 틀린 본문은 SDK 오류다 — 예전에는 배열 본문이 TypeError, 숫자 아닌 expires_in 이 ArgumentError 로 샜고,
+    # 후자는 그 값을 메시지에 인용했다. 원인 사슬도 달지 않는다.
+    [["an array body", ["TS-CANARY-TOKEN"]], ["a string body", "TS-CANARY-TOKEN"]].each do |name, bad|
+      it "rejects #{name} with AuthError" do
+        expect { described_class.from_response(bad, received_at: 0.0) }
+          .to raise_error(KeycloakSdk::AuthError) { |e| expect(e.full_message).not_to include("TS-CANARY") }
+      end
+    end
+
+    it "rejects a non-integer expires_in with AuthError and no cause that quotes it" do
+      expect do
+        described_class.from_response({ "access_token" => "AT", "expires_in" => "TS-CANARY-EXP" }, received_at: 0.0)
+      end.to raise_error(KeycloakSdk::AuthError) { |e|
+        expect(e.cause).to be_nil
+        expect(e.full_message).not_to include("TS-CANARY")
+      }
+    end
   end
 
   describe KeycloakSdk::IntrospectionResult do
+    it "rejects a body that is not a JSON object with AuthError" do
+      [["IR-CANARY-TOKEN"], "IR-CANARY-TOKEN"].each do |bad|
+        expect { described_class.from_response(bad) }
+          .to raise_error(KeycloakSdk::AuthError) { |e| expect(e.full_message).not_to include("IR-CANARY") }
+      end
+    end
+
     it "parses active and exposes active?" do
       r = described_class.from_response({ "active" => true, "username" => "u", "client_id" => "c" })
       expect(r.active?).to be(true)

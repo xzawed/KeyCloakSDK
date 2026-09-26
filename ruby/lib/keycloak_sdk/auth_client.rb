@@ -41,31 +41,19 @@ module KeycloakSdk
     def exchange_code(code:, code_verifier:, redirect_uri:, expected_nonce: nil)
       client = oauth_client(redirect_uri: redirect_uri)
       client.authorization_code = code
-      token_set = to_token_set(client.access_token!(code_verifier: code_verifier))
+      token_set = token_request("authorization_code exchange") { client.access_token!(code_verifier: code_verifier) }
       verify_nonce!(token_set.id_token, expected_nonce) unless expected_nonce.nil?
       token_set
-    rescue Rack::OAuth2::Client::Error => e
-      raise AuthError.new("authorization_code exchange failed: #{e.message}", oauth_error: e.response[:error].to_s)
-    rescue Faraday::Error => e
-      raise TransportError, "token endpoint transport error: #{e.message}"
     end
 
     def refresh(refresh_token:)
       client = oauth_client
       client.refresh_token = refresh_token
-      to_token_set(client.access_token!)
-    rescue Rack::OAuth2::Client::Error => e
-      raise AuthError.new("refresh failed: #{e.message}", oauth_error: e.response[:error].to_s)
-    rescue Faraday::Error => e
-      raise TransportError, "token endpoint transport error: #{e.message}"
+      token_request("refresh") { client.access_token! }
     end
 
     def client_credentials_token
-      to_token_set(oauth_client.access_token!(scope: @config.scopes.join(" ")))
-    rescue Rack::OAuth2::Client::Error => e
-      raise AuthError.new("client-credentials failed: #{e.message}", oauth_error: e.response[:error].to_s)
-    rescue Faraday::Error => e
-      raise TransportError, "token endpoint transport error: #{e.message}"
+      token_request("client-credentials") { oauth_client.access_token!(scope: @config.scopes.join(" ")) }
     end
 
     # TokenProvider 계약(직접 사용용). admin은 캐싱 provider를 별도로 쓴다.
@@ -81,7 +69,7 @@ module KeycloakSdk
 
       IntrospectionResult.from_response(resp.body)
     rescue Faraday::Error => e
-      raise TransportError, "introspection transport error: #{e.message}"
+      raise TransportError, "introspection transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
     end
 
     def logout(refresh_token:)
@@ -93,7 +81,7 @@ module KeycloakSdk
 
       nil
     rescue Faraday::Error => e
-      raise TransportError, "logout transport error: #{e.message}"
+      raise TransportError, "logout transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
     end
 
     def validate(token)
@@ -127,6 +115,25 @@ module KeycloakSdk
       raise AuthError, "authorization_code exchange failed: invalid id_token: #{e.message}"
     end
 
+    # rack-oauth2 토큰 호출의 오류 경계(§4). 하위 예외는 SDK 타입이 되고 `cause` 에는 원본 대신 `RedactedCause` 가 달린다.
+    # ⚠️ OAuth 오류는 **코드와 HTTP 상태만** 싣는다 — `error_description` 은 서버가 고른 자유 문장이라 토큰을
+    # 되울릴 수 있고, 오류 본문이 JSON 이 아니면 rack-oauth2 가 본문 전체를 거기 넣는다.
+    # ⚠️ 마지막 `StandardError` 는 rack-oauth2 가 형식이 틀린 200 을 읽다 내는 것(NoMethodError·AttrMissing·
+    # 'Unknown Token Type')과 `to_token_set` 의 형 변환 실패다 — 원본이 새면 Ruby 3.2 의 NoMethodError 가 본문을 인용한다.
+    def token_request(operation)
+      to_token_set(yield)
+    rescue Error
+      raise
+    rescue Rack::OAuth2::Client::Error => e
+      code = e.response[:error].is_a?(String) ? e.response[:error] : ""
+      raise AuthError.new([operation, "failed:", code, "(HTTP #{e.status})"].reject(&:empty?).join(" "),
+                          oauth_error: code), cause: RedactedCause.new(e)
+    rescue Faraday::Error => e
+      raise TransportError, "token endpoint transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
+    rescue StandardError => e
+      raise AuthError, "#{operation} failed: unusable token response (#{e.class})", cause: RedactedCause.new(e)
+    end
+
     def oauth_client(redirect_uri: nil)
       Rack::OAuth2::Client.new(
         identifier: @config.client_id,
@@ -137,17 +144,19 @@ module KeycloakSdk
       )
     end
 
+    # `expires_in` 은 `TokenSet.from_response` 와 같이 정수로 읽는다(문자열 "300" 허용) — 예전에는 문자열이면
+    # `Float + String` 의 TypeError 가 경계를 뚫었다. 변환 실패는 `token_request` 가 AuthError 로 바꾼다.
     def to_token_set(token)
       raw = token.raw_attributes || {}
-      scope = raw[:scope] || raw["scope"]
+      expires_in = token.expires_in && Integer(token.expires_in)
       TokenSet.new(
         access_token: token.access_token,
         token_type: "Bearer",
-        expires_in: token.expires_in,
+        expires_in: expires_in,
         refresh_token: token.refresh_token,
         id_token: raw[:id_token] || raw["id_token"],
-        scope: scope,
-        expires_at: token.expires_in ? Time.now.to_f + token.expires_in : nil
+        scope: raw[:scope] || raw["scope"],
+        expires_at: expires_in ? Time.now.to_f + expires_in : nil
       )
     end
   end

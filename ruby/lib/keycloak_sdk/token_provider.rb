@@ -59,7 +59,7 @@ module KeycloakSdk
 
       TokenSet.from_response(resp.body, received_at: Time.now.to_f)
     rescue Faraday::Error => e
-      raise TransportError, "token endpoint transport error: #{e.message}"
+      raise TransportError, "token endpoint transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
     end
   end
 end
