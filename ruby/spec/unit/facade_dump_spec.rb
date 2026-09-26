@@ -23,7 +23,10 @@ require "pp"
 # 메시지가 거기 실린다). 남의 타입은 걷기만 하고 따로 찍지 않는다 — SDK 객체의 `inspect` 가 이미 그것을 싣는다.
 #
 # ⚠️ 한계: 카나리아는 뿌리를 만드는 호출이 흘려 넣은 비밀뿐이다. 새 타입이 이 뿌리들이 안 밟는 경로로
-# 비밀을 받으면 그 비밀은 여기 없다 — 그때는 그 경로를 뿌리에 더한다.
+# 비밀을 받으면 그 비밀은 여기 없다 — 그때는 그 경로를 뿌리에 더한다. 검사는 **전체 일치**라서
+# 부분 노출(`"CANA***"` 같은 접두·접미 마스크)은 못 잡는다 — 부분 일치는 렌더링 속 난수(JWKS 모듈러스·
+# state·nonce)와 우연히 겹쳐 흔들린다. `***` 모양 자체는 타입별 spec 이 잰다(`include("***")` 라서 그것도
+# 접두 마스크를 통과시킨다 — 알려진 빈틈).
 module FacadeDumpSpec
   SECRET = "CANARY-DUMP-CLIENT-SECRET"
   ACCESS = "CANARY-DUMP-ACCESS-TOKEN"
@@ -258,19 +261,31 @@ module FacadeDumpSpec
 
     # 너비 우선 — 실패 메시지의 경로가 가장 짧은 경로가 된다.
     def walk(root_obj, root)
+      # 뿌리는 소유와 무관하게 찍는다 — 소비자가 쥐는 값 자체다(이름 없는 `Data.define` 인스턴스도 여기서 잰다).
+      render(root_obj, root, root) unless own?(root_obj) || kind?(LEAVES, root_obj)
       queue = [[root_obj, root]]
       until queue.empty?
         obj, path = queue.shift
-        next if kind?(LEAVES, obj) || @seen.key?(obj)
-
-        @seen[obj] = true
-        @contamination << path if kind?(HARNESS, obj)
-        render(obj, path, root) if own?(obj)
-        queue.concat(edges(obj, path))
+        queue.concat(visit(obj, path, root)) unless kind?(LEAVES, obj) || @seen.key?(obj)
       end
     end
 
     private
+
+    # 한 객체를 재고, 더 걸어 내려갈 자리를 돌려준다.
+    def visit(obj, path, root)
+      @seen[obj] = true
+      # 하네스 객체는 적고 **거기서 멈춘다** — 그 안(RSpec 내부·스텁 응답의 카나리아)은 SDK 와 무관한 소음이다.
+      if kind?(HARNESS, obj)
+        @contamination << path
+        return []
+      end
+      if own?(obj)
+        @reached << CLASS_OF.bind_call(obj).name
+        render(obj, path, root)
+      end
+      edges(obj, path)
+    end
 
     # `Module#===` 는 BasicObject 에도 안전하다(수신자 메서드를 부르지 않는다).
     def kind?(types, obj)
@@ -318,7 +333,6 @@ module FacadeDumpSpec
 
     def render(obj, path, root)
       klass = CLASS_OF.bind_call(obj)
-      @reached << klass.name
       renderings(obj).each do |how, out|
         scan(out).each do |name|
           key = "#{root}|#{name}"
