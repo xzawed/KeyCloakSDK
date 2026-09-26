@@ -186,6 +186,10 @@ export class AuthClient {
    * 서버 메타데이터(`id_token_signing_alg_values_supported`, Keycloak은 HS256 포함)로만 거른다. 그래서
    * JWKS 밖 키(HS256)나 위조 RS256 id_token도 nonce만 맞으면 통과했다(통합·단위 실측). SDK 검증기에 태워
    * 서명·alg 핀·iss·aud·exp를 강제한다.
+   *
+   * ⚠️ 액세스 토큰과 검증기를 공유한다 — 기본값(aud=clientId)에서는 둘의 기대 audience가 같아 안전하지만,
+   * `expectedAudience`를 clientId가 아닌 값으로 재정의하면 id_token에도 그 값을 요구한다(OIDC id_token의
+   * aud는 client id다). 다른 여덟 언어도 같은 모양이다.
    */
   async #verifyIdToken(idToken: string | undefined): Promise<void> {
     if (idToken === undefined) {
