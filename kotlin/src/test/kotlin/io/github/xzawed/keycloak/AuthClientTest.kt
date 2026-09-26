@@ -382,6 +382,47 @@ internal class AuthClientTest {
             auth.close()
         }
 
+    // 위조 RS256 id_token — iss·aud·exp 는 전부 맞고 서명 키만 realm JWKS 밖이다. 실서버는 이것을 만들 수
+    // 없어(자기 키로만 서명한다) 통합 스위트(CodeExchangeIT)가 못 덮는 자리다. nonce 대조만 남기고 서명 검증을
+    // 건너뛰는 변이는 이것이 잡는다 — 같은 kid(서명 불일치)와 모르는 kid(키 없음) 두 길 다.
+    // nonce 까지 틀린 위조도 「unexpected nonce」가 아니라 「invalid id_token」이다 — 서명을 **먼저** 본다(검증 전
+    // 페이로드의 nonce 를 먼저 대조하는 변이가 이 한 쌍 없이는 초록이었다, 독립 레그 Grok 실측). 거부 오류의 어느
+    // 꼴에도 위조 토큰이 실리지 않는다.
+    @Test
+    fun `exchangeCode refuses a forged RS256 id_token whose nonce matches`() =
+        runTest {
+            val realmKey = rsaKey("k1")
+            val cfg = config()
+            val endpoints = OidcEndpoints.forRealm(cfg)
+            for (forger in listOf(rsaKey("k1"), rsaKey("attacker"))) {
+                for (expectedNonce in listOf("the-nonce", "another-nonce")) {
+                    val case = "kid=${forger.keyID} expectedNonce=$expectedNonce"
+                    val validator = JwtValidator.withStaticJwks(JWKSet(realmKey.toPublicJWK()), endpoints.issuer, cfg.clientId)
+                    val forged = signedIdToken(forger, endpoints.issuer, cfg.clientId, "the-nonce")
+                    server.stubFor(
+                        post(urlEqualTo(tokenPath))
+                            .willReturn(
+                                aResponse()
+                                    .withStatus(200)
+                                    .withHeader("Content-Type", "application/json")
+                                    .withBody("""{"access_token":"AT","token_type":"Bearer","expires_in":300,"id_token":"$forged"}"""),
+                            ),
+                    )
+                    val auth = AuthClient(cfg, endpoints, validator)
+
+                    val refused =
+                        assertFailsWith<KeycloakAuthException>(case) {
+                            auth.exchangeCode("code", testCodeVerifier, "https://app.example.com/cb", expectedNonce = expectedNonce)
+                        }
+                    assertEquals("Authorization code exchange failed: invalid id_token", refused.message, case)
+                    assertTrue(refused.cause is TokenValidationException, "$case: ${refused.cause}")
+                    val printed = refused.stackTraceToString()
+                    assertTrue(forged !in printed && forged.substringBefore('.') !in printed, "$case: the forged token leaked")
+                    auth.close()
+                }
+            }
+        }
+
     @Test
     fun `exchangeCode without expectedNonce skips id_token validation`() =
         runTest {
