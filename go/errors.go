@@ -29,6 +29,18 @@ type AuthError struct {
 func (e *AuthError) Error() string { return "keycloak: auth: " + e.Msg }
 func (e *AuthError) Unwrap() error { return e.Cause }
 
+// GoString is the `%#v` hook. The default prints every exported field, and OAuthError keeps the token
+// endpoint's `error` value verbatim for callers — so a hostile endpoint that put a token there had
+// `%#v` print it (measured 2026-09-26). The field is unchanged; `%#v` shows it only when it has the
+// shape of an OAuth error code (cause.go). Value receiver so a value and a pointer are both covered.
+func (e AuthError) GoString() string {
+	code := e.OAuthError
+	if code != "" && !oauthCodeShaped(code) {
+		code = "(withheld: not shaped like an OAuth error code)"
+	}
+	return fmt.Sprintf("&keycloak.AuthError{Msg:%q, OAuthError:%q, Cause:%T}", e.Msg, code, e.Cause)
+}
+
 // TokenValidationError signals a JWT signature/issuer/audience/expiry failure.
 type TokenValidationError struct {
 	Msg   string

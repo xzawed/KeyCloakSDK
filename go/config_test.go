@@ -48,9 +48,13 @@ func TestConfigHttpClientWiresConnectAndReadTimeouts(t *testing.T) {
 	if c.Timeout != 7000*time.Millisecond {
 		t.Fatalf("total (read) timeout: %v", c.Timeout)
 	}
-	tr, ok := c.Transport.(*http.Transport)
+	ws, ok := c.Transport.(wireScrubTransport)
 	if !ok {
-		t.Fatalf("transport type: %T", c.Transport)
+		t.Fatalf("transport type: %T — the wire scrub (cause.go) must wrap it", c.Transport)
+	}
+	tr, ok := ws.base.(*http.Transport)
+	if !ok {
+		t.Fatalf("pooled transport type: %T", ws.base)
 	}
 	// ConnectTimeout is wired to the TLS handshake deadline (the dial deadline is
 	// captured in the DialContext closure and not directly inspectable).

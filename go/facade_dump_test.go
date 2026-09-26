@@ -55,7 +55,12 @@ const (
 )
 
 // 걷기에 안 닿아도 되는 구조체 타입과 그 이유. **이유 없는 면제는 넣지 않는다.**
-var dumpWalkExempt = map[string]string{}
+var dumpWalkExempt = map[string]string{
+	"wireScrubTransport": "*http.Client.Transport·resty 안에만 산다 — 걷기는 외부 타입(http.Client) 안으로 내려가지 않는다. " +
+		"필드는 하위 RoundTripper 하나뿐이고 비밀을 쥐지 않는다(cause.go)",
+	"wireScrubBody": "응답 본문(http.Response.Body)을 감싸 읽는 동안만 산다 — 파사드가 쥐지 않는다. " +
+		"필드는 원래 본문 하나뿐이다(cause.go)",
+}
 
 // 가짜 IdP — 토큰·introspect·JWKS·실패 realm·admin 404 를 한 서버가 낸다.
 func newDumpIdP(t *testing.T, key *rsa.PrivateKey) *httptest.Server {
