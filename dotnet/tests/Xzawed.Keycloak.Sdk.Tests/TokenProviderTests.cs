@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
@@ -12,12 +13,13 @@ public class TokenProviderTests
         public int Calls;
         public long ExpiresIn = 300;
         public int DelayMs = 20;   // hold the flight so concurrent callers pile up on the gate
+        public string? FixedToken; // when set, every fetch returns this exact access token
         private int _n;
         public async Task<TokenSet> ClientCredentialsTokenAsync(CancellationToken ct = default)
         {
             Interlocked.Increment(ref Calls);
             if (DelayMs > 0) await Task.Delay(DelayMs, ct).ConfigureAwait(false);
-            var tok = $"tok-{Interlocked.Increment(ref _n)}";
+            var tok = FixedToken ?? $"tok-{Interlocked.Increment(ref _n)}";
             return TokenSet.Create(tok, "Bearer", ExpiresIn, null, null, null, 0);
         }
     }
@@ -64,5 +66,21 @@ public class TokenProviderTests
         var b = await p.GetAccessTokenAsync();
         Assert.Equal(a, b);
         Assert.Equal(1, src.Calls); // injected clock still drives the fresh-cache path
+    }
+
+    [Fact]
+    public async Task CachedSnapshotToStringDoesNotLeakToken()
+    {
+        var src = new CountingSource { FixedToken = "CANARY-DOTNET-CACHED-AT" };
+        var p = new ClientCredentialsTokenProvider(src, skewSeconds: 0);
+        await p.GetAccessTokenAsync();
+
+        var field = typeof(ClientCredentialsTokenProvider).GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance);
+        Assert.NotNull(field);
+        var cached = field.GetValue(p);
+        Assert.NotNull(cached);
+        var result = cached.ToString();
+        Assert.DoesNotContain("CANARY-DOTNET-CACHED-AT", result);
+        Assert.Contains("***", result);
     }
 }
