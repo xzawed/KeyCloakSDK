@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `214`(2026-09-26 기준 열림 118 · 닫힘 96)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `215`(2026-09-27 기준 열림 119 · 닫힘 96)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,14 +116,14 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-09-26 · #560–#634 반영)
+### 다음 세션 진입점 (2026-09-27 · #560–#636 반영)
 
 **지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. **2026-09-26 릴리스 물결 둘**: 첫째(#604–#616)로 아홉 전부 게시, 둘째(#626–#634)로 원인 사슬 수정(#617–#624)을 게시 — go·php `1.2.0` · ruby `1.1.0` · rust `1.1.1` · python·dotnet `1.0.2` LIVE·기준선 상향(#634). ⚠️ java·kotlin `1.0.3` 은 **Portal 스테이징 — 사람이 Publish 한 뒤** JVM 기준선(`java/pom.xml`·`kotlin-ci.yml`·`df_api_baseline`)을 올리고 `node scripts/check-published-jvm-floor.mjs` 로 바이트를 다시 잰다. 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
 1. **`guard-detection-surface-hand-narrowed` [H/M]** — 마스킹 축의 「새 자리」는 아홉 언어 전부 파생으로 닫혔다(#592–#602). 남은 것은 **새 교환 경로**(nonce·백오프·토큰타입)와 줄 단위 skip 표지. 설계는 섰고 Go 분류표가 첫 걸음이다 — 다음은 계급별 적대 변형(항목의 ⏳ 줄).
-2. `integration-coverage-never-measured` [H/L] — 크다. 설계부터.
+2. `integration-code-exchange-never-run` [H/M] — 코드 교환이 통합 9/9 에서 0. 이것이 `integration-coverage-never-measured` 판정의 첫 걸음이다(그 항목의 순서).
 3. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다. 반대 방향도 있다 — #585 는 「verifier 하나」로 등록됐지만 부류는 호출 인자 다섯 갈래였다.
 
 **사람 판정 대기** — 없음. 2026-09-25 사용자 판정: 출처 미상 stash 둘(JDK 17→25)과 빈 `snap*` 워크트리 셋은 **폐기**했다(실측·검증되지 않은 산출물은 확인 후 폐기) · `irreversible-publish-no-reentry` 는 **보류 유지**(근거는 그 항목).
@@ -613,7 +613,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 76건 (열림 52)
+## D. 원장 밖 — 77건 (열림 53)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -657,15 +657,39 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `orphan-active-workflows` **[L/S]** 파일이 없는 워크플로 2개가 Actions 에 `active` 로 남아 있다 — 라이브 26 vs 커밋 24 · `.github/workflows/repo-hygiene.yml:207`
 - [ ] `repo-settings-ssot-gap` **[L/S]** 브랜치 자동삭제 등 저장소 설정이 SSOT 밖 — 원격이 깨끗한 이유가 어디에도 안 적혀 있다 · `.github/security-config.json:2`
 
-### 테스트 실행 갭 — 6
+### 테스트 실행 갭 — 7
 
-- [ ] `integration-coverage-never-measured` **[H/L]** 9개 언어가 "경계는 통합으로 검증"이라 적고 omit했지만, 통합 실행에서 커버리지를 재는 언어가 0개다 · `.github/workflows/ci.yml:42`
+- [ ] `integration-code-exchange-never-run` **[H/M · 신규 2026-09-27]** 코드 교환이 실제 Keycloak 에 대고 한 번도 돈 적이 없다.
+  - **무엇이 안 도나.** `exchangeCode`·`createAuthorizationRequest` 를 부르는 통합 스위트가 **9/9 에서 0** 이다. 하네스도 authz URL 만 보고 로그인·교환은 하지 않는다.
+  - **왜 문제인가.** 이름 있는 nonce 검증기와 id_token 서명 검증이 실서버 토큰으로 검증된 적이 없다. 「경계는 통합으로 검증」 주장의 **중심**이 비어 있다. `refresh`·`logout` 도 7/9 에서 통합 미실행이다.
+  - **처방.** 브라우저 없는 로그인으로 푼다 — authz URL GET → 로그인 폼 POST → 리다이렉트의 `code` 를 따르지 않고 받는다. 한 언어로 파일럿을 한 뒤 여덟 언어로 옮긴다.
+  - **다시 재는 명령.** `grep -rliE 'exchange_?code|ExchangeCode|createAuthorizationRequest' <각 언어 통합 디렉터리>` → 0.
+- [ ] `integration-coverage-never-measured` **[H/L]** 9개 언어가 "경계는 통합으로 검증"이라 적고 omit했지만, 통합 실행에서 커버리지를 재는 언어가 0개다 · `.github/workflows/ci.yml:49`
+  - ✅ **전제 실측(2026-09-27, 9/9, Docker).** 통합 실행에서 커버리지를 **리포트**하는 언어는 0 이다.
+    - java 는 failsafe 가 `jacoco.exec` 에 적기는 하지만, 그 데이터를 읽는 리포트가 없다. IT 가 다른 모듈에서 돌고, 경계 클래스는 exclude 돼 있다.
+    - 통합만의 경계 라인 %: java 59.7 · kotlin 68.8 · go 64.3(문장) · python 67.6 · node 54.4 · dotnet 61.9 · ruby 81.6 · php 34.0 · rust 80.2.
+    - php 는 `Groups`·`Realms`·`Roles` 리소스가 **0%** 다(`integration-admin-surface-uneven`).
+  - **판정: 두 설계를 합친다 — 퍼센트 하한만 걸면 위의 구멍을 ⌊최솟값⌋으로 동결한다.** 순서는 네 걸음이다.
+    1. `integration-code-exchange-never-run` 으로 구멍부터 메운다.
+    2. omit 사본 조인 가드를 세운다(`coverage-omit-no-ssot`).
+    3. 레인별 통합 전용 리포트를 **보고 모드**로 붙인다. 붙이는 세 가지:
+       - include 는 단위 omit 설정에서 파생한다 — 사본을 더하지 않는다.
+       - 리포트의 파일 집합을 고정한다 — 파생이 너무 적게 고르면 %가 오른다. 실측: coverlet `<Include>` 를 그대로 뒤집으면 중첩 async 타입이 빠져 211/312 가 된다.
+       - 통합 미실행 함수 목록을 둔다. 항목마다 열린 등록부 id 를 소유자로 단다.
+    4. CI 관측 세 번 뒤에만 하한을 무장한다.
+  - ⚠️ **리포트 구성의 함정.** java 는 `prepare-agent-integration` 으로 IT 전용 exec 를 떼야 한다 — 단위와 IT 가 같은 파일에 합쳐진다. kotlin 은 `integrationTest` 계측을 끄고 있다(`build.gradle.kts`). rust 브랜치는 stable 에서 못 잰다.
 - [ ] `integration-admin-surface-uneven` **[H/M · 계수 정정 2026-09-09]** 9개 통합 스위트가 덮는 admin 표면이 제각각이다 — **clients.update 는 2/9**, realms.create/delete 는 4/9, PHP 는 roles·groups·realms 를 하나도 안 부른다
   - ⚠️ **1/9 이 아니라 2/9**(php·rust). 두 자리 다 등록부 작성보다 앞선다(`59c7916` #190 · `dc9efd7` #240) — 즉 **처음부터 틀린 계수**였다. 함께 잰 것: `users.update` 7/9(java·python 빠짐) · `clients.create` 6/9 · `roles.update`·`groups.update` 각 7/9(php·ruby 빠짐).
   - ⚠️ **PR 크기가 아니다** — php 가 roles/groups/realms 를 **0/3 계열** 부르는 것을 「구현할지 건너뛸지」가 9×capability 결정이고, 그 위에 Docker E2E 가 붙는다. · `java/keycloak-sdk/src/test/java/io/github/xzawed/keycloak/AdminOpsIT.java:48`
 - [ ] `coverage-omit-overreach` **[M/M]** omit의 근거("단위테스트 불가한 네트워크 경계")가 실측으로 거짓이다 — Node는 이미 96.93%, Python은 98%인 코드를 게이트 밖에 두고 있다 · `node/vitest.config.ts:14`
+  - **전 언어 실측(2026-09-27).** 단위만으로 java `AuthClient` 97.3%·`AdminClient` 100% 에 닿는다(세 모듈 exec 합산). 통합이 더하는 것은 **브랜치 1** 이다. dotnet `AuthClient` 는 단위와 합산이 같은 93.8% 다.
+  - ⚠️ **「도달」은 「검증」이 아니다.** go 의 `TestHostilePathMatrix`(#636)는 단언 없이 모든 공개 메서드를 부른다. 그래서 단위 커버리지가 77.2% → 93.6% 로 오른다(`-skip TestHostilePathMatrix` 로 대조). omit 을 걷어낼 근거로 이 숫자를 쓰지 말 것.
 - [ ] `coverage-threshold-parity` **[M/M]** 커버리지 임계값이 9언어에서 갈리고(브랜치 게이트가 아예 없는 곳 셋), 문서↔설정 대조 가드는 3개 언어만 본다 · `scripts/check-docs.mjs:552`
 - [ ] `coverage-omit-no-ssot` **[M/M]** omit 목록이 열 곳에 손으로 중복 기재돼 있고 대조 가드가 0건(Rust 정규식 무앵커는 #574 가 고쳤다 — 세 자리가 같은 값인지는 여전히 아무도 안 본다) · `java/pom.xml:151`
+  - **드리프트 셋 실측(2026-09-27).** 가드가 서면 첫 실행에서 이 셋으로 빨개져야 한다.
+    - `sonar-project.properties:72` 가 `node/src/transport.ts` 와 `node/src/admin/**`(`call.ts` 포함)를 뺀다. vitest 는 2026-09-10·09-15 부터 둘을 잰다.
+    - Sonar 의 `php/src/Admin/**` 가 phpunit 이 재는 `ErrorTranslation.php` 까지 삼킨다.
+    - `harness/suites/rust.sh:43` 의 정규식에만 앵커가 없다.
 - [ ] `readme-quickstarts-ungated` **[M/M]** README가 정본이라 부르는 quickstart 예제가 어떤 게이트에도 안 걸린다 — 하네스가 실제로 돌리는 것은 별도 사본이다 · `node/examples/quickstart.ts:1`
 
 ### 1.0 이후 운영 — 9
