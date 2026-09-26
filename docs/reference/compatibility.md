@@ -37,7 +37,7 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 |---|---|---|
 | Java `1.0.3` | 26.6.x (integration tests: actual **26.6**) | `keycloak-admin-client` **26.0.12** (an independent version track from the server — there is no "26.6.x admin-client") · Nimbus `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.10** · JDK 17+ |
 | Python `1.0.2` | 26.6.x (integration tests: actual **26.6**) | `python-keycloak` **7.1.x** · `joserfc` **1.7.x** · Python 3.10+ |
-| Node `1.0.1` | 26.6.x (integration tests: actual **26.6**) | `@keycloak/keycloak-admin-client` **26.7.4** · `openid-client` **6.8.8** · `jose` **6.2.12** · Node 22+ |
+| Node `1.0.2` | 26.6.x (integration tests: actual **26.6**) | `@keycloak/keycloak-admin-client` **26.7.4** · `openid-client` **6.8.8** · `jose` **6.2.12** · Node 22+ |
 | Go `1.2.0` | 26.6.x (integration tests: actual **26.6**) | `Nerzal/gocloak/v13` **13.9.0** · `golang.org/x/oauth2` **0.37.0** · `go-jose/v4` **4.1.5** · Go 1.26+ |
 | C#/.NET `1.0.2` | 26.6.x (integration tests: actual **26.6**) | `Keycloak.AuthServices.Sdk` **2.7.0** · `Duende.IdentityModel` **8.1.0** · `Microsoft.IdentityModel.JsonWebTokens` **8.23.0** · .NET 8+ |
 | PHP `1.2.0` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `fschmtt/keycloak-rest-api-client-php` **0.42.0** · `league/oauth2-client` **^2.8** · `stevenmaguire/oauth2-keycloak` **^6.1** · `firebase/php-jwt` **^7.1** · PHP 8.3+ |
