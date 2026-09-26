@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Security
+- **(.NET)** 형식이 틀린 토큰·introspect 응답의 오류가 원인 사슬과 메시지로 그 응답을 찍었습니다 — 폼 인코딩 본문이면 `ToString()` 이 살아 있는 액세스 토큰째 본문을, JSON 이 아닌 id_token 헤더·페이로드면 IdentityModel 이 가린 디코드 내용을, 잘못된 응답 헤더 줄이면 그 줄을 남겼고, 서버의 reason phrase 와 문자열이 아닌 `error` 멤버는 메시지·`OAuthError` 에 그대로 실렸습니다. 이제 입력을 인용하는 하위 예외는 타입·위치만 남긴 사본으로 달리고, JSON 루트가 객체가 아닌 응답은 하위 `InvalidOperationException` 대신 `KeycloakAuthException` 입니다. **게시본 `1.0.0`·`1.0.1` 에 들어 있습니다.** (#TBD)
+
 ## [1.1.0] - 2026-09-26 (Go · PHP · Rust)
 
 **2026-09-26 릴리스 물결 — 아홉 언어가 세 번호로 갈립니다.** 새 공개 API 가 들어간 Go · PHP · Rust 는 minor(`1.1.0`, 이 절), 나머지는 patch 입니다 — Java · Kotlin `1.0.2`, Python · .NET · Ruby · Node `1.0.1`(아래 두 절). 대부분이 보안 수정이라 권장 업그레이드입니다. 실제로 어디까지 게시됐는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh` 의 `df_published_version` 이 소유합니다.

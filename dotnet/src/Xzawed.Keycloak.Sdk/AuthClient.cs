@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -145,12 +146,14 @@ public sealed class AuthClient : ITokenSource
         {
             throw new KeycloakTransportException("introspection request timed out", ex);
         }
-        if (resp.IsError)
+        catch (InvalidOperationException ex) when (ex.TargetSite?.DeclaringType?.Assembly == typeof(JsonElement).Assembly)
         {
-            if (resp.ErrorType == ResponseErrorType.Exception)
-                throw new KeycloakTransportException("introspection transport failure", resp.Exception);
-            throw new KeycloakAuthException($"Token introspection failed: {resp.Error}", resp.Exception) { OAuthError = OAuthErrorOf(resp.Json, resp.Error) };
+            // ⚠️ Duende 는 응답을 만드는 도중(TokenIntrospectionResponse.InitializeAsync) 본문을 객체로 색인한다 — JSON 루트가
+            // 문자열·배열이면 IntrospectTokenAsync 자체가 던져 SDK 타입으로 번역되지 않고 샜다(§4, 실측). 메시지는 JSON 종류뿐이다.
+            // 거르는 기준은 던진 어셈블리다 — ex.Source 는 System.Text.Json 의 내부 표식("System.Text.Json.Rethrowable")이라 계약이 아니다(실측).
+            throw new KeycloakAuthException("Token introspection failed: response body is not a JSON object", ex);
         }
+        ThrowIfError(resp, "Token introspection failed", "introspection transport failure");
 
         var claims = resp.Claims.GroupBy(c => c.Type)
             .ToDictionary(g => g.Key, g => (object?)(g.Count() == 1 ? g.First().Value : g.Select(c => c.Value).ToArray()));
@@ -175,7 +178,8 @@ public sealed class AuthClient : ITokenSource
         catch (HttpRequestException ex)
         {
             // HttpClient.PostAsync는 전송 실패(연결거부/DNS/TLS)에 HttpRequestException을 던진다 — 전송 오류.
-            throw new KeycloakTransportException($"Logout request error: {ex.Message}", ex);
+            // ⚠️ 형식이 틀린 응답의 오류는 잘못된 헤더 줄을 인용한다 — 그 메시지를 SDK 메시지에 복사하지 않는다(ErrorCause).
+            throw new KeycloakTransportException($"Logout request error: {ErrorCause.MessageOf(ex)}", ex);
         }
         catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)
         {
@@ -193,15 +197,7 @@ public sealed class AuthClient : ITokenSource
 
     private static TokenSet ToTokenSet(TokenResponse resp, string failureMessage, long issuedAtSeconds)
     {
-        if (resp.IsError)
-        {
-            // Duende IsError는 전송 실패(ErrorType=Exception: 연결거부/DNS/TLS, resp.Exception=HttpRequestException)와
-            // 프로토콜/HTTP 오류(잘못된 자격증명 401 등)를 모두 포함한다 — 전송 실패는 KeycloakTransportException으로
-            // 분류해야 §4 경계에서 인증 실패와 구분된다.
-            if (resp.ErrorType == ResponseErrorType.Exception)
-                throw new KeycloakTransportException($"{failureMessage} (transport)", resp.Exception);
-            throw new KeycloakAuthException($"{failureMessage}: {resp.Error}", resp.Exception) { OAuthError = OAuthErrorOf(resp.Json, resp.Error) };
-        }
+        ThrowIfError(resp, failureMessage, $"{failureMessage} (transport)");
         // ⚠️ **존재 검사는 타입 검사가 아니다 — Duende 는 JSON 값을 강제변환한다.** 실측:
         // `access_token: 12345` → `"12345"`, `{"a":1}` → 그 문자열. 그래서 아래
         // `TokenSet.Create` 의 `IsNullOrEmpty` 검사를 통과하고, 소비자는 쓸 수 없는 토큰을
@@ -216,15 +212,46 @@ public sealed class AuthClient : ITokenSource
                                resp.RefreshToken, resp.IdentityToken, resp.Scope, issuedAtSeconds);
     }
 
-    // Keycloak returns 401 for bad client creds => ErrorType=Http (resp.Error = reason phrase),
-    // so read the OAuth code from the JSON body. Shared by the token endpoint (TokenResponse) and the
-    // introspection endpoint (TokenIntrospectionResponse) — both expose Json/Error via ProtocolResponse.
-    private static string? OAuthErrorOf(JsonElement? json, string? fallbackError)
+    /// <summary>Converts a Duende error response (token or introspection endpoint) to the SDK error.</summary>
+    /// <remarks>⚠️ Beyond the OAuth <c>error</c> code, nothing the server wrote reaches the SDK error — Duende's own
+    /// <c>Error</c> is the server's reason phrase for an HTTP error and the raw JSON text of a non-string <c>error</c>
+    /// member, and its <c>IsError</c> throws on a JSON root that is not an object (all three measured, with a token
+    /// echoed in them: <c>MalformedTokenResponseTests</c>).</remarks>
+    private static void ThrowIfError(ProtocolResponse resp, string failureMessage, string transportMessage)
     {
-        if (json is JsonElement j && j.ValueKind == JsonValueKind.Object
-            && j.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String)
-            return e.GetString();
-        return fallbackError;
+        switch (resp.ErrorType)
+        {
+            case ResponseErrorType.Exception:
+                // 전송 실패(연결거부/DNS/TLS) — 그리고 Duende 가 JSON 으로 못 읽은 본문(처음부터 이 분류다). 전송 실패는
+                // KeycloakTransportException 이어야 §4 경계에서 인증 실패와 구분된다. 원인 사슬은 생성자가 정화한다
+                // (JSON 파서가 본문을 인용한다 — ErrorCause).
+                throw new KeycloakTransportException(transportMessage, resp.Exception);
+            case ResponseErrorType.Http:
+                // Keycloak 은 잘못된 클라이언트 자격증명에 401 을 준다 — OAuth 코드는 본문에서 읽는다.
+                var reason = CanonicalReason(resp.HttpStatusCode);
+                throw new KeycloakAuthException($"{failureMessage}: {reason}") { OAuthError = OAuthErrorOf(resp.Json) ?? reason };
+        }
+        if (resp.Json is { ValueKind: not JsonValueKind.Object })
+            throw new KeycloakAuthException($"{failureMessage}: response body is not a JSON object");
+        if (resp.IsError)
+        {
+            var code = OAuthErrorOf(resp.Json);
+            throw new KeycloakAuthException($"{failureMessage}: {code ?? "error is not a JSON string"}") { OAuthError = code };
+        }
+    }
+
+    // Only a JSON string is an OAuth error code — Duende renders any other kind as its raw JSON text.
+    private static string? OAuthErrorOf(JsonElement? json) =>
+        json is { ValueKind: JsonValueKind.Object } j && j.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String
+            ? e.GetString()
+            : null;
+
+    // The standard phrase for the status, never the server's — a reason phrase is wire text the server chooses. Keycloak's
+    // are the standard ones (and HTTP/2 has none), so the message is unchanged for it.
+    private static string CanonicalReason(HttpStatusCode status)
+    {
+        using var canonical = new HttpResponseMessage(status);
+        return canonical.ReasonPhrase ?? $"HTTP {(int)status}";
     }
 
     private static string Base64Url(byte[] bytes) =>
