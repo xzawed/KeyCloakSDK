@@ -7,7 +7,7 @@
 ## [Unreleased]
 
 ### Security
-- **(Go)** 형식이 틀리거나 적대적인 토큰·introspect 응답의 오류가 원인 사슬과 메시지로 그 응답의 토큰을 찍었습니다 — x/oauth2 `RetrieveError` 가 실패 본문·`error_description` 을, net/http 가 깨진 상태줄·헤더·트레일러 줄을, admin 로그인이 `error_description`·리다이렉트 대상을, `AuthError` 의 `%#v` 가 `error` 값을 실었습니다. 이제 하위 타입·HTTP 상태·코드 모양의 OAuth 오류만 남고(admin 로그인 메시지에서 `error_description` 이 빠집니다), 분류와 `errors.Is(err, context.Canceled)`·`net.Error` 는 그대로입니다. **게시본 `1.0.0`·`1.1.0` 에 들어 있습니다.** (#TBD)
+- **(Go)** 형식이 틀리거나 적대적인 토큰·introspect 응답의 오류가 원인 사슬과 메시지로 그 응답의 토큰을 찍었습니다 — x/oauth2 `RetrieveError` 가 실패 본문·`error_description` 을, net/http 가 깨진 상태줄·헤더·트레일러 줄을, admin 로그인이 `error_description`·리다이렉트 대상을, `AuthError` 의 `%#v` 가 `error` 값을 실었습니다. 이제 하위 타입·HTTP 상태·코드 모양의 OAuth 오류만 남고(admin 로그인 메시지에서 `error_description` 이 빠집니다), 분류와 `errors.Is(err, context.Canceled)`·`net.Error` 는 그대로입니다. **게시본 `1.0.0`·`1.1.0` 에 들어 있습니다.** (#620)
 
 ## [1.1.0] - 2026-09-26 (Go · PHP · Rust)
 
