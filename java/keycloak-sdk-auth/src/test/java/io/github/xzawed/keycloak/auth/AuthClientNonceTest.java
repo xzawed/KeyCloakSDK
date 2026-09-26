@@ -15,6 +15,7 @@ import com.nimbusds.openid.connect.sdk.token.OIDCTokens;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
 import io.github.xzawed.keycloak.core.TokenSet;
 import io.github.xzawed.keycloak.core.exception.KeycloakAuthException;
+import io.github.xzawed.keycloak.core.exception.TokenValidationException;
 import com.sun.net.httpserver.HttpServer;
 import java.io.OutputStream;
 import java.net.InetAddress;
@@ -141,6 +142,19 @@ class AuthClientNonceTest {
     KeycloakAuthException e = assertThrows(KeycloakAuthException.class,
         () -> client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, "expected-nonce"));
     assertTrue(e.getMessage().contains("unexpected nonce"), e.getMessage());
+  }
+
+  // 서명만 틀린 RS256 id_token(같은 kid, nonce 일치) — 실서버는 만들 수 없는 토큰이라 통합(CodeExchangeIT)으로는 못 잰다.
+  // requireValidNonce_rejectsUntrustedIdToken 은 헬퍼만 본다 — exchangeCode 가 헬퍼 대신 검증 없는 디코드로 nonce 를
+  // 대조하도록 바뀌면 그 테스트와 위 exchangeCode_* 셋은 전부 초록이다. 이것이 그 경로를 끝까지 막는다.
+  @Test void exchangeCode_rejectsForgedIdTokenWhoseNonceMatches() throws Exception {
+    RSAKey trusted = new RSAKeyGenerator(2048).keyID("k1").generate();
+    RSAKey attacker = new RSAKeyGenerator(2048).keyID("k1").generate();
+    AuthClient client = clientServingToken(trusted, signIdToken(attacker, ISSUER, "app", "expected-nonce"));
+    KeycloakAuthException e = assertThrows(KeycloakAuthException.class,
+        () -> client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, "expected-nonce"));
+    assertEquals("Authorization code exchange failed: invalid id_token", e.getMessage());
+    assertInstanceOf(TokenValidationException.class, e.getCause());
   }
 
   @Test void exchangeCode_acceptsMatchingNonce_endToEnd() throws Exception {
