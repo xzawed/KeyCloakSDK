@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `213`(2026-09-26 기준 열림 118 · 닫힘 95)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `214`(2026-09-26 기준 열림 118 · 닫힘 96)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,16 +116,15 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-09-26 · #560–#614 반영)
+### 다음 세션 진입점 (2026-09-26 · #560–#624 반영)
 
-**지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. **2026-09-26 릴리스 물결**(#604–#614): go·php·rust `1.1.0` · python·dotnet·ruby·node `1.0.1` 게시(LIVE)·기준선 상향 완료. ⚠️ java·kotlin `1.0.2` 는 **Portal 스테이징 — 사람이 Publish 한 뒤** JVM 기준선(`java/pom.xml`·`kotlin-ci.yml`·`df_api_baseline`)을 올리고 `node scripts/check-published-jvm-floor.mjs` 로 바이트를 다시 잰다. 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
+**지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. **2026-09-26 릴리스 물결**(#604–#614): go·php·rust `1.1.0` · python·dotnet·ruby·node `1.0.1` 게시(LIVE)·기준선 상향 완료. java·kotlin `1.0.2` 도 사람이 Portal 에서 Publish 해 아홉 전부 게시·기준선 상향(#616)·JVM 바이트 major ≤ 61 확인. 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. **`error-cause-chain-carries-response-body-crosslang` [M/M]** — node 에서 실측·수정한 부류가 여덟에 있는가. 각 언어 걷기 테스트에 「200 + 형식이 틀린 본문」·「토큰을 품은 오류 본문」 뿌리를 더하는 것이 곧 측정이다.
-2. **`guard-detection-surface-hand-narrowed` [H/M]** — 마스킹 축의 「새 자리」는 아홉 언어 전부 파생으로 닫혔다(#592–#602). 남은 것은 **새 교환 경로**(nonce·백오프·토큰타입)와 줄 단위 skip 표지 — 같은 「뿌리 + 선언 대조」 모양이 서는지부터 설계한다.
-3. `integration-coverage-never-measured` [H/L] — 크다. 설계부터.
-4. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다. 반대 방향도 있다 — #585 는 「verifier 하나」로 등록됐지만 부류는 호출 인자 다섯 갈래였다.
+1. **`guard-detection-surface-hand-narrowed` [H/M]** — 마스킹 축의 「새 자리」는 아홉 언어 전부 파생으로 닫혔다(#592–#602). 남은 것은 **새 교환 경로**(nonce·백오프·토큰타입)와 줄 단위 skip 표지 — 같은 「뿌리 + 선언 대조」 모양이 서는지부터 설계한다.
+2. `integration-coverage-never-measured` [H/L] — 크다. 설계부터.
+3. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다. 반대 방향도 있다 — #585 는 「verifier 하나」로 등록됐지만 부류는 호출 인자 다섯 갈래였다.
 
 **사람 판정 대기** — 없음. 2026-09-25 사용자 판정: 출처 미상 stash 둘(JDK 17→25)과 빈 `snap*` 워크트리 셋은 **폐기**했다(실측·검증되지 않은 산출물은 확인 후 폐기) · `irreversible-publish-no-reentry` 는 **보류 유지**(근거는 그 항목).
 
@@ -606,7 +605,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 75건 (열림 52)
+## D. 원장 밖 — 76건 (열림 52)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -728,7 +727,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `probe-new-file-mutation-dies-silent` **[M/S · 신규·닫힘 2026-09-26 #591]** 새 파일만 만드는 변이에서 `probe.sh` 가 판정 없이 1(SILENT 의 코드)로 죽었다 — diff 가 비면 자리 검사의 `grep` 파이프가 1 을 내 `set -e` 가 끝냈다(실측: 0 바이트 · exit 1). `|| true` 한 곳 + 판정 줄을 보는 자가테스트 둘(RED → 18/18) · `scripts/probe.sh`
 - [x] `probe-verdict-line-glued-or-name-split` **[L/S · 신규·닫힘 2026-09-26 #595]** Grok 레그의 퍼저(193 사례, 인자 이동 버그를 고쳐 돌림)가 러너 계약 위반 둘을 냈다 — 끝 개행 없는 새 파일이면 판정 줄이 미리보기 뒤에 붙어(`+plantedCAUGHT — …`) `^CAUGHT` 로 읽는 쪽이 판정을 못 보고, 이름에 공백이 든 새 파일은 `for … in $(…)` 가 쪼개 맞는 변이를 INVALID 로 거부했다. 나머지 INVALID 는 전부 fail-closed. 자가테스트 둘 RED → 20/20, 되돌림 변이 둘 CAUGHT · `scripts/probe.sh`
 - [x] `node-error-cause-carries-response-tokens` **[M/S · 신규·닫힘 2026-09-26 #603]** 형식이 틀린 토큰 응답에서 난 오류가 cause 사슬로 토큰을 찍었다 — oauth4webapi 가 응답 본문 전체나 원문 id_token 을 `cause` 에 싣고 SDK 가 그대로 달았다. 실측: id_token 이 JWT 가 아니면 `console.log(err)` 에 원문 id_token, access_token·expires_in·token_type 이 틀리면 깊은 inspect 에 access/refresh 토큰. 걷기 테스트(#599)가 첫 경우를 잡았다. `KeycloakError` 생성자 한 곳에서 cause 를 이름·메시지·code·스택 사본으로 — 원본 하위 오류도 안 샌다(§4). ⚠️ Grok 적대 레그가 그 사본에서 하나 더 찾았다: 200 에 JSON 아닌 본문이면 `SyntaxError` 가 본문을(짧으면 전부, 길면 앞 10 자) 메시지·스택에 인용한다 — 그 둘은 옮기지 않는다. 변이 6/6 · `node/src/errors.ts`
-- [ ] `error-cause-chain-carries-response-body-crosslang` **[M/M · 신규 2026-09-26]** node 에서 닫은 부류(#603)가 나머지 여덟에 있는지 안 쟀다 — 형식이 틀린·적대적인 IdP 응답(200 + 비-JSON 본문, 토큰을 품은 본문·오류 설명)에서 하위 라이브러리 오류가 본문을 싣고, SDK 오류의 기본 출력이 원인 사슬로 그것을 찍는가: java·kotlin 의 `Caused by:`(printStackTrace·로거), python 로깅의 연쇄 트레이스백, .NET `ToString` 의 내부 예외, ruby `full_message`, go `%+v`·`errors.Unwrap`, rust `source()` 사슬, php `(string)$e` 의 previous. 아홉 걷기 테스트의 뿌리는 401·깨진 토큰·도달 불가뿐이라 이 경로를 안 밟는다 — 뿌리를 더하는 것이 곧 측정이다 · `*/…FacadeDump*`
+- [x] `error-cause-chain-carries-response-body-crosslang` **[M/M · 신규 2026-09-26 · 닫힘 2026-09-26 #617–#624]** 여덟 전부 샜다 — 먼저 쟀다(수정 전, 언어당 변형 17–40 · 누출 6–18): java·kotlin `Caused by:` 가 비-JSON 본문·토큰째, python 트레이스백·메시지, go `RetrieveError` 본문·`error_description`, .NET `ToString()` 내부 예외, php `getPrevious()` 원본과 트레이스 인자, rust `oauth_error` 의 `error_description`, ruby `full_message`·`Faraday::ParsingError#inspect`. 되울린 `error_description` 이 보낸 refresh·code·verifier·Basic 을 싣는 경로도 여럿. 각 경계에서 하위 원인을 타입 이름·프레임만 남긴 사본으로 · 보낸 비밀은 `***` · 코드 모양만 OAuth 오류로. 언어마다 변이 8–13 CAUGHT, Grok 레그(ruby 는 여섯째 시도) 주장 측정·채택. 워크플로 한 번(격리 워크트리 여덟)
+- [ ] `error-description-foreign-token-residue` **[L/S · 신규 2026-09-26]** 위 수정이 **설계상 남긴** 자리 일곱 — `KNOWN_LEAKS` 가 고정한다(낡으면 실패): java 셋(보내지 않은 20 자 미만 값·소문자만의 긴 값이 `error_description` 에 — 산문 식별자와 가를 수 없다), kotlin 둘(남의 토큰을 되울린 `error_description`), .NET 둘(서버가 OAuth `error` **코드 자리**에 토큰을 넣음 — 코드 모양이면 그대로 둔다). 모두 IdP 가 이미 가진 값이나 적대적 IdP 가 심은 값이다 — 더 좁히려면 오류 설명을 통째로 버리는 결정이 필요하다 · `*/…MalformedTokenResponse*`
 - [ ] `rust-admin-unreachable-classified-admin` **[L/S · 신규 2026-09-26]** rust 에서 도달 불가 서버로의 admin 호출이 `Transport` 가 아니라 `Admin(Other{401})` 로 나온다 — `SdkTokenSupplier` 가 토큰 획득 실패를 전부 `HttpFailure{401}` 로 바꾸고 `map_admin` 이 그것을 admin 상태로 읽는다. 걷기 테스트가 그 분류를 지금 그대로 단언한다(`rust/tests/facade_dump.rs` 「admin get_user unreachable」) — 고치면 그 단언도 함께 · `rust/src/admin.rs`
 - [ ] `java-admin-token-401-classified-transport` **[L/S · 신규 2026-09-26 · 재현 필요]** java 걷기 레그의 관측: 잘못된 realm 으로 admin 토큰 요청이 401 을 받으면 `KeycloakTransportException`("admin transport failure")으로 나온다 — RESTEasy 가 토큰 필터의 `NotAuthorizedException` 을 `ProcessingException` 으로 감싸 `AdminExceptions` 가 전송으로 매핑한다는 진단. 걷기 테스트는 기반 예외만 단언해 고정되지 않았다 · `java/keycloak-sdk-admin`
 - [x] `token-type-library-behaviour-unpinned` **[M/S · 신규·닫힘 2026-09-25 #581]** go·java·kotlin 이 비문자열 `access_token` 거절을 라이브러리(x/oauth2 · Nimbus)에 맡기면서 그 행동을 고정한 테스트가 0 이었다 — go 는 전제부터 미측정(실측: 여섯 다 `*AuthError`). 셋 다 표 테스트로 고정, 파싱 실패를 삼키는 변이에 go·java CAUGHT(kotlin 미측정) · `go/auth_test.go`
