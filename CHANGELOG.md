@@ -7,7 +7,7 @@
 ## [Unreleased]
 
 ### Security
-- **(Kotlin)** 형식이 틀린 토큰·introspect 응답의 오류가 원인 사슬로 응답을 찍었습니다 — JSON 아닌 본문은 파서가 토큰째(auth), 앞부분·JSON 문자열 값을(admin 내장 TokenManager) 인용했고, IdP 가 error_description 에 되울린 호출자의 refresh·introspect 토큰·시크릿이 SDK 메시지에 실렸습니다. 하위 파서 오류는 타입 이름·스택만 남긴 사본으로 달고, 그 요청에 보낸 비밀은 `***` 로 가립니다. **게시본 `1.0.2` 에 들어 있습니다.** (#TBD)
+- **(Kotlin)** 형식이 틀린 토큰·introspect 응답의 오류가 원인 사슬로 응답을 찍었습니다 — JSON 아닌 본문은 파서가 토큰째(auth), 앞부분·JSON 문자열 값을(admin 내장 TokenManager) 인용했고, IdP 가 error_description 에 되울린 호출자의 refresh·introspect 토큰·시크릿이 SDK 메시지에 실렸습니다. 하위 파서 오류는 타입 이름·스택만 남긴 사본으로 달고, 그 요청에 보낸 비밀은 `***` 로 가립니다. **게시본 `1.0.2` 에 들어 있습니다.** (#618)
 
 ## [1.1.0] - 2026-09-26 (Go · PHP · Rust)
 
