@@ -52,7 +52,9 @@ describe('KeycloakError cause 정화', () => {
   })
 
   it('사슬의 이름·메시지·code 는 남는다 — 디버깅할 수 있어야 한다', () => {
-    const wrapped = Object.assign(new Error('fetch failed', { cause: lower() }), { name: 'TypeError' })
+    const wrapped = Object.assign(new Error('fetch failed', { cause: lower() }), {
+      name: 'TypeError',
+    })
     const cause = new KeycloakAuthError('x', { cause: wrapped }).cause as Error & { code?: string }
     expect(cause.name).toBe('TypeError')
     expect(cause.message).toBe('fetch failed')
@@ -91,8 +93,11 @@ describe('KeycloakError cause 정화 — 입력을 인용하는 SyntaxError', ()
       parseError = e
     }
     expect(inspect(parseError)).toContain('RAW-BODY') // 대조군 — 원본은 정말 인용한다
-    const e = new KeycloakAuthError('x', { cause: new Error('parse failed', { cause: parseError }) })
-    for (const out of [inspect(e), inspect(e, { depth: Infinity })]) expect(out).not.toContain('RAW-BODY')
+    const e = new KeycloakAuthError('x', {
+      cause: new Error('parse failed', { cause: parseError }),
+    })
+    for (const out of [inspect(e), inspect(e, { depth: Infinity })])
+      expect(out).not.toContain('RAW-BODY')
     const inner = (e.cause as Error).cause as Error
     expect(inner.name).toBe('SyntaxError')
   })

@@ -28,7 +28,11 @@ const VARIANTS: Record<string, Record<string, unknown> | string> = {
     expires_in: 'x',
     refresh_token: 'LEAK-RT-3',
   },
-  'token_type 이 문자열이 아니다': { access_token: 'LEAK-AT-4', token_type: 5, refresh_token: 'LEAK-RT-4' },
+  'token_type 이 문자열이 아니다': {
+    access_token: 'LEAK-AT-4',
+    token_type: 5,
+    refresh_token: 'LEAK-RT-4',
+  },
   // 본문이 JSON 이 아니다 — JSON.parse 의 SyntaxError 가 본문을 인용한다(짧으면 전부, 길면 앞 10 자).
   '본문이 JSON 이 아니다': 'LEAK-BODY-5',
 }
@@ -71,20 +75,28 @@ describe('형식이 틀린 토큰 응답의 오류', () => {
     server.close()
   })
 
-  it.each(Object.entries(VARIANTS))('%s — 기본·깊은 inspect 어디에도 토큰이 없다', async (_name, variant) => {
-    body = variant
-    const kc = await KeycloakClient.create({ serverUrl: origin, realm: 'r', clientId: 'c', clientSecret: 'S' })
-    const err = await kc.auth.clientCredentialsToken().then(
-      () => undefined,
-      (e: unknown) => e,
-    )
-    // 대조군 — 정말 실패했는가. 성공했다면 아래 단언은 없는 것을 찾으며 통과한다.
-    expect(err).toBeInstanceOf(KeycloakAuthError)
-    const values = typeof variant === 'string' ? [variant] : Object.values(variant)
-    const leaks = values.filter((v): v is string => typeof v === 'string' && v.startsWith('LEAK'))
-    expect(leaks.length).toBeGreaterThan(0)
-    for (const out of [inspect(err), inspect(err, { depth: Infinity })]) {
-      for (const leak of leaks) expect(out).not.toContain(leak)
-    }
-  })
+  it.each(Object.entries(VARIANTS))(
+    '%s — 기본·깊은 inspect 어디에도 토큰이 없다',
+    async (_name, variant) => {
+      body = variant
+      const kc = await KeycloakClient.create({
+        serverUrl: origin,
+        realm: 'r',
+        clientId: 'c',
+        clientSecret: 'S',
+      })
+      const err = await kc.auth.clientCredentialsToken().then(
+        () => undefined,
+        (e: unknown) => e,
+      )
+      // 대조군 — 정말 실패했는가. 성공했다면 아래 단언은 없는 것을 찾으며 통과한다.
+      expect(err).toBeInstanceOf(KeycloakAuthError)
+      const values = typeof variant === 'string' ? [variant] : Object.values(variant)
+      const leaks = values.filter((v): v is string => typeof v === 'string' && v.startsWith('LEAK'))
+      expect(leaks.length).toBeGreaterThan(0)
+      for (const out of [inspect(err), inspect(err, { depth: Infinity })]) {
+        for (const leak of leaks) expect(out).not.toContain(leak)
+      }
+    },
+  )
 })
