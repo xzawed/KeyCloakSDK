@@ -146,10 +146,12 @@ public sealed class AuthClient : ITokenSource
         {
             throw new KeycloakTransportException("introspection request timed out", ex);
         }
-        catch (InvalidOperationException ex) when (ex.TargetSite?.DeclaringType?.Assembly == typeof(JsonElement).Assembly)
+        catch (InvalidOperationException ex) when (ex.TargetSite?.DeclaringType?.Assembly is { } thrower
+                                                    && (thrower == typeof(JsonElement).Assembly || thrower == typeof(TokenIntrospectionResponse).Assembly))
         {
             // ⚠️ Duende 는 응답을 만드는 도중(TokenIntrospectionResponse.InitializeAsync) 본문을 객체로 색인한다 — JSON 루트가
-            // 문자열·배열이면 IntrospectTokenAsync 자체가 던져 SDK 타입으로 번역되지 않고 샜다(§4, 실측). 메시지는 JSON 종류뿐이다.
+            // 문자열·배열이면(System.Text.Json 이 던진다) 또는 200 본문이 비면(Duende 가 "Json is null" 을 던진다, Grok 레그)
+            // IntrospectTokenAsync 자체가 던져 SDK 타입으로 번역되지 않고 샜다(§4, 실측). 두 메시지 모두 응답을 인용하지 않는다.
             // 거르는 기준은 던진 어셈블리다 — ex.Source 는 System.Text.Json 의 내부 표식("System.Text.Json.Rethrowable")이라 계약이 아니다(실측).
             throw new KeycloakAuthException("Token introspection failed: response body is not a JSON object", ex);
         }
@@ -222,10 +224,12 @@ public sealed class AuthClient : ITokenSource
         switch (resp.ErrorType)
         {
             case ResponseErrorType.Exception:
-                // 전송 실패(연결거부/DNS/TLS) — 그리고 Duende 가 JSON 으로 못 읽은 본문(처음부터 이 분류다). 전송 실패는
-                // KeycloakTransportException 이어야 §4 경계에서 인증 실패와 구분된다. 원인 사슬은 생성자가 정화한다
-                // (JSON 파서가 본문을 인용한다 — ErrorCause).
-                throw new KeycloakTransportException(transportMessage, resp.Exception);
+                // 전송 실패(연결거부/DNS/TLS) — 그리고 도착한 응답을 Duende 가 못 읽은 경우(처음부터 이 분류다). 전송 실패는
+                // KeycloakTransportException 이어야 §4 경계에서 인증 실패와 구분된다. 원인 사슬은 생성자가 정화한다(ErrorCause).
+                // ⚠️ 응답이 도착했으면(HttpResponse 있음) 그 사슬의 어느 메시지든 응답을 인용할 수 있다 — JSON 파서는 본문을,
+                // Encoding 은 알 수 없는 charset 이름을 인용했다(실측, 후자는 Grok 레그). 그래서 메시지를 전부 뺀다.
+                throw new KeycloakTransportException(transportMessage,
+                    resp is { HttpResponse: not null, Exception: { } read } ? ErrorCause.WithholdAll(read) : resp.Exception);
             case ResponseErrorType.Http:
                 // Keycloak 은 잘못된 클라이언트 자격증명에 401 을 준다 — OAuth 코드는 본문에서 읽는다.
                 var reason = CanonicalReason(resp.HttpStatusCode);

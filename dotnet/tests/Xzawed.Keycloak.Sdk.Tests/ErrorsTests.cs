@@ -110,6 +110,29 @@ public class ErrorsTests
     }
 
     [Fact]
+    public void Response_read_failure_keeps_types_but_no_message()
+    {
+        // Grok 레그가 찾은 모양 — 알 수 없는 charset 은 Encoding.GetEncoding 이 이름을 인용하고 HttpContent 가 감싼다(실측 g5).
+        var read = new InvalidOperationException("The character set provided in ContentType is invalid.",
+            new ArgumentException($"'{Canary}' is not a supported encoding name.", "name"));
+        var ex = new KeycloakTransportException("Client credentials grant failed (transport)", ErrorCause.WithholdAll(read));
+
+        Assert.DoesNotContain(Canary, ex.ToString());
+        Assert.Contains("System.InvalidOperationException", ex.ToString());
+        Assert.Contains("System.ArgumentException", ex.ToString());
+    }
+
+    [Fact]
+    public void A_scrubbed_copy_is_marked_and_kept_as_is_when_wrapped_again()
+    {
+        var copy = new KeycloakTransportException("x", ParseError($"t{Canary}")).InnerException!;
+
+        Assert.Equal(true, copy.Data[ErrorCause.SanitizedKey]);
+        Assert.Same(copy, ErrorCause.Scrub(copy));
+        Assert.Same(copy, ErrorCause.WithholdAll(copy));
+    }
+
+    [Fact]
     public void Sdk_error_in_the_chain_is_kept_as_is_because_its_own_chain_was_already_scrubbed()
     {
         var validation = new KeycloakTokenValidationException("IDX14102", new ArgumentException("IDX14102", ParseError($"t{Canary}")));

@@ -126,6 +126,9 @@ public sealed class MalformedTokenResponseTests
         // (f) introspect 모양 — active 가 불리언이 아니면 Duende 가 비활성으로 읽는다(성공). 토큰 호출에는 access_token 이 없다.
         new("f introspect active string", 200, "application/json", """{"active":"LK-F-ACT-01-canary","username":"svc"}""",
             new[] { "LK-F-ACT-01-canary" }, Auth, null),
+        // Grok 레그의 주장 — 빈 200 본문이면 Duende 의 TokenIntrospectionResponse 가 "Json is null" 을 던진다. 카나리아는
+        // 없다(흐름 검사만 — SDK 타입으로 번역되는가).
+        new("h empty 200 body", 200, "application/json", "", Array.Empty<string>(), Auth, Auth),
     };
 
     public static IEnumerable<object[]> VariantNames => Variants.Select(v => new object[] { v.Name });
@@ -180,24 +183,32 @@ public sealed class MalformedTokenResponseTests
     /// 선(wire) 수준에서 형식이 틀린 응답 — 가짜 IdP(WireMock)로는 못 만드는 모양이라 원시 소켓으로 낸다. SocketsHttpHandler 가
     /// 잘못된 헤더 줄·이름을 인용하고(청크 길이 줄은 16진), 서버의 reason phrase 는 그대로 SDK 까지 온다.
     /// </summary>
+    /// <param name="expected">토큰·introspect 호출의 기대 예외.</param>
+    /// <param name="logout">logout 의 기대 예외(<c>null</c> 은 성공 — logout 은 2xx 본문을 읽지 않는다).</param>
     [Theory]
-    [InlineData("g1 invalid header line", "HTTP/1.1 200 OK\r\nLK-G1-HDRLINE-canary\r\nContent-Length: 2\r\n\r\n{}", "LK-G1-HDRLINE-canary", false)]
-    [InlineData("g2 invalid header name", "HTTP/1.1 200 OK\r\nBad LK-G2-HDRNAME-canary: v\r\nContent-Length: 2\r\n\r\n{}", "LK-G2-HDRNAME-canary", false)]
-    [InlineData("g3 invalid chunk size line", "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nLK-G3-CHUNK-canary\r\n\r\n", "LK-G3-CHUNK-canary", false)]
-    [InlineData("g4 reason phrase echo", "HTTP/1.1 401 Unauthorized LK-G4-REASON-canary\r\nContent-Length: 0\r\n\r\n", "LK-G4-REASON-canary", true)]
-    public async Task Malformed_wire_response_errors_do_not_print_its_secrets(string name, string raw, string canary, bool isHttpError)
+    [InlineData("g1 invalid header line", "HTTP/1.1 200 OK\r\nLK-G1-HDRLINE-canary\r\nContent-Length: 2\r\n\r\n{}", "LK-G1-HDRLINE-canary",
+        typeof(KeycloakTransportException), typeof(KeycloakTransportException))]
+    [InlineData("g2 invalid header name", "HTTP/1.1 200 OK\r\nBad LK-G2-HDRNAME-canary: v\r\nContent-Length: 2\r\n\r\n{}", "LK-G2-HDRNAME-canary",
+        typeof(KeycloakTransportException), typeof(KeycloakTransportException))]
+    [InlineData("g3 invalid chunk size line", "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nLK-G3-CHUNK-canary\r\n\r\n", "LK-G3-CHUNK-canary",
+        typeof(KeycloakTransportException), typeof(KeycloakTransportException))]
+    [InlineData("g4 reason phrase echo", "HTTP/1.1 401 Unauthorized LK-G4-REASON-canary\r\nContent-Length: 0\r\n\r\n", "LK-G4-REASON-canary",
+        typeof(KeycloakAuthException), typeof(KeycloakAuthException))]
+    // Grok 레그의 주장 — 알 수 없는 charset 은 본문을 문자열로 읽을 때 Encoding.GetEncoding 이 그 이름을 인용한다.
+    [InlineData("g5 unknown charset", "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=LK-G5-CHARSET-canary\r\nContent-Length: 2\r\n\r\n{}",
+        "LK-G5-CHARSET-canary", typeof(KeycloakTransportException), null)]
+    public async Task Malformed_wire_response_errors_do_not_print_its_secrets(string name, string raw, string canary, Type expected, Type? logout)
     {
         using var listener = new RawServer(raw);
         using var kc = KeycloakClient.Create(new KeycloakConfig { ServerUrl = listener.Url, Realm = "r", ClientId = "c", ClientSecret = "S" });
         var report = new Report(name, new[] { canary }, new[] { BitConverter.ToString(Encoding.ASCII.GetBytes(canary)) });
-        var expected = isHttpError ? Auth : Transport;
         await report.RunAsync("ClientCredentialsTokenAsync", expected, async () => await kc.Auth.ClientCredentialsTokenAsync());
         await report.RunAsync("RefreshAsync", expected, async () => await kc.Auth.RefreshAsync("rt-sent"));
         await report.RunAsync("ExchangeCodeAsync(nonce)", expected,
             async () => await kc.Auth.ExchangeCodeAsync("code", "https://app/cb", new string('v', 43), "n1"));
         await report.RunAsync("IntrospectAsync", expected, async () => await kc.Auth.IntrospectAsync("tok-sent"));
         // logout 은 토큰 엔드포인트가 아니지만 같은 선 오류를 받고, 수정 전에는 그 메시지를 SDK 메시지에 복사했다.
-        await report.RunAsync("LogoutAsync", expected, async () => { await kc.Auth.LogoutAsync("rt-sent"); return null; });
+        await report.RunAsync("LogoutAsync", logout, async () => { await kc.Auth.LogoutAsync("rt-sent"); return null; });
         report.AssertClean(_out);
     }
 
