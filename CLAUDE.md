@@ -355,7 +355,7 @@ dev(테스트 csproj — **앵커 있음**):
 |---|---|---|---|
 | Java | `io.github.xzawed:keycloak-sdk` (Maven Central) | `v*` | 게시됨(`1.0.3`) |
 | Python | `keycloak-sdk` (PyPI) | `py-v*` | 게시됨(`1.0.2`) |
-| Node | `@xzawed/keycloak-sdk` (npm) | `node-v*` | 게시됨(`1.0.1`) |
+| Node | `@xzawed/keycloak-sdk` (npm) | `node-v*` | 게시됨(`1.0.2`) |
 | Go | `github.com/xzawed/KeyCloakSDK/go` (proxy.golang.org) | `go/v*` | 게시됨(`1.2.0`) |
 | C#/.NET | `Xzawed.Keycloak.Sdk` (NuGet) | `dotnet-v*` | 게시됨(`1.0.2`) |
 | PHP | `xzawed/keycloak-sdk` (Packagist) | `php-v*` | 게시됨(`1.2.0`) |

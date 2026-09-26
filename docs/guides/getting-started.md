@@ -27,7 +27,7 @@
 
 A guide to installing the Keycloak polyglot SDK locally and running your first token issuance, JWT validation, and Admin API call with minimal code. This SDK is provided in **multiple programming languages** (currently Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby · Kotlin), and while each language is idiomatic, the concepts, layers, and flows are isomorphic.
 
-> ℹ️ **All nine are on a public registry with a stable release** (Go · PHP `1.2.0`, Ruby `1.1.0`, Rust `1.1.1`, Java · Kotlin `1.0.3`, Python · .NET `1.0.2`, Node `1.0.1` — alignment was never a policy) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java · Kotlin (Maven Central) and Go (the Go module proxy). A bare install resolves the current release in every ecosystem that picks one for you (Maven and Gradle never do — name the version); the release candidates that preceded 1.0 are still on their registries (none of these ecosystems lets you delete a published version) but none of them prefers one any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. Releasing is a maintainer task — see [DEPLOY.md](../../DEPLOY.md).
+> ℹ️ **All nine are on a public registry with a stable release** (Go · PHP `1.2.0`, Ruby `1.1.0`, Rust `1.1.1`, Java · Kotlin `1.0.3`, Python · .NET · Node `1.0.2` — alignment was never a policy) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java · Kotlin (Maven Central) and Go (the Go module proxy). A bare install resolves the current release in every ecosystem that picks one for you (Maven and Gradle never do — name the version); the release candidates that preceded 1.0 are still on their registries (none of these ecosystems lets you delete a published version) but none of them prefers one any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. Releasing is a maintainer task — see [DEPLOY.md](../../DEPLOY.md).
 
 > 🖥️ **You need a Keycloak *server* first.** This SDK is a client library, so it needs a **Keycloak server to connect to** in order to work (the server is a separate, standalone product not included in this SDK). For a local trial, use the one-line Docker command `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`; for a **production deployment**, see the [Keycloak server deployment guide](deploying-keycloak-server.md).
 
@@ -226,9 +226,9 @@ cd node && npm ci && npm run build   # generates dist/ (tsc). Consume via npm li
 
 The distribution name is `@xzawed/keycloak-sdk`, and the import path is the same.
 
-### 3) Installation from npm (stable `1.0.1`)
+### 3) Installation from npm (stable `1.0.2`)
 
-`1.0.1` is live on npm and holds the `latest` dist-tag:
+`1.0.2` is live on npm and holds the `latest` dist-tag:
 
 ```bash
 npm install @xzawed/keycloak-sdk
