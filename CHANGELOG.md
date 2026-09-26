@@ -7,7 +7,7 @@
 ## [Unreleased]
 
 ### Security
-- **(Ruby)** 형식이 틀리거나 적대적인 IdP 응답의 오류가 원인(`cause`) 사슬과 메시지로 그 응답과 SDK 가 보낸 비밀을 찍었습니다 — `full_message`(로거)가 JSON 아닌 본문 앞부분·되울린 `error_description`·깨진 상태 줄을, 하위 `Faraday::ParsingError` 의 `inspect` 가 요청의 클라이언트 시크릿·refresh 토큰·admin 베어러를 남겼고, Ruby 3.2 에서는 감싸이지 않은 `NoMethodError` 가 응답 본문을 인용했습니다. 이제 원인 사슬은 하위 클래스 이름과 백트레이스만, OAuth 오류는 코드와 HTTP 상태만 싣고, 형식이 틀린 200 은 `AuthError` 입니다. **게시본 `1.0.1` 에 들어 있습니다.** (#TBD)
+- **(Ruby)** 형식이 틀리거나 적대적인 IdP 응답의 오류가 원인(`cause`) 사슬과 메시지로 그 응답과 SDK 가 보낸 비밀을 찍었습니다 — `full_message`(로거)가 JSON 아닌 본문 앞부분·되울린 `error_description`·깨진 상태 줄을, 하위 `Faraday::ParsingError` 의 `inspect` 가 요청의 클라이언트 시크릿·refresh 토큰·admin 베어러를 남겼고, Ruby 3.2 에서는 감싸이지 않은 `NoMethodError` 가 응답 본문을 인용했습니다. 이제 원인 사슬은 하위 클래스 이름과 백트레이스만, OAuth 오류는 코드와 HTTP 상태만 싣고, 형식이 틀린 200 은 `AuthError` 입니다. **게시본 `1.0.1` 에 들어 있습니다.** (#624)
 
 ## [1.1.0] - 2026-09-26 (Go · PHP · Rust)
 
