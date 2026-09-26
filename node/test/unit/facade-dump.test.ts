@@ -71,14 +71,11 @@ const EXEMPT: Readonly<Record<string, string>> = {}
 /**
  * 알려진 누출 — `"뿌리|카나리아"` 와 사유. ⚠️ 고쳐져 더 안 새면 **여기서 지워야 통과한다**(낡은 항목 검사).
  *
- * `malformed id_token error` — IdP 토큰 응답의 id_token 이 JWT 가 아니면 openid-client 가
- * `OperationProcessingError('Invalid JWT')` 의 `cause` 에 **id_token 원문**을 싣고, `AuthClient.#grant` 가 그
- * 오류를 `KeycloakAuthError` 의 `cause` 로 그대로 단다. `util.inspect`(기본 depth 2 의 `console.log(err)` 도)가
- * `[cause]` 사슬을 따라 원문을 찍는다. `String()`·`JSON.stringify` 는 깨끗하다(실측 2026-09-26).
+ * 지금은 비어 있다. 이 걷기가 처음 찾은 `malformed id_token error`(openid-client 가 `cause` 에 싣은 id_token
+ * 원문을 `KeycloakAuthError` 가 그대로 달았다)는 `KeycloakError` 생성자의 cause 정화로 닫혔다 — 그 뿌리는
+ * 남아 「더 안 샌다」를 잰다.
  */
-const KNOWN_LEAKS: Readonly<Record<string, string>> = {
-  'malformed id_token error|MALFORMED_ID': 'UNTRIAGED — reported',
-}
+const KNOWN_LEAKS: Readonly<Record<string, string>> = {}
 
 const SRC = fileURLToPath(new URL('../../src/', import.meta.url))
 
