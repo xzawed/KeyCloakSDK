@@ -6,6 +6,7 @@ namespace Xzawed\Keycloak\Tests\Unit;
 
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
@@ -29,9 +30,10 @@ use Xzawed\Keycloak\OidcEndpoints;
  * `FacadeDumpTest` 는 정상 응답과 전송 실패만 뿌리로 세운다. 여기서는 토큰·introspect·logout 엔드포인트가
  * 적대적 응답을 줄 때 공개 auth 호출 전부를 돌려, 그 오류를 **`(string)$e`**(원인 사슬 전부의 메시지·트레이스)·
  * **`var_dump`**·**`print_r`**·**`getMessage()`** 로 찍고 카나리아(원문 또는 앞 10 자)를 찾는다.
- * Node #603 의 `auth-malformed-token-response.test.ts` 와 같은 부류다. 수정 전 실측(2026-09-26): 원문 적중 231 ·
- * 앞 10 자만 적중 0 · 원인 사슬의 하위 예외 원본 66(그중 16 은 던져진 것 자체가 `\TypeError`). 원인과 수정은
- * `SanitizedCause` 의 docblock 이 소유한다.
+ * Node #603 의 `auth-malformed-token-response.test.ts` 와 같은 부류다. 수정 전 실측(2026-09-26, 처음 27 변형):
+ * 원문 적중 231 · 앞 10 자만 적중 0 · 원인 사슬의 하위 예외 원본 66(그중 16 은 던져진 것 자체가 `\TypeError`).
+ * e3·w2·x·x2·x3 과 핸들러 메시지의 카나리아는 Grok 레그가 찾은 자리다. 원인과 수정은 `SanitizedCause` 의
+ * docblock 이 소유한다.
  *
  * ⚠️ 하네스 상태는 전부 **정적**이다 — 예외 트레이스 인자에 러너·클로저 프레임이 실리고 `var_dump` 가 그것을
  * 따라간다(FacadeDumpTest 의 실측). 그래서 카나리아는 인자로도, 클로저 캡처로도 넘기지 않는다.
@@ -48,6 +50,8 @@ final class MalformedTokenResponseTest extends TestCase
     private const IN_CODE = 'LKin2CODE-input-authorization-code';
     private const IN_VERIFIER = 'LKin3VERIFIER-input-pkce-code-verifier';
     private const IN_TOKEN = 'LKin4TOKEN-input-introspected-token';
+    // 핸들러(소비자 미들웨어 자리)가 던지는 예외의 메시지 — SDK 는 그 메시지가 무엇을 인용하는지 모른다.
+    private const HANDLER_ECHO = 'LKh1HANDLER-message-echo';
 
     /**
      * 알려진 누출 — `"변형|호출|찍는 길|카나리아"` 와 이유. ⚠️ 고쳐져 더 안 새면 **여기서 지워야 통과한다**.
@@ -84,6 +88,7 @@ final class MalformedTokenResponseTest extends TestCase
         'd4 500 non-JSON body text/html' => ['clientCredentialsToken' => 'transport', 'refresh' => 'transport', 'exchangeCode' => 'transport', 'exchangeCode+nonce' => 'transport', 'provider.getToken' => 'auth'],
         'e 400 error_description echo' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'e2 401 error body carrying tokens' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
+        'e3 error code carries a token' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'f short non-JSON body' => ['introspect' => 'auth'],
         'f2 long non-JSON body' => ['introspect' => 'auth'],
         'f3 401 error_description echo' => ['introspect' => 'auth'],
@@ -91,12 +96,37 @@ final class MalformedTokenResponseTest extends TestCase
         'f5 200 JSON wrong types' => ['introspect' => 'ok'],
         'g 400 error_description echo' => ['logout' => 'auth'],
         't token endpoint unreachable' => ['clientCredentialsToken' => 'transport', 'refresh' => 'transport', 'exchangeCode' => 'transport', 'exchangeCode+nonce' => 'transport', 'provider.getToken' => 'transport'],
-        't2 token handler RuntimeException' => ['clientCredentialsToken' => 'transport', 'refresh' => 'transport', 'exchangeCode' => 'transport', 'exchangeCode+nonce' => 'transport'],
+        't2 token handler RuntimeException' => ['clientCredentialsToken' => 'transport', 'refresh' => 'transport', 'exchangeCode' => 'transport', 'exchangeCode+nonce' => 'transport', 'provider.getToken' => 'transport'],
         'u introspect unreachable' => ['introspect' => 'transport'],
         'u2 introspect handler RuntimeException' => ['introspect' => 'transport'],
         'v logout unreachable' => ['logout' => 'transport'],
         'v2 logout handler RuntimeException' => ['logout' => 'transport'],
         'w JWKS unreachable' => ['exchangeCode+nonce' => 'transport'],
+        'w2 JWKS handler RuntimeException' => ['exchangeCode+nonce' => 'transport'],
+        'x token TLS failure' => ['clientCredentialsToken' => 'transport', 'refresh' => 'transport', 'exchangeCode' => 'transport', 'exchangeCode+nonce' => 'transport', 'provider.getToken' => 'transport'],
+        'x2 introspect TLS failure' => ['introspect' => 'auth'],
+        'x3 logout TLS failure' => ['logout' => 'auth'],
+    ];
+
+    /**
+     * 정화가 **디버깅 정보까지 지우지 않는가** — `"변형|호출"` => [SDK 메시지, oauthError, 원인 메시지]. 감사한 하위
+     * 라이브러리가 만든 메시지·OAuth 오류 코드(`[a-z_]` 모양)·HTTP 상태는 남고, 그 밖은 원본 클래스명만 남는다.
+     *
+     * @var array<string, array{0:string,1:?string,2:?string}>
+     */
+    private const DEBUG_INFO = [
+        'd short non-JSON body|clientCredentialsToken' => ['token endpoint returned unexpected response', null,
+            'UnexpectedValueException: Failed to parse JSON response: Syntax error'],
+        'e 400 error_description echo|clientCredentialsToken' => ['token request rejected: invalid_grant', 'invalid_grant',
+            'League\OAuth2\Client\Provider\Exception\IdentityProviderException: OAuth error response: invalid_grant (description withheld)'],
+        'e 400 error_description echo|provider.getToken' => ['client-credentials failed', 'invalid_grant', null],
+        'e3 error code carries a token|clientCredentialsToken' => ['token request rejected', null,
+            'League\OAuth2\Client\Provider\Exception\IdentityProviderException: OAuth error response (body withheld)'],
+        'e3 error code carries a token|provider.getToken' => ['client-credentials failed', null, null],
+        'f3 401 error_description echo|introspect' => ['introspection failed', null,
+            'GuzzleHttp\Exception\ClientException: HTTP 401 from POST https://kc.test/realms/r/protocol/openid-connect/token/introspect (response body withheld)'],
+        'u2 introspect handler RuntimeException|introspect' => ['introspection failed unexpectedly', null,
+            'RuntimeException: (message withheld: thrown outside the audited libraries)'],
     ];
 
     /**
@@ -121,6 +151,8 @@ final class MalformedTokenResponseTest extends TestCase
     private static array $knownSeen = [];
     /** @var list<string> */
     private static array $foreign = [];
+    /** @var array<string, array{0:string,1:?string,2:?string}> */
+    private static array $debug = [];
 
     protected function setUp(): void
     {
@@ -129,6 +161,7 @@ final class MalformedTokenResponseTest extends TestCase
         self::$leaks = [];
         self::$knownSeen = [];
         self::$foreign = [];
+        self::$debug = [];
     }
 
     protected function tearDown(): void
@@ -237,6 +270,10 @@ final class MalformedTokenResponseTest extends TestCase
                 'e2.DESC' => ['LKe2DESC-echoed-client-secret', true], 'e2.AT' => ['LKe2AT-access-token-in-error', true],
                 'e2.RT' => ['LKe2RT-refresh-token-in-error', true],
             ]],
+            // `error` 자리 자체가 토큰을 되울린다 — OAuth 오류 코드 모양(`[a-z_]`)이 아니면 코드로 싣지 않는다(Grok 레그).
+            'e3 error code carries a token' => ['ep' => 'token', 'status' => 400, 'type' => $json, 'body' => $enc([
+                'error' => 'LKe3ERR-Token-In-Error-Code', 'error_description' => 'x',
+            ]), 'canaries' => ['e3.ERR' => ['LKe3ERR-Token-In-Error-Code', true]]],
             // (f) introspect 의 같은 모양.
             'f short non-JSON body' => ['ep' => 'introspect', 'status' => 200, 'type' => $json, 'body' => 'LKf1SHORTbody',
                 'canaries' => ['f.SHORT' => ['LKf1SHORTbody', true]]],
@@ -255,15 +292,20 @@ final class MalformedTokenResponseTest extends TestCase
                 'error' => 'invalid_grant', 'error_description' => 'LKg1ECHO-echoed-refresh-token',
             ]), 'canaries' => ['g.ECHO' => ['LKg1ECHO-echoed-refresh-token', true]]],
             // 전송 실패 — 응답은 없지만 하위 예외의 **트레이스 인자**가 호출 입력(refresh·code·Basic·시크릿)을 쥔다.
-            // 감싸는 자리마다 하나씩: connect = ConnectException 갈래, runtime = Guzzle 밖 예외(`\Throwable` 갈래).
+            // 감싸는 자리마다 하나씩: connect = ConnectException 갈래, runtime = Guzzle 밖 예외(`\Throwable` 갈래),
+            // tls = 응답 없는 RequestException(연결 아닌 GuzzleException · PSR-18 비-네트워크 갈래). 핸들러 예외의
+            // 메시지는 HANDLER_ECHO 를 싣는다 — 감사한 라이브러리 밖에서 난 메시지는 옮기지 않아야 한다.
             't token endpoint unreachable' => ['ep' => 'token', 'fail' => 'connect'] + $none,
-            't2 token handler RuntimeException' => ['ep' => 'token', 'fail' => 'runtime',
-                'calls' => ['clientCredentialsToken', 'refresh', 'exchangeCode', 'exchangeCode+nonce']] + $none,
+            't2 token handler RuntimeException' => ['ep' => 'token', 'fail' => 'runtime'] + $none,
             'u introspect unreachable' => ['ep' => 'introspect', 'fail' => 'connect'] + $none,
             'u2 introspect handler RuntimeException' => ['ep' => 'introspect', 'fail' => 'runtime'] + $none,
             'v logout unreachable' => ['ep' => 'logout', 'fail' => 'connect'] + $none,
             'v2 logout handler RuntimeException' => ['ep' => 'logout', 'fail' => 'runtime'] + $none,
             'w JWKS unreachable' => ['ep' => 'certs', 'fail' => 'connect'] + $none,
+            'w2 JWKS handler RuntimeException' => ['ep' => 'certs', 'fail' => 'runtime'] + $none,
+            'x token TLS failure' => ['ep' => 'token', 'fail' => 'tls'] + $none,
+            'x2 introspect TLS failure' => ['ep' => 'introspect', 'fail' => 'tls'] + $none,
+            'x3 logout TLS failure' => ['ep' => 'logout', 'fail' => 'tls'] + $none,
         ];
     }
 
@@ -281,8 +323,9 @@ final class MalformedTokenResponseTest extends TestCase
             };
             if ($ep === self::$reply['ep']) {
                 return match (self::$reply['fail']) {
-                    'connect' => Create::rejectionFor(new ConnectException('connection refused', $req)),
-                    'runtime' => Create::rejectionFor(new \RuntimeException('handler failed')),
+                    'connect' => Create::rejectionFor(new ConnectException('connection refused ' . self::HANDLER_ECHO, $req)),
+                    'runtime' => Create::rejectionFor(new \RuntimeException('handler failed ' . self::HANDLER_ECHO)),
+                    'tls' => Create::rejectionFor(new RequestException('TLS handshake failed ' . self::HANDLER_ECHO, $req)),
                     default => Create::promiseFor(new Response(self::$reply['status'], ['Content-Type' => self::$reply['type']], self::$reply['body'])),
                 };
             }
@@ -437,6 +480,13 @@ final class MalformedTokenResponseTest extends TestCase
         self::$outcomes[$name][$callName] = self::outcome($e);
         if ($e !== null) {
             self::inspect("$name|$callName", $e);
+            if (array_key_exists("$name|$callName", self::DEBUG_INFO)) {
+                self::$debug["$name|$callName"] = [
+                    $e->getMessage(),
+                    $e instanceof KeycloakAuthError ? $e->oauthError : null,
+                    $e->getPrevious()?->getMessage(),
+                ];
+            }
         }
     }
 
@@ -449,6 +499,7 @@ final class MalformedTokenResponseTest extends TestCase
             'SECRET' => [self::SECRET, true], 'IN_REFRESH' => [self::IN_REFRESH, true], 'IN_CODE' => [self::IN_CODE, true],
             'IN_VERIFIER' => [self::IN_VERIFIER, true], 'IN_TOKEN' => [self::IN_TOKEN, true],
             'BASIC' => [base64_encode(rawurlencode('c') . ':' . rawurlencode(self::SECRET)), true],
+            'HANDLER' => [self::HANDLER_ECHO, true],
         ];
         foreach ($variants as $v) {
             self::$canaries += $v['canaries'];
@@ -475,5 +526,6 @@ final class MalformedTokenResponseTest extends TestCase
             array_keys(array_diff_key(self::knownLeaks(), self::$knownSeen)),
             '알려진 누출이 더 안 난다 — 고쳐졌으면 KNOWN_LEAKS 에서 지워라',
         );
+        self::assertSame(self::DEBUG_INFO, self::$debug, '정화가 디버깅 정보(라이브러리 메시지·OAuth 코드·HTTP 상태)까지 지웠다');
     }
 }

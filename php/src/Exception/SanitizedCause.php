@@ -6,6 +6,7 @@ namespace Xzawed\Keycloak\Exception;
 
 use GuzzleHttp\Exception\RequestException;
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
+use Xzawed\Keycloak\Internal\OAuthErrorCode;
 
 /**
  * SDK 예외의 `getPrevious()` 자리에 하위 라이브러리 예외 **원본 대신** 달리는 정화된 사본이다(§4 — 하위
@@ -17,18 +18,33 @@ use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
  * 호출 옵션(refresh_token·code·Basic 헤더)·원문 JWT 를 쥔다 — `(string)$e`·`var_dump`·`print_r` 가 그 사슬을
  * 따라간다. `#[\SensitiveParameter]` 는 제3자 프레임에 닿지 않으므로 사본으로 바꾸는 것만이 경계에서 막는 길이다.
  *
- * 사본이 남기는 것: 원본 클래스명(`originalClass`)·코드·파일·줄·**인자를 뺀** 트레이스·같은 규칙으로 정화된 원인
- * 사슬. 메시지는 원본을 옮기되 응답을 인용하는 둘만 바꾼다 — HTTP 오류는 상태·메서드·URL(쿼리·사용자정보 제외),
- * OAuth 오류 응답은 `error` 코드만.
+ * 사본이 남기는 것: 원본 클래스명(`originalClass`, 메시지 머리에도)·코드·파일·줄·**인자를 뺀** 트레이스·같은 규칙으로
+ * 정화된 원인 사슬. 메시지는 셋으로 가른다 — HTTP 오류 응답은 상태·메서드·URL(쿼리·사용자정보 제외)만, OAuth 오류
+ * 응답은 `error` 코드(`OAuthErrorCode` 모양일 때)만, 그 밖은 **감사한 하위 라이브러리 안에서 만든 메시지만** 옮긴다
+ * (그 라이브러리들의 메시지는 입력을 인용하지 않는다). 소비자 핸들러·미들웨어처럼 그 밖에서 난 예외의 메시지는
+ * 무엇을 인용할지 모르므로 옮기지 않는다(Grok 레그 실측: 핸들러 예외가 인용한 시크릿이 사슬로 찍혔다).
  */
 final class SanitizedCause extends \RuntimeException
 {
     private const MAX_DEPTH = 8;
 
+    /** 메시지를 믿는 하위 라이브러리 — 클래스 => 그 파일에서 소스 뿌리(`src`)까지 올라갈 단계. */
+    private const AUDITED = [
+        \GuzzleHttp\Client::class => 1,
+        \GuzzleHttp\Psr7\Message::class => 1,
+        \GuzzleHttp\Promise\Promise::class => 1,
+        \League\OAuth2\Client\Provider\AbstractProvider::class => 2,
+        \Stevenmaguire\OAuth2\Client\Provider\Keycloak::class => 2,
+        \Firebase\JWT\JWT::class => 1,
+    ];
+
+    /** @var list<string>|null */
+    private static ?array $auditedRoots = null;
+
     /** @param class-string $originalClass */
     private function __construct(public readonly string $originalClass, string $message, int $code, ?\Throwable $previous)
     {
-        parent::__construct($message, $code, $previous);
+        parent::__construct($originalClass . ': ' . $message, $code, $previous);
     }
 
     /**
@@ -69,7 +85,7 @@ final class SanitizedCause extends \RuntimeException
     {
         if ($e instanceof IdentityProviderException) {
             $body = $e->getResponseBody();
-            $error = \is_array($body) && isset($body['error']) && \is_string($body['error']) ? $body['error'] : null;
+            $error = OAuthErrorCode::of(\is_array($body) ? ($body['error'] ?? null) : null);
 
             return $error === null ? 'OAuth error response (body withheld)' : "OAuth error response: $error (description withheld)";
         }
@@ -83,6 +99,26 @@ final class SanitizedCause extends \RuntimeException
             }
         }
 
-        return $e->getMessage();
+        return self::fromAuditedLibrary($e) ? $e->getMessage() : '(message withheld: thrown outside the audited libraries)';
+    }
+
+    private static function fromAuditedLibrary(\Throwable $e): bool
+    {
+        if (self::$auditedRoots === null) {
+            self::$auditedRoots = [];
+            foreach (self::AUDITED as $class => $up) {
+                $file = (new \ReflectionClass($class))->getFileName();
+                if ($file !== false) {
+                    self::$auditedRoots[] = \dirname($file, $up) . \DIRECTORY_SEPARATOR;
+                }
+            }
+        }
+        foreach (self::$auditedRoots as $root) {
+            if (str_starts_with($e->getFile(), $root)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -7,7 +7,7 @@
 ## [Unreleased]
 
 ### Security
-- **(PHP)** 형식이 틀리거나 적대적인 IdP 응답에서 난 오류가 토큰과 응답 본문을 찍었습니다 — 오류 응답의 `error_description` 이 SDK 메시지에 그대로 실렸고, 원인(`getPrevious()`)으로 단 하위 예외 원본이 응답 본문·토큰 응답·호출 입력(refresh token·code·Basic 헤더)·원문 JWT 를 메시지와 트레이스 인자(`zend.exception_ignore_args=Off`)로 쥐어 `(string)$e`·`var_dump`·`print_r` 가 찍었으며, 문자열이 아닌 `access_token`·`refresh_token` 과 소수 `expires_in` 은 토큰 응답을 쥔 `\TypeError` 로 공개 API 를 빠져나갔습니다. 이제 원인은 원본 클래스명·코드·위치·인자 없는 트레이스만 남긴 `SanitizedCause` 이고, 토큰 거부 메시지는 OAuth `error` 코드만 싣고, 쓸 수 없는 `access_token` 은 `KeycloakAuthError` 입니다. **게시본 `1.1.0` 에 들어 있습니다.** (#TBD)
+- **(PHP)** 형식이 틀리거나 적대적인 IdP 응답에서 난 오류가 토큰과 응답 본문을 찍었습니다 — 오류 응답의 `error_description`·`error` 가 SDK 메시지와 `oauthError` 에 그대로 실렸고, 원인(`getPrevious()`)으로 단 하위 예외 원본이 응답 본문·토큰 응답·호출 입력(refresh token·code·Basic 헤더)·원문 JWT 를 메시지와 트레이스 인자(`zend.exception_ignore_args=Off`)로 쥐어 `(string)$e`·`var_dump`·`print_r` 가 찍었으며, 문자열이 아닌 `access_token`·`refresh_token` 과 소수 `expires_in` 은 토큰 응답을 쥔 `\TypeError` 로 공개 API 를 빠져나갔습니다. 이제 원인은 원본 클래스명·코드·위치·인자 없는 트레이스만 남긴 `SanitizedCause` 이고(메시지는 감사한 하위 라이브러리가 만든 것만 옮깁니다), 토큰 거부 메시지와 `oauthError` 는 OAuth 오류 코드 모양(`[a-z_]`)일 때만 그 코드를 싣고, 쓸 수 없는 `access_token` 은 `KeycloakAuthError`, 토큰 provider·JWKS 조회의 PSR-18 밖 예외는 `KeycloakTransportError` 입니다. **게시본 `1.1.0` 에 들어 있습니다.** (#TBD)
 
 ## [1.1.0] - 2026-09-26 (Go · PHP · Rust)
 
