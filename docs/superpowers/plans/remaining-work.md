@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `219`(2026-09-27 기준 열림 122 · 닫힘 97)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `220`(2026-09-27 기준 열림 122 · 닫힘 98)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,7 +116,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-09-27 · #560–#652 반영)
+### 다음 세션 진입점 (2026-09-27 · #560–#653 반영)
 
 **지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. **2026-09-26 릴리스 물결 둘**: 첫째(#604–#616)로 아홉 전부 게시, 둘째(#626–#634)로 원인 사슬 수정(#617–#624)을 게시 — go·php `1.2.0` · ruby `1.1.0` · rust `1.1.1` · python·dotnet `1.0.2` LIVE·기준선 상향(#634). java·kotlin `1.0.3` 도 사람이 Portal 에서 Publish 해 LIVE 이고, 게시 바이트는 major ≤ 61 이며, JVM 기준선도 올렸다(#638). **2026-09-27 node `1.0.2`**(#649–#651): 코드 교환 통합 이식이 찾은 id_token 서명 미검증을 고친 security patch 로, LIVE 이고 기준선도 올렸다. 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
 
@@ -124,12 +124,10 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 1. **`guard-detection-surface-hand-narrowed` [H/M]** — 마스킹 축의 「새 자리」는 아홉 언어 전부 파생으로 닫혔다(#592–#602). 남은 것은 **새 교환 경로**(nonce·백오프·토큰타입)와 줄 단위 skip 표지. Go 파일럿(분류 · 손 목록 포함 · 계급별 변형)은 섰다 — 다음은 여덟 언어로 옮기기(항목의 ⏳ 줄).
 2. `integration-coverage-never-measured` [H/L] — 첫 걸음(코드 교환 통합 9/9)은 닫혔다. 다음은 둘째 걸음 — omit 사본 조인 가드(`coverage-omit-no-ssot`, 드리프트 셋이 이미 재져 있다).
-   - 이 이식이 새로 연 것 가운데 사람 판정이 둘이다: `id-token-audience-follows-access-audience` · `nonce-failure-leaves-session-alive`.
+   - 이 이식이 연 판정 둘은 2026-09-27 결정됐다 — `id-token-audience-follows-access-audience` 는 (a) 로 아홉 언어 구현, `nonce-failure-leaves-session-alive` 는 (b) 기각. 그 실측이 `python-traceback-locals-carry-tokens` 를 새로 찾았다.
 3. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다. 반대 방향도 있다 — #585 는 「verifier 하나」로 등록됐지만 부류는 호출 인자 다섯 갈래였다.
 
-**사람 판정 대기** — 둘(2026-09-27 코드 교환 이식이 열었다).
-- `id-token-audience-follows-access-audience`: id_token 을 clientId 로 따로 검증할지(아홉 언어 동작 변경), 문서로만 적을지.
-- `nonce-failure-leaves-session-alive`: 검증 실패 시 logout 을 계약으로 올릴지.
+**사람 판정 대기** — 없음. 2026-09-27 사용자 판정(권장안으로): id_token audience 는 (a) clientId 로 따로 검증 · 검증 실패 교환의 revoke 는 (b) 기각. 근거와 되살릴 조건은 각 항목이 소유한다.
 
 그 전의 판정 — 2026-09-25 사용자 판정: 출처 미상 stash 둘(JDK 17→25)과 빈 `snap*` 워크트리 셋은 **폐기**했다(실측·검증되지 않은 산출물은 확인 후 폐기) · `irreversible-publish-no-reentry` 는 **보류 유지**(근거는 그 항목).
 
@@ -624,7 +622,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 81건 (열림 56)
+## D. 원장 밖 — 82건 (열림 56)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -646,15 +644,33 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `release-yml-unpaid-measurement` **[M/S]** release.yml 헤더의 「미납 실측」 블록이 전제(태그 미푸시)가 무너진 뒤에도 그대로 남아 있다 · `.github/workflows/release.yml:16`
 - [ ] `install-verify-not-implemented-wording` **[L/S]** install-verify.sh의 유일한 TODO — not_implemented가 원인을 「언어 태스크 대기 중」으로 오귀속한다 · `harness/install/install-verify.sh:100`
 
-### 로드맵·기능 갭 — 10
+### 로드맵·기능 갭 — 11
 
 - [ ] `id-token-audience-follows-access-audience` **[M/S · 신규 2026-09-27 · 아홉 언어]** `expectedAudience` 를 clientId 가 아닌 값(리소스 서버)으로 재정의하면, nonce 를 넘긴 코드 교환이 id_token `aud` 불일치로 **실패한다**.
   - 원인: 아홉 언어 전부 id_token 을 액세스 토큰과 같은 검증기로 검증한다. OIDC id_token 의 `aud` 는 client id 다.
   - java·kotlin·ruby·dotnet·rust·node 는 코드 주석으로만 적었고, 소비자 문서에는 0 곳이다(`grep` 확인).
-  - 고치는 길은 둘이고 사람 판정이다: (a) id_token 은 clientId 로 따로 검증한다(아홉 언어 동작 변경), (b) 소비자 문서에 적는다.
+  - 고치는 길은 둘이었다: (a) id_token 은 clientId 로 따로 검증한다(아홉 언어 동작 변경), (b) 소비자 문서에 적는다.
   - 실측: go 통합 테스트가 `ExpectedAudience` 를 재정의하면 실서버 교환이 거부됨을 고정한다(`TestE2ECodeExchange/RefusesAnIDTokenForAnotherAudience` — 거부가 기대값인 테스트라, (a) 를 고르면 이 테스트도 바뀐다).
+  - ✅ **판정 (a)(2026-09-27, 사용자가 권장안으로 결정).** 근거는 셋이다.
+    - OIDC Core §2·§3.1.3.7: id_token `aud` 는 client_id 를 **MUST** 담는다.
+    - RFC 9700 §2.3·§4.10.2: `expectedAudience` 재정의는 **액세스 토큰**의 리소스 서버 제한이다.
+    - Grok 독립 판정도 (a) 다. 같은 사실만 주고 내 결론은 주지 않았다.
+  - **실서버 실측(Keycloak 26.6).** id_token `aud` 는 access-only audience 매퍼에서도 client_id 다. 「Add to ID token」 매퍼를 켜면 `[client_id, extra]` 가 된다. client_id 가 빠지는 것은 `aud` 를 덮어쓰는 하드코딩 클레임 매퍼뿐이다.
+    - `expectedAudience="extra-api"` 에서 access 검증은 OK 인데, 교환은 `invalid id_token`(`Audience not contained`)이었다.
+  - **수용 기준.** 전부 아홉 언어에서 같은 결과여야 한다.
+    - 재정의해도 id_token `aud`=client_id 인 교환이 통과한다.
+    - `aud` 에 client_id 가 없는 id_token 은 거부한다(재정의 값만 있어도 거부).
+    - access 검증은 재정의를 계속 쓴다.
+    - JWKS 캐시·재조회 제한은 하나로 공유한다 — 교환 뒤 access 검증에서 JWKS 조회가 늘지 않는다.
+    - `azp` 는 다루지 않는다. SHOULD 이고 errata 로 바뀌었을 수 있어, 원문을 확인하기 전에는 계약으로 올리지 않는다.
 - [ ] `node-auth-error-no-oauth-code` **[L/S · 신규 2026-09-27]** node `KeycloakAuthError` 에만 OAuth `error` 코드가 없다. python 은 `.error`, go 는 `OAuthError`, rust 는 `oauth_error` 로 공개한다. `scrubCause` 가 name·message·code 만 남겨, `invalid_grant` 를 공개 API 로 가를 수 없다. 코드 교환 이식 테스트는 그래서 `OAUTH_RESPONSE_BODY_ERROR` 까지만 단언한다 · `node/src/errors.ts`
-- [ ] `nonce-failure-leaves-session-alive` **[L/S · 신규 2026-09-27 · 사람 판정]** nonce·id_token 검증에 실패한 교환에서 SDK 는 받은 토큰을 버리기만 하고 revoke 하지 않는다. 그래서 서버 세션과 refresh token 이 살아 남는다. 아홉 언어 공통 설계다. go 레그가 Grok 주장을 코드로 참이라 판정했다(검증 실패 경로에 revoke 호출이 없다) — 실서버에서 세션이 남는지는 아직 재지 않았다. 되살릴 조건은 「검증 실패 시 logout 호출」을 계약으로 올릴지의 판정이다.
+- [x] `nonce-failure-leaves-session-alive` **[L/S · 신규·닫힘 2026-09-27 · 판정 (b) 기각]** 검증에 실패한 교환의 토큰을 revoke 하지 않는다 — 버리고 원래 오류를 던지는 지금 동작이 계약이다(사용자가 권장안으로 결정). 실서버 실측: 거부된 교환은 로그인 때 생긴 세션을 끝내지 않는다(idle 1800s · max 36000s). revoke 는 SDK 가 버린 refresh token 이 있어야만 가능하다. 근거: OIDC Core 는 revoke 를 요구하지 않고, RFC 7009 §2.2 는 무효 토큰에도 200 이며, 주입된 코드면 남의 grant 에 손댄다(Grok 독립 판정도 (b)). **되살릴 조건**: 검증 통과 뒤의 실패에 한정한 제품 요구 + 잔존 수명 실측 + Keycloak `/revoke` 범위 실측. ⚠️ 이 실측이 `python-traceback-locals-carry-tokens` 를 찾았다.
+- [ ] `python-traceback-locals-carry-tokens` **[M/S · 신규 2026-09-27]** python 에서 거부된 교환의 토큰이 **예외 traceback 의 프레임 로컬**에 남는다.
+  - 실측: `err.__traceback__.tb_next.tb_frame.f_locals['response']['refresh_token']` · `['token_set'].refresh_token` 가 raw refresh token 이다. `TracebackException(capture_locals=True)` 가 그것을 찍는다. invalid-id_token 경로도 같다. `str`·`repr`·`format_exception` 에는 없다.
+  - 왜 중요한가: Sentry Python 은 기본값으로 프레임 로컬을 모은다 — 거부된(공격 시도일 수 있는) 교환의 refresh token 이 오류 수집기로 나간다.
+  - 원인 사슬 스크럽(#617–#624)은 `__cause__` 만 보았고 로컬은 부류 밖이었다.
+  - 할 일: 오류를 던지기 전에 비밀 로컬을 지우고 안쪽 프레임을 떼어 낸다. 교환·refresh·client_credentials·introspect 의 오류 경로 전부에서 `capture_locals=True` 렌더링(사슬 포함)에 토큰이 없음을 단언한다. sync·aio 둘 다.
+  - 다른 언어는 예외가 로컬을 들고 다니지 않는다. php 의 호출 인자는 `php-exception-trace-third-party-args` 가 이미 소유한다.
 
 - [ ] `admin-relations-role-mapping-group-membership` **[H/L]** 역할 부여·그룹 가입이 9개 언어 어디에도 없다 — CRUD만 있고 리소스 간 연결이 없다 · `docs/reference/admin-capability.md:18`
 - [ ] `admin-client-roles-and-user-subresources` **[H/L]** roles 파사드는 realm role 전용 — client role·client secret·user credential/session이 0/9 · `node/src/admin/roles.ts:5`
