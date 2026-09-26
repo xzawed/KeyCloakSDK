@@ -669,6 +669,16 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - **왜 문제인가.** 이름 있는 nonce 검증기와 id_token 서명 검증이 실서버 토큰으로 검증된 적이 없다. 「경계는 통합으로 검증」 주장의 **중심**이 비어 있다. `refresh`·`logout` 도 7/9 에서 통합 미실행이다.
   - **처방.** 브라우저 없는 로그인으로 푼다 — authz URL GET → 로그인 폼 POST → 리다이렉트의 `code` 를 따르지 않고 받는다. 한 언어로 파일럿을 한 뒤 여덟 언어로 옮긴다.
   - **다시 재는 명령.** `grep -rliE 'exchange_?code|ExchangeCode|createAuthorizationRequest' <각 언어 통합 디렉터리>` → 0.
+  - ✅ **python 파일럿(2026-09-27, sync·aio).** 모양은 `python/tests/integration/browser_login.py`(80 줄) — 다른 언어는 이것을 옮긴다.
+    - **도는 것.** 정상 교환 → nonce·`sub` → refresh → introspect active → logout → refresh `invalid_grant` · introspect inactive.
+    - **거부하는 것.** nonce 불일치 · nonce 없는 id_token · 재사용 코드. 재사용 코드는 `str`·`repr`·예외 사슬·DEBUG 로그·stdout 에 비밀이 없어야 한다. JWKS 밖 키(HS256 클라이언트)도 거부한다.
+    - **통합만의 커버리지.** `auth.py` 60.0 → 91.5%, `aio/auth.py` 63.2 → 91.2%.
+    - **변이.** 전부 새 테스트가 잡았다: nonce 비교 삭제(sync·aio) · 서명 검증 생략 · 헬퍼 state 비교 오류 · logout 무동작(PM).
+  - ⚠️ **옮길 때의 함정(파일럿 실측).**
+    - **Secure 쿠키.** Keycloak 26 은 http 에서도 로그인 쿠키에 `Secure` 를 단다. RFC 6265 대로 사는 쿠키 저장소는 그 쿠키를 안 보내 POST 가 400 이다 → 쿠키를 직접 되싣는다.
+    - **audience 매퍼.** `aud` 없는 접근 토큰은 introspect 가 `active: false` 다 → 웹 클라이언트에 audience 매퍼를 단다.
+    - **위조 RS256.** 실서버는 만들 수 없는 토큰이다 → 언어마다 **단위** 테스트가 따로 필요하다.
+    - **렐름 사본 아홉.** 일곱이 같은 해시이고 java·kotlin 이 다르다. 이 사본들을 대조하는 가드는 없다. 파일럿은 python 사본에만 `it-web`·`it-web-hs256` 을 더했으니, 이식 때 전부에 더한다(`git hash-object` 로 확인).
 - [ ] `integration-coverage-never-measured` **[H/L]** 9개 언어가 "경계는 통합으로 검증"이라 적고 omit했지만, 통합 실행에서 커버리지를 재는 언어가 0개다 · `.github/workflows/ci.yml:49`
   - ✅ **전제 실측(2026-09-27, 9/9, Docker).** 통합 실행에서 커버리지를 **리포트**하는 언어는 0 이다.
     - java 는 failsafe 가 `jacoco.exec` 에 적기는 하지만, 그 데이터를 읽는 리포트가 없다. IT 가 다른 모듈에서 돌고, 경계 클래스는 exclude 돼 있다.
