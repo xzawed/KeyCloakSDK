@@ -110,6 +110,23 @@ func TestClientCredentialsToken(t *testing.T) {
 	}
 }
 
+// ccAccessTokenCases is the access_token table the test below pins. It is package-level because
+// hostile_path_matrix_test.go attaches every non-string row to every token-grant and code-exchange
+// path it derives (Admin and the admin resources included), so the two cannot drift apart.
+var ccAccessTokenCases = []struct {
+	name        string
+	raw         string
+	accessToken string
+}{
+	{name: "number", raw: "12345"},
+	{name: "object", raw: `{"a":1}`},
+	{name: "array", raw: "[]"},
+	{name: "boolean", raw: "true"},
+	{name: "null", raw: "null"},
+	{name: "empty string", raw: `""`},
+	{name: "string", raw: `"AT"`, accessToken: "AT"},
+}
+
 // TestClientCredentialsRejectsNonStringAccessToken pins the client-credentials
 // lane: token-endpoint access_token must be a non-empty JSON string. The
 // "string" subtest is the positive control (raw value "AT").
@@ -120,20 +137,7 @@ func TestClientCredentialsToken(t *testing.T) {
 // unusable token out as success — .NET's Duende did exactly that. Measured on
 // 2026-09-25: all six are *AuthError, so that is what this pins.
 func TestClientCredentialsRejectsNonStringAccessToken(t *testing.T) {
-	tests := []struct {
-		name        string
-		raw         string
-		accessToken string
-	}{
-		{name: "number", raw: "12345"},
-		{name: "object", raw: `{"a":1}`},
-		{name: "array", raw: "[]"},
-		{name: "boolean", raw: "true"},
-		{name: "null", raw: "null"},
-		{name: "empty string", raw: `""`},
-		{name: "string", raw: `"AT"`, accessToken: "AT"},
-	}
-	for _, tt := range tests {
+	for _, tt := range ccAccessTokenCases {
 		t.Run(tt.name, func(t *testing.T) {
 			body := `{"access_token":` + tt.raw + `,"token_type":"Bearer","expires_in":300}`
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
