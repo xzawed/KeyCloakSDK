@@ -56,7 +56,8 @@ func newAdminTransport(cfg Config) (*gocloak.GoCloak, *http.Transport) {
 	// ReadTimeout = overall deadline; ConnectTimeout = dial/TLS-handshake deadline
 	// (injected via the transport — previously a silent no-op for admin calls).
 	tr := cfg.transport()
-	gc.RestyClient().SetTimeout(time.Duration(cfg.ReadTimeout) * time.Millisecond).SetTransport(tr)
+	// The pooled transport stays in AdminClient.tr for Close; requests go through the wire scrub (cause.go).
+	gc.RestyClient().SetTimeout(time.Duration(cfg.ReadTimeout) * time.Millisecond).SetTransport(wireScrubTransport{tr})
 	// SSRF hardening for the admin lane. resty owns its own *http.Client, so Config.httpClient()'s
 	// CheckRedirect never reached admin requests — including LoginClient, which carries the client
 	// secret. ⚠️ This lane uses the **erroring** mode (see config.go): gocloak's error test is
@@ -116,7 +117,8 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 	tp := NewClientCredentialsTokenProvider(func(ctx context.Context) (*TokenSet, error) {
 		jwt, err := gc.LoginClient(ctx, cfg.ClientID, cfg.ClientSecret, cfg.Realm)
 		if err != nil {
-			return nil, toSDKError(err)
+			// Not toSDKError: gocloak flattened the token response's error body into the message (cause.go).
+			return nil, loginError(err)
 		}
 		// gocloak reports a non-2xx it can still unmarshal as success — a 3xx surfaced by
 		// noFollowRedirect, or any body without an access_token, yields a zero-value JWT and a
