@@ -35,6 +35,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.ref.Reference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
@@ -70,6 +71,7 @@ import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
@@ -97,6 +99,9 @@ import org.keycloak.representations.idm.UserRepresentation;
  * <p>⚠️ 한계: 카나리아는 뿌리를 만드는 호출이 흘려 넣은 비밀뿐이다. 제3자 객체는 렌더링하지 않는다(§4(b) —
  * {@code raw()} 가 돌려주는 admin-client 는 탈출구다). Jackson/Gson 직렬화는 바닥이 아니다({@code SECURITY.md}).
  * Java admin 에는 소비자가 토큰 소스를 주입하는 경로가 없다({@code .claude/rules/java.md}) — 그 뿌리는 없다.
+ * JDK 객체는 공개 API(컬렉션·Map·Optional·Atomic*·Reference·Map.Entry·원인 사슬)로만 건넌다 — {@code ThreadLocal}·
+ * {@code CompletableFuture}·JDK 가 만든 람다 속에만 든 SDK 객체와 정적 필드는 걷지 않는다(독립 레그 지목). 그런
+ * 자리에만 사는 **새 타입**은 대조에서 「닿지 않음」으로 걸리고, 이미 닿는 타입의 다른 인스턴스만 거기 살 때가 빈틈이다.
  */
 class FacadeDumpTest {
   private static final String SECRET = "CANARY-DUMP-CLIENT-SECRET";
@@ -106,6 +111,8 @@ class FacadeDumpTest {
   private static final String PASSWORD = "CANARY-DUMP-ADMIN-PASSWORD";
   private static final String CLIENT_ID = "c";
   private static final String OC = "/realms/r/protocol/openid-connect";
+  /** SDK 루트 패키지 = 파사드의 패키지(손으로 적지 않는다). */
+  private static final String SDK_PACKAGE = KeycloakClient.class.getPackageName() + ".";
 
   /** 걷기에 안 닿아도 되는 상태 있는 타입과 그 이유. ⚠️ 이유 없는 면제는 넣지 않는다. */
   private static final Map<String, String> EXEMPT = Map.of();
@@ -379,7 +386,7 @@ class FacadeDumpTest {
 
   /** SDK 루트 패키지(파사드의 패키지)를 담은 클래스패스 루트 전부 — 이 테스트의 산출물만 뺀다. */
   private static Set<Path> sdkLocations(Path harness) throws Exception {
-    String dir = KeycloakClient.class.getPackageName().replace('.', '/');
+    String dir = SDK_PACKAGE.substring(0, SDK_PACKAGE.length() - 1).replace('.', '/');
     Set<Path> out = new TreeSet<>();
     Enumeration<URL> urls = FacadeDumpTest.class.getClassLoader().getResources(dir);
     while (urls.hasMoreElements()) {
@@ -506,6 +513,10 @@ class FacadeDumpTest {
         problems.add(path + ": 하네스 객체(" + c.getName() + ")가 SDK 뿌리에서 닿았다 — 오염을 걷어라, 면제하지 말고");
         return;
       }
+      // 소유 판정의 독립 대조 — SDK 패키지 이름인데 SDK 위치가 아니면(복사·셰이딩·코드 소스 없음) 렌더링이 빠진다.
+      if (c.getName().startsWith(SDK_PACKAGE) && !own(c)) {
+        problems.add(path + ": SDK 패키지의 " + c.getName() + " 이 SDK 산출물 밖(" + loc(c) + ")에서 왔다 — 소유 판정이 샌다");
+      }
       if (own(c)) {
         // 상위 SDK 타입은 **같은 렌더링 구현을 쓸 때만** 닿은 것으로 센다 — 그때 그 타입의 상태 전부와 그 구현이
         // 이 인스턴스로 렌더링된다. 하위가 toString 을 덮으면 상위 자신의 렌더링은 한 번도 안 돈 것이다.
@@ -534,6 +545,14 @@ class FacadeDumpTest {
           push(((Optional<?>) v).orElse(null), root, path + ".get()");
         } else if (v instanceof AtomicReference) {
           push(((AtomicReference<?>) v).get(), root, path + ".get()");
+        } else if (v instanceof AtomicReferenceArray) {
+          AtomicReferenceArray<?> a = (AtomicReferenceArray<?>) v;
+          for (int i = 0; i < a.length(); i++) push(a.get(i), root, path + "[" + i + "]");
+        } else if (v instanceof Map.Entry) {
+          push(((Map.Entry<?, ?>) v).getKey(), root, path + ".key");
+          push(((Map.Entry<?, ?>) v).getValue(), root, path + ".value");
+        } else if (v instanceof Reference) {
+          push(((Reference<?>) v).get(), root, path + ".get()");
         }
       } catch (RuntimeException e) {
         if (own(c)) problems.add(path + ": SDK 컨테이너를 못 훑었다 — " + e);
@@ -546,7 +565,10 @@ class FacadeDumpTest {
         for (Field f : k.getDeclaredFields()) {
           if (Modifier.isStatic(f.getModifiers()) || f.getType().isPrimitive()) continue;
           if (!f.trySetAccessible()) {
-            if (ownK) problems.add(path + "." + f.getName() + ": SDK 필드를 못 읽는다 — 걷기가 이 자리를 못 잰다");
+            // 이름 없는 모듈(SDK·클래스패스 jar)의 필드는 늘 읽혀야 한다 — 못 읽으면 조용히 건너뛰지 않는다.
+            if (ownK || !k.getModule().isNamed()) {
+              problems.add(path + "." + f.getName() + ": 필드를 못 읽는다(" + k.getName() + ") — 걷기가 이 자리를 못 잰다");
+            }
             continue;
           }
           try {
