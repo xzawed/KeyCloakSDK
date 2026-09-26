@@ -173,14 +173,37 @@ describe('exchangeCode', () => {
     expect(checks).toEqual({ pkceCodeVerifier: 'verifier' })
   })
 
-  it('nonce를 넘기면 expectedNonce로 전달한다(openid-client가 id_token nonce를 검증하도록)', async () => {
+  it('nonce를 넘기면 expectedNonce로 전달하고 id_token을 SDK 검증기에 태운다', async () => {
+    vi.mocked(oidc.authorizationCodeGrant).mockResolvedValue({
+      access_token: 'AT2',
+      expires_in: 60,
+      id_token: 'the-id-token',
+    } as never)
+    const validate = vi.fn().mockResolvedValue({})
+    await new AuthClient(cfg, { validate } as unknown as JwtValidator).exchangeCode(
+      'c',
+      'https://app/cb',
+      'verifier',
+      'the-nonce',
+    )
+    const [, , checks] = vi.mocked(oidc.authorizationCodeGrant).mock.calls.at(-1)!
+    expect(checks).toEqual({ pkceCodeVerifier: 'verifier', expectedNonce: 'the-nonce' })
+    // openid-client 는 토큰 엔드포인트 id_token 의 서명을 안 본다 — 서명·alg 핀은 SDK 검증기의 몫이다.
+    expect(validate).toHaveBeenCalledWith('the-id-token')
+  })
+
+  it('nonce 없이 교환하면 id_token 을 검증하지 않는다(다른 언어와 같은 계약)', async () => {
     vi.mocked(oidc.authorizationCodeGrant).mockResolvedValue({
       access_token: 'AT2',
       expires_in: 60,
     } as never)
-    await new AuthClient(cfg).exchangeCode('c', 'https://app/cb', 'verifier', 'the-nonce')
-    const [, , checks] = vi.mocked(oidc.authorizationCodeGrant).mock.calls.at(-1)!
-    expect(checks).toEqual({ pkceCodeVerifier: 'verifier', expectedNonce: 'the-nonce' })
+    const validate = vi.fn()
+    await new AuthClient(cfg, { validate } as unknown as JwtValidator).exchangeCode(
+      'c',
+      'https://app/cb',
+      'verifier',
+    )
+    expect(validate).not.toHaveBeenCalled()
   })
 
   it('실패를 KeycloakAuthError로 변환한다', async () => {
