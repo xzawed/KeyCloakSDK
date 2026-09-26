@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from ._internal.secrets import mask
@@ -36,8 +37,16 @@ class KeycloakConfig:
         if not self.signature_algorithms:
             # 빈 집합은 joserfc가 권장 기본(HS256 포함)으로 폴백해 알고리즘 혼동 방어를 무력화한다.
             raise KeycloakConfigError("signature_algorithms must be non-empty")
-        if self.jwks_min_refetch_seconds < 0:
+        # read_timeout이 0 이하·NaN·±inf면 인증 경로는 max(1, round(...))로 1초로 조용히
+        # 클램프하고, 어드민 경로는 python-keycloak에 그대로 넘겨 모든 호출이 즉시 실패한다.
+        # 음수·비유한 clock_skew도 같다. jwks 간격은 `< 0`만으로는 NaN·+inf가 통과한다.
+        # 쓸 수 없는 클라이언트가 에러 없이 생기지 않게 생성 시 거부한다(Ruby·.NET·JVM과 동일).
+        if self.jwks_min_refetch_seconds < 0 or not math.isfinite(self.jwks_min_refetch_seconds):
             raise KeycloakConfigError("jwks_min_refetch_seconds must be >= 0")
+        if not math.isfinite(self.read_timeout) or self.read_timeout <= 0:
+            raise KeycloakConfigError("read_timeout must be > 0")
+        if not math.isfinite(self.clock_skew) or self.clock_skew < 0:
+            raise KeycloakConfigError("clock_skew must be >= 0")
 
     def __repr__(self) -> str:
         return (

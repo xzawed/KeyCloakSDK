@@ -144,6 +144,53 @@ describe('defineConfig', () => {
     expect(message).not.toContain(serverUrl)
   })
 
+  // 0 이하·NaN·Infinity·2^31 이상의 타임아웃은 생성 시 KeycloakConfigError — 전에는 조용히 받아 쓸 수 없는
+  // 클라이언트가 됐다(실측 2026-09-26: -1 은 logout 이 항상 실패, 0 은 즉시 abort, 2^31 이상은 Node 타이머가
+  // 1ms 로 바꿔 즉시 abort). ruby·dotnet·JVM 과 같다.
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648])(
+    'connectTimeoutMs·readTimeoutMs 가 %s 이면 KeycloakConfigError',
+    (value) => {
+      for (const key of ['connectTimeoutMs', 'readTimeoutMs'] as const) {
+        expect(() =>
+          defineConfig({ serverUrl: 'https://kc', realm: 'r', clientId: 'c', [key]: value }),
+        ).toThrow(new KeycloakConfigError(`${key} must be > 0 and <= 2147483647`))
+      }
+    },
+  )
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])(
+    'clockSkewSeconds·jwksMinRefetchSeconds 가 %s 이면 KeycloakConfigError',
+    (value) => {
+      for (const key of ['clockSkewSeconds', 'jwksMinRefetchSeconds'] as const) {
+        expect(() =>
+          defineConfig({ serverUrl: 'https://kc', realm: 'r', clientId: 'c', [key]: value }),
+        ).toThrow(new KeycloakConfigError(`${key} must be >= 0`))
+      }
+    },
+  )
+
+  // 대조군 — 경계값은 받는다.
+  it('타임아웃 경계값(1 · 2147483647)과 0 인 skew·재조회 간격은 받는다', () => {
+    for (const value of [1, 2_147_483_647]) {
+      const c = defineConfig({
+        serverUrl: 'https://kc',
+        realm: 'r',
+        clientId: 'c',
+        connectTimeoutMs: value,
+        readTimeoutMs: value,
+      })
+      expect([c.connectTimeoutMs, c.readTimeoutMs]).toEqual([value, value])
+    }
+    const z = defineConfig({
+      serverUrl: 'https://kc',
+      realm: 'r',
+      clientId: 'c',
+      clockSkewSeconds: 0,
+      jwksMinRefetchSeconds: 0,
+    })
+    expect([z.clockSkewSeconds, z.jwksMinRefetchSeconds]).toEqual([0, 0])
+  })
+
   // 대조군 — 밑줄 호스트(docker compose 서비스 이름)와 경계 포트는 받아야 한다.
   it.each([
     'http://keycloak_server:8080',
