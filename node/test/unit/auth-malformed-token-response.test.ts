@@ -8,7 +8,7 @@ import { KeycloakAuthError, KeycloakClient } from '../../src/index.js'
 // 원문 id_token 을 `cause` 에 싣는다. 실측(2026-09-26, 수정 전): id_token 이 JWT 가 아니면 `console.log(err)`
 // 기본 깊이에서 원문 id_token 이, access_token·expires_in·token_type 이 틀리면 깊은 직렬화에서 살아 있는
 // access/refresh 토큰이 찍혔다. 정화는 `KeycloakError` 생성자 한 곳이다(`errors.test.ts`).
-const VARIANTS: Record<string, Record<string, unknown>> = {
+const VARIANTS: Record<string, Record<string, unknown> | string> = {
   'id_token 이 JWT 가 아니다': {
     access_token: 'AT',
     token_type: 'Bearer',
@@ -29,12 +29,14 @@ const VARIANTS: Record<string, Record<string, unknown>> = {
     refresh_token: 'LEAK-RT-3',
   },
   'token_type 이 문자열이 아니다': { access_token: 'LEAK-AT-4', token_type: 5, refresh_token: 'LEAK-RT-4' },
+  // 본문이 JSON 이 아니다 — JSON.parse 의 SyntaxError 가 본문을 인용한다(짧으면 전부, 길면 앞 10 자).
+  '본문이 JSON 이 아니다': 'LEAK-BODY-5',
 }
 
 describe('형식이 틀린 토큰 응답의 오류', () => {
   let server: Server
   let origin = ''
-  let body: Record<string, unknown> = {}
+  let body: Record<string, unknown> | string = {}
 
   beforeAll(async () => {
     server = createServer((req, res) => {
@@ -52,7 +54,7 @@ describe('형식이 틀린 토큰 응답의 오류', () => {
             }),
           )
         } else if (path.endsWith('/token')) {
-          res.end(JSON.stringify(body))
+          res.end(typeof body === 'string' ? body : JSON.stringify(body))
         } else {
           res.statusCode = 404
           res.end('{}')
@@ -78,7 +80,8 @@ describe('형식이 틀린 토큰 응답의 오류', () => {
     )
     // 대조군 — 정말 실패했는가. 성공했다면 아래 단언은 없는 것을 찾으며 통과한다.
     expect(err).toBeInstanceOf(KeycloakAuthError)
-    const leaks = Object.values(variant).filter((v): v is string => typeof v === 'string' && v.startsWith('LEAK'))
+    const values = typeof variant === 'string' ? [variant] : Object.values(variant)
+    const leaks = values.filter((v): v is string => typeof v === 'string' && v.startsWith('LEAK'))
     expect(leaks.length).toBeGreaterThan(0)
     for (const out of [inspect(err), inspect(err, { depth: Infinity })]) {
       for (const leak of leaks) expect(out).not.toContain(leak)

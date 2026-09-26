@@ -78,3 +78,22 @@ describe('KeycloakError cause 정화', () => {
     expect(inspect(new KeycloakAuthError('x', { cause: 'RAW' }))).not.toContain('RAW')
   })
 })
+
+// ⚠️ `SyntaxError` 는 **입력을 인용한다** — `JSON.parse` 가 `Unexpected token 'C', "CANARY-RT" is not valid JSON`
+// 처럼 본문을(짧으면 전부, 길면 앞 10 자) 메시지와 스택 첫 줄에 싣는다. 토큰 엔드포인트가 200 에 JSON 아닌 본문을
+// 주면 그대로 찍혔다(Grok 적대 레그, 재현 2026-09-26). 메시지를 고정 문구로 바꾸고 스택은 옮기지 않는다.
+describe('KeycloakError cause 정화 — 입력을 인용하는 SyntaxError', () => {
+  it('메시지와 스택 어디에도 인용된 입력이 남지 않는다', () => {
+    let parseError: unknown
+    try {
+      JSON.parse('RAW-BODY-TOKEN')
+    } catch (e) {
+      parseError = e
+    }
+    expect(inspect(parseError)).toContain('RAW-BODY') // 대조군 — 원본은 정말 인용한다
+    const e = new KeycloakAuthError('x', { cause: new Error('parse failed', { cause: parseError }) })
+    for (const out of [inspect(e), inspect(e, { depth: Infinity })]) expect(out).not.toContain('RAW-BODY')
+    const inner = (e.cause as Error).cause as Error
+    expect(inner.name).toBe('SyntaxError')
+  })
+})

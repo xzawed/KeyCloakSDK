@@ -21,9 +21,13 @@ export class KeycloakError extends Error {
 function scrubCause(cause: unknown, depth = 0): Error | undefined {
   if (!(cause instanceof Error) || depth > 8) return undefined
   const inner = scrubCause((cause as { cause?: unknown }).cause, depth + 1)
-  const copy = new Error(cause.message, inner === undefined ? undefined : { cause: inner })
+  // ⚠️ `SyntaxError` 는 입력을 인용한다 — `JSON.parse` 가 본문을(짧으면 전부, 길면 앞 10 자) 메시지와 스택 첫 줄에
+  // 싣는다. 토큰 엔드포인트가 200 에 JSON 아닌 본문을 주면 그대로 찍혔다(재현 2026-09-26). 둘 다 옮기지 않는다.
+  const quotesInput = cause instanceof SyntaxError
+  const message = quotesInput ? 'invalid JSON (input withheld)' : cause.message
+  const copy = new Error(message, inner === undefined ? undefined : { cause: inner })
   copy.name = cause.name
-  if (cause.stack !== undefined) copy.stack = cause.stack
+  if (!quotesInput && cause.stack !== undefined) copy.stack = cause.stack
   const code = (cause as { code?: unknown }).code
   if (typeof code === 'string') Object.assign(copy, { code })
   return copy
