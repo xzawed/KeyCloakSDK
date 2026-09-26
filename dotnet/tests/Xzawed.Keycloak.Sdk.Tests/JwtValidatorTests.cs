@@ -65,6 +65,30 @@ public class JwtValidatorTests
             () => v.ValidateAsync(Sign(PayloadJson("\"other-client\""), Key)));
     }
 
+    // IdentityModel wraps a JSON parse error under its own PII-hidden message today (MalformedTokenResponseTests a3/a4), so
+    // the validator's own message never quotes input. This pins that it stays so if the failure it is handed is the raw
+    // quoting exception itself — the seam is a validation delegate, which IdentityModel returns as result.Exception.
+    [Fact]
+    public async Task Validation_failure_that_quotes_input_is_not_copied_into_the_sdk_message()
+    {
+        const string canary = "LK-JWT-QUOTE-canary";
+        var tvp = JwtValidator.BuildParameters(Issuer, new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        tvp.IssuerSigningKey = Key;
+        tvp.ConfigurationManager = null;
+        System.Text.Json.JsonException? quoting = null;
+        try { System.Text.Json.JsonDocument.Parse($"t{canary}"); }
+        catch (System.Text.Json.JsonException e) { quoting = e; }
+        Assert.Contains(canary, quoting!.Message); // 대조군 — 진짜 파서 예외는 입력을 인용한다
+        tvp.IssuerValidator = (_, _, _) => throw quoting;
+
+        var ex = await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+            () => new JwtValidator(tvp).ValidateAsync(Sign(PayloadJson("\"it-client\""), Key)));
+
+        Assert.IsAssignableFrom<System.Text.Json.JsonException>(ex.InnerException); // 대조군 — 그 예외가 정말 넘어왔다
+        Assert.DoesNotContain(canary, ex.Message);
+        Assert.DoesNotContain(canary, ex.ToString());
+    }
+
     // Wiring: KeycloakClient.Create feeds the validator through ValidatorOptionsFor, so both branches of
     // ExpectedAudience are exercised on the options the facade actually builds — not on a hand-made copy.
     private static KeycloakConfig ConfigWith(string? expectedAudience) => new()

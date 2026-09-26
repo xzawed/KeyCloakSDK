@@ -3,6 +3,10 @@
 리소스 파사드(4.2~4.4)는 `KeycloakAdmin`을 호출할 때 항상 `call(...)`로 감싼다 —
 `keycloak.exceptions.*`(python-keycloak) 타입이 공개 API에 노출되지 않도록 여기서
 `KeycloakAdminError` 계층(및 하위 `KeycloakTransportError`)으로 변환한다.
+
+⚠️ **원본 예외를 원인으로 달지 않는다** — python-keycloak 은 거기에 응답 본문을 싣고(admin 의
+토큰 그랜트가 받은 토큰·되돌린 `client_secret` 까지), 형식이 틀린 응답에는 본문을 인용한
+`TypeError` 를 던진다. 규칙과 실측은 `_internal/lower.py`.
 """
 
 from __future__ import annotations
@@ -12,6 +16,7 @@ from typing import TypeVar
 
 from keycloak.exceptions import KeycloakError
 
+from .._internal.lower import is_lower_failure, summarize
 from ..exceptions import (
     KeycloakAdminError,
     KeycloakConflictError,
@@ -49,12 +54,30 @@ def translate(exc: KeycloakError) -> KeycloakAdminError | KeycloakTransportError
     return KeycloakAdminError(status, body_str)
 
 
-def call(fn: Callable[[], T]) -> T:
-    """`fn`을 실행하고 `KeycloakError`를 SDK 예외로 변환해 재발생시킨다.
+def admin_failure(exc: BaseException) -> KeycloakAdminError | KeycloakTransportError:
+    """`is_lower_failure` 인 실패의 분류.
 
-    `KeycloakError`가 아닌 예외는 그대로 전파한다(변환 대상이 아님).
+    `KeycloakError` 는 `translate` 그대로다. 그 밖의 python-keycloak 실패(응답 모양이 틀려 그
+    안에서 난 `TypeError`·`KeyError` — admin 토큰 그랜트의 응답이 쓸 수 없을 때도 여기다)는
+    HTTP 상태가 없으므로 이 경계의 규칙대로 전송 쪽이다. 예전에는 raw 로 새어 본문을 인용했다.
+    """
+    if isinstance(exc, KeycloakError):
+        return translate(exc)
+    return KeycloakTransportError(
+        f"Keycloak admin API returned an unusable response ({type(exc).__name__})"
+    )
+
+
+def call(fn: Callable[[], T]) -> T:
+    """`fn`을 실행하고 python-keycloak 의 실패를 SDK 예외로 변환해 재발생시킨다.
+
+    python-keycloak 의 실패가 아닌 예외(우리 코드의 버그)는 그대로 전파한다(변환 대상이 아님).
+    원본은 `except` **밖에서** 다시 던져 `__context__` 로도 닿지 않게 한다.
     """
     try:
         return fn()
-    except KeycloakError as e:
-        raise translate(e) from e
+    except Exception as e:
+        if not is_lower_failure(e):
+            raise
+        error, cause = admin_failure(e), summarize(e)
+    raise error from cause

@@ -74,6 +74,28 @@ class AdminExceptionsTest {
     assertNotNull(e.getCause());
   }
 
+  @Test void responseProcessingException_causeIsWithheld_transportKeepsItsMessage() {
+    // admin-client 의 Jackson 은 역직렬화 실패에 응답 값을 인용하고 RESTEasy 가 그 메시지를 제 메시지에 복사한다 —
+    // 토큰 엔드포인트가 형식이 틀린 본문을 주면 printStackTrace 가 토큰을 찍었다(실측: MalformedIdpResponseTest).
+    String canary = "CANARY-ADMIN-TOKEN-BODY";
+    java.io.IOException parse = new java.io.IOException("Cannot deserialize from String \"" + canary + "\"");
+    jakarta.ws.rs.client.ResponseProcessingException rpe = new jakarta.ws.rs.client.ResponseProcessingException(
+        mock(Response.class), "jakarta.ws.rs.ProcessingException: " + parse.getMessage(), parse);
+    KeycloakTransportException e = assertThrows(KeycloakTransportException.class,
+        () -> AdminExceptions.call(() -> { throw new ProcessingException(rpe.toString(), rpe); }));
+    assertEquals("admin transport failure", e.getMessage()); // 분류·메시지는 그대로
+    java.io.StringWriter sw = new java.io.StringWriter();
+    e.printStackTrace(new java.io.PrintWriter(sw, true));
+    assertFalse(sw.toString().contains(canary), sw.toString());
+    assertTrue(sw.toString().contains("jakarta.ws.rs.client.ResponseProcessingException (message withheld"));
+
+    // 대조군 — 응답을 싣지 않는 전송 사슬은 그대로(같은 인스턴스·메시지) 남는다.
+    ProcessingException refused = new ProcessingException("connection refused");
+    KeycloakTransportException t = assertThrows(KeycloakTransportException.class,
+        () -> AdminExceptions.call(() -> { throw refused; }));
+    assertSame(refused, t.getCause());
+  }
+
   // --- safeBody branches ----------------------------------------------------
 
   @Test void safeBody_noEntity_fallsBackToMessage() {

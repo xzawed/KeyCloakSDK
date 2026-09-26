@@ -75,6 +75,10 @@ private const val DUMP_REFRESH = "CANARY-DUMP-REFRESH-TOKEN"
 private const val DUMP_GARBAGE = "CANARY-DUMP-GARBAGE-TOKEN"
 private const val DUMP_PASSWORD = "CANARY-DUMP-ADMIN-PASSWORD"
 
+// 200 인데 JSON 이 아닌 토큰 응답 본문 — 파서가 이 토큰을 예외 메시지로 인용한다(json-smart 는 통째로, Jackson 은
+// 식별자 문자까지). 대시 없이 둔 것은 두 파서가 **전부** 인용하게 해 걷기의 전체 일치 검사가 잡게 하려는 것이다.
+private const val DUMP_BODY = "CANARYDUMPMALFORMEDTOKENBODY"
+
 // 멈춤 규칙(ClassLoader·Thread 에서 멈추고 JDK 모듈은 공개 API 로만 들어간다)이 새면 그래프 전체를 헤맨다.
 private const val DUMP_MAX_VISITS = 1_000_000
 
@@ -195,6 +199,7 @@ private suspend fun dumpRoots(
         post(urlEqualTo("/realms/bad/protocol/openid-connect/token"))
             .willReturn(json(401, """{"error":"invalid_client","error_description":"Invalid client credentials"}""")),
     )
+    server.stubFor(post(urlEqualTo("/realms/malformed/protocol/openid-connect/token")).willReturn(json(200, DUMP_BODY)))
     server.stubFor(get(urlEqualTo("/admin/realms/r/users/missing")).willReturn(json(404, """{"error":"User not found"}""")))
     server.stubFor(post(urlEqualTo("/admin/realms/r/users")).willReturn(json(409, """{"errorMessage":"User exists"}""")))
     server.stubFor(get(urlEqualTo("/admin/realms/r/roles/forbidden")).willReturn(json(403, """{"error":"forbidden"}""")))
@@ -259,6 +264,12 @@ private suspend fun dumpRoots(
     val downAdmin = AdminClient(down).also { closing += it }
     val adminTransport = assertFailsWith<KeycloakTransportException> { downAdmin.users().get("missing") }
     val configError = assertFailsWith<KeycloakConfigException> { KeycloakConfig("", "r", "c", DUMP_SECRET.toCharArray()) }
+    // 형식이 틀린 토큰 응답 — auth 의 파서 오류와 admin 내장 TokenManager 의 응답 처리 오류(#603 부류).
+    val malformed = KeycloakConfig(server.baseUrl(), "malformed", "c", DUMP_SECRET.toCharArray())
+    val malformedAuth = assertFailsWith<KeycloakAuthException> { AuthClient(malformed).clientCredentialsToken() }
+    val malformedAdminClient = AdminClient(malformed).also { closing += it }
+    val malformedAdmin = assertFailsWith<KeycloakTransportException> { malformedAdminClient.users().get("missing") }
+    server.verify(2, postRequestedFor(urlEqualTo("/realms/malformed/protocol/openid-connect/token")))
 
     val roots =
         listOf(
@@ -280,6 +291,8 @@ private suspend fun dumpRoots(
             "auth transport error" to authTransport,
             "admin transport error" to adminTransport,
             "config error" to configError,
+            "malformed token response error" to malformedAuth,
+            "admin malformed token response error" to malformedAdmin,
             "admin 404" to notFound,
             "admin 409" to conflict,
             "admin 403" to forbidden,
@@ -293,6 +306,7 @@ private suspend fun dumpRoots(
             "ID" to idToken,
             "GARBAGE" to DUMP_GARBAGE,
             "PASSWORD" to DUMP_PASSWORD,
+            "BODY" to DUMP_BODY,
             "VERIFIER" to ar.codeVerifier,
             "JWT" to rawJwt,
             // introspect 의 Basic 헤더 값 — 시크릿의 인코딩된 형태도 비밀이다(위 verify 가 실제 값임을 보였다).

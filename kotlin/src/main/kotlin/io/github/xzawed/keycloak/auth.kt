@@ -32,6 +32,8 @@ import kotlinx.coroutines.CancellationException
 import java.io.IOException
 import java.net.URI
 import java.net.URISyntaxException
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.time.Instant
 
 // auth.kt — AuthClient: Java SDK의 io.github.xzawed.keycloak.auth.AuthClient와 동형인 흐름(client-credentials·
@@ -106,12 +108,13 @@ public class AuthClient internal constructor(
     /** `client_credentials` 그랜트로 서비스계정 토큰을 발급한다. `config.scopes`를 명시 전달한다(부록 §auth exactConfig). */
     public suspend fun clientCredentialsToken(): TokenSet {
         val issuedAt = Instant.now().epochSecond
-        val tr =
+        val req =
             TokenRequest
                 .Builder(URI(endpoints.token), clientAuth("the client_credentials grant"), ClientCredentialsGrant())
                 .scope(configuredScope())
                 .build()
-        return mapTokenResponse(authSend(tr.toHTTPRequest()), issuedAt, "Client credentials failed")
+                .toHTTPRequest()
+        return mapTokenResponse(authSend(req), issuedAt, "Client credentials failed", sentSecrets(req))
     }
 
     /**
@@ -144,11 +147,13 @@ public class AuthClient internal constructor(
             }
         // oidc=true: id_token을 실제로 담아 오는 유일한 그랜트라 OIDC 인지 파서로 파싱해야 id_token이 보존된다
         // (플레인 TokenResponse.parse는 Tokens만 만들고 OIDCTokens/id_token을 인지하지 못한다).
+        val req = builder.build().toHTTPRequest()
         val tokenSet =
             mapTokenResponse(
-                authSend(builder.build().toHTTPRequest(), oidc = true),
+                authSend(req, oidc = true),
                 issuedAt,
                 "Authorization code exchange failed",
+                sentSecrets(req, code, codeVerifier),
             )
         if (expectedNonce != null) {
             requireValidNonce(tokenSet.idToken, expectedNonce)
@@ -159,7 +164,8 @@ public class AuthClient internal constructor(
     /** `refresh_token` 그랜트로 액세스 토큰을 갱신한다. */
     public suspend fun refresh(refreshToken: String): TokenSet {
         val issuedAt = Instant.now().epochSecond
-        return mapTokenResponse(authSend(buildRefreshRequest(refreshToken)), issuedAt, "Token refresh failed")
+        val req = buildRefreshRequest(refreshToken)
+        return mapTokenResponse(authSend(req), issuedAt, "Token refresh failed", sentSecrets(req, refreshToken))
     }
 
     /** RFC 7662 토큰 introspection. 비활성 토큰은 active 외 클레임이 생략될 수 있다. */
@@ -169,20 +175,20 @@ public class AuthClient internal constructor(
                 URI(endpoints.introspection),
                 clientAuth("token introspection"),
                 requestValue("Introspection", "token") { TypelessAccessToken(token) },
-            )
+            ).toHTTPRequest()
         val resp =
             try {
-                onIo { TokenIntrospectionResponse.parse(applyTimeouts(req.toHTTPRequest()).send()) }
+                onIo { TokenIntrospectionResponse.parse(applyTimeouts(req).send()) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: IOException) {
                 throw KeycloakTransportException("Introspection request failed", e)
             } catch (e: ParseException) {
-                throw KeycloakAuthException("Malformed introspection response", c = e)
+                throw KeycloakAuthException("Malformed introspection response", c = RedactedCause.of(e))
             }
         if (!resp.indicatesSuccess()) {
             val err = resp.toErrorResponse().errorObject
-            throw KeycloakAuthException("Introspection failed: ${err.description}", err.code)
+            throw KeycloakAuthException("Introspection failed: ${maskSent(err.description, sentSecrets(req, token))}", err.code)
         }
         val success = resp.toSuccessResponse()
         return IntrospectionResult(success.isActive, success.username, success.clientID?.value)
@@ -254,6 +260,7 @@ public class AuthClient internal constructor(
     // 로직을 세 그랜트(client-credentials/refresh/exchangeCode)가 공유하도록 factoring). oidc=true일 때만
     // OIDCTokenResponseParser로 파싱해 id_token을 보존한다(exchangeCode 전용 — 나머지 그랜트는 id_token이
     // 없어도 플레인 파서로 충분하다).
+    // ⚠️ 파서 오류는 [RedactedCause] 로만 단다 — 원본(과 그 아래 json-smart 오류)은 응답 본문을 인용한다.
     private suspend fun authSend(
         req: HTTPRequest,
         oidc: Boolean = false,
@@ -268,20 +275,32 @@ public class AuthClient internal constructor(
         } catch (e: IOException) {
             throw KeycloakTransportException("Auth request failed", e)
         } catch (e: ParseException) {
-            throw KeycloakAuthException("Malformed auth response", c = e)
+            throw KeycloakAuthException("Malformed auth response", c = RedactedCause.of(e))
         }
 
     private fun mapTokenResponse(
         resp: TokenResponse,
         issuedAt: Long,
         failureMessage: String,
+        sent: List<String?>,
     ): TokenSet {
         if (!resp.indicatesSuccess()) {
             val err = resp.toErrorResponse().errorObject
-            throw KeycloakAuthException("$failureMessage: ${err.description}", err.code)
+            throw KeycloakAuthException("$failureMessage: ${maskSent(err.description, sent)}", err.code)
         }
         return toTokenSet(resp.toSuccessResponse().tokens, issuedAt)
     }
+
+    // SDK 가 이 요청에 실어 보낸 비밀 — 클라이언트 시크릿, 그것을 담은 Basic 자격, 호출자의 grant 값. 오류 응답의
+    // error_description 이 이것을 되울리면 [maskSent] 가 가린다(사유 문구 자체는 남는다). ⚠️ grant 값은 본문에
+    // 폼 인코딩된 꼴(Nimbus `URLUtils` = `URLEncoder`)로 실린다 — 받은 본문을 되울리는 IdP 앞에서는 `+`·`/`·`=`·`~`
+    // 가 든 값이 그 꼴로 돌아오므로 둘 다 가린다(독립 레그 Grok 의 지적, `AuthMalformedResponseTest` e7·e8·f10).
+    private fun sentSecrets(
+        req: HTTPRequest,
+        vararg inputs: String,
+    ): List<String?> =
+        listOf(config.clientSecret?.let { String(it) }, req.authorization?.substringAfter(' ', "")) +
+            inputs + inputs.map { URLEncoder.encode(it, StandardCharsets.UTF_8) }
 
     // Nimbus Tokens → SDK 소유 TokenSet 매핑(Java toTokenSet 동형). tokens가 OIDCTokens(=id_token 포함
     // 가능)이면 id_token도 실어 나른다 — Java는 id_token을 아예 캡처하지 않지만, TokenSet.idToken 필드가

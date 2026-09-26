@@ -1,9 +1,11 @@
 namespace Xzawed.Keycloak;
 
-/// <summary>Base for every error raised by this SDK. Lower-library exceptions are converted at the boundary.</summary>
+/// <summary>Base for every error raised by this SDK. Lower-library exceptions are converted at the boundary; an inner
+/// exception chain that quotes response input is attached as a copy without that input.</summary>
 public class KeycloakException : Exception
 {
-    public KeycloakException(string message, Exception? innerException = null) : base(message, innerException) { }
+    // One choke point for every wrap site (auth · jwt · admin) — see ErrorCause.
+    public KeycloakException(string message, Exception? innerException = null) : base(message, ErrorCause.Scrub(innerException)) { }
 }
 
 /// <summary>Configuration validation failure (missing/blank required value, missing clientSecret for admin).</summary>
