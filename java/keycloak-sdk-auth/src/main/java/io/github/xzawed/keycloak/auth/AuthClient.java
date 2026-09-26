@@ -128,12 +128,12 @@ public class AuthClient {
       long issuedAt = Instant.now().getEpochSecond();
       // OIDC 인지 파서로 파싱해야 id_token이 보존된다(플레인 TokenResponse.parse는 Tokens만
       // 만들고 OIDCTokens/id_token을 인지하지 못한다).
-      TokenResponse resp = OIDCTokenResponseParser.parse(
-          applyTimeouts(buildExchangeCodeRequest(code, redirectUri, codeVerifier)).send());
+      HTTPRequest req = applyTimeouts(buildExchangeCodeRequest(code, redirectUri, codeVerifier));
+      TokenResponse resp = OIDCTokenResponseParser.parse(req.send());
       if (!resp.indicatesSuccess()) {
         var err = resp.toErrorResponse().getErrorObject();
-        throw new KeycloakAuthException("Authorization code exchange failed: " + err.getDescription(),
-            err.getCode(), null);
+        throw new KeycloakAuthException("Authorization code exchange failed: "
+            + describe(err.getDescription(), req, config.getClientSecret()), err.getCode(), null);
       }
       tokenSet = toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
     } catch (java.io.IOException e) {
@@ -197,11 +197,12 @@ public class AuthClient {
           .scope(configuredScope())
           .build();
       long issuedAt = Instant.now().getEpochSecond();
-      TokenResponse resp = TokenResponse.parse(applyTimeouts(tr.toHTTPRequest()).send());
+      HTTPRequest req = applyTimeouts(tr.toHTTPRequest());
+      TokenResponse resp = TokenResponse.parse(req.send());
       if (!resp.indicatesSuccess()) {
         var err = resp.toErrorResponse().getErrorObject();
-        throw new KeycloakAuthException("Client credentials failed: " + err.getDescription(),
-            err.getCode(), null);
+        throw new KeycloakAuthException("Client credentials failed: "
+            + describe(err.getDescription(), req, config.getClientSecret()), err.getCode(), null);
       }
       return toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
     } catch (java.io.IOException e) {
@@ -217,11 +218,12 @@ public class AuthClient {
     }
     try {
       long issuedAt = Instant.now().getEpochSecond();
-      TokenResponse resp = TokenResponse.parse(applyTimeouts(buildRefreshRequest(refreshToken)).send());
+      HTTPRequest req = applyTimeouts(buildRefreshRequest(refreshToken));
+      TokenResponse resp = TokenResponse.parse(req.send());
       if (!resp.indicatesSuccess()) {
         var err = resp.toErrorResponse().getErrorObject();
-        throw new KeycloakAuthException("Token refresh failed: " + err.getDescription(),
-            err.getCode(), null);
+        throw new KeycloakAuthException("Token refresh failed: "
+            + describe(err.getDescription(), req, config.getClientSecret()), err.getCode(), null);
       }
       return toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
     } catch (java.io.IOException e) {
@@ -282,11 +284,12 @@ public class AuthClient {
   // RFC 7662 토큰 introspection: metadata.getIntrospectionEndpoint()에 client 인증 포함 POST (WBS 3.7).
   public IntrospectionResult introspect(String token) {
     try {
-      HTTPResponse resp = applyTimeouts(buildIntrospectionRequest(token)).send();
-      TokenIntrospectionResponse tir = TokenIntrospectionResponse.parse(resp);
+      HTTPRequest req = applyTimeouts(buildIntrospectionRequest(token));
+      TokenIntrospectionResponse tir = TokenIntrospectionResponse.parse(req.send());
       if (!tir.indicatesSuccess()) {
         var err = tir.toErrorResponse().getErrorObject();
-        throw new KeycloakAuthException("Introspection failed: " + err.getDescription(), err.getCode(), null);
+        throw new KeycloakAuthException("Introspection failed: "
+            + describe(err.getDescription(), req, config.getClientSecret()), err.getCode(), null);
       }
       return toIntrospectionResult(tir.toSuccessResponse());
     } catch (java.io.IOException e) {
@@ -333,6 +336,80 @@ public class AuthClient {
     } catch (IllegalArgumentException e) {
       throw new KeycloakAuthException(operation + " request error: invalid " + param, null, e);
     }
+  }
+
+  // ⚠️ error_description 은 IdP 가 쓴 산문이라 진단 가치가 커서 메시지에 싣는다 — 그런데 IdP 가 요청을 되울리면 이
+  // 요청이 보낸 비밀(Basic 자격·code·verifier·refresh/introspect 토큰)이 SDK 메시지에 원문으로 실렸다(실측 2026-09-26,
+  // MalformedIdpResponseTest e1·e2·e7). 가린다: (1) 보낸 비밀의 원문(디코딩·인코딩 형태 둘 다), (2) 보낸 비밀과
+  // 10 자 창 하나라도 겹치는 연속(잘린·이름표에 붙은 되울림 `token=<앞 12 자>`), (3) 토큰 모양의 20 자 이상 연속 —
+  // 숫자·대문자·`+=~` 중 하나를 품은 것(`code_challenge_method` 같은 산문 식별자와 소문자 URL 은 남는다).
+  // 연속은 안쪽 `.` 을 품는다 — 마디마다 20 자 미만인 JWT 도 통째로 잡히고, 앞뒤 `.`(말줄임표)는 떼고 잰다(Grok 레그
+  // h2·h3). ⚠️ 정규식은 **문자 클래스 하나의 반복**이어야 한다 — 그룹 반복 `(?:\.[..]+)*` 은 반복마다 재귀해 600 KB
+  // 설명에서 StackOverflowError 가 SDK 타입 대신 나갔다(실측 h8, Sonar S5998 이 먼저 짚었다).
+  // ⚠️ 보내지 않았고 토큰 모양도 아닌 값(20 자 미만, 또는 소문자뿐)은 낱말과 못 가른다 — 그 경계는
+  // MalformedIdpResponseTest 의 KNOWN_LEAKS(e6·h1·h4)가 고정한다.
+  private static final java.util.regex.Pattern RUN = java.util.regex.Pattern.compile("[A-Za-z0-9_~+/=.-]+");
+  private static final java.util.regex.Pattern TOKENISH = java.util.regex.Pattern.compile("[A-Z0-9+=~]");
+  private static final int WINDOW = 10;
+  private static final java.util.Set<String> SECRET_PARAMS = java.util.Set.of(
+      "code", "code_verifier", "refresh_token", "token", "client_secret", "client_assertion", "password");
+
+  static String describe(String description, HTTPRequest sent, char[] clientSecret) {
+    if (description == null) return null;
+    List<String> secrets = sentSecrets(sent, clientSecret);
+    String out = description;
+    for (String s : secrets) out = out.replace(s, "***");
+    java.util.regex.Matcher m = RUN.matcher(out);
+    StringBuilder masked = new StringBuilder();
+    while (m.find()) {
+      m.appendReplacement(masked, java.util.regex.Matcher.quoteReplacement(maskRun(m.group(), secrets)));
+    }
+    m.appendTail(masked);
+    return masked.toString();
+  }
+
+  /** 이 요청이 실어 보낸 비밀 — Authorization 값과 그 자격, 시크릿, 비밀 파라미터(디코딩·인코딩). 긴 것부터. */
+  private static List<String> sentSecrets(HTTPRequest sent, char[] clientSecret) {
+    List<String> secrets = new java.util.ArrayList<>();
+    String authorization = sent.getAuthorization();
+    if (authorization != null) {
+      secrets.add(authorization);
+      secrets.add(authorization.substring(authorization.indexOf(' ') + 1));
+    }
+    if (clientSecret != null) secrets.add(new String(clientSecret));
+    if (sent.getBody() != null) {
+      URLUtils.parseParameters(sent.getBody()).forEach((name, values) -> {
+        if (!SECRET_PARAMS.contains(name)) return;
+        for (String v : values) {
+          secrets.add(v);
+          secrets.add(java.net.URLEncoder.encode(v, java.nio.charset.StandardCharsets.UTF_8));
+        }
+      });
+    }
+    secrets.removeIf(s -> s == null || s.isEmpty());
+    secrets.sort(java.util.Comparator.comparingInt(String::length).reversed()); // "Basic x" 를 "x" 보다 먼저
+    return secrets;
+  }
+
+  /** 연속 하나 — 앞뒤 `.` 을 뗀 몸통이 토큰 모양이거나 보낸 비밀과 10 자 창을 나누면 몸통을 가린다. */
+  private static String maskRun(String run, List<String> secrets) {
+    int from = 0;
+    int to = run.length();
+    while (from < to && run.charAt(from) == '.') from++;
+    while (to > from && run.charAt(to - 1) == '.') to--;
+    String core = run.substring(from, to);
+    boolean mask = core.length() >= WINDOW
+        && ((core.length() >= 20 && TOKENISH.matcher(core).find()) || sharesWindow(core, secrets));
+    return mask ? run.substring(0, from) + "***" + run.substring(to) : run;
+  }
+
+  private static boolean sharesWindow(String run, List<String> secrets) {
+    for (String s : secrets) {
+      for (int i = 0; i + WINDOW <= s.length(); i++) {
+        if (run.contains(s.substring(i, i + WINDOW))) return true;
+      }
+    }
+    return false;
   }
 
   static IntrospectionResult toIntrospectionResult(TokenIntrospectionSuccessResponse s) {

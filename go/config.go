@@ -115,8 +115,9 @@ func (c Config) signatureAlgorithms() []jose.SignatureAlgorithm {
 // no-op. Used by auth, the JWKS validator, and (via transport) the admin client.
 func (c Config) httpClient() *http.Client {
 	return &http.Client{
-		Timeout:   time.Duration(c.ReadTimeout) * time.Millisecond,
-		Transport: c.transport(),
+		Timeout: time.Duration(c.ReadTimeout) * time.Millisecond,
+		// wireScrubTransport keeps what net/http quotes from the wire out of transport errors (cause.go).
+		Transport: wireScrubTransport{c.transport()},
 		// SSRF hardening: never follow redirects on back-channel requests. Go's default follows up
 		// to 10 hops, so an unexpected 3xx from a token/JWKS/admin endpoint would make the SDK fetch
 		// an attacker-chosen URL — possibly on the internal network — while carrying our headers.
