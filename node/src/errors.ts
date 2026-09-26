@@ -4,9 +4,29 @@
  */
 export class KeycloakError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options)
+    const cause = scrubCause(options?.cause)
+    super(message, cause === undefined ? undefined : { cause })
     this.name = new.target.name
   }
+}
+
+/**
+ * 하위 오류의 cause 사슬을 **이름·메시지·code·스택만** 남긴 사본으로 바꾼다. 오류가 아닌 cause 는 떨어진다.
+ *
+ * ⚠️ oauth4webapi 는 형식이 틀린 토큰 응답의 **본문 전체**(살아 있는 access/refresh 토큰)나 원문 id_token 을
+ * `cause` 에 싣는다 — 원본을 그대로 달면 `console.log(err)` 와 로거의 깊은 직렬화가 그 사슬을 따라가 토큰을
+ * 찍었다(실측 2026-09-26). 생성자 한 곳에서 하므로 모든 감싸기 자리를 덮고, 원본 하위 오류 객체도 공개 API 로
+ * 새지 않는다(§4). 전송 오류 분류는 감싸기 **전에** 원본으로 끝난다(`isTransportError`).
+ */
+function scrubCause(cause: unknown, depth = 0): Error | undefined {
+  if (!(cause instanceof Error) || depth > 8) return undefined
+  const inner = scrubCause((cause as { cause?: unknown }).cause, depth + 1)
+  const copy = new Error(cause.message, inner === undefined ? undefined : { cause: inner })
+  copy.name = cause.name
+  if (cause.stack !== undefined) copy.stack = cause.stack
+  const code = (cause as { code?: unknown }).code
+  if (typeof code === 'string') Object.assign(copy, { code })
+  return copy
 }
 
 /** 설정 검증 실패(필수값 누락 등). */
