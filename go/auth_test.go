@@ -209,7 +209,11 @@ func signIDToken(t *testing.T, key *rsa.PrivateKey, kid, iss, aud, nonce string)
 	}
 	std := jwt.Claims{Subject: "user1", Issuer: iss, Audience: jwt.Audience{aud},
 		Expiry: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)), IssuedAt: jwt.NewNumericDate(time.Now())}
-	s, err := jwt.Signed(sig).Claims(std).Claims(map[string]any{"nonce": nonce}).Serialize()
+	b := jwt.Signed(sig).Claims(std)
+	if nonce != "" { // "" means the token carries no nonce claim at all
+		b = b.Claims(map[string]any{"nonce": nonce})
+	}
+	s, err := b.Serialize()
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -227,11 +231,12 @@ func TestExchangeCodeNonceValidation(t *testing.T) {
 	base := "/realms/test/protocol/openid-connect"
 	var issuer string
 	includeIDToken := true
+	serverNonce := "server-nonce"
 	mux := http.NewServeMux()
 	mux.HandleFunc(base+"/token", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if includeIDToken {
-			idt := signIDToken(t, priv, "k1", issuer, "app", "server-nonce")
+			idt := signIDToken(t, priv, "k1", issuer, "app", serverNonce)
 			_, _ = w.Write([]byte(`{"access_token":"AT","token_type":"Bearer","expires_in":300,"id_token":"` + idt + `"}`))
 		} else {
 			_, _ = w.Write([]byte(`{"access_token":"AT","token_type":"Bearer","expires_in":300}`))
@@ -271,6 +276,15 @@ func TestExchangeCodeNonceValidation(t *testing.T) {
 	_, err = auth.ExchangeCode(ctx, "code", srv.URL+"/cb", "verifier", "server-nonce")
 	if !errors.As(err, &ae) {
 		t.Fatalf("missing id_token with expected nonce must yield *AuthError, got %v", err)
+	}
+
+	// A validly signed id_token with no nonce claim while a nonce is expected → rejected. Java pins
+	// the same (exchangeCode_rejectsIdTokenWithoutNonceClaim). Without this case, reading the claim
+	// as `n, ok := …; ok && n != expected` left the whole Go suite green (measured 2026-09-27).
+	includeIDToken, serverNonce = true, ""
+	_, err = auth.ExchangeCode(ctx, "code", srv.URL+"/cb", "verifier", "server-nonce")
+	if !errors.As(err, &ae) {
+		t.Fatalf("id_token without a nonce claim must yield *AuthError, got %v", err)
 	}
 }
 

@@ -53,8 +53,8 @@ import (
 //        ⚠️ 행마다 정상 응답 대조를 먼저 돈다 — admin 자원 메서드는 정상 응답에도 404 로 실패하므로 그 행에서
 //        「오류다」는 공허하고, 무게는 「토큰 뒤로 안 나아갔다」가 진다. 대조가 둘 다 못 가르면 행이 실패한다.
 //   (W3b) CODE_EXCHANGE 행 중 **서명에 nonce 파라미터가 있는** 것(go/parser 로 파생)마다 nonce 가 다른
-//        id_token · 다른 키로 서명한 id_token(같은 kid·다른 kid) · id_token 없음. 대조(맞는 id_token)는 성공해야
-//        하고, id_token 이 있는 변형은 검증기까지 가야 한다(콜드 캐시 JWKS 조회 ≥ 1). nonce 클레임 없음은 측정만.
+//        id_token · 다른 키로 서명한 id_token(같은 kid·다른 kid) · id_token 없음 · nonce 클레임 없음. 대조(맞는
+//        id_token)는 성공해야 하고, id_token 이 있는 변형은 검증기까지 가야 한다(콜드 캐시 JWKS 조회 ≥ 1).
 //        nonce 파라미터가 없어 빠지는 CODE_EXCHANGE 행은 hpNonceDropExempt 에 이유가 있어야 한다(조용히 빠지지 않게).
 //   (W3c) 분류 실행에서 JWKS 를 조회한 행마다 콜드 캐시 + /certs 503 에서 k 회 호출 — 전부 실패하고
 //        1 ≤ /certs 요청 ≤ k−1(하한은 콜드 경로에 닿았다는 증명, 상한은 백오프). 시간이 아니라 요청 수만 잰다.
@@ -1088,9 +1088,9 @@ func hpRunVariantsA(t *testing.T, key *rsa.PrivateKey, methods map[string]hpMeth
 	return cells
 }
 
-// W3b 의 변형 — 대조(맞는 id_token)와 넷, 측정 하나. 다른 키로 서명할 때 kid 가 k1 이면 캐시된 키로 서명 검증이
-// 실패하고, k2 면 키를 못 찾는다. 「id_token 없음」은 TestExchangeCodeNonceValidation 이 이미 단언한다.
-// 「nonce 클레임 없음」은 어느 Go 테스트도 단언하지 않아 측정만 한다(java 는 단언한다 — 계약을 여기서 만들지 않는다).
+// W3b 의 변형 — 대조(맞는 id_token)와 다섯. 다른 키로 서명할 때 kid 가 k1 이면 캐시된 키로 서명 검증이
+// 실패하고, k2 면 키를 못 찾는다. 「id_token 없음」과 「nonce 클레임 없음」은 TestExchangeCodeNonceValidation 이
+// 단언하는 계약이다(뒤의 것은 측정만 하다가 그 테스트가 생긴 뒤 올렸다 — java 와 같은 계약).
 var hpNonceVariants = []struct {
 	code, kid string
 	otherKey  bool
@@ -1103,7 +1103,7 @@ var hpNonceVariants = []struct {
 	{"key≠·kid=k1", "k1", true, nil, false, "reject"},
 	{"key≠·kid=k2", "k2", true, nil, false, "reject"},
 	{"id_token없음", "", false, nil, true, "reject"},
-	{"nonce클레임없음", "k1", false, map[string]any{}, false, "measure"},
+	{"nonce클레임없음", "k1", false, map[string]any{}, false, "reject"},
 }
 
 func hpRunNonceB(t *testing.T, key *rsa.PrivateKey, methods map[string]hpMethod, builderOf map[string]int,
