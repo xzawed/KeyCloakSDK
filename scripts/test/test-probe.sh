@@ -149,6 +149,29 @@ printf 'hello\nworld\n' > "$SANDBOX/f2.txt"
 assert_eq "2" "$(code_site "world" "sed -i s/hello/bye/ f2.txt" grep -q hello f2.txt)" \
   "문맥 줄에만 있는 패턴은 「쳤다」가 아니다 — 추가/삭제 줄만 본다"
 
+# ⚠️ **새 파일만 만드는 변이도 판정까지 가야 한다.** 실측 2026-09-26: 변이가 추적 파일을 안 건드리면
+# `git diff` 가 비고, 자리 검사의 `grep` 파이프가 1 을 내 `set -e` 가 러너를 **아무것도 안 찍고
+# 종료코드 1** 로 죽였다 — 1 은 SILENT(진짜 구멍)의 코드다. 그래서 코드만이 아니라 **판정 줄**을 본다.
+verdict_site() {
+  _site="$1"; _mut="$2"; shift 2
+  set +e
+  _o="$( cd "$SANDBOX" && sh scripts/probe.sh --site "$_site" "$_mut" "$@" 2>&1 </dev/null )"
+  _c=$?
+  set -e
+  printf '%s %s' "$_c" "$(printf '%s\n' "$_o" | grep -oE '^(CAUGHT|SILENT) —' | head -1)"
+}
+assert_eq "0 CAUGHT —" "$(verdict_site "planted" "printf 'planted\n' > new.txt" sh -c '! test -f new.txt')" \
+  "새 파일만 만드는 변이를 검사가 잡으면 CAUGHT(0) 판정까지 간다"
+_newfile_silent() {
+  set +e
+  _o="$( cd "$SANDBOX" && sh scripts/probe.sh --site planted --assume-relevant "printf 'planted\n' > new.txt" true 2>&1 </dev/null )"
+  _c=$?
+  set -e
+  printf '%s %s' "$_c" "$(printf '%s\n' "$_o" | grep -oE '^(CAUGHT|SILENT) —' | head -1)"
+}
+assert_eq "1 SILENT —" "$(_newfile_silent)" \
+  "새 파일만 만드는 변이의 SILENT(1) 은 판정 줄을 찍는다 — 줄 없는 1 은 러너가 죽은 것이다"
+
 # 인자를 안 주면 아예 돌지 않는다(생략을 기본값으로 두면 아무도 안 쓴다).
 _noarg() { set +e; ( cd "$SANDBOX" && sh scripts/probe.sh "sed -i s/hello/bye/ f.txt" true ) >/dev/null 2>&1; _c=$?; set -e; echo "$_c"; }
 assert_eq "2" "$(_noarg)" "--site/--no-site 를 안 주면 거부한다"
