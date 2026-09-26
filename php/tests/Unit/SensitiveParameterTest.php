@@ -24,7 +24,9 @@ final class SensitiveParameterTest extends TestCase
      * 비밀을 뜻하는 파라미터 이름. ⚠️ `nonce`·`state` 는 **비밀이 아니다**(재생 방지용
      * 공개값이라 URL 로 이동한다) — 여기 넣으면 가드가 사실이 아닌 것을 강제한다.
      */
-    private const SECRET_NAME = '/(secret|password|credential|verifier|(^|_|[a-z])(code|token)s?$)/i';
+    // ⚠️ `jwt` 는 2026-09-26 에 더했다 — 이름이 `$jwt` 인 원문 토큰(`JwtValidator::validate`·`decodeHeader`)을
+    // 정규식이 못 골라 #467 이 그 두 자리를 빠뜨렸고, 트레이스가 토큰 앞 15 자를 찍었다(실측).
+    private const SECRET_NAME = '/(secret|password|credential|verifier|(^|_|[a-z])(code|token|jwt)s?$)/i';
 
     /** @return list<class-string> */
     private static function sdkClasses(): array

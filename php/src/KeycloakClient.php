@@ -46,6 +46,17 @@ final class KeycloakClient
         return $this->adminClient ??= new AdminClient($this->config);
     }
 
+    /**
+     * ⚠️ 덤프 계열은 중첩 객체를 따라간다 — 이 훅이 없을 때 `var_dump($client)` 가 클라이언트 시크릿과 살아 있는
+     * PKCE verifier 를 원문으로 찍었다(실측 2026-09-26). 중첩 객체는 각자의 훅으로 가려진다.
+     *
+     * @return array<string, mixed>
+     */
+    public function __debugInfo(): array
+    {
+        return ['config' => $this->config, 'authClient' => $this->authClient, 'adminClient' => $this->adminClient];
+    }
+
     public function close(): void
     {
         // Guzzle/PSR-18은 명시적 커넥션 풀 close가 필요 없다(소켓은 GC/keep-alive 관리).
