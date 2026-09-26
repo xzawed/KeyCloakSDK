@@ -110,6 +110,23 @@ func TestClientCredentialsToken(t *testing.T) {
 	}
 }
 
+// ccAccessTokenCases is the access_token table the test below pins. It is package-level because
+// hostile_path_matrix_test.go attaches every non-string row to every token-grant and code-exchange
+// path it derives (Admin and the admin resources included), so the two cannot drift apart.
+var ccAccessTokenCases = []struct {
+	name        string
+	raw         string
+	accessToken string
+}{
+	{name: "number", raw: "12345"},
+	{name: "object", raw: `{"a":1}`},
+	{name: "array", raw: "[]"},
+	{name: "boolean", raw: "true"},
+	{name: "null", raw: "null"},
+	{name: "empty string", raw: `""`},
+	{name: "string", raw: `"AT"`, accessToken: "AT"},
+}
+
 // TestClientCredentialsRejectsNonStringAccessToken pins the client-credentials
 // lane: token-endpoint access_token must be a non-empty JSON string. The
 // "string" subtest is the positive control (raw value "AT").
@@ -120,20 +137,7 @@ func TestClientCredentialsToken(t *testing.T) {
 // unusable token out as success — .NET's Duende did exactly that. Measured on
 // 2026-09-25: all six are *AuthError, so that is what this pins.
 func TestClientCredentialsRejectsNonStringAccessToken(t *testing.T) {
-	tests := []struct {
-		name        string
-		raw         string
-		accessToken string
-	}{
-		{name: "number", raw: "12345"},
-		{name: "object", raw: `{"a":1}`},
-		{name: "array", raw: "[]"},
-		{name: "boolean", raw: "true"},
-		{name: "null", raw: "null"},
-		{name: "empty string", raw: `""`},
-		{name: "string", raw: `"AT"`, accessToken: "AT"},
-	}
-	for _, tt := range tests {
+	for _, tt := range ccAccessTokenCases {
 		t.Run(tt.name, func(t *testing.T) {
 			body := `{"access_token":` + tt.raw + `,"token_type":"Bearer","expires_in":300}`
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -205,7 +209,11 @@ func signIDToken(t *testing.T, key *rsa.PrivateKey, kid, iss, aud, nonce string)
 	}
 	std := jwt.Claims{Subject: "user1", Issuer: iss, Audience: jwt.Audience{aud},
 		Expiry: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)), IssuedAt: jwt.NewNumericDate(time.Now())}
-	s, err := jwt.Signed(sig).Claims(std).Claims(map[string]any{"nonce": nonce}).Serialize()
+	b := jwt.Signed(sig).Claims(std)
+	if nonce != "" { // "" means the token carries no nonce claim at all
+		b = b.Claims(map[string]any{"nonce": nonce})
+	}
+	s, err := b.Serialize()
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -223,11 +231,12 @@ func TestExchangeCodeNonceValidation(t *testing.T) {
 	base := "/realms/test/protocol/openid-connect"
 	var issuer string
 	includeIDToken := true
+	serverNonce := "server-nonce"
 	mux := http.NewServeMux()
 	mux.HandleFunc(base+"/token", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if includeIDToken {
-			idt := signIDToken(t, priv, "k1", issuer, "app", "server-nonce")
+			idt := signIDToken(t, priv, "k1", issuer, "app", serverNonce)
 			_, _ = w.Write([]byte(`{"access_token":"AT","token_type":"Bearer","expires_in":300,"id_token":"` + idt + `"}`))
 		} else {
 			_, _ = w.Write([]byte(`{"access_token":"AT","token_type":"Bearer","expires_in":300}`))
@@ -267,6 +276,15 @@ func TestExchangeCodeNonceValidation(t *testing.T) {
 	_, err = auth.ExchangeCode(ctx, "code", srv.URL+"/cb", "verifier", "server-nonce")
 	if !errors.As(err, &ae) {
 		t.Fatalf("missing id_token with expected nonce must yield *AuthError, got %v", err)
+	}
+
+	// A validly signed id_token with no nonce claim while a nonce is expected → rejected. Java pins
+	// the same (exchangeCode_rejectsIdTokenWithoutNonceClaim). Without this case, reading the claim
+	// as `n, ok := …; ok && n != expected` left the whole Go suite green (measured 2026-09-27).
+	includeIDToken, serverNonce = true, ""
+	_, err = auth.ExchangeCode(ctx, "code", srv.URL+"/cb", "verifier", "server-nonce")
+	if !errors.As(err, &ae) {
+		t.Fatalf("id_token without a nonce claim must yield *AuthError, got %v", err)
 	}
 }
 
