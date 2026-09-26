@@ -180,15 +180,16 @@ module HostileTokenResponseSpec
 
     private
 
+    # ⚠️ admin 은 변형이 안 정했어도 스텁한다(404) — 토큰 발급이 뜻밖에 성공하면 미등록 요청 예외(Exception 이라
+    # `run` 이 못 잡는다)로 행렬이 통째로 죽지 않고, 흐름 검사가 「기대 X, 실제 NotFoundError」로 짚는다.
     def stub
       v = VARIANTS.fetch(@key)
       oidc = self.class.stub_request(
         :post, %r{\A#{Regexp.escape(SERVER)}/realms/#{@key}/protocol/openid-connect/(token|token/introspect|logout)\z}
       )
       v[:raise] ? oidc.to_raise(v[:raise]) : oidc.to_return(v[:reply])
-      return unless v[:admin]
-
-      self.class.stub_request(:any, %r{\A#{Regexp.escape(SERVER)}/admin/realms/#{@key}/}).to_return(v[:admin])
+      self.class.stub_request(:any, %r{\A#{Regexp.escape(SERVER)}/admin/realms/#{@key}/})
+          .to_return(v.fetch(:admin, { status: 404 }))
     end
   end
 
