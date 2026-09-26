@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `215`(2026-09-27 기준 열림 119 · 닫힘 96)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `219`(2026-09-27 기준 열림 122 · 닫힘 97)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,17 +116,22 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-09-27 · #560–#639 반영)
+### 다음 세션 진입점 (2026-09-27 · #560–#652 반영)
 
-**지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. **2026-09-26 릴리스 물결 둘**: 첫째(#604–#616)로 아홉 전부 게시, 둘째(#626–#634)로 원인 사슬 수정(#617–#624)을 게시 — go·php `1.2.0` · ruby `1.1.0` · rust `1.1.1` · python·dotnet `1.0.2` LIVE·기준선 상향(#634). java·kotlin `1.0.3` 도 사람이 Portal 에서 Publish 해 LIVE 이고, 게시 바이트는 major ≤ 61 이며, JVM 기준선도 올렸다(#638). 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
+**지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. **2026-09-26 릴리스 물결 둘**: 첫째(#604–#616)로 아홉 전부 게시, 둘째(#626–#634)로 원인 사슬 수정(#617–#624)을 게시 — go·php `1.2.0` · ruby `1.1.0` · rust `1.1.1` · python·dotnet `1.0.2` LIVE·기준선 상향(#634). java·kotlin `1.0.3` 도 사람이 Portal 에서 Publish 해 LIVE 이고, 게시 바이트는 major ≤ 61 이며, JVM 기준선도 올렸다(#638). **2026-09-27 node `1.0.2`**(#649–#651): 코드 교환 통합 이식이 찾은 id_token 서명 미검증을 고친 security patch 로, LIVE 이고 기준선도 올렸다. 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
 1. **`guard-detection-surface-hand-narrowed` [H/M]** — 마스킹 축의 「새 자리」는 아홉 언어 전부 파생으로 닫혔다(#592–#602). 남은 것은 **새 교환 경로**(nonce·백오프·토큰타입)와 줄 단위 skip 표지. Go 파일럿(분류 · 손 목록 포함 · 계급별 변형)은 섰다 — 다음은 여덟 언어로 옮기기(항목의 ⏳ 줄).
-2. `integration-code-exchange-never-run` [H/M] — 코드 교환이 통합 9/9 에서 0. 이것이 `integration-coverage-never-measured` 판정의 첫 걸음이다(그 항목의 순서).
+2. `integration-coverage-never-measured` [H/L] — 첫 걸음(코드 교환 통합 9/9)은 닫혔다. 다음은 둘째 걸음 — omit 사본 조인 가드(`coverage-omit-no-ssot`, 드리프트 셋이 이미 재져 있다).
+   - 이 이식이 새로 연 것 가운데 사람 판정이 둘이다: `id-token-audience-follows-access-audience` · `nonce-failure-leaves-session-alive`.
 3. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다. 반대 방향도 있다 — #585 는 「verifier 하나」로 등록됐지만 부류는 호출 인자 다섯 갈래였다.
 
-**사람 판정 대기** — 없음. 2026-09-25 사용자 판정: 출처 미상 stash 둘(JDK 17→25)과 빈 `snap*` 워크트리 셋은 **폐기**했다(실측·검증되지 않은 산출물은 확인 후 폐기) · `irreversible-publish-no-reentry` 는 **보류 유지**(근거는 그 항목).
+**사람 판정 대기** — 둘(2026-09-27 코드 교환 이식이 열었다).
+- `id-token-audience-follows-access-audience`: id_token 을 clientId 로 따로 검증할지(아홉 언어 동작 변경), 문서로만 적을지.
+- `nonce-failure-leaves-session-alive`: 검증 실패 시 logout 을 계약으로 올릴지.
+
+그 전의 판정 — 2026-09-25 사용자 판정: 출처 미상 stash 둘(JDK 17→25)과 빈 `snap*` 워크트리 셋은 **폐기**했다(실측·검증되지 않은 산출물은 확인 후 폐기) · `irreversible-publish-no-reentry` 는 **보류 유지**(근거는 그 항목).
 
 **이 세션이 새로 확인한 함정** — 앞 세션의 (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 는 그대로 유효하다.
 
@@ -514,6 +519,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `authcode-flow-verification-defeated` **[M/L]** 인가 코드 흐름의 검증이 무력하거나 오적용된다 — azp 미검증·iss 자기주입·공유 검증기 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:135-149`
 - [x] `lenient-parsing-yields-false-success` **[M/M · 닫힘 2026-09-12 · 부류 다섯]** ⚠️ **rust 하나가 아니라 다섯이었다** — 아홉 전수 측정 뒤 rust·python·ruby·php·**dotnet** 을 함께 고쳤다(아래 표가 근거). 불변식: **`access_token` 이 비어 있지 않은 JSON 문자열이 아니면 TokenSet 을 만들지 않는다.** ⚠️ **dotnet 은 문자열 검사로 못 잡는다** — Duende 가 이미 강제변환한 뒤라 원본 JSON 의 `ValueKind` 를 봐야 한다. ⚠️ **`expires_in` 의 문자열 허용은 건드리지 않았다**(php·ruby 가 테스트로 고정한 의도된 관용). ⚠️ **팩토리만 지키면 우회된다 — 재스캔이 이음매를 셋 더 찾았다**(독립 레그가 첫 둘을 지목): **ruby·php 의 AuthClient 경로는 팩토리를 지나지 않고 생성자를 직접 부른다**(`auth_client.rb` 의 `to_token_set` · `AuthClient.php` 의 `toTokenSet`) → 검증을 **생성자로** 내렸다. 그리고 **rust `auth.rs:to_token_set` 은 타입은 안전하나 빈 문자열을 통과**시켜 `exchange_code`/`refresh` 가 쓸 수 없는 토큰으로 성공했다 → `Result` 로 바꿨다. python·dotnet 은 생성 자리가 하나뿐임을 재스캔으로 확인했다. 가드: `test-security-defaults.sh` 축 1c(9언어·공허 하한 9). 변이 7/7 `CAUGHT`. ⚠️ **축 앵커가 두 종류인 것은 의도다** — 고친 다섯은 행동 테스트, 이미 옳던 넷은 집행 기제(소스 철자를 겨누면 동작이 같은 리팩터에도 빨개진다: 실측 rust `Value::as_str` → `|v| v.as_str()`).
 - [ ] `nimbus-type-on-public-surface` **[L/M]** JWSAlgorithm이 두 JVM SDK의 공개 팩토리 시그니처에 올라 있다 — §4 은닉 위반 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java:27-28`
+  - **같은 부류의 둘째 자리(2026-09-27, kotlin 코드 교환 레그).** `TokenValidationException` 의 원인 사슬에 Nimbus `BadJOSEException` 이 그대로 남는다(java 도 같다고 레그가 보고). 측정한 경우에서 토큰 조각은 찍히지 않았다 — 비밀 누출이 아니라 §4 「하위 타입은 경계에서 변환」의 문제다. #617–#624 의 원인 스크럽이 이 예외 경로도 덮는지부터 잰다.
 - [ ] `configured-timeout-not-propagated` **[L/M]** 설정한 타임아웃·취소 토큰이 JWKS/검증 경로에 도달하지 않는다 · `node/src/jwt.ts:47-51`
 - [ ] `close-path-leaks` **[L/M]** 정리 경로가 자원을 놓친다 — 실패 시 중단·생성 중 누락·미소유 executor · `go/admin.go:66-68`
 - [ ] `node-nonsdk-error-escapes` **[L/S]** Node의 두 공개 경로가 SDK 예외 계층 밖의 오류를 던진다 · `node/src/admin/call.ts:13-26`
@@ -618,7 +624,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 77건 (열림 53)
+## D. 원장 밖 — 81건 (열림 56)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -640,7 +646,15 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `release-yml-unpaid-measurement` **[M/S]** release.yml 헤더의 「미납 실측」 블록이 전제(태그 미푸시)가 무너진 뒤에도 그대로 남아 있다 · `.github/workflows/release.yml:16`
 - [ ] `install-verify-not-implemented-wording` **[L/S]** install-verify.sh의 유일한 TODO — not_implemented가 원인을 「언어 태스크 대기 중」으로 오귀속한다 · `harness/install/install-verify.sh:100`
 
-### 로드맵·기능 갭 — 7
+### 로드맵·기능 갭 — 10
+
+- [ ] `id-token-audience-follows-access-audience` **[M/S · 신규 2026-09-27 · 아홉 언어]** `expectedAudience` 를 clientId 가 아닌 값(리소스 서버)으로 재정의하면, nonce 를 넘긴 코드 교환이 id_token `aud` 불일치로 **실패한다**.
+  - 원인: 아홉 언어 전부 id_token 을 액세스 토큰과 같은 검증기로 검증한다. OIDC id_token 의 `aud` 는 client id 다.
+  - java·kotlin·ruby·dotnet·rust·node 는 코드 주석으로만 적었고, 소비자 문서에는 0 곳이다(`grep` 확인).
+  - 고치는 길은 둘이고 사람 판정이다: (a) id_token 은 clientId 로 따로 검증한다(아홉 언어 동작 변경), (b) 소비자 문서에 적는다.
+  - 실측: go 통합 테스트가 `ExpectedAudience` 를 재정의하면 실서버 교환이 거부됨을 고정한다(`TestE2ECodeExchange/RefusesAnIDTokenForAnotherAudience` — 거부가 기대값인 테스트라, (a) 를 고르면 이 테스트도 바뀐다).
+- [ ] `node-auth-error-no-oauth-code` **[L/S · 신규 2026-09-27]** node `KeycloakAuthError` 에만 OAuth `error` 코드가 없다. python 은 `.error`, go 는 `OAuthError`, rust 는 `oauth_error` 로 공개한다. `scrubCause` 가 name·message·code 만 남겨, `invalid_grant` 를 공개 API 로 가를 수 없다. 코드 교환 이식 테스트는 그래서 `OAUTH_RESPONSE_BODY_ERROR` 까지만 단언한다 · `node/src/errors.ts`
+- [ ] `nonce-failure-leaves-session-alive` **[L/S · 신규 2026-09-27 · 사람 판정]** nonce·id_token 검증에 실패한 교환에서 SDK 는 받은 토큰을 버리기만 하고 revoke 하지 않는다. 그래서 서버 세션과 refresh token 이 살아 남는다. 아홉 언어 공통 설계다. go 레그가 Grok 주장을 코드로 참이라 판정했다(검증 실패 경로에 revoke 호출이 없다) — 실서버에서 세션이 남는지는 아직 재지 않았다. 되살릴 조건은 「검증 실패 시 logout 호출」을 계약으로 올릴지의 판정이다.
 
 - [ ] `admin-relations-role-mapping-group-membership` **[H/L]** 역할 부여·그룹 가입이 9개 언어 어디에도 없다 — CRUD만 있고 리소스 간 연결이 없다 · `docs/reference/admin-capability.md:18`
 - [ ] `admin-client-roles-and-user-subresources` **[H/L]** roles 파사드는 realm role 전용 — client role·client secret·user credential/session이 0/9 · `node/src/admin/roles.ts:5`
@@ -662,30 +676,18 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `orphan-active-workflows` **[L/S]** 파일이 없는 워크플로 2개가 Actions 에 `active` 로 남아 있다 — 라이브 26 vs 커밋 24 · `.github/workflows/repo-hygiene.yml:207`
 - [ ] `repo-settings-ssot-gap` **[L/S]** 브랜치 자동삭제 등 저장소 설정이 SSOT 밖 — 원격이 깨끗한 이유가 어디에도 안 적혀 있다 · `.github/security-config.json:2`
 
-### 테스트 실행 갭 — 7
+### 테스트 실행 갭 — 8
 
-- [ ] `integration-code-exchange-never-run` **[H/M · 신규 2026-09-27]** 코드 교환이 실제 Keycloak 에 대고 한 번도 돈 적이 없다.
-  - **무엇이 안 도나.** `exchangeCode`·`createAuthorizationRequest` 를 부르는 통합 스위트가 **9/9 에서 0** 이다. 하네스도 authz URL 만 보고 로그인·교환은 하지 않는다.
-  - **왜 문제인가.** 이름 있는 nonce 검증기와 id_token 서명 검증이 실서버 토큰으로 검증된 적이 없다. 「경계는 통합으로 검증」 주장의 **중심**이 비어 있다. `refresh`·`logout` 도 7/9 에서 통합 미실행이다.
-  - **처방.** 브라우저 없는 로그인으로 푼다 — authz URL GET → 로그인 폼 POST → 리다이렉트의 `code` 를 따르지 않고 받는다. 한 언어로 파일럿을 한 뒤 여덟 언어로 옮긴다.
-  - **다시 재는 명령.** `grep -rliE 'exchange_?code|ExchangeCode|createAuthorizationRequest' <각 언어 통합 디렉터리>` → 0.
-  - ✅ **python 파일럿(2026-09-27, sync·aio).** 모양은 `python/tests/integration/browser_login.py`(80 줄) — 다른 언어는 이것을 옮긴다.
-    - **도는 것.** 정상 교환 → nonce·`sub` → refresh → introspect active → logout → refresh `invalid_grant` · introspect inactive.
-    - **거부하는 것.** nonce 불일치 · nonce 없는 id_token · 재사용 코드. 재사용 코드는 `str`·`repr`·예외 사슬·DEBUG 로그·stdout 에 비밀이 없어야 한다. JWKS 밖 키(HS256 클라이언트)도 거부한다.
-    - **통합만의 커버리지.** `auth.py` 60.0 → 91.5%, `aio/auth.py` 63.2 → 91.2%.
-    - **변이.** 전부 새 테스트가 잡았다: nonce 비교 삭제(sync·aio) · 서명 검증 생략 · 헬퍼 state 비교 오류 · logout 무동작(PM).
-  - ⚠️ **옮길 때의 함정(파일럿 실측).**
-    - **Secure 쿠키.** Keycloak 26 은 http 에서도 로그인 쿠키에 `Secure` 를 단다. RFC 6265 대로 사는 쿠키 저장소는 그 쿠키를 안 보내 POST 가 400 이다 → 쿠키를 직접 되싣는다.
-    - **audience 매퍼.** `aud` 없는 접근 토큰은 introspect 가 `active: false` 다 → 웹 클라이언트에 audience 매퍼를 단다.
-    - **위조 RS256.** 실서버는 만들 수 없는 토큰이다 → 언어마다 **단위** 테스트가 따로 필요하다.
-    - **렐름 사본 아홉.** 일곱이 같은 해시이고 java·kotlin 이 다르다. 이 사본들을 대조하는 가드는 없다. 파일럿은 python 사본에만 `it-web`·`it-web-hs256` 을 더했으니, 이식 때 전부에 더한다(`git hash-object` 로 확인).
+- [ ] `realm-copies-unguarded` **[L/S · 신규 2026-09-27]** 통합 렐름 사본 아홉을 대조하는 가드가 없다. 지금은 우연히 둘로 수렴해 있다 — 일곱이 `3e76565`, java·kotlin 이 `191515a` 다. 코드 교환 이식이 클라이언트 둘을 손으로 아홉 곳에 복사했다. 다시 재는 명령: `git ls-files '*it-realm-realm.json' | xargs -n1 git hash-object`. JVM 짝이 공개 클라이언트 하나를 더 가진 것은 의도다 — 가드는 「두 집합, 그 차이만」을 고정하면 된다.
+
+- [x] `integration-code-exchange-never-run` **[H/M · 신규·닫힘 2026-09-27 #640–#648]** 코드 교환이 이제 **9/9 통합에서 실제 Keycloak 에 대고 돈다**. 수단은 브라우저 없는 로그인이다(인가 URL GET → `kc-form-login` POST, 쿠키 직접 되싣기 → `Location` 의 code·state). 정상 흐름(교환 → refresh → introspect → logout)과 거부 넷(nonce 불일치 · nonce 없음 · 재사용 코드 · JWKS 밖 키)을 돈다. **node 에서 id_token 서명 미검증 결함이 나와 고쳤다**(#648 → node `1.0.2`). 다시 재는 명령: `grep -rliE 'exchange_?code|ExchangeCode' <각 통합 디렉터리>` → 언어마다 ≥ 1. 옮길 때의 함정(Secure 쿠키 · audience 매퍼 · 위조 RS256 은 단위 층)은 각 헬퍼 머리 주석이 소유한다.
 - [ ] `integration-coverage-never-measured` **[H/L]** 9개 언어가 "경계는 통합으로 검증"이라 적고 omit했지만, 통합 실행에서 커버리지를 재는 언어가 0개다 · `.github/workflows/ci.yml:49`
   - ✅ **전제 실측(2026-09-27, 9/9, Docker).** 통합 실행에서 커버리지를 **리포트**하는 언어는 0 이다.
     - java 는 failsafe 가 `jacoco.exec` 에 적기는 하지만, 그 데이터를 읽는 리포트가 없다. IT 가 다른 모듈에서 돌고, 경계 클래스는 exclude 돼 있다.
     - 통합만의 경계 라인 %: java 59.7 · kotlin 68.8 · go 64.3(문장) · python 67.6 · node 54.4 · dotnet 61.9 · ruby 81.6 · php 34.0 · rust 80.2.
     - php 는 `Groups`·`Realms`·`Roles` 리소스가 **0%** 다(`integration-admin-surface-uneven`).
   - **판정: 두 설계를 합친다 — 퍼센트 하한만 걸면 위의 구멍을 ⌊최솟값⌋으로 동결한다.** 순서는 네 걸음이다.
-    1. `integration-code-exchange-never-run` 으로 구멍부터 메운다.
+    1. ✅ `integration-code-exchange-never-run` 으로 구멍부터 메운다 — 닫힘(#640–#648). 통합만의 auth 커버리지는 python 60→91 · go 43.5→88.2 · node 37→86(auth 파일, 언어별 레그 실측)으로 올랐다.
     2. omit 사본 조인 가드를 세운다(`coverage-omit-no-ssot`).
     3. 레인별 통합 전용 리포트를 **보고 모드**로 붙인다. 붙이는 세 가지:
        - include 는 단위 omit 설정에서 파생한다 — 사본을 더하지 않는다.
