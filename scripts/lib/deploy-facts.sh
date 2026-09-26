@@ -178,7 +178,7 @@ df_published_version() { case "$1" in
 # ⚠️ 형태가 둘이다 — 넷은 맨 버전, 셋(python·php·ruby)은 **태그 문자열**이다. 그 레인들이
 # `git archive <태그>` 나 `--against <ref>` 로 읽기 때문이고, 사본과 글자 그대로 같아야 한다.
 df_api_baseline() { case "$1" in
-  java) echo "1.0.3" ;; kotlin) echo "1.0.3" ;; node) echo "1.0.1" ;; dotnet) echo "1.0.2" ;;
+  java) echo "1.0.3" ;; kotlin) echo "1.0.3" ;; node) echo "1.0.2" ;; dotnet) echo "1.0.2" ;;
   python) echo "py-v1.0.2" ;; php) echo "php-v1.2.0" ;; ruby) echo "ruby-v1.1.0" ;;
   rust|go) echo "" ;;   # 자리 없음(자동 추론) — 빈 문자열이 곧 「자리가 없다」는 선언이다
   *) echo "" ;; esac; }
