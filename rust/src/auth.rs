@@ -5,18 +5,21 @@
 //! `?` 없이 호출 가능한(infallible) 구체 타입 `KcOidcClient`를 얻는다. id_token은 openidconnect의
 //! 자체 검증기 대신 강화된 `JwtValidator`로 검증하므로 `JsonWebKeySet`은 비워 둔다.
 use crate::config::KeycloakConfig;
-use crate::error::{KeycloakError, Result};
+use crate::error::{KeycloakError, Result, oauth_error_code};
 use crate::jwt::JwtValidator;
 use crate::oidc::OidcEndpoints;
 use crate::token_provider::TokenProvider;
 use crate::tokens::{AuthorizationRequest, IntrospectionResult, TokenSet, ValidatedToken};
 use async_trait::async_trait;
-use openidconnect::core::{CoreClient, CoreJsonWebKey, CoreResponseType, CoreTokenResponse};
+use openidconnect::core::{
+    CoreClient, CoreErrorResponseType, CoreJsonWebKey, CoreResponseType, CoreTokenResponse,
+};
 use openidconnect::{
     AccessToken, AuthUrl, AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
     EndpointNotSet, EndpointSet, IntrospectionUrl, IssuerUrl, JsonWebKeySet, Nonce,
     OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken,
-    RequestTokenError, Scope, TokenIntrospectionResponse, TokenResponse, TokenUrl,
+    RequestTokenError, Scope, StandardErrorResponse, TokenIntrospectionResponse, TokenResponse,
+    TokenUrl,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -371,21 +374,52 @@ fn to_token_set(resp: &CoreTokenResponse) -> Result<TokenSet> {
 }
 
 /// openidconnect `RequestTokenError` → `KeycloakError`. 서버 OAuth 오류는 `Auth`, 전송/파싱은 `Transport`.
-/// (`.error()`는 `StandardErrorResponse`의 고유 메서드이므로 제네릭 T에서는 `Display`로 접근한다 —
-/// `ErrorResponse: Display`가 이를 보장하며 출력은 "code: description" 형태로 오류코드를 포함한다.)
-fn map_token_err<RE, T>(e: RequestTokenError<RE, T>) -> KeycloakError
+///
+/// ⚠️ **응답이 보낸 글자를 옮기지 않는다 — OAuth 오류 코드 하나만 옮긴다.** 예전에는 `oauth_error` 에
+/// `StandardErrorResponse` 의 `Display`(`error: error_description (see error_uri)`)를 통째로 실어, 받은
+/// 토큰을 되울리는 `error_description`·`error_uri` 가 `{:?}` 로 원문 그대로 찍혔고, `Other` 문구는 응답
+/// Content-Type 헤더 값을 인용했다(실측 2026-09-26 — `tests/hostile_token_response.rs`). `Parse` 의 serde
+/// 오류는 틀린 타입의 문자열 값을 인용하고 원 본문을 품으므로 그 문구도 옮기지 않는다.
+fn map_token_err<RE>(e: RequestTokenError<RE, TokenErrorResponse>) -> KeycloakError
 where
     RE: std::error::Error + 'static,
-    T: openidconnect::ErrorResponse + 'static,
 {
     use openidconnect::RequestTokenError as RTE;
     match e {
         RTE::ServerResponse(resp) => KeycloakError::Auth {
             message: "token endpoint rejected".into(),
-            oauth_error: Some(resp.to_string()),
+            // RFC 6749 §5.2 의 `error` — 코드다. description·uri 는 서버의 자유 서술이라 싣지 않는다.
+            // 코드 자리에 코드 아닌 값(되울린 토큰)이 오면 그것도 싣지 않는다(`oauth_error_code`).
+            oauth_error: oauth_error_code(resp.error().as_ref()),
         },
         RTE::Request(re) => KeycloakError::Transport(format!("token request: {re}")),
-        other => KeycloakError::Transport(format!("token request failed: {other}")),
+        RTE::Parse(..) => {
+            KeycloakError::Transport("token request failed: Failed to parse server response".into())
+        }
+        RTE::Other(msg) => KeycloakError::Transport(format!(
+            "token request failed: Other error: {}",
+            other_message(&msg)
+        )),
+    }
+}
+
+/// openidconnect `CoreClient` 의 토큰·introspect 오류 응답 타입.
+type TokenErrorResponse = StandardErrorResponse<CoreErrorResponseType>;
+
+/// oauth2 5.0 이 `RequestTokenError::Other` 에 싣는 문구 중 **응답 입력을 인용하지 않는 것**만 옮긴다.
+/// ⚠️ 허용 목록이다 — 모르는 문구는 숨기는 쪽으로 떨어진다(상류가 문구를 바꿔도 새지 않는다).
+fn other_message(msg: &str) -> &str {
+    const FIXED: [&str; 2] = [
+        "server returned empty error response",
+        "server returned empty response body",
+    ];
+    if FIXED.contains(&msg) || msg.starts_with("failed to prepare request: ") {
+        msg
+    } else if msg.starts_with("unexpected response Content-Type") {
+        // 원문은 헤더 값을 인용한다 — 값은 빼고 의미만 남긴다.
+        "unexpected response Content-Type (value withheld), should be `application/json`"
+    } else {
+        "unexpected response (detail withheld)"
     }
 }
 
@@ -701,6 +735,28 @@ mod tests {
             auth.refresh("RT").await,
             Err(KeycloakError::Auth { .. })
         ));
+    }
+
+    /// `Other` 문구는 허용 목록이다 — 응답 입력을 인용하지 않는 고정 문구만 옮기고, 나머지는 숨긴다.
+    /// ⚠️ 마지막 줄(모르는 문구)을 지우지 말 것 — 상류가 새 문구에 응답을 인용해도 안 새게 하는 것이
+    /// 그 갈래이고, 적대적 응답 시험(`tests/hostile_token_response.rs`)은 그 갈래에 닿지 못한다.
+    #[test]
+    fn other_message_passes_only_fixed_phrases() {
+        for fixed in [
+            "server returned empty error response",
+            "server returned empty response body",
+            "failed to prepare request: builder error",
+        ] {
+            assert_eq!(other_message(fixed), fixed);
+        }
+        let ct = other_message(
+            "unexpected response Content-Type: \"text/plain; t=SECRET-TOKEN\", should be `application/json`",
+        );
+        assert!(ct.starts_with("unexpected response Content-Type") && !ct.contains("SECRET"));
+        assert_eq!(
+            other_message("some new upstream phrase quoting SECRET-TOKEN"),
+            "unexpected response (detail withheld)"
+        );
     }
 
     #[tokio::test]

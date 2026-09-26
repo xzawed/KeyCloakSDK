@@ -210,9 +210,14 @@ public sealed class FacadeDumpTests
         var bad = KeycloakClient.Create(cfg with { Realm = "bad" });
         var down = KeycloakClient.Create(cfg with { ServerUrl = "http://127.0.0.1:1" });
         var noSecret = KeycloakClient.Create(cfg with { ClientSecret = null });
+        // 형식이 틀린 200 응답 둘 — 하위 예외가 응답을 인용하는 자리(MalformedTokenResponseTests 가 모양 전부를 잰다).
+        var form = KeycloakClient.Create(cfg with { Realm = "form" });
+        var junk = KeycloakClient.Create(cfg with { Realm = "junk" });
         set.Owned.Add(bad);
         set.Owned.Add(down);
         set.Owned.Add(noSecret);
+        set.Owned.Add(form);
+        set.Owned.Add(junk);
         // provider 는 이미 토큰을 캐시했으므로 워밍업이 네트워크를 안 탄다 — 실패는 그다음 호출에서 난다.
         var downAdmin = await AdminClient.CreateAsync(cfg with { ServerUrl = "http://127.0.0.1:1" }, provider);
         set.Owned.Add(downAdmin);
@@ -234,6 +239,11 @@ public sealed class FacadeDumpTests
             ("auth error (401 refresh)", typeof(KeycloakAuthException), await FailureOf(() => bad.Auth.RefreshAsync(Refresh))),
             ("auth error (id_token rejected)", typeof(KeycloakAuthException),
                 await FailureOf(() => kc.Auth.ExchangeCodeAsync("code", "https://app/cb", ar.CodeVerifier, ar.Nonce))),
+            // 헤더가 JSON 이 아닌 id_token — IdentityModel 은 PII 를 가린 자기 메시지 밑에 디코드된 헤더를 인용하는 예외를 단다.
+            ("auth error (id_token header not JSON)", typeof(KeycloakAuthException),
+                await FailureOf(() => junk.Auth.ExchangeCodeAsync("code", "https://app/cb", ar.CodeVerifier, ar.Nonce))),
+            ("transport error (200 form-encoded token body)", typeof(KeycloakTransportException),
+                await FailureOf(() => form.Auth.ClientCredentialsTokenAsync())),
             ("validation error (garbage)", typeof(KeycloakTokenValidationException), await FailureOf(() => kc.Auth.ValidateAsync(Garbage))),
             // 점이 있으면 IdentityModel 은 다른 경로(헤더 디코드 실패)로 간다 — 그 메시지가 세그먼트를 싣는지 따로 잰다.
             ("validation error (JWT-shaped garbage)", typeof(KeycloakTokenValidationException),
@@ -319,6 +329,12 @@ public sealed class FacadeDumpTests
             $$"""{"keys":[{"kty":"RSA","kid":"k1","use":"sig","alg":"RS256","n":"{{Base64UrlEncoder.Encode(p.Modulus)}}","e":"{{Base64UrlEncoder.Encode(p.Exponent)}}"}]}""");
         Json(idp, Request.Create().WithPath("/realms/bad/protocol/openid-connect/token").UsingPost(), 401,
             """{"error":"invalid_client","error_description":"Invalid client or Invalid client credentials"}""");
+        // System.Text.Json 은 't' 로 시작하는 본문을 첫 구분자까지 전부 인용한다 — 폼 인코딩 본문이면 살아 있는 토큰째.
+        idp.Given(Request.Create().WithPath("/realms/form/protocol/openid-connect/token").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/x-www-form-urlencoded")
+                .WithBody($"token_type=bearer&access_token={Access}"));
+        Json(idp, Request.Create().WithPath("/realms/junk/protocol/openid-connect/token").UsingPost(), 200,
+            $$"""{"access_token":"x","token_type":"Bearer","expires_in":300,"id_token":"{{Base64UrlEncoder.Encode("t" + Id)}}.e30.c2ln"}""");
         Json(idp, Request.Create().WithPath("/admin/realms/r/users/missing").UsingGet(), 404, """{"error":"User not found"}""");
         Json(idp, Request.Create().WithPath("/admin/realms/r/clients/missing").UsingGet(), 404, """{"error":"Could not find client"}""");
         Json(idp, Request.Create().WithPath("/admin/realms/r/users").UsingPost(), 409, """{"errorMessage":"User exists with same username"}""");

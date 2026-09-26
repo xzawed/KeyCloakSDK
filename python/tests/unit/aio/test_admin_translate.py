@@ -6,6 +6,9 @@ sync `keycloak_sdk.admin._translate.translate`(상태 코드→예외 매핑)를
 
 from __future__ import annotations
 
+import traceback
+from typing import Any
+
 import pytest
 from keycloak.exceptions import (
     KeycloakDeleteError,
@@ -14,6 +17,7 @@ from keycloak.exceptions import (
     KeycloakPutError,
 )
 
+from keycloak_sdk._internal.lower import LowerLibraryError
 from keycloak_sdk.aio.admin._translate import acall
 from keycloak_sdk.exceptions import (
     KeycloakAdminError,
@@ -89,3 +93,30 @@ async def test_acall_does_not_catch_non_keycloak_exceptions():
 
     with pytest.raises(ValueError):
         await acall(boom())
+
+
+_CANARY = "WK3-token-in-body-canary"
+_BODY = b'{"error": "forbidden", "error_description": "' + _CANARY.encode() + b'"}'
+
+
+async def test_the_raw_lower_error_is_not_attached_only_a_summary(lower_post_error: Any) -> None:
+    """sync `call` 과 동형 — 원본 대신 요약을 달고, `__context__` 로도 닿지 않는다."""
+    with pytest.raises(KeycloakForbiddenError) as excinfo:
+        await acall(_raise(lower_post_error(403, _BODY)))
+
+    error = excinfo.value
+    assert isinstance(error.__cause__, LowerLibraryError)
+    assert error.__context__ is None
+    assert _CANARY not in "".join(traceback.format_exception(error))
+
+
+async def test_unusable_response_inside_python_keycloak_is_a_transport_error(
+    lower_type_error: Any,
+) -> None:
+    with pytest.raises(KeycloakTransportError) as excinfo:
+        await acall(_raise(lower_type_error(_CANARY.encode())))
+
+    error = excinfo.value
+    assert str(error) == "Keycloak admin API returned an unusable response (TypeError)"
+    assert error.__context__ is None
+    assert _CANARY not in "".join(traceback.format_exception(error))

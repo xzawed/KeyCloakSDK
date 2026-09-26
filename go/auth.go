@@ -89,7 +89,7 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 	}
 	tok, err := cc.Token(a.oauthCtx(ctx))
 	if err != nil {
-		return nil, &AuthError{Msg: "client credentials grant failed", OAuthError: oauthError(err), Cause: err}
+		return nil, &AuthError{Msg: "client credentials grant failed", OAuthError: oauthError(err), Cause: scrubCause(err)}
 	}
 	return tokenSetFromToken(tok), nil
 }
@@ -107,7 +107,7 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVerifier, expectedNonce string) (*TokenSet, error) {
 	tok, err := a.codeConfig(redirectURI).Exchange(a.oauthCtx(ctx), code, oauth2.VerifierOption(codeVerifier))
 	if err != nil {
-		return nil, &AuthError{Msg: "authorization code exchange failed", OAuthError: oauthError(err), Cause: err}
+		return nil, &AuthError{Msg: "authorization code exchange failed", OAuthError: oauthError(err), Cause: scrubCause(err)}
 	}
 	ts := tokenSetFromToken(tok)
 	if expectedNonce != "" {
@@ -140,7 +140,7 @@ func (a *AuthClient) Refresh(ctx context.Context, refreshToken string) (*TokenSe
 	src := a.codeConfig("").TokenSource(a.oauthCtx(ctx), &oauth2.Token{RefreshToken: refreshToken})
 	tok, err := src.Token()
 	if err != nil {
-		return nil, &AuthError{Msg: "token refresh failed", OAuthError: oauthError(err), Cause: err}
+		return nil, &AuthError{Msg: "token refresh failed", OAuthError: oauthError(err), Cause: scrubCause(err)}
 	}
 	return tokenSetFromToken(tok), nil
 }

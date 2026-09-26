@@ -91,10 +91,12 @@ public sealed class JwtValidator
         }
         catch (Exception ex) // malformed token (SecurityTokenMalformedException) still throws from parse
         {
-            throw new KeycloakTokenValidationException(ex.Message, ex);
+            throw new KeycloakTokenValidationException(ErrorCause.MessageOf(ex), ex);
         }
+        // ⚠️ IdentityModel hides PII in its own message but nests a JSON parse error that quotes the decoded header or
+        // payload — the constructor scrubs that chain (ErrorCause); the message is taken the same way.
         if (!result.IsValid)
-            throw new KeycloakTokenValidationException(result.Exception?.Message ?? "invalid token", result.Exception);
+            throw new KeycloakTokenValidationException(result.Exception is { } rex ? ErrorCause.MessageOf(rex) : "invalid token", result.Exception);
 
         var jwt = (JsonWebToken)result.SecurityToken;
         var claims = result.Claims.ToDictionary(kv => kv.Key, kv => (object?)kv.Value); // matches IntrospectAsync projection; no CS8620

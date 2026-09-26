@@ -6,6 +6,7 @@ import io.mockk.every
 import io.mockk.mockk
 import jakarta.ws.rs.ProcessingException
 import jakarta.ws.rs.WebApplicationException
+import jakarta.ws.rs.client.ResponseProcessingException
 import jakarta.ws.rs.core.Response
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
@@ -14,7 +15,9 @@ import java.net.URI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 // AdminBoundaryTest — adminCall(AdminClient.kt)의 경계변환(부록 §auth-admin exactConfig)을 검증한다:
 // WebApplicationException(status→404/409/403/그외)·ProcessingException→Transport·CancellationException 재throw.
@@ -124,6 +127,26 @@ internal class AdminBoundaryTest {
             // suspend 경계를 넘는 예외를 (동일 정보의) 새 인스턴스로 복사하므로 identity가 보존되지 않는다.
             assertIs<ProcessingException>(e.cause)
             assertEquals("RESTEASY004655: could not send request", e.cause?.message)
+        }
+
+    // 응답을 받았으나 읽지 못한 실패(ResponseProcessingException — 사슬 어디에 있든)는 본문을 인용하는 하위 사슬을
+    // 가린 사본으로만 단다. 분류(전송)와 SDK 메시지는 그대로다 — 전송 실패의 원본 유지는 위 테스트가 고정한다.
+    @Test
+    fun `ResponseProcessingException anywhere in the chain is attached only as a redacted copy`() =
+        runTest {
+            val parse = java.io.IOException("Unrecognized token 'LEAKBODY': was expecting a JSON value")
+            val direct = ResponseProcessingException(Response.status(200).build(), parse)
+            for (thrown in listOf(direct, ProcessingException(direct))) {
+                val e =
+                    assertFailsWith<KeycloakTransportException> {
+                        adminCall<Unit> { throw thrown }
+                    }
+                assertEquals("Admin request failed", e.message)
+                val printed = e.stackTraceToString()
+                assertFalse("LEAKBODY" in printed, printed)
+                assertTrue("Caused by: jakarta.ws.rs.client.ResponseProcessingException (message withheld)" in printed, printed)
+                assertTrue("Caused by: java.io.IOException (message withheld)" in printed, printed)
+            }
         }
 
     @Test
