@@ -109,7 +109,9 @@ fi
 if [ "$SITE_MODE" = declared ]; then
   # ⚠️ **추가/삭제된 줄만 본다.** 문맥 줄까지 보면 「근처에 있었다」가 「쳤다」로 통과한다 —
   # 실측(이 커밋을 만들다가): 선언 패턴이 diff 문맥에 있어 거짓 통과했다. `+++`/`---` 헤더는 뺀다.
-  _diff="$( (cd "$WT" && git diff -- .) | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' )"
+  # ⚠️ `|| true` 를 빼지 말 것 — 새 파일만 만든 변이면 diff 가 비어 grep 이 1 을 내고, `set -e` 가
+  # 러너를 **판정 없이 종료코드 1(SILENT 의 코드)** 로 죽인다(실측 2026-09-26, `test-probe.sh`).
+  _diff="$( (cd "$WT" && git diff -- .) | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' || true)"
   # 신규 파일은 diff 에 안 나오므로 본문을 더한다(그래야 「새 파일에 심는 변이」도 선언할 수 있다).
   for _nf in $( (cd "$WT" && git ls-files --others --exclude-standard) 2>/dev/null); do
     _diff="$_diff
