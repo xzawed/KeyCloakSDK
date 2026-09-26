@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `209`(2026-09-26 기준 열림 115 · 닫힘 94)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `212`(2026-09-26 기준 열림 117 · 닫힘 95)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,13 +116,13 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-09-26 · #560–#595 반영)
+### 다음 세션 진입점 (2026-09-26 · #560–#603 반영)
 
 **지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. JVM `1.0.1` 은 **게시·바이트 확인 완료**(`node scripts/check-published-jvm-floor.mjs` 전부 major ≤ 61)이고 API 기저선도 1.0.1 이다. 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. **`guard-detection-surface-hand-narrowed` [H/M]** — 파생 술어의 모양은 두 언어에서 섰다(Go #592 · PHP #593: 도달 객체 걷기 + 선언 대조). 남은 것은 일곱으로 옮기기다 — 언어마다 리플렉션 도구가 달라 한 언어씩, rust 는 리플렉션이 없어 다른 모양(그 항목의 ✅).
+1. **`guard-detection-surface-hand-narrowed` [H/M]** — 마스킹 축의 「새 자리」는 아홉 언어 전부 파생으로 닫혔다(#592–#602). 남은 것은 **새 교환 경로**(nonce·백오프·토큰타입)와 줄 단위 skip 표지 — 같은 「뿌리 + 선언 대조」 모양이 서는지부터 설계한다.
 2. `integration-coverage-never-measured` [H/L] — 크다. 설계부터.
 3. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다. 반대 방향도 있다 — #585 는 「verifier 하나」로 등록됐지만 부류는 호출 인자 다섯 갈래였다.
 
@@ -465,6 +465,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - ⏸ **열린 채 남는 것** — 이 부류의 (B) 「기존 언어에 **새 자리**가 생겼다」는 값 동형이 서는 숫자 축(재조회·skew·크기상한)만 파생으로 닫혔다. 마스킹·nonce·백오프·토큰타입은 앵커가 비공허해졌을 뿐 **새 비밀 보유 타입·새 교환 경로**를 스스로 찾지 못한다. 줄 단위라 다음 줄의 skip 표지(`#[ignore]`·`@Disabled`·데코레이터)도 못 본다. 닫으려면 「새 자리」를 트리에서 파생할 술어가 필요하다(예: 공개 타입 중 비밀 필드를 가진 것 전수).
   - ✅ **첫 파생 술어 — Go, 이름 grep 이 아니라 행위로(2026-09-26 #592).** 공개 API 호출로 만든 뿌리에서 리플렉션으로 닿는 패키지 타입 전부를 fmt 다섯 동사·slog 두 핸들러로 찍어 카나리아를 찾고, 소스를 파싱한 **구조체 선언 전수**가 걷기에 걸렸는지 대조한다(새 타입은 걷기에 닿거나 이유와 함께 면제 — 면제 0). 언어 CI 안이라 required 를 잠그지 않는다. 첫 실행이 실제 누출을 냈다(`go-facade-dump-leaks-secret`). 선행 전수(9 언어 · 독자+비판자 18): 기본 표현으로 새는 파사드는 go 뿐이었다. ⚠️ **한계**: 카나리아는 뿌리 호출이 흘린 비밀뿐이다. **남은 것**: 같은 모양을 여덟 언어에(리플렉션 없는 rust 는 다른 모양) · nonce·백오프·토큰타입의 「새 교환 경로」는 이 술어 밖.
   - ✅ **둘째 — PHP(#593).** 같은 모양을 `ReflectionObject` 로 — 인스턴스 상태 없는 클래스는 규칙으로 제외, 면제 1(이유 적음). ⚠️ 예외 뿌리는 트레이스 인자에 **하네스**(PHPUnit 러너 프레임의 테스트 객체·비정적 클로저의 `$this`)가 실려 첫 RED 172 가 대부분 거짓이었다 — 하네스 상태를 정적으로, 클로저를 `static fn` 으로. 고칠 수 없는 누출은 `KNOWN_LEAKS`(낡으면 실패)로 드러낸 채 고정했다. **남은 일곱**: java·kotlin·python·node·dotnet·ruby·rust.
+  - ✅ **아홉 전부 — 나머지 일곱(#596–#602).** 언어마다 워크트리 하나에서 같은 모양을 세웠다(java·kotlin·python·node·dotnet·ruby 는 리플렉션 걷기, rust 는 리플렉션이 없어 **Debug/Display 를 구현한 타입 전수를 소스에서 파생**하고 파사드가 Debug 를 갖지 않음을 단언). 언어마다 변이 4–13건 전부 CAUGHT(kotlin 하네스 규칙 하나는 지금 뿌리에 대해 등가 변이), 구현마다 Grok 독립 레그가 붙어 걷기가 놓치던 자리(JDK 프록시 핸들러·익명 클래스·부분 노출·enum 새 변형 등)를 메웠다. 걷기가 찾은 실제 누출은 node 하나 — `node-error-cause-carries-response-tokens`. **남은 것**: 이 술어는 **마스킹 축의 새 자리**를 닫는다. nonce·백오프·토큰타입의 「새 교환 경로」와 줄 단위 skip 표지는 여전히 밖이다.
   - ⚠️ **또 늘었다 — 축 9 중 손 표 7 → 축 11 중 손 표 9 → 축 12 중 파생 3 · 혼합 1 · 손 8**(재측정 2026-09-16 · 직전 판 2026-09-12 는 독립 레그와 일치했다). 그 사이 추가된 축 둘(JWKS 크기상한 · 토큰응답 타입검증)이 **둘 다 손 표**다. 파생은 여전히 `git ls-files` 둘뿐. 배너 전수: `grep -cE '^# [0-9]+[a-z0-9]*\) ' scripts/test/test-security-defaults.sh` → **11**. ⚠️ `'^# [0-9]'` 로 세면 **15** 가 나온다 — 숫자로 시작하는 산문 넉 줄(「30초로…」 등)이 섞인다. ⚠️ 그리고 **축 이름이 이미 충돌한다**(`1b` 셋 · `1c` 둘) — 「축 N」으로 지목하지 말고 줄번호로 지목할 것. ⚠️ **처방은 그대로다**(이 파일에 축을 더하지 않는다) — 이번 PR 도 새 불변식을 여기가 아니라 `check-versions.mjs` 로 냈다.
   - **축 7 중 손 표 5 → 축 9 중 손 표 7 로 늘었다**(실측 2026-09-07, 독립 레그 둘). 그 사이 추가된 축 둘 — 1b2 콜드캐시 백오프 · 1d 형제 마스킹(#437) — 이 **둘 다 손 표**다. 파생은 여전히 `git ls-files` 둘(문서 축·소스 주석 축)뿐이다.
   - ⚠️ **그런데 지금 파생으로 바꾸는 것이 옳은 수가 아니다.** 이 파일은 required 체크 `doc-facts` 안에서 `paths:` 필터 없이 돌고 룰셋은 `bypass_actors: []` 다 — 오탐 하나가 모든 PR 을 막고 소유자도 못 푼다. **되살릴 조건**: required **밖**(nightly 등)에서 먼저 돌려 오탐 0 을 실측할 것. 노이즈는 이미 쟀다 — 9언어 비테스트 소스에서 비밀 이름을 언급하는 파일이 **83개**라 그 신호를 그대로 쓸 수 없다.
@@ -604,7 +605,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 71건 (열림 49)
+## D. 원장 밖 — 74건 (열림 51)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -725,6 +726,9 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `dotnet-cached-record-tostring` **[L/S · 신규·닫힘 2026-09-26 #594]** `ClientCredentialsTokenProvider.Cached` 레코드의 컴파일러 `ToString` 이 캐시된 액세스 토큰을 찍었다(실측) — 모양은 두고 `ToString` 만 덮었다. Grok 레그가 명세대로 구현(RED → 104), 변이 CAUGHT · `dotnet/src/Xzawed.Keycloak.Sdk/ITokenProvider.cs`
 - [x] `probe-new-file-mutation-dies-silent` **[M/S · 신규·닫힘 2026-09-26 #591]** 새 파일만 만드는 변이에서 `probe.sh` 가 판정 없이 1(SILENT 의 코드)로 죽었다 — diff 가 비면 자리 검사의 `grep` 파이프가 1 을 내 `set -e` 가 끝냈다(실측: 0 바이트 · exit 1). `|| true` 한 곳 + 판정 줄을 보는 자가테스트 둘(RED → 18/18) · `scripts/probe.sh`
 - [x] `probe-verdict-line-glued-or-name-split` **[L/S · 신규·닫힘 2026-09-26 #595]** Grok 레그의 퍼저(193 사례, 인자 이동 버그를 고쳐 돌림)가 러너 계약 위반 둘을 냈다 — 끝 개행 없는 새 파일이면 판정 줄이 미리보기 뒤에 붙어(`+plantedCAUGHT — …`) `^CAUGHT` 로 읽는 쪽이 판정을 못 보고, 이름에 공백이 든 새 파일은 `for … in $(…)` 가 쪼개 맞는 변이를 INVALID 로 거부했다. 나머지 INVALID 는 전부 fail-closed. 자가테스트 둘 RED → 20/20, 되돌림 변이 둘 CAUGHT · `scripts/probe.sh`
+- [x] `node-error-cause-carries-response-tokens` **[M/S · 신규·닫힘 2026-09-26 #603]** 형식이 틀린 토큰 응답에서 난 오류가 cause 사슬로 토큰을 찍었다 — oauth4webapi 가 응답 본문 전체나 원문 id_token 을 `cause` 에 싣고 SDK 가 그대로 달았다. 실측: id_token 이 JWT 가 아니면 `console.log(err)` 에 원문 id_token, access_token·expires_in·token_type 이 틀리면 깊은 inspect 에 access/refresh 토큰. 걷기 테스트(#599)가 첫 경우를 잡았다. `KeycloakError` 생성자 한 곳에서 cause 를 이름·메시지·code·스택 사본으로 — 원본 하위 오류도 안 샌다(§4). 변이 4/4 · `node/src/errors.ts`
+- [ ] `rust-admin-unreachable-classified-admin` **[L/S · 신규 2026-09-26]** rust 에서 도달 불가 서버로의 admin 호출이 `Transport` 가 아니라 `Admin(Other{401})` 로 나온다 — `SdkTokenSupplier` 가 토큰 획득 실패를 전부 `HttpFailure{401}` 로 바꾸고 `map_admin` 이 그것을 admin 상태로 읽는다. 걷기 테스트가 그 분류를 지금 그대로 단언한다(`rust/tests/facade_dump.rs` 「admin get_user unreachable」) — 고치면 그 단언도 함께 · `rust/src/admin.rs`
+- [ ] `java-admin-token-401-classified-transport` **[L/S · 신규 2026-09-26 · 재현 필요]** java 걷기 레그의 관측: 잘못된 realm 으로 admin 토큰 요청이 401 을 받으면 `KeycloakTransportException`("admin transport failure")으로 나온다 — RESTEasy 가 토큰 필터의 `NotAuthorizedException` 을 `ProcessingException` 으로 감싸 `AdminExceptions` 가 전송으로 매핑한다는 진단. 걷기 테스트는 기반 예외만 단언해 고정되지 않았다 · `java/keycloak-sdk-admin`
 - [x] `token-type-library-behaviour-unpinned` **[M/S · 신규·닫힘 2026-09-25 #581]** go·java·kotlin 이 비문자열 `access_token` 거절을 라이브러리(x/oauth2 · Nimbus)에 맡기면서 그 행동을 고정한 테스트가 0 이었다 — go 는 전제부터 미측정(실측: 여섯 다 `*AuthError`). 셋 다 표 테스트로 고정, 파싱 실패를 삼키는 변이에 go·java CAUGHT(kotlin 미측정) · `go/auth_test.go`
 
 ---
