@@ -12,6 +12,7 @@ use Psr\Http\Message\StreamFactoryInterface;
 use Xzawed\Keycloak\Token\TokenSet;
 use Xzawed\Keycloak\Exception\KeycloakAuthError;
 use Xzawed\Keycloak\Exception\KeycloakTransportError;
+use Xzawed\Keycloak\Exception\SanitizedCause;
 
 final class ClientCredentialsTokenProvider implements TokenProvider
 {
@@ -65,9 +66,9 @@ final class ClientCredentialsTokenProvider implements TokenProvider
         try {
             $response = $this->http->sendRequest($request);
         } catch (NetworkExceptionInterface $e) {
-            throw new KeycloakTransportError('token endpoint unreachable', previous: $e);
+            throw new KeycloakTransportError('token endpoint unreachable', previous: SanitizedCause::of($e));
         } catch (ClientExceptionInterface $e) {
-            throw new KeycloakTransportError('token request failed', previous: $e);
+            throw new KeycloakTransportError('token request failed', previous: SanitizedCause::of($e));
         }
         $json = json_decode((string) $response->getBody(), true);
         if ($response->getStatusCode() !== 200 || !is_array($json) || !isset($json['access_token'])) {

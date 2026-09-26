@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Security
+- **(PHP)** 형식이 틀리거나 적대적인 IdP 응답에서 난 오류가 토큰과 응답 본문을 찍었습니다 — 오류 응답의 `error_description` 이 SDK 메시지에 그대로 실렸고, 원인(`getPrevious()`)으로 단 하위 예외 원본이 응답 본문·토큰 응답·호출 입력(refresh token·code·Basic 헤더)·원문 JWT 를 메시지와 트레이스 인자(`zend.exception_ignore_args=Off`)로 쥐어 `(string)$e`·`var_dump`·`print_r` 가 찍었으며, 문자열이 아닌 `access_token`·`refresh_token` 과 소수 `expires_in` 은 토큰 응답을 쥔 `\TypeError` 로 공개 API 를 빠져나갔습니다. 이제 원인은 원본 클래스명·코드·위치·인자 없는 트레이스만 남긴 `SanitizedCause` 이고, 토큰 거부 메시지는 OAuth `error` 코드만 싣고, 쓸 수 없는 `access_token` 은 `KeycloakAuthError` 입니다. **게시본 `1.1.0` 에 들어 있습니다.** (#TBD)
+
 ## [1.1.0] - 2026-09-26 (Go · PHP · Rust)
 
 **2026-09-26 릴리스 물결 — 아홉 언어가 세 번호로 갈립니다.** 새 공개 API 가 들어간 Go · PHP · Rust 는 minor(`1.1.0`, 이 절), 나머지는 patch 입니다 — Java · Kotlin `1.0.2`, Python · .NET · Ruby · Node `1.0.1`(아래 두 절). 대부분이 보안 수정이라 권장 업그레이드입니다. 실제로 어디까지 게시됐는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh` 의 `df_published_version` 이 소유합니다.
