@@ -111,7 +111,8 @@ func dumpRoots(t *testing.T) ([]dumpRoot, []string) {
 	}
 	t.Cleanup(func() { _ = c.Close() })
 	// 기본 경로의 admin — 내부에서 만든 provider 가 토큰을 캐시한 뒤라야 그 캐시가 걷기에 걸린다.
-	if _, err := c.Admin(ctx); err != nil {
+	def, err := c.Admin(ctx)
+	if err != nil {
 		t.Fatalf("admin: %v", err)
 	}
 	ts, err := c.Auth.ClientCredentialsToken(ctx)
@@ -119,6 +120,12 @@ func dumpRoots(t *testing.T) ([]dumpRoot, []string) {
 		t.Fatalf("client credentials: %v", err)
 	}
 	ar := c.Auth.CreateAuthorizationRequest("https://app/cb")
+	// ⚠️ 카나리아가 실제로 흘러 들어갔는가 — 안 흘렀으면 아래 누출 검사는 없는 것을 찾으며 통과한다.
+	if tok, _ := def.tp.Token(ctx); tok != dumpCanaryAccess ||
+		ts.AccessToken != dumpCanaryAccess || ts.RefreshToken != dumpCanaryRefresh || ts.IDToken != dumpCanaryID ||
+		ar.CodeVerifier == "" {
+		t.Fatalf("카나리아가 뿌리에 안 흘렀다 — 가짜 IdP 응답이나 매핑이 바뀌었다(provider %q, TokenSet %+v)", tok, *ts)
+	}
 	ir, err := c.Auth.Introspect(ctx, dumpCanaryAccess)
 	if err != nil {
 		t.Fatalf("introspect: %v", err)
