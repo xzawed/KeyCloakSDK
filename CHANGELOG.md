@@ -7,7 +7,7 @@
 ## [Unreleased]
 
 ### Security
-- **(Rust)** 토큰·introspect 엔드포인트의 오류 응답이 받은 토큰을 되울리면 SDK 오류가 그것을 원문으로 찍었습니다 — `oauth_error` 가 `error_description`·`error_uri`(코드 자리에 온 코드 아닌 값까지)를 그대로 실어 `{:?}` 에, 응답 Content-Type 값·id_token 헤더의 kid·JWKS 본문의 값을 인용한 문구가 `{}` 에도 샜습니다. 이제 `oauth_error` 는 코드 모양의 OAuth 오류 코드(`invalid_grant` 등)만 싣고, 나머지 문구는 인용하던 값을 빼고 의미(분류·위치)만 남깁니다. (#TBD)
+- **(Rust)** 토큰·introspect 엔드포인트의 오류 응답이 받은 토큰을 되울리면 SDK 오류가 그것을 원문으로 찍었습니다 — `oauth_error` 가 `error_description`·`error_uri`(코드 자리에 온 코드 아닌 값까지)를 그대로 실어 `{:?}` 에, 응답 Content-Type 값·id_token 헤더의 kid·JWKS 본문의 값을 인용한 문구가 `{}` 에도 샜습니다. 이제 `oauth_error` 는 코드 모양의 OAuth 오류 코드(`invalid_grant` 등)만 싣고, 나머지 문구는 인용하던 값을 빼고 의미(분류·위치)만 남깁니다. (#623)
 
 ## [1.1.0] - 2026-09-26 (Go · PHP · Rust)
 
