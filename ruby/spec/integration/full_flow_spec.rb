@@ -9,12 +9,11 @@ require_relative "../support/keycloak_container"
 RSpec.describe "Keycloak full flow", :integration do
   before(:all) do
     WebMock.allow_net_connect! # 통합에서는 실네트워크 허용
-    @container = KeycloakContainer.new(fixtures_dir: File.expand_path("../fixtures", __dir__))
-    @base = @container.start
+    # 컨테이너는 통합 스펙 파일들이 나눠 쓴다(정리는 support 의 after(:suite)).
+    @base = KeycloakContainer.shared_base_url(fixtures_dir: File.expand_path("../fixtures", __dir__))
   end
 
   after(:all) do
-    @container&.stop
     WebMock.disable_net_connect!(allow_localhost: false)
   end
 
