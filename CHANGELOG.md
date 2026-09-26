@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Security
+- **(Rust)** 토큰·introspect 엔드포인트의 오류 응답이 받은 토큰을 되울리면 SDK 오류가 그것을 원문으로 찍었습니다 — `oauth_error` 가 `error_description`·`error_uri`(코드 자리에 온 코드 아닌 값까지)를 그대로 실어 `{:?}` 에, 응답 Content-Type 값·id_token 헤더의 kid·JWKS 본문의 값을 인용한 문구가 `{}` 에도 샜습니다. 이제 `oauth_error` 는 코드 모양의 OAuth 오류 코드(`invalid_grant` 등)만 싣고, 나머지 문구는 인용하던 값을 빼고 의미(분류·위치)만 남깁니다. (#TBD)
+
 ## [1.1.0] - 2026-09-26 (Go · PHP · Rust)
 
 **2026-09-26 릴리스 물결 — 아홉 언어가 세 번호로 갈립니다.** 새 공개 API 가 들어간 Go · PHP · Rust 는 minor(`1.1.0`, 이 절), 나머지는 patch 입니다 — Java · Kotlin `1.0.2`, Python · .NET · Ruby · Node `1.0.1`(아래 두 절). 대부분이 보안 수정이라 권장 업그레이드입니다. 실제로 어디까지 게시됐는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh` 의 `df_published_version` 이 소유합니다.

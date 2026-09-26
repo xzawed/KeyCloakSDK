@@ -118,8 +118,16 @@ impl JwksStore {
                 )));
             }
         }
-        let set: JwkSet = serde_json::from_slice(&body)
-            .map_err(|e| KeycloakError::Transport(format!("JWKS parse: {e}")))?;
+        // ⚠️ serde_json 의 `Display` 는 틀린 타입의 문자열 값을 인용한다(`invalid type: string "…"`) —
+        // 응답 본문을 오류로 옮기지 않도록 분류와 위치만 남긴다(Grok 레그 실측 2026-09-26).
+        let set: JwkSet = serde_json::from_slice(&body).map_err(|e| {
+            KeycloakError::Transport(format!(
+                "JWKS parse: {:?} error at line {} column {}",
+                e.classify(),
+                e.line(),
+                e.column()
+            ))
+        })?;
         // ⚠️ **빈 집합은 정상 답이 아니고, 설치하면 검증기가 눈이 먼다**(go/jwt.go 와 동형 —
         // 그쪽 #380 픽스의 나머지 절반이다). 200 + `{"keys":[]}` 를 주는 것은 키를 전부 회수한
         // IdP 가 아니라 프록시·WAF·반쯤 뜬 realm 이고, 좋은 캐시를 그것으로 덮으면 방금 검증되던
@@ -162,9 +170,11 @@ impl JwksStore {
                 && Instant::now().saturating_duration_since(last)
                     < Duration::from_secs(self.min_refetch)
             {
-                return Err(KeycloakError::TokenValidation(format!(
-                    "unknown kid '{kid}' (refetch rate-limited)"
-                )));
+                // ⚠️ kid 값은 인용하지 않는다 — 검증 대상 토큰(적대적 IdP 의 id_token 포함)이 준 입력이다
+                // (실측 2026-09-26, `tests/hostile_token_response.rs` 의 `a3`). jose·Nimbus 도 인용하지 않는다.
+                return Err(KeycloakError::TokenValidation(
+                    "unknown kid (refetch rate-limited)".into(),
+                ));
             }
             // 재조회 결정 시점에 stamp — fetch 실패해도 rate-limit이 걸리도록(Go/Python 동형).
             gate.last_refetch = Some(Instant::now());
@@ -186,7 +196,7 @@ impl JwksStore {
                 gate.failures = 0;
                 gate.last_failure = None;
                 Self::lookup(Some(&set), kid)
-                    .ok_or_else(|| KeycloakError::TokenValidation(format!("unknown kid '{kid}'")))
+                    .ok_or_else(|| KeycloakError::TokenValidation("unknown kid".into()))
             }
             Err(e) => {
                 gate.failures = gate.failures.saturating_add(1);
@@ -249,6 +259,60 @@ mod tests {
         store.get_key("k1").await.unwrap(); // fetch #1(초기)
         let _ = store.get_key("k2").await; // 미해결 → refetch #2
         let _ = store.get_key("k3").await; // rate-limit → refetch 없음
+    }
+
+    /// 모르는 kid 의 오류가 그 kid 를 인용하지 않는다 — 두 갈래(재조회 뒤 · rate-limit) 다. kid 는 검증
+    /// 대상 토큰이 준 입력이다. rate-limit 갈래는 `tests/hostile_token_response.rs` 가 닿지 못해 여기서 본다.
+    #[tokio::test]
+    async fn unknown_kid_errors_do_not_quote_the_kid() {
+        const KID: &str = "KID-FROM-TOKEN-CANARY-7M3Q";
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(jwks_json("k1")))
+            .mount(&server)
+            .await;
+        let store = JwksStore::new(
+            format!("{}/certs", server.uri()),
+            reqwest::Client::new(),
+            60,
+        );
+        store.get_key("k1").await.unwrap();
+        let after_refetch = store.get_key(KID).await.unwrap_err().to_string();
+        let rate_limited = store.get_key(KID).await.unwrap_err().to_string();
+        assert!(rate_limited.contains("rate-limited"), "{rate_limited}");
+        for msg in [&after_refetch, &rate_limited] {
+            assert!(msg.contains("unknown kid"), "{msg}");
+            assert!(!msg.contains(&KID[..10]), "kid 를 인용했다: {msg}");
+        }
+    }
+
+    /// 파싱 실패가 응답 본문을 인용하지 않는다 — serde_json 은 틀린 타입의 **문자열 값**을 오류 문구에
+    /// 인용한다(`invalid type: string "…"`). 형식 오류(비 JSON)도 함께 본다.
+    #[tokio::test]
+    async fn jwks_parse_error_does_not_quote_the_body() {
+        for body in [
+            r#"{"keys":"JWKS-BODY-CANARY-4T8W"}"#,
+            r#"{"keys":[{"kty":"RSA","kid":7,"n":"JWKS-BODY-CANARY-4T8W"}], "x": 1}"#,
+            "JWKS-BODY-CANARY-4T8W",
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/certs"))
+                .respond_with(ResponseTemplate::new(200).set_body_string(body))
+                .mount(&server)
+                .await;
+            let store = JwksStore::new(
+                format!("{}/certs", server.uri()),
+                reqwest::Client::new(),
+                60,
+            );
+            let err = store.get_key("k1").await.unwrap_err();
+            let msg = format!("{err} {err:?}");
+            assert!(matches!(err, KeycloakError::Transport(_)), "{body}: {msg}");
+            assert!(msg.contains("JWKS parse"), "{body}: {msg}");
+            assert!(!msg.contains("JWKS-BODY-"), "본문을 인용했다: {msg}");
+        }
     }
 
     /// 회귀테스트: IdP 장애창(fetch 실패)에서도 gate가 재조회 "결정 시점"에 stamp되어야
