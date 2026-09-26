@@ -4,7 +4,7 @@ A TypeScript SDK for [Keycloak](https://www.keycloak.org/) covering both **Authe
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .NET · PHP · Rust · Ruby · Kotlin) — idiomatic in each language, isomorphic across all of them. Monorepo: <https://github.com/xzawed/KeyCloakSDK>
 
-> **`1.0.0` is on npm** and holds the `latest` dist-tag, so a bare install resolves it. It is the first release carrying the stability guarantee: from here the public API is under SemVer, and a breaking change requires a major bump.
+> **`1.0.1` is on npm** and holds the `latest` dist-tag, so a bare install resolves it. A patch release of security and correctness fixes on top of `1.0.0`, the first release carrying the stability guarantee (the public API is under SemVer, and a breaking change requires a major bump). The PKCE verifier and tokens no longer leak through `console.log` / `JSON.stringify`, and an SDK error no longer carries the IdP's raw token response in its `cause` chain (both present in `1.0.0`); the configured clock skew now actually reaches validation; JWKS responses are size-capped, an empty `200` key set no longer replaces a good cached one, and failed fetches back off. ⚠️ **Config is now validated when it is built** — a `serverUrl` that is not an absolute http(s) URL, or a timeout that is not a finite number in `(0, 2147483647]` ms, throws `KeycloakConfigError`.
 >
 > ⚠️ **Upgrading from `0.1.0`? Two breaking changes since then, both at the type level only** — the runtime behaviour is unchanged and **the normal paths (`kc.auth.validate(token)`, `(await kc.admin()).users.search(...)`) are untouched**. (1) `JwtValidator` can no longer be built with `new` — use `JwtValidator.forJwksUri(...)`. (2) The five admin resource classes no longer expose their constructors in the emitted declarations; `AdminClient` assembles them, and they were never a consumer construction path. Both existed because the constructors were putting `jose` and `@keycloak/keycloak-admin-client` types onto this package's public surface.
 
@@ -21,10 +21,10 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .
 npm install @xzawed/keycloak-sdk
 ```
 
-A bare install resolves `1.0.0`, and so does a `^1.0.0` range — at and above `1.0.0` a caret covers every `1.x`, so it picks up later minor and patch releases but never a `2.0.0`. Pin the exact version if you would rather not follow `latest`:
+A bare install resolves `1.0.1`, and so does a `^1.0.0` range — at and above `1.0.0` a caret covers every `1.x`, so it picks up later minor and patch releases but never a `2.0.0`. Pin the exact version if you would rather not follow `latest`:
 
 ```bash
-npm install @xzawed/keycloak-sdk@1.0.0
+npm install @xzawed/keycloak-sdk@1.0.1
 ```
 
 ## Quickstart

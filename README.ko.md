@@ -1,4 +1,7 @@
-<!-- doc-budget: max-bytes=13513 -->
+<!-- doc-budget: max-bytes=13527 -->
+<!-- 13513 → 13527 (2026-09-26). 규약 (1) — README.md 와 같은 교환이다. 함대가 세 갈래로
+     갈려 두 갈래 요약 문장이 거짓이 되고, 새 문장의 버전 집합은 `test-publication-claims.sh`
+     축 2 가 SSOT 와 대조한다. 언어 넷을 「나머지」로 접어 증가분을 줄였다(한글은 3B/자). -->
 <!-- 13505 → 13513 (2026-09-23). 규약 (1) — 태그 `kotlin-v1.0.1` 이 생겨 kotlin 앵커의
      `published=21` 도 반대 방향으로 실패했다. java 와 같은 정정을 kotlin 자리에 한다.
      이제 **JVM 둘 다 17** 이므로 「어느 쪽이 아직 안 내려갔는가」 단서는 필요 없어졌고,
@@ -34,7 +37,7 @@
 
 > 여기서 "다국어/polyglot"은 **프로그래밍 언어**를 뜻하며, 자연어 현지화(i18n)와는 무관합니다.
 >
-> ⚠️ **아홉 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다** — JVM 짝(Java · Kotlin)은 `1.0.1`, 나머지 일곱은 `1.0.0`입니다. 같은 보증을 같은 시기에 갖췄기에 1.0에는 같은 물결에서 도달했습니다 — 공개 API를 깨려면 **major**가 필요하고, CI가 각 레인의 API를 **직전 게시본**과 대조해 그것을 강제합니다. **함대로 움직이지 않습니다**: 소비자에게 보이는 변경이 있은 언어만 번호가 올라갑니다. 모든 배포는 사람 승인 게이트입니다. 설치 명령은 [설치](#설치)에, 붙일 임시 서버는 [지금 바로 써보기](#지금-바로-써보기)에 있습니다.
+> ⚠️ **아홉 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다** — Go · PHP · Rust는 `1.1.0`, Java · Kotlin은 `1.0.2`, 나머지는 `1.0.1`입니다. 같은 보증을 같은 시기에 갖췄기에 1.0에는 같은 물결에서 도달했습니다 — 공개 API를 깨려면 **major**가 필요하고, CI가 각 레인의 API를 **직전 게시본**과 대조해 그것을 강제합니다. **함대로 움직이지 않습니다**: 소비자에게 보이는 변경이 있은 언어만 번호가 올라갑니다. 모든 배포는 사람 승인 게이트입니다. 설치 명령은 [설치](#설치)에, 붙일 임시 서버는 [지금 바로 써보기](#지금-바로-써보기)에 있습니다.
 
 ---
 
@@ -77,7 +80,7 @@ with KeycloakClient.create(config) as kc:
 ```bash
 pip install keycloak-sdk                              # Python
 npm install @xzawed/keycloak-sdk                      # Node
-go get github.com/xzawed/KeyCloakSDK/go@v1.0.0        # Go
+go get github.com/xzawed/KeyCloakSDK/go@v1.1.0        # Go
 dotnet add package Xzawed.Keycloak.Sdk                # C# / .NET
 composer require xzawed/keycloak-sdk                  # PHP
 cargo add keycloak-sdk                                # Rust
@@ -87,8 +90,8 @@ gem install keycloak-sdk                              # Ruby
 JVM은 빌드 파일에 좌표를 추가합니다:
 
 ```
-io.github.xzawed:keycloak-sdk:1.0.1                   # Java   (Maven Central)
-io.github.xzawed:keycloak-sdk-kotlin:1.0.1            # Kotlin (Maven Central)
+io.github.xzawed:keycloak-sdk:1.0.2                   # Java   (Maven Central)
+io.github.xzawed:keycloak-sdk-kotlin:1.0.2            # Kotlin (Maven Central)
 ```
 
 빌드 도구별 전체 스니펫(Maven XML · Gradle Kotlin DSL · `Gemfile` · `Cargo.toml`)은 [시작 가이드](docs/guides/getting-started.md)에 있습니다.

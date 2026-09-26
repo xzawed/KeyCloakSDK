@@ -6,28 +6,66 @@
 
 ## [Unreleased]
 
-**아직 어느 레지스트리에도 올라가지 않았습니다.** 지금 `1.0.0` 을 받는 소비자에게는 아래가 **하나도 반영돼 있지 않습니다** — 대부분이 보안 수정이라 다음 릴리스는 권장 업그레이드가 됩니다. 어디까지 실제로 게시됐는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh` 의 `df_published_version` 이 소유합니다.
+## [1.1.0] - 2026-09-26 (Go · PHP · Rust)
 
-⚠️ 이 절은 `1.0.0` 태그 이후 **게시되는 라이브러리 소스를 고친 30 커밋**에서 왔습니다. 경위·측정·변이증명은 각 PR 의 커밋 메시지에 있고 여기 옮기지 않습니다. 소비자 행동이 안 바뀌는 소스 변경(주석 교정 #398 · #458)은 적지 않습니다. ⚠️ 이 절이 다시 비는 것은 `scripts/test/test-changelog-landing.sh` 가 착지 시점에 막습니다 — 이 목록은 릴리스 직전에 복원된 것이고, 복원은 커밋 제목을 베껴 쓰는 일이라 반드시 틀립니다.
+**2026-09-26 릴리스 물결 — 아홉 언어가 세 번호로 갈립니다.** 새 공개 API 가 들어간 Go · PHP · Rust 는 minor(`1.1.0`, 이 절), 나머지는 patch 입니다 — Java · Kotlin `1.0.2`, Python · .NET · Ruby · Node `1.0.1`(아래 두 절). 대부분이 보안 수정이라 권장 업그레이드입니다. 실제로 어디까지 게시됐는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh` 의 `df_published_version` 이 소유합니다.
+
+⚠️ 세 절은 `1.0.0` 태그 이후(JVM 은 `1.0.1` 이후) **게시되는 라이브러리 소스를 고친 커밋**에서 왔습니다. 경위·측정·변이증명은 각 PR 의 커밋 메시지에 있고 여기 옮기지 않습니다. 소비자 행동이 안 바뀌는 소스 변경(주석 교정 #398 · #458)은 적지 않습니다. ⚠️ **여러 언어를 이름한 항목은 해당하는 절마다 그대로 되풀이했습니다** — 항목의 언어 태그 중 **그 절 제목의 언어만** 그 번호로 올라갑니다. 「같은 결함」을 가리키는 항목의 원 결함: #404 ← #403(콜드 캐시 + IdP 장애에서 매 검증이 IdP 를 때림), #551·#556 ← #520(빈 JWKS 키셋이 좋은 캐시를 덮음).
+
+⚠️ **Go `1.1.0` 은 최소 Go 를 1.25 → 1.26 으로 올립니다** — `go/v1.0.0` 의 `go.mod` 는 `go 1.25.0`, 이 릴리스는 `go 1.26.0` 입니다(`golang.org/x/oauth2` v0.37 · `golang.org/x/sync` v0.23 이 선언). 1.25 에 남는 모듈은 `v1.0.0` 에 머뭅니다.
 
 ### Security
 - **(Go)** 백채널 3xx 가 SSRF 와 fail-open 을 함께 열고 있었습니다 — raw HTTP 세 자리에 2xx 계약을 세웠습니다. (#380)
 - **(Go)** 마스킹 바닥 계약을 깨고 있었습니다 — 아홉 언어 교차가드로 켰습니다. (#387)
 - **(Go)** 클라이언트·auth·admin 파사드와 토큰 provider 의 기본 표현이 클라이언트 시크릿과 캐시된 액세스 토큰을 원문으로 찍었습니다 — `log.Printf("%+v", client)` 가 시크릿을 남겼습니다. **게시본 `1.0.0` 에 들어 있습니다.** (#592)
 - **(Go · PHP · Ruby)** 덤프 경로에서 막을 수 있는 것을 막고, 못 막는 것은 경계로 적었습니다. (#491)
-- **(Ruby)** admin 경로 세그먼트가 무이스케이프 보간이었습니다 — 엔드포인트 우회 + stdlib 예외 누출. (#383)
-- **(Ruby)** provider 의 기본 `inspect` 가 캐시된 액세스 토큰을 원문으로 찍었습니다. (#490)
 - **(.NET · Node · PHP)** PKCE verifier 와 토큰이 기본 직렬화기로 새고 있었습니다 — **게시본 `1.0.0` 에 들어 있습니다.** (#382)
 - **(PHP · Ruby)** 만료 시각 미상을 「안 만료됨」으로 읽었습니다 — PHP 캐시가 죽은 토큰을 영원히 재사용합니다. (#399)
 - **(PHP)** 비밀을 인자로 받는 아홉 자리가 스택트레이스에 원문으로 샜습니다. (#467)
 - **(PHP)** 클라이언트·auth·admin 파사드의 `var_dump`·`print_r` 가 클라이언트 시크릿과 **진행 중인 PKCE verifier** 를 원문으로 찍었고, `JwtValidator` 두 자리가 스택트레이스에 토큰 앞부분을 남겼습니다 — **게시본 `1.0.0` 에 들어 있습니다.** (#593)
 - **(PHP · Ruby)** JWKS 응답에 바이트 상한이 없었습니다 — PHP 는 상태를 보기도 전에 슬러프했습니다. (#466)
 - **(PHP · Ruby · Rust)** 빈 JWKS 키셋(200)이 좋은 캐시를 덮어 검증기를 눈멀게 했습니다. (#520)
-- **(Node)** 같은 결함의 마지막 자리였습니다 — jose 의 원격 키셋은 그대로 두고 JWKS fetch 이음매에서 막았습니다. (#556)
-- **(Java · Kotlin · .NET)** 같은 결함이 셋에도 있었습니다 — .NET 은 last-known-good 폴백이 최대 1 시간 가리고 있었을 뿐입니다. (#551)
 - **(Rust)** 마스킹 축이 `TokenSet` 하나만 겨눴습니다 — 형제 타입은 무방비였습니다. (#437)
 - **(Rust)** JWKS 응답의 HTTP 상태와 본문 크기를 안 봤습니다 — 500 본문이 JSON 이면 파싱됐습니다. (#440)
 - **(Rust)** 공개 클라이언트에 빈 시크릿을 강제해 Basic 인증을 켰습니다 — 세 자리 전부. (#441)
+
+### Fixed
+- **(Node · Python · PHP)** 0 이하·비유한 타임아웃과 음수 clock skew 를 조용히 받아 쓸 수 없는 클라이언트를 만들었습니다 — **PHP 의 0 은 타임아웃 없는 무한 대기**였고, Node 는 2^31 ms 이상에서 타이머가 1ms 로 바뀌어 즉시 abort 됐습니다. 이제 설정을 만들 때 `ConfigError` 입니다(Node 의 타임아웃 상한은 2147483647 ms). Ruby·.NET·Java·Kotlin 과 같은 규칙입니다. (#590)
+- **(Rust)** `logout` 이 400/401/404 에도 `Ok(())` 를 돌려줬습니다 — 세션이 살아있는데 성공입니다. (#397)
+- **(.NET · Go · Node · PHP · Python · Rust)** 같은 결함을 나머지 여섯에 복제했습니다(Ruby 는 #403 의 참조 구현 + 보강). (#404)
+- **(.NET · PHP · Python · Ruby · Rust)** 존재 검사는 타입 검사가 아닙니다 — 다섯 SDK 가 쓸 수 없는 토큰을 성공으로 냈습니다. (#481)
+
+### Added
+- **(Go)** godoc 이 약속한 `TokenProvider` 주입 자리를 만들었습니다 — 지금까지 없었습니다. (#449)
+- **(PHP · Rust)** 인가·교환의 `redirect_uri` 를 호출당 받습니다 — 일곱은 되고 둘만 안 됐습니다. (#485)
+- **(Rust)** `reqwest` · `RawKeycloakError` · `Jwk` 를 크레이트 루트에서 재노출합니다 — 없으면 `raw()` 소비자가 하위 크레이트를 직접 의존해야 합니다. (#523)
+
+## [1.0.2] - 2026-09-26 (Java · Kotlin)
+
+**Java · Kotlin 의 patch 입니다**(같은 물결의 나머지는 위 `[1.1.0]` 절의 머리말). 공개 API 변경은 **0** 입니다. ⚠️ **설정 검증이 조여졌습니다** — 연결·읽기 타임아웃 `0`(무한 대기)은 이제 `KeycloakConfigException` 입니다(#588). 아래 #551 의 「같은 결함」은 빈 JWKS 키셋(200)이 좋은 캐시를 덮는 결함입니다(#520, 위 절).
+
+### Security
+- **(Java · Kotlin · .NET)** 같은 결함이 셋에도 있었습니다 — .NET 은 last-known-good 폴백이 최대 1 시간 가리고 있었을 뿐입니다. (#551)
+
+### Fixed
+- **(Java · Kotlin)** 공개(시크릿 없는) 클라이언트가 `refresh`·`logout` 을 할 수 없었습니다 — Keycloak 은 둘 다 허용합니다. 로컬 거부는 서버도 거부하는 `clientCredentials`·`introspect` 에만 남았습니다. (#557)
+- **(Java · Kotlin)** 호출 인자를 Nimbus 가 로컬에서 거부하면 그 예외가 SDK 타입으로 번역되지 않고 샜습니다 — 잘못된 PKCE verifier·빈 code·빈 refresh/introspect 토큰은 이제 `KeycloakAuthException`, 잘못된 `redirect_uri` 는 `KeycloakConfigException` 입니다(나머지 일곱은 같은 값을 서버가 거절해 이미 SDK 인증 오류였습니다). `clientCredentialsToken` 은 공백 scope 로 실패하지 않습니다. Java 의 null `code`·`codeVerifier`·`redirectUri` 는 SDK 메시지의 `IllegalArgumentException` 입니다. (#585)
+- **(Java · Kotlin)** 형식이 틀린 설정값이 첫 호출에서 하위 예외로 샜습니다(상대 `serverUrl` 은 Nimbus `SerializeException` 자체였습니다) — 이제 설정을 만들 때 `KeycloakConfigException` 입니다: `serverUrl` 은 절대 http(s) URL(포트 65535 이하), 연결·읽기 타임아웃은 1 ms 이상 int 밀리초 이하입니다(**0 은 무한 대기라 이제 거부합니다**). `clockSkew`·`jwksMinRefetch` 는 음수·null 을, Java 의 `scopes`·`signatureAlgorithms` 는 null 을 거부합니다. realm 은 엔드포인트 URL 에서 퍼센트 인코딩되고, `openid` 가 없는 scopes 는 인가 요청에 그대로 실립니다 — 나머지 일곱과 같고, 전에는 Nimbus 예외가 났습니다. (#588)
+
+## [1.0.1] - 2026-09-26 (Python · .NET · Ruby · Node)
+
+**Python · .NET · Ruby · Node 의 patch 입니다**(같은 물결의 나머지는 위 `[1.1.0]` 절의 머리말). ⚠️ 같은 번호의 `[1.0.1] - 2026-09-23` 절(아래)은 **Java · Kotlin** 의 것이고 이 절과 무관합니다 — 번호는 언어별로 독립입니다. ⚠️ **설정 검증이 조여졌습니다** — 형식이 틀린 서버 URL(Ruby·.NET·Node, #589)과 0 이하·비유한 타임아웃·음수 clock skew(Python·Node, #590)는 이제 설정을 만들 때 거부됩니다.
+
+### Security
+- **(Go · PHP · Ruby)** 덤프 경로에서 막을 수 있는 것을 막고, 못 막는 것은 경계로 적었습니다. (#491)
+- **(Ruby)** admin 경로 세그먼트가 무이스케이프 보간이었습니다 — 엔드포인트 우회 + stdlib 예외 누출. (#383)
+- **(Ruby)** provider 의 기본 `inspect` 가 캐시된 액세스 토큰을 원문으로 찍었습니다. (#490)
+- **(.NET · Node · PHP)** PKCE verifier 와 토큰이 기본 직렬화기로 새고 있었습니다 — **게시본 `1.0.0` 에 들어 있습니다.** (#382)
+- **(PHP · Ruby)** 만료 시각 미상을 「안 만료됨」으로 읽었습니다 — PHP 캐시가 죽은 토큰을 영원히 재사용합니다. (#399)
+- **(PHP · Ruby)** JWKS 응답에 바이트 상한이 없었습니다 — PHP 는 상태를 보기도 전에 슬러프했습니다. (#466)
+- **(PHP · Ruby · Rust)** 빈 JWKS 키셋(200)이 좋은 캐시를 덮어 검증기를 눈멀게 했습니다. (#520)
+- **(Node)** 같은 결함의 마지막 자리였습니다 — jose 의 원격 키셋은 그대로 두고 JWKS fetch 이음매에서 막았습니다. (#556)
+- **(Java · Kotlin · .NET)** 같은 결함이 셋에도 있었습니다 — .NET 은 last-known-good 폴백이 최대 1 시간 가리고 있었을 뿐입니다. (#551)
 - **(Python)** sync 인가 URL 이 인코딩 없이 조립돼 파라미터가 주입됐습니다. (#442)
 - **(Python)** JWKS 응답에 바이트 상한을 걸었습니다 — 9 언어 보안 부류의 마지막 이음매. (#480)
 - **(Node)** 사용처 skew 기본값이 무보호였고, 설정값이 아예 도달하지 않았습니다. (#445)
@@ -37,21 +75,12 @@
 - **(.NET)** 토큰 provider 가 캐시한 액세스 토큰을 내부 레코드의 `ToString` 이 원문으로 찍었습니다 — 디버거 조사식·리플렉션 덤프로만 닿는 private 타입입니다. (#594)
 
 ### Fixed
-- **(Java · Kotlin)** 공개(시크릿 없는) 클라이언트가 `refresh`·`logout` 을 할 수 없었습니다 — Keycloak 은 둘 다 허용합니다. 로컬 거부는 서버도 거부하는 `clientCredentials`·`introspect` 에만 남았습니다. (#557)
-- **(Java · Kotlin)** 호출 인자를 Nimbus 가 로컬에서 거부하면 그 예외가 SDK 타입으로 번역되지 않고 샜습니다 — 잘못된 PKCE verifier·빈 code·빈 refresh/introspect 토큰은 이제 `KeycloakAuthException`, 잘못된 `redirect_uri` 는 `KeycloakConfigException` 입니다(나머지 일곱은 같은 값을 서버가 거절해 이미 SDK 인증 오류였습니다). `clientCredentialsToken` 은 공백 scope 로 실패하지 않습니다. Java 의 null `code`·`codeVerifier`·`redirectUri` 는 SDK 메시지의 `IllegalArgumentException` 입니다. (#585)
-- **(Java · Kotlin)** 형식이 틀린 설정값이 첫 호출에서 하위 예외로 샜습니다(상대 `serverUrl` 은 Nimbus `SerializeException` 자체였습니다) — 이제 설정을 만들 때 `KeycloakConfigException` 입니다: `serverUrl` 은 절대 http(s) URL(포트 65535 이하), 연결·읽기 타임아웃은 1 ms 이상 int 밀리초 이하입니다(**0 은 무한 대기라 이제 거부합니다**). `clockSkew`·`jwksMinRefetch` 는 음수·null 을, Java 의 `scopes`·`signatureAlgorithms` 는 null 을 거부합니다. realm 은 엔드포인트 URL 에서 퍼센트 인코딩되고, `openid` 가 없는 scopes 는 인가 요청에 그대로 실립니다 — 나머지 일곱과 같고, 전에는 Nimbus 예외가 났습니다. (#588)
 - **(Ruby · .NET · Node)** 형식이 틀린 설정 URL 이 첫 호출이나 클라이언트 조립 중 하위 예외(`URI::InvalidURIError`·`UriFormatException`·`TypeError` 등)로 샜습니다 — 이제 설정을 만들 때 `ConfigError` 입니다. Ruby 는 realm 을 엔드포인트 URL 에서 퍼센트 인코딩합니다(전에는 공백 든 realm 이 예외를 냈습니다). (#589)
 - **(Node · Python · PHP)** 0 이하·비유한 타임아웃과 음수 clock skew 를 조용히 받아 쓸 수 없는 클라이언트를 만들었습니다 — **PHP 의 0 은 타임아웃 없는 무한 대기**였고, Node 는 2^31 ms 이상에서 타이머가 1ms 로 바뀌어 즉시 abort 됐습니다. 이제 설정을 만들 때 `ConfigError` 입니다(Node 의 타임아웃 상한은 2147483647 ms). Ruby·.NET·Java·Kotlin 과 같은 규칙입니다. (#590)
-- **(Rust)** `logout` 이 400/401/404 에도 `Ok(())` 를 돌려줬습니다 — 세션이 살아있는데 성공입니다. (#397)
 - **(Ruby)** 콜드 캐시 + IdP 장애에서 매 검증이 IdP 를 때렸습니다 — 참조 구현(20 → 1). (#403)
 - **(.NET · Go · Node · PHP · Python · Rust)** 같은 결함을 나머지 여섯에 복제했습니다(Ruby 는 #403 의 참조 구현 + 보강). (#404)
 - **(Python)** sync admin 의 `close()` 가 no-op 이었고, 테스트가 그것을 의도로 고정하고 있었습니다. (#469)
 - **(.NET · PHP · Python · Ruby · Rust)** 존재 검사는 타입 검사가 아닙니다 — 다섯 SDK 가 쓸 수 없는 토큰을 성공으로 냈습니다. (#481)
-
-### Added
-- **(Go)** godoc 이 약속한 `TokenProvider` 주입 자리를 만들었습니다 — 지금까지 없었습니다. (#449)
-- **(PHP · Rust)** 인가·교환의 `redirect_uri` 를 호출당 받습니다 — 일곱은 되고 둘만 안 됐습니다. (#485)
-- **(Rust)** `reqwest` · `RawKeycloakError` · `Jwk` 를 크레이트 루트에서 재노출합니다 — 없으면 `raw()` 소비자가 하위 크레이트를 직접 의존해야 합니다. (#523)
 
 ## [1.0.1] - 2026-09-23
 

@@ -4,16 +4,16 @@ A coroutine-first Keycloak client library for Kotlin/JVM that covers both **Auth
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`1.0.1` is on Maven Central** — a patch release: two security fixes and a **lowered JDK floor** (21 → 17). No public API changed; the stability guarantee below is unchanged. ⚠️ **A coordinate written without a version resolves nothing in Gradle or Maven**, and nothing falls back to the newest release — name `1.0.1` explicitly as shown below (Maven Central is immutable, so every earlier `0.x` stays published forever too: no delete, no yank, no unlist). ⚠️ **Consumer floor: Kotlin 2.2+** — the published jar carries `@Metadata(mv=[2,2,0])` and declares `kotlin-stdlib 2.2.21`, deliberately lower than the 2.4.10 toolchain used to build it.
+> **`1.0.2` is on Maven Central** — a patch release of security and correctness fixes: a `200` JWKS response carrying an empty key set no longer replaces a good cached one, a public (secret-less) client can now `refresh` and `logout`, and call arguments or config values that Nimbus rejects now surface as `KeycloakAuthException` / `KeycloakConfigException` instead of leaking Nimbus exceptions. ⚠️ **Config is now validated when it is built** — `serverUrl` must be an absolute http(s) URL, and a connect or read timeout of `0` (an unbounded wait until now) is rejected. No public API changed; the stability guarantee below is unchanged. ⚠️ **A coordinate written without a version resolves nothing in Gradle or Maven**, and nothing falls back to the newest release — name `1.0.2` explicitly as shown below (Maven Central is immutable, so every earlier `0.x` stays published forever too: no delete, no yank, no unlist). ⚠️ **Consumer floor: Kotlin 2.2+** — the published jar carries `@Metadata(mv=[2,2,0])` and declares `kotlin-stdlib 2.2.21`, deliberately lower than the 2.4.20 toolchain used to build it.
 
 ## Requirements
 
-- **Kotlin 2.2+** on **JDK 17+** — this is the floor of the **published** `1.0.1`, which is the release that lowers it (`jvmTarget = JVM_17` plus `-Xjdk-release=17`). ⚠️ **`1.0.0` needed JDK 21** — `kotlin-v1.0.0` carried only `jvmToolchain(21)` and no `jvmTarget` ([detail](../docs/guides/getting-started.md#kotlin)). The SDK is built with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so its published metadata is consumable by any Kotlin 2.2+ compiler.
+- **Kotlin 2.2+** on **JDK 17+** — this is the floor of the **published** `1.0.2`; `1.0.1` is the release that lowered it (`jvmTarget = JVM_17` plus `-Xjdk-release=17`). ⚠️ **`1.0.0` needed JDK 21** — `kotlin-v1.0.0` carried only `jvmToolchain(21)` and no `jvmTarget` ([detail](../docs/guides/getting-started.md#kotlin)). The SDK is built with Kotlin 2.4.20 but pins `languageVersion`/`apiVersion` to 2.2, so its published metadata is consumable by any Kotlin 2.2+ compiler.
 - A Keycloak server to connect to (integration-tested against Keycloak 26.6).
 
 Every network call is a `suspend` function — blocking calls into the underlying JVM libraries run on `Dispatchers.IO` via `runInterruptible`. `createAuthorizationRequest` is the one `AuthClient` call that is not, because it needs no network (the facade accessors such as `admin.users()` are synchronous too — they do no I/O). Public API visibility is enforced with `explicitApi()`.
 
-The published `1.0.1` reuses the verified JVM stack of its sibling Java SDK — `org.keycloak:keycloak-admin-client`, `com.nimbusds:oauth2-oidc-sdk` and `com.nimbusds:nimbus-jose-jwt` — plus `kotlinx-coroutines-core` for the coroutine boundary. The exact pins are in the published POM; `main` may already be ahead of it.
+The published `1.0.2` reuses the verified JVM stack of its sibling Java SDK — `org.keycloak:keycloak-admin-client`, `com.nimbusds:oauth2-oidc-sdk` and `com.nimbusds:nimbus-jose-jwt` — plus `kotlinx-coroutines-core` for the coroutine boundary. The exact pins are in the published POM; `main` may already be ahead of it.
 
 ## Install
 
@@ -21,7 +21,7 @@ Gradle Kotlin DSL:
 
 ```kotlin
 dependencies {
-    implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.1")
+    implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.2")
 }
 ```
 
@@ -82,7 +82,7 @@ This SDK is **`1.0`** and follows SemVer: a breaking change to the public API re
 
 Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
 
-**Each of the nine languages versions independently.** All nine reached `1.0.0` together because they earned the same guarantee at the same time — and they have since diverged: the JVM pair is on `1.0.1`, the other seven on `1.0.0`. They do **not** move in lockstep.
+**Each of the nine languages versions independently.** All nine reached `1.0.0` together because they earned the same guarantee at the same time — and they have since diverged: Go · PHP · Rust are on `1.1.0`, the JVM pair on `1.0.2`, Python · .NET · Ruby · Node on `1.0.1`. They do **not** move in lockstep.
 
 ## Documentation
 

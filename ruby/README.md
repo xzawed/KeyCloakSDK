@@ -4,7 +4,7 @@ Authentication (OIDC / OAuth2) and the Admin REST API for [Keycloak](https://www
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) — one API surface, isomorphic across all of them: [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`1.0.0` is on RubyGems** — the first release carrying the stability guarantee. A bare `gem install keycloak-sdk` resolves it.
+> **`1.0.1` is on RubyGems** — a patch release of security and correctness fixes on top of `1.0.0`, the first release carrying the stability guarantee. A bare `gem install keycloak-sdk` resolves it. Admin path segments are now escaped (an unescaped name could redirect a call to another endpoint), the token provider's default `inspect` no longer prints the cached access token, a token whose expiry is unknown is treated as expired, JWKS responses are size-capped, an empty `200` JWKS key set no longer replaces a good cached one, failed JWKS fetches back off instead of hitting the IdP on every validation, and a token response of the wrong shape is no longer returned as a success. ⚠️ **A `server_url` that is not an absolute http(s) URL now raises `ConfigError` when the config is built**, instead of a stdlib exception on the first call.
 
 ## Requirements
 

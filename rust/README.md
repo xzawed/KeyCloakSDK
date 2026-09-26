@@ -4,7 +4,7 @@ An async Keycloak SDK for Rust — OIDC/OAuth2 authentication with hardened JWT 
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layering and flows are isomorphic across every language — monorepo: <https://github.com/xzawed/KeyCloakSDK>
 
-> **`1.0.0` is on crates.io** — the first release that carries the stability guarantee: from here on, a breaking change to the public API requires a major bump. The bare `cargo add keycloak-sdk` below resolves `1.0.0`, and a hand-written `keycloak-sdk = "1"` or `keycloak-sdk = "1.0"` matches it too.
+> **`1.1.0` is on crates.io** — a minor release on top of `1.0.0`, the first release that carries the stability guarantee (a breaking change to the public API requires a major bump). The bare `cargo add keycloak-sdk` below resolves `1.1.0`, and a hand-written `keycloak-sdk = "1"` or `keycloak-sdk = "1.0"` matches it too. **Added**: a per-call `redirect_uri` for the authorization flow (`create_authorization_request_with_redirect` · `exchange_code_with_redirect`), and `RawKeycloakError` and `Jwk` re-exported from the crate root. **Fixed**: masking now covers every sibling of `TokenSet`, the JWKS fetch checks the HTTP status and caps the body size, a public client no longer sends an empty secret over Basic auth, an empty `200` JWKS key set no longer replaces a good cached one, and failed JWKS fetches back off. ⚠️ **`logout` now returns an error on a 400/401/404** — it returned `Ok(())` before, although the session was still alive.
 
 ## Requirements
 

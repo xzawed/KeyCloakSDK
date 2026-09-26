@@ -1,4 +1,8 @@
-<!-- doc-budget: max-bytes=12492 -->
+<!-- doc-budget: max-bytes=12497 -->
+<!-- 12492 → 12497 (2026-09-26). 규약 (1) — 함대가 **세 갈래**로 갈렸다. 두 갈래를 말하던 요약
+     문장은 이 릴리스 범프로 거짓이 되고, 새 문장의 버전 집합은 `test-publication-claims.sh`
+     축 2 가 SSOT(`df_published_version`)와 대조한다. 압축을 먼저 했다 — 언어 넷을 「the rest」
+     로 접어 증가분을 31B 에서 5B 로 낮췄다(README.ko.md·SECURITY.md 도 같은 교환). -->
 <!-- 12484 → 12492 (2026-09-23). 규약 (1) — 태그 `kotlin-v1.0.1` 이 생겨 kotlin 앵커의
      `published=21` 도 반대 방향으로 실패했다. java 와 같은 정정을 kotlin 자리에 한다.
      이제 **JVM 둘 다 17** 이므로 「어느 쪽이 아직 안 내려갔는가」 단서는 필요 없어졌고,
@@ -36,7 +40,7 @@ English · [한국어](README.ko.md)
 
 > "Polyglot" here means **programming languages**, not natural-language localization (i18n).
 >
-> ⚠️ **All nine languages have shipped a stable release, and the numbers differ** — the JVM pair (Java · Kotlin) is on `1.0.1`, the other seven on `1.0.0`. They reached 1.0 in the same wave because they earned the same guarantee at the same time — a breaking change to the public API requires a **major** bump, and CI enforces that by diffing each lane's API against its previously published artifact. **They do not move as a fleet**: a language gets a new number only when something consumer-visible changed in it. Every release is human-gated. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
+> ⚠️ **All nine languages have shipped a stable release, and the numbers differ** — Go · PHP · Rust on `1.1.0`, Java · Kotlin on `1.0.2`, the rest on `1.0.1`. They reached 1.0 in the same wave because they earned the same guarantee at the same time — a breaking change to the public API requires a **major** bump, and CI enforces that by diffing each lane's API against its previously published artifact. **They do not move as a fleet**: a language gets a new number only when something consumer-visible changed in it. Every release is human-gated. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
 
 ---
 
@@ -79,7 +83,7 @@ with KeycloakClient.create(config) as kc:
 ```bash
 pip install keycloak-sdk                              # Python
 npm install @xzawed/keycloak-sdk                      # Node
-go get github.com/xzawed/KeyCloakSDK/go@v1.0.0        # Go
+go get github.com/xzawed/KeyCloakSDK/go@v1.1.0        # Go
 dotnet add package Xzawed.Keycloak.Sdk                # C# / .NET
 composer require xzawed/keycloak-sdk                  # PHP
 cargo add keycloak-sdk                                # Rust
@@ -89,8 +93,8 @@ gem install keycloak-sdk                              # Ruby
 JVM — add the coordinate to your build file:
 
 ```
-io.github.xzawed:keycloak-sdk:1.0.1                   # Java   (Maven Central)
-io.github.xzawed:keycloak-sdk-kotlin:1.0.1            # Kotlin (Maven Central)
+io.github.xzawed:keycloak-sdk:1.0.2                   # Java   (Maven Central)
+io.github.xzawed:keycloak-sdk-kotlin:1.0.2            # Kotlin (Maven Central)
 ```
 
 Full snippets per build tool (Maven XML, Gradle Kotlin DSL, `Gemfile`, `Cargo.toml`) are in the [getting-started guide](docs/guides/getting-started.md).
