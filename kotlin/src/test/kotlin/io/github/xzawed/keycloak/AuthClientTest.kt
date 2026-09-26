@@ -107,7 +107,8 @@ internal class AuthClientTest {
                 val auth = AuthClient(config())
                 val ex = assertFailsWith<KeycloakAuthException>("access_token $raw") { auth.clientCredentialsToken() }
                 assertEquals("Malformed auth response", ex.message, "access_token $raw")
-                assertTrue(ex.cause is com.nimbusds.oauth2.sdk.ParseException, "access_token $raw")
+                // 원인은 Nimbus 예외의 가린 사본이다(응답을 인용하므로 — `AuthMalformedResponseTest`) — 타입 이름이 거절한 쪽을 말한다.
+                assertEquals("com.nimbusds.oauth2.sdk.ParseException", (ex.cause as RedactedCause).originalType, "access_token $raw")
                 auth.close()
             }
         }
