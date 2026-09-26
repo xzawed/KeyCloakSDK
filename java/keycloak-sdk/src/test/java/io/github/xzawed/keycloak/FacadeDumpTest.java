@@ -109,6 +109,8 @@ class FacadeDumpTest {
   private static final String REFRESH = "CANARY-DUMP-REFRESH-TOKEN";
   private static final String GARBAGE = "CANARY-DUMP-GARBAGE-TOKEN";
   private static final String PASSWORD = "CANARY-DUMP-ADMIN-PASSWORD";
+  /** 200 인데 JSON 이 아닌 토큰 본문 — 식별자 글자만(Jackson 은 {@code -} 앞에서 인용을 끊는다). */
+  private static final String GARBLED = "CANARYDUMPGARBLEDTOKENBODY";
   private static final String CLIENT_ID = "c";
   private static final String OC = "/realms/r/protocol/openid-connect";
   /** SDK 루트 패키지 = 파사드의 패키지(손으로 적지 않는다). */
@@ -246,6 +248,13 @@ class FacadeDumpTest {
 
     KeycloakAdminException serverError = assertThrows(KeycloakAdminException.class, () -> admin.users().get("boom"));
     assertEquals(KeycloakAdminException.class, serverError.getClass(), "500 은 기본 분기다");
+    // 형식이 틀린 토큰 응답 — 파서 예외가 응답을 인용하는 사슬(상세 측정: MalformedIdpResponseTest).
+    KeycloakClient garbled = KeycloakClient.create(KeycloakConfig.builder()
+        .serverUrl(idp.url()).realm("garbled").clientId(CLIENT_ID).clientSecret(SECRET.toCharArray()).build());
+    closers.add(garbled);
+    KeycloakClient echo = KeycloakClient.create(KeycloakConfig.builder()
+        .serverUrl(idp.url()).realm("echo").clientId(CLIENT_ID).clientSecret(SECRET.toCharArray()).build());
+    closers.add(echo);
 
     canaries.put("SECRET", SECRET);
     canaries.put("BASIC", basic);   // Basic 헤더 값 — 시크릿의 인코딩된 형태도 비밀이다.
@@ -254,6 +263,7 @@ class FacadeDumpTest {
     canaries.put("ID", idp.idToken);
     canaries.put("GARBAGE", GARBAGE);
     canaries.put("PASSWORD", PASSWORD);
+    canaries.put("GARBLED", GARBLED);
     canaries.put("VERIFIER", ar.getCodeVerifier());
     canaries.put("PKCE", pkce.getVerifier());
     canaries.put("JWT", jwt);
@@ -290,6 +300,12 @@ class FacadeDumpTest {
     roots.put("introspect transport error", assertThrows(KeycloakTransportException.class, () -> down.auth().introspect(ACCESS)));
     roots.put("logout transport error", assertThrows(KeycloakTransportException.class, () -> down.auth().logout(REFRESH)));
     roots.put("admin transport error", assertThrows(KeycloakTransportException.class, () -> down.admin().users().get("x")));
+    roots.put("auth error (200 non-JSON token body)",
+        assertThrows(KeycloakAuthException.class, () -> garbled.auth().clientCredentialsToken()));
+    roots.put("admin error (200 non-JSON token body)",
+        assertThrows(KeycloakTransportException.class, () -> garbled.admin().users().get("x")));
+    roots.put("auth error (error_description echoes the refresh token)",
+        assertThrows(KeycloakAuthException.class, () -> echo.auth().refresh(REFRESH)));
     roots.put("config error", assertThrows(KeycloakConfigException.class,
         () -> KeycloakConfig.builder().clientSecret(SECRET.toCharArray()).build()));
     return roots;
@@ -333,6 +349,10 @@ class FacadeDumpTest {
           reply(ex, 204, null);
         } else if (path.equals("/realms/bad/protocol/openid-connect/token")) {
           reply(ex, 401, "{\"error\":\"invalid_client\"}");
+        } else if (path.equals("/realms/garbled/protocol/openid-connect/token")) {
+          reply(ex, 200, GARBLED);
+        } else if (path.equals("/realms/echo/protocol/openid-connect/token")) {
+          reply(ex, 400, "{\"error\":\"invalid_grant\",\"error_description\":\"Invalid refresh token " + REFRESH + "\"}");
         } else if (path.equals("/admin/realms/r/users/missing")) {
           reply(ex, 404, "{\"error\":\"User not found\"}");
         } else if (path.equals("/admin/realms/r/users/forbidden")) {
