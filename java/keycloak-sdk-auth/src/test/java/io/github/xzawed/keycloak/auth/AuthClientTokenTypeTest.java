@@ -29,7 +29,10 @@ class AuthClientTokenTypeTest {
       KeycloakAuthException e = assertThrows(KeycloakAuthException.class,
           client::clientCredentialsToken, "access_token " + raw);
       assertEquals("Client credentials request error", e.getMessage(), "access_token " + raw);
-      assertInstanceOf(ParseException.class, e.getCause(), "access_token " + raw);
+      // 원인은 Nimbus 파서 예외의 **사본**이다 — 타입 이름은 남고 메시지(응답을 인용할 수 있다)는 보류된다.
+      assertFalse(e.getCause() instanceof ParseException, "access_token " + raw);
+      assertTrue(e.getCause().getMessage().startsWith(ParseException.class.getName() + " (message withheld"),
+          "access_token " + raw + ": " + e.getCause().getMessage());
       server.stop(0);
     }
   }

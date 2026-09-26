@@ -227,3 +227,52 @@ def trap() -> Any:
     for server in (idp, evil):
         server.shutdown()
         server.server_close()
+
+
+class _FakeResponse:
+    """python-keycloak `raise_error_from_response` 가 읽는 만큼만 흉내 낸 응답."""
+
+    def __init__(self, status_code: int, content: bytes) -> None:
+        self.status_code = status_code
+        self.content = content
+
+    def json(self) -> Any:
+        return json.loads(self.content)
+
+
+@pytest.fixture(scope="session")
+def lower_type_error() -> Any:
+    """python-keycloak 이 **실제로** 던지는, 응답 본문을 인용한 `TypeError` 를 만든다.
+
+    200 인데 JSON 객체가 아닌 본문이면 `KeycloakOpenID.token` 이 `value b'...'` 로 본문을 실은
+    `TypeError` 를 던진다(7.1.1 실측). 네트워크 없이 — `raw_post` 만 바꿔 끼운다."""
+    from keycloak import KeycloakOpenID
+
+    openid = KeycloakOpenID(server_url="https://kc.invalid", realm_name="r", client_id="c")
+
+    def make(body: bytes) -> TypeError:
+        openid.connection.raw_post = lambda *_a, **_k: _FakeResponse(200, body)
+        try:
+            openid.token(grant_type="client_credentials")
+        except TypeError as exc:
+            assert body.decode() in str(exc), "python-keycloak 이 더는 본문을 인용하지 않는다"
+            return exc
+        raise AssertionError("python-keycloak 이 TypeError 를 던지지 않았다")
+
+    return make
+
+
+@pytest.fixture(scope="session")
+def lower_post_error() -> Any:
+    """python-keycloak 이 오류 응답에서 **실제로** 만드는 오류 — 메시지가 본문이다. 401 이면
+    `KeycloakAuthenticationError`, 그 밖은 `KeycloakPostError` 다(`raise_error_from_response`)."""
+    from keycloak.exceptions import KeycloakError, KeycloakPostError, raise_error_from_response
+
+    def make(status: int, body: bytes) -> KeycloakError:
+        try:
+            raise_error_from_response(_FakeResponse(status, body), KeycloakPostError)
+        except KeycloakError as exc:
+            return exc
+        raise AssertionError("python-keycloak 이 오류를 던지지 않았다")
+
+    return make
