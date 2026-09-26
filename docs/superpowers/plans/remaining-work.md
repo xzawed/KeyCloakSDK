@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `206`(2026-09-26 기준 열림 116 · 닫힘 90)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `208`(2026-09-26 기준 열림 116 · 닫힘 92)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,16 +116,15 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-09-26 · #560–#592 반영)
+### 다음 세션 진입점 (2026-09-26 · #560–#593 반영)
 
 **지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. JVM `1.0.1` 은 **게시·바이트 확인 완료**(`node scripts/check-published-jvm-floor.mjs` 전부 major ≤ 61)이고 API 기저선도 1.0.1 이다. 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. **`php-facade-dump-leaks-secret` [M/S] · `php-jwtvalidator-trace-arg` [M/S]** — #592 의 선행 전수가 낸 실측 누출. 작다 — php 에 go 의 걷기 테스트 모양을 세우며 함께 닫는다.
-2. **`guard-detection-surface-hand-narrowed` [H/M]** — 파생 술어의 모양은 섰다(Go #592: 도달 객체 걷기 + 구조체 선언 대조). 남은 것은 여덟 언어로 옮기기다 — 언어마다 리플렉션 도구가 달라 한 언어씩(그 항목의 ✅ 첫 파생 술어).
-3. `integration-coverage-never-measured` [H/L] — 크다. 설계부터.
-4. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다. 반대 방향도 있다 — #585 는 「verifier 하나」로 등록됐지만 부류는 호출 인자 다섯 갈래였다.
+1. **`guard-detection-surface-hand-narrowed` [H/M]** — 파생 술어의 모양은 두 언어에서 섰다(Go #592 · PHP #593: 도달 객체 걷기 + 선언 대조). 남은 것은 일곱으로 옮기기다 — 언어마다 리플렉션 도구가 달라 한 언어씩, rust 는 리플렉션이 없어 다른 모양(그 항목의 ✅).
+2. `integration-coverage-never-measured` [H/L] — 크다. 설계부터.
+3. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다. 반대 방향도 있다 — #585 는 「verifier 하나」로 등록됐지만 부류는 호출 인자 다섯 갈래였다.
 
 **사람 판정 대기** — 없음. 2026-09-25 사용자 판정: 출처 미상 stash 둘(JDK 17→25)과 빈 `snap*` 워크트리 셋은 **폐기**했다(실측·검증되지 않은 산출물은 확인 후 폐기) · `irreversible-publish-no-reentry` 는 **보류 유지**(근거는 그 항목).
 
@@ -465,6 +464,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - ✅ **남은 넷도 비공허 앵커로 옮겼다(2026-09-25, #578 · #580 · #582).** 모형 하나로 수렴했다: 구조 표지는 **주석 밖 ≥ 1**, 행위 테스트 카나리아는 **주석 밖 정확히 1 회**(`파일|선언`, 경로마다 한 줄). `main` 실측 SILENT 였던 것: 카나리아가 형제에 흡수(go `assertMasked` 8 회 · node 3 회 · go 인가요청 7 회) · 주석 속 훅 사본 · `xit` 로 건너뛴 테스트 · 선언 이름 표지라 **호출 삭제**가 통과(nonce·백오프). ⚠️ 호출 삭제 자체는 이 가드가 아니라 **언어 CI 의 행위 테스트**가 잡는다 — 그 테스트가 없던 java·rust nonce(#577)·토큰타입(node #579 · go·java·kotlin #581)을 먼저 세웠다.
   - ⏸ **열린 채 남는 것** — 이 부류의 (B) 「기존 언어에 **새 자리**가 생겼다」는 값 동형이 서는 숫자 축(재조회·skew·크기상한)만 파생으로 닫혔다. 마스킹·nonce·백오프·토큰타입은 앵커가 비공허해졌을 뿐 **새 비밀 보유 타입·새 교환 경로**를 스스로 찾지 못한다. 줄 단위라 다음 줄의 skip 표지(`#[ignore]`·`@Disabled`·데코레이터)도 못 본다. 닫으려면 「새 자리」를 트리에서 파생할 술어가 필요하다(예: 공개 타입 중 비밀 필드를 가진 것 전수).
   - ✅ **첫 파생 술어 — Go, 이름 grep 이 아니라 행위로(2026-09-26 #592).** 공개 API 호출로 만든 뿌리에서 리플렉션으로 닿는 패키지 타입 전부를 fmt 다섯 동사·slog 두 핸들러로 찍어 카나리아를 찾고, 소스를 파싱한 **구조체 선언 전수**가 걷기에 걸렸는지 대조한다(새 타입은 걷기에 닿거나 이유와 함께 면제 — 면제 0). 언어 CI 안이라 required 를 잠그지 않는다. 첫 실행이 실제 누출을 냈다(`go-facade-dump-leaks-secret`). 선행 전수(9 언어 · 독자+비판자 18): 기본 표현으로 새는 파사드는 go 뿐이었다. ⚠️ **한계**: 카나리아는 뿌리 호출이 흘린 비밀뿐이다. **남은 것**: 같은 모양을 여덟 언어에(리플렉션 없는 rust 는 다른 모양) · nonce·백오프·토큰타입의 「새 교환 경로」는 이 술어 밖.
+  - ✅ **둘째 — PHP(#593).** 같은 모양을 `ReflectionObject` 로 — 인스턴스 상태 없는 클래스는 규칙으로 제외, 면제 1(이유 적음). ⚠️ 예외 뿌리는 트레이스 인자에 **하네스**(PHPUnit 러너 프레임의 테스트 객체·비정적 클로저의 `$this`)가 실려 첫 RED 172 가 대부분 거짓이었다 — 하네스 상태를 정적으로, 클로저를 `static fn` 으로. 고칠 수 없는 누출은 `KNOWN_LEAKS`(낡으면 실패)로 드러낸 채 고정했다. **남은 일곱**: java·kotlin·python·node·dotnet·ruby·rust.
   - ⚠️ **또 늘었다 — 축 9 중 손 표 7 → 축 11 중 손 표 9 → 축 12 중 파생 3 · 혼합 1 · 손 8**(재측정 2026-09-16 · 직전 판 2026-09-12 는 독립 레그와 일치했다). 그 사이 추가된 축 둘(JWKS 크기상한 · 토큰응답 타입검증)이 **둘 다 손 표**다. 파생은 여전히 `git ls-files` 둘뿐. 배너 전수: `grep -cE '^# [0-9]+[a-z0-9]*\) ' scripts/test/test-security-defaults.sh` → **11**. ⚠️ `'^# [0-9]'` 로 세면 **15** 가 나온다 — 숫자로 시작하는 산문 넉 줄(「30초로…」 등)이 섞인다. ⚠️ 그리고 **축 이름이 이미 충돌한다**(`1b` 셋 · `1c` 둘) — 「축 N」으로 지목하지 말고 줄번호로 지목할 것. ⚠️ **처방은 그대로다**(이 파일에 축을 더하지 않는다) — 이번 PR 도 새 불변식을 여기가 아니라 `check-versions.mjs` 로 냈다.
   - **축 7 중 손 표 5 → 축 9 중 손 표 7 로 늘었다**(실측 2026-09-07, 독립 레그 둘). 그 사이 추가된 축 둘 — 1b2 콜드캐시 백오프 · 1d 형제 마스킹(#437) — 이 **둘 다 손 표**다. 파생은 여전히 `git ls-files` 둘(문서 축·소스 주석 축)뿐이다.
   - ⚠️ **그런데 지금 파생으로 바꾸는 것이 옳은 수가 아니다.** 이 파일은 required 체크 `doc-facts` 안에서 `paths:` 필터 없이 돌고 룰셋은 `bypass_actors: []` 다 — 오탐 하나가 모든 PR 을 막고 소유자도 못 푼다. **되살릴 조건**: required **밖**(nightly 등)에서 먼저 돌려 오탐 0 을 실측할 것. 노이즈는 이미 쟀다 — 9언어 비테스트 소스에서 비밀 이름을 언급하는 파일이 **83개**라 그 신호를 그대로 쓸 수 없다.
@@ -604,7 +604,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 68건 (열림 50)
+## D. 원장 밖 — 70건 (열림 50)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -718,8 +718,10 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `config-timeouts-accept-negative-node-python-php` **[L/S · 신규·닫힘 2026-09-26 #590]** 셋의 0·음수를 먼저 쟀다 — 누출은 없고 쓸 수 없거나 위험한 설정이었다(php 0 = 무한 대기, node 2^31 이상 = 타이머가 1ms 로 바꿔 즉시 abort, python admin 은 즉시 실패). 셋 다 타임아웃 유한 > 0(node 는 ≤ 2147483647), skew·재조회 유한 ≥ 0 → 생성 시 ConfigError. python·php 는 Grok 레그가 구현, 변이 10/10 · `node/src/config.ts`
 - [ ] `release-publish-job-holds-contents-write` **[M/S · 신규 2026-09-25]** dotnet·php 에서 레지스트리 자격증명(`NUGET_API_KEY` · `PHP_SPLIT_TOKEN`)을 쥔 잡이 `gh release create` 때문에 저장소 `contents: write` 도 쥔다 — 게시와 Release 를 잡으로 나누면 풀리지만 그것은 `irreversible-publish-no-reentry` 의 보류된 안이라, **권한만을 위한 분리**가 값을 하는지는 별도 판정이다 · `.github/workflows/dotnet-release.yml`
 - [x] `go-facade-dump-leaks-secret` **[H/S · 신규·닫힘 2026-09-26 #592]** `*Client`·`*AuthClient` 가 fmt 다섯 동사 전부에서 클라이언트 시크릿을, 토큰 provider 가 캐시된 액세스 토큰을, `*AdminClient` 가 `%s`·`%q` 에서 그 토큰을 원문으로 찍었다(실측) — 비공개 필드는 fmt 가 `Config.String()` 을 못 부른다. 넷에 String·GoString + 도달 객체 걷기 테스트, 변이 8/8 · `go/facade_dump_test.go`
-- [ ] `php-facade-dump-leaks-secret` **[M/S · 신규 2026-09-26]** php `KeycloakClient`·`AuthClient` 의 `var_dump`·`print_r` 가 클라이언트 시크릿과 **살아 있는 PKCE verifier** 를, `AdminClient` 가 시크릿을 원문으로 찍는다(실측) — 값 타입과 provider 는 이미 `__debugInfo` 로 가리고 파사드만 없다. 같은 처방 + go 의 걷기 테스트 모양 · `php/src/AuthClient.php`
-- [ ] `php-jwtvalidator-trace-arg` **[M/S · 신규 2026-09-26]** `JwtValidator::validate`·`decodeHeader` 에 `#[\SensitiveParameter]` 가 없다 — #467 이 아홉 자리를 막을 때 빠졌다. 실측(`zend.exception_ignore_args=0`): 트레이스 두 프레임이 토큰 앞 15 자를 찍는다(`string_param_max_len` 을 올린 환경은 더) · `php/src/JwtValidator.php:26`
+- [x] `php-facade-dump-leaks-secret` **[M/S · 신규·닫힘 2026-09-26 #593]** php 파사드의 `var_dump`·`print_r` 가 클라이언트 시크릿과 **살아 있는 PKCE verifier** 를 원문으로 찍었다(실측). 새는 것을 쥔 자리에만 `__debugInfo`(league 프로바이더 · AdminClient · 리소스 다섯) — 두 파사드 훅은 변이가 SILENT 라 뺐다. go 와 같은 걷기 테스트, 변이 12 · `php/tests/Unit/FacadeDumpTest.php`
+- [x] `php-jwtvalidator-trace-arg` **[M/S · 신규·닫힘 2026-09-26 #593]** `JwtValidator::validate`·`decodeHeader` 에 `#[\SensitiveParameter]` — #467 의 파생 정규식이 이름 `jwt` 를 못 골라 빠졌다. 정규식에 더하자 정확히 그 둘이 RED, `$jwt` 선택을 대조군으로 고정 · `php/src/JwtValidator.php`
+- [ ] `php-exception-trace-third-party-args` **[L/M · 신규 2026-09-26]** `introspect`·`logout` 이 Guzzle `request()` 옵션으로 넘긴 토큰·Basic 헤더·클라이언트 시크릿이 `previous` 예외의 **Guzzle 프레임 인자**로 `var_dump`·`print_r` 에 찍힌다(실측, `zend.exception_ignore_args=0` — 운영 php.ini 는 1). `#[\SensitiveParameter]` 는 제3자 프레임에 못 닿는다. PSR-7 요청 + `send()` 면 본문은 스트림이라 안 찍히나 introspect 의 Basic 헤더는 남는다 — `FacadeDumpTest` 의 `KNOWN_LEAKS` 넷이 고정한다(고치면 낡은 항목으로 실패) · `php/src/AuthClient.php`
+- [ ] `go-nonstring-verb-bypasses-stringer` **[L/S · 신규 2026-09-26]** go 의 `%d` 류(비문자열 동사)는 `Stringer` 를 안 타 `Config`·`TokenSet`·`AuthorizationRequest`·파사드·provider 가 비밀을 찍는다(Grok 레그 818 사례 중 92, 재현). 바닥(`%v %+v %#v %s %q`) 밖이고 `go vet` printf 가 그 호출을 경고한다 — `fmt.Formatter` 로 닫을 수 있다. ⚠️ 같은 레그의 `json.Marshal`·slog JSON(컨테이너 안) 누출은 **설계 경계**다(`MarshalJSON` 은 왕복을 `***` 로 오염시킨다) · `go/config.go`
 - [ ] `dotnet-cached-record-tostring` **[L/S · 신규 2026-09-26]** `ClientCredentialsTokenProvider.Cached` 가 `sealed record` 라 컴파일러 `ToString` 이 캐시된 액세스 토큰을 찍는다 — private 이라 리플렉션·디버거로만 닿는다 · `dotnet/src/Xzawed.Keycloak.Sdk/ITokenProvider.cs:27`
 - [x] `probe-new-file-mutation-dies-silent` **[M/S · 신규·닫힘 2026-09-26 #591]** 새 파일만 만드는 변이에서 `probe.sh` 가 판정 없이 1(SILENT 의 코드)로 죽었다 — diff 가 비면 자리 검사의 `grep` 파이프가 1 을 내 `set -e` 가 끝냈다(실측: 0 바이트 · exit 1). `|| true` 한 곳 + 판정 줄을 보는 자가테스트 둘(RED → 18/18) · `scripts/probe.sh`
 - [x] `token-type-library-behaviour-unpinned` **[M/S · 신규·닫힘 2026-09-25 #581]** go·java·kotlin 이 비문자열 `access_token` 거절을 라이브러리(x/oauth2 · Nimbus)에 맡기면서 그 행동을 고정한 테스트가 0 이었다 — go 는 전제부터 미측정(실측: 여섯 다 `*AuthError`). 셋 다 표 테스트로 고정, 파싱 실패를 삼키는 변이에 go·java CAUGHT(kotlin 미측정) · `go/auth_test.go`
