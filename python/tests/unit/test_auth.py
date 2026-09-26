@@ -21,7 +21,12 @@ from keycloak.exceptions import KeycloakAuthenticationError, KeycloakGetError
 from keycloak_sdk._internal.backoff import JwksFailureBackoff
 from keycloak_sdk.auth import AuthClient
 from keycloak_sdk.config import KeycloakConfig
-from keycloak_sdk.exceptions import KeycloakAuthError, KeycloakTransportError, TokenValidationError
+from keycloak_sdk.exceptions import (
+    KeycloakAuthError,
+    KeycloakTransportError,
+    TokenSignatureError,
+    TokenValidationError,
+)
 from keycloak_sdk.oidc import OidcEndpoints
 from keycloak_sdk.tokens import IntrospectionResult, TokenSet, ValidatedToken
 
@@ -393,6 +398,24 @@ def test_exchange_code_rejects_missing_id_token_when_nonce_expected(jwks):
 
     with pytest.raises(KeycloakAuthError, match="id_token"):
         client.exchange_code("code", "https://app/cb", "verifier", nonce="server-nonce")
+
+
+def test_exchange_code_rejects_a_forged_rs256_id_token_whose_nonce_matches(jwks):
+    """서명만 틀린 RS256 id_token — 실서버로는 만들 수 없는 거부 경로라 여기서 증명한다.
+
+    통합 테스트(`test_code_exchange_it.py`)의 서명 음성은 HS256 토큰뿐이라, RS256 에서만 검증을
+    건너뛰는 구현은 거기서 초록이다(Grok 레그가 찾고 실측으로 확인)."""
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    forger = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})  # JWKS 의 k1 과 kid 만 같다
+    forged = _signed_token(
+        forger, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce"
+    )
+    client, _ = _exchange_client_with_id_token(id_token=forged, jwks=jwks)
+
+    with pytest.raises(KeycloakAuthError, match="invalid id_token") as refused:
+        client.exchange_code("code", "https://app/cb", "verifier", nonce="server-nonce")
+    assert type(refused.value.__cause__) is TokenSignatureError
 
 
 def test_exchange_code_skips_id_token_validation_without_nonce(jwks):

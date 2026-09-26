@@ -21,7 +21,12 @@ from keycloak_sdk._internal.backoff import JwksFailureBackoff
 from keycloak_sdk.aio.auth import AsyncAuthClient
 from keycloak_sdk.auth import AuthorizationUrl
 from keycloak_sdk.config import KeycloakConfig
-from keycloak_sdk.exceptions import KeycloakAuthError, KeycloakTransportError, TokenValidationError
+from keycloak_sdk.exceptions import (
+    KeycloakAuthError,
+    KeycloakTransportError,
+    TokenSignatureError,
+    TokenValidationError,
+)
 from keycloak_sdk.oidc import OidcEndpoints
 from keycloak_sdk.tokens import IntrospectionResult, TokenSet, ValidatedToken
 
@@ -228,6 +233,22 @@ async def test_exchange_code_rejects_missing_id_token_when_nonce_expected(ajwks)
 
     with pytest.raises(KeycloakAuthError, match="id_token"):
         await client.exchange_code("code", "https://app/cb", "verifier", nonce="server-nonce")
+
+
+async def test_exchange_code_rejects_a_forged_rs256_id_token_whose_nonce_matches(ajwks):
+    """sync 동형 — 서명만 틀린 RS256 id_token 은 실서버로 만들 수 없어 여기서 증명한다."""
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    forger = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})  # kid 만 같다
+    forged = _signed_token(
+        forger, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce"
+    )
+    client = _client(_exchange_openid_with_id_token(key, forged, ajwks), config=config)
+
+    with pytest.raises(KeycloakAuthError, match="invalid id_token") as refused:
+        await client.exchange_code("code", "https://app/cb", "verifier", nonce="server-nonce")
+    assert type(refused.value.__cause__) is TokenSignatureError
 
 
 async def test_refresh_maps_response_and_delegates():
