@@ -4,11 +4,13 @@ import io.github.xzawed.keycloak.KeycloakAdminException
 import io.github.xzawed.keycloak.KeycloakConfig
 import io.github.xzawed.keycloak.KeycloakConfigException
 import io.github.xzawed.keycloak.KeycloakTransportException
+import io.github.xzawed.keycloak.RedactedCause
 import io.github.xzawed.keycloak.onIo
 import jakarta.ws.rs.ProcessingException
 import jakarta.ws.rs.WebApplicationException
 import jakarta.ws.rs.client.Client
 import jakarta.ws.rs.client.ClientBuilder
+import jakarta.ws.rs.client.ResponseProcessingException
 import kotlinx.coroutines.CancellationException
 import org.keycloak.OAuth2Constants
 import org.keycloak.admin.client.JacksonProvider
@@ -121,8 +123,15 @@ internal suspend fun <T> adminCall(block: () -> T): T =
     } catch (e: WebApplicationException) {
         throw translateAdminException(e)
     } catch (e: ProcessingException) {
-        throw KeycloakTransportException("Admin request failed", e)
+        throw KeycloakTransportException("Admin request failed", transportCause(e))
     }
+
+// ⚠️ [ResponseProcessingException] 은 응답을 **받았으나** 읽지 못했다는 JAX-RS 의 표시다 — 그 아래 Jackson 예외가
+// 본문을 인용한다(「Unrecognized token '<본문>'」·JSON 문자열 값·expires_in 값). 내장 TokenManager 가 형식이
+// 틀린 토큰 응답을 받으면 여기로 온다(`AuthMalformedResponseTest`). 그 사슬은 [RedactedCause] 로 갈아 끼우고,
+// 응답이 없는 전송 실패(연결 거부·타임아웃·TLS)는 진단에 필요한 메시지를 그대로 둔다.
+internal fun transportCause(e: ProcessingException): Throwable =
+    if (generateSequence<Throwable>(e) { it.cause }.take(16).any { it is ResponseProcessingException }) RedactedCause.of(e) else e
 
 // Java AdminExceptions.translate 동형: status→리프 타입 매핑(부록 §auth-admin exactConfig).
 internal fun translateAdminException(e: WebApplicationException): KeycloakAdminException {
