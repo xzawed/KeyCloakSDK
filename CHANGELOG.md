@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Security
+- **(Java)** 형식이 틀린 토큰·introspect 응답의 오류가 원인 사슬(`printStackTrace` 의 「Caused by:」)로 응답 본문의 토큰을 찍었고(admin 의 토큰 요청도 같았습니다), 요청을 되울린 `error_description` 은 보낸 refresh 토큰·code·verifier·Basic 자격을 메시지에 실었습니다 — 이제 파서 예외 사슬은 타입 이름과 프레임만 남고, 설명은 보낸 비밀과 토큰 모양의 연속을 `***` 로 가립니다. 태그 `v1.0.2` 의 소스에 들어 있습니다. (#TBD)
+
 ## [1.1.0] - 2026-09-26 (Go · PHP · Rust)
 
 **2026-09-26 릴리스 물결 — 아홉 언어가 세 번호로 갈립니다.** 새 공개 API 가 들어간 Go · PHP · Rust 는 minor(`1.1.0`, 이 절), 나머지는 patch 입니다 — Java · Kotlin `1.0.2`, Python · .NET · Ruby · Node `1.0.1`(아래 두 절). 대부분이 보안 수정이라 권장 업그레이드입니다. 실제로 어디까지 게시됐는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh` 의 `df_published_version` 이 소유합니다.
