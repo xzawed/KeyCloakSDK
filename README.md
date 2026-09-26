@@ -40,7 +40,7 @@ English · [한국어](README.ko.md)
 
 > "Polyglot" here means **programming languages**, not natural-language localization (i18n).
 >
-> ⚠️ **All nine languages have shipped a stable release, and the numbers differ** — Go · PHP · Rust on `1.1.0`, Java · Kotlin on `1.0.2`, the rest on `1.0.1`. They reached 1.0 in the same wave because they earned the same guarantee at the same time — a breaking change to the public API requires a **major** bump, and CI enforces that by diffing each lane's API against its previously published artifact. **They do not move as a fleet**: a language gets a new number only when something consumer-visible changed in it. Every release is human-gated. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
+> ⚠️ **All nine languages have shipped a stable release, and the numbers differ** — Go · PHP `1.2.0`, Ruby `1.1.0`, Rust `1.1.1`, Java · Kotlin `1.0.3`, Python · .NET `1.0.2`, Node `1.0.1`. They reached 1.0 together because they earned the same guarantee together — a breaking change to the public API requires a **major** bump, and CI enforces that by diffing each lane's API against its previously published artifact. **They do not move as a fleet**: a language gets a new number only when something consumer-visible changed in it. Every release is human-gated. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
 
 ---
 
@@ -83,7 +83,7 @@ with KeycloakClient.create(config) as kc:
 ```bash
 pip install keycloak-sdk                              # Python
 npm install @xzawed/keycloak-sdk                      # Node
-go get github.com/xzawed/KeyCloakSDK/go@v1.1.0        # Go
+go get github.com/xzawed/KeyCloakSDK/go@v1.2.0        # Go
 dotnet add package Xzawed.Keycloak.Sdk                # C# / .NET
 composer require xzawed/keycloak-sdk                  # PHP
 cargo add keycloak-sdk                                # Rust
@@ -93,8 +93,8 @@ gem install keycloak-sdk                              # Ruby
 JVM — add the coordinate to your build file:
 
 ```
-io.github.xzawed:keycloak-sdk:1.0.2                   # Java   (Maven Central)
-io.github.xzawed:keycloak-sdk-kotlin:1.0.2            # Kotlin (Maven Central)
+io.github.xzawed:keycloak-sdk:1.0.3                   # Java   (Maven Central)
+io.github.xzawed:keycloak-sdk-kotlin:1.0.3            # Kotlin (Maven Central)
 ```
 
 Full snippets per build tool (Maven XML, Gradle Kotlin DSL, `Gemfile`, `Cargo.toml`) are in the [getting-started guide](docs/guides/getting-started.md).
