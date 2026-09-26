@@ -139,7 +139,7 @@ class AsyncAuthClient:
     ) -> TokenSet:
         """인가 코드 + PKCE verifier를 토큰으로 교환한다(`authorization_code` grant).
 
-        `nonce`가 주어지면(create_authorization_request가 돌려준 값) 응답 id_token을 강화
+        `nonce`가 주어지면(authorization_url 이 돌려준 값) 응답 id_token을 강화
         `JwtValidator`로 서명·iss·aud·exp까지 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce
         재생 방지(sync `AuthClient.exchange_code` 동형). 불일치·부재·검증실패는 거부(fail-closed).
         """
