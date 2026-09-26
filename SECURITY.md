@@ -1,4 +1,8 @@
-<!-- doc-budget: max-bytes=10907 -->
+<!-- doc-budget: max-bytes=10916 -->
+<!-- 10907 → 10916 (2026-09-26). 규약 (1) — README.md 와 같은 교환이다. 함대가 세 갈래로
+     갈려 두 갈래 요약 문장이 거짓이 되고, 새 문장의 버전 집합은 `test-publication-claims.sh`
+     축 2 가 SSOT 와 대조한다. 같은 커밋이 Go 태그 괄호의 버전 리터럴을 `go/v*` 로 바꿔
+     릴리스마다 낡는 사본 하나를 지웠다. -->
 # Security Policy
 
 ## Reporting a Vulnerability
@@ -60,9 +64,9 @@ Issues in Keycloak itself (the server) should be reported to the
 All nine SDKs have shipped a stable release to a public registry — PHP
 (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems),
 Node (npm), Java (Maven Central), Kotlin (Maven Central) and Go (the Go module
-proxy — for Go the git tag *is* the version, so the `go/v1.0.0` tag is the
+proxy — for Go the git tag *is* the version, so the `go/v*` tag is the
 release).
-⚠️ **The numbers have diverged, because a language moves only when something consumer-visible changed in it** — the JVM pair is on `1.0.1`, the other seven on `1.0.0`. They reached 1.0 together because they earned the same guarantee together; alignment was never a policy.
+⚠️ **The numbers have diverged, because a language moves only when something consumer-visible changed in it** — Go · PHP · Rust on `1.1.0`, Java · Kotlin on `1.0.2`, the rest on `1.0.1`. They reached 1.0 together because they earned the same guarantee together; alignment was never a policy.
 **The newest released version of each language is the supported one** and the
 only one that receives fixes; anything older, including every `0.x` release and
 the release candidates, stays on its registry but is **not** supported. Each

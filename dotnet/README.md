@@ -4,7 +4,7 @@ An async-first Keycloak client library for .NET that covers both **Authenticatio
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`1.0.0` is on NuGet** — the first release carrying the stability guarantee set out under *Versioning and support* below. A bare `dotnet add package Xzawed.Keycloak.Sdk` resolves it.
+> **`1.0.1` is on NuGet** — a patch release of security and correctness fixes on top of `1.0.0`, the first release carrying the stability guarantee set out under *Versioning and support* below. A bare `dotnet add package Xzawed.Keycloak.Sdk` resolves it. It stops the PKCE verifier and tokens leaking through the default serializer (present in `1.0.0`), caps JWKS and discovery response sizes, stops an empty `200` JWKS key set from replacing a good cached one, backs off failed JWKS fetches, and no longer returns a token response of the wrong shape as a success. ⚠️ **A `ServerUrl` that is not an absolute http(s) URL is now rejected up front with a `KeycloakConfigException`**, instead of escaping as a `UriFormatException` on the first call.
 
 ## Requirements
 

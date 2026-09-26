@@ -27,7 +27,7 @@
 
 A guide to installing the Keycloak polyglot SDK locally and running your first token issuance, JWT validation, and Admin API call with minimal code. This SDK is provided in **multiple programming languages** (currently Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby · Kotlin), and while each language is idiomatic, the concepts, layers, and flows are isomorphic.
 
-> ℹ️ **All nine are on a public registry with a stable release** (the JVM pair is at `1.0.1`, the other seven at `1.0.0` — alignment was never a policy) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central), Kotlin (Maven Central) and Go (the Go module proxy). A bare install resolves the current release in every ecosystem that picks one for you (Maven and Gradle never do — name the version); the release candidates that preceded 1.0 are still on their registries (none of these ecosystems lets you delete a published version) but none of them prefers one any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. Releasing is a maintainer task — see [DEPLOY.md](../../DEPLOY.md).
+> ℹ️ **All nine are on a public registry with a stable release** (Go · PHP · Rust at `1.1.0`, Java · Kotlin at `1.0.2`, Python · .NET · Ruby · Node at `1.0.1` — alignment was never a policy) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java (Maven Central), Kotlin (Maven Central) and Go (the Go module proxy). A bare install resolves the current release in every ecosystem that picks one for you (Maven and Gradle never do — name the version); the release candidates that preceded 1.0 are still on their registries (none of these ecosystems lets you delete a published version) but none of them prefers one any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. Releasing is a maintainer task — see [DEPLOY.md](../../DEPLOY.md).
 
 > 🖥️ **You need a Keycloak *server* first.** This SDK is a client library, so it needs a **Keycloak server to connect to** in order to work (the server is a separate, standalone product not included in this SDK). For a local trial, use the one-line Docker command `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`; for a **production deployment**, see the [Keycloak server deployment guide](deploying-keycloak-server.md).
 
@@ -65,7 +65,7 @@ The sources target JDK **`17`** (`--release 17`), and this anchor holds that val
 
 ⚠️ **`1.0.0` needed JDK 21 — `1.0.1` is the release that closed that gap.** The lowering landed 2026-09-04 (#389) but no JVM release carried it until `v1.0.1` (2026-09-23), so anyone still pinned to `1.0.0` is running a `--release 21` artifact and must build against 21.
 
-⚠️ **The gap is closed, so the anchor carries no `published=` attribute any more.** `kind=runtime` reads both the working tree and the newest release tag; while they differ it **fails** unless the anchor records the published value and this paragraph states it, and once a release closes the difference it fails the other way until the attribute is deleted. That is why this edit could not ship in the release PR — the tag did not exist yet when its CI ran. **Kotlin's anchor still carries `published=21`**: `kotlin-v1.0.1` has not been cut.
+⚠️ **The gap is closed, so the anchor carries no `published=` attribute any more.** `kind=runtime` reads both the working tree and the newest release tag; while they differ it **fails** unless the anchor records the published value and this paragraph states it, and once a release closes the difference it fails the other way until the attribute is deleted. That is why this edit could not ship in the release PR — the tag did not exist yet when its CI ran.
 
 ### 2) Local installation (development)
 
@@ -85,19 +85,19 @@ After installation, adding just the single facade artifact to your consuming pro
 </dependency>
 ```
 
-### 3) Installation from Maven Central (stable `1.0.1`)
+### 3) Installation from Maven Central (stable `1.0.2`)
 
-`1.0.1` is live on Maven Central — a patch release (two security fixes · JDK floor 21 → 17). No local `install` is needed:
+`1.0.2` is live on Maven Central — a patch release of security and correctness fixes. No local `install` is needed:
 
 ```xml
 <dependency>
   <groupId>io.github.xzawed</groupId>
   <artifactId>keycloak-sdk</artifactId>
-  <version>1.0.1</version>
+  <version>1.0.2</version>
 </dependency>
 ```
 
-If you depend on the modules individually rather than through the facade, import the BOM (`io.github.xzawed:keycloak-sdk-bom:1.0.1`, `<type>pom</type>` `<scope>import</scope>`) so their versions stay aligned.
+If you depend on the modules individually rather than through the facade, import the BOM (`io.github.xzawed:keycloak-sdk-bom:1.0.2`, `<type>pom</type>` `<scope>import</scope>`) so their versions stay aligned.
 
 > ⚠️ **Maven has no prerelease concept — and that made it the odd one out during the RC.** `0.1.0-RC1` was never "a prerelease of `0.1.0`"; it is a different, lower-sorting coordinate. Nothing filtered it out the way RubyGems does, and nothing fell back to it the way pip and Cargo do, because in Maven you always name the version yourself. `0.1.0` is a **separate** artifact, and the RC stays on Central forever — Central is immutable, with no delete, no yank and no unlist. Releases remain human-gated: a publish runs only when a human pushes a `v*` tag to trigger [`.github/workflows/release.yml`](../../.github/workflows/release.yml), and even then the workflow only stages to the Central Portal until a human clicks Publish. For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
@@ -163,15 +163,15 @@ cd python && python -m build   # dist/keycloak_sdk-*-py3-none-any.whl + .tar.gz
 
 The distribution name is `keycloak-sdk` and the import package name is `keycloak_sdk`.
 
-### 3) Installation from PyPI (stable `1.0.0`)
+### 3) Installation from PyPI (stable `1.0.1`)
 
-`1.0.0` is live on PyPI:
+`1.0.1` is live on PyPI:
 
 ```bash
-pip install keycloak-sdk==1.0.0
+pip install keycloak-sdk==1.0.1
 ```
 
-> ⚠️ **pip skips prereleases again now that `1.0.0` exists.** A bare `pip install keycloak-sdk` resolves the stable release; the earlier `0.1.0rc1` now needs `--pre` or an exact pin. While the RC was the only release, pip fell back to it instead. Releases remain human-gated: a publish runs only when a human pushes a `py-v*` tag to trigger [`.github/workflows/python-release.yml`](../../.github/workflows/python-release.yml) (PyPI Trusted Publisher / OIDC). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> ⚠️ **pip skips prereleases again now that a stable release exists.** A bare `pip install keycloak-sdk` resolves the stable release; the earlier `0.1.0rc1` now needs `--pre` or an exact pin. While the RC was the only release, pip fell back to it instead. Releases remain human-gated: a publish runs only when a human pushes a `py-v*` tag to trigger [`.github/workflows/python-release.yml`](../../.github/workflows/python-release.yml) (PyPI Trusted Publisher / OIDC). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 
@@ -226,9 +226,9 @@ cd node && npm ci && npm run build   # generates dist/ (tsc). Consume via npm li
 
 The distribution name is `@xzawed/keycloak-sdk`, and the import path is the same.
 
-### 3) Installation from npm (stable `1.0.0`)
+### 3) Installation from npm (stable `1.0.1`)
 
-`1.0.0` is live on npm and holds the `latest` dist-tag:
+`1.0.1` is live on npm and holds the `latest` dist-tag:
 
 ```bash
 npm install @xzawed/keycloak-sdk
@@ -292,13 +292,13 @@ cd go && go build ./... && go test ./...   # unit tests + coverage gate (logic �
 
 The module path is `github.com/xzawed/KeyCloakSDK/go` and the package name is `keycloak`.
 
-### 3) Installation from the Go module proxy (stable `1.0.0`)
+### 3) Installation from the Go module proxy (stable `1.1.0`)
 
 ```bash
-go get github.com/xzawed/KeyCloakSDK/go@v1.0.0
+go get github.com/xzawed/KeyCloakSDK/go@v1.1.0
 ```
 
-> Go modules are **published via VCS tags** with no separate registry, so **the tag *is* the release** — `go/v1.0.0` is published and `proxy.golang.org` has cached it. A bare `go get github.com/xzawed/KeyCloakSDK/go` (and `@latest`) now resolves it; while `go/v0.1.0-rc.1` was the only tag, the `go` command fell back to that prerelease instead. ⚠️ The proxy cache is immutable — a published version stays fetchable by exact version forever, and the only remedy for a bad one is a `retract` directive in a *later* release.
+> Go modules are **published via VCS tags** with no separate registry, so **the tag *is* the release** — `go/v1.1.0` is published and `proxy.golang.org` has cached it. A bare `go get github.com/xzawed/KeyCloakSDK/go` (and `@latest`) now resolves it; while `go/v0.1.0-rc.1` was the only tag, the `go` command fell back to that prerelease instead. ⚠️ The proxy cache is immutable — a published version stays fetchable by exact version forever, and the only remedy for a bad one is a `retract` directive in a *later* release.
 
 ### 4) Minimal usage example
 
@@ -378,15 +378,15 @@ dotnet add reference ../KeyCloakSDK/dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keyclo
 
 The package ID is `Xzawed.Keycloak.Sdk`, and the root namespace is `Xzawed.Keycloak` (admin is the `Xzawed.Keycloak.Admin` sub-namespace).
 
-### 3) Installation from NuGet (stable `1.0.0`)
+### 3) Installation from NuGet (stable `1.0.1`)
 
-`1.0.0` is live on NuGet — the first release under the 1.0 stability guarantee:
+`1.0.1` is live on NuGet — a patch release under the 1.0 stability guarantee:
 
 ```bash
-dotnet add package Xzawed.Keycloak.Sdk --version 1.0.0   # or omit --version for latest
+dotnet add package Xzawed.Keycloak.Sdk --version 1.0.1   # or omit --version for latest
 ```
 
-> A plain `dotnet add package Xzawed.Keycloak.Sdk` now resolves `1.0.0`. While only the RC existed it failed outright ("There are no stable versions available") — opting in took `--prerelease` or the exact version. Releases remain human-gated: a publish runs only when a human pushes a `dotnet-v*` tag to trigger [`.github/workflows/dotnet-release.yml`](../../.github/workflows/dotnet-release.yml) (requires the `NUGET_API_KEY` secret). For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> A plain `dotnet add package Xzawed.Keycloak.Sdk` now resolves `1.0.1`. While only the RC existed it failed outright ("There are no stable versions available") — opting in took `--prerelease` or the exact version. Releases remain human-gated: a publish runs only when a human pushes a `dotnet-v*` tag to trigger [`.github/workflows/dotnet-release.yml`](../../.github/workflows/dotnet-release.yml) (requires the `NUGET_API_KEY` secret). For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 
@@ -445,15 +445,15 @@ cd php && composer install   # install dependencies (fschmtt/league/stevenmaguir
 
 The distribution name is `xzawed/keycloak-sdk`, and the root namespace is `Xzawed\Keycloak` (admin is the `Xzawed\Keycloak\Admin` sub-namespace).
 
-### 3) Installation from Packagist (stable `1.0.0`)
+### 3) Installation from Packagist (stable `1.1.0`)
 
-`v1.0.0` is live on Packagist — the first release under the 1.0 stability guarantee:
+`v1.1.0` is live on Packagist — a minor release under the 1.0 stability guarantee:
 
 ```bash
-composer require "xzawed/keycloak-sdk:1.0.0"
+composer require "xzawed/keycloak-sdk:1.1.0"
 ```
 
-> A plain `composer require xzawed/keycloak-sdk` now resolves `1.0.0`. While only the RCs existed it failed outright, because Composer's default `minimum-stability: stable` excludes prereleases — opting in took the exact version or `^0.1@rc`. How publishing works here: PHP does not publish from this monorepo, and it never could — Composer's VCS driver reads only a `composer.json` at a repository **root**, and there is none here (only `php/composer.json`). When a human pushes a `php-v*` tag, [`.github/workflows/php-release.yml`](../../.github/workflows/php-release.yml) verifies, then splits `php/` out with `git subtree split` and pushes it to a separate read-only mirror repository, **`xzawed/keycloak-sdk-php`**, tagging it there with a **bare `vX.Y.Z`** (Composer cannot parse `php-vX.Y.Z` as a version). **That mirror — not this repository — is what is registered on Packagist**; the package name stays `xzawed/keycloak-sdk`, since it comes from `php/composer.json`, which the split carries along. The split job requires a `PHP_SPLIT_TOKEN` secret with write access to the mirror and **fails closed without it** (nothing is pushed, and no GitHub Release is created). The mirror and its Packagist registration exist and serve `v1.0.0` today — for the full procedure, see [DEPLOY.md](../../DEPLOY.md) §2-D. For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> A plain `composer require xzawed/keycloak-sdk` now resolves `1.1.0`. While only the RCs existed it failed outright, because Composer's default `minimum-stability: stable` excludes prereleases — opting in took the exact version or `^0.1@rc`. How publishing works here: PHP does not publish from this monorepo, and it never could — Composer's VCS driver reads only a `composer.json` at a repository **root**, and there is none here (only `php/composer.json`). When a human pushes a `php-v*` tag, [`.github/workflows/php-release.yml`](../../.github/workflows/php-release.yml) verifies, then splits `php/` out with `git subtree split` and pushes it to a separate read-only mirror repository, **`xzawed/keycloak-sdk-php`**, tagging it there with a **bare `vX.Y.Z`** (Composer cannot parse `php-vX.Y.Z` as a version). **That mirror — not this repository — is what is registered on Packagist**; the package name stays `xzawed/keycloak-sdk`, since it comes from `php/composer.json`, which the split carries along. The split job requires a `PHP_SPLIT_TOKEN` secret with write access to the mirror and **fails closed without it** (nothing is pushed, and no GitHub Release is created). The mirror and its Packagist registration exist and serve `v1.1.0` today — for the full procedure, see [DEPLOY.md](../../DEPLOY.md) §2-D. For the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 
@@ -514,15 +514,15 @@ cd rust && cargo build && cargo test   # Just verify a local build/test: unit te
 
 The crate name is `keycloak-sdk`, and the root module is `keycloak_sdk` (`keycloak_sdk::{KeycloakClient, KeycloakConfig, ...}`).
 
-### 3) Installation from crates.io (stable `1.0.0`)
+### 3) Installation from crates.io (stable `1.1.0`)
 
-`1.0.0` is live on crates.io — the first release under the 1.0 stability guarantee:
+`1.1.0` is live on crates.io — a minor release under the 1.0 stability guarantee:
 
 ```bash
 cargo add keycloak-sdk
 ```
 
-> The bare `cargo add` above resolves `1.0.0`. While `0.1.0-rc.1` was the only version, Cargo fell back to it — but note the asymmetry that made this confusing: a **hand-written** requirement such as `keycloak-sdk = "0.1"` never matches a pre-release, so during the RC the two forms disagreed. They agree now. Releases remain human-gated: a publish runs only when a human pushes a `rust-v*` tag to trigger [`.github/workflows/rust-release.yml`](../../.github/workflows/rust-release.yml). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> The bare `cargo add` above resolves `1.1.0`. While `0.1.0-rc.1` was the only version, Cargo fell back to it — but note the asymmetry that made this confusing: a **hand-written** requirement such as `keycloak-sdk = "0.1"` never matches a pre-release, so during the RC the two forms disagreed. They agree now. Releases remain human-gated: a publish runs only when a human pushes a `rust-v*` tag to trigger [`.github/workflows/rust-release.yml`](../../.github/workflows/rust-release.yml). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 
@@ -583,15 +583,15 @@ cd ruby && bundle install   # install dependencies (faraday/jwt/rack-oauth2, etc
 
 The gem name is `keycloak-sdk` (hyphen), and the require/module name is `keycloak_sdk`/`KeycloakSdk` (underscore — to avoid a clash with the existing `keycloak` gem's `Keycloak` module).
 
-### 3) Installation from RubyGems (stable `1.0.0`)
+### 3) Installation from RubyGems (stable `1.0.1`)
 
-`1.0.0` is live on RubyGems — the first release under the 1.0 stability guarantee:
+`1.0.1` is live on RubyGems — a patch release under the 1.0 stability guarantee:
 
 ```bash
-gem install keycloak-sdk -v 1.0.0
+gem install keycloak-sdk -v 1.0.1
 ```
 
-> A bare `gem install keycloak-sdk` resolves `1.0.0`. RubyGems is stricter than pip or Cargo about prereleases — it never falls back to one — so while `1.0.0.rc1` was the only release a bare install resolved **nothing** and both the command and a `Gemfile` entry needed the version spelled out. Releases remain human-gated: a publish runs only when a human pushes a `ruby-v*` tag to trigger [`.github/workflows/ruby-release.yml`](../../.github/workflows/ruby-release.yml) over RubyGems Trusted Publishing (OIDC — no stored secret). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> A bare `gem install keycloak-sdk` resolves `1.0.1`. RubyGems is stricter than pip or Cargo about prereleases — it never falls back to one — so while `1.0.0.rc1` was the only release a bare install resolved **nothing** and both the command and a `Gemfile` entry needed the version spelled out. Releases remain human-gated: a publish runs only when a human pushes a `ruby-v*` tag to trigger [`.github/workflows/ruby-release.yml`](../../.github/workflows/ruby-release.yml) over RubyGems Trusted Publishing (OIDC — no stored secret). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 
@@ -635,33 +635,33 @@ client.close
 ### 1) Required runtime — Kotlin 2.2+ / JDK 17+
 
 <!-- doc-guard: kind=runtime lang=kotlin -->
-**JDK `17+`** is the bytecode target **in the sources** (this anchor verifies the emitted target, not the JDK used to build). ⚠️ **`1.0.0` needed JDK 21 — `1.0.1` is the release that closed that gap.** `kotlin-v1.0.0` carried only `jvmToolchain(21)` with no `jvmTarget`/`-Xjdk-release`, so its bytecode was 21; anyone still pinned to `1.0.0` must build against 21. Same story as [Java](#java), and the anchor no longer carries `published=` because tree and published now agree. Kotlin **2.2 or newer** is also required on that JDK (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). The SDK is *built* with Kotlin 2.4.10 but pins `languageVersion`/`apiVersion` to 2.2, so the published artifact’s binary metadata is readable by any Kotlin 2.2+ compiler — you do not need to be on 2.4 to consume it. All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
+**JDK `17+`** is the bytecode target **in the sources** (this anchor verifies the emitted target, not the JDK used to build). ⚠️ **`1.0.0` needed JDK 21 — `1.0.1` is the release that closed that gap.** `kotlin-v1.0.0` carried only `jvmToolchain(21)` with no `jvmTarget`/`-Xjdk-release`, so its bytecode was 21; anyone still pinned to `1.0.0` must build against 21. Same story as [Java](#java), and the anchor no longer carries `published=` because tree and published now agree. Kotlin **2.2 or newer** is also required on that JDK (the same runtime as the sibling Java SDK, whose verified JVM stack it reuses). The SDK is *built* with Kotlin 2.4.20 but pins `languageVersion`/`apiVersion` to 2.2, so the published artifact’s binary metadata is readable by any Kotlin 2.2+ compiler — you do not need to be on 2.4 to consume it. All network methods are `suspend` functions (coroutines; blocking sub-library calls run on `Dispatchers.IO` via `runInterruptible`), value types are data classes, and the exception hierarchy is a sealed `KeycloakException`. Public API visibility is strictly enforced with `explicitApi()`. Docker is needed only for integration tests.
 
 ### 2) Local installation (development)
 
 To build against your working copy, clone the repository and publish it to your local `~/.m2` with Gradle:
 
 ```bash
-cd kotlin && ./gradlew publishToMavenLocal   # installs keycloak-sdk-kotlin-1.0.0.jar (+ sources/javadoc) into ~/.m2
+cd kotlin && ./gradlew publishToMavenLocal   # installs keycloak-sdk-kotlin-1.0.2.jar (+ sources/javadoc) into ~/.m2
 ```
 
 Then reference it from a consuming Gradle project via `mavenLocal()` (Gradle Kotlin DSL):
 
 ```kotlin
 repositories { mavenLocal(); mavenCentral() }
-dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.1") }
+dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.2") }
 ```
 
-⚠️ **Same coordinate as the released artifact** — unlike [Java](#java)'s `1.0.0-SNAPSHOT` working copy, Kotlin's `build.gradle.kts` declares the release version (the release workflow checks the tag against it). With `mavenLocal()` first, your local build shadows Maven Central silently; to undo, drop `mavenLocal()` or delete `~/.m2/repository/io/github/xzawed/keycloak-sdk-kotlin/1.0.0`.
+⚠️ **Same coordinate as the released artifact** — unlike [Java](#java)'s `1.0.0-SNAPSHOT` working copy, Kotlin's `build.gradle.kts` declares the release version (the release workflow checks the tag against it). With `mavenLocal()` first, your local build shadows Maven Central silently; to undo, drop `mavenLocal()` or delete `~/.m2/repository/io/github/xzawed/keycloak-sdk-kotlin/1.0.2`.
 
 (To just build and test locally without publishing: `cd kotlin && ./gradlew build && ./gradlew test` — unit tests + coverage gate, Docker-free.)
 
-### 3) Installation from Maven Central (stable `1.0.1`)
+### 3) Installation from Maven Central (stable `1.0.2`)
 
-`1.0.0` is live on Maven Central — the first release under the 1.0 stability guarantee. No local publish is needed:
+`1.0.2` is live on Maven Central — a patch release under the 1.0 stability guarantee. No local publish is needed:
 
 ```kotlin
-dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.1") }
+dependencies { implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.2") }
 ```
 
 > ⚠️ **Consumer floor is Kotlin 2.2+, and that is a deliberate choice you can verify.** The published jar carries `@Metadata(mv=[2,2,0])` and its POM declares `kotlin-stdlib 2.2.21` — both lower than the 2.4.10 toolchain that built it, because a jar built without pinning `languageVersion`/`apiVersion` is unreadable to any compiler older than the one that produced it. (Measured on the published artifact: `javap -v` on a class shows `mv=[2,2,0]`, and a clean `mvn dependency:get` resolves `kotlin-stdlib 2.2.21`, not 2.4.x.)
