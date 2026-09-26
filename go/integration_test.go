@@ -13,7 +13,9 @@ import (
 	"context"
 	_ "embed"
 	"errors"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,8 +27,33 @@ import (
 //go:embed testdata/it-realm-realm.json
 var itRealmJSON []byte
 
-func startKeycloak(ctx context.Context, t *testing.T) string {
+// One Keycloak for the whole run — TestE2E and TestE2ECodeExchange share it (both match `-run TestE2E`),
+// so the code-exchange tests cost no second container start. TestMain terminates it after every test.
+var (
+	kcOnce sync.Once
+	kcURL  string
+	kcStop func()
+	kcErr  error
+)
+
+func keycloakURL(t *testing.T) string {
 	t.Helper()
+	kcOnce.Do(func() { kcURL, kcStop, kcErr = startKeycloak(context.Background()) })
+	if kcErr != nil {
+		t.Fatalf("start keycloak: %v", kcErr)
+	}
+	return kcURL
+}
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if kcStop != nil {
+		kcStop()
+	}
+	os.Exit(code)
+}
+
+func startKeycloak(ctx context.Context) (string, func(), error) {
 	req := testcontainers.ContainerRequest{
 		Image:        "quay.io/keycloak/keycloak:26.6",
 		ExposedPorts: []string{"8080/tcp"},
@@ -48,20 +75,26 @@ func startKeycloak(ctx context.Context, t *testing.T) string {
 	c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req, Started: true,
 	})
-	if err != nil {
-		t.Fatalf("start keycloak: %v", err)
+	stop := func() {
+		if c != nil {
+			_ = c.Terminate(context.Background())
+		}
 	}
-	t.Cleanup(func() { _ = c.Terminate(context.Background()) })
+	if err != nil {
+		stop() // GenericContainer can hand back a created container together with the error
+		return "", nil, err
+	}
 	url, err := c.PortEndpoint(ctx, "8080/tcp", "http")
 	if err != nil {
-		t.Fatalf("port endpoint: %v", err)
+		stop()
+		return "", nil, err
 	}
-	return url
+	return url, stop, nil
 }
 
 func TestE2E(t *testing.T) {
 	ctx := context.Background()
-	serverURL := startKeycloak(ctx, t)
+	serverURL := keycloakURL(t)
 
 	client, err := New(Config{
 		ServerURL: serverURL, Realm: "it-realm", ClientID: "it-client", ClientSecret: "it-secret",
