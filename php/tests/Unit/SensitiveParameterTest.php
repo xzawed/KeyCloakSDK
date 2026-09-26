@@ -76,6 +76,12 @@ final class SensitiveParameterTest extends TestCase
             $hits++;
         }
         self::assertGreaterThanOrEqual(8, $hits, '비밀 이름 정규식이 고른 파라미터가 너무 적다 — 정규식이 낡았나?');
+        // 이름이 `$jwt` 인 원문 토큰을 고르는가 — 그 이름을 못 골라 #467 이 두 자리를 빠뜨렸다.
+        $picked = [];
+        foreach ($this->secretStringParameters() as [$where, $param]) {
+            $picked[] = $where . '($' . $param->getName() . ')';
+        }
+        self::assertContains('JwtValidator::validate($jwt)', $picked, '정규식이 원문 JWT 파라미터를 못 고른다');
     }
 
     public function testEverySecretStringParameterIsMarkedSensitive(): void
