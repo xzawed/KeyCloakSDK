@@ -4,18 +4,18 @@ An idiomatic Go SDK for [Keycloak](https://www.keycloak.org/) covering both OIDC
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) — one API shape, nine idioms: [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`v1.1.0` is on the Go module proxy** — a minor release on top of `v1.0.0`, the first release carrying the stability guarantee below, and what a bare `go get github.com/xzawed/KeyCloakSDK/go` (or `@latest`) resolves to. **Added**: `NewAdminClient(ctx, cfg, tp)`, the `TokenProvider` injection point the godoc had promised. **Fixed**: the default formatting (`%+v`) of the client, auth and admin facades and the token provider no longer prints the client secret or the cached access token (present in `v1.0.0`), a back-channel `3xx` is no longer followed or taken as success, and failed JWKS fetches back off. ⚠️ **It requires Go 1.26+** (see Requirements). Go has no registry: the `go/v1.1.0` **tag** is the release, `proxy.golang.org` caches it on first request, and ⚠️ that cache is immutable — every published version stays fetchable by exact version forever, and the only remedy for a bad one is a `retract` directive in a *later* release.
+> **`v1.2.0` is on the Go module proxy** — a minor release on top of `v1.1.0`, and what a bare `go get github.com/xzawed/KeyCloakSDK/go` (or `@latest`) resolves to (`v1.0.0` was the first release carrying the stability guarantee below). **Fixed**: a malformed or hostile token, introspection or admin-login response no longer puts its tokens into an SDK error (present in `v1.0.0` and `v1.1.0`) — the `Cause` chain keeps the lower error's type and the HTTP status but drops what the server sent (an OAuth error shaped like a code is the one thing kept), the admin token request's message drops `error_description`, and transport errors no longer quote the lines net/http could not parse. **Added**: `AuthError.GoString`, so `%#v` withholds an `OAuthError` value not shaped like an OAuth error code (the field itself is unchanged). ⚠️ **`errors.As` no longer finds the raw lower error** — `*oauth2.RetrieveError` on the auth lane, `*gocloak.APIError` on the admin token request; read `AuthError.OAuthError` or `AdminError.StatusCode` instead. `errors.Is(err, context.Canceled)` and `net.Error` still match. ⚠️ **It requires Go 1.26+** (see Requirements). Go has no registry: the `go/v1.2.0` **tag** is the release, `proxy.golang.org` caches it on first request, and ⚠️ that cache is immutable — every published version stays fetchable by exact version forever, and the only remedy for a bad one is a `retract` directive in a *later* release.
 
 ## Requirements
 
-Go **1.26+** for the published `1.1.0` (the `go.mod` on that tag declares `go 1.26.0`), against a Keycloak 26.6.x server. ⚠️ **`1.0.0` needed only Go 1.25** — `golang.org/x/oauth2` v0.37 and `golang.org/x/sync` v0.23 raised the floor, so a module still on 1.25 stays on `v1.0.0`.
+Go **1.26+** for the published `1.2.0` (the `go.mod` on that tag declares `go 1.26.0`, as on `1.1.0`), against a Keycloak 26.6.x server. ⚠️ **`1.0.0` needed only Go 1.25** — `golang.org/x/oauth2` v0.37 and `golang.org/x/sync` v0.23 raised the floor, so a module still on 1.25 stays on `v1.0.0`.
 
 ## Install
 
-Go modules have no registry — the VCS tag *is* the release. This SDK lives in the `go/` subdirectory of a monorepo, so its release tags are prefixed `go/v...` while the import path carries the `/go` suffix and the package name is `keycloak`. The `go/v1.1.0` tag is published, so the module resolves from the Go module proxy:
+Go modules have no registry — the VCS tag *is* the release. This SDK lives in the `go/` subdirectory of a monorepo, so its release tags are prefixed `go/v...` while the import path carries the `/go` suffix and the package name is `keycloak`. The `go/v1.2.0` tag is published, so the module resolves from the Go module proxy:
 
 ```bash
-go get github.com/xzawed/KeyCloakSDK/go@v1.1.0
+go get github.com/xzawed/KeyCloakSDK/go@v1.2.0
 ```
 
 To work against a local checkout instead, clone the monorepo and build under `go/`, or add a `replace`:

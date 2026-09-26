@@ -4,7 +4,7 @@ A Keycloak client library for Java that covers both **Authentication (OIDC / OAu
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`1.0.2` is on Maven Central** — a patch release of security and correctness fixes: a `200` JWKS response carrying an empty key set no longer replaces a good cached one, a public (secret-less) client can now `refresh` and `logout`, and call arguments or config values that Nimbus rejects now surface as `KeycloakAuthException` / `KeycloakConfigException` instead of leaking Nimbus exceptions (a `null` `code`, `codeVerifier` or `redirectUri` is an `IllegalArgumentException` with an SDK message). ⚠️ **Config is now validated when it is built** — `serverUrl` must be an absolute http(s) URL, and a connect or read timeout of `0` (an unbounded wait until now) is rejected. No public API changed. ⚠️ **Maven never picks a version for you**: a `<dependency>` with no `<version>` and no BOM managing it fails the build rather than resolving to the newest release, so name `1.0.2` explicitly as shown below.
+> **`1.0.3` is on Maven Central** — a patch release of security fixes (present in the `v1.0.2` source): an error raised on a malformed token or introspection response — the admin client's own token request included — no longer prints that response's tokens through `printStackTrace`'s "Caused by:" lines. ⚠️ **When a response parser's exception (Nimbus, json-smart, Jackson, or JAX-RS `ResponseProcessingException`) is anywhere in an SDK exception's cause chain, that chain is now replaced by copies that keep only each type name and its stack frames**, so code that walked `getCause()` to one of those types no longer finds it. An `error_description` the IdP sent is still in the message, but anything in it that the request sent (Basic credentials, client secret, code, verifier, refresh or introspection token) or that looks like a token is masked as `***`. No public API changed. ⚠️ **Maven never picks a version for you**: a `<dependency>` with no `<version>` and no BOM managing it fails the build rather than resolving to the newest release, so name `1.0.3` explicitly as shown below.
 
 ## Requirements
 
@@ -20,7 +20,7 @@ The SDK ships as several Maven modules, but **most users need exactly one**: `io
 <dependency>
   <groupId>io.github.xzawed</groupId>
   <artifactId>keycloak-sdk</artifactId>
-  <version>1.0.2</version>
+  <version>1.0.3</version>
 </dependency>
 ```
 
@@ -40,7 +40,7 @@ If you depend on the modules individually, import the BOM so their versions stay
     <dependency>
       <groupId>io.github.xzawed</groupId>
       <artifactId>keycloak-sdk-bom</artifactId>
-      <version>1.0.2</version>
+      <version>1.0.3</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -101,7 +101,7 @@ This SDK is **`1.0`** and follows SemVer: a breaking change to the public API re
 
 Only the newest released version of each language SDK receives security fixes; there are no long-term-support lines and older releases are not backported to.
 
-**Each of the nine languages versions independently.** All nine reached `1.0.0` together because they earned the same guarantee at the same time — and they have since diverged: Go · PHP · Rust are on `1.1.0`, the JVM pair on `1.0.2`, Python · .NET · Ruby · Node on `1.0.1`. They do **not** move in lockstep.
+**Each of the nine languages versions independently.** All nine reached `1.0.0` in the same release wave because they earned the same guarantee at the same time — they do **not** move in lockstep afterwards.
 
 ## Documentation
 
