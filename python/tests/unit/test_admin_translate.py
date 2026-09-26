@@ -7,6 +7,10 @@
 
 from __future__ import annotations
 
+import traceback
+from collections.abc import Callable
+from typing import Any
+
 import pytest
 from keycloak.exceptions import (
     KeycloakDeleteError,
@@ -15,6 +19,7 @@ from keycloak.exceptions import (
     KeycloakPutError,
 )
 
+from keycloak_sdk._internal.lower import LowerLibraryError
 from keycloak_sdk.admin._translate import call, translate
 from keycloak_sdk.exceptions import (
     KeycloakAdminError,
@@ -109,3 +114,45 @@ def test_call_does_not_catch_non_keycloak_exceptions():
 
     with pytest.raises(ValueError):
         call(boom)
+
+
+_CANARY = "WK2-token-in-body-canary"
+_BODY = b'{"error": "invalid_client", "error_description": "' + _CANARY.encode() + b'"}'
+
+
+def _raiser(exc: Exception) -> Callable[[], None]:
+    def boom() -> None:
+        raise exc
+
+    return boom
+
+
+def test_the_raw_lower_error_is_not_attached_only_a_summary(lower_post_error: Any) -> None:
+    """⚠️ python-keycloak 의 오류는 메시지가 응답 본문이다 — 원인으로 달면 `logging.exception` 이
+    그것을 찍는다. 요약만 달고, 원본은 `__context__` 로도 닿지 않는다(except 밖에서 던진다)."""
+    with pytest.raises(KeycloakAdminError) as excinfo:
+        call(_raiser(lower_post_error(400, _BODY)))
+
+    error = excinfo.value
+    assert isinstance(error.__cause__, LowerLibraryError)
+    assert str(error.__cause__).startswith("keycloak.exceptions.KeycloakPostError (HTTP 400)")
+    assert error.__context__ is None
+    assert _CANARY not in "".join(traceback.format_exception(error))
+    # `keycloak_error` 는 문서화된 필드로 본문을 예전대로 보존한다(찍히지 않는다).
+    assert error.keycloak_error is not None
+    assert _CANARY in error.keycloak_error
+
+
+def test_unusable_response_inside_python_keycloak_is_a_transport_error(
+    lower_type_error: Any,
+) -> None:
+    """python-keycloak 은 모양이 틀린 응답에 본문을 인용한 `TypeError` 를 던진다 — 예전에는 그것이
+    raw 로 새어 `str(e)` 가 본문을 찍었다. HTTP 상태가 없으므로 이 경계의 규칙대로 전송 쪽이다."""
+    with pytest.raises(KeycloakTransportError) as excinfo:
+        call(_raiser(lower_type_error(_CANARY.encode())))
+
+    error = excinfo.value
+    assert str(error) == "Keycloak admin API returned an unusable response (TypeError)"
+    assert str(error.__cause__).startswith("builtins.TypeError at keycloak.keycloak_openid.token:")
+    assert error.__context__ is None
+    assert _CANARY not in "".join(traceback.format_exception(error))
