@@ -27,6 +27,12 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// (4) JSON 루트가 객체가 아니면 <c>InvalidOperationException</c> 이 SDK 타입으로 번역되지 않고 샜다(§4).</para>
 /// <para>⚠️ 흐름 검사가 먼저다 — 변형마다 호출이 기대한 SDK 타입으로 실패했는지(또는 기대대로 성공했는지)를 본다.
 /// 가짜 IdP 가 변형을 안 내면 아래 누출 검사는 없는 것을 찾으며 통과한다.</para>
+/// <para>변이 실측(2026-09-26) — 수정의 어느 조각을 무엇이 잡는가: 생성자 정화 제거 → a3·a4·g1~g3·걷기·ErrorsTests ·
+/// <c>WithholdAll</c> 제거 → g5 · 서버 reason phrase → g4 · 원문 <c>error</c> → e3·e8 · introspect catch 제거 → d7·d8·e9·h ·
+/// Logout 메시지 복사 → g1·g2 · <c>InvalidResponse</c> 규칙 제거 → g1~g3 · 변형이 SDK 에 안 닿음 → 흐름 검사.
+/// ⚠️ <c>JwtValidator</c> 의 <c>catch</c> 쪽 <c>MessageOf</c> 는 SILENT 다 — IdentityModel 8 은 실패를(검증 대리자가 던진
+/// 것까지) <c>result.Exception</c> 으로 돌려줘 그 catch 에 닿는 입력을 못 찾았다. <c>result</c> 쪽은
+/// <c>JwtValidatorTests</c> 의 이음매 테스트가 잡는다.</para>
 /// </remarks>
 [Trait("Category", "Unit")]
 public sealed class MalformedTokenResponseTests
