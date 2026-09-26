@@ -477,7 +477,9 @@ sd_nonce_verify() {
 # `exchangeCode` 안의 호출을 지우니 이 축도, 그 언어의 단위 테스트도 전부 통과했다(probe.sh
 # SILENT 2026-09-25 · rust 도 같았다 → #577 이 교환 경로 테스트를 세웠다). 그래서 그 경로를
 # **실행으로** 치는 테스트가 살아 있는지를 여기서 본다.
-# node 만 거부를 openid-client 에 맡긴다 — 우리 몫은 `expectedNonce` 전달이고 그 배선 테스트를 본다.
+# node 는 nonce 대조를 openid-client 에 맡기고(`expectedNonce` 전달) id_token 은 SDK 검증기에 태운다 —
+# openid-client 가 토큰 엔드포인트 id_token 의 서명을 안 보기 때문이다(#648). 배선 테스트와, 목 없는
+# 진짜 openid-client 로 거부를 실행하는 테스트 둘(nonce 불일치 · JWKS 밖 키 서명)을 본다.
 sd_nonce_canary() {
   case "$1" in
     java)   printf '%s\n' \
@@ -489,7 +491,10 @@ sd_nonce_canary() {
               'python/tests/unit/test_auth.py|def test_exchange_code_rejects_missing_id_token_when_nonce_expected(' \
               'python/tests/unit/aio/test_auth.py|async def test_exchange_code_rejects_mismatched_nonce(' \
               'python/tests/unit/aio/test_auth.py|async def test_exchange_code_rejects_missing_id_token_when_nonce_expected(' ;;
-    node)   printf '%s\n' "node/test/unit/auth.test.ts|it('nonce를 넘기면 expectedNonce로 전달한다" ;;
+    node)   printf '%s\n' \
+              "node/test/unit/auth.test.ts|it('nonce를 넘기면 expectedNonce로 전달하고 id_token을 SDK 검증기에 태운다'" \
+              "node/test/unit/auth-id-token-signature.test.ts|it('대조군: nonce 가 틀리면 거부한다" \
+              "node/test/unit/auth-id-token-signature.test.ts|it('JWKS 밖 키로 서명된 RS256 id_token 은 nonce 가 맞아도 SDK 검증기에서 거부한다'" ;;
     go)     printf '%s\n' 'go/auth_test.go|func TestExchangeCodeNonceValidation(' ;;
     dotnet) printf '%s\n' \
               'dotnet/tests/Xzawed.Keycloak.Sdk.Tests/AuthClientTests.cs|public async Task ExchangeCode_nonce_mismatch_throws(' \
