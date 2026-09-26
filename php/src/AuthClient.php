@@ -268,18 +268,6 @@ final class AuthClient
     }
 
     /**
-     * ⚠️ 덤프 계열(`var_dump`·`print_r`)은 프로퍼티를 직접 따라가 중첩된 league 프로바이더까지 찍는다 — 이 훅이
-     * 없을 때 클라이언트 시크릿과 **살아 있는 PKCE verifier** 가 원문으로 나왔다(실측 2026-09-26). 설정은 자기
-     * 훅으로 가려진다. 도달 객체 전부는 `FacadeDumpTest` 가 잰다.
-     *
-     * @return array<string, mixed>
-     */
-    public function __debugInfo(): array
-    {
-        return ['config' => $this->config, 'endpoints' => $this->endpoints];
-    }
-
-    /**
      * json_decode(..., true)/league getValues()의 배열은 키 타입이 array-key(int|string)로만 추론된다.
      * 신뢰된 OAuth/introspection 응답의 키는 항상 문자열이므로 정수 키(있다면)를 걸러 string-keyed로 좁힌다
      * (JwtValidator/JwksStore의 stringKeyed와 동일 패턴 — 로컬 헬퍼로 중복 유지, 공용화는 범위 밖).
