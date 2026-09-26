@@ -7,7 +7,7 @@
 ## [Unreleased]
 
 ### Security
-- **(Java)** 형식이 틀린 토큰·introspect 응답의 오류가 원인 사슬(`printStackTrace` 의 「Caused by:」)로 응답 본문의 토큰을 찍었고(admin 의 토큰 요청도 같았습니다), 요청을 되울린 `error_description` 은 보낸 refresh 토큰·code·verifier·Basic 자격을 메시지에 실었습니다 — 이제 파서 예외 사슬은 타입 이름과 프레임만 남고, 설명은 보낸 비밀과 토큰 모양의 연속을 `***` 로 가립니다. 태그 `v1.0.2` 의 소스에 들어 있습니다. (#TBD)
+- **(Java)** 형식이 틀린 토큰·introspect 응답의 오류가 원인 사슬(`printStackTrace` 의 「Caused by:」)로 응답 본문의 토큰을 찍었고(admin 의 토큰 요청도 같았습니다), 요청을 되울린 `error_description` 은 보낸 refresh 토큰·code·verifier·Basic 자격을 메시지에 실었습니다 — 이제 파서 예외 사슬은 타입 이름과 프레임만 남고, 설명은 보낸 비밀과 토큰 모양의 연속을 `***` 로 가립니다. 태그 `v1.0.2` 의 소스에 들어 있습니다. (#617)
 
 ## [1.1.0] - 2026-09-26 (Go · PHP · Rust)
 
