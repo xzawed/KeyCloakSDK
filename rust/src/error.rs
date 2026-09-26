@@ -11,6 +11,9 @@ pub enum KeycloakError {
     #[error("authentication error: {message}")]
     Auth {
         message: String,
+        /// RFC 6749 §5.2 의 `error` **코드만**(예: `invalid_grant`) — 코드 모양이 아니면 `None`.
+        /// ⚠️ `error_description`·`error_uri` 는 서버의 자유 서술이라 받은 토큰을 되울릴 수 있어 싣지
+        /// 않는다(`tests/hostile_token_response.rs`).
         oauth_error: Option<String>,
     },
     #[error("transport error: {0}")]
@@ -46,9 +49,47 @@ impl KeycloakError {
     }
 }
 
+/// 서버 오류 본문의 `error` 를 **코드 모양일 때만** `oauth_error` 로 옮긴다(토큰·provider 두 경로 공용).
+/// RFC 6749 §5.2 와 등록된 확장 코드는 전부 소문자를 `_` 로 이은 것이다(`invalid_grant`·`slow_down`).
+/// ⚠️ 그 모양이 아닌 값은 코드가 아니라 서버의 자유 서술이다 — 받은 토큰을 `error` 자리에 되울린 응답이
+/// `{:?}` 로 원문 그대로 찍혔다(실측 2026-09-26, `tests/hostile_token_response.rs` 의 `e3`).
+pub(crate) fn oauth_error_code(raw: &str) -> Option<String> {
+    let code_shaped = raw.len() <= 64
+        && raw
+            .split('_')
+            .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_lowercase()));
+    code_shaped.then(|| raw.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oauth_error_code_keeps_only_code_shaped_values() {
+        for code in [
+            "invalid_grant",
+            "unauthorized_client",
+            "slow_down",
+            "invalid_dpop_proof",
+            "consent_required",
+        ] {
+            assert_eq!(oauth_error_code(code).as_deref(), Some(code));
+        }
+        for not_code in [
+            "",
+            "E3-ERRCODE-CANARY-9K4D",
+            "eyJhbGciOiJSUzI1NiJ9.e30.sig",
+            "invalid__grant",
+            "_invalid",
+            "invalid_",
+            "invalid grant",
+            "abc123",
+            &"a".repeat(65),
+        ] {
+            assert_eq!(oauth_error_code(not_code), None, "{not_code:?}");
+        }
+    }
 
     #[test]
     fn maps_admin_status() {
