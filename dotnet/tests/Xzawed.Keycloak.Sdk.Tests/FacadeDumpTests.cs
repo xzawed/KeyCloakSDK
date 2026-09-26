@@ -82,6 +82,10 @@ public sealed class FacadeDumpTests
     [Fact]
     public async Task Reachable_objects_do_not_render_secrets()
     {
+        // 바닥은 IdentityModel 의 기본값(ShowPII=false) 위에서 잰다 — 켜면 검증 오류 메시지가 토큰 세그먼트를 싣는다
+        // (실측: 점 있는 garbage 뿌리만 GARBAGE 를 찍었다). 프로세스 전역 값이라 누가 켰으면 여기서 멈춘다.
+        Assert.False(Microsoft.IdentityModel.Logging.IdentityModelEventSource.ShowPII,
+            "IdentityModelEventSource.ShowPII 가 켜져 있다 — 다른 테스트가 전역 값을 바꿨다. 이 상태의 누출은 SDK 기본값이 아니다");
         using var rsa = RSA.Create(2048);
         var key = new RsaSecurityKey(rsa) { KeyId = "k1" };
         using var idp = WireMockServer.Start();
@@ -231,6 +235,9 @@ public sealed class FacadeDumpTests
             ("auth error (id_token rejected)", typeof(KeycloakAuthException),
                 await FailureOf(() => kc.Auth.ExchangeCodeAsync("code", "https://app/cb", ar.CodeVerifier, ar.Nonce))),
             ("validation error (garbage)", typeof(KeycloakTokenValidationException), await FailureOf(() => kc.Auth.ValidateAsync(Garbage))),
+            // 점이 있으면 IdentityModel 은 다른 경로(헤더 디코드 실패)로 간다 — 그 메시지가 세그먼트를 싣는지 따로 잰다.
+            ("validation error (JWT-shaped garbage)", typeof(KeycloakTokenValidationException),
+                await FailureOf(() => kc.Auth.ValidateAsync($"{Garbage}.e30.e30"))),
             ("validation error (wrong aud)", typeof(KeycloakTokenValidationException), await FailureOf(() => kc.Auth.ValidateAsync(jwtWrongAud))),
             ("transport error (introspect)", typeof(KeycloakTransportException), transport[0]),
             ("transport error (logout)", typeof(KeycloakTransportException), transport[1]),
