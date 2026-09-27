@@ -27,6 +27,11 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
+// 교차언어 가드 토큰 타입 축(test-security-defaults.sh 1c)의 kotlin 앵커 테스트가 거부를 단언하는 access_token 값들.
+// 파일 수준에 두는 것은 `HostilePathMatrixTest` 가 **같은 목록**을 모든 TOKEN_GRANT·CODE_EXCHANGE 행에 붙이기 때문이다
+// (사본을 만들지 않는다 — 여기에 값을 더하면 행렬이 따라온다).
+internal val CC_NON_STRING_ACCESS_TOKENS: List<String> = listOf("12345", """{"a":1}""", "[]", "true", "null", "\"\"")
+
 // AuthClientTest — WireMock으로 Keycloak token/introspect/logout 엔드포인트를 목킹해 AuthClient의 경계변환
 // (OAuth 에러→KeycloakAuthException·send() 실패→KeycloakTransportException)·PKCE S256 조립·exchangeCode의
 // nonce threading(Node SDK HIGH 결함 회귀 방지)을 검증한다. 네트워크 경계라 Kover 커버리지 게이트에서
@@ -93,7 +98,7 @@ internal class AuthClientTest {
     @Test
     fun `clientCredentialsToken rejects non-string or empty access_token`() =
         runTest {
-            for (raw in listOf("12345", """{"a":1}""", "[]", "true", "null", "\"\"")) {
+            for (raw in CC_NON_STRING_ACCESS_TOKENS) {
                 server.resetAll()
                 server.stubFor(
                     post(urlEqualTo(tokenPath))

@@ -131,7 +131,9 @@ internal class FacadeDumpTest {
         }
 }
 
-private data class DumpRoots(
+// `internal` 인 것(DumpRoots·dumpRoots·DumpWalker·declaredTypes)은 적대 경로 행렬(`HostilePathMatrixTest`)이 같은
+// 뿌리·걷기·선언 파생을 다시 쓰기 때문이다 — 걷기를 둘로 만들지 않는다.
+internal data class DumpRoots(
     val roots: List<Pair<String, Any>>,
     val canaries: Map<String, String>,
 )
@@ -164,7 +166,7 @@ private fun signed(
 
 // 공개 API 로 뿌리를 만들고, 그 과정이 흘려 넣은 비밀 전부를 카나리아로 돌려준다. 파일 수준 함수다 — 멤버로
 // 두면 안의 람다가 테스트 인스턴스를 붙잡는다.
-private suspend fun dumpRoots(
+internal suspend fun dumpRoots(
     server: WireMockServer,
     closing: MutableList<AutoCloseable>,
 ): DumpRoots {
@@ -318,7 +320,7 @@ private suspend fun dumpRoots(
 // 뿌리에서 닿는 객체 전부를 너비 우선으로 걷는다. SDK 타입(main 클래스 디렉터리에서 온 클래스)은 바닥 경로로
 // 그려 카나리아를 찾고, 하위 라이브러리 객체는 그리지 않고 **통과만** 한다 — SDK 객체가 라이브러리 안쪽에만
 // 매달려 있을 수 있다(예: JwtValidator → Nimbus 프로세서 사슬 → NoRedirectResourceRetriever).
-private class DumpWalker(
+internal class DumpWalker(
     private val canaries: Map<String, String>,
     private val own: String,
     private val harness: String,
@@ -328,6 +330,9 @@ private class DumpWalker(
 
     /** 걷기에 걸린 SDK 타입(상위 타입 포함)의 이진 이름. */
     val reached: MutableSet<String> = sortedSetOf()
+
+    /** 걷기에 걸린 SDK 객체 — 클래스 이진 이름마다 처음 닿은 것(적대 경로 행렬이 여기서 수신자를 꺼낸다). */
+    val found: MutableMap<String, Any> = linkedMapOf()
 
     /** `"뿌리|카나리아"` → 그 누출을 본 자리들. */
     val leaks: MutableMap<String, MutableList<String>> = sortedMapOf()
@@ -358,6 +363,7 @@ private class DumpWalker(
                 continue
             }
             if (source == own) {
+                found.putIfAbsent(obj.javaClass.name, obj)
                 record(obj.javaClass)
                 render(root, obj, path)
             }
@@ -475,7 +481,7 @@ private class DumpWalker(
 }
 
 // main 클래스 디렉터리의 선언 타입 전수 — 손 목록이 아니라 트리에서 파생한다.
-private fun declaredTypes(
+internal fun declaredTypes(
     own: URL,
     loader: ClassLoader,
 ): List<Class<*>> {
