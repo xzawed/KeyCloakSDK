@@ -172,7 +172,7 @@ private val HP_NONCE_DROP_EXEMPT: Map<String, String> = emptyMap()
 // 토큰 타입 축(test-security-defaults.sh 1c)의 불변식 — 「쓸 수 없는 값을 Bearer 로 실어 보내고 매번 401 을 받는 조용한
 // 반복 실패」를 막는다 — 이 auth 의 Nimbus 경로에만 걸려 있다. 여기서 고치지 않는다.
 private const val HP_GAP_ADMIN_TOKEN_TYPE =
-    "REGISTRY-TBD(kotlin-admin-token-response-type-unchecked): admin 내장 TokenManager 가 비문자열·빈 access_token 을 " +
+    "jvm-admin-token-response-type-unchecked: admin 내장 TokenManager 가 비문자열·빈 access_token 을 " +
         "강제변환해 Bearer 로 싣고 나아간다(실측 `Bearer 12345`·`Bearer true`·`Bearer`) — SDK 결함"
 
 // 그 틈이 걸리는 행 — 손으로 적는다. 새 admin 멤버의 같은 칸은 GAP 이 아니라 FAIL 로 드러나야 한다.
