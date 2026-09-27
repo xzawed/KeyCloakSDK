@@ -10,6 +10,7 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -69,21 +70,30 @@ import org.junit.jupiter.api.Test;
  * <ul>
  *   <li>선언 집합 — {@link FacadeDumpTest} 의 뿌리·걷기가 닿는 SDK 타입({@code Walker.reached})과, 클래스패스의 SDK
  *       산출물을 훑은 타입 전수({@code declaredTypes}, Go 의 「소스 선언」 자리)의 합. 그중 **공개 타입**의 공개
- *       메서드·생성자 전부(선언 클래스가 SDK 인 것만 — Object·Throwable 상속분은 뺀다, 오버로드는 따로 센다).
- *       추상 메서드는 행이 아니라 「SDK 구현 행이 있어야 한다」는 의무다 — 없으면 UNDETERMINED 행이 된다.</li>
- *   <li>호출 — 행마다 기록을 비운 IdP({@link Idp} — 서버는 하나, 경계는 칸)와 **새** 수신자. 수신자는 {@link #BUILDERS}(덜 데운 것부터)의 걷기가 닿는
- *       인스턴스이고, 어느 빌더에도 안 닿는 타입은 <b>서명에서 파생한 생산자</b>(공개 생성자 → 그 타입을 돌려주는
- *       정적 메서드 → 인스턴스 메서드)로 만든다 — Go 의 영값 수신자 자리다(Java 에는 영값 인스턴스가 없다). 인자는
- *       타입만 보고 합성한다.</li>
- *   <li>분류 — 그 호출이 IdP 에 실제로 보낸 요청으로({@link #classify}). 엔드포인트는 경로 <b>꼬리</b>로 본다.</li>
+ *       메서드·생성자 전부(선언 클래스가 SDK 인 것, 그리고 제3자 상위 타입에게서 물려받은 것 — JDK 의 Object·Throwable
+ *       상속분만 뺀다, 오버로드는 따로 센다, 라벨이 겹치면 실패). 추상 메서드는 행이 아니라 「SDK 구현 행이 있어야 한다」는
+ *       의무다 — 없으면 UNDETERMINED 행이 된다.</li>
+ *   <li>호출 — 행마다 기록을 비운 IdP({@link Idp} — 서버는 하나, 경계는 칸)와 **새** 수신자. 수신자는
+ *       {@link #BUILDERS}(덜 데운 것부터)의 걷기가 닿는 인스턴스이고, 어느 빌더에도 안 닿는 타입은 <b>서명에서 파생한
+ *       생산자</b>(공개 생성자 → 그 타입을 돌려주는 정적 메서드 → 인스턴스 메서드)로 만든다 — Go 의 영값 수신자 자리다
+ *       (Java 에는 영값 인스턴스가 없다). 인자는 타입만 보고 합성하고, 불리언 파라미터가 있으면 true 로도 불러 더 센
+ *       계급을 쓴다.</li>
+ *   <li>분류 — 그 호출이 IdP 에 실제로 보낸 요청으로({@link #classify}). 엔드포인트는 경로 <b>꼬리</b>로 보고, 토큰
+ *       요청은 메서드를 가리지 않으며 grant_type 은 폼 본문·쿼리·JSON 본문 어디서든 읽는다.</li>
  * </ul>
  *
  * <p>단언: (1) UNDETERMINED 없음(면제는 이유와 함께 · 낡은 면제는 실패) · (2) CODE_EXCHANGE·TOKEN_GRANT·JWKS_FETCH 가
  * 각각 비지 않음 · (W1) 손으로 고른 테스트가 겨누는 메서드({@link #HAND})가 전부 행이고 기대 계급이고 그 축의 파생
  * 대상에 있다 — 표도 손 목록이라 셋과 대조한다: 앵커가 정말 그 이름을 부르는가, {@code MalformedIdpResponseTest.CALLS}
  * 의 키가 전부 표에 있고 그 호출을 이 IdP 에 돌린 계급이 표와 같은가, 보안 기본값 가드의 Java 앵커가 전부 표의 앵커인가
- * · (W3a·b·c) 계급별 적대 변형 — 각 메서드의 주석. 실패한 칸은 {@link #KNOWN_GAPS} 에 이유와 함께 있으면 GAP 이고,
- * 관측되지 않는 항목은 낡은 것이라 실패한다.
+ * · (W3a·b·c) 계급별 적대 변형 — 각 메서드의 주석 · (W3d) 교환 요청의 PKCE 모양. 실패한 칸은 {@link #KNOWN_GAPS} 에
+ * 이유와 함께 있으면 GAP 이고, 관측되지 않는 항목은 낡은 것이라 실패한다.
+ *
+ * <p>Grok 레그(파일 둘 · 계약 인라인)가 낸 우회 여덟을 심어서 쟀다 — 실측 SILENT 였던 것을 닫았다: JSON 본문 교환이
+ * TOKEN_GRANT 로 읽혀 nonce 변형이 빠짐(grant 를 세 자리에서 읽고, nonce 파라미터 있는 부여 행에도 (b)) · 불리언 가지
+ * (true 로도 부름) · 토큰 엔드포인트 GET(메서드 무관) · nonce 를 code 와 대조(nonce 파라미터에 다른 값) · PKCE 누락((d)) ·
+ * 서명 없는 id_token(alg=none·aud≠ 를 (b) 에) · bool·빈 문자열 access_token 을 받는 새 교환(at:* 를 교환에도 단언) ·
+ * 제3자 상속 메서드·라벨 충돌. 「가변 인자와 배열 오버로드가 한 라벨로 겹친다」는 javac 가 선언을 거부해 성립하지 않았다.
  *
  * <p>⚠️ Go 설계가 Java 에 안 맞은 자리:
  * <ul>
@@ -100,8 +110,9 @@ import org.junit.jupiter.api.Test;
  *       ({@code .claude/rules/security.md}) W3c 는 2 를 본다. 상한 k−1=4 는 그대로 성립한다.</li>
  * </ul>
  *
- * <p>⚠️ 한계(전부 NONE 으로 읽힌다 — Go 와 같다): 기록된 요청도 오류도 없이 끝나는 교환 경로, 합성 인자가 요청 앞에서
- * 갈라 세우는 것, 비동기로 나가는 요청(표는 반환 직후 찍힌다), 이 IdP 가 아닌 호스트로 나가 오류를 버리는 것. 비공개
+ * <p>⚠️ 한계(전부 NONE 으로 읽힌다 — Go 와 같다): 기록된 요청도 오류도 없이 끝나는 교환 경로, 불리언 밖의 합성 인자
+ * (1·빈 Optional·빈 컬렉션)가 요청 앞에서 갈라 세우는 것, 비동기로 나가는 요청(표는 반환 직후 찍힌다), 이 IdP 가 아닌
+ * 호스트로 나가 오류를 버리는 것. PKCE·nonce 값이 서버에서 맞는지는 이 가짜 IdP 가 보지 않는다(통합 CodeExchangeIT 몫). 비공개
  * 타입의 공개 메서드는 공개 API 가 아니라 행이 아니다(비공개 SDK 타입이 공개 인터페이스로 나가면 그 인터페이스의 추상
  * 메서드가 의무로 잡는다). 생산자가 만들 수 없는 수신자는 UNDETERMINED 로 드러난다.
  */
@@ -180,8 +191,11 @@ class HostilePathMatrixTest {
 
   // ───────────────────────────── 기록하는 가짜 IdP ─────────────────────────────
 
-  /** auth 는 Authorization 헤더의 앞 16 자 — 적대 토큰 뒤로 나아간 요청이 무엇을 bearer 로 실었는지 판정 사유에 싣는다. */
-  record Req(String method, String path, String grant, String auth) {}
+  /**
+   * params 는 토큰 요청이 실은 파라미터 이름(W3d 가 PKCE 를 본다). auth 는 Authorization 헤더의 앞 16 자 — 적대 토큰 뒤로
+   * 나아간 요청이 무엇을 bearer 로 실었는지 판정 사유에 싣는다.
+   */
+  record Req(String method, String path, String grant, Set<String> params, String auth) {}
 
   /**
    * 모든 요청을 (메서드, 경로, 토큰 요청이면 grant_type) 으로 **라우팅 앞에서** 남긴다 — 라우트가 없는 경로(admin 404)도
@@ -278,10 +292,13 @@ class HostilePathMatrixTest {
         String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
         String path = ex.getRequestURI().getPath();
         String method = ex.getRequestMethod();
-        String grant = "POST".equals(method) && path.endsWith(TOKEN_SUFFIX) ? form(body).get("grant_type") : null;
+        // 토큰 요청의 파라미터는 폼 본문·쿼리·JSON 본문 어디서 와도 읽는다 — 폼만 읽으면 JSON 본문으로 보낸 코드 교환이
+        // TOKEN_GRANT 로 읽혀 W3b 가 안 붙었다(Grok 레그 주장 1, 실측 SILENT).
+        Map<String, String> params = isTokenPath(path) ? tokenParams(body, ex.getRequestURI().getRawQuery()) : Map.of();
         String auth = ex.getRequestHeaders().getFirst("Authorization");
         synchronized (reqs) {
-          reqs.add(new Req(method, path, grant, auth == null ? null : auth.substring(0, Math.min(16, auth.length()))));
+          reqs.add(new Req(method, path, params.get("grant_type"), params.keySet(),
+              auth == null ? null : auth.substring(0, Math.min(16, auth.length()))));
         }
         MalformedIdpResponseTest.Resp r;
         if (path.equals(OC + "/token")) {
@@ -328,8 +345,22 @@ class HostilePathMatrixTest {
     }
   }
 
+  private static final Pattern JSON_FIELD = Pattern.compile("\"(\\w+)\"\\s*:\\s*\"([^\"]*)\"");
+
+  /** 토큰 요청의 파라미터 — 폼 본문, 쿼리, JSON 본문의 문자열 필드(앞의 것이 이긴다). */
+  static Map<String, String> tokenParams(String body, String rawQuery) {
+    Map<String, String> out = new LinkedHashMap<>(form(body));
+    if (rawQuery != null) form(rawQuery).forEach(out::putIfAbsent);
+    if (body.trim().startsWith("{")) {
+      Matcher m = JSON_FIELD.matcher(body);
+      while (m.find()) out.putIfAbsent(m.group(1), m.group(2));
+    }
+    return out;
+  }
+
   private static Map<String, String> form(String body) {
     Map<String, String> out = new LinkedHashMap<>();
+    if (body.trim().startsWith("{")) return out;
     for (String kv : body.split("&")) {
       int eq = kv.indexOf('=');
       if (eq > 0) {
@@ -341,7 +372,11 @@ class HostilePathMatrixTest {
   }
 
   static String sign(RSAKey key, String kid, String iss, Map<String, Object> extra) throws JOSEException {
-    JWTClaimsSet.Builder b = new JWTClaimsSet.Builder().issuer(iss).subject("u1").audience(CLIENT_ID)
+    return sign(key, kid, iss, CLIENT_ID, extra);
+  }
+
+  static String sign(RSAKey key, String kid, String iss, String aud, Map<String, Object> extra) throws JOSEException {
+    JWTClaimsSet.Builder b = new JWTClaimsSet.Builder().issuer(iss).subject("u1").audience(aud)
         .expirationTime(new Date(System.currentTimeMillis() + 300_000)).issueTime(new Date());
     extra.forEach(b::claim);
     SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(kid).build(), b.build());
@@ -378,13 +413,20 @@ class HostilePathMatrixTest {
   final class Env implements AutoCloseable {
     final Idp idp;
     final boolean plain;
+    /** 합성 불리언의 값 — 기본 false, {@link #run} 이 true 로 한 번 더 부른다. */
+    final boolean flip;
     private final List<AutoCloseable> closers = new ArrayList<>();
     private final Map<Integer, Map<Class<?>, Object>> built = new HashMap<>();
     private final Map<Class<?>, String> via = new HashMap<>();
 
     Env(boolean plain) {
+      this(plain, false);
+    }
+
+    Env(boolean plain, boolean flip) {
       this.idp = server;
       this.plain = plain;
+      this.flip = flip;
       idp.activate(plain);
     }
 
@@ -440,11 +482,18 @@ class HostilePathMatrixTest {
     }
 
     Object[] args(Executable x, Set<Integer> blank, int depth) throws Exception {
+      return args(x, blank, Map.of(), depth);
+    }
+
+    /** blank 의 위치는 null, set 의 위치는 그 값, 나머지는 타입으로 합성한다(0 부터, 수신자 제외). */
+    Object[] args(Executable x, Set<Integer> blank, Map<Integer, Object> set, int depth) throws Exception {
       Class<?>[] ps = x.getParameterTypes();
       Type[] gs = x.getGenericParameterTypes();
       Object[] out = new Object[ps.length];
       for (int i = 0; i < ps.length; i++) {
-        out[i] = blank.contains(i) ? null : arg(ps[i], i < gs.length ? gs[i] : ps[i], depth);
+        if (blank.contains(i)) out[i] = null;
+        else if (set.containsKey(i)) out[i] = set.get(i);
+        else out[i] = arg(ps[i], i < gs.length ? gs[i] : ps[i], depth);
       }
       return out;
     }
@@ -461,7 +510,7 @@ class HostilePathMatrixTest {
       if (t == byte.class || t == Byte.class) return (byte) 1;
       if (t == double.class || t == Double.class) return 1.0;
       if (t == float.class || t == Float.class) return 1.0f;
-      if (t == boolean.class || t == Boolean.class) return false;
+      if (t == boolean.class || t == Boolean.class) return flip;
       if (t == char.class || t == Character.class) return 'x';
       if (t == URI.class) return CB;
       if (t == Duration.class) return Duration.ofSeconds(1);
@@ -515,6 +564,9 @@ class HostilePathMatrixTest {
   private final Map<Class<?>, Optional<Path>> locations = new HashMap<>();
   /** 선언 집합 — 라벨 → 공개 메서드·생성자. */
   private final Map<String, Executable> declared = new TreeMap<>();
+  /** 라벨 → 수신자 타입(대개 선언 클래스, 제3자에게서 물려받은 메서드면 그것을 물려받은 SDK 공개 타입). */
+  private final Map<String, Class<?>> recvTypes = new HashMap<>();
+  private int inheritedRows;
   private final Map<Class<?>, Integer> builderOf = new LinkedHashMap<>();
   private final Map<Class<?>, List<Executable>> producerCache = new HashMap<>();
 
@@ -574,10 +626,32 @@ class HostilePathMatrixTest {
     return n.substring(n.lastIndexOf('.') + 1).replace('$', '.');
   }
 
+  static String params(Executable x) {
+    return Arrays.stream(x.getParameterTypes()).map(Class::getSimpleName).collect(Collectors.joining(","));
+  }
+
   static String label(Executable x) {
-    String params = Arrays.stream(x.getParameterTypes()).map(Class::getSimpleName).collect(Collectors.joining(","));
     String owner = simpleName(x.getDeclaringClass());
-    return x instanceof Constructor ? "new " + owner + "(" + params + ")" : owner + "." + x.getName() + "(" + params + ")";
+    return x instanceof Constructor ? "new " + owner + "(" + params(x) + ")" : owner + "." + x.getName() + "(" + params(x) + ")";
+  }
+
+  private static boolean jdk(Class<?> c) {
+    Module m = c.getModule();
+    return m.isNamed() && (m.getName().startsWith("java.") || m.getName().startsWith("jdk."));
+  }
+
+  /**
+   * 행을 선언 집합에 넣는다 — 라벨은 단순 이름이라 다른 패키지의 같은 이름 타입을 받는 오버로드가 한 라벨로 겹칠 수 있다.
+   * 겹치면 하나가 조용히 빠지므로 실패로 드러낸다(Grok 레그 주장 8 — 「가변 인자와 배열」 판은 javac 가 선언을 거부해 성립하지
+   * 않았다, 실측).
+   */
+  private void putDeclared(String label, Executable x, Class<?> recvType, List<String> fails) {
+    Executable prev = declared.putIfAbsent(label, x);
+    if (prev == null) {
+      recvTypes.put(label, recvType);
+    } else if (!prev.equals(x)) {
+      fails.add("라벨 충돌: " + label + " — " + prev + " 와 " + x + " 가 한 행으로 겹쳐 하나가 빠진다");
+    }
   }
 
   private static boolean accessible(Class<?> c) {
@@ -593,8 +667,20 @@ class HostilePathMatrixTest {
 
   // ───────────────────────────── 분류 ─────────────────────────────
 
-  static boolean isTokenPost(Req r) {
-    return "POST".equals(r.method()) && r.path().endsWith(TOKEN_SUFFIX);
+  /** 토큰 엔드포인트 — 꼬리로 본다(끝 슬래시는 뗀다). */
+  static boolean isTokenPath(String path) {
+    String p = path;
+    while (p.endsWith("/")) p = p.substring(0, p.length() - 1);
+    return p.endsWith(TOKEN_SUFFIX);
+  }
+
+  /**
+   * 토큰 요청 — 메서드를 가리지 않는다. POST 만 세면 토큰 엔드포인트를 GET 으로 부르는 새 경로가 OTHER 로 빠져 W3 가 안
+   * 붙었다(Grok 레그 주장 3, 실측 SILENT). 틀린 메서드는 그 자체로 틀린 요청이지만, 여기서 재는 것은 「토큰을 받으러
+   * 갔는가」다.
+   */
+  static boolean isTokenRequest(Req r) {
+    return isTokenPath(r.path());
   }
 
   static boolean isCertsGet(Req r) {
@@ -603,11 +689,12 @@ class HostilePathMatrixTest {
 
   /**
    * 요청으로 가른다. 앞 줄이 이긴다: 코드 교환 > 토큰 부여 > JWKS 조회 > 그 밖의 요청 > 요청 없음. ⚠️ 토큰 엔드포인트
-   * POST 는 grant_type 이 무엇이든 TOKEN_GRANT 다 — 새 grant 가 OTHER 로 새지 않게. grant 는 표의 요청 열에 찍힌다.
+   * 요청은 grant_type 이 무엇이든(메서드도 무엇이든) TOKEN_GRANT 다 — 새 grant 가 OTHER 로 새지 않게. grant 는 표의 요청
+   * 열에 찍힌다.
    */
   static String classify(List<Req> reqs, boolean failed) {
-    if (reqs.stream().anyMatch(r -> isTokenPost(r) && "authorization_code".equals(r.grant()))) return CODE_EXCHANGE;
-    if (reqs.stream().anyMatch(HostilePathMatrixTest::isTokenPost)) return TOKEN_GRANT;
+    if (reqs.stream().anyMatch(r -> isTokenRequest(r) && "authorization_code".equals(r.grant()))) return CODE_EXCHANGE;
+    if (reqs.stream().anyMatch(HostilePathMatrixTest::isTokenRequest)) return TOKEN_GRANT;
     if (reqs.stream().anyMatch(HostilePathMatrixTest::isCertsGet)) return JWKS_FETCH;
     if (!reqs.isEmpty()) return OTHER;
     return failed ? UNDETERMINED : NONE;
@@ -633,17 +720,39 @@ class HostilePathMatrixTest {
   // ───────────────────────────── 행 ─────────────────────────────
 
   record Row(String label, String cls, String reqs, String recv, String outcome, String note, List<Req> sent,
-      Executable x, boolean plain) {}
+      Executable x, boolean plain, boolean flip) {}
 
-  private Row run(Executable x) throws Exception {
+  /** 계급의 세기 — 뒤로 갈수록 세다. 불리언을 뒤집은 호출은 더 센 계급일 때만 쓴다. */
+  private static final List<String> STRENGTH = List.of(UNDETERMINED, NONE, OTHER, JWKS_FETCH, TOKEN_GRANT, CODE_EXCHANGE);
+
+  /**
+   * 행 하나를 가른다. ⚠️ 합성 불리언은 false 다 — 그 인자가 교환 가지를 가르면 요청 없이 끝나 NONE 으로 읽혔다(Grok 레그
+   * 주장 2, 실측 SILENT). 그래서 불리언 파라미터가 있으면 true 로 한 번 더 부르고 더 센 계급을 쓴다(그 행의 W3 칸도 같은
+   * 인자로 돈다).
+   */
+  private Row run(String label, Executable x) throws Exception {
+    Row best = attempt(label, x, false);
+    boolean hasBoolean = Arrays.stream(x.getParameterTypes()).anyMatch(t -> t == boolean.class || t == Boolean.class);
+    if (hasBoolean) {
+      Row flipped = attempt(label, x, true);
+      if (STRENGTH.indexOf(flipped.cls()) > STRENGTH.indexOf(best.cls())) best = flipped;
+    }
+    return best;
+  }
+
+  private Class<?> recvType(String label, Executable x) {
+    return recvTypes.getOrDefault(label, x.getDeclaringClass());
+  }
+
+  private Row attempt(String label, Executable x, boolean flip) throws Exception {
     Row last = null;
     for (boolean plain : new boolean[] {false, true}) {
-      try (Env e = new Env(plain)) {
+      try (Env e = new Env(plain, flip)) {
         Object recv = null;
         String src = needsReceiver(x) ? null : x instanceof Constructor ? "생성자" : "정적";
         if (src == null) {
-          recv = e.resolve(x.getDeclaringClass(), 0);
-          src = recv == null ? "없음" : e.via(x.getDeclaringClass());
+          recv = e.resolve(recvType(label, x), 0);
+          src = recv == null ? "없음" : e.via(recvType(label, x));
         }
         Object[] a = e.args(x, Set.of(), 1);
         e.idp.reset(); // 수신자·인자를 만들며 나간 요청은 이 메서드의 몫이 아니다
@@ -657,7 +766,7 @@ class HostilePathMatrixTest {
         if (cls.equals(UNDETERMINED)) {
           note = noRecv ? " · 수신자를 만들 빌더·생산자가 없다" : " · " + brief(o.thrown());
         }
-        Row r = new Row(label(x), cls, format(sent, e.idp.universal()), src, outcome, note, sent, x, plain);
+        Row r = new Row(label, cls, format(sent, e.idp.universal()), src, outcome, note, sent, x, plain, flip);
         if (!cls.equals(UNDETERMINED)) return r;
         last = r;
       }
@@ -707,15 +816,26 @@ class HostilePathMatrixTest {
       if (!accessible(t)) continue; // 비공개 타입의 공개 메서드는 공개 API 가 아니다
       int before = declared.size();
       for (Method m : t.getMethods()) {
-        if (!own(m.getDeclaringClass()) || m.isSynthetic() || m.isBridge()) continue;
+        if (m.isSynthetic() || m.isBridge()) continue;
+        Class<?> decl = m.getDeclaringClass();
+        if (!own(decl)) {
+          // 제3자 상위 타입에서 물려받은 공개 메서드도 이 공개 타입의 API 다 — 빼면 SDK 가 하위 라이브러리의 교환 메서드를
+          // 그대로 물려줄 때 선언 집합 밖으로 샌다(Grok 레그 주장 8). JDK(Object·Throwable)의 것만 뺀다. 오늘은 0 행이다.
+          if (!jdk(decl) && !Modifier.isAbstract(m.getModifiers())) {
+            String l = simpleName(t) + "." + m.getName() + "(" + params(m) + ") ⟵" + simpleName(decl);
+            putDeclared(l, m, t, fails);
+            inheritedRows++;
+          }
+          continue;
+        }
         if (Modifier.isAbstract(m.getModifiers())) {
           abstracts.add(m);
         } else {
-          declared.putIfAbsent(label(m), m);
+          putDeclared(label(m), m, decl, fails);
         }
       }
       if (!Modifier.isAbstract(t.getModifiers()) && !t.isInterface()) {
-        for (Constructor<?> c : t.getConstructors()) declared.putIfAbsent(label(c), c);
+        for (Constructor<?> c : t.getConstructors()) putDeclared(label(c), c, t, fails);
       }
       if (reached.contains(name)) fromWalk += declared.size() - before;
     }
@@ -730,8 +850,8 @@ class HostilePathMatrixTest {
 
     List<Row> rows = new ArrayList<>();
     Map<String, Row> byLabel = new LinkedHashMap<>();
-    for (Executable x : declared.values()) {
-      Row r = run(x);
+    for (Map.Entry<String, Executable> d : declared.entrySet()) {
+      Row r = run(d.getKey(), d.getValue());
       rows.add(r);
       byLabel.put(r.label(), r);
     }
@@ -742,7 +862,8 @@ class HostilePathMatrixTest {
           && a.getDeclaringClass().isAssignableFrom(m.getDeclaringClass()));
       if (!covered && !byLabel.containsKey(label(a))) {
         Row r = new Row(label(a), UNDETERMINED, "-", "없음", "-",
-            " · 추상 메서드인데 SDK 구현 행이 없다(구현을 뿌리에 닿게 하거나 이유와 함께 면제하라)", List.of(), a, false);
+            " · 추상 메서드인데 SDK 구현 행이 없다(구현을 뿌리에 닿게 하거나 이유와 함께 면제하라)", List.of(), a, false,
+            false);
         rows.add(r);
         byLabel.put(r.label(), r);
       }
@@ -779,8 +900,12 @@ class HostilePathMatrixTest {
         continue;
       }
       if (r.cls().equals(TOKEN_GRANT) || r.cls().equals(CODE_EXCHANGE)) tgt.get("a").add(r);
+      boolean hasNonce = !nonceParams.getOrDefault(r.label(), List.of()).isEmpty();
+      // nonce 파라미터가 있는 부여 행도 (b) 를 받는다 — 교환인데 grant 를 못 읽었든, nonce 를 받는 새 부여든, nonce 를 받는
+      // 이상 id_token 을 검증해야 한다(Grok 레그 주장 1 의 두 번째 벨트).
+      if (hasNonce && r.cls().equals(TOKEN_GRANT)) tgt.get("b").add(r);
       if (r.cls().equals(CODE_EXCHANGE)) {
-        if (!nonceParams.getOrDefault(r.label(), List.of()).isEmpty()) {
+        if (hasNonce) {
           tgt.get("b").add(r);
         } else if (NONCE_DROP_EXEMPT.containsKey(r.label())) {
           log("(b) nonce 파라미터가 없어 빠진 CODE_EXCHANGE 행: " + r.label() + " — " + NONCE_DROP_EXEMPT.get(r.label()));
@@ -802,6 +927,7 @@ class HostilePathMatrixTest {
     cells.addAll(runVariantsA(tgt.get("a"), nonceParams, sdkErrors, callClass, byLabel));
     cells.addAll(runNonceB(tgt.get("b"), nonceParams, sdkErrors));
     cells.addAll(runColdJwksC(tgt.get("c"), sdkErrors));
+    cells.addAll(pkceD(rows));
     List<String> judged = judge(cells);
 
     // W1 — 손 목록 포함.
@@ -834,11 +960,12 @@ class HostilePathMatrixTest {
   private Map<String, Integer> logTable(List<Row> rows, int fromWalk, int abstractCount) {
     Map<String, Integer> counts = new LinkedHashMap<>();
     log("선언 집합 " + rows.size() + " 행(걷기가 닿은 타입의 것 " + fromWalk + " · 산출물에만 있는 타입의 것 "
-        + (rows.size() - fromWalk) + " · 추상 의무 " + abstractCount + ") — 경로의 " + OC + " 는 생략, {U} 는 보편 인자");
+        + (rows.size() - fromWalk) + " · 제3자에게서 물려받은 것 " + inheritedRows + " · 추상 의무 " + abstractCount
+        + ") — 경로의 " + OC + " 는 생략, {U} 는 보편 인자");
     for (Row r : rows) {
       counts.merge(r.cls(), 1, Integer::sum);
-      log(String.format("%-62s → %-13s · %s  [수신자 %s · %s · %s]%s", r.label(), r.cls(), r.reqs(), r.recv(),
-          r.plain() ? "plain" : "jws", r.outcome(), r.note()));
+      log(String.format("%-62s → %-13s · %s  [수신자 %s · %s%s · %s]%s", r.label(), r.cls(), r.reqs(), r.recv(),
+          r.plain() ? "plain" : "jws", r.flip() ? " · bool=true" : "", r.outcome(), r.note()));
     }
     log("계급별: " + CLASSES.stream().map(c -> c + " " + counts.getOrDefault(c, 0)).collect(Collectors.joining(" · ")));
     return counts;
@@ -985,6 +1112,10 @@ class HostilePathMatrixTest {
     for (Row r : rows) {
       if (r.x() == null || !r.cls().equals(CODE_EXCHANGE) && !r.cls().equals(TOKEN_GRANT)) continue;
       Executable x = r.x();
+      if (!own(x.getDeclaringClass())) {
+        fails.add(r.label() + ": 제3자에게서 물려받은 " + r.cls() + " 행이다 — SDK 소스가 없어 nonce 파라미터를 파생할 수 없다");
+        continue;
+      }
       Class<?> top = x.getDeclaringClass();
       while (top.getEnclosingClass() != null) top = top.getEnclosingClass();
       List<SrcDecl> decls = cache.get(top);
@@ -1191,10 +1322,15 @@ class HostilePathMatrixTest {
   /** 수신자를 정상 응답 위에서 새로 만든 **뒤에** 토큰 응답·JWKS 를 바꾸고 times 번 부른다. */
   private CellRun cell(Row row, Set<Integer> blank, Function<Idp, MalformedIdpResponseTest.Reply> reply,
       boolean certsDown, int times) throws Exception {
-    try (Env e = new Env(row.plain())) {
+    return cell(row, blank, Map.of(), reply, certsDown, times);
+  }
+
+  private CellRun cell(Row row, Set<Integer> blank, Map<Integer, Object> set,
+      Function<Idp, MalformedIdpResponseTest.Reply> reply, boolean certsDown, int times) throws Exception {
+    try (Env e = new Env(row.plain(), row.flip())) {
       Executable x = row.x();
-      Object recv = needsReceiver(x) ? e.resolve(x.getDeclaringClass(), 0) : null;
-      Object[] a = e.args(x, blank, 1);
+      Object recv = needsReceiver(x) ? e.resolve(recvType(row.label(), x), 0) : null;
+      Object[] a = e.args(x, blank, set, 1);
       e.idp.reset();
       e.idp.tokenReply(reply == null ? null : reply.apply(e.idp));
       e.idp.certsDown(certsDown);
@@ -1217,7 +1353,7 @@ class HostilePathMatrixTest {
     List<Req> after = new ArrayList<>();
     boolean seen = false;
     for (Req r : reqs) {
-      if (isTokenPost(r)) seen = true;
+      if (isTokenRequest(r)) seen = true;
       else if (seen) after.add(r);
     }
     return after;
@@ -1276,11 +1412,13 @@ class HostilePathMatrixTest {
     Matcher lm = Pattern.compile("for \\(String raw : List\\.of\\((.*?)\\)\\)").matcher(body == null ? "" : body);
     List<String> raws = lm.find() ? stringLiterals(lm.group(1)) : List.of();
     if (raws.isEmpty()) throw new AssertionError("AuthClientTokenTypeTest 에서 access_token 변형을 하나도 못 읽었다");
-    // 원 테스트의 호출은 clientCredentialsToken 하나 — 그 계급(TOKEN_GRANT)에 단언한다. CODE_EXCHANGE 는 그 테스트가 부르지
-    // 않으므로 측정만 한다(Go 는 교환에도 단언했다 — 여기서는 계약을 새로 만들지 않는다).
+    // 원 테스트의 호출은 clientCredentialsToken 하나 — 그 계급(TOKEN_GRANT)은 호출 전부에 단언되고, CODE_EXCHANGE 는 그
+    // 테스트가 부르지 않을 뿐 **일부러 뺀 호출이 없다**. 그래서 두 계급 다 단언한다(Go 와 같다). 처음엔 교환 쪽을 측정만
+    // 했는데, 그러면 bool·빈 문자열·null access_token 을 받아들이는 새 교환이 초록이었다(Grok 레그 주장 4). 원 테스트가
+    // 계급 안의 호출을 **골라** 뺀 변형(MalformedIdpResponseTest b1 의 admin)은 여전히 측정만 한다.
     Row ttRow = byLabel.get(tt.label());
-    Set<String> ttOn = ttRow == null ? Set.of() : Set.of(ttRow.cls());
     Set<String> both = Set.of(TOKEN_GRANT, CODE_EXCHANGE);
+    Set<String> ttOn = ttRow == null ? Set.of() : both;
     String atRT = "ZatRT-0123456789abcdef";
     Set<String> codes = new TreeSet<>();
     for (String raw : raws) {
@@ -1349,7 +1487,7 @@ class HostilePathMatrixTest {
       Set<Integer> blank = new HashSet<>(nonceParams.getOrDefault(row.label(), List.of()));
       CellRun ctl = cell(row, blank, i -> WELL_FORMED, false, 1);
       Outcome co = ctl.outcomes().get(0);
-      int ctlHits = count(ctl.sent(), HostilePathMatrixTest::isTokenPost);
+      int ctlHits = count(ctl.sent(), HostilePathMatrixTest::isTokenRequest);
       List<Req> ctlAfter = afterToken(ctl.sent());
       List<String> cw = new ArrayList<>();
       if (co.thrown() != null && !sdkError(co.thrown(), sdkErrors)) cw.add("정상 응답에 충돌: " + brief(co.thrown()));
@@ -1390,7 +1528,7 @@ class HostilePathMatrixTest {
         if (exposed != null) why.add("카나리아 " + name + " 가 " + how + " 에 찍혔다(" + exposed + ")");
       }));
     }
-    int hits = count(run.sent(), HostilePathMatrixTest::isTokenPost);
+    int hits = count(run.sent(), HostilePathMatrixTest::isTokenRequest);
     List<Req> after = afterToken(run.sent());
     if (hits == 0) why.add("토큰 엔드포인트에 한 번도 안 닿았다 — 변형이 공허하다(" + brief(t) + ")");
     // 하한만 두면 틀린 응답마다 재시도하는 새 메서드가 통과한다(Go 레그 지목, 실측 SILENT) — 상한은 같은 행의 대조다.
@@ -1403,20 +1541,41 @@ class HostilePathMatrixTest {
   }
 
   /**
-   * (b) CODE_EXCHANGE 행 중 서명에 nonce 파라미터가 있는 것 — 대조(맞는 id_token)와 다섯. 다른 키로 서명할 때 kid 가
-   * k1 이면 캐시된 키로 서명 검증이 실패하고, k2 면 키를 못 찾는다(둘 다 재야 서명 생략을 잡는다 — Go 변이 7).
-   * 대조는 성공해야 하고, id_token 이 있는 변형은 검증기까지 가야 한다(콜드 캐시 JWKS 조회 ≥ 1).
+   * (b) 서명에 nonce 파라미터가 있는 교환 행 — 대조(맞는 id_token)와 일곱. 다른 키로 서명할 때 kid 가 k1 이면 캐시된 키로
+   * 서명 검증이 실패하고, k2 면 키를 못 찾는다(둘 다 재야 서명 생략을 잡는다 — Go 변이 7). 대조는 성공해야 하고, id_token
+   * 이 서명돼 있는 변형은 검증기까지 가야 한다(콜드 캐시 JWKS 조회 ≥ 1). 서명 없는(alg=none) 것은 JWKS 앞에서 거부되는
+   * 것이 맞다.
+   *
+   * <p>⚠️ nonce 파라미터에는 <b>다른 문자열 인자와 다른 값</b>({@link #NONCE_ARG})을 넘기고 id_token 도 그 값으로 서명한다.
+   * 보편 인자 하나를 모든 문자열에 넣었더니 nonce 를 code 와 대조하는 새 교환이 대조까지 통과했다(Grok 레그 주장 5, 실측
+   * SILENT). alg=none · aud≠ 는 JwtValidatorTest 가 검증기 수준에서 단언하는 거부다 — 교환 경로에도 붙인다(주장 7).
    */
   private record NonceVariant(String code, String kid, boolean otherKey, Map<String, Object> claims, boolean noIdToken,
-      String want) {}
+      boolean unsigned, String aud, String want) {}
+
+  /** nonce 파라미터 값 — 보편 인자(JWS·PLAIN)와 겹치지 않는다. */
+  static final String NONCE_ARG = "hp-expected-nonce-7Qx";
 
   private static final List<NonceVariant> NONCE_VARIANTS = List.of(
-      new NonceVariant("대조", "k1", false, null, false, "ok"),
-      new NonceVariant("nonce≠", "k1", false, Map.of("nonce", "hp-other-nonce"), false, "reject"),
-      new NonceVariant("key≠·kid=k1", "k1", true, null, false, "reject"),
-      new NonceVariant("key≠·kid=k2", "k2", true, null, false, "reject"),
-      new NonceVariant("id_token없음", null, false, null, true, "reject"),
-      new NonceVariant("nonce클레임없음", "k1", false, Map.of(), false, "reject"));
+      new NonceVariant("대조", "k1", false, null, false, false, CLIENT_ID, "ok"),
+      new NonceVariant("nonce≠", "k1", false, Map.of("nonce", "hp-other-nonce"), false, false, CLIENT_ID, "reject"),
+      new NonceVariant("key≠·kid=k1", "k1", true, null, false, false, CLIENT_ID, "reject"),
+      new NonceVariant("key≠·kid=k2", "k2", true, null, false, false, CLIENT_ID, "reject"),
+      new NonceVariant("id_token없음", null, false, null, true, false, CLIENT_ID, "reject"),
+      new NonceVariant("nonce클레임없음", "k1", false, Map.of(), false, false, CLIENT_ID, "reject"),
+      new NonceVariant("alg=none", null, false, null, false, true, CLIENT_ID, "reject"),
+      new NonceVariant("aud≠", "k1", false, null, false, false, "someone-else", "reject"));
+
+  private String idTokenFor(NonceVariant nv, Idp idp) throws JOSEException {
+    Map<String, Object> claims = nv.claims() == null ? Map.of("nonce", NONCE_ARG) : nv.claims();
+    if (nv.unsigned()) {
+      JWTClaimsSet.Builder b = new JWTClaimsSet.Builder().issuer(idp.iss()).subject("u1").audience(nv.aud())
+          .expirationTime(new Date(System.currentTimeMillis() + 300_000)).issueTime(new Date());
+      claims.forEach(b::claim);
+      return new PlainJWT(b.build()).serialize();
+    }
+    return sign(nv.otherKey() ? otherKey : key, nv.kid(), idp.iss(), nv.aud(), claims);
+  }
 
   private List<Cell> runNonceB(List<Row> targets, Map<String, List<Integer>> nonceParams, Set<Class<?>> sdkErrors)
       throws Exception {
@@ -1424,14 +1583,15 @@ class HostilePathMatrixTest {
         .collect(Collectors.joining(", ")));
     List<Cell> cells = new ArrayList<>();
     for (Row row : targets) {
+      Map<Integer, Object> nonceArg = new HashMap<>();
+      for (int i : nonceParams.getOrDefault(row.label(), List.of())) nonceArg.put(i, NONCE_ARG);
       for (NonceVariant nv : NONCE_VARIANTS) {
-        CellRun run = cell(row, Set.of(), idp -> {
+        CellRun run = cell(row, Set.of(), nonceArg, idp -> {
           String body = "\"access_token\":\"hp-access\",\"token_type\":\"Bearer\",\"expires_in\":300,"
               + "\"refresh_token\":\"hp-refresh\"";
           if (!nv.noIdToken()) {
-            Map<String, Object> claims = nv.claims() == null ? Map.of("nonce", idp.universal()) : nv.claims();
             try {
-              body += ",\"id_token\":\"" + sign(nv.otherKey() ? otherKey : key, nv.kid(), idp.iss(), claims) + "\"";
+              body += ",\"id_token\":\"" + idTokenFor(nv, idp) + "\"";
             } catch (JOSEException e) {
               throw new IllegalStateException(e);
             }
@@ -1442,8 +1602,10 @@ class HostilePathMatrixTest {
         Throwable t = run.outcomes().get(0).thrown();
         int certs = count(run.sent(), HostilePathMatrixTest::isCertsGet);
         List<String> why = new ArrayList<>();
-        if (count(run.sent(), HostilePathMatrixTest::isTokenPost) == 0) why.add("토큰 엔드포인트에 안 닿았다 — 변형이 공허하다");
-        if (certs == 0 && !nv.noIdToken()) why.add("JWKS 를 조회하지 않았다 — id_token 이 검증기에 닿지 않았다");
+        if (count(run.sent(), HostilePathMatrixTest::isTokenRequest) == 0) why.add("토큰 엔드포인트에 안 닿았다 — 변형이 공허하다");
+        if (certs == 0 && !nv.noIdToken() && !nv.unsigned()) {
+          why.add("JWKS 를 조회하지 않았다 — id_token 이 검증기에 닿지 않았다");
+        }
         if (nv.want().equals("ok") && t != null) {
           why.add("맞는 id_token 에 실패했다 — 아래 변형의 실패가 아무것도 증명하지 않는다: " + brief(t));
         } else if (!nv.want().equals("ok") && t == null) {
@@ -1481,6 +1643,27 @@ class HostilePathMatrixTest {
     return cells;
   }
 
+  /**
+   * (d) CODE_EXCHANGE 행마다 — 분류 실행의 authorization_code 요청이 code·code_verifier·redirect_uri 를 실었는가(추가 호출
+   * 없음). AuthClientExchangeCodeTest 가 exchangeCode 한 곳에 단언하는 요청 모양을 계급에 붙인다 — nonce 는 제대로 보면서
+   * PKCE 를 빼먹은 새 교환이 (a)·(b) 를 전부 통과했다(Grok 레그 주장 6, 실측 SILENT).
+   */
+  private static List<Cell> pkceD(List<Row> rows) {
+    List<Cell> cells = new ArrayList<>();
+    for (Row r : rows) {
+      if (!r.cls().equals(CODE_EXCHANGE)) continue;
+      List<String> why = new ArrayList<>();
+      for (Req q : r.sent()) {
+        if (!isTokenRequest(q) || !"authorization_code".equals(q.grant())) continue;
+        for (String p : List.of("code", "code_verifier", "redirect_uri")) {
+          if (!q.params().contains(p)) why.add("authorization_code 요청에 " + p + " 가 없다");
+        }
+      }
+      cells.add(new Cell("d", r.label(), "PKCE", why, false, ""));
+    }
+    return cells;
+  }
+
   // ───────────────────────────── 판정 ─────────────────────────────
 
   private final Map<String, String> verdict = new LinkedHashMap<>();
@@ -1505,7 +1688,7 @@ class HostilePathMatrixTest {
       if (!c.note().isEmpty() && (!c.axis().equals("a") || c.variant().equals("대조"))) v += "(" + c.note() + ")";
       verdict.put(c.key(), v);
     }
-    for (String axis : List.of("a", "b", "c")) logVerdicts(axis, cells);
+    for (String axis : List.of("a", "b", "c", "d")) logVerdicts(axis, cells);
     // 측정 칸은 변형마다 한 줄로 모은다 — 받아들인 행만 이름과 사유를 적는다.
     Map<String, List<Cell>> measured = new LinkedHashMap<>();
     for (Cell c : cells) {
@@ -1531,13 +1714,13 @@ class HostilePathMatrixTest {
     return fails;
   }
 
-  private static final Pattern BEARER = Pattern.compile("나아갔다: .*\\(Authorization: (.*)\\)$");
-
   /** 칸들의 사유를 종류로 접는다 — 「토큰 뒤로 나아갔다」는 경로가 행마다 달라 bearer 만 남긴다. */
   private static String reasons(List<Cell> cs) {
+    String mark = "(Authorization: ";
     return cs.stream().flatMap(c -> c.why().stream()).map(w -> {
-      Matcher bm = BEARER.matcher(w);
-      return bm.find() ? "토큰 뒤로 나아감, bearer=" + bm.group(1) : w;
+      int i = w.lastIndexOf(mark);
+      return w.startsWith("적대 토큰 응답 뒤로 나아갔다") && i >= 0 && w.endsWith(")")
+          ? "토큰 뒤로 나아감, bearer=" + w.substring(i + mark.length(), w.length() - 1) : w;
     }).distinct().collect(Collectors.joining(" | "));
   }
 
@@ -1578,7 +1761,7 @@ class HostilePathMatrixTest {
   /** 요약은 실패 줄 **뒤에** 찍는다 — 변이 프로브는 출력 꼬리만 보여 준다. */
   private void logSummaries(Map<String, Integer> counts, List<Cell> cells) {
     log("계급별: " + CLASSES.stream().map(c -> c + " " + counts.getOrDefault(c, 0)).collect(Collectors.joining(" · ")));
-    for (String axis : List.of("a", "b", "c")) {
+    for (String axis : List.of("a", "b", "c", "d")) {
       Map<String, Integer> n = new HashMap<>();
       Map<String, Integer> failedBy = new LinkedHashMap<>();
       for (Cell c : cells) {
