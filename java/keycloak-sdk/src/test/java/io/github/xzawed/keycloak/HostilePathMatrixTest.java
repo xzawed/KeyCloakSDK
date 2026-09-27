@@ -170,7 +170,7 @@ class HostilePathMatrixTest {
     // admin API 를 부른다**(판정 사유의 Authorization 열) — 형식이 틀린 부여 응답을 거부하지 않는다. AuthClient 경로는
     // Nimbus TokenResponse.parse 가 같은 셋을 거부하고(AuthClientTokenTypeTest), Go admin 은 거부한다(#639).
     // MalformedIdpResponseTest b1 이 이 강제변환을 적어 두었지만 단언하지 않는다. null·객체·배열·누락은 admin 도 거부한다.
-    String why = "등록부 id 미정(제안: java-admin-token-response-type-unchecked): admin-client TokenManager 의 Jackson 이 "
+    String why = "jvm-admin-token-response-type-unchecked: admin-client TokenManager 의 Jackson 이 "
         + "비문자열·빈 access_token 을 강제변환해 그 값을 bearer 로 admin API 를 부른다";
     List<String> admin = List.of(
         "ClientsResource.create(ClientRepresentation)", "ClientsResource.delete(String)",
