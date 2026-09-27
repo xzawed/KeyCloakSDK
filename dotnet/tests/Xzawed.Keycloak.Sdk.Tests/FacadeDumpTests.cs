@@ -156,7 +156,8 @@ public sealed class FacadeDumpTests
 
     // ── 뿌리 ────────────────────────────────────────────────────────────────────────────────────
 
-    private sealed class RootSet : IAsyncDisposable
+    // 뿌리·걷기·대조 규칙은 HostilePathMatrixTests 가 같은 것을 다시 쓴다(두 번째 걷기를 만들지 않는다) — 그래서 internal 이다.
+    internal sealed class RootSet : IAsyncDisposable
     {
         public List<(string Name, object Value)> Roots { get; } = new();
         public Dictionary<string, string> Canaries { get; } = new(StringComparer.Ordinal);
@@ -170,7 +171,7 @@ public sealed class FacadeDumpTests
     }
 
     /// <summary>공개 API 로 뿌리를 만들고, 그 과정이 흘려 넣은 비밀 전부를 카나리아로 남긴다.</summary>
-    private static async Task BuildRootsAsync(RootSet set, WireMockServer idp, RsaSecurityKey key)
+    internal static async Task BuildRootsAsync(RootSet set, WireMockServer idp, RsaSecurityKey key)
     {
         var url = idp.Urls[0];
         var cfg = new KeycloakConfig { ServerUrl = url, Realm = "r", ClientId = "c", ClientSecret = Secret };
@@ -315,7 +316,7 @@ public sealed class FacadeDumpTests
     }
 
     /// <summary>가짜 IdP — 토큰·introspect·디스커버리+JWKS·실패 realm·admin 4xx/5xx 를 한 서버가 낸다.</summary>
-    private static void StubIdp(WireMockServer idp, RsaSecurityKey key)
+    internal static void StubIdp(WireMockServer idp, RsaSecurityKey key)
     {
         var issuer = $"{idp.Urls[0]}/realms/r";
         var p = key.Rsa!.ExportParameters(false);
@@ -358,7 +359,7 @@ public sealed class FacadeDumpTests
     // ── 선언 대조 규칙 ───────────────────────────────────────────────────────────────────────────
 
     /// <summary>컴파일러가 만든 타입(클로저·상태 기계·임베드 특성) — 선언이 아니다. 감싸는 타입까지 본다.</summary>
-    private static bool IsCompilerGenerated(Type t)
+    internal static bool IsCompilerGenerated(Type t)
     {
         for (var c = t; c is not null; c = c.DeclaringType)
         {
@@ -373,11 +374,11 @@ public sealed class FacadeDumpTests
     /// ⚠️ 「인스턴스 필드가 없다」로 넓히지 말 것 — 필드 없는 클래스도 ToString 이 정적 상태를 찍을 수 있다
     /// (변이 실측 2026-09-26: 정적 필드를 찍는 ToString 을 가진 무필드 공개 클래스가 그 규칙으로 빠져 SILENT 였다).
     /// </summary>
-    private static bool HasNoInstances(Type t) => t.IsInterface || (t.IsAbstract && t.IsSealed);
+    internal static bool HasNoInstances(Type t) => t.IsInterface || (t.IsAbstract && t.IsSealed);
 
     // ── 걷기 ────────────────────────────────────────────────────────────────────────────────────
 
-    private sealed class Walker
+    internal sealed class Walker
     {
         private readonly Assembly _sdk;
         private readonly IReadOnlyDictionary<string, string> _canaries;
@@ -394,6 +395,9 @@ public sealed class FacadeDumpTests
 
         /// <summary>닿은 SDK 타입(기반 타입 포함) → 처음 닿은 경로.</summary>
         public Dictionary<Type, string> Reached { get; } = new();
+
+        /// <summary>닿은 SDK 타입(기반 타입 포함) → 처음 닿은 인스턴스. 적대 경로 행렬이 수신자·인자를 여기서 꺼낸다.</summary>
+        public Dictionary<Type, object> Instances { get; } = new();
 
         /// <summary>카나리아 이름 → 그 문자열을 (직접 또는 외부 컨테이너 너머로) 쥔 가장 가까운 SDK 타입들.</summary>
         public Dictionary<string, HashSet<Type>> HeldBy { get; } = new(StringComparer.Ordinal);
@@ -437,7 +441,11 @@ public sealed class FacadeDumpTests
                 foreignHops = 0;
                 // 닫힌 제네릭은 GetTypes() 가 내놓는 열린 정의로 센다 — 안 그러면 대조가 영영 「안 닿음」이라 한다.
                 for (var t = type; t is not null && t.Assembly == _sdk; t = t.BaseType)
-                    Reached.TryAdd(t.IsGenericType ? t.GetGenericTypeDefinition() : t, path);
+                {
+                    var key = t.IsGenericType ? t.GetGenericTypeDefinition() : t;
+                    Reached.TryAdd(key, path);
+                    Instances.TryAdd(key, value);
+                }
                 Render(root, path, value);
             }
             else
