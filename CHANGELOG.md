@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **(Kotlin)** `expectedAudience` 를 재정의하면 nonce 를 넘긴 `exchangeCode` 가 서버가 서명한 정상 id_token 에서도 「invalid id_token」으로 실패했습니다 — id_token 을 액세스 토큰과 같은 기대 audience(재정의 값)로 봤기 때문입니다. 이제 id_token 의 `aud` 는 OIDC Core §2 · §3.1.3.7 대로 `clientId` 로 보므로 그 교환이 성공하고, `aud` 에 client id 가 없는 id_token 은 재정의 값을 담았어도 거부합니다. `validate()` 의 액세스 토큰 검증은 지금처럼 재정의 값을 쓰고, JWKS 조회는 늘지 않습니다(저장소 하나를 공유). 공개 API 변경은 **0** 입니다.
+
 ## [1.0.2] - 2026-09-27 (Node)
 
 **Node 의 security patch 입니다** — 다른 여덟 언어는 움직이지 않습니다(같은 번호의 아래 `[1.0.2]` 두 절은 다른 언어의 것입니다). 공개 API 변경은 **0** 입니다. 코드 교환을 실제 Keycloak 에 대고 돌리는 통합 테스트를 아홉 언어에 세우다(#640–#648) node 에서만 나온 결함입니다.
