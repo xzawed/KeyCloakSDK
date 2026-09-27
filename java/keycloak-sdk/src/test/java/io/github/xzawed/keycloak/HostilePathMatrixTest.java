@@ -89,11 +89,12 @@ import org.junit.jupiter.api.Test;
  * · (W3a·b·c) 계급별 적대 변형 — 각 메서드의 주석 · (W3d) 교환 요청의 PKCE 모양. 실패한 칸은 {@link #KNOWN_GAPS} 에
  * 이유와 함께 있으면 GAP 이고, 관측되지 않는 항목은 낡은 것이라 실패한다.
  *
- * <p>Grok 레그(파일 둘 · 계약 인라인)가 낸 우회 여덟을 심어서 쟀다 — 실측 SILENT 였던 것을 닫았다: JSON 본문 교환이
- * TOKEN_GRANT 로 읽혀 nonce 변형이 빠짐(grant 를 세 자리에서 읽고, nonce 파라미터 있는 부여 행에도 (b)) · 불리언 가지
- * (true 로도 부름) · 토큰 엔드포인트 GET(메서드 무관) · nonce 를 code 와 대조(nonce 파라미터에 다른 값) · PKCE 누락((d)) ·
- * 서명 없는 id_token(alg=none·aud≠ 를 (b) 에) · bool·빈 문자열 access_token 을 받는 새 교환(at:* 를 교환에도 단언) ·
- * 제3자 상속 메서드·라벨 충돌. 「가변 인자와 배열 오버로드가 한 라벨로 겹친다」는 javac 가 선언을 거부해 성립하지 않았다.
+ * <p>Grok 레그(파일 둘 · 계약 인라인)가 우회 여덟을 냈다. 여섯은 AuthClient 에 심어 쟀고 전부 SILENT 였다가, 아래를 넣은 뒤
+ * 전부 CAUGHT 다: JSON 본문 교환이 TOKEN_GRANT 로 읽혀 nonce 변형이 빠짐(grant 를 세 자리에서 읽고, nonce 파라미터 있는
+ * 부여 행에도 (b)) · 불리언 가지(true 로도 부름) · 토큰 엔드포인트 GET(메서드 무관) · nonce 를 code 와 대조(nonce 파라미터에
+ * 다른 값) · PKCE 누락((d)) · 서명 없는 id_token(alg=none·aud≠ 를 (b) 에). 둘은 심지 않고 규칙으로 닫았다: bool·빈
+ * 문자열 access_token 을 받는 새 교환(at:* 를 교환에도 단언 — 오늘의 교환 두 행은 거부한다) · 제3자 상속 메서드와 라벨
+ * 충돌(오늘 0 행). 「가변 인자와 배열 오버로드가 한 라벨로 겹친다」는 javac 가 선언을 거부해 성립하지 않았다.
  *
  * <p>⚠️ Go 설계가 Java 에 안 맞은 자리:
  * <ul>
