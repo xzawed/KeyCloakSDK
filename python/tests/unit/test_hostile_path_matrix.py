@@ -782,18 +782,22 @@ def _receiver(
 async def _invoke(
     member: _Member, target: _Target, synth: _Synth, blank: frozenset[str] = frozenset()
 ) -> tuple[BaseException | None, object]:
+    # 생성자·함수 대상은 하네스가 정한다 — `try` 밖에서 푼다. 안에서 풀면 하네스
+    # 결함(AssertionError)이 아래 `except Exception` 에 잡혀 「SDK 가 실패했다」로
+    # 읽힌다(SonarCloud python:S5779).
+    static: tuple[Callable[..., object], inspect.Signature | None, dict[str, object]] | None = None
+    if member.kind == "ctor":
+        assert member.cls is not None
+        static = (member.cls, _signature(member.cls), _ctor_hints(member.cls))
+    elif member.kind == "func":
+        assert member.func is not None
+        static = (member.func, _signature(member.func), _hints(member.func))
     try:
         if member.kind == "property":
             result = getattr(target.recv, member.name)
         else:
-            if member.kind == "ctor":
-                assert member.cls is not None
-                fn: Callable[..., object] = member.cls
-                sig, hints = _signature(member.cls), _ctor_hints(member.cls)
-            elif member.kind == "func":
-                assert member.func is not None
-                fn = member.func
-                sig, hints = _signature(fn), _hints(fn)
+            if static is not None:
+                fn, sig, hints = static
             else:
                 holder = target.recv if member.kind == "method" else member.cls
                 fn = getattr(holder, member.name)
