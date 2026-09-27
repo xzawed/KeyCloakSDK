@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **(PHP)** `expectedAudience` 를 client id 가 아닌 값(리소스 서버)으로 재정의하면 nonce 를 넘긴 `exchangeCode()` 가 `invalid id_token: audience does not contain <재정의 값>` 으로 **실패했습니다** — id_token 을 액세스 토큰과 같은 기대 aud 로 검증했기 때문입니다. 이제 교환의 id_token `aud` 는 OIDC Core §2 · §3.1.3.7 대로 `clientId` 를 담는지로 검사해 재정의 아래서도 교환이 통과하고, 재정의 값만 담고 `clientId` 가 없는 id_token 은 거부합니다. `validate()` 의 액세스 토큰 검증은 지금처럼 재정의를 씁니다. 이 검증은 새 공개 메서드 `JwtValidator::validateIdToken(string $idToken, string $clientId)` 가 합니다 — `final` 클래스에 메서드가 는 것이라 minor 입니다.
+
 ## [1.0.2] - 2026-09-27 (Node)
 
 **Node 의 security patch 입니다** — 다른 여덟 언어는 움직이지 않습니다(같은 번호의 아래 `[1.0.2]` 두 절은 다른 언어의 것입니다). 공개 API 변경은 **0** 입니다. 코드 교환을 실제 Keycloak 에 대고 돌리는 통합 테스트를 아홉 언어에 세우다(#640–#648) node 에서만 나온 결함입니다.
