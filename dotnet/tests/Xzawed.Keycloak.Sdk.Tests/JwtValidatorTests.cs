@@ -119,6 +119,30 @@ public class JwtValidatorTests
             () => v.ValidateAsync(Sign(PayloadJson("\"it-client\""), Key)));
     }
 
+    // The id_token path (ValidateForAudienceAsync) holds aud to the audience it is given and nothing else: an audience
+    // policy on the base parameters — a delegate, or the check switched off — must not carry over through Clone().
+    // IdentityModel consults AudienceValidator INSTEAD of ValidAudiences when one is set (Grok leg; measured here).
+    [Theory]
+    [InlineData("audience delegate that admits only the access audience")]
+    [InlineData("audience check switched off")]
+    public async Task Id_token_audience_ignores_the_base_audience_policy(string policy)
+    {
+        var tvp = JwtValidator.BuildParameters(Issuer, new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "my-api" } });
+        tvp.IssuerSigningKey = Key;
+        tvp.ConfigurationManager = null;
+        if (policy.StartsWith("audience delegate", StringComparison.Ordinal))
+            tvp.AudienceValidator = (audiences, _, _) => audiences.Contains("my-api");
+        else
+            tvp.ValidateAudience = false;
+        var v = new JwtValidator(tvp);
+
+        var forClient = await v.ValidateForAudienceAsync(Sign(PayloadJson("\"it-client\""), Key), "it-client");
+        Assert.Contains("it-client", forClient.Audience);
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+            () => v.ValidateForAudienceAsync(Sign(PayloadJson("\"my-api\""), Key), "it-client"));
+        Assert.IsType<SecurityTokenInvalidAudienceException>(refused.InnerException);
+    }
+
     [Fact]
     public async Task Wrong_issuer_rejected()
     {
