@@ -46,7 +46,7 @@ private const val MAL_OIDC = "/realms/r/protocol/openid-connect"
 private const val MAL_TOKEN = "$MAL_OIDC/token"
 private const val MAL_INTROSPECT = "$MAL_OIDC/token/introspect"
 private const val MAL_ADMIN_USER = "/admin/realms/r/users/u1"
-private const val MAL_PREFIX = 10
+internal const val MAL_PREFIX = 10
 
 // 호출자가 SDK 에 넘긴 비밀 — 어떤 오류에도 나오면 안 된다.
 private const val MAL_SECRET = "SECRETLEAK-client-secret-0001"
@@ -477,6 +477,43 @@ private fun variants(
         ),
     )
 }
+
+/**
+ * 적대 경로 행렬(`HostilePathMatrixTest`)이 쓰는 **토큰 엔드포인트** 변형 — 위 [variants] 목록 그 자체의 투영이다(사본을
+ * 만들지 않는다 — 변형을 더하면 행렬이 따라온다). [assertedCalls] 는 이 파일이 그 변형을 단언하는 호출,
+ * [assertedOnEveryTokenCall] 은 그것이 토큰 호출 전부([ALL_TOKEN_CALLS])인지, [knownLeakLabels] 는 [MAL_KNOWN_LEAKS] 가
+ * 설계로 면제한 카나리아다(행렬도 단언하지 않는다).
+ */
+internal class MalTokenVariant(
+    val id: String,
+    val status: Int,
+    val body: String,
+    val contentType: String,
+    val canaries: Map<String, String>,
+    val assertedCalls: Set<String>,
+    val assertedOnEveryTokenCall: Boolean,
+    val knownLeakLabels: Set<String>,
+)
+
+internal fun malTokenEndpointVariants(
+    issuer: String,
+    key: RSAKey,
+    foreignKey: RSAKey,
+): List<MalTokenVariant> =
+    variants(issuer, key, foreignKey).filter { it.path == MAL_TOKEN }.map { v ->
+        MalTokenVariant(
+            v.id,
+            v.status,
+            v.body,
+            v.contentType,
+            v.canaries,
+            v.calls.map { it.name }.toSet(),
+            v.calls.containsAll(ALL_TOKEN_CALLS),
+            v.canaries.keys
+                .filter { label -> v.calls.any { "${v.id}|$it|$label" in MAL_KNOWN_LEAKS } }
+                .toSet(),
+        )
+    }
 
 private suspend fun invoke(
     config: KeycloakConfig,
