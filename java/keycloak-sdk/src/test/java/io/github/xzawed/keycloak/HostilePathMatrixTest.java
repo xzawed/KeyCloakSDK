@@ -53,6 +53,7 @@ import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -219,7 +220,7 @@ class HostilePathMatrixTest {
     private final String jwks;
     private final Map<String, String> idTokens = new HashMap<>();
     /** null 이 아니면 토큰 엔드포인트가 정상 응답 대신 이것을 낸다(W3 — 수신자를 만든 **뒤에** 건다). */
-    private volatile MalformedIdpResponseTest.Reply tokenReply;
+    private final AtomicReference<MalformedIdpResponseTest.Reply> tokenReply = new AtomicReference<>();
     private volatile boolean certsDown;
 
     Idp(RSAKey key) throws IOException, JOSEException {
@@ -235,7 +236,7 @@ class HostilePathMatrixTest {
     /** 새 칸 — 기록을 비우고, 보편 인자를 고르고, 토큰 응답·JWKS 를 정상으로 되돌린다. */
     void activate(boolean plain) {
       universal = plain ? PLAIN : jws;
-      tokenReply = null;
+      tokenReply.set(null);
       certsDown = false;
       reset();
     }
@@ -271,7 +272,7 @@ class HostilePathMatrixTest {
     }
 
     void tokenReply(MalformedIdpResponseTest.Reply r) {
-      tokenReply = r;
+      tokenReply.set(r);
     }
 
     void certsDown(boolean down) {
@@ -303,7 +304,7 @@ class HostilePathMatrixTest {
         }
         MalformedIdpResponseTest.Resp r;
         if (path.equals(OC + "/token")) {
-          MalformedIdpResponseTest.Reply over = tokenReply;
+          MalformedIdpResponseTest.Reply over = tokenReply.get();
           // expires_in 을 기본 skew(30s)보다 짧게 준다 — 캐시가 늘 식어 있어 부여에 닿을 수 있는 메서드는 실제로 닿는다
           // (Go 함정: 300 이면 캐시가 부여 경로를 가려 TOKEN_GRANT 29→3 이 됐다).
           r = over != null ? over.reply(body, ex.getRequestHeaders().getFirst("Authorization"))
