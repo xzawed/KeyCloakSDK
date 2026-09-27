@@ -492,4 +492,32 @@ class JwtValidatorTest {
     }
     return hits.get();
   }
+
+  // withAudience 는 요구 aud 만 바꾼 **새** 검증기를 준다 — 원본(validate() 의 액세스 검증기)의 기대값은 그대로다.
+  // 교환이 id_token 을 clientId 로 검증한 뒤에도 액세스 검증이 재정의를 계속 쓰는 근거다.
+  @Test void withAudience_changesOnlyTheRequiredAudience_andLeavesTheOriginal() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String issuer = "https://kc.example.com/realms/r";
+    JwtValidator access = JwtValidator.withStaticJwks(new JWKSet(key.toPublicJWK()), issuer, API_AUDIENCE,
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+    JwtValidator id = access.withAudience("app");
+    String forApp = signedFor(key, issuer, "app");
+    String forApi = signedFor(key, issuer, API_AUDIENCE);
+
+    assertEquals(List.of("app"), id.validate(forApp).getAudience());
+    assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+        () -> id.validate(forApi));
+    assertEquals(List.of(API_AUDIENCE), access.validate(forApi).getAudience());
+    assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+        () -> access.validate(forApp));
+  }
+
+  private static String signedFor(RSAKey key, String issuer, String audience) throws Exception {
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        new JWTClaimsSet.Builder().issuer(issuer).audience(audience)
+            .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
+    jwt.sign(new RSASSASigner(key));
+    return jwt.serialize();
+  }
 }

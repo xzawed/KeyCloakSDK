@@ -29,7 +29,8 @@ public final class KeycloakConfig {
   /**
    * JWT `aud` 포함검사에 기대할 값 — 미설정이면 clientId(기존 동작). 기본 realm은 client-credentials
    * 토큰의 aud에 client id를 넣지 않으므로(그러려면 audience 프로토콜 매퍼가 필요) 리소스 서버 이름 등
-   * 실제로 발급되는 audience로 재정의할 수 있다.
+   * 실제로 발급되는 audience로 재정의할 수 있다. 액세스 토큰(`validate`)의 기대값이다 — `exchangeCode`가 nonce와 함께
+   * 검증하는 id_token의 aud는 이 값과 무관하게 clientId로 검사한다(OIDC Core §3.1.3.7).
    */
   public String getExpectedAudience() { return expectedAudience == null ? clientId : expectedAudience; }
   /** JWT 서명 검증 시 허용할 알고리즘 핀(기본 ["RS256"]). ES256/PS256 realm을 위해 설정 가능. */

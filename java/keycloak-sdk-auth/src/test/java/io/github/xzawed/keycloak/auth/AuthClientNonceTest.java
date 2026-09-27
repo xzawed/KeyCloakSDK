@@ -24,9 +24,12 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Date;
+import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 // OIDC nonce 재생 방지 회귀 테스트: exchangeCode가 id_token을 보존하고(현재는 null 폐기),
 // expectedNonce가 주어지면 응답 id_token을 강화 JwtValidator로 서명검증한 뒤 nonce를 대조하는지
@@ -43,11 +46,6 @@ class AuthClientNonceTest {
 
   @AfterEach void stopServer() {
     if (server != null) server.stop(0);
-  }
-
-  private KeycloakConfig config() {
-    return KeycloakConfig.builder()
-        .serverUrl("https://kc.example.com").realm("r").clientId("app").build();
   }
 
   // id_token 캡처: OIDCTokens가 담은 id_token이 TokenSet.getIdToken()으로 노출돼야 한다.
@@ -165,8 +163,126 @@ class AuthClientNonceTest {
     assertEquals(idToken, ts.getIdToken());
   }
 
+  // ── expectedAudience 재정의 아래의 교환 ── (등록부 `id-token-audience-follows-access-audience`, 판정 (a))
+  // expectedAudience 는 **액세스 토큰**이 향하는 리소스 서버의 이름이다(RFC 9700 §2.3). id_token 의 aud 는 언제나
+  // client id 를 담는다(OIDC Core §2·§3.1.3.7, MUST). 예전에는 교환이 id_token 을 validate() 의 검증기로 봐서, 재정의하면
+  // 정상 id_token 이 「invalid id_token」으로 거부됐다(실서버 실측 2026-09-27). 주입 시임의 aud 는 **액세스 쪽** 값이고
+  // (실코드의 forRealm(…, getExpectedAudience()) 자리), id 쪽은 거기서 clientId 로 파생된다. forRealm 경로와 JWKS 공유는
+  // IdTokenAudienceJwksSharingTest 가 본다.
+  private static final String OVERRIDE = "api";
+  private static final String NONCE = "expected-nonce";
+
+  @Test void exchangeCode_underAudienceOverride_acceptsAnIdTokenForTheClientId() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String idToken = sign(key, JWSAlgorithm.RS256, idClaims("app").build());
+    AuthClient client = clientServingToken(key, idToken, OVERRIDE);
+    TokenSet ts = client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, NONCE);
+    assertEquals(idToken, ts.getIdToken());
+  }
+
+  // 「Add to ID token」 audience 매퍼를 켠 Keycloak 은 [client_id, extra] 를 낸다(실측) — 포함 검사이지 완전 일치가 아니다.
+  @Test void exchangeCode_underAudienceOverride_acceptsAMultiValuedAudienceThatNamesTheClient() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String idToken = sign(key, JWSAlgorithm.RS256, idClaims("app", OVERRIDE).build());
+    AuthClient client = clientServingToken(key, idToken, OVERRIDE);
+    assertEquals(idToken,
+        client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, NONCE).getIdToken());
+  }
+
+  // 재정의 값만 담은 id_token — 액세스 검증기라면 통과시킬 aud 다. client id 가 없으니 거부한다.
+  @Test void exchangeCode_underAudienceOverride_refusesAnIdTokenThatNamesOnlyTheOverride() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    assertRefusedAsInvalidIdToken(key, sign(key, JWSAlgorithm.RS256, idClaims(OVERRIDE).build()));
+  }
+
+  @Test void exchangeCode_underAudienceOverride_refusesAnIdTokenForAnotherClient() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    assertRefusedAsInvalidIdToken(key, sign(key, JWSAlgorithm.RS256, idClaims("other-client").build()));
+  }
+
+  // validate() 는 재정의를 계속 쓴다 — 액세스 토큰은 재정의 값으로 통과하고 client id 만으로는 거부된다.
+  @Test void validate_underAudienceOverride_stillLooksForTheOverride() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    AuthClient client = clientWithValidator(key, OVERRIDE);
+    String forApi = sign(key, JWSAlgorithm.RS256, accessClaims(OVERRIDE).build());
+    String forClient = sign(key, JWSAlgorithm.RS256, accessClaims("app").build());
+    assertTrue(client.validate(forApi).getAudience().contains(OVERRIDE));
+    assertThrows(TokenValidationException.class, () -> client.validate(forClient));
+  }
+
+  // iss · alg 핀 · exp(필수)·skew · 서명은 재정의 아래에서도 그대로다 — aud 만 바뀐다. 양성 대조는 위 accepts 둘.
+  // skew 는 양쪽에서 고정한다: -45s 는 30s 로는 거부이고 Nimbus 기본 60s 로는 통과(아래), -10s 는 30s 로 통과이고 0 으로는 거부.
+  @ParameterizedTest
+  @ValueSource(strings = {"wrong-issuer", "algorithm-outside-the-pin", "expired-beyond-the-skew", "no-exp",
+      "forged-signature"})
+  void exchangeCode_underAudienceOverride_keepsTheOtherIdTokenChecks(String variant) throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String idToken = switch (variant) {
+      case "wrong-issuer" ->
+          sign(key, JWSAlgorithm.RS256, idClaims("app").issuer("https://evil.example.com/realms/r").build());
+      case "algorithm-outside-the-pin" -> sign(key, JWSAlgorithm.RS512, idClaims("app").build());
+      case "expired-beyond-the-skew" ->
+          sign(key, JWSAlgorithm.RS256, idClaims("app").expirationTime(secondsFromNow(-45)).build());
+      case "no-exp" -> sign(key, JWSAlgorithm.RS256, idClaims("app").expirationTime(null).build());
+      case "forged-signature" ->
+          sign(new RSAKeyGenerator(2048).keyID("k1").generate(), JWSAlgorithm.RS256, idClaims("app").build());
+      default -> throw new IllegalArgumentException(variant);
+    };
+    assertRefusedAsInvalidIdToken(key, idToken);
+  }
+
+  @Test void exchangeCode_underAudienceOverride_toleratesExpiryWithinTheSkew() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String idToken = sign(key, JWSAlgorithm.RS256, idClaims("app").expirationTime(secondsFromNow(-10)).build());
+    AuthClient client = clientServingToken(key, idToken, OVERRIDE);
+    assertEquals(idToken,
+        client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, NONCE).getIdToken());
+  }
+
+  // 메시지까지 본다 — 옛 동작(재정의 aud 로 검증)이면 여기서 nonce 가 아니라 「invalid id_token」이 난다.
+  @Test void exchangeCode_underAudienceOverride_stillComparesTheNonce() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    AuthClient client = clientServingToken(key,
+        sign(key, JWSAlgorithm.RS256, idClaims("app").claim("nonce", "attacker-nonce").build()), OVERRIDE);
+    KeycloakAuthException e = assertThrows(KeycloakAuthException.class,
+        () -> client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, NONCE));
+    assertEquals("Authorization code exchange failed: unexpected nonce", e.getMessage());
+  }
+
+  private void assertRefusedAsInvalidIdToken(RSAKey key, String idToken) throws Exception {
+    AuthClient client = clientServingToken(key, idToken, OVERRIDE);
+    KeycloakAuthException e = assertThrows(KeycloakAuthException.class,
+        () -> client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, NONCE));
+    assertEquals("Authorization code exchange failed: invalid id_token", e.getMessage());
+    assertInstanceOf(TokenValidationException.class, e.getCause());
+  }
+
+  private static JWTClaimsSet.Builder idClaims(String... audience) {
+    return accessClaims(audience).claim("nonce", NONCE);
+  }
+
+  private static JWTClaimsSet.Builder accessClaims(String... audience) {
+    return new JWTClaimsSet.Builder().issuer(ISSUER).audience(List.of(audience)).expirationTime(secondsFromNow(60));
+  }
+
+  private static Date secondsFromNow(int seconds) {
+    return new Date(System.currentTimeMillis() + seconds * 1000L);
+  }
+
+  private static String sign(RSAKey key, JWSAlgorithm alg, JWTClaimsSet claims) throws Exception {
+    SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(alg).keyID("k1").build(), claims);
+    jwt.sign(new RSASSASigner(key));
+    return jwt.serialize();
+  }
+
   // 토큰 엔드포인트 하나만 서는 로컬 서버. idTokenOrNull 이 null 이면 응답에 id_token 이 없다.
   private AuthClient clientServingToken(RSAKey key, String idTokenOrNull) throws Exception {
+    return clientServingToken(key, idTokenOrNull, null);
+  }
+
+  // expectedAudienceOrNull 이 주어지면 config 와 주입 검증기(액세스 쪽) 둘 다 그 값을 기대한다.
+  private AuthClient clientServingToken(RSAKey key, String idTokenOrNull, String expectedAudienceOrNull)
+      throws Exception {
     String body = "{\"access_token\":\"AT\",\"token_type\":\"Bearer\",\"expires_in\":300"
         + (idTokenOrNull == null ? "" : ",\"id_token\":\"" + idTokenOrNull + "\"") + "}";
     byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
@@ -181,15 +297,22 @@ class AuthClientNonceTest {
     server.start();
     KeycloakConfig cfg = KeycloakConfig.builder()
         .serverUrl("http://127.0.0.1:" + server.getAddress().getPort()).realm("r").clientId("app")
+        .expectedAudience(expectedAudienceOrNull)
         .build();
-    JwtValidator v = JwtValidator.withStaticJwks(new JWKSet(key.toPublicJWK()), ISSUER, "app",
+    JwtValidator v = JwtValidator.withStaticJwks(new JWKSet(key.toPublicJWK()), ISSUER, cfg.getExpectedAudience(),
         Set.of(JWSAlgorithm.RS256), Duration.ofSeconds(30));
     return new AuthClient(cfg, OidcMetadata.forRealm(cfg), v);
   }
 
   private AuthClient clientWithValidator(RSAKey key) throws Exception {
-    KeycloakConfig cfg = config();
-    JwtValidator v = JwtValidator.withStaticJwks(new JWKSet(key.toPublicJWK()), ISSUER, "app",
+    return clientWithValidator(key, null);
+  }
+
+  private AuthClient clientWithValidator(RSAKey key, String expectedAudienceOrNull) throws Exception {
+    KeycloakConfig cfg = KeycloakConfig.builder()
+        .serverUrl("https://kc.example.com").realm("r").clientId("app")
+        .expectedAudience(expectedAudienceOrNull).build();
+    JwtValidator v = JwtValidator.withStaticJwks(new JWKSet(key.toPublicJWK()), ISSUER, cfg.getExpectedAudience(),
         Set.of(JWSAlgorithm.RS256), Duration.ofSeconds(30));
     return new AuthClient(cfg, OidcMetadata.forRealm(cfg), v);
   }
