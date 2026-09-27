@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **(Rust)** `with_expected_audience(…)` 로 기대 aud 를 재정의하면 nonce 를 넘긴 코드 교환(`exchange_code` · `exchange_code_with_redirect`)이 **실패했습니다** — id_token 을 access 토큰과 같은 기대 aud 로 검증해, client id 를 담은 진짜 id_token 이 `invalid id_token … audience mismatch` 로 거부됐습니다. 이제 id_token 의 `aud` 는 OIDC Core §2 · §3.1.3.7 대로 **client id** 로 검증하므로 그 교환이 통과하고, client id 를 담지 않은 id_token 은 `aud` 가 재정의 값과 같아도 거부합니다. `validate()` 의 access 토큰 검증은 지금처럼 재정의 값을 씁니다. JWKS 캐시 · 재조회 제한 · 콜드 실패 백오프는 두 경로가 하나를 공유하고, 공개 API 변경은 없습니다.
+
 ## [1.0.2] - 2026-09-27 (Node)
 
 **Node 의 security patch 입니다** — 다른 여덟 언어는 움직이지 않습니다(같은 번호의 아래 `[1.0.2]` 두 절은 다른 언어의 것입니다). 공개 API 변경은 **0** 입니다. 코드 교환을 실제 Keycloak 에 대고 돌리는 통합 테스트를 아홉 언어에 세우다(#640–#648) node 에서만 나온 결함입니다.

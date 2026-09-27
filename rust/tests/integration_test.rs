@@ -471,7 +471,7 @@ async fn full_flow() {
 //
 // ⚠️ 컨테이너 하나를 시나리오 전부가 쓴다. `#[tokio::test]` 마다 런타임이 따로라 테스트 사이에서
 // 컨테이너를 나눌 수 없고(정적 보관은 Drop 이 안 돌아 컨테이너가 샌다), 시나리오마다 띄우면 KC 가
-// 열여덟 번 뜬다. 그래서 시나리오를 `tokio::spawn` 으로 하나씩 돌려 panic 을 잡고 **이름을 모아**
+// 스무 번 뜬다. 그래서 시나리오를 `tokio::spawn` 으로 하나씩 돌려 panic 을 잡고 **이름을 모아**
 // 실패시킨다 — 하나가 빨개도 나머지가 돌고, 실패 목록이 곧 「어느 시나리오가 잡았나」다.
 
 const REDIRECT_URI: &str = "http://localhost/it-callback";
@@ -491,8 +491,13 @@ const KID_OUTSIDE_JWKS: &str =
     "authorization code exchange failed: invalid id_token: token validation error: unknown kid";
 const MISSING_ID_TOKEN: &str =
     "authorization code exchange failed: missing id_token for nonce validation";
-const AUDIENCE_MISMATCH: &str = "authorization code exchange failed: invalid id_token: \
+const ID_TOKEN_AUDIENCE_MISMATCH: &str = "authorization code exchange failed: invalid id_token: \
      token validation error: token verification failed: audience mismatch";
+/// access 검증(`validate()`)의 거부 — 교환 접두가 없다.
+const ACCESS_AUDIENCE_MISMATCH: &str = "token verification failed: audience mismatch";
+/// realm JSON 의 `it-web-foreign-aud` — 하드코딩 클레임 매퍼가 id_token `aud` 를 `it-client` 로 **덮어쓴다**
+/// (client id 가 빠진다). 실서버가 client id 없는 id_token 을 서명하는 유일한 길이다.
+const IT_WEB_FOREIGN_AUD: (&str, &str) = ("it-web-foreign-aud", "it-web-foreign-aud-secret");
 const ALGORITHM_NOT_PINNED: &str = "authorization code exchange failed: invalid id_token: \
      token validation error: token verification failed: algorithm not allowed";
 /// 서명이 깨진 refresh token 으로 로그아웃할 때 — Keycloak 26.6 의 상태코드는 실측으로 고정한다.
@@ -810,16 +815,92 @@ async fn exchange_refuses_a_response_that_carries_no_id_token(env: Arc<Env>, red
     );
 }
 
-/// 서명·kid 는 맞는 **실서버** id_token 이 클레임 검사에서 떨어지는 유일한 길 — 기대 aud 를 바꾼다.
-/// (위조 RS256 은 서명에서, HS256 은 kid 에서 멈춘다. 이것만 서명 **뒤**의 검사에 닿는다.)
-async fn id_token_for_another_audience_is_refused(env: Arc<Env>, redirect: Redirect) {
+/// `expected_audience` 재정의(리소스 서버)는 **access 토큰**에만 걸린다 — nonce 교환의 id_token 은
+/// client id 로 본다(OIDC Core §2 · §3.1.3.7). 실서버 id_token 의 `aud` 는 client id(`it-web`)라
+/// 재정의 값(`it-client`)을 담지 않는다 — 예전에는 그래서 이 교환이 `audience mismatch` 로 거부됐다.
+async fn exchange_with_the_nonce_succeeds_under_an_expected_audience_override(
+    env: Arc<Env>,
+    redirect: Redirect,
+) {
     let cfg =
         web_config(&env.base, IT_WEB, RS256_ONLY, redirect).with_expected_audience("it-client");
     let kc = KeycloakClient::new(cfg).unwrap();
     let (request, code) = login(&kc, redirect).await;
+    let tokens = exchange(&kc, redirect, &code, &request, Some(&request.nonce))
+        .await
+        .expect("the id_token carries the client id — the override must not refuse it");
+
+    // 전제: id_token 의 aud 는 client id 이고 재정의 값이 **아니다** — 아니면 위 통과가 아무것도 안 잰다.
+    let id = web_client(&env.base, IT_WEB, RS256_ONLY, redirect)
+        .auth()
+        .validate(tokens.id_token.as_deref().expect("an id_token"))
+        .await
+        .expect("the server-signed id_token validates against the client id");
+    assert!(
+        id.audience.iter().any(|a| a == IT_WEB.0),
+        "precondition: {:?}",
+        id.audience
+    );
+    assert!(
+        !id.audience.iter().any(|a| a == "it-client"),
+        "precondition: {:?}",
+        id.audience
+    );
+
+    // access 검증은 재정의를 그대로 쓴다 — 담지 않은 토큰은 거부하고, 담은 토큰은 통과한다.
+    match kc.auth().validate(&tokens.access_token).await {
+        Err(KeycloakError::TokenValidation(m)) => assert_eq!(m, ACCESS_AUDIENCE_MISMATCH),
+        other => panic!("validate() must still look for the override, got {other:?}"),
+    }
+    let service = KeycloakConfig::new(env.base.as_str(), "it-realm", "it-client")
+        .unwrap()
+        .with_client_secret("it-secret");
+    let carries_override = KeycloakClient::new(service)
+        .unwrap()
+        .auth()
+        .client_credentials_token()
+        .await
+        .expect("it-client's service account")
+        .access_token;
+    let access = kc
+        .auth()
+        .validate(&carries_override)
+        .await
+        .expect("a token audienced at the override validates");
+    assert!(access.audience.iter().any(|a| a == "it-client"));
+}
+
+/// 서명·kid 는 맞는 **실서버** id_token 이 aud 검사에서 떨어지는 길 — `aud` 를 재정의 값으로 **덮어쓴**
+/// id_token(realm 의 하드코딩 클레임 매퍼). aud 가 재정의 값과 같아도 client id 가 없으면 거부다.
+/// (위조 RS256 은 서명에서, HS256 은 kid 에서 멈춘다. 이것이 서명 **뒤**의 aud 검사에 닿는다.)
+async fn id_token_without_the_client_id_is_refused_even_when_it_carries_the_override(
+    env: Arc<Env>,
+    redirect: Redirect,
+) {
+    let cfg = web_config(&env.base, IT_WEB_FOREIGN_AUD, RS256_ONLY, redirect)
+        .with_expected_audience("it-client");
+    let kc = KeycloakClient::new(cfg).unwrap();
+    // 전제: 서버가 정말 client id 없이, 재정의 값만 담아 서명했다.
+    let (request, code) = login(&kc, redirect).await;
+    let unchecked = exchange(&kc, redirect, &code, &request, None)
+        .await
+        .expect("without an expected nonce the id_token is not validated");
+    let id_token = unchecked.id_token.expect("an id_token");
+    let payload = id_token.split('.').nth(1).expect("a JWS payload");
+    let raw = String::from_utf8(
+        base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, payload).unwrap(),
+    )
+    .unwrap();
+    // ⚠️ 원문에서 `aud` 가 **한 번**인지 본다 — serde_json 은 중복 키를 조용히 마지막 값으로 덮으므로,
+    // 매퍼가 덮어쓴 것이 아니라 키를 하나 더 붙인 것이어도 아래 비교는 통과한다.
+    assert_eq!(raw.matches("\"aud\"").count(), 1, "precondition: {raw}");
+    let payload: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(payload["aud"], "it-client", "precondition: {payload}");
+
+    let (request, code) = login(&kc, redirect).await;
     assert_refused(
         exchange(&kc, redirect, &code, &request, Some(&request.nonce)).await,
-        AUDIENCE_MISMATCH,
+        ID_TOKEN_AUDIENCE_MISMATCH,
     );
 }
 
@@ -968,11 +1049,22 @@ async fn code_exchange() {
             )),
         );
         add(
-            "id_token_for_another_audience_is_refused",
-            Box::pin(id_token_for_another_audience_is_refused(
-                env.clone(),
-                redirect,
-            )),
+            "exchange_with_the_nonce_succeeds_under_an_expected_audience_override",
+            Box::pin(
+                exchange_with_the_nonce_succeeds_under_an_expected_audience_override(
+                    env.clone(),
+                    redirect,
+                ),
+            ),
+        );
+        add(
+            "id_token_without_the_client_id_is_refused_even_when_it_carries_the_override",
+            Box::pin(
+                id_token_without_the_client_id_is_refused_even_when_it_carries_the_override(
+                    env.clone(),
+                    redirect,
+                ),
+            ),
         );
         add(
             "id_token_signed_outside_the_algorithm_pin_is_refused",
