@@ -21,6 +21,7 @@ from joserfc.jwk import KeySet, KeySetSerialization
 from keycloak import KeycloakOpenID
 
 from ._internal.backoff import JwksFailureBackoff
+from ._internal.frames import scrub_frames
 from ._internal.jwks_fetch import fetch_jwks
 from ._internal.jwt import JwtValidator
 from ._internal.lower import auth_failure, is_lower_failure, summarize
@@ -73,6 +74,10 @@ def _generate_pkce_pair() -> tuple[str, str]:
 class AuthClient:
     """`KeycloakOpenID` 래핑. `openid`는 테스트 주입용(미지정 시 config로부터 생성)."""
 
+    # ⚠️ 비밀을 다루는 공개 진입점은 전부 `@scrub_frames` 다 — 실패할 때 프레임 로컬(토큰 응답·
+    # 인자로 받은 토큰·code·verifier, 하위 생성자가 받은 client secret)이 traceback 으로 오류
+    # 수집기에 닿지 않게(`_internal/frames.py`). 생성자·인가 URL 두 자리는 Grok 레그가 찾았다.
+    @scrub_frames
     def __init__(
         self,
         config: KeycloakConfig,
@@ -125,6 +130,7 @@ class AuthClient:
             error, cause = auth_failure(exc), summarize(exc)
         raise error from cause
 
+    @scrub_frames
     def client_credentials_token(self) -> TokenSet:
         """`client_credentials` grant로 서비스 계정 토큰을 발급받는다.
 
@@ -139,6 +145,7 @@ class AuthClient:
         )
         return TokenSet.from_response(response, issued_at=time.time())
 
+    @scrub_frames
     def authorization_url(self, redirect_uri: str) -> AuthorizationUrl:
         """PKCE(S256) 인가 코드 흐름의 시작 URL을 만든다.
 
@@ -170,6 +177,7 @@ class AuthClient:
         url = f"{self._endpoints.authorization}?{params}"
         return AuthorizationUrl(url=url, code_verifier=code_verifier, state=state, nonce=nonce)
 
+    @scrub_frames
     def exchange_code(
         self, code: str, redirect_uri: str, code_verifier: str, nonce: str | None = None
     ) -> TokenSet:
@@ -206,20 +214,24 @@ class AuthClient:
         if validated.claims.get("nonce") != expected_nonce:
             raise KeycloakAuthError("authorization code exchange failed: unexpected nonce")
 
+    @scrub_frames
     def refresh(self, refresh_token: str) -> TokenSet:
         """`refresh_token` grant로 접근 토큰을 갱신한다."""
         response = self._wrap(lambda: self._openid.refresh_token(refresh_token))
         return TokenSet.from_response(response, issued_at=time.time())
 
+    @scrub_frames
     def logout(self, refresh_token: str) -> None:
         """세션을 무효화한다(refresh token revoke)."""
         self._wrap(lambda: self._openid.logout(refresh_token))
 
+    @scrub_frames
     def introspect(self, token: str) -> IntrospectionResult:
         """RFC 7662 토큰 인트로스펙션. 비활성 토큰은 `active` 외 필드가 생략될 수 있다."""
         response = self._wrap(lambda: self._openid.introspect(token))
         return _introspection_result(response)
 
+    @scrub_frames
     def validate(self, access_token: str) -> ValidatedToken:
         """realm JWKS로 서명을 검증하고 issuer/audience/exp/nbf를 강제한다(`JwtValidator`).
 

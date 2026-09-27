@@ -5,7 +5,8 @@ Node #603 과 같은 부류다. 거기서는 oauth4webapi 가 형식이 틀린 �
 가 그것을 찍었다. Python 에서 같은 자리는 **예외 사슬**이다 — `logging.exception` 은
 `traceback.format_exception` 과 같은 것을 찍고, 그것은 `__cause__`·`__context__` 를 따라간다.
 
-찍는 길 셋(sync·aio 파사드 둘 다): `"".join(traceback.format_exception(e))`, `str(e)`, `repr(e)`.
+찍는 길 넷(sync·aio 파사드 둘 다): `"".join(traceback.format_exception(e))`, `str(e)`, `repr(e)`,
+그리고 프레임 로컬까지 찍는 `TracebackException(capture_locals=True)`(오류 수집기의 기본값).
 카나리아는 응답에 실린 토큰(`ACCESS`·`REFRESH`·`ID_TOKEN`·본문)과 **요청에 실린 비밀**
 (`SECRET`·입력 refresh/introspect 토큰·인가 코드·PKCE verifier — 요청 본문을 되돌리는 프록시가
 오류 본문에 싣는다)이고, 원문 전체뿐 아니라 **앞 10 자**도 찾는다(Node 의 `SyntaxError` 가
@@ -315,17 +316,32 @@ class _Outcome:
     reached: bool  # 이 변형의 요청이 가짜 IdP 의 변형 경로에 닿았는가
 
 
+def _invoke(
+    fn: Callable[[KeycloakClient], object], kc: KeycloakClient
+) -> tuple[object, Exception | None]:
+    """호출을 **여기서** 잡는다 — traceback 의 첫 프레임이 이 함수가 되어, `capture_locals` 가
+    하네스의 로컬(요청 본문을 쥔 `idp`)이 아니라 `fn`·`kc` 만 찍는다."""
+    try:
+        return fn(kc), None
+    except Exception as exc:
+        return None, exc
+
+
+async def _ainvoke(
+    fn: Callable[[AsyncKeycloakClient], Awaitable[object]], akc: AsyncKeycloakClient
+) -> tuple[object, Exception | None]:
+    try:
+        return await fn(akc), None
+    except Exception as exc:
+        return None, exc
+
+
 def _run_sync(idp: _Idp, kc: KeycloakClient) -> list[_Outcome]:
     outcomes = []
     for variant in VARIANTS:
         for call, fn in SYNC_CALLS.items():
             idp.variant, before = variant, len(idp.hits)
-            error: BaseException | None = None
-            result: object = None
-            try:
-                result = fn(kc)
-            except Exception as exc:
-                error = exc
+            result, error = _invoke(fn, kc)
             reached = len(idp.hits) > before
             outcomes.append(_Outcome("sync", variant, call, error, result, reached))
     return outcomes
@@ -336,12 +352,7 @@ async def _run_aio(idp: _Idp, akc: AsyncKeycloakClient) -> list[_Outcome]:
     for variant in VARIANTS:
         for call, fn in AIO_CALLS.items():
             idp.variant, before = variant, len(idp.hits)
-            error: BaseException | None = None
-            result: object = None
-            try:
-                result = await fn(akc)
-            except Exception as exc:
-                error = exc
+            result, error = await _ainvoke(fn, akc)
             reached = len(idp.hits) > before
             outcomes.append(_Outcome("aio", variant, call, error, result, reached))
     return outcomes
@@ -366,6 +377,12 @@ def _renders(outcome: _Outcome) -> dict[str, str]:
     return {
         # `logging.exception` 이 찍는 것 — `__cause__`·(억제 안 된) `__context__` 사슬을 따라간다.
         "traceback": "".join(traceback.format_exception(outcome.error)),
+        # 오류 수집기가 찍는 것 — Sentry Python 은 기본값으로 **프레임 로컬**을 모은다. 예전에는
+        # 여기서 거부된 교환의 `response`(raw refresh token)·`code`·`code_verifier` 와 입력
+        # refresh/introspect 토큰이 찍혔다(실측 2026-09-27: 여섯 호출 전부, sync·aio 둘 다).
+        "locals": "".join(
+            traceback.TracebackException.from_exception(outcome.error, capture_locals=True).format()
+        ),
         "str": str(outcome.error),
         "repr": repr(outcome.error),
     }

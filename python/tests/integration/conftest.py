@@ -7,8 +7,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from dataclasses import replace
+import traceback
+from collections.abc import Awaitable, Callable, Iterator
+from dataclasses import dataclass, replace
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
@@ -50,6 +51,41 @@ def web_config(
         signature_algorithms=algorithms,
         expected_audience=expected_audience,
     )
+
+
+@dataclass(frozen=True)
+class Sealed:
+    """호출에 넘길 비밀을 쥐되 `repr` 로 드러내지 않는다 — 호출을 싼 람다의 자유 변수도 프레임
+    로컬로 찍히므로, 원문을 그대로 두면 누출을 **테스트 자신이** 만든다."""
+
+    code: str
+    verifier: str
+    nonce: str
+
+    def __repr__(self) -> str:
+        return "Sealed(***)"
+
+
+def render_with_locals(err: BaseException) -> str:
+    """오류 수집기(Sentry Python 기본값)가 모으는 것 — 사슬까지, 프레임마다 로컬을 찍는다."""
+    return "".join(traceback.TracebackException.from_exception(err, capture_locals=True).format())
+
+
+def catch(call: Callable[[], object]) -> BaseException:
+    """호출을 **여기서** 잡는다 — traceback 의 첫 프레임 로컬은 `call`(람다) 뿐이다."""
+    try:
+        call()
+    except Exception as exc:
+        return exc
+    raise AssertionError("the call did not fail")
+
+
+async def acatch(call: Callable[[], Awaitable[object]]) -> BaseException:
+    try:
+        await call()
+    except Exception as exc:
+        return exc
+    raise AssertionError("the call did not fail")
 
 
 def strip_nonce(request: AuthorizationUrl) -> AuthorizationUrl:

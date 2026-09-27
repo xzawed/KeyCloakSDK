@@ -26,6 +26,9 @@ from tests.integration.conftest import (
     EXTRA_API,
     REDIRECT_URI,
     WEB_CLIENT_SECRETS,
+    Sealed,
+    acatch,
+    render_with_locals,
     strip_nonce,
     web_config,
 )
@@ -129,6 +132,26 @@ async def test_reused_code_is_refused_without_leaking_it(
         assert secret not in str(reused.value)
         assert secret not in repr(reused.value)
         assert secret not in printed
+
+
+async def test_a_refused_exchange_leaves_no_token_in_frame_locals(
+    kc: AsyncKeycloakClient,
+) -> None:
+    """sync 동형 — 거부된 교환의 프레임 로컬에 실서버 토큰(JWT, `eyJ`)이 없다."""
+    request, code = _login(kc)
+    sealed = Sealed(code=code, verifier=request.code_verifier, nonce=f"x{request.nonce}")
+
+    err = await acatch(
+        lambda: kc.auth.exchange_code(
+            sealed.code, REDIRECT_URI, sealed.verifier, nonce=sealed.nonce
+        )
+    )
+
+    assert str(err) == "authorization code exchange failed: unexpected nonce"
+    rendered = render_with_locals(err)
+    assert "eyJ" not in rendered
+    for secret in (code, request.code_verifier, WEB_CLIENT_SECRETS["it-web"]):
+        assert secret not in rendered
 
 
 async def test_exchange_code_with_the_nonce_succeeds_under_an_expected_audience_override(

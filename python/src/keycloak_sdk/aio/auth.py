@@ -22,6 +22,7 @@ from joserfc.jwk import KeySet, KeySetSerialization
 from keycloak import KeycloakOpenID
 
 from .._internal.backoff import JwksFailureBackoff
+from .._internal.frames import ascrub_frames, scrub_frames
 from .._internal.jwks_fetch import afetch_jwks
 from .._internal.jwt import JwtValidator
 from .._internal.lower import auth_failure, is_lower_failure, summarize
@@ -48,6 +49,9 @@ class AsyncAuthClient:
     메서드로 남아 있다(나머지는 `async def`).
     """
 
+    # ⚠️ sync 미러와 같다 — 비밀을 다루는 공개 진입점은 전부 `@scrub_frames`/`@ascrub_frames` 다
+    # (`_internal/frames.py`). 동기인 생성자·`authorization_url` 은 sync 데코레이터를 쓴다.
+    @scrub_frames
     def __init__(
         self,
         config: KeycloakConfig,
@@ -96,6 +100,7 @@ class AsyncAuthClient:
             error, cause = auth_failure(exc), summarize(exc)
         raise error from cause
 
+    @scrub_frames
     def authorization_url(self, redirect_uri: str) -> AuthorizationUrl:
         """PKCE(S256) 인가 코드 흐름의 시작 URL을 만든다.
 
@@ -124,6 +129,7 @@ class AsyncAuthClient:
         url = f"{self._endpoints.authorization}?{params}"
         return AuthorizationUrl(url=url, code_verifier=code_verifier, state=state, nonce=nonce)
 
+    @ascrub_frames
     async def client_credentials_token(self) -> TokenSet:
         """`client_credentials` grant로 서비스 계정 토큰을 발급받는다."""
         response = await self._awrap(
@@ -134,6 +140,7 @@ class AsyncAuthClient:
         )
         return TokenSet.from_response(response, issued_at=time.time())
 
+    @ascrub_frames
     async def exchange_code(
         self, code: str, redirect_uri: str, code_verifier: str, nonce: str | None = None
     ) -> TokenSet:
@@ -170,20 +177,24 @@ class AsyncAuthClient:
         if validated.claims.get("nonce") != expected_nonce:
             raise KeycloakAuthError("authorization code exchange failed: unexpected nonce")
 
+    @ascrub_frames
     async def refresh(self, refresh_token: str) -> TokenSet:
         """`refresh_token` grant로 접근 토큰을 갱신한다."""
         response = await self._awrap(self._openid.a_refresh_token(refresh_token))
         return TokenSet.from_response(response, issued_at=time.time())
 
+    @ascrub_frames
     async def logout(self, refresh_token: str) -> None:
         """세션을 무효화한다(refresh token revoke)."""
         await self._awrap(self._openid.a_logout(refresh_token))
 
+    @ascrub_frames
     async def introspect(self, token: str) -> IntrospectionResult:
         """RFC 7662 토큰 인트로스펙션. 비활성 토큰은 `active` 외 필드가 생략될 수 있다."""
         response = await self._awrap(self._openid.a_introspect(token))
         return _introspection_result(response)
 
+    @ascrub_frames
     async def validate(self, access_token: str) -> ValidatedToken:
         """realm JWKS로 서명을 검증하고 issuer/audience/exp/nbf를 강제한다(sync `JwtValidator`).
 

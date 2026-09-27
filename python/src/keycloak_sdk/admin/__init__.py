@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from keycloak import KeycloakAdmin
 
+from .._internal.frames import scrub_frames
 from .._internal.redirects import harden_admin
 from ..config import KeycloakConfig
 from ..exceptions import KeycloakConfigError
@@ -35,6 +36,7 @@ class AdminClient:
         self._admin = admin
 
     @property
+    @scrub_frames  # 생성 실패 시 `KeycloakAdmin` 프레임이 client secret 을 쥔다(`_internal/frames`)
     def raw(self) -> KeycloakAdmin:
         """내부 `KeycloakAdmin` 인스턴스(탈출구). 미생성 상태면 지금 생성한다."""
         if self._admin is None:

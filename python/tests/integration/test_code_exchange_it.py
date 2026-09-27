@@ -27,6 +27,9 @@ from tests.integration.conftest import (
     EXTRA_API,
     REDIRECT_URI,
     WEB_CLIENT_SECRETS,
+    Sealed,
+    catch,
+    render_with_locals,
     strip_nonce,
     web_config,
 )
@@ -120,6 +123,27 @@ def test_reused_code_is_refused_without_leaking_it(
         assert secret not in str(reused.value)
         assert secret not in repr(reused.value)
         assert secret not in printed
+
+
+def test_a_refused_exchange_leaves_no_token_in_frame_locals(kc: KeycloakClient) -> None:
+    """등록부 `python-traceback-locals-carry-tokens` 의 실측 자리 — 실서버가 서명해 준 토큰 응답을
+    SDK 가 거부할 때, 오류 수집기(Sentry 기본값)가 모으는 프레임 로컬에 그 토큰이 없다.
+
+    Keycloak 26 의 access·refresh·id 토큰은 전부 JWT 라 `eyJ` 가 곧 카나리아다."""
+    request, code = _login(kc)
+    sealed = Sealed(code=code, verifier=request.code_verifier, nonce=f"x{request.nonce}")
+
+    err = catch(
+        lambda: kc.auth.exchange_code(
+            sealed.code, REDIRECT_URI, sealed.verifier, nonce=sealed.nonce
+        )
+    )
+
+    assert str(err) == "authorization code exchange failed: unexpected nonce"
+    rendered = render_with_locals(err)
+    assert "eyJ" not in rendered
+    for secret in (code, request.code_verifier, WEB_CLIENT_SECRETS["it-web"]):
+        assert secret not in rendered
 
 
 def test_exchange_code_with_the_nonce_succeeds_under_an_expected_audience_override(
