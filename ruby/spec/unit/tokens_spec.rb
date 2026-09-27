@@ -2,6 +2,12 @@
 
 require "spec_helper"
 
+# 비문자열 `access_token` 표 — `hostile_path_matrix_spec.rb` 가 토큰 계급의 적대 변형(W3a)으로 그대로 가져간다
+# (행렬이 계약을 새로 만들지 않게 한 자리에 둔다).
+module TokensSpec
+  NON_STRING_ACCESS_TOKENS = [12_345, nil, { "a" => 1 }, [], ""].freeze
+end
+
 RSpec.describe KeycloakSdk do
   describe KeycloakSdk::TokenSet do
     let(:body) do
@@ -52,7 +58,7 @@ RSpec.describe KeycloakSdk do
     # ⚠️ **존재 검사는 타입 검사가 아니다.** 예전에는 `body["access_token"]` 을 그대로 담아
     # 숫자·해시·nil 이 `access_token` 이 됐다. 소비자는 그것을 Bearer 로 실어 보내고 매번
     # 401 을 받는다 — 조용한 반복 실패다. 아홉 언어 전수 측정에서 다섯이 이 부류였다.
-    [12_345, nil, { "a" => 1 }, [], ""].each do |bad|
+    TokensSpec::NON_STRING_ACCESS_TOKENS.each do |bad|
       it "rejects a non-string access_token (#{bad.inspect})" do
         expect do
           described_class.from_response({ "access_token" => bad }, received_at: 0.0)
