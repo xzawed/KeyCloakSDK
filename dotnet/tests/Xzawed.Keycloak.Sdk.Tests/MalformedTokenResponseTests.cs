@@ -47,7 +47,8 @@ public sealed class MalformedTokenResponseTests
     /// 넘기기로 한 값이고, RFC 6749 §5.2 문법(<c>%x20-21 / %x23-5B / %x5D-7E</c>)이 토큰 문자를 전부 허용해 SDK 가
     /// 코드와 토큰을 가를 수 없다. 서버가 코드 자리에 토큰을 넣는 경우만 여기 걸린다.
     /// </summary>
-    private static readonly Dictionary<string, string> KnownLeaks = new(StringComparer.Ordinal)
+    /// <remarks>internal — HostilePathMatrixTests 가 같은 계약(어느 경로의 카나리아가 계약상 찍히는가)을 파생 행에 그대로 건다.</remarks>
+    internal static readonly Dictionary<string, string> KnownLeaks = new(StringComparer.Ordinal)
     {
         ["e4 400 error string echo|ToString()"] = "OAuth error 코드는 계약상 그대로 싣는다 — 문자열 코드와 토큰을 가를 문법이 없다",
         ["e4 400 error string echo|Message"] = "OAuth error 코드는 계약상 그대로 싣는다 — 문자열 코드와 토큰을 가를 문법이 없다",
@@ -59,14 +60,15 @@ public sealed class MalformedTokenResponseTests
     /// <param name="Token">토큰 호출들의 기대 결과(<c>null</c> 은 성공). nonce 를 준 code 교환은 토큰이 성공해도
     /// id_token 검사에서 실패하므로 <c>Token ?? Auth</c> 다.</param>
     /// <param name="Encoded">원문이 아니라 변환된 꼴로만 찍히는 카나리아 — 전체 일치만 본다(10자 접두는 흔하다).</param>
-    private sealed record Variant(string Name, int Status, string ContentType, string Body, string[] Canaries,
-                                  Type? Token, Type? Introspect, string[]? Encoded = null);
+    internal sealed record Variant(string Name, int Status, string ContentType, string Body, string[] Canaries,
+                                   Type? Token, Type? Introspect, string[]? Encoded = null);
 
     private static string Long(string canary) => canary + new string('x', 200);
 
     private static string B64(string s) => Base64UrlEncoder.Encode(s);
 
-    private static readonly Variant[] Variants =
+    /// <remarks>internal — HostilePathMatrixTests 가 변형 집합을 새로 만들지 않고 여기서 가져간다(토큰 호출에 단언된 것만).</remarks>
+    internal static readonly Variant[] Variants =
     {
         // (a) id_token 이 JWT 가 아니다 — 토큰 호출은 id_token 을 안 보므로 성공, nonce 교환만 실패한다.
         new("a id_token not a JWT", 200, "application/json",
