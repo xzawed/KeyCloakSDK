@@ -71,7 +71,7 @@ import org.junit.jupiter.api.Test;
  *       산출물을 훑은 타입 전수({@code declaredTypes}, Go 의 「소스 선언」 자리)의 합. 그중 **공개 타입**의 공개
  *       메서드·생성자 전부(선언 클래스가 SDK 인 것만 — Object·Throwable 상속분은 뺀다, 오버로드는 따로 센다).
  *       추상 메서드는 행이 아니라 「SDK 구현 행이 있어야 한다」는 의무다 — 없으면 UNDETERMINED 행이 된다.</li>
- *   <li>호출 — 행마다 **새** 기록 IdP 와 **새** 수신자. 수신자는 {@link #BUILDERS}(덜 데운 것부터)의 걷기가 닿는
+ *   <li>호출 — 행마다 기록을 비운 IdP({@link Idp} — 서버는 하나, 경계는 칸)와 **새** 수신자. 수신자는 {@link #BUILDERS}(덜 데운 것부터)의 걷기가 닿는
  *       인스턴스이고, 어느 빌더에도 안 닿는 타입은 <b>서명에서 파생한 생산자</b>(공개 생성자 → 그 타입을 돌려주는
  *       정적 메서드 → 인스턴스 메서드)로 만든다 — Go 의 영값 수신자 자리다(Java 에는 영값 인스턴스가 없다). 인자는
  *       타입만 보고 합성한다.</li>
@@ -184,14 +184,21 @@ class HostilePathMatrixTest {
   record Req(String method, String path, String grant, String auth) {}
 
   /**
-   * 모든 요청을 (메서드, 경로, 토큰 POST 면 grant_type) 으로 **라우팅 앞에서** 남긴다 — 라우트가 없는 경로(admin 404)도
+   * 모든 요청을 (메서드, 경로, 토큰 요청이면 grant_type) 으로 **라우팅 앞에서** 남긴다 — 라우트가 없는 경로(admin 404)도
    * 남는다. 분류는 SDK 가 무엇을 <b>시도했나</b>를 본다.
+   *
+   * <p>⚠️ <b>서버는 테스트 하나에 하나다</b>(행·칸마다 새로 띄우지 않는다). 칸마다 새 서버를 띄웠더니 한 번에 소켓 수천
+   * 개가 TIME_WAIT 로 남았고, 같은 기계를 쓰는 다른 작업과 겹치자 동적 포트(16384)가 바닥나 admin 칸이 토큰 엔드포인트에
+   * 닿지도 못한 채 FAIL 했다(실측 2026-09-27: loopback TIME_WAIT 5861). 칸의 경계는 서버가 아니라 {@link #activate} —
+   * 기록을 비우고 칸 상태를 되돌린다. 칸은 순서대로 돌고 SDK 는 비동기 요청을 내지 않으므로 「activate 부터 snapshot
+   * 까지 받은 요청」이 그 칸의 것이다(새 서버의 격리와 같다 — 비동기 경로는 머리 주석의 한계 그대로다). 클라이언트는
+   * 여전히 칸마다 새것이다.
    */
   static final class Idp implements AutoCloseable {
     final RSAKey key;
     /** 이 IdP 키로 서명한 JWS — 문자열 인자의 첫 보편 인자. URL·폼·경로 어디에 들어가도 안전한 글자만 쓴다. */
     final String jws;
-    final String universal;
+    private volatile String universal;
     private final HttpServer server;
     private final List<Req> reqs = new ArrayList<>();
     private final String jwks;
@@ -200,14 +207,26 @@ class HostilePathMatrixTest {
     private volatile MalformedIdpResponseTest.Reply tokenReply;
     private volatile boolean certsDown;
 
-    Idp(RSAKey key, boolean plain) throws IOException, JOSEException {
+    Idp(RSAKey key) throws IOException, JOSEException {
       this.key = key;
       this.jwks = new JWKSet(key.toPublicJWK()).toString();
       server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
       server.createContext("/", this::handle);
       server.start();
       jws = sign(key, "k1", iss(), Map.of());
+      universal = jws;
+    }
+
+    /** 새 칸 — 기록을 비우고, 보편 인자를 고르고, 토큰 응답·JWKS 를 정상으로 되돌린다. */
+    void activate(boolean plain) {
       universal = plain ? PLAIN : jws;
+      tokenReply = null;
+      certsDown = false;
+      reset();
+    }
+
+    String universal() {
+      return universal;
     }
 
     String url() {
@@ -355,7 +374,7 @@ class HostilePathMatrixTest {
 
   record Outcome(Object value, Throwable thrown) {}
 
-  /** 행·칸마다 하나 — 새 IdP, 새 클라이언트. 만든 것은 닫는다. */
+  /** 행·칸마다 하나 — 기록을 비운 IdP({@link Idp#activate}), 새 클라이언트. 만든 것은 닫는다. */
   final class Env implements AutoCloseable {
     final Idp idp;
     final boolean plain;
@@ -363,9 +382,10 @@ class HostilePathMatrixTest {
     private final Map<Integer, Map<Class<?>, Object>> built = new HashMap<>();
     private final Map<Class<?>, String> via = new HashMap<>();
 
-    Env(boolean plain) throws IOException, JOSEException {
-      this.idp = new Idp(key, plain);
+    Env(boolean plain) {
+      this.idp = server;
       this.plain = plain;
+      idp.activate(plain);
     }
 
     KeycloakClient client() {
@@ -431,7 +451,7 @@ class HostilePathMatrixTest {
 
     /** 인자 합성 — 타입만 본다. SDK 타입은 같은 IdP 위에서 만든 인스턴스다. */
     Object arg(Class<?> t, Type g, int depth) throws Exception {
-      String u = idp.universal;
+      String u = idp.universal();
       if (t == String.class || t == Object.class || t == CharSequence.class) return u;
       if (t == char[].class) return u.toCharArray();
       if (t == String[].class) return new String[] {u};
@@ -481,7 +501,6 @@ class HostilePathMatrixTest {
           // 닫기 실패는 판정과 무관하다.
         }
       }
-      idp.close();
     }
   }
 
@@ -489,6 +508,8 @@ class HostilePathMatrixTest {
 
   private RSAKey key;
   private RSAKey otherKey;
+  /** 기록하는 가짜 IdP — 테스트 하나에 하나({@link Idp} 주석). */
+  private Idp server;
   private Path harness;
   private Set<Path> sdk;
   private final Map<Class<?>, Optional<Path>> locations = new HashMap<>();
@@ -636,7 +657,7 @@ class HostilePathMatrixTest {
         if (cls.equals(UNDETERMINED)) {
           note = noRecv ? " · 수신자를 만들 빌더·생산자가 없다" : " · " + brief(o.thrown());
         }
-        Row r = new Row(label(x), cls, format(sent, e.idp.universal), src, outcome, note, sent, x, plain);
+        Row r = new Row(label(x), cls, format(sent, e.idp.universal()), src, outcome, note, sent, x, plain);
         if (!cls.equals(UNDETERMINED)) return r;
         last = r;
       }
@@ -656,6 +677,15 @@ class HostilePathMatrixTest {
   void hostilePathMatrix() throws Exception {
     key = new RSAKeyGenerator(2048).keyID("k1").generate();
     otherKey = new RSAKeyGenerator(2048).keyID("k1").generate();
+    try (Idp idp = new Idp(key)) {
+      server = idp;
+      matrix();
+    } finally {
+      server = null;
+    }
+  }
+
+  private void matrix() throws Exception {
     harness = FacadeDumpTest.location(FacadeDumpTest.class);
     sdk = FacadeDumpTest.sdkLocations(harness);
     List<String> fails = new ArrayList<>();
@@ -1174,7 +1204,7 @@ class HostilePathMatrixTest {
         e.track(o.value());
         outs.add(o);
       }
-      return new CellRun(e.idp.snapshot(), outs, e.idp.universal);
+      return new CellRun(e.idp.snapshot(), outs, e.idp.universal());
     }
   }
 
@@ -1362,7 +1392,7 @@ class HostilePathMatrixTest {
     }
     int hits = count(run.sent(), HostilePathMatrixTest::isTokenPost);
     List<Req> after = afterToken(run.sent());
-    if (hits == 0) why.add("토큰 엔드포인트에 한 번도 안 닿았다 — 변형이 공허하다");
+    if (hits == 0) why.add("토큰 엔드포인트에 한 번도 안 닿았다 — 변형이 공허하다(" + brief(t) + ")");
     // 하한만 두면 틀린 응답마다 재시도하는 새 메서드가 통과한다(Go 레그 지목, 실측 SILENT) — 상한은 같은 행의 대조다.
     if (hits > ctlHits) why.add("토큰 요청 " + hits + " 건 — 정상 응답 대조(" + ctlHits + " 건)보다 많다: 틀린 응답이 재시도를 부른다");
     if (!after.isEmpty()) {
@@ -1399,7 +1429,7 @@ class HostilePathMatrixTest {
           String body = "\"access_token\":\"hp-access\",\"token_type\":\"Bearer\",\"expires_in\":300,"
               + "\"refresh_token\":\"hp-refresh\"";
           if (!nv.noIdToken()) {
-            Map<String, Object> claims = nv.claims() == null ? Map.of("nonce", idp.universal) : nv.claims();
+            Map<String, Object> claims = nv.claims() == null ? Map.of("nonce", idp.universal()) : nv.claims();
             try {
               body += ",\"id_token\":\"" + sign(nv.otherKey() ? otherKey : key, nv.kid(), idp.iss(), claims) + "\"";
             } catch (JOSEException e) {
