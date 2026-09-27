@@ -24,6 +24,7 @@ from keycloak_sdk.config import KeycloakConfig
 from keycloak_sdk.exceptions import (
     KeycloakAuthError,
     KeycloakTransportError,
+    TokenKeyError,
     TokenSignatureError,
     TokenValidationError,
 )
@@ -441,6 +442,195 @@ def test_exchange_code_skips_id_token_validation_without_nonce(jwks):
     jwks.assert_not_called()
 
 
+# --- id_token 의 aud 는 client_id 로 잰다 — `expected_audience` 는 access 전용이다 ------------
+# OIDC Core §2·§3.1.3.7: id_token `aud` 는 client_id 를 MUST 담는다. `expected_audience` 는
+# 액세스 토큰의 리소스 서버 제한(RFC 9700 §2.3)이라 id_token 에 걸면, 재정의한 소비자는 nonce 를
+# 넘긴 코드 교환을 전혀 할 수 없었다(실서버 실측: `Audience not contained`).
+
+_API = "some-api"
+
+
+def _override_setup(jwks) -> tuple[AuthClient, MagicMock, RSAKey, OidcEndpoints]:
+    """`expected_audience` 를 리소스 서버로 재정의한 클라이언트. 토큰 응답은 `_answer` 가 싣는다."""
+    config = _config(expected_audience=_API)
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    jwks.return_value = {"keys": [key.as_dict(private=False)]}
+    openid = MagicMock(spec=KeycloakOpenID)
+    return _client(openid, config=config), openid, key, OidcEndpoints.for_realm(config)
+
+
+def _answer(openid: MagicMock, id_token: str, access: str = "acc") -> None:
+    openid.token.return_value = {
+        "access_token": access,
+        "id_token": id_token,
+        "token_type": "Bearer",
+        "expires_in": 60,
+    }
+
+
+@pytest.mark.parametrize("aud", ["app", ["app", _API], [_API, "app"]])
+def test_exchange_code_checks_the_id_token_aud_against_the_client_id_under_an_override(jwks, aud):
+    """A1 — 재정의가 있어도 `aud` 에 client_id 가 있는 id_token 의 교환은 통과한다."""
+    client, openid, key, endpoints = _override_setup(jwks)
+    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n"))
+
+    tokens = client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+
+    assert tokens.id_token
+
+
+@pytest.mark.parametrize("aud", [_API, [_API], [_API, "other"]])
+def test_exchange_code_refuses_an_id_token_without_the_client_id_even_if_aud_is_the_override(
+    jwks, aud
+):
+    """A2 — `aud` 가 재정의 값뿐인 id_token 은 거부다. 재정의 값은 id_token 을 통과시키지 않는다."""
+    client, openid, key, endpoints = _override_setup(jwks)
+    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n"))
+
+    with pytest.raises(KeycloakAuthError, match="invalid id_token") as refused:
+        client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+    assert type(refused.value.__cause__) is TokenValidationError
+    assert str(refused.value.__cause__) == "Audience not contained"
+
+
+def test_validate_keeps_the_override_for_access_tokens_after_an_exchange(jwks):
+    """A3 — access 검증은 재정의를 계속 쓴다. 교환이 기대 audience 를 바꿔 놓지 않는다."""
+    client, openid, key, endpoints = _override_setup(jwks)
+    id_token = _signed_token(key, issuer=endpoints.issuer, audience="app", nonce="n")
+    access = _signed_token(key, issuer=endpoints.issuer, audience=_API)
+    _answer(openid, id_token, access)
+
+    tokens = client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+
+    assert _API in client.validate(tokens.access_token).audience
+    # 반대편: `validate()` 는 client_id 를 기대하지 않는다 — 교환이 통과시킨 id_token 도 거부다.
+    with pytest.raises(TokenValidationError, match="Audience not contained"):
+        client.validate(id_token)
+
+
+def _id_claims(endpoints: OidcEndpoints, **changes: object) -> dict[str, object]:
+    claims: dict[str, object] = {
+        "iss": endpoints.issuer,
+        "aud": "app",
+        "sub": "user-1",
+        "exp": int(time.time()) + 60,
+        "nonce": "n",
+    }
+    claims.update(changes)
+    return {k: v for k, v in claims.items() if v is not None}
+
+
+@pytest.mark.parametrize(
+    ("changes", "nonce", "cause", "reason"),
+    [
+        (
+            {"iss": "https://evil.example.com/realms/r"},
+            "n",
+            TokenValidationError,
+            "Issuer mismatch",
+        ),
+        ({"exp": None}, "n", TokenValidationError, "Missing exp claim"),
+        ({"exp": -60}, "n", TokenValidationError, "Token expired"),  # 스큐(30초) 밖
+        ({"nbf": 60}, "n", TokenValidationError, "Token not yet valid"),  # 스큐 밖
+        ({}, "other", None, "unexpected nonce"),
+    ],
+)
+def test_exchange_code_keeps_iss_exp_skew_and_nonce_checks_under_an_override(
+    jwks, changes, nonce, cause, reason
+):
+    """A4 — 재정의 아래에서도 aud 만 바뀐다. iss·exp·스큐·nonce 대조는 그대로다."""
+    client, openid, key, endpoints = _override_setup(jwks)
+    now = int(time.time())
+    timed = {k: now + v for k, v in changes.items() if k in ("exp", "nbf") and v is not None}
+    claims = _id_claims(endpoints, **{**changes, **timed})
+    _answer(openid, jjwt.encode({"alg": "RS256", "kid": key.kid}, claims, key))
+
+    with pytest.raises(KeycloakAuthError) as refused:
+        client.exchange_code("code", "https://app/cb", "verifier", nonce=nonce)
+    if cause is None:
+        assert str(refused.value) == f"authorization code exchange failed: {reason}"
+    else:
+        assert str(refused.value) == "authorization code exchange failed: invalid id_token"
+        assert type(refused.value.__cause__) is cause
+        assert str(refused.value.__cause__) == reason
+
+
+def test_exchange_code_keeps_the_clock_skew_under_an_override(jwks):
+    """A4 대조군 — 스큐 안(10초 전 만료)의 id_token 은 통과한다. 스큐가 0 이 되면 여기서 깨진다."""
+    client, openid, key, endpoints = _override_setup(jwks)
+    claims = _id_claims(endpoints, exp=int(time.time()) - 10)
+    _answer(openid, jjwt.encode({"alg": "RS256", "kid": key.kid}, claims, key))
+
+    assert client.exchange_code("code", "https://app/cb", "verifier", nonce="n").id_token
+
+
+def test_exchange_code_keeps_the_algorithm_pin_under_an_override(jwks):
+    """A4 — 알고리즘 핀(기본 RS256)도 그대로다: ES256 id_token 은 서명 단계에서 거부된다."""
+    config = _config(expected_audience=_API)
+    endpoints = OidcEndpoints.for_realm(config)
+    key = ECKey.generate_key("P-256", {"kid": "k1", "use": "sig"})
+    jwks.return_value = {"keys": [key.as_dict(private=False)]}
+    openid = MagicMock(spec=KeycloakOpenID)
+    _answer(openid, jjwt.encode({"alg": "ES256", "kid": key.kid}, _id_claims(endpoints), key))
+    client = _client(openid, config=config)
+
+    with pytest.raises(KeycloakAuthError, match="invalid id_token") as refused:
+        client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+    assert type(refused.value.__cause__) is TokenSignatureError
+
+
+def test_exchange_and_validate_share_one_jwks_store(jwks):
+    """A5 — 교환 뒤 access 검증은 JWKS 를 다시 가져오지 않는다. 키 저장소는 하나다.
+
+    대조군: 두 번째 저장소(다른 `AuthClient`)는 **실제로** 한 번 더 가져온다 — 이 카운터가 두 번째
+    저장소를 볼 수 있다는 증거다. id_token 경로가 제 저장소를 만들면 첫 단언에서 2 가 된다."""
+    client, openid, key, endpoints = _override_setup(jwks)
+    access = _signed_token(key, issuer=endpoints.issuer, audience=_API)
+    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience="app", nonce="n"), access)
+
+    client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+    assert jwks.call_count == 1
+    assert client._jwks_cache is not None  # 교환이 채운 것이 **이** 저장소다
+    client.validate(access)
+    assert jwks.call_count == 1
+
+    second_store = _client(MagicMock(spec=KeycloakOpenID), config=_config(expected_audience=_API))
+    second_store.validate(access)
+    assert jwks.call_count == 2
+
+
+def test_exchange_and_validate_share_one_forced_refetch_window(jwks):
+    """A5 — 교환의 미해결 kid 가 연 30초 창을 `validate()` 가 이어받는다. 재조회 제한이 하나다."""
+    client, openid, _, endpoints = _override_setup(jwks)
+    stranger = RSAKey.generate_key(2048, {"kid": "x1", "use": "sig"})
+    other = RSAKey.generate_key(2048, {"kid": "x2", "use": "sig"})
+    _answer(openid, _signed_token(stranger, issuer=endpoints.issuer, audience="app", nonce="n"))
+
+    with pytest.raises(KeycloakAuthError, match="invalid id_token"):
+        client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+    assert jwks.call_count == 2  # 최초 로드 + 강제 재조회 1
+
+    with pytest.raises(TokenKeyError):
+        client.validate(_signed_token(other, issuer=endpoints.issuer, audience=_API))
+    assert jwks.call_count == 2  # 교환이 연 창 안이다 — 나가지 않는다
+
+
+def test_exchange_and_validate_share_one_cold_cache_backoff(jwks):
+    """A5 — 콜드 캐시 + IdP 장애의 백오프도 하나다.
+
+    교환이 실패시킨 창 안에서 `validate()` 는 IdP 로 나가지 않는다."""
+    client, openid, key, endpoints = _override_setup(jwks)
+    client._jwks_backoff = JwksFailureBackoff(clock=_FakeClock(), jitter=lambda: 1.0)
+    jwks.side_effect = KeycloakTransportError("idp down")
+    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience="app", nonce="n"))
+
+    with pytest.raises(KeycloakTransportError, match="idp down"):
+        client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+    with pytest.raises(KeycloakTransportError, match="backing off"):
+        client.validate(_signed_token(key, issuer=endpoints.issuer, audience=_API))
+    assert jwks.call_count == 1
+
+
 def test_refresh_maps_response_and_delegates():
     openid = MagicMock(spec=KeycloakOpenID)
     openid.refresh_token.return_value = {
@@ -521,7 +711,9 @@ def test_introspect_maps_inactive_token_with_missing_fields():
 # --- 3.5: validate() — JWKS 로드(+캐시) 후 JwtValidator에 위임 -------------------
 
 
-def _signed_token(key: RSAKey, issuer: str, audience: str, **extra_claims: object) -> str:
+def _signed_token(
+    key: RSAKey, issuer: str, audience: str | list[str], **extra_claims: object
+) -> str:
     claims = {"iss": issuer, "aud": audience, "sub": "user-1", "exp": int(time.time()) + 60}
     claims.update(extra_claims)
     return jjwt.encode({"alg": "RS256", "kid": key.kid}, claims, key)

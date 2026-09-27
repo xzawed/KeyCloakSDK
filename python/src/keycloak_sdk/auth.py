@@ -178,6 +178,8 @@ class AuthClient:
         `nonce`가 주어지면(authorization_url 이 돌려준 값) 응답 id_token을 강화
         `JwtValidator`로 서명·iss·aud·exp까지 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce
         재생 방지. 불일치·부재·검증실패는 모두 거부(fail-closed). 생략 시 id_token 검증을 건너뛴다.
+        id_token 의 `aud` 는 `expected_audience` 가 아니라 **`client_id`** 로 잰다(OIDC Core
+        §2·§3.1.3.7) — `expected_audience` 는 `validate()` 가 보는 액세스 토큰 전용이다.
         """
         response = self._wrap(
             lambda: self._openid.token(
@@ -198,7 +200,7 @@ class AuthClient:
                 "authorization code exchange failed: missing id_token for nonce validation"
             )
         try:
-            validated = self.validate(id_token)
+            validated = self._validate_for(id_token, self._config.client_id)
         except TokenValidationError as exc:
             raise KeycloakAuthError("authorization code exchange failed: invalid id_token") from exc
         if validated.claims.get("nonce") != expected_nonce:
@@ -231,19 +233,30 @@ class AuthClient:
         재조회 자체도 `_jwks_min_refetch` 간격으로 rate-limit되어 kid 변조 공격에 상한이
         있다. 클레임 실패(`TokenValidationError`)도 재조회를 트리거하지 않는다.
         """
+        # `expected_audience`가 설정되면 그 값을, 아니면 client_id를 기대한다(기존 동작).
+        return self._validate_for(
+            access_token, self._config.expected_audience or self._config.client_id
+        )
+
+    def _validate_for(self, token: str, audience: str) -> ValidatedToken:
+        """`validate()` 의 본체 — 기대 audience 만 호출자가 정한다(access·id_token 이 갈린다).
+
+        ⚠️ **JWKS 상태는 여기서 만들지 않는다** — 캐시·30초 강제 재조회 창·콜드 캐시 백오프는
+        이 인스턴스의 `_load_jwks` 하나가 소유하고, 두 경로가 그것을 함께 쓴다. `JwtValidator` 는
+        키를 들지 않는 규칙 묶음이라 매번 새로 만들어도 저장소가 갈라지지 않는다.
+        """
         key_set = self._load_jwks()
         validator = JwtValidator(
             issuer=self._endpoints.issuer,
-            # `expected_audience`가 설정되면 그 값을, 아니면 client_id를 기대한다(기존 동작).
-            audience=self._config.expected_audience or self._config.client_id,
+            audience=audience,
             allowed_algs=self._config.signature_algorithms,
             clock_skew=self._config.clock_skew,
         )
         try:
-            return validator.validate(access_token, key_set)
+            return validator.validate(token, key_set)
         except TokenKeyError:
             key_set = self._load_jwks(force=True)
-            return validator.validate(access_token, key_set)
+            return validator.validate(token, key_set)
 
     def _load_jwks(self, *, force: bool = False) -> KeySet:
         if not force and self._jwks_cache is not None:

@@ -23,13 +23,24 @@ _REALM_IMPORT_FILE = Path(__file__).parent / "it-realm-realm.json"
 # 인가 코드 흐름용 — realm JSON 의 `it-web`(RS256)·`it-web-hs256`(id_token 을 HS256 서명)과 짝.
 # ⚠️ `it-web` 의 audience 매퍼는 introspect 용이다 — `aud` 가 없는 접근 토큰을 Keycloak 26.6 은
 # 발급한 그 클라이언트가 물어도 `{"active": false}` 로 답한다(실측; aud=it-web 을 넣으면 true).
+# `it-web` 의 둘째 매퍼는 리소스 서버 `extra-api` 를 **접근 토큰에만** 넣는다 — `expected_audience`
+# 재정의를 실서버로 재는 자리다. `it-web-foreign-aud` 는 id_token `aud` 를 `extra-api` 로 덮어써
+# client_id 가 **빠진** id_token 을 낸다(하드코딩 클레임 매퍼 — 실서버로 그것을 만드는 유일한 길).
 REDIRECT_URI = "http://localhost/it-callback"
-WEB_CLIENT_SECRETS = {"it-web": "it-web-secret", "it-web-hs256": "it-web-hs256-secret"}
+WEB_CLIENT_SECRETS = {
+    "it-web": "it-web-secret",
+    "it-web-hs256": "it-web-hs256-secret",
+    "it-web-foreign-aud": "it-web-foreign-aud-secret",
+}
+EXTRA_API = "extra-api"
 ALICE = ("alice", "alice-password")
 
 
 def web_config(
-    keycloak_url: str, client_id: str = "it-web", algorithms: tuple[str, ...] = ("RS256",)
+    keycloak_url: str,
+    client_id: str = "it-web",
+    algorithms: tuple[str, ...] = ("RS256",),
+    expected_audience: str | None = None,
 ) -> KeycloakConfig:
     return KeycloakConfig(
         server_url=keycloak_url,
@@ -37,6 +48,7 @@ def web_config(
         client_id=client_id,
         client_secret=WEB_CLIENT_SECRETS[client_id],
         signature_algorithms=algorithms,
+        expected_audience=expected_audience,
     )
 
 

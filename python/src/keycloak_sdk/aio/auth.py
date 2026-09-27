@@ -142,6 +142,8 @@ class AsyncAuthClient:
         `nonce`가 주어지면(authorization_url 이 돌려준 값) 응답 id_token을 강화
         `JwtValidator`로 서명·iss·aud·exp까지 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce
         재생 방지(sync `AuthClient.exchange_code` 동형). 불일치·부재·검증실패는 거부(fail-closed).
+        id_token 의 `aud` 는 `expected_audience` 가 아니라 **`client_id`** 로 잰다(OIDC Core
+        §2·§3.1.3.7) — `expected_audience` 는 `validate()` 가 보는 액세스 토큰 전용이다.
         """
         response = await self._awrap(
             self._openid.a_token(
@@ -162,7 +164,7 @@ class AsyncAuthClient:
                 "authorization code exchange failed: missing id_token for nonce validation"
             )
         try:
-            validated = await self.validate(id_token)
+            validated = await self._validate_for(id_token, self._config.client_id)
         except TokenValidationError as exc:
             raise KeycloakAuthError("authorization code exchange failed: invalid id_token") from exc
         if validated.claims.get("nonce") != expected_nonce:
@@ -191,19 +193,28 @@ class AsyncAuthClient:
         재시도한다. 단순 서명 위조(`TokenSignatureError`)는 재조회하지 않으며(DoS 증폭
         차단), 재조회는 `_jwks_min_refetch` 간격으로 rate-limit된다.
         """
+        # `expected_audience`가 설정되면 그 값을, 아니면 client_id를 기대한다(sync 동형).
+        return await self._validate_for(
+            access_token, self._config.expected_audience or self._config.client_id
+        )
+
+    async def _validate_for(self, token: str, audience: str) -> ValidatedToken:
+        """`validate()` 의 본체(sync `AuthClient._validate_for` 동형) — audience 만 호출자가 정한다.
+
+        ⚠️ JWKS 상태(캐시·강제 재조회 창·백오프)는 이 인스턴스의 `_load_jwks` 하나가 소유한다.
+        """
         key_set = await self._load_jwks()
         validator = JwtValidator(
             issuer=self._endpoints.issuer,
-            # `expected_audience`가 설정되면 그 값을, 아니면 client_id를 기대한다(sync 동형).
-            audience=self._config.expected_audience or self._config.client_id,
+            audience=audience,
             allowed_algs=self._config.signature_algorithms,
             clock_skew=self._config.clock_skew,
         )
         try:
-            return validator.validate(access_token, key_set)
+            return validator.validate(token, key_set)
         except TokenKeyError:
             key_set = await self._load_jwks(force=True)
-            return validator.validate(access_token, key_set)
+            return validator.validate(token, key_set)
 
     async def _load_jwks(self, *, force: bool = False) -> KeySet:
         if not force and self._jwks_cache is not None:

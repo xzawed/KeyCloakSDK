@@ -13,11 +13,18 @@ from collections.abc import Iterator
 
 import pytest
 
-from keycloak_sdk import KeycloakAuthError, KeycloakClient, TokenKeyError, TokenSignatureError
+from keycloak_sdk import (
+    KeycloakAuthError,
+    KeycloakClient,
+    TokenKeyError,
+    TokenSignatureError,
+    TokenValidationError,
+)
 from keycloak_sdk.auth import AuthorizationUrl
 from tests.integration.browser_login import browser_login
 from tests.integration.conftest import (
     ALICE,
+    EXTRA_API,
     REDIRECT_URI,
     WEB_CLIENT_SECRETS,
     strip_nonce,
@@ -113,6 +120,50 @@ def test_reused_code_is_refused_without_leaking_it(
         assert secret not in str(reused.value)
         assert secret not in repr(reused.value)
         assert secret not in printed
+
+
+def test_exchange_code_with_the_nonce_succeeds_under_an_expected_audience_override(
+    keycloak_url: str, alice_id: str
+) -> None:
+    """`expected_audience` 는 접근 토큰의 리소스 서버다 — id_token `aud` 는 client_id 로 잰다.
+
+    예전에는 재정의한 소비자가 nonce 를 넘긴 교환을 전혀 할 수 없었다(`invalid id_token`,
+    `Audience not contained`). OIDC Core §2·§3.1.3.7."""
+    with KeycloakClient.create(web_config(keycloak_url, expected_audience=EXTRA_API)) as kc:
+        request, code = _login(kc)
+        tokens = kc.auth.exchange_code(
+            code, REDIRECT_URI, request.code_verifier, nonce=request.nonce
+        )
+        assert tokens.id_token
+        # access 검증은 재정의를 계속 쓴다 — 서버가 접근 토큰에만 extra-api 를 실었다.
+        access = kc.auth.validate(tokens.access_token)
+        assert EXTRA_API in access.audience
+        assert access.subject == alice_id
+        # 반대편: `validate()` 는 client_id 를 기대하지 않는다 — id_token 에는 extra-api 가 없다.
+        with pytest.raises(TokenValidationError, match="Audience not contained"):
+            kc.auth.validate(tokens.id_token)
+
+
+def test_exchange_code_refuses_an_id_token_whose_aud_lacks_the_client_id(
+    keycloak_url: str,
+) -> None:
+    """id_token `aud` 에서 client_id 가 빠지면 거부다 — `aud` 가 재정의 값 그 자체여도."""
+    config = web_config(keycloak_url, "it-web-foreign-aud", expected_audience=EXTRA_API)
+    with KeycloakClient.create(config) as kc:
+        # 전제: 서버가 정말 client_id 없이 `aud=extra-api` 로 서명한다(아니면 다른 것을 잰다).
+        request = kc.auth.authorization_url(REDIRECT_URI)
+        unchecked = kc.auth.exchange_code(
+            browser_login(request, REDIRECT_URI, *ALICE), REDIRECT_URI, request.code_verifier
+        )
+        assert unchecked.id_token
+        assert kc.auth.validate(unchecked.id_token).audience == (EXTRA_API,)
+
+        request, code = _login(kc)
+        with pytest.raises(KeycloakAuthError) as refused:
+            kc.auth.exchange_code(code, REDIRECT_URI, request.code_verifier, nonce=request.nonce)
+    assert str(refused.value) == "authorization code exchange failed: invalid id_token"
+    assert type(refused.value.__cause__) is TokenValidationError
+    assert str(refused.value.__cause__) == "Audience not contained"
 
 
 @pytest.mark.parametrize(

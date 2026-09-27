@@ -27,6 +27,7 @@ class KeycloakConfig:
     # `validate()`가 토큰 `aud`에서 찾을 값. 미지정(None)이면 `client_id`를 기대한다(기존 동작).
     # 기본 realm은 client-credentials 토큰 `aud`에 client_id를 넣지 않으므로(audience 매퍼를
     # 추가해야 들어간다), 리소스 서버처럼 API 이름이 aud인 경우 여기에 그 값을 설정한다.
+    # 액세스 토큰 전용이다 — `exchange_code(..., nonce=)` 의 id_token `aud` 는 늘 client_id 로 잰다.
     expected_audience: str | None = None
 
     def __post_init__(self) -> None:
