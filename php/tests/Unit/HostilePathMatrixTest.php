@@ -114,7 +114,7 @@ final class HostilePathMatrixTest extends TestCase
      * FAIL** 이다(틈에 조용히 흡수되지 않는다). **이유 없는 항목은 넣지 않는다.**
      */
     private const KNOWN_GAP_GROUPS = [
-        'php-admin-token-error-unsanitized (등록부 id 자리 — 미등록)' => [
+        'php-admin-token-error-unsanitized' => [
             'reason' => 'admin 의 토큰 부여는 fschmtt 가 하고 Admin\\ErrorTranslation 이 그 예외를 SanitizedCause 없이 원본째 달며 '
                 . '메시지도 그대로 옮긴다 — Guzzle 의 본문 요약(d4·e·e2·e3 → getMessage)과 하위 예외의 트레이스 인자(b2·d·d2·d3 → '
                 . 'var_dump·print_r·(string))가 토큰 응답을 찍는다. #622 는 AuthClient·provider 에만 적용됐다.',
