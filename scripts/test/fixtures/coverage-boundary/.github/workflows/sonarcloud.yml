@@ -1,0 +1,14 @@
+name: sonarcloud
+on:
+  pull_request:
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Rust lcov coverage
+        working-directory: rust
+        run: |
+          cargo llvm-cov --ignore-filename-regex '(^|[\\/])(auth|admin|client)\.rs$' --lcov --output-path lcov.info
+      - uses: SonarSource/sonarqube-scan-action@0000000000000000000000000000000000000000 # v8
+        with:
+          args: -Dsonar.qualitygate.wait=true

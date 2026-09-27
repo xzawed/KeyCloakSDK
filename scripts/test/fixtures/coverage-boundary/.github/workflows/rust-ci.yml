@@ -1,0 +1,8 @@
+name: rust-ci
+on: { pull_request: { paths: ['rust/**'] } }
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      # cargo llvm-cov --ignore-filename-regex 'x' ← 주석은 사본이 아니다
+      - run: cargo llvm-cov --ignore-filename-regex '(^|[\\/])(auth|admin|client)\.rs$' --fail-under-lines 90
