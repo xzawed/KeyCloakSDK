@@ -169,7 +169,7 @@ _UNDETERMINED_EXEMPT: dict[str, str] = {
 _NONCE_DROP_EXEMPT: dict[str, str] = {}
 
 _SYNC_ADMIN_EMPTY_BEARER = (
-    "REGISTRY-TBD(python-admin-grant-accepts-empty-access-token): sync admin 의 자체 "
+    "python-admin-grant-accepts-empty-access-token: sync admin 의 자체 "
     "client_credentials 그랜트가 빈 access_token 을 받아들이고 `Authorization: Bearer ` "
     "로 admin REST 요청을 보낸다 — python-keycloak 의 토큰 세터가 타입·빈 값을 안 보고, "
     "SDK 는 admin 레인에서 그 응답을 검사하지 않는다. aio 는 h11 이 그 헤더 값을 거부해 "
