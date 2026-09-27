@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **(Go)** `Config.ExpectedAudience` 를 client id 가 아닌 값(리소스 서버)으로 재정의하면 nonce 를 넘긴 `ExchangeCode` 가 `invalid id_token` 으로 **실패했습니다** — id_token 을 액세스 토큰과 같은 audience 로 검증했기 때문입니다. 이제 그 교환은 통과하고, id_token 의 `aud` 는 OIDC Core §2·§3.1.3.7 대로 `ClientID` 를 담는지 검사합니다(`ClientID` 가 없으면 재정의 값만 담겨도 거부합니다). `Validate` 의 액세스 토큰 검증은 그대로 `ExpectedAudience` 를 쓰고, iss·알고리즘 핀·exp·nonce 검사와 JWKS 캐시·재조회 제한(둘이 하나를 공유합니다)은 바뀌지 않습니다. 공개 API 변경은 없습니다.
+
 ## [1.0.2] - 2026-09-27 (Node)
 
 **Node 의 security patch 입니다** — 다른 여덟 언어는 움직이지 않습니다(같은 번호의 아래 `[1.0.2]` 두 절은 다른 언어의 것입니다). 공개 API 변경은 **0** 입니다. 코드 교환을 실제 Keycloak 에 대고 돌리는 통합 테스트를 아홉 언어에 세우다(#640–#648) node 에서만 나온 결함입니다.
