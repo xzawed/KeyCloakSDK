@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **(Node)** `expectedAudience` 를 client id 가 아닌 값(리소스 서버)으로 재정의하면 `exchangeCode(…, nonce)` 가 Keycloak 이 발급한 정상 id_token 을 `invalid id_token` 으로 거부했습니다 — 액세스 토큰의 기대 audience 를 id_token 에도 요구했기 때문입니다. 이제 id_token 의 `aud` 는 OIDC Core §2·§3.1.3.7 대로 **client id** 로 검사하므로 재정의 아래에서도 교환이 통과하고, `aud` 에 client id 가 없는 id_token 은 재정의 값과 같아도 계속 거부합니다. 액세스 토큰 `validate` 는 지금처럼 재정의 값을 쓰고, 두 검증은 JWKS 캐시·재조회 제한을 하나로 공유합니다. 선언된 공개 API(`.d.ts`) 변경은 **0** 입니다 — `@internal` 메서드 `JwtValidator#withAudience` 가 런타임 번들(`dist/jwt.js`)에만 늘어납니다.
+
 ## [1.0.2] - 2026-09-27 (Node)
 
 **Node 의 security patch 입니다** — 다른 여덟 언어는 움직이지 않습니다(같은 번호의 아래 `[1.0.2]` 두 절은 다른 언어의 것입니다). 공개 API 변경은 **0** 입니다. 코드 교환을 실제 Keycloak 에 대고 돌리는 통합 테스트를 아홉 언어에 세우다(#640–#648) node 에서만 나온 결함입니다.
