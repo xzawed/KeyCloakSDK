@@ -992,12 +992,23 @@ module HostilePathMatrixSpec
       anchors = TARGETS.map(&:anchor)
       calls = HostileTokenResponseSpec::CALLS.keys.map { |k| "#{HOSTILE}|CALLS[#{k}]" }
       why = (calls - anchors).map { |a| "W1 #{a} 가 Hand::TARGETS 에 없다" }
+      return why + script_missing unless File.file?(SCRIPT)
+
       found = script_anchors
       why << "W1 test-security-defaults.sh 에서 Ruby 행위 앵커를 하나도 못 읽었다 — 적는 모양이 바뀌었나?" if found.empty?
       why + (found - anchors).map { |a| "W1 보안 기본값 가드의 Ruby 앵커 #{a} 가 Hand::TARGETS 에 없다" }
     end
 
-    def script_anchors = File.read(SCRIPT).scan(SCRIPT_ANCHOR).map { |file, example| "#{file}|#{example}" }
+    # 가드가 없을 때 — 저장소 체크아웃이면 실패, 저장소 밖(ruby/ 만 마운트한 하네스 컨테이너)이면 건너뛴다(go·node 등과 같다).
+    def script_missing
+      return ["W1 저장소 체크아웃인데 보안 기본값 가드를 못 읽었다: #{SCRIPT}"] if File.exist?(File.expand_path("../../../.git", __dir__))
+
+      $stdout.puts("W1: 저장소 밖에서 돌아 보안 기본값 가드 대조는 건너뛴다")
+      []
+    end
+
+    # Result#summary 도 부른다 — 가드가 없으면 빈 목록이다(건너뜀 · 실패의 판정은 completeness 가 한다).
+    def script_anchors = File.file?(SCRIPT) ? File.read(SCRIPT).scan(SCRIPT_ANCHOR).map { |f, e| "#{f}|#{e}" } : []
 
     def resolve(key)
       log = []
