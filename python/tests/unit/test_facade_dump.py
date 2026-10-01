@@ -85,9 +85,15 @@ GARBAGE = "CANARY-DUMP-GARBAGE-TOKEN"
 PASSWORD = "CANARY-DUMP-ADMIN-PASSWORD"
 
 #: 걷기에 안 닿아도 되는 선언과 그 이유. ⚠️ 이유 없는 면제는 넣지 않는다.
-#: (비어 있다 — `JwtValidator` 는 `validate` 가 지역으로 만들고 버리지만, 실패한 검증 오류의
-#: 트레이스백 프레임이 그것을 쥐어 소비자 손에 닿으므로 면제가 아니라 걷기 대상이다.)
-EXEMPT: dict[str, str] = {}
+EXEMPT: dict[str, str] = {
+    # 예전에는 면제가 아니라 걷기 대상이었다 — 실패한 검증 오류의 트레이스백 프레임이 그것을 쥐어
+    # 소비자 손에 닿았다. 그 프레임(과 거기 함께 있던 토큰)은 이제 공개 메서드가 떼어 낸다
+    # (`_internal/frames.py`, 등록부 `python-traceback-locals-carry-tokens`) — 닿지 않는 것이 수정의
+    # 결과다. 되돌아와 닿으면 `test_traceback_locals.py` 가 먼저 운다.
+    "keycloak_sdk._internal.jwt.JwtValidator": (
+        "`_validate_for` 가 지역으로 만들고 버린다 — 실패 traceback 의 프레임은 떼어진다"
+    ),
+}
 
 #: 알려진 누출 — `"뿌리|카나리아"` → 사유. ⚠️ 고쳐져 더 안 새면 **여기서 지워야 통과한다**
 #: (낡은 항목 검사).
