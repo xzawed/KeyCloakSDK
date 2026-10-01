@@ -30,8 +30,13 @@ module KeycloakSdk
           algorithms: config.signature_algorithms, clock_skew: config.clock_skew)
     end
 
-    def validate(token)
-      payload, = JWT.decode(token, nil, true, decode_options)
+    # `audience:` 는 이 호출만의 기대 aud 다(기본 = 생성 시 값). 코드 교환이 id_token 을 client_id 로 검사할 때
+    # 쓴다 — 키 저장소(캐시 · 재조회 제한 · 백오프)는 그대로 이 인스턴스의 것 하나다.
+    # ⚠️ nil·공백은 생성자와 같이 ConfigError — ruby-jwt 는 `aud: nil` 이면 aud 검사를 건너뛴다.
+    def validate(token, audience: @audience)
+      raise ConfigError, "audience is required" if audience.nil? || audience.to_s.strip.empty?
+
+      payload, = JWT.decode(token, nil, true, decode_options(audience))
       to_validated(payload)
     rescue JWT::DecodeError => e
       # ruby-jwt 메시지는 입력을 인용하지 않는다. 그 **원인**은 인용한다 — 조각이 JSON 이 아니면 JSON::ParserError 가
@@ -41,12 +46,12 @@ module KeycloakSdk
 
     private
 
-    def decode_options
+    def decode_options(audience)
       {
         algorithms: @algorithms,
         jwks: jwks_loader,
         verify_iss: true, iss: @issuer,
-        verify_aud: true, aud: @audience,
+        verify_aud: true, aud: audience,
         verify_expiration: true,
         verify_not_before: true,
         required_claims: %w[exp iss aud],
