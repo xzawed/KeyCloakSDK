@@ -21,7 +21,8 @@ pub struct KeycloakConfig {
     /// `validate()`가 토큰 `aud`에서 찾을 값. `None`이면 `client_id`를 기대한다(기존 동작).
     /// 기본 realm은 client-credentials 토큰 `aud`에 client_id를 넣지 않으므로(audience 매퍼를
     /// 추가해야 들어간다), 리소스 서버처럼 API 이름이 aud면 여기에 그 값을 설정한다.
-    /// 같은 검증기를 쓰는 `exchange_code`의 id_token 검사에도 함께 적용된다.
+    /// `exchange_code`의 id_token 검사에는 걸리지 않는다 — id_token `aud` 는 늘 `client_id` 로
+    /// 본다(OIDC Core §3.1.3.7).
     pub expected_audience: Option<String>,
     pub redirect_uri: Option<String>,
 }

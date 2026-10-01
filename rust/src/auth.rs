@@ -167,6 +167,7 @@ impl AuthClient {
     /// `expected_nonce`가 `Some`이면(create_authorization_request가 돌려준 nonce) 응답 id_token을
     /// 강화 `JwtValidator`로 서명·iss·aud·exp까지 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce
     /// 재생 방지. 불일치·부재·검증실패는 모두 거부(fail-closed). `None`이면 id_token 검증을 건너뛴다.
+    /// id_token 의 `aud` 는 `client_id` 로 본다 — `expected_audience` 는 [`Self::validate`] 에만 걸린다.
     pub async fn exchange_code(
         &self,
         code: &str,
@@ -218,23 +219,24 @@ impl AuthClient {
         Ok(token_set)
     }
 
-    // id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다
-    // (액세스 토큰과 id_token 모두 aud=client_id라 검증기를 공유해도 안전 — config.expected_audience로
-    // 기대 aud를 바꾸면 그 값이 id_token 검사에도 함께 적용된다).
+    // id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다.
+    // ⚠️ aud 는 `expected_audience` 가 아니라 **이 AuthClient 의 client_id**(토큰 엔드포인트에서 인증한
+    // 신원)로 본다(OIDC Core §2 · §3.1.3.7) — 재정의는 access 토큰의 리소스 서버 제한이다. 검증기는 같은
+    // 것을 쓴다(JWKS 상태가 하나로 남는다).
     async fn verify_nonce(&self, id_token: Option<&str>, expected_nonce: &str) -> Result<()> {
         let id_token = id_token.ok_or_else(|| KeycloakError::Auth {
             message: "authorization code exchange failed: missing id_token for nonce validation"
                 .to_string(),
             oauth_error: None,
         })?;
-        let validated =
-            self.validator
-                .validate(id_token)
-                .await
-                .map_err(|e| KeycloakError::Auth {
-                    message: format!("authorization code exchange failed: invalid id_token: {e}"),
-                    oauth_error: None,
-                })?;
+        let validated = self
+            .validator
+            .validate_for_audience(id_token, &self.config.client_id)
+            .await
+            .map_err(|e| KeycloakError::Auth {
+                message: format!("authorization code exchange failed: invalid id_token: {e}"),
+                oauth_error: None,
+            })?;
         let actual = validated.claims.get("nonce").and_then(|v| v.as_str());
         if actual != Some(expected_nonce) {
             return Err(KeycloakError::Auth {
@@ -623,52 +625,435 @@ mod tests {
     }
 
     async fn exchange_fixture(id_token: IdTok<'_>) -> AuthClient {
+        exchange_fixture_with(ExchangeSpec::default(), |t| match id_token {
+            IdTok::Absent => None,
+            IdTok::Nonce(nonce) => Some(t.id_token(json!("it-client"), Some(nonce))),
+            IdTok::NoNonceClaim => Some(t.id_token(json!("it-client"), None)),
+        })
+        .await
+        .auth
+    }
+
+    /// 교환 픽스처의 손잡이 — 기본값은 재정의 없음 · JWKS 200.
+    struct ExchangeSpec {
+        expected_audience: Option<&'static str>,
+        /// 토큰 응답 access_token(서명된 JWT)의 `aud`.
+        access_aud: serde_json::Value,
+        jwks_status: u16,
+        /// `Some` 이면 검증기만 이 client id 의 config 로 만든다(AuthClient 는 `it-client`).
+        validator_client_id: Option<&'static str>,
+    }
+
+    impl Default for ExchangeSpec {
+        fn default() -> Self {
+            Self {
+                expected_audience: None,
+                access_aud: json!(["it-client", "account"]),
+                jwks_status: 200,
+                validator_client_id: None,
+            }
+        }
+    }
+
+    /// id_token·access_token 을 서명하는 손 — 픽스처의 키와 issuer 를 안다.
+    struct Signer {
+        priv_pem: String,
+        issuer: String,
+    }
+
+    impl Signer {
+        fn claims(&self, aud: serde_json::Value, nonce: Option<&str>) -> serde_json::Value {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let mut c = json!({"sub":"u","iss":self.issuer,"aud":aud,"exp":now+300,"iat":now});
+            if let Some(n) = nonce {
+                c["nonce"] = json!(n);
+            }
+            c
+        }
+
+        fn sign(&self, claims: &serde_json::Value, kid: &str) -> String {
+            let mut h = Header::new(Algorithm::RS256);
+            h.kid = Some(kid.into());
+            let ek = EncodingKey::from_rsa_pem(self.priv_pem.as_bytes()).unwrap();
+            encode(&h, claims, &ek).unwrap()
+        }
+
+        fn id_token(&self, aud: serde_json::Value, nonce: Option<&str>) -> String {
+            self.sign(&self.claims(aud, nonce), "test-kid")
+        }
+    }
+
+    struct Exchange {
+        auth: AuthClient,
+        server: &'static MockServer,
+        signer: Signer,
+    }
+
+    impl Exchange {
+        /// 이 픽스처의 IdP 가 받은 JWKS 요청 수 — 키 저장소가 몇 개였는지의 관측값이다.
+        async fn jwks_fetches(&self) -> usize {
+            self.server
+                .received_requests()
+                .await
+                .expect("request recording is on")
+                .iter()
+                .filter(|r| r.url.path().ends_with("/certs"))
+                .count()
+        }
+    }
+
+    /// `id_token` 은 토큰 응답에 실을 id_token 을 만든다(`None` = 싣지 않는다). access_token 은 같은
+    /// 키로 서명한 JWT 라서 교환 뒤 `validate()` 로 이어 부를 수 있다 — 두 경로가 **한** JWKS 저장소를
+    /// 쓰는지 재려면 둘 다 그 저장소에 닿아야 한다.
+    async fn exchange_fixture_with(
+        spec: ExchangeSpec,
+        id_token: impl FnOnce(&Signer) -> Option<String>,
+    ) -> Exchange {
         let (priv_pem, jwk) = make_rsa();
-        let server = Box::leak(Box::new(MockServer::start().await));
+        let server: &'static MockServer = Box::leak(Box::new(MockServer::start().await));
+        let jwks_body = if spec.jwks_status == 200 {
+            json!({"keys": [jwk]})
+        } else {
+            json!({"error": "unavailable"})
+        };
         Mock::given(method("GET"))
             .and(path("/realms/it-realm/protocol/openid-connect/certs"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"keys": [jwk]})))
+            .respond_with(ResponseTemplate::new(spec.jwks_status).set_body_json(jwks_body))
             .mount(server)
             .await;
-        let config = KeycloakConfig::new(server.uri(), "it-realm", "it-client")
+        let mut config = KeycloakConfig::new(server.uri(), "it-realm", "it-client")
             .unwrap()
             .with_client_secret("s");
+        if let Some(aud) = spec.expected_audience {
+            config = config.with_expected_audience(aud);
+        }
         let endpoints = OidcEndpoints::new(&config);
+        let signer = Signer {
+            priv_pem,
+            issuer: endpoints.issuer(),
+        };
         let mut body = json!({
-            "access_token": "AT",
+            "access_token": signer.sign(&signer.claims(spec.access_aud, None), "test-kid"),
             "token_type": "Bearer",
             "expires_in": 300,
         });
-        match id_token {
-            IdTok::Absent => {}
-            IdTok::Nonce(nonce) => {
-                body["id_token"] = json!(sign_id_token(
-                    &priv_pem,
-                    &endpoints.issuer(),
-                    "it-client",
-                    nonce
-                ));
-            }
-            IdTok::NoNonceClaim => {
-                let mut h = Header::new(Algorithm::RS256);
-                h.kid = Some("test-kid".into());
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                let claims = json!({"sub":"u","iss":endpoints.issuer(),"aud":"it-client","exp":now+300,"iat":now});
-                let ek = EncodingKey::from_rsa_pem(priv_pem.as_bytes()).unwrap();
-                body["id_token"] = json!(encode(&h, &claims, &ek).unwrap());
-            }
+        if let Some(t) = id_token(&signer) {
+            body["id_token"] = json!(t);
         }
         Mock::given(method("POST"))
             .and(path("/realms/it-realm/protocol/openid-connect/token"))
             .respond_with(ResponseTemplate::new(200).set_body_json(body))
             .mount(server)
             .await;
-        let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
-        let validator = JwtValidator::new(&config, &endpoints, jwks).unwrap();
-        AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap()
+        // `KeycloakClient::new` 와 같은 배선 — 저장소 **하나**를 검증기 하나가 소유한다.
+        let jwks = JwksStore::new(
+            endpoints.jwks(),
+            reqwest::Client::new(),
+            config.jwks_min_refetch_secs,
+        );
+        // 저수준 주입은 검증기와 AuthClient 에 **다른** config 를 줄 수 있다 — 그 갈래를 재는 손잡이.
+        let validator_config = match spec.validator_client_id {
+            Some(id) => KeycloakConfig {
+                client_id: id.to_string(),
+                ..config.clone()
+            },
+            None => config.clone(),
+        };
+        let validator = JwtValidator::new(&validator_config, &endpoints, jwks).unwrap();
+        let auth = AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap();
+        Exchange {
+            auth,
+            server,
+            signer,
+        }
+    }
+
+    /// 리소스 서버 재정의 — access 토큰의 aud 는 API 이름이고, id_token 의 aud 는 여전히 client id 다.
+    fn override_spec() -> ExchangeSpec {
+        ExchangeSpec {
+            expected_audience: Some("api://orders"),
+            access_aud: json!(["api://orders", "account"]),
+            ..ExchangeSpec::default()
+        }
+    }
+
+    // ── id_token audience 는 client id 로 본다 (OIDC Core §2 · §3.1.3.7) ─────────────────────
+    //
+    // 예전에는 id_token 을 access 검증기 그대로 검증해, `expected_audience` 를 재정의하면 client id 를
+    // 담은 **진짜** id_token 이 거부됐다(nonce 교환이 막혔다). 재정의는 access 토큰의 리소스 서버
+    // 제한이다(RFC 9700 §2.3 · §4.10.2) — id_token 의 aud 는 client id 를 담아야 한다.
+
+    /// (A1) 재정의 아래에서도 aud 에 client id 가 있으면 교환이 통과한다 — 단일 값과 배열 둘 다.
+    #[tokio::test]
+    async fn exchange_code_accepts_client_id_audience_under_expected_audience_override() {
+        for aud in [json!("it-client"), json!(["it-client", "api://orders"])] {
+            let fx = exchange_fixture_with(override_spec(), |t| {
+                Some(t.id_token(aud.clone(), Some("expected-nonce")))
+            })
+            .await;
+            let ts = fx
+                .auth
+                .exchange_code("c", "v", Some("expected-nonce"))
+                .await
+                .unwrap_or_else(|e| panic!("aud={aud} carries the client id, got {e:?}"));
+            assert!(ts.id_token.is_some());
+        }
+    }
+
+    /// (A2) aud 에 client id 가 없는 id_token 은 거부한다 — aud 가 재정의 값과 **같아도**.
+    #[tokio::test]
+    async fn exchange_code_rejects_id_token_audienced_only_at_the_override() {
+        for aud in [json!("api://orders"), json!(["api://orders", "account"])] {
+            let fx = exchange_fixture_with(override_spec(), |t| {
+                Some(t.id_token(aud.clone(), Some("expected-nonce")))
+            })
+            .await;
+            assert_auth_err(
+                fx.auth
+                    .exchange_code("c", "v", Some("expected-nonce"))
+                    .await,
+                "invalid id_token: token validation error: token verification failed: audience mismatch",
+            );
+        }
+        // 재정의가 없어도 같다 — client id 밖의 aud 는 거부.
+        let fx = exchange_fixture_with(ExchangeSpec::default(), |t| {
+            Some(t.id_token(json!(["other-client"]), Some("expected-nonce")))
+        })
+        .await;
+        assert_auth_err(
+            fx.auth
+                .exchange_code("c", "v", Some("expected-nonce"))
+                .await,
+            "audience mismatch",
+        );
+    }
+
+    /// (A3) 교환이 client id 로 id_token 을 본 뒤에도 `validate()` 는 재정의를 쓴다.
+    #[tokio::test]
+    async fn validate_keeps_the_expected_audience_override_after_an_exchange() {
+        let fx = exchange_fixture_with(override_spec(), |t| {
+            Some(t.id_token(json!("it-client"), Some("expected-nonce")))
+        })
+        .await;
+        let ts = fx
+            .auth
+            .exchange_code("c", "v", Some("expected-nonce"))
+            .await
+            .expect("the id_token carries the client id");
+        let vt = fx
+            .auth
+            .validate(&ts.access_token)
+            .await
+            .expect("the access token carries the override");
+        assert!(vt.audience.contains(&"api://orders".to_string()));
+        // client id 만 담은 토큰(여기선 id_token)은 access 검증에서 거부 — 재정의는 대체다.
+        match fx.auth.validate(ts.id_token.as_deref().unwrap()).await {
+            Err(KeycloakError::TokenValidation(m)) => {
+                assert_eq!(m, "token verification failed: audience mismatch")
+            }
+            other => panic!("validate() must look for the override, got {other:?}"),
+        }
+    }
+
+    /// 저수준 주입(`AuthClient::new` 에 검증기를 따로 만든 config)에서 id_token 의 aud 는 **코드를
+    /// 교환한 클라이언트**(AuthClient config 의 client id — 토큰 엔드포인트에서 인증한 신원)를 따른다.
+    /// OIDC Core §3.1.3.7 의 「its client_id」다. 검증기 config 의 client id 는 access 경로만 쓴다.
+    #[tokio::test]
+    async fn id_token_audience_follows_the_client_that_exchanged_the_code() {
+        let spec = || ExchangeSpec {
+            validator_client_id: Some("validator-only-client"),
+            ..ExchangeSpec::default()
+        };
+        let fx = exchange_fixture_with(spec(), |t| {
+            Some(t.id_token(json!("it-client"), Some("expected-nonce")))
+        })
+        .await;
+        fx.auth
+            .exchange_code("c", "v", Some("expected-nonce"))
+            .await
+            .expect("aud carries the client that exchanged the code");
+        let fx = exchange_fixture_with(spec(), |t| {
+            Some(t.id_token(json!("validator-only-client"), Some("expected-nonce")))
+        })
+        .await;
+        assert_auth_err(
+            fx.auth
+                .exchange_code("c", "v", Some("expected-nonce"))
+                .await,
+            "audience mismatch",
+        );
+    }
+
+    /// (A4) 재정의 아래의 교환도 iss · alg 핀 · exp/스큐 · nonce 대조를 그대로 건다.
+    #[tokio::test]
+    async fn exchange_code_under_override_keeps_issuer_alg_expiry_and_nonce_checks() {
+        // ⚠️ 만료는 서명하는 순간의 `iat` 에서 잰다 — 테스트 머리의 시각을 쓰면 픽스처마다 도는
+        // RSA 키 생성(디버그 빌드에서 수 초)이 그 사이에 쌓여 「스큐 안쪽」이 밖으로 밀려난다(실측).
+        fn expired_by(t: &Signer, secs: u64) -> String {
+            let mut c = t.claims(json!("it-client"), Some("expected-nonce"));
+            c["exp"] = json!(c["iat"].as_u64().unwrap() - secs);
+            t.sign(&c, "test-kid")
+        }
+        type Build = Box<dyn FnOnce(&Signer) -> Option<String>>;
+        let cases: Vec<(&str, Build)> = vec![
+            (
+                "unexpected nonce",
+                Box::new(|t: &Signer| Some(t.id_token(json!("it-client"), Some("attacker-nonce")))),
+            ),
+            (
+                "issuer mismatch",
+                Box::new(|t: &Signer| {
+                    let mut c = t.claims(json!("it-client"), Some("expected-nonce"));
+                    c["iss"] = json!(format!("{}-evil", t.issuer));
+                    Some(t.sign(&c, "test-kid"))
+                }),
+            ),
+            (
+                "expired",
+                Box::new(|t: &Signer| Some(expired_by(t, 45))), // 스큐 30 밖
+            ),
+            (
+                "algorithm not allowed",
+                Box::new(|t: &Signer| {
+                    let mut h = Header::new(Algorithm::HS256);
+                    h.kid = Some("test-kid".into());
+                    let c = t.claims(json!("it-client"), Some("expected-nonce"));
+                    Some(encode(&h, &c, &EncodingKey::from_secret(b"guessed")).unwrap())
+                }),
+            ),
+        ];
+        for (needle, build) in cases {
+            let fx = exchange_fixture_with(override_spec(), build).await;
+            assert_auth_err(
+                fx.auth
+                    .exchange_code("c", "v", Some("expected-nonce"))
+                    .await,
+                needle,
+            );
+        }
+        // 스큐는 넓어지지도 좁아지지도 않았다 — 30초 안쪽 만료는 통과한다.
+        let fx = exchange_fixture_with(override_spec(), |t| Some(expired_by(t, 10))).await;
+        fx.auth
+            .exchange_code("c", "v", Some("expected-nonce"))
+            .await
+            .expect("an expiry inside the 30s skew is tolerated");
+    }
+
+    // ── (A5) 두 경로는 JWKS 저장소 **하나**를 쓴다 ──────────────────────────────────────────
+    //
+    // 저장소가 둘로 갈리면(id_token 용 검증기를 따로 만들면) 캐시 · 30초 재조회 제한 · 콜드 실패
+    // 백오프가 모두 둘이 되어 IdP 요청이 늘어난다. 셋 다 IdP 가 받은 `/certs` 요청 수로 잰다.
+
+    /// 캐시: 교환이 채운 키로 `validate()` 가 검증한다 — JWKS 조회는 한 번.
+    #[tokio::test]
+    async fn exchange_and_validate_share_one_jwks_cache() {
+        let fx = exchange_fixture_with(override_spec(), |t| {
+            Some(t.id_token(json!("it-client"), Some("expected-nonce")))
+        })
+        .await;
+        let ts = fx
+            .auth
+            .exchange_code("c", "v", Some("expected-nonce"))
+            .await
+            .unwrap();
+        assert_eq!(fx.jwks_fetches().await, 1, "the exchange loads the key set");
+        fx.auth.validate(&ts.access_token).await.unwrap();
+        fx.auth.validate(&ts.access_token).await.unwrap();
+        assert_eq!(
+            fx.jwks_fetches().await,
+            1,
+            "validate() after an exchange must reuse the exchange's key set"
+        );
+
+        // 대조군 — 저장소를 하나 더 만들면 이 계수가 **보인다**(계수가 눈멀지 않았음을 증명).
+        let config = KeycloakConfig::new(fx.server.uri(), "it-realm", "it-client")
+            .unwrap()
+            .with_expected_audience("api://orders");
+        let endpoints = OidcEndpoints::new(&config);
+        let second = JwtValidator::new(
+            &config,
+            &endpoints,
+            JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 30),
+        )
+        .unwrap();
+        second.validate(&ts.access_token).await.unwrap();
+        assert_eq!(fx.jwks_fetches().await, 2, "a second store fetches again");
+    }
+
+    /// 30초 재조회 제한: 교환의 미해결 kid 가 게이트를 찍으면, 이어진 `validate()` 의 미해결 kid 는
+    /// IdP 에 닿지 않는다.
+    #[tokio::test]
+    async fn exchange_and_validate_share_the_refetch_rate_limit() {
+        let fx = exchange_fixture_with(override_spec(), |t| {
+            let c = t.claims(json!("it-client"), Some("expected-nonce"));
+            Some(t.sign(&c, "rotated-kid"))
+        })
+        .await;
+        // 캐시를 채운다(콜드 로드는 재조회 예산을 쓰지 않는다).
+        let warm = fx
+            .signer
+            .sign(&fx.signer.claims(json!("api://orders"), None), "test-kid");
+        fx.auth.validate(&warm).await.unwrap();
+        assert_eq!(fx.jwks_fetches().await, 1);
+        // 교환: id_token 의 kid 가 캐시에 없다 → 강제 재조회 한 번(게이트를 찍는다).
+        assert_auth_err(
+            fx.auth
+                .exchange_code("c", "v", Some("expected-nonce"))
+                .await,
+            "unknown kid",
+        );
+        assert_eq!(fx.jwks_fetches().await, 2);
+        // 같은 창 안의 `validate()` 미해결 kid — 같은 게이트라 IdP 에 가지 않는다.
+        let forged = fx
+            .signer
+            .sign(&fx.signer.claims(json!("api://orders"), None), "other-kid");
+        match fx.auth.validate(&forged).await {
+            Err(KeycloakError::TokenValidation(m)) => {
+                assert_eq!(m, "unknown kid (refetch rate-limited)")
+            }
+            other => panic!("expected the shared rate limit to refuse, got {other:?}"),
+        }
+        assert_eq!(
+            fx.jwks_fetches().await,
+            2,
+            "one refetch per window across both paths"
+        );
+    }
+
+    /// 콜드 실패 백오프: 교환의 JWKS 실패가 백오프를 열면, 바로 이어진 `validate()` 는 IdP 에 가지 않고
+    /// 즉시 실패한다.
+    #[tokio::test]
+    async fn exchange_and_validate_share_the_cold_fetch_backoff() {
+        let fx = exchange_fixture_with(
+            ExchangeSpec {
+                jwks_status: 503,
+                ..override_spec()
+            },
+            |t| Some(t.id_token(json!("it-client"), Some("expected-nonce"))),
+        )
+        .await;
+        assert_auth_err(
+            fx.auth
+                .exchange_code("c", "v", Some("expected-nonce"))
+                .await,
+            "JWKS fetch failed: HTTP 503",
+        );
+        assert_eq!(fx.jwks_fetches().await, 1);
+        let access = fx
+            .signer
+            .sign(&fx.signer.claims(json!("api://orders"), None), "test-kid");
+        match fx.auth.validate(&access).await {
+            Err(KeycloakError::Transport(m)) => assert!(m.contains("backing off"), "{m}"),
+            other => panic!("expected the shared backoff to fail fast, got {other:?}"),
+        }
+        assert_eq!(
+            fx.jwks_fetches().await,
+            1,
+            "the backoff opened by the exchange must hold for validate()"
+        );
     }
 
     #[tokio::test]
