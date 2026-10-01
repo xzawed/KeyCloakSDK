@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { inspect } from 'node:util'
 import { tokenSetFromResponse } from '../../src/tokens.js'
+import { NON_STRING_ACCESS_TOKENS } from './token-responses.js'
 
 describe('TokenSet', () => {
   const t = tokenSetFromResponse(
@@ -60,19 +61,16 @@ describe('TokenSet', () => {
   })
 
   // `at === undefined || at === null` 로 약화해도 키 부재만 보면 오늘 스위트가 통과한다.
-  // 비문자열·빈 문자열도 같은 오류로 거절되는지 표로 고정한다.
-  it.each([
-    ['number', 12345],
-    ['object', { a: 1 }],
-    ['array', []],
-    ['boolean', true],
-    ['null', null],
-    ['empty string', ''],
-  ])('access_token 이 비문자열·빈 문자열이면 throw: %s', (_label, value) => {
-    expect(() =>
-      tokenSetFromResponse({ access_token: value, token_type: 'Bearer', expires_in: 300 }),
-    ).toThrow('token response missing access_token')
-  })
+  // 비문자열·빈 문자열도 같은 오류로 거절되는지 표로 고정한다(표는 `token-responses.ts` — 적대 경로
+  // 행렬이 같은 값을 토큰 응답으로 계급 전체에 붙인다).
+  it.each(NON_STRING_ACCESS_TOKENS)(
+    'access_token 이 비문자열·빈 문자열이면 throw: %s',
+    (_label, value) => {
+      expect(() =>
+        tokenSetFromResponse({ access_token: value, token_type: 'Bearer', expires_in: 300 }),
+      ).toThrow('token response missing access_token')
+    },
+  )
 
   it('대조군 — 문자열 access_token 은 통과한다', () => {
     expect(

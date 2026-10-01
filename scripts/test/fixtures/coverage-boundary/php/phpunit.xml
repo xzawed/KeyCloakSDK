@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="vendor/autoload.php">
+  <testsuites>
+    <testsuite name="unit"><directory>tests</directory></testsuite>
+  </testsuites>
+  <source>
+    <include><directory>src</directory></include>
+    <!-- <exclude><file>src/Config.php</file></exclude> 주석 속 항목은 세지 않는다 -->
+    <exclude>
+      <file>src/AuthClient.php</file>
+      <file>src/Admin/AdminClient.php</file>
+    </exclude>
+  </source>
+</phpunit>

@@ -90,6 +90,11 @@ dependencies {
     implementation("com.nimbusds:nimbus-jose-jwt:10.10")
 
     testImplementation(kotlin("test"))
+    // 적대 경로 행렬(HostilePathMatrixTest)이 공개 표면을 **메타데이터로** 읽는다 — Java 리플렉션으로는 `internal`
+    // (바이트코드에서는 public)을 못 가르고, 파라미터 이름(nonce 파생)이 `arg0` 이 되며, suspend 를 부를 수 없다.
+    // 실측(2026-09-27): MockK 가 이미 test **런타임**에 2.2.21 로 끌어오지만 **컴파일** 클래스패스에는 없다. 버전은 적지
+    // 않는다 — KGP 가 자기 버전으로 맞춘다(kotlin("test") 와 같다). 게시 POM 에는 실리지 않는다(test 범위).
+    testImplementation(kotlin("reflect"))
     testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -189,7 +194,8 @@ kover {
             excludes {
                 // ⚠️ Kover 0.9.x는 와일드카드 없는 정확 클래스명 exclude를 적용하지 않는다(실측: "AuthClient"
                 // 정확명은 무시돼 브랜치 집계됨·"admin.*"만 제외됨) → 네트워크 경계 클래스는 전부 `*` 접미로
-                // 지정한다. `AuthClient*`/`KeycloakClient*`는 클래스 본체 + 파일-레벨 top-level 함수 클래스(…Kt)까지 포함.
+                // 지정한다. `AuthClient*`/`KeycloakClient*`는 클래스 본체와 그 중첩·익명 클래스($…)를 덮는다 —
+                // 파일의 top-level 함수 클래스(auth.kt → AuthKt)는 덮지 않는다(생기면 coverage-boundary 가드가 실패한다).
                 classes(
                     "io.github.xzawed.keycloak.AuthClient*",
                     "io.github.xzawed.keycloak.admin.*",
