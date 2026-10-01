@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   KeycloakAuthError,
   KeycloakClient,
+  KeycloakTokenValidationError,
   type AuthorizationRequest,
   type KeycloakConfigInput,
 } from '../../src/index.js'
@@ -195,6 +196,41 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
       message: 'JWT "nonce" (nonce) claim missing',
       code: 'OAUTH_INVALID_RESPONSE',
     })
+  })
+
+  /**
+   * `expectedAudience` 재정의(리소스 서버)는 액세스 토큰의 몫이다 — id_token `aud` 는 clientId 로 잰다
+   * (OIDC Core §2·§3.1.3.7). 예전에는 재정의가 id_token 에도 걸려 Keycloak 의 진짜 id_token(aud=it-web)이
+   * `invalid id_token` 으로 거부됐다(go `RefusesAnIDTokenForAnotherAudience` 가 그 거부를 고정했었다).
+   */
+  it('expectedAudience 를 재정의해도 nonce 교환은 통과하고, 재정의는 액세스 토큰 validate 에만 걸린다', async () => {
+    const other = KeycloakClient.create({
+      ...webConfig(harness.url),
+      expectedAudience: 'not-it-web',
+    })
+    try {
+      const { request, code } = await login(other)
+      const tokens = await other.auth.exchangeCode(
+        code,
+        REDIRECT_URI,
+        request.codeVerifier,
+        request.nonce,
+      )
+      // 서버가 서명한 진짜 id_token 이다 — 기본 설정(aud=it-web) 검증기로 따로 잰다.
+      const id = await kc.auth.validate(tokens.idToken as string)
+      expect(id.audience).toContain('it-web')
+      expect(id.audience).not.toContain('not-it-web')
+      expect(id.claims['nonce']).toBe(request.nonce)
+      expect(id.subject).toBe(aliceId)
+
+      // 재정의는 액세스 토큰 검증에 그대로 걸린다 — 그 토큰은 기본 설정에서는 유효하다(대조군).
+      await expect(kc.auth.validate(tokens.accessToken)).resolves.toBeDefined()
+      await expect(other.auth.validate(tokens.accessToken)).rejects.toBeInstanceOf(
+        KeycloakTokenValidationError,
+      )
+    } finally {
+      await other.close()
+    }
   })
 
   it('재사용한 코드는 거부하고, 그 오류는 코드·verifier·시크릿·토큰을 싣지 않는다', async () => {

@@ -18,7 +18,9 @@ public sealed record KeycloakConfig
 
     /// <summary>Value the token's <c>aud</c> must contain (default: <see cref="ClientId"/>). A stock realm
     /// does not put the client id in a client-credentials token's <c>aud</c> — set the resource/audience your
-    /// realm actually issues, or add an audience mapper to the client in Keycloak.</summary>
+    /// realm actually issues, or add an audience mapper to the client in Keycloak. It governs access-token
+    /// validation only: the id_token checked by <c>ExchangeCodeAsync</c> must contain <see cref="ClientId"/>
+    /// (OIDC Core §3.1.3.7).</summary>
     public string? ExpectedAudience { get; init; }
 
     /// <summary>JWT signature algorithms accepted during validation (default ["RS256"]). Set for
