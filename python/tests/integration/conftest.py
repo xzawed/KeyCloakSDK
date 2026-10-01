@@ -7,8 +7,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from dataclasses import replace
+import traceback
+from collections.abc import Awaitable, Callable, Iterator
+from dataclasses import dataclass, replace
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
@@ -23,13 +24,24 @@ _REALM_IMPORT_FILE = Path(__file__).parent / "it-realm-realm.json"
 # 인가 코드 흐름용 — realm JSON 의 `it-web`(RS256)·`it-web-hs256`(id_token 을 HS256 서명)과 짝.
 # ⚠️ `it-web` 의 audience 매퍼는 introspect 용이다 — `aud` 가 없는 접근 토큰을 Keycloak 26.6 은
 # 발급한 그 클라이언트가 물어도 `{"active": false}` 로 답한다(실측; aud=it-web 을 넣으면 true).
+# `it-web` 의 둘째 매퍼는 리소스 서버 `extra-api` 를 **접근 토큰에만** 넣는다 — `expected_audience`
+# 재정의를 실서버로 재는 자리다. `it-web-foreign-aud` 는 id_token `aud` 를 `extra-api` 로 덮어써
+# client_id 가 **빠진** id_token 을 낸다(하드코딩 클레임 매퍼 — 실서버로 그것을 만드는 유일한 길).
 REDIRECT_URI = "http://localhost/it-callback"
-WEB_CLIENT_SECRETS = {"it-web": "it-web-secret", "it-web-hs256": "it-web-hs256-secret"}
+WEB_CLIENT_SECRETS = {
+    "it-web": "it-web-secret",
+    "it-web-hs256": "it-web-hs256-secret",
+    "it-web-foreign-aud": "it-web-foreign-aud-secret",
+}
+EXTRA_API = "extra-api"
 ALICE = ("alice", "alice-password")
 
 
 def web_config(
-    keycloak_url: str, client_id: str = "it-web", algorithms: tuple[str, ...] = ("RS256",)
+    keycloak_url: str,
+    client_id: str = "it-web",
+    algorithms: tuple[str, ...] = ("RS256",),
+    expected_audience: str | None = None,
 ) -> KeycloakConfig:
     return KeycloakConfig(
         server_url=keycloak_url,
@@ -37,7 +49,43 @@ def web_config(
         client_id=client_id,
         client_secret=WEB_CLIENT_SECRETS[client_id],
         signature_algorithms=algorithms,
+        expected_audience=expected_audience,
     )
+
+
+@dataclass(frozen=True)
+class Sealed:
+    """호출에 넘길 비밀을 쥐되 `repr` 로 드러내지 않는다 — 호출을 싼 람다의 자유 변수도 프레임
+    로컬로 찍히므로, 원문을 그대로 두면 누출을 **테스트 자신이** 만든다."""
+
+    code: str
+    verifier: str
+    nonce: str
+
+    def __repr__(self) -> str:
+        return "Sealed(***)"
+
+
+def render_with_locals(err: BaseException) -> str:
+    """오류 수집기(Sentry Python 기본값)가 모으는 것 — 사슬까지, 프레임마다 로컬을 찍는다."""
+    return "".join(traceback.TracebackException.from_exception(err, capture_locals=True).format())
+
+
+def catch(call: Callable[[], object]) -> BaseException:
+    """호출을 **여기서** 잡는다 — traceback 의 첫 프레임 로컬은 `call`(람다) 뿐이다."""
+    try:
+        call()
+    except Exception as exc:
+        return exc
+    raise AssertionError("the call did not fail")
+
+
+async def acatch(call: Callable[[], Awaitable[object]]) -> BaseException:
+    try:
+        await call()
+    except Exception as exc:
+        return exc
+    raise AssertionError("the call did not fail")
 
 
 def strip_nonce(request: AuthorizationUrl) -> AuthorizationUrl:

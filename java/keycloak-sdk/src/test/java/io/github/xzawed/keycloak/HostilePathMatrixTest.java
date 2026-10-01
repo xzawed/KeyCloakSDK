@@ -1288,7 +1288,17 @@ class HostilePathMatrixTest {
     }
     if (MalformedIdpResponseTest.CALLS.isEmpty()) why.add("W1 CALLS 가 비었다 — 대조가 공허하다");
     // 보안 기본값 가드의 Java 행위 앵커는 전부 표의 앵커다 — 가드에 Java 앵커가 늘면 여기가 운다.
-    Path script = javaRoot().getParent().resolve("scripts/test/test-security-defaults.sh");
+    // 가드가 없으면 저장소 체크아웃에서만 실패다 — java/ 만 복사된 곳(하네스 스위트 컨테이너)은 건너뛴다(go·node·python·kotlin·rust 와 같다).
+    Path repo = javaRoot().getParent();
+    Path script = repo.resolve("scripts/test/test-security-defaults.sh");
+    if (!Files.isRegularFile(script)) {
+      if (Files.exists(repo.resolve(".git"))) {
+        why.add("W1 저장소 체크아웃인데 보안 기본값 가드를 못 읽었다: " + script);
+      } else {
+        log("W1: 저장소 밖에서 돌아 보안 기본값 가드 대조는 건너뛴다");
+      }
+      return why;
+    }
     Matcher m = SCRIPT_ANCHOR.matcher(Files.readString(script));
     int found = 0;
     while (m.find()) {

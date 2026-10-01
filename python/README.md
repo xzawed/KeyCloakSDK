@@ -47,7 +47,7 @@ with KeycloakClient.create(config) as kc:
     users = kc.admin.users.search(first=0, max=20)
 ```
 
-`validate()` expects the token's `aud` to contain `client_id` by default, but a stock realm does not put the client id into a client-credentials token. Either set `expected_audience="my-api"` on the config to check the audience your tokens actually carry, or add an audience mapper to the client in Keycloak (Client scopes → dedicated scope → Add mapper → Audience).
+`validate()` expects the token's `aud` to contain `client_id` by default, but a stock realm does not put the client id into a client-credentials token. Either set `expected_audience="my-api"` on the config to check the audience your tokens actually carry, or add an audience mapper to the client in Keycloak (Client scopes → dedicated scope → Add mapper → Audience). `expected_audience` applies to access tokens only: the id_token that `exchange_code(..., nonce=...)` verifies must always carry `client_id` in `aud` (OIDC Core §3.1.3.7).
 
 ### Async
 

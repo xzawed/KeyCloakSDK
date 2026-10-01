@@ -6,11 +6,12 @@ nonce·콜드캐시 백오프·토큰응답 타입검증 축은 `scripts/test/te
 손으로 고른 자리에 앵커를 건다. 그래서 **새 공개 교환 경로**가 생기면 세 축 모두 모른다.
 여기서는 경로를 손 목록이 아니라 파생한다:
 
-- 선언 집합: `test_facade_dump.py` 의 뿌리·걷기(`_walk_everything`)가 닿는 SDK 타입마다
-  공개 멤버 전부 — 메서드·`async def`·프로퍼티·정적/클래스 메서드, 소스에 선언된
-  dunder(`__repr__`·`__exit__`…), 그리고 **생성자**(`T.__init__` 행 = 클래스 호출).
-  여기에 공개 모듈의 공개 함수(`keycloak_sdk.mask`)와 소스(`ast`)에 선언된 공개 메서드
-  전수를 합친다. 걷기에 안 닿아 부르지 못한 소스 선언은 UNDETERMINED 행이다.
+- 선언 집합: `test_facade_dump.py` 의 뿌리·걷기(`_walk_everything`)가 닿는 SDK 타입과 그
+  테스트가 걷기에서 이유와 함께 면제한 타입(`EXEMPT`)마다 공개 멤버 전부 — 메서드·`async def`·
+  프로퍼티·정적/클래스 메서드, 소스에 선언된 dunder(`__repr__`·`__exit__`…), 그리고
+  **생성자**(`T.__init__` 행 = 클래스 호출). 여기에 공개 모듈의 공개 함수(`keycloak_sdk.mask`)와
+  소스(`ast`)에 선언된 공개 메서드 전수를 합친다. 걷기에 안 닿고 걷기 면제(`EXEMPT`)에도 없어
+  부르지 못한 소스 선언은 UNDETERMINED 행이다.
 - 호출: 행마다 **새** 기록 IdP 와 **새** 클라이언트(캐시가 옆 행으로 새지 않게).
   sync·aio 둘 다 — 행 하나를 이벤트 루프 하나에서 돌고 코루틴은 거기서 await 한다
   (httpx 풀은 루프에 묶인다). 인자는 타입 힌트만 보고 합성한다(`_Synth`). 행이 SDK 가
@@ -82,6 +83,7 @@ import importlib
 import inspect
 import json
 import pkgutil
+import pydoc
 import re
 import threading
 import time
@@ -107,6 +109,7 @@ from keycloak_sdk.aio import AsyncKeycloakClient
 from keycloak_sdk.oidc import OidcEndpoints
 
 from . import test_tokens as tokens_tests
+from .test_facade_dump import EXEMPT as _WALK_EXEMPT
 from .test_facade_dump import _fake_idp as _dump_idp
 from .test_facade_dump import (
     _is_own,
@@ -419,6 +422,8 @@ class _Source:
 
     labels: set[str] = field(default_factory=set)  # 공개 메서드·dunder·__init__·모듈 함수
     dunders: dict[str, set[str]] = field(default_factory=dict)  # 타입 → 선언된 dunder
+    # 행(`labels`)보다 넓다 — 비공개 메서드도 둔다. W1 이 공개 입구가 `self.` 로 부르는 도우미를
+    # 따라간다(`_entrance_calls`).
     nodes: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = field(default_factory=dict)
 
 
@@ -458,20 +463,29 @@ def _source_class(out: _Source, prefix: str, node: ast.ClassDef) -> None:
         is_func = isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
         if not is_func or item.name in _NOT_ROWS:
             continue
+        out.nodes[f"{qual}.{item.name}"] = item
         dunder = item.name.startswith("__") and item.name.endswith("__")
         if dunder and item.name != "__init__":
             out.dunders.setdefault(qual, set()).add(item.name)
         if dunder or not item.name.startswith("_"):
             out.labels.add(f"{qual}.{item.name}")
-            out.nodes[f"{qual}.{item.name}"] = item
 
 
 def _declared_types() -> dict[str, type]:
-    """`test_facade_dump.py` 의 뿌리와 걷기 그대로 — 두 번째 걷기를 만들지 않는다."""
+    """`test_facade_dump.py` 의 뿌리와 걷기 그대로 — 두 번째 걷기를 만들지 않는다. 그 걷기의
+    면제(`EXEMPT` — 닿지 않는 것이 설계인 타입. 이유와 낡음 검사는 그 테스트가 소유한다)도 그대로
+    받는다: 걷기가 못 닿을 뿐 소스에 살아 있는 타입이라, 빌더에 안 닿는 다른 타입처럼 합성 인자로
+    생성해 **부른다**. 빼면 그 선언은 부르지도 못한 UNDETERMINED 로 남는다 — `@scrub_frames` 가
+    실패 traceback 을 떼어 `JwtValidator`(유일한 경로가 그 프레임 로컬이었다)가 걷기에서 빠졌다."""
     with _dump_idp(b"") as idp:
         idp.jwks, jwts = _sign_jwts(f"{idp.url}/realms/r")
         walker = asyncio.run(_walk_everything(idp, jwts))
-    return dict(walker.reached)
+    reached = dict(walker.reached)
+    for name in sorted(_WALK_EXEMPT):
+        cls = pydoc.locate(name)
+        assert isinstance(cls, type) and _type_name(cls) == name, f"EXEMPT {name}: 클래스가 아니다"
+        reached.setdefault(name, cls)
+    return reached
 
 
 def _kind(attr: object) -> str | None:
@@ -1469,7 +1483,7 @@ class _Hand:
     klass: str
     axis: str  # a·b·c·d = 그 W3 축의 파생 대상이어야 한다 · row = 행이고 계급만 맞으면 된다
     anchor: str  # `python/ 기준 파일|함수 또는 모듈 수준 이름`
-    call: str  # 앵커가 부르는 이름 — 비공개면 label 이 그 공개 입구다(입구 소스를 대조)
+    call: str  # 앵커가 부르는 이름 — 비공개면 label 이 그 공개 입구다(입구·도우미 소스를 대조)
 
 
 _LEAKS = "tests/unit/test_token_response_leaks.py"
@@ -1537,6 +1551,32 @@ def _calls_in(node: ast.AST) -> set[str]:
     }
 
 
+def _entrance_calls(src: _Source, label: str) -> set[str] | None:
+    """공개 입구 `label` 이 부르는 이름 — 입구가 `self.<이름>(…)` 으로 부르는 **같은 클래스**
+    메서드의 본문까지 따라간다(추이). 본체를 비공개 도우미로 옮겨도 입구는 앵커와 이어져 있다
+    (`validate` → `_validate_for` → `_load_jwks`). 입구 본문만 보면 그 이동이 「끊겼다」로
+    읽힌다."""
+    node = src.nodes.get(label)
+    if node is None:
+        return None
+    owner = label.rsplit(".", 1)[0]
+    calls: set[str] = set()
+    todo, seen = [node], {label}
+    while todo:
+        fn = todo.pop()
+        calls |= _calls_in(fn)
+        for n in ast.walk(fn):
+            if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)):
+                continue
+            if not (isinstance(n.func.value, ast.Name) and n.func.value.id == "self"):
+                continue
+            helper = f"{owner}.{n.func.attr}"
+            if helper in src.nodes and helper not in seen:
+                seen.add(helper)
+                todo.append(src.nodes[helper])
+    return calls
+
+
 def _anchor_calls(anchor: str) -> set[str] | None:
     """앵커(`파일|이름`)의 함수 본문 또는 모듈 수준 대입이 부르는 이름. 없으면 None."""
     file, _, name = anchor.partition("|")
@@ -1573,8 +1613,8 @@ def _check_hand_row(
     if h.call not in calls:
         why.append(f"W1 {h.anchor}: 앵커가 .{h.call}( 를 안 부른다 — 손 테스트의 대상이 바뀌었다")
     if not h.label.endswith(f".{h.call}"):
-        node = src.nodes.get(h.label)
-        if node is None or h.call not in _calls_in(node):
+        entrance = _entrance_calls(src, h.label)
+        if entrance is None or h.call not in entrance:
             why.append(f"W1 {lb}: 공개 입구가 {h.call} 를 안 부른다 — 앵커({h.anchor})와 끊겼다")
     return why
 

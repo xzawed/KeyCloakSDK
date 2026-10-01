@@ -21,6 +21,7 @@ from joserfc.jwk import KeySet, KeySetSerialization
 from keycloak import KeycloakOpenID
 
 from ._internal.backoff import JwksFailureBackoff
+from ._internal.frames import scrub_frames
 from ._internal.jwks_fetch import fetch_jwks
 from ._internal.jwt import JwtValidator
 from ._internal.lower import auth_failure, is_lower_failure, summarize
@@ -73,6 +74,10 @@ def _generate_pkce_pair() -> tuple[str, str]:
 class AuthClient:
     """`KeycloakOpenID` 래핑. `openid`는 테스트 주입용(미지정 시 config로부터 생성)."""
 
+    # ⚠️ 비밀을 다루는 공개 진입점은 전부 `@scrub_frames` 다 — 실패할 때 프레임 로컬(토큰 응답·
+    # 인자로 받은 토큰·code·verifier, 하위 생성자가 받은 client secret)이 traceback 으로 오류
+    # 수집기에 닿지 않게(`_internal/frames.py`). 생성자·인가 URL 두 자리는 Grok 레그가 찾았다.
+    @scrub_frames
     def __init__(
         self,
         config: KeycloakConfig,
@@ -125,6 +130,7 @@ class AuthClient:
             error, cause = auth_failure(exc), summarize(exc)
         raise error from cause
 
+    @scrub_frames
     def client_credentials_token(self) -> TokenSet:
         """`client_credentials` grant로 서비스 계정 토큰을 발급받는다.
 
@@ -139,6 +145,7 @@ class AuthClient:
         )
         return TokenSet.from_response(response, issued_at=time.time())
 
+    @scrub_frames
     def authorization_url(self, redirect_uri: str) -> AuthorizationUrl:
         """PKCE(S256) 인가 코드 흐름의 시작 URL을 만든다.
 
@@ -170,6 +177,7 @@ class AuthClient:
         url = f"{self._endpoints.authorization}?{params}"
         return AuthorizationUrl(url=url, code_verifier=code_verifier, state=state, nonce=nonce)
 
+    @scrub_frames
     def exchange_code(
         self, code: str, redirect_uri: str, code_verifier: str, nonce: str | None = None
     ) -> TokenSet:
@@ -178,6 +186,8 @@ class AuthClient:
         `nonce`가 주어지면(authorization_url 이 돌려준 값) 응답 id_token을 강화
         `JwtValidator`로 서명·iss·aud·exp까지 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce
         재생 방지. 불일치·부재·검증실패는 모두 거부(fail-closed). 생략 시 id_token 검증을 건너뛴다.
+        id_token 의 `aud` 는 `expected_audience` 가 아니라 **`client_id`** 로 잰다(OIDC Core
+        §2·§3.1.3.7) — `expected_audience` 는 `validate()` 가 보는 액세스 토큰 전용이다.
         """
         response = self._wrap(
             lambda: self._openid.token(
@@ -198,26 +208,30 @@ class AuthClient:
                 "authorization code exchange failed: missing id_token for nonce validation"
             )
         try:
-            validated = self.validate(id_token)
+            validated = self._validate_for(id_token, self._config.client_id)
         except TokenValidationError as exc:
             raise KeycloakAuthError("authorization code exchange failed: invalid id_token") from exc
         if validated.claims.get("nonce") != expected_nonce:
             raise KeycloakAuthError("authorization code exchange failed: unexpected nonce")
 
+    @scrub_frames
     def refresh(self, refresh_token: str) -> TokenSet:
         """`refresh_token` grant로 접근 토큰을 갱신한다."""
         response = self._wrap(lambda: self._openid.refresh_token(refresh_token))
         return TokenSet.from_response(response, issued_at=time.time())
 
+    @scrub_frames
     def logout(self, refresh_token: str) -> None:
         """세션을 무효화한다(refresh token revoke)."""
         self._wrap(lambda: self._openid.logout(refresh_token))
 
+    @scrub_frames
     def introspect(self, token: str) -> IntrospectionResult:
         """RFC 7662 토큰 인트로스펙션. 비활성 토큰은 `active` 외 필드가 생략될 수 있다."""
         response = self._wrap(lambda: self._openid.introspect(token))
         return _introspection_result(response)
 
+    @scrub_frames
     def validate(self, access_token: str) -> ValidatedToken:
         """realm JWKS로 서명을 검증하고 issuer/audience/exp/nbf를 강제한다(`JwtValidator`).
 
@@ -231,19 +245,30 @@ class AuthClient:
         재조회 자체도 `_jwks_min_refetch` 간격으로 rate-limit되어 kid 변조 공격에 상한이
         있다. 클레임 실패(`TokenValidationError`)도 재조회를 트리거하지 않는다.
         """
+        # `expected_audience`가 설정되면 그 값을, 아니면 client_id를 기대한다(기존 동작).
+        return self._validate_for(
+            access_token, self._config.expected_audience or self._config.client_id
+        )
+
+    def _validate_for(self, token: str, audience: str) -> ValidatedToken:
+        """`validate()` 의 본체 — 기대 audience 만 호출자가 정한다(access·id_token 이 갈린다).
+
+        ⚠️ **JWKS 상태는 여기서 만들지 않는다** — 캐시·30초 강제 재조회 창·콜드 캐시 백오프는
+        이 인스턴스의 `_load_jwks` 하나가 소유하고, 두 경로가 그것을 함께 쓴다. `JwtValidator` 는
+        키를 들지 않는 규칙 묶음이라 매번 새로 만들어도 저장소가 갈라지지 않는다.
+        """
         key_set = self._load_jwks()
         validator = JwtValidator(
             issuer=self._endpoints.issuer,
-            # `expected_audience`가 설정되면 그 값을, 아니면 client_id를 기대한다(기존 동작).
-            audience=self._config.expected_audience or self._config.client_id,
+            audience=audience,
             allowed_algs=self._config.signature_algorithms,
             clock_skew=self._config.clock_skew,
         )
         try:
-            return validator.validate(access_token, key_set)
+            return validator.validate(token, key_set)
         except TokenKeyError:
             key_set = self._load_jwks(force=True)
-            return validator.validate(access_token, key_set)
+            return validator.validate(token, key_set)
 
     def _load_jwks(self, *, force: bool = False) -> KeySet:
         if not force and self._jwks_cache is not None:
