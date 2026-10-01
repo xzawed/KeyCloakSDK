@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # harness/suites/rust.sh — Rust SDK 자체 단위테스트+커버리지(cargo-llvm-cov)+린트를 rust:alpine
 # 컨테이너에서 실행한다(CLAUDE.md Rust 툴체인: `cargo test` + `cargo clippy --all-targets -- -D
-# warnings` + `cargo fmt --all --check` + `cargo llvm-cov --ignore-filename-regex '(auth|admin|client)\.rs'`).
+# warnings` + `cargo fmt --all --check` + `cargo llvm-cov --ignore-filename-regex '(^|[\\/])(auth|admin|client)\.rs$'`).
 # 마지막 줄에 JSON 신호 1줄을 출력한다.
 #
 # ⚠️ 미실행 검증(untested-here) — node/go 2개 언어로 이 스위트 메커니즘을 검증했고, 이 스크립트는
@@ -38,9 +38,11 @@ RAW=$(docker run --rm -v "$ROOT/rust:/src-ro:ro" rust:alpine sh -c '
   [ -s /tmp/clippy.log ] && { echo "___CLIPPYLOG_BEGIN"; grep -E "^(error|warning)" /tmp/clippy.log | head -30; echo "___CLIPPYLOG_END"; }
   cargo test 2>&1
   echo "___TESTEXIT=$?"
+  # 경계 정규식은 rust-ci.yml 의 값 그대로다(scripts/coverage-boundary.mjs 가 대조한다). 이 줄은 바깥
+  # 작은따옴표 안이라 안쪽 sh 가 큰따옴표를 벗긴다 — `\\\\` → `\\`, `\$` → `$`.
   rustup component add llvm-tools-preview >/tmp/llvmtools.log 2>&1 \
     && cargo install cargo-llvm-cov --locked >/tmp/llvmcov-install.log 2>&1 \
-    && cargo llvm-cov --ignore-filename-regex "(auth|admin|client)\.rs" --summary-only 2>&1
+    && cargo llvm-cov --ignore-filename-regex "(^|[\\\\/])(auth|admin|client)\.rs\$" --summary-only 2>&1
   echo "___COVEXIT=$?"
 ' 2>&1)
 DOCKER_RC=$?
