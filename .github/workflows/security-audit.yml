@@ -76,7 +76,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
       - name: 해석된 런타임 의존성 좌표 수집(runtimeClasspath)
         # `dependencies` 리포트의 트리 출력을 파싱한다: `|    +--- g:a:v (*)` 꼴이며 (*)/(c)/(n)
         # 마커는 버리고, 버전 충돌 표기(`g:a:1.0 -> 1.2`)가 있으면 해석된 오른쪽 버전을 쓴다.
@@ -240,7 +240,7 @@ jobs:
         working-directory: ruby
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
         with:
           ruby-version: '3.4' # CI 매트릭스 상단 — 감사는 Gemfile.lock 기준이라 매트릭스 불필요
           bundler-cache: true
@@ -310,7 +310,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
       # ⚠️ 이 잡이 없으면 **아무도 이 자리를 보지 않는다.** 의존성 그래프는 Gradle 을 파싱하지
       # 않아(공식 표의 Gradle 행이 비어 있다) `dependabot-alerts` 게이트가 못 보고, 위 kotlin 잡은
       # `working-directory: kotlin` 이라 SDK 만 본다. 남는 것이 ktor 4종 + jackson-module-kotlin 인데

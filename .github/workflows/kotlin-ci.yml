@@ -23,7 +23,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
       # 단위테스트 100개 + 커버리지 게이트(로직 모듈 라인≥90/브랜치≥85 — 네트워크 경계
       # AuthClient/admin.*/KeycloakClient omit) + ktlint(무경고). Docker 불필요(integrationTest는 별도 잡).
       - run: ./gradlew build test koverVerify ktlintCheck
@@ -48,7 +48,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
       - name: Integration E2E (Docker, 실제 Keycloak 26.6 — FullFlowIT)
         run: ./gradlew integrationTest
 
@@ -68,7 +68,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
       - name: 해석된 런타임 의존성 좌표 수집(runtimeClasspath)
         # `dependencies` 리포트의 트리 출력을 파싱한다: `|    +--- g:a:v (*)` 꼴이며 (*)/(c)/(n)
         # 마커는 버리고, 버전 충돌 표기(`g:a:1.0 -> 1.2`)가 있으면 해석된 오른쪽 버전을 쓴다.
