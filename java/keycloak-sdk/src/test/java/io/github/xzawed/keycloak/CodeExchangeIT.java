@@ -265,6 +265,40 @@ class CodeExchangeIT {
     }
   }
 
+  /**
+   * {@code expectedAudience} 를 client id 가 아닌 값으로 정해도 nonce 를 넘긴 교환은 통과한다 — 서버가 서명한 id_token 의
+   * {@code aud} 는 client id 이고(OIDC Core §2·§3.1.3.7), 교환은 그것을 client id 로 검사한다. 같은 클라이언트의
+   * {@code validate} 는 재정의 값을 계속 찾는다 — 접근 토큰에 그 값이 없으니 거부된다. (예전에는 교환이 id_token 을
+   * {@code validate} 의 검증기로 봐서 여기서 「invalid id_token」이었다 — 실서버 실측 2026-09-27, 등록부
+   * {@code id-token-audience-follows-access-audience}.)
+   */
+  @Test
+  void exchangeCode_withTheNonce_succeedsUnderAnExpectedAudienceOverride() {
+    KeycloakConfig overridden = KeycloakConfig.builder()
+        .serverUrl(KC.getAuthServerUrl()).realm("it-realm")
+        .clientId("it-web").clientSecret(WEB_CLIENT_SECRETS.get("it-web").toCharArray())
+        .expectedAudience("not-it-web")
+        .build();
+    try (KeycloakClient kc = KeycloakClient.create(overridden);
+        KeycloakClient plain = KeycloakClient.create(webConfig("it-web"))) {
+      AuthClient auth = kc.auth();
+      AuthorizationUrlRequest request = auth.createAuthorizationRequest(REDIRECT_URI);
+      String code = BrowserLogin.login(request, REDIRECT_URI, USERNAME, PASSWORD);
+
+      TokenSet tokens = auth.exchangeCode(code, REDIRECT_URI, request.getCodeVerifier(), request.getNonce());
+      assertNotBlank(tokens.getIdToken());
+      // 교환이 받아들인 것은 서버가 client id 에게 낸 id_token 이다 — 재정의 값은 aud 에 없다.
+      Map<String, Object> idClaims = plain.auth().validate(tokens.getIdToken()).getClaims();
+      assertEquals(request.getNonce(), idClaims.get("nonce"));
+      assertEquals(aliceId, idClaims.get("sub"));
+      assertTrue(plain.auth().validate(tokens.getIdToken()).getAudience().contains("it-web"));
+      assertFalse(plain.auth().validate(tokens.getIdToken()).getAudience().contains("not-it-web"));
+      // 같은 클라이언트의 validate 는 재정의를 계속 쓴다 — 두 토큰 다 "not-it-web" 을 담지 않는다.
+      assertThrows(TokenValidationException.class, () -> auth.validate(tokens.getAccessToken()));
+      assertThrows(TokenValidationException.class, () -> auth.validate(tokens.getIdToken()));
+    }
+  }
+
   private static TokenSet loginAndExchange(AuthClient auth) {
     AuthorizationUrlRequest request = auth.createAuthorizationRequest(REDIRECT_URI);
     String code = BrowserLogin.login(request, REDIRECT_URI, USERNAME, PASSWORD);

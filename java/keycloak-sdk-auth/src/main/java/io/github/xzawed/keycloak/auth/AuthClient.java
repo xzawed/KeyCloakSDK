@@ -38,6 +38,12 @@ public class AuthClient {
   // JWKS 기반 서명·issuer·audience·만료 검증. 실패 시 TokenValidationException.
   // 반환 타입은 SDK 소유의 ValidatedToken (I.1) — Nimbus 타입을 공개 API에 노출하지 않는다.
   public ValidatedToken validate(String accessToken) {
+    return validator().validate(accessToken);
+  }
+
+  // 액세스 토큰 검증기(aud = expectedAudience). 키 원천(JWKS 캐시·재조회 제한)은 이것 하나다 — 교환의 id_token 검증기도
+  // 여기서 withAudience 로 파생해 같은 원천을 쓴다.
+  private JwtValidator validator() {
     JwtValidator v = jwtValidator;
     if (v == null) {
       synchronized (this) {
@@ -48,7 +54,7 @@ public class AuthClient {
         }
       }
     }
-    return v.validate(accessToken);
+    return v;
   }
 
   // config의 서명 알고리즘 이름(List<String>)을 Nimbus JWSAlgorithm 집합으로 변환한다 — §4에 따라
@@ -120,7 +126,7 @@ public class AuthClient {
   }
 
   // OIDC nonce 재생 방지: expectedNonce가 주어지면(createAuthorizationRequest의 getNonce()) 응답
-  // id_token을 강화 JwtValidator로 서명·iss·aud·exp까지 검증한 뒤 nonce 클레임을 대조한다 —
+  // id_token을 강화 JwtValidator로 서명·iss·aud(= clientId)·exp까지 검증한 뒤 nonce 클레임을 대조한다 —
   // 불일치·부재·검증실패는 모두 거부(fail-closed). null이면 id_token 검증을 건너뛴다(무-nonce 흐름).
   public TokenSet exchangeCode(String code, URI redirectUri, String codeVerifier, String expectedNonce) {
     TokenSet tokenSet;
@@ -147,11 +153,11 @@ public class AuthClient {
     return tokenSet;
   }
 
-  // id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다
-  // (validate() 재사용 — 액세스 토큰과 id_token 모두 기본값(aud=clientId)에서 검증기를 공유해도 안전).
-  // ⚠️ config.expectedAudience를 clientId가 아닌 값(리소스 서버 이름 등)으로 재정의하면 이 공유 검증기의
-  // 기대 audience도 그 값이 된다 — OIDC id_token의 aud는 항상 client id이므로, 그런 구성에서는
-  // 이 nonce 검증 경로를 쓰는 흐름(expectedNonce를 넘기는 exchangeCode)을 함께 쓰지 않는다.
+  // id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다.
+  // aud 는 expectedAudience 가 아니라 **clientId** 다 — id_token 의 aud 는 client id 를 담고(OIDC Core §2·§3.1.3.7),
+  // expectedAudience 는 액세스 토큰이 향하는 리소스 서버의 값이다. 키 원천·iss·alg 핀·skew 는 validate() 의 검증기
+  // 것을 그대로 쓴다(withAudience — 두 번째 키 저장소를 만들지 않는다). forRealm 의 TokenValidationException 도
+  // 「invalid id_token」으로 가도록 파생은 try 안에 둔다.
   // 패키지 가시성: 토큰 엔드포인트 send() 없이 nonce 로직을 단위 테스트로 검증하기 위함
   // (buildExchangeCodeRequest/buildLogoutRequest와 동일 패턴).
   void requireValidNonce(String idToken, String expectedNonce) {
@@ -161,7 +167,7 @@ public class AuthClient {
     }
     ValidatedToken claims;
     try {
-      claims = validate(idToken);
+      claims = validator().withAudience(config.getClientId()).validate(idToken);
     } catch (io.github.xzawed.keycloak.core.exception.TokenValidationException e) {
       throw new KeycloakAuthException("Authorization code exchange failed: invalid id_token", null, e);
     }
