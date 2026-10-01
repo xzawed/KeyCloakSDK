@@ -117,15 +117,15 @@ class MalformedIdpResponseTest {
     return "Z" + tag + "0123456789abcdefXYZ";
   }
 
-  private record Resp(int status, String contentType, String body) {}
+  record Resp(int status, String contentType, String body) {}
 
   /** 요청 본문과 Authorization 헤더를 보고 응답을 고른다 — 에코 변형용. */
-  private interface Reply {
+  interface Reply {
     Resp reply(String requestBody, String authorization);
   }
 
   /** {@code certs} 가 null 이면 가짜 IdP 가 진짜 JWKS 를 준다. */
-  private record Variant(String id, String shape, Reply token, Reply introspect, Reply logout, Reply admin,
+  record Variant(String id, String shape, Reply token, Reply introspect, Reply logout, Reply admin,
       Reply certs, List<String> mustFail, Map<String, String> canaries) {
     Variant(String id, String shape, Reply token, Reply introspect, Reply logout, List<String> mustFail,
         Map<String, String> canaries) {
@@ -146,7 +146,7 @@ class MalformedIdpResponseTest {
     return fixed(status, "application/json", body);
   }
 
-  private static final Reply TOKEN_OK = json(200, "{\"access_token\":\"okAT\",\"token_type\":\"Bearer\","
+  static final Reply TOKEN_OK = json(200, "{\"access_token\":\"okAT\",\"token_type\":\"Bearer\","
       + "\"expires_in\":300,\"refresh_token\":\"okRT\"}");
   private static final Reply INTROSPECT_OK = json(200, "{\"active\":true,\"username\":\"svc\",\"client_id\":\"c\"}");
   private static final Reply LOGOUT_OK = fixed(204, null, null);
@@ -374,7 +374,7 @@ class MalformedIdpResponseTest {
   }
 
   /** 공개 호출 — 이름 → 실행. */
-  private interface Call {
+  interface Call {
     void run(KeycloakClient kc) throws Exception;
   }
 
@@ -396,7 +396,7 @@ class MalformedIdpResponseTest {
     CALLS.put(VALIDATE, kc -> kc.auth().validate(validateJwt));
   }
 
-  private static void signValidateJwt(RSAKey key) throws JOSEException {
+  static void signValidateJwt(RSAKey key) throws JOSEException {
     SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(),
         new JWTClaimsSet.Builder().subject("u").expirationTime(Date.from(Instant.now().plusSeconds(60))).build());
     jwt.sign(new RSASSASigner(key));
