@@ -25,6 +25,8 @@ const CLIENT_ID = 'c'
 interface Idp {
   readonly origin: string
   idToken: string
+  /** `/certs` 요청 수 — JWKS 저장소가 하나인지 재는 계수기. */
+  certsHits: number
   close(): Promise<void>
 }
 
@@ -56,7 +58,10 @@ async function startIdp(jwks: unknown): Promise<Idp> {
         ...(idp.idToken === '' ? {} : { id_token: idp.idToken }),
       })
     }
-    if (path === '/realms/r/protocol/openid-connect/certs') return json(res, jwks)
+    if (path === '/realms/r/protocol/openid-connect/certs') {
+      idp.certsHits += 1
+      return json(res, jwks)
+    }
     res.writeHead(404).end()
   }
   const server = createServer((req, res) => {
@@ -67,6 +72,7 @@ async function startIdp(jwks: unknown): Promise<Idp> {
   const idp: Idp = {
     origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     idToken: '',
+    certsHits: 0,
     close: () =>
       new Promise<void>((resolve) => {
         server.closeAllConnections()
@@ -93,24 +99,45 @@ afterAll(async () => {
 })
 
 /** JWKS 의 `k1` 로 보이는 RS256 id_token — `key` 가 실제 서명 키다. */
-function idToken(key: CryptoKey, nonce: string): Promise<string> {
+function idToken(
+  key: CryptoKey,
+  nonce: string,
+  audience: string | string[] = CLIENT_ID,
+): Promise<string> {
   return new SignJWT({ nonce })
     .setProtectedHeader({ alg: 'RS256', kid: 'k1', typ: 'JWT' })
     .setIssuer(`${idp.origin}/realms/r`)
     .setSubject('u1')
-    .setAudience(CLIENT_ID)
+    .setAudience(audience)
     .setIssuedAt()
     .setExpirationTime('1m')
     .sign(key)
 }
 
-function exchange(): Promise<unknown> {
-  const kc = KeycloakClient.create({
+/** JWKS 의 `k1` 로 서명한 액세스 토큰 — `validate` 가 재정의 audience 로 잰다. */
+function accessToken(audience: string): Promise<string> {
+  return new SignJWT({})
+    .setProtectedHeader({ alg: 'RS256', kid: 'k1', typ: 'JWT' })
+    .setIssuer(`${idp.origin}/realms/r`)
+    .setSubject('u1')
+    .setAudience(audience)
+    .setIssuedAt()
+    .setExpirationTime('1m')
+    .sign(signed)
+}
+
+/** 클라이언트마다 JWKS 저장소가 새로 선다(`AuthClient` 생성자). */
+function client(expectedAudience?: string): KeycloakClient {
+  return KeycloakClient.create({
     serverUrl: idp.origin,
     realm: 'r',
     clientId: CLIENT_ID,
     clientSecret: 's',
+    ...(expectedAudience === undefined ? {} : { expectedAudience }),
   })
+}
+
+function exchange(kc: KeycloakClient = client()): Promise<unknown> {
   return kc.auth.exchangeCode('code', 'https://app.example/cb', 'verifier', NONCE)
 }
 
@@ -153,5 +180,65 @@ describe('exchangeCode — 진짜 openid-client 로 id_token 을 잰다', () => 
     idp.idToken = ''
     const refused = await refusal(exchange())
     expect(refused).toBeInstanceOf(KeycloakAuthError)
+  })
+})
+
+/**
+ * `expectedAudience` 재정의 — id_token `aud` 는 clientId 로 검사한다(OIDC Core §2·§3.1.3.7). 재정의는 액세스
+ * 토큰의 리소스 서버 제한이다.
+ *
+ * ⚠️ 거부 사유의 **문구는 고정하지 않는다.** 진짜 openid-client(oauth4webapi)는 aud 에 client_id 가 없는
+ * id_token 을 SDK 검증기보다 **먼저** 자기 문구로 거부한다 — 그 층의 거부는 `auth.test.ts`(목) 가 SDK 층만
+ * 따로 잰다. 여기서 보는 것은 거부 여부와 SDK 오류 타입이다.
+ */
+describe('exchangeCode — expectedAudience 재정의(진짜 openid-client)', () => {
+  const API = 'some-api'
+
+  it('(A1) 재정의해도 aud=clientId 인 id_token 의 교환은 통과한다', async () => {
+    idp.idToken = await idToken(signed, NONCE)
+    await expect(exchange(client(API))).resolves.toMatchObject({ idToken: idp.idToken })
+  })
+
+  it('(A2) aud 에 clientId 가 없는 id_token 은 거부한다 — aud 가 재정의 값과 같아도', async () => {
+    idp.idToken = await idToken(signed, NONCE, API)
+    expect(await refusal(exchange(client(API)))).toBeInstanceOf(KeycloakAuthError)
+  })
+
+  it('(A4) 재정의 아래에서도 nonce 불일치와 JWKS 밖 서명은 거부한다', async () => {
+    idp.idToken = await idToken(signed, `x${NONCE}`)
+    const badNonce = await refusal(exchange(client(API)))
+    expect(badNonce).toBeInstanceOf(KeycloakAuthError)
+    expect(innermost(badNonce).message).toBe('unexpected ID Token "nonce" claim value')
+
+    idp.idToken = await idToken(forger, NONCE)
+    const forged = await refusal(exchange(client(API)))
+    expect(forged).toBeInstanceOf(KeycloakAuthError)
+    expect(forged.message).toBe('Authorization code exchange failed: invalid id_token')
+  })
+
+  it('(A3·A5) 교환 뒤 액세스 토큰 validate 는 재정의를 쓰고, JWKS 조회를 늘리지 않는다', async () => {
+    idp.idToken = await idToken(signed, NONCE)
+    const kc = client(API)
+    idp.certsHits = 0
+    await exchange(kc)
+    expect(idp.certsHits).toBe(1) // 콜드 캐시를 채운 한 번
+    await expect(kc.auth.validate(await accessToken(API))).resolves.toMatchObject({
+      audience: [API],
+    })
+    await expect(kc.auth.validate(await accessToken(CLIENT_ID))).rejects.toThrow()
+    await exchange(kc)
+    // id_token 검증기와 액세스 토큰 검증기가 한 저장소를 쓴다 — 둘째 저장소면 여기가 2 다.
+    expect(idp.certsHits).toBe(1)
+  })
+
+  it('대조군: 저장소가 둘이면 이 계수기가 그것을 본다(2)', async () => {
+    // 위 단언이 공허하지 않다는 증거 — 교환과 validate 가 서로 다른 저장소를 쓰면 /certs 가 두 번 불린다.
+    idp.idToken = await idToken(signed, NONCE)
+    const exchanger = client(API)
+    const validator = client(API)
+    idp.certsHits = 0
+    await exchange(exchanger)
+    await validator.auth.validate(await accessToken(API))
+    expect(idp.certsHits).toBe(2)
   })
 })

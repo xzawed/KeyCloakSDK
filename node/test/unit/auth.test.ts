@@ -179,8 +179,10 @@ describe('exchangeCode', () => {
       expires_in: 60,
       id_token: 'the-id-token',
     } as never)
-    const validate = vi.fn().mockResolvedValue({})
-    await new AuthClient(cfg, { validate } as unknown as JwtValidator).exchangeCode(
+    const validate = vi.fn()
+    const idValidate = vi.fn().mockResolvedValue({})
+    const withAudience = vi.fn(() => ({ validate: idValidate }))
+    await new AuthClient(cfg, { validate, withAudience } as unknown as JwtValidator).exchangeCode(
       'c',
       'https://app/cb',
       'verifier',
@@ -189,7 +191,10 @@ describe('exchangeCode', () => {
     const [, , checks] = vi.mocked(oidc.authorizationCodeGrant).mock.calls.at(-1)!
     expect(checks).toEqual({ pkceCodeVerifier: 'verifier', expectedNonce: 'the-nonce' })
     // openid-client 는 토큰 엔드포인트 id_token 의 서명을 안 본다 — 서명·alg 핀은 SDK 검증기의 몫이다.
-    expect(validate).toHaveBeenCalledWith('the-id-token')
+    // id_token 은 clientId 로 파생한 검증기에 탄다(액세스 토큰용 검증기가 아니다).
+    expect(withAudience).toHaveBeenCalledWith('app')
+    expect(idValidate).toHaveBeenCalledWith('the-id-token')
+    expect(validate).not.toHaveBeenCalled()
   })
 
   it('nonce 없이 교환하면 id_token 을 검증하지 않는다(다른 언어와 같은 계약)', async () => {
@@ -354,6 +359,125 @@ describe('validate — expectedAudience', () => {
     await expect(auth.validate(await sign('app'))).rejects.toBeInstanceOf(
       KeycloakTokenValidationError,
     )
+  })
+})
+
+/**
+ * `expectedAudience` 재정의 아래의 코드 교환 — id_token `aud` 는 **clientId** 로 검사한다(OIDC Core §2·§3.1.3.7).
+ * 재정의는 액세스 토큰(`validate`)의 리소스 서버 제한이다. openid-client 가 목이라 aud 판정은 SDK 검증기
+ * 하나뿐이다(진짜 openid-client 는 client_id 로 먼저 거른다 — `auth-id-token-signature.test.ts`).
+ */
+describe('exchangeCode — expectedAudience 재정의(id_token aud 는 clientId)', () => {
+  const ISSUER = 'https://kc.example.com/realms/demo'
+  let priv: Awaited<ReturnType<typeof generateKeyPair>>['privateKey']
+  let keys: JWTVerifyGetKey
+
+  beforeAll(async () => {
+    const kp = await generateKeyPair('RS256')
+    priv = kp.privateKey
+    const jwk = await exportJWK(kp.publicKey)
+    keys = createLocalJWKSet({ keys: [{ ...jwk, kid: 'k1', use: 'sig', alg: 'RS256' }] })
+  })
+
+  const now = () => Math.floor(Date.now() / 1000)
+  const sign = (
+    aud: string | string[],
+    { iss = ISSUER, exp = now() + 300 }: { iss?: string; exp?: number | null } = {},
+  ) => {
+    const jwt = new SignJWT({ sub: 'u', aud, nonce: 'the-nonce' })
+      .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+      .setIssuedAt(now() - 120)
+      .setIssuer(iss)
+    return (exp === null ? jwt : jwt.setExpirationTime(exp)).sign(priv)
+  }
+
+  /** 로컬 키셋 검증기로 조립한다 — 실제 aud 판정을 네트워크 없이 관찰. */
+  const overridden = (): AuthClient => {
+    const spy = vi
+      .spyOn(JwtValidator, 'forJwksUri')
+      .mockImplementation((_uri, opts) => JwtValidator.forKeySource(keys, opts))
+    try {
+      return new AuthClient(
+        defineConfig({
+          serverUrl: 'https://kc.example.com',
+          realm: 'demo',
+          clientId: 'app',
+          expectedAudience: 'some-api',
+        }),
+      )
+    } finally {
+      spy.mockRestore()
+    }
+  }
+
+  const exchangeWith = (auth: AuthClient, idToken: string) => {
+    vi.mocked(oidc.authorizationCodeGrant).mockResolvedValue({
+      access_token: 'AT',
+      expires_in: 60,
+      id_token: idToken,
+    } as never)
+    return auth.exchangeCode('c', 'https://app/cb', 'verifier', 'the-nonce')
+  }
+
+  /**
+   * 교환이 id_token 검증에서 거부됐다 — 문구가 아니라 타입으로 가린다. cause 는 `scrubCause` 가 만든
+   * 사본이라(`src/errors.ts`) 인스턴스가 아니라 이름으로 본다.
+   */
+  const refusedAtIdToken = async (call: Promise<unknown>) => {
+    const refused = await call.then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(refused).toBeInstanceOf(KeycloakAuthError)
+    expect(((refused as Error).cause as Error | undefined)?.name).toBe(
+      KeycloakTokenValidationError.name,
+    )
+  }
+
+  it('(A1) 재정의해도 aud 에 clientId 가 있는 id_token 의 교환은 통과한다', async () => {
+    const auth = overridden()
+    const single = await sign('app')
+    await expect(exchangeWith(auth, single)).resolves.toMatchObject({ idToken: single })
+    // Keycloak 「Add to ID token」 audience 매퍼의 모양 — [client_id, extra].
+    const multi = await sign(['app', 'some-api'])
+    await expect(exchangeWith(auth, multi)).resolves.toMatchObject({ idToken: multi })
+  })
+
+  it('(A2) aud 에 clientId 가 없는 id_token 은 거부한다 — aud 가 재정의 값과 같아도', async () => {
+    const auth = overridden()
+    await refusedAtIdToken(exchangeWith(auth, await sign('some-api')))
+    await refusedAtIdToken(exchangeWith(auth, await sign('other')))
+  })
+
+  it('(A3) 교환 뒤에도 액세스 토큰 validate 는 재정의 값을 쓴다', async () => {
+    const auth = overridden()
+    await exchangeWith(auth, await sign('app'))
+    await expect(auth.validate(await sign('some-api'))).resolves.toMatchObject({
+      audience: ['some-api'],
+    })
+    await expect(auth.validate(await sign('app'))).rejects.toBeInstanceOf(
+      KeycloakTokenValidationError,
+    )
+  })
+
+  it('(A4) 재정의 아래에서도 iss · alg 핀 · exp/스큐 · nonce 전달은 그대로다', async () => {
+    const auth = overridden()
+    await refusedAtIdToken(exchangeWith(auth, await sign('app', { iss: 'https://evil.example' })))
+    await refusedAtIdToken(exchangeWith(auth, await sign('app', { exp: now() - 60 }))) // 스큐 30초 밖
+    await refusedAtIdToken(exchangeWith(auth, await sign('app', { exp: null }))) // exp 없음
+    // 스큐 안(10초 전 만료)은 통과한다 — 스큐가 0 으로 떨어지지 않았다.
+    await expect(exchangeWith(auth, await sign('app', { exp: now() - 10 }))).resolves.toBeDefined()
+    // alg 핀: 허용 목록(RS256) 밖의 HS256 은 서명이 맞아도 거부한다.
+    const hs = await new SignJWT({ sub: 'u', aud: 'app', nonce: 'the-nonce' })
+      .setProtectedHeader({ alg: 'HS256', kid: 'k1' })
+      .setIssuedAt()
+      .setIssuer(ISSUER)
+      .setExpirationTime('5m')
+      .sign(new TextEncoder().encode('a-shared-secret-of-at-least-32-bytes!!'))
+    await refusedAtIdToken(exchangeWith(auth, hs))
+    // nonce 대조는 openid-client 의 몫이다 — 재정의가 그 전달을 바꾸지 않는다.
+    const [, , checks] = vi.mocked(oidc.authorizationCodeGrant).mock.calls.at(-1)!
+    expect(checks).toEqual({ pkceCodeVerifier: 'verifier', expectedNonce: 'the-nonce' })
   })
 })
 

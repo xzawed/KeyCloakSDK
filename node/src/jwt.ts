@@ -232,6 +232,22 @@ export class JwtValidator {
     return new JwtValidator(withColdCacheBackoff(remote, seams), opts)
   }
 
+  /**
+   * 기대 audience 만 바꾼 검증기 — 키 소스(`keys`)는 **같은 객체**를 넘긴다. 코드 교환이 id_token 을
+   * client id 로 검증하는 데 쓴다(OIDC Core §2·§3.1.3.7 — id_token `aud` 는 client_id 를 담는다).
+   * `expectedAudience` 재정의는 액세스 토큰의 몫이라 id_token 에 걸면 안 된다.
+   *
+   * ⚠️ 새 키 소스를 만들지 말 것 — JWKS 캐시·재조회 쿨다운·콜드 캐시 백오프가 전부 `keys` 클로저 안에
+   * 있어서, 둘로 나뉘면 IdP 요청과 DoS 상한이 두 배가 된다. I/O 는 하지 않는다.
+   *
+   * ⚠️ `@internal` — `forKeySource` 와 같은 처리다(방출 `.d.ts` 에 오르지 않는다).
+   *
+   * @internal
+   */
+  withAudience(audience: string): JwtValidator {
+    return new JwtValidator(this.keys, { ...this.opts, audience })
+  }
+
   async validate(token: string): Promise<ValidatedToken> {
     try {
       const { payload } = await jwtVerify(token, this.keys, {

@@ -50,9 +50,10 @@ public class AuthClient internal constructor(
     /** 운영 진입점 — realm의 OIDC 엔드포인트 규약으로 endpoints를 조립한다(네트워크 없음). */
     public constructor(config: KeycloakConfig) : this(config, OidcEndpoints.forRealm(config), null)
 
-    // validate()/exchangeCode()의 nonce 검증이 공유하는 지연 생성 JwtValidator. Java AuthClient와 동형인
-    // double-checked locking — forRealm()이 non-suspend(JWKS는 첫 validate 호출까지 지연 조회)이므로
-    // 이 synchronized 블록 안에는 suspension point가 없다(§코루틴 래핑 핵심 계약 위반 아님).
+    // validate()가 쓰는 지연 생성 JwtValidator(aud = config.expectedAudience). exchangeCode()의 nonce 검증은
+    // 여기서 audience 만 client id 로 바꾼 파생([JwtValidator.withAudience])을 써 JWKS 저장소를 공유한다.
+    // Java AuthClient와 동형인 double-checked locking — forRealm()이 non-suspend(JWKS는 첫 validate 호출까지
+    // 지연 조회)이므로 이 synchronized 블록 안에는 suspension point가 없다(§코루틴 래핑 핵심 계약 위반 아님).
     @Volatile
     private var jwtValidator: JwtValidator? = injectedValidator
     private val validatorLock = Any()
@@ -124,6 +125,8 @@ public class AuthClient internal constructor(
      * `createAuthorizationRequest`가 돌려준 `nonce`를 [expectedNonce]로 넘기면, 응답 id_token을 realm
      * JWKS로 서명·iss·aud·exp까지 강화 검증한 뒤(§jwt 재사용) nonce 클레임까지 대조한다 — Node SDK가 겪은
      * HIGH 결함(nonce를 threading하지 않으면 id_token이 사실상 무검증으로 통과)을 원천 차단한다.
+     * id_token의 `aud`는 OIDC Core §3.1.3.7 대로 `clientId`로 본다 — `expectedAudience`는 [validate]의
+     * 액세스 토큰 전용이라, 재정의해도 이 교환에는 걸리지 않는다.
      * `expectedNonce`를 생략하면(커스텀 무-nonce 흐름) id_token 검증을 건너뛴다.
      */
     public suspend fun exchangeCode(
@@ -209,7 +212,7 @@ public class AuthClient internal constructor(
         }
     }
 
-    /** realm JWKS로 서명을 검증하고 issuer/audience/exp/nbf를 강제한다(강화 [JwtValidator], §jwt 재사용). */
+    /** realm JWKS로 서명을 검증하고 issuer/audience(= `expectedAudience`)/exp/nbf를 강제한다(강화 [JwtValidator], §jwt 재사용). */
     public suspend fun validate(accessToken: String): ValidatedToken = ensureValidator().validate(accessToken)
 
     /**
@@ -231,11 +234,10 @@ public class AuthClient internal constructor(
         }
     }
 
-    // id_token의 nonce 클레임을 대조하기 전에 realm JWKS로 서명·iss·aud·exp까지 강화 검증한다(ensureValidator
-    // 재사용 — 기본값(aud=config.clientId)에서는 액세스 토큰과 id_token이 기대 audience를 공유해 안전하다).
-    // ⚠️ config.expectedAudience를 clientId가 아닌 값(리소스 서버 이름 등)으로 재정의하면 이 공유 검증기의
-    // 기대 audience도 그 값이 된다 — OIDC id_token의 aud는 항상 client id이므로, 그런 구성에서는
-    // expectedNonce를 넘기는 exchangeCode 흐름을 함께 쓰지 않는다.
+    // id_token의 nonce 클레임을 대조하기 전에 realm JWKS로 서명·iss·aud·exp까지 강화 검증한다. aud는 언제나
+    // config.clientId다(OIDC Core §2 · §3.1.3.7) — config.expectedAudience는 액세스 토큰(validate) 전용이다.
+    // ⚠️ 새 검증기를 만들지 않고 ensureValidator()의 것에서 audience 만 바꾼다 — 같은 JWKS 저장소(캐시·재조회
+    // 창)를 공유해야 IdP 요청 상한이 그대로다(`IdTokenAudienceJwksTest`).
     private suspend fun requireValidNonce(
         idToken: String?,
         expectedNonce: String,
@@ -245,7 +247,7 @@ public class AuthClient internal constructor(
         }
         val claims =
             try {
-                ensureValidator().validate(idToken)
+                ensureValidator().withAudience(config.clientId).validate(idToken)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: TokenValidationException) {
