@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `224`(2026-09-27 기준 열림 125 · 닫힘 99)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `225`(2026-10-01 기준 열림 124 · 닫힘 101)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,35 +116,28 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-09-27 · #560–#672 반영)
+### 다음 세션 진입점 (2026-10-01 · #560–#675 반영)
 
-**지금 상태** — ⚠️ **열린 PR 10, 전부 CI 초록(#658 은 Sonar 하나 대기)이고 병합만 남았다.** 모두 구현 레그가 변이 전부 CAUGHT 를 보고했고, PM 이 CI 로그로 재검증했다.
-- **#658** java 적대 행렬.
-- **#663–#671**: id_token audience 판정 (a) 구현 아홉. java #663 · kotlin #664 · go #665 · python #666 · node #667 · dotnet #668 · php #669 · ruby #670 · rust #671.
-  - python #666 은 `python-traceback-locals-carry-tokens` 수정도 싣는다.
-- ⚠️ **병합 절차.** 아홉이 모두 CHANGELOG `[Unreleased]` 에 줄을 넣어, 하나를 병합하면 나머지가 충돌한다.
-  - 각 브랜치에 `origin/main` 을 merge 하고, CHANGELOG 는 「main + 그 브랜치의 `[Unreleased]` 줄」로 합친다. 다른 경로가 충돌하면 멈춘다.
-  - 합친 뒤 required 체크를 기다렸다가 squash 한다.
-  - **kotlin #664 는 `.claude/rules/kotlin.md` 를 #662 와 같이 고쳤다** — 충돌과 doc-budget 을 확인한다.
+**지금 상태** — 열린 PR 0. 2026-09-27 의 열 PR 은 전부 병합됐다(#658 · #663–#671). ⚠️ **「병합만 남았다」는 둘에서 거짓이었다** — 함정 (x).
+- **야간 harness 가 2026-09-27 부터 빨갰다(#673)** — 적대 행렬 셋(dotnet·ruby·java)이 저장소 밖에서 가드 파일을 무조건 읽었다. #674 가 아홉 포트를 같은 세 갈래로 맞췄다. #673 은 **예약 실행이 다시 성공해야** 닫힌다(`nightly-alert.yml`) — `gh issue view 673` 부터 본다.
 
-열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유하고, 아홉 전부 LIVE·기준선 일치다(2026-09-27). `node scripts/check-registry-truth.mjs` 로 다시 잰다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
+열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유하고, 2026-09-27 이후 게시는 0 이다. `node scripts/check-registry-truth.mjs` 로 다시 잰다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. **열린 PR 10 병합**(위 절차). 병합 뒤 `id-token-audience-follows-access-audience`·`python-traceback-locals-carry-tokens` 를 닫는다.
-2. **admin 결함 셋 수정**: `php-admin-token-error-unsanitized` · `jvm-admin-token-response-type-unchecked` · `python-admin-grant-accepts-empty-access-token`. 적대 행렬이 KNOWN_GAPS 로 고정해 두었으므로, 고치면 그 항목이 낡아 실패한다 — 함께 지운다.
-3. **3차 릴리스 물결**(DEPLOY §4, 태그는 사용자 위임). 1·2 를 싣는다.
+1. **admin 결함 셋 수정**: `php-admin-token-error-unsanitized` · `jvm-admin-token-response-type-unchecked` · `python-admin-grant-accepts-empty-access-token`. 적대 행렬이 KNOWN_GAPS 로 고정해 두었으므로, 고치면 그 항목이 낡아 실패한다 — 함께 지운다.
+2. **3차 릴리스 물결**(DEPLOY §4, 태그는 사용자 위임). `[Unreleased]` 의 판정 (a) 아홉 · python 프레임 로컬(#666) · 1 을 싣는다.
    - 7 언어 patch, php·ruby minor(판정 (a) 가 공개 메서드·키워드를 더했다).
    - JVM 은 사람이 Portal 에서 Publish 해야 한다.
-4. `guard-detection-surface-hand-narrowed` [H/M] — 적대 행렬은 **아홉 언어 전부 섰다**(go #636·#639 · 여덟 #654–#661). 다음은 skip 표지를 닫는 attest 파일(W5)과, KNOWN_GAPS id ↔ 열린 등록부 항목 대조다.
-5. `integration-coverage-never-measured` [H/L] — ①코드 교환 통합 9/9 · ②omit 조인 가드(#662) 닫힘. 다음은 ③레인별 통합 전용 리포트, 보고 모드다.
-3. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다. 반대 방향도 있다 — #585 는 「verifier 하나」로 등록됐지만 부류는 호출 인자 다섯 갈래였다.
+3. `guard-detection-surface-hand-narrowed` [H/M] — 적대 행렬은 **아홉 언어 전부 섰다**(go #636·#639 · 여덟 #654–#661). 다음은 skip 표지를 닫는 attest 파일(W5)과, KNOWN_GAPS id ↔ 열린 등록부 항목 대조다.
+4. `integration-coverage-never-measured` [H/L] — ①코드 교환 통합 9/9 · ②omit 조인 가드(#662) 닫힘. 다음은 ③레인별 통합 전용 리포트, 보고 모드다.
+5. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다. 반대 방향도 있다 — #585 는 「verifier 하나」로 등록됐지만 부류는 호출 인자 다섯 갈래였다.
 
 **사람 판정 대기** — 없음. 2026-09-27 사용자 판정(권장안으로): id_token audience 는 (a) clientId 로 따로 검증 · 검증 실패 교환의 revoke 는 (b) 기각. 근거와 되살릴 조건은 각 항목이 소유한다.
 
 그 전의 판정 — 2026-09-25 사용자 판정: 출처 미상 stash 둘(JDK 17→25)과 빈 `snap*` 워크트리 셋은 **폐기**했다(실측·검증되지 않은 산출물은 확인 후 폐기) · `irreversible-publish-no-reentry` 는 **보류 유지**(근거는 그 항목).
 
-**이 세션이 새로 확인한 함정** — 앞 세션의 (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 는 그대로 유효하다.
+**함정** — (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 와 아래 (j)–(w) 는 그대로 유효하다. (x)–(z) 는 2026-10-01 이 더했다.
 
 - (j) **`scripts/probe.sh` 는 node·php·python 을 못 잰다**(워크트리에 의존성이 없다). 그 언어는 커밋한 뒤 의존성이 깔린 워크트리에서 파일 하나를 변이 → 테스트 → `git checkout -- <파일>` → `git status` 빈 것 확인.
 - (k) **변이 대상은 줄 번호가 아니라 내용으로 고른다** — `| Java |` 가 툴체인 표에 먼저 나와 엉뚱한 줄을 겨눴다(probe 가 INVALID 로 막았다).
@@ -160,6 +153,9 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - (u) **변이 SILENT 가 곧 구멍은 아니다 — 관찰 가능한 행동이 남는지 먼저 따진다.** node 백오프 성공 리셋은 지워도 드러날 행동이 없고(콜드 캐시가 다시 안 빈다), go 의 id_token 누락 검사는 지워도 `Validate("")` 가 같은 오류 타입으로 거부한다 — 둘 다 동치 변이로 판정했다. 반대로 **컴파일이 깨지는 변이는 INVALID** 다(go `vt` 미사용 — (i)).
 - (v) **「부류를 닫았다」는 적대적 레그가 반증하지 못한 뒤에만 쓴다** — #585 첫 커밋의 재스캔은 Nimbus **값 타입 생성자**만 봤다. 계약과 코드만 받은(내 결론은 안 받은) Grok 레그가 **빌더 `build()` 의 redirect_uri 검사**가 남긴 누출을 인쇄로 증명했다.
 - (w) **JVM 변이를 `probe.sh` 로 잴 때는 검사 명령을 래퍼로 감싸 실패한 테스트 이름과 컴파일 오류를 출력 끝에 모은다** — 근거로 보이는 것은 꼬리 12 줄이고 mvn·gradle 의 꼬리는 상투구라, 래퍼 없이는 CAUGHT 이 단언인지 컴파일 실패((i))인지 안 보인다.
+- (x) **열린 PR 의 초록은 그 PR 기준점에서의 초록이다** — 기준점 뒤에 병합된 가드와 의미 충돌한다. #666 은 python 적대 행렬(#655)보다 앞선 기준점에서 초록이었고, `origin/main` 을 합치자 행렬이 7 FAIL 을 냈다(기전·변이·반증 판정은 #666 의 PR 코멘트). 병합 전 `origin/main` 을 합쳐 **언어 CI 를 다시 보고**, 같은 언어의 PR 둘(#658 행렬 · #663)은 하나를 병합한 뒤 나머지를 다시 잰다. CHANGELOG 만 바뀐 재푸시는 required 둘로 충분하다 — 언어 코드가 초록 실행과 같음을 `git diff --stat <초록 SHA> HEAD -- <lang>/` 가 빈 출력으로 보인다.
+- (y) **Git Bash 는 `origin/main:<path>` 인자를 경로로 바꿔 `git show` 를 깨뜨린다** — `2>/dev/null` 이면 빈 출력이 「없다」로 읽힌다(아홉 언어 CI 의 `paths:` 가 전부 비어 보였다). `MSYS_NO_PATHCONV=1` 로 돌리고(그때 경로는 `/d/…` 가 아니라 `D:/…`), 알려진 파일 하나로 양성 대조를 먼저 찍는다.
+- (z) **`git -C <워크트리> config <키>` 는 공용 `.git/config` 에 쓴다** — 워크트리 하나만 LF 로 받으려다 저장소 전체의 `core.autocrlf` 를 덮었다(2026-10-01, 되돌림). 명령 단위로 준다: `git -c core.autocrlf=false worktree add …`.
 
 ### 재발 원인 분석 — 2026-09-13 (독립 레그와 공동, 산출물 기반)
 
@@ -520,7 +516,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [ ] `facade-wiring-close-contract-unasserted` **[M/S]** 파사드의 §4 계약(provider 배선·close)이 무단언 테스트 뒤에 있고 커버리지 게이트에서도 빠져 있다 · `rust/src/client.rs:65`
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 74건 (열림 52)
+## C. 품질 부채 — 75건 (열림 53)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -570,7 +566,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `probes-that-discard-the-result` **[M/M]** 프로브가 결과를 버린다 — 예외 타입 미단언·반환값 미단언 · `php/tests/Unit/Jwks/JwksStoreTest.php:188`
 - [ ] `wall-clock-ordering-in-tests` **[M/M]** 동시성·시간창 테스트가 벽시계에 매달려 있다 — 조용한 퇴화와 거짓 실패 · `go/jwt_test.go:322`
 
-### 가드·CI — 16
+### 가드·CI — 17
 
 - [x] `selftest-exit-code-contract-two-leaks` **[H/M · 닫힘 2026-09-23 #540]** 자가테스트의 「실패하면 비영 종료」 계약이 한 곳에서 샜다 — 탐지기는 #405, 계수기는 #540(파일 눈금 오라클) · `scripts/test/test-selftest-hygiene.sh:20`
 - [x] `sweeps-without-vacuity-floor` **[H/M · 닫힘 2026-09-08 #443]** 스윕/스캔이 0건을 훑고 통과했다 — 이 저장소의 하한 관용이 적용되지 않았다 · `.github/workflows/repo-hygiene.yml:234`
@@ -596,6 +592,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `default-root-percent-encoding` **[M/S]** 무인자 기본 루트가 percent 이스케이프를 디코드하지 않아 공백 경로에서 죽는다 · `scripts/check-versions.mjs:27`
 - [ ] `repo-config-apply-exit0-on-security-drift` **[M/S]** repo-config.mjs apply가 보안 설정 드리프트를 알리고도 exit 0으로 끝난다 · `scripts/repo-config.mjs:288`
 - [ ] `rust-token-in-argv` **[L/S]** rust publish가 env로도 넘긴 토큰을 --token으로 argv에 한 번 더 싣는다 · `.github/workflows/rust-release.yml:127`
+- [ ] `w1-shared-script-drift-weekly-only` **[L/S · 신규 2026-10-01]** 아홉 적대 행렬의 W1 은 `scripts/test/test-security-defaults.sh` 의 앵커를 언어별 손 표와 대조하는데, 그 스크립트만 바꾼 PR 은 언어 CI 를 만들지 않고(`paths:` 가 `<lang>/**` 뿐) 야간 harness 도 #674 이후 W1 을 건너뛴다 — 앵커 드리프트는 그 언어의 다음 PR 이나 월요일 정기 실행에서야 드러난다(#674 의 Grok 레그가 지목). 후보: 아홉 언어 CI `paths:` 에 그 스크립트를 더하기 · harness 스위트에 `scripts/` 읽기전용 마운트(dotnet·ruby 실측 초록). php 만 건너뜀 메시지가 없다 · `php/tests/Unit/HostilePathMatrixTest.php:1789`
 - [ ] `push-trigger-branches-asymmetry` **[L/S]** 여섯 워크플로의 push 트리거에 branches가 없어 PR 브랜치에서 레인이 두 번 돈다 · `.github/workflows/dotnet-ci.yml:3`
 
 ### 문서·규칙 — 15
@@ -638,7 +635,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 86건 (열림 59)
+## D. 원장 밖 — 86건 (열림 57)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -674,31 +671,10 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `python-admin-grant-accepts-empty-access-token` **[L/S · 신규 2026-09-27]** python sync admin 이 자기 client_credentials 응답의 빈 `access_token` 으로 `Authorization: Bearer ` 를 보낸다(KNOWN_GAPS 25칸, #655).
   - aio 는 h11 이 헤더를 거부해 우연히 막힌다. 그마저 `KeycloakTransportError` 로 잘못 분류된다.
 
-- [ ] `id-token-audience-follows-access-audience` **[M/S · 신규 2026-09-27 · 아홉 언어]** `expectedAudience` 를 clientId 가 아닌 값(리소스 서버)으로 재정의하면, nonce 를 넘긴 코드 교환이 id_token `aud` 불일치로 **실패한다**.
-  - 원인: 아홉 언어 전부 id_token 을 액세스 토큰과 같은 검증기로 검증한다. OIDC id_token 의 `aud` 는 client id 다.
-  - java·kotlin·ruby·dotnet·rust·node 는 코드 주석으로만 적었고, 소비자 문서에는 0 곳이다(`grep` 확인).
-  - 고치는 길은 둘이었다: (a) id_token 은 clientId 로 따로 검증한다(아홉 언어 동작 변경), (b) 소비자 문서에 적는다.
-  - 실측: go 통합 테스트가 `ExpectedAudience` 를 재정의하면 실서버 교환이 거부됨을 고정한다(`TestE2ECodeExchange/RefusesAnIDTokenForAnotherAudience` — 거부가 기대값인 테스트라, (a) 를 고르면 이 테스트도 바뀐다).
-  - ✅ **판정 (a)(2026-09-27, 사용자가 권장안으로 결정).** 근거는 셋이다.
-    - OIDC Core §2·§3.1.3.7: id_token `aud` 는 client_id 를 **MUST** 담는다.
-    - RFC 9700 §2.3·§4.10.2: `expectedAudience` 재정의는 **액세스 토큰**의 리소스 서버 제한이다.
-    - Grok 독립 판정도 (a) 다. 같은 사실만 주고 내 결론은 주지 않았다.
-  - **실서버 실측(Keycloak 26.6).** id_token `aud` 는 access-only audience 매퍼에서도 client_id 다. 「Add to ID token」 매퍼를 켜면 `[client_id, extra]` 가 된다. client_id 가 빠지는 것은 `aud` 를 덮어쓰는 하드코딩 클레임 매퍼뿐이다.
-    - `expectedAudience="extra-api"` 에서 access 검증은 OK 인데, 교환은 `invalid id_token`(`Audience not contained`)이었다.
-  - **수용 기준.** 전부 아홉 언어에서 같은 결과여야 한다.
-    - 재정의해도 id_token `aud`=client_id 인 교환이 통과한다.
-    - `aud` 에 client_id 가 없는 id_token 은 거부한다(재정의 값만 있어도 거부).
-    - access 검증은 재정의를 계속 쓴다.
-    - JWKS 캐시·재조회 제한은 하나로 공유한다 — 교환 뒤 access 검증에서 JWKS 조회가 늘지 않는다.
-    - `azp` 는 다루지 않는다. SHOULD 이고 errata 로 바뀌었을 수 있어, 원문을 확인하기 전에는 계약으로 올리지 않는다.
+- [x] `id-token-audience-follows-access-audience` **[M/S · 신규 2026-09-27 · 닫힘 2026-10-01 #663–#671 · 아홉 언어]** `expectedAudience` 를 clientId 가 아닌 값(리소스 서버)으로 재정의하면 nonce 를 넘긴 코드 교환이 id_token `aud` 불일치로 실패했다 — 아홉 언어 전부 id_token 을 액세스 토큰과 같은 검증기로 봤다. ✅ 판정 (a)(2026-09-27, 사용자 · Grok 독립 판정 일치): id_token `aud` 는 clientId 로 따로 검증한다. OIDC Core §2·§3.1.3.7 은 client_id 를 **MUST** 담게 하고, 재정의는 RFC 9700 §2.3·§4.10.2 의 **액세스 토큰** 제한이다. 실서버(Keycloak 26.6) 실측: access-only audience 매퍼에서도 id_token `aud` 는 client_id 다. 수용 기준(아홉 동형, 각 PR 이 테스트로 고정): 재정의 아래 교환 통과 · `aud` 에 client_id 가 없으면 재정의 값만 있어도 거부 · access 검증은 재정의 유지 · JWKS 캐시·재조회 제한 공유. `azp` 는 다루지 않는다(SHOULD — 원문 확인 전 계약 아님). php(`validateIdToken`)·ruby(`audience:`)는 공개 API 가 늘어 minor 다.
 - [ ] `node-auth-error-no-oauth-code` **[L/S · 신규 2026-09-27]** node `KeycloakAuthError` 에만 OAuth `error` 코드가 없다. python 은 `.error`, go 는 `OAuthError`, rust 는 `oauth_error` 로 공개한다. `scrubCause` 가 name·message·code 만 남겨, `invalid_grant` 를 공개 API 로 가를 수 없다. 코드 교환 이식 테스트는 그래서 `OAUTH_RESPONSE_BODY_ERROR` 까지만 단언한다 · `node/src/errors.ts`
 - [x] `nonce-failure-leaves-session-alive` **[L/S · 신규·닫힘 2026-09-27 · 판정 (b) 기각]** 검증에 실패한 교환의 토큰을 revoke 하지 않는다 — 버리고 원래 오류를 던지는 지금 동작이 계약이다(사용자가 권장안으로 결정). 실서버 실측: 거부된 교환은 로그인 때 생긴 세션을 끝내지 않는다(idle 1800s · max 36000s). revoke 는 SDK 가 버린 refresh token 이 있어야만 가능하다. 근거: OIDC Core 는 revoke 를 요구하지 않고, RFC 7009 §2.2 는 무효 토큰에도 200 이며, 주입된 코드면 남의 grant 에 손댄다(Grok 독립 판정도 (b)). **되살릴 조건**: 검증 통과 뒤의 실패에 한정한 제품 요구 + 잔존 수명 실측 + Keycloak `/revoke` 범위 실측. ⚠️ 이 실측이 `python-traceback-locals-carry-tokens` 를 찾았다.
-- [ ] `python-traceback-locals-carry-tokens` **[M/S · 신규 2026-09-27]** python 에서 거부된 교환의 토큰이 **예외 traceback 의 프레임 로컬**에 남는다.
-  - 실측: `err.__traceback__.tb_next.tb_frame.f_locals['response']['refresh_token']` · `['token_set'].refresh_token` 가 raw refresh token 이다. `TracebackException(capture_locals=True)` 가 그것을 찍는다. invalid-id_token 경로도 같다. `str`·`repr`·`format_exception` 에는 없다.
-  - 왜 중요한가: Sentry Python 은 기본값으로 프레임 로컬을 모은다 — 거부된(공격 시도일 수 있는) 교환의 refresh token 이 오류 수집기로 나간다.
-  - 원인 사슬 스크럽(#617–#624)은 `__cause__` 만 보았고 로컬은 부류 밖이었다.
-  - 할 일: 오류를 던지기 전에 비밀 로컬을 지우고 안쪽 프레임을 떼어 낸다. 교환·refresh·client_credentials·introspect 의 오류 경로 전부에서 `capture_locals=True` 렌더링(사슬 포함)에 토큰이 없음을 단언한다. sync·aio 둘 다.
-  - 다른 언어는 예외가 로컬을 들고 다니지 않는다. php 의 호출 인자는 `php-exception-trace-third-party-args` 가 이미 소유한다.
+- [x] `python-traceback-locals-carry-tokens` **[M/S · 신규 2026-09-27 · 닫힘 2026-10-01 #666]** python 에서 거부된 교환의 토큰이 예외 traceback 의 **프레임 로컬**에 남았다 — `TracebackException(capture_locals=True)` 와 Sentry Python(기본값)이 찍고, `str`·`repr`·`format_exception` 에는 없어 누출 테스트가 못 봤다. 원인 사슬 스크럽(#617–#624)은 `__cause__` 만 보았다. 비밀을 다루는 공개 진입점을 `@scrub_frames`(`_internal/frames.py`)로 감싸, 실패하면 안쪽 프레임·사슬 traceback·인자를 떼고 **같은 예외**를 던진다(sync·aio · `authorization_url` · 생성자 포함). 다른 언어는 예외가 로컬을 들고 다니지 않는다(php 호출 인자는 `php-exception-trace-third-party-args`).
 
 - [ ] `admin-relations-role-mapping-group-membership` **[H/L]** 역할 부여·그룹 가입이 9개 언어 어디에도 없다 — CRUD만 있고 리소스 간 연결이 없다 · `docs/reference/admin-capability.md:18`
 - [ ] `admin-client-roles-and-user-subresources` **[H/L]** roles 파사드는 realm role 전용 — client role·client secret·user credential/session이 0/9 · `node/src/admin/roles.ts:5`
