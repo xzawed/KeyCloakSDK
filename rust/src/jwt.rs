@@ -59,7 +59,22 @@ impl JwtValidator {
         })
     }
 
+    /// access 토큰 검증 — 기대 aud 는 `expected_audience`(미설정이면 `client_id`)다.
     pub async fn validate(&self, token: &str) -> Result<ValidatedToken> {
+        self.validate_for_audience(token, &self.audience).await
+    }
+
+    /// `validate()` 와 같은 강화 검증을 **호출자가 준 aud** 로 한다 — 코드 교환의 id_token 전용.
+    ///
+    /// ⚠️ id_token 의 `aud` 는 client id 를 담아야 한다(OIDC Core §2 · §3.1.3.7). `expected_audience`
+    /// 재정의는 access 토큰의 리소스 서버 제한이라 id_token 에 걸면 진짜 id_token 이 거부된다.
+    /// ⚠️ **검증기를 따로 만들지 말 것** — 같은 `&self` 라서 JWKS 캐시·30초 재조회 제한·콜드 실패
+    /// 백오프가 하나로 공유된다(`exchange_and_validate_share_*` 테스트).
+    pub(crate) async fn validate_for_audience(
+        &self,
+        token: &str,
+        audience: &str,
+    ) -> Result<ValidatedToken> {
         // (1) 헤더에서 kid만 추출(alg는 검증 선택에 미사용 — RS256 고정 핀).
         //     Algorithm enum에는 `none` 변형이 없어 alg="none" 헤더는 여기서 구조적으로 거부된다.
         let header = jsonwebtoken::decode_header(token)
@@ -78,7 +93,7 @@ impl JwtValidator {
         let mut v = Validation::new(self.algorithms[0]); // non-empty 보장(new에서 검증)
         v.algorithms = self.algorithms.clone(); // 헤더 alg 무시하고 설정된 집합만 허용(confusion·none 차단)
         v.set_issuer(&[self.issuer.as_str()]); // 정확 일치(부분/접두/후행슬래시 변형 거부)
-        v.set_audience(&[self.audience.as_str()]); // 집합 정확 포함(부분문자열 아님)
+        v.set_audience(&[audience]); // 집합 정확 포함(부분문자열 아님)
         v.validate_exp = true; // exp 검증
         v.validate_nbf = true; // 기본 false → 강화(미래 nbf 거부)
         v.leeway = self.clock_skew; // 기본 60 → config(30)
@@ -311,6 +326,111 @@ mod tests {
             v.validate(&sign(&fx, c, "test-kid")).await,
             Err(KeycloakError::TokenValidation(_))
         ));
+    }
+
+    /// id_token 경로(`validate_for_audience`)는 재정의가 걸린 검증기에서도 **넘겨받은 aud** 를 본다 —
+    /// 재정의 값이 아니다(OIDC Core §2 · §3.1.3.7: id_token `aud` 는 client_id 를 담아야 한다).
+    #[tokio::test]
+    async fn validate_for_audience_checks_the_given_audience_not_the_override() {
+        let fx = make_key();
+        let cfg = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
+            .unwrap()
+            .with_expected_audience("api://orders");
+        let v = validator_for_config(&fx, cfg).await;
+        // client_id 를 담은 id_token 은 통과한다(재정의 값이 없어도).
+        let vt = v
+            .validate_for_audience(&sign(&fx, good_claims(), "test-kid"), "it-client")
+            .await
+            .expect("aud contains the client id");
+        assert_eq!(vt.subject, "s1");
+        // 재정의 값**만** 담은 토큰은 거부한다 — 재정의가 client_id 를 대신하지 않는다.
+        let mut c = good_claims();
+        c["aud"] = json!(["api://orders", "account"]);
+        match v
+            .validate_for_audience(&sign(&fx, c, "test-kid"), "it-client")
+            .await
+        {
+            Err(KeycloakError::TokenValidation(m)) => {
+                assert_eq!(m, "token verification failed: audience mismatch")
+            }
+            other => panic!("expected an audience mismatch, got {other:?}"),
+        }
+        // 대조군 — 같은 검증기의 `validate()` 는 재정의를 그대로 쓴다(두 경로가 갈렸음을 보인다).
+        assert!(
+            v.validate(&sign(&fx, good_claims(), "test-kid"))
+                .await
+                .is_err()
+        );
+    }
+
+    /// id_token 경로의 나머지 강화는 `validate()` 와 **같은 블록**이다 — 재정의 아래에서도
+    /// iss 정확·alg 핀·exp 필수·스큐(30)·nbf 가 그대로 걸린다. aud 인자만 다르다.
+    #[tokio::test]
+    async fn validate_for_audience_keeps_every_other_check_under_an_override() {
+        let fx = make_key();
+        let cfg = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
+            .unwrap()
+            .with_expected_audience("api://orders");
+        let v = validator_for_config(&fx, cfg).await;
+        let rejected = |what: &'static str| {
+            move |r: Result<ValidatedToken>| match r {
+                Err(KeycloakError::TokenValidation(m)) => m,
+                other => panic!("{what} MUST be rejected, got {other:?}"),
+            }
+        };
+
+        let mut c = good_claims();
+        c["iss"] = json!("http://kc:8080/realms/it-realm-evil");
+        let m = rejected("issuer superstring")(
+            v.validate_for_audience(&sign(&fx, c, "test-kid"), "it-client")
+                .await,
+        );
+        assert_eq!(m, "token verification failed: issuer mismatch");
+
+        let mut h = Header::new(Algorithm::HS256);
+        h.kid = Some("test-kid".into());
+        let forged = encode(
+            &h,
+            &good_claims(),
+            &EncodingKey::from_secret(fx.pub_pem.as_bytes()),
+        )
+        .unwrap();
+        let m =
+            rejected("HS256 alg confusion")(v.validate_for_audience(&forged, "it-client").await);
+        assert_eq!(m, "token verification failed: algorithm not allowed");
+
+        let mut c = good_claims();
+        c.as_object_mut().unwrap().remove("exp");
+        let m = rejected("missing exp")(
+            v.validate_for_audience(&sign(&fx, c, "test-kid"), "it-client")
+                .await,
+        );
+        assert_eq!(m, "token verification failed: missing required claim");
+
+        let mut c = good_claims();
+        c["exp"] = json!(now() - 45);
+        let m = rejected("exp beyond the 30s skew")(
+            v.validate_for_audience(&sign(&fx, c, "test-kid"), "it-client")
+                .await,
+        );
+        assert_eq!(m, "token verification failed: expired");
+
+        let mut c = good_claims();
+        c["nbf"] = json!(now() + 3600);
+        let m = rejected("future nbf")(
+            v.validate_for_audience(&sign(&fx, c, "test-kid"), "it-client")
+                .await,
+        );
+        assert_eq!(m, "token verification failed: not yet valid (nbf)");
+
+        // 스큐는 양쪽이다 — 30초 안쪽의 만료는 여전히 통과한다(검사가 더 좁아지지도 않았다).
+        let mut c = good_claims();
+        c["exp"] = json!(now() - 10);
+        assert!(
+            v.validate_for_audience(&sign(&fx, c, "test-kid"), "it-client")
+                .await
+                .is_ok()
+        );
     }
 
     /// expected_audience 설정: 기대 aud가 client_id를 *대체*한다(리소스 서버 케이스 —
