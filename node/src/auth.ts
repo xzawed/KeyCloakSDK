@@ -90,6 +90,8 @@ export class AuthClient {
   readonly #cfg: KeycloakConfig
   readonly #endpoints: OidcEndpoints
   readonly #validator: JwtValidator
+  /** id_token 용 — `#validator` 에서 audience 만 clientId 로 바꿔 파생한다(키 소스 공유). */
+  #idTokenValidator?: JwtValidator
 
   /** `validator`는 테스트 주입용(미지정 시 realm JWKS로 강화 검증기를 생성). */
   constructor(cfg: KeycloakConfig, validator?: JwtValidator) {
@@ -99,7 +101,8 @@ export class AuthClient {
       validator ??
       JwtValidator.forJwksUri(this.#endpoints.jwks, {
         issuer: this.#endpoints.issuer,
-        // expectedAudience가 설정되면 그 값을, 아니면 clientId를 기대한다(기존 동작).
+        // 액세스 토큰: expectedAudience가 설정되면 그 값을, 아니면 clientId를 기대한다(기존 동작).
+        // id_token은 이 값을 쓰지 않는다 — `#verifyIdToken`이 clientId로 파생한다.
         audience: cfg.expectedAudience ?? cfg.clientId,
         allowedAlgs: [...cfg.signatureAlgorithms],
         clockSkewSeconds: cfg.clockSkewSeconds,
@@ -153,7 +156,8 @@ export class AuthClient {
    * 커스텀 흐름을 위해 인자는 선택적이다.
    *
    * nonce를 넘기면 id_token을 강화 {@link JwtValidator}로도 검증한다(서명 · `signatureAlgorithms` 핀 ·
-   * iss · aud · exp) — 다른 여덟 언어와 같은 계약이다. id_token이 없으면 거부한다.
+   * iss · aud · exp) — 다른 여덟 언어와 같은 계약이다. id_token의 aud는 `expectedAudience`가 아니라
+   * **clientId**로 검사한다(OIDC Core §2·§3.1.3.7). id_token이 없으면 거부한다.
    */
   async exchangeCode(
     code: string,
@@ -187,9 +191,9 @@ export class AuthClient {
    * JWKS 밖 키(HS256)나 위조 RS256 id_token도 nonce만 맞으면 통과했다(통합·단위 실측). SDK 검증기에 태워
    * 서명·alg 핀·iss·aud·exp를 강제한다.
    *
-   * ⚠️ 액세스 토큰과 검증기를 공유한다 — 기본값(aud=clientId)에서는 둘의 기대 audience가 같아 안전하지만,
-   * `expectedAudience`를 clientId가 아닌 값으로 재정의하면 id_token에도 그 값을 요구한다(OIDC id_token의
-   * aud는 client id다). 다른 여덟 언어도 같은 모양이다.
+   * id_token의 aud는 **clientId**로 검사한다(OIDC Core §2·§3.1.3.7) — `expectedAudience`는 액세스 토큰의
+   * 리소스 서버 제한이다. 검증기는 `#validator`에서 audience만 바꿔 파생하므로 키 소스(JWKS 캐시·재조회
+   * 제한·백오프)는 하나다. 파생은 지연한다 — 주입된 검증기가 교환 경로에 닿기 전에는 부르지 않는다.
    */
   async #verifyIdToken(idToken: string | undefined): Promise<void> {
     if (idToken === undefined) {
@@ -198,7 +202,8 @@ export class AuthClient {
       )
     }
     try {
-      await this.#validator.validate(idToken)
+      this.#idTokenValidator ??= this.#validator.withAudience(this.#cfg.clientId)
+      await this.#idTokenValidator.validate(idToken)
     } catch (e) {
       throw new KeycloakAuthError('Authorization code exchange failed: invalid id_token', {
         cause: e,

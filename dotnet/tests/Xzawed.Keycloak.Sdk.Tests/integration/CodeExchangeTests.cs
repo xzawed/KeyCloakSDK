@@ -45,7 +45,8 @@ public sealed class CodeExchangeTests
         _out = output;
     }
 
-    private KeycloakClient WebClient(string clientId = "it-web", string[]? algorithms = null, string[]? scopes = null) =>
+    private KeycloakClient WebClient(string clientId = "it-web", string[]? algorithms = null, string[]? scopes = null,
+                                     string? expectedAudience = null) =>
         KeycloakClient.Create(new KeycloakConfig
         {
             ServerUrl = _kc.BaseUrl,
@@ -54,6 +55,7 @@ public sealed class CodeExchangeTests
             ClientSecret = WebClientSecrets[clientId],
             SignatureAlgorithms = algorithms ?? new[] { "RS256" },
             Scopes = scopes ?? Array.Empty<string>(),
+            ExpectedAudience = expectedAudience,
         });
 
     private static async Task<(AuthorizationRequest Request, string Code)> LoginAsync(KeycloakClient kc)
@@ -121,6 +123,28 @@ public sealed class CodeExchangeTests
         Assert.Equal("id_token nonce mismatch", refused.Message);
         Assert.Null(refused.OAuthError);      // 서버가 아니라 SDK 가 거부했다
         Assert.Null(refused.InnerException);  // 서명·iss·aud·exp 는 통과했다 — 거부 사유는 nonce 하나다
+    }
+
+    /// <summary><c>ExpectedAudience</c> 를 client id 가 아닌 값(리소스 서버)으로 재정의해도 nonce 교환은 통과한다 — id_token 의
+    /// <c>aud</c> 는 client_id 로 검증한다(OIDC Core §2 · §3.1.3.7). 재정의는 access 검증에만 걸린다.</summary>
+    /// <remarks>대조군이 둘이다. 같은 클라이언트의 access 검증이 그 재정의로 <b>거부</b>하고(재정의가 살아 있다 — 무시됐다면 위
+    /// 통과는 공허하다), 재정의 없는 클라이언트는 같은 토큰을 통과시킨다(거부 사유는 audience 하나다).</remarks>
+    [Fact]
+    public async Task Exchange_code_with_the_nonce_succeeds_under_an_expected_audience_override()
+    {
+        await using var kc = WebClient(expectedAudience: "not-it-web");
+        var (request, code) = await LoginAsync(kc);
+        var tokens = await kc.Auth.ExchangeCodeAsync(code, RedirectUri, request.CodeVerifier, request.Nonce);
+        Assert.False(string.IsNullOrEmpty(tokens.IdToken));
+
+        var held = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => kc.Auth.ValidateAsync(tokens.AccessToken));
+        Assert.IsType<SecurityTokenInvalidAudienceException>(held.InnerException);
+        await using var plain = WebClient();
+        var access = await plain.Auth.ValidateAsync(tokens.AccessToken);
+        var id = await plain.Auth.ValidateAsync(tokens.IdToken!);
+        _out.WriteLine($"access aud=[{string.Join(",", access.Audience)}] id_token aud=[{string.Join(",", id.Audience)}]");
+        Assert.Contains("it-web", access.Audience);
+        Assert.DoesNotContain("not-it-web", id.Audience); // 전제: 교환이 통과한 것은 id_token 이 재정의 값을 실어서가 아니다
     }
 
     /// <summary>nonce 를 빼고 인가받은 코드 — 서버는 nonce 없는 id_token 을 낸다. 부재도 거부다.</summary>

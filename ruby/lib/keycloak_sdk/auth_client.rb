@@ -39,7 +39,7 @@ module KeycloakSdk
     end
 
     # `expected_nonce`가 주어지면(create_authorization_request가 항상 돌려주는 nonce) 응답 id_token을
-    # realm JWKS로 서명·iss·aud·exp까지 강화 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce 재생
+    # realm JWKS로 서명·iss·aud(client_id)·exp까지 강화 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce 재생
     # 방지. 불일치·부재·검증실패는 모두 거부(fail-closed). 생략 시 id_token 검증을 건너뛴다
     # (여덟 언어 공통 — exchange에서 nonce를 필수로 만들지 않는다).
     def exchange_code(code:, code_verifier:, redirect_uri:, expected_nonce: nil)
@@ -104,14 +104,13 @@ module KeycloakSdk
       end
     end
 
-    # id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다
-    # (액세스 토큰과 id_token 모두 aud=client_id이므로 검증기를 공유해도 안전 — Kotlin/.NET 동형).
-    # ⚠️ `config.expected_audience`를 설정하면 이 공유 검증기가 id_token에도 그 값을 요구한다 —
-    # 이 흐름을 쓴다면 해당 오디언스를 id_token에도 매핑해야 한다(audience 매퍼의 "Add to ID token").
+    # id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다.
+    # aud 는 `expected_audience` 재정의가 아니라 **client_id** 다(OIDC Core §2·§3.1.3.7) — 재정의는 액세스 토큰의 것.
+    # 검증기(=키 저장소)는 `validate` 와 같은 하나를 쓴다.
     def verify_nonce!(id_token, expected_nonce)
       raise AuthError, "authorization_code exchange failed: missing id_token for nonce validation" if id_token.nil?
 
-      validated = @jwt_validator.validate(id_token)
+      validated = @jwt_validator.validate(id_token, audience: @config.client_id)
       return if validated.claims["nonce"] == expected_nonce
 
       raise AuthError, "authorization_code exchange failed: unexpected nonce"

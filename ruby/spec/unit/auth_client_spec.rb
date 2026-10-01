@@ -93,6 +93,7 @@ RSpec.describe KeycloakSdk::AuthClient do
   end
 
   describe "#validate" do
+    # audience 를 넘기지 않는다 — 넘기면 검증기가 가진 `expected_audience` 재정의를 덮는다(액세스 토큰의 것).
     it "delegates to the JwtValidator" do
       vt = instance_double(KeycloakSdk::ValidatedToken)
       allow(jwt_validator).to receive(:validate).with("tok").and_return(vt)
@@ -126,18 +127,32 @@ RSpec.describe KeycloakSdk::AuthClient do
       it "validates the id_token and accepts a matching nonce" do
         stub_token_with_id_token
         vt = instance_double(KeycloakSdk::ValidatedToken, claims: { "nonce" => "n-abc" })
-        allow(jwt_validator).to receive(:validate).with("the-id-token").and_return(vt)
+        allow(jwt_validator).to receive(:validate).with("the-id-token", audience: "app").and_return(vt)
 
         ts = auth.exchange_code(code: "c", code_verifier: "v",
                                 redirect_uri: "https://app/cb", expected_nonce: "n-abc")
         expect(ts.access_token).to eq("AT")
-        expect(jwt_validator).to have_received(:validate).with("the-id-token")
+        expect(jwt_validator).to have_received(:validate).with("the-id-token", audience: "app")
+      end
+
+      # OIDC Core §3.1.3.7 — id_token `aud` 는 client_id 다. `expected_audience` 는 액세스 토큰(`#validate`)의 것이다.
+      it "checks the id_token against the client_id even when expected_audience is overridden" do
+        overridden = KeycloakSdk::Config.new(server_url: "https://kc.example.com", realm: "demo", client_id: "app",
+                                             client_secret: "sekret", expected_audience: "my-api")
+        stub_token_with_id_token
+        vt = instance_double(KeycloakSdk::ValidatedToken, claims: { "nonce" => "n-abc" })
+        allow(jwt_validator).to receive(:validate).with("the-id-token", audience: "app").and_return(vt)
+
+        described_class.new(config: overridden, http: http, jwt_validator: jwt_validator)
+                       .exchange_code(code: "c", code_verifier: "v", redirect_uri: "https://app/cb",
+                                      expected_nonce: "n-abc")
+        expect(jwt_validator).to have_received(:validate).with("the-id-token", audience: "app")
       end
 
       it "rejects a mismatched nonce" do
         stub_token_with_id_token
         vt = instance_double(KeycloakSdk::ValidatedToken, claims: { "nonce" => "attacker" })
-        allow(jwt_validator).to receive(:validate).with("the-id-token").and_return(vt)
+        allow(jwt_validator).to receive(:validate).with("the-id-token", audience: "app").and_return(vt)
 
         expect do
           auth.exchange_code(code: "c", code_verifier: "v",

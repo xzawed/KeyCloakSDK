@@ -82,12 +82,40 @@ public sealed class JwtValidator
         ValidateIssuerSigningKey = true,
     };
 
-    public async Task<ValidatedToken> ValidateAsync(string token, CancellationToken ct = default)
+    public Task<ValidatedToken> ValidateAsync(string token, CancellationToken ct = default)
+        => ValidateCoreAsync(token, _tvp);
+
+    /// <summary>Validates with every check of <see cref="ValidateAsync"/> except the audience, which must contain
+    /// <paramref name="audience"/> instead of the configured one. The id_token path: its <c>aud</c> MUST contain the
+    /// client id (OIDC Core §2, §3.1.3.7), whatever audience access tokens are held to.</summary>
+    internal Task<ValidatedToken> ValidateForAudienceAsync(string token, string audience, CancellationToken ct = default)
+        => ValidateCoreAsync(token, ParametersForAudience(audience));
+
+    /// <summary>A copy of the parameters that differs only in the audience.</summary>
+    /// <remarks>⚠️ <c>Clone()</c> keeps the key source by reference, and that is what keeps ONE key store: the copy
+    /// holds the same <c>ConfigurationManager</c> (JWKS cache, 30s refresh gate, cold-cache backoff, last-known-good) and
+    /// the same <c>IssuerSigningKey</c>. Never build a second validator from the options for this — it would fetch and
+    /// cache the JWKS on its own. (The audience list, by contrast, is copied — measured on 8.23.0 — so setting it here
+    /// cannot retarget access-token validation.) <c>ValidAudience</c> is cleared because IdentityModel accepts it in
+    /// addition to <c>ValidAudiences</c>, and <c>AudienceValidator</c> because IdentityModel consults it INSTEAD of
+    /// <c>ValidAudiences</c> — the base parameters' audience policy must not carry over (measured:
+    /// <c>Id_token_audience_ignores_the_base_audience_policy</c>).</remarks>
+    internal TokenValidationParameters ParametersForAudience(string audience)
+    {
+        var tvp = _tvp.Clone();
+        tvp.ValidateAudience = true;
+        tvp.AudienceValidator = null;
+        tvp.ValidAudience = null;
+        tvp.ValidAudiences = new[] { audience };
+        return tvp;
+    }
+
+    private static async Task<ValidatedToken> ValidateCoreAsync(string token, TokenValidationParameters tvp)
     {
         TokenValidationResult result;
         try
         {
-            result = await Handler.ValidateTokenAsync(token, _tvp).ConfigureAwait(false);
+            result = await Handler.ValidateTokenAsync(token, tvp).ConfigureAwait(false);
         }
         catch (Exception ex) // malformed token (SecurityTokenMalformedException) still throws from parse
         {

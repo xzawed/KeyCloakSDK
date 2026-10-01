@@ -14,8 +14,11 @@ module CodeExchangeIT
   # realm JSON 의 `it-web`(RS256)·`it-web-hs256`(id_token 을 HS256 서명)과 짝.
   # ⚠️ `it-web` 의 audience 매퍼는 introspect 용이다 — `aud` 가 없는 접근 토큰을 Keycloak 26.6 은 발급한 그
   # 클라이언트가 물어도 `{"active": false}` 로 답한다(python 파일럿 실측).
+  # `it-web-foreign-aud` 는 하드코딩 클레임 매퍼로 id_token `aud` 를 `it-client` 로 **덮어쓴다** — Keycloak 에서
+  # id_token `aud` 에서 client_id 를 빼는 길은 이것뿐이다.
   REDIRECT_URI = "http://localhost/it-callback"
-  WEB_CLIENT_SECRETS = { "it-web" => "it-web-secret", "it-web-hs256" => "it-web-hs256-secret" }.freeze
+  WEB_CLIENT_SECRETS = { "it-web" => "it-web-secret", "it-web-hs256" => "it-web-hs256-secret",
+                         "it-web-foreign-aud" => "it-web-foreign-aud-secret" }.freeze
   ALICE = %w[alice alice-password].freeze
 
   # ⚠️ 기본값(알고리즘 핀·오디언스)은 **넘기지 않는다** — 늘 명시하면 `Config` 기본값이 넓어져도 이 스펙이 못 본다(Grok 레그 실측).
@@ -142,12 +145,32 @@ RSpec.describe "Authorization code exchange against a real Keycloak", :integrati
     expect(kc.auth.validate(tokens.id_token).claims["nonce"]).to eq(request.nonce)
   end
 
-  # 오디언스 검사가 실서버 id_token 에서 돈다 — `expected_audience` 를 이 클라이언트가 아닌 값으로 두면 거부한다.
-  it "refuses an id_token whose aud lacks the expected audience" do
+  # `expected_audience` 재정의는 액세스 토큰의 것이다 — id_token `aud` 는 client_id 로 검사한다(OIDC Core §3.1.3.7).
+  it "exchanges with the nonce under an expected_audience override, and validate keeps the override" do
     kc = new_client(expected_audience: "it-client")
     request, code = login(kc)
-    expect { exchange(kc, request, code) }
-      .to raise_error(KeycloakSdk::AuthError, /\Aauthorization_code exchange failed: invalid id_token: .*audience/i)
+    tokens = exchange(kc, request, code)
+    # 전제: 서버의 id_token `aud` 에 재정의 값은 없다(audience 매퍼는 access 전용) — 통과가 client_id 덕임을 보인다.
+    id_token = new_client.auth.validate(tokens.id_token)
+    expect([id_token.audience, id_token.claims["nonce"]]).to eq([["it-web"], request.nonce])
+    # 접근 토큰 검증은 재정의를 쓴다 — 이 토큰은 client_id(it-web)는 담지만 it-client 는 담지 않는다.
+    expect(new_client.auth.validate(tokens.access_token).audience).to include("it-web")
+    expect { kc.auth.validate(tokens.access_token) }
+      .to raise_error(KeycloakSdk::TokenValidationError, /Invalid audience\. Expected it-client,/)
+  end
+
+  # 재정의와 **같은** aud 라도 client_id 가 없으면 id_token 을 거부한다 — 실서버가 서명한 토큰으로.
+  it "refuses an id_token whose aud lacks the client_id even when it equals the override" do
+    kc = new_client("it-web-foreign-aud", expected_audience: "it-client")
+    request, code = login(kc)
+    # 전제: 서명·iss·exp 는 멀쩡하고 `aud` 만 재정의 값이다 — 접근 토큰 규칙(재정의)으로는 통과한다.
+    expect(kc.auth.validate(exchange(kc, request, code, nonce: nil).id_token).audience).to eq(["it-client"])
+
+    request, code = login(kc)
+    expect { exchange(kc, request, code) }.to raise_error(KeycloakSdk::AuthError) { |e|
+      expect(e.message).to start_with("authorization_code exchange failed: invalid id_token: ")
+      expect(e.message).to include("Invalid audience. Expected it-web-foreign-aud,") # client_id 를 기대했다
+    }
   end
 
   it "refuses a nonce the server did not sign" do

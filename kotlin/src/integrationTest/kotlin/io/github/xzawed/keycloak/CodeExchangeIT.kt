@@ -204,15 +204,29 @@ internal class CodeExchangeIT {
             }
         }
 
-    /** id_token 의 `aud` 도 교환 경로에서 강제된다 — 기대 audience 를 다른 값으로 두면 서버가 서명한 정상 토큰도 거부. */
+    /**
+     * `expectedAudience` 재정의는 **액세스 토큰**의 기대 audience 다 — id_token 의 `aud` 는 OIDC Core §2 · §3.1.3.7 대로
+     * client id 로 본다. 그래서 재정의한 채로도 nonce 교환이 서버가 서명한 정상 id_token 을 받는다(한때 검증기 하나를
+     * 공유해 이 교환이 「invalid id_token」으로 거부됐다). 재정의는 액세스 검증에 그대로 걸린다.
+     */
     @Test
-    fun `exchangeCode refuses an id_token issued to another audience`(): Unit =
+    fun `exchangeCode with the nonce succeeds under an expectedAudience override`(): Unit =
         runBlocking {
             KeycloakClient.create(webConfig(expectedAudience = "not-it-web")).use { kc ->
                 val (request, code) = login(kc)
-                val refused = refusedExchange(kc, request, code, expectedNonce = request.nonce)
-                assertEquals("Authorization code exchange failed: invalid id_token", refused.message)
-                assertIs<TokenValidationException>(refused.cause)
+                val tokens = kc.auth.exchangeCode(code, request.codeVerifier, REDIRECT_URI, expectedNonce = request.nonce)
+                val idToken = assertNotNull(tokens.idToken)
+                // 전제: 이 id_token 의 aud 에 재정의 값이 없다 — 재정의로 id_token 을 보던 옛 동작이면 위 교환은 거부됐다.
+                assertFailsWith<TokenValidationException> { kc.auth.validate(idToken) }
+                // 액세스 검증은 재정의를 그대로 쓴다.
+                assertFailsWith<TokenValidationException> { kc.auth.validate(tokens.accessToken) }
+                // 대조군: 기본 설정(aud = it-web)은 같은 두 토큰을 받는다 — 위 두 거부는 audience 때문이다.
+                KeycloakClient.create(webConfig()).use { plain ->
+                    val idClaims = plain.auth.validate(idToken).claims
+                    assertEquals(request.nonce, idClaims["nonce"])
+                    assertEquals(aliceId, idClaims["sub"])
+                    assertTrue("it-web" in plain.auth.validate(tokens.accessToken).audience)
+                }
             }
         }
 
