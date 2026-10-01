@@ -9,6 +9,7 @@
 ### Fixed
 - **(Go)** `Config.ExpectedAudience` 를 client id 가 아닌 값(리소스 서버)으로 재정의하면 nonce 를 넘긴 `ExchangeCode` 가 `invalid id_token` 으로 **실패했습니다** — id_token 을 액세스 토큰과 같은 audience 로 검증했기 때문입니다. 이제 그 교환은 통과하고, id_token 의 `aud` 는 OIDC Core §2·§3.1.3.7 대로 `ClientID` 를 담는지 검사합니다(`ClientID` 가 없으면 재정의 값만 담겨도 거부합니다). `Validate` 의 액세스 토큰 검증은 그대로 `ExpectedAudience` 를 쓰고, iss·알고리즘 핀·exp·nonce 검사와 JWKS 캐시·재조회 제한(둘이 하나를 공유합니다)은 바뀌지 않습니다. 공개 API 변경은 없습니다.
 - **(Kotlin)** `expectedAudience` 를 재정의하면 nonce 를 넘긴 `exchangeCode` 가 서버가 서명한 정상 id_token 에서도 「invalid id_token」으로 실패했습니다 — id_token 을 액세스 토큰과 같은 기대 audience(재정의 값)로 봤기 때문입니다. 이제 id_token 의 `aud` 는 OIDC Core §2 · §3.1.3.7 대로 `clientId` 로 보므로 그 교환이 성공하고, `aud` 에 client id 가 없는 id_token 은 재정의 값을 담았어도 거부합니다. `validate()` 의 액세스 토큰 검증은 지금처럼 재정의 값을 쓰고, JWKS 조회는 늘지 않습니다(저장소 하나를 공유). 공개 API 변경은 **0** 입니다.
+- **(Node)** `expectedAudience` 를 client id 가 아닌 값(리소스 서버)으로 재정의하면 `exchangeCode(…, nonce)` 가 Keycloak 이 발급한 정상 id_token 을 `invalid id_token` 으로 거부했습니다 — 액세스 토큰의 기대 audience 를 id_token 에도 요구했기 때문입니다. 이제 id_token 의 `aud` 는 OIDC Core §2·§3.1.3.7 대로 **client id** 로 검사하므로 재정의 아래에서도 교환이 통과하고, `aud` 에 client id 가 없는 id_token 은 재정의 값과 같아도 계속 거부합니다. 액세스 토큰 `validate` 는 지금처럼 재정의 값을 쓰고, 두 검증은 JWKS 캐시·재조회 제한을 하나로 공유합니다. 선언된 공개 API(`.d.ts`) 변경은 **0** 입니다 — `@internal` 메서드 `JwtValidator#withAudience` 가 런타임 번들(`dist/jwt.js`)에만 늘어납니다.
 
 ## [1.0.2] - 2026-09-27 (Node)
 
