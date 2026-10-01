@@ -88,9 +88,10 @@ public sealed class AuthClient : ITokenSource
         var tokens = ToTokenSet(resp, "Authorization code exchange failed", issuedAt);
 
         // NONCE: Duende does not auto-validate the id_token (unlike openid-client). Fully validate it
-        // (signature/iss/aud/exp via the hardened validator — Keycloak id_token aud == clientId, which
-        // the validator expects by default; setting KeycloakConfig.ExpectedAudience makes this shared
-        // validator demand that value from the id_token too, so map it into the id_token as well)
+        // (signature/alg pin/iss/exp on the hardened validator's one ConfigurationManager — the same JWKS
+        // cache, refresh gate and backoff as ValidateAsync — but aud against ClientId, never
+        // KeycloakConfig.ExpectedAudience: an id_token's aud MUST contain the client_id (OIDC Core §2,
+        // §3.1.3.7), and ExpectedAudience restricts access tokens only)
         // and then check the nonce claim. Fails CLOSED when a nonce was supplied
         // (CreateAuthorizationRequest always issues one), matching the Node posture —
         // a missing id_token must throw, NOT silently skip validation (an attacker could otherwise strip
@@ -100,7 +101,7 @@ public sealed class AuthClient : ITokenSource
             if (tokens.IdToken is not { } idToken)
                 throw new KeycloakAuthException("id_token missing for nonce validation");
             ValidatedToken idt;
-            try { idt = await _validator.ValidateAsync(idToken, ct).ConfigureAwait(false); }
+            try { idt = await _validator.ValidateForAudienceAsync(idToken, _cfg.ClientId, ct).ConfigureAwait(false); }
             catch (KeycloakTokenValidationException ex) { throw new KeycloakAuthException("id_token validation failed", ex); }
             if (!idt.Claims.TryGetValue("nonce", out var n) || n as string != nonce)
                 throw new KeycloakAuthException("id_token nonce mismatch");

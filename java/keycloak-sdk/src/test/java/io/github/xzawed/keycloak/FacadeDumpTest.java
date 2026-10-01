@@ -177,8 +177,11 @@ class FacadeDumpTest {
     }
   }
 
-  /** 공개 API 로 뿌리를 만들고, 그 과정이 흘려 넣은 비밀 전부를 {@code canaries} 에 남긴다. */
-  private static Map<String, Object> roots(FakeIdp idp, RSAKey key, Map<String, String> canaries,
+  /**
+   * 공개 API 로 뿌리를 만들고, 그 과정이 흘려 넣은 비밀 전부를 {@code canaries} 에 남긴다. {@link HostilePathMatrixTest}
+   * 가 선언 집합을 파생하려고 같은 뿌리·걷기를 쓴다(두 번째 걷기를 만들지 않는다).
+   */
+  static Map<String, Object> roots(FakeIdp idp, RSAKey key, Map<String, String> canaries,
       List<AutoCloseable> closers) throws Exception {
     KeycloakConfig.Builder builder = KeycloakConfig.builder()
         .serverUrl(idp.url()).realm("r").clientId(CLIENT_ID).clientSecret(SECRET.toCharArray());
@@ -321,7 +324,7 @@ class FacadeDumpTest {
   }
 
   /** 가짜 IdP — 경로로 응답을 고른다(호출 순서가 바뀌어도 안 깨진다). 토큰·introspect·JWKS·logout·실패 realm·admin 4xx/5xx. */
-  private static final class FakeIdp implements AutoCloseable {
+  static final class FakeIdp implements AutoCloseable {
     final AtomicInteger hits = new AtomicInteger();
     final Set<String> tokenAuth = ConcurrentHashMap.newKeySet();
     final String idToken;
@@ -393,7 +396,7 @@ class FacadeDumpTest {
 
   // ── 걷기 ──
 
-  private static Path location(Class<?> c) {
+  static Path location(Class<?> c) {
     ProtectionDomain pd = c.getProtectionDomain();
     CodeSource cs = pd == null ? null : pd.getCodeSource();
     if (cs == null || cs.getLocation() == null) return null;
@@ -405,7 +408,7 @@ class FacadeDumpTest {
   }
 
   /** SDK 루트 패키지(파사드의 패키지)를 담은 클래스패스 루트 전부 — 이 테스트의 산출물만 뺀다. */
-  private static Set<Path> sdkLocations(Path harness) throws Exception {
+  static Set<Path> sdkLocations(Path harness) throws Exception {
     String dir = SDK_PACKAGE.substring(0, SDK_PACKAGE.length() - 1).replace('.', '/');
     Set<Path> out = new TreeSet<>();
     Enumeration<URL> urls = FacadeDumpTest.class.getClassLoader().getResources(dir);
@@ -426,7 +429,7 @@ class FacadeDumpTest {
   }
 
   /** SDK 산출물의 이름 있는 타입 전수(익명·합성 제외) — 손 목록이 아니라 트리에서 파생한다. */
-  private static SortedSet<String> declaredTypes(Set<Path> locations) throws Exception {
+  static SortedSet<String> declaredTypes(Set<Path> locations) throws Exception {
     SortedSet<String> names = new TreeSet<>();
     for (Path loc : locations) {
       if (Files.isDirectory(loc)) {
@@ -478,10 +481,12 @@ class FacadeDumpTest {
     return out;
   }
 
-  private static final class Walker {
+  static final class Walker {
     private record Item(Object value, String root, String path) {}
 
     final Set<String> reached = new TreeSet<>();
+    /** 닿은 SDK 구체 클래스마다 처음 만난 인스턴스 — {@link HostilePathMatrixTest} 가 수신자를 여기서 꺼낸다. */
+    final Map<Class<?>, Object> found = new LinkedHashMap<>();
     final List<String> leaks = new ArrayList<>();
     final List<String> problems = new ArrayList<>();
     final Set<String> knownSeen = new TreeSet<>();
@@ -538,6 +543,7 @@ class FacadeDumpTest {
         problems.add(path + ": SDK 패키지의 " + c.getName() + " 이 SDK 산출물 밖(" + loc(c) + ")에서 왔다 — 소유 판정이 샌다");
       }
       if (own(c)) {
+        found.putIfAbsent(c, v);
         // 상위 SDK 타입은 **같은 렌더링 구현을 쓸 때만** 닿은 것으로 센다 — 그때 그 타입의 상태 전부와 그 구현이
         // 이 인스턴스로 렌더링된다. 하위가 toString 을 덮으면 상위 자신의 렌더링은 한 번도 안 돈 것이다.
         List<Class<?>> impl = renderedBy(c);
