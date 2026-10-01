@@ -1,0 +1,13 @@
+name: go-ci
+on: { pull_request: { paths: ['go/**'] } }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # grep -vE '/(nope)\.go:' cover.out  ← YAML 주석 속 명령은 사본이 아니다
+      - name: gate
+        run: |
+          go test ./... -coverprofile=cover.out
+          # grep -vE '/(nope)\.go:' cover.out  ← 셸 주석도 사본이 아니다
+          grep -vE '/(auth|admin|admin_users)\.go:' cover.out > cover.logic.out
+          grep -c . cover.logic.out

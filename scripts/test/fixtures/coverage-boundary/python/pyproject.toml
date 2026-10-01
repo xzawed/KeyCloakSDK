@@ -1,0 +1,15 @@
+[project]
+name = "fixture"
+description = "omit = ['*/config.py'] in a string is not the list"
+
+[tool.coverage.run]
+branch = true
+source = ["keycloak_sdk"]
+omit = [
+  "*/auth.py",           # 경계 — `*/auth.py` 는 aio/auth.py 도 잡는다(coverage.py 의미론)
+  "*/admin/__init__.py",
+  # "*/config.py",      주석 속 항목은 세지 않는다
+]
+
+[tool.coverage.report]
+fail_under = 100

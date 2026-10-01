@@ -1,0 +1,6 @@
+<project>
+  <artifactId>mod-examples</artifactId>
+  <properties>
+    <jacoco.skip>true</jacoco.skip>
+  </properties>
+</project>
