@@ -81,6 +81,16 @@ internal class JwtValidatorTest {
         return jwt.serialize()
     }
 
+    private fun signed(
+        key: RSAKey,
+        alg: JWSAlgorithm,
+        claimsSet: JWTClaimsSet,
+    ): String {
+        val jwt = SignedJWT(JWSHeader.Builder(alg).keyID(key.keyID).build(), claimsSet)
+        jwt.sign(RSASSASigner(key))
+        return jwt.serialize()
+    }
+
     @Test
     fun `valid RS256 token validates and exposes claims`() =
         runTest {
@@ -329,6 +339,50 @@ internal class JwtValidatorTest {
             val token = signedRs256(key, claims(aud = listOf(audience)))
 
             assertFailsWith<TokenValidationException> { validator.validate(token) }
+        }
+
+    // ── withAudience — 코드 교환의 id_token 검증(OIDC Core §3.1.3.7: aud 는 client id)이 쓰는 파생 검증기 ──
+    // 바뀌는 것은 기대 audience 하나뿐이다. iss · alg 핀 · skew 는 원본 것을 그대로 쓰고, 원본은 그대로 남는다.
+    // (JWKS 저장소를 공유하는지는 요청 수로만 보인다 — `IdTokenAudienceJwksTest`.)
+    @Test
+    fun `withAudience checks the new audience and leaves the original validator as it was`() =
+        runTest {
+            val key = rsaKey()
+            val access = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, apiAudience)
+            val idToken = access.withAudience(audience)
+
+            assertEquals(listOf(audience), idToken.validate(signedRs256(key, claims(aud = listOf(audience)))).audience)
+            assertFailsWith<TokenValidationException> { idToken.validate(signedRs256(key, claims(aud = listOf(apiAudience)))) }
+            assertEquals(listOf(apiAudience), access.validate(signedRs256(key, claims(aud = listOf(apiAudience)))).audience)
+            assertFailsWith<TokenValidationException> { access.validate(signedRs256(key, claims(aud = listOf(audience)))) }
+        }
+
+    // 원본을 기본값이 아닌 skew(120초)와 alg 집합으로 만든다 — 파생이 기본값으로 되돌아가면 여기서 갈린다.
+    @Test
+    fun `withAudience keeps the issuer, the algorithm pin and the clock skew`() =
+        runTest {
+            val key = rsaKey()
+            val jwks = JWKSet(key.toPublicJWK())
+            val pinned =
+                JwtValidator.withStaticJwks(jwks, issuer, apiAudience, skew = Duration.ofSeconds(120)).withAudience(audience)
+            // 같은 RSA 키의 RS384 — 키는 맞고 alg 만 RS256 핀 밖이다.
+            val rs384 = signed(key, JWSAlgorithm.RS384, claims())
+
+            assertFailsWith<TokenValidationException>("iss") {
+                pinned.validate(signedRs256(key, claims(iss = "https://attacker.example.com/realms/evil")))
+            }
+            assertFailsWith<TokenValidationException>("alg pin") { pinned.validate(rs384) }
+            assertEquals(issuer, pinned.validate(signedRs256(key, claims(expiresInMillis = -90_000))).issuer, "skew kept")
+            assertFailsWith<TokenValidationException>("skew kept") {
+                pinned.validate(signedRs256(key, claims(expiresInMillis = -200_000)))
+            }
+            assertFailsWith<TokenValidationException>("exp required") { pinned.validate(signedRs256(key, claims(expiresInMillis = null))) }
+            // 대조군: 원본이 RS384 를 허용하면 파생도 받는다 — 위 거부가 핀 때문이고, 파생이 원본의 집합을 쓴다는 증거다.
+            val widened =
+                JwtValidator
+                    .withStaticJwks(jwks, issuer, apiAudience, allowedAlgs = setOf(JWSAlgorithm.RS256, JWSAlgorithm.RS384))
+                    .withAudience(audience)
+            assertEquals(issuer, widened.validate(rs384).issuer)
         }
 
     @Test

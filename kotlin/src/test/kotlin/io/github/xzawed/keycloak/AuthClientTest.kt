@@ -23,6 +23,7 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -53,6 +54,7 @@ internal class AuthClientTest {
     private fun config(
         readTimeout: Duration = Duration.ofSeconds(30),
         serverUrl: String = server.baseUrl(),
+        expectedAudience: String? = null,
     ): KeycloakConfig =
         KeycloakConfig(
             serverUrl = serverUrl,
@@ -61,6 +63,7 @@ internal class AuthClientTest {
             clientSecret = "secret".toCharArray(),
             scopes = listOf("openid", "profile"),
             readTimeout = readTimeout,
+            expectedAudience = expectedAudience,
         )
 
     private val tokenPath = "/realms/r/protocol/openid-connect/token"
@@ -447,5 +450,146 @@ internal class AuthClientTest {
 
             assertEquals("AT", tokenSet.accessToken)
             auth.close()
+        }
+
+    // expectedAudience 재정의 + 코드 교환 ------------------------------------------------------------------
+    //
+    // 재정의는 **액세스 토큰**의 기대 audience 다. id_token 의 `aud` 는 OIDC Core §2 · §3.1.3.7 대로 언제나
+    // client id 로 본다. 한때 둘이 검증기 하나를 공유해 재정의가 id_token 에도 걸렸고, 재정의한 소비자의 nonce
+    // 교환은 서버가 서명한 정상 id_token 에서 「invalid id_token」으로 실패했다. 주입 검증기는 운영 경로처럼
+    // `validate()` 의 것, 즉 **재정의 audience** 로 만든다 — 공유 JWKS 는 `IdTokenAudienceJwksTest` 가 잰다.
+
+    private val apiAudience = "api"
+
+    private fun idToken(
+        key: RSAKey,
+        aud: List<String>,
+        nonce: String = "the-nonce",
+        iss: String = OidcEndpoints.forRealm(config()).issuer,
+        alg: JWSAlgorithm = JWSAlgorithm.RS256,
+        expiresInMillis: Long? = 60_000,
+    ): String {
+        val claims =
+            JWTClaimsSet
+                .Builder()
+                .issuer(iss)
+                .audience(aud)
+                .subject("user-1")
+                .claim("nonce", nonce)
+        expiresInMillis?.let { claims.expirationTime(Date(System.currentTimeMillis() + it)) }
+        val jwt = SignedJWT(JWSHeader.Builder(alg).keyID(key.keyID).build(), claims.build())
+        jwt.sign(RSASSASigner(key))
+        return jwt.serialize()
+    }
+
+    private fun stubExchange(
+        idToken: String,
+        accessToken: String = "AT",
+    ) {
+        server.stubFor(
+            post(urlEqualTo(tokenPath)).willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody("""{"access_token":"$accessToken","token_type":"Bearer","expires_in":300,"id_token":"$idToken"}"""),
+            ),
+        )
+    }
+
+    // 운영 경로의 모양 — 주입 검증기의 audience 는 config.expectedAudience(= 재정의)다.
+    private fun overridden(
+        realmKey: RSAKey,
+        skew: Duration = Duration.ofSeconds(30),
+    ): AuthClient {
+        val cfg = config(expectedAudience = apiAudience)
+        val endpoints = OidcEndpoints.forRealm(cfg)
+        val validator =
+            JwtValidator.withStaticJwks(JWKSet(realmKey.toPublicJWK()), endpoints.issuer, cfg.expectedAudience, skew = skew)
+        return AuthClient(cfg, endpoints, validator)
+    }
+
+    private suspend fun AuthClient.exchange(expectedNonce: String = "the-nonce"): TokenSet =
+        exchangeCode("code", testCodeVerifier, "https://app.example.com/cb", expectedNonce = expectedNonce)
+
+    @Test
+    fun `exchangeCode checks the id_token against the client id under an expectedAudience override`() =
+        runTest {
+            val key = rsaKey()
+            for (aud in listOf(listOf("app"), listOf("app", apiAudience), listOf(apiAudience, "app"))) {
+                val token = idToken(key, aud)
+                stubExchange(token)
+                val auth = overridden(key)
+
+                assertEquals(token, auth.exchange().idToken, "aud=$aud")
+                auth.close()
+            }
+        }
+
+    @Test
+    fun `exchangeCode refuses an id_token whose aud lacks the client id even when it carries the override`() =
+        runTest {
+            val key = rsaKey()
+            for (aud in listOf(listOf(apiAudience), listOf(apiAudience, "other"), listOf("other"))) {
+                stubExchange(idToken(key, aud))
+                val auth = overridden(key)
+
+                val refused = assertFailsWith<KeycloakAuthException>("aud=$aud") { auth.exchange() }
+                assertEquals("Authorization code exchange failed: invalid id_token", refused.message, "aud=$aud")
+                assertIs<TokenValidationException>(refused.cause, "aud=$aud")
+                auth.close()
+            }
+        }
+
+    // 교환이 공유 검증기를 바꿔 두지 않는다 — 교환 **뒤**에도 validate() 는 재정의로 본다.
+    @Test
+    fun `validate keeps the expectedAudience override for access tokens after an exchange`() =
+        runTest {
+            val key = rsaKey()
+            val accessForApi = idToken(key, listOf(apiAudience))
+            val accessForClient = idToken(key, listOf("app"))
+            stubExchange(idToken(key, listOf("app")), accessToken = accessForApi)
+            val auth = overridden(key)
+
+            val tokens = auth.exchange()
+
+            assertEquals(listOf(apiAudience), auth.validate(tokens.accessToken).audience)
+            assertFailsWith<TokenValidationException> { auth.validate(accessForClient) }
+            auth.close()
+        }
+
+    // audience 만 바뀐다 — iss · alg 핀 · 서명 · exp(원본 검증기의 skew 그대로) · nonce 대조는 재정의 아래서도 같다.
+    // skew 를 기본값이 아닌 120초로 준다: 파생 검증기가 기본값으로 되돌아가면 「90초 지난 토큰」에서 갈린다.
+    @Test
+    fun `exchangeCode under an expectedAudience override still enforces iss, the algorithm pin, exp and the nonce`() =
+        runTest {
+            val key = rsaKey("k1")
+            val invalid =
+                mapOf(
+                    "foreign iss" to idToken(key, listOf("app"), iss = "https://attacker.example.com/realms/r"),
+                    "RS384 under the RS256 pin" to idToken(key, listOf("app"), alg = JWSAlgorithm.RS384),
+                    "forged signature" to idToken(rsaKey("k1"), listOf("app")),
+                    "no exp" to idToken(key, listOf("app"), expiresInMillis = null),
+                    "expired beyond the skew" to idToken(key, listOf("app"), expiresInMillis = -200_000),
+                )
+            for ((case, token) in invalid) {
+                stubExchange(token)
+                val auth = overridden(key, skew = Duration.ofSeconds(120))
+
+                val refused = assertFailsWith<KeycloakAuthException>(case) { auth.exchange() }
+                assertEquals("Authorization code exchange failed: invalid id_token", refused.message, case)
+                assertIs<TokenValidationException>(refused.cause, case)
+                auth.close()
+            }
+
+            stubExchange(idToken(key, listOf("app"), expiresInMillis = -90_000))
+            val withinSkew = overridden(key, skew = Duration.ofSeconds(120))
+            assertNotNull(withinSkew.exchange().idToken, "expired by less than the validator's skew")
+            withinSkew.close()
+
+            stubExchange(idToken(key, listOf("app"), nonce = "server-nonce"))
+            val wrongNonce = overridden(key)
+            val refused = assertFailsWith<KeycloakAuthException> { wrongNonce.exchange(expectedNonce = "expected-nonce") }
+            assertEquals("Authorization code exchange failed: unexpected nonce", refused.message)
+            wrongNonce.close()
         }
 }
