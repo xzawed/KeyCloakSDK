@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -286,6 +287,298 @@ func TestExchangeCodeNonceValidation(t *testing.T) {
 	if !errors.As(err, &ae) {
 		t.Fatalf("id_token without a nonce claim must yield *AuthError, got %v", err)
 	}
+}
+
+// audIdP stands in for a realm in the id_token audience tests: the token endpoint answers with the
+// id_token stored in idTok, and /certs counts every JWKS request (answering 503 while down is set).
+type audIdP struct {
+	srv   *httptest.Server
+	priv  *rsa.PrivateKey
+	other *rsa.PrivateKey // not in the JWKS
+	certs atomic.Int32
+	down  atomic.Bool
+	idTok atomic.Value // string
+}
+
+const (
+	audClientID = "app"
+	audOverride = "api://orders" // Config.ExpectedAudience: a resource server, not the client
+)
+
+func newAudIdP(t *testing.T) *audIdP {
+	t.Helper()
+	p := &audIdP{}
+	var err error
+	if p.priv, err = rsa.GenerateKey(rand.Reader, 2048); err != nil {
+		t.Fatal(err)
+	}
+	if p.other, err = rsa.GenerateKey(rand.Reader, 2048); err != nil {
+		t.Fatal(err)
+	}
+	jwks := jose.JSONWebKeySet{Keys: []jose.JSONWebKey{
+		{Key: &p.priv.PublicKey, KeyID: "k1", Algorithm: "RS256", Use: "sig"},
+	}}
+	base := "/realms/test/protocol/openid-connect"
+	mux := http.NewServeMux()
+	mux.HandleFunc(base+"/token", func(w http.ResponseWriter, _ *http.Request) {
+		idt, _ := p.idTok.Load().(string)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"AT","token_type":"Bearer","expires_in":300,"id_token":"` + idt + `"}`))
+	})
+	mux.HandleFunc(base+"/certs", func(w http.ResponseWriter, _ *http.Request) {
+		p.certs.Add(1)
+		if p.down.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(jwks)
+	})
+	p.srv = httptest.NewServer(mux)
+	t.Cleanup(p.srv.Close)
+	return p
+}
+
+// client is built by New — New's wiring is what is under test — with ExpectedAudience overridden.
+func (p *audIdP) client(t *testing.T) *Client {
+	t.Helper()
+	c, err := New(Config{ServerURL: p.srv.URL, Realm: "test", ClientID: audClientID, ClientSecret: "s",
+		ExpectedAudience: audOverride})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	return c
+}
+
+// claims is a well-formed claim set from this realm for the given audiences.
+func (p *audIdP) claims(aud ...string) jwt.Claims {
+	return jwt.Claims{Subject: "user1", Issuer: p.srv.URL + "/realms/test", Audience: jwt.Audience(aud),
+		Expiry: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)), IssuedAt: jwt.NewNumericDate(time.Now())}
+}
+
+// sign serialises cl signed by key under alg with header kid; an empty nonce leaves the claim out.
+func (p *audIdP) sign(t *testing.T, key *rsa.PrivateKey, alg jose.SignatureAlgorithm, kid string, cl jwt.Claims, nonce string) string {
+	t.Helper()
+	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: alg, Key: key},
+		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", kid))
+	if err != nil {
+		t.Fatalf("signer: %v", err)
+	}
+	b := jwt.Signed(sig).Claims(cl)
+	if nonce != "" {
+		b = b.Claims(map[string]any{"nonce": nonce})
+	}
+	s, err := b.Serialize()
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	return s
+}
+
+// idToken is a genuine id_token for the given audiences, carrying nonce "n".
+func (p *audIdP) idToken(t *testing.T, aud ...string) string {
+	t.Helper()
+	return p.sign(t, p.priv, jose.RS256, "k1", p.claims(aud...), "n")
+}
+
+// exchange makes the token endpoint return idToken and runs ExchangeCode expecting nonce.
+func (p *audIdP) exchange(c *Client, idToken, nonce string) error {
+	p.idTok.Store(idToken)
+	_, err := c.Auth.ExchangeCode(context.Background(), "code", p.srv.URL+"/cb", "verifier", nonce)
+	return err
+}
+
+// requireIDTokenRefused asserts that err is the exchange's invalid-id_token refusal and that the cause is a
+// TokenValidationError from the named stage ("claims: ", "parse: ", "signature: ").
+func requireIDTokenRefused(t *testing.T, err error, stage, what string) *TokenValidationError {
+	t.Helper()
+	var ae *AuthError
+	if !errors.As(err, &ae) || ae.Msg != "authorization code exchange failed: invalid id_token" {
+		t.Fatalf("%s: want the invalid-id_token AuthError, got %v", what, err)
+	}
+	var tve *TokenValidationError
+	if !errors.As(err, &tve) || !strings.HasPrefix(tve.Msg, stage) {
+		t.Fatalf("%s: want a TokenValidationError from %q, got %v", what, stage, err)
+	}
+	return tve
+}
+
+// TestExchangeCodeIDTokenAudienceIsTheClientIDUnderAnOverride pins the audience contract of the code exchange
+// when Config.ExpectedAudience names a resource server. OIDC Core §2 and §3.1.3.7: an id_token's aud MUST
+// contain the client_id, and the client MUST reject one that does not list it. ExpectedAudience is the
+// access-token audience (RFC 9700 §2.3), so it keeps governing Validate and nothing else.
+func TestExchangeCodeIDTokenAudienceIsTheClientIDUnderAnOverride(t *testing.T) {
+	ctx := context.Background()
+	p := newAudIdP(t)
+	c := p.client(t)
+
+	// A1: the id_token names the client, alone or beside other audiences — the exchange passes.
+	for _, aud := range [][]string{{audClientID}, {audOverride, audClientID}} {
+		if err := p.exchange(c, p.idToken(t, aud...), "n"); err != nil {
+			t.Fatalf("A1: id_token aud=%v must pass under ExpectedAudience=%q: %v", aud, audOverride, err)
+		}
+	}
+
+	// A2: an id_token that does not name the client is refused by the audience check — also when its aud is
+	// exactly the override, which is what the access-token validator would have accepted.
+	for _, aud := range [][]string{{audOverride}, {"someone-else"}} {
+		err := p.exchange(c, p.idToken(t, aud...), "n")
+		requireIDTokenRefused(t, err, "claims: ", "A2 aud="+strings.Join(aud, ","))
+		if !errors.Is(err, jwt.ErrInvalidAudience) {
+			t.Fatalf("A2: id_token aud=%v must fail the audience check, got %v", aud, err)
+		}
+	}
+
+	// A3: Validate still looks for the override — and only the override.
+	access := func(aud string) string { return p.sign(t, p.priv, jose.RS256, "k1", p.claims(aud), "") }
+	if _, err := c.Auth.Validate(ctx, access(audOverride)); err != nil {
+		t.Fatalf("A3: an access token for the override must pass Validate: %v", err)
+	}
+	_, err := c.Auth.Validate(ctx, access(audClientID))
+	if !errors.Is(err, jwt.ErrInvalidAudience) {
+		t.Fatalf("A3: under the override Validate must refuse aud=%q, got %v", audClientID, err)
+	}
+}
+
+// TestExchangeCodeIDTokenChecksUnchangedUnderAnOverride pins A4: moving the id_token onto the client id changed
+// only its audience. iss, the algorithm pin, the signature, exp with its skew and the nonce comparison are
+// still enforced on the exchange, under the same override.
+func TestExchangeCodeIDTokenChecksUnchangedUnderAnOverride(t *testing.T) {
+	p := newAudIdP(t)
+	c := p.client(t)
+	withClaims := func(edit func(*jwt.Claims)) string {
+		cl := p.claims(audClientID)
+		edit(&cl)
+		return p.sign(t, p.priv, jose.RS256, "k1", cl, "n")
+	}
+
+	// iss: exact match.
+	err := p.exchange(c, withClaims(func(cl *jwt.Claims) { cl.Issuer = "https://evil.example/realms/test" }), "n")
+	requireIDTokenRefused(t, err, "claims: ", "foreign iss")
+	if !errors.Is(err, jwt.ErrInvalidIssuer) {
+		t.Fatalf("foreign iss: want the issuer check, got %v", err)
+	}
+
+	// Algorithm pin: RS512 by the realm's own key is a valid signature, but not a pinned algorithm.
+	requireIDTokenRefused(t, p.exchange(c, p.sign(t, p.priv, jose.RS512, "k1", p.claims(audClientID), "n"), "n"),
+		"parse: ", "RS512 id_token")
+
+	// Signature: a key outside the JWKS under the realm's kid.
+	requireIDTokenRefused(t, p.exchange(c, p.sign(t, p.other, jose.RS256, "k1", p.claims(audClientID), "n"), "n"),
+		"signature: ", "foreign key")
+
+	// exp and its 30s skew: inside the skew passes, past it and absent are refused.
+	if err := p.exchange(c, withClaims(func(cl *jwt.Claims) {
+		cl.Expiry = jwt.NewNumericDate(time.Now().Add(-10 * time.Second))
+	}), "n"); err != nil {
+		t.Fatalf("exp 10s ago is inside the 30s skew and must pass: %v", err)
+	}
+	err = p.exchange(c, withClaims(func(cl *jwt.Claims) {
+		cl.Expiry = jwt.NewNumericDate(time.Now().Add(-2 * time.Minute))
+	}), "n")
+	requireIDTokenRefused(t, err, "claims: ", "expired")
+	if !errors.Is(err, jwt.ErrExpired) {
+		t.Fatalf("expired: want the expiry check, got %v", err)
+	}
+	requireIDTokenRefused(t, p.exchange(c, withClaims(func(cl *jwt.Claims) { cl.Expiry = nil }), "n"),
+		"claims: missing required exp", "no exp")
+
+	// Nonce: compared after validation — a mismatch and an absent claim are both refused.
+	for what, idt := range map[string]string{
+		"mismatched nonce": p.idToken(t, audClientID),
+		"absent nonce":     p.sign(t, p.priv, jose.RS256, "k1", p.claims(audClientID), ""),
+	} {
+		var ae *AuthError
+		if err := p.exchange(c, idt, "m"); !errors.As(err, &ae) || ae.Msg != "authorization code exchange failed: unexpected nonce" {
+			t.Fatalf("%s: want the unexpected-nonce AuthError, got %v", what, err)
+		}
+	}
+	if n := p.certs.Load(); n != 1 {
+		t.Fatalf("every id_token above resolves kid k1 from the one cached JWKS: /certs=%d, want 1", n)
+	}
+}
+
+// TestExchangeCodeAndValidateShareOneKeyStore pins A5: the id_token check has no key store of its own. The JWKS
+// cache, the forced-refetch window (JwksMinRefetch) and the cold-cache failure backoff are the SAME state for
+// the exchange and for Validate — a second store would double the cold load on the IdP and let one path fetch
+// while the other is inside its window. The control subtest proves the count sees a second store.
+func TestExchangeCodeAndValidateShareOneKeyStore(t *testing.T) {
+	ctx := context.Background()
+	access := func(p *audIdP, kid string) string {
+		return p.sign(t, p.priv, jose.RS256, kid, p.claims(audOverride), "")
+	}
+
+	t.Run("OneColdLoadForBoth", func(t *testing.T) {
+		p := newAudIdP(t)
+		c := p.client(t)
+		if err := p.exchange(c, p.idToken(t, audClientID), "n"); err != nil {
+			t.Fatalf("exchange: %v", err)
+		}
+		if _, err := c.Auth.Validate(ctx, access(p, "k1")); err != nil {
+			t.Fatalf("validate: %v", err)
+		}
+		if n := p.certs.Load(); n != 1 {
+			t.Fatalf("an exchange followed by Validate must cost one JWKS fetch, got /certs=%d", n)
+		}
+	})
+
+	t.Run("ControlASecondStoreIsCounted", func(t *testing.T) {
+		// What a separate id_token validator would be: same options, its own store.
+		p := newAudIdP(t)
+		c := p.client(t)
+		opts := c.Auth.val.opts
+		opts.audience = audClientID
+		if _, err := newValidator(opts).Validate(ctx, p.idToken(t, audClientID)); err != nil {
+			t.Fatalf("control id_token: %v", err)
+		}
+		if _, err := c.Auth.Validate(ctx, access(p, "k1")); err != nil {
+			t.Fatalf("control validate: %v", err)
+		}
+		if n := p.certs.Load(); n != 2 {
+			t.Fatalf("control: a second store must cost a second cold load, got /certs=%d — the count above is blind", n)
+		}
+	})
+
+	t.Run("OneForcedRefetchWindow", func(t *testing.T) {
+		p := newAudIdP(t)
+		c := p.client(t)
+		if err := p.exchange(c, p.idToken(t, audClientID), "n"); err != nil { // cold load: 1
+			t.Fatalf("exchange: %v", err)
+		}
+		if _, err := c.Auth.Validate(ctx, access(p, "rotated")); err == nil { // forced refetch: 2
+			t.Fatal("an unknown kid must not validate")
+		}
+		if n := p.certs.Load(); n != 2 {
+			t.Fatalf("Validate's unknown kid must force one refetch, got /certs=%d", n)
+		}
+		idt := p.sign(t, p.priv, jose.RS256, "rotated-too", p.claims(audClientID), "n")
+		tve := requireIDTokenRefused(t, p.exchange(c, idt, "n"), "key: ", "unknown kid inside the window")
+		if !strings.Contains(tve.Msg, "rate-limited") {
+			t.Fatalf("the exchange's unknown kid must hit Validate's window, got %v", tve)
+		}
+		if n := p.certs.Load(); n != 2 {
+			t.Fatalf("the exchange must share Validate's forced-refetch window, got /certs=%d", n)
+		}
+	})
+
+	t.Run("OneColdCacheBackoff", func(t *testing.T) {
+		p := newAudIdP(t)
+		c := p.client(t)
+		frozen := time.Now()
+		c.Auth.val.opts.now = func() time.Time { return frozen } // the backoff window never elapses
+		p.down.Store(true)
+		requireIDTokenRefused(t, p.exchange(c, p.idToken(t, audClientID), "n"), "key: ", "cold JWKS outage")
+		if n := p.certs.Load(); n != 1 {
+			t.Fatalf("the failed exchange must cost one JWKS fetch, got /certs=%d", n)
+		}
+		_, err := c.Auth.Validate(ctx, access(p, "k1"))
+		if err == nil || !strings.Contains(err.Error(), "backing off") {
+			t.Fatalf("Validate after the failed exchange must sit in the shared backoff, got %v", err)
+		}
+		if n := p.certs.Load(); n != 1 {
+			t.Fatalf("Validate inside the exchange's backoff must not fetch, got /certs=%d", n)
+		}
+	})
 }
 
 func TestIntrospect(t *testing.T) {
