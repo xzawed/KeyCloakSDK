@@ -98,12 +98,12 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 //
 // When expectedNonce is non-empty (the nonce returned by
 // CreateAuthorizationRequest), the returned id_token is fully signature-
-// validated (iss/aud/exp via the hardened Validator — Keycloak id_token aud ==
-// clientID, which is what the Validator expects unless Config.ExpectedAudience
-// overrides it) and its nonce claim
-// is compared against expectedNonce — OIDC nonce replay protection. A mismatch,
-// a missing id_token, or a validation failure all fail closed. An empty
-// expectedNonce skips id_token validation (custom no-nonce flows).
+// validated (iss/aud/exp via the hardened Validator) and its nonce claim is
+// compared against expectedNonce — OIDC nonce replay protection. The id_token's
+// aud must contain Config.ClientID (OIDC Core §3.1.3.7), whatever
+// Config.ExpectedAudience is set to. A mismatch, a missing id_token, or a
+// validation failure all fail closed. An empty expectedNonce skips id_token
+// validation (custom no-nonce flows).
 func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVerifier, expectedNonce string) (*TokenSet, error) {
 	tok, err := a.codeConfig(redirectURI).Exchange(a.oauthCtx(ctx), code, oauth2.VerifierOption(codeVerifier))
 	if err != nil {
@@ -119,13 +119,14 @@ func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVe
 }
 
 // verifyNonce validates the id_token and checks its nonce claim against
-// expectedNonce. Reuses the access-token Validator (aud == Config.ExpectedAudience,
-// i.e. clientID unless overridden).
+// expectedNonce. The id_token's aud is the client id, not Config.ExpectedAudience
+// (the access-token audience), so it is checked by a sibling of the access-token
+// Validator that shares its key store — one JWKS cache and one set of refetch gates.
 func (a *AuthClient) verifyNonce(ctx context.Context, idToken, expectedNonce string) error {
 	if idToken == "" {
 		return &AuthError{Msg: "authorization code exchange failed: missing id_token for nonce validation"}
 	}
-	vt, err := a.val.Validate(ctx, idToken)
+	vt, err := a.val.withAudience(a.cfg.ClientID).Validate(ctx, idToken)
 	if err != nil {
 		return &AuthError{Msg: "authorization code exchange failed: invalid id_token", Cause: err}
 	}

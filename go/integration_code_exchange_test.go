@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -135,6 +136,23 @@ func unverifiedPayload(t *testing.T, token string) map[string]any {
 		t.Fatalf("JWS payload: %v", err)
 	}
 	return claims
+}
+
+// audienceClaim reads a JWT aud claim, which is a string for one audience and an array for several.
+func audienceClaim(v any) []string {
+	switch aud := v.(type) {
+	case string:
+		return []string{aud}
+	case []any:
+		out := make([]string, 0, len(aud))
+		for _, a := range aud {
+			if s, ok := a.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 type secret struct{ name, value string }
@@ -338,20 +356,31 @@ func TestE2ECodeExchange(t *testing.T) {
 			secret{"id_token", tokens.IDToken})
 	})
 
-	// The exchange path checks the id_token's claims, not only its signature: a client that expects another
-	// audience refuses Keycloak's genuine id_token (aud = it-web). ⚠️ Config.ExpectedAudience governs this
-	// check as well as Validate (config.go) — so a consumer who points it at a resource server can no longer
-	// exchange a code with a nonce.
-	t.Run("RefusesAnIDTokenForAnotherAudience", func(t *testing.T) {
+	// The id_token's audience is the client id whatever Config.ExpectedAudience says (OIDC Core §2 and
+	// §3.1.3.7: aud MUST contain the client_id). ExpectedAudience is the access-token audience of a resource
+	// server, so a consumer who sets it still exchanges a code with a nonce — and Validate still uses it.
+	t.Run("AcceptsItsIDTokenUnderAnExpectedAudienceOverride", func(t *testing.T) {
 		other := webClient(t, serverURL, "it-web", func(c *Config) { c.ExpectedAudience = "not-it-web" })
 		req, code := aliceLogin(t, other)
-		_, err := other.Auth.ExchangeCode(ctx, code, itRedirectURI, req.CodeVerifier, req.Nonce)
-		if ae := requireAuthError(t, err, "foreign audience"); ae.Msg != msgBadIDToken {
-			t.Fatalf("foreign audience: got Msg=%q", ae.Msg)
+		tokens, err := other.Auth.ExchangeCode(ctx, code, itRedirectURI, req.CodeVerifier, req.Nonce)
+		if err != nil {
+			t.Fatalf("exchange with the nonce under ExpectedAudience=not-it-web: %v", err)
 		}
+		// Precondition: the server signed the id_token for it-web and not for the override — else the pass
+		// above would not show that the id_token was checked against the client id.
+		if aud := audienceClaim(unverifiedPayload(t, tokens.IDToken)["aud"]); !slices.Contains(aud, "it-web") ||
+			slices.Contains(aud, "not-it-web") {
+			t.Fatalf("precondition: id_token aud = %v, want it-web and not the override", aud)
+		}
+		// The override still governs Validate: the access token (aud it-web, from the realm's audience mapper)
+		// is refused by the audience check.
+		if aud := audienceClaim(unverifiedPayload(t, tokens.AccessToken)["aud"]); !slices.Contains(aud, "it-web") {
+			t.Fatalf("precondition: access token aud = %v, want it-web", aud)
+		}
+		_, err = other.Auth.Validate(ctx, tokens.AccessToken)
 		var tve *TokenValidationError
 		if !errors.As(err, &tve) || !strings.HasPrefix(tve.Msg, "claims: ") {
-			t.Fatalf("foreign audience: want a TokenValidationError from the claims check, got %v", err)
+			t.Fatalf("access token under the override: want a TokenValidationError from the claims check, got %v", err)
 		}
 	})
 
