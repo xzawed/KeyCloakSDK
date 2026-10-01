@@ -1145,10 +1145,14 @@ public sealed class HostilePathMatrixTests
         if (nCalls == 0)
             why.Add("W1 앵커 본문에서 요청을 내는 공개 호출을 하나도 못 읽었다 — 대조가 공허하다");
         // 보안 기본값 가드의 dotnet 행위 앵커는 전부 표의 앵커다 — 그 가드에 dotnet 앵커가 늘면 여기가 운다.
+        // 가드가 없으면 저장소 체크아웃에서만 실패다 — dotnet/ 만 복사된 곳(하네스 스위트 컨테이너)은 건너뛴다(go·node·python·kotlin·rust 와 같다).
         var script = Path.Combine(dotnet, "..", "scripts", "test", "test-security-defaults.sh");
         if (!File.Exists(script))
         {
-            why.Add($"W1 보안 기본값 가드를 못 읽었다: {script}");
+            if (Path.Exists(Path.Combine(dotnet, "..", ".git")))
+                why.Add($"W1 저장소 체크아웃인데 보안 기본값 가드를 못 읽었다: {script}");
+            else
+                _out.WriteLine("W1: 저장소 밖에서 돌아 보안 기본값 가드 대조는 건너뛴다");
             return why;
         }
         var found = ScriptAnchor.Matches(File.ReadAllText(script)).Select(m => $"{m.Groups[1].Value}|{m.Groups[2].Value}").Distinct().ToList();
