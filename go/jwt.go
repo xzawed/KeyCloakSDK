@@ -56,7 +56,13 @@ type validatorOptions struct {
 // refetch; only an unresolved kid does, rate-limited).
 type Validator struct {
 	opts validatorOptions
+	*jwksState
+}
 
+// jwksState is the key store: the cached JWKS and every gate on refetching it. It sits behind a
+// pointer so that withAudience's siblings share it — one cache, one forced-refetch window, one
+// failure backoff and one single-flight group per Client, whichever audience a caller checks.
+type jwksState struct {
 	mu          sync.Mutex
 	jwks        *jose.JSONWebKeySet
 	forcedAt    time.Time          // last *forced* refetch (rotation); zero until the first one
@@ -110,7 +116,17 @@ func newValidator(opts validatorOptions) *Validator {
 	if opts.minRefetch == 0 {
 		opts.minRefetch = time.Duration(defaultJwksMinRefetchSecs) * time.Second
 	}
-	return &Validator{opts: opts}
+	return &Validator{opts: opts, jwksState: &jwksState{}}
+}
+
+// withAudience returns a Validator that requires audience in aud and shares this one's key store.
+// Only the audience differs: issuer, algorithm pin, skew and the refetch gates are this Validator's.
+// ExchangeCode uses it for the id_token, whose aud is the client id (OIDC Core §2, §3.1.3.7) while
+// Config.ExpectedAudience names the access-token audience.
+func (v *Validator) withAudience(audience string) *Validator {
+	o := v.opts
+	o.audience = audience
+	return &Validator{opts: o, jwksState: v.jwksState}
 }
 
 func (v *Validator) Validate(ctx context.Context, token string) (*ValidatedToken, error) {

@@ -10,8 +10,14 @@ import java.time.Duration; import java.util.*;
 
 public final class JwtValidator {
   private final ConfigurableJWTProcessor<SecurityContext> processor;   // issuer당 1회 구성(JWKSource 캐시)
+  // withAudience 가 넘겨줄 것 — 특히 jwkSource 는 **같은 객체**여야 한다(JWKS 캐시·재조회 제한·콜드 캐시 창이 그 안에 있다).
+  private final JWKSource<SecurityContext> jwkSource;
+  private final String issuer;
+  private final Set<JWSAlgorithm> allowedAlgs;
+  private final Duration skew;
   private JwtValidator(JWKSource<SecurityContext> jwkSource, String issuer, String audience,
                        Set<JWSAlgorithm> allowedAlgs, Duration skew) {
+    this.jwkSource = jwkSource; this.issuer = issuer; this.allowedAlgs = allowedAlgs; this.skew = skew;
     DefaultJWTProcessor<SecurityContext> p = new DefaultJWTProcessor<>();
     p.setJWSKeySelector(new JWSVerificationKeySelector<>(allowedAlgs, jwkSource)); // 허용 alg만 → none/기타 거부
     // exactMatchClaims에는 issuer만 둔다: audience까지 넣으면 Nimbus가 aud를 [audience]와
@@ -59,6 +65,13 @@ public final class JwtValidator {
   static JwtValidator withStaticJwks(JWKSet jwks, String issuer, String audience,
                                      Set<JWSAlgorithm> allowedAlgs, Duration skew) {
     return new JwtValidator(new ImmutableJWKSet<>(jwks), issuer, audience, allowedAlgs, skew);
+  }
+  // 요구 aud 만 바꾼 검증기 — 키 원천·iss·alg 핀·skew·필수 exp 는 이 검증기 것 그대로다. 교환의 id_token 용이다:
+  // id_token 의 aud 는 client id 를 담는다(OIDC Core §2·§3.1.3.7). ⚠️ 여기서 forRealm 을 다시 부르면 키 저장소가 둘이
+  // 되어 교환 뒤 첫 validate() 가 JWKS 를 다시 받고 장애 때 창당 상한이 두 배다(IdTokenAudienceJwksSharingTest).
+  // 네트워크 I/O 없이 처리기만 새로 만든다. 패키지 전용 — 공개 API 가 아니다.
+  JwtValidator withAudience(String audience) {
+    return new JwtValidator(jwkSource, issuer, audience, allowedAlgs, skew);
   }
   // 반환 타입은 SDK 소유의 ValidatedToken (I.1): 이 SDK의 공개 API는 어떤 시그니처에서도
   // Nimbus 타입을 노출하지 않는다.

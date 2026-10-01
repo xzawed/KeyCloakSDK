@@ -97,6 +97,31 @@ RSpec.describe KeycloakSdk::JwtValidator do
         expect { validator.validate(sign(base_claims)) } # aud carries client_id only
           .to raise_error(KeycloakSdk::TokenValidationError)
       end
+
+      # id_token 경로 — OIDC Core §2·§3.1.3.7 의 `aud` 는 client_id 다. 재정의는 액세스 토큰(리소스 서버)의 것이다.
+      it "checks a per-call audience instead of the override" do
+        expect(validator.validate(sign(base_claims), audience: audience).audience).to eq([audience])
+        expect { validator.validate(sign(base_claims("aud" => api_audience)), audience: audience) }
+          .to raise_error(KeycloakSdk::TokenValidationError, /audience/i)
+      end
+
+      it "shares one key cache between the default and a per-call audience" do
+        validator.validate(sign(base_claims("aud" => api_audience)))
+        validator.validate(sign(base_claims), audience: audience)
+        expect(a_request(:get, jwks_url)).to have_been_made.once
+      end
+    end
+  end
+
+  # ⚠️ ruby-jwt 는 `aud: nil` 이면 aud 검사를 **통째로 건너뛴다**(3.3.0 실측: 다른 aud 를 통과시킨다).
+  # 생성자와 같은 fail-closed 가드가 호출별 audience 에도 있어야 한다.
+  describe "per-call audience guard" do
+    [nil, "", "  "].each do |blank|
+      it "raises ConfigError for audience: #{blank.inspect} before any JWKS request" do
+        token = sign(base_claims("aud" => "someone-else"))
+        expect { validator.validate(token, audience: blank) }.to raise_error(KeycloakSdk::ConfigError, /audience/)
+        expect(a_request(:get, jwks_url)).not_to have_been_made
+      end
     end
   end
 

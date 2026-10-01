@@ -36,7 +36,8 @@ public sealed class KeycloakClient : IAsyncDisposable, IDisposable
     }
 
     /// <summary>Validator options for a config: the expected audience is ExpectedAudience when set,
-    /// otherwise ClientId (the pre-existing default).</summary>
+    /// otherwise ClientId (the pre-existing default). The id_token path overrides it with ClientId
+    /// (<c>JwtValidator.ValidateForAudienceAsync</c>) on the same key store.</summary>
     internal static JwtValidatorOptions ValidatorOptionsFor(KeycloakConfig cfg, string issuer) => new()
     {
         Issuer = issuer,

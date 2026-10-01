@@ -149,6 +149,65 @@ describe('JwtValidator (강화 검증)', () => {
     await expect(permissive.validate(forged)).rejects.toBeInstanceOf(KeycloakTokenValidationError)
   })
 
+  describe('withAudience — 코드 교환의 id_token 용(aud 만 바뀐다)', () => {
+    it('기대 aud 만 바꾸고 원본 검증기는 그대로 둔다', async () => {
+      const base = JwtValidator.forKeySource(keys, OPTS)
+      const derived = base.withAudience('the-client')
+      await expect(
+        derived.validate(await sign({ sub: 'u', aud: 'the-client' })),
+      ).resolves.toMatchObject({ audience: ['the-client'] })
+      await expect(
+        derived.validate(await sign({ sub: 'u', aud: 'my-client' })),
+      ).rejects.toBeInstanceOf(KeycloakTokenValidationError)
+      // 원본은 파생 뒤에도 자기 audience 를 쓴다 — opts 를 공유 변이하지 않는다.
+      await expect(base.validate(await sign({ sub: 'u', aud: 'my-client' }))).resolves.toBeDefined()
+      await expect(
+        base.validate(await sign({ sub: 'u', aud: 'the-client' })),
+      ).rejects.toBeInstanceOf(KeycloakTokenValidationError)
+    })
+
+    it('키 소스는 같은 객체다 — JWKS 캐시·재조회 제한·백오프를 둘로 나누지 않는다', () => {
+      const base = JwtValidator.forJwksUri(
+        'https://kc.example.com/realms/test/protocol/openid-connect/certs',
+        OPTS,
+      )
+      const keysOf = (v: JwtValidator): unknown => (v as unknown as { keys: unknown }).keys
+      expect(keysOf(base)).toBeTypeOf('function')
+      expect(Object.is(keysOf(base.withAudience('the-client')), keysOf(base))).toBe(true)
+    })
+
+    it('iss · alg 핀 · exp 필수 · 클록 스큐는 그대로다', async () => {
+      const derived = JwtValidator.forKeySource(keys, OPTS).withAudience('the-client')
+      const now = Math.floor(Date.now() / 1000)
+      const at = (exp: number) =>
+        new SignJWT({ sub: 'u', aud: 'the-client' })
+          .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+          .setIssuer(ISS)
+          .setIssuedAt(now - 120)
+          .setExpirationTime(exp)
+          .sign(priv)
+      const rejects = async (t: string) =>
+        expect(derived.validate(t)).rejects.toBeInstanceOf(KeycloakTokenValidationError)
+
+      await rejects(
+        await sign({ sub: 'u', aud: 'the-client' }, 'https://evil.example.com/realms/test'),
+      )
+      await rejects(await at(now - 60)) // 스큐(30초) 밖 만료
+      await expect(derived.validate(await at(now - 10))).resolves.toBeDefined() // 스큐 안 — 스큐가 살아 있다
+      await rejects(
+        await new SignJWT({ sub: 'u', aud: 'the-client' })
+          .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+          .setIssuer(ISS)
+          .setIssuedAt()
+          .sign(priv),
+      ) // exp 없음
+      const pinned = JwtValidator.forKeySource(keys, { ...OPTS, allowedAlgs: ['ES256'] })
+      await expect(
+        pinned.withAudience('the-client').validate(await sign({ sub: 'u', aud: 'the-client' })),
+      ).rejects.toBeInstanceOf(KeycloakTokenValidationError)
+    })
+  })
+
   it('forJwksUri — 원격 JWKS 검증기 구성(지연 fetch, 네트워크 호출 없음)', () => {
     const v = JwtValidator.forJwksUri(
       'https://kc.example.com/realms/test/protocol/openid-connect/certs',
