@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `220`(2026-09-27 기준 열림 122 · 닫힘 98)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `224`(2026-09-27 기준 열림 125 · 닫힘 99)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,15 +116,28 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-09-27 · #560–#653 반영)
+### 다음 세션 진입점 (2026-09-27 · #560–#672 반영)
 
-**지금 상태** — 열린 PR 0 · `main` 깨끗 · 열린 항목 수는 위 「규모」의 명령으로 센다. **2026-09-26 릴리스 물결 둘**: 첫째(#604–#616)로 아홉 전부 게시, 둘째(#626–#634)로 원인 사슬 수정(#617–#624)을 게시 — go·php `1.2.0` · ruby `1.1.0` · rust `1.1.1` · python·dotnet `1.0.2` LIVE·기준선 상향(#634). java·kotlin `1.0.3` 도 사람이 Portal 에서 Publish 해 LIVE 이고, 게시 바이트는 major ≤ 61 이며, JVM 기준선도 올렸다(#638). **2026-09-27 node `1.0.2`**(#649–#651): 코드 교환 통합 이식이 찾은 id_token 서명 미검증을 고친 security patch 로, LIVE 이고 기준선도 올렸다. 레지스트리 9/9 는 `node scripts/check-registry-truth.mjs` 로 다시 잰다. 닫은 것의 경위는 여기 없다 — `git log --oneline d7439f5..HEAD` 와 아카이브 태그가 소유한다.
+**지금 상태** — ⚠️ **열린 PR 10, 전부 CI 초록(#658 은 Sonar 하나 대기)이고 병합만 남았다.** 모두 구현 레그가 변이 전부 CAUGHT 를 보고했고, PM 이 CI 로그로 재검증했다.
+- **#658** java 적대 행렬.
+- **#663–#671**: id_token audience 판정 (a) 구현 아홉. java #663 · kotlin #664 · go #665 · python #666 · node #667 · dotnet #668 · php #669 · ruby #670 · rust #671.
+  - python #666 은 `python-traceback-locals-carry-tokens` 수정도 싣는다.
+- ⚠️ **병합 절차.** 아홉이 모두 CHANGELOG `[Unreleased]` 에 줄을 넣어, 하나를 병합하면 나머지가 충돌한다.
+  - 각 브랜치에 `origin/main` 을 merge 하고, CHANGELOG 는 「main + 그 브랜치의 `[Unreleased]` 줄」로 합친다. 다른 경로가 충돌하면 멈춘다.
+  - 합친 뒤 required 체크를 기다렸다가 squash 한다.
+  - **kotlin #664 는 `.claude/rules/kotlin.md` 를 #662 와 같이 고쳤다** — 충돌과 doc-budget 을 확인한다.
+
+열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유하고, 아홉 전부 LIVE·기준선 일치다(2026-09-27). `node scripts/check-registry-truth.mjs` 로 다시 잰다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. **`guard-detection-surface-hand-narrowed` [H/M]** — 마스킹 축의 「새 자리」는 아홉 언어 전부 파생으로 닫혔다(#592–#602). 남은 것은 **새 교환 경로**(nonce·백오프·토큰타입)와 줄 단위 skip 표지. Go 파일럿(분류 · 손 목록 포함 · 계급별 변형)은 섰다 — 다음은 여덟 언어로 옮기기(항목의 ⏳ 줄).
-2. `integration-coverage-never-measured` [H/L] — 첫 걸음(코드 교환 통합 9/9)은 닫혔다. 다음은 둘째 걸음 — omit 사본 조인 가드(`coverage-omit-no-ssot`, 드리프트 셋이 이미 재져 있다).
-   - 이 이식이 연 판정 둘은 2026-09-27 결정됐다 — `id-token-audience-follows-access-audience` 는 (a) 로 아홉 언어 구현, `nonce-failure-leaves-session-alive` 는 (b) 기각. 그 실측이 `python-traceback-locals-carry-tokens` 를 새로 찾았다.
+1. **열린 PR 10 병합**(위 절차). 병합 뒤 `id-token-audience-follows-access-audience`·`python-traceback-locals-carry-tokens` 를 닫는다.
+2. **admin 결함 셋 수정**: `php-admin-token-error-unsanitized` · `jvm-admin-token-response-type-unchecked` · `python-admin-grant-accepts-empty-access-token`. 적대 행렬이 KNOWN_GAPS 로 고정해 두었으므로, 고치면 그 항목이 낡아 실패한다 — 함께 지운다.
+3. **3차 릴리스 물결**(DEPLOY §4, 태그는 사용자 위임). 1·2 를 싣는다.
+   - 7 언어 patch, php·ruby minor(판정 (a) 가 공개 메서드·키워드를 더했다).
+   - JVM 은 사람이 Portal 에서 Publish 해야 한다.
+4. `guard-detection-surface-hand-narrowed` [H/M] — 적대 행렬은 **아홉 언어 전부 섰다**(go #636·#639 · 여덟 #654–#661). 다음은 skip 표지를 닫는 attest 파일(W5)과, KNOWN_GAPS id ↔ 열린 등록부 항목 대조다.
+5. `integration-coverage-never-measured` [H/L] — ①코드 교환 통합 9/9 · ②omit 조인 가드(#662) 닫힘. 다음은 ③레인별 통합 전용 리포트, 보고 모드다.
 3. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다. 반대 방향도 있다 — #585 는 「verifier 하나」로 등록됐지만 부류는 호출 인자 다섯 갈래였다.
 
 **사람 판정 대기** — 없음. 2026-09-27 사용자 판정(권장안으로): id_token audience 는 (a) clientId 로 따로 검증 · 검증 실패 교환의 revoke 는 (b) 기각. 근거와 되살릴 조건은 각 항목이 소유한다.
@@ -455,7 +468,10 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
       - nonce 파라미터가 있는 교환 행: 대상은 go/parser 로 서명에서 파생한다. nonce 가 다름 · 다른 키(같은 kid·다른 kid) · id_token 없음 · nonce 클레임 없음을 모두 거부해야 한다. nonce 이름이 아닌 교환 행은 이유 있는 면제가 있어야만 빠진다.
       - JWKS 조회 행: 콜드 캐시에서 503 을 5 번 받는 동안 `/certs` 요청이 `1 ≤ hits ≤ 4` 여야 한다.
     - **손 목록 포함(W1).** 파생 집합은 기존 손 테스트와 보안 기본값 가드의 Go 앵커를 전부 담아야 한다. 알려진 틈(`hpKnownGaps`)은 0 이고, 낡은 항목은 실패한다.
-    - **다음 걸음.** 나머지 여덟 언어로 옮긴다(PHP · Python · Ruby · .NET · Java · Node · Kotlin → Rust). 그다음 skip 표지를 닫는 attest 파일을 둔다(실행 ID nonce, 비-required 단계).
+    - **여덟 언어 이식 완료(2026-09-27).** #654–#661 이고, java #658 만 병합 대기다. 언어마다 Grok 레그를 거쳤고 필수 변이 여섯은 전부 CAUGHT 였다.
+      - KNOWN_GAPS 가 SDK 결함 셋을 드러냈다: `php-admin-token-error-unsanitized` · `jvm-admin-token-response-type-unchecked` · `python-admin-grant-accepts-empty-access-token`.
+      - dotnet 의 로컬 고부하 일시 실패는 CI 로 가렸다(8 회 연속 초록).
+    - **다음 걸음.** skip 표지를 닫는 attest 파일(실행 ID nonce, 비-required 단계)과, KNOWN_GAPS id ↔ 열린 등록부 항목 대조.
     - **Go 재는 명령.** `go -C go test -run TestHostilePathMatrix -v ./...` — 판정표와 요약이 찍힌다. 변이는 모두 `CAUGHT` 였다: nonce 비교 삭제 · 백오프 우회 · 빈 access_token 검사 삭제 · 캐시 선가열 · 적대 응답을 정상으로 교체 · 검사 없는 새 grant 메서드 · 서명 검증 생략 · 원인 스크럽 우회 · nonce 클레임 누락 허용.
     - ⚠️ **잴 때 함정 둘.**
       - 문자열 인자는 가짜 IdP 키로 **서명한 JWS** 여야 한다. 평문이면 `Validate` 가 요청 전에 실패해 `JWKS_FETCH` 가 빈다.
@@ -622,7 +638,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 82건 (열림 56)
+## D. 원장 밖 — 86건 (열림 59)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -644,7 +660,19 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `release-yml-unpaid-measurement` **[M/S]** release.yml 헤더의 「미납 실측」 블록이 전제(태그 미푸시)가 무너진 뒤에도 그대로 남아 있다 · `.github/workflows/release.yml:16`
 - [ ] `install-verify-not-implemented-wording` **[L/S]** install-verify.sh의 유일한 TODO — not_implemented가 원인을 「언어 태스크 대기 중」으로 오귀속한다 · `harness/install/install-verify.sh:100`
 
-### 로드맵·기능 갭 — 11
+### 로드맵·기능 갭 — 14
+
+- [ ] `php-admin-token-error-unsanitized` **[M/S · 신규 2026-09-27]** php admin 의 토큰 부여 오류가 IdP 토큰 응답을 찍는다(적대 행렬 KNOWN_GAPS 208칸, #654).
+  - `Admin\ErrorTranslation` 이 fschmtt·Guzzle 예외를 `SanitizedCause` 없이 원본째 달고 메시지도 그대로 옮긴다. 그래서 `getMessage()`·원인 사슬·trace 인자(`var_dump`·`print_r`·`(string)`)에 토큰·되울린 `error_description` 이 나온다.
+  - #622 는 `AuthClient`·provider 에만 적용됐다.
+  - 측정만 한 것(단언 안 함): 비-JWT access_token 이 fschmtt 파서 trace 인자로 찍힌다. `access_token` 이 없으면 PHP 경고가 난다.
+  - 고치면 `php/tests/Unit/HostilePathMatrixTest.php` 의 KNOWN_GAPS 가 낡아 실패한다 — 함께 지운다.
+- [ ] `jvm-admin-token-response-type-unchecked` **[M/S · 신규 2026-09-27 · java·kotlin]** admin 내장 TokenManager(keycloak-admin-client 의 Jackson)가 숫자·bool·빈 `access_token` 을 문자열로 바꿔 admin API 에 Bearer 로 보낸다.
+  - 실측 헤더: `Bearer 12345`, `Bearer true`, `Bearer `. 각 75칸이다(#658 · #660).
+  - auth 경로(Nimbus)와 go admin 은 거부한다.
+  - `MalformedIdpResponseTest` b1 은 주석으로만 적고 단언하지 않았다.
+- [ ] `python-admin-grant-accepts-empty-access-token` **[L/S · 신규 2026-09-27]** python sync admin 이 자기 client_credentials 응답의 빈 `access_token` 으로 `Authorization: Bearer ` 를 보낸다(KNOWN_GAPS 25칸, #655).
+  - aio 는 h11 이 헤더를 거부해 우연히 막힌다. 그마저 `KeycloakTransportError` 로 잘못 분류된다.
 
 - [ ] `id-token-audience-follows-access-audience` **[M/S · 신규 2026-09-27 · 아홉 언어]** `expectedAudience` 를 clientId 가 아닌 값(리소스 서버)으로 재정의하면, nonce 를 넘긴 코드 교환이 id_token `aud` 불일치로 **실패한다**.
   - 원인: 아홉 언어 전부 id_token 을 액세스 토큰과 같은 검증기로 검증한다. OIDC id_token 의 `aud` 는 client id 다.
@@ -692,7 +720,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `orphan-active-workflows` **[L/S]** 파일이 없는 워크플로 2개가 Actions 에 `active` 로 남아 있다 — 라이브 26 vs 커밋 24 · `.github/workflows/repo-hygiene.yml:207`
 - [ ] `repo-settings-ssot-gap` **[L/S]** 브랜치 자동삭제 등 저장소 설정이 SSOT 밖 — 원격이 깨끗한 이유가 어디에도 안 적혀 있다 · `.github/security-config.json:2`
 
-### 테스트 실행 갭 — 8
+### 테스트 실행 갭 — 9
 
 - [ ] `realm-copies-unguarded` **[L/S · 신규 2026-09-27]** 통합 렐름 사본 아홉을 대조하는 가드가 없다. 지금은 우연히 둘로 수렴해 있다 — 일곱이 `3e76565`, java·kotlin 이 `191515a` 다. 코드 교환 이식이 클라이언트 둘을 손으로 아홉 곳에 복사했다. 다시 재는 명령: `git ls-files '*it-realm-realm.json' | xargs -n1 git hash-object`. JVM 짝이 공개 클라이언트 하나를 더 가진 것은 의도다 — 가드는 「두 집합, 그 차이만」을 고정하면 된다.
 
@@ -718,11 +746,14 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - **전 언어 실측(2026-09-27).** 단위만으로 java `AuthClient` 97.3%·`AdminClient` 100% 에 닿는다(세 모듈 exec 합산). 통합이 더하는 것은 **브랜치 1** 이다. dotnet `AuthClient` 는 단위와 합산이 같은 93.8% 다.
   - ⚠️ **「도달」은 「검증」이 아니다.** go 의 `TestHostilePathMatrix`(#636)는 단언 없이 모든 공개 메서드를 부른다. 그래서 단위 커버리지가 77.2% → 93.6% 로 오른다(`-skip TestHostilePathMatrix` 로 대조). omit 을 걷어낼 근거로 이 숫자를 쓰지 말 것.
 - [ ] `coverage-threshold-parity` **[M/M]** 커버리지 임계값이 9언어에서 갈리고(브랜치 게이트가 아예 없는 곳 셋), 문서↔설정 대조 가드는 3개 언어만 본다 · `scripts/check-docs.mjs:552`
-- [ ] `coverage-omit-no-ssot` **[M/M]** omit 목록이 열 곳에 손으로 중복 기재돼 있고 대조 가드가 0건(Rust 정규식 무앵커는 #574 가 고쳤다 — 세 자리가 같은 값인지는 여전히 아무도 안 본다) · `java/pom.xml:151`
-  - **드리프트 셋 실측(2026-09-27).** 가드가 서면 첫 실행에서 이 셋으로 빨개져야 한다.
-    - `sonar-project.properties:72` 가 `node/src/transport.ts` 와 `node/src/admin/**`(`call.ts` 포함)를 뺀다. vitest 는 2026-09-10·09-15 부터 둘을 잰다.
-    - Sonar 의 `php/src/Admin/**` 가 phpunit 이 재는 `ErrorTranslation.php` 까지 삼킨다.
-    - `harness/suites/rust.sh:43` 의 정규식에만 앵커가 없다.
+- [x] `coverage-omit-no-ssot` **[M/M · 닫힘 2026-09-27 #662]** 조인 가드가 섰다. `scripts/coverage-boundary.mjs check` 는 언어별 SSOT 아홉을 제품 소스 파일 집합으로 전개해 모든 사본과 대조한다. 첫 실행은 등록부가 잰 드리프트 셋만 냈고, 이 PR 이 셋을 고쳤다(비-required 잡 `coverage-boundary`). 잔여 SILENT 는 `coverage-boundary-guard-residuals`.
+- [ ] `coverage-boundary-guard-residuals` **[L/S · 신규 2026-09-27]** 조인 가드(#662)가 계약 밖이라 못 보는 자리. 전부 독립 변이 레그와 Grok 레그의 실측이다.
+  - 파일을 `sonar.exclusions` 로 옮기기
+  - `.md` 코드 펜스 안의 사본 — 중간
+  - go 게이트의 두 번째 omit 손잡이(`sed` · 두 번째 `grep`)
+  - pom 속성 간접 참조 `${…}`, Kover `excludedSourceSets`, vitest `'!…'` 부정 패턴, SimpleCov 필터를 다른 파일로 옮기기
+  - 등록되지 않은 새 사본 파일
+  - 자리를 늘리거나 그 모양을 FAIL 로 · `scripts/coverage-boundary.mjs`
 - [ ] `readme-quickstarts-ungated` **[M/M]** README가 정본이라 부르는 quickstart 예제가 어떤 게이트에도 안 걸린다 — 하네스가 실제로 돌리는 것은 별도 사본이다 · `node/examples/quickstart.ts:1`
 
 ### 1.0 이후 운영 — 9
