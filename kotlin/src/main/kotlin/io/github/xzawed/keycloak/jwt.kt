@@ -23,14 +23,15 @@ import java.time.Duration
 // jwt.kt — JwtValidator: Java SDK의 JwtValidator(io.github.xzawed.keycloak.auth.JwtValidator)와 100%
 // 동형인 하드닝 불변식(§jwt)을 지킨다: RS256 alg 핀 · alg=none/미서명 명시 거부 · iss 정확일치
 // (exactMatchClaims엔 issuer만 — aud를 넣으면 다중값 정상 토큰이 오탐 거부된다) · aud 포함검사 ·
-// exp 필수 · 클록스큐 · DoS-safe JWKS(JWKSourceBuilder 기본값 = cache+rateLimited만 활성 —
-// refreshAhead/retrying/outageTolerant는 기본 비활성. 위조 서명은 재조회 유발 안 함·미해결 kid만 rate-limited 재조회).
+// exp 필수 · 클록스큐 · DoS-safe JWKS(JWKSourceBuilder 기본값 = cache+refreshAhead+rateLimited 활성 —
+// retrying/outageTolerant는 기본 비활성. 위조 서명은 재조회 유발 안 함·미해결 kid만 rate-limited 재조회).
+// ⚠️ 생성자 인자 목록을 바꾸지 말 것 — 게시본의 합성 public 생성자(끝에 DefaultConstructorMarker)가 이 모양이다.
 public class JwtValidator private constructor(
-    jwkSource: JWKSource<SecurityContext>,
-    issuer: String,
+    private val jwkSource: JWKSource<SecurityContext>,
+    private val issuer: String,
     audience: String,
-    allowedAlgs: Set<JWSAlgorithm>,
-    skew: Duration,
+    private val allowedAlgs: Set<JWSAlgorithm>,
+    private val skew: Duration,
 ) {
     private val processor: ConfigurableJWTProcessor<SecurityContext> =
         DefaultJWTProcessor<SecurityContext>().also { p ->
@@ -66,6 +67,12 @@ public class JwtValidator private constructor(
         } catch (e: Exception) {
             throw TokenValidationException("JWT validation failed", e)
         }
+
+    // 기대 audience 만 바꾼 검증기. 코드 교환의 id_token 검증이 쓴다 — OIDC Core §2 · §3.1.3.7 대로 id_token 의
+    // aud 는 client id 이고, `expectedAudience` 재정의는 액세스 토큰 전용이다. iss · alg 핀 · skew 는 그대로다.
+    // ⚠️ 같은 [jwkSource] 객체를 넘긴다 — 새 저장소를 만들면 JWKS 캐시·재조회 rate-limit 창·콜드 캐시 창이 둘로
+    // 갈려 IdP 요청 상한이 두 배가 된다(`IdTokenAudienceJwksTest`). 조회도 suspension point 도 없다.
+    internal fun withAudience(audience: String): JwtValidator = JwtValidator(jwkSource, issuer, audience, allowedAlgs, skew)
 
     public companion object {
         /** 실 JWKS 엔드포인트를 지연 조회하는 운영용 팩토리(non-suspend — 조회는 첫 [validate] 호출 시점). */
