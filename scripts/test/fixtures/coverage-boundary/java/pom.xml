@@ -1,0 +1,28 @@
+<project>
+  <modules>
+    <module>mod-auth</module>
+    <module>mod-core</module>
+    <module>mod-examples</module>
+  </modules>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <configuration>
+          <excludes>
+            <exclude>**/*IT.class</exclude>
+            <!-- <exclude>**/Config.class</exclude> 주석 속 항목은 세지 않는다 -->
+            <exclude>**/AuthClient.class</exclude>
+          </excludes>
+        </configuration>
+        <executions>
+          <execution>
+            <id>check</id>
+            <configuration><rules><rule><element>BUNDLE</element></rule></rules></configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
