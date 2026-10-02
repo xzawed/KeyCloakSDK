@@ -275,7 +275,7 @@ dev(테스트 csproj — **앵커 있음**):
 <!-- doc-guard: kind=dep source=php/composer.json min=6 undocumented=10 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
-| Admin | `fschmtt/keycloak-rest-api-client-php` | **0.42.0** |
+| Admin | `fschmtt/keycloak-rest-api-client-php` | **0.43.0** |
 | 인증(OAuth2) | `league/oauth2-client` | `^2.8` |
 | 인증(OAuth2, Keycloak 프로바이더) | `stevenmaguire/oauth2-keycloak` | `^6.1` |
 | JWT(강화 검증) | `firebase/php-jwt` | `^7.1` |
