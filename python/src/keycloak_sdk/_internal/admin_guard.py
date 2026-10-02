@@ -44,6 +44,7 @@ import inspect
 import threading
 import weakref
 from collections.abc import Callable, Coroutine
+from types import FunctionType
 from typing import Any, cast
 
 from keycloak import KeycloakAdmin
@@ -61,6 +62,11 @@ _OURS: weakref.WeakSet[Callable[..., Any]] = weakref.WeakSet()
 #: 래퍼는 **원본의** 헤더를 본다 — 주인을 대조하지 않으면 복사본의 빈 bearer 가 검사 없이 나갔다
 #: (실측). 래퍼 함수의 속성으로 둔다: 전역 표에 두면 객체를 붙잡아 놓아 주지 않는다.
 _OWNER = "__kcsdk_owner__"
+#: 래퍼를 걸기 **전** 그 자리의 인스턴스 상태(`_ABSENT` 면 클래스의 것이었다). 복사본이 물려받은
+#: 래퍼는 다시 감싸지 않고 이것으로 **벗긴다** — 그 래퍼는 원본에 묶인 메서드로 원본의 갱신·그랜트를
+#: 부르고 원본의 헤더를 본다. 감싸기만 하면 복사본의 만료 갱신이 원본에서 돌았고, bearer 를 싣지
+#: 않는 복사본의 요청이 원본의 빈 bearer 로 거부됐다(실측). 복사본이 SDK 없이 가졌을 것이 이것이다.
+_PRIOR = "__kcsdk_prior__"
 #: 감시 클래스가 감싼 원래 `connection` 프로퍼티 — 정리 경로가 무장 없이 읽는 자리다.
 _BASE = "__kcsdk_connection__"
 _WATCHED: dict[type[KeycloakAdmin], type[KeycloakAdmin]] = {}
@@ -116,10 +122,31 @@ def _own(target: Any, name: str) -> Any:
     return getattr(target, "__dict__", {}).get(name)
 
 
+def _is_ours(hook: object) -> bool:
+    """이 모듈이 만든 래퍼인가. 래퍼는 언제나 함수라 그것부터 본다 — 소비자가 먼저 건 훅이 해시되지
+    않는 객체여도(`eq=True` 데이터클래스) 소속 대조가 raw `TypeError` 로 설치를 깨지 않는다
+    (실측)."""
+    return isinstance(hook, FunctionType) and hook in _OURS
+
+
 def _hooked(target: Any, name: str) -> bool:
     """`target.name` 이 이 모듈이 **바로 이 객체에** 건 래퍼인가(복사본이 물려받은 것은 아니다)."""
     hook = _own(target, name)
-    return hook in _OURS and getattr(hook, _OWNER, None) is target
+    return _is_ours(hook) and getattr(hook, _OWNER, None) is target
+
+
+def _base(target: Any, name: str) -> tuple[Any, object]:
+    """(감쌀 것, 감싸기 전 인스턴스 상태). 복사본이 물려받은 래퍼면 벗겨 **복사본 자신의** 것을 낸다
+    — 원본이 인스턴스에 두었던 것(소비자의 훅)이면 그것, 아니면 클래스의 것을 이 객체에 묶은 것."""
+    state = getattr(target, "__dict__", {}).get(name, _ABSENT)
+    if not _is_ours(state):
+        return getattr(target, name, None), state
+    prior = vars(state)[_PRIOR]  # 우리 래퍼가 아니다 — 걸 때 벗겨 둔 상태다
+    if prior is not _ABSENT:
+        return prior, prior
+    attr = inspect.getattr_static(type(target), name, None)
+    get = getattr(type(attr), "__get__", None)
+    return (attr if get is None else get(attr, target, type(target))), _ABSENT
 
 
 def _plan_redirects(hooks: list[_Hook], session: Any, what: str, where: str) -> None:
@@ -140,11 +167,12 @@ def _plan_wrap(
 ) -> None:
     if _hooked(target, name):
         return
-    current = getattr(target, name, None)
+    current, prior = _base(target, name)
     if not callable(current):
         raise _missing(what, where)
     wrapped = wrap(current)
     vars(wrapped)[_OWNER] = target
+    vars(wrapped)[_PRIOR] = prior
     _OURS.add(wrapped)
     hooks.append((target, name, wrapped, where))
 
@@ -233,7 +261,11 @@ def _watched_type(cls: type[KeycloakAdmin]) -> type[KeycloakAdmin]:
         )
 
     def connection(self: KeycloakAdmin) -> Any:
-        conn = prop.__get__(self, type(self))
+        try:
+            conn = prop.__get__(self, type(self))
+        except AttributeError as exc:
+            # 생성 때(`arm_admin` 의 `_require`)와 같은 거부다 — 지워진 연결 필드에는 걸 곳이 없다.
+            raise _unsupported("admin REST call", "connection") from exc
         arm_connection(conn)
         return conn
 
@@ -248,7 +280,10 @@ def _watched_type(cls: type[KeycloakAdmin]) -> type[KeycloakAdmin]:
         "connection": property(connection, prop.fset, prop.fdel, prop.__doc__),
         _BASE: prop,
     }
-    watched = cast("type[KeycloakAdmin]", type(cls.__name__, (cls,), namespace))
+    try:
+        watched = cast("type[KeycloakAdmin]", type(cls.__name__, (cls,), namespace))
+    except Exception as exc:  # `__init_subclass__`·메타클래스가 하위 클래스를 막는다(런타임 final)
+        raise _refused(f"subclassing {cls.__qualname__} to watch its connection", exc) from exc
     return _WATCHED.setdefault(cls, watched)
 
 

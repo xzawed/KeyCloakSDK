@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 from unittest.mock import MagicMock
+from urllib.parse import parse_qs
 
 import pytest
 from keycloak import KeycloakAdmin, KeycloakOpenID, KeycloakOpenIDConnection
@@ -178,6 +180,134 @@ async def test_a_copied_connection_is_checked_on_its_own_header(lane: str) -> No
     assert result is None
     assert _refused_like_the_auth_lane(err, _auth_lane_verdict(_EMPTY)) == []
     assert idp.admin_requests() == [_Seen("GET", _USER, "", f"Bearer {ACCESS_OLD}")]
+
+
+# 복사본이 물려받은 래퍼는 **원본의** 갱신(원본에 묶인 메서드)과 원본의 헤더 검사를 부른다. 그것을
+# 다시 감싸기만 하면 바깥 래퍼가 복사본의 헤더를 보더라도 안쪽이 원본에서 돈다 — 그래서 물려받은
+# 래퍼는 벗기고 복사본 자신의 것을 감싼다. 셋 다 수정 전 실측으로 실패했다(검증 레그).
+
+_ACCESS_NEW = "AN3h7q-access-from-the-copys-own-refresh"
+_TWIN_SECRET = "TS8w2e-secret-of-the-copied-grant-object"
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_copy_that_carries_no_bearer_is_not_refused_for_the_originals_header(
+    lane: str,
+) -> None:
+    """bearer 를 싣지 않는 요청은 검사가 거부하지 않는다 — 원본의 헤더가 비었어도, 그것은 이
+    요청이 싣는 헤더가 아니다(수정 전: 원본 래퍼의 검사로 `KeycloakAuthError`, 요청 없음)."""
+    with _fake_idp() as idp:
+        idp.grants["client_credentials"] = [(200, _GOOD)]
+        async with _client(lane, idp) as client:
+            first, err = await _attempt(lane, client, lambda c: c.admin.users.get("u1"))
+            assert (first, err) == ({"id": "u1"}, None), "앞 호출이 성공하지 않았다"
+            raw = client.admin.raw
+            original = raw.connection
+            dup = copy.copy(original)
+            dup.headers = {"Content-Type": "application/json"}  # 복사본은 bearer 를 싣지 않는다
+            original.token = {"access_token": "", "expires_in": 300}  # 원본만 빈 bearer 다
+            raw.connection = dup
+            result, err = await _attempt(lane, client, lambda c: c.admin.users.get("u1"))
+            raw.connection = original
+
+    assert (result, err) == ({"id": "u1"}, None)
+    assert idp.admin_requests() == [
+        _Seen("GET", _USER, "", f"Bearer {ACCESS_OLD}"),
+        _Seen("GET", _USER, "", None),
+    ]
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_copy_keeps_the_consumers_own_hook_it_inherited(lane: str) -> None:
+    """원본에 소비자가 먼저 건 자기 훅이 있었으면, 복사본이 벗겨 감싸는 것은 그 훅이다 —
+    `copy.copy` 가 SDK 없이 물려줬을 바로 그것(클래스의 메서드로 바꿔치지도, 원본의 검사를
+    끌어오지도 않는다). 수정 전: 원본 래퍼째 다시 감싸 원본의 빈 bearer 로 거부됐다."""
+    name = _BEARER_HOOKS[0] if lane == "sync" else _BEARER_HOOKS[1]
+    with _fake_idp() as idp:
+        admin = KeycloakAdmin(
+            server_url=idp.url,
+            realm_name="r",
+            client_id="c",
+            client_secret_key=SECRET,
+            grant_type="client_credentials",
+            token={"access_token": ACCESS_OLD, "expires_in": 300},
+        )
+        original = admin.connection
+        inner = getattr(original, name)
+        calls: list[int] = []
+
+        def hook(*args: Any, **kwargs: Any) -> Any:  # 함수지만 SDK 의 것은 아니다
+            calls.append(1)
+            return inner(*args, **kwargs)
+
+        setattr(original, name, hook)  # SDK 보다 먼저 건 소비자의 훅
+        client = _ADMIN_CLIENTS[lane](_cfg(idp.url), admin=admin)
+        dup = copy.copy(original)
+        dup.headers = {"Content-Type": "application/json"}  # 복사본은 bearer 를 싣지 않는다
+        original.token = {"access_token": "", "expires_in": 300}  # 원본만 빈 bearer 다
+        admin.connection = dup
+        result, err = await _attempt(lane, client, lambda c: c.users.get("u1"))
+        admin.connection = original
+        await _close(lane, client)
+
+    assert (result, err) == ({"id": "u1"}, None)
+    assert calls == [1], "복사본이 물려받은 소비자의 훅을 부르지 않았다"
+    assert idp.admin_requests() == [_Seen("GET", _USER, "", None)]
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_copy_refreshes_itself_not_the_connection_it_was_copied_from(lane: str) -> None:
+    """만료된 복사본은 **제** 토큰을 갱신해 새 bearer 로 보낸다 — python-keycloak 그대로다(수정 전:
+    갱신은 원본에서 돌고 복사본은 옛 토큰을 보냈다)."""
+    with _fake_idp() as idp:
+        idp.grants["client_credentials"] = [
+            (200, _grant_body(ACCESS_OLD, expires_in=1, refresh_token=REFRESH_OLD))
+        ]
+        idp.grants["refresh_token"] = [
+            (200, _grant_body(_ACCESS_NEW, expires_in=300, refresh_token=REFRESH_NEW))
+        ]
+        async with _client(lane, idp) as client:
+            first, err = await _attempt(lane, client, lambda c: c.admin.users.get("u1"))
+            assert (first, err) == ({"id": "u1"}, None), "앞 호출이 성공하지 않았다"
+            raw = client.admin.raw
+            original = raw.connection
+            dup = copy.copy(original)
+            dup.headers = dict(dup.headers)
+            raw.connection = dup
+            result, err = await _attempt(lane, client, lambda c: c.admin.users.get("u1"))
+            held = (dup.token["access_token"], original.token["access_token"])
+            raw.connection = original
+
+    assert (result, err) == ({"id": "u1"}, None)
+    assert idp.grant_types() == ["client_credentials", "refresh_token"]
+    assert idp.admin_requests()[-1] == _Seen("GET", _USER, "", f"Bearer {_ACCESS_NEW}")
+    assert held == (_ACCESS_NEW, ACCESS_OLD), "갱신이 복사본이 아니라 원본에서 돌았다"
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_copied_token_grant_object_grants_with_its_own_credentials(lane: str) -> None:
+    """같은 부류의 그랜트 쪽 — 중첩 `KeycloakOpenID` 의 복사본도 물려받은 그랜트 래퍼를 벗긴다
+    (수정 전: 복사본의 그랜트가 원본에 묶인 메서드로 **원본의** client_secret 을 실어 나갔다).
+    공개 세터가 없어 비공개 필드로 끼운다 — 같은 감싸기 자리(`_plan_wrap`)를 재는 것이 목적이다."""
+    secrets: list[str] = []
+    with _fake_idp() as idp:
+        idp.grants["client_credentials"] = [(200, _GOOD)]
+        answer = idp.answer
+
+        def recording(method: str, path: str, body: str, authorization: str | None) -> Any:
+            secrets.extend(parse_qs(body).get("client_secret", []))
+            return answer(method, path, body, authorization)
+
+        idp.answer = recording  # type: ignore[method-assign]
+        async with _client(lane, idp) as client:
+            conn = client.admin.raw.connection
+            twin = copy.copy(conn.keycloak_openid)
+            twin.client_secret_key = _TWIN_SECRET
+            conn._keycloak_openid = twin
+            result, err = await _attempt(lane, client, lambda c: c.admin.users.get("u1"))
+
+    assert (result, err) == ({"id": "u1"}, None)
+    assert secrets == [_TWIN_SECRET], "복사본의 그랜트가 원본의 자격증명으로 나갔다"
 
 
 # --- (H2) 주입된 admin 이 이미 쥔 bearer ----------------------------------------------------------
@@ -369,10 +499,22 @@ class _PlainConnection(KeycloakAdmin):
     connection = None  # 프로퍼티를 평범한 클래스 속성으로 가린다 — 가로챌 읽기 자리가 없다
 
 
+class _RefusesSubclassing(KeycloakAdmin):
+    """하위 클래스를 막는다 — 런타임 「final」의 흔한 꼴. 감시 하위 클래스를 만들 수 없다(수정 전:
+    생성이 raw `TypeError` 였다)."""
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        raise TypeError("this admin class is final")
+
+
 @pytest.mark.parametrize(
     ("cls", "match"),
-    [(_RefusesItsClass, "class"), (_PlainConnection, r"connection is not a property")],
-    ids=["클래스 교체 거부", "connection 이 프로퍼티가 아님"],
+    [
+        (_RefusesItsClass, "class"),
+        (_PlainConnection, r"connection is not a property"),
+        (_RefusesSubclassing, r"subclassing _RefusesSubclassing\b"),
+    ],
+    ids=["클래스 교체 거부", "connection 이 프로퍼티가 아님", "하위 클래스 생성 거부"],
 )
 @pytest.mark.parametrize("lane", LANES)
 def test_an_admin_that_cannot_be_watched_is_refused_untouched(
@@ -476,6 +618,80 @@ async def test_a_replaced_connection_that_cannot_be_guarded_sends_nothing(
 
 def _consumer_refuses_redirects(*_args: Any, **_kwargs: Any) -> Any:
     return iter(())
+
+
+def _without_connection(url: str) -> KeycloakAdmin:
+    admin = KeycloakAdmin(
+        server_url=url,
+        realm_name="r",
+        client_id="c",
+        client_secret_key=SECRET,
+        grant_type="client_credentials",
+    )
+    del admin._connection
+    return admin
+
+
+@pytest.mark.parametrize("path", ["리소스", "raw"])
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_deleted_connection_is_refused_as_construction_refuses_it(
+    lane: str, path: str
+) -> None:
+    """연결 필드가 지워지면 요청 직전의 무장은 걸 곳이 없다 — 생성 때 같은 상태가 내는 것과 같은
+    `KeycloakConfigError` 다(수정 전: 감시 게터가 원래 프로퍼티의 raw `AttributeError` 를 그대로
+    냈고, 리소스로는 `KeycloakTransportError` 였다)."""
+    with _fake_idp() as idp:
+        with pytest.raises(KeycloakConfigError) as at_construction:
+            _ADMIN_CLIENTS[lane](_cfg(idp.url), admin=_without_connection(idp.url))
+        client = _ADMIN_CLIENTS[lane](_cfg(idp.url))
+        raw = client.raw
+        held = raw.connection
+        del raw._connection
+        direct = (
+            (lambda _c: raw.get_users({})) if lane == "sync" else (lambda _c: raw.a_get_users({}))
+        )
+        act = (lambda c: c.users.search()) if path == "리소스" else direct
+        result, err = await _attempt(lane, client, act)
+        raw._connection = held
+        await _close(lane, client)
+
+    assert result is None
+    assert (type(err), str(err)) == (KeycloakConfigError, str(at_construction.value))
+    assert idp.seen == [], "연결 없이 무언가 보냈다"
+    if path == "리소스":
+        assert _inner_frames(err) == []
+        assert err.__cause__ is None and err.__context__ is None
+
+
+@dataclass(eq=True)
+class _OwnHook:
+    """소비자가 먼저 건 자기 훅 — `eq=True` 데이터클래스라 **해시되지 않는다**."""
+
+    inner: Callable[..., Any]
+    calls: int = 0
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        self.calls += 1
+        return self.inner(*args, **kwargs)
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_consumers_own_unhashable_hook_is_wrapped_not_a_crash(lane: str) -> None:
+    """소비자가 먼저 건 훅은 지우지 않고 감싼다 — 해시되지 않는 객체여도(수정 전: 「우리 래퍼인가」
+    대조가 그것을 해시하다 생성이 raw `TypeError` 였다). 감싼 뒤에도 훅은 불리고 검사는 선다."""
+    name = _BEARER_HOOKS[0] if lane == "sync" else _BEARER_HOOKS[1]
+    with _fake_idp() as idp:
+        admin = _injected(idp.url, credentials=True, expires_in=300)  # 빈 bearer 를 쥐고 온다
+        hook = _OwnHook(getattr(admin.connection, name))
+        setattr(admin.connection, name, hook)
+        client = _ADMIN_CLIENTS[lane](_cfg(idp.url), admin=admin)
+        result, err = await _attempt(lane, client, lambda c: c.users.get("u1"))
+        await _close(lane, client)
+
+    assert result is None
+    assert _refused_like_the_auth_lane(err, _auth_lane_verdict(_EMPTY)) == []
+    assert hook.calls == 1, "소비자의 훅이 감싸지지 않고 사라졌다"
+    assert idp.seen == []
 
 
 @pytest.mark.parametrize("lane", LANES)
