@@ -8,6 +8,7 @@
 
 ### Fixed
 - **(PHP)** IdP 오류 응답의 `error` 가 OAuth 코드 모양 뒤에 줄바꿈을 하나 달고 오면(`"invalid_client\n"`) 그 줄바꿈째 코드로 받아, `KeycloakAuthError` 의 메시지와 `oauthError`, 원인(`getPrevious()`)의 메시지, admin 토큰 부여 실패(`KeycloakAdminError`)의 메시지에 실었습니다 — 그 오류를 찍는 로그 한 줄이 둘로 갈립니다(토큰·시크릿은 실리지 않습니다). 코드 모양 검사의 끝 닻 `$` 가 `D` 수식자 없이 쓰여 끝 줄바꿈 하나 앞에서도 맞았기 때문입니다. 이제 `error` 는 정확히 `[a-z_]{1,64}` 일 때만 코드로 싣고(`\A…\z`) 그 밖의 값은 싣지 않습니다(`oauthError` 는 `null`). CR·CRLF 로 끝나는 값은 전에도 걸렀습니다. 공개 API 변경은 0 입니다.
+- **(.NET)** 토큰·introspect 응답의 OAuth `error` 가 RFC 6749 §5.2 문법 밖의 문자열이어도(`"invalid_client\n"` 처럼 끝에 줄바꿈이 붙거나 CR·NUL·DEL·비 ASCII 를 담아도) 그 값을 그대로 `KeycloakAuthException` 에 실었습니다 — 400 응답이면 메시지와 `OAuthError` 둘 다에, 그 밖의 HTTP 오류면 `OAuthError` 에 실려 그 오류를 찍는 로그 한 줄이 둘로 갈렸습니다. 이제 `error` 는 문법(`1*NQSCHAR`, `NQSCHAR = %x20-21 / %x23-5B / %x5D-7E`)에 정확히 맞을 때만 그대로 싣고, 문법 밖의 문자열은 다듬어 코드로 만들지 않고 코드가 없는 것으로 칩니다 — `OAuthError` 는 400 이면 `null`, 그 밖의 HTTP 오류면 지금처럼 상태의 표준 reason phrase(`Unauthorized` 등)이고, 400 의 메시지 꼬리는 `error is not an RFC 6749 error code` 입니다. Keycloak 이 내는 코드(`invalid_grant` 등)를 포함해 문법에 맞는 값은 그대로입니다. 공개 API 변경은 없습니다.
 
 ## [1.3.0] - 2026-10-02 (PHP)
 

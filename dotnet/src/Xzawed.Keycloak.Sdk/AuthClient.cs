@@ -216,7 +216,8 @@ public sealed class AuthClient : ITokenSource
     }
 
     /// <summary>Converts a Duende error response (token or introspection endpoint) to the SDK error.</summary>
-    /// <remarks>⚠️ Beyond the OAuth <c>error</c> code, nothing the server wrote reaches the SDK error — Duende's own
+    /// <remarks>⚠️ Beyond the OAuth <c>error</c> code, nothing the server wrote reaches the SDK error, and the code only when
+    /// it is one in the RFC 6749 §5.2 grammar (<see cref="OAuthErrorOf"/>) — Duende's own
     /// <c>Error</c> is the server's reason phrase for an HTTP error and the raw JSON text of a non-string <c>error</c>
     /// member, and its <c>IsError</c> throws on a JSON root that is not an object (all three measured, with a token
     /// echoed in them: <c>MalformedTokenResponseTests</c>).</remarks>
@@ -241,15 +242,29 @@ public sealed class AuthClient : ITokenSource
         if (resp.IsError)
         {
             var code = OAuthErrorOf(resp.Json);
-            throw new KeycloakAuthException($"{failureMessage}: {code ?? "error is not a JSON string"}") { OAuthError = code };
+            throw new KeycloakAuthException($"{failureMessage}: {code ?? NoCodeReason(resp.Json)}") { OAuthError = code };
         }
     }
 
-    // Only a JSON string is an OAuth error code — Duende renders any other kind as its raw JSON text.
+    // RFC 6749 §5.2: error = 1*NQSCHAR, NQSCHAR = %x20-21 / %x23-5B / %x5D-7E. Only a JSON string in that grammar is an
+    // OAuth error code, and it is used unchanged. Anything else is no code: Duende renders a non-string as its raw JSON
+    // text, and a string outside the grammar (CR/LF and every other control character, '"', '\', anything past ASCII)
+    // split the logged SDK error into lines before this check (measured: OAuthErrorCodeGrammarTests). It is never trimmed
+    // into a code. ⚠️ Not this check's case: GetString throws InvalidOperationException on an unpaired surrogate escape,
+    // as does Duende's IsError — that still leaves the SDK as a lower-library exception (measured).
     private static string? OAuthErrorOf(JsonElement? json) =>
-        json is { ValueKind: JsonValueKind.Object } j && j.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String
-            ? e.GetString()
+        ErrorMember(json) is { ValueKind: JsonValueKind.String } e && e.GetString() is { Length: > 0 } code && code.All(IsNqsChar)
+            ? code
             : null;
+
+    private static bool IsNqsChar(char c) => c is >= '\x20' and <= '\x21' or >= '\x23' and <= '\x5B' or >= '\x5D' and <= '\x7E';
+
+    // Why a 400 carried no code — a string outside the grammar is still a JSON string, so it gets its own words.
+    private static string NoCodeReason(JsonElement? json) =>
+        ErrorMember(json) is { ValueKind: JsonValueKind.String } ? "error is not an RFC 6749 error code" : "error is not a JSON string";
+
+    private static JsonElement? ErrorMember(JsonElement? json) =>
+        json is { ValueKind: JsonValueKind.Object } j && j.TryGetProperty("error", out var e) ? e : null;
 
     // The standard phrase for the status, never the server's — a reason phrase is wire text the server chooses. Keycloak's
     // are the standard ones (and HTTP/2 has none), so the message is unchanged for it.
