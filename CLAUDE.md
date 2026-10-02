@@ -264,7 +264,7 @@ dev(테스트 csproj — **앵커 있음**):
 | 테스트 호스트 | `Microsoft.NET.Test.Sdk` | 18.10.1 |
 | 단위 테스트 | `xunit` | 2.9.3 |
 | 테스트 어댑터 | `xunit.runner.visualstudio` | 4.0.0 |
-| 커버리지 수집 | `coverlet.collector` | 10.0.1 |
+| 커버리지 수집 | `coverlet.collector` | 10.1.0 |
 | HTTP 목 | `WireMock.Net` | 2.18.0 |
 | 통합 테스트 | `Testcontainers.Keycloak` | 4.15.0 |
 
