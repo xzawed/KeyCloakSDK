@@ -42,17 +42,25 @@ class TokenSet:
         # `expires_in` 이 숫자가 아니면 raw `ValueError`/`TypeError` 가 샜고, 앞의 것은 **값을
         # 인용한다**. 객체 모양 `token_type` 은 `repr` 이 그대로 찍었다(실측 2026-09-26).
         # ⚠️ 거부 메시지에는 필드 이름만 싣는다 — 형식이 틀린 응답은 그 자리에 토큰을 실어 온다.
-        access_token = data.get("access_token")
-        if not isinstance(access_token, str) or not access_token:
-            raise KeycloakAuthError("token response has no usable access_token")
         return TokenSet(
-            access_token=access_token,
+            access_token=_usable_access_token(data),
             refresh_token=_optional_str(data, "refresh_token"),
             id_token=_optional_str(data, "id_token"),
             token_type=_optional_str(data, "token_type") or "Bearer",
             scope=_optional_str(data, "scope"),
             expires_at=_expires_at(data.get("expires_in"), issued_at),
         )
+
+
+def _usable_access_token(data: Mapping[str, Any]) -> str:
+    """토큰 응답의 `access_token` — 비어 있지 않은 문자열이 아니면 `KeycloakAuthError`.
+
+    auth 레인(`TokenSet.from_response`)과 admin 레인의 자체 그랜트(`_internal/admin_grant.py`)가
+    **함께** 쓴다 — 같은 응답을 같은 타입·같은 메시지로 거부하도록 판정을 한 곳에 둔다."""
+    access_token = data.get("access_token")
+    if not isinstance(access_token, str) or not access_token:
+        raise KeycloakAuthError("token response has no usable access_token")
+    return access_token
 
 
 def _optional_str(data: dict[str, Any], name: str, what: str = "token response") -> str | None:
