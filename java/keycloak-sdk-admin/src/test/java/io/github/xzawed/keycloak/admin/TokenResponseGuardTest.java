@@ -283,6 +283,51 @@ class TokenResponseGuardTest {
     verify(ctx, never()).setInputStream(any());
   }
 
+  /**
+   * 거부 전에 스트림을 닫는다 — 닫기의 실패는 버리고 거부는 그대로다(두 진입점). 실제 연결에서 닫기는 읽지 않은 나머지를
+   * 비우고(HttpCore), 응답 필터가 거부한 뒤 RESTEasy 가 try/catch 없이 닫으면 그 비우기의 실패가 이 거부를 대신해 걸러지지
+   * 않은 사슬로 나갔다 — 먼저 닫아 두면 뒤의 닫기는 아무것도 하지 않는다(실제 연결로는 {@code AdminTokenResponseTest} 가 잰다).
+   */
+  @Test void bodyAboveTheCap_isClosedBeforeTheRejection_aCloseFaultDoesNotReplaceIt() throws IOException {
+    FaultyCloseBody raw = new FaultyCloseBody();
+    ClientResponseContext res = response(Response.Status.OK, raw);
+    IOException filtered = assertThrows(IOException.class,
+        () -> new TokenResponseGuard().filter(request("POST", TOKEN), res));
+    assertEquals("token endpoint response carries no usable access_token", filtered.getMessage());
+    assertNull(filtered.getCause());
+    assertEquals(0, filtered.getSuppressed().length);
+    assertEquals(1, raw.closes, "거부 전에 스트림을 한 번 닫아야 한다");
+    verify(res, never()).setEntityStream(any());
+
+    FaultyCloseBody decoded = new FaultyCloseBody();
+    ReaderInterceptorContext ctx = readContext(Boolean.TRUE, decoded);
+    IOException read = assertThrows(IOException.class, () -> new TokenResponseGuard().aroundReadFrom(ctx));
+    assertEquals("token endpoint response carries no usable access_token", read.getMessage());
+    assertNull(read.getCause());
+    assertEquals(0, read.getSuppressed().length);
+    assertEquals(1, decoded.closes, "거부 전에 스트림을 한 번 닫아야 한다");
+    verify(ctx, never()).proceed();
+  }
+
+  /** 끝없는 본문({@link EndlessBody}) — 닫으면 연결 해제의 실패처럼 응답 바이트를 인용하는 IOException 을 던지고, 횟수를 센다. */
+  private static final class FaultyCloseBody extends InputStream {
+    private final EndlessBody body = new EndlessBody(CAP + 1L);
+    int closes;
+
+    @Override public int read() {
+      return body.read();
+    }
+
+    @Override public int read(byte[] b, int off, int len) {
+      return body.read(b, off, len);
+    }
+
+    @Override public void close() throws IOException {
+      closes++;
+      throw new IOException("Bad chunk header: \"refresh_token\":\"ZadminRT-0123456789abcdef\"");
+    }
+  }
+
   /** 경계 — 정확히 상한인 본문은 바이트 그대로 넘기고, 한 바이트 더 크면 거부한다(두 진입점). */
   @Test void bodyOfExactlyTheCap_isHandedOn_oneByteMoreIsRejected() throws IOException {
     byte[] atCap = padded(CAP);

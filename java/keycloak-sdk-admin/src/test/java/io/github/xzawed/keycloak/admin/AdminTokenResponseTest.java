@@ -7,13 +7,18 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
 import io.github.xzawed.keycloak.core.exception.KeycloakTransportException;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayDeque;
@@ -22,8 +27,10 @@ import java.util.Arrays;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
 import java.util.zip.GZIPOutputStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -144,9 +151,13 @@ class AdminTokenResponseTest {
   }
 
   private AdminClient admin() {
-    return new AdminClient(KeycloakConfig.builder().serverUrl("http://127.0.0.1:" + server.getAddress().getPort())
+    return admin(server.getAddress().getPort(), Duration.ofSeconds(5));
+  }
+
+  private static AdminClient admin(int port, Duration readTimeout) {
+    return new AdminClient(KeycloakConfig.builder().serverUrl("http://127.0.0.1:" + port)
         .realm(REALM).clientId("app").clientSecret("s3cr3t".toCharArray())
-        .connectTimeout(Duration.ofSeconds(5)).readTimeout(Duration.ofSeconds(5)).build());
+        .connectTimeout(Duration.ofSeconds(5)).readTimeout(readTimeout).build());
   }
 
   private static String tokenBody(String rawAccessToken, String extra) {
@@ -191,8 +202,13 @@ class AdminTokenResponseTest {
    * 에 쌓고 표의 한 행을 돌려준다.
    */
   private String callExpectingRejection(String label, List<String> wrong) {
+    return callExpectingRejection(label, wrong, this::admin);
+  }
+
+  /** {@link #callExpectingRejection(String, List)} 와 같은 계약을 {@code client} 가 만든 admin 으로 잰다(다른 토큰 엔드포인트). */
+  private String callExpectingRejection(String label, List<String> wrong, Supplier<AdminClient> client) {
     Throwable thrown;
-    try (AdminClient admin = admin()) {
+    try (AdminClient admin = client.get()) {
       admin.users().get("x");
       thrown = null;
     } catch (Throwable t) {
@@ -282,6 +298,158 @@ class AdminTokenResponseTest {
     }
     System.out.println("[AdminTokenResponseTest 크기 상한 " + cap + "]\n  " + String.join("\n  ", table));
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
+  }
+
+  /**
+   * 거부한 뒤 연결을 놓다가 실패해도 거부는 그대로다 — 상한을 넘는 응답(쓸 수 있는 토큰 + 공백)의 나머지 전송이 깨져도
+   * ({@link ReleaseFault}) 결과는 쓸 수 없는 토큰과 같다: KeycloakTransportException · admin 요청 0 건 · 토큰 요청 1 건 ·
+   * 걸러진 원인 사슬 · 응답 바이트 미노출. ⚠️ 미디어 타입이 없는 2xx 는 응답 필터에서 거부되고 RESTEasy
+   * ({@code ClientInvocation.invoke})가 그 응답을 try/catch 없이 닫는다 — 닫기가 HttpCore 로 나머지를 비우다 난 오류가 거부를
+   * 대신해 {@code jakarta.ws.rs.ProcessingException}·{@code org.apache.http.*} 사슬로 나갔고, 청크 크기 줄 오류는
+   * 「Bad chunk header: &lt;그 줄&gt;」 로 응답 바이트(여기서는 refresh_token)를 찍었다. 본문을 통째로 읽던 그 전 가드는 그
+   * 오류를 판정 안에서 만나 걸러진 사슬이었다(실측). 미디어 타입이 있으면 RESTEasy 가 닫기 실패를 삼킨다(대조 행).
+   */
+  @Test void tokenResponseAboveTheCap_staysRejectedWhenReleasingTheConnectionFails() throws IOException {
+    List<String> table = new ArrayList<>();
+    List<String> wrong = new ArrayList<>();
+    try (RawEndpoint raw = new RawEndpoint()) {
+      Supplier<AdminClient> client = () -> admin(raw.port(), Duration.ofSeconds(2));
+      for (ReleaseFault fault : ReleaseFault.values()) {
+        for (int status : new int[] {200, 201}) {
+          raw.reply(fault, status, false);
+          table.add(callExpectingRejection("Content-Type 없음 " + status + " · " + fault, wrong, client));
+        }
+      }
+      raw.reply(ReleaseFault.BAD_CHUNK_HEADER, 200, true);
+      table.add(callExpectingRejection("application/json 200 · " + ReleaseFault.BAD_CHUNK_HEADER, wrong, client));
+    }
+    System.out.println("[AdminTokenResponseTest 거부 뒤 연결 해제 실패]\n  " + String.join("\n  ", table));
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
+  }
+
+  /** 상한을 넘는 첫 부분 뒤에서 깨지는 전송 — 가드가 거부한 뒤 연결을 놓으며 나머지를 비울 때 그 비우기가 실패한다. */
+  private enum ReleaseFault {
+    /** 다음 청크 크기 줄이 16진이 아니다 — HttpCore 가 그 줄을 「Bad chunk header: …」 에 그대로 싣는다(여기서는 refresh_token). */
+    BAD_CHUNK_HEADER,
+    /** 청크 도중에 연결이 끊긴다(TruncatedChunkException). */
+    TRUNCATED_CHUNK,
+    /** Content-Length 보다 적게 보내고 끊는다(ConnectionClosedException). */
+    SHORT_CONTENT_LENGTH,
+    /** Content-Length 보다 적게 보내고 멈춘다 — 비우기가 읽기 타임아웃을 만난다(SocketTimeoutException). */
+    STALL
+  }
+
+  /**
+   * 바이트를 그대로 쓰는 토큰 엔드포인트 — com.sun HttpServer 는 전송 틀(청크·길이)을 스스로 짜서 깨진 틀을 낼 수 없다. 토큰
+   * 요청과 admin 요청을 이 시험의 {@code grants}·{@code adminHits} 에 적고, admin 은 {@link #handle} 처럼 성공을 낸다.
+   */
+  private final class RawEndpoint implements AutoCloseable {
+    /** 첫 부분(쓸 수 있는 토큰 + 공백) — 상한+1 보다 커서 가드는 그 앞 상한+1 바이트만 읽고 거부한다. */
+    private static final int FIRST = 60_000;
+    private final ServerSocket socket;
+    private volatile ReleaseFault fault = ReleaseFault.BAD_CHUNK_HEADER;
+    private volatile int status = 200;
+    private volatile boolean typed;
+
+    RawEndpoint() throws IOException {
+      socket = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
+      Thread t = new Thread(this::serve, "raw-token-endpoint");
+      t.setDaemon(true);
+      t.start();
+    }
+
+    void reply(ReleaseFault fault, int status, boolean typed) {
+      this.fault = fault;
+      this.status = status;
+      this.typed = typed;
+      reset();
+    }
+
+    int port() {
+      return socket.getLocalPort();
+    }
+
+    private void serve() {
+      while (!socket.isClosed()) {
+        Socket s;
+        try {
+          s = socket.accept();
+        } catch (IOException closed) {
+          return;
+        }
+        Thread t = new Thread(() -> answer(s), "raw-token-exchange");
+        t.setDaemon(true);
+        t.start();
+      }
+    }
+
+    private void answer(Socket s) {
+      try (s) {
+        s.setSoTimeout(10_000);
+        InputStream in = new BufferedInputStream(s.getInputStream());
+        String[] requestLine = httpLine(in).split(" ");
+        Map<String, String> headers = new LinkedHashMap<>();
+        for (String h = httpLine(in); !h.isEmpty(); h = httpLine(in)) {
+          int colon = h.indexOf(':');
+          if (colon > 0) headers.put(h.substring(0, colon).trim().toLowerCase(Locale.ROOT), h.substring(colon + 1).trim());
+        }
+        String body = new String(in.readNBytes(Integer.parseInt(headers.getOrDefault("content-length", "0"))),
+            StandardCharsets.UTF_8);
+        String path = requestLine.length > 1 ? requestLine[1] : "";
+        OutputStream out = new BufferedOutputStream(s.getOutputStream());
+        if (path.equals(TOKEN_PATH)) {
+          synchronized (AdminTokenResponseTest.this) {
+            grants.add(form(body).getOrDefault("grant_type", "?"));
+          }
+          writeBrokenToken(out);
+          if (fault == ReleaseFault.STALL) in.read(); // 클라이언트가 끊을 때까지(읽기 타임아웃 뒤) 연결을 붙든다
+        } else if (path.startsWith("/admin/realms/" + REALM + "/users")) {
+          synchronized (AdminTokenResponseTest.this) {
+            adminHits.add(requestLine[0] + " " + path + " · " + headers.get("authorization"));
+          }
+          byte[] user = "{\"id\":\"x\",\"username\":\"alice\"}".getBytes(StandardCharsets.UTF_8);
+          out.write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + user.length
+              + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.ISO_8859_1));
+          out.write(user);
+          out.flush();
+        } else {
+          out.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+              .getBytes(StandardCharsets.ISO_8859_1));
+          out.flush();
+        }
+      } catch (IOException clientWentAway) {
+        // 클라이언트가 연결을 끊었다 — 깨진 전송의 정상 결말이다
+      }
+    }
+
+    private void writeBrokenToken(OutputStream out) throws IOException {
+      boolean chunked = fault == ReleaseFault.BAD_CHUNK_HEADER || fault == ReleaseFault.TRUNCATED_CHUNK;
+      int declared = fault == ReleaseFault.BAD_CHUNK_HEADER ? FIRST : FIRST + 10_000;
+      out.write(("HTTP/1.1 " + status + (status == 200 ? " OK" : " Created") + "\r\n"
+          + (typed ? "Content-Type: application/json\r\n" : "")
+          + (chunked ? "Transfer-Encoding: chunked\r\n" : "Content-Length: " + declared + "\r\n")
+          + "Connection: close\r\n\r\n").getBytes(StandardCharsets.ISO_8859_1));
+      if (chunked) out.write((Integer.toHexString(declared) + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
+      out.write(padTo(tokenBody("\"good\"", ",\"refresh_token\":\"" + RT_CANARY + "\""), FIRST));
+      if (fault == ReleaseFault.BAD_CHUNK_HEADER) {
+        // 다음 청크 크기 자리에 응답 내용 — 16진이 아니므로 HttpCore 가 이 줄을 오류 메시지에 그대로 싣는다
+        out.write(("\r\n\"refresh_token\":\"" + RT_CANARY + "\"\r\n").getBytes(StandardCharsets.ISO_8859_1));
+      }
+      out.flush();
+    }
+
+    @Override public void close() throws IOException {
+      socket.close();
+    }
+  }
+
+  /** CRLF(또는 LF)로 끝나는 HTTP 한 줄 — 줄 끝은 빼고. */
+  private static String httpLine(InputStream in) throws IOException {
+    ByteArrayOutputStream line = new ByteArrayOutputStream();
+    for (int c = in.read(); c >= 0 && c != '\n'; c = in.read()) {
+      if (c != '\r') line.write(c);
+    }
+    return line.toString(StandardCharsets.ISO_8859_1);
   }
 
   /**
