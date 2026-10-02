@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `228`(2026-10-02 기준 열림 124 · 닫힘 104)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `233`(2026-10-03 기준 열림 126 · 닫힘 107)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,23 +116,20 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-10-02 · #560–#703 반영)
+### 다음 세션 진입점 (2026-10-03 · #560–#713 반영)
 
-**지금 상태** — 열린 PR 0 · 열린 이슈 0 · Dependabot 알림 0.
-- **3차 릴리스 물결 아홉 LIVE**(2026-10-02, #689–#702): 게시 번호는 `CLAUDE.md` 표가 소유하고, 기준선 아홉이 게시본과 같다. #682(Gradle 9.8 — KGP 2.4.20 대역 밖)의 되살릴 조건은 그 PR.
+**지금 상태** — 열린 PR 0 · 열린 이슈 0 · Dependabot 알림 0. 2026-10-03 수정(#705–#712)은 **미게시**다 — `CHANGELOG.md` `[Unreleased]` 가 소유하고 다음 릴리스 물결이 싣는다. #682(Gradle 9.8)의 되살릴 조건은 그 PR.
 
 열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유한다. `node scripts/check-registry-truth.mjs` 로 다시 잰다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. 2026-10-02 신규 강화 셋(아래 「9언어 소스」)과 `wall-clock-ordering-in-tests` 의 남은 셋 — 전부 L/S.
+1. 2026-10-03 신규(아래 「9언어 소스」) — M 셋(`token-response-size-unbounded` · `jwks-forced-refetch-window-burned` · `dotnet-unpaired-surrogate-escapes`) 먼저, L/S 강화 둘은 뒤. `wall-clock-ordering-in-tests` 는 남은 다섯 언어가 그 항목에 있다.
 2. `guard-detection-surface-hand-narrowed` [H/M] — 적대 행렬은 **아홉 언어 전부 섰다**(go #636·#639 · 여덟 #654–#661). 다음은 skip 표지를 닫는 attest 파일(W5)과, KNOWN_GAPS id ↔ 열린 등록부 항목 대조다.
 3. `integration-coverage-never-measured` [H/L] — ①코드 교환 통합 9/9 · ②omit 조인 가드(#662) 닫힘. 다음은 ③레인별 통합 전용 리포트, 보고 모드다.
 4. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다. 반대 방향도 있다 — #585 는 「verifier 하나」로 등록됐지만 부류는 호출 인자 다섯 갈래였다.
 
-**사람 판정 대기** — 없음. 2026-10-02: 3차 물결 태그는 Claude 위임(JVM Publish 만 사람). 2026-09-27 사용자 판정(권장안으로): id_token audience 는 (a) clientId 로 따로 검증 · 검증 실패 교환의 revoke 는 (b) 기각. 근거와 되살릴 조건은 각 항목이 소유한다.
-
-그 전의 판정 — 2026-09-25 사용자 판정: 출처 미상 stash 둘(JDK 17→25)과 빈 `snap*` 워크트리 셋은 **폐기**했다(실측·검증되지 않은 산출물은 확인 후 폐기) · `irreversible-publish-no-reentry` 는 **보류 유지**(근거는 그 항목).
+**사람 판정 대기** — 없음. 지난 판정의 근거와 되살릴 조건은 각 항목이 소유한다(릴리스 태그 위임은 물결마다 다시 묻는다).
 
 **함정** — (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 와 아래 (j)–(w) 는 그대로 유효하다. (x)–(z) 는 2026-10-01 이 더했다.
 
@@ -513,13 +510,13 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [ ] `facade-wiring-close-contract-unasserted` **[M/S]** 파사드의 §4 계약(provider 배선·close)이 무단언 테스트 뒤에 있고 커버리지 게이트에서도 빠져 있다 · `rust/src/client.rs:65`
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 78건 (열림 56)
+## C. 품질 부채 — 83건 (열림 58)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 24
+### 9언어 소스 — 29
 
-- [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청의 `redirect_uri` 를 호출당 받지 못했다(나머지 일곱은 인자로 받는다). ⚠️ **범위가 두 배였다 — 비대칭은 `exchangeCode` 에도 있었다.** OAuth 는 토큰 교환의 `redirect_uri` 가 인가 때 쓴 값과 **같기를** 요구하므로(RFC 6749 §4.1.3) 인가 URL 만 고치면 교환이 config 값을 보내 Keycloak 이 거부한다. 등록부는 인가요청만 적었다. **§4 사람 판정(2026-09-12): API 를 맞춘다.** 근거 — §4 가 「개념·계층은 동형이고 **표기만** 갈린다」고 하는데 이것은 표기가 아니라 **능력**의 차이다(일곱은 클라이언트 하나가 콜백 N 개를 섬기고 둘은 1 개만). ⚠️ §4 에 선례가 있으나(admin 토큰 소유 비대칭) 그것은 **하위 라이브러리가 강제한** 것이고 이건 우리 파사드가 인자를 안 받기로 한 것뿐이라 고칠 수 있다. 구현은 **둘 다 가산적**이다 — php `?string $redirectUri = null`(두 메서드 후행 인자) · rust `create_authorization_request_with_redirect` / `exchange_code_with_redirect`(기본 인자가 없으므로 새 메서드). ⚠️ rust 는 §4 대로 하위 타입을 숨긴다 — `&str` 을 받고 `RedirectUrl` 파싱 실패는 `KeycloakError::Config` 로 번역한다(경계 테스트로 고정). 하네스 앱 둘도 함께 고쳤다 — rust 앱은 주석이 「**쿼리파라미터는 받되 사용하지 않는다**」라고 적고 있었다(H1 이 드러낸 그 공허). php 138 tests/phpstan 0/cs-fixer 0 · rust 82 tests/clippy/fmt 통과.
+- [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청과 교환의 `redirect_uri` 를 호출당 받지 못했다 — §4 판정 「표기가 아니라 능력의 차이이니 API 를 맞춘다」로 둘 다 가산적으로 맞췄다. 사후 서사는 `git show 8d7316c:docs/superpowers/plans/remaining-work.md` 522행
 
 - [x] `jwks-refetch-budget-overclaimed` **[M/M · 닫힘 2026-09-07]** JWKS 재조회 예산 문서가 실제보다 강하게 약속했다 — cold 로드가 예산을 안 쓴다 · `rust/src/jwks.rs:34-49`
 - [x] `jwks-response-not-validated` **[M/M · 닫힘 2026-09-07 #440]** JWKS 응답을 검증 없이 신뢰했다 — JVM 둘의 본문 크기 무제한은 #400 이 `DEFAULT_HTTP_SIZE_LIMIT` 를 되살려 닫았고, **Rust 의 상태코드 미확인은 #440 이 닫았다**(그 전 실측: `error_for_status`·`.status()` **0건**) · `rust/src/jwks.rs:34`
@@ -531,7 +528,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `close-path-leaks` **[L/M]** 정리 경로가 자원을 놓친다 — 실패 시 중단·생성 중 누락·미소유 executor · `go/admin.go:66-68`
 - [ ] `node-nonsdk-error-escapes` **[L/S]** Node의 두 공개 경로가 SDK 예외 계층 밖의 오류를 던진다 · `node/src/admin/call.ts:13-26`
 - [ ] `rust-admin-error-cause-flattened` **[L/M]** Rust에서 admin 토큰 실패의 원인이 가짜 401로 뭉개져 사라진다 · `rust/src/admin.rs:29-40`
-- [ ] `error-message-surface-unspecified` **[L/M]** 오류 메시지 표면에 규약이 없다 — 서버 본문 원문 삽입과 한글 메시지 · `dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:95-101`
+- [ ] `error-message-surface-unspecified` **[L/M]** 오류 메시지 표면에 규약이 없다 — 서버 본문 원문 삽입과 한글 메시지. 토큰 제시자가 고른 `kid` 도 줄바꿈째 실린다(.NET IDX10503, 실측) · `dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:95-101`
+<!-- 2026-10-03 #710 재스캔(.NET): JwtValidator.cs:122/127 이 ErrorCause.MessageOf(IdentityModel 예외)로 메시지를 만든다 — kid "k\nINJ-FORGED-LINE" → Message·ToString 에 INJ. kid 는 IdP 가 아니라 토큰을 내민 쪽이 고른다(로그 위조). alg·iss·aud 의 LF 는 메시지에 안 닿았다. admin 타입 경로 AdminClient.cs:66/74 (ErrorDescription 원문, LF 그대로)·raw 경로 :98-100 (본문 통째) 도 실측. 다른 여덟 언어의 kid 인용은 미측정. -->
 - [ ] `config-validation-gaps` **[L/M]** 설정 진입점이 값을 검증하지 않고 잘못된 기본값으로 대체한다 · `node/src/config.ts:74-87`
 - [ ] `token-provider-cache-invariants` **[L/S]** 토큰 프로바이더 캐시가 설정을 무시하거나 중복 발급한다 · `go/tokenprovider.go:36-60`
 - [ ] `coverage-omit-hides-security-paths` **[L/L]** "네트워크 경계"라는 이름의 파일 단위 커버리지 제외가 보안·오류분류 로직까지 무측정으로 만든다 · `dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:110`
@@ -542,9 +540,18 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `packaging-surface-hygiene` **[L/M]** 게시되는 아티팩트에 불필요·깨진 것이 실리거나 재현되지 않는다 · `java/pom.xml:112-143`
 - [ ] `example-and-readme-publication-drift` **[L/S]** 예제·언어 README가 게시 상태와 검증 방법을 틀리게 말하고 아무 게이트도 안 본다 · `kotlin/examples/QuickStart.kt:9-10`
 - [ ] `dotnet-admin-path-escaping` **[L/S]** .NET admin 파사드의 경로 이스케이프 규약이 리소스 클래스마다 다르다 · `dotnet/src/Xzawed.Keycloak.Sdk/Admin/ClientsResource.cs:16`
-- [ ] `python-admin-grant-guard-install-time` **[L/S · 신규 2026-10-02]** #685 의 그랜트 가드는 생성 때 설치된다 — `AdminClient.raw.connection` 을 바꾸면 빈 `access_token` 이 다시 `Bearer ` 로 나간다(sync 실측). 주입된 admin 의 기존 bearer 는 안 보고, 설치 중 실패는 `AttributeError` 다 · `python/src/keycloak_sdk/_internal/admin_grant.py`
-- [ ] `php-oauth-error-code-trailing-newline` **[L/S · 신규 2026-10-02]** `/^[a-z_]{1,64}$/`(D 없음)라 `invalid_client\n` 이 메시지에 실려 로그 줄이 갈린다(누출 없음, 실측). 호출부 넷. 수정: `/\A[a-z_]{1,64}\z/` · `php/src/Internal/OAuthErrorCode.php:19`
-- [ ] `jvm-admin-token-guard-buffers-whole-body` **[L/S · 신규 2026-10-02 · java·kotlin]** `TokenResponseGuard` 가 2xx 본문을 통째로 읽는다 — 힙보다 큰 본문은 `OutOfMemoryError`(결과는 여전히 거부 · admin 요청 0, 실측). 후보: JWKS 와 같은 크기 상한 · `java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/TokenResponseGuard.java`
+- [x] `python-admin-grant-guard-install-time` **[L/S · 닫힘 2026-10-03 #708]** 하드닝이 생성 때만 걸렸다 — 이제 `connection` 을 읽을 때마다 살아 있는 연결에 다시 건다. 남은 틈은 `python-admin-guard-send-time`
+- [x] `php-oauth-error-code-trailing-newline` **[L/S · 닫힘 2026-10-03 #705]** `$`(D 없음)가 끝 줄바꿈 앞에서도 맞았다 — `\A…\z`. 같은 부류의 .NET 은 #710
+- [x] `jvm-admin-token-guard-buffers-whole-body` **[L/S · 닫힘 2026-10-03 #711 #712]** 상한 1 MiB·`readNBytes` — 후보였던 JWKS 상한 51,200 은 KC 기본이 받는 bearer(65,459B, 실측)보다 작아 기각
+- [ ] `token-response-size-unbounded` **[M/M · 신규 2026-10-03]** 토큰 응답을 크기 제한 없이 읽는다 — 비JVM 일곱의 admin 토큰 경로와 JVM auth 레인(raw `OutOfMemoryError` 가 공개 API 로). 상한은 서버가 받는 bearer 보다 커야 한다(#711) · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java`
+<!-- token-response-size-unbounded 실측(2026-10-03, 첫 물결 JVM 레그): 쓸 수 있는 토큰 + JSON 공백 128 MiB → 프로세스 피크 node 63→489 MB · python 56→325 · go 11→282 · dotnet 41→556(≈4×, HttpClient MaxResponseContentBufferSize 미설정) · php 25→154(admin 은 fschmtt Client.php:118 json_decode, ClientCredentialsTokenProvider.php:77 도 무제한 — 소스 추적) · ruby 54→326, 전부 토큰 수락. rust 는 소스 추적만(token_provider.rs:66 resp.json → reqwest collect). JVM auth: -Xmx64m·256 MiB → AuthClient.clientCredentialsToken(AuthClient.java:207) 에서 raw OOM, kotlin auth.kt authSend 같음. Nimbus 11.38.2 HTTPRequest 에 크기 설정 없음(javap) — 이음매는 send(HTTPRequestSender). 상한 크기: KC 26.6 start-dev 기본, GET /admin/realms 에 Bearer n 바이트 → 65,459 = 401 · 65,460 = 431. master admin 서비스 계정 토큰은 realm 하나당 456 B 씩 자란다(1–6 실측) → 51,200 은 realm 약 109–139 에서 서버가 받는 토큰을 거부했다. -->
+- [ ] `jwks-forced-refetch-window-burned` **[M/S · 신규 2026-10-03 · go 실측]** 실패하거나 호출자가 취소한 강제 재조회도 30초 창을 다 쓴다 — IdP 에 요청이 안 닿아도 회전된 키를 그 창 내내 거부한다 · `go/jwt.go`
+<!-- jwks-forced-refetch-window-burned 실측(2026-10-03 go 검증 레그, origin/main 79182f9 와 동일): 따뜻한 캐시 → IdP 가 k2 로 회전 → 첫 k2 조회가 503 이면 「/certs 1→2」 뒤 둘째(정상) 조회가 「(refetch rate-limited) · /certs 2→2」, 취소된 ctx 면 「/certs 1→1」 인데도 창이 소진. ⚠️ 결정 시점 기록은 의도다(rust.md: 장애 중 위조 kid 상한) — 판정할 것은 「요청이 IdP 에 닿지 않은 실패(취소)까지 창을 써야 하는가」. 나머지 자체 게이트 넷(python·rust·php·ruby) 미측정. -->
+- [ ] `dotnet-unpaired-surrogate-escapes` **[M/S · 신규 2026-10-03]** `error` 의 짝 없는 서로게이트 이스케이프가 `InvalidOperationException` 을 SDK 밖으로 낸다(§4) — `OAuthErrorOf` 와 Duende `IsError` 둘 다 · `dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs`
+- [ ] `jvm-admin-token-guard-residuals` **[L/S · 신규 2026-10-03 · java·kotlin]** 거부 뒤 `close()` 가 본문 나머지를 끝까지 비운다 · 0 을 돌려주는 스트림에서 회전한다(main 동일) · HttpCore 프레이밍 예외가 응답 바이트를 인용한다 · `java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/TokenResponseGuard.java`
+<!-- jvm-admin-token-guard-residuals: (1) 서버가 16 MiB 를 다 썼다(가드 1,048,577 · close 가 나머지) — 끊기(abortConnection)는 풀 재사용을 잃는다. (2) read 가 0 을 돌려주면 readNBytes 가 200 ms 에 1.5 GB 할당(InputStream 계약 위반 스트림, 운송 경로에서 미발견). (3) MalformedChunkCodingException 「Bad chunk header: <줄>」 — 정화 트리거는 ResponseProcessingException·파서 예외뿐(WithheldCauses), 후보: RESTEasy ClientInvocation.extractResult 의 finally close(2xx·미디어 타입 없음). (4) JVM 은 Nimbus 가 문법 밖 OAuth 코드를 버려 줄바꿈이 안 실리지만 고정하는 시험이 없다(#710 재스캔). -->
+- [ ] `python-admin-guard-send-time` **[L/S · 신규 2026-10-03]** 검사가 보내는 순간이 아니라 무장 때다 — 다른 스레드가 요청 도중 중첩 세션을 바꾸면 그랜트가 307 을 따라 `client_secret` 을 넘긴다(실측) · `python/src/keycloak_sdk/_internal/admin_guard.py`
+<!-- python-admin-guard-send-time 실측(#708 검증 레그 두 차례): 401 재시도 중 다른 스레드의 토큰 쓰기·_keycloak_openid 교체 → 'Bearer ' · 소문자 'bearer ' · _s.headers 기본값 · _s 를 바꾼 연결 직접 호출(307 따라감) · 설치 안 된 copy.copy(conn) 직접 호출 · wrapt.ObjectProxy(admin) 는 생성 때만 무장. 같은 부류: 주입한 openid 의 연결을 바꾸면 auth 레인이 리다이렉트를 따라 client_secret 을 넘긴다(sync). 이음매 후보: _s.send / async_s 의 송신 시점 검사(병합된 헤더, 대소문자 무시). -->
 
 ### 테스트·커버리지 — 8
 
@@ -564,7 +571,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `guard-paths-never-exercised` **[M/M]** 자가테스트가 가드의 한 경로만 태워, 나머지 경로를 지워도 초록이다 · `scripts/test/test-check-coverage.sh:41`
 - [ ] `selftests-with-no-negative-case` **[M/L]** 일곱 자가테스트가 라이브 상태만 단언한다 — 판정기가 나쁜 입력을 거부한다는 증거가 없다 · `scripts/test/test-deploy-md.sh:7`
 - [ ] `probes-that-discard-the-result` **[M/M]** 프로브가 결과를 버린다 — 예외 타입 미단언·반환값 미단언 · `php/tests/Unit/Jwks/JwksStoreTest.php:188`
-- [ ] `wall-clock-ordering-in-tests` **[M/M]** 동시성·시간창 테스트가 벽시계에 매달려 있다 — 조용한 퇴화와 거짓 실패 · `go/jwt_test.go:322`. rust 한 건은 #701 이 닫았다(CI 8회 중 2회 실패). 남은 셋: rust `jwks.rs` `empty_keyset_flood_is_bounded_like_any_other_failure` · `tests/hostile_path_matrix.rs` `run_cold_jwks_c` · ruby `exchange_code_id_token_audience_spec.rb:150`.
+- [ ] `wall-clock-ordering-in-tests` **[M/M]** 동시성·시간창 테스트가 벽시계에 매달려 있다 — 조용한 퇴화와 거짓 실패. rust·ruby·go 는 닫았다(#701 #706 #707 #709). 남은 다섯 언어의 자리는 아래 주석 — ⚠️ 시계를 얼리면 창 크기 검출이 사라지니 결정적 창 크기 시험을 함께 둔다 · `python/tests/unit/test_auth.py:992`
+<!-- wall-clock 남은 자리(2026-10-03 첫 물결 재스캔, 정적 읽기 + 표시한 것은 주입 실측): python tests/unit/test_auth.py:992 · aio/test_auth.py:734 · W3c test_hostile_path_matrix.py:1258 / php JwksStoreTest.php:333 · FailureBackoffTest.php:103 · W3c HostilePathMatrixTest.php:1481 / dotnet BackoffConfigurationManagerTests.cs:137 · W3c HostilePathMatrixTests.cs:950 / node W3c hostile-path-matrix.test.ts:1557 / ruby jwks_store_spec.rb:135(주입 0.25 s → 3/3 실패) · W3c hostile_path_matrix_spec.rb:810 / go tokenprovider_test.go:29 TestProviderSingleFlight(50 ms 비행, 주입 60 ms → 2/3 실패, 경합만으로 0/300 — 원인은 비행 안에서 캐시를 다시 안 보는 것, token-provider-cache-invariants). java·kotlin 은 30 s 창이라 실노출 없음. go 원래 지목(jwt_test.go:322)은 경합만으로 13/200 실패했다. -->
 
 ### 가드·CI — 17
 
