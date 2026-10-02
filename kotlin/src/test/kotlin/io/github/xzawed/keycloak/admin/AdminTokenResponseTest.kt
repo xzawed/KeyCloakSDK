@@ -1,6 +1,5 @@
 package io.github.xzawed.keycloak.admin
 
-import com.nimbusds.jose.jwk.source.JWKSourceBuilder
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import io.github.xzawed.keycloak.KeycloakConfig
@@ -27,6 +26,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 // admin 레인의 토큰 응답 계약(Java `AdminTokenResponseTest` 동형) — admin 은 토큰을 자체 소유하고(§4) keycloak-admin-client
@@ -72,7 +72,11 @@ private fun atrPadTo(
 }
 
 // 깨진 전송 시험의 첫 부분(쓸 수 있는 토큰 + 공백) — 상한+1 보다 커서 가드는 그 앞 상한+1 바이트만 읽고 거부한다.
-private const val ATR_FIRST = 60_000
+private const val ATR_FIRST = TokenResponseGuard.MAX_BODY_BYTES + 10_000
+
+// Keycloak 26.6(start-dev 기본 설정)이 받아들이는 가장 긴 Bearer — 실측(curl GET /admin/realms): 65,459 바이트면 401(헤더는
+// 받고 토큰이 무효), 65,460 바이트면 431.
+private const val ATR_KEYCLOAK_MAX_BEARER = 65_459
 
 // CRLF(또는 LF)로 끝나는 HTTP 한 줄 — 줄 끝은 빼고.
 private fun atrHttpLine(input: InputStream): String {
@@ -327,15 +331,15 @@ internal class AdminTokenResponseTest {
         }
     }
 
-    // 크기 상한(Java 동형) — 토큰 응답 본문이 상한(JWKS 응답 상한, Nimbus JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT)을 넘으면 그
-    // 안의 토큰이 쓸 수 있어도 쓸 수 없는 토큰과 똑같이 거부한다 — KeycloakTransportException · admin 요청 0 건 · 토큰 요청 1 건.
-    // 상한 안의 쓸 수 있는 토큰은 평문·gzip 모두 그대로 동작한다. 판정은 결합이 읽는 바이트로 하므로 gzip 은 **푼** 크기로
-    // 잰다. 본문은 쓸 수 있는 토큰 뒤를 JSON 공백으로 채운 것이다 — 가드 없이 결합만 있으면 스트리밍으로 통과하는 모양이고,
-    // 수정 전 가드는 그것을 통째로 버퍼링해 힙보다 크면 OutOfMemoryError 를 냈다.
+    // 크기 상한(Java 동형) — 토큰 응답 본문이 가드의 상한(TokenResponseGuard.MAX_BODY_BYTES)을 넘으면 그 안의 토큰이 쓸 수
+    // 있어도 쓸 수 없는 토큰과 똑같이 거부한다 — KeycloakTransportException · admin 요청 0 건 · 토큰 요청 1 건. 상한 안의 쓸 수
+    // 있는 토큰은 평문·gzip 모두 그대로 동작한다. 판정은 결합이 읽는 바이트로 하므로 gzip 은 **푼** 크기로 잰다. 본문은 쓸 수
+    // 있는 토큰 뒤를 JSON 공백으로 채운 것이다 — 가드 없이 결합만 있으면 스트리밍으로 통과하는 모양이고, 본문을 통째로 버퍼링하던
+    // 가드는 힙보다 크면 OutOfMemoryError 를 냈다.
     @Test
     fun `token response above the cap is rejected like an unusable token`() =
         runTest {
-            val cap = JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT
+            val cap = TokenResponseGuard.MAX_BODY_BYTES
             val table = mutableListOf<String>()
             val wrong = mutableListOf<String>()
             val body = atrTokenBody("\"good\"", ",\"refresh_token\":\"$ATR_RT_CANARY\"")
@@ -358,6 +362,35 @@ internal class AdminTokenResponseTest {
             }
             println("[AdminTokenResponseTest 크기 상한 $cap]\n  " + table.joinToString("\n  "))
             assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
+        }
+
+    // 서버가 받아들이는 토큰은 거부하지 않는다(Java 동형) — 가장 긴 Bearer 를 담은 토큰 응답(본문 약 65.6 KB)은 결합에 그대로
+    // 넘어가고 admin 요청이 그 토큰을 싣는다. 큰 배포의 토큰이 이만큼 자란다: master 렐름 서비스 계정에 admin 역할을 주면 렐름
+    // 하나마다 resource_access 항목이 붙어 access_token 이 456 바이트씩 자란다(Keycloak 26.6.4 실측 — 렐름 0 개에 1,733 바이트,
+    // 이름 두 글자 렐름). 본문을 통째로 읽던 가드는 통과시켰고, JWKS 응답 상한(51,200)을 빌린 상한은 렐름 109 개부터 그 토큰을
+    // 쓸 수 없는 토큰처럼 거부했다(서버는 139 개까지 받아들인다) — admin 이 통째로 멈춘다.
+    @Test
+    fun `largest bearer the server accepts is handed on and carried by the admin request`() =
+        runTest {
+            val token = "a".repeat(ATR_KEYCLOAK_MAX_BEARER)
+            val body = atrTokenBody("\"$token\"", ",\"refresh_token\":\"$ATR_RT_CANARY\"").toByteArray()
+            reset(Reply(200, body))
+            val thrown = failureOf { it.users().get("x") }
+            val row =
+                "본문 ${body.size} 바이트 · Bearer ${token.length} 바이트 → " +
+                    "${thrown?.let { "${it.javaClass.simpleName}(${it.message})" } ?: "성공"} · " +
+                    "grants ${grants()} · admin ${bearerLengths(adminHits())}"
+            println("[AdminTokenResponseTest 서버가 받아들이는 가장 긴 Bearer]\n  $row")
+            assertNull(thrown, row)
+            assertEquals(listOf("client_credentials"), grants(), row)
+            assertTrue(adminHits() == listOf("GET /admin/realms/r/users/x · Bearer $token"), row)
+        }
+
+    // admin 요청 기록의 Bearer 를 길이로만 적는다 — 긴 토큰을 표에 그대로 찍지 않는다.
+    private fun bearerLengths(hits: List<String>): List<String> =
+        hits.map { hit ->
+            val at = hit.indexOf("Bearer ")
+            if (at < 0) hit else hit.substring(0, at) + "Bearer(len ${hit.length - at - "Bearer ".length})"
         }
 
     // 거부한 뒤 연결을 놓다가 실패해도 거부는 그대로다(Java 동형) — 상한을 넘는 응답(쓸 수 있는 토큰 + 공백)의 나머지 전송이

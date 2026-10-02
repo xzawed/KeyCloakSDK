@@ -2,7 +2,6 @@ package io.github.xzawed.keycloak.admin
 
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonToken
-import com.nimbusds.jose.jwk.source.JWKSourceBuilder
 import jakarta.ws.rs.HttpMethod
 import jakarta.ws.rs.client.ClientRequestContext
 import jakarta.ws.rs.client.ClientResponseContext
@@ -44,9 +43,12 @@ import java.io.InputStream
  *
  * ⚠️ **판정은 본문을 상한([MAX_BODY_BYTES])까지만 읽고 쥔다.** 통째로 읽던 때는 힙보다 큰 2xx 본문이 `OutOfMemoryError` 를
  * 냈다 — RESTEasy 가 감싸 결과는 거부였어도 그 순간 JVM 전체가 메모리를 잃었고, JSON 공백으로 부풀린 **쓸 수 있는** 토큰도
- * 그랬다(가드 없는 결합은 그것을 스트리밍으로 통과시킨다). 상한+1 바이트까지 읽어 넘침을 알아채면 나머지는 버퍼에 담지 않고
- * 스트림을 닫은 뒤(`closeQuietly` — 닫기의 실패는 버린다) 쓸 수 없는 토큰과 같은 거부를 던진다. 버퍼는 본문 크기와 무관하게
- * 하나다 — 받는 바이트는 아니다: 실제 연결에서 닫기는 나머지를 고정 버퍼로 끝까지 비운다(HttpCore).
+ * 그랬다(가드 없는 결합은 그것을 스트리밍으로 통과시킨다). `readNBytes(상한+1)` 로 읽어 넘침을 알아채면 나머지는 담지 않고
+ * 스트림을 닫은 뒤(`closeQuietly` — 닫기의 실패는 버린다) 쓸 수 없는 토큰과 같은 거부를 던진다. 그 메서드(JDK 17·21 의
+ * `InputStream` 기본 구현 — RESTEasy·HttpCore 의 스트림은 재정의하지 않는다)는 남은 길이 너머를 요청하지 않고 JDK 기본
+ * 조각(17: 8 KiB · 21: 16 KiB)으로 **읽은 만큼만** 할당한다 — 작은 본문은 작은 배열이고, 넘치는 본문도 상한의 약 두 배(읽은
+ * 조각 + 그것을 이은 배열)다. 상한만 한 버퍼를 미리 잡지 않는다(그러면 토큰 요청 하나하나가 상한을 할당한다). 받는 바이트는
+ * 상한이 없다: 실제 연결에서 닫기는 나머지를 고정 버퍼로 끝까지 비운다(HttpCore).
  *
  * 검사는 Jackson **스트리밍** 파서다 — 데이터 결합·다형 타입이 없고 자체 ObjectMapper 도 아니다(보안 불변식). 최상위
  * `access_token` 은 **전부** 본다 — 결합은 중복 키의 마지막 값을 쓰므로 첫 값만 보면 `{"access_token":"ok","access_token":1}`
@@ -88,21 +90,23 @@ internal class TokenResponseGuard :
         internal val JUDGE_ENTITY: String = TokenResponseGuard::class.java.name + ".judgeEntity"
         internal const val REJECTED = "token endpoint response carries no usable access_token"
 
-        // 판정이 읽고 쥐는 본문의 상한(바이트) — JWKS 응답 상한 그 자체다(NoRedirectResourceRetriever 가 Nimbus 에 넘기는 상수를
-        // 그대로 참조한다 — 두 번째 정의 자리를 만들지 않는다).
-        internal const val MAX_BODY_BYTES = JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT
+        // 판정이 읽고 쥐는 본문의 상한(바이트) — 1 MiB. Keycloak 26.6 기본 설정(start-dev 로 실측)이 받아들이는 가장 긴 Bearer
+        // (65,459 바이트 — 한 바이트 더 길면 HTTP 431)의 16 배라, 서버가 받아들이는 토큰을 이 상한이 거부하지 않는다(운영자는 그
+        // 헤더 한도를 올릴 수 있다 — 그래서 여유를 크게 둔다). 그래도 적대적이거나 고장 난 엔드포인트의 끝없는 본문은 여기서 끊긴다.
+        // ⚠️ JWKS 응답 상한(51,200)을 빌려 쓰지 말 것 — 큰 배포의 쓸 수 있는 토큰을 거부했다(AdminTokenResponseTest 의 65,459
+        // 바이트 Bearer 시험, Java 동형).
+        internal const val MAX_BODY_BYTES = 1 shl 20
         private const val ACCESS_TOKEN = "access_token"
         private val JSON = JsonFactory()
 
-        // 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치거나 쓸 수 없으면 거부, 통과하면 읽은 바이트를 사본 없이 넘긴다.
+        // 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치거나 쓸 수 없으면 거부, 통과하면 읽은 바이트를 그대로 넘긴다.
         private fun usableOrReject(input: InputStream?): ByteArrayInputStream {
-            val buf = ByteArray(MAX_BODY_BYTES + 1)
-            val n = input?.readNBytes(buf, 0, buf.size) ?: 0
-            if (n > MAX_BODY_BYTES || !carriesUsableAccessToken(buf, n)) {
+            val body = input?.readNBytes(MAX_BODY_BYTES + 1) ?: ByteArray(0)
+            if (body.size > MAX_BODY_BYTES || !carriesUsableAccessToken(body)) {
                 closeQuietly(input)
                 throw IOException(REJECTED)
             }
-            return ByteArrayInputStream(buf, 0, n)
+            return ByteArrayInputStream(body)
         }
 
         // 거부하기 전에 스트림을 닫고, 닫기의 실패는 버린다(Java 동형). ⚠️ 응답 필터가 던지면 RESTEasy(ClientInvocation.invoke)가
@@ -118,17 +122,10 @@ internal class TokenResponseGuard :
             }
         }
 
-        // ⚠️ 한 인자 형태를 지우지 말 것 — internal 멤버도 바이트코드에서는 public 이라(이름만 맹글링) CI api-compat(japicmp,
-        // 게시된 1.0.4 대비)이 그 삭제를 METHOD_REMOVED 로 막는다(실측).
-        internal fun carriesUsableAccessToken(body: ByteArray): Boolean = carriesUsableAccessToken(body, body.size)
-
-        /** `body` 의 앞 `length` 바이트가 최상위 JSON 객체이고 그 `access_token` 이 하나 이상이며 전부 비어 있지 않은 문자열이다. 형식이 틀리면 false. */
-        internal fun carriesUsableAccessToken(
-            body: ByteArray,
-            length: Int,
-        ): Boolean {
+        /** 최상위가 JSON 객체이고 그 `access_token` 이 하나 이상이며 전부 비어 있지 않은 문자열이다. 형식이 틀리면 false. */
+        internal fun carriesUsableAccessToken(body: ByteArray): Boolean {
             try {
-                JSON.createParser(body, 0, length).use { p ->
+                JSON.createParser(body).use { p ->
                     if (p.nextToken() != JsonToken.START_OBJECT) return false
                     var found = false
                     while (p.nextToken() == JsonToken.FIELD_NAME) {

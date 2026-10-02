@@ -7,7 +7,7 @@
 ## [Unreleased]
 
 ### Security
-- **(Kotlin)** admin 의 토큰 응답 검사가 2xx 본문을 통째로 메모리에 읽었습니다 — 힙보다 큰 본문은 `OutOfMemoryError` 를 냈고(RESTEasy 가 감싸 결과는 admin 요청 0 건의 `KeycloakTransportException` 이었지만 그 순간 같은 JVM 의 다른 작업도 메모리를 잃습니다), JSON 공백으로 부풀린 **쓸 수 있는** 토큰 응답도 그랬습니다(검사 없는 결합은 그것을 스트리밍으로 통과시킵니다). 이제 검사는 본문을 JWKS 응답 상한과 같은 51200 바이트(gzip 은 푼 뒤)까지만 읽고 쥡니다. ⚠️ 그보다 큰 토큰 응답은 쓸 수 있는 토큰을 담았어도 쓸 수 없는 토큰과 똑같이 admin 요청 없이 `KeycloakTransportException` 으로 실패하고, 상한 안의 응답은 그대로 동작합니다. 공개 API 변경은 0 입니다.
+- **(Kotlin)** admin 의 토큰 응답 검사가 2xx 본문을 통째로 메모리에 읽었습니다 — 힙보다 큰 본문은 `OutOfMemoryError` 를 냈고(RESTEasy 가 감싸 결과는 admin 요청 0 건의 `KeycloakTransportException` 이었지만 그 순간 같은 JVM 의 다른 작업도 메모리를 잃습니다), JSON 공백으로 부풀린 **쓸 수 있는** 토큰 응답도 그랬습니다(검사 없는 결합은 그것을 스트리밍으로 통과시킵니다). 이제 검사는 본문을 1 MiB(gzip 은 푼 뒤)까지만 읽고 읽은 만큼만 메모리를 잡습니다 — 이 상한은 Keycloak 26.6 이 기본 설정으로 받아들이는 가장 긴 Bearer(65,459 바이트)의 16 배라, 서버가 받아들이는 토큰은 거부하지 않습니다. ⚠️ 1 MiB 를 넘는 토큰 응답은 쓸 수 있는 토큰을 담았어도 쓸 수 없는 토큰과 똑같이 admin 요청 없이 `KeycloakTransportException` 으로 실패합니다. 공개 API 변경은 0 입니다.
 
 ## [1.3.0] - 2026-10-02 (PHP)
 

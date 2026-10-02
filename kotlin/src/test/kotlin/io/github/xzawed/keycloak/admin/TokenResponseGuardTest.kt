@@ -1,6 +1,5 @@
 package io.github.xzawed.keycloak.admin
 
-import com.nimbusds.jose.jwk.source.JWKSourceBuilder
 import io.github.xzawed.keycloak.KeycloakConfig
 import io.mockk.every
 import io.mockk.just
@@ -40,8 +39,9 @@ import kotlin.test.assertTrue
 private const val TRG_TOKEN = "http://kc/auth/realms/r/protocol/openid-connect/token"
 private const val TRG_NUMBER = """{"access_token":12345}"""
 
-// 크기 상한은 JWKS 응답 상한 그 자체다(NoRedirectResourceRetriever 가 Nimbus 에 넘기는 상수) — 시험은 그 상수로 경계를 잰다.
-private const val TRG_CAP = JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT
+// 가드 자신의 상한 — 경계 시험은 이 상수로 상한·상한+1 을 잰다. 값의 아래쪽은 서버가 받아들이는 가장 큰 토큰이 정하고
+// AdminTokenResponseTest 의 65,459 바이트 Bearer 시험이 지킨다 — 위쪽은 16 MiB 거부 시험이 지킨다(Java 동형).
+private const val TRG_CAP = TokenResponseGuard.MAX_BODY_BYTES
 private const val TRG_USABLE = """{"access_token":"AT","expires_in":300}"""
 
 // 쓸 수 있는 토큰 뒤를 JSON 공백으로 채워 정확히 size 바이트로 — 결합에게는 여전히 쓸 수 있는 본문이다.
@@ -111,6 +111,22 @@ private class TrgSizedBody(
         }
         return n
     }
+}
+
+// 쓸 수 있는 약 2 KiB 토큰 응답 — Keycloak client_credentials 응답의 모양(토큰 자리는 가짜 문자다).
+private val TRG_SMALL_TOKEN_RESPONSE =
+    (
+        "{\"access_token\":\"" + "A".repeat(1_900) + "\",\"expires_in\":300,\"refresh_expires_in\":0," +
+            "\"token_type\":\"Bearer\",\"not-before-policy\":0,\"scope\":\"profile email\"}"
+    ).toByteArray()
+
+// HotSpot 의 스레드 할당 계수기 — 없는 JVM 에서는 할당 시험을 건너뛴다.
+private fun trgAllocationCounter(): com.sun.management.ThreadMXBean {
+    val bean = ManagementFactory.getThreadMXBean()
+    assumeTrue(bean is com.sun.management.ThreadMXBean, "스레드 할당 계수기가 없는 JVM")
+    val threads = bean as com.sun.management.ThreadMXBean
+    assumeTrue(threads.isThreadAllocatedMemorySupported && threads.isThreadAllocatedMemoryEnabled)
+    return threads
 }
 
 // 끝없는 본문(TrgEndlessBody) — 닫으면 연결 해제의 실패처럼 응답 바이트를 인용하는 IOException 을 던지고, 횟수를 센다.
@@ -407,14 +423,13 @@ internal class TokenResponseGuardTest {
         verify(exactly = 0) { overRead.proceed() }
     }
 
-    // 쥐는 메모리도 본문 크기와 무관하다 — 16 MiB 본문을 판정하는 동안 이 스레드가 할당한 바이트가 상한의 몇 배 안이다(수정 전
-    // readAllBytes 는 본문 전체와 그 사본을 할당했다). HotSpot 의 스레드 할당 계수기로 잰다 — OOM 에 기대지 않는다.
+    // 쥐는 메모리도 본문 크기와 무관하다 — 16 MiB 본문을 거부하는 동안 이 스레드가 할당한 바이트가 상한의 세 배 안이다. 상한+1
+    // 바이트를 읽는 readNBytes(int) 는 읽은 조각(합 상한+1)과 그것을 이은 배열(상한+1)을 할당한다 — 두 배이고, 남은 한 배가
+    // 목·예외의 몫이다. 본문을 통째로 읽으면(readAllBytes) 본문 전체와 그 사본이다(32 MiB 넘게). HotSpot 의 스레드 할당 계수기로
+    // 잰다 — OOM 에 기대지 않는다.
     @Test
     fun `rejecting a huge body allocates independently of its size`() {
-        val bean = ManagementFactory.getThreadMXBean()
-        assumeTrue(bean is com.sun.management.ThreadMXBean, "스레드 할당 계수기가 없는 JVM")
-        val threads = bean as com.sun.management.ThreadMXBean
-        assumeTrue(threads.isThreadAllocatedMemorySupported && threads.isThreadAllocatedMemoryEnabled)
+        val threads = trgAllocationCounter()
         val huge = 16L shl 20
         val guard = TokenResponseGuard()
         val req = request("POST", TRG_TOKEN)
@@ -423,8 +438,31 @@ internal class TokenResponseGuardTest {
         val before = threads.currentThreadAllocatedBytes
         val rejected = judge(guard, req, res)
         val allocated = threads.currentThreadAllocatedBytes - before
-        assertTrue(allocated < 4L * (TRG_CAP + 1), "$huge 바이트 본문 하나를 판정하며 $allocated 바이트를 할당했다")
+        val limit = 3L * (TRG_CAP + 1)
+        println("[TokenResponseGuardTest 할당] $huge 바이트 본문 거부 → $allocated 바이트 (한도 $limit)")
+        assertTrue(allocated < limit, "$huge 바이트 본문 하나를 판정하며 $allocated 바이트를 할당했다")
         assertNotNull(rejected, "상한을 넘는 본문을 넘겼다")
+    }
+
+    // 작은 본문은 작게 할당한다 — 상한만 한 버퍼를 본문마다 미리 잡지 않는다(그러면 토큰 요청 하나하나가 상한 1 MiB 를 할당한다).
+    // 쓸 수 있는 약 2 KiB 토큰 응답 하나를 판정하며 이 스레드가 할당한 바이트가 64 KiB 안이다 — readNBytes(int) 는 JDK 의 기본
+    // 조각(17: 8 KiB · 21: 16 KiB)으로 읽은 만큼만 잡는다. 먼저 한 번 판정해 데운다(Jackson 의 재활용 버퍼·기호표와 목의 첫 할당을
+    // 재지 않는다).
+    @Test
+    fun `judging a small body allocates in proportion to it`() {
+        val threads = trgAllocationCounter()
+        val small = TRG_SMALL_TOKEN_RESPONSE
+        val guard = TokenResponseGuard()
+        val req = request("POST", TRG_TOKEN)
+        judge(guard, req, response(Response.Status.OK, ByteArrayInputStream(small))) // 데우기
+        val res = response(Response.Status.OK, ByteArrayInputStream(small))
+        val before = threads.currentThreadAllocatedBytes
+        val rejected = judge(guard, req, res)
+        val allocated = threads.currentThreadAllocatedBytes - before
+        val limit = 64L * 1024
+        println("[TokenResponseGuardTest 할당] ${small.size} 바이트 본문 통과 → $allocated 바이트 (한도 $limit)")
+        assertNull(rejected, "쓸 수 있는 작은 본문을 거부했다")
+        assertTrue(allocated < limit, "${small.size} 바이트 본문 하나를 판정하며 $allocated 바이트를 할당했다")
     }
 
     // 응답 필터 판정 하나 — 거부면 그 예외를, 통과면 null 을 돌려준다(할당을 재는 구간에 단언을 두지 않는다).
