@@ -15,9 +15,8 @@ from __future__ import annotations
 
 from keycloak import KeycloakAdmin
 
-from .._internal.admin_grant import guard_admin_grant
+from .._internal.admin_guard import arm_admin, unarmed_connection
 from .._internal.frames import scrub_frames
-from .._internal.redirects import harden_admin
 from ..config import KeycloakConfig
 from ..exceptions import KeycloakConfigError
 from .clients import ClientsResource
@@ -33,8 +32,7 @@ class AdminClient:
     def __init__(self, config: KeycloakConfig, admin: KeycloakAdmin | None = None) -> None:
         self._config = config
         if admin is not None:
-            harden_admin(admin)
-            guard_admin_grant(admin)
+            arm_admin(admin)  # 주입도 생성과 같은 하드닝 — `_internal/admin_guard.py`
         self._admin = admin
 
     @property
@@ -46,7 +44,7 @@ class AdminClient:
                 raise KeycloakConfigError(
                     "admin API 접근에는 client_secret이 필요합니다(client-credentials grant)"
                 )
-            self._admin = KeycloakAdmin(
+            admin = KeycloakAdmin(
                 server_url=self._config.server_url,
                 realm_name=self._config.realm,
                 client_id=self._config.client_id,
@@ -59,11 +57,12 @@ class AdminClient:
                 # (런타임은 requests로 흘러 float 정상 동작 — 스텁 부정확).
                 timeout=self._config.read_timeout,  # type: ignore[arg-type]
             )
-            # 생성 직후·첫 호출 전에 막는다. `KeycloakAdmin.__init__`은 네트워크를
-            # 타지 않으므로(토큰 그랜트는 첫 호출 때 지연 수행) 여기가 안전한 지점이다.
-            # 그랜트 응답 검사도 같은 이유로 여기다(`_internal/admin_grant.py`).
-            harden_admin(self._admin)
-            guard_admin_grant(self._admin)
+            # 생성 직후·첫 호출 전에 무장한다(`KeycloakAdmin.__init__` 은 네트워크를 타지 않는다).
+            # 리다이렉트 하드닝·그랜트 응답 검사·보낼 bearer 검사를 걸고, 이후 admin 요청마다
+            # 살아 있는 연결에 다시 본다(`_internal/admin_guard.py`). 무장이 실패하면 캐시하지
+            # 않는다 — 실패한 객체를 다음 `raw` 가 무방비로 돌려주면 안 된다.
+            arm_admin(admin)
+            self._admin = admin
         return self._admin
 
     @property
@@ -97,7 +96,8 @@ class AdminClient:
         `__del__`뿐이라, sync 세션은 **GC 될 때까지** 열려 있었다. 장기 서비스에서는 그
         시점이 보장되지 않는다.
 
-        ⚠️ 매니저가 **둘**이다(`_internal/redirects.py`의 `harden_admin`이 다루는 바로 그 구조):
+        ⚠️ 매니저가 **둘**이다(`_internal/admin_guard.py` 가 리다이렉트 하드닝에서 다루는 그
+        구조):
 
         1. `connection._s` — admin REST 호출.
         2. `connection.keycloak_openid.connection._s` — admin 자신의 client-credentials
@@ -111,8 +111,11 @@ class AdminClient:
         ⚠️ **`async_s`는 여기서 닫지 못한다 — 과대광고하지 말 것.** sync `ConnectionManager`도
         `httpx.AsyncClient`를 함께 만들지만 그것을 닫으려면 `await`가 필요하다. sync 경로에서
         회수 가능한 자원은 `requests.Session`이고, 이 훅이 닫는 것은 그것뿐이다.
+
+        연결은 **무장하지 않고** 읽는다(`unarmed_connection`) — 정리는 요청을 보내지 않으므로,
+        보호할 수 없게 바뀐 연결이라도 닫는 것까지 막지 않는다.
         """
-        conn = getattr(self._admin, "connection", None)
+        conn = unarmed_connection(self._admin)
         if conn is None:
             return
         nested = getattr(conn, "keycloak_openid", None)

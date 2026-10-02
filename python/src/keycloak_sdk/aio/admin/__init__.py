@@ -14,9 +14,8 @@ from __future__ import annotations
 
 from keycloak import KeycloakAdmin
 
-from ..._internal.admin_grant import guard_admin_grant
+from ..._internal.admin_guard import arm_admin, unarmed_connection
 from ..._internal.frames import scrub_frames
-from ..._internal.redirects import harden_admin
 from ...config import KeycloakConfig
 from ...exceptions import KeycloakConfigError
 from .clients import AsyncClientsResource
@@ -39,8 +38,7 @@ class AsyncAdminClient:
     def __init__(self, config: KeycloakConfig, admin: KeycloakAdmin | None = None) -> None:
         self._config = config
         if admin is not None:
-            harden_admin(admin)
-            guard_admin_grant(admin)
+            arm_admin(admin)  # sync 미러와 같다(`_internal/admin_guard.py`)
         self._admin = admin
 
     @property
@@ -52,7 +50,7 @@ class AsyncAdminClient:
                 raise KeycloakConfigError(
                     "admin API 접근에는 client_secret이 필요합니다(client-credentials grant)"
                 )
-            self._admin = KeycloakAdmin(
+            admin = KeycloakAdmin(
                 server_url=self._config.server_url,
                 realm_name=self._config.realm,
                 client_id=self._config.client_id,
@@ -64,8 +62,8 @@ class AsyncAdminClient:
                 # 전달한다(python-keycloak 스텁은 int로 좁게 타이핑하나 런타임은 정상).
                 timeout=self._config.read_timeout,  # type: ignore[arg-type]
             )
-            harden_admin(self._admin)
-            guard_admin_grant(self._admin)  # sync 미러와 같다(`_internal/admin_grant.py`)
+            arm_admin(admin)  # sync 미러와 같다 — 무장이 실패하면 캐시하지 않는다
+            self._admin = admin
         return self._admin
 
     @property
@@ -94,8 +92,8 @@ class AsyncAdminClient:
         `KeycloakAdmin`에는 `aclose`가 없다 — 실제 자원인 `httpx.AsyncClient`는
         `ConnectionManager`에 있고 그 `aclose()`가 정리한다(async auth 미러와 동형).
 
-        ⚠️ 그 ConnectionManager가 **둘**이다(`harden_admin`이 리다이렉트 하드닝에서 이미
-        다루는 바로 그 구조 — `_internal/redirects.py`):
+        ⚠️ 그 ConnectionManager가 **둘**이다(`_internal/admin_guard.py` 가 리다이렉트 하드닝에서
+        이미 다루는 바로 그 구조):
 
         1. `connection` — admin REST 호출.
         2. `connection.keycloak_openid.connection` — admin 자신의 client-credentials
@@ -110,8 +108,10 @@ class AsyncAdminClient:
         중첩 정리가 실패해도 바깥 정리는 `finally`로 반드시 수행한다 — 둘 중 하나가
         깨졌다고 나머지 FD까지 함께 잃는 것이 최악이다. 실패 자체는 숨기지 않는다
         (예외는 그대로 전파된다 — 조용한 누수보다 시끄러운 실패가 낫다).
+
+        연결은 **무장하지 않고** 읽는다 — sync `close()` 와 같은 이유(`unarmed_connection`).
         """
-        conn = getattr(self._admin, "connection", None)
+        conn = unarmed_connection(self._admin)
         if conn is None:
             return
         nested = getattr(conn, "keycloak_openid", None)

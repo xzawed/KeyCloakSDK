@@ -20,6 +20,7 @@ from .._internal.lower import is_lower_failure, summarize
 from ..exceptions import (
     KeycloakAdminError,
     KeycloakAuthError,
+    KeycloakConfigError,
     KeycloakConflictError,
     KeycloakForbiddenError,
     KeycloakNotFoundError,
@@ -73,28 +74,38 @@ def admin_failure(exc: BaseException) -> KeycloakAdminError | KeycloakTransportE
 
 
 def refused_grant(exc: KeycloakAuthError) -> KeycloakAuthError:
-    """admin 자체 그랜트의 응답 검사(`_internal/admin_grant.py`)가 python-keycloak **안에서** 던진
-    거부를 같은 타입·메시지로 새로 만든다.
+    """admin 자체 그랜트의 응답 검사(`_internal/admin_grant.py`)나 보낼 bearer 검사
+    (`_internal/admin_guard.py`)가 python-keycloak **안에서** 던진 거부를 같은 타입·메시지로 새로
+    만든다.
 
-    원본은 그 안쪽 프레임(거부된 응답·이전 refresh token)을 traceback 으로 쥐고, `Refresh token
-    expired` 폴백에서 났으면 python-keycloak 의 `except` 안이라 `__context__` 가 그 400(응답
-    본문)이다 — 호출자는 원본을 버리고 이것을 `except` **밖에서** 던진다."""
+    원본은 그 안쪽 프레임(거부된 응답·이전 refresh token·보낼 요청 본문)을 traceback 으로 쥐고,
+    `Refresh token expired` 폴백에서 났으면 python-keycloak 의 `except` 안이라 `__context__` 가 그
+    400(응답 본문)이다 — 호출자는 원본을 버리고 이것을 `except` **밖에서** 던진다."""
     return KeycloakAuthError(str(exc), exc.error)
+
+
+def refused_guard(exc: KeycloakConfigError) -> KeycloakConfigError:
+    """요청 직전에 살아 있는 연결을 무장하지 못한 거부(`_internal/admin_guard.py`)를 새로 만든다 —
+    python-keycloak 의 admin 메서드 프레임 안(보낼 representation 을 쥔다)에서 났기 때문이다."""
+    return KeycloakConfigError(str(exc))
 
 
 def call(fn: Callable[[], T]) -> T:
     """`fn`을 실행하고 python-keycloak 의 실패를 SDK 예외로 변환해 재발생시킨다.
 
     python-keycloak 의 실패가 아닌 예외(우리 코드의 버그)는 그대로 전파한다(변환 대상이 아님).
-    admin 그랜트 검사의 거부는 같은 타입으로 새로 만든다(`refused_grant`). 원본은 `except`
-    **밖에서** 다시 던져 `__context__` 로도 닿지 않게 한다.
+    admin 하드닝의 거부(그랜트·bearer 검사, 연결 무장 실패)는 같은 타입으로 새로 만든다
+    (`refused_grant`·`refused_guard`). 원본은 `except` **밖에서** 다시 던져 `__context__` 로도
+    닿지 않게 한다.
     """
-    error: KeycloakAuthError | KeycloakAdminError | KeycloakTransportError
+    error: KeycloakAuthError | KeycloakConfigError | KeycloakAdminError | KeycloakTransportError
     cause: BaseException | None
     try:
         return fn()
     except KeycloakAuthError as e:
         error, cause = refused_grant(e), None
+    except KeycloakConfigError as e:
+        error, cause = refused_guard(e), None
     except Exception as e:
         if not is_lower_failure(e):
             raise

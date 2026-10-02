@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Security
+- **(Python)** admin 의 하드닝이 생성 때 그 객체들에 한 번만 걸려, python-keycloak 의 공개 세터로 연결을 갈아 끼우면(`raw.connection = …`) 빈 `access_token` 이 다시 `Authorization: Bearer ` 로 admin API 에 나갔습니다(sync — `aio` 는 h11 이 그 헤더를 거부해 `KeycloakTransportError`). 같은 교체는 리다이렉트 차단도 지워 `client_secret` 을 싣는 admin 그랜트가 307 을 따라갔고(중첩 `raw.connection.keycloak_openid.connection` 교체도 같았습니다), 이미 빈 bearer 를 쥔 채 주입된 admin 은 그랜트 없이 곧바로 보냈으며, 설치 도중의 실패는 raw `AttributeError` 와 반쯤 감긴 객체를 남겼습니다. 이제 admin 요청이 나가기 직전마다 **살아 있는** 연결에 하드닝이 걸렸는지 다시 보고 걸며, 보낼 bearer 가 쓸 수 없으면 요청 없이 auth 레인과 같은 `KeycloakAuthError`(`token response has no usable access_token`)를 던집니다 — 리소스 메서드와 탈출구 `raw` 의 메서드, sync·`aio` 모두입니다. 걸 수 없는 연결이면 아무것도 바꾸지 않고 `KeycloakConfigError` 로 거부하고, `close()`·`aclose()` 는 그래도 정리합니다. ⚠️ 그래서 `raw`(주입한 `KeycloakAdmin` 포함)는 그 하위 클래스의 인스턴스가 됩니다 — `isinstance` 와 정체성은 그대로이고 `type(raw) is KeycloakAdmin` 만 거짓입니다. 공개 API 변경은 0 입니다.
+
 ## [1.3.0] - 2026-10-02 (PHP)
 
 **2026-10-02 셋째 릴리스 물결 — 아홉 언어가 여섯 번호로 올라갑니다.** 둘째 물결(아래 `[1.2.0] - 2026-09-26 (Go · PHP)` 절의 머리말)과 Node 의 `[1.0.2] - 2026-09-27` 뒤에 착지한 수정을 싣습니다 — 아홉 언어 전부의 id_token audience 수정(#663–#671 — `expectedAudience` 를 재정의하면 nonce 를 넘긴 코드 교환이 정상 id_token 을 거부하던 것), Python 의 traceback 프레임 로컬 누출 수정(#666), admin 수정 넷(Python #685 · PHP #686 · Java #687 · Kotlin #688). 새 공개 API 가 들어간 PHP(`JwtValidator::validateIdToken`)는 minor(`1.3.0`, 이 절)이고 Ruby(`JwtValidator#validate` 의 `audience:` 키워드)도 minor(`1.2.0`), 나머지는 patch 입니다 — Go `1.2.1`, Rust `1.1.2`, Java · Kotlin `1.0.4`, Python · .NET · Node `1.0.3`(아래 절들). 실제로 어디까지 게시됐는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh` 의 `df_published_version` 이 소유합니다.
