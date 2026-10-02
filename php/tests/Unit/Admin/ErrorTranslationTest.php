@@ -157,6 +157,26 @@ final class ErrorTranslationTest extends TestCase
         );
     }
 
+    /**
+     * admin 의 토큰 부여는 Bearer 없이 나가는 요청 하나뿐이다(fschmtt `Client::fetchTokens`) — admin 요청은 전부 Bearer 를 싣는다.
+     * 경로 꼬리만 보면 경로로 가는 식별자(`users()->get('x/protocol/openid-connect/token')` — fschmtt 는 경로 값을 인코딩하지 않는다)가
+     * admin 요청을 토큰 부여로 바꿔, admin 오류 본문의 코드 모양 `error` 를 메시지에 실었다. 진짜 스택으로 다섯 자원의 식별자 메서드
+     * 전부를 재는 것은 `AdminFacadeErrorLeakTest` 의 'admin 404 · path identifier ends in the token path' 칸이다.
+     */
+    public function testAdminRequestWhosePathEndsInTheTokenPathIsNotTheTokenGrant(): void
+    {
+        $req = new Request('GET', 'http://kc.test/admin/realms/r/users/x/protocol/openid-connect/token', ['Authorization' => 'Bearer ETbearer0']);
+        $json = ['Content-Type' => 'application/json'];
+        $e = self::thrownBy(fn () => ErrorTranslation::call(static fn () => throw new ClientException('x', $req, new Response(404, $json, '{"error":"invalid_client"}'))));
+        self::assertSame(KeycloakNotFoundError::class, $e::class);
+        self::assertSame('admin request failed: HTTP 404', $e->getMessage());
+
+        // 5xx 갈래도 같은 판정을 탄다 — Keycloak 의 500 본문은 코드 모양이다(`unknown_error`).
+        $e = self::thrownBy(fn () => ErrorTranslation::call(static fn () => throw new ServerException('x', $req, new Response(500, $json, '{"error":"unknown_error"}'))));
+        self::assertSame(KeycloakAdminError::class, $e::class);
+        self::assertSame('admin request failed: HTTP 500', $e->getMessage());
+    }
+
     /** 본문을 못 읽어도 변환은 끝난다 — 읽기 오류가 하위 예외 원본으로 경계를 넘지 않는다(코드만 빠진다). */
     public function testUnreadableTokenErrorBodyStillTranslates(): void
     {

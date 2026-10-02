@@ -31,6 +31,7 @@ use Psr\Http\Message\RequestInterface;
 use Xzawed\Keycloak\Admin\AdminClient;
 use Xzawed\Keycloak\Exception\KeycloakAdminError;
 use Xzawed\Keycloak\Exception\KeycloakConflictError;
+use Xzawed\Keycloak\Exception\KeycloakNotFoundError;
 use Xzawed\Keycloak\Exception\KeycloakTransportError;
 use Xzawed\Keycloak\Exception\SanitizedCause;
 
@@ -96,9 +97,10 @@ final class AdminFacadeErrorLeakTest extends TestCase
 
     /**
      * 실패 방식 => 기대. `status` 는 `KeycloakAdminError::getStatusCode()`, `cause` 는 첫 원인의 [원본 클래스, 메시지 머리,
-     * 메시지 꼬리] — 원인은 하위 예외 원본이 아니라 `SanitizedCause` 사본이다. `reach` 는 실패가 난 자리(공허성 검사).
+     * 메시지 꼬리] — 원인은 하위 예외 원본이 아니라 `SanitizedCause` 사본이다. `reach` 는 실패가 난 자리(공허성 검사). `id` 는
+     * 경로로 가는 문자열 인자의 값(없으면 `id-1`).
      *
-     * @return array<string, array{class: class-string<\Throwable>, status: ?int, message: string, cause: array{0: class-string<\Throwable>, 1: string, 2: string}, reach: string}>
+     * @return array<string, array{class: class-string<\Throwable>, status: ?int, message: string, cause: array{0: class-string<\Throwable>, 1: string, 2: string}, reach: string, id?: string}>
      */
     private static function modes(): array
     {
@@ -127,6 +129,17 @@ final class AdminFacadeErrorLeakTest extends TestCase
             'admin unreachable' => ['class' => KeycloakTransportError::class, 'status' => null,
                 'message' => 'admin request unreachable',
                 'cause' => [ConnectException::class, $withheld, ''], 'reach' => 'admin'],
+            // 경로로 가는 식별자가 admin 경로를 토큰 부여의 꼬리로 끝나게 해도 admin 요청이다(fschmtt 는 경로 값을 인코딩하지
+            // 않는다) — 코드 모양의 error 가 있어도 싣지 않는다. 식별자 없는 메서드는 이 칸에서 보통 404 의 대조군이다.
+            'admin 404 · path identifier ends in the token path' => ['class' => KeycloakNotFoundError::class, 'status' => 404,
+                'message' => 'admin request failed: HTTP 404',
+                'cause' => [ClientException::class, 'HTTP 404 from ', ' (response body withheld)'], 'reach' => 'admin',
+                'id' => 'id-1/protocol/openid-connect/token'],
+            // 같은 것의 5xx 갈래 — Keycloak 의 500 본문은 코드 모양이다(`unknown_error`).
+            'admin 500 · path identifier ends in the token path' => ['class' => KeycloakAdminError::class, 'status' => 500,
+                'message' => 'admin request failed: HTTP 500',
+                'cause' => [ServerException::class, 'HTTP 500 from ', ' (response body withheld)'], 'reach' => 'admin',
+                'id' => 'id-1/protocol/openid-connect/token'],
         ];
     }
 
@@ -168,6 +181,12 @@ final class AdminFacadeErrorLeakTest extends TestCase
                 ]))),
                 'admin 500 · HTML body' => Create::promiseFor(new Response(500, ['Content-Type' => 'text/html'], '<p>' . self::BODY . '</p>')),
                 'admin unreachable' => Create::rejectionFor(new ConnectException('connection refused', $req)),
+                'admin 404 · path identifier ends in the token path' => Create::promiseFor(new Response(404, $json, (string) json_encode([
+                    'error' => 'invalid_client', 'error_description' => self::BODY,
+                ]))),
+                'admin 500 · path identifier ends in the token path' => Create::promiseFor(new Response(500, $json, (string) json_encode([
+                    'error' => 'unknown_error', 'error_description' => self::BODY,
+                ]))),
                 default => Create::promiseFor(new Response(204)),
             };
         };
@@ -324,7 +343,7 @@ final class AdminFacadeErrorLeakTest extends TestCase
      * 한 칸(메서드 × 실패 방식)의 위반 — 비면 통과.
      *
      * @param array{0: class-string, 1: string} $target
-     * @param array{class: class-string<\Throwable>, status: ?int, message: string, cause: array{0: class-string<\Throwable>, 1: string, 2: string}, reach: string} $want
+     * @param array{class: class-string<\Throwable>, status: ?int, message: string, cause: array{0: class-string<\Throwable>, 1: string, 2: string}, reach: string, id?: string} $want
      * @return list<string>
      */
     private static function cell(array $target, string $mode, array $want): array
@@ -333,7 +352,8 @@ final class AdminFacadeErrorLeakTest extends TestCase
         self::$mode = $mode;
         self::$sent = [];
         self::$rest = [];
-        [$call, $args] = self::build($target, static fn (\ReflectionParameter $p): string => in_array($p->getName(), $hidden, true) ? self::INPUT : 'id-1');
+        $id = $want['id'] ?? 'id-1';
+        [$call, $args] = self::build($target, static fn (\ReflectionParameter $p): string => in_array($p->getName(), $hidden, true) ? self::INPUT : $id);
         $e = self::invoke($call, $args);
 
         $why = [];

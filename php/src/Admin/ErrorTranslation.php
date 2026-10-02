@@ -33,7 +33,10 @@ use Xzawed\Keycloak\Internal\OAuthErrorCode;
  */
 final class ErrorTranslation
 {
-    /** fschmtt 가 admin 토큰을 받는 자리 — `{base}/realms/{realm}` 뒤의 꼬리. admin REST 경로는 이것으로 끝나지 않는다. */
+    /**
+     * fschmtt 가 admin 토큰을 받는 자리 — `{base}/realms/{realm}` 뒤의 꼬리. ⚠️ 꼬리만으로는 못 가른다 — 경로로 가는 식별자가
+     * admin REST 경로도 이것으로 끝나게 만든다(fschmtt 는 경로 값을 인코딩하지 않는다). 가르는 것은 Bearer 다(`failed()`).
+     */
     private const TOKEN_PATH = '/protocol/openid-connect/token';
 
     /** OAuth 오류 응답은 작다 — 이보다 긴 본문에서는 코드를 찾지 않는다(적대적 IdP 의 큰 본문을 통째로 디코드하지 않는다). */
@@ -83,7 +86,10 @@ final class ErrorTranslation
     private static function failed(BadResponseException $e): string
     {
         $status = $e->getResponse()->getStatusCode();
-        if (!str_ends_with($e->getRequest()->getUri()->getPath(), self::TOKEN_PATH)) {
+        $request = $e->getRequest();
+        // admin 의 토큰 부여는 Bearer 없이 나가는 요청 하나뿐이다(fschmtt `Client::fetchTokens`) — admin 요청은 전부 Bearer 를
+        // 싣는다. 꼬리만 보면 `users()->get('x/protocol/openid-connect/token')` 이 admin 오류 본문의 코드 모양 `error` 를 실었다.
+        if ($request->hasHeader('Authorization') || !str_ends_with($request->getUri()->getPath(), self::TOKEN_PATH)) {
             return "admin request failed: HTTP $status";
         }
         try {
