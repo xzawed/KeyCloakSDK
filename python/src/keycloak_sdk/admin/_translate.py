@@ -19,6 +19,7 @@ from keycloak.exceptions import KeycloakError
 from .._internal.lower import is_lower_failure, summarize
 from ..exceptions import (
     KeycloakAdminError,
+    KeycloakAuthError,
     KeycloakConflictError,
     KeycloakForbiddenError,
     KeycloakNotFoundError,
@@ -58,8 +59,11 @@ def admin_failure(exc: BaseException) -> KeycloakAdminError | KeycloakTransportE
     """`is_lower_failure` 인 실패의 분류.
 
     `KeycloakError` 는 `translate` 그대로다. 그 밖의 python-keycloak 실패(응답 모양이 틀려 그
-    안에서 난 `TypeError`·`KeyError` — admin 토큰 그랜트의 응답이 쓸 수 없을 때도 여기다)는
-    HTTP 상태가 없으므로 이 경계의 규칙대로 전송 쪽이다. 예전에는 raw 로 새어 본문을 인용했다.
+    안에서 난 `TypeError`·`KeyError` — admin 토큰 그랜트의 응답이 JSON 객체가 아니거나 `expires_in`
+    을 못 쓸 때도 여기다)는 HTTP 상태가 없으므로 이 경계의 규칙대로 전송 쪽이다. 예전에는 raw 로
+    새어 본문을 인용했다. ⚠️ 그랜트 응답의 `access_token` 을 못 쓰는 것은 여기가 아니다 — 세터에
+    닿기 전에 `_internal/admin_grant.py` 가 auth 레인과 같은 `KeycloakAuthError` 로 거부한다
+    (`refused_grant`).
     """
     if isinstance(exc, KeycloakError):
         return translate(exc)
@@ -68,14 +72,29 @@ def admin_failure(exc: BaseException) -> KeycloakAdminError | KeycloakTransportE
     )
 
 
+def refused_grant(exc: KeycloakAuthError) -> KeycloakAuthError:
+    """admin 자체 그랜트의 응답 검사(`_internal/admin_grant.py`)가 python-keycloak **안에서** 던진
+    거부를 같은 타입·메시지로 새로 만든다.
+
+    원본은 그 안쪽 프레임(거부된 응답·이전 refresh token)을 traceback 으로 쥐고, `Refresh token
+    expired` 폴백에서 났으면 python-keycloak 의 `except` 안이라 `__context__` 가 그 400(응답
+    본문)이다 — 호출자는 원본을 버리고 이것을 `except` **밖에서** 던진다."""
+    return KeycloakAuthError(str(exc), exc.error)
+
+
 def call(fn: Callable[[], T]) -> T:
     """`fn`을 실행하고 python-keycloak 의 실패를 SDK 예외로 변환해 재발생시킨다.
 
     python-keycloak 의 실패가 아닌 예외(우리 코드의 버그)는 그대로 전파한다(변환 대상이 아님).
-    원본은 `except` **밖에서** 다시 던져 `__context__` 로도 닿지 않게 한다.
+    admin 그랜트 검사의 거부는 같은 타입으로 새로 만든다(`refused_grant`). 원본은 `except`
+    **밖에서** 다시 던져 `__context__` 로도 닿지 않게 한다.
     """
+    error: KeycloakAuthError | KeycloakAdminError | KeycloakTransportError
+    cause: BaseException | None
     try:
         return fn()
+    except KeycloakAuthError as e:
+        error, cause = refused_grant(e), None
     except Exception as e:
         if not is_lower_failure(e):
             raise

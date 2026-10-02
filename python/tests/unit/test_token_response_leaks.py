@@ -418,6 +418,21 @@ def _where(o: _Outcome) -> str:
     return f"{o.facade}|{o.variant}|{o.call}"
 
 
+def _unusable_access_token(variant: str) -> bool:
+    """200 JSON 객체인데 `access_token` 을 못 쓰는 변형 — admin 그랜트도 세터에 닿기 전에 auth
+    레인과 같이 거부한다(`_internal/admin_grant.py`). 그 밖의 쓸 수 없는 그랜트 응답은 전송 오류
+    그대로다."""
+    status, _, payload = VARIANTS[variant].respond("")
+    try:
+        body = json.loads(payload)
+    except ValueError:
+        return False
+    if status != 200 or not isinstance(body, dict):
+        return False
+    token = body.get("access_token")
+    return not (isinstance(token, str) and token)
+
+
 @pytest.fixture(scope="module")
 def measured() -> tuple[_Idp, list[_Outcome]]:
     with _fake_idp() as idp:
@@ -452,14 +467,24 @@ def test_failures_are_sdk_types_with_no_lower_exception_reachable(
     measured: tuple[_Idp, list[_Outcome]],
 ) -> None:
     """§4 — 실패는 SDK 타입이고, 사슬(억제된 `__context__` 까지)에 python-keycloak 원본이 없다.
-    분류는 레인 규칙대로다: auth 는 `KeycloakAuthError`, admin 은 admin 계층 또는 전송 오류."""
+    분류는 레인 규칙대로다: auth 는 `KeycloakAuthError`, admin 은 admin 계층 또는 전송 오류 — 단
+    admin 그랜트 응답의 `access_token` 을 못 쓰면 같은 변형의 auth 레인(client_credentials)과 같은
+    타입·메시지다."""
     _, outcomes = measured
     failed = [o for o in outcomes if o.error is not None]
     assert failed, "실패가 없다 — 흐름이 공허하다"
+    auth_lane = {(o.facade, o.variant): o.error for o in outcomes if o.call == CC}
+    assert any(o.call == ADMIN and _unusable_access_token(o.variant) for o in failed), (
+        "access_token 을 못 쓰는 변형이 admin 에 없다 — 대조가 공허하다"
+    )
     problems = []
     for o in failed:
         assert o.error is not None
-        if o.call == ADMIN:
+        if o.call == ADMIN and _unusable_access_token(o.variant):
+            ref = auth_lane[(o.facade, o.variant)]
+            if ref is None or (type(o.error), str(o.error)) != (type(ref), str(ref)):
+                problems.append(f"{_where(o)}: auth 레인과 다르다 — {o.error!r} ≠ {ref!r}")
+        elif o.call == ADMIN:
             if not isinstance(o.error, (KeycloakAdminError, KeycloakTransportError)):
                 problems.append(f"{_where(o)}: admin 계층이 아니다 — {type(o.error)}")
         elif not isinstance(o.error, KeycloakAuthError):

@@ -171,28 +171,10 @@ _UNDETERMINED_EXEMPT: dict[str, str] = {
 #: 지목하고 실측으로 SILENT 를 확인). 오늘은 비어 있다.
 _NONCE_DROP_EXEMPT: dict[str, str] = {}
 
-_SYNC_ADMIN_EMPTY_BEARER = (
-    "python-admin-grant-accepts-empty-access-token: sync admin 의 자체 "
-    "client_credentials 그랜트가 빈 access_token 을 받아들이고 `Authorization: Bearer ` "
-    "로 admin REST 요청을 보낸다 — python-keycloak 의 토큰 세터가 타입·빈 값을 안 보고, "
-    "SDK 는 admin 레인에서 그 응답을 검사하지 않는다. aio 는 h11 이 그 헤더 값을 거부해 "
-    "우연히 막힌다(`Can't connect to server` 로 잘못 보고된다)"
-)
-
 #: 현재 main 에서 실패하는 칸 — 키는 `_Cell.key`(`W3<축> 행/변형`), 값은 `등록부 id: 이유`.
 #: SDK 를 고치지 않고 드러내 둔다. 관측되지 않는(이제 통과하거나 칸이 없는) 항목은 낡은
-#: 것이라 실패한다. **이유 없는 항목은 넣지 않는다.**
-_KNOWN_GAPS: dict[str, str] = {
-    f'W3a keycloak_sdk.admin.{module}.{cls}.{method}/at:""': _SYNC_ADMIN_EMPTY_BEARER
-    for module, cls, methods in (
-        ("clients", "ClientsResource", ("create", "delete", "find_by_client_id", "get", "update")),
-        ("groups", "GroupsResource", ("create", "delete", "get", "list", "update")),
-        ("realms", "RealmsResource", ("create", "delete", "get", "list", "update")),
-        ("roles", "RolesResource", ("create", "delete", "get", "list", "update")),
-        ("users", "UsersResource", ("create", "delete", "get", "search", "update")),
-    )
-    for method in methods
-}
+#: 것이라 실패한다. **이유 없는 항목은 넣지 않는다.** 오늘은 비어 있다.
+_KNOWN_GAPS: dict[str, str] = {}
 
 
 # --- 기록하는 가짜 IdP ---------------------------------------------------------------------
@@ -377,27 +359,6 @@ def one_loop() -> Iterator[None]:
         _LOOP.clear()
         loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()
-
-
-@pytest.fixture
-def fast_tls(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`httpx.AsyncClient` 하나마다 certifi 번들을 읽는다(0.45초) — 행·칸마다 새
-    클라이언트라 그대로면 수천 초다. 기록 IdP 는 평문 HTTP 라 TLS 문맥을 쓰지 않는다.
-    같은 인자의 문맥을 재사용할 뿐 검증 설정은 그대로다."""
-    transport = importlib.import_module("httpx._transports.default")
-    original = getattr(transport, "create_ssl_context", None)
-    if original is None:  # httpx 가 이음매를 옮겼다 — 느려질 뿐 결과는 같다
-        return
-    cache: dict[bool, object] = {}
-
-    def cached(verify: object = True, cert: object = None, trust_env: bool = True) -> object:
-        if verify is True and cert is None:
-            if trust_env not in cache:
-                cache[trust_env] = original(verify=verify, cert=cert, trust_env=trust_env)
-            return cache[trust_env]
-        return original(verify=verify, cert=cert, trust_env=trust_env)
-
-    monkeypatch.setattr(transport, "create_ssl_context", cached)
 
 
 # --- 선언 집합 -----------------------------------------------------------------------------
