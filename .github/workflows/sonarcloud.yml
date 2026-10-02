@@ -37,7 +37,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
       - name: Generate Kotlin Kover XML coverage
         working-directory: kotlin
         run: ./gradlew koverXmlReport
@@ -99,7 +99,7 @@ jobs:
       # Ruby(simplecov_json_formatter → coverage/coverage.json; Sonar SimpleCovSensor가 파싱).
       # JSON은 절대경로를 담고 SonarQube가 baseDir 하위로 해석하므로 경로 정규화 불필요(lcov와 차이).
       - name: Set up Ruby 3.4
-        uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9 # v1
+        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true

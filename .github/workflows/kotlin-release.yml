@@ -113,7 +113,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
       - run: ./gradlew build test koverVerify ktlintCheck
 
   # 발행 전 게이트(2): koverVerify는 네트워크 경계(AuthClient/admin.*/KeycloakClient)를 omit하므로
@@ -137,7 +137,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
       - name: Integration E2E (Docker, 실제 Keycloak 26.6 — FullFlowIT)
         run: ./gradlew integrationTest
 
@@ -162,7 +162,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
       # --no-configuration-cache: vanniktech maven.publish의 서명/업로드 태스크가 구성 캐시와
       # 완전히 호환되지 않는 알려진 제약(플러그인 문서 권고) — 릴리스 1회성 실행이라 비용 무시 가능.
       - name: Publish to Maven Central (Central Portal, in-memory GPG)
