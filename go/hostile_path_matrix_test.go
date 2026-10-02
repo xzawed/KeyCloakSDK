@@ -57,7 +57,8 @@ import (
 //        id_token)는 성공해야 하고, id_token 이 있는 변형은 검증기까지 가야 한다(콜드 캐시 JWKS 조회 ≥ 1).
 //        nonce 파라미터가 없어 빠지는 CODE_EXCHANGE 행은 hpNonceDropExempt 에 이유가 있어야 한다(조용히 빠지지 않게).
 //   (W3c) 분류 실행에서 JWKS 를 조회한 행마다 콜드 캐시 + /certs 503 에서 k 회 호출 — 전부 실패하고
-//        1 ≤ /certs 요청 ≤ k−1(하한은 콜드 경로에 닿았다는 증명, 상한은 백오프). 시간이 아니라 요청 수만 잰다.
+//        1 ≤ /certs 요청 ≤ k−1(하한은 콜드 경로에 닿았다는 증명, 상한은 백오프). 게이트 시계(opts.now)를 얼려
+//        시간이 아니라 요청 수만 잰다(hpFreezeGateClock).
 // 실패한 칸은 hpKnownGaps 에 이유와 함께 있으면 GAP 으로 찍히고, 관측되지 않는 항목은 낡은 것이라 실패한다.
 //
 // 걷기는 이 패키지의 구조체·포인터만 찍는다 — 비구조체 정의 타입(`type Realm string`)의 메서드는 필드로
@@ -1169,6 +1170,25 @@ func hpRunNonceB(t *testing.T, key *rsa.PrivateKey, methods map[string]hpMethod,
 // hpColdK 는 콜드 캐시 JWKS 칸의 호출 수다 — 상한 k−1 이 백오프, 하한 1 이 콜드 경로 도달의 증명이다.
 const hpColdK = 5
 
+// hpFreezeGateClock 은 recv 에서 걷기로 닿는 *Validator 의 게이트 시계(opts.now)를 지금에 얼리고 얼렸는지를 낸다.
+// ⚠️ 실시간이면 다섯 호출 사이의 정지가 창(0.1–0.2 · 0.2–0.4 · 0.4–0.8 · 0.8–1.6초)을 넘을 때마다 요청이 하나 더
+// 나가 상한 k−1 을 깬다(실측: 호출마다 1.7초 정지 → 세 행 전부 `/certs 요청 5`). ExchangeCode 의 withAudience 는
+// 호출 때 opts 를 복사하므로 그 사본도 언 시계를 갖는다. 걷기는 타입마다 처음 닿은 값 하나만 남긴다(found).
+func hpFreezeGateClock(t *testing.T, recv reflect.Value) bool {
+	t.Helper()
+	found, ok := hpWalk(t, map[string]any{"recv": recv.Interface()})["Validator"]
+	if !ok {
+		return false
+	}
+	v, ok := found.Interface().(*Validator) // 값으로 닿았으면 사본이다 — 얼려도 수신자의 게이트는 그대로다
+	if !ok {
+		return false
+	}
+	frozen := time.Now()
+	v.opts.now = func() time.Time { return frozen }
+	return true
+}
+
 func hpRunColdJWKSC(t *testing.T, key *rsa.PrivateKey, methods map[string]hpMethod, builderOf map[string]int,
 	labels []string, sdk map[string]bool) []hpCell {
 	t.Helper()
@@ -1181,6 +1201,9 @@ func hpRunColdJWKSC(t *testing.T, key *rsa.PrivateKey, methods map[string]hpMeth
 		idp.reset()
 		idp.setCertsDown(true)
 		c := hpCell{axis: "c", label: label, variant: fmt.Sprintf("503×%d", hpColdK)}
+		if !hpFreezeGateClock(t, recv) {
+			c.why = append(c.why, "게이트 시계를 얼릴 *Validator 에 닿지 못했다 — 실시간이면 이 칸의 요청 수가 정지에 갈린다")
+		}
 		for i := 0; i < hpColdK; i++ {
 			panicked, err := hpInvoke(recv, m.name, hpArgs(idp.universal, nil))
 			switch {
