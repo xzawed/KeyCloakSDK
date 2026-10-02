@@ -55,8 +55,12 @@ from .redirects import _refuse_redirects, _require, _unsupported
 
 #: 훅을 거는 일은 한 번에 하나 — 되돌림이 다른 스레드가 막 건 훅을 지우지 않게 한다.
 _LOCK = threading.RLock()
-#: 이 모듈이 건 래퍼. 「이미 걸려 있나」를 이것으로 가른다.
+#: 이 모듈이 건 래퍼. 「이미 걸려 있나」를 이것과 아래 주인으로 가른다.
 _OURS: weakref.WeakSet[Callable[..., Any]] = weakref.WeakSet()
+#: 래퍼가 걸린 객체. 얕은 복사본(`copy.copy(conn)`)은 원본의 래퍼를 인스턴스 속성째 물려받는데 그
+#: 래퍼는 **원본의** 헤더를 본다 — 주인을 대조하지 않으면 복사본의 빈 bearer 가 검사 없이 나갔다
+#: (실측). 래퍼 함수의 속성으로 둔다: 전역 표에 두면 객체를 붙잡아 놓아 주지 않는다.
+_OWNER = "__kcsdk_owner__"
 #: 감시 클래스가 감싼 원래 `connection` 프로퍼티 — 정리 경로가 무장 없이 읽는 자리다.
 _BASE = "__kcsdk_connection__"
 _WATCHED: dict[type[KeycloakAdmin], type[KeycloakAdmin]] = {}
@@ -112,6 +116,12 @@ def _own(target: Any, name: str) -> Any:
     return getattr(target, "__dict__", {}).get(name)
 
 
+def _hooked(target: Any, name: str) -> bool:
+    """`target.name` 이 이 모듈이 **바로 이 객체에** 건 래퍼인가(복사본이 물려받은 것은 아니다)."""
+    hook = _own(target, name)
+    return hook in _OURS and getattr(hook, _OWNER, None) is target
+
+
 def _plan_redirects(hooks: list[_Hook], session: Any, what: str, where: str) -> None:
     if _own(session, "resolve_redirects") is _refuse_redirects:
         return
@@ -128,12 +138,13 @@ def _plan_wrap(
     where: str,
     wrap: Callable[[Callable[..., Any]], Callable[..., Any]],
 ) -> None:
-    if _own(target, name) in _OURS:
+    if _hooked(target, name):
         return
     current = getattr(target, name, None)
     if not callable(current):
         raise _missing(what, where)
     wrapped = wrap(current)
+    vars(wrapped)[_OWNER] = target
     _OURS.add(wrapped)
     hooks.append((target, name, wrapped, where))
 

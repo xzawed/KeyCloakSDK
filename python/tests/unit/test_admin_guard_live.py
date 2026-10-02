@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock
@@ -150,6 +151,28 @@ async def test_a_bearer_set_on_the_live_connection_is_checked_too(lane: str) -> 
             first, err = await _attempt(lane, client, lambda c: c.admin.users.get("u1"))
             assert (first, err) == ({"id": "u1"}, None), "앞 호출이 성공하지 않았다"
             client.admin.raw.connection.token = {"access_token": "", "expires_in": 300}
+            result, err = await _attempt(lane, client, lambda c: c.admin.users.get("u1"))
+
+    assert result is None
+    assert _refused_like_the_auth_lane(err, _auth_lane_verdict(_EMPTY)) == []
+    assert idp.admin_requests() == [_Seen("GET", _USER, "", f"Bearer {ACCESS_OLD}")]
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_copied_connection_is_checked_on_its_own_header(lane: str) -> None:
+    """얕은 복사본은 원본의 훅을 인스턴스 속성째 물려받는다 — 그 훅은 **원본의** 헤더를 본다.
+    복사본이 제 헤더를 따로 갖게 되면, 원본 것을 「이미 걸린 훅」으로 셈하는 한 복사본의 빈
+    bearer 가 검사 없이 나갔다(수정 전 실측 sync `['Bearer ']`)."""
+    with _fake_idp() as idp:
+        idp.grants["client_credentials"] = [(200, _GOOD)]
+        async with _client(lane, idp) as client:
+            first, err = await _attempt(lane, client, lambda c: c.admin.users.get("u1"))
+            assert (first, err) == ({"id": "u1"}, None), "앞 호출이 성공하지 않았다"
+            raw = client.admin.raw
+            dup = copy.copy(raw.connection)
+            dup.headers = dict(dup.headers)  # 복사본이 제 헤더를 갖는다
+            dup.token = {"access_token": "", "expires_in": 300}
+            raw.connection = dup
             result, err = await _attempt(lane, client, lambda c: c.admin.users.get("u1"))
 
     assert result is None
