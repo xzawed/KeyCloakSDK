@@ -34,6 +34,10 @@ final class OAuthErrorCodeTest extends TestCase
             'empty' => ['', null],
             'too long (65)' => [str_repeat('a', 65), null],
             'capitals and digits (token-shaped)' => ['LKe3ERR-Token-In-Error-Code', null],
+            // 바이트가 [a-z_] 라는 조항 — 유니코드 소문자(`\p{Ll}`)로 넓혀도 위 행들은 전부 초록이었다(실측).
+            'non-ASCII lowercase (U+00E9)' => ["invalid_client\u{e9}", null],
+            'dotless i (U+0131)' => ["\u{131}nvalid_client", null],
+            'fullwidth a (U+FF41)' => ["\u{ff41}", null],
             'not a string' => [['invalid_client'], null],
             'null' => [null, null],
         ];
