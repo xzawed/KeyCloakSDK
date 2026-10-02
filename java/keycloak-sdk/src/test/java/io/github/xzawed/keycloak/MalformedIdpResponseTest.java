@@ -244,10 +244,11 @@ class MalformedIdpResponseTest {
     String a4ID = forged.serialize();
     out.add(token("a4", "200 JSON, id_token a JWT signed by another key",
         json(200, tokens(q(a4AT), q("Bearer"), "300", q(a4RT), q(a4ID))), List.of(EXN), a4AT, a4RT, a4ID));
-    // (b) access_token 이 문자열이 아니다 — refresh_token 이 카나리아. admin 의 Jackson 은 숫자를 문자열로 받아 준다.
+    // (b) access_token 이 문자열이 아니다 — refresh_token 이 카나리아. admin 의 Jackson 은 숫자를 문자열로 받아 주지만, 그
+    // 결합 앞에서 TokenResponseGuard 가 토큰 응답을 거부해 admin 도 실패한다(admin 요청 0 건 — AdminTokenResponseTest).
     String bRT = c("bRT");
     out.add(token("b1", "200 JSON, access_token a number",
-        json(200, tokens("12345", q("Bearer"), "300", q(bRT), null)), TOKEN_CALLS, bRT));
+        json(200, tokens("12345", q("Bearer"), "300", q(bRT), null)), TOKEN_CALLS_ADMIN, bRT));
     String b2AT = c("b2AT"), b2RT = c("b2RT");
     out.add(token("b2", "200 JSON, access_token an object holding a canary",
         json(200, tokens("{\"v\":" + q(b2AT) + "}", q("Bearer"), "300", q(b2RT), null)), TOKEN_CALLS_ADMIN,
@@ -489,12 +490,23 @@ class MalformedIdpResponseTest {
       assertTrue(trace.contains("com.nimbusds.oauth2.sdk.ParseException (message withheld"), trace);
       assertTrue(trace.contains("net.minidev.json.parser.ParseException (message withheld"), trace);
 
+      // admin 의 토큰 응답은 결합 바로 앞(가장 안쪽 ReaderInterceptor)에서 TokenResponseGuard 가 거부한다 — 진단은 그
+      // 자리(프레임)와 타입 이름이다.
       KeycloakTransportException admin = assertInstanceOf(KeycloakTransportException.class,
           run(idp, idp.variants.get("d8"), CALLS.get(ADMIN)));
       assertEquals("admin transport failure", admin.getMessage());
       String adminTrace = render(admin).get("printStackTrace");
       assertTrue(adminTrace.contains("jakarta.ws.rs.client.ResponseProcessingException (message withheld"), adminTrace);
-      assertTrue(adminTrace.contains("com.fasterxml.jackson."), adminTrace);
+      assertTrue(adminTrace.contains("java.io.IOException (message withheld"), adminTrace);
+      assertTrue(adminTrace.contains("at io.github.xzawed.keycloak.admin.TokenResponseGuard.aroundReadFrom("), adminTrace);
+      // admin 자원 응답의 결합 실패는 여전히 Jackson 타입 이름을 남긴다 — 가드는 토큰 엔드포인트 응답만 본다.
+      KeycloakTransportException resource = assertInstanceOf(KeycloakTransportException.class,
+          run(idp, idp.variants.get("g3"), CALLS.get(ADMIN)));
+      assertEquals("admin transport failure", resource.getMessage());
+      String resourceTrace = render(resource).get("printStackTrace");
+      assertTrue(resourceTrace.contains("jakarta.ws.rs.client.ResponseProcessingException (message withheld"),
+          resourceTrace);
+      assertTrue(resourceTrace.contains("com.fasterxml.jackson."), resourceTrace);
 
       KeycloakAuthException echo = assertInstanceOf(KeycloakAuthException.class,
           run(idp, idp.variants.get("e1"), CALLS.get(RF)));
