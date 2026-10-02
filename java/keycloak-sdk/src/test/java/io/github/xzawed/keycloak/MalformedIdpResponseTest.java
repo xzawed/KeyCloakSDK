@@ -490,14 +490,15 @@ class MalformedIdpResponseTest {
       assertTrue(trace.contains("com.nimbusds.oauth2.sdk.ParseException (message withheld"), trace);
       assertTrue(trace.contains("net.minidev.json.parser.ParseException (message withheld"), trace);
 
-      // admin 의 토큰 응답은 결합 앞에서 TokenResponseGuard 가 거부한다 — 진단은 그 자리(프레임)와 타입 이름이다.
+      // admin 의 토큰 응답은 결합 바로 앞(가장 안쪽 ReaderInterceptor)에서 TokenResponseGuard 가 거부한다 — 진단은 그
+      // 자리(프레임)와 타입 이름이다.
       KeycloakTransportException admin = assertInstanceOf(KeycloakTransportException.class,
           run(idp, idp.variants.get("d8"), CALLS.get(ADMIN)));
       assertEquals("admin transport failure", admin.getMessage());
       String adminTrace = render(admin).get("printStackTrace");
       assertTrue(adminTrace.contains("jakarta.ws.rs.client.ResponseProcessingException (message withheld"), adminTrace);
       assertTrue(adminTrace.contains("java.io.IOException (message withheld"), adminTrace);
-      assertTrue(adminTrace.contains("at io.github.xzawed.keycloak.admin.TokenResponseGuard.filter("), adminTrace);
+      assertTrue(adminTrace.contains("at io.github.xzawed.keycloak.admin.TokenResponseGuard.aroundReadFrom("), adminTrace);
       // admin 자원 응답의 결합 실패는 여전히 Jackson 타입 이름을 남긴다 — 가드는 토큰 엔드포인트 응답만 본다.
       KeycloakTransportException resource = assertInstanceOf(KeycloakTransportException.class,
           run(idp, idp.variants.get("g3"), CALLS.get(ADMIN)));

@@ -2,8 +2,12 @@ package io.github.xzawed.keycloak.admin;
 
 import io.github.xzawed.keycloak.core.KeycloakConfig;
 import io.github.xzawed.keycloak.core.exception.KeycloakConfigException;
+import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.ClientBuilder;
+import jakarta.ws.rs.client.ClientResponseFilter;
+import jakarta.ws.rs.ext.ReaderInterceptor;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.JacksonProvider;
@@ -83,7 +87,8 @@ public final class AdminClient implements AutoCloseable {
    * 기본 50에서 10으로 조용히 줄어든다({@code connectionPoolSize(10)}).
    *
    * <p>{@link TokenResponseGuard}도 등록한다 — 내장 TokenManager 의 토큰 요청도 이 클라이언트로 나가고, 그 응답의
-   * 숫자·불리언·빈 문자열 {@code access_token} 을 Jackson 이 문자열로 받아 admin API 를 그 값의 Bearer 로 불렀다.
+   * 숫자·불리언·빈 문자열 {@code access_token} 을 Jackson 이 문자열로 받아 admin API 를 그 값의 Bearer 로 불렀다. 응답 필터
+   * (범위)와 <b>가장 안쪽</b> ReaderInterceptor(판정 — 결합이 읽는 바이트, gzip 해제 뒤) 두 계약으로 건다.
    */
   static Client buildTimeoutClient(KeycloakConfig config) { // 패키지 전용 — 프로바이더 등록 회귀테스트 시임
     return ClientBuilder.newBuilder()
@@ -91,7 +96,9 @@ public final class AdminClient implements AutoCloseable {
         .readTimeout(config.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS)
         .register(JacksonProvider.class, 100)
         .register(StreamMessageBodyReader.class)
-        .register(new TokenResponseGuard())
+        .register(new TokenResponseGuard(), Map.<Class<?>, Integer>of(
+            ClientResponseFilter.class, Priorities.USER,
+            ReaderInterceptor.class, TokenResponseGuard.READ_PRIORITY))
         .build();
   }
 

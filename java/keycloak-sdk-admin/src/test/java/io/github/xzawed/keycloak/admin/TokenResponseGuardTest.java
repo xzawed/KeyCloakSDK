@@ -3,10 +3,15 @@ package io.github.xzawed.keycloak.admin;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.ClientRequestContext;
 import jakarta.ws.rs.client.ClientResponseContext;
+import jakarta.ws.rs.client.ClientResponseFilter;
+import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.ext.ReaderInterceptor;
+import jakarta.ws.rs.ext.ReaderInterceptorContext;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -15,6 +20,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -109,13 +115,33 @@ class TokenResponseGuardTest {
         new Object[] {"POST", TOKEN, Response.Status.UNAUTHORIZED},
         new Object[] {"POST", TOKEN + "/introspect", Response.Status.OK});
     for (Object[] o : others) {
+      ClientRequestContext req = request((String) o[0], (String) o[1]);
       ClientResponseContext res = response((Response.Status) o[2], bytes(NUMBER));
-      guard.filter(request((String) o[0], (String) o[1]), res);
+      when(res.getMediaType()).thenReturn(MediaType.APPLICATION_JSON_TYPE);
+      guard.filter(req, res);
       verify(res, never()).getEntityStream();
       verify(res, never()).setEntityStream(any());
+      verify(req, never()).setProperty(any(), any()); // 표시가 없으면 ReaderInterceptor 도 그 엔티티를 보지 않는다
     }
   }
 
+  /**
+   * 범위 안이고 미디어 타입이 있으면 응답 필터는 엔티티를 읽지 않고 표시만 단다 — 결합은 ReaderInterceptor 사슬(gzip 해제
+   * 등)을 거친 바이트를 읽으므로 판정은 가장 안쪽 ReaderInterceptor({@link TokenResponseGuard#aroundReadFrom}) 몫이다.
+   */
+  @Test void tokenResponseWithMediaType_isMarkedForTheReader_notReadByTheFilter() throws IOException {
+    ClientRequestContext req = request("POST", TOKEN);
+    ClientResponseContext res = response(Response.Status.OK, bytes(NUMBER));
+    when(res.getMediaType()).thenReturn(MediaType.APPLICATION_JSON_TYPE);
+    new TokenResponseGuard().filter(req, res);
+    verify(req).setProperty(TokenResponseGuard.JUDGE_ENTITY, Boolean.TRUE);
+    verify(res, never()).getEntityStream();
+    verify(res, never()).setEntityStream(any());
+  }
+
+  // ⚠️ 아래 두 테스트의 응답 목은 미디어 타입이 없다(목의 기본값 null) — 결합이 아예 읽지 않는 2xx 라 응답 필터가 원시
+  // 바이트로 판정하는 자리다(RESTEasy extractResult 는 미디어 타입이 없으면 엔티티를 읽지 않는다 — 200 이면
+  // ResponseProcessingException, 그 밖의 2xx 면 null).
   @Test void usableTokenResponse_isHandedOnByteForByte() throws IOException {
     String body = "{\"access_token\":\"AT\",\"expires_in\":300,\"refresh_token\":\"RT\",\"x\":[1]}";
     ClientResponseContext res = response(Response.Status.OK, bytes(body));
@@ -136,12 +162,58 @@ class TokenResponseGuardTest {
     }
   }
 
-  /** 배선 — admin 의 JAX-RS 클라이언트에 등록돼 있어야 한다(TokenManager 의 토큰 요청이 그 클라이언트로 나간다). */
+  // ───────────── ReaderInterceptor — 결합이 읽을 바이트를 판정한다 ─────────────
+
+  private static ReaderInterceptorContext readContext(Object mark, InputStream body) throws IOException {
+    ReaderInterceptorContext ctx = mock(ReaderInterceptorContext.class);
+    when(ctx.getProperty(TokenResponseGuard.JUDGE_ENTITY)).thenReturn(mark);
+    when(ctx.getInputStream()).thenReturn(body);
+    when(ctx.proceed()).thenReturn("bound");
+    return ctx;
+  }
+
+  @Test void reader_leavesUnmarkedEntitiesUntouched() throws IOException {
+    for (Object mark : new Object[] {null, Boolean.FALSE, "true"}) {
+      ReaderInterceptorContext ctx = readContext(mark, bytes(NUMBER));
+      assertEquals("bound", new TokenResponseGuard().aroundReadFrom(ctx));
+      verify(ctx, never()).getInputStream();
+      verify(ctx, never()).setInputStream(any());
+    }
+  }
+
+  @Test void reader_handsAUsableMarkedEntityOnByteForByte() throws IOException {
+    String body = "{\"access_token\":\"AT\",\"expires_in\":300,\"refresh_token\":\"RT\",\"x\":[1]}";
+    ReaderInterceptorContext ctx = readContext(Boolean.TRUE, bytes(body));
+    assertEquals("bound", new TokenResponseGuard().aroundReadFrom(ctx));
+    ArgumentCaptor<InputStream> handed = ArgumentCaptor.forClass(InputStream.class);
+    verify(ctx).setInputStream(handed.capture());
+    assertEquals(body, new String(handed.getValue().readAllBytes(), StandardCharsets.UTF_8));
+  }
+
+  @Test void reader_rejectsAnUnusableMarkedEntityWithoutQuotingIt() throws IOException {
+    for (InputStream body : new InputStream[] {bytes(NUMBER), bytes("{\"access_token\":\"\"}"), null}) {
+      ReaderInterceptorContext ctx = readContext(Boolean.TRUE, body);
+      IOException e = assertThrows(IOException.class, () -> new TokenResponseGuard().aroundReadFrom(ctx));
+      assertEquals("token endpoint response carries no usable access_token", e.getMessage());
+      assertNull(e.getCause());
+      verify(ctx, never()).proceed();
+      verify(ctx, never()).setInputStream(any());
+    }
+  }
+
+  /**
+   * 배선 — admin 의 JAX-RS 클라이언트에 두 계약으로 등록돼 있어야 한다(TokenManager 의 토큰 요청이 그 클라이언트로 나간다).
+   * ReaderInterceptor 는 오름차순으로 돌므로 가장 큰 우선순위 값이 결합 바로 앞이다 — gzip 해제({@code Priorities.ENTITY_CODER})
+   * 보다 작아지면 원시 바이트를 판정하게 된다.
+   */
   @Test void timeoutClient_registersTheGuard() {
     KeycloakConfig config = KeycloakConfig.builder().serverUrl("https://kc.example.com").realm("r").clientId("app")
         .clientSecret("s3cr3t".toCharArray()).build();
     try (Client client = AdminClient.buildTimeoutClient(config)) {
       assertTrue(client.getConfiguration().isRegistered(TokenResponseGuard.class));
+      Map<Class<?>, Integer> contracts = client.getConfiguration().getContracts(TokenResponseGuard.class);
+      assertEquals(Priorities.USER, contracts.get(ClientResponseFilter.class));
+      assertEquals(Integer.MAX_VALUE, contracts.get(ReaderInterceptor.class));
     }
   }
 }

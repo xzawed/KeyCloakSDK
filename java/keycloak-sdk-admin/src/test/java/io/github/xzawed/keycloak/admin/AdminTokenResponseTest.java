@@ -6,6 +6,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
 import io.github.xzawed.keycloak.core.exception.KeycloakTransportException;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
@@ -20,6 +21,7 @@ import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.GZIPOutputStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,7 +50,19 @@ class AdminTokenResponseTest {
   /** admin 엔드포인트에 닿은 요청(메서드 경로 · Authorization). */
   private final List<String> adminHits = new ArrayList<>();
 
-  private record Reply(int status, String body) {}
+  /**
+   * 토큰 엔드포인트의 응답 — {@code contentEncoding} 이 있으면 그 헤더를 달고(본문은 이미 그 코딩으로 된 바이트),
+   * {@code typed} 가 거짓이면 Content-Type 을 달지 않는다.
+   */
+  private record Reply(int status, byte[] body, String contentEncoding, boolean typed) {
+    Reply(int status, String body) {
+      this(status, body.getBytes(StandardCharsets.UTF_8), null, true);
+    }
+
+    Reply(int status, byte[] body, String contentEncoding) {
+      this(status, body, contentEncoding, true);
+    }
+  }
 
   @BeforeEach void start() throws IOException {
     server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -66,7 +80,8 @@ class AdminTokenResponseTest {
     if (path.equals(TOKEN_PATH)) {
       grants.add(form(body).getOrDefault("grant_type", "?"));
       Reply r = tokenReplies.size() > 1 ? tokenReplies.poll() : tokenReplies.peek();
-      send(ex, r.status(), r.body());
+      if (r.contentEncoding() != null) ex.getResponseHeaders().add("Content-Encoding", r.contentEncoding());
+      send(ex, r.status(), r.body(), r.typed());
     } else if (path.startsWith("/admin/realms/" + REALM + "/users")) {
       adminHits.add(ex.getRequestMethod() + " " + path + " · " + ex.getRequestHeaders().getFirst("Authorization"));
       if (ex.getRequestMethod().equals("POST")) {
@@ -86,8 +101,11 @@ class AdminTokenResponseTest {
       ex.close();
       return;
     }
-    byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-    ex.getResponseHeaders().add("Content-Type", "application/json");
+    send(ex, status, body.getBytes(StandardCharsets.UTF_8), true);
+  }
+
+  private static void send(HttpExchange ex, int status, byte[] bytes, boolean typed) throws IOException {
+    if (typed) ex.getResponseHeaders().add("Content-Type", "application/json");
     ex.sendResponseHeaders(status, bytes.length);
     try (OutputStream os = ex.getResponseBody()) {
       os.write(bytes);
@@ -139,32 +157,115 @@ class AdminTokenResponseTest {
     for (String raw : List.of("12345", "true", "\"\"", "null", "{\"v\":\"x\"}", "[\"x\"]", MISSING,
         "\"AT\",\"access_token\":12345")) {
       reset(new Reply(200, tokenBody(raw, ",\"refresh_token\":\"" + RT_CANARY + "\"")));
-      Throwable thrown;
-      try (AdminClient admin = admin()) {
-        admin.users().get("x");
-        thrown = null;
-      } catch (Throwable t) {
-        thrown = t;
-      }
-      List<String> hits = adminHits();
-      table.add(String.format("access_token %-12s → %s · grants %s · admin %s", raw,
-          thrown == null ? "성공" : thrown.getClass().getSimpleName() + "(" + thrown.getMessage() + ")", grants(), hits));
-      if (!(thrown instanceof KeycloakTransportException) || !"admin transport failure".equals(thrown.getMessage())) {
-        wrong.add(raw + ": KeycloakTransportException(admin transport failure) 가 아니다 — "
-            + (thrown == null ? "성공" : thrown.getClass().getName()));
-      }
-      if (!hits.isEmpty()) wrong.add(raw + ": 쓸 수 없는 토큰으로 admin 요청이 나갔다 — " + hits);
-      if (grants().size() != 1) wrong.add(raw + ": 토큰 요청이 정확히 한 번이 아니다 — " + grants());
-      if (thrown == null) continue;
-      // §4 — 원인 사슬에 하위 라이브러리 인스턴스가 없고(파서 사슬은 타입 이름만 남긴 사본이다), 응답을 인용하지 않는다.
-      for (Throwable c = thrown.getCause(); c != null; c = c.getCause()) {
-        if (!c.getClass().getName().startsWith("java.")) wrong.add(raw + ": 원인 사슬에 하위 타입이 샜다 — " + c.getClass());
-      }
-      StringWriter trace = new StringWriter();
-      thrown.printStackTrace(new PrintWriter(trace, true));
-      if (trace.toString().contains(RT_CANARY.substring(0, 10))) wrong.add(raw + ": 오류가 응답의 refresh_token 을 찍었다");
+      table.add(callExpectingRejection("access_token " + raw, wrong));
     }
     System.out.println("[AdminTokenResponseTest]\n  " + String.join("\n  ", table));
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
+  }
+
+  /**
+   * admin 호출 하나를 내고 거부 계약을 잰다 — {@link KeycloakTransportException}("admin transport failure") · admin 요청
+   * 0 건 · 토큰 요청 정확히 1 건 · 원인 사슬에 java.* 밖 타입 없음(§4) · 응답의 refresh_token 미노출. 어긋남은 {@code wrong}
+   * 에 쌓고 표의 한 행을 돌려준다.
+   */
+  private String callExpectingRejection(String label, List<String> wrong) {
+    Throwable thrown;
+    try (AdminClient admin = admin()) {
+      admin.users().get("x");
+      thrown = null;
+    } catch (Throwable t) {
+      thrown = t;
+    }
+    List<String> hits = adminHits();
+    String row = String.format("%-24s → %s · grants %s · admin %s", label,
+        thrown == null ? "성공" : thrown.getClass().getSimpleName() + "(" + thrown.getMessage() + ")", grants(), hits);
+    if (!(thrown instanceof KeycloakTransportException) || !"admin transport failure".equals(thrown.getMessage())) {
+      wrong.add(label + ": KeycloakTransportException(admin transport failure) 가 아니다 — "
+          + (thrown == null ? "성공" : thrown.getClass().getName()));
+    }
+    if (!hits.isEmpty()) wrong.add(label + ": 쓸 수 없는 토큰으로 admin 요청이 나갔다 — " + hits);
+    if (grants().size() != 1) wrong.add(label + ": 토큰 요청이 정확히 한 번이 아니다 — " + grants());
+    if (thrown == null) return row;
+    // §4 — 원인 사슬에 하위 라이브러리 인스턴스가 없고(파서 사슬은 타입 이름만 남긴 사본이다), 응답을 인용하지 않는다.
+    for (Throwable c = thrown.getCause(); c != null; c = c.getCause()) {
+      if (!c.getClass().getName().startsWith("java.")) wrong.add(label + ": 원인 사슬에 하위 타입이 샜다 — " + c.getClass());
+    }
+    StringWriter trace = new StringWriter();
+    thrown.printStackTrace(new PrintWriter(trace, true));
+    if (trace.toString().contains(RT_CANARY.substring(0, 10))) wrong.add(label + ": 오류가 응답의 refresh_token 을 찍었다");
+    return row;
+  }
+
+  private static byte[] gzip(String s) throws IOException {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    try (GZIPOutputStream z = new GZIPOutputStream(out)) {
+      z.write(s.getBytes(StandardCharsets.UTF_8));
+    }
+    return out.toByteArray();
+  }
+
+  /**
+   * 내용 코딩(Content-Encoding)이 붙은 토큰 응답도 <b>결합이 읽는 바이트</b>로 판정한다. 소비자가 RESTEasy 의 gzip 해제를
+   * 켜면({@code resteasy.allowGzip=true} → GZIPDecodingInterceptor) 결합은 응답 필터 뒤의 ReaderInterceptor 에서 푼 바이트를
+   * 읽는다 — 원시 바이트를 보던 가드는 gzip 으로 온 쓸 수 있는 토큰을 거부해 admin 이 통째로 멈췄다(수정 전 실측: 가드 없이는
+   * {@code Bearer good} 으로 성공, 가드가 있으면 KeycloakTransportException · admin []). 해제기가 없는 코딩은 결합이 원시
+   * 바이트를 그대로 읽으므로 그 바이트로 판정한다 — 헤더 하나로 검사를 건너뛰지 못한다.
+   */
+  @Test void contentCodedTokenResponse_isJudgedOnTheBytesTheBindingReads() throws IOException {
+    List<String> table = new ArrayList<>();
+    List<String> wrong = new ArrayList<>();
+    String canary = ",\"refresh_token\":\"" + RT_CANARY + "\"";
+    System.setProperty("resteasy.allowGzip", "true");
+    try {
+      reset(new Reply(200, gzip(tokenBody("\"good\"", canary)), "gzip"));
+      try (AdminClient admin = admin()) {
+        admin.users().get("x");
+      } catch (RuntimeException e) {
+        wrong.add("gzip 쓸 수 있는 토큰: 성공해야 한다 — " + e);
+      }
+      table.add("gzip \"good\" → admin " + adminHits());
+      if (!adminHits().equals(List.of("GET /admin/realms/r/users/x · Bearer good"))) wrong.add("gzip \"good\": " + adminHits());
+      if (!grants().equals(List.of("client_credentials"))) wrong.add("gzip \"good\": 토큰 요청 " + grants());
+
+      reset(new Reply(200, gzip(tokenBody("12345", canary)), "gzip"));
+      table.add(callExpectingRejection("gzip 12345", wrong));
+
+      // 갱신(refresh_token 그랜트) 응답도 같은 자리에서 판정한다 — 푼 바이트가 쓸 수 있으면 새 토큰으로 나아간다.
+      String first = tokenBody("\"AT-1\"", ",\"refresh_token\":\"RT-1\",\"refresh_expires_in\":300")
+          .replace("\"expires_in\":300", "\"expires_in\":1");
+      reset(new Reply(200, first), new Reply(200, gzip(tokenBody("\"AT-2\"", "")), "gzip"));
+      try (AdminClient admin = admin()) {
+        admin.users().get("x");
+        admin.users().get("x");
+      } catch (RuntimeException e) {
+        wrong.add("gzip 갱신: 성공해야 한다 — " + e);
+      }
+      table.add("gzip 갱신 \"AT-2\" → grants " + grants() + " · admin " + adminHits());
+      if (!adminHits().equals(List.of("GET /admin/realms/r/users/x · Bearer AT-1", "GET /admin/realms/r/users/x · Bearer AT-2"))) {
+        wrong.add("gzip 갱신: " + adminHits());
+      }
+    } finally {
+      System.clearProperty("resteasy.allowGzip");
+    }
+    // 해제기가 없는 코딩(br) — 결합은 원시 바이트(여기서는 평문 JSON)를 읽는다.
+    reset(new Reply(200, tokenBody("12345", canary).getBytes(StandardCharsets.UTF_8), "br"));
+    table.add(callExpectingRejection("br(평문) 12345", wrong));
+    reset(new Reply(200, tokenBody("\"good\"", "").getBytes(StandardCharsets.UTF_8), "br"));
+    try (AdminClient admin = admin()) {
+      admin.users().get("x");
+    } catch (RuntimeException e) {
+      wrong.add("br(평문) 쓸 수 있는 토큰: 성공해야 한다 — " + e);
+    }
+    table.add("br(평문) \"good\" → admin " + adminHits());
+    if (!adminHits().equals(List.of("GET /admin/realms/r/users/x · Bearer good"))) wrong.add("br(평문) \"good\": " + adminHits());
+    // Content-Type 이 없는 2xx — 결합이 아예 읽지 않는다(RESTEasy extractResult 는 200 이면 스스로 ResponseProcessingException
+    // 을 던지고, 그 밖의 2xx 면 null 을 돌려줘 TokenManager 가 NPE 로 멈춘다). 판정은 응답 필터가 원시 바이트로 한다 — 그
+    // 자리가 빠지면 201 행의 원인 사슬에 ProcessingException 이 그대로 달린다(§4, 200 행은 RESTEasy 가 대신 막아 가려진다).
+    for (int status : new int[] {200, 201}) {
+      reset(new Reply(status, tokenBody("12345", canary).getBytes(StandardCharsets.UTF_8), null, false));
+      table.add(callExpectingRejection("Content-Type 없음 " + status + " 12345", wrong));
+    }
+    System.out.println("[AdminTokenResponseTest 내용 코딩]\n  " + String.join("\n  ", table));
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
   }
 
