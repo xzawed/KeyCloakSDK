@@ -112,7 +112,7 @@ import kotlin.time.Duration.Companion.seconds
 // ⚠️ 남은 한계(전부 NONE 이나 OTHER 로 읽히거나 보이지 않는다): 기록된 요청도 오류도 없이 끝나는 교환 경로(합성 인자가
 // 요청 앞에서 갈라 세우는 것, 이 IdP 가 아닌 호스트로 나가 오류를 버리는 것), 정착 창보다 늦게 나가는 비동기 요청(다음 행에
 // 잘못 붙는다), 측정만 하는 변형(at:missing — 200 인데 access_token 이 없는 응답을 받아들여도 이 행렬은 실패하지 않는다:
-// 그 거부를 단언하는 기존 테스트가 없다).
+// 이 행렬이 단언을 끌어오는 테스트에 그 거부가 없다 — admin 레인만 admin/AdminTokenResponseTest 가 따로 단언한다).
 
 private const val HP_CODE_EXCHANGE = "CODE_EXCHANGE"
 private const val HP_TOKEN_GRANT = "TOKEN_GRANT"
@@ -166,54 +166,12 @@ private val HP_UNDETERMINED_EXEMPT: Map<String, String> =
  */
 private val HP_NONCE_DROP_EXEMPT: Map<String, String> = emptyMap()
 
-// ⚠️ SDK 결함(2026-09-27 이 행렬이 처음 쟀다 · 등록부 id 미정). admin 은 토큰을 자체 소유한다(§4) — 그 내장 TokenManager
-// (keycloak-admin-client 의 Jackson)가 비문자열·빈 access_token 을 문자열로 **강제변환**해 그대로 Bearer 로 싣고 admin 요청을
-// 보낸다. 실측 Authorization: `Bearer 12345` · `Bearer true` · `Bearer`(빈 값). JSON 객체·배열·null 은 거부한다(pass).
-// 토큰 타입 축(test-security-defaults.sh 1c)의 불변식 — 「쓸 수 없는 값을 Bearer 로 실어 보내고 매번 401 을 받는 조용한
-// 반복 실패」를 막는다 — 이 auth 의 Nimbus 경로에만 걸려 있다. 여기서 고치지 않는다.
-private const val HP_GAP_ADMIN_TOKEN_TYPE =
-    "jvm-admin-token-response-type-unchecked: admin 내장 TokenManager 가 비문자열·빈 access_token 을 " +
-        "강제변환해 Bearer 로 싣고 나아간다(실측 `Bearer 12345`·`Bearer true`·`Bearer`) — SDK 결함"
-
-// 그 틈이 걸리는 행 — 손으로 적는다. 새 admin 멤버의 같은 칸은 GAP 이 아니라 FAIL 로 드러나야 한다.
-private val HP_GAP_ADMIN_ROWS =
-    listOf(
-        "admin.ClientsResource.create",
-        "admin.ClientsResource.delete",
-        "admin.ClientsResource.findByClientId",
-        "admin.ClientsResource.get",
-        "admin.ClientsResource.update",
-        "admin.GroupsResource.create",
-        "admin.GroupsResource.delete",
-        "admin.GroupsResource.get",
-        "admin.GroupsResource.list",
-        "admin.GroupsResource.update",
-        "admin.RealmsResource.create",
-        "admin.RealmsResource.delete",
-        "admin.RealmsResource.get",
-        "admin.RealmsResource.list",
-        "admin.RealmsResource.update",
-        "admin.RolesResource.create",
-        "admin.RolesResource.delete",
-        "admin.RolesResource.get",
-        "admin.RolesResource.list",
-        "admin.RolesResource.update",
-        "admin.UsersResource.create",
-        "admin.UsersResource.delete",
-        "admin.UsersResource.get",
-        "admin.UsersResource.search",
-        "admin.UsersResource.update",
-    )
-
 /**
  * 현재 `main` 에서 실패하는 칸 — 키는 [HpCell.key](`W3<축> 행/변형`), 값은 `등록부 id: 한 줄 이유`. SDK 를 여기서 고치지
  * 않고 드러내 둔다. 관측되지 않는(이제 통과하거나 칸이 없는) 항목은 낡은 것이라 실패한다. **이유 없는 항목은 넣지 않는다.**
- * 키는 칸 하나하나다(와일드카드 없음) — 행 25 × 변형 3 = 75 칸.
+ * 키는 칸 하나하나다(와일드카드 없음). 오늘은 비어 있다.
  */
-private val HP_KNOWN_GAPS: Map<String, String> =
-    HP_GAP_ADMIN_ROWS
-        .flatMap { row -> listOf("at:12345", "at:true", "at:''").map { "W3a $row/$it" to HP_GAP_ADMIN_TOKEN_TYPE } }
-        .toMap()
+private val HP_KNOWN_GAPS: Map<String, String> = emptyMap()
 
 internal class HostilePathMatrixTest {
     @Test
@@ -1066,7 +1024,7 @@ private class HpVariant(
 //     변형은 호출 인자에 묶여 있어 뺀다.
 //   - AuthClientTest 의 CC_NON_STRING_ACCESS_TOKENS — 교차언어 가드 토큰 타입 축(1c)의 kotlin 앵커가 단언하는 값이다. Go 가
 //     ccAccessTokenCases 로 한 것처럼 계급 전체에 단언한다(그 축의 불변식이 부여 경로의 것이다).
-//   - at:missing — 어느 기존 테스트도 단언하지 않는다. 측정만.
+//   - at:missing — 위 두 출처 어디에도 없다(admin 레인만 admin/AdminTokenResponseTest 가 따로 단언한다). 측정만.
 //
 // ⚠️ 공허 함정: 이 본문들엔 쓸 수 있는 id_token 이 없다. nonce 를 준 exchangeCode 는 정상 토큰 응답이어도 「missing id_token」
 // 으로 실패하므로 적대 응답이 안 닿아도 통과한다 — 그래서 W3a 는 nonce 파라미터를 비워 id_token 검증을 끄고 **토큰 응답

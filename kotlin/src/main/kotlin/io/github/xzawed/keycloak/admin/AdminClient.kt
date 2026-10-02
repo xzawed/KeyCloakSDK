@@ -6,11 +6,14 @@ import io.github.xzawed.keycloak.KeycloakConfigException
 import io.github.xzawed.keycloak.KeycloakTransportException
 import io.github.xzawed.keycloak.RedactedCause
 import io.github.xzawed.keycloak.onIo
+import jakarta.ws.rs.Priorities
 import jakarta.ws.rs.ProcessingException
 import jakarta.ws.rs.WebApplicationException
 import jakarta.ws.rs.client.Client
 import jakarta.ws.rs.client.ClientBuilder
+import jakarta.ws.rs.client.ClientResponseFilter
 import jakarta.ws.rs.client.ResponseProcessingException
+import jakarta.ws.rs.ext.ReaderInterceptor
 import kotlinx.coroutines.CancellationException
 import org.keycloak.OAuth2Constants
 import org.keycloak.admin.client.JacksonProvider
@@ -95,6 +98,10 @@ public class AdminClient internal constructor(
          * 10으로 조용히 줄어든다.
          *
          * `internal` 가시성은 프로바이더 등록 회귀테스트를 위한 시임이다(Java의 패키지 전용 seam과 동형).
+         *
+         * [TokenResponseGuard]도 등록한다 — 내장 TokenManager 의 토큰 요청도 이 클라이언트로 나가고, 그 응답의
+         * 숫자·불리언·빈 문자열 `access_token` 을 Jackson 이 문자열로 받아 admin API 를 그 값의 Bearer 로 불렀다. 응답 필터
+         * (범위)와 **가장 안쪽** ReaderInterceptor(판정 — 결합이 읽는 바이트, gzip 해제 뒤) 두 계약으로 건다.
          */
         internal fun buildTimeoutClient(config: KeycloakConfig): Client =
             ClientBuilder
@@ -103,7 +110,13 @@ public class AdminClient internal constructor(
                 .readTimeout(config.readTimeout.toMillis(), TimeUnit.MILLISECONDS)
                 .register(JacksonProvider::class.java, 100)
                 .register(StreamMessageBodyReader::class.java)
-                .build()
+                .register(
+                    TokenResponseGuard(),
+                    mapOf<Class<*>, Int>(
+                        ClientResponseFilter::class.java to Priorities.USER,
+                        ReaderInterceptor::class.java to TokenResponseGuard.READ_PRIORITY,
+                    ),
+                ).build()
     }
 }
 

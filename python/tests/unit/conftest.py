@@ -1,8 +1,10 @@
-"""단위 테스트 공유 픽스처 — 백채널 리다이렉트 덫 서버(sync/async 공용)."""
+"""단위 테스트 공유 픽스처 — 백채널 리다이렉트 덫 서버(sync/async 공용)·JWKS 서버·하위 오류 생성기,
+그리고 새 클라이언트를 많이 만드는 테스트의 TLS 문맥 재사용(`fast_tls`)."""
 
 from __future__ import annotations
 
 import gzip
+import importlib
 import json
 import threading
 from dataclasses import dataclass, field
@@ -101,6 +103,28 @@ def _make_handler(trap_box: dict[str, Trap], role: str) -> type[BaseHTTPRequestH
         do_DELETE = _serve
 
     return Handler
+
+
+@pytest.fixture
+def fast_tls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`httpx.AsyncClient` 하나마다 certifi 번들을 읽는다(0.45초) — 호출마다 새 클라이언트를
+    만드는 테스트(적대 경로 행렬의 행·칸, admin 그랜트의 경로마다)는 그대로면 수천·수십 초다.
+    가짜 IdP 는 평문 HTTP 라 TLS 문맥을 쓰지 않는다. 같은 인자의 문맥을 재사용할 뿐 검증 설정은
+    그대로다."""
+    transport = importlib.import_module("httpx._transports.default")
+    original = getattr(transport, "create_ssl_context", None)
+    if original is None:  # httpx 가 이음매를 옮겼다 — 느려질 뿐 결과는 같다
+        return
+    cache: dict[bool, object] = {}
+
+    def cached(verify: object = True, cert: object = None, trust_env: bool = True) -> object:
+        if verify is True and cert is None:
+            if trust_env not in cache:
+                cache[trust_env] = original(verify=verify, cert=cert, trust_env=trust_env)
+            return cache[trust_env]
+        return original(verify=verify, cert=cert, trust_env=trust_env)
+
+    monkeypatch.setattr(transport, "create_ssl_context", cached)
 
 
 @pytest.fixture

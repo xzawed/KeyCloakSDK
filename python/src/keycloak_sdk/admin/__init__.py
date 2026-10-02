@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from keycloak import KeycloakAdmin
 
+from .._internal.admin_grant import guard_admin_grant
 from .._internal.frames import scrub_frames
 from .._internal.redirects import harden_admin
 from ..config import KeycloakConfig
@@ -33,6 +34,7 @@ class AdminClient:
         self._config = config
         if admin is not None:
             harden_admin(admin)
+            guard_admin_grant(admin)
         self._admin = admin
 
     @property
@@ -59,7 +61,9 @@ class AdminClient:
             )
             # 생성 직후·첫 호출 전에 막는다. `KeycloakAdmin.__init__`은 네트워크를
             # 타지 않으므로(토큰 그랜트는 첫 호출 때 지연 수행) 여기가 안전한 지점이다.
+            # 그랜트 응답 검사도 같은 이유로 여기다(`_internal/admin_grant.py`).
             harden_admin(self._admin)
+            guard_admin_grant(self._admin)
         return self._admin
 
     @property
