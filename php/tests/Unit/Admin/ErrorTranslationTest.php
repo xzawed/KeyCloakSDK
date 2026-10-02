@@ -208,6 +208,68 @@ final class ErrorTranslationTest extends TestCase
         }
     }
 
+    /**
+     * Guzzle 의 전송 실패 메시지는 요청 URL 을 **쿼리째** 인용한다(admin 검색의 쿼리는 소비자의 검색어·username). 원인 사본은 URL 을
+     * 남기되 쿼리·사용자정보·조각을 빼고, 다른 꼴로 인용돼(호스트를 IP 로 바꾼 URL · 디코드한 쿼리) 바꾸지 못한 쿼리가 남으면 메시지를
+     * 거둔다 — 감싼 사슬(stream 핸들러의 fopen 경고)도 같은 URL 로 본다. 진짜 핸들러로 재는 것은
+     * `AdminFacadeErrorLeakTest::testRealTransportFailureCauseKeepsTheUrlButNotItsQuery` 이고, 여기서는 그 꼴들을 Guzzle 파일에서 난
+     * 것처럼 세워(원인 사본은 파일로 감사한 라이브러리를 가린다) 가지마다 고정한다.
+     *
+     * @return array<string, array{0: class-string<ConnectException|RequestException>, 1: string, 2: ?string, 3: list<string>}>
+     */
+    public static function quotedRequestUrls(): array
+    {
+        $url = 'http://u:p@kc.test/admin/realms/r/users?search=ETq%2B0+x&exact=true#f';
+        $redacted = 'http://u:***@kc.test/admin/realms/r/users?search=ETq%2B0+x&exact=true#f';
+        $safe = 'http://kc.test/admin/realms/r/users';
+        $withheld = '(message withheld: it quotes the request query)';
+        $see = '(see https://curl.se/libcurl/c/libcurl-errors.html)';
+
+        return [
+            'curl · … for <URL>' => [ConnectException::class, "cURL error 28: Operation timed out $see for $redacted", null,
+                ["cURL error 28: Operation timed out $see for $safe"]],
+            'stream · Connection refused for URI <URL>' => [ConnectException::class, "Connection refused for URI $redacted", null,
+                ["Connection refused for URI $safe"]],
+            'curl · other errno, no response' => [RequestException::class, "cURL error 56: Recv failure $see for $redacted", null,
+                ["cURL error 56: Recv failure $see for $safe"]],
+            'host rewritten to an IP' => [ConnectException::class, 'Connection refused for URI http://127.0.0.1/admin/realms/r/users?search=ETq%2B0+x&exact=true', null,
+                [$withheld]],
+            'query quoted decoded' => [ConnectException::class, 'request failed: search=ETq+0 x&exact=true', null, [$withheld]],
+            'stream · wrapped fopen warning' => [ConnectException::class, "Connection refused for URI $redacted",
+                "Error creating resource: [message] fopen($url): Failed to open stream", ["Connection refused for URI $safe", "Error creating resource: [message] fopen($safe): Failed to open stream"]],
+        ];
+    }
+
+    /**
+     * @param class-string<ConnectException|RequestException> $class
+     * @param list<string> $causes
+     */
+    #[DataProvider('quotedRequestUrls')]
+    public function testTransportFailureCauseKeepsTheUrlButNotItsQuery(string $class, string $message, ?string $wrapped, array $causes): void
+    {
+        $guzzle = (new \ReflectionClass(\GuzzleHttp\Client::class))->getFileName();
+        self::assertIsString($guzzle);
+        $file = new \ReflectionProperty(\Exception::class, 'file');
+        $req = new Request('GET', 'http://u:p@kc.test/admin/realms/r/users?search=ETq%2B0+x&exact=true#f');
+        $previous = $wrapped === null ? null : new \RuntimeException($wrapped);
+        $lower = $class === ConnectException::class ? new ConnectException($message, $req, $previous) : new RequestException($message, $req, null, $previous);
+        foreach ([$lower, $previous] as $thrown) {
+            if ($thrown !== null) {
+                $file->setValue($thrown, $guzzle);   // Guzzle 핸들러 안에서 난 것처럼 — 감사한 라이브러리의 메시지
+            }
+        }
+
+        $e = self::thrownBy(fn () => ErrorTranslation::call(static fn () => throw $lower));
+
+        self::assertSame(KeycloakTransportError::class, $e::class);
+        $chain = [];
+        for ($l = $e->getPrevious(); $l !== null; $l = $l->getPrevious()) {
+            self::assertInstanceOf(SanitizedCause::class, $l);
+            $chain[] = substr($l->getMessage(), \strlen($l->originalClass) + 2);
+        }
+        self::assertSame($causes, $chain);
+    }
+
     public function testPassesThroughReturn(): void
     {
         // 리터럴 'ok' 대신 런타임 생성 문자열 사용 — PHPStan이 @template T를 리터럴 타입으로 좁혀

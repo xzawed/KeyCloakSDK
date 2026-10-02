@@ -18,7 +18,10 @@ use Fschmtt\Keycloak\Representation\User;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Exception\ServerException;
+use GuzzleHttp\Handler\CurlHandler;
+use GuzzleHttp\Handler\StreamHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
@@ -51,6 +54,9 @@ use Xzawed\Keycloak\Exception\SanitizedCause;
  *
  * ⚠️ 하네스 상태는 정적이고, 인자를 넘기는 하네스 프레임(`invoke`)은 `#[\SensitiveParameter]` 로 가린다 — 그래야 찍힌 것이
  * SDK 프레임의 것이다. 트레이스 인자는 `zend.exception_ignore_args=0` 에서 잰다(운영 php.ini 는 1 이라 안 모은다).
+ *
+ * ⚠️ `modes()` 의 unreachable 두 칸은 가짜 핸들러가 `ConnectException` 을 만든다 — Guzzle 의 진짜 전송 실패 메시지(요청 URL 을
+ * **쿼리째** 인용한다)는 거기 없다. 그 메시지는 진짜 curl·stream 핸들러를 붙인 `testRealTransportFailure…` 가 잰다.
  */
 final class AdminFacadeErrorLeakTest extends TestCase
 {
@@ -68,6 +74,15 @@ final class AdminFacadeErrorLeakTest extends TestCase
     private static array $sent = [];
     /** @var list<string> 같은 요청의 `쿼리 본문` — 문자열 인자가 경로가 아닌 곳으로 가는지 가른다(`hiddenStrings`) */
     private static array $rest = [];
+    /** @var list<string> 같은 요청의 쿼리만 — 소비자 입력을 쿼리로 보내는 메서드를 가른다(`queriesInput`) */
+    private static array $queries = [];
+    /**
+     * 진짜 전송 핸들러 — 있으면 토큰 부여·serverinfo 밖의 요청은 가짜 응답 대신 이리로 간다(`testRealTransportFailure…`).
+     *
+     * @var (\Closure(RequestInterface, array<mixed>): PromiseInterface)|null
+     */
+    private static ?\Closure $transport = null;
+    private static string $server = self::SERVER;
 
     protected function setUp(): void
     {
@@ -115,13 +130,17 @@ final class AdminFacadeErrorLeakTest extends TestCase
         ];
     }
 
-    /** 실제 fschmtt 스택 — 핸들러만 가짜다. ⚠️ 핸들러는 아무것도 캡처하지 않는다(정적 상태와 상수만 읽는다). */
+    /**
+     * 실제 fschmtt 스택 — 핸들러만 가짜다(`$transport` 가 있으면 admin 요청은 진짜 핸들러로 간다). ⚠️ 핸들러는 아무것도
+     * 캡처하지 않는다(정적 상태와 상수만 읽는다).
+     */
     private static function keycloak(): Keycloak
     {
-        $handler = static function (RequestInterface $req): PromiseInterface {
+        $handler = static function (RequestInterface $req, array $options): PromiseInterface {
             $path = $req->getUri()->getPath();
             self::$sent[] = $req->getMethod() . ' ' . $path;
             self::$rest[] = $req->getUri()->getQuery() . ' ' . $req->getBody();
+            self::$queries[] = $req->getUri()->getQuery();
             $json = ['Content-Type' => 'application/json'];
             if ($path === self::TOKEN_PATH) {
                 return match (self::$mode) {
@@ -139,6 +158,9 @@ final class AdminFacadeErrorLeakTest extends TestCase
                 // fschmtt 는 첫 자원 접근 전에 서버 버전을 묻는다 — 여기서 실패하면 자원 엔드포인트에 못 닿는다.
                 return Create::promiseFor(new Response(200, $json, '{"systemInfo":{"version":"26.0.0"}}'));
             }
+            if (self::$transport !== null) {
+                return (self::$transport)($req, $options);
+            }
 
             return match (self::$mode) {
                 'admin 409 · error body echoes' => Create::promiseFor(new Response(409, $json, (string) json_encode([
@@ -151,9 +173,10 @@ final class AdminFacadeErrorLeakTest extends TestCase
         };
 
         return (new Builder())
-            ->withBaseUrl(self::SERVER)
+            ->withBaseUrl(self::$server)
             ->withGrantType(GrantType::clientCredentials(clientId: 'c', clientSecret: self::SECRET, realm: self::REALM))
-            ->withHttpClient(new GuzzleClient(['handler' => HandlerStack::create($handler)]))
+            // 시간 제한은 진짜 핸들러에만 뜻이 있다(응답하지 않는 소켓 — `testRealTransportFailure…`).
+            ->withHttpClient(new GuzzleClient(['handler' => HandlerStack::create($handler), 'timeout' => 0.25, 'connect_timeout' => 0.25]))
             ->build();
     }
 
@@ -344,6 +367,14 @@ final class AdminFacadeErrorLeakTest extends TestCase
         } elseif (!str_starts_with($cause->getMessage(), "$origin: $head") || !str_ends_with($cause->getMessage(), $tail)) {
             $why[] = '원인 메시지 ' . json_encode($cause->getMessage()) . ' — 기대 ' . json_encode("{$origin}: {$head}…{$tail}");
         }
+
+        return [...$why, ...self::printed($e)];
+    }
+
+    /** @return list<string> 카나리아가 찍힌 자리 — 원문, 또는 (JWT 가 아닌 값은) 앞 10 자. */
+    private static function printed(\Throwable $e): array
+    {
+        $why = [];
         $canaries = ['SECRET' => [self::SECRET, true], 'BODY' => [self::BODY, true], 'INPUT' => [self::INPUT, true], 'BEARER' => [self::$bearer, false]];
         foreach (self::renderings($e) as $how => $out) {
             foreach ($canaries as $name => [$value, $prefix]) {
@@ -375,5 +406,114 @@ final class AdminFacadeErrorLeakTest extends TestCase
         }
         self::assertGreaterThan(0, $cells);
         self::assertSame([], $fails, sprintf("admin 오류 %d 칸 중 위반 %d 건:\n%s", $cells, count($fails), implode("\n", $fails)));
+    }
+
+    /** @return list<string> `sent()` 와 같은 이유로 함수로 읽는다. */
+    private static function queries(): array
+    {
+        return self::$queries;
+    }
+
+    /**
+     * 소비자 입력(검색 조건·숨김 문자열)을 **쿼리로** 보내는 메서드인가 — 정상 IdP 위에서 카나리아를 넣어 한 번 불러 잰다.
+     *
+     * @param array{0: class-string, 1: string} $target
+     * @param list<string> $hidden
+     */
+    private static function queriesInput(array $target, array $hidden): bool
+    {
+        self::$mode = '';
+        self::$queries = [];
+        [$call, $args] = self::build($target, static fn (\ReflectionParameter $p): string => in_array($p->getName(), $hidden, true) ? self::INPUT : 'id-1');
+        self::invoke($call, $args);
+
+        return str_contains(implode("\n", self::queries()), self::INPUT);
+    }
+
+    /**
+     * 진짜 전송 핸들러로 admin 요청이 시간 초과된 한 칸의 위반 — 비면 통과.
+     *
+     * @param array{0: class-string, 1: string} $target
+     * @param list<string> $hidden
+     * @return list<string>
+     */
+    private static function transportCell(array $target, array $hidden): array
+    {
+        self::$sent = [];
+        [$call, $args] = self::build($target, static fn (\ReflectionParameter $p): string => in_array($p->getName(), $hidden, true) ? self::INPUT : 'id-1');
+        $e = self::invoke($call, $args);
+        $admin = array_values(array_filter(self::sent(), static fn (string $s): bool => !str_ends_with($s, self::TOKEN_PATH) && $s !== 'GET /admin/serverinfo'));
+        if ($admin === []) {
+            return ['admin 요청에 안 닿았다(공허): ' . implode(', ', self::sent())];
+        }
+        if (!$e instanceof KeycloakTransportError) {
+            return ['SDK 타입이 ' . ($e === null ? '(오류 없음)' : $e::class) . ' — 기대 ' . KeycloakTransportError::class];
+        }
+        $why = [];
+        $cause = $e->getPrevious();
+        $messages = [ConnectException::class => 'admin request unreachable', RequestException::class => 'admin request failed'];
+        if (!$cause instanceof SanitizedCause || !isset($messages[$cause->originalClass])) {
+            $why[] = '첫 원인이 ' . ($cause === null ? 'null' : $cause::class) . ' — 기대 Guzzle 전송 예외의 SanitizedCause';
+        } else {
+            if ($e->getMessage() !== $messages[$cause->originalClass]) {
+                $why[] = 'getMessage() ' . json_encode($e->getMessage()) . ' — 기대 ' . json_encode($messages[$cause->originalClass]);
+            }
+            // 진단은 남는다 — 쿼리를 뺀 URL(경로까지)은 원인 메시지에 있다(메시지를 통째로 거두면 이 칸이 실패한다).
+            $last = $admin[count($admin) - 1];
+            $url = self::$server . substr($last, (int) strpos($last, ' ') + 1);
+            if (!str_contains($cause->getMessage(), $url)) {
+                $why[] = '원인 메시지에 쿼리를 뺀 URL ' . $url . ' 이 없다: ' . json_encode($cause->getMessage());
+            }
+        }
+
+        return [...$why, ...self::printed($e)];
+    }
+
+    /**
+     * Guzzle 의 진짜 전송 실패는 요청 URL 을 **쿼리째** 메시지에 싣는다 — curl `cURL error 28: … for <URL>`, stream `Connection
+     * refused for URI <URL>`(실측 2026-10-02). admin 검색의 쿼리는 소비자의 검색어·username 이라 원인 사본이 그대로 옮기면 `(string)`·
+     * `var_dump`·`print_r` 에 찍혔다 — 토큰을 캐시한 뒤 Keycloak 이 느려지거나 끊기면 나는 흔한 실패다. 응답하지 않는 소켓에 진짜
+     * 핸들러를 붙여(토큰 부여·serverinfo 만 가짜) 시간 초과를 낸다. 쿼리로 입력을 보내는 메서드는 손 목록이 아니라 잰다(`queriesInput`).
+     */
+    public function testRealTransportFailureCauseKeepsTheUrlButNotItsQuery(): void
+    {
+        $handlers = [];
+        if (\function_exists('curl_exec') && \function_exists('curl_multi_exec')) {
+            $handlers['curl'] = (new CurlHandler())(...);
+        }
+        if (filter_var(\ini_get('allow_url_fopen'), \FILTER_VALIDATE_BOOL)) {
+            $handlers['stream'] = (new StreamHandler())(...);
+        }
+        self::assertNotSame([], $handlers, '전송 핸들러가 하나도 없다');
+        $socket = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);   // 받기만 하고 답하지 않는다
+        self::assertNotFalse($socket, (string) $errstr);
+        $queried = [];
+        $fails = [];
+        try {
+            $address = stream_socket_get_name($socket, false);
+            self::assertIsString($address);
+            self::$server = "http://$address";
+            foreach (self::facadeMethods() as $label => $target) {
+                $hidden = self::hiddenStrings($target);
+                if (!self::queriesInput($target, $hidden)) {
+                    continue;
+                }
+                $queried[] = $label;
+                foreach ($handlers as $name => $transport) {
+                    self::$transport = $transport;
+                    foreach (self::transportCell($target, $hidden) as $why) {
+                        $fails[] = "$label / $name: $why";
+                    }
+                    self::$transport = null;
+                }
+            }
+        } finally {
+            self::$transport = null;
+            self::$server = self::SERVER;
+            fclose($socket);
+        }
+        self::assertNotSame([], $queried, '쿼리로 입력을 보내는 메서드를 못 찾았다(공허)');
+        $cells = count($queried) * count($handlers);
+        self::assertSame([], $fails, sprintf("진짜 전송 실패 %d 칸(%s × %s) 중 위반 %d 건:\n%s", $cells, implode('·', $queried), implode('·', array_keys($handlers)), count($fails), implode("\n", $fails)));
     }
 }
