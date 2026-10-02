@@ -28,8 +28,8 @@ final class RealmsResource
         return ErrorTranslation::call(fn (): Realm => $this->kc->realms()->get($realm));
     }
 
-    /** ClientsResource::all() 과 동형 — 이름 all, 반환 *Collection, 선택 Criteria. */
-    public function all(?Criteria $criteria = null): RealmCollection
+    /** ClientsResource::all() 과 동형 — 이름 all, 반환 *Collection, 선택 Criteria(쿼리로 가므로 같이 가린다). */
+    public function all(#[\SensitiveParameter] ?Criteria $criteria = null): RealmCollection
     {
         return ErrorTranslation::call(fn (): RealmCollection => $this->kc->realms()->all($criteria));
     }

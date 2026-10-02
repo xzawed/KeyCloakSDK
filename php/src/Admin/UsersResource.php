@@ -47,7 +47,8 @@ final class UsersResource
         ErrorTranslation::call(fn () => $this->kc->users()->update($this->realm, $userId, $user));
     }
 
-    public function search(?Criteria $criteria = null): UserCollection
+    /** ⚠️ 검색 조건은 쿼리로 간다 — 원인 사본이 URL 의 쿼리를 빼듯 실패 오류의 트레이스 인자에서도 가린다(findIdByUsername 도). */
+    public function search(#[\SensitiveParameter] ?Criteria $criteria = null): UserCollection
     {
         return ErrorTranslation::call(fn (): UserCollection => $this->kc->users()->search($this->realm, $criteria));
     }
@@ -58,7 +59,7 @@ final class UsersResource
     }
 
     /** 편의: username으로 생성된 사용자 id 조회(create가 void라 필요). */
-    public function findIdByUsername(string $username): ?string
+    public function findIdByUsername(#[\SensitiveParameter] string $username): ?string
     {
         $found = $this->search(new Criteria(['username' => $username, 'exact' => true]));
 

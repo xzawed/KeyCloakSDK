@@ -38,7 +38,8 @@ final class ClientsResource
         return ErrorTranslation::call(fn (): Client => $this->kc->clients()->get($this->realm, $clientUuid));
     }
 
-    public function all(?Criteria $criteria = null): ClientCollection
+    /** ⚠️ 검색 조건은 쿼리로 간다 — 원인 사본이 URL 의 쿼리를 빼듯 실패 오류의 트레이스 인자에서도 가린다. */
+    public function all(#[\SensitiveParameter] ?Criteria $criteria = null): ClientCollection
     {
         return ErrorTranslation::call(fn (): ClientCollection => $this->kc->clients()->all($this->realm, $criteria));
     }

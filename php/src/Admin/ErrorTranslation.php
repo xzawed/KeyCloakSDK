@@ -24,11 +24,12 @@ use Xzawed\Keycloak\Internal\OAuthErrorCode;
 /**
  * fschmtt는 Guzzle 예외를 변환하지 않으므로(404/409/403 전부 raw ClientException) 경계에서 여기로 변환한다.
  *
- * ⚠️ 하위 예외는 원본이 아니라 `SanitizedCause` 사본으로 달고, 메시지는 여기서 만든다(`AuthClient` 와 같은 규칙 — 그
- * 클래스의 docblock). 원본을 달면 admin 의 토큰 부여(fschmtt 가 한다)나 admin 요청이 실패할 때 Guzzle 메시지의 응답 본문
- * 요약과 하위 프레임의 인자 — 토큰 응답 본문·`client_secret` 폼·`Bearer` 헤더·보낸 representation — 가 `getMessage()`·
- * `(string)$e`·`var_dump`·`print_r` 로 찍혔다(실측 2026-10-02). 남기는 것: 타입 · HTTP 상태(`getStatusCode()`) · 토큰
- * 부여 오류의 OAuth `error` 코드(`OAuthErrorCode` 모양일 때만).
+ * ⚠️ 하위 예외는 원본이 아니라 `SanitizedCause` 사본으로 달고, 메시지는 여기서 만든다(`AuthClient` 와 같은 규칙 — 근거는
+ * `SanitizedCause` 의 docblock). 원본을 달면 admin 의 토큰 부여(fschmtt 가 한다)나 admin 요청이 실패할 때 Guzzle 메시지의
+ * 응답 본문 요약과 하위 프레임의 인자 — 토큰 응답 본문·`client_secret` 폼·`Bearer` 헤더·보낸 representation — 가
+ * `getMessage()`·`(string)$e`·`var_dump`·`print_r` 로 찍혔다(실측 2026-10-02). 남기는 것: 타입 · HTTP 상태(`getStatusCode()`) ·
+ * 토큰 부여 오류의 OAuth `error` 코드(`OAuthErrorCode` 모양일 때만). 파사드가 보내는 입력(representation·검색 조건)은 각
+ * 자원 메서드가 `#[\SensitiveParameter]` 로 가린다 — 경로로 가는 식별자는 원인의 URL 처럼 남는다.
  */
 final class ErrorTranslation
 {

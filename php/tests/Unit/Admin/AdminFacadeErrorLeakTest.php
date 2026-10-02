@@ -42,7 +42,9 @@ use Xzawed\Keycloak\Exception\SanitizedCause;
  * `ClientException` 은 트레이스에 Guzzle·fschmtt 프레임이 없어 이 누출을 못 본다(`ErrorTranslationTest` 의 한계).
  *
  * 메서드는 손 목록이 아니다 — `AdminClient` 가 내주는 자원 클래스마다 공개 메서드 전부를 리플렉션으로 뽑고, 인자는 타입으로
- * 합성한다(모르는 타입이면 실패한다). 새 파사드 메서드는 저절로 들어온다.
+ * 합성한다(모르는 타입이면 실패한다). 새 파사드 메서드는 저절로 들어온다. representation 과 검색 조건(`Criteria`)은 카나리아를
+ * 품는다. 문자열 인자는 **어디로 가는지를 재서** 가른다(`hiddenStrings`): 쿼리·본문으로 가면 카나리아이고, 경로로 가는 식별자는
+ * 원인 사본의 URL(`HTTP … from GET <경로>`)처럼 일부러 남는다 — `SanitizedCause` 가 쿼리를 빼고 경로를 남기는 것과 같은 선이다.
  *
  * 디버깅 정보는 지운 만큼만 지웠는지 함께 본다(`modes()`): 예외 타입 · `getStatusCode()` · 토큰 부여의 OAuth `error` 코드
  * (`OAuthErrorCode` 모양일 때) · 원인의 원본 클래스명.
@@ -64,6 +66,8 @@ final class AdminFacadeErrorLeakTest extends TestCase
     private static string $bearer = '';
     /** @var list<string> 가짜 IdP 가 받은 요청 `메서드 경로` */
     private static array $sent = [];
+    /** @var list<string> 같은 요청의 `쿼리 본문` — 문자열 인자가 경로가 아닌 곳으로 가는지 가른다(`hiddenStrings`) */
+    private static array $rest = [];
 
     protected function setUp(): void
     {
@@ -117,6 +121,7 @@ final class AdminFacadeErrorLeakTest extends TestCase
         $handler = static function (RequestInterface $req): PromiseInterface {
             $path = $req->getUri()->getPath();
             self::$sent[] = $req->getMethod() . ' ' . $path;
+            self::$rest[] = $req->getUri()->getQuery() . ' ' . $req->getBody();
             $json = ['Content-Type' => 'application/json'];
             if ($path === self::TOKEN_PATH) {
                 return match (self::$mode) {
@@ -180,8 +185,8 @@ final class AdminFacadeErrorLeakTest extends TestCase
     }
 
     /**
-     * 타입으로 합성한 인자 — representation 은 카나리아를 품는다(소비자가 보내는 비밀번호·client secret 자리).
-     * `$str` 는 문자열 자리의 값이다(생성자는 realm, 메서드는 식별자).
+     * 타입으로 합성한 인자 — representation 과 검색 조건은 카나리아를 품는다(소비자가 보내는 비밀번호·client secret·검색어 자리).
+     * `$str` 는 문자열 자리의 값이다(생성자는 realm, 메서드는 `hiddenStrings` 가 가른 값).
      */
     private static function arg(\ReflectionParameter $p, Keycloak $kc, string $str): mixed
     {
@@ -191,7 +196,7 @@ final class AdminFacadeErrorLeakTest extends TestCase
         return match ($name) {
             Keycloak::class => $kc,
             'string' => $str,
-            Criteria::class => null,
+            Criteria::class => new Criteria(['search' => self::INPUT]),
             User::class => new User(username: 'u1', credentials: new CredentialCollection([new Credential(type: 'password', value: self::INPUT)])),
             Client::class => new Client(id: 'c-uuid', clientId: 'c2', secret: self::INPUT),
             Realm::class => new Realm(realm: 'r2', displayName: self::INPUT),
@@ -224,6 +229,60 @@ final class AdminFacadeErrorLeakTest extends TestCase
         return self::$sent;
     }
 
+    /** @return list<string> `sent()` 와 같은 이유로 함수로 읽는다. */
+    private static function rest(): array
+    {
+        return self::$rest;
+    }
+
+    /**
+     * 수신자와 인자를 만든다. 문자열 인자는 `$str($p)` 가 정한다.
+     *
+     * @param array{0: class-string, 1: string} $target
+     * @param \Closure(\ReflectionParameter): string $str
+     * @return array{0: \Closure, 1: list<mixed>}
+     */
+    private static function build(array $target, \Closure $str): array
+    {
+        [$class, $method] = $target;
+        $kc = self::keycloak();
+        $ctor = (new \ReflectionClass($class))->getConstructor();
+        $receiver = new $class(...array_map(static fn (\ReflectionParameter $p): mixed => self::arg($p, $kc, self::REALM), $ctor?->getParameters() ?? []));
+        $m = new \ReflectionMethod($class, $method);
+
+        return [$m->getClosure($receiver), array_map(static fn (\ReflectionParameter $p): mixed => self::arg($p, $kc, $str($p)), $m->getParameters())];
+    }
+
+    /**
+     * 문자열 인자 중 **경로가 아닌 곳**(쿼리·본문)으로 가는 것 — 정상 IdP 위에서 인자마다 다른 표지를 넣고 한 번 불러, 표지가
+     * 요청 경로에 나타나는지 잰다. 경로에 없으면 가려야 할 입력이고, 쿼리·본문에도 없으면(어디에도 안 실림) 실패한다.
+     *
+     * @param array{0: class-string, 1: string} $target
+     * @return list<string> 파라미터 이름
+     */
+    private static function hiddenStrings(array $target): array
+    {
+        self::$mode = '';
+        self::$sent = [];
+        self::$rest = [];
+        [$call, $args] = self::build($target, static fn (\ReflectionParameter $p): string => 'ADMstr' . $p->getPosition() . 'x' . $p->getName());
+        self::invoke($call, $args);
+        $paths = implode("\n", self::sent());
+        $rest = implode("\n", self::rest());
+        $hidden = [];
+        foreach ((new \ReflectionMethod($target[0], $target[1]))->getParameters() as $p) {
+            $marker = 'ADMstr' . $p->getPosition() . 'x' . $p->getName();
+            $type = $p->getType();
+            if ($type instanceof \ReflectionNamedType && $type->getName() === 'string' && !str_contains($paths, $marker)) {
+                // 공허 방지 — 경로에 없다면 쿼리·본문에는 실렸어야 한다(어디에도 없으면 이 재기 자체를 의심한다).
+                self::assertStringContainsString($marker, $rest, "{$target[1]}(\${$p->getName()}): 표지가 요청 어디에도 없다");
+                $hidden[] = $p->getName();
+            }
+        }
+
+        return $hidden;
+    }
+
     /** @return array<string, string> 찍는 길 => 출력. `(string)` 은 원인 사슬 전부의 메시지·트레이스를 담는다. */
     private static function renderings(\Throwable $e): array
     {
@@ -247,15 +306,12 @@ final class AdminFacadeErrorLeakTest extends TestCase
      */
     private static function cell(array $target, string $mode, array $want): array
     {
-        [$class, $method] = $target;
+        $hidden = self::hiddenStrings($target);
         self::$mode = $mode;
         self::$sent = [];
-        $kc = self::keycloak();
-        $ctor = (new \ReflectionClass($class))->getConstructor();
-        $receiver = new $class(...array_map(static fn (\ReflectionParameter $p): mixed => self::arg($p, $kc, self::REALM), $ctor?->getParameters() ?? []));
-        $m = new \ReflectionMethod($class, $method);
-        $args = array_map(static fn (\ReflectionParameter $p): mixed => self::arg($p, $kc, 'id-1'), $m->getParameters());
-        $e = self::invoke($m->getClosure($receiver), $args);
+        self::$rest = [];
+        [$call, $args] = self::build($target, static fn (\ReflectionParameter $p): string => in_array($p->getName(), $hidden, true) ? self::INPUT : 'id-1');
+        $e = self::invoke($call, $args);
 
         $why = [];
         $reached = array_filter(self::sent(), static fn (string $s): bool => $want['reach'] === 'token'
