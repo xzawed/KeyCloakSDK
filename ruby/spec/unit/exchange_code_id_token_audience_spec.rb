@@ -159,6 +159,9 @@ RSpec.describe KeycloakSdk::AuthClient, "#exchange_code under an expected_audien
       expect { client.auth.validate(sign(claims("aud" => "my-api"))) }
         .to raise_error(KeycloakSdk::TransportError, /backing off/)
       expect(a_request(:get, certs_url)).to have_been_made.once
+      # 스텁이 실제로 읽혔는가 — 저장소가 인자 둘의 꼴로 읽으면 스텁을 비켜 가 실시간으로 돌아간다(실측: 그 변이에
+      # `sleep 0.25` 를 끼우면 `HTTP 503`). 그때 이 예제는 조용히 다시 벽시계에 매달린다.
+      expect(Process).to have_received(:clock_gettime).with(Process::CLOCK_MONOTONIC).at_least(:once)
     end
   end
 end
