@@ -7,16 +7,26 @@ import io.github.xzawed.keycloak.KeycloakTransportException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.keycloak.representations.idm.UserRepresentation
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
 import java.time.Duration
+import java.util.Locale
 import java.util.zip.GZIPOutputStream
+import kotlin.concurrent.thread
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 // admin 레인의 토큰 응답 계약(Java `AdminTokenResponseTest` 동형) — admin 은 토큰을 자체 소유하고(§4) keycloak-admin-client
@@ -47,8 +57,37 @@ private fun atrTokenBody(
 // 갱신 시나리오의 첫 응답 — expires_in 1 < TokenManager 최소 유효기간(30s) 이라 다음 호출이 refresh_token 으로 갱신한다.
 private val ATR_REFRESHABLE = atrTokenBody("\"AT-1\"", ",\"refresh_token\":\"RT-1\",\"refresh_expires_in\":300", expiresIn = 1)
 
-private fun atrGzip(s: String): ByteArray =
-    ByteArrayOutputStream().also { out -> GZIPOutputStream(out).use { it.write(s.toByteArray()) } }.toByteArray()
+private fun atrGzip(s: String): ByteArray = atrGzip(s.toByteArray())
+
+private fun atrGzip(plain: ByteArray): ByteArray =
+    ByteArrayOutputStream().also { out -> GZIPOutputStream(out).use { it.write(plain) } }.toByteArray()
+
+// JSON 뒤를 JSON 공백으로 채워 정확히 size 바이트로 — 결합에게는 같은 값이다.
+private fun atrPadTo(
+    json: String,
+    size: Int,
+): ByteArray {
+    val head = json.toByteArray()
+    return ByteArray(size) { i -> if (i < head.size) head[i] else ' '.code.toByte() }
+}
+
+// 깨진 전송 시험의 첫 부분(쓸 수 있는 토큰 + 공백) — 상한+1 보다 커서 가드는 그 앞 상한+1 바이트만 읽고 거부한다.
+private const val ATR_FIRST = TokenResponseGuard.MAX_BODY_BYTES + 10_000
+
+// Keycloak 26.6(start-dev 기본 설정)이 받아들이는 가장 긴 Bearer — 실측(curl GET /admin/realms): 65,459 바이트면 401(헤더는
+// 받고 토큰이 무효), 65,460 바이트면 431.
+private const val ATR_KEYCLOAK_MAX_BEARER = 65_459
+
+// CRLF(또는 LF)로 끝나는 HTTP 한 줄 — 줄 끝은 빼고.
+private fun atrHttpLine(input: InputStream): String {
+    val line = ByteArrayOutputStream()
+    var c = input.read()
+    while (c >= 0 && c != '\n'.code) {
+        if (c != '\r'.code) line.write(c)
+        c = input.read()
+    }
+    return line.toString(Charsets.ISO_8859_1)
+}
 
 internal class AdminTokenResponseTest {
     // 토큰 엔드포인트의 응답 — contentEncoding 이 있으면 그 헤더를 달고(본문은 이미 그 코딩으로 된 바이트), typed 가 거짓이면
@@ -140,15 +179,20 @@ internal class AdminTokenResponseTest {
             .filter { it.indexOf('=') > 0 }
             .associate { it.substringBefore('=') to it.substringAfter('=') }
 
-    private fun admin(): AdminClient =
+    private fun admin(): AdminClient = admin(server.address.port, Duration.ofSeconds(5))
+
+    private fun admin(
+        port: Int,
+        readTimeout: Duration,
+    ): AdminClient =
         AdminClient(
             KeycloakConfig(
-                serverUrl = "http://127.0.0.1:${server.address.port}",
+                serverUrl = "http://127.0.0.1:$port",
                 realm = ATR_REALM,
                 clientId = "app",
                 clientSecret = "s3cr3t".toCharArray(),
                 connectTimeout = Duration.ofSeconds(5),
-                readTimeout = Duration.ofSeconds(5),
+                readTimeout = readTimeout,
             ),
         )
 
@@ -179,10 +223,13 @@ internal class AdminTokenResponseTest {
             assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
         }
 
-    // admin 호출을 내고 그 실패를 돌려준다(성공이면 null). 취소는 그대로 던진다.
-    private suspend fun failureOf(block: suspend (AdminClient) -> Unit): Throwable? =
+    // admin 호출을 내고 그 실패를 돌려준다(성공이면 null). 취소는 그대로 던진다. client 는 다른 토큰 엔드포인트를 겨눌 때.
+    private suspend fun failureOf(
+        client: () -> AdminClient = { admin() },
+        block: suspend (AdminClient) -> Unit,
+    ): Throwable? =
         try {
-            admin().use { block(it) }
+            client().use { block(it) }
             null
         } catch (e: CancellationException) {
             throw e
@@ -196,8 +243,9 @@ internal class AdminTokenResponseTest {
     private suspend fun callExpectingRejection(
         label: String,
         wrong: MutableList<String>,
+        client: () -> AdminClient = { admin() },
     ): String {
-        val thrown = failureOf { it.users().get("x") }
+        val thrown = failureOf(client) { it.users().get("x") }
         val hits = adminHits()
         val row =
             "${label.padEnd(24)} → ${thrown?.let { "${it.javaClass.simpleName}(${it.message})" } ?: "성공"} · " +
@@ -269,6 +317,229 @@ internal class AdminTokenResponseTest {
             println("[AdminTokenResponseTest 내용 코딩]\n  " + table.joinToString("\n  "))
             assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
         }
+
+    // admin 호출 하나가 Bearer good 으로 나아가 성공하는지 — 어긋남은 wrong 에, 행은 table 에.
+    private suspend fun expectGood(
+        label: String,
+        wrong: MutableList<String>,
+        table: MutableList<String>,
+    ) {
+        failureOf { it.users().get("x") }?.let { wrong += "$label: 성공해야 한다 — $it" }
+        table += "$label → grants ${grants()} · admin ${adminHits()}"
+        if (adminHits() != listOf("GET /admin/realms/r/users/x · Bearer good") || grants() != listOf("client_credentials")) {
+            wrong += "$label: ${grants()} ${adminHits()}"
+        }
+    }
+
+    // 크기 상한(Java 동형) — 토큰 응답 본문이 가드의 상한(TokenResponseGuard.MAX_BODY_BYTES)을 넘으면 그 안의 토큰이 쓸 수
+    // 있어도 쓸 수 없는 토큰과 똑같이 거부한다 — KeycloakTransportException · admin 요청 0 건 · 토큰 요청 1 건. 상한 안의 쓸 수
+    // 있는 토큰은 평문·gzip 모두 그대로 동작한다. 판정은 결합이 읽는 바이트로 하므로 gzip 은 **푼** 크기로 잰다. 본문은 쓸 수
+    // 있는 토큰 뒤를 JSON 공백으로 채운 것이다 — 가드 없이 결합만 있으면 스트리밍으로 통과하는 모양이고, 본문을 통째로 버퍼링하던
+    // 가드는 힙보다 크면 OutOfMemoryError 를 냈다.
+    @Test
+    fun `token response above the cap is rejected like an unusable token`() =
+        runTest {
+            val cap = TokenResponseGuard.MAX_BODY_BYTES
+            val table = mutableListOf<String>()
+            val wrong = mutableListOf<String>()
+            val body = atrTokenBody("\"good\"", ",\"refresh_token\":\"$ATR_RT_CANARY\"")
+            reset(Reply(200, atrPadTo(body, cap)))
+            expectGood("평문 = 상한", wrong, table)
+            reset(Reply(200, atrPadTo(body, cap + 1)))
+            table += callExpectingRejection("평문 = 상한+1", wrong)
+            for (status in listOf(200, 201)) {
+                reset(Reply(status, atrPadTo(body, cap + 1), typed = false))
+                table += callExpectingRejection("Content-Type 없음 $status = 상한+1", wrong)
+            }
+            System.setProperty("resteasy.allowGzip", "true")
+            try {
+                reset(Reply(200, atrGzip(atrPadTo(body, cap)), "gzip"))
+                expectGood("gzip 푼 크기 = 상한", wrong, table)
+                reset(Reply(200, atrGzip(atrPadTo(body, cap + 1)), "gzip"))
+                table += callExpectingRejection("gzip 푼 크기 = 상한+1", wrong)
+            } finally {
+                System.clearProperty("resteasy.allowGzip")
+            }
+            println("[AdminTokenResponseTest 크기 상한 $cap]\n  " + table.joinToString("\n  "))
+            assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
+        }
+
+    // 서버가 받아들이는 토큰은 거부하지 않는다(Java 동형) — 가장 긴 Bearer 를 담은 토큰 응답(본문 약 65.6 KB)은 결합에 그대로
+    // 넘어가고 admin 요청이 그 토큰을 싣는다. 큰 배포의 토큰이 이만큼 자란다: master 렐름 서비스 계정에 admin 역할을 주면 렐름
+    // 하나마다 resource_access 항목이 붙어 access_token 이 456 바이트씩 자란다(Keycloak 26.6.4 실측 — 렐름 0 개에 1,733 바이트,
+    // 이름 두 글자 렐름). 본문을 통째로 읽던 가드는 통과시켰고, JWKS 응답 상한(51,200)을 빌린 상한은 렐름 109 개부터 그 토큰을
+    // 쓸 수 없는 토큰처럼 거부했다(서버는 139 개까지 받아들인다) — admin 이 통째로 멈춘다.
+    @Test
+    fun `largest bearer the server accepts is handed on and carried by the admin request`() =
+        runTest {
+            val token = "a".repeat(ATR_KEYCLOAK_MAX_BEARER)
+            val body = atrTokenBody("\"$token\"", ",\"refresh_token\":\"$ATR_RT_CANARY\"").toByteArray()
+            reset(Reply(200, body))
+            val thrown = failureOf { it.users().get("x") }
+            val row =
+                "본문 ${body.size} 바이트 · Bearer ${token.length} 바이트 → " +
+                    "${thrown?.let { "${it.javaClass.simpleName}(${it.message})" } ?: "성공"} · " +
+                    "grants ${grants()} · admin ${bearerLengths(adminHits())}"
+            println("[AdminTokenResponseTest 서버가 받아들이는 가장 긴 Bearer]\n  $row")
+            assertNull(thrown, row)
+            assertEquals(listOf("client_credentials"), grants(), row)
+            assertTrue(adminHits() == listOf("GET /admin/realms/r/users/x · Bearer $token"), row)
+        }
+
+    // admin 요청 기록의 Bearer 를 길이로만 적는다 — 긴 토큰을 표에 그대로 찍지 않는다.
+    private fun bearerLengths(hits: List<String>): List<String> =
+        hits.map { hit ->
+            val at = hit.indexOf("Bearer ")
+            if (at < 0) hit else hit.substring(0, at) + "Bearer(len ${hit.length - at - "Bearer ".length})"
+        }
+
+    // 거부한 뒤 연결을 놓다가 실패해도 거부는 그대로다(Java 동형) — 상한을 넘는 응답(쓸 수 있는 토큰 + 공백)의 나머지 전송이
+    // 깨져도(ReleaseFault) 결과는 쓸 수 없는 토큰과 같다: KeycloakTransportException · admin 요청 0 건 · 토큰 요청 1 건 · 걸러진
+    // 원인 사슬 · 응답 바이트 미노출. ⚠️ 미디어 타입이 없는 2xx 는 응답 필터에서 거부되고 RESTEasy(ClientInvocation.invoke)가 그
+    // 응답을 try/catch 없이 닫는다 — 닫기가 HttpCore 로 나머지를 비우다 난 오류가 거부를 대신해 jakarta.ws.rs.ProcessingException·
+    // org.apache.http.* 사슬로 나갔고(RedactedCause 로 걸러지지 않았다), 청크 크기 줄 오류는 「Bad chunk header: <그 줄>」 로 응답
+    // 바이트(여기서는 refresh_token)를 찍었다. 본문을 통째로 읽던 그 전 가드는 그 오류를 판정 안에서 만나 걸러진 사슬이었다(실측).
+    // 미디어 타입이 있으면 RESTEasy 가 닫기 실패를 삼킨다(대조 행).
+    @Test
+    fun `token response above the cap stays rejected when releasing the connection fails`() =
+        runTest {
+            val table = mutableListOf<String>()
+            val wrong = mutableListOf<String>()
+            RawEndpoint().use { raw ->
+                val client = { admin(raw.port, Duration.ofSeconds(2)) }
+                for (fault in ReleaseFault.entries) {
+                    for (status in listOf(200, 201)) {
+                        raw.reply(fault, status, typed = false)
+                        table += callExpectingRejection("Content-Type 없음 $status · $fault", wrong, client)
+                    }
+                }
+                raw.reply(ReleaseFault.BAD_CHUNK_HEADER, 200, typed = true)
+                table += callExpectingRejection("application/json 200 · ${ReleaseFault.BAD_CHUNK_HEADER}", wrong, client)
+            }
+            println("[AdminTokenResponseTest 거부 뒤 연결 해제 실패]\n  " + table.joinToString("\n  "))
+            assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
+        }
+
+    // 상한을 넘는 첫 부분 뒤에서 깨지는 전송 — 가드가 거부한 뒤 연결을 놓으며 나머지를 비울 때 그 비우기가 실패한다.
+    private enum class ReleaseFault {
+        // 다음 청크 크기 줄이 16진이 아니다 — HttpCore 가 그 줄을 「Bad chunk header: …」 에 그대로 싣는다(여기서는 refresh_token).
+        BAD_CHUNK_HEADER,
+
+        // 청크 도중에 연결이 끊긴다(TruncatedChunkException).
+        TRUNCATED_CHUNK,
+
+        // Content-Length 보다 적게 보내고 끊는다(ConnectionClosedException).
+        SHORT_CONTENT_LENGTH,
+
+        // Content-Length 보다 적게 보내고 멈춘다 — 비우기가 읽기 타임아웃을 만난다(SocketTimeoutException).
+        STALL,
+    }
+
+    // 바이트를 그대로 쓰는 토큰 엔드포인트 — com.sun HttpServer 는 전송 틀(청크·길이)을 스스로 짜서 깨진 틀을 낼 수 없다. 토큰
+    // 요청과 admin 요청을 이 시험의 grants·adminHits 에 적고, admin 은 handle 처럼 성공을 낸다.
+    private inner class RawEndpoint : AutoCloseable {
+        private val socket = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+
+        @Volatile private var fault = ReleaseFault.BAD_CHUNK_HEADER
+
+        @Volatile private var status = 200
+
+        @Volatile private var typed = false
+
+        val port: Int get() = socket.localPort
+
+        init {
+            thread(isDaemon = true, name = "raw-token-endpoint") { serve() }
+        }
+
+        fun reply(
+            fault: ReleaseFault,
+            status: Int,
+            typed: Boolean,
+        ) {
+            this.fault = fault
+            this.status = status
+            this.typed = typed
+            reset()
+        }
+
+        private fun serve() {
+            while (!socket.isClosed) {
+                val s =
+                    try {
+                        socket.accept()
+                    } catch (closed: IOException) {
+                        return
+                    }
+                thread(isDaemon = true, name = "raw-token-exchange") { answer(s) }
+            }
+        }
+
+        private fun answer(s: Socket) {
+            try {
+                s.use { exchange(it) }
+            } catch (clientWentAway: IOException) {
+                // 클라이언트가 연결을 끊었다 — 깨진 전송의 정상 결말이다
+            }
+        }
+
+        private fun exchange(s: Socket) {
+            s.soTimeout = 10_000
+            val input = BufferedInputStream(s.getInputStream())
+            val requestLine = atrHttpLine(input).split(" ")
+            val headers = mutableMapOf<String, String>()
+            while (true) {
+                val h = atrHttpLine(input)
+                if (h.isEmpty()) break
+                val colon = h.indexOf(':')
+                if (colon > 0) headers[h.substring(0, colon).trim().lowercase(Locale.ROOT)] = h.substring(colon + 1).trim()
+            }
+            val body = input.readNBytes(headers["content-length"]?.toInt() ?: 0).decodeToString()
+            val path = requestLine.getOrElse(1) { "" }
+            val out = BufferedOutputStream(s.getOutputStream())
+            when {
+                path == ATR_TOKEN_PATH -> {
+                    synchronized(lock) { grants += form(body)["grant_type"] ?: "?" }
+                    writeBrokenToken(out)
+                    if (fault == ReleaseFault.STALL) input.read() // 클라이언트가 끊을 때까지(읽기 타임아웃 뒤) 연결을 붙든다
+                }
+                path.startsWith("/admin/realms/$ATR_REALM/users") -> {
+                    synchronized(lock) { adminHits += "${requestLine[0]} $path · ${headers["authorization"]}" }
+                    val user = """{"id":"x","username":"alice"}""".toByteArray()
+                    val head =
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" +
+                            "Content-Length: ${user.size}\r\nConnection: close\r\n\r\n"
+                    out.write(head.toByteArray(Charsets.ISO_8859_1))
+                    out.write(user)
+                    out.flush()
+                }
+                else -> {
+                    out.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(Charsets.ISO_8859_1))
+                    out.flush()
+                }
+            }
+        }
+
+        private fun writeBrokenToken(out: OutputStream) {
+            val chunked = fault == ReleaseFault.BAD_CHUNK_HEADER || fault == ReleaseFault.TRUNCATED_CHUNK
+            val declared = if (fault == ReleaseFault.BAD_CHUNK_HEADER) ATR_FIRST else ATR_FIRST + 10_000
+            val head =
+                "HTTP/1.1 $status ${if (status == 200) "OK" else "Created"}\r\n" +
+                    (if (typed) "Content-Type: application/json\r\n" else "") +
+                    (if (chunked) "Transfer-Encoding: chunked\r\n" else "Content-Length: $declared\r\n") +
+                    "Connection: close\r\n\r\n"
+            out.write(head.toByteArray(Charsets.ISO_8859_1))
+            if (chunked) out.write("${Integer.toHexString(declared)}\r\n".toByteArray(Charsets.ISO_8859_1))
+            out.write(atrPadTo(atrTokenBody("\"good\"", ",\"refresh_token\":\"$ATR_RT_CANARY\""), ATR_FIRST))
+            if (fault == ReleaseFault.BAD_CHUNK_HEADER) {
+                // 다음 청크 크기 자리에 응답 내용 — 16진이 아니므로 HttpCore 가 이 줄을 오류 메시지에 그대로 싣는다
+                out.write("\r\n\"refresh_token\":\"$ATR_RT_CANARY\"\r\n".toByteArray(Charsets.ISO_8859_1))
+            }
+            out.flush()
+        }
+
+        override fun close() = socket.close()
+    }
 
     // 대조 — 같은 경로에서 문자열 토큰은 GET·POST 둘 다 admin 에 닿는다(위 실패가 다른 원인이 아님을 보인다).
     @Test
