@@ -1,5 +1,6 @@
 package io.github.xzawed.keycloak.admin
 
+import com.nimbusds.jose.jwk.source.JWKSourceBuilder
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import io.github.xzawed.keycloak.KeycloakConfig
@@ -47,8 +48,19 @@ private fun atrTokenBody(
 // 갱신 시나리오의 첫 응답 — expires_in 1 < TokenManager 최소 유효기간(30s) 이라 다음 호출이 refresh_token 으로 갱신한다.
 private val ATR_REFRESHABLE = atrTokenBody("\"AT-1\"", ",\"refresh_token\":\"RT-1\",\"refresh_expires_in\":300", expiresIn = 1)
 
-private fun atrGzip(s: String): ByteArray =
-    ByteArrayOutputStream().also { out -> GZIPOutputStream(out).use { it.write(s.toByteArray()) } }.toByteArray()
+private fun atrGzip(s: String): ByteArray = atrGzip(s.toByteArray())
+
+private fun atrGzip(plain: ByteArray): ByteArray =
+    ByteArrayOutputStream().also { out -> GZIPOutputStream(out).use { it.write(plain) } }.toByteArray()
+
+// JSON 뒤를 JSON 공백으로 채워 정확히 size 바이트로 — 결합에게는 같은 값이다.
+private fun atrPadTo(
+    json: String,
+    size: Int,
+): ByteArray {
+    val head = json.toByteArray()
+    return ByteArray(size) { i -> if (i < head.size) head[i] else ' '.code.toByte() }
+}
 
 internal class AdminTokenResponseTest {
     // 토큰 엔드포인트의 응답 — contentEncoding 이 있으면 그 헤더를 달고(본문은 이미 그 코딩으로 된 바이트), typed 가 거짓이면
@@ -267,6 +279,52 @@ internal class AdminTokenResponseTest {
                 table += callExpectingRejection("Content-Type 없음 $status 12345", wrong)
             }
             println("[AdminTokenResponseTest 내용 코딩]\n  " + table.joinToString("\n  "))
+            assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
+        }
+
+    // admin 호출 하나가 Bearer good 으로 나아가 성공하는지 — 어긋남은 wrong 에, 행은 table 에.
+    private suspend fun expectGood(
+        label: String,
+        wrong: MutableList<String>,
+        table: MutableList<String>,
+    ) {
+        failureOf { it.users().get("x") }?.let { wrong += "$label: 성공해야 한다 — $it" }
+        table += "$label → grants ${grants()} · admin ${adminHits()}"
+        if (adminHits() != listOf("GET /admin/realms/r/users/x · Bearer good") || grants() != listOf("client_credentials")) {
+            wrong += "$label: ${grants()} ${adminHits()}"
+        }
+    }
+
+    // 크기 상한(Java 동형) — 토큰 응답 본문이 상한(JWKS 응답 상한, Nimbus JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT)을 넘으면 그
+    // 안의 토큰이 쓸 수 있어도 쓸 수 없는 토큰과 똑같이 거부한다 — KeycloakTransportException · admin 요청 0 건 · 토큰 요청 1 건.
+    // 상한 안의 쓸 수 있는 토큰은 평문·gzip 모두 그대로 동작한다. 판정은 결합이 읽는 바이트로 하므로 gzip 은 **푼** 크기로
+    // 잰다. 본문은 쓸 수 있는 토큰 뒤를 JSON 공백으로 채운 것이다 — 가드 없이 결합만 있으면 스트리밍으로 통과하는 모양이고,
+    // 수정 전 가드는 그것을 통째로 버퍼링해 힙보다 크면 OutOfMemoryError 를 냈다.
+    @Test
+    fun `token response above the cap is rejected like an unusable token`() =
+        runTest {
+            val cap = JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT
+            val table = mutableListOf<String>()
+            val wrong = mutableListOf<String>()
+            val body = atrTokenBody("\"good\"", ",\"refresh_token\":\"$ATR_RT_CANARY\"")
+            reset(Reply(200, atrPadTo(body, cap)))
+            expectGood("평문 = 상한", wrong, table)
+            reset(Reply(200, atrPadTo(body, cap + 1)))
+            table += callExpectingRejection("평문 = 상한+1", wrong)
+            for (status in listOf(200, 201)) {
+                reset(Reply(status, atrPadTo(body, cap + 1), typed = false))
+                table += callExpectingRejection("Content-Type 없음 $status = 상한+1", wrong)
+            }
+            System.setProperty("resteasy.allowGzip", "true")
+            try {
+                reset(Reply(200, atrGzip(atrPadTo(body, cap)), "gzip"))
+                expectGood("gzip 푼 크기 = 상한", wrong, table)
+                reset(Reply(200, atrGzip(atrPadTo(body, cap + 1)), "gzip"))
+                table += callExpectingRejection("gzip 푼 크기 = 상한+1", wrong)
+            } finally {
+                System.clearProperty("resteasy.allowGzip")
+            }
+            println("[AdminTokenResponseTest 크기 상한 $cap]\n  " + table.joinToString("\n  "))
             assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
         }
 

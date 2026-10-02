@@ -1,5 +1,6 @@
 package io.github.xzawed.keycloak.admin
 
+import com.nimbusds.jose.jwk.source.JWKSourceBuilder
 import io.github.xzawed.keycloak.KeycloakConfig
 import io.mockk.every
 import io.mockk.just
@@ -15,14 +16,18 @@ import jakarta.ws.rs.core.MediaType
 import jakarta.ws.rs.core.Response
 import jakarta.ws.rs.ext.ReaderInterceptor
 import jakarta.ws.rs.ext.ReaderInterceptorContext
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
+import java.lang.management.ManagementFactory
 import java.net.URI
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -34,6 +39,79 @@ import kotlin.test.assertTrue
 // `.claude/rules/kotlin.md`). 상태는 실제 enum `Response.Status` 를 쓴다.
 private const val TRG_TOKEN = "http://kc/auth/realms/r/protocol/openid-connect/token"
 private const val TRG_NUMBER = """{"access_token":12345}"""
+
+// 크기 상한은 JWKS 응답 상한 그 자체다(NoRedirectResourceRetriever 가 Nimbus 에 넘기는 상수) — 시험은 그 상수로 경계를 잰다.
+private const val TRG_CAP = JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT
+private const val TRG_USABLE = """{"access_token":"AT","expires_in":300}"""
+
+// 쓸 수 있는 토큰 뒤를 JSON 공백으로 채워 정확히 size 바이트로 — 결합에게는 여전히 쓸 수 있는 본문이다.
+private fun trgPadded(size: Int): ByteArray {
+    val head = TRG_USABLE.toByteArray()
+    return ByteArray(size) { i -> if (i < head.size) head[i] else ' '.code.toByte() }
+}
+
+// 끝없는 본문 — 쓸 수 있는 토큰 뒤에 JSON 공백이 끝없이 온다. 가드가 limit 바이트 너머를 **요청하기만 해도** 시험을 깬다(실제
+// 소켓이라면 그만큼 읽혔을 것이다). OOM 에 기대지 않고 「본문 크기에 비례해 읽는가」를 잰다.
+private class TrgEndlessBody(
+    private val limit: Long,
+) : InputStream() {
+    private val head = TRG_USABLE.toByteArray()
+    var served = 0L
+        private set
+    var overread = false
+        private set
+
+    override fun read(): Int {
+        val one = ByteArray(1)
+        read(one, 0, 1)
+        return one[0].toInt() and 0xff
+    }
+
+    override fun read(
+        b: ByteArray,
+        off: Int,
+        len: Int,
+    ): Int {
+        if (len == 0) return 0
+        if (len > limit - served) {
+            overread = true
+            throw AssertionError("가드가 $served 바이트 뒤에서 $len 바이트를 더 요청했다 — 상한+1 = $limit")
+        }
+        for (i in 0 until len) {
+            b[off + i] = if (served < head.size) head[served.toInt()] else ' '.code.toByte()
+            served++
+        }
+        return len
+    }
+}
+
+// 정해진 크기의 본문(쓸 수 있는 토큰 + 공백) — 배경 배열 없이 만들어 시험 자신의 할당을 재지 않는다.
+private class TrgSizedBody(
+    private val size: Long,
+) : InputStream() {
+    private val head = TRG_USABLE.toByteArray()
+    private var pos = 0L
+
+    override fun read(): Int {
+        val one = ByteArray(1)
+        return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 0xff
+    }
+
+    override fun read(
+        b: ByteArray,
+        off: Int,
+        len: Int,
+    ): Int {
+        if (len == 0) return 0
+        if (pos >= size) return -1
+        val n = minOf(len.toLong(), size - pos).toInt()
+        for (i in 0 until n) {
+            b[off + i] = if (pos < head.size) head[pos.toInt()] else ' '.code.toByte()
+            pos++
+        }
+        return n
+    }
+}
 
 internal class TokenResponseGuardTest {
     private fun usable(json: String): Boolean = TokenResponseGuard.carriesUsableAccessToken(json.toByteArray())
@@ -232,6 +310,91 @@ internal class TokenResponseGuardTest {
             verify(exactly = 0) { ctx.inputStream = any() }
         }
     }
+
+    // ───────────── 크기 상한 — 판정이 읽고 쥐는 바이트 ─────────────
+
+    // 상한을 넘는 본문은 쓸 수 있는 토큰이 들어 있어도 쓸 수 없는 토큰과 같은 상수 메시지로 거부하고, 그 판정을 위해 상한+1
+    // 바이트까지만 읽는다 — 두 진입점 모두(미디어 타입 없는 응답 필터 · 결합 직전 ReaderInterceptor).
+    @Test
+    fun `body above the cap is rejected without reading past cap plus one`() {
+        val raw = TrgEndlessBody(TRG_CAP + 1L)
+        val res = response(Response.Status.OK, raw)
+        val filtered = assertFailsWith<IOException> { TokenResponseGuard().filter(request("POST", TRG_TOKEN), res) }
+        assertEquals("token endpoint response carries no usable access_token", filtered.message)
+        assertNull(filtered.cause)
+        assertFalse(raw.overread)
+        assertEquals(TRG_CAP + 1L, raw.served, "넘침을 알아챌 한 바이트까지 읽어야 한다")
+        verify(exactly = 0) { res.entityStream = any() }
+
+        val decoded = TrgEndlessBody(TRG_CAP + 1L)
+        val ctx = readContext(true, decoded)
+        val read = assertFailsWith<IOException> { TokenResponseGuard().aroundReadFrom(ctx) }
+        assertEquals("token endpoint response carries no usable access_token", read.message)
+        assertNull(read.cause)
+        assertFalse(decoded.overread)
+        assertEquals(TRG_CAP + 1L, decoded.served, "넘침을 알아챌 한 바이트까지 읽어야 한다")
+        verify(exactly = 0) { ctx.proceed() }
+        verify(exactly = 0) { ctx.inputStream = any() }
+    }
+
+    // 경계 — 정확히 상한인 본문은 바이트 그대로 넘기고, 한 바이트 더 크면 거부한다(두 진입점).
+    @Test
+    fun `body of exactly the cap is handed on, one byte more is rejected`() {
+        val atCap = trgPadded(TRG_CAP)
+        val res = response(Response.Status.OK, ByteArrayInputStream(atCap))
+        val handed = slot<InputStream>()
+        every { res.entityStream = capture(handed) } just runs
+        TokenResponseGuard().filter(request("POST", TRG_TOKEN), res)
+        assertContentEquals(atCap, handed.captured.readAllBytes())
+
+        val ctx = readContext(true, ByteArrayInputStream(atCap))
+        val read = slot<InputStream>()
+        every { ctx.inputStream = capture(read) } just runs
+        assertEquals("bound", TokenResponseGuard().aroundReadFrom(ctx))
+        assertContentEquals(atCap, read.captured.readAllBytes())
+
+        val over = response(Response.Status.OK, ByteArrayInputStream(trgPadded(TRG_CAP + 1)))
+        val e = assertFailsWith<IOException> { TokenResponseGuard().filter(request("POST", TRG_TOKEN), over) }
+        assertEquals("token endpoint response carries no usable access_token", e.message)
+        verify(exactly = 0) { over.entityStream = any() }
+        val overRead = readContext(true, ByteArrayInputStream(trgPadded(TRG_CAP + 1)))
+        val e2 = assertFailsWith<IOException> { TokenResponseGuard().aroundReadFrom(overRead) }
+        assertEquals("token endpoint response carries no usable access_token", e2.message)
+        verify(exactly = 0) { overRead.proceed() }
+    }
+
+    // 쥐는 메모리도 본문 크기와 무관하다 — 16 MiB 본문을 판정하는 동안 이 스레드가 할당한 바이트가 상한의 몇 배 안이다(수정 전
+    // readAllBytes 는 본문 전체와 그 사본을 할당했다). HotSpot 의 스레드 할당 계수기로 잰다 — OOM 에 기대지 않는다.
+    @Test
+    fun `rejecting a huge body allocates independently of its size`() {
+        val bean = ManagementFactory.getThreadMXBean()
+        assumeTrue(bean is com.sun.management.ThreadMXBean, "스레드 할당 계수기가 없는 JVM")
+        val threads = bean as com.sun.management.ThreadMXBean
+        assumeTrue(threads.isThreadAllocatedMemorySupported && threads.isThreadAllocatedMemoryEnabled)
+        val huge = 16L shl 20
+        val guard = TokenResponseGuard()
+        val req = request("POST", TRG_TOKEN)
+        judge(guard, req, response(Response.Status.OK, TrgSizedBody(huge))) // 데우기 — 클래스 로딩의 할당을 재지 않는다
+        val res = response(Response.Status.OK, TrgSizedBody(huge))
+        val before = threads.currentThreadAllocatedBytes
+        val rejected = judge(guard, req, res)
+        val allocated = threads.currentThreadAllocatedBytes - before
+        assertTrue(allocated < 4L * (TRG_CAP + 1), "$huge 바이트 본문 하나를 판정하며 $allocated 바이트를 할당했다")
+        assertNotNull(rejected, "상한을 넘는 본문을 넘겼다")
+    }
+
+    // 응답 필터 판정 하나 — 거부면 그 예외를, 통과면 null 을 돌려준다(할당을 재는 구간에 단언을 두지 않는다).
+    private fun judge(
+        guard: TokenResponseGuard,
+        req: ClientRequestContext,
+        res: ClientResponseContext,
+    ): IOException? =
+        try {
+            guard.filter(req, res)
+            null
+        } catch (e: IOException) {
+            e
+        }
 
     // 배선 — admin 의 JAX-RS 클라이언트에 두 계약으로 등록돼 있어야 한다(TokenManager 의 토큰 요청이 그 클라이언트로 나간다).
     // ReaderInterceptor 는 오름차순으로 돌므로 가장 큰 우선순위 값이 결합 바로 앞이다 — gzip 해제(Priorities.ENTITY_CODER)보다

@@ -2,6 +2,7 @@ package io.github.xzawed.keycloak.admin
 
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonToken
+import com.nimbusds.jose.jwk.source.JWKSourceBuilder
 import jakarta.ws.rs.HttpMethod
 import jakarta.ws.rs.client.ClientRequestContext
 import jakarta.ws.rs.client.ClientResponseContext
@@ -41,6 +42,11 @@ import java.io.InputStream
  * 보내지지 않고, [adminCall] 이 `KeycloakTransportException` 으로 바꾼다(원인 사슬은 [transportCause] 가 `RedactedCause` 로
  * 간다) — null·객체·배열·누락이 이미 실패하던 타입이다. 메시지는 상수다(응답을 인용하지 않는다).
  *
+ * ⚠️ **판정은 본문을 상한([MAX_BODY_BYTES])까지만 읽고 쥔다.** 통째로 읽던 때는 힙보다 큰 2xx 본문이 `OutOfMemoryError` 를
+ * 냈다 — RESTEasy 가 감싸 결과는 거부였어도 그 순간 JVM 전체가 메모리를 잃었고, JSON 공백으로 부풀린 **쓸 수 있는** 토큰도
+ * 그랬다(가드 없는 결합은 그것을 스트리밍으로 통과시킨다). 상한+1 바이트까지 읽어 넘침을 알아채면 쓸 수 없는 토큰과 같은
+ * 거부를 던지고 나머지는 읽지 않는다. 버퍼는 본문 크기와 무관하게 하나다.
+ *
  * 검사는 Jackson **스트리밍** 파서다 — 데이터 결합·다형 타입이 없고 자체 ObjectMapper 도 아니다(보안 불변식). 최상위
  * `access_token` 은 **전부** 본다 — 결합은 중복 키의 마지막 값을 쓰므로 첫 값만 보면 `{"access_token":"ok","access_token":1}`
  * 이 통과한다. 통과한 바이트는 그대로 되돌려 결합이 refresh_token·expires_in 을 잃지 않게 한다.
@@ -62,12 +68,12 @@ internal class TokenResponseGuard :
             request.setProperty(JUDGE_ENTITY, true) // 결합이 읽는 바이트(해제 뒤)는 aroundReadFrom 이 판정한다
             return
         }
-        response.entityStream = ByteArrayInputStream(usableOrReject(response.entityStream))
+        response.entityStream = usableOrReject(response.entityStream)
     }
 
     override fun aroundReadFrom(context: ReaderInterceptorContext): Any? {
         if (context.getProperty(JUDGE_ENTITY) != true) return context.proceed()
-        context.inputStream = ByteArrayInputStream(usableOrReject(context.inputStream))
+        context.inputStream = usableOrReject(context.inputStream)
         return context.proceed()
     }
 
@@ -80,19 +86,32 @@ internal class TokenResponseGuard :
         // 응답 필터가 범위 안의 교환에 다는 요청 속성 — ReaderInterceptor 가 이것이 있는 엔티티만 판정한다.
         internal val JUDGE_ENTITY: String = TokenResponseGuard::class.java.name + ".judgeEntity"
         internal const val REJECTED = "token endpoint response carries no usable access_token"
+
+        // 판정이 읽고 쥐는 본문의 상한(바이트) — JWKS 응답 상한 그 자체다(NoRedirectResourceRetriever 가 Nimbus 에 넘기는 상수를
+        // 그대로 참조한다 — 두 번째 정의 자리를 만들지 않는다).
+        internal const val MAX_BODY_BYTES = JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT
         private const val ACCESS_TOKEN = "access_token"
         private val JSON = JsonFactory()
 
-        private fun usableOrReject(input: InputStream?): ByteArray {
-            val body = input?.readAllBytes() ?: ByteArray(0)
-            if (!carriesUsableAccessToken(body)) throw IOException(REJECTED)
-            return body
+        // 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치거나 쓸 수 없으면 거부, 통과하면 읽은 바이트를 사본 없이 넘긴다.
+        private fun usableOrReject(input: InputStream?): ByteArrayInputStream {
+            val buf = ByteArray(MAX_BODY_BYTES + 1)
+            val n = input?.readNBytes(buf, 0, buf.size) ?: 0
+            if (n > MAX_BODY_BYTES || !carriesUsableAccessToken(buf, n)) throw IOException(REJECTED)
+            return ByteArrayInputStream(buf, 0, n)
         }
 
-        /** 최상위가 JSON 객체이고 그 `access_token` 이 하나 이상이며 전부 비어 있지 않은 문자열이다. 형식이 틀리면 false. */
-        internal fun carriesUsableAccessToken(body: ByteArray): Boolean {
+        // ⚠️ 한 인자 형태를 지우지 말 것 — internal 멤버도 바이트코드에서는 public 이라(이름만 맹글링) CI api-compat(japicmp,
+        // 게시된 1.0.4 대비)이 그 삭제를 METHOD_REMOVED 로 막는다(실측).
+        internal fun carriesUsableAccessToken(body: ByteArray): Boolean = carriesUsableAccessToken(body, body.size)
+
+        /** `body` 의 앞 `length` 바이트가 최상위 JSON 객체이고 그 `access_token` 이 하나 이상이며 전부 비어 있지 않은 문자열이다. 형식이 틀리면 false. */
+        internal fun carriesUsableAccessToken(
+            body: ByteArray,
+            length: Int,
+        ): Boolean {
             try {
-                JSON.createParser(body).use { p ->
+                JSON.createParser(body, 0, length).use { p ->
                     if (p.nextToken() != JsonToken.START_OBJECT) return false
                     var found = false
                     while (p.nextToken() == JsonToken.FIELD_NAME) {

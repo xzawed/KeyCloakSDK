@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Security
+- **(Kotlin)** admin 의 토큰 응답 검사가 2xx 본문을 통째로 메모리에 읽었습니다 — 힙보다 큰 본문은 `OutOfMemoryError` 를 냈고(RESTEasy 가 감싸 결과는 admin 요청 0 건의 `KeycloakTransportException` 이었지만 그 순간 같은 JVM 의 다른 작업도 메모리를 잃습니다), JSON 공백으로 부풀린 **쓸 수 있는** 토큰 응답도 그랬습니다(검사 없는 결합은 그것을 스트리밍으로 통과시킵니다). 이제 검사는 본문을 JWKS 응답 상한과 같은 51200 바이트(gzip 은 푼 뒤)까지만 읽고 쥡니다. ⚠️ 그보다 큰 토큰 응답은 쓸 수 있는 토큰을 담았어도 쓸 수 없는 토큰과 똑같이 admin 요청 없이 `KeycloakTransportException` 으로 실패하고, 상한 안의 응답은 그대로 동작합니다. 공개 API 변경은 0 입니다.
+
 ## [1.3.0] - 2026-10-02 (PHP)
 
 **2026-10-02 셋째 릴리스 물결 — 아홉 언어가 여섯 번호로 올라갑니다.** 둘째 물결(아래 `[1.2.0] - 2026-09-26 (Go · PHP)` 절의 머리말)과 Node 의 `[1.0.2] - 2026-09-27` 뒤에 착지한 수정을 싣습니다 — 아홉 언어 전부의 id_token audience 수정(#663–#671 — `expectedAudience` 를 재정의하면 nonce 를 넘긴 코드 교환이 정상 id_token 을 거부하던 것), Python 의 traceback 프레임 로컬 누출 수정(#666), admin 수정 넷(Python #685 · PHP #686 · Java #687 · Kotlin #688). 새 공개 API 가 들어간 PHP(`JwtValidator::validateIdToken`)는 minor(`1.3.0`, 이 절)이고 Ruby(`JwtValidator#validate` 의 `audience:` 키워드)도 minor(`1.2.0`), 나머지는 patch 입니다 — Go `1.2.1`, Rust `1.1.2`, Java · Kotlin `1.0.4`, Python · .NET · Node `1.0.3`(아래 절들). 실제로 어디까지 게시됐는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh` 의 `df_published_version` 이 소유합니다.
