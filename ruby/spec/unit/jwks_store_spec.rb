@@ -165,6 +165,27 @@ RSpec.describe KeycloakSdk::JwksStore do
       expect(stub).to have_been_requested.times(2)
     end
 
+    # ⚠️ **창의 크기를 못 박는다 — 지우지 말 것.** 멈춘 시계의 백오프 예제는 창이 0 보다 크기만 하면 통과하고,
+    # 실시간 예제는 크기를 우연히만 잰다(실측: 기준값 0.2→0.0002 를 실시간 「20회 시도」 예제는 3회 중 2회만
+    # 잡았다). 0.2초 × jitter[0.5, 1.0) 라 첫 창은 [0.1, 0.2)초, 둘째 창은 그 두 배다 — jitter 와 무관하게 결정적이다.
+    it "첫 창은 0.1초 이상 버티고 둘째 창은 그 두 배다 (창의 크기)" do
+      stub = stub_request(:get, jwks_url).to_return(status: 500, body: "err")
+      now = 1000.0
+      allow(Process).to receive(:clock_gettime).and_call_original
+      allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC) { now }
+
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /HTTP 500/) # 실패 1
+      now += 0.099
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /backing off/)
+      now += 0.111 # 실패 1 로부터 0.21초 — 첫 창의 상한(0.2초) 너머
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /HTTP 500/) # 실패 2
+      now += 0.199
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /backing off/)
+      now += 0.211 # 실패 2 로부터 0.41초 — 둘째 창의 상한(0.4초) 너머
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /HTTP 500/)
+      expect(stub).to have_been_requested.times(3)
+    end
+
     # ⚠️ 대조군 둘째 — 성공이 실패 카운터를 되돌리지 않으면 오래 산 프로세스에서 백오프가
     # 상한까지 올라간 채 영영 내려오지 않는다.
     it "성공하면 실패 카운터가 0으로 돌아간다 (대조군)" do
