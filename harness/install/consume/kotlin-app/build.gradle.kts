@@ -46,6 +46,11 @@ dependencies {
     // 이 줄이 필요 없어지는 조건: ktor 가 4.2.17 이상을 끌어오게 되면 지운다 —
     // `security-audit` 의 harness-kotlin 잡이 그때도 초록이면 지워도 안전하다.
     implementation(platform("io.netty:netty-bom:4.2.17.Final"))
+    // ⚠️ jackson 도 같은 방식으로 끌어올린다. ktor-serialization-jackson 3.5.2 가 jackson 2.22.1 을 끌어오는데
+    // jackson-core·databind 권고 일곱(2026-09-28–10-01 공개, GHSA-7hhh-6rmp-j9qf 등)이 2.22.3 에서 고쳐졌다.
+    // SDK 게시본(1.0.4)은 이미 2.22.3 으로 제약하지만, 이 앱의 단독 기본값(위 0.1.0)은 그 제약이 없다.
+    // 이 줄이 필요 없어지는 조건: ktor 가 2.22.3 이상을 끌어오게 되면 지운다 — 그때도 이 잡이 초록이면 안전하다.
+    implementation(platform("com.fasterxml.jackson:jackson-bom:2.22.3"))
 }
 
 kotlin {
