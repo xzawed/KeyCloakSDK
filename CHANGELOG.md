@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **(PHP)** IdP 오류 응답의 `error` 가 OAuth 코드 모양 뒤에 줄바꿈을 하나 달고 오면(`"invalid_client\n"`) 그 줄바꿈째 코드로 받아, `KeycloakAuthError` 의 메시지와 `oauthError`, 원인(`getPrevious()`)의 메시지, admin 토큰 부여 실패(`KeycloakAdminError`)의 메시지에 실었습니다 — 그 오류를 찍는 로그 한 줄이 둘로 갈립니다(토큰·시크릿은 실리지 않습니다). 코드 모양 검사의 끝 닻 `$` 가 `D` 수식자 없이 쓰여 끝 줄바꿈 하나 앞에서도 맞았기 때문입니다. 이제 `error` 는 정확히 `[a-z_]{1,64}` 일 때만 코드로 싣고(`\A…\z`) 그 밖의 값은 싣지 않습니다(`oauthError` 는 `null`). CR·CRLF 로 끝나는 값은 전에도 걸렀습니다. 공개 API 변경은 0 입니다.
+
 ## [1.3.0] - 2026-10-02 (PHP)
 
 **2026-10-02 셋째 릴리스 물결 — 아홉 언어가 여섯 번호로 올라갑니다.** 둘째 물결(아래 `[1.2.0] - 2026-09-26 (Go · PHP)` 절의 머리말)과 Node 의 `[1.0.2] - 2026-09-27` 뒤에 착지한 수정을 싣습니다 — 아홉 언어 전부의 id_token audience 수정(#663–#671 — `expectedAudience` 를 재정의하면 nonce 를 넘긴 코드 교환이 정상 id_token 을 거부하던 것), Python 의 traceback 프레임 로컬 누출 수정(#666), admin 수정 넷(Python #685 · PHP #686 · Java #687 · Kotlin #688). 새 공개 API 가 들어간 PHP(`JwtValidator::validateIdToken`)는 minor(`1.3.0`, 이 절)이고 Ruby(`JwtValidator#validate` 의 `audience:` 키워드)도 minor(`1.2.0`), 나머지는 patch 입니다 — Go `1.2.1`, Rust `1.1.2`, Java · Kotlin `1.0.4`, Python · .NET · Node `1.0.3`(아래 절들). 실제로 어디까지 게시됐는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh` 의 `df_published_version` 이 소유합니다.
