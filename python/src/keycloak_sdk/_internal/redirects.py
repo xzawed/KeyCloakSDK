@@ -93,25 +93,11 @@ def harden_openid(openid: Any, *, what: str = "auth back-channel") -> None:
     """`KeycloakOpenID`의 sync 세션이 3xx를 따라가지 않게 만든다.
 
     token·refresh·exchange_code·logout·introspect·certs(JWKS)가 모두 이 한 세션을 쓴다.
+
+    ⚠️ admin 레인은 이 함수를 쓰지 않는다. 세션이 **둘**이고(REST 의 `connection._s` 와, 지연
+    프로퍼티 `connection.keycloak_openid` 뒤의 그랜트 세션 — 앞의 것만 막으면 첫 그랜트가
+    `client_secret` 을 리다이렉트 대상에 넘긴다), `raw.connection` 이 공개 세터로 갈아
+    끼워지므로 요청마다 다시 걸어야 한다. 그 일은 `admin_guard.py` 가 이 모듈의 훅
+    (`_refuse_redirects`)으로 한다.
     """
     _harden_connection(_require(openid, "connection", what=what), what=what)
-
-
-def harden_admin(admin: Any) -> None:
-    """`KeycloakAdmin`이 쓰는 **두 개의** sync 세션을 모두 막는다.
-
-    admin 경로에는 세션이 둘 있다:
-
-    1. `admin.connection._s` — admin REST 호출(`Authorization: Bearer` 동반).
-    2. `admin.connection.keycloak_openid.connection._s` — admin 자신의
-       client-credentials 토큰 그랜트(`client_secret` 동반).
-
-    2번은 `keycloak_openid` **지연 프로퍼티** 뒤에 있어 `KeycloakAdmin` 생성 시점에는
-    아직 존재하지 않는다. 여기서 프로퍼티를 강제로 실체화해 함께 막는다 — 실측상 1번만
-    막으면 admin 첫 호출의 토큰 그랜트가 `client_secret`을 그대로 리다이렉트 대상에
-    넘긴다. 프로퍼티 실체화는 객체 생성뿐이라 네트워크 왕복이 없다.
-    """
-    connection = _require(admin, "connection", what="admin REST call")
-    _harden_connection(connection, what="admin REST call")
-    nested = _require(connection, "keycloak_openid", what="admin token grant")
-    harden_openid(nested, what="admin token grant")

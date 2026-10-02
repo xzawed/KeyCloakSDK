@@ -272,10 +272,11 @@ def test_raises_when_the_hook_is_not_callable() -> None:
 
 
 def test_raises_when_admin_nested_token_session_is_unreachable() -> None:
-    """중첩 토큰 그랜트 세션에 닿지 못해도 조용히 넘어가지 않는다."""
+    """중첩 토큰 그랜트 세션에 닿지 못해도 조용히 넘어가지 않는다 — 그리고 바깥 세션도 막다 만 채로
+    남기지 않는다(무장은 전부이거나 아무것도 아니다, `_internal/admin_guard.py`)."""
     import requests
 
-    from keycloak_sdk._internal.redirects import harden_admin
+    from keycloak_sdk._internal.admin_guard import arm_admin
 
     class Conn:
         _s = requests.Session()
@@ -284,5 +285,7 @@ def test_raises_when_admin_nested_token_session_is_unreachable() -> None:
         def keycloak_openid(self) -> Any:
             raise AttributeError("gone")
 
+    conn = Conn()
     with pytest.raises(KeycloakConfigError, match="admin token grant"):
-        harden_admin(type("A", (), {"connection": Conn()})())
+        arm_admin(type("A", (), {"connection": conn})())  # type: ignore[arg-type]
+    assert "resolve_redirects" not in vars(conn._s)
