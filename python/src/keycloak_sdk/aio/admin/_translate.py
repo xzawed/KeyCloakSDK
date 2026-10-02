@@ -11,7 +11,8 @@ from collections.abc import Awaitable
 from typing import TypeVar
 
 from ..._internal.lower import is_lower_failure, summarize
-from ...admin._translate import admin_failure
+from ...admin._translate import admin_failure, refused_grant
+from ...exceptions import KeycloakAdminError, KeycloakAuthError, KeycloakTransportError
 
 T = TypeVar("T")
 
@@ -19,11 +20,16 @@ T = TypeVar("T")
 async def acall(awaitable: Awaitable[T]) -> T:
     """`awaitable`을 await하고 python-keycloak 의 실패를 SDK 예외로 변환해 재발생시킨다.
 
-    python-keycloak 의 실패가 아닌 예외는 그대로 전파한다(변환 대상이 아님). 리소스
-    파사드는 `await acall(self._admin.a_...(...))` 형태로 이 함수를 사용한다.
+    python-keycloak 의 실패가 아닌 예외는 그대로 전파한다(변환 대상이 아님). admin 그랜트 검사의
+    거부는 sync `call` 과 같이 새로 만든다(`refused_grant`). 리소스 파사드는
+    `await acall(self._admin.a_...(...))` 형태로 이 함수를 사용한다.
     """
+    error: KeycloakAuthError | KeycloakAdminError | KeycloakTransportError
+    cause: BaseException | None
     try:
         return await awaitable
+    except KeycloakAuthError as e:
+        error, cause = refused_grant(e), None
     except Exception as e:
         if not is_lower_failure(e):
             raise

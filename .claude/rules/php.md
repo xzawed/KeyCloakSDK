@@ -5,7 +5,19 @@ paths:
   - "harness/install/consume/php*"
   - ".github/workflows/php-*.yml"
 ---
-<!-- doc-budget: max-bytes=7388 -->
+<!-- doc-budget: max-bytes=7686 -->
+<!-- 7388 → 7686 (2026-10-02, 이 PR 합계 +298B = 아래 +288B 에 +10B). 규약 (1) — 교환이다. 지운 거짓 문장: 「A hand-built
+     `ClientException` lacks those frames; `AdminFacadeErrorLeakTest` drives the real stack」 — 그 테스트의 전송 실패 두 칸은 가짜
+     핸들러가 만든 `ConnectException` 이라 Guzzle 의 진짜 메시지(요청 URL 을 쿼리째 인용한다)를 못 봤다. 실측: 진짜 curl·stream
+     핸들러를 붙이자 검색어·username 이 원인 메시지·`(string)`·`var_dump`·`print_r` 에 찍혔다(8 칸 32 건). 바꾼 문장은 가짜
+     전부(손으로 만든 예외·가짜 핸들러)가 놓치는 둘을 적고, 같은 테스트가 이제 진짜 핸들러를 붙인다
+     (`testRealTransportFailureCauseKeepsTheUrlButNotItsQuery`). -->
+<!-- 7388 → 7676 (2026-10-02, +288B). 규약 (1) — 교환이다. 지운 거짓 문장: 「This portable install has no coverage
+     driver (`php -m | grep -ciE 'xdebug|pcov'` → 0)」 — 같은 명령이 오늘 2 를 낸다(Xdebug 가 들어왔고 php.ini 가
+     `xdebug.mode=off`). 머신 상태를 단언하던 줄을 그 상태를 **다시 재는 명령**으로 바꿨다. 더한 것: ErrorTranslation
+     이 원본 대신 `SanitizedCause` 를 다는 이유 한 절과, 그것을 기계 검증하는 테스트 이름(손으로 만든 예외는 그 누출을
+     못 본다 — 실측: 수정 전 ErrorTranslationTest·FacadeDumpTest 의 admin 뿌리는 초록인데 실제 스택에서 client secret·
+     Bearer 가 var_dump 에 찍혔다). -->
 <!-- 7155 → 7388 (2026-09-22). 규약 (1) — **세션이 못 보는 경고**를 보는 자리로 옮긴다.
      Windows 체크아웃에서 포매터가 **깨끗한 트리 전체**를 지적한다(출처: `.claude/rules/ci.md:62`
      가 go·node·php 셋을 같은 문장으로 적는다. 오늘 다시 잰 것은 go 뿐이다 — `gofmt -l go` → 29
@@ -35,7 +47,7 @@ cd php && vendor/bin/php-cs-fixer fix --dry-run --allow-risky=yes
 - A single test: `vendor/bin/phpunit --filter <TestName> tests/Unit/<Path>Test.php`
 - ⚠️ **Do not write the exact patch version here** — measure it with `php -v` and `node scripts/doctor.mjs php`.
 - ⚠️ `OPENSSL_CONF` is required for local RSA key generation (`JwtValidatorTest`) — without it, key generation fails.
-- ⚠️ **This portable install has no coverage driver** (`php -m | grep -ciE 'xdebug|pcov'` → 0). The coverage gate (logic lines ≥90%) is enforced on CI; to measure it locally, install Xdebug or PCOV first.
+- ⚠️ **Ask for a coverage driver first**: `php -m | grep -ciE 'xdebug|pcov'` (0 = none). CI enforces the gate (logic lines ≥90%) with PCOV; with Xdebug run `XDEBUG_MODE=coverage vendor/bin/phpunit --testsuite unit --coverage-clover <file>`.
 - ⚠️ **The integration tests shell out to the docker CLI rather than using Testcontainers** (Windows-native PHP has no `unix://` support). The integration testsuite in `phpunit.xml` has to state `suffix="IT.php"` — leave it out and the default pattern `*Test.php` makes the ITs **skip silently**.
 
 ## Publishing (the mirror-repository path)
@@ -48,7 +60,7 @@ cd php && vendor/bin/php-cs-fixer fix --dry-run --allow-risky=yes
 
 ## Library gotchas
 
-- ⚠️ **fschmtt's `Users::create()` returns void** — look the created id up afterwards with `findIdByUsername()`. For `Clients` and `Realms` it is not `create` but `import` (the id/realm has to be pre-set on the representation). fschmtt does not translate Guzzle exceptions, so `ErrorTranslation` has to absorb the base `RequestException` (TLS failures and the like) as well as 404/409/403.
+- ⚠️ **fschmtt's `Users::create()` returns void** — look the created id up afterwards with `findIdByUsername()`. For `Clients` and `Realms` it is not `create` but `import` (the id/realm has to be pre-set on the representation). fschmtt does not translate Guzzle exceptions, so `ErrorTranslation` has to absorb the base `RequestException` (TLS failures and the like) as well as 404/409/403 — and attach `SanitizedCause::of($e)`, never the original, whose trace args hold the grant's `client_secret`, the `Bearer` and the sent representation. Fakes miss those frames and Guzzle's query-quoting messages; `AdminFacadeErrorLeakTest` drives the real stack.
 - **The facade's `update()` returns void on all five resources** — fschmtt re-GETs the representation and hands it back, but the eight sister languages all return no value, so we drop it to hold the §4 isomorphism. `Users::all()` hits the same endpoint as `search()`, so it is not exposed.
 - ⚠️ **`roles.update` does not delegate to fschmtt — it goes through `Keycloak::resource(RenamableRoles::class)`.** fschmtt's `Roles::update(string $realm, Role $role)` takes no name argument and builds the path from `$role->getName()`, so path and body come from one value and **a rename cannot be expressed**: measured, the PUT goes to `/roles/{new name}` and the current name appears nowhere in the request. `RenamableRoles` re-issues the same `Command` with the path and body kept apart, which reuses fschmtt's token, HTTP client and serializer — a raw Guzzle PUT would need a bearer that is locked inside fschmtt, and minting a fresh one breaks the §4 token-cache invariant (`RolesRenameTest` asserts the grant count stays 1).
   - ⚠️ **That path stands on `CommandExecutor`, which fschmtt marks `@internal`** — what makes it safe is the **exact pin `0.42.0`** in `composer.json`, nothing else. `RolesRenameTest` drives the real stack, so it is the drift guard when that pin moves.
