@@ -160,36 +160,9 @@ class HostilePathMatrixTest {
 
   /**
    * 현재 main 에서 실패하는 칸 — 키는 {@code W3<축> 행/변형}, 값은 {@code 등록부 id: 이유}. SDK 를 고치지 않고 드러내 둔다.
-   * 관측되지 않는(이제 통과하거나 칸이 없는) 항목은 낡은 것이라 실패한다. ⚠️ 이유 없는 항목은 넣지 않는다.
+   * 관측되지 않는(이제 통과하거나 칸이 없는) 항목은 낡은 것이라 실패한다. ⚠️ 이유 없는 항목은 넣지 않는다. 오늘은 비어 있다.
    */
-  static final Map<String, String> KNOWN_GAPS = knownGaps();
-
-  private static Map<String, String> knownGaps() {
-    Map<String, String> out = new TreeMap<>();
-    // ⚠️ SDK 결함(2026-09-27 이 행렬이 처음 쟀다). admin 경로는 keycloak-admin-client 내장 TokenManager 가 토큰 응답을
-    // Jackson 으로 읽는데, 그 스칼라 강제변환이 숫자·불리언·빈 문자열 access_token 을 문자열로 받아 **그 값을 bearer 로
-    // admin API 를 부른다**(판정 사유의 Authorization 열) — 형식이 틀린 부여 응답을 거부하지 않는다. AuthClient 경로는
-    // Nimbus TokenResponse.parse 가 같은 셋을 거부하고(AuthClientTokenTypeTest), Go admin 은 거부한다(#639).
-    // MalformedIdpResponseTest b1 이 이 강제변환을 적어 두었지만 단언하지 않는다. null·객체·배열·누락은 admin 도 거부한다.
-    String why = "jvm-admin-token-response-type-unchecked: admin-client TokenManager 의 Jackson 이 "
-        + "비문자열·빈 access_token 을 강제변환해 그 값을 bearer 로 admin API 를 부른다";
-    List<String> admin = List.of(
-        "ClientsResource.create(ClientRepresentation)", "ClientsResource.delete(String)",
-        "ClientsResource.findByClientId(String)", "ClientsResource.get(String)",
-        "ClientsResource.update(String,ClientRepresentation)",
-        "GroupsResource.create(GroupRepresentation)", "GroupsResource.delete(String)", "GroupsResource.get(String)",
-        "GroupsResource.list(int,int)", "GroupsResource.update(String,GroupRepresentation)",
-        "RealmsResource.create(RealmRepresentation)", "RealmsResource.delete(String)", "RealmsResource.get(String)",
-        "RealmsResource.list()", "RealmsResource.update(String,RealmRepresentation)",
-        "RolesResource.create(RoleRepresentation)", "RolesResource.delete(String)", "RolesResource.get(String)",
-        "RolesResource.list()", "RolesResource.update(String,RoleRepresentation)",
-        "UsersResource.create(UserRepresentation)", "UsersResource.delete(String)", "UsersResource.get(String)",
-        "UsersResource.search(String,int,int)", "UsersResource.update(String,UserRepresentation)");
-    for (String row : admin) {
-      for (String variant : List.of("at:number", "at:bool", "at:empty_string")) out.put("W3a " + row + "/" + variant, why);
-    }
-    return out;
-  }
+  static final Map<String, String> KNOWN_GAPS = Map.of();
 
   // ───────────────────────────── 기록하는 가짜 IdP ─────────────────────────────
 
@@ -1427,7 +1400,8 @@ class HostilePathMatrixTest {
     // 원 테스트의 호출은 clientCredentialsToken 하나 — 그 계급(TOKEN_GRANT)은 호출 전부에 단언되고, CODE_EXCHANGE 는 그
     // 테스트가 부르지 않을 뿐 **일부러 뺀 호출이 없다**. 그래서 두 계급 다 단언한다(Go 와 같다). 처음엔 교환 쪽을 측정만
     // 했는데, 그러면 bool·빈 문자열·null access_token 을 받아들이는 새 교환이 초록이었다(Grok 레그 주장 4). 원 테스트가
-    // 계급 안의 호출을 **골라** 뺀 변형(MalformedIdpResponseTest b1 의 admin)은 여전히 측정만 한다.
+    // 계급 안의 호출을 **골라** 뺀 변형(MalformedIdpResponseTest c2·c3·c5 의 admin — admin 레인은 token_type 을 쓰지 않고
+    // refresh_token 의 타입을 검사하지 않는다)은 여전히 측정만 한다.
     Row ttRow = byLabel.get(tt.label());
     Set<String> both = Set.of(TOKEN_GRANT, CODE_EXCHANGE);
     Set<String> ttOn = ttRow == null ? Set.of() : both;
@@ -1442,7 +1416,8 @@ class HostilePathMatrixTest {
           (b, a) -> new MalformedIdpResponseTest.Resp(200, "application/json", body2),
           Map.of("ZatRT-0123", atRT), both, ttOn, Map.of()));
     }
-    // 누락된 access_token — 어느 기존 테스트도 단언하지 않는다. 측정만.
+    // 누락된 access_token — 이 행렬이 단언을 끌어오는 테스트(AuthClientTokenTypeTest·MalformedIdpResponseTest)에 없다(admin
+    // 레인만 AdminTokenResponseTest 가 따로 단언한다). 측정만.
     out.add(new Variant("at:missing", "", (b, a) -> new MalformedIdpResponseTest.Resp(200, "application/json",
         "{\"token_type\":\"Bearer\",\"expires_in\":300,\"refresh_token\":\"" + atRT + "\"}"),
         Map.of("ZatRT-0123", atRT), both, Set.of(), Map.of()));

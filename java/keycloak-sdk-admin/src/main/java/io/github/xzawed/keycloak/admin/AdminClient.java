@@ -81,6 +81,9 @@ public final class AdminClient implements AutoCloseable {
    * <p>기반 빌더는 {@link ClientBuilder#newBuilder()}를 유지한다 —
    * {@code ResteasyClientClassicProvider.createClientBuilder()}로 바꾸면 커넥션 풀이
    * 기본 50에서 10으로 조용히 줄어든다({@code connectionPoolSize(10)}).
+   *
+   * <p>{@link TokenResponseGuard}도 등록한다 — 내장 TokenManager 의 토큰 요청도 이 클라이언트로 나가고, 그 응답의
+   * 숫자·불리언·빈 문자열 {@code access_token} 을 Jackson 이 문자열로 받아 admin API 를 그 값의 Bearer 로 불렀다.
    */
   static Client buildTimeoutClient(KeycloakConfig config) { // 패키지 전용 — 프로바이더 등록 회귀테스트 시임
     return ClientBuilder.newBuilder()
@@ -88,6 +91,7 @@ public final class AdminClient implements AutoCloseable {
         .readTimeout(config.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS)
         .register(JacksonProvider.class, 100)
         .register(StreamMessageBodyReader.class)
+        .register(new TokenResponseGuard())
         .build();
   }
 

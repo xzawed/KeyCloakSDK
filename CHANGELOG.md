@@ -19,6 +19,7 @@
 
 ### Security
 - **(Python)** 실패한 인증 호출의 오류가 **프레임 로컬**로 토큰을 들고 나갔습니다 — 거부된 `exchange_code` 는 받은 토큰 응답(raw refresh token 포함)을 교환 프레임의 `response` 에, 원문 id_token 을 `JwtValidator`·joserfc 프레임에 남겨 원인 사슬(`__cause__`)로 닿게 했고, 인자로 받은 `code`·`code_verifier`·refresh/introspect 토큰도 같은 자리에 있었습니다. `str`·`repr`·`logging.exception` 에는 없지만 `TracebackException(capture_locals=True)` 와 Sentry Python(프레임 로컬 수집이 기본값)이 그것을 찍었습니다(수정 전 실측: `client_credentials_token`·`exchange_code`·`refresh`·`logout`·`introspect` 가 sync·`aio` 모두 샜습니다). 같은 부류로 `authorization_url` 이 조립 도중 실패하면 생성한 `code_verifier` 가, 하위 클라이언트 생성이 실패하면(예: `SSL_CERT_FILE` 이 없는 파일) python-keycloak 프레임이 쥔 **client secret** 이 찍혔습니다(auth 생성자·admin 의 지연 생성 모두). 이제 이 자리들과 `validate()` 는 실패하면 SDK 안쪽 프레임과 원인 사슬의 traceback 을 떼고 인자를 지운 뒤 **같은 예외**를 던집니다 — 타입·메시지·사슬 모양은 그대로이고 잃는 것은 SDK 안쪽 프레임의 줄 번호뿐입니다. 공개 API 변경은 0 입니다.
+- **(Java)** admin 이 토큰 응답의 숫자·불리언·빈 문자열 `access_token` 을 그대로 Bearer 로 실어 admin API 를 불렀습니다(`Authorization: Bearer 12345` · `Bearer true` · `Bearer `) — admin 이 토큰을 맡기는 keycloak-admin-client 내장 TokenManager 의 Jackson 이 그 값을 문자열로 강제변환했기 때문입니다(null·객체·배열·누락은 이미 거부했습니다). 이제 그런 토큰 응답은 결합 전에 거부되어 admin 요청을 하나도 보내지 않고, null·객체·배열·누락과 같은 `KeycloakTransportException` 으로 실패합니다. 공개 API 변경은 0 입니다.
 
 ## [1.0.2] - 2026-09-27 (Node)
 
