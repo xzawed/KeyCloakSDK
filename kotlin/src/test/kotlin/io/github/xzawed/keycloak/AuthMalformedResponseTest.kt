@@ -239,14 +239,16 @@ private fun variants(
             nonceOnly,
             failure = MalFailure.ID_TOKEN,
         ),
-        // (b)(c) 타입이 틀린 멤버 — admin 의 Jackson 은 수를 문자열로 바꿔 받고 token_type 을 안 본다(측정: 성공).
+        // (b)(c) 타입이 틀린 멤버 — admin 의 Jackson 은 수를 문자열로 바꿔 받지만 그 결합 앞에서 TokenResponseGuard 가 토큰
+        // 응답을 거부해 admin 도 실패한다(b — admin 요청 0 건, AdminTokenResponseTest). token_type 은 admin 이 안 본다(c2·c3,
+        // 측정: 성공).
         MalVariant(
             "b access_token is not a string",
             MAL_TOKEN,
             200,
             tokens("B0", "access_token" to "123"),
             mapOf("RT" to "B0RTLEAK-refresh-0001"),
-            AUTH_TOKEN_CALLS,
+            ALL_TOKEN_CALLS,
         ),
         MalVariant(
             "c1 expires_in is not a number",
@@ -659,14 +661,18 @@ private fun assertDebugInfoKept(failures: Map<String, Throwable>) {
             "d1 200 short non-JSON body|CLIENT_CREDENTIALS" to nimbusJson,
             "f1 introspect 200 short non-JSON body|INTROSPECT" to nimbusJson,
             "c3 token_type is an unknown string|REFRESH" to listOf("com.nimbusds.oauth2.sdk.ParseException"),
-            "d1 200 short non-JSON body|ADMIN" to
-                listOf("jakarta.ws.rs.client.ResponseProcessingException", "com.fasterxml.jackson.core.JsonParseException"),
-            "d4 200 JSON string body|ADMIN" to listOf("com.fasterxml.jackson.databind.exc.MismatchedInputException"),
+            // admin 의 토큰 응답은 결합 앞에서 TokenResponseGuard 가 거부한다 — 진단은 그 타입 이름과 프레임(아래)이다.
+            "d1 200 short non-JSON body|ADMIN" to listOf("jakarta.ws.rs.client.ResponseProcessingException", "java.io.IOException"),
+            "d4 200 JSON string body|ADMIN" to listOf("jakarta.ws.rs.client.ResponseProcessingException", "java.io.IOException"),
         )
     for ((case, types) in kept) {
         val e = at(case)
         val printed = e.stackTraceToString()
         types.forEach { assertTrue("Caused by: $it" in printed, "$case: 하위 예외 타입 $it 이 사라졌다:\n$printed") }
+        if (case.endsWith("|ADMIN")) {
+            val frame = "at io.github.xzawed.keycloak.admin.TokenResponseGuard.filter("
+            assertTrue(frame in printed, "$case: 거부한 자리(가드의 프레임)가 사라졌다:\n$printed")
+        }
         val raw = chainOf(e).drop(1).map { it.javaClass.name }.filter { n -> lowerPackages.any { n.startsWith(it) } }
         assertTrue(raw.isEmpty(), "$case: 응답을 쥔 하위 예외 객체가 원인 사슬에 그대로 달렸다: $raw")
     }

@@ -95,6 +95,9 @@ public class AdminClient internal constructor(
          * 10으로 조용히 줄어든다.
          *
          * `internal` 가시성은 프로바이더 등록 회귀테스트를 위한 시임이다(Java의 패키지 전용 seam과 동형).
+         *
+         * [TokenResponseGuard]도 등록한다 — 내장 TokenManager 의 토큰 요청도 이 클라이언트로 나가고, 그 응답의
+         * 숫자·불리언·빈 문자열 `access_token` 을 Jackson 이 문자열로 받아 admin API 를 그 값의 Bearer 로 불렀다.
          */
         internal fun buildTimeoutClient(config: KeycloakConfig): Client =
             ClientBuilder
@@ -103,6 +106,7 @@ public class AdminClient internal constructor(
                 .readTimeout(config.readTimeout.toMillis(), TimeUnit.MILLISECONDS)
                 .register(JacksonProvider::class.java, 100)
                 .register(StreamMessageBodyReader::class.java)
+                .register(TokenResponseGuard())
                 .build()
     }
 }
