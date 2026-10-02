@@ -15,6 +15,10 @@
 레인과 같은 판정(`tokens._usable_access_token`)으로 거부하므로 헤더가 서지 않고 요청도 나가지
 않는다. 세터는 클래스의 프로퍼티라 인스턴스마다 바꿀 수 없다.
 
+⚠️ 감싸기를 **거는** 것은 이 모듈이 아니라 `admin_guard.py` 다 — 생성 때 한 번이 아니라 admin 요청이
+나가기 전마다 살아 있는 중첩 객체에 걸려 있는지 다시 본다(`raw.connection` 은 공개 세터로 갈아
+끼워진다). 그랜트를 거치지 않고 실린 bearer(주입·토큰 세터)도 거기서 잡는다.
+
 ⚠️ 거부는 python-keycloak 프레임 **안에서** 난다 — 그 traceback 은 거부된 응답·이전 refresh
 token 을 쥔 프레임을 지나고, 폴백이면 python-keycloak 의 `except` 안이라 `__context__` 가 그
 400(응답 본문)이다. 그래서 경계(`admin/_translate.py` 의 `call`·`acall`)가 같은 타입·메시지로
@@ -26,7 +30,6 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
-from ..exceptions import KeycloakConfigError
 from ..tokens import _usable_access_token
 
 #: 중첩 `KeycloakOpenID` 의 그랜트 메서드 — 연결이 토큰을 받는 자리 전부다.
@@ -53,30 +56,3 @@ def _achecked(grant: _AsyncGrant) -> Callable[..., Coroutine[Any, Any, dict[str,
         return response
 
     return checked
-
-
-def _grant(openid: Any, name: str) -> Any:
-    grant = getattr(openid, name, None)
-    if not callable(grant):
-        raise KeycloakConfigError(
-            f"cannot check the admin token grant: this SDK expects python-keycloak to expose "
-            f"connection.keycloak_openid.{name}, but it is missing or not callable. Refusing to "
-            f"build an admin client that could send an unusable access token to the admin API. "
-            f"Pin python-keycloak to a supported version (>=7.1,<8) and report this at "
-            f"https://github.com/xzawed/KeyCloakSDK/issues."
-        )
-    return grant
-
-
-def guard_admin_grant(admin: Any) -> None:
-    """`KeycloakAdmin` 의 토큰 그랜트가 쓸 수 없는 `access_token` 을 연결에 넘기지 못하게 한다.
-
-    `harden_admin` **뒤에** 부른다 — 그것이 `connection.keycloak_openid`(지연 프로퍼티)를 이미
-    실체화하고 없으면 생성을 거부했다. 넷을 다 감싼 뒤에야 바꾼다(하나라도 없으면 아무것도
-    안 바꾼다).
-    """
-    openid = admin.connection.keycloak_openid
-    sync = {name: _checked(_grant(openid, name)) for name in _SYNC_GRANTS}
-    aio = {name: _achecked(_grant(openid, name)) for name in _ASYNC_GRANTS}
-    for name, wrapped in {**sync, **aio}.items():
-        setattr(openid, name, wrapped)
