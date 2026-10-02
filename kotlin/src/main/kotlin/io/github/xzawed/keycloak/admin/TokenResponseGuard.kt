@@ -44,8 +44,9 @@ import java.io.InputStream
  *
  * ⚠️ **판정은 본문을 상한([MAX_BODY_BYTES])까지만 읽고 쥔다.** 통째로 읽던 때는 힙보다 큰 2xx 본문이 `OutOfMemoryError` 를
  * 냈다 — RESTEasy 가 감싸 결과는 거부였어도 그 순간 JVM 전체가 메모리를 잃었고, JSON 공백으로 부풀린 **쓸 수 있는** 토큰도
- * 그랬다(가드 없는 결합은 그것을 스트리밍으로 통과시킨다). 상한+1 바이트까지 읽어 넘침을 알아채면 쓸 수 없는 토큰과 같은
- * 거부를 던지고 나머지는 읽지 않는다. 버퍼는 본문 크기와 무관하게 하나다.
+ * 그랬다(가드 없는 결합은 그것을 스트리밍으로 통과시킨다). 상한+1 바이트까지 읽어 넘침을 알아채면 나머지는 버퍼에 담지 않고
+ * 스트림을 닫은 뒤(`closeQuietly` — 닫기의 실패는 버린다) 쓸 수 없는 토큰과 같은 거부를 던진다. 버퍼는 본문 크기와 무관하게
+ * 하나다 — 받는 바이트는 아니다: 실제 연결에서 닫기는 나머지를 고정 버퍼로 끝까지 비운다(HttpCore).
  *
  * 검사는 Jackson **스트리밍** 파서다 — 데이터 결합·다형 타입이 없고 자체 ObjectMapper 도 아니다(보안 불변식). 최상위
  * `access_token` 은 **전부** 본다 — 결합은 중복 키의 마지막 값을 쓰므로 첫 값만 보면 `{"access_token":"ok","access_token":1}`
@@ -97,8 +98,24 @@ internal class TokenResponseGuard :
         private fun usableOrReject(input: InputStream?): ByteArrayInputStream {
             val buf = ByteArray(MAX_BODY_BYTES + 1)
             val n = input?.readNBytes(buf, 0, buf.size) ?: 0
-            if (n > MAX_BODY_BYTES || !carriesUsableAccessToken(buf, n)) throw IOException(REJECTED)
+            if (n > MAX_BODY_BYTES || !carriesUsableAccessToken(buf, n)) {
+                closeQuietly(input)
+                throw IOException(REJECTED)
+            }
             return ByteArrayInputStream(buf, 0, n)
+        }
+
+        // 거부하기 전에 스트림을 닫고, 닫기의 실패는 버린다(Java 동형). ⚠️ 응답 필터가 던지면 RESTEasy(ClientInvocation.invoke)가
+        // 응답을 try/catch 없이 닫는데, 실제 연결에서 닫기는 읽지 않은 나머지를 비운다(HttpCore). 그 비우기가 실패하면(청크 크기 줄
+        // 오류·잘린 본문·읽기 타임아웃) 그 ProcessingException 이 이 거부를 대신해 RedactedCause 로 걸러지지 않은 채 나갔고, 청크
+        // 크기 줄 오류는 응답 바이트를 메시지에 실었다(실측 — AdminTokenResponseTest). 여기서 먼저 닫으면 뒤의 닫기는 아무것도 하지
+        // 않는다(BufferedInputStream·EofSensorInputStream 모두 두 번째 닫기가 no-op).
+        private fun closeQuietly(input: InputStream?) {
+            try {
+                input?.close()
+            } catch (releaseFault: IOException) {
+                // 버린다 — 결과는 거부다(메시지는 응답 바이트를 인용할 수 있다)
+            }
         }
 
         // ⚠️ 한 인자 형태를 지우지 말 것 — internal 멤버도 바이트코드에서는 public 이라(이름만 맹글링) CI api-compat(japicmp,
