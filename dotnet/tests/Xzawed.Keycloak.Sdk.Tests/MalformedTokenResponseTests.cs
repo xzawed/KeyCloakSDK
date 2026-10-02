@@ -45,7 +45,8 @@ public sealed class MalformedTokenResponseTests
     /// 알려진 누출 — <c>"변형|경로"</c>(경로: <c>ToString()</c>·<c>Message</c>·<c>OAuthError</c>). ⚠️ 더 안 새면 <b>여기서
     /// 지워야 통과한다</b>(낡은 항목 검사). 둘 다 <b>계약</b>이다 — OAuth <c>error</c> 코드는 디버깅 정보로 그대로
     /// 넘기기로 한 값이고, RFC 6749 §5.2 문법(<c>%x20-21 / %x23-5B / %x5D-7E</c>)이 토큰 문자를 전부 허용해 SDK 가
-    /// 코드와 토큰을 가를 수 없다. 서버가 코드 자리에 토큰을 넣는 경우만 여기 걸린다.
+    /// 코드와 토큰을 가를 수 없다. 서버가 코드 자리에 토큰을 넣는 경우만 여기 걸린다. 그 문법 밖의 문자열(제어 문자·
+    /// <c>"</c>·<c>\</c>·비 ASCII)은 코드가 아니어서 어느 경로에도 싣지 않는다 — e10·e11 이 그 쪽을 잰다.
     /// </summary>
     /// <remarks>internal — HostilePathMatrixTests 가 같은 계약(어느 경로의 카나리아가 계약상 찍히는가)을 파생 행에 그대로 건다.</remarks>
     internal static readonly Dictionary<string, string> KnownLeaks = new(StringComparer.Ordinal)
@@ -131,6 +132,12 @@ public sealed class MalformedTokenResponseTests
             """{"error":"LK-E7-ERR-1-canary","error_description":"LK-E7-DSC-1-canary"}""", new[] { "LK-E7-ERR-1-canary", "LK-E7-DSC-1-canary" }, Auth, Auth),
         new("e8 400 error array echo", 400, "application/json", """{"error":["LK-E8-ERR-1-canary"]}""", new[] { "LK-E8-ERR-1-canary" }, Auth, Auth),
         new("e9 400 JSON string root", 400, "application/json", "\"LK-E9-BODY-canary\"", new[] { "LK-E9-BODY-canary" }, Auth, Auth),
+        // error 가 RFC 6749 §5.2 문법 밖이다(끝 CRLF·LF) — 코드가 아니므로 어느 경로에도 싣지 않는다. 다듬어(Trim) 코드로
+        // 만들지도 않는다 — 카나리아는 줄바꿈을 뺀 앞부분이라 다듬은 값이 실려도 잡힌다. 경계 전부는 OAuthErrorCodeGrammarTests.
+        new("e10 400 error code + CRLF", 400, "application/json", """{"error":"LK-E10-ERR-1-canary\r\n"}""",
+            new[] { "LK-E10-ERR-1-canary" }, Auth, Auth),
+        new("e11 401 error code + LF", 401, "application/json", """{"error":"LK-E11-ERR-1-canary\n"}""",
+            new[] { "LK-E11-ERR-1-canary" }, Auth, Auth),
         // (f) introspect 모양 — active 가 불리언이 아니면 Duende 가 비활성으로 읽는다(성공). 토큰 호출에는 access_token 이 없다.
         new("f introspect active string", 200, "application/json", """{"active":"LK-F-ACT-01-canary","username":"svc"}""",
             new[] { "LK-F-ACT-01-canary" }, Auth, null),
