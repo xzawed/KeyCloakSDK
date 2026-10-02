@@ -4,7 +4,7 @@ A Keycloak client library for Java that covers both **Authentication (OIDC / OAu
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`1.0.3` is on Maven Central** — a patch release fixing leaks present in the `v1.0.2` source: an error raised on a malformed token or introspection response — the admin client's own token request included — no longer prints that response's tokens through `printStackTrace`'s "Caused by:" lines. ⚠️ **When a response parser's exception (Nimbus, json-smart, Jackson, or JAX-RS `ResponseProcessingException`) is anywhere in an SDK exception's cause chain, that chain is now replaced by copies that keep only each type name and its stack frames**, so code that walked `getCause()` to one of those types no longer finds it. An `error_description` the IdP sent is still in the message, but anything in it that the request sent (Basic credentials, client secret, code, verifier, refresh or introspection token) or that looks like a token is masked as `***`. No public API changed. ⚠️ **Maven never picks a version for you**: a `<dependency>` with no `<version>` and no BOM managing it fails the build rather than resolving to the newest release, so name `1.0.3` explicitly as shown below.
+> **`1.0.4` is on Maven Central** — a patch release on top of `1.0.3`. **Fixed**: with `expectedAudience` set to something other than the client id (a resource server's name, say), `exchangeCode(…, nonce)` rejected the server's valid id_token as `invalid id_token`, because the id_token went through the access token's validator (`aud` = `expectedAudience`). The id_token's `aud` is now checked for the client id (OIDC Core §2, §3.1.3.7), so that exchange passes, and an id_token without the client id is refused even when its `aud` is the override; `validate()` still uses `expectedAudience`, and both share one JWKS cache and refetch limit. **Security**: the admin client no longer sends a number, boolean or empty-string `access_token` from a token response as its bearer (`Authorization: Bearer 12345`, `Bearer true`, `Bearer `) — the Jackson inside keycloak-admin-client's built-in TokenManager coerced those to strings. Such a token response is now rejected before any admin request is sent, with the `KeycloakTransportException` that a `null`, object, array or missing `access_token` already got. No public API changed. ⚠️ **Maven never picks a version for you**: a `<dependency>` with no `<version>` and no BOM managing it fails the build rather than resolving to the newest release, so name `1.0.4` explicitly as shown below.
 
 ## Requirements
 
@@ -20,7 +20,7 @@ The SDK ships as several Maven modules, but **most users need exactly one**: `io
 <dependency>
   <groupId>io.github.xzawed</groupId>
   <artifactId>keycloak-sdk</artifactId>
-  <version>1.0.3</version>
+  <version>1.0.4</version>
 </dependency>
 ```
 
@@ -40,7 +40,7 @@ If you depend on the modules individually, import the BOM so their versions stay
     <dependency>
       <groupId>io.github.xzawed</groupId>
       <artifactId>keycloak-sdk-bom</artifactId>
-      <version>1.0.3</version>
+      <version>1.0.4</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>

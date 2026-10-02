@@ -4,7 +4,9 @@ A TypeScript SDK for [Keycloak](https://www.keycloak.org/) covering both **Authe
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .NET · PHP · Rust · Ruby · Kotlin) — idiomatic in each language, isomorphic across all of them. Monorepo: <https://github.com/xzawed/KeyCloakSDK>
 
-> **`1.0.2` is on npm** and holds the `latest` dist-tag, so a bare install resolves it. A security patch: `exchangeCode(…, nonce)` did not verify the id_token's **signature** in `1.0.0` and `1.0.1` — openid-client checks the nonce but not the signature of an id_token that comes straight from the token endpoint, so an id_token signed outside the realm JWKS (HS256, or a forged RS256) passed. It now goes through the SDK's hardened validator (signature · `signatureAlgorithms` · iss · aud · exp), as in the other eight languages, and a missing id_token is refused.
+> **`1.0.3` is on npm** and holds the `latest` dist-tag, so a bare install resolves it. A patch release: with `expectedAudience` set to something other than the client id (a resource server), `exchangeCode(…, nonce)` rejected a valid id_token issued by Keycloak as `invalid id_token`, because the access token's expected audience was demanded of the id_token too. The id_token's `aud` is now checked for the **client id** (OIDC Core §2, §3.1.3.7), so the exchange passes under the override, while an id_token whose `aud` lacks the client id is still refused even when it equals the override. `validate` still applies the override to access tokens, and the two checks share one JWKS cache and refetch limit. The declared public API (`.d.ts`) is unchanged.
+>
+> `1.0.2` was a security patch: `exchangeCode(…, nonce)` had not verified the id_token's **signature** in `1.0.0` and `1.0.1` — openid-client checks the nonce but not the signature of an id_token that comes straight from the token endpoint, so an id_token signed outside the realm JWKS (HS256, or a forged RS256) passed. Since then it goes through the SDK's hardened validator (signature · `signatureAlgorithms` · iss · aud · exp), as in the other eight languages, and a missing id_token is refused.
 >
 > `1.0.1` was a patch release of security and correctness fixes on top of `1.0.0`, the first release carrying the stability guarantee (the public API is under SemVer, and a breaking change requires a major bump). The PKCE verifier and tokens no longer leak through `console.log` / `JSON.stringify`, and an SDK error no longer carries the IdP's raw token response in its `cause` chain (both present in `1.0.0`); the configured clock skew now actually reaches validation; JWKS responses are size-capped, an empty `200` key set no longer replaces a good cached one, and failed fetches back off. ⚠️ **Config is now validated when it is built** — a `serverUrl` that is not an absolute http(s) URL, or a timeout that is not a finite number in `(0, 2147483647]` ms, throws `KeycloakConfigError`.
 >
@@ -23,10 +25,10 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .
 npm install @xzawed/keycloak-sdk
 ```
 
-A bare install resolves `1.0.2`, and so does a `^1.0.0` range — at and above `1.0.0` a caret covers every `1.x`, so it picks up later minor and patch releases but never a `2.0.0`. Pin the exact version if you would rather not follow `latest`:
+A bare install resolves `1.0.3`, and so does a `^1.0.0` range — at and above `1.0.0` a caret covers every `1.x`, so it picks up later minor and patch releases but never a `2.0.0`. Pin the exact version if you would rather not follow `latest`:
 
 ```bash
-npm install @xzawed/keycloak-sdk@1.0.2
+npm install @xzawed/keycloak-sdk@1.0.3
 ```
 
 ## Quickstart

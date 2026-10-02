@@ -4,16 +4,16 @@ A coroutine-first Keycloak client library for Kotlin/JVM that covers both **Auth
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`1.0.3` is on Maven Central** — a patch release fixing leaks present in `1.0.2`: an error raised on a malformed token or introspection response no longer prints that response through `stackTraceToString()`'s "Caused by:" lines — the token itself on the auth side, the body's head and JSON string values from the admin client's built-in token manager. ⚠️ **A parser failure's cause is now an internal copy that keeps only the lower exception's type name and stack frames**, so it is no longer the Nimbus `ParseException`, or the JAX-RS/Jackson exception for an admin response that could not be read. An `error_description` the IdP sent is still in the message, but the client secret, Basic credentials and the code, verifier, refresh or introspection token the request sent are masked in it as `***`. No public API changed; the stability guarantee below is unchanged. ⚠️ **A coordinate written without a version resolves nothing in Gradle or Maven**, and nothing falls back to the newest release — name `1.0.3` explicitly as shown below (Maven Central is immutable, so every earlier `0.x` stays published forever too: no delete, no yank, no unlist). ⚠️ **Consumer floor: Kotlin 2.2+** — the published jar carries `@Metadata(mv=[2,2,0])` and declares `kotlin-stdlib 2.2.21`, deliberately lower than the 2.4.20 toolchain used to build it.
+> **`1.0.4` is on Maven Central** — a patch release on top of `1.0.3`. **Fixed**: overriding `expectedAudience` made `exchangeCode` with a nonce fail with "invalid id_token" even on a valid id_token the server signed, because the id_token was checked against the override meant for access tokens. The id_token's `aud` is now checked for `clientId` (OIDC Core §2, §3.1.3.7), so that exchange succeeds, and an id_token without the client id in `aud` is refused even when it carries the override; `validate()` still applies the override to access tokens, and no extra JWKS fetch is made (one shared store). **Security**: the admin client no longer sends a number, boolean or empty-string `access_token` from a token response as its bearer (`Authorization: Bearer 12345`, `Bearer true`, `Bearer `) — the Jackson inside keycloak-admin-client's built-in TokenManager coerced those to strings. Such a token response is now rejected before any admin request is sent, with the `KeycloakTransportException` that a `null`, object, array or missing `access_token` already got. No public API changed; the stability guarantee below is unchanged. ⚠️ **A coordinate written without a version resolves nothing in Gradle or Maven**, and nothing falls back to the newest release — name `1.0.4` explicitly as shown below (Maven Central is immutable, so every earlier `0.x` stays published forever too: no delete, no yank, no unlist). ⚠️ **Consumer floor: Kotlin 2.2+** — the published jar carries `@Metadata(mv=[2,2,0])` and declares `kotlin-stdlib 2.2.21`, deliberately lower than the 2.4.20 toolchain used to build it.
 
 ## Requirements
 
-- **Kotlin 2.2+** on **JDK 17+** — this is the floor of the **published** `1.0.3`; `1.0.1` is the release that lowered it (`jvmTarget = JVM_17` plus `-Xjdk-release=17`). ⚠️ **`1.0.0` needed JDK 21** — `kotlin-v1.0.0` carried only `jvmToolchain(21)` and no `jvmTarget` ([detail](../docs/guides/getting-started.md#kotlin)). The SDK is built with Kotlin 2.4.20 but pins `languageVersion`/`apiVersion` to 2.2, so its published metadata is consumable by any Kotlin 2.2+ compiler.
+- **Kotlin 2.2+** on **JDK 17+** — this is the floor of the **published** `1.0.4`; `1.0.1` is the release that lowered it (`jvmTarget = JVM_17` plus `-Xjdk-release=17`). ⚠️ **`1.0.0` needed JDK 21** — `kotlin-v1.0.0` carried only `jvmToolchain(21)` and no `jvmTarget` ([detail](../docs/guides/getting-started.md#kotlin)). The SDK is built with Kotlin 2.4.20 but pins `languageVersion`/`apiVersion` to 2.2, so its published metadata is consumable by any Kotlin 2.2+ compiler.
 - A Keycloak server to connect to (integration-tested against Keycloak 26.6).
 
 Every network call is a `suspend` function — blocking calls into the underlying JVM libraries run on `Dispatchers.IO` via `runInterruptible`. `createAuthorizationRequest` is the one `AuthClient` call that is not, because it needs no network (the facade accessors such as `admin.users()` are synchronous too — they do no I/O). Public API visibility is enforced with `explicitApi()`.
 
-The published `1.0.3` reuses the verified JVM stack of its sibling Java SDK — `org.keycloak:keycloak-admin-client`, `com.nimbusds:oauth2-oidc-sdk` and `com.nimbusds:nimbus-jose-jwt` — plus `kotlinx-coroutines-core` for the coroutine boundary. The exact pins are in the published POM; `main` may already be ahead of it.
+The published `1.0.4` reuses the verified JVM stack of its sibling Java SDK — `org.keycloak:keycloak-admin-client`, `com.nimbusds:oauth2-oidc-sdk` and `com.nimbusds:nimbus-jose-jwt` — plus `kotlinx-coroutines-core` for the coroutine boundary. The exact pins are in the published POM; `main` may already be ahead of it.
 
 ## Install
 
@@ -21,7 +21,7 @@ Gradle Kotlin DSL:
 
 ```kotlin
 dependencies {
-    implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.3")
+    implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.4")
 }
 ```
 
