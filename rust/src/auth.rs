@@ -1025,7 +1025,14 @@ mod tests {
 
     /// 콜드 실패 백오프: 교환의 JWKS 실패가 백오프를 열면, 바로 이어진 `validate()` 는 IdP 에 가지 않고
     /// 즉시 실패한다.
-    #[tokio::test]
+    ///
+    /// ⚠️ **`start_paused` 를 떼지 말 것 — 실시간 시계에서는 이 단언이 러너 속도를 잰다.** 첫 실패의 창은
+    /// 0.2초 × jitter[0.5, 1.0) 라 0.1초까지 좁고, 그 사이의 RSA 서명이 느린 러너에서 창을 넘기면
+    /// `validate()` 가 IdP 로 다시 나가 `JWKS fetch failed: HTTP 503` 으로 깨진다. 게이트 시계가
+    /// `tokio::time::Instant` 라 멈춘 시계에서는 그 사이 경과가 0 이다(`jwks.rs` 의 백오프 시험과 같은 틀).
+    /// 자동 전진이 터뜨릴 타임아웃은 없다 — 픽스처의 `reqwest::Client::new()` 는 요청·연결·읽기 타임아웃이
+    /// 없고, 남는 타이머(풀 유휴 정리)는 유휴 연결을 닫을 뿐이다.
+    #[tokio::test(start_paused = true)]
     async fn exchange_and_validate_share_the_cold_fetch_backoff() {
         let fx = exchange_fixture_with(
             ExchangeSpec {
