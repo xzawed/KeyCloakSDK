@@ -454,11 +454,20 @@ mod tests {
         matches!(r, Err(KeycloakError::Transport(m)) if m.contains("backing off"))
     }
 
-    /// ⚠️ **창의 크기를 못 박는다 — 이 시험을 지우지 말 것.** 백오프를 쓰는 다른 시험은 전부 멈춘 시계(경과
-    /// 0)에서 돌아, 창이 0 보다 크기만 하면 통과한다. 실시간 시계였던 W3c(`tests/hostile_path_matrix.rs`)는
-    /// 교환 행의 호출 간격으로 「창이 µs 로 줄었다」를 잡았다 — 실측: `FAILURE_BACKOFF_BASE` 200ms→200µs 를
-    /// main 의 W3c 교환 두 행이 `certs 5` 로 잡았고, 그 시계를 얼린 뒤에는 이 시험 말고 잡는 시험이 없다.
-    /// 0.2초 × jitter[0.5, 1.0) 이라 첫 창은 [0.1, 0.2)초, 둘째 창은 그 두 배다 — jitter 와 무관하게 결정적이다.
+    /// 실패 2 로부터 「둘째 창은 아직 안 끝났다」를 보는 시점. 두 배가 된 창은 0.4초 × jitter 라 가장 짧아도
+    /// 0.2초(jitter 최소 0.5)이고, 두 배를 잃은 창은 첫 창과 같아 0.2초 × jitter 라 가장 길어도 0.1999999초
+    /// (jitter 최대 0.5 + 999_999/2_000_000)다 — 그 사이에 둬야 **모든** jitter 에서 둘을 가른다.
+    /// ⚠️ **199ms 로 되돌리지 말 것.** 그 탐침은 jitter 가 0.995 를 넘는 판(약 1%)에서 두 배를 잃은 창도
+    /// 덮는다 — 실측: `backoff_delay` 의 두 배를 없앤 변이가 아래 시험을 1500 판 중 17 판 통과했다.
+    /// 그 성질은 `doubling_probe_splits_undoubled_from_doubled_window_at_every_jitter` 가 지킨다.
+    const SECOND_WINDOW_PROBE: Duration = Duration::from_nanos(199_999_999);
+
+    /// ⚠️ **창의 크기를 못 박는다 — 이 시험을 지우지 말 것.** 백오프를 쓰는 다른 시험은 아래 회귀 시험 말고는
+    /// 전부 멈춘 시계(경과 0)에서 돌아, 창이 0 보다 크기만 하면 통과한다. W3c(`tests/hostile_path_matrix.rs`)는
+    /// 실시간 시계였을 때 교환 행의 호출 간격으로 「창이 µs 로 줄었다」를 잡았다 — 실측: `FAILURE_BACKOFF_BASE`
+    /// 200ms→200µs 를 main 의 W3c 교환 두 행이 `certs 5` 로 잡았고, 얼린 뒤에는 이 시험과 아래 회귀 시험만 잡는다.
+    /// 0.2초 × jitter[0.5, 1.0) 이라 첫 창은 [0.1, 0.2)초, 둘째 창은 그 두 배다. 「두 배가 아니다」 단언이
+    /// jitter 와 무관하게 결정적인 것은 탐침이 `SECOND_WINDOW_PROBE` 라서다.
     #[tokio::test(start_paused = true)]
     async fn backoff_window_holds_its_minimum_and_doubles() {
         let server = failing_server().await;
@@ -480,14 +489,47 @@ mod tests {
         assert!(!backing_off(&store.get_key("k1").await)); // 실패 2
         assert_eq!(certs_hits(&server).await, 2);
 
-        tokio::time::advance(Duration::from_millis(199)).await;
+        tokio::time::advance(SECOND_WINDOW_PROBE).await;
         assert!(
             backing_off(&store.get_key("k1").await),
             "둘째 창이 첫 창의 두 배(0.2초 이상)가 아니다"
         );
-        tokio::time::advance(Duration::from_millis(201)).await; // 실패 2 로부터 0.4초 — 둘째 창의 상한
+        // 실패 2 로부터 0.4초 — 둘째 창의 상한
+        tokio::time::advance(Duration::from_millis(400) - SECOND_WINDOW_PROBE).await;
         assert!(!backing_off(&store.get_key("k1").await));
         assert_eq!(certs_hits(&server).await, 3);
+    }
+
+    /// 회귀 — 위 시험의 「두 배가 아니다」 단언이 두 배 상실을 **jitter 와 무관하게** 잡는가. 두 배를 잃은
+    /// 둘째 창은 첫 창과 같으므로 실패 1 회의 게이트로, 두 배가 된 창은 실패 2 회의 게이트로 본다. jitter 는
+    /// 벽시계 나노초의 1ms 주기에서 뽑히니, 진짜 `backoff_remaining` 을 1ms 보다 훨씬 오래 걸릴 만큼 불러
+    /// 주기 전체를 훑는다 — 통과는 jitter 값에 기대지 않고(모든 값에서 성립해야 한다), 탐침이 헐거우면
+    /// 어느 판에서든 깨진다.
+    #[test]
+    fn doubling_probe_splits_undoubled_from_doubled_window_at_every_jitter() {
+        let t0 = Instant::now();
+        let at = t0 + SECOND_WINDOW_PROBE;
+        let undoubled = Gate {
+            failures: 1,
+            last_failure: Some(t0),
+            ..Gate::default()
+        };
+        let doubled = Gate {
+            failures: 2,
+            last_failure: Some(t0),
+            ..Gate::default()
+        };
+        for _ in 0..200_000 {
+            let left = undoubled.backoff_remaining(at);
+            assert!(
+                left.is_zero(),
+                "두 배를 잃은 창이 탐침 {SECOND_WINDOW_PROBE:?} 을 {left:?} 넘는다 — 이 jitter 에서는 두 배 상실이 산다"
+            );
+            assert!(
+                !doubled.backoff_remaining(at).is_zero(),
+                "두 배가 된 창이 탐침 {SECOND_WINDOW_PROBE:?} 전에 끝났다 — 둘째 창이 0.2초보다 짧다"
+            );
+        }
     }
 
     /// ⚠️ 대조군 둘째 — 성공이 실패 카운터를 되돌리지 않으면 오래 산 프로세스에서 백오프가
