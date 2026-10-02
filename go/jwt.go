@@ -43,9 +43,9 @@ type validatorOptions struct {
 	clockSkewSec int64
 	httpClient   *http.Client
 	minRefetch   time.Duration // DoS 증폭 상한(강제 재조회 최소 간격)
-	// now is a clock seam for tests. Nil means time.Now. It exists so the failure-backoff tests
-	// can cross the window deterministically instead of sleeping — this repo already tracks
-	// wall-clock-dependent tests as a defect class.
+	// now is a clock seam for tests. Nil means time.Now. It exists so the failure-backoff and
+	// forced-refetch (minRefetch) tests can cross their windows deterministically instead of
+	// sleeping — this repo already tracks wall-clock-dependent tests as a defect class.
 	now func() time.Time
 }
 
@@ -210,12 +210,15 @@ func (v *Validator) resolveKey(ctx context.Context, kid string) (any, error) {
 	}
 
 	// Cached JWKS lacks the kid → possible rotation → forced refetch, rate-limited.
+	// One reading of the clock seam serves both the check and the stamp. With the default
+	// (time.Now) both carry a monotonic reading, so Sub is monotonic exactly as time.Since was.
 	v.mu.Lock()
-	if !v.forcedAt.IsZero() && time.Since(v.forcedAt) < v.opts.minRefetch {
+	now := v.opts.now()
+	if !v.forcedAt.IsZero() && now.Sub(v.forcedAt) < v.opts.minRefetch {
 		v.mu.Unlock()
 		return nil, fmt.Errorf("no key for kid %q (refetch rate-limited)", kid)
 	}
-	v.forcedAt = time.Now()
+	v.forcedAt = now
 	v.mu.Unlock()
 
 	if err := v.singleFetch(ctx); err != nil {

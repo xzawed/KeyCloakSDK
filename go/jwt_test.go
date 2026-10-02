@@ -298,10 +298,17 @@ func TestValidateUnknownKidRefetchOnceThenRateLimited(t *testing.T) {
 // 이쪽이 깨지면 rate-limit 이 **영구 잠금**이 된다 — 키 로테이션이 일어나도 SDK 가 새 JWKS 를
 // 영원히 못 가져오고, 증상은 "특정 시점 이후 모든 토큰이 no key for kid" 다. DoS 상한을 지키는
 // 것과 복구를 막는 것은 한 줄 차이이고, 그 한 줄이 여기다.
+//
+// ⚠️ 시계는 주입한다(opts.now). 실시간 40ms 창이었을 때는 kX 와 kY 사이(RSA 서명 하나)의 정지가 창보다
+// 길면 「창 안」 단언이 깨졌다(실측: 한 코어에 CPU 점유 셋 → 200 회 중 1–13 회 `1 → 3`). 얼린 시계는 창이
+// 0 보다 크기만 하면 통과하므로 창 끝 양쪽을 1ns 로 찌른다 — 1ns 앞은 아직 차단, 정각은 허용.
 func TestValidateRefetchAllowedAgainAfterRateLimitWindowElapses(t *testing.T) {
 	f := newJWTFixture(t)
-	const window = 40 * time.Millisecond
-	v := f.validator(t, window) // 실제로 만료시킬 수 있을 만큼 짧은 창
+	const window = 30 * time.Second // 기본값 — 시계를 주입하므로 짧은 창이 필요 없다
+	v := f.validator(t, window)
+	start := time.Now()
+	now := start
+	v.opts.now = func() time.Time { return now }
 
 	good := f.sign(t, f.priv, "k1", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
 	if _, err := v.Validate(context.Background(), good); err != nil {
@@ -324,10 +331,17 @@ func TestValidateRefetchAllowedAgainAfterRateLimitWindowElapses(t *testing.T) {
 		t.Fatalf("창 안에서는 재조회가 한 번뿐이어야 한다: %d → %d", base, got)
 	}
 
-	// 창을 넉넉히 넘긴다(경계에 걸치지 않도록 2.5배).
-	time.Sleep(window * 5 / 2)
+	// 창 끝 1ns 앞 — 아직 차단. 창을 줄이는 변이(minRefetch/1000 등)는 여기서 잡힌다.
+	now = start.Add(window - time.Nanosecond)
+	if _, err := v.Validate(context.Background(), unknownKid("kW")); err == nil {
+		t.Fatal("unknown kid must be rejected")
+	}
+	if got := atomic.LoadInt32(f.fetches); got != base+1 {
+		t.Fatalf("창 끝 1ns 앞에서도 차단돼야 한다(창이 minRefetch 보다 짧다): %d → %d", base, got)
+	}
 
-	// 창이 지났으므로 재조회가 **다시 허용**돼야 한다 — 이것이 위 조건의 false 갈래다.
+	// 창 정각 — 창이 지났으므로 재조회가 **다시 허용**돼야 한다 — 이것이 위 조건의 false 갈래다.
+	now = start.Add(window)
 	if _, err := v.Validate(context.Background(), unknownKid("kZ")); err == nil {
 		t.Fatal("unknown kid must be rejected")
 	}
@@ -561,16 +575,21 @@ func failingJWKS(t *testing.T) (*httptest.Server, *int32) {
 	return srv, &hits
 }
 
+// ⚠️ 시계는 주입하고 조회마다 명시적으로 민다. 실시간이면 첫 실패 뒤 창(0.2초 × jitter [0.5, 1.0) =
+// 0.1–0.2초)보다 긴 정지 한 번이 다음 조회를 내보내 `got 2` 가 된다(실측: 첫 조회 뒤 250ms → 3/3 실패).
+// 얼리기만 하면 창이 0 보다 크기만 해도 통과하므로, 스무 조회를 첫 창의 하한(0.1초) 안에 5ms 간격으로 편다.
 func TestJWKSFailedFetchBackoffBoundsColdRetries(t *testing.T) {
 	srv, hits := failingJWKS(t)
+	now := time.Now()
 	v := newValidator(validatorOptions{jwksURI: srv.URL, issuer: testISS, audience: "my-client",
 		allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: 30,
-		minRefetch: 30 * time.Second})
+		minRefetch: 30 * time.Second, now: func() time.Time { return now }})
 
 	for i := 0; i < 20; i++ {
 		if _, err := v.resolveKey(context.Background(), "k1"); err == nil {
 			t.Fatalf("lookup %d must fail while the IdP is down", i)
 		}
+		now = now.Add(5 * time.Millisecond) // 마지막 조회가 첫 실패 +95ms — 어느 jitter 에서도 창 안
 	}
 	if got := atomic.LoadInt32(hits); got != 1 {
 		t.Fatalf("cold cache + failing IdP: 20 lookups must collapse to one outbound request, got %d", got)
@@ -653,4 +672,38 @@ func TestJWKSSuccessResetsFailureCounter(t *testing.T) {
 		t.Fatalf("a successful fetch must reset the counter and the timestamp, got %d / zero=%v",
 			failures, zero)
 	}
+}
+
+// ⚠️ 창 크기 — 실패 백오프의 **크기**는 이 시험 전에는 아무 시험도 재지 않았다(실측, main 2e0742f: 기준값
+// 200ms→200µs · 두 배 제거 · 기준값 2초 셋 다 `go test ./...` 통과). jitter 는 검사마다 벽시계 나노초에서
+// 새로 뽑으므로([0.5, 0.9999995]) 탐침은 **모든 jitter 에서** 갈라야 한다:
+//
+//	실패 1 뒤 창 0.2초 × j ∈ [100ms, 199.9999ms] → +100ms−1ns 는 안 · +200ms−1ns 는 밖
+//	실패 2 뒤 창 0.4초 × j ∈ [200ms, 399.9998ms] → +200ms−1ns 는 안(두 배를 잃은 창이면 밖) · +400ms−1ns 는 밖
+func TestJWKSFailedFetchBackoffWindowHoldsItsMinimumAndDoubles(t *testing.T) {
+	srv, hits := failingJWKS(t)
+	start := time.Now()
+	now := start
+	v := newValidator(validatorOptions{jwksURI: srv.URL, issuer: testISS, audience: "my-client",
+		allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: 30,
+		minRefetch: 30 * time.Second, now: func() time.Time { return now }})
+	probe := func(at time.Time, want int32, why string) {
+		t.Helper()
+		now = at
+		_, err := v.resolveKey(context.Background(), "k1")
+		if err == nil {
+			t.Fatalf("%s: the lookup must fail while the IdP is down", why)
+		}
+		if got := atomic.LoadInt32(hits); got != want {
+			t.Fatalf("%s: IdP 요청 %d 건, 기대 %d (%v)", why, got, want, err)
+		}
+	}
+	const ns = time.Nanosecond
+
+	probe(start, 1, "실패 1")
+	probe(start.Add(100*time.Millisecond-ns), 1, "첫 창이 0.1초보다 짧다")
+	second := start.Add(200*time.Millisecond - ns)
+	probe(second, 2, "첫 창이 0.2초보다 길다")
+	probe(second.Add(200*time.Millisecond-ns), 2, "둘째 창이 첫 창의 두 배(0.2초 이상)가 아니다")
+	probe(second.Add(400*time.Millisecond-ns), 3, "둘째 창이 0.4초보다 길다")
 }

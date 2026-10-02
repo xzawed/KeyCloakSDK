@@ -17,7 +17,9 @@ public sealed class KeycloakConfigException : KeycloakException
 /// <summary>OIDC/OAuth2 flow failure (token endpoint, introspection, logout).</summary>
 public sealed class KeycloakAuthException : KeycloakException
 {
-    /// <summary>OAuth2 error code from the token endpoint body, when available.</summary>
+    /// <summary>OAuth2 <c>error</c> code from a token or introspection response — only a value in the RFC 6749 §5.2 grammar
+    /// (<c>1*NQSCHAR</c>), passed on unchanged; any other value is no code. When such a request fails with an HTTP status
+    /// other than 400 and no code, this holds the status's standard reason phrase.</summary>
     public string? OAuthError { get; init; }
     public KeycloakAuthException(string message, Exception? innerException = null) : base(message, innerException) { }
 }
