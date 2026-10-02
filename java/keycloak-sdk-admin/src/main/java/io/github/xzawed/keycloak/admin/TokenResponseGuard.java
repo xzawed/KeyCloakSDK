@@ -43,6 +43,15 @@ import java.io.InputStream;
  * 요청은 보내지지 않고, {@link AdminExceptions} 가 {@code KeycloakTransportException} 으로 바꾼다 — null·객체·배열·누락이
  * 이미 실패하던 타입이다. 메시지는 상수다(응답을 인용하지 않는다).
  *
+ * <p>⚠️ <b>판정은 본문을 상한({@link #MAX_BODY_BYTES})까지만 읽고 쥔다.</b> 통째로 읽던 때는 힙보다 큰 2xx 본문이
+ * {@code OutOfMemoryError} 를 냈다 — RESTEasy 가 감싸 결과는 거부였어도 그 순간 JVM 전체가 메모리를 잃었고, JSON 공백으로
+ * 부풀린 <b>쓸 수 있는</b> 토큰도 그랬다(가드 없는 결합은 그것을 스트리밍으로 통과시킨다). {@code readNBytes(상한+1)} 로 읽어
+ * 넘침을 알아채면 나머지는 담지 않고 스트림을 닫은 뒤({@link #closeQuietly} — 닫기의 실패는 버린다) 쓸 수 없는 토큰과 같은
+ * 거부를 던진다. 그 메서드(JDK 17·21 의 {@code InputStream} 기본 구현 — RESTEasy·HttpCore 의 스트림은 재정의하지 않는다)는 남은
+ * 길이 너머를 요청하지 않고 JDK 기본 조각(17: 8 KiB · 21: 16 KiB)으로 <b>읽은 만큼만</b> 할당한다 — 작은 본문은 작은 배열이고,
+ * 넘치는 본문도 상한의 약 두 배(읽은 조각 + 그것을 이은 배열)다. 상한만 한 버퍼를 미리 잡지 않는다(그러면 토큰 요청 하나하나가
+ * 상한을 할당한다). 받는 바이트는 상한이 없다: 실제 연결에서 닫기는 나머지를 고정 버퍼로 끝까지 비운다(HttpCore).
+ *
  * <p>검사는 Jackson <b>스트리밍</b> 파서다 — 데이터 결합·다형 타입이 없고 자체 ObjectMapper 도 아니다(보안 불변식,
  * {@code .claude/rules/java.md}). 최상위 {@code access_token} 은 <b>전부</b> 본다 — 결합은 중복 키의 마지막 값을 쓰므로 첫
  * 값만 보면 {@code {"access_token":"ok","access_token":1}} 이 통과한다. 통과한 바이트는 그대로 되돌려 결합이 refresh_token·
@@ -55,6 +64,14 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   /** 응답 필터가 범위 안의 교환에 다는 요청 속성 — ReaderInterceptor 가 이것이 있는 엔티티만 판정한다. */
   static final String JUDGE_ENTITY = TokenResponseGuard.class.getName() + ".judgeEntity";
   static final String REJECTED = "token endpoint response carries no usable access_token";
+  /**
+   * 판정이 읽고 쥐는 본문의 상한(바이트) — 1 MiB. Keycloak 26.6 기본 설정(start-dev 로 실측)이 받아들이는 가장 긴 Bearer
+   * (65,459 바이트 — 한 바이트 더 길면 HTTP 431)의 16 배라, 서버가 받아들이는 토큰을 이 상한이 거부하지 않는다(운영자는 그 헤더
+   * 한도를 올릴 수 있다 — 그래서 여유를 크게 둔다). 그래도 적대적이거나 고장 난 엔드포인트의 끝없는 본문은 여기서 끊긴다. ⚠️ JWKS 응답
+   * 상한(51,200)을 빌려 쓰지 말 것 — 큰 배포의 쓸 수 있는 토큰을 거부했다({@code AdminTokenResponseTest} 의 65,459 바이트
+   * Bearer 행).
+   */
+  static final int MAX_BODY_BYTES = 1 << 20;
   private static final String ACCESS_TOKEN = "access_token";
   private static final JsonFactory JSON = new JsonFactory();
 
@@ -69,7 +86,7 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
       request.setProperty(JUDGE_ENTITY, Boolean.TRUE); // 결합이 읽는 바이트(해제 뒤)는 aroundReadFrom 이 판정한다
       return;
     }
-    response.setEntityStream(new ByteArrayInputStream(usableOrReject(response.getEntityStream())));
+    response.setEntityStream(usableOrReject(response.getEntityStream()));
   }
 
   @Override
@@ -77,16 +94,34 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
     if (!Boolean.TRUE.equals(context.getProperty(JUDGE_ENTITY))) {
       return context.proceed();
     }
-    context.setInputStream(new ByteArrayInputStream(usableOrReject(context.getInputStream())));
+    context.setInputStream(usableOrReject(context.getInputStream()));
     return context.proceed();
   }
 
-  private static byte[] usableOrReject(InputStream in) throws IOException {
-    byte[] body = in == null ? new byte[0] : in.readAllBytes();
-    if (!carriesUsableAccessToken(body)) {
+  /** 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치거나 쓸 수 없으면 거부, 통과하면 읽은 바이트를 그대로 넘긴다. */
+  private static ByteArrayInputStream usableOrReject(InputStream in) throws IOException {
+    byte[] body = in == null ? new byte[0] : in.readNBytes(MAX_BODY_BYTES + 1);
+    if (body.length > MAX_BODY_BYTES || !carriesUsableAccessToken(body)) {
+      closeQuietly(in);
       throw new IOException(REJECTED);
     }
-    return body;
+    return new ByteArrayInputStream(body);
+  }
+
+  /**
+   * 거부하기 전에 스트림을 닫고, 닫기의 실패는 버린다. ⚠️ 응답 필터가 던지면 RESTEasy({@code ClientInvocation.invoke})가 응답을
+   * try/catch 없이 닫는데, 실제 연결에서 닫기는 읽지 않은 나머지를 비운다(HttpCore). 그 비우기가 실패하면(청크 크기 줄 오류·잘린
+   * 본문·읽기 타임아웃) 그 {@code ProcessingException} 이 이 거부를 대신해 걸러지지 않은 채 나갔고, 청크 크기 줄 오류는 응답
+   * 바이트를 메시지에 실었다(실측 — {@code AdminTokenResponseTest}). 여기서 먼저 닫으면 뒤의 닫기는 아무것도 하지 않는다
+   * (BufferedInputStream·EofSensorInputStream 모두 두 번째 닫기가 no-op).
+   */
+  private static void closeQuietly(InputStream in) {
+    if (in == null) return;
+    try {
+      in.close();
+    } catch (IOException releaseFault) {
+      // 버린다 — 결과는 거부다(메시지는 응답 바이트를 인용할 수 있다)
+    }
   }
 
   /** 최상위가 JSON 객체이고 그 {@code access_token} 이 하나 이상이며 전부 비어 있지 않은 문자열이다. 형식이 틀리면 false. */
