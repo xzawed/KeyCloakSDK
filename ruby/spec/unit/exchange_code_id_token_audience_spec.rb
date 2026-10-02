@@ -147,12 +147,21 @@ RSpec.describe KeycloakSdk::AuthClient, "#exchange_code under an expected_audien
       expect(a_request(:get, certs_url)).to have_been_made.twice # 콜드 로드 + 창 안의 재조회 1건
     end
 
+    # ⚠️ **시계 스텁을 떼지 말 것 — 실시간 monotonic 에서는 이 단언이 러너 속도를 잰다.** 첫 실패의 창은
+    # 0.2초 × jitter[0.5, 1.0) 라 0.1초까지 좁고, 교환이 실패를 기록한 뒤 `validate` 의 백오프 검사 전에 RSA
+    # 서명이 끼어 있다. 그 사이 정지가 창을 넘으면 `validate` 가 IdP 로 다시 나가 `HTTP 503` 으로 깨진다.
+    # 저장소가 읽는 시계(인자 하나의 `CLOCK_MONOTONIC`)만 멈춘다 — jitter 의 나노초 호출은 원본으로 흐른다.
     it "shares the cold-cache failure backoff between the exchange and validate" do
+      allow(Process).to receive(:clock_gettime).and_call_original
+      allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC).and_return(1000.0)
       stub_request(:get, certs_url).to_return(status: 503)
       expect { exchange(sign(claims)) }.to raise_error(KeycloakSdk::TransportError, /HTTP 503/)
       expect { client.auth.validate(sign(claims("aud" => "my-api"))) }
         .to raise_error(KeycloakSdk::TransportError, /backing off/)
       expect(a_request(:get, certs_url)).to have_been_made.once
+      # 스텁이 실제로 읽혔는가 — 저장소가 인자 둘의 꼴로 읽으면 스텁을 비켜 가 실시간으로 돌아간다(실측: 그 변이에
+      # `sleep 0.25` 를 끼우면 `HTTP 503`). 그때 이 예제는 조용히 다시 벽시계에 매달린다.
+      expect(Process).to have_received(:clock_gettime).with(Process::CLOCK_MONOTONIC).at_least(:once)
     end
   end
 end

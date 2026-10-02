@@ -37,7 +37,8 @@
 //!        id_token · 다른 키(같은 kid·다른 kid) · id_token 없음 · nonce 클레임 없음. 대조(맞는 id_token)는 성공하고
 //!        JWKS 에 닿아야 한다. nonce 파라미터가 없는 CODE_EXCHANGE 행은 `NONCE_DROP_EXEMPT` 에 이유가 있어야 한다.
 //!   (W3c) 분류 실행에서 JWKS 를 조회한 행마다 콜드 캐시 + /certs 503 에서 5 회 — 전부 실패하고
-//!        1 ≤ /certs 요청 ≤ 4. 시간이 아니라 요청 수만 잰다.
+//!        1 ≤ /certs 요청 ≤ 4. 시간이 아니라 요청 수만 잰다 — 다섯 호출 동안 게이트 시계를 얼리고
+//!        (`GateClockFreeze`), 그 시계가 움직였으면 그것도 실패다.
 //! 실패한 칸은 `KNOWN_GAPS` 에 이유와 함께 있으면 GAP 으로 찍히고, 관측되지 않는 항목은 낡은 것이라 실패한다.
 //!
 //! go 와 다른 자리:
@@ -83,7 +84,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 const CODE_EXCHANGE: &str = "CODE_EXCHANGE";
@@ -1495,6 +1496,63 @@ async fn run_nonce_b(
     slots
 }
 
+/// W3c 의 다섯 호출 동안 백오프 게이트의 시계(`tokio::time::Instant`, `src/jwks.rs`)를 얼린다.
+///
+/// ⚠️ **떼지 말 것 — 실시간 시계에서는 상한 4 가 러너 속도를 잰다.** 백오프 창은 0.1–0.2·0.2–0.4·0.4–0.8·
+/// 0.8–1.6초로 늘어서, 호출 사이마다 그보다 긴 정지가 끼면 다섯 호출이 전부 나간다(실측: 호출마다 1.7초를
+/// 재우면 다섯 행 전부 `certs 5`). 얼린 시계에서는 실패 기록과 다음 백오프 검사 사이의 경과가 0 이다 — 그래서
+/// 이 축은 창의 **크기**를 못 잰다(창이 0 보다 크기만 하면 통과). 크기는 `src/jwks.rs` 의
+/// `backoff_window_holds_its_minimum_and_doubles` 가 결정적으로 잰다.
+///
+/// ⚠️ **`pause()` 만으로는 안 된다 — 막힌 작업이 함께 살아 있어야 한다.** 멈춘 시계는 런타임이 할 일 없이
+/// park 할 때 다음 타이머까지 **자동 전진**한다. 실측(막힌 작업 없이 `pause()` 만): 교환 두 행은 매 호출의
+/// 토큰 POST 가 `KeycloakClient` 뿌리의 30초 타임아웃에 터져 JWKS 에 한 번도 닿지 못했고(`certs 0`, 게이트
+/// 시계 150초 이동), `AuthClient::validate` 행은 시계가 30초 뛰었다 — 그때 칸을 가르는 것은 백오프가 아니라
+/// 타임아웃이다. `spawn_blocking` 작업이 살아 있는 동안 current_thread 런타임은 자동 전진하지 않는다(tokio
+/// 1.53.1 `runtime/blocking/schedule.rs` 의 `inhibit_auto_advance` — `time::pause` 문서의 「Preventing
+/// auto-advance」). 그래서 시계는 정확히 멈추고, I/O 는 실시간으로 기다린다.
+///
+/// 막힌 작업은 센더를 놓을 때(`finish` · 패닉 중의 `Drop`) 끝난다. 실시간 상한은 일부러 두지 않는다 — 두면
+/// 그것이 다시 벽시계 판정이 된다. IdP 가 영영 답하지 않으면 이 다섯 호출은 기다린다(타임아웃 없는
+/// `reqwest::Client::new()` 를 쓰는 두 행은 동결 전에도 그랬다).
+struct GateClockFreeze {
+    at: tokio::time::Instant,
+    release: Option<std::sync::mpsc::Sender<()>>,
+}
+
+impl GateClockFreeze {
+    fn start() -> Self {
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        // 자동 전진 금지는 spawn 시점에 걸린다(`BlockingSchedule::new`) — 클로저가 돌기를 기다릴 필요가 없다.
+        tokio::task::spawn_blocking(move || held.recv());
+        tokio::time::pause();
+        GateClockFreeze {
+            at: tokio::time::Instant::now(),
+            release: Some(release),
+        }
+    }
+
+    /// 얼린 동안 게이트 시계가 움직인 양. 0 이 아니면 동결이 깨진 것이다(자동 전진 · `pause` 누락).
+    fn finish(mut self) -> Duration {
+        let drift = self.at.elapsed();
+        self.thaw();
+        drift
+    }
+
+    fn thaw(&mut self) {
+        if let Some(release) = self.release.take() {
+            tokio::time::resume();
+            drop(release); // 막힌 작업이 곧 끝나 자동 전진 금지가 풀린다
+        }
+    }
+}
+
+impl Drop for GateClockFreeze {
+    fn drop(&mut self) {
+        self.thaw();
+    }
+}
+
 async fn run_cold_jwks_c(
     keys: &Keys,
     decl: &BTreeMap<String, FnDecl>,
@@ -1517,6 +1575,7 @@ async fn run_cold_jwks_c(
             measure: false,
             note: String::new(),
         };
+        let freeze = GateClockFreeze::start();
         for i in 1..=COLD_K {
             match run_once(d, &ctx, &root).await.0 {
                 Kind::Panic(p) => s.why.push(format!("{i}번째 호출이 패닉: {p}")),
@@ -1526,6 +1585,12 @@ async fn run_cold_jwks_c(
                 )),
                 Kind::Sdk(_) => {}
             }
+        }
+        let drift = freeze.finish();
+        if !drift.is_zero() {
+            s.why.push(format!(
+                "다섯 호출 동안 게이트 시계가 {drift:?} 움직였다 — 동결이 깨지면 상한이 요청 수가 아니라 시간을 잰다"
+            ));
         }
         let sent = idp.requests().await;
         let hits = sent[mark.min(sent.len())..]
