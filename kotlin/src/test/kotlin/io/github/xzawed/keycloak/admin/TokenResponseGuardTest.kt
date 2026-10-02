@@ -7,9 +7,14 @@ import io.mockk.mockk
 import io.mockk.runs
 import io.mockk.slot
 import io.mockk.verify
+import jakarta.ws.rs.Priorities
 import jakarta.ws.rs.client.ClientRequestContext
 import jakarta.ws.rs.client.ClientResponseContext
+import jakarta.ws.rs.client.ClientResponseFilter
+import jakarta.ws.rs.core.MediaType
 import jakarta.ws.rs.core.Response
+import jakarta.ws.rs.ext.ReaderInterceptor
+import jakarta.ws.rs.ext.ReaderInterceptorContext
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -103,16 +108,20 @@ internal class TokenResponseGuardTest {
         val req = mockk<ClientRequestContext>()
         every { req.method } returns method
         every { req.uri } returns URI.create(uri)
+        every { req.setProperty(any(), any()) } just runs
         return req
     }
 
+    // ⚠️ 미디어 타입은 명시한다 — relaxed 목은 mediaType 에 null 이 아닌 목을 돌려줘 원시 바이트 판정 자리를 건너뛴다.
     private fun response(
         status: Response.Status,
         body: InputStream?,
+        mediaType: MediaType? = null,
     ): ClientResponseContext {
         val res = mockk<ClientResponseContext>(relaxed = true)
         every { res.statusInfo } returns status
         every { res.entityStream } returns body
+        every { res.mediaType } returns mediaType
         return res
     }
 
@@ -133,13 +142,30 @@ internal class TokenResponseGuardTest {
                 Triple("POST", "$TRG_TOKEN/introspect", Response.Status.OK),
             )
         for ((method, uri, status) in others) {
-            val res = response(status, bytes(TRG_NUMBER))
-            guard.filter(request(method, uri), res)
+            val req = request(method, uri)
+            val res = response(status, bytes(TRG_NUMBER), MediaType.APPLICATION_JSON_TYPE)
+            guard.filter(req, res)
             verify(exactly = 0) { res.entityStream }
             verify(exactly = 0) { res.entityStream = any() }
+            verify(exactly = 0) { req.setProperty(any(), any()) } // 표시가 없으면 ReaderInterceptor 도 그 엔티티를 보지 않는다
         }
     }
 
+    // 범위 안이고 미디어 타입이 있으면 응답 필터는 엔티티를 읽지 않고 표시만 단다 — 결합은 ReaderInterceptor 사슬(gzip 해제
+    // 등)을 거친 바이트를 읽으므로 판정은 가장 안쪽 ReaderInterceptor(aroundReadFrom) 몫이다.
+    @Test
+    fun `token response with a media type is marked for the reader, not read by the filter`() {
+        val req = request("POST", TRG_TOKEN)
+        val res = response(Response.Status.OK, bytes(TRG_NUMBER), MediaType.APPLICATION_JSON_TYPE)
+        TokenResponseGuard().filter(req, res)
+        verify(exactly = 1) { req.setProperty(TokenResponseGuard.JUDGE_ENTITY, true) }
+        verify(exactly = 0) { res.entityStream }
+        verify(exactly = 0) { res.entityStream = any() }
+    }
+
+    // ⚠️ 아래 두 테스트의 응답은 미디어 타입이 없다 — 결합이 아예 읽지 않는 2xx 라 응답 필터가 원시 바이트로 판정하는 자리다
+    // (RESTEasy extractResult 는 미디어 타입이 없으면 엔티티를 읽지 않는다 — 200 이면 ResponseProcessingException, 그 밖의 2xx 면
+    // null).
     @Test
     fun `usable token response is handed on byte for byte`() {
         val body = """{"access_token":"AT","expires_in":300,"refresh_token":"RT","x":[1]}"""
@@ -161,12 +187,63 @@ internal class TokenResponseGuardTest {
         }
     }
 
-    // 배선 — admin 의 JAX-RS 클라이언트에 등록돼 있어야 한다(TokenManager 의 토큰 요청이 그 클라이언트로 나간다).
+    // ───────────── ReaderInterceptor — 결합이 읽을 바이트를 판정한다 ─────────────
+
+    private fun readContext(
+        mark: Any?,
+        body: InputStream?,
+    ): ReaderInterceptorContext {
+        val ctx = mockk<ReaderInterceptorContext>()
+        every { ctx.getProperty(TokenResponseGuard.JUDGE_ENTITY) } returns mark
+        every { ctx.inputStream } returns body
+        every { ctx.inputStream = any() } just runs
+        every { ctx.proceed() } returns "bound"
+        return ctx
+    }
+
+    @Test
+    fun `reader leaves unmarked entities untouched`() {
+        for (mark in listOf(null, false, "true")) {
+            val ctx = readContext(mark, bytes(TRG_NUMBER))
+            assertEquals("bound", TokenResponseGuard().aroundReadFrom(ctx))
+            verify(exactly = 0) { ctx.inputStream }
+            verify(exactly = 0) { ctx.inputStream = any() }
+        }
+    }
+
+    @Test
+    fun `reader hands a usable marked entity on byte for byte`() {
+        val body = """{"access_token":"AT","expires_in":300,"refresh_token":"RT","x":[1]}"""
+        val ctx = readContext(true, bytes(body))
+        val handed = slot<InputStream>()
+        every { ctx.inputStream = capture(handed) } just runs
+        assertEquals("bound", TokenResponseGuard().aroundReadFrom(ctx))
+        assertEquals(body, handed.captured.readAllBytes().decodeToString())
+    }
+
+    @Test
+    fun `reader rejects an unusable marked entity without quoting it`() {
+        for (body in listOf(bytes(TRG_NUMBER), bytes("""{"access_token":""}"""), null)) {
+            val ctx = readContext(true, body)
+            val e = assertFailsWith<IOException> { TokenResponseGuard().aroundReadFrom(ctx) }
+            assertEquals("token endpoint response carries no usable access_token", e.message)
+            assertNull(e.cause)
+            verify(exactly = 0) { ctx.proceed() }
+            verify(exactly = 0) { ctx.inputStream = any() }
+        }
+    }
+
+    // 배선 — admin 의 JAX-RS 클라이언트에 두 계약으로 등록돼 있어야 한다(TokenManager 의 토큰 요청이 그 클라이언트로 나간다).
+    // ReaderInterceptor 는 오름차순으로 돌므로 가장 큰 우선순위 값이 결합 바로 앞이다 — gzip 해제(Priorities.ENTITY_CODER)보다
+    // 작아지면 원시 바이트를 판정하게 된다.
     @Test
     fun `timeout client registers the guard`() {
         val config = KeycloakConfig("https://kc.example.com", "r", "app", "s3cr3t".toCharArray())
         AdminClient.buildTimeoutClient(config).use { client ->
             assertTrue(client.configuration.isRegistered(TokenResponseGuard::class.java))
+            val contracts = client.configuration.getContracts(TokenResponseGuard::class.java)
+            assertEquals(Priorities.USER, contracts[ClientResponseFilter::class.java])
+            assertEquals(Int.MAX_VALUE, contracts[ReaderInterceptor::class.java])
         }
     }
 }

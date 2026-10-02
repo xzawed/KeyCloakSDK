@@ -661,7 +661,8 @@ private fun assertDebugInfoKept(failures: Map<String, Throwable>) {
             "d1 200 short non-JSON body|CLIENT_CREDENTIALS" to nimbusJson,
             "f1 introspect 200 short non-JSON body|INTROSPECT" to nimbusJson,
             "c3 token_type is an unknown string|REFRESH" to listOf("com.nimbusds.oauth2.sdk.ParseException"),
-            // admin 의 토큰 응답은 결합 앞에서 TokenResponseGuard 가 거부한다 — 진단은 그 타입 이름과 프레임(아래)이다.
+            // admin 의 토큰 응답은 결합 바로 앞(가장 안쪽 ReaderInterceptor)에서 TokenResponseGuard 가 거부한다 — 진단은 그 타입
+            // 이름과 프레임(아래)이다.
             "d1 200 short non-JSON body|ADMIN" to listOf("jakarta.ws.rs.client.ResponseProcessingException", "java.io.IOException"),
             "d4 200 JSON string body|ADMIN" to listOf("jakarta.ws.rs.client.ResponseProcessingException", "java.io.IOException"),
         )
@@ -670,7 +671,7 @@ private fun assertDebugInfoKept(failures: Map<String, Throwable>) {
         val printed = e.stackTraceToString()
         types.forEach { assertTrue("Caused by: $it" in printed, "$case: 하위 예외 타입 $it 이 사라졌다:\n$printed") }
         if (case.endsWith("|ADMIN")) {
-            val frame = "at io.github.xzawed.keycloak.admin.TokenResponseGuard.filter("
+            val frame = "at io.github.xzawed.keycloak.admin.TokenResponseGuard.aroundReadFrom("
             assertTrue(frame in printed, "$case: 거부한 자리(가드의 프레임)가 사라졌다:\n$printed")
         }
         val raw = chainOf(e).drop(1).map { it.javaClass.name }.filter { n -> lowerPackages.any { n.startsWith(it) } }
