@@ -389,7 +389,7 @@ class TokenResponseGuardTest {
     long before = threads.getCurrentThreadAllocatedBytes();
     IOException rejected = judge(guard, req, res);
     long allocated = threads.getCurrentThreadAllocatedBytes() - before;
-    long limit = 64 * 1024;
+    long limit = 64L * 1024;
     System.out.println("[TokenResponseGuardTest 할당] " + small.length + " 바이트 본문 통과 → " + allocated + " 바이트 (한도 " + limit + ")");
     assertNull(rejected, "쓸 수 있는 작은 본문을 거부했다");
     assertTrue(allocated < limit, () -> small.length + " 바이트 본문 하나를 판정하며 " + allocated + " 바이트를 할당했다");
