@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from keycloak import KeycloakAdmin
 
+from ..._internal.admin_grant import guard_admin_grant
 from ..._internal.frames import scrub_frames
 from ..._internal.redirects import harden_admin
 from ...config import KeycloakConfig
@@ -39,6 +40,7 @@ class AsyncAdminClient:
         self._config = config
         if admin is not None:
             harden_admin(admin)
+            guard_admin_grant(admin)
         self._admin = admin
 
     @property
@@ -63,6 +65,7 @@ class AsyncAdminClient:
                 timeout=self._config.read_timeout,  # type: ignore[arg-type]
             )
             harden_admin(self._admin)
+            guard_admin_grant(self._admin)  # sync 미러와 같다(`_internal/admin_grant.py`)
         return self._admin
 
     @property
