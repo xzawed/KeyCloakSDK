@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.*;
 
-import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.ClientRequestContext;
@@ -41,7 +40,7 @@ class TokenResponseGuardTest {
   }
 
   private static boolean usable(byte[] body) {
-    return TokenResponseGuard.carriesUsableAccessToken(body, body.length);
+    return TokenResponseGuard.carriesUsableAccessToken(body);
   }
 
   @Test void usableShapes() {
@@ -210,11 +209,10 @@ class TokenResponseGuardTest {
   // ───────────── 크기 상한 — 판정이 읽고 쥐는 바이트 ─────────────
 
   /**
-   * 상한은 JWKS 응답 상한과 같은 수다 — keycloak-sdk-auth 의 {@code NoRedirectResourceRetriever} 가 Nimbus 에 넘기는 그
-   * 상수. admin 아티팩트는 Nimbus 에 의존하지 않으므로 가드는 같은 값을 리터럴로 두고, 여기서 상수 자체와 대조해 못박는다
-   * (아래 경계 시험이 값이 한 바이트만 어긋나도 깨진다).
+   * 가드 자신의 상한 — 아래 경계 시험은 이 상수로 상한·상한+1 을 잰다. 값의 아래쪽은 서버가 받아들이는 가장 큰 토큰이 정하고
+   * {@link AdminTokenResponseTest} 의 65,459 바이트 Bearer 시험이 지킨다 — 위쪽은 아래의 16 MiB 거부 시험이 지킨다.
    */
-  private static final int CAP = JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT;
+  private static final int CAP = TokenResponseGuard.MAX_BODY_BYTES;
   private static final String USABLE = "{\"access_token\":\"AT\",\"expires_in\":300}";
 
   /** 쓸 수 있는 토큰 뒤를 JSON 공백으로 채워 정확히 {@code size} 바이트로 — 결합에게는 여전히 쓸 수 있는 본문이다. */
@@ -354,14 +352,13 @@ class TokenResponseGuardTest {
   }
 
   /**
-   * 쥐는 메모리도 본문 크기와 무관하다 — 16 MiB 본문을 거부하는 동안 이 스레드가 할당한 바이트가 상한의 몇 배 안이다(수정 전
-   * {@code readAllBytes} 는 본문 전체와 그 사본을 할당했다). HotSpot 의 스레드 할당 계수기로 잰다 — OOM 에 기대지 않는다.
+   * 쥐는 메모리도 본문 크기와 무관하다 — 16 MiB 본문을 거부하는 동안 이 스레드가 할당한 바이트가 상한의 세 배 안이다. 상한+1
+   * 바이트를 읽는 {@code readNBytes(int)} 는 읽은 조각(합 상한+1)과 그것을 이은 배열(상한+1)을 할당한다 — 두 배이고, 남은 한
+   * 배가 목·예외의 몫이다. 본문을 통째로 읽으면({@code readAllBytes}) 본문 전체와 그 사본이다(32 MiB 넘게). HotSpot 의 스레드
+   * 할당 계수기로 잰다 — OOM 에 기대지 않는다.
    */
   @Test void rejectingAHugeBody_allocatesIndependentlyOfItsSize() throws IOException {
-    java.lang.management.ThreadMXBean bean = ManagementFactory.getThreadMXBean();
-    assumeTrue(bean instanceof com.sun.management.ThreadMXBean, "스레드 할당 계수기가 없는 JVM");
-    com.sun.management.ThreadMXBean threads = (com.sun.management.ThreadMXBean) bean;
-    assumeTrue(threads.isThreadAllocatedMemorySupported() && threads.isThreadAllocatedMemoryEnabled());
+    com.sun.management.ThreadMXBean threads = allocationCounter();
     int huge = 16 << 20;
     TokenResponseGuard guard = new TokenResponseGuard();
     ClientRequestContext req = request("POST", TOKEN);
@@ -370,8 +367,47 @@ class TokenResponseGuardTest {
     long before = threads.getCurrentThreadAllocatedBytes();
     IOException rejected = judge(guard, req, res);
     long allocated = threads.getCurrentThreadAllocatedBytes() - before;
-    assertTrue(allocated < 4L * (CAP + 1), () -> huge + " 바이트 본문 하나를 판정하며 " + allocated + " 바이트를 할당했다");
+    long limit = 3L * (CAP + 1);
+    System.out.println("[TokenResponseGuardTest 할당] " + huge + " 바이트 본문 거부 → " + allocated + " 바이트 (한도 " + limit + ")");
+    assertTrue(allocated < limit, () -> huge + " 바이트 본문 하나를 판정하며 " + allocated + " 바이트를 할당했다");
     assertNotNull(rejected, "상한을 넘는 본문을 넘겼다");
+  }
+
+  /**
+   * 작은 본문은 작게 할당한다 — 상한만 한 버퍼를 본문마다 미리 잡지 않는다(그러면 토큰 요청 하나하나가 상한 1 MiB 를 할당한다).
+   * 쓸 수 있는 약 2 KiB 토큰 응답 하나를 판정하며 이 스레드가 할당한 바이트가 64 KiB 안이다 — {@code readNBytes(int)} 는 JDK 의
+   * 기본 조각(17: 8 KiB · 21: 16 KiB)으로 읽은 만큼만 잡는다. 먼저 한 번 판정해 데운다(Jackson 의 재활용 버퍼·기호표와 목의 첫
+   * 할당을 재지 않는다).
+   */
+  @Test void judgingASmallBody_allocatesInProportionToIt() throws IOException {
+    com.sun.management.ThreadMXBean threads = allocationCounter();
+    byte[] small = smallTokenResponse();
+    TokenResponseGuard guard = new TokenResponseGuard();
+    ClientRequestContext req = request("POST", TOKEN);
+    judge(guard, req, response(Response.Status.OK, new ByteArrayInputStream(small))); // 데우기
+    ClientResponseContext res = response(Response.Status.OK, new ByteArrayInputStream(small));
+    long before = threads.getCurrentThreadAllocatedBytes();
+    IOException rejected = judge(guard, req, res);
+    long allocated = threads.getCurrentThreadAllocatedBytes() - before;
+    long limit = 64 * 1024;
+    System.out.println("[TokenResponseGuardTest 할당] " + small.length + " 바이트 본문 통과 → " + allocated + " 바이트 (한도 " + limit + ")");
+    assertNull(rejected, "쓸 수 있는 작은 본문을 거부했다");
+    assertTrue(allocated < limit, () -> small.length + " 바이트 본문 하나를 판정하며 " + allocated + " 바이트를 할당했다");
+  }
+
+  /** HotSpot 의 스레드 할당 계수기 — 없는 JVM 에서는 할당 시험을 건너뛴다. */
+  private static com.sun.management.ThreadMXBean allocationCounter() {
+    java.lang.management.ThreadMXBean bean = ManagementFactory.getThreadMXBean();
+    assumeTrue(bean instanceof com.sun.management.ThreadMXBean, "스레드 할당 계수기가 없는 JVM");
+    com.sun.management.ThreadMXBean threads = (com.sun.management.ThreadMXBean) bean;
+    assumeTrue(threads.isThreadAllocatedMemorySupported() && threads.isThreadAllocatedMemoryEnabled());
+    return threads;
+  }
+
+  /** 쓸 수 있는 약 2 KiB 토큰 응답 — Keycloak client_credentials 응답의 모양(토큰 자리는 가짜 문자다). */
+  private static byte[] smallTokenResponse() {
+    return ("{\"access_token\":\"" + "A".repeat(1_900) + "\",\"expires_in\":300,\"refresh_expires_in\":0,"
+        + "\"token_type\":\"Bearer\",\"not-before-policy\":0,\"scope\":\"profile email\"}").getBytes(StandardCharsets.UTF_8);
   }
 
   /** 응답 필터 판정 하나 — 거부면 그 예외를, 통과면 null 을 돌려준다(할당을 재는 구간에 단언을 두지 않는다). */

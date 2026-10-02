@@ -2,7 +2,6 @@ package io.github.xzawed.keycloak.admin;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
@@ -268,14 +267,14 @@ class AdminTokenResponseTest {
   }
 
   /**
-   * 크기 상한 — 토큰 응답 본문이 상한(JWKS 응답 상한과 같은 Nimbus {@code JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT})을 넘으면
-   * 그 안의 토큰이 쓸 수 있어도 쓸 수 없는 토큰과 똑같이 거부한다 — KeycloakTransportException · admin 요청 0 건 · 토큰 요청
-   * 1 건. 상한 안의 쓸 수 있는 토큰은 평문·gzip 모두 그대로 동작한다. 판정은 결합이 읽는 바이트로 하므로 gzip 은 <b>푼</b>
-   * 크기로 잰다. 본문은 쓸 수 있는 토큰 뒤를 JSON 공백으로 채운 것이다 — 가드 없이 결합만 있으면 스트리밍으로 통과하는
-   * 모양이고, 수정 전 가드는 그것을 통째로 버퍼링해 힙보다 크면 OutOfMemoryError 를 냈다.
+   * 크기 상한 — 토큰 응답 본문이 가드의 상한({@link TokenResponseGuard#MAX_BODY_BYTES})을 넘으면 그 안의 토큰이 쓸 수 있어도
+   * 쓸 수 없는 토큰과 똑같이 거부한다 — KeycloakTransportException · admin 요청 0 건 · 토큰 요청 1 건. 상한 안의 쓸 수 있는
+   * 토큰은 평문·gzip 모두 그대로 동작한다. 판정은 결합이 읽는 바이트로 하므로 gzip 은 <b>푼</b> 크기로 잰다. 본문은 쓸 수 있는
+   * 토큰 뒤를 JSON 공백으로 채운 것이다 — 가드 없이 결합만 있으면 스트리밍으로 통과하는 모양이고, 본문을 통째로 버퍼링하던
+   * 가드는 힙보다 크면 OutOfMemoryError 를 냈다.
    */
   @Test void tokenResponseAboveTheCap_isRejectedLikeAnUnusableToken() throws IOException {
-    int cap = JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT;
+    int cap = TokenResponseGuard.MAX_BODY_BYTES;
     List<String> table = new ArrayList<>();
     List<String> wrong = new ArrayList<>();
     String body = tokenBody("\"good\"", ",\"refresh_token\":\"" + RT_CANARY + "\"");
@@ -298,6 +297,48 @@ class AdminTokenResponseTest {
     }
     System.out.println("[AdminTokenResponseTest 크기 상한 " + cap + "]\n  " + String.join("\n  ", table));
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
+  }
+
+  /**
+   * Keycloak 26.6(start-dev 기본 설정)이 받아들이는 가장 긴 Bearer — 실측(curl GET /admin/realms): 65,459 바이트면 401(헤더는
+   * 받고 토큰이 무효), 65,460 바이트면 431.
+   */
+  private static final int KEYCLOAK_MAX_BEARER = 65_459;
+
+  /**
+   * 서버가 받아들이는 토큰은 거부하지 않는다 — 가장 긴 Bearer 를 담은 토큰 응답(본문 약 65.6 KB)은 결합에 그대로 넘어가고 admin
+   * 요청이 그 토큰을 싣는다. 큰 배포의 토큰이 이만큼 자란다: master 렐름 서비스 계정에 admin 역할을 주면 렐름 하나마다
+   * {@code resource_access} 항목이 붙어 access_token 이 456 바이트씩 자란다(Keycloak 26.6.4 실측 — 렐름 0 개에 1,733 바이트,
+   * 이름 두 글자 렐름). 본문을 통째로 읽던 가드는 통과시켰고, JWKS 응답 상한(51,200)을 빌린 상한은 렐름 109 개부터 그 토큰을 쓸
+   * 수 없는 토큰처럼 거부했다(서버는 139 개까지 받아들인다) — admin 이 통째로 멈춘다.
+   */
+  @Test void largestBearerTheServerAccepts_isHandedOn_andCarriedByTheAdminRequest() {
+    String token = "a".repeat(KEYCLOAK_MAX_BEARER);
+    byte[] body = tokenBody("\"" + token + "\"", ",\"refresh_token\":\"" + RT_CANARY + "\"").getBytes(StandardCharsets.UTF_8);
+    reset(new Reply(200, body, null));
+    Throwable thrown = null;
+    try (AdminClient admin = admin()) {
+      admin.users().get("x");
+    } catch (RuntimeException e) {
+      thrown = e;
+    }
+    String row = "본문 " + body.length + " 바이트 · Bearer " + token.length() + " 바이트 → "
+        + (thrown == null ? "성공" : thrown.getClass().getSimpleName() + "(" + thrown.getMessage() + ")")
+        + " · grants " + grants() + " · admin " + bearerLengths(adminHits());
+    System.out.println("[AdminTokenResponseTest 서버가 받아들이는 가장 긴 Bearer]\n  " + row);
+    assertNull(thrown, row);
+    assertEquals(List.of("client_credentials"), grants(), row);
+    assertTrue(adminHits().equals(List.of("GET /admin/realms/r/users/x · Bearer " + token)), row);
+  }
+
+  /** admin 요청 기록의 Bearer 를 길이로만 적는다 — 긴 토큰을 표에 그대로 찍지 않는다. */
+  private static List<String> bearerLengths(List<String> hits) {
+    List<String> out = new ArrayList<>();
+    for (String hit : hits) {
+      int at = hit.indexOf("Bearer ");
+      out.add(at < 0 ? hit : hit.substring(0, at) + "Bearer(len " + (hit.length() - at - "Bearer ".length()) + ")");
+    }
+    return out;
   }
 
   /**
@@ -345,7 +386,7 @@ class AdminTokenResponseTest {
    */
   private final class RawEndpoint implements AutoCloseable {
     /** 첫 부분(쓸 수 있는 토큰 + 공백) — 상한+1 보다 커서 가드는 그 앞 상한+1 바이트만 읽고 거부한다. */
-    private static final int FIRST = 60_000;
+    private static final int FIRST = TokenResponseGuard.MAX_BODY_BYTES + 10_000;
     private final ServerSocket socket;
     private volatile ReleaseFault fault = ReleaseFault.BAD_CHUNK_HEADER;
     private volatile int status = 200;
