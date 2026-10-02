@@ -2,6 +2,7 @@ package io.github.xzawed.keycloak.admin;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
@@ -218,11 +219,69 @@ class AdminTokenResponseTest {
   }
 
   private static byte[] gzip(String s) throws IOException {
+    return gzip(s.getBytes(StandardCharsets.UTF_8));
+  }
+
+  private static byte[] gzip(byte[] plain) throws IOException {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     try (GZIPOutputStream z = new GZIPOutputStream(out)) {
-      z.write(s.getBytes(StandardCharsets.UTF_8));
+      z.write(plain);
     }
     return out.toByteArray();
+  }
+
+  /** JSON 뒤를 JSON 공백으로 채워 정확히 {@code size} 바이트로 — 결합에게는 같은 값이다. */
+  private static byte[] padTo(String json, int size) {
+    byte[] body = new byte[size];
+    Arrays.fill(body, (byte) ' ');
+    byte[] head = json.getBytes(StandardCharsets.UTF_8);
+    System.arraycopy(head, 0, body, 0, head.length);
+    return body;
+  }
+
+  /** admin 호출 하나가 {@code Bearer good} 으로 나아가 성공하는지 — 어긋남은 {@code wrong} 에, 행은 {@code table} 에. */
+  private void expectGood(String label, List<String> wrong, List<String> table) {
+    try (AdminClient admin = admin()) {
+      admin.users().get("x");
+    } catch (RuntimeException e) {
+      wrong.add(label + ": 성공해야 한다 — " + e);
+    }
+    table.add(label + " → admin " + adminHits());
+    if (!adminHits().equals(List.of("GET /admin/realms/r/users/x · Bearer good"))) wrong.add(label + ": " + adminHits());
+    if (!grants().equals(List.of("client_credentials"))) wrong.add(label + ": 토큰 요청 " + grants());
+  }
+
+  /**
+   * 크기 상한 — 토큰 응답 본문이 상한(JWKS 응답 상한과 같은 Nimbus {@code JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT})을 넘으면
+   * 그 안의 토큰이 쓸 수 있어도 쓸 수 없는 토큰과 똑같이 거부한다 — KeycloakTransportException · admin 요청 0 건 · 토큰 요청
+   * 1 건. 상한 안의 쓸 수 있는 토큰은 평문·gzip 모두 그대로 동작한다. 판정은 결합이 읽는 바이트로 하므로 gzip 은 <b>푼</b>
+   * 크기로 잰다. 본문은 쓸 수 있는 토큰 뒤를 JSON 공백으로 채운 것이다 — 가드 없이 결합만 있으면 스트리밍으로 통과하는
+   * 모양이고, 수정 전 가드는 그것을 통째로 버퍼링해 힙보다 크면 OutOfMemoryError 를 냈다.
+   */
+  @Test void tokenResponseAboveTheCap_isRejectedLikeAnUnusableToken() throws IOException {
+    int cap = JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT;
+    List<String> table = new ArrayList<>();
+    List<String> wrong = new ArrayList<>();
+    String body = tokenBody("\"good\"", ",\"refresh_token\":\"" + RT_CANARY + "\"");
+    reset(new Reply(200, padTo(body, cap), null));
+    expectGood("평문 = 상한", wrong, table);
+    reset(new Reply(200, padTo(body, cap + 1), null));
+    table.add(callExpectingRejection("평문 = 상한+1", wrong));
+    for (int status : new int[] {200, 201}) {
+      reset(new Reply(status, padTo(body, cap + 1), null, false));
+      table.add(callExpectingRejection("Content-Type 없음 " + status + " = 상한+1", wrong));
+    }
+    System.setProperty("resteasy.allowGzip", "true");
+    try {
+      reset(new Reply(200, gzip(padTo(body, cap)), "gzip"));
+      expectGood("gzip 푼 크기 = 상한", wrong, table);
+      reset(new Reply(200, gzip(padTo(body, cap + 1)), "gzip"));
+      table.add(callExpectingRejection("gzip 푼 크기 = 상한+1", wrong));
+    } finally {
+      System.clearProperty("resteasy.allowGzip");
+    }
+    System.out.println("[AdminTokenResponseTest 크기 상한 " + cap + "]\n  " + String.join("\n  ", table));
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
   }
 
   /**

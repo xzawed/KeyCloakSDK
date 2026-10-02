@@ -1,8 +1,10 @@
 package io.github.xzawed.keycloak.admin;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.*;
 
+import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.ClientRequestContext;
@@ -16,9 +18,11 @@ import io.github.xzawed.keycloak.core.KeycloakConfig;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.management.ManagementFactory;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -33,7 +37,11 @@ import org.mockito.ArgumentCaptor;
 class TokenResponseGuardTest {
 
   private static boolean usable(String json) {
-    return TokenResponseGuard.carriesUsableAccessToken(json.getBytes(StandardCharsets.UTF_8));
+    return usable(json.getBytes(StandardCharsets.UTF_8));
+  }
+
+  private static boolean usable(byte[] body) {
+    return TokenResponseGuard.carriesUsableAccessToken(body, body.length);
   }
 
   @Test void usableShapes() {
@@ -74,10 +82,8 @@ class TokenResponseGuardTest {
 
   /** Jackson 결합과 같은 자동 인코딩 감지 — 다시 디코딩하지 않는다(UTF-16 본문을 UTF-8 로 읽으면 거짓 거부다). */
   @Test void detectsEncodingLikeTheBinding() {
-    assertTrue(TokenResponseGuard.carriesUsableAccessToken(
-        "{\"access_token\":\"AT\"}".getBytes(StandardCharsets.UTF_16LE)));
-    assertFalse(TokenResponseGuard.carriesUsableAccessToken(
-        "{\"access_token\":12345}".getBytes(StandardCharsets.UTF_16BE)));
+    assertTrue(usable("{\"access_token\":\"AT\"}".getBytes(StandardCharsets.UTF_16LE)));
+    assertFalse(usable("{\"access_token\":12345}".getBytes(StandardCharsets.UTF_16BE)));
   }
 
   // ───────────── 범위 — 어느 응답을 보는가 ─────────────
@@ -198,6 +204,162 @@ class TokenResponseGuardTest {
       assertNull(e.getCause());
       verify(ctx, never()).proceed();
       verify(ctx, never()).setInputStream(any());
+    }
+  }
+
+  // ───────────── 크기 상한 — 판정이 읽고 쥐는 바이트 ─────────────
+
+  /**
+   * 상한은 JWKS 응답 상한과 같은 수다 — keycloak-sdk-auth 의 {@code NoRedirectResourceRetriever} 가 Nimbus 에 넘기는 그
+   * 상수. admin 아티팩트는 Nimbus 에 의존하지 않으므로 가드는 같은 값을 리터럴로 두고, 여기서 상수 자체와 대조해 못박는다
+   * (아래 경계 시험이 값이 한 바이트만 어긋나도 깨진다).
+   */
+  private static final int CAP = JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT;
+  private static final String USABLE = "{\"access_token\":\"AT\",\"expires_in\":300}";
+
+  /** 쓸 수 있는 토큰 뒤를 JSON 공백으로 채워 정확히 {@code size} 바이트로 — 결합에게는 여전히 쓸 수 있는 본문이다. */
+  private static byte[] padded(int size) {
+    byte[] body = new byte[size];
+    Arrays.fill(body, (byte) ' ');
+    byte[] head = USABLE.getBytes(StandardCharsets.UTF_8);
+    System.arraycopy(head, 0, body, 0, head.length);
+    return body;
+  }
+
+  /**
+   * 끝없는 본문 — 쓸 수 있는 토큰 뒤에 JSON 공백이 끝없이 온다. 가드가 {@code limit} 바이트 너머를 <b>요청하기만 해도</b>
+   * 시험을 깬다(실제 소켓이라면 그만큼 읽혔을 것이다). OOM 에 기대지 않고 「본문 크기에 비례해 읽는가」를 잰다.
+   */
+  private static final class EndlessBody extends InputStream {
+    private final byte[] head = USABLE.getBytes(StandardCharsets.UTF_8);
+    private final long limit;
+    long served;
+    boolean overread;
+
+    EndlessBody(long limit) {
+      this.limit = limit;
+    }
+
+    @Override public int read() {
+      byte[] one = new byte[1];
+      read(one, 0, 1);
+      return one[0] & 0xff;
+    }
+
+    @Override public int read(byte[] b, int off, int len) {
+      if (len == 0) return 0;
+      if (len > limit - served) {
+        overread = true;
+        throw new AssertionError("가드가 " + served + " 바이트 뒤에서 " + len + " 바이트를 더 요청했다 — 상한+1 = " + limit);
+      }
+      for (int i = 0; i < len; i++, served++) b[off + i] = served < head.length ? head[(int) served] : (byte) ' ';
+      return len;
+    }
+  }
+
+  /**
+   * 상한을 넘는 본문은 쓸 수 있는 토큰이 들어 있어도 쓸 수 없는 토큰과 같은 상수 메시지로 거부하고, 그 판정을 위해 상한+1
+   * 바이트까지만 읽는다 — 두 진입점 모두(미디어 타입 없는 응답 필터 · 결합 직전 ReaderInterceptor).
+   */
+  @Test void bodyAboveTheCap_isRejectedWithoutReadingPastCapPlusOne() throws IOException {
+    EndlessBody raw = new EndlessBody(CAP + 1L);
+    ClientResponseContext res = response(Response.Status.OK, raw);
+    IOException filtered = assertThrows(IOException.class,
+        () -> new TokenResponseGuard().filter(request("POST", TOKEN), res));
+    assertEquals("token endpoint response carries no usable access_token", filtered.getMessage());
+    assertNull(filtered.getCause());
+    assertFalse(raw.overread);
+    assertEquals(CAP + 1L, raw.served, "넘침을 알아챌 한 바이트까지 읽어야 한다");
+    verify(res, never()).setEntityStream(any());
+
+    EndlessBody decoded = new EndlessBody(CAP + 1L);
+    ReaderInterceptorContext ctx = readContext(Boolean.TRUE, decoded);
+    IOException read = assertThrows(IOException.class, () -> new TokenResponseGuard().aroundReadFrom(ctx));
+    assertEquals("token endpoint response carries no usable access_token", read.getMessage());
+    assertNull(read.getCause());
+    assertFalse(decoded.overread);
+    assertEquals(CAP + 1L, decoded.served, "넘침을 알아챌 한 바이트까지 읽어야 한다");
+    verify(ctx, never()).proceed();
+    verify(ctx, never()).setInputStream(any());
+  }
+
+  /** 경계 — 정확히 상한인 본문은 바이트 그대로 넘기고, 한 바이트 더 크면 거부한다(두 진입점). */
+  @Test void bodyOfExactlyTheCap_isHandedOn_oneByteMoreIsRejected() throws IOException {
+    byte[] atCap = padded(CAP);
+    ClientResponseContext res = response(Response.Status.OK, new ByteArrayInputStream(atCap));
+    new TokenResponseGuard().filter(request("POST", TOKEN), res);
+    ArgumentCaptor<InputStream> handed = ArgumentCaptor.forClass(InputStream.class);
+    verify(res).setEntityStream(handed.capture());
+    assertArrayEquals(atCap, handed.getValue().readAllBytes());
+
+    ReaderInterceptorContext ctx = readContext(Boolean.TRUE, new ByteArrayInputStream(atCap));
+    assertEquals("bound", new TokenResponseGuard().aroundReadFrom(ctx));
+    ArgumentCaptor<InputStream> read = ArgumentCaptor.forClass(InputStream.class);
+    verify(ctx).setInputStream(read.capture());
+    assertArrayEquals(atCap, read.getValue().readAllBytes());
+
+    ClientResponseContext over = response(Response.Status.OK, new ByteArrayInputStream(padded(CAP + 1)));
+    IOException e = assertThrows(IOException.class, () -> new TokenResponseGuard().filter(request("POST", TOKEN), over));
+    assertEquals("token endpoint response carries no usable access_token", e.getMessage());
+    verify(over, never()).setEntityStream(any());
+    ReaderInterceptorContext overRead = readContext(Boolean.TRUE, new ByteArrayInputStream(padded(CAP + 1)));
+    e = assertThrows(IOException.class, () -> new TokenResponseGuard().aroundReadFrom(overRead));
+    assertEquals("token endpoint response carries no usable access_token", e.getMessage());
+    verify(overRead, never()).proceed();
+  }
+
+  /**
+   * 쥐는 메모리도 본문 크기와 무관하다 — 16 MiB 본문을 거부하는 동안 이 스레드가 할당한 바이트가 상한의 몇 배 안이다(수정 전
+   * {@code readAllBytes} 는 본문 전체와 그 사본을 할당했다). HotSpot 의 스레드 할당 계수기로 잰다 — OOM 에 기대지 않는다.
+   */
+  @Test void rejectingAHugeBody_allocatesIndependentlyOfItsSize() throws IOException {
+    java.lang.management.ThreadMXBean bean = ManagementFactory.getThreadMXBean();
+    assumeTrue(bean instanceof com.sun.management.ThreadMXBean, "스레드 할당 계수기가 없는 JVM");
+    com.sun.management.ThreadMXBean threads = (com.sun.management.ThreadMXBean) bean;
+    assumeTrue(threads.isThreadAllocatedMemorySupported() && threads.isThreadAllocatedMemoryEnabled());
+    int huge = 16 << 20;
+    TokenResponseGuard guard = new TokenResponseGuard();
+    ClientRequestContext req = request("POST", TOKEN);
+    judge(guard, req, response(Response.Status.OK, new SizedBody(huge))); // 데우기 — 클래스 로딩의 할당을 재지 않는다
+    ClientResponseContext res = response(Response.Status.OK, new SizedBody(huge));
+    long before = threads.getCurrentThreadAllocatedBytes();
+    IOException rejected = judge(guard, req, res);
+    long allocated = threads.getCurrentThreadAllocatedBytes() - before;
+    assertTrue(allocated < 4L * (CAP + 1), () -> huge + " 바이트 본문 하나를 판정하며 " + allocated + " 바이트를 할당했다");
+    assertNotNull(rejected, "상한을 넘는 본문을 넘겼다");
+  }
+
+  /** 응답 필터 판정 하나 — 거부면 그 예외를, 통과면 null 을 돌려준다(할당을 재는 구간에 단언을 두지 않는다). */
+  private static IOException judge(TokenResponseGuard guard, ClientRequestContext req, ClientResponseContext res) {
+    try {
+      guard.filter(req, res);
+      return null;
+    } catch (IOException e) {
+      return e;
+    }
+  }
+
+  /** 정해진 크기의 본문(쓸 수 있는 토큰 + 공백) — 배경 배열 없이 만들어 시험 자신의 할당을 재지 않는다. */
+  private static final class SizedBody extends InputStream {
+    private final byte[] head = USABLE.getBytes(StandardCharsets.UTF_8);
+    private final long size;
+    private long pos;
+
+    SizedBody(long size) {
+      this.size = size;
+    }
+
+    @Override public int read() {
+      byte[] one = new byte[1];
+      return read(one, 0, 1) < 0 ? -1 : one[0] & 0xff;
+    }
+
+    @Override public int read(byte[] b, int off, int len) {
+      if (len == 0) return 0;
+      if (pos >= size) return -1;
+      int n = (int) Math.min(len, size - pos);
+      for (int i = 0; i < n; i++, pos++) b[off + i] = pos < head.length ? head[(int) pos] : (byte) ' ';
+      return n;
     }
   }
 

@@ -43,6 +43,11 @@ import java.io.InputStream;
  * 요청은 보내지지 않고, {@link AdminExceptions} 가 {@code KeycloakTransportException} 으로 바꾼다 — null·객체·배열·누락이
  * 이미 실패하던 타입이다. 메시지는 상수다(응답을 인용하지 않는다).
  *
+ * <p>⚠️ <b>판정은 본문을 상한({@link #MAX_BODY_BYTES})까지만 읽고 쥔다.</b> 통째로 읽던 때는 힙보다 큰 2xx 본문이
+ * {@code OutOfMemoryError} 를 냈다 — RESTEasy 가 감싸 결과는 거부였어도 그 순간 JVM 전체가 메모리를 잃었고, JSON 공백으로
+ * 부풀린 <b>쓸 수 있는</b> 토큰도 그랬다(가드 없는 결합은 그것을 스트리밍으로 통과시킨다). 상한+1 바이트까지 읽어 넘침을
+ * 알아채면 쓸 수 없는 토큰과 같은 거부를 던지고 나머지는 읽지 않는다. 버퍼는 본문 크기와 무관하게 하나다.
+ *
  * <p>검사는 Jackson <b>스트리밍</b> 파서다 — 데이터 결합·다형 타입이 없고 자체 ObjectMapper 도 아니다(보안 불변식,
  * {@code .claude/rules/java.md}). 최상위 {@code access_token} 은 <b>전부</b> 본다 — 결합은 중복 키의 마지막 값을 쓰므로 첫
  * 값만 보면 {@code {"access_token":"ok","access_token":1}} 이 통과한다. 통과한 바이트는 그대로 되돌려 결합이 refresh_token·
@@ -55,6 +60,12 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   /** 응답 필터가 범위 안의 교환에 다는 요청 속성 — ReaderInterceptor 가 이것이 있는 엔티티만 판정한다. */
   static final String JUDGE_ENTITY = TokenResponseGuard.class.getName() + ".judgeEntity";
   static final String REJECTED = "token endpoint response carries no usable access_token";
+  /**
+   * 판정이 읽고 쥐는 본문의 상한(바이트) — JWKS 응답 상한과 같은 수다: keycloak-sdk-auth 의 {@code NoRedirectResourceRetriever}
+   * 가 Nimbus 에 넘기는 {@code JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT}. admin 아티팩트는 Nimbus 에 의존하지 않으므로 같은 값을
+   * 리터럴로 두고, {@code TokenResponseGuardTest} 의 경계 시험이 그 상수와 대조한다(한 바이트만 어긋나도 깨진다).
+   */
+  static final int MAX_BODY_BYTES = 51_200;
   private static final String ACCESS_TOKEN = "access_token";
   private static final JsonFactory JSON = new JsonFactory();
 
@@ -69,7 +80,7 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
       request.setProperty(JUDGE_ENTITY, Boolean.TRUE); // 결합이 읽는 바이트(해제 뒤)는 aroundReadFrom 이 판정한다
       return;
     }
-    response.setEntityStream(new ByteArrayInputStream(usableOrReject(response.getEntityStream())));
+    response.setEntityStream(usableOrReject(response.getEntityStream()));
   }
 
   @Override
@@ -77,21 +88,26 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
     if (!Boolean.TRUE.equals(context.getProperty(JUDGE_ENTITY))) {
       return context.proceed();
     }
-    context.setInputStream(new ByteArrayInputStream(usableOrReject(context.getInputStream())));
+    context.setInputStream(usableOrReject(context.getInputStream()));
     return context.proceed();
   }
 
-  private static byte[] usableOrReject(InputStream in) throws IOException {
-    byte[] body = in == null ? new byte[0] : in.readAllBytes();
-    if (!carriesUsableAccessToken(body)) {
+  /** 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치거나 쓸 수 없으면 거부, 통과하면 읽은 바이트를 사본 없이 넘긴다. */
+  private static ByteArrayInputStream usableOrReject(InputStream in) throws IOException {
+    byte[] buf = new byte[MAX_BODY_BYTES + 1];
+    int n = in == null ? 0 : in.readNBytes(buf, 0, buf.length);
+    if (n > MAX_BODY_BYTES || !carriesUsableAccessToken(buf, n)) {
       throw new IOException(REJECTED);
     }
-    return body;
+    return new ByteArrayInputStream(buf, 0, n);
   }
 
-  /** 최상위가 JSON 객체이고 그 {@code access_token} 이 하나 이상이며 전부 비어 있지 않은 문자열이다. 형식이 틀리면 false. */
-  static boolean carriesUsableAccessToken(byte[] body) {
-    try (JsonParser p = JSON.createParser(body)) {
+  /**
+   * {@code body} 의 앞 {@code length} 바이트가 최상위 JSON 객체이고 그 {@code access_token} 이 하나 이상이며 전부 비어 있지
+   * 않은 문자열이다. 형식이 틀리면 false.
+   */
+  static boolean carriesUsableAccessToken(byte[] body, int length) {
+    try (JsonParser p = JSON.createParser(body, 0, length)) {
       if (p.nextToken() != JsonToken.START_OBJECT) return false;
       boolean found = false;
       while (p.nextToken() == JsonToken.FIELD_NAME) {
