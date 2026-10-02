@@ -17,10 +17,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.zip.GZIPOutputStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,6 +63,25 @@ class AdminTokenResponseTest {
 
     Reply(int status, byte[] body, String contentEncoding) {
       this(status, body, contentEncoding, true);
+    }
+
+    // 배열 컴포넌트라 record 기본 equals·hashCode 는 참조를 본다(SonarCloud java:S6218) — 내용으로 비교한다.
+    @Override
+    public boolean equals(Object o) {
+      return o instanceof Reply r && status == r.status && typed == r.typed
+          && Arrays.equals(body, r.body) && Objects.equals(contentEncoding, r.contentEncoding);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(status, Arrays.hashCode(body), contentEncoding, typed);
+    }
+
+    // 본문은 토큰 응답일 수 있다 — 길이만 찍는다.
+    @Override
+    public String toString() {
+      return "Reply[status=" + status + ", body=" + body.length + " bytes, contentEncoding=" + contentEncoding
+          + ", typed=" + typed + "]";
     }
   }
 
