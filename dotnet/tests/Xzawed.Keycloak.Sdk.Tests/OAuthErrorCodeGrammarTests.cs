@@ -20,8 +20,9 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// <c>OAuthError</c>. The grammar excludes every control character, <c>"</c>, <c>\</c> and everything past ASCII, so
 /// enforcing it costs no valid code — and it still admits every token character, which is why
 /// <c>MalformedTokenResponseTests.KnownLeaks</c> keeps an in-grammar code as debugging information.</para>
-/// <para>The two branches that carry a code are both here: 400 (the body's <c>error</c> — a 2xx carrying an <c>error</c>
-/// member takes the same branch) and every other HTTP error (the canonical reason, with the code in <c>OAuthError</c>).</para>
+/// <para>The two branches that carry a code are both here: 400 (the body's <c>error</c> — a 2xx takes the same branch when
+/// it carries an error code or an <c>error</c> Duende flags) and every other HTTP error (the canonical reason, with the code
+/// in <c>OAuthError</c>).</para>
 /// <para>⚠️ Outside this contract: an unpaired UTF-16 surrogate escape (U+D800 alone). System.Text.Json throws
 /// <c>InvalidOperationException</c> while decoding it — in Duende's <c>IsError</c> for a token call on 400 or 2xx, in
 /// <c>OAuthErrorOf</c> for any call on 401 — so it leaves the SDK as a lower-library exception before any grammar check
@@ -67,6 +68,7 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
         // Decided: a space-only value IS an error code — %x20 is NQSCHAR, so refusing it would make the 400 message
         // ("not an RFC 6749 error code") false. It cannot split a log line.
         ["space only, 0x20 is NQSCHAR"] = Admitted(" "),
+        ["spaces only"] = Admitted("   "),
         ["the grammar's inner edges"] = Admitted("!#[]~"),
         // Not a string at all — keeps its own wording (Duende renders it as raw JSON text).
         ["number, not a JSON string"] = new("42", null, NotAString),
@@ -74,6 +76,11 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
 
     public static IEnumerable<object[]> Cases =>
         Rows.Keys.SelectMany(row => new[] { new object[] { row, 400 }, new object[] { row, 401 } });
+
+    /// <summary>Every admitted row on a 2xx — the low edge, a common one and the high edge of the success range.</summary>
+    public static IEnumerable<object[]> SuccessStatusCases =>
+        Rows.Where(kv => kv.Value.Code is not null)
+            .SelectMany(kv => new[] { 200, 201, 299 }.Select(status => new object[] { kv.Key, status }));
 
     private delegate Task<object> Call(KeycloakClient kc);
 
@@ -89,7 +96,18 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
 
     [Theory]
     [MemberData(nameof(Cases))]
-    public async Task Only_an_RFC_6749_error_code_reaches_Message_or_OAuthError(string row, int status)
+    public Task Only_an_RFC_6749_error_code_reaches_Message_or_OAuthError(string row, int status) => Check(row, status);
+
+    /// <summary>A 2xx that carries an error code fails with that code, exactly as a 400 does.</summary>
+    /// <remarks>Measured before this check (2026-10-03): Duende's <c>IsError</c> did not flag a 2xx whose <c>error</c> text
+    /// is whitespace, so a space-only code — %x20 is NQSCHAR — left every token call failing as "token response missing
+    /// access_token" with no <c>OAuthError</c>, and let introspection return a result. A 2xx with any other code was
+    /// flagged already.</remarks>
+    [Theory]
+    [MemberData(nameof(SuccessStatusCases))]
+    public Task A_2xx_carrying_an_error_code_fails_with_that_code_as_a_400_does(string row, int status) => Check(row, status);
+
+    private async Task Check(string row, int status)
     {
         var r = Rows[row];
         var body = $$"""{"error":{{r.ErrorJson}}}""";
@@ -103,18 +121,23 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
         var wrong = new List<string>();
         foreach (var (name, prefix, run) in Calls)
         {
-            var ex = await Assert.ThrowsAsync<KeycloakAuthException>(() => run(kc));
-            var (message, oauthError) = status == 400
+            var ex = await Record.ExceptionAsync(() => run(kc));
+            // A 400 and a 2xx carry the body's error; any other status gives the canonical reason (401 here).
+            var (message, oauthError) = status is 400 or (>= 200 and <= 299)
                 ? ($"{prefix}: {r.Code ?? r.NoCode}", r.Code)
                 : ($"{prefix}: Unauthorized", r.Code ?? "Unauthorized");
-            if (ex.Message != message || ex.OAuthError != oauthError)
-            {
-                wrong.Add($"{name}: Message={Visible(ex.Message)} OAuthError={Visible(ex.OAuthError)} " +
-                          $"— want {Visible(message)} / {Visible(oauthError)}");
-            }
+            if (ex is not KeycloakAuthException k || k.Message != message || k.OAuthError != oauthError)
+                wrong.Add($"{name}: {Describe(ex)} — want {Visible(message)} / {Visible(oauthError)}");
         }
         Assert.True(wrong.Count == 0, $"[{row} · HTTP {status} · body {body}]\n" + string.Join("\n", wrong));
     }
+
+    private static string Describe(Exception? ex) => ex switch
+    {
+        null => "no exception",
+        KeycloakAuthException k => $"Message={Visible(k.Message)} OAuthError={Visible(k.OAuthError)}",
+        _ => ex.GetType().Name,
+    };
 
     /// <summary>The text with every byte outside printable ASCII spelled out — the failure output must not split lines.</summary>
     private static string Visible(string? s)

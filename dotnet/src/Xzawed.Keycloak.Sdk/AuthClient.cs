@@ -239,7 +239,9 @@ public sealed class AuthClient : ITokenSource
         }
         if (resp.Json is { ValueKind: not JsonValueKind.Object })
             throw new KeycloakAuthException($"{failureMessage}: response body is not a JSON object");
-        if (resp.IsError)
+        // A 2xx that carries an error code fails as a 400 does. Duende's IsError alone misses a space-only one there — it
+        // does not flag a whitespace error text on a 2xx, and %x20 is NQSCHAR (measured: OAuthErrorCodeGrammarTests).
+        if (resp.IsError || OAuthErrorOf(resp.Json) is not null)
         {
             var code = OAuthErrorOf(resp.Json);
             throw new KeycloakAuthException($"{failureMessage}: {code ?? NoCodeReason(resp.Json)}") { OAuthError = code };
