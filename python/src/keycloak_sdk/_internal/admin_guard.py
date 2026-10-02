@@ -23,7 +23,9 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
    마지막이 주입·토큰 세터로 **그랜트를 거치지 않고** 실린 bearer 를 잡는다. `raw_*` 는 그 갱신
    직후 보내고, 401 재시도는 방금 그랜트(검사됨)가 실은 토큰으로만 보낸다.
 3. 설치는 전부이거나 아무것도 아니다 — 먼저 다 계획(검증)하고, 걸다가 하나라도 실패하면 건
-   것을 되돌린 뒤 `KeycloakConfigError` 로 거부한다.
+   것을 되돌린 뒤 `KeycloakConfigError` 로 거부한다. 그래프를 읽다 난 실패는 무엇을 던졌든
+   그 거부이고, 훅은 되돌림과 같은 통로(인스턴스 `__dict__`)로 쓰며, 설치 도중의 재진입은
+   거부한다(`_install`·`_apply`).
 
 **왜 저장된 토큰이 아니라 헤더인가.** 보내는 것이 헤더다. 둘은 갈린다 — 자격증명 없이 토큰만
 받은 admin 이 만료되면 python-keycloak 은 토큰을 `None` 으로 비우고 헤더(`Bearer `)는 남긴다.
@@ -56,6 +58,12 @@ from .redirects import _refuse_redirects, _require, _unsupported
 
 #: 훅을 거는 일은 한 번에 하나 — 되돌림이 다른 스레드가 막 건 훅을 지우지 않게 한다.
 _LOCK = threading.RLock()
+#: 이 스레드가 지금 그래프를 읽거나 훅을 거는 중인가(`_install`). RLock 은 **같은 스레드**의
+#: 재진입을 막지 않는다 — 그 사이 소비자 코드(`__getattribute__`·디스크립터·지연 프로퍼티)가
+#: `admin.connection` 을 다시 읽으면 안쪽 설치가 끝까지 걸고, 바깥 설치가 실패해 되돌리면 자기가
+#: 먼저 건 자리만 지워 거부된 연결에 SDK 훅이 반쯤 남았다(실측: 여덟 중 일곱). 재진입한 설치는
+#: 그래서 거부한다 — 그 거부가 바깥 설치를 실패시키고, 바깥이 전부 되돌린다.
+_LOCAL = threading.local()
 #: 이 모듈이 건 래퍼. 「이미 걸려 있나」를 이것과 아래 주인으로 가른다.
 _OURS: weakref.WeakSet[Callable[..., Any]] = weakref.WeakSet()
 #: 래퍼가 걸린 객체. 얕은 복사본(`copy.copy(conn)`)은 원본의 래퍼를 인스턴스 속성째 물려받는데 그
@@ -230,8 +238,13 @@ def _apply(hooks: list[_Hook]) -> list[tuple[Any, str, object]]:
     done: list[tuple[Any, str, object]] = []
     for target, name, value, where in hooks:
         try:
-            done.append((target, name, vars(target).get(name, _ABSENT)))
-            setattr(target, name, value)
+            state = cast("dict[str, Any]", vars(target))  # 인스턴스의 것 — 클래스는 걸지 않는다
+            done.append((target, name, state.get(name, _ABSENT)))
+            # 되돌림(`_undo`)과 같은 통로로 쓴다. `setattr` 은 소비자의 `__setattr__`·슬롯으로 새어
+            # 되돌림이 못 보는 곳에 훅을 두었다 — 곁 사전·슬롯에 산 소비자의 훅이 거부 뒤
+            # `_refuse_redirects` 로 바뀌어 있었다(실측). 쓴 값이 보이지 않으면(슬롯·데이터
+            # 디스크립터·`__getattribute__` 가 가린다) 건 것이 아니다.
+            state[name] = value
             if getattr(target, name) is not value:
                 raise AttributeError(f"{name} did not keep the hook")
         except Exception as exc:
@@ -240,10 +253,56 @@ def _apply(hooks: list[_Hook]) -> list[tuple[Any, str, object]]:
     return done
 
 
+def _reentered() -> KeycloakConfigError:
+    return KeycloakConfigError(
+        "cannot guard the admin client: its connection was read again while the guard was being "
+        "installed on it (code that runs while this SDK reads or hooks the connection graph "
+        "called back into the admin client), so nothing was changed. Refusing to leave an admin "
+        "client half-guarded."
+    )
+
+
+def _install(conn: Any) -> list[tuple[Any, str, object]]:
+    """`conn` 그래프에 빠진 훅을 건다(전부이거나 아무것도) — `_LOCK` 을 쥔 채 부른다.
+
+    그래프를 읽다 난 실패는 무엇이든 `KeycloakConfigError` 다 — 프로퍼티·지연 생성·디스크립터는
+    `AttributeError` 만 던지지 않는다(실측: raw `TypeError`·`ValueError` 가 생성과 `raw` 로 샜고
+    리소스로는 `KeycloakTransportError` 였다). 재진입은 `_LOCAL` 이 거부한다."""
+    if getattr(_LOCAL, "installing", False):
+        raise _reentered()
+    _LOCAL.installing = True
+    try:
+        try:
+            hooks = _plan(conn)
+        except KeycloakConfigError:
+            raise
+        except Exception as exc:
+            raise _refused("reading the connection graph", exc) from exc
+        return _apply(hooks)
+    finally:
+        _LOCAL.installing = False
+
+
+def _read_connection(read: Callable[[], Any]) -> Any:
+    """`admin.connection` — 생성 때든 요청 직전이든 읽지 못하면 같은 `KeycloakConfigError` 다.
+
+    지워진 연결 필드(`AttributeError`)는 걸 자리가 없다는 거부, 그 밖의 실패(하위 클래스의
+    프로퍼티가 던진 `TypeError` 등)는 읽기가 실패했다는 거부다. 이미 감시 중인 admin 이면 읽기가
+    곧 무장이라 그 거부는 그대로 지난다."""
+    try:
+        return read()
+    except KeycloakConfigError:
+        raise
+    except AttributeError as exc:
+        raise _unsupported("admin REST call", "connection") from exc
+    except Exception as exc:
+        raise _refused("reading the admin's connection", exc) from exc
+
+
 def arm_connection(conn: Any) -> None:
     """`conn` 그래프에 빠진 훅을 건다(전부이거나 아무것도). 다 걸려 있으면 아무것도 안 한다."""
     with _LOCK:
-        _apply(_plan(conn))
+        _install(conn)
 
 
 def _watched_type(cls: type[KeycloakAdmin]) -> type[KeycloakAdmin]:
@@ -261,11 +320,7 @@ def _watched_type(cls: type[KeycloakAdmin]) -> type[KeycloakAdmin]:
         )
 
     def connection(self: KeycloakAdmin) -> Any:
-        try:
-            conn = prop.__get__(self, type(self))
-        except AttributeError as exc:
-            # 생성 때(`arm_admin` 의 `_require`)와 같은 거부다 — 지워진 연결 필드에는 걸 곳이 없다.
-            raise _unsupported("admin REST call", "connection") from exc
+        conn = _read_connection(lambda: prop.__get__(self, type(self)))  # 생성 때와 같은 거부
         arm_connection(conn)
         return conn
 
@@ -294,7 +349,7 @@ def arm_admin(admin: KeycloakAdmin) -> None:
     cls = type(admin)
     with _LOCK:
         watched = _watched_type(cls) if issubclass(cls, KeycloakAdmin) else cls
-        done = _apply(_plan(_require(admin, "connection", what="admin REST call")))
+        done = _install(_read_connection(lambda: admin.connection))
         # 이미 감시 중이거나 진짜 KeycloakAdmin 이 아니다. 목에 `__class__` 를 쓰면 클래스가
         # 아니라 spec 이 바뀌어 `isinstance` 가 깨진다.
         if watched is cls:

@@ -27,6 +27,7 @@ from unittest.mock import MagicMock
 from urllib.parse import parse_qs
 
 import pytest
+import requests
 from keycloak import KeycloakAdmin, KeycloakOpenID, KeycloakOpenIDConnection
 from keycloak.connection import ConnectionManager
 
@@ -728,3 +729,344 @@ async def test_cleanup_does_not_arm_a_connection_it_only_closes(lane: str) -> No
     del raw._connection  # 연결 필드 자체가 없어도 정리는 조용히 넘어간다(예전과 같다)
     await _close(lane, client)
     await _close_connection(lane, old)
+
+
+# --- 2차 검증 레그 — 그래프를 읽다 나는 실패 · 재진입한 설치 · `__dict__` 밖에 사는 훅 ------------
+#
+# 셋 다 계약 3(전부이거나 아무것도, 실패는 `KeycloakConfigError`)의 구멍이었다.
+# 수정 전 실측(a505b8b): 그래프를 읽다 난 `TypeError`·`ValueError` 는 raw 로 새거나
+# 리소스로는 `KeycloakTransportError` 였고, 설치 도중 소비자 코드가 `admin.connection` 을
+# 다시 읽으면 안쪽 설치가 다 건 것을 바깥 되돌림이 반만 되돌려 거부된 연결에 SDK 훅 일곱이
+# 남았으며, 슬롯·곁 사전에 사는 소비자의 훅은 되돌림 뒤 SDK 훅으로 바뀌어 있었다.
+
+
+def _graph_connection(cls: type[KeycloakOpenIDConnection], url: str) -> Any:
+    return cls(
+        server_url=url,
+        realm_name="r",
+        client_id="c",
+        client_secret_key=SECRET,
+        grant_type="client_credentials",
+    )
+
+
+class _UnreadableSession(KeycloakOpenIDConnection):
+    """`_s` 를 읽으면 `TypeError` — 그래프를 읽다 나는 실패는 `AttributeError` 만이 아니다."""
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == "_s" and object.__getattribute__(self, "__dict__").get("_broken"):
+            raise TypeError("connection._s cannot be read")
+        return super().__getattribute__(name)
+
+
+class _RefusingDescriptor:
+    def __get__(self, obj: Any, owner: Any = None) -> Any:
+        if obj is not None and obj.__dict__.get("_broken"):
+            raise TypeError("the refresh seam refuses to be read")
+        return KeycloakOpenIDConnection._refresh_if_required.__get__(obj, owner)
+
+
+class _UnreadableRefreshSeam(KeycloakOpenIDConnection):
+    _refresh_if_required = _RefusingDescriptor()  # type: ignore[assignment]
+
+
+class _UnbuildableGrantObject(KeycloakOpenIDConnection):
+    """python-keycloak 이 중첩 그랜트 객체를 지연 생성하는 자리가 `ValueError` 를 던진다."""
+
+    @property
+    def keycloak_openid(self) -> KeycloakOpenID:
+        if self.__dict__.get("_broken"):
+            raise ValueError("cannot build the token grant object")
+        return super().keycloak_openid
+
+
+_UNREADABLE: dict[str, tuple[type[KeycloakOpenIDConnection], str]] = {
+    "_s 를 읽으면 TypeError": (_UnreadableSession, "TypeError"),
+    "갱신 자리 디스크립터가 TypeError": (_UnreadableRefreshSeam, "TypeError"),
+    "중첩 그랜트 객체 생성이 ValueError": (_UnbuildableGrantObject, "ValueError"),
+}
+
+
+@pytest.mark.parametrize("path", ["생성", "리소스", "raw"])
+@pytest.mark.parametrize("kind", list(_UNREADABLE))
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_connection_graph_that_fails_to_be_read_is_refused_as_a_config_error(
+    lane: str, kind: str, path: str
+) -> None:
+    """무장이 그래프를 읽다 실패하면 — 무엇을 던졌든 — 생성 때도 요청 직전에도 `KeycloakConfigError`
+    이고 아무것도 보내지 않는다(수정 전: raw `TypeError`·`ValueError`, 리소스로는
+    `KeycloakTransportError`)."""
+    cls, thrown = _UNREADABLE[kind]
+    with _fake_idp() as idp:
+        broken = _graph_connection(cls, idp.url)
+        broken.__dict__["_broken"] = True
+        if path == "생성":
+            admin = KeycloakAdmin(connection=broken)
+            result, err = await _attempt(
+                "sync", None, lambda _c: _ADMIN_CLIENTS[lane](_cfg(idp.url), admin=admin)
+            )
+            assert type(admin) is KeycloakAdmin, "거부했는데 클래스를 바꿨다"
+        else:
+            client = _ADMIN_CLIENTS[lane](_cfg(idp.url))
+            raw = client.raw
+            old = raw.connection
+            raw.connection = broken
+            direct = (
+                (lambda _c: raw.get_users({}))
+                if lane == "sync"
+                else (lambda _c: raw.a_get_users({}))
+            )
+            act = (lambda c: c.users.search()) if path == "리소스" else direct
+            result, err = await _attempt(lane, client, act)
+            raw.connection = old
+            await _close(lane, client)
+        broken.__dict__["_broken"] = False
+        hooks = _hooks_left(broken)
+        await _close_connection(lane, broken)
+
+    assert result is None
+    assert type(err) is KeycloakConfigError, f"{type(err).__qualname__}: {err}"
+    assert f"failed ({thrown})" in str(err)
+    assert idp.seen == [], "무장하지 못한 연결로 무언가 보냈다"
+    assert hooks == []
+    if path == "리소스":
+        assert _inner_frames(err) == []
+        assert err.__cause__ is None and err.__context__ is None
+
+
+class _UnreadableConnection(KeycloakAdmin):
+    """admin 자신의 `connection` 프로퍼티가 `TypeError` — 읽지 못한 연결에는 걸 곳이 없다."""
+
+    @property
+    def connection(self) -> Any:
+        if self.__dict__.get("_broken"):
+            raise TypeError("the admin's connection cannot be read")
+        return self._connection
+
+    @connection.setter
+    def connection(self, value: Any) -> None:
+        self._connection = value
+
+
+@pytest.mark.parametrize("path", ["생성", "리소스", "raw"])
+@pytest.mark.parametrize("lane", LANES)
+async def test_an_admin_whose_connection_cannot_be_read_is_refused_as_a_config_error(
+    lane: str, path: str
+) -> None:
+    with _fake_idp() as idp:
+        admin = _UnreadableConnection(
+            server_url=idp.url,
+            realm_name="r",
+            client_id="c",
+            client_secret_key=SECRET,
+            grant_type="client_credentials",
+        )
+        if path == "생성":
+            admin.__dict__["_broken"] = True
+            result, err = await _attempt(
+                "sync", None, lambda _c: _ADMIN_CLIENTS[lane](_cfg(idp.url), admin=admin)
+            )
+            assert type(admin) is _UnreadableConnection, "거부했는데 클래스를 바꿨다"
+            admin.__dict__["_broken"] = False
+            await _close_connection(lane, admin.connection)
+        else:
+            client = _ADMIN_CLIENTS[lane](_cfg(idp.url), admin=admin)
+            admin.__dict__["_broken"] = True
+            direct = (
+                (lambda _c: admin.get_users({}))
+                if lane == "sync"
+                else (lambda _c: admin.a_get_users({}))
+            )
+            act = (lambda c: c.users.search()) if path == "리소스" else direct
+            result, err = await _attempt(lane, client, act)
+            admin.__dict__["_broken"] = False
+            await _close(lane, client)
+
+    assert result is None
+    assert type(err) is KeycloakConfigError, f"{type(err).__qualname__}: {err}"
+    assert "failed (TypeError)" in str(err)
+    assert idp.seen == []
+    if path == "리소스":
+        assert _inner_frames(err) == []
+        assert err.__cause__ is None and err.__context__ is None
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_re_injecting_a_guarded_admin_that_cannot_be_armed_is_refused_alike(
+    lane: str,
+) -> None:
+    """감시 중인 admin 을 다른 클라이언트에 넘기면 생성의 읽기가 곧 무장이다 — 그 거부는 요청
+    직전과 같은 메시지 그대로 지난다(「읽기 실패」로 덧씌우지 않는다)."""
+    first = _ADMIN_CLIENTS[lane](_cfg("http://127.0.0.1:9"))
+    raw = first.raw
+    old = raw.connection
+    raw.connection = None
+    with pytest.raises(KeycloakConfigError) as at_request:
+        raw.get_current_realm()
+    with pytest.raises(KeycloakConfigError) as at_construction:
+        _ADMIN_CLIENTS[lane](_cfg("http://127.0.0.1:9"), admin=raw)
+    raw.connection = old
+    await _close(lane, first)
+
+    assert str(at_construction.value) == str(at_request.value)
+    assert "cannot harden the admin REST call" in str(at_request.value)
+
+
+class _ReentrantSession(requests.Session):
+    """소비자 코드가 SDK 가 그래프를 만지는 도중 `admin.connection` 을 **한 번** 다시 읽는다 —
+    `__setattr__`(훅을 쓸 때) 또는 `__getattribute__`(방금 쓴 훅을 확인할 때)에서."""
+
+    def _reenter(self, via: str) -> None:
+        state = object.__getattribute__(self, "__dict__")
+        if state.get("_via") == via and state.get("_budget"):
+            state["_budget"] = 0
+            _ = state["_admin"].connection
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "resolve_redirects":
+            self._reenter("setattr")
+        super().__setattr__(name, value)
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == "resolve_redirects" and name in object.__getattribute__(self, "__dict__"):
+            object.__getattribute__(self, "_reenter")("getattr")
+        return super().__getattribute__(name)
+
+
+class _TakesTheBearerHookOnce(KeycloakOpenIDConnection):
+    """`a__refresh_if_required` 훅을 한 번만 받는다 — 재진입한 안쪽 설치는 성공하고, 그 뒤에 같은
+    자리를 다시 거는 바깥 설치가 실패한다(쓰기로 거부하든, 처음 받은 훅만 보여 주든)."""
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == _BEARER_HOOKS[1]:
+            count = self.__dict__.get("_sets", 0) + 1
+            self.__dict__["_sets"] = count
+            if count == 2:
+                raise AttributeError("the bearer hook was already taken")
+        super().__setattr__(name, value)
+
+    def __getattribute__(self, name: str) -> Any:
+        state = object.__getattribute__(self, "__dict__")
+        if name == _BEARER_HOOKS[1] and name in state:
+            return state.setdefault("_first", state[name])
+        return super().__getattribute__(name)
+
+
+@pytest.mark.parametrize("via", ["setattr", "getattr"])
+@pytest.mark.parametrize("lane", LANES)
+async def test_an_install_re_entered_by_the_consumers_code_is_all_or_nothing(
+    lane: str, via: str
+) -> None:
+    """RLock 은 같은 스레드의 재진입을 막지 않는다 — 설치 도중 `admin.connection` 을 다시
+    읽으면 안쪽 설치가 끝까지 걸고, 바깥 설치가 실패해 되돌리면 자기가 처음 건 자리만 지운다
+    (수정 전 실측: 거부된 연결에 SDK 훅 일곱). 끝 상태는 둘 중 하나여야 한다 — 다 걸려
+    보냈거나, 하나도 없이 거부했거나."""
+    with _fake_idp() as idp:
+        idp.grants["client_credentials"] = [(200, _GOOD)]
+        client = _ADMIN_CLIENTS[lane](_cfg(idp.url))
+        raw = client.raw
+        old = raw.connection
+        conn = _graph_connection(_TakesTheBearerHookOnce, idp.url)
+        session = _ReentrantSession()
+        session.__dict__.update(vars(conn._s))
+        session.__dict__.update(_admin=raw, _via=via, _budget=1)
+        conn.__dict__["_s"] = session
+        raw.connection = conn
+        act = (
+            (lambda _c: raw.get_user("u1")) if lane == "sync" else (lambda _c: raw.a_get_user("u1"))
+        )
+        result, err = await _attempt(lane, client, act)
+        hooks = _hooks_left(conn)
+        raw.connection = old
+        await _close(lane, client)
+        await _close_connection(lane, conn)
+
+    if err is None:
+        assert result == {"id": "u1"}
+        assert len(hooks) == len(_GRANTS) + 4, hooks  # 두 세션 + 그랜트 넷 + bearer 둘
+    else:
+        assert type(err) is KeycloakConfigError, f"{type(err).__qualname__}: {err}"
+        assert hooks == [], "거부한 설치가 SDK 훅을 남겼다 — 전부이거나 아무것도가 아니다"
+        assert idp.seen == []
+
+
+def _consumers_own_redirect_hook(*_args: Any, **_kwargs: Any) -> Any:
+    return iter(())
+
+
+class _SideStoredHook(requests.Session):
+    """`resolve_redirects` 를 인스턴스 `__dict__` 가 아닌 곁 사전에 두고 거기서 읽는다."""
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "resolve_redirects":
+            self.__dict__.setdefault("_side", {})[name] = value
+            return
+        super().__setattr__(name, value)
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == "resolve_redirects":
+            side = object.__getattribute__(self, "__dict__").get("_side", {})
+            if name in side:
+                return side[name]
+        return super().__getattribute__(name)
+
+
+class _SlottedHook(requests.Session):
+    """`resolve_redirects` 가 슬롯이다 — 클래스의 데이터 디스크립터가 인스턴스 `__dict__` 를
+    가린다."""
+
+    __slots__ = ("resolve_redirects",)
+
+
+class _RefusesTheRedirectHook(requests.Session):
+    """둘째 자리(중첩 그랜트 세션)에 훅을 쓰면 실패한다 — 첫 자리를 건 **뒤**의 실패다."""
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "resolve_redirects":
+            raise AttributeError("the grant session refuses the redirect hook")
+        super().__setattr__(name, value)
+
+
+def _graft(cls: type[requests.Session], source: requests.Session) -> Any:
+    session = cls()
+    for name, value in vars(source).items():
+        object.__setattr__(session, name, value)
+    return session
+
+
+_OUTSIDE_THE_DICT = {"곁 사전": _SideStoredHook, "슬롯": _SlottedHook}
+
+
+@pytest.mark.parametrize("store", list(_OUTSIDE_THE_DICT))
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_hook_the_consumer_keeps_outside_the_instance_dict_survives_a_refused_install(
+    lane: str, store: str
+) -> None:
+    """되돌림은 인스턴스 `__dict__` 로 한다 — 설치가 다른 통로(소비자의 `__setattr__`·슬롯)로
+    들어가면 되돌림이 못 보고, 소비자가 먼저 건 자기 훅이 SDK 훅으로 바뀐 채 남았다(수정 전
+    실측: 둘 다 `_refuse_redirects`)."""
+    with _fake_idp() as idp:
+        client = _ADMIN_CLIENTS[lane](_cfg(idp.url))
+        raw = client.raw
+        old = raw.connection
+        conn = _connection(idp.url)
+        conn._s = _graft(_OUTSIDE_THE_DICT[store], conn._s)
+        conn._s.resolve_redirects = _consumers_own_redirect_hook  # SDK 보다 먼저 건 소비자의 훅
+        nested = conn.keycloak_openid.connection
+        nested._s = _graft(_RefusesTheRedirectHook, nested._s)
+        raw.connection = conn
+        act = (
+            (lambda _c: raw.get_user("u1")) if lane == "sync" else (lambda _c: raw.a_get_user("u1"))
+        )
+        result, err = await _attempt(lane, client, act)
+        kept = conn._s.resolve_redirects
+        hooks = _hooks_left(conn)
+        raw.connection = old
+        await _close(lane, client)
+        await _close_connection(lane, conn)
+
+    assert result is None
+    assert type(err) is KeycloakConfigError, f"{type(err).__qualname__}: {err}"
+    assert kept is _consumers_own_redirect_hook, f"소비자의 훅이 {kept!r} 로 바뀌었다"
+    assert hooks == []
+    assert idp.seen == []
