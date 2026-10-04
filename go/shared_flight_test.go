@@ -42,7 +42,7 @@ type flightIdP struct {
 	mu       sync.Mutex
 	set      []byte
 	held     chan struct{}
-	fail     int // 다음 n 번의 /certs 를 503 으로
+	fail     int // 다음 n 번의 /certs 를 503 으로(붙잡혀 있었다면 풀린 뒤에)
 	expires  int // 토큰 응답의 expires_in
 	certs    atomic.Int32
 	tokens   atomic.Int32
@@ -65,22 +65,21 @@ func newFlightIdP(t *testing.T) *flightIdP {
 	mux := http.NewServeMux()
 	mux.HandleFunc(base+"/certs", func(w http.ResponseWriter, r *http.Request) {
 		p.certs.Add(1)
+		// 붙잡기가 먼저다 — 붙잡힌 요청도 503 으로 끝날 수 있다(창 끝까지 끌다 실패한 조회의 모양).
+		if !p.wait(r) {
+			return
+		}
 		p.mu.Lock()
 		fail := p.fail > 0
 		if fail {
 			p.fail--
 		}
+		set := p.set
 		p.mu.Unlock()
 		if fail {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		if !p.wait(r) {
-			return
-		}
-		p.mu.Lock()
-		set := p.set
-		p.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(set)
 	})
@@ -575,4 +574,79 @@ func TestAdminLeaderCancellationDoesNotFailWaiter(t *testing.T) {
 			t.Fatalf("admin requests=%d, want 1 (only the live waiter's)", n)
 		}
 	})
+}
+
+// stepClock 은 시험이 한 걸음씩 옮기는 게이트 시계다(창·백오프 판정만 이것을 읽는다 — 토큰의 exp 는 벽시계다).
+type stepClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *stepClock) now() time.Time  { c.mu.Lock(); defer c.mu.Unlock(); return c.t }
+func (c *stepClock) set(t time.Time) { c.mu.Lock(); c.t = t; c.mu.Unlock() }
+
+// TestJWKSWindowIsStampedOnlyByTheFetchThatStartsInIt — 같은 부류(검증 레그 실측, 수정 전 이 트리와 origin/main
+// 둘 다): 창이 지난 뒤의 miss 가 먼저 창 도장을 찍고 나서 (a) 실패 백오프에 거부되거나 (b) 이전 창의 아직 비행 중인
+// 조회에 합류했다. 어느 쪽도 IdP 에 새 요청을 보내지 않았는데 새 창이 서서, 백오프가 끝나고 IdP 가 회복된 뒤에도
+// 회전된 키가 그 창 내내 「(refetch rate-limited)」로 거부됐다(/certs 2 그대로). 기본값에서 닿는다 —
+// Config.ReadTimeout(30초)이 창(30초)과 같아 시간 초과로 끝나는 강제 재조회는 창 끝에서 실패한다. 창은 그 창에서
+// **시작한** 조회만 찍는다: 거부도 합류도 찍지 않는다(창마다 새 조회 하나라는 상한은 그대로다).
+func TestJWKSWindowIsStampedOnlyByTheFetchThatStartsInIt(t *testing.T) {
+	for _, joined := range []bool{false, true} {
+		name := "refused by the failure backoff"
+		if joined {
+			name = "joined the previous window's fetch"
+		}
+		t.Run(name, func(t *testing.T) {
+			p := newFlightIdP(t)
+			c := p.client(t)
+			t0 := time.Now()
+			clk := &stepClock{t: t0}
+			c.Auth.val.opts.now = clk.now
+			p.warm(t, c)
+			p.rotate(t)
+			p.mu.Lock()
+			p.fail = 1 // 창을 연 강제 재조회는 붙잡혔다가 503 으로 끝난다
+			p.mu.Unlock()
+			release := p.hold(t)
+			k2 := func() error { _, err := c.Auth.Validate(context.Background(), p.token(t, p.k2, "k2")); return err }
+			first := async(k2)
+			p.waitArrived(t, "/certs")
+			var second <-chan error
+			if joined {
+				// 창(t0 에 찍힘)이 그 조회가 아직 비행 중일 때 지난다 — 이때의 miss 는 그 조회에 합류한다.
+				clk.set(t0.Add(30010 * time.Millisecond))
+				second = async(k2)
+				mustStillWait(t, second, "a miss after the window, while the previous window's fetch is in flight")
+			} else {
+				clk.set(t0.Add(29950 * time.Millisecond)) // 조회가 창 끝 직전에 실패한다(ReadTimeout 의 모양)
+			}
+			release()
+			if err := mustReturn(t, first, "#1"); err == nil || !strings.Contains(err.Error(), "HTTP 503") {
+				t.Fatalf("#1 must fail with the IdP's 503, got %v", err)
+			}
+			if joined {
+				if err := mustReturn(t, second, "#2"); err == nil || !strings.Contains(err.Error(), "HTTP 503") {
+					t.Fatalf("#2 joined the failed fetch and must get its 503, got %v", err)
+				}
+			} else {
+				// 창은 지났고 실패 백오프(실패 한 번 뒤 100–200ms)는 아직이다.
+				clk.set(t0.Add(30010 * time.Millisecond))
+				if err := k2(); err == nil || !strings.Contains(err.Error(), "backing off") {
+					t.Fatalf("#2 inside the failure backoff must be refused by it, got %v", err)
+				}
+			}
+			if n := p.certs.Load(); n != 2 {
+				t.Fatalf("/certs=%d, want 2 — neither a refusal nor a join may send a request", n)
+			}
+			clk.set(t0.Add(30500 * time.Millisecond)) // 모든 백오프가 끝났고(실패 뒤 200ms 이내) IdP 는 회복됐다
+			if err := k2(); err != nil {
+				t.Fatalf("after the backoff the rotated key must be fetched and accepted (no fetch started in a window "+
+					"the refusal or the join could have stamped), got %v", err)
+			}
+			if n := p.certs.Load(); n != 3 {
+				t.Fatalf("/certs=%d, want 3 (cold load, the failed refetch, the recovery)", n)
+			}
+		})
+	}
 }
