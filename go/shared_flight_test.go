@@ -650,3 +650,93 @@ func TestJWKSWindowIsStampedOnlyByTheFetchThatStartsInIt(t *testing.T) {
 		})
 	}
 }
+
+// pauseCtx 는 호출자를 캐시 조회와 조회 결정 사이에 세운다 — resolveKey 는 그 사이에서 ctx.Err() 를 한 번 묻는다.
+// 첫 Err() 가 paused 를 닫고 resume 이 닫힐 때까지 기다린다: 스케줄러가 그 자리에서 고루틴을 내려놓은 것과 같다.
+// ⚠️ 그 ctx.Err() 가 조회 앞으로 옮겨지면 이 시험은 그 자리에 서지 못한다 — 옮길 때 이 시험의 세울 자리도 옮겨라.
+type pauseCtx struct {
+	context.Context
+	once           sync.Once
+	paused, resume chan struct{}
+}
+
+func (c *pauseCtx) Err() error {
+	c.once.Do(func() { close(c.paused); <-c.resume })
+	return c.Context.Err()
+}
+
+// TestJWKSMissRechecksTheCacheBeforeDeciding — 같은 부류(검증 레그 실측): 캐시 조회는 잠금 밖이고 조회 결정은
+// 잠금 안이라, 그 사이에 비행이 끝나 캐시가 kid 를 갖게 되면 낡은 miss 로 결정했다. 콜드 적재에서는 둘째 호출자가
+// 강제 재조회를 하나 더 띄우고 창을 찍어(/certs 2) 첫 키 회전이 「(refetch rate-limited)」로 거부됐고 — 첫 적재는
+// 창을 쓰지 않는다는 불변식이 깨졌다 — 창 안에서는 그 창의 조회가 **가져온** 키를 가진 토큰이 거부됐다. 세운 자리
+// 없이 공개 API 로만 재도 닿는다(실측: 회전 40 번에 1 번, k2 토큰 하나가 거부됨). 결정은 잠금 아래에서 캐시를 다시 본다.
+func TestJWKSMissRechecksTheCacheBeforeDeciding(t *testing.T) {
+	for _, warmFirst := range []bool{false, true} {
+		name := "cold load"
+		if warmFirst {
+			name = "forced refetch inside the window"
+		}
+		t.Run(name, func(t *testing.T) {
+			p := newFlightIdP(t)
+			c := p.client(t)
+			kid, key := "k1", p.k1
+			if warmFirst {
+				p.warm(t, c)
+				p.rotate(t)
+				kid, key = "k2", p.k2
+			}
+			release := p.hold(t)
+			first := async(func() error { _, err := c.Auth.Validate(context.Background(), p.token(t, key, kid)); return err })
+			p.waitArrived(t, "/certs")
+			pc := &pauseCtx{Context: context.Background(), paused: make(chan struct{}), resume: make(chan struct{})}
+			var resumeOnce sync.Once
+			resume := func() { resumeOnce.Do(func() { close(pc.resume) }) }
+			t.Cleanup(resume)
+			second := async(func() error { _, err := c.Auth.Validate(pc, p.token(t, key, kid)); return err })
+			select {
+			case <-pc.paused: // 둘째의 조회는 비었다 — kid 를 가져올 조회는 아직 붙잡혀 있다
+			case <-time.After(5 * time.Second):
+				t.Fatal("the second caller never stopped between its cache lookup and the fetch decision")
+			}
+			release()
+			if err := mustReturn(t, first, "the caller whose fetch brings the kid"); err != nil {
+				t.Fatalf("the first caller: %v", err)
+			}
+			resume() // 이제 결정한다 — 조회는 끝났고 캐시가 kid 를 갖는다
+			if err := mustReturn(t, second, "the caller that missed before the fill"); err != nil {
+				t.Fatalf("a miss decided after the fill must find the cached key, got %v", err)
+			}
+			want := int32(1) // 콜드: 적재 하나 · 따뜻함: 적재와 강제 재조회 하나
+			if warmFirst {
+				want = 2
+			}
+			if n := p.certs.Load(); n != want {
+				t.Fatalf("/certs=%d, want %d — a miss whose kid is cached must not fetch", n, want)
+			}
+			// 결정 자체가, 자기 잠금 아래에서, 캐시된 kid 를 봐야 한다 — 호출자가 잠그기 전에 한 번 더 찾는 것으로는
+			// 같은 틈이 한 걸음 뒤로 갈 뿐이다(그 변형은 위의 세운 자리를 지나간다).
+			v := c.Auth.val
+			v.mu.Lock()
+			stamp := v.forcedAt
+			v.mu.Unlock()
+			if f, err := v.fetchFor(context.Background(), kid); f != nil || err != nil {
+				t.Fatalf("deciding for a cached kid must start, join and refuse nothing: flight %v, err %v", f != nil, err)
+			}
+			v.mu.Lock()
+			restamped := !v.forcedAt.Equal(stamp)
+			v.mu.Unlock()
+			if restamped || p.certs.Load() != want {
+				t.Fatalf("deciding for a cached kid touched the window (%v) or the IdP (/certs=%d)", restamped, p.certs.Load())
+			}
+			if !warmFirst {
+				p.rotate(t)
+				if _, err := c.Auth.Validate(context.Background(), p.token(t, p.k2, "k2")); err != nil {
+					t.Fatalf("the first rotation after the cold load must be fetched (the load does not use the window), got %v", err)
+				}
+				if n := p.certs.Load(); n != 2 {
+					t.Fatalf("/certs=%d, want 2 (cold load, the first rotation)", n)
+				}
+			}
+		})
+	}
+}

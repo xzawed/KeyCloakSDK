@@ -223,8 +223,10 @@ func (v *Validator) resolveKey(ctx context.Context, kid string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := f.wait(ctx); err != nil {
-		return nil, err
+	if f != nil { // nil: the kid was cached by the time fetchFor looked again — nothing to wait for
+		if err := f.wait(ctx); err != nil {
+			return nil, err
+		}
 	}
 	if k := v.lookup(kid); k != nil {
 		return k, nil
@@ -242,9 +244,18 @@ func (v *Validator) resolveKey(ctx context.Context, kid string) (any, error) {
 // and the rotated key was then refused for the rest of it (measured — a backoff refusal right after a refetch
 // that failed at the window's end, and a join of the previous window's fetch still in flight when that window
 // ended; the default Config.ReadTimeout equals the default window, so a timed-out refetch fails right there).
+//
+// It first looks the kid up again, under the lock that decides: the caller's own lookup ran outside it, and a
+// fetch that finished in between may have brought the kid. Deciding on that stale miss refused a key the window's
+// own fetch had just cached, and on a cold cache started a second, forced fetch that stamped the window — so the
+// first rotation after the load was refused (measured; the initial load must not use the window). A nil flight
+// with a nil error means the kid is cached now.
 func (v *Validator) fetchFor(ctx context.Context, kid string) (*jwksFlight, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	if v.jwks != nil && len(v.jwks.Key(kid)) > 0 {
+		return nil, nil
+	}
 	if v.flight != nil {
 		return v.flight, nil
 	}
