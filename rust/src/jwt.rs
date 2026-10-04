@@ -154,7 +154,7 @@ mod tests {
     use rsa::traits::PublicKeyParts;
     use rsa::{RsaPrivateKey, RsaPublicKey};
     use serde_json::json;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -681,5 +681,106 @@ mod tests {
             "exp 45s in the past MUST be rejected under configured leeway=30 \
              (jsonwebtoken's default leeway=60 would have accepted it)"
         );
+    }
+
+    // ── 키 회전 직후 시간 초과로 끊긴 검증이 강제 재조회 창을 버리지 않는다 (jwks-forced-refetch-window-burned) ──
+    //
+    // 소비자가 실제로 쓰는 취소(`tokio::time::timeout`)로 본다 — 저장소 수준의 두 취소 지점(첫 poll · 비행 중)은
+    // `jwks.rs` 의 `forced_refetch_cancelled_*` 가 본다. 멈춘 시계라 시간 초과는 런타임이 처음 쉴 때(IdP 응답을
+    // 기다릴 때) 터진다. IdP 는 회전한 집합을 실시간 2초 늦게 준다 — 그 전에 #1 이 끊긴다.
+
+    fn keyed(kid: &str) -> Fixture {
+        let mut fx = make_key();
+        fx.jwk["kid"] = json!(kid);
+        fx
+    }
+
+    /// 첫 조회에 `k1` 집합, 그 뒤로는 `rotated` 를 주는 IdP 와 그것을 보는 검증기. 클라이언트에 유휴 연결 풀이
+    /// 없어야 풀 정리 타이머가 없고, 멈춘 시계가 I/O 를 기다리는 동안 30초 창 너머로 자동 전진하지 않는다.
+    async fn rotating_validator(
+        k1: &Fixture,
+        rotated: ResponseTemplate,
+    ) -> (JwtValidator, &'static MockServer) {
+        let server: &'static MockServer = Box::leak(Box::new(MockServer::start().await));
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"keys": [k1.jwk]})))
+            .up_to_n_times(1)
+            .with_priority(1)
+            .mount(server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(rotated)
+            .mount(server)
+            .await;
+        let cfg = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client").unwrap();
+        let endpoints = OidcEndpoints::new(&cfg);
+        let http = reqwest::Client::builder()
+            .pool_max_idle_per_host(0)
+            .build()
+            .unwrap();
+        let store = JwksStore::new(format!("{}/certs", server.uri()), http, 30);
+        (JwtValidator::new(&cfg, &endpoints, store).unwrap(), server)
+    }
+
+    async fn certs_requests(server: &MockServer) -> usize {
+        server
+            .received_requests()
+            .await
+            .expect("request recording is on")
+            .iter()
+            .filter(|r| r.url.path() == "/certs")
+            .count()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn validation_cut_by_a_timeout_does_not_waste_the_forced_refetch_window() {
+        let (k1, k2) = (keyed("k1"), keyed("k2"));
+        let t1 = sign(&k1, good_claims(), "k1");
+        let t2 = sign(&k2, good_claims(), "k2");
+        let late = Duration::from_secs(2);
+
+        // (a) 회전 — 창의 fetch 하나가 끝까지 돌아 k2 를 캐시에 올리므로 #2 가 받아들여진다.
+        let (v, server) = rotating_validator(
+            &k1,
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"keys": [k2.jwk]}))
+                .set_delay(late),
+        )
+        .await;
+        v.validate(&t1).await.expect("warm k1 (cold load)");
+        let t0 = tokio::time::Instant::now();
+        let cut = tokio::time::timeout(Duration::from_millis(500), v.validate(&t2)).await;
+        assert!(cut.is_err(), "#1 must be cut by its timeout, got {cut:?}");
+        let ok = v
+            .validate(&t2)
+            .await
+            .expect("#2 with the rotated key inside the window must be accepted");
+        assert_eq!(ok.subject, "s1");
+        assert_eq!(
+            certs_requests(server).await,
+            2,
+            "exactly one /certs request for the window"
+        );
+        assert!(
+            t0.elapsed() < Duration::from_secs(30),
+            "#2 must run inside the window"
+        );
+
+        // (b) 장애 — 실패한 강제 fetch 는 그래도 창을 쓴다(의도된 상한). #2 는 IdP 에 가지 않고 거부된다.
+        let (v, server) = rotating_validator(&k1, ResponseTemplate::new(503).set_delay(late)).await;
+        v.validate(&t1).await.expect("warm k1 (cold load)");
+        let t0 = tokio::time::Instant::now();
+        let cut = tokio::time::timeout(Duration::from_millis(500), v.validate(&t2)).await;
+        assert!(cut.is_err(), "#1 must be cut by its timeout, got {cut:?}");
+        match v.validate(&t2).await {
+            Err(KeycloakError::TokenValidation(m)) => {
+                assert_eq!(m, "unknown kid (refetch rate-limited)")
+            }
+            other => panic!("a failed forced fetch must still spend the window, got {other:?}"),
+        }
+        assert_eq!(certs_requests(server).await, 2);
+        assert!(t0.elapsed() < Duration::from_secs(30));
     }
 }

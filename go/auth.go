@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
@@ -43,8 +45,11 @@ func newAuthClient(cfg Config, v *Validator) *AuthClient {
 	}
 }
 
-func (a *AuthClient) oauthCtx(ctx context.Context) context.Context {
-	return context.WithValue(ctx, oauth2.HTTPClient, a.client)
+// oauthCtx is the context every grant hands to x/oauth2: the SDK's HTTP client, and the token-response cap
+// (tokencap.go). The flag reports whether the cap refused the response.
+func (a *AuthClient) oauthCtx(ctx context.Context) (context.Context, *atomic.Bool) {
+	ctx, capped := withTokenCap(ctx)
+	return context.WithValue(ctx, oauth2.HTTPClient, a.client), capped
 }
 
 func (a *AuthClient) scope() string {
@@ -87,9 +92,10 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 		ClientID: a.cfg.ClientID, ClientSecret: a.cfg.ClientSecret,
 		TokenURL: a.ep.token, Scopes: a.cfg.Scopes, AuthStyle: oauth2.AuthStyleInParams,
 	}
-	tok, err := cc.Token(a.oauthCtx(ctx))
+	octx, capped := a.oauthCtx(ctx)
+	tok, err := cc.Token(octx)
 	if err != nil {
-		return nil, &AuthError{Msg: "client credentials grant failed", OAuthError: oauthError(err), Cause: scrubCause(err)}
+		return nil, grantFailed("client credentials grant failed", err, capped)
 	}
 	return tokenSetFromToken(tok), nil
 }
@@ -105,9 +111,10 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 // validation failure all fail closed. An empty expectedNonce skips id_token
 // validation (custom no-nonce flows).
 func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVerifier, expectedNonce string) (*TokenSet, error) {
-	tok, err := a.codeConfig(redirectURI).Exchange(a.oauthCtx(ctx), code, oauth2.VerifierOption(codeVerifier))
+	octx, capped := a.oauthCtx(ctx)
+	tok, err := a.codeConfig(redirectURI).Exchange(octx, code, oauth2.VerifierOption(codeVerifier))
 	if err != nil {
-		return nil, &AuthError{Msg: "authorization code exchange failed", OAuthError: oauthError(err), Cause: scrubCause(err)}
+		return nil, grantFailed("authorization code exchange failed", err, capped)
 	}
 	ts := tokenSetFromToken(tok)
 	if expectedNonce != "" {
@@ -138,10 +145,11 @@ func (a *AuthClient) verifyNonce(ctx context.Context, idToken, expectedNonce str
 
 // Refresh obtains a new access token from a refresh token.
 func (a *AuthClient) Refresh(ctx context.Context, refreshToken string) (*TokenSet, error) {
-	src := a.codeConfig("").TokenSource(a.oauthCtx(ctx), &oauth2.Token{RefreshToken: refreshToken})
+	octx, capped := a.oauthCtx(ctx)
+	src := a.codeConfig("").TokenSource(octx, &oauth2.Token{RefreshToken: refreshToken})
 	tok, err := src.Token()
 	if err != nil {
-		return nil, &AuthError{Msg: "token refresh failed", OAuthError: oauthError(err), Cause: scrubCause(err)}
+		return nil, grantFailed("token refresh failed", err, capped)
 	}
 	return tokenSetFromToken(tok), nil
 }
@@ -212,9 +220,13 @@ func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Val
 		return nil, &TransportError{Msg: err.Error(), Cause: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
+	// Bounded like the JWKS read (jwt.go): never more than cap+1 bytes, the extra one telling a longer body apart.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, tokenResponseMaxBytes+1))
 	if err != nil {
 		return nil, &TransportError{Msg: err.Error(), Cause: err}
+	}
+	if len(body) > tokenResponseMaxBytes {
+		return nil, &AuthError{Msg: fmt.Sprintf("response from %s exceeds %d bytes", endpoint, tokenResponseMaxBytes)}
 	}
 	// Success is 2xx. `>= 400` alone read a 3xx as success, and the SDK deliberately does not follow
 	// redirects (noFollowRedirect surfaces the 3xx here), so that path was reachable: Logout returned

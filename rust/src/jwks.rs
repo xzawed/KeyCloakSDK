@@ -23,6 +23,38 @@ const FAILURE_BACKOFF_CAP: Duration = Duration::from_secs(5);
 /// 여기만 바꾸지 말 것. 상한이 없으면 적대적·거대 JWKS 가 그대로 메모리에 올라온다.
 const JWKS_MAX_BYTES: usize = 51200;
 
+/// 토큰 엔드포인트(모든 grant — auth 레인과 admin 레인의 자기 토큰)·introspection 응답 본문의 바이트 상한. 레인이
+/// 몇이든 이 상수 하나다(`auth.rs` 의 `CappedHttp` · `token_provider.rs`). 두 끝과 할당 상한은
+/// `tests/token_response_cap.rs` 가 고정한다.
+/// ⚠️ 51200(JWKS 상한)을 빌려 쓰지 말 것 — Keycloak 26.6 이 기본으로 받아들이는 가장 긴 Bearer 가 65,459 바이트다.
+/// ⚠️ 교차언어 가드가 이 값을 뽑는다 — 식(`1 << 20`)이 아니라 맨 십진 리터럴로 둔다.
+pub(crate) const TOKEN_RESPONSE_MAX_BYTES: usize = 1_048_576;
+
+/// 응답 본문을 `cap` 바이트까지만 읽는다 — 넘으면 `Ok(None)`(JWKS · 토큰 · introspection 공용).
+///
+/// ⚠️ 쥐는 본문은 많아야 `cap` 바이트다 — 넘기는 청크는 복사하지 않고, 벡터는 읽은 만큼만 자라며(선할당 금지)
+/// 용량도 `cap` 에서 멈춘다. 청크 크기는 hyper 가 정한다(읽기 버퍼 최대 8192 + 4096 × 100 = 417,792 바이트) —
+/// 판정 순간 그 한 청크가 더 있을 수 있다. reqwest 가 디코딩하면 `chunk()` 가 푼 바이트를 준다.
+/// 오류는 `bytes()` 와 같다(둘 다 reqwest 의 `decode`).
+pub(crate) async fn read_capped(
+    resp: &mut reqwest::Response,
+    cap: usize,
+) -> std::result::Result<Option<Vec<u8>>, reqwest::Error> {
+    let mut body: Vec<u8> = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        let len = body.len().saturating_add(chunk.len());
+        if len > cap {
+            return Ok(None);
+        }
+        if len > body.capacity() {
+            let target = len.max(body.capacity().saturating_mul(2)).min(cap);
+            body.reserve_exact(target - body.len());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(Some(body))
+}
+
 /// 게이트 상태. **하나의 뮤텍스가 두 축을 함께 소유한다** — 강제 재조회의 30초 rate-limit 과
 /// 실패 fetch 의 백오프. 잠금을 나누면 「검사 후 fetch」 사이에 다른 태스크가 끼어들 수 있다.
 #[derive(Default)]
@@ -66,24 +98,33 @@ fn jitter() -> f64 {
 }
 
 pub struct JwksStore {
+    source: Arc<Source>,
+    gate: Arc<Mutex<Gate>>, // single-flight + rate-limit + 실패 백오프 — 떼어 낸 fetch 가 소유 가드를 쥔다
+    min_refetch: u64,
+}
+
+/// 떼어 낸 fetch 태스크가 들고 가는 것 — 호출자가 사라져도 이것만으로 끝까지 돌아 캐시를 채운다.
+struct Source {
     jwks_uri: String,
     http: reqwest::Client,
     cache: RwLock<Option<Arc<JwkSet>>>,
-    gate: Mutex<Gate>, // single-flight + rate-limit + 실패 백오프
-    min_refetch: u64,
 }
 
 impl JwksStore {
     pub fn new(jwks_uri: impl Into<String>, http: reqwest::Client, min_refetch_secs: u64) -> Self {
         Self {
-            jwks_uri: jwks_uri.into(),
-            http,
-            cache: RwLock::new(None),
-            gate: Mutex::new(Gate::default()),
+            source: Arc::new(Source {
+                jwks_uri: jwks_uri.into(),
+                http,
+                cache: RwLock::new(None),
+            }),
+            gate: Arc::new(Mutex::new(Gate::default())),
             min_refetch: min_refetch_secs,
         }
     }
+}
 
+impl Source {
     async fn fetch(&self) -> Result<Arc<JwkSet>> {
         let resp = self
             .http
@@ -105,19 +146,12 @@ impl JwksStore {
         // 보내는 만큼 다 받는다. 청크 단위로 받으며 상한+1 을 넘는 순간 끊는다 — `Content-Length`
         // 로만 판정하면 그 헤더가 없거나 거짓인 응답을 놓친다.
         let mut resp = resp;
-        let mut body: Vec<u8> = Vec::new();
-        while let Some(chunk) = resp
-            .chunk()
+        let body = read_capped(&mut resp, JWKS_MAX_BYTES)
             .await
             .map_err(|e| KeycloakError::Transport(format!("JWKS read: {e}")))?
-        {
-            body.extend_from_slice(&chunk);
-            if body.len() > JWKS_MAX_BYTES {
-                return Err(KeycloakError::Transport(format!(
-                    "JWKS response exceeds {JWKS_MAX_BYTES} bytes"
-                )));
-            }
-        }
+            .ok_or_else(|| {
+                KeycloakError::Transport(format!("JWKS response exceeds {JWKS_MAX_BYTES} bytes"))
+            })?;
         // ⚠️ serde_json 의 `Display` 는 틀린 타입의 문자열 값을 인용한다(`invalid type: string "…"`) —
         // 응답 본문을 오류로 옮기지 않도록 분류와 위치만 남긴다(Grok 레그 실측 2026-09-26).
         let set: JwkSet = serde_json::from_slice(&body).map_err(|e| {
@@ -141,22 +175,25 @@ impl JwksStore {
         *self.cache.write().await = Some(arc.clone());
         Ok(arc)
     }
+}
 
+impl JwksStore {
     fn lookup(set: Option<&Arc<JwkSet>>, kid: &str) -> Option<Jwk> {
         set.and_then(|s| s.find(kid)).cloned()
     }
 
     /// kid로 JWK 조회. 캐시 히트=네트워크 0. 미해결 kid만 rate-limited 재조회.
     pub async fn get_key(&self, kid: &str) -> Result<Jwk> {
-        if let Some(jwk) = Self::lookup(self.cache.read().await.as_ref(), kid) {
+        if let Some(jwk) = Self::lookup(self.source.cache.read().await.as_ref(), kid) {
             return Ok(jwk);
         }
         // ⚠️ gate 획득이 **콜드 로드와 강제 재조회 양쪽의** single-flight 지점이다. 예전에는
         // 콜드 로드가 이 잠금 **밖**에 있어서, 20개 태스크가 동시에 첫 검증을 하면 IdP 로
         // 20건이 나갔다 — **정상(200) 엔드포인트에서도** 그랬다(실측 20/20).
-        let mut gate = self.gate.lock().await;
+        // 소유 가드(`lock_owned`)인 것은 아래에서 그 가드를 fetch 태스크로 넘기기 때문이다.
+        let mut gate = self.gate.clone().lock_owned().await;
         let cold = {
-            let c = self.cache.read().await;
+            let c = self.source.cache.read().await;
             // gate 획득 후 재확인(다른 태스크가 방금 채웠을 수 있음)
             if let Some(jwk) = Self::lookup(c.as_ref(), kid) {
                 return Ok(jwk);
@@ -191,19 +228,31 @@ impl JwksStore {
             )));
         }
 
-        match self.fetch().await {
-            Ok(set) => {
-                gate.failures = 0;
-                gate.last_failure = None;
-                Self::lookup(Some(&set), kid)
-                    .ok_or_else(|| KeycloakError::TokenValidation("unknown kid".into()))
+        // ⚠️ **fetch 를 호출자에게서 떼어 낸다 — 게이트 가드째.** 호출자의 future 안에서 돌리면 창을 찍은 뒤 호출자가
+        // 취소(드롭)될 때 fetch 도 죽어 창만 쓰고 키는 못 받았다 — 같은 fetch 를 기다리던 호출자까지 `rate-limited`
+        // (`forced_refetch_cancelled_*`). 태스크는 HTTP 타임아웃으로만 끝나고 결과(캐시·백오프)를 남긴 뒤 가드를 놓는다.
+        // 핸들을 버려도 태스크는 취소되지 않는다. ⚠️ 취소 시 stamp 를 되돌리지 말 것 — 취소된 위조 kid 검증마다 IdP
+        // 요청이 하나씩 나간다. ⚠️ 저수준 주입에 타임아웃 없는 클라이언트를 주면 멈춘 IdP 가 게이트를 그만큼 쥔다.
+        let source = self.source.clone();
+        let fetch = tokio::spawn(async move {
+            let fetched = source.fetch().await;
+            match &fetched {
+                Ok(_) => {
+                    gate.failures = 0;
+                    gate.last_failure = None;
+                }
+                Err(_) => {
+                    gate.failures = gate.failures.saturating_add(1);
+                    gate.last_failure = Some(Instant::now());
+                }
             }
-            Err(e) => {
-                gate.failures = gate.failures.saturating_add(1);
-                gate.last_failure = Some(Instant::now());
-                Err(e)
-            }
-        }
+            fetched
+        });
+        let set = fetch.await.map_err(|_| {
+            KeycloakError::Transport("JWKS fetch task did not complete".to_string())
+        })??;
+        Self::lookup(Some(&set), kid)
+            .ok_or_else(|| KeycloakError::TokenValidation("unknown kid".into()))
     }
 }
 
@@ -796,6 +845,184 @@ mod tests {
             certs_hits(&server).await,
             1,
             "빈 200 을 주는 IdP 에 20 회 조회가 요청 1 건으로 접혀야 한다 — 거부가 백오프를 찍지 않으면 20 건이 나간다"
+        );
+    }
+
+    // ── 강제 재조회 창 + 호출자 취소 (jwks-forced-refetch-window-burned) ───────────────────────
+    //
+    // 창은 재조회를 **결정할 때** 찍힌다(위 `fetch_failure_still_stamps_gate_rate_limiting_next_lookup`). 그 fetch 가
+    // 호출자의 future 안에서 돌면, 호출자가 취소(드롭)될 때 fetch 도 함께 죽어 **창만 쓰고 키는 못 받는다** — 키가
+    // 회전한 IdP 의 진짜 토큰이 창이 끝날 때까지 거부된다(실측 2026-10-05: 시간 초과 · abort 로 #1 을 비행 중에
+    // 끊으면 #2 가 `unknown kid (refetch rate-limited)`, IdP 는 소켓이 먼저 닫힌 것을 봤다).
+    //
+    // ⚠️ 창을 되돌려(취소 시 stamp 철회) 고치지 말 것 — 그러면 취소된 위조 kid 검증마다 IdP 요청이 하나씩 나간다
+    // (python 실측 10 대 1). 아래 503 시험이 그 「고침」을 잡는다.
+    //
+    // ⚠️ 이 시험들의 클라이언트에는 **유휴 연결 풀이 없다** — 풀 정리 타이머가 없어야 멈춘 시계가 I/O 를 기다리는 동안
+    // 다음 타이머로 자동 전진하지 않는다(그러면 30초 창이 몰래 끝나 「창 안」이 거짓이 된다). 시험마다 시계가
+    // 움직이지 않았음을 마지막에 단언한다.
+
+    fn timerless_http() -> reqwest::Client {
+        reqwest::Client::builder()
+            .pool_max_idle_per_host(0)
+            .build()
+            .expect("reqwest client")
+    }
+
+    /// 첫 조회(콜드 로드)에 k1 을 주고, 그 뒤로는 `rotated` 를 준다(키 회전 · 장애).
+    async fn rotating_idp(rotated: ResponseTemplate) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(jwks_json("k1")))
+            .up_to_n_times(1)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(rotated)
+            .mount(&server)
+            .await;
+        server
+    }
+
+    /// 강제 재조회가 IdP 에 닿을 때까지 기다린다 — wiremock 은 자기 스레드의 실시간으로 돌고, 여기는 `yield` 만 하므로
+    /// 멈춘 시계를 건드리지 않는다.
+    async fn until_certs_hits(server: &MockServer, n: usize) {
+        while certs_hits(server).await < n {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    /// 취소 지점 하나 — 첫 poll 에서 게이트가 찍힌 뒤, fetch 요청이 IdP 에 닿기 **전**에 버린다.
+    #[tokio::test(start_paused = true)]
+    async fn forced_refetch_cancelled_after_its_first_poll_still_fills_the_cache() {
+        let server = rotating_idp(ResponseTemplate::new(200).set_body_json(jwks_json("k2"))).await;
+        let store = JwksStore::new(format!("{}/certs", server.uri()), timerless_http(), 30);
+        store.get_key("k1").await.unwrap(); // 콜드 로드 — 창을 쓰지 않는다
+        let t0 = Instant::now();
+        {
+            let first = store.get_key("k2");
+            tokio::pin!(first);
+            // 잠금이 모두 비어 있어 이 한 번의 poll 안에서 게이트가 찍힌다. 그리고 버린다 = 취소.
+            let polled = std::future::poll_fn(|cx| {
+                std::task::Poll::Ready(std::future::Future::poll(first.as_mut(), cx))
+            })
+            .await;
+            assert!(
+                polled.is_pending(),
+                "the forced fetch cannot finish within one poll"
+            );
+        }
+        assert_eq!(
+            certs_hits(&server).await,
+            1,
+            "#1 was cancelled before its request reached the IdP"
+        );
+
+        let jwk = store.get_key("k2").await.expect(
+            "#2 inside the window: the window's one fetch must still fill the cache with k2",
+        );
+        assert_eq!(jwk.common.key_id.as_deref(), Some("k2"));
+        assert_eq!(
+            certs_hits(&server).await,
+            2,
+            "exactly one /certs request for the window"
+        );
+        assert_eq!(
+            Instant::now(),
+            t0,
+            "the paused clock must not move — #2 is inside the window"
+        );
+    }
+
+    /// 취소 지점 둘 — 요청이 IdP 에 닿은 **뒤**(비행 중) 버린다. 같은 fetch 를 게이트에서 기다리던 다른 호출자도
+    /// 그 취소로 실패해서는 안 된다.
+    #[tokio::test(start_paused = true)]
+    async fn forced_refetch_cancelled_mid_flight_still_fills_the_cache_for_every_waiter() {
+        let server = rotating_idp(
+            ResponseTemplate::new(200)
+                .set_body_json(jwks_json("k2"))
+                .set_delay(Duration::from_millis(300)), // 실시간 — 그동안 #1 을 끊는다
+        )
+        .await;
+        let store = Arc::new(JwksStore::new(
+            format!("{}/certs", server.uri()),
+            timerless_http(),
+            30,
+        ));
+        store.get_key("k1").await.unwrap();
+        let t0 = Instant::now();
+
+        let s = store.clone();
+        let first = tokio::spawn(async move { s.get_key("k2").await });
+        until_certs_hits(&server, 2).await;
+        let s = store.clone();
+        let waiter = tokio::spawn(async move { s.get_key("k2").await });
+        tokio::task::yield_now().await; // waiter 가 게이트에 줄을 선다
+        first.abort();
+        assert!(
+            first.await.expect_err("#1 must be cut").is_cancelled(),
+            "#1 was cancelled mid-flight"
+        );
+
+        let waited = waiter.await.expect("waiter task").expect(
+            "a caller waiting on the same fetch must not be failed by another caller's cancellation",
+        );
+        assert_eq!(waited.common.key_id.as_deref(), Some("k2"));
+        let jwk = store
+            .get_key("k2")
+            .await
+            .expect("#2 inside the window must be accepted");
+        assert_eq!(jwk.common.key_id.as_deref(), Some("k2"));
+        assert_eq!(
+            certs_hits(&server).await,
+            2,
+            "exactly one /certs request for the window"
+        );
+        assert_eq!(
+            Instant::now(),
+            t0,
+            "the paused clock must not move — #2 is inside the window"
+        );
+    }
+
+    /// 의도된 실패 의미는 그대로다 — **실패한** 강제 fetch(503)는 호출자가 취소됐어도 창을 쓴다. 창 안의 #2 는
+    /// IdP 에 가지 않고 거부된다(취소 시 stamp 를 되돌리는 「고침」이면 여기서 #2 가 다시 나가 503 을 받는다).
+    #[tokio::test(start_paused = true)]
+    async fn failed_forced_refetch_still_spends_the_window_when_its_caller_was_cancelled() {
+        let server =
+            rotating_idp(ResponseTemplate::new(503).set_delay(Duration::from_millis(300))).await;
+        let store = Arc::new(JwksStore::new(
+            format!("{}/certs", server.uri()),
+            timerless_http(),
+            30,
+        ));
+        store.get_key("k1").await.unwrap();
+        let t0 = Instant::now();
+
+        let s = store.clone();
+        let first = tokio::spawn(async move { s.get_key("k2").await });
+        until_certs_hits(&server, 2).await;
+        first.abort();
+        assert!(first.await.expect_err("#1 must be cut").is_cancelled());
+
+        match store.get_key("k2").await {
+            Err(KeycloakError::TokenValidation(m)) => {
+                assert_eq!(m, "unknown kid (refetch rate-limited)")
+            }
+            other => panic!("a failed forced fetch must still spend the window, got {other:?}"),
+        }
+        assert_eq!(
+            certs_hits(&server).await,
+            2,
+            "the refused #2 must not reach the IdP"
+        );
+        assert_eq!(
+            Instant::now(),
+            t0,
+            "the paused clock must not move — #2 is inside the window"
         );
     }
 }
