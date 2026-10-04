@@ -60,6 +60,8 @@ var dumpWalkExempt = map[string]string{
 		"필드는 하위 RoundTripper 하나뿐이고 비밀을 쥐지 않는다(cause.go)",
 	"wireScrubBody": "응답 본문(http.Response.Body)을 감싸 읽는 동안만 산다 — 파사드가 쥐지 않는다. " +
 		"필드는 원래 본문 하나뿐이다(cause.go)",
+	"cappedBody": "토큰 응답 본문을 감싸 상한까지 읽는 동안만 산다 — 파사드가 쥐지 않는다. " +
+		"필드는 원래 본문·상한 판정 플래그·센 바이트 수·끝 오류뿐이고 본문 바이트를 쥐지 않는다(tokencap.go)",
 }
 
 // 가짜 IdP — 토큰·introspect·JWKS·실패 realm·admin 404 를 한 서버가 낸다.

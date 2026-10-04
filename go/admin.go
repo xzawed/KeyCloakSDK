@@ -115,6 +115,9 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 	gc, tr := newAdminTransport(cfg)
 
 	tp := NewClientCredentialsTokenProvider(func(ctx context.Context) (*TokenSet, error) {
+		// The token response is capped (tokencap.go). gocloak flattens the cap's Read error into its message, and
+		// loginError keeps that message, so the flag is not needed here.
+		ctx, _ = withTokenCap(ctx)
 		jwt, err := gc.LoginClient(ctx, cfg.ClientID, cfg.ClientSecret, cfg.Realm)
 		if err != nil {
 			// Not toSDKError: gocloak flattened the token response's error body into the message (cause.go).
