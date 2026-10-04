@@ -6,6 +6,7 @@
 //! 자체 검증기 대신 강화된 `JwtValidator`로 검증하므로 `JsonWebKeySet`은 비워 둔다.
 use crate::config::KeycloakConfig;
 use crate::error::{KeycloakError, Result, oauth_error_code};
+use crate::jwks::{TOKEN_RESPONSE_MAX_BYTES, read_capped};
 use crate::jwt::JwtValidator;
 use crate::oidc::OidcEndpoints;
 use crate::token_provider::TokenProvider;
@@ -21,6 +22,9 @@ use openidconnect::{
     RequestTokenError, Scope, StandardErrorResponse, TokenIntrospectionResponse, TokenResponse,
     TokenUrl,
 };
+use openidconnect::{AsyncHttpClient, HttpClientError, HttpRequest, HttpResponse};
+use std::future::Future;
+use std::pin::Pin;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // 수동 EndpointSet 구성으로 exchange 빌더를 infallible하게 만든다.
@@ -41,6 +45,48 @@ pub struct AuthClient {
     http: reqwest::Client,
     oidc: KcOidcClient,
     validator: JwtValidator,
+}
+
+/// openidconnect(oauth2) 에 넘기는 HTTP 클라이언트 — 공유 `reqwest::Client` 로 보내되 본문은
+/// [`TOKEN_RESPONSE_MAX_BYTES`] 까지만 읽는다. ⚠️ `request_async(&self.http)` 로 되돌리지 말 것 — oauth2 5.0 의
+/// reqwest 구현은 `response.bytes()` 로 통째로 읽는다(`reqwest_client.rs`). 비공개 타입이라 §4 표면은 그대로다.
+struct CappedHttp<'a> {
+    http: &'a reqwest::Client,
+    /// 상한 초과 문구의 주어 — `"token response"` · `"introspection response"`.
+    what: &'static str,
+}
+
+impl<'c> AsyncHttpClient<'c> for CappedHttp<'_> {
+    // ⚠️ oauth2 reqwest 구현과 같은 오류 타입 — 전송 실패의 문구(`map_token_err`)가 그대로다. 다른 것은 본문 읽기뿐.
+    type Error = HttpClientError<reqwest::Error>;
+    type Future =
+        Pin<Box<dyn Future<Output = std::result::Result<HttpResponse, Self::Error>> + Send + 'c>>;
+
+    fn call(&'c self, request: HttpRequest) -> Self::Future {
+        Box::pin(async move {
+            let mut response = self
+                .http
+                .execute(request.try_into().map_err(Box::new)?)
+                .await
+                .map_err(Box::new)?;
+            let mut builder = openidconnect::http::Response::builder()
+                .status(response.status())
+                .version(response.version());
+            for (name, value) in response.headers() {
+                builder = builder.header(name, value);
+            }
+            let body = read_capped(&mut response, TOKEN_RESPONSE_MAX_BYTES)
+                .await
+                .map_err(Box::new)?
+                .ok_or_else(|| {
+                    HttpClientError::Other(format!(
+                        "{} exceeds {TOKEN_RESPONSE_MAX_BYTES} bytes",
+                        self.what
+                    ))
+                })?;
+            builder.body(body).map_err(HttpClientError::Http)
+        })
+    }
 }
 
 fn now_secs() -> u64 {
@@ -210,7 +256,10 @@ impl AuthClient {
         if let Some(uri) = redirect_uri {
             req = req.set_redirect_uri(std::borrow::Cow::Owned(uri));
         }
-        let resp = req.request_async(&self.http).await.map_err(map_token_err)?;
+        let resp = req
+            .request_async(&self.capped("token response"))
+            .await
+            .map_err(map_token_err)?;
         let token_set = to_token_set(&resp)?;
         if let Some(nonce) = expected_nonce {
             self.verify_nonce(token_set.id_token.as_deref(), nonce)
@@ -247,6 +296,14 @@ impl AuthClient {
         Ok(())
     }
 
+    /// 토큰·introspection 요청에 넘길 상한 클라이언트(`CappedHttp`) — 공유 `http` 를 그대로 쓴다.
+    fn capped(&self, what: &'static str) -> CappedHttp<'_> {
+        CappedHttp {
+            http: &self.http,
+            what,
+        }
+    }
+
     /// config.scopes를 openidconnect `Scope` 벡터로 변환한다(authz-url·client-credentials 공용).
     /// 비면 "openid" 폴백 — token_provider(admin 경로)와 동형.
     fn scopes(&self) -> Vec<Scope> {
@@ -268,7 +325,7 @@ impl AuthClient {
             .oidc
             .exchange_client_credentials()
             .add_scopes(self.scopes())
-            .request_async(&self.http)
+            .request_async(&self.capped("token response"))
             .await
             .map_err(map_token_err)?;
         to_token_set(&resp)
@@ -280,7 +337,7 @@ impl AuthClient {
         let resp = self
             .oidc
             .exchange_refresh_token(&rt)
-            .request_async(&self.http)
+            .request_async(&self.capped("token response"))
             .await
             .map_err(map_token_err)?;
         to_token_set(&resp)
@@ -297,7 +354,7 @@ impl AuthClient {
         let resp = self
             .oidc
             .introspect(&at)
-            .request_async(&self.http)
+            .request_async(&self.capped("introspection response"))
             .await
             .map_err(map_token_err)?;
         Ok(IntrospectionResult {
@@ -382,10 +439,9 @@ fn to_token_set(resp: &CoreTokenResponse) -> Result<TokenSet> {
 /// 토큰을 되울리는 `error_description`·`error_uri` 가 `{:?}` 로 원문 그대로 찍혔고, `Other` 문구는 응답
 /// Content-Type 헤더 값을 인용했다(실측 2026-09-26 — `tests/hostile_token_response.rs`). `Parse` 의 serde
 /// 오류는 틀린 타입의 문자열 값을 인용하고 원 본문을 품으므로 그 문구도 옮기지 않는다.
-fn map_token_err<RE>(e: RequestTokenError<RE, TokenErrorResponse>) -> KeycloakError
-where
-    RE: std::error::Error + 'static,
-{
+fn map_token_err(
+    e: RequestTokenError<HttpClientError<reqwest::Error>, TokenErrorResponse>,
+) -> KeycloakError {
     use openidconnect::RequestTokenError as RTE;
     match e {
         RTE::ServerResponse(resp) => KeycloakError::Auth {
@@ -394,6 +450,8 @@ where
             // 코드 자리에 코드 아닌 값(되울린 토큰)이 오면 그것도 싣지 않는다(`oauth_error_code`).
             oauth_error: oauth_error_code(resp.error().as_ref()),
         },
+        // `Other` 는 `CappedHttp` 만 만든다 — 상한 초과의 고정 문구(admin 레인과 같다)라 그대로 옮긴다.
+        RTE::Request(HttpClientError::Other(msg)) => KeycloakError::Transport(msg),
         RTE::Request(re) => KeycloakError::Transport(format!("token request: {re}")),
         RTE::Parse(..) => {
             KeycloakError::Transport("token request failed: Failed to parse server response".into())

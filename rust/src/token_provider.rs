@@ -1,6 +1,7 @@
 //! TokenProvider — §4 동형 async 추상화. admin은 이 trait로만 토큰을 받는다.
 use crate::config::KeycloakConfig;
 use crate::error::{KeycloakError, Result, oauth_error_code};
+use crate::jwks::{TOKEN_RESPONSE_MAX_BYTES, read_capped};
 use crate::oidc::OidcEndpoints;
 use crate::tokens::TokenSet;
 use async_trait::async_trait;
@@ -64,10 +65,21 @@ impl ClientCredentialsTokenProvider {
             .await
             .map_err(|e| KeycloakError::Transport(format!("token endpoint: {e}")))?;
         let status = resp.status();
-        let body: serde_json::Value = resp
-            .json()
+        // ⚠️ 본문은 상한(auth 레인과 한 상수)까지만 읽는다 — `resp.json()` 은 통째로 모았다. 넘으면 admin 요청 없이
+        // 실패한다(`SdkTokenSupplier` 가 401 로 옮긴다).
+        let mut resp = resp;
+        let body = read_capped(&mut resp, TOKEN_RESPONSE_MAX_BYTES)
             .await
-            .map_err(|e| KeycloakError::Transport(format!("token response: {e}")))?;
+            .map_err(|e| KeycloakError::Transport(format!("token response: {e}")))?
+            .ok_or_else(|| {
+                KeycloakError::Transport(format!(
+                    "token response exceeds {TOKEN_RESPONSE_MAX_BYTES} bytes"
+                ))
+            })?;
+        // 해석 실패 문구는 `resp.json()` 시절 그대로다 — serde 문구는 문자열 값을 인용할 수 있어 옮기지 않는다.
+        let body: serde_json::Value = serde_json::from_slice(&body).map_err(|_| {
+            KeycloakError::Transport("token response: error decoding response body".into())
+        })?;
         // ⚠️ **존재 검사는 타입 검사가 아니다.** 예전에는 `is_none()` 만 봐서 `access_token`
         // 이 숫자·객체·null 이어도 통과했고, 아래 `as_str().unwrap_or_default()` 가 그것을
         // **빈 문자열**로 만들어 호출자에게 성공을 돌려줬다. 그 빈 토큰은 `expires_at` 까지

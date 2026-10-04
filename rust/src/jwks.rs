@@ -23,6 +23,38 @@ const FAILURE_BACKOFF_CAP: Duration = Duration::from_secs(5);
 /// 여기만 바꾸지 말 것. 상한이 없으면 적대적·거대 JWKS 가 그대로 메모리에 올라온다.
 const JWKS_MAX_BYTES: usize = 51200;
 
+/// 토큰 엔드포인트(모든 grant — auth 레인과 admin 레인의 자기 토큰)·introspection 응답 본문의 바이트 상한. 레인이
+/// 몇이든 이 상수 하나다(`auth.rs` 의 `CappedHttp` · `token_provider.rs`). 두 끝과 할당 상한은
+/// `tests/token_response_cap.rs` 가 고정한다.
+/// ⚠️ 51200(JWKS 상한)을 빌려 쓰지 말 것 — Keycloak 26.6 이 기본으로 받아들이는 가장 긴 Bearer 가 65,459 바이트다.
+/// ⚠️ 교차언어 가드가 이 값을 뽑는다 — 식(`1 << 20`)이 아니라 맨 십진 리터럴로 둔다.
+pub(crate) const TOKEN_RESPONSE_MAX_BYTES: usize = 1_048_576;
+
+/// 응답 본문을 `cap` 바이트까지만 읽는다 — 넘으면 `Ok(None)`(JWKS · 토큰 · introspection 공용).
+///
+/// ⚠️ 쥐는 본문은 많아야 `cap` 바이트다 — 넘기는 청크는 복사하지 않고, 벡터는 읽은 만큼만 자라며(선할당 금지)
+/// 용량도 `cap` 에서 멈춘다. 청크 크기는 hyper 가 정한다(읽기 버퍼 최대 8192 + 4096 × 100 = 417,792 바이트) —
+/// 판정 순간 그 한 청크가 더 있을 수 있다. reqwest 가 디코딩하면 `chunk()` 가 푼 바이트를 준다.
+/// 오류는 `bytes()` 와 같다(둘 다 reqwest 의 `decode`).
+pub(crate) async fn read_capped(
+    resp: &mut reqwest::Response,
+    cap: usize,
+) -> std::result::Result<Option<Vec<u8>>, reqwest::Error> {
+    let mut body: Vec<u8> = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        let len = body.len().saturating_add(chunk.len());
+        if len > cap {
+            return Ok(None);
+        }
+        if len > body.capacity() {
+            let target = len.max(body.capacity().saturating_mul(2)).min(cap);
+            body.reserve_exact(target - body.len());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(Some(body))
+}
+
 /// 게이트 상태. **하나의 뮤텍스가 두 축을 함께 소유한다** — 강제 재조회의 30초 rate-limit 과
 /// 실패 fetch 의 백오프. 잠금을 나누면 「검사 후 fetch」 사이에 다른 태스크가 끼어들 수 있다.
 #[derive(Default)]
@@ -105,19 +137,12 @@ impl JwksStore {
         // 보내는 만큼 다 받는다. 청크 단위로 받으며 상한+1 을 넘는 순간 끊는다 — `Content-Length`
         // 로만 판정하면 그 헤더가 없거나 거짓인 응답을 놓친다.
         let mut resp = resp;
-        let mut body: Vec<u8> = Vec::new();
-        while let Some(chunk) = resp
-            .chunk()
+        let body = read_capped(&mut resp, JWKS_MAX_BYTES)
             .await
             .map_err(|e| KeycloakError::Transport(format!("JWKS read: {e}")))?
-        {
-            body.extend_from_slice(&chunk);
-            if body.len() > JWKS_MAX_BYTES {
-                return Err(KeycloakError::Transport(format!(
-                    "JWKS response exceeds {JWKS_MAX_BYTES} bytes"
-                )));
-            }
-        }
+            .ok_or_else(|| {
+                KeycloakError::Transport(format!("JWKS response exceeds {JWKS_MAX_BYTES} bytes"))
+            })?;
         // ⚠️ serde_json 의 `Display` 는 틀린 타입의 문자열 값을 인용한다(`invalid type: string "…"`) —
         // 응답 본문을 오류로 옮기지 않도록 분류와 위치만 남긴다(Grok 레그 실측 2026-09-26).
         let set: JwkSet = serde_json::from_slice(&body).map_err(|e| {
