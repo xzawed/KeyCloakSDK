@@ -58,17 +58,23 @@ func (c *Client) Admin(ctx context.Context) (*AdminClient, error) {
 	if a != nil {
 		return a, nil
 	}
+	if err := ctx.Err(); err != nil { // a caller that has already given up starts nothing
+		return nil, abandoned(err)
+	}
 	// singleflight는 Do가 반환되면 키를 즉시 해제하므로, 첫 배치 완료 직후 c.admin 세팅 전에 도착한
 	// 호출이 두 번째 배치를 시작해 admin 클라이언트를 중복 생성(로그인·커넥션풀 누출)할 수 있다.
 	// 캐시를 플라이트 '안에서' 다시 확인(double-checked)해 중복 생성을 막고 c.admin도 여기서 세팅한다.
-	v, err, _ := c.group.Do("admin", func() (any, error) {
+	// 생성은 호출자 누구의 취소에도 묶이지 않는다(값은 유지 — 로그인은 Config.ReadTimeout 이 묶는다). 첫 호출자의
+	// ctx 로 돌던 때는 그 호출자가 포기하면 같이 기다리던 호출자까지 「context canceled」로 실패했다(실측).
+	detached := context.WithoutCancel(ctx)
+	ch := c.group.DoChan("admin", func() (any, error) {
 		c.mu.Lock()
 		existing := c.admin
 		c.mu.Unlock()
 		if existing != nil {
 			return existing, nil
 		}
-		created, cerr := newAdminClient(ctx, c.cfg)
+		created, cerr := newAdminClient(detached, c.cfg)
 		if cerr != nil {
 			return nil, cerr
 		}
@@ -77,10 +83,15 @@ func (c *Client) Admin(ctx context.Context) (*AdminClient, error) {
 		c.mu.Unlock()
 		return created, nil
 	})
-	if err != nil {
-		return nil, err
+	select {
+	case r := <-ch:
+		if r.Err != nil {
+			return nil, r.Err
+		}
+		return r.Val.(*AdminClient), nil
+	case <-ctx.Done():
+		return nil, abandoned(ctx.Err())
 	}
-	return v.(*AdminClient), nil
 }
 
 // Close releases created sub-resources — admin only if it was created, auth always.

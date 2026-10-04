@@ -11,7 +11,6 @@ import (
 
 	jose "github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
-	"golang.org/x/sync/singleflight"
 )
 
 // jwksMaxBytes bounds a JWKS response body. 51200 is Nimbus's RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT
@@ -61,14 +60,36 @@ type Validator struct {
 
 // jwksState is the key store: the cached JWKS and every gate on refetching it. It sits behind a
 // pointer so that withAudience's siblings share it — one cache, one forced-refetch window, one
-// failure backoff and one single-flight group per Client, whichever audience a caller checks.
+// failure backoff and one fetch in flight per Client, whichever audience a caller checks.
 type jwksState struct {
 	mu          sync.Mutex
 	jwks        *jose.JSONWebKeySet
-	forcedAt    time.Time          // last *forced* refetch (rotation); zero until the first one
-	failures    int                // consecutive fetch failures; reset to 0 on success
-	lastFailure time.Time          // when the last fetch failed; zero when healthy
-	group       singleflight.Group // collapses concurrent JWKS fetches
+	forcedAt    time.Time   // when the last *forced* refetch (rotation) started; zero until the first one
+	failures    int         // consecutive fetch failures; reset to 0 on success
+	lastFailure time.Time   // when the last fetch failed; zero when healthy
+	flight      *jwksFlight // the fetch in progress, which concurrent misses wait on; nil when none is
+}
+
+// jwksFlight is one JWKS fetch in progress. No caller owns it: it runs detached from every caller's
+// cancellation, bounded only by the JWKS HTTP client's timeout (Config.ReadTimeout), and its result fills the
+// cache whoever is still waiting. A caller that gives up therefore returns at once without stopping the fetch,
+// without failing the others waiting on it, and without counting as an IdP failure — and a forced refetch
+// whose window is already stamped is never wasted. Measured before: a validation cancelled mid-flight spent the
+// 30s window without updating the cache, so the rotated key was refused for the rest of it.
+type jwksFlight struct {
+	done chan struct{} // closed once the fetch has finished and its outcome is recorded
+	err  error         // the fetch's outcome; written before done is closed
+}
+
+// wait blocks until the fetch has finished or ctx is done. A caller that stops waiting gets its own
+// context's error; the fetch carries on for the others and for the cache.
+func (f *jwksFlight) wait(ctx context.Context) error {
+	select {
+	case <-f.done:
+		return f.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // backoffRemaining reports how long the caller must wait before another fetch is allowed.
@@ -189,40 +210,23 @@ func (v *Validator) Validate(ctx context.Context, token string) (*ValidatedToken
 // rate-limited by minRefetch so a token with a random kid cannot flood the IdP.
 // The initial load is not "forced" and does not consume the rate limit — the
 // first rotation refetch is always allowed (matching the Python/Java SDKs).
-// Concurrent misses collapse to a single fetch via single-flight.
+// Concurrent misses wait on the one fetch in flight (jwksFlight).
 func (v *Validator) resolveKey(ctx context.Context, kid string) (any, error) {
 	if k := v.lookup(kid); k != nil {
 		return k, nil
 	}
-
-	v.mu.Lock()
-	fresh := v.jwks == nil
-	v.mu.Unlock()
-	if fresh {
-		// Initial (non-forced) load; if the kid is still absent it is genuinely unknown.
-		if err := v.singleFetch(ctx); err != nil {
+	// A caller that has already given up starts nothing: no stamp on the window, no request to the IdP.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	f, err := v.fetchFor(ctx, kid)
+	if err != nil {
+		return nil, err
+	}
+	if f != nil { // nil: the kid was cached by the time fetchFor looked again — nothing to wait for
+		if err := f.wait(ctx); err != nil {
 			return nil, err
 		}
-		if k := v.lookup(kid); k != nil {
-			return k, nil
-		}
-		return nil, fmt.Errorf("no key for kid %q", kid)
-	}
-
-	// Cached JWKS lacks the kid → possible rotation → forced refetch, rate-limited.
-	// One reading of the clock seam serves both the check and the stamp. With the default
-	// (time.Now) both carry a monotonic reading, so Sub is monotonic exactly as time.Since was.
-	v.mu.Lock()
-	now := v.opts.now()
-	if !v.forcedAt.IsZero() && now.Sub(v.forcedAt) < v.opts.minRefetch {
-		v.mu.Unlock()
-		return nil, fmt.Errorf("no key for kid %q (refetch rate-limited)", kid)
-	}
-	v.forcedAt = now
-	v.mu.Unlock()
-
-	if err := v.singleFetch(ctx); err != nil {
-		return nil, err
 	}
 	if k := v.lookup(kid); k != nil {
 		return k, nil
@@ -230,40 +234,80 @@ func (v *Validator) resolveKey(ctx context.Context, kid string) (any, error) {
 	return nil, fmt.Errorf("no key for kid %q", kid)
 }
 
-// singleFetch fetches the JWKS, collapsing concurrent callers into one request.
+// fetchFor decides, under one lock, which fetch serves a cache miss for kid. A fetch in flight is joined — its
+// result may carry the kid, and joining costs the IdP nothing, whichever window started it. Otherwise a cold
+// cache starts the initial load, which does not stamp the window, and a warm one starts a forced refetch unless
+// the window is still open, in which case the miss is refused without touching the IdP.
 //
-// The failure backoff is checked here rather than in fetch() so that it sits behind the
-// singleflight barrier: callers coalesced into one in-flight fetch share its outcome, and only the
-// leader consults the gate. Checking it in fetch() would be equivalent, but this keeps the "one
-// decision per outbound request" property visible in one place.
-func (v *Validator) singleFetch(ctx context.Context) error {
-	_, err, _ := v.group.Do("fetch", func() (any, error) {
-		// The backoff sits *before* the request and *after* the 30s forced-refetch gate. On a
-		// cold cache the branch above is skipped entirely, so without this every lookup goes out
-		// to the IdP — that is the original defect.
-		v.mu.Lock()
-		if r := v.backoffRemaining(v.opts.now()); r > 0 {
-			failures := v.failures
-			v.mu.Unlock()
-			return nil, &TransportError{Msg: fmt.Sprintf(
-				"JWKS fetch backing off after %d consecutive failures (retry in %.2fs)",
-				failures, r.Seconds())}
-		}
-		v.mu.Unlock()
+// The window is stamped only by the forced refetch that starts in it. A miss that joins a fetch, or that the
+// failure backoff refuses, leaves the window as it was: stamping first spent a window on no request of its own,
+// and the rotated key was then refused for the rest of it (measured — a backoff refusal right after a refetch
+// that failed at the window's end, and a join of the previous window's fetch still in flight when that window
+// ended; the default Config.ReadTimeout equals the default window, so a timed-out refetch fails right there).
+//
+// It first looks the kid up again, under the lock that decides: the caller's own lookup ran outside it, and a
+// fetch that finished in between may have brought the kid. Deciding on that stale miss refused a key the window's
+// own fetch had just cached, and on a cold cache started a second, forced fetch that stamped the window — so the
+// first rotation after the load was refused (measured; the initial load must not use the window). A nil flight
+// with a nil error means the kid is cached now.
+func (v *Validator) fetchFor(ctx context.Context, kid string) (*jwksFlight, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.jwks != nil && len(v.jwks.Key(kid)) > 0 {
+		return nil, nil
+	}
+	if v.flight != nil {
+		return v.flight, nil
+	}
+	// One reading of the clock seam serves the window, the backoff and the stamp. With the default (time.Now)
+	// it carries a monotonic reading, so Sub is monotonic exactly as time.Since was.
+	now := v.opts.now()
+	if v.jwks == nil {
+		return v.startFetchLocked(ctx, now)
+	}
+	// Cached JWKS lacks the kid → possible rotation → forced refetch, rate-limited.
+	if !v.forcedAt.IsZero() && now.Sub(v.forcedAt) < v.opts.minRefetch {
+		return nil, fmt.Errorf("no key for kid %q (refetch rate-limited)", kid)
+	}
+	f, err := v.startFetchLocked(ctx, now)
+	if err == nil {
+		v.forcedAt = now
+	}
+	return f, err
+}
 
-		err := v.fetch(ctx)
-		v.mu.Lock()
-		if err != nil {
-			v.failures++
-			v.lastFailure = v.opts.now()
-		} else {
-			v.failures = 0
-			v.lastFailure = time.Time{}
-		}
-		v.mu.Unlock()
-		return nil, err
-	})
-	return err
+// startFetchLocked starts a fetch unless the failure backoff forbids it. Callers hold v.mu and have found no
+// fetch in flight.
+//
+// The backoff sits *before* the request and *after* the 30s forced-refetch gate. On a cold cache that gate
+// is skipped entirely, so without this every lookup goes out to the IdP — that is the original defect.
+func (v *Validator) startFetchLocked(ctx context.Context, now time.Time) (*jwksFlight, error) {
+	if r := v.backoffRemaining(now); r > 0 {
+		return nil, &TransportError{Msg: fmt.Sprintf(
+			"JWKS fetch backing off after %d consecutive failures (retry in %.2fs)", v.failures, r.Seconds())}
+	}
+	f := &jwksFlight{done: make(chan struct{})}
+	v.flight = f
+	go v.runFetch(context.WithoutCancel(ctx), f)
+	return f, nil
+}
+
+// runFetch performs the fetch and records its outcome. Only a fetch that failed counts toward the backoff —
+// the context is detached, so no caller's cancellation can make it fail — and a success resets it.
+func (v *Validator) runFetch(ctx context.Context, f *jwksFlight) {
+	err := v.fetch(ctx)
+	v.mu.Lock()
+	if err != nil {
+		v.failures++
+		v.lastFailure = v.opts.now()
+	} else {
+		v.failures = 0
+		v.lastFailure = time.Time{}
+	}
+	v.flight = nil
+	v.mu.Unlock()
+	f.err = err
+	close(f.done)
 }
 
 func (v *Validator) lookup(kid string) any {
