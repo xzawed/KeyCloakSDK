@@ -144,6 +144,18 @@ public sealed class MalformedTokenResponseTests
         // Grok 레그의 주장 — 빈 200 본문이면 Duende 의 TokenIntrospectionResponse 가 "Json is null" 을 던진다. 카나리아는
         // 없다(흐름 검사만 — SDK 타입으로 번역되는가).
         new("h empty 200 body", 200, "application/json", "", Array.Empty<string>(), Auth, Auth),
+        // (s) 짝 없는 서로게이트 이스케이프 — System.Text.Json 은 파싱하지만 GetString 이 InvalidOperationException 을 던진다.
+        // 수정 전에는 토큰 호출 전부에서 그것이 그대로 샜다(§4, UndecodableResponseTests). 값은 어느 경로에도 싣지 않는다.
+        new("s1 access_token unpaired surrogate", 200, "application/json",
+            """{"access_token":"\ud800LK-S1-AT-1-canary","token_type":"Bearer","expires_in":300,"refresh_token":"LK-S1-RT-1-canary"}""",
+            new[] { "LK-S1-AT-1-canary", "LK-S1-RT-1-canary" }, Auth, Auth),
+        new("s2 refresh_token unpaired surrogate", 200, "application/json",
+            """{"access_token":"LK-S2-AT-1-canary","token_type":"Bearer","expires_in":300,"refresh_token":"\udc00LK-S2-RT-1-canary"}""",
+            new[] { "LK-S2-AT-1-canary", "LK-S2-RT-1-canary" }, Auth, Auth),
+        new("s3 400 error unpaired surrogate", 400, "application/json", """{"error":"\ud800LK-S3-ERR-1-canary"}""",
+            new[] { "LK-S3-ERR-1-canary" }, Auth, Auth),
+        new("s4 401 error unpaired surrogate", 401, "application/json", """{"error":"\ud800xLK-S4-ERR-1-canary"}""",
+            new[] { "LK-S4-ERR-1-canary" }, Auth, Auth),
     };
 
     public static IEnumerable<object[]> VariantNames => Variants.Select(v => new object[] { v.Name });

@@ -6,7 +6,12 @@ paths:
   - "harness/install/consume/dotnet/**"
   - ".github/workflows/dotnet-*.yml"
 ---
-<!-- doc-budget: max-bytes=7064 -->
+<!-- doc-budget: max-bytes=7135 -->
+<!-- 7064 → 7135 (2026-10-05): 래칫 조건 (1) — 교환이다. 「The Duende.IdentityModel extension methods do not throw
+     (check resp.IsError) … read the error code from resp.Json["error"]」는 거짓이었다: IntrospectTokenAsync 는 던지고
+     (InitializeAsync), IsError·AccessToken 같은 getter 는 짝 없는 서로게이트 이스케이프에서 InvalidOperationException 을
+     던져 SDK 밖으로 샜다(실측). 그 문장을 지우고, 판정을 다시 재는 시험(UndecodableResponseTests)과 읽는 자리
+     (AuthClient.TryDecode)를 가리키는 문장으로 바꿨다. 압축으로 먼저 지불했다(초안 +115B → +71B). -->
 
 # C#/.NET rules
 
@@ -50,7 +55,7 @@ cd dotnet && dotnet pack src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c R
 - ⚠️ **`JsonWebTokenHandler.ValidateTokenAsync` does not throw on failure** — checking `result.IsValid` is mandatory. Its defaults are not safe either: `ValidAlgorithms` is `null` (everything allowed), so pin `["RS256"]`; `ClockSkew` 5 minutes → 30 seconds; `RequireExpirationTime=true`. **Test trap**: `CreateToken` injects `exp` automatically, so a no-exp test needs `SetDefaultTimesOnTokenCreation=false`.
 - ⚠️ **A forged signature triggers a JWKS refetch — of all nine languages, .NET is the only one where that happens.** `Microsoft.IdentityModel` reads a signature failure as a key-rotation signal, calls `RequestRefresh()` and retries, and it cannot be turned off short of abandoning `ConfigurationManager`. The only thing limiting the actual damage is `RefreshIntervalSeconds` (30 seconds) — measured: 6 forgeries → 1 extra fetch. **Do not change the test to "0 times"** — that would assert something this SDK does not do.
 - ⚠️ **An expiring `HttpClient.Timeout` raises `TaskCanceledException`, not `HttpRequestException`** — catch and convert it at the boundary with `catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)`.
-- ⚠️ **The Duende.IdentityModel extension methods do not throw** (check `resp.IsError`). Bad credentials also come back as a 401 (`ErrorType=Http`), so read the error code from `resp.Json["error"]`. PKCE is unsupported (generate it by hand), and logout is a manual POST.
+- ⚠️ **Duende reports errors in the response, not by throwing — but its getters decode lazily**: `IsError`, `AccessToken`… and `IntrospectTokenAsync` throw `InvalidOperationException` on an unpaired surrogate escape; read via `AuthClient.TryDecode` (`UndecodableResponseTests`). A 401 is `ErrorType=Http`. No PKCE (generate it); logout is a manual POST.
 - ⚠️ **A `record`'s generated `ToString()` exposes every token and secret** — `TokenSet` and `KeycloakConfig` mask them with a `ToString()` override plus a `JsonConverter<T>`. **But Serilog's `{@}` destructuring reads the raw properties directly and bypasses the masking, so never write those two types with `{@}`.**
 - ⚠️ **`AddKeycloak(config)` also registers `KeycloakConfig` as a singleton** — a consumer who adds their own `AddSingleton<KeycloakConfig>` makes the resolution ambiguous.
 
