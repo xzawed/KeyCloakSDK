@@ -86,6 +86,7 @@ var hpUndeterminedExempt = map[string]string{
 		"소비자에게 건네는 값이 아니다(facade_dump_test.go 의 걷기 면제와 같은 이유)",
 	"wireScrubTransport.CloseIdleConnections": "전송층의 유휴 커넥션 정리 — 요청을 내지 않는다(cause.go)",
 	"wireScrubBody.Read":                      "응답 본문 래퍼 — 이미 받은 본문을 읽을 뿐 요청을 내지 않는다(cause.go)",
+	"(*cappedBody).Read":                      "토큰 응답 본문 래퍼 — 이미 받은 본문을 상한까지 읽을 뿐 요청을 내지 않는다(tokencap.go)",
 }
 
 const (
