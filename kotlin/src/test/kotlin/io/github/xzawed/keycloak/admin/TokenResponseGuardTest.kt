@@ -37,11 +37,13 @@ import kotlin.test.assertTrue
 // ⚠️ 요청·응답 컨텍스트는 **인터페이스**라 MockK 로 만든다(JAX-RS 추상 클래스 Response 를 목으로 만들면 JDK 21 에서 멈춘다 —
 // `.claude/rules/kotlin.md`). 상태는 실제 enum `Response.Status` 를 쓴다.
 private const val TRG_TOKEN = "http://kc/auth/realms/r/protocol/openid-connect/token"
+private const val TRG_LOGOUT = "http://kc/auth/realms/r/protocol/openid-connect/logout"
 private const val TRG_NUMBER = """{"access_token":12345}"""
 
-// 가드 자신의 상한 — 경계 시험은 이 상수로 상한·상한+1 을 잰다. 값의 아래쪽은 서버가 받아들이는 가장 큰 토큰이 정하고
-// AdminTokenResponseTest 의 65,459 바이트 Bearer 시험이 지킨다 — 위쪽은 16 MiB 거부 시험이 지킨다(Java 동형).
-private const val TRG_CAP = TokenResponseGuard.MAX_BODY_BYTES
+// 토큰 응답 크기 상한 — 경계 시험은 이 숫자로 상한·상한+1 을 잰다(아홉 언어가 함께 움직이는 값이라 숫자로 적는다 — SDK 상수가
+// 바뀌면 이 시험이 먼저 안다). 값의 아래쪽은 서버가 받아들이는 가장 큰 토큰이 정하고 AdminTokenResponseTest 의 65,459 바이트
+// Bearer 시험이 지킨다 — 위쪽은 16 MiB 거부 시험이 지킨다(Java 동형).
+private const val TRG_CAP = 1_048_576
 private const val TRG_USABLE = """{"access_token":"AT","expires_in":300}"""
 
 // 쓸 수 있는 토큰 뒤를 JSON 공백으로 채워 정확히 size 바이트로 — 결합에게는 여전히 쓸 수 있는 본문이다.
@@ -251,9 +253,14 @@ internal class TokenResponseGuardTest {
                 Triple("GET", "http://kc/admin/realms/r/users/x", Response.Status.OK),
                 // ⚠️ 원시 경로로 본다 — 렐름 이름의 %2F 가 경로 조각을 지어내지 못한다
                 Triple("POST", "http://kc/admin/realms/a%2Fprotocol%2Fopenid-connect%2Ftoken", Response.Status.OK),
-                Triple("POST", TRG_TOKEN, Response.Status.BAD_REQUEST), // 오류는 TokenManager 몫
-                Triple("POST", TRG_TOKEN, Response.Status.UNAUTHORIZED),
+                Triple("POST", "http://kc/admin/realms/a%2Fprotocol%2Fopenid-connect%2Ftoken", Response.Status.BAD_REQUEST),
                 Triple("POST", "$TRG_TOKEN/introspect", Response.Status.OK),
+                Triple("POST", "$TRG_TOKEN/introspect", Response.Status.BAD_REQUEST),
+                // logout 의 2xx 는 RESTEasy 의 void 추출기가 읽지 않고 닫는다(나머지는 고정 버퍼로 비운다)
+                Triple("POST", TRG_LOGOUT, Response.Status.NO_CONTENT),
+                Triple("POST", TRG_LOGOUT, Response.Status.OK),
+                Triple("GET", TRG_LOGOUT, Response.Status.BAD_REQUEST),
+                Triple("GET", TRG_TOKEN, Response.Status.BAD_REQUEST),
             )
         for ((method, uri, status) in others) {
             val req = request(method, uri)
@@ -298,6 +305,63 @@ internal class TokenResponseGuardTest {
             assertEquals("token endpoint response carries no usable access_token", e.message)
             assertNull(e.cause)
             verify(exactly = 0) { res.entityStream = any() }
+        }
+    }
+
+    // ───────────── 오류 상태 — 판정하지 않고 상한까지만 읽는다 ─────────────
+
+    // 토큰·logout 경로의 오류 상태(3xx·4xx·5xx)는 판정하지 않는다(TokenManager 의 몫 — 갱신 400 의 복구) — 다만 RESTEasy 가 그
+    // 본문을 예외에 담으려고 통째로 버퍼에 읽으므로(extractResult · void 추출기의 bufferEntity) 여기서 상한까지만 읽어 바이트
+    // 그대로 넘긴다. 미디어 타입과 무관하다(버퍼링은 원시 엔티티를 읽는다) — 표시도 달지 않는다.
+    @Test
+    fun `error status bodies are read within the cap and handed on byte for byte`() {
+        val body = """{"error":"invalid_grant","error_description":"Stale token"}"""
+        for (uri in listOf(TRG_TOKEN, TRG_LOGOUT)) {
+            for (status in listOf(Response.Status.FOUND, Response.Status.BAD_REQUEST, Response.Status.UNAUTHORIZED)) {
+                for (mediaType in listOf(MediaType.APPLICATION_JSON_TYPE, null)) {
+                    val req = request("POST", uri)
+                    val res = response(status, bytes(body), mediaType)
+                    val handed = slot<InputStream>()
+                    every { res.entityStream = capture(handed) } just runs
+                    TokenResponseGuard().filter(req, res)
+                    assertEquals(body, handed.captured.readAllBytes().decodeToString(), "$uri $status $mediaType")
+                    verify(exactly = 0) { req.setProperty(any(), any()) }
+                }
+            }
+            // 엔티티가 없는 오류는 그대로 둔다 — 빈 스트림을 지어내면 hasEntity 가 바뀐다
+            val empty = response(Response.Status.BAD_REQUEST, null)
+            TokenResponseGuard().filter(request("POST", uri), empty)
+            verify(exactly = 0) { empty.entityStream = any() }
+        }
+        val atCap = response(Response.Status.BAD_REQUEST, ByteArrayInputStream(trgPadded(TRG_CAP)))
+        val handed = slot<InputStream>()
+        every { atCap.entityStream = capture(handed) } just runs
+        TokenResponseGuard().filter(request("POST", TRG_TOKEN), atCap)
+        assertContentEquals(trgPadded(TRG_CAP), handed.captured.readAllBytes())
+    }
+
+    // 상한을 넘는 오류 본문은 상한+1 바이트까지만 읽고, 스트림을 닫은 뒤(닫기의 실패는 버린다) 상수 메시지로 거부한다 — RESTEasy 가
+    // ResponseProcessingException 으로 감싸 admin 은 걸러진 원인 사슬의 KeycloakTransportException 이다(AdminTokenResponseTest).
+    @Test
+    fun `error status body above the cap is rejected without reading past cap plus one`() {
+        for ((uri, message) in listOf(
+            TRG_TOKEN to "token response exceeds 1048576 bytes",
+            TRG_LOGOUT to "logout response exceeds 1048576 bytes",
+        )) {
+            val raw = TrgFaultyCloseBody()
+            val res = response(Response.Status.BAD_REQUEST, raw, MediaType.APPLICATION_JSON_TYPE)
+            val e = assertFailsWith<IOException> { TokenResponseGuard().filter(request("POST", uri), res) }
+            assertEquals(message, e.message)
+            assertNull(e.cause)
+            assertEquals(0, e.suppressed.size)
+            assertEquals(1, raw.closes, "거부 전에 스트림을 한 번 닫아야 한다")
+            verify(exactly = 0) { res.entityStream = any() }
+
+            val counted = TrgEndlessBody(TRG_CAP + 1L)
+            val over = response(Response.Status.SERVICE_UNAVAILABLE, counted)
+            assertFailsWith<IOException> { TokenResponseGuard().filter(request("POST", uri), over) }
+            assertFalse(counted.overread)
+            assertEquals(TRG_CAP + 1L, counted.served, "넘침을 알아챌 한 바이트까지 읽어야 한다")
         }
     }
 

@@ -58,6 +58,11 @@ public class AuthClient internal constructor(
     private var jwtValidator: JwtValidator? = injectedValidator
     private val validatorLock = Any()
 
+    // 응답 본문을 상한까지만 읽는 송신기(상태 없음) — 토큰(세 그랜트)·introspection·logout. 이름은 넘친 본문의 메시지에 실린다.
+    private val tokenSender = CappedResponseSender("token response")
+    private val introspectionSender = CappedResponseSender("introspection response")
+    private val logoutSender = CappedResponseSender("logout response")
+
     /**
      * PKCE(S256) 인가 코드 흐름의 시작 URL을 만든다(non-suspend·네트워크 없음). S256 code_challenge 계산은
      * Nimbus `AuthenticationRequest.Builder.codeChallenge(CodeVerifier, S256)`에 위임한다(Java `AuthClient`
@@ -181,9 +186,11 @@ public class AuthClient internal constructor(
             ).toHTTPRequest()
         val resp =
             try {
-                onIo { TokenIntrospectionResponse.parse(applyTimeouts(req).send()) }
+                onIo { TokenIntrospectionResponse.parse(applyTimeouts(req).send(introspectionSender)) }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: ResponseTooLargeException) {
+                throw KeycloakTransportException("Introspection request failed: ${e.message}", e)
             } catch (e: IOException) {
                 throw KeycloakTransportException("Introspection request failed", e)
             } catch (e: ParseException) {
@@ -201,9 +208,11 @@ public class AuthClient internal constructor(
     public suspend fun logout(refreshToken: String) {
         val resp =
             try {
-                onIo { applyTimeouts(buildLogoutRequest(refreshToken)).send() }
+                onIo { applyTimeouts(buildLogoutRequest(refreshToken)).send(logoutSender) }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: ResponseTooLargeException) {
+                throw KeycloakTransportException("Logout request failed: ${e.message}", e)
             } catch (e: IOException) {
                 throw KeycloakTransportException("Logout request failed", e)
             }
@@ -263,17 +272,21 @@ public class AuthClient internal constructor(
     // OIDCTokenResponseParser로 파싱해 id_token을 보존한다(exchangeCode 전용 — 나머지 그랜트는 id_token이
     // 없어도 플레인 파서로 충분하다).
     // ⚠️ 파서 오류는 [RedactedCause] 로만 단다 — 원본(과 그 아래 json-smart 오류)은 응답 본문을 인용한다.
+    // ⚠️ 응답 본문은 [CappedResponseSender] 로 읽는다 — Nimbus 의 `send()` 는 본문을 끝까지 담는다(상한 없음, 실측 32 MiB 에
+    // 230 MiB 할당). introspect·logout 도 같은 송신기다. 상한을 넘으면 그 레인의 전송 실패다(메시지가 상한을 말한다).
     private suspend fun authSend(
         req: HTTPRequest,
         oidc: Boolean = false,
     ): TokenResponse =
         try {
             onIo {
-                val httpResponse = applyTimeouts(req).send()
+                val httpResponse = applyTimeouts(req).send(tokenSender)
                 if (oidc) OIDCTokenResponseParser.parse(httpResponse) else TokenResponse.parse(httpResponse)
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: ResponseTooLargeException) {
+            throw KeycloakTransportException("Auth request failed: ${e.message}", e)
         } catch (e: IOException) {
             throw KeycloakTransportException("Auth request failed", e)
         } catch (e: ParseException) {
