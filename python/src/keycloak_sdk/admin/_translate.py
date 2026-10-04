@@ -37,12 +37,18 @@ def translate(exc: KeycloakError) -> KeycloakAdminError | KeycloakTransportError
     `KeycloakTransportError`로, 있으면 상태별(`404`→NotFound, `409`→Conflict,
     `403`→Forbidden, 그 외→일반 `KeycloakAdminError`)로 변환한다. `response_body`는
     가능하면 문자열로 보존한다.
+
+    ⚠️ **이 함수는 던지지 않는다** — `call`·`acall` 이 `except` **안에서** 부르므로, 여기서 난
+    예외는 SDK 타입이 아닌 채로 새고 그 `__context__` 가 응답 본문을 쥔 python-keycloak 오류다.
+    예전의 엄격한 `body.decode()` 가 UTF-8 이 아닌 오류 본문에서 바로 그렇게 raw
+    `UnicodeDecodeError` 를 냈다(실측: 0xFF · UTF-8 로 인코딩한 서로게이트 ED A0 80, sync·aio).
+    풀 수 없는 바이트는 버리지도 바꾸지도 않고 `\\xff` 처럼 이스케이프로 남긴다.
     """
     status = getattr(exc, "response_code", None)
     body = getattr(exc, "response_body", None)
     body_str: str | None
     if isinstance(body, (bytes, bytearray)):
-        body_str = body.decode()
+        body_str = body.decode("utf-8", "backslashreplace")
     else:
         body_str = str(body) if body else None
     if status is None:

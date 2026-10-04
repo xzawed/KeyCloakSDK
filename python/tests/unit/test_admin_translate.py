@@ -161,6 +161,42 @@ def test_unusable_response_inside_python_keycloak_is_a_transport_error(
     assert _CANARY not in "".join(traceback.format_exception(error))
 
 
+#: UTF-8 이 아닌 오류 본문 — 0xFF(어디서도 시작 바이트가 아니다)와 UTF-8 로 인코딩한 서로게이트
+#: (ED A0 80, 엄격한 디코더가 거부한다). 둘 다 수정 전에는 raw `UnicodeDecodeError` 가 샜다.
+_NOT_UTF8 = {
+    "0xFF": b'{"errorMessage":"\xff ' + _CANARY.encode() + b'"}',
+    "ED A0 80": b'{"errorMessage":"\xed\xa0\x80 ' + _CANARY.encode() + b'"}',
+}
+
+
+@pytest.mark.parametrize("status", [400, 404])
+@pytest.mark.parametrize("body", list(_NOT_UTF8.values()), ids=list(_NOT_UTF8))
+def test_an_error_body_that_is_not_utf8_is_an_sdk_error_with_no_body_in_its_chain(
+    lower_post_error: Any, status: int, body: bytes
+) -> None:
+    """§4 — 예전에는 엄격한 `body.decode()` 가 `except` 안에서 raw `UnicodeDecodeError` 를 냈고,
+    그 `__context__` 가 응답 본문을 쥔 python-keycloak 오류였다. 이제 SDK 타입이고 사슬은
+    요약뿐이다."""
+    with pytest.raises(KeycloakAdminError) as excinfo:
+        call(_raiser(lower_post_error(status, body)))
+
+    error = excinfo.value
+    assert error.status_code == status
+    assert isinstance(error.__cause__, LowerLibraryError)
+    assert error.__context__ is None
+    assert _CANARY not in "".join(traceback.format_exception(error))
+    # 문서화된 필드는 본문을 예전대로 보존한다 — 풀 수 없는 바이트는 버리지도(ignore) 바꾸지도
+    # (replace) 않고 이스케이프로 보인다.
+    assert error.keycloak_error == body.decode("utf-8", "backslashreplace")
+
+
+def test_translate_never_raises_on_a_body_it_cannot_decode() -> None:
+    translated = translate(KeycloakGetError("x", response_code=400, response_body=b"\xff\xfe"))
+
+    assert isinstance(translated, KeycloakAdminError)
+    assert translated.keycloak_error == "\\xff\\xfe"
+
+
 def _refused_grant_body() -> KeycloakConnectionError:
     """admin 그랜트 세션이 상한을 넘는 본문을 거부했을 때 `raw_post` 가 만드는 오류 그대로다."""
     try:
