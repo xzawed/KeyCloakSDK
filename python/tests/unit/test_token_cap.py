@@ -1,18 +1,22 @@
 """`_internal/token_cap.py` 단위 — 상수의 모양, 응답 이름, 상한 안의 풀기, 설치.
 
 레인 전체(실 HTTP)는 `test_token_response_cap.py`·`aio/test_token_response_cap_async.py` 가 잰다.
-여기는 그 경로들이 다 밟지 않는 갈래(날 deflate·겹친 압축·모르는 인코딩·스트리밍 통과·설치 거부)다.
+여기는 그 경로들이 다 밟지 않는 갈래(날 deflate·겹친 압축·모르는 인코딩·끝난 스트림 뒤의 바이트·
+스트리밍 통과·설치 거부)와, 설치된 urllib3 버전과 무관해야 하는 sync 원문 읽기다.
 """
 
 from __future__ import annotations
 
 import inspect
 import re
+import tracemalloc
 import zlib
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+import requests
 from keycloak import KeycloakOpenID
 
 from keycloak_sdk._internal import token_cap
@@ -26,8 +30,33 @@ from keycloak_sdk._internal.token_cap import (
     capped_send,
 )
 from keycloak_sdk.exceptions import KeycloakConfigError
+from tests.unit.conftest import RawBeforeMaxLength, gzip_padded
 
 _BOMB = zlib.compress(b" " * (4 * 1024 * 1024))  # 4 MiB 공백 → 수 KB
+_TOKEN_URL = "http://idp.test/realms/r/protocol/openid-connect/token"
+#: 레인 테스트와 같은 자릿수 — 16 MiB 폭탄을 통째로 풀면 그 네 배를 넘는다.
+_BOUNDED_PEAK = 4 * 1024 * 1024
+
+
+def _sync_response(raw: RawBeforeMaxLength, encoding: str | None) -> requests.Response:
+    response = requests.Response()
+    response.status_code = 200
+    if encoding is not None:
+        response.headers["Content-Encoding"] = encoding
+    response.raw = raw
+    return response
+
+
+def _sync_send(
+    response: requests.Response,
+) -> tuple[Callable[..., requests.Response], list[dict[str, Any]]]:
+    seen: list[dict[str, Any]] = []
+
+    def send(_request: Any, **kwargs: Any) -> requests.Response:
+        seen.append(kwargs)
+        return response
+
+    return send, seen
 
 
 def test_the_cap_is_one_plain_decimal_literal() -> None:
@@ -92,9 +121,95 @@ def test_a_broken_deflate_stream_after_the_first_piece_is_a_decoding_error() -> 
         inflate(b"\xff" * 64, 100)
 
 
+@pytest.mark.parametrize(
+    ("coding", "wbits"),
+    [("gzip", zlib.MAX_WBITS | 16), ("deflate", zlib.MAX_WBITS), ("deflate", -zlib.MAX_WBITS)],
+    ids=["gzip", "deflate", "raw-deflate"],
+)
+def test_bytes_after_the_end_of_the_stream_are_neither_inflated_nor_kept(
+    coding: str, wbits: int
+) -> None:
+    """⚠️ zlib 의 `decompressobj` 는 스트림이 끝난 뒤 받은 입력을 **전부** `unused_data` 에 이어
+    붙인다 — 상한은 푼 바이트에 걸리므로 그 꼬리는 세지도 막지도 못했다(aio 레인 실측: 작은 gzip
+    뒤에 16 MiB 를 덧대면 피크 34 MB). 끝난 스트림 뒤의 입력은 풀지도 쥐지도 않는다."""
+    comp = zlib.compressobj(9, zlib.DEFLATED, wbits)
+    stream = comp.compress(b'{"access_token": "x"}') + comp.flush()
+    inflate = _inflater([coding], "token response")
+    trailing = bytes(65_536)
+
+    assert inflate(stream, 1000) == b'{"access_token": "x"}'
+    tracemalloc.start()
+    try:
+        for _ in range(64):  # 끝난 스트림 뒤로 4 MiB
+            assert inflate(trailing, 1000) == b""
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert peak < 256 * 1024, f"4 MiB after the end of the stream: peak {peak} bytes"
+
+
 def test_a_body_compressed_twice_is_refused() -> None:
     with pytest.raises(ResponseRefused, match=r"^token response is compressed more than once"):
         _inflater(["gzip", "deflate"], "token response")
+
+
+def test_sync_reads_raw_bytes_and_inflates_them_itself_whatever_urllib3_does() -> None:
+    """⚠️ sync 상한이 urllib3 버전에 달리면 안 된다 — 2.6 미만 urllib3 는 `read(amt,
+    decode_content=True)` 의 원문 `amt` 를 상한 없이 통째로 푼다(실측 2.5.0: 16 MiB gzip 폭탄에 sync
+    여섯 레인 피크 47.6 MB — 거부 메시지는 옳았다). 그 urllib3 를 흉내 낸 원문을 주고, SDK 가 원문을
+    청하는지(`decode_content=False`)와 피크를 잰다 — 예외만으로는 상한의 증거가 아니다."""
+    raw = RawBeforeMaxLength(gzip_padded(b'{"access_token": "x"}', 16 * 1024 * 1024))
+    send, seen = _sync_send(_sync_response(raw, "gzip"))
+    request = requests.Request("POST", _TOKEN_URL).prepare()
+
+    outcome: BaseException | None = None
+    tracemalloc.start()
+    try:
+        try:
+            capped_send(send)(request)
+        except Exception as exc:  # 판정은 아래 단언이 한다 — 청한 것과 피크가 먼저다
+            outcome = exc
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert set(raw.asked) == {False}, f"asked urllib3 to inflate: {raw.asked[:3]}"
+    assert peak < _BOUNDED_PEAK, f"16 MiB gzip bomb: peak {peak} bytes"
+    assert type(outcome) is ResponseRefused
+    assert str(outcome) == f"token response exceeds {TOKEN_RESPONSE_MAX_BYTES} bytes"
+    assert seen == [{"stream": True}]
+    assert raw.closed  # 남은 본문을 읽지 않고 연결째 버린다
+
+
+@pytest.mark.parametrize("encoding", [None, "identity", "br"])
+def test_a_sync_body_it_does_not_inflate_is_kept_as_it_arrives(encoding: str | None) -> None:
+    """aio 와 같다 — 모르는 이름은 풀지 않고 원문 그대로 센다. urllib3 에 맡기면 `br` 의 결과가
+    `brotli` 설치 여부에 달린다."""
+    body = b'{"access_token": "x"}'
+    raw = RawBeforeMaxLength(body, inflates=False)
+    send, _ = _sync_send(_sync_response(raw, encoding))
+
+    response = capped_send(send)(requests.Request("POST", _TOKEN_URL).prepare())
+
+    assert response.content == body
+    assert set(raw.asked) == {False}
+
+
+def test_a_sync_body_compressed_twice_is_refused_before_it_is_read() -> None:
+    """aio 와 같다 — 겹친 압축은 상한 안에서 묶어 풀 수 없으므로 읽기 전에 거부하고 연결째
+    버린다."""
+    raw = RawBeforeMaxLength(b"never read", inflates=False)
+    send, _ = _sync_send(_sync_response(raw, "gzip, gzip"))
+    request = requests.Request("POST", _TOKEN_URL).prepare()
+
+    with pytest.raises(
+        ResponseRefused, match=r"^token response is compressed more than once \(gzip, gzip\)$"
+    ):
+        capped_send(send)(request)
+
+    assert raw.asked == []
+    assert raw.closed
 
 
 def test_a_streamed_sync_request_passes_through_untouched() -> None:

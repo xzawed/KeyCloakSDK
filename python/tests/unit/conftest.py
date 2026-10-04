@@ -253,6 +253,62 @@ def _padded(head: bytes, total: int) -> Iterator[memoryview]:
         left -= n
 
 
+def gzip_padded(head: bytes, total: int) -> bytes:
+    """`head` + 공백 `total` 바이트를 gzip 으로 — 전송은 작고 푼 뒤가 거대하다(압축폭탄).
+    조각마다 압축해 원문을 통째로 만들지 않는다."""
+    comp = zlib.compressobj(9, zlib.DEFLATED, 31)
+    out = [comp.compress(piece) for piece in _padded(head, total)]
+    out.append(comp.flush())
+    return b"".join(out)
+
+
+class RawBeforeMaxLength:
+    """urllib3 2.6 미만 `HTTPResponse` 의 원문 읽기 흉내(gzip) — **설치된 urllib3 와 무관하게**
+    SDK 가 무엇을 청하는지, 그때 메모리가 얼마나 드는지를 잰다.
+
+    ⚠️ `decode_content=True` 면 원문 `amt` 바이트를 읽어 **상한 없이 통째로** 풀고, `amt` 를 넘는
+    분량은 버퍼에 쥔다 — 2.6 미만의 `GzipDecoder.decompress(data)` 에는 `max_length` 가 없다(실측
+    2.5.0: 16 MiB 폭탄 한 번의 decompress 가 16,762,622 바이트). `decode_content=False` 면 원문
+    그대로다(2.5.0 과 2.8.0 이 같다). `inflates=False` 는 urllib3 에 그 인코딩의 디코더가 없는
+    경우다(`identity`, `brotli` 없는 `br`) — 그때는 `decode_content=True` 여도 원문 그대로다."""
+
+    def __init__(self, wire: bytes, *, inflates: bool = True) -> None:
+        self._wire = wire
+        self._at = 0
+        self._decoder = zlib.decompressobj(zlib.MAX_WBITS | 16) if inflates else None
+        self._decoded = bytearray()
+        self.asked: list[bool | None] = []  # 읽기마다 받은 `decode_content`
+        self.closed = False
+
+    def read(self, amt: int | None = None, decode_content: bool | None = None) -> bytes:
+        self.asked.append(decode_content)
+        if not decode_content or self._decoder is None:
+            return self._raw(amt)
+        while amt is None or len(self._decoded) < amt:
+            data = self._raw(amt)
+            if not data:
+                break
+            self._decoded += self._decoder.decompress(data)  # 상한 없음 — 2.6 미만처럼
+        n = len(self._decoded) if amt is None else min(amt, len(self._decoded))
+        out = bytes(self._decoded[:n])
+        del self._decoded[:n]
+        return out
+
+    def stream(self, amt: int = 65_536, decode_content: bool | None = None) -> Iterator[bytes]:
+        """requests `iter_content` 가 부르는 자리 — `read` 를 빈 조각까지 되풀이한다."""
+        while data := self.read(amt, decode_content=decode_content):
+            yield data
+
+    def close(self) -> None:
+        self.closed = True
+
+    def _raw(self, amt: int | None) -> bytes:
+        end = len(self._wire) if amt is None else self._at + amt
+        data = self._wire[self._at : end]
+        self._at += len(data)
+        return data
+
+
 @dataclass
 class TokenIdp:
     """토큰·introspect 엔드포인트와 admin `GET /admin/realms` 를 내는 실 HTTP 서버(realm `r`).
@@ -275,12 +331,8 @@ class TokenIdp:
     accept_encoding: str | None = None  # 마지막 토큰 엔드포인트 요청의 Accept-Encoding
 
     def serve_gzip(self, head: bytes, total: int) -> None:
-        """`head` + 공백 `total` 바이트를 gzip 으로 — 전송은 작고 푼 뒤가 거대하다(압축폭탄).
-        조각마다 압축해 원문을 통째로 만들지 않는다."""
-        comp = zlib.compressobj(9, zlib.DEFLATED, 31)
-        out = [comp.compress(piece) for piece in _padded(head, total)]
-        out.append(comp.flush())
-        self.gzip_body = b"".join(out)
+        """`head` + 공백 `total` 바이트를 gzip 으로 보낸다(`gzip_padded`)."""
+        self.gzip_body = gzip_padded(head, total)
 
 
 def _make_token_handler(box: dict[str, TokenIdp]) -> type[BaseHTTPRequestHandler]:

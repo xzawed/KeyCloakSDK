@@ -1,9 +1,10 @@
 """토큰·introspection 응답 본문의 바이트 상한 — aio 레인 다섯(sync 미러는
 `tests/unit/test_token_response_cap.py`).
 
-⚠️ aio 는 sync 와 **푸는 자리가 다르다.** urllib3 는 `read(amt)` 로 `amt` 까지만 풀지만 httpx 의
-디코더에는 상한이 없다(`_internal/jwks_fetch.py` 실측: 20 MB 폭탄에 피크 84 MB). 그래서 이 미러는
-gzip 폭탄과, 상한 안에서 풀 수 없는 인코딩(`br`·`zstd`)을 요구하지 않는지를 따로 본다.
+⚠️ 두 미러 모두 원문을 받아 SDK 가 상한 안에서 푼다(`_internal/token_cap.py`) — httpx 의 디코더에는
+상한이 없고(`_internal/jwks_fetch.py` 실측: 20 MB 폭탄에 피크 84 MB) urllib3 는 2.6.0 부터만 `amt`
+까지 푼다. 그래서 이 미러도 gzip 폭탄과, 상한 안에서 풀 수 없는 인코딩(`br`·`zstd`)을 요구하지
+않는지를 본다.
 """
 
 from __future__ import annotations

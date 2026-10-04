@@ -240,6 +240,26 @@ def test_a_replaced_connection_is_capped_before_its_first_grant(swap: Any, token
     assert token_idp.hits == ["/realms/r/protocol/openid-connect/token"]
 
 
+@pytest.mark.parametrize("lane", ["cc", "admin"])
+def test_only_encodings_it_can_inflate_within_the_cap_are_asked_for(
+    lane: str, token_idp: Any
+) -> None:
+    """aio 미러와 같다 — 본문은 SDK 가 원문으로 받아 스스로 푼다(`_internal/token_cap.py`).
+    requests 는 `brotli`·`zstandard` 가 깔려 있으면 `br`·`zstd` 도 요구하는데(urllib3
+    `make_headers`) SDK 는 그것을 상한 안에서 풀 수 없다. 깔린 상태를 세션 기본 헤더로 흉내 내고,
+    나가는 요청을 본다."""
+    token_idp.head = _head(lane, "I" * 40)
+
+    with _client(token_idp) as kc:
+        sessions = [kc.auth._openid.connection._s]
+        sessions.append(kc.admin.raw.connection.keycloak_openid.connection._s)
+        for session in sessions:
+            session.headers["Accept-Encoding"] = "gzip, deflate, br, zstd"
+        _assert_accepted(lane, token_idp, _call(lane, kc, "I" * 40), "I" * 40)
+
+    assert token_idp.accept_encoding == "gzip, deflate"
+
+
 def test_judging_a_small_body_allocates_nothing_near_the_cap(token_idp: Any) -> None:
     """~2 KiB 응답을 판정하는 데 상한 크기의 버퍼를 미리 잡지 않는다(읽은 만큼만 자란다).
     수정 전 실측 피크 24 KB — 128 KiB 는 그 다섯 배, 상한의 1/8 이다."""

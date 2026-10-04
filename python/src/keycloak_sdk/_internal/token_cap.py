@@ -15,15 +15,18 @@ GET(`jwks_fetch.py`)이 그렇고, 그쪽은 51,200 상한을 스스로 건다. 
 본문을 이 상한까지만 읽는다 — 읽은 만큼만 메모리를 잡는다. python-keycloak 이 세션에 단
 재시도·풀 어댑터는 건드리지 않는다.
 
-⚠️ **세는 것은 푼 뒤의 바이트다.** sync 는 urllib3 가 `read(amt, decode_content=True)` 로
-`amt` 까지만 푼다. aio 는 httpx 디코더에 상한이 없으므로(`jwks_fetch.py` 실측: 20 MB 폭탄에
-피크 84 MB) 원문(`aiter_raw`)을 여기서 상한 안에서 푼다 — 그래서 aio 는 그렇게 풀 수 있는
-인코딩만 요구한다.
+⚠️ **세는 것은 푼 뒤의 바이트이고, 푸는 것은 두 미러 모두 이 모듈이다(`_inflater`).** 하위
+디코더에 맡기면 상한이 그 버전에 달린다 — httpx 디코더에는 상한이 없고(`jwks_fetch.py` 실측:
+20 MB 폭탄에 피크 84 MB), urllib3 는 2.6.0 부터만 `read(amt, decode_content=True)` 를 `amt`
+까지만 푼다. requests 는 urllib3 1.26 부터 받고 이 SDK 는 urllib3 하한을 두지 않는데, 2.5.0 에서는
+16 MiB gzip 폭탄이 한 번의 `decompress` 에 16,762,622 바이트로 풀려 sync 여섯 레인의 피크가
+47.6 MB 였다(2.8.0 은 1.2 MB, 실측 2026-10-05). 그래서 둘 다 원문(sync `read(amt,
+decode_content=False)`·aio `aiter_raw`)을 받아 여기서 풀고, 그렇게 풀 수 있는 인코딩만 요구한다.
 
-**한 번에 얼마나 넘을 수 있나.** sync 는 읽기 크기를 우리가 정한다 — 받은 것 + 이번에 청하는
-것이 cap+1 을 넘지 않는다. aio 는 전송이 조각을 정한다(httpcore 의 한 번 읽기는 64 KiB) —
-조각은 받은 뒤에야 보이므로 그 조각의 나머지(최대 64 KiB)가 상한 너머에 잠깐 있을 수 있지만,
-쌓는 본문은 cap+1 을 넘지 않는다(조각을 잘라 붙이고, 풀기는 `max_length` 로 묶는다).
+**한 번에 얼마나 넘을 수 있나.** 쌓는 본문은 두 미러 모두 cap+1 을 넘지 않는다 — 풀기를
+`max_length` 로 묶는다(`_keep`). 원문 조각의 크기는 sync 는 우리가 정하고(받은 것 + 이번에 청하는
+것이 cap+1 을 넘지 않는다), aio 는 전송이 정한다(httpcore 의 한 번 읽기는 64 KiB — 조각은 받은
+뒤에야 보이므로 그 나머지가 상한 너머에 잠깐 있을 수 있다).
 
 ⚠️ **여기서 던지는 것은 신호다.** python-keycloak 의 `raw_*` 는 세션 안에서 난 예외를 전부
 `KeycloakConnectionError("Can't connect to server")` 로 감싼다. 경계(`lower.py` 의
@@ -54,8 +57,9 @@ TOKEN_RESPONSE_MAX_BYTES = 1_048_576
 
 #: sync 한 번 읽기의 상한. ~2 KiB 응답에 상한 크기 버퍼를 잡지 않게 작게 둔다.
 _CHUNK = 16_384
-#: aio 가 요구하는 인코딩 — 상한 안에서 풀 수 있는 것만. httpx 는 `brotli`·`zstandard` 가
-#: 깔려 있으면 `br`·`zstd` 도 요구하는데, 여기서는 그것을 `max_length` 로 묶어 풀 수 없다.
+#: 두 미러가 요구하는 인코딩 — 상한 안에서 풀 수 있는 것만. httpx 도 requests 도 `brotli`·
+#: `zstandard` 가 깔려 있으면 `br`·`zstd` 를 요구하는데, 여기서는 그것을 `max_length` 로 묶어 풀 수
+#: 없다.
 _ACCEPT_ENCODING = "gzip, deflate"
 _INFLATABLE = ("gzip", "deflate")
 #: 이 모듈이 감싼 `send` 의 표지 — 같은 세션을 두 번 감싸지 않는다.
@@ -86,27 +90,37 @@ def _too_large(kind: str) -> ResponseRefused:
     return ResponseRefused(f"{kind} exceeds {TOKEN_RESPONSE_MAX_BYTES} bytes")
 
 
-def _read(raw: Any, kind: str) -> bytes:
-    """urllib3 응답에서 푼 바이트를 cap+1 까지만 청해 읽는다 — 넘으면 거부한다."""
+def _keep(body: bytearray, inflate: _Inflate, data: bytes, kind: str) -> None:
+    """원문 조각 하나를 상한 안에서 풀어 쌓는다 — 넘으면 거부한다(sync·aio 공용). `limit` 은
+    언제나 1 이상이다 — 본문이 cap 을 넘는 순간 거부하므로 cap+1-len 은 0 이 되지 않는다."""
+    body += inflate(data, TOKEN_RESPONSE_MAX_BYTES + 1 - len(body))
+    if len(body) > TOKEN_RESPONSE_MAX_BYTES:
+        raise _too_large(kind)
+
+
+def _read(response: requests.Response, kind: str) -> bytes:
+    """원문을 cap+1 까지만 청해 읽고(`decode_content=False` — urllib3 에 풀기를 맡기지 않는다)
+    여기서 상한 안에서 푼다."""
+    inflate = _inflater(response.headers.get("content-encoding", "").split(","), kind)
     body = bytearray()
-    while chunk := raw.read(
-        min(_CHUNK, TOKEN_RESPONSE_MAX_BYTES + 1 - len(body)), decode_content=True
+    while data := response.raw.read(
+        min(_CHUNK, TOKEN_RESPONSE_MAX_BYTES + 1 - len(body)), decode_content=False
     ):
-        body += chunk
-        if len(body) > TOKEN_RESPONSE_MAX_BYTES:
-            raise _too_large(kind)
+        _keep(body, inflate, data, kind)
     return bytes(body)
 
 
 def capped_send(send: _SyncSend) -> _SyncSend:
-    """requests `Session.send` 를 감싼다 — 스트리밍이 아닌 요청의 본문을 상한까지만 읽는다."""
+    """requests `Session.send` 를 감싼다 — 스트리밍이 아닌 요청의 본문을 원문으로 받아 상한까지만
+    푼다(aio 와 같다)."""
 
     def capped(request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:
         if kwargs.get("stream"):
             return send(request, **kwargs)
+        request.headers["Accept-Encoding"] = _ACCEPT_ENCODING
         response = send(request, **{**kwargs, "stream": True})
         try:
-            body = _read(response.raw, _kind(request.path_url))
+            body = _read(response, _kind(request.path_url))
         except BaseException:
             response.close()  # 남은 본문을 읽지 않고 연결째 버린다
             raise
@@ -124,7 +138,12 @@ def _inflater(codings: list[str], kind: str) -> _Inflate:
     멈춘다).
 
     httpx 와 같게 모르는 이름(`identity`·`br`·`zstd`…)은 풀지 않고 원문 그대로 센다. 압축이
-    둘 이상 겹친 응답은 묶어서 풀 수 없으므로 거부한다."""
+    둘 이상 겹친 응답은 묶어서 풀 수 없으므로 거부한다.
+
+    ⚠️ 스트림이 끝난 뒤의 입력은 풀지도 쥐지도 않는다 — zlib 의 `decompressobj` 는 끝난 뒤 받은
+    입력을 **전부** `unused_data` 에 이어 붙이고, 상한은 푼 바이트에만 걸린다(aio 레인 실측: 작은
+    gzip 뒤에 16 MiB 를 덧대면 피크 34 MB). 그 꼬리는 읽어서 버린다 — 두 번째 gzip 멤버도 풀지
+    않는다(httpx 와 같고, 멤버를 이어 푸는 urllib3 와는 다르다)."""
     known = [c.strip().lower() for c in codings if c.strip().lower() in _INFLATABLE]
     if not known:
         return lambda data, limit: data[:limit]
@@ -132,7 +151,7 @@ def _inflater(codings: list[str], kind: str) -> _Inflate:
         raise ResponseRefused(f"{kind} is compressed more than once ({', '.join(known)})")
     if known[0] == "gzip":
         gzip = zlib.decompressobj(zlib.MAX_WBITS | 16)
-        return lambda data, limit: gzip.decompress(data, limit)
+        return lambda data, limit: b"" if gzip.eof else gzip.decompress(data, limit)
     # deflate 는 zlib 래퍼가 표준이지만 날 deflate 를 보내는 서버가 있다 — httpx 처럼 첫 조각이
     # 실패하면 날 deflate 로 다시 푼다.
     inflater = zlib.decompressobj()
@@ -140,6 +159,8 @@ def _inflater(codings: list[str], kind: str) -> _Inflate:
 
     def deflate(data: bytes, limit: int) -> bytes:
         nonlocal inflater, first
+        if inflater.eof:
+            return b""
         was_first, first = first, False
         try:
             return inflater.decompress(data, limit)
@@ -155,15 +176,13 @@ def _inflater(codings: list[str], kind: str) -> _Inflate:
 async def _aread(response: httpx.Response, kind: str) -> bytes:
     inflate = _inflater(response.headers.get_list("content-encoding", split_commas=True), kind)
     body = bytearray()
-    async for chunk in response.aiter_raw():
-        body += inflate(chunk, TOKEN_RESPONSE_MAX_BYTES + 1 - len(body))
-        if len(body) > TOKEN_RESPONSE_MAX_BYTES:
-            raise _too_large(kind)
+    async for data in response.aiter_raw():
+        _keep(body, inflate, data, kind)
     return bytes(body)
 
 
 def acapped_send(send: _AsyncSend) -> Callable[..., Coroutine[Any, Any, httpx.Response]]:
-    """httpx `AsyncClient.send` 를 감싼다 — sync 와 같되 푸는 일을 여기서 한다."""
+    """httpx `AsyncClient.send` 를 감싼다 — sync 와 같다(원문을 받아 여기서 푼다)."""
 
     async def capped(
         request: httpx.Request, *, stream: bool = False, **kwargs: Any
