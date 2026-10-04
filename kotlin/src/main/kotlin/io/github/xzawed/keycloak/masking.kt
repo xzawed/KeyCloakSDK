@@ -1,6 +1,7 @@
 package io.github.xzawed.keycloak
 
 import com.nimbusds.oauth2.sdk.ErrorObject
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 // masking.kt — internal, 접두 노출 없음
@@ -29,8 +30,18 @@ internal fun maskSent(
     }
 
 // 보낸 값이 문구로 되돌아올 수 있는 꼴 — 그대로 · IdP 가 받은 꼴(UTF-8 이 짝 없는 서로게이트를 `?` 로 바꾼다) · 그 둘에서 §5.2
-// 밖의 글자를 지운 꼴(Nimbus 가 error_description 에 한 일 — 같은 함수로 지워 어긋나지 않게 한다).
+// 밖의 글자를 지운 꼴(Nimbus 가 error_description 에 한 일 — 같은 함수로 지워 어긋나지 않게 한다) · 폼 인코딩된 꼴.
+// ⚠️ 폼 인코딩된 꼴은 **어느 값이든** 더한다 — SDK 는 grant 값을 본문에, 클라이언트 시크릿을 Basic 의 비밀번호 칸에 이 꼴로
+// 싣는다(RFC 6749 §2.3.1 — Nimbus `URLUtils`·`ClientSecretBasic` 이 같은 `URLEncoder` 를 쓴다). 한때 호출부가 grant 값에만 이
+// 꼴을 더해, 폼 디코딩 없이 되울리는 IdP 앞에서 시크릿이 「Bad BASIC: sec+ret%2F… (rejected)」 로 찍혔다
+// (`AuthEchoedValueMaskingTest`). 이 꼴은 §5.2 안의 글자뿐이라 지울 것이 없다.
 private fun echoForms(value: String): List<String> {
     val received = String(value.toByteArray(StandardCharsets.UTF_8), StandardCharsets.UTF_8)
-    return listOf(value, received, ErrorObject.removeIllegalChars(value), ErrorObject.removeIllegalChars(received))
+    return listOf(
+        value,
+        received,
+        ErrorObject.removeIllegalChars(value),
+        ErrorObject.removeIllegalChars(received),
+        URLEncoder.encode(value, StandardCharsets.UTF_8),
+    )
 }
