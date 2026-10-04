@@ -27,6 +27,7 @@ from .._internal.jwks_fetch import afetch_jwks
 from .._internal.jwt import JwtValidator
 from .._internal.lower import auth_failure, is_lower_failure, summarize
 from .._internal.redirects import harden_openid
+from .._internal.token_cap import cap_openid
 from ..auth import AuthorizationUrl, _generate_pkce_pair
 from ..config import KeycloakConfig
 from ..exceptions import (
@@ -77,6 +78,9 @@ class AsyncAuthClient:
         # 함께 들고 있다. 지금은 어떤 `a_*`도 sync `raw_*`로 내려가지 않음을 확인했으나,
         # 한 줄로 그 경로가 생길 가능성을 미리 닫아둔다(비용 0의 심층방어).
         harden_openid(self._openid)
+        # 토큰·introspection 응답 본문은 상한까지만 읽는다 — `async_s` 에서는 푸는 일까지 여기서
+        # 한다(`_internal/token_cap.py`).
+        cap_openid(self._openid)
         self._jwks_cache: KeySet | None = None
         self._jwks_lock = asyncio.Lock()
         self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)

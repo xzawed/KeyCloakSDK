@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 from keycloak.exceptions import (
+    KeycloakConnectionError,
     KeycloakDeleteError,
     KeycloakGetError,
     KeycloakPostError,
@@ -20,9 +21,11 @@ from keycloak.exceptions import (
 )
 
 from keycloak_sdk._internal.lower import LowerLibraryError
+from keycloak_sdk._internal.token_cap import ResponseRefused
 from keycloak_sdk.admin._translate import call, translate
 from keycloak_sdk.exceptions import (
     KeycloakAdminError,
+    KeycloakAuthError,
     KeycloakConflictError,
     KeycloakForbiddenError,
     KeycloakNotFoundError,
@@ -156,3 +159,24 @@ def test_unusable_response_inside_python_keycloak_is_a_transport_error(
     assert str(error.__cause__).startswith("builtins.TypeError at keycloak.keycloak_openid.token:")
     assert error.__context__ is None
     assert _CANARY not in "".join(traceback.format_exception(error))
+
+
+def _refused_grant_body() -> KeycloakConnectionError:
+    """admin 그랜트 세션이 상한을 넘는 본문을 거부했을 때 `raw_post` 가 만드는 오류 그대로다."""
+    try:
+        raise KeycloakConnectionError("Can't connect to server") from ResponseRefused(
+            "token response exceeds 1048576 bytes"
+        )
+    except KeycloakConnectionError as exc:
+        return exc
+
+
+def test_a_grant_body_over_the_cap_is_the_auth_lanes_refusal_not_a_transport_error() -> None:
+    with pytest.raises(KeycloakAuthError) as excinfo:
+        call(_raiser(_refused_grant_body()))
+
+    error = excinfo.value
+    assert type(error) is KeycloakAuthError
+    assert str(error) == "token response exceeds 1048576 bytes"
+    assert isinstance(error.__cause__, LowerLibraryError)
+    assert error.__context__ is None

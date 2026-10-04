@@ -16,7 +16,7 @@ from typing import TypeVar
 
 from keycloak.exceptions import KeycloakError
 
-from .._internal.lower import is_lower_failure, summarize
+from .._internal.lower import is_lower_failure, refused_body, summarize
 from ..exceptions import (
     KeycloakAdminError,
     KeycloakAuthError,
@@ -56,7 +56,9 @@ def translate(exc: KeycloakError) -> KeycloakAdminError | KeycloakTransportError
     return KeycloakAdminError(status, body_str)
 
 
-def admin_failure(exc: BaseException) -> KeycloakAdminError | KeycloakTransportError:
+def admin_failure(
+    exc: BaseException,
+) -> KeycloakAdminError | KeycloakTransportError | KeycloakAuthError:
     """`is_lower_failure` 인 실패의 분류.
 
     `KeycloakError` 는 `translate` 그대로다. 그 밖의 python-keycloak 실패(응답 모양이 틀려 그
@@ -64,8 +66,12 @@ def admin_failure(exc: BaseException) -> KeycloakAdminError | KeycloakTransportE
     을 못 쓸 때도 여기다)는 HTTP 상태가 없으므로 이 경계의 규칙대로 전송 쪽이다. 예전에는 raw 로
     새어 본문을 인용했다. ⚠️ 그랜트 응답의 `access_token` 을 못 쓰는 것은 여기가 아니다 — 세터에
     닿기 전에 `_internal/admin_grant.py` 가 auth 레인과 같은 `KeycloakAuthError` 로 거부한다
-    (`refused_grant`).
+    (`refused_grant`). 그랜트 응답 본문이 상한을 넘은 것도 auth 레인과 같은 `KeycloakAuthError` 다
+    (`refused_body` — 그 그랜트는 admin REST 요청보다 먼저라 REST 요청은 나가지 않는다).
     """
+    refused = refused_body(exc)
+    if refused is not None:
+        return refused
     if isinstance(exc, KeycloakError):
         return translate(exc)
     return KeycloakTransportError(

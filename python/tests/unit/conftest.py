@@ -1,5 +1,5 @@
-"""단위 테스트 공유 픽스처 — 백채널 리다이렉트 덫 서버(sync/async 공용)·JWKS 서버·하위 오류 생성기,
-그리고 새 클라이언트를 많이 만드는 테스트의 TLS 문맥 재사용(`fast_tls`)."""
+"""단위 테스트 공유 픽스처 — 백채널 리다이렉트 덫 서버(sync/async 공용)·JWKS 서버·토큰 응답 서버·
+하위 오류 생성기, 그리고 새 클라이언트를 많이 만드는 테스트의 TLS 문맥 재사용(`fast_tls`)."""
 
 from __future__ import annotations
 
@@ -7,10 +7,13 @@ import gzip
 import importlib
 import json
 import threading
+import zlib
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
+from urllib.parse import parse_qs
 
 import pytest
 
@@ -232,6 +235,129 @@ def jwks_server() -> Any:
     box["server"] = JwksServer(url=f"http://127.0.0.1:{server.server_address[1]}")
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield box["server"]
+    server.shutdown()
+    server.server_close()
+
+
+#: 덧댈 공백 — JSON 이 허용하는 뒤 공백이다. 한 번 만들어 잘라 쓴다(거대 본문을 메모리에
+#: 만들지 않는다).
+_PAD = memoryview(b" " * 65_536)
+
+
+def _padded(head: bytes, total: int) -> Iterator[memoryview]:
+    yield memoryview(head)
+    left = total - len(head)
+    while left > 0:
+        n = min(len(_PAD), left)
+        yield _PAD[:n]
+        left -= n
+
+
+@dataclass
+class TokenIdp:
+    """토큰·introspect 엔드포인트와 admin `GET /admin/realms` 를 내는 실 HTTP 서버(realm `r`).
+
+    ⚠️ **목으로는 토큰 응답 상한을 잴 수 없다** — 상한은 HTTP 전송에서 걸린다(`JwksServer` 와 같은
+    이유). ⚠️ **거대 본문은 유효한 JSON + 공백이다** — 쓰레기 바이트로 부풀리면 상한이 없어도 JSON
+    파싱이 실패해 「거부됐다」가 거짓 초록이 된다. 본문은 `head` 뒤에 공백을 덧대 정확히 `size`
+    바이트다(거대 본문도 64 KiB 버퍼 하나를 잘라 보낸다).
+    """
+
+    url: str
+    head: bytes = b"{}"
+    size: int | None = None  # 본문 전체 바이트. None 이면 head 그대로
+    status: int = 200
+    chunked: bool = False  # Content-Length 없이 보낸다 — 헤더만 믿는 상한을 걸러내는 대조군
+    gzip_body: bytes | None = None  # 미리 압축한 본문(`Content-Encoding: gzip`) — 압축폭탄
+    hits: list[str] = field(default_factory=list)
+    bearer_len: int | None = None  # admin REST 요청이 실어 온 Authorization 값의 길이
+    introspected_len: int | None = None  # introspect 요청 폼의 token 길이
+    accept_encoding: str | None = None  # 마지막 토큰 엔드포인트 요청의 Accept-Encoding
+
+    def serve_gzip(self, head: bytes, total: int) -> None:
+        """`head` + 공백 `total` 바이트를 gzip 으로 — 전송은 작고 푼 뒤가 거대하다(압축폭탄).
+        조각마다 압축해 원문을 통째로 만들지 않는다."""
+        comp = zlib.compressobj(9, zlib.DEFLATED, 31)
+        out = [comp.compress(piece) for piece in _padded(head, total)]
+        out.append(comp.flush())
+        self.gzip_body = b"".join(out)
+
+
+def _make_token_handler(box: dict[str, TokenIdp]) -> type[BaseHTTPRequestHandler]:
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *_args: Any) -> None:
+            pass
+
+        def _small(self, status: int, payload: bytes) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_GET(self) -> None:
+            idp = box["idp"]
+            idp.hits.append(self.path)
+            if self.path.startswith("/admin/realms"):
+                auth = self.headers.get("Authorization")
+                idp.bearer_len = len(auth) if auth is not None else None
+                self._small(200, b"[]")
+            else:
+                self._small(404, b'{"error":"not_found"}')
+
+        def do_POST(self) -> None:
+            idp = box["idp"]
+            length = int(self.headers.get("Content-Length") or 0)
+            form = self.rfile.read(length) if length else b""
+            idp.hits.append(self.path)
+            if not self.path.startswith("/realms/r/protocol/openid-connect/token"):
+                self._small(404, b'{"error":"not_found"}')
+                return
+            idp.accept_encoding = self.headers.get("Accept-Encoding")
+            if self.path.endswith("/introspect"):
+                token = parse_qs(form.decode("ascii", "replace")).get("token", [""])[0]
+                idp.introspected_len = len(token)
+            self._body(idp)
+
+        def _body(self, idp: TokenIdp) -> None:
+            self.send_response(idp.status)
+            self.send_header("Content-Type", "application/json")
+            if idp.gzip_body is not None:
+                self.send_header("Content-Encoding", "gzip")
+                total = len(idp.gzip_body)
+                pieces: Iterator[memoryview] = iter([memoryview(idp.gzip_body)])
+            else:
+                total = len(idp.head) if idp.size is None else idp.size
+                pieces = _padded(idp.head, total)
+            if idp.chunked:
+                self.send_header("Transfer-Encoding", "chunked")
+            else:
+                self.send_header("Content-Length", str(total))
+            self.end_headers()
+            try:
+                for piece in pieces:
+                    if idp.chunked:
+                        self.wfile.write(b"%x\r\n" % len(piece) + piece.tobytes() + b"\r\n")
+                    else:
+                        self.wfile.write(piece)
+                if idp.chunked:
+                    self.wfile.write(b"0\r\n\r\n")
+            except OSError:
+                # 상한에 걸린 클라이언트가 끊었다 — 상한이 작동한 증거이지 오류가 아니다.
+                self.close_connection = True
+
+    return Handler
+
+
+@pytest.fixture
+def token_idp() -> Any:
+    box: dict[str, TokenIdp] = {}
+    server = _QuietServer(("127.0.0.1", 0), _make_token_handler(box))
+    box["idp"] = TokenIdp(url=f"http://127.0.0.1:{server.server_address[1]}")
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield box["idp"]
     server.shutdown()
     server.server_close()
 
