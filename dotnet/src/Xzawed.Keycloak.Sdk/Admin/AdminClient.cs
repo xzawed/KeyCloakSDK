@@ -99,15 +99,20 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
 
     /// <summary>The SDK error for a JSON failure inside the typed client: a body it could not decode — under its own status
     /// when that was an error response, as <see cref="GetJsonAsync{T}"/> reports a success body otherwise — or, with no
-    /// response seen, a request body it could not encode (a representation that contains itself, measured).</summary>
+    /// response seen, the request body. <see cref="BearerHandler"/> already turns a body the serializer refuses into that
+    /// same error where it is written, inside the transport (<c>UnencodableRequestBodyTests</c>); the arm keeps the answer
+    /// the same for one that surfaces here instead.</summary>
     private static KeycloakException Undecodable(int status, JsonException ex) => status switch
     {
-        0 => new KeycloakTransportException("admin request failed: the request body could not be encoded as JSON", ex),
+        0 => new KeycloakTransportException(UnencodableBody, ex),
         >= 300 => KeycloakErrorMapping.MapHttpError(status, "admin error response body could not be decoded", ex),
         _ => new KeycloakAdminException(500, UndecodableBody, ex),
     };
 
     private const string UndecodableBody = "admin response body could not be decoded";
+
+    /// <summary>The message for a request body System.Text.Json would not write — every admin write, typed or raw.</summary>
+    internal const string UnencodableBody = "admin request failed: the request body could not be encoded as JSON";
 
     internal async Task<string> CreateReturningIdAsync(Func<IKeycloakClient, Task<HttpResponseMessage>> fn, CancellationToken ct)
     {
