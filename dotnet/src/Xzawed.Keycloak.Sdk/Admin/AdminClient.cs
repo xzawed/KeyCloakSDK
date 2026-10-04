@@ -1,4 +1,7 @@
+using System.Net;
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Keycloak.AuthServices.Sdk;              // KeycloakHttpClientException
 using Keycloak.AuthServices.Sdk.Admin;         // IKeycloakClient
 // ⚠️ Alias REQUIRED: inside namespace Xzawed.Keycloak.Admin, the bare name `KeycloakClient` binds to the
@@ -60,21 +63,51 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
     public IKeycloakClient Raw => _typed;
 
     // ---- boundary helpers ----
+
+    /// <summary>The status of the admin response on the current typed call — set by <see cref="BearerHandler"/>.</summary>
+    /// <remarks>The typed client decodes the body itself, an error body too (for its message). When it cannot — invalid
+    /// UTF-8, an unpaired surrogate escape — it throws <see cref="JsonException"/>, which carries no status; that escaped
+    /// the SDK raw (measured: <c>UndecodableResponseTests</c>). The status lets a 404 whose body is undecodable stay a
+    /// <see cref="KeycloakNotFoundException"/>. One box per call, flowing down the call's own async context.</remarks>
+    private static readonly AsyncLocal<StrongBox<int>?> TypedCallStatus = new();
+
+    internal static void Observe(HttpStatusCode status)
+    {
+        if (TypedCallStatus.Value is { } box)
+            box.Value = (int)status;
+    }
+
     internal async Task<T> CallTypedAsync<T>(Func<IKeycloakClient, Task<T>> fn)
     {
+        var status = TypedCallStatus.Value = new StrongBox<int>();
         try { return await fn(_typed).ConfigureAwait(false); }
         catch (KeycloakHttpClientException ex) { throw KeycloakErrorMapping.MapHttpError(ex.StatusCode, ex.Response?.ErrorDescription ?? ex.HttpResponse ?? ex.Message, ex); }
+        catch (JsonException ex) { throw Undecodable(status.Value, ex); }
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
         catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException) { throw new KeycloakTransportException("admin request timed out", ex); }
     }
 
     internal async Task CallTypedAsync(Func<IKeycloakClient, Task> fn)
     {
+        var status = TypedCallStatus.Value = new StrongBox<int>();
         try { await fn(_typed).ConfigureAwait(false); }
         catch (KeycloakHttpClientException ex) { throw KeycloakErrorMapping.MapHttpError(ex.StatusCode, ex.Response?.ErrorDescription ?? ex.HttpResponse ?? ex.Message, ex); }
+        catch (JsonException ex) { throw Undecodable(status.Value, ex); }
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
         catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException) { throw new KeycloakTransportException("admin request timed out", ex); }
     }
+
+    /// <summary>The SDK error for a JSON failure inside the typed client: a body it could not decode — under its own status
+    /// when that was an error response, as <see cref="GetJsonAsync{T}"/> reports a success body otherwise — or, with no
+    /// response seen, a request body it could not encode (a representation that contains itself, measured).</summary>
+    private static KeycloakException Undecodable(int status, JsonException ex) => status switch
+    {
+        0 => new KeycloakTransportException("admin request failed: the request body could not be encoded as JSON", ex),
+        >= 300 => KeycloakErrorMapping.MapHttpError(status, "admin error response body could not be decoded", ex),
+        _ => new KeycloakAdminException(500, UndecodableBody, ex),
+    };
+
+    private const string UndecodableBody = "admin response body could not be decoded";
 
     internal async Task<string> CreateReturningIdAsync(Func<IKeycloakClient, Task<HttpResponseMessage>> fn, CancellationToken ct)
     {
@@ -108,8 +141,12 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
         using var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
         T? value;
         try { value = await resp.Content.ReadFromJsonAsync<T>(cancellationToken: ct).ConfigureAwait(false); }
-        catch (Exception ex) when (ex is System.Text.Json.JsonException or NotSupportedException)
-        { throw new KeycloakAdminException(500, "admin response body was not valid JSON", ex); }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            // "could not be decoded", not "was not valid JSON": an unpaired surrogate escape is valid JSON (RFC 8259 §8.2)
+            // that System.Text.Json will not decode.
+            throw new KeycloakAdminException(500, UndecodableBody, ex);
+        }
         return value ?? throw new KeycloakNotFoundException($"empty response body for {relativeUrl}");
     }
 

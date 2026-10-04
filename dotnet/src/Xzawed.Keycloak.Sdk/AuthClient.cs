@@ -170,11 +170,13 @@ public sealed class AuthClient : ITokenSource
         catch (InvalidOperationException ex) when (ex.TargetSite?.DeclaringType?.Assembly is { } thrower
                                                     && (thrower == typeof(JsonElement).Assembly || thrower == typeof(TokenIntrospectionResponse).Assembly))
         {
-            // ⚠️ Duende 는 응답을 만드는 도중(TokenIntrospectionResponse.InitializeAsync) 본문을 객체로 색인한다 — JSON 루트가
-            // 문자열·배열이면(System.Text.Json 이 던진다) 또는 200 본문이 비면(Duende 가 "Json is null" 을 던진다, Grok 레그)
-            // IntrospectTokenAsync 자체가 던져 SDK 타입으로 번역되지 않고 샜다(§4, 실측). 두 메시지 모두 응답을 인용하지 않는다.
+            // ⚠️ Duende 는 응답을 만드는 도중(TokenIntrospectionResponse.InitializeAsync) 본문을 객체로 색인하고 문자열을 전부
+            // 디코드한다 — JSON 루트가 문자열·배열이면(System.Text.Json 이 던진다), 200 본문이 비면(Duende 가 "Json is null" 을
+            // 던진다, Grok 레그), 또는 문자열 하나가 짝 없는 서로게이트 이스케이프면(GetString 이 던진다 — 객체여도, `error` 여도)
+            // IntrospectTokenAsync 자체가 던져 SDK 타입으로 번역되지 않고 샜다(§4, 실측). 세 경우를 가를 응답이 여기 없으므로
+            // 메시지는 셋 모두에 참인 말이다(예전 "not a JSON object" 는 셋째에 거짓이었다). 어느 메시지도 응답을 인용하지 않는다.
             // 거르는 기준은 던진 어셈블리다 — ex.Source 는 System.Text.Json 의 내부 표식("System.Text.Json.Rethrowable")이라 계약이 아니다(실측).
-            throw new KeycloakAuthException("Token introspection failed: response body is not a JSON object", ex);
+            throw new KeycloakAuthException("Token introspection failed: response body is not a decodable JSON object", ex);
         }
         ThrowIfError(resp, "Token introspection failed", "introspection transport failure");
 
@@ -240,8 +242,47 @@ public sealed class AuthClient : ITokenSource
         {
             throw new KeycloakAuthException($"{failureMessage}: access_token is not a JSON string");
         }
+        // Duende's getters below decode lazily: a member holding an unpaired surrogate escape made them throw a raw
+        // InvalidOperationException out of the SDK (measured: access_token, refresh_token). Refuse the response by name.
+        if (UndecodableMember(resp.Json, TokenMembers) is { } member)
+            throw new KeycloakAuthException($"{failureMessage}: {member} holds an unpaired surrogate escape");
         return TokenSet.Create(resp.AccessToken!, resp.TokenType, resp.ExpiresIn,
                                resp.RefreshToken, resp.IdentityToken, resp.Scope, issuedAtSeconds);
+    }
+
+    /// <summary>Every member the getters in <see cref="ToTokenSet"/> decode.</summary>
+    private static readonly string[] TokenMembers = { "access_token", "token_type", "expires_in", "refresh_token", "id_token", "scope" };
+
+    /// <summary>The first of <paramref name="names"/> that is a JSON string System.Text.Json will not decode.</summary>
+    private static string? UndecodableMember(JsonElement? json, string[] names)
+    {
+        if (json is not { ValueKind: JsonValueKind.Object } body)
+            return null;
+        foreach (var name in names)
+        {
+            if (body.TryGetProperty(name, out var member) && member.ValueKind == JsonValueKind.String && !TryDecode(member, out _))
+                return name;
+        }
+        return null;
+    }
+
+    /// <summary>The text of a JSON string, or <c>false</c> when System.Text.Json refuses to decode it.</summary>
+    /// <remarks>It parses an unpaired UTF-16 surrogate escape (<c>\ud800</c>, <c>\udc00</c> — RFC 8259 §8.2 lets the grammar
+    /// carry one) but its <c>GetString</c> throws <see cref="InvalidOperationException"/> on it. That is the only way it fails
+    /// here: Duende parses the body from a .NET string, so the UTF-8 underneath is always well formed. The value is never
+    /// rewritten into a decodable one.</remarks>
+    private static bool TryDecode(JsonElement value, out string? text)
+    {
+        try
+        {
+            text = value.GetString();
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            text = null;
+            return false;
+        }
     }
 
     /// <summary>Converts a Duende error response (token or introspection endpoint) to the SDK error.</summary>
@@ -249,7 +290,8 @@ public sealed class AuthClient : ITokenSource
     /// it is one in the RFC 6749 §5.2 grammar (<see cref="OAuthErrorOf"/>) — Duende's own
     /// <c>Error</c> is the server's reason phrase for an HTTP error and the raw JSON text of a non-string <c>error</c>
     /// member, and its <c>IsError</c> throws on a JSON root that is not an object (all three measured, with a token
-    /// echoed in them: <c>MalformedTokenResponseTests</c>).</remarks>
+    /// echoed in them: <c>MalformedTokenResponseTests</c>) and on an <c>error</c> holding an unpaired surrogate escape
+    /// (<c>UndecodableResponseTests</c>).</remarks>
     private static void ThrowIfError(ProtocolResponse resp, string failureMessage, string transportMessage)
     {
         switch (resp.ErrorType)
@@ -274,7 +316,9 @@ public sealed class AuthClient : ITokenSource
             throw new KeycloakAuthException($"{failureMessage}: response body is not a JSON object");
         // A 2xx that carries an error code fails as a 400 does. Duende's IsError alone misses a space-only one there — it
         // does not flag a whitespace error text on a 2xx, and %x20 is NQSCHAR (measured: OAuthErrorCodeGrammarTests).
-        if (resp.IsError || OAuthErrorOf(resp.Json) is not null)
+        // An `error` it cannot decode is an error with no code — checked first, because IsError decodes it and throws.
+        if ((ErrorMember(resp.Json) is { ValueKind: JsonValueKind.String } error && !TryDecode(error, out _))
+            || resp.IsError || OAuthErrorOf(resp.Json) is not null)
         {
             var code = OAuthErrorOf(resp.Json);
             throw new KeycloakAuthException($"{failureMessage}: {code ?? NoCodeReason(resp.Json)}") { OAuthError = code };
@@ -285,10 +329,10 @@ public sealed class AuthClient : ITokenSource
     // OAuth error code, and it is used unchanged. Anything else is no code: Duende renders a non-string as its raw JSON
     // text, and a string outside the grammar (CR/LF and every other control character, '"', '\', anything past ASCII)
     // split the logged SDK error into lines before this check (measured: OAuthErrorCodeGrammarTests). It is never trimmed
-    // into a code. ⚠️ Not this check's case: GetString throws InvalidOperationException on an unpaired surrogate escape,
-    // as does Duende's IsError — that still leaves the SDK as a lower-library exception (measured).
+    // into a code. A string System.Text.Json will not decode (an unpaired surrogate escape) is no code either — GetString
+    // threw it out of the SDK raw before (measured: UndecodableResponseTests).
     private static string? OAuthErrorOf(JsonElement? json) =>
-        ErrorMember(json) is { ValueKind: JsonValueKind.String } e && e.GetString() is { Length: > 0 } code && code.All(IsNqsChar)
+        ErrorMember(json) is { ValueKind: JsonValueKind.String } e && TryDecode(e, out var code) && code is { Length: > 0 } && code.All(IsNqsChar)
             ? code
             : null;
 
