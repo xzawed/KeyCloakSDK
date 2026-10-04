@@ -30,4 +30,6 @@ end
 # (b) Config 타임아웃을 무시했다. 이제는 AuthClient#initialize에서 Config의 connect/read 타임아웃으로
 # 설정한다(auth_client.rb) — require 부작용 제거 + config 반영. 전역이라는 근본 한계는 남지만
 # "SDK auth를 실제로 쓸 때"로 스코프가 좁혀진다(require 시점 아님).
+# ⚠️ SDK 자신의 토큰 요청은 이 전역 연결을 타지 않는다 — 그랜트는 SDK 커넥션(`Http.build`, 클라이언트마다 Config
+# 타임아웃)으로 직접 보낸다(응답 상한 때문). rack-oauth2 의 HTTP 연결을 쓰는 SDK 경로는 이제 없다(인가 URL 조립은 네트워크가 없다).
 require "rack/oauth2"

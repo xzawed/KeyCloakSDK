@@ -4,9 +4,11 @@ require "rack/oauth2"
 require "securerandom"
 require "digest"
 require "base64"
+require "uri"
 
 module KeycloakSdk
-  # 인증 파사드. rack-oauth2를 래핑(그랜트·PKCE)하고 introspection(RFC7662)·logout은 Faraday로 손수 수행한다.
+  # 인증 파사드. 인가 URL(PKCE)은 rack-oauth2 로 만들고, 세 그랜트·introspection(RFC7662)·logout 은 SDK 의 Faraday
+  # 커넥션으로 직접 보낸다 — 토큰 응답 본문을 상한까지만 읽어야 하는데 rack-oauth2 는 자기 커넥션으로 통째로 읽는다.
   # TokenProvider를 구현하지만(직접 사용용), admin은 캐싱 ClientCredentialsTokenProvider를 별도로 쓴다(§4).
   class AuthClient
     include TokenProvider
@@ -43,21 +45,19 @@ module KeycloakSdk
     # 방지. 불일치·부재·검증실패는 모두 거부(fail-closed). 생략 시 id_token 검증을 건너뛴다
     # (여덟 언어 공통 — exchange에서 nonce를 필수로 만들지 않는다).
     def exchange_code(code:, code_verifier:, redirect_uri:, expected_nonce: nil)
-      client = oauth_client(redirect_uri: redirect_uri)
-      client.authorization_code = code
-      token_set = token_request("authorization_code exchange") { client.access_token!(code_verifier: code_verifier) }
+      token_set = token_request("authorization_code exchange",
+                                { grant_type: "authorization_code", code: code, redirect_uri: redirect_uri,
+                                  code_verifier: code_verifier }, required: :code)
       verify_nonce!(token_set.id_token, expected_nonce) unless expected_nonce.nil?
       token_set
     end
 
     def refresh(refresh_token:)
-      client = oauth_client
-      client.refresh_token = refresh_token
-      token_request("refresh") { client.access_token! }
+      token_request("refresh", { grant_type: "refresh_token", refresh_token: refresh_token }, required: :refresh_token)
     end
 
     def client_credentials_token
-      token_request("client-credentials") { oauth_client.access_token!(scope: @config.scopes.join(" ")) }
+      token_request("client-credentials", { grant_type: "client_credentials", scope: @config.scopes.join(" ") })
     end
 
     # TokenProvider 계약(직접 사용용). admin은 캐싱 provider를 별도로 쓴다.
@@ -66,9 +66,10 @@ module KeycloakSdk
     end
 
     def introspect(token)
-      resp = @http.post(@endpoints.introspection, {
-                          token: token, client_id: @config.client_id, client_secret: @config.client_secret
-                        })
+      resp = Http.decode_json(Http.read_capped(@http, :post, @endpoints.introspection,
+                                               body: { token: token, client_id: @config.client_id,
+                                                       client_secret: @config.client_secret },
+                                               max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "introspection"))
       raise AuthError, "introspection failed: HTTP #{resp.status}" unless resp.success?
 
       IntrospectionResult.from_response(resp.body)
@@ -97,6 +98,8 @@ module KeycloakSdk
     # rack-oauth2의 프로세스 전역 HTTP 타임아웃을 Config로 설정한다(require 시점 하드코딩 대신).
     # 타임아웃은 Faraday::Connection이 아니라 그 #options(Faraday::RequestOptions)에 있다
     # (Connection에 open_timeout=/timeout= 세터가 없어 NoMethodError — 게차 참조).
+    # ⚠️ SDK 의 토큰 요청은 이제 rack-oauth2 의 연결을 타지 않는다(그랜트는 `token_request` 가 직접 보낸다) — 이 등록이
+    # 닿는 것은 같은 프로세스의 다른 rack-oauth2 사용자뿐이다. 등록은 first-wins(`@@http_config ||= block`)다.
     def configure_rack_oauth2_timeouts(config)
       Rack::OAuth2.http_config do |conn|
         conn.options.open_timeout = config.connect_timeout
@@ -118,14 +121,18 @@ module KeycloakSdk
       raise AuthError, "authorization_code exchange failed: invalid id_token: #{e.message}"
     end
 
-    # rack-oauth2 토큰 호출의 오류 경계(§4). 하위 예외는 SDK 타입이 되고 `cause` 에는 원본 대신 `RedactedCause` 가 달린다.
+    # 토큰 그랜트 하나와 그 오류 경계(§4). 하위 예외는 SDK 타입이 되고 `cause` 에는 원본 대신 `RedactedCause` 가 달린다.
     # ⚠️ OAuth 오류는 **코드와 HTTP 상태만** 싣는다 — `error_description` 은 서버가 고른 자유 문장이라 토큰을
     # 되울릴 수 있고, 오류 본문이 JSON 이 아니면 rack-oauth2 가 본문 전체를 거기 넣는다. 코드 자리도 서버 값이라
     # **코드 모양**(`OAUTH_CODE` — 등록 코드는 전부 소문자·밑줄)일 때만 메시지에 싣는다(`oauth_error` 에는 그대로).
-    # ⚠️ 마지막 `StandardError` 는 rack-oauth2 가 형식이 틀린 200 을 읽다 내는 것(NoMethodError·AttrMissing·
-    # 'Unknown Token Type')과 `to_token_set` 의 형 변환 실패다 — 원본이 새면 Ruby 3.2 의 NoMethodError 가 본문을 인용한다.
-    def token_request(operation)
-      to_token_set(yield)
+    # ⚠️ 마지막 `StandardError` 는 형식이 틀린 200 을 읽다 나는 것(NoMethodError·AttrMissing·'Unknown Token Type')과
+    # `to_token_set` 의 형 변환 실패다 — 원본이 새면 Ruby 3.2 의 NoMethodError 가 본문을 인용한다.
+    # ⚠️ 필수 값(`code`·`refresh_token`)이 비면 보내지 않는다 — rack-oauth2 의 그랜트가 하던 검사이고, 그때는 이 경계
+    # 밖에서 raw `AttrRequired::AttrMissing` 으로 샜다.
+    def token_request(operation, params, required: nil)
+      raise AuthError, "#{operation} failed: #{required} is required" if required && missing?(params[required])
+
+      to_token_set(oauth_token(post_grant(params)))
     rescue Error
       raise
     rescue Rack::OAuth2::Client::Error => e
@@ -137,6 +144,39 @@ module KeycloakSdk
       raise TransportError, "token endpoint transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
     rescue StandardError => e
       raise AuthError, "#{operation} failed: unusable token response (#{e.class})", cause: RedactedCause.new(e)
+    end
+
+    # 그랜트를 SDK 커넥션으로 보낸다 — 클라이언트 인증은 rack-oauth2 의 기본(`:basic`)과 같은 모양(id·secret 을
+    # 각각 form-url-encode 한 뒤 base64)이고, 빈 값은 rack-oauth2 의 `Util.compact_hash` 처럼 보내지 않는다.
+    # 본문은 `TOKEN_RESPONSE_MAX_BYTES` 까지만 읽는다.
+    def post_grant(params)
+      pair = [@config.client_id, @config.client_secret].map { |v| URI.encode_www_form_component(v) }.join(":")
+      Http.decode_json(Http.read_capped(@http, :post, @endpoints.token,
+                                        body: params.reject { |_, v| v.nil? || v.to_s.match?(/\A[[:space:]]*\z/) },
+                                        headers: { "Authorization" => "Basic #{Base64.strict_encode64(pair)}" },
+                                        max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "token"))
+    end
+
+    # rack-oauth2 의 응답 규칙(`Client#handle_response` — 2.3.0 client.rb:205-240)을 SDK 가 읽은 본문에 그대로 건다:
+    # 200·201 은 token_type 이 bearer 인 `AccessToken::Bearer`, 그 밖은 `Client::Error`(본문이 객체가 아니면 'Unknown').
+    # 그 메서드는 private 이라 규칙만 옮겼다 — 결과·오류는 rack-oauth2 의 공개 타입이라 위 오류 대응이 그대로다.
+    # 객체가 아닌 200 본문은 rack-oauth2 처럼 NoMethodError 로 떨어져 `token_request` 가 AuthError 로 바꾼다.
+    def oauth_token(resp)
+      body = resp.body
+      unless (200..201).cover?(resp.status)
+        error = body.is_a?(Hash) ? body.transform_keys(&:to_sym) : { error: "Unknown", error_description: body }
+        raise Rack::OAuth2::Client::Error.new(resp.status, error)
+      end
+
+      token_hash = body.transform_keys(&:to_sym)
+      raise "Unknown Token Type" unless token_hash[:token_type]&.downcase == "bearer"
+
+      Rack::OAuth2::AccessToken::Bearer.new(token_hash)
+    end
+
+    # rack-oauth2 의 `attr_required` 와 같은 「비었다」 — nil 이거나 빈 값(공백뿐인 문자열은 비지 않았다).
+    def missing?(value)
+      value.respond_to?(:empty?) ? value.empty? : value.nil?
     end
 
     def oauth_client(redirect_uri: nil)

@@ -45,13 +45,14 @@ module KeycloakSdk
 
     private
 
+    # 본문은 `Http::TOKEN_RESPONSE_MAX_BYTES` 까지만 읽는다 — 넘으면 `TransportError` 이고 admin 요청은 나가지 않는다.
     def request_token
-      resp = @http.post(@token_url, {
-                          grant_type: "client_credentials",
-                          client_id: @config.client_id,
-                          client_secret: @config.client_secret,
-                          scope: @config.scopes.join(" ")
-                        })
+      resp = Http.decode_json(Http.read_capped(@http, :post, @token_url,
+                                               body: { grant_type: "client_credentials",
+                                                       client_id: @config.client_id,
+                                                       client_secret: @config.client_secret,
+                                                       scope: @config.scopes.join(" ") },
+                                               max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "token"))
       unless resp.success?
         oauth = resp.body.is_a?(Hash) ? resp.body["error"] : nil
         raise AuthError.new("client-credentials token request failed: HTTP #{resp.status}", oauth_error: oauth)

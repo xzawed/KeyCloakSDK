@@ -5,7 +5,10 @@ paths:
   - "harness/install/consume/ruby*"
   - ".github/workflows/ruby-*.yml"
 ---
-<!-- doc-budget: max-bytes=6305 -->
+<!-- doc-budget: max-bytes=6433 -->
+<!-- 6305 → 6433 (2026-10-05 · wave 4 응답 상한): 래칫 조건 (1), 교환이다. 거짓이 된 문장 둘을 지웠다 —
+     「verifier 를 `access_token!(code_verifier:)` 로 넘긴다」·「scope 는 키워드 전용」(그랜트가 더는 `access_token!` 을
+     부르지 않는다). 측정이 산 함정 둘을 그것을 다시 재는 테스트 경로와 함께 넣었다. -->
 
 # Ruby rules
 
@@ -37,7 +40,9 @@ cd ruby && gem build keycloak-sdk.gemspec       # release build check
 
 ## auth · admin
 
-- ⚠️ **`rack-oauth2`'s PKCE is a passthrough** — the SDK builds the S256 verifier and challenge by hand out of `SecureRandom` + SHA256 + base64url and passes it to `access_token!(code_verifier:)` (omit it and you get invalid_grant). scope is **keyword-only** as well: a positional argument is dropped silently. `Client::Error` has no `#error`, so read it as `e.response[:error]`, and take the id_token out of `raw_attributes[:id_token]`.
+- ⚠️ **PKCE is by hand** (rack-oauth2 only passes params through): S256 from `SecureRandom` + SHA256 + base64url; omit `code_verifier` and you get invalid_grant.
+- ⚠️ **Grants never call `access_token!`** (it reads whole bodies on rack-oauth2's own connection) — `token_request` posts via `Http.read_capped` and reuses rack-oauth2's response rule (`spec/unit/token_response_cap_spec.rb`).
+- ⚠️ Capped reads send `Accept-Encoding: identity` (net-http's inflater finishes the in-flight read after `on_data` raises, ~16 MiB); WebMock buffers whole bodies, so measure on a real socket (`spec/support/body_server.rb`).
 - `create_authorization_request` **always** generates `nonce:` alongside `state:` and puts it in the URL. `exchange_code(expected_nonce:)` is optional (omit it and id_token validation is skipped).
 - ⚠️ **admin has no mature gem, so the Admin REST API is wrapped directly with `faraday`** (`looorent/keycloak-admin` has no seam for injecting a TokenProvider, which makes it §4-incompatible). **The base_url is `"{server_url}/"` plus a full path per resource** — assembling relative paths onto `"{server_url}/admin/realms/"` diverges from a real server over the trailing slash. The `create` family takes the id out of the 201's `Location` header.
 - ⚠️ **admin does not depend on `auth` — the `TokenProvider` duck interface is the only glue.** admin takes a dedicated `ClientCredentialsTokenProvider`. `AuthClient` implements `TokenProvider` too, but **it is not injected into admin directly** (plugging in an uncached provider fetches a fresh token on every call).
@@ -47,5 +52,5 @@ cd ruby && gem build keycloak-sdk.gemspec       # release build check
 - ⚠️ **`Faraday::SSLError` and `ParsingError` descend directly from `Faraday::Error`** — they are siblings of ConnectionFailed and TimeoutError, not subclasses of them — so all four boundaries have to catch **broadly**, with `rescue Faraday::Error`, for a TLS or parsing failure to become a `TransportError`. Catching broadly is safe here because the `RaiseError` middleware is not installed (each resource checks `resp.success?` by hand), so a status-derived `Faraday::ClientError` never reaches this boundary.
 - ⚠️ **`Rack::OAuth2::Client::Error` has to be converted too** — catch only the Faraday family and the rack-oauth2 exceptions from the auth path leak out through the public API.
 - ⚠️ **`client.auth.validate` can raise a `TransportError` when the IdP is down** (fail-closed, intended) — a caller has to handle that as well as `TokenValidationError`.
-- ⚠️ **The shared Faraday connection factory (`http.rb`) deliberately does not install `follow_redirects`** (SSRF hardening). All four paths — token_provider, jwks, admin, introspect/logout — go through this factory, so **this is the single enforcement point**. `spec/unit/http_spec.rb` catches the regression, but ⚠️ that check inspects the middleware **list**; it is not a probe that actually drives a 302.
+- ⚠️ **The shared Faraday connection factory (`http.rb`) deliberately does not install `follow_redirects`** (SSRF hardening). Every SDK request goes through this factory, so **this is the single enforcement point**. `spec/unit/http_spec.rb` catches the regression, but ⚠️ that check inspects the middleware **list**; it is not a probe that actually drives a 302.
 - **Limits**: `Config`'s string attributes are frozen at the instance level only, not deep-frozen. Secret memory hygiene is impossible at the language level because a Ruby `String` cannot be erased — masking is only defence in depth.

@@ -96,6 +96,10 @@ module HostilePathMatrixSpec
     "AuthorizationRequest#pretty_print" => "PP 훅 — `pp` 가 PrettyPrint 를 넘겨 부르고 `inspect` 를 찍을 뿐이다(tokens.rb)",
     "Http.build" => "커넥션 팩토리 — Config 를 받아 Faraday 커넥션을 조립할 뿐이다. 그 커넥션의 요청은 그것을 쓰는 " \
                     "메서드의 행에 잡힌다(http.rb)",
+    "Http.read_capped" => "본문 상한 헬퍼 — 받은 커넥션으로 요청 하나를 보내 본문을 상한까지만 읽는다. 그 요청은 그것을 " \
+                          "쓰는 메서드의 행(세 그랜트·admin 토큰 TOKEN_GRANT/CODE_EXCHANGE · JWKS_FETCH · introspect " \
+                          "OTHER)에 잡힌다(http.rb)",
+    "Http.decode_json" => "이미 받은 응답의 해석기 — 요청을 내지 않는다. 입구는 read_capped 를 쓰는 메서드들이다(http.rb)",
     "JwtValidator.from_config" => "생성 팩토리 — 검증기를 조립할 뿐이다. 검증 요청은 JwtValidator#validate 행(JWKS_FETCH)이다",
     "OidcEndpoints.from_config" => "엔드포인트 조립 — 네트워크가 없다(oidc_endpoints.rb 머리 주석)",
     "TokenSet.from_response" => "이미 받은 본문의 파서 — Hash 가 아니면 요청 없이 AuthError 다. 그 계약은 입구 " \
