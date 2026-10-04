@@ -11,11 +11,31 @@ namespace Xzawed.Keycloak;
 /// client-credentials <c>ITokenSource</c> for the admin facade.</summary>
 public sealed class AuthClient : ITokenSource
 {
+    /// <summary>The most bytes of a token, introspection or logout response the SDK's own client buffers — 1 MiB.</summary>
+    /// <remarks>
+    /// <para><c>KeycloakClient.Create</c> sets it as <see cref="HttpClient.MaxResponseContentBufferSize"/> on the client it
+    /// builds, so it bounds every lane that reads one of those responses — the three grants, introspection, logout and the
+    /// admin facade's own token fetch (which goes through this class). Above it the call fails with
+    /// <see cref="KeycloakTransportException"/> and the body is not kept. Admin REST responses are not capped: the admin
+    /// facade builds a separate client. Discovery and JWKS are read as streams with their own 51,200-byte cap.</para>
+    /// <para>Sixteen times the longest bearer Keycloak 26.6 accepts with its default settings (65,459 bytes, measured), so
+    /// the cap never refuses a token the server would take. The transport does not decode a content-encoding here
+    /// (<c>AutomaticDecompression</c> is off), so the bytes counted are the bytes received.</para>
+    /// </remarks>
+    internal const int MaxTokenResponseBytes = 1048576;
+
     private readonly KeycloakConfig _cfg;
     private readonly OidcEndpoints _ep;
     private readonly JwtValidator _validator;
     private readonly HttpClient _http;
 
+    /// <param name="cfg">Normalized configuration.</param>
+    /// <param name="ep">The realm's endpoints.</param>
+    /// <param name="validator">The validator for access tokens and id_tokens.</param>
+    /// <param name="http">The client every call goes through. ⚠️ It brings its own response limit: the 1,048,576-byte cap
+    /// on token, introspection and logout responses is set only on the client <c>KeycloakClient.Create</c> builds, and a
+    /// client passed here keeps whatever <see cref="HttpClient.MaxResponseContentBufferSize"/> it has (the .NET default is
+    /// <see cref="int.MaxValue"/> bytes).</param>
     public AuthClient(KeycloakConfig cfg, OidcEndpoints ep, JwtValidator validator, HttpClient http)
     {
         _cfg = cfg; _ep = ep; _validator = validator; _http = http;
@@ -150,11 +170,13 @@ public sealed class AuthClient : ITokenSource
         catch (InvalidOperationException ex) when (ex.TargetSite?.DeclaringType?.Assembly is { } thrower
                                                     && (thrower == typeof(JsonElement).Assembly || thrower == typeof(TokenIntrospectionResponse).Assembly))
         {
-            // ⚠️ Duende 는 응답을 만드는 도중(TokenIntrospectionResponse.InitializeAsync) 본문을 객체로 색인한다 — JSON 루트가
-            // 문자열·배열이면(System.Text.Json 이 던진다) 또는 200 본문이 비면(Duende 가 "Json is null" 을 던진다, Grok 레그)
-            // IntrospectTokenAsync 자체가 던져 SDK 타입으로 번역되지 않고 샜다(§4, 실측). 두 메시지 모두 응답을 인용하지 않는다.
+            // ⚠️ Duende 는 응답을 만드는 도중(TokenIntrospectionResponse.InitializeAsync) 본문을 객체로 색인하고 문자열을 전부
+            // 디코드한다 — JSON 루트가 문자열·배열이면(System.Text.Json 이 던진다), 200 본문이 비면(Duende 가 "Json is null" 을
+            // 던진다, Grok 레그), 또는 문자열 하나가 짝 없는 서로게이트 이스케이프면(GetString 이 던진다 — 객체여도, `error` 여도)
+            // IntrospectTokenAsync 자체가 던져 SDK 타입으로 번역되지 않고 샜다(§4, 실측). 세 경우를 가를 응답이 여기 없으므로
+            // 메시지는 셋 모두에 참인 말이다(예전 "not a JSON object" 는 셋째에 거짓이었다). 어느 메시지도 응답을 인용하지 않는다.
             // 거르는 기준은 던진 어셈블리다 — ex.Source 는 System.Text.Json 의 내부 표식("System.Text.Json.Rethrowable")이라 계약이 아니다(실측).
-            throw new KeycloakAuthException("Token introspection failed: response body is not a JSON object", ex);
+            throw new KeycloakAuthException("Token introspection failed: response body is not a decodable JSON object", ex);
         }
         ThrowIfError(resp, "Token introspection failed", "introspection transport failure");
 
@@ -178,6 +200,11 @@ public sealed class AuthClient : ITokenSource
             using var content = new FormUrlEncodedContent(form);
             resp = await _http.PostAsync(_ep.EndSession, content, ct).ConfigureAwait(false);
         }
+        catch (HttpRequestException ex) when (ex.HttpRequestError == HttpRequestError.ConfigurationLimitExceeded)
+        {
+            // The same cap as the token lanes (MaxTokenResponseBytes) — PostAsync buffers the response body too.
+            throw new KeycloakTransportException("Logout failed: response exceeds a size limit", ex);
+        }
         catch (HttpRequestException ex)
         {
             // HttpClient.PostAsync는 전송 실패(연결거부/DNS/TLS)에 HttpRequestException을 던진다 — 전송 오류.
@@ -195,6 +222,10 @@ public sealed class AuthClient : ITokenSource
         }
     }
 
+    /// <summary>Validates an access token with the hardened validator.</summary>
+    /// <param name="accessToken">The compact JWT.</param>
+    /// <param name="ct">Ends the call with <see cref="OperationCanceledException"/> — see
+    /// <see cref="JwtValidator.ValidateAsync(string, CancellationToken)"/>.</param>
     public Task<ValidatedToken> ValidateAsync(string accessToken, CancellationToken ct = default)
         => _validator.ValidateAsync(accessToken, ct);
 
@@ -211,8 +242,47 @@ public sealed class AuthClient : ITokenSource
         {
             throw new KeycloakAuthException($"{failureMessage}: access_token is not a JSON string");
         }
+        // Duende's getters below decode lazily: a member holding an unpaired surrogate escape made them throw a raw
+        // InvalidOperationException out of the SDK (measured: access_token, refresh_token). Refuse the response by name.
+        if (UndecodableMember(resp.Json, TokenMembers) is { } member)
+            throw new KeycloakAuthException($"{failureMessage}: {member} holds an unpaired surrogate escape");
         return TokenSet.Create(resp.AccessToken!, resp.TokenType, resp.ExpiresIn,
                                resp.RefreshToken, resp.IdentityToken, resp.Scope, issuedAtSeconds);
+    }
+
+    /// <summary>Every member the getters in <see cref="ToTokenSet"/> decode.</summary>
+    private static readonly string[] TokenMembers = { "access_token", "token_type", "expires_in", "refresh_token", "id_token", "scope" };
+
+    /// <summary>The first of <paramref name="names"/> that is a JSON string System.Text.Json will not decode.</summary>
+    private static string? UndecodableMember(JsonElement? json, string[] names)
+    {
+        if (json is not { ValueKind: JsonValueKind.Object } body)
+            return null;
+        foreach (var name in names)
+        {
+            if (body.TryGetProperty(name, out var member) && member.ValueKind == JsonValueKind.String && !TryDecode(member, out _))
+                return name;
+        }
+        return null;
+    }
+
+    /// <summary>The text of a JSON string, or <c>false</c> when System.Text.Json refuses to decode it.</summary>
+    /// <remarks>It parses an unpaired UTF-16 surrogate escape (<c>\ud800</c>, <c>\udc00</c> — RFC 8259 §8.2 lets the grammar
+    /// carry one) but its <c>GetString</c> throws <see cref="InvalidOperationException"/> on it. That is the only way it fails
+    /// here: Duende parses the body from a .NET string, so the UTF-8 underneath is always well formed. The value is never
+    /// rewritten into a decodable one.</remarks>
+    private static bool TryDecode(JsonElement value, out string? text)
+    {
+        try
+        {
+            text = value.GetString();
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            text = null;
+            return false;
+        }
     }
 
     /// <summary>Converts a Duende error response (token or introspection endpoint) to the SDK error.</summary>
@@ -220,11 +290,16 @@ public sealed class AuthClient : ITokenSource
     /// it is one in the RFC 6749 §5.2 grammar (<see cref="OAuthErrorOf"/>) — Duende's own
     /// <c>Error</c> is the server's reason phrase for an HTTP error and the raw JSON text of a non-string <c>error</c>
     /// member, and its <c>IsError</c> throws on a JSON root that is not an object (all three measured, with a token
-    /// echoed in them: <c>MalformedTokenResponseTests</c>).</remarks>
+    /// echoed in them: <c>MalformedTokenResponseTests</c>) and on an <c>error</c> holding an unpaired surrogate escape
+    /// (<c>UndecodableResponseTests</c>).</remarks>
     private static void ThrowIfError(ProtocolResponse resp, string failureMessage, string transportMessage)
     {
         switch (resp.ErrorType)
         {
+            case ResponseErrorType.Exception when resp.Exception is HttpRequestException { HttpRequestError: HttpRequestError.ConfigurationLimitExceeded } tooLarge:
+                // The client refused to buffer the response: a body above MaxTokenResponseBytes — or headers above the
+                // handler's 64 KiB, which .NET reports with the same code (measured), so the message names neither alone.
+                throw new KeycloakTransportException($"{failureMessage}: response exceeds a size limit", tooLarge);
             case ResponseErrorType.Exception:
                 // 전송 실패(연결거부/DNS/TLS) — 그리고 도착한 응답을 Duende 가 못 읽은 경우(처음부터 이 분류다). 전송 실패는
                 // KeycloakTransportException 이어야 §4 경계에서 인증 실패와 구분된다. 원인 사슬은 생성자가 정화한다(ErrorCause).
@@ -241,7 +316,9 @@ public sealed class AuthClient : ITokenSource
             throw new KeycloakAuthException($"{failureMessage}: response body is not a JSON object");
         // A 2xx that carries an error code fails as a 400 does. Duende's IsError alone misses a space-only one there — it
         // does not flag a whitespace error text on a 2xx, and %x20 is NQSCHAR (measured: OAuthErrorCodeGrammarTests).
-        if (resp.IsError || OAuthErrorOf(resp.Json) is not null)
+        // An `error` it cannot decode is an error with no code — checked first, because IsError decodes it and throws.
+        if ((ErrorMember(resp.Json) is { ValueKind: JsonValueKind.String } error && !TryDecode(error, out _))
+            || resp.IsError || OAuthErrorOf(resp.Json) is not null)
         {
             var code = OAuthErrorOf(resp.Json);
             throw new KeycloakAuthException($"{failureMessage}: {code ?? NoCodeReason(resp.Json)}") { OAuthError = code };
@@ -252,10 +329,10 @@ public sealed class AuthClient : ITokenSource
     // OAuth error code, and it is used unchanged. Anything else is no code: Duende renders a non-string as its raw JSON
     // text, and a string outside the grammar (CR/LF and every other control character, '"', '\', anything past ASCII)
     // split the logged SDK error into lines before this check (measured: OAuthErrorCodeGrammarTests). It is never trimmed
-    // into a code. ⚠️ Not this check's case: GetString throws InvalidOperationException on an unpaired surrogate escape,
-    // as does Duende's IsError — that still leaves the SDK as a lower-library exception (measured).
+    // into a code. A string System.Text.Json will not decode (an unpaired surrogate escape) is no code either — GetString
+    // threw it out of the SDK raw before (measured: UndecodableResponseTests).
     private static string? OAuthErrorOf(JsonElement? json) =>
-        ErrorMember(json) is { ValueKind: JsonValueKind.String } e && e.GetString() is { Length: > 0 } code && code.All(IsNqsChar)
+        ErrorMember(json) is { ValueKind: JsonValueKind.String } e && TryDecode(e, out var code) && code is { Length: > 0 } && code.All(IsNqsChar)
             ? code
             : null;
 

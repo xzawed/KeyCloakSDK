@@ -646,6 +646,12 @@ macro_rules! outcome {
 // ── 뿌리 · 구동 표 ──────────────────────────────────────────────────────────────────────
 
 /// 수신자를 얻는 공개 API 뿌리 — **덜 데운 것부터**(go 의 builders). 칸마다 새로 만든다.
+///
+/// `large_enum_variant` 를 끈다 — 칸마다 하나 만들어 `Arc` 로 잠깐 쥐는 시험 그릇이라 크기가 문제가 아니고, 변형을
+/// 상자에 넣으면 구동 표의 호출 원문(`TokenProvider::access_token(p)` — 스캐너가 대조한다)이 바뀐다. 이 경고는
+/// `JwksStore` 가 떼어 낸 fetch 를 위해 상태를 `Arc` 뒤로 옮겨 작아지면서(둘째로 큰 변형이 `Validator` 에서
+/// `Config` 로 바뀜) 처음 났다.
+#[allow(clippy::large_enum_variant)]
 enum Root {
     Unit(()),
     Client(KeycloakClient),

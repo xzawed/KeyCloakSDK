@@ -28,6 +28,10 @@ public sealed class KeycloakClient : IAsyncDisposable, IDisposable
         var http = new HttpClient(HttpTransport.CreateHandler(cfg))
         {
             Timeout = TimeSpan.FromMilliseconds(cfg.ReadTimeoutMs),
+            // Token, introspection and logout responses are buffered whole (Duende's extension methods and PostAsync read
+            // with ResponseContentRead) — this bounds that buffer. Measured before: a usable token followed by 32 MiB of
+            // whitespace was accepted on every lane (peak 35 → 195 MB). Not on the admin client: it is built separately.
+            MaxResponseContentBufferSize = AuthClient.MaxTokenResponseBytes,
         };
         var ep = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm);
         var validator = new JwtValidator(ep.Issuer, ValidatorOptionsFor(cfg, ep.Issuer), http);
