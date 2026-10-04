@@ -94,6 +94,9 @@ describe('admin — 헤더에 실을 수 없는 Bearer 는 토큰 없는 SDK 오
       const refused = await refusal(client().admin())
       expect(refused).toBeInstanceOf(KeycloakAuthError)
       expect(refused.message).toBe(REFUSED)
+      // 원인도 없다 — 플랫폼 오류를 원인으로 달면 U+0100·서로게이트·U+FFFD 의 ByteString 오류는 토큰을 인용하지
+      // 않아 아래 누출 검사로는 보이지 않는다(그 변이에서 그 셋이 두 블록 모두 살아남았다).
+      expect(refused.cause).toBeUndefined()
       expect(idp.counts.admin).toBe(before)
       for (const text of renderings(refused)) expect(text).not.toContain('SECRET')
     },
@@ -116,6 +119,7 @@ describe('admin — 헤더에 실을 수 없는 Bearer 는 토큰 없는 SDK 오
         const refused = await refusal(call())
         expect(refused).toBeInstanceOf(KeycloakAuthError)
         expect(refused.message).toBe(REFUSED)
+        expect(refused.cause).toBeUndefined()
         for (const text of renderings(refused)) expect(text).not.toContain('SECRET')
       }
       expect(idp.counts.admin).toBe(before)
@@ -134,6 +138,7 @@ describe('admin — 헤더에 실을 수 없는 Bearer 는 토큰 없는 SDK 오
     )
     expect(refused).toBeInstanceOf(KeycloakAuthError)
     expect(refused.message).toBe(REFUSED)
+    expect(refused.cause).toBeUndefined()
     for (const text of renderings(refused)) expect(text).not.toContain('SECRET')
   })
 })
@@ -175,6 +180,7 @@ describe('헤더 한도를 넘는 Bearer', () => {
     const admin = await client().admin()
     const refused = await refusal(admin.realms.list())
     expect(refused).toBeInstanceOf(KeycloakError)
+    // 여기는 원인이 있다 — `call()` 이 전송 실패·HTTP 오류를 원인으로 감싼다. 그래서 원인 없음이 아니라 사슬을 본다.
     for (const text of renderings(refused)) expect(text).not.toContain('SECRETaaaa')
   })
 })
