@@ -19,7 +19,9 @@ namespace Xzawed.Keycloak;
 /// <c>MaxResponseContentBufferSize</c> appeared <b>nowhere</b> under <c>dotnet/src</c>.
 /// <c>HttpClient.Timeout</c> is a time bound, not a byte bound. Whether
 /// <c>Microsoft.IdentityModel</c> bounds the body internally is <b>unmeasured</b> — it ships as a
-/// compiled package — so this type does not rely on it either way.
+/// compiled package — so this type does not rely on it either way. (Since 2026-10-05 the shared client
+/// carries <c>MaxResponseContentBufferSize</c> = 1 MiB, the token-response cap; it bounds buffered reads
+/// only, so it never reaches this streamed one.)
 /// </para>
 /// <para>
 /// ⚠️ <b>Why not <c>MaxResponseContentBufferSize</c> on the shared client:</b> the
