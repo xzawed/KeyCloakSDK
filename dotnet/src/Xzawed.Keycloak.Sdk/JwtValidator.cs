@@ -23,6 +23,11 @@ public sealed class JwtValidator
     private readonly TokenValidationParameters _tvp;
 
     /// <summary>Production: JWKS via ConfigurationManager (OIDC discovery), rate-limited refresh.</summary>
+    /// <param name="issuer">Realm issuer URL; discovery hangs off it.</param>
+    /// <param name="opts">Hardened validation options.</param>
+    /// <param name="http">The client discovery and the JWKS are fetched with. They are read through a 51,200-byte cap
+    /// whatever client is passed; every other limit — timeouts, redirects, <see cref="HttpClient.MaxResponseContentBufferSize"/>
+    /// — is this client's own. <c>KeycloakClient.Create</c> passes the client it builds.</param>
     public JwtValidator(string issuer, JwtValidatorOptions opts, HttpClient http)
         : this(issuer, opts, http, null, null) { }
 
@@ -39,9 +44,10 @@ public sealed class JwtValidator
         Func<double>? jitter)
     {
         _tvp = BuildParameters(issuer, opts);
-        // ⚠️ Not HttpDocumentRetriever: it imposes no byte cap, and the obvious .NET-level bound
-        // (HttpClient.MaxResponseContentBufferSize) would also bound token/introspect traffic on
-        // this shared client. BoundedDocumentRetriever caps only discovery and JWKS.
+        // ⚠️ Not HttpDocumentRetriever: it imposes no byte cap. The shared client's
+        // MaxResponseContentBufferSize is the token-response cap (1 MiB, AuthClient.MaxTokenResponseBytes) and
+        // does not reach a streamed read; set to 51,200 it would refuse large tokens. BoundedDocumentRetriever
+        // caps only discovery and JWKS.
         var docRetriever = new BoundedDocumentRetriever(
             http,
             requireHttps: issuer.StartsWith("https", StringComparison.OrdinalIgnoreCase));

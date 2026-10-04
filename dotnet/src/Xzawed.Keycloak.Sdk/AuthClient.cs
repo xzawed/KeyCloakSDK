@@ -11,11 +11,31 @@ namespace Xzawed.Keycloak;
 /// client-credentials <c>ITokenSource</c> for the admin facade.</summary>
 public sealed class AuthClient : ITokenSource
 {
+    /// <summary>The most bytes of a token, introspection or logout response the SDK's own client buffers — 1 MiB.</summary>
+    /// <remarks>
+    /// <para><c>KeycloakClient.Create</c> sets it as <see cref="HttpClient.MaxResponseContentBufferSize"/> on the client it
+    /// builds, so it bounds every lane that reads one of those responses — the three grants, introspection, logout and the
+    /// admin facade's own token fetch (which goes through this class). Above it the call fails with
+    /// <see cref="KeycloakTransportException"/> and the body is not kept. Admin REST responses are not capped: the admin
+    /// facade builds a separate client. Discovery and JWKS are read as streams with their own 51,200-byte cap.</para>
+    /// <para>Sixteen times the longest bearer Keycloak 26.6 accepts with its default settings (65,459 bytes, measured), so
+    /// the cap never refuses a token the server would take. The transport does not decode a content-encoding here
+    /// (<c>AutomaticDecompression</c> is off), so the bytes counted are the bytes received.</para>
+    /// </remarks>
+    internal const int MaxTokenResponseBytes = 1048576;
+
     private readonly KeycloakConfig _cfg;
     private readonly OidcEndpoints _ep;
     private readonly JwtValidator _validator;
     private readonly HttpClient _http;
 
+    /// <param name="cfg">Normalized configuration.</param>
+    /// <param name="ep">The realm's endpoints.</param>
+    /// <param name="validator">The validator for access tokens and id_tokens.</param>
+    /// <param name="http">The client every call goes through. ⚠️ It brings its own response limit: the 1,048,576-byte cap
+    /// on token, introspection and logout responses is set only on the client <c>KeycloakClient.Create</c> builds, and a
+    /// client passed here keeps whatever <see cref="HttpClient.MaxResponseContentBufferSize"/> it has (the .NET default is
+    /// <see cref="int.MaxValue"/> bytes).</param>
     public AuthClient(KeycloakConfig cfg, OidcEndpoints ep, JwtValidator validator, HttpClient http)
     {
         _cfg = cfg; _ep = ep; _validator = validator; _http = http;
@@ -178,6 +198,11 @@ public sealed class AuthClient : ITokenSource
             using var content = new FormUrlEncodedContent(form);
             resp = await _http.PostAsync(_ep.EndSession, content, ct).ConfigureAwait(false);
         }
+        catch (HttpRequestException ex) when (ex.HttpRequestError == HttpRequestError.ConfigurationLimitExceeded)
+        {
+            // The same cap as the token lanes (MaxTokenResponseBytes) — PostAsync buffers the response body too.
+            throw new KeycloakTransportException("Logout failed: response exceeds a size limit", ex);
+        }
         catch (HttpRequestException ex)
         {
             // HttpClient.PostAsync는 전송 실패(연결거부/DNS/TLS)에 HttpRequestException을 던진다 — 전송 오류.
@@ -225,6 +250,10 @@ public sealed class AuthClient : ITokenSource
     {
         switch (resp.ErrorType)
         {
+            case ResponseErrorType.Exception when resp.Exception is HttpRequestException { HttpRequestError: HttpRequestError.ConfigurationLimitExceeded } tooLarge:
+                // The client refused to buffer the response: a body above MaxTokenResponseBytes — or headers above the
+                // handler's 64 KiB, which .NET reports with the same code (measured), so the message names neither alone.
+                throw new KeycloakTransportException($"{failureMessage}: response exceeds a size limit", tooLarge);
             case ResponseErrorType.Exception:
                 // 전송 실패(연결거부/DNS/TLS) — 그리고 도착한 응답을 Duende 가 못 읽은 경우(처음부터 이 분류다). 전송 실패는
                 // KeycloakTransportException 이어야 §4 경계에서 인증 실패와 구분된다. 원인 사슬은 생성자가 정화한다(ErrorCause).
