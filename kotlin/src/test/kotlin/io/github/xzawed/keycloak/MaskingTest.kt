@@ -47,6 +47,19 @@ internal class MaskingTest {
         assertEquals("x *** y", maskSent("x abcdef y", listOf("abc", "abcdef")))
     }
 
+    // 되울린 사본은 보낸 값 그대로가 아닐 수 있다 — 문구는 Nimbus 가 RFC 6749 §5.2 밖의 글자를 지운 뒤이고(LF·NUL·U+0100),
+    // 짝 없는 서로게이트는 UTF-8 이 `?` 로 보냈다. 둘이 겹치면 `?` 로 바뀐 꼴에서 다시 지운 꼴이다.
+    @Test
+    fun `maskSent hides the forms an echoed value takes on the wire and through Nimbus' filter`() {
+        val token = "RT\nLF\u0000NULĀWIDE-1"
+        assertEquals("Bad token: *** (x)", maskSent("Bad token: RTLFNULWIDE-1 (x)", listOf(token)))
+        assertEquals("Bad token: *** (x)", maskSent("Bad token: RT-ab?cd (x)", listOf("RT-ab\uD800cd")))
+        val both = "RT-é-\uD800-x"
+        assertEquals("a *** b *** c", maskSent("a RT---x b RT--?-x c", listOf(both)))
+        // 지우고 나면 아무것도 안 남는 값은 가릴 것이 없다 — 빈 꼴이 모든 글자 사이에 끼어들지 않는다.
+        assertEquals("prose stays", maskSent("prose stays", listOf("Ā\n")))
+    }
+
     // 빈 값은 가릴 것이 아니다 — `replace("", …)` 는 모든 글자 사이에 끼어든다.
     @Test
     fun `maskSent ignores empty values and passes null text through`() {
