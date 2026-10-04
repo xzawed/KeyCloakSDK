@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import tracemalloc
 from collections.abc import Iterator
@@ -260,9 +261,18 @@ def test_only_encodings_it_can_inflate_within_the_cap_are_asked_for(
     assert token_idp.accept_encoding == "gzip, deflate"
 
 
-def test_judging_a_small_body_allocates_nothing_near_the_cap(token_idp: Any) -> None:
+def test_judging_a_small_body_allocates_nothing_near_the_cap(
+    token_idp: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """~2 KiB 응답을 판정하는 데 상한 크기의 버퍼를 미리 잡지 않는다(읽은 만큼만 자란다).
-    수정 전 실측 피크 24 KB — 128 KiB 는 그 다섯 배, 상한의 1/8 이다."""
+    수정 전 실측 피크 24 KB — 128 KiB 는 그 다섯 배, 상한의 1/8 이다.
+
+    ⚠️ 전송의 응답 읽기 버퍼는 3.13 까지의 크기(8 KiB)로 고정하고 잰다 — http.client 가 응답마다
+    `sock.makefile("rb")` 로 잡는 `io.DEFAULT_BUFFER_SIZE` 가 3.14 부터 128 KiB 라, SDK 와 무관한 그
+    버퍼가 피크를 지배한다(3.14.8 실측 146 KB, 이 값만 8192 로 두면 24 KB — SDK 를 수정 전 소스로
+    바꿔도 146~148 KB). 피크에서 빼지 않는 것은 그 버퍼가 본문을 다 읽으면 풀리기 때문이다 — 빼면
+    그 뒤의 할당을 버퍼 크기만큼 덜 잰다."""
+    monkeypatch.setattr(io, "DEFAULT_BUFFER_SIZE", 8192)  # 3.13 까지의 값
     token = "H" * 2000
     token_idp.head = _head("cc", token)
 
