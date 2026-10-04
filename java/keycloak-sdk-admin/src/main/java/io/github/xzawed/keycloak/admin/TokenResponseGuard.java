@@ -3,6 +3,7 @@ package io.github.xzawed.keycloak.admin;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
+import io.github.xzawed.keycloak.core.ResponseLimits;
 import jakarta.ws.rs.HttpMethod;
 import jakarta.ws.rs.client.ClientRequestContext;
 import jakarta.ws.rs.client.ClientResponseContext;
@@ -25,8 +26,9 @@ import java.io.InputStream;
  * {@link AdminClient#buildTimeoutClient} 의 클라이언트로 나가므로 거기에 등록한다.
  *
  * <p>범위는 POST · 경로 꼬리 {@value #TOKEN_PATH_SUFFIX} · 2xx 응답뿐이다 — 응답 필터가 정한다. admin 자원 응답의
- * 역직렬화는 건드리지 않는다. 오류 상태는 그대로 넘긴다 — 갱신이 400 이면 TokenManager 가 {@code BadRequestException} 을 받아
- * client_credentials 로 다시 부여하는 복구 경로가 있다.
+ * 역직렬화는 건드리지 않는다. 오류 상태는 상한 안이면 그대로 넘긴다 — 갱신이 400 이면 TokenManager 가 {@code BadRequestException} 을
+ * 받아 client_credentials 로 다시 부여하는 복구 경로가 있다. ⚠️ 그래도 오류 본문은 상한까지만 읽는다 — RESTEasy 는 오류 상태의 본문을
+ * 통째로 버퍼에 담아(32 MiB 오류 본문에 약 107 MB 할당, 실측 — {@code TokenResponseCapTest}) 상한을 넘으면 같은 거부를 던진다.
  *
  * <p>⚠️ <b>판정은 결합이 읽을 바이트로 한다</b> — 응답 필터가 보는 원시 엔티티가 아니다. RESTEasy 는 엔티티를
  * ReaderInterceptor 사슬을 거쳐 결합에 넘기고, 그 사슬이 바이트를 바꿀 수 있다: 소비자가 {@code resteasy.allowGzip=true} 를
@@ -43,7 +45,8 @@ import java.io.InputStream;
  * 요청은 보내지지 않고, {@link AdminExceptions} 가 {@code KeycloakTransportException} 으로 바꾼다 — null·객체·배열·누락이
  * 이미 실패하던 타입이다. 메시지는 상수다(응답을 인용하지 않는다).
  *
- * <p>⚠️ <b>판정은 본문을 상한({@link #MAX_BODY_BYTES})까지만 읽고 쥔다.</b> 통째로 읽던 때는 힙보다 큰 2xx 본문이
+ * <p>⚠️ <b>판정은 본문을 상한({@link ResponseLimits#MAX_TOKEN_RESPONSE_BYTES} — auth 레인과 함께 쓰는 값)까지만 읽고
+ * 쥔다.</b> 통째로 읽던 때는 힙보다 큰 2xx 본문이
  * {@code OutOfMemoryError} 를 냈다 — RESTEasy 가 감싸 결과는 거부였어도 그 순간 JVM 전체가 메모리를 잃었고, JSON 공백으로
  * 부풀린 <b>쓸 수 있는</b> 토큰도 그랬다(가드 없는 결합은 그것을 스트리밍으로 통과시킨다). {@code readNBytes(상한+1)} 로 읽어
  * 넘침을 알아채면 나머지는 담지 않고 스트림을 닫은 뒤({@link #closeQuietly} — 닫기의 실패는 버린다) 쓸 수 없는 토큰과 같은
@@ -64,22 +67,21 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   /** 응답 필터가 범위 안의 교환에 다는 요청 속성 — ReaderInterceptor 가 이것이 있는 엔티티만 판정한다. */
   static final String JUDGE_ENTITY = TokenResponseGuard.class.getName() + ".judgeEntity";
   static final String REJECTED = "token endpoint response carries no usable access_token";
-  /**
-   * 판정이 읽고 쥐는 본문의 상한(바이트) — 1 MiB. Keycloak 26.6 기본 설정(start-dev 로 실측)이 받아들이는 가장 긴 Bearer
-   * (65,459 바이트 — 한 바이트 더 길면 HTTP 431)의 16 배라, 서버가 받아들이는 토큰을 이 상한이 거부하지 않는다(운영자는 그 헤더
-   * 한도를 올릴 수 있다 — 그래서 여유를 크게 둔다). 그래도 적대적이거나 고장 난 엔드포인트의 끝없는 본문은 여기서 끊긴다. ⚠️ JWKS 응답
-   * 상한(51,200)을 빌려 쓰지 말 것 — 큰 배포의 쓸 수 있는 토큰을 거부했다({@code AdminTokenResponseTest} 의 65,459 바이트
-   * Bearer 행).
-   */
-  static final int MAX_BODY_BYTES = 1 << 20;
+  /** 오류 상태의 본문이 상한을 넘을 때의 거부 — 응답을 인용하지 않는다. */
+  static final String TOO_LARGE = "token endpoint response exceeds " + ResponseLimits.MAX_TOKEN_RESPONSE_BYTES + " bytes";
   private static final String ACCESS_TOKEN = "access_token";
   private static final JsonFactory JSON = new JsonFactory();
 
   @Override
   public void filter(ClientRequestContext request, ClientResponseContext response) throws IOException {
     if (!HttpMethod.POST.equals(request.getMethod())
-        || !request.getUri().getRawPath().endsWith(TOKEN_PATH_SUFFIX)
-        || response.getStatusInfo().getFamily() != Response.Status.Family.SUCCESSFUL) {
+        || !request.getUri().getRawPath().endsWith(TOKEN_PATH_SUFFIX)) {
+      return;
+    }
+    if (response.getStatusInfo().getFamily() != Response.Status.Family.SUCCESSFUL) {
+      // 오류 상태 — 상한 안이면 같은 바이트를 그대로 넘기고(TokenManager 의 복구 경로), 넘치면 거부한다.
+      InputStream in = response.getEntityStream();
+      if (in != null) response.setEntityStream(withinCapOrReject(in));
       return;
     }
     if (response.getMediaType() != null) {
@@ -100,10 +102,20 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
 
   /** 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치거나 쓸 수 없으면 거부, 통과하면 읽은 바이트를 그대로 넘긴다. */
   private static ByteArrayInputStream usableOrReject(InputStream in) throws IOException {
-    byte[] body = in == null ? new byte[0] : in.readNBytes(MAX_BODY_BYTES + 1);
-    if (body.length > MAX_BODY_BYTES || !carriesUsableAccessToken(body)) {
+    byte[] body = in == null ? new byte[0] : in.readNBytes(ResponseLimits.MAX_TOKEN_RESPONSE_BYTES + 1);
+    if (body.length > ResponseLimits.MAX_TOKEN_RESPONSE_BYTES || !carriesUsableAccessToken(body)) {
       closeQuietly(in);
       throw new IOException(REJECTED);
+    }
+    return new ByteArrayInputStream(body);
+  }
+
+  /** 오류 상태의 본문 — 상한+1 바이트까지만 읽어 넘치면 거부, 아니면 읽은 바이트를 그대로 넘긴다(판정은 하지 않는다). */
+  private static ByteArrayInputStream withinCapOrReject(InputStream in) throws IOException {
+    byte[] body = in.readNBytes(ResponseLimits.MAX_TOKEN_RESPONSE_BYTES + 1);
+    if (body.length > ResponseLimits.MAX_TOKEN_RESPONSE_BYTES) {
+      closeQuietly(in);
+      throw new IOException(TOO_LARGE);
     }
     return new ByteArrayInputStream(body);
   }
