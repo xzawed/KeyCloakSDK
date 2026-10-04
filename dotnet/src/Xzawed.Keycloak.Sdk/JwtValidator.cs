@@ -88,14 +88,19 @@ public sealed class JwtValidator
         ValidateIssuerSigningKey = true,
     };
 
+    /// <summary>Validates an access token.</summary>
+    /// <param name="token">The compact JWT.</param>
+    /// <param name="ct">Ends the call with <see cref="OperationCanceledException"/>: at once when it is already cancelled
+    /// (nothing is fetched), or while validation waits on the IdP. A discovery or JWKS fetch already under way is not
+    /// cancelled with it — it completes and fills the cache.</param>
     public Task<ValidatedToken> ValidateAsync(string token, CancellationToken ct = default)
-        => ValidateCoreAsync(token, _tvp);
+        => ValidateCoreAsync(token, _tvp, ct);
 
     /// <summary>Validates with every check of <see cref="ValidateAsync"/> except the audience, which must contain
     /// <paramref name="audience"/> instead of the configured one. The id_token path: its <c>aud</c> MUST contain the
     /// client id (OIDC Core §2, §3.1.3.7), whatever audience access tokens are held to.</summary>
     internal Task<ValidatedToken> ValidateForAudienceAsync(string token, string audience, CancellationToken ct = default)
-        => ValidateCoreAsync(token, ParametersForAudience(audience));
+        => ValidateCoreAsync(token, ParametersForAudience(audience), ct);
 
     /// <summary>A copy of the parameters that differs only in the audience.</summary>
     /// <remarks>⚠️ <c>Clone()</c> keeps the key source by reference, and that is what keeps ONE key store: the copy
@@ -116,17 +121,13 @@ public sealed class JwtValidator
         return tvp;
     }
 
-    private static async Task<ValidatedToken> ValidateCoreAsync(string token, TokenValidationParameters tvp)
+    private static async Task<ValidatedToken> ValidateCoreAsync(string token, TokenValidationParameters tvp, CancellationToken ct)
     {
-        TokenValidationResult result;
-        try
-        {
-            result = await Handler.ValidateTokenAsync(token, tvp).ConfigureAwait(false);
-        }
-        catch (Exception ex) // malformed token (SecurityTokenMalformedException) still throws from parse
-        {
-            throw new KeycloakTokenValidationException(ErrorCause.MessageOf(ex), ex);
-        }
+        // IdentityModel's ValidateTokenAsync takes no token (measured: a cancelled one still validated). Check it first so
+        // a cancelled call starts nothing, then stop WAITING when it fires — the work itself runs on: a configuration fetch
+        // it began is on CancellationToken.None and still fills the cache, so cancelling never wastes the refetch window.
+        ct.ThrowIfCancellationRequested();
+        var result = await ResultAsync(token, tvp).WaitAsync(ct).ConfigureAwait(false);
         // ⚠️ IdentityModel hides PII in its own message but nests a JSON parse error that quotes the decoded header or
         // payload — the constructor scrubs that chain (ErrorCause); the message is taken the same way.
         if (!result.IsValid)
@@ -141,5 +142,19 @@ public sealed class JwtValidator
             ExpiresAt: jwt.TryGetPayloadValue<long>("exp", out var exp) ? exp : null,
             IssuedAt: jwt.TryGetPayloadValue<long>("iat", out var iat) ? iat : null,
             Claims: claims);
+    }
+
+    /// <summary>IdentityModel's verdict, with anything it throws already an SDK error — so the caller's
+    /// <see cref="Task.WaitAsync(CancellationToken)"/> is the only source of <see cref="OperationCanceledException"/>.</summary>
+    private static async Task<TokenValidationResult> ResultAsync(string token, TokenValidationParameters tvp)
+    {
+        try
+        {
+            return await Handler.ValidateTokenAsync(token, tvp).ConfigureAwait(false);
+        }
+        catch (Exception ex) // malformed token (SecurityTokenMalformedException) still throws from parse
+        {
+            throw new KeycloakTokenValidationException(ErrorCause.MessageOf(ex), ex);
+        }
     }
 }

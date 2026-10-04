@@ -220,6 +220,10 @@ public sealed class AuthClient : ITokenSource
         }
     }
 
+    /// <summary>Validates an access token with the hardened validator.</summary>
+    /// <param name="accessToken">The compact JWT.</param>
+    /// <param name="ct">Ends the call with <see cref="OperationCanceledException"/> — see
+    /// <see cref="JwtValidator.ValidateAsync(string, CancellationToken)"/>.</param>
     public Task<ValidatedToken> ValidateAsync(string accessToken, CancellationToken ct = default)
         => _validator.ValidateAsync(accessToken, ct);
 
