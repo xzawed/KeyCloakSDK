@@ -512,6 +512,85 @@ func TestTokenProviderLeaderCancellationDoesNotFailWaiter(t *testing.T) {
 	}
 }
 
+// TestTokenProviderSharedRefreshIsBounded — 형제(PM 리뷰 실측, 위 수정이 낳은 것): 갱신을 어느 호출자의 취소에도 묶지
+// 않자, 자기 시간 제한 없이 ctx 로만 끝나는 소비자 TokenSource(예: 기본 http.Client 로 clientcredentials.Config.Token(ctx)
+// 를 부르는 함수)는 IdP 가 멈추면 끝나지 않았다. 이후의 Token 은 전부 그 비행에 합류해 자기 기한에야 돌아오고 새 갱신은
+// 시작되지 않아, admin 레인이 프로세스 재시작까지 막혔다(실측: 200ms 기한의 호출 넷이 전부 시간 초과, 소스 호출 1 그대로 —
+// origin/main 은 첫 호출자의 기한이 소스를 끝내 호출마다 새 갱신, 소스 호출 1→4). 공유 갱신에는 자기 기한이 있다: 지나면
+// 소스의 ctx 가 끝나고, 기다리던 호출자는 소스가 돌려준 오류를 받으며, 다음 Token 은 새 갱신을 시작한다.
+func TestTokenProviderSharedRefreshIsBounded(t *testing.T) {
+	var calls atomic.Int32
+	tp := NewClientCredentialsTokenProvider(func(ctx context.Context) (*TokenSet, error) {
+		if calls.Add(1) == 1 { // 첫 요청은 멈춘 IdP 에 걸린다 — 자기 시간 제한이 없어 ctx 만이 끝낸다
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return &TokenSet{AccessToken: "AT", ExpiresIn: 300}, nil // IdP 가 회복된 뒤의 요청
+	}, 30).(*clientCredentialsProvider)
+	tp.timeout = 50 * time.Millisecond // 60초를 시험 시간으로 줄일 뿐이다 — 기한을 만드는 길은 그대로다
+
+	// 기다리는 호출자에게는 기한이 없다 — 그를 놓아줄 수 있는 것은 갱신 자신의 기한뿐이다. 그래서 그가 돌아오면 그
+	// 비행은 끝났고(singleflight 는 결과를 보내기 전에 키를 놓는다) 다음 호출은 새 갱신을 시작한다 — 순서는 시계가 아니라
+	// 이 인과가 정한다.
+	err := mustReturn(t, async(func() error { _, err := tp.Token(context.Background()); return err }),
+		"a caller waiting on a refresh whose IdP never answers")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("the refresh's own deadline must end it and hand the source's error to the waiter, got %v", err)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("the source ran %d times, want 1", n)
+	}
+	tok, err := tp.Token(context.Background())
+	if err != nil || tok != "AT" {
+		t.Fatalf("the next call must start a new refresh and get its token, got %q, %v", tok, err)
+	}
+	if n := calls.Load(); n != 2 {
+		t.Fatalf("the source ran %d times, want 2 (the stuck refresh, then a new one)", n)
+	}
+}
+
+// TestTokenProviderRefreshDeadlineIsItsOwn — 끝나는 소스에는 바뀌는 것이 없다: 소스는 갱신을 시작한 호출자의 값을 받되
+// 그 호출자의 기한·취소는 받지 않고, 기한은 갱신이 시작된 지 tokenRefreshTimeout(60초) 하나다. 소스가 돌아오면 그 ctx 는
+// 풀린다 — 기한의 타이머가 갱신마다 60초씩 남지 않는다.
+func TestTokenProviderRefreshDeadlineIsItsOwn(t *testing.T) {
+	type key struct{}
+	var (
+		srcCtx      context.Context
+		errInside   error
+		deadline    time.Time
+		hasDeadline bool
+	)
+	tp := NewClientCredentialsTokenProvider(func(ctx context.Context) (*TokenSet, error) {
+		srcCtx, errInside = ctx, ctx.Err()
+		deadline, hasDeadline = ctx.Deadline()
+		return &TokenSet{AccessToken: "AT", ExpiresIn: 300}, nil
+	}, 30)
+	ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), key{}, "caller"), 10*time.Second)
+	defer cancel()
+	before := time.Now()
+	tok, err := tp.Token(ctx)
+	after := time.Now()
+	if err != nil || tok != "AT" {
+		t.Fatalf("Token() = %q, %v", tok, err)
+	}
+	if got := srcCtx.Value(key{}); got != "caller" {
+		t.Fatalf("the source must get the values of the caller that started the refresh, got %v", got)
+	}
+	if !hasDeadline {
+		t.Fatalf("the source's ctx must carry the refresh's own deadline (%v), it has none", tokenRefreshTimeout)
+	}
+	if deadline.Before(before.Add(tokenRefreshTimeout)) || deadline.After(after.Add(tokenRefreshTimeout)) {
+		t.Fatalf("the source's one deadline must be %v after the refresh starts, not the caller's 10s: got %v after the call",
+			tokenRefreshTimeout, deadline.Sub(before).Round(time.Millisecond))
+	}
+	if errInside != nil {
+		t.Fatalf("the source's ctx was done while it ran: %v", errInside)
+	}
+	if !errors.Is(srcCtx.Err(), context.Canceled) {
+		t.Fatalf("the refresh's ctx must be released once the source returns, got %v", srcCtx.Err())
+	}
+}
+
 // TestAdminLeaderCancellationDoesNotFailWaiter — 형제(실측 F1·F2, 공개 API): admin 레인의 두 공유 비행 —
 // Client.Admin 의 생성과, 만료된 토큰을 다시 받는 admin 호출 — 에서 첫 호출자의 취소가 산 대기자를 실패시키지
 // 않고, 토큰 요청은 한 번이다.
