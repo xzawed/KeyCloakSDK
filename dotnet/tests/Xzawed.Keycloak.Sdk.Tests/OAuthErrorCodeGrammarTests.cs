@@ -23,10 +23,9 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// <para>The two branches that carry a code are both here: 400 (the body's <c>error</c> — a 2xx takes the same branch when
 /// it carries an error code or an <c>error</c> Duende flags) and every other HTTP error (the canonical reason, with the code
 /// in <c>OAuthError</c>).</para>
-/// <para>⚠️ Outside this contract: an unpaired UTF-16 surrogate escape (U+D800 alone). System.Text.Json throws
-/// <c>InvalidOperationException</c> while decoding it — in Duende's <c>IsError</c> for a token call on 400 or 2xx, in
-/// <c>OAuthErrorOf</c> for any call on 401 — so it leaves the SDK as a lower-library exception before any grammar check
-/// (introspection's 400 is caught earlier, as "response body is not a JSON object"). Measured 2026-10-03, unchanged here.</para>
+/// <para>An unpaired UTF-16 surrogate escape (U+D800 alone) is no code either — System.Text.Json will not decode it at all.
+/// It used to leave the SDK as a raw <c>InvalidOperationException</c> (Duende's <c>IsError</c> on 400 and 2xx, the
+/// SDK's own <c>GetString</c> on 401); that case and its messages live in <c>UndecodableResponseTests</c>.</para>
 /// </remarks>
 [Trait("Category", "Unit")]
 public sealed class OAuthErrorCodeGrammarTests : IDisposable
