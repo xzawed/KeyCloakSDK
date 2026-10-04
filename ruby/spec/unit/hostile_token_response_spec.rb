@@ -144,7 +144,74 @@ module HostileTokenResponseSpec
                 raise: Errno::ECONNREFUSED, expect: expect_all(ALL, transport) }
     }.freeze
   end
-  VARIANTS = Table::VARIANTS
+
+  # wave 4 변형 — 디코드할 수 없는 응답 · 헤더에 실을 수 없는 Bearer. 표가 길어 따로 둔다(뜻은 위 표와 같다).
+  module Wave4
+    # 바이트 그대로의 JSON 본문 — 잘못된 UTF-8 은 Ruby 리터럴로 적을 수 없어 이어 붙인다(BINARY).
+    def self.raw_json(status, *parts) = { status: status, headers: JSON_TYPE, body: parts.join.b }
+
+    def self.json(status, body) = Table.json(status, body)
+
+    def self.expect_all(calls, klass) = Table.expect_all(calls, klass)
+
+    auth = KeycloakSdk::AuthError
+    transport = KeycloakSdk::TransportError
+    ff = 0xFF.chr # 어떤 UTF-8 에서도 올 수 없는 바이트
+    low = "#{92.chr}udc00" # 짝 없는 낮은 서로게이트의 JSON 이스케이프 글자(역슬래시는 실행 때 만든다)
+    admin_ok = { status: 200, headers: JSON_TYPE, body: "{}" }
+    VARIANTS = {
+      # ── 디코드할 수 없는 응답(wave 4) — 잠긴 json 3 은 짝 없는 서로게이트 이스케이프를 ParserError 로 거부하지만
+      # **날 잘못된 UTF-8 바이트**는 그대로 받아 잘못된 문자열을 내고(실측), json 2.9–2.21 은 짝 없는 **낮은**
+      # 서로게이트 이스케이프까지 잘못된 UTF-8 로 푼다. 그 문자열이 SDK 를 지나면 raw ArgumentError(코드 대조)·
+      # Encoding::CompatibilityError(admin 헤더)가 샌다. JSON 버전과 무관하게 응답째 TransportError 여야 한다.
+      # logout 은 본문을 쓰지 않아 기대에서 뺀다(그 결과는 JSON 버전마다 다르다 — 실패가 아니라 무관이다).
+      "u1" => { note: "200 JSON — access_token 에 잘못된 UTF-8 바이트(0xFF)",
+                reply: raw_json(200, '{"access_token":"uAT7k-bad-byte-canary', ff,
+                                '","token_type":"Bearer","expires_in":300,"refresh_token":"uRT7k-refresh-canary"}'),
+                expect: expect_all(TOKEN + ["auth.introspect"], transport) },
+      "u2" => { note: "400 JSON — error 에 잘못된 UTF-8 바이트",
+                reply: raw_json(400, '{"error":"inv', ff, 'alid","error_description":"uED7k-description-canary"}'),
+                expect: expect_all(TOKEN + ["auth.introspect"], transport).merge("auth.logout" => auth) },
+      "u3" => { note: "200 JSON — refresh_token 에 잘못된 UTF-8 바이트(access_token 은 멀쩡하다)",
+                reply: raw_json(200, '{"access_token":"uAT8k-access-canary","token_type":"Bearer","expires_in":300,',
+                                '"refresh_token":"uRT8k-refresh-canary', ff, '"}'),
+                expect: expect_all(TOKEN + ["auth.introspect"], transport) },
+      "u4" => { note: "200 JSON — access_token 에 짝 없는 낮은 서로게이트 이스케이프(json 2 는 잘못된 UTF-8 로 푼다)",
+                reply: raw_json(200, '{"access_token":"uAT9k-lone-low-canary', low,
+                                '","token_type":"Bearer","expires_in":300}'),
+                expect: expect_all(TOKEN + ["auth.introspect"], transport) },
+      "u5" => { note: "400 JSON — error 에 짝 없는 낮은 서로게이트 이스케이프(json 2 는 코드 대조에서 raw ArgumentError)",
+                reply: raw_json(400, '{"error":"', low, '","error_description":"uED9k-description-canary"}'),
+                expect: expect_all(TOKEN + ["auth.introspect"], transport) },
+      # 중첩 — introspection 은 클레임 전체를 돌려준다(realm_access.roles 등). 겉 키만 보면 안의 잘못된 문자열이 나간다.
+      "u6" => { note: "200 JSON — 중첩 배열 값에 잘못된 UTF-8 바이트(토큰·active 는 멀쩡하다)",
+                reply: raw_json(200, '{"access_token":"uAT6k-nested-canary","token_type":"Bearer","expires_in":300,',
+                                '"active":true,"realm_access":{"roles":["r', ff, '"]}}'),
+                expect: expect_all(TOKEN + ["auth.introspect"], transport) },
+      # ── 헤더에 실을 수 없는 Bearer(wave 4 헤더 사례 탐침) — 토큰 응답은 멀쩡한 JSON 이다. net-http 는 CR·LF 면
+      # 헤더 값을 **통째로 인용한** raw ArgumentError(= Bearer 누출)를, 65,536 바이트를 넘으면 raw ArgumentError 를
+      # 요청 전에 낸다. NUL·U+00FF 위 문자는 막지 않는다 — 고쳐 쓰지 않고 그대로 보낸다(서버가 판정).
+      "k1" => { note: "200 JSON — access_token 에 LF(admin 이 헤더로 보낼 수 없다)",
+                reply: json(200, access_token: "kLF7k-lf-bearer-canary\nx", token_type: "Bearer", expires_in: 300),
+                admin: admin_ok, expect: { "admin.users.get(token via provider)" => auth } },
+      "k2" => { note: "200 JSON — access_token 에 CR",
+                reply: json(200, access_token: "kCR7k-cr-bearer-canary\rx", token_type: "Bearer", expires_in: 300),
+                admin: admin_ok, expect: { "admin.users.get(token via provider)" => auth } },
+      "k3" => { note: "200 JSON — access_token 이 65,530 바이트(Authorization 65,537 > net-http 65,536)",
+                reply: json(200, access_token: "kLG7k-long-bearer-canary#{'A' * 65_506}", token_type: "Bearer",
+                                 expires_in: 300),
+                admin: admin_ok, expect: { "admin.users.get(token via provider)" => auth } },
+      "k4" => { note: "200 JSON — access_token 에 NUL(막지 않는다 — 그대로 보낸다)",
+                reply: json(200, access_token: "kNL7k-nul-bearer-canary#{0.chr}x", token_type: "Bearer",
+                                 expires_in: 300),
+                admin: admin_ok, expect: { "admin.users.get(token via provider)" => NilClass } },
+      "k5" => { note: "200 JSON — access_token 에 U+0100(막지 않는다 — UTF-8 그대로 보낸다)",
+                reply: json(200, access_token: "kHI7k-high-bearer-canary#{[0x100].pack('U')}x", token_type: "Bearer",
+                                 expires_in: 300),
+                admin: admin_ok, expect: { "admin.users.get(token via provider)" => NilClass } }
+    }.freeze
+  end
+  VARIANTS = Table::VARIANTS.merge(Wave4::VARIANTS).freeze
 
   # 알려진 누출 — `"변형|호출|경로|카나리아"` => 사유. ⚠️ 더 안 새면 **지워야 통과한다**(낡은 항목 검사).
   KNOWN_LEAKS = {}.freeze

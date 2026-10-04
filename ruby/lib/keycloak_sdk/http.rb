@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "faraday"
+require "json"
 
 module KeycloakSdk
   # 공유 Faraday 커넥션 팩토리. 타임아웃을 config에서 주입하고,
@@ -24,7 +25,8 @@ module KeycloakSdk
     # Faraday 의 JSON 응답 규칙 그대로(JSON 콘텐츠 타입만 · 빈 본문은 nil · 해석 실패는 Faraday::ParsingError).
     # 스트리밍으로 읽은 본문은 커넥션의 json 미들웨어가 보지 못하므로(그때 본문은 비어 있다) 여기서 같은 규칙을 건다.
     JSON_RESPONSE = Faraday::Response::Json.new(nil, content_type: /\bjson$/)
-    private_constant :IDENTITY, :JSON_RESPONSE
+    UNDECODABLE = "JSON text decodes to invalid UTF-8"
+    private_constant :IDENTITY, :JSON_RESPONSE, :UNDECODABLE
 
     module_function
 
@@ -60,9 +62,31 @@ module KeycloakSdk
     end
 
     # `read_capped` 의 본문을 커넥션의 json 미들웨어가 하던 그대로 해석한다(응답을 돌려준다).
+    # ⚠️ 해석한 값의 문자열이 잘못된 UTF-8 이면 해석 실패다(Faraday::ParsingError ← JSON::ParserError — 짝 없는
+    # 서로게이트 이스케이프에서 json 3 이 내는 것과 같은 모양). 고쳐 쓰지 않는다 — 그 값은 SDK 를 지나며 raw 예외가 된다.
     def decode_json(resp)
       JSON_RESPONSE.on_complete(resp.env)
-      resp
+      return resp if utf8?(resp.body)
+
+      begin
+        raise JSON::ParserError, UNDECODABLE
+      rescue JSON::ParserError => e
+        raise Faraday::ParsingError.new(e, resp) # 원인 사슬도 json 3 의 실패와 같다(ParsingError <- ParserError)
+      end
+    end
+
+    # 해석한 JSON 값(키 포함)의 문자열이 전부 올바른 인코딩인가. 해석하지 않은 본문(BINARY)은 언제나 참이다.
+    # ⚠️ **json 버전으로 막을 수 없다** — 잠긴 json 3.0.2 도 날 잘못된 UTF-8 바이트(0xFF)는 그대로 받아 잘못된
+    # 문자열을 내고, json 2.9–2.21 은 짝 없는 **낮은** 서로게이트 이스케이프(\udc00)까지 그렇게 푼다(둘 다 실측).
+    # 그 문자열이 지나는 자리마다 raw 예외다 — OAuth 코드 대조(`match?`)의 ArgumentError, admin 헤더의
+    # Encoding::CompatibilityError(net-http `strip`), ruby-jwt base64 의 ArgumentError.
+    def utf8?(value)
+      case value
+      when String then value.valid_encoding?
+      when Hash then value.all? { |k, v| utf8?(k) && utf8?(v) }
+      when Array then value.all? { |v| utf8?(v) }
+      else true
+      end
     end
   end
 end

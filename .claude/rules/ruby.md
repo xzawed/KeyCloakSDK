@@ -5,16 +5,17 @@ paths:
   - "harness/install/consume/ruby*"
   - ".github/workflows/ruby-*.yml"
 ---
-<!-- doc-budget: max-bytes=6433 -->
-<!-- 6305 → 6433 (2026-10-05 · wave 4 응답 상한): 래칫 조건 (1), 교환이다. 거짓이 된 문장 둘을 지웠다 —
+<!-- doc-budget: max-bytes=6603 -->
+<!-- 6305 → 6603 (2026-10-05 · wave 4 응답 상한 + §4 디코드 경계): 래칫 조건 (1), 교환이다. 거짓 문장 셋을 지웠다 —
      「verifier 를 `access_token!(code_verifier:)` 로 넘긴다」·「scope 는 키워드 전용」(그랜트가 더는 `access_token!` 을
-     부르지 않는다). 측정이 산 함정 둘을 그것을 다시 재는 테스트 경로와 함께 넣었다. -->
+     부르지 않는다)·「`${KCSDK_TOOLS:-$HOME/tools}/ruby` 는 이 기계에 없다」(있다 — `node scripts/doctor.mjs ruby` →
+     ruby 3.4.10 ok, 그 경로의 bin/ruby.exe). 측정이 산 함정 셋을 그것을 다시 재는 테스트 경로와 함께 넣었다. -->
 
 # Ruby rules
 
 ## Toolchain
 
-System install — ask `node scripts/doctor.mjs ruby` where it is rather than assuming a path (⚠️ this line said `${KCSDK_TOOLS:-$HOME/tools}/ruby`, which does not exist on this machine). Development on 3.4; `required_ruby_version >= 3.2` (CI runs 3.2, 3.3, 3.4 and 4.0).
+System install — ask `node scripts/doctor.mjs ruby` where it is rather than assuming a path. Development on 3.4; `required_ruby_version >= 3.2` (CI runs 3.2, 3.3, 3.4 and 4.0).
 
 ```bash
 cd ruby && bundle install   # ruby 는 PATH 에 있다. 없으면 `node scripts/doctor.mjs ruby`
@@ -52,5 +53,6 @@ cd ruby && gem build keycloak-sdk.gemspec       # release build check
 - ⚠️ **`Faraday::SSLError` and `ParsingError` descend directly from `Faraday::Error`** — they are siblings of ConnectionFailed and TimeoutError, not subclasses of them — so all four boundaries have to catch **broadly**, with `rescue Faraday::Error`, for a TLS or parsing failure to become a `TransportError`. Catching broadly is safe here because the `RaiseError` middleware is not installed (each resource checks `resp.success?` by hand), so a status-derived `Faraday::ClientError` never reaches this boundary.
 - ⚠️ **`Rack::OAuth2::Client::Error` has to be converted too** — catch only the Faraday family and the rack-oauth2 exceptions from the auth path leak out through the public API.
 - ⚠️ **`client.auth.validate` can raise a `TransportError` when the IdP is down** (fail-closed, intended) — a caller has to handle that as well as `TokenValidationError`.
+- ⚠️ **Parsed JSON may hold invalid UTF-8** (json 3: raw bad bytes; json < 3: also lone `\udc00`) — SDK-read JSON must pass `Http.utf8?`. `BearerAuth` refuses CR/LF/oversize bearers before net-http raises (quoting CR/LF ones) (`spec/unit/bearer_auth_spec.rb`).
 - ⚠️ **The shared Faraday connection factory (`http.rb`) deliberately does not install `follow_redirects`** (SSRF hardening). Every SDK request goes through this factory, so **this is the single enforcement point**. `spec/unit/http_spec.rb` catches the regression, but ⚠️ that check inspects the middleware **list**; it is not a probe that actually drives a 302.
 - **Limits**: `Config`'s string attributes are frozen at the instance level only, not deep-frozen. Secret memory hygiene is impossible at the language level because a Ruby `String` cannot be erased — masking is only defence in depth.

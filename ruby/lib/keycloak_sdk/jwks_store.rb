@@ -113,8 +113,13 @@ module KeycloakSdk
 
       # ⚠️ `on_data` 를 쓰면 Faraday 는 본문을 누적하지 않으므로 json 미들웨어가 돌지 않는다 —
       # 파싱은 여기서 한다. 파싱 실패도 경계에서 SDK 타입이 되어야 한다(§4).
+      # ⚠️ 잘못된 UTF-8 로 풀리는 본문도 해석 실패다(`Http.utf8?`) — n·e 가 그러면 ruby-jwt 의 base64 가 검증 중에
+      # raw ArgumentError 를 냈다(실측, 잠긴 json 3.0.2 에서도).
       body = begin
-        JSON.parse(resp.body)
+        parsed = JSON.parse(resp.body)
+        raise JSON::ParserError, "JSON text decodes to invalid UTF-8" unless Http.utf8?(parsed)
+
+        parsed
       rescue JSON::ParserError => e
         raise TransportError, "JWKS response unparsable (JSON::ParserError)", cause: RedactedCause.new(e)
       end

@@ -66,10 +66,10 @@ module KeycloakSdk
     end
 
     def introspect(token)
+      form = form!("introspection", token: token, client_id: @config.client_id, client_secret: @config.client_secret)
       resp = Http.decode_json(Http.read_capped(@http, :post, @endpoints.introspection,
-                                               body: { token: token, client_id: @config.client_id,
-                                                       client_secret: @config.client_secret },
-                                               max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "introspection"))
+                                               body: form, max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES,
+                                               what: "introspection"))
       raise AuthError, "introspection failed: HTTP #{resp.status}" unless resp.success?
 
       IntrospectionResult.from_response(resp.body)
@@ -78,10 +78,9 @@ module KeycloakSdk
     end
 
     def logout(refresh_token:)
-      resp = @http.post(@endpoints.end_session, {
-                          client_id: @config.client_id, client_secret: @config.client_secret,
-                          refresh_token: refresh_token
-                        })
+      resp = @http.post(@endpoints.end_session, form!("logout", client_id: @config.client_id,
+                                                                client_secret: @config.client_secret,
+                                                                refresh_token: refresh_token))
       raise AuthError, "logout failed: HTTP #{resp.status}" unless resp.success?
 
       nil
@@ -132,7 +131,7 @@ module KeycloakSdk
     def token_request(operation, params, required: nil)
       raise AuthError, "#{operation} failed: #{required} is required" if required && missing?(params[required])
 
-      to_token_set(oauth_token(post_grant(params)))
+      to_token_set(oauth_token(post_grant(operation, params)))
     rescue Error
       raise
     rescue Rack::OAuth2::Client::Error => e
@@ -149,11 +148,12 @@ module KeycloakSdk
     # 그랜트를 SDK 커넥션으로 보낸다 — 클라이언트 인증은 rack-oauth2 의 기본(`:basic`)과 같은 모양(id·secret 을
     # 각각 form-url-encode 한 뒤 base64)이고, 빈 값은 rack-oauth2 의 `Util.compact_hash` 처럼 보내지 않는다.
     # 본문은 `TOKEN_RESPONSE_MAX_BYTES` 까지만 읽는다.
-    def post_grant(params)
+    def post_grant(operation, params)
+      form = form!(operation, **params).reject { |_, v| v.nil? || v.to_s.match?(/\A[[:space:]]*\z/) }
       pair = [@config.client_id, @config.client_secret].map { |v| URI.encode_www_form_component(v) }.join(":")
+      basic = { "Authorization" => "Basic #{Base64.strict_encode64(pair)}" }
       Http.decode_json(Http.read_capped(@http, :post, @endpoints.token,
-                                        body: params.reject { |_, v| v.nil? || v.to_s.match?(/\A[[:space:]]*\z/) },
-                                        headers: { "Authorization" => "Basic #{Base64.strict_encode64(pair)}" },
+                                        body: form, headers: basic,
                                         max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "token"))
     end
 
@@ -177,6 +177,16 @@ module KeycloakSdk
     # rack-oauth2 의 `attr_required` 와 같은 「비었다」 — nil 이거나 빈 값(공백뿐인 문자열은 비지 않았다).
     def missing?(value)
       value.respond_to?(:empty?) ? value.empty? : value.nil?
+    end
+
+    # 폼 값이 잘못된 UTF-8 이면 요청 없이 거부하고(어느 자리인지만 말한다) 아니면 폼을 돌려준다. Faraday 의 폼
+    # 인코더(`Faraday::Utils.escape` 의 `gsub`)가 그것에서 raw ArgumentError 를 냈다(실측: logout·introspect 는 요청 0 건에
+    # raw, 그랜트는 「unusable token response (ArgumentError)」라는 틀린 말). 고쳐 쓰지 않는다.
+    def form!(operation, **form)
+      bad = form.find { |_, v| v.is_a?(String) && !v.valid_encoding? }
+      raise AuthError, "#{operation} failed: #{bad.first} is not valid UTF-8" if bad
+
+      form
     end
 
     def oauth_client(redirect_uri: nil)
