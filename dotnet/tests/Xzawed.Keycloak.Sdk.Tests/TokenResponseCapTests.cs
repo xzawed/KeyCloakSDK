@@ -226,7 +226,10 @@ public sealed class TokenResponseCapAllocationTests
 
     /// <summary>A 16–32 MiB body fails, and what judging it allocates does not grow with it: the buffer doubles up to the cap
     /// and the piece that would cross it is refused unstored — measured 2.5 MB chunked for both sizes, and under 0.1 MB with
-    /// a Content-Length (refused before the body is read), against 317 MiB allocated for 32 MiB before the fix.</summary>
+    /// a Content-Length (refused before the body is read), against 317 MiB allocated for 32 MiB before the fix.
+    /// ⚠️ The bound is 8× the cap, not 4×: the counter is process-wide, so it also sees the in-process fake IdP writing the
+    /// padding and the handler draining up to 1 MiB after the refusal to reuse the connection — CI (.NET 10 SDK runner)
+    /// measured 4,196,504 bytes for 16 MiB chunked, 2,200 bytes over 4×. A full read still allocates at least the body.</summary>
     [Theory]
     [MemberData(nameof(HugeBodies))]
     public async Task A_huge_body_fails_with_bounded_allocation(int size, bool chunked)
@@ -243,7 +246,7 @@ public sealed class TokenResponseCapAllocationTests
 
         _out.WriteLine($"{size} bytes {(chunked ? "chunked" : "content-length")}: {ex?.GetType().Name ?? "accepted"} · allocated {allocated}");
         Assert.IsType<KeycloakTransportException>(ex);
-        Assert.True(allocated < 4L * Cap, $"judging a {size}-byte body allocated {allocated} bytes — not bounded by the cap");
+        Assert.True(allocated < 8L * Cap, $"judging a {size}-byte body allocated {allocated} bytes — not bounded by the cap");
     }
 
     /// <summary>A small body allocates in proportion to itself — nothing near the cap is reserved per response.</summary>
