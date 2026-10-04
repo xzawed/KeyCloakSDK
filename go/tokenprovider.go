@@ -15,6 +15,10 @@ type TokenProvider interface {
 }
 
 // TokenSource obtains a fresh token set (e.g. via client-credentials).
+//
+// Under NewClientCredentialsTokenProvider the ctx it receives carries the values of the caller that started the
+// refresh but is never cancelled: one refresh serves every caller waiting for it, so no single caller's
+// cancellation may stop it. Bound the source's own I/O — the SDK's admin source is bounded by Config.ReadTimeout.
 type TokenSource func(ctx context.Context) (*TokenSet, error)
 
 type clientCredentialsProvider struct {
@@ -39,7 +43,8 @@ func (p *clientCredentialsProvider) String() string {
 func (p *clientCredentialsProvider) GoString() string { return p.String() }
 
 // NewClientCredentialsTokenProvider caches a token and refreshes it before
-// expiry, collapsing concurrent refreshes via single-flight.
+// expiry, collapsing concurrent refreshes via single-flight. A caller whose ctx
+// ends while it waits returns at once; the refresh goes on for the others (see TokenSource).
 func NewClientCredentialsTokenProvider(src TokenSource, skewSec int64) TokenProvider {
 	return &clientCredentialsProvider{src: src, skewSec: skewSec}
 }
@@ -52,9 +57,16 @@ func (p *clientCredentialsProvider) Token(ctx context.Context) (string, error) {
 		return tok, nil
 	}
 	p.mu.Unlock()
+	if err := ctx.Err(); err != nil { // a caller that has already given up starts nothing
+		return "", abandoned(err)
+	}
 
-	v, err, _ := p.group.Do("token", func() (any, error) {
-		ts, err := p.src(ctx)
+	// The refresh runs detached from every caller's cancellation. It used to run on the first caller's ctx, so
+	// that caller giving up failed everyone coalesced into the same refresh (measured: a live waiter got
+	// "context canceled" 200ms in). Each caller now waits on its own ctx instead.
+	detached := context.WithoutCancel(ctx)
+	ch := p.group.DoChan("token", func() (any, error) {
+		ts, err := p.src(detached)
 		if err != nil {
 			return nil, err
 		}
@@ -64,10 +76,22 @@ func (p *clientCredentialsProvider) Token(ctx context.Context) (string, error) {
 		p.mu.Unlock()
 		return ts.AccessToken, nil
 	})
-	if err != nil {
-		return "", err
+	select {
+	case r := <-ch:
+		if r.Err != nil {
+			return "", r.Err
+		}
+		return r.Val.(string), nil
+	case <-ctx.Done():
+		return "", abandoned(ctx.Err())
 	}
-	return v.(string), nil
+}
+
+// abandoned is what a caller gets when its ctx ends while it waits on a shared token fetch or admin client
+// creation: the admin lane's transport error for a request that did not complete, wrapping the context's
+// error so that errors.Is(err, context.Canceled) and errors.Is(err, context.DeadlineExceeded) hold.
+func abandoned(ctxErr error) error {
+	return &TransportError{Msg: "could not get token: " + ctxErr.Error(), Cause: ctxErr}
 }
 
 func max64(a, b int64) int64 {
