@@ -1,4 +1,5 @@
 import {
+  errors as joseErrors,
   jwtVerify,
   createRemoteJWKSet,
   customFetch,
@@ -102,11 +103,57 @@ interface BackoffSeams {
 }
 
 /**
+ * 원격 JWKS 를 만들고 웜 캐시의 **강제 재조회**(미해결 kid) 창 — `jwksMinRefetchSeconds`(30초) — 을 건다.
+ * 창은 fetch 이음매에서 **조회를 결정할 때** 찍는다.
+ *
+ * ⚠️ jose 의 `cooldownDuration` 은 **성공한** 조회에만 찍힌다(jose 문서 「after a successful fetch」 ·
+ * `remote.js` 의 `.then` 안 `jwksTimestamp = updatedAt`). 그래서 캐시가 찬 채 IdP 가 503 이면 창이 계속 열려
+ * 위조 kid 토큰마다 IdP 로 나갔다 — 실측(2026-10-05): 위조 kid 5 → /certs 5, 60 초 동안 초당 하나 → 60.
+ * 자기 손으로 창을 거는 다섯(python·go·rust·php·ruby)처럼 **시도할 때** 찍으면 장애 중에도 창마다 한 번이다.
+ * 실패를 아래 백오프에 세는 안은 실측으로 기각했다 — 진입부 게이트가 캐시된 kid 까지 막아 홍수 60 초 동안
+ * 정상 토큰 6/6 이 거부됐다(규칙 (4) 가 막으려는 바로 그것).
+ *
+ * ⚠️ 그래서 jose 의 쿨다운은 **0** 이고 창은 여기 하나가 소유한다. 둘을 겹치면 정상 경로에서 이쪽이 jose 의
+ * 것을 가려(시도 시각 ≤ 성공 시각) 한쪽을 지워도 동작이 안 변하고 변이검증이 조용해진다 — 아래 백오프 주석과
+ * 같은 이유다.
+ *
+ * 「강제 재조회」 판정: 캐시가 찼고 신선하면(`jwks() !== undefined && fresh`) jose 가 fetch 를 부르는 길은 미해결
+ * kid 뿐이다. 콜드 적재와 만료(`cacheMaxAge`) 갱신은 이 창에 걸지 않는다 — 걸면 그 갱신 하나가 실패하거나 직전에
+ * 시도가 있었을 때 정상 토큰까지 30 초 막힌다(규칙 (1)). 다만 그 둘도 **찍기는** 한다 — 창은 마지막 시도로부터
+ * 세므로, 정상일 때는 콜드 적재 직후의 위조 kid 가 지금처럼 IdP 로 안 나간다(창마다 정확히 한 번).
+ *
+ * 창 안에서는 IdP 에 가지 않고 jose 가 쿨다운 안에서 던지는 것과 같은 `JWKSNoMatchingKey` 를 던진다 — 미해결
+ * kid 거부이지 fetch 실패가 아니므로 아래 콜드 캐시 백오프는 세지 않는다(규칙 (4)).
+ */
+function remoteJwksWithRefetchWindow(
+  jwksUri: string,
+  minRefetchSeconds: number,
+  seams: BackoffSeams,
+): RemoteJWKSet {
+  const now = seams.now ?? (() => Date.now())
+  const windowMs = minRefetchSeconds * 1000
+  let lastAttempt = Number.NEGATIVE_INFINITY
+  const remote = createRemoteJWKSet(new URL(jwksUri), {
+    cooldownDuration: 0,
+    cacheMaxAge: 600_000,
+    [customFetch]: async (url, options) => {
+      const forced = remote.jwks() !== undefined && remote.fresh
+      if (forced && now() - lastAttempt < windowMs) {
+        throw new joseErrors.JWKSNoMatchingKey()
+      }
+      lastAttempt = now()
+      return fetchJwksBounded(url, options)
+    },
+  })
+  return remote
+}
+
+/**
  * 키 소스를 감싸 **콜드 캐시일 때만** 실패 백오프를 건다.
  *
- * ⚠️ 조건이 「콜드 캐시」인 것이 핵심이다. 웜 캐시의 미해결 kid 경로는 jose 의 쿨다운이 이미
- * 상한한다(실측 `== 1`), 그리고 그 경로의 `JWKSNoMatchingKey` 는 **fetch 실패가 아니다** —
- * 그것을 실패로 세면 위조 kid 홍수가 백오프를 올려 정상 토큰까지 막는다.
+ * ⚠️ 조건이 「콜드 캐시」인 것이 핵심이다. 웜 캐시의 미해결 kid 경로는 강제 재조회 창
+ * (`remoteJwksWithRefetchWindow`)이 상한한다(실측 `== 1`, 장애 중에도), 그리고 그 경로의 `JWKSNoMatchingKey` 는
+ * **fetch 실패가 아니다** — 그것을 실패로 세면 위조 kid 홍수가 백오프를 올려 정상 토큰까지 막는다.
  */
 // ⚠️ **export 하지 않는다** — 시그니처에 jose 의 `RemoteJWKSet`/`JWTVerifyGetKey` 가 들어 있어
 // export 하면 방출 `.d.ts` 가 그 타입을 다시 import 하고 §4(b) 은닉이 깨진다(가드 실측:
@@ -162,7 +209,10 @@ export interface JwtValidatorOptions {
   readonly audience: string
   readonly allowedAlgs: string[]
   readonly clockSkewSeconds: number
-  /** 미해결 kid로 인한 JWKS 재조회의 최소 간격(초). jose `cooldownDuration`에 배선(기본 30). */
+  /**
+   * 미해결 kid로 인한 JWKS 재조회의 최소 간격(초, 기본 30). 조회를 **시도할 때** 찍으므로 IdP 장애 중에도 창마다
+   * 한 번이다(jose 의 `cooldownDuration` 은 성공에만 찍혀 쓰지 않는다 — 0 으로 둔다).
+   */
   readonly jwksMinRefetchSeconds: number
 }
 
@@ -200,10 +250,10 @@ export class JwtValidator {
   }
 
   /**
-   * 원격 JWKS URI로 검증기를 만든다. `createRemoteJWKSet`은 kid 미해결 시에만 재조회하고
-   * cooldownDuration으로 rate-limit → 서명 위조로 인한 미인증 DoS 증폭을 차단한다.
+   * 원격 JWKS URI로 검증기를 만든다. `createRemoteJWKSet`은 kid 미해결 시에만 재조회하고, 그 재조회를
+   * `jwksMinRefetchSeconds` 창으로 rate-limit 한다 → 서명 위조로 인한 미인증 DoS 증폭을 차단한다.
    *
-   * ⚠️ 그 쿨다운은 **캐시가 찬 뒤에만** 걸린다 — 콜드 캐시 + IdP 장애는 실패 백오프가 막는다
+   * ⚠️ 그 창은 **캐시가 찬 뒤에만** 걸린다 — 콜드 캐시 + IdP 장애는 실패 백오프가 막는다
    * (측정 20 → 1).
    */
   static forJwksUri(jwksUri: string, opts: JwtValidatorOptions): JwtValidator {
@@ -224,11 +274,7 @@ export class JwtValidator {
     opts: JwtValidatorOptions,
     seams: BackoffSeams,
   ): JwtValidator {
-    const remote = createRemoteJWKSet(new URL(jwksUri), {
-      cooldownDuration: opts.jwksMinRefetchSeconds * 1000,
-      cacheMaxAge: 600_000,
-      [customFetch]: fetchJwksBounded,
-    })
+    const remote = remoteJwksWithRefetchWindow(jwksUri, opts.jwksMinRefetchSeconds, seams)
     return new JwtValidator(withColdCacheBackoff(remote, seams), opts)
   }
 
