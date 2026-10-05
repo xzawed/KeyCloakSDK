@@ -4,7 +4,7 @@ A Keycloak client library for Java that covers both **Authentication (OIDC / OAu
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · PHP · Rust · Ruby · Kotlin) whose concepts, layers, and flows are isomorphic across every language — [github.com/xzawed/KeyCloakSDK](https://github.com/xzawed/KeyCloakSDK).
 
-> **`1.0.4` is on Maven Central** — a patch release on top of `1.0.3`. **Fixed**: with `expectedAudience` set to something other than the client id (a resource server's name, say), `exchangeCode(…, nonce)` rejected the server's valid id_token as `invalid id_token`, because the id_token went through the access token's validator (`aud` = `expectedAudience`). The id_token's `aud` is now checked for the client id (OIDC Core §2, §3.1.3.7), so that exchange passes, and an id_token without the client id is refused even when its `aud` is the override; `validate()` still uses `expectedAudience`, and both share one JWKS cache and refetch limit. **Security**: the admin client no longer sends a number, boolean or empty-string `access_token` from a token response as its bearer (`Authorization: Bearer 12345`, `Bearer true`, `Bearer `) — the Jackson inside keycloak-admin-client's built-in TokenManager coerced those to strings. Such a token response is now rejected before any admin request is sent, with the `KeycloakTransportException` that a `null`, object, array or missing `access_token` already got. No public API changed. ⚠️ **Maven never picks a version for you**: a `<dependency>` with no `<version>` and no BOM managing it fails the build rather than resolving to the newest release, so name `1.0.4` explicitly as shown below.
+> **`1.1.0` is on Maven Central** — a minor release on top of `1.0.4`. **Security**: token, introspection and logout responses — on the auth calls and on the admin client's own token grant, error statuses included — are now accepted only up to 1,048,576 bytes; a usable token padded with 32 MiB of JSON whitespace used to be read whole (about 235 MB allocated for one call). The cap is 16 times the longest bearer a default Keycloak 26.6 accepts, so no token a server accepts is refused. A larger response fails with `KeycloakTransportException` (`Client credentials failed: token response exceeds 1048576 bytes` and the like; the admin client's stays `admin transport failure`), and the admin client sends no admin request. The SDK holds no more of the body than that, though closing the connection can still read past it. **Added**: `io.github.xzawed.keycloak.core.ResponseLimits.MAX_TOKEN_RESPONSE_BYTES`, the cap both lanes share. **Fixed**: interrupting a JDK 21 virtual thread inside `validate()` cut its forced JWKS refetch short but still spent the refetch window, so a rotated key's tokens were refused for the rest of it (`jwksMinRefetch`, 30 seconds by default). The fetch now runs to completion on an SDK platform thread and fills the cache; the interrupted caller waits for it and keeps its interrupt flag. ⚠️ **Maven never picks a version for you**: a `<dependency>` with no `<version>` and no BOM managing it fails the build rather than resolving to the newest release, so name `1.1.0` explicitly as shown below.
 
 ## Requirements
 
@@ -20,7 +20,7 @@ The SDK ships as several Maven modules, but **most users need exactly one**: `io
 <dependency>
   <groupId>io.github.xzawed</groupId>
   <artifactId>keycloak-sdk</artifactId>
-  <version>1.0.4</version>
+  <version>1.1.0</version>
 </dependency>
 ```
 
@@ -40,7 +40,7 @@ If you depend on the modules individually, import the BOM so their versions stay
     <dependency>
       <groupId>io.github.xzawed</groupId>
       <artifactId>keycloak-sdk-bom</artifactId>
-      <version>1.0.4</version>
+      <version>1.1.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>

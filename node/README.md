@@ -4,7 +4,9 @@ A TypeScript SDK for [Keycloak](https://www.keycloak.org/) covering both **Authe
 
 Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .NET · PHP · Rust · Ruby · Kotlin) — idiomatic in each language, isomorphic across all of them. Monorepo: <https://github.com/xzawed/KeyCloakSDK>
 
-> **`1.0.3` is on npm** and holds the `latest` dist-tag, so a bare install resolves it. A patch release: with `expectedAudience` set to something other than the client id (a resource server), `exchangeCode(…, nonce)` rejected a valid id_token issued by Keycloak as `invalid id_token`, because the access token's expected audience was demanded of the id_token too. The id_token's `aud` is now checked for the **client id** (OIDC Core §2, §3.1.3.7), so the exchange passes under the override, while an id_token whose `aud` lacks the client id is still refused even when it equals the override. `validate` still applies the override to access tokens, and the two checks share one JWKS cache and refetch limit. The declared public API (`.d.ts`) is unchanged.
+> **`1.0.4` is on npm** and holds the `latest` dist-tag, so a bare install resolves it. A patch release. **Security**: token, introspection and OIDC discovery responses are now read only up to 1,048,576 bytes after decompression — a usable token padded with 32 MiB of JSON whitespace used to be read whole, on every grant, on introspection and on the admin client's own token grant. The cap is 16 times the longest bearer a default Keycloak 26.6 accepts, so no token a server accepts is refused; a larger response fails with `KeycloakAuthError` (`… failed: response body exceeds 1048576 bytes`), and the admin client sends no admin request. An access token that an HTTP header cannot carry (CR, LF, NUL or a character above U+00FF) now fails the admin call with `KeycloakAuthError` before anything is sent — it used to escape as a raw `TypeError` (for CR, LF or NUL, one whose message quoted the whole token). **Fixed**: while the IdP's JWKS endpoint was failing, every token with an unknown key id triggered another JWKS request, because the 30-second refetch window was stamped only on a successful fetch; it is now stamped on each attempt, so an outage costs one request per window. ⚠️ A failed forced refetch therefore refuses a rotated key's tokens until its window ends (at most 30 seconds) — before, they were accepted as soon as the IdP recovered. The declared public API (`.d.ts`) is unchanged.
+>
+> `1.0.3` was a patch release: with `expectedAudience` set to something other than the client id (a resource server), `exchangeCode(…, nonce)` had rejected a valid id_token issued by Keycloak as `invalid id_token`, because the access token's expected audience was demanded of the id_token too. Since then the id_token's `aud` is checked for the **client id** (OIDC Core §2, §3.1.3.7), so the exchange passes under the override, while an id_token whose `aud` lacks the client id is still refused even when it equals the override. `validate` still applies the override to access tokens, and the two checks share one JWKS cache and refetch limit.
 >
 > `1.0.2` was a security patch: `exchangeCode(…, nonce)` had not verified the id_token's **signature** in `1.0.0` and `1.0.1` — openid-client checks the nonce but not the signature of an id_token that comes straight from the token endpoint, so an id_token signed outside the realm JWKS (HS256, or a forged RS256) passed. Since then it goes through the SDK's hardened validator (signature · `signatureAlgorithms` · iss · aud · exp), as in the other eight languages, and a missing id_token is refused.
 >
@@ -25,10 +27,10 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# / .
 npm install @xzawed/keycloak-sdk
 ```
 
-A bare install resolves `1.0.3`, and so does a `^1.0.0` range — at and above `1.0.0` a caret covers every `1.x`, so it picks up later minor and patch releases but never a `2.0.0`. Pin the exact version if you would rather not follow `latest`:
+A bare install resolves `1.0.4`, and so does a `^1.0.0` range — at and above `1.0.0` a caret covers every `1.x`, so it picks up later minor and patch releases but never a `2.0.0`. Pin the exact version if you would rather not follow `latest`:
 
 ```bash
-npm install @xzawed/keycloak-sdk@1.0.3
+npm install @xzawed/keycloak-sdk@1.0.4
 ```
 
 ## Quickstart
