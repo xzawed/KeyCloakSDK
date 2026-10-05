@@ -32,8 +32,6 @@ import kotlinx.coroutines.CancellationException
 import java.io.IOException
 import java.net.URI
 import java.net.URISyntaxException
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import java.time.Instant
 
 // auth.kt — AuthClient: Java SDK의 io.github.xzawed.keycloak.auth.AuthClient와 동형인 흐름(client-credentials·
@@ -57,6 +55,11 @@ public class AuthClient internal constructor(
     @Volatile
     private var jwtValidator: JwtValidator? = injectedValidator
     private val validatorLock = Any()
+
+    // 응답 본문을 상한까지만 읽는 송신기(상태 없음) — 토큰(세 그랜트)·introspection·logout. 이름은 넘친 본문의 메시지에 실린다.
+    private val tokenSender = CappedResponseSender("token response")
+    private val introspectionSender = CappedResponseSender("introspection response")
+    private val logoutSender = CappedResponseSender("logout response")
 
     /**
      * PKCE(S256) 인가 코드 흐름의 시작 URL을 만든다(non-suspend·네트워크 없음). S256 code_challenge 계산은
@@ -181,9 +184,11 @@ public class AuthClient internal constructor(
             ).toHTTPRequest()
         val resp =
             try {
-                onIo { TokenIntrospectionResponse.parse(applyTimeouts(req).send()) }
+                onIo { TokenIntrospectionResponse.parse(applyTimeouts(req).send(introspectionSender)) }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: ResponseTooLargeException) {
+                throw KeycloakTransportException("Introspection request failed: ${e.message}", e)
             } catch (e: IOException) {
                 throw KeycloakTransportException("Introspection request failed", e)
             } catch (e: ParseException) {
@@ -201,9 +206,11 @@ public class AuthClient internal constructor(
     public suspend fun logout(refreshToken: String) {
         val resp =
             try {
-                onIo { applyTimeouts(buildLogoutRequest(refreshToken)).send() }
+                onIo { applyTimeouts(buildLogoutRequest(refreshToken)).send(logoutSender) }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: ResponseTooLargeException) {
+                throw KeycloakTransportException("Logout request failed: ${e.message}", e)
             } catch (e: IOException) {
                 throw KeycloakTransportException("Logout request failed", e)
             }
@@ -263,17 +270,21 @@ public class AuthClient internal constructor(
     // OIDCTokenResponseParser로 파싱해 id_token을 보존한다(exchangeCode 전용 — 나머지 그랜트는 id_token이
     // 없어도 플레인 파서로 충분하다).
     // ⚠️ 파서 오류는 [RedactedCause] 로만 단다 — 원본(과 그 아래 json-smart 오류)은 응답 본문을 인용한다.
+    // ⚠️ 응답 본문은 [CappedResponseSender] 로 읽는다 — Nimbus 의 `send()` 는 본문을 끝까지 담는다(상한 없음, 실측 32 MiB 에
+    // 230 MiB 할당). introspect·logout 도 같은 송신기다. 상한을 넘으면 그 레인의 전송 실패다(메시지가 상한을 말한다).
     private suspend fun authSend(
         req: HTTPRequest,
         oidc: Boolean = false,
     ): TokenResponse =
         try {
             onIo {
-                val httpResponse = applyTimeouts(req).send()
+                val httpResponse = applyTimeouts(req).send(tokenSender)
                 if (oidc) OIDCTokenResponseParser.parse(httpResponse) else TokenResponse.parse(httpResponse)
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: ResponseTooLargeException) {
+            throw KeycloakTransportException("Auth request failed: ${e.message}", e)
         } catch (e: IOException) {
             throw KeycloakTransportException("Auth request failed", e)
         } catch (e: ParseException) {
@@ -294,15 +305,14 @@ public class AuthClient internal constructor(
     }
 
     // SDK 가 이 요청에 실어 보낸 비밀 — 클라이언트 시크릿, 그것을 담은 Basic 자격, 호출자의 grant 값. 오류 응답의
-    // error_description 이 이것을 되울리면 [maskSent] 가 가린다(사유 문구 자체는 남는다). ⚠️ grant 값은 본문에
-    // 폼 인코딩된 꼴(Nimbus `URLUtils` = `URLEncoder`)로 실린다 — 받은 본문을 되울리는 IdP 앞에서는 `+`·`/`·`=`·`~`
-    // 가 든 값이 그 꼴로 돌아오므로 둘 다 가린다(독립 레그 Grok 의 지적, `AuthMalformedResponseTest` e7·e8·f10).
+    // error_description 이 이것을 되울리면 [maskSent] 가 가린다(사유 문구 자체는 남는다). ⚠️ 값이 전송에서 바뀐 꼴(폼 인코딩 —
+    // 본문의 grant 값과 Basic 의 시크릿 · UTF-8 · Nimbus 의 §5.2 필터)은 [maskSent] 가 값마다 더한다 — 여기서 꼴을 따로 더하면
+    // 빠지는 값이 생긴다(grant 값에만 폼 인코딩 꼴을 더하던 때 시크릿의 그 꼴이 샜다 — `AuthEchoedValueMaskingTest`,
+    // `AuthMalformedResponseTest` e7·e8·f10).
     private fun sentSecrets(
         req: HTTPRequest,
         vararg inputs: String,
-    ): List<String?> =
-        listOf(config.clientSecret?.let { String(it) }, req.authorization?.substringAfter(' ', "")) +
-            inputs + inputs.map { URLEncoder.encode(it, StandardCharsets.UTF_8) }
+    ): List<String?> = listOf(config.clientSecret?.let { String(it) }, req.authorization?.substringAfter(' ', "")) + inputs
 
     // Nimbus Tokens → SDK 소유 TokenSet 매핑(Java toTokenSet 동형). tokens가 OIDCTokens(=id_token 포함
     // 가능)이면 id_token도 실어 나른다 — Java는 id_token을 아예 캡처하지 않지만, TokenSet.idToken 필드가
