@@ -52,7 +52,12 @@ import {
 } from './facade-walk.js'
 
 /** 걷기에 안 닿아도 되는 클래스와 그 이유. ⚠️ 이유 없는 면제는 넣지 않는다. */
-const EXEMPT: Readonly<Record<string, string>> = {}
+const EXEMPT: Readonly<Record<string, string>> = {
+  ResponseTooLargeError:
+    '내부 신호(token-response-cap.ts) — 상한 fetch 가 던지고 openid-client 가 ClientError 로 감싸며, auth.ts 가 ' +
+    'KeycloakAuthError 로 바꾼다. KeycloakError 생성자가 cause 를 평범한 Error 사본으로 바꾸므로 인스턴스는 공개 ' +
+    'API 로 나오지 않는다(token-response-cap.test.ts 의 「원인 사슬」 시험이 잰다)',
+}
 
 /**
  * 알려진 누출 — `"뿌리|카나리아"` 와 사유. ⚠️ 고쳐져 더 안 새면 **여기서 지워야 통과한다**(낡은 항목 검사).
