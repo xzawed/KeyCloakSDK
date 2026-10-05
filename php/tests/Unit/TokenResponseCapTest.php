@@ -29,10 +29,12 @@ use Xzawed\Keycloak\KeycloakConfig;
 use Xzawed\Keycloak\OidcEndpoints;
 
 /**
- * 토큰 엔드포인트·introspection 응답 본문의 상한 1,048,576 바이트(등록부 `token-response-size-unbounded`)를 **공개 API 의
- * 여섯 레인**에 건다 — client_credentials · refresh · 코드 교환(셋 다 league) · `ClientCredentialsTokenProvider` · introspect ·
- * admin 의 자기 토큰 부여(fschmtt). 수정 전 실측(가짜 IdP · 32 MiB 공백 패딩): 여섯 레인 전부 수락, league 레인은 본문 사본
- * 둘(zend 피크 75 MB), memory_limit 보다 큰 본문은 잡을 수 없는 치명 오류(exit 255).
+ * 토큰 엔드포인트·introspection·logout 응답 본문의 상한 1,048,576 바이트(등록부 `token-response-size-unbounded`)를 **공개 API 의
+ * 일곱 레인**에 건다 — client_credentials · refresh · 코드 교환(셋 다 league) · `ClientCredentialsTokenProvider` · introspect ·
+ * logout · admin 의 자기 토큰 부여(fschmtt). 수정 전 실측(가짜 IdP · 32 MiB 공백 패딩): 여섯 레인 전부 수락, league 레인은 본문 사본
+ * 둘(zend 피크 75 MB), memory_limit 보다 큰 본문은 잡을 수 없는 치명 오류(exit 255). logout 은 Guzzle 기본 싱크(php://temp)가
+ * 16 MiB 본문을 끝까지 받아 2 MB 를 넘는 순간부터 임시 파일에 통째로 옮겨 썼다(200·400 모두 — 서버가 16,777,216 바이트를 다 썼고
+ * 임시 파일이 16,777,216 바이트까지 자랐다).
  *
  * 가짜 IdP 는 진짜 HTTP 다(`Fixtures/token-cap-router.php`) — 상한이 전송(curl 이 싱크에 넘기는 청크·끊기·gzip 디코딩)과
  * 맞물리기 때문이다. 길이를 아는 본문(`cl`)·모르는 본문(`close`, `php -S` 는 청크 인코딩을 쓰지 않는다)·gzip(푼 바이트로
@@ -62,11 +64,14 @@ final class TokenResponseCapTest extends TestCase
         'code' => 'token response exceeds 1048576 bytes',
         'cctp' => 'token response exceeds 1048576 bytes',
         'introspect' => 'introspection response exceeds 1048576 bytes',
+        'logout' => 'logout response exceeds 1048576 bytes',
         'admin' => 'admin token response exceeds 1048576 bytes',
     ];
 
     private static string $dir = '';
     private static int $port = 0;
+    /** 마지막 `serve()` 가 상태에 쓴 nonce — `sentTo()` 는 이 상태를 읽은 요청의 기록만 본다. */
+    private static string $nonce = '';
     /** @var resource|null */
     private static $proc = null;
 
@@ -120,7 +125,7 @@ final class TokenResponseCapTest extends TestCase
             proc_close(self::$proc);
             self::$proc = null;
         }
-        foreach (['state.json', 'requests.log', 'server.out', 'server.err'] as $f) {
+        foreach (['state.json', 'requests.log', 'sent.log', 'server.out', 'server.err'] as $f) {
             @unlink(self::$dir . '/' . $f);
         }
         @rmdir(self::$dir);
@@ -136,10 +141,34 @@ final class TokenResponseCapTest extends TestCase
         $state = [
             'token' => ['access' => 1000, 'size' => 0, 'framing' => 'cl', 'gzip' => false],
             'introspect' => ['size' => 0, 'framing' => 'cl', 'gzip' => false],
+            'logout' => ['size' => 0, 'framing' => 'cl', 'gzip' => false],
         ];
         $state[$endpoint] = $spec + $state[$endpoint];
+        self::$nonce = bin2hex(random_bytes(6));
+        $state['nonce'] = self::$nonce;
         file_put_contents(self::$dir . '/state.json', json_encode($state, JSON_THROW_ON_ERROR));
         @unlink(self::$dir . '/requests.log');
+        @unlink(self::$dir . '/sent.log');
+    }
+
+    /**
+     * 경로가 `$suffix` 로 끝나고 마지막 `serve()` 의 상태를 읽은 응답에서 가짜 IdP 가 내보낸 본문 바이트(gzip 이면 압축 전). 서버
+     * 스크립트가 끝나야 남는다 — 끊긴 전송은 서버가 다음 쓰기에서 알아채므로 호출이 돌아온 뒤 잠시 기다린다. 남지 않으면 null.
+     */
+    private static function sentTo(string $suffix): ?int
+    {
+        for ($i = 0; $i < 250; $i++) {
+            $log = @file(self::$dir . '/sent.log', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            foreach ($log === false ? [] : $log as $line) {
+                $r = json_decode($line, true);
+                if (is_array($r) && is_string($r[0] ?? null) && is_int($r[1] ?? null) && ($r[2] ?? null) === self::$nonce && str_ends_with($r[0], $suffix)) {
+                    return $r[1];
+                }
+            }
+            usleep(20_000);
+        }
+
+        return null;
     }
 
     /** @return list<array{0: string, 1: string, 2: int}> 가짜 IdP 가 받은 [메서드, 경로, Authorization 길이] */
@@ -169,12 +198,15 @@ final class TokenResponseCapTest extends TestCase
     /** 레인의 본문이 나오는 엔드포인트. */
     private static function endpoint(string $lane): string
     {
-        return $lane === 'introspect' ? 'introspect' : 'token';
+        return match ($lane) {
+            'introspect', 'logout' => $lane,
+            default => 'token',
+        };
     }
 
     /**
      * 레인의 공개 호출 하나 — 수신자는 여기서 만들고(재기 전), 돌려주는 클로저가 그 호출이다. 결과는 판정에 쓰는 스칼라 하나:
-     * 토큰 레인은 access token 의 길이, introspect 는 `active`, admin 은 돌려받은 사용자 수.
+     * 토큰 레인은 access token 의 길이, introspect 는 `active`, logout 은 돌아왔으면 true, admin 은 돌려받은 사용자 수.
      *
      * @return \Closure(): (int|bool)
      */
@@ -199,6 +231,11 @@ final class TokenResponseCapTest extends TestCase
             'refresh' => static fn (): int => strlen($auth->refresh('tc-refresh-token')->accessToken),
             'code' => static fn (): int => strlen($auth->exchangeCode('tc-code', str_repeat('v', 64))->accessToken),
             'introspect' => static fn (): bool => $auth->introspect('tc-introspected-token')->active,
+            'logout' => static function () use ($auth): bool {
+                $auth->logout('tc-refresh-token');
+
+                return true;
+            },
             default => throw new \LogicException("모르는 레인 $lane"),
         };
     }
@@ -283,7 +320,10 @@ final class TokenResponseCapTest extends TestCase
         self::assertSame('1048576', $m[1][0]);
     }
 
-    /** Keycloak 이 받아들이는 가장 긴 Bearer 는 어느 레인에서도 상한에 걸리지 않는다 — admin 은 그것을 Bearer 로 실어 보낸다. */
+    /**
+     * Keycloak 이 받아들이는 가장 긴 Bearer 는 어느 레인에서도 상한에 걸리지 않는다 — admin 은 그것을 Bearer 로 실어 보낸다.
+     * introspect·logout 의 응답은 토큰을 싣지 않는다 — 그 둘은 평범한 응답이 지나가는지만 본다.
+     */
     #[DataProvider('lanes')]
     public function testTheLargestBearerKeycloakAcceptsPassesOnEveryLane(string $lane): void
     {
@@ -294,7 +334,7 @@ final class TokenResponseCapTest extends TestCase
             self::fail("$lane: 받아들여야 한다 — " . $result::class . ': ' . $result->getMessage());
         }
         match ($lane) {
-            'introspect' => self::assertTrue($result),
+            'introspect', 'logout' => self::assertTrue($result),
             'admin' => self::assertSame(['/admin/serverinfo', '/admin/realms/r/users'], self::adminRequests()),
             default => self::assertSame(self::LARGEST_BEARER, $result),
         };
@@ -343,6 +383,17 @@ final class TokenResponseCapTest extends TestCase
         if ($lane === 'admin') {
             self::assertSame([], self::adminRequests());
         }
+        // 전송도 상한 근처에서 끊긴다(싱크) — 판독기만으로는 거부는 같아도 서버가 본문을 끝까지 보낸다(logout 수정 전: 16 MiB 를 다 받아
+        // 임시 파일에 썼다). ⚠️ cctp 는 뺀다 — PSR-18 `sendRequest()` 에는 요청별 싱크가 없어 주입 클라이언트가 끝까지 받는다(문서화된
+        // 한계). gzip 도 뺀다 — 압축된 본문 전체가 소켓 버퍼에 들어가 끊어도 서버는 다 보낸다.
+        if ($lane !== 'cctp' && !$gzip) {
+            $sent = self::sentTo('/' . self::endpoint($lane));
+            self::assertNotNull($sent, "$lane: 가짜 IdP 가 내보낸 바이트를 남기지 않았다");
+            if (getenv('TC_PRINT') === '1') {
+                fwrite(STDERR, sprintf("%-34s sent=%9d of %d\n", self::$current, $sent, $size));
+            }
+            self::assertLessThan(intdiv($size, 2), $sent, "$lane: 서버가 {$size} 바이트 본문 중 $sent 바이트를 보냈다 — 전송이 끊기지 않았다");
+        }
     }
 
     /**
@@ -366,6 +417,9 @@ final class TokenResponseCapTest extends TestCase
                 self::assertSame(400, $result->getStatusCode());
             } else {
                 self::assertInstanceOf(KeycloakAuthError::class, $result, "$lane $size: " . $result::class . ': ' . $result->getMessage());
+                if ($lane === 'logout') {
+                    self::assertSame('logout failed', $result->getMessage(), "$lane $size: 상한 안의 오류 상태는 오늘의 오류 그대로다");
+                }
             }
             if ($lane === 'admin') {
                 self::assertSame([], self::adminRequests(), "$lane $size: 토큰 부여가 실패하면 admin REST 요청은 없다");
@@ -384,7 +438,7 @@ final class TokenResponseCapTest extends TestCase
         $call = self::lane($lane);
         @unlink(self::$dir . '/requests.log');
         [$result, $peak] = self::measure($call);
-        $suffix = self::endpoint($lane) === 'token' ? '/token' : '/introspect';
+        $suffix = '/' . self::endpoint($lane);
         self::assertNotSame([], array_filter(self::requests(), static fn (array $r): bool => str_ends_with($r[1], $suffix)), "$lane: 잰 호출이 그 엔드포인트에 닿지 않았다(공허)");
         if ($result instanceof \Throwable) {
             self::fail("$lane: " . $result::class . ': ' . $result->getMessage());
@@ -419,6 +473,8 @@ final class TokenResponseCapTest extends TestCase
      * 본문을 읽다 실패하면 SDK 오류다 — 상한을 걸며 본문 읽기가 SDK 코드로 나왔고, 그 읽기는 지연 본문(소비자가 넘긴 클라이언트 ·
      * `stream` 옵션)에서 실패할 수 있다. 수정 전에는 `(string) $body` 의 raw `\RuntimeException` 이 introspect 와
      * `ClientCredentialsTokenProvider::getToken()` 밖으로 나갔다(§4). league 레인은 원래부터 `token request failed` 였다.
+     * logout 은 전에 본문을 읽지 않아 2xx 면 돌아왔다 — 이제 상한을 판정하려고 읽으므로 읽을 수 없는 본문은 introspect 와 같은
+     * 부류의 `KeycloakTransportError` 다(SDK 가 만든 클라이언트의 본문은 메모리 싱크라 이 갈래에 닿지 않는다).
      */
     public function testABodyThatFailsToReadIsAnSdkError(): void
     {
@@ -439,6 +495,9 @@ final class TokenResponseCapTest extends TestCase
         $auth = new AuthClient($cfg, $ep, new JwtValidator($cfg, $ep, new JwksStore($ep->jwks(), $http, $f)), $http);
         $calls = [
             'introspect' => [static fn (): mixed => $auth->introspect('tc-token'), 'introspection response could not be read'],
+            'logout' => [static function () use ($auth): void {
+                $auth->logout('tc-refresh-token');
+            }, 'logout response could not be read'],
             'cctp' => [static fn (): mixed => (new ClientCredentialsTokenProvider($cfg, $ep, $http, $f, $f))->getToken(), 'token response could not be read'],
             'cc' => [static fn (): mixed => $auth->clientCredentialsToken(), 'token request failed'],
         ];

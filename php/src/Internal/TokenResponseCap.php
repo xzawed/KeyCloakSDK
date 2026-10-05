@@ -13,8 +13,8 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
 
 /**
- * 토큰 엔드포인트(모든 grant — auth 레인과 admin 레인의 자기 토큰)·introspection 응답 본문의 상한. 레인이 몇이든 이 상수 하나다
- * (`PkceKeycloakProvider` · `AuthClient::introspect` · `ClientCredentialsTokenProvider` · `Admin\AdminClient`). @internal
+ * 토큰 엔드포인트(모든 grant — auth 레인과 admin 레인의 자기 토큰)·introspection·logout 응답 본문의 상한. 레인이 몇이든 이 상수
+ * 하나다(`PkceKeycloakProvider` · `AuthClient::introspect`·`logout` · `ClientCredentialsTokenProvider` · `Admin\AdminClient`). @internal
  *
  * ⚠️ 예전에는 상한이 없었다 — 쓸 수 있는 토큰 뒤에 JSON 공백 32 MiB 를 붙인 응답을 여섯 레인이 전부 받아들였고(zend 피크 league
  * 75 MB · 그 밖 40 MB), memory_limit 보다 큰 본문은 잡을 수 없는 치명 오류(exit 255)로 프로세스를 끝냈다(실측 2026-10-03).

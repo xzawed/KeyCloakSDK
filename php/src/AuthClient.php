@@ -214,23 +214,43 @@ final class AuthClient
     public function logout(#[\SensitiveParameter] string $refreshToken): void
     {
         // 백채널 end_session POST(refresh_token + client creds) — league/stevenmaguire 미제공
+        // 응답 본문은 쓰지 않지만 Guzzle 은 그것을 끝까지 받는다(기본 싱크 php://temp — 2 MB 를 넘으면 임시 파일). 그래서 introspect 와
+        // 같은 싱크로 상한까지만 받고 판독기로 판정한다(`TokenResponseCap`) — 넘으면 상태와 무관하게 실패다.
+        $sink = TokenResponseCap::sink();
         try {
-            $this->http->request('POST', $this->endpoints->endSession(), [
+            $response = $this->http->request('POST', $this->endpoints->endSession(), [
                 'form_params' => [
                     'client_id' => $this->config->clientId,
                     'client_secret' => $this->config->clientSecret ?? '',
                     'refresh_token' => $refreshToken,
                 ],
+                'sink' => $sink,
             ]);
         } catch (ConnectException $e) {
             throw new KeycloakTransportError('logout unreachable', previous: SanitizedCause::of($e));
         } catch (GuzzleException $e) {
+            if (TokenResponseCap::overflowed($sink)) {
+                throw self::logoutTooLarge();   // curl 이 짧은 쓰기에 끊은 전송(CURLE_WRITE_ERROR) — 오류 상태의 본문 포함
+            }
             throw new KeycloakAuthError('logout failed', previous: SanitizedCause::of($e));
         } catch (KeycloakException $e) {
             throw $e;
         } catch (\Throwable $e) {
             throw new KeycloakTransportError('logout failed unexpectedly', previous: SanitizedCause::of($e));
         }
+        try {
+            $body = TokenResponseCap::read($response->getBody());
+        } catch (\Throwable $e) {
+            throw new KeycloakTransportError('logout response could not be read', previous: SanitizedCause::of($e));
+        }
+        if ($body === null) {
+            throw self::logoutTooLarge();
+        }
+    }
+
+    private static function logoutTooLarge(): KeycloakTransportError
+    {
+        return new KeycloakTransportError(sprintf('logout response exceeds %d bytes', TokenResponseCap::TOKEN_RESPONSE_MAX_BYTES));
     }
 
     /**
