@@ -23,6 +23,7 @@ import java.util.Date;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
@@ -56,26 +57,28 @@ class JwksCancellationTest {
   private HttpServer server;
   private java.util.concurrent.ExecutorService handlers;
   private final AtomicInteger certs = new AtomicInteger();
-  private volatile JWKSet served;
+  private final AtomicReference<JWKSet> served = new AtomicReference<>();
   private volatile int fail503;
   /** 설정되면 /certs 응답이 이 래치가 열릴 때까지 멈춘다 — 요청이 닿으면 {@link #arrived} 를 연다. */
-  private volatile CountDownLatch release;
-  private volatile CountDownLatch arrived;
+  private final AtomicReference<CountDownLatch> release = new AtomicReference<>();
+  private final AtomicReference<CountDownLatch> arrived = new AtomicReference<>();
+  /** /certs 응답이 {@link #release} 를 10 초 기다리다 스스로 풀렸으면 true — 시험이 조회 중 취소를 재지 못한 것이다. */
+  private final AtomicBoolean gateTimedOut = new AtomicBoolean();
 
   @BeforeEach void start() throws Exception {
     k1 = new RSAKeyGenerator(2048).keyID("k1").generate();
     k2 = new RSAKeyGenerator(2048).keyID("k2").generate();
-    served = new JWKSet(k1.toPublicJWK());
+    served.set(new JWKSet(k1.toPublicJWK()));
     server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
     handlers = Executors.newCachedThreadPool();
     server.setExecutor(handlers);
     server.createContext(CERTS, ex -> {
       certs.incrementAndGet();
-      CountDownLatch gate = release;
+      CountDownLatch gate = release.get();
       if (gate != null) {
-        arrived.countDown();
+        arrived.get().countDown();
         try {
-          gate.await(10, TimeUnit.SECONDS);
+          if (!gate.await(10, TimeUnit.SECONDS)) gateTimedOut.set(true);
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
         }
@@ -86,7 +89,7 @@ class JwksCancellationTest {
         ex.close();
         return;
       }
-      byte[] body = served.toString().getBytes(StandardCharsets.UTF_8);
+      byte[] body = served.get().toString().getBytes(StandardCharsets.UTF_8);
       ex.getResponseHeaders().add("Content-Type", "application/json");
       ex.sendResponseHeaders(200, body.length);
       try (OutputStream os = ex.getResponseBody()) {
@@ -99,7 +102,8 @@ class JwksCancellationTest {
   }
 
   @AfterEach void stop() {
-    if (release != null) release.countDown();
+    CountDownLatch gate = release.get();
+    if (gate != null) gate.countDown();
     server.stop(0);
     handlers.shutdownNow();
   }
@@ -141,7 +145,7 @@ class JwksCancellationTest {
     AuthClient auth = client();
     assertEquals("u-k1", validate(auth, token(k1, "k1")).subject(), "데우기");
     assertEquals(1, certs.get(), "데우기는 콜드 로드 한 번이다");
-    served = new JWKSet(k2.toPublicJWK());
+    served.set(new JWKSet(k2.toPublicJWK()));
     return auth;
   }
 
@@ -187,20 +191,21 @@ class JwksCancellationTest {
   private void cancelledMidFlight(Starter starter) throws Exception {
     AuthClient auth = warmedThenRotated();
     String k2Token = token(k2, "k2");
-    arrived = new CountDownLatch(1);
-    release = new CountDownLatch(1);
+    arrived.set(new CountDownLatch(1));
+    release.set(new CountDownLatch(1));
     AtomicReference<Outcome> first = new AtomicReference<>();
     Thread caller = starter.start(() -> first.set(validate(auth, k2Token)));
-    assertTrue(arrived.await(10, TimeUnit.SECONDS), "강제 재조회가 IdP 에 닿지 않았다");
+    assertTrue(arrived.get().await(10, TimeUnit.SECONDS), "강제 재조회가 IdP 에 닿지 않았다");
     caller.interrupt();
     Thread.sleep(200); // 인터럽트가 닿을 시간 — 수정 전 가상 스레드는 여기서 소켓이 닫힌다
-    release.countDown();
+    release.get().countDown();
     caller.join(15_000);
     assertFalse(caller.isAlive(), "취소된 호출자가 SDK 의 타임아웃 안에 돌아오지 않았다");
-    release = null;
+    release.set(null);
     Outcome second = validate(auth, k2Token);
     String row = "#1 " + first.get().describe() + " · #2 " + second.describe() + " · /certs " + certs.get();
     System.out.println("[JwksCancellationTest 조회 중 취소] " + row);
+    assertFalse(gateTimedOut.get(), "/certs 응답이 release 를 10 초 기다리다 스스로 풀렸다 — 조회 중 취소를 재지 못했다 — " + row);
     assertEquals("u-k2", second.subject(), "창 안의 다음 k2 검증이 받아들여져야 한다 — " + row);
     assertEquals(2, certs.get(), "창의 강제 재조회는 정확히 한 번이다 — " + row);
     assertEquals("u-k2", first.get().subject(), "취소된 호출자도 끝난 조회로 검증을 마친다 — " + row);
@@ -235,21 +240,22 @@ class JwksCancellationTest {
   void anotherCallerWaitingOnTheSameFetch_isNotFailedByOneCancellation() throws Exception {
     AuthClient auth = warmedThenRotated();
     String k2Token = token(k2, "k2");
-    arrived = new CountDownLatch(1);
-    release = new CountDownLatch(1);
+    arrived.set(new CountDownLatch(1));
+    release.set(new CountDownLatch(1));
     AtomicReference<Outcome> first = new AtomicReference<>();
     AtomicReference<Outcome> waiter = new AtomicReference<>();
     Thread t1 = startVirtual(() -> first.set(validate(auth, k2Token)));
-    assertTrue(arrived.await(10, TimeUnit.SECONDS), "강제 재조회가 IdP 에 닿지 않았다");
+    assertTrue(arrived.get().await(10, TimeUnit.SECONDS), "강제 재조회가 IdP 에 닿지 않았다");
     Thread t2 = startPlatform(() -> waiter.set(validate(auth, k2Token)));
     Thread.sleep(200); // T2 가 갱신 잠금에 닿을 시간
     t1.interrupt();
     Thread.sleep(200);
-    release.countDown();
+    release.get().countDown();
     t1.join(15_000);
     t2.join(15_000);
     String row = "T1 " + first.get().describe() + " · T2 " + waiter.get().describe() + " · /certs " + certs.get();
     System.out.println("[JwksCancellationTest 같은 조회의 대기자] " + row);
+    assertFalse(gateTimedOut.get(), "/certs 응답이 release 를 10 초 기다리다 스스로 풀렸다 — 조회 중 취소를 재지 못했다 — " + row);
     assertEquals("u-k2", waiter.get().subject(), "기다리던 호출자가 실패했다 — " + row);
     assertEquals("u-k2", first.get().subject(), "취소된 호출자도 끝난 조회로 검증을 마친다 — " + row);
     assertEquals(2, certs.get(), "조회는 한 번이다 — " + row);
@@ -290,7 +296,7 @@ class JwksCancellationTest {
   @Test @EnabledForJreRange(min = JRE.JAVA_21)
   void cancelledForgedKidFlood_staysWithinTheWindow() throws Exception {
     AuthClient auth = warmedThenRotated();
-    served = new JWKSet(k1.toPublicJWK());
+    served.set(new JWKSet(k1.toPublicJWK()));
     for (int i = 0; i < 10; i++) {
       String forged = token(k1, "forged-" + i);
       Thread t = startVirtual(() -> {

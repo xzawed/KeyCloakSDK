@@ -21,10 +21,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
@@ -110,13 +113,13 @@ class TokenResponseCapTest {
 
   private HttpServer server;
   private ExecutorService handlers;
-  private volatile Reply tokenReply;
-  private volatile Reply introspectReply;
-  private volatile Reply logoutReply;
+  private final AtomicReference<Reply> tokenReply = new AtomicReference<>();
+  private final AtomicReference<Reply> introspectReply = new AtomicReference<>();
+  private final AtomicReference<Reply> logoutReply = new AtomicReference<>();
   private final AtomicInteger adminHits = new AtomicInteger();
   private volatile int adminBearerLength = -1;
   /** 마지막으로 준비한 응답이 붙잡는 응답이면 그 결말(아니면 null). */
-  private volatile CompletableFuture<Boolean> clientLeft;
+  private final AtomicReference<CompletableFuture<Boolean>> clientLeft = new AtomicReference<>();
 
   @BeforeEach void start() throws IOException {
     server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -140,11 +143,11 @@ class TokenResponseCapTest {
       adminBearerLength = authorization == null ? -1 : authorization.length() - "Bearer ".length();
       send(ex, new Reply(200, "[]", 0, false));
     } else if (path.equals(OIDC + "/token")) {
-      send(ex, tokenReply);
+      send(ex, tokenReply.get());
     } else if (path.equals(OIDC + "/token/introspect")) {
-      send(ex, introspectReply);
+      send(ex, introspectReply.get());
     } else if (path.equals(OIDC + "/logout")) {
-      send(ex, logoutReply);
+      send(ex, logoutReply.get());
     } else {
       send(ex, new Reply(404, "{}", 0, false));
     }
@@ -166,7 +169,7 @@ class TokenResponseCapTest {
       os.write(head);
       long left = r.length() - head.length;
       if (r.clientLeft() != null) {
-        long quick = CAP + PACED_SLACK - head.length;
+        long quick = (long) CAP + PACED_SLACK - head.length;
         pad(os, spaces, quick);
         os.flush();
         left -= quick + probeUntilGone(os);
@@ -215,11 +218,11 @@ class TokenResponseCapTest {
   private void replyOk(Lane lane, String token, long size, boolean chunked) {
     CompletableFuture<Boolean> held = pacing(lane, size, chunked);
     switch (lane) {
-      case INTROSPECT -> introspectReply = new Reply(200,
-          "{\"active\":true,\"username\":\"" + token + "\",\"client_id\":\"app\"}", size, chunked, held);
-      case LOGOUT -> logoutReply = new Reply(200, "{}", size, chunked, held);
-      default -> tokenReply = new Reply(200, "{\"access_token\":\"" + token + "\",\"token_type\":\"Bearer\","
-          + "\"expires_in\":300,\"refresh_token\":\"" + RT_CANARY + "\"}", size, chunked, held);
+      case INTROSPECT -> introspectReply.set(new Reply(200,
+          "{\"active\":true,\"username\":\"" + token + "\",\"client_id\":\"app\"}", size, chunked, held));
+      case LOGOUT -> logoutReply.set(new Reply(200, "{}", size, chunked, held));
+      default -> tokenReply.set(new Reply(200, "{\"access_token\":\"" + token + "\",\"token_type\":\"Bearer\","
+          + "\"expires_in\":300,\"refresh_token\":\"" + RT_CANARY + "\"}", size, chunked, held));
     }
     adminHits.set(0);
     adminBearerLength = -1;
@@ -230,19 +233,23 @@ class TokenResponseCapTest {
    * 레인의 청크 본문만 붙잡는다(클래스 설명).
    */
   private CompletableFuture<Boolean> pacing(Lane lane, long size, boolean chunked) {
-    clientLeft = chunked && lane != Lane.ADMIN && size > CAP + PACED_SLACK ? new CompletableFuture<>() : null;
-    return clientLeft;
+    CompletableFuture<Boolean> held = chunked && lane != Lane.ADMIN && size > CAP + PACED_SLACK ? new CompletableFuture<>() : null;
+    clientLeft.set(held);
+    return held;
   }
 
   /** 붙잡은 응답이었으면 클라이언트가 붙잡힌 동안 떠났어야 한다 — 끝까지 읽는 클라이언트는 나머지를 받았다. */
   private void expectLeftWhileHeld(Lane lane, String label, List<String> wrong) {
-    CompletableFuture<Boolean> held = clientLeft;
+    CompletableFuture<Boolean> held = clientLeft.get();
     if (held == null) return;
     try {
       if (!held.get(HOLD.toMillis() + 10_000, TimeUnit.MILLISECONDS)) {
         wrong.add(lane + " " + label + ": 붙잡힌 " + HOLD.toSeconds() + " 초 동안 떠나지 않았다 — 본문을 끝까지 읽었다");
       }
-    } catch (Exception e) {
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt(); // 표시를 삼키지 않는다 — 시험은 아래 어긋남으로 실패한다
+      wrong.add(lane + " " + label + ": 서버가 붙잡은 응답의 결말을 기다리다 인터럽트됐다 — " + e);
+    } catch (ExecutionException | TimeoutException e) {
       wrong.add(lane + " " + label + ": 서버가 붙잡은 응답의 결말을 알리지 않았다 — " + e);
     }
   }
@@ -252,9 +259,9 @@ class TokenResponseCapTest {
     Reply r = new Reply(400, "{\"error\":\"invalid_grant\",\"error_description\":\"Zcap bad grant\"}", size, chunked,
         pacing(lane, size, chunked));
     switch (lane) {
-      case INTROSPECT -> introspectReply = r;
-      case LOGOUT -> logoutReply = r;
-      default -> tokenReply = r;
+      case INTROSPECT -> introspectReply.set(r);
+      case LOGOUT -> logoutReply.set(r);
+      default -> tokenReply.set(r);
     }
     adminHits.set(0);
   }
@@ -383,7 +390,7 @@ class TokenResponseCapTest {
       String label = (c[0] >> 20) + " MiB " + (chunked ? "chunked" : "content-length");
       replyOk(lane, "AT-huge", c[0], chunked);
       Measured m = measured(lane);
-      System.out.println("[TokenResponseCapTest] " + lane + " " + label + (clientLeft != null ? " (held)" : "")
+      System.out.println("[TokenResponseCapTest] " + lane + " " + label + (clientLeft.get() != null ? " (held)" : "")
           + " → allocated " + m.allocated() + " bytes");
       expectOverCap(lane, label, m.thrown(), wrong);
       if (m.allocated() > ALLOCATION_BOUND) wrong.add(lane + " " + label + ": 할당 " + m.allocated() + " > " + ALLOCATION_BOUND);
@@ -430,7 +437,7 @@ class TokenResponseCapTest {
     call(lane);
     replyError(lane, 32L << 20, true);
     Measured m = measured(lane);
-    System.out.println("[TokenResponseCapTest] " + lane + " 400 32 MiB chunked" + (clientLeft != null ? " (held)" : "")
+    System.out.println("[TokenResponseCapTest] " + lane + " 400 32 MiB chunked" + (clientLeft.get() != null ? " (held)" : "")
         + " → allocated " + m.allocated() + " bytes");
     if (!(m.thrown() instanceof KeycloakTransportException)) wrong.add(lane + " 400 32 MiB: 전송 실패여야 한다 — " + m.thrown());
     if (m.allocated() > ALLOCATION_BOUND) wrong.add(lane + " 400 32 MiB: 할당 " + m.allocated() + " > " + ALLOCATION_BOUND);

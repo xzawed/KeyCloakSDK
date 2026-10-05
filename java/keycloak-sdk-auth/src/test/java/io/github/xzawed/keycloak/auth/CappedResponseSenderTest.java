@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,13 +39,31 @@ class CappedResponseSenderTest {
   private static final int CAP = 1_048_576;
 
   private HttpServer server;
-  private volatile Reply reply;
+  private final AtomicReference<Reply> reply = new AtomicReference<>();
   private final AtomicInteger redirectTargetHits = new AtomicInteger();
 
-  /** {@code body} 가 null 이면 본문 없음(-1). {@code location} 이 있으면 그 헤더를 단다. {@code stallMs} 만큼 늦게 답한다. */
+  /**
+   * {@code body} 가 null 이면 본문 없음(-1). {@code location} 이 있으면 그 헤더를 단다. {@code stallMs} 만큼 늦게 답한다. 같음·해시는
+   * 배열의 내용으로 정한다(record 의 기본은 배열의 참조를 비교한다) — 문자열은 1 MiB 를 늘어놓지 않게 본문의 길이만 적는다.
+   */
   private record Reply(int status, byte[] body, String location, int stallMs) {
     Reply(int status, byte[] body) {
       this(status, body, null, 0);
+    }
+
+    @Override public boolean equals(Object o) {
+      if (!(o instanceof Reply r)) return false;
+      return status == r.status && stallMs == r.stallMs && Arrays.equals(body, r.body)
+          && java.util.Objects.equals(location, r.location);
+    }
+
+    @Override public int hashCode() {
+      return java.util.Objects.hash(status, Arrays.hashCode(body), location, stallMs);
+    }
+
+    @Override public String toString() {
+      return "Reply[status=" + status + ", body=" + (body == null ? "null" : body.length + " bytes") + ", location=" + location
+          + ", stallMs=" + stallMs + "]";
     }
   }
 
@@ -65,7 +84,7 @@ class CappedResponseSenderTest {
 
   private void handle(HttpExchange ex) throws IOException {
     ex.getRequestBody().readAllBytes();
-    Reply r = reply;
+    Reply r = reply.get();
     if (r.stallMs() > 0) {
       try {
         Thread.sleep(r.stallMs());
@@ -134,7 +153,7 @@ class CappedResponseSenderTest {
         new Reply(200, padded(CAP)));
     List<String> wrong = new ArrayList<>();
     for (Reply r : replies) {
-      reply = r;
+      reply.set(r);
       HTTPResponse stock = post(10_000).send();
       HTTPResponse capped = CappedResponseSender.send(post(10_000), "token");
       String label = r.status() + " " + (r.body() == null ? "(no body)" : r.body().length + " bytes");
@@ -160,7 +179,7 @@ class CappedResponseSenderTest {
 
   /** 출력이 없는 요청(GET)도 Nimbus 와 같다 — 출력 스트림을 열지 않는다. */
   @Test void aRequestWithoutABody_isSentLikeNimbusSendsIt() throws IOException {
-    reply = new Reply(200, utf8("{\"ok\":true}"));
+    reply.set(new Reply(200, utf8("{\"ok\":true}")));
     HTTPRequest get = new HTTPRequest(HTTPRequest.Method.GET,
         URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/token").toURL());
     HTTPResponse capped = CappedResponseSender.send(get, "token");
@@ -172,7 +191,7 @@ class CappedResponseSenderTest {
   @Test void oneByteAboveTheCap_isTooLarge_forSuccessAndErrorStatuses() throws IOException {
     for (int status : new int[] {200, 400}) {
       byte[] body = padded(CAP + 1);
-      reply = new Reply(status, body);
+      reply.set(new Reply(status, body));
       IOException e = assertThrows(IOException.class, () -> CappedResponseSender.send(post(10_000), "introspection"));
       assertInstanceOf(CappedResponseSender.TooLarge.class, e);
       assertEquals("introspection response exceeds 1048576 bytes", e.getMessage());
@@ -232,7 +251,7 @@ class CappedResponseSenderTest {
 
   /** 읽기 타임아웃은 Nimbus 의 연결 설정 그대로다 — 늦은 응답은 SocketTimeoutException 이다. */
   @Test void theReadTimeoutIsKept() {
-    reply = new Reply(200, utf8("{}"), null, 1_500);
+    reply.set(new Reply(200, utf8("{}"), null, 1_500));
     assertThrows(SocketTimeoutException.class, () -> CappedResponseSender.send(post(300), "token"));
   }
 
