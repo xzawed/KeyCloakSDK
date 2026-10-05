@@ -6,9 +6,9 @@ require "json"
 module KeycloakSdk
   # 공유 Faraday 커넥션 팩토리. 타임아웃을 config에서 주입하고,
   # follow_redirects 미들웨어를 절대 장착하지 않는다(SSRF 하드닝 — Faraday는 기본 미추종).
-  # 상한을 건 본문 읽기(`read_capped`)도 여기 있다 — 토큰·introspection·JWKS 레인이 같은 기제를 쓴다.
+  # 상한을 건 본문 읽기(`read_capped`)도 여기 있다 — 토큰·introspection·logout·JWKS 레인이 같은 기제를 쓴다.
   module Http
-    # 토큰 엔드포인트(세 그랜트 · admin 레인의 자기 토큰)와 introspection 응답 본문의 상한(바이트).
+    # 토큰 엔드포인트(세 그랜트 · admin 레인의 자기 토큰)·introspection·logout 응답 본문의 상한(바이트).
     # 1 MiB 는 Keycloak 26.6 이 기본 설정으로 받는 가장 긴 Bearer(65,459 바이트 — 하나 더 길면 HTTP 431)의
     # 16 배라 서버가 받는 토큰은 거부하지 않고, 끝없는 본문은 여기서 멈춘다.
     # ⚠️ JWKS 의 51,200 을 빌려 쓰지 말 것 — 서비스 계정 토큰은 관리하는 realm 수만큼 자란다.
@@ -64,9 +64,10 @@ module KeycloakSdk
     # `read_capped` 의 본문을 커넥션의 json 미들웨어가 하던 그대로 해석한다(응답을 돌려준다).
     # ⚠️ 해석한 값의 문자열이 잘못된 UTF-8 이면 해석 실패다(Faraday::ParsingError ← JSON::ParserError — 짝 없는
     # 서로게이트 이스케이프에서 json 3 이 내는 것과 같은 모양). 고쳐 쓰지 않는다 — 그 값은 SDK 를 지나며 raw 예외가 된다.
-    def decode_json(resp)
+    # `check_utf8: false` 는 해석한 값을 하나도 쓰지 않는 호출(logout)의 것이다 — 미들웨어의 판정만 남는다.
+    def decode_json(resp, check_utf8: true)
       JSON_RESPONSE.on_complete(resp.env)
-      return resp if utf8?(resp.body)
+      return resp if !check_utf8 || utf8?(resp.body)
 
       begin
         raise JSON::ParserError, UNDECODABLE

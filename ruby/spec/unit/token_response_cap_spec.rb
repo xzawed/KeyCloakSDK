@@ -3,11 +3,12 @@
 require "spec_helper"
 require_relative "../support/body_server"
 
-# 토큰·introspection 응답 본문의 상한(wave 4 · token-response-size-unbounded).
+# 토큰·introspection·logout 응답 본문의 상한(wave 4 · token-response-size-unbounded).
 #
 # 다섯 레인이 본문을 통째로 읽었다 — 쓸 수 있는 토큰 뒤에 JSON 공백 32 MiB 를 붙인 응답을 전부 받아들였고
 # 프로세스 피크가 +86 MB 였다(2026-10-05 실측, 가짜 IdP · 레인마다 새 프로세스). 상한은 1 MiB 이고 Keycloak 26.6
 # 이 기본 설정으로 받는 가장 긴 Bearer(65,459 바이트)의 16 배다 — 서버가 받는 토큰은 거부하지 않는다.
+# logout 은 본문을 쓰지 않지만 읽었다 — 16 MiB 본문을 받아들였고 할당이 ~50 MB 였다(아래 logout 예제).
 module TokenResponseCapSpec
   # ⚠️ 시험의 신탁(oracle)이다 — SDK 상수와 같은지는 한 예제가 따로 본다. 여기서 SDK 상수를 쓰면 상수가
   # 없을 때(수정 전) 모든 예제가 NameError 로 죽어 「본문을 받아들였다」는 진짜 결함이 가려진다.
@@ -19,6 +20,8 @@ module TokenResponseCapSpec
   INTROSPECT = "#{OIDC}/token/introspect".freeze
   JWKS = "#{OIDC}/certs".freeze
   USERS = "/admin/realms/#{REALM}/users".freeze
+  LOGOUT = "#{OIDC}/logout".freeze
+  LOGOUT_REFUSED = "logout response exceeds #{CAP} bytes".freeze
   JSON_TYPE = { "Content-Type" => "application/json" }.freeze
 
   # 레인 — 부르는 법과, 성공했을 때 돌려받은 「값의 길이」(토큰·클레임·admin 이 보낸 Bearer).
@@ -62,6 +65,16 @@ module TokenResponseCapSpec
 
   def message(lane)
     "#{LANES.fetch(lane)[:introspection] ? 'introspection' : 'token'} response exceeds #{CAP} bytes"
+  end
+
+  # logout 응답 — 2xx 는 빈 객체, 그 밖은 Keycloak 의 오류 본문 모양. logout 은 본문을 쓰지 않는다(상태만 본다).
+  def logout_head(status) = status < 300 ? "{}" : { error: "invalid_grant" }.to_json
+
+  # logout 의 결과 — 성공이면 [:ok, 돌려준 값], SDK 오류면 [클래스, 메시지].
+  def logout_outcome(client)
+    [:ok, client.auth.logout(refresh_token: "rt")]
+  rescue KeycloakSdk::Error => e
+    [e.class, e.message]
   end
 end
 
@@ -230,6 +243,98 @@ RSpec.describe KeycloakSdk::Http do
         expect { client.auth.client_credentials_token }.to raise_error(KeycloakSdk::TransportError, spec.message(lane))
       ensure
         server&.close
+      end
+
+      # ── logout — 본문을 쓰지 않지만 읽는다. 같은 상한이다: 정확히 상한이면 지금과 같고(2xx 는 nil · 그 밖은 기존
+      # AuthError), 한 바이트라도 넘으면 상태와 무관하게 TransportError. 16 KiB 읽기의 두 틀 모두에서 본다.
+      context "with auth.logout over #{name}" do
+        let(:body_server) { BodyServer.new(framing: framing) }
+
+        def serve_logout(status, pad)
+          body_server.route(TokenResponseCapSpec::LOGOUT) { [status, {}, spec.logout_head(status), pad] }
+        end
+
+        def measure_logout(client)
+          error = nil
+          bytes = BodyServer.allocated_bytes do
+            client.auth.logout(refresh_token: "rt")
+          rescue StandardError => e
+            error = e
+          end
+          [bytes, error]
+        end
+
+        it "draws the line exactly at the cap, at any status" do
+          seen = [200, 302, 400, 500].to_h do |status|
+            exact = TokenResponseCapSpec::CAP - spec.logout_head(status).bytesize
+            outcomes = [exact, exact + 1].map do |pad|
+              serve_logout(status, pad)
+              spec.logout_outcome(kc)
+            end
+            [status, outcomes]
+          end
+          refused = [KeycloakSdk::TransportError, TokenResponseCapSpec::LOGOUT_REFUSED]
+          expect(seen).to eq(200 => [[:ok, nil], refused],
+                             302 => [[KeycloakSdk::AuthError, "logout failed: HTTP 302"], refused],
+                             400 => [[KeycloakSdk::AuthError, "logout failed: HTTP 400"], refused],
+                             500 => [[KeycloakSdk::AuthError, "logout failed: HTTP 500"], refused])
+        end
+
+        it "refuses a 16 MiB body while allocating a bounded amount", :aggregate_failures do
+          serve_logout(200, 0)
+          spec.logout_outcome(spec.client(body_server.url)) # 데운다 — `warm_up` 과 같은 이유
+          serve_logout(200, 16 * 1_048_576)
+          bytes, error = measure_logout(kc)
+          expect(error).to be_a(KeycloakSdk::TransportError)
+          expect(error&.message).to eq(TokenResponseCapSpec::LOGOUT_REFUSED)
+          expect(bytes).to be < 8 * TokenResponseCapSpec::CAP # 상한 없이 읽던 때는 ~50 MB(실측 50,429,852–50,784,359)
+        end
+      end
+    end
+
+    # 상한은 읽기만 바꾼다 — 보내는 것은 그대로다(같은 커넥션 · 같은 폼, 클라이언트 인증은 폼 안이고 Basic 은 없다).
+    # 바뀐 헤더는 Accept-Encoding 하나다: net-http 기본값(gzip;q=1.0,deflate;q=0.6,identity;q=0.3) → identity.
+    context "with auth.logout's request" do
+      let(:body_server) { BodyServer.new(framing: :length) }
+
+      it "still succeeds on an empty 204 or 200" do
+        outcomes = [204, 200].map do |status|
+          body_server.route(TokenResponseCapSpec::LOGOUT) { [status, {}, "", 0] }
+          spec.logout_outcome(kc)
+        end
+        expect(outcomes).to eq([[:ok, nil], [:ok, nil]])
+      end
+
+      it "sends the same form and client auth, asking for an unencoded body" do
+        body_server.route(TokenResponseCapSpec::LOGOUT) { [204, {}, "", 0] }
+        kc.auth.logout(refresh_token: "rt")
+        req = body_server.requests.last
+        expect([req.verb, req.path, req.body])
+          .to eq(["POST", TokenResponseCapSpec::LOGOUT, "client_id=c&client_secret=s&refresh_token=rt"])
+        expect(req.headers).to eq("user-agent" => "Faraday v#{Faraday::VERSION}",
+                                  "content-type" => "application/x-www-form-urlencoded",
+                                  "accept-encoding" => "identity", "accept" => "*/*",
+                                  "host" => body_server.url.delete_prefix("http://"), "content-length" => "44")
+      end
+
+      it "does not follow a redirect" do
+        body_server.route(TokenResponseCapSpec::LOGOUT) { [302, { "Location" => "/elsewhere" }, "", 0] }
+        expect(spec.logout_outcome(kc)).to eq([KeycloakSdk::AuthError, "logout failed: HTTP 302"])
+        expect(body_server.requests.map(&:path)).to eq([TokenResponseCapSpec::LOGOUT])
+      end
+
+      # 시간을 재지 않는다 — 서버는 1 초 뒤에 답하므로 ReadTimeout 이 났다면 Config 의 0.2 초가 걸린 것이다(기본 10 초).
+      it "keeps the Config read timeout" do
+        body_server.route(TokenResponseCapSpec::LOGOUT) do
+          sleep 1
+          [204, {}, "", 0]
+        end
+        slow = KeycloakSdk::KeycloakClient.new(
+          KeycloakSdk::Config.new(server_url: body_server.url, realm: TokenResponseCapSpec::REALM, client_id: "c",
+                                  client_secret: "s", read_timeout: 0.2)
+        )
+        expect { slow.auth.logout(refresh_token: "rt") }
+          .to raise_error(KeycloakSdk::TransportError, /\Alogout transport error: Net::ReadTimeout/)
       end
     end
 

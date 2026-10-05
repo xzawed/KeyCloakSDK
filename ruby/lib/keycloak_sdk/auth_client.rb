@@ -77,11 +77,16 @@ module KeycloakSdk
       raise TransportError, "introspection transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
     end
 
+    # 본문은 쓰지 않지만 읽는다 — `TOKEN_RESPONSE_MAX_BYTES` 까지만(넘으면 상태와 무관하게 TransportError).
+    # 해석은 커넥션의 json 미들웨어가 하던 그대로 남긴다: JSON 이라면서 JSON 이 아닌 본문은 지금처럼 TransportError 다.
+    # UTF-8 검사는 걸지 않는다(`check_utf8: false`) — 값을 쓰지 않아 지킬 것이 없고, 걸면 400 이 오류 본문의 바이트에
+    # 따라 AuthError 에서 TransportError 로 바뀐다(hostile_token_response_spec 의 u2). 해석은 상태 검사보다 먼저다.
     def logout(refresh_token:)
-      resp = @http.post(@endpoints.end_session, form!("logout", client_id: @config.client_id,
-                                                                client_secret: @config.client_secret,
-                                                                refresh_token: refresh_token))
-      raise AuthError, "logout failed: HTTP #{resp.status}" unless resp.success?
+      form = form!("logout", client_id: @config.client_id, client_secret: @config.client_secret,
+                             refresh_token: refresh_token)
+      resp = Http.read_capped(@http, :post, @endpoints.end_session,
+                              body: form, max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "logout")
+      raise AuthError, "logout failed: HTTP #{resp.status}" unless Http.decode_json(resp, check_utf8: false).success?
 
       nil
     rescue Faraday::Error => e

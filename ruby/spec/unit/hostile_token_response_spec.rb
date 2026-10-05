@@ -104,7 +104,7 @@ module HostileTokenResponseSpec
                 reply: { status: 200, headers: JSON_TYPE, body: LONG_BODY },
                 canaries: { "d2.BODY" => "dL7k-long-non-json-body-canary" },
                 expect: expect_all(ALL, transport) },
-      "d3" => { note: "200 text/plain — 본문이 짧은 카나리아(logout 은 본문을 안 읽어 받아들인다)",
+      "d3" => { note: "200 text/plain — 본문이 짧은 카나리아(logout 은 본문을 쓰지 않아 받아들인다)",
                 reply: { status: 200, headers: { "Content-Type" => "text/plain" }, body: "dT7k-plain-body" },
                 expect: expect_all(TOKEN + ["auth.introspect"], auth) },
       "e1" => { note: "400 JSON — error_description 이 토큰을 되울린다",
