@@ -15,8 +15,8 @@
 
 from __future__ import annotations
 
-import io
 import json
+import socket
 import tracemalloc
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -271,8 +271,21 @@ def test_judging_a_small_body_allocates_nothing_near_the_cap(
     `sock.makefile("rb")` 로 잡는 `io.DEFAULT_BUFFER_SIZE` 가 3.14 부터 128 KiB 라, SDK 와 무관한 그
     버퍼가 피크를 지배한다(3.14.8 실측 146 KB, 이 값만 8192 로 두면 24 KB — SDK 를 수정 전 소스로
     바꿔도 146~148 KB). 피크에서 빼지 않는 것은 그 버퍼가 본문을 다 읽으면 풀리기 때문이다 — 빼면
-    그 뒤의 할당을 버퍼 크기만큼 덜 잰다."""
-    monkeypatch.setattr(io, "DEFAULT_BUFFER_SIZE", 8192)  # 3.13 까지의 값
+    그 뒤의 할당을 버퍼 크기만큼 덜 잰다.
+
+    ⚠️ 고정하는 것은 `makefile()` 이 크기를 받지 않았을 때 고르는 값뿐이다 — 전역
+    `io.DEFAULT_BUFFER_SIZE` 를 바꾸면 그 값으로 크기를 정하는 SDK 할당까지 3.14 에서 1/16 로 잰다
+    (3.14 에서 상한 그 자체인 `bytearray(io.DEFAULT_BUFFER_SIZE * 8)` 가 94 KB 로 통과했다)."""
+    real_makefile = socket.socket.makefile
+
+    def makefile(
+        self: socket.socket, mode: str = "r", buffering: int | None = None, **kwargs: Any
+    ) -> Any:
+        if buffering is None or buffering < 0:
+            buffering = 8192  # 3.13 까지 makefile() 이 고르던 값(io.DEFAULT_BUFFER_SIZE)
+        return real_makefile(self, mode, buffering, **kwargs)
+
+    monkeypatch.setattr(socket.socket, "makefile", makefile)
     token = "H" * 2000
     token_idp.head = _head("cc", token)
 
