@@ -5,6 +5,7 @@ import { KeycloakAuthError, KeycloakTransportError } from './errors.js'
 import { JwtValidator } from './jwt.js'
 import { mask } from './masking.js'
 import { oidcEndpoints, type OidcEndpoints } from './oidc-metadata.js'
+import { fetchTokenEndpointBounded, responseTooLarge } from './token-response-cap.js'
 import { isTransportError } from './transport.js'
 import {
   tokenSetFromResponse,
@@ -71,6 +72,14 @@ type GrantResponse = Awaited<ReturnType<typeof oidc.clientCredentialsGrant>>
 
 function base64url(buffer: Buffer): string {
   return buffer.toString('base64url')
+}
+
+/**
+ * 실패 메시지의 꼬리. 응답 본문이 상한을 넘었으면 그렇게 말한다 — openid-client 는 fetch 가 던진 상한 신호를
+ * `ClientError('something went wrong')` 로 감싸므로 그 겉 메시지는 거짓에 가깝다(`token-response-cap.ts`).
+ */
+function reasonOf(e: unknown): string {
+  return responseTooLarge(e)?.message ?? (e as Error).message
 }
 
 /**
@@ -229,9 +238,7 @@ export class AuthClient {
         claims: response as Record<string, unknown>,
       }
     } catch (e) {
-      throw new KeycloakAuthError(`Token introspection failed: ${(e as Error).message}`, {
-        cause: e,
-      })
+      throw new KeycloakAuthError(`Token introspection failed: ${reasonOf(e)}`, { cause: e })
     }
   }
 
@@ -318,6 +325,10 @@ export class AuthClient {
     // 서버 다운(undici `TypeError: fetch failed` + cause)·타임아웃(AbortError)·불량 메타데이터
     // (openid-client 자체 오류)를 던진다. 이들이 §4 계약을 뚫고 원시 하위 오류로 누출되지 않도록
     // 경계에서 SDK 예외로 변환한다(전송 실패는 KeycloakTransportError, 그 외는 KeycloakAuthError).
+    //
+    // `[oidc.customFetch]` 는 응답 본문 상한이다(`token-response-cap.ts`). openid-client 가 이것을 Configuration 에
+    // 복사하므로 discovery 와 이후 세 그랜트·introspection 이 전부 이 한 자리를 지난다. ⚠️ jose 의 `customFetch`
+    // 심볼과 **다르다**(실측 `jose.customFetch === oidc.customFetch` → false) — 그것을 쓰면 조용히 무시된다.
     let config: oidc.Configuration
     try {
       config = await oidc.discovery(
@@ -325,13 +336,13 @@ export class AuthClient {
         this.#cfg.clientId,
         this.#cfg.clientSecret,
         undefined,
-        { execute, timeout },
+        { execute, timeout, [oidc.customFetch]: fetchTokenEndpointBounded },
       )
     } catch (e) {
       if (isTransportError(e)) {
         throw new KeycloakTransportError('OIDC discovery transport failure', { cause: e })
       }
-      throw new KeycloakAuthError(`OIDC discovery failed: ${(e as Error).message}`, { cause: e })
+      throw new KeycloakAuthError(`OIDC discovery failed: ${reasonOf(e)}`, { cause: e })
     }
     this.#configuration = config
     return config
@@ -343,7 +354,7 @@ export class AuthClient {
       const response = await fn()
       return tokenSetFromResponse(response as unknown as Record<string, unknown>)
     } catch (e) {
-      throw new KeycloakAuthError(`${message}: ${(e as Error).message}`, { cause: e })
+      throw new KeycloakAuthError(`${message}: ${reasonOf(e)}`, { cause: e })
     }
   }
 }
