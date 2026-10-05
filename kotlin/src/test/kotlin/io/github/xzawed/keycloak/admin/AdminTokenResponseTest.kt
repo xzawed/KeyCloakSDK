@@ -6,6 +6,7 @@ import io.github.xzawed.keycloak.KeycloakConfig
 import io.github.xzawed.keycloak.KeycloakTransportException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.keycloak.representations.idm.UserRepresentation
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -13,12 +14,14 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.lang.management.ManagementFactory
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.time.Duration
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.GZIPOutputStream
 import kotlin.concurrent.thread
 import kotlin.test.AfterTest
@@ -71,12 +74,43 @@ private fun atrPadTo(
     return ByteArray(size) { i -> if (i < head.size) head[i] else ' '.code.toByte() }
 }
 
+// 토큰 응답 크기 상한 — 숫자로 적는다(아홉 언어가 함께 움직이는 값이라, SDK 상수가 바뀌면 이 시험이 먼저 안다).
+private const val ATR_CAP = 1_048_576
+
 // 깨진 전송 시험의 첫 부분(쓸 수 있는 토큰 + 공백) — 상한+1 보다 커서 가드는 그 앞 상한+1 바이트만 읽고 거부한다.
-private const val ATR_FIRST = TokenResponseGuard.MAX_BODY_BYTES + 10_000
+private const val ATR_FIRST = ATR_CAP + 10_000
+
+private const val ATR_LOGOUT_PATH = "/realms/$ATR_REALM/protocol/openid-connect/logout"
 
 // Keycloak 26.6(start-dev 기본 설정)이 받아들이는 가장 긴 Bearer — 실측(curl GET /admin/realms): 65,459 바이트면 401(헤더는
 // 받고 토큰이 무효), 65,460 바이트면 431.
 private const val ATR_KEYCLOAK_MAX_BEARER = 65_459
+
+private val ATR_SPACES = ByteArray(64 * 1024) { ' '.code.toByte() }
+
+// 이 JVM 의 모든 스레드가 지금까지 할당한 바이트 — admin 호출은 Dispatchers.IO 스레드에서 돈다. getTotalThreadAllocatedBytes 는
+// JDK 21 API 라(시험 컴파일은 17 API 로 묶여 있다) 반사로 부른다.
+private fun atrAllocatedAllThreads(): Long {
+    val bean = ManagementFactory.getThreadMXBean()
+    assumeTrue(bean is com.sun.management.ThreadMXBean, "스레드 할당 계수기가 없는 JVM")
+    val total =
+        try {
+            com.sun.management.ThreadMXBean::class.java.getMethod("getTotalThreadAllocatedBytes")
+        } catch (absent: NoSuchMethodException) {
+            null
+        }
+    assumeTrue(total != null, "JDK 21 미만 — 모든 스레드의 할당 합계를 못 잰다")
+    val bytes = total!!.invoke(bean) as Long
+    assumeTrue(bytes >= 0, "스레드 할당 계수가 꺼져 있다")
+    return bytes
+}
+
+// 이 스레드가 지금까지 할당한 바이트 — admin 의 close()(TokenManager.logout)는 호출 스레드에서 돈다.
+private fun atrAllocatedThisThread(): Long {
+    val bean = ManagementFactory.getThreadMXBean()
+    assumeTrue(bean is com.sun.management.ThreadMXBean, "스레드 할당 계수기가 없는 JVM")
+    return (bean as com.sun.management.ThreadMXBean).currentThreadAllocatedBytes
+}
 
 // CRLF(또는 LF)로 끝나는 HTTP 한 줄 — 줄 끝은 빼고.
 private fun atrHttpLine(input: InputStream): String {
@@ -91,15 +125,20 @@ private fun atrHttpLine(input: InputStream): String {
 
 internal class AdminTokenResponseTest {
     // 토큰 엔드포인트의 응답 — contentEncoding 이 있으면 그 헤더를 달고(본문은 이미 그 코딩으로 된 바이트), typed 가 거짓이면
-    // Content-Type 을 달지 않는다.
+    // Content-Type 을 달지 않는다. pad 는 본문 뒤에 흘려 보낼 JSON 공백 바이트 수다(시험 서버가 거대한 본문만 한 배열을 잡지 않는다).
     private class Reply(
         val status: Int,
         val body: ByteArray,
         val contentEncoding: String? = null,
         val typed: Boolean = true,
+        val pad: Long = 0,
     ) {
         constructor(status: Int, body: String) : this(status, body.toByteArray())
     }
+
+    // logout 엔드포인트의 응답 — admin 이 닫힐 때 내장 TokenManager 가 refresh_token 을 그리로 보낸다(null 이면 204).
+    @Volatile private var logoutReply: Reply? = null
+    private val logouts = AtomicInteger()
 
     private lateinit var server: HttpServer
     private val lock = Any()
@@ -134,7 +173,12 @@ internal class AdminTokenResponseTest {
                         if (tokenReplies.size > 1) tokenReplies.removeFirst() else tokenReplies.first()
                     }
                 r.contentEncoding?.let { ex.responseHeaders.add("Content-Encoding", it) }
-                send(ex, r.status, r.body, r.typed)
+                send(ex, r.status, r.body, r.typed, r.pad)
+            }
+            path == ATR_LOGOUT_PATH -> {
+                logouts.incrementAndGet()
+                val r = logoutReply
+                if (r == null) send(ex, 204, null) else send(ex, r.status, r.body, r.typed, r.pad)
             }
             path.startsWith("/admin/realms/$ATR_REALM/users") -> {
                 synchronized(lock) { adminHits += "${ex.requestMethod} $path · ${ex.requestHeaders.getFirst("Authorization")}" }
@@ -167,10 +211,23 @@ internal class AdminTokenResponseTest {
         status: Int,
         bytes: ByteArray,
         typed: Boolean,
+        pad: Long = 0,
     ) {
         if (typed) ex.responseHeaders.add("Content-Type", "application/json")
-        ex.sendResponseHeaders(status, bytes.size.toLong())
-        ex.responseBody.use { it.write(bytes) }
+        ex.sendResponseHeaders(status, bytes.size + pad)
+        try {
+            ex.responseBody.use { out ->
+                out.write(bytes)
+                var left = pad
+                while (left > 0) {
+                    val n = minOf(left, ATR_SPACES.size.toLong()).toInt()
+                    out.write(ATR_SPACES, 0, n)
+                    left -= n
+                }
+            }
+        } catch (clientWentAway: IOException) {
+            // 클라이언트가 본문을 다 읽지 않고 끊었다 — 상한을 넘긴 본문의 기대 결말이다
+        }
     }
 
     private fun form(body: String): Map<String, String> =
@@ -202,6 +259,8 @@ internal class AdminTokenResponseTest {
             tokenReplies.addAll(replies)
             grants.clear()
             adminHits.clear()
+            logoutReply = null
+            logouts.set(0)
         }
 
     private fun adminHits(): List<String> = synchronized(lock) { adminHits.toList() }
@@ -339,7 +398,7 @@ internal class AdminTokenResponseTest {
     @Test
     fun `token response above the cap is rejected like an unusable token`() =
         runTest {
-            val cap = TokenResponseGuard.MAX_BODY_BYTES
+            val cap = ATR_CAP
             val table = mutableListOf<String>()
             val wrong = mutableListOf<String>()
             val body = atrTokenBody("\"good\"", ",\"refresh_token\":\"$ATR_RT_CANARY\"")
@@ -384,6 +443,112 @@ internal class AdminTokenResponseTest {
             assertNull(thrown, row)
             assertEquals(listOf("client_credentials"), grants(), row)
             assertTrue(adminHits() == listOf("GET /admin/realms/r/users/x · Bearer $token"), row)
+        }
+
+    // 오류 상태의 토큰 응답도 같은 상한이다 — 그 본문은 RESTEasy 가 예외에 담으려고 **통째로** 버퍼에 읽었다(extractResult 의
+    // bufferEntity, 수정 전 실측: 400 + 32 MiB 에 admin 호출 하나가 154–210 MiB 할당). 상한 안의 오류는 예전 그대로 TokenManager 에
+    // 간다(이 레인의 실패 모양 — ProcessingException 에 싸인 BadRequestException, 아래 갱신 시험의 복구 경로). 상한을 넘으면 쓸 수
+    // 없는 토큰과 같은 거부다: KeycloakTransportException · admin 요청 0 건 · 걸러진 원인 사슬.
+    @Test
+    fun `token error response above the cap is rejected like an unusable token`() =
+        runTest {
+            val table = mutableListOf<String>()
+            val wrong = mutableListOf<String>()
+            val error = """{"error":"invalid_client","error_description":"bad client"}""".toByteArray()
+            for (status in listOf(400, 401, 503)) {
+                reset(Reply(status, error, pad = (ATR_CAP - error.size).toLong()))
+                val atCap = failureOf { it.users().get("x") }
+                val chain = generateSequence(atCap?.cause) { it.cause }.take(16).map { it.javaClass.simpleName }.toList()
+                table += "$status = 상한   → ${atCap?.let { "${it.javaClass.simpleName}(${it.message})" }} · 사슬 $chain · admin ${adminHits()}"
+                if (atCap !is KeycloakTransportException || atCap.message != "Admin request failed" || adminHits().isNotEmpty()) {
+                    wrong += "$status = 상한: 예전의 실패(Admin request failed · admin 0 건)가 아니다 — $atCap ${adminHits()}"
+                }
+                if ("ProcessingException" !in chain) wrong += "$status = 상한: TokenManager 의 실패 모양(ProcessingException 사슬)이 바뀌었다 — $chain"
+                reset(Reply(status, error, pad = (ATR_CAP + 1 - error.size).toLong()))
+                table += callExpectingRejection("$status = 상한+1", wrong)
+            }
+            println("[AdminTokenResponseTest 오류 본문 상한]\n  " + table.joinToString("\n  "))
+            assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
+        }
+
+    // 갱신 오류(400)의 복구 — 상한 안의 400 은 예전 그대로 TokenManager 가 BadRequestException 을 받아 client_credentials 로 다시
+    // 부여한다. 상한을 넘는 400 은 그 본문을 읽지 않고 거부하므로 복구 없이 실패한다(그 IdP 는 이미 상한을 넘는 본문을 보냈다).
+    @Test
+    fun `refresh error above the cap fails instead of being recovered`() =
+        runTest {
+            val error = """{"error":"invalid_grant"}""".toByteArray()
+            val recovered = listOf("GET /admin/realms/r/users/x · Bearer AT-1", "GET /admin/realms/r/users/x · Bearer AT-3")
+            val regrant = Reply(200, atrTokenBody("\"AT-3\""))
+            reset(Reply(200, ATR_REFRESHABLE), Reply(400, error, pad = (ATR_CAP - error.size).toLong()), regrant)
+            admin().use { admin ->
+                admin.users().get("x")
+                admin.users().get("x")
+            }
+            assertEquals(listOf("client_credentials", "refresh_token", "client_credentials"), grants(), "상한 안의 400 은 복구돼야 한다")
+            assertEquals(recovered, adminHits())
+
+            reset(Reply(200, ATR_REFRESHABLE), Reply(400, error, pad = (ATR_CAP + 1 - error.size).toLong()), regrant)
+            admin().use { admin ->
+                admin.users().get("x")
+                val e = assertFailsWith<KeycloakTransportException> { admin.users().get("x") }
+                assertEquals("Admin request failed", e.message)
+            }
+            assertEquals(listOf("client_credentials", "refresh_token"), grants(), "상한을 넘는 400 을 BadRequestException 으로 복구했다")
+            assertEquals(listOf("GET /admin/realms/r/users/x · Bearer AT-1"), adminHits())
+        }
+
+    // 거대한 오류 본문(32 MiB) — 실패는 예전과 같은 타입이고, 그 호출이 모든 스레드에서 할당한 바이트가 본문의 절반(상한의 16 배)
+    // 안이다 — 본문을 버퍼에 담으면 적어도 본문만큼이다. 수정 후 실측 약 6 MB(넘친 경로의 첫 클래스 로딩 포함), 수정 전: RESTEasy 가
+    // 본문을 통째로 버퍼에 담아 105–210 MB. 먼저 작은 오류로 한 번 불러 데운다.
+    @Test
+    fun `a huge token error body is not buffered`() =
+        runTest {
+            val error = """{"error":"invalid_client"}""".toByteArray()
+            reset(Reply(400, error))
+            failureOf { it.users().get("x") }
+            val huge = 32L shl 20
+            reset(Reply(400, error, pad = huge - error.size))
+            val before = atrAllocatedAllThreads()
+            val thrown = failureOf { it.users().get("x") }
+            val allocated = atrAllocatedAllThreads() - before
+            val limit = 16L * ATR_CAP
+            println("[AdminTokenResponseTest 거대한 오류 본문] $huge 바이트 → ${thrown?.javaClass?.simpleName} · 할당 $allocated (한도 $limit)")
+            assertTrue(thrown is KeycloakTransportException && thrown.message == "Admin request failed", "$thrown")
+            assertTrue(adminHits().isEmpty(), "${adminHits()}")
+            assertTrue(allocated < limit, "$huge 바이트 오류 본문 하나에 $allocated 바이트를 할당했다")
+        }
+
+    // admin 이 닫힐 때의 logout — 내장 TokenManager 가 refresh_token 을 logout 엔드포인트로 보내고(Keycloak.close), 오류 상태면
+    // RESTEasy 가 그 본문을 통째로 버퍼에 담았다(수정 전 실측: 400 + 32 MiB 에 close() 하나가 101 MiB). 그 실패는 close() 가
+    // 삼키므로 결과는 같고, 달라지는 것은 메모리뿐이다 — close() 가 이 스레드에서 할당한 바이트가 상한의 네 배 안이다. 상한 안의
+    // 오류와 2xx 의 close() 는 예전처럼 조용히 끝난다(대조).
+    @Test
+    fun `close does not buffer a huge logout error body`() =
+        runTest {
+            val withRefresh = atrTokenBody("\"AT-1\"", ",\"refresh_token\":\"$ATR_RT_CANARY\",\"refresh_expires_in\":300")
+            val error = """{"error":"invalid_grant"}""".toByteArray()
+            reset(Reply(200, withRefresh))
+            admin().use { it.users().get("x") } // 데우기 — 첫 close() 의 클래스 로딩을 재지 않는다
+            val measured = mutableListOf<String>()
+            for ((label, reply) in listOf(
+                "logout 400 작은 본문" to Reply(400, error),
+                "logout 400 = 상한" to Reply(400, error, pad = (ATR_CAP - error.size).toLong()),
+                "logout 400 + 32 MiB" to Reply(400, error, pad = (32L shl 20) - error.size),
+            )) {
+                reset(Reply(200, withRefresh))
+                val admin = admin()
+                admin.users().get("x")
+                logoutReply = reply
+                val before = atrAllocatedThisThread()
+                admin.close()
+                val allocated = atrAllocatedThisThread() - before
+                measured += "$label → close() 할당 $allocated · logout ${logouts.get()} 건"
+                assertEquals(1, logouts.get(), "$label: close() 가 logout 을 보내야 한다")
+                if (reply.pad > ATR_CAP) {
+                    assertTrue(allocated < 4L * ATR_CAP, "$label: close() 하나가 $allocated 바이트를 할당했다")
+                }
+            }
+            println("[AdminTokenResponseTest close() 의 logout]\n  " + measured.joinToString("\n  "))
         }
 
     // admin 요청 기록의 Bearer 를 길이로만 적는다 — 긴 토큰을 표에 그대로 찍지 않는다.

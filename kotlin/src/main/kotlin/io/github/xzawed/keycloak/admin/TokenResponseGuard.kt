@@ -2,6 +2,9 @@ package io.github.xzawed.keycloak.admin
 
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonToken
+import io.github.xzawed.keycloak.ResponseTooLargeException
+import io.github.xzawed.keycloak.TOKEN_RESPONSE_MAX_BYTES
+import io.github.xzawed.keycloak.readWithinCap
 import jakarta.ws.rs.HttpMethod
 import jakarta.ws.rs.client.ClientRequestContext
 import jakarta.ws.rs.client.ClientResponseContext
@@ -23,9 +26,14 @@ import java.io.InputStream
  * 타입이 남지 않으므로 결합 **앞**의 바이트를 본다. TokenManager 의 부여·갱신 요청도 [AdminClient.buildTimeoutClient] 의
  * 클라이언트로 나가므로 거기에 등록한다.
  *
- * 범위는 POST · 경로 꼬리 [TOKEN_PATH_SUFFIX] · 2xx 응답뿐이다 — 응답 필터가 정한다. admin 자원 응답의 역직렬화는 건드리지
- * 않는다. 오류 상태는 그대로 넘긴다 — 갱신이 400 이면 TokenManager 가 `BadRequestException` 을 받아 client_credentials 로
- * 다시 부여하는 복구 경로가 있다.
+ * 판정의 범위는 POST · 경로 꼬리 [TOKEN_PATH_SUFFIX] · 2xx 응답뿐이다 — 응답 필터가 정한다. admin 자원 응답의 역직렬화는
+ * 건드리지 않는다. 오류 상태는 판정하지 않고 넘긴다 — 갱신이 400 이면 TokenManager 가 `BadRequestException` 을 받아 client_credentials 로
+ * 다시 부여하는 복구 경로가 있다. ⚠️ 다만 그 본문(과 admin 이 닫힐 때 TokenManager 가 보내는 logout 의 오류 본문 —
+ * [LOGOUT_PATH_SUFFIX])은 상한([TOKEN_RESPONSE_MAX_BYTES])까지만 읽어 바이트 그대로 넘긴다 — RESTEasy 가 예외에 담으려고 오류
+ * 본문을 **통째로** 버퍼에 읽기 때문이다(`ClientInvocation.extractResult` · void 추출기의 `bufferEntity`, 실측: 400 + 32 MiB 에
+ * admin 호출 하나가 154–210 MiB, close() 가 101 MiB). 넘치면 [ResponseTooLargeException] 으로 거부한다 — 아래의 거부와 같은
+ * 길로 `KeycloakTransportException` 이 되고(복구 경로에는 닿지 않는다), close() 의 logout 실패는 admin-client 가 삼킨다.
+ * 오류 본문의 상한은 원시 바이트로 잰다 — 그 버퍼링은 ReaderInterceptor(gzip 해제)를 거치지 않는다.
  *
  * ⚠️ **판정은 결합이 읽을 바이트로 한다** — 응답 필터가 보는 원시 엔티티가 아니다. RESTEasy 는 엔티티를 ReaderInterceptor
  * 사슬을 거쳐 결합에 넘기고, 그 사슬이 바이트를 바꿀 수 있다: 소비자가 `resteasy.allowGzip=true` 를 켜면
@@ -41,14 +49,14 @@ import java.io.InputStream
  * 보내지지 않고, [adminCall] 이 `KeycloakTransportException` 으로 바꾼다(원인 사슬은 [transportCause] 가 `RedactedCause` 로
  * 간다) — null·객체·배열·누락이 이미 실패하던 타입이다. 메시지는 상수다(응답을 인용하지 않는다).
  *
- * ⚠️ **판정은 본문을 상한([MAX_BODY_BYTES])까지만 읽고 쥔다.** 통째로 읽던 때는 힙보다 큰 2xx 본문이 `OutOfMemoryError` 를
- * 냈다 — RESTEasy 가 감싸 결과는 거부였어도 그 순간 JVM 전체가 메모리를 잃었고, JSON 공백으로 부풀린 **쓸 수 있는** 토큰도
- * 그랬다(가드 없는 결합은 그것을 스트리밍으로 통과시킨다). `readNBytes(상한+1)` 로 읽어 넘침을 알아채면 나머지는 담지 않고
- * 스트림을 닫은 뒤(`closeQuietly` — 닫기의 실패는 버린다) 쓸 수 없는 토큰과 같은 거부를 던진다. 그 메서드(JDK 17·21 의
- * `InputStream` 기본 구현 — RESTEasy·HttpCore 의 스트림은 재정의하지 않는다)는 남은 길이 너머를 요청하지 않고 JDK 기본
- * 조각(17: 8 KiB · 21: 16 KiB)으로 **읽은 만큼만** 할당한다 — 작은 본문은 작은 배열이고, 넘치는 본문도 상한의 약 두 배(읽은
- * 조각 + 그것을 이은 배열)다. 상한만 한 버퍼를 미리 잡지 않는다(그러면 토큰 요청 하나하나가 상한을 할당한다). 받는 바이트는
- * 상한이 없다: 실제 연결에서 닫기는 나머지를 고정 버퍼로 끝까지 비운다(HttpCore).
+ * ⚠️ **판정은 본문을 상한([TOKEN_RESPONSE_MAX_BYTES] — auth 레인과 같은 상수)까지만 읽고 쥔다.** 통째로 읽던 때는 힙보다 큰
+ * 2xx 본문이 `OutOfMemoryError` 를 냈다 — RESTEasy 가 감싸 결과는 거부였어도 그 순간 JVM 전체가 메모리를 잃었고, JSON 공백으로
+ * 부풀린 **쓸 수 있는** 토큰도 그랬다(가드 없는 결합은 그것을 스트리밍으로 통과시킨다). [readWithinCap] 으로 상한+1 바이트까지
+ * 읽어 넘침을 알아채면 나머지는 담지 않고 스트림을 닫은 뒤(`closeQuietly` — 닫기의 실패는 버린다) 쓸 수 없는 토큰과 같은 거부를
+ * 던진다. 그 읽기(JDK 17·21 의 `InputStream.readNBytes` 기본 구현 — RESTEasy·HttpCore 의 스트림은 재정의하지 않는다)는 남은
+ * 길이 너머를 요청하지 않고 **읽은 만큼만** 할당한다. 받는 바이트는 상한이 없다: 실제 연결에서 닫기는 나머지를 끝까지
+ * 비운다(HttpCore — 2 KiB 고정 버퍼로 읽지만 청크 머리마다 문자열을 만들고 HTTPS 면 TLS 도 할당하므로, 할당은 비운
+ * 양에 비례한다).
  *
  * 검사는 Jackson **스트리밍** 파서다 — 데이터 결합·다형 타입이 없고 자체 ObjectMapper 도 아니다(보안 불변식). 최상위
  * `access_token` 은 **전부** 본다 — 결합은 중복 키의 마지막 값을 쓰므로 첫 값만 보면 `{"access_token":"ok","access_token":1}`
@@ -61,12 +69,17 @@ internal class TokenResponseGuard :
         request: ClientRequestContext,
         response: ClientResponseContext,
     ) {
-        if (request.method != HttpMethod.POST ||
-            !request.uri.rawPath.endsWith(TOKEN_PATH_SUFFIX) ||
-            response.statusInfo.family != Response.Status.Family.SUCCESSFUL
-        ) {
+        if (request.method != HttpMethod.POST) return
+        val path = request.uri.rawPath
+        val token = path.endsWith(TOKEN_PATH_SUFFIX)
+        if (!token && !path.endsWith(LOGOUT_PATH_SUFFIX)) return
+        if (response.statusInfo.family != Response.Status.Family.SUCCESSFUL) {
+            // 오류·리다이렉트는 판정하지 않는다(TokenManager 의 몫) — RESTEasy 가 통째로 버퍼에 읽는 그 본문을 상한까지만 넘긴다.
+            val raw = response.entityStream ?: return // 엔티티가 없으면 그대로 — 빈 스트림을 지어내면 hasEntity 가 바뀐다
+            response.entityStream = withinCapOrReject(raw, if (token) "token response" else "logout response")
             return
         }
+        if (!token) return // 2xx logout 은 RESTEasy 의 void 추출기가 읽지 않고 닫는다
         if (response.mediaType != null) {
             request.setProperty(JUDGE_ENTITY, true) // 결합이 읽는 바이트(해제 뒤)는 aroundReadFrom 이 판정한다
             return
@@ -83,6 +96,9 @@ internal class TokenResponseGuard :
     internal companion object {
         internal const val TOKEN_PATH_SUFFIX = "/protocol/openid-connect/token"
 
+        // admin 이 닫힐 때 내장 TokenManager 가 refresh_token 을 보내는 곳(Keycloak.close → TokenManager.logout) — 오류 본문의 상한만.
+        internal const val LOGOUT_PATH_SUFFIX = "/protocol/openid-connect/logout"
+
         // ReaderInterceptor 로서의 우선순위 — 오름차순으로 도므로 가장 큰 값이 결합(MessageBodyReader) 바로 앞이다.
         internal const val READ_PRIORITY = Int.MAX_VALUE
 
@@ -90,21 +106,29 @@ internal class TokenResponseGuard :
         internal val JUDGE_ENTITY: String = TokenResponseGuard::class.java.name + ".judgeEntity"
         internal const val REJECTED = "token endpoint response carries no usable access_token"
 
-        // 판정이 읽고 쥐는 본문의 상한(바이트) — 1 MiB. Keycloak 26.6 기본 설정(start-dev 로 실측)이 받아들이는 가장 긴 Bearer
-        // (65,459 바이트 — 한 바이트 더 길면 HTTP 431)의 16 배라, 서버가 받아들이는 토큰을 이 상한이 거부하지 않는다(운영자는 그
-        // 헤더 한도를 올릴 수 있다 — 그래서 여유를 크게 둔다). 그래도 적대적이거나 고장 난 엔드포인트의 끝없는 본문은 여기서 끊긴다.
-        // ⚠️ JWKS 응답 상한(51,200)을 빌려 쓰지 말 것 — 큰 배포의 쓸 수 있는 토큰을 거부했다(AdminTokenResponseTest 의 65,459
-        // 바이트 Bearer 시험, Java 동형).
-        internal const val MAX_BODY_BYTES = 1 shl 20
+        // 판정이 읽고 쥐는 본문의 상한은 [TOKEN_RESPONSE_MAX_BYTES](auth 레인과 같은 상수, 근거는 그 선언에) — 여기 다시 적지 않는다.
         private const val ACCESS_TOKEN = "access_token"
         private val JSON = JsonFactory()
 
         // 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치거나 쓸 수 없으면 거부, 통과하면 읽은 바이트를 그대로 넘긴다.
         private fun usableOrReject(input: InputStream?): ByteArrayInputStream {
-            val body = input?.readNBytes(MAX_BODY_BYTES + 1) ?: ByteArray(0)
-            if (body.size > MAX_BODY_BYTES || !carriesUsableAccessToken(body)) {
+            val body = if (input == null) ByteArray(0) else readWithinCap(input)
+            if (body == null || !carriesUsableAccessToken(body)) {
                 closeQuietly(input)
                 throw IOException(REJECTED)
+            }
+            return ByteArrayInputStream(body)
+        }
+
+        // 오류 본문 — 판정하지 않고 상한까지만 읽어 바이트 그대로 넘긴다. 넘치면 스트림을 닫고 상한을 말하는 예외로 거부한다.
+        private fun withinCapOrReject(
+            input: InputStream,
+            what: String,
+        ): ByteArrayInputStream {
+            val body = readWithinCap(input)
+            if (body == null) {
+                closeQuietly(input)
+                throw ResponseTooLargeException(what)
             }
             return ByteArrayInputStream(body)
         }

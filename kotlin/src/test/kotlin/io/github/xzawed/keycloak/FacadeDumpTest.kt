@@ -202,6 +202,9 @@ internal suspend fun dumpRoots(
             .willReturn(json(401, """{"error":"invalid_client","error_description":"Invalid client credentials"}""")),
     )
     server.stubFor(post(urlEqualTo("/realms/malformed/protocol/openid-connect/token")).willReturn(json(200, DUMP_BODY)))
+    // 크기 상한(1,048,576 바이트)을 한 바이트 넘는 토큰 응답 — 카나리아 토큰을 싣고 JSON 공백으로 부풀렸다.
+    val oversizedBody = """{"access_token":"$DUMP_ACCESS","token_type":"Bearer","expires_in":300}""".padEnd(1_048_577)
+    server.stubFor(post(urlEqualTo("/realms/oversized/protocol/openid-connect/token")).willReturn(json(200, oversizedBody)))
     server.stubFor(get(urlEqualTo("/admin/realms/r/users/missing")).willReturn(json(404, """{"error":"User not found"}""")))
     server.stubFor(post(urlEqualTo("/admin/realms/r/users")).willReturn(json(409, """{"errorMessage":"User exists"}""")))
     server.stubFor(get(urlEqualTo("/admin/realms/r/roles/forbidden")).willReturn(json(403, """{"error":"forbidden"}""")))
@@ -272,6 +275,9 @@ internal suspend fun dumpRoots(
     val malformedAdminClient = AdminClient(malformed).also { closing += it }
     val malformedAdmin = assertFailsWith<KeycloakTransportException> { malformedAdminClient.users().get("missing") }
     server.verify(2, postRequestedFor(urlEqualTo("/realms/malformed/protocol/openid-connect/token")))
+    // 상한을 넘는 토큰 응답 — auth 레인이 나머지를 읽지 않고 거부한다(원인은 상한만 말하는 SDK 내부 예외).
+    val oversized = KeycloakConfig(server.baseUrl(), "oversized", "c", DUMP_SECRET.toCharArray())
+    val oversizedAuth = assertFailsWith<KeycloakTransportException> { AuthClient(oversized).clientCredentialsToken() }
 
     val roots =
         listOf(
@@ -295,6 +301,7 @@ internal suspend fun dumpRoots(
             "config error" to configError,
             "malformed token response error" to malformedAuth,
             "admin malformed token response error" to malformedAdmin,
+            "oversized token response error" to oversizedAuth,
             "admin 404" to notFound,
             "admin 409" to conflict,
             "admin 403" to forbidden,
