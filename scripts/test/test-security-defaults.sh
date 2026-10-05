@@ -336,6 +336,109 @@ assert_eq "999999" "$(ROOT="$_cap_nc" sd_jwks_cap go)" \
 rm -rf "$_cap_nc"
 
 # ---------------------------------------------------------------------------
+# 1e) 토큰 응답 **크기 상한** — 아홉 언어가 같은 리터럴 하나를 선언한다
+# ---------------------------------------------------------------------------
+#
+# 토큰 엔드포인트·introspection(·logout) 응답 본문을 이 바이트 수까지만 읽고, 넘으면 거부한다. 없으면
+# 고장 났거나 적대적인 엔드포인트 하나가 끝없는 본문으로 메모리를 채운다(등록부
+# `token-response-size-unbounded` 의 실측 — wave 4 가 아홉 언어에 상한을 걸었다).
+#
+# **왜 1048576(1 MiB)인가.** Keycloak 26.6 기본 설정(start-dev)이 받아들이는 가장 긴 Bearer 가
+# **65,459 바이트**다 — 한 바이트 더 길면 HTTP 431(2026-10-03 실측 · #711 커밋 메시지 · Java
+# `AdminTokenResponseTest` 의 `KEYCLOAK_MAX_BEARER`). 상한은 그 ≈16 배라 **서버가 받는 토큰을 SDK 가
+# 거부하지 않는다**(운영자는 헤더 한도를 올릴 수 있으므로 여유를 크게 둔다). ⚠️ JWKS 상한(51,200 — 1b)을
+# 빌려 쓰지 말 것: 65,459 보다 작아 쓸 수 있는 토큰을 거부했다(#711 변이 (a)).
+#
+# ⚠️ **아홉이 한 번에 움직인다** — 한 언어만 낮추면 그 언어에서만 큰 배포의 정상 토큰이 거부되고, 한
+# 언어만 높이면 그 언어만 메모리 DoS 에 더 열린다. 바꾸려면 아홉 선언 · 아래 `SD_TOKEN_CAP` ·
+# `.claude/rules/security.md`(4절이 그 줄을 이 값과 대조한다)를 **한 커밋에서** 고친다.
+#
+# 1b 와 다른 셋:
+#   · **아홉 전부다** — JVM 둘도 자기 소스에 리터럴을 선언한다(Nimbus 상수가 아니다). 그래서 손 목록을
+#     두지 않고 `SD_LANGS`(0절이 트리와 대조한다)를 그대로 돈다 — 열 번째 언어는 아래 `case` 에 없으면
+#     「선언 0 개」로 운다. 손 목록 + `sd_subset_of_langs` 는 부분집합 축의 관용이다(오타·유령 이름만
+#     잡고 **누락은 못 잡는다**).
+#   · **언어마다 핀과 직접 비교한다** — 「첫 언어 = 합의값」(1b)은 첫 언어가 드리프트하면 맞는 나머지가
+#     「다르다」로 울고 범인은 핀 단언 하나로만 드러난다.
+#   · **주석 밖의 맨 리터럴 선언이 정확히 하나여야 한다** — 식(`1_048_576 * 2` · `1 << 20`)·꼬리 주석·
+#     여러 줄 선언은 「0 개」, 같은 파일의 재대입(python·ruby 만 문법상 가능)은 「2 개」로 운다. 앞 정수만
+#     읽으면 값이 바뀌어도 1048576 으로 보인다(3절 파생 반쪽이 JWKS 상한에서 같은 부류를 겪었다). 대가는
+#     표기만 바꾼 PR 이 빨개지는 것 — 그 PR 만 막는 시끄러운 방향이다.
+SD_TOKEN_CAP=1048576
+# 이름 뒤: 선택적 타입 표기(`: usize` · `: Int`) → 대입 → 맨 리터럴 → 선택적 `;` → 줄 끝.
+SD_TC_DECL='([[:space:]]*:[[:space:]]*[A-Za-z0-9_]+)?[[:space:]]*=[[:space:]]*[0-9][0-9_]*[[:space:]]*;?[[:space:]]*$'
+sd_token_cap() { # $1=언어 → 주석 밖 맨 리터럴 선언의 값(정규화 전), 선언 하나당 한 줄
+  case "$1" in
+    go)     _tc_f='go/tokencap.go' _tc_n='tokenResponseMaxBytes' ;;
+    rust)   _tc_f='rust/src/jwks.rs' _tc_n='TOKEN_RESPONSE_MAX_BYTES' ;;
+    python) _tc_f='python/src/keycloak_sdk/_internal/token_cap.py' _tc_n='TOKEN_RESPONSE_MAX_BYTES' ;;
+    dotnet) _tc_f='dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs' _tc_n='MaxTokenResponseBytes' ;;
+    node)   _tc_f='node/src/token-response-cap.ts' _tc_n='TOKEN_RESPONSE_MAX_BYTES' ;;
+    ruby)   _tc_f='ruby/lib/keycloak_sdk/http.rb' _tc_n='TOKEN_RESPONSE_MAX_BYTES' ;;
+    php)    _tc_f='php/src/Internal/TokenResponseCap.php' _tc_n='TOKEN_RESPONSE_MAX_BYTES' ;;
+    java)   _tc_f='java/keycloak-sdk-core/src/main/java/io/github/xzawed/keycloak/core/ResponseLimits.java' \
+            _tc_n='MAX_TOKEN_RESPONSE_BYTES' ;;
+    kotlin) _tc_f='kotlin/src/main/kotlin/io/github/xzawed/keycloak/CappedResponseSender.kt' \
+            _tc_n='TOKEN_RESPONSE_MAX_BYTES' ;;
+    *)      return 0 ;;
+  esac
+  sd_code_lines "$ROOT/$_tc_f" \
+    | grep -E "(^|[^A-Za-z0-9_.])${_tc_n}${SD_TC_DECL}" \
+    | sed -E 's/.*=[[:space:]]*([0-9][0-9_]*)[[:space:]]*;?[[:space:]]*$/\1/' || true
+}
+sd_token_cap_axis() { # $1=언어 목록 — 지금 ROOT 를 읽는다. 선언을 읽은 언어 수를 SD_TC_SEEN 에 남긴다.
+  SD_TC_SEEN=0
+  for L in $1; do
+    _tc_vals="$(sd_token_cap "$L")"
+    _tc_cnt="$(printf '%s\n' "$_tc_vals" | grep -c . || true)"
+    assert_eq "1" "$_tc_cnt" \
+      "[토큰응답 상한] $L 의 상한 선언이 주석 밖에 맨 리터럴로 정확히 하나가 아니다(${_tc_cnt} 개) — 지워졌거나 이름이 바뀌었거나, 식·꼬리 주석·여러 줄로 적혔거나, 같은 파일에 둘째 선언이 생겼다"
+    [ "$_tc_cnt" = 1 ] || continue
+    SD_TC_SEEN=$((SD_TC_SEEN + 1))
+    assert_eq "$SD_TOKEN_CAP" "$(printf '%s' "$_tc_vals" | tr -d '_')" \
+      "[토큰응답 상한] $L 의 상한이 $SD_TOKEN_CAP 이 아니다 — 아홉이 한 번에 움직이는 값이다(바꾸려면 아홉 선언 · SD_TOKEN_CAP · security.md 를 한 커밋에서)"
+  done
+}
+sd_token_cap_axis "$SD_LANGS"
+# 공허 하한 — 위 호출이 실제로 아홉을 읽었는가. 목록이 비거나 줄면 단언이 그만큼 덜 돌고 조용히 통과한다.
+# (아래 대조군은 목록을 `ruby` 하나로 주므로 이 하한은 함수 밖에 있어야 한다.)
+assert_eq "9" "$SD_TC_SEEN" "[토큰응답 상한] 상한 선언을 읽은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
+
+# 대조군 — 축 **자신**을 태운다(대조군 안에 추출·비교를 다시 구현하지 않는다 — #495). ruby 의 라이브 파일
+# 하나만 같은 상대경로로 TMP 에 두고 목록을 `ruby` 하나로 준다 — 나머지 여덟이 없어서 나는 실패가 섞이지
+# 않아야 각 사본이 **그 단언만** 울릴 수 있다. sed 가 아무것도 안 바꿨으면 `NOT-LANDED` 다 — 그것을 「축이
+# 침묵했다」로 읽으면 거짓 구멍이다(probe.sh 가 「변이 미적용」을 따로 가르는 것과 같은 이유).
+sd_token_cap_probe() { # $1=sed 표현식(빈 값이면 라이브 사본 그대로) → SD_TCP: GREW | QUIET | NOT-LANDED
+  _tcp_f='ruby/lib/keycloak_sdk/http.rb'
+  _tcp_tmp="$(mktemp -d)"; mkdir -p "$_tcp_tmp/$(dirname "$_tcp_f")"
+  sed "$1" "$ROOT/$_tcp_f" > "$_tcp_tmp/$_tcp_f"
+  if [ -n "$1" ] && cmp -s "$ROOT/$_tcp_f" "$_tcp_tmp/$_tcp_f"; then
+    SD_TCP='NOT-LANDED'
+  else
+    _a_save; _tcp_root="$ROOT"; ROOT="$_tcp_tmp"
+    sd_token_cap_axis ruby >/dev/null 2>&1 || true
+    ROOT="$_tcp_root"
+    SD_TCP='QUIET'; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && SD_TCP='GREW'
+    _a_restore
+  fi
+  rm -rf "$_tcp_tmp"
+}
+# ⚠️ sed 는 **값과 무관하게** 쓴다(지금 리터럴이 무엇이든 그 자리를 친다) — 정당하게 아홉과 핀을 함께
+# 옮긴 PR 에서 대조군이 NOT-LANDED 로 헛울지 않게.
+sd_token_cap_probe ''
+assert_eq "QUIET" "$SD_TCP" \
+  "[양성대조·토큰응답 상한] 라이브 ruby 선언의 사본에서 축이 실패했다 — 「늘 운다」와 구분되지 않는다"
+sd_token_cap_probe "s/\(TOKEN_RESPONSE_MAX_BYTES = \)[0-9_]*/\1$((SD_TOKEN_CAP + 1))/"
+assert_eq "GREW" "$SD_TCP" \
+  "[음성대조·토큰응답 상한] 값만 핀+1 로 바꾼 사본에서 축이 안 울었다 — 값 비교가 no-op 이거나 추출이 파일을 안 읽는다"
+sd_token_cap_probe 's/^\([[:space:]]*\)TOKEN_RESPONSE_MAX_BYTES = /\1# TOKEN_RESPONSE_MAX_BYTES = /'
+assert_eq "GREW" "$SD_TCP" \
+  "[음성대조·토큰응답 상한] 선언이 주석으로만 남은 사본에서 축이 안 울었다 — 주석 속 사본을 선언으로 읽는다"
+sd_token_cap_probe 's/\(TOKEN_RESPONSE_MAX_BYTES = [0-9_]*\)/\1 * 2/'
+assert_eq "GREW" "$SD_TCP" \
+  "[음성대조·토큰응답 상한] 식(<리터럴> * 2)이 된 선언에서 축이 안 울었다 — 앞 정수만 읽으면 값이 바뀌어도 핀과 같아 보인다"
+
+# ---------------------------------------------------------------------------
 # 빈 키셋 거부 — 자체 JWKS 스토어를 가진 넷
 # ---------------------------------------------------------------------------
 # ⚠️ go 의 #380 픽스는 **두 절반**이었다 — 상태코드 거부와 `len(ks.Keys) == 0` 거부. 자매 SDK
@@ -1337,14 +1440,16 @@ assert_eq "" "$_cap_bad" \
 #
 # ⚠️ 파일 상단이 제외한 것은 `docs/governance/` 같은 **기록** 문서다. 이 둘은 기록이 아니라
 # 상주 규칙이고, 값이 어긋나면 그건 이력이 아니라 드리프트다. 그래서 여기서 정책값과 대조한다.
-sd_owner_axis() { # $1=파일 $2=값을 말하는 줄의 정규식
+sd_owner_axis() { # $1=파일 $2=값을 말하는 줄의 정규식 $3=기대값(생략 시 SD_POLICY)
   _f="$ROOT/$1"
+  _oexp="${3:-$SD_POLICY}"
   _exists=1; [ -f "$_f" ] && _exists=0
   assert_eq "ok" "$(ok_if "$_exists" MISSING)" "소유자 문서 $1 이 없다 — 경로가 바뀌었나?"
   [ -f "$_f" ] || return 0
   # 그 값을 말하는 줄만 뽑아, 정책값을 **자릿수 경계로** 담고 있는지 본다(`300` 이 `30` 으로
-  # 읽히지 않도록 — 위 문서 축이 같은 이유로 겪은 부류다).
-  _lines="$(grep -E "$2" "$_f" || true)"
+  # 읽히지 않도록 — 위 문서 축이 같은 이유로 겪은 부류다). 자릿수 구분 쉼표는 먼저 지운다
+  # (`1,048,576` = 1e 의 상한 — 문서는 읽는 사람을 위해 쉼표를 쓴다).
+  _lines="$(grep -E "$2" "$_f" | sed 's/\([0-9]\),\([0-9]\)/\1\2/g' || true)"
   _n="$(printf '%s\n' "$_lines" | grep -c . || true)"
   # ⚠️ **메시지 없는 `assert_ok` 는 실패해도 무엇이 틀렸는지 안 알려준다** — 실측(2026-09-14):
   # 하한을 `-ge 2` 로 올린 변이가 낸 전부가 `FAIL expected success: test 1 -ge 2` 세 줄이었고,
@@ -1352,12 +1457,15 @@ sd_owner_axis() { # $1=파일 $2=값을 말하는 줄의 정규식
   _ohit=1; [ "$_n" -ge 1 ] && _ohit=0
   assert_eq "ok" "$(ok_if "$_ohit" "$_n")" \
     "[소유자축] $1 에서 이 불변식을 말하는 줄을 못 찾았다 — 정규식이 낡았나? (/$2/)"
-  _bad="$(printf '%s\n' "$_lines" | grep -vE "(^|[^0-9])$SD_POLICY([^0-9]|$)" || true)"
-  assert_eq "" "$_bad" "$1 이 정책값 $SD_POLICY 을 말하지 않는 줄로 이 불변식을 서술한다"
+  _bad="$(printf '%s\n' "$_lines" | grep -vE "(^|[^0-9])$_oexp([^0-9]|$)" || true)"
+  assert_eq "" "$_bad" "$1 이 정책값 $_oexp 을 말하지 않는 줄로 이 불변식을 서술한다"
 }
 sd_owner_axis "CLAUDE.md" 'JWKS 재조회 최소 간격'
 sd_owner_axis ".claude/rules/security.md" 'JWKS minimum refetch interval defaults'
 sd_owner_axis ".claude/rules/security.md" 'is the same invariant and is likewise'
+# 1e 의 상한도 security.md 가 선언한다 — 아홉 선언과 SD_TOKEN_CAP 만 옮기고 이 줄을 잊으면 여기서 운다.
+SD_TC_OWNER_RE='response bodies are capped at'
+sd_owner_axis ".claude/rules/security.md" "$SD_TC_OWNER_RE" "$SD_TOKEN_CAP"
 
 # ⚠️ **소유자 축은 단언이 셋이고 셋 다 공허했다** — 실측(2026-09-14, `scripts/probe.sh --site`):
 # 존재 검사(`_exists=0`)·히트 하한(`-ge 0`)·값 비교(`_bad=""`) 를 각각 무력화하니 **셋 다 SILENT**.
@@ -1369,13 +1477,13 @@ sd_owner_axis ".claude/rules/security.md" 'is the same invariant and is likewise
 # 여기서 나는 실패는 **기대된 실패**라 계수를 원복한다(스위트를 빨갛게 만들면 안 된다).
 # ⚠️ **`set -eu` 아래다 — 반환값을 `cmd; v=$?` 로 받지 말 것.** 비제로가 곧 스크립트 종료라
 # 스위트가 **출력 한 줄 없이 exit 1** 로 죽는다(실측). 반드시 `|| v=1` 조건 문맥으로 받는다.
-sd_owner_probe() { # $1=TMP루트 $2=파일 $3=정규식 → 실패가 늘었으면 0
+sd_owner_probe() { # $1=TMP루트 $2=파일 $3=정규식 $4=기대값(생략 시 SD_POLICY) → 실패가 늘었으면 0
   _a_save; _op_root="$ROOT"
   ROOT="$1"
   # ⚠️ `|| true` 는 지금은 불필요하다(실측: `assert_*` 는 if/fi 로 끝나 항상 0 을 낸다).
   # 미래에 `assert_*` 가 비교 결과를 반환하게 되면 `set -e` 가 아래 원복을 건너뛴다 — 독립
   # 레그가 지목한 자리라 값싼 보험으로 둔다(원복이 새면 계수와 ROOT 가 함께 샌다).
-  sd_owner_axis "$2" "$3" >/dev/null 2>&1 || true
+  sd_owner_axis "$2" "$3" "${4:-}" >/dev/null 2>&1 || true
   ROOT="$_op_root"
   _op_grew=1; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && _op_grew=0
   _a_restore
@@ -1384,10 +1492,10 @@ sd_owner_probe() { # $1=TMP루트 $2=파일 $3=정규식 → 실패가 늘었으
 
 # (1) **값 비교** — 정책값만 다른 사본. 그 줄은 여전히 있으므로 존재·하한은 통과하고,
 #     값 비교만 울 수 있다.
-sd_owner_value_control() { # $1=파일 $2=정규식 $3=sed표현식
+sd_owner_value_control() { # $1=파일 $2=정규식 $3=sed표현식 $4=기대값(생략 시 SD_POLICY)
   _ovc_tmp="$(mktemp -d)"; mkdir -p "$_ovc_tmp/$(dirname "$1")"
   sed "$3" "$ROOT/$1" > "$_ovc_tmp/$1"
-  _ovc_grew=0; sd_owner_probe "$_ovc_tmp" "$1" "$2" || _ovc_grew=1
+  _ovc_grew=0; sd_owner_probe "$_ovc_tmp" "$1" "$2" "${4:-}" || _ovc_grew=1
   rm -rf "$_ovc_tmp"
   assert_eq "ok" "$(ok_if "$_ovc_grew" DID-NOT-FAIL)" \
     "[값대조·소유자축] $1: 정책값을 다르게 말하는 사본에서도 축이 통과했다 — 값 비교가 no-op 이다"
@@ -1429,6 +1537,8 @@ sd_owner_value_control  'CLAUDE.md' 'JWKS 재조회 최소 간격' 's/9개 언�
 sd_owner_floor_control  'CLAUDE.md' 'JWKS 재조회 최소 간격'
 sd_owner_exists_control 'CLAUDE.md' 'JWKS 재조회 최소 간격'
 sd_owner_positive_control 'CLAUDE.md' 'JWKS 재조회 최소 간격'
+# 기대값을 넘기는 경로(1e 의 상한 · 쉼표 표기)도 값이 틀리면 운다 — 기본값 경로의 대조군은 이 경로를 안 탄다.
+sd_owner_value_control '.claude/rules/security.md' "$SD_TC_OWNER_RE" 's/\(response bodies are capped at \)[0-9][0-9,]*/\1999,999/' "$SD_TOKEN_CAP"
 sd_negative_control() { # $1=라벨 $2=추출함수 $3=언어 $4=상대경로 $5=sed표현식 $6=기대(바뀐값)
   _nc_tmp="$(mktemp -d)"
   mkdir -p "$_nc_tmp/$(dirname "$4")"
