@@ -1,0 +1,46 @@
+
+
+Scanning /home/runner/work/_temp/base/php/src
+ 1/18 [=>--------------------------]   5% < 1 sec/< 1 sec 8.0 MiB
+Scanning php/src
+ 9/18 [==============>-------------]  50% < 1 sec/< 1 sec 10.0 MiB
+Scanning php/src
+17/18 [==========================>-]  94% < 1 sec/< 1 sec 12.0 MiB
+Scanning php/src
+18/18 [============================] 100% < 1 sec/< 1 sec 12.0 MiB
+Suggested semantic versioning change: MAJOR
+
+Class (MAJOR)
++-------+-----------------------------------------------+--------------------------------------------------------------+------------------------------------------+------+
+| Level | Location                                      | Target                                                       | Reason                                   | Code |
++-------+-----------------------------------------------+--------------------------------------------------------------+------------------------------------------+------+
+| MAJOR | php/src/Internal/PkceKeycloakProvider.php:32  | Xzawed\Keycloak\Internal\PkceKeycloakProvider::getResponse   | [public] Method has been added.          | V015 |
+| MAJOR | php/src/Internal/PkceKeycloakProvider.php:57  | Xzawed\Keycloak\Internal\PkceKeycloakProvider::parseResponse | [protected] Method has been added.       | V016 |
+| MINOR | php/src/Internal/ResponseTooLarge.php:20      | Xzawed\Keycloak\Internal\ResponseTooLarge                    | Class was added.                         | V014 |
+| MINOR | php/src/Internal/TokenResponseCap.php:38      | Xzawed\Keycloak\Internal\TokenResponseCap                    | Class was added.                         | V014 |
+| PATCH | php/src/AuthClient.php:32                     | Xzawed\Keycloak\AuthClient                                   | Class name case was changed.             | V154 |
+| PATCH | php/src/AuthClient.php:160                    | Xzawed\Keycloak\AuthClient::introspect                       | [public] Method implementation changed.  | V023 |
+| PATCH | php/src/AuthClient.php:214                    | Xzawed\Keycloak\AuthClient::logout                           | [public] Method implementation changed.  | V023 |
+| PATCH | php/src/AuthClient.php:262                    | Xzawed\Keycloak\AuthClient::getAccessToken                   | [private] Method implementation changed. | V025 |
+| PATCH | php/src/AuthClient.php:202                    | Xzawed\Keycloak\AuthClient::introspectionTooLarge            | [private] Method has been added.         | V028 |
+| PATCH | php/src/AuthClient.php:251                    | Xzawed\Keycloak\AuthClient::logoutTooLarge                   | [private] Method has been added.         | V028 |
+| PATCH | php/src/ClientCredentialsTokenProvider.php:19 | Xzawed\Keycloak\ClientCredentialsTokenProvider               | Class name case was changed.             | V154 |
+| PATCH | php/src/ClientCredentialsTokenProvider.php:57 | Xzawed\Keycloak\ClientCredentialsTokenProvider::fetch        | [private] Method implementation changed. | V025 |
+| PATCH | php/src/Internal/OAuthErrorCode.php:18        | Xzawed\Keycloak\Internal\OAuthErrorCode                      | Class name case was changed.             | V154 |
+| PATCH | php/src/Internal/OAuthErrorCode.php:20        | Xzawed\Keycloak\Internal\OAuthErrorCode::of                  | [public] Method implementation changed.  | V023 |
+| PATCH | php/src/Internal/PkceKeycloakProvider.php:20  | Xzawed\Keycloak\Internal\PkceKeycloakProvider                | Class name case was changed.             | V154 |
+| PATCH | php/src/Internal/PkceKeycloakProvider.php:83  | Xzawed\Keycloak\Internal\PkceKeycloakProvider::stringKeyed   | [private] Method has been added.         | V028 |
+| PATCH | php/src/Exception/SanitizedCause.php:34       | Xzawed\Keycloak\Exception\SanitizedCause                     | Class name case was changed.             | V154 |
+| PATCH | php/src/Exception/SanitizedCause.php:98       | Xzawed\Keycloak\Exception\SanitizedCause::safeMessage        | [private] Method implementation changed. | V025 |
+| PATCH | php/src/Exception/SanitizedCause.php:133      | Xzawed\Keycloak\Exception\SanitizedCause::quotesAHeader      | [private] Method has been added.         | V028 |
+| PATCH | php/src/Exception/SanitizedCause.php:52       | Xzawed\Keycloak\Exception\SanitizedCause::$headerValidation  | [private] Property has been added.       | V026 |
+| PATCH | php/src/Admin/AdminClient.php:22              | Xzawed\Keycloak\Admin\AdminClient                            | Class name case was changed.             | V154 |
+| PATCH | php/src/Admin/AdminClient.php:27              | Xzawed\Keycloak\Admin\AdminClient::__construct               | [public] Method implementation changed.  | V023 |
+| PATCH | php/src/Admin/AdminClient.php:95              | Xzawed\Keycloak\Admin\AdminClient::isTokenGrant              | [private] Method has been added.         | V028 |
+| PATCH | php/src/Admin/ErrorTranslation.php:35         | Xzawed\Keycloak\Admin\ErrorTranslation                       | Class name case was changed.             | V154 |
+| PATCH | php/src/Admin/ErrorTranslation.php:54         | Xzawed\Keycloak\Admin\ErrorTranslation::call                 | [public] Method implementation changed.  | V023 |
+| PATCH | php/src/Admin/RenamableRoles.php:31           | Xzawed\Keycloak\Admin\RenamableRoles                         | Class name case was changed.             | V154 |
++-------+-----------------------------------------------+--------------------------------------------------------------+------------------------------------------+------+
+
+[Scanned files] Before: 8, After: 10, Identical: 27
+Time: 0.153 seconds, Memory: 10.41 MB
