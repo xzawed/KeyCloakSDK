@@ -51,11 +51,12 @@ internal fun readWithinCap(input: InputStream): ByteArray? {
  * 로부터 연결을 새로 지으면 `followRedirects = false`(SSRF 하드닝 — [AuthClient.applyTimeouts])와 TLS 설정을 잃는다(그
  * 인터페이스에는 없다).
  *
- * 상한 안의 본문은 Nimbus 와 같은 문자열로 만든다(아래 `asNimbusReadsIt`). 상한을 넘으면 나머지를 읽지 않고 스트림을 닫은 뒤
- * [ResponseTooLargeException] 을 던진다 — 호출부가 그 레인의 KeycloakTransportException 으로 바꾼다. 닫기는 남은 본문을 비우지 않고
- * 연결을 끊는다(JDK 는 청크 본문과 512 KiB 보다 긴 길이 본문을 비우지 않는다 — 넘친 본문은 언제나 그보다 길다). SDK 는 상한+1
- * 바이트 너머를 요청하지 않는다 — 그 아래 JDK 의 소켓 버퍼(`BufferedInputStream` 8 KiB)가 그만큼 더 받아 둘 수 있을 뿐이고, 그것은
- * 고정 버퍼다.
+ * 상한 안의 본문은 Nimbus 와 같은 문자열로 만든다(아래 `asNimbusReadsIt`). 상한을 넘으면 나머지를 요청하지 않고 스트림을 닫은 뒤
+ * [ResponseTooLargeException] 을 던진다 — 호출부가 그 레인의 KeycloakTransportException 으로 바꾼다. SDK 가 요청하고 쥐는 것은
+ * 상한+1 바이트까지다. ⚠️ 연결은 그 너머를 더 읽을 수 있다 — JDK 운송은 소켓을 8 KiB `BufferedInputStream` 으로 읽고, 닫을 때
+ * 평문이면 이미 도착한 바이트 너머는 읽지 않지만 청크 본문은 그 바이트를 읽어 청크로 푼다(`ChunkedInputStream.hurry` — 비용이 쌓인
+ * 양의 제곱에 비례하고 청크 크기에 반비례한다). HTTPS 면 청크든 길이든 연결을 끊으며 소켓에 쌓인 바이트를 복호화하지 않고
+ * 버리는데(`SSLSocketInputRecord.deplete`) 바이트가 끊이지 않고 오는 동안 멈추지 않는다.
  */
 internal class CappedResponseSender(
     private val what: String,
