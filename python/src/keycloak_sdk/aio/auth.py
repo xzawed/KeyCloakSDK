@@ -27,6 +27,7 @@ from .._internal.jwks_fetch import afetch_jwks
 from .._internal.jwt import JwtValidator
 from .._internal.lower import auth_failure, is_lower_failure, summarize
 from .._internal.redirects import harden_openid
+from .._internal.token_cap import cap_openid
 from ..auth import AuthorizationUrl, _generate_pkce_pair
 from ..config import KeycloakConfig
 from ..exceptions import (
@@ -77,8 +78,12 @@ class AsyncAuthClient:
         # 함께 들고 있다. 지금은 어떤 `a_*`도 sync `raw_*`로 내려가지 않음을 확인했으나,
         # 한 줄로 그 경로가 생길 가능성을 미리 닫아둔다(비용 0의 심층방어).
         harden_openid(self._openid)
+        # 토큰·introspection 응답 본문은 상한까지만 읽는다 — `async_s` 에서는 푸는 일까지 여기서
+        # 한다(`_internal/token_cap.py`).
+        cap_openid(self._openid)
         self._jwks_cache: KeySet | None = None
-        self._jwks_lock = asyncio.Lock()
+        # 진행 중인 JWKS fetch — 호출자가 아니라 이 인스턴스가 소유한다(`_load_jwks`).
+        self._jwks_fetch: asyncio.Task[KeySet] | None = None
         self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)
         # 강제 재조회 최소 간격(초) — DoS 증폭 상한
         self._jwks_min_refetch = config.jwks_min_refetch_seconds
@@ -202,7 +207,8 @@ class AsyncAuthClient:
         복원력은 sync `AuthClient.validate`와 동일하다 — 서명 키(kid) 미해결
         (`TokenKeyError`)에 한해 캐시를 무효화하고 `a_certs()`를 한 번 재조회해
         재시도한다. 단순 서명 위조(`TokenSignatureError`)는 재조회하지 않으며(DoS 증폭
-        차단), 재조회는 `_jwks_min_refetch` 간격으로 rate-limit된다.
+        차단), 재조회는 `_jwks_min_refetch` 간격으로 rate-limit된다. 이 호출을 취소해도(시간
+        초과 포함) 이미 시작한 재조회는 끝까지 가서 캐시를 채운다(`_load_jwks`).
         """
         # `expected_audience`가 설정되면 그 값을, 아니면 client_id를 기대한다(sync 동형).
         return await self._validate_for(
@@ -228,16 +234,27 @@ class AsyncAuthClient:
             return validator.validate(token, key_set)
 
     async def _load_jwks(self, *, force: bool = False) -> KeySet:
+        """캐시된 키셋, 아니면 fetch 결과. 창·백오프 판정은 sync 미러와 같고 fetch 의 소유만 다르다.
+
+        ⚠️ **fetch 는 호출자가 아니라 이 인스턴스의 태스크다**(`_refetch_jwks`). 호출자가 그것을
+        `asyncio.shield` 너머로 기다리므로, 창에 도장을 찍은 뒤 호출자가 취소돼도(시간 초과 포함)
+        fetch 는 SDK 의 HTTP 타임아웃 안에서 끝까지 가서 캐시를 채운다. 예전에는 fetch 가 호출자
+        안에서 돌아 취소와 함께 버려졌고, 도장은 남아 창 30초 동안 회전한 키의 정상 토큰이
+        거부됐다(실측: 요청이 IdP 에 닿기 전·도중 취소 모두). 창 안의 강제 호출자는 낡은 캐시 대신
+        진행 중인 그 fetch 를 기다린다. ⚠️ 도장을 되돌리는 것으로 고치지 말 것 — 느린 IdP 앞에서
+        시간 초과한 위조 kid 검증마다 IdP 요청이 하나씩 났다(실측 10 대 1). 실패한 fetch 는 여전히
+        창을 쓴다.
+
+        자물쇠가 없는 이유: 판정에서 태스크를 만들기까지 `await` 가 없어 다른 코루틴이 끼지 못한다.
+        단일 비행(single-flight)은 진행 중인 태스크가 맡는다.
+        """
         if not force and self._jwks_cache is not None:
             return self._jwks_cache
-        async with self._jwks_lock:
-            # Double-checked: another concurrent caller may have already populated
-            # (or refreshed) the cache while we were waiting on the lock.
-            if not force and self._jwks_cache is not None:
-                return self._jwks_cache
+        fetch = self._jwks_fetch
+        if fetch is None or fetch.done():
             if force and self._jwks_cache is not None:
                 # rate-limit: 최근 강제 재조회 직후면 재사용 — kid 변조 위조 토큰의
-                # a_certs() 폭주 차단(정상 회전은 간격 경과 후 복원).
+                # 재조회 폭주 차단(정상 회전은 간격 경과 후 복원).
                 now = time.monotonic()
                 if now - self._jwks_forced_at < self._jwks_min_refetch:
                     return self._jwks_cache
@@ -251,25 +268,41 @@ class AsyncAuthClient:
                     f"JWKS fetch backing off after {self._jwks_backoff.failures} "
                     f"consecutive failures (retry in {remaining:.2f}s)"
                 )
+            fetch = asyncio.ensure_future(self._refetch_jwks())
+            fetch.add_done_callback(self._refetch_done)
+            self._jwks_fetch = fetch
+        return await asyncio.shield(fetch)
+
+    async def _refetch_jwks(self) -> KeySet:
+        """fetch → 키셋 → 캐시. 이 인스턴스의 태스크로 돈다 — 호출자의 취소가 닿지 않는다."""
+        try:
+            # 상류 `a_certs()` 와 달리 이 경로는 바이트 상한을 건다
+            # (`_internal/jwks_fetch.py`). sync 미러와 **같은 모듈**을 쓴다.
+            certs = await self._afetch_jwks()
+            certs_typed = cast(KeySetSerialization, cast(Any, certs))
+            # ⚠️ sync 미러와 동일 — 기형 JWKS에서 joserfc는 joserfc 타입도 아닌 stdlib
+            # `binascii.Error`를 던진다. 그대로 두면 `keycloak_sdk.exceptions`를 잡는
+            # 소비자가 아무것도 잡지 못한다(§4 위반). 두 미러가 갈라지지 않도록 같이 고친다.
             try:
-                # 상류 `a_certs()` 와 달리 이 경로는 바이트 상한을 건다
-                # (`_internal/jwks_fetch.py`). sync 미러와 **같은 모듈**을 쓴다.
-                certs = await self._afetch_jwks()
-                certs_typed = cast(KeySetSerialization, cast(Any, certs))
-                # ⚠️ sync 미러와 동일 — 기형 JWKS에서 joserfc는 joserfc 타입도 아닌 stdlib
-                # `binascii.Error`를 던진다. 그대로 두면 `keycloak_sdk.exceptions`를 잡는
-                # 소비자가 아무것도 잡지 못한다(§4 위반). 두 미러가 갈라지지 않도록 같이 고친다.
-                try:
-                    self._jwks_cache = KeySet.import_key_set(certs_typed)
-                except Exception as exc:
-                    raise TokenValidationError(
-                        f"malformed JWKS from the identity provider: {exc}"
-                    ) from exc
-            except Exception:
-                self._jwks_backoff.record_failure()
-                raise
-            self._jwks_backoff.record_success()
-        return self._jwks_cache
+                key_set = KeySet.import_key_set(certs_typed)
+            except Exception as exc:
+                raise TokenValidationError(
+                    f"malformed JWKS from the identity provider: {exc}"
+                ) from exc
+        except Exception:
+            self._jwks_backoff.record_failure()
+            raise
+        self._jwks_cache = key_set
+        self._jwks_backoff.record_success()
+        return key_set
+
+    def _refetch_done(self, fetch: asyncio.Task[KeySet]) -> None:
+        """끝난 fetch 를 놓고 그 실패를 거둔다 — 기다리던 호출자가 다 취소됐으면 아무도 거두지
+        않아, asyncio 가 GC 때 「Task exception was never retrieved」를 찍는다."""
+        if self._jwks_fetch is fetch:
+            self._jwks_fetch = None
+        if not fetch.cancelled():
+            fetch.exception()
 
     async def _afetch_jwks(self) -> dict[str, Any]:
         """httpx 클라이언트로 JWKS 를 상한 안에서 가져온다.

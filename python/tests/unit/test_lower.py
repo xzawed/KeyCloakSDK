@@ -17,8 +17,10 @@ from keycloak_sdk._internal.lower import (
     auth_failure,
     is_lower_failure,
     oauth_error,
+    refused_body,
     summarize,
 )
+from keycloak_sdk._internal.token_cap import ResponseRefused
 from keycloak_sdk.exceptions import KeycloakAuthError, KeycloakTransportError
 
 TOKEN = "ZQ4-token-in-body-canary"
@@ -142,3 +144,40 @@ def test_an_unusable_response_is_an_auth_error_without_the_quoted_body(
     assert isinstance(error, KeycloakAuthError)
     assert str(error) == "Keycloak returned an unusable response (TypeError)"
     assert error.error is None
+
+
+# --- 응답 본문 상한의 거부(`token_cap.py`) --------------------------------------------------------
+
+
+def _wrapped_by_python_keycloak(cause: BaseException) -> KeycloakConnectionError:
+    """`raw_*` 가 하는 일 그대로 — 세션 안에서 난 무엇이든 `KeycloakConnectionError` 의
+    원인이 된다."""
+    try:
+        raise KeycloakConnectionError("Can't connect to server") from cause
+    except KeycloakConnectionError as exc:
+        return exc
+
+
+def test_a_refused_body_is_the_auth_error_it_names_not_a_connection_failure() -> None:
+    signal = ResponseRefused("token response exceeds 1048576 bytes")
+    lower = _wrapped_by_python_keycloak(signal)
+
+    for error in (refused_body(lower), auth_failure(lower)):
+        assert type(error) is KeycloakAuthError
+        assert str(error) == "token response exceeds 1048576 bytes"
+        assert error.error is None
+        assert error.__cause__ is None and error.__context__ is None  # 신호는 매달지 않는다
+    assert refused_body(lower) is not signal
+
+
+@pytest.mark.parametrize(
+    "lower",
+    [
+        _wrapped_by_python_keycloak(OSError("connection reset")),
+        KeycloakConnectionError("Can't connect to server"),
+    ],
+    ids=["other cause", "no cause"],
+)
+def test_only_the_sdks_own_refusal_is_recognised(lower: BaseException) -> None:
+    assert refused_body(lower) is None
+    assert type(auth_failure(lower)) is KeycloakTransportError

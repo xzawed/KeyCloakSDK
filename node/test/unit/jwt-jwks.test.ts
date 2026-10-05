@@ -1,18 +1,19 @@
 /**
- * JWKS 재조회 rate-limit(`cooldownDuration`)이 실제로 동작하는지 **HTTP 히트 수**로 잠근다.
+ * JWKS 재조회 rate-limit 이 실제로 동작하는지 **HTTP 히트 수**로 잠근다.
  *
- * 왜 필요한가: `JwtValidator.forJwksUri`는 jose에 `cooldownDuration`/`cacheMaxAge`를 넘겨
- * 미인증 DoS 증폭(위조 kid를 실은 Bearer 토큰마다 IdP를 때리는 것)을 차단한다. 그런데 이 옵션이
- * 상위 버전에서 이름이 바뀌거나 제거되면 JavaScript는 알 수 없는 프로퍼티를 **조용히 무시**한다 —
- * 타입체크도(테스트는 tsconfig `include`에 없다), 린트도, 나머지 테스트도 그걸 잡지 못한 채
- * 하드닝만 사라진다. 히트 수를 세는 것 외에 이 실패 모드를 감지할 방법이 없다.
+ * 왜 필요한가: `JwtValidator.forJwksUri`는 미해결 kid 의 강제 재조회를 `jwksMinRefetchSeconds` 창으로 묶어
+ * 미인증 DoS 증폭(위조 kid를 실은 Bearer 토큰마다 IdP를 때리는 것)을 차단한다. 창은 SDK 의 JWKS fetch 이음매가
+ * 조회를 **시도할 때** 찍고, jose 의 `cooldownDuration` 은 0 으로 둔다(jose 는 성공에만 찍어 장애 중에는 창이
+ * 열린 채다 — 아래 「웜 캐시 + IdP 장애」). 그 옵션이 상위 버전에서 이름이 바뀌거나 제거되면 JavaScript는 알 수
+ * 없는 프로퍼티를 **조용히 무시**한다 — 타입체크도, 린트도, 나머지 테스트도 그걸 잡지 못한다. 히트 수를 세는
+ * 것 외에 이 실패 모드를 감지할 방법이 없다.
  *
- * ⚠️ 두 번째 케이스(대조군)를 **지우지 말 것** — 실제로 회귀를 잡는 쪽은 그쪽이다. 변이 검증
- * 실측: `cooldownDuration`을 개명해 무시되게 만들면 jose가 자체 기본값(30초)으로 폴백하므로
- * 첫 케이스는 그대로 통과한다(우리 설정값도 30초라 구분이 안 된다). cooldown=0을 요구하는
- * 대조군만이 히트 7 → 1로 떨어지며 실패한다. 대조군이 없으면 하드닝 유실이 무사통과한다.
+ * ⚠️ 두 번째 케이스(대조군)를 **지우지 말 것** — 실제로 회귀를 잡는 쪽은 그쪽이다. 변이 검증 실측: jose 의
+ * `cooldownDuration` 을 개명해 무시되게 만들면 jose가 자체 기본값(30초)으로 폴백하므로 첫 케이스는 그대로
+ * 통과한다(SDK 창도 30초라 구분이 안 된다). 창 0 을 요구하는 대조군만이 히트 7 → 1로 떨어지며 실패한다
+ * (2026-10-05 다시 잼: 「expected 1 to be greater than 2」 — 같은 창 0 을 쓰는 빈 키셋 시험도 함께 떨어진다).
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { generateKeyPair, exportJWK, SignJWT } from 'jose'
@@ -76,7 +77,7 @@ async function attack(v: JwtValidator, times: number): Promise<void> {
   }
 }
 
-describe('JWKS 재조회 rate-limit (cooldownDuration 실동작)', () => {
+describe('JWKS 재조회 rate-limit (재조회 창 실동작)', () => {
   it('미해결 kid를 반복 주입해도 IdP 조회는 상한된다', async () => {
     const v = JwtValidator.forJwksUri(jwksUri, { ...baseOpts, jwksMinRefetchSeconds: 30 })
 
@@ -332,5 +333,135 @@ describe('빈 JWKS 키셋(200)이 좋은 캐시를 덮지 않는다', () => {
     } finally {
       await new Promise<void>((resolve) => srv.close(() => resolve()))
     }
+  })
+})
+
+// ⚠️ 여기부터가 **웜 캐시 + IdP 장애** 축이다. 위 콜드 캐시 백오프는 캐시가 찬 뒤를 보지 않는다(규칙 (4) —
+// 웜 캐시의 미해결 kid 거부는 fetch 실패가 아니다). 그런데 jose 는 재조회 창(`cooldownDuration`)을 **성공**한
+// 조회에만 찍으므로, 캐시가 찬 채 IdP 가 503 이면 위조 kid 토큰마다 IdP 로 나갔다 — 실측(2026-10-05,
+// jwks-window.mjs): 위조 kid 5 → /certs 5. 자기 손으로 창을 거는 다섯(python·go·rust·php·ruby)은 결정할 때
+// 창을 찍어 장애 중에도 창마다 한 번이다(`.claude/rules/security.md`).
+//
+// ⚠️ 시계는 `Date` 만 가짜로 돌린다 — jose 의 창 판정(`isFreshFor`)과 SDK 이음매의 기본 `now` 가 둘 다
+// `Date.now()` 를 읽는다. HTTP 와 jose 의 5 초 타임아웃은 실시계 그대로다.
+describe('웜 캐시 + IdP 장애 — 위조 kid 의 강제 재조회도 창마다 한 번', () => {
+  let srv: Server
+  let uri: string
+  let status = 200
+  let certs = 0
+  let published: Awaited<ReturnType<typeof generateKeyPair>>
+  let forger: Awaited<ReturnType<typeof generateKeyPair>>['privateKey']
+
+  beforeAll(async () => {
+    published = await generateKeyPair('RS256')
+    forger = (await generateKeyPair('RS256')).privateKey
+    const body = JSON.stringify({
+      keys: [{ ...(await exportJWK(published.publicKey)), kid: 'k1', use: 'sig', alg: 'RS256' }],
+    })
+    srv = createServer((_req, res) => {
+      certs += 1
+      if (status !== 200) {
+        res.writeHead(status, { 'content-type': 'text/plain' })
+        res.end('unavailable')
+        return
+      }
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(body)
+    })
+    await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve))
+    uri = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/certs`
+  })
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => srv.close(() => resolve()))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const legit = (): Promise<string> =>
+    new SignJWT({ sub: 'u', aud: 'my-client' })
+      .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+      .setIssuer(ISS)
+      .setIssuedAt()
+      .setExpirationTime('10m')
+      .sign(published.privateKey)
+
+  const forgedKid = (kid: string): Promise<string> =>
+    new SignJWT({ sub: 'u', aud: 'my-client' })
+      .setProtectedHeader({ alg: 'RS256', kid })
+      .setIssuer(ISS)
+      .setIssuedAt()
+      .setExpirationTime('10m')
+      .sign(forger)
+
+  /** 캐시를 채운다(콜드 적재 한 번) — 돌려준 시각이 그 적재의 시각이다. */
+  async function warm(): Promise<{ v: JwtValidator; t0: number }> {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const t0 = Date.now()
+    status = 200
+    certs = 0
+    const v = JwtValidator.forJwksUri(uri, { ...baseOpts, jwksMinRefetchSeconds: 30 })
+    await expect(v.validate(await legit())).resolves.toMatchObject({ subject: 'u' })
+    expect(certs).toBe(1)
+    return { v, t0 }
+  }
+
+  it('장애 중 위조 kid 다섯은 IdP 요청 한 건으로 접히고, 캐시된 kid 는 그대로 통과한다', async () => {
+    const { v, t0 } = await warm()
+    vi.setSystemTime(t0 + 31_000) // 창이 열린 뒤
+    status = 503
+    for (let i = 0; i < 5; i += 1) {
+      await expect(v.validate(await forgedKid(`forged-${i}`))).rejects.toBeInstanceOf(
+        KeycloakTokenValidationError,
+      )
+    }
+    expect(certs).toBe(2) // 콜드 적재 + 이 창의 강제 재조회 한 번(수정 전: 6)
+    // ⚠️ 규칙 (4) — 위조 kid 홍수가 정상 토큰을 막으면 원래 결함보다 나쁘다. 캐시된 kid 는 IdP 없이 통과한다.
+    await expect(v.validate(await legit())).resolves.toMatchObject({ subject: 'u' })
+    expect(certs).toBe(2)
+  })
+
+  // ⚠️ **이 대조군을 지우지 말 것 — 위 단언은 「한 번 실패하면 영원히 안 나간다」로도 통과한다.** 그 동작은
+  // IdP 가 돌아와도 회전한 키를 영영 못 받는다.
+  it('대조군 — 장애가 이어져도 다음 창에서는 다시 한 번 나간다', async () => {
+    const { v, t0 } = await warm()
+    vi.setSystemTime(t0 + 31_000)
+    status = 503
+    await expect(v.validate(await forgedKid('forged-a'))).rejects.toThrow()
+    expect(certs).toBe(2)
+    vi.setSystemTime(t0 + 61_000) // 그 실패한 시도로부터 30 초
+    await expect(v.validate(await forgedKid('forged-b'))).rejects.toThrow()
+    expect(certs).toBe(3)
+  })
+
+  // ⚠️ 만료(cacheMaxAge 600 초) 갱신은 강제 재조회 창에 걸지 않는다. jose 는 만료된 캐시를 갱신하지 못하면 캐시된
+  // kid 도 거부하므로, 걸면 직전의 위조 kid 시도 하나 때문에 정상 토큰까지 30 초 막힌다.
+  it('만료된 캐시의 갱신은 창에 걸리지 않는다 — 직전에 실패한 강제 재조회가 있어도 정상 토큰이 통과한다', async () => {
+    const { v, t0 } = await warm()
+    vi.setSystemTime(t0 + 595_000)
+    status = 503
+    await expect(v.validate(await forgedKid('late'))).rejects.toThrow()
+    expect(certs).toBe(2)
+    vi.setSystemTime(t0 + 601_000) // 마지막 성공(t0)으로부터 cacheMaxAge 를 넘었다 — 그 시도로부터는 6 초
+    status = 200
+    await expect(v.validate(await legit())).resolves.toMatchObject({ subject: 'u' })
+    expect(certs).toBe(3)
+  })
+
+  // 정상 IdP 에서는 지금과 같아야 한다 — 창마다 정확히 한 번(0 초 콜드 적재 · 31 초 · 61 초).
+  it('정상 IdP — 위조 kid 의 강제 재조회는 창마다 정확히 한 번이다', async () => {
+    const { v, t0 } = await warm()
+    const at = async (offsetMs: number, kid: string): Promise<number> => {
+      vi.setSystemTime(t0 + offsetMs)
+      await expect(v.validate(await forgedKid(kid))).rejects.toThrow()
+      return certs
+    }
+    expect(await at(1_000, 'f1')).toBe(1) // 콜드 적재의 창 안
+    expect(await at(31_000, 'f2')).toBe(2)
+    expect(await at(45_000, 'f3')).toBe(2)
+    expect(await at(60_000, 'f4')).toBe(2)
+    expect(await at(61_000, 'f5')).toBe(3)
   })
 })
