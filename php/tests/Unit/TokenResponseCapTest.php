@@ -506,25 +506,56 @@ final class TokenResponseCapTest extends TestCase
     }
 
     /**
-     * 판독기는 스트림에 상한+1 바이트보다 많이 청하지 않는다 — 한 번에 많아야 8 KiB(PHP `fread` 는 청한 길이를 미리 잡는다)이고,
-     * 넘는 순간 멈춘다. 정확히 상한인 본문은 그대로 돌려준다.
+     * 판독기가 스트림에서 **가져오는** 바이트는 많아야 상한+1 이고(넘었음을 아는 한 바이트까지), 한 번의 청은 많아야 min(8 KiB, 상한+1 −
+     * 이미 가져온 바이트)다(PHP `fread` 는 청한 길이를 미리 잡는다). 정확히 상한인 본문은 그대로 돌려준다.
+     *
+     * ⚠️ 청한 바이트의 **합**은 묶이지 않는다 — 청한 것보다 적게 주는 스트림이면 판독기가 다시 청해 합이 상한+1 을 넘는다(실측: 한 번에
+     * 1 바이트씩 주는 2,048 바이트 본문에 청한 합 16,785,408). 이 시험의 옛 이름(`testTheReaderNeverAsksForMoreThanTheCapPlusOne`)과
+     * 「청한 합 ≤ 상한+1」 단언은 청한 만큼 주는 스트림에서만 참이었다. 그래서 청한 만큼 주는 스트림 · 한 번에 1 바이트씩 주는 스트림 ·
+     * 상한 바로 앞부터 1 바이트씩 주는 스트림(청이 남은 자리까지 줄어드는지)을 함께 돈다.
      */
-    public function testTheReaderNeverAsksForMoreThanTheCapPlusOne(): void
+    public function testTheReaderTakesAtMostTheCapPlusOneAndEachRequestFitsTheRoomLeft(): void
     {
-        foreach ([self::CAP => self::CAP, self::CAP + 1 => null, 3 * self::CAP => null, 10 => 10] as $size => $want) {
-            $asked = [];
+        // 스트림이 한 번에 주는 바이트 — (청한 바이트, 이미 내준 바이트) → 줄 바이트
+        $asAsked = static fn (int $asked, int $taken): int => $asked;
+        $oneByte = static fn (int $asked, int $taken): int => min(1, $asked);
+        $oneByteNearTheCap = static fn (int $asked, int $taken): int => $taken >= self::CAP - 16 ? min(1, $asked) : $asked;
+        /** @var array<string, array{int, \Closure(int, int): int, ?int}> 칸 => [본문 바이트, 주는 규칙, 기대 길이(null = 넘었다)] */
+        $cases = [
+            'as asked, cap' => [self::CAP, $asAsked, self::CAP],
+            'as asked, cap+1' => [self::CAP + 1, $asAsked, null],
+            'as asked, 3×cap' => [3 * self::CAP, $asAsked, null],
+            'as asked, 10' => [10, $asAsked, 10],
+            '1 byte per read, 2,048' => [2048, $oneByte, 2048],
+            '1 byte per read from cap−16, cap' => [self::CAP, $oneByteNearTheCap, self::CAP],
+            '1 byte per read from cap−16, cap+1' => [self::CAP + 1, $oneByteNearTheCap, null],
+            '1 byte per read from cap−16, 3×cap' => [3 * self::CAP, $oneByteNearTheCap, null],
+        ];
+        foreach ($cases as $name => [$size, $give, $want]) {
+            $taken = 0;
+            $reads = 0;
+            $tooBig = [];
             $inner = Utils::streamFor(str_repeat('a', $size));
             $spy = FnStream::decorate($inner, [
-                'read' => static function (int $length) use ($inner, &$asked): string {
-                    $asked[] = $length;
+                'read' => static function (int $length) use ($inner, $give, &$taken, &$reads, &$tooBig): string {
+                    $room = min(8192, self::CAP + 1 - $taken);
+                    if ($length > $room) {
+                        $tooBig[] = "청 $length > 남은 자리 $room (가져간 $taken)";
+                    }
+                    $reads++;
+                    $got = $inner->read($give($length, $taken));
+                    $taken += strlen($got);
 
-                    return $inner->read($length);
+                    return $got;
                 },
             ]);
             $got = TokenResponseCap::read($spy);
-            self::assertSame($want, $got === null ? null : strlen($got), "본문 $size 바이트");
-            self::assertLessThanOrEqual(self::CAP + 1, array_sum($asked), "본문 $size 바이트: 청한 바이트 합");
-            self::assertLessThanOrEqual(8192, $asked === [] ? 0 : max($asked), "본문 $size 바이트: 한 번에 청한 바이트");
+            self::assertSame($want, $got === null ? null : strlen($got), "$name: 결과");
+            self::assertLessThanOrEqual(self::CAP + 1, $taken, "$name: 스트림에서 가져온 바이트");
+            self::assertSame([], array_slice($tooBig, 0, 3), "$name: 한 번의 청이 min(8192, 상한+1 − 가져온 바이트) 를 넘었다");
+            if ($give === $oneByte) {
+                self::assertGreaterThan($size, $reads, "$name: 1 바이트씩 읽히지 않았다(공허)");
+            }
         }
     }
 
