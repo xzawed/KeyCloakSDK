@@ -16,6 +16,8 @@ use Xzawed\Keycloak\Exception\SanitizedCause;
 use Xzawed\Keycloak\Exception\TokenValidationError;
 use Xzawed\Keycloak\Internal\OAuthErrorCode;
 use Xzawed\Keycloak\Internal\PkceKeycloakProvider;
+use Xzawed\Keycloak\Internal\ResponseTooLarge;
+use Xzawed\Keycloak\Internal\TokenResponseCap;
 use Xzawed\Keycloak\Token\AuthorizationRequest;
 use Xzawed\Keycloak\Token\IntrospectionResult;
 use Xzawed\Keycloak\Token\TokenSet;
@@ -161,26 +163,45 @@ final class AuthClient
         // RFC 6749 §2.3.1: Basic 자격증명은 각 구성요소를 먼저 percent-encode한다
         // (secret에 ':'/예약문자가 있어도 자격증명이 깨지지 않도록).
         $basic = base64_encode(rawurlencode($this->config->clientId) . ':' . rawurlencode($this->config->clientSecret ?? ''));
+        // 응답 본문은 상한까지만 받고 한 번만 읽는다 — 싱크가 전송을 끊고 판독기가 판정한다(`TokenResponseCap`).
+        $sink = TokenResponseCap::sink();
         try {
             $response = $this->http->request('POST', $this->endpoints->introspection(), [
                 'headers' => ['Authorization' => 'Basic ' . $basic, 'Content-Type' => 'application/x-www-form-urlencoded'],
                 'form_params' => ['token' => $token, 'token_type_hint' => 'access_token'],
+                'sink' => $sink,
             ]);
         } catch (ConnectException $e) {
             throw new KeycloakTransportError('introspection unreachable', previous: SanitizedCause::of($e));
         } catch (GuzzleException $e) {
+            if (TokenResponseCap::overflowed($sink)) {
+                throw self::introspectionTooLarge();   // curl 이 짧은 쓰기에 끊은 전송(CURLE_WRITE_ERROR) — 오류 상태의 본문 포함
+            }
             throw new KeycloakAuthError('introspection failed', previous: SanitizedCause::of($e));
         } catch (KeycloakException $e) {
             throw $e;
         } catch (\Throwable $e) {
             throw new KeycloakTransportError('introspection failed unexpectedly', previous: SanitizedCause::of($e));
         }
-        $json = json_decode((string) $response->getBody(), true);
+        try {
+            $body = TokenResponseCap::read($response->getBody());
+        } catch (\Throwable $e) {
+            throw new KeycloakTransportError('introspection response could not be read', previous: SanitizedCause::of($e));
+        }
+        if ($body === null) {
+            throw self::introspectionTooLarge();
+        }
+        $json = json_decode($body, true);
         if (!is_array($json)) {
             throw new KeycloakAuthError('introspection returned non-JSON');
         }
 
         return IntrospectionResult::fromArray(self::stringKeyed($json));
+    }
+
+    private static function introspectionTooLarge(): KeycloakTransportError
+    {
+        return new KeycloakTransportError(sprintf('introspection response exceeds %d bytes', TokenResponseCap::TOKEN_RESPONSE_MAX_BYTES));
     }
 
     public function logoutUrl(TokenSet $tokens): string
@@ -234,6 +255,10 @@ final class AuthClient
             throw new KeycloakTransportError('token endpoint unreachable', previous: SanitizedCause::of($e));
         } catch (GuzzleException $e) {
             throw new KeycloakTransportError('token request failed', previous: SanitizedCause::of($e));
+        } catch (ResponseTooLarge $e) {
+            // 토큰 응답이 상한을 넘었다(`PkceKeycloakProvider`). ⚠️ 원인을 달지 않는다 — 그 예외의 트레이스는 league 의
+            // `getAccessToken($grant, $options)` 프레임 인자(refresh_token·code)를 쥔다. 메시지는 SDK 가 만든 것이 전부다.
+            throw new KeycloakTransportError($e->getMessage());
         } catch (\UnexpectedValueException $e) {
             // league는 토큰 엔드포인트가 비-JSON/파싱불가 응답을 줄 때 SPL \UnexpectedValueException을
             // 던진다(IdentityProviderException이 아님 — OAuth 에러 바디가 아니라 응답 자체가 깨진 경우).

@@ -57,6 +57,9 @@ final class FacadeDumpTest extends TestCase
     private const EXEMPT = [
         \Xzawed\Keycloak\Admin\RenamableRoles::class => 'RolesResource::update 안에서 만들어 곧바로 버린다 — 반환·보관되지 않아 '
             . '소비자가 쥘 수 없다. 직접 만드는 길은 raw() 경유 fschmtt 표면이다(§4(b) 탈출구).',
+        \Xzawed\Keycloak\Internal\ResponseTooLarge::class => '토큰 응답 상한의 운반체 — league·fschmtt 스택 안에서 던져 SDK 경계'
+            . '(AuthClient::getAccessToken · Admin\ErrorTranslation::call)가 받아 원인 없는 KeycloakTransportError 로 바꾼다. 공개 API 로 '
+            . '나가지 않아 소비자가 쥘 수 없다(TokenResponseCapTest::testABodyOneByteOverTheCapFails 가 경계 밖 예외의 타입과 원인 없음을 잰다).',
     ];
 
     /**

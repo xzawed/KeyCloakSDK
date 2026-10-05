@@ -1,0 +1,484 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Xzawed\Keycloak\Tests\Unit;
+
+use GuzzleHttp\Client as GuzzleClient;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Promise\PromiseInterface;
+use GuzzleHttp\Psr7\FnStream;
+use GuzzleHttp\Psr7\HttpFactory;
+use GuzzleHttp\Psr7\Response;
+use GuzzleHttp\Psr7\Utils;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+use Xzawed\Keycloak\AuthClient;
+use Xzawed\Keycloak\ClientCredentialsTokenProvider;
+use Xzawed\Keycloak\Exception\KeycloakAdminError;
+use Xzawed\Keycloak\Exception\KeycloakAuthError;
+use Xzawed\Keycloak\Exception\KeycloakTransportError;
+use Xzawed\Keycloak\Exception\SanitizedCause;
+use Xzawed\Keycloak\Http\HttpOptions;
+use Xzawed\Keycloak\Internal\TokenResponseCap;
+use Xzawed\Keycloak\Jwks\JwksStore;
+use Xzawed\Keycloak\JwtValidator;
+use Xzawed\Keycloak\KeycloakClient;
+use Xzawed\Keycloak\KeycloakConfig;
+use Xzawed\Keycloak\OidcEndpoints;
+
+/**
+ * 토큰 엔드포인트·introspection 응답 본문의 상한 1,048,576 바이트(등록부 `token-response-size-unbounded`)를 **공개 API 의
+ * 여섯 레인**에 건다 — client_credentials · refresh · 코드 교환(셋 다 league) · `ClientCredentialsTokenProvider` · introspect ·
+ * admin 의 자기 토큰 부여(fschmtt). 수정 전 실측(가짜 IdP · 32 MiB 공백 패딩): 여섯 레인 전부 수락, league 레인은 본문 사본
+ * 둘(zend 피크 75 MB), memory_limit 보다 큰 본문은 잡을 수 없는 치명 오류(exit 255).
+ *
+ * 가짜 IdP 는 진짜 HTTP 다(`Fixtures/token-cap-router.php`) — 상한이 전송(curl 이 싱크에 넘기는 청크·끊기·gzip 디코딩)과
+ * 맞물리기 때문이다. 길이를 아는 본문(`cl`)·모르는 본문(`close`, `php -S` 는 청크 인코딩을 쓰지 않는다)·gzip(푼 바이트로
+ * 센다) 셋을 돈다.
+ *
+ * 할당은 `memory_reset_peak_usage()` 뒤의 zend 피크로 잰다. 수신자(클라이언트·admin 파사드)는 재기 **전에** 만든다 — 클래스
+ * 적재·조립은 본문 판정의 몫이 아니다.
+ */
+final class TokenResponseCapTest extends TestCase
+{
+    /** ⚠️ SDK 상수와 따로 적는다 — 상수가 바뀌면 `testTheCapIsOneMebibyte` 가 운다. */
+    private const CAP = 1048576;
+
+    /** Keycloak 26.6 이 기본 설정으로 받아들이는 가장 긴 Bearer(실측 2026-10-03: 65,459 = 401 · 65,460 = 431). */
+    private const LARGEST_BEARER = 65459;
+
+    /** 상한을 넘긴 판정이 쥐어도 되는 zend 메모리 — 본문 크기와 무관해야 한다(수정 전 32 MiB 본문: league 75 MB · 그 밖 40 MB). */
+    private const BOUND_OVER = 4 * self::CAP;
+
+    /** 2 KiB 남짓한 본문의 호출이 쥐어도 되는 zend 메모리 — 상한 근처를 미리 잡으면 여기서 운다. */
+    private const BOUND_SMALL = self::CAP / 4;
+
+    /** @var array<string, string> 레인 => 상한을 넘긴 본문의 메시지 */
+    private const OVER = [
+        'cc' => 'token response exceeds 1048576 bytes',
+        'refresh' => 'token response exceeds 1048576 bytes',
+        'code' => 'token response exceeds 1048576 bytes',
+        'cctp' => 'token response exceeds 1048576 bytes',
+        'introspect' => 'introspection response exceeds 1048576 bytes',
+        'admin' => 'admin token response exceeds 1048576 bytes',
+    ];
+
+    private static string $dir = '';
+    private static int $port = 0;
+    /** @var resource|null */
+    private static $proc = null;
+
+    public static function setUpBeforeClass(): void
+    {
+        $sock = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+        self::assertNotFalse($sock, "빈 포트를 못 얻었다: $errstr");
+        $name = (string) stream_socket_get_name($sock, false);
+        fclose($sock);
+        self::$port = (int) substr($name, (int) strrpos($name, ':') + 1);
+        self::$dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'tc-idp-' . bin2hex(random_bytes(6));
+        self::assertTrue(mkdir(self::$dir));
+        self::serve('token', []);
+        $env = getenv();
+        $env['TC_STATE'] = self::$dir;
+        $pipes = [];
+        $proc = proc_open(
+            [PHP_BINARY, '-S', '127.0.0.1:' . self::$port, __DIR__ . '/Fixtures/token-cap-router.php'],
+            [0 => ['pipe', 'r'], 1 => ['file', self::$dir . '/server.out', 'a'], 2 => ['file', self::$dir . '/server.err', 'a']],
+            $pipes,
+            self::$dir,
+            $env,
+        );
+        self::assertIsResource($proc, '가짜 IdP 프로세스를 못 띄웠다');
+        self::$proc = $proc;
+        // ⚠️ 치명 오류·exit 는 tearDownAfterClass 를 건너뛴다 — `php -S` 가 고아로 남아 포트를 쥐지 않게(HostilePathMatrixTest 와 같다).
+        register_shutdown_function(static function (): void {
+            self::stopIdp();
+        });
+        for ($i = 0; $i < 500; $i++) {   // 기동 대기 — 판정에 시간을 쓰지 않는다
+            $c = @fsockopen('127.0.0.1', self::$port, $en, $es, 0.2);
+            if ($c !== false) {
+                fclose($c);
+
+                return;
+            }
+            usleep(20_000);
+        }
+        self::fail('가짜 IdP 가 뜨지 않았다');
+    }
+
+    public static function tearDownAfterClass(): void
+    {
+        self::stopIdp();
+    }
+
+    private static function stopIdp(): void
+    {
+        if (self::$proc !== null) {
+            proc_terminate(self::$proc);
+            proc_close(self::$proc);
+            self::$proc = null;
+        }
+        foreach (['state.json', 'requests.log', 'server.out', 'server.err'] as $f) {
+            @unlink(self::$dir . '/' . $f);
+        }
+        @rmdir(self::$dir);
+    }
+
+    /**
+     * 가짜 IdP 상태 — 겨눈 엔드포인트의 본문 명세만 바꾸고 요청 기록을 비운다.
+     *
+     * @param array{access?: int, size?: int, framing?: string, gzip?: bool, status?: int} $spec
+     */
+    private static function serve(string $endpoint, array $spec): void
+    {
+        $state = [
+            'token' => ['access' => 1000, 'size' => 0, 'framing' => 'cl', 'gzip' => false],
+            'introspect' => ['size' => 0, 'framing' => 'cl', 'gzip' => false],
+        ];
+        $state[$endpoint] = $spec + $state[$endpoint];
+        file_put_contents(self::$dir . '/state.json', json_encode($state, JSON_THROW_ON_ERROR));
+        @unlink(self::$dir . '/requests.log');
+    }
+
+    /** @return list<array{0: string, 1: string, 2: int}> 가짜 IdP 가 받은 [메서드, 경로, Authorization 길이] */
+    private static function requests(): array
+    {
+        $out = [];
+        $log = @file(self::$dir . '/requests.log', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($log === false ? [] : $log as $line) {
+            $r = json_decode($line, true);
+            if (is_array($r) && is_string($r[0] ?? null) && is_string($r[1] ?? null) && is_int($r[2] ?? null)) {
+                $out[] = [$r[0], $r[1], $r[2]];
+            }
+        }
+
+        return $out;
+    }
+
+    /** @return list<string> admin REST 로 나간 요청의 경로 — 토큰 부여는 빼고 */
+    private static function adminRequests(): array
+    {
+        return array_values(array_map(
+            static fn (array $r): string => $r[1],
+            array_filter(self::requests(), static fn (array $r): bool => str_starts_with($r[1], '/admin/')),
+        ));
+    }
+
+    /** 레인의 본문이 나오는 엔드포인트. */
+    private static function endpoint(string $lane): string
+    {
+        return $lane === 'introspect' ? 'introspect' : 'token';
+    }
+
+    /**
+     * 레인의 공개 호출 하나 — 수신자는 여기서 만들고(재기 전), 돌려주는 클로저가 그 호출이다. 결과는 판정에 쓰는 스칼라 하나:
+     * 토큰 레인은 access token 의 길이, introspect 는 `active`, admin 은 돌려받은 사용자 수.
+     *
+     * @return \Closure(): (int|bool)
+     */
+    private static function lane(string $lane): \Closure
+    {
+        $cfg = new KeycloakConfig('http://127.0.0.1:' . self::$port, 'r', 'c', 'tc-client-secret', readTimeout: 30.0);
+        $auth = KeycloakClient::create($cfg)->auth();
+        if ($lane === 'cctp') {
+            $f = new HttpFactory();
+            $provider = new ClientCredentialsTokenProvider($cfg, new OidcEndpoints($cfg), new GuzzleClient(HttpOptions::guzzle($cfg)), $f, $f);
+
+            return static fn (): int => strlen($provider->getToken());
+        }
+        if ($lane === 'admin') {
+            $users = KeycloakClient::create($cfg)->admin()->users();
+
+            return static fn (): int => count($users->search());
+        }
+
+        return match ($lane) {
+            'cc' => static fn (): int => strlen($auth->clientCredentialsToken()->accessToken),
+            'refresh' => static fn (): int => strlen($auth->refresh('tc-refresh-token')->accessToken),
+            'code' => static fn (): int => strlen($auth->exchangeCode('tc-code', str_repeat('v', 64))->accessToken),
+            'introspect' => static fn (): bool => $auth->introspect('tc-introspected-token')->active,
+            default => throw new \LogicException("모르는 레인 $lane"),
+        };
+    }
+
+    /**
+     * 호출 하나와 그동안의 zend 피크(호출 직전 사용량 대비).
+     *
+     * @param \Closure(): (int|bool) $call
+     * @return array{0: int|bool|\Throwable, 1: int}
+     */
+    private static function measure(\Closure $call): array
+    {
+        gc_collect_cycles();
+        memory_reset_peak_usage();
+        $before = memory_get_usage();
+        try {
+            $result = $call();
+        } catch (\Throwable $e) {
+            $result = $e;
+        }
+        $peak = memory_get_peak_usage() - $before;
+        if (getenv('TC_PRINT') === '1') {   // 재는 명령: TC_PRINT=1 vendor/bin/phpunit --filter TokenResponseCapTest
+            fwrite(STDERR, sprintf("%-34s peak=%9d  %s\n", self::$current, $peak, $result instanceof \Throwable ? $result->getMessage() : var_export($result, true)));
+        }
+
+        return [$result, $peak];
+    }
+
+    /** 찍을 때 쓰는 이름 — 데이터 제공자 이름. */
+    private static string $current = '';
+
+    protected function setUp(): void
+    {
+        self::$current = $this->dataName() === '' ? $this->name() : (string) $this->dataName();
+    }
+
+    /** @return array<string, array{string}> */
+    public static function lanes(): array
+    {
+        $out = [];
+        foreach (array_keys(self::OVER) as $lane) {
+            $out[$lane] = [$lane];
+        }
+
+        return $out;
+    }
+
+    /** @return array<string, array{string, string, bool}> 레인 × 본문 틀(`cl` 길이를 안다 · `close` 모른다 · `gzip` 푼 바이트) */
+    public static function lanesByFraming(): array
+    {
+        $out = [];
+        foreach (array_keys(self::OVER) as $lane) {
+            foreach (['cl' => false, 'close' => false, 'gzip' => true] as $framing => $gzip) {
+                $out["$lane $framing"] = [$lane, $framing === 'gzip' ? 'close' : $framing, $gzip];
+            }
+        }
+
+        return $out;
+    }
+
+    /** @return array<string, array{string, int, string, bool}> 레인 × 거대 본문(16 MiB 길이 앎 · 32 MiB 모름 · 32 MiB gzip) */
+    public static function lanesByHugeBody(): array
+    {
+        $out = [];
+        foreach (array_keys(self::OVER) as $lane) {
+            $out["$lane 16 MiB cl"] = [$lane, 16 * self::CAP, 'cl', false];
+            $out["$lane 32 MiB close"] = [$lane, 32 * self::CAP, 'close', false];
+            $out["$lane 32 MiB gzip"] = [$lane, 32 * self::CAP, 'close', true];
+        }
+
+        return $out;
+    }
+
+    /**
+     * 상한은 1 MiB 이고 **맨 십진 리터럴**로 한 자리에 선언된다 — 교차언어 가드가 그 줄을 뽑는다(식 `1 << 20` 이면 못 뽑는다).
+     */
+    public function testTheCapIsOneMebibyteDeclaredAsAPlainDecimalLiteral(): void
+    {
+        self::assertSame(self::CAP, (new \ReflectionClassConstant(TokenResponseCap::class, 'TOKEN_RESPONSE_MAX_BYTES'))->getValue());
+        $file = (string) (new \ReflectionClass(TokenResponseCap::class))->getFileName();
+        self::assertSame(1, preg_match_all('/\bconst TOKEN_RESPONSE_MAX_BYTES = (\S+);/', (string) file_get_contents($file), $m));
+        self::assertSame('1048576', $m[1][0]);
+    }
+
+    /** Keycloak 이 받아들이는 가장 긴 Bearer 는 어느 레인에서도 상한에 걸리지 않는다 — admin 은 그것을 Bearer 로 실어 보낸다. */
+    #[DataProvider('lanes')]
+    public function testTheLargestBearerKeycloakAcceptsPassesOnEveryLane(string $lane): void
+    {
+        self::serve('token', ['access' => self::LARGEST_BEARER]);
+        $call = self::lane($lane);
+        [$result] = self::measure($call);
+        if ($result instanceof \Throwable) {
+            self::fail("$lane: 받아들여야 한다 — " . $result::class . ': ' . $result->getMessage());
+        }
+        match ($lane) {
+            'introspect' => self::assertTrue($result),
+            'admin' => self::assertSame(['/admin/serverinfo', '/admin/realms/r/users'], self::adminRequests()),
+            default => self::assertSame(self::LARGEST_BEARER, $result),
+        };
+        if ($lane === 'admin') {
+            foreach (self::requests() as [, $path, $authLen]) {
+                if (str_starts_with($path, '/admin/')) {
+                    self::assertSame(strlen('Bearer ') + self::LARGEST_BEARER, $authLen, "$path 의 Authorization 길이");
+                }
+            }
+        }
+    }
+
+    #[DataProvider('lanesByFraming')]
+    public function testABodyOfExactlyTheCapPasses(string $lane, string $framing, bool $gzip): void
+    {
+        self::serve(self::endpoint($lane), ['size' => self::CAP, 'framing' => $framing, 'gzip' => $gzip]);
+        [$result] = self::measure(self::lane($lane));
+        if ($result instanceof \Throwable) {
+            self::fail("$lane: 정확히 상한인 본문은 받아들여야 한다 — " . $result::class . ': ' . $result->getMessage());
+        }
+        self::assertNotFalse($result);
+    }
+
+    #[DataProvider('lanesByFraming')]
+    public function testABodyOneByteOverTheCapFails(string $lane, string $framing, bool $gzip): void
+    {
+        self::serve(self::endpoint($lane), ['size' => self::CAP + 1, 'framing' => $framing, 'gzip' => $gzip]);
+        [$result] = self::measure(self::lane($lane));
+        self::assertInstanceOf(KeycloakTransportError::class, $result, "$lane: 상한+1 바이트 본문은 KeycloakTransportError 여야 한다 — "
+            . (is_object($result) ? $result::class : 'success'));
+        self::assertSame(self::OVER[$lane], $result->getMessage());
+        self::assertNull($result->getPrevious(), '하위 프레임을 쥔 원인을 달지 않는다 — 메시지가 전부다');
+        if ($lane === 'admin') {
+            self::assertSame([], self::adminRequests(), 'admin 은 토큰 부여가 실패하면 admin REST 요청을 보내지 않는다');
+        }
+    }
+
+    #[DataProvider('lanesByHugeBody')]
+    public function testAHugeBodyFailsWithAnAllocationThatDoesNotGrowWithIt(string $lane, int $size, string $framing, bool $gzip): void
+    {
+        self::serve(self::endpoint($lane), ['size' => $size, 'framing' => $framing, 'gzip' => $gzip]);
+        [$result, $peak] = self::measure(self::lane($lane));
+        self::assertInstanceOf(KeycloakTransportError::class, $result, "$lane: " . (is_object($result) ? $result::class : 'success'));
+        self::assertSame(self::OVER[$lane], $result->getMessage());
+        self::assertLessThan(self::BOUND_OVER, $peak, "$lane: {$size} 바이트 본문을 거부하며 zend 메모리를 $peak 바이트 잡았다");
+        if ($lane === 'admin') {
+            self::assertSame([], self::adminRequests());
+        }
+    }
+
+    /**
+     * 오류 상태(400)의 본문도 상한을 지난다 — league 는 그 본문을 읽어 OAuth 오류를 만들고, admin 은 그 본문에서 오류 코드를 찾는다.
+     * 상한 안이면 그 레인이 오늘 내는 오류 그대로(`KeycloakAuthError` · admin 은 상태를 지킨 `KeycloakAdminError`), 넘으면 상한 오류다.
+     */
+    #[DataProvider('lanes')]
+    public function testAnErrorStatusBodyIsCappedToo(string $lane): void
+    {
+        $sizes = [self::CAP => false, self::CAP + 1 => true, 32 * self::CAP => true];
+        foreach ($sizes as $size => $over) {
+            self::serve(self::endpoint($lane), ['size' => $size, 'framing' => 'close', 'status' => 400]);
+            [$result, $peak] = self::measure(self::lane($lane));
+            self::assertInstanceOf(\Throwable::class, $result, "$lane $size: 400 은 실패여야 한다");
+            if ($over) {
+                self::assertInstanceOf(KeycloakTransportError::class, $result, "$lane $size: " . $result::class . ': ' . $result->getMessage());
+                self::assertSame(self::OVER[$lane], $result->getMessage(), "$lane $size");
+                self::assertLessThan(self::BOUND_OVER, $peak, "$lane $size: 거부하며 zend 메모리를 $peak 바이트 잡았다");
+            } elseif ($lane === 'admin') {
+                self::assertInstanceOf(KeycloakAdminError::class, $result, "$lane $size: " . $result::class . ': ' . $result->getMessage());
+                self::assertSame(400, $result->getStatusCode());
+            } else {
+                self::assertInstanceOf(KeycloakAuthError::class, $result, "$lane $size: " . $result::class . ': ' . $result->getMessage());
+            }
+            if ($lane === 'admin') {
+                self::assertSame([], self::adminRequests(), "$lane $size: 토큰 부여가 실패하면 admin REST 요청은 없다");
+            }
+        }
+    }
+
+    /** 2 KiB 남짓한 본문의 판정이 상한 근처를 미리 잡지 않는다 — 읽은 만큼만 자란다. */
+    #[DataProvider('lanes')]
+    public function testASmallBodyAllocatesFarLessThanTheCap(string $lane): void
+    {
+        self::serve(self::endpoint($lane), ['size' => 2048]);
+        (self::lane($lane))();   // 데우기 — 처음 쓰는 클래스의 적재를 재지 않는다
+        // ⚠️ 재는 호출은 **새 수신자**다 — `ClientCredentialsTokenProvider` 와 admin(fschmtt)은 받은 토큰을 캐시해, 데운 수신자를 다시
+        // 부르면 토큰 요청 없이 끝난다(실측: 그렇게 쟀을 때 cctp 0 바이트 — 상한을 한 번에 청하는 변이를 그 두 레인이 놓쳤다).
+        $call = self::lane($lane);
+        @unlink(self::$dir . '/requests.log');
+        [$result, $peak] = self::measure($call);
+        $suffix = self::endpoint($lane) === 'token' ? '/token' : '/introspect';
+        self::assertNotSame([], array_filter(self::requests(), static fn (array $r): bool => str_ends_with($r[1], $suffix)), "$lane: 잰 호출이 그 엔드포인트에 닿지 않았다(공허)");
+        if ($result instanceof \Throwable) {
+            self::fail("$lane: " . $result::class . ': ' . $result->getMessage());
+        }
+        self::assertLessThan(self::BOUND_SMALL, $peak, "$lane: 2 KiB 본문의 호출이 zend 메모리를 $peak 바이트 잡았다");
+    }
+
+    /**
+     * 판독기는 스트림에 상한+1 바이트보다 많이 청하지 않는다 — 한 번에 많아야 8 KiB(PHP `fread` 는 청한 길이를 미리 잡는다)이고,
+     * 넘는 순간 멈춘다. 정확히 상한인 본문은 그대로 돌려준다.
+     */
+    public function testTheReaderNeverAsksForMoreThanTheCapPlusOne(): void
+    {
+        foreach ([self::CAP => self::CAP, self::CAP + 1 => null, 3 * self::CAP => null, 10 => 10] as $size => $want) {
+            $asked = [];
+            $inner = Utils::streamFor(str_repeat('a', $size));
+            $spy = FnStream::decorate($inner, [
+                'read' => static function (int $length) use ($inner, &$asked): string {
+                    $asked[] = $length;
+
+                    return $inner->read($length);
+                },
+            ]);
+            $got = TokenResponseCap::read($spy);
+            self::assertSame($want, $got === null ? null : strlen($got), "본문 $size 바이트");
+            self::assertLessThanOrEqual(self::CAP + 1, array_sum($asked), "본문 $size 바이트: 청한 바이트 합");
+            self::assertLessThanOrEqual(8192, $asked === [] ? 0 : max($asked), "본문 $size 바이트: 한 번에 청한 바이트");
+        }
+    }
+
+    /**
+     * 본문을 읽다 실패하면 SDK 오류다 — 상한을 걸며 본문 읽기가 SDK 코드로 나왔고, 그 읽기는 지연 본문(소비자가 넘긴 클라이언트 ·
+     * `stream` 옵션)에서 실패할 수 있다. 수정 전에는 `(string) $body` 의 raw `\RuntimeException` 이 introspect 와
+     * `ClientCredentialsTokenProvider::getToken()` 밖으로 나갔다(§4). league 레인은 원래부터 `token request failed` 였다.
+     */
+    public function testABodyThatFailsToReadIsAnSdkError(): void
+    {
+        $failing = static function (): FnStream {
+            $fail = static fn (): never => throw new \RuntimeException('tc read failure');
+
+            return new FnStream([
+                '__toString' => $fail, 'getContents' => $fail, 'read' => $fail, 'eof' => static fn (): bool => false,
+                'isSeekable' => static fn (): bool => false, 'isReadable' => static fn (): bool => true, 'getSize' => static fn (): ?int => null,
+                'close' => static fn (): null => null, 'getMetadata' => static fn (): mixed => null,
+            ]);
+        };
+        $handler = static fn (): PromiseInterface => Create::promiseFor(new Response(200, ['Content-Type' => 'application/json'], $failing()));
+        $cfg = new KeycloakConfig('https://kc.test', 'r', 'c', 'tc-client-secret');
+        $http = new GuzzleClient(['handler' => HandlerStack::create($handler)] + HttpOptions::guzzle($cfg));
+        $ep = new OidcEndpoints($cfg);
+        $f = new HttpFactory();
+        $auth = new AuthClient($cfg, $ep, new JwtValidator($cfg, $ep, new JwksStore($ep->jwks(), $http, $f)), $http);
+        $calls = [
+            'introspect' => [static fn (): mixed => $auth->introspect('tc-token'), 'introspection response could not be read'],
+            'cctp' => [static fn (): mixed => (new ClientCredentialsTokenProvider($cfg, $ep, $http, $f, $f))->getToken(), 'token response could not be read'],
+            'cc' => [static fn (): mixed => $auth->clientCredentialsToken(), 'token request failed'],
+        ];
+        foreach ($calls as $lane => [$call, $message]) {
+            try {
+                $call();
+                self::fail("$lane: 읽을 수 없는 본문을 받아들였다");
+            } catch (\Throwable $e) {
+                self::assertInstanceOf(KeycloakTransportError::class, $e, "$lane: " . $e::class . ': ' . $e->getMessage());
+                self::assertSame($message, $e->getMessage(), $lane);
+                self::assertInstanceOf(SanitizedCause::class, $e->getPrevious(), "$lane: 원인은 정화된 사본이다");
+            }
+        }
+    }
+
+    /**
+     * 싱크는 상한+1 바이트까지만 담고 그 경계를 넘기는 청크에서 짧게 쓴다 — curl 은 짧은 쓰기에 전송을 끊고(CURLE_WRITE_ERROR),
+     * psr7 의 복사는 멈춘다. 그 뒤의 쓰기는 0 이다. 상한+1 번째 바이트를 담아 두는 것이 요점이다 — 판독기가 그것으로 「넘었다」를 안다.
+     */
+    public function testTheSinkHoldsAtMostTheCapPlusOneAndRefusesTheRest(): void
+    {
+        $sink = TokenResponseCap::sink();
+        $chunk = str_repeat('b', 16384);   // curl 의 CURL_MAX_WRITE_SIZE
+        $accepted = 0;
+        for ($i = 0; $i < 70; $i++) {
+            $n = $sink->write($chunk);
+            $accepted += $n;
+            if ($n < strlen($chunk)) {
+                break;
+            }
+        }
+        self::assertSame(self::CAP + 1, $sink->getSize(), '싱크가 담은 바이트');
+        self::assertSame(self::CAP + 1, $accepted, '받아들였다고 돌려준 바이트');
+        self::assertSame(0, $sink->write($chunk), '넘은 뒤의 쓰기');
+        self::assertTrue(TokenResponseCap::overflowed($sink));
+        self::assertNull(TokenResponseCap::read($sink));
+
+        $exact = TokenResponseCap::sink();
+        self::assertSame(self::CAP, $exact->write(str_repeat('c', self::CAP)));
+        self::assertFalse(TokenResponseCap::overflowed($exact));
+        self::assertSame(self::CAP, strlen((string) TokenResponseCap::read($exact)));
+    }
+}
