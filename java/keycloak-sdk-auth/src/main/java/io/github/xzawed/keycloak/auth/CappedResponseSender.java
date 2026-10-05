@@ -29,11 +29,12 @@ import java.util.Map;
  * 바뀌는 것은 읽기뿐이다.
  *
  * <p>상한 안의 본문은 Nimbus 와 같은 문자열로 만든다({@link #asNimbusReadsIt}) — 파서가 받는 입력이 지금과 같다. 상한을 넘으면
- * 나머지를 읽지 않고 스트림을 닫은 뒤 {@link TooLarge} 를 던지고, 호출부가 그 레인의 {@code KeycloakTransportException} 으로
- * 바꾼다. SDK 가 요청하는 것은 상한+1 바이트까지다({@link #readWithinCap}). 그 아래 JDK 운송은 소켓을 8 KiB
- * {@code BufferedInputStream} 으로 읽으므로 한 번에 그만큼 더 받아 둘 수 있고, 닫을 때는 이미 도착해 있는 바이트만 막힘 없이 소비한
- * 뒤(청크 본문 {@code hurry()}) 연결을 끊는다 — Content-Length 가 512 KiB 를 넘는 본문은 비우지 않고 끊는다. HttpURLConnection 은
- * 내용 코딩을 풀지 않으므로 센 바이트가 받은 바이트다.
+ * 나머지를 요청하지 않고 스트림을 닫은 뒤 {@link TooLarge} 를 던지고, 호출부가 그 레인의 {@code KeycloakTransportException} 으로
+ * 바꾼다. SDK 가 요청하고 쥐는 것은 상한+1 바이트까지다({@link #readWithinCap}). ⚠️ 연결은 그 너머를 더 읽을 수 있다 — JDK 운송은
+ * 소켓을 8 KiB {@code BufferedInputStream} 으로 읽고, 닫을 때 평문이면 이미 도착한 바이트 너머는 읽지 않지만 청크 본문은 그
+ * 바이트를 읽어 청크로 푼다({@code ChunkedInputStream.hurry()} — 비용이 쌓인 양의 제곱에 비례하고 청크 크기에 반비례한다). HTTPS 면
+ * 청크든 길이든 연결을 끊으며 소켓에 쌓인 바이트를 복호화하지 않고 버리는데({@code SSLSocketInputRecord.deplete}) 바이트가 끊이지
+ * 않고 오는 동안 멈추지 않는다. HttpURLConnection 은 내용 코딩을 풀지 않으므로 센 바이트가 받은 바이트다.
  *
  * <p>인스턴스 상태가 없다 — 호출 하나의 스택에만 사는 값(연결·본문)을 필드로 쥐지 않는다.
  */
