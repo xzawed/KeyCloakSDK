@@ -55,7 +55,8 @@ import java.io.InputStream
  * 읽어 넘침을 알아채면 나머지는 담지 않고 스트림을 닫은 뒤(`closeQuietly` — 닫기의 실패는 버린다) 쓸 수 없는 토큰과 같은 거부를
  * 던진다. 그 읽기(JDK 17·21 의 `InputStream.readNBytes` 기본 구현 — RESTEasy·HttpCore 의 스트림은 재정의하지 않는다)는 남은
  * 길이 너머를 요청하지 않고 **읽은 만큼만** 할당한다. 받는 바이트는 상한이 없다: 실제 연결에서 닫기는 나머지를 끝까지
- * 비운다(HttpCore — 2 KiB 고정 버퍼로 읽지만 HTTPS 면 그 아래 TLS 가 비운 양에 비례해 할당한다).
+ * 비운다(HttpCore — 2 KiB 고정 버퍼로 읽지만 청크 머리마다 문자열을 만들고 HTTPS 면 TLS 도 할당하므로, 할당은 비운
+ * 양에 비례한다).
  *
  * 검사는 Jackson **스트리밍** 파서다 — 데이터 결합·다형 타입이 없고 자체 ObjectMapper 도 아니다(보안 불변식). 최상위
  * `access_token` 은 **전부** 본다 — 결합은 중복 키의 마지막 값을 쓰므로 첫 값만 보면 `{"access_token":"ok","access_token":1}`
