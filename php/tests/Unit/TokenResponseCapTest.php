@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Xzawed\Keycloak\Tests\Unit;
 
 use GuzzleHttp\Client as GuzzleClient;
+use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
@@ -394,6 +396,63 @@ final class TokenResponseCapTest extends TestCase
             }
             self::assertLessThan(intdiv($size, 2), $sent, "$lane: 서버가 {$size} 바이트 본문 중 $sent 바이트를 보냈다 — 전송이 끊기지 않았다");
         }
+    }
+
+    /** @return array<string, array{int, string, int}> 상한을 넘는 admin 토큰 응답 — [본문 바이트, 틀, 상태] */
+    public static function overCapAdminTokenBodies(): array
+    {
+        return [
+            '200 cap+1 cl' => [self::CAP + 1, 'cl', 200],        // 끝까지 받은 응답을 판독기가 거부한다(미들웨어의 이행 갈래)
+            '200 16 MiB cl' => [16 * self::CAP, 'cl', 200],      // curl 이 짧은 쓰기에 끊은 전송(거부 갈래)
+            '400 32 MiB close' => [32 * self::CAP, 'close', 400], // 오류 상태도 같은 거부 갈래
+        ];
+    }
+
+    /** 호출이 던진 것 — 던지지 않았으면 null(PHPUnit 의 실패 예외를 삼키지 않으려고 `try` 밖에서 판정한다). */
+    private static function thrown(\Closure $call): ?\Throwable
+    {
+        try {
+            $call();
+        } catch (\Throwable $e) {
+            return $e;
+        }
+
+        return null;
+    }
+
+    /**
+     * admin 의 탈출구 `raw()` 는 하위 fschmtt 클라이언트와 **그것이 내는 오류**를 내보낸다(§4(b)). 그 길에서 상한을 넘은 토큰 응답은
+     * 하위 라이브러리 계열 — Guzzle 의 `RequestException` — 로 나가야 한다. SDK 내부 클래스가 나가면 `GuzzleException` 을 잡는 소비자가
+     * 놓친다(실측: 이 시험 전에는 `\UnexpectedValueException` 을 잇는 `Internal\ResponseTooLarge` 가 나왔다 — 그 전 ff40a07 은 그
+     * 응답을 받아들였다). 메시지는 상한 문구뿐이고(토큰·시크릿 없음) 응답과 원인을 달지 않는다 — 받은 본문은 토큰을 담는다. 같은 본문을
+     * 파사드로 부르면 오늘의 `KeycloakTransportError`(원인 없음)다. 어느 길이든 admin REST 요청은 나가지 않는다.
+     */
+    #[DataProvider('overCapAdminTokenBodies')]
+    public function testAdminRawGetsAGuzzleExceptionWhileTheFacadeKeepsItsError(int $size, string $framing, int $status): void
+    {
+        $cfg = new KeycloakConfig('http://127.0.0.1:' . self::$port, 'r', 'c', 'tc-client-secret', readTimeout: 30.0);
+        $spec = ['size' => $size, 'framing' => $framing, 'status' => $status];
+
+        self::serve('token', $spec);
+        $raw = KeycloakClient::create($cfg)->admin()->raw();
+        $e = self::thrown(static fn (): int => count($raw->users()->all('r')));
+        self::assertInstanceOf(GuzzleException::class, $e, 'raw(): ' . ($e === null ? 'success' : $e::class . ': ' . $e->getMessage()));
+        self::assertInstanceOf(RequestException::class, $e);
+        self::assertStringStartsWith('GuzzleHttp\\Exception\\', $e::class, 'raw() 가 내보내는 것은 하위 라이브러리의 클래스다');
+        self::assertSame('admin token response exceeds 1048576 bytes', $e->getMessage());
+        foreach (['tc-client-secret', 'eyJ', str_repeat('A', 32)] as $secret) {   // 시크릿 · 가짜 IdP 토큰의 머리와 서명 조각
+            self::assertStringNotContainsString($secret, $e->getMessage());
+        }
+        self::assertFalse($e->hasResponse(), '받은 본문(토큰을 담는다)을 달지 않는다');
+        self::assertNull($e->getPrevious());
+        self::assertSame([], self::adminRequests(), 'raw(): 토큰 부여가 실패하면 admin REST 요청은 없다');
+
+        self::serve('token', $spec);
+        $facade = self::thrown(static fn (): int => count(KeycloakClient::create($cfg)->admin()->users()->search()));
+        self::assertInstanceOf(KeycloakTransportError::class, $facade, '파사드: ' . ($facade === null ? 'success' : $facade::class));
+        self::assertSame('admin token response exceeds 1048576 bytes', $facade->getMessage());
+        self::assertNull($facade->getPrevious());
+        self::assertSame([], self::adminRequests(), '파사드: 토큰 부여가 실패하면 admin REST 요청은 없다');
     }
 
     /**

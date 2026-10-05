@@ -20,7 +20,7 @@ use Xzawed\Keycloak\Exception\KeycloakNotFoundError;
 use Xzawed\Keycloak\Exception\KeycloakTransportError;
 use Xzawed\Keycloak\Exception\SanitizedCause;
 use Xzawed\Keycloak\Internal\OAuthErrorCode;
-use Xzawed\Keycloak\Internal\ResponseTooLarge;
+use Xzawed\Keycloak\Internal\TokenResponseCap;
 
 /**
  * fschmtt는 Guzzle 예외를 변환하지 않으므로(404/409/403 전부 raw ClientException) 경계에서 여기로 변환한다.
@@ -70,14 +70,16 @@ final class ErrorTranslation
         } catch (ConnectException $e) {
             throw new KeycloakTransportError('admin request unreachable', previous: SanitizedCause::of($e));
         } catch (RequestException $e) {
+            if (TokenResponseCap::isRejection($e)) {
+                // admin 의 토큰 응답이 상한을 넘었다(`AdminClient` 의 미들웨어) — 토큰 부여에서 끝나 admin REST 요청은 나가지 않았다.
+                // 메시지는 그 미들웨어가 만든 상한 문구다. ⚠️ 원인을 달지 않는다 — 그 예외의 트레이스는 Guzzle `request()` 의
+                // `form_params`(client_secret) 프레임 인자를 쥔다.
+                throw new KeycloakTransportError($e->getMessage());
+            }
             throw new KeycloakTransportError('admin request failed', previous: SanitizedCause::of($e));
         } catch (BuilderException $e) {
             // fschmtt Builder 의 고정 문구 둘(`Base URL is not set`·`Grant type is not set`) — 네트워크 앞이라 응답·토큰이 없다.
             throw new KeycloakConfigError($e->getMessage(), previous: SanitizedCause::of($e));
-        } catch (ResponseTooLarge $e) {
-            // admin 의 토큰 응답이 상한을 넘었다(`AdminClient` 의 미들웨어) — 토큰 부여에서 끝나 admin REST 요청은 나가지 않았다.
-            // ⚠️ 원인을 달지 않는다 — 그 예외의 트레이스는 Guzzle `request()` 의 `form_params`(client_secret) 프레임 인자를 쥔다.
-            throw new KeycloakTransportError($e->getMessage());
         } catch (KeycloakException $e) {
             throw $e;   // 우리 자신의 SDK 예외 — 재래핑하지 않는다.
         } catch (\Throwable $e) {

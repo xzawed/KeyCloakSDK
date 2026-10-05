@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Xzawed\Keycloak\Internal;
 
+use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
 use GuzzleHttp\Psr7\FnStream;
@@ -41,6 +42,9 @@ final class TokenResponseCap
 
     /** 판독기가 한 번에 청하는 바이트 — PHP `fread` 는 청한 길이만큼 미리 잡으므로 상한을 한 번에 청하지 않는다. */
     private const READ_CHUNK_BYTES = 8192;
+
+    /** admin 미들웨어의 상한 거부를 다른 `RequestException` 과 가르는 Guzzle handler context 키 — 그 미들웨어만 단다(`isRejection`). */
+    private const REJECTION = 'xzawed_keycloak_token_response_cap';
 
     /**
      * 본문 전부를 많아야 상한 바이트까지 읽는다 — 넘으면 null. 스트림에 청하는 바이트는 합해서 상한+1 을 넘지 않고, 문자열은 읽은 만큼만
@@ -104,8 +108,14 @@ final class TokenResponseCap
 
     /**
      * admin 레인의 핸들러 스택 미들웨어 — `$isTokenRequest` 가 고르는 요청(fschmtt 의 토큰 부여)에만 싱크를 달고, 받은 본문을 판독기로
-     * 한 번 읽어 같은 바이트의 새 본문으로 바꿔 넘긴다. 넘으면 `ResponseTooLarge`(`$what`)로 거부한다 — 그 요청은 여기서 끝나고
-     * admin REST 요청은 나가지 않는다. 그 밖의 요청(사용자 목록처럼 정당하게 큰 admin 응답)은 건드리지 않는다.
+     * 한 번 읽어 같은 바이트의 새 본문으로 바꿔 넘긴다. 넘으면 그 요청을 Guzzle `RequestException`(메시지 `"$what exceeds 1048576
+     * bytes"`)으로 거부한다 — 요청은 여기서 끝나고 admin REST 요청은 나가지 않는다. 그 밖의 요청(사용자 목록처럼 정당하게 큰 admin
+     * 응답)은 건드리지 않는다.
+     *
+     * ⚠️ 거부가 SDK 예외가 아니라 Guzzle 의 것인 이유: 이 스택은 `AdminClient::raw()` 가 내보내는 fschmtt 클라이언트의 것이라, 여기서
+     * 던진 것은 탈출구를 쓰는 소비자에게 **그대로** 닿는다(§4(b) — raw() 는 하위 클라이언트와 그것이 내는 오류를 내보낸다). 그래서
+     * 그 소비자가 잡는 하위 계열(`GuzzleException`)이어야 하고, 메시지는 상한 문구뿐이며 응답(받은 본문 — 토큰을 담는다)과 원인을 달지
+     * 않는다. 파사드 쪽은 `Admin\ErrorTranslation` 이 `isRejection()` 으로 가려 원인 없는 `KeycloakTransportError` 로 바꾼다.
      *
      * ⚠️ 스택의 **맨 안쪽**(`push`)에 둔다 — http_errors 보다 먼저 응답을 받아야 4xx 의 오류 본문도 상한을 지나고, 그 미들웨어와
      * `Admin\ErrorTranslation` 이 되감을 수 있는 본문을 본다.
@@ -123,23 +133,35 @@ final class TokenResponseCap
             $options['sink'] = $sink;
 
             return self::promise($handler($request, $options))->then(
-                static function (ResponseInterface $response) use ($what): ResponseInterface {
+                static function (ResponseInterface $response) use ($request, $what): ResponseInterface {
                     $body = self::read($response->getBody());
                     if ($body === null) {
-                        throw new ResponseTooLarge($what);
+                        throw self::rejection($request, $what);
                     }
 
                     return $response->withBody(Utils::streamFor($body));
                 },
-                static function (mixed $reason) use ($sink, $what): PromiseInterface {
+                static function (mixed $reason) use ($request, $sink, $what): PromiseInterface {
                     if (self::overflowed($sink)) {
-                        throw new ResponseTooLarge($what);   // curl 이 짧은 쓰기에 끊은 전송(CURLE_WRITE_ERROR)
+                        throw self::rejection($request, $what);   // curl 이 짧은 쓰기에 끊은 전송(CURLE_WRITE_ERROR)
                     }
 
                     return Create::rejectionFor($reason);
                 },
             );
         };
+    }
+
+    /** 미들웨어의 상한 거부인가 — `Admin\ErrorTranslation` 이 다른 `RequestException`(전송 실패)과 가른다. */
+    public static function isRejection(\Throwable $e): bool
+    {
+        return $e instanceof RequestException && ($e->getHandlerContext()[self::REJECTION] ?? null) === true;
+    }
+
+    /** 상한 거부 — 요청만 달고(응답·원인 없음) 표시를 handler context 에 둔다. 메시지는 `ResponseTooLarge` 와 같은 꼴이다. */
+    private static function rejection(RequestInterface $request, string $what): RequestException
+    {
+        return new RequestException(sprintf('%s exceeds %d bytes', $what, self::TOKEN_RESPONSE_MAX_BYTES), $request, null, null, [self::REJECTION => true]);
     }
 
     /**
