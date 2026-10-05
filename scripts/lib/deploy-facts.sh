@@ -161,9 +161,9 @@ df_coordinate() { case "$1" in   # 레지스트리상 패키지 식별자(사람
 # `DF_PUBLISHED`가 지켰지만 **버전 문자열은 아무도 지키지 않았다** — 같은 사실의 다른 축이고,
 # 소비자가 실제로 복사해 가는 쪽은 버전이다.
 df_published_version() { case "$1" in
-  php) echo "1.3.0" ;; python) echo "1.0.3" ;; dotnet) echo "1.0.3" ;;
-  rust) echo "1.1.2" ;; ruby) echo "1.2.0" ;; node) echo "1.0.3" ;;
-  java) echo "1.0.4" ;; kotlin) echo "1.0.4" ;; go) echo "1.2.1" ;;
+  php) echo "1.4.0" ;; python) echo "1.0.4" ;; dotnet) echo "1.0.4" ;;
+  rust) echo "1.1.3" ;; ruby) echo "1.3.0" ;; node) echo "1.0.4" ;;
+  java) echo "1.1.0" ;; kotlin) echo "1.0.5" ;; go) echo "1.2.2" ;;
   *) echo "" ;; esac; }
 
 # 공개 API 게이트가 대조하는 **직전 게시본**. 일곱 레인이 이 값을 리터럴로 들고 있고
