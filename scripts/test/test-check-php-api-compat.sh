@@ -79,4 +79,45 @@ assert_contains "$out" "접두가 아니다" "중간 삽입은 접두 조건으�
 # (3) 비-final 이면 하위 클래스의 오버라이드가 깨진다 → MAJOR.
 assert_fails node "$GUARD" --report "$FIX/report-v010-open.txt" --base "$FIX/v010-base" --new "$FIX/v010-open"
 out=$(node "$GUARD" --report "$FIX/report-v010-open.txt" --base "$FIX/v010-open" --new "$FIX/v010-open" 2>&1 || true)
+
+# ── V016: final 클래스에 protected 메서드가 늘었다 ───────────────────────────
+# V015 와 같은 술어다 — 하위 클래스가 있을 수 없다. protected 가 바깥에 닿는 나머지 길(같은 조상을
+# 상속한 형제)은 조상이 선언한 메서드 = 재정의에만 열리고, 그 메서드는 재정의 이전에도 닿았다.
+# 이 절의 픽스처 행은 전부 php-semver-checker 0.17.0 이 같은 트리 쌍에 실제로 낸 출력이다.
+assert_ok node "$GUARD" --report "$FIX/report-final-add-protected.txt" --base "$FIX/base" --new "$FIX/final-add-protected"
+out=$(node "$GUARD" --report "$FIX/report-final-add-protected.txt" --base "$FIX/base" --new "$FIX/final-add-protected" 2>&1 || true)
+assert_contains "$out" "면제 1건" "final 클래스의 V016 은 면제된다"
+assert_contains "$out" "final class Alpha — 상속 불가" "V016 면제 사유를 찍는다"
+
+# 대조군: **비-final** 이면 하위 클래스가 같은 이름을 이미 가졌을 수 있다 → 진짜 MAJOR.
+# ⚠️ 사유까지 본다 — 「면제 술어에 해당하지 않는다」로 떨어져도 종료코드는 같아서, 사유가 없으면
+# V016 이 final 술어를 거쳤는지를 이 대조군이 증명하지 못한다.
+assert_fails node "$GUARD" --report "$FIX/report-open-add-protected.txt" --base "$FIX/base" --new "$FIX/open-add-protected"
+out=$(node "$GUARD" --report "$FIX/report-open-add-protected.txt" --base "$FIX/base" --new "$FIX/open-add-protected" 2>&1 || true)
+assert_contains "$out" "final 이 아니다" "비-final 클래스의 V016 은 final 술어가 거부"
+
+# ⚠️ 대조군: **매직 메서드**는 final 이어도 면제하지 않는다 — 이름 충돌이 아니라 엔진 연산을 바꾼다.
+# protected __construct·__clone 은 바깥의 new·clone 을 막는다(도구는 V016 으로 낸다).
+assert_fails node "$GUARD" --report "$FIX/report-final-add-protected-ctor.txt" --base "$FIX/base" --new "$FIX/final-add-protected-ctor"
+out=$(node "$GUARD" --report "$FIX/report-final-add-protected-ctor.txt" --base "$FIX/base" --new "$FIX/final-add-protected-ctor" 2>&1 || true)
+assert_contains "$out" "매직 메서드" "final 클래스의 protected __construct 추가(V016)는 거부"
+assert_fails node "$GUARD" --report "$FIX/report-final-add-protected-clone.txt" --base "$FIX/base" --new "$FIX/final-add-protected-clone"
+out=$(node "$GUARD" --report "$FIX/report-final-add-protected-clone.txt" --base "$FIX/base" --new "$FIX/final-add-protected-clone" 2>&1 || true)
+assert_contains "$out" "매직 메서드" "final 클래스의 protected __clone 추가(V016)는 거부"
+
+# V015 도 매직 메서드를 싣는다 — public __construct(int $x) 추가는 기존 `new Alpha()` 를 깨는데
+# 도구는 그것을 V015 로 낸다. 이 대조군 전에는 (1) 이 그것을 MINOR 로 면제했다.
+assert_fails node "$GUARD" --report "$FIX/report-final-add-public-ctor.txt" --base "$FIX/base" --new "$FIX/final-add-public-ctor"
+out=$(node "$GUARD" --report "$FIX/report-final-add-public-ctor.txt" --base "$FIX/base" --new "$FIX/final-add-public-ctor" 2>&1 || true)
+assert_contains "$out" "매직 메서드" "final 클래스의 public __construct 추가(V015)는 거부"
+
+# ── 회귀: #723 이 실제로 받은 리포트 ─────────────────────────────────────────
+# report-pkce-override.txt 는 run 37253446893 의 리포트 그대로다(로그 접두만 뗐다). final 인
+# PkceKeycloakProvider 가 league AbstractProvider 의 getResponse(V015)·parseResponse(V016)를
+# 재정의했고, V016 이 면제 밖이라 「파괴적 변경 1건」으로 막혔다. 소스 쌍은 그 클래스의 축약본이다.
+assert_ok node "$GUARD" --report "$FIX/report-pkce-override.txt" --base "$FIX/pkce-base" --new "$FIX/pkce-override"
+out=$(node "$GUARD" --report "$FIX/report-pkce-override.txt" --base "$FIX/pkce-base" --new "$FIX/pkce-override" 2>&1 || true)
+assert_contains "$out" "표 26행 · MAJOR 2행" "실제 리포트의 26행·MAJOR 2행을 그대로 파싱"
+assert_contains "$out" "면제 2건" "getResponse(V015)·parseResponse(V016) 둘 다 면제"
+assert_contains "$out" "남은 MAJOR 0건" "실제 리포트가 게이트를 통과한다"
 assert_report

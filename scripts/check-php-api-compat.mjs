@@ -5,8 +5,9 @@
 // 「기본값이 바뀌었다」(V097)고, 대소문자를 바꾸지 않은 클래스명을 「대소문자가 바뀌었다」(V154)고
 // 보고한다. 최소 A/B 로 확인했다 — `php-v1.0.0` 의 KeycloakConfig 에 `implements \JsonSerializable`
 // **한 절만** 넣고 다른 문자는 하나도 건드리지 않은 트리가 그 둘을 그대로 낸다.
-// 또 `final` 클래스에 public 메서드를 더하는 것(V015)은 상속이 불가능하므로 semver 상 MINOR 인데
-// 도구는 무조건 MAJOR 로 센다.
+// 또 `final` 클래스에 public·protected 메서드를 더하는 것(V015·V016)은 상속이 불가능하므로 semver 상
+// MINOR 인데 도구는 무조건 MAJOR 로 센다 — 도구의 docs/Ruleset.md 가 바로 그 둘을 V017·V018(MINOR)로
+// 적어 두고 「미구현」으로 표시한 자리다. 매직 메서드(`__*`)는 그 예외로 남긴다(아래 (1)).
 //
 // ⚠️ **블랭킷 억제가 아니다.** 면제는 셋뿐이고 각각 **소스로 반증 가능한 술어**를 통과해야 한다 —
 // 술어가 거짓이면(진짜로 바뀌었으면) 면제되지 않고 MAJOR 로 남는다. 그래서 이 스크립트는
@@ -178,8 +179,29 @@ for (const r of majors) {
   const newSrc = readSrc(newDir, r.location)
   const oldSrc = readSrc(baseDir, r.location)
 
-  // (1) V015 — final 클래스에 메서드가 늘었다. 상속이 불가능하므로 충돌할 수 없다 = MINOR.
-  if (r.code === 'V015' && /Method has been added/i.test(r.reason)) {
+  // (1) V015·V016 — final 클래스에 public·protected 메서드가 늘었다 = MINOR.
+  //
+  // 상속이 불가능하므로 하위 클래스의 같은 이름과 충돌할 수 없다. protected 는 바깥에 닿는 길이 하나 더
+  // 있다 — PHP 는 protected 접근을 그 메서드를 **처음 선언한 클래스** 기준으로 판정해서, 같은 조상을
+  // 상속한 형제 클래스는 조상이 선언한 메서드에 닿는다. 그래서 final 클래스에서 그 길로 닿는 것은
+  // **재정의**뿐인데, 재정의된 메서드는 그 전에도 상속된 채 같은 길로 닿았다(시그니처 호환은 PHP 가 링크
+  // 시점에 강제한다) — 호출 가능한 표면이 늘지 않는다. 조상이 선언하지 않은 새 protected 에는 형제가
+  // 닿지 못한다(조상 **자신**의 코드는 닿지만 그것은 상류 코드지 소비자가 아니다).
+  //
+  // ⚠️ 매직 메서드(`__` 로 시작 — PHP 가 예약한 접두)는 final 이어도 면제하지 않는다. 위 논증은 이름
+  // 충돌에 관한 것인데 매직 메서드는 엔진이 연산에 쓰는 자리라 덮이지 않는다 — protected __construct·
+  // __clone·__destruct 를 더하면 바깥의 new·clone·소멸이 Error 가 되고(도구는 V016 으로 낸다), public
+  // __construct 를 더하면 기존 `new` 호출이 깨진다(도구는 V015 로 낸다). 목록이 아니라 접두로 거른다 —
+  // 매직 메서드 목록은 PHP 버전마다 늘었다.
+  if ((r.code === 'V015' || r.code === 'V016') && /Method has been added/i.test(r.reason)) {
+    const method = r.target.includes('::') ? r.target.split('::')[1] : ''
+    if (method.startsWith('__')) {
+      remaining.push({
+        r,
+        why: `${method}() 는 매직 메서드다 — 엔진이 연산(생성·복제·소멸…)에 쓰는 이름이라 final 이어도 기존 사용을 깰 수 있다`,
+      })
+      continue
+    }
     if (newSrc != null && new RegExp(`\\bfinal\\b[^\\n]*\\bclass\\s+${short}\\b`).test(newSrc)) {
       exemptions.push({ r, why: `final class ${short} — 상속 불가라 메서드 추가가 충돌을 만들 수 없다 (MINOR)` })
       continue
