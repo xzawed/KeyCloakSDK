@@ -35,6 +35,10 @@ module KeycloakSdk
     # ⚠️ nil·공백은 생성자와 같이 ConfigError — ruby-jwt 는 `aud: nil` 이면 aud 검사를 건너뛴다.
     def validate(token, audience: @audience)
       raise ConfigError, "audience is required" if audience.nil? || audience.to_s.strip.empty?
+      # ⚠️ ruby-jwt 는 맨 먼저 토큰을 `split` 하고, 잘못된 UTF-8 이면 그것이 raw ArgumentError 다(실측).
+      if token.is_a?(String) && !token.valid_encoding?
+        raise TokenValidationError, "JWT validation failed: token is not valid UTF-8"
+      end
 
       payload, = JWT.decode(token, nil, true, decode_options(audience))
       to_validated(payload)

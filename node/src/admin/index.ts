@@ -2,7 +2,7 @@ import KcAdminClient from '@keycloak/keycloak-admin-client'
 import type { KeycloakConfig } from '../config.js'
 import { KeycloakConfigError } from '../errors.js'
 import type { TokenProvider } from '../token-provider.js'
-import { call } from './call.js'
+import { call, sendableBearer } from './call.js'
 import { ClientsResource } from './clients.js'
 import { GroupsResource } from './groups.js'
 import { RealmsResource } from './realms.js'
@@ -74,10 +74,16 @@ export class AdminClient {
       requestOptions: { redirect: 'manual' },
     })
     // 매 요청 admin-client는 이 provider에서 액세스 토큰을 얻는다(만료 시 provider가 재인증).
-    kc.registerTokenProvider({ getAccessToken: () => tokenProvider.getAccessToken() })
+    // ⚠️ admin-client 가 그 토큰으로 헤더를 짓기 **직전**의 SDK 쪽 마지막 자리라 여기서 Bearer 로 실을 수 있는지
+    // 묻는다(`sendableBearer`) — 못 실으면 undici 의 raw `TypeError` 가 토큰을 통째로 인용했다. 탈출구 `raw()` 의
+    // 요청도 이 공급자를 지난다.
+    kc.registerTokenProvider({
+      getAccessToken: async () => sendableBearer(await tokenProvider.getAccessToken()),
+    })
     // 초기 자격증명 검증(fail-fast) + provider 캐시 워밍. call()로 감싸 401·전송 실패가 raw fetch
     // 오류로 누출되지 않고 SDK 예외(KeycloakAdminError/KeycloakTransportError)로 변환되도록(§4 경계).
-    await call(() => tokenProvider.getAccessToken())
+    // 실을 수 없는 Bearer 도 여기서 거부한다 — 첫 요청까지 미루지 않는다.
+    await call(async () => sendableBearer(await tokenProvider.getAccessToken()))
     return new AdminClient(kc, config.realm)
   }
 

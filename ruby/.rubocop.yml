@@ -22,8 +22,10 @@ Metrics/AbcSize:
 # AuthClient는 8개 인증 흐름(create_authorization_request·exchange_code·refresh·
 # client_credentials·access_token·introspect·logout·validate)에 PKCE·nonce 재생방지까지
 # 한 파사드에 모으는 관용 SDK 진입점이라 기본 100줄을 소폭 넘는다(자매 SDK의 AuthClient 동형).
+# 115 → 140 (2026-10-05): 세 그랜트를 rack-oauth2 의 연결이 아니라 SDK 커넥션으로 직접 보낸다(토큰 응답 1 MiB
+# 상한 — rack-oauth2 는 자기 연결로 본문을 통째로 읽는다). 클라이언트 인증·rack-oauth2 의 응답 규칙이 이 클래스로 왔다.
 Metrics/ClassLength:
-  Max: 115
+  Max: 140
 # 키워드 인자는 이름이 곧 문서화라 위치 인자 목록과 달리 가독성을 해치지 않는다
 # (예: Config#initialize의 8개 키워드 인자).
 Metrics/ParameterLists:
