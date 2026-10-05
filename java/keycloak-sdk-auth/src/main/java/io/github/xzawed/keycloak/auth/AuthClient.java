@@ -68,6 +68,8 @@ public class AuthClient {
     return algs;
   }
   // Nimbus HTTPRequest에 KeycloakConfig 타임아웃 적용 후 전송 (3.4~3.7 공용 헬퍼)
+  // ⚠️ 전송은 req.send() 가 아니라 CappedResponseSender.send(req, …) 다 — Nimbus send() 는 응답 본문을 크기 제한 없이 담는다
+  // (32 MiB 본문에 호출 하나가 약 235 MB 할당 — TokenResponseCapTest). 다섯 호출부 모두 그것을 지난다.
   HTTPRequest applyTimeouts(HTTPRequest req) {
     req.setConnectTimeout((int) config.getConnectTimeout().toMillis());
     req.setReadTimeout((int) config.getReadTimeout().toMillis());
@@ -135,7 +137,7 @@ public class AuthClient {
       // OIDC 인지 파서로 파싱해야 id_token이 보존된다(플레인 TokenResponse.parse는 Tokens만
       // 만들고 OIDCTokens/id_token을 인지하지 못한다).
       HTTPRequest req = applyTimeouts(buildExchangeCodeRequest(code, redirectUri, codeVerifier));
-      TokenResponse resp = OIDCTokenResponseParser.parse(req.send());
+      TokenResponse resp = OIDCTokenResponseParser.parse(CappedResponseSender.send(req, "token"));
       if (!resp.indicatesSuccess()) {
         var err = resp.toErrorResponse().getErrorObject();
         throw new KeycloakAuthException("Authorization code exchange failed: "
@@ -143,7 +145,7 @@ public class AuthClient {
       }
       tokenSet = toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
     } catch (java.io.IOException e) {
-      throw new KeycloakTransportException("Authorization code exchange transport failure", e);
+      throw transportFailure("Authorization code exchange", e);
     } catch (com.nimbusds.oauth2.sdk.ParseException e) {
       throw new KeycloakAuthException("Authorization code exchange request error", null, e);
     }
@@ -204,7 +206,7 @@ public class AuthClient {
           .build();
       long issuedAt = Instant.now().getEpochSecond();
       HTTPRequest req = applyTimeouts(tr.toHTTPRequest());
-      TokenResponse resp = TokenResponse.parse(req.send());
+      TokenResponse resp = TokenResponse.parse(CappedResponseSender.send(req, "token"));
       if (!resp.indicatesSuccess()) {
         var err = resp.toErrorResponse().getErrorObject();
         throw new KeycloakAuthException("Client credentials failed: "
@@ -212,7 +214,7 @@ public class AuthClient {
       }
       return toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
     } catch (java.io.IOException e) {
-      throw new KeycloakTransportException("Client credentials transport failure", e);
+      throw transportFailure("Client credentials", e);
     } catch (com.nimbusds.oauth2.sdk.ParseException e) {
       throw new KeycloakAuthException("Client credentials request error", null, e);
     }
@@ -225,7 +227,7 @@ public class AuthClient {
     try {
       long issuedAt = Instant.now().getEpochSecond();
       HTTPRequest req = applyTimeouts(buildRefreshRequest(refreshToken));
-      TokenResponse resp = TokenResponse.parse(req.send());
+      TokenResponse resp = TokenResponse.parse(CappedResponseSender.send(req, "token"));
       if (!resp.indicatesSuccess()) {
         var err = resp.toErrorResponse().getErrorObject();
         throw new KeycloakAuthException("Token refresh failed: "
@@ -233,7 +235,7 @@ public class AuthClient {
       }
       return toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
     } catch (java.io.IOException e) {
-      throw new KeycloakTransportException("Token refresh transport failure", e);
+      throw transportFailure("Token refresh", e);
     } catch (com.nimbusds.oauth2.sdk.ParseException e) {
       throw new KeycloakAuthException("Token refresh request error", null, e);
     }
@@ -253,12 +255,12 @@ public class AuthClient {
 
   public void logout(String refreshToken) {
     try {
-      HTTPResponse resp = applyTimeouts(buildLogoutRequest(refreshToken)).send();
+      HTTPResponse resp = CappedResponseSender.send(applyTimeouts(buildLogoutRequest(refreshToken)), "logout");
       if (!resp.indicatesSuccess()) {
         throw new KeycloakAuthException("Logout failed (HTTP " + resp.getStatusCode() + ")", null, null);
       }
     } catch (java.io.IOException e) {
-      throw new KeycloakTransportException("Logout transport failure", e);
+      throw transportFailure("Logout", e);
     }
   }
 
@@ -291,7 +293,7 @@ public class AuthClient {
   public IntrospectionResult introspect(String token) {
     try {
       HTTPRequest req = applyTimeouts(buildIntrospectionRequest(token));
-      TokenIntrospectionResponse tir = TokenIntrospectionResponse.parse(req.send());
+      TokenIntrospectionResponse tir = TokenIntrospectionResponse.parse(CappedResponseSender.send(req, "introspection"));
       if (!tir.indicatesSuccess()) {
         var err = tir.toErrorResponse().getErrorObject();
         throw new KeycloakAuthException("Introspection failed: "
@@ -299,10 +301,17 @@ public class AuthClient {
       }
       return toIntrospectionResult(tir.toSuccessResponse());
     } catch (java.io.IOException e) {
-      throw new KeycloakTransportException("Introspection transport failure", e);
+      throw transportFailure("Introspection", e);
     } catch (com.nimbusds.oauth2.sdk.ParseException e) {
       throw new KeycloakAuthException("Introspection request error", null, e);
     }
+  }
+
+  // 전송 실패 — 상한을 넘는 응답(CappedResponseSender.TooLarge)도 IOException 이라 같은 타입으로 던지되, 메시지는 무엇이
+  // 상한을 넘었는지 말한다(응답을 인용하지 않는다). 그 밖의 IOException 은 지금까지의 「… transport failure」 그대로다.
+  private static KeycloakTransportException transportFailure(String operation, java.io.IOException e) {
+    return new KeycloakTransportException(e instanceof CappedResponseSender.TooLarge
+        ? operation + " failed: " + e.getMessage() : operation + " transport failure", e);
   }
 
   // introspect()의 send() 이전 요청 구성만 분리: send() 없이 HTTP method/endpoint/content-type/

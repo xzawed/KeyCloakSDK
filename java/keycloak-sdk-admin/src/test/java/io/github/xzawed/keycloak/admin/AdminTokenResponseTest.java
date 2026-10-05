@@ -267,14 +267,15 @@ class AdminTokenResponseTest {
   }
 
   /**
-   * 크기 상한 — 토큰 응답 본문이 가드의 상한({@link TokenResponseGuard#MAX_BODY_BYTES})을 넘으면 그 안의 토큰이 쓸 수 있어도
-   * 쓸 수 없는 토큰과 똑같이 거부한다 — KeycloakTransportException · admin 요청 0 건 · 토큰 요청 1 건. 상한 안의 쓸 수 있는
+   * 크기 상한 — 토큰 응답 본문이 상한(1,048,576 바이트 — {@link io.github.xzawed.keycloak.core.ResponseLimits}, auth 레인과 함께
+   * 쓰는 값)을 넘으면 그 안의 토큰이 쓸 수 있어도 쓸 수 없는 토큰과 똑같이 거부한다 — KeycloakTransportException · admin 요청
+   * 0 건 · 토큰 요청 1 건. 상한은 리터럴로 고정한다(SDK 상수를 빌리면 그 값이 바뀌어도 시험이 따라 움직인다). 상한 안의 쓸 수 있는
    * 토큰은 평문·gzip 모두 그대로 동작한다. 판정은 결합이 읽는 바이트로 하므로 gzip 은 <b>푼</b> 크기로 잰다. 본문은 쓸 수 있는
    * 토큰 뒤를 JSON 공백으로 채운 것이다 — 가드 없이 결합만 있으면 스트리밍으로 통과하는 모양이고, 본문을 통째로 버퍼링하던
    * 가드는 힙보다 크면 OutOfMemoryError 를 냈다.
    */
   @Test void tokenResponseAboveTheCap_isRejectedLikeAnUnusableToken() throws IOException {
-    int cap = TokenResponseGuard.MAX_BODY_BYTES;
+    int cap = 1_048_576;
     List<String> table = new ArrayList<>();
     List<String> wrong = new ArrayList<>();
     String body = tokenBody("\"good\"", ",\"refresh_token\":\"" + RT_CANARY + "\"");
@@ -386,7 +387,7 @@ class AdminTokenResponseTest {
    */
   private final class RawEndpoint implements AutoCloseable {
     /** 첫 부분(쓸 수 있는 토큰 + 공백) — 상한+1 보다 커서 가드는 그 앞 상한+1 바이트만 읽고 거부한다. */
-    private static final int FIRST = TokenResponseGuard.MAX_BODY_BYTES + 10_000;
+    private static final int FIRST = 1_048_576 + 10_000;
     private final ServerSocket socket;
     private volatile ReleaseFault fault = ReleaseFault.BAD_CHUNK_HEADER;
     private volatile int status = 200;
@@ -615,5 +616,39 @@ class AdminTokenResponseTest {
     assertEquals(List.of("client_credentials", "refresh_token", "client_credentials"), grants());
     assertEquals(List.of("GET /admin/realms/r/users/x · Bearer AT-1", "GET /admin/realms/r/users/x · Bearer AT-3"),
         adminHits());
+  }
+
+  /**
+   * 오류 상태의 토큰 응답 본문도 상한(1,048,576 바이트)까지만 읽는다. 상한 안의 갱신 400 은 지금처럼 TokenManager 에 넘어가
+   * client_credentials 로 다시 부여되고({@link #tokenErrorStatus_isLeftToTokenManager} 의 복구 경로), 한 바이트 더 길면 그 응답은
+   * 거부되어 admin 요청 없이 {@link KeycloakTransportException} 으로 실패한다. 수정 전에는 RESTEasy 가 오류 본문을 통째로 버퍼에
+   * 담았다 — 32 MiB 오류 본문 하나에 약 107 MB 할당(실측 — 공개 API 행렬은 {@code TokenResponseCapTest}). 상한은 리터럴로 고정한다.
+   */
+  @Test void tokenErrorStatus_isReadUpToTheCapOnly() {
+    int cap = 1_048_576;
+    String first = tokenBody("\"AT-1\"", ",\"refresh_token\":\"RT-1\",\"refresh_expires_in\":300")
+        .replace("\"expires_in\":300", "\"expires_in\":1");
+    String error = "{\"error\":\"invalid_grant\",\"error_description\":\"" + RT_CANARY + "\"}";
+    reset(new Reply(200, first), new Reply(400, padTo(error, cap), null), new Reply(200, tokenBody("\"AT-3\"", "")));
+    try (AdminClient admin = admin()) {
+      admin.users().get("x");
+      admin.users().get("x");
+    }
+    assertEquals(List.of("client_credentials", "refresh_token", "client_credentials"), grants(), "상한 안: 복구 경로");
+    assertEquals(List.of("GET /admin/realms/r/users/x · Bearer AT-1", "GET /admin/realms/r/users/x · Bearer AT-3"),
+        adminHits());
+
+    reset(new Reply(200, first), new Reply(400, padTo(error, cap + 1), null), new Reply(200, tokenBody("\"AT-3\"", "")));
+    try (AdminClient admin = admin()) {
+      admin.users().get("x");
+      KeycloakTransportException e = assertThrows(KeycloakTransportException.class, () -> admin.users().get("x"),
+          "상한+1: 오류 본문을 거부해야 한다(복구로 가면 그 본문을 통째로 읽은 것이다)");
+      assertEquals("admin transport failure", e.getMessage());
+      StringWriter trace = new StringWriter();
+      e.printStackTrace(new PrintWriter(trace, true));
+      assertFalse(trace.toString().contains(RT_CANARY.substring(0, 10)), "거부가 응답을 인용했다");
+    }
+    assertEquals(List.of("client_credentials", "refresh_token"), grants(), "상한+1: 다시 부여하지 않는다");
+    assertEquals(List.of("GET /admin/realms/r/users/x · Bearer AT-1"), adminHits(), "상한+1: admin 요청이 더 나가면 안 된다");
   }
 }

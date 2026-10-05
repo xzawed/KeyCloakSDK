@@ -116,8 +116,7 @@ class TokenResponseGuardTest {
         new Object[] {"GET", "http://kc/admin/realms/r/users/x", Response.Status.OK},
         // ⚠️ 원시 경로로 본다 — 렐름 이름의 %2F 가 경로 조각을 지어내지 못한다
         new Object[] {"POST", "http://kc/admin/realms/a%2Fprotocol%2Fopenid-connect%2Ftoken", Response.Status.OK},
-        new Object[] {"POST", TOKEN, Response.Status.BAD_REQUEST},                             // 오류는 TokenManager 몫
-        new Object[] {"POST", TOKEN, Response.Status.UNAUTHORIZED},
+        new Object[] {"POST", "http://kc/admin/realms/r/users", Response.Status.BAD_REQUEST},  // admin 자원의 오류는 상한 밖
         new Object[] {"POST", TOKEN + "/introspect", Response.Status.OK});
     for (Object[] o : others) {
       ClientRequestContext req = request((String) o[0], (String) o[1]);
@@ -127,6 +126,48 @@ class TokenResponseGuardTest {
       verify(res, never()).getEntityStream();
       verify(res, never()).setEntityStream(any());
       verify(req, never()).setProperty(any(), any()); // 표시가 없으면 ReaderInterceptor 도 그 엔티티를 보지 않는다
+    }
+  }
+
+  /**
+   * 토큰 엔드포인트의 오류 상태는 판정하지 않고 TokenManager 에 넘긴다(갱신 400 → client_credentials 재부여의 복구 경로) — 그래도
+   * 본문은 상한까지만 읽는다. 상한 안이면 같은 바이트를 그대로 넘기고(쓸 수 없는 토큰 모양이어도 — 오류 본문이다) 판정 표시를 달지
+   * 않는다. 상한을 넘으면 상한+1 바이트까지만 읽고 스트림을 닫은 뒤 응답을 인용하지 않는 거부를 던진다. 엔티티 스트림이 없으면 아무것도
+   * 하지 않는다. 수정 전에는 RESTEasy 가 오류 본문을 통째로 버퍼에 담았다(32 MiB → 약 107 MB 할당 — {@code TokenResponseCapTest}).
+   */
+  @Test void tokenErrorStatus_isHandedOnWithinTheCap_andRejectedAboveIt() throws IOException {
+    TokenResponseGuard guard = new TokenResponseGuard();
+    for (Response.Status status : List.of(Response.Status.BAD_REQUEST, Response.Status.UNAUTHORIZED)) {
+      byte[] atCap = padded(CAP);
+      byte[] number = NUMBER.getBytes(StandardCharsets.UTF_8);
+      for (byte[] body : List.of(number, atCap)) {
+        ClientRequestContext req = request("POST", TOKEN);
+        ClientResponseContext res = response(status, new ByteArrayInputStream(body));
+        guard.filter(req, res);
+        ArgumentCaptor<InputStream> handed = ArgumentCaptor.forClass(InputStream.class);
+        verify(res).setEntityStream(handed.capture());
+        assertArrayEquals(body, handed.getValue().readAllBytes(), status + ": 같은 바이트를 넘겨야 한다");
+        verify(req, never()).setProperty(any(), any());
+      }
+      EndlessBody endless = new EndlessBody(CAP + 1L);
+      ClientResponseContext over = response(status, endless);
+      IOException e = assertThrows(IOException.class, () -> guard.filter(request("POST", TOKEN), over));
+      assertEquals("token endpoint response exceeds 1048576 bytes", e.getMessage());
+      assertNull(e.getCause());
+      assertFalse(endless.overread);
+      assertEquals(CAP + 1L, endless.served, "넘침을 알아챌 한 바이트까지 읽어야 한다");
+      verify(over, never()).setEntityStream(any());
+
+      FaultyCloseBody faulty = new FaultyCloseBody();
+      ClientResponseContext closeFault = response(status, faulty);
+      e = assertThrows(IOException.class, () -> guard.filter(request("POST", TOKEN), closeFault));
+      assertEquals("token endpoint response exceeds 1048576 bytes", e.getMessage());
+      assertEquals(0, e.getSuppressed().length);
+      assertEquals(1, faulty.closes, "거부 전에 스트림을 한 번 닫아야 한다");
+
+      ClientResponseContext empty = response(status, null);
+      guard.filter(request("POST", TOKEN), empty);
+      verify(empty, never()).setEntityStream(any());
     }
   }
 
@@ -209,10 +250,16 @@ class TokenResponseGuardTest {
   // ───────────── 크기 상한 — 판정이 읽고 쥐는 바이트 ─────────────
 
   /**
-   * 가드 자신의 상한 — 아래 경계 시험은 이 상수로 상한·상한+1 을 잰다. 값의 아래쪽은 서버가 받아들이는 가장 큰 토큰이 정하고
-   * {@link AdminTokenResponseTest} 의 65,459 바이트 Bearer 시험이 지킨다 — 위쪽은 아래의 16 MiB 거부 시험이 지킨다.
+   * 가드의 상한 — auth 레인과 함께 쓰는 {@link io.github.xzawed.keycloak.core.ResponseLimits#MAX_TOKEN_RESPONSE_BYTES}. 아래 경계
+   * 시험은 이 값으로 상한·상한+1 을 잰다 — 리터럴로 고정한다(SDK 상수를 빌리면 그 값이 바뀌어도 시험이 따라 움직인다). 값의
+   * 아래쪽은 서버가 받아들이는 가장 큰 토큰이 정하고 {@link AdminTokenResponseTest} 의 65,459 바이트 Bearer 시험이 지킨다 — 위쪽은
+   * 아래의 16 MiB 거부 시험이 지킨다.
    */
-  private static final int CAP = TokenResponseGuard.MAX_BODY_BYTES;
+  private static final int CAP = 1_048_576;
+
+  @Test void theGuardUsesTheSharedCap() {
+    assertEquals(CAP, io.github.xzawed.keycloak.core.ResponseLimits.MAX_TOKEN_RESPONSE_BYTES);
+  }
   private static final String USABLE = "{\"access_token\":\"AT\",\"expires_in\":300}";
 
   /** 쓸 수 있는 토큰 뒤를 JSON 공백으로 채워 정확히 {@code size} 바이트로 — 결합에게는 여전히 쓸 수 있는 본문이다. */

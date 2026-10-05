@@ -258,6 +258,9 @@ class FacadeDumpTest {
     KeycloakClient echo = KeycloakClient.create(KeycloakConfig.builder()
         .serverUrl(idp.url()).realm("echo").clientId(CLIENT_ID).clientSecret(SECRET.toCharArray()).build());
     closers.add(echo);
+    KeycloakClient huge = KeycloakClient.create(KeycloakConfig.builder()
+        .serverUrl(idp.url()).realm("huge").clientId(CLIENT_ID).clientSecret(SECRET.toCharArray()).build());
+    closers.add(huge);
 
     canaries.put("SECRET", SECRET);
     canaries.put("BASIC", basic);   // Basic 헤더 값 — 시크릿의 인코딩된 형태도 비밀이다.
@@ -309,6 +312,8 @@ class FacadeDumpTest {
         assertThrows(KeycloakTransportException.class, () -> garbled.admin().users().get("x")));
     roots.put("auth error (error_description echoes the refresh token)",
         assertThrows(KeycloakAuthException.class, () -> echo.auth().refresh(REFRESH)));
+    roots.put("auth error (token response above the 1 MiB cap)",
+        assertThrows(KeycloakTransportException.class, () -> huge.auth().clientCredentialsToken()));
     roots.put("config error", assertThrows(KeycloakConfigException.class,
         () -> KeycloakConfig.builder().clientSecret(SECRET.toCharArray()).build()));
     return roots;
@@ -356,6 +361,10 @@ class FacadeDumpTest {
           reply(ex, 200, GARBLED);
         } else if (path.equals("/realms/echo/protocol/openid-connect/token")) {
           reply(ex, 400, "{\"error\":\"invalid_grant\",\"error_description\":\"Invalid refresh token " + REFRESH + "\"}");
+        } else if (path.equals("/realms/huge/protocol/openid-connect/token")) {
+          // 상한(1,048,576 바이트)을 한 바이트 넘는 쓸 수 있는 토큰 응답 — 넘침 오류(원인 CappedResponseSender.TooLarge)를 얻는다
+          String head = tokens.substring(0, tokens.length() - 1);
+          reply(ex, 200, head + " ".repeat(1_048_577 - head.length() - 1) + "}");
         } else if (path.equals("/admin/realms/r/users/missing")) {
           reply(ex, 404, "{\"error\":\"User not found\"}");
         } else if (path.equals("/admin/realms/r/users/forbidden")) {

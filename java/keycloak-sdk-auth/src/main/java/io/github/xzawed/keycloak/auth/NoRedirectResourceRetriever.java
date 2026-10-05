@@ -6,6 +6,8 @@ import com.nimbusds.jose.util.Resource;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 
 /**
  * JWKS 조회 전용 {@link DefaultResourceRetriever} — 3xx를 따라가지 않는다.
@@ -54,7 +56,7 @@ final class NoRedirectResourceRetriever extends DefaultResourceRetriever {
   // 집합**의 크기다(같은 파서). 파싱 자체가 실패하면 판정을 Nimbus 에 그대로 맡긴다.
   @Override
   public Resource retrieveResource(URL url) throws IOException {
-    Resource res = super.retrieveResource(url);
+    Resource res = fetchToCompletion(url);
     JWKSet parsed;
     try {
       parsed = JWKSet.parse(res.getContent());
@@ -65,5 +67,47 @@ final class NoRedirectResourceRetriever extends DefaultResourceRetriever {
       throw new IOException("JWKS response contains no keys");
     }
     return res;
+  }
+
+  /**
+   * 조회를 SDK 의 플랫폼 스레드에서 끝까지 돌리고, 호출자는 인터럽트와 무관하게 그 끝을 기다린 뒤 인터럽트 표시를 되살린다.
+   *
+   * <p>왜: Nimbus {@code RateLimitedJWKSetSource} 는 강제 재조회를 하기로 정한 <b>뒤</b> 창의 크레딧을 쓰고 그다음 이 메서드를
+   * 부른다 — 되돌리지 않는다. 조회가 호출자 스레드에서 돌던 때 JDK 21 가상 스레드의 인터럽트는 소켓 읽기를 끊었고(「Closed by
+   * interrupt」), 크레딧은 썼는데 캐시는 안 차서 창이 닫힐 때까지 회전한 진짜 키가 {@code RateLimitReachedException} 으로 거부됐다
+   * (같은 조회를 기다리던 다른 호출자도). 플랫폼 스레드의 블로킹 읽기는 인터럽트를 무시하므로 그쪽의 결과 — 조회가 끝나고 캐시가
+   * 차며 인터럽트 표시는 남는다 — 를 모든 호출자에게 준다({@code JwksCancellationTest}). 캐시는 Nimbus 가 이 메서드를 부른 호출자의
+   * 스택에서 채우므로 호출자는 끝을 기다려야 한다. 기다림은 이 리트리버의 연결·읽기 타임아웃(과 51,200 바이트 상한)이 묶는다.
+   *
+   * <p>⚠️ 취소에서 크레딧을 되돌리는 것으로 고치지 않는다 — 위조 kid 검증을 취소할 때마다 IdP 요청 하나가 된다(Python 실측 10 대 1).
+   * 실패한 조회(503 등)는 지금처럼 그대로 실패로 올라가 창을 쓴다(의도된 동작). 조회 스레드는 데몬이고 조회가 끝나면 끝난다 —
+   * {@code KeycloakClient.close()} 가 기다릴 것이 없다.
+   */
+  private Resource fetchToCompletion(URL url) throws IOException {
+    FutureTask<Resource> fetch = new FutureTask<>(() -> super.retrieveResource(url));
+    Thread fetcher = new Thread(fetch, "keycloak-sdk-jwks-fetch");
+    fetcher.setDaemon(true);
+    fetcher.start();
+    boolean interrupted = false;
+    try {
+      while (true) {
+        try {
+          return fetch.get();
+        } catch (InterruptedException e) {
+          interrupted = true; // 창은 이미 썼다 — 조회가 끝날 때까지 기다린다
+        } catch (ExecutionException e) {
+          throw rethrow(e.getCause());
+        }
+      }
+    } finally {
+      if (interrupted) Thread.currentThread().interrupt();
+    }
+  }
+
+  /** 조회가 던진 것을 그대로 — 조회는 IOException 만 선언하므로 그 밖의 검사 예외는 없다. */
+  static IOException rethrow(Throwable cause) {
+    if (cause instanceof RuntimeException unchecked) throw unchecked;
+    if (cause instanceof Error error) throw error;
+    return (IOException) cause;
   }
 }
