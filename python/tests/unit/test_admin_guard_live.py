@@ -458,7 +458,8 @@ def _hooks_left(conn: Any) -> list[str]:
     nested = conn.keycloak_openid  # 지연 프로퍼티 — 아직 없으면 훅 없는 새 객체가 생긴다
     spots = [
         ("connection._s", conn._s, ("resolve_redirects",)),
-        ("keycloak_openid.connection._s", nested.connection._s, ("resolve_redirects",)),
+        ("keycloak_openid.connection._s", nested.connection._s, ("resolve_redirects", "send")),
+        ("keycloak_openid.connection.async_s", nested.connection.async_s, ("send",)),
         ("keycloak_openid", nested, _GRANTS),
         ("connection", conn, _BEARER_HOOKS),
     ]
@@ -983,7 +984,7 @@ async def test_an_install_re_entered_by_the_consumers_code_is_all_or_nothing(
 
     if err is None:
         assert result == {"id": "u1"}
-        assert len(hooks) == len(_GRANTS) + 4, hooks  # 두 세션 + 그랜트 넷 + bearer 둘
+        assert len(hooks) == len(_GRANTS) + 6, hooks  # 두 세션 + 그랜트 넷 + 상한 둘 + bearer 둘
     else:
         assert type(err) is KeycloakConfigError, f"{type(err).__qualname__}: {err}"
         assert hooks == [], "거부한 설치가 SDK 훅을 남겼다 — 전부이거나 아무것도가 아니다"

@@ -93,6 +93,13 @@ EXEMPT: dict[str, str] = {
     "keycloak_sdk._internal.jwt.JwtValidator": (
         "`_validate_for` 가 지역으로 만들고 버린다 — 실패 traceback 의 프레임은 떼어진다"
     ),
+    # 상한을 넘는 토큰 응답 본문의 내부 신호. 세션 안에서 나므로 python-keycloak 의 `raw_*` 가
+    # `KeycloakConnectionError` 의 원인으로 감싸고, 경계(`lower.refused_body`)가 같은 메시지의
+    # `KeycloakAuthError` 를 except 밖에서 새로 만든다 — 신호는 python-keycloak 프레임(보낼 폼의
+    # client_secret)을 지나왔으므로 닿지 않는 것이 수정의 일부다.
+    "keycloak_sdk._internal.token_cap.ResponseRefused": (
+        "세션 안의 신호 — 경계가 `KeycloakAuthError` 로 새로 만들고 신호는 버린다"
+    ),
 }
 
 #: 알려진 누출 — `"뿌리|카나리아"` → 사유. ⚠️ 고쳐져 더 안 새면 **여기서 지워야 통과한다**

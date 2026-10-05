@@ -12,16 +12,21 @@
 from __future__ import annotations
 
 import json
+import tracemalloc
+import zlib
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
+import requests
 from joserfc.jwk import RSAKey
 
-from keycloak_sdk._internal.jwks_fetch import JWKS_MAX_BYTES
+from keycloak_sdk._internal.jwks_fetch import JWKS_MAX_BYTES, fetch_jwks
 from keycloak_sdk.auth import AuthClient
 from keycloak_sdk.config import KeycloakConfig
 from keycloak_sdk.exceptions import KeycloakTransportError, TokenValidationError
 from keycloak_sdk.oidc import OidcEndpoints
+from tests.unit.conftest import RawBeforeMaxLength, gzip_padded
 
 
 def _config(jwks_server: Any) -> KeycloakConfig:
@@ -181,3 +186,76 @@ def test_jwks_request_refuses_compression(jwks_server: Any) -> None:
         AuthClient(cfg, OidcEndpoints.for_realm(cfg)).validate("irrelevant.token.here")
 
     assert jwks_server.accept_encoding == "identity"
+
+
+def test_a_gzip_bomb_is_inflated_here_within_the_cap_whatever_urllib3_does() -> None:
+    """⚠️ sync JWKS 상한도 urllib3 버전에 달리면 안 된다 — `iter_content` 는 urllib3 에 풀기를
+    맡기고, 2.6 미만 urllib3 는 원문 한 조각을 상한 없이 통째로 푼다(실측 2.5.0: `identity` 를
+    무시한 16 MiB 폭탄에 한 번의 decompress 가 8,004,884 바이트 — 51,200 상한의 156 배, 피크
+    22 MB). 그 urllib3 를 흉내 낸 원문을 주고, 원문을 청하는지(`decode_content=False`)와 피크를
+    잰다."""
+    raw = RawBeforeMaxLength(gzip_padded(b'{"keys": []}', 16 * 1024 * 1024))
+    response = requests.Response()
+    response.status_code = 200
+    response.headers["Content-Encoding"] = "gzip"
+    response.raw = raw
+    session = MagicMock()
+    session.get.return_value = response
+
+    outcome: BaseException | None = None
+    tracemalloc.start()
+    try:
+        try:
+            fetch_jwks(session, "http://idp.test/certs", timeout=5.0, verify=True, cert=None)
+        except Exception as exc:  # 판정은 아래 단언이 한다 — 청한 것과 피크가 먼저다
+            outcome = exc
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert set(raw.asked) == {False}, f"asked urllib3 to inflate: {raw.asked[:3]}"
+    assert peak < 1024 * 1024, f"16 MiB gzip bomb: peak {peak} bytes"
+    assert type(outcome) is KeycloakTransportError
+    assert str(outcome) == f"JWKS response exceeds {JWKS_MAX_BYTES} bytes"
+    assert raw.closed
+
+
+@pytest.mark.parametrize("encoding", ["gzip", "deflate"])
+def test_a_body_that_is_not_the_compression_it_claims_is_an_sdk_error(
+    encoding: str, jwks_server: Any
+) -> None:
+    """§4 — 이름표만 압축인 본문을 풀다 난 실패도 SDK 타입이다(stdlib `zlib.error` 가 아니다).
+    sync 도 이제 aio 와 같은 자리(`_inflate`)에서 푼다."""
+    jwks_server.body = _valid_jwks()
+    jwks_server.fake_encoding = encoding
+    cfg = _config(jwks_server)
+
+    with pytest.raises(KeycloakTransportError, match=rf"^JWKS response is not valid {encoding}: "):
+        AuthClient(cfg, OidcEndpoints.for_realm(cfg)).validate("irrelevant.token.here")
+
+
+def test_a_raw_deflate_body_is_inflated_like_a_wrapped_one(jwks_server: Any) -> None:
+    """zlib 래퍼 없는 날 deflate 를 `deflate` 라 부르는 서버가 있다 — 토큰 상한과 같은
+    인플레이터(`token_cap._inflater`)가 httpx·urllib3 처럼 받는다. urllib3 에 맡기던 sync 는 원래
+    받았다 — 여기서 풀게 되면서 그것을 잃지 않는다."""
+    comp = zlib.compressobj(9, zlib.DEFLATED, -zlib.MAX_WBITS)
+    jwks_server.body = comp.compress(_valid_jwks()) + comp.flush()
+    jwks_server.fake_encoding = "deflate"
+    cfg = _config(jwks_server)
+
+    # 토큰이 가짜라 검증에서 떨어진다 — 키셋까지는 받았다는 것이 이 테스트의 관심이다.
+    with pytest.raises(TokenValidationError):
+        AuthClient(cfg, OidcEndpoints.for_realm(cfg)).validate("irrelevant.token.here")
+
+    assert jwks_server.hits == 1
+
+
+def test_unsupported_content_encoding_is_refused(jwks_server: Any) -> None:
+    """aio 미러와 같다(그 파일의 주석이 근거를 소유한다). sync 도 이제 원문을 받아 여기서 푼다 —
+    urllib3 에 맡기면 결과가 `brotli` 설치 여부에 달렸다(없으면 원문을 그대로 받아들였다)."""
+    jwks_server.body = _valid_jwks()
+    jwks_server.fake_encoding = "br"
+    cfg = _config(jwks_server)
+
+    with pytest.raises(KeycloakTransportError, match="unsupported encoding"):
+        AuthClient(cfg, OidcEndpoints.for_realm(cfg)).validate("irrelevant.token.here")

@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 from keycloak.exceptions import (
+    KeycloakConnectionError,
     KeycloakDeleteError,
     KeycloakGetError,
     KeycloakPostError,
@@ -18,9 +19,11 @@ from keycloak.exceptions import (
 )
 
 from keycloak_sdk._internal.lower import LowerLibraryError
+from keycloak_sdk._internal.token_cap import ResponseRefused
 from keycloak_sdk.aio.admin._translate import acall
 from keycloak_sdk.exceptions import (
     KeycloakAdminError,
+    KeycloakAuthError,
     KeycloakConflictError,
     KeycloakForbiddenError,
     KeycloakNotFoundError,
@@ -120,3 +123,43 @@ async def test_unusable_response_inside_python_keycloak_is_a_transport_error(
     assert str(error) == "Keycloak admin API returned an unusable response (TypeError)"
     assert error.__context__ is None
     assert _CANARY not in "".join(traceback.format_exception(error))
+
+
+@pytest.mark.parametrize("status", [400, 404])
+@pytest.mark.parametrize(
+    "body",
+    [b'{"errorMessage":"\xff ' + _CANARY.encode() + b'"}', b'{"error":"\xed\xa0\x80"}'],
+    ids=["0xFF", "ED A0 80"],
+)
+async def test_an_error_body_that_is_not_utf8_is_an_sdk_error_with_no_body_in_its_chain(
+    lower_post_error: Any, status: int, body: bytes
+) -> None:
+    """sync `call` 과 동형 — raw `UnicodeDecodeError` 가 새지 않고, 사슬에 본문이 없다."""
+    with pytest.raises(KeycloakAdminError) as excinfo:
+        await acall(_raise(lower_post_error(status, body)))
+
+    error = excinfo.value
+    assert error.status_code == status
+    assert isinstance(error.__cause__, LowerLibraryError)
+    assert error.__context__ is None
+    assert _CANARY not in "".join(traceback.format_exception(error))
+    assert error.keycloak_error == body.decode("utf-8", "backslashreplace")
+
+
+async def test_a_grant_body_over_the_cap_is_the_auth_lanes_refusal_not_a_transport_error() -> None:
+    """sync `call` 과 동형 — `a_raw_post` 가 감싼 상한 거부는 연결 실패가 아니다."""
+    try:
+        raise KeycloakConnectionError("Can't connect to server") from ResponseRefused(
+            "token response exceeds 1048576 bytes"
+        )
+    except KeycloakConnectionError as exc:
+        lower = exc
+
+    with pytest.raises(KeycloakAuthError) as excinfo:
+        await acall(_raise(lower))
+
+    error = excinfo.value
+    assert type(error) is KeycloakAuthError
+    assert str(error) == "token response exceeds 1048576 bytes"
+    assert isinstance(error.__cause__, LowerLibraryError)
+    assert error.__context__ is None

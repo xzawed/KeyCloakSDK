@@ -17,8 +17,9 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
    직접 읽는 메서드는 없다, 7.1.1 실측). 읽을 때마다 **지금 살아 있는** 연결 그래프에 훅이 다
    걸렸는지 보고 빠진 것을 다시 건다 — 공개 세터·비공개 필드·중첩 세터 어느 쪽으로 바뀌었어도
    다음 요청 전에 잡힌다.
-2. 그래프의 훅 여덟 자리(전부 인스턴스 속성): 두 세션의 `resolve_redirects`(`redirects.py`),
-   중첩 `KeycloakOpenID` 의 그랜트 넷(`admin_grant.py`), 그리고 연결의
+2. 그래프의 훅 열 자리(전부 인스턴스 속성): 두 세션의 `resolve_redirects`(`redirects.py`),
+   중첩 `KeycloakOpenID` 의 그랜트 넷(`admin_grant.py`), 그랜트 세션 둘(`_s`·`async_s`)의 `send` —
+   그랜트 응답 본문의 크기 상한(`token_cap.py`, admin REST 세션에는 걸지 않는다), 그리고 연결의
    `_refresh_if_required`·`a__refresh_if_required` — 그 **뒤**에서 보낼 헤더의 bearer 를 본다.
    마지막이 주입·토큰 세터로 **그랜트를 거치지 않고** 실린 bearer 를 잡는다. `raw_*` 는 그 갱신
    직후 보내고, 401 재시도는 방금 그랜트(검사됨)가 실은 토큰으로만 보낸다.
@@ -34,7 +35,7 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
 연결을 바꾸고 곧바로 메서드를 부르면 그 사이에 SDK 코드가 한 줄도 돌지 않는다. (b) 연결에 한 번
 거는 요청 시점 검사 — 연결째 갈아 끼워진다. (c) `connection` **세터**만 가로채기 — 비공개
 `_connection` 쓰기와 중첩 `KeycloakOpenID.connection` 교체를 못 본다. 게터가 치르는 값은 읽기마다
-훅 여덟 자리를 확인하는 것이다.
+훅 열 자리를 확인하는 것이다.
 
 ⚠️ 목(`MagicMock(spec=KeycloakAdmin)`)은 클래스를 바꾸면 `isinstance` 가 깨진다(실측) — 그래서
 진짜 `KeycloakAdmin` 만 읽기마다 다시 보고, 그 밖의 객체는 생성 때 한 번 건다.
@@ -55,6 +56,7 @@ from ..exceptions import KeycloakConfigError
 from ..tokens import _usable_access_token
 from .admin_grant import _ASYNC_GRANTS, _SYNC_GRANTS, _achecked, _checked
 from .redirects import _refuse_redirects, _require, _unsupported
+from .token_cap import acapped_send, capped_send
 
 #: 훅을 거는 일은 한 번에 하나 — 되돌림이 다른 스레드가 막 건 훅을 지우지 않게 한다.
 _LOCK = threading.RLock()
@@ -84,6 +86,9 @@ _SUPPORT = (
     "Pin python-keycloak to a supported version (>=7.1,<8) and report this at "
     "https://github.com/xzawed/KeyCloakSDK/issues."
 )
+#: 훅을 걸 수 없을 때 거부 메시지가 말하는 위험.
+_UNUSABLE = "send an unusable access token to the admin API"
+_UNBOUNDED = "read an unbounded token grant response into memory"
 
 #: (걸 객체, 속성 이름, 걸 값, 메시지에 쓸 자리). 클래스로 두지 않는다 — 공개 뿌리에서 닿지
 #: 않는 SDK 선언은 `test_facade_dump.py` 가 면제를 요구한다.
@@ -117,11 +122,10 @@ def _abearer_checked(
     return checked
 
 
-def _missing(what: str, where: str) -> KeycloakConfigError:
+def _missing(what: str, where: str, risk: str = _UNUSABLE) -> KeycloakConfigError:
     return KeycloakConfigError(
         f"cannot check the {what}: this SDK expects python-keycloak to expose {where}, but it is "
-        f"missing or not callable. Refusing to build an admin client that could send an unusable "
-        f"access token to the admin API. {_SUPPORT}"
+        f"missing or not callable. Refusing to build an admin client that could {risk}. {_SUPPORT}"
     )
 
 
@@ -172,12 +176,13 @@ def _plan_wrap(
     what: str,
     where: str,
     wrap: Callable[[Callable[..., Any]], Callable[..., Any]],
+    risk: str = _UNUSABLE,
 ) -> None:
     if _hooked(target, name):
         return
     current, prior = _base(target, name)
     if not callable(current):
-        raise _missing(what, where)
+        raise _missing(what, where, risk)
     wrapped = wrap(current)
     vars(wrapped)[_OWNER] = target
     vars(wrapped)[_PRIOR] = prior
@@ -191,8 +196,15 @@ def _plan(conn: Any) -> list[_Hook]:
     rest, grant = "admin REST call", "admin token grant"
     _plan_redirects(hooks, _require(conn, "_s", what=rest), rest, "connection._s")
     nested = _require(conn, "keycloak_openid", what=grant)
-    nested_session = _require(_require(nested, "connection", what=grant), "_s", what=grant)
+    nested_conn = _require(nested, "connection", what=grant)
+    nested_session = _require(nested_conn, "_s", what=grant)
     _plan_redirects(hooks, nested_session, grant, "connection.keycloak_openid.connection._s")
+    # 그랜트 응답 본문의 크기 상한(`token_cap.py`) — 그랜트 세션 둘에만 건다. REST 세션
+    # (`connection._s`)의 응답(사용자 목록 등)은 정당하게 크다.
+    size, at = "token grant response size", "connection.keycloak_openid.connection"
+    _plan_wrap(hooks, nested_session, "send", size, f"{at}._s.send", capped_send, _UNBOUNDED)
+    async_session = getattr(nested_conn, "async_s", None)
+    _plan_wrap(hooks, async_session, "send", size, f"{at}.async_s.send", acapped_send, _UNBOUNDED)
     for name in _SYNC_GRANTS:
         _plan_wrap(hooks, nested, name, grant, f"connection.keycloak_openid.{name}", _checked)
     for name in _ASYNC_GRANTS:
