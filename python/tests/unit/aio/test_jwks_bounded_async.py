@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import tracemalloc
+import zlib
 from typing import Any
 
 import httpx
@@ -174,6 +175,32 @@ async def test_compressed_but_small_body_is_accepted(jwks_server: Any) -> None:
     """
     jwks_server.body = _valid_jwks()
     jwks_server.gzip = True
+
+    result = await _fetch(jwks_server)
+
+    assert "keys" in result
+
+
+@pytest.mark.parametrize("encoding", ["gzip", "deflate"])
+async def test_a_body_that_is_not_the_compression_it_claims_is_an_sdk_error(
+    encoding: str, jwks_server: Any
+) -> None:
+    """§4 — 이름표만 압축인 본문을 풀다 난 실패도 SDK 타입이다. `_inflate` 는 `afetch_jwks` 의
+    번역 밖에서 돌아, 번역하지 않으면 stdlib `zlib.error` 가 `validate` 의 소비자에게 그대로
+    샜다(실측)."""
+    jwks_server.body = _valid_jwks()
+    jwks_server.fake_encoding = encoding
+
+    with pytest.raises(KeycloakTransportError, match=rf"^JWKS response is not valid {encoding}: "):
+        await _fetch(jwks_server)
+
+
+async def test_a_raw_deflate_body_is_inflated_like_a_wrapped_one(jwks_server: Any) -> None:
+    """sync 미러와 같다 — 날 deflate 도 토큰 상한과 같은 인플레이터가 푼다(예전 aio 는 zlib 래퍼만
+    시도해 `zlib.error` 를 그대로 냈다)."""
+    comp = zlib.compressobj(9, zlib.DEFLATED, -zlib.MAX_WBITS)
+    jwks_server.body = comp.compress(_valid_jwks()) + comp.flush()
+    jwks_server.fake_encoding = "deflate"
 
     result = await _fetch(jwks_server)
 

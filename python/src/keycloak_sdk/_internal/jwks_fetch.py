@@ -23,6 +23,7 @@ import zlib
 from typing import Any
 
 from ..exceptions import KeycloakTransportError
+from .token_cap import _inflater
 
 # Nimbus `JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT`. 아홉 언어가 **함께 움직이는** 값이라
 # 하나만 바꾸지 말 것 — 가드 `scripts/test/test-security-defaults.sh` 의 JWKS 크기상한 축.
@@ -46,20 +47,29 @@ def _too_big() -> KeycloakTransportError:
 
 
 def _inflate(data: bytes, encoding: str) -> bytes:
-    """`aiter_raw` 가 준 원문을 필요하면 **상한 안에서** 푼다.
+    """두 미러가 받은 원문(sync `read(decode_content=False)`·aio `aiter_raw`)을 필요하면 **상한
+    안에서** 푼다 — 푸는 것은 토큰 응답 상한과 같은 `token_cap._inflater` 다(날 deflate 폴백,
+    끝난 스트림 뒤 무시까지 같다).
 
     우리는 `identity` 를 요구했으므로 정상 서버는 압축하지 않는다. 그것을 무시하는 서버가
     있으므로 여기서 풀되, **팽창분에도 같은 상한**을 건다 — 그러지 않으면 상한을 통과한
-    작은 gzip 하나가 100MB 로 부푼다(압축폭탄).
+    작은 gzip 하나가 100MB 로 부푼다(압축폭탄). `max_length` 가 cap+1 이라 cap+1 바이트가
+    나왔으면 넘은 것이다(덜 나왔으면 zlib 이 입력을 다 먹었다).
+
+    ⚠️ 이 함수는 두 미러의 전송 번역(`except Exception`) **밖에서** 돈다 — 풀 수 없는 본문의
+    `zlib.error` 도 여기서 SDK 타입으로 바꾼다. 안 바꾸면 stdlib 타입이 `validate` 의 소비자에게
+    그대로 샌다(§4, aio 실측).
     """
     if encoding in ("", "identity"):
         return data
     if encoding not in ("gzip", "deflate"):
         # 요구하지 않은 인코딩을 이해하는 척하지 않는다(fail-closed).
         raise KeycloakTransportError(f"JWKS response uses unsupported encoding {encoding!r}")
-    obj = zlib.decompressobj(31 if encoding == "gzip" else 15)
-    out = obj.decompress(data, JWKS_MAX_BYTES + 1)
-    if len(out) > JWKS_MAX_BYTES or obj.unconsumed_tail:
+    try:
+        out = _inflater([encoding], "JWKS response")(data, JWKS_MAX_BYTES + 1)
+    except zlib.error as exc:
+        raise KeycloakTransportError(f"JWKS response is not valid {encoding}: {exc}") from exc
+    if len(out) > JWKS_MAX_BYTES:
         raise _too_big()
     return out
 
@@ -100,13 +110,19 @@ def fetch_jwks(session: Any, url: str, *, timeout: Any, verify: Any, cert: Any) 
 
     try:
         body = bytearray()
-        for chunk in response.iter_content(_CHUNK):
+        # ⚠️ **원문(`decode_content=False`)을 센다 — aio 의 `aiter_raw` 와 같다.**
+        # `iter_content` 는 urllib3 에 풀기를 맡기는데, 2.6.0 미만 urllib3 는 원문 한 조각을
+        # 상한 없이 통째로 푼다(실측 2.5.0: `identity` 를 무시한 16 MiB gzip 폭탄에 한 번의
+        # decompress 가 8,004,884 바이트, 피크 22 MB). 원문을 상한까지 받고 `_inflate` 가
+        # 상한 안에서 푼다.
+        while chunk := response.raw.read(_CHUNK, decode_content=False):
             body += chunk
             # ⚠️ 다 읽고 나서 길이를 재면 이미 메모리를 내준 뒤다. `Content-Length` 로만
             # 판정해도 안 된다 — 그 헤더는 없을 수도(chunked) 거짓일 수도 있다.
             if len(body) > JWKS_MAX_BYTES:
                 raise _TooBig
         status = response.status_code
+        encoding = response.headers.get("content-encoding", "").strip().lower()
     except _TooBig as exc:
         raise _too_big() from exc
     except Exception as exc:
@@ -114,7 +130,7 @@ def fetch_jwks(session: Any, url: str, *, timeout: Any, verify: Any, cert: Any) 
     finally:
         response.close()
 
-    return _decode(bytes(body), status)
+    return _decode(_inflate(bytes(body), encoding), status)
 
 
 async def afetch_jwks(client: Any, url: str, *, timeout: Any) -> dict[str, Any]:
@@ -139,7 +155,8 @@ async def afetch_jwks(client: Any, url: str, *, timeout: Any) -> dict[str, Any]:
             # 실측: `aiter_bytes` 로는 우리가 상한을 보기 전에 httpx 의 `GZipDecoder` 가
             # 통째로 팽창시킨다(`decompress(data)` 에 상한이 없다). 20MB 폭탄에서 피크
             # **84MB** 를 쟀다. 청크 크기를 넘겨도 소용없다 — 디코더가 청킹보다 앞이다.
-            # sync 미러는 이 문제가 없다(urllib3 이 `max_length` 를 gzip 에 넘긴다).
+            # sync 미러도 같은 이유로 원문(`decode_content=False`)을 센다 — urllib3 는 2.6.0
+            # 부터만 `max_length` 를 디코더에 넘긴다(2.5.0 실측: 피크 22 MB).
             async for chunk in response.aiter_raw(_CHUNK):
                 body += chunk
                 if len(body) > JWKS_MAX_BYTES:
