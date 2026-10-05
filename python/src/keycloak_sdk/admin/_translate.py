@@ -16,7 +16,7 @@ from typing import TypeVar
 
 from keycloak.exceptions import KeycloakError
 
-from .._internal.lower import is_lower_failure, summarize
+from .._internal.lower import is_lower_failure, refused_body, summarize
 from ..exceptions import (
     KeycloakAdminError,
     KeycloakAuthError,
@@ -37,12 +37,18 @@ def translate(exc: KeycloakError) -> KeycloakAdminError | KeycloakTransportError
     `KeycloakTransportError`로, 있으면 상태별(`404`→NotFound, `409`→Conflict,
     `403`→Forbidden, 그 외→일반 `KeycloakAdminError`)로 변환한다. `response_body`는
     가능하면 문자열로 보존한다.
+
+    ⚠️ **이 함수는 던지지 않는다** — `call`·`acall` 이 `except` **안에서** 부르므로, 여기서 난
+    예외는 SDK 타입이 아닌 채로 새고 그 `__context__` 가 응답 본문을 쥔 python-keycloak 오류다.
+    예전의 엄격한 `body.decode()` 가 UTF-8 이 아닌 오류 본문에서 바로 그렇게 raw
+    `UnicodeDecodeError` 를 냈다(실측: 0xFF · UTF-8 로 인코딩한 서로게이트 ED A0 80, sync·aio).
+    풀 수 없는 바이트는 버리지도 바꾸지도 않고 `\\xff` 처럼 이스케이프로 남긴다.
     """
     status = getattr(exc, "response_code", None)
     body = getattr(exc, "response_body", None)
     body_str: str | None
     if isinstance(body, (bytes, bytearray)):
-        body_str = body.decode()
+        body_str = body.decode("utf-8", "backslashreplace")
     else:
         body_str = str(body) if body else None
     if status is None:
@@ -56,7 +62,9 @@ def translate(exc: KeycloakError) -> KeycloakAdminError | KeycloakTransportError
     return KeycloakAdminError(status, body_str)
 
 
-def admin_failure(exc: BaseException) -> KeycloakAdminError | KeycloakTransportError:
+def admin_failure(
+    exc: BaseException,
+) -> KeycloakAdminError | KeycloakTransportError | KeycloakAuthError:
     """`is_lower_failure` 인 실패의 분류.
 
     `KeycloakError` 는 `translate` 그대로다. 그 밖의 python-keycloak 실패(응답 모양이 틀려 그
@@ -64,8 +72,12 @@ def admin_failure(exc: BaseException) -> KeycloakAdminError | KeycloakTransportE
     을 못 쓸 때도 여기다)는 HTTP 상태가 없으므로 이 경계의 규칙대로 전송 쪽이다. 예전에는 raw 로
     새어 본문을 인용했다. ⚠️ 그랜트 응답의 `access_token` 을 못 쓰는 것은 여기가 아니다 — 세터에
     닿기 전에 `_internal/admin_grant.py` 가 auth 레인과 같은 `KeycloakAuthError` 로 거부한다
-    (`refused_grant`).
+    (`refused_grant`). 그랜트 응답 본문이 상한을 넘은 것도 auth 레인과 같은 `KeycloakAuthError` 다
+    (`refused_body` — 그 그랜트는 admin REST 요청보다 먼저라 REST 요청은 나가지 않는다).
     """
+    refused = refused_body(exc)
+    if refused is not None:
+        return refused
     if isinstance(exc, KeycloakError):
         return translate(exc)
     return KeycloakTransportError(

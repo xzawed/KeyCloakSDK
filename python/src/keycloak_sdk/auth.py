@@ -27,6 +27,7 @@ from ._internal.jwt import JwtValidator
 from ._internal.lower import auth_failure, is_lower_failure, summarize
 from ._internal.redirects import harden_openid
 from ._internal.secrets import mask
+from ._internal.token_cap import cap_openid
 from .config import KeycloakConfig
 from .exceptions import (
     KeycloakAuthError,
@@ -103,6 +104,8 @@ class AuthClient:
         # 백채널은 3xx를 따라가지 않는다 — 주입된 인스턴스도 동일하게 막는다(주입 경로가
         # 프로덕션 경로보다 느슨해지면 테스트가 증명하는 것이 실제와 달라진다).
         harden_openid(self._openid)
+        # 토큰·introspection 응답 본문은 상한까지만 읽는다(`_internal/token_cap.py`).
+        cap_openid(self._openid)
         self._jwks_cache: KeySet | None = None
         self._jwks_lock = threading.Lock()
         self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)
