@@ -19,7 +19,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSession;
@@ -48,6 +50,7 @@ import org.apache.http.config.Registry;
 import org.apache.http.config.RegistryBuilder;
 import org.apache.http.conn.ConnectionKeepAliveStrategy;
 import org.apache.http.conn.ConnectionPoolTimeoutException;
+import org.apache.http.conn.ConnectionRequest;
 import org.apache.http.conn.DnsResolver;
 import org.apache.http.conn.HttpConnectionFactory;
 import org.apache.http.conn.ManagedHttpClientConnection;
@@ -63,9 +66,11 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.DefaultConnectionKeepAliveStrategy;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.conn.DefaultHttpResponseParser;
-import org.apache.http.impl.conn.ManagedHttpClientConnectionFactory;
+import org.apache.http.impl.conn.DefaultManagedHttpClientConnection;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.impl.conn.SystemDefaultRoutePlanner;
+import org.apache.http.io.BufferInfo;
+import org.apache.http.io.HttpMessageParserFactory;
 import org.apache.http.protocol.HttpContext;
 import org.apache.http.protocol.HttpRequestExecutor;
 import org.apache.http.util.CharArrayBuffer;
@@ -87,7 +92,10 @@ import org.apache.http.util.CharArrayBuffer;
  * header: <줄>}) 상수 메시지의 {@link IOException} 으로 바꾼다({@link #shield}) · (6) 본문을 읽는 동안 받는 틀의 바이트를 본문 상한의
  * {@value #WIRE_FACTOR} 배로 묶는다({@link #wireBounded}) · (7) 거부하며 닫는 TLS 연결이 더 읽지 않게 한다 — JSSE 는 TLS 1.3 을 닫을 때
  * 도착한 바이트가 없으면 읽기 타임아웃만큼 한 번 더 읽어 기다린다(실측: 상태 줄 뒤 조용한 서버에 읽기 타임아웃 8 초면 거부가 8,025
- * ms) — 끊기 전에 그 타임아웃을 0 으로 둔다({@link #quiet}).
+ * ms) — 끊기 전에 그 타임아웃을 0 으로 둔다({@link #quiet}) · (8) 다시 쓰려는 연결에 아무도 묻지 않은 바이트가 와 있으면(앞 응답 뒤에
+ * 서버가 더 보냈다) 그 연결을 버린다 — 다음 요청이 그것을 제 응답으로 읽는다(실측: 204 뒤에 붙인 200 「EVIL」을 다음 호출이 받았다.
+ * HttpURLConnection 은 응답마다 새 버퍼로 읽어 버퍼에 남은 것을 버렸다). TLS 에서 늦게 도착해 아직 풀리지 않은 바이트는 보이지 않는다
+ * — 같은 서버가 같은 연결로 보낸 것이다.
  *
  * <p><b>풀</b>({@link #POOL}): HttpURLConnection 의 keep-alive 캐시처럼 프로세스에 하나다. AuthClient 는 닫히지 않으므로(AutoCloseable
  * 이 아니다) 클라이언트마다 풀을 두면 그 연결을 닫을 자리가 없고, 클라이언트를 호출마다 만드는 소비자에게 소켓이 클라이언트 수만큼
@@ -101,7 +109,7 @@ import org.apache.http.util.CharArrayBuffer;
  * <p>⚠️ <b>HttpURLConnection 과 같아야 하는 것</b>(실측 대조 — {@code TransportParityTest}): 요청 머리(User-Agent ·
  * Accept · Host · Connection — 아래 상수들), 제한 헤더를 버리는 규칙({@link #restricted}), 리다이렉트를 따르지 않음, 내용 코딩을
  * 요청하지도 풀지도 않음(상한은 받은 바이트를 센다), 시스템 프록시({@code http(s).proxyHost} — {@code ProxySelector}), 거절된
- * CONNECT 는 응답이 아니라 IOException, TLS 단계({@link HucTls}), 연결 재사용. <b>따라하지 않는 것</b>(JVM 전역 훅 — 키클록의 정상
+ * CONNECT 는 응답이 아니라 IOException, TLS 단계({@link HucTls}), 연결 재사용, 요청·응답을 로그에 찍지 않음. <b>따라하지 않는 것</b>(JVM 전역 훅 — 키클록의 정상
  * 응답에는 닿지 않는다): {@code CookieHandler} · {@code ResponseCache} · {@code java.net.Authenticator}(401·407 도전에 답하지 않는다),
  * 새 연결의 한 번 재시도, {@code http.keepAlive=false} 의 {@code Connection: close}, {@code http.maxConnections}(쉬는 연결 5 개).
  */
@@ -147,6 +155,8 @@ final class BoundedTransport {
   private static final String FRESH = BoundedTransport.class.getName() + ".fresh";
   /** 이 시도의 요청에 응답 바이트가 하나도 오지 않았다. */
   private static final String UNANSWERED = BoundedTransport.class.getName() + ".unanswered";
+  /** 연결의 속성 — 다시 쓰려는 연결에 아무도 묻지 않은 바이트가 와 있다({@link #CONNECTIONS}). */
+  static final String UNSOLICITED = BoundedTransport.class.getName() + ".unsolicited";
 
   /** HttpURLConnection 이 요청 머리에서 조용히 버리는 이름(소문자) — {@code sun.net.http.allowRestrictedHeaders} 기본. */
   private static final Set<String> RESTRICTED = Set.of("access-control-request-headers", "access-control-request-method",
@@ -161,13 +171,36 @@ final class BoundedTransport {
       .build();
 
   /** 첫 줄이 상태 줄이 아니면 거부하는 응답 해석기 — HttpClient 의 기본은 쓰레기 줄을 한도 없이 건너뛴다. */
-  private static final HttpConnectionFactory<HttpRoute, ManagedHttpClientConnection> CONNECTIONS =
-      new ManagedHttpClientConnectionFactory((buffer, constraints) ->
-          new DefaultHttpResponseParser(buffer, null, null, constraints) {
-            @Override protected boolean reject(CharArrayBuffer line, int count) {
-              return true;
-            }
-          });
+  private static final HttpMessageParserFactory<HttpResponse> STATUS_LINE_FIRST = (buffer, constraints) ->
+      new DefaultHttpResponseParser(buffer, null, null, constraints) {
+        @Override protected boolean reject(CharArrayBuffer line, int count) {
+          return true;
+        }
+      };
+
+  private static final AtomicLong CONNECTION_IDS = new AtomicLong();
+
+  /**
+   * 연결 — HttpCore 의 기본 연결에, 다시 쓰기 전에 묻지 않은 바이트가 와 있는지 답하는 문맥 속성 하나를 더했다({@link #UNSOLICITED} —
+   * 풀의 대리자가 그대로 넘긴다). ⚠️ HttpClient 의 기본 공장({@code ManagedHttpClientConnectionFactory})은 쓰지 않는다 — 그 연결은
+   * DEBUG 에서 요청 머리(Authorization 의 Basic 자격 포함)와 오가는 바이트(토큰)를 그대로 찍는다.
+   */
+  static final HttpConnectionFactory<HttpRoute, ManagedHttpClientConnection> CONNECTIONS = (route, config) ->
+      new DefaultManagedHttpClientConnection("keycloak-sdk-" + CONNECTION_IDS.incrementAndGet(), config.getBufferSize(),
+          config.getFragmentSizeHint(), null, null, config.getMessageConstraints(), null, null, null, STATUS_LINE_FIRST) {
+        @Override public Object getAttribute(String id) {
+          return UNSOLICITED.equals(id) ? unsolicited() : super.getAttribute(id);
+        }
+
+        /** 입력 버퍼에 남은 바이트, 또는 소켓에 와 있는 바이트(TLS 면 JSSE 가 이미 푼 것만 보인다). 요청을 보내기 전이니 묻지 않은 것이다. */
+        private boolean unsolicited() {
+          try {
+            return ((BufferInfo) getSessionInputBuffer()).length() > 0 || getSocket().getInputStream().available() > 0;
+          } catch (IOException gone) {
+            return true;
+          }
+        }
+      };
 
   /** HttpURLConnection 처럼 이름의 첫 주소 하나에만 붙는다(HttpClient 의 기본은 주소마다 연결 타임아웃을 다시 쓴다). */
   private static final DnsResolver FIRST_ADDRESS = host -> new InetAddress[] {InetAddress.getByName(host)};
@@ -288,6 +321,28 @@ final class BoundedTransport {
       }
 
       @Override
+      public ConnectionRequest requestConnection(HttpRoute route, Object state) {
+        ConnectionRequest lease = super.requestConnection(route, state);
+        return new ConnectionRequest() {
+          @Override
+          public HttpClientConnection get(long timeout, TimeUnit unit)
+              throws InterruptedException, ExecutionException, ConnectionPoolTimeoutException {
+            HttpClientConnection conn = lease.get(timeout, unit);
+            // 다시 쓰려는 연결에 묻지 않은 바이트가 와 있다(앞 응답 뒤에 서버가 더 보냈다) — 다음 요청이 그것을 제 응답으로 읽는다.
+            // 닫으면 HttpClient 가 같은 자리에 새 소켓을 맺는다(그 시도는 새 연결이다). HttpURLConnection 은 응답마다 새 버퍼로 읽어
+            // 버퍼에 남은 것을 버렸다(실측).
+            if (conn.isOpen() && Boolean.TRUE.equals(((HttpContext) conn).getAttribute(UNSOLICITED))) discard(conn);
+            return conn;
+          }
+
+          @Override
+          public boolean cancel() {
+            return lease.cancel();
+          }
+        };
+      }
+
+      @Override
       public void shutdown() {
         // 닫지 않는다 — HttpClient 는 교환 중에 Error 가 나면 관리자를 닫는데, 이 풀은 프로세스에 하나라 그러면 이 JVM 의 auth·JWKS
         // 레인이 끝난다. 그 교환이 쥔 연결은 exchange 의 끝(cut)이 끊는다.
@@ -366,6 +421,16 @@ final class BoundedTransport {
       connection.setSocketTimeout(0);
     } catch (RuntimeException returned) {
       // 이미 풀로 돌아갔다 — 이 교환의 것이 아니다
+    }
+  }
+
+  /** 빌린 연결을 다시 쓰지 않고 닫는다 — 읽지 않는다({@link #quiet}). 닫기의 실패는 버린다(어차피 쓰지 않는다). */
+  static void discard(HttpConnection connection) {
+    quiet(connection);
+    try {
+      connection.close();
+    } catch (IOException ignored) {
+      // 쓰지 않을 연결이다
     }
   }
 

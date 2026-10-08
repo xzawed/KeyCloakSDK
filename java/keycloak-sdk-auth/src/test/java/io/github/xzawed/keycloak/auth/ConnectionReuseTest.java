@@ -49,7 +49,8 @@ import org.junit.jupiter.api.io.TempDir;
  * TLS 연결은 조용한 서버 앞에서 기다리지 않는다.
  *
  * <p>⚠️ 풀은 프로세스에 하나다 — 시험마다 새 서버(새 포트 = 새 경로)를 써서 서로의 연결을 다시 쓰지 않는다. 연결 수는 서버가 받아들인
- * 수로 잰다.
+ * 수로 잰다. 시간 한도는 별도 스레드에서 끊는다({@code SEPARATE_THREAD}) — 블로킹 소켓 읽기는 인터럽트로 멈추지 않아, 회귀(예: 거부한
+ * 본문을 비우는 닫기)가 빌드를 붙잡지 않고 실패하게.
  */
 class ConnectionReuseTest {
   private static final int CAP = 1_048_576;
@@ -351,7 +352,7 @@ class ConnectionReuseTest {
    * 상한을 넘는 본문(끝없는 1 바이트 청크) — 거부한 연결은 읽지 않고 끊긴다: 서버의 쓰기가 곧 실패하고, 다음 호출은 새 연결이며, 그
    * 새 연결은 다시 쓰인다(연결 2 개에 요청 3 개).
    */
-  @Test @Timeout(30) void aRejectedResponse_isCutAndNeverReturnedToThePool() throws Exception {
+  @Test @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD) void aRejectedResponse_isCutAndNeverReturnedToThePool() throws Exception {
     AtomicLong written = new AtomicLong();
     AtomicLong cutAt = new AtomicLong();
     byte[] one = latin1("1\r\n \r\n");
@@ -430,6 +431,68 @@ class ConnectionReuseTest {
       assertEquals("HTTP response body framing exceeds 409600 bytes on the wire", e.getMessage());
       assertEquals(1, server.accepted.get(), "두 번째 조회는 다시 쓴 연결이어야 한다");
     }
+  }
+
+  // ───────────── 묻지 않은 바이트 ─────────────
+
+  /**
+   * 응답 뒤에 서버가 더 보낸 바이트(다음 응답처럼 생긴 「EVIL」)는 다음 호출의 응답이 되지 않는다 — 다시 쓰려는 연결에 묻지 않은 바이트가
+   * 와 있으면 그 연결은 버리고 새 연결을 맺는다. 204 · Content-Length 0 · 본문 · 청크 본문 뒤에 같은 쓰기로 붙인 것(평문 · TLS)과, 평문에서
+   * 앞 응답을 다 읽은 뒤 늦게 도착한 것. HttpURLConnection 은 응답마다 새 버퍼로 읽어 버퍼에 남은 것을 버렸다(실측 — 다음 호출은 서버의
+   * 답을 기다렸다).
+   */
+  @Test @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void bytesSentAfterAResponse_areNeverReadAsTheNextResponse() throws Exception {
+    String evil = "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nEVIL";
+    java.util.Map<String, String> outcomes = new java.util.LinkedHashMap<>();
+    outcomes.put("204 뒤", secondCallAfter(null, "HTTP/1.1 204 No Content\r\n\r\n" + evil, null));
+    outcomes.put("Content-Length 0 뒤", secondCallAfter(null, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n" + evil, null));
+    outcomes.put("본문 뒤", secondCallAfter(null, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}" + evil, null));
+    outcomes.put("청크 본문 뒤",
+        secondCallAfter(null, "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n\r\n" + evil, null));
+    outcomes.put("204 뒤 늦게(평문)", secondCallAfter(null, "HTTP/1.1 204 No Content\r\n\r\n", evil));
+    outcomes.put("204 뒤(TLS)", secondCallAfter(serverIp, "HTTP/1.1 204 No Content\r\n\r\n" + evil, null));
+    System.out.println("[ConnectionReuseTest] 응답 뒤에 붙인 바이트 → " + outcomes);
+    assertTrue(outcomes.values().stream().allMatch("GOOD · 연결 2"::equals), outcomes::toString);
+  }
+
+  /**
+   * 첫 연결은 첫 요청에 {@code first}(뒤에 붙은 바이트 포함)를 보내고, {@code late} 가 있으면 100 ms 뒤 그것을 더 보낸 다음 답하지 않는다
+   * (두 번째 요청이 이 연결로 오면 응답 대신 그 바이트를 읽거나 기다린다). 뒤의 연결은 「GOOD」 을 답한다. 두 번째 호출의 본문과 연결 수.
+   */
+  private static String secondCallAfter(SSLContext tls, String first, String late) throws Exception {
+    try (RawServer server = new RawServer(tls, p -> {
+      if (p.index > 1) {
+        p.serveAll(latin1("HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nGOOD"));
+        return;
+      }
+      p.readRequest();
+      p.write(latin1(first));
+      if (late != null) {
+        Thread.sleep(100);
+        p.write(latin1(late));
+      }
+      p.readRequest();
+      Thread.sleep(20_000);
+    })) {
+      String url = (tls == null ? "http" : "https") + "://127.0.0.1:" + server.port() + "/x";
+      CappedResponseSender.send(get(url), "token");
+      Thread.sleep(300);
+      try {
+        return String.valueOf(CappedResponseSender.send(get(url), "token").getBody()).trim() + " · 연결 " + server.accepted.get();
+      } catch (IOException e) {
+        return e + " · 연결 " + server.accepted.get();
+      }
+    }
+  }
+
+  private static HTTPRequest get(String url) throws IOException {
+    HTTPRequest req = new HTTPRequest(HTTPRequest.Method.GET, URI.create(url).toURL());
+    req.setConnectTimeout(2_000);
+    req.setReadTimeout(3_000);
+    req.setFollowRedirects(false);
+    req.setSSLSocketFactory(trusting);
+    return req;
   }
 
   // ───────────── TLS 근원 ─────────────
@@ -587,7 +650,7 @@ class ConnectionReuseTest {
    * 경로의 연결 50 개가 모두 쓰이는 동안 연결 타임아웃(1 초)이 지나면, 연결을 기다리던 호출은 JDK 의 타임아웃이다(응답과 무관한 상수
    * 메시지 — 연결을 빌리지 못했으니 끊을 것도 없다). 연결을 쥔 호출들은 그대로 끝난다.
    */
-  @Test @Timeout(30) void aCallThatCannotGetAPooledConnection_timesOutAfterTheConnectTimeout() throws Exception {
+  @Test @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD) void aCallThatCannotGetAPooledConnection_timesOutAfterTheConnectTimeout() throws Exception {
     java.util.concurrent.CountDownLatch busy = new java.util.concurrent.CountDownLatch(BoundedTransport.MAX_PER_ROUTE);
     try (RawServer server = new RawServer(null, p -> {
       p.readRequest();
@@ -647,7 +710,7 @@ class ConnectionReuseTest {
    * 닫는다. 그 전에는 아무것도 닫지 않는다(백그라운드 스레드가 없다). 서버가 {@code Keep-Alive} 를 주지 않으면 HttpClient 의 기본은
    * 무한이다.
    */
-  @Test @Timeout(30) void anExpiredIdleConnection_isClosedByTheNextExchange_withoutAThread() throws Exception {
+  @Test @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD) void anExpiredIdleConnection_isClosedByTheNextExchange_withoutAThread() throws Exception {
     AtomicLong closedAt = new AtomicLong();
     try (RawServer a = new RawServer(null, p -> {
       p.serveAll(ok(ACTIVE));
@@ -694,7 +757,7 @@ class ConnectionReuseTest {
   // ───────────── 소켓 타임아웃 — 풀의 소켓 설정이 아니라 교환의 읽기 타임아웃 ─────────────
 
   /** TCP 는 받지만 TLS 핸드셰이크에 답하지 않는 서버 — 교환의 읽기 타임아웃(1 초)에 끝난다. */
-  @Test @Timeout(15) void aStalledTlsHandshake_isBoundedByTheReadTimeout() throws Exception {
+  @Test @Timeout(value = 15, threadMode = Timeout.ThreadMode.SEPARATE_THREAD) void aStalledTlsHandshake_isBoundedByTheReadTimeout() throws Exception {
     try (RawServer silent = new RawServer(null, p -> Thread.sleep(20_000))) {
       long start = System.nanoTime();
       IOException e = assertThrows(IOException.class, () -> CappedResponseSender.send(
@@ -706,7 +769,7 @@ class ConnectionReuseTest {
   }
 
   /** CONNECT 를 받고 답하지 않는 프록시 — 교환의 읽기 타임아웃(1 초)에 끝난다. */
-  @Test @Timeout(15) void aStalledProxyConnect_isBoundedByTheReadTimeout() throws Exception {
+  @Test @Timeout(value = 15, threadMode = Timeout.ThreadMode.SEPARATE_THREAD) void aStalledProxyConnect_isBoundedByTheReadTimeout() throws Exception {
     try (RawServer proxy = new RawServer(null, p -> {
       p.readRequest();
       Thread.sleep(20_000);
@@ -738,7 +801,7 @@ class ConnectionReuseTest {
    * TLS 1.3 을 닫을 때 JSSE 는 받은 바이트가 없으면 읽기 타임아웃만큼 한 번 더 읽어 기다린다 — 거부한 뒤 조용한(닫지도 않는) 서버 앞에서
    * 그만큼 늦었다(실측 8,025 ms · 12,206 ms). 거부의 네 자리가 읽기 타임아웃(8 초)을 기다리지 않는다.
    */
-  @Test @Timeout(60) void aRejectAgainstASilentTlsServer_doesNotWaitForTheReadTimeout() throws Exception {
+  @Test @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD) void aRejectAgainstASilentTlsServer_doesNotWaitForTheReadTimeout() throws Exception {
     List<String> slow = new ArrayList<>();
     // 상태 줄이 아닌 첫 줄 뒤 조용하다 — 머리 단계의 거부(실행기)
     rejectFast(slow, "머리 단계", serverIp, ACCEPTS_LOOPBACK, p -> {
@@ -776,7 +839,7 @@ class ConnectionReuseTest {
    * 본문 중간에서 멈춘 서버 — 읽기 타임아웃(2 초)에 한 번 끝나고, 그 연결을 닫으며 한 번 더 기다리지 않는다(JSSE 가 닫기에서 읽기
    * 타임아웃을 또 기다리면 4 초였다).
    */
-  @Test @Timeout(30) void aBodyStalledMidway_timesOutOnce() throws Exception {
+  @Test @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD) void aBodyStalledMidway_timesOutOnce() throws Exception {
     try (RawServer server = new RawServer(serverIp, p -> {
       p.readRequest();
       p.write(latin1("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{\"acti"));

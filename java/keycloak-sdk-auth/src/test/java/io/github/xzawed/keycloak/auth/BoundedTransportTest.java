@@ -24,7 +24,10 @@ import org.apache.http.client.ClientProtocolException;
 import org.apache.http.conn.ConnectTimeoutException;
 import org.apache.http.conn.ConnectionPoolTimeoutException;
 import org.apache.http.conn.HttpHostConnectException;
+import org.apache.http.conn.ManagedHttpClientConnection;
+import org.apache.http.conn.routing.HttpRoute;
 import org.apache.http.impl.execchain.RequestAbortedException;
+import org.apache.http.protocol.HttpContext;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -174,6 +177,47 @@ class BoundedTransportTest {
           throw new org.apache.http.impl.conn.ConnectionShutdownException();
         });
     assertDoesNotThrow(() -> BoundedTransport.quiet(detached));
+  }
+
+  /**
+   * 운송의 연결은 「묻지 않은 바이트가 와 있는가」를 문맥 속성으로 답한다 — 입력 버퍼나 소켓에 바이트가 있으면 참, 없으면 거짓, 소켓을 읽을
+   * 수 없으면 참(그 연결은 버린다). 다른 속성은 HttpCore 의 연결 그대로 담는다.
+   */
+  @Test void connections_answerWhetherUnsolicitedBytesWait() throws Exception {
+    ManagedHttpClientConnection conn = BoundedTransport.CONNECTIONS.create(
+        new HttpRoute(new HttpHost("127.0.0.1", 1)), org.apache.http.config.ConnectionConfig.DEFAULT);
+    HttpContext attributes = (HttpContext) conn;
+    attributes.setAttribute("other", 1);
+    assertEquals(1, attributes.getAttribute("other"));
+    try (java.net.ServerSocket server = new java.net.ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+         java.net.Socket client = new java.net.Socket(InetAddress.getLoopbackAddress(), server.getLocalPort());
+         java.net.Socket peer = server.accept()) {
+      conn.bind(client);
+      assertEquals(Boolean.FALSE, attributes.getAttribute(BoundedTransport.UNSOLICITED));
+      peer.getOutputStream().write(new byte[] {'H', 'T'});
+      peer.getOutputStream().flush();
+      for (int i = 0; i < 100 && client.getInputStream().available() == 0; i++) Thread.sleep(10);
+      assertEquals(Boolean.TRUE, attributes.getAttribute(BoundedTransport.UNSOLICITED));
+    }
+    java.net.Socket closed = new java.net.Socket();
+    closed.close();
+    ManagedHttpClientConnection gone = BoundedTransport.CONNECTIONS.create(
+        new HttpRoute(new HttpHost("127.0.0.1", 1)), org.apache.http.config.ConnectionConfig.DEFAULT);
+    gone.bind(closed);
+    assertEquals(Boolean.TRUE, ((HttpContext) gone).getAttribute(BoundedTransport.UNSOLICITED));
+  }
+
+  /** 버리는 연결 — 읽기 타임아웃을 0 으로 두고 닫는다. 닫기의 실패는 삼킨다(어차피 쓰지 않는다). */
+  @Test void discard_quietsThenClosesAndSwallowsACloseFailure() {
+    List<String> calls = new ArrayList<>();
+    HttpClientConnection failing = (HttpClientConnection) Proxy.newProxyInstance(HttpClientConnection.class.getClassLoader(),
+        new Class<?>[] {HttpClientConnection.class}, (proxy, method, args) -> {
+          calls.add(method.getName());
+          if (method.getName().equals("close")) throw new IOException("close failed");
+          return null;
+        });
+    assertDoesNotThrow(() -> BoundedTransport.discard(failing));
+    assertEquals(List.of("setSocketTimeout", "close"), calls);
   }
 
   /** 지표와 읽기 타임아웃만 아는 연결 — 나머지 메서드는 부르면 실패한다. */
