@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using Keycloak.AuthServices.Sdk;              // KeycloakHttpClientException
 using Keycloak.AuthServices.Sdk.Admin;         // IKeycloakClient
@@ -83,6 +84,7 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
         try { return await fn(_typed).ConfigureAwait(false); }
         catch (KeycloakHttpClientException ex) { throw KeycloakErrorMapping.MapHttpError(ex.StatusCode, ex.Response?.ErrorDescription ?? ex.HttpResponse ?? ex.Message, ex); }
         catch (JsonException ex) { throw Undecodable(status.Value, ex); }
+        catch (Exception ex) when (status.Value != 0 && IsUnsupportedCharset(ex)) { throw Undecodable(status.Value, ErrorCause.WithholdAll(ex)); }
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
         catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException) { throw new KeycloakTransportException("admin request timed out", ex); }
     }
@@ -93,16 +95,17 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
         try { await fn(_typed).ConfigureAwait(false); }
         catch (KeycloakHttpClientException ex) { throw KeycloakErrorMapping.MapHttpError(ex.StatusCode, ex.Response?.ErrorDescription ?? ex.HttpResponse ?? ex.Message, ex); }
         catch (JsonException ex) { throw Undecodable(status.Value, ex); }
+        catch (Exception ex) when (status.Value != 0 && IsUnsupportedCharset(ex)) { throw Undecodable(status.Value, ErrorCause.WithholdAll(ex)); }
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
         catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException) { throw new KeycloakTransportException("admin request timed out", ex); }
     }
 
-    /// <summary>The SDK error for a JSON failure inside the typed client: a body it could not decode — under its own status
-    /// when that was an error response, as <see cref="GetJsonAsync{T}"/> reports a success body otherwise — or, with no
-    /// response seen, the request body. <see cref="BearerHandler"/> already turns a body the serializer refuses into that
-    /// same error where it is written, inside the transport (<c>UnencodableRequestBodyTests</c>); the arm keeps the answer
-    /// the same for one that surfaces here instead.</summary>
-    private static KeycloakException Undecodable(int status, JsonException ex) => status switch
+    /// <summary>The SDK error for a body the typed client could not decode — malformed JSON, or a charset .NET does not
+    /// support — under its own status when that was an error response, as <see cref="GetJsonAsync{T}"/> reports a success
+    /// body otherwise; or, for a JSON failure with no response seen, the request body. <see cref="BearerHandler"/> already
+    /// turns a body the serializer refuses into that same error where it is written, inside the transport
+    /// (<c>UnencodableRequestBodyTests</c>); the arm keeps the answer the same for one that surfaces here instead.</summary>
+    private static KeycloakException Undecodable(int status, Exception ex) => status switch
     {
         0 => new KeycloakTransportException(UnencodableBody, ex),
         >= 300 => KeycloakErrorMapping.MapHttpError(status, "admin error response body could not be decoded", ex),
@@ -113,6 +116,28 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
 
     /// <summary>The message for a request body System.Text.Json would not write — every admin write, typed or raw.</summary>
     internal const string UnencodableBody = "admin request failed: the request body could not be encoded as JSON";
+
+    /// <summary>Whether <paramref name="ex"/> is .NET refusing the charset a response's <c>Content-Type</c> names — the body
+    /// was never read. It escaped the admin calls that read a body raw, an unknown name quoted in its chain (measured:
+    /// <c>UnsupportedCharsetResponseTests</c>).</summary>
+    /// <remarks>An unknown name makes <c>Encoding.GetEncoding</c> throw <see cref="ArgumentException"/>, quoting it, which
+    /// <see cref="HttpContent"/>'s string read and System.Net.Http.Json wrap in <see cref="InvalidOperationException"/>;
+    /// UTF-7, disabled under every alias, makes it throw <see cref="NotSupportedException"/>, which neither wraps (8.0 and
+    /// 10.0 alike). ⚠️ Keyed on that lookup, never on the type or the assembly that throws it: System.Net.Http also throws
+    /// <see cref="InvalidOperationException"/> for a state error — a request URI it will not send, a disposed client — and
+    /// that is no bad response. ⚠️ On the typed path it also takes a response seen (<see cref="Observe"/>): the token
+    /// provider runs inside the same call before one arrives, and a consumer's provider that reads its own HTTP response
+    /// throws exactly this.</remarks>
+    private static bool IsUnsupportedCharset(Exception ex) => ex switch
+    {
+        InvalidOperationException { InnerException: ArgumentException lookup } => IsEncodingLookup(lookup),
+        NotSupportedException => IsEncodingLookup(ex),
+        _ => false,
+    };
+
+    /// <summary>Thrown inside CoreLib's <c>System.Text</c> — <c>Encoding.GetEncoding</c> and the name table behind it.</summary>
+    private static bool IsEncodingLookup(Exception ex) =>
+        ex.TargetSite?.DeclaringType is { Namespace: "System.Text" } type && type.Assembly == typeof(Encoding).Assembly;
 
     internal async Task<string> CreateReturningIdAsync(Func<IKeycloakClient, Task<HttpResponseMessage>> fn, CancellationToken ct)
     {
@@ -132,12 +157,20 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
         catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException) { throw new KeycloakTransportException("admin request timed out", ex); }
         if (!resp.IsSuccessStatusCode)
         {
-            var status = (int)resp.StatusCode;
-            var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            var error = await ErrorResponseAsync(resp, ct).ConfigureAwait(false);
             resp.Dispose(); // 에러 경로에서 호출자가 소유권을 못 받으므로 여기서 폐기(커넥션 반환)
-            throw KeycloakErrorMapping.MapHttpError(status, body);
+            throw error;
         }
         return resp;
+    }
+
+    /// <summary>The SDK error for an admin error response, its body as the message. A body in a charset .NET does not
+    /// support gets the error the typed path gives an error body it cannot decode, under the same status.</summary>
+    private static async Task<KeycloakException> ErrorResponseAsync(HttpResponseMessage resp, CancellationToken ct)
+    {
+        var status = (int)resp.StatusCode;
+        try { return KeycloakErrorMapping.MapHttpError(status, await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false)); }
+        catch (Exception ex) when (IsUnsupportedCharset(ex)) { return Undecodable(status, ErrorCause.WithholdAll(ex)); }
     }
 
     internal async Task<T> GetJsonAsync<T>(string relativeUrl, CancellationToken ct)
@@ -146,6 +179,11 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
         using var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
         T? value;
         try { value = await resp.Content.ReadFromJsonAsync<T>(cancellationToken: ct).ConfigureAwait(false); }
+        catch (Exception ex) when (IsUnsupportedCharset(ex))
+        {
+            // Nothing was read; every message in the chain may quote the charset name the response gave.
+            throw new KeycloakAdminException(500, UndecodableBody, ErrorCause.WithholdAll(ex));
+        }
         catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
             // "could not be decoded", not "was not valid JSON": an unpaired surrogate escape is valid JSON (RFC 8259 §8.2)
@@ -165,7 +203,7 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
     private async Task<string> IdFromLocationAsync(HttpResponseMessage resp, CancellationToken ct)
     {
         if (!resp.IsSuccessStatusCode)
-            throw KeycloakErrorMapping.MapHttpError((int)resp.StatusCode, await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            throw await ErrorResponseAsync(resp, ct).ConfigureAwait(false);
         var loc = resp.Headers.Location;
         var id = loc is { IsAbsoluteUri: true } ? loc.Segments[^1].TrimEnd('/') : null;
         return string.IsNullOrEmpty(id)

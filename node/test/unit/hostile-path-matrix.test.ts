@@ -1734,6 +1734,14 @@ const HAND: ReadonlyArray<{
     anchor: "jwt-jwks.test.ts|it('대조군 — 백오프 창이 지나면 다시 IdP 로 나간다'",
     call: 'validate',
   },
+  {
+    label: 'JwtValidator#validate',
+    cls: JWKS_FETCH,
+    axis: 'c',
+    anchor:
+      "jwt-jwks.test.ts|it('대조군 — 성공하면 카운터가 돌아간다: 회복 뒤 다시 낡아 실패하면 창은 처음(0.2 초)부터다'",
+    call: 'validate',
+  },
 ]
 
 /** 보안 기본값 가드가 node 행위 앵커를 적는 모양(`node/test/unit/<파일>|<선언>`, 한 따옴표 안). */

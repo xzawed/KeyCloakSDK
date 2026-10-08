@@ -89,6 +89,10 @@ public sealed class HostilePathMatrixTests
         ["BoundedDocumentRetriever.GetDocumentAsync(String, CancellationToken)"] =
             "internal 문서 리트리버 — 주소는 ConfigurationManager 가 디스커버리에서 얻은 URL 이고 합성 문자열(JWS)은 URI 가 아니라 요청 전에 " +
             "실패한다. 이것이 내는 요청은 전부 그것을 모는 공개 메서드(ValidateAsync → JWKS_FETCH)의 행에 이미 잡힌다",
+        ["BackoffConfigurationRetriever.GetConfigurationAsync(String, IDocumentRetriever, CancellationToken)"] =
+            "internal 설정 리트리버 — 위 BoundedDocumentRetriever 를 감싸 실패한 조회를 백오프한다. 주소는 ConfigurationManager 가 쥔 " +
+            "디스커버리 URL 이고 합성 문자열(JWS)은 URI 가 아니라 요청 전에 실패한다. 이것이 내는 요청도 전부 그것을 모는 공개 메서드" +
+            "(ValidateAsync → JWKS_FETCH)의 행에 이미 잡힌다",
         ["AuthorizationRequestJsonConverter.*"] = JsonConverterReason,
         ["KeycloakConfigJsonConverter.*"] = JsonConverterReason,
         ["TokenSetJsonConverter.*"] = JsonConverterReason,

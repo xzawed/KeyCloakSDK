@@ -1,5 +1,6 @@
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.Configuration;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 
@@ -36,12 +37,16 @@ public sealed class JwtValidator
     /// <param name="http">Shared client (redirect-blocking, SSRF-hardened).</param>
     /// <param name="now">Clock seam (tests only).</param>
     /// <param name="jitter">Jitter seam (tests only).</param>
+    /// <param name="configurationEvents">Tests only; <c>null</c> in production. IdentityModel's public hook for handing
+    /// the manager a configuration with its retrieval time — the one way to give a test a configuration that is already
+    /// past the 12-hour refresh without waiting 12 hours or reflecting on the manager's internal clock.</param>
     internal JwtValidator(
         string issuer,
         JwtValidatorOptions opts,
         HttpClient http,
         Func<DateTimeOffset>? now,
-        Func<double>? jitter)
+        Func<double>? jitter,
+        IConfigurationEventHandler<OpenIdConnectConfiguration>? configurationEvents = null)
     {
         _tvp = BuildParameters(issuer, opts);
         // ⚠️ Not HttpDocumentRetriever: it imposes no byte cap. The shared client's
@@ -51,20 +56,24 @@ public sealed class JwtValidator
         var docRetriever = new BoundedDocumentRetriever(
             http,
             requireHttps: issuer.StartsWith("https", StringComparison.OrdinalIgnoreCase));
+        // A 200 with {"keys":[]} would otherwise replace a good configuration. The handler's
+        // last-known-good fallback only hides that until the LKG entry expires (1h) — measured:
+        // JwksEmptyKeysetTests.
+        var keysRequired = new Microsoft.IdentityModel.Protocols.OpenIdConnect.Configuration.OpenIdConnectConfigurationValidator
+        {
+            MinimumNumberOfKeys = 1,
+        };
         var inner = new ConfigurationManager<OpenIdConnectConfiguration>(
             $"{issuer}/.well-known/openid-configuration",
-            new OpenIdConnectConfigurationRetriever(),
+            // Every fetch passes through here — cold load, stale refresh, bad-signature refresh — so a failed one is
+            // backed off here. The manager hides a failed refresh once a configuration is cached.
+            new BackoffConfigurationRetriever(new OpenIdConnectConfigurationRetriever(), keysRequired, now, jitter),
             docRetriever,
-            // A 200 with {"keys":[]} would otherwise replace a good configuration. The handler's
-            // last-known-good fallback only hides that until the LKG entry expires (1h) — measured:
-            // JwksEmptyKeysetTests.
-            new Microsoft.IdentityModel.Protocols.OpenIdConnect.Configuration.OpenIdConnectConfigurationValidator
-            {
-                MinimumNumberOfKeys = 1,
-            })
+            keysRequired)
         {
             AutomaticRefreshInterval = TimeSpan.FromHours(12),
             RefreshInterval = TimeSpan.FromSeconds(opts.RefreshIntervalSeconds),
+            ConfigurationEventHandler = configurationEvents,
         };
         // RefreshInterval above only caps refreshes once a configuration is cached. A cold cache
         // against a failing IdP reaches it at all — measured 20 validations → 40 requests.
