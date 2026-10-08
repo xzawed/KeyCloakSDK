@@ -74,4 +74,18 @@ internal class MaskingTest {
         assertEquals("unchanged", maskSent("unchanged", listOf("", null)))
         assertNull(maskSent(null, listOf("x")))
     }
+
+    // 상한(4,096 자)을 넘는 문구는 통째로 싣지 않는다 — 가리기의 최악 비용이 문구 길이 × 보낸 값 길이로 자랐다(적대적 IdP 가 아는 보낸
+    // 값의 앞부분으로 채운 1 MiB 문구, 실측). 앞부분만 남기면 자른 자리에 걸친 되울림의 앞 조각이 남는다 — 그래서 남기지 않는다.
+    @Test
+    fun `maskSent omits a description longer than the cap instead of scanning it`() {
+        val sent = "a".repeat(999) + "b"
+        val atCap = "x".repeat(MAX_DESCRIPTION_CHARS - sent.length) + sent
+        assertEquals("x".repeat(MAX_DESCRIPTION_CHARS - sent.length) + "***", maskSent(atCap, listOf(sent)))
+        val acrossTheCap = "x".repeat(MAX_DESCRIPTION_CHARS - 5) + sent
+        assertEquals(
+            "(error_description omitted: ${acrossTheCap.length} chars > $MAX_DESCRIPTION_CHARS)",
+            maskSent(acrossTheCap, listOf(sent)),
+        )
+    }
 }
