@@ -110,6 +110,7 @@ def test_authorization_url_is_sync_and_builds_directly_from_endpoints():
     openid = MagicMock()
     config = _config(scopes=("openid", "profile"))
     client = _client(openid, config=config)
+    openid.reset_mock()  # 생성은 세션의 어댑터 표를 읽는다(재시도 끄기) — 재는 것은 조립이다
 
     result = client.authorization_url("https://app.example.com/callback")
 
