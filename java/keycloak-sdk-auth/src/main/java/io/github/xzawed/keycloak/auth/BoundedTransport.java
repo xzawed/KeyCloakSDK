@@ -68,7 +68,8 @@ import org.apache.http.util.CharArrayBuffer;
  *
  * <p>그래서 여기서는: (1) 응답 머리의 줄·헤더 수 한도({@link ResponseLimits#MAX_LINE_LENGTH} ·
  * {@link ResponseLimits#MAX_HEADER_COUNT} — 상태 줄·헤더·청크 크기 줄·트레일러 모두)를 건다 · (2) 본문을 다 읽지 않은 교환은
- * <b>비우지 않고 끊는다</b>({@code abort} — 평문은 그 자리에서 끝나고, HTTPS 는 JSSE 가 닫으며 이미 도착한 바이트를 버린다) ·
+ * <b>비우지 않고 끊는다</b>(교환의 클라이언트를 닫으면 연결 하나를 shutdown 한다 — 평문은 그 자리에서 끝나고, HTTPS 는 JSSE 가 닫으며
+ * 이미 도착한 바이트를 버린다) ·
  * (3) 첫 줄이 상태 줄이 아니면 곧바로 거부하고(HttpURLConnection 처럼 — HttpClient 는 쓰레기 줄을 한도 없이 건너뛴다) 1xx 중간
  * 응답은 {@value #MAX_INTERIM_RESPONSES} 개까지만 받는다 · (4) 교환마다 연결 하나짜리 새 클라이언트를 만든다(공유 풀은 호스트당 2
  * 연결이라 동시 호출이 줄을 선다 — 실측 10 개 병렬 2,540 ms 대 510 ms) — 백그라운드 스레드가 없다 · (5) 하위 운송의 예외는 응답을
@@ -173,8 +174,8 @@ final class BoundedTransport {
 
   /**
    * 교환 하나 — 연결 하나짜리 새 클라이언트로 {@code request} 를 보내고 상태와 머리가 오면 {@code reader} 에 넘긴다. 본문을 EOF 까지
-   * 읽었으면 연결은 그때 이미 놓였고(정상 종료), 아니면(넘침·거부·실패) 남은 본문을 읽지 않고 끊는다. 실패는 {@link #shield} 를
-   * 거친 IOException 이다. TLS 근원은 HttpURLConnection 이 쓰는 소켓 팩토리와 검증기다({@link HucTls}).
+   * 읽었으면 연결은 그때 이미 놓였고(정상 종료), 아니면(넘침·거부·실패) 클라이언트를 닫으며 남은 본문을 읽지 않고 끊는다. 실패는
+   * {@link #shield} 를 거친 IOException 이다. TLS 근원은 HttpURLConnection 이 쓰는 소켓 팩토리와 검증기다({@link HucTls}).
    */
   static <T> T exchange(HttpRequestBase request, SSLSocketFactory tlsFactory, HostnameVerifier verifier,
                         int connectTimeoutMillis, int readTimeoutMillis, Reader<T> reader) throws IOException {
@@ -202,14 +203,16 @@ final class BoundedTransport {
         .disableAutomaticRetries()
         .disableCookieManagement()
         .build()) {
+      // 끊기는 이 클라이언트의 닫기다: 연결 하나짜리 관리자의 shutdown 이 연결을 읽지 않고 닫는다(SO_LINGER 0 —
+      // BHttpConnectionBase.shutdown). 본문을 EOF 까지 읽었으면 연결은 그때 이미 정상 종료됐다. ⚠️ 본문 스트림을 닫거나
+      // EntityUtils.consume 으로 「놓지」 말 것 — HttpCore 의 닫기는 나머지를 EOF 까지 비운다(끝없는 본문이면 돌아오지 않는다 —
+      // ResponseFramingBoundsTest 의 끝없는 본문 시험이 잡는다). request.abort() 를 더해도 같은 shutdown 이라 아무것도 바뀌지 않았다(변이 실측).
       try {
         HttpResponse head = client.execute(request, context);
         HttpEntity entity = head.getEntity();
         return reader.read(head, entity == null ? InputStream.nullInputStream() : entity.getContent());
       } catch (IOException e) {
         throw shield(e);
-      } finally {
-        request.abort(); // 본문을 EOF 까지 읽었으면 아무 일도 없다 — 아니면 비우지 않고 끊는다(SO_LINGER 0)
       }
     }
   }

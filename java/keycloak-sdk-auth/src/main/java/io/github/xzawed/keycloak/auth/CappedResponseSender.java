@@ -41,7 +41,7 @@ import org.apache.http.entity.ByteArrayEntity;
  * 시스템 프록시({@code http(s).proxyHost})는 따른다.
  *
  * <p>상한 안의 본문은 Nimbus 와 같은 문자열로 만든다({@link #asNimbusReadsIt}) — 파서가 받는 입력이 지금과 같다. 상한을 넘으면
- * 나머지를 읽지 않고 <b>연결을 끊은 뒤</b>({@code abort} — 평문은 그 자리에서 끝나고, HTTPS 는 JSSE 가 닫으며 이미 도착한 바이트를
+ * 나머지를 읽지 않고 <b>연결을 끊은 뒤</b>(교환의 클라이언트를 닫으며 — 평문은 그 자리에서 끝나고, HTTPS 는 JSSE 가 닫으며 이미 도착한 바이트를
  * 버린다) {@link TooLarge} 를 던지고, 호출부가 그 레인의 {@code KeycloakTransportException} 으로 바꾼다. SDK 가 요청하고 쥐는 것은
  * 상한+1 바이트까지다({@link #readWithinCap}). 운송은 내용 코딩을 요청하지도 풀지도 않으므로 센 바이트가 받은 바이트다.
  *
