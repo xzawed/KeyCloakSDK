@@ -96,6 +96,31 @@ class AdminExceptionsTest {
     assertSame(refused, t.getCause());
   }
 
+  @Test void httpErrorUnderProcessingException_isWithheld_resourceErrorKeepsItsCause() {
+    // admin 의 토큰 요청은 BearerAuthFilter 안에서 실패한다 — RESTEasy 가 그 HTTP 오류를 ProcessingException 으로 감싸고, 오류는
+    // 본문을 버퍼에 담은 Response 를 쥔다(close 뒤에도 readEntity 가 본문을 돌려준다). 그 사슬은 타입 이름만 남긴 사본이 된다.
+    String canary = "CANARY-TOKEN-ENDPOINT-BODY";
+    NotAuthorizedException tokenError =
+        new NotAuthorizedException(Response.status(401).entity("{\"error_description\":\"" + canary + "\"}").build());
+    tokenError.getResponse().bufferEntity();
+    KeycloakTransportException t = assertThrows(KeycloakTransportException.class,
+        () -> AdminExceptions.call(() -> { throw new ProcessingException(tokenError); }));
+    assertEquals("admin transport failure", t.getMessage());
+    for (Throwable c = t.getCause(); c != null; c = c.getCause()) {
+      assertFalse(c instanceof WebApplicationException, "Response 를 쥔 원인이 남았다: " + c.getClass());
+    }
+    java.io.StringWriter sw = new java.io.StringWriter();
+    t.printStackTrace(new java.io.PrintWriter(sw, true));
+    assertFalse(sw.toString().contains(canary), sw.toString());
+    assertTrue(sw.toString().contains("jakarta.ws.rs.NotAuthorizedException (message withheld"), sw.toString());
+
+    // 대조군 — 자원 오류(뿌리가 WebApplicationException 자신)는 원래 예외를 원인으로 그대로 둔다(본문은 getKeycloakError 의 몫).
+    NotFoundException resource = new NotFoundException(Response.status(404).entity("{\"error\":\"User not found\"}").build());
+    KeycloakNotFoundException n = assertThrows(KeycloakNotFoundException.class,
+        () -> AdminExceptions.call(() -> { throw resource; }));
+    assertSame(resource, n.getCause());
+  }
+
   // --- safeBody branches ----------------------------------------------------
 
   @Test void safeBody_noEntity_fallsBackToMessage() {
