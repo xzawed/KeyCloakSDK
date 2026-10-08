@@ -72,7 +72,7 @@ final class NoRedirectResourceRetriever extends DefaultResourceRetriever {
    * 조회 하나 — Nimbus {@code DefaultResourceRetriever.retrieveResource} 가 HttpURLConnection 으로 하던 일을 {@link
    * BoundedTransport} 로: GET · 이 리트리버의 헤더(제한 헤더는 버린다) · 연결/읽기 타임아웃 · 2xx 가 아니면 실패 · 본문은 UTF-8 ·
    * Content-Type 은 마지막 값. 상한은 {@code BoundedInputStream} 과 같은 셈이다 — 읽은 바이트가 상한에 <b>닿으면</b> 넘침이다
-   * (정확히 51,200 바이트도 거부된다 — Nimbus 대조 {@code CappedResponseSenderTest}). 상한까지만 요청하고, 넘치면 나머지를 읽지
+   * (정확히 51,200 바이트도 거부된다 — Nimbus 대조 {@code TransportParityTest}). 상한까지만 요청하고, 넘치면 나머지를 읽지
    * 않고 끊는다. 비-2xx 의 메시지는 상태 코드만 싣는다(이유 문구는 응답 바이트다).
    */
   Resource fetch(URL url) throws IOException {

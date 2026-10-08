@@ -78,7 +78,7 @@ import org.apache.http.util.CharArrayBuffer;
  * 인용할 수 있으므로({@code Bad chunk header: <줄>}) 상수 메시지의 {@link IOException} 으로 바꾼다({@link #shield}) · (6) 본문을
  * 읽는 동안 받는 틀의 바이트를 본문 상한의 {@value #WIRE_FACTOR} 배로 묶는다({@link #exchange}).
  *
- * <p>⚠️ <b>HttpURLConnection 과 같아야 하는 것</b>(실측 대조 — {@code CappedResponseSenderTest}): 요청 머리(User-Agent ·
+ * <p>⚠️ <b>HttpURLConnection 과 같아야 하는 것</b>(실측 대조 — {@code TransportParityTest}): 요청 머리(User-Agent ·
  * Accept · Host · Connection — 아래 상수들), 제한 헤더를 버리는 규칙({@link #restricted}), 리다이렉트를 따르지 않음, 내용 코딩을
  * 요청하지도 풀지도 않음(상한은 받은 바이트를 센다), 시스템 프록시({@code http(s).proxyHost} — {@code ProxySelector}), 거절된
  * CONNECT 는 응답이 아니라 IOException, TLS 단계({@link HucTls}). <b>따라하지 않는 것</b>(JVM 전역 훅 — 키클록의 정상 응답에는
