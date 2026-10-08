@@ -78,7 +78,8 @@ assert_contains "$out" "접두가 아니다" "중간 삽입은 접두 조건으�
 
 # (3) 비-final 이면 하위 클래스의 오버라이드가 깨진다 → MAJOR.
 assert_fails node "$GUARD" --report "$FIX/report-v010-open.txt" --base "$FIX/v010-base" --new "$FIX/v010-open"
-out=$(node "$GUARD" --report "$FIX/report-v010-open.txt" --base "$FIX/v010-open" --new "$FIX/v010-open" 2>&1 || true)
+out=$(node "$GUARD" --report "$FIX/report-v010-open.txt" --base "$FIX/v010-base" --new "$FIX/v010-open" 2>&1 || true)
+assert_contains "$out" "하위 클래스의 오버라이드가 깨진다" "비-final 클래스의 V010 은 오버라이드가 깨진다는 사유로 거부"
 
 # ── V016: final 클래스에 protected 메서드가 늘었다 ───────────────────────────
 # V015 와 같은 술어다 — 하위 클래스가 있을 수 없다. protected 가 바깥에 닿는 나머지 길(같은 조상을
