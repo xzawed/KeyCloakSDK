@@ -447,23 +447,39 @@ internal class AdminTokenResponseTest {
 
     // 오류 상태의 토큰 응답도 같은 상한이다 — 그 본문은 RESTEasy 가 예외에 담으려고 **통째로** 버퍼에 읽었다(extractResult 의
     // bufferEntity, 수정 전 실측: 400 + 32 MiB 에 admin 호출 하나가 154–210 MiB 할당). 상한 안의 오류는 예전 그대로 TokenManager 에
-    // 간다(이 레인의 실패 모양 — ProcessingException 에 싸인 BadRequestException, 아래 갱신 시험의 복구 경로). 상한을 넘으면 쓸 수
+    // 간다(이 레인의 실패 모양 — ProcessingException 에 싸인 BadRequestException 등, 아래 갱신 시험의 복구 경로). 상한을 넘으면 쓸 수
     // 없는 토큰과 같은 거부다: KeycloakTransportException · admin 요청 0 건 · 걸러진 원인 사슬.
+    // ⚠️ 상한 안의 실패도 이제 **걸러진** 사슬이다 — 그 HTTP 오류가 버퍼된 본문을 쥔 Response 를 남겨, close() 뒤에도 readEntity 가 본문
+    // (되울린 Basic 시크릿 포함)을 돌려줬다(`AdminTokenEchoTest`). 그래서 날 사슬(「ProcessingException」 이 있다)을 고정하던 것을 걸러진
+    // 모양으로 고정한다 — 타입 이름은 남고(ProcessingException · 상태의 HTTP 오류), Response 에 닿지 않고, 본문 바이트가 없다.
     @Test
     fun `token error response above the cap is rejected like an unusable token`() =
         runTest {
             val table = mutableListOf<String>()
             val wrong = mutableListOf<String>()
             val error = """{"error":"invalid_client","error_description":"bad client"}""".toByteArray()
-            for (status in listOf(400, 401, 503)) {
+            // 상태마다 TokenManager 가 받는 HTTP 오류 — 걸러진 사슬에도 그 타입 이름은 남는다.
+            val httpError =
+                linkedMapOf(
+                    400 to "jakarta.ws.rs.BadRequestException",
+                    401 to "jakarta.ws.rs.NotAuthorizedException",
+                    503 to "jakarta.ws.rs.ServiceUnavailableException",
+                )
+            for ((status, type) in httpError) {
                 reset(Reply(status, error, pad = (ATR_CAP - error.size).toLong()))
                 val atCap = failureOf { it.users().get("x") }
-                val chain = generateSequence(atCap?.cause) { it.cause }.take(16).map { it.javaClass.simpleName }.toList()
+                val chain = generateSequence(atCap?.cause) { it.cause }.take(16).map { it.toString() }.toList()
                 table += "$status = 상한   → ${atCap?.let { "${it.javaClass.simpleName}(${it.message})" }} · 사슬 $chain · admin ${adminHits()}"
                 if (atCap !is KeycloakTransportException || atCap.message != "Admin request failed" || adminHits().isNotEmpty()) {
                     wrong += "$status = 상한: 예전의 실패(Admin request failed · admin 0 건)가 아니다 — $atCap ${adminHits()}"
                 }
-                if ("ProcessingException" !in chain) wrong += "$status = 상한: TokenManager 의 실패 모양(ProcessingException 사슬)이 바뀌었다 — $chain"
+                val trace = atCap?.stackTraceToString().orEmpty()
+                if ("jakarta.ws.rs.ProcessingException (message withheld)" !in trace || "$type (message withheld)" !in trace) {
+                    wrong += "$status = 상한: 걸러진 사슬이 타입 이름(ProcessingException · $type)을 잃었다 — $chain"
+                }
+                val handles = atCap?.let { aeGraph(it).mapNotNull(::aeResponseHandle) }.orEmpty()
+                if (handles.isNotEmpty()) wrong += "$status = 상한: 던진 예외에서 Response 에 닿는다 — $handles"
+                if ("bad client" in trace) wrong += "$status = 상한: 원인 사슬이 오류 본문을 찍었다"
                 reset(Reply(status, error, pad = (ATR_CAP + 1 - error.size).toLong()))
                 table += callExpectingRejection("$status = 상한+1", wrong)
             }
