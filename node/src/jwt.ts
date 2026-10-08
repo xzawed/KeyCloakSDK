@@ -83,6 +83,7 @@ const fetchJwksBounded: FetchImplementation = async (url, options) => {
  * `getKey` 가 매번 `reload()` 를 부르고, `reload()` 는 실패 시 타임스탬프를 남기지 않으므로
  * 쿨다운에 **닿지도 못한다** — 측정상 20회 검증이 IdP 요청 20건을 그대로 냈다
  * (2026-09-04 · 7개 언어 동일. jose v6.2.9 `RemoteJWKSetImpl.getKey`/`reload` 실측).
+ * 캐시가 `cacheMaxAge` 를 넘겨 낡았을 때도 같다(2026-10-05 node: 검증 10 → IdP 요청 10).
  *
  * ⚠️ 여기에 30초를 재사용하면 안 된다 — 일시적 503 한 번이 「30초간 어떤 토큰도 검증 불가」가
  * 된다. 짧게 시작해 지수적으로 늘리고 상한을 둔다. **sleep 하지 않는다**(negative cache).
@@ -119,11 +120,12 @@ interface BackoffSeams {
  *
  * 「강제 재조회」 판정: 캐시가 찼고 신선하면(`jwks() !== undefined && fresh`) jose 가 fetch 를 부르는 길은 미해결
  * kid 뿐이다. 콜드 적재와 만료(`cacheMaxAge`) 갱신은 이 창에 걸지 않는다 — 걸면 그 갱신 하나가 실패하거나 직전에
- * 시도가 있었을 때 정상 토큰까지 30 초 막힌다(규칙 (1)). 다만 그 둘도 **찍기는** 한다 — 창은 마지막 시도로부터
+ * 시도가 있었을 때 정상 토큰까지 30 초 막힌다(규칙 (1)). 그 둘의 실패는 아래 fetch 실패 백오프(0.2 → 5 초)가
+ * 상한한다. 다만 그 둘도 **찍기는** 한다 — 창은 마지막 시도로부터
  * 세므로, 정상일 때는 콜드 적재 직후의 위조 kid 가 지금처럼 IdP 로 안 나간다(창마다 정확히 한 번).
  *
  * 창 안에서는 IdP 에 가지 않고 jose 가 쿨다운 안에서 던지는 것과 같은 `JWKSNoMatchingKey` 를 던진다 — 미해결
- * kid 거부이지 fetch 실패가 아니므로 아래 콜드 캐시 백오프는 세지 않는다(규칙 (4)).
+ * kid 거부이지 fetch 실패가 아니므로 아래 fetch 실패 백오프는 세지 않는다(규칙 (4)).
  */
 function remoteJwksWithRefetchWindow(
   jwksUri: string,
@@ -149,16 +151,19 @@ function remoteJwksWithRefetchWindow(
 }
 
 /**
- * 키 소스를 감싸 **콜드 캐시일 때만** 실패 백오프를 건다.
+ * 키 소스를 감싸 **신선한 캐시 없이 fetch 가 실패했을 때만** 실패 백오프를 건다. 신선한 캐시가 없으면(콜드, 또는
+ * `cacheMaxAge` 가 지난 낡은 캐시) jose 가 `getKey` 첫머리에서 적재한다(`remote.js:66`). 낡은 캐시도 콜드와
+ * 같다 — 갱신이 실패하면 jose 는 캐시된 kid 까지 거부하고 시각을 남기지 않아, 세지 않으면 검증마다 IdP 로 나갔다
+ * (실측 2026-10-05: 601 초 · 503 · 검증 10 → /certs 10).
  *
- * ⚠️ 조건이 「콜드 캐시」인 것이 핵심이다. 웜 캐시의 미해결 kid 경로는 강제 재조회 창
- * (`remoteJwksWithRefetchWindow`)이 상한한다(실측 `== 1`, 장애 중에도), 그리고 그 경로의 `JWKSNoMatchingKey` 는
- * **fetch 실패가 아니다** — 그것을 실패로 세면 위조 kid 홍수가 백오프를 올려 정상 토큰까지 막는다.
+ * ⚠️ 웜 캐시의 미해결 kid 경로는 강제 재조회 창(`remoteJwksWithRefetchWindow`)이 상한한다(실측 `== 1`, 장애 중에도),
+ * 그리고 그 경로의 거부는 **fetch 실패가 아니다** — 그것을 실패로 세면 위조 kid 홍수가 백오프를 올려 정상 토큰까지
+ * 막는다(규칙 (4)).
  */
 // ⚠️ **export 하지 않는다** — 시그니처에 jose 의 `RemoteJWKSet`/`JWTVerifyGetKey` 가 들어 있어
 // export 하면 방출 `.d.ts` 가 그 타입을 다시 import 하고 §4(b) 은닉이 깨진다(가드 실측:
 // `check-node-public-surface.mjs` 누출 1건). 배선은 `forJwksUri` 를 통해서만 닿는다.
-function withColdCacheBackoff(remote: RemoteJWKSet, seams: BackoffSeams = {}): JWTVerifyGetKey {
+function withFetchFailureBackoff(remote: RemoteJWKSet, seams: BackoffSeams = {}): JWTVerifyGetKey {
   const now = seams.now ?? (() => Date.now())
   // jitter 는 thundering herd 를 흩는다 — 비밀이 아니다. ⚠️ 그래도 **PRNG API 를 쓰지 않고**
   // 나노초 시계에서 뽑는다: 보안 민감 코드에서 약한 PRNG 호출은 정적분석이 정당하게 막는다
@@ -167,6 +172,8 @@ function withColdCacheBackoff(remote: RemoteJWKSet, seams: BackoffSeams = {}): J
     seams.jitter ?? (() => 0.5 + Number(process.hrtime.bigint() % 1_000_000n) / 2_000_000)
   let failures = 0
   let lastFailure: number | null = null
+  // 마지막으로 센 실패. jose 는 동시 적재를 한 fetch 로 합치고 그 거부 사유(**같은 객체**)를 대기자 모두에게 던진다.
+  let lastCounted: unknown
 
   const delayMs = () =>
     Math.min(FAILURE_BACKOFF_BASE_MS * 2 ** (Math.max(failures, 1) - 1), FAILURE_BACKOFF_CAP_MS) *
@@ -188,14 +195,26 @@ function withColdCacheBackoff(remote: RemoteJWKSet, seams: BackoffSeams = {}): J
       lastFailure = null
       return key
     } catch (e) {
-      // ⚠️ **이 조건이 콜드 캐시 한정의 유일한 근거다.** 캐시가 여전히 비어 있으면 fetch 가
-      // 실패한 것이다. 캐시가 찼는데 던졌다면 그것은 미해결 kid(`JWKSNoMatchingKey`)이지 전송
-      // 실패가 아니므로 세지 않는다 — 세면 위조 kid 홍수가 백오프를 올려 정상 토큰까지 막는다.
-      //
-      // ⚠️ 진입부에 `if (cold)` 게이트를 **다시 넣지 말 것**. 넣으면 두 검사가 서로를 가려
-      // (한쪽만 지워도 동작이 안 변해) 변이검증이 **양쪽 다 통과**한다 — 실측으로 겪었다.
-      // 여기가 유일한 검사여야 대조군이 실제로 무언가를 겨눈다.
-      if (remote.jwks() === undefined) {
+      // ⚠️ 진입부 게이트를 `!remote.fresh` 로 **좁히지 말 것**. 결과는 같아 보이지만(좁혀도 22/22) 신선한 캐시의 호출이
+      // 게이트를 안 타서, 아래를 부숴 위조 kid 를 세도 규칙 (4) 대조군이 안 운다 — 실측: 그 변이에 jwt-jwks 실패 8 → 2.
+      // 두 자리가 서로를 가리는 것이고(콜드 캐시 때도 겪었다), 여기가 유일한 검사여야 대조군이 무언가를 겨눈다.
+      if (remote.fresh) {
+        // 신선한 캐시로 끝났다 = 마지막 적재는 성공했다. 여기서 던진 것은 미해결 kid 이거나 신선한 캐시의 강제 재조회
+        // 실패라 세지 않고(규칙 (4)), 성공이 카운터를 되돌린다(규칙 (3) — 참조 구현 ruby 도 kid 와 무관하게 fetch
+        // 성공에서 되돌린다). 안 되돌리면 회복 갱신을 위조 kid 가 일으켰을 때 다음 장애의 첫 창이 길어지고(실측
+        // 0.2 → 0.4 초), jitter 가 검사마다 다시 뽑혀 신선한 캐시의 k1 까지 남은 창에 막혔다.
+        failures = 0
+        lastFailure = null
+      } else if (!(e instanceof joseErrors.JWKSNoMatchingKey) && e !== lastCounted) {
+        // ⚠️ **신선한 캐시 없이(콜드 · `cacheMaxAge` 뒤) fetch 가 실패했다 — 그것만 센다.**
+        // - `JWKSNoMatchingKey` 는 kid 거부이거나 30 초 창이 IdP 없이 거부한 것이지 fetch 실패가 아니다(규칙 (4)).
+        //   「신선한 캐시가 없다」만 보면 창의 거부가, 그 결정과 이 catch 사이에 캐시가 600 초를 넘긴 것만으로
+        //   세어진다 — 실측: 정상 IdP 에서 k1 이 'backing off' 로 거부, /certs 그대로.
+        // - 신선할 때 정한 강제 재조회라도 응답을 기다리는 사이 캐시가 낡고 실패했으면 센다 — 안 세면 다음 검증이
+        //   또 나간다(창 전에 두 건).
+        // - 같은 실패는 한 번 — 대기자마다 세면 503 한 번이 곧바로 상한 창이 된다(실측: 동시 10 → 'retry in 4.00s',
+        //   정상 IdP 의 k1 거부). 참조 구현 ruby 는 mutex 로 fetch 마다 한 번 센다.
+        lastCounted = e
         failures += 1
         lastFailure = now()
       }
@@ -253,8 +272,8 @@ export class JwtValidator {
    * 원격 JWKS URI로 검증기를 만든다. `createRemoteJWKSet`은 kid 미해결 시에만 재조회하고, 그 재조회를
    * `jwksMinRefetchSeconds` 창으로 rate-limit 한다 → 서명 위조로 인한 미인증 DoS 증폭을 차단한다.
    *
-   * ⚠️ 그 창은 **캐시가 찬 뒤에만** 걸린다 — 콜드 캐시 + IdP 장애는 실패 백오프가 막는다
-   * (측정 20 → 1).
+   * ⚠️ 그 창은 **캐시가 찬 뒤에만** 걸린다 — 콜드·낡은(`cacheMaxAge` 뒤) 캐시 + IdP 장애는 실패 백오프가 막는다
+   * (측정 20 → 1 · 10 → 1).
    */
   static forJwksUri(jwksUri: string, opts: JwtValidatorOptions): JwtValidator {
     return JwtValidator.forJwksUriWithSeams(jwksUri, opts, {})
@@ -275,7 +294,7 @@ export class JwtValidator {
     seams: BackoffSeams,
   ): JwtValidator {
     const remote = remoteJwksWithRefetchWindow(jwksUri, opts.jwksMinRefetchSeconds, seams)
-    return new JwtValidator(withColdCacheBackoff(remote, seams), opts)
+    return new JwtValidator(withFetchFailureBackoff(remote, seams), opts)
   }
 
   /**
@@ -283,7 +302,7 @@ export class JwtValidator {
    * client id 로 검증하는 데 쓴다(OIDC Core §2·§3.1.3.7 — id_token `aud` 는 client_id 를 담는다).
    * `expectedAudience` 재정의는 액세스 토큰의 몫이라 id_token 에 걸면 안 된다.
    *
-   * ⚠️ 새 키 소스를 만들지 말 것 — JWKS 캐시·재조회 쿨다운·콜드 캐시 백오프가 전부 `keys` 클로저 안에
+   * ⚠️ 새 키 소스를 만들지 말 것 — JWKS 캐시·재조회 쿨다운·fetch 실패 백오프가 전부 `keys` 클로저 안에
    * 있어서, 둘로 나뉘면 IdP 요청과 DoS 상한이 두 배가 된다. I/O 는 하지 않는다.
    *
    * ⚠️ `@internal` — `forKeySource` 와 같은 처리다(방출 `.d.ts` 에 오르지 않는다).

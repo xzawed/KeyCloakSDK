@@ -693,8 +693,8 @@ sd_backoff_gate() {
 # 행위 카나리아 — 백오프를 **실행으로** 치는 테스트(`파일|선언`, 한 줄에 하나): 실패 N 회 → IdP 요청 1 건 ·
 # 창이 지나면 다시 나간다 · 성공하면 카운터가 돌아간다. ⚠️ 위 두 표지는 상수·게이트 함수의 **선언**이라
 # 그 호출을 지워도 참이다(nonce 축과 같은 모양 — #580). 동작의 증명은 이 테스트들이 진다.
-# ⚠️ node 의 「성공 리셋」 테스트는 없다 — 지워도 드러날 행동이 없다(실패 카운트는 콜드 캐시에서만 오르고,
-# 한 번 성공하면 jose 캐시가 다시 비지 않는다 · #556). 변이 SILENT 이지만 **동치 변이**로 판정했다.
+# node 의 「성공 리셋」 카나리아는 낡은 캐시 축에 있다 — 실패를 콜드 캐시에서만 셀 때는 한 번 성공하면 캐시가 다시
+# 비지 않아 지워도 드러날 행동이 없었다(#556, 동치 변이). 낡은 캐시는 성공 뒤에도 600 초마다 다시 낡는다.
 sd_backoff_canary() {
   case "$1" in
     python) printf '%s\n' \
@@ -706,7 +706,8 @@ sd_backoff_canary() {
               'python/tests/unit/aio/test_auth.py|async def test_recovered_idp_resets_the_backoff(' ;;
     node)   printf '%s\n' \
               "node/test/unit/jwt-jwks.test.ts|it('20회 검증이 IdP 요청 1건으로 접힌다'" \
-              "node/test/unit/jwt-jwks.test.ts|it('대조군 — 백오프 창이 지나면 다시 IdP 로 나간다'" ;;
+              "node/test/unit/jwt-jwks.test.ts|it('대조군 — 백오프 창이 지나면 다시 IdP 로 나간다'" \
+              "node/test/unit/jwt-jwks.test.ts|it('대조군 — 성공하면 카운터가 돌아간다: 회복 뒤 다시 낡아 실패하면 창은 처음(0.2 초)부터다'" ;;
     go)     printf '%s\n' \
               'go/jwt_test.go|func TestJWKSFailedFetchBackoffBoundsColdRetries(' \
               'go/jwt_test.go|func TestJWKSBackoffExpiresAndAllowsRetry(' \
