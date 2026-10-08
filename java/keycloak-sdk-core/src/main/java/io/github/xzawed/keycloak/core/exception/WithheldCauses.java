@@ -17,6 +17,14 @@ import java.util.Set;
  * (20 자 이하 본문도 인용된다). 파서가 없는 사슬(연결 거부·타임아웃·Nimbus 값 검사)은 그대로 둔다 — 응답을 싣지 않는
  * 진단이다. 생성자 한 곳이라 모든 감싸기 자리를 덮는다(Node {@code scrubCause} 와 같은 자리).
  *
+ * <p>⚠️ <b>{@code jakarta.ws.rs.ProcessingException} 아래의 {@code WebApplicationException} 도 같다</b> — 메시지가 아니라 쥔
+ * {@code Response} 가 응답을 낸다. admin-client 의 내장 TokenManager 가 BearerAuthFilter(요청 필터) 안에서 토큰 엔드포인트의 오류를
+ * 받으면 RESTEasy 는 그 본문을 bufferEntity 한 {@code Response} 를 {@code NotAuthorizedException} 등에 쥐여 {@code ProcessingException}
+ * 으로 감싸고, 그 {@code Response} 는 {@code close()} 뒤에도 {@code readEntity(String.class)} 가 본문을 그대로 돌려준다(버퍼된 엔티티는
+ * 닫힘 검사를 건너뛴다 — 닫기로는 막지 못한다, 실측). 그 본문은 그 요청의 Basic 시크릿을 되울릴 수 있다({@code AdminTokenEchoTest}).
+ * 뿌리가 {@code WebApplicationException} 자신인 사슬(admin 자원 오류 — {@code AdminExceptions.translate})은 그대로 둔다: 그 본문은
+ * {@code KeycloakAdminException.getKeycloakError()} 가 이미 싣는 레인이다.
+ *
  * <p>⚠️ 따로 둔 이유: 예외 클래스에 정적 초기화를 더하면 기본 {@code serialVersionUID} 가 바뀐다(japicmp 가 알렸다).
  */
 final class WithheldCauses {
@@ -28,6 +36,10 @@ final class WithheldCauses {
       "jakarta.ws.rs.client.ResponseProcessingException",  // JAX-RS: 응답 엔티티를 못 읽었다(admin)
       "com.fasterxml.jackson.core.JacksonException",       // admin-client 의 Jackson(2.12+)
       "com.fasterxml.jackson.core.JsonProcessingException");
+  /** 전송 실패의 감싸개 — 이것이 뿌리일 때 그 아래의 HTTP 오류는 admin 토큰 요청의 것이다. */
+  private static final Set<String> TRANSPORT_WRAPPER = Set.of("jakarta.ws.rs.ProcessingException");
+  /** 응답(버퍼된 본문)을 쥔 HTTP 오류. */
+  private static final Set<String> HTTP_ERROR = Set.of("jakarta.ws.rs.WebApplicationException");
 
   static Throwable scrub(Throwable cause) {
     return cause != null && quotesResponse(cause)
@@ -35,17 +47,24 @@ final class WithheldCauses {
   }
 
   private static boolean quotesResponse(Throwable root) {
+    boolean wrapped = isA(root, TRANSPORT_WRAPPER);
     Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
     Deque<Throwable> todo = new ArrayDeque<>();
     todo.push(root);
     while (!todo.isEmpty()) {
       Throwable t = todo.pop();
       if (!seen.add(t)) continue;
-      for (Class<?> k = t.getClass(); k != null; k = k.getSuperclass()) {
-        if (RESPONSE_PARSERS.contains(k.getName())) return true;
-      }
+      if (isA(t, RESPONSE_PARSERS) || (wrapped && isA(t, HTTP_ERROR))) return true;
       if (t.getCause() != null) todo.push(t.getCause());
       for (Throwable s : suppressed(t)) todo.push(s);
+    }
+    return false;
+  }
+
+  /** {@code t} 의 타입이나 그 상위 타입 중 하나가 {@code names} 에 있다(하위 라이브러리를 이름으로만 안다 — core 는 그것에 의존하지 않는다). */
+  private static boolean isA(Throwable t, Set<String> names) {
+    for (Class<?> k = t.getClass(); k != null; k = k.getSuperclass()) {
+      if (names.contains(k.getName())) return true;
     }
     return false;
   }
