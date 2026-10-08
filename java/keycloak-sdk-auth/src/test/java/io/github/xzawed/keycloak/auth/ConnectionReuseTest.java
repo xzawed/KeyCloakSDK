@@ -66,6 +66,11 @@ class ConnectionReuseTest {
   /** SAN 이 127.0.0.1 인 서버 키 · 다른 이름(other.example)의 서버 키 · 둘을 믿는 클라이언트 팩토리. */
   private static SSLContext serverIp;
   private static SSLContext serverOther;
+  /**
+   * {@code serverOther} 의 키로, 핸드셰이크 뒤 세션 티켓을 보내지 않는 서버 — JDK 의 TLS 1.3 서버는 세션 시한이 7 일을 넘으면 티켓을 보내지
+   * 않는다({@code NewSessionTicket} 「Session timeout is too long」). 보내면 그 바이트가 와 있어 JSSE 의 닫기가 기다리지 않는다.
+   */
+  private static SSLContext serverOtherWithoutTickets;
   private static SSLSocketFactory trusting;
 
   @BeforeAll static void keys() throws Exception {
@@ -73,6 +78,8 @@ class ConnectionReuseTest {
     KeyStore other = keystore("other", "CN=other.example", "SAN=dns:other.example");
     serverIp = serverContext(ip);
     serverOther = serverContext(other);
+    serverOtherWithoutTickets = serverContext(other);
+    serverOtherWithoutTickets.getServerSessionContext().setSessionTimeout(8 * 24 * 3600);
     KeyStore trust = KeyStore.getInstance("PKCS12");
     trust.load(null, null);
     trust.setCertificateEntry("ip", ip.getCertificate("ip"));
@@ -566,6 +573,40 @@ class ConnectionReuseTest {
     }
   }
 
+  /**
+   * 다시 보내기는 새 연결로 간다 — 함께 쉬던 연결 둘이 모두 죽었으면(서버가 둘 다 닫았다) 첫 시도가 하나를 빌려 끊기고, 다시 보내기는 다른
+   * 죽은 연결이 아니라 새 연결을 맺는다(다시 보내기 전에 쉬는 연결을 닫는다). 그 호출은 성공한다 — 다시 보내기가 남은 죽은 연결을
+   * 빌렸다면 두 시도 모두 끊겨 실패했을 것이다.
+   */
+  @Test void theStaleRetry_goesOutOnAFreshConnection_evenWhenOtherPooledConnectionsAreStale() throws Exception {
+    java.util.concurrent.CountDownLatch both = new java.util.concurrent.CountDownLatch(2);
+    try (RawServer server = new RawServer(null, p -> {
+      if (p.index <= 2) {
+        p.readRequest();
+        both.countDown();
+        assertTrue(both.await(10, TimeUnit.SECONDS)); // 둘 다 열린 채로 답한다 — 풀에 연결 둘이 쉬게
+        p.write(ok(ACTIVE));
+        Thread.sleep(100);
+        return; // 닫는다(Connection: close 없이)
+      }
+      p.serveAll(ok(ACTIVE));
+    })) {
+      AuthClient auth = authClient("http://127.0.0.1:" + server.port());
+      ExecutorService pool = Executors.newFixedThreadPool(2);
+      try {
+        Future<Boolean> a = pool.submit(() -> auth.introspect("a").isActive());
+        Future<Boolean> b = pool.submit(() -> auth.introspect("b").isActive());
+        assertTrue(a.get(10, TimeUnit.SECONDS));
+        assertTrue(b.get(10, TimeUnit.SECONDS));
+      } finally {
+        pool.shutdownNow();
+      }
+      Thread.sleep(300); // 두 연결의 FIN 이 닿을 시간 — 빌려줄 때 보는 시간(2 초)보다 짧다
+      assertTrue(auth.introspect("c").isActive());
+      assertEquals(3, server.accepted.get(), () -> server.requests.toString());
+    }
+  }
+
   /** 쉬는 동안 RST 로 끊긴 연결 — 다시 쓰면 연결 재설정(SocketException)이고, 응답 바이트 없이 끊긴 것이라 한 번 다시 보낸다. */
   @Test void aConnectionTheServerResetWhileIdle_isSentAgainOnce() throws Exception {
     try (RawServer server = new RawServer(null, p -> {
@@ -816,8 +857,8 @@ class ConnectionReuseTest {
       p.write(new byte[CAP + 1]);
       Thread.sleep(20_000);
     }, "token response exceeds 1048576 bytes");
-    // 핸드셰이크 뒤 아무것도 읽지 않는다 — 검증기의 거부(HttpURLConnection 의 checkURLSpoofing)
-    rejectFast(slow, "검증기 거부", serverOther, REJECTS, p -> Thread.sleep(20_000),
+    // 핸드셰이크 뒤 아무것도 보내지도 읽지도 않는다(세션 티켓도 없다) — 검증기의 거부(HttpURLConnection 의 checkURLSpoofing)
+    rejectFast(slow, "검증기 거부", serverOtherWithoutTickets, REJECTS, p -> Thread.sleep(20_000),
         "HTTPS hostname wrong:  should be <127.0.0.1>");
     assertTrue(slow.isEmpty(), () -> String.join("\n", slow));
   }

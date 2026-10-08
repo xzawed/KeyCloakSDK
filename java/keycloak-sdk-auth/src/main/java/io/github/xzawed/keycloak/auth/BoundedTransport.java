@@ -109,8 +109,9 @@ import org.apache.http.util.CharArrayBuffer;
  * <p>⚠️ <b>HttpURLConnection 과 같아야 하는 것</b>(실측 대조 — {@code TransportParityTest}): 요청 머리(User-Agent ·
  * Accept · Host · Connection — 아래 상수들), 제한 헤더를 버리는 규칙({@link #restricted}), 리다이렉트를 따르지 않음, 내용 코딩을
  * 요청하지도 풀지도 않음(상한은 받은 바이트를 센다), 시스템 프록시({@code http(s).proxyHost} — {@code ProxySelector}), 거절된
- * CONNECT 는 응답이 아니라 IOException, TLS 단계({@link HucTls}), 연결 재사용, 요청·응답을 로그에 찍지 않음. <b>따라하지 않는 것</b>(JVM 전역 훅 — 키클록의 정상
- * 응답에는 닿지 않는다): {@code CookieHandler} · {@code ResponseCache} · {@code java.net.Authenticator}(401·407 도전에 답하지 않는다),
+ * CONNECT 는 응답이 아니라 IOException, TLS 단계({@link HucTls}), 연결 재사용, 요청·응답을 로그에 찍지 않음. <b>따라하지 않는
+ * 것</b>(JVM 전역 훅 — 키클록의 정상 응답에는 닿지 않는다): {@code CookieHandler} · {@code ResponseCache} ·
+ * {@code java.net.Authenticator}(401·407 도전에 답하지 않는다),
  * 새 연결의 한 번 재시도, {@code http.keepAlive=false} 의 {@code Connection: close}, {@code http.maxConnections}(쉬는 연결 5 개).
  */
 final class BoundedTransport {
@@ -287,11 +288,17 @@ final class BoundedTransport {
 
   /**
    * 한 번만 다시 보낸다 — 풀에서 꺼낸(다시 쓰는) 연결이 응답 바이트 하나 없이 끊겼을 때만(쉬는 동안 서버가 닫은 연결). 새 연결의 실패와
-   * 응답이 오다 끊긴 것은 다시 보내지 않는다 — 서버가 처리한 요청(인가 코드·회전하는 refresh 토큰)을 두 번 보내지 않게.
+   * 응답이 오다 끊긴 것은 다시 보내지 않는다 — 서버가 처리한 요청(인가 코드·회전하는 refresh 토큰)을 두 번 보내지 않게. 다시 보내기
+   * 전에 쉬는 연결을 모두 닫는다 — 하나가 죽었으면 함께 쉬던 것들도 그럴 수 있어(서버가 다시 떴다) 다시 보내기가 또 죽은 연결을 빌리지
+   * 않게, 새 연결로 간다(HttpURLConnection 도 다시 보낼 때 새 연결을 열었다). 시도 수의 한도는 그 사이 다른 교환이 죽은 연결을 돌려준
+   * 경우를 묶는다.
    */
-  private static final HttpRequestRetryHandler STALE_ONCE = (failure, attempt, context) -> attempt == 1
-      && context.getAttribute(FRESH) == null && context.getAttribute(UNANSWERED) != null
-      && (failure instanceof NoHttpResponseException || failure instanceof SocketException);
+  private static final HttpRequestRetryHandler STALE_ONCE = (failure, attempt, context) -> {
+    boolean stale = attempt == 1 && context.getAttribute(FRESH) == null && context.getAttribute(UNANSWERED) != null
+        && (failure instanceof NoHttpResponseException || failure instanceof SocketException);
+    if (stale) BoundedTransport.POOL.closeIdleConnections(0, TimeUnit.MILLISECONDS);
+    return stale;
+  };
 
   /** 교환들이 함께 쓰는 연결 풀 — 프로세스에 하나(클래스 설명). */
   static final PoolingHttpClientConnectionManager POOL = pool();

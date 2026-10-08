@@ -7,8 +7,8 @@ paths:
 <!-- doc-budget: max-bytes=6869 -->
 <!-- 6572 → 6869 (2026-10-09, +297B). 규약 (1) — 증가분이 **다시 재는 시험**을 사 온다: auth·JWKS 운송의 프로세스 풀
      함정 한 줄이 `ConnectionReuseTest`(다 읽지 않은 연결은 끊긴다 · 거부 60 번 뒤 빌린 연결 0 · 조용한 TLS 서버 앞 거부
-     7–29 ms)를 가리킨다. 같은 커밋이 거짓 문장 하나를 고친다 — 「It is now 148/150」 은 실측 196/198 이다(auth 모듈
-     `jacoco.xml` BRANCH missed=2 covered=196 — 미커버 둘은 여전히 다음 줄의 둘). 초안 +308B(검사 8b 의 300B 상한) →
+     7–29 ms)를 가리킨다. 같은 커밋이 거짓 문장 하나를 고친다 — 「It is now 148/150」 은 실측 198/200 이다(auth 모듈
+     `jacoco.xml` BRANCH missed=2 covered=198 — 미커버 둘은 여전히 다음 줄의 둘). 초안 +308B(검사 8b 의 300B 상한) →
      「connection pool」 을 「pool」 로 줄여 +297B. -->
 <!-- 6274 → 6572 (2026-09-25, +298B). 규약 (1) — 증가분이 **다시 재는 테스트**를 사 온다: Nimbus 로컬 검증
      함정 한 줄이 `AuthClientInputBoundaryTest`(거부 케이스마다 요청 적중 0 까지 단언, #585)를 가리킨다.
@@ -50,7 +50,7 @@ PATH="${KCSDK_TOOLS:-$HOME/tools}/apache-maven-3.9.9/bin:$PATH" mvn -f java/pom.
 - The real release goes `v*` tag → `release.yml` (human approval gate).
 - ⚠️ **Do not write the exact patch versions here** — measure them with `java -version` and `node scripts/doctor.mjs java`.
 - ⚠️ **`jacoco:check` is bound to the `verify` phase, so `mvn test` never verifies the coverage gate at all.**
-- ⚠️ **JaCoCo checks each module separately, so the repository total hides the module that is actually at risk.** `keycloak-sdk-auth` sat at **exactly 85.00% branches** (17 of 20, gate 85) while the four modules summed to a comfortable 93.9%. Read the per-module figure, not the sum. It is now 196/198 (27 branches of slack).
+- ⚠️ **JaCoCo checks each module separately, so the repository total hides the module that is actually at risk.** `keycloak-sdk-auth` sat at **exactly 85.00% branches** (17 of 20, gate 85) while the four modules summed to a comfortable 93.9%. Read the per-module figure, not the sum. It is now 198/200 (28 branches of slack).
 - ⚠️ **The two branches still uncovered in that module are unreachable, not missing tests.** `ValidatedToken.from` guards `getAudience() == null`, which a real Nimbus `JWTClaimsSet` never returns, and `OidcMetadata.stripTrailingSlashes` guards an all-slash or empty server URL, which config validation rejects earlier. Both need a mock to reach. **Do not chase 100% here.**
 
 ## Gotchas
