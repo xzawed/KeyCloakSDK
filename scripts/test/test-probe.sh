@@ -183,4 +183,68 @@ assert_eq "1 SILENT —" "$(_newfile_silent)" \
 # 인자를 안 주면 아예 돌지 않는다(생략을 기본값으로 두면 아무도 안 쓴다).
 _noarg() { set +e; ( cd "$SANDBOX" && sh scripts/probe.sh "sed -i s/hello/bye/ f.txt" true ) >/dev/null 2>&1; _c=$?; set -e; echo "$_c"; }
 assert_eq "2" "$(_noarg)" "--site/--no-site 를 안 주면 거부한다"
+
+# ── 빌드·적재 실패는 CAUGHT 가 아니다 ───────────────────────────────────────
+# ⚠️ 컴파일 안 되는 변이는 INVALID 다(함정 (i)) — 검사 명령이 비영으로 끝났다고 단언이 변이를 잡은 것이
+# 아니다. 실측(2026-10-05): go 변이가 컴파일되지 않아 `FAIL … [build failed]` 로 끝났는데 CAUGHT 이 났다.
+# ⚠️ **먹이는 줄은 지어내지 않는다 — 그 도구가 실제로 낸 줄이다**(2026-10-09, 이 저장소의 SDK 를 일부러
+# 깨서 받았다 · 경로만 지웠다). 지어낸 줄로 고른 초안의 표식 둘은 실제 출력에 한 번도 안 맞았다:
+# pytest 수집 오류의 머리는 `____ ERROR collecting … ____` 이고 PHPUnit 12 는 `ParseError:` 를 찍는다.
+# ⚠️ 기준선은 통과해야 한다 — 변이 전(hello)에는 grep 이 성공하고 변이 뒤에만 그 줄을 찍는다. 변이 전부터
+# 실패하면 「기준선이 이미 실패한다」로 INVALID 가 돼 이 표식을 시험한 것이 아니게 된다.
+# 줄은 변수로 넘긴다 — `$( … )` 안에 괄호·따옴표가 섞인 리터럴을 두면 셸마다 파싱이 갈린다(CI 는 dash).
+line_code() { code_of "sed -i s/hello/bye/ f.txt" sh -c 'grep -q hello f.txt || { printf "%s\n" "$1"; exit 1; }' sh "$1"; }
+_tab="$(printf '\t')"
+
+# 양성 — 컴파일·적재 실패. 도구마다 실제 출력의 한 줄.
+_l="FAIL${_tab}github.com/xzawed/KeyCloakSDK/go [build failed]"
+assert_eq "2" "$(line_code "$_l")" "go test 빌드 실패(미사용 변수·vet·미정의 이름 셋 다 이 줄로 끝났다) — INVALID(2)"
+_l="FAIL${_tab}github.com/xzawed/KeyCloakSDK/go [setup failed]"
+assert_eq "2" "$(line_code "$_l")" "go test 셋업 실패(없는 패키지 import) — INVALID(2)"
+_l='[ERROR] COMPILATION ERROR : '
+assert_eq "2" "$(line_code "$_l")" "maven 컴파일 실패 — INVALID(2)"
+_l="e: file:///kotlin/src/main/kotlin/io/github/xzawed/keycloak/ZzProbe.kt:3:31 Unresolved reference 'undefinedProbe'."
+assert_eq "2" "$(line_code "$_l")" "kotlin 컴파일러 진단 — INVALID(2)"
+_l="Execution failed for task ':compileKotlin' (registered by plugin 'org.jetbrains.kotlin.jvm')."
+assert_eq "2" "$(line_code "$_l")" "gradle 9 의 compileKotlin 실패(꼬리에 플러그인 이름이 붙는다) — INVALID(2)"
+_l="src/config.ts(146,30): error TS2304: Cannot find name 'undefinedProbe'."
+assert_eq "2" "$(line_code "$_l")" "tsc 진단 — INVALID(2)"
+_l='Error: Transform failed with 1 error:'
+assert_eq "2" "$(line_code "$_l")" "vitest 5 변환 실패(구문 오류) — INVALID(2)"
+_l='error[E0425]: cannot find value `undefined_probe` in this scope'
+assert_eq "2" "$(line_code "$_l")" "rustc 진단 — INVALID(2)"
+_l='error: could not compile `keycloak-sdk` (lib) due to 1 previous error'
+assert_eq "2" "$(line_code "$_l")" "cargo 컴파일 실패 — INVALID(2)"
+_l="src/Xzawed.Keycloak.Sdk/ZzProbe.cs(2,60): error CS0103: The name 'undefinedProbe' does not exist in the current context [src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj]"
+assert_eq "2" "$(line_code "$_l")" "dotnet 컴파일러 진단 — INVALID(2)"
+_l='E   SyntaxError: invalid syntax'
+assert_eq "2" "$(line_code "$_l")" "pytest 수집 오류 본문의 SyntaxError — INVALID(2)"
+_l='!!!!!!!!!!!!!!!!!!! Interrupted: 33 errors during collection !!!!!!!!!!!!!!!!!!!'
+assert_eq "2" "$(line_code "$_l")" "pytest 수집 중단(NameError·ImportError 는 이 줄로만 갈린다) — INVALID(2)"
+_l="ParseError: Unclosed '(' on line 146"
+assert_eq "2" "$(line_code "$_l")" "PHPUnit 12 의 ParseError — INVALID(2)"
+_l='An error occurred while loading ./spec/unit/admin_spec.rb.'
+assert_eq "2" "$(line_code "$_l")" "rspec 적재 실패(NameError) — INVALID(2)"
+_l='0 examples, 0 failures, 24 errors occurred outside of examples'
+assert_eq "2" "$(line_code "$_l")" "rspec 예제 밖 오류(SyntaxError 는 이 요약으로만 갈린다) — INVALID(2)"
+# 섞인 출력 — 한 패키지는 단언 실패, 다른 패키지는 빌드 실패. 보수적으로 INVALID 다(문서화한 동작을 고정한다).
+_l="$(printf 'FAIL\tgithub.com/xzawed/KeyCloakSDK/go/a\t0.412s\nFAIL\tgithub.com/xzawed/KeyCloakSDK/go/b [build failed]')"
+assert_eq "2" "$(line_code "$_l")" "단언 실패와 빌드 실패가 섞이면 INVALID(2) — 변이를 격리해 다시 잰다"
+
+# 음성 대조군 — 실제 단언 실패의 줄은 그대로 CAUGHT. 같은 도구들이 상수 변이에 실제로 낸 줄이다.
+_l="FAIL${_tab}github.com/xzawed/KeyCloakSDK/go${_tab}10.716s"
+assert_eq "0" "$(line_code "$_l")" "go test 단언 실패 요약 — CAUGHT(0)"
+_l='--- FAIL: TestAdminTokenRefreshOverCapSendsNoAdminRequest (0.01s)'
+assert_eq "0" "$(line_code "$_l")" "go test 단언 실패 줄 — CAUGHT(0)"
+_l='FAILED tests/unit/test_token_response_cap.py::test_reads_never_ask_for_more_than_one_byte_past_the_cap'
+assert_eq "0" "$(line_code "$_l")" "pytest 단언 실패 — CAUGHT(0)"
+_l='266 examples, 22 failures'
+assert_eq "0" "$(line_code "$_l")" "rspec 단언 실패 요약 — CAUGHT(0)"
+_l='Tests: 366, Assertions: 4021, Failures: 5.'
+assert_eq "0" "$(line_code "$_l")" "PHPUnit 단언 실패 요약 — CAUGHT(0)"
+# 앵커 대조군 — 표식 단어가 줄 **중간**에 있다. 부분문자열로 보면 INVALID 로 오진한다.
+_l='FAIL expected SyntaxError: text in docs'
+assert_eq "0" "$(line_code "$_l")" "줄 중간의 SyntaxError 는 표식이 아니다 — CAUGHT(0)"
+_l='FAIL note: [build failed] appears mid-line'
+assert_eq "0" "$(line_code "$_l")" "줄 중간의 [build failed] 는 표식이 아니다(줄 끝 앵커) — CAUGHT(0)"
 assert_report
