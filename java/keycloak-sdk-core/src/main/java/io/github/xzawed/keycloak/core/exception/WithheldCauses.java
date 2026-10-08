@@ -29,10 +29,10 @@ final class WithheldCauses {
       "com.fasterxml.jackson.core.JacksonException",       // admin-client 의 Jackson(2.12+)
       "com.fasterxml.jackson.core.JsonProcessingException",
       // admin 의 HttpCore(RESTEasy) — 틀 오류가 응답의 줄을 싣는다: 「Invalid header: <줄>」·「Status line contains invalid status
-      // code: <줄>」(머리, RESTEasy 가 그 사슬을 ProcessingException 으로 감싼다)·「Bad chunk header: <줄>」(본문 — 미디어 타입 없는
-      // 2xx 를 닫을 때). 실측 AdminResponseFramingTest. auth 레인은 운송이 먼저 상수 메시지로 바꾼다(BoundedTransport.shield).
+      // code: <줄>」(머리 — ProtocolException, RESTEasy 가 그 사슬을 ProcessingException 으로 감싼다)·「Bad chunk header: <줄>」(본문
+      // — 미디어 타입 없는 2xx 를 닫을 때). 실측 AdminResponseFramingTest. HttpCore 의 ParseException 은 늘 ProtocolException 안에
+      // 실려 와 따로 적지 않는다(변이: 그 이름을 빼도 시험이 통과했다). auth 레인은 운송이 먼저 상수 메시지로 바꾼다(BoundedTransport.shield).
       "org.apache.http.HttpException",
-      "org.apache.http.ParseException",
       "org.apache.http.MalformedChunkCodingException");
 
   static Throwable scrub(Throwable cause) {
