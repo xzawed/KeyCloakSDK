@@ -4,9 +4,13 @@ import io.github.xzawed.keycloak.core.ResponseLimits;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
+import java.lang.ref.WeakReference;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -15,6 +19,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.concurrent.TimeUnit;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSession;
@@ -22,6 +27,7 @@ import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import org.apache.http.Header;
 import org.apache.http.HttpClientConnection;
+import org.apache.http.HttpConnection;
 import org.apache.http.HttpConnectionMetrics;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpException;
@@ -30,7 +36,9 @@ import org.apache.http.HttpRequest;
 import org.apache.http.HttpRequestInterceptor;
 import org.apache.http.HttpResponse;
 import org.apache.http.MessageConstraintException;
+import org.apache.http.NoHttpResponseException;
 import org.apache.http.ProtocolException;
+import org.apache.http.client.HttpRequestRetryHandler;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.client.protocol.HttpClientContext;
@@ -38,7 +46,8 @@ import org.apache.http.config.ConnectionConfig;
 import org.apache.http.config.MessageConstraints;
 import org.apache.http.config.Registry;
 import org.apache.http.config.RegistryBuilder;
-import org.apache.http.config.SocketConfig;
+import org.apache.http.conn.ConnectionKeepAliveStrategy;
+import org.apache.http.conn.ConnectionPoolTimeoutException;
 import org.apache.http.conn.DnsResolver;
 import org.apache.http.conn.HttpConnectionFactory;
 import org.apache.http.conn.ManagedHttpClientConnection;
@@ -48,12 +57,14 @@ import org.apache.http.conn.socket.ConnectionSocketFactory;
 import org.apache.http.conn.socket.LayeredConnectionSocketFactory;
 import org.apache.http.conn.socket.PlainConnectionSocketFactory;
 import org.apache.http.conn.ssl.DefaultHostnameVerifier;
-import org.apache.http.impl.NoConnectionReuseStrategy;
+import org.apache.http.entity.BasicHttpEntity;
+import org.apache.http.impl.DefaultConnectionReuseStrategy;
 import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.DefaultConnectionKeepAliveStrategy;
 import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.impl.conn.BasicHttpClientConnectionManager;
 import org.apache.http.impl.conn.DefaultHttpResponseParser;
 import org.apache.http.impl.conn.ManagedHttpClientConnectionFactory;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.impl.conn.SystemDefaultRoutePlanner;
 import org.apache.http.protocol.HttpContext;
 import org.apache.http.protocol.HttpRequestExecutor;
@@ -69,31 +80,46 @@ import org.apache.http.util.CharArrayBuffer;
  * 7.7 초), 1xx 를 끝없이 받으면 재귀하다 {@code StackOverflowError} 가 공개 API 로 나갔다. 그 운송에는 이것들을 끌 노브가 없다.
  *
  * <p>그래서 여기서는: (1) 응답 머리의 줄·헤더 수 한도({@link ResponseLimits#MAX_LINE_LENGTH} ·
- * {@link ResponseLimits#MAX_HEADER_COUNT} — 상태 줄·헤더·청크 크기 줄·트레일러 모두)를 건다 · (2) 본문을 다 읽지 않은 교환은
- * <b>비우지 않고 끊는다</b>(교환의 클라이언트를 닫으면 연결 하나를 shutdown 한다 — 평문은 그 자리에서 끝나고, HTTPS 는 JSSE 가 닫으며
- * 이미 도착한 바이트를 버린다) ·
- * (3) 첫 줄이 상태 줄이 아니면 곧바로 거부하고(HttpURLConnection 처럼 — HttpClient 는 쓰레기 줄을 한도 없이 건너뛴다) 1xx 중간
- * 응답은 {@value #MAX_INTERIM_RESPONSES} 개까지만 받는다 · (4) 교환마다 연결 하나짜리 새 클라이언트를 만든다(공유 풀은 호스트당 2
- * 연결이라 동시 호출이 줄을 선다 — 실측 10 개 병렬 2,540 ms 대 510 ms) — 백그라운드 스레드가 없다 · (5) 하위 운송의 예외는 응답을
- * 인용할 수 있으므로({@code Bad chunk header: <줄>}) 상수 메시지의 {@link IOException} 으로 바꾼다({@link #shield}) · (6) 본문을
- * 읽는 동안 받는 틀의 바이트를 본문 상한의 {@value #WIRE_FACTOR} 배로 묶는다({@link #exchange}).
+ * {@link ResponseLimits#MAX_HEADER_COUNT} — 상태 줄·헤더·청크 크기 줄·트레일러 모두)를 건다 · (2) 본문을 EOF 까지 읽지 않은 교환의
+ * 연결은 <b>비우지 않고 끊는다</b>({@link #cut} — 풀에 돌려주지 않는다) · (3) 첫 줄이 상태 줄이 아니면 곧바로 거부하고
+ * (HttpURLConnection 처럼 — HttpClient 는 쓰레기 줄을 한도 없이 건너뛴다) 1xx 중간 응답은 {@value #MAX_INTERIM_RESPONSES} 개까지만
+ * 받는다 · (4) 연결은 프로세스에 하나인 풀에서 다시 쓴다(아래) · (5) 하위 운송의 예외는 응답을 인용할 수 있으므로({@code Bad chunk
+ * header: <줄>}) 상수 메시지의 {@link IOException} 으로 바꾼다({@link #shield}) · (6) 본문을 읽는 동안 받는 틀의 바이트를 본문 상한의
+ * {@value #WIRE_FACTOR} 배로 묶는다({@link #wireBounded}) · (7) 거부하며 닫는 TLS 연결이 더 읽지 않게 한다 — JSSE 는 TLS 1.3 을 닫을 때
+ * 도착한 바이트가 없으면 읽기 타임아웃만큼 한 번 더 읽어 기다린다(실측: 상태 줄 뒤 조용한 서버에 읽기 타임아웃 8 초면 거부가 8,025
+ * ms) — 끊기 전에 그 타임아웃을 0 으로 둔다({@link #quiet}).
+ *
+ * <p><b>풀</b>({@link #POOL}): HttpURLConnection 의 keep-alive 캐시처럼 프로세스에 하나다. AuthClient 는 닫히지 않으므로(AutoCloseable
+ * 이 아니다) 클라이언트마다 풀을 두면 그 연결을 닫을 자리가 없고, 클라이언트를 호출마다 만드는 소비자에게 소켓이 클라이언트 수만큼
+ * 쌓인다. 경로(호스트·포트·프록시)마다 {@value #MAX_PER_ROUTE} 개까지 — admin 레인의 RESTEasy 풀과 같은 수이고, 넘는 동시 호출은 연결
+ * 타임아웃만큼 연결을 기다린다. 백그라운드 스레드가 없다: 쉰 지 {@value #IDLE_MILLIS} ms(서버의 {@code Keep-Alive: timeout} 이 더
+ * 짧으면 그것 — {@link #idleMillis})가 지난 연결은 다음 교환이 닫고, {@value #VALIDATE_AFTER_MILLIS} ms 넘게 쉰 연결은 빌려줄 때 살아
+ * 있는지 본다. 다시 쓴 연결이 응답 바이트 하나 없이 끊기면(쉬는 동안 서버가 닫았다) 한 번 다시 보낸다 — HttpURLConnection 도
+ * 그랬다(그쪽은 새 연결의 실패도 다시 보낸다). 연결에는 맺을 때의 TLS 근원({@link TlsKey})을 달아 같은 근원의 교환만 다시 쓴다 —
+ * HttpURLConnection 은 소켓 팩토리만 가려 검증기가 다른 교환도 검증 없이 다시 썼다.
  *
  * <p>⚠️ <b>HttpURLConnection 과 같아야 하는 것</b>(실측 대조 — {@code TransportParityTest}): 요청 머리(User-Agent ·
  * Accept · Host · Connection — 아래 상수들), 제한 헤더를 버리는 규칙({@link #restricted}), 리다이렉트를 따르지 않음, 내용 코딩을
  * 요청하지도 풀지도 않음(상한은 받은 바이트를 센다), 시스템 프록시({@code http(s).proxyHost} — {@code ProxySelector}), 거절된
- * CONNECT 는 응답이 아니라 IOException, TLS 단계({@link HucTls}). <b>따라하지 않는 것</b>(JVM 전역 훅 — 키클록의 정상 응답에는
- * 닿지 않는다): {@code CookieHandler} · {@code ResponseCache} · {@code java.net.Authenticator}(401·407 도전에 답하지 않는다),
- * 상태 줄을 받기 전 끊긴 연결의 한 번 재시도, {@code http.keepAlive=false} 의 {@code Connection: close}.
+ * CONNECT 는 응답이 아니라 IOException, TLS 단계({@link HucTls}), 연결 재사용. <b>따라하지 않는 것</b>(JVM 전역 훅 — 키클록의 정상
+ * 응답에는 닿지 않는다): {@code CookieHandler} · {@code ResponseCache} · {@code java.net.Authenticator}(401·407 도전에 답하지 않는다),
+ * 새 연결의 한 번 재시도, {@code http.keepAlive=false} 의 {@code Connection: close}, {@code http.maxConnections}(쉬는 연결 5 개).
  */
 final class BoundedTransport {
   private BoundedTransport() {}
 
   /** 1xx 중간 응답을 이보다 많이 받으면 거부한다 — 끝없이 보내는 서버에 시간이 묶이도록(HttpURLConnection 은 재귀하다 넘쳤다). */
   static final int MAX_INTERIM_RESPONSES = 8;
-  /** 본문을 읽는 동안 연결에서 받아도 되는 바이트 — 본문 상한의 이 배수({@link #exchange}). */
+  /** 본문을 읽는 동안 연결에서 받아도 되는 바이트 — 본문 상한의 이 배수({@link #wireBounded}). */
   static final int WIRE_FACTOR = 8;
   /** 본문 읽기 한 번이 소켓에 요청하는 최대 바이트 — 그 사이에 받은 바이트를 센다({@link #wireBounded}). */
   static final int MAX_READ = 16 * 1024;
+  /** 경로(호스트·포트·프록시) 하나에 동시에 여는 연결의 상한 — admin 레인의 RESTEasy 풀(경로당 50)과 같다. 넘는 호출은 기다린다. */
+  static final int MAX_PER_ROUTE = 50;
+  /** 쉬는 연결의 수명 — HttpURLConnection 의 기본(KeepAliveCache 5 초). */
+  static final long IDLE_MILLIS = 5_000;
+  /** 이보다 오래 쉰 연결은 빌려줄 때 1 ms 읽기로 살아 있는지 본다(HttpClient 의 기본값). */
+  static final int VALIDATE_AFTER_MILLIS = 2_000;
   /** 하위 운송이 응답을 해석하지 못했다 — HttpURLConnection 이 같은 경우에 쓰는 말 그대로. 응답을 인용하지 않는다. */
   static final String INVALID_RESPONSE = "Invalid Http response";
   /** 응답 머리·청크 줄·트레일러가 한도를 넘었다. 응답을 인용하지 않는다. */
@@ -101,6 +127,10 @@ final class BoundedTransport {
       + ResponseLimits.MAX_HEADER_COUNT + " header fields";
   /** 프록시가 CONNECT 를 거절했다(HttpURLConnection 처럼 응답이 아니라 IOException — 프록시의 응답은 인용하지 않는다). */
   static final String TUNNEL_REFUSED = "Unable to tunnel through proxy";
+  /** 경로의 연결이 모두 쓰이는 동안 연결 타임아웃이 지났다. */
+  static final String POOL_TIMEOUT = "Timed out waiting for a pooled connection";
+  /** 연결을 기다리던 스레드가 인터럽트됐다. */
+  static final String INTERRUPTED = "Interrupted while waiting for a pooled connection";
   /** HttpURLConnection 의 기본 User-Agent — 그 클래스처럼 초기화 때 한 번 읽는다. */
   static final String USER_AGENT = userAgent(System.getProperty("http.agent"), System.getProperty("java.version"));
   /** HttpURLConnection 의 기본 Accept — JDK 21 부터 {@code *}{@code /*} 다(17 은 옛 목록). */
@@ -109,6 +139,14 @@ final class BoundedTransport {
   private static final String APACHE = "org.apache.http.";
   private static final String TLS_FACTORY = BoundedTransport.class.getName() + ".tlsFactory";
   private static final String TLS_VERIFIER = BoundedTransport.class.getName() + ".tlsVerifier";
+  /** 교환의 읽기 타임아웃 — 풀의 소켓 설정은 교환마다 다르지 않으므로 소켓을 맺는 자리(아래 팩토리들)가 이것으로 건다. */
+  private static final String READ_TIMEOUT = BoundedTransport.class.getName() + ".readTimeout";
+  /** 본문을 읽는 동안 받아도 되는 바이트 — 실행기가 본문 스트림에 건다. */
+  private static final String WIRE_BUDGET = BoundedTransport.class.getName() + ".wireBudget";
+  /** 이 시도가 연결을 새로 맺었다 — 다시 보내기는 다시 쓴 연결에만 한다. */
+  private static final String FRESH = BoundedTransport.class.getName() + ".fresh";
+  /** 이 시도의 요청에 응답 바이트가 하나도 오지 않았다. */
+  private static final String UNANSWERED = BoundedTransport.class.getName() + ".unanswered";
 
   /** HttpURLConnection 이 요청 머리에서 조용히 버리는 이름(소문자) — {@code sun.net.http.allowRestrictedHeaders} 기본. */
   private static final Set<String> RESTRICTED = Set.of("access-control-request-headers", "access-control-request-method",
@@ -134,8 +172,23 @@ final class BoundedTransport {
   /** HttpURLConnection 처럼 이름의 첫 주소 하나에만 붙는다(HttpClient 의 기본은 주소마다 연결 타임아웃을 다시 쓴다). */
   private static final DnsResolver FIRST_ADDRESS = host -> new InetAddress[] {InetAddress.getByName(host)};
 
+  /** 평문 소켓 — 맺은 뒤 교환의 읽기 타임아웃을 건다(프록시의 CONNECT 응답도 그 아래에서 읽는다). */
+  private static final ConnectionSocketFactory PLAIN = new ConnectionSocketFactory() {
+    @Override public Socket createSocket(HttpContext context) {
+      return new Socket();
+    }
+
+    @Override public Socket connectSocket(int connectTimeout, Socket socket, HttpHost host, InetSocketAddress remote,
+                                          InetSocketAddress local, HttpContext context) throws IOException {
+      Socket connected = PlainConnectionSocketFactory.getSocketFactory()
+          .connectSocket(connectTimeout, socket, host, remote, local, context);
+      connected.setSoTimeout(readTimeout(context));
+      return connected;
+    }
+  };
+
   private static final Registry<ConnectionSocketFactory> SOCKETS = RegistryBuilder.<ConnectionSocketFactory>create()
-      .register("http", PlainConnectionSocketFactory.getSocketFactory())
+      .register("http", PLAIN)
       .register("https", HucTls.INSTANCE)
       .build();
 
@@ -146,12 +199,23 @@ final class BoundedTransport {
     if (!request.containsHeader(name)) request.addHeader(name, "keep-alive");
   };
 
-  /** 1xx 를 세고, 거절된 CONNECT 를 IOException 으로 바꾸는 실행기 — 상태가 없어 모든 교환이 함께 쓴다. */
+  /**
+   * 1xx 를 세고, 거절된 CONNECT 를 IOException 으로 바꾸고, 본문에 틀 예산을 걸고({@link #wireBounded}), 실패한 시도가 응답 바이트를
+   * 받았는지 적는 실행기 — 상태가 없어 모든 교환이 함께 쓴다. 응답을 받다 실패하면 HttpCore 가 곧 연결을 닫으므로 그 전에 읽기
+   * 타임아웃을 0 으로 둔다({@link #quiet} — 요청을 쓰다 실패한 연결은 이미 죽어 JSSE 가 기다릴 것이 없다).
+   */
   private static final HttpRequestExecutor EXECUTOR = new HttpRequestExecutor() {
     @Override
     public HttpResponse execute(HttpRequest request, HttpClientConnection conn, HttpContext context)
         throws IOException, HttpException {
-      HttpResponse response = super.execute(request, conn, context);
+      long before = conn.getMetrics().getReceivedBytesCount();
+      HttpResponse response;
+      try {
+        response = super.execute(request, conn, context);
+      } catch (IOException e) {
+        if (conn.getMetrics().getReceivedBytesCount() == before) context.setAttribute(UNANSWERED, Boolean.TRUE);
+        throw e;
+      }
       // HttpClient 는 거절된 CONNECT 의 응답(본문까지 통째로 버퍼에 담아)을 호출자에게 돌려준다 — 받기 전에 끊는다.
       if ("CONNECT".equals(request.getRequestLine().getMethod()) && response.getStatusLine().getStatusCode() != 200) {
         throw new IOException(TUNNEL_REFUSED);
@@ -162,16 +226,79 @@ final class BoundedTransport {
     @Override
     protected HttpResponse doReceiveResponse(HttpRequest request, HttpClientConnection conn, HttpContext context)
         throws HttpException, IOException {
-      for (int interim = 0; ; interim++) {
-        HttpResponse response = conn.receiveResponseHeader();
-        if (response.getStatusLine().getStatusCode() >= 200) {
-          if (canResponseHaveBody(request, response)) conn.receiveResponseEntity(response);
-          return response;
+      try {
+        for (int interim = 0; ; interim++) {
+          HttpResponse response = conn.receiveResponseHeader();
+          if (response.getStatusLine().getStatusCode() >= 200) {
+            if (canResponseHaveBody(request, response)) {
+              conn.receiveResponseEntity(response);
+              // HttpCore 가 만든 그대로의 엔티티(BHttpConnectionBase.prepareInput) — 그 스트림 위에, EOF 를 알아채 연결을 놓는 HttpClient 의
+              // 감싸개 아래에 건다: 마지막 읽기(트레일러 포함)까지 연결을 쥔 채로 센다.
+              BasicHttpEntity entity = (BasicHttpEntity) response.getEntity();
+              entity.setContent(wireBounded(entity.getContent(), conn, (Long) context.getAttribute(WIRE_BUDGET)));
+            }
+            return response;
+          }
+          if (interim >= MAX_INTERIM_RESPONSES) throw new ProtocolException("too many interim responses");
         }
-        if (interim >= MAX_INTERIM_RESPONSES) throw new ProtocolException("too many interim responses");
+      } catch (IOException | HttpException | RuntimeException e) {
+        quiet(conn);
+        throw e;
       }
     }
   };
+
+  /** 서버가 {@code Keep-Alive: timeout} 으로 준 시간과 {@link #IDLE_MILLIS} 중 짧은 것 — {@link #idleMillis}. */
+  private static final ConnectionKeepAliveStrategy KEEP_ALIVE =
+      (response, context) -> idleMillis(DefaultConnectionKeepAliveStrategy.INSTANCE.getKeepAliveDuration(response, context));
+
+  /**
+   * 한 번만 다시 보낸다 — 풀에서 꺼낸(다시 쓰는) 연결이 응답 바이트 하나 없이 끊겼을 때만(쉬는 동안 서버가 닫은 연결). 새 연결의 실패와
+   * 응답이 오다 끊긴 것은 다시 보내지 않는다 — 서버가 처리한 요청(인가 코드·회전하는 refresh 토큰)을 두 번 보내지 않게.
+   */
+  private static final HttpRequestRetryHandler STALE_ONCE = (failure, attempt, context) -> attempt == 1
+      && context.getAttribute(FRESH) == null && context.getAttribute(UNANSWERED) != null
+      && (failure instanceof NoHttpResponseException || failure instanceof SocketException);
+
+  /** 교환들이 함께 쓰는 연결 풀 — 프로세스에 하나(클래스 설명). */
+  static final PoolingHttpClientConnectionManager POOL = pool();
+  private static final CloseableHttpClient CLIENT = HttpClientBuilder.create()
+      .setConnectionManager(POOL)
+      .setConnectionManagerShared(true)
+      .setRoutePlanner(new SystemDefaultRoutePlanner(null))
+      .setRequestExecutor(EXECUTOR)
+      .setUserAgent(USER_AGENT)
+      .addInterceptorFirst(CONNECTION)
+      .setConnectionReuseStrategy(DefaultConnectionReuseStrategy.INSTANCE)
+      .setKeepAliveStrategy(KEEP_ALIVE)
+      .setRetryHandler(STALE_ONCE)
+      .disableRedirectHandling()
+      .disableContentCompression()
+      .disableCookieManagement()
+      .build();
+
+  private static PoolingHttpClientConnectionManager pool() {
+    PoolingHttpClientConnectionManager pool = new PoolingHttpClientConnectionManager(SOCKETS, CONNECTIONS, null, FIRST_ADDRESS,
+        -1, TimeUnit.MILLISECONDS) {
+      @Override
+      public void connect(HttpClientConnection conn, HttpRoute route, int connectTimeout, HttpContext context)
+          throws IOException {
+        context.setAttribute(FRESH, Boolean.TRUE);
+        super.connect(conn, route, connectTimeout, context);
+      }
+
+      @Override
+      public void shutdown() {
+        // 닫지 않는다 — HttpClient 는 교환 중에 Error 가 나면 관리자를 닫는데, 이 풀은 프로세스에 하나라 그러면 이 JVM 의 auth·JWKS
+        // 레인이 끝난다. 그 교환이 쥔 연결은 exchange 의 끝(cut)이 끊는다.
+      }
+    };
+    pool.setDefaultConnectionConfig(BOUNDED_HEAD);
+    pool.setDefaultMaxPerRoute(MAX_PER_ROUTE);
+    pool.setMaxTotal(Integer.MAX_VALUE); // 경로마다의 상한이 묶는다 — 경로는 소비자의 설정이 정한다(응답이 만들지 못한다)
+    pool.setValidateAfterInactivity(VALIDATE_AFTER_MILLIS);
+    return pool;
+  }
 
   /** 응답의 상태·머리를 받아 본문 스트림에서 결과를 만든다. ⚠️ 본문 스트림을 닫지 않는다 — 닫기는 나머지를 비운다(HttpCore). */
   @FunctionalInterface
@@ -180,9 +307,10 @@ final class BoundedTransport {
   }
 
   /**
-   * 교환 하나 — 연결 하나짜리 새 클라이언트로 {@code request} 를 보내고 상태와 머리가 오면 {@code reader} 에 넘긴다. 본문을 EOF 까지
-   * 읽었으면 연결은 그때 이미 놓였고(정상 종료), 아니면(넘침·거부·실패) 클라이언트를 닫으며 남은 본문을 읽지 않고 끊는다. 실패는
-   * {@link #shield} 를 거친 IOException 이다. TLS 근원은 HttpURLConnection 이 쓰는 소켓 팩토리와 검증기다({@link HucTls}).
+   * 교환 하나 — 풀의 연결로 {@code request} 를 보내고 상태와 머리가 오면 {@code reader} 에 넘긴다. 본문을 EOF 까지 읽었으면 연결은
+   * 그때 이미 풀로 돌아갔고(재사용), 아니면(넘침·거부·실패) {@link #cut} 이 그 연결을 읽지 않고 끊는다. 실패는 {@link #shield} 를 거친
+   * IOException 이다. TLS 근원은 HttpURLConnection 이 쓰는 소켓 팩토리와 검증기다({@link HucTls}) — 그 근원이 연결의 표식이다
+   * ({@link TlsKey}).
    *
    * <p>본문을 읽는 동안 연결에서 받은 바이트(청크 머리·확장·트레일러 포함)는 {@code bodyCap} 의 {@value #WIRE_FACTOR} 배까지다
    * ({@link #wireBounded}) — 본문 상한은 본문만 세서, 한 바이트짜리 청크마다 크기 줄을 줄 한도(8,192)까지 채우면(「0000…01」) 상한
@@ -191,64 +319,90 @@ final class BoundedTransport {
    */
   static <T> T exchange(HttpRequestBase request, SSLSocketFactory tlsFactory, HostnameVerifier verifier,
                         int connectTimeoutMillis, int readTimeoutMillis, int bodyCap, Reader<T> reader) throws IOException {
-    BasicHttpClientConnectionManager connections = new BasicHttpClientConnectionManager(SOCKETS, CONNECTIONS, null, FIRST_ADDRESS);
-    connections.setConnectionConfig(BOUNDED_HEAD);
-    // 프록시의 CONNECT 응답과 TLS 핸드셰이크도 읽기 타임아웃 아래에서 읽는다(HttpURLConnection 은 연결 직후 거는 값이다)
-    connections.setSocketConfig(SocketConfig.custom().setSoTimeout(readTimeoutMillis).build());
+    POOL.closeExpiredConnections(); // 스레드 없이 — 수명이 지난 쉬는 연결은 다음 교환이 닫는다
     request.setConfig(RequestConfig.custom()
         .setConnectTimeout(connectTimeoutMillis)
+        .setConnectionRequestTimeout(connectTimeoutMillis)
         .setSocketTimeout(readTimeoutMillis)
         .setAuthenticationEnabled(false)
         .build());
     HttpClientContext context = HttpClientContext.create();
     context.setAttribute(TLS_FACTORY, tlsFactory);
     context.setAttribute(TLS_VERIFIER, verifier);
-    try (CloseableHttpClient client = HttpClientBuilder.create()
-        .setConnectionManager(connections)
-        .setRoutePlanner(new SystemDefaultRoutePlanner(null))
-        .setRequestExecutor(EXECUTOR)
-        .setUserAgent(USER_AGENT)
-        .addInterceptorFirst(CONNECTION)
-        .setConnectionReuseStrategy(NoConnectionReuseStrategy.INSTANCE)
-        .disableRedirectHandling()
-        .disableContentCompression()
-        .disableAutomaticRetries()
-        .disableCookieManagement()
-        .build()) {
-      // 끊기는 이 클라이언트의 닫기다: 연결 하나짜리 관리자의 shutdown 이 연결을 읽지 않고 닫는다(SO_LINGER 0 —
-      // BHttpConnectionBase.shutdown). 본문을 EOF 까지 읽었으면 연결은 그때 이미 정상 종료됐다. ⚠️ 본문 스트림을 닫거나
-      // EntityUtils.consume 으로 「놓지」 말 것 — HttpCore 의 닫기는 나머지를 EOF 까지 비운다(끝없는 본문이면 돌아오지 않는다 —
-      // ResponseFramingBoundsTest 의 끝없는 본문 시험이 잡는다). request.abort() 를 더해도 같은 shutdown 이라 아무것도 바뀌지 않았다(변이 실측).
-      try {
-        HttpResponse head = client.execute(request, context);
-        HttpEntity entity = head.getEntity();
-        return reader.read(head, entity == null ? InputStream.nullInputStream()
-            : wireBounded(entity.getContent(), context.getConnection().getMetrics(), (long) WIRE_FACTOR * bodyCap));
-      } catch (IOException e) {
-        throw shield(e);
-      }
+    context.setAttribute(READ_TIMEOUT, readTimeoutMillis);
+    context.setAttribute(WIRE_BUDGET, (long) WIRE_FACTOR * bodyCap);
+    context.setUserToken(new TlsKey(tlsFactory, verifier));
+    try {
+      HttpResponse head = CLIENT.execute(request, context);
+      HttpEntity entity = head.getEntity();
+      return reader.read(head, entity == null ? InputStream.nullInputStream() : entity.getContent());
+    } catch (IOException e) {
+      throw shield(e);
+    } finally {
+      cut(request, context);
     }
   }
 
   /**
-   * 읽기마다 이 연결이 받은 바이트(소켓에서 버퍼로 — HttpCore 의 연결 지표)를 세어, 본문을 읽기 시작한 뒤 {@code budget} 을 넘으면
-   * 상수 메시지로 거부한다. 한 번의 읽기가 넘는 양은 {@value #MAX_READ} 바이트(HttpCore 는 큰 요청을 버퍼를 거치지 않고 소켓에서 바로
-   * 읽는다 — 그래서 요청 길이를 자른다)와 청크 머리 한 줄, 트레일러 한 묶음(줄·헤더 수 한도 안)까지다.
+   * 교환의 끝. 본문을 EOF 까지 읽은 연결은 그때 이미 풀로 돌아갔다 — 여기서는 아무것도 하지 않는다(이 교환의 연결 대리자는 그때 떨어져
+   * 나갔다). 그 밖의 끝(넘침·거부·실패)은 그 연결을 <b>읽지 않고</b> 끊는다 — 읽기 타임아웃을 0 으로 두고({@link #quiet}) 요청을
+   * 중단하면 HttpClient 가 연결을 SO_LINGER 0 으로 닫고 풀에서 뺀다({@code ConnectionHolder.abortConnection}). ⚠️ 본문 스트림을 닫거나
+   * {@code EntityUtils.consume}·{@code consumeContent} 로 「놓지」 말 것 — HttpCore 의 닫기는 나머지를 EOF 까지 비우고,
+   * {@code consumeContent} 는 다 읽지 않은 연결을 풀에 돌려준다(다음 교환이 남은 본문을 응답으로 읽는다).
    */
-  static InputStream wireBounded(InputStream body, HttpConnectionMetrics metrics, long budget) {
+  private static void cut(HttpRequestBase request, HttpClientContext context) {
+    HttpConnection connection = context.getConnection();
+    if (connection != null) quiet(connection);
+    request.abort();
+  }
+
+  /**
+   * 곧 닫을 연결의 읽기 타임아웃을 0 으로 — JSSE 는 TLS 1.3 을 닫을 때 받은 바이트가 없으면 읽기 타임아웃만큼 한 번 더 읽어 기다리고
+   * (타임아웃이 0 이면 읽지 않는다 — {@code SSLSocketImpl.readLockedDeplete}), 조용한 서버 앞에서 거부가 그만큼 늦었다. 이미 풀로
+   * 돌아간 연결(이 교환의 대리자가 떨어져 나갔다)은 건드리지 않는다.
+   */
+  static void quiet(HttpConnection connection) {
+    try {
+      connection.setSocketTimeout(0);
+    } catch (RuntimeException returned) {
+      // 이미 풀로 돌아갔다 — 이 교환의 것이 아니다
+    }
+  }
+
+  /**
+   * 본문 스트림 — 읽기마다 이 연결이 받은 바이트(소켓에서 버퍼로 — HttpCore 의 연결 지표)를 세어, 본문을 읽기 시작한 뒤 {@code budget}
+   * 을 넘으면 상수 메시지로 거부한다. 한 번의 읽기가 넘는 양은 {@value #MAX_READ} 바이트(HttpCore 는 큰 요청을 버퍼를 거치지 않고
+   * 소켓에서 바로 읽는다 — 그래서 요청 길이를 자른다)와 청크 머리 한 줄, 트레일러 한 묶음(줄·헤더 수 한도 안)까지다. 길이 0 의 읽기는
+   * 소켓에 닿지 않고 0 이다 — HttpCore 의 버퍼는 비었을 때 그것도 기다리고, JDK 의 {@code readNBytes} 는 다 채운 뒤 길이 0 으로 한 번 더
+   * 묻는다(실측: 상한+1 바이트 뒤 멈춘 서버 앞에서 넘침을 읽기 타임아웃까지 알아채지 못했다). 거부하거나 읽기가 실패하면 연결의 읽기
+   * 타임아웃을 0 으로 둔다({@link #quiet}) — HttpClient 가 곧 그 연결을 닫는다.
+   */
+  static InputStream wireBounded(InputStream body, HttpClientConnection connection, long budget) {
+    HttpConnectionMetrics metrics = connection.getMetrics();
     long start = metrics.getReceivedBytesCount();
     String overBudget = "HTTP response body framing exceeds " + budget + " bytes on the wire";
     return new FilterInputStream(body) {
       @Override public int read() throws IOException {
-        int b = super.read();
-        check();
-        return b;
+        try {
+          int b = super.read();
+          check();
+          return b;
+        } catch (IOException e) {
+          quiet(connection);
+          throw e;
+        }
       }
 
       @Override public int read(byte[] buffer, int offset, int length) throws IOException {
-        int n = super.read(buffer, offset, Math.min(length, MAX_READ));
-        check();
-        return n;
+        if (length == 0) return 0;
+        try {
+          int n = super.read(buffer, offset, Math.min(length, MAX_READ));
+          check();
+          return n;
+        } catch (IOException e) {
+          quiet(connection);
+          throw e;
+        }
       }
 
       private void check() throws IOException {
@@ -259,13 +413,25 @@ final class BoundedTransport {
 
   /**
    * 하위 운송의 예외를 응답을 인용하지 않는 것으로 — JDK 의 예외(타임아웃·연결 거부·TLS·DNS)와 SDK 의 것은 그대로 두고, HttpClient
-   * 가 JDK 의 예외를 감싼 것(연결 실패)은 그 원인을 꺼내고(HttpURLConnection 이 던지는 바로 그것), 나머지(틀 오류 · 한도 초과)는 상수
-   * 메시지의 IOException 이다 — 원인을 달지 않는다(HttpCore 의 메시지는 응답의 줄을 싣는다: {@code Bad chunk header: <줄>}).
+   * 가 JDK 의 예외를 감싼 것(연결 실패)은 그 원인을 꺼내고(HttpURLConnection 이 던지는 바로 그것), 풀의 기다림이 끝난 것은 JDK 의
+   * 타임아웃·인터럽트 예외로, 나머지(틀 오류 · 한도 초과)는 상수 메시지의 IOException 이다 — 원인을 달지 않는다(HttpCore 의 메시지는
+   * 응답의 줄을 싣는다: {@code Bad chunk header: <줄>}).
    */
   static IOException shield(IOException e) {
     if (!e.getClass().getName().startsWith(APACHE)) return e;
     if (e.getCause() instanceof IOException cause) return shield(cause);
+    if (e instanceof ConnectionPoolTimeoutException) return new SocketTimeoutException(POOL_TIMEOUT);
+    if (e instanceof InterruptedIOException) return new InterruptedIOException(INTERRUPTED);
     return new IOException(e instanceof MessageConstraintException ? OVER_LIMITS : INVALID_RESPONSE);
+  }
+
+  /** 서버가 준 쉬는 시간(없으면 음수)을 풀의 쉬는 수명으로 — {@link #IDLE_MILLIS} 를 넘지 않고, 0 이면 곧 닫는다(1 ms). */
+  static long idleMillis(long serverMillis) {
+    return serverMillis < 0 ? IDLE_MILLIS : Math.max(1, Math.min(serverMillis, IDLE_MILLIS));
+  }
+
+  private static int readTimeout(HttpContext context) {
+    return (Integer) context.getAttribute(READ_TIMEOUT);
   }
 
   /** HttpURLConnection 이 조용히 버리는 요청 헤더인가 — {@code Connection: close} 는 허용하고 {@code Sec-*} 는 버린다. */
@@ -320,11 +486,50 @@ final class BoundedTransport {
   }
 
   /**
+   * 풀의 연결에 다는 표식 — 그 연결을 맺은 TLS 근원(소켓 팩토리·검증기)의 정체. 풀은 같은 표식의 교환에만 그 연결을 빌려준다
+   * ({@code RouteSpecificPool.getFree(state)}). 근원을 붙잡지 않는다(약한 참조) — 근원이 사라진 표식은 자기 자신 말고는 무엇과도 같지
+   * 않아 그 연결은 다시 쓰이지 않고 수명이 지나면 닫힌다(빌리는 교환은 제 근원을 쥐고 있으므로 살아 있다). 없는 근원(null)은 하나의
+   * 표지로 센다. 비밀을 쥐지 않고, 문자열 표현은 상수다.
+   */
+  static final class TlsKey {
+    /** 없는 근원 — 약한 참조의 null(사라진 근원)과 가르려고 강하게 쥔 표지다. */
+    private static final Object NONE = new Object();
+    private final WeakReference<Object> factory;
+    private final WeakReference<Object> verifier;
+    private final int hash;
+
+    TlsKey(SSLSocketFactory factory, HostnameVerifier verifier) {
+      Object f = factory == null ? NONE : factory;
+      Object v = verifier == null ? NONE : verifier;
+      this.factory = new WeakReference<>(f);
+      this.verifier = new WeakReference<>(v);
+      this.hash = 31 * System.identityHashCode(f) + System.identityHashCode(v);
+    }
+
+    @Override public boolean equals(Object o) {
+      if (o == this) return true;
+      if (!(o instanceof TlsKey other)) return false;
+      Object f = factory.get();
+      Object v = verifier.get();
+      return f != null && v != null && f == other.factory.get() && v == other.verifier.get();
+    }
+
+    @Override public int hashCode() {
+      return hash;
+    }
+
+    @Override public String toString() {
+      return "TlsKey";
+    }
+  }
+
+  /**
    * HttpURLConnection 의 TLS 단계({@code sun.net.www.protocol.https.HttpsClient.afterConnect}) — 근원(소켓 팩토리·검증기)은 교환의
    * 문맥에서 받는다(상태가 없다). {@code https.protocols}·{@code https.cipherSuites} 를 그대로 걸고, 검증기가 JDK 기본이면 핸드셰이크
    * 안에서 RFC 2818 검사를 하고(그래서 불일치는 HttpURLConnection 과 같은 SSLHandshakeException 이다), 아니면 핸드셰이크 뒤 엄격한
    * 검사 → 검증기 순서로 묻는다. ⚠️ 그 기본 검증기를 Apache 의 검증기로 그냥 넘기면 모든 HTTPS 호출이 깨진다 — JDK 의 기본 검증기
-   * 객체는 늘 거짓을 돌려주고, HttpURLConnection 이 이름으로 알아보아 따로 처리한다(실측).
+   * 객체는 늘 거짓을 돌려주고, HttpURLConnection 이 이름으로 알아보아 따로 처리한다(실측). 핸드셰이크는 교환의 읽기 타임아웃 아래에서
+   * 한다(풀의 소켓 설정은 교환마다 다르지 않다).
    */
   static final class HucTls implements LayeredConnectionSocketFactory {
     static final HucTls INSTANCE = new HucTls();
@@ -351,6 +556,7 @@ final class BoundedTransport {
     @Override public Socket createLayeredSocket(Socket socket, String target, int port, HttpContext context) throws IOException {
       SSLSocketFactory factory = (SSLSocketFactory) context.getAttribute(TLS_FACTORY);
       HostnameVerifier verifier = (HostnameVerifier) context.getAttribute(TLS_VERIFIER);
+      socket.setSoTimeout(readTimeout(context));
       SSLSocket tls = (SSLSocket) factory.createSocket(socket, target, port, true);
       String[] protocols = tokens(System.getProperty("https.protocols"));
       if (protocols.length > 0) tls.setEnabledProtocols(protocols);
@@ -371,11 +577,15 @@ final class BoundedTransport {
       return tls;
     }
 
-    /** HttpsClient.checkURLSpoofing — 엄격한 검사가 맞으면 통과, 아니면 검증기에 묻고, 둘 다 아니면 닫고 던진다. */
+    /**
+     * HttpsClient.checkURLSpoofing — 엄격한 검사가 맞으면 통과, 아니면 검증기에 묻고, 둘 다 아니면 닫고 던진다(닫기 전에 읽기
+     * 타임아웃을 0 으로 — 조용한 서버 앞에서 JSSE 가 기다리지 않게).
+     */
     private static void checkHostname(SSLSocket tls, String target, HostnameVerifier verifier) throws IOException {
       String host = target.replaceFirst("^\\[(.*)]$", "$1");
       SSLSession session = tls.getSession();
       if (STRICT.verify(host, session) || verifier.verify(host, session)) return;
+      tls.setSoTimeout(0);
       tls.close();
       session.invalidate();
       throw new IOException("HTTPS hostname wrong:  should be <" + target + ">");

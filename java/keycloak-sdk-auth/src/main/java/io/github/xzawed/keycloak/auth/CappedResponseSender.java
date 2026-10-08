@@ -40,11 +40,12 @@ import org.apache.http.entity.ByteArrayEntity;
  * 그것을 따르는 길을 아예 두지 않는다. 요청의 프록시({@code HTTPRequest.setProxy})는 보지 않는다 — SDK 가 설정하지 않는 값이고,
  * 시스템 프록시({@code http(s).proxyHost})는 따른다.
  *
- * <p>상한 안의 본문은 Nimbus 와 같은 문자열로 만든다({@link #asNimbusReadsIt}) — 파서가 받는 입력이 지금과 같다. 상한을 넘으면
- * 나머지를 읽지 않고 <b>연결을 끊은 뒤</b>(교환의 클라이언트를 닫으며 — 평문은 그 자리에서 끝나고, HTTPS 는 JSSE 가 닫으며 이미 도착한 바이트를
- * 버린다) {@link TooLarge} 를 던지고, 호출부가 그 레인의 {@code KeycloakTransportException} 으로 바꾼다. SDK 가 요청하고 쥐는 것은
- * 상한+1 바이트까지다({@link #readWithinCap}). 운송은 내용 코딩을 요청하지도 풀지도 않으므로 센 바이트가 받은 바이트다. 그 본문을
- * 읽는 동안 연결에서 받는 틀(청크 머리·트레일러 포함)은 상한의 8 배까지다({@code BoundedTransport.exchange}).
+ * <p>상한 안의 본문은 Nimbus 와 같은 문자열로 만든다({@link #asNimbusReadsIt}) — 파서가 받는 입력이 지금과 같다. 그 본문은 EOF 까지
+ * 읽으므로 연결은 운송의 풀로 돌아가 다음 호출이 다시 쓴다(HttpURLConnection 의 keep-alive 처럼). 상한을 넘으면 나머지를 읽지 않고
+ * <b>그 연결을 끊은 뒤</b>(풀에 돌려주지 않는다 — 평문은 그 자리에서 끝나고, HTTPS 는 JSSE 가 닫으며 이미 도착한 바이트를 버린다)
+ * {@link TooLarge} 를 던지고, 호출부가 그 레인의 {@code KeycloakTransportException} 으로 바꾼다. SDK 가 요청하고 쥐는 것은 상한+1
+ * 바이트까지다({@link #readWithinCap}). 운송은 내용 코딩을 요청하지도 풀지도 않으므로 센 바이트가 받은 바이트다. 그 본문을 읽는 동안
+ * 연결에서 받는 틀(청크 머리·트레일러 포함)은 상한의 8 배까지다({@code BoundedTransport.wireBounded}).
  *
  * <p>인스턴스 상태가 없다 — 호출 하나의 스택에만 사는 값(연결·본문)을 필드로 쥐지 않는다.
  */

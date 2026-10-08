@@ -71,6 +71,8 @@ class TransportParityTest {
   private static final HostnameVerifier ACCEPTS_LOOPBACK = (host, session) -> "127.0.0.1".equals(host);
 
   @TempDir static Path dir;
+  /** 시험 키 저장소의 암호 — 실행마다 새로 만든다(저장소에 키도, 그 암호도 두지 않는다). */
+  private static final String STOREPASS = java.util.UUID.randomUUID().toString();
   /** SAN 이 127.0.0.1 인 서버 키 · 다른 이름(other.example)의 서버 키 · 둘을 믿는 클라이언트 팩토리. */
   private static SSLContext serverIp;
   private static SSLContext serverOther;
@@ -102,20 +104,20 @@ class TransportParityTest {
     Path file = dir.resolve(alias + ".p12");
     Process p = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "keytool").toString(),
         "-genkeypair", "-alias", alias, "-keyalg", "EC", "-groupname", "secp256r1", "-validity", "2", "-dname", dname,
-        "-ext", san, "-keystore", file.toString(), "-storetype", "PKCS12", "-storepass", "changeit", "-keypass", "changeit")
+        "-ext", san, "-keystore", file.toString(), "-storetype", "PKCS12", "-storepass", STOREPASS, "-keypass", STOREPASS)
         .redirectErrorStream(true).start();
     String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
     assertTrue(p.waitFor(60, TimeUnit.SECONDS) && p.exitValue() == 0, () -> "keytool 실패: " + out);
     KeyStore ks = KeyStore.getInstance("PKCS12");
     try (InputStream in = new FileInputStream(file.toFile())) {
-      ks.load(in, "changeit".toCharArray());
+      ks.load(in, STOREPASS.toCharArray());
     }
     return ks;
   }
 
   private static SSLContext serverContext(KeyStore ks) throws Exception {
     KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-    kmf.init(ks, "changeit".toCharArray());
+    kmf.init(ks, STOREPASS.toCharArray());
     SSLContext ctx = SSLContext.getInstance("TLS");
     ctx.init(kmf.getKeyManagers(), null, null);
     return ctx;
