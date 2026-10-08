@@ -94,7 +94,8 @@ def _decode(body: bytes, status: int) -> dict[str, Any]:
 def fetch_jwks(session: Any, url: str, *, timeout: Any, verify: Any, cert: Any) -> dict[str, Any]:
     """하드닝된 requests 세션으로 JWKS 를 상한 안에서 가져온다.
 
-    세션을 그대로 쓰므로 `harden_openid` 의 리다이렉트 거부 훅과 재시도 어댑터가 유지된다.
+    세션을 그대로 쓰므로 `harden_openid` 의 리다이렉트 거부 훅과 재시도 없는 어댑터
+    (`retries.py`)가 그대로 걸린다 — 실패한 조회는 다시 보내지 않고 백오프가 센다.
     """
     try:
         response = session.get(

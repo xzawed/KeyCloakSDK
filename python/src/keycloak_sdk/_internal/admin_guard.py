@@ -22,7 +22,8 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
    그랜트 응답 본문의 크기 상한(`token_cap.py`, admin REST 세션에는 걸지 않는다), 그리고 연결의
    `_refresh_if_required`·`a__refresh_if_required` — 그 **뒤**에서 보낼 헤더의 bearer 를 본다.
    마지막이 주입·토큰 세터로 **그랜트를 거치지 않고** 실린 bearer 를 잡는다. `raw_*` 는 그 갱신
-   직후 보내고, 401 재시도는 방금 그랜트(검사됨)가 실은 토큰으로만 보낸다.
+   직후 보내고, 401 재시도는 방금 그랜트(검사됨)가 실은 토큰으로만 보낸다. 그 밖에 두 sync 세션의
+   어댑터마다 `max_retries` 를 재시도 없는 정책으로 둔다(`retries.py`) — 어댑터 수만큼의 자리다.
 3. 설치는 전부이거나 아무것도 아니다 — 먼저 다 계획(검증)하고, 걸다가 하나라도 실패하면 건
    것을 되돌린 뒤 `KeycloakConfigError` 로 거부한다. 그래프를 읽다 난 실패는 무엇을 던졌든
    그 거부이고, 훅은 되돌림과 같은 통로(인스턴스 `__dict__`)로 쓰며, 설치 도중의 재진입은
@@ -35,7 +36,7 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
 연결을 바꾸고 곧바로 메서드를 부르면 그 사이에 SDK 코드가 한 줄도 돌지 않는다. (b) 연결에 한 번
 거는 요청 시점 검사 — 연결째 갈아 끼워진다. (c) `connection` **세터**만 가로채기 — 비공개
 `_connection` 쓰기와 중첩 `KeycloakOpenID.connection` 교체를 못 본다. 게터가 치르는 값은 읽기마다
-훅 열 자리를 확인하는 것이다.
+그 자리들(훅 열 자리와 어댑터)을 확인하는 것이다.
 
 ⚠️ 목(`MagicMock(spec=KeycloakAdmin)`)은 클래스를 바꾸면 `isinstance` 가 깨진다(실측) — 그래서
 진짜 `KeycloakAdmin` 만 읽기마다 다시 보고, 그 밖의 객체는 생성 때 한 번 건다.
@@ -56,6 +57,7 @@ from ..exceptions import KeycloakConfigError
 from ..tokens import _usable_access_token
 from .admin_grant import _ASYNC_GRANTS, _SYNC_GRANTS, _achecked, _checked
 from .redirects import _refuse_redirects, _require, _unsupported
+from .retries import NO_RETRY, retrying_adapters
 from .token_cap import acapped_send, capped_send
 
 #: 훅을 거는 일은 한 번에 하나 — 되돌림이 다른 스레드가 막 건 훅을 지우지 않게 한다.
@@ -169,6 +171,12 @@ def _plan_redirects(hooks: list[_Hook], session: Any, what: str, where: str) -> 
     hooks.append((session, "resolve_redirects", _refuse_redirects, f"{where}.resolve_redirects"))
 
 
+def _plan_retries(hooks: list[_Hook], session: Any, where: str) -> None:
+    """세션의 어댑터마다 재시도 없는 정책(`retries.py`) — 소비자가 나중에 `mount` 한 것도."""
+    for prefix, adapter in retrying_adapters(session, where):
+        hooks.append((adapter, "max_retries", NO_RETRY, f"{where}.adapters[{prefix!r}]"))
+
+
 def _plan_wrap(
     hooks: list[_Hook],
     target: Any,
@@ -194,11 +202,14 @@ def _plan(conn: Any) -> list[_Hook]:
     """`conn` 그래프에서 빠진 훅. 하나라도 걸 수 없으면 아무것도 바꾸기 전에 거부한다."""
     hooks: list[_Hook] = []
     rest, grant = "admin REST call", "admin token grant"
-    _plan_redirects(hooks, _require(conn, "_s", what=rest), rest, "connection._s")
+    rest_session = _require(conn, "_s", what=rest)
+    _plan_redirects(hooks, rest_session, rest, "connection._s")
+    _plan_retries(hooks, rest_session, "connection._s")
     nested = _require(conn, "keycloak_openid", what=grant)
     nested_conn = _require(nested, "connection", what=grant)
     nested_session = _require(nested_conn, "_s", what=grant)
     _plan_redirects(hooks, nested_session, grant, "connection.keycloak_openid.connection._s")
+    _plan_retries(hooks, nested_session, "connection.keycloak_openid.connection._s")
     # 그랜트 응답 본문의 크기 상한(`token_cap.py`) — 그랜트 세션 둘에만 건다. REST 세션
     # (`connection._s`)의 응답(사용자 목록 등)은 정당하게 크다.
     size, at = "token grant response size", "connection.keycloak_openid.connection"

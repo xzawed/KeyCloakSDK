@@ -198,6 +198,7 @@ def test_authorization_url_contains_pkce_state_and_nonce():
     openid = MagicMock(spec=KeycloakOpenID)
     config = _config(scopes=("openid", "profile"))
     client = _client(openid, config=config)
+    openid.reset_mock()  # 생성은 세션의 어댑터 표를 읽는다(재시도 끄기) — 재는 것은 조립이다
 
     result = client.authorization_url("https://app.example.com/callback")
 
@@ -289,6 +290,7 @@ def test_authorization_url_makes_no_network_call():
     openid = MagicMock(spec=KeycloakOpenID)
     openid.auth_url.side_effect = KeycloakGetError(error_message="dns failure")
     client = _client(openid)
+    openid.reset_mock()  # 생성은 세션의 어댑터 표를 읽는다(재시도 끄기) — 재는 것은 조립이다
 
     result = client.authorization_url("https://app/cb")
 
