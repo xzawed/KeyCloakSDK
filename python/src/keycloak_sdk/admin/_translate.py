@@ -16,6 +16,7 @@ from typing import TypeVar
 
 from keycloak.exceptions import KeycloakError
 
+from .._internal.admin_grant import is_grant_failure
 from .._internal.lower import is_lower_failure, refused_body, summarize
 from ..exceptions import (
     KeycloakAdminError,
@@ -43,9 +44,14 @@ def translate(exc: KeycloakError) -> KeycloakAdminError | KeycloakTransportError
     예전의 엄격한 `body.decode()` 가 UTF-8 이 아닌 오류 본문에서 바로 그렇게 raw
     `UnicodeDecodeError` 를 냈다(실측: 0xFF · UTF-8 로 인코딩한 서로게이트 ED A0 80, sync·aio).
     풀 수 없는 바이트는 버리지도 바꾸지도 않고 `\\xff` 처럼 이스케이프로 남긴다.
+
+    ⚠️ admin **자체 토큰 그랜트**의 실패(`_internal/admin_grant.py` 의 `is_grant_failure`)면 본문을
+    옮기지 않는다 — `keycloak_error` 는 `None` 이고 타입·메시지·`status_code` 는 그대로다. 그 본문은
+    토큰 엔드포인트의 것이라 그랜트가 보낸 `client_secret`·refresh token 을 되울릴 수 있다. admin
+    REST 응답의 오류(리소스의 401 포함)는 예전처럼 본문을 싣는다.
     """
     status = getattr(exc, "response_code", None)
-    body = getattr(exc, "response_body", None)
+    body = None if is_grant_failure(exc) else getattr(exc, "response_body", None)
     body_str: str | None
     if isinstance(body, (bytes, bytearray)):
         body_str = body.decode("utf-8", "backslashreplace")
