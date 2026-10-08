@@ -143,8 +143,17 @@ internal suspend fun <T> adminCall(block: () -> T): T =
 // 본문을 인용한다(「Unrecognized token '<본문>'」·JSON 문자열 값·expires_in 값). 내장 TokenManager 가 형식이
 // 틀린 토큰 응답을 받으면 여기로 온다(`AuthMalformedResponseTest`). 그 사슬은 [RedactedCause] 로 갈아 끼우고,
 // 응답이 없는 전송 실패(연결 거부·타임아웃·TLS)는 진단에 필요한 메시지를 그대로 둔다.
+// ⚠️ 이 아래의 [WebApplicationException] 도 같다 — 메시지가 아니라 쥔 Response 가 응답을 낸다. 내장 TokenManager 가 BearerAuthFilter
+// 안에서 토큰 엔드포인트의 오류를 받으면 RESTEasy 는 그 본문을 bufferEntity 한 Response 를 NotAuthorizedException 등에 쥐여
+// ProcessingException 으로 감싸고, 그 Response 는 close() 뒤에도 readEntity(String) 가 본문을 그대로 돌려준다(버퍼된 엔티티는 닫힘 검사를
+// 건너뛴다 — 닫기로는 막지 못한다, 실측). 그 본문은 그 요청의 Basic 시크릿을 되울릴 수 있다(`AdminTokenEchoTest`). 자원 오류는 여기로
+// 오지 않는다 — [translateAdminException] 이 받아 본문을 keycloakError 로 싣는다(그대로).
 internal fun transportCause(e: ProcessingException): Throwable =
-    if (generateSequence<Throwable>(e) { it.cause }.take(16).any { it is ResponseProcessingException }) RedactedCause.of(e) else e
+    if (generateSequence<Throwable>(e) { it.cause }.take(16).any { it is ResponseProcessingException || it is WebApplicationException }) {
+        RedactedCause.of(e)
+    } else {
+        e
+    }
 
 // Java AdminExceptions.translate 동형: status→리프 타입 매핑(부록 §auth-admin exactConfig).
 internal fun translateAdminException(e: WebApplicationException): KeycloakAdminException {
