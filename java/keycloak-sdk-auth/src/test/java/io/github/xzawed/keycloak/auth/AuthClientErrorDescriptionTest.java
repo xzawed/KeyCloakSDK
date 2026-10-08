@@ -61,10 +61,26 @@ class AuthClientErrorDescriptionTest {
   }
 
   @Test void hugeDottedRun_neverOverflowsTheStack() throws Exception {
-    // ⚠️ 적대적 IdP 가 고른 입력이다 — 그룹 반복 정규식은 반복마다 재귀해 오류 경로에서 StackOverflowError 를 냈다.
+    // ⚠️ 적대적 IdP 가 고른 입력이다 — 그룹 반복 정규식은 반복마다 재귀해 오류 경로에서 StackOverflowError 를 냈다. 상한(4,096 자)을
+    // 넘는 600 KB 설명은 이제 정규식에 닿지도 않고, 상한 안의 가장 긴 점 연속도 한 연속으로 가려진다.
     HTTPRequest req = sent("grant_type=client_credentials", null);
     String huge = "X" + ".ab".repeat(200_000);
-    assertEquals("***", assertDoesNotThrow(() -> AuthClient.describe(huge, req, null)));
+    assertEquals("(error_description omitted: 600001 chars > 4096)",
+        assertDoesNotThrow(() -> AuthClient.describe(huge, req, null)));
+    String atCap = "X" + ".ab".repeat((AuthClient.MAX_DESCRIPTION_CHARS - 1) / 3);
+    assertEquals("***", assertDoesNotThrow(() -> AuthClient.describe(atCap, req, null)));
+  }
+
+  @Test void overlongDescription_isOmitted_notScanned() throws Exception {
+    // 가리기의 최악 비용은 설명 길이 × 보낸 값 길이다 — 적대적 IdP 는 자기가 받은 refresh 토큰을 알아 그 앞 999 자로 채운 1 MiB 설명이
+    // 호출 하나를 4.6 초 붙잡았다(실측). 상한을 넘는 설명은 통째로 싣지 않는다 — 앞부분만 남기면 자른 자리에 걸친 되울림의 앞 조각이 남는다.
+    String refresh = "a".repeat(999) + "b";
+    HTTPRequest req = sent("grant_type=refresh_token&refresh_token=" + refresh, null);
+    String atCap = "a".repeat(AuthClient.MAX_DESCRIPTION_CHARS);
+    assertEquals("***", AuthClient.describe(atCap, req, null)); // 상한까지는 가린다(보낸 토큰과 10 자 창을 나눈다)
+    String echoAcrossTheCap = "b".repeat(AuthClient.MAX_DESCRIPTION_CHARS - 5) + refresh;
+    assertEquals("(error_description omitted: " + echoAcrossTheCap.length() + " chars > 4096)",
+        AuthClient.describe(echoAcrossTheCap, req, null)); // 상한에 걸친 되울림 — 조각 하나 남기지 않는다
   }
 
   @Test void echoGluedToALabel_isMasked() throws Exception {
