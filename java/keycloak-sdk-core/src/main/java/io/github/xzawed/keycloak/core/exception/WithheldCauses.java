@@ -27,7 +27,13 @@ final class WithheldCauses {
       "net.minidev.json.parser.ParseException",            // Nimbus 아래 json-smart
       "jakarta.ws.rs.client.ResponseProcessingException",  // JAX-RS: 응답 엔티티를 못 읽었다(admin)
       "com.fasterxml.jackson.core.JacksonException",       // admin-client 의 Jackson(2.12+)
-      "com.fasterxml.jackson.core.JsonProcessingException");
+      "com.fasterxml.jackson.core.JsonProcessingException",
+      // admin 의 HttpCore(RESTEasy) — 틀 오류가 응답의 줄을 싣는다: 「Invalid header: <줄>」·「Status line contains invalid status
+      // code: <줄>」(머리, RESTEasy 가 그 사슬을 ProcessingException 으로 감싼다)·「Bad chunk header: <줄>」(본문 — 미디어 타입 없는
+      // 2xx 를 닫을 때). 실측 AdminResponseFramingTest. auth 레인은 운송이 먼저 상수 메시지로 바꾼다(BoundedTransport.shield).
+      "org.apache.http.HttpException",
+      "org.apache.http.ParseException",
+      "org.apache.http.MalformedChunkCodingException");
 
   static Throwable scrub(Throwable cause) {
     return cause != null && quotesResponse(cause)

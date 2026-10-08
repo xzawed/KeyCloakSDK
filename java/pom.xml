@@ -110,6 +110,12 @@
       <dependency><groupId>commons-io</groupId><artifactId>commons-io</artifactId><version>2.22.0</version></dependency>
       <!-- jakarta.activation-api: 더 높은 버전으로 고정(picked higher) — keycloak-client-parent 등 권위 있는 BOM 출처 없음. -->
       <dependency><groupId>jakarta.activation</groupId><artifactId>jakarta.activation-api</artifactId><version>2.1.4</version></dependency>
+      <!-- auth 운송(BoundedTransport): admin 의 RESTEasy 6.2.15.Final 이 이미 가져오는 판(httpclient 4.5.14 → httpcore 4.4.16 ·
+           commons-logging 1.2) 그대로 — 새 판을 들이지 않는다. httpclient 가 선언하는 commons-codec 1.11 은 RESTEasy 가 직접
+           선언하는 1.15 와 갈려 dependencyConvergence 가 깨진다 — admin 이 이미 푸는 1.15 로 고정한다(auth 는 runtime 으로
+           직접 선언해 소비자 쪽 nearest-wins 도 1.15 로 묶는다 — keycloak-sdk-auth/pom.xml). -->
+      <dependency><groupId>org.apache.httpcomponents</groupId><artifactId>httpclient</artifactId><version>4.5.14</version></dependency>
+      <dependency><groupId>commons-codec</groupId><artifactId>commons-codec</artifactId><version>1.15</version></dependency>
     </dependencies>
   </dependencyManagement>
 

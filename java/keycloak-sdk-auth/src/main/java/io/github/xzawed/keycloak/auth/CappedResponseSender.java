@@ -1,19 +1,27 @@
 package io.github.xzawed.keycloak.auth;
 
+import com.nimbusds.common.contenttype.ContentType;
 import com.nimbusds.oauth2.sdk.http.HTTPRequest;
 import com.nimbusds.oauth2.sdk.http.HTTPResponse;
 import io.github.xzawed.keycloak.core.ResponseLimits;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
-import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
+import java.net.URI;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.SSLSocketFactory;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.HttpEntityEnclosingRequestBase;
+import org.apache.http.client.methods.HttpRequestBase;
+import org.apache.http.entity.ByteArrayEntity;
 
 /**
  * Nimbus {@code HTTPRequest.send()} 와 같은 일을 하되 응답 본문을 {@link ResponseLimits#MAX_TOKEN_RESPONSE_BYTES} 까지만 읽는
@@ -23,59 +31,86 @@ import java.util.Map;
  * 32 MiB 를 붙인 응답을 다섯 레인이 받아들였고 호출 하나가 약 235 MB 를 할당했다(실측 — {@code TokenResponseCapTest}). 오류
  * 상태의 본문도 같은 고리였다.
  *
- * <p>⚠️ 송신기({@code HTTPRequestSender})는 그 요청을 붙잡아 두고 그 요청의 {@code toHttpURLConnection()} 으로 연결을 연다 —
- * Nimbus 가 넘기는 {@code ReadOnlyHTTPRequest} 에는 {@code followRedirects}·TLS 설정(호스트 이름 검증기·소켓 팩토리)이 없어 그것으로
- * 연결을 새로 지으면 SSRF 하드닝({@code AuthClient.applyTimeouts})을 잃는다. 연결 조립·타임아웃·요청 본문 쓰기는 Nimbus 그대로이고
- * 바뀌는 것은 읽기뿐이다.
+ * <p>운송은 {@link BoundedTransport} 다 — JDK 의 HttpURLConnection 은 트레일러에 한도가 없었고 상한을 넘은 청크 본문을 닫으며 쌓인
+ * 바이트를 제곱 비용으로 풀었다(그 클래스 설명). 요청은 Nimbus 가 이 요청으로 HttpURLConnection 에 실었을 그대로 만든다({@link
+ * #toApache}): 메서드·URL·헤더 표(제한 헤더는 HttpURLConnection 처럼 버린다)·POST/PUT 의 Content-Type 과 본문(플랫폼 기본 문자셋 —
+ * Nimbus 의 {@code OutputStreamWriter} 와 같다)·연결/읽기 타임아웃. TLS 근원은 이 요청의 소켓 팩토리와 검증기이고, 없으면 Nimbus 의
+ * 기본값이다({@code HTTPRequest.getDefaultSSLSocketFactory()} — Nimbus 가 클래스 초기화 때 잡아 둔 값, 오늘 그대로). ⚠️ 리다이렉트는
+ * 요청의 플래그와 무관하게 따르지 않는다 — 모든 호출부가 {@code AuthClient.applyTimeouts} 로 끄는 값이고(SSRF 하드닝), 이 송신은
+ * 그것을 따르는 길을 아예 두지 않는다. 요청의 프록시({@code HTTPRequest.setProxy})는 보지 않는다 — SDK 가 설정하지 않는 값이고,
+ * 시스템 프록시({@code http(s).proxyHost})는 따른다.
  *
  * <p>상한 안의 본문은 Nimbus 와 같은 문자열로 만든다({@link #asNimbusReadsIt}) — 파서가 받는 입력이 지금과 같다. 상한을 넘으면
- * 나머지를 요청하지 않고 스트림을 닫은 뒤 {@link TooLarge} 를 던지고, 호출부가 그 레인의 {@code KeycloakTransportException} 으로
- * 바꾼다. SDK 가 요청하고 쥐는 것은 상한+1 바이트까지다({@link #readWithinCap}). ⚠️ 연결은 그 너머를 더 읽을 수 있다 — JDK 운송은
- * 소켓을 8 KiB {@code BufferedInputStream} 으로 읽고, 닫을 때 평문이면 이미 도착한 바이트 너머는 읽지 않지만 청크 본문은 그
- * 바이트를 읽어 청크로 푼다({@code ChunkedInputStream.hurry()} — 비용이 쌓인 양의 제곱에 비례하고 청크 크기에 반비례한다). HTTPS 면
- * 청크든 길이든 연결을 끊으며 소켓에 쌓인 바이트를 복호화하지 않고 버리는데({@code SSLSocketInputRecord.deplete}) 바이트가 끊이지
- * 않고 오는 동안 멈추지 않는다. HttpURLConnection 은 내용 코딩을 풀지 않으므로 센 바이트가 받은 바이트다.
+ * 나머지를 읽지 않고 <b>연결을 끊은 뒤</b>({@code abort} — 평문은 그 자리에서 끝나고, HTTPS 는 JSSE 가 닫으며 이미 도착한 바이트를
+ * 버린다) {@link TooLarge} 를 던지고, 호출부가 그 레인의 {@code KeycloakTransportException} 으로 바꾼다. SDK 가 요청하고 쥐는 것은
+ * 상한+1 바이트까지다({@link #readWithinCap}). 운송은 내용 코딩을 요청하지도 풀지도 않으므로 센 바이트가 받은 바이트다.
  *
  * <p>인스턴스 상태가 없다 — 호출 하나의 스택에만 사는 값(연결·본문)을 필드로 쥐지 않는다.
  */
 final class CappedResponseSender {
   private CappedResponseSender() {}
 
-  /** {@code request.send()} 대신 — 같은 연결·같은 응답이되 본문은 상한까지만 읽는다. {@code what} 은 넘침 메시지의 주어다. */
+  /** Nimbus 가 본문을 쓰는 메서드({@code toHttpURLConnection} 의 {@code setDoOutput(true)}) — 나머지는 본문 없이 보낸다. */
+  private static final Set<HTTPRequest.Method> WITH_BODY = EnumSet.of(HTTPRequest.Method.POST, HTTPRequest.Method.PUT);
+
+  /** {@code request.send()} 대신 — 같은 요청·같은 응답이되 본문은 상한까지만 읽는다. {@code what} 은 넘침 메시지의 주어다. */
   static HTTPResponse send(HTTPRequest request, String what) throws IOException {
     return request.send(sameRequest -> receive(request, what));
   }
 
   private static HTTPResponse receive(HTTPRequest request, String what) throws IOException {
-    HttpURLConnection conn = request.toHttpURLConnection();
-    OutputStream out = null;
-    InputStream in = null;
-    try {
-      int status;
-      try {
-        if (conn.getDoOutput()) out = conn.getOutputStream();
-        in = conn.getInputStream();
-        status = conn.getResponseCode();
-      } catch (IOException e) {
-        // 4xx·5xx 면 getInputStream 이 던진다 — 상태가 있으면 본문은 오류 스트림에 있다(Nimbus send() 와 같다)
-        status = conn.getResponseCode();
-        if (status == -1) throw e;
-        in = conn.getErrorStream();
-      }
-      byte[] body = in == null ? new byte[0] : readWithinCap(in);
-      if (body == null) throw new TooLarge(what);
-      HTTPResponse response = new HTTPResponse(status);
-      response.setStatusMessage(conn.getResponseMessage());
-      for (Map.Entry<String, List<String>> header : conn.getHeaderFields().entrySet()) {
-        // 상태 줄은 이름 없는 항목으로 온다 — Nimbus send() 와 send(sender) 둘 다 건너뛴다
-        if (header.getKey() != null) response.setHeader(header.getKey(), header.getValue().toArray(new String[0]));
-      }
-      response.setBody(asNimbusReadsIt(body));
-      return response;
-    } finally {
-      closeQuietly(in);
-      closeQuietly(out);
+    SSLSocketFactory tls = request.getSSLSocketFactory() != null
+        ? request.getSSLSocketFactory() : HTTPRequest.getDefaultSSLSocketFactory();
+    HostnameVerifier verifier = request.getHostnameVerifier() != null
+        ? request.getHostnameVerifier() : HTTPRequest.getDefaultHostnameVerifier();
+    return BoundedTransport.exchange(toApache(request), tls, verifier, request.getConnectTimeout(), request.getReadTimeout(),
+        (head, body) -> toNimbus(head, body, what));
+  }
+
+  /**
+   * Nimbus {@code toHttpURLConnection()} 이 HttpURLConnection 에 싣는 그대로의 요청. ⚠️ 본문을 싣는 요청에 Content-Type 이 없을 때
+   * HttpURLConnection 이 덧붙이는 {@code application/x-www-form-urlencoded} 는 따라하지 않는다 — SDK 의 요청은 모두 그것을 단다.
+   */
+  static HttpRequestBase toApache(HTTPRequest request) {
+    String method = request.getMethod().name();
+    boolean withBody = WITH_BODY.contains(request.getMethod());
+    HttpRequestBase out;
+    if (withBody) {
+      HttpEntityEnclosingRequestBase enclosing = new HttpEntityEnclosingRequestBase() {
+        @Override public String getMethod() {
+          return method;
+        }
+      };
+      // 본문이 없어도 본문을 싣는 요청이다 — HttpURLConnection 처럼 Content-Length: 0
+      if (request.getBody() != null) enclosing.setEntity(new ByteArrayEntity(request.getBody().getBytes(Charset.defaultCharset())));
+      out = enclosing;
+    } else {
+      out = new HttpRequestBase() {
+        @Override public String getMethod() {
+          return method;
+        }
+      };
     }
+    out.setURI(URI.create(request.getURL().toString()));
+    BoundedTransport.addHeaders(out, request.getHeaderMap());
+    if (withBody) {
+      ContentType type = request.getEntityContentType();
+      if (type != null) out.setHeader("Content-Type", type.toString()); // Nimbus 의 setRequestProperty — 표의 값을 대신한다
+    }
+    BoundedTransport.addJdkDefaults(out, request.getURL());
+    return out;
+  }
+
+  private static HTTPResponse toNimbus(HttpResponse head, InputStream in, String what) throws IOException {
+    byte[] body = readWithinCap(in);
+    if (body == null) throw new TooLarge(what);
+    HTTPResponse response = new HTTPResponse(head.getStatusLine().getStatusCode());
+    response.setStatusMessage(head.getStatusLine().getReasonPhrase());
+    for (Map.Entry<String, List<String>> header : BoundedTransport.grouped(head).entrySet()) {
+      response.setHeader(header.getKey(), header.getValue().toArray(new String[0]));
+    }
+    response.setBody(asNimbusReadsIt(body));
+    return response;
   }
 
   /**
@@ -101,16 +136,6 @@ final class CappedResponseSender {
       text.append(line).append(separator);
     }
     return text.length() == 0 ? null : text.toString();
-  }
-
-  // Nimbus closeStreams 와 같이 닫기의 실패는 버린다 — 결과(응답이든 그 실패든)는 이미 정해졌다.
-  private static void closeQuietly(Closeable stream) {
-    if (stream == null) return;
-    try {
-      stream.close();
-    } catch (IOException ignored) {
-      // 버린다
-    }
   }
 
   /** 상한을 넘는 응답 — 메시지는 무엇이 상한을 넘었는지만 말한다(응답을 인용하지 않는다). */

@@ -185,7 +185,7 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 
 ## 확정 의존성 (BOM으로 고정)
 
-<!-- doc-guard: kind=dep source=java/pom.xml min=5 undocumented=18 -->
+<!-- doc-guard: kind=dep source=java/pom.xml min=5 undocumented=20 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | Keycloak admin-client | `org.keycloak:keycloak-admin-client` | 26.0.12 |
