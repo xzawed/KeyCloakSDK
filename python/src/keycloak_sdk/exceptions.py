@@ -45,7 +45,10 @@ class KeycloakTransportError(KeycloakSdkError):
 
 
 class KeycloakAdminError(KeycloakSdkError):
-    """관리 API 오류. HTTP status + Keycloak error 본문 보존."""
+    """관리 API 오류. HTTP status + Keycloak error 본문 보존.
+
+    단 admin 자체 토큰 그랜트가 실패한 것이면 `keycloak_error` 는 `None` 이다 — 토큰 엔드포인트의
+    오류 본문은 보낸 client secret·refresh token 을 되울릴 수 있다."""
 
     def __init__(self, status_code: int, keycloak_error: str | None = None) -> None:
         super().__init__(f"Keycloak admin error (HTTP {status_code})")

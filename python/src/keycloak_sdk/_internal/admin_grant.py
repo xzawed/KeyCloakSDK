@@ -23,12 +23,24 @@
 token 을 쥔 프레임을 지나고, 폴백이면 python-keycloak 의 `except` 안이라 `__context__` 가 그
 400(응답 본문)이다. 그래서 경계(`admin/_translate.py` 의 `call`·`acall`)가 같은 타입·메시지로
 **새로** 만들어 `except` 밖에서 던진다.
+
+⚠️ **그랜트 자체가 실패하면**(토큰 엔드포인트의 4xx·5xx) 그 python-keycloak 오류를 표시만 하고 **같은
+객체를** 다시 던진다 — python-keycloak 의 `refresh_token` 폴백이 그 오류의 `response_code`·
+`response_body`(`Refresh token expired` 등)를 읽고 client_credentials 로 넘어가므로 바꾸거나 감싸면
+안 된다. 경계는 표시된 실패의 응답 본문을 SDK 예외에 싣지 않는다(`is_grant_failure`) — 토큰
+엔드포인트는 그랜트가 폼에 실어 보낸 `client_secret`(갱신이면 admin 의 refresh token 도)을 오류
+본문에 되울릴 수 있고, 예전에는 그것이 `KeycloakAdminError.keycloak_error` 에 그대로 남았다(등록부
+`secret-echo-form-encoded-rescan`, `tests/unit/test_admin_grant_echo.py`). admin REST 응답의 오류는
+이 래퍼를 지나지 않는다 — 같은 401 `KeycloakAuthenticationError` 라도 리소스의 것이면 표시가 없다.
 """
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
+
+from keycloak.exceptions import KeycloakError
 
 from ..tokens import _usable_access_token
 
@@ -36,13 +48,25 @@ from ..tokens import _usable_access_token
 _SYNC_GRANTS = ("token", "refresh_token")
 _ASYNC_GRANTS = ("a_token", "a_refresh_token")
 
+#: 그랜트 래퍼를 빠져나간 python-keycloak 실패 — 정체로 대조하고, 붙잡아 두지 않는다.
+_FAILED_GRANTS: weakref.WeakSet[KeycloakError] = weakref.WeakSet()
+
 _Grant = Callable[..., dict[str, Any]]
 _AsyncGrant = Callable[..., Awaitable[dict[str, Any]]]
 
 
+def is_grant_failure(exc: BaseException) -> bool:
+    """`exc` 가 admin 자체 토큰 그랜트(위 네 메서드)에서 빠져나온 실패인가."""
+    return exc in _FAILED_GRANTS
+
+
 def _checked(grant: _Grant) -> _Grant:
     def checked(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        response = grant(*args, **kwargs)
+        try:
+            response = grant(*args, **kwargs)
+        except KeycloakError as exc:
+            _FAILED_GRANTS.add(exc)
+            raise
         _usable_access_token(response)
         return response
 
@@ -51,7 +75,11 @@ def _checked(grant: _Grant) -> _Grant:
 
 def _achecked(grant: _AsyncGrant) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
     async def checked(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        response = await grant(*args, **kwargs)
+        try:
+            response = await grant(*args, **kwargs)
+        except KeycloakError as exc:
+            _FAILED_GRANTS.add(exc)
+            raise
         _usable_access_token(response)
         return response
 

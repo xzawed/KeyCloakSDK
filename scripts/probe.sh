@@ -209,6 +209,40 @@ if [ "$_rc" = 0 ]; then
   echo "SILENT — 변이가 적용됐는데 검사 명령이 통과했다(진짜 구멍)."
   exit 1
 fi
+# ⚠️ **비영의 이유가 컴파일·적재 실패면 CAUGHT 가 아니라 INVALID 다** — 함정 (i)「컴파일 안 되는 변이는
+# INVALID」를 사람 대신 러너가 지킨다. 빌드가 죽으면 단언은 변이를 한 번도 시험하지 못했다. 실측(2026-10-05):
+# go 변이가 「declared and not used」로 컴파일되지 않아 `FAIL … [build failed]` 로 끝났는데 CAUGHT 이 났다.
+# ⚠️ **표식은 그 도구가 실제로 낸 줄에서 뽑는다.** 아래 줄마다 2026-10-09 에 그 도구의 컴파일·적재 실패
+# 출력과 대조했고 `test-probe.sh` 가 그 줄을 그대로 먹인다(경로만 지웠다). 지어낸 줄로 고른 초안의 둘은
+# 실제 출력에 한 번도 안 맞았다 — pytest 수집 오류의 머리는 `____ ERROR collecting … ____` 이고 PHPUnit 12
+# 는 `Parse error:` 가 아니라 `ParseError:` 를 찍는다.
+# 차례대로: go test(빌드·셋업) · maven · kotlin 컴파일러 · gradle · tsc · vitest 변환 · rustc · cargo ·
+# dotnet · pytest(본문 · 수집 중단) · PHPUnit · rspec(적재 · 예제 밖 오류).
+# ⚠️ 못 가르는 것: JS 모듈 적재의 ReferenceError(vitest 는 타입 검사를 안 한다)와 함수 안 지연 import 의
+# NameError — 단언 실패와 모양이 같아 CAUGHT 로 남는다. 한 패키지는 빌드 실패이고 다른 패키지의 단언이
+# 잡은 섞인 출력은 INVALID 로 간다(보수적이다 — 변이를 격리해 다시 잰다).
+_bpat="$(printf '%s|' \
+  '\[(build|setup) failed\]$' \
+  '^\[ERROR\] COMPILATION ERROR' \
+  '^e: ' \
+  "Execution failed for task '[^']*:compile[A-Za-z]*(Kotlin|Java)'" \
+  'error TS[0-9]+:' \
+  'Transform failed with [0-9]+ error' \
+  '^error\[E[0-9]+\]' \
+  '^error: could not compile' \
+  'error CS[0-9]+:' \
+  '^E +SyntaxError: ' \
+  'Interrupted: [0-9]+ errors? during collection' \
+  '^ParseError: ' \
+  '^An error occurred while loading ' \
+  '[0-9]+ errors? occurred outside of examples')"
+_build="$(printf '%s\n' "$_out" | grep -aE "${_bpat%|}" || true)"
+if [ -n "$_build" ]; then
+  fail_invalid "검사 명령이 변이를 **빌드·적재하지 못했다** — 단언이 잡은 것이 아니다.
+  빌드가 죽은 변이는 한 번도 시험되지 않았다. 이것을 CAUGHT 로 읽으면 시험되지 않은 변이가 잡힌 것으로 기록된다.
+  일치한 줄:
+$(printf '%s\n' "$_build" | head -5 | sed 's/^/  /')"
+fi
 echo "CAUGHT — 검사 명령이 변이를 잡았다."
 # ⚠️ **꼬리가 아니라 실패한 단언을 전부 찍는다.** `assert.sh` 는 fail-fast 가 아니라 누적하므로
 # 한 변이가 여러 축을 동시에 넘어뜨린다. 꼬리만 보면 **물리적으로 마지막** 단언이 범인으로

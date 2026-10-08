@@ -22,7 +22,12 @@ afterEach(() => {
 describe('상한 상수', () => {
   it('1,048,576 이고 소스에 맨 십진 리터럴로 한 번 적혀 있다(교차 언어 가드가 뽑는다)', () => {
     expect(TOKEN_RESPONSE_MAX_BYTES).toBe(1_048_576)
-    const source = readFileSync(new URL('../../src/token-response-cap.ts', import.meta.url), 'utf8')
+    // ⚠️ 줄끝을 LF 로 맞춘 뒤 잰다 — `core.autocrlf=true`(Windows 기본) 체크아웃은 이 파일을 CRLF 로 풀어, `\n` 으로 끝나는
+    // 아래 정규식이 아무것도 못 찾고 이 단언이 어떤 소스에서든 빨갛다(main 에서 실측). 가드 쪽(axis 1e)은 이미 CRLF 에 안전하다.
+    const source = readFileSync(
+      new URL('../../src/token-response-cap.ts', import.meta.url),
+      'utf8',
+    ).replace(/\r\n/g, '\n')
     const declarations = source.match(/export const TOKEN_RESPONSE_MAX_BYTES = (\S+)\n/g) ?? []
     expect(declarations).toEqual(['export const TOKEN_RESPONSE_MAX_BYTES = 1_048_576\n'])
   })
