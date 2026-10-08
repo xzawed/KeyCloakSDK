@@ -84,6 +84,40 @@ class BoundedTransportTest {
     assertEquals("text/html, image/gif, image/jpeg, */*; q=0.2", BoundedTransport.acceptFor(17));
   }
 
+  /**
+   * 틀의 바이트 예산 — 읽기 한 번이 소켓에 요청하는 길이를 자르고(HttpCore 는 큰 요청을 버퍼 없이 소켓에서 바로 읽는다 — Grok 레그 2
+   * 의 지적), 그 사이 받은 바이트가 예산을 넘으면 상수 메시지로 거부한다. 예산 안은 그대로 지나간다.
+   */
+  @Test void wireBounded_capsEachReadAndRefusesOverBudget() throws IOException {
+    long[] received = {0};
+    int[] largestAsk = {0};
+    java.io.InputStream socket = new java.io.InputStream() {
+      @Override public int read() {
+        received[0]++;
+        return 'x';
+      }
+
+      @Override public int read(byte[] b, int off, int len) {
+        largestAsk[0] = Math.max(largestAsk[0], len);
+        received[0] += len; // 소켓에서 바로 읽은 것처럼 — 요청한 만큼 받는다
+        return len;
+      }
+    };
+    org.apache.http.HttpConnectionMetrics metrics = new org.apache.http.impl.HttpConnectionMetricsImpl(null, null) {
+      @Override public long getReceivedBytesCount() {
+        return received[0];
+      }
+    };
+    java.io.InputStream within = BoundedTransport.wireBounded(socket, metrics, 1_048_576);
+    assertEquals(100, within.read(new byte[100], 0, 100));
+    assertEquals('x', within.read());
+    java.io.InputStream over = BoundedTransport.wireBounded(socket, metrics, 1_000);
+    IOException e = assertThrows(IOException.class, () -> over.read(new byte[1_000_000], 0, 1_000_000));
+    assertEquals("HTTP response body framing exceeds 1000 bytes on the wire", e.getMessage());
+    assertEquals(BoundedTransport.MAX_READ, largestAsk[0], "읽기 한 번이 소켓에 요청한 길이");
+    assertThrows(IOException.class, over::read, "예산을 넘은 뒤의 한 바이트 읽기도 거부한다");
+  }
+
   /** {@code https.protocols}·{@code https.cipherSuites} 는 HttpURLConnection 처럼 쉼표로만 나눈다 — 없거나 비면 걸지 않는다. */
   @Test void tokens_splitLikeHttpsClient() {
     assertArrayEquals(new String[0], BoundedTransport.tokens(null));

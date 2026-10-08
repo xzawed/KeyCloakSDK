@@ -92,6 +92,8 @@ final class BoundedTransport {
   static final int MAX_INTERIM_RESPONSES = 8;
   /** 본문을 읽는 동안 연결에서 받아도 되는 바이트 — 본문 상한의 이 배수({@link #exchange}). */
   static final int WIRE_FACTOR = 8;
+  /** 본문 읽기 한 번이 소켓에 요청하는 최대 바이트 — 그 사이에 받은 바이트를 센다({@link #wireBounded}). */
+  static final int MAX_READ = 16 * 1024;
   /** 하위 운송이 응답을 해석하지 못했다 — HttpURLConnection 이 같은 경우에 쓰는 말 그대로. 응답을 인용하지 않는다. */
   static final String INVALID_RESPONSE = "Invalid Http response";
   /** 응답 머리·청크 줄·트레일러가 한도를 넘었다. 응답을 인용하지 않는다. */
@@ -230,7 +232,8 @@ final class BoundedTransport {
 
   /**
    * 읽기마다 이 연결이 받은 바이트(소켓에서 버퍼로 — HttpCore 의 연결 지표)를 세어, 본문을 읽기 시작한 뒤 {@code budget} 을 넘으면
-   * 상수 메시지로 거부한다. 한 번의 읽기가 넘는 양은 청크 머리 한 줄이나 트레일러 한 묶음(줄·헤더 수 한도 안)까지다.
+   * 상수 메시지로 거부한다. 한 번의 읽기가 넘는 양은 {@value #MAX_READ} 바이트(HttpCore 는 큰 요청을 버퍼를 거치지 않고 소켓에서 바로
+   * 읽는다 — 그래서 요청 길이를 자른다)와 청크 머리 한 줄, 트레일러 한 묶음(줄·헤더 수 한도 안)까지다.
    */
   static InputStream wireBounded(InputStream body, HttpConnectionMetrics metrics, long budget) {
     long start = metrics.getReceivedBytesCount();
@@ -243,7 +246,7 @@ final class BoundedTransport {
       }
 
       @Override public int read(byte[] buffer, int offset, int length) throws IOException {
-        int n = super.read(buffer, offset, length);
+        int n = super.read(buffer, offset, Math.min(length, MAX_READ));
         check();
         return n;
       }
