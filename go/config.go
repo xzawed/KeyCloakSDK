@@ -146,18 +146,30 @@ var errBackChannelRedirect = errors.New("back-channel redirect refused")
 
 func errOnRedirect(*http.Request, []*http.Request) error { return errBackChannelRedirect }
 
+// responseHeaderMaxBytes caps the response header block — status line, header lines and the blank line — that
+// the transport below reads (http.Transport.MaxResponseHeaderBytes; HTTP/2 derives its MAX_HEADER_LIST_SIZE from
+// the same field). net/http's own default is 10 MiB: one 16 MiB header line made a single token request read that
+// much and allocate 73 MB before it failed (measured).
+//
+// 64 KiB is .NET HttpClient's default. Keycloak 26.6 answered every endpoint this SDK calls, error replies
+// included, with a header block of at most 339 bytes and no Set-Cookie, and its largest anywhere in a browser login
+// is 3,018 bytes (five Set-Cookie on the SSO redirect) — measured, so the cap refuses nothing a default Keycloak sends.
+const responseHeaderMaxBytes = 65536
+
 // transport mirrors http.DefaultTransport's defaults but injects ConnectTimeout
-// into the dial and TLS-handshake deadlines.
+// into the dial and TLS-handshake deadlines, and caps the response header block.
+// It is the only transport the SDK builds: auth, the JWKS validator and admin all use it.
 func (c Config) transport() *http.Transport {
 	connect := time.Duration(c.ConnectTimeout) * time.Millisecond
 	return &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: connect}).DialContext,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   connect,
-		ExpectContinueTimeout: time.Second,
+		Proxy:                  http.ProxyFromEnvironment,
+		DialContext:            (&net.Dialer{Timeout: connect}).DialContext,
+		ForceAttemptHTTP2:      true,
+		MaxIdleConns:           100,
+		IdleConnTimeout:        90 * time.Second,
+		TLSHandshakeTimeout:    connect,
+		ExpectContinueTimeout:  time.Second,
+		MaxResponseHeaderBytes: responseHeaderMaxBytes,
 	}
 }
 
