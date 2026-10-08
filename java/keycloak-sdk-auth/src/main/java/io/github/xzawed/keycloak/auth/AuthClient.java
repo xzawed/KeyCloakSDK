@@ -370,8 +370,19 @@ public class AuthClient {
   private static final java.util.Set<String> SECRET_PARAMS = java.util.Set.of(
       "code", "code_verifier", "refresh_token", "token", "client_secret", "client_assertion", "password");
 
+  /**
+   * 이보다 긴 error_description 은 싣지 않는다 — 고정된 표식으로 바꾼다. ⚠️ 가리기의 최악 비용은 설명 길이 × 보낸 값 길이다: 적대적
+   * IdP 는 자기가 보낸(받은) 값을 알므로 그 값의 앞 999 자로 채운 설명이 indexOf 를 자리마다 끝까지 돌린다 — 1 MiB 설명(토큰 응답 상한)에
+   * 호출 하나가 4.6 초였다(`a`×999+`b` refresh 토큰 · 설명 `a`×1 MiB, 실측 — 상한 전 main 도 String.replace 로 3.1 초). 앞부분만 남기지
+   * 않는 것은 자르는 자리에 걸친 되울림의 앞 조각이 가려지지 않은 채 남기 때문이다. 정상 설명은 이보다 훨씬 짧다(Keycloak 은 300 자 밑).
+   */
+  static final int MAX_DESCRIPTION_CHARS = 4096;
+
   static String describe(String description, HTTPRequest sent, char[] clientSecret) {
     if (description == null) return null;
+    if (description.length() > MAX_DESCRIPTION_CHARS) {
+      return "(error_description omitted: " + description.length() + " chars > " + MAX_DESCRIPTION_CHARS + ")";
+    }
     List<String> secrets = sentSecrets(sent.getAuthorization(), sentValues(sent, clientSecret));
     // 푼 바이트로 먼저 가린다 — 그대로의 꼴을 먼저 가리면 인코딩된 되울림의 아스키 부분만 사라지고 나머지(`&#233;`)가 남는다.
     String out = maskDecoded(description, secrets);
