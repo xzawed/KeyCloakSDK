@@ -9,6 +9,9 @@ internal fun mask(v: CharArray?) = if (v == null || v.isEmpty()) "" else "***"
 
 internal fun mask(v: String?) = if (v.isNullOrEmpty()) "" else "***"
 
+// IdP 의 error_description 을 메시지에 싣는 최대 길이 — 넘으면 통째로 싣지 않는다([maskSent]).
+internal const val MAX_DESCRIPTION_CHARS = 4096
+
 // IdP 가 쓴 문구(error_description)에서 SDK 가 **그 요청에 실어 보낸** 비밀을 가린다 — 값을 되울리는 IdP·프록시
 // 앞에서 SDK 메시지가 호출자의 refresh 토큰·시크릿을 찍었다(`AuthMalformedResponseTest`). 긴 값부터 가려 한 비밀이
 // 다른 비밀을 품어도 조각이 남지 않는다. 보낸 적 없는 값은 사유 문구와 구별할 수 없어 가리지 못한다.
@@ -16,11 +19,16 @@ internal fun mask(v: String?) = if (v.isNullOrEmpty()) "" else "***"
 // 비 ASCII·`"`·`\`)를 **지운 뒤**의 것이고, 짝 없는 서로게이트는 UTF-8 이 `?` 로 바꿔 보냈다. 그래서 LF·NUL·U+0100 을 담은
 // 토큰이 「…rtLFNULWIDE…」 로 메시지에 실렸다(헤더 경우 탐침 — `AuthEchoedValueMaskingTest`). 값마다 [echoForms] 를 가리고,
 // 퍼센트 인코딩을 풀면 그 값이 되는 구간도 가린다([maskDecoded]).
+// ⚠️ [MAX_DESCRIPTION_CHARS] 보다 긴 문구는 싣지 않고 고정된 표식으로 바꾼다 — 가리기의 최악 비용은 문구 길이 × 보낸 값 길이다:
+// 적대적 IdP 는 자기가 보낸(받은) 값을 알므로 그 값의 앞부분으로 채운 문구가 indexOf 를 자리마다 끝까지 돌린다(`a`×999+`b` refresh
+// 토큰 · 문구 `a`×1 MiB 에 호출 하나가 수백 ms~수 초, 실측 — 상한 전 main 도 1.45 초). 앞부분만 남기지 않는 것은 자르는 자리에 걸친
+// 되울림의 앞 조각이 가려지지 않은 채 남기 때문이다(이 레인에는 조각 규칙이 없다). Java `AuthClient.MAX_DESCRIPTION_CHARS` 와 같은 값이다.
 internal fun maskSent(
     text: String?,
     sent: List<String?>,
 ): String? =
     text?.let { t ->
+        if (t.length > MAX_DESCRIPTION_CHARS) return@let "(error_description omitted: ${t.length} chars > $MAX_DESCRIPTION_CHARS)"
         val forms =
             sent
                 .filterNotNull()
