@@ -27,6 +27,7 @@ from .._internal.jwks_fetch import afetch_jwks
 from .._internal.jwt import JwtValidator
 from .._internal.lower import auth_failure, is_lower_failure, summarize
 from .._internal.redirects import harden_openid
+from .._internal.retries import forbid_retries
 from .._internal.token_cap import cap_openid
 from ..auth import AuthorizationUrl, _generate_pkce_pair
 from ..config import KeycloakConfig
@@ -81,6 +82,9 @@ class AsyncAuthClient:
         # 토큰·introspection 응답 본문은 상한까지만 읽는다 — `async_s` 에서는 푸는 일까지 여기서
         # 한다(`_internal/token_cap.py`).
         cap_openid(self._openid)
+        # httpx 는 요청을 다시 보내지 않는다 — 쓰이지 않는 sync 세션의 재시도도 끈다(위와 같은
+        # 심층방어, `_internal/retries.py`).
+        forbid_retries(self._openid)
         self._jwks_cache: KeySet | None = None
         # 진행 중인 JWKS fetch — 호출자가 아니라 이 인스턴스가 소유한다(`_load_jwks`).
         self._jwks_fetch: asyncio.Task[KeySet] | None = None

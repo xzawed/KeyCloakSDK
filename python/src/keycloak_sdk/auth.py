@@ -26,6 +26,7 @@ from ._internal.jwks_fetch import fetch_jwks
 from ._internal.jwt import JwtValidator
 from ._internal.lower import auth_failure, is_lower_failure, summarize
 from ._internal.redirects import harden_openid
+from ._internal.retries import forbid_retries
 from ._internal.secrets import mask
 from ._internal.token_cap import cap_openid
 from .config import KeycloakConfig
@@ -106,6 +107,9 @@ class AuthClient:
         harden_openid(self._openid)
         # 토큰·introspection 응답 본문은 상한까지만 읽는다(`_internal/token_cap.py`).
         cap_openid(self._openid)
+        # 처리됐을지 모르는 요청(그랜트·introspect·logout)을 저절로 다시 보내지 않는다 —
+        # python-keycloak 의 어댑터는 POST 까지 다시 보낸다(`_internal/retries.py`).
+        forbid_retries(self._openid)
         self._jwks_cache: KeySet | None = None
         self._jwks_lock = threading.Lock()
         self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)
