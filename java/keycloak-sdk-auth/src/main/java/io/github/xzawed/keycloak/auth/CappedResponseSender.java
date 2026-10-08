@@ -64,7 +64,7 @@ final class CappedResponseSender {
     HostnameVerifier verifier = request.getHostnameVerifier() != null
         ? request.getHostnameVerifier() : HTTPRequest.getDefaultHostnameVerifier();
     return BoundedTransport.exchange(toApache(request), tls, verifier, request.getConnectTimeout(), request.getReadTimeout(),
-        (head, body) -> toNimbus(head, body, what));
+        ResponseLimits.MAX_TOKEN_RESPONSE_BYTES, (head, body) -> toNimbus(head, body, what));
   }
 
   /**

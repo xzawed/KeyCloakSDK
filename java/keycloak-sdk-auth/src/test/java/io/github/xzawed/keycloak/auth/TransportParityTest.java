@@ -576,10 +576,15 @@ class TransportParityTest {
     return ok(TOKEN);
   }
 
-  /** 같은 요청을 둘에 보내고 결말(상태 또는 예외 타입·메시지)을 비교할 수 있게 적는다. */
+  /**
+   * 같은 요청을 둘에 보내고 결말(상태 또는 예외 타입·메시지)을 비교할 수 있게 적는다. ⚠️ JDK 25 의 HttpURLConnection 은 이름 검사
+   * 실패를 「Wrong HTTPS hostname: should be &lt;…&gt;」로 쓴다(17·21 은 「HTTPS hostname wrong:  should be &lt;…&gt;」 — 실측 25.0.4) —
+   * 타입은 같다. 새 운송은 17·21 의 문구를 쓰므로 비교 전에 25 의 문구를 그것으로 맞춘다.
+   */
   private static String fate(ThrowingCall call) {
     Throwable t = outcome(call);
-    return t == null ? "ok" : t.getClass().getName() + (t instanceof SSLHandshakeException ? "" : ": " + t.getMessage());
+    return t == null ? "ok" : t.getClass().getName() + (t instanceof SSLHandshakeException ? ""
+        : ": " + t.getMessage().replace("Wrong HTTPS hostname: ", "HTTPS hostname wrong:  "));
   }
 
   private static HTTPRequest tlsRequest(int port, SSLSocketFactory factory, HostnameVerifier verifier) throws IOException {

@@ -1,6 +1,7 @@
 package io.github.xzawed.keycloak.auth;
 
 import io.github.xzawed.keycloak.core.ResponseLimits;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -21,6 +22,7 @@ import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import org.apache.http.Header;
 import org.apache.http.HttpClientConnection;
+import org.apache.http.HttpConnectionMetrics;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpException;
 import org.apache.http.HttpHost;
@@ -73,7 +75,8 @@ import org.apache.http.util.CharArrayBuffer;
  * (3) 첫 줄이 상태 줄이 아니면 곧바로 거부하고(HttpURLConnection 처럼 — HttpClient 는 쓰레기 줄을 한도 없이 건너뛴다) 1xx 중간
  * 응답은 {@value #MAX_INTERIM_RESPONSES} 개까지만 받는다 · (4) 교환마다 연결 하나짜리 새 클라이언트를 만든다(공유 풀은 호스트당 2
  * 연결이라 동시 호출이 줄을 선다 — 실측 10 개 병렬 2,540 ms 대 510 ms) — 백그라운드 스레드가 없다 · (5) 하위 운송의 예외는 응답을
- * 인용할 수 있으므로({@code Bad chunk header: <줄>}) 상수 메시지의 {@link IOException} 으로 바꾼다({@link #shield}).
+ * 인용할 수 있으므로({@code Bad chunk header: <줄>}) 상수 메시지의 {@link IOException} 으로 바꾼다({@link #shield}) · (6) 본문을
+ * 읽는 동안 받는 틀의 바이트를 본문 상한의 {@value #WIRE_FACTOR} 배로 묶는다({@link #exchange}).
  *
  * <p>⚠️ <b>HttpURLConnection 과 같아야 하는 것</b>(실측 대조 — {@code CappedResponseSenderTest}): 요청 머리(User-Agent ·
  * Accept · Host · Connection — 아래 상수들), 제한 헤더를 버리는 규칙({@link #restricted}), 리다이렉트를 따르지 않음, 내용 코딩을
@@ -87,6 +90,8 @@ final class BoundedTransport {
 
   /** 1xx 중간 응답을 이보다 많이 받으면 거부한다 — 끝없이 보내는 서버에 시간이 묶이도록(HttpURLConnection 은 재귀하다 넘쳤다). */
   static final int MAX_INTERIM_RESPONSES = 8;
+  /** 본문을 읽는 동안 연결에서 받아도 되는 바이트 — 본문 상한의 이 배수({@link #exchange}). */
+  static final int WIRE_FACTOR = 8;
   /** 하위 운송이 응답을 해석하지 못했다 — HttpURLConnection 이 같은 경우에 쓰는 말 그대로. 응답을 인용하지 않는다. */
   static final String INVALID_RESPONSE = "Invalid Http response";
   /** 응답 머리·청크 줄·트레일러가 한도를 넘었다. 응답을 인용하지 않는다. */
@@ -176,9 +181,14 @@ final class BoundedTransport {
    * 교환 하나 — 연결 하나짜리 새 클라이언트로 {@code request} 를 보내고 상태와 머리가 오면 {@code reader} 에 넘긴다. 본문을 EOF 까지
    * 읽었으면 연결은 그때 이미 놓였고(정상 종료), 아니면(넘침·거부·실패) 클라이언트를 닫으며 남은 본문을 읽지 않고 끊는다. 실패는
    * {@link #shield} 를 거친 IOException 이다. TLS 근원은 HttpURLConnection 이 쓰는 소켓 팩토리와 검증기다({@link HucTls}).
+   *
+   * <p>본문을 읽는 동안 연결에서 받은 바이트(청크 머리·확장·트레일러 포함)는 {@code bodyCap} 의 {@value #WIRE_FACTOR} 배까지다
+   * ({@link #wireBounded}) — 본문 상한은 본문만 세서, 한 바이트짜리 청크마다 크기 줄을 줄 한도(8,192)까지 채우면(「0000…01」) 상한
+   * 안의 본문에 8 GB 의 틀을 실을 수 있었다(실측: 청크 200,000 개에 1.6 GB 를 받아 할당하고 4.0 초 — 그리고 받아들였다. 예전 운송도
+   * 청크 머리 2,050 바이트 한도로 같은 부류였다). 1 바이트 청크의 틀은 본문의 6 배라 그 응답도 본문 상한에 먼저 닿는다.
    */
   static <T> T exchange(HttpRequestBase request, SSLSocketFactory tlsFactory, HostnameVerifier verifier,
-                        int connectTimeoutMillis, int readTimeoutMillis, Reader<T> reader) throws IOException {
+                        int connectTimeoutMillis, int readTimeoutMillis, int bodyCap, Reader<T> reader) throws IOException {
     BasicHttpClientConnectionManager connections = new BasicHttpClientConnectionManager(SOCKETS, CONNECTIONS, null, FIRST_ADDRESS);
     connections.setConnectionConfig(BOUNDED_HEAD);
     // 프록시의 CONNECT 응답과 TLS 핸드셰이크도 읽기 타임아웃 아래에서 읽는다(HttpURLConnection 은 연결 직후 거는 값이다)
@@ -210,11 +220,38 @@ final class BoundedTransport {
       try {
         HttpResponse head = client.execute(request, context);
         HttpEntity entity = head.getEntity();
-        return reader.read(head, entity == null ? InputStream.nullInputStream() : entity.getContent());
+        return reader.read(head, entity == null ? InputStream.nullInputStream()
+            : wireBounded(entity.getContent(), context.getConnection().getMetrics(), (long) WIRE_FACTOR * bodyCap));
       } catch (IOException e) {
         throw shield(e);
       }
     }
+  }
+
+  /**
+   * 읽기마다 이 연결이 받은 바이트(소켓에서 버퍼로 — HttpCore 의 연결 지표)를 세어, 본문을 읽기 시작한 뒤 {@code budget} 을 넘으면
+   * 상수 메시지로 거부한다. 한 번의 읽기가 넘는 양은 청크 머리 한 줄이나 트레일러 한 묶음(줄·헤더 수 한도 안)까지다.
+   */
+  static InputStream wireBounded(InputStream body, HttpConnectionMetrics metrics, long budget) {
+    long start = metrics.getReceivedBytesCount();
+    String overBudget = "HTTP response body framing exceeds " + budget + " bytes on the wire";
+    return new FilterInputStream(body) {
+      @Override public int read() throws IOException {
+        int b = super.read();
+        check();
+        return b;
+      }
+
+      @Override public int read(byte[] buffer, int offset, int length) throws IOException {
+        int n = super.read(buffer, offset, length);
+        check();
+        return n;
+      }
+
+      private void check() throws IOException {
+        if (metrics.getReceivedBytesCount() - start > budget) throw new IOException(overBudget);
+      }
+    };
   }
 
   /**

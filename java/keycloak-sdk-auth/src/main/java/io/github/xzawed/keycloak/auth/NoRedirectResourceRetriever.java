@@ -81,7 +81,7 @@ final class NoRedirectResourceRetriever extends DefaultResourceRetriever {
     BoundedTransport.addJdkDefaults(get, url);
     int limit = getSizeLimit();
     return BoundedTransport.exchange(get, HttpsURLConnection.getDefaultSSLSocketFactory(),
-        HttpsURLConnection.getDefaultHostnameVerifier(), getConnectTimeout(), getReadTimeout(), (head, body) -> {
+        HttpsURLConnection.getDefaultHostnameVerifier(), getConnectTimeout(), getReadTimeout(), limit, (head, body) -> {
           int status = head.getStatusLine().getStatusCode();
           if (status / 100 != 2) throw new IOException("JWKS endpoint returned HTTP " + status);
           byte[] content = body.readNBytes(limit);

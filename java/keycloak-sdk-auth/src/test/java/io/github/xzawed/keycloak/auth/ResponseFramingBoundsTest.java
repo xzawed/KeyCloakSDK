@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.nimbusds.common.contenttype.ContentType;
 import com.nimbusds.jose.util.Resource;
 import com.nimbusds.oauth2.sdk.http.HTTPRequest;
+import com.nimbusds.oauth2.sdk.http.HTTPResponse;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -381,6 +382,58 @@ class ResponseFramingBoundsTest {
     assertInstanceOf(IOException.class, o.thrown(), o::describe);
     assertEquals("Exceeded configured input limit of 51200 bytes", o.thrown().getMessage());
     assertTrue(o.millis() < 5_000, () -> "jwks 끝없는 1 바이트 청크: " + o.describe());
+  }
+
+  /** 짧은 청크 본문 뒤 1 바이트 청크를 끝없이 — 크기 줄마다 0 을 {@code zeros} 개 채운다(「0000…01」, 값은 1). */
+  private static Reply endlessPaddedChunks(byte[] body, int zeros) {
+    return (out, server) -> {
+      chunkedHead(out, body);
+      byte[] chunk = new byte[zeros + 6];
+      Arrays.fill(chunk, 0, zeros, (byte) '0');
+      System.arraycopy(latin1("1\r\n \r\n"), 0, chunk, zeros, 6);
+      while (!server.stop) out.write(chunk);
+    };
+  }
+
+  /** 1 바이트 청크 {@code count} 개 — 본문 상한 안의 멀쩡한(그러나 잘게 나눈) 청크 본문. */
+  private static Reply tinyChunks(byte[] body, int count) {
+    return (out, server) -> {
+      chunkedHead(out, body);
+      byte[] one = latin1("1\r\n \r\n");
+      for (int i = 0; i < count; i++) out.write(one);
+      out.write(latin1("0\r\n\r\n"));
+    };
+  }
+
+  /**
+   * 크기 줄을 줄 한도까지 채운 1 바이트 청크(Grok 레그 A 의 지적 — 재현: 청크 200,000 개에 1.6 GB 를 받아 할당하고 4.0 초, 그리고
+   * 받아들였다). 본문을 읽는 동안 받은 틀이 본문 상한의 8 배를 넘으면 거부한다 — 두 레인 모두 곧바로, 할당이 묶인 채로.
+   */
+  @Test void paddedChunkSizeLines_areRefusedOnTheWireBudget() throws Exception {
+    for (Call lane : new Call[] {AUTH, JWKS_LANE}) {
+      String name = lane == AUTH ? "auth" : "jwks";
+      long cap = lane == AUTH ? CAP : 51_200;
+      Outcome o = assertTimeoutPreemptively(Duration.ofSeconds(30),
+          () -> measure(lane, endlessPaddedChunks(lane == AUTH ? TOKEN : JWKS, 8000)));
+      System.out.println("[ResponseFramingBoundsTest] " + name + " 채운 크기 줄의 1 바이트 청크 → " + o.describe());
+      assertInstanceOf(IOException.class, o.thrown(), o::describe);
+      assertEquals("HTTP response body framing exceeds " + 8 * cap + " bytes on the wire", o.thrown().getMessage());
+      assertTrue(o.millis() < 5_000, () -> name + ": " + o.describe());
+      assertTrue(o.allocated() < 8 * FRAMING_BOUND, () -> name + ": " + o.describe());
+    }
+  }
+
+  /** 대조 — 상한 안의 본문을 1 바이트 청크로 잘게 나눠도(틀이 본문의 6 배) 두 레인 모두 받아들인다. */
+  @Test void control_tinyChunksUnderTheCap_areAccepted() throws Exception {
+    try (RawServer server = new RawServer(tinyChunks(TOKEN, 100_000))) {
+      HTTPResponse response = CappedResponseSender.send(tokenRequest(server.port()), "token");
+      assertEquals(200, response.getStatusCode());
+      assertEquals(TOKEN.length + 100_000 + System.lineSeparator().length(), response.getBody().length());
+    }
+    try (RawServer server = new RawServer(tinyChunks(JWKS, 40_000))) {
+      Resource r = new NoRedirectResourceRetriever(5_000, 20_000).retrieveResource(certs(server.port()));
+      assertEquals(JWKS.length + 40_000, r.getContent().length());
+    }
   }
 
   // ───────────── 끝없는 머리 ─────────────
