@@ -366,7 +366,8 @@ class ResponseFramingBoundsTest {
 
   /** 끝없는 1 바이트 청크 본문 — 상한에서 거부하고 곧바로 돌아온다(닫기가 나머지를 비우지 않는다). */
   @Test void auth_anEndlessChunkedBody_isRefusedPromptly() throws Exception {
-    Outcome o = measure(AUTH, endlessOneByteChunks(TOKEN));
+    // 닫기가 나머지를 비우면 끝없는 본문에서 돌아오지 않는다 — 빌드를 붙잡지 않고 실패하게 시간을 건다
+    Outcome o = assertTimeoutPreemptively(Duration.ofSeconds(30), () -> measure(AUTH, endlessOneByteChunks(TOKEN)));
     System.out.println("[ResponseFramingBoundsTest] auth 끝없는 1 바이트 청크 → " + o.describe());
     assertInstanceOf(CappedResponseSender.TooLarge.class, o.thrown(), o::describe);
     assertTrue(o.millis() < 5_000, () -> "auth 끝없는 1 바이트 청크: " + o.describe());
