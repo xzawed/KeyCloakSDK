@@ -363,6 +363,26 @@ class TransportParityTest {
     }
   }
 
+  /**
+   * 리다이렉트는 따르지 않는다 — HttpClient 의 기본은 POST 의 303 을 GET 으로, GET 의 302 를 따른다. AuthClient 가 끄는 플래그
+   * ({@code followRedirects=false})의 POST 303 은 HttpURLConnection 과 같이 303 을 돌려주고, ⚠️ 플래그가 켜진 GET 302 도 이
+   * 송신은 따르지 않는다(Nimbus 의 send() 는 따른다 — SSRF 하드닝, 클래스 설명).
+   */
+  @Test void redirects_areNeverFollowed() throws Exception {
+    try (CaptureServer server = new CaptureServer(null, c -> c.requestLine().contains("/elsewhere") ? ok(TOKEN)
+        : latin1("HTTP/1.1 " + (c.requestLine().startsWith("POST") ? "303 See Other" : "302 Found")
+            + "\r\nLocation: /elsewhere\r\nContent-Length: 0\r\n\r\n"))) {
+      HTTPRequest post = shapes("http://127.0.0.1:" + server.port()).get("client_credentials");
+      assertEquals(303, post.send().getStatusCode());
+      assertEquals(303, CappedResponseSender.send(post, "token").getStatusCode());
+      HTTPRequest get = new HTTPRequest(HTTPRequest.Method.GET, URI.create("http://127.0.0.1:" + server.port() + "/x").toURL());
+      assertTrue(get.getFollowRedirects(), "Nimbus 의 기본은 따르기다");
+      assertEquals(302, CappedResponseSender.send(get, "token").getStatusCode());
+      assertTrue(server.requests.stream().noneMatch(r -> r.requestLine().contains("/elsewhere")),
+          () -> "리다이렉트 대상에 요청이 갔다 — " + server.requests);
+    }
+  }
+
   // ───────────── 응답 ─────────────
 
   /**
