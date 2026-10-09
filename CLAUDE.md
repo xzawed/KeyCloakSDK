@@ -210,7 +210,7 @@ dev(비앵커): `pytest`·`pytest-asyncio`·`pytest-cov`·`mypy`(strict)·`ruff`
 <!-- doc-guard: kind=dep source=node/package.json min=3 -->
 | 의존성 | 패키지 | 버전 |
 |---|---|---|
-| Admin | `@keycloak/keycloak-admin-client` | `~26.7.0` |
+| Admin | `@keycloak/keycloak-admin-client` | `~26.8.0` |
 | 인증(OIDC/OAuth2) | `openid-client` | `^6` |
 | JWT(강화 검증) | `jose` | `^6` |
 
