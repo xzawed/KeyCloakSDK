@@ -15,6 +15,11 @@
 레인과 같은 판정(`tokens._usable_access_token`)으로 거부하므로 헤더가 서지 않고 요청도 나가지
 않는다. 세터는 클래스의 프로퍼티라 인스턴스마다 바꿀 수 없다.
 
+⚠️ **헤더가 실을 수 없는 토큰도 여기서 거부한다**(`bearer.py` — RFC 9110 이 빼는 제어 문자와 그
+레인의 전송이 못 싣는 문자) — auth 레인은 그것을 거부하지 않는다(`TokenSet` 으로 소비자에게 가고,
+그 판정은 언어 횡단 `bearer-token-grammar-divergent` 다). 레인은 래퍼의 것이다 — sync 그랜트 둘은
+sync 요청이, `a_*` 둘은 aio 요청이 부른다.
+
 ⚠️ 감싸기를 **거는** 것은 이 모듈이 아니라 `admin_guard.py` 다 — 생성 때 한 번이 아니라 admin 요청이
 나가기 전마다 살아 있는 중첩 객체에 걸려 있는지 다시 본다(`raw.connection` 은 공개 세터로 갈아
 끼워진다). 그랜트를 거치지 않고 실린 bearer(주입·토큰 세터)도 거기서 잡는다.
@@ -42,7 +47,9 @@ from typing import Any
 
 from keycloak.exceptions import KeycloakError
 
+from ..exceptions import KeycloakAuthError
 from ..tokens import _usable_access_token
+from .bearer import GRANTED, Lane, unsendable
 
 #: 중첩 `KeycloakOpenID` 의 그랜트 메서드 — 연결이 토큰을 받는 자리 전부다.
 _SYNC_GRANTS = ("token", "refresh_token")
@@ -60,6 +67,14 @@ def is_grant_failure(exc: BaseException) -> bool:
     return exc in _FAILED_GRANTS
 
 
+def _require_carried(response: dict[str, Any], lane: Lane) -> None:
+    """그랜트 응답의 access_token 이 쓸 수 있고 `lane` 의 헤더가 실을 수 있는가 — 아니면
+    `KeycloakAuthError`. 세터 앞이라 거부한 토큰은 캐시되지 않는다(`bearer.py`)."""
+    reason = unsendable(_usable_access_token(response), lane)
+    if reason is not None:
+        raise KeycloakAuthError(GRANTED.format(reason))
+
+
 def _checked(grant: _Grant) -> _Grant:
     def checked(*args: Any, **kwargs: Any) -> dict[str, Any]:
         try:
@@ -67,7 +82,7 @@ def _checked(grant: _Grant) -> _Grant:
         except KeycloakError as exc:
             _FAILED_GRANTS.add(exc)
             raise
-        _usable_access_token(response)
+        _require_carried(response, "sync")
         return response
 
     return checked
@@ -80,7 +95,7 @@ def _achecked(grant: _AsyncGrant) -> Callable[..., Coroutine[Any, Any, dict[str,
         except KeycloakError as exc:
             _FAILED_GRANTS.add(exc)
             raise
-        _usable_access_token(response)
+        _require_carried(response, "aio")
         return response
 
     return checked
