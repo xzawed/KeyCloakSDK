@@ -294,9 +294,13 @@ private enum class RfbLane(
             rfbTokenRequest(port).send(CappedResponseSender("token response"))
         }
     },
+
+    // ⚠️ fetch 다 — retrieveResource 는 조회를 제 데몬 스레드에서 돌리고(fetchToCompletion) 부른 스레드는 기다리기만 해, 그 스레드로 재면 운송의
+    // 할당이 빠진다(실측 리눅스 JDK 21: retrieveResource 는 어느 응답이든 4,2xx B · 같은 응답의 fetch 는 끝없는 1 바이트 청크 1,369,800 B ·
+    // 1xx 여덟과 머리 14,540,768 B). 리트리버의 나머지(빈 키 집합 판정)는 운송이 아니고, 대조 시험·재사용 시험이 retrieveResource 를 지난다.
     JWKS(RFB_JWKS, 51_200L) {
         override fun run(port: Int) {
-            NoRedirectResourceRetriever(5_000, 20_000).retrieveResource(rfbCerts(port))
+            NoRedirectResourceRetriever(5_000, 20_000).fetch(rfbCerts(port))
         }
     }, ;
 
@@ -379,6 +383,7 @@ internal class ResponseFramingBoundsTest {
         val o = rfbMeasure(RfbLane.JWKS, rfbManyTrailers(RFB_JWKS, 32L shl 20))
         println("[ResponseFramingBoundsTest] jwks 32 MiB 트레일러 → ${o.describe()}")
         rfbExpectRejectedWithoutQuoting("jwks 32 MiB 트레일러", o.thrown)
+        assertTrue(o.allocated < RFB_FRAMING_BOUND, "jwks 32 MiB 트레일러: ${o.describe()}")
     }
 
     @Test
@@ -387,6 +392,7 @@ internal class ResponseFramingBoundsTest {
         println("[ResponseFramingBoundsTest] jwks 1 MiB 트레일러 한 줄 → ${o.describe()}")
         rfbExpectRejectedWithoutQuoting("jwks 1 MiB 트레일러 한 줄", o.thrown)
         assertTrue(o.millis < 3_000, "jwks 1 MiB 트레일러 한 줄: ${o.describe()}")
+        assertTrue(o.allocated < RFB_FRAMING_BOUND, "jwks 1 MiB 트레일러 한 줄: ${o.describe()}")
     }
 
     // ───────────── 헤더 줄·청크 확장 (운송의 줄 한도) ─────────────
@@ -428,6 +434,8 @@ internal class ResponseFramingBoundsTest {
         assertIs<IOException>(o.thrown, o.describe())
         assertEquals("Exceeded configured input limit of 51200 bytes", o.thrown.message)
         assertTrue(o.millis < 5_000, "jwks 끝없는 1 바이트 청크: ${o.describe()}")
+        // auth 레인의 한도(상한의 96 배)를 이 레인의 상한으로 — 상한+1 바이트를 읽는 동안 청크 머리 51,200 개를 해석한다
+        assertTrue(o.allocated < 96L * RfbLane.JWKS.cap, "jwks 끝없는 1 바이트 청크: ${o.describe()}")
     }
 
     // 크기 줄을 줄 한도까지 채운 1 바이트 청크(Java 의 Grok 레그 A 지적 — 재현: 청크 200,000 개에 1.6 GB 를 받아 할당하고 4.0 초, 그리고

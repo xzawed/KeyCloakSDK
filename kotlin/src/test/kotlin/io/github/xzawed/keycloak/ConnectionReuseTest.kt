@@ -279,6 +279,50 @@ private fun <T> crtWithProperties(
 
 private fun crtElapsedMillis(start: Long): Long = (System.nanoTime() - start) / 1_000_000
 
+// 만든 TLS 소켓을 강하게 쥐는 팩토리 — 운송이 넘기지 못한 소켓을 닫았는지 본다(쥐지 않으면 GC 가 대신 닫아 결과가 그때그때 다르다).
+private class CrtRecordingFactory(
+    private val delegate: SSLSocketFactory,
+) : SSLSocketFactory() {
+    val created = CopyOnWriteArrayList<SSLSocket>()
+
+    private fun record(s: Socket): Socket = s.also { created += it as SSLSocket }
+
+    override fun getDefaultCipherSuites(): Array<String> = delegate.defaultCipherSuites
+
+    override fun getSupportedCipherSuites(): Array<String> = delegate.supportedCipherSuites
+
+    override fun createSocket(
+        s: Socket,
+        host: String,
+        port: Int,
+        autoClose: Boolean,
+    ): Socket = record(delegate.createSocket(s, host, port, autoClose))
+
+    override fun createSocket(
+        host: String,
+        port: Int,
+    ): Socket = record(delegate.createSocket(host, port))
+
+    override fun createSocket(
+        host: String,
+        port: Int,
+        local: InetAddress,
+        localPort: Int,
+    ): Socket = record(delegate.createSocket(host, port, local, localPort))
+
+    override fun createSocket(
+        host: InetAddress,
+        port: Int,
+    ): Socket = record(delegate.createSocket(host, port))
+
+    override fun createSocket(
+        host: InetAddress,
+        port: Int,
+        local: InetAddress,
+        localPort: Int,
+    ): Socket = record(delegate.createSocket(host, port, local, localPort))
+}
+
 internal class ConnectionReuseTest {
     // ───────────── 재사용 ─────────────
 
@@ -764,11 +808,25 @@ internal class ConnectionReuseTest {
         }
     }
 
-    // TLS 단계의 런타임 예외(검증기가 던진 IllegalStateException)는 그대로 나가고 — HttpURLConnection 도 검증기의 예외를 그대로 냈다 — 그
-    // TLS 소켓은 넘기기 전에 닫힌다(Java 의 SonarCloud S2095 수정): 서버는 곧 연결의 끝을 보고, 빌린 연결은 0 이며 다음 교환은 성공한다.
+    // TLS 단계의 런타임 예외는 그대로 나가고 — HttpURLConnection 도 같은 예외를 그대로 냈다 — 그 TLS 소켓은 넘기기 전에 닫힌다(Java 의
+    // SonarCloud S2095 수정): 그 소켓은 연결에 묶이기 전이라 HttpClient 는 닫지 않는다(연결 연산자에 finally 가 없다). 두 자리 — 핸드셰이크 뒤
+    // 검증기가 던진 IllegalStateException · 핸드셰이크 전 https.protocols 의 없는 규약에 setEnabledProtocols 가 던진 IllegalArgumentException.
+    // ⚠️ 시험은 만들어진 TLS 소켓을 강하게 쥔다 — 쥐지 않으면 닫지 않은 소켓도 GC 의 Cleaner 가 곧 닫아 서버가 끝을 보므로, 닫기를 지운
+    // 변이(k04)가 할당이 많은 스위트에서 통과했다.
     @Test
-    @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
-    fun `a RuntimeException in the TLS stage passes through and leaves nothing behind`() {
+    @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `a RuntimeException in the TLS stage passes through and closes the TLS socket`() {
+        val rejects = HostnameVerifier { _, _ -> throw IllegalStateException("검증기 실패") }
+        tlsStageFailure("검증기", emptyMap(), rejects) { e -> e is IllegalStateException && e.message == "검증기 실패" }
+        tlsStageFailure("https.protocols", mapOf("https.protocols" to "TLSv9"), CRT_ACCEPTS_LOOPBACK) { e -> e is IllegalArgumentException }
+    }
+
+    private fun tlsStageFailure(
+        label: String,
+        properties: Map<String, String>,
+        verifier: HostnameVerifier,
+        expected: (Throwable) -> Boolean,
+    ) {
         val ended = CountDownLatch(1)
         CrtRawServer(TransportTestTls.serverOther) { p ->
             if (p.index == 1) {
@@ -782,10 +840,13 @@ internal class ConnectionReuseTest {
             p.serveAll(crtOk(CRT_ACTIVE))
         }.use { server ->
             val url = "https://127.0.0.1:${server.port}/token"
-            val throwing = HostnameVerifier { _, _ -> throw IllegalStateException("검증기 실패") }
-            val e = assertFailsWith<IllegalStateException> { crtPost(url, TransportTestTls.trusting, throwing, 5_000).sendCapped() }
-            assertEquals("검증기 실패", e.message)
-            assertTrue(ended.await(5, TimeUnit.SECONDS), "서버가 연결의 끝을 보지 못했다 — TLS 소켓이 닫히지 않았다")
+            val recording = CrtRecordingFactory(TransportTestTls.trusting)
+            val thrown =
+                crtWithProperties(properties) { runCatching { crtPost(url, recording, verifier, 5_000).sendCapped() }.exceptionOrNull() }
+            println("[ConnectionReuseTest] TLS 단계의 런타임 예외($label) → $thrown · 만든 TLS 소켓 ${recording.created.map { it.isClosed }}")
+            assertTrue(thrown != null && expected(thrown), "$label: $thrown")
+            assertEquals(listOf(true), recording.created.map { it.isClosed }, "$label: 넘기지 못한 TLS 소켓이 열린 채 남았다")
+            if (properties.isEmpty()) assertTrue(ended.await(5, TimeUnit.SECONDS), "$label: 서버가 연결의 끝을 보지 못했다")
             assertEquals(0, crtLeased())
             assertEquals(200, crtPost(url, TransportTestTls.trusting, CRT_ACCEPTS_LOOPBACK, 5_000).sendCapped().statusCode)
         }
