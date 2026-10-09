@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "faraday"
+require "faraday/net_http"
 require "json"
 
 module KeycloakSdk
@@ -8,6 +9,27 @@ module KeycloakSdk
   # follow_redirects 미들웨어를 절대 장착하지 않는다(SSRF 하드닝 — Faraday는 기본 미추종).
   # 상한을 건 본문 읽기(`read_capped`)도 여기 있다 — 토큰·introspection·logout·JWKS 레인이 같은 기제를 쓴다.
   module Http
+    # ⚠️ **응답 **틀**(상태 줄·헤더 줄·청크 크기/확장 줄·트레일러)의 상한.** `read_capped` 의 1 MiB 는 `on_data` 로 오는
+    # **본문 바이트**만 본다 — net-http(net-protocol 의 `BufferedIO`)는 그 앞뒤로 틀을 한도 없이 읽는다(헤더·트레일러는
+    # `readuntil("\n")`, 청크 크기/확장 줄도 `readline`). 그래서 16 MiB 헤더 한 줄·청크 확장·트레일러가 상한 밖이었다
+    # (response-framing-unbounded · 2026-10-09 실측 · auth·admin 같다). 다른 여덟 언어는 전부 틀을 묶는다(.NET 64 KiB ·
+    # Go 64 KiB · Java 8,192/100 · undici · h11 · hyper).
+    #
+    # ⚠️ **두 상한은 함께 움직인다.** `MAX_FRAMING_LINE_BYTES` 는 한 **줄**(F1·F2·F3b — 거대한 줄 하나)을, `MAX_FRAMING_BYTES`
+    # 는 한 **응답의 틀 전체**(F3a — 작은 줄 다수)를 묶는다. 둘 중 하나만 두면 다른 공격이 지나간다(변이 증명 M1·M2).
+    # ⚠️ **틀 예산은 본문 중에 읽히는 청크 크기 줄도 센다** — 그래서 큰 본문을 수십 바이트 청크로 잘게 쪼갠 응답은
+    # 거부된다. Keycloak·주류 리버스 프록시는 KiB 단위로 청크하므로(nginx proxy_buffer 4–8 KiB) 현실 트래픽은 통과한다
+    # (control: `response_framing_cap_spec` 의 「realistically chunked multi-chunk body」). admin 레인은 본문 상한이 없어
+    # 이 예산이 **순수 안전 추가**다(잘게 쪼갠 무한 청크 틀을 여기서 끊는다).
+    #   · 8,192 = Java MessageConstraints 줄 한도. Keycloak 26.6 의 가장 긴 응답 틀 줄 85 B(Go 실측)의 ×96.
+    #   · 65,536 = .NET 헤더+트레일러 한도 · Go 머리 블록 한도. Keycloak 머리 블록 ≤339 B · 브라우저 로그인 최대 3,018 B
+    #     (둘 다 Go 실측) — SDK 가 받는 것의 ×19 이상이라 기본 서버가 어떤 프록시를 거쳐 보내도 거부하지 않는다.
+    # ⚠️ 맨 십진 리터럴 — 교차언어 가드가 이 줄을 읽을 수 있어야 한다(`TOKEN_RESPONSE_MAX_BYTES` 와 같은 관용).
+    MAX_FRAMING_LINE_BYTES = 8_192
+    MAX_FRAMING_BYTES = 65_536
+    # ⚠️ 메시지에 바이트를 싣지 않는다(상수 문자열) — 다른 경계와 같은 규율(§4 · `RedactedCause`).
+    FRAMING_LINE_MSG = "HTTP response framing line exceeds #{MAX_FRAMING_LINE_BYTES} bytes".freeze
+    FRAMING_TOTAL_MSG = "HTTP response framing exceeds #{MAX_FRAMING_BYTES} bytes".freeze
     # 토큰 엔드포인트(세 그랜트 · admin 레인의 자기 토큰)·introspection·logout 응답 본문의 상한(바이트).
     # 1 MiB 는 Keycloak 26.6 이 기본 설정으로 받는 가장 긴 Bearer(65,459 바이트 — 하나 더 길면 HTTP 431)의
     # 16 배라 서버가 받는 토큰은 거부하지 않고, 끝없는 본문은 여기서 멈춘다.
@@ -28,6 +50,98 @@ module KeycloakSdk
     UNDECODABLE = "JSON text decodes to invalid UTF-8"
     private_constant :IDENTITY, :JSON_RESPONSE, :UNDECODABLE
 
+    # 소켓 하나에 거는 **싱글턴 확장** — 전역 몽키패치가 아니라 이 SDK 가 연 `BufferedIO` 인스턴스 하나에만 붙는다
+    # (`BoundedHttp#on_connect`). 호스트 애플리케이션의 net-http 는 건드리지 않는다.
+    #
+    # 틀 줄은 전부 `readuntil`/`readline` 로 읽힌다(상태 줄·헤더 줄·청크 크기/확장 줄·트레일러 — `readline` 은
+    # `readuntil("\n").chop`). `readuntil` 은 net-protocol 원판과 **같은 버퍼 주사**를 하되(종단 문자를 `@rbuf` 에서 찾고,
+    # 못 찾을 때만 `rbuf_fill` 로 소켓에서 16 KiB 를 더 받는다), 채우기 **전에** 두 상한을 건다: 쌓인 부분 줄이
+    # `MAX_FRAMING_LINE_BYTES` 를 넘으면(F1·F2·F3b — 거대한 줄 하나) 그 자리에서, 한 응답의 틀 누적이
+    # `MAX_FRAMING_BYTES` 를 넘으면(F3a — 작은 줄 다수) 거부한다. 원판이 종단 문자를 찾을 때까지 16 MiB 를 통째로
+    # 담은 **뒤** 돌려주던 것을, 채우기 루프 안에서 끊는다.
+    #
+    # ⚠️ **net-protocol `BufferedIO` 내부(`@rbuf`·`@rbuf_offset`·private `rbuf_fill`·`rbuf_consume`)에 기댄다.**
+    # 한 바이트씩 읽는 `read(1)` 은 F3a 의 64 KiB 를 쌓느라 할당을 10 MB 넘게 튀겼다(실측) — 버퍼 주사는 그 churn 이 없다.
+    # 이 내부가 바뀌면 조용히 깨지므로 `http_framing_pins_spec` 이 그 모양(ivar·메서드·`readuntil`/`readline` 호출 경로)을
+    # 핀으로 고정해 **시끄럽게** 실패시킨다. net-protocol 0.2.1(루비 3.2 하한)·0.2.2(3.3/3.4) 의 `readuntil` 은 동형이다.
+    # ⚠️ 거부는 `TransportError`(상수 메시지) — net-http 가 인식하지 않는 타입이라 그 **바깥** rescue 가 소켓을 닫고
+    # 다시 던진다(비우지 않는다 · idempotent 재시도 목록에 없어 재시도도 안 된다). Faraday 어댑터의
+    # `NET_HTTP_EXCEPTIONS` 에도 없어 공개 경계까지 `TransportError` 로 그대로 올라간다.
+    module BoundedReads
+      def kcsdk_reset_framing!
+        @kcsdk_framing_total = 0
+      end
+
+      # ⚠️ 시그니처는 net-protocol 원판과 같아야 한다 — net-http 가 `sock.readuntil("\n", true)` 로 위치 인자로 부른다.
+      # 그래서 키워드 인자로 바꾸지 않는다(Style/OptionalBooleanParameter 를 그 이유로 끈다).
+      def readuntil(terminator, ignore_eof = false) # rubocop:disable Style/OptionalBooleanParameter
+        @kcsdk_framing_total ||= 0
+        offset = @rbuf_offset
+        begin
+          until (idx = @rbuf.index(terminator, offset))
+            pending = @rbuf.bytesize - @rbuf_offset # 이 줄에 쌓인, 아직 소비되지 않은 바이트
+            raise KeycloakSdk::TransportError, FRAMING_LINE_MSG if pending > MAX_FRAMING_LINE_BYTES
+            raise KeycloakSdk::TransportError, FRAMING_TOTAL_MSG if @kcsdk_framing_total + pending > MAX_FRAMING_BYTES
+
+            offset = @rbuf.bytesize
+            rbuf_fill
+          end
+          line = rbuf_consume(idx + terminator.bytesize - @rbuf_offset)
+        rescue EOFError
+          raise unless ignore_eof
+
+          line = rbuf_consume
+        end
+        charge_framing(line.bytesize)
+        line
+      end
+
+      def readline
+        readuntil("\n").chop
+      end
+
+      private
+
+      # 완성된 줄 하나를 틀 예산에 올린다 — 종단 문자가 이미 버퍼 안에 있어 채우기 루프의 검사를 건너뛴 경우(작은 줄)도
+      # 여기서 두 상한을 다시 본다.
+      def charge_framing(len)
+        raise KeycloakSdk::TransportError, FRAMING_LINE_MSG if len > MAX_FRAMING_LINE_BYTES
+
+        @kcsdk_framing_total += len
+        raise KeycloakSdk::TransportError, FRAMING_TOTAL_MSG if @kcsdk_framing_total > MAX_FRAMING_BYTES
+      end
+    end
+
+    # `Net::HTTP` 인스턴스의 싱글턴에 **prepend** 해 소켓이 만들어지는 자리(`on_connect`, `connect` 끝)에서 그 소켓에만
+    # `BoundedReads` 를 건다. `begin_transport` 는 요청마다 틀 예산을 0 으로 되돌린다 — keep-alive 로 연결을 재사용해도
+    # 다음 응답은 새 예산을 받는다(한 요청의 1xx 중간 응답들은 같은 예산을 나눠 쓴다 — 그래야 1xx 홍수도 묶인다).
+    # ⚠️ **`Net::HTTP` 를 하위 클래스로 두지 않는다.** 그 하위 클래스 인스턴스가 Faraday 스택에 남으면 공개 표면 가드의
+    # 객체 걷기(`facade_dump_spec`·`hostile_path_matrix_spec`)가 SDK 네임스페이스로 보고 그 상속 공개 메서드(Net::HTTP
+    # 수백 개)를 불러 **실 네트워크로 블록**된다(실측: 스위트 교착). 표준 어댑터 + 인스턴스 prepend 는 그래프에 SDK 이름의
+    # 어댑터·HTTP 타입을 남기지 않는다.
+    module BoundedTransport
+      private
+
+      def on_connect
+        super
+        @socket.extend(BoundedReads)
+        @socket.kcsdk_reset_framing!
+      end
+
+      def begin_transport(req)
+        super
+        @socket.kcsdk_reset_framing! if @socket.respond_to?(:kcsdk_reset_framing!)
+      end
+    end
+
+    # 표준 `:net_http` 어댑터의 설정 블록 — 커넥션을 짓기 직전 그 `Net::HTTP` 인스턴스의 싱글턴에 `BoundedTransport` 를
+    # prepend 한다. 프록시 인자·연결 조립은 어댑터가 그대로 하고(원판 `net_http_connection`), 프록시·keep-alive 경로는
+    # `http_framing_pins_spec` 이 고정한다.
+    BOUND_CONNECTION = lambda do |http|
+      http.singleton_class.prepend(BoundedTransport)
+    end
+    private_constant :BOUND_CONNECTION
+
     module_function
 
     def build(config, base_url: nil)
@@ -36,7 +150,7 @@ module KeycloakSdk
         request: { timeout: config.read_timeout, open_timeout: config.connect_timeout }
       ) do |f|
         yield f if block_given?
-        f.adapter :net_http
+        f.adapter :net_http, &BOUND_CONNECTION
       end
     end
 
