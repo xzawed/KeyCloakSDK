@@ -49,6 +49,12 @@ assert_contains "$OUT" "[ruby] SSOT ruby/spec/spec_helper.rb:7 (SimpleCov skip) 
 run list "$T" --lang rust
 assert_contains "$OUT" "[rust]" "--lang 은 그 언어를 찍는다"
 assert_not_contains "$OUT" "[go]" "--lang 은 다른 언어를 찍지 않는다"
+# `list --json` — 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`)가 파일 집합을 파생하는 계약.
+run list "$T" --json
+assert_eq 0 "$RC" "list --json 은 exit 0"
+assert_contains "$OUT" '"python/src/keycloak_sdk/aio/auth.py"' "[json] 텍스트 판과 같은 전개를 낸다"
+assert_contains "$OUT" '"site": "python/pyproject.toml:9"' "[json] SSOT 자리를 함께 낸다"
+assert_contains "$OUT" '"findings": []' "[json] 건강한 트리는 findings 가 비었다"
 
 # ── 드리프트 1: Sonar 글롭이 게이트가 재는 파일을 삼킨다(php `Admin/**` 의 원형) ───────────
 fresh
@@ -198,6 +204,10 @@ sed -i 's#"\*/auth.py"#"*/nope.py"#; s#"\*/admin/__init__.py"#"*/nope2.py"#' "$T
 run check "$T"
 assert_eq 2 "$RC" "SSOT 가 0 파일이면 FAIL"
 assert_contains "$OUT" "FAIL python/pyproject.toml:9 [python] SSOT 가 제품 소스 0 개로 펼쳐진다" "0 파일 FAIL 문구"
+run list "$T" --json --lang python
+assert_eq 2 "$RC" "[json] FAIL 인 언어가 있으면 exit 2(텍스트 판과 같다)"
+assert_not_contains "$OUT" '"python": {' "[json] FAIL 인 언어는 langs 에 없다 — 빈 전개로 위장하지 않는다"
+assert_contains "$OUT" '"lang": "python"' "[json] 그 FAIL 은 findings 로 온다"
 # 사본 자리 파일이 없다.
 fresh
 rm "$T/harness/suites/go.sh"

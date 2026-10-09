@@ -1,7 +1,9 @@
 name: Go CI
 on:
-  push: { branches: [main], paths: ['go/**', '.github/workflows/go-ci.yml'] }
-  pull_request: { branches: [main], paths: ['go/**', '.github/workflows/go-ci.yml'] }
+  # `scripts/integration-coverage.*` — integration 잡의 리포트가 그 둘로 돈다. 리포트 로직·핀만 고친 PR 에서도
+  # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다).
+  push: { branches: [main], paths: ['go/**', '.github/workflows/go-ci.yml', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
+  pull_request: { branches: [main], paths: ['go/**', '.github/workflows/go-ci.yml', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:
@@ -96,8 +98,22 @@ jobs:
         with:
           go-version: '1.26'
           cache-dependency-path: go/go.sum
-      - name: Integration E2E (Docker, 실제 Keycloak 26.6)
-        run: go test -tags=integration -run TestE2E -count=1 ./...
+      # 같은 통합 E2E 에 커버 프로필만 더한다. 명령은 `scripts/integration-coverage.mjs` 의 run 이 소유한다 —
+      # 로컬(`node scripts/integration-coverage.mjs go`)과 CI 가 같은 명령을 쓰게 여기 다시 적지 않는다.
+      # 종료코드는 테스트의 것이다.
+      - name: Integration E2E (Docker, 실제 Keycloak 26.6) + 경계 커버리지 수집
+        working-directory: .
+        run: node scripts/integration-coverage.mjs run go --out "$RUNNER_TEMP/integration-coverage"
+      # ⚠️ 보고 모드 — 낮은 수치로는 실패하지 않는다. 하한은 CI 관측 세 번 뒤 사람이 정한다(등록부
+      # `integration-coverage-never-measured` 4 걸음째). exit 2(파생 실패 · 핀과 다름 · 데이터에서 경계 파일
+      # 빠짐 · 아무것도 안 돈 실행)만 잡을 실패시킨다. exit 1(미실행 함수의 소유 문제)은 경고다.
+      - name: 통합 전용 경계 커버리지 리포트 (보고 모드 — 하한 없음)
+        working-directory: .
+        run: |
+          rc=0
+          node scripts/integration-coverage.mjs report go --out "$RUNNER_TEMP/integration-coverage" || rc=$?
+          if [ "$rc" -eq 1 ]; then echo "::warning::통합 미실행 함수의 소유 문제 — 위 DRIFT 줄(보고 모드라 게이트가 아니다)"; fi
+          [ "$rc" -le 1 ]
 
   api-compat:
     name: gorelease (공개 API 파괴적 변경)

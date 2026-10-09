@@ -1,0 +1,20 @@
+mode: set
+example.com/fixture/go/admin.go:10.38,10.73 1 0
+example.com/fixture/go/admin.go:13.57,14.17 1 0
+example.com/fixture/go/admin.go:14.17,16.3 1 0
+example.com/fixture/go/admin.go:17.2,17.40 1 0
+example.com/fixture/go/admin.go:22.39,26.19 2 0
+example.com/fixture/go/admin.go:26.19,28.3 1 0
+example.com/fixture/go/admin.go:29.2,29.20 1 0
+example.com/fixture/go/admin.go:33.37,36.2 2 0
+example.com/fixture/go/admin_users.go:7.49,10.2 2 0
+example.com/fixture/go/admin_users.go:13.49,14.14 1 0
+example.com/fixture/go/admin_users.go:14.14,16.3 1 0
+example.com/fixture/go/admin_users.go:17.2,18.12 2 0
+example.com/fixture/go/admin_users.go:24.5,26.2 1 0
+example.com/fixture/go/auth.go:6.37,6.74 1 0
+example.com/fixture/go/auth.go:9.23,11.2 1 0
+example.com/fixture/go/auth.go:14.37,15.16 1 0
+example.com/fixture/go/auth.go:15.16,17.3 1 0
+example.com/fixture/go/auth.go:18.2,18.22 1 0
+example.com/fixture/go/config.go:7.30,7.54 1 0
