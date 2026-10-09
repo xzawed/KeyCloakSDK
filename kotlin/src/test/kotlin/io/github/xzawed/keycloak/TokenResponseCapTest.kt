@@ -35,16 +35,12 @@ private const val TRC_KEYCLOAK_MAX_BEARER = 65_459
 private const val TRC_OIDC = "/realms/r/protocol/openid-connect"
 private const val TRC_SPACE = ' '.code.toByte()
 
-// ⚠️ 상한을 넘는 청크 본문은 서버가 붙잡는다(answer) — 잰 할당이 SDK 가 정하는 몫이어야 해서다. HttpURLConnection 은 닫을 때
-// 소켓에 이미 와 있는 바이트를 한 번에 읽고(ChunkedInputStream.hurry) 청크 하나마다 모은 배열을 새로 잡는다 — 할당이 그 양의
-// 제곱으로 자라고, 그 양은 SDK 가 아니라 커널 수신 버퍼와 시점이 정한다(Linux 루프백은 tcp_rmem 최대 6 MiB 까지 자란다).
-// 실측(2026-10-05 · JDK 21 · Docker Linux): 빠른 서버로는 이 시험이 5 번 다 실패했다 — 청크 레인 7,088,976–567,981,136 바이트,
-// 길이 틀(REFRESH)은 매번 2,309,400 남짓. 그래서 상한+TRC_PACED_SLACK 바이트까지만 곧바로 보내 닫기가 읽을 양을 고정하고
-// 클라이언트가 떠날 때까지 기다린다 — TRC_HOLD_MILLIS 가 지나도록 읽고 있는 클라이언트(상한 없는 읽기)에게는 나머지를 전속력으로
-// 보내 그 할당을 잡는다. 여유를 키우지 말 것 — 닫기의 할당이 16 KiB 면 53,488 · 256 KiB 면 8,782,288 바이트다(JDK 21 탐침).
-private const val TRC_PACED_SLACK = 16 * 1024
-private const val TRC_HOLD_MILLIS = 3_000L
-private const val TRC_PROBE_MILLIS = 50L
+// ⚠️ 서버는 모든 레인에서 전속력으로 쓴다 — 잰 할당에는 거부한 뒤 연결을 닫는 비용까지 든다. auth 레인은 상한을 넘으면 연결을
+// 끊는다(남은 본문을 읽지 않는다 — BoundedTransport). 예전 운송(HttpURLConnection)은 닫을 때 소켓에 이미 와 있는 청크 바이트를
+// 읽어 풀었고(ChunkedInputStream.hurry) 할당이 그 양의 제곱으로 자라서(실측 2026-10-05 · JDK 21 · Docker Linux: 빠른 서버로는 청크
+// 레인 7,088,976–567,981,136 바이트 — 등록부 close-drain-time-unbounded), 이 시험의 서버가 상한 너머를 붙잡아 그 몫을 뺐었다.
+// Windows 루프백은 수신 버퍼가 작아 그 비용이 1 MB 아래였다 — 닫기의 회귀는 리눅스에서 드러난다.
+private const val TRC_ANSWER_MILLIS = 10_000L
 
 // 쓸 수 있는 n 바이트 값(token68 문자만).
 private fun trcValue(n: Int): String {
@@ -70,16 +66,14 @@ private fun trcAllocatedAllThreads(): Long {
 }
 
 internal class TokenResponseCapTest {
-    // 엔드포인트가 낼 응답 — head 뒤에 공백 pad 바이트를 고정 버퍼로 흘려 보낸다(시험 서버가 본문만 한 배열을 잡지 않는다).
-    // held 면 상한+TRC_PACED_SLACK 바이트까지만 곧바로 보내고 클라이언트가 떠날 때까지 붙잡는다. answered 는 서버가 이 응답을
-    // 끝냈을 때(클라이언트가 떠난 것을 알아챘거나 끝까지 썼을 때) 채워진다.
+    // 엔드포인트가 낼 응답 — head 뒤에 공백 pad 바이트를 고정 버퍼로 전속력으로 흘려 보낸다(시험 서버가 본문만 한 배열을 잡지
+    // 않는다). answered 는 서버가 이 응답을 끝냈을 때(클라이언트가 떠난 것을 알아챘거나 끝까지 썼을 때) 채워진다.
     private class Reply(
         val status: Int,
         val head: ByteArray,
         val pad: Long = 0,
         val chunked: Boolean = false,
         val location: String? = null,
-        val held: Boolean = false,
     ) {
         val size: Long get() = head.size + pad
         val answered = CompletableFuture<Unit>()
@@ -131,14 +125,7 @@ internal class TokenResponseCapTest {
             ex.responseBody.use { out ->
                 out.write(r.head)
                 written.addAndGet(r.head.size.toLong())
-                var left = r.pad
-                if (r.held) {
-                    val quick = TRC_CAP + TRC_PACED_SLACK - r.head.size.toLong()
-                    pad(out, quick)
-                    out.flush()
-                    left -= quick + probeUntilGone(out)
-                }
-                pad(out, left)
+                pad(out, r.pad)
             }
         } catch (clientWentAway: IOException) {
             clientLeftEarly = true // 클라이언트가 본문을 다 읽지 않고 끊었다 — 상한을 넘긴 본문의 기대 결말이다
@@ -158,21 +145,6 @@ internal class TokenResponseCapTest {
             written.addAndGet(k.toLong())
             left -= k
         }
-    }
-
-    // TRC_PROBE_MILLIS 마다 공백 한 바이트(청크 하나)를 써 본다 — 떠난 클라이언트에게 쓰면 IOException 이다. TRC_HOLD_MILLIS 가
-    // 지나도록 살아 있으면 써 본 바이트 수를 돌려준다(끝까지 읽는 클라이언트 — 호출부가 나머지를 전속력으로 보낸다).
-    private fun probeUntilGone(out: OutputStream): Long {
-        var probes = 0L
-        val end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(TRC_HOLD_MILLIS)
-        while (System.nanoTime() < end) {
-            Thread.sleep(TRC_PROBE_MILLIS)
-            out.write(TRC_SPACE.toInt())
-            out.flush()
-            written.incrementAndGet()
-            probes++
-        }
-        return probes
     }
 
     private fun hitsOf(path: String): Int = synchronized(hits) { hits[path]?.get() ?: 0 }
@@ -313,9 +285,9 @@ internal class TokenResponseCapTest {
         }
 
     // 거대한 본문(16 MiB, 한 레인은 32 MiB) — 실패하고, SDK 는 나머지를 읽지 않고 끊으며(서버가 다 쓰지 못한다), 그 호출이 모든
-    // 스레드에서 할당한 바이트가 상한의 여덟 배 안이다(본문 크기와 무관하다). 수정 전: 다섯 레인이 받아들였고 32 MiB 에 약
-    // 230 MiB 를 할당했다. 레인마다 먼저 작은 본문으로 한 번 불러 클래스 로딩의 할당을 재지 않는다. 청크 레인은 붙잡는 서버이고
-    // (위 TRC_PACED_SLACK), REFRESH 의 길이 틀은 빠른 서버 그대로다 — JDK 는 길이 틀의 남은 본문을 닫을 때 읽지 않고 끊는다.
+    // 스레드에서 할당한 바이트가 상한의 여덟 배 안이다(본문 크기와 무관하다 — 거부한 뒤 연결을 닫는 비용까지 든다). 수정 전: 다섯
+    // 레인이 받아들였고 32 MiB 에 약 230 MiB 를 할당했다. 레인마다 먼저 작은 본문으로 한 번 불러 클래스 로딩의 할당을 재지 않는다.
+    // REFRESH 는 길이 틀, 나머지는 청크 틀이다.
     @Test
     fun `a huge body fails, is not read to its end and allocates independently of its size`() =
         runTest {
@@ -328,14 +300,14 @@ internal class TokenResponseCapTest {
                 reply = Reply(200, head)
                 call(lane) // 데우기
                 val chunked = lane != Lane.REFRESH
-                val measured = Reply(200, head, huge - head.size, chunked, held = chunked)
+                val measured = Reply(200, head, huge - head.size, chunked)
                 reply = measured
                 val before = trcAllocatedAllThreads()
                 val r = call(lane)
                 val allocated = trcAllocatedAllThreads() - before
                 // 서버가 그 응답을 끝낼 때까지(끊긴 쓰기를 알아채거나 끝까지 쓸 때까지) 기다린다
-                val answered = runCatching { measured.answered.get(TRC_HOLD_MILLIS + 10_000, TimeUnit.MILLISECONDS) }.isSuccess
-                val frame = if (chunked) "청크(붙잡음)" else "길이"
+                val answered = runCatching { measured.answered.get(TRC_ANSWER_MILLIS, TimeUnit.MILLISECONDS) }.isSuccess
+                val frame = if (chunked) "청크" else "길이"
                 table += "${lane.name.padEnd(18)} ${huge shr 20} MiB $frame → ${describe(r)} · 할당 $allocated · 서버가 쓴 ${written.get()}"
                 expectOverCap("${lane.name} ${huge shr 20} MiB", lane, r, wrong)
                 if (allocated >= limit) wrong += "${lane.name}: ${huge shr 20} MiB 본문 하나에 $allocated 바이트를 할당했다(한도 $limit)"

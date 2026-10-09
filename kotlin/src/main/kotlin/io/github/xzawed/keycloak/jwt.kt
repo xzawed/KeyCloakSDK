@@ -15,7 +15,10 @@ import com.nimbusds.jwt.proc.DefaultJWTClaimsVerifier
 import com.nimbusds.jwt.proc.DefaultJWTProcessor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runInterruptible
+import java.io.InterruptedIOException
 import java.net.MalformedURLException
 import java.net.URI
 import java.time.Duration
@@ -145,7 +148,17 @@ internal fun validatedTokenFrom(claimsSet: JWTClaimsSet): ValidatedToken {
     return ValidatedToken(claimsSet.subject, claimsSet.issuer, audience, expiresAt, issuedAt, claims)
 }
 
-// 코루틴 취소를 Thread.interrupt로 전파하는 블로킹 호출 래퍼(§코루틴 래핑 핵심 계약). Nimbus의
-// HttpURLConnection 기반 JWKS 조회는 interrupt를 완전히 준수하지 않으므로, 주입된 connect/read
-// 타임아웃이 실질 상한이다.
-internal suspend fun <T> onIo(block: () -> T): T = runInterruptible(Dispatchers.IO, block)
+// 코루틴 취소를 Thread.interrupt로 전파하는 블로킹 호출 래퍼(§코루틴 래핑 핵심 계약). 플랫폼 스레드의 소켓
+// 읽기는 interrupt를 무시하므로, 주입된 connect/read 타임아웃이 실질 상한이다.
+// ⚠️ auth 운송(BoundedTransport)에는 인터럽트에 끝나는 자리가 하나 있다 — 경로의 연결이 모두 쓰이는 동안의 풀의
+// 기다림. 그 끝은 InterruptedException 이 아니라 InterruptedIOException 이라 runInterruptible 이 취소로 알아보지
+// 못하고, 코루틴은 취소된 뒤에도 그 예외(→ KeycloakTransportException)를 그대로 내보낸다(취소 뒤의 정상 반환만 취소가
+// 된다). 취소된 코루틴에서 온 것이면 취소로 돌린다 — 취소되지 않았으면(읽기 타임아웃 SocketTimeoutException 등)
+// 그대로다(`ConnectionReuseTest` 의 취소 사례).
+internal suspend fun <T> onIo(block: () -> T): T =
+    try {
+        runInterruptible(Dispatchers.IO, block)
+    } catch (e: InterruptedIOException) {
+        currentCoroutineContext().ensureActive()
+        throw e
+    }

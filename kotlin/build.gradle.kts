@@ -88,6 +88,13 @@ dependencies {
     api("org.keycloak:keycloak-admin-client:26.0.12") // representation 노출 → api
     implementation("com.nimbusds:oauth2-oidc-sdk:11.38.2")
     implementation("com.nimbusds:nimbus-jose-jwt:10.10")
+    // auth·JWKS 운송(BoundedTransport) — admin 의 RESTEasy 6.2.15.Final 이 이미 가져오는 판 그대로(httpclient 4.5.14 → httpcore 4.4.16 ·
+    // commons-logging 1.2). 새 판을 들이지 않는다 — 전이로 쓰던 것을 직접 선언한다(Java keycloak-sdk-auth 와 같은 좌표).
+    implementation("org.apache.httpcomponents:httpclient:4.5.14")
+    // ⚠️ commons-codec 은 쓰지 않지만 직접 선언한다 — 이 빌드(Gradle 은 가장 높은 판)는 어느 쪽이든 1.15 이지만, 게시 POM 을 읽는 Maven
+    // 소비자는 가까운 쪽이 이긴다: httpclient 를 직접 선언하면 그것이 선언하는 1.11 이 RESTEasy 쪽 1.15 보다 얕아 1.11 로 내려간다(실측 —
+    // 소비자 `mvn dependency:tree`: 게시본 1.0.5 는 1.15, 이 선언 없이 1.11, 있으면 1.15). Java keycloak-sdk-auth 와 같은 처방이다.
+    runtimeOnly("commons-codec:commons-codec:1.15")
 
     testImplementation(kotlin("test"))
     // 적대 경로 행렬(HostilePathMatrixTest)이 공개 표면을 **메타데이터로** 읽는다 — Java 리플렉션으로는 `internal`
