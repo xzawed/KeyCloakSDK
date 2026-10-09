@@ -1147,6 +1147,34 @@ internal class ConnectionReuseTest {
         }
     }
 
+    // 같은 계약의 실패 쪽 — 늦게 끝난 조회가 실패(503)해도 호출자는 그 실패를 그대로 받고 인터럽트 표시는 남는다(되살리기가 성공의 길에만
+    // 있으면 이 사례가 깨진다). 실패한 조회는 지금처럼 실패로 올라간다(창을 쓴다 — 의도된 동작).
+    @Test
+    @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `a JWKS fetch whose caller is interrupted still reports its failure and keeps the interrupt flag`() {
+        CrtRawServer(null) { p ->
+            while (p.readRequest() != null) {
+                Thread.sleep(500)
+                p.write(crtLatin1("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n"))
+            }
+        }.use { server ->
+            val certs = URI("http://127.0.0.1:${server.port}/certs").toURL()
+            val outcome = AtomicReference<String>()
+            val caller =
+                Thread {
+                    val r = runCatching { NoRedirectResourceRetriever(2_000, 5_000).retrieveResource(certs) }
+                    outcome.set("${r.exceptionOrNull()} · 인터럽트 ${Thread.currentThread().isInterrupted}")
+                }
+            caller.start()
+            Thread.sleep(100)
+            caller.interrupt()
+            caller.join(10_000)
+            println("[ConnectionReuseTest] 인터럽트된 JWKS 호출자(조회 실패) → ${outcome.get()}")
+            assertEquals("java.io.IOException: JWKS endpoint returned HTTP 503 · 인터럽트 true", outcome.get())
+            assertEquals(0, crtLeased())
+        }
+    }
+
     // 취소가 JWKS 강제 재조회 창을 버리지 않는다 — 경로의 50 자리가 다 쓰이는 동안 회전한 키(k2)의 검증이 강제 재조회를 정하고(Nimbus 는
     // 그때 창의 크레딧을 쓴다) 연결을 기다리다 취소돼도, 그 조회는 끝까지 가서 캐시를 채운다: 자리가 풀린 뒤 k2 검증은 /certs 를 더 치지
     // 않고 성공한다. HttpURLConnection 은 플랫폼 스레드의 읽기라 인터럽트를 무시했다(등록부 jwks-forced-refetch-window-burned 「kotlin 은
