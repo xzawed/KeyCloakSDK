@@ -27,8 +27,9 @@ public sealed class JwtValidator
     /// <param name="issuer">Realm issuer URL; discovery hangs off it.</param>
     /// <param name="opts">Hardened validation options.</param>
     /// <param name="http">The client discovery and the JWKS are fetched with. They are read through a 51,200-byte cap
-    /// whatever client is passed; every other limit — timeouts, redirects, <see cref="HttpClient.MaxResponseContentBufferSize"/>
-    /// — is this client's own. <c>KeycloakClient.Create</c> passes the client it builds.</param>
+    /// whatever client is passed; every other limit — timeouts, redirects, <see cref="HttpClient.MaxResponseContentBufferSize"/>,
+    /// how much of a refused document its handler drains to reuse the connection — is this client's own.
+    /// <c>KeycloakClient.Create</c> passes the client it builds.</param>
     public JwtValidator(string issuer, JwtValidatorOptions opts, HttpClient http)
         : this(issuer, opts, http, null, null) { }
 
