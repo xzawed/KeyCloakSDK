@@ -13,12 +13,13 @@ import jakarta.ws.rs.core.Response
 import jakarta.ws.rs.ext.ReaderInterceptor
 import jakarta.ws.rs.ext.ReaderInterceptorContext
 import java.io.ByteArrayInputStream
+import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 
 /**
- * admin 레인의 토큰 응답 검사(Java `TokenResponseGuard` 동형) — 토큰 엔드포인트의 성공 응답이 **비어 있지 않은 JSON 문자열**
- * `access_token` 을 싣지 않으면 그 응답을 거부한다.
+ * admin 레인의 토큰 응답 검사(Java `TokenResponseGuard` 동형) — 토큰 엔드포인트의 성공 응답이 **HTTP 필드 값이 실을 수 있는 비어 있지
+ * 않은 JSON 문자열** `access_token` 을 싣지 않으면([fieldValueSafe]) 그 응답을 거부한다.
  *
  * 왜 여기인가: admin 은 토큰을 자체 소유하고(§4) keycloak-admin-client 내장 TokenManager 가 토큰 응답을 Jackson 으로
  * `AccessTokenResponse` 에 결합한다. Jackson 의 스칼라 강제변환이 숫자·불리언을 문자열로 바꾸고 빈 문자열은 그대로 둬서,
@@ -52,11 +53,10 @@ import java.io.InputStream
  * ⚠️ **판정은 본문을 상한([TOKEN_RESPONSE_MAX_BYTES] — auth 레인과 같은 상수)까지만 읽고 쥔다.** 통째로 읽던 때는 힙보다 큰
  * 2xx 본문이 `OutOfMemoryError` 를 냈다 — RESTEasy 가 감싸 결과는 거부였어도 그 순간 JVM 전체가 메모리를 잃었고, JSON 공백으로
  * 부풀린 **쓸 수 있는** 토큰도 그랬다(가드 없는 결합은 그것을 스트리밍으로 통과시킨다). [readWithinCap] 으로 상한+1 바이트까지
- * 읽어 넘침을 알아채면 나머지는 담지 않고 스트림을 닫은 뒤(`closeQuietly` — 닫기의 실패는 버린다) 쓸 수 없는 토큰과 같은 거부를
- * 던진다. 그 읽기(JDK 17·21 의 `InputStream.readNBytes` 기본 구현 — RESTEasy·HttpCore 의 스트림은 재정의하지 않는다)는 남은
- * 길이 너머를 요청하지 않고 **읽은 만큼만** 할당한다. 받는 바이트는 상한이 없다: 실제 연결에서 닫기는 나머지를 끝까지
- * 비운다(HttpCore — 2 KiB 고정 버퍼로 읽지만 청크 머리마다 문자열을 만들고 HTTPS 면 TLS 도 할당하므로, 할당은 비운
- * 양에 비례한다).
+ * 읽어 넘침을 알아채면 나머지는 읽지 않고 그 연결을 끊은 뒤(`release` — [AdminEngine]) 쓸 수 없는 토큰과 같은 거부를 던진다. 그
+ * 읽기(JDK 17·21 의 `InputStream.readNBytes` 기본 구현 — RESTEasy·HttpCore 의 스트림은 재정의하지 않는다)는 남은 길이 너머를 요청하지
+ * 않고 **읽은 만큼만** 할당한다. ⚠️ 끊지 않고 닫기만 하면 HttpCore 가 나머지를 EOF 까지 비운다 — 받는 바이트에 상한이 없었고, 1 바이트
+ * 청크면 청크 머리마다 문자열을 만들어 할당이 비운 양을 따라 자랐다(실측 `AdminRejectedResponseCutTest`).
  *
  * 검사는 Jackson **스트리밍** 파서다 — 데이터 결합·다형 타입이 없고 자체 ObjectMapper 도 아니다(보안 불변식). 최상위
  * `access_token` 은 **전부** 본다 — 결합은 중복 키의 마지막 값을 쓰므로 첫 값만 보면 `{"access_token":"ok","access_token":1}`
@@ -73,10 +73,11 @@ internal class TokenResponseGuard :
         val path = request.uri.rawPath
         val token = path.endsWith(TOKEN_PATH_SUFFIX)
         if (!token && !path.endsWith(LOGOUT_PATH_SUFFIX)) return
+        val exchange = request.getProperty(AdminEngine.EXCHANGE)
         if (response.statusInfo.family != Response.Status.Family.SUCCESSFUL) {
             // 오류·리다이렉트는 판정하지 않는다(TokenManager 의 몫) — RESTEasy 가 통째로 버퍼에 읽는 그 본문을 상한까지만 넘긴다.
             val raw = response.entityStream ?: return // 엔티티가 없으면 그대로 — 빈 스트림을 지어내면 hasEntity 가 바뀐다
-            response.entityStream = withinCapOrReject(raw, if (token) "token response" else "logout response")
+            response.entityStream = withinCapOrReject(raw, if (token) "token response" else "logout response", exchange)
             return
         }
         if (!token) return // 2xx logout 은 RESTEasy 의 void 추출기가 읽지 않고 닫는다
@@ -84,12 +85,12 @@ internal class TokenResponseGuard :
             request.setProperty(JUDGE_ENTITY, true) // 결합이 읽는 바이트(해제 뒤)는 aroundReadFrom 이 판정한다
             return
         }
-        response.entityStream = usableOrReject(response.entityStream)
+        response.entityStream = usableOrReject(response.entityStream, exchange)
     }
 
     override fun aroundReadFrom(context: ReaderInterceptorContext): Any? {
         if (context.getProperty(JUDGE_ENTITY) != true) return context.proceed()
-        context.inputStream = usableOrReject(context.inputStream)
+        context.inputStream = usableOrReject(context.inputStream, context.getProperty(AdminEngine.EXCHANGE))
         return context.proceed()
     }
 
@@ -111,33 +112,52 @@ internal class TokenResponseGuard :
         private val JSON = JsonFactory()
 
         // 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치거나 쓸 수 없으면 거부, 통과하면 읽은 바이트를 그대로 넘긴다.
-        private fun usableOrReject(input: InputStream?): ByteArrayInputStream {
-            val body = if (input == null) ByteArray(0) else readWithinCap(input)
+        private fun usableOrReject(
+            input: InputStream?,
+            exchange: Any?,
+        ): ByteArrayInputStream {
+            val body = if (input == null) ByteArray(0) else capPlusOne(input)
             if (body == null || !carriesUsableAccessToken(body)) {
-                closeQuietly(input)
+                release(input, exchange)
                 throw IOException(REJECTED)
             }
             return ByteArrayInputStream(body)
         }
 
-        // 오류 본문 — 판정하지 않고 상한까지만 읽어 바이트 그대로 넘긴다. 넘치면 스트림을 닫고 상한을 말하는 예외로 거부한다.
+        // 오류 본문 — 판정하지 않고 상한까지만 읽어 바이트 그대로 넘긴다. 넘치면 연결을 끊고 상한을 말하는 예외로 거부한다.
         private fun withinCapOrReject(
             input: InputStream,
             what: String,
+            exchange: Any?,
         ): ByteArrayInputStream {
-            val body = readWithinCap(input)
+            val body = capPlusOne(input)
             if (body == null) {
-                closeQuietly(input)
+                release(input, exchange)
                 throw ResponseTooLargeException(what)
             }
             return ByteArrayInputStream(body)
         }
 
+        // [readWithinCap] — 다만 길이 0 의 읽기는 스트림에 넘기지 않는다([NoEmptyReads]).
+        private fun capPlusOne(input: InputStream): ByteArray? = readWithinCap(NoEmptyReads(input))
+
+        // 거부하기 전에 그 교환을 놓는다 — 엔진이 단 손잡이([AdminEngine.EXCHANGE])로 연결을 **읽지 않고** 끊은 뒤 스트림을 닫는다(Java
+        // 동형). 끊지 않고 닫으면 HttpCore 의 닫기가 나머지를 EOF 까지 비웠다(거부한 64 MiB 를 서버가 끝까지 썼다 — 실측
+        // AdminRejectedResponseCutTest). 끊은 뒤의 닫기는 소켓에 닿지 못하고(이미 닫혔다) 버퍼에 남은 것만 지나간다. EOF 까지 읽고 거부한
+        // 응답의 연결은 이미 풀로 돌아갔고 끊기는 그것을 건드리지 않는다. 손잡이가 없으면(다른 엔진) 닫기만 한다.
+        private fun release(
+            input: InputStream?,
+            exchange: Any?,
+        ) {
+            (exchange as? AdminEngine.Exchange)?.cut()
+            closeQuietly(input)
+        }
+
         // 거부하기 전에 스트림을 닫고, 닫기의 실패는 버린다(Java 동형). ⚠️ 응답 필터가 던지면 RESTEasy(ClientInvocation.invoke)가
-        // 응답을 try/catch 없이 닫는데, 실제 연결에서 닫기는 읽지 않은 나머지를 비운다(HttpCore). 그 비우기가 실패하면(청크 크기 줄
-        // 오류·잘린 본문·읽기 타임아웃) 그 ProcessingException 이 이 거부를 대신해 RedactedCause 로 걸러지지 않은 채 나갔고, 청크
-        // 크기 줄 오류는 응답 바이트를 메시지에 실었다(실측 — AdminTokenResponseTest). 여기서 먼저 닫으면 뒤의 닫기는 아무것도 하지
-        // 않는다(BufferedInputStream·EofSensorInputStream 모두 두 번째 닫기가 no-op).
+        // 응답을 try/catch 없이 닫는다 — 그 닫기가 실패하면(끊긴 연결에서 나머지를 읽으려다 · 끊지 못한 연결에서 청크 크기 줄 오류·잘린
+        // 본문·읽기 타임아웃) 그 ProcessingException 이 이 거부를 대신해 RedactedCause 로 걸러지지 않은 채 나갔고, 청크 크기 줄 오류는
+        // 응답 바이트를 메시지에 실었다(실측 — AdminTokenResponseTest). 여기서 먼저 닫으면 뒤의 닫기는 아무것도 하지 않는다
+        // (BufferedInputStream·EofSensorInputStream 모두 두 번째 닫기가 no-op).
         private fun closeQuietly(input: InputStream?) {
             try {
                 input?.close()
@@ -146,7 +166,10 @@ internal class TokenResponseGuard :
             }
         }
 
-        /** 최상위가 JSON 객체이고 그 `access_token` 이 하나 이상이며 전부 비어 있지 않은 문자열이다. 형식이 틀리면 false. */
+        /**
+         * 최상위가 JSON 객체이고 그 `access_token` 이 하나 이상이며 전부 HTTP 필드 값이 실을 수 있는([fieldValueSafe]) 비어 있지 않은
+         * 문자열이다. 형식이 틀리면 false.
+         */
         internal fun carriesUsableAccessToken(body: ByteArray): Boolean {
             try {
                 JSON.createParser(body).use { p ->
@@ -157,7 +180,7 @@ internal class TokenResponseGuard :
                         val value = p.nextToken()
                         when {
                             !accessToken -> p.skipChildren()
-                            value != JsonToken.VALUE_STRING || p.textLength == 0 -> return false
+                            value != JsonToken.VALUE_STRING || p.textLength == 0 || !fieldValueSafe(p.text) -> return false
                             else -> found = true
                         }
                     }
@@ -167,5 +190,30 @@ internal class TokenResponseGuard :
                 return false // 파서 메시지는 본문을 인용할 수 있다 — 버리고 거부만 한다
             }
         }
+
+        /**
+         * HTTP 필드 값이 실을 수 있는 문자열인가(Java 동형) — RFC 9110 §5.5 가 필드 값에서 빼는 CR·LF·NUL·HTAB 밖의 C0 와 DEL 이 없다.
+         * 그런 access_token 은 쓸 수 없는 토큰이다 — 캐시되지 않고(다음 호출이 다시 부여한다) admin 요청은 나가지 않는다. 수정 전
+         * HttpCore 는 그 Bearer 를 조용히 고쳐 보냈다(CR·LF·VT·FF → 공백 · 그 밖의 C0·DEL → `?` — `BasicLineFormatter`·`ByteArrayBuffer`,
+         * 실측 `AdminTokenResponseTest`). TokenManager 의 토큰은 모두 이 응답에서 오므로(부여·갱신 — 다른 길로 넣는 setter 가 없다) 보낼
+         * 때 다시 보지 않는다. ⚠️ HTAB·SP·ASCII 밖(HttpCore 가 U+0100 위와 C1 을 `?` 로 보낸다)은 여기서 판정하지 않는다 — 아홉 언어가
+         * 함께 정할 일이다(등록부 `bearer-token-grammar-divergent`).
+         */
+        internal fun fieldValueSafe(value: String): Boolean = value.none { (it < ' ' && it != '\t') || it == '\u007f' }
     }
+}
+
+/**
+ * 길이 0 의 읽기는 감싼 스트림에 넘기지 않고 0 이다. JDK 의 `readNBytes` 는 다 채운 뒤 길이 0 으로 한 번 더 묻고, HttpCore 의 버퍼는 비었을
+ * 때 그것도 소켓에서 기다린다 — 상한+1 바이트 뒤 멈춘 서버 앞에서 거부가 읽기 타임아웃을 기다렸다(실측 `AdminRejectedResponseCutTest` —
+ * auth 레인의 `BoundedTransport` 본문 스트림과 같은 처방). 판정이 본문을 읽는 동안만 산다.
+ */
+private class NoEmptyReads(
+    input: InputStream,
+) : FilterInputStream(input) {
+    override fun read(
+        b: ByteArray,
+        off: Int,
+        len: Int,
+    ): Int = if (len == 0) 0 else super.read(b, off, len)
 }

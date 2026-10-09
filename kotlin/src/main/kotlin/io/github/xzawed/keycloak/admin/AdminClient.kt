@@ -21,12 +21,17 @@ import org.apache.http.HttpException
 import org.apache.http.HttpHost
 import org.apache.http.MalformedChunkCodingException
 import org.apache.http.client.config.RequestConfig
+import org.apache.http.client.methods.HttpRequestBase
+import org.apache.http.client.protocol.HttpClientContext
 import org.apache.http.config.ConnectionConfig
 import org.apache.http.config.MessageConstraints
 import org.apache.http.conn.HttpClientConnectionManager
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager
+import org.apache.http.protocol.HttpContext
 import org.jboss.resteasy.client.jaxrs.ClientHttpEngine
 import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder
+import org.jboss.resteasy.client.jaxrs.engines.HttpContextProvider
+import org.jboss.resteasy.client.jaxrs.internal.ClientInvocation
 import org.keycloak.OAuth2Constants
 import org.keycloak.admin.client.JacksonProvider
 import org.keycloak.admin.client.Keycloak
@@ -145,7 +150,8 @@ public class AdminClient internal constructor(
 
 /**
  * RESTEasy 의 기본 엔진 빌더 그대로에 응답 틀의 한도만 더한다([AdminClient.buildTimeoutClient]). 그 클래스는 RESTEasy 6.2 에서 제거 예정으로
- * 표시돼 있지만 RESTEasy 자신이 기본 엔진을 그것으로 짓는다 — 제거되면 여기가 컴파일되지 않아 다시 볼 자리를 알린다.
+ * 표시돼 있지만 RESTEasy 자신이 기본 엔진을 그것으로 짓는다 — 제거되면 여기가 컴파일되지 않아 다시 볼 자리를 알린다. 지은 엔진은
+ * [AdminEngine] 이 감싼다 — 교환마다 읽지 않고 끊을 손잡이를 달아, 가드가 거부한 응답의 나머지를 HttpCore 가 비우지 않게 한다.
  */
 @Suppress("DEPRECATION")
 private class BoundedEngineBuilder : org.jboss.resteasy.client.jaxrs.engines.ClientHttpEngineBuilder43() {
@@ -159,7 +165,94 @@ private class BoundedEngineBuilder : org.jboss.resteasy.client.jaxrs.engines.Cli
     ): ClientHttpEngine {
         // 풀 크기가 0 보다 크면 RESTEasy 는 풀을 짓는다(기본 50) — 다른 것이 오면 여기서 터져 조용히 한도를 잃지 않는다
         (cm as PoolingHttpClientConnectionManager).defaultConnectionConfig = ADMIN_BOUNDED_HEAD
-        return super.createEngine(cm, rcBuilder, defaultProxy, responseBufferSize, verifier, theContext)
+        // RESTEasy 는 ApacheHttpClient43Engine 을 짓는다 — 다른 것이 오면 여기서 터져 조용히 끊기를 잃지 않는다
+        val built = super.createEngine(cm, rcBuilder, defaultProxy, responseBufferSize, verifier, theContext)
+        return AdminEngine(built as org.jboss.resteasy.client.jaxrs.engines.ApacheHttpClient43Engine)
+    }
+}
+
+/**
+ * admin 레인의 RESTEasy 엔진(Java `AdminEngine` 동형) — RESTEasy 가 지은 엔진([owner] — 타임아웃·풀·응답 틀의 한도)의 HttpClient 를 그대로
+ * 쓰고, 교환마다 그 교환을 **읽지 않고 끊을** 손잡이([Exchange])를 요청 속성 [EXCHANGE] 에 단다. 응답 필터와 ReaderInterceptor 가 같은
+ * 속성을 본다([TokenResponseGuard] 가 거부할 때 쓴다).
+ *
+ * 왜: 거부한 응답의 스트림을 닫으면 HttpCore 의 닫기(`ContentLengthInputStream`·`ChunkedInputStream.close`)가 나머지를 EOF 까지 비운다 —
+ * 거부한 64 MiB 본문을 서버가 끝까지 썼고, 1 바이트 청크면 할당이 비운 양을 따라 자랐고, 멈춘 서버 앞에서 거부가 읽기 타임아웃을
+ * 기다렸다(실측 `AdminRejectedResponseCutTest`). auth 레인([io.github.xzawed.keycloak.BoundedTransport] 의 cut)과 같은 규칙으로 바꾼다:
+ * EOF 까지 읽은 본문만 연결을 풀로 돌려주고, 그 밖의 끝은 읽기 타임아웃을 0 으로 둔 채 요청을 중단한다 — HttpClient 가 연결을
+ * SO_LINGER 0 으로 닫고 풀에서 뺀다(`ConnectionHolder.abortConnection`). auth 의 운송 객체를 부르지 않는다 — 그 객체를 건드리면 admin 만
+ * 쓰는 소비자에게도 auth 의 프로세스 풀이 지어진다.
+ *
+ * ⚠️ 엔진을 새로 짓지 않는다 — [owner] 의 HttpClient 를 넘겨받고 설정 넷(응답 버퍼 · 검증기 · TLS 근원 · 리다이렉트)을 옮긴다. HttpClient
+ * 를 닫는 것은 [owner] 의 몫이다([close]). 손잡이가 쥘 문맥은 RESTEasy 가 교환마다 묻는 `HttpContextProvider`(이 엔진 자신 —
+ * [getContext])로 건넨다 — [loadHttpMethod] 가 만든 것을 같은 스레드의 바로 다음 물음(`invoke` 안, `httpClient.execute` 직전)이 가져간다.
+ */
+@Suppress("DEPRECATION")
+internal class AdminEngine(
+    private val owner: org.jboss.resteasy.client.jaxrs.engines.ApacheHttpClient43Engine,
+) : org.jboss.resteasy.client.jaxrs.engines.ApacheHttpClient43Engine(owner.httpClient, false),
+    HttpContextProvider {
+    init {
+        responseBufferSize = owner.responseBufferSize
+        hostnameVerifier = owner.hostnameVerifier
+        sslContext = owner.sslContext
+        isFollowRedirects = owner.isFollowRedirects
+        // 람다를 두지 않는다 — 그 숨은 클래스는 이름으로 적재되지 않아 파사드를 걷는 시험(HostilePathMatrixTest)이 실패했다(Java 실측)
+        httpContextProvider = this
+    }
+
+    override fun loadHttpMethod(
+        request: ClientInvocation,
+        httpMethod: HttpRequestBase,
+    ) {
+        super.loadHttpMethod(request, httpMethod)
+        val context = HttpClientContext.create()
+        request.mutableProperties[EXCHANGE] = Exchange(httpMethod, context)
+        NEXT_CONTEXT.set(context)
+    }
+
+    // [loadHttpMethod] 가 둔 문맥을 가져가고 지운다 — RESTEasy 가 같은 교환에서 곧바로 묻는다.
+    override fun getContext(): HttpContext? {
+        val context = NEXT_CONTEXT.get()
+        NEXT_CONTEXT.remove()
+        return context
+    }
+
+    override fun close() {
+        try {
+            super.close()
+        } finally {
+            owner.close()
+        }
+    }
+
+    /** 교환 하나의 끊기 손잡이 — 그 요청과, 실행이 연결을 적는 문맥. */
+    internal class Exchange(
+        private val request: HttpRequestBase,
+        private val context: HttpClientContext,
+    ) {
+        /**
+         * 읽지 않고 끊는다 — 연결의 읽기 타임아웃을 0 으로 두고(JSSE 는 TLS 1.3 을 닫을 때 받은 바이트가 없으면 읽기 타임아웃만큼 한 번 더
+         * 읽어 기다린다 — 타임아웃이 0 이면 읽지 않는다) 요청을 중단한다. 본문을 EOF 까지 읽어 이미 풀로 돌아간 연결은 건드리지 않는다 —
+         * 그 대리자는 떨어져 나갔고(읽기 타임아웃 설정이 실패한다) 중단은 아무것도 하지 않는다(풀의 연결은 다른 교환의 것이다).
+         */
+        fun cut() {
+            val connection = context.connection
+            if (connection != null) {
+                try {
+                    connection.socketTimeout = 0
+                } catch (returned: RuntimeException) {
+                    // 이미 풀로 돌아갔다 — 이 교환의 것이 아니다
+                }
+            }
+            request.abort()
+        }
+    }
+
+    internal companion object {
+        /** 교환의 끊기 손잡이([Exchange])를 담는 요청 속성. */
+        internal val EXCHANGE: String = AdminEngine::class.java.name + ".exchange"
+        private val NEXT_CONTEXT = ThreadLocal<HttpClientContext>()
     }
 }
 

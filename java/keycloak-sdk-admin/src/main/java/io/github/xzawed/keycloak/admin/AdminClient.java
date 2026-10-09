@@ -20,6 +20,7 @@ import org.apache.http.conn.HttpClientConnectionManager;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.jboss.resteasy.client.jaxrs.ClientHttpEngine;
 import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder;
+import org.jboss.resteasy.client.jaxrs.engines.ApacheHttpClient43Engine;
 import org.jboss.resteasy.client.jaxrs.engines.ClientHttpEngineBuilder43;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.JacksonProvider;
@@ -114,7 +115,8 @@ public final class AdminClient implements AutoCloseable {
    * 응답 틀의 한도만 더한다({@link ResponseLimits#MAX_LINE_LENGTH}·{@link ResponseLimits#MAX_HEADER_COUNT} — auth 레인과 같은 값).
    * HttpCore 의 기본은 한도가 없어(-1) 짧은 청크 본문 뒤 4 KiB 트레일러 줄 32 MiB 를 담았다 — 토큰 수락 · 호출 하나 74 MB
    * (실측 {@code AdminResponseFramingTest}). 그 클래스는 RESTEasy 6.2 에서 제거 예정으로 표시돼 있지만 RESTEasy 자신이 기본 엔진을
-   * 그것으로 짓는다 — 제거되면 여기가 컴파일되지 않아 다시 볼 자리를 알린다.
+   * 그것으로 짓는다 — 제거되면 여기가 컴파일되지 않아 다시 볼 자리를 알린다. 지은 엔진은 {@link AdminEngine} 이 감싼다 — 교환마다
+   * 읽지 않고 끊을 손잡이를 달아, 가드가 거부한 응답의 나머지를 HttpCore 가 비우지 않게 한다.
    */
   @SuppressWarnings("removal")
   static Client buildTimeoutClient(KeycloakConfig config) { // 패키지 전용 — 프로바이더 등록 회귀테스트 시임
@@ -128,7 +130,9 @@ public final class AdminClient implements AutoCloseable {
                                               SSLContext tls) {
         // 풀 크기가 0 보다 크면 RESTEasy 는 풀을 짓는다(기본 50) — 다른 것이 오면 여기서 터져 조용히 한도를 잃지 않는다
         ((PoolingHttpClientConnectionManager) connections).setDefaultConnectionConfig(BOUNDED_HEAD);
-        return super.createEngine(connections, requests, proxy, responseBufferSize, verifier, tls);
+        // RESTEasy 는 ApacheHttpClient43Engine 을 짓는다 — 다른 것이 오면 여기서 터져 조용히 끊기를 잃지 않는다
+        return new AdminEngine((ApacheHttpClient43Engine) super.createEngine(connections, requests, proxy,
+            responseBufferSize, verifier, tls));
       }
     }.resteasyClientBuilder(builder).build());
     return builder
