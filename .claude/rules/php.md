@@ -31,7 +31,7 @@ paths:
 
 ## Toolchain
 
-Portable PHP 8.3 + Composer (not committed). ⚠️ The directory is `php` — this said `php-8.3`, which does not exist; ask `node scripts/doctor.mjs php`.
+Portable PHP 8.3 + Composer (not committed) in `php`, not `php-8.3`. ⚠️ **Never write the patch version here** — ask `php -v` and `node scripts/doctor.mjs php`.
 
 ```bash
 export KCSDK_PHP="${KCSDK_PHP:-${KCSDK_TOOLS:-$HOME/tools}/php}"
@@ -43,11 +43,10 @@ cd php && vendor/bin/phpstan analyse                   # level max + strict-rule
 cd php && vendor/bin/php-cs-fixer fix --dry-run --allow-risky=yes
 ```
 
-- ⚠️ **On Windows `php-cs-fixer --dry-run` names the whole clean tree** — that is CRLF, not formatting. Normalise only what you changed to LF and re-check those; committed blobs stay LF (`.gitattributes`), so CI never sees it.
+- ⚠️ **On Windows `php-cs-fixer --dry-run` names the whole clean tree** — CRLF from `core.autocrlf`, not formatting; blobs stay LF, so CI never sees it. Normalise only what you changed to LF and re-check those.
 - A single test: `vendor/bin/phpunit --filter <TestName> tests/Unit/<Path>Test.php`
-- ⚠️ **Do not write the exact patch version here** — measure it with `php -v` and `node scripts/doctor.mjs php`.
 - ⚠️ `OPENSSL_CONF` is required for local RSA key generation (`JwtValidatorTest`) — without it, key generation fails.
-- ⚠️ **Ask for a coverage driver first**: `php -m | grep -ciE 'xdebug|pcov'` (0 = none). CI enforces the gate (logic lines ≥90%) with PCOV; with Xdebug run `XDEBUG_MODE=coverage vendor/bin/phpunit --testsuite unit --coverage-clover <file>`.
+- ⚠️ **Ask for a coverage driver first**: `php -m | grep -ciE 'xdebug|pcov'` (0 = none). CI enforces the gate with PCOV; with Xdebug run `XDEBUG_MODE=coverage vendor/bin/phpunit --testsuite unit --coverage-clover <file>`.
 - ⚠️ **The integration tests shell out to the docker CLI rather than using Testcontainers** (Windows-native PHP has no `unix://` support). The integration testsuite in `phpunit.xml` has to state `suffix="IT.php"` — leave it out and the default pattern `*Test.php` makes the ITs **skip silently**.
 
 ## Publishing (the mirror-repository path)
@@ -63,11 +62,12 @@ cd php && vendor/bin/php-cs-fixer fix --dry-run --allow-risky=yes
 - ⚠️ **fschmtt's `Users::create()` returns void** — look the created id up afterwards with `findIdByUsername()`. For `Clients` and `Realms` it is not `create` but `import` (the id/realm has to be pre-set on the representation). fschmtt does not translate Guzzle exceptions, so `ErrorTranslation` has to absorb the base `RequestException` (TLS failures and the like) as well as 404/409/403 — and attach `SanitizedCause::of($e)`, never the original, whose trace args hold the grant's `client_secret`, the `Bearer` and the sent representation. Fakes miss those frames and Guzzle's query-quoting messages; `AdminFacadeErrorLeakTest` drives the real stack.
 - **The facade's `update()` returns void on all five resources** — fschmtt re-GETs the representation and hands it back, but the eight sister languages all return no value, so we drop it to hold the §4 isomorphism. `Users::all()` hits the same endpoint as `search()`, so it is not exposed.
 - ⚠️ **`roles.update` does not delegate to fschmtt — it goes through `Keycloak::resource(RenamableRoles::class)`.** fschmtt's `Roles::update(string $realm, Role $role)` takes no name argument and builds the path from `$role->getName()`, so path and body come from one value and **a rename cannot be expressed**: measured, the PUT goes to `/roles/{new name}` and the current name appears nowhere in the request. `RenamableRoles` re-issues the same `Command` with the path and body kept apart, which reuses fschmtt's token, HTTP client and serializer — a raw Guzzle PUT would need a bearer that is locked inside fschmtt, and minting a fresh one breaks the §4 token-cache invariant (`RolesRenameTest` asserts the grant count stays 1).
-  - ⚠️ **That path stands on `CommandExecutor`, which fschmtt marks `@internal`** — what makes it safe is the **exact pin `0.44.0`** in `composer.json`, nothing else. `RolesRenameTest` drives the real stack, so it is the drift guard when that pin moves.
+  - ⚠️ **That path stands on `CommandExecutor`, which fschmtt marks `@internal`** — what makes it safe is the **exact pin** in `composer.json`, nothing else. `RolesRenameTest` drives the real stack, so it is the drift guard when that pin moves.
   - ⚠️ **Do not copy the sister Go SDK's assertion placement.** Both languages have the same hazard but break in opposite directions: gocloak puts the `name` argument on the path, so there the path always agrees and the **body** assertion is load-bearing; fschmtt derives the path from the body, so here the **path** assertion is. Measured both ways — with the merge restored and the path assertion alone neutralised, the PHP test still passes.
 - ⚠️ **league/stevenmaguire's `pkceMethod` constructor option is a no-op** (it is recomputed internally and ignored) — override `PkceKeycloakProvider::getPkceMethod()`. `exchangeCode()` is stateless, so it does not verify the OAuth `state` (the caller's responsibility — isomorphic with Node, Go and C#).
 - ⚠️ **`getAuthorizationUrl(['nonce' => $n])`, by contrast, is a passthrough** — do not assume it falls into the same category as `pkceMethod`. `createAuthorizationRequest()` **always** builds a nonce and puts it in the URL, and **only when a nonce is passed** does `exchangeCode(..., ?string $expectedNonce = null)` fully validate the id_token and then compare the nonce.
 - ⚠️ **firebase/php-jwt's `&$headers` out-parameter is only populated after a successful decode** — trusting the alg beforehand buys no forgery protection, so **base64url-decode the first segment of the raw token yourself** and gate the alg up front. The built-in `CachedKeySet` is not used because of a rate-limit bug (#543); we have our own `JwksStore`. The `\TypeError` thrown by a malicious JWKS modulus is a subclass of `\Error`, so `\Exception` does not catch it — `catch(\Throwable)` is required.
+- ⚠️ **No `ext-curl` → `StreamHandler`**: `TokenResponseCapTest` runs both (`useTransport`). Body reads stop on `''` — `eof()` alone spins.
 - ⚠️ **`JwksStore`'s rate limit is per-instance memory state** — in a long-lived worker (Swoole, RoadRunner) it holds across requests, but classic PHP-FPM builds a new store per request, so the protection only holds within a single request. **Do not oversell a limit that depends on the deployment model.**
 - **Secret memory hygiene is impossible at the language level** — there is no erasable type, so `clientSecret` is always a `string` and masking is only defence in depth.
 - **`jumbojett/openid-connect-php` was rejected** — it takes ownership of the session superglobals and of the `header()` redirect, which conflicts with a deterministic facade. Hence the `league/oauth2-client` + Keycloak provider combination.
