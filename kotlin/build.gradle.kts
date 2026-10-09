@@ -12,7 +12,7 @@ plugins {
     `java-library`
     id("org.jetbrains.dokka") version "2.2.0"
     id("com.vanniktech.maven.publish") version "0.37.0"
-    id("org.jetbrains.kotlinx.kover") version "0.9.10"
+    id("org.jetbrains.kotlinx.kover") version "0.9.11"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
 }
 
@@ -110,7 +110,7 @@ dependencies {
     testImplementation("org.wiremock:wiremock:3.13.2")
     testImplementation("org.testcontainers:testcontainers:2.0.5")
     testImplementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
-    testImplementation("com.github.dasniko:testcontainers-keycloak:4.3.1")
+    testImplementation("com.github.dasniko:testcontainers-keycloak:4.4.0")
 }
 
 tasks.test {
@@ -163,7 +163,7 @@ testing {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
                 implementation("org.testcontainers:testcontainers:2.0.5")
                 implementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
-                implementation("com.github.dasniko:testcontainers-keycloak:4.3.1")
+                implementation("com.github.dasniko:testcontainers-keycloak:4.4.0")
             }
             targets {
                 all {

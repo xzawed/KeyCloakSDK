@@ -185,13 +185,13 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 
 ## 확정 의존성 (BOM으로 고정)
 
-<!-- doc-guard: kind=dep source=java/pom.xml min=5 undocumented=18 -->
+<!-- doc-guard: kind=dep source=java/pom.xml min=5 undocumented=20 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | Keycloak admin-client | `org.keycloak:keycloak-admin-client` | 26.0.12 |
 | OAuth2/OIDC SDK | `com.nimbusds:oauth2-oidc-sdk` | 11.38.2 |
 | JOSE/JWT | `com.nimbusds:nimbus-jose-jwt` | 10.10 |
-| 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 4.3.1 |
+| 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 4.4.0 |
 | Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0.5 |
 | 단위 테스트 | JUnit · Mockito | — |
 
@@ -210,7 +210,7 @@ dev(비앵커): `pytest`·`pytest-asyncio`·`pytest-cov`·`mypy`(strict)·`ruff`
 <!-- doc-guard: kind=dep source=node/package.json min=3 -->
 | 의존성 | 패키지 | 버전 |
 |---|---|---|
-| Admin | `@keycloak/keycloak-admin-client` | `~26.7.0` |
+| Admin | `@keycloak/keycloak-admin-client` | `~26.8.0` |
 | 인증(OIDC/OAuth2) | `openid-client` | `^6` |
 | JWT(강화 검증) | `jose` | `^6` |
 
@@ -265,8 +265,8 @@ dev(테스트 csproj — **앵커 있음**):
 | 단위 테스트 | `xunit` | 2.9.3 |
 | 테스트 어댑터 | `xunit.runner.visualstudio` | 4.0.0 |
 | 커버리지 수집 | `coverlet.collector` | 10.1.0 |
-| HTTP 목 | `WireMock.Net` | 2.18.0 |
-| 통합 테스트 | `Testcontainers.Keycloak` | 4.15.0 |
+| HTTP 목 | `WireMock.Net` | 2.19.0 |
+| 통합 테스트 | `Testcontainers.Keycloak` | 4.16.0 |
 
 전부 Apache-2.0/MIT(호환).
 
@@ -333,7 +333,7 @@ dev(테스트 csproj — **앵커 있음**):
 | 인증(재사용) | `com.nimbusds:oauth2-oidc-sdk` | 11.38.2 |
 | JWT(재사용, 강화 검증) | `com.nimbusds:nimbus-jose-jwt` | 10.10 |
 | 코루틴(신규, 공개 suspend 노출 → api) | `org.jetbrains.kotlinx:kotlinx-coroutines-core` | 1.11.0 |
-| 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 4.3.1 |
+| 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 4.4.0 |
 | Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0.5 |
 
 | 의존성 | 좌표 | 버전 |
