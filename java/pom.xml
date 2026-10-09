@@ -164,6 +164,9 @@
             <!-- 라이브 네트워크 경계: 단위테스트 불가, Phase 6 통합테스트로 검증 (거버넌스 G3 주석) -->
             <exclude>**/AuthClient.class</exclude>
             <exclude>**/AdminClient.class</exclude>
+            <!-- 같은 파일의 익명 클래스(엔진 훅 ClientHttpEngineBuilder43 의 createEngine)도 — 파일이 통째로 빠져야 Sonar 의
+                 파일 사본(java/**/AdminClient.java)과 같은 집합이다(coverage-boundary). 훅의 동작은 AdminResponseFramingTest 가 잰다. -->
+            <exclude>**/AdminClient$*.class</exclude>
           </excludes>
         </configuration>
         <executions>
