@@ -1,8 +1,13 @@
 //! 토큰 엔드포인트·introspection 응답 본문의 바이트 상한(1 MiB) — **모든 레인**이 같은 상한으로 읽는가.
 //!
-//! 레인 여섯: `client_credentials_token` · `refresh` · `exchange_code`(셋 다 token 엔드포인트) ·
-//! `introspect` · admin 이 쓰는 `ClientCredentialsTokenProvider` 단독 · admin 파사드(`list_realms` — 그 provider 가
-//! 토큰을 먼저 얻는다).
+//! 레인 여덟: `client_credentials_token` · `<AuthClient as TokenProvider>::access_token` · `refresh` ·
+//! `exchange_code` · `exchange_code_with_redirect`(다섯 다 token 엔드포인트) · `introspect` · admin 이 쓰는
+//! `ClientCredentialsTokenProvider` 단독 · admin 파사드(`list_realms` — 그 provider 가 토큰을 먼저 얻는다).
+//! 공개 진입점마다 따로 부른다 — 지금은 같은 길로 모여도, 하나가 상한 밖 길로 갈라지면 그 진입점만 그것을 본다.
+//! 상한은 상태와 무관하다 — 오류 상태(400) 본문도 같은 상한으로 읽는다(`error_status_*`).
+//!
+//! 이웃한 두 상한도 여기서 **수로** 고정한다 — JWKS 본문은 51,200 바이트에서 끊기고(`jwks_body_*`), admin REST
+//! 응답에는 상한이 없다(`admin_rest_response_is_not_capped` — 토큰 상한은 토큰·introspection 응답에만 건다).
 //!
 //! ⚠️ 상한이 없을 때(실측 2026-10-05): 다섯 레인 모두 쓸 수 있는 토큰 뒤에 JSON 공백 32 MiB 를 붙인 응답을
 //! **받아들였고**, 힙 피크가 ~95 MiB(본문의 ~2.9 배 — reqwest `bytes()` 의 수집 + 연속 사본 + oauth2 의
@@ -16,9 +21,10 @@
 //! 상한 1,048,576 은 Keycloak 26.6 이 기본 설정으로 받아들이는 가장 긴 Bearer(65,459 바이트, 2026-10-03 실측 —
 //! java `AdminTokenResponseTest`)의 16 배다. 아래 `KEYCLOAK_MAX_BEARER` 시험이 그 아래쪽을, 16 MiB 시험이 위쪽을 지킨다.
 
+use keycloak_sdk::jwks::JwksStore;
 use keycloak_sdk::{
-    AdminError, ClientCredentialsTokenProvider, KeycloakClient, KeycloakConfig, KeycloakError,
-    TokenProvider, reqwest,
+    AdminError, AuthClient, ClientCredentialsTokenProvider, KeycloakClient, KeycloakConfig,
+    KeycloakError, TokenProvider, reqwest,
 };
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::io::{Read, Write};
@@ -86,17 +92,21 @@ const CAP: usize = 1_048_576;
 /// Keycloak 26.6(start-dev 기본)이 받아들이는 가장 긴 Bearer — 한 바이트 더 길면 HTTP 431(2026-10-03 실측).
 const KEYCLOAK_MAX_BEARER: usize = 65_459;
 const MIB: usize = 1024 * 1024;
+/// JWKS 본문 상한 — 우리가 고른 수가 아니라 아홉 언어가 함께 쓰는 Nimbus `DEFAULT_HTTP_SIZE_LIMIT` 다.
+/// ⚠️ 리터럴로 둔다 — `src/jwks.rs` 의 시험은 상수 이름(`JWKS_MAX_BYTES`)으로 재서 그 상수가 움직이면 함께 움직인다.
+const JWKS_CAP: usize = 51_200;
 
 // ── 가짜 IdP: 큰 본문을 정적 버퍼에서 흘려보낸다 ───────────────────────────────────────────
 
 static PAD: [u8; 64 * 1024] = [b' '; 64 * 1024];
 
-/// 응답 하나 — `head` 뒤에 JSON 공백을 붙여 전체 `total` 바이트로 만든다.
+/// 응답 하나 — `head` 뒤에 JSON 공백을 붙여 전체 `total` 바이트로 만든다. 상태는 기본 200.
 #[derive(Clone)]
 struct Reply {
     head: Arc<str>,
     total: usize,
     chunked: bool,
+    status: u16,
 }
 
 impl Reply {
@@ -106,10 +116,14 @@ impl Reply {
             head: head.into(),
             total,
             chunked,
+            status: 200,
         }
     }
     fn exact(head: &str) -> Self {
         Self::padded(head, head.len(), false)
+    }
+    fn with_status(self, status: u16) -> Self {
+        Self { status, ..self }
     }
 }
 
@@ -117,6 +131,9 @@ impl Reply {
 struct State {
     token: Option<Reply>,
     introspect: Option<Reply>,
+    jwks: Option<Reply>,
+    /// `GET /admin/realms` 의 응답 — 없으면 `[]`.
+    admin: Option<Reply>,
     admin_hits: usize,
     admin_auth_len: Option<usize>,
 }
@@ -154,6 +171,14 @@ impl Fake {
 
     fn serve_introspect(&self, r: Reply) {
         self.state.lock().unwrap().introspect = Some(r);
+    }
+
+    fn serve_jwks(&self, r: Reply) {
+        self.state.lock().unwrap().jwks = Some(r);
+    }
+
+    fn serve_admin(&self, r: Reply) {
+        self.state.lock().unwrap().admin = Some(r);
     }
 
     fn admin_hits(&self) -> usize {
@@ -210,10 +235,12 @@ fn serve(mut s: TcpStream, st: &Mutex<State>) -> std::io::Result<()> {
             g.introspect.clone()
         } else if path.ends_with("/token") {
             g.token.clone()
+        } else if path.ends_with("/certs") {
+            g.jwks.clone()
         } else if path == "/admin/realms" {
             g.admin_hits += 1;
             g.admin_auth_len = header("authorization").map(|v| v.len());
-            Some(Reply::exact("[]"))
+            Some(g.admin.clone().unwrap_or_else(|| Reply::exact("[]")))
         } else {
             None
         }
@@ -228,9 +255,11 @@ fn serve(mut s: TcpStream, st: &Mutex<State>) -> std::io::Result<()> {
     } else {
         format!("content-length: {}", r.total)
     };
+    let reason = if r.status == 200 { "OK" } else { "Bad Request" };
     write!(
         s,
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\n{framing}\r\n\r\n"
+        "HTTP/1.1 {} {reason}\r\ncontent-type: application/json\r\nconnection: close\r\n{framing}\r\n\r\n",
+        r.status
     )?;
     let piece = |s: &mut TcpStream, data: &[u8]| -> std::io::Result<()> {
         if r.chunked {
@@ -259,17 +288,22 @@ fn serve(mut s: TcpStream, st: &Mutex<State>) -> std::io::Result<()> {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Lane {
     ClientCredentials,
+    /// `<AuthClient as TokenProvider>::access_token` — 소비자가 admin 에 주입할 수 있는 auth 쪽 공급자.
+    AuthAsTokenProvider,
     Refresh,
     Code,
+    CodeWithRedirect,
     Introspect,
     Provider,
     Admin,
 }
 
-const LANES: [Lane; 6] = [
+const LANES: [Lane; 8] = [
     Lane::ClientCredentials,
+    Lane::AuthAsTokenProvider,
     Lane::Refresh,
     Lane::Code,
+    Lane::CodeWithRedirect,
     Lane::Introspect,
     Lane::Provider,
     Lane::Admin,
@@ -301,12 +335,24 @@ impl Sdk {
                 .client_credentials_token()
                 .await
                 .map(|t| Some(t.access_token.len())),
+            Lane::AuthAsTokenProvider => <AuthClient as TokenProvider>::access_token(auth)
+                .await
+                .map(|t| Some(t.len())),
             Lane::Refresh => auth
                 .refresh(token_arg)
                 .await
                 .map(|t| Some(t.access_token.len())),
             Lane::Code => auth
                 .exchange_code("code", "verifier-0123456789-0123456789-0123456789", None)
+                .await
+                .map(|t| Some(t.access_token.len())),
+            Lane::CodeWithRedirect => auth
+                .exchange_code_with_redirect(
+                    "code",
+                    "verifier-0123456789-0123456789-0123456789",
+                    "http://localhost/callback",
+                    None,
+                )
                 .await
                 .map(|t| Some(t.access_token.len())),
             Lane::Introspect => auth.introspect(token_arg).await.map(|r| {
@@ -347,10 +393,34 @@ fn serve_both(fake: &Fake, access_token: &str, total: usize, chunked: bool) {
     fake.serve_introspect(Reply::padded(&introspect_head(), total, chunked));
 }
 
+/// 두 엔드포인트가 OAuth 오류(400 `invalid_grant`)로 같은 크기(`total`)·같은 프레이밍으로 답하게 한다.
+fn serve_error_both(fake: &Fake, total: usize, chunked: bool) {
+    let head = serde_json::json!({ "error": "invalid_grant", "error_description": "rejected" })
+        .to_string();
+    fake.serve_token(Reply::padded(&head, total, chunked).with_status(400));
+    fake.serve_introspect(Reply::padded(&head, total, chunked).with_status(400));
+}
+
 /// 덧붙임 없는 정상 응답.
 fn serve_unpadded(fake: &Fake, access_token: &str) {
     fake.serve_token(Reply::exact(&token_head(access_token)));
     fake.serve_introspect(Reply::exact(&introspect_head()));
+}
+
+/// 키 `k1` 하나의 JWKS — `JwksStore::get_key` 는 파싱만 하므로 모듈러스가 짧아도 된다.
+fn jwks_head() -> String {
+    serde_json::json!({ "keys": [
+        { "kty": "RSA", "kid": "k1", "use": "sig", "alg": "RS256", "n": "sXchg", "e": "AQAB" }
+    ] })
+    .to_string()
+}
+
+/// 공개 `JwksStore` 로 `k1` 을 찾는다 — 콜드 적재 한 번이 본문을 읽는다. 성공이면 찾은 kid.
+async fn jwks_k1(fake: &Fake) -> Result<Option<String>, KeycloakError> {
+    JwksStore::new(format!("{}/certs", fake.base()), reqwest::Client::new(), 30)
+        .get_key("k1")
+        .await
+        .map(|jwk| jwk.common.key_id)
 }
 
 /// 상한을 넘긴 응답의 기대 분류 — 레인마다 그 레인의 「실패한 토큰(·introspection) 응답」 타입이다.
@@ -458,6 +528,58 @@ async fn body_one_byte_over_the_cap_fails_every_lane() {
     );
 }
 
+/// 오류 상태도 같다 — 400 본문이 한 바이트 넘으면 그 레인의 상한 오류다(상한은 상태를 보기 **전에** 건다). 두 프레이밍 다.
+/// ⚠️ 가짜 IdP 가 200 만 답하던 동안은 「2xx 만 상한으로 읽는다」로 바꿔도 이 파일과 스위트 전체가 초록이었다.
+#[tokio::test]
+async fn error_status_body_one_byte_over_the_cap_fails_every_lane() {
+    let _serial = SERIAL.lock().await;
+    let mut wrong = Vec::new();
+    for chunked in [false, true] {
+        for lane in LANES {
+            let fake = Fake::start();
+            serve_error_both(&fake, CAP + 1, chunked);
+            let r = Sdk::new(&fake).call(lane, "rt").await;
+            if let Err(why) = rejected_over_cap(lane, &r, &fake) {
+                wrong.push(format!("chunked={chunked} {why}"));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} lane(s) wrong:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// 대조군 — 정확히 상한인 400 본문은 상한이 아니라 그 상태로 실패한다. 없으면 위 시험이 「400 이면 늘 상한 오류」와
+/// 구분되지 않는다.
+#[tokio::test]
+async fn error_status_body_of_exactly_the_cap_fails_on_its_status_not_the_cap() {
+    let _serial = SERIAL.lock().await;
+    let mut wrong = Vec::new();
+    for chunked in [false, true] {
+        for lane in LANES {
+            let fake = Fake::start();
+            serve_error_both(&fake, CAP, chunked);
+            let r = Sdk::new(&fake).call(lane, "rt").await;
+            let cap_failure = matches!(
+                &r,
+                Err(KeycloakError::Transport(m)) if m.ends_with("exceeds 1048576 bytes")
+            );
+            if r.is_ok() || cap_failure {
+                wrong.push(format!("chunked={chunked} {lane:?}: {r:?}"));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} lane(s) wrong:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
 /// 위쪽 — 16 MiB 본문은 실패하고, 그 판정이 잡는 메모리는 상한 언저리에서 멈춘다(본문 크기에 비례하지 않는다).
 ///
 /// 한도 `3 × CAP`: 쥐는 본문은 많아야 `CAP` 이고, 그 위에 hyper 의 읽기 버퍼(최대 417,792 바이트 =
@@ -517,4 +639,71 @@ async fn small_body_does_not_allocate_anywhere_near_the_cap() {
             "{lane:?}: judging a ~2 KiB body grew the heap by {grown} bytes — that is near the cap"
         );
     }
+}
+
+/// JWKS 경계 — 정확히 51,200 바이트인 본문은 통과한다. 두 프레이밍 다.
+#[tokio::test]
+async fn jwks_body_of_exactly_51200_bytes_parses() {
+    let _serial = SERIAL.lock().await;
+    let mut wrong = Vec::new();
+    for chunked in [false, true] {
+        let fake = Fake::start();
+        fake.serve_jwks(Reply::padded(&jwks_head(), JWKS_CAP, chunked));
+        match jwks_k1(&fake).await {
+            Ok(Some(kid)) if kid == "k1" => {}
+            other => wrong.push(format!(
+                "chunked={chunked}: a 51,200-byte JWKS must parse, got {other:?}"
+            )),
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// JWKS 경계 — 한 바이트 넘는 51,201 바이트는 그 키를 담았어도 상한 문구의 `Transport` 로 실패한다. 두 프레이밍 다.
+#[tokio::test]
+async fn jwks_body_of_51201_bytes_fails() {
+    let _serial = SERIAL.lock().await;
+    let mut wrong = Vec::new();
+    for chunked in [false, true] {
+        let fake = Fake::start();
+        fake.serve_jwks(Reply::padded(&jwks_head(), JWKS_CAP + 1, chunked));
+        match jwks_k1(&fake).await {
+            Err(KeycloakError::Transport(m)) if m == "JWKS response exceeds 51200 bytes" => {}
+            other => wrong.push(format!(
+                "chunked={chunked}: a 51,201-byte JWKS must fail at the cap, got {other:?}"
+            )),
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// admin REST 응답에는 상한이 **없다** — 토큰 상한은 토큰·introspection 응답에만 건다. 모든 토큰 레인이 거부하는
+/// 1,048,577 바이트도, 16 MiB 도 `list_realms` 는 끝까지 읽는다(토큰은 정상 크기). 두 프레이밍 다.
+///
+/// ⚠️ 그 본문은 `keycloak` crate 가 읽는다(`error_check(..).json()`) — crate 를 올리다 크기 한도가 생기거나 SDK 가
+/// admin 응답을 토큰 상한으로 읽게 바뀌면 여기서 깨진다.
+#[tokio::test]
+async fn admin_rest_response_is_not_capped() {
+    let _serial = SERIAL.lock().await;
+    let mut wrong = Vec::new();
+    for total in [CAP + 1, 16 * MIB] {
+        for chunked in [false, true] {
+            let fake = Fake::start();
+            serve_unpadded(&fake, "usable-access-token");
+            fake.serve_admin(Reply::padded("[]", total, chunked));
+            let r = Sdk::new(&fake).call(Lane::Admin, "rt").await;
+            let hits = fake.admin_hits();
+            if !(matches!(r, Ok(None)) && hits == 1) {
+                wrong.push(format!(
+                    "total={total} chunked={chunked}: {hits} admin request(s), {r:?}"
+                ));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} case(s) wrong:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
 }
