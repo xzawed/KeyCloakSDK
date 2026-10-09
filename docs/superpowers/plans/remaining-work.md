@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `256`(2026-10-05 기준 열림 139 · 닫힘 117)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `263`(2026-10-09 기준 열림 141 · 닫힘 122)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,22 +116,22 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-10-05 · #560–#723 반영)
+### 다음 세션 진입점 (2026-10-09 · #737–#756 반영)
 
-**지금 상태** — 열린 PR 0 · 열린 이슈 0 · Dependabot 알림 0. 2026-10-03·10-05 수정(#705–#723)은 **미게시**다 — `CHANGELOG.md` `[Unreleased]` 가 소유하고 다음 릴리스 물결이 싣는다. #682(Gradle 9.8)의 되살릴 조건은 그 PR.
+**지금 상태** — 물결 4 아홉 LIVE(`check-registry-truth` 2026-10-09) · 2026-10-09 수정(#737–#756)은 **미게시** — `CHANGELOG.md` `[Unreleased]` 가 소유한다(태그 위임은 물결마다 다시 묻는다). 열린 PR 은 Dependabot #750(보류 — `php-admin-client-0.44-upgrade`)과 kotlin 운송 후속뿐이어야 한다. #682(Gradle 9.8)의 되살릴 조건은 그 PR.
 
-열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유한다. `node scripts/check-registry-truth.mjs` 로 다시 잰다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
+열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유한다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. 2026-10-05 신규(아래 「9언어 소스」·「테스트·커버리지」) — H `jvm-chunked-trailers-unbounded` 먼저, 그다음 M 여섯(`close-drain-time-unbounded` · `response-framing-unbounded` · `jwks-stale-cache-outage-unbounded` · `secret-echo-form-encoded-rescan` · `dotnet-admin-bogus-charset-escape` · `probe-build-failure-reported-caught`), 그다음 언어별 `wave4-hardening-*` 아홉.
-2. `guard-detection-surface-hand-narrowed` [H/M] — 적대 행렬은 **아홉 언어 전부 섰다**(go #636·#639 · 여덟 #654–#661). 다음은 skip 표지를 닫는 attest 파일(W5)과, KNOWN_GAPS id ↔ 열린 등록부 항목 대조다.
-3. `integration-coverage-never-measured` [H/L] — ①코드 교환 통합 9/9 · ②omit 조인 가드(#662) 닫힘. 다음은 ③레인별 통합 전용 리포트, 보고 모드다.
-4. ⚠️ **손대기 전에 그 항목의 전제를 먼저 잰다.** 이 세션도 뒤집혔다 — `coverage-exclusions` 는 셋이 아니라 아홉이었고, 조사 에이전트의 주장 중 둘(SonarCloud 제외 · node 백오프 리셋 「무시험 = 구멍」)은 실측이 기각했다. 반대 방향도 있다 — #585 는 「verifier 하나」로 등록됐지만 부류는 호출 인자 다섯 갈래였다.
+1. H `jvm-chunked-trailers-unbounded` — java 는 #756(Apache HttpClient + `MessageConstraints` · 프로세스 풀 · 선 위 예산), kotlin 은 같은 설계의 후속 PR. 그다음 `close-drain-time-unbounded` 의 남은 칸(느린 물방울 · admin 비우기).
+2. `response-framing-unbounded` 의 남은 넷 · `php-admin-client-0.44-upgrade` · 언어별 `wave4-hardening-*` 아홉.
+3. `guard-detection-surface-hand-narrowed` [H/M](W5 attest · KNOWN_GAPS 대조) · `integration-coverage-never-measured` [H/L](③레인별 통합 리포트).
+4. ⚠️ **손대기 전에 전제를 잰다** — 이번에도 뒤집혔다: jwks 후보(「신선한 캐시가 없으면 센다」)는 600 초 경계에서 규칙 (4) 를 깼고, 「낡은 캐시 + 장애」는 node 하나가 아니라 node·.NET 이었고, probe.sh 초안 정규식은 지어낸 줄로 골라 실제 출력 셋을 못 맞췄다.
 
-**사람 판정 대기** — 없음. 지난 판정의 근거와 되살릴 조건은 각 항목이 소유한다(릴리스 태그 위임은 물결마다 다시 묻는다).
+**사람 판정 대기** — `jwks-cache-lifetime-divergent`(장애 중 낡은 키 수락·수명 정렬, 아홉 동시) · #756 이 java `keycloak-sdk-auth` 에 직접 의존(httpclient 4.5.14)을 더했다 — 받아들일지.
 
-**함정** — (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 와 아래 (j)–(w) 는 그대로 유효하다. (x)–(z) 는 2026-10-01, (aa)(bb) 는 2026-10-05 가 더했다.
+**함정** — (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 와 아래 (j)–(w) 는 그대로 유효하다. (x)–(z) 는 2026-10-01, (aa)(bb) 는 2026-10-05, (cc) 는 2026-10-09 가 더했다.
 
 - (j) **`scripts/probe.sh` 는 node·php·python 을 못 잰다**(워크트리에 의존성이 없다). 그 언어는 커밋한 뒤 의존성이 깔린 워크트리에서 파일 하나를 변이 → 테스트 → `git checkout -- <파일>` → `git status` 빈 것 확인.
 - (k) **변이 대상은 줄 번호가 아니라 내용으로 고른다** — `| Java |` 가 툴체인 표에 먼저 나와 엉뚱한 줄을 겨눴다(probe 가 INVALID 로 막았다).
@@ -144,7 +144,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - (r) **게이트를 `| tail` 로 보면 종료코드가 사라진다** — `check-docs … | tail -2; … && git commit && git push` 가 예산 초과를 push 했다(#574). `${PIPESTATUS[0]}` 로 받아 그 값으로 분기한다.
 - (s) **dependabot 은 JVM 짝의 같은 좌표를 두 생태계로 따로 올린다** — doc-facts 가 문서 간 좌표를 한 버전으로 강제해 둘 다 빨갛다. 한 PR 로 합치고(#562) 남은 쪽은 `@dependabot rebase` 가 다시 만든다(#569 → #572). KGP 가 움직이면 `kgp-gradle-band` 도 kotlinlang.org 표로 다시 확인한다(가드가 요구한다).
 - (t) **「앞 글자가 식별자·`.` 면 세지 않는다」 경계는 카나리아(테스트 선언)용이다** — 구조 표지에 걸면 멤버 접근(`url.searchParams.set('nonce'`)이 0 이 되어 required 체크가 정당한 코드를 막는다(#580 이 계수를 둘로 나눴다).
-- (u) **변이 SILENT 가 곧 구멍은 아니다 — 관찰 가능한 행동이 남는지 먼저 따진다.** node 백오프 성공 리셋은 지워도 드러날 행동이 없고(콜드 캐시가 다시 안 빈다), go 의 id_token 누락 검사는 지워도 `Validate("")` 가 같은 오류 타입으로 거부한다 — 둘 다 동치 변이로 판정했다. 반대로 **컴파일이 깨지는 변이는 INVALID** 다(go `vt` 미사용 — (i)).
+- (u) **변이 SILENT 가 곧 구멍은 아니다 — 관찰 가능한 행동이 남는지 먼저 따진다.** node 백오프 성공 리셋은 콜드 캐시만 셀 때 지워도 드러날 행동이 없었다(#743 뒤 낡은 캐시 축에서는 아니다 — 카나리아가 섰다), go 의 id_token 누락 검사는 지워도 `Validate("")` 가 같은 오류 타입으로 거부한다 — 그때 둘 다 동치 변이로 판정했다. **판정은 축이 늘면 다시 한다.** 반대로 **컴파일이 깨지는 변이는 INVALID** 다(go `vt` 미사용 — (i), 이제 `probe.sh` 가 막는다 #738).
 - (v) **「부류를 닫았다」는 적대적 레그가 반증하지 못한 뒤에만 쓴다** — #585 첫 커밋의 재스캔은 Nimbus **값 타입 생성자**만 봤다. 계약과 코드만 받은(내 결론은 안 받은) Grok 레그가 **빌더 `build()` 의 redirect_uri 검사**가 남긴 누출을 인쇄로 증명했다.
 - (w) **JVM 변이를 `probe.sh` 로 잴 때는 검사 명령을 래퍼로 감싸 실패한 테스트 이름과 컴파일 오류를 출력 끝에 모은다** — 근거로 보이는 것은 꼬리 12 줄이고 mvn·gradle 의 꼬리는 상투구라, 래퍼 없이는 CAUGHT 이 단언인지 컴파일 실패((i))인지 안 보인다.
 - (x) **열린 PR 의 초록은 그 PR 기준점에서의 초록이다** — 기준점 뒤에 병합된 가드와 의미 충돌한다. #666 은 python 적대 행렬(#655)보다 앞선 기준점에서 초록이었고, `origin/main` 을 합치자 행렬이 7 FAIL 을 냈다(기전·변이·반증 판정은 #666 의 PR 코멘트). 병합 전 `origin/main` 을 합쳐 **언어 CI 를 다시 보고**, 같은 언어의 PR 둘(#658 행렬 · #663)은 하나를 병합한 뒤 나머지를 다시 잰다. CHANGELOG 만 바뀐 재푸시는 required 둘로 충분하다 — 언어 코드가 초록 실행과 같음을 `git diff --stat <초록 SHA> HEAD -- <lang>/` 가 빈 출력으로 보인다.
@@ -152,6 +152,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - (z) **`git -C <워크트리> config <키>` 는 공용 `.git/config` 에 쓴다** — 워크트리 하나만 LF 로 받으려다 저장소 전체의 `core.autocrlf` 를 덮었다(2026-10-01, 되돌림). 명령 단위로 준다: `git -c core.autocrlf=false worktree add …`.
 - (aa) **Edit 툴은 백슬래시-u 이스케이프를 글자로 풀어 쓴다** — .NET 시험의 U+2028 이 컴파일을 깼다. 그런 줄을 옮길 때는 `git merge-file --union` 으로 합친다.
 - (bb) **`[no-changelog: …]` 표지 하나가 범위 전체의 착지 성장 검사를 끈다**(`scripts/test/test-changelog-landing.sh:150`) — `[Unreleased]` 를 키우는 브랜치에는 달지 않는다.
+- (cc) **PHP `vendor/` 를 정션으로 걸면 Composer 오토로더가 원 트리의 `src` 를 읽는다** — 파스 오류를 넣은 워크트리가 「OK (21 tests)」를 냈다(2026-10-09). 변이·프로브 워크트리에는 `vendor/` 를 복사한다. node_modules 정션은 의존성만 풀어 안전하다(실측).
 
 ### 재발 원인 분석 — 2026-09-13 (독립 레그와 공동, 산출물 기반)
 
@@ -516,11 +517,11 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [ ] `facade-wiring-close-contract-unasserted` **[M/S]** 파사드의 §4 계약(provider 배선·close)이 무단언 테스트 뒤에 있고 커버리지 게이트에서도 빠져 있다 · `rust/src/client.rs:65`
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 106건 (열림 71)
+## C. 품질 부채 — 112건 (열림 72)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 51
+### 9언어 소스 — 57
 
 - [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청과 교환의 `redirect_uri` 를 호출당 받지 못했다 — §4 판정 「표기가 아니라 능력의 차이이니 API 를 맞춘다」로 둘 다 가산적으로 맞췄다. 사후 서사는 `git show 8d7316c:docs/superpowers/plans/remaining-work.md` 522행
 
@@ -537,7 +538,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `rust-admin-error-cause-flattened` **[L/M]** Rust에서 admin 토큰 실패의 원인이 가짜 401로 뭉개져 사라진다 · `rust/src/admin.rs:29-40`
 <!-- 2026-10-05(rust 물결 4 구현 레그): 새 토큰 응답 상한도 같은 길로 뭉개진다 — admin 레인 32 MiB → 「admin error: admin HTTP 401」, provider 를 직접 부르면 Transport("token response …"). SdkTokenSupplier 가 HttpFailure{401, text} 로 싸고 map_admin 이 text 를 버린다. 형제: rust-admin-unreachable-classified-admin. -->
 - [ ] `error-message-surface-unspecified` **[L/M]** 오류 메시지 표면에 규약이 없다 — 서버 본문 원문 삽입과 한글 메시지. 토큰 제시자가 고른 `kid` 도 줄바꿈째 실린다(.NET IDX10503, 실측) · `dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:95-101`
-<!-- 2026-10-03 #710 재스캔(.NET): JwtValidator.cs:122/127 이 ErrorCause.MessageOf(IdentityModel 예외)로 메시지를 만든다 — kid "k\nINJ-FORGED-LINE" → Message·ToString 에 INJ. kid 는 IdP 가 아니라 토큰을 내민 쪽이 고른다(로그 위조). alg·iss·aud 의 LF 는 메시지에 안 닿았다. admin 타입 경로 AdminClient.cs:66/74 (ErrorDescription 원문, LF 그대로)·raw 경로 :98-100 (본문 통째) 도 실측. 다른 여덟 언어의 kid 인용은 미측정. 2026-10-05 물결 4 레그: .NET admin 오류 본문이 KeycloakAdminException 메시지에 원문으로 실려, 받은 bearer 를 되울리는 admin 서버면 그것을 찍는다(SendRawAsync·IdFromLocationAsync 의 MapHttpError, raw·타입드 401·404 16/16 LEAK=bearer, 6f23931 도 같음 — 보낸 bearer 를 가릴지 php 처럼 본문을 버릴지 판정). go AdminError.Msg 도 apiErr.Message 를 그대로 싣는다(admin.go:178, 카나리아 1 히트 — cause.go 는 토큰·introspection 레인만 정화). -->
+<!-- 2026-10-03 #710 재스캔(.NET): JwtValidator.cs:122/127 이 ErrorCause.MessageOf(IdentityModel 예외)로 메시지를 만든다 — kid "k\nINJ-FORGED-LINE" → Message·ToString 에 INJ. kid 는 IdP 가 아니라 토큰을 내민 쪽이 고른다(로그 위조). alg·iss·aud 의 LF 는 메시지에 안 닿았다. admin 타입 경로 AdminClient.cs:66/74 (ErrorDescription 원문, LF 그대로)·raw 경로 :98-100 (본문 통째) 도 실측. 다른 여덟 언어의 kid 인용은 미측정. 2026-10-05 물결 4 레그: .NET admin 오류 본문이 KeycloakAdminException 메시지에 원문으로 실려, 받은 bearer 를 되울리는 admin 서버면 그것을 찍는다(SendRawAsync·IdFromLocationAsync 의 MapHttpError, raw·타입드 401·404 16/16 LEAK=bearer, 6f23931 도 같음 — 보낸 bearer 를 가릴지 php 처럼 본문을 버릴지 판정). go AdminError.Msg 도 apiErr.Message 를 그대로 싣는다(admin.go:178, 카나리아 1 히트 — cause.go 는 토큰·introspection 레인만 정화). · 2026-10-09 (secret-echo JVM 구현 레그): java getKeycloakError() 가 admin 리소스 오류 본문을 그대로 돌려준다 — 그 요청은 Bearer 를 실었다(되울리면 남는다). -->
 - [ ] `config-validation-gaps` **[L/M]** 설정 진입점이 값을 검증하지 않고 잘못된 기본값으로 대체한다 · `node/src/config.ts:74-87`
 - [ ] `token-provider-cache-invariants` **[L/S]** 토큰 프로바이더 캐시가 설정을 무시하거나 중복 발급한다 · `go/tokenprovider.go:36-60`
 - [ ] `coverage-omit-hides-security-paths` **[L/L]** "네트워크 경계"라는 이름의 파일 단위 커버리지 제외가 보안·오류분류 로직까지 무측정으로 만든다 · `dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:110`
@@ -558,18 +559,26 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 <!-- jvm-admin-token-guard-residuals: (1) 은 close-drain-time-unbounded 로 옮겼다 — 서버가 16 MiB 를 다 썼다(가드 1,048,577 · close 가 나머지) — 끊기(abortConnection)는 풀 재사용을 잃는다. (2) read 가 0 을 돌려주면 readNBytes 가 200 ms 에 1.5 GB 할당(InputStream 계약 위반 스트림, 운송 경로에서 미발견). (3) MalformedChunkCodingException 「Bad chunk header: <줄>」 — 정화 트리거는 ResponseProcessingException·파서 예외뿐(WithheldCauses), 후보: RESTEasy ClientInvocation.extractResult 의 finally close(2xx·미디어 타입 없음). (4) JVM 은 Nimbus 가 문법 밖 OAuth 코드를 버려 줄바꿈이 안 실리지만 고정하는 시험이 없다(#710 재스캔). -->
 - [ ] `python-admin-guard-send-time` **[L/S · 신규 2026-10-03]** 검사가 보내는 순간이 아니라 무장 때다 — 다른 스레드가 요청 도중 중첩 세션을 바꾸면 그랜트가 307 을 따라 `client_secret` 을 넘긴다(실측) · `python/src/keycloak_sdk/_internal/admin_guard.py`
 <!-- python-admin-guard-send-time 실측(#708 검증 레그 두 차례): 401 재시도 중 다른 스레드의 토큰 쓰기·_keycloak_openid 교체 → 'Bearer ' · 소문자 'bearer ' · _s.headers 기본값 · _s 를 바꾼 연결 직접 호출(307 따라감) · 설치 안 된 copy.copy(conn) 직접 호출 · wrapt.ObjectProxy(admin) 는 생성 때만 무장. 같은 부류: 주입한 openid 의 연결을 바꾸면 auth 레인이 리다이렉트를 따라 client_secret 을 넘긴다(sync). 이음매 후보: _s.send / async_s 의 송신 시점 검사(병합된 헤더, 대소문자 무시). -->
-- [ ] `jvm-chunked-trailers-unbounded` **[H/M · 신규 2026-10-05 · java·kotlin]** 짧은 본문 뒤 `readNBytes` 가 EOF 까지 읽으면 JDK 가 청크 트레일러를 한도 없이 담는다 — 32 MiB 에 173 MB·토큰 수락, 한 줄 1 MiB 에 17 GB·5.3 초(제곱). 물결 4 전부터 · `*/CappedResponseSender.*`
-<!-- jvm-chunked-trailers-unbounded 실측(2026-10-05 JVM bounds 검증 레그 · 물결 4 SDK · clientCredentialsToken · 평문 루프백 · 리눅스 Docker): java(JDK 21.0.12.1) 4 KB 트레일러 줄 4 MiB → 43,028,792 B · 32 MiB → 172,898,352 B(첫 실행 201,889,320), 둘 다 「OK access_token=AT-probe」. 한 줄 256 KiB·512 KiB·1 MiB → 1,075,156,056·4,297,692,248·17,185,215,576 B, 479·1,320·5,279 ms. 32 MiB 한 줄은 ChunkedInputStream.processRaw:435 에서 CPU 613 s 뒤 죽였다. kotlin(21.0.11) 4 MiB 줄 → 51,504,200 B(전 스레드) · 512 KiB 한 줄 → 4,298,237,168 B·1,552 ms. 원인: JDK ChunkedInputStream 의 STATE_AWAITING_TRAILERS 에 한도가 없다. 청크 확장 줄은 MAX_CHUNK_HEADER_SIZE 2,050 에서 끊긴다(32 MiB → 148,896 B·전송 실패) — 틈 아님. 미측정: admin 레인(HttpCore 트레일러) · HTTPS · 다른 auth 레인. 「물결 4 전부터」는 소스 판독이다(Nimbus send() 도 EOF 까지 읽었다 — main 대조는 안 했다). ⚠️ #718 PR 본문의 kotlin 수치(「1 MiB 한 줄 17 GB」·「32 MiB 줄 51.5 MB」)는 java 값과 섞였다 — 위가 실측이다. -->
-- [ ] `close-drain-time-unbounded` **[M/M · 신규 2026-10-05 · java·kotlin (+재스캔)]** 끝없는 본문이면 `close()` 가 끝나지 않는다 — HTTPS 버리기·admin HttpCore 비우기는 바이트가 오는 동안 읽고, 평문 청크 닫기는 제곱 비용(2–137 GB), 읽기 타임아웃은 바이트가 흐르면 안 걸린다 · `*/CappedResponseSender.*`
+- [ ] `jvm-chunked-trailers-unbounded` **[H/M · 신규 2026-10-05 · java 닫힘 #756 · kotlin 남음]** 짧은 본문 뒤 트레일러를 JDK 가 한도 없이 담았다(32 MiB 에 173 MB · 한 줄 1 MiB 에 17 GB) — java 는 Apache HttpClient + `MessageConstraints`(#756), kotlin 은 같은 설계로 · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/CappedResponseSender.kt`
+<!-- jvm-chunked-trailers-unbounded 실측(2026-10-05 JVM bounds 검증 레그 · 물결 4 SDK · clientCredentialsToken · 평문 루프백 · 리눅스 Docker): java(JDK 21.0.12.1) 4 KB 트레일러 줄 4 MiB → 43,028,792 B · 32 MiB → 172,898,352 B(첫 실행 201,889,320), 둘 다 「OK access_token=AT-probe」. 한 줄 256 KiB·512 KiB·1 MiB → 1,075,156,056·4,297,692,248·17,185,215,576 B, 479·1,320·5,279 ms. 32 MiB 한 줄은 ChunkedInputStream.processRaw:435 에서 CPU 613 s 뒤 죽였다. kotlin(21.0.11) 4 MiB 줄 → 51,504,200 B(전 스레드) · 512 KiB 한 줄 → 4,298,237,168 B·1,552 ms. 원인: JDK ChunkedInputStream 의 STATE_AWAITING_TRAILERS 에 한도가 없다. 청크 확장 줄은 MAX_CHUNK_HEADER_SIZE 2,050 에서 끊긴다(32 MiB → 148,896 B·전송 실패) — 틈 아님. 미측정: admin 레인(HttpCore 트레일러) · HTTPS · 다른 auth 레인. 「물결 4 전부터」는 소스 판독이다(Nimbus send() 도 EOF 까지 읽었다 — main 대조는 안 했다). ⚠️ #718 PR 본문의 kotlin 수치(「1 MiB 한 줄 17 GB」·「32 MiB 줄 51.5 MB」)는 java 값과 섞였다 — 위가 실측이다. · 2026-10-09 #756(java): 두 후보를 측정했다 — java.net.http 는 JDK 17 에서 요청별 스레드 누수·TLS 객체 불가라 기각, Apache HttpClient 4.5 + MessageConstraints(8,192·100) 채택 · 프로세스 풀(경로당 50, 스레드 없음) · EOF 까지 읽은 본문만 연결을 돌려준다 · 선 위 예산 8× · 1xx 8 · 응답 desync 차단. kotlin 포팅 메모와 측정 전부는 #756 의 커밋 메시지(BoundedTransport 를 프로세스 객체로, admin 엔진 훅, 상한 상수 둘 · 스크러버 이름 둘, commons-codec 은 dependencyInsight 로). -->
+- [ ] `close-drain-time-unbounded` **[M/M · 신규 2026-10-05 · java 일부 닫힘 #756]** 끝없는 본문의 `close()` — java auth·JWKS 는 #756 이 읽지 않고 끊는다. 남은 것: 느린 물방울(읽기마다 타임아웃)·admin HttpCore 비우기·kotlin · `*/CappedResponseSender.*`
 <!-- close-drain-time-unbounded 실측(2026-10-05 JVM 사실 확인 레그 · 리눅스 Docker 6.6 · tcp_rmem 최대 6 MiB · JDK 21.0.12.1/17.0.20.1 · 루프백): (a) HTTPS — HttpsClient.closeServer 가 SO_TIMEOUT 1 ms 를 걸고 SSLSocketImpl 닫기가 SSLSocketInputRecord.deplete 로 available() != 0 인 동안 skip 한다(javap). 1 바이트 청크면 닫기 146.7–182.8 ms 동안 서버가 186–190 MB 를 더 썼고, SDK 호출에서 서버가 32 MiB 를 끝까지 썼다. (b) admin — HttpCore ContentLengthInputStream·ChunkedInputStream.close 가 byte[2048] 로 -1 까지 읽는다: https 128 MiB 도 끝까지(305 ms, Windows JDK 21.0.8), 1 바이트 청크면 MiB 마다 ~25 MB 할당(2 MiB 52.5 MB · 8 MiB 203.5 MB, java·kotlin 같음). jvm-admin-token-guard-residuals (1) 이 이 갈래다. (c) 평문 청크 닫기 — ChunkedInputStream.hurry → readAheadNonBlocking → processRaw, 할당 ≈ A + c·N(N+1)/2(A 쌓인 바이트 · c 청크 · N=A/c): 4 KiB 청크 32 MiB 에 호출 하나 0.36–2.84 GB, 1 바이트 청크면 닫기 하나 34–137 GB·2.9–11.5 초, tcp_rmem 최대 64 KiB 면 ≤417 KB. JWKS 리트리버도 #400 부터 같은 평문 노출이다 — Nimbus DefaultResourceRetriever 가 51,200 을 넘으면 그 스트림을 닫는다(바이트코드, 미측정). (d) 읽기 타임아웃은 읽기마다다 — java 강제 JWKS 조회에 1 B/700 ms 를 흘리면(readTimeout 1 s) 인터럽트 뒤 5,374 ms 에 돌아왔다(최악 ≈ 51,200 × readTimeout). Nimbus 가 호출자 프레임에서 캐시를 채워 취소된 호출자를 일찍 못 돌려준다. CHANGELOG [Unreleased] Java JWKS 줄의 「연결·읽기 타임아웃까지만 묶여」 는 「읽기마다」로 좁혀야 한다(검증 레그). kotlin — runInterruptible 은 플랫폼 소켓 읽기를 못 끊어, 본문 중간에 멈춘 IdP 에서 withTimeout(300) 호출이 readTimeout 5 s 에 5,091–5,269 ms 붙잡혔다(cc·introspect·admin, 수정 전후 같음). 재스캔: 나머지 일곱의 닫기·취소 비용은 미측정. -->
-- [ ] `response-framing-unbounded` **[M/M · 신규 2026-10-05 · 9언어 재스캔]** 헤더 줄·청크 크기 줄·트레일러는 어느 본문 상한에도 안 잡힌다 — ruby 16 MiB 헤더 줄에 67 MB·토큰 수락(main 같음). JVM 트레일러는 위 항목, 여섯 언어는 미측정 · `ruby/lib/keycloak_sdk/http.rb`
-<!-- response-framing-unbounded 실측(2026-10-05 ruby 검증 레그 · 원시 TCP 서버 · cc 레인 · 각 16 MiB): 헤더 한 줄 → OK TokenSet · 할당 67,129,778(main 67,113,839) · 청크 확장 → OK · 33,558,045(main 33,558,107) · 트레일러 → OK · 33,574,346(main 33,558,023). net-http 가 헤더·청크 크기 줄·트레일러를 readuntil/readline 으로 한도 없이 읽는다(on_data 앞뒤). JVM: 청크 확장은 JDK 가 2,050 바이트에서 끊고 트레일러는 jvm-chunked-trailers-unbounded, 헤더 줄은 미측정. .NET 응답 헤더는 64 KiB 한도가 ConfigurationLimitExceeded 를 낸다(구현 레그, 파사드처럼 구성한 HttpClient). python·node·go·rust·php 와 .NET 트레일러는 미측정. -->
-- [ ] `jwks-stale-cache-outage-unbounded` **[M/S · 신규 2026-10-05 · node · 판정은 아홉]** 캐시가 낡은 뒤(10 분) IdP 가 실패하면 검증마다 /certs 를 친다(10 회에 10 건, main 같음) — 막으려면 security.md 규칙 (4) 의 `jwks() === undefined` 를 바꿔야 해 아홉이 함께 정한다 · `node/src/jwt.ts`
-<!-- jwks-stale-cache-outage-unbounded 실측(2026-10-05 node 구현·검증 레그): 캐시 적재 → 시계를 cacheMaxAge 뒤(601 s)로 → IdP 503 → 검증 10 회(k1 다섯·위조 다섯) → /certs 1→11, 정상 토큰도 거부. origin/main ff40a07 도 1→11. jose 는 낡은 캐시를 local 로 둔 채 getKey 첫머리에서 reload 한다(remote.js:66). 콜드 백오프는 remote.jwks() === undefined 일 때만 세고, #721 의 창은 만료된 캐시의 갱신을 일부러 뺐다. 후보: fresh 캐시가 없는 동안(undefined 또는 !fresh) 백오프. 나머지 여덟의 「낡은 캐시 + 장애」 동작은 미측정. security.md:42(「스스로 창을 거는 다섯 — python·go·rust·php·ruby」)·:44(「jose 의 cooldown 이 정확히 하나」)는 #721 뒤 node 에 낡았다 — node 도 이제 스스로 건다(검증 레그). #724 가 security.md 의 그 두 문장을 고쳤다(여섯 언어가 스스로 건다). -->
-- [ ] `secret-echo-form-encoded-rescan` **[M/S · 신규 2026-10-05 · 여덟 언어]** IdP 가 Basic 의 폼 인코딩 시크릿을 되울리면 kotlin 은 못 가렸다(#718 이 닫음) — 같은 인코딩을 하면서 날 시크릿만 가리는 언어가 있는지 여덟을 잰다
-<!-- secret-echo-form-encoded-rescan(2026-10-05 kotlin 검증 레그): RFC 6749 §2.3.1 대로 시크릿을 x-www-form-urlencoded 해 Basic 에 싣고 날 값만 가리면, base64 만 푸는 IdP 의 되울림 「Bad BASIC: sec+ret%2F%2B%3D%7E0005」 가 메시지에 실린다(kotlin origin/main ff40a07 재현). java 는 보낸 시크릿과 10 자 창을 공유하는 런을 가리는데 그 꼴을 잡는지는 미측정. -->
-- [ ] `dotnet-admin-bogus-charset-escape` **[M/S · 신규 2026-10-05]** 2xx admin 응답의 알 수 없는 charset 이 raw `InvalidOperationException` 을 SDK 밖으로 낸다(§4, main 같음) — 타입드·raw 경로 둘 다 · `dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs`
-<!-- dotnet-admin-bogus-charset-escape 실측(2026-10-05 .NET 검증 레그): Content-Type 「application/json; charset=bogus-cs」 → 'The character set provided in ContentType is invalid.' — Users.GetAsync(CallTypedAsync)·Clients.GetAsync(GetJsonAsync), origin/main 6f23931·f3fd71e·913d4e8 같음. 후보: 디코드 못 하는 본문으로 — GetJsonAsync 는 System.Net.Http.Json 의 InvalidOperationException 을 필터에 더하고, CallTypedAsync 는 던진 어셈블리로 거른다. 심각도는 같은 예외의 선례(dotnet-unpaired-surrogate-escapes, M)를 따랐다. -->
+- [ ] `response-framing-unbounded` **[M/M · 신규 2026-10-05 · 아홉 측정 2026-10-09]** 헤더 줄·청크 크기 줄·트레일러는 본문 상한 밖이다 — 남은 것은 ruby(셋 다 수락)·php stream 처리기(헤더 줄)·node(undici 청크 확장)·python sync(트레일러 줄 수). go 는 #742, JVM 은 위 항목 · `ruby/lib/keycloak_sdk/http.rb`
+<!-- response-framing-unbounded 실측(2026-10-09 · 아홉 언어 측정 레그 둘 · 가짜 IdP 원시 TCP · cc 그랜트 · 각 16 MiB · F1 헤더 한 줄 · F2 청크 확장 · F3a 4 KiB 트레일러 줄 4096 개 · F3b 트레일러 한 줄 · 대조군 F4·F4c 는 전 레인 수락·할당 ≤ 0.3 MB · 양성 대조 ruby F1 +66.7–67.2 MB 로 2026-10-05 값 재현): ruby — F1 수락 +67 MB · F2 수락 +50 MB · F3a 수락 +32–46 MB · F3b 수락 +50 MB(auth·admin 같다 — net-http 의 readuntil/readline 에 한도가 없다) · php curl 처리기(기본) — F1 거부(cURL 100) · F2 수락(평탄) · F3 거부 / stream 처리기(ext-curl 이 없을 때 — composer.json 이 요구하지 않는다) — F1 수락 +56.6 MB · F2·F3 수락(평탄) · python sync(requests) — F1·F2·F3b 거부(LineTooLong 65536) · F3a 수락(할당 0.04 MB 지만 16.78 MB 를 끝까지 읽는다 — 트레일러 줄 수에 한도가 없다) · aio(httpx/h11) 넷 다 거부 · node(undici 6.21.2) — F1·F3a·F3b 거부(HEADERS_OVERFLOW) · F2 수락 +16.8 MB(SDK 밖 실험: 64 MiB 확장 → arrayBuffers +74 MB · RSS +104 MB, GC 뒤 0) · go — F1 은 거부하지만 10 MiB 를 읽고 73.3 MB 를 할당했다 → #742(64 KiB) · F2·F3 작게 거부 · rust(hyper 1.11) 넷 다 작게 거부 · .NET 넷 다 거부(헤더·트레일러 64 KiB) · JVM — F1 은 jdk.http.maxHeaderSize 393,216 에서, F2 는 2,050 에서 거부하고 트레일러는 위 항목. 남은 넷의 수정 후보 — ruby: SDK 전용 Net::HTTP 하위 클래스의 BufferedIO 줄 상한(net-http 판에 기댄다) · php: stream 처리기에는 헤더 크기 손잡이가 없다 → ext-curl 을 요구하거나 문서로 · node: undici 상류(SDK 밖) · python: 시간·대역뿐이라 L. 측정 하네스는 커밋 안 함(세션 스크래치패드 xmeas1·xmeas2). -->
+- [x] `jwks-stale-cache-outage-unbounded` **[M/S · 닫힘 2026-10-09 #743 #744]** 아홉을 재 보니 검증마다 재조회는 node·.NET 둘이었다(둘 다 실패 백오프로) — JVM 은 rate limit 2 건, 다섯은 TTL 이 없다. 낡은 키 수락·TTL 은 `jwks-cache-lifetime-divergent`
+- [ ] `jwks-cache-lifetime-divergent` **[M/S · 신규 2026-10-09 · 판정 · 아홉]** JWKS 캐시 수명과 「낡은 캐시 + IdP 장애」의 수락이 언어마다 다르다 — 정상 토큰을 장애 중에 node·JVM 은 거부, .NET 은 수락, 다섯은 영원히 신선 · `.claude/rules/security.md`
+<!-- jwks-cache-lifetime-divergent 실측(2026-10-09 · 아홉 언어 측정 레그 둘 + PM 재실행 · 가짜 IdP · k1 과 위조 kid 를 번갈아 검증 10 회 · 캐시를 낡게 만든 뒤 /certs 503): node 수명 600 s(jwt.ts cacheMaxAge) → /certs +10 · k1 0/5 (#743 뒤 창마다 1) · .NET 12 h + 지터(AutomaticRefreshInterval) → discovery·/certs 각 +10 · k1 5/5 — 낡은 설정으로 받는다 (#744 뒤 창마다 1) · java·kotlin Nimbus 기본 TTL 300 s · refresh-ahead · outage tolerance 꺼짐 → /certs 2(rate limit) · k1 0/5 · python·go·rust·php·ruby 수명 없음(적재 뒤에는 kid miss 의 강제 재조회 때만 다시 받는다) → 낡지 않는다(+1 · 5/5). 정할 것 둘 — (1) 장애 중에 낡은 키로 계속 받는가(가용성 ↔ 회전·폐기된 키 신뢰 연장 · Nimbus 는 outageTolerant 가 그 손잡이) · (2) 수명을 맞추는가(수명 없는 다섯은 빠진 키를 새 kid 토큰이 올 때까지 쥔다). 다시 재는 명령은 #743·#744 의 시험과 측정 레그의 하네스(커밋 안 함)다. -->
+- [x] `python-sync-post-retried` **[M/S · 신규·닫힘 2026-10-09 #747]** sync 세션이 토큰·admin POST 를 한 번 더 보냈다(13 종 2 → 1) — python-keycloak 이 POST 를 재시도 목록에 넣는다. TLS 레코드가 깨지면 메서드와 무관하게 재시도돼 `Retry(0)` 이어야 했다
+- [ ] `oauth-error-field-echo-unmasked` **[L/S · 신규 2026-10-09 · python·go·java·kotlin (+재스캔)]** IdP 가 시크릿·토큰을 `error_description` 이 아니라 OAuth `error` 에 되울리면 공개 오류 속성에 그대로 남는다 · `python/src/keycloak_sdk/_internal/lower.py`
+<!-- oauth-error-field-echo-unmasked(2026-10-09 #741 구현 레그 재스캔): python KeycloakAuthError.error(lower.py:118-120)는 JSON error 값을 그대로 싣는다 — sync·aio client_credentials 에서 vars(e) == {'error': 'sec+ret%2F%2B%3D~0005%C3%A9'}, refresh 는 호출자의 refresh token. 문법 검사(NQSCHAR)로는 못 막는다 — 폼 인코딩 꼴이 문법 안이다. go 는 wave4-hardening-go (4)(문법 밖 값을 그대로)와 같은 자리. JVM 둘(secret-echo 구현 레그 재스캔)도 getError()·oauthError 가 IdP 의 error 코드를 그대로 넘긴다. 나머지 다섯(node·rust·.NET·php·ruby)은 미측정. -->
+- [ ] `backoff-jitter-redrawn-per-check` **[L/S · 신규 2026-10-09 · 백오프를 가진 언어 전부]** 실패 백오프의 지터를 검사마다 다시 뽑아 창이 0.5× 쪽으로 줄어든다(장애 중 IdP 요청이 설계의 최대 두 배) · `ruby/lib/keycloak_sdk/jwks_store.rb`
+<!-- backoff-jitter-redrawn-per-check(2026-10-09 #743 Grok 레그 둘 + node 구현 레그): delayMs() 가 remainingMs() 안에서 jitter() 를 부른다 — 190 ms 에 0.99 를 뽑으면 거부, 191 ms 에 0.5 를 뽑으면 IdP 로 나간다. 참조 구현 ruby 가 같은 관용이라 node 만 고치면 언어 간 드리프트 — 실패 때 한 번 뽑아 고정하는 것으로 아홉이 함께 옮긴다(security.md 백오프 절). 언어별 실측은 아직. -->
+- [ ] `backoff-counts-caller-cancellation` **[L/S · 신규 2026-10-09 · .NET (+재스캔)]** 호출자가 취소한 콜드 적재가 fetch 실패로 세어져, 정상 IdP 에서도 그 창 동안 검증이 거부된다 · `dotnet/src/Xzawed.Keycloak.Sdk/FailureBackoff.cs`
+<!-- backoff-counts-caller-cancellation(2026-10-09 #744 Grok 레그 · PM 코드 판독): main 의 BackoffConfigurationManager 는 catch (Exception e) when (e is not KeycloakTransportException) 로 취소까지 셌고, #744 의 리트리버도 catch-all 이다 — 회귀 아님. 미측정. 정할 것: 취소를 실패로 셀 것인가 — 세지 않으면 취소 폭풍이 IdP 로 그대로 나가고(security.md 의 「취소에 도장을 되돌리지 않는다」와 같은 축), 세면 정상 IdP 에서 최대 한 창(≤ 5 s) 거부. 다른 여섯 언어의 판정은 재스캔. -->
+- [ ] `token-provider-outage-refetch-per-call` **[L/S · 신규 2026-10-09 · 판정 · node·.NET (+재스캔)]** 토큰이 만료된 뒤 IdP 가 내려가 있으면 토큰 프로바이더가 호출마다 그랜트를 다시 보낸다 — 호출자 주도 1:1 · `node/src/token-provider.ts`
+<!-- token-provider-outage-refetch-per-call(2026-10-09 #743 · #744 구현 레그 재스캔): node token-provider.ts — 만료 뒤 IdP 장애에서 호출 5 → 그랜트 5(정상 대조 5 → 1) · .NET admin 토큰 프로바이더 — admin 호출 10 → 그랜트 10. 미인증 트래픽으로는 못 닿고(앱이 직접 부르는 호출) JWKS 백오프와 달리 위조 입력으로 부풀릴 수 없다. 백오프를 걸지는 아홉 판정. -->
+- [x] `secret-echo-form-encoded-rescan` **[M/S · 닫힘 2026-10-09 #741 #745 #746]** 아홉을 재 보니 샌 곳은 넷이었다 — java auth(폼·RFC 3986·userinfo 그대로 · raw 는 앞 낱말) · kotlin auth(RFC 3986) · JVM admin(원인 사슬의 Response 가 401 본문) · python admin(`keycloak_error`). JVM 은 4,096 자 넘는 설명을 싣지 않는다(가리기 최악 2.9 초). 남은 것은 `oauth-error-field-echo-unmasked`
+- [x] `dotnet-admin-bogus-charset-escape` **[M/S · 닫힘 2026-10-09 #740]** 2xx·오류 상태·UTF-7 이 다 샜다 — 던진 자리(System.Text 인코딩 조회)로 걸러 SDK 예외로. 디코드되는 오류 본문의 메시지 삽입은 `error-message-surface-unspecified`
 - [ ] `wave4-hardening-dotnet` **[L/S · 신규 2026-10-05]** 키 회전 뒤 첫 토큰을 거부한다(기본 비차단 갱신) · 요청 본문의 짝 없는 서로게이트를 U+FFFD 로 보낸다 · 거부 뒤 1 MiB 를 비운다 · NUL·DEL 헤더 · `dotnet/src/Xzawed.Keycloak.Sdk/`
 <!-- wave4-hardening-dotnet(2026-10-05 .NET 구현·검증 레그): (1) 회전된 키의 첫 토큰이 IDX10503 으로 거부되고 다음 것은 받는다(수정 전후 같음) — JsonWebTokenHandler.ValidateToken.cs:610 RequestRefresh → ConfigurationManager.cs:506 Task.Run(CancellationToken.None)·:507 창 도장, :613-616 재시도는 다른 설정 객체가 왔을 때만. 옵트인 AppContext 스위치 Switch.Microsoft.IdentityModel.UpdateConfigAsBlocking(:486)은 미측정. (2) admin 쓰기 열 가지가 짝 없는 U+D800 을 U+FFFD 로 써 보낸다(서버가 받은 값 'a' U+FFFD 'b') — 응답 쪽은 거부하니 비대칭이다(main 같음). (3) 상한 거부 뒤 SocketsHttpHandler 가 연결 재사용을 위해 MaxResponseDrainSize(기본 1 MiB)까지 비운다 — 32 MiB 청크 본문에 소켓 2,101,248 B 읽음·4.1 MB 할당, Content-Length 는 안 비운다. 후보: 파사드 핸들러만 0. (4) Authorization 의 NUL·DEL 을 거르지 않는다 — 서버 400 만 막는다. (5) 코드 판독: AdminClient.Undecodable 의 status-0 갈래는 응답 전 JsonException 을 전부 「요청 본문을 인코딩할 수 없다」로 부른다(BearerHandler 의 try 밖에서 부르는 소비자 ITokenProvider 가 던진 것도). admin 오류 본문의 bearer 되울림은 error-message-surface-unspecified. -->
 - [ ] `wave4-hardening-go` **[L/S · 신규 2026-10-05]** 공유 비행의 select 동점 · 표시된 ctx 의 postForm 오류 타입 · CR·LF·NUL bearer 를 캐시해 불투명 오류 · `OAuthError` 가 문법 밖 값을 그대로 싣는다 · `go/`
@@ -610,8 +619,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - **되살릴 조건**: 위 우회를 `probe.sh` 에 옵션으로 넣을지, 언어별 프로브 러너를 따로 둘지 판정. 지금은 그 절차를 손으로 밟았고 본 트리 불변·기준선·변이 적용 셋을 같은 방식으로 지켰다.
   - ⚠️ **넷이 아니라 다섯이고, 그 하나는 등록부를 쓴 뒤에 생겼다** — 이 부류는 **지금도 늘고 있다**(실측 2026-09-07, 독립 레그 둘): kotlin 3(`tokens.kt:18`·`tokenprovider.kt:18`·`jwt.kt:126`) · python 1(`_internal/jwt.py:43`) · dotnet 1(`KeycloakConfig.cs:29`). 축 3 은 `sd_no_literal` 호출 **4**(go·php·ruby·ruby-skew)로 그대로다. 값이 아직 안 갈렸다고 안전한 것이 아니다 — **자리가 늘고 있는 것**이 JWKS 가 10/30/60 으로 갈리기 직전과 같은 모양이다.
   - ⚠️ **required 손 표에 다섯 줄을 더하는 것이 답이 아니다** — 그것이 곧 `guard-detection-surface-hand-narrowed` 를 악화시킨다(그 파일은 `doc-facts` 안에서 `paths:` 없이 돈다). **언어 로컬 테스트**(그 언어의 2차 기본값이 config 값과 같은가)로 닫고, `test-security-defaults.sh` 는 건드리지 않는다.
-- [ ] `probe-build-failure-reported-caught` **[M/S · 신규 2026-10-05]** `probe.sh` 가 go 컴파일 실패를 CAUGHT 로 냈다 · `test-check-php-api-compat.sh:81` 은 V010 비-final 사례를 `--base v010-open` 으로 만들고 그 출력을 안 본다 · `scripts/probe.sh`
-<!-- probe-build-failure-reported-caught(2026-10-05 go 구현 레그): 변이가 「declared and not used: detached」 로 컴파일되지 않았는데 「CAUGHT — 검사 명령이 변이를 잡았다」. 러너는 go test 출력의 꼬리만 찍는다 — 실패 grep 이 --- FAIL: 이 아니라 assert.sh 줄에 맞는다. 제안: [build failed] 를 INVALID 로. 함정 (i)·(w) 는 사람이 지키는 규칙이고 이 항목은 도구가 막게 한다. 심각도: 거짓 CAUGHT 은 진입점 ① 부류이고 선례 probe-new-file-mutation-dies-silent 가 M 이었다. php-api-compat 81 행은 80 행(--base v010-base)과 달리 base=new 이고 out 을 아무 단언도 읽지 않는다. -->
+- [x] `probe-build-failure-reported-caught` **[M/S · 닫힘 2026-10-09 #738]** 컴파일·적재 실패 표식 14 개(실제 도구 출력 16 건에서 뽑음)면 INVALID · php-api-compat 81 행이 사유를 단언한다
 - [x] `selftest-assert-counter-subshell` **[M/M · 닫힘 2026-09-23 #540]** 어서션 카운터가 서브셸에서 증발한다 — 자가테스트 프레임워크의 구조적 맹점 · `scripts/test/assert.sh:10`
 - [ ] `guard-paths-never-exercised` **[M/M]** 자가테스트가 가드의 한 경로만 태워, 나머지 경로를 지워도 초록이다 · `scripts/test/test-check-coverage.sh:41`
 - [ ] `selftests-with-no-negative-case` **[M/L]** 일곱 자가테스트가 라이브 상태만 단언한다 — 판정기가 나쁜 입력을 거부한다는 증거가 없다 · `scripts/test/test-deploy-md.sh:7`
@@ -688,7 +696,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 86건 (열림 54)
+## D. 원장 밖 — 87건 (열림 55)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -777,7 +785,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - 자리를 늘리거나 그 모양을 FAIL 로 · `scripts/coverage-boundary.mjs`
 - [ ] `readme-quickstarts-ungated` **[M/M]** README가 정본이라 부르는 quickstart 예제가 어떤 게이트에도 안 걸린다 — 하네스가 실제로 돌리는 것은 별도 사본이다 · `node/examples/quickstart.ts:1`
 
-### 1.0 이후 운영 — 9
+### 1.0 이후 운영 — 20
 
 - [ ] `audit-2026-09-22-doc-code` **[H/L · 신규 2026-09-22]** 전체 코드·문서 감사(17 독립 레그 + 3렌즈 반증) 결과 **91 건 중 57 건이 과반 반증을 견뎠고**, 그중 **13 건이 닫혔다(high 는 6/6 전부)** — 나머지 44 건(medium 31 · low 12 · 계수 1)이 열려 있다 · `docs/superpowers/plans/remaining-work.md:1`
   - **방법과 계수**: 발견 레그 17(횡단 8 + 언어별 9) → 91 건. 렌즈 3(증거 재도출 · 기지사실 · 오탐)이 각 건을 독립 판정 → **생존 57**(high 14 · medium 31 · low 12), **기각 34**. high 14 는 5 렌즈 심층 반증 또는 사람의 직접 확인을 거쳤다. 범주 분포와 레그별 산출은 이 항목을 만든 PR 이 소유한다.
@@ -814,6 +822,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `keycloak-server-tag-ssot` **[M/L]** Keycloak 서버 태그가 18개 파일에 복제된 채 떠 있고, 호환성 표의 「actual 26.6.4」는 재현 불가한 스냅샷 · `docs/reference/compatibility.md:20`
 - [ ] `harness-consume-pin-unsupported` **[L/S]** 주간 OSV 감사가 지원 대상이 아닌 0.1.0 트리를 재고 있다 · `harness/install/consume/kotlin-app/build.gradle.kts:36`
 - [ ] `npm-rc-dist-tag-residue` **[L/S]** npm `rc` dist-tag 가 지원하지 않는 0.1.0-rc.2 를 아직 서빙한다 · `DEPLOY.md:503`
+- [ ] `php-admin-client-0.44-upgrade` **[L/M · 신규 2026-10-09]** Dependabot #750(fschmtt 0.43.0 → 0.44.0 + phpstan 셋)이 빨갛다 — admin 토큰 요청 실패가 다른 경로로 올라와 `ErrorTranslation` 이 「admin request failed unexpectedly」 로 떨어진다 · `php/src/Admin/ErrorTranslation.php`
+<!-- php-admin-client-0.44-upgrade(2026-10-09 #750 CI): AdminFacadeErrorLeakTest·AdminBearerHeaderLeakTest 가 PHP 8.3·8.4·8.5 모두에서 잡았다 — 기대 「admin token request failed: HTTP 401 (invalid_client)」·KeycloakTransportError 「admin request unreachable」, 실제 KeycloakAdminError(상태 NULL). ⚠️ 정확 핀이다(php.md) — roles.update 가 fschmtt 의 @internal CommandExecutor 를 쓰는 것을 안전하게 만드는 것이 0.43.0 이고, 핀을 옮길 때의 드리프트 가드는 RolesRenameTest. 올림 = ErrorTranslation 적응 + CommandExecutor 재검증 + 실서버 통합 + CLAUDE.md 표(**0.43.0**) 함께. -->
 
 ### 완전성 비평 신규 — 6
 
