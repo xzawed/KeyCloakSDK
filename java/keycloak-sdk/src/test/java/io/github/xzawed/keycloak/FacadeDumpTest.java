@@ -117,7 +117,11 @@ class FacadeDumpTest {
   private static final String SDK_PACKAGE = KeycloakClient.class.getPackageName() + ".";
 
   /** 걷기에 안 닿아도 되는 상태 있는 타입과 그 이유. ⚠️ 이유 없는 면제는 넣지 않는다. */
-  private static final Map<String, String> EXEMPT = Map.of();
+  private static final Map<String, String> EXEMPT = Map.of(
+      "io.github.xzawed.keycloak.auth.BoundedTransport$TlsKey",
+      "auth·JWKS 운송의 프로세스 풀이 연결에 다는 상태 표식 — 정적 풀에만 산다(뿌리에서 닿지 않는다). TLS 근원(소켓 팩토리·"
+          + "검증기)의 약한 참조와 정체 해시뿐이라 비밀을 쥐지 않고, 문자열 표현은 상수다"
+          + "(BoundedTransportTest.tlsKey_isTheIdentityOfTheFactoryAndTheVerifier)");
 
   /**
    * 알려진 누출 — {@code "뿌리|카나리아"} 와 사유. ⚠️ 고쳐져 더 안 새면 **여기서 지워야 통과한다**(낡은 항목 검사).

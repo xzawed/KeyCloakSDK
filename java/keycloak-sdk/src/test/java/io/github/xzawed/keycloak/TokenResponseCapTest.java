@@ -20,12 +20,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
@@ -49,14 +45,12 @@ import org.junit.jupiter.params.provider.EnumSource;
  * <p>⚠️ 상한은 SDK 상수를 빌리지 않고 리터럴로 고정한다 — 상수를 빌리면 그 값이 바뀌어도 이 시험이 따라 움직여 아무것도 지키지
  * 않는다(교차언어 가드가 같은 값을 읽는다).
  *
- * <p>⚠️ <b>상한을 넘는 auth 레인의 청크 본문은 서버가 붙잡는다</b>({@link #send}) — 잰 할당이 SDK 가 정하는 몫이어야 해서다. 그
- * 레인의 운송(HttpURLConnection)은 닫을 때 소켓에 이미 와 있는 바이트를 한 번에 읽고({@code ChunkedInputStream.hurry()}) 청크
- * 하나마다 모은 배열을 새로 잡는다 — 할당이 그 양의 제곱으로 자라고, 그 양은 SDK 가 아니라 커널 수신 버퍼와 시점이 정한다(Linux
- * 루프백은 {@code tcp_rmem} 최대 6 MiB 까지 자란다). 실측(2026-10-05 · JDK 21 · Docker Linux): SDK 의 읽기는 매번 2,111,536
- * 바이트, 닫기는 6.5 MB–4.58 GB 였다(Windows 는 수신 버퍼가 작아 닫기가 0.77 MB 이하라 통과했다). 그래서 상한+{@value
- * #PACED_SLACK} 바이트까지만 곧바로 보내 닫기가 읽을 양을 고정하고, 클라이언트가 떠날 때까지 기다린다 — {@link #HOLD} 가
- * 지나도록 읽고 있는 클라이언트(상한 없는 읽기)에게는 나머지를 전속력으로 보내 그 할당을 잡는다. admin 레인(HttpCore 는 닫기가
- * 고정 버퍼로 비운다)과 Content-Length 본문(JDK 가 닫을 때 읽지 않고 끊는다)은 빠른 서버 그대로 — 현실적인 경우로 남긴다.
+ * <p>⚠️ <b>서버는 모든 레인에서 전속력으로 쓴다</b> — 잰 할당에는 거부한 뒤 연결을 닫는 비용까지 든다. auth 레인은 상한을
+ * 넘으면 연결을 끊는다(남은 본문을 읽지 않는다 — {@code CappedResponseSender}). 예전 운송(HttpURLConnection)은 닫을 때 소켓에
+ * 이미 와 있는 청크 바이트를 읽어 풀었고 할당이 그 양의 제곱으로 자라서(리눅스 루프백 · 4 KiB 청크 32 MiB 에 호출 하나 0.36–2.84
+ * GB — 등록부 {@code close-drain-time-unbounded}), 이 시험의 서버가 상한 너머를 붙잡아 그 몫을 뺐었다. Windows 루프백은 수신
+ * 버퍼가 작아 그 비용이 1 MB 아래였다 — 닫기의 회귀는 리눅스에서 드러난다. admin 레인은 닫을 때 HttpCore 가 남은 본문을 고정
+ * 버퍼로 비운다(시간은 본문 길이를 따르고 할당은 작다).
  */
 class TokenResponseCapTest {
   private static final int CAP = 1_048_576;
@@ -70,16 +64,6 @@ class TokenResponseCapTest {
   private static final String VERIFIER = "ZcapVERIFIER-0123456789abcdefghijklmnopqrstuvwxyz";
   /** 16·32 MiB 본문을 거부하는 호출 하나가 호출 스레드에서 할당해도 되는 상한 — 상한의 네 배. */
   private static final long ALLOCATION_BOUND = 4L * CAP;
-  /**
-   * 붙잡는 응답이 상한 너머로 곧바로 보내는 바이트 — 클라이언트가 상한+1 번째 바이트를 기다리지 않게 하는 여유이자 닫기가 읽을
-   * 양의 상한이다. 작게 둔다: 닫기의 할당이 16 KiB 면 53,488 · 64 KiB 면 619,600 · 256 KiB 면 8,782,288 바이트다(JDK 21 실측 —
-   * 256 KiB 는 닫기만으로 한도를 넘는다).
-   */
-  private static final int PACED_SLACK = 16 * 1024;
-  /** 붙잡는 시간 — 이만큼 지나도 연결이 살아 있으면 끝까지 읽는 클라이언트다(SDK 는 상한+1 바이트를 읽자마자 끊는다). */
-  private static final Duration HOLD = Duration.ofSeconds(3);
-  /** 붙잡는 동안 클라이언트가 떠났는지 보는 간격 — 떠난 클라이언트에게 쓰면 실패한다. */
-  private static final long PROBE_MILLIS = 50;
 
   /** 레인과 그 레인이 상한을 넘었을 때의 메시지. */
   enum Lane {
@@ -97,15 +81,8 @@ class TokenResponseCapTest {
     }
   }
 
-  /**
-   * 응답 하나 — {@code head} 뒤를 JSON 공백으로 채워 정확히 {@code size} 바이트(0 이면 {@code head} 그대로). {@code clientLeft} 가
-   * 있으면 붙잡는 응답이고({@link #send}) 서버가 그 결말을 채운다 — 붙잡힌 동안 클라이언트가 떠났으면 true.
-   */
-  private record Reply(int status, String head, long size, boolean chunked, CompletableFuture<Boolean> clientLeft) {
-    Reply(int status, String head, long size, boolean chunked) {
-      this(status, head, size, chunked, null);
-    }
-
+  /** 응답 하나 — {@code head} 뒤를 JSON 공백으로 채워 정확히 {@code size} 바이트(0 이면 {@code head} 그대로). */
+  private record Reply(int status, String head, long size, boolean chunked) {
     long length() {
       return size > 0 ? size : head.getBytes(StandardCharsets.UTF_8).length;
     }
@@ -118,8 +95,6 @@ class TokenResponseCapTest {
   private final AtomicReference<Reply> logoutReply = new AtomicReference<>();
   private final AtomicInteger adminHits = new AtomicInteger();
   private volatile int adminBearerLength = -1;
-  /** 마지막으로 준비한 응답이 붙잡는 응답이면 그 결말(아니면 null). */
-  private final AtomicReference<CompletableFuture<Boolean>> clientLeft = new AtomicReference<>();
 
   @BeforeEach void start() throws IOException {
     server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -153,59 +128,25 @@ class TokenResponseCapTest {
     }
   }
 
-  /**
-   * 본문을 64 KiB 씩 흘려 보낸다 — 32 MiB 를 메모리에 만들지 않는다. 클라이언트가 상한에서 끊으면 쓰기가 실패한다(기대한 결말).
-   * 붙잡는 응답은 상한+{@value #PACED_SLACK} 바이트까지만 곧바로 보내고 클라이언트가 떠날 때까지 기다린다({@link #probeUntilGone}) —
-   * {@link #HOLD} 가 지나도록 떠나지 않으면 끝까지 읽는 클라이언트이므로 나머지를 전속력으로 보낸다.
-   */
+  /** 본문을 64 KiB 씩 전속력으로 흘려 보낸다 — 32 MiB 를 메모리에 만들지 않는다. 클라이언트가 상한에서 끊으면 쓰기가 실패한다(기대한 결말). */
   private static void send(HttpExchange ex, Reply r) throws IOException {
     byte[] head = r.head().getBytes(StandardCharsets.UTF_8);
     ex.getResponseHeaders().add("Content-Type", "application/json");
     ex.sendResponseHeaders(r.status(), r.chunked() ? 0 : r.length());
     byte[] spaces = new byte[64 * 1024];
     Arrays.fill(spaces, (byte) ' ');
-    boolean stayed = false;
     try (OutputStream os = ex.getResponseBody()) {
       os.write(head);
-      long left = r.length() - head.length;
-      if (r.clientLeft() != null) {
-        long quick = (long) CAP + PACED_SLACK - head.length;
-        pad(os, spaces, quick);
-        os.flush();
-        left -= quick + probeUntilGone(os);
-        stayed = true;
+      for (long left = r.length() - head.length; left > 0; ) {
+        int k = (int) Math.min(left, spaces.length);
+        os.write(spaces, 0, k);
+        left -= k;
       }
-      pad(os, spaces, left);
     } catch (IOException clientWentAway) {
       // 클라이언트가 상한에서 연결을 끊었다
-    } catch (InterruptedException stopped) {
-      Thread.currentThread().interrupt(); // 시험이 끝나 서버를 멈췄다
     } finally {
-      if (r.clientLeft() != null) r.clientLeft().complete(!stayed);
       ex.close();
     }
-  }
-
-  private static void pad(OutputStream os, byte[] spaces, long n) throws IOException {
-    for (long left = n; left > 0; ) {
-      int k = (int) Math.min(left, spaces.length);
-      os.write(spaces, 0, k);
-      left -= k;
-    }
-  }
-
-  /**
-   * {@value #PROBE_MILLIS} ms 마다 공백 한 바이트(청크 하나)를 써 본다 — 떠난 클라이언트에게 쓰면 실패한다(그 {@link IOException} 을
-   * 그대로 던진다). {@link #HOLD} 가 지나도록 살아 있으면 써 본 바이트 수를 돌려준다.
-   */
-  private static long probeUntilGone(OutputStream os) throws IOException, InterruptedException {
-    long probes = 0;
-    for (long end = System.nanoTime() + HOLD.toNanos(); System.nanoTime() < end; probes++) {
-      Thread.sleep(PROBE_MILLIS);
-      os.write(' ');
-      os.flush();
-    }
-    return probes;
   }
 
   private KeycloakConfig config() {
@@ -216,48 +157,20 @@ class TokenResponseCapTest {
 
   /** 레인의 엔드포인트가 낼 성공 응답 — 토큰 레인은 {@code token} 을 access_token 에, introspect 는 username 에 싣는다. */
   private void replyOk(Lane lane, String token, long size, boolean chunked) {
-    CompletableFuture<Boolean> held = pacing(lane, size, chunked);
     switch (lane) {
       case INTROSPECT -> introspectReply.set(new Reply(200,
-          "{\"active\":true,\"username\":\"" + token + "\",\"client_id\":\"app\"}", size, chunked, held));
-      case LOGOUT -> logoutReply.set(new Reply(200, "{}", size, chunked, held));
+          "{\"active\":true,\"username\":\"" + token + "\",\"client_id\":\"app\"}", size, chunked));
+      case LOGOUT -> logoutReply.set(new Reply(200, "{}", size, chunked));
       default -> tokenReply.set(new Reply(200, "{\"access_token\":\"" + token + "\",\"token_type\":\"Bearer\","
-          + "\"expires_in\":300,\"refresh_token\":\"" + RT_CANARY + "\"}", size, chunked, held));
+          + "\"expires_in\":300,\"refresh_token\":\"" + RT_CANARY + "\"}", size, chunked));
     }
     adminHits.set(0);
     adminBearerLength = -1;
   }
 
-  /**
-   * 붙잡을 응답이면 그 결말 자리(아니면 null)를 {@link #clientLeft} 에도 둔다 — 상한+{@value #PACED_SLACK} 바이트를 넘는 auth
-   * 레인의 청크 본문만 붙잡는다(클래스 설명).
-   */
-  private CompletableFuture<Boolean> pacing(Lane lane, long size, boolean chunked) {
-    CompletableFuture<Boolean> held = chunked && lane != Lane.ADMIN && size > CAP + PACED_SLACK ? new CompletableFuture<>() : null;
-    clientLeft.set(held);
-    return held;
-  }
-
-  /** 붙잡은 응답이었으면 클라이언트가 붙잡힌 동안 떠났어야 한다 — 끝까지 읽는 클라이언트는 나머지를 받았다. */
-  private void expectLeftWhileHeld(Lane lane, String label, List<String> wrong) {
-    CompletableFuture<Boolean> held = clientLeft.get();
-    if (held == null) return;
-    try {
-      if (!held.get(HOLD.toMillis() + 10_000, TimeUnit.MILLISECONDS)) {
-        wrong.add(lane + " " + label + ": 붙잡힌 " + HOLD.toSeconds() + " 초 동안 떠나지 않았다 — 본문을 끝까지 읽었다");
-      }
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt(); // 표시를 삼키지 않는다 — 시험은 아래 어긋남으로 실패한다
-      wrong.add(lane + " " + label + ": 서버가 붙잡은 응답의 결말을 기다리다 인터럽트됐다 — " + e);
-    } catch (ExecutionException | TimeoutException e) {
-      wrong.add(lane + " " + label + ": 서버가 붙잡은 응답의 결말을 알리지 않았다 — " + e);
-    }
-  }
-
   /** 레인의 엔드포인트가 낼 OAuth 오류(400) — 본문을 {@code size} 바이트로 채운다. */
   private void replyError(Lane lane, long size, boolean chunked) {
-    Reply r = new Reply(400, "{\"error\":\"invalid_grant\",\"error_description\":\"Zcap bad grant\"}", size, chunked,
-        pacing(lane, size, chunked));
+    Reply r = new Reply(400, "{\"error\":\"invalid_grant\",\"error_description\":\"Zcap bad grant\"}", size, chunked);
     switch (lane) {
       case INTROSPECT -> introspectReply.set(r);
       case LOGOUT -> logoutReply.set(r);
@@ -375,8 +288,8 @@ class TokenResponseCapTest {
   }
 
   /**
-   * (3) 16·32 MiB 본문은 실패하고, 호출 스레드의 할당은 상한 근처에서 멈춘다(수정 전 auth 레인은 약 235 MB). auth 레인의 32 MiB
-   * 청크는 붙잡는 서버이고, 16 MiB Content-Length 와 admin 레인은 빠른 서버다(클래스 설명).
+   * (3) 16·32 MiB 본문은 실패하고, 호출 스레드의 할당은 상한 근처에서 멈춘다(수정 전 auth 레인은 약 235 MB) — 거부한 뒤
+   * 연결을 닫는 비용까지 든다(서버는 전속력 — 클래스 설명).
    */
   @ParameterizedTest
   @EnumSource(Lane.class)
@@ -390,11 +303,9 @@ class TokenResponseCapTest {
       String label = (c[0] >> 20) + " MiB " + (chunked ? "chunked" : "content-length");
       replyOk(lane, "AT-huge", c[0], chunked);
       Measured m = measured(lane);
-      System.out.println("[TokenResponseCapTest] " + lane + " " + label + (clientLeft.get() != null ? " (held)" : "")
-          + " → allocated " + m.allocated() + " bytes");
+      System.out.println("[TokenResponseCapTest] " + lane + " " + label + " → allocated " + m.allocated() + " bytes");
       expectOverCap(lane, label, m.thrown(), wrong);
       if (m.allocated() > ALLOCATION_BOUND) wrong.add(lane + " " + label + ": 할당 " + m.allocated() + " > " + ALLOCATION_BOUND);
-      expectLeftWhileHeld(lane, label, wrong);
     }
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
   }
@@ -437,12 +348,10 @@ class TokenResponseCapTest {
     call(lane);
     replyError(lane, 32L << 20, true);
     Measured m = measured(lane);
-    System.out.println("[TokenResponseCapTest] " + lane + " 400 32 MiB chunked" + (clientLeft.get() != null ? " (held)" : "")
-        + " → allocated " + m.allocated() + " bytes");
+    System.out.println("[TokenResponseCapTest] " + lane + " 400 32 MiB chunked → allocated " + m.allocated() + " bytes");
     if (!(m.thrown() instanceof KeycloakTransportException)) wrong.add(lane + " 400 32 MiB: 전송 실패여야 한다 — " + m.thrown());
     if (m.allocated() > ALLOCATION_BOUND) wrong.add(lane + " 400 32 MiB: 할당 " + m.allocated() + " > " + ALLOCATION_BOUND);
     if (adminHits.get() != 0) wrong.add(lane + " 400 32 MiB: admin 요청이 나갔다");
-    expectLeftWhileHeld(lane, "400 32 MiB", wrong);
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
   }
 
