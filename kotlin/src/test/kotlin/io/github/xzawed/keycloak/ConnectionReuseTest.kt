@@ -279,7 +279,8 @@ private fun <T> crtWithProperties(
 
 private fun crtElapsedMillis(start: Long): Long = (System.nanoTime() - start) / 1_000_000
 
-// 만든 TLS 소켓을 강하게 쥐는 팩토리 — 운송이 넘기지 못한 소켓을 닫았는지 본다(쥐지 않으면 GC 가 대신 닫아 결과가 그때그때 다르다).
+// 만든 TLS 소켓을 쥐는 팩토리 — 운송이 넘기지 못한 그 소켓 객체를 닫았는지 본다. 서버 쪽에서는 구별되지 않는다: 닫지 않아도 교환의 abort 가
+// 그 아래 평문 소켓(connectSocket 전에 연결에 묶인다)을 SO_LINGER 0 으로 끊는다.
 private class CrtRecordingFactory(
     private val delegate: SSLSocketFactory,
 ) : SSLSocketFactory() {
@@ -809,10 +810,10 @@ internal class ConnectionReuseTest {
     }
 
     // TLS 단계의 런타임 예외는 그대로 나가고 — HttpURLConnection 도 같은 예외를 그대로 냈다 — 그 TLS 소켓은 넘기기 전에 닫힌다(Java 의
-    // SonarCloud S2095 수정): 그 소켓은 연결에 묶이기 전이라 HttpClient 는 닫지 않는다(연결 연산자에 finally 가 없다). 두 자리 — 핸드셰이크 뒤
-    // 검증기가 던진 IllegalStateException · 핸드셰이크 전 https.protocols 의 없는 규약에 setEnabledProtocols 가 던진 IllegalArgumentException.
-    // ⚠️ 시험은 만들어진 TLS 소켓을 강하게 쥔다 — 쥐지 않으면 닫지 않은 소켓도 GC 의 Cleaner 가 곧 닫아 서버가 끝을 보므로, 닫기를 지운
-    // 변이(k04)가 할당이 많은 스위트에서 통과했다.
+    // SonarCloud S2095 수정): 그 TLS 소켓은 연결에 묶이기 전이라 HttpClient 는 그 객체를 닫지 않는다. 두 자리 — 핸드셰이크 뒤 검증기가 던진
+    // IllegalStateException · 핸드셰이크 전 https.protocols 의 없는 규약에 setEnabledProtocols 가 던진 IllegalArgumentException.
+    // ⚠️ 서버가 보는 끝으로는 닫기를 지운 변이(k04)를 못 잡는다 — 그 아래 평문 소켓은 connectSocket 전에 연결에 묶여 교환의 abort 가
+    // SO_LINGER 0 으로 끊는다(k04 실측: 평문 소켓 닫힘 · 서버는 「Connection reset」 · TLS 소켓 객체는 열림). 그래서 시험이 TLS 소켓을 쥐고 본다.
     @Test
     @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     fun `a RuntimeException in the TLS stage passes through and closes the TLS socket`() {
