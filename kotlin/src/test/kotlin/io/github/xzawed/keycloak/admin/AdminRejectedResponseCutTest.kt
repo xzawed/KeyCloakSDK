@@ -4,7 +4,6 @@ import io.github.xzawed.keycloak.KeycloakConfig
 import io.github.xzawed.keycloak.KeycloakTransportException
 import io.github.xzawed.keycloak.TransportTestTls
 import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
@@ -40,7 +39,8 @@ import kotlin.test.assertTrue
 // 따라 자랐고, 멈춘 서버 앞에서 거부가 읽기 타임아웃을 기다렸다. 비운 연결은 풀로 돌아가 다음 호출이 다시 썼다.
 //
 // 계약: (1) 거부 자리 모두 서버가 상한과 소켓 버퍼를 넘어 쓰지 못한다. (2) 멈춘 서버 앞의 거부는 읽기 타임아웃을 기다리지 않는다(평문 ·
-// TLS 1.3). (3) 1 바이트 청크 본문의 할당은 상한 너머의 길이를 따라 자라지 않는다. (4) 끊긴 연결은 다시 쓰이지 않는다. 대조: EOF 까지
+// TLS 1.3). (3) 1 바이트 청크 본문도 상한 너머를 읽지 않는다 — 서버가 쓴 양이 묶이고 할당이 길이를 따라 자라지 않는다. (4) 끊긴
+// 연결은 다시 쓰이지 않는다. 대조: EOF 까지
 // 읽은 응답의 연결은 지금처럼 다시 쓰인다. 공개 API 와 로컬 루프백만 쓴다. ⚠️ admin 호출은 Dispatchers.IO 에서 돈다 — 할당은 모든
 // 스레드의 합으로 잰다(JDK 21 API — 17 이면 그 단언을 건너뛴다).
 private const val ARC_CAP = 1_048_576
@@ -55,8 +55,18 @@ private const val ARC_HUGE = 64L shl 20
 // 끊긴 교환에서 서버가 써도 되는 본문 — 상한 + 소켓 버퍼(리눅스 tcp_rmem 6 MiB · tcp_wmem 4 MiB)를 넉넉히 넘는 16 MiB.
 private const val ARC_WRITTEN_BOUND = 16L shl 20
 
-// 1 바이트 청크 본문이 길어질 때 더 써도 되는 할당 — 상한 너머는 읽지 않으므로 소음뿐이다.
-private const val ARC_ALLOCATION_GROWTH_BOUND = 8L * ARC_CAP
+// 1 바이트 청크 본문의 두 길이 — 상한 바로 위(기준)와 그 8 배. 선 위는 본문의 6 배다(「1\r\n \r\n」).
+private val ARC_CHUNKED_SIZES = longArrayOf(2L shl 20, 16L shl 20)
+
+// 1 바이트 청크로 끊긴 교환에서 서버가 써도 되는 본문 — 판정이 읽는 상한+1(선 위 6 MiB)에 소켓 버퍼(리눅스 최대 약 10 MiB 의 선 위 =
+// 본문 1.7 MiB)를 넉넉히 넘는 4 MiB. 결정적인 신호다: 끊지 않으면 닫기가 16 MiB 본문을 끝까지 읽어 서버가 전부 쓴다.
+private const val ARC_CHUNKED_WRITTEN_BOUND = 4L shl 20
+
+// 한 길이를 이만큼 재고 가장 작은 할당을 쓴다 — 같은 일의 할당이 JIT 상태에 따라 실행마다 갈린다(모든 스레드 합 56–74 MB 를 봤다).
+private const val ARC_ALLOCATION_REPEATS = 3
+
+// 16 MiB 와 2 MiB 의 최소 할당 차의 한도 — 근거(측정)는 그 시험(one-byte chunks past the cap …)의 머리에.
+private const val ARC_ALLOCATION_GROWTH_BOUND = 128L shl 20
 
 private fun arcLatin1(s: String): ByteArray = s.toByteArray(Charsets.ISO_8859_1)
 
@@ -310,33 +320,26 @@ private fun arcTlsAdmin(
     }
 }
 
-// 이 JVM 의 모든 스레드가 지금까지 할당한 바이트 — JDK 21 API 라(시험 컴파일은 17 API 로 묶여 있다) 반사로 부른다.
-private fun arcAllocatedAllThreads(): Long {
-    val bean = ManagementFactory.getThreadMXBean()
-    assumeTrue(bean is com.sun.management.ThreadMXBean, "스레드 할당 계수기가 없는 JVM")
-    val total = runCatching { com.sun.management.ThreadMXBean::class.java.getMethod("getTotalThreadAllocatedBytes") }.getOrNull()
-    assumeTrue(total != null, "JDK 21 미만 — 모든 스레드의 할당 합계를 못 잰다")
-    val bytes = total!!.invoke(bean) as Long
-    assumeTrue(bytes >= 0, "스레드 할당 계수가 꺼져 있다")
-    return bytes
+// 이 JVM 의 모든 스레드의 할당 합계를 읽는 함수 — admin 호출은 Dispatchers.IO 에서 돈다. JDK 21 API(getTotalThreadAllocatedBytes)라
+// (시험 컴파일은 17 API 로 묶여 있다) 반사로 부르고, 없거나 꺼져 있으면 null 이다(그때는 할당 단언만 건너뛴다).
+private fun arcTotalAllocation(): (() -> Long)? {
+    val bean = ManagementFactory.getThreadMXBean() as? com.sun.management.ThreadMXBean ?: return null
+    val total =
+        runCatching { com.sun.management.ThreadMXBean::class.java.getMethod("getTotalThreadAllocatedBytes") }.getOrNull()
+            ?: return null
+    if ((total.invoke(bean) as Long) < 0) return null
+    return { total.invoke(bean) as Long }
 }
 
-// admin 호출 하나 — 던진 것(없으면 null), 걸린 시간, 모든 스레드의 할당(measure 일 때만).
+// admin 호출 하나 — 던진 것(없으면 null)과 걸린 시간. 할당은 그 시험이 [arcTotalAllocation] 으로 따로 잰다.
 private class ArcOutcome(
     val thrown: Throwable?,
     val millis: Long,
-    val allocated: Long,
 ) {
-    fun describe(): String =
-        (if (thrown == null) "accepted" else "${thrown.javaClass.simpleName}(${thrown.message})") +
-            " · $millis ms · allocated $allocated B"
+    fun describe(): String = (if (thrown == null) "accepted" else "${thrown.javaClass.simpleName}(${thrown.message})") + " · $millis ms"
 }
 
-private fun arcCall(
-    admin: AdminClient,
-    measure: Boolean = false,
-): ArcOutcome {
-    val before = if (measure) arcAllocatedAllThreads() else 0L
+private fun arcCall(admin: AdminClient): ArcOutcome {
     val start = System.nanoTime()
     val thrown =
         try {
@@ -345,8 +348,7 @@ private fun arcCall(
         } catch (t: Throwable) {
             t
         }
-    val millis = (System.nanoTime() - start) / 1_000_000
-    return ArcOutcome(thrown, millis, if (measure) arcAllocatedAllThreads() - before else 0L)
+    return ArcOutcome(thrown, (System.nanoTime() - start) / 1_000_000)
 }
 
 private fun arcExpectRejected(
@@ -429,29 +431,57 @@ internal class AdminRejectedResponseCutTest {
         assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
     }
 
-    // (3) 1 바이트 청크 본문 — 상한까지는 읽어야 하지만(판정) 그 너머의 길이가 할당을 키우지 않는다. 2 MiB 와 8 MiB 의 할당 차가 소음
-    // 안이다(수정 전: 닫기가 청크 머리마다 문자열을 만들며 끝까지 비웠다).
+    // (3) 1 바이트 청크 본문 — 상한까지는 읽어야 하지만(판정) 그 너머는 읽지 않는다(Java 동형). 두 신호: (a) 결정적 — 16 MiB 본문에서
+    // 서버가 쓴 본문이 ARC_CHUNKED_WRITTEN_BOUND 를 넘지 않는다. (b) 할당 — 16 MiB 와 2 MiB 의 최소 할당 차(모든 스레드 합)가
+    // ARC_ALLOCATION_GROWTH_BOUND 안이다. 한 길이를 ARC_ALLOCATION_REPEATS 번 재고 최소를 쓴다 — 한 번 잰 차는 실행마다의 할당 소음에
+    // 흔들렸다(CI 의 Java 쌍둥이가 서버가 쓴 양이 같은 채 8 MiB 한도를 넘었다). 예열도 1 바이트 청크의 거부 경로로 한다. 모든 스레드의
+    // 할당 합계가 없는 JVM(JDK 21 미만)에서는 (b) 만 건너뛴다. 한도의 근거(2026-10-10 실측, 로컬 Windows · JDK 21.0.8, 실행마다 새 시험
+    // JVM): 수정 뒤 열 번 — 한 번 잰 할당 55.8–56.1 MB(옛 시험이 한 번 잰 값은 56.0–73.7 MB 로 흔들림 17.7 MB · Java 쌍둥이의 두 갈래는
+    // 25.3 MB), 최소의 차 −0.06 MB, 서버가 쓴 양 1,120,062–1,190,062 B. 수정 전(main) 세 번 — 최소 할당 2 MiB 106.2 MB · 16 MiB
+    // 810.8 MB(차 704.6 MB), 서버가 16 MiB 를 다 썼다. 할당 한도 128 MiB(134.2 MB)는 양쪽에서 5 배 넘게 떨어지고(134.2/25.3 ·
+    // 704.6/134.2), 서버가 쓴 양의 한도 4 MiB 는 CI 의 Java 1.40 MB 보다 3 배 · 수정 전의 16 MiB 보다 4 배 떨어진다.
     @Test
-    @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
-    fun `one-byte chunks past the cap do not grow the allocation`() {
+    @Timeout(value = 180, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `one-byte chunks past the cap are not read on and do not grow the allocation`() {
+        val wrong = mutableListOf<String>()
+        val total = arcTotalAllocation()
         ArcRawServer(null).use { server ->
-            arcAdmin(server, Duration.ofSeconds(20)).use { arcCall(it) } // 예열 — 클래스 적재·JIT 를 잰 구간 밖으로
-            val sizes = longArrayOf(2L shl 20, 8L shl 20)
-            val allocated = LongArray(2)
-            for (i in sizes.indices) {
-                server.reply(arcOneByteChunks(sizes[i]))
-                val o = arcAdmin(server, Duration.ofSeconds(20)).use { arcCall(it, measure = true) }
-                server.awaitReply()
-                println(
-                    "[AdminRejectedResponseCutTest] 1 바이트 청크 ${sizes[i] shr 20} MiB → ${o.describe()} · " +
-                        "server wrote ${server.written.get()} B",
-                )
-                assertIs<KeycloakTransportException>(o.thrown, o.describe())
-                allocated[i] = o.allocated
+            server.reply(arcOneByteChunks(ARC_CHUNKED_SIZES[0]))
+            arcAdmin(server, Duration.ofSeconds(20)).use { arcCall(it) } // 예열 — 1 바이트 청크의 거부 경로를 잰 구간 밖에서 한 번 돈다
+            server.awaitReply()
+            val least = longArrayOf(Long.MAX_VALUE, Long.MAX_VALUE)
+            for (i in ARC_CHUNKED_SIZES.indices) {
+                repeat(ARC_ALLOCATION_REPEATS) { r ->
+                    server.reply(arcOneByteChunks(ARC_CHUNKED_SIZES[i]))
+                    val (o, allocated) =
+                        arcAdmin(server, Duration.ofSeconds(20)).use { admin ->
+                            val before = total?.invoke()
+                            val outcome = arcCall(admin)
+                            outcome to (if (before == null || total == null) null else total() - before)
+                        }
+                    val finished = server.awaitReply()
+                    val written = server.written.get()
+                    val label = "1 바이트 청크 ${ARC_CHUNKED_SIZES[i] shr 20} MiB #${r + 1}"
+                    println(
+                        "[AdminRejectedResponseCutTest] $label → ${o.describe()} · server wrote $written B · " +
+                            "[sample size=${ARC_CHUNKED_SIZES[i] shr 20} allocated=${allocated ?: -1} written=$written]",
+                    )
+                    arcExpectRejected(label, o, server, wrong)
+                    if (!finished || written > ARC_CHUNKED_WRITTEN_BOUND) {
+                        wrong += "$label: 거부한 뒤에도 본문을 읽었다 — server wrote $written B (한도 $ARC_CHUNKED_WRITTEN_BOUND)"
+                    }
+                    if (allocated != null) least[i] = minOf(least[i], allocated)
+                }
             }
-            val growth = allocated[1] - allocated[0]
-            assertTrue(growth < ARC_ALLOCATION_GROWTH_BOUND, "본문이 6 MiB 더 길어 할당이 $growth B 더 늘었다 — 상한 너머를 읽었다")
+            if (total != null) {
+                val growth = least[1] - least[0]
+                println("[AdminRejectedResponseCutTest] 1 바이트 청크 최소 할당 2 MiB ${least[0]} B · 16 MiB ${least[1]} B · [growth=$growth]")
+                if (growth >= ARC_ALLOCATION_GROWTH_BOUND) {
+                    wrong += "본문이 14 MiB 더 길어 최소 할당이 $growth B 더 늘었다(한도 $ARC_ALLOCATION_GROWTH_BOUND) — 상한 너머를 읽었다"
+                }
+            }
         }
+        assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
     }
 
     // (4) 끊긴 연결은 풀로 돌아가지 않는다 — 다음 호출은 새 연결을 맺어 성공한다. 수정 전: 비운 연결을 다시 썼다(연결 1).

@@ -46,12 +46,13 @@ import org.junit.jupiter.params.provider.EnumSource;
  * <p>수정 전(실측 2026-10-09, Windows · JDK 21.0.8 · 루프백 · main 80547df): {@code TokenResponseGuard} 는 상한+1 바이트를 읽고 거부한 뒤
  * 스트림을 닫았고, HttpCore 의 닫기({@code ContentLengthInputStream}·{@code ChunkedInputStream.close})는 나머지를 EOF 까지 비웠다 — 세
  * 거부 자리(미디어 타입 있는 2xx · 없는 2xx · 오류 상태) 모두 서버가 128 MiB 본문을 끝까지 썼고, 1 바이트 청크면 할당이 비운 양을
- * 따라 자랐고(2 MiB 67 MB · 8 MiB 232 MB), 상한+64 KiB 뒤 멈춘 서버 앞에서 거부가 읽기 타임아웃(3 초)을 기다렸다. 비운 연결은 풀로
- * 돌아가 다음 호출이 다시 썼다.
+ * 따라 자랐고(세 번 잰 최소로 2 MiB 80 MB · 16 MiB 811 MB — 2026-10-10 main), 상한+64 KiB 뒤 멈춘 서버 앞에서 거부가 읽기 타임아웃(3
+ * 초)을 기다렸다. 비운 연결은 풀로 돌아가 다음 호출이 다시 썼다.
  *
  * <p>계약: (1) 세 거부 자리 모두 서버가 상한과 소켓 버퍼를 넘어 쓰지 못한다. (2) 멈춘 서버 앞의 거부는 읽기 타임아웃을 기다리지 않는다 —
  * 평문과 TLS 1.3(JSSE 는 닫을 때 받은 바이트가 없으면 읽기 타임아웃만큼 한 번 더 읽는다 — 그래서 끊기 전에 그 타임아웃을 0 으로
- * 둔다). (3) 1 바이트 청크 본문의 할당은 상한 너머의 길이를 따라 자라지 않는다. (4) 끊긴 연결은 다시 쓰이지 않는다. 대조: EOF 까지
+ * 둔다). (3) 1 바이트 청크 본문도 상한 너머를 읽지 않는다 — 서버가 쓴 양이 묶이고 할당이 길이를 따라 자라지 않는다. (4) 끊긴 연결은
+ * 다시 쓰이지 않는다. 대조: EOF 까지
  * 읽은 응답(쓸 수 있는 토큰 · 상한 안에서 거부한 토큰)의 연결은 지금처럼 다시 쓰인다. 공개 API 와 로컬 루프백만 쓴다.
  */
 class AdminRejectedResponseCutTest {
@@ -64,8 +65,17 @@ class AdminRejectedResponseCutTest {
   private static final long HUGE = 64L << 20;
   /** 끊긴 교환에서 서버가 써도 되는 본문 — 상한 + 소켓 버퍼(리눅스 tcp_rmem 6 MiB · tcp_wmem 4 MiB)를 넉넉히 넘는 16 MiB. */
   private static final long WRITTEN_BOUND = 16L << 20;
-  /** 1 바이트 청크 본문이 길어질 때 더 써도 되는 할당 — 상한 너머는 읽지 않으므로 소음뿐이다. 수정 전 6 MiB 더 길면 165 MB 더 썼다. */
-  private static final long ALLOCATION_GROWTH_BOUND = 8L * CAP;
+  /** 1 바이트 청크 본문의 두 길이 — 상한 바로 위(기준)와 그 8 배. 선 위는 본문의 6 배다(「1\r\n \r\n」). */
+  private static final long[] CHUNKED_SIZES = {2L << 20, 16L << 20};
+  /**
+   * 1 바이트 청크로 끊긴 교환에서 서버가 써도 되는 본문 — 판정이 읽는 상한+1(선 위 6 MiB)에 소켓 버퍼(리눅스 최대 약 10 MiB 의 선 위 =
+   * 본문 1.7 MiB)를 넉넉히 넘는 4 MiB. 결정적인 신호다: 끊지 않으면 닫기가 16 MiB 본문을 끝까지 읽어 서버가 전부 쓴다.
+   */
+  private static final long CHUNKED_WRITTEN_BOUND = 4L << 20;
+  /** 한 길이를 이만큼 재고 가장 작은 할당을 쓴다 — 같은 일의 할당이 JIT 상태에 따라 실행마다 갈린다(CI 35.8 MB · 로컬 56 MB). */
+  private static final int ALLOCATION_REPEATS = 3;
+  /** 16 MiB 와 2 MiB 의 최소 할당 차의 한도 — 근거(측정)는 {@link #oneByteChunksPastTheCap_areNotReadOn_andDoNotGrowTheAllocation} 에. */
+  private static final long ALLOCATION_GROWTH_BOUND = 128L << 20;
 
   @TempDir static Path dir;
   /** 시험 키 저장소의 암호 — 실행마다 새로 만든다(저장소에 키도, 그 암호도 두지 않는다). */
@@ -436,32 +446,53 @@ class AdminRejectedResponseCutTest {
   }
 
   /**
-   * (3) 1 바이트 청크 본문 — 상한까지는 읽어야 하지만(판정) 그 너머의 길이가 할당을 키우지 않는다. 2 MiB 와 8 MiB 의 할당 차가 소음
-   * 안이다. 수정 전: 67 MB → 232 MB(닫기가 청크 머리마다 문자열을 만들며 끝까지 비웠다).
+   * (3) 1 바이트 청크 본문 — 상한까지는 읽어야 하지만(판정) 그 너머는 읽지 않는다. 두 신호: (a) 결정적 — 16 MiB 본문에서 서버가 쓴
+   * 본문이 {@link #CHUNKED_WRITTEN_BOUND} 를 넘지 않는다. (b) 할당 — 16 MiB 와 2 MiB 의 최소 할당 차가 {@link #ALLOCATION_GROWTH_BOUND}
+   * 안이다. 한 길이를 {@link #ALLOCATION_REPEATS} 번 재고 최소를 쓴다 — 같은 일의 할당이 실행마다 갈렸고(CI 의 2 MiB 35.8 MB · 같은
+   * 실행의 8 MiB 55.9 MB — 서버가 쓴 양은 1.39·1.40 MB 로 같았다) 그 소음이 한 번 잰 차를 8 MiB 한도 위로 밀었다. 예열도 1 바이트
+   * 청크의 거부 경로로 한다. 한도의 근거(2026-10-10 실측, 로컬 Windows · JDK 21.0.8, 실행마다 새 JVM): 수정 뒤 열 번 — 한 번 잰
+   * 할당이 30.6–55.9 MB 의 두 갈래라 최소의 차가 가장 크게 흔들려도 25.3 MB(CI 의 한 번 잰 차 20.0 MB), 실제 최소의 차 −0.1–0.6 MB ·
+   * 서버가 쓴 양 1,120,062–1,190,062 B. 수정 전(main) 세 번 — 최소 할당 2 MiB 80.3 MB · 16 MiB 810.7 MB(차 730.3–730.5 MB), 서버가
+   * 16 MiB 를 다 썼다(kotlin 704.6 MB). 할당 한도 128 MiB(134.2 MB)는 두 끝의 기하 평균 근처라 양쪽에서 5 배 넘게 떨어지고(134.2/25.3 ·
+   * 704.6/134.2), 서버가 쓴 양의 한도 4 MiB 는 CI 의 1.40 MB 보다 3 배 · 수정 전의 16 MiB 보다 4 배 떨어진다.
    */
-  @Test @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
-  void oneByteChunksPastTheCap_doNotGrowTheAllocation() throws Exception {
+  @Test @Timeout(value = 180, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void oneByteChunksPastTheCap_areNotReadOn_andDoNotGrowTheAllocation() throws Exception {
+    List<String> wrong = new ArrayList<>();
     try (RawServer server = new RawServer(null)) {
+      server.reply(oneByteChunks(CHUNKED_SIZES[0]));
       try (AdminClient warm = admin(server, Duration.ofSeconds(20))) {
-        call(warm); // 예열 — 클래스 적재·JIT 를 잰 구간 밖으로
+        call(warm); // 예열 — 1 바이트 청크의 거부 경로를 잰 구간 밖에서 한 번 돈다
       }
-      long[] allocated = new long[2];
-      long[] sizes = {2L << 20, 8L << 20};
-      for (int i = 0; i < sizes.length; i++) {
-        server.reply(oneByteChunks(sizes[i]));
-        Outcome o;
-        try (AdminClient admin = admin(server, Duration.ofSeconds(20))) {
-          o = call(admin);
+      server.awaitReply();
+      long[] least = {Long.MAX_VALUE, Long.MAX_VALUE};
+      for (int i = 0; i < CHUNKED_SIZES.length; i++) {
+        for (int r = 0; r < ALLOCATION_REPEATS; r++) {
+          server.reply(oneByteChunks(CHUNKED_SIZES[i]));
+          Outcome o;
+          try (AdminClient admin = admin(server, Duration.ofSeconds(20))) {
+            o = call(admin);
+          }
+          boolean finished = server.awaitReply();
+          long written = server.written.get();
+          String label = "1 바이트 청크 " + (CHUNKED_SIZES[i] >> 20) + " MiB #" + (r + 1);
+          System.out.println("[AdminRejectedResponseCutTest] " + label + " → " + o.describe() + " · server wrote " + written + " B"
+              + " · [sample size=" + (CHUNKED_SIZES[i] >> 20) + " allocated=" + o.allocated() + " written=" + written + "]");
+          expectRejected(label, o, server, wrong);
+          if (!finished || written > CHUNKED_WRITTEN_BOUND) {
+            wrong.add(label + ": 거부한 뒤에도 본문을 읽었다 — server wrote " + written + " B (한도 " + CHUNKED_WRITTEN_BOUND + ")");
+          }
+          least[i] = Math.min(least[i], o.allocated());
         }
-        server.awaitReply();
-        System.out.println("[AdminRejectedResponseCutTest] 1 바이트 청크 " + (sizes[i] >> 20) + " MiB → " + o.describe()
-            + " · server wrote " + server.written.get() + " B");
-        assertInstanceOf(KeycloakTransportException.class, o.thrown(), o::describe);
-        allocated[i] = o.allocated();
       }
-      long growth = allocated[1] - allocated[0];
-      assertTrue(growth < ALLOCATION_GROWTH_BOUND, () -> "본문이 6 MiB 더 길어 할당이 " + growth + " B 더 늘었다 — 상한 너머를 읽었다");
+      long growth = least[1] - least[0];
+      System.out.println("[AdminRejectedResponseCutTest] 1 바이트 청크 최소 할당 2 MiB " + least[0] + " B · 16 MiB " + least[1] + " B"
+          + " · [growth=" + growth + "]");
+      if (growth >= ALLOCATION_GROWTH_BOUND) {
+        wrong.add("본문이 14 MiB 더 길어 최소 할당이 " + growth + " B 더 늘었다(한도 " + ALLOCATION_GROWTH_BOUND + ") — 상한 너머를 읽었다");
+      }
     }
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
   }
 
   /** (4) 끊긴 연결은 풀로 돌아가지 않는다 — 다음 호출은 새 연결을 맺어 성공한다. 수정 전: 비운 연결을 다시 썼다(연결 1). */
