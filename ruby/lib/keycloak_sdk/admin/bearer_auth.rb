@@ -24,13 +24,24 @@ module KeycloakSdk
       # 때(`initialize_http_header`) CR·LF 면 헤더 값을 **통째로 인용한** raw ArgumentError(= Bearer 누출)를,
       # `MAX_FIELD_LENGTH`(65,536)를 넘으면 raw ArgumentError 를, 잘못된 UTF-8 이면 `strip` 의 raw
       # Encoding::CompatibilityError 를 낸다 — 셋 다 admin 경계(`rescue Faraday::Error`)를 지나 샜다(실측).
-      # ⚠️ 고쳐 쓰지 않는다(잘라내거나 바꿔 보내면 다른 토큰이다). NUL·U+00FF 위 문자는 net-http 가 막지 않으므로
-      # 그대로 보내고 판정은 서버에 맡긴다. 메시지에는 토큰을 싣지 않는다(길이만).
+      # ⚠️ **같은 `value.strip`(0.9.1 header.rb:195)이 끝의 NUL·공백·탭·VT·FF 를 말없이 지운다** — 다른 토큰이 나갔다.
+      # 앞의 공백·탭은 그대로 나가지만 받는 쪽이 `Bearer` 뒤 공백으로 접고(RFC 9110 §11.4 `1*SP`), NUL·그 밖의 C0·DEL 은
+      # 어디 있든 그대로 나가지만 헤더 값에 올 수 없다(§5.5 — field-vchar·SP·HTAB 뿐). 셋 다 같은 거부다(실측 · 시험).
+      # ⚠️ 고쳐 쓰지 않는다(잘라내거나 바꿔 보내면 다른 토큰이다). 헤더 값에 올 수 있는 것(가운데 공백·탭 · U+00FF
+      # 위 문자)은 그대로 보내고 판정은 서버에 맡긴다. 메시지에는 토큰을 싣지 않는다(길이만).
       def sendable!(token)
         raise AuthError, "admin request not sent: the access token is not valid UTF-8" unless token.valid_encoding?
 
         if token.match?(/[\r\n]/)
           raise AuthError, "admin request not sent: the access token holds CR or LF, which an HTTP header cannot carry"
+        end
+        if token.match?(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/)
+          raise AuthError, "admin request not sent: the access token holds NUL, DEL or another control character, " \
+                           "which an HTTP header cannot carry"
+        end
+        if token.match?(/\A[ \t]|[ \t]\z/)
+          raise AuthError, "admin request not sent: the access token starts or ends with a space or tab, which an " \
+                           "HTTP header cannot carry"
         end
 
         limit = field_limit

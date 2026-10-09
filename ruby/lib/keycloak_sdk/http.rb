@@ -116,8 +116,9 @@ module KeycloakSdk
     # `BoundedReads` 를 건다. `begin_transport` 는 요청마다 틀 예산을 0 으로 되돌린다 — keep-alive 로 연결을 재사용해도
     # 다음 응답은 새 예산을 받는다(한 요청의 1xx 중간 응답들은 같은 예산을 나눠 쓴다 — 그래야 1xx 홍수도 묶인다).
     # ⚠️ **`Net::HTTP` 를 하위 클래스로 두지 않는다.** 그 하위 클래스 인스턴스가 Faraday 스택에 남으면 공개 표면 가드의
-    # 객체 걷기(`facade_dump_spec`·`hostile_path_matrix_spec`)가 SDK 네임스페이스로 보고 그 상속 공개 메서드(Net::HTTP
-    # 수백 개)를 불러 **실 네트워크로 블록**된다(실측: 스위트 교착). 표준 어댑터 + 인스턴스 prepend 는 그래프에 SDK 이름의
+    # 객체 걷기(`facade_dump_spec`·`hostile_path_matrix_spec`)가 그 세 시험을 끝내지 못했다(실측: 90–150 초 timeout 에
+    # 죽었다 — 이 설계로 바꾼 뒤 같은 셋은 14 초). 원인은 가드 코드를 읽은 추정이다 — SDK 네임스페이스로 보고 그 상속 공개
+    # 메서드(Net::HTTP 수백 개)를 불러 실 네트워크에서 기다린다. 표준 어댑터 + 인스턴스 prepend 는 그래프에 SDK 이름의
     # 어댑터·HTTP 타입을 남기지 않는다.
     module BoundedTransport
       private
