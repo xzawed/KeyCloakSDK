@@ -326,7 +326,7 @@ dev(테스트 csproj — **앵커 있음**):
 
 **Kotlin 확정 의존성(build.gradle.kts, JVM 자매 Java SDK 스택 재사용 + 코루틴 경계 신규)**:
 
-<!-- doc-guard: kind=dep source=kotlin/build.gradle.kts min=6 undocumented=14 -->
+<!-- doc-guard: kind=dep source=kotlin/build.gradle.kts min=6 undocumented=16 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | Admin(재사용, api) | `org.keycloak:keycloak-admin-client` | 26.0.12 |
