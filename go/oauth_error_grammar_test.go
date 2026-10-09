@@ -20,8 +20,8 @@ import (
 // — the token-response cap (1 MiB) bounds it.
 //
 // Before: every value reached the field verbatim — CR/LF/CRLF, NUL, DEL, 0x1F, HTAB, U+00E9, U+2028, '"', '\' — in all
-// four grants, for 400, 401 and an error-carrying 200, JSON or form-encoded (measured on cfb3b29 through the public
-// API). Error() never carried it, and %#v already withheld a value not shaped like a code (errors.go) — the field
+// three grants (ExchangeCode with and without a nonce), for 400, 401 and an error-carrying 200, JSON or form-encoded
+// (measured on cfb3b29 through the public API). Error() never carried it, and %#v already withheld a value not shaped like a code (errors.go) — the field
 // itself is what a caller logs or compares.
 
 // nqschar is the RFC's character class, written from the RFC — the expectation, not the implementation.
