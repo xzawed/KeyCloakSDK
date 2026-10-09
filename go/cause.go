@@ -121,6 +121,22 @@ func oauthCodeShaped(s string) bool {
 	return true
 }
 
+// oauthErrorCode is what AuthError.OAuthError carries for the server's `error` value s: s itself when it is an OAuth
+// error code in the RFC 6749 §5.2 grammar — error = 1*NQSCHAR, NQSCHAR = %x20-21 / %x23-5B / %x5D-7E — and "" (no
+// code) otherwise. It never trims a value into a code ("invalid_client\r\n" is no code, not "invalid_client"). Before,
+// the field carried every value verbatim — CR/LF and every other control character, '"', '\', anything past ASCII —
+// into whatever logged it (measured: oauth_error_grammar_test.go). A space-only value is a code (%x20 is NQSCHAR) and
+// the grammar sets no length (the token-response cap bounds it) — both as .NET #710.
+// ⚠️ This is the field's rule. What an SDK error's text or `%#v` shows of a code is the stricter oauthCodeShaped.
+func oauthErrorCode(s string) string {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c < 0x20 || c > 0x7e || c == '"' || c == '\\' {
+			return ""
+		}
+	}
+	return s // an empty value stays empty: no code
+}
+
 // belowHTTP reports whether err failed beneath HTTP — socket, DNS, TLS, timeout, cancellation, EOF.
 // Those carry no bytes of a response, and callers match them with errors.Is/As, so they pass unchanged.
 func belowHTTP(err error) bool {
