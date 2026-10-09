@@ -48,7 +48,7 @@ internal object TransportTestTls {
         trust.setCertificateEntry("tunnelled", tunnelled.getCertificate("tunnelled"))
         val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
         tmf.init(trust)
-        SSLContext.getInstance("TLS").apply { init(null, tmf.trustManagers, null) }.socketFactory
+        SSLContext.getInstance("TLSv1.3").apply { init(null, tmf.trustManagers, null) }.socketFactory
     }
 
     private fun keystore(
@@ -92,6 +92,6 @@ internal object TransportTestTls {
     private fun serverContext(ks: KeyStore): SSLContext {
         val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
         kmf.init(ks, storepass.toCharArray())
-        return SSLContext.getInstance("TLS").apply { init(kmf.keyManagers, null, null) }
+        return SSLContext.getInstance("TLSv1.3").apply { init(kmf.keyManagers, null, null) }
     }
 }
