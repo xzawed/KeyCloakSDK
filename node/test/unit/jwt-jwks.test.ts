@@ -10,8 +10,8 @@
  *
  * ⚠️ 두 번째 케이스(대조군)를 **지우지 말 것** — 실제로 회귀를 잡는 쪽은 그쪽이다. 변이 검증 실측: jose 의
  * `cooldownDuration` 을 개명해 무시되게 만들면 jose가 자체 기본값(30초)으로 폴백하므로 첫 케이스는 그대로
- * 통과한다(SDK 창도 30초라 구분이 안 된다). 창 0 을 요구하는 대조군만이 히트 7 → 1로 떨어지며 실패한다
- * (2026-10-05 다시 잼: 「expected 1 to be greater than 2」 — 같은 창 0 을 쓰는 빈 키셋 시험도 함께 떨어진다).
+ * 통과한다(SDK 창도 30초라 구분이 안 된다). 창 0 을 쓰는 두 시험만 떨어진다 — 대조군(히트 7 → 1, 「expected 1
+ * to be greater than 2」)과 빈 키셋 시험(「expected 1 to be greater than 1」). 지우기·개명 둘 다 단위 346 중 이 둘이다.
  */
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { createServer, type Server } from 'node:http'

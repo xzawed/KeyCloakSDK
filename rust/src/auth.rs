@@ -344,6 +344,10 @@ impl AuthClient {
     }
 
     /// access_token 검증을 강화된 `JwtValidator`에 위임(RS256 핀·iss·aud·exp·nbf·스큐·DoS-safe JWKS).
+    ///
+    /// ⚠️ 강제 JWKS 재조회(모르는 kid)는 이 호출이 취소돼도 끝까지 가지만 그것을 띄운 tokio 런타임이 먼저 내려가면 함께
+    /// 끝나, 창(`jwks_min_refetch_secs`)이 지날 때까지 새 키의 토큰이 `unknown kid (refetch rate-limited)` 로 거부된다 —
+    /// 호출마다 런타임을 만들어 시간 초과로 끊는 동기 래퍼는 런타임을 재사용하라.
     pub async fn validate(&self, access_token: &str) -> Result<ValidatedToken> {
         self.validator.validate(access_token).await
     }
