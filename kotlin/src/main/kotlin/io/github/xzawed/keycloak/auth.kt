@@ -112,12 +112,7 @@ public class AuthClient internal constructor(
     /** `client_credentials` 그랜트로 서비스계정 토큰을 발급한다. `config.scopes`를 명시 전달한다(부록 §auth exactConfig). */
     public suspend fun clientCredentialsToken(): TokenSet {
         val issuedAt = Instant.now().epochSecond
-        val req =
-            TokenRequest
-                .Builder(URI(endpoints.token), clientAuth("the client_credentials grant"), ClientCredentialsGrant())
-                .scope(configuredScope())
-                .build()
-                .toHTTPRequest()
+        val req = buildClientCredentialsRequest()
         return mapTokenResponse(authSend(req), issuedAt, "Client credentials failed", sentSecrets(req))
     }
 
@@ -139,21 +134,9 @@ public class AuthClient internal constructor(
         expectedNonce: String? = null,
     ): TokenSet {
         val issuedAt = Instant.now().epochSecond
-        val grant =
-            AuthorizationCodeGrant(
-                requestValue("Authorization code exchange", "code") { AuthorizationCode(code) },
-                redirectUri(redirectUri),
-                requestValue("Authorization code exchange", "code_verifier") { CodeVerifier(codeVerifier) },
-            )
-        val builder =
-            if (config.clientSecret != null) {
-                TokenRequest.Builder(URI(endpoints.token), clientAuth("authorization code exchange"), grant)
-            } else {
-                TokenRequest.Builder(URI(endpoints.token), ClientID(config.clientId), grant)
-            }
         // oidc=true: id_token을 실제로 담아 오는 유일한 그랜트라 OIDC 인지 파서로 파싱해야 id_token이 보존된다
         // (플레인 TokenResponse.parse는 Tokens만 만들고 OIDCTokens/id_token을 인지하지 못한다).
-        val req = builder.build().toHTTPRequest()
+        val req = buildExchangeCodeRequest(code, codeVerifier, redirectUri)
         val tokenSet =
             mapTokenResponse(
                 authSend(req, oidc = true),
@@ -176,12 +159,7 @@ public class AuthClient internal constructor(
 
     /** RFC 7662 토큰 introspection. 비활성 토큰은 active 외 클레임이 생략될 수 있다. */
     public suspend fun introspect(token: String): IntrospectionResult {
-        val req =
-            TokenIntrospectionRequest(
-                URI(endpoints.introspection),
-                clientAuth("token introspection"),
-                requestValue("Introspection", "token") { TypelessAccessToken(token) },
-            ).toHTTPRequest()
+        val req = buildIntrospectionRequest(token)
         val resp =
             try {
                 onIo { TokenIntrospectionResponse.parse(applyTimeouts(req).send(introspectionSender)) }
@@ -223,9 +201,9 @@ public class AuthClient internal constructor(
     public suspend fun validate(accessToken: String): ValidatedToken = ensureValidator().validate(accessToken)
 
     /**
-     * auth 자원을 정리한다. Nimbus `HTTPRequest.send()`는 호출마다 ephemeral `HttpURLConnection`을 열 뿐
+     * auth 자원을 정리한다. auth·JWKS 운송의 연결 풀은 프로세스에 하나라([BoundedTransport] — HttpURLConnection 의 keep-alive 캐시처럼)
      * AuthClient가 소유하는 커넥션 풀이 없어 no-op이지만, [KeycloakClient] close 프로토콜과의 대칭을 위해
-     * `AutoCloseable`을 구현한다(Node `AuthClient.close()` 동형).
+     * `AutoCloseable`을 구현한다(Node `AuthClient.close()` 동형). 쉬는 연결은 수명(5 초)이 지나면 다음 호출이 닫는다.
      */
     override fun close() {
         // 의도적 no-op: 소유하는 커넥션 풀/자원이 없다(위 KDoc 참조). AutoCloseable만 대칭을 위해 구현.
@@ -362,10 +340,46 @@ public class AuthClient internal constructor(
         return ClientSecretBasic(ClientID(config.clientId), Secret(String(secret)))
     }
 
+    // 다섯 요청의 send() 이전 구성 — `internal` 인 이유: 운송 대조 시험(`TransportParityTest`)이 이 요청들을 Nimbus 의 `send()`
+    // (HttpURLConnection)와 [CappedResponseSender] 에 나란히 보내 서버가 받은 바이트를 대조한다(Java 의 package-private 빌더와 같은 시임).
+    internal fun buildClientCredentialsRequest(): HTTPRequest =
+        TokenRequest
+            .Builder(URI(endpoints.token), clientAuth("the client_credentials grant"), ClientCredentialsGrant())
+            .scope(configuredScope())
+            .build()
+            .toHTTPRequest()
+
+    internal fun buildExchangeCodeRequest(
+        code: String,
+        codeVerifier: String,
+        redirectUri: String,
+    ): HTTPRequest {
+        val grant =
+            AuthorizationCodeGrant(
+                requestValue("Authorization code exchange", "code") { AuthorizationCode(code) },
+                redirectUri(redirectUri),
+                requestValue("Authorization code exchange", "code_verifier") { CodeVerifier(codeVerifier) },
+            )
+        val builder =
+            if (config.clientSecret != null) {
+                TokenRequest.Builder(URI(endpoints.token), clientAuth("authorization code exchange"), grant)
+            } else {
+                TokenRequest.Builder(URI(endpoints.token), ClientID(config.clientId), grant)
+            }
+        return builder.build().toHTTPRequest()
+    }
+
+    internal fun buildIntrospectionRequest(token: String): HTTPRequest =
+        TokenIntrospectionRequest(
+            URI(endpoints.introspection),
+            clientAuth("token introspection"),
+            requestValue("Introspection", "token") { TypelessAccessToken(token) },
+        ).toHTTPRequest()
+
     // refresh()의 send() 이전 요청 구성. ⚠️ 공개 클라이언트도 refresh 할 수 있다 — Keycloak 이
     // 허용한다(실측 2026-09-24, KC 26.6: 200). exchangeCode 와 같이 시크릿이 없으면 client_id 를
     // 본문에 싣는다(예전엔 clientAuth() 가 로컬에서 거부해 공개 클라이언트가 갱신을 못 했다).
-    private fun buildRefreshRequest(refreshToken: String): HTTPRequest {
+    internal fun buildRefreshRequest(refreshToken: String): HTTPRequest {
         val grant = RefreshTokenGrant(requestValue("Token refresh", "refresh_token") { RefreshToken(refreshToken) })
         val tr =
             if (config.clientSecret != null) {
@@ -411,7 +425,7 @@ public class AuthClient internal constructor(
             throw KeycloakConfigException("invalid redirect_uri: ${e.reason}", e)
         }
 
-    private fun buildLogoutRequest(refreshToken: String): HTTPRequest {
+    internal fun buildLogoutRequest(refreshToken: String): HTTPRequest {
         val req = HTTPRequest(HTTPRequest.Method.POST, URI(endpoints.logout))
         req.setEntityContentType(ContentType.APPLICATION_URLENCODED)
         val params = linkedMapOf<String, List<String>>()
