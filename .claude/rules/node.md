@@ -5,7 +5,11 @@ paths:
   - "harness/install/consume/node*"
   - ".github/workflows/node-*.yml"
 ---
-<!-- doc-budget: max-bytes=6761 -->
+<!-- doc-budget: max-bytes=6749 -->
+<!-- 6761 → 6749 (2026-10-09, −12B). **인하** — 「Only the `cooldown=0` control fails」 는 거짓이었다.
+     `cooldownDuration: 0` 을 지우거나 개명하면 jose 가 자기 기본 30 초로 돌아가고, 창 0 을 쓰는
+     시험 **둘**(대조군 · 빈 키셋)이 함께 떨어진다 — `npx vitest run test/unit` 346 중 2 실패, 두 변이
+     같다. 「our setting」 은 「our window」 로 — 우리 jose 설정은 0 이고 30 초는 SDK 창이다. -->
 <!-- 6534 → 6761 (2026-09-22). 규약 (1) — **세션이 못 보는 경고**를 보는 자리로 옮긴다.
      Windows 체크아웃에서 포매터가 **깨끗한 트리 전체**를 지적한다(출처: `.claude/rules/ci.md:62`
      가 go·node·php 셋을 같은 문장으로 적는다. 오늘 다시 잰 것은 go 뿐이다 — `gofmt -l go` → 29
@@ -56,7 +60,7 @@ cd node && npm run build       # tsc → dist/
 - ⚠️ **Two timeouts, two different units** — `Configuration.timeout` is in **seconds**, the admin-client's `ConnectionConfig.timeout` is in **milliseconds**. A signal cannot be injected through `requestOptions`.
 - ⚠️ **Always pass `nonce` to the PKCE `exchangeCode`.** Keycloak returns the nonce inside the id_token and openid-client v6 verifies it automatically, so with no expected nonce the whole exchange is rejected as "unexpected nonce".
 - TLS: `allowInsecureRequests` applies only when `serverUrl` is `http://` (https stays enforced).
-- ⚠️ **A JWKS rate-limit regression cannot be caught without a control case.** If `cooldownDuration` is renamed or removed, JS silently ignores it — and **jose falls back to its own 30-second default**, so the normal case, where our setting is also 30 seconds, keeps passing. Only the `cooldown=0` control fails. Do not delete the second case in `test/unit/jwt-jwks.test.ts`.
+- ⚠️ **A JWKS rate-limit regression cannot be caught without a control case.** If `cooldownDuration` is renamed or removed, **jose falls back to its own 30-second default**, so the normal case (our window is 30 seconds too) keeps passing. Only the two window-0 cases in `test/unit/jwt-jwks.test.ts` fail — the control (do not delete it) and the empty-keyset case.
 
 ## Dependency ranges
 
