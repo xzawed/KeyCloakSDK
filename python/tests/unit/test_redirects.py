@@ -56,6 +56,17 @@ def _auth(trap: Trap) -> AuthClient:
     return AuthClient(config, OidcEndpoints.for_realm(config))
 
 
+def _close_stock(stock: KeycloakOpenID | KeycloakAdmin) -> None:
+    """대조군(python-keycloak 그대로)의 sync 세션을 닫는다 — 닫지 않으면 keep-alive 연결이 덫 서버의
+    처리 스레드를 테스트 뒤까지 붙잡는다(실측: 이 파일의 여덟 항목이 처리 스레드 열넷을 남겼다,
+    등록부 `wave4-hardening-python` (7)). admin 은 지연 생성되는 그랜트 연결도 닫는다."""
+    conn = stock.connection
+    nested = getattr(conn, "_keycloak_openid", None)
+    if nested is not None:
+        nested.connection._s.close()
+    conn._s.close()
+
+
 # --------------------------------------------------------------------------- auth 백채널
 
 
@@ -133,14 +144,22 @@ def test_auth_backchannel_refuses_redirects(
     돌려주므로 리다이렉트를 따라가지 않는다) — 아래 `trap.hits == []` 가 그것을 잰다.
     """
     # --- 대조군: 하드닝 없는 stock은 따라가고, 리다이렉트 대상의 답을 받아들인다 ---
-    control(_stock_openid(trap))
+    stock = _stock_openid(trap)
+    try:
+        control(stock)
+    finally:
+        _close_stock(stock)
     assert len(trap.hits) == 1, f"{operation}: 덫이 무장되지 않았다(stock이 따라가지 않음)"
     followed = trap.hits[0]
     trap.reset()
 
     # --- 대상: SDK는 따라가지 않고, 성공을 반환하지도 않는다 ---
-    with pytest.raises(expected) as exc_info:
-        subject(_auth(trap))
+    client = _auth(trap)
+    try:
+        with pytest.raises(expected) as exc_info:
+            subject(client)
+    finally:
+        client.close()  # 오류의 traceback 이 클라이언트를 쥐어 GC 전까지 연결이 남는다
 
     assert trap.hits == [], f"{operation}: SDK가 리다이렉트 대상으로 요청을 보냈다"
     # 조용한 거짓 성공이 아니라 표면화된 실패여야 한다. 상태코드가 메시지에 남는다.
@@ -206,7 +225,11 @@ def test_admin_refuses_redirects_on_both_of_its_sessions(trap: Trap) -> None:
     Bearer를 실은 REST 호출. 바깥 세션만 막으면 토큰 그랜트는 그대로 샌다.
     """
     stock = _stock_admin(trap)
-    assert stock.get_users({}) == [{"id": "planted", "username": "planted"}]
+    try:
+        planted = stock.get_users({})
+    finally:
+        _close_stock(stock)
+    assert planted == [{"id": "planted", "username": "planted"}]
     assert len(trap.hits) == 2, "대조군이 두 세션 모두에서 새지 않았다"
     grant, rest = trap.hits[0], trap.hits[1]
     assert "token" in grant.path and CLIENT_SECRET in grant.body
@@ -214,8 +237,11 @@ def test_admin_refuses_redirects_on_both_of_its_sessions(trap: Trap) -> None:
     trap.reset()
 
     client = AdminClient(_config(trap))
-    with pytest.raises(KeycloakAdminError) as exc_info:
-        client.users.search()
+    try:
+        with pytest.raises(KeycloakAdminError) as exc_info:
+            client.users.search()
+    finally:
+        client.close()
 
     assert trap.hits == [], "SDK admin이 리다이렉트 대상으로 요청을 보냈다"
     assert exc_info.value.status_code == 307
@@ -229,15 +255,21 @@ def test_admin_rest_session_leaks_bearer_on_a_same_origin_redirect(trap: Trap) -
     """
     trap.same_origin = True
     stock = _stock_admin(trap)
-    stock.get_users({})
+    try:
+        stock.get_users({})
+    finally:
+        _close_stock(stock)
 
     rest = next(h for h in trap.hits if "/users" in h.path)
     assert rest.authorization is not None and rest.authorization.startswith("Bearer ")
     trap.reset()
 
     client = AdminClient(_config(trap))
-    with pytest.raises(KeycloakAdminError):
-        client.users.search()
+    try:
+        with pytest.raises(KeycloakAdminError):
+            client.users.search()
+    finally:
+        client.close()
     assert trap.hits == []
 
 

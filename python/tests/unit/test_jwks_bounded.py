@@ -87,8 +87,11 @@ def test_jwks_within_cap_is_accepted(jwks_server: Any) -> None:
     cfg = _config(jwks_server)
     client = AuthClient(cfg, OidcEndpoints.for_realm(cfg))
 
-    with pytest.raises(Exception) as excinfo:
-        client.validate("irrelevant.token.here")
+    try:
+        with pytest.raises(Exception) as excinfo:
+            client.validate("irrelevant.token.here")
+    finally:
+        client.close()  # keep-alive 연결이 서버의 처리 스레드를 테스트 뒤까지 붙잡지 않게
     assert "exceeds" not in str(excinfo.value)
     assert jwks_server.hits == 1
 

@@ -365,15 +365,22 @@ async def test_an_injected_admin_holding_an_unusable_bearer_sends_nothing(
 def test_a_replaced_connection_still_refuses_redirects(trap: Trap) -> None:
     """대조군을 같은 테스트에 둔다 — 하드닝 없는 새 연결은 307 을 따라가 client_secret 을 넘긴다."""
     stock = KeycloakAdmin(connection=_trap_connection(trap))
-    assert stock.get_users({}) == [{"id": "planted", "username": "planted"}]
+    try:
+        planted = stock.get_users({})
+    finally:
+        _close_stock(stock)
+    assert planted == [{"id": "planted", "username": "planted"}]
     assert len(trap.hits) == 2, "대조군이 두 세션 모두에서 새지 않았다 — 덫 고장"
     assert CLIENT_SECRET in trap.hits[0].body, "대조군의 그랜트가 client_secret 을 싣지 않았다"
     trap.reset()
 
     client = AdminClient(_trap_cfg(trap))
     client.raw.connection = _trap_connection(trap)
-    with pytest.raises(KeycloakAdminError) as exc_info:
-        client.users.search()
+    try:
+        with pytest.raises(KeycloakAdminError) as exc_info:
+            client.users.search()
+    finally:
+        client.close()  # 갈아 끼운 연결의 두 세션 — 그것이 요청을 보냈다
 
     assert trap.hits == [], "갈아 끼운 연결이 리다이렉트를 따라갔다"
     assert exc_info.value.status_code == 307
@@ -386,7 +393,10 @@ def test_a_replaced_token_grant_session_still_refuses_redirects(trap: Trap) -> N
     stock.connection.keycloak_openid.connection = ConnectionManager(
         base_url=trap.idp_url, timeout=5
     )
-    stock.get_users({})
+    try:
+        stock.get_users({})
+    finally:
+        _close_stock(stock)
     grant = trap.hits[0]
     assert "token" in grant.path and CLIENT_SECRET in grant.body, "대조군 덫이 무장되지 않았다"
     trap.reset()
@@ -395,8 +405,11 @@ def test_a_replaced_token_grant_session_still_refuses_redirects(trap: Trap) -> N
     client.raw.connection.keycloak_openid.connection = ConnectionManager(
         base_url=trap.idp_url, timeout=5
     )
-    with pytest.raises(KeycloakAdminError) as exc_info:
-        client.users.search()
+    try:
+        with pytest.raises(KeycloakAdminError) as exc_info:
+            client.users.search()
+    finally:
+        client.close()
 
     assert trap.hits == [], "갈아 끼운 그랜트 세션이 client_secret 을 리다이렉트 대상에 넘겼다"
     assert exc_info.value.status_code == 307
@@ -421,6 +434,13 @@ def _trap_connection(trap: Trap) -> KeycloakOpenIDConnection:
         grant_type="client_credentials",
         timeout=5,
     )
+
+
+def _close_stock(stock: KeycloakAdmin) -> None:
+    """대조군의 두 sync 세션을 닫는다 — 닫지 않으면 keep-alive 연결이 덫 서버의 처리 스레드를
+    테스트 뒤까지 붙잡는다(실측: 위 두 테스트가 다섯씩, 등록부 `wave4-hardening-python` (7))."""
+    stock.connection.keycloak_openid.connection._s.close()
+    stock.connection._s.close()
 
 
 # --- (H3) 설치는 전부이거나 아무것도 아니다 ----------------------------------------------
