@@ -1,0 +1,10 @@
+name: go-ci
+on: { pull_request: { paths: ['go/**'] } }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: gate
+        run: |
+          go test ./... -coverprofile=cover.out
+          grep -vE '/(auth|admin|admin_users)\.go:' cover.out > cover.logic.out

@@ -24,8 +24,10 @@
 // ⚠️ 주석은 사본이 아니다 — XML·properties·TOML·셸·YAML 모두 주석을 걷어낸 뒤 찾는다. YAML 은
 // `run:` 스크립트 안만 본다(그 밖의 문자열은 실행되지 않는다).
 //
-// 사용: node scripts/coverage-boundary.mjs list  [ROOT] [--lang <id>]
+// 사용: node scripts/coverage-boundary.mjs list  [ROOT] [--lang <id>] [--json]
 //       node scripts/coverage-boundary.mjs check [ROOT]
+// `list --json` 은 같은 전개를 기계 판독용으로 낸다 — `scripts/integration-coverage.mjs` 가 통합 리포트의
+// 파일 집합을 **사본 없이** 여기서 파생한다. 종료코드는 텍스트 판과 같다(어느 언어든 FAIL 이면 2).
 import { readFileSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join, dirname, basename } from 'node:path'
@@ -42,7 +44,7 @@ class Fatal extends Error {
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
   if (msg) console.error(msg)
-  console.error('usage: node scripts/coverage-boundary.mjs list [ROOT] [--lang <id>]')
+  console.error('usage: node scripts/coverage-boundary.mjs list [ROOT] [--lang <id>] [--json]')
   console.error('       node scripts/coverage-boundary.mjs check [ROOT]')
   process.exit(2)
 }
@@ -51,10 +53,12 @@ const cmd = argv[0]
 if (cmd !== 'list' && cmd !== 'check') usage(cmd ? `알 수 없는 명령: ${cmd}` : '')
 let root = null
 let onlyLang = null
+let asJson = false
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i]
   if (a === '--lang') onlyLang = argv[++i]
   else if (a.startsWith('--lang=')) onlyLang = a.slice(7)
+  else if (a === '--json' && cmd === 'list') asJson = true
   else if (a.startsWith('--')) usage(`알 수 없는 옵션: ${a}`)
   else if (root === null) root = a
   else usage(`인자가 너무 많다: ${a}`)
@@ -1218,6 +1222,18 @@ for (const id of LANG_IDS) {
 
 if (cmd === 'list') {
   if (onlyLang && !SSOT[onlyLang]) usage(`모르는 언어: ${onlyLang} (${LANG_IDS.join(' · ')})`)
+  if (asJson) {
+    // ⚠️ FAIL 인 언어는 `langs` 에 **없다**(전개가 없으므로) — 소비자는 그 부재와 `findings` 를 함께 봐야 한다.
+    const langs = {}
+    for (const id of LANG_IDS) {
+      if ((onlyLang && id !== onlyLang) || !S[id]) continue
+      const s = S[id]
+      langs[id] = { dir: SSOT[id].dir, site: s.site, label: s.label, universe: U[id].length, files: sortU(s.set), forced: Object.fromEntries([...s.forced].sort()), partial: s.partial, dead: s.dead }
+    }
+    const found = findings.filter((f) => !onlyLang || f.lang === onlyLang).map(({ site, lang, msg }) => ({ site, lang, msg }))
+    console.log(JSON.stringify({ langs, findings: found }, null, 2))
+    process.exit(findings.length ? 2 : 0)
+  }
   for (const id of LANG_IDS) {
     if (onlyLang && id !== onlyLang) continue
     const s = S[id]

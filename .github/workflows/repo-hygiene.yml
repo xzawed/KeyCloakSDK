@@ -144,6 +144,12 @@ jobs:
         # 이 자가테스트는 커밋된 픽스처만 읽는다 — 실제 트리 대조는 아래 `coverage-boundary` 잡이다.
         run: sh scripts/test/test-coverage-boundary.sh
 
+      - name: 통합 전용 커버리지 리포트 자가테스트(파생 ↔ 핀 · 데이터 누락 · 공허 실행 · 소유자 — 픽스처만)
+        # go·python 레인 통합 잡의 보고 모드 리포트(`scripts/integration-coverage.mjs`)가 무결성을 지키는지 —
+        # 파생이 좁아지면(%가 오른다) · 데이터에서 경계 파일이 빠지면 · 아무것도 안 돈 실행이면 exit 2 인지.
+        # 픽스처의 커버 데이터는 실제 도구(`go test -coverprofile` · coverage.py json)가 낸 것이라 Docker 가 필요 없다.
+        run: sh scripts/test/test-integration-coverage.sh
+
       - name: JVM 바이트코드 하한 가드 자가테스트(위반을 실제로 잡는지 · 0개를 훑고 통과하지 않는지)
         # 두 JVM 레인은 JDK 21 로 빌드하고 17 을 방출한다. 그 설정 한 줄이 빠지면 빌드는 성공하고
         # CI(21에서 돈다)도 초록인데 major 65 가 나가서 JDK 17 소비자만 죽는다 — 산출물을 직접
@@ -446,6 +452,10 @@ jobs:
           node-version: '22'
       - name: 커버리지 omit SSOT ↔ 사본 대조(실제 트리)
         run: node scripts/coverage-boundary.mjs check
+      - name: 통합 전용 커버리지 핀 · 소유자 대조(실제 트리 — 데이터 없이)
+        # 파생 ↔ `scripts/integration-coverage.json` 의 핀 · 소유자 id ↔ 등록부의 열린 항목. 레인 통합 잡은 `paths:`
+        # 뒤라 SSOT 나 등록부만 바꾼 PR 에서는 돌지 않는다 — 그 대조를 모든 PR 에서 여기서 한다.
+        run: node scripts/integration-coverage.mjs check
 
   repo-config:
     # 저장소 설정(브랜치 룰셋) 대조기의 자가테스트.

@@ -1,0 +1,28 @@
+{
+  "go": {
+    "pinned": [
+      "go/admin.go",
+      "go/admin_users.go",
+      "go/auth.go"
+    ],
+    "owners": {
+      "go/admin.go:AdminClient.Close": "open-admin",
+      "go/admin.go:AdminClient.String": "open-masking",
+      "go/admin_users.go:UsersResource.Delete": "open-admin",
+      "go/auth.go:AuthClient.String": "open-masking"
+    }
+  },
+  "python": {
+    "pinned": [
+      "python/src/keycloak_sdk/admin/__init__.py",
+      "python/src/keycloak_sdk/aio/auth.py",
+      "python/src/keycloak_sdk/auth.py"
+    ],
+    "owners": {
+      "python/src/keycloak_sdk/admin/__init__.py:AdminClient.clients": "open-admin",
+      "python/src/keycloak_sdk/aio/auth.py:AsyncAuthClient.token": "open-admin",
+      "python/src/keycloak_sdk/auth.py:AuthClient.logout": "open-admin",
+      "python/src/keycloak_sdk/auth.py:AuthorizationUrl.__repr__": "open-masking"
+    }
+  }
+}

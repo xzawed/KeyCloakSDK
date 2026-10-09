@@ -1,0 +1,39 @@
+{
+  "go": {
+    "pinned": [
+      "go/admin.go",
+      "go/admin_clients.go",
+      "go/admin_groups.go",
+      "go/admin_realms.go",
+      "go/admin_roles.go",
+      "go/admin_users.go",
+      "go/auth.go",
+      "go/client.go"
+    ],
+    "owners": {
+      "go/admin.go:AdminClient.GoString": "coverage-omit-hides-security-paths",
+      "go/admin.go:AdminClient.String": "coverage-omit-hides-security-paths",
+      "go/admin.go:NewAdminClient": "facade-wiring-close-contract-unasserted",
+      "go/admin_clients.go:ClientsResource.Update": "integration-admin-surface-uneven",
+      "go/admin_realms.go:RealmsResource.Create": "integration-admin-surface-uneven",
+      "go/admin_realms.go:RealmsResource.Delete": "integration-admin-surface-uneven",
+      "go/auth.go:AuthClient.GoString": "coverage-omit-hides-security-paths",
+      "go/auth.go:AuthClient.String": "coverage-omit-hides-security-paths",
+      "go/client.go:Client.GoString": "coverage-omit-hides-security-paths",
+      "go/client.go:Client.String": "coverage-omit-hides-security-paths"
+    }
+  },
+  "python": {
+    "pinned": [
+      "python/src/keycloak_sdk/admin/__init__.py",
+      "python/src/keycloak_sdk/aio/admin/__init__.py",
+      "python/src/keycloak_sdk/aio/auth.py",
+      "python/src/keycloak_sdk/auth.py"
+    ],
+    "owners": {
+      "python/src/keycloak_sdk/admin/__init__.py:AdminClient.clients": "integration-admin-surface-uneven",
+      "python/src/keycloak_sdk/aio/admin/__init__.py:AsyncAdminClient.clients": "integration-admin-surface-uneven",
+      "python/src/keycloak_sdk/auth.py:AuthorizationUrl.__repr__": "coverage-omit-hides-security-paths"
+    }
+  }
+}

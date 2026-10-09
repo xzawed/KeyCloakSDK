@@ -1,0 +1,13 @@
+[project]
+name = "fixture"
+
+[tool.coverage.run]
+branch = true
+source = ["keycloak_sdk"]
+omit = [
+  "*/auth.py",
+  "*/admin/__init__.py",
+]
+
+[tool.coverage.report]
+fail_under = 100
