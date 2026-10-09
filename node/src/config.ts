@@ -24,8 +24,9 @@ export interface KeycloakConfig {
   readonly signatureAlgorithms: readonly string[]
   /**
    * 미해결 kid(키 회전)로 인한 JWKS 재조회의 최소 간격(초, 기본 30) — DoS 증폭 상한. 위조 kid를
-   * 연속 주입해도 이 간격보다 자주 IdP를 때리지 못한다(jose `cooldownDuration`에 배선). 0이면 매
-   * 미해결 kid마다 재조회를 허용한다(비권장).
+   * 연속 주입해도 이 간격보다 자주 IdP를 때리지 못한다. 창은 SDK 의 JWKS 조회가 직접 걸고 조회를
+   * **시도할 때** 찍으므로 IdP 장애 중에도 창마다 한 번이다(jose 의 `cooldownDuration` 은 성공에만
+   * 찍혀 쓰지 않는다 — 0 으로 둔다). 0이면 매 미해결 kid마다 재조회를 허용한다(비권장).
    */
   readonly jwksMinRefetchSeconds: number
   /**
