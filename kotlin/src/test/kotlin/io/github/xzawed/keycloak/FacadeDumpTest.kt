@@ -85,8 +85,27 @@ private const val DUMP_MAX_VISITS = 1_000_000
 // `kotlin.Metadata.kind` — 1 = 소스에 선언된 class/object/interface. 2 = 파일 파사드, 3 = 합성(람다·continuation).
 private const val DUMP_KIND_CLASS = 1
 
-/** 걷기에 안 닿아도 되는 선언 타입(패키지 뒤 이름)과 그 이유. ⚠️ 이유 없는 면제는 넣지 않는다. */
-private val DUMP_EXEMPT: Map<String, String> = emptyMap()
+/**
+ * 걷기에 안 닿아도 되는 선언 타입(패키지 뒤 이름)과 그 이유. ⚠️ 이유 없는 면제는 넣지 않는다.
+ *
+ * auth·JWKS 운송(`BoundedTransport`)의 타입들은 정적 풀(프로세스에 하나)과 교환 하나의 스택에만 산다 — 걷기는 정적 필드를 걷지 않는다.
+ * Java 는 `BoundedTransport$TlsKey` 하나만 면제했다(Java 의 나머지는 익명 클래스라 선언 파생이 뺀다). Kotlin 의 익명 객체는 메타데이터
+ * kind=1 이라 이 파생이 선언으로 세므로, 운송은 이름 있는 중첩 클래스로 쓰고 여기 이유와 함께 적는다.
+ */
+private val DUMP_EXEMPT: Map<String, String> =
+    mapOf(
+        "BoundedTransport\$TlsKey" to
+            "auth·JWKS 운송의 프로세스 풀이 연결에 다는 상태 표식 — 정적 풀에만 산다(뿌리에서 닿지 않는다). TLS 근원(소켓 팩토리·검증기)의 " +
+            "약한 참조와 정체 해시뿐이라 비밀을 쥐지 않고, 문자열 표현은 상수다(BoundedTransportTest 의 TlsKey 사례)",
+        "BoundedTransport\$BoundedPool" to "그 정적 풀 자체 — 프로세스에 하나라 공개 API 뿌리의 인스턴스 필드에서 닿지 않는다",
+        "BoundedTransport\$BoundedConnection" to
+            "정적 풀의 연결(HttpCore 기본 연결의 하위 타입) — 문자열 표현은 HttpCore 의 것(양 끝 주소)이다(BoundedTransportTest 의 연결 사례)",
+        "BoundedTransport\$StatusLineFirstParser" to "그 연결마다 짓는 응답 해석기 — 그 연결(정적 풀)에만 산다",
+        "BoundedTransport\$BoundedExecutor" to "정적 HttpClient 의 실행기 — 상태는 HttpCore 의 int 하나다",
+        "BoundedTransport\$ScreenedLease" to "연결을 빌리는 동안만 사는 대여 — 빌린 뒤 버려진다",
+        "BoundedTransport\$WireBoundedStream" to "교환 하나의 본문 스트림 — 교환이 끝나면 버려진다. 상태는 연결 지표와 수다",
+        "admin.BoundedEngineBuilder" to "AdminClient 를 지을 때만 쓰는 RESTEasy 엔진 빌더 — 엔진을 지은 뒤 버려진다(엔진이 이것을 쥐지 않는다)",
+    )
 
 /**
  * 알려진 누출 — `"뿌리|카나리아"` → 사유. SDK 를 여기서 고치지 않는다: 새 누출은 `UNTRIAGED — reported` 로

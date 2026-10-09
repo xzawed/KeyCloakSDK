@@ -5,18 +5,14 @@ import com.nimbusds.oauth2.sdk.http.HTTPResponse
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
-import java.io.OutputStream
 import java.lang.management.ManagementFactory
-import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.net.URI
-import java.net.URL
-import java.net.URLConnection
-import java.net.URLStreamHandler
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -73,58 +69,37 @@ private class CrsCountingBody(
     }
 }
 
-// 네트워크 없는 연결 — HTTPRequest.toHttpURLConnection() 이 이 URL 의 처리기로 연다. Nimbus 의 send() 와 같은 갈래(입력 스트림이
-// 던지는 4xx·5xx · 상태를 모르는 실패 · 오류 스트림 없음 · GET)를 서버 없이 재현한다.
-private class CrsFakeConnection(
-    url: URL,
-    private val code: Int,
-    private val body: ByteArray?,
-    private val inputFails: Boolean,
-) : HttpURLConnection(url) {
-    override fun connect() = Unit
+// 요청 하나를 받고 아무 응답 없이 닫는 원시 서버 — 상태 줄을 받지 못한 실패. 받은 요청 수를 센다.
+private class CrsSilentServer : AutoCloseable {
+    val socket = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+    val requests = AtomicInteger()
 
-    override fun disconnect() = Unit
-
-    override fun usingProxy(): Boolean = false
-
-    override fun getOutputStream(): OutputStream = ByteArrayOutputStream()
-
-    override fun getInputStream(): InputStream {
-        if (inputFails) throw IOException("Server returned HTTP response code: $code")
-        return ByteArrayInputStream(body ?: ByteArray(0))
+    init {
+        Thread(::serve, "crs-silent-server").apply { isDaemon = true }.start()
     }
 
-    override fun getErrorStream(): InputStream? = body?.let { ByteArrayInputStream(it) }
-
-    override fun getResponseCode(): Int = code
-
-    override fun getResponseMessage(): String = "Fake"
-
-    override fun getHeaderFields(): Map<String?, List<String?>?> =
-        mapOf(
-            null to listOf("HTTP/1.1 $code Fake"),
-            "Content-Type" to listOf("application/json"),
-            "X-Empty" to emptyList(),
-            "X-Null" to null,
-            "X-Null-First" to listOf(null, "x"),
-        )
-}
-
-private fun crsFake(
-    method: HTTPRequest.Method,
-    code: Int,
-    body: ByteArray?,
-    inputFails: Boolean,
-): HTTPRequest {
-    val handler =
-        object : URLStreamHandler() {
-            override fun openConnection(u: URL): URLConnection = CrsFakeConnection(u, code, body, inputFails)
+    private fun serve() {
+        while (!socket.isClosed) {
+            try {
+                socket.accept().use { s ->
+                    s.soTimeout = 5_000
+                    val input = s.getInputStream()
+                    var last4 = 0
+                    while (last4 != 0x0d0a0d0a) {
+                        val b = input.read()
+                        if (b == -1) break
+                        last4 = (last4 shl 8) or b
+                    }
+                    requests.incrementAndGet()
+                }
+            } catch (gone: IOException) {
+                // 닫힌 서버 소켓 · 떠난 클라이언트
+            }
         }
-    return HTTPRequest(method, URL(null, "http://fake.invalid$CRS_PATH", handler)).apply {
-        if (method == HTTPRequest.Method.POST) {
-            setHeader("Content-Type", "application/x-www-form-urlencoded")
-            this.body = "grant_type=client_credentials"
-        }
+    }
+
+    override fun close() {
+        socket.close()
     }
 }
 
@@ -220,32 +195,51 @@ internal class CappedResponseSenderTest {
         assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
     }
 
-    // 네트워크 없는 갈래 — 입력 스트림이 던지는 오류 상태(오류 스트림이 있든 없든)와 상태를 모르는 실패(-1 이면 그 IOException 을
-    // 그대로 던진다)가 Nimbus 의 send() 와 같다. 헤더 맵의 null 키(상태 줄)·null 목록·빈 목록·첫 값이 null 인 목록은 둘 다 버린다.
+    // 오류 상태의 갈래 — 본문 있는 4xx·본문 없는 5xx·성공이 Nimbus 의 send() 와 같은 HTTPResponse 다(POST·GET). 상태 줄을 받지 못한
+    // 실패는 둘 다 IOException 이다 — 새 운송의 메시지는 응답과 무관한 상수이고, 새 연결의 실패라 다시 보내지 않는다(Nimbus 의 send()
+    // 는 HttpURLConnection 이라 같은 실패에 POST 를 새 연결로 한 번 더 보냈다 — sun.net.http.retryPost). ⚠️ 예전 시험은 가짜
+    // HttpURLConnection 의 null 헤더 키·값 갈래를 쟀다 — 새 운송의 헤더는 HttpCore 가 만든 것이라 그 갈래가 없다.
     @Test
-    fun `the branches Nimbus' send takes on a failing input stream are the same`() {
+    fun `the error branches are what Nimbus' send builds and a missing status line is an IOException`() {
         val wrong = mutableListOf<String>()
         val cases =
             listOf(
-                Triple(400, "{\"error\":\"invalid_client\"}".toByteArray(), true),
-                Triple(503, null, true),
-                Triple(200, "{\"access_token\":\"AT\"}".toByteArray(), false),
+                400 to "{\"error\":\"invalid_client\"}".toByteArray(),
+                503 to ByteArray(0),
+                200 to "{\"access_token\":\"AT\"}".toByteArray(),
             )
-        for ((code, payload, fails) in cases) {
+        for ((code, payload) in cases) {
+            status = code
+            body = payload
             for (method in listOf(HTTPRequest.Method.POST, HTTPRequest.Method.GET)) {
-                val stock = crsFake(method, code, payload, fails).send()
-                val capped = crsFake(method, code, payload, fails).send(CappedResponseSender("token response"))
+                val stock = request(method).send()
+                val capped = request(method).send(CappedResponseSender("token response"))
                 same(stock, capped)?.let { wrong += "$code $method: $it" }
-                val carried = capped.headerMap.keys.filter { it.startsWith("X-") }
-                if (carried.isNotEmpty()) wrong += "$code $method: 빈·null 헤더를 실었다 — $carried"
-                if (capped.headerMap["Content-Type"] != listOf("application/json")) wrong += "$code $method: 헤더를 잃었다 — ${capped.headerMap}"
             }
         }
         assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
-        val stockFailure = assertFailsWith<IOException> { crsFake(HTTPRequest.Method.POST, -1, null, true).send() }
-        val cappedFailure =
-            assertFailsWith<IOException> { crsFake(HTTPRequest.Method.POST, -1, null, true).send(CappedResponseSender("token response")) }
-        assertEquals(stockFailure.message, cappedFailure.message)
+        CrsSilentServer().use { silent ->
+            val url = URI("http://127.0.0.1:${silent.socket.localPort}$CRS_PATH")
+            val silentRequest = {
+                HTTPRequest(HTTPRequest.Method.POST, url).apply {
+                    connectTimeout = 5_000
+                    readTimeout = 5_000
+                    followRedirects = false
+                    this.body = "grant_type=client_credentials"
+                }
+            }
+            assertFailsWith<IOException> { silentRequest().send() }
+            val stockRequests = silent.requests.getAndSet(0)
+            val cappedFailure = assertFailsWith<IOException> { silentRequest().send(CappedResponseSender("token response")) }
+            assertEquals("Invalid Http response", cappedFailure.message)
+            assertNull(cappedFailure.cause)
+            for (i in 0 until 50) {
+                if (silent.requests.get() > 0) break
+                Thread.sleep(20)
+            }
+            println("[CappedResponseSenderTest] 상태 줄 없음 → Nimbus send() 요청 $stockRequests · 새 운송 ${silent.requests.get()} · $cappedFailure")
+            assertEquals(1, silent.requests.get(), "새 연결의 실패를 다시 보냈다")
+        }
     }
 
     // 상한을 넘는 본문(2xx 든 오류든)은 상한만 말하는 예외다 — 응답을 인용하지 않는다.
