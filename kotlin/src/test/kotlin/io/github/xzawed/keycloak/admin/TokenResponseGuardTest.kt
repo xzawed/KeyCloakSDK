@@ -225,6 +225,7 @@ internal class TokenResponseGuardTest {
         every { req.method } returns method
         every { req.uri } returns URI.create(uri)
         every { req.setProperty(any(), any()) } just runs
+        every { req.getProperty(any()) } returns null // 엔진의 끊기 손잡이가 없다 — 실제 연결의 끊기는 AdminRejectedResponseCutTest 가 잰다
         return req
     }
 
@@ -372,6 +373,7 @@ internal class TokenResponseGuardTest {
         body: InputStream?,
     ): ReaderInterceptorContext {
         val ctx = mockk<ReaderInterceptorContext>()
+        every { ctx.getProperty(any()) } returns null // 엔진의 끊기 손잡이가 없다 — 아래의 판정 표시만 답한다(나중 선언이 이긴다)
         every { ctx.getProperty(TokenResponseGuard.JUDGE_ENTITY) } returns mark
         every { ctx.inputStream } returns body
         every { ctx.inputStream = any() } just runs

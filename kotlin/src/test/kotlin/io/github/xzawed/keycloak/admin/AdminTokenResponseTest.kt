@@ -57,6 +57,35 @@ private fun atrTokenBody(
     return "{$at\"token_type\":\"Bearer\",\"expires_in\":$expiresIn$extra}"
 }
 
+// JSON 문자열 리터럴 — 제어 문자·DEL·따옴표·역슬래시는 이스케이프한다(그 밖은 그대로 — 본문은 UTF-8).
+private fun atrJsonString(s: String): String =
+    buildString {
+        append('"')
+        for (c in s) {
+            if (c < ' ' || c == '\u007f' || c == '"' || c == '\\') append("\\u%04x".format(c.code)) else append(c)
+        }
+        append('"')
+    }
+
+// 표에 찍을 수 있게 — 제어 문자·DEL·C1·Latin-1 밖은 \uXXXX 로.
+private fun atrPrintable(s: String): String =
+    buildString {
+        for (c in s) {
+            if (c < ' ' || (c >= '\u007f' && c < ' ') || c > 'ÿ') append("\\u%04X".format(c.code)) else append(c)
+        }
+    }
+
+// admin 호출 하나의 결과 — 실패면 그것, 성공이면 null(취소는 그대로 던진다).
+private suspend fun atrOutcome(call: suspend () -> Unit): Throwable? =
+    try {
+        call()
+        null
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        e
+    }
+
 // 갱신 시나리오의 첫 응답 — expires_in 1 < TokenManager 최소 유효기간(30s) 이라 다음 호출이 refresh_token 으로 갱신한다.
 private val ATR_REFRESHABLE = atrTokenBody("\"AT-1\"", ",\"refresh_token\":\"RT-1\",\"refresh_expires_in\":300", expiresIn = 1)
 
@@ -733,6 +762,55 @@ internal class AdminTokenResponseTest {
             }
             assertEquals(listOf("client_credentials"), grants(), "토큰은 캐시되어 한 번만 부여돼야 한다")
             assertEquals(listOf("GET /admin/realms/r/users/x · Bearer AT-1", "POST /admin/realms/r/users · Bearer AT-1"), adminHits())
+        }
+
+    // HTTP 필드 값이 싣지 못하는 문자(RFC 9110 §5.5 — CR·LF·NUL·HTAB 밖의 C0·DEL)를 담은 access_token 은 쓸 수 없는 토큰이다(Java
+    // 동형): admin 요청을 하나도 보내지 않고, 캐시하지도 않는다(두 번째 호출이 다시 부여한다). 오류는 토큰을 인용하지 않는다. 수정 전
+    // HttpCore 는 그 Bearer 를 조용히 고쳐 보냈다 — CR·LF·VT·FF 는 공백으로, NUL·그 밖의 C0·DEL 은 ? 로. 대조: HTAB·SP·U+00E9·U+0100·
+    // U+0085·~ 는 지금처럼 보낸다 — 그 밖의 판정은 아홉 언어가 함께 정할 일이다(등록부 bearer-token-grammar-divergent). 서버가 해석한
+    // 값은 표로 찍는다 — 선 위 바이트가 아니다(com.sun HttpServer 는 HTAB 을 공백으로 읽는다).
+    @Test
+    fun `an access_token no HTTP header can carry is neither sent nor cached`() =
+        runTest {
+            val table = mutableListOf<String>()
+            val wrong = mutableListOf<String>()
+            val refused = mutableListOf<String>()
+            for (c in 0 until 0x20) if (c != 0x09) refused += "tok-${Char(c)}-end"
+            refused += "tok-\u007f-end"
+            for (c in listOf('\u0000', '\r', '\n', '\u007f')) {
+                refused += "${c}tok-end"
+                refused += "tok-end$c"
+            }
+            for (token in refused) {
+                reset(Reply(200, atrTokenBody(atrJsonString(token), ",\"refresh_token\":\"$ATR_RT_CANARY\"")))
+                val thrown = admin().use { admin -> List(2) { atrOutcome { admin.users().get("x") } } }
+                val label = "access_token ${atrPrintable(token)}"
+                table += "$label → ${thrown.map { it?.javaClass?.simpleName ?: "성공" }} · grants ${grants()} · " +
+                    "admin ${atrPrintable(adminHits().toString())}"
+                for (t in thrown) {
+                    if (t !is KeycloakTransportException || t.message != "Admin request failed") {
+                        wrong += "$label: KeycloakTransportException(Admin request failed) 가 아니다 — $t"
+                    } else if ("tok-" in t.stackTraceToString() || ATR_RT_CANARY.take(10) in t.stackTraceToString()) {
+                        wrong += "$label: 오류가 응답을 인용했다"
+                    }
+                }
+                if (adminHits().isNotEmpty()) wrong += "$label: admin 요청이 나갔다 — ${atrPrintable(adminHits().toString())}"
+                if (grants() != listOf("client_credentials", "client_credentials")) {
+                    wrong += "$label: 토큰을 캐시했다(두 번째 호출이 다시 부여하지 않았다) — grants ${grants()}"
+                }
+            }
+            for (token in listOf("tok-\t-end", "tok- -end", "tok-é-end", "tok-Ā-end", "tok-\u0085-end", "tok-~-end")) {
+                reset(Reply(200, atrTokenBody(atrJsonString(token))))
+                val thrown = admin().use { admin -> List(2) { atrOutcome { admin.users().get("x") } } }
+                val label = "대조 access_token ${atrPrintable(token)}"
+                table += "$label → ${thrown.map { it?.javaClass?.simpleName ?: "성공" }} · grants ${grants()} · " +
+                    "서버가 받은 값 ${atrPrintable(adminHits().toString())}"
+                if (thrown.any { it != null }) wrong += "$label: 보내야 한다 — $thrown"
+                if (adminHits().size != 2) wrong += "$label: admin 요청 두 건이어야 한다 — ${atrPrintable(adminHits().toString())}"
+                if (grants() != listOf("client_credentials")) wrong += "$label: 토큰은 캐시돼야 한다 — grants ${grants()}"
+            }
+            println("[AdminTokenResponseTest 헤더가 싣지 못하는 access_token]\n  " + table.joinToString("\n  "))
+            assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
         }
 
     // TokenManager 의 갱신(refresh_token 그랜트) 응답도 같은 검사를 받는다 — 쓸 수 있으면 새 토큰으로 나아간다.

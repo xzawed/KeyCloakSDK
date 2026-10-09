@@ -49,8 +49,8 @@ import org.junit.jupiter.params.provider.EnumSource;
  * 넘으면 연결을 끊는다(남은 본문을 읽지 않는다 — {@code CappedResponseSender}). 예전 운송(HttpURLConnection)은 닫을 때 소켓에
  * 이미 와 있는 청크 바이트를 읽어 풀었고 할당이 그 양의 제곱으로 자라서(리눅스 루프백 · 4 KiB 청크 32 MiB 에 호출 하나 0.36–2.84
  * GB — 등록부 {@code close-drain-time-unbounded}), 이 시험의 서버가 상한 너머를 붙잡아 그 몫을 뺐었다. Windows 루프백은 수신
- * 버퍼가 작아 그 비용이 1 MB 아래였다 — 닫기의 회귀는 리눅스에서 드러난다. admin 레인은 닫을 때 HttpCore 가 남은 본문을 고정
- * 버퍼로 비운다(시간은 본문 길이를 따르고 할당은 작다).
+ * 버퍼가 작아 그 비용이 1 MB 아래였다 — 닫기의 회귀는 리눅스에서 드러난다. admin 레인도 상한을 넘으면 연결을 끊는다(예전에는
+ * 닫을 때 HttpCore 가 남은 본문을 끝까지 비웠다 — {@code AdminRejectedResponseCutTest}).
  */
 class TokenResponseCapTest {
   private static final int CAP = 1_048_576;
