@@ -150,6 +150,14 @@ jobs:
         # 픽스처의 커버 데이터는 실제 도구(`go test -coverprofile` · coverage.py json)가 낸 것이라 Docker 가 필요 없다.
         run: sh scripts/test/test-integration-coverage.sh
 
+      - name: KNOWN_GAPS ↔ 등록부 대조 가드 자가테스트(아홉 문법 · 주석 속 id 거름 · 공허 실패 · 픽스처만)
+        # 적대 경로 행렬의 알려진 틈이 **열린** 등록부 항목을 가리키는지 보는 가드의 자가테스트다.
+        # ⚠️ required 안에 두어도 안전한 이유: 임시 저장소에 픽스처를 만들어 가드를 돌릴 뿐이라 판정이
+        # 가드 코드와 `df_tree_langs` 에만 달려 있다 — 언어 CI 의 실행·산출물·네트워크·실제 행렬 파일·
+        # 실제 등록부 어느 것도 읽지 않는다. 그래서 언어 레인에서만 일어나는 일로는 빨개질 수 없고,
+        # 빨개지는 것은 그 셋을 고친 PR 뿐이다. 실제 트리 대조는 아래 비-required `known-gaps-join` 잡이다.
+        run: sh scripts/test/test-check-known-gaps.sh
+
       - name: JVM 바이트코드 하한 가드 자가테스트(위반을 실제로 잡는지 · 0개를 훑고 통과하지 않는지)
         # 두 JVM 레인은 JDK 21 로 빌드하고 17 을 방출한다. 그 설정 한 줄이 빠지면 빌드는 성공하고
         # CI(21에서 돈다)도 초록인데 major 65 가 나가서 JDK 17 소비자만 죽는다 — 산출물을 직접
@@ -456,6 +464,22 @@ jobs:
         # 파생 ↔ `scripts/integration-coverage.json` 의 핀 · 소유자 id ↔ 등록부의 열린 항목. 레인 통합 잡은 `paths:`
         # 뒤라 SSOT 나 등록부만 바꾼 PR 에서는 돌지 않는다 — 그 대조를 모든 PR 에서 여기서 한다.
         run: node scripts/integration-coverage.mjs check
+
+  known-gaps-join:
+    # 아홉 적대 경로 행렬의 KNOWN_GAPS 가 가리키는 id ↔ 등록부의 **열린** 항목 — **실제 트리**. 가드
+    # 자신의 자가테스트는 doc-facts 잡에서 픽스처로 돈다.
+    # ⚠️ **비-required 다, 그리고 그렇게 두는 것이 의도다** — `coverage-boundary` 와 같은 이유: 이 가드는
+    # 아홉 언어의 문법을 렉서로 읽으므로 첫 도입의 오탐 하나가 required 에 있으면 모든 PR 이 멈춘다
+    # (PRIMARY 는 `bypass_actors: []`). `paths:` 가 없어 체크가 모든 PR 에서 **생성**되므로 Pending 으로
+    # 남지 않는다. required 로 올리는 것은 rulesets 변경이라 별개 판단이다.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+      - name: KNOWN_GAPS id ↔ 등록부 열린 항목(실제 트리)
+        run: node scripts/check-known-gaps.mjs
 
   repo-config:
     # 저장소 설정(브랜치 룰셋) 대조기의 자가테스트.
