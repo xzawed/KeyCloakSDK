@@ -24,9 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -288,6 +286,26 @@ class ConnectionReuseTest {
     return BoundedTransport.POOL.getTotalStats().getLeased();
   }
 
+  /**
+   * {@code n} 개의 호출을 각자의 데몬 스레드에서 함께 시작한다 — ExecutorService 를 쓰지 않는다(JDK 19 부터 AutoCloseable 인데 이 시험은
+   * release 17 로 컴파일돼 그 close() 를 부를 수 없다). 끝나면 {@link #cancelAll} 로 남은 것을 중단한다.
+   */
+  private static List<FutureTask<Boolean>> concurrently(int n, java.util.concurrent.Callable<Boolean> call) {
+    List<FutureTask<Boolean>> tasks = new ArrayList<>();
+    for (int i = 0; i < n; i++) {
+      FutureTask<Boolean> task = new FutureTask<>(call);
+      Thread t = new Thread(task, "reuse-test-call");
+      t.setDaemon(true);
+      t.start();
+      tasks.add(task);
+    }
+    return tasks;
+  }
+
+  private static void cancelAll(List<FutureTask<Boolean>> tasks) {
+    for (FutureTask<Boolean> task : tasks) task.cancel(true);
+  }
+
   // ───────────── 재사용 ─────────────
 
   /** AuthClient 의 introspection 20 번이 연결 하나로 간다 — 서버는 연결 하나에서 요청 20 개를 받는다. */
@@ -338,13 +356,11 @@ class ConnectionReuseTest {
       }
     })) {
       AuthClient auth = authClient("http://127.0.0.1:" + server.port());
-      ExecutorService pool = Executors.newFixedThreadPool(60);
+      List<FutureTask<Boolean>> calls = concurrently(60, () -> auth.introspect("tok").isActive());
       try {
-        List<Future<Boolean>> calls = new ArrayList<>();
-        for (int i = 0; i < 60; i++) calls.add(pool.submit(() -> auth.introspect("tok").isActive()));
-        for (Future<Boolean> call : calls) assertTrue(call.get(20, TimeUnit.SECONDS));
+        for (FutureTask<Boolean> call : calls) assertTrue(call.get(20, TimeUnit.SECONDS));
       } finally {
-        pool.shutdownNow();
+        cancelAll(calls);
       }
       System.out.println("[ConnectionReuseTest] 동시 60 호출 → 서버가 받아들인 연결 " + server.accepted + " · 동시에 열린 최고 "
           + server.peakOpen);
@@ -592,14 +608,11 @@ class ConnectionReuseTest {
       p.serveAll(ok(ACTIVE));
     })) {
       AuthClient auth = authClient("http://127.0.0.1:" + server.port());
-      ExecutorService pool = Executors.newFixedThreadPool(2);
+      List<FutureTask<Boolean>> pair = concurrently(2, () -> auth.introspect("tok").isActive());
       try {
-        Future<Boolean> a = pool.submit(() -> auth.introspect("a").isActive());
-        Future<Boolean> b = pool.submit(() -> auth.introspect("b").isActive());
-        assertTrue(a.get(10, TimeUnit.SECONDS));
-        assertTrue(b.get(10, TimeUnit.SECONDS));
+        for (FutureTask<Boolean> call : pair) assertTrue(call.get(10, TimeUnit.SECONDS));
       } finally {
-        pool.shutdownNow();
+        cancelAll(pair);
       }
       Thread.sleep(300); // 두 연결의 FIN 이 닿을 시간 — 빌려줄 때 보는 시간(2 초)보다 짧다
       assertTrue(auth.introspect("c").isActive());
@@ -701,10 +714,8 @@ class ConnectionReuseTest {
     })) {
       String base = "http://127.0.0.1:" + server.port();
       AuthClient holder = authClient(base, Duration.ofSeconds(10));
-      ExecutorService pool = Executors.newFixedThreadPool(BoundedTransport.MAX_PER_ROUTE);
+      List<FutureTask<Boolean>> holders = concurrently(BoundedTransport.MAX_PER_ROUTE, () -> holder.introspect("tok").isActive());
       try {
-        List<Future<Boolean>> holders = new ArrayList<>();
-        for (int i = 0; i < BoundedTransport.MAX_PER_ROUTE; i++) holders.add(pool.submit(() -> holder.introspect("tok").isActive()));
         assertTrue(busy.await(10, TimeUnit.SECONDS), "연결 50 개가 차지 않았다");
         AuthClient waiting = authClient(base, Duration.ofSeconds(1), Duration.ofSeconds(10));
         long start = System.nanoTime();
@@ -713,9 +724,9 @@ class ConnectionReuseTest {
         assertInstanceOf(SocketTimeoutException.class, e.getCause());
         assertEquals(BoundedTransport.POOL_TIMEOUT, e.getCause().getMessage());
         assertTrue(millis >= 900 && millis < 2_900, () -> millis + " ms");
-        for (Future<Boolean> call : holders) assertTrue(call.get(20, TimeUnit.SECONDS));
+        for (FutureTask<Boolean> call : holders) assertTrue(call.get(20, TimeUnit.SECONDS));
       } finally {
-        pool.shutdownNow();
+        cancelAll(holders);
       }
       assertEquals(BoundedTransport.MAX_PER_ROUTE, server.accepted.get());
       assertEquals(0, leased());

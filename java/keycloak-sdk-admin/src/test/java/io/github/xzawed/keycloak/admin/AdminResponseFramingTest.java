@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.config.MessageConstraints;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
@@ -140,8 +141,9 @@ class AdminResponseFramingTest {
   private static final class RawServer implements AutoCloseable {
     final ServerSocket socket;
     final AtomicInteger adminHits = new AtomicInteger();
-    volatile Reply token = lengthDelimited(TOKEN);
-    volatile Reply users = lengthDelimited(USER);
+    /** 시험 스레드가 바꾸고 서버 스레드가 읽는 응답 — 원자적 참조로 건넨다. */
+    final AtomicReference<Reply> token = new AtomicReference<>(lengthDelimited(TOKEN));
+    final AtomicReference<Reply> users = new AtomicReference<>(lengthDelimited(USER));
     volatile boolean stop;
 
     RawServer() throws IOException {
@@ -189,10 +191,10 @@ class AdminResponseFramingTest {
         String path = lines[0].split(" ")[1];
         OutputStream out = s.getOutputStream();
         if (path.equals(TOKEN_PATH)) {
-          token.write(out);
+          token.get().write(out);
         } else if (path.startsWith("/admin/realms/" + REALM + "/users")) {
           adminHits.incrementAndGet();
-          users.write(out);
+          users.get().write(out);
         } else {
           out.write(latin1("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"));
         }
@@ -255,7 +257,7 @@ class AdminResponseFramingTest {
     try (RawServer server = new RawServer()) {
       call(server); // 예열 — 클래스 적재·JIT 를 잰 구간 밖으로
       server.adminHits.set(0);
-      server.token = manyTrailers(TOKEN);
+      server.token.set(manyTrailers(TOKEN));
       Outcome o = call(server);
       System.out.println("[AdminResponseFramingTest] 토큰 응답 32 MiB 트레일러 → " + o.describe() + " · admin "
           + server.adminHits.get());
@@ -269,7 +271,7 @@ class AdminResponseFramingTest {
   @Test void adminResponseWithHugeTrailers_isRejected() throws IOException {
     try (RawServer server = new RawServer()) {
       call(server);
-      server.users = manyTrailers(USER);
+      server.users.set(manyTrailers(USER));
       Outcome o = call(server);
       System.out.println("[AdminResponseFramingTest] 사용자 응답 32 MiB 트레일러 → " + o.describe());
       assertInstanceOf(KeycloakTransportException.class, o.thrown(), o::describe);
@@ -293,8 +295,8 @@ class AdminResponseFramingTest {
       String[] kinds = {"청크 크기 줄", "트레일러 줄", "콜론 없는 헤더 줄", "상태 줄", "미디어 타입 없는 청크 크기 줄"};
       for (int w = 0; w < 2; w++) {
         for (int k = 0; k < kinds.length; k++) {
-          server.token = w == 0 ? replies[0][k] : lengthDelimited(TOKEN);
-          server.users = w == 1 ? replies[1][k] : lengthDelimited(USER);
+          server.token.set(w == 0 ? replies[0][k] : lengthDelimited(TOKEN));
+          server.users.set(w == 1 ? replies[1][k] : lengthDelimited(USER));
           Outcome o = call(server);
           String label = where[w] + " " + kinds[k];
           table.add(label + " → " + o.describe());

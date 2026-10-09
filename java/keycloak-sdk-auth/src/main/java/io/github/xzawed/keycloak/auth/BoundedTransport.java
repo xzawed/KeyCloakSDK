@@ -630,6 +630,23 @@ final class BoundedTransport {
       HostnameVerifier verifier = (HostnameVerifier) context.getAttribute(TLS_VERIFIER);
       socket.setSoTimeout(readTimeout(context));
       SSLSocket tls = (SSLSocket) factory.createSocket(socket, target, port, true);
+      try {
+        handshake(tls, target, verifier);
+      } catch (IOException | RuntimeException failed) {
+        // 넘기기 전의 실패 — 이 소켓을 여기서 닫는다(autoClose 라 그 아래 평문 소켓도). 핸드셰이크 전이라 읽을 것이 없거나 이미
+        // 닫혔다(검증기 거부 · JSSE 의 핸드셰이크 실패) — 닫기가 기다리지 않는다.
+        try {
+          tls.close();
+        } catch (IOException ignored) {
+          // 실패한 연결이다 — 처음의 실패를 던진다
+        }
+        throw failed;
+      }
+      return tls;
+    }
+
+    /** HttpURLConnection 처럼 규약·암호 묶음을 걸고, 이름 검사를 정해 핸드셰이크한다(검사가 뒤에 오면 {@link #checkHostname}). */
+    private static void handshake(SSLSocket tls, String target, HostnameVerifier verifier) throws IOException {
       String[] protocols = tokens(System.getProperty("https.protocols"));
       if (protocols.length > 0) tls.setEnabledProtocols(protocols);
       String[] suites = tokens(System.getProperty("https.cipherSuites"));
@@ -646,7 +663,6 @@ final class BoundedTransport {
       }
       tls.startHandshake();
       if (checkAfter) checkHostname(tls, target, verifier);
-      return tls;
     }
 
     /**

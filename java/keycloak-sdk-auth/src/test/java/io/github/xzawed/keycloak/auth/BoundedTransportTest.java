@@ -184,14 +184,14 @@ class BoundedTransportTest {
    * 수 없으면 참(그 연결은 버린다). 다른 속성은 HttpCore 의 연결 그대로 담는다.
    */
   @Test void connections_answerWhetherUnsolicitedBytesWait() throws Exception {
-    ManagedHttpClientConnection conn = BoundedTransport.CONNECTIONS.create(
-        new HttpRoute(new HttpHost("127.0.0.1", 1)), org.apache.http.config.ConnectionConfig.DEFAULT);
-    HttpContext attributes = (HttpContext) conn;
-    attributes.setAttribute("other", 1);
-    assertEquals(1, attributes.getAttribute("other"));
-    try (java.net.ServerSocket server = new java.net.ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+    try (ManagedHttpClientConnection conn = BoundedTransport.CONNECTIONS.create(
+             new HttpRoute(new HttpHost("127.0.0.1", 1)), org.apache.http.config.ConnectionConfig.DEFAULT);
+         java.net.ServerSocket server = new java.net.ServerSocket(0, 1, InetAddress.getLoopbackAddress());
          java.net.Socket client = new java.net.Socket(InetAddress.getLoopbackAddress(), server.getLocalPort());
          java.net.Socket peer = server.accept()) {
+      HttpContext attributes = (HttpContext) conn;
+      attributes.setAttribute("other", 1);
+      assertEquals(1, attributes.getAttribute("other"));
       conn.bind(client);
       assertEquals(Boolean.FALSE, attributes.getAttribute(BoundedTransport.UNSOLICITED));
       peer.getOutputStream().write(new byte[] {'H', 'T'});
@@ -201,10 +201,11 @@ class BoundedTransportTest {
     }
     java.net.Socket closed = new java.net.Socket();
     closed.close();
-    ManagedHttpClientConnection gone = BoundedTransport.CONNECTIONS.create(
-        new HttpRoute(new HttpHost("127.0.0.1", 1)), org.apache.http.config.ConnectionConfig.DEFAULT);
-    gone.bind(closed);
-    assertEquals(Boolean.TRUE, ((HttpContext) gone).getAttribute(BoundedTransport.UNSOLICITED));
+    try (ManagedHttpClientConnection gone = BoundedTransport.CONNECTIONS.create(
+        new HttpRoute(new HttpHost("127.0.0.1", 1)), org.apache.http.config.ConnectionConfig.DEFAULT)) {
+      gone.bind(closed);
+      assertEquals(Boolean.TRUE, ((HttpContext) gone).getAttribute(BoundedTransport.UNSOLICITED));
+    }
   }
 
   /** 버리는 연결 — 읽기 타임아웃을 0 으로 두고 닫는다. 닫기의 실패는 삼킨다(어차피 쓰지 않는다). */
