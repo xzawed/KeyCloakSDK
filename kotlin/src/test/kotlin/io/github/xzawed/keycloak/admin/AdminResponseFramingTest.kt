@@ -236,29 +236,37 @@ private fun afCall(server: AfRawServer): AfOutcome =
     }
 
 internal class AdminResponseFramingTest {
-    // (2) 토큰 응답의 트레일러가 한도를 넘으면 그 토큰으로 admin 요청을 보내지 않고 실패한다 — 할당이 묶인다.
+    // (2) 토큰 응답의 트레일러가 한도를 넘으면 그 토큰으로 admin 요청을 보내지 않고 실패한다 — 할당이 묶인다. ⚠️ 거부의 길도 한 번 먼저
+    // 지난다 — 이 레인은 Dispatchers.IO 에서 돌아 모든 스레드의 합을 재므로, 그 길을 처음 지나는 호출은 클래스 적재·계측(Kover 에이전트)까지
+    // 센다(실측: 이 클래스만 돌면 첫 거부 22,011,424 B · 스위트 안에서는 4,343,440 B). 처음의 수는 출력에 남기고 잰 것은 두 번째다.
     @Test
     fun `a token response with huge trailers is rejected before any admin request`() {
         AfRawServer().use { server ->
             afCall(server) // 예열 — 클래스 적재·JIT 를 잰 구간 밖으로
             server.adminHits.set(0)
             server.token.set(afManyTrailers(AF_TOKEN))
+            val first = afCall(server) // 거부의 길 예열
             val o = afCall(server)
-            println("[AdminResponseFramingTest] 토큰 응답 32 MiB 트레일러 → ${o.describe()} · admin ${server.adminHits.get()}")
+            println(
+                "[AdminResponseFramingTest] 토큰 응답 32 MiB 트레일러 → ${o.describe()} · 처음 ${first.allocated} B · admin ${server.adminHits.get()}",
+            )
+            assertIs<KeycloakTransportException>(first.thrown, first.describe())
             assertIs<KeycloakTransportException>(o.thrown, o.describe())
             assertEquals(0, server.adminHits.get(), "한도를 넘는 토큰 응답으로 admin 요청이 나갔다")
             assertTrue(o.allocated < AF_FRAMING_BOUND, o.describe())
         }
     }
 
-    // (2) admin 자원 응답도 같은 한도다 — 사용자 조회의 트레일러가 한도를 넘으면 전송 실패다.
+    // (2) admin 자원 응답도 같은 한도다 — 사용자 조회의 트레일러가 한도를 넘으면 전송 실패다(거부의 길 예열은 위와 같다).
     @Test
     fun `an admin response with huge trailers is rejected`() {
         AfRawServer().use { server ->
             afCall(server)
             server.users.set(afManyTrailers(AF_USER))
+            val first = afCall(server) // 거부의 길 예열
             val o = afCall(server)
-            println("[AdminResponseFramingTest] 사용자 응답 32 MiB 트레일러 → ${o.describe()}")
+            println("[AdminResponseFramingTest] 사용자 응답 32 MiB 트레일러 → ${o.describe()} · 처음 ${first.allocated} B")
+            assertIs<KeycloakTransportException>(first.thrown, first.describe())
             assertIs<KeycloakTransportException>(o.thrown, o.describe())
             assertTrue(o.allocated < AF_FRAMING_BOUND, o.describe())
         }
