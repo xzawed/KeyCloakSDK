@@ -6,7 +6,14 @@ paths:
   - "harness/install/consume/kotlin-app/**"
   - ".github/workflows/kotlin-*.yml"
 ---
-<!-- doc-budget: max-bytes=9352 -->
+<!-- doc-budget: max-bytes=9639 -->
+<!-- 9352 → 9639 (2026-10-09, +287B). 규약 (1) — 증가분이 **다시 재는 시험**을 사 온다: auth·JWKS 운송의 프로세스 풀
+     함정 한 줄이 `ConnectionReuseTest`(거부한 응답은 끊겨 풀로 돌아가지 않는다 · 풀을 기다리던 60 호출 취소 → 빌린 연결 0 ·
+     강제 JWKS 재조회 취소 뒤 /certs 2 · 인터럽트된 JWKS 호출자는 성공·실패 둘 다 표시를 지킨다 — 변이 k01·k02·k03·k10 을
+     잡는다)를 가리킨다. 같은 커밋이 거짓 문장 셋을 고친다 — 「95.37% (103 of 108)」·「denominator is 108 … 0.93 points」·
+     「Slack is now 11」 은 실측 91.76% (323 of 352)·352 → 0.28·23 이다(`koverXmlReport` 의 BRANCH 323/352, 분기 하한 85% 는
+     300 을 요구 — main 343578c 도 이미 196/224 였다). 미커버 29 = masking.kt 23 · validatedTokenFrom 5 · `toApache` 의
+     플랫폼 타입 null 검사 1. 초안 +303B(검사 8b 의 300B 상한) → 「Its wait is the only interruptible spot」 을 줄여 +287B. -->
 <!-- 9145 → 9352 (2026-09-25, +207B). 규약 (1) — 증가분이 **다시 재는 테스트**를 사 온다: Nimbus·`java.net.URI`
      로컬 검증 함정 한 줄이 `AuthClientInputBoundaryTest`(#585)를 가리킨다. 같은 커밋이 거짓 문장 셋을 고친다 —
      「99.33% / 89.13% (41 of 46)」·「denominator is 46 … 2.2 points」·「Slack is now 1」 은 실측 98.72% / 89.58%
@@ -47,8 +54,8 @@ cd kotlin
 - ⚠️ **`jvmToolchain(21)` is the build JDK; the consumer floor is `jvmTarget = JVM_17` + `-Xjdk-release=17`.** The toolchain also drives the bytecode target, so **deleting `jvmTarget` silently ships major 65** — build green, CI (on 21) blind. `check-jvm-bytecode-floor.mjs` re-reads the class files, and `check-docs.mjs` extracts `JvmTarget.JVM_(\d+)`, **not** the toolchain.
 - ⚠️ **`-Xjdk-release` is load-bearing.** `jvmTarget` alone lowers the class-file version but still links against JDK 21's boot classpath, so a 17-absent API compiles and dies at runtime. Measured: enabling it immediately failed `AdminRedirectHardeningTest.kt` (`HttpClient.use {}` — `AutoCloseable` only since 21).
 - Releasing goes `kotlin-v*` tag → `kotlin-release.yml` (staging on the Central Portal) → a human releases it from the Portal. The pins' SSOT is the dependency table in the root `CLAUDE.md` (a doc-guard anchor cross-checks it against `build.gradle.kts` — do not write the numbers here).
-- Measured branch coverage is 95.37% (103 of 108). ⚠️ `koverVerify` prints no percentages, so it cannot be cross-checked from the CI log — use `koverHtmlReport` for that.
-- ⚠️ **Read the branch gate's slack as a count, not a percentage.** The denominator is 108, so a branch is 0.93 points. It sat at **exactly zero slack** (40 covered, 40 required) until a test for a token carrying `iat` was added — the helper in `JwtValidatorTest` had never set `issueTime`, so `validatedTokenFrom` only ever took the null path. Slack is now 11.
+- Measured branch coverage is 91.76% (323 of 352). ⚠️ `koverVerify` prints no percentages, so it cannot be cross-checked from the CI log — use `koverHtmlReport` for that.
+- ⚠️ **Read the branch gate's slack as a count, not a percentage.** The denominator is 352, so a branch is 0.28 points. It sat at **exactly zero slack** (40 covered, 40 required) until a test for a token carrying `iat` was added — the helper in `JwtValidatorTest` had never set `issueTime`, so `validatedTokenFrom` only ever took the null path. Slack is now 23.
 - ⚠️ **The five branches still uncovered in `validatedTokenFrom` are unreachable, not missing tests.** Nimbus's `JWTClaimsSet` returns an empty list from `getAudience()` and a non-null map from `getClaims()` — never null — and the processor rejects a token with no `exp` before this function runs. Reaching them needs a mock claims set, which buys a number and asserts nothing. **Do not chase 100% here.**
 
 ## Build and test constraints
@@ -78,3 +85,4 @@ cd kotlin
 - `fun interface` + `suspend` compiles (KT-40978 is resolved), so `TokenProvider` is SAM-convertible.
 - ⚠️ **`jwksMinRefetch` must stay below the Nimbus cache TTL (5 minutes by default).** Above it, `JWKSourceBuilder.build()` throws, and letting that foreign exception escape through the public API is a §4 violation — convert it at the boundary to `KeycloakConfigException`. ⚠️ **A JWKS rate-limit test must always include a control case (interval 0, or a rebuilt validator)** — the cache alone makes it pass, so it stays green even after a line of the hardening is deleted.
 - ⚠️ **Injecting `resteasyClient(...)` bypasses the admin-client's `JacksonProvider` registration** — that loses `NON_NULL` together with `FAIL_ON_UNKNOWN_PROPERTIES=false`, which breaks version skew in both directions. `buildTimeoutClient` registers `JacksonProvider` and `StreamMessageBodyReader` itself. Keep `ClientBuilder.newBuilder()` (`createClientBuilder()` drops the connection pool from 50 to 10). **Behavioural contract**: with `NON_NULL` on, a partial update cannot blank a field by setting it to null (same as the official admin-client) — to blank one, use an empty string or the dedicated API.
+- ⚠️ **auth/JWKS share one process-wide pool** (`BoundedTransport`): only a body read to EOF returns its connection; other exits abort it — never close/`consume` the entity. Only its wait is interruptible: keep `onIo`'s `ensureActive` and `fetchToCompletion`. Pinned by `ConnectionReuseTest`.
