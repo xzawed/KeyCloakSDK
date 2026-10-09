@@ -101,8 +101,8 @@ func NewAdminClient(ctx context.Context, cfg Config, tp TokenProvider) (*AdminCl
 	gc, tr := newAdminTransport(cfg)
 	a := assembleAdmin(gc, tr, cfg, tp)
 	// Eager authentication — same contract as the default path: a provider that cannot mint a token
-	// fails at construction, not at the first admin call.
-	if _, err := tp.Token(ctx); err != nil {
+	// (or mints one no header can carry) fails at construction, not at the first admin call.
+	if _, err := a.token(ctx); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -130,13 +130,17 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 		if jwt == nil || jwt.AccessToken == "" {
 			return nil, &AuthError{Msg: "client-credentials login returned no access token"}
 		}
+		// Refused here so the provider never caches it: net/http would refuse it on every admin call (bearerSendable).
+		if !bearerSendable(jwt.AccessToken) {
+			return nil, &AuthError{Msg: "client-credentials login returned an access token an HTTP header cannot carry (it holds a control character such as CR, LF or NUL)"}
+		}
 		return &TokenSet{AccessToken: jwt.AccessToken, ExpiresIn: int64(jwt.ExpiresIn)}, nil
 	}, cfg.ClockSkew)
 
 	a := assembleAdmin(gc, tr, cfg, tp)
 
 	// Eager authentication: fail fast on bad credentials (matches Java/Python/Node).
-	if _, err := tp.Token(ctx); err != nil {
+	if _, err := a.token(ctx); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -152,7 +156,19 @@ func (a *AdminClient) Close() error {
 	return nil
 }
 
-func (a *AdminClient) token(ctx context.Context) (string, error) { return a.tp.Token(ctx) }
+// token is the bearer of every facade call and of the eager authentication. A token an HTTP header cannot carry is
+// refused before any request is built — the SDK's own provider never returns one (its login refuses it, above), a
+// consumer's can.
+func (a *AdminClient) token(ctx context.Context) (string, error) {
+	tok, err := a.tp.Token(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !bearerSendable(tok) {
+		return "", &AuthError{Msg: "admin request not sent: an HTTP header cannot carry the access token (it holds a control character such as CR, LF or NUL)"}
+	}
+	return tok, nil
+}
 
 // call runs a gocloak call and converts its error to the SDK taxonomy.
 func call[T any](fn func() (T, error)) (T, error) {

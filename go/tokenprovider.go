@@ -105,6 +105,21 @@ func (p *clientCredentialsProvider) Token(ctx context.Context) (string, error) {
 	}
 }
 
+// bearerSendable reports whether net/http sends "Bearer "+token as a header value. It transcribes the check the
+// transport makes before anything is sent (httpguts.ValidHeaderFieldValue): no control character other than HTAB — CR,
+// LF and NUL among them — and no DEL; a byte past ASCII is carried as it is. A token that fails it never reaches the
+// server, and the transport's refusal used to come back from every admin call as an opaque *TransportError whose
+// withheld detail blamed the IdP's response (measured: admin_bearer_header_test.go). bearer_sendable_test.go checks
+// this transcription against the transport byte by byte.
+func bearerSendable(token string) bool {
+	for i := 0; i < len(token); i++ {
+		if c := token[i]; (c < 0x20 && c != '\t') || c == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
 // abandoned is what a caller gets when its ctx ends while it waits on a shared token fetch or admin client
 // creation: the admin lane's transport error for a request that did not complete, wrapping the context's
 // error so that errors.Is(err, context.Canceled) and errors.Is(err, context.DeadlineExceeded) hold.

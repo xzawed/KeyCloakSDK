@@ -237,10 +237,12 @@ func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Val
 	return body, nil
 }
 
+// oauthError is the code AuthError.OAuthError carries: x/oauth2's, when it is one in the RFC 6749 grammar
+// (oauthErrorCode, cause.go), and none otherwise.
 func oauthError(err error) string {
 	var re *oauth2.RetrieveError
 	if errors.As(err, &re) {
-		return re.ErrorCode
+		return oauthErrorCode(re.ErrorCode)
 	}
 	return ""
 }
