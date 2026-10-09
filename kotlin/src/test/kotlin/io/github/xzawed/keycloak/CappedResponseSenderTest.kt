@@ -147,12 +147,18 @@ internal class CappedResponseSenderTest {
             }
         }
 
-    // 두 응답이 같은가 — 상태·상태 문구·헤더(서버가 매번 다시 찍는 Date 는 뺀다)·본문 문자열.
+    // 두 응답이 같은가 — 상태·상태 문구·헤더(서버가 매번 다시 찍는 Date 는 뺀다)·본문 문자열. ⚠️ JDK 17 의 HttpURLConnection 은 거듭 오는
+    // 헤더의 값 순서를 뒤집는다(JDK-8133686 은 18 에서 고쳐졌다 — 리눅스 Docker 17.0.20.1 실측: X-multi [b, a] 대 새 운송 [a, b]) — 17 에서는
+    // 값의 집합으로 비교한다(TransportParityTest 와 같은 정규화). 새 운송은 받은 순서를 지킨다.
     private fun same(
         stock: HTTPResponse,
         capped: HTTPResponse,
     ): String? {
-        val strip = { r: HTTPResponse -> r.headerMap.filterKeys { !it.equals("Date", ignoreCase = true) } }
+        val strip = { r: HTTPResponse ->
+            r.headerMap
+                .filterKeys { !it.equals("Date", ignoreCase = true) }
+                .mapValues { (_, values) -> if (Runtime.version().feature() < 18) values.sorted() else values }
+        }
         return when {
             stock.statusCode != capped.statusCode -> "상태 ${stock.statusCode} != ${capped.statusCode}"
             stock.statusMessage != capped.statusMessage -> "상태 문구 ${stock.statusMessage} != ${capped.statusMessage}"
