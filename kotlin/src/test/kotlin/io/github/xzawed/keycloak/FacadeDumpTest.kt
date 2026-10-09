@@ -105,6 +105,8 @@ private val DUMP_EXEMPT: Map<String, String> =
         "BoundedTransport\$ScreenedLease" to "연결을 빌리는 동안만 사는 대여 — 빌린 뒤 버려진다",
         "BoundedTransport\$WireBoundedStream" to "교환 하나의 본문 스트림 — 교환이 끝나면 버려진다. 상태는 연결 지표와 수다",
         "admin.BoundedEngineBuilder" to "AdminClient 를 지을 때만 쓰는 RESTEasy 엔진 빌더 — 엔진을 지은 뒤 버려진다(엔진이 이것을 쥐지 않는다)",
+        "admin.NoEmptyReads" to
+            "토큰 응답 가드가 본문을 상한+1 바이트까지 읽는 동안만 사는 스트림 감싸개 — 판정이 끝나면 버려진다. 상태는 감싼 스트림뿐이다",
     )
 
 /**

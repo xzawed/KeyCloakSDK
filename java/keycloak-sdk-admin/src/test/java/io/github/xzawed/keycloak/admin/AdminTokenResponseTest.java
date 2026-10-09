@@ -573,6 +573,99 @@ class AdminTokenResponseTest {
         adminHits());
   }
 
+  /**
+   * HTTP 필드 값이 싣지 못하는 문자(RFC 9110 §5.5 — CR·LF·NUL·HTAB 밖의 C0·DEL)를 담은 access_token 은 쓸 수 없는 토큰이다: admin
+   * 요청을 하나도 보내지 않고, 캐시하지도 않는다(두 번째 호출이 다시 부여한다). 오류는 토큰을 인용하지 않는다. 수정 전 HttpCore 는 그
+   * Bearer 를 조용히 고쳐 보냈다 — CR·LF·VT·FF 는 공백으로, NUL·그 밖의 C0·DEL 은 {@code ?} 로(실측 2026-10-09: 모든 행에서 admin 요청이
+   * 나갔고 토큰은 캐시됐다). 대조: HTAB·SP·U+00E9·U+0100·U+0085·{@code ~} 는 지금처럼 보낸다 — 그 밖의 판정은 아홉 언어가 함께 정할
+   * 일이다(등록부 bearer-token-grammar-divergent). 서버가 해석한 값은 표로 찍는다 — 선 위 바이트가 아니다(com.sun HttpServer 는 HTAB 을
+   * 공백으로 읽는다). 원시 소켓으로 잰 선 위 바이트(2026-10-09): HTAB 0x09 · SP 0x20 · U+00E9 0xE9 · U+0100·U+0085 {@code ?}.
+   */
+  @Test void anAccessTokenNoHttpHeaderCanCarry_isNeitherSentNorCached() {
+    List<String> table = new ArrayList<>();
+    List<String> wrong = new ArrayList<>();
+    List<String> refused = new ArrayList<>();
+    for (char c = 0; c < 0x20; c++) {
+      if (c != '\t') refused.add("tok-" + c + "-end");
+    }
+    refused.add("tok-\u007f-end");
+    for (char c : new char[] {0, '\r', '\n', 0x7f}) {
+      refused.add(c + "tok-end");
+      refused.add("tok-end" + c);
+    }
+    for (String token : refused) {
+      reset(new Reply(200, tokenBody(jsonString(token), ",\"refresh_token\":\"" + RT_CANARY + "\"")));
+      List<Throwable> thrown = new ArrayList<>();
+      try (AdminClient admin = admin()) {
+        for (int call = 0; call < 2; call++) thrown.add(outcome(() -> admin.users().get("x")));
+      }
+      String label = "access_token " + printable(token);
+      table.add(label + " → " + thrown.stream().map(t -> t == null ? "성공" : t.getClass().getSimpleName()).toList()
+          + " · grants " + grants() + " · admin " + printable(adminHits().toString()));
+      for (Throwable t : thrown) {
+        if (!(t instanceof KeycloakTransportException) || !"admin transport failure".equals(t.getMessage())) {
+          wrong.add(label + ": KeycloakTransportException(admin transport failure) 가 아니다 — " + t);
+        } else if (trace(t).contains("tok-") || trace(t).contains(RT_CANARY.substring(0, 10))) {
+          wrong.add(label + ": 오류가 응답을 인용했다");
+        }
+      }
+      if (!adminHits().isEmpty()) wrong.add(label + ": admin 요청이 나갔다 — " + printable(adminHits().toString()));
+      if (!grants().equals(List.of("client_credentials", "client_credentials"))) {
+        wrong.add(label + ": 토큰을 캐시했다(두 번째 호출이 다시 부여하지 않았다) — grants " + grants());
+      }
+    }
+    for (String token : List.of("tok-\t-end", "tok- -end", "tok-é-end", "tok-Ā-end", "tok-\u0085-end", "tok-~-end")) {
+      reset(new Reply(200, tokenBody(jsonString(token), "")));
+      List<Throwable> thrown = new ArrayList<>();
+      try (AdminClient admin = admin()) {
+        for (int call = 0; call < 2; call++) thrown.add(outcome(() -> admin.users().get("x")));
+      }
+      String label = "대조 access_token " + printable(token);
+      table.add(label + " → " + thrown.stream().map(t -> t == null ? "성공" : t.getClass().getSimpleName()).toList()
+          + " · grants " + grants() + " · 서버가 받은 값 " + printable(adminHits().toString()));
+      if (thrown.stream().anyMatch(java.util.Objects::nonNull)) wrong.add(label + ": 보내야 한다 — " + thrown);
+      if (adminHits().size() != 2) wrong.add(label + ": admin 요청 두 건이어야 한다 — " + printable(adminHits().toString()));
+      if (!grants().equals(List.of("client_credentials"))) wrong.add(label + ": 토큰은 캐시돼야 한다 — grants " + grants());
+    }
+    System.out.println("[AdminTokenResponseTest 헤더가 싣지 못하는 access_token]\n  " + String.join("\n  ", table));
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
+  }
+
+  private static Throwable outcome(Runnable call) {
+    try {
+      call.run();
+      return null;
+    } catch (RuntimeException e) {
+      return e;
+    }
+  }
+
+  private static String trace(Throwable t) {
+    StringWriter out = new StringWriter();
+    t.printStackTrace(new PrintWriter(out, true));
+    return out.toString();
+  }
+
+  /** JSON 문자열 리터럴 — 제어 문자·DEL·따옴표·역슬래시는 이스케이프한다(그 밖은 그대로 — 본문은 UTF-8). */
+  private static String jsonString(String s) {
+    StringBuilder out = new StringBuilder("\"");
+    for (char c : s.toCharArray()) {
+      if (c < 0x20 || c == 0x7f || c == '"' || c == '\\') out.append(String.format("\\u%04x", (int) c));
+      else out.append(c);
+    }
+    return out.append('"').toString();
+  }
+
+  /** 표에 찍을 수 있게 — 제어 문자·DEL·C1·Latin-1 밖은 {@code \}uXXXX 로. */
+  private static String printable(String s) {
+    StringBuilder out = new StringBuilder();
+    for (char c : s.toCharArray()) {
+      if (c < 0x20 || (c >= 0x7f && c < 0xa0) || c > 0xff) out.append(String.format("\\u%04X", (int) c));
+      else out.append(c);
+    }
+    return out.toString();
+  }
+
   /** TokenManager 의 갱신(refresh_token 그랜트) 응답도 같은 검사를 받는다 — 쓸 수 있으면 새 토큰으로 나아간다. */
   @Test void refreshedStringAccessToken_isUsed() {
     String first = tokenBody("\"AT-1\"", ",\"refresh_token\":\"RT-1\",\"refresh_expires_in\":300")

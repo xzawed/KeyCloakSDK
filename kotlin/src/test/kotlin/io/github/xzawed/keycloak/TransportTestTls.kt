@@ -39,8 +39,8 @@ internal object TransportTestTls {
     /** 프록시 터널 너머의 이름(kc.invalid) — 터널 시험의 TLS 서버 키. */
     val serverTunnelled: SSLContext by lazy { serverContext(tunnelled) }
 
-    /** 위 셋을 믿는 클라이언트 팩토리. */
-    val trusting: SSLSocketFactory by lazy {
+    /** 위 셋을 믿는 클라이언트 TLS 근원 — admin 시험은 이것을 잠시 JVM 기본값으로 두고 RESTEasy 엔진을 짓는다(지을 때 읽는다). */
+    val trustingContext: SSLContext by lazy {
         val trust = KeyStore.getInstance("PKCS12")
         trust.load(null, null)
         trust.setCertificateEntry("ip", ip.getCertificate("ip"))
@@ -48,8 +48,11 @@ internal object TransportTestTls {
         trust.setCertificateEntry("tunnelled", tunnelled.getCertificate("tunnelled"))
         val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
         tmf.init(trust)
-        SSLContext.getInstance("TLSv1.3").apply { init(null, tmf.trustManagers, null) }.socketFactory
+        SSLContext.getInstance("TLSv1.3").apply { init(null, tmf.trustManagers, null) }
     }
+
+    /** 위 셋을 믿는 클라이언트 팩토리. */
+    val trusting: SSLSocketFactory by lazy { trustingContext.socketFactory }
 
     private fun keystore(
         alias: String,
