@@ -17,10 +17,14 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// <para>Measured before the fix (2026-10-05): a bearer holding LF, CR or CRLF let a raw <c>System.FormatException</c>
 /// ("New-line characters are not allowed in header values.") out of every admin call — raw REST, the typed client and an
 /// admin built on a consumer <see cref="ITokenProvider"/> — thrown by <c>new AuthenticationHeaderValue</c> in
-/// <c>BearerHandler</c>. It quoted no part of the token. NUL and DEL went out on the wire (the server refused them with
-/// 400); a character past ASCII was refused by .NET ("Request headers must contain only ASCII characters.") and was
-/// already an SDK error; a 70,000-byte bearer drew a 431. Introspection, refresh and logout carry the token in a
-/// form-encoded body, so every variant went through them.</para>
+/// <c>BearerHandler</c>. It quoted no part of the token. NUL and DEL went out on the wire (this test's Kestrel refuses NUL
+/// with 400 and takes DEL; Keycloak refuses both); a character past ASCII was refused by .NET ("Request headers must
+/// contain only ASCII characters.") and was already an SDK error; a 70,000-byte bearer drew a 431. Introspection, refresh
+/// and logout carry the token in a form-encoded body, so every variant went through them.</para>
+/// <para>Measured before the second fix (2026-10-09, .NET 8.0.23, raw socket): every C0 control but CR and LF — NUL
+/// included — and DEL went out on the wire unchanged, from a consumer <see cref="ITokenProvider"/> and from the token
+/// endpoint alike. Keycloak 26.6 answers each of them with 400 (raw request per character), and answers HTAB and SP —
+/// which RFC 9110 §5.5 lets a field value carry — with 401, as for any bad token.</para>
 /// <para>Node measured the opposite on the leak axis — its raw <c>TypeError</c> quoted the whole bearer — which is why
 /// every rendering is searched here, not only the type.</para>
 /// </remarks>
@@ -30,6 +34,7 @@ public sealed class BearerHeaderCaseTests : IDisposable
     private const string Oidc = "/realms/r/protocol/openid-connect";
     private const string Secret = "HC-SECRET-canary-7f3a";
     private const string LineBreakMessage = "admin request failed: the access token holds a CR or LF, which an HTTP header cannot carry";
+    private const string ControlMessage = "admin request failed: the access token holds a NUL, DEL or other control character, which an HTTP header cannot carry";
 
     private readonly WireMockServer _idp = WireMockServer.Start();
     private readonly ITestOutputHelper _out;
@@ -123,6 +128,75 @@ public sealed class BearerHeaderCaseTests : IDisposable
             Assert.DoesNotContain(_idp.LogEntries, e => e.RequestMessage?.Path?.StartsWith("/admin/", StringComparison.Ordinal) == true);
         }
         Assert.True(wrong.Count == 0, $"[{v}]\n" + string.Join("\n", wrong));
+    }
+
+    /// <summary>What RFC 9110 §5.5 keeps out of a field value besides CR and LF: every other C0 control but HTAB, and DEL.</summary>
+    public static IEnumerable<object[]> FieldValueControls =>
+        Enumerable.Range(0, 0x20).Where(c => c is not 0x09 and not 0x0A and not 0x0D).Append(0x7F).Select(c => new object[] { c });
+
+    /// <summary>NUL, DEL or another such control character in the bearer is refused before anything is sent, on every admin
+    /// path — raw REST and the typed client on the SDK's own token (the token endpoint handed it out), and an admin built
+    /// on a consumer <see cref="ITokenProvider"/>. The IdP is a raw socket, so a request Kestrel would refuse unlogged
+    /// is still counted.</summary>
+    [Theory]
+    [MemberData(nameof(FieldValueControls))]
+    public async Task A_token_holding_NUL_DEL_or_another_control_character_is_refused_before_it_is_sent(int codeUnit)
+    {
+        var at = $"HCAT-head{C(codeUnit)}tail-HCend";
+        using var idp = new CapIdp(req => req.Path.StartsWith("/admin/", StringComparison.Ordinal)
+            ? CapIdp.Resp.Json(200, "[]")
+            : CapIdp.Resp.Json(200, JsonSerializer.Serialize(new { access_token = at, token_type = "Bearer", expires_in = 300 })));
+        var cfg = new KeycloakConfig { ServerUrl = idp.Url, Realm = "r", ClientId = "c", ClientSecret = Secret };
+        await using var kc = KeycloakClient.Create(cfg);
+        Assert.Equal(at, (await kc.Auth.ClientCredentialsTokenAsync()).AccessToken); // the token is handed out as it came
+        var admin = await kc.AdminAsync();
+        await using var consumerBuilt = await AdminClient.CreateAsync(cfg.Normalized(), new Fixed(at));
+
+        var outcomes = new (string Call, Exception? Error)[]
+        {
+            ("admin Realms.ListAsync (raw)", await Record.ExceptionAsync(() => admin.Realms.ListAsync())),
+            ("admin Users.SearchAsync (typed)", await Record.ExceptionAsync(() => admin.Users.SearchAsync(null))),
+            ("consumer-provider admin Realms.ListAsync", await Record.ExceptionAsync(() => consumerBuilt.Realms.ListAsync())),
+        };
+
+        var wrong = outcomes.Where(o => o.Error is not KeycloakTransportException { Message: ControlMessage })
+            .Select(o => $"{o.Call}: {o.Error?.GetType().Name ?? "no exception"} \"{o.Error?.Message}\"").ToList();
+        var sent = idp.Seen.Count(r => r.Path.StartsWith("/admin/", StringComparison.Ordinal));
+        Assert.True(wrong.Count == 0 && sent == 0,
+            $"U+{codeUnit:X4}: {sent} admin request(s) reached the server; want KeycloakTransportException \"{ControlMessage}\" before sending\n"
+            + string.Join("\n", wrong));
+    }
+
+    /// <summary>The control: HTAB and SP may travel in a field value (RFC 9110 §5.5) — Keycloak 26.6 reads them as part of the
+    /// token and answers 401 — so they go out as they came. Refusing them would be a token-grammar rule (RFC 6750's
+    /// <c>b64token</c>), not a header one.</summary>
+    [Theory]
+    [InlineData(0x09)]
+    [InlineData(0x20)]
+    public async Task A_tab_or_a_space_in_the_token_goes_out_as_it_came(int codeUnit)
+    {
+        var at = $"HCAT-head{C(codeUnit)}tail-HCend";
+        using var idp = new CapIdp(_ => CapIdp.Resp.Json(200, "[]"));
+        var cfg = new KeycloakConfig { ServerUrl = idp.Url, Realm = "r", ClientId = "c", ClientSecret = Secret };
+        await using var admin = await AdminClient.CreateAsync(cfg.Normalized(), new Fixed(at));
+
+        await admin.Realms.ListAsync();
+
+        Assert.Equal($"Bearer {at}", Assert.Single(idp.Seen).Authorization);
+    }
+
+    /// <summary>The control for the check itself: a consumer provider that returns <c>null</c> despite the contract still
+    /// sends its request with a bare scheme, as it did before the check — no raw exception out of the SDK.</summary>
+    [Fact]
+    public async Task A_null_token_from_a_consumer_provider_still_goes_out_with_a_bare_scheme()
+    {
+        using var idp = new CapIdp(_ => CapIdp.Resp.Json(200, "[]"));
+        var cfg = new KeycloakConfig { ServerUrl = idp.Url, Realm = "r", ClientId = "c", ClientSecret = Secret };
+        await using var admin = await AdminClient.CreateAsync(cfg.Normalized(), new Fixed(null!));
+
+        await admin.Realms.ListAsync();
+
+        Assert.Equal("Bearer", Assert.Single(idp.Seen).Authorization);
     }
 
     /// <summary>Every text a logger may print for an exception: <c>ToString()</c> (message, cause chain, stack), each

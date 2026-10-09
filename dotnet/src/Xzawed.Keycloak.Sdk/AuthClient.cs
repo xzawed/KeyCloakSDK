@@ -35,7 +35,8 @@ public sealed class AuthClient : ITokenSource
     /// <param name="http">The client every call goes through. ⚠️ It brings its own response limit: the 1,048,576-byte cap
     /// on token, introspection and logout responses is set only on the client <c>KeycloakClient.Create</c> builds, and a
     /// client passed here keeps whatever <see cref="HttpClient.MaxResponseContentBufferSize"/> it has (the .NET default is
-    /// <see cref="int.MaxValue"/> bytes).</param>
+    /// <see cref="int.MaxValue"/> bytes) — and its handler's own drain: after a refused response the .NET default handler
+    /// reads up to 1 MiB more of it to reuse the connection, which the SDK's own handler does not.</param>
     public AuthClient(KeycloakConfig cfg, OidcEndpoints ep, JwtValidator validator, HttpClient http)
     {
         _cfg = cfg; _ep = ep; _validator = validator; _http = http;

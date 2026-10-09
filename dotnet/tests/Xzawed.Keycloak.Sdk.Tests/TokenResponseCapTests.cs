@@ -228,8 +228,10 @@ public sealed class TokenResponseCapAllocationTests
     /// and the piece that would cross it is refused unstored — measured 2.5 MB chunked for both sizes, and under 0.1 MB with
     /// a Content-Length (refused before the body is read), against 317 MiB allocated for 32 MiB before the fix.
     /// ⚠️ The bound is 8× the cap, not 4×: the counter is process-wide, so it also sees the in-process fake IdP writing the
-    /// padding and the handler draining up to 1 MiB after the refusal to reuse the connection — CI (.NET 10 SDK runner)
-    /// measured 4,196,504 bytes for 16 MiB chunked, 2,200 bytes over 4×. A full read still allocates at least the body.</summary>
+    /// padding — CI (.NET 10 SDK runner) measured 4,196,504 bytes for 16 MiB chunked, 2,200 bytes over 4×. That run still
+    /// drained up to 1 MiB after the refusal; the handler no longer does (<c>DrainAfterRejectionTests</c>), and locally that
+    /// changed nothing here (16 MiB chunked: 2,502,680 bytes before, 2,509,856 after). A full read still allocates at least
+    /// the body.</summary>
     [Theory]
     [MemberData(nameof(HugeBodies))]
     public async Task A_huge_body_fails_with_bounded_allocation(int size, bool chunked)
