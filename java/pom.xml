@@ -115,7 +115,7 @@
            선언하는 1.15 와 갈려 dependencyConvergence 가 깨진다 — admin 이 이미 푸는 1.15 로 고정한다(auth 는 runtime 으로
            직접 선언해 소비자 쪽 nearest-wins 도 1.15 로 묶는다 — keycloak-sdk-auth/pom.xml). -->
       <dependency><groupId>org.apache.httpcomponents</groupId><artifactId>httpclient</artifactId><version>4.5.14</version></dependency>
-      <dependency><groupId>commons-codec</groupId><artifactId>commons-codec</artifactId><version>1.15</version></dependency>
+      <dependency><groupId>commons-codec</groupId><artifactId>commons-codec</artifactId><version>1.23.0</version></dependency>
     </dependencies>
   </dependencyManagement>
 
