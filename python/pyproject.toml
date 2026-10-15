@@ -50,7 +50,7 @@ dev = [
   # ⚠️ 상한 없이 두면 CI가 매 실행 최신을 집어 새 규칙 하나가 레인을 깬다(ruby 락 부재와 같은 부류).
   # ruff는 pre-1.0이라 minor가 규칙을 추가하므로 minor 상한, mypy는 major 상한.
   "mypy>=2.0,<3",
-  "ruff>=0.6,<0.17",
+  "ruff>=0.6,<0.18",
   "testcontainers[keycloak]>=4.14",
 ]
 
