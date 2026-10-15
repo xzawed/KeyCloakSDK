@@ -8,7 +8,7 @@
 // settings.gradle.kts: plugins { id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0" }
 
 plugins {
-    kotlin("jvm") version "2.4.20"
+    kotlin("jvm") version "2.4.21"
     `java-library`
     id("org.jetbrains.dokka") version "2.2.0"
     id("com.vanniktech.maven.publish") version "0.37.0"
@@ -94,7 +94,7 @@ dependencies {
     // ⚠️ commons-codec 은 쓰지 않지만 직접 선언한다 — 이 빌드(Gradle 은 가장 높은 판)는 어느 쪽이든 1.15 이지만, 게시 POM 을 읽는 Maven
     // 소비자는 가까운 쪽이 이긴다: httpclient 를 직접 선언하면 그것이 선언하는 1.11 이 RESTEasy 쪽 1.15 보다 얕아 1.11 로 내려간다(실측 —
     // 소비자 `mvn dependency:tree`: 게시본 1.0.5 는 1.15, 이 선언 없이 1.11, 있으면 1.15). Java keycloak-sdk-auth 와 같은 처방이다.
-    runtimeOnly("commons-codec:commons-codec:1.15")
+    runtimeOnly("commons-codec:commons-codec:1.23.0")
 
     testImplementation(kotlin("test"))
     // 적대 경로 행렬(HostilePathMatrixTest)이 공개 표면을 **메타데이터로** 읽는다 — Java 리플렉션으로는 `internal`
@@ -158,7 +158,7 @@ testing {
                 // `kotlin.test.Test` typealias(→org.junit.jupiter.api.Test)는 plain kotlin-test가 아니라
                 // kotlin-test-junit5 변형이 제공한다 — 단위 test는 Kotlin 플러그인의 variant-aware 해석이 이를
                 // 자동 선택하나 jvm-test-suite 구성엔 그 해석이 없어 junit5 변형을 직접 지정한다(assertions 포함).
-                implementation("org.jetbrains.kotlin:kotlin-test-junit5:2.4.20")
+                implementation("org.jetbrains.kotlin:kotlin-test-junit5:2.4.21")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
                 implementation("org.testcontainers:testcontainers:2.0.5")
