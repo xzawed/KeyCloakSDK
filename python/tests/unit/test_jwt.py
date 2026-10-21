@@ -8,11 +8,15 @@ exp/nbf(+클록 스큐), RSA-공개키를 HMAC 비밀키로 재사용하는 고�
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import time
 
 import pytest
 from joserfc import jwt as jjwt
-from joserfc.jwk import KeySet, OctKey, RSAKey
+from joserfc.jwk import KeySet, RSAKey
 
 from keycloak_sdk._internal.jwt import JwtValidator
 from keycloak_sdk.exceptions import TokenKeyError, TokenSignatureError, TokenValidationError
@@ -26,6 +30,10 @@ def _rsa_key() -> RSAKey:
 
 def _sign(key: RSAKey, claims: dict) -> str:
     return jjwt.encode({"alg": "RS256", "kid": key.kid}, claims, key)
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
 def test_valid_single_aud_token_accepted():
@@ -210,12 +218,16 @@ def test_hs256_token_signed_with_rsa_public_key_bytes_rejected_when_pinned_to_rs
     public_key_bytes = rsa_key.as_pem(private=False)
     assert len(public_key_bytes) >= 32  # HS256에 유효한 길이의 "비밀키" 후보
 
-    hmac_key = OctKey.import_key(public_key_bytes)
-    hs256_token = jjwt.encode(
-        {"alg": "HS256"},
-        {"iss": ISSUER, "aud": "app", "exp": int(time.time()) + 60},
-        hmac_key,
-    )
+    # joserfc 1.7.7+는 비대칭 공개키를 oct 키로 import하는 것을 거부하지만, 공격자는
+    # 그 검사에 묶이지 않으므로 위조 토큰은 표준 라이브러리로 만든다.
+    header = {"typ": "JWT", "alg": "HS256"}
+    claims = {"iss": ISSUER, "aud": "app", "exp": int(time.time()) + 60}
+    header_segment = _b64url(json.dumps(header, separators=(",", ":")).encode())
+    claims_segment = _b64url(json.dumps(claims, separators=(",", ":")).encode())
+    signing_input = f"{header_segment}.{claims_segment}"
+    signature = hmac.new(public_key_bytes, signing_input.encode("ascii"), hashlib.sha256).digest()
+    signature_segment = _b64url(signature)
+    hs256_token = f"{signing_input}.{signature_segment}"
 
     # 검증기의 키셋에는 RSA 공개키만 있다 — HS256으로는 애초에 검증 불가능할뿐더러
     # allowed_algs=("RS256",)로 알고리즘 자체가 거부되어야 한다.
