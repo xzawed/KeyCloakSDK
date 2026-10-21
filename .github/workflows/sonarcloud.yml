@@ -54,7 +54,7 @@ jobs:
       # Node(vitest v8 → lcov). vitest lcov의 SF 경로는 node/ 기준 상대라 SonarCloud(루트 baseDir)가
       # 못 찾는다 → `node/` 접두를 붙여 루트 기준으로 정규화한다(모노레포 lcov 경로 정합).
       - name: Set up Node 22
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '22'
       - name: Generate Node lcov coverage
@@ -86,7 +86,7 @@ jobs:
 
       # PHP(phpunit → Clover XML, pcov 드라이버). 경계파일은 phpunit.xml source-exclude로 이미 빠짐.
       - name: Set up PHP 8.3 (pcov)
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: '8.3'
           coverage: pcov
@@ -99,7 +99,7 @@ jobs:
       # Ruby(simplecov_json_formatter → coverage/coverage.json; Sonar SimpleCovSensor가 파싱).
       # JSON은 절대경로를 담고 SonarQube가 baseDir 하위로 해석하므로 경로 정규화 불필요(lcov와 차이).
       - name: Set up Ruby 3.4
-        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
+        uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
