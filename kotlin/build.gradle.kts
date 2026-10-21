@@ -1,5 +1,5 @@
 // gradle/wrapper: 9.5.0
-// kgp-gradle-band: kgp=2.4.20 gradle=7.6.3-9.7.0
+// kgp-gradle-band: kgp=2.4.21 gradle=7.6.3-9.7.0
 //   ⚠️ 이 줄은 주석이 아니라 **검사되는 선언**이다(scripts/check-versions.mjs). kotlinlang.org의
 //   KGP↔Gradle 완전지원 밴드를 그 KGP 버전과 **묶어서** 기록한다 — `kgp=`가 아래 `kotlin("jvm")`과
 //   어긋나면 가드가 실패하므로, KGP를 올리는 사람은 밴드를 반드시 다시 확인하게 된다(밴드 값은
@@ -94,7 +94,7 @@ dependencies {
     // ⚠️ commons-codec 은 쓰지 않지만 직접 선언한다 — 이 빌드(Gradle 은 가장 높은 판)는 어느 쪽이든 1.15 이지만, 게시 POM 을 읽는 Maven
     // 소비자는 가까운 쪽이 이긴다: httpclient 를 직접 선언하면 그것이 선언하는 1.11 이 RESTEasy 쪽 1.15 보다 얕아 1.11 로 내려간다(실측 —
     // 소비자 `mvn dependency:tree`: 게시본 1.0.5 는 1.15, 이 선언 없이 1.11, 있으면 1.15). Java keycloak-sdk-auth 와 같은 처방이다.
-    runtimeOnly("commons-codec:commons-codec:1.23.0")
+    runtimeOnly("commons-codec:commons-codec:1.15")
 
     testImplementation(kotlin("test"))
     // 적대 경로 행렬(HostilePathMatrixTest)이 공개 표면을 **메타데이터로** 읽는다 — Java 리플렉션으로는 `internal`
