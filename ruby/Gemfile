@@ -10,9 +10,9 @@ group :development, :test do
   gem "parallel", "< 2"
   gem "rake", "~> 13.0"
   gem "rspec", "~> 3.13"
-  gem "rubocop", "~> 1.91"
+  gem "rubocop", "~> 1.92"
   gem "rubocop-rspec", "~> 3.0"
   gem "simplecov", "~> 1.2"
   gem "simplecov_json_formatter", "~> 0.1"
-  gem "webmock", "~> 3.26"
+  gem "webmock", "~> 3.30"
 end

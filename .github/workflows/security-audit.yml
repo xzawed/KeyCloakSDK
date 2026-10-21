@@ -148,7 +148,7 @@ jobs:
     defaults: { run: { working-directory: node } }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '22' # engines 하한 — 감사는 package-lock.json 기준이라 매트릭스 불필요
           cache: npm
@@ -209,7 +209,7 @@ jobs:
         working-directory: php
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: '8.3' # 감사는 composer.lock 기준이라 8.3/8.4 매트릭스 불필요
           tools: composer
@@ -240,7 +240,7 @@ jobs:
         working-directory: ruby
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
+      - uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1
         with:
           ruby-version: '3.4' # CI 매트릭스 상단 — 감사는 Gemfile.lock 기준이라 매트릭스 불필요
           bundler-cache: true
