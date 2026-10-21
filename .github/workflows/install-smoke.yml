@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with: { node-version: '22' }
       # 언어 간 버전 SSOT. 각 릴리스 워크플로의 태그↔매니페스트 가드는 **자기 언어만** 본다 —
       # python만 올리고 node를 두면 어떤 게이트도 잡지 못한 채 태그가 밀린다. `check-versions.mjs`가
@@ -72,7 +72,7 @@ jobs:
         run: cd harness/install && ./install-verify.sh --version "$SMOKE_VERSION" "$SMOKE_LANG"
       - name: 설치 매트릭스 업로드
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: install-matrix-${{ inputs.lang }}
           path: harness/install/report/INSTALL-MATRIX.md
