@@ -86,7 +86,9 @@ module KeycloakSdk
         begin
           until (idx = @rbuf.index(terminator, offset))
             kcsdk_bound_line(@rbuf.bytesize - @rbuf_offset, limit) # 이 줄에 쌓인, 아직 소비되지 않은 바이트
-            offset = @rbuf.bytesize
+            # 원판(0.3.0+)과 같은 되감기 — 두 바이트 종단 문자가 읽기 경계에 걸쳐도 찾는다(0.2.x 는 놓쳤다).
+            # net-http 의 `"\n"` 에서는 `@rbuf.bytesize` 와 같다.
+            offset = [@rbuf.bytesize - terminator.bytesize + 1, @rbuf_offset].max
             rbuf_fill
           end
           len = idx + terminator.bytesize - @rbuf_offset
@@ -111,11 +113,17 @@ module KeycloakSdk
       # 원판이 `limit:` 검증을 들인 판이 바로 0.3.0 이라, `check_limit` 같은 맨 이름은 언젠가 원판과 겹칠 수 있다.
 
       # 줄 하나(`len` 바이트 — 채우는 중이면 쌓인 몫)를 소비하기 **전에** 본다: SDK 의 두 상한, 그다음 호출자의 `limit:`.
-      # ⚠️ `Net::ReadLimitExceeded` 는 net-protocol 0.3.0+ 에만 있다 — `limit:` 을 넘기는 net-http 0.10 이 그 판을 요구한다.
       def kcsdk_bound_line(len, limit)
         raise KeycloakSdk::TransportError, FRAMING_LINE_MSG if len > MAX_FRAMING_LINE_BYTES
         raise KeycloakSdk::TransportError, FRAMING_TOTAL_MSG if @kcsdk_framing_total + len > MAX_FRAMING_BYTES
-        raise Net::ReadLimitExceeded, "exceeded the #{limit} byte read limit" if limit && len > limit
+        raise kcsdk_limit_error, "exceeded the #{limit} byte read limit" if limit && len > limit
+      end
+
+      # ⚠️ `Net::ReadLimitExceeded` 는 net-protocol 0.3.0+ 에만 있다 — `limit:` 을 넘기는 net-http 0.10 은 그 판을 요구하지만,
+      # 0.2.x 에서 누가 직접 넘기면 NameError 가 났다(Grok 적대 레그). 그때는 그 부모 `Net::ProtocolError` 다 — 둘 다
+      # Faraday 어댑터가 `ConnectionFailed` 로 바꾼다. 전역 상수를 세우지 않는다(싱글턴 확장 규율).
+      def kcsdk_limit_error
+        defined?(Net::ReadLimitExceeded) ? Net::ReadLimitExceeded : Net::ProtocolError
       end
 
       # 원판과 같은 검증 — `Integer ===` 는 호출자의 값에 메서드를 부르지 않는다(원판 주석과 같은 이유).
