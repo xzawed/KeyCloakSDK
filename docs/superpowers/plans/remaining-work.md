@@ -679,7 +679,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `rust-token-in-argv` **[L/S]** rust publish가 env로도 넘긴 토큰을 --token으로 argv에 한 번 더 싣는다 · `.github/workflows/rust-release.yml:127`
 - [ ] `w1-shared-script-drift-weekly-only` **[L/S · 신규 2026-10-01]** 아홉 적대 행렬의 W1 은 `scripts/test/test-security-defaults.sh` 의 앵커를 언어별 손 표와 대조하는데, 그 스크립트만 바꾼 PR 은 언어 CI 를 만들지 않고(`paths:` 가 `<lang>/**` 뿐) 야간 harness 도 #674 이후 W1 을 건너뛴다 — 앵커 드리프트는 그 언어의 다음 PR 이나 월요일 정기 실행에서야 드러난다(#674 의 Grok 레그가 지목). 후보: 아홉 언어 CI `paths:` 에 그 스크립트를 더하기 · harness 스위트에 `scripts/` 읽기전용 마운트(dotnet·ruby 실측 초록). php 만 건너뜀 메시지가 없다 · `php/tests/Unit/HostilePathMatrixTest.php:1789`
 - [ ] `push-trigger-branches-asymmetry` **[L/S]** 여섯 워크플로의 push 트리거에 branches가 없어 PR 브랜치에서 레인이 두 번 돈다 · `.github/workflows/dotnet-ci.yml:3`
-- [x] `sonarcloud-dependabot-skip-keys-on-actor` **[M/S · 신규 2026-10-22 · 닫힘 2026-10-23 #PR]** 건너뛰기가 PR 작성자도 본다 — actor 로만 거를 때 사람이 커밋을 얹은 Dependabot PR 실행 일곱(2026-10-08~21)이 미검토 범프와 `SONAR_TOKEN` 을 한 잡에서 돌렸다. 가드는 `check-ci-permissions.mjs` 규칙 11
+- [x] `sonarcloud-dependabot-skip-keys-on-actor` **[M/S · 신규 2026-10-22 · 닫힘 2026-10-23 #801]** 건너뛰기가 PR 작성자도 본다 — actor 로만 거를 때 사람이 커밋을 얹은 Dependabot PR 실행 일곱(2026-10-08~21)이 미검토 범프와 `SONAR_TOKEN` 을 한 잡에서 돌렸다. 가드는 `check-ci-permissions.mjs` 규칙 11
 - [ ] `sonarcloud-human-pr-carries-unreviewed-bump` **[M/M · 신규 2026-10-23 · 판정]** 사람이 연 PR 에 Dependabot 의 bump 커밋을 옮겨 담으면(JVM 짝 합치기 등) 작성자가 사람이라 규칙 11 밖이다 — 미검토 패키지의 설치·빌드가 `SONAR_TOKEN` 과 한 잡에서 돈다. 후보 둘: 빌드·커버리지 잡(시크릿 없음)과 스캔 잡(산출물만 받고 패키지 코드는 돌리지 않음)으로 나눈다 · PR 스캔을 접는다(push 전용 — PR 품질 게이트를 잃으므로 사람 판정) · `.github/workflows/sonarcloud.yml`
 
 ### 문서·규칙 — 15
