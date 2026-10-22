@@ -246,7 +246,7 @@ module HostileTokenResponseSpec
     transport = KeycloakSdk::TransportError
     VARIANTS = {
       "n1" => { note: "응답 헤더 이름 검증(net-http 0.10) — 토큰·introspect·logout 엔드포인트",
-                raise: ArgumentError.new('header field name cannot include control characters or colon: ' \
+                raise: ArgumentError.new("header field name cannot include control characters or colon: " \
                                          '"nHN9k-header-name-canary"'),
                 expect: expect_all(RACK, auth).merge(expect_all(PROVIDER + ["auth.introspect", "auth.logout"],
                                                                 transport)) },

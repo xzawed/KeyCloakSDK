@@ -59,7 +59,9 @@ module KeycloakSdk
       end
 
       TokenSet.from_response(resp.body, received_at: Time.now.to_f)
-    rescue Faraday::Error => e
+    rescue Error
+      raise
+    rescue StandardError => e # Faraday 밖 예외도 — net-http 0.10 의 응답 헤더 검증은 ArgumentError 다(어댑터 목록 밖)
       raise TransportError, "token endpoint transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
     end
   end
