@@ -71,13 +71,13 @@ tasks.withType<JavaCompile>().configureEach {
 // ⚠️ java/pom.xml의 Jackson 버전을 올릴 때는 여기도 함께 올린다 — 두 JVM SDK가 같은 트리를 쓴다.
 dependencies {
     constraints {
-        implementation("com.fasterxml.jackson.core:jackson-core:2.22.3")
-        implementation("com.fasterxml.jackson.core:jackson-databind:2.22.3")
+        implementation("com.fasterxml.jackson.core:jackson-core:2.22.4")
+        implementation("com.fasterxml.jackson.core:jackson-databind:2.22.4")
         implementation("com.fasterxml.jackson.core:jackson-annotations:2.22") // 별도 버전 트랙
-        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.22.3")
-        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.3")
-        implementation("com.fasterxml.jackson.jakarta.rs:jackson-jakarta-rs-base:2.22.3")
-        implementation("com.fasterxml.jackson.module:jackson-module-jakarta-xmlbind-annotations:2.22.3")
+        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.22.4")
+        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.4")
+        implementation("com.fasterxml.jackson.jakarta.rs:jackson-jakarta-rs-base:2.22.4")
+        implementation("com.fasterxml.jackson.module:jackson-module-jakarta-xmlbind-annotations:2.22.4")
     }
 
     // stdlib는 KGP 자동주입을 끄고(gradle.properties `kotlin.stdlib.default.dependency=false`)
@@ -94,7 +94,7 @@ dependencies {
     // ⚠️ commons-codec 은 쓰지 않지만 직접 선언한다 — 이 빌드(Gradle 은 가장 높은 판)는 어느 쪽이든 1.15 이지만, 게시 POM 을 읽는 Maven
     // 소비자는 가까운 쪽이 이긴다: httpclient 를 직접 선언하면 그것이 선언하는 1.11 이 RESTEasy 쪽 1.15 보다 얕아 1.11 로 내려간다(실측 —
     // 소비자 `mvn dependency:tree`: 게시본 1.0.5 는 1.15, 이 선언 없이 1.11, 있으면 1.15). Java keycloak-sdk-auth 와 같은 처방이다.
-    runtimeOnly("commons-codec:commons-codec:1.15")
+    runtimeOnly("commons-codec:commons-codec:1.23.0")
 
     testImplementation(kotlin("test"))
     // 적대 경로 행렬(HostilePathMatrixTest)이 공개 표면을 **메타데이터로** 읽는다 — Java 리플렉션으로는 `internal`
