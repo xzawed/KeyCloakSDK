@@ -12,6 +12,10 @@ require "socket"
 # `written` 은 서버가 소켓에 넘긴 바이트다 — 커널 버퍼가 받아 준 것까지라 클라이언트가 읽은 바이트보다 크거나 같다.
 class FramingServer
   PIECE = ("a" * 16_384).b.freeze
+  # ⚠️ 받은 소켓의 송신 버퍼를 고정한다 — 리눅스는 기본값에서 송신 버퍼를 자동으로 키워, 클라이언트가 16,439 B 만 읽고
+  # 끊어도 커널이 2,654,263 B 를 받아 가 `written` 의 2 MiB 오라클을 넘겼다(ruby:3.4-alpine 2,400 회 중 1 회 · CI 10-21 두 번).
+  # 고정하면(리눅스 실효 128 KiB) 같은 2,400 회의 최대가 229,570 B 다 — 남는 것은 클라이언트 수신 버퍼다(Go 의 같은 오라클과 같다).
+  SNDBUF = 65_536
 
   Request = Struct.new(:verb, :path, :headers, :body, :connection)
 
@@ -103,6 +107,7 @@ class FramingServer
 
   def accept
     raw = @server.accept
+    raw.setsockopt(Socket::SOL_SOCKET, Socket::SO_SNDBUF, SNDBUF)
     return raw unless @tls
 
     OpenSSL::SSL::SSLSocket.new(raw, @tls).tap do |s|

@@ -63,7 +63,8 @@ module KeycloakSdk
     # ⚠️ **net-protocol `BufferedIO` 내부(`@rbuf`·`@rbuf_offset`·private `rbuf_fill`·`rbuf_consume`)에 기댄다.**
     # 한 바이트씩 읽는 `read(1)` 은 F3a 의 64 KiB 를 쌓느라 할당을 10 MB 넘게 튀겼다(실측) — 버퍼 주사는 그 churn 이 없다.
     # 이 내부가 바뀌면 조용히 깨지므로 `http_framing_pins_spec` 이 그 모양(ivar·메서드·`readuntil`/`readline` 호출 경로)을
-    # 핀으로 고정해 **시끄럽게** 실패시킨다. net-protocol 0.2.1(루비 3.2 하한)·0.2.2(3.3/3.4) 의 `readuntil` 은 동형이다.
+    # 핀으로 고정해 **시끄럽게** 실패시킨다. 그 내부는 net-protocol 0.2.1(루비 3.2 하한)·0.2.2·0.3.0·0.4.0 에서 같고,
+    # 0.3.0 이 `readuntil` 에 `limit:` 키워드를 더했다 — net-http 0.10 은 모든 틀 줄을 그것으로 읽는다(아래).
     # ⚠️ 거부는 `TransportError`(상수 메시지) — net-http 가 인식하지 않는 타입이라 그 **바깥** rescue 가 소켓을 닫고
     # 다시 던진다(비우지 않는다 · idempotent 재시도 목록에 없어 재시도도 안 된다). Faraday 어댑터의
     # `NET_HTTP_EXCEPTIONS` 에도 없어 공개 경계까지 `TransportError` 로 그대로 올라간다.
@@ -72,27 +73,31 @@ module KeycloakSdk
         @kcsdk_framing_total = 0
       end
 
-      # ⚠️ 시그니처는 net-protocol 원판과 같아야 한다 — net-http 가 `sock.readuntil("\n", true)` 로 위치 인자로 부른다.
-      # 그래서 키워드 인자로 바꾸지 않는다(Style/OptionalBooleanParameter 를 그 이유로 끈다).
-      def readuntil(terminator, ignore_eof = false) # rubocop:disable Style/OptionalBooleanParameter
+      # ⚠️ 시그니처는 net-protocol 원판(0.3.0+)과 같아야 한다 — net-http 0.9.x 이하는 `sock.readuntil("\n", true)` 로
+      # 위치 인자로, 0.10 은 `sock.readuntil("\n", ignore_eof, limit: 1 MiB)` 로 키워드를 붙여 부른다. 키워드를 못 받으면
+      # SDK 의 HTTP 호출이 전부 ArgumentError 다(net-protocol 0.4.0 실측). 그래서 `ignore_eof` 를 키워드로 바꾸지 않는다
+      # (Style/OptionalBooleanParameter 를 그 이유로 끈다).
+      # `limit:` 은 원판의 뜻 그대로다 — 같은 검증(ArgumentError), 넘으면 `Net::ReadLimitExceeded` 이고 소비하지 않는다
+      # (net-http 0.10 이 그것을 HTTPBadResponse 로 바꾼다). SDK 의 두 상한을 먼저 본다 — 둘 다 넘으면 SDK 오류가 이긴다.
+      def readuntil(terminator, ignore_eof = false, limit: nil) # rubocop:disable Style/OptionalBooleanParameter
+        kcsdk_check_limit(limit)
         @kcsdk_framing_total ||= 0
         offset = @rbuf_offset
         begin
           until (idx = @rbuf.index(terminator, offset))
-            pending = @rbuf.bytesize - @rbuf_offset # 이 줄에 쌓인, 아직 소비되지 않은 바이트
-            raise KeycloakSdk::TransportError, FRAMING_LINE_MSG if pending > MAX_FRAMING_LINE_BYTES
-            raise KeycloakSdk::TransportError, FRAMING_TOTAL_MSG if @kcsdk_framing_total + pending > MAX_FRAMING_BYTES
-
+            kcsdk_bound_line(@rbuf.bytesize - @rbuf_offset, limit) # 이 줄에 쌓인, 아직 소비되지 않은 바이트
             offset = @rbuf.bytesize
             rbuf_fill
           end
-          line = rbuf_consume(idx + terminator.bytesize - @rbuf_offset)
+          len = idx + terminator.bytesize - @rbuf_offset
+          kcsdk_bound_line(len, limit)
+          line = rbuf_consume(len)
         rescue EOFError
           raise unless ignore_eof
 
           line = rbuf_consume
         end
-        charge_framing(line.bytesize)
+        kcsdk_charge_framing(line.bytesize)
         line
       end
 
@@ -102,9 +107,28 @@ module KeycloakSdk
 
       private
 
-      # 완성된 줄 하나를 틀 예산에 올린다 — 종단 문자가 이미 버퍼 안에 있어 채우기 루프의 검사를 건너뛴 경우(작은 줄)도
-      # 여기서 두 상한을 다시 본다.
-      def charge_framing(len)
+      # ⚠️ 이름은 전부 `kcsdk_` 로 시작한다 — 싱글턴 확장은 원판의 같은 이름 메서드를 **가린다**(원판 안의 호출까지).
+      # 원판이 `limit:` 검증을 들인 판이 바로 0.3.0 이라, `check_limit` 같은 맨 이름은 언젠가 원판과 겹칠 수 있다.
+
+      # 줄 하나(`len` 바이트 — 채우는 중이면 쌓인 몫)를 소비하기 **전에** 본다: SDK 의 두 상한, 그다음 호출자의 `limit:`.
+      # ⚠️ `Net::ReadLimitExceeded` 는 net-protocol 0.3.0+ 에만 있다 — `limit:` 을 넘기는 net-http 0.10 이 그 판을 요구한다.
+      def kcsdk_bound_line(len, limit)
+        raise KeycloakSdk::TransportError, FRAMING_LINE_MSG if len > MAX_FRAMING_LINE_BYTES
+        raise KeycloakSdk::TransportError, FRAMING_TOTAL_MSG if @kcsdk_framing_total + len > MAX_FRAMING_BYTES
+        raise Net::ReadLimitExceeded, "exceeded the #{limit} byte read limit" if limit && len > limit
+      end
+
+      # 원판과 같은 검증 — `Integer ===` 는 호출자의 값에 메서드를 부르지 않는다(원판 주석과 같은 이유).
+      def kcsdk_check_limit(limit)
+        return if limit.nil? || (Integer === limit && limit.positive?) # rubocop:disable Style/CaseEquality
+
+        got = Integer === limit ? limit : "a non-Integer" # rubocop:disable Style/CaseEquality
+        raise ArgumentError, "limit must be a positive Integer, got #{got}"
+      end
+
+      # 돌려줄 줄 하나를 틀 예산에 올린다 — EOF 로 끝난 부분 줄(`ignore_eof`)은 `kcsdk_bound_line` 을 지나지 않으므로 여기서
+      # 두 상한을 다시 본다(원판도 그 갈래에는 `limit:` 을 걸지 않는다).
+      def kcsdk_charge_framing(len)
         raise KeycloakSdk::TransportError, FRAMING_LINE_MSG if len > MAX_FRAMING_LINE_BYTES
 
         @kcsdk_framing_total += len

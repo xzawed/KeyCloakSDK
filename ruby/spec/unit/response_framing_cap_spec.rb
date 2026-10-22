@@ -17,8 +17,9 @@ require_relative "../support/framing_server"
 # `MAX_FRAMING_BYTES` 를 넘을 수 없다(F3a). 넘으면 상수 메시지의 `TransportError` 이고 연결은 닫힌다(비우지 않는다).
 #
 # ⚠️ WebMock 은 틀을 못 짠다 — 실제 소켓(`FramingServer`)으로 바이트 그대로 보낸다. 할당은 `BodyServer.allocated_bytes`
-# (GC 끈 창)로 잰다. 「읽은 바이트」는 서버가 소켓에 넘긴 바이트(`server.written`)로 본다 — 커널 송신 버퍼 탓에 클라이언트가
-# 읽은 것보다 크지만, 16 MiB 전부를 넘겼는지 아닌지는 가른다(Go·Java 가 같은 오라클을 쓴다).
+# (GC 끈 창)로 잰다. 「읽은 바이트」는 서버가 소켓에 넘긴 바이트(`server.written`)로 본다 — 커널 버퍼 탓에 클라이언트가
+# 읽은 것보다 크지만, 16 MiB 전부를 넘겼는지 아닌지는 가른다(Go 가 같은 오라클을 쓴다). ⚠️ 서버 송신 버퍼를 고정해야 가른다
+# (`FramingServer::SNDBUF` — 고정 전에는 리눅스 자동 조정 탓에 2 MiB 를 넘겨 흔들렸다).
 module ResponseFramingCapSpec
   REALM = "frm"
   OIDC = "/realms/#{REALM}/protocol/openid-connect".freeze
