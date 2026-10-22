@@ -360,7 +360,7 @@ dev(테스트 csproj — **앵커 있음**):
 | C#/.NET | `Xzawed.Keycloak.Sdk` (NuGet) | `dotnet-v*` | 게시됨(`1.0.4`) |
 | PHP | `xzawed/keycloak-sdk` (Packagist) | `php-v*` | 게시됨(`1.4.0`) |
 | Rust | `keycloak-sdk` (crates.io) | `rust-v*` | 게시됨(`1.1.3`) |
-| Ruby | `keycloak-sdk` (RubyGems) | `ruby-v*` | 게시됨(`1.3.0`) |
+| Ruby | `keycloak-sdk` (RubyGems) | `ruby-v*` | 게시됨(`1.3.1`) |
 | Kotlin | `io.github.xzawed:keycloak-sdk-kotlin` (Maven Central) | `kotlin-v*` | 게시됨(`1.0.5` · 하한 2.2+) |
 
 **릴리스-레디니스 감사**(`main` 병합, PR #104)로 릴리스 워크플로 불변식(태그↔매니페스트 가드·시크릿 미설정 시 fail-closed·발행 전 E2E 게이트·액션 SHA 핀·`permissions` 최소화)과 패키징 표면(LICENSE·영문 README·레지스트리 메타데이터, Rust 캐럿 전환 + `Cargo.lock` 커밋 + `keycloak::types` 재노출)을 갖췄다. PHP 선행작업(미러·`PHP_SPLIT_TOKEN`·Packagist 등록)도 끝났다.
