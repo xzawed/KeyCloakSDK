@@ -46,7 +46,7 @@ The procedure lives in **[DEPLOY.md](../../DEPLOY.md)** — do not copy checklis
 | **C# / .NET** | ✅ | ✅ (async-first `Task<T>`+`CancellationToken`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 NuGet `1.0.4` |
 | **PHP** | ✅ | ✅ (`readonly class` · exception-based) | ✅ | ✅ (docker CLI shell-out — real Keycloak 26.6) | ✅ | 🚀 Packagist `1.4.0` |
 | **Rust** | ✅ | ✅ (edition 2024 · async-only) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 crates.io `1.1.3` |
-| **Ruby** | ✅ | ✅ (sync-only · exception hierarchy) | ✅ | ✅ (E2E, docker CLI shell-out) | ✅ | 🚀 RubyGems `1.3.0` |
+| **Ruby** | ✅ | ✅ (sync-only · exception hierarchy) | ✅ | ✅ (E2E, docker CLI shell-out) | ✅ | 🚀 RubyGems `1.3.1` |
 | **Kotlin** | ✅ | ✅ (coroutines `suspend` · reuses JVM/Java stack) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 Maven Central `1.0.5` |
 
 **Legend**: ✅ done · 🚀 published on that registry, at the version shown. Test counts are not hand-maintained here — each language's CI job is the authority (this file previously carried stale, mutually inconsistent counts). Publish procedure, tag prefixes, and secrets: [DEPLOY.md](../../DEPLOY.md). PHP·Ruby integrate via docker CLI shell-out rather than Testcontainers, for two different reasons — Windows-native PHP has no `unix://` transport support ([`.claude/rules/php.md`](../../.claude/rules/php.md)), while for Ruby `testcontainers-ruby` is stale and `docker-api` does not support the Windows named-pipe transport ([`ruby/spec/support/keycloak_container.rb`](../../ruby/spec/support/keycloak_container.rb)). A new language is "done" only after all six columns are filled (depth-first).

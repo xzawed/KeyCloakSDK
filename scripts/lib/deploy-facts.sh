@@ -162,7 +162,7 @@ df_coordinate() { case "$1" in   # 레지스트리상 패키지 식별자(사람
 # 소비자가 실제로 복사해 가는 쪽은 버전이다.
 df_published_version() { case "$1" in
   php) echo "1.4.0" ;; python) echo "1.0.4" ;; dotnet) echo "1.0.4" ;;
-  rust) echo "1.1.3" ;; ruby) echo "1.3.0" ;; node) echo "1.0.4" ;;
+  rust) echo "1.1.3" ;; ruby) echo "1.3.1" ;; node) echo "1.0.4" ;;
   java) echo "1.1.0" ;; kotlin) echo "1.0.5" ;; go) echo "1.2.2" ;;
   *) echo "" ;; esac; }
 

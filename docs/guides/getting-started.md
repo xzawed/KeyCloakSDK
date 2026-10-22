@@ -27,7 +27,7 @@
 
 A guide to installing the Keycloak polyglot SDK locally and running your first token issuance, JWT validation, and Admin API call with minimal code. This SDK is provided in **multiple programming languages** (currently Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby · Kotlin), and while each language is idiomatic, the concepts, layers, and flows are isomorphic.
 
-> ℹ️ **All nine are on a public registry with a stable release** (PHP `1.4.0`, Ruby `1.3.0`, Go `1.2.2`, Rust `1.1.3`, Java `1.1.0`, Kotlin `1.0.5`, Python · .NET · Node `1.0.4` — alignment was never a policy) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java · Kotlin (Maven Central) and Go (the Go module proxy). A bare install resolves the current release in every ecosystem that picks one for you (Maven and Gradle never do — name the version); the release candidates that preceded 1.0 are still on their registries (none of these ecosystems lets you delete a published version) but none of them prefers one any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. Releasing is a maintainer task — see [DEPLOY.md](../../DEPLOY.md).
+> ℹ️ **All nine are on a public registry with a stable release** (PHP `1.4.0`, Ruby `1.3.1`, Go `1.2.2`, Rust `1.1.3`, Java `1.1.0`, Kotlin `1.0.5`, Python · .NET · Node `1.0.4` — alignment was never a policy) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java · Kotlin (Maven Central) and Go (the Go module proxy). A bare install resolves the current release in every ecosystem that picks one for you (Maven and Gradle never do — name the version); the release candidates that preceded 1.0 are still on their registries (none of these ecosystems lets you delete a published version) but none of them prefers one any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. Releasing is a maintainer task — see [DEPLOY.md](../../DEPLOY.md).
 
 > 🖥️ **You need a Keycloak *server* first.** This SDK is a client library, so it needs a **Keycloak server to connect to** in order to work (the server is a separate, standalone product not included in this SDK). For a local trial, use the one-line Docker command `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`; for a **production deployment**, see the [Keycloak server deployment guide](deploying-keycloak-server.md).
 
@@ -583,15 +583,15 @@ cd ruby && bundle install   # install dependencies (faraday/jwt/rack-oauth2, etc
 
 The gem name is `keycloak-sdk` (hyphen), and the require/module name is `keycloak_sdk`/`KeycloakSdk` (underscore — to avoid a clash with the existing `keycloak` gem's `Keycloak` module).
 
-### 3) Installation from RubyGems (stable `1.3.0`)
+### 3) Installation from RubyGems (stable `1.3.1`)
 
-`1.3.0` is live on RubyGems — a minor release under the 1.0 stability guarantee:
+`1.3.1` is live on RubyGems — a patch release under the 1.0 stability guarantee:
 
 ```bash
-gem install keycloak-sdk -v 1.3.0
+gem install keycloak-sdk -v 1.3.1
 ```
 
-> A bare `gem install keycloak-sdk` resolves `1.3.0`. RubyGems is stricter than pip or Cargo about prereleases — it never falls back to one — so while `1.0.0.rc1` was the only release a bare install resolved **nothing** and both the command and a `Gemfile` entry needed the version spelled out. Releases remain human-gated: a publish runs only when a human pushes a `ruby-v*` tag to trigger [`.github/workflows/ruby-release.yml`](../../.github/workflows/ruby-release.yml) over RubyGems Trusted Publishing (OIDC — no stored secret). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
+> A bare `gem install keycloak-sdk` resolves `1.3.1`. RubyGems is stricter than pip or Cargo about prereleases — it never falls back to one — so while `1.0.0.rc1` was the only release a bare install resolved **nothing** and both the command and a `Gemfile` entry needed the version spelled out. Releases remain human-gated: a publish runs only when a human pushes a `ruby-v*` tag to trigger [`.github/workflows/ruby-release.yml`](../../.github/workflows/ruby-release.yml) over RubyGems Trusted Publishing (OIDC — no stored secret). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
 ### 4) Minimal usage example
 
