@@ -1,0 +1,26 @@
+name: demo-scan
+# 가드 테스트용 픽스처 — 규칙 11 의 입력이다(실행되는 워크플로가 아니다).
+# `scan` 은 PR 에서 시크릿을 쥐는 잡이라 Dependabot 이 **연** PR 을 누가 트리거했든 건너뛰어야 하고,
+# push(main) 실행은 건너뛰면 안 된다. `lint` 는 GITHUB_TOKEN 만 쥐므로 대상이 아니다(오탐 대조군).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.user.login != 'dependabot[bot]')
+    steps:
+      - uses: actions/checkout@0000000000000000000000000000000000000000 # 픽스처
+      - run: echo "픽스처 — 실행되지 않는다"
+        env:
+          SCAN_TOKEN: ${{ secrets.DEMO_SCAN_TOKEN }}
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "픽스처 — 실행되지 않는다"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

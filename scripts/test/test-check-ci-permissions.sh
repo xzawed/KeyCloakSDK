@@ -27,7 +27,7 @@ assert_ok node "$GUARD" "$TMP"
 # 계수를 동시에 고정한다 — 특히 write 계수는 주석 제거(`write # 이유` → `write`)가 살아
 # 있어야만 1이 나온다. 주석을 안 걷어내면 값이 "write # ..."가 되어 상승이 보이지 않는다.
 out=$(node "$GUARD" "$TMP" 2>&1)
-assert_contains "$out" "릴리스 1개 · 잡 9개 · 게시 잡 1개 · 비로컬 uses 4개 · 릴리스 잡의 write 상승 2건 · write+체크아웃 잡 1개" "잡·릴리스·게시잡·uses·권한상승·write+체크아웃을 실제로 센다"
+assert_contains "$out" "릴리스 1개 · 잡 11개 · 게시 잡 1개 · 비로컬 uses 5개 · 릴리스 잡의 write 상승 2건 · write+체크아웃 잡 1개 · PR 시크릿 잡 1개" "잡·릴리스·게시잡·uses·권한상승·write+체크아웃·PR 시크릿 잡을 실제로 센다"
 
 # ── 변이 1b: 쓰기 토큰을 쥔 잡이 체크아웃 자격증명을 남긴다 ──
 # ⚠️ **이 규칙은 오래 자가테스트가 전혀 덮지 않았다**(픽스처에 write+체크아웃 잡이 없었다).
@@ -267,10 +267,92 @@ assert_fails node "$GUARD" "$TMP" --min-escalations=99
 out=$(node "$GUARD" "$TMP" --min-escalations=99 2>&1 || true)
 assert_contains "$out" "규칙 5 가 상승을 못 보고 있을 수 있다" "상승 하한이 공허를 막는다"
 
+# ── 규칙 11: PR 에서 시크릿을 쥐는 잡은 Dependabot 이 연 PR 에서 돌지 않는다 ──
+# 실측: actor 로만 거르던 sonarcloud.yml 이 2026-10-08~21 일곱 번, 사람이 Dependabot PR 에 커밋을
+# 얹은 실행에서 방금 bump 된 미검토 패키지와 SONAR_TOKEN 을 한 잡에서 돌렸다.
+# 첫 변이가 그 원래 식이다. ⚠️ 이 식도 Dependabot 이 **트리거한** 실행은 건너뛴다 — 아래 부정 단언이
+# 평가가 시나리오별로 실제로 갈리는지(「if: 가 있으면 무조건 실패」가 아닌지)를 고정한다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i "s/^    if: .*/    if: github.event_name != 'pull_request' || github.actor != 'dependabot[bot]'/" "$TMP/.github/workflows/demo-scan.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "사람이 커밋을 얹음" "actor 만 보는 건너뛰기를 그 시나리오 이름으로 잡는다"
+assert_not_contains "$out" "Dependabot 이 갱신」" "Dependabot 이 트리거한 실행은 원래 식도 건너뛴다 — 평가가 시나리오별로 갈린다"
+
+# `&&` 를 `||` 로 — 글자로는 작성자 검사가 있다. 문자열 대조였다면 통과했을 식이다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i "s/github.actor != 'dependabot\[bot\]' && /github.actor != 'dependabot[bot]' || /" "$TMP/.github/workflows/demo-scan.yml"
+assert_contains "$(cat "$TMP/.github/workflows/demo-scan.yml")" "'dependabot[bot]' || github.event.pull_request" "변이가 실제로 착지했다"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "사람이 커밋을 얹음" "작성자 검사를 || 로 이은 식을 평가로 잡는다"
+
+# `if:` 가 없으면 Dependabot PR 에서도 돈다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i '/^    if: /d' "$TMP/.github/workflows/demo-scan.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "\`if:\` 가 없다" "if 없는 시크릿 PR 잡을 잡는다"
+
+# 건너뛰기가 push 로 새면 main 실행이 사라진다(PR0 fail-closed).
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i "s/^    if: .*/    if: github.event_name == 'pull_request' \&\& github.event.pull_request.user.login != 'dependabot[bot]'/" "$TMP/.github/workflows/demo-scan.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "push 실행까지 건너뛴다" "push 를 건너뛰는 식을 잡는다"
+
+# pull_request_target 도 범위다 — 그 트리거는 기본 브랜치 맥락에서 돈다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i 's/^  pull_request:$/  pull_request_target:/' "$TMP/.github/workflows/demo-scan.yml"
+sed -i "s/^    if: .*/    if: github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]'/" "$TMP/.github/workflows/demo-scan.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "(pull_request_target)에서 돈다" "pull_request_target 트리거도 평가한다"
+
+# 워크플로 레벨 env 의 시크릿은 모든 잡이 쥔다 — 시크릿이 없던 lint 잡이 대상이 된다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i 's/^jobs:$/env:\n  WIDE: ${{ secrets.DEMO_WIDE }}\njobs:/' "$TMP/.github/workflows/demo-scan.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "잡 \`lint\` 은 PR 에서 \`DEMO_WIDE\` 를 쥐는데" "워크플로 레벨 시크릿을 모든 잡에 건다"
+
+# ⚠️ 모르는 것은 통과가 아니라 오류다 — 모르는 함수 · 시나리오에 없는 문맥 · 섞인 표기.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i "s/^    if: .*/    if: fromJSON('true')/" "$TMP/.github/workflows/demo-scan.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "모르는 함수" "모르는 함수를 fail-closed 로 떨어뜨린다"
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i "s/^    if: .*/    if: github.event.pull_request.head.repo.fork != true/" "$TMP/.github/workflows/demo-scan.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "시나리오에 없는 문맥" "시나리오 밖 문맥을 null 로 두고 계산하지 않는다"
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i "s/^    if: .*/    if: \${{ github.event_name == 'push' }} || false/" "$TMP/.github/workflows/demo-scan.yml"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "문자열 템플릿" "감싼 식과 맨 식이 섞인 표기를 fail-closed 로 떨어뜨린다"
+
+# 대조군 — 같은 판정의 다른 표기는 통과한다: `${{ }}` 감싸기 + 대문자(GitHub 은 문자열을 대소문자
+# 없이 비교한다), 블록 스칼라. 이것이 없으면 평가기가 표기 하나만 아는 것을 알 수 없다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i "s/^    if: \(.*\)/    if: \${{ \1 }}/; s/user.login != 'dependabot\[bot\]'/user.login != 'Dependabot[bot]'/" "$TMP/.github/workflows/demo-scan.yml"
+assert_contains "$(cat "$TMP/.github/workflows/demo-scan.yml")" "if: \${{ github.event_name" "대조군 입력이 실제로 감싼 표기로 바뀌었다"
+assert_ok node "$GUARD" "$TMP"
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+sed -i "s/^    if: \(.*\)/    if: >-\n      \1/" "$TMP/.github/workflows/demo-scan.yml"
+assert_ok node "$GUARD" "$TMP"
+
+# 공허성 — 규칙 11 도 발견 기반이다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+assert_fails node "$GUARD" "$TMP" --min-pr-secret-jobs=99
+out=$(node "$GUARD" "$TMP" --min-pr-secret-jobs=99 2>&1 || true)
+assert_contains "$out" "규칙 11 이 조용히 비었을 수 있다" "PR 시크릿 잡 하한이 공허를 막는다"
+
 # ── 오탐 대조군 3: 저장소 루트 실물에 대해 통과해야 한다 ──
 # 픽스처에서만 도는 가드는 실제 트리와 어긋난 채로 초록불을 유지할 수 있다.
 assert_ok node "$GUARD" "$DIR/../.."
 # 실측 하한과 함께 돌려도 통과해야 한다(CI 가 넘기는 값과 같은 모양).
-assert_ok node "$GUARD" "$DIR/../.." --min-escalations=6
+assert_ok node "$GUARD" "$DIR/../.." --min-escalations=6 --min-pr-secret-jobs=1
 
 assert_report
