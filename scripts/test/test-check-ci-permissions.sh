@@ -349,6 +349,151 @@ assert_fails node "$GUARD" "$TMP" --min-pr-secret-jobs=99
 out=$(node "$GUARD" "$TMP" --min-pr-secret-jobs=99 2>&1 || true)
 assert_contains "$out" "규칙 11 이 조용히 비었을 수 있다" "PR 시크릿 잡 하한이 공허를 막는다"
 
+# ── 규칙 11 둘째 회차 — 독립 레그 둘이 짚은 자리 ──
+# 적대 레그(계약 + 코드만): 우회 셋 · 오탐 둘. 변이 레그(변이를 레그가 고름): 8 변이가 전부 SILENT 였다.
+# 아래는 그 하나하나를 사례로 세운 것이다. 워크플로 모양이 여러 줄이라 sed 대신 파일째 쓴다.
+fresh() { rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"; }
+scan_wf() { cat > "$TMP/.github/workflows/demo-scan.yml"; }
+SCAN="$TMP/.github/workflows/demo-scan.yml"
+ACTOR_ONLY="github.event_name != 'pull_request' || github.actor != 'dependabot[bot]'"
+
+# 우회 — pull_request_target 은 PR 병합 ref 가 아니라 **기준 브랜치** ref 로 돈다. 시나리오가 모든 PR 이벤트에
+# `refs/pull/N/merge` 를 넣으면 `github.ref == 'refs/heads/main'` 이 PR 에서 거짓으로 보여 통과한다.
+fresh
+scan_wf <<'EOF'
+name: demo-scan
+on:
+  push:
+    branches: [main]
+  pull_request_target:
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - run: echo "픽스처"
+        env:
+          SCAN_TOKEN: ${{ secrets.DEMO_SCAN_TOKEN }}
+EOF
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "(pull_request_target)에서 돈다" "pull_request_target 의 ref 를 기준 브랜치로 평가한다"
+
+# 우회 — 시나리오의 상수 하나에 맞춘 식. Dependabot 의 target-branch 는 바꿀 수 있으므로 기준 브랜치가
+# main 하나라고 가정하면 `base_ref != 'main'` 이 통과한다. 자유값은 두 벌로 평가한다.
+fresh
+sed -i "s/^    if: .*/    if: github.event_name == 'push' || github.base_ref != 'main'/" "$SCAN"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "Dependabot 이 연 PR 을 Dependabot 이 갱신" "기준 브랜치 하나에 맞춘 식을 다른 벌로 잡는다"
+
+# 우회 — `jobs:` **뒤**의 최상위 env 도 모든 잡이 쥔다. 앞만 보면 마지막 잡 말고는 모른다.
+fresh
+scan_wf <<'EOF'
+name: demo-scan
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  early:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "픽스처"
+  late:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    steps:
+      - run: echo "픽스처"
+env:
+  LATE: ${{ secrets.DEMO_LATE }}
+EOF
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "잡 \`early\` 은 PR 에서 \`DEMO_LATE\` 를 쥐는데" "jobs: 뒤의 최상위 env 를 앞선 잡에도 건다"
+
+# 우회 — 여러 줄 플로우 시퀀스와 앵커는 트리거를 읽지 못한다 → 빈 트리거로 넘기지 말고 fail-closed.
+fresh
+printf 'name: demo-scan\non: [push,\n  pull_request]\npermissions:\n  contents: read\njobs:\n  scan:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo "${{ secrets.DEMO_SCAN_TOKEN }}"\n' > "$SCAN"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "트리거를 읽을 수 없다" "여러 줄 플로우 시퀀스 on: 을 fail-closed 로 떨어뜨린다"
+fresh
+sed -i 's/^on:$/on: \&triggers/' "$SCAN"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "트리거를 읽을 수 없다" "앵커 붙은 on: 을 fail-closed 로 떨어뜨린다"
+
+# 오탐 — `run:` 의 글자 `secrets.X` 는 시크릿을 쥐는 것이 아니다. 식(`${{ }}`) 안의 것만 센다.
+fresh
+printf '      - run: echo "missing secrets.NPM_TOKEN"\n' >> "$SCAN"
+assert_ok node "$GUARD" "$TMP"
+# ⚠️ 그러나 run 블록 안의 셸 주석에 든 식은 센다 — GitHub 은 셸을 모르고 run 글 전체에서 식을 치환한다.
+fresh
+printf '      - run: |\n          # echo ${{ secrets.DEMO_COMMENTED }}\n          true\n' >> "$SCAN"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "\`DEMO_COMMENTED\` 를 쥐는데" "run 블록 셸 주석 속 식도 시크릿을 쥔다"
+
+# 오탐 — 여러 줄 plain 스칼라 if: (YAML 은 줄바꿈을 공백으로 접는다). 첫 줄만 읽으면 `||` 로 끝나 거부된다.
+fresh
+sed -i "s/^    if: \(.*\) || \((.*)\)$/    if: \1 ||\n      \2/" "$SCAN"
+assert_contains "$(cat "$SCAN")" "pull_request' ||
+      (github.actor" "대조군 입력이 실제로 두 줄이 됐다"
+assert_ok node "$GUARD" "$TMP"
+
+# 미고정 — 재실행 시나리오(actor 와 triggering_actor 가 갈리는 유일한 경우)가 따로 선다.
+fresh
+sed -i "s/^    if: .*/    if: github.event_name != 'pull_request' || github.triggering_actor != github.actor/" "$SCAN"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "다시 돌림" "재실행 시나리오만 참인 식을 잡는다"
+
+# 미고정 — `secrets: inherit`(재사용 워크플로 호출)는 이름 없이 시크릿을 넘긴다.
+fresh
+printf '  call:\n    uses: ./.github/workflows/demo-reusable.yml\n    secrets: inherit # 픽스처\n' >> "$SCAN"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "잡 \`call\` 은 PR 에서 \`secrets: inherit\` 를 쥐는데" "secrets: inherit 를 시크릿으로 센다"
+
+# 미고정 — PR 트리거가 둘이면 둘 다 평가한다.
+fresh
+sed -i 's/^  pull_request:$/  pull_request:\n  pull_request_target:/' "$SCAN"
+sed -i "s/^    if: .*/    if: github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]'/" "$SCAN"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "(pull_request_target)에서 돈다" "두 번째 PR 트리거도 평가한다"
+
+# 미고정 — 트리거 표기 셋(플로우 시퀀스 · 블록 시퀀스는 읽고, 플로우 매핑은 fail-closed).
+for ON in 'on: [push, pull_request]' 'on:
+  - push
+  - pull_request'; do
+  fresh
+  printf 'name: demo-scan\n%s\npermissions:\n  contents: read\njobs:\n  scan:\n    runs-on: ubuntu-latest\n    if: %s\n    steps:\n      - run: echo "${{ secrets.DEMO_SCAN_TOKEN }}"\n' "$ON" "$ACTOR_ONLY" > "$SCAN"
+  assert_fails node "$GUARD" "$TMP"
+  out=$(node "$GUARD" "$TMP" 2>&1 || true)
+  assert_contains "$out" "사람이 커밋을 얹음" "트리거 표기 [$(printf '%s' "$ON" | head -1)…] 를 읽어 평가한다"
+done
+fresh
+sed -i '/^  push:$/,/^    types: /d' "$SCAN"
+sed -i 's/^on:$/on: {push: {branches: [main]}, pull_request: {}}/' "$SCAN"
+assert_fails node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "플로우 매핑이라 트리거를" "플로우 매핑 on: 을 fail-closed 로 떨어뜨린다"
+
+# 미고정 — contains() 는 대소문자를 가리지 않는다(GitHub 과 같다). 가리면 맞는 식이 거부된다.
+fresh
+sed -i "s/^    if: .*/    if: github.event_name != 'pull_request' || !contains(github.event.pull_request.user.login, 'Dependabot')/" "$SCAN"
+assert_ok node "$GUARD" "$TMP"
+
+# 미고정 — 블록 스칼라의 **둘째 줄**도 식이다.
+fresh
+sed -i "s/^    if: \(.*\) || \((.*)\)$/    if: >-\n      \1 ||\n      \2/" "$SCAN"
+assert_contains "$(cat "$SCAN")" "if: >-" "대조군 입력이 실제로 블록 스칼라가 됐다"
+assert_ok node "$GUARD" "$TMP"
+
 # ── 오탐 대조군 3: 저장소 루트 실물에 대해 통과해야 한다 ──
 # 픽스처에서만 도는 가드는 실제 트리와 어긋난 채로 초록불을 유지할 수 있다.
 assert_ok node "$GUARD" "$DIR/../.."
