@@ -41,6 +41,32 @@ jobs:
       - run: bundle exec rspec           # 단위 71개(integration 태그는 spec_helper가 자동 제외) + 커버리지 게이트(라인≥90/브랜치≥85)
       - run: bundle exec bundler-audit check --update
 
+  # ⚠️ **커밋된 락은 소비자에게 닿지 않는다** — 소비자의 `bundle install` 은 런타임 의존을 새로 푼다. 위 매트릭스는 락으로만
+  # 돌아서, net-http 0.10.0(net-protocol 0.4.0)이 SDK 의 틀 상한 훅을 깨 HTTP 호출이 전부 ArgumentError 였던 것을 못 봤다
+  # (락 없는 야간 하네스만 10-10 부터 봤다 · #776). 이 잡은 런타임 그룹만 새로 풀고(rspec·rubocop 같은 dev 도구는 락 그대로)
+  # 단위 시험을 돈다. 하한(3.2)과 최신(4.0) — 새로 푼 판은 루비 판마다 갈린다. 상류가 새 판을 내면 주간 실행이 여기서 운다.
+  latest-runtime-deps:
+    name: rspec on freshly resolved runtime deps (Ruby ${{ matrix.ruby }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ['3.2', '4.0']
+    defaults:
+      run:
+        working-directory: ruby
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          working-directory: ruby
+      - name: 런타임 그룹만 새로 푼다 — 락과 달라진 판을 찍는다
+        run: |
+          bundle update --group default
+          git --no-pager diff -U0 -- Gemfile.lock | grep -E '^[-+] {4}[a-z]' || echo "(락과 같다)"
+      - run: bundle exec rspec
+
   integration:
     name: Integration (docker CLI 셸아웃, 실제 Keycloak 26.6)
     runs-on: ubuntu-latest # ubuntu 러너는 Docker 내장 → KeycloakContainer(docker run 셸아웃) 동작

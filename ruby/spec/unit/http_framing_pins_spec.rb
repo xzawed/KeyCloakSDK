@@ -13,6 +13,23 @@ require_relative "../support/framing_server"
 module HttpFramingPinsSpec
   TOKEN = "/realms/frm/protocol/openid-connect/token"
 
+  # 두 바이트 종단 문자가 16 KiB 읽기 경계에 걸친다 — 셋째 줄(8,192 B)의 "\r" 이 16,383 번째, "\n" 이 16,384 번째 바이트다.
+  # 0.3.0+ 는 되감아 찾고 0.2.x 는 놓친다(Grok 적대 레그). 줄은 전부 SDK 상한 안이다.
+  CRLF_STRADDLE = "#{'A' * 3_998}\r\n#{'B' * 4_191}\r\n#{'C' * 8_190}\r\nZ\r\n".freeze
+
+  # (C3) 대조 사례 — `[데이터, 위치 인자, 키워드, 읽는 횟수]`. 원판이 0.3.0+ 면(`limit:` · 되감기) 그 뜻도 대조한다.
+  PARITY_CASES = [
+    ["HTTP/1.1 200 OK\r\nX: y\r\n", ["\n"], {}, 1], ["HTTP/1.1 200 OK\r\nX: y\r\n", ["\n", true], {}, 1],
+    ["no-terminator", ["\n", true], {}, 1], ["no-terminator", ["\n"], {}, 1], ["", ["\n", true], {}, 1]
+  ].freeze
+  PARITY_V030_CASES = [
+    ["abc\nrest", ["\n"], { limit: 4 }, 1], ["abcd\nrest", ["\n"], { limit: 4 }, 1],
+    ["#{'a' * 200}\n", ["\n"], { limit: 100 }, 1], ["a" * 200, ["\n", true], { limit: 100 }, 1],
+    ["a" * 100, ["\n", true], { limit: 10 }, 1], ["x\n", ["\n"], { limit: 0 }, 1], ["x\n", ["\n"], { limit: "1" }, 1],
+    [CRLF_STRADDLE, ["\r\n"], {}, 4]
+  ].freeze
+  UPSTREAM_IS_V030 = Net::BufferedIO.instance_method(:readuntil).parameters.include?(%i[key limit])
+
   module_function
 
   # StringIO 위의 BufferedIO 에 BoundedReads 를 extend 한 것(직접 단위 시험용).
@@ -29,9 +46,19 @@ RSpec.describe KeycloakSdk::Http do # response framing bound — net-http shape 
   describe "net-protocol BufferedIO shape the hook relies on" do
     let(:io) { Net::BufferedIO.new(StringIO.new("".b)) }
 
+    # 아는 모양은 둘이다 — 0.2.x(위치 인자 둘)와 0.3.0+(`limit:` 키워드 — net-http 0.10 이 그것으로 부른다). 셋째 모양이
+    # 나오면 여기서 운다(훅이 그 모양을 못 받으면 SDK 의 HTTP 호출이 전부 ArgumentError 다 — 0.4.0 에서 실제로 그랬다).
     it "reads framing through readuntil and readline (the methods the hook overrides)" do
-      expect(Net::BufferedIO.instance_method(:readuntil).parameters).to eq([%i[req terminator], %i[opt ignore_eof]])
-      expect(Net::BufferedIO.instance_methods).to include(:readline)
+      expect(Net::BufferedIO.instance_method(:readuntil).parameters)
+        .to eq([%i[req terminator], %i[opt ignore_eof]])
+        .or eq([%i[req terminator], %i[opt ignore_eof], %i[key limit]])
+      expect(Net::BufferedIO.instance_method(:readline).parameters).to eq([])
+    end
+
+    it "the hook takes both upstream call shapes (positional ignore_eof and the limit: keyword)" do
+      hooked = HttpFramingPinsSpec.bounded_over("")
+      expect(hooked.method(:readuntil).parameters).to eq([%i[req terminator], %i[opt ignore_eof], %i[key limit]])
+      expect(hooked.method(:readline).parameters).to eq([])
     end
 
     it "buffers into @rbuf / @rbuf_offset and fills via private rbuf_fill / rbuf_consume" do
@@ -87,6 +114,14 @@ RSpec.describe KeycloakSdk::Http do # response framing bound — net-http shape 
       expect(error&.message).to eq(total_msg)
     end
 
+    # 경계 그 자체 — 위 시험은 「어딘가에서 넘는다」만 본다(`>` 를 `>=` 로 바꾼 변이가 통과했다 · Grok 변이 레그).
+    it "accepts a response whose framing totals exactly MAX_FRAMING_BYTES and refuses one byte more" do
+      line = "#{'a' * 4_094}\r\n" # 4,096 바이트
+      io = HttpFramingPinsSpec.bounded_over("#{line * 16}\n") # 16 줄 = 65,536 바이트, 그다음 1 바이트 줄
+      16.times { io.readuntil("\n", true) }
+      expect { io.readuntil("\n", true) }.to raise_error(KeycloakSdk::TransportError, total_msg)
+    end
+
     it "resets the response budget on kcsdk_reset_framing! (keep-alive reuse)" do
       line = "#{'a' * 4_094}\r\n"
       io = HttpFramingPinsSpec.bounded_over(line * 40)
@@ -103,6 +138,93 @@ RSpec.describe KeycloakSdk::Http do # response framing bound — net-http shape 
 
     it "reads a whole short line through readline (status / chunk-size / trailer path)" do
       expect(HttpFramingPinsSpec.bounded_over("HTTP/1.1 200 OK\r\n").readline).to eq("HTTP/1.1 200 OK")
+    end
+  end
+
+  # ── (C2) `limit:` — net-http 0.10 이 모든 틀 줄을 `readuntil("\n", ignore_eof, limit: 1 MiB)` 로 읽는다 ─────────
+  describe "the limit: keyword net-http 0.10 passes" do
+    let(:line_msg) { described_class.const_get(:FRAMING_LINE_MSG) }
+
+    # net-protocol 0.2.x 에는 이 예외가 없다(0.3.0 이 들였다) — 잠긴 레인에서도 같은 갈래를 밟도록 그때만 세운다.
+    before do
+      stub_const("Net::ReadLimitExceeded", Class.new(Net::ProtocolError)) unless defined?(Net::ReadLimitExceeded)
+    end
+
+    it "keeps the SDK line bound under net-http's 1 MiB limit" do
+      io = HttpFramingPinsSpec.bounded_over("#{'a' * 8_191}\r\nrest")
+      expect { io.readuntil("\n", true, limit: 1_048_576) }.to raise_error(KeycloakSdk::TransportError, line_msg)
+    end
+
+    it "returns a line within both bounds unchanged" do
+      expect(HttpFramingPinsSpec.bounded_over("HTTP/1.1 200 OK\r\n").readuntil("\n", false, limit: 1_048_576))
+        .to eq("HTTP/1.1 200 OK\r\n")
+    end
+
+    it "keeps upstream's meaning for a tighter limit: it counts the terminator and consumes nothing" do
+      io = HttpFramingPinsSpec.bounded_over("abcd\nabc\n")
+      expect { io.readuntil("\n", false, limit: 4) }
+        .to raise_error(Net::ReadLimitExceeded, "exceeded the 4 byte read limit")
+      expect(io.readuntil("\n", false, limit: 5)).to eq("abcd\n")
+      expect(io.readuntil("\n", false, limit: 4)).to eq("abc\n")
+    end
+
+    it "applies a tighter limit while the line is still being filled" do
+      io = HttpFramingPinsSpec.bounded_over("a" * 200)
+      expect { io.readuntil("\n", true, limit: 100) }.to raise_error(Net::ReadLimitExceeded)
+    end
+
+    it "lets the SDK bound win when it and the caller's limit both trip" do
+      io = HttpFramingPinsSpec.bounded_over("#{'a' * 8_191}\r\n")
+      expect { io.readuntil("\n", false, limit: 100) }.to raise_error(KeycloakSdk::TransportError, line_msg)
+    end
+
+    it "rejects an invalid limit the way upstream does" do
+      [0, -1, "1", 1.5].each do |bad|
+        expect { HttpFramingPinsSpec.bounded_over("x\n").readuntil("\n", false, limit: bad) }
+          .to raise_error(ArgumentError, /\Alimit must be a positive Integer, got /)
+      end
+    end
+  end
+
+  # ── (C3) 상한 안에서는 설치된 원판과 같다 — 원판의 뜻이 바뀌면 시끄럽게 실패한다 ───────────────────────────
+  describe "parity with the installed upstream readuntil inside the SDK bounds" do
+    # 읽을 때마다 값 또는 예외(클래스·메시지 — 처음 예외에서 멈춘다)와, 그 뒤 소켓에 남은 바이트.
+    def outcome(io, pos, kwargs, reads)
+      results = []
+      reads.times do
+        results << [:returned, io.readuntil(*pos, **kwargs)]
+      rescue StandardError => e
+        results << [:raised, e.class, e.message]
+        break
+      end
+      results << io.read_all
+    end
+
+    it "returns or raises what upstream does, and leaves the same bytes unread" do
+      cases = HttpFramingPinsSpec::PARITY_CASES
+      cases += HttpFramingPinsSpec::PARITY_V030_CASES if HttpFramingPinsSpec::UPSTREAM_IS_V030
+      cases.each do |data, pos, kwargs, reads|
+        expected = outcome(Net::BufferedIO.new(StringIO.new(data.b)), pos, kwargs, reads)
+        expect(outcome(HttpFramingPinsSpec.bounded_over(data), pos, kwargs, reads))
+          .to eq(expected), "#{data[0, 20].inspect} #{pos} #{kwargs}"
+      end
+    end
+
+    # 원판이 0.2.x 여도(위 대조가 그 사례를 건너뛰는 레인) 훅은 0.3.0+ 처럼 되감아 찾는다.
+    it "finds a two-byte terminator split across a 16 KiB read, as net-protocol 0.3.0+ does" do
+      io = HttpFramingPinsSpec.bounded_over(HttpFramingPinsSpec::CRLF_STRADDLE)
+      expect(Array.new(4) { io.readuntil("\r\n").bytesize }).to eq([4_000, 4_193, 8_192, 3])
+    end
+  end
+
+  # ── (C4) `Net::ReadLimitExceeded` 가 없는 판(net-protocol 0.2.x) ─────────────────────────────────────────
+  describe "a caller limit where net-protocol has no ReadLimitExceeded" do
+    before { hide_const("Net::ReadLimitExceeded") }
+
+    it "raises its 0.3.0+ parent Net::ProtocolError instead of a NameError" do
+      io = HttpFramingPinsSpec.bounded_over("abcd\n")
+      expect { io.readuntil("\n", false, limit: 1) }
+        .to raise_error(Net::ProtocolError, "exceeded the 1 byte read limit")
     end
   end
 
