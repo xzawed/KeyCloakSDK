@@ -155,6 +155,12 @@ const triggersOf = (file, lines, nodes, fatal) => {
     fatal.push(`${file}:${on.n} \`on:\` 이 플로우 매핑이라 트리거를 읽을 수 없다(fail-closed) — 블록 표기로 적을 것`)
     return []
   }
+  // ⚠️ 여러 줄로 이어진 플로우 시퀀스(`on: [push,` …)와 앵커·별칭(`on: &t`)은 이 줄만으로 트리거를 알 수 없다 —
+  // 빈 목록이나 `&t` 하나로 읽으면 PR 트리거가 조용히 빠진다(Grok 적대 레그).
+  if ((v.startsWith('[') && !v.endsWith(']')) || /^[&*]/.test(v)) {
+    fatal.push(`${file}:${on.n} \`on:\` 의 트리거를 읽을 수 없다(여러 줄 플로우 시퀀스·앵커 — fail-closed) — 블록 표기로 적을 것`)
+    return []
+  }
   if (v.startsWith('['))
     return v
       .replace(/^\[|\]$/g, '')
@@ -185,7 +191,7 @@ const triggersOf = (file, lines, nodes, fatal) => {
 // 잡 목록과 각 잡의 `permissions:` 선언 위치를 뽑는다.
 const parseWorkflow = (file, text) => {
   const { lines, nodes } = scan(text)
-  const wf = { file, lines, workflowPerms: null, jobs: [], fatal: [], triggers: [], jobsLine: null }
+  const wf = { file, lines, workflowPerms: null, jobs: [], fatal: [], triggers: [], jobsLine: null, jobsEndLine: null }
 
   // 머지 키(`<<: *anchor`)가 있으면 잡의 실제 키 집합을 이 스캐너로 알 수 없다.
   // 판단 불가는 통과가 아니라 실패다.
@@ -222,6 +228,8 @@ const parseWorkflow = (file, text) => {
   const after = nodes.slice(jobsIdx + 1)
   const stop = after.findIndex((x) => x.indent === 0)
   const body = stop < 0 ? after : after.slice(0, stop)
+  // `jobs:` 뒤에도 최상위 키(`env:` 등)가 올 수 있다 — 그 시작 줄(없으면 파일 끝 다음 줄). 규칙 11 이 쓴다.
+  wf.jobsEndLine = stop < 0 ? lines.length + 1 : after[stop].n
   if (body.length === 0) {
     wf.fatal.push(`${file}: \`jobs:\` 하위에서 잡을 하나도 읽지 못했다(플로우 스타일이거나 비어 있다 — fail-closed)`)
     return wf
@@ -717,21 +725,26 @@ const yamlScalar = (v) => {
   if (v.startsWith('"')) return JSON.parse(v) // YAML 의 큰따옴표 이스케이프 중 JSON 밖의 것은 오류(fail-closed)
   return v
 }
-// 잡 레벨 `if:` 의 식. `${{ }}` 로 통째로 감쌌으면 벗기고, 블록 스칼라면 이어지는 줄을 붙인다.
+// 잡 레벨 `if:` 의 식. `${{ }}` 로 통째로 감쌌으면 벗기고, 이어지는 줄(키보다 깊이 들여쓴 줄)을 붙인다 —
+// 블록 스칼라뿐 아니라 plain·따옴표 스칼라도 여러 줄로 이어질 수 있다(YAML 은 줄바꿈을 공백 하나로 접는다).
+// 첫 줄만 읽으면 `… ||` 로 끝나 맞는 식이 거부된다(Grok 적대 레그의 오탐).
 // ⚠️ `${{ a }} && b` 처럼 감싼 것과 맨 식이 섞이면 GitHub 은 그 값을 식이 아니라 문자열 템플릿으로
 // 다룬다 — 평가기가 식으로 읽으면 그 차이가 가려지므로 오류로 떨어뜨린다.
 const ifExpression = (wf, node) => {
   const raw = splitComment(wf.lines[node.n - 1]).body
   let v = raw.slice(raw.indexOf(':') + 1).trim()
-  if (BLOCK_SCALAR.test(v)) {
-    const body = []
-    for (let k = node.n; k < wf.lines.length; k++) {
-      const l = wf.lines[k]
-      if (l.trim() !== '' && l.length - l.trimStart().length <= node.indent) break
-      body.push(l.trim())
-    }
-    v = body.join(' ').trim()
-  } else v = yamlScalar(v)
+  const more = []
+  for (let k = node.n; k < wf.lines.length; k++) {
+    const l = wf.lines[k]
+    if (l.trim() !== '' && l.length - l.trimStart().length <= node.indent) break
+    more.push(l)
+  }
+  if (BLOCK_SCALAR.test(v)) v = more.map((l) => l.trim()).join(' ').trim()
+  else {
+    const quoted = v.startsWith("'") || v.startsWith('"')
+    const tail = more.map((l) => (quoted ? l : splitComment(l).body).trim()).filter(Boolean)
+    v = yamlScalar([v, ...tail].join(' ').trim())
+  }
   const m = /^\$\{\{([\s\S]*)\}\}$/.exec(v)
   if (m && !m[1].includes('${{')) return m[1]
   if (v.includes('${{'))
@@ -739,52 +752,71 @@ const ifExpression = (wf, node) => {
   return v
 }
 
-// 잡이 쥐는 Actions 시크릿. `GITHUB_TOKEN` 은 모든 잡에 있으므로 세지 않는다(규칙 8 과 같다).
-// `secrets: inherit`(재사용 워크플로 호출)와 인덱스 접근 `secrets[…]` 은 이름을 몰라도 쥔다.
-const SECRET_REF = /\bsecrets\.([A-Za-z_][A-Za-z0-9_]*)|\bsecrets\s*\[|^\s*secrets:\s*inherit\b/g
+// 잡이 쥐는 Actions 시크릿 — 식(`${{ … }}`) 안의 `secrets.X`·`secrets[…]`, 그리고 `secrets: inherit`(재사용
+// 워크플로 호출 — 이름 없이 넘긴다). `GITHUB_TOKEN` 은 모든 잡에 있으므로 세지 않는다(규칙 8 과 같다).
+// ⚠️ 식 밖의 글자는 세지 않는다 — `run:` 의 `echo "secrets.X"` 는 시크릿을 쥐지 않는다(Grok 적대 레그의 오탐).
+// ⚠️ 그리고 **주석을 걷지 않는다**: GitHub 은 셸을 모르고 `run:` 글 전체에서 식을 치환하므로 run 블록의
+// `# echo ${{ secrets.X }}` 도 그 값을 스크립트에 싣는다. 걷으면 쥔 시크릿을 놓친다(걷던 첫 판이 그랬다).
+// 대가는 YAML 주석 속 식까지 세는 쪽 — 엄격해지는 방향이다.
+const EXPR_SPAN = /\$\{\{([\s\S]*?)\}\}/g
+const SECRET_IN_EXPR = /\bsecrets\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*)|\[)/g
+const SECRETS_INHERIT = /^\s*secrets:\s*inherit\b/
 const secretsIn = (lines) => {
   const names = new Set()
-  for (const raw of lines)
-    for (const m of splitComment(raw).body.matchAll(SECRET_REF))
-      if (m[1] !== 'GITHUB_TOKEN') names.add(m[1] ?? m[0].trim())
+  for (const raw of lines) if (SECRETS_INHERIT.test(splitComment(raw).body)) names.add('secrets: inherit')
+  for (const span of lines.join('\n').matchAll(EXPR_SPAN))
+    for (const m of span[1].matchAll(SECRET_IN_EXPR)) if (m[1] !== 'GITHUB_TOKEN') names.add(m[1] ?? 'secrets[…]')
   return names
 }
 
 const DEPENDABOT = 'dependabot[bot]'
-const MAINTAINER = 'a-maintainer'
 const PR_EVENTS = ['pull_request', 'pull_request_target']
-// [이름, actor, triggering_actor] — 셋 다 Dependabot 이 **연** PR 이다.
+// [이름, actor, triggering_actor] — 셋 다 Dependabot 이 **연** PR 이다. 재실행은 actor 가 처음 트리거한 쪽,
+// triggering_actor 가 다시 돌린 쪽이다(GitHub 문서 — 재실행은 actor 의 권한으로 돈다).
 const DEPENDABOT_CASES = [
-  ['Dependabot 이 연 PR 을 Dependabot 이 갱신', DEPENDABOT, DEPENDABOT],
-  ['Dependabot 이 연 PR 에 사람이 커밋을 얹음(Update branch 포함)', MAINTAINER, MAINTAINER],
-  ['Dependabot 이 트리거한 실행을 사람이 다시 돌림', DEPENDABOT, MAINTAINER],
+  ['Dependabot 이 연 PR 을 Dependabot 이 갱신', 'bot', 'bot'],
+  ['Dependabot 이 연 PR 에 사람이 커밋을 얹음(Update branch 포함)', 'human', 'human'],
+  ['Dependabot 이 트리거한 실행을 사람이 다시 돌림', 'bot', 'human'],
 ]
-const prScenario = (event, actor, triggering) => ({
-  'github.event_name': event,
-  'github.actor': actor,
-  'github.triggering_actor': triggering,
-  'github.event.pull_request.user.login': DEPENDABOT,
-  'github.head_ref': 'dependabot/npm_and_yarn/node/demo-1.2.3',
-  'github.base_ref': 'main',
-  'github.ref': 'refs/pull/1/merge',
-})
-const PUSH_SCENARIO = {
+// 자유값(사람 이름 · 기준/머리 브랜치 · PR 번호)은 **두 벌**로 평가한다 — 시나리오의 상수 하나에 맞춘 식
+// (`base_ref != 'main'` 처럼 — Dependabot 의 target-branch 는 바꿀 수 있다)이 통과하지 못하게(Grok 적대 레그).
+const FREE_VALUES = [
+  { human: 'a-maintainer', base: 'main', head: 'dependabot/npm_and_yarn/node/demo-1.2.3', pr: 1 },
+  { human: 'Another-Maintainer', base: 'release/1.x', head: 'dependabot/github_actions/demo-4.5.6', pr: 77 },
+]
+const prScenario = (event, actorKind, triggeringKind, f) => {
+  const who = (kind) => (kind === 'bot' ? DEPENDABOT : f.human)
+  return {
+    'github.event_name': event,
+    'github.actor': who(actorKind),
+    'github.triggering_actor': who(triggeringKind),
+    'github.event.pull_request.user.login': DEPENDABOT,
+    'github.head_ref': f.head,
+    'github.base_ref': f.base,
+    // ⚠️ pull_request 는 PR 병합 ref 에서, pull_request_target 은 **기준 브랜치** ref 에서 돈다 — 둘을 같게 두면
+    // `github.ref == 'refs/heads/main'` 이 pull_request_target 에서 거짓으로 보여 통과한다(Grok 적대 레그).
+    'github.ref': event === 'pull_request_target' ? `refs/heads/${f.base}` : `refs/pull/${f.pr}/merge`,
+  }
+}
+const pushScenario = (f) => ({
   'github.event_name': 'push',
-  'github.actor': MAINTAINER,
-  'github.triggering_actor': MAINTAINER,
+  'github.actor': f.human,
+  'github.triggering_actor': f.human,
   'github.event.pull_request.user.login': null,
   'github.head_ref': '',
   'github.base_ref': '',
   'github.ref': 'refs/heads/main',
-}
+})
 const ruleDependabotPrSecretSkip = (wf, out) => {
   const prEvents = wf.triggers.filter((t) => PR_EVENTS.includes(t))
   if (prEvents.length === 0 || wf.jobsLine === null) return 0
-  // 워크플로 레벨 `env:` 의 시크릿은 모든 잡이 쥔다.
-  const wfSecrets = secretsIn(wf.lines.slice(0, wf.jobsLine - 1))
+  // 최상위 `env:` 의 시크릿은 모든 잡이 쥔다 — `jobs:` **앞뒤** 어디에 있든(뒤를 안 보면 마지막 잡만 안다).
+  const outside = [...wf.lines.slice(0, wf.jobsLine - 1), ...wf.lines.slice(wf.jobsEndLine - 1)]
+  const wfSecrets = secretsIn(outside)
   let seen = 0
   for (const job of wf.jobs) {
-    const secrets = new Set([...wfSecrets, ...secretsIn(jobLines(wf, job))])
+    const body = jobLines(wf, job).slice(0, Math.max(0, wf.jobsEndLine - job.node.n))
+    const secrets = new Set([...wfSecrets, ...secretsIn(body)])
     if (secrets.size === 0) continue
     seen++
     const at = `${wf.file}:${job.node.n} 잡 \`${job.name}\` 은 PR 에서 \`${[...secrets].join('`·`')}\` 를 쥐는데`
@@ -795,12 +827,12 @@ const ruleDependabotPrSecretSkip = (wf, out) => {
     try {
       const expr = ifExpression(wf, job.ifNode)
       for (const event of prEvents)
-        for (const [label, actor, triggering] of DEPENDABOT_CASES)
-          if (exprTruthy(evalExpr(expr, prScenario(event, actor, triggering))))
+        for (const [label, actorKind, triggeringKind] of DEPENDABOT_CASES)
+          if (FREE_VALUES.some((f) => exprTruthy(evalExpr(expr, prScenario(event, actorKind, triggeringKind, f)))))
             out.push(
               `${at} 「${label}」(${event})에서 돈다 — 미검토 패키지가 시크릿과 같은 잡에서 돈다. 기준은 actor 가 아니라 PR 작성자(\`github.event.pull_request.user.login\`)다`,
             )
-      if (wf.triggers.includes('push') && !exprTruthy(evalExpr(expr, PUSH_SCENARIO)))
+      if (wf.triggers.includes('push') && FREE_VALUES.some((f) => !exprTruthy(evalExpr(expr, pushScenario(f)))))
         out.push(
           `${wf.file}:${job.ifNode.n} 잡 \`${job.name}\` 의 \`if:\` 가 push 실행까지 건너뛴다 — Dependabot 건너뛰기가 main 실행으로 새면 안 된다(PR0 fail-closed)`,
         )
