@@ -31,8 +31,11 @@ module KeycloakSdk
         return resp if resp.success?
 
         raise AdminError.from_status(resp.status, "admin request failed: HTTP #{resp.status}")
-      rescue Faraday::Error => e
+      rescue Error
+        raise
+      rescue StandardError => e
         # 원본을 달면 `Faraday::ParsingError#inspect` 가 요청의 베어러 토큰을, 메시지가 응답 앞부분을 찍는다(실측).
+        # Faraday 밖 예외도 감싼다 — net-http 0.10 의 응답 헤더 검증 ArgumentError 는 헤더 이름을 인용한다.
         raise TransportError, "admin transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
       end
 

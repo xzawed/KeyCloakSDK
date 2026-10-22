@@ -100,12 +100,6 @@ module HostilePathMatrixSpec
                           "쓰는 메서드의 행(세 그랜트·admin 토큰 TOKEN_GRANT/CODE_EXCHANGE · JWKS_FETCH · introspect " \
                           "OTHER)에 잡힌다(http.rb)",
     "Http.decode_json" => "이미 받은 응답의 해석기 — 요청을 내지 않는다. 입구는 read_capped 를 쓰는 메서드들이다(http.rb)",
-    "Http::BoundedReads#readuntil" => "소켓 틀 리더 — 요청 때 BufferedIO 인스턴스에 extend 된다(BoundedTransport#on_connect). " \
-                                      "도달 가능한 수신자가 아니라 응답 틀 줄을 읽을 뿐이고, 그 요청은 그것을 내는 메서드의 " \
-                                      "행(세 그랜트·admin 토큰·JWKS·introspect)에 잡힌다(http.rb)",
-    "Http::BoundedReads#readline" => "소켓 틀 리더 — readuntil 과 같다(상태 줄·청크 크기/확장 줄·트레일러를 읽는다, http.rb)",
-    "Http::BoundedReads#kcsdk_reset_framing!" => "요청마다 틀 예산을 0 으로 되돌린다(BoundedTransport#begin_transport). " \
-                                                 "소켓 상태 리셋일 뿐 요청을 내지 않는다(http.rb)",
     "JwtValidator.from_config" => "생성 팩토리 — 검증기를 조립할 뿐이다. 검증 요청은 JwtValidator#validate 행(JWKS_FETCH)이다",
     "OidcEndpoints.from_config" => "엔드포인트 조립 — 네트워크가 없다(oidc_endpoints.rb 머리 주석)",
     "TokenSet.from_response" => "이미 받은 본문의 파서 — Hash 가 아니면 요청 없이 AuthError 다. 그 계약은 입구 " \
@@ -479,9 +473,11 @@ module HostilePathMatrixSpec
       missing.map { |f| "#{f.delete_prefix("#{LIB}/")} (로드되지 않은 파일)" }
     end
 
-    # 소스의 정의 이름이 런타임 SDK 메서드(가시성·싱글턴 무관)에 없으면 로드되지 않은 선언이다.
+    # 소스의 정의 이름이 런타임 SDK 메서드(가시성·싱글턴 무관)에 없으면 로드되지 않은 선언이다. `private_constant` 로
+    # 숨긴 모듈(응답 틀 상한의 BoundedReads·BoundedTransport)도 로드된 것이다 — 공개 경로가 아니라 행은 되지 않는다.
     def unloaded_defs
-      runtime = FacadeDumpSpec::Declared.runtime.flat_map { |n| names(Object.const_get(n)) }.to_set
+      declared = FacadeDumpSpec::Declared.runtime + FacadeDumpSpec::Declared.private_declared
+      runtime = declared.flat_map { |n| names(Object.const_get(n)) }.to_set
       Dir.glob(File.join(LIB, "**", "*.rb")).flat_map do |file|
         File.readlines(file).each_with_index.flat_map do |line, i|
           line.scan(DEF).map(&:compact).flatten.reject { |name| runtime.include?(name.to_sym) }

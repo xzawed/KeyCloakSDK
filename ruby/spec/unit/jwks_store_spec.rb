@@ -61,8 +61,13 @@ RSpec.describe KeycloakSdk::JwksStore do
 
   # 원인 사슬에 원본 하위 예외를 달지 않는다(§4) — JSON 파서는 본문을, 깨진 상태 줄은 그 줄을 인용한다.
   # 경로 전수는 `hostile_token_response_spec.rb`; 이 둘은 거기서 안 밟는 JWKS 의 두 경계다.
+  # 셋째는 Faraday 밖 예외다 — net-http 0.10 의 응답 헤더 검증이 내는 ArgumentError(헤더 이름을 인용한다 · Faraday
+  # 어댑터의 목록 밖이라 raw 로 올라온다). validate·exchange_code(expected_nonce:) 가 그대로 내보냈다(Grok 적대 레그).
   { "a non-JSON body" => ->(s) { s.to_return(status: 200, body: "JW-CANARY-BODY") },
-    "a garbled status line" => ->(s) { s.to_raise(Net::HTTPBadResponse.new("wrong status line: JW-CANARY-LINE")) } }
+    "a garbled status line" => ->(s) { s.to_raise(Net::HTTPBadResponse.new("wrong status line: JW-CANARY-LINE")) },
+    "a header name net-http 0.10 rejects" => lambda { |s|
+      s.to_raise(ArgumentError.new('header field name cannot include control characters or colon: "JW-CANARY-NAME"'))
+    } }
     .each do |name, reply|
       it "does not quote #{name} or attach the lower exception" do
         reply.call(stub_request(:get, jwks_url))

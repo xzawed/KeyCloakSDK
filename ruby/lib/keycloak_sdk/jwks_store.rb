@@ -124,7 +124,9 @@ module KeycloakSdk
         raise TransportError, "JWKS response unparsable (JSON::ParserError)", cause: RedactedCause.new(e)
       end
       validate_key_set!(body)
-    rescue Faraday::Error => e
+    rescue Error
+      raise
+    rescue StandardError => e # Faraday 밖 예외도 — net-http 0.10 의 응답 헤더 검증은 ArgumentError 다(어댑터 목록 밖)
       raise TransportError, "JWKS transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
     end
 

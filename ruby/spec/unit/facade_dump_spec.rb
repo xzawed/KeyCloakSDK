@@ -358,6 +358,16 @@ module FacadeDumpSpec
       end.sort
     end
 
+    # 소스에 선언됐지만 `private_constant` 로 숨긴 것 — 공개 상수 걷기(`runtime`)에는 없다. 공개 API 가 아니라 뿌리·
+    # 면제 대상도 아니고, 로드됐는지(`const_defined?` 는 private 도 참)와 정말 private 인지만 본다(require 누락은 그대로 운다).
+    def self.private_declared
+      (source - runtime).select do |name|
+        parent, _, last = name.rpartition("::")
+        mod = Object.const_get(parent)
+        mod.const_defined?(last, false) && !mod.constants(false).include?(last.to_sym)
+      end
+    end
+
     # `ruby/lib` 의 선언을 들여쓰기로 중첩을 복원해 완전 이름으로(rubocop 이 들여쓰기를 강제한다).
     def self.source
       Dir.glob(File.join(LIB, "**", "*.rb")).flat_map { |f| declarations(File.readlines(f)) }.uniq.sort
@@ -417,7 +427,8 @@ RSpec.describe KeycloakSdk do
     it "derives the same declared types at runtime as ruby/lib declares in source" do
       runtime = FacadeDumpSpec::Declared.runtime
       source = FacadeDumpSpec::Declared.source
-      expect(source - runtime).to eq([]), "ruby/lib 에 선언됐지만 로드되지 않았다(require 누락?): #{source - runtime}"
+      missing = source - runtime - FacadeDumpSpec::Declared.private_declared
+      expect(missing).to eq([]), "ruby/lib 에 선언됐지만 로드되지 않았다(require 누락?): #{missing}"
       expect(runtime - source).to eq([]), "런타임에 있지만 ruby/lib 선언 파싱이 못 찾았다: #{runtime - source}"
     end
 

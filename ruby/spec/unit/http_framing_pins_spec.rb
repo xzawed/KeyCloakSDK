@@ -85,6 +85,15 @@ RSpec.describe KeycloakSdk::Http do # response framing bound — net-http shape 
       expect(http.const_get(:FRAMING_LINE_MSG)).to eq("HTTP response framing line exceeds 8192 bytes")
       expect(http.const_get(:FRAMING_TOTAL_MSG)).to eq("HTTP response framing exceeds 65536 bytes")
     end
+
+    # 공개 API 가 아니다 — 교차언어 상한은 내부 값이고(Go 의 responseHeaderMaxBytes 도 비노출) CHANGELOG 도 「공개 API
+    # 변경은 0」이라 약속한다. 공개로 바꾸는 것은 minor 판정이라 여기서 운다.
+    it "keeps the framing bounds and the hook modules private (not public API)" do
+      names = %i[MAX_FRAMING_LINE_BYTES MAX_FRAMING_BYTES FRAMING_LINE_MSG FRAMING_TOTAL_MSG
+                 BoundedReads BoundedTransport]
+      expect(http.constants & names).to be_empty
+      expect { http::BoundedReads }.to raise_error(NameError, /private constant/)
+    end
   end
 
   # ── (C) BoundedReads 경계 동작(소켓 수준 직접) ───────────────────────────────────────────────────

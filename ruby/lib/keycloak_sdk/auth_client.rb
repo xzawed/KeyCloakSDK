@@ -73,7 +73,9 @@ module KeycloakSdk
       raise AuthError, "introspection failed: HTTP #{resp.status}" unless resp.success?
 
       IntrospectionResult.from_response(resp.body)
-    rescue Faraday::Error => e
+    rescue Error
+      raise
+    rescue StandardError => e # Faraday 밖 예외도 — net-http 0.10 의 응답 헤더 검증은 ArgumentError 다(어댑터 목록 밖)
       raise TransportError, "introspection transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
     end
 
@@ -89,7 +91,9 @@ module KeycloakSdk
       raise AuthError, "logout failed: HTTP #{resp.status}" unless Http.decode_json(resp, check_utf8: false).success?
 
       nil
-    rescue Faraday::Error => e
+    rescue Error
+      raise
+    rescue StandardError => e # introspect 와 같다(Faraday 밖 예외도 감싼다)
       raise TransportError, "logout transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
     end
 
