@@ -116,19 +116,18 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-10-22 · #737–#798 반영)
+### 다음 세션 진입점 (2026-10-22 · #737–#799 반영)
 
-**지금 상태** — 물결 4 아홉 LIVE(`check-registry-truth` 2026-10-09) · 2026-10-09 수정(#737–#774)은 **미게시** — `CHANGELOG.md` `[Unreleased]` 가 소유한다(태그 위임은 물결마다 다시 묻는다). 열린 PR 은 Dependabot 과 #780(사람 판정)뿐이어야 한다. 래퍼 9.8 의 되살릴 조건은 #682·#788.
+**지금 상태** — 물결 4 아홉 LIVE(`check-registry-truth` 2026-10-09) · **Ruby 1.3.1 LIVE**(2026-10-22 #799 — #760·#797·#798 의 Ruby 수정) · 2026-10-09 수정(#737–#774)의 나머지 여덟 언어 몫은 **미게시** — `CHANGELOG.md` `[Unreleased]` 가 소유한다(태그 위임은 물결마다 다시 묻는다). 열린 PR 은 Dependabot 과 #780(사람 판정)뿐이어야 한다. 래퍼 9.8 의 되살릴 조건은 #682·#788.
 
 열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유한다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. ⚠️ **ruby 릴리스 판정**(사람) — #797·#798 이 미게시다: net-http 0.10 에서 게시본 1.3.0 은 introspect·logout·admin 이 raw `ArgumentError` 를 낸다(#798 이 고쳤다).
-2. `close-drain-time-unbounded` 의 남은 칸(admin 자원 응답 비우기 · admin TLS 닫기) — 토큰 응답 갈래는 #769 가 닫았다.
-3. `wave4-hardening-*` 의 남은 칸(#763–#772 가 일곱 언어의 일부를 닫았다) · `response-framing-unbounded` 의 node·python.
-4. `guard-detection-surface-hand-narrowed` [H/M](attest — KNOWN_GAPS 대조는 #773) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
-5. ⚠️ **손대기 전에 전제를 잰다** — 이번에도 뒤집혔다: jwks 후보(「신선한 캐시가 없으면 센다」)는 600 초 경계에서 규칙 (4) 를 깼고, 「낡은 캐시 + 장애」는 node 하나가 아니라 node·.NET 이었고, probe.sh 초안 정규식은 지어낸 줄로 골라 실제 출력 셋을 못 맞췄다.
+1. `close-drain-time-unbounded` 의 남은 칸(admin 자원 응답 비우기 · admin TLS 닫기) — 토큰 응답 갈래는 #769 가 닫았다.
+2. `wave4-hardening-*` 의 남은 칸(#763–#772 가 일곱 언어의 일부를 닫았다) · `response-framing-unbounded` 의 node·python.
+3. `guard-detection-surface-hand-narrowed` [H/M](attest — KNOWN_GAPS 대조는 #773) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
+4. ⚠️ **손대기 전에 전제를 잰다** — 이번에도 뒤집혔다: jwks 후보(「신선한 캐시가 없으면 센다」)는 600 초 경계에서 규칙 (4) 를 깼고, 「낡은 캐시 + 장애」는 node 하나가 아니라 node·.NET 이었고, probe.sh 초안 정규식은 지어낸 줄로 골라 실제 출력 셋을 못 맞췄다.
 
 **사람 판정 대기** — `jwks-cache-lifetime-divergent`(장애 중 낡은 키 수락·수명 정렬, 아홉 동시) · `bearer-token-grammar-divergent`(아홉 동시) · `response-read-deadline-divergent` · php ext-curl(`response-framing-unbounded`) · #756 이 java `keycloak-sdk-auth` 에 직접 의존(httpclient 4.5.14)을 더했다 — 받아들일지 · 그 핀 commons-codec 1.15 → 1.23.0(#780 · kotlin 짝은 #787 에서 1.15 로 남겼다).
 
