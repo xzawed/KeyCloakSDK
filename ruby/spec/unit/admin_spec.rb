@@ -42,6 +42,48 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
     expect { admin.users.get("x") }.to raise_error(KeycloakSdk::TransportError)
   end
 
+  # ⚠️ **상태가 클래스를 정한다 — 오류 본문이 JSON 이라면서 JSON 이 아니어도.** 커넥션의 json 미들웨어가 상태 검사보다
+  # 먼저 해석해, 고치기 전에는 셋 다 `TransportError`(`admin transport error: Faraday::ParsingError`)였다 — 404 를
+  # 「없음」으로 다루는 소비자 분기가 전송 오류로 빠졌다(.NET 은 같은 경우 상태 클래스를 지킨다). 본문은 메시지에도
+  # 원인 사슬에도 인용하지 않는다. 2xx 의 해석 실패는 그대로 전송 오류다(맨 아래 대조군).
+  describe "an error status whose body claims JSON but is not" do
+    let(:junk) { { body: "<html>NOT-JSON-CANARY</html>", headers: { "Content-Type" => "application/json" } } }
+
+    def expect_status_class(klass, status, &)
+      expect(&).to raise_error(klass) do |e|
+        expect(e.message).to eq("admin request failed: HTTP #{status}")
+        expect(e.status).to eq(status)
+        expect(e.full_message(highlight: false)).not_to include("NOT-JSON-CANARY")
+      end
+    end
+
+    it "keeps 404 as NotFoundError" do
+      stub_request(:get, "#{users_url}/missing").to_return(status: 404, **junk)
+      expect_status_class(KeycloakSdk::NotFoundError, 404) { admin.users.get("missing") }
+    end
+
+    it "keeps 409 as ConflictError" do
+      stub_request(:post, users_url).to_return(status: 409, **junk)
+      expect_status_class(KeycloakSdk::ConflictError, 409) { admin.users.create({ username: "dup" }) }
+    end
+
+    it "keeps 403 as ForbiddenError" do
+      stub_request(:get, users_url).with(query: hash_including({})).to_return(status: 403, **junk)
+      expect_status_class(KeycloakSdk::ForbiddenError, 403) { admin.users.list }
+    end
+
+    it "keeps any other error status an AdminError" do
+      stub_request(:get, "#{users_url}/x").to_return(status: 500, **junk)
+      expect_status_class(KeycloakSdk::AdminError, 500) { admin.users.get("x") }
+    end
+
+    it "still reports an unparsable 2xx body as a transport error" do
+      stub_request(:get, "#{users_url}/x").to_return(status: 200, **junk)
+      expect { admin.users.get("x") }.to raise_error(KeycloakSdk::TransportError,
+                                                     "admin transport error: Faraday::ParsingError")
+    end
+  end
+
   # ⚠️ rename은 PUT /roles/{현재 이름} + body의 **새** 이름이다. 경로를 representation에서
   # 만들면 rename을 표현할 수 없다 — 자매 Go(#275)·PHP(#279) SDK에서 실제로 그랬고, 둘 다
   # 이 테스트가 없어서 오래 살아남았다. 여기 구현은 처음부터 옳지만 그것을 붙잡는 것이 없었다.
