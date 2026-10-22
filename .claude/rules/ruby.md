@@ -5,7 +5,12 @@ paths:
   - "harness/install/consume/ruby*"
   - ".github/workflows/ruby-*.yml"
 ---
-<!-- doc-budget: max-bytes=6603 -->
+<!-- doc-budget: max-bytes=6835 -->
+<!-- 6603 → 6835 (2026-10-22 · 틀 상한 훅의 net-protocol 0.3.0+ `limit:`): 래칫 조건 (1), 교환이다. 거짓 지시 하나를 지웠다 —
+     「A single test: `bundle exec rspec spec/unit/<path>_spec.rb -e …`」 는 부분 실행이라 커버리지 게이트로 exit 2 다
+     (실측: `bundle exec rspec spec/unit/http_framing_pins_spec.rb` → 27 examples · 0 failures 인데 exit=2,
+     `RUN_INTEGRATION=1` 을 붙이면 exit=0). 그 줄과 SimpleCov 줄을 하나로 합쳤다. 새 함정 줄은 그 주장을 다시 재는
+     시험(`http_framing_pins_spec` 의 모양 핀·원판 대조)과 잡(`ruby-ci` 의 `latest-runtime-deps`)을 가리킨다. -->
 <!-- 6305 → 6603 (2026-10-05 · wave 4 응답 상한 + §4 디코드 경계): 래칫 조건 (1), 교환이다. 거짓 문장 셋을 지웠다 —
      「verifier 를 `access_token!(code_verifier:)` 로 넘긴다」·「scope 는 키워드 전용」(그랜트가 더는 `access_token!` 을
      부르지 않는다)·「`${KCSDK_TOOLS:-$HOME/tools}/ruby` 는 이 기계에 없다」(있다 — `node scripts/doctor.mjs ruby` →
@@ -26,12 +31,11 @@ cd ruby && bundle exec bundler-audit check --update
 cd ruby && gem build keycloak-sdk.gemspec       # release build check
 ```
 
-- A single test: `bundle exec rspec spec/unit/<path>_spec.rb -e "<example name>"`
+- A single test: `RUN_INTEGRATION=1 bundle exec rspec spec/unit/<path>_spec.rb -e "<name>"` — ⚠️ **SimpleCov's gate is process-wide**: any partial run (a file, `spec/integration`) exits 2 even when all pass; `RUN_INTEGRATION` lifts it.
 - The gem is `keycloak-sdk` (hyphen); the require path and module name are `keycloak_sdk` / `KeycloakSdk` (underscore) — this avoids colliding with the `Keycloak` module of the existing `keycloak` gem.
 - Releasing goes `ruby-v*` tag → RubyGems **Trusted Publishing** (OIDC, no stored secret). The only prerequisite is one **pending** Trusted Publisher registration on the rubygems.org profile, and it can be used for a gem that does not exist yet. ⚠️ A pending registration is believed to expire after 12 hours, so **do the registration and the tag push in one sitting**. ⚠️ Never `gem push` by hand — it bypasses `install-smoke`, the integration gate and the tag ↔ manifest guard.
 - ⚠️ **A local Windows build needs MSYS2/DevKit** (racc, prism and bigdecimal compile natively; CI on ubuntu is unaffected). MSYS2 pacman's c-ares resolver cannot resolve DNS on this network, so work around it with `XferCommand = /usr/bin/wget …` in `pacman.conf` plus a pinned mirrorlist and `/etc/hosts`, then run `ridk install 3` (once).
 - ⚠️ `rubocop -a` can write CRLF on Windows — overwrite with the Edit/Write tools to keep LF.
-- ⚠️ **SimpleCov's `minimum_coverage` is a process-wide gate** — running `spec/integration` on its own fails on branch coverage, so guard it with `unless ENV["RUN_INTEGRATION"]`.
 
 ## JWT · JWKS
 
@@ -55,4 +59,5 @@ cd ruby && gem build keycloak-sdk.gemspec       # release build check
 - ⚠️ **`client.auth.validate` can raise a `TransportError` when the IdP is down** (fail-closed, intended) — a caller has to handle that as well as `TokenValidationError`.
 - ⚠️ **Parsed JSON may hold invalid UTF-8** (json 3: raw bad bytes; json < 3: also lone `\udc00`) — SDK-read JSON must pass `Http.utf8?`. `BearerAuth` refuses what net-http raises on (quoting CR/LF) or `strip`s, and C0/DEL (`spec/unit/bearer_auth_spec.rb`).
 - ⚠️ **The shared Faraday connection factory (`http.rb`) deliberately does not install `follow_redirects`** (SSRF hardening). Every SDK request goes through this factory, so **this is the single enforcement point**. `spec/unit/http_spec.rb` catches the regression, but ⚠️ that check inspects the middleware **list**; it is not a probe that actually drives a 302.
+- ⚠️ **The framing hook overrides `readuntil` — it must take every upstream call shape** (net-http 0.10 adds `limit:`; pinned in `spec/unit/http_framing_pins_spec.rb`). Red `latest-runtime-deps` + green matrix = consumers broken: fix the SDK, never pin.
 - **Limits**: `Config`'s string attributes are frozen at the instance level only, not deep-frozen. Secret memory hygiene is impossible at the language level because a Ruby `String` cannot be erased — masking is only defence in depth.
