@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `268`(2026-10-22 기준 열림 144 · 닫힘 124)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `269`(2026-10-22 기준 열림 143 · 닫힘 126)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,7 +116,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-10-22 · #737–#795 반영)
+### 다음 세션 진입점 (2026-10-22 · #737–#797 반영)
 
 **지금 상태** — 물결 4 아홉 LIVE(`check-registry-truth` 2026-10-09) · 2026-10-09 수정(#737–#774)은 **미게시** — `CHANGELOG.md` `[Unreleased]` 가 소유한다(태그 위임은 물결마다 다시 묻는다). 열린 PR 은 Dependabot 과 #780(사람 판정)뿐이어야 한다. 래퍼 9.8 의 되살릴 조건은 #682·#788.
 
@@ -124,11 +124,10 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. ⚠️ `ruby-framing-hook-breaks-on-net-protocol-0-4` [H/S] — **다음 ruby 릴리스 전에.** 야간 하네스 ruby 4/26(#776, 10-10 부터)의 원인이다.
-2. `close-drain-time-unbounded` 의 남은 칸(admin 자원 응답 비우기 · admin TLS 닫기) — 토큰 응답 갈래는 #769 가 닫았다.
-3. `wave4-hardening-*` 의 남은 칸(#763–#772 가 일곱 언어의 일부를 닫았다) · `response-framing-unbounded` 의 node·python.
-4. `guard-detection-surface-hand-narrowed` [H/M](attest — KNOWN_GAPS 대조는 #773) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
-5. ⚠️ **손대기 전에 전제를 잰다** — 이번에도 뒤집혔다: jwks 후보(「신선한 캐시가 없으면 센다」)는 600 초 경계에서 규칙 (4) 를 깼고, 「낡은 캐시 + 장애」는 node 하나가 아니라 node·.NET 이었고, probe.sh 초안 정규식은 지어낸 줄로 골라 실제 출력 셋을 못 맞췄다.
+1. `close-drain-time-unbounded` 의 남은 칸(admin 자원 응답 비우기 · admin TLS 닫기) — 토큰 응답 갈래는 #769 가 닫았다.
+2. `wave4-hardening-*` 의 남은 칸(#763–#772 가 일곱 언어의 일부를 닫았다) · `response-framing-unbounded` 의 node·python.
+3. `guard-detection-surface-hand-narrowed` [H/M](attest — KNOWN_GAPS 대조는 #773) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
+4. ⚠️ **손대기 전에 전제를 잰다** — 이번에도 뒤집혔다: jwks 후보(「신선한 캐시가 없으면 센다」)는 600 초 경계에서 규칙 (4) 를 깼고, 「낡은 캐시 + 장애」는 node 하나가 아니라 node·.NET 이었고, probe.sh 초안 정규식은 지어낸 줄로 골라 실제 출력 셋을 못 맞췄다.
 
 **사람 판정 대기** — `jwks-cache-lifetime-divergent`(장애 중 낡은 키 수락·수명 정렬, 아홉 동시) · `bearer-token-grammar-divergent`(아홉 동시) · `response-read-deadline-divergent` · php ext-curl(`response-framing-unbounded`) · #756 이 java `keycloak-sdk-auth` 에 직접 의존(httpclient 4.5.14)을 더했다 — 받아들일지 · 그 핀 commons-codec 1.15 → 1.23.0(#780 · kotlin 짝은 #787 에서 1.15 로 남겼다).
 
@@ -523,11 +522,11 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 117건 (열림 76)
+## C. 품질 부채 — 118건 (열림 75)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 60
+### 9언어 소스 — 61
 
 - [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청과 교환의 `redirect_uri` 를 호출당 받지 못했다 — §4 판정 「표기가 아니라 능력의 차이이니 API 를 맞춘다」로 둘 다 가산적으로 맞췄다. 사후 서사는 `git show 8d7316c:docs/superpowers/plans/remaining-work.md` 522행
 
@@ -575,8 +574,11 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 <!-- response-read-deadline-divergent(2026-10-09 #769 JVM 레그 측정 · 다른 일곱은 코드 판독): JVM 둘 — 읽기 타임아웃 1 s 에 마지막 10 바이트를 700 ms 마다 흘리면 auth 토큰 7,370–7,388 ms · JWKS 콜드 적재 7,092–7,107 ms(대조군 1,300 ms 간격은 1.0 s 에 실패). java 는 1 s 에 인터럽트해도 그 뒤 6,049 ms 에 돌아오고, kotlin withTimeout(1500)은 7,044–7,072 ms — 최악 ≈ 상한(토큰 1,048,577 · JWKS 51,200) × 읽기 타임아웃. 본문 전체 기한이 있다: Go config.go:118 · Rust client.rs:23 · Node(JWKS 는 jose 기본 5 s, jwt.ts:138) · .NET auth/admin KeycloakClient.cs:30 · PHP HttpOptions.php:25(curl 일 때만). 읽기마다뿐: Python auth.py:102 · Ruby http.rb:151 · JVM. 없음: .NET JWKS 는 헤더가 온 뒤 — BoundedDocumentRetriever.cs:74 가 ResponseHeadersRead 라 HttpClient.Timeout 은 헤더까지이고 본문은 호출자의 토큰뿐인데, 그 갱신은 CancellationToken.None 이다(JwtValidator.cs:138 주석). 인용한 줄은 PM 이 열어 확인했다 — 각 설정이 전체인지 읽기마다인지는 하위 라이브러리 동작이라 미측정. 선택지(JVM): wireBounded 안의 벽시계 기한(배경 스레드 없음) 또는 request.abort() 를 부르는 감시자(그러면 kotlin 취소도 소켓 읽기를 끊는다). 정할 것: 전체 기한을 둘지 · 값 · .NET JWKS 의 구멍을 먼저 메울지(아홉 동시). -->
 - [ ] `response-framing-unbounded` **[M/M · 신규 2026-10-05 · 아홉 측정 2026-10-09 · ruby 닫힘 #760]** 헤더 줄·청크 크기 줄·트레일러는 본문 상한 밖이다 — 남은 것은 php stream 처리기(헤더 줄 — ext-curl 요구냐 문서냐 판정)·node(undici 청크 확장)·python sync(트레일러 줄 수). go 는 #742, JVM 은 #756·#761 · `php/src/Http/HttpOptions.php`
 <!-- response-framing-unbounded 실측(2026-10-09 · 아홉 언어 측정 레그 둘 · 가짜 IdP 원시 TCP · cc 그랜트 · 각 16 MiB · F1 헤더 한 줄 · F2 청크 확장 · F3a 4 KiB 트레일러 줄 4096 개 · F3b 트레일러 한 줄 · 대조군 F4·F4c 는 전 레인 수락·할당 ≤ 0.3 MB · 양성 대조 ruby F1 +66.7–67.2 MB 로 2026-10-05 값 재현): ruby — F1 수락 +67 MB · F2 수락 +50 MB · F3a 수락 +32–46 MB · F3b 수락 +50 MB(auth·admin 같다 — net-http 의 readuntil/readline 에 한도가 없다) · php curl 처리기(기본) — F1 거부(cURL 100) · F2 수락(평탄) · F3 거부 / stream 처리기(ext-curl 이 없을 때 — composer.json 이 요구하지 않는다) — F1 수락 +56.6 MB · F2·F3 수락(평탄) · python sync(requests) — F1·F2·F3b 거부(LineTooLong 65536) · F3a 수락(할당 0.04 MB 지만 16.78 MB 를 끝까지 읽는다 — 트레일러 줄 수에 한도가 없다) · aio(httpx/h11) 넷 다 거부 · node(undici 6.21.2) — F1·F3a·F3b 거부(HEADERS_OVERFLOW) · F2 수락 +16.8 MB(SDK 밖 실험: 64 MiB 확장 → arrayBuffers +74 MB · RSS +104 MB, GC 뒤 0) · go — F1 은 거부하지만 10 MiB 를 읽고 73.3 MB 를 할당했다 → #742(64 KiB) · F2·F3 작게 거부 · rust(hyper 1.11) 넷 다 작게 거부 · .NET 넷 다 거부(헤더·트레일러 64 KiB) · JVM — F1 은 jdk.http.maxHeaderSize 393,216 에서, F2 는 2,050 에서 거부하고 트레일러는 위 항목. 남은 넷의 수정 후보 — ruby: SDK 전용 Net::HTTP 하위 클래스의 BufferedIO 줄 상한(net-http 판에 기댄다) · php: stream 처리기에는 헤더 크기 손잡이가 없다 → ext-curl 을 요구하거나 문서로 · node: undici 상류(SDK 밖) · python: 시간·대역뿐이라 L. 측정 하네스는 커밋 안 함(세션 스크래치패드 xmeas1·xmeas2). · 2026-10-09 #760: ruby 는 SDK 가 연 소켓에만 거는 줄 8,192 · 틀 65,536 예산으로 닫혔다(net_http 어댑터 · 할당 1 MB 아래). · 2026-10-09 #767 레그(현 main 재측정): php stream 처리기 F1 수락 +57.2 MB · F2·F3 수락 1.0 MB / curl F1·F3 거부 · F2 수락 0.9 MB. 손잡이가 없다 — PHP 8.3 http_fopen_wrapper.c:1037 이 헤더 줄을 길이 제한 없이 읽고, Guzzle progress 는 헤더 뒤에 켜진다(F3b 는 1.6 MB 에서 끊었지만 F1 은 그대로), on_headers 는 57.2 MB 를 잡은 뒤다. 선택지: (a) composer.json 이 ext-curl 을 요구 — 소비자 하한이 오른다(기각 체크리스트 8, 릴리스 또는 등록 후속), gzip×stream 할당(7–8 MB)도 없앤다 · (c) 문서. 사람 판정. -->
-- [ ] `ruby-framing-hook-breaks-on-net-protocol-0-4` **[H/S · 신규 2026-10-22 · 미게시]** #760 의 `BufferedIO#readuntil` 훅이 net-protocol 0.4.0 의 `limit:` 키워드를 못 받는다 — net-http 0.10.0 이 그것을 넘겨 SDK 의 HTTP 호출이 전부 깨진다(cc·refresh·exchange_code 는 `AuthError`, introspect·admin 은 raw `ArgumentError` 가 샌다 — §4). 게시본 1.3.0 은 훅 이전이라 무관, **다음 ruby 릴리스를 막는다**. 레인 CI 는 락(net-http 0.9.1)이라 이 결함을 못 보고 핀 시험(`spec/unit/http_framing_pins_spec.rb:33`)도 새 판에서만 운다 · `ruby/lib/keycloak_sdk/http.rb:77`
+- [x] `ruby-framing-hook-breaks-on-net-protocol-0-4` **[H/S · 닫힘 2026-10-22 #797 · 미게시]** 훅이 `limit:` 를 원판(0.3.0+)의 뜻으로 받는다(SDK 상한이 먼저) · 핀은 두 모양과 설치된 원판과의 대조 · 레인 CI 에 `latest-runtime-deps`(런타임 그룹을 새로 푼다 — 소비자 시야) · `ruby/lib/keycloak_sdk/http.rb`
+<!-- ruby-framing-hook-breaks-on-net-protocol-0-4 닫힘 상세(2026-10-22 #797): 버퍼 내부는 net-protocol 0.2.2·0.3.0·0.4.0 에서 같고(diff) 0.3.0 이 readuntil 에 limit: · ReadLimitExceeded 를 들였다 — net-http 0.10.0 의 요구는 net-protocol >= 0.3.0 이다(0.4.0 이 아니다). 수정 뒤 전체 단위 시험 340 · 0: net-http/net-protocol 0.9.1/0.2.2 · 0.9.1/0.4.0 · 0.10.0/0.3.0 · 0.10.0/0.4.0(Windows 3.4.10) · ruby:3.2-alpine · 4.0-alpine 에서 `bundle update --group default`. 새 잡의 양성 대조 — 수정 전 origin/main 에 같은 명령: 332 · 66 실패. 변이 다섯(net-http 0.10 사본 — 호출자 limit 삭제 · 검증 삭제 · 소비 뒤 검사 · 순서 뒤집기 · `**` 로 받고 무시)이 전부 새 블록에서만 잡혔다. raw ArgumentError 가 introspect·admin 경계를 지난 것은 원인(시그니처)이 사라져 닫혔다 — 그 경계가 Faraday 밖 예외를 감싸지 않는 것은 남는다(`ruby-boundary-non-faraday-exception-leak`). -->
 <!-- ruby-framing-hook-breaks-on-net-protocol-0-4 실측(2026-10-22): 예약 harness 의 score-all(SDK 를 소스에서 새로 해석 — 락 없는 Gemfile)이 10-10 부터 ruby conformance 4/26 · security 8/9 다(취소된 10-15·10-20 외 예약 실행 전부, #776). 같은 10-10 실행의 install-all 은 26/26 · 9/9 이고 그 잡 로그에는 net-http 0.10.0 설치가 없다. 회귀 창: 10-09 03:18 예약 실행 성공(2893765 — 그 로그도 net-http 0.10.0 · net-protocol 0.4.0 · faraday 2.14.4 · faraday-net_http 3.4.4 를 설치했다) → 10-10 03:17 실패(c4529c8 · 같은 판들) — 그 사이 #760(10-09 04:58 병합). 10-21 실행은 faraday 2.15.0 · faraday-net_http 3.5.0 · puma 8.0.2 도 받았지만 앞의 둘은 10-16·10-11 게시라 창 밖이다. 재현: origin/main 의 ruby/ 사본에서 `bundle update net-http --conservative`(→ net-http 0.10.0 · net-protocol 0.4.0) 뒤 rspec → `ArgumentError: wrong number of arguments (given 3, expected 1..2)` · response_framing_cap_spec 34 examples · 34 failures(cc·refresh·exchange_code 는 AuthError 가 ArgumentError 를 감싸고, introspect·admin_token·admin_rest 는 raw ArgumentError 가 샌다 · 정상 응답 대조군도 실패) · 대조군(원 락 net-http 0.9.1) 같은 파일 34 · 0, 핀 시험과 함께 53 · 0. 분류는 rspec --format json 을 스크립트로 셌다(일회용 계측기 — 대조군 0 failures 로 음성 확인). net-http 0.10.0 response.rb:163 이 `sock.readuntil("\n", ignore_eof, limit: limit)` 로 부른다 — 상류가 같은 줄 상한을 들였다. 수정 후보: 훅이 `limit:` 를 받아 상류 한도와 SDK 예산 중 작은 쪽을 쓰고 super 로 넘긴다 · 핀 시험은 두 모양(0.9.x · 0.10.x)을 다 받는다 · 락 밖 판을 레인 CI 가 한 번은 밟게(지금은 락 없는 하네스만 본다). -->
+- [ ] `ruby-boundary-non-faraday-exception-leak` **[M/S · 신규 2026-10-22]** introspect · logout · admin(REST 와 자기 토큰) 경계는 `Faraday::Error` 만 SDK 오류로 바꾼다 — 세 그랜트는 `StandardError` 까지 `AuthError` 로 감싼다(`auth_client.rb:149`). 하위 스택이 Faraday 밖 예외를 내면 그 넷에서는 raw 로 샌다(§4) — #797 이 고친 훅 결함의 `ArgumentError` 가 실제로 그렇게 샜다. 넓히면 프로그래밍 오류도 `TransportError` 로 가려진다 — 경계마다 같은 규칙을 정할 것 · `ruby/lib/keycloak_sdk/auth_client.rb:76`
+<!-- ruby-boundary-non-faraday-exception-leak 자리(2026-10-22 PM 판독): `rescue Faraday::Error` 만 — auth_client.rb:76(introspect) · :92(logout) · admin/call.rb:34(admin REST) · token_provider.rb:62(admin 의 ClientCredentialsTokenProvider). 넓게 — auth_client.rb:149(세 그랜트 `rescue StandardError`) · jwks_store.rb:102. Faraday 어댑터가 바꿔 주는 것은 `NET_HTTP_EXCEPTIONS`(faraday-net_http 3.4.4·3.5.0 — HTTPBadResponse·ProtocolError·IOError·Errno 계열 …)뿐이다. -->
 - [x] `jwks-stale-cache-outage-unbounded` **[M/S · 닫힘 2026-10-09 #743 #744]** node·.NET 에 실패 백오프. 남은 판정은 `jwks-cache-lifetime-divergent`
 <!-- jwks-stale-cache-outage-unbounded 닫힘 상세: 아홉을 재 보니 검증마다 재조회는 node·.NET 둘이었다(둘 다 실패 백오프로) — JVM 은 rate limit 2 건, 다섯은 TTL 이 없다. 낡은 키 수락·TTL 은 jwks-cache-lifetime-divergent. -->
 - [ ] `jwks-cache-lifetime-divergent` **[M/S · 신규 2026-10-09 · 판정 · 아홉]** JWKS 캐시 수명과 「낡은 캐시 + IdP 장애」의 수락이 언어마다 다르다 — 정상 토큰을 장애 중에 node·JVM 은 거부, .NET 은 수락, 다섯은 영원히 신선 · `.claude/rules/security.md`
@@ -644,7 +646,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `probes-that-discard-the-result` **[M/M]** 프로브가 결과를 버린다 — 예외 타입 미단언·반환값 미단언 · `php/tests/Unit/Jwks/JwksStoreTest.php:188`
 - [ ] `wall-clock-ordering-in-tests` **[M/M]** 동시성·시간창 테스트가 벽시계에 매달려 있다 — 조용한 퇴화와 거짓 실패. rust·ruby·go 는 닫았다(#701 #706 #707 #709). 남은 다섯 언어의 자리는 아래 주석 — ⚠️ 시계를 얼리면 창 크기 검출이 사라지니 결정적 창 크기 시험을 함께 둔다 · `python/tests/unit/test_auth.py:992`
 <!-- wall-clock 남은 자리(2026-10-03 첫 물결 재스캔, 정적 읽기 + 표시한 것은 주입 실측): python tests/unit/test_auth.py:992 · aio/test_auth.py:734 · W3c test_hostile_path_matrix.py:1258 / php JwksStoreTest.php:333 · FailureBackoffTest.php:103 · W3c HostilePathMatrixTest.php:1481 / dotnet BackoffConfigurationManagerTests.cs:137 · W3c HostilePathMatrixTests.cs:950 / node W3c hostile-path-matrix.test.ts:1557 / ruby jwks_store_spec.rb:135(주입 0.25 s → 3/3 실패) · W3c hostile_path_matrix_spec.rb:810 / go tokenprovider_test.go:29 TestProviderSingleFlight(50 ms 비행, 주입 60 ms → 2/3 실패, 경합만으로 0/300 — 원인은 비행 안에서 캐시를 다시 안 보는 것, token-provider-cache-invariants). java·kotlin 은 30 s 창이라 실노출 없음. go 원래 지목(jwt_test.go:322)은 경합만으로 13/200 실패했다. -->
-- [ ] `ruby-framing-spec-server-written-flaky` **[M/S · 신규 2026-10-22]** `server.written < 2 MiB` 상한이 흔들린다(원인 미측정 — 소켓 버퍼 추정) — 10-21 main push 두 번(Ruby 4.0 2,310,225 B · 3.4 2,457,865 B), 둘 다 같은 커밋 재실행은 초록 · `ruby/spec/unit/response_framing_cap_spec.rb:206`
+- [x] `ruby-framing-spec-server-written-flaky` **[M/S · 닫힘 2026-10-22 #797]** 원인은 리눅스가 받은 소켓의 송신 버퍼를 자동으로 키운 것 — `FramingServer` 가 SO_SNDBUF 를 64 KiB 로 고정한다(Go 의 같은 오라클과 같다) · `ruby/spec/support/framing_server.rb`
+<!-- ruby-framing-spec-server-written-flaky 닫힘 상세(2026-10-22 · ruby:3.4-alpine · --cpus 4 · 여섯 레인 × 네 모양 × 100 회 = 2,400 · 계측기는 서버 written 과 클라이언트가 커널에서 읽은 바이트를 함께 센다): 고정 전 2 MiB 이상 1 회(최대 2,654,263 — 그때 클라이언트는 16,439 B 만 읽었다 · 같은 계측 480 회에서도 2 회), 고정 뒤 0 회(최대 229,570 · 실효 SO_SNDBUF 131,072). 클라이언트가 읽은 바이트는 두 경우 모두 최대 73,911 — 상한은 처음부터 섰고 흔들린 것은 오라클이었다. CI 실패 두 번의 값 2,310,225 = 141 × 16,384 + 81 · 2,457,865 = 150 × 16,384 + 265(+81·+265 는 응답 머리 조각). Grok 원인 레그가 같은 원인을 독립으로 냈다. -->
 
 ### 가드·CI — 18
 
