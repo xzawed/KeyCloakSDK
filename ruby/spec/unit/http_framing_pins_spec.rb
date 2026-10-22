@@ -109,6 +109,14 @@ RSpec.describe KeycloakSdk::Http do # response framing bound — net-http shape 
       expect(error&.message).to eq(total_msg)
     end
 
+    # 경계 그 자체 — 위 시험은 「어딘가에서 넘는다」만 본다(`>` 를 `>=` 로 바꾼 변이가 통과했다 · Grok 변이 레그).
+    it "accepts a response whose framing totals exactly MAX_FRAMING_BYTES and refuses one byte more" do
+      line = "#{'a' * 4_094}\r\n" # 4,096 바이트
+      io = HttpFramingPinsSpec.bounded_over("#{line * 16}\n") # 16 줄 = 65,536 바이트, 그다음 1 바이트 줄
+      16.times { io.readuntil("\n", true) }
+      expect { io.readuntil("\n", true) }.to raise_error(KeycloakSdk::TransportError, total_msg)
+    end
+
     it "resets the response budget on kcsdk_reset_framing! (keep-alive reuse)" do
       line = "#{'a' * 4_094}\r\n"
       io = HttpFramingPinsSpec.bounded_over(line * 40)
