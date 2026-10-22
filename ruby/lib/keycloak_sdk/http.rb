@@ -30,6 +30,8 @@ module KeycloakSdk
     # ⚠️ 메시지에 바이트를 싣지 않는다(상수 문자열) — 다른 경계와 같은 규율(§4 · `RedactedCause`).
     FRAMING_LINE_MSG = "HTTP response framing line exceeds #{MAX_FRAMING_LINE_BYTES} bytes".freeze
     FRAMING_TOTAL_MSG = "HTTP response framing exceeds #{MAX_FRAMING_BYTES} bytes".freeze
+    # ⚠️ 공개 API 가 아니다 — 교차언어 내부 값이다(Go 의 responseHeaderMaxBytes 도 비노출). 시험은 const_get 으로 본다.
+    private_constant :MAX_FRAMING_LINE_BYTES, :MAX_FRAMING_BYTES, :FRAMING_LINE_MSG, :FRAMING_TOTAL_MSG
     # 토큰 엔드포인트(세 그랜트 · admin 레인의 자기 토큰)·introspection·logout 응답 본문의 상한(바이트).
     # 1 MiB 는 Keycloak 26.6 이 기본 설정으로 받는 가장 긴 Bearer(65,459 바이트 — 하나 더 길면 HTTP 431)의
     # 16 배라 서버가 받는 토큰은 거부하지 않고, 끝없는 본문은 여기서 멈춘다.
@@ -173,7 +175,7 @@ module KeycloakSdk
     BOUND_CONNECTION = lambda do |http|
       http.singleton_class.prepend(BoundedTransport)
     end
-    private_constant :BOUND_CONNECTION
+    private_constant :BoundedReads, :BoundedTransport, :BOUND_CONNECTION
 
     module_function
 
