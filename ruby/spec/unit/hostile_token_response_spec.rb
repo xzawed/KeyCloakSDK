@@ -232,7 +232,31 @@ module HostileTokenResponseSpec
                 admin: admin_ok, expect: { "admin.users.get(token via provider)" => NilClass } }
     }.freeze
   end
-  VARIANTS = Table::VARIANTS.merge(Wave4::VARIANTS).freeze
+
+  # net-http 0.10 의 응답 헤더 검증 — 헤더 이름에 제어 문자가 있거나 1,024 바이트를 넘으면 `Net::HTTPHeader#set_field` 가
+  # **이름 앞 30 바이트를 인용한** ArgumentError 를 낸다. Faraday 어댑터의 목록 밖이라 raw 로 올라와, introspect·logout·
+  # admin 이 그대로 내보냈다(게시본 1.3.0 포함 · 실측). 0.9.x 는 그 검증이 없어 같은 응답이 통과하므로 여기서는 그 예외를
+  # webmock 으로 그대로 던진다 — 실소켓으로 0.10 의 그 경로를 밟는 것은 `net_http_header_validation_spec.rb`.
+  module NetHttp010
+    def self.json(status, body) = Table.json(status, body)
+
+    def self.expect_all(calls, klass) = Table.expect_all(calls, klass)
+
+    auth = KeycloakSdk::AuthError
+    transport = KeycloakSdk::TransportError
+    VARIANTS = {
+      "n1" => { note: "응답 헤더 이름 검증(net-http 0.10) — 토큰·introspect·logout 엔드포인트",
+                raise: ArgumentError.new('header field name cannot include control characters or colon: ' \
+                                         '"nHN9k-header-name-canary"'),
+                expect: expect_all(RACK, auth).merge(expect_all(PROVIDER + ["auth.introspect", "auth.logout"],
+                                                                transport)) },
+      "n2" => { note: "응답 헤더 이름 검증(net-http 0.10) — admin 응답(토큰 발급은 정상)",
+                reply: json(200, access_token: "nAT9k-admin-bearer-canary", token_type: "Bearer", expires_in: 300),
+                admin_raise: ArgumentError.new('too long (2000 bytes) header: "nHL9k-long-header-name-canary"...'),
+                expect: { "admin.users.get(token via provider)" => transport } }
+    }.freeze
+  end
+  VARIANTS = Table::VARIANTS.merge(Wave4::VARIANTS, NetHttp010::VARIANTS).freeze
 
   # 알려진 누출 — `"변형|호출|경로|카나리아"` => 사유. ⚠️ 더 안 새면 **지워야 통과한다**(낡은 항목 검사).
   KNOWN_LEAKS = {}.freeze
@@ -240,7 +264,8 @@ module HostileTokenResponseSpec
   # 변형의 카나리아 — 응답 본문의 카나리아 모양 문자열 전부(자동) + 명시분 + SDK 가 보낸 비밀.
   def self.canaries(key)
     v = VARIANTS.fetch(key)
-    texts = [v.dig(:reply, :body), v.dig(:admin, :body), v[:raise].is_a?(Exception) ? v[:raise].message : nil].compact
+    texts = [v.dig(:reply, :body), v.dig(:admin, :body), v[:raise].is_a?(Exception) ? v[:raise].message : nil,
+             v[:admin_raise]&.message].compact
     found = texts.join(" ").scan(/[a-z][A-Z]{1,2}\dk-[\w-]+/).to_h { |c| ["#{key}.#{c[0, 3]}", c] }
     SENT.merge(found, v.fetch(:canaries, {}))
   end
@@ -286,8 +311,8 @@ module HostileTokenResponseSpec
         :post, %r{\A#{Regexp.escape(SERVER)}/realms/#{@key}/protocol/openid-connect/(token|token/introspect|logout)\z}
       )
       v[:raise] ? oidc.to_raise(v[:raise]) : oidc.to_return(v[:reply])
-      self.class.stub_request(:any, %r{\A#{Regexp.escape(SERVER)}/admin/realms/#{@key}/})
-          .to_return(v.fetch(:admin, { status: 404 }))
+      admin = self.class.stub_request(:any, %r{\A#{Regexp.escape(SERVER)}/admin/realms/#{@key}/})
+      v[:admin_raise] ? admin.to_raise(v[:admin_raise]) : admin.to_return(v.fetch(:admin, { status: 404 }))
     end
   end
 
