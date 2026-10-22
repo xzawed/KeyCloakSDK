@@ -13,7 +13,15 @@ module NetHttpHeaderValidationSpec
   OIDC = "/realms/#{REALM}/protocol/openid-connect".freeze
   TOKEN = "#{OIDC}/token".freeze
   USERS = "/admin/realms/#{REALM}/users".freeze
+  CERTS = "#{OIDC}/certs".freeze
   TOKEN_BODY = %({"access_token":"AT","token_type":"Bearer","expires_in":60,"refresh_token":"rt"})
+  # 서명 검증까지 가지 않는다 — 헤더의 kid 로 JWKS 를 부르는 데까지만 쓰인다.
+  JWT = [%({"alg":"RS256","kid":"k1"}), %({"sub":"s"})]
+        .map { |p| Base64.urlsafe_encode64(p, padding: false) }
+        .push("sig").join(".")
+  ID_TOKEN_BODY = %({"access_token":"AT","token_type":"Bearer","expires_in":60,"id_token":"#{JWT}"}).freeze
+  # 공격 경로의 정상 본문(헤더 한 줄만 공격) — 나머지 경로는 TOKEN_BODY.
+  BODIES = { USERS => "[]", CERTS => %({"keys":[{"kty":"RSA","kid":"k1"}]}) }.freeze
   CANARY = "hvN9k"
   SHAPES = {
     "a control character in a header name" => "X\x01#{CANARY}: v\r\n",
@@ -25,7 +33,12 @@ module NetHttpHeaderValidationSpec
     "introspect" => ["#{OIDC}/token/introspect", ->(kc) { kc.auth.introspect("T") }, KeycloakSdk::TransportError],
     "logout" => ["#{OIDC}/logout", ->(kc) { kc.auth.logout(refresh_token: "rt") }, KeycloakSdk::TransportError],
     "admin token" => [TOKEN, ->(kc) { kc.admin.users.list }, KeycloakSdk::TransportError],
-    "admin REST" => [USERS, ->(kc) { kc.admin.users.list }, KeycloakSdk::TransportError]
+    "admin REST" => [USERS, ->(kc) { kc.admin.users.list }, KeycloakSdk::TransportError],
+    # JWKS — 둘 다 키를 받으러 certs 를 부른다(exchange_code 는 nonce 를 대조하기 전에 id_token 을 검증한다).
+    "validate" => [CERTS, ->(kc) { kc.auth.validate(JWT) }, KeycloakSdk::TransportError],
+    "exchange_code(expected_nonce:)" => [CERTS, lambda { |kc|
+      kc.auth.exchange_code(code: "c", code_verifier: "v", redirect_uri: "https://a/cb", expected_nonce: "n")
+    }, KeycloakSdk::TransportError]
   }.freeze
 
   module_function
@@ -68,8 +81,10 @@ RSpec.describe KeycloakSdk::KeycloakClient do
   NetHttpHeaderValidationSpec::LANES.each do |lane, (path, call, error_class)|
     NetHttpHeaderValidationSpec::SHAPES.each do |shape, header|
       it "#{lane}: a response with #{shape} never escapes as a lower-library exception", :aggregate_failures do
-        server.route(spec::TOKEN) { spec.response(spec::TOKEN_BODY) } if path == spec::USERS
-        server.route(path) { spec.response(path == spec::USERS ? "[]" : spec::TOKEN_BODY, header) }
+        if [spec::USERS, spec::CERTS].include?(path)
+          server.route(spec::TOKEN) { spec.response(path == spec::CERTS ? spec::ID_TOKEN_BODY : spec::TOKEN_BODY) }
+        end
+        server.route(path) { spec.response(spec::BODIES.fetch(path, spec::TOKEN_BODY), header) }
         error = outcome(call)
         if spec.validates? # net-http 0.10+ — 검증이 그 응답을 거부한다
           expect(error).to be_a(error_class)
