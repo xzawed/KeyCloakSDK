@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `270`(2026-10-22 기준 열림 144 · 닫힘 126)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `270`(2026-10-22 기준 열림 143 · 닫힘 127)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,7 +116,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-10-22 · #737–#797 반영)
+### 다음 세션 진입점 (2026-10-22 · #737–#798 반영)
 
 **지금 상태** — 물결 4 아홉 LIVE(`check-registry-truth` 2026-10-09) · 2026-10-09 수정(#737–#774)은 **미게시** — `CHANGELOG.md` `[Unreleased]` 가 소유한다(태그 위임은 물결마다 다시 묻는다). 열린 PR 은 Dependabot 과 #780(사람 판정)뿐이어야 한다. 래퍼 9.8 의 되살릴 조건은 #682·#788.
 
@@ -124,7 +124,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. ⚠️ `ruby-boundary-non-faraday-exception-leak` [H/S] — **게시본 1.3.0 도** net-http 0.10 에서 introspect·logout·admin 이 raw `ArgumentError` 를 낸다. 다음 ruby 릴리스 전에.
+1. ⚠️ **ruby 릴리스 판정**(사람) — #797·#798 이 미게시다: net-http 0.10 에서 게시본 1.3.0 은 introspect·logout·admin 이 raw `ArgumentError` 를 낸다(#798 이 고쳤다).
 2. `close-drain-time-unbounded` 의 남은 칸(admin 자원 응답 비우기 · admin TLS 닫기) — 토큰 응답 갈래는 #769 가 닫았다.
 3. `wave4-hardening-*` 의 남은 칸(#763–#772 가 일곱 언어의 일부를 닫았다) · `response-framing-unbounded` 의 node·python.
 4. `guard-detection-surface-hand-narrowed` [H/M](attest — KNOWN_GAPS 대조는 #773) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
@@ -523,7 +523,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 119건 (열림 76)
+## C. 품질 부채 — 119건 (열림 75)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -578,7 +578,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `ruby-framing-hook-breaks-on-net-protocol-0-4` **[H/S · 닫힘 2026-10-22 #797 · 미게시]** 훅이 `limit:` 를 원판(0.3.0+)의 뜻으로 받는다(SDK 상한이 먼저) · 핀은 두 모양과 설치된 원판과의 대조 · 레인 CI 에 `latest-runtime-deps`(런타임 그룹을 새로 푼다 — 소비자 시야) · `ruby/lib/keycloak_sdk/http.rb`
 <!-- ruby-framing-hook-breaks-on-net-protocol-0-4 닫힘 상세(2026-10-22 #797): 버퍼 내부는 net-protocol 0.2.2·0.3.0·0.4.0 에서 같고(diff) 0.3.0 이 readuntil 에 limit: · ReadLimitExceeded 를 들였다 — net-http 0.10.0 의 요구는 net-protocol >= 0.3.0 이다(0.4.0 이 아니다). 수정 뒤 전체 단위 시험 340 · 0: net-http/net-protocol 0.9.1/0.2.2 · 0.9.1/0.4.0 · 0.10.0/0.3.0 · 0.10.0/0.4.0(Windows 3.4.10) · ruby:3.2-alpine · 4.0-alpine 에서 `bundle update --group default`. 새 잡의 양성 대조 — 수정 전 origin/main 에 같은 명령: 332 · 66 실패. 변이 다섯(net-http 0.10 사본 — 호출자 limit 삭제 · 검증 삭제 · 소비 뒤 검사 · 순서 뒤집기 · `**` 로 받고 무시)이 전부 새 블록에서만 잡혔다. Grok 변이 레그(8 변이 · probe.sh)의 SILENT 하나 — 응답 틀 예산 `>` → `>=`(#760 이 남긴 경계 빈칸) — 는 정확히 65,536 시험으로 닫혔다(재변이 CAUGHT). Grok 적대 입력 레그(계약 C1–C6)의 C5 위반 둘 — 두 바이트 종단 문자가 16 KiB 읽기 경계에 걸치면 놓치던 것(0.2.x 의 검색 위치 · net-http 의 "\n" 경로는 무관) · 0.2.x 에서 호출자 limit: 이 NameError 이던 것 — 은 0.3.0+ 의 되감기와 부모 `Net::ProtocolError` 로 닫혔다(PM 이 그 프로브로 재현 · 수정 뒤 0.10 15 · 0). raw ArgumentError 가 introspect·admin 경계를 지난 것은 원인(시그니처)이 사라져 닫혔다 — 그 경계가 Faraday 밖 예외를 감싸지 않는 것은 남는다(`ruby-boundary-non-faraday-exception-leak`). -->
 <!-- ruby-framing-hook-breaks-on-net-protocol-0-4 실측(2026-10-22): 예약 harness 의 score-all(SDK 를 소스에서 새로 해석 — 락 없는 Gemfile)이 10-10 부터 ruby conformance 4/26 · security 8/9 다(취소된 10-15·10-20 외 예약 실행 전부, #776). 같은 10-10 실행의 install-all 은 26/26 · 9/9 이고 그 잡 로그에는 net-http 0.10.0 설치가 없다. 회귀 창: 10-09 03:18 예약 실행 성공(2893765 — 그 로그도 net-http 0.10.0 · net-protocol 0.4.0 · faraday 2.14.4 · faraday-net_http 3.4.4 를 설치했다) → 10-10 03:17 실패(c4529c8 · 같은 판들) — 그 사이 #760(10-09 04:58 병합). 10-21 실행은 faraday 2.15.0 · faraday-net_http 3.5.0 · puma 8.0.2 도 받았지만 앞의 둘은 10-16·10-11 게시라 창 밖이다. 재현: origin/main 의 ruby/ 사본에서 `bundle update net-http --conservative`(→ net-http 0.10.0 · net-protocol 0.4.0) 뒤 rspec → `ArgumentError: wrong number of arguments (given 3, expected 1..2)` · response_framing_cap_spec 34 examples · 34 failures(cc·refresh·exchange_code 는 AuthError 가 ArgumentError 를 감싸고, introspect·admin_token·admin_rest 는 raw ArgumentError 가 샌다 · 정상 응답 대조군도 실패) · 대조군(원 락 net-http 0.9.1) 같은 파일 34 · 0, 핀 시험과 함께 53 · 0. 분류는 rspec --format json 을 스크립트로 셌다(일회용 계측기 — 대조군 0 failures 로 음성 확인). net-http 0.10.0 response.rb:163 이 `sock.readuntil("\n", ignore_eof, limit: limit)` 로 부른다 — 상류가 같은 줄 상한을 들였다. 수정 후보: 훅이 `limit:` 를 받아 상류 한도와 SDK 예산 중 작은 쪽을 쓰고 super 로 넘긴다 · 핀 시험은 두 모양(0.9.x · 0.10.x)을 다 받는다 · 락 밖 판을 레인 CI 가 한 번은 밟게(지금은 락 없는 하네스만 본다). -->
-- [ ] `ruby-boundary-non-faraday-exception-leak` **[H/S · 신규 2026-10-22 · 게시본 1.3.0 포함]** introspect · logout · admin(REST 와 자기 토큰) 경계는 `Faraday::Error` 만 SDK 오류로 바꾼다 — 세 그랜트는 `StandardError` 까지 `AuthError` 로 감싼다(`auth_client.rb:149`). net-http 0.10.0 은 응답 헤더 이름에 제어 문자가 있거나 1,024 바이트를 넘으면 `ArgumentError` 를 내고(`Net::HTTPHeader#set_field`), 그 넷은 그것을 raw 로 내보낸다 — 메시지가 헤더 이름 30 바이트를 인용한다(§4 · 새로 푸는 설치가 받는 판) · `ruby/lib/keycloak_sdk/auth_client.rb:76`
+- [x] `ruby-boundary-non-faraday-exception-leak` **[H/S · 닫힘 2026-10-22 #798 · 게시본 1.3.0 포함]** introspect · logout · admin(REST 와 자기 토큰) 경계도 세 그랜트처럼 SDK 밖 예외를 감싼다(`rescue Error; raise` 뒤 `rescue StandardError` → `TransportError` + `RedactedCause`) — net-http 0.10.0 의 응답 헤더 검증 `ArgumentError` 가 raw 로, 헤더 이름을 인용한 채 샜다 · `ruby/lib/keycloak_sdk/auth_client.rb`
+<!-- ruby-boundary-non-faraday-exception-leak 닫힘 상세(2026-10-22 #798): RED — hostile_token_response_spec 의 새 변형 n1(토큰·introspect·logout 엔드포인트가 그 예외를 던진다) · n2(admin 응답)가 흐름 5 칸 · 카나리아 누출 · 원인 사슬의 하위 예외로 실패, 새 net_http_header_validation_spec(실소켓 · 다섯 레인 × 두 모양)이 net-http 0.10.0 에서 10 · 8 실패(0.9.1 은 10 · 0 — 검증이 없다). GREEN 전체 353 · 0(0.9.1/0.2.2 · 0.10.0/0.4.0). 변이 여섯(probe.sh — 넓힘 되돌림 넷 · SDK 오류 통과 제거 둘) 전부 CAUGHT. AuthClient 140 → 144 줄(.rubocop.yml 상한 144). -->
 <!-- ruby-boundary-non-faraday-exception-leak 자리(2026-10-22 PM 판독): `rescue Faraday::Error` 만 — auth_client.rb:76(introspect) · :92(logout) · admin/call.rb:34(admin REST) · token_provider.rb:62(admin 의 ClientCredentialsTokenProvider). 넓게 — auth_client.rb:149(세 그랜트 `rescue StandardError`) · jwks_store.rb:102. Faraday 어댑터가 바꿔 주는 것은 `NET_HTTP_EXCEPTIONS`(faraday-net_http 3.4.4·3.5.0 — HTTPBadResponse·ProtocolError·IOError·Errno 계열 …)뿐이다. 실측(2026-10-22 · FramingServer · 헤더 `X\x01Y: v` 와 이름 2,000 B): net-http 0.10.0 에서 introspect·logout·admin_token·admin_rest 넷 다 RAW `ArgumentError`(「header field name cannot include control characters or colon: "X\x01Y"」 · 「too long (2000 bytes) header: "KKK…"」), cc·refresh 는 `AuthError`(… unusable token response (ArgumentError)). 게시본 1.3.0 소스(`ruby-v1.3.0` 워크트리 + net-http 0.10.0)도 같은 열둘. net-http 0.9.1 은 여섯 레인 모두 그대로 성공(검증이 없다). -->
 - [ ] `ruby-framing-proxy-connect-unbounded` **[M/M · 신규 2026-10-22 · 판정]** HTTPS 대상을 HTTP 프록시로 부르면 net-http 가 CONNECT 응답을 `on_connect` 전에 만든 `BufferedIO` 로 읽어 SDK 틀 상한이 걸리지 않는다 — net-http 0.9.1 은 한도가 없고 0.10.0 은 상류 1 MiB 뿐이다. 소켓 하나에만 거는 지금 설계로는 그 `BufferedIO` 를 잡을 자리가 없다(전역 패치 없이 고칠 길을 정할 것) · `ruby/lib/keycloak_sdk/http.rb` `BoundedTransport`
 <!-- ruby-framing-proxy-connect-unbounded 실측(2026-10-22 · Grok 적대 레그 2 회차 → PM 재현): FramingServer 를 프록시로, 대상 https://127.0.0.1:9. CONNECT 응답에 헤더 한 줄 100,000 B → 프록시가 100,048 B 를 다 넘기고 클라이언트는 TLS 로 넘어갔다(0.9.1 · 0.10.0 둘 다) · 짧은 헤더 400 줄(82,039 B)도 다 읽었다. net-http 0.10.0 `Net::HTTP#connect` 이 `proxy_sock = BufferedIO.new(…)` 뒤 `HTTPResponse.read_new(proxy_sock)` 을 부른다 — `on_connect` 는 그 뒤다. 평문 HTTP 프록시의 응답은 같은 @socket 이라 상한이 선다(control-proxy-http-line). 후보: `timeouted_connect` 가 돌려준 소켓을 표시하고 BufferedIO 를 그 표시로 감싸는 것은 전역 prepend 라 지금 규율(싱글턴만)과 부딪힌다. -->
