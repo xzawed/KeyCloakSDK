@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `272`(2026-10-23 기준 열림 142 · 닫힘 130)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `274`(2026-10-23 기준 열림 143 · 닫힘 131)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -116,9 +116,9 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-10-22 · #737–#799 반영)
+### 다음 세션 진입점 (2026-10-23 · #801–#825 반영)
 
-**지금 상태** — 물결 4 아홉 LIVE(`check-registry-truth` 2026-10-09) · **Ruby 1.3.1 LIVE**(2026-10-22 #799 — #760·#797·#798 의 Ruby 수정) · 2026-10-09 수정(#737–#774)의 나머지 여덟 언어 몫은 **미게시** — `CHANGELOG.md` `[Unreleased]` 가 소유한다(태그 위임은 물결마다 다시 묻는다). 열린 PR 은 Dependabot 과 #780(사람 판정)뿐이어야 한다. 래퍼 9.8 의 되살릴 조건은 #682·#788.
+**지금 상태** — 물결 5(범프 #812 · 요청 #814–#823): php 1.4.1 · go 1.2.3 · python·dotnet·node 1.0.5 · ruby 1.3.2 LIVE, 게시 바이트 = 태그(#824 본문) · 그 다섯 기준선은 #824. **JVM 은 Portal Publish(사람) 대기** — kotlin 1.0.6 · java 1.2.2(`v1.2.0`·`v1.2.1` 은 Portal 검증 FAILED 로 미게시 — 러너 Maven 3.10.0 × central-publishing 0.11.0, #825). Publish 뒤 `check-registry-truth` LIVE → `check-published-jvm-floor` → 기준선(`japicmp.baseline` · `kotlin-ci.yml` · `df_api_baseline`) → `security-audit.yml`. `[Unreleased]` 는 비었다(태그 위임은 물결마다 다시 묻는다). 열린 PR 은 Dependabot 뿐이어야 한다. 래퍼 9.8 의 되살릴 조건은 #682·#788.
 
 열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유한다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
 
@@ -129,9 +129,9 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 3. `guard-detection-surface-hand-narrowed` [H/M](attest — KNOWN_GAPS 대조는 #773) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
 4. ⚠️ **손대기 전에 전제를 잰다** — 이번에도 뒤집혔다: jwks 후보(「신선한 캐시가 없으면 센다」)는 600 초 경계에서 규칙 (4) 를 깼고, 「낡은 캐시 + 장애」는 node 하나가 아니라 node·.NET 이었고, probe.sh 초안 정규식은 지어낸 줄로 골라 실제 출력 셋을 못 맞췄다.
 
-**사람 판정 대기** — `jwks-cache-lifetime-divergent`(장애 중 낡은 키 수락·수명 정렬, 아홉 동시) · `bearer-token-grammar-divergent`(아홉 동시) · `response-read-deadline-divergent` · php ext-curl(`response-framing-unbounded`) · #756 이 java `keycloak-sdk-auth` 에 직접 의존(httpclient 4.5.14)을 더했다 — 받아들일지 · 그 핀 commons-codec 1.15 → 1.23.0(#780 · kotlin 짝은 #787 에서 1.15 로 남겼다).
+**사람 판정 대기** — `jwks-cache-lifetime-divergent`(장애 중 낡은 키 수락·수명 정렬, 아홉 동시) · `bearer-token-grammar-divergent`(아홉 동시) · `response-read-deadline-divergent` · php ext-curl(`response-framing-unbounded`) · commons-codec 1.15 → 1.23.0(#805 java · #806 kotlin — #756 의 직접 의존은 2026-10-23 받아들여 1.2.1 에 실렸다) · `sonarcloud-human-pr-carries-unreviewed-bump`.
 
-**함정** — (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 와 아래 (j)–(w) 는 그대로 유효하다. (x)–(z) 는 2026-10-01, (aa)(bb) 는 2026-10-05, (cc)–(ee) 는 2026-10-09 가 더했다.
+**함정** — (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 와 아래 (j)–(w) 는 그대로 유효하다. (x)–(z) 는 2026-10-01, (aa)(bb) 는 2026-10-05, (cc)–(ee) 는 2026-10-09, (ff)(gg) 는 2026-10-23 이 더했다.
 
 - (j) **`scripts/probe.sh` 는 node·php·python 을 못 잰다**(워크트리에 의존성이 없다). 그 언어는 커밋한 뒤 의존성이 깔린 워크트리에서 파일 하나를 변이 → 테스트 → `git checkout -- <파일>` → `git status` 빈 것 확인.
 - (k) **변이 대상은 줄 번호가 아니라 내용으로 고른다** — `| Java |` 가 툴체인 표에 먼저 나와 엉뚱한 줄을 겨눴다(probe 가 INVALID 로 막았다).
@@ -155,6 +155,8 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - (cc) **PHP `vendor/` 를 정션으로 걸면 Composer 오토로더가 원 트리의 `src` 를 읽는다** — 파스 오류를 넣은 워크트리가 「OK (21 tests)」를 냈다(2026-10-09). 변이·프로브 워크트리에는 `vendor/` 를 복사한다. node_modules 정션은 의존성만 풀어 안전하다(실측).
 - (dd) **`probe.sh` 와 작업 트리가 같은 `CARGO_TARGET_DIR` 을 쓰면 다음 `cargo test` 가 변이 산출물을 돈다** — 원본이 더 오래돼 다시 짓지 않는다(#768 재현). probe 앞에서 공유 타깃을 푼다.
 - (ee) **스쿼시는 `git merge-base HEAD origin/main` 위에서** — `origin/main` 위에서 하면 그 사이 main 의 변경을 되돌린다(#774, 307 줄 삭제로 발견).
+- (ff) **CHANGELOG 절을 옮긴 main 위로 rebase 하면 새 글머리가 충돌 없이 이웃 절로 들어간다** — #813 의 Ruby 항목이 Go `[1.2.3]` 안에 착지했다. rebase 뒤 새 글머리의 소속 절을 다시 본다.
+- (gg) **Git Bash 의 UTF-8 로캘에서 `grep '🚀'` 는 0 줄이다** — `test-publication-claims.sh` 의 매트릭스 10 건이 거짓 실패한다. `LANG= LC_ALL= dash scripts/test/test-publication-claims.sh` 는 241/0.
 
 ### 재발 원인 분석 — 2026-09-13 (독립 레그와 공동, 산출물 기반)
 
@@ -522,7 +524,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 121건 (열림 74)
+## C. 품질 부채 — 123건 (열림 75)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -626,7 +628,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `php-admin-raw-leaks-internal-cap-error` **[L/S · 신규·닫힘 2026-10-05 #723]** 이 물결의 상한이 `raw()` 에 `@internal` 예외를 냈다 — 병합 전에 잡았다
 - [x] `ruby-bearer-and-utf8-raw-escapes` **[M/S · 신규·닫힘 2026-10-05 #722]** CR·LF admin 토큰이 Bearer 를 인용한 raw `ArgumentError` 로, 잘못된 UTF-8 응답이 raw 예외로 나왔다(§4)
 
-### 테스트·커버리지 — 12
+### 테스트·커버리지 — 13
 
 - [x] `selftest-hygiene-textual-rules` **[H/M]** '존재'가 아니라 '실행'을 센다던 규칙이 주석·비활성화·`|| true`를 실행으로 센다 · `scripts/test/test-selftest-hygiene.sh:20`
 - [x] `coverage-exclusions-swallow-pure-logic` **[H/L · 닫힘 2026-09-25 #573 #574 #577 #579]** '네트워크 경계' 커버리지 제외가 순수 로직까지 삼켰다 — **아홉 언어를 변이로 전수 측정**: node 3 · python 10 · dotnet 4 · java 5 · kotlin 3 · ruby 3 · go 4 CAUGHT(제외돼도 시험됨), php 2/2 SILENT → #573, rust 제외 정규식 무앵커 → #574. 측정 중 드러난 **교환 경로 nonce 무시험**(java·rust, #577)·**node 토큰 타입 무시험**(#579)은 제외와 무관한 테스트 구멍이었다. 사후 서사는 `git show ef040af:docs/superpowers/plans/remaining-work.md` 515–528행 · `php/phpunit.xml:13`
@@ -649,8 +651,10 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 <!-- wall-clock 남은 자리(2026-10-03 첫 물결 재스캔, 정적 읽기 + 표시한 것은 주입 실측): python tests/unit/test_auth.py:992 · aio/test_auth.py:734 · W3c test_hostile_path_matrix.py:1258 / php JwksStoreTest.php:333 · FailureBackoffTest.php:103 · W3c HostilePathMatrixTest.php:1481 / dotnet BackoffConfigurationManagerTests.cs:137 · W3c HostilePathMatrixTests.cs:950 / node W3c hostile-path-matrix.test.ts:1557 / ruby jwks_store_spec.rb:135(주입 0.25 s → 3/3 실패) · W3c hostile_path_matrix_spec.rb:810 / go tokenprovider_test.go:29 TestProviderSingleFlight(50 ms 비행, 주입 60 ms → 2/3 실패, 경합만으로 0/300 — 원인은 비행 안에서 캐시를 다시 안 보는 것, token-provider-cache-invariants). java·kotlin 은 30 s 창이라 실노출 없음. go 원래 지목(jwt_test.go:322)은 경합만으로 13/200 실패했다. -->
 - [x] `ruby-framing-spec-server-written-flaky` **[M/S · 닫힘 2026-10-22 #797]** 원인은 리눅스가 받은 소켓의 송신 버퍼를 자동으로 키운 것 — `FramingServer` 가 SO_SNDBUF 를 64 KiB 로 고정한다(Go 의 같은 오라클과 같다) · `ruby/spec/support/framing_server.rb`
 <!-- ruby-framing-spec-server-written-flaky: 2,400 회 측정(고정 전 최대 2,654,263 · 고정 뒤 229,570 · 클라이언트가 읽은 바이트 ≤ 73,911)은 #797 커밋이 소유한다. -->
+- [ ] `dotnet-allocation-test-process-wide-counter-flaky` **[L/S · 신규 2026-10-23]** 2 KiB 할당 시험이 프로세스 전체 카운터로 재서 같은 SHA 에서 갈렸다(318,336 B ≥ `Cap / 4`, 재실행 초록) · `dotnet/tests/Xzawed.Keycloak.Sdk.Tests/TokenResponseCapTests.cs:271`
+<!-- dotnet-allocation-test-process-wide-counter-flaky: A_2_KiB_body_allocates_nothing_near_the_cap(chunked: False). run 39893087370 attempt 1(.NET SDK 10.0.x, #824) 빨강 · attempt 2 초록 · 같은 SHA 434fab6 의 push 실행 39893081688 초록 — 재실행 전 dotnet-ci 최근 60 회 중 실패는 이 하나. GC.GetTotalAllocatedBytes 는 프로세스 전체이고 DisableParallelization 은 동시에 도는 시험을 막을 뿐 시험 밖의 배경 작업은 막지 못한다. 원인 미측정 — 후보: 앞 시험이 남긴 가짜 IdP 의 ServeAsync · 러너 보고. 고칠 후보: k 회 측정의 최솟값(잡음은 더하기만 한다). -->
 
-### 가드·CI — 19
+### 가드·CI — 20
 
 - [x] `selftest-exit-code-contract-two-leaks` **[H/M · 닫힘 2026-09-23 #540]** 자가테스트의 「실패하면 비영 종료」 계약이 한 곳에서 샜다 — 탐지기는 #405, 계수기는 #540(파일 눈금 오라클) · `scripts/test/test-selftest-hygiene.sh:20`
 - [x] `sweeps-without-vacuity-floor` **[H/M · 닫힘 2026-09-08 #443]** 스윕/스캔이 0건을 훑고 통과했다 — 이 저장소의 하한 관용이 적용되지 않았다 · `.github/workflows/repo-hygiene.yml:234`
@@ -679,6 +683,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `w1-shared-script-drift-weekly-only` **[L/S · 신규 2026-10-01]** 아홉 적대 행렬의 W1 은 `scripts/test/test-security-defaults.sh` 의 앵커를 언어별 손 표와 대조하는데, 그 스크립트만 바꾼 PR 은 언어 CI 를 만들지 않고(`paths:` 가 `<lang>/**` 뿐) 야간 harness 도 #674 이후 W1 을 건너뛴다 — 앵커 드리프트는 그 언어의 다음 PR 이나 월요일 정기 실행에서야 드러난다(#674 의 Grok 레그가 지목). 후보: 아홉 언어 CI `paths:` 에 그 스크립트를 더하기 · harness 스위트에 `scripts/` 읽기전용 마운트(dotnet·ruby 실측 초록). php 만 건너뜀 메시지가 없다 · `php/tests/Unit/HostilePathMatrixTest.php:1789`
 - [ ] `push-trigger-branches-asymmetry` **[L/S]** 여섯 워크플로의 push 트리거에 branches가 없어 PR 브랜치에서 레인이 두 번 돈다 · `.github/workflows/dotnet-ci.yml:3`
 - [x] `sonarcloud-dependabot-skip-keys-on-actor` **[M/S · 신규 2026-10-22 · 닫힘 2026-10-23 #801]** 건너뛰기가 PR 작성자도 본다 — actor 로만 거를 때 사람이 커밋을 얹은 Dependabot PR 실행 일곱(2026-10-08~21)이 미검토 범프와 `SONAR_TOKEN` 을 한 잡에서 돌렸다. 가드는 `check-ci-permissions.mjs` 규칙 11
+- [x] `java-release-bundle-never-built-before-tag` **[H/S · 신규·닫힘 2026-10-23 #825]** 릴리스 번들을 태그 전에 만드는 잡이 없어 러너 Maven 3.10.0 × central-publishing 0.11.0 의 장부 번들을 v1.2.0·v1.2.1 두 번호를 태운 뒤에야 알았다 — `ci.yml` release-bundle + `scripts/check-central-bundle.mjs`
 - [ ] `sonarcloud-human-pr-carries-unreviewed-bump` **[M/M · 신규 2026-10-23 · 판정]** 사람이 연 PR 에 Dependabot 의 bump 커밋을 옮겨 담으면(JVM 짝 합치기 등) 작성자가 사람이라 규칙 11 밖이다 — 미검토 패키지의 설치·빌드가 `SONAR_TOKEN` 과 한 잡에서 돈다. 후보 둘: 빌드·커버리지 잡(시크릿 없음)과 스캔 잡(산출물만 받고 패키지 코드는 돌리지 않음)으로 나눈다 · PR 스캔을 접는다(push 전용 — PR 품질 게이트를 잃으므로 사람 판정) · `.github/workflows/sonarcloud.yml`
 
 ### 문서·규칙 — 15

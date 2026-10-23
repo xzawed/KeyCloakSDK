@@ -50,7 +50,7 @@ cd kotlin
 ```
 
 - A single test: `./gradlew test --tests "*<ClassName>"` (from inside `kotlin/`)
-- Coordinate `io.github.xzawed:keycloak-sdk-kotlin`. KGP 2.4.20 · `languageVersion`/`apiVersion` = `KOTLIN_2_2` (the Kotlin consumer floor) · `explicitApi()`.
+- Coordinate `io.github.xzawed:keycloak-sdk-kotlin`. `languageVersion`/`apiVersion` = `KOTLIN_2_2` (the Kotlin consumer floor) · `explicitApi()`.
 - ⚠️ **`jvmToolchain(21)` is the build JDK; the consumer floor is `jvmTarget = JVM_17` + `-Xjdk-release=17`.** The toolchain also drives the bytecode target, so **deleting `jvmTarget` silently ships major 65** — build green, CI (on 21) blind. `check-jvm-bytecode-floor.mjs` re-reads the class files, and `check-docs.mjs` extracts `JvmTarget.JVM_(\d+)`, **not** the toolchain.
 - ⚠️ **`-Xjdk-release` is load-bearing.** `jvmTarget` alone lowers the class-file version but still links against JDK 21's boot classpath, so a 17-absent API compiles and dies at runtime. Measured: enabling it immediately failed `AdminRedirectHardeningTest.kt` (`HttpClient.use {}` — `AutoCloseable` only since 21).
 - Releasing goes `kotlin-v*` tag → `kotlin-release.yml` (staging on the Central Portal) → a human releases it from the Portal. The pins' SSOT is the dependency table in the root `CLAUDE.md` (a doc-guard anchor cross-checks it against `build.gradle.kts` — do not write the numbers here).
