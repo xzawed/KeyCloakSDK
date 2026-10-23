@@ -132,7 +132,21 @@ assert_eq 0 "$(status "$FIX/dotslash.txt")" "'./' 로 시작하는 항목도 같
 good | grep -v -E '\.asc$' > "$FIX/unsigned.txt"
 assert_eq 0 "$(status "$FIX/unsigned.txt")" "서명 없는 번들은 통과한다(서명은 범위 밖 — CI 번들은 서명하지 않는다)"
 
-# 10. 실제 트리 — 기대 집합을 이 저장소의 pom 이 정한다(여기서 손으로 적지 않는다)
+# 10. 변이 레그(Grok, probe.sh)가 SILENT 로 짚은 셋 — 각 단언이 그 변이만 잡는다
+# (a) 구성요소 디렉터리보다 깊은 파일 — `rest.length !== 3` 을 `< 3` 으로 풀면 통과했다
+{ good; echo "$G/kc-core/1.2.2/kc-core-1.2.2.pom/extra.dat"; } > "$FIX/deep.txt"
+assert_eq 1 "$(status "$FIX/deep.txt")" "구성요소 디렉터리보다 깊은 파일은 실패한다(이름이 좌표처럼 생긴 디렉터리 밑이어도)"
+# (b) 모듈을 못 읽는 pom + 빈 목록 — 공허 하한을 지우면 exit 0 이었다
+mkdir -p "$FIX/hollow/java"
+printf '<p:project xmlns:p="http://maven.apache.org/POM/4.0.0"><p:artifactId>x</p:artifactId></p:project>\n' > "$FIX/hollow/java/pom.xml"
+assert_eq 1 "$(node "$GUARD" "$FIX/empty.txt" --root="$FIX/hollow" >/dev/null 2>&1 && echo 0 || echo $?)" "기대 구성요소가 0 개면(모듈을 못 읽은 pom) 빈 목록도 실패한다"
+assert_contains "$(node "$GUARD" "$FIX/empty.txt" --root="$FIX/hollow" 2>&1)" "기대 구성요소가 0 개다" "공허 하한이 그 이유를 말한다"
+# (c) 장부 이름은 진단 문구로 짚는다 — 구조 규칙이 어차피 잡지만, 「플러그인을 올려라」로 이어지는 것은 이 문구다
+{ good; echo "$G/kc-core/1.2.2/resolver-status.properties"; } > "$FIX/resolver.txt"
+assert_contains "$(run "$FIX/resolver.txt")" "로컬 저장소 장부가 번들에 있다: $G/kc-core/1.2.2/resolver-status.properties" "resolver-status.properties 를 장부로 짚는다"
+assert_contains "$(run "$FIX/m310.txt")" "로컬 저장소 장부가 번들에 있다: $G/kc-core/1.2.2/_remote.repositories" "_remote.repositories 를 장부로 짚는다"
+
+# 11. 실제 트리 — 기대 집합을 이 저장소의 pom 이 정한다(여기서 손으로 적지 않는다)
 real_ids="$(node "$GUARD" "$FIX/empty.txt" --root="$REPO" 2>&1 | sed -n 's/.*번들에 없는 게시 모듈: \([^ ]*\).*/\1/p' | sort | tr '\n' ' ')"
 assert_contains "$real_ids" "keycloak-sdk-auth" "실제 트리의 기대 집합에 auth 가 있다"
 assert_contains "$real_ids" "keycloak-sdk-parent" "실제 트리의 기대 집합에 부모 pom 이 있다"
