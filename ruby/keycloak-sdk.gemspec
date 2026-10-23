@@ -40,5 +40,8 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "faraday", "~> 2.0"
   spec.add_dependency "jwt", "~> 3.2"
+  # ⚠️ 하한만이다(상한을 두지 않는다) — 프록시 CONNECT 응답의 틀 상한이 `Net::HTTP#timeouted_connect` 에 걸리고 그
+  # 메서드는 0.9.0 에 생겼다(0.5–0.8 은 `connect` 안에서 TCPSocket.open). faraday-net_http 가 이미 끌어오는 gem 이다.
+  spec.add_dependency "net-http", ">= 0.9"
   spec.add_dependency "rack-oauth2", "~> 2.3"
 end
