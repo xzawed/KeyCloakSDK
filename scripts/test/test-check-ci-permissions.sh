@@ -494,6 +494,114 @@ sed -i "s/^    if: \(.*\) || \((.*)\)$/    if: >-\n      \1 ||\n      \2/" "$SCA
 assert_contains "$(cat "$SCAN")" "if: >-" "대조군 입력이 실제로 블록 스칼라가 됐다"
 assert_ok node "$GUARD" "$TMP"
 
+# ── 규칙 12: PR 에서 시크릿을 쥐는 잡은 저장소·패키지 코드를 돌리지 않는다 ──
+# 규칙 11 은 Dependabot 이 연 PR 을 건너뛸 뿐이라, 사람이 연 PR 에 bump 커밋을 옮겨 담으면 미검토 패키지가 토큰과
+# 한 잡에서 돈다(등록부 sonarcloud-human-pr-carries-unreviewed-bump). 정상형은 시크릿 없는 build 잡이 코드를 돌리고
+# 시크릿 잡 scan 이 산출물을 runner.temp 로 받아 정해진 자리만 옮기는 모양이다.
+# $1 = download 스텝의 path 줄(빈 값이면 줄이 없다) · $2 = scan 잡 레벨에 더할 줄
+# ⚠️ 기본값을 `"${1-… \${{ … }}…}"` 로 쓰지 말 것 — 첫 `}` 가 매개변수 확장을 닫아 `}}` 가 `}` 하나로 깨진다(실측).
+DL_TEMP='          path: ${{ runner.temp }}/in'
+base_scan() {
+  if [ "$#" -ge 1 ]; then _path="$1"; else _path="$DL_TEMP"; fi
+  cat > "$SCAN" <<EOF
+name: demo-scan
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@0000000000000000000000000000000000000000 # 픽스처
+      - run: npm ci && ./gradlew build
+  scan:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.user.login != 'dependabot[bot]')
+${2-}
+    steps:
+      # npm·gradlew 는 build 잡이 돌린다 — 스텝 사이의 YAML 주석은 run 글이 아니다(오탐 대조군)
+      - uses: actions/checkout@0000000000000000000000000000000000000000 # 픽스처
+      - uses: actions/download-artifact@0000000000000000000000000000000000000000 # 픽스처
+        with:
+          name: inputs
+${_path}
+      - name: place
+        env:
+          IN: \${{ runner.temp }}/in
+        run: |
+          set -euo pipefail
+          for f in java/a/target/x.xml go/cover.out node/coverage/lcov.info; do cp "\$IN/\$f" "\$f"; done
+          echo "Java libraries for Sonar: 3 jars"
+          echo "LIBS=\$IN/libs/001-a.jar" >> "\$GITHUB_ENV"
+      - uses: SonarSource/sonarqube-scan-action@0000000000000000000000000000000000000000 # 픽스처
+        with:
+          args: -Dsonar.java.libraries=\${{ env.LIBS }}
+        env:
+          SONAR_TOKEN: \${{ secrets.DEMO_SCAN_TOKEN }}
+EOF
+}
+Z=0000000000000000000000000000000000000000
+# 정상형 — build 잡의 npm·gradlew·셋업 액션(시크릿 없음), scan 잡의 경로 조각(`java/…`·`go/cover.out`)·산문
+# (`Java libraries`)·스텝 사이 YAML 주석은 걸리지 않는다. 이것이 없으면 「무엇이든 실패」로도 아래가 다 통과한다.
+fresh; base_scan
+assert_ok node "$GUARD" "$TMP"
+# r12 <설명> <기대 문구> — 마지막에 쓴 $SCAN 이 실패하고 그 문구를 내는지 본다.
+r12() {
+  assert_fails node "$GUARD" "$TMP"
+  out=$(node "$GUARD" "$TMP" 2>&1 || true)
+  assert_contains "$out" "$2" "$1"
+}
+fresh; base_scan; printf '      - run: npm ci\n' >> "$SCAN"
+r12 "시크릿 잡의 설치 명령을 잡는다" "의 \`run:\` 이 \`npm\` 를 부른다"
+fresh; base_scan; printf '      - run:\n          npm ci\n' >> "$SCAN"
+r12 "다음 줄로 넘어간 plain 스칼라 run 도 읽는다" "의 \`run:\` 이 \`npm\` 를 부른다"
+fresh; base_scan; printf '      - run: /usr/bin/node x.js\n' >> "$SCAN"
+r12 "절대경로로 부른 인터프리터를 잡는다" "\`node\` 를 부른다"
+fresh; base_scan; printf '      - run: bash scripts/x.sh\n' >> "$SCAN"
+r12 "셸로 저장소 스크립트를 부르면 잡는다" "\`bash\` 를 부른다"
+fresh; base_scan; printf '      - run: ./gradlew koverXmlReport\n' >> "$SCAN"
+r12 "명령 자리의 상대경로 실행을 잡는다" "파일을 실행한다"
+fresh; base_scan; printf '      - run: |\n          set -e\n          . ./env.sh\n' >> "$SCAN"
+r12 "점 소싱을 잡는다" "파일을 실행한다"
+# 엄격한 쪽으로 고정 — run 글의 셸 주석은 걷지 않는다(`"#"` 안팎을 셸처럼 못 가리면 걷는 쪽이 뒤를 숨긴다).
+fresh; base_scan; printf '      - run: |\n          # npm ci\n          true\n' >> "$SCAN"
+r12 "run 글 안의 셸 주석도 센다" "\`npm\` 를 부른다"
+fresh; base_scan; printf '      - uses: actions/setup-java@%s # 픽스처\n' "$Z" >> "$SCAN"
+r12 "허용 목록 밖 셋업 액션을 잡는다" "이 \`actions/setup-java\` 를 쓴다"
+fresh; base_scan; printf '      - uses: ./.github/actions/build\n' >> "$SCAN"
+r12 "로컬 액션을 잡는다" "이 \`./.github/actions/build\` 를 쓴다"
+fresh; base_scan; printf '      - uses: docker://alpine:3.20\n' >> "$SCAN"
+r12 "docker:// 액션을 잡는다" "이 \`docker://alpine:3.20\` 를 쓴다"
+fresh; base_scan; printf '      - uses: SonarSource/sonarqube-scan-action@%s # 픽스처\n        with:\n          skipSignatureVerification: true\n' "$Z" >> "$SCAN"
+r12 "스캐너 서명 검증 끄기를 잡는다" "서명 검증·출처를 바꾼다(\`skipSignatureVerification\`)"
+fresh; base_scan '          path: in'
+r12 "산출물을 워크스페이스에 풀면 잡는다" "가 \`path: \${{ runner.temp }}/…\` 가 아니다"
+fresh; base_scan ''
+r12 "path 없는 download(기본값 = 워크스페이스)를 잡는다" "가 \`path: \${{ runner.temp }}/…\` 가 아니다"
+fresh; base_scan; printf '      - run: echo "${{ needs.build.outputs.cmd }}"\n' >> "$SCAN"
+r12 "run 의 앞 잡 출력(스크립트 주입)을 잡는다" "앞 잡의 출력은 그 잡의 코드가 정한 글자다"
+fresh; base_scan; printf '      - uses: SonarSource/sonarqube-scan-action@%s # 픽스처\n        with:\n          args: ${{ needs.build.outputs.args }}\n' "$Z" >> "$SCAN"
+r12 "스캔 args 의 앞 잡 출력(속성 주입)을 잡는다" "앞 잡의 출력은 그 잡의 코드가 정한 글자다"
+fresh; base_scan; printf '      - shell: python\n        run: print(1)\n' >> "$SCAN"
+r12 "bash·sh 밖의 셸을 잡는다" "\`shell: python\`"
+fresh; base_scan; sed -i 's/^jobs:$/defaults:\n  run:\n    shell: pwsh\njobs:/' "$SCAN"
+assert_contains "$(cat "$SCAN")" "    shell: pwsh" "(변이가 착지했는지 먼저 본다)"
+r12 "워크플로 최상위 defaults 의 셸도 잡는다" "워크플로 최상위 의 \`shell: pwsh\`"
+fresh; base_scan; printf '      - uses: actions/checkout@%s # 픽스처\n        env:\n          NODE_OPTIONS: --require ./hook.js\n' "$Z" >> "$SCAN"
+r12 "env 의 로더 훅을 잡는다" "로더 훅 \`NODE_OPTIONS\`"
+fresh; base_scan; printf '      - run: echo "JAVA_TOOL_OPTIONS=-javaagent:x.jar" >> "$GITHUB_ENV"\n' >> "$SCAN"
+r12 "GITHUB_ENV 로 쓰는 로더 훅을 잡는다" "로더 훅 \`JAVA_TOOL_OPTIONS\`"
+fresh; base_scan; printf '      - run: echo "$RUNNER_TEMP/in/bin" >> "$GITHUB_PATH"\n' >> "$SCAN"
+r12 "GITHUB_PATH 쓰기를 잡는다" "\`\$GITHUB_PATH\` 를 고친다"
+fresh; base_scan "$DL_TEMP" '    container: node:22'
+r12 "잡 레벨 container 를 잡는다" "잡 레벨 \`container:\` 를 쓴다"
+fresh; printf '  call:\n    uses: ./.github/workflows/demo-reusable.yml\n    secrets: inherit # 픽스처\n' >> "$SCAN"
+r12 "재사용 워크플로 호출을 잡는다" "잡 \`call\`(PR 에서 시크릿을 쥔다) 이 잡 레벨 \`uses:\` 를 쓴다"
+
 # ── 오탐 대조군 3: 저장소 루트 실물에 대해 통과해야 한다 ──
 # 픽스처에서만 도는 가드는 실제 트리와 어긋난 채로 초록불을 유지할 수 있다.
 assert_ok node "$GUARD" "$DIR/../.."

@@ -137,6 +137,8 @@ const readJob = (jobNode, inner) => {
     perms,
     scopes: perms ? scopesOf(inner, perms, childIndent) : [],
     ifNode: inner.find((x) => x.indent === childIndent && x.key === 'if') ?? null,
+    // 잡 레벨 키(`uses`·`container`·`services` …) — 규칙 12 가 쓴다.
+    keys: inner.filter((x) => x.indent === childIndent),
   }
 }
 
@@ -590,7 +592,7 @@ const ruleActionsPinnedToSha = (wf, out) => {
 // 있는가」를 문자열로 보면 `&&` 를 `||` 로 쓴 식, 괄호를 빠뜨린 식이 통과한다(글자로는 검사가 있다).
 // 같은 식이 push 실행을 건너뛰지 않는지도 본다 — main 스캔은 건너뛸 수 없다(PR0 fail-closed).
 // ⚠️ 이 규칙이 못 보는 것: 사람이 연 PR 에 Dependabot 의 bump 커밋을 옮겨 담은 경우(작성자가
-// 사람이다). 그 몫은 등록부 `sonarcloud-human-pr-carries-unreviewed-bump`.
+// 사람이다). 그 몫은 규칙 12 다 — 거르는 대신 시크릿 잡에 패키지 코드를 두지 않는다.
 //
 // 평가기는 GitHub Actions 식의 부분집합이다. 의미는 GitHub 의 것을 따른다 — 문자열 비교는 대소문자를
 // 가리지 않고, 타입이 다르면 숫자로 바꿔 비교하며(null → 0 · 문자열 → Number), `&&`·`||` 는 피연산자
@@ -807,18 +809,25 @@ const pushScenario = (f) => ({
   'github.base_ref': '',
   'github.ref': 'refs/heads/main',
 })
-const ruleDependabotPrSecretSkip = (wf, out) => {
+// PR 에서 Actions 시크릿을 쥐는 잡들 — 규칙 11·12 가 **같은 발견**을 쓴다(한쪽만 새 표기를 배우면 다른 쪽이
+// 조용히 빈다).
+const prSecretJobsOf = (wf) => {
   const prEvents = wf.triggers.filter((t) => PR_EVENTS.includes(t))
-  if (prEvents.length === 0 || wf.jobsLine === null) return 0
+  if (prEvents.length === 0 || wf.jobsLine === null) return { prEvents, jobs: [], outside: [] }
   // 최상위 `env:` 의 시크릿은 모든 잡이 쥔다 — `jobs:` **앞뒤** 어디에 있든(뒤를 안 보면 마지막 잡만 안다).
   const outside = [...wf.lines.slice(0, wf.jobsLine - 1), ...wf.lines.slice(wf.jobsEndLine - 1)]
   const wfSecrets = secretsIn(outside)
-  let seen = 0
+  const jobs = []
   for (const job of wf.jobs) {
     const body = jobLines(wf, job).slice(0, Math.max(0, wf.jobsEndLine - job.node.n))
     const secrets = new Set([...wfSecrets, ...secretsIn(body)])
-    if (secrets.size === 0) continue
-    seen++
+    if (secrets.size > 0) jobs.push({ job, body, secrets })
+  }
+  return { prEvents, jobs, outside }
+}
+const ruleDependabotPrSecretSkip = (wf, out) => {
+  const { prEvents, jobs } = prSecretJobsOf(wf)
+  for (const { job, secrets } of jobs) {
     const at = `${wf.file}:${job.node.n} 잡 \`${job.name}\` 은 PR 에서 \`${[...secrets].join('`·`')}\` 를 쥐는데`
     if (!job.ifNode) {
       out.push(`${at} \`if:\` 가 없다 — Dependabot 이 연 PR 에서도 방금 bump 된 미검토 패키지가 그 시크릿과 같은 잡에서 돈다`)
@@ -840,7 +849,144 @@ const ruleDependabotPrSecretSkip = (wf, out) => {
       out.push(`${wf.file}:${job.ifNode.n} 잡 \`${job.name}\` 의 \`if:\` 를 평가하지 못했다(fail-closed) — ${e.message}`)
     }
   }
-  return seen
+  return jobs.length
+}
+
+// 규칙 12(저장소 전체): PR 에서 Actions 시크릿을 쥐는 잡은 저장소·패키지 코드를 돌리지 않는다 — 설치·빌드·테스트는
+// 시크릿이 없는 잡이 하고, 시크릿 잡은 그 산출물을 **데이터로만** 받는다.
+//
+// 규칙 11 은 Dependabot 이 **연** PR 을 건너뛸 뿐이다. 사람이 연 PR 에 bump 커밋을 옮겨 담으면 작성자가 사람이라
+// 못 거른다(등록부 `sonarcloud-human-pr-carries-unreviewed-bump`). 그래서 거르는 대신 **같은 잡에 두지 않는다** —
+// 별개 잡은 별개 러너(VM)라 앞 잡의 코드가 뒤 잡의 프로세스·디스크에 닿지 못한다. 닿는 통로는 잡 자신의 실행과
+// 산출물·캐시·출력이고, 아래가 그것을 막는다.
+//   (a) 잡 레벨 `uses:`(재사용 워크플로)·`container:`·`services:` — 안에서 무엇이 도는지 이 가드가 못 본다(fail-closed).
+//   (b) 스텝 `uses:` 는 허용 목록뿐이다(체크아웃 · 산출물 받기 · 스캔). 로컬 액션(`./`)·`docker://` 는 저장소 코드다.
+//       스캔 액션의 서명 검증을 끄거나 다른 곳에서 스캐너를 받는 입력(`skipSignatureVerification` ·
+//       `scannerBinaries*`)도 막는다 — 검증 안 된 바이너리가 토큰과 돈다.
+//       ⚠️ 셋업 액션이 빠진 것은 의도다 — 툴체인이 있으면 다음 사람이 빌드 한 줄을 얹고, 캐시를 복원하는 액션은
+//       시크릿 없는 잡이 같은 PR 범위에 심은 캐시를 읽는다. 스캔 액션(핀된 SHA)은 Actions 캐시 API 를 쓰지 않는다
+//       (dist 에 restoreCache·saveCache·ACTIONS_CACHE_URL 0 건 — 러너 로컬 tool-cache 만, 2026-10-23 실측).
+//   (c) `run:` 에 설치·빌드·인터프리터 실행이 없다. `shell:`(잡·워크플로 `defaults:` 포함)은 bash·sh 뿐이고, 로더 훅
+//       환경변수(`BASH_ENV`·`NODE_OPTIONS`·`JAVA_TOOL_OPTIONS`·`LD_PRELOAD` …)와 `$GITHUB_PATH` 쓰기가 없다 — 훅
+//       하나면 저장소·산출물의 파일이 셸·스캔 액션(node)·스캐너(JVM) 안에서 돈다. ⚠️ 손 목록이라 수렴하지 않는다 —
+//       구조적 막이는 (b)이고, 이것은 「한 줄만 얹은」 회귀를 잡는 그물이다. `run:` 글의 셸 주석은 걷지 않는다
+//       (엄격한 쪽 — `"#"` 안팎을 셸처럼 가리지 못하면 걷는 쪽이 뒤를 숨긴다).
+//   (d) 잡 어디에도 `${{ needs.… }}` 가 없다 — 앞 잡의 출력은 그 잡의 코드가 정한 글자다(`run:` 이면 스크립트 주입,
+//       스캔 `args:` 면 스캐너 속성 주입).
+//   (e) `actions/download-artifact` 의 `path:` 가 `${{ runner.temp }}` 아래다 — 워크스페이스에 풀리면 산출물이 설정
+//       파일(sonar-project.properties · .git/config)을 덮는다. 받은 뒤 정해진 자리만 옮기는 것은 워크플로 몫이다.
+const PR_SECRET_JOB_ACTIONS = new Set(['actions/checkout', 'actions/download-artifact', 'SonarSource/sonarqube-scan-action'])
+const RUN_TOOLS =
+  'npm|npx|yarn|pnpm|bun|node|deno|pip|pip3|pipx|python|python3|pytest|poetry|uv|tox|mvn|mvnw|gradle|gradlew|java|javac|' +
+  'go|cargo|rustc|rustup|composer|php|phpunit|bundle|bundler|gem|ruby|rake|rspec|dotnet|msbuild|make|cmake|sh|bash|zsh|source'
+// 앞: 줄머리·공백·셸 구분자·따옴표·`/`(절대경로 실행). 뒤: 끝·공백·구분자·따옴표 — `java/…`·`go/cover.out` 같은
+// 경로 조각은 뒤에 `/` 가 와서 걸리지 않는다. 대소문자는 가린다(`Java libraries` 같은 산문이 걸리지 않게).
+const RUN_TOOL = new RegExp(String.raw`(?:^|[\s;&|()\x60"'/])(${RUN_TOOLS})(?=$|[\s;&|()\x60"'])`, 'm')
+// 명령 자리의 상대경로 실행(`./gradlew` · `../x`)과 점 소싱(`. ./env`).
+const RUN_LOCAL_EXEC = /(?:^|[;&|(])\s*\.{1,2}\/\S|(?:^|[;&|(])\s*\.\s+\S/m
+const LOADER_HOOKS =
+  'BASH_ENV|ENV|PATH|NODE_OPTIONS|NODE_PATH|JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS|SONAR_SCANNER_OPTS|' +
+  'SONAR_SCANNER_JAVA_OPTS|LD_PRELOAD|LD_LIBRARY_PATH|PYTHONPATH|PYTHONSTARTUP|RUBYOPT|PERL5OPT'
+// YAML `env:` 의 키(`NODE_OPTIONS: …`)와 `$GITHUB_ENV` 에 쓰는 글(`NODE_OPTIONS=…`) 둘 다 본다.
+const LOADER_HOOK = new RegExp(String.raw`(?:^\s*|[\s"'])(${LOADER_HOOKS})\s*[:=]`)
+const SCAN_UNSAFE_INPUT = /^\s*(skipSignatureVerification|scannerBinariesUrl|scannerBinariesAuthHeader)\s*:/
+const runBlocksOf = (body) => {
+  const blocks = []
+  for (let i = 0; i < body.length; i++) {
+    const m = /^(\s*)(?:-\s+)?run:(?:\s(.*))?$/.exec(body[i])
+    if (!m) continue
+    const keyIndent = body[i].indexOf('run:')
+    const v = (m[2] ?? '').trim()
+    // 블록 스칼라, 그리고 값이 다음 줄로 넘어간 plain 스칼라(`run:` 뒤가 빈 줄) — 둘 다 더 깊은 줄이 본문이다.
+    if (v === '' || BLOCK_SCALAR.test(splitComment(v).body.trim())) {
+      const text = []
+      for (let k = i + 1; k < body.length; k++) {
+        const l = body[k]
+        if (l.trim() !== '' && l.length - l.trimStart().length <= keyIndent) break
+        text.push(l)
+      }
+      blocks.push({ at: i, text: text.join('\n') })
+    } else blocks.push({ at: i, text: v })
+  }
+  return blocks
+}
+// 스텝 `uses:` 의 본문(그 스텝의 다음 줄부터 다음 스텝 전까지).
+const stepTail = (body, i) => {
+  const dash = body[i].indexOf('-')
+  const tail = []
+  for (let k = i + 1; k < body.length; k++) {
+    const l = body[k]
+    if (l.trim() === '') continue
+    const ind = l.length - l.trimStart().length
+    if (ind <= dash) break
+    tail.push(l)
+  }
+  return tail
+}
+// 셸·로더 훅·`$GITHUB_PATH` — 잡 본문과 최상위 줄(`defaults:`·`env:` 는 모든 잡에 걸린다)에 같이 쓴다.
+// 여기는 YAML 주석을 걷는다 — 설명 주석의 낱말이 설정 행세를 하지 않게(규칙 1b 의 교훈).
+const hookFindings = (lines, lineOf, who) => {
+  const found = []
+  for (const [i, raw] of lines.entries()) {
+    const body = splitComment(raw).body
+    const sm = /^\s*(?:-\s+)?shell:\s*(.*)$/.exec(body)
+    if (sm && !/^['"]?(bash|sh)\b/.test(sm[1].trim()))
+      found.push(`${lineOf(i)} ${who} 의 \`shell: ${sm[1].trim()}\` — 시크릿 잡의 셸은 bash·sh 뿐이다(다른 셸은 run 글을 그 언어로 실행한다)`)
+    const hm = LOADER_HOOK.exec(body)
+    if (hm)
+      found.push(`${lineOf(i)} ${who} 이 로더 훅 \`${hm[1]}\` 를 둔다 — 훅 하나면 저장소·산출물의 파일이 셸·스캔 액션·스캐너 안에서 돈다`)
+    if (/\bGITHUB_PATH\b/.test(body))
+      found.push(`${lineOf(i)} ${who} 이 \`$GITHUB_PATH\` 를 고친다 — 산출물 속 실행 파일이 이후 스텝의 명령을 가린다`)
+  }
+  return found
+}
+const rulePrSecretJobRunsNoCode = (wf, out) => {
+  const { jobs, outside } = prSecretJobsOf(wf)
+  if (jobs.length === 0) return
+  // 최상위 줄의 번호 — `outside` 는 `jobs:` 앞 조각과 뒤 조각을 이은 것이다.
+  const head = wf.jobsLine - 1
+  out.push(...hookFindings(outside, (i) => `${wf.file}:${i < head ? i + 1 : wf.jobsEndLine + (i - head)}`, '워크플로 최상위'))
+  for (const { job, body } of jobs) {
+    const who = `잡 \`${job.name}\`(PR 에서 시크릿을 쥔다)`
+    const lineOf = (i) => `${wf.file}:${job.node.n + i}`
+    const jobLevelUses = new Set(job.keys.filter((k) => k.key === 'uses').map((k) => k.n))
+    for (const k of job.keys)
+      if (['uses', 'container', 'services'].includes(k.key))
+        out.push(`${wf.file}:${k.n} ${who} 이 잡 레벨 \`${k.key}:\` 를 쓴다 — 그 안에서 무엇이 도는지 이 가드가 볼 수 없다(fail-closed). 빌드·설치는 시크릿 없는 잡으로`)
+    out.push(...hookFindings(body, lineOf, who))
+    for (const [i, raw] of body.entries()) {
+      const plain = splitComment(raw).body
+      if (SCAN_UNSAFE_INPUT.test(plain))
+        out.push(`${lineOf(i)} ${who} 이 스캐너 서명 검증·출처를 바꾼다(\`${SCAN_UNSAFE_INPUT.exec(plain)[1]}\`) — 검증 안 된 바이너리가 토큰과 돈다`)
+      const um = USES_REF.exec(plain)
+      if (!um || jobLevelUses.has(job.node.n + i)) continue
+      const ref = um[1]
+      const name = ref.replace(/@.*$/, '')
+      if (ref.startsWith('./') || ref.startsWith('docker://') || !PR_SECRET_JOB_ACTIONS.has(name))
+        out.push(
+          `${lineOf(i)} ${who} 이 \`${name}\` 를 쓴다 — 시크릿 잡의 액션은 \`${[...PR_SECRET_JOB_ACTIONS].join('`·`')}\` 뿐이다(셋업·캐시·로컬 액션은 패키지 코드를 이 잡에 들인다)`,
+        )
+      if (name === 'actions/download-artifact') {
+        const path = stepTail(body, i)
+          .map((l) => /^\s*path:\s*(.*)$/.exec(splitComment(l).body))
+          .find(Boolean)
+        if (!path || !/^['"]?\$\{\{\s*runner\.temp\s*\}\}/.test(path[1].trim()))
+          out.push(
+            `${lineOf(i)} ${who} 의 \`actions/download-artifact\` 가 \`path: \${{ runner.temp }}/…\` 가 아니다 — 워크스페이스에 풀리면 산출물이 설정 파일을 덮는다`,
+          )
+      }
+    }
+    for (const span of body.join('\n').matchAll(EXPR_SPAN))
+      if (/\bneeds\s*[.[]/.test(span[1]))
+        out.push(`${wf.file}:${job.node.n} ${who} 에 \`\${{${span[1]}}}\` 가 있다 — 앞 잡의 출력은 그 잡의 코드가 정한 글자다(run 이면 스크립트 주입, 스캔 args 면 속성 주입)`)
+    for (const { at: i, text } of runBlocksOf(body)) {
+      const tool = RUN_TOOL.exec(text)
+      if (tool)
+        out.push(`${lineOf(i)} ${who} 의 \`run:\` 이 \`${tool[1]}\` 를 부른다 — 설치·빌드·인터프리터는 시크릿 없는 잡에서 돌리고 산출물로 넘길 것`)
+      if (RUN_LOCAL_EXEC.test(text))
+        out.push(`${lineOf(i)} ${who} 의 \`run:\` 이 파일을 실행한다(\`./…\`·\`. …\`) — 시크릿 없는 잡으로`)
+    }
+  }
 }
 
 // ── 실행 ────────────────────────────────────────────────────────────────────
@@ -879,6 +1025,7 @@ for (const wf of workflows) {
   jobCount += wf.jobs.length
   writeCheckouts += ruleWriteJobDropsCheckoutCreds(wf, errors)
   prSecretJobs += ruleDependabotPrSecretSkip(wf, errors)
+  rulePrSecretJobRunsNoCode(wf, errors)
   ruleNoBlanketGrant(wf, errors)
   ruleGovulncheckChecksLatest(wf, errors)
   usesRefs += ruleActionsPinnedToSha(wf, errors)
