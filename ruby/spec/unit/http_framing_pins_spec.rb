@@ -70,6 +70,44 @@ RSpec.describe KeycloakSdk::Http do # response framing bound — net-http shape 
     it "net-http opens the socket through private on_connect and runs begin_transport per request" do
       expect(Net::HTTP.private_instance_methods).to include(:on_connect, :begin_transport)
     end
+
+    # 프록시 CONNECT 응답은 `on_connect` 앞에서 지역 BufferedIO 로 읽힌다 — 상한은 그 소켓이 생기는 두 자리에 건다.
+    # 이름·인자가 바뀌면 훅이 안 불리거나(조용히 무상한) ArgumentError 다 — 여기서 운다.
+    it "net-http opens the CONNECT socket through private connect / timeouted_connect / ssl_socket_connect" do
+      expect(Net::HTTP.private_instance_methods).to include(:connect, :timeouted_connect, :ssl_socket_connect)
+      expect(Net::HTTP.instance_method(:connect).parameters).to eq([])
+      expect(Net::HTTP.instance_method(:timeouted_connect).parameters).to eq([%i[req conn_addr], %i[req conn_port]])
+      expect(Net::HTTP.instance_method(:ssl_socket_connect).parameters).to eq([%i[req s], %i[req timeout]])
+    end
+
+    # 훅은 `connect` 가 보는 그 ivar 로 TLS 프록시를 가른다(공개 읽기가 없다 — 쓰기와 클래스 읽기뿐이다).
+    it "keeps the TLS-to-proxy flag in @proxy_use_ssl (what connect branches on)" do
+      tls = Net::HTTP.new("192.0.2.1", 443, "127.0.0.1", 8080, nil, nil, nil, true)
+      plain = Net::HTTP.new("192.0.2.1", 443, "127.0.0.1", 8080)
+      expect([tls.proxy?, tls.instance_variable_get(:@proxy_use_ssl)]).to eq([true, true])
+      expect([plain.proxy?, plain.instance_variable_get(:@proxy_use_ssl)]).to eq([true, nil])
+    end
+
+    # CONNECT 상한은 BufferedIO 가 소켓을 읽는 **그 호출**을 감싼다 — 모양이 바뀌면 상한이 안 불린다.
+    it "fills from its socket via read_nonblock(BUFSIZE, buffer, exception: false) (what the CONNECT bound wraps)" do
+      seen = []
+      sock = Object.new
+      sock.define_singleton_method(:read_nonblock) do |len, buf = nil, **kw|
+        seen << [len, buf.class, kw]
+        buf ? buf.replace("HTTP/1.1 200 OK\r\n") : +"HTTP/1.1 200 OK\r\n"
+      end
+      expect(Net::BufferedIO.new(sock).readline).to eq("HTTP/1.1 200 OK")
+      expect(seen).to eq([[Net::BufferedIO::BUFSIZE, String, { exception: false }]])
+    end
+
+    # `timeouted_connect` 는 net-http 0.9.0 에 처음 생겼다(0.5–0.8 은 `connect` 안에서 TCPSocket.open) — 그 아래 판이
+    # 풀리면 평문 프록시의 CONNECT 훅이 조용히 안 불린다. 그래서 gemspec 의 런타임 하한이다.
+    it "declares net-http >= 0.9 as a runtime floor (the first release with timeouted_connect)" do
+      spec = Gem::Specification.load(File.expand_path("../../keycloak-sdk.gemspec", __dir__))
+      dep = spec.runtime_dependencies.find { |d| d.name == "net-http" }
+      expect(dep&.requirement&.to_s).to eq(">= 0.9")
+      expect(%w[0.8.0 0.9.0].map { |v| dep.requirement.satisfied_by?(Gem::Version.new(v)) }).to eq([false, true])
+    end
   end
 
   # ── (B) SDK 상한·메시지가 교차언어 값인가(= response_framing_cap_spec 의 신탁과 같은가) ─────────────
@@ -90,9 +128,10 @@ RSpec.describe KeycloakSdk::Http do # response framing bound — net-http shape 
     # 변경은 0」이라 약속한다. 공개로 바꾸는 것은 minor 판정이라 여기서 운다.
     it "keeps the framing bounds and the hook modules private (not public API)" do
       names = %i[MAX_FRAMING_LINE_BYTES MAX_FRAMING_BYTES FRAMING_LINE_MSG FRAMING_TOTAL_MSG
-                 BoundedReads BoundedTransport]
+                 BoundedReads BoundedTransport ConnectFraming]
       expect(http.constants & names).to be_empty
       expect { http::BoundedReads }.to raise_error(NameError, /private constant/)
+      expect { http::ConnectFraming }.to raise_error(NameError, /private constant/)
     end
   end
 
