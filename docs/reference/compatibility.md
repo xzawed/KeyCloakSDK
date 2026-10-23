@@ -35,7 +35,7 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 
 | SDK | Target Keycloak server | Base libraries · runtime |
 |---|---|---|
-| Java `1.2.1` | 26.6.x (integration tests: actual **26.6**) | `keycloak-admin-client` **26.0.12** (an independent version track from the server — there is no "26.6.x admin-client") · Nimbus `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.10** · JDK 17+ |
+| Java `1.2.2` | 26.6.x (integration tests: actual **26.6**) | `keycloak-admin-client` **26.0.12** (an independent version track from the server — there is no "26.6.x admin-client") · Nimbus `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.10** · JDK 17+ |
 | Python `1.0.5` | 26.6.x (integration tests: actual **26.6**) | `python-keycloak` **7.1.x** · `joserfc` **1.7.x** · Python 3.10+ |
 | Node `1.0.5` | 26.6.x (integration tests: actual **26.6**) | `@keycloak/keycloak-admin-client` **26.8.0** · `openid-client` **6.8.8** · `jose` **6.2.12** · Node 22+ |
 | Go `1.2.3` | 26.6.x (integration tests: actual **26.6**) | `Nerzal/gocloak/v13` **13.9.0** · `golang.org/x/oauth2` **0.37.0** · `go-jose/v4` **4.1.6** · Go 1.26+ |
