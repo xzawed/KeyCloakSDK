@@ -61,6 +61,22 @@ _findings() { # _findings <워크플로 디렉터리>
   for f in "$wfdir"/*.yml "$wfdir"/*.yaml; do
     [ -f "$f" ] || continue
     nc="$(_nc "$f")"
+    # ⚠️ **올리지 않는 deploy 는 게시 명령이 아니다 — 두 조건이 다 있을 때만.** (A) 그 줄의 `skipUpload=`
+    # 지정이 전부 `-DskipUpload=true` 이고(central-publishing 0.12.0+: 「Nothing is sent to Central」), (B) 워크플로에
+    # `secrets` 가 한 번도 안 나온다(Central 에 인증할 수단이 없다). A 만이면 0.12.0 아래로 내린 플러그인이 그
+    # 플래그를 무시하고 올리고, B 만이면 의도가 보이지 않는다. 그 줄은 빈 줄로 바꿔 줄 번호를 지킨다 — 같은
+    # 워크플로의 다른 deploy 줄은 그대로 조준에 남는다(ci.yml release-bundle 이 이 자리다).
+    if ! printf '%s\n' "$nc" | grep -q 'secrets'; then
+      nc="$(printf '%s\n' "$nc" | awk '
+        /mvnw?[^|]*deploy/ {
+          t = $0 " "; a = $0
+          n_true = gsub(/-DskipUpload=true[^A-Za-z0-9_]/, "&", t)
+          n_all = gsub(/skipUpload=/, "&", a)
+          if (n_all >= 1 && n_all == n_true) { print ""; next }
+        }
+        { print }
+      ')"
+    fi
     printf '%s\n' "$nc" | grep -qE "$PUBLISH_RE" || continue
     found=$((found + 1))
     wf="$(basename "$f")"
@@ -211,6 +227,25 @@ assert_contains "$(_findings "$W")" "잡 **밖**에 있다" "[음성대조] 증�
 # (m) ⚠️ `subject-path` 가 없으면 무엇을 증명하는지가 비어 있다(다른 것은 전부 정상이다).
 _wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$OKPERM1" "$OKPERM2" "$STEPS" "$PUBSTEP" "$PIN"
 assert_contains "$(_findings "$W")" "subject-path" "[음성대조] subject-path 가 없으면 판정이 운다"
+
+# (n) 올리지 않는 deploy(ci.yml release-bundle 의 모양) — 시크릿 없는 워크플로의 `-DskipUpload=true` 는
+# 게시 명령이 아니다. 이 디렉터리의 유일한 워크플로라 남는 것은 공허 하한 하나여야 한다.
+SKIPSTEP='      - run: mvn -B -f java/pom.xml -Prelease deploy -DskipUpload=true -DskipTests'
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" "$SKIPSTEP"
+assert_not_contains "$(_findings "$W")" "단계가 없다" "[대조] 시크릿 없는 워크플로의 -DskipUpload=true deploy 는 게시가 아니다"
+assert_contains "$(_findings "$W")" "하나도 못 찾았다" "[대조] 그 워크플로는 게시 워크플로로 세지 않는다"
+# (o) 같은 줄이라도 워크플로에 시크릿이 있으면 게시로 본다(플러그인이 플래그를 모르는 판이면 올린다)
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" "$SKIPSTEP" '        env: { PW: "${{ secrets.CENTRAL_TOKEN_PW }}" }'
+assert_contains "$(_findings "$W")" "단계가 없다" "[음성대조] 시크릿이 있으면 -DskipUpload=true 도 게시로 본다"
+# (p) skipUpload 를 다시 false 로 덮으면 게시다
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" '      - run: mvn -Prelease deploy -DskipUpload=true -DskipUpload=false'
+assert_contains "$(_findings "$W")" "단계가 없다" "[음성대조] skipUpload=false 가 함께 있으면 게시로 본다"
+# (q) 같은 잡의 다른 deploy 줄은 예외를 받지 않는다
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" "$SKIPSTEP" "$PUBSTEP"
+assert_contains "$(_findings "$W")" "단계가 없다" "[음성대조] 예외는 그 줄만 — 옆의 진짜 deploy 는 조준에 남는다"
+# (r) 접두만 같은 값(`-DskipUpload=trueish`)은 true 가 아니다
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" '      - run: mvn -Prelease deploy -DskipUpload=trueish'
+assert_contains "$(_findings "$W")" "단계가 없다" "[음성대조] -DskipUpload=trueish 는 예외가 아니다"
 
 # (f) 게시 명령이 하나도 없으면 공허 하한이 운다.
 printf '%s\n' 'name: x' 'jobs:' '  a:' '    steps:' '      - run: echo hi' > "$W/x.yml"
