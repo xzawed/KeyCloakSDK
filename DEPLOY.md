@@ -358,7 +358,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   ```
   > ℹ️ The tag value **determines the release version** — match the tag exactly to the desired release version.
 - Deployment check: confirm GitHub Actions `release.yml` succeeded (through the staging upload) → verify in the [Central Portal](https://central.sonatype.com) Deployments, then **a human manually Publishes**. This staging step is your last chance to reject the build: once published, Maven Central is immutable (§6).
-- Install: `io.github.xzawed:keycloak-sdk:1.2.0` (+ BOM)
+- Install: `io.github.xzawed:keycloak-sdk:1.2.1` (+ BOM)
 
 ### 7. Kotlin
 

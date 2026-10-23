@@ -27,7 +27,7 @@
 
 A guide to installing the Keycloak polyglot SDK locally and running your first token issuance, JWT validation, and Admin API call with minimal code. This SDK is provided in **multiple programming languages** (currently Java · Python · Node.js · Go · C#/.NET · PHP · Rust · Ruby · Kotlin), and while each language is idiomatic, the concepts, layers, and flows are isomorphic.
 
-> ℹ️ **All nine are on a public registry with a stable release** (PHP `1.4.1`, Ruby `1.3.2`, Go `1.2.3`, Java `1.2.0`, Rust `1.1.3`, Kotlin `1.0.6`, Python · .NET · Node `1.0.5` — alignment was never a policy) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java · Kotlin (Maven Central) and Go (the Go module proxy). A bare install resolves the current release in every ecosystem that picks one for you (Maven and Gradle never do — name the version); the release candidates that preceded 1.0 are still on their registries (none of these ecosystems lets you delete a published version) but none of them prefers one any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. Releasing is a maintainer task — see [DEPLOY.md](../../DEPLOY.md).
+> ℹ️ **All nine are on a public registry with a stable release** (PHP `1.4.1`, Ruby `1.3.2`, Go `1.2.3`, Java `1.2.1`, Rust `1.1.3`, Kotlin `1.0.6`, Python · .NET · Node `1.0.5` — alignment was never a policy) — PHP (Packagist), Python (PyPI), .NET (NuGet), Rust (crates.io), Ruby (RubyGems), Node (npm), Java · Kotlin (Maven Central) and Go (the Go module proxy). A bare install resolves the current release in every ecosystem that picks one for you (Maven and Gradle never do — name the version); the release candidates that preceded 1.0 are still on their registries (none of these ecosystems lets you delete a published version) but none of them prefers one any more. Every language also keeps a local-clone path (see each language's "Local installation" below), which is what you want when developing against the SDK itself. Releasing is a maintainer task — see [DEPLOY.md](../../DEPLOY.md).
 
 > 🖥️ **You need a Keycloak *server* first.** This SDK is a client library, so it needs a **Keycloak server to connect to** in order to work (the server is a separate, standalone product not included in this SDK). For a local trial, use the one-line Docker command `docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:26.6 start-dev`; for a **production deployment**, see the [Keycloak server deployment guide](deploying-keycloak-server.md).
 
@@ -85,19 +85,19 @@ After installation, adding just the single facade artifact to your consuming pro
 </dependency>
 ```
 
-### 3) Installation from Maven Central (stable `1.2.0`)
+### 3) Installation from Maven Central (stable `1.2.1`)
 
-`1.2.0` is live on Maven Central — a minor release of security fixes. No local `install` is needed:
+`1.2.1` is live on Maven Central — a minor release of security fixes (`1.2.0` was tagged but never published). No local `install` is needed:
 
 ```xml
 <dependency>
   <groupId>io.github.xzawed</groupId>
   <artifactId>keycloak-sdk</artifactId>
-  <version>1.2.0</version>
+  <version>1.2.1</version>
 </dependency>
 ```
 
-If you depend on the modules individually rather than through the facade, import the BOM (`io.github.xzawed:keycloak-sdk-bom:1.2.0`, `<type>pom</type>` `<scope>import</scope>`) so their versions stay aligned.
+If you depend on the modules individually rather than through the facade, import the BOM (`io.github.xzawed:keycloak-sdk-bom:1.2.1`, `<type>pom</type>` `<scope>import</scope>`) so their versions stay aligned.
 
 > ⚠️ **Maven has no prerelease concept — and that made it the odd one out during the RC.** `0.1.0-RC1` was never "a prerelease of `0.1.0`"; it is a different, lower-sorting coordinate. Nothing filtered it out the way RubyGems does, and nothing fell back to it the way pip and Cargo do, because in Maven you always name the version yourself. `0.1.0` is a **separate** artifact, and the RC stays on Central forever — Central is immutable, with no delete, no yank and no unlist. Releases remain human-gated: a publish runs only when a human pushes a `v*` tag to trigger [`.github/workflows/release.yml`](../../.github/workflows/release.yml), and even then the workflow only stages to the Central Portal until a human clicks Publish. For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
 
