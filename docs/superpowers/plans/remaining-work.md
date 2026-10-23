@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `271`(2026-10-22 기준 열림 144 · 닫힘 127)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `271`(2026-10-23 기준 열림 143 · 닫힘 128)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -522,7 +522,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 120건 (열림 76)
+## C. 품질 부채 — 120건 (열림 75)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -578,8 +578,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 <!-- ruby-framing-hook-breaks-on-net-protocol-0-4: 원 실측(하네스 4/26 · 회귀 창 · 재현 34 · 34 실패)은 #796 커밋, 수정과 검증(2×2 네 조합 340 · 0 · 새 잡 양성 대조 332 · 66 실패 · 변이 · Grok 레그 다섯)은 #797 커밋·PR 본문이 소유한다. -->
 - [x] `ruby-boundary-non-faraday-exception-leak` **[H/S · 닫힘 2026-10-22 #798 · 게시본 1.3.0 포함]** introspect · logout · admin(REST 와 자기 토큰) 경계도 세 그랜트처럼 SDK 밖 예외를 감싼다(`rescue Error; raise` 뒤 `rescue StandardError` → `TransportError` + `RedactedCause`) — net-http 0.10.0 의 응답 헤더 검증 `ArgumentError` 가 raw 로, 헤더 이름을 인용한 채 샜다 · `ruby/lib/keycloak_sdk/auth_client.rb`
 <!-- ruby-boundary-non-faraday-exception-leak: 자리(네 경계 + JWKS)·RED/GREEN·변이 여섯·Grok 레그(다섯째 경계)·private_constant 판정(api_surface 차이 0 → 1.3.1 patch)은 #798 커밋·PR 본문이 소유한다. -->
-- [ ] `ruby-admin-error-status-lost-on-bad-json` **[M/S · 신규 2026-10-22 · 게시본 1.3.0 포함]** admin 의 404·409·403 이 `Content-Type: application/json` 인데 본문이 JSON 이 아니면 `NotFoundError`·`ConflictError`·`ForbiddenError` 대신 `TransportError`(`admin transport error: Faraday::ParsingError`)다 — 커넥션의 json 미들웨어가 상태 검사 전에 해석한다. .NET 은 같은 경우 상태 클래스를 지킨다(CHANGELOG [Unreleased] .NET 항목). 바꾸면 소비자가 보는 오류 타입이 달라진다 · `ruby/lib/keycloak_sdk/admin/call.rb`
-<!-- ruby-admin-error-status-lost-on-bad-json 실측(2026-10-22 · Grok 적대 레그 B2 · FramingServer): users.get 404 · users.create 409 · users.list 403 에 본문 "not-json …" → 세 판 모두 TransportError(net-http 0.9.1 · 0.10.0 같다). 같은 상태에 JSON 객체 본문, 또는 Content-Type text/plain 이면 상태 클래스 그대로이고 본문을 인용하지 않는다. -->
+- [x] `ruby-admin-error-status-lost-on-bad-json` **[M/S · 신규 2026-10-22 · 닫힘 2026-10-23 #810]** admin 의 오류 상태가 JSON 이라면서 JSON 아닌 본문에서도 상태 클래스를 지킨다 — json 미들웨어의 해석 실패를 응답 상태로 되짚는다(.NET 과 같다)
 - [ ] `ruby-framing-proxy-connect-unbounded` **[M/M · 신규 2026-10-22 · 판정]** HTTPS 대상을 HTTP 프록시로 부르면 net-http 가 CONNECT 응답을 `on_connect` 전에 만든 `BufferedIO` 로 읽어 SDK 틀 상한이 걸리지 않는다 — net-http 0.9.1 은 한도가 없고 0.10.0 은 상류 1 MiB 뿐이다. 소켓 하나에만 거는 지금 설계로는 그 `BufferedIO` 를 잡을 자리가 없다(전역 패치 없이 고칠 길을 정할 것) · `ruby/lib/keycloak_sdk/http.rb` `BoundedTransport`
 <!-- ruby-framing-proxy-connect-unbounded 실측(2026-10-22 · Grok 적대 레그 2 회차 → PM 재현): FramingServer 를 프록시로, 대상 https://127.0.0.1:9. CONNECT 응답에 헤더 한 줄 100,000 B → 프록시가 100,048 B 를 다 넘기고 클라이언트는 TLS 로 넘어갔다(0.9.1 · 0.10.0 둘 다) · 짧은 헤더 400 줄(82,039 B)도 다 읽었다. net-http 0.10.0 `Net::HTTP#connect` 이 `proxy_sock = BufferedIO.new(…)` 뒤 `HTTPResponse.read_new(proxy_sock)` 을 부른다 — `on_connect` 는 그 뒤다. 평문 HTTP 프록시의 응답은 같은 @socket 이라 상한이 선다(control-proxy-http-line). 후보: `timeouted_connect` 가 돌려준 소켓을 표시하고 BufferedIO 를 그 표시로 감싸는 것은 전역 prepend 라 지금 규율(싱글턴만)과 부딪힌다. -->
 - [x] `jwks-stale-cache-outage-unbounded` **[M/S · 닫힘 2026-10-09 #743 #744]** node·.NET 에 실패 백오프. 남은 판정은 `jwks-cache-lifetime-divergent`

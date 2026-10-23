@@ -36,7 +36,24 @@ module KeycloakSdk
       rescue StandardError => e
         # 원본을 달면 `Faraday::ParsingError#inspect` 가 요청의 베어러 토큰을, 메시지가 응답 앞부분을 찍는다(실측).
         # Faraday 밖 예외도 감싼다 — net-http 0.10 의 응답 헤더 검증 ArgumentError 는 헤더 이름을 인용한다.
+        status = unparsable_error_status(e)
+        if status
+          raise AdminError.from_status(status, "admin request failed: HTTP #{status}"), cause: RedactedCause.new(e)
+        end
+
         raise TransportError, "admin transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
+      end
+
+      # 커넥션의 json 미들웨어는 상태 검사보다 먼저 해석한다 — JSON 이라면서 JSON 이 아닌 **오류** 본문(404·409·403 …)이어도
+      # 상태가 클래스를 정한다(.NET 과 같다). 2xx 의 해석 실패는 전송 오류 그대로다(nil).
+      # ⚠️ `Faraday::Error#response_status` 를 쓰지 않는다 — faraday 2.0.0 은 응답 객체에 `[:status]` 를 묻고, 그것은
+      # `headers[:status]` 로 위임돼 nil 이다. 응답 객체면 `status`, 해시면 `[:status]` 를 읽는다.
+      def unparsable_error_status(err)
+        return unless err.is_a?(Faraday::ParsingError)
+
+        resp = err.response
+        status = resp.respond_to?(:status) ? resp.status : (resp[:status] if resp.is_a?(Hash))
+        status if status.is_a?(Integer) && !(200..299).cover?(status)
       end
 
       def id_from_location(resp)
