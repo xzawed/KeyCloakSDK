@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-10-23 (Ruby)
+
+**Ruby 의 patch 입니다** — 공개 API 는 1.3.1 과 같습니다(CONNECT 응답 판독기 `Http::ConnectFraming` 은 `private_constant` 라 공개 표면에 나오지 않습니다). 다섯째 물결(아래 `[1.4.1] - 2026-10-23 (PHP)` 절의 머리말)의 마지막 언어로 나갑니다. ⚠️ **`net-http >= 0.9` 가 새 런타임 의존성입니다** — 아래 Security 항목. ⚠️ admin 이 JSON 아닌 오류 본문에 내던 `TransportError` 가 상태 클래스로 바뀝니다 — 아래 Fixed 항목.
+
 ### Fixed
 - **(Ruby)** admin 이 오류 상태(404·409·403 과 그 밖의 비 2xx)를 `Content-Type: application/json` 이면서 JSON 이 아닌 본문(프록시의 HTML 오류 페이지 등)과 함께 받으면 상태 클래스(`NotFoundError`·`ConflictError`·`ForbiddenError`·`AdminError`) 대신 `TransportError`(`admin transport error: Faraday::ParsingError`)를 냈습니다 — 커넥션의 json 미들웨어가 상태 검사보다 먼저 본문을 해석했기 때문입니다(게시본 1.3.0·1.3.1 포함). 이제 상태가 클래스를 정하고(.NET 과 같습니다) 메시지는 JSON 본문일 때와 같은 `admin request failed: HTTP <상태>` 이며, 본문은 메시지에도 원인 사슬에도 인용하지 않습니다. 2xx 의 해석 실패는 그대로 `TransportError` 입니다. ⚠️ 그런 응답을 `rescue KeycloakSdk::TransportError` 로 받던 코드는 이제 상태 클래스를 받습니다. 공개 API 변경은 0 입니다.
 
