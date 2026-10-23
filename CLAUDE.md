@@ -311,7 +311,7 @@ dev(테스트 csproj — **앵커 있음**):
 
 **Ruby 확정 의존성(gemspec, 범위 지정)**:
 
-<!-- doc-guard: kind=dep source=ruby/keycloak-sdk.gemspec min=3 -->
+<!-- doc-guard: kind=dep source=ruby/keycloak-sdk.gemspec min=3 undocumented=1 -->
 | 의존성 | gem | 버전 |
 |---|---|---|
 | 인증(OAuth2/OIDC) | `rack-oauth2`(nov) | `~> 2.3` |
