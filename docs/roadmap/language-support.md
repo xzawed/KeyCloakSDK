@@ -39,7 +39,7 @@ The procedure lives in **[DEPLOY.md](../../DEPLOY.md)** — do not copy checklis
 
 | Language | Design | Impl | Unit | Integration | CI | Publish |
 |---|---|---|---|---|---|---|
-| **Java** | ✅ | ✅ | ✅ | ✅ (Testcontainers) | ✅ | 🚀 Maven Central `1.2.0` |
+| **Java** | ✅ | ✅ | ✅ | ✅ (Testcontainers) | ✅ | 🚀 Maven Central `1.2.1` |
 | **Python** | ✅ | ✅ (+ `aio` async mirror) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 PyPI `1.0.5` |
 | **TypeScript / Node.js** | ✅ | ✅ (ESM · async-only) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 npm `1.0.5` |
 | **Go** | ✅ | ✅ (sync + `context.Context`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 Go module proxy `1.2.3` |
