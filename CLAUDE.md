@@ -104,7 +104,7 @@ Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·P
 
 1. **언어 디렉터리에서 작업한다.** `java/`·`python/`·`node/`·`go/`·`dotnet/`·`php/`·`rust/`·`ruby/`·`kotlin/` 중 하나에 들어가면 `.claude/rules/<lang>.md`가 자동 로드된다(`paths:` 프론트매터). **그 파일이 그 언어의 빌드 명령·제약·게차의 진실 원천이다** — 이 파일에 다시 적지 않는다.
 2. **바꾸기 전에 테스트를 돌린다.** 아래 툴체인 표의 진입 명령. 통합 테스트는 Docker가 필요하다.
-3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=76 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=5 --min-count-anchors=4`.
+3. **문서·매니페스트를 건드렸으면** `node scripts/check-docs.mjs . --strict --min-facts=78 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=5 --min-count-anchors=4`.
 4. **PR로 올린다.** `main` 직접 push 불가(룰셋 `PRIMARY`). required 체크는 `doc-facts`·`shell-exec-bits` 둘뿐이고 **언어 CI를 required에 넣으면 저장소가 잠긴다**(`paths:` 필터라 체크가 생성조차 안 된다).
 
 ### 하지 말 것
@@ -179,9 +179,11 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 <!-- min 8 → 6 (2026-09-10): vitest·@vitest/coverage-v8 의 **일시적** 이관 보류 두 항목을 지웠다.
      그것은 「종류」가 아니라 보류였고, v4 이관이 끝나 해제했다(GHSA 패치가 4.1.11 뿐이라 3.x 에는
      백포트가 없었다). 남은 6 이 곧 네 종류다 — 문단과 min 이 함께 움직였다.
+     min 6 → 8 (2026-10-23): commons-codec 두 항목(maven /java · gradle /kotlin) — 다섯째 종류 「상위가
+     선언한 판」. 사람 판정이다(#805·#806 의 1.15 → 1.23.0 기각 — 값이 RESTEasy 의 선언을 뜻한다).
      ⚠️ 이 주석은 앵커 **앞**에 둔다 — 검사는 앵커 바로 다음 줄을 문단으로 읽는다. -->
-<!-- doc-guard: kind=ignores source=.github/dependabot.yml min=6 -->
-- ⚠️ **dependabot이 올려서는 안 되는 핀 네 종류** — 값이 **다른 결정**을 뜻하는 것들: ref가 브랜치인 액션(`rust-toolchain`·`gh-action-pypi-publish`)·소비자에게 보이는 하한(`kotlin-stdlib`·`@types/node`)·CI 매트릭스 하한(`parallel`)·**대상 서버 라인**(rust `keycloak`). 근거·해제 조건·명령은 `.github/dependabot.yml`의 `ignore` 주석이 소유한다.
+<!-- doc-guard: kind=ignores source=.github/dependabot.yml min=8 -->
+- ⚠️ **dependabot이 올려서는 안 되는 핀 다섯 종류** — 값이 **다른 결정**을 뜻하는 것들: ref가 브랜치인 액션(`rust-toolchain`·`gh-action-pypi-publish`)·소비자에게 보이는 하한(`kotlin-stdlib`·`@types/node`)·CI 매트릭스 하한(`parallel`)·**대상 서버 라인**(rust `keycloak`)·상위가 선언한 판(`commons-codec`). 근거·해제 조건·명령은 `.github/dependabot.yml`의 `ignore` 주석이 소유한다.
 
 ## 확정 의존성 (BOM으로 고정)
 

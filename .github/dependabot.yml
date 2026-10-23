@@ -26,6 +26,19 @@ updates:
     schedule: { interval: weekly }
     groups:
       java-minor-patch: { update-types: [minor, patch] }
+    ignore:
+      # commons-codec 의 판은 우리가 고른 값이 아니라 **admin 의 RESTEasy 가 선언한 판**이다. SDK 는 이것을
+      # 쓰지 않는다 — keycloak-sdk-auth 가 runtime 으로 직접 선언하는 이유는 소비자 그래프의 nearest-wins 를
+      # 그 판에 묶는 것 하나다(httpclient 가 선언하는 1.11 이 더 얕아 이긴다 — 근거는 java/pom.xml 의
+      # dependencyManagement 주석과 keycloak-sdk-auth/pom.xml). 그러니 이 값이 뜻하는 것은 「RESTEasy 가 무엇을
+      # 선언하는가」이고, dependabot 이 최신판으로 올리면 어느 상위도 선언하지 않은 판이 소비자에게 간다
+      # (「새 판을 들이지 않는다」). 2026-10-23 사람 판정 — #805·#806 의 1.15 → 1.23.0 을 이 이유로 기각했다.
+      # CVE 감시는 이 ignore 와 별개다 — security-audit.yml 의 Java·Kotlin OSV 잡이 런타임 그래프 전체를 본다.
+      # 이동 조건: keycloak-admin-client 를 올려 RESTEasy 의 선언이 바뀌면 **그 PR 에서** 이 판(java/pom.xml 의
+      # commons-codec.version · kotlin/build.gradle.kts 의 runtimeOnly)을 같은 값으로 옮긴다. 선언 판 읽기:
+      #   mvn -f java/pom.xml -pl keycloak-sdk-admin -am dependency:tree -Dverbose -Dincludes=commons-codec:commons-codec
+      #   → resteasy-client 줄 아래 「version managed from X」 의 X(2026-10-23: resteasy-client 6.2.15.Final → 1.15)
+      - dependency-name: 'commons-codec:commons-codec'
 
   - package-ecosystem: gradle # Kotlin
     directory: /kotlin
@@ -60,6 +73,10 @@ updates:
       - dependency-name: 'org.jetbrains.kotlin:kotlin-stdlib'
         update-types:
           ['version-update:semver-minor', 'version-update:semver-major']
+      # commons-codec — 위 maven(/java) 항목과 같은 핀이고 같은 이유다(kotlin/build.gradle.kts 의 runtimeOnly
+      # 주석: Gradle 빌드는 높은 판을 고르지만 게시 POM 을 읽는 Maven 소비자는 nearest-wins 다). 두 레인이 함께
+      # 움직이고, 이동 조건과 선언 판 읽는 명령도 그 항목이 소유한다.
+      - dependency-name: 'commons-codec:commons-codec'
 
   - package-ecosystem: pip # Python
     directory: /python

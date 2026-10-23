@@ -110,7 +110,7 @@ grep -c '^- \[x\]' docs/superpowers/plans/remaining-work.md   # 닫힘
 ```sh
 git clone https://github.com/xzawed/KeyCloakSDK && cd KeyCloakSDK
 node scripts/doctor.mjs                 # 이 PC에 무엇이 없는지. 설치·환경변수는 docs/guides/development-setup.md
-node scripts/check-docs.mjs . --strict --min-facts=76 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=5 --min-count-anchors=4
+node scripts/check-docs.mjs . --strict --min-facts=78 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=5 --min-count-anchors=4
 git branch --show-current               # ⚠️ 아래 함정 (e)
 ```
 
@@ -118,7 +118,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ### 다음 세션 진입점 (2026-10-23 · #801–#825 반영)
 
-**지금 상태** — 물결 5(범프 #812 · 요청 #814–#823): php 1.4.1 · go 1.2.3 · python·dotnet·node 1.0.5 · ruby 1.3.2 LIVE, 게시 바이트 = 태그(#824 본문) · 그 다섯 기준선은 #824. **JVM 은 Portal Publish(사람) 대기** — kotlin 1.0.6 · java 1.2.2(`v1.2.0`·`v1.2.1` 은 Portal 검증 FAILED 로 미게시 — 러너 Maven 3.10.0 × central-publishing 0.11.0, #825). Publish 뒤 `check-registry-truth` LIVE → `check-published-jvm-floor` → 기준선(`japicmp.baseline` · `kotlin-ci.yml` · `df_api_baseline`) → `security-audit.yml`. `[Unreleased]` 는 비었다(태그 위임은 물결마다 다시 묻는다). 열린 PR 은 Dependabot 뿐이어야 한다. 래퍼 9.8 의 되살릴 조건은 #682·#788.
+**지금 상태** — 물결 5 끝(범프 #812 · 요청 #814–#823 · java 수정 #825): **아홉 레인 전부 LIVE** — php 1.4.1 · go 1.2.3 · python·dotnet·node 1.0.5 · ruby 1.3.2 · java 1.2.2 · kotlin 1.0.6(`v1.2.0`·`v1.2.1` 은 Portal 검증 FAILED 로 미게시 — 러너 Maven 3.10.0 × central-publishing 0.11.0, #825). 게시 바이트 = 태그(#824 본문 · JVM 은 #827 본문 — 출처 증명 15 jar), 기준선 일곱 = 게시판(#824·#827 · rust·go 는 자리 없음), `security-audit.yml` 전 잡 초록(2026-10-23). `[Unreleased]` 는 비었다(태그 위임은 물결마다 다시 묻는다). 열린 PR 은 Dependabot 뿐이어야 한다. 래퍼 9.8 의 되살릴 조건은 #682·#788.
 
 열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유한다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
 
@@ -129,7 +129,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 3. `guard-detection-surface-hand-narrowed` [H/M](attest — KNOWN_GAPS 대조는 #773) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
 4. ⚠️ **손대기 전에 전제를 잰다** — 이번에도 뒤집혔다: jwks 후보(「신선한 캐시가 없으면 센다」)는 600 초 경계에서 규칙 (4) 를 깼고, 「낡은 캐시 + 장애」는 node 하나가 아니라 node·.NET 이었고, probe.sh 초안 정규식은 지어낸 줄로 골라 실제 출력 셋을 못 맞췄다.
 
-**사람 판정 대기** — `jwks-cache-lifetime-divergent`(장애 중 낡은 키 수락·수명 정렬, 아홉 동시) · `bearer-token-grammar-divergent`(아홉 동시) · `response-read-deadline-divergent` · php ext-curl(`response-framing-unbounded`) · commons-codec 1.15 → 1.23.0(#805 java · #806 kotlin — #756 의 직접 의존은 2026-10-23 받아들여 1.2.1 에 실렸다) · `sonarcloud-human-pr-carries-unreviewed-bump`.
+**사람 판정 대기** — `jwks-cache-lifetime-divergent`(장애 중 낡은 키 수락·수명 정렬, 아홉 동시) · `bearer-token-grammar-divergent`(아홉 동시) · `response-read-deadline-divergent` · php ext-curl(`response-framing-unbounded`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · `sonarcloud-human-pr-carries-unreviewed-bump` 는 잡 분리(미구현).
 
 **함정** — (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 와 아래 (j)–(w) 는 그대로 유효하다. (x)–(z) 는 2026-10-01, (aa)(bb) 는 2026-10-05, (cc)–(ee) 는 2026-10-09, (ff)(gg) 는 2026-10-23 이 더했다.
 
