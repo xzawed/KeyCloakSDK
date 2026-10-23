@@ -157,6 +157,7 @@ jobs:
           name: sonar-inputs
           retention-days: 1
           if-no-files-found: error
+          # >>> sonar-inputs — scripts/test/test-sonar-scan-inputs.sh 가 이 목록을 scan 의 배치 목록과 대조한다
           path: |
             kotlin/build/reports/kover/report.xml
             java/keycloak-sdk-core/target/site/jacoco/jacoco.xml
@@ -174,6 +175,7 @@ jobs:
             ruby/coverage/coverage.json
             rust/lcov.info
             sonar-inputs/java-libs
+          # <<< sonar-inputs
 
   scan:
     name: SonarCloud
@@ -206,11 +208,15 @@ jobs:
       # 심볼릭 링크는 받지 않는다. 리포트·바이트코드는 sonar-project.properties 가 읽는 자리로 옮기고(빠지면
       # 스캔하지 않는다 — 생성 실패가 「덜 본 초록」이 되지 않게), jar 는 받은 자리에 둔 채 경로만 짓는다.
       # ⚠️ jar 이름은 엄격한 모양만 받는다 — 그 경로가 스캔 `args:` 로 들어가므로, 공백 하나면 `-Dsonar.scanner.…`
-      # 같은 스캐너 속성을 산출물이 주입할 수 있다(스캐너가 실행할 JRE 를 바꾸는 속성도 있다).
+      # 같은 스캐너 속성을 산출물이 주입할 수 있다(스캐너가 실행할 JRE 를 바꾸는 속성도 있다). 그리고 이름은 **문자열
+      # 전체**로 잰다(`[[ =~ ^…$ ]]`) — 첫 판의 `grep -x` 는 여러 줄 중 한 줄만 맞아도 참이라 개행 든 이름이 통과했고,
+      # 둘째 줄이 `$GITHUB_ENV` 의 새 변수(예: NODE_OPTIONS)가 됐다(실측 — scripts/test/test-sonar-scan-inputs.sh).
+      # 공격자가 지은 이름은 로그에 찍지 않는다(워크플로 명령 주입).
       - name: Place SonarCloud inputs
         env:
           IN: ${{ runner.temp }}/sonar-inputs
         run: |
+          # >>> sonar-place
           set -euo pipefail
           if [ -n "$(find "$IN" -type l -print -quit)" ]; then echo "::error::산출물에 심볼릭 링크가 있다 — 받지 않는다"; exit 1; fi
           for f in kotlin/build/reports/kover/report.xml \
@@ -230,16 +236,19 @@ jobs:
           done
           LIBS=''
           n=0
+          shopt -s nullglob
           for j in "$IN"/sonar-inputs/java-libs/*; do
-            b="$(basename "$j")"
-            printf '%s\n' "$b" | grep -qxE '[0-9]{3}-[A-Za-z0-9._+-]+\.jar' || { echo "::error::jar 이름이 모양 밖이다: $b"; exit 1; }
-            [ -f "$j" ] || { echo "::error::jar 가 파일이 아니다: $b"; exit 1; }
+            b="${j##*/}"
+            [[ "$b" =~ ^[0-9]{3}-[A-Za-z0-9._+-]+\.jar$ ]] || { echo "::error::jar 이름이 허용 모양(NNN-이름.jar) 밖이다 — 이름은 찍지 않는다"; exit 1; }
+            [ -f "$j" ] || { echo "::error::jar 자리가 파일이 아니다"; exit 1; }
             LIBS="${LIBS:+$LIBS,}$j"
             n=$((n + 1))
           done
           [ "$n" -gt 0 ] || { echo "::error::sonar.java.libraries 가 비었다"; exit 1; }
+          case "$LIBS" in *[!A-Za-z0-9._+,/-]*) echo "::error::jar 경로에 허용 밖 글자가 있다"; exit 1 ;; esac
           echo "Java libraries for Sonar: $n jars"
           echo "SONAR_JAVA_LIBS=$LIBS" >> "$GITHUB_ENV"
+          # <<< sonar-place
 
       # ⚠️ `sonar.qualitygate.wait`가 없으면 이 잡은 **품질 게이트가 빨개도 구조적으로 절대
       # 실패하지 않는다** — 스캐너는 리포트를 업로드하고 판정을 기다리지 않은 채 `EXECUTION SUCCESS`

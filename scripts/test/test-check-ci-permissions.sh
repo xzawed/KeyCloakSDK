@@ -577,7 +577,7 @@ r12 "로컬 액션을 잡는다" "이 \`./.github/actions/build\` 를 쓴다"
 fresh; base_scan; printf '      - uses: docker://alpine:3.20\n' >> "$SCAN"
 r12 "docker:// 액션을 잡는다" "이 \`docker://alpine:3.20\` 를 쓴다"
 fresh; base_scan; printf '      - uses: SonarSource/sonarqube-scan-action@%s # 픽스처\n        with:\n          skipSignatureVerification: true\n' "$Z" >> "$SCAN"
-r12 "스캐너 서명 검증 끄기를 잡는다" "서명 검증·출처를 바꾼다(\`skipSignatureVerification\`)"
+r12 "스캐너 서명 검증 끄기를 잡는다" "입력 \`skipSignatureVerification\`"
 fresh; base_scan '          path: in'
 r12 "산출물을 워크스페이스에 풀면 잡는다" "가 \`path: \${{ runner.temp }}/…\` 가 아니다"
 fresh; base_scan ''
@@ -601,6 +601,48 @@ fresh; base_scan "$DL_TEMP" '    container: node:22'
 r12 "잡 레벨 container 를 잡는다" "잡 레벨 \`container:\` 를 쓴다"
 fresh; printf '  call:\n    uses: ./.github/workflows/demo-reusable.yml\n    secrets: inherit # 픽스처\n' >> "$SCAN"
 r12 "재사용 워크플로 호출을 잡는다" "잡 \`call\`(PR 에서 시크릿을 쥔다) 이 잡 레벨 \`uses:\` 를 쓴다"
+
+# ── 규칙 12 둘째 회차 — 독립 레그(Grok, 계약 + 스텝만)가 짚은 자리 ──
+# 「규칙 12 를 통과하면서 시크릿 잡에서 코드가 도는 편집」 다섯 중 넷을 사례로 세운다. 다섯째(이름만 허용된 스캔
+# 액션이 움직이는 태그를 따른다)는 규칙 10 의 40자 SHA 핀이 이미 막는다. 오탐 지적 둘 중 하나(needs.<잡>.result)는
+# 재현돼 대조군으로 세웠고, 다른 하나(`shell: bash --noprofile …`)는 재현되지 않아 그 판정을 대조군으로 고정한다.
+fresh; base_scan; printf '      - uses: SonarSource/sonarqube-scan-action@%s # 픽스처\n        with:\n          projectBaseDir: ${{ runner.temp }}/in\n' "$Z" >> "$SCAN"
+r12 "분석 루트를 산출물로 돌리는 스캔 입력을 잡는다" "입력 \`projectBaseDir\`"
+fresh; base_scan; printf '      - uses: SonarSource/sonarqube-scan-action@%s # 픽스처\n        with:\n          args: -Dsonar.scanner.javaOpts=-javaagent:x.jar\n' "$Z" >> "$SCAN"
+r12 "스캐너 JVM 옵션 속성을 잡는다" "스캐너 속성 \`sonar.scanner.javaOpts\`"
+fresh; base_scan; printf '      - uses: SonarSource/sonarqube-scan-action@%s # 픽스처\n        with:\n          args: -Dsonar.qualitygate.wait=true -Dsonar.projectBaseDir=/tmp/in\n' "$Z" >> "$SCAN"
+r12 "args 의 분석 루트 속성을 잡는다" "스캐너 속성 \`sonar.projectBaseDir\`"
+fresh; base_scan; printf '      - uses: actions/checkout@%s # 픽스처\n        env:\n          JAVA_HOME: /tmp/in/jre\n' "$Z" >> "$SCAN"
+r12 "JAVA_HOME 를 로더 훅으로 잡는다" "로더 훅 \`JAVA_HOME\`"
+fresh; base_scan; printf '      - run: echo "SONAR_USER_HOME=$RUNNER_TEMP/in" >> "$GITHUB_ENV"\n' >> "$SCAN"
+r12 "SONAR_USER_HOME 을 로더 훅으로 잡는다" "로더 훅 \`SONAR_USER_HOME\`"
+fresh; base_scan; printf '      - run: python3.12 -c 1\n' >> "$SCAN"
+r12 "버전 붙은 인터프리터를 잡는다" "\`python3.12\` 를 부른다"
+fresh; base_scan; printf '      - run: perl x.pl\n' >> "$SCAN"
+r12 "perl 을 잡는다" "\`perl\` 를 부른다"
+fresh; base_scan; printf '      - run: chmod +x "$RUNNER_TEMP/in/x"\n' >> "$SCAN"
+r12 "chmod 를 잡는다" "\`chmod\` 를 부른다"
+fresh; base_scan; printf '      - run: |\n          set -e\n          "$IN/bin/x" --flag\n' >> "$SCAN"
+r12 "명령 자리의 변수 경로 실행을 잡는다" "파일을 실행한다"
+fresh; base_scan; printf '      - run: cp "$IN/x" /tmp/x && /tmp/x\n' >> "$SCAN"
+r12 "명령 자리의 절대경로 실행을 잡는다" "파일을 실행한다"
+fresh; base_scan; printf '      - run: for x in 1; do "$IN/x"; done\n' >> "$SCAN"
+r12 "do 뒤 명령 자리의 파일 실행을 잡는다" "파일을 실행한다"
+fresh; base_scan; printf '      - run: ls | xargs /tmp/x\n' >> "$SCAN"
+r12 "xargs 가 받는 명령 자리의 파일 실행을 잡는다" "파일을 실행한다"
+fresh; base_scan; printf '      - uses: actions/checkout@%s # 픽스처\n' "$Z" >> "$SCAN"
+r12 "시크릿 잡의 두 번째 체크아웃을 잡는다" "체크아웃이 2 번 있다"
+fresh; base_scan; sed -i 's|^          path: \${{ runner.temp }}/in$|          path: ${{ runner.temp }}/in\n      - uses: actions/checkout@0000000000000000000000000000000000000000 # 픽스처\n        with:\n          repository: other/repo|' "$SCAN"
+assert_contains "$(cat "$SCAN")" "repository: other/repo" "(변이가 착지했는지 먼저 본다)"
+r12 "다른 저장소 체크아웃을 잡는다" "\`repository:\` 로 다른 저장소를 받는다"
+fresh; base_scan; printf '      - run: echo "${{ toJSON(needs) }}"\n' >> "$SCAN"
+r12 "needs 통째를 싣는 식을 잡는다" "앞 잡의 출력은 그 잡의 코드가 정한 글자다"
+# 대조군 — `needs.<잡>.result` 는 상태라 앞 잡의 코드가 못 정한다(오탐이었다 — 재현).
+fresh; base_scan; printf '      - run: echo "build=${{ needs.build.result }}"\n' >> "$SCAN"
+assert_ok node "$GUARD" "$TMP"
+# 대조군 — `shell: bash --noprofile --norc …` 는 bash 다(오탐이라는 지적은 재현되지 않았다).
+fresh; base_scan; printf '      - shell: bash --noprofile --norc -eo pipefail {0}\n        run: echo ok\n' >> "$SCAN"
+assert_ok node "$GUARD" "$TMP"
 
 # ── 오탐 대조군 3: 저장소 루트 실물에 대해 통과해야 한다 ──
 # 픽스처에서만 도는 가드는 실제 트리와 어긋난 채로 초록불을 유지할 수 있다.

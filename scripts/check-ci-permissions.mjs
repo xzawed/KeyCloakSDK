@@ -861,35 +861,50 @@ const ruleDependabotPrSecretSkip = (wf, out) => {
 // 산출물·캐시·출력이고, 아래가 그것을 막는다.
 //   (a) 잡 레벨 `uses:`(재사용 워크플로)·`container:`·`services:` — 안에서 무엇이 도는지 이 가드가 못 본다(fail-closed).
 //   (b) 스텝 `uses:` 는 허용 목록뿐이다(체크아웃 · 산출물 받기 · 스캔). 로컬 액션(`./`)·`docker://` 는 저장소 코드다.
-//       스캔 액션의 서명 검증을 끄거나 다른 곳에서 스캐너를 받는 입력(`skipSignatureVerification` ·
-//       `scannerBinaries*`)도 막는다 — 검증 안 된 바이너리가 토큰과 돈다.
+//       체크아웃은 하나 · 이 저장소만이다. 스캔 액션의 서명 검증 · 스캐너 출처 · 분석 루트를 바꾸는 입력
+//       (`skipSignatureVerification` · `scannerBinaries*` · `projectBaseDir`)과 같은 일을 하는 스캐너 속성
+//       (`-Dsonar.projectBaseDir` · `-Dsonar.scanner.*` · `userHome` · `working.directory` · `java.jdkHome` · `host.url`)도
+//       막는다 — 검증 안 된 바이너리나 산출물의 설정이 토큰과 돈다(둘째 회차: Grok 적대 레그가 짚었다).
 //       ⚠️ 셋업 액션이 빠진 것은 의도다 — 툴체인이 있으면 다음 사람이 빌드 한 줄을 얹고, 캐시를 복원하는 액션은
 //       시크릿 없는 잡이 같은 PR 범위에 심은 캐시를 읽는다. 스캔 액션(핀된 SHA)은 Actions 캐시 API 를 쓰지 않는다
 //       (dist 에 restoreCache·saveCache·ACTIONS_CACHE_URL 0 건 — 러너 로컬 tool-cache 만, 2026-10-23 실측).
-//   (c) `run:` 에 설치·빌드·인터프리터 실행이 없다. `shell:`(잡·워크플로 `defaults:` 포함)은 bash·sh 뿐이고, 로더 훅
-//       환경변수(`BASH_ENV`·`NODE_OPTIONS`·`JAVA_TOOL_OPTIONS`·`LD_PRELOAD` …)와 `$GITHUB_PATH` 쓰기가 없다 — 훅
-//       하나면 저장소·산출물의 파일이 셸·스캔 액션(node)·스캐너(JVM) 안에서 돈다. ⚠️ 손 목록이라 수렴하지 않는다 —
-//       구조적 막이는 (b)이고, 이것은 「한 줄만 얹은」 회귀를 잡는 그물이다. `run:` 글의 셸 주석은 걷지 않는다
-//       (엄격한 쪽 — `"#"` 안팎을 셸처럼 가리지 못하면 걷는 쪽이 뒤를 숨긴다).
-//   (d) 잡 어디에도 `${{ needs.… }}` 가 없다 — 앞 잡의 출력은 그 잡의 코드가 정한 글자다(`run:` 이면 스크립트 주입,
-//       스캔 `args:` 면 스캐너 속성 주입).
+//   (c) `run:` 에 설치·빌드·인터프리터 실행(버전 꼬리 포함 — `python3.12`)과 명령 자리의 파일 실행(`./x` · `. x` ·
+//       `"$VAR/x"` · `/x`)이 없다. `shell:`(잡·워크플로 `defaults:` 포함)은 bash·sh 뿐이고, 로더 훅 환경변수
+//       (`BASH_ENV`·`NODE_OPTIONS`·`JAVA_TOOL_OPTIONS`·`JAVA_HOME`·`SONAR_USER_HOME`·`LD_PRELOAD` …)와 `$GITHUB_PATH`
+//       쓰기가 없다 — 훅 하나면 저장소·산출물의 파일이 셸·스캔 액션(node)·스캐너(JVM) 안에서 돈다. ⚠️ 손 목록이라
+//       수렴하지 않는다 — 구조적 막이는 (b)이고, 이것은 「한 줄만 얹은」 회귀를 잡는 그물이다. `run:` 글의 셸 주석은
+//       걷지 않는다(엄격한 쪽 — `"#"` 안팎을 셸처럼 가리지 못하면 걷는 쪽이 뒤를 숨긴다).
+//       ⚠️ 이 규칙은 **모양**만 본다. 산출물의 **값**(이름에 든 개행 → `$GITHUB_ENV` 주입 같은 것)은
+//       `scripts/test/test-sonar-scan-inputs.sh` 가 sonarcloud.yml 의 배치 블록을 떼어내 실제로 돌려 본다.
+//   (d) 잡 어디에도 앞 잡의 **출력**(`${{ needs.<잡>.outputs… }}` · `toJSON(needs)`)이 없다 — 그 잡의 코드가 정한
+//       글자다(`run:` 이면 스크립트 주입, 스캔 `args:` 면 스캐너 속성 주입). `needs.<잡>.result` 는 상태라 허용한다.
 //   (e) `actions/download-artifact` 의 `path:` 가 `${{ runner.temp }}` 아래다 — 워크스페이스에 풀리면 산출물이 설정
 //       파일(sonar-project.properties · .git/config)을 덮는다. 받은 뒤 정해진 자리만 옮기는 것은 워크플로 몫이다.
 const PR_SECRET_JOB_ACTIONS = new Set(['actions/checkout', 'actions/download-artifact', 'SonarSource/sonarqube-scan-action'])
+// 버전 꼬리(`python3.12` · `php8.3` · `pip3`)는 같은 도구다 — 꼬리 없는 이름만 적으면 그 표기가 빠져나간다(Grok 레그).
 const RUN_TOOLS =
-  'npm|npx|yarn|pnpm|bun|node|deno|pip|pip3|pipx|python|python3|pytest|poetry|uv|tox|mvn|mvnw|gradle|gradlew|java|javac|' +
-  'go|cargo|rustc|rustup|composer|php|phpunit|bundle|bundler|gem|ruby|rake|rspec|dotnet|msbuild|make|cmake|sh|bash|zsh|source'
+  'npm|npx|yarn|pnpm|bun|node(?:js)?|deno|pip[0-9.]*|pipx|python[0-9.]*|pytest|poetry|uv|tox|mvn|mvnw|gradle|gradlew|' +
+  'java|javac|jshell|groovy|kotlinc?|scala|go|cargo|rustc|rustup|composer|php[0-9.]*|phpunit|bundle|bundler|gem|' +
+  'ruby[0-9.]*|rake|rspec|dotnet|msbuild|make|cmake|perl[0-9.]*|lua|tclsh|sh|bash|zsh|source|chmod|curl|wget'
 // 앞: 줄머리·공백·셸 구분자·따옴표·`/`(절대경로 실행). 뒤: 끝·공백·구분자·따옴표 — `java/…`·`go/cover.out` 같은
 // 경로 조각은 뒤에 `/` 가 와서 걸리지 않는다. 대소문자는 가린다(`Java libraries` 같은 산문이 걸리지 않게).
 const RUN_TOOL = new RegExp(String.raw`(?:^|[\s;&|()\x60"'/])(${RUN_TOOLS})(?=$|[\s;&|()\x60"'])`, 'm')
-// 명령 자리의 상대경로 실행(`./gradlew` · `../x`)과 점 소싱(`. ./env`).
-const RUN_LOCAL_EXEC = /(?:^|[;&|(])\s*\.{1,2}\/\S|(?:^|[;&|(])\s*\.\s+\S/m
+// 명령 자리 — 줄머리 · 셸 구분자 · `$(` · 백틱 · 명령을 앞에 받는 낱말(then · do · exec · xargs …) 뒤.
+const CMD_POS = String.raw`(?:^|[;&|(\x60]|\$\(|\b(?:then|do|else|exec|command|xargs|env|sudo|nohup|time)\s)\s*`
+// 명령 자리의 **파일 실행** — 상대경로(`./gradlew` · `../x`) · 점 소싱(`. ./env`) · 변수 경로(`"$IN/x"`) · 절대경로
+// (`/tmp/x`) · 홈(`~/x`). 산출물의 파일을 실행하는 통로라 도구 이름 목록과 따로 막는다(Grok 레그 — `/tmp/x` 가 샜다).
+const RUN_FILE_EXEC = new RegExp(CMD_POS + String.raw`(?:\.{1,2}\/|\.\s+\S|"?\$[{A-Za-z_]|\/|~\/)`, 'm')
 const LOADER_HOOKS =
-  'BASH_ENV|ENV|PATH|NODE_OPTIONS|NODE_PATH|JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS|SONAR_SCANNER_OPTS|' +
-  'SONAR_SCANNER_JAVA_OPTS|LD_PRELOAD|LD_LIBRARY_PATH|PYTHONPATH|PYTHONSTARTUP|RUBYOPT|PERL5OPT'
+  'BASH_ENV|ENV|PATH|NODE_OPTIONS|NODE_PATH|JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS|JAVA_HOME|SONAR_SCANNER_OPTS|' +
+  'SONAR_SCANNER_JAVA_OPTS|SONAR_SCANNER_JSON_PARAMS|SONARQUBE_SCANNER_PARAMS|SONAR_USER_HOME|LD_PRELOAD|LD_LIBRARY_PATH|' +
+  'PYTHONPATH|PYTHONSTARTUP|RUBYOPT|PERL5OPT'
 // YAML `env:` 의 키(`NODE_OPTIONS: …`)와 `$GITHUB_ENV` 에 쓰는 글(`NODE_OPTIONS=…`) 둘 다 본다.
 const LOADER_HOOK = new RegExp(String.raw`(?:^\s*|[\s"'])(${LOADER_HOOKS})\s*[:=]`)
-const SCAN_UNSAFE_INPUT = /^\s*(skipSignatureVerification|scannerBinariesUrl|scannerBinariesAuthHeader)\s*:/
+// 스캔 액션의 입력 중 서명 검증 · 스캐너 출처 · **분석 루트**를 바꾸는 것. 분석 루트를 산출물로 돌리면 산출물의
+// sonar-project.properties 가 `sonar.scanner.javaOpts=-javaagent:…` 를 실을 수 있다(Grok 레그).
+const SCAN_UNSAFE_INPUT = /^\s*(skipSignatureVerification|scannerBinariesUrl|scannerBinariesAuthHeader|projectBaseDir)\s*:/
+// 같은 것을 속성으로 — 분석 루트 · 스캐너 JVM(JRE 경로·옵션·프로비저닝) · 캐시 · 작업 디렉터리 · JDK 홈 · 서버.
+const SCAN_UNSAFE_PROP = /-Dsonar\.(projectBaseDir|scanner\.[A-Za-z0-9.]+|userHome|working\.directory|java\.jdkHome|host\.url)\b/
 const runBlocksOf = (body) => {
   const blocks = []
   for (let i = 0; i < body.length; i++) {
@@ -954,10 +969,15 @@ const rulePrSecretJobRunsNoCode = (wf, out) => {
       if (['uses', 'container', 'services'].includes(k.key))
         out.push(`${wf.file}:${k.n} ${who} 이 잡 레벨 \`${k.key}:\` 를 쓴다 — 그 안에서 무엇이 도는지 이 가드가 볼 수 없다(fail-closed). 빌드·설치는 시크릿 없는 잡으로`)
     out.push(...hookFindings(body, lineOf, who))
+    let checkouts = 0
     for (const [i, raw] of body.entries()) {
       const plain = splitComment(raw).body
-      if (SCAN_UNSAFE_INPUT.test(plain))
-        out.push(`${lineOf(i)} ${who} 이 스캐너 서명 검증·출처를 바꾼다(\`${SCAN_UNSAFE_INPUT.exec(plain)[1]}\`) — 검증 안 된 바이너리가 토큰과 돈다`)
+      const ui = SCAN_UNSAFE_INPUT.exec(plain)
+      if (ui)
+        out.push(`${lineOf(i)} ${who} 이 스캔 액션의 입력 \`${ui[1]}\` 를 쓴다 — 서명 검증·스캐너 출처·분석 루트를 바꾸는 입력은 시크릿 잡에서 금지(검증 안 된 바이너리나 산출물의 설정이 토큰과 돈다)`)
+      const up = SCAN_UNSAFE_PROP.exec(plain)
+      if (up)
+        out.push(`${lineOf(i)} ${who} 이 스캐너 속성 \`sonar.${up[1]}\` 를 바꾼다 — 분석 루트·스캐너 JVM·캐시·서버를 바꾸는 속성은 시크릿 잡에서 금지`)
       const um = USES_REF.exec(plain)
       if (!um || jobLevelUses.has(job.node.n + i)) continue
       const ref = um[1]
@@ -966,6 +986,14 @@ const rulePrSecretJobRunsNoCode = (wf, out) => {
         out.push(
           `${lineOf(i)} ${who} 이 \`${name}\` 를 쓴다 — 시크릿 잡의 액션은 \`${[...PR_SECRET_JOB_ACTIONS].join('`·`')}\` 뿐이다(셋업·캐시·로컬 액션은 패키지 코드를 이 잡에 들인다)`,
         )
+      // 체크아웃은 하나 · 이 저장소만 — 둘째 체크아웃이나 다른 저장소는 작업 트리(설정 · 소스)를 덮는다(Grok 레그).
+      if (name === 'actions/checkout') {
+        checkouts++
+        if (checkouts === 2)
+          out.push(`${lineOf(i)} ${who} 의 체크아웃이 2 번 있다 — 둘째 체크아웃은 검토된 트리(sonar-project.properties · 소스)를 덮는다`)
+        if (stepTail(body, i).some((l) => /^\s*repository:/.test(splitComment(l).body)))
+          out.push(`${lineOf(i)} ${who} 의 체크아웃이 \`repository:\` 로 다른 저장소를 받는다 — 검토되지 않은 트리다`)
+      }
       if (name === 'actions/download-artifact') {
         const path = stepTail(body, i)
           .map((l) => /^\s*path:\s*(.*)$/.exec(splitComment(l).body))
@@ -976,15 +1004,17 @@ const rulePrSecretJobRunsNoCode = (wf, out) => {
           )
       }
     }
+    // `needs.<잡>.result` 는 상태라 앞 잡의 코드가 못 정한다 — 그것만 걷어 내고 남은 `needs` 를 본다. `toJSON(needs)`
+    // 처럼 점·괄호 없이 통째로 싣는 식도 출력을 싣는다(첫 판의 `needs[.[]` 가 놓쳤다 — Grok 레그 뒤 재현).
     for (const span of body.join('\n').matchAll(EXPR_SPAN))
-      if (/\bneeds\s*[.[]/.test(span[1]))
+      if (/\bneeds\b/.test(span[1].replace(/\bneeds\s*\.\s*[A-Za-z_][\w-]*\s*\.\s*result\b/g, '')))
         out.push(`${wf.file}:${job.node.n} ${who} 에 \`\${{${span[1]}}}\` 가 있다 — 앞 잡의 출력은 그 잡의 코드가 정한 글자다(run 이면 스크립트 주입, 스캔 args 면 속성 주입)`)
     for (const { at: i, text } of runBlocksOf(body)) {
       const tool = RUN_TOOL.exec(text)
       if (tool)
         out.push(`${lineOf(i)} ${who} 의 \`run:\` 이 \`${tool[1]}\` 를 부른다 — 설치·빌드·인터프리터는 시크릿 없는 잡에서 돌리고 산출물로 넘길 것`)
-      if (RUN_LOCAL_EXEC.test(text))
-        out.push(`${lineOf(i)} ${who} 의 \`run:\` 이 파일을 실행한다(\`./…\`·\`. …\`) — 시크릿 없는 잡으로`)
+      if (RUN_FILE_EXEC.test(text))
+        out.push(`${lineOf(i)} ${who} 의 \`run:\` 이 파일을 실행한다(명령 자리의 \`./…\`·\`. …\`·\`$VAR/…\`·\`/…\`) — 시크릿 없는 잡으로`)
     }
   }
 }
