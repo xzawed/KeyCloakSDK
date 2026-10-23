@@ -101,3 +101,32 @@ jobs:
             exit 1
           fi
           echo "OK: Maven 좌표 ${n_q}개에 알려진 OSV 취약점 없음"
+
+  # ⚠️ 릴리스 번들을 **태그 전에** 만든다. Central Portal 은 번들 배치를 업로드 **뒤에야** 검증하고,
+  # 이 잡 말고는 아무것도 번들을 만들지 않는다 — 러너 Maven 이 3.10.0 이 되자(ubuntu-24.04 이미지
+  # 20261004) central-publishing 0.11.x 가 로컬 저장소 장부를 번들에 넣었고, v1.2.0·v1.2.1 이 태그를
+  # 자른 뒤에 「Bundle has content that does NOT have a .pom file」로 거부됐다(번호 둘, 게시 0).
+  # ⚠️ Maven 은 **러너가 주는 판을 그대로** 쓴다 — release.yml 이 쓰는 것이 그것이고, 주간 스케줄이
+  # 다음 러너 변화를 태그 전에 잡는다. `skipUpload`(0.12.0+)라 자격증명·서명 없이 돈다: 이 잡에는
+  # `central` 서버가 없으니 업로드를 시도하면 그 자리에서 실패한다(아무것도 Central 로 가지 않는다).
+  release-bundle:
+    name: Release bundle layout (Central 규칙, 태그 전)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
+      - name: Maven 판(러너 기본 — release.yml 과 같다)
+        run: mvn -v
+      - name: 릴리스 판으로 덮어쓰기(SNAPSHOT 은 번들을 만들지 않는다)
+        run: >
+          mvn -B -f java/pom.xml org.codehaus.mojo:versions-maven-plugin:2.21.0:set
+          -DnewVersion=0.0.0-bundle-check -DgenerateBackupPoms=false
+      - name: 번들 생성(-Prelease deploy · skipUpload)
+        run: >
+          mvn -B -f java/pom.xml -Prelease deploy -DskipUpload=true
+          -DskipTests -DskipITs=true -Dgpg.skip=true -Djapicmp.skip=true -Djacoco.skip=true
+      - name: 번들 배치 검사(scripts/check-central-bundle.mjs)
+        run: |
+          set -euo pipefail
+          unzip -Z1 java/target/central-publishing/central-bundle.zip | node scripts/check-central-bundle.mjs - --root=.
