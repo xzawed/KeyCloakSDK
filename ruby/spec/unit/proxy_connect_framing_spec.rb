@@ -117,6 +117,13 @@ RSpec.describe KeycloakSdk::Http do # proxy CONNECT reply framing bound
       expect { spec.drain(io, 2) }.to raise_error(KeycloakSdk::TransportError, spec.line_msg)
     end
 
+    # 빈 줄은 "\r\n"·"\n" 뿐이다 — net-http 0.10 은 헤더 뒤 "\t\n" 을 빈 접힘 줄로 넘기고 블록을 계속 읽는다. 그 줄에서
+    # 꺼지면 줄 하나로 상한을 끈다.
+    it "does not take another two-byte line (HTAB LF) as the end of the block" do
+      io = spec.armed("#{spec::STATUS}X: y\r\n\t\n", "a" * 8_193)
+      expect { spec.drain(io, 2) }.to raise_error(KeycloakSdk::TransportError, spec.line_msg)
+    end
+
     it "returns bytes after the blank line unchanged and stops counting for the rest of that socket" do
       head = "#{spec::STATUS}\r\n#{'x' * 16_000}"
       io = spec.armed(head, "y" * 70_000, "z" * 9_000)
