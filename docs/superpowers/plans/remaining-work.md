@@ -94,7 +94,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `271`(2026-10-23 기준 열림 143 · 닫힘 128)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `272`(2026-10-23 기준 열림 143 · 닫힘 129)인데 심각도·작업량 행의 합은 **150**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -522,7 +522,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 120건 (열림 75)
+## C. 품질 부채 — 121건 (열림 75)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -651,7 +651,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `ruby-framing-spec-server-written-flaky` **[M/S · 닫힘 2026-10-22 #797]** 원인은 리눅스가 받은 소켓의 송신 버퍼를 자동으로 키운 것 — `FramingServer` 가 SO_SNDBUF 를 64 KiB 로 고정한다(Go 의 같은 오라클과 같다) · `ruby/spec/support/framing_server.rb`
 <!-- ruby-framing-spec-server-written-flaky: 2,400 회 측정(고정 전 최대 2,654,263 · 고정 뒤 229,570 · 클라이언트가 읽은 바이트 ≤ 73,911)은 #797 커밋이 소유한다. -->
 
-### 가드·CI — 18
+### 가드·CI — 19
 
 - [x] `selftest-exit-code-contract-two-leaks` **[H/M · 닫힘 2026-09-23 #540]** 자가테스트의 「실패하면 비영 종료」 계약이 한 곳에서 샜다 — 탐지기는 #405, 계수기는 #540(파일 눈금 오라클) · `scripts/test/test-selftest-hygiene.sh:20`
 - [x] `sweeps-without-vacuity-floor` **[H/M · 닫힘 2026-09-08 #443]** 스윕/스캔이 0건을 훑고 통과했다 — 이 저장소의 하한 관용이 적용되지 않았다 · `.github/workflows/repo-hygiene.yml:234`
@@ -679,7 +679,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `rust-token-in-argv` **[L/S]** rust publish가 env로도 넘긴 토큰을 --token으로 argv에 한 번 더 싣는다 · `.github/workflows/rust-release.yml:127`
 - [ ] `w1-shared-script-drift-weekly-only` **[L/S · 신규 2026-10-01]** 아홉 적대 행렬의 W1 은 `scripts/test/test-security-defaults.sh` 의 앵커를 언어별 손 표와 대조하는데, 그 스크립트만 바꾼 PR 은 언어 CI 를 만들지 않고(`paths:` 가 `<lang>/**` 뿐) 야간 harness 도 #674 이후 W1 을 건너뛴다 — 앵커 드리프트는 그 언어의 다음 PR 이나 월요일 정기 실행에서야 드러난다(#674 의 Grok 레그가 지목). 후보: 아홉 언어 CI `paths:` 에 그 스크립트를 더하기 · harness 스위트에 `scripts/` 읽기전용 마운트(dotnet·ruby 실측 초록). php 만 건너뜀 메시지가 없다 · `php/tests/Unit/HostilePathMatrixTest.php:1789`
 - [ ] `push-trigger-branches-asymmetry` **[L/S]** 여섯 워크플로의 push 트리거에 branches가 없어 PR 브랜치에서 레인이 두 번 돈다 · `.github/workflows/dotnet-ci.yml:3`
-- [ ] `sonarcloud-dependabot-skip-keys-on-actor` **[M/S · 신규 2026-10-22]** `sonarcloud.yml` 의 Dependabot 건너뛰기가 `github.actor` 기준이라, 사람이 Dependabot 브랜치에 커밋을 얹거나 갱신하면 미검토 범프의 설치·빌드와 `SONAR_TOKEN` 스캔이 한 잡에서 돈다 — 그 주석이 막으려던 것. 2026-10-22 셋을 스캔 전에 취소했다(#785·#777·#787). 후보: PR 작성자(`github.event.pull_request.user.login`)도 본다 · `.github/workflows/sonarcloud.yml:21`
+- [x] `sonarcloud-dependabot-skip-keys-on-actor` **[M/S · 신규 2026-10-22 · 닫힘 2026-10-23 #801]** 건너뛰기가 PR 작성자도 본다 — actor 로만 거를 때 사람이 커밋을 얹은 Dependabot PR 실행 일곱(2026-10-08~21)이 미검토 범프와 `SONAR_TOKEN` 을 한 잡에서 돌렸다. 가드는 `check-ci-permissions.mjs` 규칙 11
+- [ ] `sonarcloud-human-pr-carries-unreviewed-bump` **[M/M · 신규 2026-10-23 · 판정]** 사람이 연 PR 에 Dependabot 의 bump 커밋을 옮겨 담으면(JVM 짝 합치기 등) 작성자가 사람이라 규칙 11 밖이다 — 미검토 패키지의 설치·빌드가 `SONAR_TOKEN` 과 한 잡에서 돈다. 후보 둘: 빌드·커버리지 잡(시크릿 없음)과 스캔 잡(산출물만 받고 패키지 코드는 돌리지 않음)으로 나눈다 · PR 스캔을 접는다(push 전용 — PR 품질 게이트를 잃으므로 사람 판정) · `.github/workflows/sonarcloud.yml`
 
 ### 문서·규칙 — 15
 
