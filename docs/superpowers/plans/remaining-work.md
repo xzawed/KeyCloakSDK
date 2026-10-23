@@ -579,7 +579,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `ruby-boundary-non-faraday-exception-leak` **[H/S · 닫힘 2026-10-22 #798 · 게시본 1.3.0 포함]** introspect · logout · admin(REST 와 자기 토큰) 경계도 세 그랜트처럼 SDK 밖 예외를 감싼다(`rescue Error; raise` 뒤 `rescue StandardError` → `TransportError` + `RedactedCause`) — net-http 0.10.0 의 응답 헤더 검증 `ArgumentError` 가 raw 로, 헤더 이름을 인용한 채 샜다 · `ruby/lib/keycloak_sdk/auth_client.rb`
 <!-- ruby-boundary-non-faraday-exception-leak: 자리(네 경계 + JWKS)·RED/GREEN·변이 여섯·Grok 레그(다섯째 경계)·private_constant 판정(api_surface 차이 0 → 1.3.1 patch)은 #798 커밋·PR 본문이 소유한다. -->
 - [x] `ruby-admin-error-status-lost-on-bad-json` **[M/S · 신규 2026-10-22 · 닫힘 2026-10-23 #810]** admin 의 오류 상태가 JSON 이라면서 JSON 아닌 본문에서도 상태 클래스를 지킨다 — json 미들웨어의 해석 실패를 응답 상태로 되짚는다(.NET 과 같다)
-- [x] `ruby-framing-proxy-connect-unbounded` **[M/M · 신규 2026-10-22 · 닫힘 2026-10-23 #PR]** CONNECT 응답을 나르는 소켓(평문 프록시의 TCP · TLS 프록시면 첫 `ssl_socket_connect`)에도 줄 8,192 · 블록 65,536 — net-http `>= 0.9` 하한 · `ruby/lib/keycloak_sdk/http.rb`
+- [x] `ruby-framing-proxy-connect-unbounded` **[M/M · 신규 2026-10-22 · 닫힘 2026-10-23 #813]** CONNECT 응답을 나르는 소켓(평문 프록시의 TCP · TLS 프록시면 첫 `ssl_socket_connect`)에도 줄 8,192 · 블록 65,536 — net-http `>= 0.9` 하한 · `ruby/lib/keycloak_sdk/http.rb`
 - [x] `jwks-stale-cache-outage-unbounded` **[M/S · 닫힘 2026-10-09 #743 #744]** node·.NET 에 실패 백오프. 남은 판정은 `jwks-cache-lifetime-divergent`
 <!-- jwks-stale-cache-outage-unbounded 닫힘 상세: 아홉을 재 보니 검증마다 재조회는 node·.NET 둘이었다(둘 다 실패 백오프로) — JVM 은 rate limit 2 건, 다섯은 TTL 이 없다. 낡은 키 수락·TTL 은 jwks-cache-lifetime-divergent. -->
 - [ ] `jwks-cache-lifetime-divergent` **[M/S · 신규 2026-10-09 · 판정 · 아홉]** JWKS 캐시 수명과 「낡은 캐시 + IdP 장애」의 수락이 언어마다 다르다 — 정상 토큰을 장애 중에 node·JVM 은 거부, .NET 은 수락, 다섯은 영원히 신선 · `.claude/rules/security.md`
