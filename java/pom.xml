@@ -63,9 +63,9 @@
     <keycloak.adminclient.version>26.0.12</keycloak.adminclient.version>
     <nimbus.oidc.version>11.38.2</nimbus.oidc.version>
     <nimbus.jose.version>10.10</nimbus.jose.version>
-    <!-- auth 운송(BoundedTransport) — 아래 dependencyManagement 와 keycloak-sdk-auth 가 함께 쓴다. ⚠️ 게시 POM 의 compile·runtime
-         의존은 버전을 직접 적는다: 부모 dependencyManagement 에만 두면 Central Portal 검증이 「의존성 버전」으로 번들을 거부한다
-         (v1.2.0 — 배포 둘이 업로드 5 초 뒤 FAILED, 그래서 1.2.0 은 게시되지 않았다). -->
+    <!-- auth 운송(BoundedTransport) — 아래 dependencyManagement 와 keycloak-sdk-auth 가 함께 쓴다(nimbus.*.version 과 같은
+         관용). ⚠️ v1.2.0·v1.2.1 의 Portal 거부는 이 표기와 무관했다 — 원인은 러너 Maven 3.10.0 × central-publishing 0.11.x
+         (release 프로필의 플러그인 주석). -->
     <httpclient.version>4.5.14</httpclient.version>
     <commons-codec.version>1.15</commons-codec.version>
     <junit.version>6.1.3</junit.version>

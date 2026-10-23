@@ -19,8 +19,8 @@
       </exclusions>
     </dependency>
     <dependency><groupId>com.nimbusds</groupId><artifactId>nimbus-jose-jwt</artifactId><version>${nimbus.jose.version}</version></dependency>
-    <!-- 운송(BoundedTransport) — 버전은 부모의 속성을 여기서도 직접 적는다(부모 dependencyManagement 에만 두면 Central Portal 이
-         「의존성 버전」으로 번들을 거부한다 — v1.2.0). commons-codec 은 쓰지 않지만 직접 선언한다: 부모의 핀은
+    <!-- 운송(BoundedTransport) — 버전은 부모의 속성으로 적는다(nimbus.*.version 과 같은 관용). commons-codec 은 쓰지 않지만
+         직접 선언한다: 부모의 핀은
          이 리액터에만 걸리고, 소비자 그래프에서는 httpclient 가 선언하는 1.11 이 admin(RESTEasy) 쪽 1.15 보다 얕아
          nearest-wins 로 이긴다(실측 — 이 선언 없이 keycloak-sdk 소비자 dependency:tree 가 1.11, 있으면 1.15). -->
     <dependency><groupId>org.apache.httpcomponents</groupId><artifactId>httpclient</artifactId><version>${httpclient.version}</version></dependency>

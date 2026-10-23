@@ -353,7 +353,7 @@ dev(테스트 csproj — **앵커 있음**):
 
 | 언어 | 배포명 | 태그 접두 | 배포 |
 |---|---|---|---|
-| Java | `io.github.xzawed:keycloak-sdk` (Maven Central) | `v*` | 게시됨(`1.2.1`) |
+| Java | `io.github.xzawed:keycloak-sdk` (Maven Central) | `v*` | 게시됨(`1.2.2`) |
 | Python | `keycloak-sdk` (PyPI) | `py-v*` | 게시됨(`1.0.5`) |
 | Node | `@xzawed/keycloak-sdk` (npm) | `node-v*` | 게시됨(`1.0.5`) |
 | Go | `github.com/xzawed/KeyCloakSDK/go` (proxy.golang.org) | `go/v*` | 게시됨(`1.2.3`) |
