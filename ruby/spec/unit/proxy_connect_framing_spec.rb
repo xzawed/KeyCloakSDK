@@ -43,7 +43,7 @@ module ProxyConnectFramingSpec
     io
   end
 
-  # 각본을 끝까지 읽는다(BufferedIO 의 호출 모양 그대로).
+  # 각본을 `reads` 번 읽는다(BufferedIO 의 호출 모양 그대로).
   def drain(io, reads) = Array.new(reads) { io.read_nonblock(16_384, nil, exception: false) }
 
   def line_msg = KeycloakSdk::Http.const_get(:FRAMING_LINE_MSG)
@@ -255,8 +255,8 @@ RSpec.describe KeycloakSdk::Http do # proxy CONNECT reply framing bound
       expect([error.class, error&.message]).to eq([KeycloakSdk::TransportError, spec.total_msg])
     end
 
-    # 대조 — 정상 CONNECT 응답은 지나가고 대상과의 TLS 악수에서 실패한다(프록시가 닫는다). 빈 줄 뒤 같은 쓰기의
-    # 바이트도 세지 않는다(그 바이트는 net-http 가 버린다).
+    # 대조 — 정상 CONNECT 응답은 지나가고 대상과의 TLS 악수에서 실패한다(프록시가 닫는다). 빈 줄 바로 뒤에 오는
+    # 바이트도(같은 읽기에 실리면) 세지 않는다 — 그 바이트는 net-http 가 버린다.
     it "lets a well-formed CONNECT reply through to the TLS handshake (a non-framing TransportError)" do
       connect_reply("#{spec::STATUS}\r\n", "j" * 20_000)
       error = call_through(proxy.url)
