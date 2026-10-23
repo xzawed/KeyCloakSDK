@@ -10,10 +10,14 @@
 // 입력: 번들의 항목 목록 한 줄에 하나(`unzip -Z1 central-bundle.zip`) — 파일 인자 또는 `-`(stdin).
 // 디렉터리 항목(`/` 로 끝남)은 무시하고, 윈도에서 만든 zip 의 `\` 는 `/` 로 읽는다.
 //
-// 규칙 — 파일마다 `<그룹 경로>/<artifactId>/<version>/<artifactId>-<version>…` 에 있어야 하고(구성요소
-// 디렉터리), 구성요소 디렉터리마다 `<artifactId>-<version>.pom` 이 있어야 한다. 로컬 저장소 장부는
-// 어디에 있든 위반이다. 기대 구성요소 집합은 `--root` 의 `java/pom.xml` 이 소유한다(모듈 pom 의
-// artifactId + 부모 − `<excludeArtifacts>`) — 손으로 적으면 모듈이 하나 늘 때 조용히 조준 밖이 된다.
+// 규칙 — 파일마다 `<그룹 경로>/<artifactId>/<version>/<artifactId>-<version>` 다음에 `.`·`-` 가 오는 이름이어야
+// 하고(구성요소 디렉터리), 구성요소마다 `<artifactId>-<version>.pom` 이, 서명·체크섬이 아닌 파일마다 `.md5`·`.sha1`
+// 이 있어야 한다. 본 jar 가 있는 구성요소는 `-sources`·`-javadoc` jar 도(반대로 그 둘만 있고 본 jar 가 없어도 위반),
+// 판은 하나이고 SNAPSHOT 이 아니어야 한다. 로컬 저장소 장부는 어디에 있든 위반이다. 기대 구성요소 집합은
+// `--root` 의 `java/pom.xml` 이 소유한다(모듈 pom 의 artifactId + 부모 − `<excludeArtifacts>`) — 손으로 적으면
+// 모듈이 하나 늘 때 조용히 조준 밖이 된다.
+// ⚠️ 범위 밖: **서명**(`.asc` — release-bundle 은 `-Dgpg.skip` 이라 번들에 없다)과 **파일 내용**(빈 `.pom` 은
+// 목록에 크기가 없어 못 본다). 그 둘은 Portal 이 마지막으로 잰다.
 //
 // 사용: node scripts/check-central-bundle.mjs <목록|-> [--root=<저장소>] [--group=io/github/xzawed]
 import { readFileSync } from 'node:fs'
@@ -61,7 +65,10 @@ const expected = (() => {
 })()
 
 const raw = readFileSync(input === '-' ? 0 : input, 'utf8')
-const files = raw.split(/\r?\n/).map((l) => l.trim().replace(/\\/g, '/')).filter((l) => l && !l.endsWith('/'))
+const files = raw
+  .split(/\r?\n/)
+  .map((l) => l.trim().replace(/\\/g, '/').replace(/^(\.\/)+/, ''))
+  .filter((l) => l && !l.endsWith('/'))
 
 // 로컬 저장소가 자기 내용에 대해 남기는 장부 — Central 은 이것이 든 번들을 거부한다.
 const BOOKKEEPING = /(^|\/)(maven-metadata-local\.xml|_remote\.repositories|resolver-status\.properties|[^/]+\.lastUpdated)(\.(md5|sha1|sha256|sha512|asc))?$|(^|\/)\.locks\//
@@ -85,19 +92,40 @@ for (const f of files) {
     continue
   }
   const [artifactId, version, name] = rest
-  if (!name.startsWith(`${artifactId}-${version}`)) {
+  const base = `${artifactId}-${version}`
+  // ⚠️ 접두만 보면 `…-1.2.2X.jar`(다른 판의 이름)가 통과한다 — 접두 다음 글자는 확장자(`.`)나 분류자(`-`)다.
+  if (!name.startsWith(base) || !/^[.-]/.test(name.slice(base.length))) {
     errors.push(`이름이 좌표와 맞지 않는 파일: ${f}`)
     continue
   }
   const key = `${artifactId}/${version}`
-  const c = components.get(key) ?? { files: 0, hasPom: false }
-  c.files += 1
-  if (name === `${artifactId}-${version}.pom`) c.hasPom = true
+  const c = components.get(key) ?? { files: new Set() }
+  c.files.add(name.slice(base.length)) // `.pom` · `.jar` · `-sources.jar.sha1` …
   components.set(key, c)
 }
+const CHECKSUM = /\.(md5|sha1|sha256|sha512)$/
 for (const [key, c] of components) {
-  if (!c.hasPom) errors.push(`.pom 이 없는 구성요소: ${GROUP}/${key} (파일 ${c.files} 개)`)
+  const [artifactId, version] = key.split('/')
+  if (!c.files.has('.pom')) errors.push(`.pom 이 없는 구성요소: ${GROUP}/${key} (파일 ${c.files.size} 개)`)
+  // Central 요구: 서명·체크섬이 아닌 파일마다 .md5 · .sha1
+  for (const s of c.files) {
+    if (CHECKSUM.test(s) || s.endsWith('.asc')) continue
+    for (const sum of ['md5', 'sha1']) {
+      if (!c.files.has(`${s}.${sum}`)) errors.push(`체크섬이 없다: ${GROUP}/${key}/${artifactId}-${version}${s}.${sum}`)
+    }
+  }
+  // Central 요구(jar 패키징): 본 jar · -sources · -javadoc 은 함께 있다
+  const jars = ['.jar', '-sources.jar', '-javadoc.jar']
+  const present = jars.filter((j) => c.files.has(j))
+  if (present.length > 0 && present.length < jars.length) {
+    const missing = jars.filter((j) => !c.files.has(j)).map((j) => `${artifactId}-${version}${j}`)
+    errors.push(`jar 구성요소에 없는 것: ${GROUP}/${key}/{${missing.join(', ')}}`)
+  }
+  if (/-SNAPSHOT$/.test(version)) errors.push(`SNAPSHOT 판은 Central 릴리스 번들에 들어갈 수 없다: ${GROUP}/${key}`)
 }
+// 리액터는 한 판이다 — 판이 갈리면(구성요소마다 다르거나 한 아티팩트에 둘) 번들이 섞인 것이다.
+const versionSet = new Set([...components.keys()].map((k) => k.split('/')[1]))
+if (versionSet.size > 1) errors.push(`판이 하나가 아니다: ${[...versionSet].sort().join(', ')}`)
 const seen = new Set([...components.keys()].map((k) => k.split('/')[0]))
 for (const id of expected) {
   if (!seen.has(id)) errors.push(`번들에 없는 게시 모듈: ${id} (java/pom.xml 이 게시한다고 말한다)`)
@@ -108,10 +136,9 @@ for (const id of seen) {
 // ⚠️ 공허 통과 금지 — 기대 집합이 비면(pom 을 못 읽음) 위의 대조가 전부 빈 채로 초록이 된다.
 if (expected.length === 0) errors.push(`기대 구성요소가 0 개다 — ${join(ROOT, 'java/pom.xml')} 의 모듈을 못 읽었다`)
 
-const versions = new Set([...components.keys()].map((k) => k.split('/')[1]))
 if (errors.length) {
   for (const e of errors) console.error(`::error::${e}`)
   console.error(`번들 배치 위반 ${errors.length}건 (파일 ${files.length} · 구성요소 ${components.size} · 기대 ${expected.length})`)
   process.exit(1)
 }
-console.log(`ok — 파일 ${files.length} · 구성요소 ${components.size}/${expected.length} (${expected.join(' · ')}) · 판 ${[...versions].join(',')}`)
+console.log(`ok — 파일 ${files.length} · 구성요소 ${components.size}/${expected.length} (${expected.join(' · ')}) · 판 ${[...versionSet].join(',')}`)

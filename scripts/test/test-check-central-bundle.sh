@@ -111,7 +111,28 @@ assert_eq 1 "$(status "$FIX/empty.txt")" "빈 목록은 실패한다(게시 모�
 mkdir -p "$FIX/norepo"
 assert_eq 2 "$(node "$GUARD" "$FIX/good.txt" --root="$FIX/norepo" >/dev/null 2>&1 && echo 0 || echo $?)" "java/pom.xml 을 못 읽으면 2 로 멈춘다(빈 기대 집합으로 넘어가지 않는다)"
 
-# 9. 실제 트리 — 기대 집합을 이 저장소의 pom 이 정한다(여기서 손으로 적지 않는다)
+# 9. 적대 레그(Grok)가 찾은 「검사기는 통과, Central 은 거부」 자리 — Central 이 문서로 요구하는 것들
+good | grep -v -F "$G/kc-core/1.2.2/kc-core-1.2.2-sources.jar.sha1" > "$FIX/nosha1.txt"
+assert_eq 1 "$(status "$FIX/nosha1.txt")" "파일마다 .md5·.sha1 이 있어야 한다(.sha1 하나가 빠져도 실패)"
+{ good; echo "$G/kc-core/1.2.2/kc-core-1.2.2X.jar"; sums "$G/kc-core/1.2.2/kc-core-1.2.2X.jar"; } > "$FIX/junk.txt"
+assert_eq 1 "$(status "$FIX/junk.txt")" "좌표 접두 뒤에는 '.' 이나 '-' 만 온다(…1.2.2X.jar 는 다른 판의 이름이다)"
+good | grep -v -E "kc-core-1\.2\.2-javadoc\.jar" > "$FIX/nojavadoc.txt"
+assert_eq 1 "$(status "$FIX/nojavadoc.txt")" "jar 구성요소는 -javadoc.jar 가 있어야 한다"
+good | grep -v -E "kc-core-1\.2\.2\.jar" > "$FIX/nomain.txt"
+assert_eq 1 "$(status "$FIX/nomain.txt")" "-sources·-javadoc 만 있고 본 jar 가 없으면 실패한다"
+{ pom_only kc-parent 1.2.2; pom_only kc-bom 1.2.2; jar_comp kc-core 1.2.3; } > "$FIX/mixed.txt"
+assert_eq 1 "$(status "$FIX/mixed.txt")" "구성요소의 판이 갈리면 실패한다(리액터는 한 판이다)"
+{ good; jar_comp kc-core 1.2.3; } > "$FIX/twover.txt"
+assert_eq 1 "$(status "$FIX/twover.txt")" "한 아티팩트의 두 판이 함께 있으면 실패한다"
+{ pom_only kc-parent 1.2.2-SNAPSHOT; pom_only kc-bom 1.2.2-SNAPSHOT; jar_comp kc-core 1.2.2-SNAPSHOT; } > "$FIX/snap.txt"
+assert_eq 1 "$(status "$FIX/snap.txt")" "SNAPSHOT 판은 실패한다"
+good | sed 's#^#./#' > "$FIX/dotslash.txt"
+assert_eq 0 "$(status "$FIX/dotslash.txt")" "'./' 로 시작하는 항목도 같은 판정을 받는다"
+# 대조군 — 서명은 이 가드의 범위 밖이다(release-bundle 은 -Dgpg.skip 이라 .asc 가 없다)
+good | grep -v -E '\.asc$' > "$FIX/unsigned.txt"
+assert_eq 0 "$(status "$FIX/unsigned.txt")" "서명 없는 번들은 통과한다(서명은 범위 밖 — CI 번들은 서명하지 않는다)"
+
+# 10. 실제 트리 — 기대 집합을 이 저장소의 pom 이 정한다(여기서 손으로 적지 않는다)
 real_ids="$(node "$GUARD" "$FIX/empty.txt" --root="$REPO" 2>&1 | sed -n 's/.*번들에 없는 게시 모듈: \([^ ]*\).*/\1/p' | sort | tr '\n' ' ')"
 assert_contains "$real_ids" "keycloak-sdk-auth" "실제 트리의 기대 집합에 auth 가 있다"
 assert_contains "$real_ids" "keycloak-sdk-parent" "실제 트리의 기대 집합에 부모 pom 이 있다"
