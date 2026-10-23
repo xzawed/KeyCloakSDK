@@ -61,16 +61,24 @@ _findings() { # _findings <워크플로 디렉터리>
   for f in "$wfdir"/*.yml "$wfdir"/*.yaml; do
     [ -f "$f" ] || continue
     nc="$(_nc "$f")"
-    # ⚠️ **올리지 않는 deploy 는 게시 명령이 아니다 — 두 조건이 다 있을 때만.** (A) 그 줄의 `skipUpload=`
-    # 지정이 전부 `-DskipUpload=true` 이고(central-publishing 0.12.0+: 「Nothing is sent to Central」), (B) 워크플로에
-    # `secrets` 가 한 번도 안 나온다(Central 에 인증할 수단이 없다). A 만이면 0.12.0 아래로 내린 플러그인이 그
-    # 플래그를 무시하고 올리고, B 만이면 의도가 보이지 않는다. 그 줄은 빈 줄로 바꿔 줄 번호를 지킨다 — 같은
-    # 워크플로의 다른 deploy 줄은 그대로 조준에 남는다(ci.yml release-bundle 이 이 자리다).
-    if ! printf '%s\n' "$nc" | grep -q 'secrets'; then
+    # ⚠️ **올리지 않는 deploy 는 게시 명령이 아니다 — 아래가 전부 참일 때 그 줄만.** central-publishing 0.12.0+ 의
+    # `skipUpload` 는 「Nothing is sent to Central」이다(ci.yml release-bundle 이 이 자리다).
+    #   (A) 그 줄의 `skipUpload=` 가 전부 `-DskipUpload=true` 뒤 공백·줄끝이고 `&&`·`||`·`;` 가 없다 — 둘째 명령을
+    #       붙이면 그 명령까지 지워지고, `true''x` 는 셸이 붙여 Maven 에 `truex` 로 간다
+    #   (B) 파일 전체의 `skipUpload=` 도 전부 그 꼴이다 — YAML 접기(`run: >`)로 다음 줄에 `-DskipUpload=false` 를
+    #       붙이면 줄 판정은 못 본다
+    #   (C) 파일에 자격증명이 들어올 통로가 글자로 없다 — `secrets`·`inputs.`·`vars.`·`id-token`(대소문자 무시).
+    #       (A)(B)만이면 0.12.0 아래로 내린 플러그인이나 POM 의 `<skipUpload>false` 가 그 플래그를 무시하고 올린다.
+    # 그 줄은 빈 줄로 바꿔 줄 번호를 지킨다 — 같은 워크플로의 다른 deploy 줄은 그대로 조준에 남는다.
+    skip_all_true="$(printf '%s\n' "$nc" | awk '
+      { t = $0 " "; a = $0
+        if (gsub(/skipUpload=/, "&", a) != gsub(/-DskipUpload=true[[:space:]]/, "&", t)) bad = 1 }
+      END { print bad ? "no" : "yes" }')"
+    if [ "$skip_all_true" = yes ] && ! printf '%s\n' "$nc" | grep -qiE 'secrets|inputs\.|vars\.|id-token'; then
       nc="$(printf '%s\n' "$nc" | awk '
-        /mvnw?[^|]*deploy/ {
+        /mvnw?[^|]*deploy/ && !/&&|\|\||;/ {
           t = $0 " "; a = $0
-          n_true = gsub(/-DskipUpload=true[^A-Za-z0-9_]/, "&", t)
+          n_true = gsub(/-DskipUpload=true[[:space:]]/, "&", t)
           n_all = gsub(/skipUpload=/, "&", a)
           if (n_all >= 1 && n_all == n_true) { print ""; next }
         }
@@ -246,6 +254,19 @@ assert_contains "$(_findings "$W")" "단계가 없다" "[음성대조] 예외는
 # (r) 접두만 같은 값(`-DskipUpload=trueish`)은 true 가 아니다
 _wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" '      - run: mvn -Prelease deploy -DskipUpload=trueish'
 assert_contains "$(_findings "$W")" "단계가 없다" "[음성대조] -DskipUpload=trueish 는 예외가 아니다"
+# (s) 적대 레그(Grok)가 짚은 우회 — 각각 예외를 받지 않아야 한다
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" '      - run: mvn -Prelease deploy -DskipUpload=true && mvn -Prelease deploy'
+assert_contains "$(_findings "$W")" "단계가 없다" "[음성대조] 같은 줄의 && 둘째 deploy 는 예외가 아니다"
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" '      - run: mvn -Prelease deploy -DskipUpload=true; mvn -Prelease deploy'
+assert_contains "$(_findings "$W")" "단계가 없다" "[음성대조] 같은 줄의 ; 둘째 deploy 는 예외가 아니다"
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" '      - run: >' '          mvn -Prelease deploy -DskipUpload=true' '          -DskipUpload=false'
+assert_contains "$(_findings "$W")" "단계가 없다" "[음성대조] YAML 접기로 다음 줄에 -DskipUpload=false 를 붙이면 예외가 아니다"
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" "      - run: mvn -Prelease deploy -DskipUpload=true''x"
+assert_contains "$(_findings "$W")" "단계가 없다" "[음성대조] 셸이 이어붙인 true''x 는 예외가 아니다"
+for chan in '        with: { token: "${{ inputs.token }}" }' '        env: { U: "${{ vars.CENTRAL_USER }}" }' '      id-token: write' '        env: { P: "${{ Secrets.CENTRAL_TOKEN_PW }}" }'; do
+  _wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" "$SKIPSTEP" "$chan"
+  assert_contains "$(_findings "$W")" "단계가 없다" "[음성대조] 자격증명 통로($chan)가 있으면 예외가 아니다"
+done
 
 # (f) 게시 명령이 하나도 없으면 공허 하한이 운다.
 printf '%s\n' 'name: x' 'jobs:' '  a:' '    steps:' '      - run: echo hi' > "$W/x.yml"
