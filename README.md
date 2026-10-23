@@ -40,7 +40,7 @@ English · [한국어](README.ko.md)
 
 > "Polyglot" here means **programming languages**, not natural-language localization (i18n).
 >
-> ⚠️ **All nine languages have shipped a stable release, and the numbers differ** — PHP `1.4.1`, Ruby `1.3.1`, Go `1.2.3`, Java `1.2.0`, Rust `1.1.3`, Kotlin `1.0.6`, Python · .NET · Node `1.0.5`. They reached 1.0 together because they earned the same guarantee together — a breaking change to the public API requires a **major** bump, and CI enforces that by diffing each lane's API against its previously published artifact. **They do not move as a fleet**: a language gets a new number only when something consumer-visible changed in it. Every release is human-gated. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
+> ⚠️ **All nine languages have shipped a stable release, and the numbers differ** — PHP `1.4.1`, Ruby `1.3.2`, Go `1.2.3`, Java `1.2.0`, Rust `1.1.3`, Kotlin `1.0.6`, Python · .NET · Node `1.0.5`. They reached 1.0 together because they earned the same guarantee together — a breaking change to the public API requires a **major** bump, and CI enforces that by diffing each lane's API against its previously published artifact. **They do not move as a fleet**: a language gets a new number only when something consumer-visible changed in it. Every release is human-gated. Install commands are in [Install](#install); a throwaway server to point them at is in [Try it today](#try-it-today).
 
 ---
 
