@@ -300,11 +300,15 @@
               </execution>
             </executions>
           </plugin>
-          <!-- Maven Central Portal 배포(구 OSSRH는 2025-06-30 종료, Central Portal 경로만 유효). -->
+          <!-- Maven Central Portal 배포(구 OSSRH는 2025-06-30 종료, Central Portal 경로만 유효).
+               ⚠️ 0.12.0 이 하한이다 — 0.11.x 는 Maven 3.10 이 스테이징 저장소에 쓰는 로컬 저장소 장부
+               (maven-metadata-local.xml · _remote.repositories · .locks)를 번들에 남겨 Portal 이 「Bundle has
+               content that does NOT have a .pom file」로 거부한다(v1.2.0·v1.2.1, 플러그인 dacf615). 판을 바꾸면
+               ci.yml 의 release-bundle 잡이 태그 전에 번들을 만들어 잰다. -->
           <plugin>
             <groupId>org.sonatype.central</groupId>
             <artifactId>central-publishing-maven-plugin</artifactId>
-            <version>0.11.0</version>
+            <version>0.12.0</version>
             <extensions>true</extensions>
             <configuration>
               <publishingServerId>central</publishingServerId>

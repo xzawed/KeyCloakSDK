@@ -4,7 +4,12 @@ paths:
   - "harness/apps/java/**"
   - "harness/install/consume/java*"
 ---
-<!-- doc-budget: max-bytes=6869 -->
+<!-- doc-budget: max-bytes=6965 -->
+<!-- 6869 → 6965 (2026-10-23, +96B). 규약 (1) — 증가분이 **태그 전에 다시 재는 잡**을 사 온다: 바뀐 문장이
+     `ci.yml` 의 release-bundle(러너 Maven 으로 번들을 만들어 scripts/check-central-bundle.mjs 로 잰다)을
+     가리킨다. 같은 문장이 거짓을 고친다 — 「Maven 3.9.x for building」 은 러너가 3.10.0 이 된 뒤(이미지
+     20261004) CI·release 에 대해 거짓이었고, 그 차이로 v1.2.0·v1.2.1 이 Portal 에서 거부됐다. 초안 +118B →
+     압축 +96B. -->
 <!-- 6572 → 6869 (2026-10-09, +297B). 규약 (1) — 증가분이 **다시 재는 시험**을 사 온다: auth·JWKS 운송의 프로세스 풀
      함정 한 줄이 `ConnectionReuseTest`(다 읽지 않은 연결은 끊긴다 · 거부 60 번 뒤 빌린 연결 0 · 조용한 TLS 서버 앞 거부
      7–29 ms)를 가리킨다. 같은 커밋이 거짓 문장 하나를 고친다 — 「It is now 148/150」 은 실측 198/200 이다(auth 모듈
@@ -37,7 +42,7 @@ paths:
 
 ## Toolchain
 
-JDK 21 + Maven 3.9.x for **building**; the **consumer floor is JDK 17** (`maven.compiler.release=17`, enforcer `[17,)`) — do not read the build JDK as the floor. CI runs 17·21·25 and `check-jvm-bytecode-floor.mjs` re-reads the class files (major ≤ 61). The harness shell does not source a profile, so specify the environment inline.
+JDK 21 + Maven 3.9+ for **building** (CI/release use the runner's Maven; `ci.yml` `release-bundle` checks the Central bundle pre-tag); the **consumer floor is JDK 17** (`maven.compiler.release=17`, enforcer `[17,)`) — do not read the build JDK as the floor. CI runs 17·21·25 and `check-jvm-bytecode-floor.mjs` re-reads the class files (major ≤ 61). The harness shell does not source a profile, so specify the environment inline.
 
 ```bash
 JAVA_HOME="${KCSDK_JDK21:?see \`node scripts/doctor.mjs java\`}" \
