@@ -101,6 +101,12 @@ else
   printf 'SKIP 이 파일시스템은 개행 든 파일 이름을 못 만든다 — 사례 (7) 은 CI(리눅스)에서 돈다\n' >&2
 fi
 
+# (9) 둘째 겹 — 이름 검사를 지나도 최종 경로의 글자 집합을 다시 잰다. 이름은 정규식이 막으므로 그 겹만 따로 서는 길은
+# 경로 앞부분(산출물 자리)뿐이다 — 공백 든 자리로 그 겹을 홀로 세운다(두 겹이 서로를 가려 한 겹을 지워도 침묵하지 않게).
+IN9="$TMP/in 9"; mk_in "$IN9"; place "$IN9"
+assert_eq 1 "$RC" "공백 든 산출물 자리는 jar 경로 검사에서 막힌다"
+assert_contains "$(cat "$WORK/.out")" "jar 경로에 허용 밖 글자가 있다" "둘째 겹의 이유를 댄다"
+
 # (8) 심볼릭 링크는 받지 않는다.
 IN8="$TMP/in8"; mk_in "$IN8"
 if ln -s /etc/hostname "$IN8/go/link" 2>/dev/null && [ -L "$IN8/go/link" ]; then
