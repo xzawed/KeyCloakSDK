@@ -350,7 +350,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   ```bash
   export JAVA_HOME="${KCSDK_JDK21:?see \`node scripts/doctor.mjs java\`}" PATH="${KCSDK_TOOLS:-$HOME/tools}/apache-maven-3.9.9/bin:$PATH"
   mvn -f java/pom.xml -Prelease -DskipTests -DskipITs=true -Dgpg.skip=true package
-  # → confirm *-sources.jar / *-javadoc.jar are generated under each target/ of core/auth/admin/keycloak-sdk
+  # → jars only (incl. -sources/-javadoc); the Central bundle: ci.yml release-bundle
   ```
 - Tag: `vX.Y.Z` — guidance command: `./scripts/release-trigger.sh java 0.1.0-RC1`
   ```bash
@@ -438,7 +438,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
    1. Prove the published bytes came from this tag. .NET: the `commit=` in `https://api.nuget.org/v3-flatcontainer/xzawed.keycloak.sdk/<ver>/xzawed.keycloak.sdk.nuspec` vs `git rev-parse 'dotnet-v<ver>^{commit}'`. PHP: the SHA column of `git ls-remote https://github.com/xzawed/keycloak-sdk-php.git refs/tags/v<ver>` vs `git subtree split --prefix=php php-v<ver>` (deterministic; takes minutes). **Registry side missing**: wait (NuGet can lag an hour); if it appears, go to 2 — only if it never does was nothing published, so re-run. **Both present and different**: the version is burned — go forward (§6).
    2. `gh release view <tag>` (the triggering tag, e.g. `php-v1.0.0`) — if it exists, finish it (`gh release upload`, `gh release edit --draft=false`). Otherwise `gh release create <tag> --prerelease=<p> --title <tag>` with `--generate-notes` (.NET; the `.nupkg` is in the flat container) or `--notes-file` holding the four `printf` lines of `php-release.yml`'s `GitHub Release` step (PHP). `<p>` is `false` when the version minus any `+…` is digits and dots only, else `true` — never omit it.
 
-   Other lanes re-run. Node · Python · Ruby · Rust publish as their last step; Go's first write is the Release (if it exists, you are done); Java/Kotlin only stage, then attest — first drop the red run's deployment once it reads `VALIDATED` or `FAILED` (Portal Deployments, or `DELETE /api/v1/publisher/deployment/<id>`).
+   Other lanes re-run. Node · Python · Ruby · Rust publish as their last step; Go's first write is the Release (if it exists, you are done); Java/Kotlin only stage, then attest — first drop the red run's deployment once it reads `VALIDATED` or `FAILED` (Portal Deployments, or `DELETE /api/v1/publisher/deployment/<id>`); a Java `FAILED` names its reason in the log (`grep -A3 'Deployment .* failed'`) — read it before guessing.
 7. **(Maven Central family only) Portal manual release** — for Java and Kotlin, a human must click Publish in the Central Portal Deployments for the final public release. **Only for a run that is green through its last step** — `Attest build provenance` runs *after* the upload, so a red run can still have staged a deployment; do not publish that one.
 8. **Verify on the registry itself** — `node scripts/check-registry-truth.mjs --lang=<lang>` must print `LIVE` (`PENDING` = inside the 72h Maven / 24h grace; a first 404 is not failure), then check the package page's README and file list.
 
