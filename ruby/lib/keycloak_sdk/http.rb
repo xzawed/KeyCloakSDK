@@ -146,6 +146,73 @@ module KeycloakSdk
       end
     end
 
+    # ⚠️ **프록시 CONNECT 응답의 틀 상한** — HTTPS 대상을 프록시로 부르면 net-http `connect` 는 프록시 소켓 위에 **지역**
+    # `BufferedIO` 를 따로 만들어 CONNECT 응답(`HTTPResponse.read_new`)을 읽는다. `on_connect` 보다 앞이라 `BoundedReads` 가
+    # 그 읽기를 못 봤다(ruby-framing-proxy-connect-unbounded — net-http 0.9.1 은 996,039 B 머리 블록도 받고 TLS 로
+    # 넘어갔고, 0.10.0 은 상태 줄·블록을 1 MiB 까지 받았다 · 65,536 B 넘는 헤더 값만 다 읽은 뒤 raw ArgumentError).
+    # 그 `BufferedIO` 는 잡을 자리가 없으니(전역 패치 금지) 그것이 읽는 **소켓 하나**에 건다 — `rbuf_fill` 이 부르는
+    # `read_nonblock` 이 돌려준 바이트를 세어 `BoundedReads` 와 같은 두 상한(줄은 종단 문자까지 8,192 · 블록은 빈 줄까지
+    # 65,536)을 넘으면 같은 상수 메시지의 `TransportError` 다(`connect` 의 rescue 가 그 소켓을 닫는다). 빈 줄(첫 줄 뒤의
+    # "\r\n"·"\n" — 두 읽기에 갈려도)에서 꺼진다: 그 뒤 바이트는 손대지 않고 돌려주고(net-http 가 버린다) 그 소켓의 뒤
+    # 읽기는 세지 않는다.
+    # ⚠️ 빈 줄은 "\r\n"·"\n" 둘뿐이다(0.10 의 `chomp` 와 같다) — 0.9.1 처럼 공백만 있는 줄까지 끝으로 보면 그 줄 하나로
+    # 상한을 끌 수 있다.
+    module ConnectFraming
+      # 시그니처는 상류(`IO`·`OpenSSL::Buffering`)와 같다 — `BufferedIO#rbuf_fill` 은 `read_nonblock(BUFSIZE, tmp,
+      # exception: false)` 로 부르고(`http_framing_pins_spec`), 받은 버퍼를 같은 객체로 돌려받기를 기대한다.
+      def read_nonblock(len, buf = nil, exception: true)
+        chunk = super
+        kcsdk_connect_scan(chunk) if @kcsdk_connect_armed && chunk.is_a?(String)
+        chunk
+      end
+
+      def kcsdk_arm_connect_framing!
+        @kcsdk_connect_armed = true
+        @kcsdk_connect_total = 0  # 끝난 줄들의 바이트(종단 문자 포함)
+        @kcsdk_connect_line = 0   # 지금 줄에 쌓인 바이트 — 아직 "\n" 전
+        @kcsdk_connect_last = nil # 그 쌓인 바이트의 마지막 — "\r" 하나로 읽기가 끝났으면 다음 읽기의 "\n" 과 빈 줄이다
+      end
+
+      def kcsdk_connect_framing_armed?
+        @kcsdk_connect_armed == true
+      end
+
+      private
+
+      # ⚠️ 바이트 위치로 읽는다(`byteindex`·`getbyte`) — 소켓이 돌려주는 BINARY 문자열에서 위치는 늘 바이트다.
+      def kcsdk_connect_scan(chunk)
+        from = 0
+        while @kcsdk_connect_armed && (eol = chunk.byteindex("\n", from))
+          kcsdk_connect_line_end(chunk, from, eol)
+          from = eol + 1
+        end
+        kcsdk_connect_partial(chunk, from) if @kcsdk_connect_armed && from < chunk.bytesize
+      end
+
+      # 빈 줄 = 첫 줄이 아닌 "\n"(1 바이트) 또는 "\r\n"(2 바이트) — 2 바이트 줄의 "\r" 은 "\n" 바로 앞 바이트다.
+      def kcsdk_connect_line_end(chunk, from, eol)
+        before = eol > from ? chunk.getbyte(eol - 1) : @kcsdk_connect_last
+        len = @kcsdk_connect_line + eol + 1 - from
+        kcsdk_connect_bound(len)
+        blank = @kcsdk_connect_total.positive? && (len == 1 || (len == 2 && before == 13))
+        @kcsdk_connect_total += len
+        @kcsdk_connect_line = 0
+        @kcsdk_connect_armed = false if blank
+      end
+
+      def kcsdk_connect_partial(chunk, from)
+        @kcsdk_connect_line += chunk.bytesize - from
+        @kcsdk_connect_last = chunk.getbyte(-1)
+        kcsdk_connect_bound(@kcsdk_connect_line)
+      end
+
+      # `BoundedReads#kcsdk_bound_line` 와 같은 경계다 — 줄이든 블록이든 상한과 **같으면** 받고 넘으면 거부한다.
+      def kcsdk_connect_bound(len)
+        raise KeycloakSdk::TransportError, FRAMING_LINE_MSG if len > MAX_FRAMING_LINE_BYTES
+        raise KeycloakSdk::TransportError, FRAMING_TOTAL_MSG if @kcsdk_connect_total + len > MAX_FRAMING_BYTES
+      end
+    end
+
     # `Net::HTTP` 인스턴스의 싱글턴에 **prepend** 해 소켓이 만들어지는 자리(`on_connect`, `connect` 끝)에서 그 소켓에만
     # `BoundedReads` 를 건다. `begin_transport` 는 요청마다 틀 예산을 0 으로 되돌린다 — keep-alive 로 연결을 재사용해도
     # 다음 응답은 새 예산을 받는다(한 요청의 1xx 중간 응답들은 같은 예산을 나눠 쓴다 — 그래야 1xx 홍수도 묶인다).
@@ -167,6 +234,37 @@ module KeycloakSdk
         super
         @socket.kcsdk_reset_framing! if @socket.respond_to?(:kcsdk_reset_framing!)
       end
+
+      # ── 프록시 CONNECT(`ConnectFraming`) — `connect` 가 소켓을 여는 두 자리. 상한은 CONNECT 응답을 나르는 소켓에만 걸고
+      # 대상과의 TLS 소켓은 건드리지 않는다. ⚠️ `timeouted_connect` 는 net-http 0.9.0 에 생겼다 — gemspec 하한이다.
+
+      # 연결마다 「이 `connect` 의 첫 `ssl_socket_connect`」를 되돌린다(keep-alive 가 끊긴 뒤 다시 열 때도 같다).
+      def connect
+        @kcsdk_connect_tls_pending = true
+        super
+      end
+
+      # 평문 프록시 + HTTPS 대상 — net-http 는 이 TCP 소켓을 그대로 BufferedIO 로 감싸 CONNECT 응답을 읽는다.
+      def timeouted_connect(conn_addr, conn_port)
+        sock = super
+        kcsdk_bound_connect(sock) if proxy? && use_ssl? && !@proxy_use_ssl
+        sock
+      end
+
+      # TLS 프록시 + HTTPS 대상 — 이 `connect` 의 **첫** 호출이 프록시와의 TLS 소켓(CONNECT 응답을 나른다)이고, 둘째는
+      # 대상과의 TLS 다. `@proxy_use_ssl` 은 `connect` 가 가르는 그 ivar 다(공개 읽기가 없다 — 모양은 핀으로 고정).
+      def ssl_socket_connect(sock, timeout)
+        first = @kcsdk_connect_tls_pending
+        @kcsdk_connect_tls_pending = false
+        result = super
+        kcsdk_bound_connect(sock) if first && proxy? && use_ssl? && @proxy_use_ssl
+        result
+      end
+
+      def kcsdk_bound_connect(sock)
+        sock.extend(ConnectFraming)
+        sock.kcsdk_arm_connect_framing!
+      end
     end
 
     # 표준 `:net_http` 어댑터의 설정 블록 — 커넥션을 짓기 직전 그 `Net::HTTP` 인스턴스의 싱글턴에 `BoundedTransport` 를
@@ -175,7 +273,7 @@ module KeycloakSdk
     BOUND_CONNECTION = lambda do |http|
       http.singleton_class.prepend(BoundedTransport)
     end
-    private_constant :BoundedReads, :BoundedTransport, :BOUND_CONNECTION
+    private_constant :BoundedReads, :ConnectFraming, :BoundedTransport, :BOUND_CONNECTION
 
     module_function
 
