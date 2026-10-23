@@ -6,33 +6,28 @@ on:
     types: [opened, synchronize, reopened]
 permissions:
   contents: read
+# ⚠️ **잡이 둘인 이유 — 패키지 코드가 도는 잡과 토큰을 쥐는 잡을 나눈다.** `coverage` 는 PR head 에서 npm ci ·
+# composer install · bundle install · pip install -e · mvn verify · gradlew · cargo 를 돌리고 **시크릿이 없다**.
+# `scan` 은 SONAR_TOKEN 을 쥐고 그 산출물만 받는다 — 설치·빌드·셋업 액션이 없고, 산출물은 runner.temp 에 받아
+# 정해진 자리만 옮긴다. 둘은 별개 러너(VM)라 앞 잡의 코드가 뒤 잡의 프로세스·디스크에 닿지 못한다.
+# 한 잡이던 때는 사람이 연 PR 에 bump 커밋을 옮겨 담으면 미검토 패키지가 토큰과 같은 잡에서 돌았다(아래 scan 의
+# `if:` 는 Dependabot 이 **연** PR 만 거른다). 2026-10-23 사람 판정 「잡 분리」(PR 품질 게이트는 그대로 둔다).
+# scripts/check-ci-permissions.mjs 규칙 12 가 scan 쪽 모양(허용 액션 · 실행 없음 · runner.temp 받기)을 고정한다.
 jobs:
-  sonarcloud:
-    name: SonarCloud
+  coverage:
+    name: SonarCloud inputs (시크릿 없음)
     runs-on: ubuntu-latest
-    # Dependabot이 **연** PR은 누가 트리거했든 건너뛴다 — 두 검사의 이유가 다르다.
-    # (1) actor: Dependabot이 트리거한 run에는 Actions 시크릿이 노출되지 않는다(별도 Dependabot 시크릿
-    #     스토어만 보이며, 이 저장소의 그 스토어는 비어 있다). SONAR_TOKEN이 빈 문자열로 보간되어 스캐너가
-    #     "Not authorized or project not found" + exit 3으로 **반드시** 실패한다 — 코드 신호가 아니라 환경 산물.
-    # (2) PR 작성자: 사람이 그 PR에 커밋을 얹거나 Update branch를 누르면 actor는 사람이 되어 시크릿이
-    #     보인다 — 그러면 방금 bump된 미검토 패키지가 토큰과 같은 잡에서 돈다(아래 기각 사유 그대로).
-    #     actor로만 거르던 때 2026-10-08~21 일곱 번 그렇게 돌았다. 작성자는 커밋이 얹혀도 바뀌지 않는다.
-    # 토큰을 Dependabot 시크릿 스토어에 복제하는 방안은 기각했다: 이 잡은 PR head에서 npm ci ·
-    # composer install · bundle install · pip install -e · mvn verify · gradlew를 실행하므로,
-    # 방금 bump된 미검토 패키지의 임의 코드가 토큰과 같은 잡에서 돌게 된다.
-    # push 이벤트는 첫 논리항에서 항상 참이라 main 스캔은 구조적으로 스킵될 수 없다(PR0 fail-closed 유지).
-    # ⚠️ scripts/check-ci-permissions.mjs 규칙 11이 이 식을 시나리오마다 평가한다. 사람이 연 PR에 bump
-    #    커밋을 옮겨 담은 경우는 그 규칙 밖이다(등록부 sonarcloud-human-pr-carries-unreviewed-bump).
+    # scan 이 Dependabot 이 연 PR 을 건너뛰므로 그 산출물도 만들지 않는다 — 같은 식이다.
     if: github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.user.login != 'dependabot[bot]')
     steps:
+      # 히스토리는 scan 쪽 체크아웃이 가져간다(blame). 이 잡의 코드가 git 자격증명을 읽을 이유가 없다.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 0 # full history for accurate new-code / blame attribution
+          persist-credentials: false
 
       # --- 언어별 커버리지 리포트를 스캔 전에 생성한다(Docker-free 단위테스트만) ---
-      # 스캔 스텝은 반드시 이 뒤에 온다(스캐너가 이미 존재하는 리포트를 읽음). 각 생성 스텝이 실패하면
-      # 스캔이 안 돌고 stale 리포트도 안 올라간다(fail-closed, 의도). 경로/제외는 sonar-project.properties.
-      # php(phpunit clover, pcov) · ruby(simplecov-lcov) · rust(cargo llvm-cov lcov)도 배선됨.
+      # 각 생성 스텝이 실패하면 이 잡이 실패하고 scan 은 돌지 않는다(fail-closed, 의도). 경로/제외는
+      # sonar-project.properties. php(phpunit clover, pcov) · ruby(simplecov JSON) · rust(cargo llvm-cov lcov)도 배선됨.
       # dotnet(C#)만 전용 SonarScanner for .NET이 필요해 커버리지 미배선(properties에서 소스 제외).
 
       # Kotlin(Kover→JaCoCo XML) + Java(JaCoCo, 4 리액터 모듈)
@@ -103,6 +98,7 @@ jobs:
 
       # Ruby(simplecov_json_formatter → coverage/coverage.json; Sonar SimpleCovSensor가 파싱).
       # JSON은 절대경로를 담고 SonarQube가 baseDir 하위로 해석하므로 경로 정규화 불필요(lcov와 차이).
+      # ⚠️ 절대경로라 두 잡의 워크스페이스 경로가 같아야 한다 — 같은 ubuntu-latest 호스티드 러너면 같다.
       - name: Set up Ruby 3.4
         uses: ruby/setup-ruby@824c0e29fdfc7d689c191c27acc969d2d04b7dd8 # v1
         with:
@@ -132,6 +128,128 @@ jobs:
           # 이미 `/` 또는 `rust/`로 시작하는 SF는 건드리지 않는다(중복 접두 방지 — 멱등).
           sed -i '/^SF:\(\/\|rust\/\)/!s|^SF:|SF:rust/|' lcov.info
 
+      # ⚠️ `sonar.java.libraries`는 **scan 의 인자에만** 둘 수 있다 — 값이 러너의 절대경로라
+      # `sonar-project.properties`(이식 가능해야 한다)에 박으면 안 된다. 그런데 scan 은 다른 러너라 이 잡의
+      # `~/.m2` 경로가 거기 없다 — 그래서 jar 를 **산출물에 담아** 넘기고, scan 이 받은 자리로 경로를 다시 짓는다.
+      # 리액터가 실제로 쓰는 compile 스코프 의존만 뽑는다(m2 와일드카드는 같은 아티팩트의 여러 버전을 섞는다 —
+      # 로컬 실측: commons-io 8개 · plexus-utils 6개). 빈 값이면 정밀도만 조용히 떨어지므로 여기서 죽인다.
+      # ⚠️ 파일마다 따로 읽는다 — sonar-cp.txt 는 끝에 개행이 없어 `cat` 으로 이으면 앞 파일의 마지막 항목과 다음
+      # 파일의 첫 항목이 한 경로로 붙는다(main run 39949233647 의 WARN: `…/rngom-4.0.6.jar/home/runner/…/
+      # keycloak-sdk-core-1.0.0-SNAPSHOT.jar` — 두 jar 가 빠져 있었다). 이름 앞의 번호는 같은 파일명끼리의 충돌을 막는다.
+      - name: Collect Java dependency jars for Sonar
+        run: |
+          set -euo pipefail
+          mkdir -p sonar-inputs/java-libs
+          for f in java/*/target/sonar-cp.txt; do tr ':' '\n' < "$f"; echo; done | grep -E '\.jar$' | sort -u > sonar-inputs/java-libs.txt
+          n=0
+          while IFS= read -r jar; do
+            n=$((n + 1))
+            cp "$jar" "sonar-inputs/java-libs/$(printf '%03d' "$n")-$(basename "$jar")"
+          done < sonar-inputs/java-libs.txt
+          [ "$n" -gt 0 ] || { echo "::error::sonar.java.libraries 가 비었다 — 클래스패스 산출 실패"; exit 1; }
+          echo "Java libraries for Sonar: $n jars"
+
+      # 넘기는 것은 리포트 · Java 바이트코드(`sonar.java.binaries`) · 위 jar 뿐이다. scan 이 받을 자리를 정해 두고
+      # 그 밖의 것은 옮기지 않으므로, 여기 무엇이 더 실려도 scan 의 워크스페이스에는 닿지 않는다.
+      - name: Upload SonarCloud inputs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: sonar-inputs
+          retention-days: 1
+          if-no-files-found: error
+          # >>> sonar-inputs — scripts/test/test-sonar-scan-inputs.sh 가 이 목록을 scan 의 배치 목록과 대조한다
+          path: |
+            kotlin/build/reports/kover/report.xml
+            java/keycloak-sdk-core/target/site/jacoco/jacoco.xml
+            java/keycloak-sdk-auth/target/site/jacoco/jacoco.xml
+            java/keycloak-sdk-admin/target/site/jacoco/jacoco.xml
+            java/keycloak-sdk/target/site/jacoco/jacoco.xml
+            java/keycloak-sdk-core/target/classes
+            java/keycloak-sdk-auth/target/classes
+            java/keycloak-sdk-admin/target/classes
+            java/keycloak-sdk/target/classes
+            node/coverage/lcov.info
+            python/coverage.xml
+            go/cover.out
+            php/clover.xml
+            ruby/coverage/coverage.json
+            rust/lcov.info
+            sonar-inputs/java-libs
+          # <<< sonar-inputs
+
+  scan:
+    name: SonarCloud
+    needs: coverage
+    runs-on: ubuntu-latest
+    # Dependabot이 **연** PR은 누가 트리거했든 건너뛴다 — 두 검사의 이유가 다르다.
+    # (1) actor: Dependabot이 트리거한 run에는 Actions 시크릿이 노출되지 않는다(별도 Dependabot 시크릿
+    #     스토어만 보이며, 이 저장소의 그 스토어는 비어 있다). SONAR_TOKEN이 빈 문자열로 보간되어 스캐너가
+    #     "Not authorized or project not found" + exit 3으로 **반드시** 실패한다 — 코드 신호가 아니라 환경 산물.
+    # (2) PR 작성자: 사람이 그 PR에 커밋을 얹거나 Update branch를 누르면 actor는 사람이 되어 시크릿이
+    #     보인다. actor로만 거르던 때 2026-10-08~21 일곱 번 그렇게 돌았다. 작성자는 커밋이 얹혀도 바뀌지 않는다.
+    #     (이 잡은 이제 패키지 코드를 돌리지 않지만 — 위 머리 주석 — 시크릿이 비어 실패하는 (1)은 그대로다.)
+    # 토큰을 Dependabot 시크릿 스토어에 복제하는 방안은 기각했다: 그 PR의 미검토 패키지가 coverage 잡에서
+    # 돈 산출물을 토큰이 받게 되는 것보다, 스캔이 Dependabot PR을 아예 보지 않는 쪽이 단순하다.
+    # push 이벤트는 첫 논리항에서 항상 참이라 main 스캔은 구조적으로 스킵될 수 없다(PR0 fail-closed 유지).
+    # ⚠️ scripts/check-ci-permissions.mjs 규칙 11이 이 식을 시나리오마다 평가하고, 규칙 12가 이 잡의 스텝을 본다.
+    if: github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.user.login != 'dependabot[bot]')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0 # full history for accurate new-code / blame attribution
+          persist-credentials: false
+      # 워크스페이스가 아니라 runner.temp 에 받는다 — 워크스페이스에 풀리면 산출물이 sonar-project.properties ·
+      # .git/config 같은 설정을 덮는다(규칙 12 (e)). 다음 스텝이 정해진 자리만 옮긴다.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: sonar-inputs
+          path: ${{ runner.temp }}/sonar-inputs
+      # 산출물은 coverage 잡의 코드가 쓴 **데이터**다 — 여기서는 실행하지 않고, 정해진 자리만 옮기고, 이름을 검사한다.
+      # 심볼릭 링크는 받지 않는다. 리포트·바이트코드는 sonar-project.properties 가 읽는 자리로 옮기고(빠지면
+      # 스캔하지 않는다 — 생성 실패가 「덜 본 초록」이 되지 않게), jar 는 받은 자리에 둔 채 경로만 짓는다.
+      # ⚠️ jar 이름은 엄격한 모양만 받는다 — 그 경로가 스캔 `args:` 로 들어가므로, 공백 하나면 `-Dsonar.scanner.…`
+      # 같은 스캐너 속성을 산출물이 주입할 수 있다(스캐너가 실행할 JRE 를 바꾸는 속성도 있다). 그리고 이름은 **문자열
+      # 전체**로 잰다(`[[ =~ ^…$ ]]`) — 첫 판의 `grep -x` 는 여러 줄 중 한 줄만 맞아도 참이라 개행 든 이름이 통과했고,
+      # 둘째 줄이 `$GITHUB_ENV` 의 새 변수(예: NODE_OPTIONS)가 됐다(실측 — scripts/test/test-sonar-scan-inputs.sh).
+      # 공격자가 지은 이름은 로그에 찍지 않는다(워크플로 명령 주입).
+      - name: Place SonarCloud inputs
+        env:
+          IN: ${{ runner.temp }}/sonar-inputs
+        run: |
+          # >>> sonar-place
+          set -euo pipefail
+          if [ -n "$(find "$IN" -type l -print -quit)" ]; then echo "::error::산출물에 심볼릭 링크가 있다 — 받지 않는다"; exit 1; fi
+          for f in kotlin/build/reports/kover/report.xml \
+            java/keycloak-sdk-core/target/site/jacoco/jacoco.xml java/keycloak-sdk-auth/target/site/jacoco/jacoco.xml \
+            java/keycloak-sdk-admin/target/site/jacoco/jacoco.xml java/keycloak-sdk/target/site/jacoco/jacoco.xml \
+            node/coverage/lcov.info python/coverage.xml go/cover.out php/clover.xml ruby/coverage/coverage.json rust/lcov.info; do
+            [ -f "$IN/$f" ] || { echo "::error::$f 가 산출물에 없다 — 스캔하지 않는다"; exit 1; }
+            mkdir -p "$(dirname "$f")"
+            cp "$IN/$f" "$f"
+          done
+          for d in java/keycloak-sdk-core/target/classes java/keycloak-sdk-auth/target/classes \
+            java/keycloak-sdk-admin/target/classes java/keycloak-sdk/target/classes; do
+            [ -d "$IN/$d" ] || { echo "::error::$d 가 산출물에 없다 — 스캔하지 않는다"; exit 1; }
+            rm -rf "$d"
+            mkdir -p "$(dirname "$d")"
+            cp -R "$IN/$d" "$d"
+          done
+          LIBS=''
+          n=0
+          shopt -s nullglob
+          for j in "$IN"/sonar-inputs/java-libs/*; do
+            b="${j##*/}"
+            [[ "$b" =~ ^[0-9]{3}-[A-Za-z0-9._+-]+\.jar$ ]] || { echo "::error::jar 이름이 허용 모양(NNN-이름.jar) 밖이다 — 이름은 찍지 않는다"; exit 1; }
+            [ -f "$j" ] || { echo "::error::jar 자리가 파일이 아니다"; exit 1; }
+            LIBS="${LIBS:+$LIBS,}$j"
+            n=$((n + 1))
+          done
+          [ "$n" -gt 0 ] || { echo "::error::sonar.java.libraries 가 비었다"; exit 1; }
+          case "$LIBS" in *[!A-Za-z0-9._+,/-]*) echo "::error::jar 경로에 허용 밖 글자가 있다"; exit 1 ;; esac
+          echo "Java libraries for Sonar: $n jars"
+          echo "SONAR_JAVA_LIBS=$LIBS" >> "$GITHUB_ENV"
+          # <<< sonar-place
+
       # ⚠️ `sonar.qualitygate.wait`가 없으면 이 잡은 **품질 게이트가 빨개도 구조적으로 절대
       # 실패하지 않는다** — 스캐너는 리포트를 업로드하고 판정을 기다리지 않은 채 `EXECUTION SUCCESS`
       # 로 끝난다. 실제 결과: main의 게이트가 2026-07-07부터 08-11까지 **100커밋 이상 연속 실패**
@@ -143,30 +261,14 @@ jobs:
       # 저장소를 잠그지 않는다: required 체크는 `doc-facts`·`shell-exec-bits` 둘뿐이고 여기에
       # 언어 CI·스캔 잡을 넣으면 안 된다(.claude/rules/ci.md — `paths:` 필터 잡은 체크가 생성조차
       # 되지 않아 Pending 영구 차단). 이 잡은 신호를 **보이게** 만들 뿐 머지를 막지 않는다.
-      # Dependabot PR은 위 `if:`로 애초에 스킵된다(시크릿 미노출 → 스캔은 반드시 실패한다).
       # 대기 타임아웃은 스캐너 기본값 300초를 쓴다 — 서버측 백그라운드 태스크가 그보다 오래 걸리면
       # 통과가 아니라 **실패**로 끝난다(fail-closed).
-      # ⚠️ `sonar.java.libraries`는 **여기에만** 둘 수 있다 — 값이 러너의 절대경로라
-      # `sonar-project.properties`(이식 가능해야 한다)에 박으면 안 된다. `sonar.java.binaries`를
-      # 넣은 뒤에도(#300) 남은 WARN 둘이 이것 때문이다:
+      # ⚠️ `sonar.java.libraries` 가 없을 때 남던 WARN 둘이 근거다(#300):
       #   "Unresolved imports/types have been detected during analysis."
       #   "Use of preview features have been detected during analysis."
       # 둘은 **같은 밀리초에 같은 분석기**가 냈고, 이 리포는 `--enable-preview`를 쓰지 않으며
-      # 스캐너 스스로 `enablePreview: false`라고 찍는다 — 즉 후자는 타입을 못 푼 데서 온 오탐이라는
-      # 가설이고, 이 스텝이 그 실험이다(둘 다 사라지면 뿌리가 하나였다는 뜻).
-      # ⚠️ 첫 판은 `$HOME/.m2/repository/**/*.jar` 와일드카드였다. **엉성한 계측기였다** —
-      # m2 에는 Maven 플러그인들이 끌어온 같은 아티팩트의 여러 버전이 함께 산다(로컬 실측:
-      # commons-io 8개 · plexus-utils 6개 · commons-lang3 5개 · asm 5개). 타입 해석을 그중
-      # 아무 버전에나 붙일 수 있는 클래스패스는 "상위집합이라 무방"하지 않다.
-      # 리액터가 실제로 쓰는 compile 스코프 의존만 뽑아 준다. 빈 값이면 정밀도만 조용히
-      # 떨어지므로 여기서 죽인다(fail-closed).
-      - name: Collect Java dependency classpath for Sonar
-        run: |
-          LIBS="$(cat java/*/target/sonar-cp.txt 2>/dev/null | tr ':' '\n' | grep -E '\.jar$' | sort -u | paste -sd, -)"
-          [ -n "$LIBS" ] || { echo "::error::sonar.java.libraries 가 비었다 — 클래스패스 산출 실패"; exit 1; }
-          echo "Java libraries for Sonar: $(printf '%s' "$LIBS" | tr ',' '\n' | wc -l) jars"
-          echo "SONAR_JAVA_LIBS=$LIBS" >> "$GITHUB_ENV"
-
+      # 스캐너 스스로 `enablePreview: false`라고 찍는다 — 즉 후자는 타입을 못 푼 데서 온 오탐이라는 가설이다.
+      # 스캐너는 JRE 를 스스로 받는다(로그 「JRE provisioning」 — Java 21) — 이 잡에 setup-java 가 없는 이유다.
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8
         with:
