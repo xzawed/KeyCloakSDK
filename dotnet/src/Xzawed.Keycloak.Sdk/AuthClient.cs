@@ -16,8 +16,9 @@ public sealed class AuthClient : ITokenSource
     /// <para><c>KeycloakClient.Create</c> sets it as <see cref="HttpClient.MaxResponseContentBufferSize"/> on the client it
     /// builds, so it bounds every lane that reads one of those responses — the three grants, introspection, logout and the
     /// admin facade's own token fetch (which goes through this class). Above it the call fails with
-    /// <see cref="KeycloakTransportException"/> and the body is not kept. Admin REST responses are not capped: the admin
-    /// facade builds a separate client. Discovery and JWKS are read as streams with their own 51,200-byte cap.</para>
+    /// <see cref="KeycloakTransportException"/> and the body is not kept. An admin REST success body is not capped — the admin
+    /// facade builds a separate client — while an admin error body is cut at this many bytes (<c>AdminResponseBody</c>).
+    /// Discovery and JWKS are read as streams with their own 51,200-byte cap.</para>
     /// <para>Sixteen times the longest bearer Keycloak 26.6 accepts with its default settings (65,459 bytes, measured), so
     /// the cap never refuses a token the server would take. The transport does not decode a content-encoding here
     /// (<c>AutomaticDecompression</c> is off), so the bytes counted are the bytes received.</para>

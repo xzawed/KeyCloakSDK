@@ -9,8 +9,9 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 
 /// <summary>
 /// The facade client reads every token, introspection and logout response through one cap — exactly 1,048,576 bytes
-/// (<c>AuthClient.MaxTokenResponseBytes</c>), registry <c>token-response-size-unbounded</c>. Admin REST responses are not
-/// capped: the admin facade builds its own client (<c>AdminClient.CreateAsync</c>).
+/// (<c>AuthClient.MaxTokenResponseBytes</c>), registry <c>token-response-size-unbounded</c>. Admin REST success bodies are
+/// not capped: the admin facade builds its own client (<c>AdminClient.CreateAsync</c>); its error bodies are
+/// <c>AdminResponseBodyTests</c>'.
 /// </summary>
 /// <remarks>
 /// <para>Measured before the fix (2026-10-05, fake IdP, one process per lane): a usable token response followed by 32 MiB
@@ -160,7 +161,7 @@ public sealed class TokenResponseCapTests
         Assert.Equal(adminRequests, idp.Seen.Count(r => r.Path.StartsWith("/admin/", StringComparison.Ordinal)));
     }
 
-    /// <summary>Admin REST is not capped — a user list is legitimately large, and the admin facade has its own client.</summary>
+    /// <summary>An admin success body is not capped — a user list is legitimately large, and the admin facade has its own client.</summary>
     [Fact]
     public async Task An_admin_response_above_the_cap_is_not_capped()
     {

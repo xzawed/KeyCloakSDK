@@ -3,7 +3,8 @@ using System.Text.Json;
 
 namespace Xzawed.Keycloak.Admin;
 
-/// <summary>Attaches a fresh bearer token from the token provider on every admin request.</summary>
+/// <summary>Attaches a fresh bearer token from the token provider on every admin request, and settles how much of each
+/// response body is read (<see cref="AdminResponseBody"/>).</summary>
 internal sealed class BearerHandler : DelegatingHandler
 {
     private readonly ITokenProvider _tokenProvider;
@@ -40,7 +41,7 @@ internal sealed class BearerHandler : DelegatingHandler
             throw new KeycloakTransportException(AdminClient.UnencodableBody, ex);
         }
         AdminClient.Observe(response.StatusCode);
-        return response;
+        return await AdminResponseBody.SettleAsync(response, ct).ConfigureAwait(false);
     }
 
     private const string UnsendableControlMessage =

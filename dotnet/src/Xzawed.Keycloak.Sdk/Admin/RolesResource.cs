@@ -13,7 +13,7 @@ public sealed class RolesResource
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, $"admin/realms/{_a.Realm}/roles")
         { Content = JsonContent.Create(role) };
-        (await _a.SendRawAsync(req, ct).ConfigureAwait(false)).Dispose();
+        await _a.WriteRawAsync(req, ct).ConfigureAwait(false);
     }
 
     public Task<RoleRepresentation> GetAsync(string name, CancellationToken ct = default)
@@ -27,12 +27,12 @@ public sealed class RolesResource
     {
         using var req = new HttpRequestMessage(HttpMethod.Put, $"admin/realms/{_a.Realm}/roles/{Uri.EscapeDataString(name)}")
         { Content = JsonContent.Create(role) };
-        (await _a.SendRawAsync(req, ct).ConfigureAwait(false)).Dispose();
+        await _a.WriteRawAsync(req, ct).ConfigureAwait(false);
     }
 
     public async Task DeleteAsync(string name, CancellationToken ct = default)
     {
         using var req = new HttpRequestMessage(HttpMethod.Delete, $"admin/realms/{_a.Realm}/roles/{Uri.EscapeDataString(name)}");
-        (await _a.SendRawAsync(req, ct).ConfigureAwait(false)).Dispose();
+        await _a.WriteRawAsync(req, ct).ConfigureAwait(false);
     }
 }

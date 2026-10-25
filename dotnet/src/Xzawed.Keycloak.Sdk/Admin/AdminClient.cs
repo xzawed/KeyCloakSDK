@@ -89,8 +89,10 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
         catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException) { throw new KeycloakTransportException("admin request timed out", ex); }
     }
 
-    internal async Task CallTypedAsync(Func<IKeycloakClient, Task> fn)
+    /// <summary>A typed write — its 2xx body is never read (<see cref="AdminResponseBody"/>).</summary>
+    internal async Task WriteTypedAsync(Func<IKeycloakClient, Task> fn)
     {
+        AdminResponseBody.LeaveUnread();
         var status = TypedCallStatus.Value = new StrongBox<int>();
         try { await fn(_typed).ConfigureAwait(false); }
         catch (KeycloakHttpClientException ex) { throw KeycloakErrorMapping.MapHttpError(ex.StatusCode, ex.Response?.ErrorDescription ?? ex.HttpResponse ?? ex.Message, ex); }
@@ -141,6 +143,7 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
 
     internal async Task<string> CreateReturningIdAsync(Func<IKeycloakClient, Task<HttpResponseMessage>> fn, CancellationToken ct)
     {
+        AdminResponseBody.LeaveUnread();
         HttpResponseMessage resp;
         try { resp = await fn(_typed).ConfigureAwait(false); }
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
@@ -162,6 +165,13 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
             throw error;
         }
         return resp;
+    }
+
+    /// <summary>A raw write — its 2xx body is never read (<see cref="AdminResponseBody"/>).</summary>
+    internal async Task WriteRawAsync(HttpRequestMessage req, CancellationToken ct)
+    {
+        AdminResponseBody.LeaveUnread();
+        (await SendRawAsync(req, ct).ConfigureAwait(false)).Dispose();
     }
 
     /// <summary>The SDK error for an admin error response, its body as the message. A body in a charset .NET does not
@@ -195,6 +205,7 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
 
     internal async Task<string> CreateRawReturningIdAsync(string relativeUrl, object body, CancellationToken ct)
     {
+        AdminResponseBody.LeaveUnread();
         using var req = new HttpRequestMessage(HttpMethod.Post, relativeUrl) { Content = JsonContent.Create(body) };
         using var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
         return await IdFromLocationAsync(resp, ct).ConfigureAwait(false);
