@@ -291,7 +291,7 @@ module KeycloakSdk
 
       def kcsdk_settle(res, unread)
         if res.code.to_i >= 300
-          kcsdk_keep(res, Http.read_error_body(res))
+          kcsdk_keep(res, Http.read_error_body(res) { @socket.close })
         elsif unread
           kcsdk_keep(res, String.new(encoding: Encoding::BINARY))
         end
@@ -358,15 +358,27 @@ module KeycloakSdk
 
     # 300 이상의 본문을 `TOKEN_RESPONSE_MAX_BYTES` 까지만 쥔다 — 상한을 넘기는 조각이 오면 읽기를 멈추고 상한에서 자른다
     # (거부하지 않는다: 상태가 이미 오류를 정했다). net-http 가 16 KiB 씩 넘기므로 손에 드는 것은 많아야 상한 + 청크 하나다.
+    # ⚠️ 끊기 전에 블록(소켓 닫기)을 부른다 — net-http 의 청크 읽기는 `ensure` 에서 그 청크의 CRLF 를 읽으려 해, 청크
+    # 한가운데서 멈춘 서버 앞에서는 끊은 뒤에도 읽기 타임아웃까지 기다렸다(상태를 잃고 TransportError). 닫힌 소켓의 그
+    # 읽기가 내는 IOError 는 끊은 뒤의 것만 삼킨다.
     def read_error_body(res)
       buf = String.new(encoding: Encoding::BINARY)
-      catch(:kcsdk_cut) do
-        res.read_body do |chunk|
-          buf << chunk
-          throw :kcsdk_cut if buf.bytesize > TOKEN_RESPONSE_MAX_BYTES
+      cut = false
+      begin
+        catch(:kcsdk_cut) do
+          res.read_body do |chunk|
+            buf << chunk
+            next if buf.bytesize <= TOKEN_RESPONSE_MAX_BYTES
+
+            cut = true
+            yield
+            throw :kcsdk_cut
+          end
         end
+      rescue IOError, SystemCallError
+        raise unless cut
       end
-      buf.bytesize > TOKEN_RESPONSE_MAX_BYTES ? buf.byteslice(0, TOKEN_RESPONSE_MAX_BYTES) : buf
+      cut ? buf.byteslice(0, TOKEN_RESPONSE_MAX_BYTES) : buf
     end
 
     # `read_capped` 의 본문을 커넥션의 json 미들웨어가 하던 그대로 해석한다(응답을 돌려준다).

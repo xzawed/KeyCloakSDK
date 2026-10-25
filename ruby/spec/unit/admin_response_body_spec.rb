@@ -137,16 +137,32 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
     end
   end
 
-  AdminResponseBodySpec::ERROR_CALLS.each do |name, (path, call)|
-    it "#{name} ends an error body that passes the cap and stalls, without waiting for the rest" do
-      server = BodyServer.new(framing: :length)
-      server.route(path) { spec.error(404, 2 * AdminResponseBodySpec::CAP, stop_after: AdminResponseBodySpec::CAP + 1) }
-      admin = spec.admin(server, read_timeout: AdminResponseBodySpec::STALL_TIMEOUT)
-      got, ms = spec.timed { spec.outcome { call.call(admin) } }
-      server.close
-      spec.note("  #{name} past the cap, stalled: #{ms} ms · #{got.first(2).inspect}")
-      expect(got.first(2)).to eq([KeycloakSdk::NotFoundError, 404])
+  # 청크면 상한을 넘긴 조각이 청크 한가운데다 — net-http 의 청크 읽기는 `ensure` 에서 그 청크의 CRLF 를 읽으려 한다.
+  %i[length chunked].each do |framing|
+    AdminResponseBodySpec::ERROR_CALLS.each do |name, (path, call)|
+      it "#{name} ends a #{framing} error body that passes the cap and stalls, without waiting for the rest" do
+        server = BodyServer.new(framing: framing)
+        server.route(path) { spec.error(404, 2 * AdminResponseBodySpec::CAP, stop_after: AdminResponseBodySpec::CAP + 1) }
+        admin = spec.admin(server, read_timeout: AdminResponseBodySpec::STALL_TIMEOUT)
+        got, ms = spec.timed { spec.outcome { call.call(admin) } }
+        server.close
+        spec.note("  [#{framing}] #{name} past the cap, stalled: #{ms} ms · #{got.first(2).inspect}")
+        expect(got.first(2)).to eq([KeycloakSdk::NotFoundError, 404])
+      end
     end
+  end
+
+  # 흘려 받는 요청(`on_data`)의 본문은 호출자에게 그대로 간다 — Faraday 가 쥐지 않으니 SDK 가 정하지 않는다.
+  it "streams a raw error body to the caller's on_data, whole" do
+    total = 2 * AdminResponseBodySpec::CAP
+    server = BodyServer.new(framing: :chunked)
+    server.route("#{AdminResponseBodySpec::BASE}/users/u1") { [404, { "Content-Type" => "text/plain" }, "nf", total - 2] }
+    received = 0
+    resp = spec.admin(server).raw.get("admin/realms/#{AdminResponseBodySpec::REALM}/users/u1") do |req|
+      req.options.on_data = proc { |chunk, _| received += chunk.bytesize }
+    end
+    server.close
+    expect([resp.status, received]).to eq([404, total])
   end
 
   it "keeps the 2xx body of a write sent on the raw connection — the mark is on the facade's request alone" do

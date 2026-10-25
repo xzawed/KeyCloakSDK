@@ -162,11 +162,17 @@ class BodyServer
     sock.write("0\r\n\r\n") if @framing == :chunked
   end
 
-  # 본문을 `stop` 바이트까지만 쓴다.
+  # 본문을 `stop` 바이트까지만 쓴다. 청크면 본문 전체를 청크 **하나**로 알리고 그 한가운데서 멈춘다.
   def write_until(sock, head, pad, stop)
-    piece(sock, head.byteslice(0, stop))
+    if @framing == :chunked
+      sock.write((head.bytesize + pad).to_s(16), "\r\n")
+      raw = ->(bytes) { sock.write(bytes).tap { @count += bytes.bytesize } }
+    else
+      raw = ->(bytes) { piece(sock, bytes) }
+    end
+    raw.call(head.byteslice(0, stop)) unless head.empty?
     left = [stop - head.bytesize, 0].max
-    self.class.each_pad([pad, left].min) { |p| piece(sock, p) }
+    self.class.each_pad([pad, left].min) { |p| raw.call(p) }
   end
 
   # 클라이언트가 닫을 때까지(많아야 HOLD_SECONDS) 아무것도 쓰지 않고 붙든다.

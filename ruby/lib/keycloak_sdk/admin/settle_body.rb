@@ -15,7 +15,11 @@ module KeycloakSdk
       # 파사드 쓰기가 요청에 다는 표시(`@conn.post(path, body, &MARK)`).
       MARK = ->(req) { req.options.context = (req.options.context || {}).merge(UNREAD => true) }
 
+      # 흘려 받는 요청(`on_data` — `raw` 호출자만 쓴다)은 정하지 않는다: 본문은 오는 대로 호출자에게 가고 Faraday 는 쥐지
+      # 않는다. 정하면 어댑터가 읽은 응답을 다시 읽어 IOError(read_body called twice)였다.
       def call(env)
+        return @app.call(env) if env.stream_response?
+
         context = env.request.context
         Http.settling(context.is_a?(Hash) && context[UNREAD] == true) { @app.call(env) }
       end
