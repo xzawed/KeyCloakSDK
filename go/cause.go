@@ -160,7 +160,8 @@ func scrubWire(err error) error {
 // trailer line (`malformed MIME header: missing colon: "<line>"`) — and that text reached callers
 // through *url.Error, through x/oauth2, and flattened into gocloak's message. Both the RoundTrip error
 // and the body's Read error pass through here; errors from beneath HTTP are returned as they are.
-// It is also where a token response gets its size cap (tokencap.go) — both lanes' token requests pass here.
+// It is also where a token response gets its size cap (tokencap.go) — both lanes' token requests pass here — and where a
+// gzip body net/http left encoded is decoded first, so every bound above counts decoded bytes (decodedGzip).
 type wireScrubTransport struct{ base http.RoundTripper }
 
 func (t wireScrubTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -168,7 +169,7 @@ func (t wireScrubTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	if err != nil {
 		return resp, scrubWire(err)
 	}
-	resp.Body = capTokenResponse(req.Context(), wireScrubBody{resp.Body})
+	resp.Body = capTokenResponse(req.Context(), decodedGzip(resp, wireScrubBody{resp.Body}))
 	return resp, nil
 }
 

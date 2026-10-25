@@ -15,7 +15,7 @@ func (r *GroupsResource) Create(ctx context.Context, group gocloak.Group) (strin
 	if err != nil {
 		return "", err
 	}
-	return call(func() (string, error) { return r.a.gc.CreateGroup(ctx, tok, r.a.realm, group) })
+	return call(func() (string, error) { return r.a.gc.CreateGroup(withoutBody(ctx), tok, r.a.realm, group) })
 }
 
 // Get returns a group by id; ErrNotFound if absent.
@@ -48,7 +48,7 @@ func (r *GroupsResource) Update(ctx context.Context, id string, group gocloak.Gr
 		return err
 	}
 	group.ID = &id
-	return run(func() error { return r.a.gc.UpdateGroup(ctx, tok, r.a.realm, group) })
+	return run(func() error { return r.a.gc.UpdateGroup(withoutBody(ctx), tok, r.a.realm, group) })
 }
 
 // Delete removes a group by id.
@@ -57,5 +57,5 @@ func (r *GroupsResource) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	return run(func() error { return r.a.gc.DeleteGroup(ctx, tok, r.a.realm, id) })
+	return run(func() error { return r.a.gc.DeleteGroup(withoutBody(ctx), tok, r.a.realm, id) })
 }

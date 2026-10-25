@@ -17,7 +17,7 @@ func (r *RealmsResource) Create(ctx context.Context, realm gocloak.RealmRepresen
 	if err != nil {
 		return err
 	}
-	_, err = call(func() (string, error) { return r.a.gc.CreateRealm(ctx, tok, realm) })
+	_, err = call(func() (string, error) { return r.a.gc.CreateRealm(withoutBody(ctx), tok, realm) })
 	return err
 }
 
@@ -57,7 +57,7 @@ func (r *RealmsResource) Update(ctx context.Context, realmName string, realm goc
 		return err
 	}
 	return run(func() error {
-		resp, err := r.a.gc.GetRequestWithBearerAuth(ctx, tok).
+		resp, err := r.a.gc.GetRequestWithBearerAuth(withoutBody(ctx), tok).
 			SetBody(realm).
 			Put(r.a.baseURL + "/admin/realms/" + url.PathEscape(realmName))
 		if err != nil {
@@ -80,5 +80,5 @@ func (r *RealmsResource) Delete(ctx context.Context, realmName string) error {
 	if err != nil {
 		return err
 	}
-	return run(func() error { return r.a.gc.DeleteRealm(ctx, tok, realmName) })
+	return run(func() error { return r.a.gc.DeleteRealm(withoutBody(ctx), tok, realmName) })
 }

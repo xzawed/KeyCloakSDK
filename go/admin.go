@@ -56,8 +56,9 @@ func newAdminTransport(cfg Config) (*gocloak.GoCloak, *http.Transport) {
 	// ReadTimeout = overall deadline; ConnectTimeout = dial/TLS-handshake deadline
 	// (injected via the transport — previously a silent no-op for admin calls).
 	tr := cfg.transport()
-	// The pooled transport stays in AdminClient.tr for Close; requests go through the wire scrub (cause.go).
-	gc.RestyClient().SetTimeout(time.Duration(cfg.ReadTimeout) * time.Millisecond).SetTransport(wireScrubTransport{tr})
+	// The pooled transport stays in AdminClient.tr for Close; requests go through the wire scrub (cause.go), and responses
+	// through the body bounds (adminbody.go — resty reads every body to its end).
+	gc.RestyClient().SetTimeout(time.Duration(cfg.ReadTimeout) * time.Millisecond).SetTransport(adminBodyTransport{wireScrubTransport{tr}})
 	// SSRF hardening for the admin lane. resty owns its own *http.Client, so Config.httpClient()'s
 	// CheckRedirect never reached admin requests — including LoginClient, which carries the client
 	// secret. ⚠️ This lane uses the **erroring** mode (see config.go): gocloak's error test is
