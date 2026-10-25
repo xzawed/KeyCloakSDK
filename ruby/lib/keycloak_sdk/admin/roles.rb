@@ -11,7 +11,7 @@ module KeycloakSdk
       end
 
       def create(representation)
-        id_from_location(request { @conn.post("admin/realms/#{esc(@realm)}/roles", representation) })
+        id_from_location(request { @conn.post("admin/realms/#{esc(@realm)}/roles", representation, &SettleBody::MARK) })
       end
 
       def get(name)
@@ -23,12 +23,12 @@ module KeycloakSdk
       end
 
       def update(name, representation)
-        request { @conn.put("admin/realms/#{esc(@realm)}/roles/#{esc(name)}", representation) }
+        request { @conn.put("admin/realms/#{esc(@realm)}/roles/#{esc(name)}", representation, &SettleBody::MARK) }
         nil
       end
 
       def delete(name)
-        request { @conn.delete("admin/realms/#{esc(@realm)}/roles/#{esc(name)}") }
+        request { @conn.delete("admin/realms/#{esc(@realm)}/roles/#{esc(name)}", &SettleBody::MARK) }
         nil
       end
     end

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "socket"
+require "io/wait"
 require "zlib"
 require "stringio"
 require "objspace"
@@ -11,14 +12,17 @@ require "objspace"
 # 본문을 **통째로** 읽은 뒤에야 블록에 넘기고, 스텁은 본문 전체를 청크 하나로 준다 — net-http 가 16 KiB 씩 읽다
 # 상한에서 끊기는 실제 경로가 생기지 않는다. 그래서 이 서버를 쓰는 예제는 `WebMock.disable!` 아래에서 돈다.
 #
-# 경로마다 응답 하나를 정한다: `route(path) { |request| [status, headers, head, pad] }` — `head` 뒤에 JSON 공백
-# `pad` 바이트를 붙인다(같은 64 KiB 조각을 되풀어 써 서버 쪽 할당은 거의 없다). `framing:` 은 `:chunked`·`:length`,
+# 경로마다 응답 하나를 정한다: `route(path) { |request| [status, headers, head, pad, stop_after] }` — `head` 뒤에
+# JSON 공백 `pad` 바이트를 붙인다(같은 64 KiB 조각을 되풀어 써 서버 쪽 할당은 거의 없다). `stop_after` 를 주면 본문을
+# 그 바이트까지만 쓰고 멈춰 클라이언트가 닫을 때까지 연결을 붙든다(평문만). `framing:` 은 `:chunked`·`:length`,
 # `compress:` 는 `nil`(평문)·`:when_allowed`(요청이 gzip 을 받으면 gzip)·`:always`(요청과 무관하게 gzip).
+# `written` 은 요청마다 서버가 써 보낸 본문 바이트다(클라이언트가 끊으면 거기서 멈춘다).
 class BodyServer
   PAD = (" " * 65_536).freeze
+  HOLD_SECONDS = 30
 
   Request = Struct.new(:verb, :path, :headers, :body)
-  Reply = Struct.new(:status, :headers, :head, :pad)
+  Reply = Struct.new(:status, :headers, :head, :pad, :stop_after)
 
   def initialize(framing: :chunked, compress: nil)
     @framing = framing
@@ -26,8 +30,13 @@ class BodyServer
     @routes = {}
     @lock = Mutex.new
     @seen = []
+    @written = []
     @server = TCPServer.new("127.0.0.1", 0)
     @thread = Thread.new { serve }
+  end
+
+  def written
+    @lock.synchronize { @written.dup }
   end
 
   def url
@@ -104,6 +113,7 @@ class BodyServer
   end
 
   def handle(sock)
+    @count = 0
     req = read_request(sock)
     @lock.synchronize { @seen << req }
     reply = Reply.new(*@routes.fetch(req.path) { ->(_) { [404, {}, "", 0] } }.call(req))
@@ -111,6 +121,8 @@ class BodyServer
     gzip ? write_gzip(sock, reply) : write_plain(sock, reply)
   rescue Errno::EPIPE, Errno::ECONNRESET, Errno::ECONNABORTED, IOError
     nil # 클라이언트가 상한에서 끊었다 — 기대한 일이다
+  ensure
+    @lock.synchronize { @written << @count } if req
   end
 
   def read_request(sock)
@@ -131,6 +143,7 @@ class BodyServer
     bytes = self.class.gzip(reply.head.b, reply.pad)
     out = base_headers(reply).merge("Content-Encoding" => "gzip", "Content-Length" => bytes.bytesize.to_s)
     sock.write(status_line(reply.status, out), bytes)
+    @count += bytes.bytesize
   end
 
   def write_plain(sock, reply)
@@ -139,15 +152,41 @@ class BodyServer
     out[@framing == :chunked ? "Transfer-Encoding" : "Content-Length"] =
       @framing == :chunked ? "chunked" : (head.bytesize + reply.pad).to_s
     sock.write(status_line(reply.status, out))
+    stop = reply.stop_after
+    if stop
+      write_until(sock, head, reply.pad, stop)
+      return hold_until_closed(sock)
+    end
     piece(sock, head)
     self.class.each_pad(reply.pad) { |p| piece(sock, p) }
     sock.write("0\r\n\r\n") if @framing == :chunked
+  end
+
+  # 본문을 `stop` 바이트까지만 쓴다. 청크면 본문 전체를 청크 **하나**로 알리고 그 한가운데서 멈춘다.
+  def write_until(sock, head, pad, stop)
+    if @framing == :chunked
+      sock.write((head.bytesize + pad).to_s(16), "\r\n")
+      raw = ->(bytes) { sock.write(bytes).tap { @count += bytes.bytesize } }
+    else
+      raw = ->(bytes) { piece(sock, bytes) }
+    end
+    raw.call(head.byteslice(0, stop)) unless head.empty?
+    left = [stop - head.bytesize, 0].max
+    self.class.each_pad([pad, left].min) { |p| raw.call(p) }
+  end
+
+  # 클라이언트가 닫을 때까지(많아야 HOLD_SECONDS) 아무것도 쓰지 않고 붙든다.
+  def hold_until_closed(sock)
+    while sock.wait_readable(HOLD_SECONDS)
+      break if sock.read_nonblock(1024, exception: false).nil?
+    end
   end
 
   def piece(sock, bytes)
     return if bytes.empty?
 
     @framing == :chunked ? sock.write(bytes.bytesize.to_s(16), "\r\n", bytes, "\r\n") : sock.write(bytes)
+    @count += bytes.bytesize
   end
 
   def status_line(status, headers)

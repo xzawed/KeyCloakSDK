@@ -12,7 +12,7 @@ module KeycloakSdk
 
       # POST /admin/realms — master realm 전용(realm SA는 403). 반환: realm 이름.
       def create(representation)
-        request { @conn.post("admin/realms", representation) }
+        request { @conn.post("admin/realms", representation, &SettleBody::MARK) }
         representation[:realm] || representation["realm"]
       end
 
@@ -25,12 +25,12 @@ module KeycloakSdk
       end
 
       def update(realm, representation)
-        request { @conn.put("admin/realms/#{esc(realm)}", representation) }
+        request { @conn.put("admin/realms/#{esc(realm)}", representation, &SettleBody::MARK) }
         nil
       end
 
       def delete(realm)
-        request { @conn.delete("admin/realms/#{esc(realm)}") }
+        request { @conn.delete("admin/realms/#{esc(realm)}", &SettleBody::MARK) }
         nil
       end
     end
