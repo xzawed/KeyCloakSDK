@@ -369,30 +369,35 @@ final class AdminResponseBodyTest extends TestCase
     }
 
     /**
-     * 본문 없는 2xx(Keycloak 의 쓰기 응답 — 204 · `Content-Length: 0`)는 끊지 않는다: 다음 요청이 같은 연결로 간다. 대조 — 본문 있는
-     * 2xx 는 끊으므로 다음 요청이 새 연결로 간다(이 시험이 연결이 바뀌는 것을 본다는 증거). 스트림 처리기는 요청마다 연결을 닫으므로
-     * curl 만 잰다.
+     * 본문 없는 2xx(Keycloak 의 쓰기 응답 — 201 `Content-Length: 0` · Content-Length 없는 204)는 끊지 않는다: 다음 요청이 같은 연결로
+     * 간다. 대조 — 본문 있는 2xx 는 끊으므로 다음 요청이 새 연결로 간다(이 시험이 연결이 바뀌는 것을 본다는 증거). 스트림 처리기는
+     * 요청마다 연결을 닫으므로 curl 만 잰다.
      */
     public function testAnEmptyWriteResponseKeepsTheConnection(): void
     {
         $this->useTransport('curl');
-        $user = self::BASE . '/users/u1';
+        $users = self::BASE . '/users';
+        $user = "$users/u1";
         $conns = [];
         foreach (['empty' => ['status' => 204, 'keep' => true], 'body' => ['status' => 200, 'head' => '{}', 'pad' => 1022, 'keep' => true]] as $case => $put) {
-            self::route(["PUT $user" => $put, "DELETE $user" => ['status' => 204, 'keep' => true]]);
+            self::route(["POST $users" => ['status' => 201, 'keep' => true], "PUT $user" => $put, "DELETE $user" => ['status' => 204, 'keep' => true]]);
             $admin = new AdminClient(self::config());
 
+            $admin->users()->create(new User(username: 'u'));
             $admin->users()->update('u1', new User(username: 'u'));
             $admin->users()->delete('u1');
-            $conns[$case] = [self::record('PUT', $user)['conn'] ?? null, self::record('DELETE', $user)['conn'] ?? null];
+            $conns[$case] = array_map(static fn (array $r): ?int => self::record($r[0], $r[1])['conn'] ?? null, [['POST', $users], ['PUT', $user], ['DELETE', $user]]);
             unset($admin);
             gc_collect_cycles();
         }
 
         self::note('keep-alive: ' . json_encode($conns));
-        self::assertNotNull($conns['empty'][0]);
-        self::assertSame($conns['empty'][0], $conns['empty'][1], '본문 없는 204 뒤에 연결을 잃었다');
-        self::assertNotSame($conns['body'][0], $conns['body'][1], '대조: 본문 있는 2xx 를 끊었다면 다음 요청은 새 연결이어야 한다');
+        [$create, $update, $delete] = $conns['empty'];
+        self::assertNotNull($create);
+        self::assertSame($create, $update, '본문 없는 201(Content-Length: 0) 뒤에 연결을 잃었다');
+        self::assertSame($update, $delete, '본문 없는 204(Content-Length 없음) 뒤에 연결을 잃었다');
+        self::assertSame($conns['body'][0], $conns['body'][1]);
+        self::assertNotSame($conns['body'][1], $conns['body'][2], '대조: 본문 있는 2xx 를 끊었다면 다음 요청은 새 연결이어야 한다');
     }
 
     /** 오류 본문은 상한에서 잘린다 — 클래스와 상태는 그대로, 서버는 64 MiB 를 다 쓰지 못한다. */
@@ -416,6 +421,27 @@ final class AdminResponseBodyTest extends TestCase
         self::assertSame($status, $result->getStatusCode());
         self::assertNotNull($sent);
         self::assertLessThan(self::HUGE, $sent, "서버가 $sent 바이트를 다 썼다 — 오류 본문을 끝까지 읽었다");
+    }
+
+    /**
+     * 3xx 본문도 오류 본문처럼 상한에서 잘린다(`allow_redirects` 가 꺼져 따라가지 않는다). ⚠️ 3xx 를 성공으로 읽는 것은 따로 열린
+     * 항목이다(등록부 go-admin-3xx-read-as-success) — 여기서는 받는 양만 잰다.
+     */
+    #[DataProvider('transports')]
+    public function testARedirectBodyIsCutAtTheCap(string $transport): void
+    {
+        $path = self::BASE . '/users/u1';
+        $head = '{"id":"u1","username":"u"}';
+        self::route(["GET $path" => ['status' => 302, 'head' => $head, 'pad' => self::HUGE - strlen($head)]]);
+        $this->useTransport($transport);
+        $admin = new AdminClient(self::config());
+
+        [$result, $ms] = self::timed(static fn () => $admin->users()->get('u1'));
+        $sent = self::sent('GET', $path);
+
+        self::note(sprintf('[%s] users.get 302: %d ms · server wrote %s · %s', $transport, $ms, var_export($sent, true), self::describe($result)));
+        self::assertNotNull($sent);
+        self::assertLessThan(self::HUGE, $sent, "서버가 $sent 바이트를 다 썼다 — 3xx 본문을 끝까지 읽었다");
     }
 
     /** 상한을 넘긴 뒤 멈춘 오류 본문 — 나머지를 기다리지 않고 그 상태로 끝난다. */
