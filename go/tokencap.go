@@ -1,9 +1,12 @@
 package keycloak
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
+	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -36,6 +39,45 @@ func withTokenCap(ctx context.Context) (context.Context, *atomic.Bool) {
 	hit := new(atomic.Bool)
 	return context.WithValue(ctx, tokenCapKey(0), hit), hit
 }
+
+// decodedGzip hands upward the decoded bytes of a gzip body net/http left encoded. net/http decodes only the gzip it asked
+// for itself; a caller that sets Accept-Encoding — a consumer can, on the admin lane's resty client (Raw()) — gets the body
+// as it came, and resty then gunzips it above every bound below it: measured, the token cap counted compressed bytes and
+// accepted a small gzip token response that decodes to 16 MiB, and the admin error bound (adminbody.go) cut a gzip stream
+// resty then failed to decode, so a 404 became a *TransportError. So it is decoded here, as net/http decodes the gzip it
+// asked for: lazily (the gzip header is read at the first Read — a body nobody reads is not waited on), with the headers
+// saying so afterwards. The test is resty's own (client.go): Content-Encoding gzip and a length other than zero.
+func decodedGzip(resp *http.Response, body io.ReadCloser) io.ReadCloser {
+	if !strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") || resp.ContentLength == 0 {
+		return body
+	}
+	resp.Header.Del("Content-Encoding")
+	resp.Header.Del("Content-Length")
+	resp.ContentLength = -1
+	resp.Uncompressed = true
+	return &gunzipBody{rc: body}
+}
+
+// gunzipBody decodes rc lazily, as net/http's own gzip reader does.
+type gunzipBody struct {
+	rc  io.ReadCloser
+	zr  *gzip.Reader
+	err error
+}
+
+func (b *gunzipBody) Read(p []byte) (int, error) {
+	if b.zr == nil {
+		if b.err == nil {
+			b.zr, b.err = gzip.NewReader(b.rc)
+		}
+		if b.err != nil {
+			return 0, b.err
+		}
+	}
+	return b.zr.Read(p)
+}
+
+func (b *gunzipBody) Close() error { return b.rc.Close() }
 
 // capTokenResponse wraps body in the cap when ctx carries the mark, and returns it as it is otherwise.
 func capTokenResponse(ctx context.Context, body io.ReadCloser) io.ReadCloser {

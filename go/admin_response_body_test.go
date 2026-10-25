@@ -3,6 +3,7 @@ package keycloak
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -10,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"errors"
 	"io"
 	"math/big"
@@ -183,6 +185,39 @@ func rbFramed(status, headers, head, tail string, total int) rbReply {
 
 func rbExact(status, headers, body string) rbReply {
 	return rbPadded(status, headers, body, len(body))
+}
+
+// rbBytes 는 body 를 그대로 싣는 응답이다(쓴 본문 바이트를 센다).
+func rbBytes(status, headers string, body []byte) rbReply {
+	return func(c net.Conn, written *atomic.Int64) bool {
+		if _, err := io.WriteString(c, "HTTP/1.1 "+status+"\r\n"+headers+"Content-Length: "+strconv.Itoa(len(body))+"\r\n\r\n"); err != nil {
+			return false
+		}
+		n, err := c.Write(body)
+		written.Add(int64(n))
+		return err == nil
+	}
+}
+
+// rbGzip 은 head 뒤에 공백 pad 바이트와 tail 을 이은 내용을 gzip 으로 압축한다.
+func rbGzip(t *testing.T, head string, pad int, tail string) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	zw := gzip.NewWriter(&b)
+	_, err := io.WriteString(zw, head)
+	for left := pad; err == nil && left > 0; left -= len(rbSlab) {
+		_, err = zw.Write(rbSlab[:min(left, len(rbSlab))])
+	}
+	if err == nil {
+		_, err = io.WriteString(zw, tail)
+	}
+	if err == nil {
+		err = zw.Close()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b.Bytes()
 }
 
 // rbStalled 는 1 MiB 를 알리고 공백 sent 바이트만 쓴 뒤 20 초 동안 읽지도 쓰지도 않고 붙든다.
@@ -435,6 +470,44 @@ func TestAdminErrorBody_isHeldOnlyUpToTheCap(t *testing.T) {
 	}
 }
 
+// (2b) 호출자가 압축을 직접 청한 오류 본문도 푼 뒤 상한까지만 쥔다 — resty 클라이언트에 Accept-Encoding 을 건 소비자(Raw() 로 닿는 손잡이 —
+// 파사드 호출에도 실린다)의 요청이다. net/http 는 자기가 청한 gzip 만 풀므로 이 본문은 Content-Encoding 이 남은 채 오고 resty 가 스스로 푼다:
+// 압축 바이트를 상한에서 자르면 resty 가 잘린 gzip 을 풀다 실패해 404 가 *TransportError 였고, 상한 안의 작은 gzip 은 끝없이 풀렸다(Grok 레그 지목).
+func TestAdminErrorBodyTheCallerAskedCompressed_isHeldOnlyUpToTheCap(t *testing.T) {
+	random := make([]byte, 3<<19)
+	if _, err := rand.Read(random); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name string
+		body []byte
+	}{
+		{"압축이 상한을 넘는다", rbGzip(t, `{"errorMessage":"`+base64.StdEncoding.EncodeToString(random), 0, `"}`)},
+		{"작은 압축이 상한 너머로 풀린다", rbGzip(t, rbNotFound, rbHuge, "")},
+	}
+	if len(cases[0].body) <= rbCap+1 || len(cases[1].body) >= rbCap {
+		t.Fatalf("행이 성립하지 않는다 — 압축 %d B(상한을 넘어야 한다) · %d B(상한 안이어야 한다)", len(cases[0].body), len(cases[1].body))
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := newRBServer(t, nil, func(string, string) rbReply {
+				return rbBytes("404 Not Found", rbTyped+"Content-Encoding: gzip\r\n", c.body)
+			})
+			a := rbAdmin(t, s, nil, 20*time.Second)
+			a.Raw().RestyClient().SetHeader("Accept-Encoding", "gzip")
+			var err error
+			allocated := rbAllocated(func() { _, err = a.Users.Get(context.Background(), "x") })
+			t.Logf("[AdminResponseBody] get 404 + gzip %d B(%s) → %T %v · allocated %d B", len(c.body), c.name, err, err, allocated)
+			if !errors.Is(err, ErrNotFound) {
+				t.Fatalf("ErrNotFound 가 아니다: %T %v", err, err)
+			}
+			if allocated > rbErrorAllocationBound {
+				t.Fatalf("할당이 한도를 넘었다 — %d B (한도 %d)", allocated, rbErrorAllocationBound)
+			}
+		})
+	}
+}
+
 // rbErrorAllocationBound 는 64 MiB 오류 본문 호출 하나의 할당 한도다. 근거(2026-10-25 실측, Windows · go1.26.4): 수정 전 165.5 MB(서버가
 // 64 MiB 를 끝까지 썼다), 수정 뒤 4.5 MB(서버 1.1 MB — 전송이 상한 + 1 까지 읽고 resty 가 그것을 다시 읽는다) — 16 MiB(16.8 MB)는 수정 뒤보다
 // 3.7 배, 수정 전보다 10 배 떨어진다.
@@ -488,7 +561,9 @@ func TestAdminTokenErrorBodyPastTheCap_isRefusedByTheTokenCap(t *testing.T) {
 }
 
 // (3) 결과 뒤 멈춘 서버를 기다리지 않는다 — create 201(1 MiB 를 알린 본문)의 머리만 받은 뒤 읽기 타임아웃 4 초의 절반 안에 id 를 돌려준다.
-// 본문 64 KiB 가 와 있다 · 한 바이트도 없다, 평문과 TLS 1.3 각각, 갈래마다 rbStallRepeats 번. 수정 전: 평문 4,001–4,002 ms 에 *TransportError.
+// 본문 64 KiB 가 와 있다 · 한 바이트도 없다, 평문과 TLS 1.3 각각, 갈래마다 rbStallRepeats 번. 호출자가 gzip 을 청하고 서버가 Content-Encoding:
+// gzip 을 단 갈래도 같다 — 전송이 gzip 을 미리 풀기 시작하면 그 머리를 읽느라 기다린다(decodedGzip 은 첫 읽기에서 푼다). 수정 전: 평문 4,000–4,002 ms
+// 에 *TransportError.
 func TestAdminServerStalledAfterTheResult_isNotWaitedFor(t *testing.T) {
 	serverTLS, pool := rbTLS(t)
 	readTimeout := 4 * time.Second
@@ -496,7 +571,12 @@ func TestAdminServerStalledAfterTheResult_isNotWaitedFor(t *testing.T) {
 		name string
 		tls  bool
 		sent int
-	}{{"평문 · 본문 64 KiB 뒤 멈춤", false, 65536}, {"평문 · 본문 없이 멈춤", false, 0}, {"TLS 1.3 · 본문 64 KiB 뒤 멈춤", true, 65536}, {"TLS 1.3 · 본문 없이 멈춤", true, 0}}
+		gzip bool
+	}{
+		{"평문 · 본문 64 KiB 뒤 멈춤", false, 65536, false}, {"평문 · 본문 없이 멈춤", false, 0, false},
+		{"TLS 1.3 · 본문 64 KiB 뒤 멈춤", true, 65536, false}, {"TLS 1.3 · 본문 없이 멈춤", true, 0, false},
+		{"평문 · gzip 머리 뒤 본문 없이 멈춤", false, 0, true},
+	}
 	for _, c := range cases {
 		for r := 1; r <= rbStallRepeats; r++ {
 			var cfg *tls.Config
@@ -504,8 +584,15 @@ func TestAdminServerStalledAfterTheResult_isNotWaitedFor(t *testing.T) {
 			if c.tls {
 				cfg, p = serverTLS, pool
 			}
-			s := newRBServer(t, cfg, func(string, string) rbReply { return rbStalled("201 Created", rbLocation, c.sent) })
+			headers := rbLocation
+			if c.gzip {
+				headers += "Content-Encoding: gzip\r\n"
+			}
+			s := newRBServer(t, cfg, func(string, string) rbReply { return rbStalled("201 Created", headers, c.sent) })
 			a := rbAdmin(t, s, p, readTimeout)
+			if c.gzip {
+				a.Raw().RestyClient().SetHeader("Accept-Encoding", "gzip")
+			}
 			start := time.Now()
 			id, err := a.Users.Create(context.Background(), rbUserRep())
 			elapsed := time.Since(start)

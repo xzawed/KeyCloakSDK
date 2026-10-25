@@ -57,7 +57,8 @@ func (t adminBodyTransport) RoundTrip(req *http.Request) (*http.Response, error)
 // error body into gocloak's error value, a cut one fails that parse, and gocloak then reports the parse failure instead of
 // the status — measured, a 404 whose 2 MiB JSON body was cut came back as a *TransportError, so ErrNotFound stopped
 // matching. Without a media type resty parses nothing and the answer keeps its status. A read error (the token cap's
-// refusal, a timeout) becomes the error of the body resty reads.
+// refusal, a timeout) becomes the error of the body resty reads. The bytes counted are decoded ones — a gzip body net/http
+// left encoded was decoded below this transport (decodedGzip).
 func boundError(resp *http.Response) {
 	b, err := io.ReadAll(io.LimitReader(resp.Body, adminErrorBodyMaxBytes+1))
 	_ = resp.Body.Close()

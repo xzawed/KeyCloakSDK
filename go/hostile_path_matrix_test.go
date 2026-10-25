@@ -87,6 +87,8 @@ var hpUndeterminedExempt = map[string]string{
 	"wireScrubTransport.CloseIdleConnections": "전송층의 유휴 커넥션 정리 — 요청을 내지 않는다(cause.go)",
 	"wireScrubBody.Read":                      "응답 본문 래퍼 — 이미 받은 본문을 읽을 뿐 요청을 내지 않는다(cause.go)",
 	"(*cappedBody).Read":                      "토큰 응답 본문 래퍼 — 이미 받은 본문을 상한까지 읽을 뿐 요청을 내지 않는다(tokencap.go)",
+	"(*gunzipBody).Read":                      "gzip 응답 본문 래퍼 — 이미 받은 본문을 풀어 읽을 뿐 요청을 내지 않는다(tokencap.go)",
+	"(*gunzipBody).Close":                     "gzip 응답 본문 래퍼의 닫기 — 요청을 내지 않는다(tokencap.go)",
 	"adminBodyTransport.RoundTrip": "admin 전송층(adminbody.go) — admin 요청이 이미 이것을 지나며 그 요청은 부른 메서드의 행에 잡힌다. " +
 		"소비자에게 건네는 값이 아니다(facade_dump_test.go 의 걷기 면제와 같은 이유)",
 	"adminBodyTransport.CloseIdleConnections": "전송층의 유휴 커넥션 정리 — 요청을 내지 않는다(adminbody.go)",
