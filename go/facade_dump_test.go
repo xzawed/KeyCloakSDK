@@ -69,7 +69,7 @@ var dumpWalkExempt = map[string]string{
 	"failedRead": "admin 오류 본문의 읽기 오류를 resty 에 건네는 동안만 산다 — 파사드가 쥐지 않는다. " +
 		"필드는 그 오류 하나뿐이다(전송층이 정화한 오류 · 토큰 상한의 SDK 오류 — adminbody.go)",
 	"gunzipBody": "net/http 가 풀지 않은 gzip 응답 본문을 감싸 푸는 동안만 산다 — 파사드가 쥐지 않는다. " +
-		"필드는 원래 본문·gzip 리더·그 리더를 만들다 난 오류뿐이고 본문을 쌓지 않는다(tokencap.go)",
+		"필드는 원래 본문과 gzip 리더뿐이고 본문을 쌓지 않는다(tokencap.go)",
 	"jwksFlight": "JWKS 조회가 비행 중인 동안만 jwksState.flight 에 산다 — 뿌리를 만든 뒤에는 nil 이라 걷기가 못 닿는다. " +
 		"필드는 끝 신호 채널과 조회 오류(JWKS 응답 바이트를 인용하지 않는 SDK·정화된 전송 오류)뿐이다(jwt.go)",
 }

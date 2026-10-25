@@ -46,9 +46,10 @@ func withTokenCap(ctx context.Context) (context.Context, *atomic.Bool) {
 // accepted a small gzip token response that decodes to 16 MiB, and the admin error bound (adminbody.go) cut a gzip stream
 // resty then failed to decode, so a 404 became a *TransportError. So it is decoded here, as net/http decodes the gzip it
 // asked for: lazily (the gzip header is read at the first Read — a body nobody reads is not waited on), with the headers
-// saying so afterwards. The test is resty's own (client.go): Content-Encoding gzip and a length other than zero.
+// saying so afterwards. The match is resty's own (client.go: Content-Encoding gzip, any case); an empty body decodes to
+// nothing, so resty's zero-length exception needs no copy here.
 func decodedGzip(resp *http.Response, body io.ReadCloser) io.ReadCloser {
-	if !strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") || resp.ContentLength == 0 {
+	if !strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
 		return body
 	}
 	resp.Header.Del("Content-Encoding")
@@ -60,19 +61,17 @@ func decodedGzip(resp *http.Response, body io.ReadCloser) io.ReadCloser {
 
 // gunzipBody decodes rc lazily, as net/http's own gzip reader does.
 type gunzipBody struct {
-	rc  io.ReadCloser
-	zr  *gzip.Reader
-	err error
+	rc io.ReadCloser
+	zr *gzip.Reader
 }
 
 func (b *gunzipBody) Read(p []byte) (int, error) {
 	if b.zr == nil {
-		if b.err == nil {
-			b.zr, b.err = gzip.NewReader(b.rc)
+		zr, err := gzip.NewReader(b.rc)
+		if err != nil {
+			return 0, err
 		}
-		if b.err != nil {
-			return 0, b.err
-		}
+		b.zr = zr
 	}
 	return b.zr.Read(p)
 }

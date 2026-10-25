@@ -479,11 +479,12 @@ func TestAdminErrorBodyTheCallerAskedCompressed_isHeldOnlyUpToTheCap(t *testing.
 		t.Fatal(err)
 	}
 	cases := []struct {
-		name string
-		body []byte
+		name, encoding string
+		body           []byte
 	}{
-		{"압축이 상한을 넘는다", rbGzip(t, `{"errorMessage":"`+base64.StdEncoding.EncodeToString(random), 0, `"}`)},
-		{"작은 압축이 상한 너머로 풀린다", rbGzip(t, rbNotFound, rbHuge, "")},
+		{"압축이 상한을 넘는다", "gzip", rbGzip(t, `{"errorMessage":"`+base64.StdEncoding.EncodeToString(random), 0, `"}`)},
+		// resty 처럼 이름의 대소문자를 가리지 않는다 — 대문자 이름을 놓치면 resty 가 풀고 상한은 압축 바이트를 센다.
+		{"작은 압축이 상한 너머로 풀린다 · 대문자 이름", "GZIP", rbGzip(t, rbNotFound, rbHuge, "")},
 	}
 	if len(cases[0].body) <= rbCap+1 || len(cases[1].body) >= rbCap {
 		t.Fatalf("행이 성립하지 않는다 — 압축 %d B(상한을 넘어야 한다) · %d B(상한 안이어야 한다)", len(cases[0].body), len(cases[1].body))
@@ -491,7 +492,7 @@ func TestAdminErrorBodyTheCallerAskedCompressed_isHeldOnlyUpToTheCap(t *testing.
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			s := newRBServer(t, nil, func(string, string) rbReply {
-				return rbBytes("404 Not Found", rbTyped+"Content-Encoding: gzip\r\n", c.body)
+				return rbBytes("404 Not Found", rbTyped+"Content-Encoding: "+c.encoding+"\r\n", c.body)
 			})
 			a := rbAdmin(t, s, nil, 20*time.Second)
 			a.Raw().RestyClient().SetHeader("Accept-Encoding", "gzip")
@@ -505,6 +506,26 @@ func TestAdminErrorBodyTheCallerAskedCompressed_isHeldOnlyUpToTheCap(t *testing.
 				t.Fatalf("할당이 한도를 넘었다 — %d B (한도 %d)", allocated, rbErrorAllocationBound)
 			}
 		})
+	}
+}
+
+// 대조 — 전송이 푼 gzip 응답은 푼 것으로 보인다: Raw() 로 보낸 요청(호출자가 Accept-Encoding)의 본문은 풀린 바이트이고, 머리에서
+// Content-Encoding·Content-Length 가 빠지며 길이는 모름(-1) · Uncompressed 다 — net/http 가 스스로 청한 gzip 을 풀었을 때와 같다.
+func TestAdminGzipTheCallerAskedFor_isDecodedAndSaysSo(t *testing.T) {
+	gz := rbGzip(t, rbUser, 0, "")
+	s := newRBServer(t, nil, func(string, string) rbReply { return rbBytes("200 OK", rbTyped+"Content-Encoding: gzip\r\n", gz) })
+	a := rbAdmin(t, s, nil, 20*time.Second)
+	rc := a.Raw().RestyClient().SetHeader("Accept-Encoding", "gzip")
+	resp, err := rc.R().Get(s.url("http") + "/admin/realms/r/users/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := resp.RawResponse
+	t.Logf("[AdminResponseBody] Raw() gzip %d B → %q · Content-Encoding=%q Content-Length=%q ContentLength=%d Uncompressed=%v",
+		len(gz), resp.Body(), raw.Header.Get("Content-Encoding"), raw.Header.Get("Content-Length"), raw.ContentLength, raw.Uncompressed)
+	if string(resp.Body()) != rbUser || raw.Header.Get("Content-Encoding") != "" || raw.Header.Get("Content-Length") != "" ||
+		raw.ContentLength != -1 || !raw.Uncompressed {
+		t.Fatal("푼 응답이 푼 것으로 보이지 않는다")
 	}
 }
 
@@ -614,27 +635,33 @@ func TestAdminServerStalledAfterTheResult_isNotWaitedFor(t *testing.T) {
 // 이 전송뿐이다. 그래도 쓰지 않는 2xx 본문과 상한을 넘은 오류 본문 앞에서 서버는 다 쓰지 못한다.
 func TestAdminCutsWithoutAClientDeadline(t *testing.T) {
 	ctx := context.Background()
+	create := func(a *AdminClient) error {
+		_, err := a.Users.Create(ctx, rbUserRep())
+		return err
+	}
 	cases := []struct {
 		name  string
+		gzip  bool // 호출자가 Accept-Encoding 을 걸었다 — 본문이 전송의 gzip 풀기(decodedGzip)를 거쳐 닫힌다
 		reply rbReply
 		call  func(*AdminClient) error
 	}{
-		{"create 201 + 64 MiB", rbPadded("201 Created", rbLocation, "", rbHuge), func(a *AdminClient) error {
-			_, err := a.Users.Create(ctx, rbUserRep())
-			return err
-		}},
-		{"get 404 + 64 MiB", rbPadded("404 Not Found", rbTyped, rbNotFound, rbHuge), func(a *AdminClient) error {
+		{"create 201 + 64 MiB", false, rbPadded("201 Created", rbLocation, "", rbHuge), create},
+		{"get 404 + 64 MiB", false, rbPadded("404 Not Found", rbTyped, rbNotFound, rbHuge), func(a *AdminClient) error {
 			if _, err := a.Users.Get(ctx, "x"); !errors.Is(err, ErrNotFound) {
 				return errors.New("ErrNotFound 가 아니다")
 			}
 			return nil
 		}},
+		{"create 201 gzip + 64 MiB", true, rbPadded("201 Created", rbLocation+"Content-Encoding: gzip\r\n", "", rbHuge), create},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			s := newRBServer(t, nil, func(string, string) rbReply { return c.reply })
 			a := rbAdmin(t, s, nil, 20*time.Second)
 			a.Raw().RestyClient().SetTimeout(0)
+			if c.gzip {
+				a.Raw().RestyClient().SetHeader("Accept-Encoding", "gzip")
+			}
 			err := c.call(a)
 			finished := s.awaitReply()
 			t.Logf("[AdminResponseBody] 기한 없음 · %s → err=%v · server wrote %d B finished=%v", c.name, err, s.written.Load(), finished)
