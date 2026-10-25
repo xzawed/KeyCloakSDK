@@ -593,6 +593,63 @@ class AdminResourceResponseCutTest {
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
   }
 
+  /**
+   * 오류 본문을 상한까지 받은 뒤 멈춘 서버도 기다리지 않는다 — RESTEasy 의 {@code bufferEntity} 는 상한에서 끝난 것처럼 보이는 스트림을
+   * 다 읽고 {@code releaseConnection} 으로 닫으며, 그 닫기가 엿보기 뒤 끊는다. 404(미디어 타입 있음)가 상한만큼 쓰고 멈추면 읽기 타임아웃
+   * 4 초의 절반 안에 {@code KeycloakNotFoundException} 이 온다(상태가 전송 실패로 바뀌지 않는다). 평문과 TLS 1.3 각각. Grok 레그의 지적
+   * (「상한에서 끊긴 오류 본문은 닫기가 다시 비우고, 멈추면 상태가 읽기 타임아웃으로 바뀐다」)을 재는 시험이다.
+   */
+  @Test @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void aServerStalledAfterACappedErrorBody_isNotWaitedFor() throws Exception {
+    List<String> wrong = new ArrayList<>();
+    Duration readTimeout = Duration.ofSeconds(4);
+    Reply capThenStall = (out, written) -> {
+      byte[] h = utf8(NOT_FOUND);
+      out.write(latin1("HTTP/1.1 404 Not Found\r\n" + TYPED + "Content-Length: " + (CAP + (1L << 20)) + "\r\n\r\n"));
+      out.write(h);
+      written.addAndGet(h.length);
+      spaces(out, CAP - h.length, written);
+      out.flush();
+      LockSupport.parkNanos(TimeUnit.SECONDS.toNanos(20)); // 상한만큼 쓰고 읽지도 쓰지도 않고 붙든다
+      return false;
+    };
+    for (SSLContext tls : new SSLContext[] {null, serverTls}) {
+      String label = tls == null ? "평문" : "TLS 1.3";
+      try (RawServer server = new RawServer(tls, any -> capThenStall)) {
+        Outcome o;
+        try (AdminClient admin = tls == null ? admin(server, readTimeout) : tlsAdmin(server, readTimeout)) {
+          o = call(admin, a -> a.users().get("x"));
+        }
+        String row = label + " · 404 상한 뒤 멈춤 → " + o.describe() + " (읽기 타임아웃 4,000 ms)";
+        System.out.println("[AdminResourceResponseCutTest] " + row);
+        if (!(o.thrown() instanceof KeycloakNotFoundException e) || e.getKeycloakError().length() != CAP) {
+          wrong.add(label + ": 상한까지의 본문을 실은 KeycloakNotFoundException 이 아니다 — " + row);
+        }
+        if (o.millis() >= readTimeout.toMillis() / 2) wrong.add(label + ": 멈춘 서버를 기다렸다 — " + row);
+      }
+    }
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
+  }
+
+  /**
+   * {@code raw()} 로 오류 응답의 스트림을 읽어도 상한에서 끝난다 — 엔진이 상태 3xx 이상의 엔티티를 그 길이에서 끝난 것처럼 보이게 하므로
+   * 소비자의 {@code readEntity(InputStream)} 은 상한만큼 읽고 끝(-1)을 본다(예외가 아니다 — 예외로 알리면 RESTEasy 의 {@code bufferEntity}
+   * 가 {@code ProcessingException} 을 내 파사드가 상태 갈래를 잃는다). 상한 너머의 꼬리는 읽지 않는다. Grok 레그가 지목한 동작을 고정한다.
+   */
+  @Test @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void aRawErrorStream_endsAtTheCap() throws Exception {
+    try (RawServer server = new RawServer(padded("500 Internal Server Error", TYPED, NOT_FOUND, CAP + 10L));
+         AdminClient admin = admin(server, Duration.ofSeconds(20))) {
+      int read;
+      try (jakarta.ws.rs.core.Response r = admin.raw().realm(REALM).users().delete("x")) {
+        assertEquals(500, r.getStatus());
+        read = r.readEntity(InputStream.class).readAllBytes().length;
+      }
+      System.out.println("[AdminResourceResponseCutTest] raw() 500 " + (CAP + 10L) + " B → 읽은 바이트 " + read);
+      assertEquals(CAP, read);
+    }
+  }
+
   /** 대조 — 끊긴 연결은 풀로 돌아가지 않는다: 나머지를 끊은 create 다음의 get 은 새 연결에서 성공한다(연결 2). */
   @Test @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
   void aCutConnection_isNotReturnedToThePool() throws Exception {

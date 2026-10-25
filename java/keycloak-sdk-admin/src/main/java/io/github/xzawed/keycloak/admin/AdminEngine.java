@@ -154,9 +154,10 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
   /**
    * 응답 하나의 엔티티 스트림 — 닫을 때 남은 본문을 비우지 않는다. EOF 를 읽었으면 그대로 닫고(HttpClient 가 연결을 풀로 돌려준다), 아니면
    * 끝인지 한 번만 엿보고({@link Exchange#endsNow}) 끝이 아니면 그 교환을 끊은 뒤 닫는다 — 끊긴 연결에서의 닫기는 소켓에 닿지 못하고 버퍼에
-   * 남은 것만 지나간다. {@code limit} 바이트를 내주면 끝난 것처럼 -1 을 돌려준다(오류 본문의 상한 — 진짜 끝이 아니므로 닫을 때 엿본다).
-   * 길이 0 의 읽기는 스트림에 넘기지 않는다 — HttpCore 의 빈 버퍼는 그것도 소켓에서 기다린다({@code TokenResponseGuard.capPlusOne} 와 같은
-   * 처방).
+   * 남은 것만 지나간다. {@code limit} 바이트를 내주면 끝난 것처럼 -1 을 돌려준다(오류 본문의 상한 — 진짜 끝이 아니므로 닫을 때 엿본다 ·
+   * {@code raw()} 로 오류 응답의 스트림을 읽어도 같은 길이에서 끝난다). 길이 0 의 읽기는 스트림에 넘기지 않는다 — HttpCore 의 빈 버퍼는
+   * 그것도 소켓에서 기다린다({@code TokenResponseGuard.capPlusOne} 와 같은 처방). ⚠️ 엿보기는 한 번이다 — 남은 것이 한 바이트뿐이거나 청크의
+   * 끝 표시가 1 ms 뒤에 오면 끊는다. 잃는 것은 그 연결의 재사용뿐이다(Keycloak 의 201·204 는 본문이 없어 끝을 바로 본다).
    */
   static final class Settled extends InputStream {
     private final InputStream in;

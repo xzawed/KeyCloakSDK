@@ -597,6 +597,64 @@ internal class AdminResourceResponseCutTest {
         assertEquals(-1, capped.read())
     }
 
+    // 오류 본문을 상한까지 받은 뒤 멈춘 서버도 기다리지 않는다 — RESTEasy 의 `bufferEntity` 는 상한에서 끝난 것처럼 보이는 스트림을 다
+    // 읽고 `releaseConnection` 으로 닫으며, 그 닫기가 엿보기 뒤 끊는다. 404(미디어 타입 있음)가 상한만큼 쓰고 멈추면 읽기 타임아웃 4 초의
+    // 절반 안에 NotFound 가 온다(상태가 전송 실패로 바뀌지 않는다). 평문과 TLS 1.3 각각. Grok 레그의 지적을 재는 시험이다(Java 와 같다).
+    @Test
+    @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `a server stalled after a capped error body is not waited for`() {
+        val wrong = mutableListOf<String>()
+        val readTimeout = Duration.ofSeconds(4)
+        val declared = TOKEN_RESPONSE_MAX_BYTES + (1L shl 20)
+        val capThenStall =
+            ArrReply { out, written ->
+                val h = ARR_NOT_FOUND.toByteArray(Charsets.UTF_8)
+                out.write(arrLatin1("HTTP/1.1 404 Not Found\r\n${ARR_TYPED}Content-Length: $declared\r\n\r\n"))
+                out.write(h)
+                written.addAndGet(h.size.toLong())
+                arrSpaces(out, (TOKEN_RESPONSE_MAX_BYTES - h.size).toLong(), written)
+                out.flush()
+                LockSupport.parkNanos(TimeUnit.SECONDS.toNanos(20)) // 상한만큼 쓰고 읽지도 쓰지도 않고 붙든다
+                false
+            }
+        for (tls in listOf<SSLContext?>(null, TransportTestTls.serverIp)) {
+            val label = if (tls == null) "평문" else "TLS 1.3"
+            ArrRawServer(tls) { _ -> capThenStall }.use { server ->
+                val o =
+                    (if (tls == null) arrAdmin(server, readTimeout) else arrTlsAdmin(server, readTimeout)).use { admin ->
+                        arrCall(admin) { a -> runBlocking { a.users().get("x") } }
+                    }
+                val row = "$label · 404 상한 뒤 멈춤 → ${o.describe()} (읽기 타임아웃 4,000 ms)"
+                println("[AdminResourceResponseCutTest] $row")
+                val e = o.thrown as? KeycloakAdminException.NotFound
+                if (e == null || e.keycloakError?.length != TOKEN_RESPONSE_MAX_BYTES) {
+                    wrong += "$label: 상한까지의 본문을 실은 NotFound 가 아니다 — $row"
+                }
+                if (o.millis >= readTimeout.toMillis() / 2) wrong += "$label: 멈춘 서버를 기다렸다 — $row"
+            }
+        }
+        assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
+    }
+
+    // `raw()` 로 오류 응답의 스트림을 읽어도 상한에서 끝난다 — 소비자의 readEntity(InputStream) 은 상한만큼 읽고 끝(-1)을 본다(예외가
+    // 아니다 — 예외로 알리면 RESTEasy 의 bufferEntity 가 ProcessingException 을 내 파사드가 상태 갈래를 잃는다). Java 와 같다.
+    @Test
+    @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `a raw error stream ends at the cap`() {
+        val total = TOKEN_RESPONSE_MAX_BYTES + 10L
+        ArrRawServer(null) { _ -> arrPadded("500 Internal Server Error", ARR_TYPED, ARR_NOT_FOUND, total) }.use { server ->
+            arrAdmin(server, Duration.ofSeconds(20)).use { admin ->
+                val read =
+                    admin.raw().realm(ARR_REALM).users().delete("x").use { r ->
+                        assertEquals(500, r.status)
+                        r.readEntity(InputStream::class.java).readAllBytes().size
+                    }
+                println("[AdminResourceResponseCutTest] raw() 500 $total B → 읽은 바이트 $read")
+                assertEquals(TOKEN_RESPONSE_MAX_BYTES, read)
+            }
+        }
+    }
+
     // 대조 — 끊긴 연결은 풀로 돌아가지 않는다: 나머지를 끊은 create 다음의 get 은 새 연결에서 성공한다(연결 2).
     @Test
     @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
