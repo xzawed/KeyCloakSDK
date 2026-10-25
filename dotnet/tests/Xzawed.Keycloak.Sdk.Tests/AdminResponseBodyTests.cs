@@ -319,6 +319,58 @@ public sealed class AdminResponseBodyTests
         Assert.Equal(size, (await updated.Content.ReadAsByteArrayAsync()).Length);
     }
 
+    /// <summary>The mark reaches the write's own request alone: an admin GET the token provider sends while the write is being
+    /// sent still reads its body.</summary>
+    [Fact]
+    public async Task A_get_the_token_provider_sends_during_a_write_reads_its_body()
+    {
+        var provider = new NestedGetProvider();
+        using var idp = new KeepAliveIdp(req => req.Method == "PUT"
+            ? KeepAliveIdp.Resp.Empty(204)
+            : KeepAliveIdp.Resp.Json("""{"id":"u1","username":"alice"}"""));
+        await using var admin = await AdminClient.CreateAsync(
+            new KeycloakConfig { ServerUrl = idp.Url, Realm = "r", ClientId = "c", ClientSecret = "s" }.Normalized(), provider);
+        provider.Admin = admin;
+
+        await admin.Users.UpdateAsync("u1", new UserRepresentation { Username = "u" });
+
+        Assert.Null(provider.Error);
+        Assert.Equal("alice", provider.User?.Username);
+    }
+
+    /// <summary>Its second call is the write's own token fetch (the first is <c>CreateAsync</c>'s warm-up): it sends one admin GET.</summary>
+    private sealed class NestedGetProvider : ITokenProvider
+    {
+        private int _calls;
+        public AdminClient? Admin { get; set; }
+        public UserRepresentation? User { get; private set; }
+        public Exception? Error { get; private set; }
+
+        public async Task<string> GetAccessTokenAsync(CancellationToken ct = default)
+        {
+            if (Interlocked.Increment(ref _calls) == 2 && Admin is { } admin)
+            {
+                try { User = await admin.Users.GetAsync("u1", ct); }
+                catch (KeycloakException e) { Error = e; }
+            }
+            return "t";
+        }
+    }
+
+    /// <summary>An error body the server cuts short fails the <c>Raw</c> client as <c>HttpClient</c> failed it before — the
+    /// escape hatch hands over the lower library's error (§4(b)), and that error is unchanged.</summary>
+    [Fact]
+    public async Task A_raw_error_body_the_server_cuts_short_fails_as_HttpClient_did()
+    {
+        using var idp = new KeepAliveIdp(_ => Error(404, 1000, chunked: false, stopAfter: 10, closeAtStop: true));
+        await using var admin = await AdminAsync(idp);
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() => admin.Raw.GetUserWithResponseAsync("r", "u1"));
+
+        Assert.Equal("Error while copying content to a stream.", ex.Message);
+        Assert.IsAssignableFrom<IOException>(ex.InnerException);
+    }
+
     /// <summary>The <c>Raw</c> client's error body is cut at the cap too — and its headers say what is left: the length of
     /// the cut body, the media type the server gave.</summary>
     [Theory]

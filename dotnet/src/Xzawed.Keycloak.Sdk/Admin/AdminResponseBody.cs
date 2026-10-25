@@ -10,7 +10,8 @@ namespace Xzawed.Keycloak.Admin;
 /// body the handler leaves is all there is to buffer.</para>
 /// <para>A write is marked, not inferred from its request: <c>Raw</c>'s <c>*WithResponseAsync</c> hands a write's response,
 /// body and all, to the consumer. The typed client builds its requests itself, so the mark is an <see cref="AsyncLocal{T}"/>
-/// set inside the facade call; it reaches the requests of that call alone. ⚠️ A new facade write goes through
+/// set inside the facade call, and <see cref="BearerHandler"/> takes it before the token provider runs — so it reaches that
+/// call's own requests alone, not one the provider sends meanwhile. ⚠️ A new facade write goes through
 /// <c>AdminClient.WriteTypedAsync</c>, <c>WriteRawAsync</c> or a create helper — any other path reads its 2xx body whole.</para>
 /// <para>The body a response replaces is disposed: one read to its end gives its connection back to the pool, one cut short
 /// closes it (<c>HttpTransport</c> sets <c>MaxResponseDrainSize</c> to 0). Nothing inflates the bytes counted —
@@ -30,13 +31,24 @@ internal static class AdminResponseBody
     /// async method: the mark ends with that method.</summary>
     internal static void LeaveUnread() => WriteUnread.Value = true;
 
+    /// <summary>Whether the request being sent is a marked write's — clearing the mark for the rest of the sending, so a request
+    /// the token provider makes meanwhile is not taken for the write's. Call it inside an async method: the clearing ends with
+    /// that method, and the facade call keeps its mark.</summary>
+    internal static bool TakeUnread()
+    {
+        if (!WriteUnread.Value)
+            return false;
+        WriteUnread.Value = false;
+        return true;
+    }
+
     /// <summary>The response with as much of its body as the SDK reads: an error body cut at the cap, a marked write's 2xx body
     /// none, any other body untouched.</summary>
-    internal static async Task<HttpResponseMessage> SettleAsync(HttpResponseMessage response, CancellationToken ct)
+    internal static async Task<HttpResponseMessage> SettleAsync(HttpResponseMessage response, bool unread, CancellationToken ct)
     {
         if ((int)response.StatusCode >= 300)
             Replace(response, await ReadErrorAsync(response, ct).ConfigureAwait(false));
-        else if (WriteUnread.Value)
+        else if (unread)
             Replace(response, ArraySegment<byte>.Empty);
         return response;
     }
@@ -66,8 +78,9 @@ internal static class AdminResponseBody
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException)
         {
-            // What HttpContent makes of the same failure when HttpClient buffers a body itself — "admin request failed".
-            throw new HttpRequestException("the admin error response body could not be read", e);
+            // What HttpContent makes of the same failure when HttpClient buffers a body itself, word for word: the facade turns
+            // it into "admin request failed", and the Raw client hands it over as it did before.
+            throw new HttpRequestException("Error while copying content to a stream.", e);
         }
         finally
         {

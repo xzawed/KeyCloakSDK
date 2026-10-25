@@ -12,6 +12,8 @@ internal sealed class BearerHandler : DelegatingHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
+        // Before the token provider runs: an admin request it sends meanwhile is its own, not this write's.
+        var unread = AdminResponseBody.TakeUnread();
         var token = await _tokenProvider.GetAccessTokenAsync(ct).ConfigureAwait(false);
         // Of the control characters, .NET refuses only CR and LF (below). NUL, DEL and the other C0 controls went out on the
         // wire as they came, and only the server stopped them — Keycloak 26.6 answers each with 400 (measured: BearerHeaderCaseTests).
@@ -41,7 +43,7 @@ internal sealed class BearerHandler : DelegatingHandler
             throw new KeycloakTransportException(AdminClient.UnencodableBody, ex);
         }
         AdminClient.Observe(response.StatusCode);
-        return await AdminResponseBody.SettleAsync(response, ct).ConfigureAwait(false);
+        return await AdminResponseBody.SettleAsync(response, unread, ct).ConfigureAwait(false);
     }
 
     private const string UnsendableControlMessage =
