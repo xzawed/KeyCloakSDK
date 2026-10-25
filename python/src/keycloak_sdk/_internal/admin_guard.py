@@ -17,9 +17,10 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
    직접 읽는 메서드는 없다, 7.1.1 실측). 읽을 때마다 **지금 살아 있는** 연결 그래프에 훅이 다
    걸렸는지 보고 빠진 것을 다시 건다 — 공개 세터·비공개 필드·중첩 세터 어느 쪽으로 바뀌었어도
    다음 요청 전에 잡힌다.
-2. 그래프의 훅 열 자리(전부 인스턴스 속성): 두 세션의 `resolve_redirects`(`redirects.py`),
+2. 그래프의 훅 열두 자리(전부 인스턴스 속성): 두 세션의 `resolve_redirects`(`redirects.py`),
    중첩 `KeycloakOpenID` 의 그랜트 넷(`admin_grant.py`), 그랜트 세션 둘(`_s`·`async_s`)의 `send` —
-   그랜트 응답 본문의 크기 상한(`token_cap.py`, admin REST 세션에는 걸지 않는다), 그리고 연결의
+   그랜트 응답 본문의 크기 상한(`token_cap.py`), REST 세션 둘(`_s`·`async_s`)의 `send` — 응답 본문의
+   끝(`admin_body.py` — 오류 본문은 상한까지, 파사드 쓰기의 2xx 는 읽지 않는다), 그리고 연결의
    `_refresh_if_required`·`a__refresh_if_required` — 그 **뒤**에서 보낼 헤더의 bearer 를 본다(빈
    것, 그리고 그 레인의 헤더가 실을 수 없는 것 — `bearer.py`).
    마지막이 주입·토큰 세터로 **그랜트를 거치지 않고** 실린 bearer 를 잡는다. `raw_*` 는 그 갱신
@@ -37,7 +38,7 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
 연결을 바꾸고 곧바로 메서드를 부르면 그 사이에 SDK 코드가 한 줄도 돌지 않는다. (b) 연결에 한 번
 거는 요청 시점 검사 — 연결째 갈아 끼워진다. (c) `connection` **세터**만 가로채기 — 비공개
 `_connection` 쓰기와 중첩 `KeycloakOpenID.connection` 교체를 못 본다. 게터가 치르는 값은 읽기마다
-그 자리들(훅 열 자리와 어댑터)을 확인하는 것이다.
+그 자리들(훅 열두 자리와 어댑터)을 확인하는 것이다.
 
 ⚠️ 목(`MagicMock(spec=KeycloakAdmin)`)은 클래스를 바꾸면 `isinstance` 가 깨진다(실측) — 그래서
 진짜 `KeycloakAdmin` 만 읽기마다 다시 보고, 그 밖의 객체는 생성 때 한 번 건다.
@@ -56,6 +57,7 @@ from keycloak import KeycloakAdmin
 
 from ..exceptions import KeycloakAuthError, KeycloakConfigError
 from ..tokens import _usable_access_token
+from .admin_body import abounded_send, bounded_send
 from .admin_grant import _ASYNC_GRANTS, _SYNC_GRANTS, _achecked, _checked
 from .bearer import SENDING, Lane, unsendable
 from .redirects import _refuse_redirects, _require, _unsupported
@@ -93,6 +95,7 @@ _SUPPORT = (
 #: 훅을 걸 수 없을 때 거부 메시지가 말하는 위험.
 _UNUSABLE = "send an unusable access token to the admin API"
 _UNBOUNDED = "read an unbounded token grant response into memory"
+_UNREAD = "read an unbounded admin error response, or a response body it never uses, into memory"
 
 #: (걸 객체, 속성 이름, 걸 값, 메시지에 쓸 자리). 클래스로 두지 않는다 — 공개 뿌리에서 닿지
 #: 않는 SDK 선언은 `test_facade_dump.py` 가 면제를 요구한다.
@@ -231,6 +234,12 @@ def _plan(conn: Any) -> list[_Hook]:
     _plan_wrap(hooks, nested_session, "send", size, f"{at}._s.send", capped_send, _UNBOUNDED)
     async_session = getattr(nested_conn, "async_s", None)
     _plan_wrap(hooks, async_session, "send", size, f"{at}.async_s.send", acapped_send, _UNBOUNDED)
+    # admin REST 응답 본문의 끝(`admin_body.py`) — 오류 본문은 상한까지, 파사드 쓰기의 2xx 는
+    # 읽지 않는다. 성공 본문은 그대로다.
+    body = "admin response body"
+    _plan_wrap(hooks, rest_session, "send", body, "connection._s.send", bounded_send, _UNREAD)
+    rest_async = getattr(conn, "async_s", None)
+    _plan_wrap(hooks, rest_async, "send", body, "connection.async_s.send", abounded_send, _UNREAD)
     for name in _SYNC_GRANTS:
         _plan_wrap(hooks, nested, name, grant, f"connection.keycloak_openid.{name}", _checked)
     for name in _ASYNC_GRANTS:

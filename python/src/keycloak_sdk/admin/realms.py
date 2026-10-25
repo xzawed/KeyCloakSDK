@@ -7,7 +7,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
-from ._translate import call
+from ._translate import call, write_call
 
 
 class RealmsResource:
@@ -17,7 +17,7 @@ class RealmsResource:
         self._admin = admin
 
     def create(self, rep: dict[str, Any]) -> None:
-        call(lambda: self._admin.create_realm(rep))
+        write_call(lambda: self._admin.create_realm(rep))
 
     def get(self, realm_name: str) -> dict[str, Any] | None:
         """realm 이름으로 조회한다. 존재하지 않으면 `KeycloakNotFoundError`가
@@ -34,7 +34,7 @@ class RealmsResource:
         경로(`realm_name`)와 body(`rep`)를 합치지 말 것 — 합치면 rename이 조용한
         no-op이 된다.
         """
-        call(lambda: self._admin.update_realm(realm_name, rep))
+        write_call(lambda: self._admin.update_realm(realm_name, rep))
 
     def delete(self, realm_name: str) -> None:
-        call(lambda: self._admin.delete_realm(realm_name))
+        write_call(lambda: self._admin.delete_realm(realm_name))

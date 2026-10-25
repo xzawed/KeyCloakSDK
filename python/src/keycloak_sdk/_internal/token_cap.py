@@ -34,7 +34,8 @@ decode_content=False)`·aio `aiter_raw`)을 받아 여기서 풀고, 그렇게 �
 **새로** 만든다 — 신호는 python-keycloak 의 프레임(보낼 폼, 곧 `client_secret`)을 지나왔으므로
 원인으로 달지 않는다.
 
-⚠️ **admin REST 세션에는 걸지 않는다** — 사용자 목록은 정당하게 크다. admin 은 자체 그랜트의
+⚠️ **admin REST 세션에는 걸지 않는다** — 사용자 목록은 정당하게 크다(그 세션의 오류
+본문 상한과 쓰지 않는 본문은 `admin_body.py` 가 맡는다). admin 은 자체 그랜트의
 세션(중첩 `KeycloakOpenID`)에만 걸고, 그 설치는 `admin_guard.py` 가 요청마다 다시 본다.
 """
 

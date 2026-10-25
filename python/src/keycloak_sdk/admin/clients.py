@@ -12,7 +12,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
-from ._translate import call
+from ._translate import call, write_call
 
 
 class ClientsResource:
@@ -22,7 +22,7 @@ class ClientsResource:
         self._admin = admin
 
     def create(self, rep: dict[str, Any]) -> str:
-        return call(lambda: self._admin.create_client(rep))
+        return write_call(lambda: self._admin.create_client(rep))
 
     def get(self, id: str) -> dict[str, Any] | None:
         """내부 UUID(`id`)로 클라이언트를 조회한다. 존재하지 않으면
@@ -34,7 +34,7 @@ class ClientsResource:
         return call(lambda: self._admin.get_client_id(client_id))
 
     def update(self, id: str, rep: dict[str, Any]) -> None:
-        call(lambda: self._admin.update_client(id, rep))
+        write_call(lambda: self._admin.update_client(id, rep))
 
     def delete(self, id: str) -> None:
-        call(lambda: self._admin.delete_client(id))
+        write_call(lambda: self._admin.delete_client(id))

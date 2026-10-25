@@ -7,7 +7,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
-from ._translate import call
+from ._translate import call, write_call
 
 
 class RolesResource:
@@ -17,7 +17,7 @@ class RolesResource:
         self._admin = admin
 
     def create(self, rep: dict[str, Any]) -> None:
-        call(lambda: self._admin.create_realm_role(rep))
+        write_call(lambda: self._admin.create_realm_role(rep))
 
     def get(self, name: str) -> dict[str, Any] | None:
         """역할 이름으로 조회한다. 존재하지 않으면 `KeycloakNotFoundError`가
@@ -32,7 +32,7 @@ class RolesResource:
 
         경로(`name`)와 body(`rep`)를 합치지 말 것.
         """
-        call(lambda: self._admin.update_realm_role(name, rep))
+        write_call(lambda: self._admin.update_realm_role(name, rep))
 
     def delete(self, name: str) -> None:
-        call(lambda: self._admin.delete_realm_role(name))
+        write_call(lambda: self._admin.delete_realm_role(name))
