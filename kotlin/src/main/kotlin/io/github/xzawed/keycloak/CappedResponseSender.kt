@@ -22,7 +22,8 @@ import java.nio.charset.StandardCharsets
  * 토큰 엔드포인트(세 그랜트 — auth 레인과 admin 레인의 자기 토큰 부여)·introspection·logout 응답 본문의 크기 상한(바이트).
  *
  * ⚠️ 아홉 언어가 함께 움직이는 값이고 교차언어 가드가 이 리터럴을 읽는다 — 식(`1 shl 20`)이 아니라 맨 십진 리터럴로 두고 여기
- * 한 곳에만 선언한다(auth 레인의 [CappedResponseSender] 와 admin 레인의 `TokenResponseGuard` 가 함께 쓴다). Keycloak 26.6 기본
+ * 한 곳에만 선언한다(auth 레인의 [CappedResponseSender] 와 admin 레인의 `TokenResponseGuard` 가 함께 쓰고, admin 엔진이 자원 응답의
+ * 오류 본문 상한으로 빌린다 — 성공 본문에는 걸지 않는다). Keycloak 26.6 기본
  * 설정(start-dev 로 실측)이 받아들이는 가장 긴 Bearer(65,459 바이트 — 한 바이트 더 길면 HTTP 431)의 16 배라 서버가 받아들이는
  * 토큰을 거부하지 않는다. JWKS 응답 상한(51,200)을 빌리지 말 것 — 큰 배포의 쓸 수 있는 토큰을 거부했다.
  */

@@ -16,6 +16,7 @@ import java.io.ByteArrayInputStream
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
+import java.net.URI
 
 /**
  * admin 레인의 토큰 응답 검사(Java `TokenResponseGuard` 동형) — 토큰 엔드포인트의 성공 응답이 **HTTP 필드 값이 실을 수 있는 비어 있지
@@ -69,10 +70,8 @@ internal class TokenResponseGuard :
         request: ClientRequestContext,
         response: ClientResponseContext,
     ) {
-        if (request.method != HttpMethod.POST) return
-        val path = request.uri.rawPath
-        val token = path.endsWith(TOKEN_PATH_SUFFIX)
-        if (!token && !path.endsWith(LOGOUT_PATH_SUFFIX)) return
+        if (!guardsErrorBody(request.method, request.uri)) return
+        val token = request.uri.rawPath.endsWith(TOKEN_PATH_SUFFIX)
         val exchange = request.getProperty(AdminEngine.EXCHANGE)
         if (response.statusInfo.family != Response.Status.Family.SUCCESSFUL) {
             // 오류·리다이렉트는 판정하지 않는다(TokenManager 의 몫) — RESTEasy 가 통째로 버퍼에 읽는 그 본문을 상한까지만 넘긴다.
@@ -99,6 +98,13 @@ internal class TokenResponseGuard :
 
         // admin 이 닫힐 때 내장 TokenManager 가 refresh_token 을 보내는 곳(Keycloak.close → TokenManager.logout) — 오류 본문의 상한만.
         internal const val LOGOUT_PATH_SUFFIX = "/protocol/openid-connect/logout"
+
+        // 이 가드가 오류 본문을 상한으로 거부하는 교환 — 토큰·logout 으로의 POST. 엔진([AdminEngine.invoke])은 이 교환을 오류 본문의 상한에서
+        // 뺀다(넘침을 알아채는 상한+1 바이트는 이 가드의 몫이다).
+        internal fun guardsErrorBody(
+            method: String,
+            uri: URI,
+        ): Boolean = method == HttpMethod.POST && uri.rawPath.let { it.endsWith(TOKEN_PATH_SUFFIX) || it.endsWith(LOGOUT_PATH_SUFFIX) }
 
         // ReaderInterceptor 로서의 우선순위 — 오름차순으로 도므로 가장 큰 값이 결합(MessageBodyReader) 바로 앞이다.
         internal const val READ_PRIORITY = Int.MAX_VALUE

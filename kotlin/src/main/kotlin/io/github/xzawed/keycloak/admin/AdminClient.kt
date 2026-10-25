@@ -7,6 +7,7 @@ import io.github.xzawed.keycloak.KeycloakTransportException
 import io.github.xzawed.keycloak.RESPONSE_MAX_HEADER_COUNT
 import io.github.xzawed.keycloak.RESPONSE_MAX_LINE_LENGTH
 import io.github.xzawed.keycloak.RedactedCause
+import io.github.xzawed.keycloak.TOKEN_RESPONSE_MAX_BYTES
 import io.github.xzawed.keycloak.onIo
 import jakarta.ws.rs.Priorities
 import jakarta.ws.rs.ProcessingException
@@ -14,7 +15,9 @@ import jakarta.ws.rs.WebApplicationException
 import jakarta.ws.rs.client.Client
 import jakarta.ws.rs.client.ClientBuilder
 import jakarta.ws.rs.client.ClientResponseFilter
+import jakarta.ws.rs.client.Invocation
 import jakarta.ws.rs.client.ResponseProcessingException
+import jakarta.ws.rs.core.Response
 import jakarta.ws.rs.ext.ReaderInterceptor
 import kotlinx.coroutines.CancellationException
 import org.apache.http.HttpException
@@ -32,11 +35,15 @@ import org.jboss.resteasy.client.jaxrs.ClientHttpEngine
 import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder
 import org.jboss.resteasy.client.jaxrs.engines.HttpContextProvider
 import org.jboss.resteasy.client.jaxrs.internal.ClientInvocation
+import org.jboss.resteasy.client.jaxrs.internal.ClientResponse
+import org.jboss.resteasy.client.jaxrs.internal.ClientResponseContextImpl
 import org.keycloak.OAuth2Constants
 import org.keycloak.admin.client.JacksonProvider
 import org.keycloak.admin.client.Keycloak
 import org.keycloak.admin.client.KeycloakBuilder
 import org.keycloak.admin.client.spi.StreamMessageBodyReader
+import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
@@ -151,7 +158,8 @@ public class AdminClient internal constructor(
 /**
  * RESTEasy 의 기본 엔진 빌더 그대로에 응답 틀의 한도만 더한다([AdminClient.buildTimeoutClient]). 그 클래스는 RESTEasy 6.2 에서 제거 예정으로
  * 표시돼 있지만 RESTEasy 자신이 기본 엔진을 그것으로 짓는다 — 제거되면 여기가 컴파일되지 않아 다시 볼 자리를 알린다. 지은 엔진은
- * [AdminEngine] 이 감싼다 — 교환마다 읽지 않고 끊을 손잡이를 달아, 가드가 거부한 응답의 나머지를 HttpCore 가 비우지 않게 한다.
+ * [AdminEngine] 이 감싼다 — 교환마다 읽지 않고 끊을 손잡이를 달아, 가드가 거부한 응답과 결과를 얻은 자원 응답의 나머지를 HttpCore 가
+ * 비우지 않게 하고 오류 본문은 상한까지만 쥔다.
  */
 @Suppress("DEPRECATION")
 private class BoundedEngineBuilder : org.jboss.resteasy.client.jaxrs.engines.ClientHttpEngineBuilder43() {
@@ -174,14 +182,17 @@ private class BoundedEngineBuilder : org.jboss.resteasy.client.jaxrs.engines.Cli
 /**
  * admin 레인의 RESTEasy 엔진(Java `AdminEngine` 동형) — RESTEasy 가 지은 엔진([owner] — 타임아웃·풀·응답 틀의 한도)의 HttpClient 를 그대로
  * 쓰고, 교환마다 그 교환을 **읽지 않고 끊을** 손잡이([Exchange])를 요청 속성 [EXCHANGE] 에 단다. 응답 필터와 ReaderInterceptor 가 같은
- * 속성을 본다([TokenResponseGuard] 가 거부할 때 쓴다).
+ * 속성을 본다([TokenResponseGuard] 가 거부할 때 쓴다). 응답마다 엔티티 스트림을 [Settled] 로 감싸 결과를 얻은 뒤의 닫기도 같은 손잡이로
+ * 끝낸다([invoke]).
  *
- * 왜: 거부한 응답의 스트림을 닫으면 HttpCore 의 닫기(`ContentLengthInputStream`·`ChunkedInputStream.close`)가 나머지를 EOF 까지 비운다 —
- * 거부한 64 MiB 본문을 서버가 끝까지 썼고, 1 바이트 청크면 할당이 비운 양을 따라 자랐고, 멈춘 서버 앞에서 거부가 읽기 타임아웃을
- * 기다렸다(실측 `AdminRejectedResponseCutTest`). auth 레인([io.github.xzawed.keycloak.BoundedTransport] 의 cut)과 같은 규칙으로 바꾼다:
- * EOF 까지 읽은 본문만 연결을 풀로 돌려주고, 그 밖의 끝은 읽기 타임아웃을 0 으로 둔 채 요청을 중단한다 — HttpClient 가 연결을
- * SO_LINGER 0 으로 닫고 풀에서 뺀다(`ConnectionHolder.abortConnection`). auth 의 운송 객체를 부르지 않는다 — 그 객체를 건드리면 admin 만
- * 쓰는 소비자에게도 auth 의 프로세스 풀이 지어진다.
+ * 왜: 응답의 스트림을 닫으면 HttpCore 의 닫기(`ContentLengthInputStream`·`ChunkedInputStream.close`)가 나머지를 EOF 까지 비운다 —
+ * 거부한 64 MiB 토큰 본문을 서버가 끝까지 썼고, 1 바이트 청크면 할당이 비운 양을 따라 자랐고, 멈춘 서버 앞에서 거부가 읽기 타임아웃을
+ * 기다렸다(실측 `AdminRejectedResponseCutTest`). 자원 응답도 같았다 — RESTEasy 가 결과를 얻은 응답을 닫아 SDK 가 읽지 않는 본문(create 의
+ * 201 · update·delete 의 2xx)을 끝까지 읽었고, 결과 뒤 멈춘 서버 앞에서는 쓸 수 있던 응답이 읽기 타임아웃 끝에 전송 실패가 됐다(실측
+ * `AdminResourceResponseCutTest`). auth 레인([io.github.xzawed.keycloak.BoundedTransport] 의 cut)과 같은 규칙으로 바꾼다: EOF 까지 읽은
+ * 본문만 연결을 풀로 돌려주고, 그 밖의 끝은 읽기 타임아웃을 0 으로 둔 채 요청을 중단한다 — HttpClient 가 연결을 SO_LINGER 0 으로 닫고
+ * 풀에서 뺀다(`ConnectionHolder.abortConnection`). auth 의 운송 객체를 부르지 않는다 — 그 객체를 건드리면 admin 만 쓰는 소비자에게도
+ * auth 의 프로세스 풀이 지어진다.
  *
  * ⚠️ 엔진을 새로 짓지 않는다 — [owner] 의 HttpClient 를 넘겨받고 설정 넷(응답 버퍼 · 검증기 · TLS 근원 · 리다이렉트)을 옮긴다. HttpClient
  * 를 닫는 것은 [owner] 의 몫이다([close]). 손잡이가 쥘 문맥은 RESTEasy 가 교환마다 묻는 `HttpContextProvider`(이 엔진 자신 —
@@ -218,6 +229,29 @@ internal class AdminEngine(
         return context
     }
 
+    /**
+     * 응답의 엔티티 스트림을 필터·결합이 보기 전에 [Settled] 로 감싼다. 오류 상태(3xx 이상)의 본문은 [ERROR_BODY_CAP] 에서 끝난 것처럼
+     * 보인다 — RESTEasy 는 그 본문을 예외에 담으려고 통째로 버퍼에 읽었다(`ClientInvocation.extractResult` 의 `bufferEntity` — 64 MiB
+     * 오류 본문에 호출 하나 약 740 MB, 그 전부가 `keycloakError` 로). 토큰·logout 엔드포인트는 빼고 그대로 둔다 — [TokenResponseGuard] 가
+     * 상한+1 바이트로 넘침을 알아채 거부한다.
+     */
+    override fun invoke(inv: Invocation): Response {
+        val request = inv as ClientInvocation
+        val response = super.invoke(inv)
+        val entity = ClientResponseContextImpl(response as ClientResponse)
+        val input = entity.entityStream
+        if (input != null) {
+            val limit =
+                if (response.status < 300 || TokenResponseGuard.guardsErrorBody(request.method, request.uri)) {
+                    Long.MAX_VALUE
+                } else {
+                    ERROR_BODY_CAP.toLong()
+                }
+            entity.entityStream = Settled(input, request.mutableProperties[EXCHANGE] as Exchange, limit)
+        }
+        return response
+    }
+
     override fun close() {
         try {
             super.close()
@@ -237,21 +271,100 @@ internal class AdminEngine(
          * 그 대리자는 떨어져 나갔고(읽기 타임아웃 설정이 실패한다) 중단은 아무것도 하지 않는다(풀의 연결은 다른 교환의 것이다).
          */
         fun cut() {
+            readTimeout(0)
+            request.abort()
+        }
+
+        /**
+         * 남은 본문이 없는지 한 번만 엿본다 — 읽기 타임아웃을 [PEEK_MILLIS] 로 낮추고 한 바이트를 읽는다. 끝(-1)이면 참이다. 바이트가 왔거나
+         * 기다림이 다했거나 읽기가 실패하면 거짓이다. 낮춘 타임아웃은 그 연결의 다음 교환에 남지 않는다 — HttpClient 가 교환마다 요청 구성의
+         * 읽기 타임아웃을 다시 건다(`MainClientExec`). ⚠️ 읽기가 실패하면 HttpClient 가 그 연결을 이미 닫았다 — 그 닫기(TLS 1.3 이면 한 번
+         * 더 읽는다)도 낮춘 타임아웃만 기다린다.
+         */
+        fun endsNow(input: InputStream): Boolean {
+            readTimeout(PEEK_MILLIS)
+            return try {
+                input.read() < 0
+            } catch (notTheEnd: IOException) {
+                false
+            }
+        }
+
+        private fun readTimeout(millis: Int) {
             val connection = context.connection
             if (connection != null) {
                 try {
-                    connection.socketTimeout = 0
+                    connection.socketTimeout = millis
                 } catch (returned: RuntimeException) {
                     // 이미 풀로 돌아갔다 — 이 교환의 것이 아니다
                 }
             }
-            request.abort()
+        }
+    }
+
+    /**
+     * 응답 하나의 엔티티 스트림(Java `AdminEngine.Settled` 동형) — 닫을 때 남은 본문을 비우지 않는다. EOF 를 읽었으면 그대로 닫고(HttpClient 가
+     * 연결을 풀로 돌려준다), 아니면 끝인지 한 번만 엿보고([Exchange.endsNow]) 끝이 아니면 그 교환을 끊은 뒤 닫는다 — 끊긴 연결에서의 닫기는
+     * 소켓에 닿지 못하고 버퍼에 남은 것만 지나간다. [left] 바이트를 내주면 끝난 것처럼 -1 을 돌려준다(오류 본문의 상한 — 진짜 끝이 아니므로
+     * 닫을 때 엿본다). 길이 0 의 읽기는 스트림에 넘기지 않는다 — HttpCore 의 빈 버퍼는 그것도 소켓에서 기다린다.
+     */
+    internal class Settled(
+        private val input: InputStream,
+        private val exchange: Exchange,
+        private var left: Long,
+    ) : InputStream() {
+        private var eof = false
+        private var closed = false
+
+        override fun read(): Int {
+            if (left == 0L) return -1
+            val b = input.read()
+            if (b < 0) eof = true else left--
+            return b
+        }
+
+        override fun read(
+            b: ByteArray,
+            off: Int,
+            len: Int,
+        ): Int {
+            if (len == 0) return 0
+            if (left == 0L) return -1
+            val n = input.read(b, off, minOf(len.toLong(), left).toInt())
+            if (n < 0) eof = true else left -= n
+            return n
+        }
+
+        override fun close() {
+            if (closed) return
+            closed = true
+            if (eof || exchange.endsNow(input)) {
+                input.close()
+                return
+            }
+            exchange.cut()
+            try {
+                input.close()
+            } catch (cutAlready: IOException) {
+                // 끊긴 연결의 닫기는 실패할 수 있다 — HttpCore 가 버퍼의 나머지를 읽은 뒤 TLS 소켓은 -1 을 돌려줘 「Premature end of
+                // Content-Length delimited message body」(ConnectionClosedException — HttpClient 가 거르는 SocketException 이 아니다)가 났고
+                // RESTEasy 가 그것을 ProcessingException 으로 내 결과를 얻은 호출이 전송 실패가 됐다(Java 실측, TLS 1.3 40/40). 버린다.
+            }
         }
     }
 
     internal companion object {
         /** 교환의 끊기 손잡이([Exchange])를 담는 요청 속성. */
         internal val EXCHANGE: String = AdminEngine::class.java.name + ".exchange"
+
+        /**
+         * 자원 응답의 오류 본문을 쥐는 상한 — 그 본문은 진단(`keycloakError`)에만 쓰여 토큰 응답의 상한을 빌린다. 성공 본문(사용자 목록 등)에는
+         * 걸지 않는다 — 정당하게 크다. 토큰·logout 엔드포인트의 오류 본문은 [TokenResponseGuard] 가 같은 상한으로 따로 거부한다.
+         */
+        internal const val ERROR_BODY_CAP: Int = TOKEN_RESPONSE_MAX_BYTES
+
+        /** 닫을 때 끝인지 엿보는 읽기의 소켓 기다림 — 0 은 「끝없이」라 가장 짧은 양수다. */
+        internal const val PEEK_MILLIS: Int = 1
         private val NEXT_CONTEXT = ThreadLocal<HttpClientContext>()
     }
 }

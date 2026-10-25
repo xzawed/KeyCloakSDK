@@ -116,7 +116,8 @@ public final class AdminClient implements AutoCloseable {
    * HttpCore 의 기본은 한도가 없어(-1) 짧은 청크 본문 뒤 4 KiB 트레일러 줄 32 MiB 를 담았다 — 토큰 수락 · 호출 하나 74 MB
    * (실측 {@code AdminResponseFramingTest}). 그 클래스는 RESTEasy 6.2 에서 제거 예정으로 표시돼 있지만 RESTEasy 자신이 기본 엔진을
    * 그것으로 짓는다 — 제거되면 여기가 컴파일되지 않아 다시 볼 자리를 알린다. 지은 엔진은 {@link AdminEngine} 이 감싼다 — 교환마다
-   * 읽지 않고 끊을 손잡이를 달아, 가드가 거부한 응답의 나머지를 HttpCore 가 비우지 않게 한다.
+   * 읽지 않고 끊을 손잡이를 달아, 가드가 거부한 응답과 결과를 얻은 자원 응답의 나머지를 HttpCore 가 비우지 않게 하고 오류 본문은
+   * 상한까지만 쥔다.
    */
   @SuppressWarnings("removal")
   static Client buildTimeoutClient(KeycloakConfig config) { // 패키지 전용 — 프로바이더 등록 회귀테스트 시임
