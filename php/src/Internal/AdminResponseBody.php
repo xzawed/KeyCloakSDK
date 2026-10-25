@@ -13,8 +13,8 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
 
 /**
- * admin 응답 본문을 얼마나 받는가 — 등록부 admin-response-body-unbounded. fschmtt 가 읽지 않는 본문은 받지 않고(GET 이 아닌 요청의
- * 2xx — 명령은 응답을 버리고 조회는 GET 뿐이다: `AdminResponseBodyTest` 의 전제 핀), 오류 본문(300 이상)은 토큰 응답 상한에서
+ * admin 응답 본문을 얼마나 받는가 — 등록부 admin-response-body-unbounded. fschmtt 가 읽지 않는 본문은 받지 않고(GET·HEAD 가 아닌
+ * 요청의 2xx — 명령은 응답을 버리고 조회는 GET 뿐이다: `AdminResponseBodyTest` 의 전제 핀), 오류 본문(300 이상)은 토큰 응답 상한에서
  * 자른다 — `AdminClient::raw()` 의 요청도. GET 의 2xx 는 지금처럼 끝까지 받는다(사용자 목록은 정당하게 크다). 토큰 부여는 건드리지
  * 않는다(`TokenResponseCap` 의 몫).
  *
@@ -26,12 +26,13 @@ use Psr\Http\Message\StreamInterface;
  *
  * ⚠️ curl 은 최종 응답이 아닌 머리에도 `on_headers` 를 부른다 — 중간 응답(`100 Continue` — Guzzle 은 1 MiB 이상인 요청 본문에
  * `Expect` 를 단다)과 프록시 터널의 `200 Connection established`(https 대상에 `HTTPS_PROXY`). 그것을 쓰기의 응답으로 보고 끊으면
- * 요청은 서버에 닿지 않은 채 성공으로 돌아온다(실측 — 둘 다 고치기 전 판이 그랬다). 그래서 1xx 는 건너뛰고, 틀(`framed`)이 없는
- * 2xx 는 머리에서 끊지 않는다 — 터널의 2xx 는 본문 없이 다음 머리(원서버의 응답)로 넘어간다.
+ * 요청은 서버에 닿지 않은 채 성공으로 돌아온다(실측 — 둘 다 고치기 전 판이 그랬다). 그래서 1xx 는 건너뛰고(규격을 어겨 틀을 단
+ * 것도), 틀(`framed`)이 없는 2xx 는 머리에서 끊지 않는다 — 터널의 2xx 는 본문 없이 다음 머리(원서버의 응답)로 넘어간다.
  * ⚠️ 본문이 없다고 머리가 말하는 2xx(204 · `Content-Length: 0` — Keycloak 의 쓰기 응답)는 끊지 않는다 — 끊을 것이 없고, 끊으면
  * curl 이 다음 요청에 쓸 연결만 잃는다.
- * ⚠️ 싱크에서 예외를 던지지 않는다 — curl 은 그 예외에도 본문을 끝까지 받았다(실측). 스트림 처리기가 상한에서 읽기를 멈추는 것은
- * guzzlehttp/psr7 2.11 이상이다(짧은 쓰기를 다시 쓰는 `copyToStream`) — 그 아래 판은 쥐는 양만 상한이다.
+ * ⚠️ 싱크에서 예외를 던지지 않는다 — curl 은 그 예외에도 본문을 끝까지 받았다(실측). 스트림 처리기가 싱크의 짧은 쓰기(상한 · 첫
+ * 바이트 거부)에 복사를 멈추는 것은 guzzlehttp/psr7 2.11 이상이다(짧은 쓰기를 다시 쓰는 `copyToStream`) — 그 아래 판은 Content-Length
+ * 를 알린 본문을 끝까지 읽고 쥐는 양만 상한이다.
  *
  * @internal
  */
