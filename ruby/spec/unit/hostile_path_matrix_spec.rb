@@ -100,6 +100,11 @@ module HostilePathMatrixSpec
                           "쓰는 메서드의 행(세 그랜트·admin 토큰 TOKEN_GRANT/CODE_EXCHANGE · JWKS_FETCH · introspect " \
                           "OTHER)에 잡힌다(http.rb)",
     "Http.decode_json" => "이미 받은 응답의 해석기 — 요청을 내지 않는다. 입구는 read_capped 를 쓰는 메서드들이다(http.rb)",
+    "Admin::SettleBody#call" => "Faraday 미들웨어 훅 — Faraday 가 요청 Env 를 넘겨 부른다. admin 요청은 전부 이것을 " \
+                                "지나고 그 요청은 부른 자원 메서드의 행에 잡힌다(BearerAuth#on_request 와 같은 자리)",
+    "Http.settling" => "전송 범위 헬퍼 — 블록을 받아 그 동안만 admin 본문 규칙을 건다. 요청을 내지 않는다. 입구는 " \
+                       "SettleBody 를 지나는 admin 자원 메서드들이다(http.rb)",
+    "Http.read_error_body" => "이미 받은 net-http 응답의 본문 읽기 — 요청을 내지 않는다. 입구는 admin 자원 메서드들이다(http.rb)",
     "JwtValidator.from_config" => "생성 팩토리 — 검증기를 조립할 뿐이다. 검증 요청은 JwtValidator#validate 행(JWKS_FETCH)이다",
     "OidcEndpoints.from_config" => "엔드포인트 조립 — 네트워크가 없다(oidc_endpoints.rb 머리 주석)",
     "TokenSet.from_response" => "이미 받은 본문의 파서 — Hash 가 아니면 요청 없이 AuthError 다. 그 계약은 입구 " \

@@ -46,11 +46,17 @@ module KeycloakSdk
     # 압축된 바이트가 그대로 와 JSON 으로 읽히지 않으므로 SDK 오류로 닫힌다.
     IDENTITY = { "Accept-Encoding" => "identity" }.freeze
 
+    # admin 응답의 본문을 얼마나 읽는가(admin-response-body-unbounded) — admin 커넥션의 `Admin::SettleBody` 가 요청 하나의
+    # 전송 동안만 거는 파이버 지역 값이다. 300 이상의 본문은 `TOKEN_RESPONSE_MAX_BYTES` 에서 자르고, 파사드
+    # 쓰기(요청 옵션의 표시)의 2xx 본문은 읽지 않는다 — 둘 다 net-http 가 머리를 읽은 뒤·본문을 읽기 전에 정한다
+    # (`BoundedTransport#request`). 그 밖의 성공 본문은 지금처럼 끝까지 읽는다.
+    SETTLE = :kcsdk_admin_settle
+
     # Faraday 의 JSON 응답 규칙 그대로(JSON 콘텐츠 타입만 · 빈 본문은 nil · 해석 실패는 Faraday::ParsingError).
     # 스트리밍으로 읽은 본문은 커넥션의 json 미들웨어가 보지 못하므로(그때 본문은 비어 있다) 여기서 같은 규칙을 건다.
     JSON_RESPONSE = Faraday::Response::Json.new(nil, content_type: /\bjson$/)
     UNDECODABLE = "JSON text decodes to invalid UTF-8"
-    private_constant :IDENTITY, :JSON_RESPONSE, :UNDECODABLE
+    private_constant :IDENTITY, :SETTLE, :JSON_RESPONSE, :UNDECODABLE
 
     # 소켓 하나에 거는 **싱글턴 확장** — 전역 몽키패치가 아니라 이 SDK 가 연 `BufferedIO` 인스턴스 하나에만 붙는다
     # (`BoundedHttp#on_connect`). 호스트 애플리케이션의 net-http 는 건드리지 않는다.
@@ -265,6 +271,39 @@ module KeycloakSdk
         sock.extend(ConnectFraming)
         sock.kcsdk_arm_connect_framing!
       end
+
+      # ── admin 응답 본문(`SETTLE`). faraday-net_http 는 `start` 블록 안에서 `request` 에 블록을 넘기고, 그 블록이 머리를
+      # 저장한 뒤 net-http 의 `reading_body` 가 본문을 끝까지 읽는다 — 그 블록 앞에서 본문을 정하면 net-http 는 읽은
+      # 응답(`@read`)의 소켓을 더 읽지 않는다. 정한 응답의 소켓은 닫는다(남은 바이트를 다음 요청이 읽지 않게).
+      public
+
+      def request(req, body = nil, &block)
+        settle = Thread.current[SETTLE]
+        return super unless settle && started?
+
+        super do |res|
+          kcsdk_settle(res, settle[:unread])
+          block&.call(res)
+        end
+      end
+
+      private
+
+      def kcsdk_settle(res, unread)
+        if res.code.to_i >= 300
+          kcsdk_keep(res, Http.read_error_body(res))
+        elsif unread
+          kcsdk_keep(res, String.new(encoding: Encoding::BINARY))
+        end
+      end
+
+      # ⚠️ **net-http `HTTPResponse` 내부(`@body`·`@read`)에 기댄다** — 읽은 응답의 `body` 는 소켓을 다시 읽지 않고 `@body`
+      # 를 돌려준다. 모양은 `admin_response_body_spec` 의 핀이 고정한다.
+      def kcsdk_keep(res, body)
+        res.instance_variable_set(:@body, body)
+        res.instance_variable_set(:@read, true)
+        @socket.close
+      end
     end
 
     # 표준 `:net_http` 어댑터의 설정 블록 — 커넥션을 짓기 직전 그 `Net::HTTP` 인스턴스의 싱글턴에 `BoundedTransport` 를
@@ -306,6 +345,28 @@ module KeycloakSdk
       end
       resp.env.body = buf
       resp
+    end
+
+    # admin 요청 하나의 전송 동안 그 응답의 본문을 정하게 한다(`SETTLE`) — `unread` 면 파사드 쓰기라 2xx 본문을 읽지 않는다.
+    def settling(unread)
+      previous = Thread.current[SETTLE]
+      Thread.current[SETTLE] = { unread: unread }
+      yield
+    ensure
+      Thread.current[SETTLE] = previous
+    end
+
+    # 300 이상의 본문을 `TOKEN_RESPONSE_MAX_BYTES` 까지만 쥔다 — 상한을 넘기는 조각이 오면 읽기를 멈추고 상한에서 자른다
+    # (거부하지 않는다: 상태가 이미 오류를 정했다). net-http 가 16 KiB 씩 넘기므로 손에 드는 것은 많아야 상한 + 청크 하나다.
+    def read_error_body(res)
+      buf = String.new(encoding: Encoding::BINARY)
+      catch(:kcsdk_cut) do
+        res.read_body do |chunk|
+          buf << chunk
+          throw :kcsdk_cut if buf.bytesize > TOKEN_RESPONSE_MAX_BYTES
+        end
+      end
+      buf.bytesize > TOKEN_RESPONSE_MAX_BYTES ? buf.byteslice(0, TOKEN_RESPONSE_MAX_BYTES) : buf
     end
 
     # `read_capped` 의 본문을 커넥션의 json 미들웨어가 하던 그대로 해석한다(응답을 돌려준다).
