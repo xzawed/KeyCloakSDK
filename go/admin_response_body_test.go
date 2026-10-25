@@ -33,10 +33,11 @@ import (
 // 본문을 그대로 받는다), 오류 상태(3xx 이상)의 본문은 tokenResponseMaxBytes 에서 끝난다. 그 밖의 성공 본문(목록 등)에는 상한이 없다.
 // admin 토큰 요청의 오류 본문은 이 상한과 토큰 상한(tokencap.go)을 함께 지난다 — 아래 대조가 둘의 맞물림을 잰다.
 //
-// 수정 전(실측 2026-10-25, Windows · go1.26.4 · 루프백 · main ee862c6 = 0a4cfee 의 go/ — 등록부 admin-response-body-unbounded 의 재스캔): create 201 +
-// 64 MiB 를 서버가 끝까지 썼고(103–107 ms) · 201 뒤 멈춘 서버 앞에서 create 가 읽기 타임아웃(4 s) 끝에 *TransportError(4,001–4,002 ms) ·
-// 404 + 64 MiB 를 끝까지 읽었다. 공개 API(NewAdminClient + 정적 토큰 공급자)와 로컬 루프백만 쓴다 — TLS 갈래만 시험 CA 를 믿게 하려고
-// 그 클라이언트의 전송(a.tr)에 손을 댄다(Config 에 TLS 근원 손잡이가 없다).
+// 수정 전(실측 2026-10-25, Windows · go1.26.4 · 루프백 — 이 파일의 시험을 수정 전 코드(0a4cfee)에 돌린 값과 등록부
+// admin-response-body-unbounded 의 재스캔(main ee862c6 — go/ 가 같다)): create·update·delete 의 2xx + 64 MiB 를 서버가 끝까지 썼고(72–157 ms) ·
+// 201 뒤 멈춘 서버 앞에서 create 가 읽기 타임아웃(4 s) 끝에 *TransportError(4,000–4,002 ms) · 404 + 64 MiB 를 끝까지 읽었다(호출 하나 165.5 MB).
+// 공개 API(NewAdminClient + 정적 토큰 공급자)와 로컬 루프백만 쓴다 — TLS 갈래만 시험 CA 를 믿게 하려고 그 클라이언트의 전송(a.tr)에 손을 댄다
+// (Config 에 TLS 근원 손잡이가 없다).
 
 const (
 	rbCap          = tokenResponseMaxBytes
@@ -530,8 +531,8 @@ func TestAdminGzipTheCallerAskedFor_isDecodedAndSaysSo(t *testing.T) {
 }
 
 // rbErrorAllocationBound 는 64 MiB 오류 본문 호출 하나의 할당 한도다. 근거(2026-10-25 실측, Windows · go1.26.4): 수정 전 165.5 MB(서버가
-// 64 MiB 를 끝까지 썼다), 수정 뒤 4.5 MB(서버 1.1 MB — 전송이 상한 + 1 까지 읽고 resty 가 그것을 다시 읽는다) — 16 MiB(16.8 MB)는 수정 뒤보다
-// 3.7 배, 수정 전보다 10 배 떨어진다.
+// 64 MiB 를 끝까지 썼다), 수정 뒤 4.5–4.6 MB(다섯 번 · 서버 1.2–1.6 MB — 전송이 상한 + 1 까지 읽고 resty 가 그것을 다시 읽는다; gzip 폭탄 행도
+// 4.6 MB) — 16 MiB(16.8 MB)는 수정 뒤보다 3.6 배 넘게, 수정 전보다 9.9 배 떨어진다.
 const rbErrorAllocationBound = 16 << 20
 
 // 대조 — 상한 안의 오류 본문은 통째로 실리고, 한 바이트 넘으면 상한까지 잘린다(경계). Realms.Update 는 오류 본문을 그대로 메시지에 싣는다.
