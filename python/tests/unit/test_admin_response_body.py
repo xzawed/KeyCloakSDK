@@ -5,13 +5,14 @@ admin-response-body-unbounded — python 칸).
 상태(3xx 이상)의 본문은 1,048,576 바이트(토큰 응답 상한)에서 끊는다 — 그 밖의 성공 본문(목록
 등)과 `raw` 로 부른 python-keycloak 메서드의 본문은 그대로다. sync(requests)와 aio(httpx) 두
 레인을 같은 칸으로 잰다. 공개 API(`AdminClient`·`AsyncAdminClient` 에 토큰을 쥔
-`KeycloakAdmin` 을 주입 — 그랜트 없음)와 로컬 루프백의 날 소켓 서버만 쓴다.
+`KeycloakAdmin` 을 주입 — 그랜트 없음)와 로컬 루프백의 날 소켓 서버를 쓴다 — 스트리밍 통과
+대조 둘만 내부 `bounded_send`·`abounded_send` 를 직접 부른다.
 
 수정 전(실측 2026-10-25, 이 파일을 수정 전 코드에 — Windows · Python 3.13.11 ·
 python-keycloak 7.1.1 · requests 2.34.2 · urllib3 2.7.0 · httpx 0.28.1, 두 레인 같다): 쓰기
 열다섯의 2xx + 64 MiB 를 서버가 끝까지 썼고 · create 201 뒤 멈춘 서버 앞에서 읽기 타임아웃
 4 초 끝에 KeycloakTransportError(4,008~4,019 ms) · get 404/300 + 64 MiB 는 keycloak_error 에
-67,108,864 자를 실었고(호출 하나 최대 135~201 MB) · gzip 65,278 B 가 64 MiB 로 풀렸다.
+67,108,864 자를 실었고(호출 하나 최대 134~201 MB) · gzip 65,278 B 가 64 MiB 로 풀렸다.
 """
 
 from __future__ import annotations
@@ -569,9 +570,9 @@ async def test_a_corrupt_gzip_error_body_fails_and_cuts_the_connection(lane: str
 
 
 # 압축된 오류 본문은 그 압축 스트림과 함께 끝난다 — gzip 멤버 뒤의 꼬리(64 MiB)는 읽지 않고, 멤버
-# 뒤 멈춘 서버는 기다리지 않는다(다 받은 400 을 돌려준다). 수정 전과 이 PR 의 앞 커밋은 꼬리를
-# 끝까지 읽었고(서버 2,097,190 B), 멈춘 서버 앞에서 4,010~4,022 ms 에 KeycloakTransportError 였다
-# (Grok 레그 지목 · 실측).
+# 뒤 멈춘 서버는 기다리지 않는다(다 받은 400 을 돌려준다). main 과 이 PR 의 앞 커밋(672b973)은
+# 꼬리 2 MiB 를 끝까지 읽었고(서버 2,097,190 B), 멈춘 서버 앞에서 4,011~4,022 ms 에
+# KeycloakTransportError 였다(Grok 레그 지목 · 실측).
 _NOPE = b'{"message":"nope"}'
 _MEMBER = gzip.compress(_NOPE)
 

@@ -7,7 +7,7 @@ requests 가 `r.content` 로, aio 는 httpx `send` 가 `aread()` 로 본문 전�
 코드에 — sync·aio 같다): 파사드 쓰기 열다섯의 2xx + 64 MiB 를 서버가 끝까지 썼고, 201 뒤
 멈춘 서버 앞에서 create 가 읽기 타임아웃 끝에 `KeycloakTransportError`(4,008~4,019 ms)
 였고, 404 + 64 MiB 는 `keycloak_error` 에 67,108,864 자를 실었다(호출 하나 최대
-135~201 MB).
+134~201 MB).
 
 **어디에 거는가.** admin REST 세션 둘(`connection._s` · `connection.async_s`)의 `send` —
 `token_cap.py` 가 그랜트 세션에 거는 자리와 같은 자리, 같은 방식(스트리밍으로 받아 상태를
@@ -98,11 +98,11 @@ def _read_error(response: requests.Response) -> tuple[bytes, bool]:
     """오류 본문을 원문으로 상한 + 1 까지 읽어 푼다 — (본문, 연결을 버리나). 압축 스트림이
     끝나면 거기서 멈춘다: 그 뒤의 꼬리는 읽지 않고 연결을 버린다 — 안 그러면 상한과 무관하게
     꼬리를 끝까지 읽었고(gzip 멤버 뒤 2 MiB), 멤버 뒤 멈춘 서버 앞에서는 다 받은 오류가 읽기
-    타임아웃 끝에 `KeycloakTransportError` 가 됐다(실측, 수정 전과 같았다).
+    타임아웃 끝에 `KeycloakTransportError` 가 됐다(실측 — main 도 같았다).
 
-    ⚠️ 와 있는 만큼만 받는다(urllib3 2.2 의 `read1`) — `read(amt)` 는 청크 본문에서 `amt` 를 다
+    ⚠️ 와 있는 만큼만 받는다(urllib3 의 `read1`) — `read(amt)` 는 청크 본문에서 `amt` 를 다
     채울 때까지 다음 청크를 기다려, 멤버가 이미 와 있어도 멈춘 서버 앞에서 끝을 보지 못했다
-    (실측). `read1` 이 없는 urllib3 는 `read` 로 받는다 — 그 판에서는 그 경우가 기다린다."""
+    (실측). `read1` 이 없는 옛 urllib3 는 `read` 로 받는다 — 그 판에서는 그 경우가 기다린다."""
     inflate, ended = _error_decoder(response.headers.get("content-encoding", "").split(","))
     read = getattr(response.raw, "read1", None) or response.raw.read
     body = bytearray()
