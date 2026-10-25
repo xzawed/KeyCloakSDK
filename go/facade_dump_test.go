@@ -65,7 +65,9 @@ var dumpWalkExempt = map[string]string{
 	"adminBodyTransport": "*http.Client.Transport·resty 안에만 산다(wireScrubTransport 를 감싼다) — 걷기는 외부 타입(http.Client) 안으로 " +
 		"내려가지 않는다. 필드는 하위 RoundTripper 하나뿐이고 비밀을 쥐지 않는다(adminbody.go)",
 	"endedBody": "admin 응답 본문을 감싸 읽는 동안만 산다 — 파사드가 쥐지 않는다. " +
-		"필드는 원래 본문과 남은 바이트 수뿐이고 본문 바이트를 쥐지 않는다(adminbody.go)",
+		"필드는 원래 본문 하나뿐이고 본문 바이트를 쥐지 않는다(adminbody.go)",
+	"failedRead": "admin 오류 본문의 읽기 오류를 resty 에 건네는 동안만 산다 — 파사드가 쥐지 않는다. " +
+		"필드는 그 오류 하나뿐이다(전송층이 정화한 오류 · 토큰 상한의 SDK 오류 — adminbody.go)",
 	"jwksFlight": "JWKS 조회가 비행 중인 동안만 jwksState.flight 에 산다 — 뿌리를 만든 뒤에는 nil 이라 걷기가 못 닿는다. " +
 		"필드는 끝 신호 채널과 조회 오류(JWKS 응답 바이트를 인용하지 않는 SDK·정화된 전송 오류)뿐이다(jwt.go)",
 }

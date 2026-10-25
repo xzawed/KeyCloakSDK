@@ -1,6 +1,7 @@
 package keycloak
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -27,28 +28,54 @@ func withoutBody(ctx context.Context) context.Context {
 // 64 MiB was read in full, a 404 with 64 MiB was read in full (165 MB allocated by one call), and a 201 whose body stalled
 // after the headers turned a create that already had its Location into a *TransportError at the read timeout. So the end
 // is set here, below resty:
-//   - an error body (status 3xx and up) ends at adminErrorBodyMaxBytes — no gocloak method reads one as data;
+//   - an error body (status 3xx and up) is read here, at most one byte past adminErrorBodyMaxBytes (boundError);
 //   - a 2xx answering a facade call marked by withoutBody ends at once;
 //   - any other success body is left as it is.
 //
-// Closing a body before its end makes net/http drop the connection rather than read the rest (it never drains), so a cut
-// connection is not reused and costs nothing more. The SDK's own token requests (tokenCapKey) are left to the token cap: it
-// must see byte cap+1 to refuse, so ending them at the cap here would accept an oversized token response.
+// A body closed before its end is read no further: on HTTP/1.1 net/http drops the connection rather than drain it, on
+// HTTP/2 it resets only that stream. The admin token request's error body passes this bound and the token cap
+// (tokencap.go) both: the two are equal, and the token cap looks one byte past its cap within the read that reaches it, so
+// it still refuses an oversized one. ⚠️ Lowering this bound below the token cap would turn that refusal into a cut.
 type adminBodyTransport struct{ base http.RoundTripper }
 
 func (t adminBodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.base.RoundTrip(req)
-	if err != nil || resp.Body == nil || req.Context().Value(tokenCapKey(0)) != nil {
+	if err != nil || resp.Body == nil {
 		return resp, err
 	}
 	switch {
 	case resp.StatusCode >= 300:
-		resp.Body = &endedBody{rc: resp.Body, left: adminErrorBodyMaxBytes}
+		boundError(resp)
 	case req.Context().Value(adminNoBodyKey(0)) != nil:
-		resp.Body = &endedBody{rc: resp.Body}
+		resp.Body = endedBody{resp.Body}
 	}
 	return resp, nil
 }
+
+// boundError reads an error body to its end or one byte past the cap, so what resty is handed is settled before it looks.
+// A body past the cap is cut to the cap and loses its media type. ⚠️ Cutting alone is not enough: resty parses a JSON
+// error body into gocloak's error value, a cut one fails that parse, and gocloak then reports the parse failure instead of
+// the status — measured, a 404 whose 2 MiB JSON body was cut came back as a *TransportError, so ErrNotFound stopped
+// matching. Without a media type resty parses nothing and the answer keeps its status. A read error (the token cap's
+// refusal, a timeout) becomes the error of the body resty reads.
+func boundError(resp *http.Response) {
+	b, err := io.ReadAll(io.LimitReader(resp.Body, adminErrorBodyMaxBytes+1))
+	_ = resp.Body.Close()
+	if err != nil {
+		resp.Body = io.NopCloser(failedRead{err})
+		return
+	}
+	if len(b) > adminErrorBodyMaxBytes {
+		b = b[:adminErrorBodyMaxBytes]
+		resp.Header.Del("Content-Type")
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(b))
+}
+
+// failedRead is a body whose every Read fails with err.
+type failedRead struct{ err error }
+
+func (r failedRead) Read([]byte) (int, error) { return 0, r.err }
 
 // CloseIdleConnections lets http.Client.CloseIdleConnections reach the pooled transport, as wireScrubTransport does.
 func (t adminBodyTransport) CloseIdleConnections() {
@@ -57,23 +84,7 @@ func (t adminBodyTransport) CloseIdleConnections() {
 	}
 }
 
-// endedBody hands over at most left bytes and then reports the end without asking the body for more. Close closes the body
-// — before its end, net/http drops that connection.
-type endedBody struct {
-	rc   io.ReadCloser
-	left int64
-}
+// endedBody reports the end at once without asking the body for anything. Close closes the body.
+type endedBody struct{ io.ReadCloser }
 
-func (b *endedBody) Read(p []byte) (int, error) {
-	if b.left <= 0 {
-		return 0, io.EOF
-	}
-	if int64(len(p)) > b.left {
-		p = p[:b.left]
-	}
-	n, err := b.rc.Read(p)
-	b.left -= int64(n)
-	return n, err
-}
-
-func (b *endedBody) Close() error { return b.rc.Close() }
+func (endedBody) Read([]byte) (int, error) { return 0, io.EOF }

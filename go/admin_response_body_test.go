@@ -29,7 +29,7 @@ import (
 // admin 레인이 읽지 않는 응답 본문은 읽지 않는다 — resty 는 모든 본문을 끝까지 읽으므로 그 아래 전송(adminBodyTransport)이 끝을
 // 정한다. 파사드의 쓰기 호출(Create·Update·Delete)이 받는 2xx 는 본문이 비어 보이고(그 호출이 컨텍스트에 표시한다 — Raw() 호출은
 // 본문을 그대로 받는다), 오류 상태(3xx 이상)의 본문은 tokenResponseMaxBytes 에서 끝난다. 그 밖의 성공 본문(목록 등)에는 상한이 없다.
-// 토큰 요청은 tokencap.go 가 맡는다.
+// admin 토큰 요청의 오류 본문은 이 상한과 토큰 상한(tokencap.go)을 함께 지난다 — 아래 대조가 둘의 맞물림을 잰다.
 //
 // 수정 전(실측 2026-10-25, Windows · go1.26.4 · 루프백 · main 0a4cfee — 등록부 admin-response-body-unbounded 의 재스캔): create 201 +
 // 64 MiB 를 서버가 끝까지 썼고(103–107 ms) · 201 뒤 멈춘 서버 앞에서 create 가 읽기 타임아웃(4 s) 끝에 *TransportError(4,001–4,002 ms) ·
@@ -146,8 +146,8 @@ func (s *rbServer) awaitReply() bool {
 	}
 }
 
-// rbWrite 는 머리를 쓰고 본문 head 뒤를 공백으로 채워 total 바이트를 쓴다(쓴 본문 바이트를 센다).
-func rbWrite(c net.Conn, written *atomic.Int64, status, headers, head string, total int) error {
+// rbWrite 는 머리를 쓰고 본문 head 와 tail 사이를 공백으로 채워 total 바이트를 쓴다(쓴 본문 바이트를 센다).
+func rbWrite(c net.Conn, written *atomic.Int64, status, headers, head, tail string, total int) error {
 	if _, err := io.WriteString(c, "HTTP/1.1 "+status+"\r\n"+headers+"Content-Length: "+strconv.Itoa(total)+"\r\n\r\n"); err != nil {
 		return err
 	}
@@ -156,7 +156,7 @@ func rbWrite(c net.Conn, written *atomic.Int64, status, headers, head string, to
 	if err != nil {
 		return err
 	}
-	for left := total - len(head); left > 0; {
+	for left := total - len(head) - len(tail); left > 0; {
 		k := min(left, len(rbSlab))
 		n, err := c.Write(rbSlab[:k])
 		written.Add(int64(n))
@@ -165,12 +165,19 @@ func rbWrite(c net.Conn, written *atomic.Int64, status, headers, head string, to
 		}
 		left -= k
 	}
-	return nil
+	n, err = io.WriteString(c, tail)
+	written.Add(int64(n))
+	return err
 }
 
 func rbPadded(status, headers, head string, total int) rbReply {
+	return rbFramed(status, headers, head, "", total)
+}
+
+// rbFramed 는 head 와 tail 사이를 공백으로 채운 본문이다 — `{"errorMessage":"` 와 `"}` 사이를 채우면 통째로는 유효하고 잘리면 깨지는 JSON 이다.
+func rbFramed(status, headers, head, tail string, total int) rbReply {
 	return func(c net.Conn, written *atomic.Int64) bool {
-		return rbWrite(c, written, status, headers, head, total) == nil
+		return rbWrite(c, written, status, headers, head, tail, total) == nil
 	}
 }
 
@@ -395,27 +402,42 @@ func TestAdminRawCalls_keepTheirBodies(t *testing.T) {
 }
 
 // (2) 오류 본문은 상한까지만 쥔다 — 404 + 64 MiB 는 ErrNotFound 이고 서버는 다 쓰지 못하며 호출의 할당이 묶인다. 수정 전: 끝까지 읽었다.
+// 잘려서 깨지는 JSON(`{"errorMessage":"…"}` 의 문자열이 상한 너머로 이어진다)도 상태를 지킨다 — 이 PR 의 첫 상한은 이것을 *TransportError 로
+// 바꿨다(Grok 레그 지목 · 실측). 상한은 3xx 부터다: Location 없는 300 은 net/http 가 따라가지 않아 resty 가 본문을 읽는다(그 답을 무엇으로
+// 돌려주는지는 여기서 재지 않는다).
 func TestAdminErrorBody_isHeldOnlyUpToTheCap(t *testing.T) {
-	s := newRBServer(t, nil, func(string, string) rbReply { return rbPadded("404 Not Found", rbTyped, rbNotFound, rbHuge) })
-	a := rbAdmin(t, s, nil, 20*time.Second)
-	var err error
-	allocated := rbAllocated(func() { _, err = a.Users.Get(context.Background(), "x") })
-	_ = a.Close()
-	finished := s.awaitReply()
-	t.Logf("[AdminResponseBody] get 404 + 64 MiB → err=%v · allocated %d B · server wrote %d B", err, allocated, s.written.Load())
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("ErrNotFound 가 아니다: %v", err)
+	cases := []struct {
+		name, status, head, tail string
+	}{
+		{"404 · 상한 안에서 닫히는 JSON", "404 Not Found", rbNotFound, ""},
+		{"404 · 상한 너머로 이어지는 JSON", "404 Not Found", `{"errorMessage":"`, `"}`},
+		{"300", "300 Multiple Choices", rbNotFound, ""},
 	}
-	if !finished || s.written.Load() > rbWrittenBound {
-		t.Fatalf("오류 본문의 나머지를 읽었다 — server wrote %d B finished=%v", s.written.Load(), finished)
-	}
-	if allocated > rbErrorAllocationBound {
-		t.Fatalf("할당이 한도를 넘었다 — %d B (한도 %d)", allocated, rbErrorAllocationBound)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := newRBServer(t, nil, func(string, string) rbReply { return rbFramed(c.status, rbTyped, c.head, c.tail, rbHuge) })
+			a := rbAdmin(t, s, nil, 20*time.Second)
+			var err error
+			allocated := rbAllocated(func() { _, err = a.Users.Get(context.Background(), "x") })
+			_ = a.Close()
+			finished := s.awaitReply()
+			t.Logf("[AdminResponseBody] get %s + 64 MiB → err=%v · allocated %d B · server wrote %d B", c.name, err, allocated, s.written.Load())
+			if c.status == "404 Not Found" && !errors.Is(err, ErrNotFound) {
+				t.Fatalf("ErrNotFound 가 아니다: %T %v", err, err)
+			}
+			if !finished || s.written.Load() > rbWrittenBound {
+				t.Fatalf("오류 본문의 나머지를 읽었다 — server wrote %d B finished=%v", s.written.Load(), finished)
+			}
+			if allocated > rbErrorAllocationBound {
+				t.Fatalf("할당이 한도를 넘었다 — %d B (한도 %d)", allocated, rbErrorAllocationBound)
+			}
+		})
 	}
 }
 
 // rbErrorAllocationBound 는 64 MiB 오류 본문 호출 하나의 할당 한도다. 근거(2026-10-25 실측, Windows · go1.26.4): 수정 전 165.5 MB(서버가
-// 64 MiB 를 끝까지 썼다), 수정 뒤 2.3 MB(서버 1.64 MB) — 16 MiB(16.8 MB)는 수정 뒤보다 7 배, 수정 전보다 10 배 떨어진다.
+// 64 MiB 를 끝까지 썼다), 수정 뒤 4.5 MB(서버 1.1 MB — 전송이 상한 + 1 까지 읽고 resty 가 그것을 다시 읽는다) — 16 MiB(16.8 MB)는 수정 뒤보다
+// 3.7 배, 수정 전보다 10 배 떨어진다.
 const rbErrorAllocationBound = 16 << 20
 
 // 대조 — 상한 안의 오류 본문은 통째로 실리고, 한 바이트 넘으면 상한까지 잘린다(경계). Realms.Update 는 오류 본문을 그대로 메시지에 싣는다.
@@ -433,6 +455,34 @@ func TestAdminErrorBodyAtTheCap_isCarriedWhole(t *testing.T) {
 		t.Logf("[AdminResponseBody] realms update 404 %d B → message %d B", total, len(adminErr.Msg))
 		if len(adminErr.Msg) != rbCap || !strings.HasPrefix(adminErr.Msg, "missing") {
 			t.Fatalf("%d B 본문 → message %d B (기대 %d)", total, len(adminErr.Msg), rbCap)
+		}
+	}
+}
+
+// 대조 — admin 토큰 요청의 오류 본문은 토큰 상한이 거부한다: 401 + 상한 + 1 바이트는 상한을 말하는 *TransportError, 정확히 상한이면 본문의
+// 오류 코드까지 읽은 401 *AdminError 다. 그 본문은 오류 본문 상한과 토큰 상한을 함께 지나는데, 둘이 같고 토큰 상한이 상한에 닿는 읽기 안에서
+// 한 바이트 너머를 보기 때문에 거부가 살아 있다 — 오류 본문 상한을 토큰 상한보다 낮추면 거부가 절단으로 바뀌어 이 시험이 운다.
+func TestAdminTokenErrorBodyPastTheCap_isRefusedByTheTokenCap(t *testing.T) {
+	for _, total := range []int{rbCap, rbCap + 1} {
+		s := newRBServer(t, nil, func(string, string) rbReply {
+			return rbPadded("401 Unauthorized", rbTyped, `{"error":"invalid_client"}`, total)
+		})
+		c, err := New(Config{ServerURL: s.url("http"), Realm: "r", ClientID: "app", ClientSecret: "cs-in"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = c.Admin(context.Background())
+		_ = c.Close()
+		t.Logf("[AdminResponseBody] admin 토큰 요청 401 %d B → %T %v", total, err, err)
+		refused := err != nil && strings.Contains(err.Error(), "exceeds 1048576 bytes")
+		var transportErr *TransportError
+		var adminErr *AdminError
+		if total > rbCap && (!refused || !errors.As(err, &transportErr)) {
+			t.Fatalf("상한을 넘는 오류 본문을 토큰 상한이 거부하지 않았다: %T %v", err, err)
+		}
+		if total == rbCap && (refused || !errors.As(err, &adminErr) || adminErr.StatusCode != http.StatusUnauthorized ||
+			!strings.Contains(err.Error(), "invalid_client")) {
+			t.Fatalf("상한 안의 오류 본문 → 본문을 읽은 401 *AdminError 가 아니다: %T %v", err, err)
 		}
 	}
 }
@@ -514,6 +564,25 @@ func TestAdminACutConnection_isNotReused(t *testing.T) {
 	t.Logf("[AdminResponseBody] 끊은 create 뒤 get → 연결 %d", s.conns.Load())
 	if s.conns.Load() != 2 {
 		t.Fatalf("끊긴 연결을 다시 썼거나 연결이 더 열렸다 — 연결 %d", s.conns.Load())
+	}
+}
+
+// 대조 — resty 의 http.Client 에 거는 CloseIdleConnections(Raw() 소비자의 손잡이)는 이 전송을 지나 풀까지 닿는다 — 끼우기 전 wireScrubTransport
+// 가 그랬듯이: 닫은 뒤의 요청은 새 연결로 나간다(연결 2). 끝까지 읽은 본문의 Read 는 연결이 풀에 돌아간 뒤에 돌아오므로 순서가 정해져 있다.
+func TestAdminCloseIdleConnections_reachesThePool(t *testing.T) {
+	s := newRBServer(t, nil, func(string, string) rbReply { return rbExact("200 OK", rbTyped, rbUser) })
+	a := rbAdmin(t, s, nil, 20*time.Second)
+	ctx := context.Background()
+	if _, err := a.Users.Get(ctx, "x"); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	a.Raw().RestyClient().GetClient().CloseIdleConnections()
+	if _, err := a.Users.Get(ctx, "x"); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	t.Logf("[AdminResponseBody] 유휴 연결을 닫은 뒤 get → 연결 %d", s.conns.Load())
+	if s.conns.Load() != 2 {
+		t.Fatalf("유휴 연결 닫기가 풀에 닿지 않았다 — 연결 %d", s.conns.Load())
 	}
 }
 
