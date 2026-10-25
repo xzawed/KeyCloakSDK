@@ -99,8 +99,11 @@ final class TokenResponseCap
     }
 
     /**
-     * Guzzle `sink` 요청 옵션에 넘기는 본문 스트림 — 상한+1 바이트까지만 담고, 그 경계를 넘기는 쓰기는 담은 만큼만 받았다고(짧게)
+     * Guzzle `sink` 요청 옵션에 넘기는 본문 스트림 — 상한+1 바이트까지만 담고, 그 바이트를 담는 쓰기는 담은 것보다 하나 적게(짧게)
      * 돌려준다. 그 뒤의 쓰기는 0 이다. 상한+1 번째 바이트를 담는 것이 요점이다 — 판독기가 그것으로 「넘었다」를 안다.
+     *
+     * ⚠️ 그 바이트를 담은 쓰기를 짧게 돌려주는 까닭: 다 받았다고 돌려주면 짧은 쓰기는 그 **다음** 바이트를 받을 때에야 생긴다 —
+     * 정확히 상한+1 바이트를 보내고 멈춘 서버 앞에서 두 전송 모두 읽기 타임아웃까지 붙들렸다(`AdminResponseBodyTest` 의 토큰 칸).
      */
     public static function sink(): StreamInterface
     {
@@ -112,8 +115,9 @@ final class TokenResponseCap
                 if ($room <= 0) {
                     return 0;
                 }
+                $written = $buffer->write(\strlen($data) <= $room ? $data : substr($data, 0, $room));
 
-                return $buffer->write(\strlen($data) <= $room ? $data : substr($data, 0, $room));
+                return self::overflowed($buffer) ? $written - 1 : $written;
             },
         ]);
     }
