@@ -530,6 +530,26 @@ func TestAdminGzipTheCallerAskedFor_isDecodedAndSaysSo(t *testing.T) {
 	}
 }
 
+// 대조 — gzip 이라 하고 gzip 이 아닌 본문은 전처럼 *TransportError(gzip: invalid header)이고 오류가 본문을 인용하지 않는다: 오류 상태(전송이
+// 미리 읽는다)와 성공 상태(resty 가 읽는다) 둘 다. 전에는 resty 가 같은 오류로 실패했다.
+func TestAdminGzipThatIsNotGzip_failsAsBefore(t *testing.T) {
+	for _, status := range []string{"404 Not Found", "200 OK"} {
+		t.Run(status, func(t *testing.T) {
+			s := newRBServer(t, nil, func(string, string) rbReply {
+				return rbBytes(status, rbTyped+"Content-Encoding: gzip\r\n", []byte("plain-not-gzip-QUOTEME"))
+			})
+			a := rbAdmin(t, s, nil, 20*time.Second)
+			a.Raw().RestyClient().SetHeader("Accept-Encoding", "gzip")
+			_, err := a.Users.Get(context.Background(), "x")
+			t.Logf("[AdminResponseBody] %s + gzip 아닌 본문 → %T %v", status, err, err)
+			var te *TransportError
+			if !errors.As(err, &te) || !strings.Contains(err.Error(), "gzip: invalid header") || strings.Contains(err.Error(), "QUOTEME") {
+				t.Fatalf("gzip 이 아닌 본문 → 본문을 인용하지 않는 *TransportError(gzip: invalid header)가 아니다: %T %v", err, err)
+			}
+		})
+	}
+}
+
 // rbErrorAllocationBound 는 64 MiB 오류 본문 호출 하나의 할당 한도다. 근거(2026-10-25 실측, Windows · go1.26.4): 수정 전 165.5 MB(서버가
 // 64 MiB 를 끝까지 썼다), 수정 뒤 4.5–4.6 MB(다섯 번 · 서버 1.2–1.6 MB — 전송이 상한 + 1 까지 읽고 resty 가 그것을 다시 읽는다; gzip 폭탄 행도
 // 4.6 MB) — 16 MiB(16.8 MB)는 수정 뒤보다 3.6 배 넘게, 수정 전보다 9.9 배 떨어진다.
