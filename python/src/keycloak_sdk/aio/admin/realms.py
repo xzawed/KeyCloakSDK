@@ -7,7 +7,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
-from ._translate import acall
+from ._translate import acall, awrite_call
 
 
 class AsyncRealmsResource:
@@ -17,7 +17,7 @@ class AsyncRealmsResource:
         self._admin = admin
 
     async def create(self, rep: dict[str, Any]) -> None:
-        await acall(self._admin.a_create_realm(rep))
+        await awrite_call(self._admin.a_create_realm(rep))
 
     async def get(self, realm_name: str) -> dict[str, Any] | None:
         """realm 이름으로 조회한다. 존재하지 않으면 `KeycloakNotFoundError`가
@@ -30,7 +30,7 @@ class AsyncRealmsResource:
 
     async def update(self, realm_name: str, rep: dict[str, Any]) -> None:
         """현재 이름으로 주소를 잡아 갱신한다(경로/body 분리 — rename 가능)."""
-        await acall(self._admin.a_update_realm(realm_name, rep))
+        await awrite_call(self._admin.a_update_realm(realm_name, rep))
 
     async def delete(self, realm_name: str) -> None:
-        await acall(self._admin.a_delete_realm(realm_name))
+        await awrite_call(self._admin.a_delete_realm(realm_name))

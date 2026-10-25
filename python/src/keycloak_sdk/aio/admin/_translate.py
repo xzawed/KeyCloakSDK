@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Awaitable
 from typing import TypeVar
 
+from ..._internal.admin_body import no_body
 from ..._internal.lower import is_lower_failure, summarize
 from ...admin._translate import admin_failure, refused_grant, refused_guard
 from ...exceptions import (
@@ -20,6 +21,14 @@ from ...exceptions import (
 )
 
 T = TypeVar("T")
+
+
+async def awrite_call(awaitable: Awaitable[T]) -> T:
+    """`acall` 과 같되 성공 응답의 본문을 읽지 않는다(sync `write_call` 과 같다 —
+    `_internal/admin_body.py`). 코루틴은 이 태스크 안에서 돌므로 표시(contextvar)가 그
+    요청에 닿는다."""
+    with no_body():
+        return await acall(awaitable)
 
 
 async def acall(awaitable: Awaitable[T]) -> T:

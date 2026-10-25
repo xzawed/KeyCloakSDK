@@ -7,7 +7,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
-from ._translate import call
+from ._translate import call, write_call
 
 
 class UsersResource:
@@ -17,7 +17,7 @@ class UsersResource:
         self._admin = admin
 
     def create(self, rep: dict[str, Any]) -> str:
-        return call(lambda: self._admin.create_user(rep))
+        return write_call(lambda: self._admin.create_user(rep))
 
     def get(self, user_id: str) -> dict[str, Any] | None:
         """`user_id`로 사용자를 조회한다. 존재하지 않으면 `KeycloakNotFoundError`가
@@ -33,7 +33,7 @@ class UsersResource:
         return call(lambda: self._admin.get_users(query))
 
     def update(self, user_id: str, rep: dict[str, Any]) -> None:
-        call(lambda: self._admin.update_user(user_id, rep))
+        write_call(lambda: self._admin.update_user(user_id, rep))
 
     def delete(self, user_id: str) -> None:
-        call(lambda: self._admin.delete_user(user_id))
+        write_call(lambda: self._admin.delete_user(user_id))

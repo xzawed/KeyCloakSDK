@@ -16,6 +16,7 @@ from typing import TypeVar
 
 from keycloak.exceptions import KeycloakError
 
+from .._internal.admin_body import no_body
 from .._internal.admin_grant import is_grant_failure
 from .._internal.lower import is_lower_failure, refused_body, summarize
 from ..exceptions import (
@@ -106,6 +107,14 @@ def refused_guard(exc: KeycloakConfigError) -> KeycloakConfigError:
     """요청 직전에 살아 있는 연결을 무장하지 못한 거부(`_internal/admin_guard.py`)를 새로 만든다 —
     python-keycloak 의 admin 메서드 프레임 안(보낼 representation 을 쥔다)에서 났기 때문이다."""
     return KeycloakConfigError(str(exc))
+
+
+def write_call(fn: Callable[[], T]) -> T:
+    """`call` 과 같되 성공 응답의 본문을 읽지 않는다(`_internal/admin_body.py`) — 파사드의
+    쓰기 호출(create 는 `Location` 을, update·delete 는 상태만 쓴다). 오류 응답의 본문은
+    상한까지 그대로 실린다."""
+    with no_body():
+        return call(fn)
 
 
 def call(fn: Callable[[], T]) -> T:

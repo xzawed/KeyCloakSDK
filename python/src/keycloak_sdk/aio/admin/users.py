@@ -7,7 +7,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
-from ._translate import acall
+from ._translate import acall, awrite_call
 
 
 class AsyncUsersResource:
@@ -17,7 +17,7 @@ class AsyncUsersResource:
         self._admin = admin
 
     async def create(self, rep: dict[str, Any]) -> str:
-        return await acall(self._admin.a_create_user(rep))
+        return await awrite_call(self._admin.a_create_user(rep))
 
     async def get(self, user_id: str) -> dict[str, Any] | None:
         """`user_id`로 사용자를 조회한다. 존재하지 않으면 `KeycloakNotFoundError`가
@@ -33,7 +33,7 @@ class AsyncUsersResource:
         return await acall(self._admin.a_get_users(query))
 
     async def update(self, user_id: str, rep: dict[str, Any]) -> None:
-        await acall(self._admin.a_update_user(user_id, rep))
+        await awrite_call(self._admin.a_update_user(user_id, rep))
 
     async def delete(self, user_id: str) -> None:
-        await acall(self._admin.a_delete_user(user_id))
+        await awrite_call(self._admin.a_delete_user(user_id))

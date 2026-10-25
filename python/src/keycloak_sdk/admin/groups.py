@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from keycloak import KeycloakAdmin
 
-from ._translate import call
+from ._translate import call, write_call
 
 
 class GroupsResource:
@@ -21,7 +21,7 @@ class GroupsResource:
         # skip_exists=True and the group already exists; we call with the
         # default skip_exists=False, which raises instead — so this always
         # yields the new group's id in practice).
-        return cast(str, call(lambda: self._admin.create_group(rep)))
+        return cast(str, write_call(lambda: self._admin.create_group(rep)))
 
     def get(self, group_id: str) -> dict[str, Any] | None:
         """`group_id`로 그룹을 조회한다. 존재하지 않으면 `KeycloakNotFoundError`가
@@ -36,7 +36,7 @@ class GroupsResource:
 
         경로(`group_id`)와 body(`rep`)를 합치지 말 것.
         """
-        call(lambda: self._admin.update_group(group_id, rep))
+        write_call(lambda: self._admin.update_group(group_id, rep))
 
     def delete(self, group_id: str) -> None:
-        call(lambda: self._admin.delete_group(group_id))
+        write_call(lambda: self._admin.delete_group(group_id))
