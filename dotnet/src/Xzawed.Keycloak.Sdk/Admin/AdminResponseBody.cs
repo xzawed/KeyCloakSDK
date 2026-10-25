@@ -10,7 +10,8 @@ namespace Xzawed.Keycloak.Admin;
 /// body the handler leaves is all there is to buffer.</para>
 /// <para>A write is marked, not inferred from its request: <c>Raw</c>'s <c>*WithResponseAsync</c> hands a write's response,
 /// body and all, to the consumer. The typed client builds its requests itself, so the mark is an <see cref="AsyncLocal{T}"/>
-/// set inside the facade call; it reaches the requests of that call alone.</para>
+/// set inside the facade call; it reaches the requests of that call alone. ⚠️ A new facade write goes through
+/// <c>AdminClient.WriteTypedAsync</c>, <c>WriteRawAsync</c> or a create helper — any other path reads its 2xx body whole.</para>
 /// <para>The body a response replaces is disposed: one read to its end gives its connection back to the pool, one cut short
 /// closes it (<c>HttpTransport</c> sets <c>MaxResponseDrainSize</c> to 0). Nothing inflates the bytes counted —
 /// <c>AutomaticDecompression</c> is off, and no admin request asks for a content-coding.</para>

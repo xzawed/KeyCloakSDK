@@ -191,6 +191,34 @@ public sealed class AdminResponseBodyTests
         Assert.True(conn.BodyBytesWritten < Huge, $"the server wrote the whole {Huge}-byte error body");
     }
 
+    public static IEnumerable<object[]> SplitRows =>
+        from call in ErrorCalls
+        from status in new[] { 404, 300 }
+        select new object[] { call.Name, status };
+
+    /// <summary>A cut that splits the error JSON keeps the class and status. The typed client's own error reading
+    /// (<c>Users.GetAsync</c>, <c>Users.UpdateAsync</c>) parses what is left and fails, so the SDK reports an undecodable error
+    /// body under that status; every other path keeps the cut text as the message.</summary>
+    [Theory]
+    [MemberData(nameof(SplitRows))]
+    public async Task A_cut_that_splits_the_error_json_keeps_its_class_and_status(string name, int status)
+    {
+        var run = ErrorCalls.Single(c => c.Name == name).Run;
+        var body = Encoding.ASCII.GetBytes("{\"error\":\"" + new string('x', 2 * Cap) + "\"}");
+        using var idp = new KeepAliveIdp(_ => new KeepAliveIdp.Resp(body, 0, Chunked: false, Status: status));
+        await using var admin = await AdminAsync(idp);
+
+        var ex = await Record.ExceptionAsync(() => run(admin));
+
+        var adminEx = Assert.IsAssignableFrom<KeycloakAdminException>(ex);
+        Assert.Equal(status == 404 ? typeof(KeycloakNotFoundException) : typeof(KeycloakAdminException), ex!.GetType());
+        Assert.Equal(status, adminEx.StatusCode);
+        var parsedByTheTypedClient = name is "typed Users.GetAsync" or "typed Users.UpdateAsync";
+        var message = parsedByTheTypedClient ? "admin error response body could not be decoded" : Encoding.ASCII.GetString(body, 0, Cap);
+        Assert.True(ex.Message == (status == 404 ? message : $"HTTP {status}: {message}"),
+            $"message of {ex.Message.Length} chars starting {ex.Message[..Math.Min(40, ex.Message.Length)]}");
+    }
+
     /// <summary>An error body of exactly the cap is kept whole and read to its end, so its connection serves the next call.</summary>
     [Theory]
     [InlineData(true)]
