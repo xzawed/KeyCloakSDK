@@ -253,6 +253,19 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
     expect(allocated).to be < 16 * AdminResponseBodySpec::CAP
   end
 
+  # identity 를 청했는데도 gzip 을 보내는 서버 — 규격을 어긴 그 서버 앞에서 무엇이 되는지 고정한다(절충 · CHANGELOG ⚠️).
+  # 아무도 풀지 않으니 성공 본문은 JSON 으로 읽히지 않아 TransportError 이고, raw 의 JSON 오류 본문은 ParsingError 다.
+  it "leaves a gzip body a server sends despite identity undecoded — facade success fails, raw JSON error raises" do
+    server = BodyServer.new(compress: :always)
+    server.route("#{AdminResponseBodySpec::BASE}/users/u1") { [200, {}, { id: "u1" }.to_json, 0] }
+    server.route("#{AdminResponseBodySpec::BASE}/users/u2") { [404, {}, { error: "missing" }.to_json, 0] }
+    admin = spec.admin(server)
+    expect(spec.outcome { admin.users.get("u1") }.first).to eq(KeycloakSdk::TransportError)
+    expect { admin.raw.get("admin/realms/#{AdminResponseBodySpec::REALM}/users/u2") }
+      .to raise_error(Faraday::ParsingError)
+    server.close
+  end
+
   it "reads a success body the call uses whole, past the cap" do
     list = (1..20_000).map { |i| { id: format("%012d", i), username: "user-#{format('%012d', i)}" } }.to_json
     server = BodyServer.new(framing: :chunked)
