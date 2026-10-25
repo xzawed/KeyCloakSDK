@@ -77,7 +77,7 @@ final class AdminResponseBody
                 'write' => static function (string $data) use (&$error, &$unread, &$cut, $capped, $plain): int {
                     if ($unread) {
                         $cut = true;
-                        return 0;   // 길이를 알리지 않은 2xx 본문의 첫 바이트 — 받지 않고 끝낸다
+                        return 0;   // GET·HEAD 가 아닌 요청의 2xx 본문 바이트(틀이 없는 본문 · 본문 없다는 응답 뒤) — 받지 않고 끝낸다
                     }
 
                     return $error ? $capped->write($data) : $plain->write($data);
