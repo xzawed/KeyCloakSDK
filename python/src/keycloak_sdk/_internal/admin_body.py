@@ -13,8 +13,9 @@ requests 가 `r.content` 로, aio 는 httpx `send` 가 `aread()` 로 본문 전�
 `token_cap.py` 가 그랜트 세션에 거는 자리와 같은 자리, 같은 방식(스트리밍으로 받아 상태를
 본 뒤 읽을 만큼만 읽는다)이다. 설치와 재설치는 `admin_guard.py` 가 요청마다 맡는다.
 
-- 상태 3xx 이상: 원문을 상한 + 1 까지 받아 **여기서** 푼다(`token_cap._inflater` — 하위
-  디코더의 상한에 기대지 않는다). 상한을 넘으면 상한에서 자르고 연결을 버린다.
+- 상태 3xx 이상: 원문을 상한 + 1 까지 받아 **여기서** 푼다(`token_cap._decoder` — 하위
+  디코더의 상한에 기대지 않는다). 상한을 넘으면 상한에서 자르고, 압축 스트림이 끝나면 그
+  뒤의 꼬리를 읽지 않고 — 둘 다 연결을 버린다.
   python-keycloak 은 상태로 오류를 고르므로(`raise_error_from_response`) 잘린 본문이
   분류를 바꾸지 않는다 — JSON 해석이 실패하면 메시지가 본문 바이트일 뿐이다.
 - 파사드 쓰기가 표시한(`no_body`) 요청의 2xx: 읽지 않고 닫는다. 본문이 이미 끝난 응답
@@ -43,7 +44,8 @@ from .token_cap import (
     _CHUNK,
     TOKEN_RESPONSE_MAX_BYTES,
     ResponseRefused,
-    _inflater,
+    _decoder,
+    _Ended,
 )
 
 #: 오류 본문의 상한 — 토큰 응답 상한을 빌린다(python-keycloak 은 오류 본문을 메시지로만 쓴다).
@@ -76,13 +78,14 @@ def _ended(status: int, length: str | None) -> bool:
     return status in (204, 304) or length == "0"
 
 
-def _error_inflater(codings: list[str]) -> _Inflate:
-    """오류 본문을 상한 안에서 푸는 함수. 묶어서 풀 수 없는 압축(둘 이상 겹침)은 풀지 않고
-    원문을 센다 — 토큰 응답과 달리 거부하지 않는다(답의 상태가 결과다)."""
+def _error_decoder(codings: list[str]) -> tuple[_Inflate, _Ended | None]:
+    """오류 본문을 상한 안에서 푸는 함수와 그 압축 스트림의 끝을 묻는 함수. 묶어서 풀 수 없는
+    압축(둘 이상 겹침)은 풀지 않고 원문을 센다 — 토큰 응답과 달리 거부하지 않는다(답의 상태가
+    결과다)."""
     try:
-        return _inflater(codings, "admin error response")
+        return _decoder(codings, "admin error response")
     except ResponseRefused:
-        return lambda data, limit: data[:limit]
+        return (lambda data, limit: data[:limit]), None
 
 
 def _cut(body: bytearray, inflate: _Inflate, data: bytes) -> bool:
@@ -92,14 +95,24 @@ def _cut(body: bytearray, inflate: _Inflate, data: bytes) -> bool:
 
 
 def _read_error(response: requests.Response) -> tuple[bytes, bool]:
-    """오류 본문을 원문으로 상한 + 1 까지 읽어 푼다 — (본문, 상한을 넘었나)."""
-    inflate = _error_inflater(response.headers.get("content-encoding", "").split(","))
+    """오류 본문을 원문으로 상한 + 1 까지 읽어 푼다 — (본문, 연결을 버리나). 압축 스트림이
+    끝나면 거기서 멈춘다: 그 뒤의 꼬리는 읽지 않고 연결을 버린다 — 안 그러면 상한과 무관하게
+    꼬리를 끝까지 읽었고(gzip 멤버 뒤 2 MiB), 멤버 뒤 멈춘 서버 앞에서는 다 받은 오류가 읽기
+    타임아웃 끝에 `KeycloakTransportError` 가 됐다(실측, 수정 전과 같았다).
+
+    ⚠️ 와 있는 만큼만 받는다(urllib3 2.2 의 `read1`) — `read(amt)` 는 청크 본문에서 `amt` 를 다
+    채울 때까지 다음 청크를 기다려, 멤버가 이미 와 있어도 멈춘 서버 앞에서 끝을 보지 못했다
+    (실측). `read1` 이 없는 urllib3 는 `read` 로 받는다 — 그 판에서는 그 경우가 기다린다."""
+    inflate, ended = _error_decoder(response.headers.get("content-encoding", "").split(","))
+    read = getattr(response.raw, "read1", None) or response.raw.read
     body = bytearray()
-    while data := response.raw.read(
+    while data := read(
         min(_CHUNK, ADMIN_ERROR_BODY_MAX_BYTES + 1 - len(body)), decode_content=False
     ):
         if _cut(body, inflate, data):
             return bytes(body[:ADMIN_ERROR_BODY_MAX_BYTES]), True
+        if ended is not None and ended():
+            return bytes(body), True
     return bytes(body), False
 
 
@@ -113,8 +126,8 @@ def bounded_send(send: _SyncSend) -> _SyncSend:
         response = send(request, **{**kwargs, "stream": True})
         try:
             if response.status_code >= 300:
-                body, over = _read_error(response)
-                if over:
+                body, drop = _read_error(response)
+                if drop:
                     response.close()  # 나머지를 읽지 않고 연결째 버린다
             elif _NO_BODY.get() and not _ended(
                 response.status_code, response.headers.get("content-length")
@@ -140,13 +153,18 @@ def _loaded(response: requests.Response) -> requests.Response:
     return response
 
 
-async def _aread_error(response: httpx.Response) -> tuple[bytes, bool]:
-    inflate = _error_inflater(response.headers.get_list("content-encoding", split_commas=True))
+async def _aread_error(response: httpx.Response) -> bytes:
+    """sync `_read_error` 와 같다 — 연결을 버릴지는 아래 `aclose` 가 스트림의 상태로 정한다."""
+    inflate, ended = _error_decoder(
+        response.headers.get_list("content-encoding", split_commas=True)
+    )
     body = bytearray()
     async for data in response.aiter_raw():
         if _cut(body, inflate, data):
-            return bytes(body[:ADMIN_ERROR_BODY_MAX_BYTES]), True
-    return bytes(body), False
+            return bytes(body[:ADMIN_ERROR_BODY_MAX_BYTES])
+        if ended is not None and ended():
+            break
+    return bytes(body)
 
 
 def abounded_send(send: _AsyncSend) -> Callable[..., Coroutine[Any, Any, httpx.Response]]:
@@ -161,7 +179,7 @@ def abounded_send(send: _AsyncSend) -> Callable[..., Coroutine[Any, Any, httpx.R
         response = await send(request, stream=True, **kwargs)
         try:
             if response.status_code >= 300:
-                body, _ = await _aread_error(response)
+                body = await _aread_error(response)
             elif _NO_BODY.get() and not _ended(
                 response.status_code, response.headers.get("content-length")
             ):

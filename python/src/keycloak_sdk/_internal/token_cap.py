@@ -69,6 +69,8 @@ _MARK = "__kcsdk_capped__"
 _SyncSend = Callable[..., requests.Response]
 _AsyncSend = Callable[..., Awaitable[httpx.Response]]
 _Inflate = Callable[[bytes, int], bytes]
+#: 압축 스트림이 끝났는가(gzip·deflate) — 풀지 않는 원문에는 없다(None).
+_Ended = Callable[[], bool]
 
 
 class ResponseRefused(Exception):
@@ -134,7 +136,14 @@ def capped_send(send: _SyncSend) -> _SyncSend:
 
 
 def _inflater(codings: list[str], kind: str) -> _Inflate:
-    """`Content-Encoding` 대로 원문을 상한 안에서 푸는 함수. `limit` 은 언제나 1 이상이다 —
+    """`_decoder` 의 푸는 함수 — 토큰 응답은 스트림의 끝을 묻지 않는다(꼬리는 읽어서 버린다)."""
+    return _decoder(codings, kind)[0]
+
+
+def _decoder(codings: list[str], kind: str) -> tuple[_Inflate, _Ended | None]:
+    """`Content-Encoding` 대로 원문을 상한 안에서 푸는 함수와, 그 압축 스트림이 끝났는지 묻는
+    함수(원문 그대로면 None). admin 오류 본문(`admin_body.py`)은 끝을 물어 꼬리를 읽지 않는다.
+    `limit` 은 언제나 1 이상이다 —
     `decompress(data, 0)` 은 「상한 없음」이라 0 을 넘기면 안 된다(호출자가 cap 을 넘기 전에
     멈춘다).
 
@@ -147,12 +156,14 @@ def _inflater(codings: list[str], kind: str) -> _Inflate:
     않는다(httpx 와 같고, 멤버를 이어 푸는 urllib3 와는 다르다)."""
     known = [c.strip().lower() for c in codings if c.strip().lower() in _INFLATABLE]
     if not known:
-        return lambda data, limit: data[:limit]
+        return (lambda data, limit: data[:limit]), None
     if len(known) > 1:
         raise ResponseRefused(f"{kind} is compressed more than once ({', '.join(known)})")
     if known[0] == "gzip":
         gzip = zlib.decompressobj(zlib.MAX_WBITS | 16)
-        return lambda data, limit: b"" if gzip.eof else gzip.decompress(data, limit)
+        return (lambda data, limit: b"" if gzip.eof else gzip.decompress(data, limit)), (
+            lambda: gzip.eof
+        )
     # deflate 는 zlib 래퍼가 표준이지만 날 deflate 를 보내는 서버가 있다 — httpx 처럼 첫 조각이
     # 실패하면 날 deflate 로 다시 푼다.
     inflater = zlib.decompressobj()
@@ -171,7 +182,8 @@ def _inflater(codings: list[str], kind: str) -> _Inflate:
             inflater = zlib.decompressobj(-zlib.MAX_WBITS)
             return inflater.decompress(data, limit)
 
-    return deflate
+    # 날 deflate 로 갈아탄 뒤의 객체를 본다 — `deflate` 가 같은 이름을 다시 묶는다.
+    return deflate, lambda: inflater.eof
 
 
 async def _aread(response: httpx.Response, kind: str) -> bytes:

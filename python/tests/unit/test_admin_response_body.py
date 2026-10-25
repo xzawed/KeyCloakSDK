@@ -27,6 +27,7 @@ import ssl
 import threading
 import time
 import tracemalloc
+import zlib
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -552,6 +553,90 @@ async def test_a_corrupt_gzip_error_body_fails_and_cuts_the_connection(lane: str
     )
     assert result is None and type(err).__name__ == "KeycloakTransportError", repr(err)
     assert finished and wire.written <= WRITTEN_BOUND, f"연결을 끊지 않았다 — {wire.written} B"
+
+
+# 압축된 오류 본문은 그 압축 스트림과 함께 끝난다 — gzip 멤버 뒤의 꼬리(64 MiB)는 읽지 않고, 멤버
+# 뒤 멈춘 서버는 기다리지 않는다(다 받은 400 을 돌려준다). 수정 전과 이 PR 의 앞 커밋은 꼬리를
+# 끝까지 읽었고(서버 2,097,190 B), 멈춘 서버 앞에서 4,010~4,022 ms 에 KeycloakTransportError 였다
+# (Grok 레그 지목 · 실측).
+_NOPE = b'{"message":"nope"}'
+_MEMBER = gzip.compress(_NOPE)
+
+
+def _raw_deflate(data: bytes) -> bytes:
+    packer = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+    return packer.compress(data) + packer.flush()
+
+
+#: 인코딩마다 끝나는 압축 스트림 하나 — 날 deflate 는 첫 조각이 zlib 머리로 실패해 갈아탄 뒤의
+#: 객체로 끝을 본다.
+_STREAMS = {
+    "gzip": ("gzip", _MEMBER),
+    "deflate": ("deflate", zlib.compress(_NOPE)),
+    "날 deflate": ("deflate", _raw_deflate(_NOPE)),
+}
+
+
+def _member_then(encoding: str, stream: bytes, tail: int, stall: bool) -> Reply:
+    def reply(conn: socket.socket, wire: _Wire) -> bool:
+        head = "HTTP/1.1 400 Bad Request\r\n" + TYPED + f"Content-Encoding: {encoding}\r\n"
+        head += "Transfer-Encoding: chunked\r\n\r\n"
+        if not _send(conn, wire, head.encode() + f"{len(stream):x}\r\n".encode() + stream):
+            return False
+        left = tail
+        while left > 0:
+            n = min(left, len(_SLAB))
+            if not _send(conn, wire, f"\r\n{n:x}\r\n".encode() + _SLAB[:n]):
+                return False
+            left -= n
+        if stall:
+            time.sleep(20)
+            return False
+        return _send(conn, wire, b"\r\n0\r\n\r\n")
+
+    return reply
+
+
+@pytest.mark.parametrize("stall", [False, True])
+@pytest.mark.parametrize("kind", sorted(_STREAMS))
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_compressed_error_body_ends_with_its_stream(
+    lane: str, kind: str, stall: bool
+) -> None:
+    encoding, stream = _STREAMS[kind]
+    with _wire(lambda _m, _t: _member_then(encoding, stream, 0 if stall else HUGE, stall)) as wire:
+        client = _client(lane, wire.url, timeout=4)
+        start = time.monotonic()
+        _, err = await _attempt(lane, client, lambda c: c.users.get("x"))
+        elapsed = time.monotonic() - start
+        await _close(lane, client)
+        # 멈춘 서버는 20 초를 붙든다 — 그 쓰기의 끝은 기다리지 않는다(쓴 것은 스트림 하나뿐이다).
+        finished = stall or wire.await_reply()
+    tail = "멈춤" if stall else "64 MiB"
+    print(
+        f"[AdminResponseBody] {lane} {kind} 스트림 뒤 {tail} → {_name(err)}"
+        f" {getattr(err, 'keycloak_error', None)!r} · {elapsed * 1000:.0f} ms · server wrote"
+        f" {wire.written} B"
+    )
+    assert isinstance(err, KeycloakAdminError) and err.status_code == 400, repr(err)
+    assert err.keycloak_error == '{"message":"nope"}', repr(err)
+    assert elapsed < 2, f"멈춘 서버를 기다렸다 — {elapsed * 1000:.0f} ms"
+    assert finished and wire.written <= WRITTEN_BOUND, f"꼬리를 읽었다 — {wire.written} B"
+
+
+# 대조 — 잘린 압축 오류 본문(gzip 머리 10 B 뿐)은 전처럼 그 상태의 오류다(KeycloakAdminError 400,
+# 빈 본문) — urllib3·httpx 의 끝내기(flush)도 잘림을 오류로 보지 않았다(main 실측).
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_truncated_compressed_error_body_keeps_its_status(lane: str) -> None:
+    def reply(_m: str, _t: str) -> Reply:
+        return _exact("400 Bad Request", TYPED + "Content-Encoding: gzip\r\n", _MEMBER[:10])
+
+    with _wire(reply) as wire:
+        client = _client(lane, wire.url)
+        _, err = await _attempt(lane, client, lambda c: c.users.get("x"))
+        await _close(lane, client)
+    assert isinstance(err, KeycloakAdminError) and err.status_code == 400, repr(err)
+    assert not err.keycloak_error, repr(err)
 
 
 # 대조 — 요청은 상한 안에서 풀 수 있는 압축만 청한다(gzip, deflate) — 소비자가 세션에 다른 것을
