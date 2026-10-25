@@ -461,6 +461,7 @@ final class AdminResponseBodyTest extends TestCase
         self::assertTrue($record['tunneled']);
         self::assertSame(strlen($body), $record['got'], '서버가 요청 본문을 다 받지 못했다');
         self::assertLessThan(self::HUGE, $record['written']);
+        self::assertSame($want >= 300 ? self::CAP : 0, strlen((string) $result->getBody()), '남긴 본문 — 오류는 상한까지, 2xx 는 비운다');
     }
 
     /**
