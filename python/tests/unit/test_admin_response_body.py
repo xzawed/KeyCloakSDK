@@ -67,7 +67,7 @@ Reply = Callable[[socket.socket, "_Wire"], bool]
 
 class _Wire:
     """날 HTTP/1.1 서버(평문 또는 TLS) — 연결 하나에 요청 여럿. 받아들인 연결 수 · 마지막
-    응답이 쓴 본문 바이트 · 그 응답의 쓰기가 끝났는지를 센다."""
+    응답이 쓴 본문 바이트 · 그 응답의 쓰기가 끝났는지 · 마지막 요청의 머리를 남긴다."""
 
     def __init__(
         self, route: Callable[[str, str], Reply], tls: ssl.SSLContext | None = None
@@ -81,6 +81,7 @@ class _Wire:
         self.conns = 0
         self.written = 0
         self.done = threading.Event()
+        self.last_headers: dict[str, str] = {}
         self._open: list[socket.socket] = []
         self._lock = threading.Lock()
         threading.Thread(target=self._serve, daemon=True).start()
@@ -114,6 +115,7 @@ class _Wire:
                     headers[name.strip().lower()] = value.strip()
                 if length := int(headers.get("content-length", "0")):
                     reader.read(length)
+                self.last_headers = headers
                 reply = self.route(method, target)
                 self.written = 0
                 self.done.clear()
@@ -369,13 +371,23 @@ async def test_error_body_at_the_cap_is_carried_whole(lane: str, total: int) -> 
     with _wire(reply) as wire:
         client = _client(lane, wire.url)
         _, err = await _attempt(lane, client, lambda c: c.users.update("x", {"username": "u"}))
+        await _attempt(lane, client, lambda c: c.users.update("x", {"username": "u"}))
         await _close(lane, client)
+        conns = wire.conns
     body = getattr(err, "keycloak_error", None) or ""
-    print(f"[AdminResponseBody] {lane} update 404 {total} B → keycloak_error {len(body)} 자")
+    print(
+        f"[AdminResponseBody] {lane} update 404 {total} B → keycloak_error {len(body)} 자"
+        f" · 두 번째 호출까지 연결 {conns}"
+    )
     assert isinstance(err, KeycloakNotFoundError), repr(err)
     assert len(body) == CAP and body.startswith("missing"), (
         f"{total} B 본문 → {len(body)} 자(기대 {CAP})"
     )
+    # 끝까지 읽은 오류 본문(정확히 상한)의 연결은 다시 쓰인다. 상한 + 1 바이트 본문은 상한 + 1 을
+    # 읽는 순간 끝에 닿으므로 레인마다 갈린다(sync 는 그때 연결을 돌려주고 aio 는 끝 신호 전에
+    # 멈춰 버린다) — 상한을 넘는 본문에서 끊는지는 위 오류 행이 서버가 쓴 양으로 잰다.
+    if total == CAP:
+        assert conns == 1, f"끝까지 읽은 오류 본문의 연결을 다시 쓰지 않았다 — 연결 {conns}"
 
 
 # (3) 결과 뒤 멈춘 서버를 기다리지 않는다 — create 201(1 MiB 를 알린 본문)의 머리만 받은 뒤
@@ -519,6 +531,41 @@ async def test_an_error_body_compressed_twice_is_carried_as_it_came(lane: str) -
         _, err = await _attempt(lane, client, lambda c: c.users.get("x"))
         await _close(lane, client)
     assert isinstance(err, KeycloakNotFoundError) and err.keycloak_error == "as-it-came", repr(err)
+
+
+# 대조 — 깨진 gzip 오류 본문(머리 뒤 쓰레기 + 64 MiB)은 전처럼 KeycloakTransportError 이고, 풀다 난
+# 오류 뒤에도 연결을 끊는다 — 서버는 64 MiB 를 다 쓰지 못한다.
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_corrupt_gzip_error_body_fails_and_cuts_the_connection(lane: str) -> None:
+    corrupt = gzip.compress(NOT_FOUND)[:10] + b"\xff" * 64
+
+    def reply(_m: str, _t: str) -> Reply:
+        return _framed("404 Not Found", TYPED + "Content-Encoding: gzip\r\n", corrupt, HUGE)
+
+    with _wire(reply) as wire:
+        client = _client(lane, wire.url)
+        result, err = await _attempt(lane, client, lambda c: c.users.get("x"))
+        await _close(lane, client)
+        finished = wire.await_reply()
+    print(
+        f"[AdminResponseBody] {lane} 깨진 gzip 404 → {_name(err)} · server wrote {wire.written} B"
+    )
+    assert result is None and type(err).__name__ == "KeycloakTransportError", repr(err)
+    assert finished and wire.written <= WRITTEN_BOUND, f"연결을 끊지 않았다 — {wire.written} B"
+
+
+# 대조 — 요청은 상한 안에서 풀 수 있는 압축만 청한다(gzip, deflate) — 소비자가 세션에 다른 것을
+# 걸어 두어도(여기서는 br) 그 요청은 그것으로 나간다. 아니면 서버가 br 로 답한 오류 본문을 풀지
+# 못하고 압축된 바이트를 메시지로 싣는다.
+@pytest.mark.parametrize("lane", LANES)
+async def test_requests_ask_only_for_encodings_decoded_under_the_cap(lane: str) -> None:
+    with _wire(lambda _m, _t: _exact("404 Not Found", TYPED, NOT_FOUND)) as wire:
+        client = _client(lane, wire.url)
+        session = client.raw.connection._s if lane == "sync" else client.raw.connection.async_s
+        session.headers["Accept-Encoding"] = "br"
+        await _attempt(lane, client, lambda c: c.users.get("x"))
+        await _close(lane, client)
+    assert wire.last_headers.get("accept-encoding") == "gzip, deflate", wire.last_headers
 
 
 # 대조 — 호출자가 스트리밍으로 받는 요청(`stream=True`)은 손대지 않는다 — 본문을 읽는 것도,
