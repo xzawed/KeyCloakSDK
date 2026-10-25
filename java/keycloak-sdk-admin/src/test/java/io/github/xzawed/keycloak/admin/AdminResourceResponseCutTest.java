@@ -72,6 +72,7 @@ class AdminResourceResponseCutTest {
   private static final int CAP = ResponseLimits.MAX_TOKEN_RESPONSE_BYTES;
   private static final String REALM = "r";
   private static final String TOKEN_PATH = "/realms/" + REALM + "/protocol/openid-connect/token";
+  private static final String LOGOUT_PATH = "/realms/" + REALM + "/protocol/openid-connect/logout";
   private static final byte[] TOKEN = utf8("{\"access_token\":\"good\",\"token_type\":\"Bearer\",\"expires_in\":300}");
   private static final String USER = "{\"id\":\"x\",\"username\":\"alice\"}";
   private static final String NOT_FOUND = "{\"error\":\"User not found\"}";
@@ -83,6 +84,12 @@ class AdminResourceResponseCutTest {
   private static final long WRITTEN_BOUND = 16L << 20;
   /** 64 MiB 오류 본문 호출 하나의 할당 한도 — 근거(측정)는 {@link #anErrorBody_isHeldOnlyUpToTheCap}. */
   private static final long ERROR_ALLOCATION_BOUND = 64L << 20;
+  /**
+   * 400 + 32 MiB logout 본문을 받는 close() 하나의 할당 한도. 근거(2026-10-25 실측, Windows · JDK 21.0.8): 수정 전 100.7 MB(서버가 32 MiB 를
+   * 끝까지 썼다 — kotlin #718 의 수정 전 101 MiB 와 같다), 수정 뒤 3.2 MB(서버 1.77 MB) — 16 MiB(16.8 MB)는 수정 뒤보다 5 배, 수정 전보다
+   * 6 배 떨어진다.
+   */
+  private static final long LOGOUT_ALLOCATION_BOUND = 16L << 20;
   /** 멈춤 갈래 하나를 되풀이하는 횟수 — 근거는 {@link #aServerStalledAfterTheResult_isNotWaitedFor}. */
   private static final int STALL_REPEATS = 5;
 
@@ -184,6 +191,13 @@ class AdminResourceResponseCutTest {
     /** 마지막 admin 응답의 쓰기가 끝났다(성공·실패) — 시험 스레드가 기다린다. */
     final AtomicReference<CountDownLatch> replied = new AtomicReference<>(new CountDownLatch(1));
     final Function<String, Reply> admin;
+    /** 토큰 엔드포인트의 본문 — logout 시험은 refresh_token 을 단다(TokenManager 는 그것이 있을 때만 logout 을 보낸다). */
+    volatile byte[] token = TOKEN;
+    /** logout 엔드포인트의 응답(없으면 404) · 받은 수 · 그 응답이 쓴 본문 바이트. */
+    volatile Reply logout;
+    final AtomicInteger logouts = new AtomicInteger();
+    final AtomicLong logoutWritten = new AtomicLong();
+    final AtomicReference<CountDownLatch> loggedOut = new AtomicReference<>(new CountDownLatch(1));
 
     RawServer(SSLContext tls, Function<String, Reply> admin) throws IOException {
       this.admin = admin;
@@ -239,10 +253,20 @@ class AdminResourceResponseCutTest {
     private boolean answer(String request, OutputStream out) throws IOException {
       String path = request.substring(request.indexOf(' ') + 1);
       if (path.equals(TOKEN_PATH)) {
-        out.write(latin1("HTTP/1.1 200 OK\r\n" + TYPED + "Content-Length: " + TOKEN.length + "\r\n\r\n"));
-        out.write(TOKEN);
+        byte[] body = token;
+        out.write(latin1("HTTP/1.1 200 OK\r\n" + TYPED + "Content-Length: " + body.length + "\r\n\r\n"));
+        out.write(body);
         out.flush();
         return true;
+      }
+      if (path.equals(LOGOUT_PATH) && logout != null) {
+        logouts.incrementAndGet();
+        CountDownLatch done = loggedOut.get();
+        try {
+          return logout.write(out, logoutWritten);
+        } finally {
+          done.countDown();
+        }
       }
       if (path.startsWith("/admin/realms/" + REALM + "/users")) {
         adminHits.incrementAndGet();
@@ -520,6 +544,53 @@ class AdminResourceResponseCutTest {
     assertEquals('x', capped.read());
     assertEquals('x', capped.read());
     assertEquals(-1, capped.read());
+  }
+
+  /**
+   * admin 이 닫힐 때의 logout — 내장 TokenManager 가 refresh_token 을 logout 엔드포인트로 보내고({@code Keycloak.close}) 오류 상태면
+   * RESTEasy 가 그 본문을 버퍼에 담는다. 그 실패는 close() 가 삼켜 결과는 같고 달라지는 것은 메모리와 읽은 양뿐이다. 토큰 엔드포인트가
+   * 아니라 {@link TokenResponseGuard} 범위 밖이지만(kotlin 은 그 가드가 logout 도 맡는다 — #718) 엔진의 오류 본문 상한이 같은 자리를
+   * 묶는다(등록부 {@code wave4-hardening-java} (1)). 한도의 근거는 {@link #LOGOUT_ALLOCATION_BOUND}. 상한 안의 오류의 close() 는 예전처럼
+   * 조용히 끝난다(대조). 수정 전: 400 + 32 MiB 에 close() 하나 100.7 MB · 서버 32 MiB 끝까지.
+   */
+  @Test @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void aHugeLogoutErrorBodyOnClose_isHeldOnlyUpToTheCap() throws Exception {
+    byte[] withRefresh = utf8("{\"access_token\":\"good\",\"token_type\":\"Bearer\",\"expires_in\":300,"
+        + "\"refresh_token\":\"rt\",\"refresh_expires_in\":300}");
+    String error = "{\"error\":\"invalid_grant\"}";
+    List<String> wrong = new ArrayList<>();
+    try (RawServer server = new RawServer(exact("200 OK", TYPED, USER))) {
+      server.token = withRefresh;
+      server.logout = exact("204 No Content", "", "");
+      try (AdminClient warm = admin(server, Duration.ofSeconds(20))) {
+        warm.users().get("x"); // 예열 — 첫 close() 의 클래스 적재를 재지 않는다
+      }
+      record Case(String label, Reply reply, long body) {}
+      List<Case> cases = List.of(new Case("logout 400 작은 본문", exact("400 Bad Request", TYPED, error), error.length()),
+          new Case("logout 400 = 상한", padded("400 Bad Request", TYPED, error, CAP), CAP),
+          new Case("logout 400 + 32 MiB", padded("400 Bad Request", TYPED, error, 32L << 20), 32L << 20));
+      for (Case c : cases) {
+        server.logout = c.reply();
+        server.logouts.set(0);
+        server.logoutWritten.set(0);
+        server.loggedOut.set(new CountDownLatch(1));
+        AdminClient admin = admin(server, Duration.ofSeconds(20));
+        admin.users().get("x");
+        Outcome o = call(admin, a -> {
+          a.close();
+          return "closed";
+        });
+        boolean finished = server.loggedOut.get().await(30, TimeUnit.SECONDS);
+        String row = c.label() + " → close() " + o.describe() + " · logout " + server.logouts.get() + " 건 · server wrote "
+            + server.logoutWritten.get() + " B" + (finished ? "" : " (still writing)");
+        System.out.println("[AdminResourceResponseCutTest] " + row);
+        if (o.thrown() != null || server.logouts.get() != 1) wrong.add(c.label() + ": close() 가 logout 을 보내고 조용히 끝나야 한다 — " + row);
+        if (c.body() > CAP && (!finished || o.allocated() > LOGOUT_ALLOCATION_BOUND || server.logoutWritten.get() > WRITTEN_BOUND)) {
+          wrong.add(c.label() + ": 상한 너머의 logout 오류 본문을 읽었다 — " + row);
+        }
+      }
+    }
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
   }
 
   /** 대조 — 끊긴 연결은 풀로 돌아가지 않는다: 나머지를 끊은 create 다음의 get 은 새 연결에서 성공한다(연결 2). */
