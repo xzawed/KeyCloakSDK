@@ -36,6 +36,8 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManagerFactory;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.protocol.HttpClientContext;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -192,9 +194,9 @@ class AdminResourceResponseCutTest {
     final AtomicReference<CountDownLatch> replied = new AtomicReference<>(new CountDownLatch(1));
     final Function<String, Reply> admin;
     /** 토큰 엔드포인트의 본문 — logout 시험은 refresh_token 을 단다(TokenManager 는 그것이 있을 때만 logout 을 보낸다). */
-    volatile byte[] token = TOKEN;
+    final AtomicReference<byte[]> token = new AtomicReference<>(TOKEN);
     /** logout 엔드포인트의 응답(없으면 404) · 받은 수 · 그 응답이 쓴 본문 바이트. */
-    volatile Reply logout;
+    final AtomicReference<Reply> logout = new AtomicReference<>();
     final AtomicInteger logouts = new AtomicInteger();
     final AtomicLong logoutWritten = new AtomicLong();
     final AtomicReference<CountDownLatch> loggedOut = new AtomicReference<>(new CountDownLatch(1));
@@ -253,17 +255,18 @@ class AdminResourceResponseCutTest {
     private boolean answer(String request, OutputStream out) throws IOException {
       String path = request.substring(request.indexOf(' ') + 1);
       if (path.equals(TOKEN_PATH)) {
-        byte[] body = token;
+        byte[] body = token.get();
         out.write(latin1("HTTP/1.1 200 OK\r\n" + TYPED + "Content-Length: " + body.length + "\r\n\r\n"));
         out.write(body);
         out.flush();
         return true;
       }
-      if (path.equals(LOGOUT_PATH) && logout != null) {
+      Reply logoutReply = logout.get();
+      if (path.equals(LOGOUT_PATH) && logoutReply != null) {
         logouts.incrementAndGet();
         CountDownLatch done = loggedOut.get();
         try {
-          return logout.write(out, logoutWritten);
+          return logoutReply.write(out, logoutWritten);
         } finally {
           done.countDown();
         }
@@ -536,14 +539,17 @@ class AdminResourceResponseCutTest {
         return 1;
       }
     };
-    AdminEngine.Settled settled = new AdminEngine.Settled(refusesZero, null, Long.MAX_VALUE);
-    assertEquals(0, settled.read(new byte[1], 0, 0));
-    assertEquals(1, settled.read(new byte[1], 0, 1));
+    AdminEngine.Exchange exchange = new AdminEngine.Exchange(new HttpGet("http://127.0.0.1:1/"), HttpClientContext.create());
+    try (AdminEngine.Settled settled = new AdminEngine.Settled(refusesZero, exchange, Long.MAX_VALUE)) {
+      assertEquals(0, settled.read(new byte[1], 0, 0));
+      assertEquals(1, settled.read(new byte[1], 0, 1));
+    }
     // 상한은 한 바이트씩 읽어도 같다 — limit 바이트 뒤에는 아래 스트림을 읽지 않고 끝(-1)이다
-    AdminEngine.Settled capped = new AdminEngine.Settled(refusesZero, null, 2);
-    assertEquals('x', capped.read());
-    assertEquals('x', capped.read());
-    assertEquals(-1, capped.read());
+    try (AdminEngine.Settled capped = new AdminEngine.Settled(refusesZero, exchange, 2)) {
+      assertEquals('x', capped.read());
+      assertEquals('x', capped.read());
+      assertEquals(-1, capped.read());
+    }
   }
 
   /**
@@ -560,8 +566,8 @@ class AdminResourceResponseCutTest {
     String error = "{\"error\":\"invalid_grant\"}";
     List<String> wrong = new ArrayList<>();
     try (RawServer server = new RawServer(exact("200 OK", TYPED, USER))) {
-      server.token = withRefresh;
-      server.logout = exact("204 No Content", "", "");
+      server.token.set(withRefresh);
+      server.logout.set(exact("204 No Content", "", ""));
       try (AdminClient warm = admin(server, Duration.ofSeconds(20))) {
         warm.users().get("x"); // 예열 — 첫 close() 의 클래스 적재를 재지 않는다
       }
@@ -570,7 +576,7 @@ class AdminResourceResponseCutTest {
           new Case("logout 400 = 상한", padded("400 Bad Request", TYPED, error, CAP), CAP),
           new Case("logout 400 + 32 MiB", padded("400 Bad Request", TYPED, error, 32L << 20), 32L << 20));
       for (Case c : cases) {
-        server.logout = c.reply();
+        server.logout.set(c.reply());
         server.logouts.set(0);
         server.logoutWritten.set(0);
         server.loggedOut.set(new CountDownLatch(1));
@@ -608,7 +614,7 @@ class AdminResourceResponseCutTest {
       out.write(latin1("HTTP/1.1 404 Not Found\r\n" + TYPED + "Content-Length: " + (CAP + (1L << 20)) + "\r\n\r\n"));
       out.write(h);
       written.addAndGet(h.length);
-      spaces(out, CAP - h.length, written);
+      spaces(out, (long) CAP - h.length, written);
       out.flush();
       LockSupport.parkNanos(TimeUnit.SECONDS.toNanos(20)); // 상한만큼 쓰고 읽지도 쓰지도 않고 붙든다
       return false;
