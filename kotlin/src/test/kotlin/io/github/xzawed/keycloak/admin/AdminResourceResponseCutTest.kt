@@ -44,8 +44,9 @@ import kotlin.test.assertTrue
 // `ChunkedInputStream.close`)가 나머지를 EOF 까지 비웠다 — 아래 2xx 다섯 자리 모두 서버가 64 MiB 를 끝까지 썼다. 미디어 타입이
 // 있는 오류 상태는 `ClientInvocation.extractResult` 의 `bufferEntity` 가 본문을 통째로 담아 64 MiB 오류 본문에 호출 하나가
 // JVM 전체로 약 477 MB 를 할당했고 그 본문 전부가 예외의 `keycloakError` 에 실렸다. 결과 뒤 멈춘 서버 앞에서는 닫기가 읽기
-// 타임아웃을 기다린 끝에 쓸 수 있던 응답이 전송 실패가 됐다(평문 4,019 · 4,035 ms — 읽기 타임아웃 4 초 · TLS 1.3 은 닫기가 한 번 더
-// 읽어 8,045 · 8,076 ms). Java `AdminResourceResponseCutTest` 의 이식이다(Grok 레그가 옮기고 main 에서 RED 를 쟀다).
+// 타임아웃을 기다린 끝에 쓸 수 있던 응답이 전송 실패가 됐다(평문 4,019–4,042 ms — 읽기 타임아웃 4 초 · TLS 1.3 은 닫기가 한 번 더
+// 읽어 8,027–8,096 ms). Java `AdminResourceResponseCutTest` 의 이식이다 — Grok 레그가 옮기고 main 에서 RED 를 쟀고 PM 이 다시 쟀다(두 실행의
+// 범위를 적는다).
 //
 // 계약: (1) SDK 가 읽지 않는 2xx 본문(create 의 201 · update·delete 의 2xx — 미디어 타입 유무) — 서버는 상한과 소켓 버퍼를 넘어
 // 쓰지 못하고 호출은 그 결과를 돌려준다. (2) 오류 본문 — 상한까지만 쥐고(상태와 본문 머리는 그대로) 나머지는 읽지 않는다. (3) 결과 뒤
@@ -408,7 +409,7 @@ internal class AdminResourceResponseCutTest {
     // (2) 오류 본문은 상한까지만 쥔다 — 상태의 갈래(404·409)와 본문 머리는 그대로, `keycloakError` 는 상한을 넘지 않고, 서버는 64 MiB 를
     // 다 쓰지 못하고, 호출의 JVM-wide 할당은 `ARR_ERROR_ALLOCATION_BOUND` 안이다. 미디어 타입이 없는 오류 상태는 RESTEasy 가 버퍼에 담지
     // 않고 닫는다(비우기 갈래). 한도의 근거(2026-10-25 실측, Windows · JDK 21.0.8, JVM 전체): 미디어 타입이 있는 64 MiB 오류 본문의
-    // 호출 하나가 수정 전 476.6 MB(delete — 서버 64 MiB 끝까지), 예열 뒤 수정본 11.3 · 10.8 MB(서버 1.6–1.8 MB) — 한도 64 MiB(67.1 MB)는
+    // 호출 하나가 수정 전 476.5–477.1 MB(서버 64 MiB 끝까지), 예열 뒤 수정본 11.3 · 10.8 MB(서버 1.6–1.8 MB) — 한도 64 MiB(67.1 MB)는
     // 수정 뒤보다 6 배, 수정 전보다 7 배 떨어진다. JVM-wide 합계를 못 읽으면 그 할당 단언만 건너뛴다.
     @Test
     @Timeout(value = 180, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
@@ -526,8 +527,8 @@ internal class AdminResourceResponseCutTest {
     // 돌려준다. 두 갈래: 본문 64 KiB 가 와 있다(엿보기가 바이트를 받는다) · 본문이 한 바이트도 없다(엿보기의 1 ms 가 다한다 — HttpClient 가
     // 그 연결을 닫고, TLS 1.3 이면 그 닫기가 한 번 더 읽는다). 평문과 TLS 1.3 각각, 갈래마다 `ARR_STALL_REPEATS` 번 — 끊긴 TLS 연결의
     // 닫기 실패(「Premature end of Content-Length delimited message body」)는 실행마다 났다 안 났다 했다(Java 실측 — 한 번 잰 시험은 통과하고
-    // 같은 JVM 의 40 번 되풀이는 40 번 다 났다). 수정 전: 평문 4,035 · 4,019 ms 에 전송 실패 · TLS 1.3 은 닫기가 한 번 더 기다려 8,076 ·
-    // 8,045 ms.
+    // 같은 JVM 의 40 번 되풀이는 40 번 다 났다). 수정 전: 평문 4,019–4,042 ms 에 전송 실패 · TLS 1.3 은 닫기가 한 번 더 기다려
+    // 8,027–8,096 ms.
     // 서버 TLS 1.3 은 `TransportTestTls.serverIp`, 클라이언트는 `TransportTestTls.trustingContext` 다.
     @Test
     @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
