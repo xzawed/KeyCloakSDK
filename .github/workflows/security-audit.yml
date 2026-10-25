@@ -137,9 +137,11 @@ jobs:
         # editable 로컬 패키지(keycloak-sdk, PyPI 미배포)는 감사 불가로 skip되고, pip-audit는
         # skip이 하나라도 있으면 종료코드 1(불완전 감사 신호)을 낸다(--skip-editable도 라벨만 바꿈).
         # 환경 대신 editable을 제외한 frozen requirements를 감사해 실 의존성만 커버한다.
+        # ⚠️ freeze 는 pip-audit 를 깔기 **전**에 — 뒤에 뜨면 감사 도구 자신의 의존성까지 감사한다
+        # (python-ci.yml 의 같은 단계 — 실측은 그쪽 주석).
         run: |
-          python -m pip install --only-binary :all: pip-audit
           python -m pip freeze --exclude-editable > audit-reqs.txt
+          python -m pip install --only-binary :all: pip-audit
           pip-audit -r audit-reqs.txt
 
   node:
