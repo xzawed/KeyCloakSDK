@@ -47,9 +47,12 @@ jobs:
         # editable 로컬 패키지(keycloak-sdk, PyPI 미배포)는 감사 불가로 skip되고, pip-audit는
         # skip이 하나라도 있으면 종료코드 1(불완전 감사 신호)을 낸다(--skip-editable도 라벨만 바꿈).
         # 환경 대신 editable을 제외한 frozen requirements를 감사해 실 의존성만 커버한다.
+        # ⚠️ freeze 는 pip-audit 를 깔기 **전**에 — 뒤에 뜨면 감사 도구 자신의 의존성까지 감사한다.
+        # 실측(2026-10-26, PR #836): Python 3.10 레인이 pip-audit 의 filelock 4.1.0(4.2.1 은 3.11+)에
+        # 공개된 CVE 여섯으로 빨갰고, 그 filelock 은 pip-audit 를 깔 때 새로 들어온 것이었다.
         run: |
-          python -m pip install --only-binary :all: pip-audit
           python -m pip freeze --exclude-editable > audit-reqs.txt
+          python -m pip install --only-binary :all: pip-audit
           pip-audit -r audit-reqs.txt
 
   integration:
