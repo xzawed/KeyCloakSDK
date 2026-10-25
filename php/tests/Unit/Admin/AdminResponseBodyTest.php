@@ -13,16 +13,21 @@ use Fschmtt\Keycloak\Representation\Group;
 use Fschmtt\Keycloak\Representation\Realm;
 use Fschmtt\Keycloak\Representation\Role;
 use Fschmtt\Keycloak\Representation\User;
+use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Exception\TransferException;
 use GuzzleHttp\Handler\CurlVersion;
 use GuzzleHttp\Handler\StreamHandler;
+use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Utils as GuzzleUtils;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\ResponseInterface;
 use Xzawed\Keycloak\Admin\AdminClient;
 use Xzawed\Keycloak\Exception\KeycloakAdminError;
 use Xzawed\Keycloak\Exception\KeycloakNotFoundError;
 use Xzawed\Keycloak\Exception\KeycloakTransportError;
+use Xzawed\Keycloak\Internal\AdminResponseBody;
 use Xzawed\Keycloak\KeycloakClient;
 use Xzawed\Keycloak\KeycloakConfig;
 
@@ -129,7 +134,7 @@ final class AdminResponseBodyTest extends TestCase
     /**
      * 이 nonce 의 `METHOD path` 요청 기록 — 응답이 끝나거나 클라이언트가 닫은 뒤 남는다(필드는 `Fixtures/admin-body-server.php` 머리말).
      *
-     * @return array{written: int, got: int, declared: int, continued: bool, conn: int}|null
+     * @return array{written: int, got: int, declared: int, continued: bool, conn: int, tunneled: bool}|null
      */
     private static function record(string $method, string $path): ?array
     {
@@ -143,7 +148,7 @@ final class AdminResponseBodyTest extends TestCase
                 $int = static fn (string $key): int => is_int($r[$key] ?? null) ? $r[$key] : -1;
 
                 return ['written' => $int('written'), 'got' => $int('got'), 'declared' => $int('declared'),
-                    'continued' => ($r['continued'] ?? null) === true, 'conn' => $int('conn')];
+                    'continued' => ($r['continued'] ?? null) === true, 'conn' => $int('conn'), 'tunneled' => ($r['tunneled'] ?? null) === true];
             }
             usleep(20_000);
         }
@@ -346,6 +351,41 @@ final class AdminResponseBodyTest extends TestCase
     }
 
     /**
+     * 틀을 알린 2xx(Content-Length · chunked · gzip — Guzzle 이 푼 응답의 Content-Length 를 `X-Encoded-Content-Length` 로 옮긴다)는
+     * 본문 첫 바이트 전에 멈춰도 기다리지 않는다 — 머리에서 끝낸다(등록부의 A2: 201 + 알린 길이 뒤 멈춤). 스트림 처리기의 chunked 칸은
+     * 없다 — PHP 의 http 래퍼가 청크를 풀며 `Transfer-Encoding` 을 머리에서 빼(`AdminResponseBody::framed` 의 docblock) 첫 바이트에서
+     * 끊는 길로 가고, 바이트가 오지 않으면 고치기 전처럼 읽기 타임아웃까지 기다린다(실측 4,081 ms).
+     *
+     * @return array<string, array{string, array<string, mixed>}>
+     */
+    public static function headStallRows(): array
+    {
+        return [
+            'Content-Length' => ['curl', []],
+            'Content-Length · stream' => ['stream', []],
+            'chunked' => ['curl', ['chunked' => true]],
+            'gzip' => ['curl', ['gzip' => true]],
+            'gzip · stream' => ['stream', ['gzip' => true]],
+        ];
+    }
+
+    /** @param array<string, mixed> $spec */
+    #[DataProvider('headStallRows')]
+    public function testAWriteReturnsAtTheHeadOfAFramedBodyThatNeverComes(string $transport, array $spec): void
+    {
+        $users = self::BASE . '/users';
+        self::route(["POST $users" => ['status' => 201, 'head' => '{"id":"x"}', 'pad' => self::CAP, 'stall' => 0] + $spec]);
+        $this->useTransport($transport);
+        $admin = new AdminClient(self::config(self::STALL_TIMEOUT));
+
+        [$result, $ms] = self::timed(static fn () => $admin->users()->create(new User(username: 'u')));
+
+        self::note(sprintf('[%s] create 201 %s stalled before its body: %d ms · %s', $transport, json_encode($spec), $ms, self::describe($result)));
+        self::assertNotInstanceOf(\Throwable::class, $result, self::describe($result));
+        self::assertLessThan(2000, $ms, "{$ms} ms — 오지 않는 본문을 기다렸다");
+    }
+
+    /**
      * 1 MiB 이상인 요청 본문에는 Guzzle 이 `Expect: 100-Continue` 를 단다 — curl 은 그 중간 응답에도 `on_headers` 를 부른다. 그것을
      * 최종 응답으로 보면 요청 본문을 보내기도 전에 끝내고 쓰기가 성공한 듯 돌아온다. 서버가 본문을 다 받아야 한다. 스트림 처리기는
      * `Expect` 를 떼고 보내므로(`StreamHandler::__invoke`) 그 칸은 큰 본문이 그대로 가는지만 잰다.
@@ -366,6 +406,61 @@ final class AdminResponseBodyTest extends TestCase
         self::assertSame($transport === 'curl', $record['continued'], 'curl 칸이 100-continue 를 청하지 않았다면 이 시험이 뜻을 갖지 못한다');
         self::assertGreaterThan(self::CAP, $record['declared']);
         self::assertSame($record['declared'], $record['got'], '서버가 요청 본문을 다 받지 못했다');
+    }
+
+    /**
+     * 프록시 터널(https 대상에 `HTTPS_PROXY` 면 curl 이 CONNECT 한다) — curl 은 프록시의 `200 Connection established` 에도
+     * `on_headers` 를 부른다. 그것을 쓰기의 2xx 로 보고 끊으면 요청은 서버에 닿지 않은 채 성공으로 돌아온다(실측: 고치기 전 판이
+     * 그랬다). 평문으로 재려고 미들웨어를 직접 단 Guzzle 클라이언트에 `CURLOPT_HTTPPROXYTUNNEL` 로 터널을 강제한다(가짜 서버가
+     * 프록시 노릇도 한다). 원서버에 닿지 못한 터널은 성공이 아니라 전송 오류다.
+     *
+     * @return array<string, array{array<string, mixed>, int|null}> [PUT 의 명세(`tunnel` = 터널을 닫는다), 돌려받을 상태(null = 예외)]
+     */
+    public static function tunnelRows(): array
+    {
+        return [
+            '204 No Content' => [['status' => 204], 204],
+            '201 Content-Length: 0' => [['status' => 201], 201],
+            '200 + 64 MiB (Content-Length)' => [['status' => 200, 'head' => '{}', 'pad' => self::HUGE - 2], 200],
+            '200 + 64 MiB (close-delimited)' => [['status' => 200, 'head' => '{}', 'pad' => self::HUGE - 2, 'length' => false], 200],
+            '404 + 64 MiB' => [['status' => 404, 'head' => self::ERROR_HEAD, 'pad' => self::HUGE - strlen(self::ERROR_HEAD)], 404],
+            'tunnel closed before the server' => [['tunnel' => 'close'], null],
+        ];
+    }
+
+    /** @param array<string, mixed> $put */
+    #[DataProvider('tunnelRows')]
+    public function testAWriteThroughAProxyTunnelReachesTheServer(array $put, ?int $want): void
+    {
+        $path = self::BASE . '/users/u1';
+        self::route(isset($put['tunnel']) ? ['CONNECT' => ['close' => true]] : ["PUT $path" => $put]);
+        $this->useTransport('curl');
+        $stack = HandlerStack::create();
+        $stack->push(AdminResponseBody::middleware(static fn (): bool => false), 'admin_response_body');
+        $client = new GuzzleClient(['handler' => $stack, 'http_errors' => false, 'allow_redirects' => false, 'timeout' => self::STALL_TIMEOUT]);
+        $body = '{"username":"u"}';
+
+        [$result, $ms] = self::timed(static fn () => $client->request('PUT', 'http://origin.test' . $path, [
+            'proxy' => 'http://127.0.0.1:' . self::$port,
+            'curl' => [\CURLOPT_HTTPPROXYTUNNEL => true],
+            'body' => $body,
+            'headers' => ['Authorization' => 'Bearer t', 'Content-Type' => 'application/json'],
+        ]));
+        $record = self::record($want === null ? 'CONNECT' : 'PUT', $want === null ? '/' : $path);
+
+        $seen = $result instanceof ResponseInterface ? $result->getStatusCode() . ' ' . $result->getReasonPhrase() : self::describe($result);
+        self::note(sprintf('[curl] tunnel %s: %d ms · %s · %s', json_encode($put), $ms, json_encode($record), $seen));
+        self::assertNotNull($record, '가짜 프록시 기록이 없다');
+        if ($want === null) {
+            self::assertInstanceOf(TransferException::class, $result, "원서버에 닿지 못한 터널이 성공으로 돌아왔다: $seen");
+
+            return;
+        }
+        self::assertInstanceOf(ResponseInterface::class, $result, $seen);
+        self::assertSame($want, $result->getStatusCode(), $seen);
+        self::assertTrue($record['tunneled']);
+        self::assertSame(strlen($body), $record['got'], '서버가 요청 본문을 다 받지 못했다');
+        self::assertLessThan(self::HUGE, $record['written']);
     }
 
     /**

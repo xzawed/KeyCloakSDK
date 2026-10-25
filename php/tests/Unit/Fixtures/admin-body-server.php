@@ -14,11 +14,13 @@ declare(strict_types=1);
  * `{"status": int, "headers": {이름: 값}, "head": 문자열, "pad": 공백 바이트, "stall": 쓰고 멈출 본문 바이트(없으면 끝까지),
  *   "close": bool(stall 에서 붙들지 않고 닫는다), "length": bool(Content-Length 를 단다 — 기본 참, 거짓이면 연결 종료로 끝),
  *   "gzip": bool(head + pad 를 gzip 으로 보낸다 — stall 은 압축된 바이트로 센다), "keep": bool(응답 뒤 연결을 닫지 않는다 — stall 이
- *   없을 때만)}`. 204 에는 Content-Length 를 달지 않는다.
+ *   없을 때만), "chunked": bool(Content-Length 대신 Transfer-Encoding: chunked — stall 은 청크 안의 바이트로 센다)}`.
+ *   204 에는 Content-Length 를 달지 않는다.
  * 경로가 없으면: GET /admin/serverinfo 는 버전, `/protocol/openid-connect/token` 은 쓸 수 있는 토큰, 그 밖은 404.
+ * `CONNECT` 는 프록시처럼 받는다 — 터널 너머 요청을 같은 연결에서 이 서버가 받는다(경로 "CONNECT" 의 {"close": true} 면 받지 않고 닫는다).
  * 요청마다 응답이 끝나거나 클라이언트가 닫은 뒤 `<디렉터리>/sent.log` 에 한 줄을 남긴다 — `{"method", "path", "nonce",
  * "written": 써 보낸 본문 바이트, "got": 받은 요청 본문 바이트, "declared": 요청의 Content-Length, "continued": 100 Continue 를
- * 보냈는가, "conn": 연결 번호(1 부터)}`.
+ * 보냈는가, "conn": 연결 번호(1 부터), "tunneled": CONNECT 터널 너머로 왔는가}`.
  */
 
 $port = (int) ($argv[1] ?? 0);
@@ -119,6 +121,25 @@ function arb_hold($conn): void
 }
 
 /**
+ * 본문 조각 하나를 쓴다 — chunked 면 청크 틀에 싸서. 돌려주는 것은 쓴 본문 바이트(실패하면 0). 청크는 다 쓰거나 실패한다.
+ *
+ * @param resource $conn
+ */
+function arb_send($conn, string $bytes, bool $chunked): int
+{
+    $frame = $chunked ? sprintf("%x\r\n", strlen($bytes)) . $bytes . "\r\n" : $bytes;
+    for ($at = 0; $at < strlen($frame);) {
+        $n = @fwrite($conn, substr($frame, $at));
+        if ($n === false || $n === 0) {
+            return $chunked ? 0 : $at;
+        }
+        $at += $n;
+    }
+
+    return strlen($bytes);
+}
+
+/**
  * 다음 요청을 받을 연결 — 붙든 연결(keep 응답 뒤)의 다음 요청(또는 닫힘)과 새 연결 중 먼저 오는 것. 새 연결이 오면 붙든 연결은
  * 버려진 것이라 닫는다.
  *
@@ -164,6 +185,22 @@ for (;;) {
     $state = json_decode((string) @file_get_contents($dir . '/state.json'), true);
     $state = is_array($state) ? $state : [];
     $routes = is_array($state['routes'] ?? null) ? $state['routes'] : [];
+    $tunneled = false;
+    if ($method === 'CONNECT') {
+        // 프록시 노릇 — 터널을 열었다고 답하고 같은 연결에서 터널 너머 요청을 이 서버가 받는다. 경로 "CONNECT" 의 명세
+        // {"close": true} 면 터널 너머 요청을 받지 않고 닫는다(원서버에 닿지 못한 터널).
+        fwrite($conn, "HTTP/1.1 200 Connection established\r\n\r\n");
+        $tunnel = $routes['CONNECT'] ?? null;
+        $request = is_array($tunnel) && ($tunnel['close'] ?? false) === true ? null : arb_read_request($conn);
+        if ($request === null) {
+            @fclose($conn);
+            $record = ['method' => 'CONNECT', 'path' => $path, 'nonce' => is_string($state['nonce'] ?? null) ? $state['nonce'] : '', 'conn' => $id];
+            file_put_contents($dir . '/sent.log', json_encode($record) . "\n", FILE_APPEND | LOCK_EX);
+            continue;
+        }
+        [$method, $path, $got, $declared, $continued] = $request;
+        $tunneled = true;
+    }
     $spec = $routes["$method $path"] ?? null;
     if (!is_array($spec)) {
         $spec = match (true) {
@@ -191,11 +228,14 @@ for (;;) {
         $headBody = $head;
         $total = strlen($head) + $pad;
     }
+    $chunked = ($spec['chunked'] ?? false) === true;
     $out = "HTTP/1.1 $status X\r\nContent-Type: application/json\r\n" . ($keep ? '' : "Connection: close\r\n");
     foreach ($headers as $name => $value) {
         $out .= "$name: $value\r\n";
     }
-    if ($status !== 204 && ($keep || ($spec['length'] ?? true) === true)) {
+    if ($chunked) {
+        $out .= "Transfer-Encoding: chunked\r\n";
+    } elseif ($status !== 204 && ($keep || ($spec['length'] ?? true) === true)) {
         $out .= "Content-Length: $total\r\n";   // 204 에는 달지 않는다(RFC 9110 §8.6) — Keycloak 의 204 도 그렇다
     }
     $limit = $stall >= 0 ? $stall : $total;
@@ -203,14 +243,17 @@ for (;;) {
     $first = substr($headBody, 0, $limit);
     $written = 0;
     while ($ok && $written < strlen($first)) {
-        $n = @fwrite($conn, substr($first, $written, 65536));
-        $ok = $n !== false && $n > 0;
+        $n = arb_send($conn, substr($first, $written, 65536), $chunked);
+        $ok = $n > 0;
         $written += $ok ? $n : 0;
     }
     while ($ok && $written < $limit) {
-        $n = @fwrite($conn, substr($spaces, 0, min($limit - $written, 65536)));
-        $ok = $n !== false && $n > 0;
+        $n = arb_send($conn, substr($spaces, 0, min($limit - $written, 65536)), $chunked);
+        $ok = $n > 0;
         $written += $ok ? $n : 0;
+    }
+    if ($ok && $chunked && $stall < 0) {
+        $ok = @fwrite($conn, "0\r\n\r\n") !== false;
     }
     if ($ok && $stall >= 0 && ($spec['close'] ?? false) !== true) {
         arb_hold($conn);
@@ -221,6 +264,6 @@ for (;;) {
         @fclose($conn);
     }
     $record = ['method' => $method, 'path' => $path, 'nonce' => is_string($state['nonce'] ?? null) ? $state['nonce'] : '',
-        'written' => $written, 'got' => $got, 'declared' => $declared, 'continued' => $continued, 'conn' => $id];
+        'written' => $written, 'got' => $got, 'declared' => $declared, 'continued' => $continued, 'conn' => $id, 'tunneled' => $tunneled];
     file_put_contents($dir . '/sent.log', json_encode($record) . "\n", FILE_APPEND | LOCK_EX);
 }
