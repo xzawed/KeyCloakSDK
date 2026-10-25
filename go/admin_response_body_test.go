@@ -550,6 +550,34 @@ func TestAdminGzipThatIsNotGzip_failsAsBefore(t *testing.T) {
 	}
 }
 
+// 대조 — gzip 이라 한 빈 본문은 비어 있을 뿐이다(net/http 가 스스로 청한 gzip 을 풀 때와 같다): HEAD 의 답(Content-Length 는 있고 본문은
+// 없다 — net/http 는 HEAD 를 풀지 않으므로 호출자가 청하지 않아도 머리가 남는다)과 본문 없는 청크 응답. resty 는 스스로 풀 때 둘 다 io.EOF 로
+// 실패시켰다 — 서버가 지운 사용자를 Delete 가 *TransportError 로 보고했다(Grok 3차 레그 지목 · main 대조).
+func TestAdminGzipEmptyBody_isEmpty(t *testing.T) {
+	s := newRBServer(t, nil, func(method, _ string) rbReply {
+		head := "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"
+		if method == http.MethodHead {
+			head = "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: 20\r\n\r\n"
+		}
+		return func(c net.Conn, _ *atomic.Int64) bool {
+			_, err := io.WriteString(c, head)
+			return err == nil
+		}
+	})
+	a := rbAdmin(t, s, nil, 20*time.Second)
+	resp, err := a.Raw().RestyClient().R().Head(s.url("http") + "/admin/realms/r/users/x")
+	t.Logf("[AdminResponseBody] Raw() HEAD · gzip · Content-Length 20 → err=%v body=%d B", err, len(resp.Body()))
+	if err != nil || len(resp.Body()) != 0 {
+		t.Fatalf("HEAD 의 빈 gzip 답이 실패했다: %v", err)
+	}
+	a.Raw().RestyClient().SetHeader("Accept-Encoding", "gzip")
+	err = a.Users.Delete(context.Background(), "x")
+	t.Logf("[AdminResponseBody] Users.Delete · 200 · gzip · 빈 청크 → err=%v", err)
+	if err != nil {
+		t.Fatalf("빈 gzip 청크 답의 Delete 가 실패했다: %v", err)
+	}
+}
+
 // rbErrorAllocationBound 는 64 MiB 오류 본문 호출 하나의 할당 한도다. 근거(2026-10-25 실측, Windows · go1.26.4): 수정 전 165.5 MB(서버가
 // 64 MiB 를 끝까지 썼다), 수정 뒤 4.5–4.6 MB(다섯 번 · 서버 1.2–1.6 MB — 전송이 상한 + 1 까지 읽고 resty 가 그것을 다시 읽는다; gzip 폭탄 행도
 // 4.6 MB) — 16 MiB(16.8 MB)는 수정 뒤보다 3.6 배 넘게, 수정 전보다 9.9 배 떨어진다.

@@ -47,7 +47,8 @@ func withTokenCap(ctx context.Context) (context.Context, *atomic.Bool) {
 // resty then failed to decode, so a 404 became a *TransportError. So it is decoded here, as net/http decodes the gzip it
 // asked for: lazily (the gzip header is read at the first Read — a body nobody reads is not waited on), with the headers
 // saying so afterwards. The match is resty's own (client.go: Content-Encoding gzip, any case); an empty body decodes to
-// nothing, so resty's zero-length exception needs no copy here.
+// nothing, as in net/http's own reader, so resty's zero-length exception needs no copy here — and resty's own gunzip, which
+// failed an empty body whose length was not zero (a HEAD answer, an empty chunked body) with io.EOF, no longer runs.
 func decodedGzip(resp *http.Response, body io.ReadCloser) io.ReadCloser {
 	if !strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
 		return body
