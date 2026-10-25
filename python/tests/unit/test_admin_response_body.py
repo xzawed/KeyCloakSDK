@@ -199,6 +199,19 @@ def _exact(status: str, headers: str, body: bytes) -> Reply:
     return _framed(status, headers, body, len(body))
 
 
+def _no_length(status: str) -> Reply:
+    """길이 머리 없는 본문 없는 답(204·304)."""
+
+    def reply(conn: socket.socket, _wire: _Wire) -> bool:
+        try:
+            conn.sendall(f"HTTP/1.1 {status}\r\n\r\n".encode())
+        except OSError:
+            return False
+        return True
+
+    return reply
+
+
 def _stalled(status: str, headers: str, sent: int) -> Reply:
     """1 MiB 를 알리고 공백 sent 바이트만 쓴 뒤 20 초 동안 붙든다."""
 
@@ -482,7 +495,7 @@ async def test_responses_read_to_their_end_keep_their_connection(lane: str) -> N
         if method == "POST":
             return _exact("201 Created", LOCATION, b"")
         if method in ("PUT", "DELETE"):
-            return _exact("204 No Content", "", b"")
+            return _no_length("204 No Content")  # 서버는 204 에 흔히 길이를 달지 않는다
         # 목록은 경로로 가른다 — get_user 도 쿼리(userProfileMetadata)를 단다.
         if target.split("?", 1)[0].endswith("/users"):
             return _exact("200 OK", TYPED, b"[" + USER + b"]")
@@ -637,6 +650,53 @@ async def test_a_truncated_compressed_error_body_keeps_its_status(lane: str) -> 
         await _close(lane, client)
     assert isinstance(err, KeycloakAdminError) and err.status_code == 400, repr(err)
     assert not err.keycloak_error, repr(err)
+
+
+# 연결을 끊는 것은 이 전송의 닫기다 — 응답이나 예외를 쥔 호출자 앞에서도. 파사드 경로에서는 응답이
+# 곧바로 버려져 CPython 의 참조 계수가 소켓을 대신 닫는다(그래서 닫기를 빼도 위 시험은 못 본다 —
+# 변이 실측). raw 로 응답을 쥐거나, 실패의 예외(트레이스백이 응답을 쥔 프레임을 붙든다)를 쥐면
+# 이 전송의 닫기만 연결을 끊는다.
+async def _raw_get(lane: str, client: Any) -> Any:
+    path = "admin/realms/r/users/x"
+    conn = client.raw.connection
+    return conn.raw_get(path) if lane == "sync" else await conn.a_raw_get(path)
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_an_error_response_held_by_a_raw_caller_is_cut(lane: str) -> None:
+    with _wire(lambda _m, _t: _framed("404 Not Found", TYPED, NOT_FOUND, HUGE)) as wire:
+        client = _client(lane, wire.url)
+        held = await _raw_get(lane, client)
+        finished = wire.await_reply()
+        print(f"[AdminResponseBody] {lane} raw 가 쥔 404 → server wrote {wire.written} B")
+        assert held.status_code == 404 and len(held.content) == CAP, (held, len(held.content))
+        await _close(lane, client)
+    assert finished and wire.written <= WRITTEN_BOUND, (
+        f"쥔 응답의 연결을 끊지 않았다 — {wire.written} B"
+    )
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_failed_error_read_held_by_a_raw_caller_is_cut(lane: str) -> None:
+    corrupt = gzip.compress(NOT_FOUND)[:10] + b"\xff" * 64
+
+    def reply(_m: str, _t: str) -> Reply:
+        return _framed("404 Not Found", TYPED + "Content-Encoding: gzip\r\n", corrupt, HUGE)
+
+    with _wire(reply) as wire:
+        client = _client(lane, wire.url)
+        held: BaseException | None = None
+        try:
+            await _raw_get(lane, client)
+        except Exception as exc:  # 예외를 쥐는 것이 시험이다
+            held = exc
+        finished = wire.await_reply()
+        print(f"[AdminResponseBody] {lane} 예외를 쥔 깨진 gzip → server wrote {wire.written} B")
+        assert held is not None
+        await _close(lane, client)
+    assert finished and wire.written <= WRITTEN_BOUND, (
+        f"예외 뒤 연결을 끊지 않았다 — {wire.written} B"
+    )
 
 
 # 대조 — 요청은 상한 안에서 풀 수 있는 압축만 청한다(gzip, deflate) — 소비자가 세션에 다른 것을
