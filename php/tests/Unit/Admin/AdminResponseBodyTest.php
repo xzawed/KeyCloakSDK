@@ -27,6 +27,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Xzawed\Keycloak\Admin\AdminClient;
 use Xzawed\Keycloak\Exception\KeycloakAdminError;
+use Xzawed\Keycloak\Exception\KeycloakConflictError;
 use Xzawed\Keycloak\Exception\KeycloakNotFoundError;
 use Xzawed\Keycloak\Exception\KeycloakTransportError;
 use Xzawed\Keycloak\Internal\AdminResponseBody;
@@ -408,6 +409,24 @@ final class AdminResponseBodyTest extends TestCase
         self::assertSame($transport === 'curl', $record['continued'], 'curl 칸이 100-continue 를 청하지 않았다면 이 시험이 뜻을 갖지 못한다');
         self::assertGreaterThan(self::CAP, $record['declared']);
         self::assertSame($record['declared'], $record['got'], '서버가 요청 본문을 다 받지 못했다');
+    }
+
+    /**
+     * 중간 응답(1xx)은 답이 아니다 — curl 은 그것에도 `on_headers` 를 부른다. 규격을 어겨 Content-Length 를 단 1xx(RFC 9110 §8.6)를
+     * 틀을 알린 2xx 처럼 보고 끊으면, 뒤따르는 최종 응답(409)을 읽지 않은 채 쓰기가 성공으로 돌아온다.
+     */
+    #[DataProvider('transports')]
+    public function testAnInterimResponseIsNotTheAnswer(string $transport): void
+    {
+        $path = self::BASE . '/users/u1';
+        self::route(["PUT $path" => ['status' => 409, 'head' => '{"errorMessage":"conflict"}', 'interim' => ['status' => 103, 'headers' => ['Content-Length' => '2']]]]);
+        $this->useTransport($transport);
+        $admin = new AdminClient(self::config());
+
+        [$result, $ms] = self::timed(static fn () => $admin->users()->update('u1', new User(username: 'u')));
+
+        self::note(sprintf('[%s] update 103 (Content-Length: 2) then 409: %d ms · %s', $transport, $ms, self::describe($result)));
+        self::assertInstanceOf(KeycloakConflictError::class, $result, self::describe($result));
     }
 
     /**
