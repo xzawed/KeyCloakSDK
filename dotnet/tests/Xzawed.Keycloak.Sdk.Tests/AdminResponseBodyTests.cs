@@ -17,12 +17,12 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// <remarks>
 /// <para>Measured before the fix (2026-10-26, .NET 8.0.23, this file's raw-socket server, one run): every facade write read
 /// its 64 MiB 2xx body to the end — the server wrote all 67,108,864 bytes and the connection stayed open (38–183 ms); behind a
-/// 201 whose body stalled, the write waited out the 4 s read timeout and failed with "admin request timed out" (4,003–4,020
-/// ms), its <c>Location</c> already in hand; a 404 or 300 with a 64 MiB body put all of it in the exception message
-/// (67,108,864 characters), the <c>Raw</c> client handed all 67,108,864 bytes over, and one such call allocated 201–337 MB.
-/// After (five runs): the server wrote at most 131,074 bytes of a write's body before its connection was closed, a stalled
-/// write returned in 1–20 ms, the error message is the first 1,048,576 bytes (the server wrote at most 1,703,966), and the
-/// call allocates 4.3–7.5 MB.</para>
+/// 2xx head whose body stalled, every write — a create with its <c>Location</c> already in hand too — waited out the 4 s read
+/// timeout and failed with "admin request timed out" (4,003–4,020 ms); a 404 or 300 with a 64 MiB body put all of it in the
+/// exception message (67,108,864 characters of body), the <c>Raw</c> client handed all 67,108,864 bytes over, and one such call
+/// allocated 201–337 MB. After (five runs): the server wrote at most 196,610 bytes of a write's body before its connection was
+/// closed, a stalled write returned in 1–24 ms, the error message carries the first 1,048,576 bytes (after "HTTP 300: " on a
+/// 300; the server wrote at most 1,638,430), and the call allocates 4.3–7.4 MB.</para>
 /// <para>The signal is the connection's fate — closed while the server was still writing — as in
 /// <c>DrainAfterRejectionTests</c>; how much the server managed to write depends on the socket buffers.</para>
 /// </remarks>
