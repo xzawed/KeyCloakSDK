@@ -1,6 +1,7 @@
 package keycloak
 
 import (
+	"context"
 	"io"
 	"net/http"
 )
@@ -10,14 +11,24 @@ import (
 // legitimately large.
 const adminErrorBodyMaxBytes = tokenResponseMaxBytes
 
+// adminNoBodyKey marks the context of a facade call that reads no success body: Create reads only the Location header,
+// Update and Delete read nothing. Only the facade sets it (withoutBody). ⚠️ It is not a rule on the response's shape:
+// gocloak methods a Raw() consumer can call do read such bodies — CreateClientRepresentation binds a 201's body (the
+// created client) and UpdateGroupManagementPermissions binds a PUT's 200 — so ending every 201 or PUT answer broke them.
+type adminNoBodyKey int
+
+// withoutBody marks ctx for a facade call that reads no success body.
+func withoutBody(ctx context.Context) context.Context {
+	return context.WithValue(ctx, adminNoBodyKey(0), true)
+}
+
 // adminBodyTransport bounds what the admin lane reads of a response body. resty reads every body to its end before gocloak
 // looks at it — measured (2026-10-25, the registry's admin-response-body-unbounded rescan): a create whose 201 carried
 // 64 MiB was read in full, a 404 with 64 MiB was read in full (165 MB allocated by one call), and a 201 whose body stalled
 // after the headers turned a create that already had its Location into a *TransportError at the read timeout. So the end
 // is set here, below resty:
-//   - a 2xx no admin call reads — 201, the answer to a PUT or a DELETE, or one with no media type — ends at once (a 204
-//     needs no rule: net/http already hands it over as http.NoBody);
-//   - an error body (status 3xx and up) ends at adminErrorBodyMaxBytes;
+//   - an error body (status 3xx and up) ends at adminErrorBodyMaxBytes — no gocloak method reads one as data;
+//   - a 2xx answering a facade call marked by withoutBody ends at once;
 //   - any other success body is left as it is.
 //
 // Closing a body before its end makes net/http drop the connection rather than read the rest (it never drains), so a cut
@@ -33,8 +44,7 @@ func (t adminBodyTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	switch {
 	case resp.StatusCode >= 300:
 		resp.Body = &endedBody{rc: resp.Body, left: adminErrorBodyMaxBytes}
-	case resp.StatusCode == http.StatusCreated, req.Method == http.MethodPut, req.Method == http.MethodDelete,
-		resp.Header.Get("Content-Type") == "":
+	case req.Context().Value(adminNoBodyKey(0)) != nil:
 		resp.Body = &endedBody{rc: resp.Body}
 	}
 	return resp, nil

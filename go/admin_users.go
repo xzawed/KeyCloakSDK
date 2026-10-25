@@ -15,7 +15,7 @@ func (r *UsersResource) Create(ctx context.Context, user gocloak.User) (string, 
 	if err != nil {
 		return "", err
 	}
-	return call(func() (string, error) { return r.a.gc.CreateUser(ctx, tok, r.a.realm, user) })
+	return call(func() (string, error) { return r.a.gc.CreateUser(withoutBody(ctx), tok, r.a.realm, user) })
 }
 
 // Get returns a user by id (ErrNotFound if absent).
@@ -47,7 +47,7 @@ func (r *UsersResource) Update(ctx context.Context, id string, user gocloak.User
 		return err
 	}
 	user.ID = &id
-	return run(func() error { return r.a.gc.UpdateUser(ctx, tok, r.a.realm, user) })
+	return run(func() error { return r.a.gc.UpdateUser(withoutBody(ctx), tok, r.a.realm, user) })
 }
 
 // Delete removes a user by id.
@@ -56,5 +56,5 @@ func (r *UsersResource) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	return run(func() error { return r.a.gc.DeleteUser(ctx, tok, r.a.realm, id) })
+	return run(func() error { return r.a.gc.DeleteUser(withoutBody(ctx), tok, r.a.realm, id) })
 }

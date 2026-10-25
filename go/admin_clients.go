@@ -16,7 +16,7 @@ func (r *ClientsResource) Create(ctx context.Context, client gocloak.Client) (st
 	if err != nil {
 		return "", err
 	}
-	return call(func() (string, error) { return r.a.gc.CreateClient(ctx, tok, r.a.realm, client) })
+	return call(func() (string, error) { return r.a.gc.CreateClient(withoutBody(ctx), tok, r.a.realm, client) })
 }
 
 // Get returns a client by internal id (UUID); ErrNotFound if absent.
@@ -45,7 +45,7 @@ func (r *ClientsResource) Update(ctx context.Context, id string, client gocloak.
 		return err
 	}
 	client.ID = &id
-	return run(func() error { return r.a.gc.UpdateClient(ctx, tok, r.a.realm, client) })
+	return run(func() error { return r.a.gc.UpdateClient(withoutBody(ctx), tok, r.a.realm, client) })
 }
 
 // Delete removes a client by internal id.
@@ -54,5 +54,5 @@ func (r *ClientsResource) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	return run(func() error { return r.a.gc.DeleteClient(ctx, tok, r.a.realm, id) })
+	return run(func() error { return r.a.gc.DeleteClient(withoutBody(ctx), tok, r.a.realm, id) })
 }

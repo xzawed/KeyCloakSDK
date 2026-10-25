@@ -27,8 +27,9 @@ import (
 )
 
 // admin 레인이 읽지 않는 응답 본문은 읽지 않는다 — resty 는 모든 본문을 끝까지 읽으므로 그 아래 전송(adminBodyTransport)이 끝을
-// 정한다. 2xx 중 admin 호출이 읽지 않는 것(201·204 · PUT·DELETE · 미디어 타입 없음)은 본문이 비어 보이고, 오류 상태(3xx 이상)의
-// 본문은 tokenResponseMaxBytes 에서 끝난다. 그 밖의 성공 본문(목록 등)에는 상한이 없다. 토큰 요청은 tokencap.go 가 맡는다.
+// 정한다. 파사드의 쓰기 호출(Create·Update·Delete)이 받는 2xx 는 본문이 비어 보이고(그 호출이 컨텍스트에 표시한다 — Raw() 호출은
+// 본문을 그대로 받는다), 오류 상태(3xx 이상)의 본문은 tokenResponseMaxBytes 에서 끝난다. 그 밖의 성공 본문(목록 등)에는 상한이 없다.
+// 토큰 요청은 tokencap.go 가 맡는다.
 //
 // 수정 전(실측 2026-10-25, Windows · go1.26.4 · 루프백 · main 0a4cfee — 등록부 admin-response-body-unbounded 의 재스캔): create 201 +
 // 64 MiB 를 서버가 끝까지 썼고(103–107 ms) · 201 뒤 멈춘 서버 앞에서 create 가 읽기 타임아웃(4 s) 끝에 *TransportError(4,001–4,002 ms) ·
@@ -261,8 +262,8 @@ func rbAllocated(f func()) uint64 {
 	return after.TotalAlloc - before.TotalAlloc
 }
 
-// (1) admin 호출이 읽지 않는 2xx 본문은 읽지 않는다 — 호출은 결과를 돌려주고 서버는 64 MiB 를 다 쓰지 못한다. 자리마다 규칙 하나를
-// 고정한다(201 · PUT · DELETE · 미디어 타입 없음). 수정 전: 여섯 자리 모두 끝까지.
+// (1) 파사드의 쓰기 호출이 받는 2xx 본문은 읽지 않는다 — 응답 모양(201 · 200 · 미디어 타입 유무)이 달라도 호출은 결과를 돌려주고
+// 서버는 64 MiB 를 다 쓰지 못한다. 수정 전: 여섯 자리 모두 끝까지.
 func TestAdminBodiesNoCallReads_areNotReadOn(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -317,6 +318,79 @@ func TestAdminBodiesNoCallReads_areNotReadOn(t *testing.T) {
 				t.Fatalf("읽지 않는 본문을 읽었다 — server wrote %d B (한도 %d) finished=%v", s.written.Load(), rbWrittenBound, finished)
 			}
 		})
+	}
+}
+
+// (1b) 파사드의 쓰기 호출 열다섯 — 다섯 리소스의 Create·Update·Delete(Realms.Update 는 raw PUT)는 모두 2xx 본문을 읽지 않는다. 그 표시
+// (withoutBody)를 한 자리라도 빠뜨리면 그 자리가 64 MiB 를 읽는다 — 자리마다 잰다.
+func TestAdminFacadeWrites_readNoBody(t *testing.T) {
+	ctx := context.Background()
+	str := func(s string) *string { return &s }
+	writes := []struct {
+		name string
+		call func(*AdminClient) error
+	}{
+		{"Users.Create", func(a *AdminClient) error { _, err := a.Users.Create(ctx, rbUserRep()); return err }},
+		{"Users.Update", func(a *AdminClient) error { return a.Users.Update(ctx, "x", rbUserRep()) }},
+		{"Users.Delete", func(a *AdminClient) error { return a.Users.Delete(ctx, "x") }},
+		{"Clients.Create", func(a *AdminClient) error {
+			_, err := a.Clients.Create(ctx, gocloak.Client{ClientID: str("c")})
+			return err
+		}},
+		{"Clients.Update", func(a *AdminClient) error { return a.Clients.Update(ctx, "x", gocloak.Client{ClientID: str("c")}) }},
+		{"Clients.Delete", func(a *AdminClient) error { return a.Clients.Delete(ctx, "x") }},
+		{"Groups.Create", func(a *AdminClient) error { _, err := a.Groups.Create(ctx, gocloak.Group{Name: str("g")}); return err }},
+		{"Groups.Update", func(a *AdminClient) error { return a.Groups.Update(ctx, "x", gocloak.Group{Name: str("g")}) }},
+		{"Groups.Delete", func(a *AdminClient) error { return a.Groups.Delete(ctx, "x") }},
+		{"Roles.Create", func(a *AdminClient) error { return a.Roles.Create(ctx, gocloak.Role{Name: str("ro")}) }},
+		{"Roles.Update", func(a *AdminClient) error { return a.Roles.Update(ctx, "ro", gocloak.Role{Name: str("ro")}) }},
+		{"Roles.Delete", func(a *AdminClient) error { return a.Roles.Delete(ctx, "ro") }},
+		{"Realms.Create", func(a *AdminClient) error { return a.Realms.Create(ctx, gocloak.RealmRepresentation{Realm: str("re")}) }},
+		{"Realms.Update", func(a *AdminClient) error { return a.Realms.Update(ctx, "re", gocloak.RealmRepresentation{}) }},
+		{"Realms.Delete", func(a *AdminClient) error { return a.Realms.Delete(ctx, "re") }},
+	}
+	for _, w := range writes {
+		t.Run(w.name, func(t *testing.T) {
+			s := newRBServer(t, nil, func(method, _ string) rbReply {
+				if method == http.MethodPost {
+					return rbPadded("201 Created", rbLocation+rbTyped, "{}", rbHuge)
+				}
+				return rbPadded("200 OK", rbTyped, "{}", rbHuge)
+			})
+			a := rbAdmin(t, s, nil, 20*time.Second)
+			err := w.call(a)
+			_ = a.Close()
+			finished := s.awaitReply()
+			t.Logf("[AdminResponseBody] %s → err=%v · server wrote %d B", w.name, err, s.written.Load())
+			if err != nil {
+				t.Fatalf("결과를 돌려주지 않았다: %v", err)
+			}
+			if !finished || s.written.Load() > rbWrittenBound {
+				t.Fatalf("읽지 않는 본문을 읽었다 — server wrote %d B (한도 %d) finished=%v", s.written.Load(), rbWrittenBound, finished)
+			}
+		})
+	}
+}
+
+// 대조 — Raw() 로 부른 gocloak 메서드는 2xx 본문을 그대로 받는다: PUT 의 200 본문(UpdateGroupManagementPermissions)과 201 본문
+// (CreateClientRepresentation — 클라이언트 등록 API)을 결합한다. 전송이 「201·PUT 의 답은 본문이 없다」로 자르면 이 둘이 빈 값을 냈다
+// (이 PR 의 첫 설계 — PM 이 gocloak v13.9.0 을 판독해 찾았다). 그래서 쓰지 않는 본문은 파사드의 표시(withoutBody)로만 끝난다.
+func TestAdminRawCalls_keepTheirBodies(t *testing.T) {
+	s := newRBServer(t, nil, func(method, _ string) rbReply {
+		if method == http.MethodPut {
+			return rbExact("200 OK", rbTyped, `{"enabled":true,"resource":"res-1"}`)
+		}
+		return rbExact("201 Created", rbTyped, `{"clientId":"made"}`)
+	})
+	a := rbAdmin(t, s, nil, 20*time.Second)
+	ctx := context.Background()
+	perm, err := a.Raw().UpdateGroupManagementPermissions(ctx, "good", "r", "g1", gocloak.ManagementPermissionRepresentation{})
+	if err != nil || perm == nil || perm.Resource == nil || *perm.Resource != "res-1" {
+		t.Fatalf("PUT 의 200 본문을 결합하지 못했다: %+v %v", perm, err)
+	}
+	cl, err := a.Raw().CreateClientRepresentation(ctx, "good", "r", gocloak.Client{})
+	if err != nil || cl == nil || cl.ClientID == nil || *cl.ClientID != "made" {
+		t.Fatalf("201 본문을 결합하지 못했다: %+v %v", cl, err)
 	}
 }
 

@@ -15,7 +15,7 @@ func (r *RolesResource) Create(ctx context.Context, role gocloak.Role) error {
 	if err != nil {
 		return err
 	}
-	_, err = call(func() (string, error) { return r.a.gc.CreateRealmRole(ctx, tok, r.a.realm, role) })
+	_, err = call(func() (string, error) { return r.a.gc.CreateRealmRole(withoutBody(ctx), tok, r.a.realm, role) })
 	return err
 }
 
@@ -50,7 +50,7 @@ func (r *RolesResource) Update(ctx context.Context, name string, role gocloak.Ro
 	if err != nil {
 		return err
 	}
-	return run(func() error { return r.a.gc.UpdateRealmRole(ctx, tok, r.a.realm, name, role) })
+	return run(func() error { return r.a.gc.UpdateRealmRole(withoutBody(ctx), tok, r.a.realm, name, role) })
 }
 
 // Delete removes a realm role by name.
@@ -59,5 +59,5 @@ func (r *RolesResource) Delete(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	return run(func() error { return r.a.gc.DeleteRealmRole(ctx, tok, r.a.realm, name) })
+	return run(func() error { return r.a.gc.DeleteRealmRole(withoutBody(ctx), tok, r.a.realm, name) })
 }
