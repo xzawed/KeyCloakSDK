@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Security
+- **(Java)** admin 이 결과를 얻은 자원 응답의 나머지 본문을 끝까지 읽었습니다 — RESTEasy 가 응답을 닫으면 HttpCore 가 남은 본문을 EOF 까지 비워, `create` 의 201 본문과 `update`·`delete` 의 2xx 본문(미디어 타입 유무)에 붙은 64 MiB 를 서버가 끝까지 썼고, 결과 뒤 멈춘 서버 앞에서는 닫기가 읽기 타임아웃을 기다린 끝에 쓸 수 있던 응답이 `KeycloakTransportException` 이 됐습니다(4 초 설정에 평문 4,020–4,042 ms · TLS 1.3 은 닫기가 한 번 더 읽어 8,041–8,091 ms). 미디어 타입이 있는 오류 상태(404·409 등)는 RESTEasy 가 본문을 통째로 버퍼에 담아, 64 MiB 오류 본문에 호출 하나가 약 475 MB 를 할당하고 그 전부를 `KeycloakAdminException.getKeycloakError()` 에 실었습니다. 이제 EOF 까지 읽은 응답만 연결을 풀로 돌려주고, 그 밖의 응답은 끝인지 1 ms 만 엿본 뒤 연결을 끊습니다(서버가 쓴 양 0.2–0.33 MB · 멈춘 서버 앞 11–70 ms). 오류 본문은 1,048,576 바이트(토큰 응답 상한)까지만 쥡니다 — 상태(`KeycloakNotFoundException` 등)는 그대로이고 `getKeycloakError()` 가 그 길이에서 잘립니다(64 MiB 오류 본문의 호출 하나가 10–13 MB). ⚠️ 미디어 타입이 있는 JSON 성공 본문(`get`·`search`)은 그대로입니다 — Jackson 이 값 뒤의 공백까지 읽어 검증하고, 성공 본문에는 상한을 걸지 않습니다. 공개 API 변경은 0 입니다.
+
 ## [1.3.2] - 2026-10-23 (Ruby)
 
 **Ruby 의 patch 입니다** — 공개 API 는 1.3.1 과 같습니다(CONNECT 응답 판독기 `Http::ConnectFraming` 은 `private_constant` 라 공개 표면에 나오지 않습니다). 다섯째 물결(아래 `[1.4.1] - 2026-10-23 (PHP)` 절의 머리말)의 마지막 언어로 나갑니다. ⚠️ **`net-http >= 0.9` 가 새 런타임 의존성입니다** — 아래 Security 항목. ⚠️ admin 이 JSON 아닌 오류 본문에 내던 `TransportError` 가 상태 클래스로 바뀝니다 — 아래 Fixed 항목.

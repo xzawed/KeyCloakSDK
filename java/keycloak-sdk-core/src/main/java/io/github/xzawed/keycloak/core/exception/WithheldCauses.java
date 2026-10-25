@@ -38,8 +38,10 @@ final class WithheldCauses {
       "com.fasterxml.jackson.core.JsonProcessingException",
       // admin 의 HttpCore(RESTEasy) — 틀 오류가 응답의 줄을 싣는다: 「Invalid header: <줄>」·「Status line contains invalid status
       // code: <줄>」(머리 — ProtocolException, RESTEasy 가 그 사슬을 ProcessingException 으로 감싼다)·「Bad chunk header: <줄>」(본문
-      // — 미디어 타입 없는 2xx 를 닫을 때). 실측 AdminResponseFramingTest. HttpCore 의 ParseException 은 늘 ProtocolException 안에
-      // 실려 와 따로 적지 않는다(변이: 그 이름을 빼도 시험이 통과했다). auth 레인은 운송이 먼저 상수 메시지로 바꾼다(BoundedTransport.shield).
+      // — 미디어 타입 없는 2xx 를 닫을 때 났다). 실측 AdminResponseFramingTest. ⚠️ #833 뒤로 그 닫기는 한 바이트만 엿보고 실패를 삼켜,
+      // MalformedChunkCodingException 이름만으로 거르는 길이 시험에 없다(변이: 빼도 통과 — main 에서는 잡혔다). 방어선으로 둔다. HttpCore 의
+      // ParseException 은 늘 ProtocolException 안에 실려 와 따로 적지 않는다(변이: 그 이름을 빼도 시험이 통과했다). auth 레인은 운송이
+      // 먼저 상수 메시지로 바꾼다(BoundedTransport.shield).
       "org.apache.http.HttpException",
       "org.apache.http.MalformedChunkCodingException");
   /** 전송 실패의 감싸개 — 이것이 뿌리일 때 그 아래의 HTTP 오류는 admin 토큰 요청의 것이다. */

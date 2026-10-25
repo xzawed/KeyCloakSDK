@@ -410,8 +410,9 @@ internal suspend fun <T> adminCall(block: () -> T): T =
 // 건너뛴다 — 닫기로는 막지 못한다, 실측). 그 본문은 그 요청의 Basic 시크릿을 되울릴 수 있다(`AdminTokenEchoTest`). 자원 오류는 여기로
 // 오지 않는다 — [translateAdminException] 이 받아 본문을 keycloakError 로 싣는다(그대로).
 // ⚠️ RESTEasy 의 HttpCore 틀 오류도 응답의 줄을 싣는다 — 「Invalid header: <줄>」·「Status line contains invalid status code: <줄>」(머리 —
-// ProtocolException, 곧 HttpException)·「Bad chunk header: <줄>」(본문 — MalformedChunkCodingException, 미디어 타입 없는 2xx 를 닫을 때).
-// 실측 `AdminResponseFramingTest`. HttpCore 의 ParseException 은 늘 ProtocolException 안에 실려 와 따로 적지 않는다(Java 의 변이: 그 이름을
+// ProtocolException, 곧 HttpException)·「Bad chunk header: <줄>」(본문 — MalformedChunkCodingException, 미디어 타입 없는 2xx 를 닫을 때
+// 났다). 실측 `AdminResponseFramingTest`. ⚠️ #833 뒤로 그 닫기는 한 바이트만 엿보고 실패를 삼킨다([AdminEngine.Settled]) — 이 이름만으로
+// 거르는 길은 방어선이다(Java 변이: 빼도 통과 — main 에서는 잡혔다). HttpCore 의 ParseException 은 늘 ProtocolException 안에 실려 와 따로 적지 않는다(Java 의 변이: 그 이름을
 // 빼도 시험이 통과했다). auth 레인은 운송이 먼저 상수 메시지로 바꾼다(BoundedTransport.shield).
 internal fun transportCause(e: ProcessingException): Throwable =
     if (generateSequence<Throwable>(e) { it.cause }.take(16).any { quotesResponse(it) }) RedactedCause.of(e) else e
