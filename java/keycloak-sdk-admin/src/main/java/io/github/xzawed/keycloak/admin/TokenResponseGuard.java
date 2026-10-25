@@ -15,6 +15,7 @@ import java.io.ByteArrayInputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 
 /**
  * admin 레인의 토큰 응답 검사 — 토큰 엔드포인트의 성공 응답이 <b>HTTP 필드 값이 실을 수 있는 비어 있지 않은 JSON 문자열</b>
@@ -74,10 +75,14 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   private static final String ACCESS_TOKEN = "access_token";
   private static final JsonFactory JSON = new JsonFactory();
 
+  /** 이 가드의 범위 — 토큰 엔드포인트로의 POST. 엔진({@link AdminEngine#invoke})도 같은 범위를 오류 본문의 상한에서 뺀다. */
+  static boolean inScope(String method, URI uri) {
+    return HttpMethod.POST.equals(method) && uri.getRawPath().endsWith(TOKEN_PATH_SUFFIX);
+  }
+
   @Override
   public void filter(ClientRequestContext request, ClientResponseContext response) throws IOException {
-    if (!HttpMethod.POST.equals(request.getMethod())
-        || !request.getUri().getRawPath().endsWith(TOKEN_PATH_SUFFIX)) {
+    if (!inScope(request.getMethod(), request.getUri())) {
       return;
     }
     Object exchange = request.getProperty(AdminEngine.EXCHANGE);
