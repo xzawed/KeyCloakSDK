@@ -36,8 +36,8 @@ import (
 // 수정 전(실측 2026-10-25, Windows · go1.26.4 · 루프백 — 이 파일의 시험을 수정 전 코드(0a4cfee)에 돌린 값과 등록부
 // admin-response-body-unbounded 의 재스캔(main ee862c6 — go/ 가 같다)): create·update·delete 의 2xx + 64 MiB 를 서버가 끝까지 썼고(72–157 ms) ·
 // 201 뒤 멈춘 서버 앞에서 create 가 읽기 타임아웃(4 s) 끝에 *TransportError(4,000–4,002 ms) · 404 + 64 MiB 를 끝까지 읽었다(호출 하나 165.5 MB).
-// 공개 API(NewAdminClient + 정적 토큰 공급자)와 로컬 루프백만 쓴다 — TLS 갈래만 시험 CA 를 믿게 하려고 그 클라이언트의 전송(a.tr)에 손을 댄다
-// (Config 에 TLS 근원 손잡이가 없다).
+// 공개 API(NewAdminClient + 정적 토큰 공급자 — admin 토큰 요청을 재는 대조만 New + Admin)와 로컬 루프백만 쓴다 — TLS 갈래만 시험 CA 를
+// 믿게 하려고 그 클라이언트의 전송(a.tr)에 손을 댄다(Config 에 TLS 근원 손잡이가 없다).
 
 const (
 	rbCap          = tokenResponseMaxBytes

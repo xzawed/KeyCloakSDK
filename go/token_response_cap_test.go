@@ -400,9 +400,7 @@ func (o iotestOneByte) Read(p []byte) (int, error) {
 	return o.r.Read(p[:1])
 }
 
-// TestAdminTokenRefreshOverCapSendsNoAdminRequest — admin 클라이언트가 이미 있고, 만료된 토큰을 다시 받는
-// 응답이 상한을 넘으면 그 admin 호출은 요청 없이 실패한다(생성 때만이 아니다).
-// TestAdminTokenCapCountsDecodedBytesWhenTheCallerAskedForGzip — 소비자가 admin 레인의 resty 클라이언트에 Accept-Encoding 을 걸면(Raw() 로 닿는다)
+// TestAdminTokenCapCountsDecodedBytesWhenTheCallerAskedForGzip —소비자가 admin 레인의 resty 클라이언트에 Accept-Encoding 을 걸면(Raw() 로 닿는다)
 // net/http 는 자기가 청하지 않은 gzip 을 풀지 않고 Content-Encoding 을 남긴다. 그러면 토큰 상한은 **압축** 바이트를 세고 resty 가 그 위에서
 // 스스로 풀어, 16 MiB 로 풀리는 작은 gzip 토큰 응답을 받아들였다. 상한은 푼 바이트를 세야 한다 — 다시 받은 토큰 응답이 거부되고 admin
 // 요청은 나가지 않는다.
@@ -432,6 +430,8 @@ func TestAdminTokenCapCountsDecodedBytesWhenTheCallerAskedForGzip(t *testing.T) 
 	}
 }
 
+// TestAdminTokenRefreshOverCapSendsNoAdminRequest — admin 클라이언트가 이미 있고, 만료된 토큰을 다시 받는
+// 응답이 상한을 넘으면 그 admin 호출은 요청 없이 실패한다(생성 때만이 아니다).
 func TestAdminTokenRefreshOverCapSendsNoAdminRequest(t *testing.T) {
 	p := newCapIdP(t, capShape{name: "small", tokLen: 900})
 	p.mu.Lock()
