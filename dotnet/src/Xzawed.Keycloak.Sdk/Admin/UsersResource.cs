@@ -20,8 +20,8 @@ public sealed class UsersResource
                 new GetUsersRequestParameters { Username = username, First = first, Max = max }, ct)).ToList());
 
     public Task UpdateAsync(string id, UserRepresentation user, CancellationToken ct = default)
-        => _a.CallTypedAsync(c => c.UpdateUserAsync(_a.Realm, id, user, ct));
+        => _a.WriteTypedAsync(c => c.UpdateUserAsync(_a.Realm, id, user, ct));
 
     public Task DeleteAsync(string id, CancellationToken ct = default)
-        => _a.CallTypedAsync(c => c.DeleteUserAsync(_a.Realm, id, ct));
+        => _a.WriteTypedAsync(c => c.DeleteUserAsync(_a.Realm, id, ct));
 }

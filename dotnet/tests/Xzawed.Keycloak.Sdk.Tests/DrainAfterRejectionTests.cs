@@ -23,8 +23,8 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// and a Content-Length body of the cap + 1, were read to the end and the next request reused the connection; one that
 /// stalled past the cap held it 2,012 ms after the call returned. A 32 MiB chunked JWKS: 1,102,257 bytes read; a 1 MiB
 /// Content-Length JWKS was read whole. Only a Content-Length beyond what the drain allows went unread (32 MiB: 141 bytes).
-/// Admin REST responses are buffered whole before anything judges them — they have no cap — so nothing is left to drain
-/// there (32 MiB undecodable body: read whole, before and after).</para>
+/// Admin REST responses were buffered whole then, so nothing was left to drain there (32 MiB undecodable body: read whole,
+/// before and after); the admin bodies the SDK now stops reading are <c>AdminResponseBodyTests</c>'.</para>
 /// <para>The signal is the fate of the connection that carried the refused response: a drained one is back in the pool
 /// and stays open, an undrained one is closed at once. That holds whatever the socket buffers hold. Bytes the server
 /// managed to write do not: the buffers absorbed up to 327 KB here, and loopback buffers grow far larger elsewhere.</para>
@@ -180,10 +180,14 @@ public sealed class DrainAfterRejectionTests
 /// </summary>
 internal sealed class KeepAliveIdp : IDisposable
 {
-    internal sealed record Req(int Conn, string Method, string Path);
+    internal sealed record Req(int Conn, string Method, string Path, IReadOnlyDictionary<string, string> Headers);
 
-    /// <summary><paramref name="Head"/> followed by spaces up to <paramref name="TotalBytes"/> (0 = the head alone).</summary>
-    internal sealed record Resp(byte[] Head, long TotalBytes, bool Chunked, int Status = 200, string ExtraHeaders = "")
+    /// <summary><paramref name="Head"/> followed by spaces up to <paramref name="TotalBytes"/> (0 = the head alone). With
+    /// <paramref name="StopAfter"/> at 0 or more the server writes that many body bytes and stops — it closes the connection
+    /// when <paramref name="CloseAtStop"/>, and otherwise holds it open, writing nothing more, until the client closes it.
+    /// A null <paramref name="ContentType"/> sends no <c>Content-Type</c>.</summary>
+    internal sealed record Resp(byte[] Head, long TotalBytes, bool Chunked, int Status = 200, string ExtraHeaders = "",
+        long StopAfter = -1, bool CloseAtStop = false, string? ContentType = "application/json")
     {
         public static Resp Json(string body) => new(Encoding.UTF8.GetBytes(body), 0, false);
 
@@ -253,7 +257,8 @@ internal sealed class KeepAliveIdp : IDisposable
                 {
                     Interlocked.Increment(ref conn.Requests);
                     Seen.Enqueue(req);
-                    await WriteAsync(stream, _route(req), conn);
+                    if (!await WriteAsync(stream, _route(req), conn))
+                        break;
                 }
             }
             catch (Exception e) when (e is IOException or SocketException or ObjectDisposedException or OperationCanceledException)
@@ -286,7 +291,7 @@ internal sealed class KeepAliveIdp : IDisposable
         else
             await SkipAsync(stream, pending, headers.TryGetValue("Content-Length", out var cl) ? int.Parse(cl, System.Globalization.CultureInfo.InvariantCulture) : 0);
         var requestLine = head[0].Split(' ');
-        return new Req(id, requestLine[0], requestLine[1].Split('?')[0]);
+        return new Req(id, requestLine[0], requestLine[1].Split('?')[0], headers);
     }
 
     /// <summary>Size line, data, CRLF … up to the zero-size chunk (the SDK sends no trailers).</summary>
@@ -337,22 +342,25 @@ internal sealed class KeepAliveIdp : IDisposable
         return -1;
     }
 
-    private async Task WriteAsync(NetworkStream stream, Resp resp, Connection conn)
+    /// <summary>Writes the response; false when the server stopped short of its end, which ends the connection.</summary>
+    private async Task<bool> WriteAsync(NetworkStream stream, Resp resp, Connection conn)
     {
         var total = Math.Max(resp.TotalBytes, resp.Head.Length);
+        var end = resp.StopAfter >= 0 ? Math.Min(resp.StopAfter, total) : total;
         var framing = resp.Chunked ? "Transfer-Encoding: chunked" : $"Content-Length: {total}";
-        var headers = Encoding.ASCII.GetBytes(
-            $"HTTP/1.1 {resp.Status} X\r\nContent-Type: application/json\r\n{resp.ExtraHeaders}{framing}\r\n\r\n");
+        var contentType = resp.ContentType is { } type ? $"Content-Type: {type}\r\n" : "";
+        var headers = Encoding.ASCII.GetBytes($"HTTP/1.1 {resp.Status} X\r\n{contentType}{resp.ExtraHeaders}{framing}\r\n\r\n");
+        var head = resp.Head.AsSpan(0, (int)Math.Min(resp.Head.Length, end)).ToArray();
         byte[] first;
-        if (resp.Head.Length == 0)
+        if (head.Length == 0)
             first = headers;
         else if (resp.Chunked)
-            first = [.. headers, .. Encoding.ASCII.GetBytes($"{resp.Head.Length:x}\r\n"), .. resp.Head, .. "\r\n"u8];
+            first = [.. headers, .. Encoding.ASCII.GetBytes($"{head.Length:x}\r\n"), .. head, .. "\r\n"u8];
         else
-            first = [.. headers, .. resp.Head];
+            first = [.. headers, .. head];
         await stream.WriteAsync(first, _cts.Token);
-        Interlocked.Add(ref conn.BodyBytesWritten, resp.Head.Length);
-        for (var left = total - resp.Head.Length; left > 0;)
+        Interlocked.Add(ref conn.BodyBytesWritten, head.Length);
+        for (var left = end - head.Length; left > 0;)
         {
             var count = (int)Math.Min(left, Spaces.Length);
             if (resp.Chunked)
@@ -363,8 +371,24 @@ internal sealed class KeepAliveIdp : IDisposable
             Interlocked.Add(ref conn.BodyBytesWritten, count);
             left -= count;
         }
+        if (resp.StopAfter >= 0)
+        {
+            if (!resp.CloseAtStop)
+                await HoldUntilClosedAsync(stream);
+            return false;
+        }
         if (resp.Chunked)
             await stream.WriteAsync("0\r\n\r\n"u8.ToArray(), _cts.Token);
+        return true;
+    }
+
+    /// <summary>Drops whatever the client sends until it closes the connection.</summary>
+    private async Task HoldUntilClosedAsync(NetworkStream stream)
+    {
+        var sink = new byte[1024];
+        while (await stream.ReadAsync(sink, _cts.Token) > 0)
+        {
+        }
     }
 
     public void Dispose()

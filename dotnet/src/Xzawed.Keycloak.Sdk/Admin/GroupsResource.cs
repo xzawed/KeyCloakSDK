@@ -21,8 +21,8 @@ public sealed class GroupsResource
 
     /// <summary>Update a group. Uses the typed client, which does cover this one.</summary>
     public Task UpdateAsync(string id, GroupRepresentation group, CancellationToken ct = default)
-        => _a.CallTypedAsync(c => c.UpdateGroupAsync(_a.Realm, id, group, ct));
+        => _a.WriteTypedAsync(c => c.UpdateGroupAsync(_a.Realm, id, group, ct));
 
     public Task DeleteAsync(string id, CancellationToken ct = default)
-        => _a.CallTypedAsync(c => c.DeleteGroupAsync(_a.Realm, id, ct));
+        => _a.WriteTypedAsync(c => c.DeleteGroupAsync(_a.Realm, id, ct));
 }

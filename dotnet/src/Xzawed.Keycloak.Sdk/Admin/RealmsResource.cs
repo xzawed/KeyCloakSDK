@@ -12,7 +12,7 @@ public sealed class RealmsResource
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, "admin/realms")
         { Content = System.Net.Http.Json.JsonContent.Create(realm) };
-        (await _a.SendRawAsync(req, ct).ConfigureAwait(false)).Dispose();
+        await _a.WriteRawAsync(req, ct).ConfigureAwait(false);
     }
 
     public Task<RealmRepresentation> GetAsync(string realmName, CancellationToken ct = default)
@@ -27,12 +27,12 @@ public sealed class RealmsResource
     {
         using var req = new HttpRequestMessage(HttpMethod.Put, $"admin/realms/{Uri.EscapeDataString(realmName)}")
         { Content = System.Net.Http.Json.JsonContent.Create(realm) };
-        (await _a.SendRawAsync(req, ct).ConfigureAwait(false)).Dispose();
+        await _a.WriteRawAsync(req, ct).ConfigureAwait(false);
     }
 
     public async Task DeleteAsync(string realmName, CancellationToken ct = default)
     {
         using var req = new HttpRequestMessage(HttpMethod.Delete, $"admin/realms/{Uri.EscapeDataString(realmName)}");
-        (await _a.SendRawAsync(req, ct).ConfigureAwait(false)).Dispose();
+        await _a.WriteRawAsync(req, ct).ConfigureAwait(false);
     }
 }
