@@ -14,8 +14,8 @@ declare(strict_types=1);
  * `{"status": int, "headers": {이름: 값}, "head": 문자열, "pad": 공백 바이트, "stall": 쓰고 멈출 본문 바이트(없으면 끝까지),
  *   "close": bool(stall 에서 붙들지 않고 닫는다), "length": bool(Content-Length 를 단다 — 기본 참, 거짓이면 연결 종료로 끝),
  *   "gzip": bool(head + pad 를 gzip 으로 보낸다 — stall 은 압축된 바이트로 센다), "keep": bool(응답 뒤 연결을 닫지 않는다 — stall 이
- *   없을 때만), "chunked": bool(Content-Length 대신 Transfer-Encoding: chunked — stall 은 청크 안의 바이트로 센다)}`.
- *   204 에는 Content-Length 를 달지 않는다.
+ *   없을 때만), "chunked": bool(Content-Length 대신 Transfer-Encoding: chunked — stall 은 청크 안의 바이트로 센다),
+ *   "cl": int(본문과 상관없이 이 Content-Length 를 단다 — 규격을 어기는 서버)}`. 204 에는 Content-Length 를 달지 않는다.
  * 경로가 없으면: GET /admin/serverinfo 는 버전, `/protocol/openid-connect/token` 은 쓸 수 있는 토큰, 그 밖은 404.
  * `CONNECT` 는 프록시처럼 받는다 — 터널 너머 요청을 같은 연결에서 이 서버가 받는다(경로 "CONNECT" 의 {"close": true} 면 받지 않고 닫는다).
  * 요청마다 응답이 끝나거나 클라이언트가 닫은 뒤 `<디렉터리>/sent.log` 에 한 줄을 남긴다 — `{"method", "path", "nonce",
@@ -233,7 +233,9 @@ for (;;) {
     foreach ($headers as $name => $value) {
         $out .= "$name: $value\r\n";
     }
-    if ($chunked) {
+    if (is_int($spec['cl'] ?? null)) {
+        $out .= "Content-Length: {$spec['cl']}\r\n";   // 본문과 다른 길이를 알린다(규격을 어기는 서버)
+    } elseif ($chunked) {
         $out .= "Transfer-Encoding: chunked\r\n";
     } elseif ($status !== 204 && ($keep || ($spec['length'] ?? true) === true)) {
         $out .= "Content-Length: $total\r\n";   // 204 에는 달지 않는다(RFC 9110 §8.6) — Keycloak 의 204 도 그렇다

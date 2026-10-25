@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Xzawed\Keycloak\Tests\Unit\Admin;
 
+use Fschmtt\Keycloak\Http\Command;
 use Fschmtt\Keycloak\Http\CommandExecutor;
 use Fschmtt\Keycloak\Http\Method;
 use Fschmtt\Keycloak\Http\Query;
@@ -13,6 +14,7 @@ use Fschmtt\Keycloak\Representation\Group;
 use Fschmtt\Keycloak\Representation\Realm;
 use Fschmtt\Keycloak\Representation\Role;
 use Fschmtt\Keycloak\Representation\User;
+use Fschmtt\Keycloak\Resource\Resource as FschmttResource;   // 별칭 — 아니면 docblock 의 `resource` 타입이 이 클래스가 된다
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\TransferException;
@@ -409,6 +411,62 @@ final class AdminResponseBodyTest extends TestCase
     }
 
     /**
+     * 본문이 없다는 2xx 뒤에 바이트를 더 보내는 서버(규격 위반) — 스트림 처리기는 `Content-Length: 0` 을 길이 미상으로 보고 EOF 까지
+     * 복사한다(Guzzle `StreamHandler::drain`). GET 이 아닌 요청의 2xx 는 본문 바이트를 받지 않는다 — 서버는 64 MiB 를 다 쓰지 못한다.
+     *
+     * @return array<string, array{string, array<string, mixed>}>
+     */
+    public static function trailingRows(): array
+    {
+        $rows = [];
+        foreach (['204' => ['status' => 204], '200 Content-Length: 0' => ['status' => 200, 'cl' => 0]] as $case => $spec) {
+            foreach (['curl', 'stream'] as $transport) {
+                $rows[$transport === 'curl' ? "$case + 64 MiB" : "$case + 64 MiB · stream"] = [$transport, $spec];
+            }
+        }
+
+        return $rows;
+    }
+
+    /** @param array<string, mixed> $spec */
+    #[DataProvider('trailingRows')]
+    public function testBytesAfterABodilessWriteResponseAreNotRead(string $transport, array $spec): void
+    {
+        $path = self::BASE . '/users/u1';
+        self::route(["PUT $path" => $spec + ['head' => '{}', 'pad' => self::HUGE - 2]]);
+        $this->useTransport($transport);
+        $admin = new AdminClient(self::config());
+
+        [$result, $ms] = self::timed(static fn () => $admin->users()->update('u1', new User(username: 'u')));
+        $sent = self::sent('PUT', $path);
+
+        self::note(sprintf('[%s] update %s + 64 MiB after it: %d ms · server wrote %s · %s', $transport, json_encode($spec), $ms, var_export($sent, true), self::describe($result)));
+        self::assertNotInstanceOf(\Throwable::class, $result, self::describe($result));
+        self::assertNotNull($sent);
+        self::assertLessThan(self::HUGE, $sent, "서버가 $sent 바이트를 다 썼다 — 본문 없다는 응답 뒤의 바이트를 읽었다");
+    }
+
+    /**
+     * HEAD 의 응답에는 본문이 없다(RFC 9110 §9.3.2) — 끊을 것이 없고, 끊으면 curl 이 다음 요청에 쓸 연결만 잃는다. 파사드는 HEAD 를
+     * 보내지 않지만 `raw()->resource()` 의 자원은 fschmtt `Command` 에 `Method::HEAD` 를 실을 수 있다(Grok 레그 지목).
+     */
+    public function testAHeadResponseKeepsTheConnection(): void
+    {
+        $this->useTransport('curl');
+        $path = self::BASE . '/users/u1';
+        self::route(["HEAD $path" => ['status' => 200, 'cl' => 24, 'keep' => true], "GET $path" => ['head' => '{"id":"u1","username":"u"}', 'keep' => true]]);
+        $kc = (new AdminClient(self::config()))->raw();
+
+        $kc->resource(AdminResponseBodyHeadResource::class)->head('r', 'u1');
+        $kc->users()->get('r', 'u1');
+        $conns = [self::record('HEAD', $path)['conn'] ?? null, self::record('GET', $path)['conn'] ?? null];
+
+        self::note('HEAD then GET conns: ' . json_encode($conns));
+        self::assertNotNull($conns[0]);
+        self::assertSame($conns[0], $conns[1], 'HEAD 뒤에 연결을 잃었다');
+    }
+
+    /**
      * 프록시 터널(https 대상에 `HTTPS_PROXY` 면 curl 이 CONNECT 한다) — curl 은 프록시의 `200 Connection established` 에도
      * `on_headers` 를 부른다. 그것을 쓰기의 2xx 로 보고 끊으면 요청은 서버에 닿지 않은 채 성공으로 돌아온다(실측: 고치기 전 판이
      * 그랬다). 평문으로 재려고 미들웨어를 직접 단 Guzzle 클라이언트에 `CURLOPT_HTTPPROXYTUNNEL` 로 터널을 강제한다(가짜 서버가
@@ -702,5 +760,14 @@ final class AdminResponseBodyTest extends TestCase
             self::assertStringNotContainsString('Http\\Client', $type, "Keycloak::{$m->getName()} 가 HTTP 클라이언트를 내보인다");
             self::assertStringNotContainsString('ClientInterface', $type, "Keycloak::{$m->getName()} 가 HTTP 클라이언트를 내보인다");
         }
+    }
+}
+
+/** `raw()->resource()` 의 자원 — 파사드에 없는 HEAD 를 fschmtt 명령으로 보낸다(`AdminResponseBodyTest::testAHeadResponseKeepsTheConnection`). */
+final class AdminResponseBodyHeadResource extends FschmttResource
+{
+    public function head(string $realm, string $userId): void
+    {
+        $this->commandExecutor->executeCommand(new Command('/admin/realms/{realm}/users/{userId}', Method::HEAD, ['realm' => $realm, 'userId' => $userId]));
     }
 }

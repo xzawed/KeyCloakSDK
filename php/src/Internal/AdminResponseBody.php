@@ -53,15 +53,18 @@ final class AdminResponseBody
             $error = false;   // 300 이상 — 본문을 상한에서 자른다
             $unread = false;  // fschmtt 가 읽지 않는 2xx 본문 — 받지 않는다
             $cut = false;     // 이 미들웨어가 2xx 의 전송을 끊었다 — 그 거부만 머리로 되살린다
-            $reads = $request->getMethod() === 'GET';
+            // 2xx 본문을 받는 요청 — fschmtt 의 조회(GET)와, 본문이 없는 HEAD(RFC 9110 §9.3.2 — `raw()->resource()` 의 명령이 보낸다).
+            $reads = \in_array($request->getMethod(), ['GET', 'HEAD'], true);
             $options['on_headers'] = static function (ResponseInterface $response) use (&$head, &$error, &$unread, &$cut, $reads): void {
                 if ($response->getStatusCode() < 200) {
                     return;   // 중간 응답 — 클래스 docblock
                 }
                 $head = $response;
                 $error = $response->getStatusCode() >= 300;
-                $unread = !$error && !$reads && !self::bodiless($response);
-                if ($unread && self::framed($response)) {
+                // 본문 없다는 2xx 도 싱크는 바이트를 받지 않는다 — 스트림 처리기는 `Content-Length: 0` 을 길이 미상으로 보고 EOF 까지
+                // 복사한다(Guzzle `StreamHandler::drain`). 머리에서 끊는 것은 틀을 알린 본문뿐이다.
+                $unread = !$error && !$reads;
+                if ($unread && !self::bodiless($response) && self::framed($response)) {
                     $cut = true;
                     throw new \RuntimeException('admin response body left unread');   // 본문 전에 전송을 끝낸다
                 }
