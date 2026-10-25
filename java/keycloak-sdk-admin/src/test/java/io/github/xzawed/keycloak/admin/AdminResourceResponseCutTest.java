@@ -60,7 +60,8 @@ import org.keycloak.representations.idm.UserRepresentation;
  * <p>계약: (1) SDK 가 읽지 않는 2xx 본문(create 의 201 · update·delete 의 2xx — 미디어 타입 유무) — 서버는 상한과 소켓 버퍼를 넘어
  * 쓰지 못하고 호출은 그 결과를 돌려준다. (2) 오류 본문 — 상한까지만 쥐고(상태와 본문 머리는 그대로) 나머지는 읽지 않는다. (3) 결과 뒤
  * 멈춘 서버 — 평문과 TLS 1.3 모두 읽기 타임아웃을 기다리지 않고 결과를 돌려준다. 대조: EOF 까지 읽은 응답의 연결은 지금처럼 다시
- * 쓰이고, 엿보려고 낮춘 기다림은 다음 교환에 남지 않으며, 상한 안의 오류 본문은 통째로 실린다. 공개 API 와 로컬 루프백만 쓴다.
+ * 쓰이고, 엿보려고 낮춘 기다림은 다음 교환에 남지 않으며, 상한 안의 오류 본문은 통째로 실리고, 성공 본문에는 상한이 없다. 공개 API 와
+ * 로컬 루프백만 쓴다(길이 0 의 읽기 한 건만 엔진의 스트림을 직접 잰다).
  *
  * <p>⚠️ 미디어 타입이 있는 JSON 성공 본문(get·search)은 이 계약 밖이다 — 결합(Jackson)이 값 뒤의 공백까지 EOF 로 읽는다
  * ({@code FAIL_ON_TRAILING_TOKENS} — 실측 스택 {@code ObjectReader._verifyNoTrailingTokens}). 그 공백은 JSON 텍스트이고 성공 본문에는
@@ -430,6 +431,21 @@ class AdminResourceResponseCutTest {
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
   }
 
+  /** 대조 — 성공 본문에는 상한을 걸지 않는다(정당하게 크다): 상한을 넘는 사용자 목록도 통째로 결합된다. */
+  @Test @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void aSuccessBodyPastTheCap_isReadWhole() throws Exception {
+    int users = CAP / USER.length() + 1_000;
+    StringBuilder list = new StringBuilder(users * (USER.length() + 1) + 2).append('[');
+    for (int i = 0; i < users; i++) list.append(i == 0 ? "" : ",").append(USER);
+    String body = list.append(']').toString();
+    try (RawServer server = new RawServer(exact("200 OK", TYPED, body)); AdminClient admin = admin(server, Duration.ofSeconds(20))) {
+      Outcome o = call(admin, a -> a.users().search("u", 0, users).size());
+      System.out.println("[AdminResourceResponseCutTest] 사용자 " + users + " 명(" + body.length() + " B) → " + o.describe());
+      assertTrue(body.length() > CAP);
+      assertEquals(users, o.result(), o::describe);
+    }
+  }
+
   /** 대조 — 상한 안의 오류 본문은 통째로 실리고, 한 바이트 넘으면 상한까지 잘린다(경계). */
   @Test @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
   void anErrorBodyAtTheCap_isCarriedWhole() throws Exception {
@@ -476,6 +492,34 @@ class AdminResourceResponseCutTest {
       }
     }
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
+  }
+
+  /**
+   * 길이 0 의 읽기는 아래 스트림에 넘기지 않는다 — JDK 의 {@code readNBytes} 는 버퍼 한 칸을 채울 때마다 길이 0 으로 한 번 더 묻고 HttpCore 의
+   * 빈 버퍼는 그것도 소켓에서 기다린다({@code TokenResponseGuard.capPlusOne} 와 같은 자리 — {@code raw()} 로 응답 스트림을 받은 소비자가
+   * 닿는다). 아래 스트림이 길이 0 의 읽기를 받으면 실패하게 해 잰다. 오류 본문의 상한은 한 바이트씩 읽는 길에서도 같다.
+   */
+  @Test
+  void aZeroLengthRead_doesNotReachTheStream() throws IOException {
+    InputStream refusesZero = new InputStream() {
+      @Override public int read() {
+        return 'x';
+      }
+
+      @Override public int read(byte[] b, int off, int len) {
+        if (len == 0) throw new AssertionError("길이 0 의 읽기가 아래 스트림에 닿았다");
+        b[off] = 'x';
+        return 1;
+      }
+    };
+    AdminEngine.Settled settled = new AdminEngine.Settled(refusesZero, null, Long.MAX_VALUE);
+    assertEquals(0, settled.read(new byte[1], 0, 0));
+    assertEquals(1, settled.read(new byte[1], 0, 1));
+    // 상한은 한 바이트씩 읽어도 같다 — limit 바이트 뒤에는 아래 스트림을 읽지 않고 끝(-1)이다
+    AdminEngine.Settled capped = new AdminEngine.Settled(refusesZero, null, 2);
+    assertEquals('x', capped.read());
+    assertEquals('x', capped.read());
+    assertEquals(-1, capped.read());
   }
 
   /** 대조 — 끊긴 연결은 풀로 돌아가지 않는다: 나머지를 끊은 create 다음의 get 은 새 연결에서 성공한다(연결 2). */
