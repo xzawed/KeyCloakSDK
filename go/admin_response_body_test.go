@@ -31,7 +31,7 @@ import (
 // 본문을 그대로 받는다), 오류 상태(3xx 이상)의 본문은 tokenResponseMaxBytes 에서 끝난다. 그 밖의 성공 본문(목록 등)에는 상한이 없다.
 // admin 토큰 요청의 오류 본문은 이 상한과 토큰 상한(tokencap.go)을 함께 지난다 — 아래 대조가 둘의 맞물림을 잰다.
 //
-// 수정 전(실측 2026-10-25, Windows · go1.26.4 · 루프백 · main 0a4cfee — 등록부 admin-response-body-unbounded 의 재스캔): create 201 +
+// 수정 전(실측 2026-10-25, Windows · go1.26.4 · 루프백 · main ee862c6 = 0a4cfee 의 go/ — 등록부 admin-response-body-unbounded 의 재스캔): create 201 +
 // 64 MiB 를 서버가 끝까지 썼고(103–107 ms) · 201 뒤 멈춘 서버 앞에서 create 가 읽기 타임아웃(4 s) 끝에 *TransportError(4,001–4,002 ms) ·
 // 404 + 64 MiB 를 끝까지 읽었다. 공개 API(NewAdminClient + 정적 토큰 공급자)와 로컬 루프백만 쓴다 — TLS 갈래만 시험 CA 를 믿게 하려고
 // 그 클라이언트의 전송(a.tr)에 손을 댄다(Config 에 TLS 근원 손잡이가 없다).
@@ -519,6 +519,45 @@ func TestAdminServerStalledAfterTheResult_isNotWaitedFor(t *testing.T) {
 			_ = a.Close()
 			s.close()
 		}
+	}
+}
+
+// 대조 — 연결을 끊는 것은 이 전송의 닫기다: resty 클라이언트의 전체 기한을 끄면(SetTimeout(0) — Raw() 로 닿는 손잡이) http.Client 가 본문을
+// 닫으며 기한 컨텍스트를 취소하는 일이 없어(그 취소도 연결을 끊는다 — 기한이 있으면 이 전송의 닫기를 빼도 시험이 못 본다, 변이 실측) 끊는 것이
+// 이 전송뿐이다. 그래도 쓰지 않는 2xx 본문과 상한을 넘은 오류 본문 앞에서 서버는 다 쓰지 못한다.
+func TestAdminCutsWithoutAClientDeadline(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name  string
+		reply rbReply
+		call  func(*AdminClient) error
+	}{
+		{"create 201 + 64 MiB", rbPadded("201 Created", rbLocation, "", rbHuge), func(a *AdminClient) error {
+			_, err := a.Users.Create(ctx, rbUserRep())
+			return err
+		}},
+		{"get 404 + 64 MiB", rbPadded("404 Not Found", rbTyped, rbNotFound, rbHuge), func(a *AdminClient) error {
+			if _, err := a.Users.Get(ctx, "x"); !errors.Is(err, ErrNotFound) {
+				return errors.New("ErrNotFound 가 아니다")
+			}
+			return nil
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := newRBServer(t, nil, func(string, string) rbReply { return c.reply })
+			a := rbAdmin(t, s, nil, 20*time.Second)
+			a.Raw().RestyClient().SetTimeout(0)
+			err := c.call(a)
+			finished := s.awaitReply()
+			t.Logf("[AdminResponseBody] 기한 없음 · %s → err=%v · server wrote %d B finished=%v", c.name, err, s.written.Load(), finished)
+			if err != nil {
+				t.Fatalf("결과가 틀렸다: %v", err)
+			}
+			if !finished || s.written.Load() > rbWrittenBound {
+				t.Fatalf("연결을 끊지 않았다 — server wrote %d B finished=%v", s.written.Load(), finished)
+			}
+		})
 	}
 }
 
