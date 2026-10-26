@@ -75,7 +75,14 @@ jobs:
       # RUSTSEC-2023-0071(rsa "Marvin" 타이밍 사이드채널)은 dev-dependency rsa(테스트 키 생성
       # 전용)에 대한 것으로, 런타임(jsonwebtoken 공개키 서명검증만)에 영향 경로가 없다 —
       # 문서화된 예외로 무시한다(게차 참조).
-      - run: cargo audit --ignore RUSTSEC-2023-0071
+      # RUSTSEC-2026-0387(crypto-bigint 0.5 의 「상수 시간」 연산이 비밀에 따라 갈라진다)도 같은 이유다 —
+      # elliptic-curve 0.13 → p256·p384 → jsonwebtoken·openidconnect 로 들어오고, 출하 코드는 ES256·ES384
+      # 를 공개키 **검증**에만 쓴다(서명·키 생성·ECDH 없음 — encode·EncodingKey 는 #[cfg(test)] 안뿐)
+      # → 그 연산에 비밀 정수가 지나가지 않는다. 고친 판(>= 0.7.6)은 elliptic-curve 0.14 가 있어야 해
+      # semver 안에서 올릴 수 없다. ⚠️ 되살릴 조건(무시를 지운다): 이 무시 없이 `cargo audit` 가 통과할 때
+      # (고친 판이 트리에 들어옴 — `cargo tree -i crypto-bigint`), 또는 출하 코드가 서명(private_key_jwt·
+      # DPoP 포함)·키 생성·ECDH 를 하게 될 때 — 그 변경과 같은 PR 에서 지운다.
+      - run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0387
 
   semver:
     name: cargo-semver-checks (공개 API 파괴적 변경)

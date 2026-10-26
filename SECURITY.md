@@ -1,4 +1,7 @@
-<!-- doc-budget: max-bytes=10916 -->
+<!-- doc-budget: max-bytes=11211 -->
+<!-- 10916 → 11211 (2026-10-27). 규약 (1) — 「Two documented scope exceptions」가 cargo audit 의 두 번째
+     Rust 예외(RUSTSEC-2026-0387)로 거짓이 되어 「Three」로 바꾸고, 새 항목에 그 주장을 다시 재는 명령
+     (`cargo tree -i crypto-bigint`)을 둔다 — 그 명령이 고친 판을 보이면 예외를 지운다. -->
 <!-- 10907 → 10916 (2026-09-26). 규약 (1) — README.md 와 같은 교환이다. 함대가 세 갈래로
      갈려 두 갈래 요약 문장이 거짓이 되고, 새 문장의 버전 집합은 `test-publication-claims.sh`
      축 2 가 SSOT 와 대조한다. 같은 커밋이 Go 태그 괄호의 버전 리터럴을 `go/v*` 로 바꿔
@@ -140,11 +143,15 @@ Both OSV jobs are **fail-closed** — an empty coordinate list, or a response wh
 length does not match the query, fails the job instead of reporting "no
 vulnerabilities found".
 
-Two documented scope exceptions:
+Three documented scope exceptions:
 
 - Rust ignores `RUSTSEC-2023-0071`. It concerns the `rsa` crate, which is a
   dev-dependency used only to generate test keys; the shipped SDK only verifies
   signatures with public keys, so there is no reachable path.
+- Rust ignores `RUSTSEC-2026-0387` (`crypto-bigint` 0.5 timing, via `p256`/`p384`):
+  the SDK only verifies signatures with public keys — no signing, key
+  generation or ECDH — so no secret integer reaches it. It goes once a patched
+  release is in the tree (`cargo tree -i crypto-bigint`).
 - .NET audits the shipped SDK project only, so test-only dependencies (for
   example WireMock's transitive tree) are deliberately out of scope.
 
