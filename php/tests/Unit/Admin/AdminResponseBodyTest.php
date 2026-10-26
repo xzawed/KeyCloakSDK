@@ -52,6 +52,8 @@ final class AdminResponseBodyTest extends TestCase
     private const STALL_TIMEOUT = 4.0;
     private const BASE = '/admin/realms/r';
     private const ERROR_HEAD = '{"error":"HTTP 404 Not Found"}';
+    /** 프록시 환경변수 — 있으면 `AdminResponseBody` 가 머리에서 끊지 않는다(`mayUseProxy`). 시험마다 비우고 되돌린다. */
+    private const PROXY_ENV = ['http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY', 'all_proxy', 'ALL_PROXY'];
 
     private static string $dir = '';
     private static int $port = 0;
@@ -60,6 +62,8 @@ final class AdminResponseBodyTest extends TestCase
     private static $proc = null;
     /** @var array{0: \ReflectionProperty, 1: mixed}|null */
     private ?array $curlInfo = null;
+    /** @var array<string, string|false> 시험 앞의 프록시 환경변수 — `tearDown` 이 되돌린다 */
+    private array $proxyEnv = [];
 
     public static function setUpBeforeClass(): void
     {
@@ -112,6 +116,14 @@ final class AdminResponseBodyTest extends TestCase
         @rmdir(self::$dir);
     }
 
+    protected function setUp(): void
+    {
+        foreach (self::PROXY_ENV as $name) {
+            $this->proxyEnv[$name] = getenv($name);
+            putenv($name);
+        }
+    }
+
     protected function tearDown(): void
     {
         if ($this->curlInfo !== null) {
@@ -119,6 +131,10 @@ final class AdminResponseBodyTest extends TestCase
             $property->setValue(null, $before);
             $this->curlInfo = null;
         }
+        foreach ($this->proxyEnv as $name => $value) {
+            putenv($value === false ? $name : "$name=$value");
+        }
+        $this->proxyEnv = [];
         gc_collect_cycles();   // 끊긴 응답의 소켓을 놓는다 — 한 번에 연결 하나를 받는 가짜 서버가 다음 시험에서 기다리지 않게
     }
 
@@ -507,19 +523,15 @@ final class AdminResponseBodyTest extends TestCase
      * `on_headers` 를 부른다. 그것을 쓰기의 2xx 로 보고 끊으면 요청은 서버에 닿지 않은 채 성공으로 돌아온다(실측: 고치기 전 판이
      * 그랬다). 평문으로 재려고 미들웨어를 직접 단 Guzzle 클라이언트에 `CURLOPT_HTTPPROXYTUNNEL` 로 터널을 강제한다(가짜 서버가
      * 프록시 노릇도 한다). 원서버에 닿지 못한 터널은 성공이 아니라 전송 오류다. 규격(RFC 9110 §9.3.6)을 어겨 그 200 에 틀을 다는
-     * 프록시도 있다 — 틀로는 가를 수 없으니 CONNECT 의 머리는 curl 이 넘기지 않게 한다(Grok 레그 2 지목).
-     * ⚠️ 숨기는 옵션은 libcurl 7.54 이상으로 빌드한 PHP 에만 있다(PHP 8.3 은 7.29 부터 받는다 — php-src `ext/curl/config.m4`). 그 아래
-     * 빌드에서는 머리가 그대로 온다 — 호출 옵션으로 숨김을 끈 행(`· CONNECT headers shown` — 미들웨어는 호출자의 curl 옵션을 이긴다)이
-     * 그 길(1xx 건너뛰기 · 틀 없는 2xx 는 머리에서 끊지 않기 · 머리마다 다시 정하기)을 잰다. 틀 단 CONNECT 200 은 그 길에서는 가를 수
-     * 없어 행이 없다.
+     * 프록시도 있다 — 틀로는 가를 수 없으니 프록시가 끼어들 수 있는 요청은 머리에서 끊지 않는다(Grok 레그 2 지목 ·
+     * `testAFramedWriteResponseIsCutAtTheHeadOnlyWhenNoProxyCanBeInPlay`).
      *
-     * @return array<string, array{array<string, mixed>, int|null, bool}> [PUT 의 명세(`tunnel` = 터널을 닫는다 · `connect` = 프록시의
-     *     200 에 더할 머리 줄), 돌려받을 상태(null = 예외), CONNECT 의 머리를 curl 이 넘기는가]
+     * @return array<string, array{array<string, mixed>, int|null}> [PUT 의 명세(`tunnel` = 터널을 닫는다 · `connect` = 프록시의 200 에
+     *     더할 머리 줄), 돌려받을 상태(null = 예외)]
      */
     public static function tunnelRows(): array
     {
-        $rows = [];
-        foreach ([
+        return [
             '204 No Content' => [['status' => 204], 204],
             '204 behind a CONNECT 200 with Content-Length' => [['status' => 204, 'connect' => "Content-Length: 10\r\n"], 204],
             '204 behind a chunked CONNECT 200' => [['status' => 204, 'connect' => "Transfer-Encoding: chunked\r\n"], 204],
@@ -528,19 +540,12 @@ final class AdminResponseBodyTest extends TestCase
             '200 + 64 MiB (close-delimited)' => [['status' => 200, 'head' => '{}', 'pad' => self::HUGE - 2, 'length' => false], 200],
             '404 + 64 MiB' => [['status' => 404, 'head' => self::ERROR_HEAD, 'pad' => self::HUGE - strlen(self::ERROR_HEAD)], 404],
             'tunnel closed before the server' => [['tunnel' => 'close'], null],
-        ] as $name => [$put, $want]) {
-            $rows[$name] = [$put, $want, false];
-            if (!isset($put['connect'])) {
-                $rows["$name · CONNECT headers shown"] = [$put, $want, true];
-            }
-        }
-
-        return $rows;
+        ];
     }
 
     /** @param array<string, mixed> $put */
     #[DataProvider('tunnelRows')]
-    public function testAWriteThroughAProxyTunnelReachesTheServer(array $put, ?int $want, bool $shown): void
+    public function testAWriteThroughAProxyTunnelReachesTheServer(array $put, ?int $want): void
     {
         $path = self::BASE . '/users/u1';
         self::route(isset($put['tunnel']) ? ['CONNECT' => ['close' => true]] : ["PUT $path" => $put, 'CONNECT' => ['headers' => $put['connect'] ?? '']]);
@@ -552,14 +557,14 @@ final class AdminResponseBodyTest extends TestCase
 
         [$result, $ms] = self::timed(static fn () => $client->request('PUT', 'http://origin.test' . $path, [
             'proxy' => 'http://127.0.0.1:' . self::$port,
-            'curl' => [\CURLOPT_HTTPPROXYTUNNEL => true] + ($shown ? [\CURLOPT_SUPPRESS_CONNECT_HEADERS => false] : []),
+            'curl' => [\CURLOPT_HTTPPROXYTUNNEL => true],
             'body' => $body,
             'headers' => ['Authorization' => 'Bearer t', 'Content-Type' => 'application/json'],
         ]));
         $record = self::record($want === null ? 'CONNECT' : 'PUT', $want === null ? '/' : $path);
 
         $seen = $result instanceof ResponseInterface ? $result->getStatusCode() . ' ' . $result->getReasonPhrase() : self::describe($result);
-        self::note(sprintf('[curl] tunnel %s%s: %d ms · %s · %s', json_encode($put), $shown ? ' (CONNECT headers shown)' : '', $ms, json_encode($record), $seen));
+        self::note(sprintf('[curl] tunnel %s: %d ms · %s · %s', json_encode($put), $ms, json_encode($record), $seen));
         self::assertNotNull($record, '가짜 프록시 기록이 없다');
         if ($want === null) {
             self::assertInstanceOf(TransferException::class, $result, "원서버에 닿지 못한 터널이 성공으로 돌아왔다: $seen");
@@ -572,6 +577,56 @@ final class AdminResponseBodyTest extends TestCase
         self::assertSame(strlen($body), $record['got'], '서버가 요청 본문을 다 받지 못했다');
         self::assertLessThan(self::HUGE, $record['written']);
         self::assertSame($want >= 300 ? self::CAP : 0, strlen((string) $result->getBody()), '남긴 본문 — 오류는 상한까지, 2xx 는 비운다');
+    }
+
+    /**
+     * 머리에서 끊는 것은 프록시가 끼어들 수 없을 때뿐이다(`AdminResponseBody::mayUseProxy`) — 이 요청에 쓰이지 않을 프록시(다른
+     * 스킴의 옵션 · 환경변수)도 끼어들 수 있다고 본다. 그때 본문 바이트 없이 멈춘 틀 있는 201 은 고치기 전처럼 읽기 타임아웃 끝에
+     * 전송 오류다. `no` 목록만 있는 `proxy` 옵션(Guzzle `Client` 가 `NO_PROXY` 를 옮긴 것)은 프록시가 아니다 — 머리에서 끊는다.
+     * 환경변수 행은 Linux 에서는 그 갈래를 재고, Windows 에서는(대소문자를 가리지 않아 Guzzle 이 `HTTPS_PROXY` 로 읽어 옵션에
+     * 옮긴다) 옵션 갈래를 잰다.
+     *
+     * @return array<string, array{array<string, mixed>, array<string, string>, bool}> [요청 옵션 `proxy`, 환경변수, 머리에서 끊는가]
+     */
+    public static function proxyRows(): array
+    {
+        return [
+            'no proxy' => [[], [], true],
+            'proxy option with only a no-list' => [['no' => ['127.0.0.1']], [], true],
+            'proxy option for https only' => [['https' => 'http://127.0.0.1:9'], [], false],
+            'https_proxy in the environment' => [[], ['https_proxy' => 'http://127.0.0.1:9'], false],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $proxy
+     * @param array<string, string> $env
+     */
+    #[DataProvider('proxyRows')]
+    public function testAFramedWriteResponseIsCutAtTheHeadOnlyWhenNoProxyCanBeInPlay(array $proxy, array $env, bool $cutAtHead): void
+    {
+        $path = self::BASE . '/users/u1';
+        self::route(["PUT $path" => ['status' => 201, 'head' => '{"id":"x"}', 'pad' => self::CAP, 'stall' => 0]]);
+        foreach ($env as $name => $value) {
+            putenv("$name=$value");   // tearDown 이 되돌린다
+        }
+        $this->useTransport('curl');
+        $stack = HandlerStack::create();
+        $stack->push(AdminResponseBody::middleware(static fn (): bool => false), 'admin_response_body');
+        $client = new GuzzleClient(['handler' => $stack, 'http_errors' => false, 'allow_redirects' => false, 'timeout' => 1.0] + ($proxy === [] ? [] : ['proxy' => $proxy]));
+
+        [$result, $ms] = self::timed(static fn () => $client->request('PUT', 'http://127.0.0.1:' . self::$port . $path, ['body' => '{}']));
+
+        $seen = $result instanceof ResponseInterface ? (string) $result->getStatusCode() : self::describe($result);
+        self::note(sprintf('[curl] create 201 stalled before its body · proxy %s · env %s: %d ms · %s', json_encode($proxy), json_encode($env), $ms, $seen));
+        self::assertNotNull(self::record('PUT', $path), '요청이 서버에 닿지 않았다');
+        if ($cutAtHead) {
+            self::assertInstanceOf(ResponseInterface::class, $result, $seen);
+            self::assertSame(201, $result->getStatusCode());
+            self::assertLessThan(900, $ms, "{$ms} ms — 머리에서 끊지 않았다");
+        } else {
+            self::assertInstanceOf(TransferException::class, $result, "프록시가 끼어들 수 있는데 머리에서 끊었다: $seen");
+        }
     }
 
     /**
