@@ -34,6 +34,7 @@ vi.mock('@keycloak/keycloak-admin-client', () => ({ default: h.ctor }))
 
 import { AdminClient } from '../../src/admin/index.js'
 import { defineConfig } from '../../src/config.js'
+import { TOKEN_RESPONSE_MAX_BYTES } from '../../src/token-response-cap.js'
 import {
   KeycloakNotFoundError,
   KeycloakConflictError,
@@ -188,6 +189,36 @@ describe('파사드의 요청 — admin-client 메서드를 거치지 않는다'
     await expect(admin.users.update('u-1', {})).resolves.toBeUndefined()
     fetchMock.mockResolvedValueOnce(stubborn(404, '2000000'))
     await expect(admin.users.delete('u-1')).rejects.toBeInstanceOf(KeycloakNotFoundError)
+  })
+
+  /**
+   * 오류 본문은 상한 + 1 바이트(넘는지 보는 한 바이트)까지만 꺼낸다 — 조각이 커도. 길이를 알리지 않은 바이트 스트림이
+   * 64 KiB 조각을 내면, 청하는 길이를 정하는 BYOB 읽기는 상한 + 1 에서 멈추고 기본 리더는 조각 하나만큼 넘는다. 루프백
+   * 시험은 서버가 쓴 양만 보고 우리가 꺼낸 양은 못 보므로 여기서 센다.
+   */
+  it('오류 본문은 상한 + 1 바이트까지만 꺼낸다 — 길이를 알리지 않은 큰 조각이어도', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    const piece = 65_536
+    let delivered = 0
+    const endless = new ReadableStream({
+      type: 'bytes',
+      pull(controller) {
+        const request = controller.byobRequest
+        if (request?.view) {
+          const n = Math.min(request.view.byteLength, piece)
+          new Uint8Array(request.view.buffer, request.view.byteOffset, n).fill(0x20)
+          delivered += n
+          request.respond(n)
+        } else {
+          controller.enqueue(new Uint8Array(piece).fill(0x20))
+          delivered += piece
+        }
+      },
+    })
+    fetchMock.mockResolvedValueOnce(new Response(endless, { status: 404 }))
+    await expect(admin.users.update('u-1', {})).rejects.toBeInstanceOf(KeycloakNotFoundError)
+    expect(delivered).toBeGreaterThan(TOKEN_RESPONSE_MAX_BYTES)
+    expect(delivered).toBeLessThanOrEqual(TOKEN_RESPONSE_MAX_BYTES + 1)
   })
 
   it('다섯 리소스 어느 것도 admin-client 메서드를 부르지 않는다', async () => {
