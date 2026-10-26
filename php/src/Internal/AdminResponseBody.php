@@ -28,8 +28,8 @@ use Psr\Http\Message\StreamInterface;
  * `Expect` 를 단다)과 프록시 터널의 `200 Connection established`(https 대상에 `HTTPS_PROXY`). 그것을 쓰기의 응답으로 보고 끊으면
  * 요청은 서버에 닿지 않은 채 성공으로 돌아온다(실측 — 둘 다 고치기 전 판이 그랬다). 그래서 1xx 는 건너뛰고(규격을 어겨 틀을 단
  * 것도), 틀(`framed`)이 없는 2xx 는 머리에서 끊지 않는다 — 터널의 2xx 는 본문 없이 다음 머리(원서버의 응답)로 넘어간다.
- * ⚠️ 본문이 없다고 머리가 말하는 2xx(204 · `Content-Length: 0` — Keycloak 의 쓰기 응답)는 끊지 않는다 — 끊을 것이 없고, 끊으면
- * curl 이 다음 요청에 쓸 연결만 잃는다.
+ * ⚠️ 본문이 없는 2xx(Keycloak 의 쓰기 응답 — 틀이 없는 204 · `Content-Length: 0` 인 201)는 머리에서 끊지 않는다 — 끊을 것이
+ * 없고, 끊으면 curl 이 다음 요청에 쓸 연결만 잃는다.
  * ⚠️ 싱크에서 예외를 던지지 않는다 — curl 은 그 예외에도 본문을 끝까지 받았다(실측). 스트림 처리기가 싱크의 짧은 쓰기(상한 · 첫
  * 바이트 거부)에 복사를 멈추는 것은 guzzlehttp/psr7 2.11 이상이다(짧은 쓰기를 다시 쓰는 `copyToStream`) — 그 아래 판은 Content-Length
  * 를 알린 본문을 끝까지 읽고 쥐는 양만 상한이다.
@@ -102,10 +102,13 @@ final class AdminResponseBody
         };
     }
 
-    /** 본문이 없다고 머리가 말하는 응답. */
+    /**
+     * 본문이 없다고 머리가 말하는 응답 — `Content-Length: 0`. 204 는 따로 가르지 않는다: 규격대로면 204 에는 틀이 없어(`framed`)
+     * 머리에서 끊기지 않고, 규격을 어겨 길이를 단 204 는 끊어도 결과가 같다(실측: 어느 쪽이든 다음 요청은 새 연결로 간다).
+     */
     private static function bodiless(ResponseInterface $response): bool
     {
-        return $response->getStatusCode() === 204 || $response->getHeaderLine('Content-Length') === '0';
+        return $response->getHeaderLine('Content-Length') === '0';
     }
 
     /**
