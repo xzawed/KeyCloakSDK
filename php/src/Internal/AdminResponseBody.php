@@ -164,7 +164,8 @@ final class AdminResponseBody
 
     /**
      * 오류 응답에 남긴 본문(상한 싱크의 앞 `TOKEN_RESPONSE_MAX_BYTES` 바이트)을 단다 — `Content-Length` 가 있으면 남긴 길이로 맞춘다.
-     * 서버가 알린 길이를 그대로 두면 `raw()` 소비자가 그 응답을 다시 내보낼 때 상대가 오지 않을 바이트를 기다린다. 없으면(청크 ·
+     * 서버가 알린 길이를 그대로 두면 `raw()` 소비자가 그 응답을 다시 내보낼 때 상대가 오지 않을 바이트를 기다리거나 잘린 전송으로
+     * 실패한다(연결이 살아 있으면 상대의 타임아웃까지 · 닫히면 그 자리에서). 없으면(청크 ·
      * Guzzle 이 압축을 풀며 뗀 것) 더하지 않는다.
      */
     private static function withKept(ResponseInterface $response, StreamInterface $capped): ResponseInterface

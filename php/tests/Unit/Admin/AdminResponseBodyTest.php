@@ -770,7 +770,7 @@ final class AdminResponseBodyTest extends TestCase
     /**
      * `raw()` 의 오류 본문도 상한에서 잘린다 — 탈출구는 Guzzle 의 예외를 그대로 넘기고, 그 응답의 본문이 상한이다. 그 응답의
      * `Content-Length` 는 남긴 길이다 — 서버가 알린 64 MiB 를 그대로 두면 그 응답을 다시 내보내는 소비자(PSR-7 그대로 흘리는 프록시)의
-     * 상대가 오지 않을 바이트를 기다린다.
+     * 상대가 오지 않을 바이트를 기다리거나 잘린 전송으로 실패한다.
      */
     public function testARawErrorBodyIsCutAtTheCap(): void
     {
