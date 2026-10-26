@@ -866,23 +866,25 @@ async fn via_crate(a: &AdminClient, m: Method, realm: &str, id: &str) -> String 
 }
 
 /// 파사드 메서드 스물여섯(+ `search_users` 의 username 없는 갈래)이 `raw()` 의 crate 메서드와 **같은 요청**을 보내고
-/// **같은 결과**를 낸다 — 메서드 · URL(경로의 퍼센트 인코딩 · 쿼리와 그 순서) · 머리 전부 · 본문 바이트. realm · id ·
-/// 이름에 바이트 0x00–0x7F 전부와 비ASCII 를 넣고, server_url 에 경로 접두(`/auth/`)를 둔다.
+/// **같은 결과**를 낸다 — 메서드 · URL(경로의 퍼센트 인코딩 · 쿼리와 그 순서) · 머리 전부 · 본문 바이트. realm 과
+/// id(이름·username 으로도 쓴다)에 바이트 0x00–0x7F 전부와 비ASCII 를 넣되 **서로 다르게** 두어(둘이 같으면 인자를
+/// 뒤바꾼 구현이 같은 와이어를 낸다), server_url 에 경로 접두(`/auth/`)를 둔다.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_facade_sends_what_the_crate_sends() {
     let _serial = SERIAL.lock().await;
-    let tricky = every_byte();
+    let realm = format!("realm{}", every_byte());
+    let id = format!("id{}", every_byte());
     let mut wrong = Vec::new();
     for m in METHODS {
         let server = MockServer::start().await;
         Mock::given(any()).respond_with(Echo).mount(&server).await;
         let a = admin_at(
             &format!("{}/auth/", server.uri()),
-            &tricky,
+            &realm,
             Duration::from_secs(4),
         );
-        let facade = via_facade(&a, m, &tricky).await;
-        let raw = via_crate(&a, m, &tricky, &tricky).await;
+        let facade = via_facade(&a, m, &id).await;
+        let raw = via_crate(&a, m, &realm, &id).await;
         let reqs = server.received_requests().await.unwrap_or_default();
         if reqs.len() != 2 {
             wrong.push(format!(
