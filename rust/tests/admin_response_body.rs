@@ -412,7 +412,7 @@ async fn an_error_body_that_stalls_keeps_its_class() {
 /// 오류 본문은 상한까지는 **비운다** — 그래야 HTTP/1.1 연결을 다음 요청이 다시 쓴다. 정확히 상한(1,048,576 바이트)이면
 /// 두 호출이 연결 하나를 쓰고, 한 바이트 넘으면 둘을 쓴다 — 알린 길이면 읽지 않고, 청크면 상한을 넘는 순간 버린다.
 /// 「읽지 않고 버린다」만으로 바꾸면 「연결 하나」 행들이 깨진다 — 오류마다 연결을 새로 맺는다. 비우는 동안 받은 바이트를
-/// 모으지 않는다(할당 피크 < 1 MiB).
+/// 모으지 않는다(할당 피크 < 1.25 MiB).
 ///
 /// ⚠️ 「끝을 늦춘」 행은 종결 청크를 2 s 늦춘다. 늦추지 않으면 마지막 데이터와 종결이 한 번에 와서, 우리가 버리기 전에
 /// hyper 가 메시지 끝까지 읽어 연결이 산다(실측 2026-10-27 — 상한 위반이 아니다). 늦추면 경계가 갈린다 — 정확히 상한인
@@ -493,13 +493,14 @@ async fn an_error_body_is_drained_up_to_the_cap() {
             Some(min) => ms >= min,
             None => ms < 1000,
         };
-        // 비우는 동안 쥐는 것은 hyper 의 읽기 버퍼뿐이다(실측 +0.53–0.55 MB · 최대 417,792 B 를 BytesMut 가 두 배까지) —
-        // 받은 바이트를 모으면 상한 본문만으로 1 MiB 를 넘는다.
+        // 비우는 동안 쥐는 것은 hyper 의 읽기 버퍼뿐이다 — 최대 417,792 B 를 BytesMut 가 두 배까지 잡는다(실측 2026-10-27
+        // 여섯 번: +0.29–0.97 MB). 받은 바이트를 모으면 상한 본문 1 MiB 가 그 위에 얹힌다(그 변이 R25 는 +2.81 MB).
+        // 한도 1.25 MiB 는 그 사이다 — 1 MiB 로 두면 버퍼가 두 배로 큰 실행이 83 KB 차이로 붙는다.
         if class(&first) != want_first
             || class(&second) != "NotFound"
             || conns != want_conns
             || !timing_ok
-            || peak >= CAP
+            || peak >= CAP + CAP / 4
         {
             wrong.push(format!(
                 "{row}: {} in {ms} ms · peak +{peak} / {} · {conns} connection(s), want {want_first} · {want_conns}",
