@@ -494,7 +494,7 @@ async fn an_error_body_is_drained_up_to_the_cap() {
             None => ms < 1000,
         };
         // 비우는 동안 쥐는 것은 hyper 의 읽기 버퍼뿐이다 — 최대 417,792 B 를 BytesMut 가 두 배까지 잡는다(실측 2026-10-27
-        // 여섯 번: +0.29–0.97 MB). 받은 바이트를 모으면 상한 본문 1 MiB 가 그 위에 얹힌다(그 변이 R25 는 +2.81 MB).
+        // 여섯 번: +0.29–0.97 MB). 받은 바이트를 모으면 상한 본문 1 MiB 가 그 위에 얹힌다(그 변이 R25 는 +2.94–3.23 MB).
         // 한도 1.25 MiB 는 그 사이다 — 1 MiB 로 두면 버퍼가 두 배로 큰 실행이 83 KB 차이로 붙는다.
         if class(&first) != want_first
             || class(&second) != "NotFound"
