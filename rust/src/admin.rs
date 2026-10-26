@@ -583,7 +583,7 @@ mod tests {
     // Keycloak의 rename은 `PUT /{현재 주소}` + body에 **새** 이름이다. 경로를 body에서 만들면
     // rename이 조용한 no-op이 된다(2xx인데 아무것도 안 바뀜). 아래 넷은 전부 body의 이름을
     // 경로와 **다르게** 두어, 둘을 합치는 구현에서는 경로가 어긋나 wiremock이 404를 돌려주고
-    // map_admin이 Err로 바꾼다 — 즉 이 어서션은 합침을 구조적으로 잡는다.
+    // 파사드가 그 상태로 Err를 낸다 — 즉 이 어서션은 합침을 구조적으로 잡는다.
     // (자매 Go SDK는 gocloak이 경로를 body에서 만들어 realms.Update만 raw REST로 우회해야 했다.)
 
     #[tokio::test]

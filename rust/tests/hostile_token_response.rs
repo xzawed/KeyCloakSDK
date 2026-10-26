@@ -283,7 +283,7 @@ async fn hostile_token_responses_fail_as_classified_and_errors_do_not_render_tok
         for (_, call, r) in observed.iter().filter(|(v, _, _)| *v == realm) {
             match r {
                 Err(KeycloakError::Auth { oauth_error, .. }) if oauth_error.as_deref() == want => {}
-                Err(KeycloakError::Admin(_)) => {} // admin 경로는 상태코드만 싣는다(map_admin).
+                Err(KeycloakError::Admin(_)) => {} // admin 경로는 상태코드만 싣는다(`AdminClient::send`).
                 other => codes.push(format!(
                     "{realm} | {call}: 기대 oauth_error={want:?}, 실제 {other:?}"
                 )),

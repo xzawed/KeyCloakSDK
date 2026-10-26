@@ -481,6 +481,10 @@ async fn an_error_body_is_drained_up_to_the_cap() {
         let first = a.get_user("u1").await.map(drop);
         let ms = start.elapsed().as_millis();
         let peak = PEAK.load(Relaxed).saturating_sub(base);
+        // ⚠️ 끝까지 읽은 HTTP/1 연결은 풀로 **비동기로** 돌아간다 — hyper-util 0.1.20 은 그 일을 따로 띄운 `on_idle`
+        // 작업에 맡기고 본문 EOF 를 늦추지 않는다(`client/legacy/client.rs`). 곧장 다음 요청을 내면 그 작업보다 먼저
+        // 풀을 봐 새 연결을 맺는다 — CI(리눅스 · 1.88) 에서 「정확히 상한」 행이 한 번 연결 둘이었다(2026-10-27).
+        tokio::time::sleep(Duration::from_millis(200)).await;
         let second = a.get_user("u2").await.map(drop);
         let conns = server.conns.load(Relaxed);
         note(format!(
