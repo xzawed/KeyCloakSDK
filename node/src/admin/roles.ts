@@ -16,8 +16,9 @@ export class RolesResource {
     private readonly realm: string,
   ) {}
 
-  /** 역할을 만든다. 응답의 `Location` 은 admin-client 처럼 요구하되 돌려주지 않는다. */
   async create(representation: RoleRepresentation): Promise<void> {
+    // 응답의 `Location` 은 admin-client 처럼 요구하되 돌려주지 않는다. (문서 주석이 아닌 것은 의도다 — api-extractor
+    // 보고서의 `(undocumented)` 줄이 사라지면 공개 API 가드가 그것을 기준선에서 사라진 줄로 센다.)
     await call(() =>
       create(
         this.http,

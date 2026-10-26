@@ -82,6 +82,8 @@ interface Server {
   readonly seen: Seen[]
   /** 받은 연결 수. */
   conns(): number
+  /** 요청마다 그 요청이 온 연결의 번호(1 부터, 받은 순서). */
+  connOf(): readonly number[]
   /** 첫 응답의 본문 바이트 중 소켓이 받아 간 양. */
   wrote(): number
   /** 첫 연결이 닫혔는가. */
@@ -149,6 +151,7 @@ async function serve(
   const route =
     typeof first === 'function' ? first : (_req: Seen, n: number): Reply => (n === 0 ? first : then)
   const seen: Seen[] = []
+  const reqConn: number[] = []
   const sockets = new Set<Socket>()
   let conns = 0
   let served = 0
@@ -181,6 +184,7 @@ async function serve(
       }
       buf = buf.subarray(end + 4 + length)
       seen.push(req)
+      reqConn.push(index)
       const n = served++
       busy = true
       void respond(s, route(req, n), n === 0 ? (k) => void (wrote += k) : () => undefined).then(
@@ -201,6 +205,7 @@ async function serve(
     url: `http://127.0.0.1:${port}`,
     seen,
     conns: () => conns,
+    connOf: () => reqConn,
     wrote: () => wrote,
     firstClosed: () => firstClosed,
     close: () =>
@@ -331,53 +336,61 @@ describe('admin 파사드의 응답 본문 — 등록부 admin-response-body-unb
 
   /**
    * 오류 본문은 상한까지는 **비운다** — 그래야 HTTP/1.1 연결을 다음 요청이 다시 쓴다. 정확히 상한(1,048,576 바이트)이면
-   * 두 호출이 연결 하나를 쓰고, 한 바이트 넘으면 둘을 쓴다 — 알린 길이면 읽지 않고, 청크면 상한을 넘는 순간 버린다.
-   * 「읽지 않고 버린다」만으로 바꾸면 「연결 하나」 행들이 깨진다. 비우기는 상태와 무관하다(409 · 302 행).
+   * 둘째 요청이 첫 요청의 연결로 오고, 한 바이트 넘으면 새 연결로 온다 — 알린 길이면 읽지 않고, 청크면 상한을 넘는 순간
+   * 버린다. 「읽지 않고 버린다」만으로 바꾸면 「같은 연결」 행들이 깨진다. 비우기는 상태와 무관하다(409 · 302 행).
    *
-   * 「끝을 늦춘」 행은 종결 청크를 2 s 늦춘다 — 정확히 상한인 본문은 끝까지 기다려 비우고(연결 하나 · 2 s), 한 바이트
-   * 넘는 본문은 기다리지 않는다(연결 둘 · 곧바로).
+   * ⚠️ 연결 **총수**로 재지 않는다 — undici 는 끊은 연결 뒤에 빈 연결을 하나 미리 열고, undici 6(Node 22)은 그것을 둘째
+   * 요청에 쓰지만 7(Node 24)은 곧바로 닫아 둘째 요청이 또 하나를 연다(총수 2 · 3). 그래서 둘째 요청이 **어느 연결로**
+   * 왔는지를 본다.
+   *
+   * 「끝을 늦춘」 행은 종결 청크를 2 s 늦춘다 — 정확히 상한인 본문은 끝까지 기다려 비우고(같은 연결 · 2 s), 한 바이트
+   * 넘는 본문은 기다리지 않는다(새 연결 · 곧바로).
    */
-  it('오류 본문은 상한까지 비워 연결을 다시 쓴다 — 정확히 상한이면 연결 하나, 한 바이트 넘으면 둘', async () => {
+  it('오류 본문은 상한까지 비워 연결을 다시 쓴다 — 정확히 상한이면 둘째 요청이 같은 연결로, 한 바이트 넘으면 새 연결로', async () => {
     const lateEnd = 2000
-    const rows: ReadonlyArray<readonly [string, Reply, number, number | undefined]> = [
-      ['정확히 상한 · Content-Length', { status: 404, body: CAP }, 1, undefined],
-      ['정확히 상한 · Content-Length · 409', { status: 409, body: CAP }, 1, undefined],
-      ['정확히 상한 · Content-Length · 302', { status: 302, body: CAP }, 1, undefined],
-      ['정확히 상한 · 청크', { status: 404, body: CAP, chunked: true }, 1, undefined],
+    const rows: ReadonlyArray<readonly [string, Reply, boolean, number | undefined]> = [
+      ['정확히 상한 · Content-Length', { status: 404, body: CAP }, true, undefined],
+      ['정확히 상한 · Content-Length · 409', { status: 409, body: CAP }, true, undefined],
+      ['정확히 상한 · Content-Length · 302', { status: 302, body: CAP }, true, undefined],
+      ['정확히 상한 · 청크', { status: 404, body: CAP, chunked: true }, true, undefined],
       [
         '정확히 상한 · 청크, 끝을 늦춘다',
         { status: 404, body: CAP, chunked: true, holdMs: lateEnd },
-        1,
+        true,
         lateEnd - 200,
       ],
-      ['한 바이트 넘는다 · Content-Length', { status: 404, body: CAP + 1 }, 2, undefined],
+      ['한 바이트 넘는다 · Content-Length', { status: 404, body: CAP + 1 }, false, undefined],
       [
         '한 바이트 넘는다 · 청크, 끝을 늦춘다',
         { status: 404, body: CAP + 1, chunked: true, holdMs: lateEnd },
-        2,
+        false,
         undefined,
       ],
     ]
     const wrong: string[] = []
-    for (const [row, reply, wantConns, waitsMs] of rows) {
+    for (const [row, reply, wantReuse, waitsMs] of rows) {
       const srv = await serve(reply)
       const a = await adminAt(srv.url)
       const { got: first, ms } = await timed(() => a.users.get('u1'))
       // 끝까지 읽은 연결이 풀로 돌아갈 틈을 준다 — 곧장 다음 요청을 내면 새 연결을 맺을 수 있다.
       await sleep(200)
       const { got: second } = await timed(() => a.users.get('u2'))
+      const [c1, c2] = srv.connOf()
+      const reused = c1 !== undefined && c1 === c2
       const conns = srv.conns()
       await srv.close()
-      note(`[drain] ${row}: ${first} in ${ms} ms / ${second} · ${conns} connection(s)`)
+      note(
+        `[drain] ${row}: ${first} in ${ms} ms / ${second} · ${reused ? 'same' : 'new'} connection · ${conns} connection(s)`,
+      )
       const timingOk = waitsMs !== undefined ? ms >= waitsMs : ms < 1000
       if (
         first !== classOf(reply.status) ||
         second !== 'NotFound' ||
-        conns !== wantConns ||
+        reused !== wantReuse ||
         !timingOk
       )
         wrong.push(
-          `${row}: ${first} in ${ms} ms / ${second} · ${conns} connection(s), want ${classOf(reply.status)} · ${wantConns}`,
+          `${row}: ${first} in ${ms} ms / ${second} · requests on connections ${c1}→${c2}, want ${classOf(reply.status)} · ${wantReuse ? 'same' : 'new'}`,
         )
     }
     expect(wrong, wrong.join('\n')).toEqual([])
@@ -537,9 +550,10 @@ describe('admin 파사드의 응답 본문 — 등록부 admin-response-body-unb
     await a.users.update('u1', {})
     await sleep(200)
     await a.users.delete('u1')
-    const conns = srv.conns()
+    const connOf = [...srv.connOf()]
     await srv.close()
-    expect({ id, conns }).toEqual({ id: 'abc-1', conns: 1 })
+    // 세 요청이 한 연결로 왔는가 — 연결 총수가 아니라(비우기 시험의 ⚠️) 요청이 온 연결을 본다.
+    expect({ id, connOf }).toEqual({ id: 'abc-1', connOf: [1, 1, 1] })
   })
 
   /**
