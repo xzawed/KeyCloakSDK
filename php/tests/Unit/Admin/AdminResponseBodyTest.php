@@ -390,6 +390,22 @@ final class AdminResponseBodyTest extends TestCase
     }
 
     /**
+     * 틀이 없는 2xx(닫힘으로 끝나는 본문)가 본문 바이트 없이 멈추면 끊을 자리가 없다 — 고치기 전처럼 읽기 타임아웃 끝에 전송
+     * 오류다. 이 미들웨어는 **스스로** 끊은 전송만 되살린다(클래스 docblock — Grok 레그 1 의 205·200 무 Content-Length 칸).
+     */
+    public function testAnUnframedWriteResponseThatNeverEndsStaysATransportError(): void
+    {
+        $path = self::BASE . '/users/u1';
+        self::route(["PUT $path" => ['status' => 200, 'length' => false, 'stall' => 0]]);
+        $admin = new AdminClient(self::config(1.0));
+
+        [$result, $ms] = self::timed(static fn () => $admin->users()->update('u1', new User(username: 'u')));
+
+        self::note(sprintf('[curl] update 200 (no framing) stalled before its body: %d ms · %s', $ms, self::describe($result)));
+        self::assertInstanceOf(KeycloakTransportError::class, $result, self::describe($result));
+    }
+
+    /**
      * 1 MiB 이상인 요청 본문에는 Guzzle 이 `Expect: 100-Continue` 를 단다 — curl 은 그 중간 응답에도 `on_headers` 를 부른다. 그것을
      * 최종 응답으로 보면 요청 본문을 보내기도 전에 끝내고 쓰기가 성공한 듯 돌아온다. 서버가 본문을 다 받아야 한다. 스트림 처리기는
      * `Expect` 를 떼고 보내므로(`StreamHandler::__invoke`) 그 칸은 큰 본문이 그대로 가는지만 잰다.
