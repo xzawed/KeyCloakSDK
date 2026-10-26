@@ -189,10 +189,12 @@ for (;;) {
     $tunneled = false;
     if ($method === 'CONNECT') {
         // 프록시 노릇 — 터널을 열었다고 답하고 같은 연결에서 터널 너머 요청을 이 서버가 받는다. 경로 "CONNECT" 의 명세
-        // {"close": true} 면 터널 너머 요청을 받지 않고 닫는다(원서버에 닿지 못한 터널).
-        fwrite($conn, "HTTP/1.1 200 Connection established\r\n\r\n");
+        // {"close": true} 면 터널 너머 요청을 받지 않고 닫는다(원서버에 닿지 못한 터널). {"headers": "…\r\n"} 는 그 200 에 머리 줄을
+        // 더한다 — 규격(RFC 9110 §9.3.6)을 어기고 틀(Content-Length · Transfer-Encoding)을 다는 프록시.
         $tunnel = $routes['CONNECT'] ?? null;
-        $request = is_array($tunnel) && ($tunnel['close'] ?? false) === true ? null : arb_read_request($conn);
+        $tunnel = is_array($tunnel) ? $tunnel : [];
+        fwrite($conn, "HTTP/1.1 200 Connection established\r\n" . (is_string($tunnel['headers'] ?? null) ? $tunnel['headers'] : '') . "\r\n");
+        $request = ($tunnel['close'] ?? false) === true ? null : arb_read_request($conn);
         if ($request === null) {
             @fclose($conn);
             $record = ['method' => 'CONNECT', 'path' => $path, 'nonce' => is_string($state['nonce'] ?? null) ? $state['nonce'] : '', 'conn' => $id];

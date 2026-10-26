@@ -351,6 +351,7 @@ final class AdminResponseBodyTest extends TestCase
 
         self::note(sprintf('[%s] %s stalled: %d ms · %s', $transport, $name, $ms, self::describe($result)));
         self::assertNotInstanceOf(\Throwable::class, $result, "$name: " . self::describe($result));
+        self::assertLessThan(2000, $ms, "$name: {$ms} ms — 멈춘 본문을 기다렸다");
     }
 
     /**
@@ -489,14 +490,18 @@ final class AdminResponseBodyTest extends TestCase
      * 프록시 터널(https 대상에 `HTTPS_PROXY` 면 curl 이 CONNECT 한다) — curl 은 프록시의 `200 Connection established` 에도
      * `on_headers` 를 부른다. 그것을 쓰기의 2xx 로 보고 끊으면 요청은 서버에 닿지 않은 채 성공으로 돌아온다(실측: 고치기 전 판이
      * 그랬다). 평문으로 재려고 미들웨어를 직접 단 Guzzle 클라이언트에 `CURLOPT_HTTPPROXYTUNNEL` 로 터널을 강제한다(가짜 서버가
-     * 프록시 노릇도 한다). 원서버에 닿지 못한 터널은 성공이 아니라 전송 오류다.
+     * 프록시 노릇도 한다). 원서버에 닿지 못한 터널은 성공이 아니라 전송 오류다. 규격(RFC 9110 §9.3.6)을 어겨 그 200 에 틀을 다는
+     * 프록시도 있다 — 틀로는 가를 수 없으니 CONNECT 의 머리는 curl 이 넘기지 않게 한다(Grok 레그 2 지목).
      *
-     * @return array<string, array{array<string, mixed>, int|null}> [PUT 의 명세(`tunnel` = 터널을 닫는다), 돌려받을 상태(null = 예외)]
+     * @return array<string, array{array<string, mixed>, int|null}> [PUT 의 명세(`tunnel` = 터널을 닫는다 · `connect` = 프록시의 200 에
+     *     더할 머리 줄), 돌려받을 상태(null = 예외)]
      */
     public static function tunnelRows(): array
     {
         return [
             '204 No Content' => [['status' => 204], 204],
+            '204 behind a CONNECT 200 with Content-Length' => [['status' => 204, 'connect' => "Content-Length: 10\r\n"], 204],
+            '204 behind a chunked CONNECT 200' => [['status' => 204, 'connect' => "Transfer-Encoding: chunked\r\n"], 204],
             '201 Content-Length: 0' => [['status' => 201], 201],
             '200 + 64 MiB (Content-Length)' => [['status' => 200, 'head' => '{}', 'pad' => self::HUGE - 2], 200],
             '200 + 64 MiB (close-delimited)' => [['status' => 200, 'head' => '{}', 'pad' => self::HUGE - 2, 'length' => false], 200],
@@ -510,7 +515,7 @@ final class AdminResponseBodyTest extends TestCase
     public function testAWriteThroughAProxyTunnelReachesTheServer(array $put, ?int $want): void
     {
         $path = self::BASE . '/users/u1';
-        self::route(isset($put['tunnel']) ? ['CONNECT' => ['close' => true]] : ["PUT $path" => $put]);
+        self::route(isset($put['tunnel']) ? ['CONNECT' => ['close' => true]] : ["PUT $path" => $put, 'CONNECT' => ['headers' => $put['connect'] ?? '']]);
         $this->useTransport('curl');
         $stack = HandlerStack::create();
         $stack->push(AdminResponseBody::middleware(static fn (): bool => false), 'admin_response_body');
@@ -617,7 +622,10 @@ final class AdminResponseBodyTest extends TestCase
         self::assertLessThan(self::HUGE, $sent, "서버가 $sent 바이트를 다 썼다 — 3xx 본문을 끝까지 읽었다");
     }
 
-    /** 상한을 넘긴 뒤 멈춘 오류 본문 — 나머지를 기다리지 않고 그 상태로 끝난다. */
+    /**
+     * 상한을 넘긴 뒤 멈춘 오류 본문 — 나머지를 기다리지 않고 그 상태로 끝난다. 클래스만으로는 모자란다: 읽기 타임아웃 끝에도 상태로
+     * 고른 같은 클래스가 나온다(psr7 2.11 아래의 스트림 처리기 실측 4,045–4,065 ms) — 그래서 시간을 함께 본다.
+     */
     #[DataProvider('errorCallRows')]
     public function testAnErrorBodyPastTheCapThatStallsEndsWithoutWaiting(string $name, string $transport): void
     {
@@ -630,6 +638,7 @@ final class AdminResponseBodyTest extends TestCase
 
         self::note(sprintf('[%s] %s past the cap, stalled: %d ms · %s', $transport, $name, $ms, self::describe($result)));
         self::assertInstanceOf(KeycloakNotFoundError::class, $result, self::describe($result));
+        self::assertLessThan(2000, $ms, "$name: 상한을 넘은 뒤에도 {$ms} ms 를 기다렸다 — 읽기 타임아웃까지 붙들렸다");
     }
 
     /**

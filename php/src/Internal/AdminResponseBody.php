@@ -27,7 +27,11 @@ use Psr\Http\Message\StreamInterface;
  * ⚠️ curl 은 최종 응답이 아닌 머리에도 `on_headers` 를 부른다 — 중간 응답(`100 Continue` — Guzzle 은 1 MiB 이상인 요청 본문에
  * `Expect` 를 단다)과 프록시 터널의 `200 Connection established`(https 대상에 `HTTPS_PROXY`). 그것을 쓰기의 응답으로 보고 끊으면
  * 요청은 서버에 닿지 않은 채 성공으로 돌아온다(실측 — 둘 다 고치기 전 판이 그랬다). 그래서 1xx 는 건너뛰고(규격을 어겨 틀을 단
- * 것도), 틀(`framed`)이 없는 2xx 는 머리에서 끊지 않는다 — 터널의 2xx 는 본문 없이 다음 머리(원서버의 응답)로 넘어간다.
+ * 것도), CONNECT 의 머리는 curl 이 넘기지 않게 한다(`CURLOPT_SUPPRESS_CONNECT_HEADERS`) — 규격(RFC 9110 §9.3.6)을 어기고 그 200 에
+ * 틀을 다는 프록시가 있어 틀로는 가를 수 없다(Grok 레그 2 지목 — 그 앞의 판은 터널 너머 PUT 을 보내지도 않고 200 을 성공으로
+ * 돌려줬다). 스트림 처리기에서는 PHP 의 http 래퍼가 CONNECT 의 머리를 읽고 버린다(php-src `ext/standard/http_fopen_wrapper.c`).
+ * 틀(`framed`)이 없는 2xx 는 머리에서 끊지 않는다 —
+ * 본문 바이트가 오면 첫 바이트에서 끊는다(그래서 틀이 없는 204 는 연결을 잃지 않는다).
  * ⚠️ 본문이 없는 2xx(Keycloak 의 쓰기 응답 — 틀이 없는 204 · `Content-Length: 0` 인 201)는 머리에서 끊지 않는다 — 끊을 것이
  * 없고, 끊으면 curl 이 다음 요청에 쓸 연결만 잃는다.
  * ⚠️ 싱크에서 예외를 던지지 않는다 — curl 은 그 예외에도 본문을 끝까지 받았다(실측). 스트림 처리기가 싱크의 짧은 쓰기(상한 · 첫
@@ -49,6 +53,10 @@ final class AdminResponseBody
         return static fn (callable $handler): \Closure => static function (RequestInterface $request, array $options) use ($handler, $isTokenRequest): PromiseInterface {
             if ($isTokenRequest($request)) {
                 return self::promise($handler($request, $options));
+            }
+            if (\defined('CURLOPT_SUPPRESS_CONNECT_HEADERS')) {   // ext-curl 이 없으면 스트림 처리기 — CONNECT 머리를 넘기지 않는다
+                $curl = \is_array($options['curl'] ?? null) ? $options['curl'] : [];
+                $options['curl'] = $curl + [\CURLOPT_SUPPRESS_CONNECT_HEADERS => true];   // 프록시 CONNECT 의 머리 — 클래스 docblock
             }
             $head = null;     // 최종 응답의 머리
             $error = false;   // 300 이상 — 본문을 상한에서 자른다
@@ -112,8 +120,8 @@ final class AdminResponseBody
     }
 
     /**
-     * 본문의 틀을 머리가 알리는 응답 — 원서버의 응답이다. 프록시가 CONNECT 에 주는 2xx 는 Content-Length 도 Transfer-Encoding 도
-     * 달 수 없다(RFC 9110 §9.3.6). Guzzle 은 압축을 풀 때 Content-Length 를 `X-Encoded-Content-Length` 로 옮긴다.
+     * 본문의 틀을 머리가 알리는 응답 — 본문이 온다고 알렸으니 머리에서 끊는다. 규격대로인 204 에는 틀이 없다(RFC 9110 §8.6 —
+     * Keycloak 26.6 의 쓰기 204 도 그렇다). Guzzle 은 압축을 풀 때 Content-Length 를 `X-Encoded-Content-Length` 로 옮긴다.
      * ⚠️ PHP 의 http 래퍼(스트림 처리기)는 청크를 풀며 `Transfer-Encoding` 을 머리에 남기지 않는다 — 그 응답은 여기서 틀이 없다고
      * 보여 첫 본문 바이트에서 끊는다(`AdminResponseBodyTest::headStallRows`).
      */
