@@ -506,6 +506,24 @@ describe('admin 파사드의 응답 본문 — 등록부 admin-response-body-unb
     expect(wrong, wrong.join('\n')).toEqual([])
   }, 60_000)
 
+  /** 성공 본문에는 상한을 걸지 않는다(정책 — 목록은 정당하게 크다) — 상한의 두 배가 넘는 목록도 다 읽는다. */
+  it('성공 본문은 상한 없이 읽는다', async () => {
+    const users = Array.from({ length: 100_000 }, (_, i) => ({
+      id: `u-${i}`,
+      username: `user-${i}`,
+    }))
+    const body = Buffer.from(JSON.stringify(users))
+    const srv = await serve({ status: 200, body })
+    const a = await adminAt(srv.url)
+    const got = await a.users.search()
+    await srv.close()
+    expect({ bytes: body.length > 2 * CAP, got: got.length, last: got.at(-1) }).toEqual({
+      bytes: true,
+      got: users.length,
+      last: users.at(-1),
+    })
+  })
+
   /** 본문 없는 2xx(Keycloak 26.6 의 쓰기 응답 — `Content-Length: 0` 인 201 · 204)는 끊지 않아 연결을 다시 쓴다. */
   it('본문 없는 2xx 쓰기는 연결을 다시 쓴다', async () => {
     const srv = await serve((_req, n) =>
@@ -664,6 +682,13 @@ const PAIRS: ReadonlyArray<readonly [string, readonly string[], Facade, Twin]> =
     NO_ARG,
     (a) => a.users.search(),
     (kc, realm) => call(() => kc.users.find({ realm, username: undefined, first: 0, max: 100 })),
+  ],
+  [
+    'users.search(null) — JS',
+    NO_ARG,
+    (a) => a.users.search(null as never),
+    (kc, realm) =>
+      call(() => kc.users.find({ realm, username: null as never, first: 0, max: 100 })),
   ],
   [
     'users.update',
@@ -924,6 +949,8 @@ const success: Script = (req, origin) =>
 const SCRIPTS: ReadonlyArray<readonly [string, Script]> = [
   ['성공', success],
   ['409 errorMessage', () => json(409, { errorMessage: 'User exists with same username' })],
+  // 메시지는 errorMessage 가, 원인의 메시지는 error 가 먼저다 — 둘 다 문자열일 때만 갈린다.
+  ['409 둘 다', () => json(409, { errorMessage: 'first', error: 'second' })],
   ['403 error', () => json(403, { error: 'unknown_error' })],
   ['404 error', () => json(404, { error: 'Could not find user' })],
   ['500 평문', () => text(500, 'boom (not json)')],
@@ -945,6 +972,8 @@ const SCRIPTS: ReadonlyArray<readonly [string, Script]> = [
   ['201 Location 없음', () => ({ status: 201 })],
   ['204 본문 없음', () => ({ status: 204 })],
   ['304 본문 없음', () => ({ status: 304 })],
+  // 본문이 없는 상태도 길이를 알릴 수 있다 — 상한보다 길다고 알려도 취소할 본문이 없다.
+  ['304 + 알린 2 MB', () => ({ status: 304, headers: ['Content-Length: 2000000'] })],
 ]
 
 /** 결과 하나 — 값이면 그 JSON, 오류면 클래스 · 메시지 · 원인(이름 · 메시지). */
@@ -965,7 +994,7 @@ const wire = (r: Seen): string => `${r.method} ${r.target}\n${r.head.join('\n')}
 
 describe('파사드 ↔ admin-client 동등성', () => {
   /**
-   * 파사드 호출(다섯 리소스 × 다섯 + 생성 payload 의 `realm` 키 · 기본 인자 둘 · 타입이 막는 JS 값 일곱)을 그 쌍둥이와
+   * 파사드 호출(다섯 리소스 × 다섯 + 생성 payload 의 `realm` 키 · 기본 인자 둘 · 타입이 막는 JS 값 null·undefined)을 그 쌍둥이와
    * 같은 서버에 보내 와이어와 결과를 대조한다. 경로 인자 여섯은 성공 대본에서만 돌리고(인코딩은 대본과 무관하다), 나머지
    * 대본은 모든 바이트 인자로 돈다. 서버 주소에 `/auth` 를 붙이고 realm 도 모든 바이트다.
    */

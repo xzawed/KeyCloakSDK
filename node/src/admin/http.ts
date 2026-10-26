@@ -112,6 +112,7 @@ function parse(text: string): unknown {
  */
 async function errorBody(res: Response): Promise<unknown> {
   const body = res.body
+  // 본문이 없는 상태(304)도 `Content-Length` 를 달 수 있다 — 그 길이로 취소하러 가지 않는다.
   if (body === null) return ''
   const declared = res.headers.get('content-length')
   if (declared !== null && Number(declared) > TOKEN_RESPONSE_MAX_BYTES) {
@@ -157,7 +158,6 @@ async function discard(res: Response): Promise<void> {
 
 /** 2xx 본문 — admin-client 처럼 끝까지 읽어 해석한다(본문이 없으면 `''`). 상한은 걸지 않는다 — 목록은 정당하게 크다. */
 async function successBody(res: Response): Promise<unknown> {
-  if (res.body === null) return ''
   return parse(await res.text())
 }
 
