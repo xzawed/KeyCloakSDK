@@ -66,20 +66,25 @@ fi
 # 하지 않는가"**를 본다.
 T5="$(mktemp -d)"
 trap 'rm -rf "$TMP" "$T5"' EXIT
+# ⚠️ 판정은 **go 줄**에서 하고 표식은 실제 도구 판과 겹치지 않는 값(97.531)이다. 출력 전체에서 「9.9」를 찾던
+# 판은 docker 29.9.2 인 PC 에서 음성 단언이 거짓 실패하고 양성 대조군이 go 판 없이도 통과했다(실측 2026-10-27 —
+# 출력의 [공통] 칸이 이 PC 의 실제 도구 판을 찍는다).
+go_line() { printf '%s\n' "$1" | grep -E '^[[:space:]]+go[[:space:]]' | head -1; }
 
 # (b) 버전이 박힌 디렉터리 안의 실행 불가 파일 — 후보로는 잡히나 실행은 실패한다.
-mkdir -p "$T5/tools/bogus-9.9"
-: > "$T5/tools/bogus-9.9/go"
+mkdir -p "$T5/tools/bogus-97.531"
+: > "$T5/tools/bogus-97.531/go"
 OUT5="$(KCSDK_TOOLS="$T5/tools" node "$DOC" go 2>&1 || true)"
-assert_not_contains "$OUT5" "9.9" '경로에 박힌 버전이 도구 버전으로 보고되면 안 된다'
+assert_contains "$(go_line "$OUT5")" "go" 'go 줄이 있어야 아래 음성 단언이 뜻을 갖는다'
+assert_not_contains "$(go_line "$OUT5")" "97.531" '경로에 박힌 버전이 도구 버전으로 보고되면 안 된다'
 
-# 대조군 — 위 단언이 "9.9 는 어차피 안 나온다"로 공허해지지 않았는지. 같은 이름이
+# 대조군 — 위 단언이 "97.531 은 어차피 안 나온다"로 공허해지지 않았는지. 같은 이름이
 # **실제로 출력한** 버전은 보고돼야 한다.
 mkdir -p "$T5/real/x"
-printf '%s\n' '#!/bin/sh' 'echo "go version go9.9.0"' > "$T5/real/x/go"
+printf '%s\n' '#!/bin/sh' 'echo "go version go97.531.0"' > "$T5/real/x/go"
 chmod +x "$T5/real/x/go"
 OUT5b="$(KCSDK_TOOLS="$T5/real" node "$DOC" go 2>&1 || true)"
-assert_contains "$OUT5b" "9.9" '규약 경로의 도구가 실제로 출력한 버전은 보고돼야 한다'
+assert_contains "$(go_line "$OUT5b")" "97.531" '규약 경로의 도구가 실제로 출력한 버전은 보고돼야 한다'
 
 # (a) 규약 디렉터리가 비었거나 없어도 PATH 폴백으로 진단은 계속된다(죽지 않는다).
 mkdir -p "$T5/empty"
@@ -96,17 +101,18 @@ assert_contains "$OUT5d" "node" '없는 규약 디렉터리는 조용히 무시�
 # 이 PC 에 무엇이 있는지 말한다」이므로, 후보를 부를 때 그 디렉터리를 PATH 앞에 둔다.
 mkdir -p "$T5/shim/xyz"
 printf '%s\n' '#!/bin/sh' 'exec sibling "$@"' > "$T5/shim/xyz/go"
-printf '%s\n' '#!/bin/sh' 'echo "go version go9.9.9"' > "$T5/shim/xyz/sibling"
+printf '%s\n' '#!/bin/sh' 'echo "go version go97.531.9"' > "$T5/shim/xyz/sibling"
 chmod +x "$T5/shim/xyz/go" "$T5/shim/xyz/sibling"
 OUT6="$(KCSDK_TOOLS="$T5/shim" node "$DOC" go 2>&1 || true)"
-assert_contains "$OUT6" "9.9.9" 'shim 이 형제를 맨 이름으로 불러도 잡혀야 한다(자기 디렉터리가 PATH 앞)'
+assert_contains "$(go_line "$OUT6")" "97.531.9" 'shim 이 형제를 맨 이름으로 불러도 잡혀야 한다(자기 디렉터리가 PATH 앞)'
 
 # 음성 대조 — 「shim 은 어차피 통과한다」로 공허해지지 않았는가. 형제가 **없으면** 잡히면 안 된다.
 mkdir -p "$T5/noshim/xyz"
 printf '%s\n' '#!/bin/sh' 'exec nothing-here "$@"' > "$T5/noshim/xyz/go"
 chmod +x "$T5/noshim/xyz/go"
 OUT6b="$(KCSDK_TOOLS="$T5/noshim" node "$DOC" go 2>&1 || true)"
-assert_not_contains "$OUT6b" "9.9.9" '형제가 없는 shim 이 버전을 보고하면 안 된다'
+assert_contains "$(go_line "$OUT6b")" "go" 'go 줄이 있어야 아래 음성 단언이 뜻을 갖는다'
+assert_not_contains "$(go_line "$OUT6b")" "97.531.9" '형제가 없는 shim 이 버전을 보고하면 안 된다'
 
 # ── 7. 요구를 **만족하는** 후보를 끝까지 찾는가 ─────────────────────────────
 # 실측된 결함(2026-09-22): `evaluate` 가 첫 성공에서 `break` 해서, JAVA_HOME 이 17 을
