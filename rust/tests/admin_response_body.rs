@@ -8,6 +8,7 @@
 //! - 머리 뒤에서 멈춘 오류 본문도 상태로 끝난다(`an_error_body_that_stalls_keeps_its_class`).
 //! - 상한까지는 비워 연결을 다시 쓴다 — 정확히 상한이면 연결 하나, 한 바이트 넘으면 둘(`an_error_body_is_drained_up_to_the_cap`).
 //! - 쓰기의 2xx 본문은 읽지 않는다(`a_write_does_not_read_its_2xx_body`).
+//! - ⚠️ `raw()` 는 crate 그대로 오류 본문을 끝까지 읽는다 — 남긴 자리다(`raw_still_reads_an_error_body_whole`).
 //! - 파사드가 crate 와 **같은 요청**을 보낸다 — `raw()` 의 crate 메서드가 기준(`the_facade_sends_what_the_crate_sends`).
 //!
 //! ⚠️ **할당은 이 프로세스 전체를 센다**(`#[global_allocator]`) — 이 바이너리의 시험은 `SERIAL` 로 하나씩 돈다. 가짜 서버는
@@ -19,7 +20,8 @@ use keycloak_sdk::types::{
     UserRepresentation,
 };
 use keycloak_sdk::{
-    AdminClient, AdminError, KeycloakConfig, KeycloakError, TokenProvider, reqwest,
+    AdminClient, AdminError, KeycloakConfig, KeycloakError, RawKeycloakError, TokenProvider,
+    reqwest,
 };
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::io::{Read, Write};
@@ -558,6 +560,25 @@ async fn a_write_does_not_read_its_2xx_body() {
         wrong.len(),
         wrong.join("\n")
     );
+}
+
+/// ⚠️ **남긴 자리** — `raw()` 는 crate 그대로라 오류 본문을 끝까지 읽어 `RawKeycloakError::HttpFailure` 의 `text` 에
+/// 싣는다. 상한(1 MiB)을 넘는 2 MiB 도 전부다. reqwest 0.12 에는 응답을 가로챌 자리가 없어, 막으려면 `raw()` 의 반환
+/// 타입을 바꿔야 한다. 이 시험이 깨지면 crate 의 동작이 바뀐 것이니 CHANGELOG 와 `src/admin.rs` 의 `raw()` 문서를 고친다.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn raw_still_reads_an_error_body_whole() {
+    let _serial = SERIAL.lock().await;
+    let server = serve(Reply::with(404, 2 * MIB), Reply::with(404, 0));
+    let a = admin(&server.url, Duration::from_secs(4));
+    let got = match a.raw().realm_users_with_user_id_get("r", "u1", None).await {
+        Err(RawKeycloakError::HttpFailure { status, text, .. }) => {
+            format!("HttpFailure {status} with {} text bytes", text.len())
+        }
+        Err(e) => format!("other error: {e}"),
+        Ok(_) => "Ok".to_string(),
+    };
+    note(format!("[raw] 404 + 2 MiB: {got}"));
+    assert_eq!(got, format!("HttpFailure 404 with {} text bytes", 2 * MIB));
 }
 
 // ── 파사드 ↔ crate 요청 동등성 ─────────────────────────────────────────────────────────────
