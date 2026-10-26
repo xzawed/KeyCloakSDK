@@ -407,26 +407,42 @@ async fn an_error_body_that_stalls_keeps_its_class() {
 
 /// 오류 본문은 상한까지는 **비운다** — 그래야 HTTP/1.1 연결을 다음 요청이 다시 쓴다. 정확히 상한(1,048,576 바이트)이면
 /// 두 호출이 연결 하나를 쓰고, 한 바이트 넘으면 둘을 쓴다 — 알린 길이면 읽지 않고, 청크면 상한을 넘는 순간 버린다.
-/// 「읽지 않고 버린다」만으로 바꾸면 위쪽 두 행이 깨진다 — 오류마다 연결을 새로 맺는다.
+/// 「읽지 않고 버린다」만으로 바꾸면 「연결 하나」 행들이 깨진다 — 오류마다 연결을 새로 맺는다.
 ///
-/// ⚠️ 청크 행은 종결 청크를 3 s 늦춘다. 늦추지 않으면 마지막 데이터와 종결이 한 번에 와서, 우리가 버리기 전에 hyper 가
-/// 메시지 끝까지 읽어 연결이 산다(실측 2026-10-27 — 상한 위반이 아니다). 늦추면 끝까지 기다리는 구현만 연결 하나로
-/// 3 s 를 쓴다.
+/// ⚠️ 「끝을 늦춘」 행은 종결 청크를 2 s 늦춘다. 늦추지 않으면 마지막 데이터와 종결이 한 번에 와서, 우리가 버리기 전에
+/// hyper 가 메시지 끝까지 읽어 연결이 산다(실측 2026-10-27 — 상한 위반이 아니다). 늦추면 경계가 갈린다 — 정확히 상한인
+/// 본문은 끝까지 기다려 비우고(연결 하나 · 2 s), 한 바이트 넘는 본문은 기다리지 않는다(연결 둘 · 곧바로).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_error_body_is_drained_up_to_the_cap() {
     let _serial = SERIAL.lock().await;
-    let late_end = Duration::from_secs(3);
+    let late_end = Duration::from_secs(2);
+    let waits = Some(late_end.as_millis() - 200);
     let rows = [
-        ("exactly the cap · Content-Length", Reply::with(404, CAP), 1),
+        (
+            "exactly the cap · Content-Length",
+            Reply::with(404, CAP),
+            1,
+            None,
+        ),
         (
             "exactly the cap · chunked",
             Reply::with(404, CAP).chunked(true),
             1,
+            None,
+        ),
+        (
+            "exactly the cap · chunked, end withheld",
+            Reply::with(404, CAP)
+                .chunked(true)
+                .stall_after(CAP, late_end),
+            1,
+            waits,
         ),
         (
             "one byte over · Content-Length",
             Reply::with(404, CAP + 1),
             2,
+            None,
         ),
         (
             "one byte over · chunked, end withheld",
@@ -434,10 +450,11 @@ async fn an_error_body_is_drained_up_to_the_cap() {
                 .chunked(true)
                 .stall_after(CAP + 1, late_end),
             2,
+            None,
         ),
     ];
     let mut wrong = Vec::new();
-    for (row, reply, want_conns) in rows {
+    for (row, reply, want_conns, waits_ms) in rows {
         let server = serve(reply, Reply::with(404, 2));
         let a = admin(&server.url, Duration::from_secs(4));
         let start = Instant::now();
@@ -450,10 +467,15 @@ async fn an_error_body_is_drained_up_to_the_cap() {
             class(&first),
             class(&second)
         ));
+        // 기다려야 하는 행은 끝을 기다렸는가, 나머지는 곧바로 끝났는가(1 s — 루프백 1 MiB 는 수 ms 다).
+        let timing_ok = match waits_ms {
+            Some(min) => ms >= min,
+            None => ms < 1000,
+        };
         if class(&first) != "NotFound"
             || class(&second) != "NotFound"
             || conns != want_conns
-            || ms >= 2000
+            || !timing_ok
         {
             wrong.push(format!(
                 "{row}: {} in {ms} ms / {} · {conns} connection(s), want {want_conns}",
