@@ -84,7 +84,7 @@ const FOREIGN_EXEMPT: &[(&str, &str)] = &[
     ),
     (
         "RawKeycloakError",
-        "§4(b) raw() 가 돌려주는 하위 오류 — SDK 경로는 map_admin 이 KeycloakError 로 바꾼다",
+        "§4(b) raw() 가 돌려주는 하위 오류 — SDK 파사드는 crate 를 거치지 않아 이 오류를 만나지 않는다",
     ),
     (
         "Jwk",

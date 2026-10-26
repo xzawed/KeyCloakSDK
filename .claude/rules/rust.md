@@ -5,7 +5,14 @@ paths:
   - "harness/install/consume/rust*"
   - ".github/workflows/rust-*.yml"
 ---
-<!-- doc-budget: max-bytes=9160 -->
+<!-- doc-budget: max-bytes=9302 -->
+<!--
+  9160 → 9302 (2026-10-27, +142B). 규약 (1) — 거짓 문장과의 교환 + 그것을 다시 재는 명령.
+  「admin 경계 변환은 `map_admin`」·「그 두 단계가 §4 은닉의 전부」는 파사드가 crate 생성 메서드를
+  부르지 않게 되며 거짓이 됐다(`map_admin` 은 지워졌다 — crate 의 `error_check` 가 오류 본문을 끝까지
+  읽기 때문). 같은 자리에 그 사실과 `cargo test --test admin_response_body`(파사드 요청을 `raw()` 의
+  같은 호출과 와이어로 대조)를 둔다 — `keycloak` 을 올릴 때 돌릴 명령이다.
+-->
 <!--
   8877 → 9160 (2026-09-22, +283B). 규약 (1) — 증가분이 **기계 집행**을 사 온다.
   §4(b) 의 「foreign 타입이 새 공개 시그니처에 들어오면 재노출을 늘려라」는 산문으로만
@@ -70,7 +77,7 @@ cd rust && cargo test --test integration_test -- --ignored    # integration E2E.
 ## SDK structure
 
 - ⚠️ **admin uses the caching `ClientCredentialsTokenProvider` — not a directly injected, uncached `AuthClient`.** Injecting it directly re-issues a token on every admin call and breaks the §4 cache and single-flight invariants. The shared `http` is reused, but the provider instance is separate.
-- **The admin boundary conversion is `map_admin`** — this is where `keycloak::KeycloakError` becomes an SDK type. `AuthClient` implements `TokenProvider` and `SdkTokenSupplier` adapts that to the crate's `KeycloakTokenSupplier`. **Those two steps are the whole of §4's hiding, so skipping either one leaks a foreign type.**
+- ⚠️ **The admin facade sends its own requests, not the crate's generated methods** — those read every non-2xx body whole (`error_check`). It borrows only `keycloak::types`; `send`/`reject` classify by status (error bodies drained to the 1 MiB cap, never kept), reqwest errors become `Transport`. `raw()` is still the crate and still reads them whole. On a `keycloak` bump, `cargo test --test admin_response_body` diffs each facade request against its `raw()` twin.
 - **The facade is flat** (`update_role(name, rep)`, not the `roles().update(…)` of the other eight), exposing all 25 of the five resources × five operations.
 - ⚠️ **`list_*`'s `max` is not an `Option`** — same reason as `search_users` above. `list_realms()` is the one exception: `GET /admin/realms` has no pagination parameters.
-- ⚠️ **`update_*` passes the path and the body separately.** `realm_put(realm, body)`, `realm_roles_with_role_name_put(realm, role_name, body)` and friends take the two apart, so rename is native. Build the path out of the representation and rename becomes a silent no-op (gocloak does that, which is why the Go `realms.Update` routes around it with raw REST). A unit test sets the body name **differently** from the path so wiremock catches such a merge as a 404.
+- ⚠️ **`update_*` passes the path and the body separately** — the path from the name/id argument, the body from the representation (as the crate's `realm_put(realm, body)` does), so rename is native. Build the path out of the representation and rename becomes a silent no-op (gocloak does that, which is why the Go `realms.Update` routes around it with raw REST). A unit test sets the body name **differently** from the path so wiremock catches such a merge as a 404.

@@ -680,8 +680,8 @@ async fn jwks_body_of_51201_bytes_fails() {
 /// admin REST 응답에는 상한이 **없다** — 토큰 상한은 토큰·introspection 응답에만 건다. 모든 토큰 레인이 거부하는
 /// 1,048,577 바이트도, 16 MiB 도 `list_realms` 는 끝까지 읽는다(토큰은 정상 크기). 두 프레이밍 다.
 ///
-/// ⚠️ 그 본문은 `keycloak` crate 가 읽는다(`error_check(..).json()`) — crate 를 올리다 크기 한도가 생기거나 SDK 가
-/// admin 응답을 토큰 상한으로 읽게 바뀌면 여기서 깨진다.
+/// ⚠️ 그 본문은 파사드가 읽는다(`src/admin.rs` 의 `fetch` — `json()`) — 성공 본문에 크기 한도가 생기거나 SDK 가
+/// admin 응답을 토큰 상한으로 읽게 바뀌면 여기서 깨진다. 오류 본문의 상한은 `tests/admin_response_body.rs` 가 잰다.
 #[tokio::test]
 async fn admin_rest_response_is_not_capped() {
     let _serial = SERIAL.lock().await;
