@@ -583,10 +583,12 @@ final class AdminResponseBodyTest extends TestCase
      * 머리에서 끊는 것은 프록시가 끼어들 수 없을 때뿐이다(`AdminResponseBody::mayUseProxy`) — 이 요청에 쓰이지 않을 프록시(다른
      * 스킴의 옵션 · 환경변수)도 끼어들 수 있다고 본다. 그때 본문 바이트 없이 멈춘 틀 있는 201 은 고치기 전처럼 읽기 타임아웃 끝에
      * 전송 오류다. `no` 목록만 있는 `proxy` 옵션(Guzzle `Client` 가 `NO_PROXY` 를 옮긴 것)은 프록시가 아니다 — 머리에서 끊는다.
-     * 환경변수 행은 Linux 에서는 그 갈래를 재고, Windows 에서는(대소문자를 가리지 않아 Guzzle 이 `HTTPS_PROXY` 로 읽어 옵션에
-     * 옮긴다) 옵션 갈래를 잰다.
+     * `https_proxy` 행은 Linux 에서는 환경변수 갈래를 재고, Windows 에서는(대소문자를 가리지 않아 Guzzle `Client` 가 `HTTPS_PROXY` 로
+     * 읽어 옵션에 옮긴다) 옵션 갈래를 잰다. `all_proxy` 는 `Client` 가 옮기지 않는다 — 두 OS 다 환경변수 갈래만 본다. 그 요청은
+     * 실제로 그 프록시(가짜 서버 — 절대형 대상을 받는다)를 지난다.
      *
-     * @return array<string, array{array<string, mixed>, array<string, string>, bool}> [요청 옵션 `proxy`, 환경변수, 머리에서 끊는가]
+     * @return array<string, array{array<string, mixed>, array<string, string>, bool}> [요청 옵션 `proxy`, 환경변수(`FIXTURE` = 가짜
+     *     서버), 머리에서 끊는가]
      */
     public static function proxyRows(): array
     {
@@ -595,6 +597,7 @@ final class AdminResponseBodyTest extends TestCase
             'proxy option with only a no-list' => [['no' => ['127.0.0.1']], [], true],
             'proxy option for https only' => [['https' => 'http://127.0.0.1:9'], [], false],
             'https_proxy in the environment' => [[], ['https_proxy' => 'http://127.0.0.1:9'], false],
+            'all_proxy in the environment (the request goes through it)' => [[], ['all_proxy' => 'FIXTURE'], false],
         ];
     }
 
@@ -608,7 +611,7 @@ final class AdminResponseBodyTest extends TestCase
         $path = self::BASE . '/users/u1';
         self::route(["PUT $path" => ['status' => 201, 'head' => '{"id":"x"}', 'pad' => self::CAP, 'stall' => 0]]);
         foreach ($env as $name => $value) {
-            putenv("$name=$value");   // tearDown 이 되돌린다
+            putenv($name . '=' . ($value === 'FIXTURE' ? 'http://127.0.0.1:' . self::$port : $value));   // tearDown 이 되돌린다
         }
         $this->useTransport('curl');
         $stack = HandlerStack::create();

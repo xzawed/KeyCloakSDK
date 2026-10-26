@@ -134,8 +134,8 @@ final class AdminResponseBody
             return true;
         }
         if (\is_array($proxy)) {
-            foreach ($proxy as $scheme => $url) {
-                if ($scheme !== 'no' && \is_string($url) && $url !== '') {
+            foreach ($proxy as $url) {   // 스킴별 프록시 URL — `no` 는 호스트 배열이라 여기서 걸러진다
+                if (\is_string($url) && $url !== '') {
                     return true;
                 }
             }
