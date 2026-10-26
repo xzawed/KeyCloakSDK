@@ -232,7 +232,9 @@ jobs:
       # RUSTSEC-2023-0071(rsa "Marvin" 타이밍 사이드채널)은 dev-dependency rsa(테스트 키 생성
       # 전용)에 대한 것으로, 런타임(jsonwebtoken 공개키 서명검증만)에 영향 경로가 없다 —
       # 문서화된 예외로 무시한다(게차 참조). rust-ci.yml의 audit 잡과 같은 예외여야 한다.
-      - run: cargo audit --ignore RUSTSEC-2023-0071
+      # RUSTSEC-2026-0387(crypto-bigint 0.5 · p256·p384 경유)도 같은 이유다 — 근거와 되살릴 조건은
+      # rust-ci.yml audit 잡의 주석이 소유한다.
+      - run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0387
 
   ruby:
     name: Scheduled dependency audit — Ruby (bundler-audit)
@@ -276,7 +278,7 @@ jobs:
       # SDK 쪽 `rust/Cargo.lock` 에 없는 axum 트리를 덮는다. `keycloak-sdk` 항목은 source·checksum
       # 이 없는 path crate 라 cargo audit 이 알아서 건너뛴다.
       # 예외는 rust 잡과 **같아야 한다** — 갈리면 두 경로의 신호가 달라진다.
-      - run: cargo audit --ignore RUSTSEC-2023-0071 -f harness/apps/rust/Cargo.lock
+      - run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0387 -f harness/apps/rust/Cargo.lock
 
   harness-python:
     name: Scheduled dependency audit — 하네스 Python (pip-audit)
