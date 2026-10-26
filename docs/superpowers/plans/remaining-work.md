@@ -131,7 +131,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **사람 판정 대기** — `jwks-cache-lifetime-divergent`(장애 중 낡은 키 수락·수명 정렬, 아홉 동시) · `bearer-token-grammar-divergent`(아홉 동시) · `response-read-deadline-divergent` · php ext-curl(`response-framing-unbounded`) · php psr7 하한. 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘). 그 분리로 토큰 복제 기각의 되살릴 조건이 왔다(Dependabot PR 도 스캔할지).
 
-**함정** — (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 와 아래 (j)–(w) 는 그대로 유효하다. (x)–(z) 는 2026-10-01, (aa)(bb) 는 2026-10-05, (cc)–(ee) 는 2026-10-09, (ff)(gg) 는 2026-10-23 이 더했다.
+**함정** — (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 와 아래 (j)–(gg) 는 그대로 유효하다(더한 날은 git log).
 
 - (j) **`scripts/probe.sh` 는 node·php·python 을 못 잰다**(워크트리에 의존성이 없다). 그 언어는 커밋한 뒤 의존성이 깔린 워크트리에서 파일 하나를 변이 → 테스트 → `git checkout -- <파일>` → `git status` 빈 것 확인.
 - (k) **변이 대상은 줄 번호가 아니라 내용으로 고른다** — `| Java |` 가 툴체인 표에 먼저 나와 엉뚱한 줄을 겨눴다(probe 가 INVALID 로 막았다).
@@ -153,7 +153,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - (aa) **Edit·Write 툴은 백슬래시-u 이스케이프를 글자로 풀어 쓴다** — .NET 시험의 U+2028 이 컴파일을 깼고 python 소스에 U+2028·U+FEFF 가 박혔다(ruff RUF001). 그런 줄을 옮길 때는 `git merge-file --union`, 새로 쓸 때는 `chr(0x…)` 꼴.
 - (bb) **`[no-changelog: …]` 표지 하나가 범위 전체의 착지 성장 검사를 끈다**(`scripts/test/test-changelog-landing.sh:150`) — `[Unreleased]` 를 키우는 브랜치에는 달지 않는다.
 - (cc) **PHP `vendor/` 를 정션으로 걸면 Composer 오토로더가 원 트리의 `src` 를 읽는다** — 파스 오류를 넣은 워크트리가 「OK (21 tests)」를 냈다(2026-10-09). 변이·프로브 워크트리에는 `vendor/` 를 복사한다. node_modules 정션은 의존성만 풀어 안전하다(실측).
-- (dd) **`probe.sh` 와 작업 트리가 같은 `CARGO_TARGET_DIR` 을 쓰면 다음 `cargo test` 가 변이 산출물을 돈다** — 원본이 더 오래돼 다시 짓지 않는다(#768 재현). probe 앞에서 공유 타깃을 푼다.
+- (dd) **워크트리끼리(probe.sh 포함) `CARGO_TARGET_DIR` 을 같이 쓰면 소스가 더 오래된 쪽이 남이 지은 라이브러리를 돈다**(#768 · #844). 돌리기 전에 `.rs` 를 touch 하고 `-v` 에 `--crate-name keycloak_sdk` 의 lib 호출이 있는지 본다 — 「Compiling」 줄은 증거가 아니다.
 - (ee) **스쿼시는 `git merge-base HEAD origin/main` 위에서** — `origin/main` 위에서 하면 그 사이 main 의 변경을 되돌린다(#774, 307 줄 삭제로 발견).
 - (ff) **CHANGELOG 절을 옮긴 main 위로 rebase 하면 새 글머리가 충돌 없이 이웃 절로 들어간다** — #813 의 Ruby 항목이 Go `[1.2.3]` 안에 착지했다. rebase 뒤 새 글머리의 소속 절을 다시 본다.
 - (gg) **Git Bash 의 UTF-8 로캘에서 `grep '🚀'` 는 0 줄이다** — `test-publication-claims.sh` 의 매트릭스 10 건이 거짓 실패한다. `LANG= LC_ALL= dash scripts/test/test-publication-claims.sh` 는 241/0.
