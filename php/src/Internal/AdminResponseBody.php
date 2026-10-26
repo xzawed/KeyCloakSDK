@@ -94,14 +94,14 @@ final class AdminResponseBody
 
             return self::promise($handler($request, $options))->then(
                 static function (ResponseInterface $response) use (&$error, $capped): ResponseInterface {
-                    return $error ? $response->withBody(self::kept($capped)) : $response;
+                    return $error ? self::withKept($response, $capped) : $response;
                 },
                 static function (mixed $reason) use (&$head, &$error, &$cut, $capped): ResponseInterface|PromiseInterface {
                     if ($head instanceof ResponseInterface && $cut) {
                         return $head->withBody(Utils::streamFor(''));
                     }
                     if ($head instanceof ResponseInterface && $error && TokenResponseCap::overflowed($capped)) {
-                        return $head->withBody(self::kept($capped));   // 싱크의 짧은 쓰기에 curl 이 끊은 전송
+                        return self::withKept($head, $capped);   // 싱크의 짧은 쓰기에 curl 이 끊은 전송
                     }
 
                     return Create::rejectionFor($reason);
@@ -162,12 +162,18 @@ final class AdminResponseBody
         return $response->hasHeader('Content-Length') || $response->hasHeader('Transfer-Encoding') || $response->hasHeader('X-Encoded-Content-Length');
     }
 
-    /** 오류 본문에서 남기는 것 — 상한 싱크의 앞 `TOKEN_RESPONSE_MAX_BYTES` 바이트. */
-    private static function kept(StreamInterface $capped): StreamInterface
+    /**
+     * 오류 응답에 남긴 본문(상한 싱크의 앞 `TOKEN_RESPONSE_MAX_BYTES` 바이트)을 단다 — `Content-Length` 가 있으면 남긴 길이로 맞춘다.
+     * 서버가 알린 길이를 그대로 두면 `raw()` 소비자가 그 응답을 다시 내보낼 때 상대가 오지 않을 바이트를 기다린다. 없으면(청크 ·
+     * Guzzle 이 압축을 풀며 뗀 것) 더하지 않는다.
+     */
+    private static function withKept(ResponseInterface $response, StreamInterface $capped): ResponseInterface
     {
         $capped->rewind();
+        $kept = substr($capped->getContents(), 0, TokenResponseCap::TOKEN_RESPONSE_MAX_BYTES);
+        $response = $response->withBody(Utils::streamFor($kept));
 
-        return Utils::streamFor(substr($capped->getContents(), 0, TokenResponseCap::TOKEN_RESPONSE_MAX_BYTES));
+        return $response->hasHeader('Content-Length') ? $response->withHeader('Content-Length', (string) \strlen($kept)) : $response;
     }
 
     /** `TokenResponseCap::promise` 와 같은 정규화 — 핸들러의 반환을 약속으로 세운다. */

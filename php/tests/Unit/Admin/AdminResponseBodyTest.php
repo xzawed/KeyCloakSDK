@@ -767,7 +767,11 @@ final class AdminResponseBodyTest extends TestCase
         }
     }
 
-    /** `raw()` 의 오류 본문도 상한에서 잘린다 — 탈출구는 Guzzle 의 예외를 그대로 넘기고, 그 응답의 본문이 상한이다. */
+    /**
+     * `raw()` 의 오류 본문도 상한에서 잘린다 — 탈출구는 Guzzle 의 예외를 그대로 넘기고, 그 응답의 본문이 상한이다. 그 응답의
+     * `Content-Length` 는 남긴 길이다 — 서버가 알린 64 MiB 를 그대로 두면 그 응답을 다시 내보내는 소비자(PSR-7 그대로 흘리는 프록시)의
+     * 상대가 오지 않을 바이트를 기다린다.
+     */
     public function testARawErrorBodyIsCutAtTheCap(): void
     {
         self::route(['GET ' . self::BASE . '/users/u1' => ['status' => 404, 'head' => self::ERROR_HEAD, 'pad' => self::HUGE - strlen(self::ERROR_HEAD)]]);
@@ -779,6 +783,7 @@ final class AdminResponseBodyTest extends TestCase
         } catch (ClientException $e) {
             self::assertSame(404, $e->getResponse()->getStatusCode());
             self::assertSame(self::CAP, strlen((string) $e->getResponse()->getBody()));
+            self::assertSame((string) self::CAP, $e->getResponse()->getHeaderLine('Content-Length'), '남긴 본문과 다른 길이를 알린다');
         }
         self::assertLessThan(self::HUGE, self::sent('GET', self::BASE . '/users/u1'));
     }
@@ -806,6 +811,7 @@ final class AdminResponseBodyTest extends TestCase
         self::assertSame(404, $result->getResponse()->getStatusCode());
         self::assertSame(self::CAP, strlen($body));
         self::assertStringStartsWith(self::ERROR_HEAD, $body, '푼 바이트가 아니다');
+        self::assertFalse($result->getResponse()->hasHeader('Content-Length'), 'Guzzle 이 압축을 풀며 뗀 Content-Length 를 되살렸다');
     }
 
     /** GET 의 2xx 는 상한 없이 끝까지 읽는다 — 사용자 목록은 정당하게 크다. */
