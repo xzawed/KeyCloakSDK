@@ -9,6 +9,7 @@
 //! - 상한까지는 비워 연결을 다시 쓴다 — 정확히 상한이면 연결 하나, 한 바이트 넘으면 둘(`an_error_body_is_drained_up_to_the_cap`).
 //! - 쓰기의 2xx 본문은 읽지 않는다(`a_write_does_not_read_its_2xx_body`).
 //! - ⚠️ `raw()` 는 crate 그대로 오류 본문을 끝까지 읽는다 — 남긴 자리다(`raw_still_reads_an_error_body_whole`).
+//! - 전송·해석 실패는 전처럼 `Transport("admin request: …")` 다(`a_transport_failure_keeps_its_shape`).
 //! - 파사드가 crate 와 **같은 요청**을 보낸다 — `raw()` 의 crate 메서드가 기준(`the_facade_sends_what_the_crate_sends`).
 //!
 //! ⚠️ **할당은 이 프로세스 전체를 센다**(`#[global_allocator]`) — 이 바이너리의 시험은 `SERIAL` 로 하나씩 돈다. 가짜 서버는
@@ -321,7 +322,8 @@ fn class_of(status: u16) -> String {
 
 // ── 시험 ─────────────────────────────────────────────────────────────────────────────────
 
-/// 오류 상태(404 · 409 · 403 · 500 · 302)의 본문은 읽지 않는다 — 분류는 상태 그대로이고, 64 MiB 를 알린 본문을 서버가 다
+/// 오류 상태(404 · 409 · 403 · 500 · 302 · 그리고 전용 갈래가 없는 400 · 401 · 429)의 본문은 읽지 않는다 — 분류는 상태
+/// 그대로이고(`from_admin_status` — 갈래 없는 상태는 `Other`), 64 MiB 를 알린 본문을 서버가 다
 /// 쓰지 못하며, 호출 하나의 할당 피크는 그 본문과 무관하다.
 ///
 /// 한도 8 MiB(서버가 쓴 양)는 소켓 버퍼 몫이다 — 읽지 않은 응답이라도 커널 버퍼와 hyper 의 읽기 버퍼(최대 417,792
@@ -330,7 +332,7 @@ fn class_of(status: u16) -> String {
 async fn an_error_body_is_not_read() {
     let _serial = SERIAL.lock().await;
     let mut wrong = Vec::new();
-    for status in [404u16, 409, 403, 500, 302] {
+    for status in [404u16, 409, 403, 500, 302, 400, 401, 429] {
         for call in CALLS {
             let server = serve(Reply::with(status, HUGE), Reply::with(status, 0));
             let a = admin(&server.url, Duration::from_secs(4));
@@ -366,7 +368,7 @@ async fn an_error_body_is_not_read() {
 /// 오류 본문이 머리 뒤에서 멈춰도 **상태로** 끝난다 — 고치기 전에는 crate 의 `text()` 가 기한 끝에 실패해 `NotFound`
 /// 가 아니라 `Transport` 였다.
 ///
-/// - 상한보다 길다고 알린 본문(2 MiB): 읽지 않으므로 기한(4 s)을 기다리지 않는다.
+/// - 상한보다 **한 바이트** 길다고 알린 본문: 읽지 않으므로 기한(4 s)을 기다리지 않는다(경계를 넓힌 구현은 여기서 기다린다).
 /// - 상한 안이라고 알린 본문(64 KiB): 연결을 다시 쓰려고 비우다 기한(1 s)에 걸린다 — 그래도 분류는 상태다.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_error_body_that_stalls_keeps_its_class() {
@@ -374,7 +376,7 @@ async fn an_error_body_that_stalls_keeps_its_class() {
     let rows = [
         (
             "declared over the cap",
-            Reply::with(404, 2 * MIB).stall_after(65_536, Duration::from_secs(6)),
+            Reply::with(404, CAP + 1).stall_after(65_536, Duration::from_secs(6)),
             Duration::from_secs(4),
             Some(2000u128),
         ),
@@ -409,7 +411,8 @@ async fn an_error_body_that_stalls_keeps_its_class() {
 
 /// 오류 본문은 상한까지는 **비운다** — 그래야 HTTP/1.1 연결을 다음 요청이 다시 쓴다. 정확히 상한(1,048,576 바이트)이면
 /// 두 호출이 연결 하나를 쓰고, 한 바이트 넘으면 둘을 쓴다 — 알린 길이면 읽지 않고, 청크면 상한을 넘는 순간 버린다.
-/// 「읽지 않고 버린다」만으로 바꾸면 「연결 하나」 행들이 깨진다 — 오류마다 연결을 새로 맺는다.
+/// 「읽지 않고 버린다」만으로 바꾸면 「연결 하나」 행들이 깨진다 — 오류마다 연결을 새로 맺는다. 비우는 동안 받은 바이트를
+/// 모으지 않는다(할당 피크 < 1 MiB).
 ///
 /// ⚠️ 「끝을 늦춘」 행은 종결 청크를 2 s 늦춘다. 늦추지 않으면 마지막 데이터와 종결이 한 번에 와서, 우리가 버리기 전에
 /// hyper 가 메시지 끝까지 읽어 연결이 산다(실측 2026-10-27 — 상한 위반이 아니다). 늦추면 경계가 갈린다 — 정확히 상한인
@@ -423,6 +426,19 @@ async fn an_error_body_is_drained_up_to_the_cap() {
         (
             "exactly the cap · Content-Length",
             Reply::with(404, CAP),
+            1,
+            None,
+        ),
+        // 404 만 비우는 구현이 여기서 깨진다 — 비우기는 상태와 무관하다.
+        (
+            "exactly the cap · Content-Length · 409",
+            Reply::with(409, CAP),
+            1,
+            None,
+        ),
+        (
+            "exactly the cap · Content-Length · 302",
+            Reply::with(302, CAP),
             1,
             None,
         ),
@@ -457,15 +473,18 @@ async fn an_error_body_is_drained_up_to_the_cap() {
     ];
     let mut wrong = Vec::new();
     for (row, reply, want_conns, waits_ms) in rows {
+        let want_first = class_of(reply.status);
         let server = serve(reply, Reply::with(404, 2));
         let a = admin(&server.url, Duration::from_secs(4));
+        let base = mark();
         let start = Instant::now();
         let first = a.get_user("u1").await.map(drop);
         let ms = start.elapsed().as_millis();
+        let peak = PEAK.load(Relaxed).saturating_sub(base);
         let second = a.get_user("u2").await.map(drop);
         let conns = server.conns.load(Relaxed);
         note(format!(
-            "[drain] {row}: {} in {ms} ms / {} · {conns} connection(s)",
+            "[drain] {row}: {} in {ms} ms · peak +{peak} / {} · {conns} connection(s)",
             class(&first),
             class(&second)
         ));
@@ -474,13 +493,16 @@ async fn an_error_body_is_drained_up_to_the_cap() {
             Some(min) => ms >= min,
             None => ms < 1000,
         };
-        if class(&first) != "NotFound"
+        // 비우는 동안 쥐는 것은 hyper 의 읽기 버퍼뿐이다(실측 +0.53–0.55 MB · 최대 417,792 B 를 BytesMut 가 두 배까지) —
+        // 받은 바이트를 모으면 상한 본문만으로 1 MiB 를 넘는다.
+        if class(&first) != want_first
             || class(&second) != "NotFound"
             || conns != want_conns
             || !timing_ok
+            || peak >= CAP
         {
             wrong.push(format!(
-                "{row}: {} in {ms} ms / {} · {conns} connection(s), want {want_conns}",
+                "{row}: {} in {ms} ms · peak +{peak} / {} · {conns} connection(s), want {want_first} · {want_conns}",
                 class(&first),
                 class(&second)
             ));
@@ -547,11 +569,47 @@ async fn a_write_does_not_read_its_2xx_body() {
         wrong.push(format!("create 201 + stalled 1 MiB: {id:?} after {ms} ms"));
     }
 
-    let server = serve(Reply::with(201, 0), Reply::with(404, 0));
+    // Location 이 없어도 본문에서 id 를 찾지 않는다 — `None` 이고 본문은 읽지 않는다.
+    let server = serve(Reply::with(201, HUGE), Reply::with(404, 0));
     let a = admin(&server.url, Duration::from_secs(4));
     let id = a.create_group(GroupRepresentation::default()).await;
-    if !matches!(id, Ok(None)) {
-        wrong.push(format!("create 201 without Location: {id:?}"));
+    drop(a);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let sent = server.wrote.load(Relaxed);
+    note(format!(
+        "[write] create 201 without Location + 64 MiB: {id:?} · server wrote {sent}"
+    ));
+    if !matches!(id, Ok(None)) || sent >= 8 * MIB {
+        wrong.push(format!(
+            "create 201 without Location + 64 MiB: {id:?} · server wrote {sent}"
+        ));
+    }
+
+    // 길이를 알리지 않은(청크) 2xx 쓰기 본문도 읽지 않는다.
+    let server = serve(Reply::with(200, HUGE).chunked(true), Reply::with(404, 0));
+    let a = admin(&server.url, Duration::from_secs(4));
+    let updated = a.update_user("u1", UserRepresentation::default()).await;
+    drop(a);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let sent = server.wrote.load(Relaxed);
+    note(format!(
+        "[write] update 200 + chunked 64 MiB: {updated:?} · server wrote {sent}"
+    ));
+    if updated.is_err() || sent >= 8 * MIB {
+        wrong.push(format!(
+            "update 200 + chunked 64 MiB: {updated:?} · server wrote {sent}"
+        ));
+    }
+
+    // `Location` 이 `/` 로 끝나면 마지막 조각은 빈 문자열이다 — crate 의 `to_id` 와 같다(고치려면 의도적으로).
+    let server = serve(
+        Reply::with(201, 0).header("Location: http://kc/admin/realms/r/users/abc-1/"),
+        Reply::with(404, 0),
+    );
+    let a = admin(&server.url, Duration::from_secs(4));
+    let id = a.create_user(UserRepresentation::default()).await;
+    if !matches!(&id, Ok(Some(v)) if v.is_empty()) {
+        wrong.push(format!("create 201 + Location ending in '/': {id:?}"));
     }
 
     assert!(
@@ -579,6 +637,47 @@ async fn raw_still_reads_an_error_body_whole() {
     };
     note(format!("[raw] 404 + 2 MiB: {got}"));
     assert_eq!(got, format!("HttpFailure 404 with {} text bytes", 2 * MIB));
+}
+
+/// 전송·해석 실패의 모양은 crate 를 거치던 때와 같다 — `Transport("admin request: …")`. 2xx 인데 JSON 이 아닌 GET 본문
+/// (해석 실패)과 닫힌 포트(전송 실패) 둘 다.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_transport_failure_keeps_its_shape() {
+    let _serial = SERIAL.lock().await;
+    let mut wrong = Vec::new();
+    let prefixed = |r: &Result<(), KeycloakError>| matches!(r, Err(KeycloakError::Transport(m)) if m.starts_with("admin request: "));
+
+    let server = serve(Reply::with(200, 16), Reply::with(404, 0));
+    let r = admin(&server.url, Duration::from_secs(4))
+        .get_user("u1")
+        .await
+        .map(drop);
+    note(format!("[transport] 2xx not JSON: {r:?}"));
+    if !prefixed(&r) {
+        wrong.push(format!("2xx not JSON: {r:?}"));
+    }
+
+    let closed = {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap().port()
+    };
+    let r = admin(
+        &format!("http://127.0.0.1:{closed}"),
+        Duration::from_secs(4),
+    )
+    .delete_group("g1")
+    .await;
+    note(format!("[transport] closed port: {r:?}"));
+    if !prefixed(&r) {
+        wrong.push(format!("closed port: {r:?}"));
+    }
+
+    assert!(
+        wrong.is_empty(),
+        "{} case(s) wrong:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
 }
 
 // ── 파사드 ↔ crate 요청 동등성 ─────────────────────────────────────────────────────────────
