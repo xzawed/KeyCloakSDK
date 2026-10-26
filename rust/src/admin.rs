@@ -94,8 +94,9 @@ fn created_id(resp: &reqwest::Response) -> Option<String> {
 /// 본문은 HTTP/1.1 연결을 다음 요청이 다시 쓰도록 [`TOKEN_RESPONSE_MAX_BYTES`] 까지만 비워 버린다 — 그보다 길다고 알린
 /// 본문은 읽지 않고, 길이를 알리지 않은 본문은 상한을 넘는 순간 버린다(그 연결은 닫힌다). 비우다 난 오류는 삼킨다 —
 /// 머리가 왔으니 상태가 답이다. ⚠️ 받은 바이트를 모으지 않는다 — 청크마다 세고 버린다.
-/// ⚠️ reqwest 가 압축을 풀면(이 crate 는 그 기능을 켜지 않는다 — 소비자 빌드의 기능 통합) `Content-Length` 를 지워
-/// `content_length()` 가 `None` 이다 — 그 본문은 푼 바이트로 상한까지 비우고, 그 안에서 멈추면 기한까지 기다린다.
+/// ⚠️ reqwest 가 압축을 풀면(이 crate 는 그 기능을 켜지 않는다 — 소비자 빌드의 기능 통합) 푼 본문의 길이를 미리 알 수
+/// 없어 `content_length()` 가 `None` 이다(`size_hint` 가 정확하지 않다) — 그 본문은 푼 바이트로 상한까지 비우고, 그
+/// 안에서 멈추면 기한까지 기다린다.
 async fn reject(mut resp: reqwest::Response) -> KeycloakError {
     let status = resp.status().as_u16();
     if resp
