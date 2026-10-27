@@ -242,3 +242,50 @@ describe('exchangeCode — expectedAudience 재정의(진짜 openid-client)', ()
     expect(idp.certsHits).toBe(2)
   })
 })
+
+/** `pad` 클레임을 덧대 길이가 [length - 8, length] 인, JWKS 의 `k1` 로 서명하고 nonce 가 맞는 id_token. */
+async function paddedIdToken(length: number): Promise<string> {
+  const make = (n: number) =>
+    new SignJWT({ nonce: NONCE, pad: 'a'.repeat(n) })
+      .setProtectedHeader({ alg: 'RS256', kid: 'k1', typ: 'JWT' })
+      .setIssuer(`${idp.origin}/realms/r`)
+      .setSubject('u1')
+      .setAudience(CLIENT_ID)
+      .setIssuedAt()
+      .setExpirationTime('1m')
+      .sign(signed)
+  let n = Math.floor((length - (await make(0)).length) * 0.75)
+  let token = await make(n)
+  while (token.length > length) {
+    n -= 1
+    token = await make(n)
+  }
+  return token
+}
+
+/**
+ * 받는 토큰의 길이 상한 — 코드 교환의 id_token 도 `validate` 와 같은 검증기 문을 지난다(`src/jwt.ts` 의
+ * `JWT_MAX_BYTES`). ⚠️ 그 문은 openid-client **뒤**다 — `authorizationCodeGrant`(oauth4webapi `validateJwt`)가 먼저
+ * id_token 을 나누고 base64url·JSON 디코드한다(토큰 응답 1 MiB 상한 안에서). 그래서 쓰레기 id_token 은 거기서
+ * 먼저 거부되고, 여기서는 클레임이 맞는 **진짜 서명** id_token 으로 잰다 — 상한이 없으면 이 교환은 통과한다.
+ */
+describe('exchangeCode — 받는 토큰의 길이 상한(진짜 openid-client)', () => {
+  const CAP = 256_000
+
+  it('상한 밖의 서명 id_token 은 SDK 검증기가 JWKS 요청 없이 거부한다', async () => {
+    idp.idToken = await paddedIdToken(CAP + 9)
+    expect(idp.idToken.length).toBeGreaterThan(CAP)
+    idp.certsHits = 0
+    const refused = await refusal(exchange())
+    expect(refused).toBeInstanceOf(KeycloakAuthError)
+    expect(refused.message).toBe('Authorization code exchange failed: invalid id_token')
+    expect((refused.cause as Error).message).toBe('JWT 검증 실패: token exceeds 256000 bytes')
+    expect(idp.certsHits).toBe(0)
+  })
+
+  it('상한까지 덧댄 서명 id_token 의 교환은 통과한다(openid-client 와 토큰 응답 상한도 거부하지 않는다)', async () => {
+    idp.idToken = await paddedIdToken(CAP)
+    expect(idp.idToken.length).toBeGreaterThan(CAP - 8)
+    await expect(exchange()).resolves.toMatchObject({ idToken: idp.idToken })
+  })
+})

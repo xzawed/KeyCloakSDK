@@ -755,3 +755,28 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
     expect(certs).toBe(2)
   })
 })
+
+/**
+ * 받는 토큰의 길이 상한 — **콜드** 원격 검증기에서 상한 밖 토큰은 JWKS 를 부르지 않는다(`src/jwt.ts` 의
+ * `JWT_MAX_BYTES`, export 하지 않는다). ⚠️ 토큰은 **진짜 서명**이다 — 쓰레기는 상한이 없어도 jose 가 헤더에서
+ * 거부해 키를 찾지 않으므로, 이 계수기로는 상한이 디코드보다 앞인지 가를 수 없다.
+ */
+describe('받는 토큰의 길이 상한 — 콜드 원격 검증기', () => {
+  it('상한 밖의 서명 토큰은 /certs 요청 없이 거부한다(대조군: 같은 검증기의 정상 길이 토큰은 요청한다)', async () => {
+    const v = JwtValidator.forJwksUri(jwksUri, { ...baseOpts, jwksMinRefetchSeconds: 30 })
+    const over = await new SignJWT({ sub: 'u', aud: 'my-client', pad: 'a'.repeat(192_000) })
+      .setProtectedHeader({ alg: 'RS256', kid: 'unresolvable' })
+      .setIssuer(ISS)
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(attackerKey)
+    expect(over.length).toBeGreaterThan(256_000)
+
+    hits = 0
+    await expect(v.validate(over)).rejects.toThrow('JWT 검증 실패: token exceeds 256000 bytes')
+    expect(hits).toBe(0)
+
+    await expect(v.validate(await forgedToken())).rejects.toThrow()
+    expect(hits).toBeGreaterThan(0) // 이 계수기가 이 콜드 검증기의 적재를 본다
+  })
+})

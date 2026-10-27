@@ -208,6 +208,69 @@ describe('JwtValidator (강화 검증)', () => {
     })
   })
 
+  /**
+   * 받는 토큰의 길이 상한(inbound-token-cap) — jose 가 나누고 디코드하기 전, 키를 찾기 전에 거부한다. 상한 상수는
+   * export 하지 않으므로(공개 표면) `CAP` 은 `src/jwt.ts` 의 `JWT_MAX_BYTES` 와 같아야 한다. 콜드 원격 검증기의
+   * JWKS 요청 0 은 `jwt-jwks.test.ts` 가 잰다.
+   */
+  describe('받는 토큰의 길이 상한(inbound-token-cap)', () => {
+    const CAP = 256_000
+
+    /** `pad` 클레임을 덧대 길이가 [length - 8, length] 인 진짜 서명 토큰(역할이 많은 사용자의 모양). */
+    const padded = async (length: number): Promise<string> => {
+      const make = (n: number) => sign({ sub: 'u', aud: 'my-client', pad: 'a'.repeat(n) })
+      let n = Math.floor((length - (await make(0)).length) * 0.75)
+      let token = await make(n)
+      while (token.length > length) {
+        n -= 1
+        token = await make(n)
+      }
+      expect(token.length).toBeGreaterThan(length - 8)
+      return token
+    }
+
+    it('T1 — 상한 + 1 의 쓰레기는 디코드 전에 거부한다(디코드가 먼저면 `exceeds` 를 말하지 않는다)', async () => {
+      const over = `${'a'.repeat(CAP - 1)}..`
+      expect(over.length).toBe(CAP + 1)
+      const refused = JwtValidator.forKeySource(keys, OPTS).validate(over)
+      await expect(refused).rejects.toBeInstanceOf(KeycloakTokenValidationError)
+      await expect(refused).rejects.toThrow('JWT 검증 실패: token exceeds 256000 bytes')
+    })
+
+    it('T2 — 상한 길이의 쓰레기는 상한이 아니라 jose 가 거부한다(`>` 이지 `>=` 가 아니다)', async () => {
+      const atCap = `${'a'.repeat(CAP - 2)}..`
+      expect(atCap.length).toBe(CAP)
+      const refused = await JwtValidator.forKeySource(keys, OPTS)
+        .validate(atCap)
+        .then(
+          () => undefined,
+          (e: unknown) => e,
+        )
+      expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+      expect((refused as Error).message).not.toContain('exceeds')
+    })
+
+    it.each([
+      ['Keycloak 26.6 기본값이 받는 가장 긴 Bearer', 65_459],
+      ['상한', CAP],
+    ])('T3 — %s(%i 자)까지 덧댄 진짜 서명 토큰은 통과한다', async (_name, length) => {
+      const token = await padded(length)
+      await expect(JwtValidator.forKeySource(keys, OPTS).validate(token)).resolves.toMatchObject({
+        subject: 'u',
+      })
+    })
+
+    it('JS 호출자의 문자열 아닌 값 — 검사가 raw TypeError 를 내지 않고, jose 가 받는 Uint8Array 도 잰다', async () => {
+      const v = JwtValidator.forKeySource(keys, OPTS)
+      await expect(v.validate(undefined as unknown as string)).rejects.toBeInstanceOf(
+        KeycloakTokenValidationError,
+      )
+      await expect(v.validate(new Uint8Array(CAP + 1) as unknown as string)).rejects.toThrow(
+        'JWT 검증 실패: token exceeds 256000 bytes',
+      )
+    })
+  })
+
   it('forJwksUri — 원격 JWKS 검증기 구성(지연 fetch, 네트워크 호출 없음)', () => {
     const v = JwtValidator.forJwksUri(
       'https://kc.example.com/realms/test/protocol/openid-connect/certs',
