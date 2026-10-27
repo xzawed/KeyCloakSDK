@@ -14,11 +14,15 @@
 FROM alpine:3.21 AS app
 WORKDIR /app
 
+# ⚠️ 마지막 줄은 PHP2Shell(CVE-2026-109618/109619) 하한이다 — 이 RUN 의 글자가 바뀌어야 PC 에 남은 낡은 apk 레이어가
+# 다시 깔리고, 다시 깔아도 저장소가 낡았으면 여기서 멈춘다. 다음 보안 하한이 오면 harness/apps/php/Dockerfile 과 함께 올린다.
 RUN apk add --no-cache \
       php83 php83-ctype php83-curl php83-dom php83-fileinfo php83-iconv php83-json \
       php83-mbstring php83-openssl php83-phar php83-session php83-simplexml php83-sodium \
       php83-tokenizer php83-xml php83-xmlwriter \
-    && ln -sf /usr/bin/php83 /usr/bin/php
+    && ln -sf /usr/bin/php83 /usr/bin/php \
+    && { php -r 'exit(version_compare(PHP_VERSION, "8.3.36", ">=") ? 0 : 1);' \
+         || { echo "php83 $(php -r 'echo PHP_VERSION;') < 8.3.36 (CVE-2026-109618/109619)" >&2; exit 1; }; }
 
 # composer 바이너리 자체는 official composer 이미지에서 그대로 가져온다(harness/apps/php/Dockerfile과
 # 동일 관용) — php83 apk 패키지 위에서도 phar로 그대로 동작한다(런타임에 필요한 확장은 위에서 이미 설치).

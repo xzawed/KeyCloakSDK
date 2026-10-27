@@ -101,7 +101,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `278`(2026-10-27 기준 열림 143 · 닫힘 135)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `280`(2026-10-27 기준 열림 143 · 닫힘 137)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -136,9 +136,9 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 3. `guard-detection-surface-hand-narrowed` [H/M](attest — KNOWN_GAPS 대조는 #773) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
 4. ⚠️ **손대기 전에 전제를 잰다** — 이번에도 뒤집혔다: jwks 후보(「신선한 캐시가 없으면 센다」)는 600 초 경계에서 규칙 (4) 를 깼고, 「낡은 캐시 + 장애」는 node 하나가 아니라 node·.NET 이었고, probe.sh 초안 정규식은 지어낸 줄로 골라 실제 출력 셋을 못 맞췄다.
 
-**사람 판정 대기** — `jwks-cache-lifetime-divergent`(장애 중 낡은 키 수락·수명 정렬, 아홉 동시) · `bearer-token-grammar-divergent`(아홉 동시) · `response-read-deadline-divergent` · php ext-curl(`response-framing-unbounded`) · php psr7 하한 · rust·node `raw()` 의 오류 본문 상한(공개 API 변경). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘). 그 분리로 토큰 복제 기각의 되살릴 조건이 왔다(Dependabot PR 도 스캔할지).
+**사람 판정 대기** — `jwks-cache-lifetime-divergent`(장애 중 낡은 키 수락·수명 정렬, 아홉 동시) · `bearer-token-grammar-divergent`(아홉 동시) · `inbound-token-cap-divergent`(아홉 동시 — php·.NET 만 256000) · `response-read-deadline-divergent` · php ext-curl(`response-framing-unbounded`) · php psr7 하한 · rust·node `raw()` 의 오류 본문 상한(공개 API 변경). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘). 그 분리로 토큰 복제 기각의 되살릴 조건이 왔다(Dependabot PR 도 스캔할지).
 
-**함정** — (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 와 아래 (j)–(gg) 는 그대로 유효하다(더한 날은 git log).
+**함정** — (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 와 아래 (j)–(hh) 는 그대로 유효하다(더한 날은 git log).
 
 - (j) **`scripts/probe.sh` 는 node·php·python 을 못 잰다**(워크트리에 의존성이 없다). 그 언어는 커밋한 뒤 의존성이 깔린 워크트리에서 파일 하나를 변이 → 테스트 → `git checkout -- <파일>` → `git status` 빈 것 확인.
 - (k) **변이 대상은 줄 번호가 아니라 내용으로 고른다** — `| Java |` 가 툴체인 표에 먼저 나와 엉뚱한 줄을 겨눴다(probe 가 INVALID 로 막았다).
@@ -164,6 +164,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - (ee) **스쿼시는 `git merge-base HEAD origin/main` 위에서** — `origin/main` 위에서 하면 그 사이 main 의 변경을 되돌린다(#774, 307 줄 삭제로 발견).
 - (ff) **CHANGELOG 절을 옮긴 main 위로 rebase 하면 새 글머리가 충돌 없이 이웃 절로 들어간다** — #813 의 Ruby 항목이 Go `[1.2.3]` 안에 착지했다. rebase 뒤 새 글머리의 소속 절을 다시 본다.
 - (gg) **Git Bash 의 UTF-8 로캘에서 `grep '🚀'` 는 0 줄이다** — `test-publication-claims.sh` 의 매트릭스 10 건이 거짓 실패한다. `LANG= LC_ALL= dash scripts/test/test-publication-claims.sh` 는 241/0.
+- (hh) **에이전트는 주 작업트리를 읽는다** — 미커밋 WIP(Java 17→25)가 감사 발견 둘을 거짓 반증으로 만들었다(2026-09-22). 발견은 `git show origin/main:<path>` 로 되재고 시작한다(Git Bash 는 (y)).
 
 ### 재발 원인 분석 — 2026-09-13 (독립 레그와 공동, 산출물 기반)
 
@@ -530,11 +531,11 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 127건 (열림 75)
+## C. 품질 부채 — 129건 (열림 77)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 63
+### 9언어 소스 — 68
 
 - [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청과 교환의 `redirect_uri` 를 호출당 받지 못했다 — §4 판정 「표기가 아니라 능력의 차이이니 API 를 맞춘다」로 둘 다 가산적으로 맞췄다. 사후 서사는 `git show 8d7316c:docs/superpowers/plans/remaining-work.md` 522행
 
@@ -602,6 +603,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 <!-- token-provider-outage-refetch-per-call(2026-10-09 #743 · #744 구현 레그 재스캔): node token-provider.ts — 만료 뒤 IdP 장애에서 호출 5 → 그랜트 5(정상 대조 5 → 1) · .NET admin 토큰 프로바이더 — admin 호출 10 → 그랜트 10. 미인증 트래픽으로는 못 닿고(앱이 직접 부르는 호출) JWKS 백오프와 달리 위조 입력으로 부풀릴 수 없다. 백오프를 걸지는 아홉 판정. -->
 - [ ] `bearer-token-grammar-divergent` **[L/S · 신규 2026-10-09 · 판정 · 아홉]** `b64token` 밖 bearer(공백·HTAB·ASCII 밖)를 언어마다 거부·다듬기·그대로 보낸다 · `.claude/rules/security.md`
 <!-- bearer-token-grammar-divergent(2026-10-09 #763–#765 구현 레그 재스캔): 헤더 값이 못 싣는 바이트(CR·LF·NUL·HTAB 밖 C0·DEL)는 .NET(#765)·go(#764)·ruby(#763)·JVM(#769)·python(#770)이 보내기 전에 SDK 오류로 거부한다 — node 는 물결 4 에서 CR·LF·NUL 을 거부하게 됐고 나머지 C0·DEL 은 미측정. 그 밖은 갈린다 — ruby 는 앞뒤 공백·탭도 거부(#763) · go 는 공백뿐이면 Authorization 없이 보내고(resty) 끝 SP·HTAB 는 net/http 가 다듬는다(#764 레그) · node 는 undici 가 끝 공백·탭을 다듬는다(wave4-hardening-node (2)) · .NET 은 HTAB·SP 를 그대로 보낸다(Keycloak 26.6 은 401 — #765 레그) · ASCII 밖은 .NET 이 거부하고 node 는 U+00FF 위만 거부(#763 PR), rust admin 은 날 UTF-8 로 보내고(wave4-hardening-rust (3)) python 은 #770 뒤 sync 가 Latin-1·끝 공백을 그대로 보내고 aio 는 ASCII 밖·끝 공백을 거부한다(전송이 다르다 — 레인을 맞출지도 이 판정) · JVM admin 은 HTAB·SP·Latin-1 을 그대로, C1·U+0100 위를 ? 로 바꿔 보낸다(#769 측정) · php 미측정. 정할 것: b64token 밖을 보내기 전에 SDK 오류로 거부할지(아홉 동시) — 거부하면 Keycloak 이 어차피 401 로 답할 토큰이 로컬 오류가 되고, 안 하면 언어마다 다른 바이트가 서버에 간다. -->
+- [ ] `inbound-token-cap-divergent` **[M/S · 신규 2026-10-27 · 판정 · 아홉]** 서명 전 디코드에 들어오는 토큰의 길이 상한이 둘에만 있다 — php `JwtValidator::JWT_MAX_BYTES`(256000, PHP2Shell 대응) · .NET(Microsoft.IdentityModel 기본 256000, SDK 가 덮어쓰지 않음). 일곱은 재지 않았다 — php 프로브의 모양(넓은 `[0]` 헤더 · 깊이 500 중첩 배열 · 점만)으로 언어마다 서명 전 바이트당 할당을 재고, 아홉을 함께 맞출지 판정한다 · `php/src/JwtValidator.php`
 - [x] `secret-echo-form-encoded-rescan` **[M/S · 닫힘 2026-10-09 #741 #745 #746]** 샌 곳 넷(java·kotlin auth · JVM admin · python admin)을 가렸다. 남은 것은 `oauth-error-field-echo-unmasked`
 - [x] `dotnet-admin-bogus-charset-escape` **[M/S · 닫힘 2026-10-09 #740]** 풀지 못하는 charset 이 SDK 예외가 됐다. 메시지 삽입은 `error-message-surface-unspecified`
 - [ ] `wave4-hardening-dotnet` **[L/S · 신규 2026-10-05 · (3)(4) 닫힘 #765]** 키 회전 뒤 첫 토큰을 거부한다(기본 비차단 갱신) · 요청 본문의 짝 없는 서로게이트를 U+FFFD 로 보낸다 · `dotnet/src/Xzawed.Keycloak.Sdk/`
@@ -706,7 +708,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `admin-capability-vestigial` **[L/S]** 25/25가 된 표를 감싼 산문이 빈 칸 시절 문장으로 남았고 두 항목이 서로 모순한다 · `docs/reference/admin-capability.md:16`
 - [ ] `roadmap-vestigial` **[L/S]** 로드맵이 출처 없는 CVE를 확정 사실로 적고, 후보가 0행인 표에 '후보 전용 caveat'를 건다 · `docs/roadmap/language-support.md:11`
 
-### harness 사각지대 — 12
+### harness 사각지대 — 13
 
 - [x] `H1-conformance-authz-vacuous` **[M/M · 닫힘 2026-09-12 · 범위 확대]** ⚠️ **공허가 하나가 아니라 셋이었다.** 요청↔응답 미대조 외에 `/code_challenge=/` 가 **빈 값**을 통과시켰고, URL 의 `state` 와 돌려준 `state` 를 **존재만 따로** 보고 대조하지 않았다. 판정을 `harness/conformance/authz-url.mjs` 로 뽑아 **Docker 없이** 픽스처로 재게 했다(그 판정이 오래 공허했던 이유가 「시험할 수 없다」였다). 가드 `scripts/test/test-conformance-authz-url.sh`(픽스처 8종, `doc-facts` 배선). 변이 6/6 `CAUGHT` + OFF 짝 3/3. ⚠️ **프로브가 구멍 하나를 실제로 찾았다** — 모듈을 부르되 `v.ok` 를 버리면 침묵했다(같은 PR 에서 닫음). ⚠️ 파생 신규: `authz-redirect-uri-not-per-call`(php·rust).
 - [x] `H3-harness-image-and-lock-pins` **[M/S · 닫힘 2026-09-12 · 범위 정정]** ⚠️ **「세 자리」가 아니라 한 파일의 두 결함이었고, 그중 하나는 거짓 초록이었다.** (1) `security-audit.yml:277` 이 `cargo audit -f harness/apps/rust/Cargo.lock` 으로 감사하는 그 락을 `harness/apps/rust/Dockerfile` 은 **COPY 하지 않았다** — 게다가 락이 `keycloak-sdk` **0.1.0** 을 고정한 채였고 매니페스트는 **1.0.0** 이다(4ed3298, 2026-08-30). 락은 2026-08-01 이후 안 움직였으므로 야간 감사는 **1.0 이전 그래프**를 6주째 감사하며 초록을 냈다. (2) `FROM rust:alpine` 은 하네스 아홉 앱 중 **유일한 무버전 태그**였다(install 경로 둘은 이미 `rust:1.88-alpine`). ⚠️ **install 경로의 락 처리는 결함이 아니다** — consume 은 registry 의존으로 재기입하고 publish 는 클로저 미러링용으로 `generate-lockfile` 하는 것이 설계다(주석이 그렇게 적는다). 부류 재스캔: `git ls-files harness/apps | grep -Ei 'lock|\.sum$'` → **1건** · `cargo audit -f` 전수 → **1건** · 무버전 `FROM` 전수(9앱) → **1건**. 형제 언어에 같은 결함 없음. ⚠️ **락 재생성에 MSRV 인지 해석이 필요했다** — cargo 가 `Locking 253 packages to latest Rust 1.88 compatible versions` 로 reqwest 0.13·matchit 0.8.6 을 눌렀다. edition 2021 은 resolver v2 라 기본이 아니고, 플래그 없이 재생성했으면 `--locked` 빌드가 1.88 에서 깨졌다(`scripts/regen-harness-rust-lock.sh` 가 소유). **Docker 실빌드로 확인**(107s, `rust:1.88-alpine` + `--locked`). 변이 6/6 `CAUGHT` + OFF 짝 6/6 `SILENT`.
@@ -715,6 +717,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `harness-orphan-container-reads-as-build-failure` **[L/S · 닫힘 2026-09-16 · 부류로 넓혀서]** 중단된 하네스 런이 남긴 컨테이너가 다음 런을 막는데, 신호가 **원인을 잘못 가리킨다** · `harness/verify.sh:30`
 - [ ] `H2-harness-judgment-module-no-test` **[L/M]** harness 판정 모듈에 「테스트가 있어야 한다」 규칙이 없다 — conformance.mjs 는 Docker 전체 런 없이는 시험 불가 · `harness/conformance/conformance.mjs:1`
 - [x] `H4-runsh-network-divergence` **[L/S · 닫힘 2026-09-15]** verify.sh 가 배운 것을 run.sh 는 못 받았다 — compose 네트워크명을 아직 리터럴로 박는다 · `harness/run.sh:6`
+- [ ] `harness-app-ports-on-all-interfaces` **[L/S · 신규 2026-10-27]** verify 하네스 앱 아홉이 호스트 포트를 모든 인터페이스에 연다(`"${HARNESS_PORT_PHP:-8095}:8090"` 꼴) — 하네스가 도는 동안 같은 LAN 에서 닿고, php 앱은 `php -S 0.0.0.0` 이다. `127.0.0.1:` 로 묶을지(PHP2Shell 검토의 Grok 독립 레그 제안) · `harness/docker-compose.yml:109`
 - [ ] `install-harness-fixed-host-ports` **[M/M · 신규 2026-09-16 · 부류 재스캔]** install 하네스가 호스트 포트 **아홉**을 박아, 그중 하나라도 쥔 PC 에서는 파이프라인이 기동조차 못 한다 · `harness/install/compose.install.yml:15`
   - **실측(2026-09-16)**: 퍼블리시 9개 — keycloak `8080:8080`·`9000:9000` · verdaccio `4873` · pypiserver `18892` · bagetter `18180` · mvn-repo `18080` · mvn-repo-kotlin `18081` · gemserver `18808` · satis-web `18099`. 이 PC 에서 **8080 은 실제로 다른 프로젝트가 쥐고 있다**(`sillok-api-1` → `127.0.0.1:8080->8080/tcp`) — verify 하네스가 같은 이유로 막혔고 그것이 PR #506 이 닫은 자리다.
   - ⚠️ **compose 만 바꾸면 안 된다 — 리터럴이 두 곳이다.** `install-verify.sh` 의 `wait_healthy` 가 `http://localhost:18180/...` 류를 **5곳**에서 직접 적는다. verify 하네스는 `docker compose port` 로 읽고 있어 compose 한 곳만 고치면 됐지만(그래서 #506 이 쌌다), 여기는 **두 소스가 함께 움직여야** 한다.
@@ -728,7 +731,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 87건 (열림 54)
+## D. 원장 밖 — 87건 (열림 52)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -826,13 +829,9 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - **닫힌 13 건 — high 는 6/6**: #520(빈 JWKS 키셋) · #521(소비자 문서의 거짓 보안 문장 6 자리) · #523(rust 재노출 위반 둘 + 컴파일 집행 · node 커버리지 목록 · java jackson 산문) · #524(루트 README 영↔한 **구조** 미러 가드) · #527(예산 커버리지를 **부류 규칙**으로 — 숫자 하한은 마커를 지우는 PR 이 같은 diff 에서 내리면 그만이라 쓰지 않았다) · #528(CHANGELOG 착지 게이트 + `[Unreleased]` 28 건 복원). ⚠️ 무엇이 어떻게 닫혔는지는 **그 PR 의 커밋 메시지가 소유한다** — 여기 옮겨 적지 않는다(이 파일이 246 KB 까지 자란 원인이 그것이다).
   - **열린 medium 31 · low 12**: 언어별 drift 가 다수이고 **아홉 전부에서 최소 1 건**이 나왔다(범위 1–6). 대표: getting-started 의 「coverage gate」 주장이 go·rust·dotnet 세 곳에서 거짓(그 명령은 커버리지를 재지도 게이트하지도 않는다) · `php/composer.json:41` 의 `cs`/`cs:fix` 가 `--allow-risky=yes` 누락으로 **항상 실패** · `.claude/rules/{dotnet,ruby,php,rust}.md` 의 전사된 실측값이 낡아 다음 세션을 틀린 판단으로 이끈다 · PHP·Ruby 의 기본 `readTimeout` 이 10 초로 나머지 일곱(30 초)과 갈린다.
   - ✅ 위 계수가 **하한**이었던 이유는 아래 `critic-2026-09-22-round2` 가 소유한다(완전성 비평 6 각도, 2026-09-22).
-- [ ] `critic-2026-09-22-round2` **[H/L · 신규 2026-09-22]** 1 라운드가 **무엇을 못 봤는가**를 6 각도로 찾고 3 렌즈로 반증(24 에이전트) → **32 건 중 24 건 생존**. **21 건을 닫고 2 건을 반증했으며 1 건이 열려 있다** · `docs/superpowers/plans/remaining-work.md:1`
-  - **1 라운드가 못 본 부류가 실재했다** — 17 레그는 「문서 ↔ 코드」를 훑었고, 2 라운드는 **가드가 스스로 거짓말하는 자리**(미러 룰셋이 이름표만 · doctor 오진 둘 · `tableAt` 이 산문 버전을 버림 · `kind=dep` 단방향)와 **소비자가 문서대로 따라 하면 막히는 자리**(퀵스타트 403 · rust 설치로 컴파일 불가 · Kotlin 좌표 그림자)를 찾았다. 닫은 21 건은 #529·#530·#531·#532·#533·#535·#536·#537·#538 이 소유한다.
-  - ⚠️ **반증 2 건은 더티 워킹트리를 읽은 결과였다.** 에이전트는 주 작업트리를 읽는데 거기엔 미커밋 WIP(Java 17→25)가 있었다 — 「세 문서가 다른 `--release`」는 그 `25` 대 커밋된 `17`(`git show origin/main:java/pom.xml`), 「6/3 vs 5/4」는 `5/4` 를 말하는 살아있는 문서가 없다. **다음 감사는 발견을 `git show origin/main:<path>` 로 되재고 시작한다.**
-  - ⚠️ **측정기부터 대조군으로 검증할 것** — 이 환경의 plain `grep -P` 는 유니코드 범위를 못 써 한글 탐지에 **거짓 0** 을 냈다(`git grep -P` 로 재야 CONTRACT.md 18 줄이 나온다).
-  - **열린 1 건**은 아래 `korean-api-docs-in-published-packages` 로 분리했다. 재개: `resumeFromRunId:'wf_6e357bb5-d55'`.
+- [x] `critic-2026-09-22-round2` **[H/L · 신규 2026-09-22 · 닫힘 2026-10-27]** 24 생존 중 21 닫힘(#529–#538) · 2 반증 · 남은 1 건은 `korean-api-docs-in-published-packages` 로 분리 — 열린 것이 없다
 - [ ] `korean-api-docs-in-published-packages` **[M/H · 신규 2026-09-22 · 사람 판정 「등록만, 별건으로」]** 게시된 SDK 안의 **소비자에게 렌더링되는 문서 주석**이 한글이다 — docs.rs 가 그리고, IDE 호버에 뜨고, PyPI·RubyGems 페이지가 싣는 텍스트다 · `rust/src` 외 6
-  - **실측**(2026-09-22, `git grep -P '[\x{AC00}-\x{D7A3}]'` · 문서 주석 문법만): rust 231 · python 298 · node 186 · ruby 158 · php 149 · go 122 · kotlin 70 = **7 언어 1,214 줄**. **java·dotnet 은 이미 0.** ⚠️ 구현 주석까지 세면 2,296 줄이지만 소비자에게 안 보이므로 대상이 아니다.
+  - **실측**(2026-09-22, `git grep -P '[\x{AC00}-\x{D7A3}]'` · 문서 주석 문법만): rust 231 · python 298 · node 186 · ruby 158 · php 149 · go 122 · kotlin 70 = **7 언어 1,214 줄**. **java·dotnet 은 이미 0.** ⚠️ 구현 주석까지 세면 2,296 줄이지만 소비자에게 안 보이므로 대상이 아니다. ⚠️ plain `grep -P` 는 이 범위를 못 써 거짓 0 을 낸다 — 반드시 `git grep -P`.
   - **왜 별건인가**: 게시 소스 7 개를 건드려 언어별 테스트와 착지 게이트를 전부 통과해야 하고, 공개 표면이라 되돌리기 어렵다. 번역 품질은 기계로 못 재므로 **언어당 PR 하나**가 리뷰 가능한 최소 단위다.
   - **착수 순서**: 노출이 가장 직접적인 rust(docs.rs)·node(`.d.ts` 호버) = 417 줄 먼저, 그다음 python·php·ruby·go·kotlin. **기각이 아니라 결정 대기다** — 다른 선택지는 「규칙에 게시 주석 한글 예외를 명시」였다.
 - [ ] `remaining-work-split-to-archive-tag` **[H/M · 신규 2026-09-22 · 설계 완료]** 이 파일이 246 KB — 전체 문서 바이트의 **31 %**, 2 위의 3 배 — 이고 그중 41~59 %가 **이미 닫힌 70 건의 사후 서사**다. 예산 앵커도 없다 · `docs/superpowers/plans/remaining-work.md:1`. **설계는 끝났고(독립 레그 판정) 실행만 남았다:**
@@ -841,7 +840,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - **계수 앵커는 총계를 다시 맞추지 말 것** — 118 은 오늘의 열린 작업이라 매번 움직인다. 분할 후 단언할 것은 **`닫힘 = 0`** 이다. 그것은 이 파일의 **규칙**이므로 올리는 것이 재보정이 아니라 규칙 변경이 된다. (지도의 `진행` 규칙이 이미 「미체크가 하나는 남아야 한다」를 강제하므로 두 번째 수를 더 넣지 않는다.)
   - **재성장 방지**: 분할 커밋이 `doc-budget: max-bytes` 를 **이동 후 크기**로 박는다(246 KB 가 아니라). 이후 `main` 대비로 검사하고 **조일 수는 있어도 올릴 수는 없게** 한다 — 옵트인이라 이 파일이 한 번도 안 덮였던 것이 원인이므로, 이 경로만은 선택 사항이 아니다.
   - ⚠️ **`CHANGELOG.md` 의 빈 `[Unreleased]` 를 이 작업으로 채우지 말 것** — 다른 실패다(아래 항목). 70 건 본문이나 150 커밋에서 역으로 만들어 넣으면 그때 기록되지 않았던 이력을 **지어내는** 것이 된다.
-- [ ] `changelog-unreleased-never-written` **[M/S · 신규 2026-09-22]** `## [Unreleased]` 가 빈 채 `v1.0.0` 이후 **150 커밋**이 main 에 들어왔다(실측 `git rev-list --count v1.0.0..origin/main`) · `CHANGELOG.md:8`. CLAUDE.md 가 완료 서사의 목적지로 지목한 자리가 아무것도 받지 않아 그 서사가 246 KB 등록부에 쌓인다. ⚠️ **150 건을 역채우지 않는다**(독립 레그 판정) — 그 절은 「착지할 때 적는 소비자 가시 변경」이지 커밋 제목 모음이 아니다. 이미 들어간 150 은 git 에 두고, 격차를 인정해야 한다면 `v1.0.0..HEAD` 를 가리키는 **헤딩 한 줄**만 두되 **재구성한 항목은 넣지 않는다**. 진짜 고칠 것은 「착지할 때 쓰게 만드는 장치」가 없다는 쪽이다.
+- [x] `changelog-unreleased-never-written` **[M/S · 신규 2026-09-22 · 닫힘 2026-10-27]** 착지 장치 `scripts/test/test-changelog-landing.sh` 가 섰고 `[Unreleased]` 가 착지마다 자란다 — 150 건은 역채우지 않았다
 - [x] `jwks-empty-keyset-node` **[M/M · 신규 2026-09-22 · 닫힘 2026-09-24]** 「구조 변경뿐」이라는 전제가 틀렸다 — 기각된 두 길(getKey 래핑·별도 프리플라이트) 밖에 셋째가 있었다: 이미 배선된 `[customFetch]` 래퍼는 jose 가 파싱할 **바로 그 응답**을 보고, jose reload 는 fetch 가 던지면 옛 캐시를 남긴다(`jose/dist/webapi/jwks/remote.js` `.then` 안에서만 대입). jose 원격 집합을 그대로 상속한다 · `jwt-jwks.test.ts` 수정 전 RED → GREEN · 변이 CAUGHT
 - [x] `jwks-empty-keyset-jvm-dotnet-undetermined` **[M/S · 신규 2026-09-22 · 닫힘 2026-09-24]** 셋 다 **오염됐다** — 판정 불가가 아니었다. ⚠️ dotnet 은 첫 판정이 「면역」이었는데 LKG 폴백이 가린 것이었다(현재 설정 키 0 · LKG 끄면 IDX10500) — 그래서 테스트가 LKG 를 끄고 단언한다(켜면 수정 없이도 초록, 대조군 실측). `RefreshInterval = 0` 은 IDX10107 로 거부된다(하한 1s) · JwksEmptyKeyset 테스트 셋(변이 3/3 CAUGHT + 대조군 SILENT)
 - [x] `nightly-failure-reaches-nobody` **[H/M · 신규 2026-09-16 · 닫힘 2026-09-21 #518]** 야간이 여드레 빨간 동안 아무 조치가 없었다 — 저장소 안에 **실패가 사람에게 가는 경로가 0건**이다 · `.github/workflows/harness.yml:8`
