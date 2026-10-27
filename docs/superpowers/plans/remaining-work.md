@@ -101,7 +101,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `281`(2026-10-27 기준 열림 143 · 닫힘 138)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `283`(2026-10-27 기준 열림 145 · 닫힘 138)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -123,9 +123,9 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-10-25 · #801–#833 반영)
+### 다음 세션 진입점 (2026-10-27 · #834–#863 반영)
 
-**지금 상태** — 물결 5 끝: **아홉 레인 전부 LIVE**(java `v1.2.0`·`v1.2.1` 은 미게시 — #825). 게시 바이트 = 태그(#824 · JVM 은 #827 — 출처 증명 15 jar), 기준선 일곱 = 게시판(#824·#827 · rust·go 는 자리 없음), `security-audit.yml` 전 잡 초록(2026-10-23). 태그 위임은 물결마다 다시 묻는다. 열린 PR 은 Dependabot 뿐이어야 한다. 래퍼 9.8 의 되살릴 조건은 #682·#788.
+**지금 상태** — 물결 6(2026-10-27): JVM 둘 말고 **LIVE**, 게시 바이트 = 태그 · 기준선 = 게시판(#863). java 1.2.3 · kotlin 1.0.7 은 Portal Publish 대기 — ⚠️ 월간 상한 6/7(`ci.md`) · JVM 기준선·`security-audit.yml` 은 그 뒤. 태그 위임은 물결마다 다시 묻는다. 열린 PR 은 Dependabot 뿐이어야 한다. 래퍼 9.8 의 되살릴 조건은 #682·#788.
 
 열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유한다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
 
@@ -531,7 +531,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 130건 (열림 77)
+## C. 품질 부채 — 131건 (열림 78)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -633,7 +633,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `php-admin-raw-leaks-internal-cap-error` **[L/S · 신규·닫힘 2026-10-05 #723]** 이 물결의 상한이 `raw()` 에 `@internal` 예외를 냈다 — 병합 전에 잡았다
 - [x] `ruby-bearer-and-utf8-raw-escapes` **[M/S · 신규·닫힘 2026-10-05 #722]** CR·LF admin 토큰이 Bearer 를 인용한 raw `ArgumentError` 로, 잘못된 UTF-8 응답이 raw 예외로 나왔다(§4)
 
-### 테스트·커버리지 — 13
+### 테스트·커버리지 — 14
 
 - [x] `selftest-hygiene-textual-rules` **[H/M]** '존재'가 아니라 '실행'을 센다던 규칙이 주석·비활성화·`|| true`를 실행으로 센다 · `scripts/test/test-selftest-hygiene.sh:20`
 - [x] `coverage-exclusions-swallow-pure-logic` **[H/L · 닫힘 2026-09-25 #573 #574 #577 #579]** '네트워크 경계' 커버리지 제외가 순수 로직까지 삼켰다 — **아홉 언어를 변이로 전수 측정**: node 3 · python 10 · dotnet 4 · java 5 · kotlin 3 · ruby 3 · go 4 CAUGHT(제외돼도 시험됨), php 2/2 SILENT → #573, rust 제외 정규식 무앵커 → #574. 측정 중 드러난 **교환 경로 nonce 무시험**(java·rust, #577)·**node 토큰 타입 무시험**(#579)은 제외와 무관한 테스트 구멍이었다. 사후 서사는 `git show ef040af:docs/superpowers/plans/remaining-work.md` 515–528행 · `php/phpunit.xml:13`
@@ -657,6 +657,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `ruby-framing-spec-server-written-flaky` **[M/S · 닫힘 2026-10-22 #797]** 원인은 리눅스가 받은 소켓의 송신 버퍼를 자동으로 키운 것 — `FramingServer` 가 SO_SNDBUF 를 64 KiB 로 고정한다(Go 의 같은 오라클과 같다) · `ruby/spec/support/framing_server.rb`
 - [ ] `dotnet-allocation-test-process-wide-counter-flaky` **[L/S · 신규 2026-10-23]** 2 KiB 할당 시험이 프로세스 전체 카운터로 재서 같은 SHA 에서 갈렸다(318,336 B ≥ `Cap / 4`, 재실행 초록) · `dotnet/tests/Xzawed.Keycloak.Sdk.Tests/TokenResponseCapTests.cs:271`
 <!-- dotnet-allocation-test-process-wide-counter-flaky: A_2_KiB_body_allocates_nothing_near_the_cap(chunked: False). run 39893087370 attempt 1(.NET SDK 10.0.x, #824) 빨강 · attempt 2 초록 · 같은 SHA 434fab6 의 push 실행 39893081688 초록 — 재실행 전 dotnet-ci 최근 60 회 중 실패는 이 하나. GC.GetTotalAllocatedBytes 는 프로세스 전체이고 DisableParallelization 은 동시에 도는 시험을 막을 뿐 시험 밖의 배경 작업은 막지 못한다. 원인 미측정 — 후보: 앞 시험이 남긴 가짜 IdP 의 ServeAsync · 러너 보고. 고칠 후보: k 회 측정의 최솟값(잡음은 더하기만 한다). -->
+- [ ] `dotnet-rawserver-reads-once-flaky` **[L/S · 신규 2026-10-27]** `RawServer` 가 요청을 한 번만 읽고 닫는다 — g4 의 `IntrospectAsync` 가 401 대신 `ResponseEnded` 로 두 번 갈렸다(#852·#863, .NET 8). 기제 미측정 · `dotnet/tests/Xzawed.Keycloak.Sdk.Tests/MalformedTokenResponseTests.cs:353`
 
 ### 가드·CI — 20
 
@@ -732,7 +733,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 87건 (열림 52)
+## D. 원장 밖 — 88건 (열림 53)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -823,7 +824,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - 자리를 늘리거나 그 모양을 FAIL 로 · `scripts/coverage-boundary.mjs`
 - [ ] `readme-quickstarts-ungated` **[M/M]** README가 정본이라 부르는 quickstart 예제가 어떤 게이트에도 안 걸린다 — 하네스가 실제로 돌리는 것은 별도 사본이다 · `node/examples/quickstart.ts:1`
 
-### 1.0 이후 운영 — 20
+### 1.0 이후 운영 — 21
 
 - [ ] `audit-2026-09-22-doc-code` **[H/L · 신규 2026-09-22]** 전체 코드·문서 감사(17 독립 레그 + 3렌즈 반증) 결과 **91 건 중 57 건이 과반 반증을 견뎠고**, 그중 **13 건이 닫혔다(high 는 6/6 전부)** — 나머지 44 건(medium 31 · low 12 · 계수 1)이 열려 있다 · `docs/superpowers/plans/remaining-work.md:1`
   - **방법과 계수**: 발견 레그 17(횡단 8 + 언어별 9) → 91 건. 렌즈 3(증거 재도출 · 기지사실 · 오탐)이 각 건을 독립 판정 → **생존 57**(high 14 · medium 31 · low 12), **기각 34**. high 14 는 5 렌즈 심층 반증 또는 사람의 직접 확인을 거쳤다. 범주 분포와 레그별 산출은 이 항목을 만든 PR 이 소유한다.
@@ -857,6 +858,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `harness-consume-pin-unsupported` **[L/S]** 주간 OSV 감사가 지원 대상이 아닌 0.1.0 트리를 재고 있다 · `harness/install/consume/kotlin-app/build.gradle.kts:36`
 - [ ] `npm-rc-dist-tag-residue` **[L/S]** npm `rc` dist-tag 가 지원하지 않는 0.1.0-rc.2 를 아직 서빙한다 · `DEPLOY.md:503`
 - [x] `php-admin-client-0.44-upgrade` **[L/M · 닫힘 2026-10-09 #759]** 0.44 가 감싼 예외를 `ErrorTranslation` 이 벗긴다(#750 대체)
+- [ ] `kotlin-pom-description-jdk-floor` **[M/S · 신규 2026-10-27]** 게시 POM `<description>` 이 「JDK 21+」다 — 하한은 1.0.1 부터 17(`JVM_17` · `-Xjdk-release=17`)인데 1.0.1–1.0.7 이 그 문구다(repo1 .pom) · `kotlin/build.gradle.kts:266`
 
 ### 완전성 비평 신규 — 6
 

@@ -5,7 +5,12 @@ paths:
   - "harness/**"
   - "DEPLOY.md"
 ---
-<!-- doc-budget: max-bytes=9985 -->
+<!-- doc-budget: max-bytes=10253 -->
+<!-- 9985 → 10253 (2026-10-27): 래칫 조건 (1) — 증가분이 그 주장을 **다시 재는 명령**을 사 온다
+     (`gh run view … --log | grep 'Release Count'`). Central Portal 의 월간 게시 상한은 계정 상태라
+     로컬 게이트가 못 보고, 그 수를 말해 주는 곳은 업로드 로그 한 줄뿐이다. 담은 넷이 전부 수행
+     방법이다 — (1) 상한이 있다는 사실, (2) 실측 근거(로그 줄과 날짜), (3) 물결마다 둘을 쓴다는
+     산수, (4) 다시 재는 명령. 필요한 만큼만 올렸다(적재 9964 → 10253). -->
 <!-- 9720 → 9985 (2026-09-02): 래칫 조건 (1) — 증가분이 **기계 검증을 사 온다**. 이 절의 규약이
      「가드가 강제하는데 아무 데도 안 적힌 불변식을 한 줄씩」이고, 이번 줄이 가리키는
      `test-selftest-hygiene.sh` 규칙 5 는 **이 PR 에서 새로 생긴 검사**다(그전에는 아무도 안 봤다).
@@ -51,6 +56,7 @@ The definitions are `.github/rulesets/*.json` (the committed JSON is the SSOT); 
 
 - ⚠️ **An unset deployment secret is a failure, not a skip.** A run that publishes nothing and finishes green is indistinguishable from a successful one, and quietly leaves the tag and Release with an empty registry. Same reason we avoid `dotnet nuget push --skip-duplicate` (it disguises an already-burned version as success).
 - ⚠️ **That guard only works on an env-mapped value inside the step** — a job-level `if:` cannot read secrets.
+- ⚠️ **The Central Portal caps the org's published releases per month** — java 1.2.3's upload logged `Release Count publishing limit (6 of 7 used)` (2026-10-27); each wave spends two (java, kotlin). Before JVM tags: `gh run view <last release.yml run> --log | grep 'Release Count'`.
 
 ## Dependabot
 
