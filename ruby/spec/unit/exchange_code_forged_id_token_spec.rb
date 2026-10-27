@@ -32,10 +32,10 @@ RSpec.describe KeycloakSdk::AuthClient, "#exchange_code with a forged RS256 id_t
     client.auth.exchange_code(code: "c", code_verifier: "v", redirect_uri: "https://app/cb", expected_nonce: "n-abc")
   end
 
-  def id_token(key, kid)
+  def id_token(key, kid, **extra)
     now = Time.now.to_i
     claims = { "sub" => "user-1", "iss" => "https://kc.example.com/realms/demo", "aud" => "app",
-               "exp" => now + 300, "iat" => now, "nonce" => "n-abc" }
+               "exp" => now + 300, "iat" => now, "nonce" => "n-abc" }.merge(extra.transform_keys(&:to_s))
     JWT.encode(claims, key, "RS256", { kid: kid })
   end
 
@@ -54,5 +54,16 @@ RSpec.describe KeycloakSdk::AuthClient, "#exchange_code with a forged RS256 id_t
     forged = id_token(OpenSSL::PKey::RSA.generate(2048), "forger-key")
     expect { exchange_with_id_token(forged) }
       .to raise_error(KeycloakSdk::AuthError, /\Aauthorization_code exchange failed: invalid id_token: /)
+  end
+
+  # 받는 토큰의 길이 상한 — 코드 교환의 id_token 도 `validate` 와 같은 문을 지난다. realm 키로 서명하고 클레임·nonce 가
+  # 맞는 id_token 이라 상한이 없으면 이 교환은 **통과한다**(쓰레기는 상한 없이도 헤더에서 거부돼 JWKS 를 안 부른다).
+  it "rejects a signed id_token over the cap without a JWKS request" do
+    over = id_token(realm_key, "realm-key", pad: "a" * 192_000)
+    expect(over.bytesize).to be > 256_000
+    expect { exchange_with_id_token(over) }
+      .to raise_error(KeycloakSdk::AuthError, "authorization_code exchange failed: invalid id_token: " \
+                                              "JWT validation failed: token exceeds 256000 bytes")
+    expect(a_request(:get, "https://kc.example.com/realms/demo/protocol/openid-connect/certs")).not_to have_been_made
   end
 end

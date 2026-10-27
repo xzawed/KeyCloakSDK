@@ -7,6 +7,11 @@ module KeycloakSdk
   # RS256 핀(none/confusion 구조적 거부)·iss 정확·aud 포함·exp 필수·nbf·클록스큐.
   # 키는 DoS-safe JwksStore로 조회한다(위조 서명은 재조회 미유발). 헤더 alg는 검증 알고리즘 선택에 미사용.
   class JwtValidator
+    # 받는 토큰의 길이 상한(아홉 언어 공통). Microsoft.IdentityModel 의 `DefaultMaximumTokenSizeInBytes` 와 같은 수이고,
+    # Keycloak 26.6 기본값이 받는 가장 긴 Bearer(65,459 B)의 약 3.9 배라 서버가 낸 토큰은 거부하지 않는다.
+    JWT_MAX_BYTES = 256_000
+    private_constant :JWT_MAX_BYTES
+
     # ⚠️ `clock_skew` 기본값을 여기 숫자로 적지 말 것 — `Config`가 유일한 정의 자리다(Task D1과
     # 같은 부류). 이 클래스도 public이라 소비자가 직접 생성할 수 있고, 두 자리가 갈리면 그
     # 경로에서만 만료된 토큰이 더 오래 통과한다.
@@ -34,6 +39,7 @@ module KeycloakSdk
     # 쓴다 — 키 저장소(캐시 · 재조회 제한 · 백오프)는 그대로 이 인스턴스의 것 하나다.
     # ⚠️ nil·공백은 생성자와 같이 ConfigError — ruby-jwt 는 `aud: nil` 이면 aud 검사를 건너뛴다.
     def validate(token, audience: @audience)
+      reject_oversized!(token) # ⚠️ 맨 앞이다 — 나누기·디코드·JWKS 적재보다 먼저(아래 메서드)
       raise ConfigError, "audience is required" if audience.nil? || audience.to_s.strip.empty?
       # ⚠️ ruby-jwt 는 맨 먼저 토큰을 `split` 하고, 잘못된 UTF-8 이면 그것이 raw ArgumentError 다(실측).
       if token.is_a?(String) && !token.valid_encoding?
@@ -49,6 +55,15 @@ module KeycloakSdk
     end
 
     private
+
+    # 길이 상한 — ruby-jwt 는 서명을 보기 전에 토큰을 나누고 base64·JSON 디코드하며(할당이 길이에 비례한다), 키는
+    # 그 뒤에 JWKS 에서 찾는다. 단위는 `bytesize`(진짜 JWT 는 ASCII 라 문자 수와 같다)이고, 잘못된 UTF-8 이어도 잴 수
+    # 있어 `validate` 의 인코딩 검사보다 앞이다. String 이 아닌 값은 지금처럼 ruby-jwt 가 거부한다.
+    def reject_oversized!(token)
+      return unless token.is_a?(String) && token.bytesize > JWT_MAX_BYTES
+
+      raise TokenValidationError, "JWT validation failed: token exceeds #{JWT_MAX_BYTES} bytes"
+    end
 
     def decode_options(audience)
       {
