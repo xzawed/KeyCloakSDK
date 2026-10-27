@@ -294,4 +294,11 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
     spec.note("  users.get 404 + 64 MiB: allocated #{allocated} bytes")
     expect(allocated).to be < 16 * AdminResponseBodySpec::CAP
   end
+
+  # 공개 API 가 아니다 — admin 커넥션의 내부 미들웨어다(`BearerAuth` 뒤·어댑터 바로 앞). 공개로 바꾸는 것은 minor 판정이라
+  # 여기서 운다(`http_framing_pins_spec.rb` 의 framing 모듈과 같은 관용).
+  it "keeps the settle middleware private (not public API)" do
+    expect(KeycloakSdk::Admin.constants).not_to include(:SettleBody)
+    expect { KeycloakSdk::Admin::SettleBody }.to raise_error(NameError, /private constant/)
+  end
 end
