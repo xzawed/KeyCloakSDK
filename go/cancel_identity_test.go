@@ -4,9 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"net"
 	"net/url"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -259,5 +264,51 @@ func TestAdminCancelledBeforeTheRequest_keepsItsIdentity(t *testing.T) {
 				t.Errorf("%s: *keycloak.TransportError 여야 하는데 %T 다", op.name, err)
 			}
 		})
+	}
+}
+
+// TestAdminFacadeClosures_takeTheCallCtx — 위 시험들은 Users 다섯 호출만 잰다. 다른 리소스의 메서드가 call/run 에 넘기는
+// 클로저가 받은 ctx(칸이 실린 것) 대신 바깥 ctx 를 쓰면 정체를 조용히 잃는다. 그래서 call/run 의 클로저 전부가 매개변수를
+// `ctx context.Context` 로 받는지 소스에서 잰다 — 그 이름이 바깥 ctx 를 가리므로 본문의 ctx 는 언제나 칸이 실린 것이다.
+func TestAdminFacadeClosures_takeTheCallCtx(t *testing.T) {
+	files, err := filepath.Glob("admin*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	seen := 0
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		af, err := parser.ParseFile(fset, f, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(af, func(n ast.Node) bool {
+			ce, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			id, ok := ce.Fun.(*ast.Ident)
+			if !ok || (id.Name != "call" && id.Name != "run") || len(ce.Args) != 2 {
+				return true
+			}
+			seen++
+			lit, ok := ce.Args[1].(*ast.FuncLit)
+			var params []*ast.Field
+			if ok {
+				params = lit.Type.Params.List
+			}
+			if !ok || len(params) != 1 || len(params[0].Names) != 1 || params[0].Names[0].Name != "ctx" {
+				t.Errorf("%s: %s 의 클로저가 매개변수를 `ctx context.Context` 로 받지 않는다 — 칸이 실린 ctx 를 못 쓴다",
+					fset.Position(ce.Pos()), id.Name)
+			}
+			return true
+		})
+	}
+	// 공허 방지 — 다섯 리소스의 호출 자리(25)와 run 자신(1)보다 적게 세면 이 검사는 아무것도 안 본 것이다.
+	if seen < 26 {
+		t.Fatalf("call/run 호출을 %d 곳만 찾았다 — 파일 글롭이나 이름이 바뀌었나?", seen)
 	}
 }
