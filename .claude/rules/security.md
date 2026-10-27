@@ -85,7 +85,7 @@ Change either one **in all nine at once**. The guard is `scripts/test/test-secur
 
 ## Inbound token cap
 
-⚠️ **Validators reject a token over 256,000 bytes in all nine, before any decode or JWKS load** — the libraries decode before the signature (up to 203 B allocated per input byte, measured 2026-10-27). 256,000 is Microsoft.IdentityModel's default. Move all nine at once; guard: axis 1f.
+⚠️ **Validators reject a token over 256,000 bytes in all nine, before any decode or JWKS load** — the libraries decode before the signature (up to ≈203 B per input byte, measured 2026-10-27); the value is Microsoft.IdentityModel's default. Move all nine at once; guard: axis 1f.
 
 ## Secret memory hygiene — it has a boundary (do not oversell it)
 

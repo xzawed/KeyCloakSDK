@@ -443,9 +443,11 @@ assert_eq "GREW" "$SD_TCP" \
 # ---------------------------------------------------------------------------
 #
 # 검증기에 넘어온 토큰이 이 길이를 넘으면 **어떤 분해·디코드·JWKS 적재보다 먼저** SDK 검증 오류로 거부한다.
-# 라이브러리가 서명 전에 디코드해, 상한이 없을 때 위조 토큰이 입력 바이트당 Rust 203 · PHP 167 · Go 54 ·
-# JVM 38 · Node 23 · Ruby 19 B 를 할당했고 PHP 에서는 768 KiB 하나가 memory_limit=128M 의 치명 OOM(PHP2Shell
-# 의 트리거)이었다(등록부 `inbound-token-cap-divergent` 의 실측 2026-10-27 · #850).
+# 라이브러리가 서명 전에 디코드해, 상한이 없을 때 위조 토큰이 입력 바이트당 Rust ≈203(최대 상주) · PHP ≈167 ·
+# Go ≈54 · JVM ≈38 · Node ≈24 · Ruby ≈19 B 를 썼고 PHP 에서는 768 KiB 하나가 memory_limit=128M 의 치명 OOM
+# (PHP2Shell 의 트리거)이었다(등록부 `inbound-token-cap-divergent` 의 실측 2026-10-27 · #850).
+# ⚠️ 4절 소유자 축은 「그 줄에 값이 있는가」만 본다 — security.md 의 그 줄은 **값을 한 번만** 말해야 한다. 두 번
+# 말하던 첫 판에서 한쪽(262,144)만 바꾼 변이가 SILENT 였다(`scripts/probe.sh` 실측 2026-10-27).
 #
 # **왜 256000 인가.** Microsoft.IdentityModel 의 `DefaultMaximumTokenSizeInBytes`(.NET 레인이 원래 쓰던 값 —
 # 이제 SDK 가 명시한다)이고, Keycloak 26.6 기본이 받는 가장 긴 Bearer(65,459 B — 1e)의 ≈3.9 배라 그 서버가 받는
