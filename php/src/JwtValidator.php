@@ -22,9 +22,9 @@ final class JwtValidator
     /**
      * 받는 JWT 의 바이트 상한 — 넘으면 **어떤 분해·디코드보다 먼저** 거부한다.
      *
-     * 이 경로는 서명을 보기 전에 토큰을 쪼개고 헤더·페이로드를 json_decode 한다. 상한이 없을 때 넓은 JSON 배열을 실은
-     * 헤더는 토큰 바이트당 약 95 B 를 할당했고, 1.5 MiB 토큰 하나가 기본 `memory_limit` 128M 에서 치명 OOM 으로 요청을
-     * 끝냈다(실측). 공격자가 일으키는 OOM 치명 오류는 PHP2Shell(CVE-2026-109618 · CVE-2026-109619)의 트리거이고, 패치된
+     * 이 경로는 서명을 보기 전에 토큰을 쪼개고 헤더·페이로드를 json_decode 한다. 상한이 없을 때 깊게 중첩한 JSON 배열을
+     * 실은 헤더는 토큰 바이트당 약 167 B 를 할당했고, 768 KiB 토큰 하나가 기본 `memory_limit` 128M 에서 치명 OOM 으로
+     * 요청을 끝냈다(넓은 배열이면 약 95 B · 1.5 MiB, 실측). 공격자가 일으키는 OOM 치명 오류는 PHP2Shell(CVE-2026-109618 · CVE-2026-109619)의 트리거이고, 패치된
      * PHP 에서도 요청을 죽이는 DoS 다. 256000 은 .NET SDK 가 쓰는 Microsoft.IdentityModel 의 `DefaultMaximumTokenSizeInBytes`
      * 와 같고, Keycloak 26.6 이 기본 설정으로 받는 가장 긴 Bearer(65,459 B)의 약 3.9 배다. 이 길이에서 잰 가장 비싼 모양
      * (깊이 500 으로 중첩한 배열, 바이트당 약 86 B)은 22 MB 남짓이다 — `JwtValidatorTest` 가 기본 한도의 1/4 아래를
