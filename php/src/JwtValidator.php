@@ -26,8 +26,9 @@ final class JwtValidator
      * 헤더는 토큰 바이트당 약 95 B 를 할당했고, 1.5 MiB 토큰 하나가 기본 `memory_limit` 128M 에서 치명 OOM 으로 요청을
      * 끝냈다(실측). 공격자가 일으키는 OOM 치명 오류는 PHP2Shell(CVE-2026-109618 · CVE-2026-109619)의 트리거이고, 패치된
      * PHP 에서도 요청을 죽이는 DoS 다. 256000 은 .NET SDK 가 쓰는 Microsoft.IdentityModel 의 `DefaultMaximumTokenSizeInBytes`
-     * 와 같고, Keycloak 26.6 이 기본 설정으로 받는 가장 긴 Bearer(65,459 B)의 약 3.9 배다. 이 길이의 가장 비싼 모양은
-     * 24 MB 남짓이다 — `JwtValidatorTest` 가 기본 한도의 절반 아래를 단언하므로 상한을 올리면 그 시험이 먼저 빨개진다.
+     * 와 같고, Keycloak 26.6 이 기본 설정으로 받는 가장 긴 Bearer(65,459 B)의 약 3.9 배다. 이 길이에서 잰 가장 비싼 모양
+     * (깊이 500 으로 중첩한 배열, 바이트당 약 86 B)은 22 MB 남짓이다 — `JwtValidatorTest` 가 기본 한도의 1/4 아래를
+     * 단언하므로 상한을 올리면 그 시험이 먼저 빨개진다.
      */
     public const JWT_MAX_BYTES = 256000;
 
@@ -89,6 +90,9 @@ final class JwtValidator
         if ($kid === null) {
             throw new TokenValidationError('missing kid');
         }
+        // ⚠️ 헤더 배열은 여기서 놓는다 — firebase 가 헤더를 다시 디코드하는 동안 둘이 함께 살면 할당이 두 배다
+        // (깊이 500 중첩 배열 헤더가 상한 길이에서 42 MB → 21 MB, 실측).
+        unset($header);
 
         // (2) JWKS에서 kid로 키 조회(DoS-safe, JwksStore) → firebase Key → 서명/exp/nbf 검증(클록 스큐 적용)
         $jwk = $this->jwks->getKeyByKid($kid);

@@ -465,7 +465,7 @@ final class JwtValidatorTest extends TestCase
 
     /**
      * PHP2Shell(CVE-2026-109618 · CVE-2026-109619)은 공격자가 일으키는 OOM 치명 오류를 트리거로 쓴다 — 서명을 보기
-     * 전의 이 경로가 토큰 길이에 비례해 할당하면 그 트리거가 된다. 상한이 없을 때 `headerBomb` 모양은 토큰 바이트당
+     * 전의 이 경로가 토큰 길이에 비례해 할당하면 그 트리거가 된다. 상한이 없을 때 `bomb('header', '[0],', …)` 모양은 토큰 바이트당
      * 약 95 B 를 할당했고, 1.5 MiB 하나가 `memory_limit=128M` 에서 치명 오류로 요청을 끝냈다(실측 2026-10-27).
      */
     public function testRejectsATokenOverTheCapBeforeDecodingItOrFetchingKeys(): void
@@ -486,7 +486,7 @@ final class JwtValidatorTest extends TestCase
         };
         $store = new JwksStore('https://kc:8080/realms/it-realm/protocol/openid-connect/certs', $http, new HttpFactory());
         $validator = new JwtValidator($cfg, new OidcEndpoints($cfg), $store);
-        $token = self::headerBomb(JwtValidator::JWT_MAX_BYTES + 64);
+        $token = self::bomb('header', '[0],', JwtValidator::JWT_MAX_BYTES + 64);
         self::assertGreaterThan(JwtValidator::JWT_MAX_BYTES, \strlen($token));
 
         $peak = self::peakDuring(static function () use ($validator, $token): void {
@@ -562,13 +562,25 @@ final class JwtValidatorTest extends TestCase
         self::assertLessThan(1 << 20, $peak, 'the dot count must be checked before explode() makes a value per segment');
     }
 
-    public function testTheWorstKnownShapeAtTheCapStaysUnderHalfTheDefaultMemoryLimit(): void
+    /** @return iterable<string, array{string, string}> */
+    public static function worstKnownShapes(): iterable
     {
-        // 상한이 그 근거를 지키는가 — 상한 길이의 가장 비싼 모양이 끝까지 디코드돼도 기본 `memory_limit`(128M)의 절반 아래다.
-        // 상한을 올리면 이 시험이 먼저 빨개진다(1 MiB 였다면 약 101 MB, 실측).
+        $nested = str_repeat('[', 500) . '0' . str_repeat(']', 500) . ',';   // 머리 객체 + "x" 배열 + 500 ≤ json 깊이 512
+
+        yield 'header, a wide array of [0]' => ['header', '[0],'];
+        yield 'header, arrays nested 500 deep' => ['header', $nested];
+        yield 'payload, arrays nested 500 deep' => ['payload', $nested];
+    }
+
+    #[DataProvider('worstKnownShapes')]
+    public function testTheWorstKnownShapesAtTheCapStayUnderAQuarterOfTheDefaultMemoryLimit(string $where, string $unit): void
+    {
+        // 상한이 그 근거를 지키는가 — 상한 길이의 가장 비싼 모양이 끝까지 디코드돼도 기본 `memory_limit`(128M)의 1/4 아래다.
+        // 상한을 올리거나(1 MiB 였다면 헤더 [0] 모양이 약 101 MB) 사전 게이트가 디코드한 헤더를 쥔 채 firebase 를 부르면
+        // (중첩 헤더가 42.7 MB) 이 시험이 먼저 빨개진다(실측 2026-10-27).
         $validator = $this->validator();
-        $token = self::headerBomb(JwtValidator::JWT_MAX_BYTES);
-        self::assertGreaterThan(JwtValidator::JWT_MAX_BYTES - 16, \strlen($token));
+        $token = self::bomb($where, $unit, JwtValidator::JWT_MAX_BYTES);
+        self::assertGreaterThan(JwtValidator::JWT_MAX_BYTES - 2048, \strlen($token));
 
         $peak = self::peakDuring(static function () use ($validator, $token): void {
             try {
@@ -579,7 +591,7 @@ final class JwtValidatorTest extends TestCase
             }
         });
 
-        self::assertLessThan(64 << 20, $peak, 'at the cap the worst known shape must stay under half of the default memory_limit');
+        self::assertLessThan(32 << 20, $peak, 'at the cap a known worst shape must stay under a quarter of the default memory_limit');
     }
 
     /** `$f` 를 도는 동안 늘어난 최대 메모리(바이트). */
@@ -594,16 +606,18 @@ final class JwtValidatorTest extends TestCase
     }
 
     /**
-     * alg·kid 가 맞아 서명 검증까지 가는, 넓은 JSON 배열(`[0]` 여럿)을 실은 헤더 — 상한이 없을 때 가장 비싼 모양이었다
-     * (사전 게이트와 firebase 가 헤더를 한 번씩 디코드하고 둘 다 살아 있다). 길이는 `$len` 이하에서 가장 가깝다.
+     * alg·kid 가 맞아 서명 검증까지 가는 폭탄 토큰 — `$unit` 을 JSON 배열 `x` 에 채워 헤더나 페이로드에 싣는다.
+     * 길이는 `$len` 이하에서 가장 가깝다(한 단위만큼 모자랄 수 있다).
      */
-    private static function headerBomb(int $len): string
+    private static function bomb(string $where, string $unit, int $len): string
     {
         $b64 = static fn (string $s): string => rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
-        $tail = '.' . $b64('{}') . '.' . $b64('sig');
-        $n = intdiv(intdiv(($len - \strlen($tail)) * 3, 4), 4);
+        $n = intdiv(intdiv($len * 3, 4), \strlen($unit));
         do {
-            $token = $b64('{"alg":"RS256","kid":"test-kid","x":[' . rtrim(str_repeat('[0],', max(1, $n--)), ',') . ']}') . $tail;
+            $x = '"x":[' . rtrim(str_repeat($unit, max(1, $n--)), ',') . ']';
+            $token = $where === 'header'
+                ? $b64('{"alg":"RS256","kid":"test-kid",' . $x . '}') . '.' . $b64('{}') . '.' . $b64('sig')
+                : $b64('{"alg":"RS256","kid":"test-kid"}') . '.' . $b64('{' . $x . '}') . '.' . $b64('sig');
         } while (\strlen($token) > $len);
 
         return $token;
