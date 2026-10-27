@@ -95,7 +95,7 @@ internal class NoRedirectResourceRetriever(
      *
      * 왜: Nimbus `RateLimitedJWKSetSource` 는 강제 재조회를 하기로 정한 **뒤** 창의 크레딧을 쓰고 그다음 이 메서드를 부른다 — 되돌리지
      * 않는다. 검증은 [onIo] 의 `runInterruptible` 안에서 돌고 코루틴 취소는 그 스레드를 인터럽트한다. HttpURLConnection 의 읽기는 플랫폼
-     * 스레드에서 인터럽트를 무시해 조회가 끝까지 갔다(등록부 `jwks-forced-refetch-window-burned` 「kotlin 은 해당 없음」). 이 운송에는
+     * 스레드에서 인터럽트를 무시해 조회가 끝까지 갔다(`jwks-forced-refetch-window-burned` 의 「kotlin 은 해당 없음」 — #725 커밋 메시지). 이 운송에는
      * 인터럽트에 끝나는 자리가 하나 있다 — 경로의 연결이 모두 쓰이는 동안의 **풀의 기다림**. 그 자리에서 취소되면 크레딧은 썼는데 캐시는
      * 안 차서 창이 닫힐 때까지 회전한 진짜 키가 거부된다(실측 `ConnectionReuseTest` 의 강제 재조회 취소 사례). 그래서 조회는 인터럽트되지
      * 않는 스레드에서 돌고 그 결과 — 조회가 끝나고 캐시가 차며 인터럽트 표시는 남는다 — 를 호출자에게 준다. 캐시는 Nimbus 가 이 메서드를

@@ -1177,8 +1177,8 @@ internal class ConnectionReuseTest {
 
     // 취소가 JWKS 강제 재조회 창을 버리지 않는다 — 경로의 50 자리가 다 쓰이는 동안 회전한 키(k2)의 검증이 강제 재조회를 정하고(Nimbus 는
     // 그때 창의 크레딧을 쓴다) 연결을 기다리다 취소돼도, 그 조회는 끝까지 가서 캐시를 채운다: 자리가 풀린 뒤 k2 검증은 /certs 를 더 치지
-    // 않고 성공한다. HttpURLConnection 은 플랫폼 스레드의 읽기라 인터럽트를 무시했다(등록부 jwks-forced-refetch-window-burned 「kotlin 은
-    // 해당 없음」) — 풀의 기다림은 인터럽트에 끝나므로 그 판정이 이 운송에서 다시 서야 한다. 창은 240 초라 시험 동안 다시 열리지 않는다.
+    // 않고 성공한다. HttpURLConnection 은 플랫폼 스레드의 읽기라 인터럽트를 무시했다(jwks-forced-refetch-window-burned 의 「kotlin 은
+    // 해당 없음」 — #725 커밋 메시지) — 풀의 기다림은 인터럽트에 끝나므로 그 판정이 이 운송에서 다시 서야 한다. 창은 240 초라 시험 동안 다시 열리지 않는다.
     @Test
     @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     fun `a validation cancelled while its forced JWKS refetch waits for a pooled connection still fills the cache`() {
