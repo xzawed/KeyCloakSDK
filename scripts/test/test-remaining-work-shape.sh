@@ -26,20 +26,20 @@ assert_eq "yes" "$([ -f "$F" ] && echo yes || echo no)" "[등록부] 파일이 �
 # 다른 본문 전까지). 끝의 빈 줄은 항목 사이 간격이므로 소유에서 뺀다.
 # ⚠️ 블록 주석도 센다(2026-10-27) — 들여쓴 줄만 세던 동안 닫힌 13 건이 열 0 블록 주석으로 서사 9,362 B 를
 # 다시 달고 있었고 이 단언은 초록이었다(주입 예산은 주석을 세지 않으니 그 길로 옮겨 붙었다). 기계 앵커
-# (`<!-- doc-guard:` · `doc-budget:` · `doc-status:`)는 서사가 아니라 다음 본문의 표지라 블록을 끝낸다.
+# (`<!-- doc-guard:` · `doc-budget:` · `doc-status:`)는 서사가 아니라 다음 본문의 표지라 **세지도 끊지도
+# 않는다** — 끊으면 앵커 뒤에 놓인 서사 주석을 놓친다(그 우회가 사례 anchor-then-narrative 다).
 _shape_of() {
   awk '
   function flush(){ if (cur=="x") { owned += (n - trail) } ; cur=""; n=0; trail=0 }
-  incomment { n++; trail=0; if ($0 ~ /-->/) incomment=0; next }
+  incomment { if (!neutral) { n++; trail=0 }; if ($0 ~ /-->/) { incomment=0; neutral=0 }; next }
   /^- \[[ x]\] / { flush(); cur = (substr($0,4,1)=="x") ? "x" : "o"; if (cur=="x") closed++; n=1; trail=0; next }
   /^#{1,6} / { flush(); next }
   {
     if (cur != "") {
       if ($0 ~ /^[[:space:]]*$/) { n++; trail++; next }
       if ($0 ~ /^[[:space:]]/)   { n++; trail=0; next }
-      if ($0 ~ /^<!--/ && $0 !~ /^<!--[[:space:]]*doc-(guard|budget|status):/) {
-        n++; trail=0; if ($0 !~ /-->/) incomment=1; next
-      }
+      if ($0 ~ /^<!--[[:space:]]*doc-(guard|budget|status):/) { if ($0 !~ /-->/) { incomment=1; neutral=1 }; next }
+      if ($0 ~ /^<!--/) { n++; trail=0; if ($0 !~ /-->/) incomment=1; next }
       flush(); next
     }
   }
@@ -67,8 +67,9 @@ printf '%s\n' '- [x] `a` 닫힘' '<!-- a 닫힘 상세 -->' '- [ ] `b`' > "$_fx/
 printf '%s\n' '- [x] `a` 닫힘' '' '<!-- 여러 줄' '서사 -->' '' '## 절' > "$_fx/multiline.md"
 printf '%s\n' '- [x] `a` 닫힘' '  들여쓴 서사' > "$_fx/indented.md"
 printf '%s\n' '- [x] `a` 닫힘' '<!-- doc-guard: kind=count source=x -->' '본문' > "$_fx/anchor.md"
+printf '%s\n' '- [x] `a` 닫힘' '<!-- doc-guard: kind=count source=x -->' '<!-- 앵커 뒤의 서사 -->' '본문' > "$_fx/anchor-then-narrative.md"
 printf '%s\n' '- [ ] `a` 열림' '<!-- a 착수 정보 -->' '- [x] `b` 닫힘' > "$_fx/open-comment.md"
-for _case in plain:0 comment:1 multiline:3 indented:1 anchor:0 open-comment:0; do
+for _case in plain:0 comment:1 multiline:3 indented:1 anchor:0 anchor-then-narrative:1 open-comment:0; do
   _name="${_case%%:*}"; _want="${_case##*:}"
   _s="$(_shape_of "$_fx/$_name.md")"
   assert_eq "$_want" "$(( ${_s%% *} - ${_s##* } ))" "[소유 규칙] 사례 $_name: 소유 − 닫힘"
