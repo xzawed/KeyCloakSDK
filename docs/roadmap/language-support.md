@@ -44,7 +44,7 @@ The procedure lives in **[DEPLOY.md](../../DEPLOY.md)** — do not copy checklis
 | **TypeScript / Node.js** | ✅ | ✅ (ESM · async-only) | ✅ | ✅ (Testcontainers) | ✅ | 🚀 npm `1.0.5` |
 | **Go** | ✅ | ✅ (sync + `context.Context`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 Go module proxy `1.2.3` |
 | **C# / .NET** | ✅ | ✅ (async-first `Task<T>`+`CancellationToken`) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 NuGet `1.0.5` |
-| **PHP** | ✅ | ✅ (`readonly class` · exception-based) | ✅ | ✅ (docker CLI shell-out — real Keycloak 26.6) | ✅ | 🚀 Packagist `1.4.1` |
+| **PHP** | ✅ | ✅ (`readonly class` · exception-based) | ✅ | ✅ (docker CLI shell-out — real Keycloak 26.6) | ✅ | 🚀 Packagist `1.5.0` |
 | **Rust** | ✅ | ✅ (edition 2024 · async-only) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 crates.io `1.1.3` |
 | **Ruby** | ✅ | ✅ (sync-only · exception hierarchy) | ✅ | ✅ (E2E, docker CLI shell-out) | ✅ | 🚀 RubyGems `1.3.2` |
 | **Kotlin** | ✅ | ✅ (coroutines `suspend` · reuses JVM/Java stack) | ✅ | ✅ (E2E, Testcontainers) | ✅ | 🚀 Maven Central `1.0.6` |
