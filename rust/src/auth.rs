@@ -501,6 +501,7 @@ mod tests {
     // 파싱하고 경계에서 IntrospectionResult로 변환되는지 확인. 전 흐름은 Task 11 통합테스트.
     use super::*;
     use crate::jwks::JwksStore;
+    use crate::jwt::JWT_MAX_BYTES;
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
@@ -1160,6 +1161,39 @@ mod tests {
             .await
             .expect("matching nonce must be accepted");
         assert!(ts.id_token.is_some());
+    }
+
+    /// 코드 교환의 id_token 도 길이 상한(`JWT_MAX_BYTES`)을 지난다 — 진짜로 서명된 상한 초과 id_token 은 상한이 없으면
+    /// 검증을 통과했을 것이다. 콜드 검증기라 이 거부는 JWKS 요청을 하나도 보내지 않는다.
+    /// ⚠️ 쓰레기가 아니라 진짜 토큰을 싣는 이유: openidconnect 가 토큰 응답을 역직렬화하며 id_token 을 먼저 디코드한다
+    /// (`CoreTokenResponse` 의 `IdToken`) — 쓰레기는 거기서 응답 파싱 실패로 떨어져 상한까지 오지 않는다. 그 디코드의
+    /// 크기는 토큰 응답 상한(`TOKEN_RESPONSE_MAX_BYTES`)이 막는다.
+    #[tokio::test]
+    async fn exchange_code_refuses_an_over_cap_id_token_before_any_jwks_request() {
+        let fx = exchange_fixture_with(ExchangeSpec::default(), |t| {
+            let mut c = t.claims(json!("it-client"), Some("expected-nonce"));
+            let mut pad = 0usize;
+            loop {
+                c["pad"] = json!("x".repeat(pad));
+                let tok = t.sign(&c, "test-kid");
+                if tok.len() > JWT_MAX_BYTES {
+                    return Some(tok);
+                }
+                pad += ((JWT_MAX_BYTES + 1 - tok.len()) * 3 / 4).max(1);
+            }
+        })
+        .await;
+        assert_auth_err(
+            fx.auth
+                .exchange_code("c", "v", Some("expected-nonce"))
+                .await,
+            "invalid id_token: token validation error: token exceeds 256000 bytes",
+        );
+        assert_eq!(
+            fx.jwks_fetches().await,
+            0,
+            "an id_token refused by the cap must not reach the IdP"
+        );
     }
 
     /// ⚠️ **타입이 안전해도 빈 값은 남는다.** `CoreTokenResponse` 는 `access_token` 이
