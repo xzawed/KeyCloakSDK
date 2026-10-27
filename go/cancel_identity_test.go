@@ -46,17 +46,40 @@ func ciDeadlines() []ciDeadline {
 	}
 }
 
-// ciShape 는 IdP 가 멈추는 자리다.
+// ciShape 는 IdP 가 멈추는 자리다. successBody 는 성공(2xx) 본문 안에서 멈추는 것 — admin 쓰기는 그것을 읽지 않으므로
+// (adminbody.go) 그 칸을 건너뛴다. 오류 상태의 본문은 쓰기도 읽는다.
 type ciShape struct {
-	name    string
-	midBody bool
-	reply   rbReply
+	name        string
+	successBody bool
+	reply       rbReply
+}
+
+// ciRawStall 은 머리와 본문 앞부분을 그대로 쓰고 멈춘다 — Content-Length 아닌 틀(close 로 끝을 알림 · chunked)을 위해.
+func ciRawStall(head string) rbReply {
+	return func(c net.Conn, written *atomic.Int64) bool {
+		n, err := io.WriteString(c, head)
+		written.Add(int64(n))
+		if err != nil {
+			return false
+		}
+		time.Sleep(20 * time.Second)
+		return false
+	}
 }
 
 func ciShapes() []ciShape {
+	body64 := `{"access_token":"x","token_type":"Bearer","expires_in":300,"x":"` // 64 B 를 채우는 앞부분
+	for len(body64) < 64 {
+		body64 += " "
+	}
 	return []ciShape{
 		{"머리 전", false, ciSilent()},
-		{"본문 64 B 뒤", true, rbStalled("200 OK", rbTyped, 64)},
+		{"Content-Length 본문 64 B 뒤", true, rbStalled("200 OK", rbTyped, 64)},
+		{"close 로 끝나는 본문 64 B 뒤", true,
+			ciRawStall("HTTP/1.1 200 OK\r\n" + rbTyped + "Connection: close\r\n\r\n" + body64)},
+		{"chunked 본문 64 B 뒤", true,
+			ciRawStall("HTTP/1.1 200 OK\r\n" + rbTyped + "Transfer-Encoding: chunked\r\n\r\n80\r\n" + body64)},
+		{"404 · 오류 본문 64 B 뒤", false, rbStalled("404 Not Found", rbTyped, 64)},
 	}
 }
 
@@ -68,6 +91,9 @@ func ciCheck(t *testing.T, what string, err error, wantType string, elapsed time
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("%s: errors.Is(err, context.DeadlineExceeded) 가 거짓이다 — %T: %v", what, err, err)
+	}
+	if ne := net.Error(nil); !errors.As(err, &ne) || !ne.Timeout() {
+		t.Errorf("%s: errors.As(err, &net.Error) 와 Timeout() 이 참이어야 한다 — %T: %v", what, err, err)
 	}
 	if got := fmt.Sprintf("%T", err); got != wantType {
 		t.Errorf("%s: %s 여야 하는데 %s 다", what, wantType, got)
@@ -132,7 +158,7 @@ func TestAdminDeadlineDuringTheExchange_keepsItsIdentity(t *testing.T) {
 	for _, d := range ciDeadlines() {
 		for _, sh := range ciShapes() {
 			for _, op := range ciAdminOps() {
-				if sh.midBody && !op.reads {
+				if sh.successBody && !op.reads {
 					continue
 				}
 				t.Run(d.name+"/"+sh.name+"/"+op.name, func(t *testing.T) {
