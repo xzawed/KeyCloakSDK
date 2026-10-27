@@ -24,7 +24,7 @@ from keycloak import KeycloakOpenID
 from .._internal.backoff import JwksFailureBackoff
 from .._internal.frames import ascrub_frames, scrub_frames
 from .._internal.jwks_fetch import afetch_jwks
-from .._internal.jwt import JwtValidator
+from .._internal.jwt import JwtValidator, check_token_size
 from .._internal.lower import auth_failure, is_lower_failure, summarize
 from .._internal.redirects import harden_openid
 from .._internal.retries import forbid_retries
@@ -223,7 +223,9 @@ class AsyncAuthClient:
         """`validate()` 의 본체(sync `AuthClient._validate_for` 동형) — audience 만 호출자가 정한다.
 
         ⚠️ JWKS 상태(캐시·강제 재조회 창·백오프)는 이 인스턴스의 `_load_jwks` 하나가 소유한다.
+        ⚠️ 길이 상한이 `_load_jwks()` **보다 앞**이다(sync 동형 — `check_token_size`).
         """
+        check_token_size(token)
         key_set = await self._load_jwks()
         validator = JwtValidator(
             issuer=self._endpoints.issuer,

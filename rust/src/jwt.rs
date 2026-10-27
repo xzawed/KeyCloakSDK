@@ -6,6 +6,15 @@ use crate::oidc::OidcEndpoints;
 use crate::tokens::ValidatedToken;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation};
 
+/// 받는 JWT 의 바이트 상한 — `validate_for_audience`(access 토큰도 코드 교환의 id_token 도 이리로 온다)가 **어떤 분해·
+/// 디코드·JWKS 적재보다 먼저** 본다. 서명을 보기 전에 SDK 의 `decode_header` 와 jsonwebtoken 의 `decode` 가 헤더를 세 번
+/// 디코드해, 상한이 없을 때 위조 토큰이 입력 바이트당 약 141–203 B 의 최고 상주 메모리를 썼다(실측 2026-10-27).
+/// 256000 은 Microsoft.IdentityModel 의 `DefaultMaximumTokenSizeInBytes` 와 같고, Keycloak 26.6 이 기본 설정으로 받는 가장
+/// 긴 Bearer(65,459 B)의 약 3.9 배라 그 서버가 받는 토큰은 거부하지 않는다. ⚠️ `TOKEN_RESPONSE_MAX_BYTES`(1 MiB)를 빌리지
+/// 말 것 — 그것은 본문 읽기의 상한이고 이것은 바이트당 백 B 넘게 쓰는 디코드의 상한이다.
+/// ⚠️ 맨 정수 리터럴로 둔다 — 아홉 SDK 가 같은 값을 쓰고 교차언어 가드가 이 줄을 읽는다.
+pub(crate) const JWT_MAX_BYTES: usize = 256_000;
+
 // aud(string 또는 array) → Vec<String>. jsonwebtoken이 aud 포함검사를 하지만 ValidatedToken 매핑용으로 벡터화.
 fn aud_to_vec(v: Option<&serde_json::Value>) -> Vec<String> {
     match v {
@@ -75,6 +84,14 @@ impl JwtValidator {
         token: &str,
         audience: &str,
     ) -> Result<ValidatedToken> {
+        // (0) 길이 상한 — 아래 어느 단계든 토큰을 쪼개거나 디코드하기 전에(`JWT_MAX_BYTES`). `len()` 은 바이트다 — 진짜
+        //     JWT 는 ASCII 라 바이트·코드포인트·UTF-16 단위가 모두 같다.
+        if token.len() > JWT_MAX_BYTES {
+            return Err(KeycloakError::TokenValidation(format!(
+                "token exceeds {JWT_MAX_BYTES} bytes"
+            )));
+        }
+
         // (1) 헤더에서 kid만 추출(alg는 검증 선택에 미사용 — RS256 고정 핀).
         //     Algorithm enum에는 `none` 변형이 없어 alg="none" 헤더는 여기서 구조적으로 거부된다.
         let header = jsonwebtoken::decode_header(token)
@@ -782,5 +799,101 @@ mod tests {
         }
         assert_eq!(certs_requests(server).await, 2);
         assert!(t0.elapsed() < Duration::from_secs(30));
+    }
+
+    // ── 받는 토큰의 길이 상한(`JWT_MAX_BYTES`) — T1 은 문구와 자리(어떤 디코드·JWKS 적재보다 먼저), T2 는 경계(`>` 이지
+    //    `>=` 가 아니다), T3 은 상한까지의 진짜 토큰이 여전히 통과함을 고정한다 ──
+
+    /// `validator_for` 와 같되 IdP 를 함께 돌려준다 — 거부가 요청을 보냈는지 세는 시험용.
+    async fn validator_and_idp(fx: &Fixture) -> (JwtValidator, &'static MockServer) {
+        let server: &'static MockServer = Box::leak(Box::new(MockServer::start().await));
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"keys":[fx.jwk]})))
+            .mount(server)
+            .await;
+        let cfg = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client").unwrap();
+        let endpoints = OidcEndpoints::new(&cfg);
+        let store = JwksStore::new(
+            format!("{}/certs", server.uri()),
+            reqwest::Client::new(),
+            60,
+        );
+        (JwtValidator::new(&cfg, &endpoints, store).unwrap(), server)
+    }
+
+    /// 픽스처 키로 서명한 **진짜** 토큰(유효 클레임) — `pad` 클레임으로 길이를 `[target-8, target]` 에 맞춘다.
+    fn sign_padded(fx: &Fixture, target: usize) -> String {
+        let mut c = good_claims();
+        let mut pad = 0usize;
+        loop {
+            c["pad"] = json!("x".repeat(pad));
+            let t = sign(fx, c.clone(), "test-kid");
+            if t.len() > target {
+                pad -= 1; // 페이로드 1 바이트는 base64url 1~2 글자라 창을 건너뛰지 못한다
+            } else if t.len() < target - 8 {
+                pad += (target - t.len()) * 3 / 4; // base64url: 페이로드 3 바이트당 4 글자
+            } else {
+                return t;
+            }
+        }
+    }
+
+    /// (T1) 상한+1 바이트의 쓰레기 — 디코더라면 기형으로 거부했을 입력이라, 상한의 문구가 **길이를 먼저 봤다**를 증명한다.
+    /// 검증기는 콜드다 — 이 거부는 IdP 에 요청을 하나도 보내지 않는다.
+    #[tokio::test]
+    async fn rejects_token_over_the_cap_before_decoding() {
+        let fx = make_key();
+        let (v, server) = validator_and_idp(&fx).await;
+        let over = format!("{}..", "a".repeat(JWT_MAX_BYTES - 1));
+        assert_eq!(over.len(), JWT_MAX_BYTES + 1);
+        match v.validate(&over).await {
+            Err(e @ KeycloakError::TokenValidation(_)) => assert!(
+                e.to_string().contains("exceeds 256000 bytes"),
+                "a token over the cap must be refused by the cap, before it is decoded: {e}"
+            ),
+            other => panic!("expected TokenValidation, got {other:?}"),
+        }
+        assert_eq!(
+            certs_requests(server).await,
+            0,
+            "a token refused by the cap must not reach the IdP"
+        );
+    }
+
+    /// (T2) 같은 쓰레기를 정확히 상한 길이로 — 길이 검사를 지나 디코더가 거부한다.
+    #[tokio::test]
+    async fn leaves_token_at_the_cap_to_the_decoder() {
+        let fx = make_key();
+        let v = validator_for(&fx).await;
+        let at = format!("{}..", "a".repeat(JWT_MAX_BYTES - 2));
+        assert_eq!(at.len(), JWT_MAX_BYTES);
+        match v.validate(&at).await {
+            Err(e @ KeycloakError::TokenValidation(_)) => assert!(
+                !e.to_string().contains("exceeds"),
+                "a token of exactly {JWT_MAX_BYTES} bytes must reach the decoder, not the cap: {e}"
+            ),
+            other => panic!("expected TokenValidation, got {other:?}"),
+        }
+    }
+
+    /// (T3) 상한 바로 아래의 진짜 토큰은 통과한다 — Keycloak 26.6 기본이 받는 가장 긴 Bearer(65,459 B) 길이도.
+    #[tokio::test]
+    async fn accepts_genuine_tokens_up_to_the_cap() {
+        let fx = make_key();
+        let v = validator_for(&fx).await;
+        for target in [JWT_MAX_BYTES, 65_459] {
+            let t = sign_padded(&fx, target);
+            assert!(
+                (target - 8..=target).contains(&t.len()),
+                "fixture: {} bytes, want [{}, {target}]",
+                t.len(),
+                target - 8
+            );
+            let vt = v.validate(&t).await.unwrap_or_else(|e| {
+                panic!("a genuine {}-byte token must validate: {e:?}", t.len())
+            });
+            assert_eq!(vt.subject, "s1");
+        }
     }
 }

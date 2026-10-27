@@ -10,7 +10,13 @@ paths:
   - "rust/**"
   - "ruby/**"
 ---
-<!-- doc-budget: max-bytes=5902 -->
+<!-- doc-budget: max-bytes=6141 -->
+<!-- 5902 → 6141 (2026-10-27): 래칫 조건 (1) — 증가분이 **기계 검증을 사 온다.** 새 「Inbound token cap」 줄은
+     두 번 대조된다 — 아홉 선언이 256000 인가(`test-security-defaults.sh` 1f 축, 대조군 넷)와 이 줄의 수가
+     `SD_JWT_CAP` 인가(같은 파일 4절 소유자 축). 아홉이 함께 움직여야 하는 새 값이라 이 파일이 자리다(사람 판정
+     2026-10-27 「결정안 모두 권장안으로」 — 등록부 `inbound-token-cap-divergent`).
+     **교환** — 같은 커밋이 46행의 「`paths:` lists all nine directories, so this file loads with any of them.」를
+     지웠다: 머리의 `paths:` 가 그 사실의 원천이고(같은 사실을 두 곳에 적지 않는다), 판정 방법은 담지 않는다. -->
 <!-- 5620 → 5902 (2026-10-05): 래칫 조건 (1) — 증가분이 **기계 검증을 사 온다.** 새 「Token-response cap」
      줄은 두 번 대조된다 — 아홉 선언이 1048576 인가(`test-security-defaults.sh` 1e 축)와 이 줄의 수가
      `SD_TOKEN_CAP` 인가(같은 파일 4절 소유자 축, 값 대조군 포함). 인상분(+282B)은 그 한 문단보다 작다.
@@ -43,7 +49,7 @@ paths:
 
 # Cross-language security invariants
 
-Only what the nine must move **together** lives here — changing one language alone is itself the defect; a one-language security fact belongs in `.claude/rules/<lang>.md`. `paths:` lists all nine directories, so this file loads with any of them.
+Only what the nine must move **together** lives here — changing one language alone is itself the defect; a one-language security fact belongs in `.claude/rules/<lang>.md`.
 
 ## Aligned defaults — JWKS minimum refetch interval and `clockSkew` (both 30s)
 
@@ -76,6 +82,10 @@ Change either one **in all nine at once**. The guard is `scripts/test/test-secur
 ## Token-response cap
 
 ⚠️ **Token-endpoint and introspection response bodies are capped at 1,048,576 bytes in all nine** — ≈16× the longest Bearer Keycloak 26.6 accepts by default (65,459 B; one more is HTTP 431), so it refuses no token a default server accepts. Move all nine at once; guard: axis 1e of `scripts/test/test-security-defaults.sh`.
+
+## Inbound token cap
+
+⚠️ **Validators reject a token over 256,000 bytes in all nine, before any decode or JWKS load** — the libraries decode before the signature (up to ≈203 B per input byte, measured 2026-10-27); the value is Microsoft.IdentityModel's default. Move all nine at once; guard: axis 1f.
 
 ## Secret memory hygiene — it has a boundary (do not oversell it)
 

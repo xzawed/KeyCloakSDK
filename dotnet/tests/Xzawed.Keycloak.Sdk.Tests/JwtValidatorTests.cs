@@ -327,6 +327,85 @@ public class JwtValidatorTests
             $"forged signatures must not translate 1:1 into JWKS fetches — {forgedCount} tokens caused {refetches} refetches");
     }
 
+    // ── The inbound length cap (JwtValidator.MaxJwtBytes): T1 pins its message and its place — first, before IdentityModel
+    // reads the token and before discovery or the JWKS is loaded — T2 its bound (">", not ">="), T3 that genuine tokens up
+    // to it still validate. ──
+
+    // T1. The input is garbage a decoder refuses as malformed, so the cap's own message proves the length was looked at
+    // first. The validator is the production one and cold, and its IdP log stays empty — also for a genuine token over the
+    // cap: garbage fails before any fetch with or without the cap, so only a token that would validate shows the cap runs
+    // before IdentityModel loads discovery and the JWKS (measured: with the check moved after the handler call and the
+    // handler's own limit raised, the garbage half still passed and this half did not).
+    [Fact]
+    public async Task Token_over_the_cap_is_refused_before_decoding_and_before_any_request()
+    {
+        using var server = WireMockServer.Start();
+        var issuer = $"{server.Urls[0]}/realms/it-realm";
+        StubDiscovery(server, issuer);
+        server.Given(Request.Create().WithPath(JwksPath).UsingGet())
+            .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                .WithBody($$"""{"keys":[{{JwksKeyJson("test-kid")}}]}"""));
+        using var http = new HttpClient();
+        var v = new JwtValidator(issuer, new JwtValidatorOptions { Issuer = issuer, Audiences = new[] { "it-client" } }, http);
+
+        var over = new string('a', JwtValidator.MaxJwtBytes - 1) + "..";
+        Assert.Equal(JwtValidator.MaxJwtBytes + 1, over.Length);
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => v.ValidateAsync(over));
+        Assert.Contains("exceeds 256000 bytes", refused.Message);
+        var genuineOver = SignPadded(JwtValidator.MaxJwtBytes + 9, issuer);
+        Assert.InRange(genuineOver.Length, JwtValidator.MaxJwtBytes + 1, JwtValidator.MaxJwtBytes + 9);
+        refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => v.ValidateAsync(genuineOver));
+        Assert.Contains("exceeds 256000 bytes", refused.Message);
+        Assert.Empty(server.LogEntries); // no discovery, no JWKS
+
+        // Control: the same cold validator does reach the IdP for a token under the cap — the empty log above is the
+        // cap's doing, not a validator that never fetches.
+        var vt = await v.ValidateAsync(Sign(PayloadJson("\"it-client\"", iss: issuer), Key));
+        Assert.Equal(issuer, vt.Issuer);
+        Assert.NotEmpty(server.LogEntries);
+    }
+
+    // T2. The same garbage at exactly the cap passes the length check and is refused by the decoder instead.
+    [Fact]
+    public async Task Token_at_the_cap_is_left_to_the_decoder()
+    {
+        var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        var at = new string('a', JwtValidator.MaxJwtBytes - 2) + "..";
+        Assert.Equal(JwtValidator.MaxJwtBytes, at.Length);
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => v.ValidateAsync(at));
+        Assert.DoesNotContain("exceeds", refused.Message);
+    }
+
+    // T3. A genuine token just under the cap validates, and so does one as long as the longest bearer Keycloak 26.6
+    // accepts with default settings (65,459 bytes).
+    [Theory]
+    [InlineData(JwtValidator.MaxJwtBytes)]
+    [InlineData(65459)]
+    public async Task Genuine_token_up_to_the_cap_validates(int target)
+    {
+        var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        var token = SignPadded(target);
+        Assert.InRange(token.Length, target - 8, target);
+        var vt = await v.ValidateAsync(token);
+        Assert.Equal("user-1", vt.Subject);
+    }
+
+    // A genuine token (Key, valid claims) whose extra "pad" claim makes it between target-8 and target characters long.
+    private static string SignPadded(int target, string iss = Issuer)
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        for (var pad = 0; ;)
+        {
+            var token = Sign($$"""{"iss":"{{iss}}","sub":"user-1","aud":"it-client","exp":{{now + 300}},"iat":{{now}},"pad":"{{new string('x', pad)}}"}""", Key);
+            if (token.Length > target)
+                pad--; // one payload byte is one or two base64url characters, so this cannot step past the window
+            else if (token.Length < target - 8)
+                pad += (target - token.Length) * 3 / 4; // base64url: four characters per three payload bytes
+            else
+                return token;
+        }
+    }
+
     private const string JwksPath = "/realms/it-realm/protocol/openid-connect/certs";
 
     private static void StubDiscovery(WireMockServer server, string issuer)

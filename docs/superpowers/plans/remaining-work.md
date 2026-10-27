@@ -101,7 +101,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `280`(2026-10-27 기준 열림 143 · 닫힘 137)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `281`(2026-10-27 기준 열림 143 · 닫힘 138)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -136,7 +136,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 3. `guard-detection-surface-hand-narrowed` [H/M](attest — KNOWN_GAPS 대조는 #773) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
 4. ⚠️ **손대기 전에 전제를 잰다** — 이번에도 뒤집혔다: jwks 후보(「신선한 캐시가 없으면 센다」)는 600 초 경계에서 규칙 (4) 를 깼고, 「낡은 캐시 + 장애」는 node 하나가 아니라 node·.NET 이었고, probe.sh 초안 정규식은 지어낸 줄로 골라 실제 출력 셋을 못 맞췄다.
 
-**사람 판정 대기** — `jwks-cache-lifetime-divergent`(장애 중 낡은 키 수락·수명 정렬, 아홉 동시) · `bearer-token-grammar-divergent`(아홉 동시) · `inbound-token-cap-divergent`(아홉 동시 — php·.NET 만 256000) · `response-read-deadline-divergent` · php ext-curl(`response-framing-unbounded`) · php psr7 하한 · rust·node `raw()` 의 오류 본문 상한(공개 API 변경). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘). 그 분리로 토큰 복제 기각의 되살릴 조건이 왔다(Dependabot PR 도 스캔할지).
+**사람 판정 대기** — `jwks-cache-lifetime-divergent`(장애 중 낡은 키 수락·수명 정렬, 아홉 동시) · `bearer-token-grammar-divergent`(아홉 동시) · `response-read-deadline-divergent` · php ext-curl(`response-framing-unbounded`) · php psr7 하한 · rust·node `raw()` 의 오류 본문 상한(공개 API 변경). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘). 그 분리로 토큰 복제 기각의 되살릴 조건이 왔다(Dependabot PR 도 스캔할지).
 
 **함정** — (g) 변이 미착지 · (h) gradle 데몬 락 · (i) 컴파일 안 되는 변이는 INVALID 와 아래 (j)–(hh) 는 그대로 유효하다(더한 날은 git log).
 
@@ -531,11 +531,11 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 129건 (열림 77)
+## C. 품질 부채 — 130건 (열림 77)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 68
+### 9언어 소스 — 69
 
 - [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청과 교환의 `redirect_uri` 를 호출당 받지 못했다 — §4 판정 「표기가 아니라 능력의 차이이니 API 를 맞춘다」로 둘 다 가산적으로 맞췄다. 사후 서사는 `git show 8d7316c:docs/superpowers/plans/remaining-work.md` 522행
 
@@ -603,7 +603,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 <!-- token-provider-outage-refetch-per-call(2026-10-09 #743 · #744 구현 레그 재스캔): node token-provider.ts — 만료 뒤 IdP 장애에서 호출 5 → 그랜트 5(정상 대조 5 → 1) · .NET admin 토큰 프로바이더 — admin 호출 10 → 그랜트 10. 미인증 트래픽으로는 못 닿고(앱이 직접 부르는 호출) JWKS 백오프와 달리 위조 입력으로 부풀릴 수 없다. 백오프를 걸지는 아홉 판정. -->
 - [ ] `bearer-token-grammar-divergent` **[L/S · 신규 2026-10-09 · 판정 · 아홉]** `b64token` 밖 bearer(공백·HTAB·ASCII 밖)를 언어마다 거부·다듬기·그대로 보낸다 · `.claude/rules/security.md`
 <!-- bearer-token-grammar-divergent(2026-10-09 #763–#765 구현 레그 재스캔): 헤더 값이 못 싣는 바이트(CR·LF·NUL·HTAB 밖 C0·DEL)는 .NET(#765)·go(#764)·ruby(#763)·JVM(#769)·python(#770)이 보내기 전에 SDK 오류로 거부한다 — node 는 물결 4 에서 CR·LF·NUL 을 거부하게 됐고 나머지 C0·DEL 은 미측정. 그 밖은 갈린다 — ruby 는 앞뒤 공백·탭도 거부(#763) · go 는 공백뿐이면 Authorization 없이 보내고(resty) 끝 SP·HTAB 는 net/http 가 다듬는다(#764 레그) · node 는 undici 가 끝 공백·탭을 다듬는다(wave4-hardening-node (2)) · .NET 은 HTAB·SP 를 그대로 보낸다(Keycloak 26.6 은 401 — #765 레그) · ASCII 밖은 .NET 이 거부하고 node 는 U+00FF 위만 거부(#763 PR), rust admin 은 날 UTF-8 로 보내고(wave4-hardening-rust (3)) python 은 #770 뒤 sync 가 Latin-1·끝 공백을 그대로 보내고 aio 는 ASCII 밖·끝 공백을 거부한다(전송이 다르다 — 레인을 맞출지도 이 판정) · JVM admin 은 HTAB·SP·Latin-1 을 그대로, C1·U+0100 위를 ? 로 바꿔 보낸다(#769 측정) · php 미측정. 정할 것: b64token 밖을 보내기 전에 SDK 오류로 거부할지(아홉 동시) — 거부하면 Keycloak 이 어차피 401 로 답할 토큰이 로컬 오류가 되고, 안 하면 언어마다 다른 바이트가 서버에 간다. -->
-- [ ] `inbound-token-cap-divergent` **[M/S · 신규 2026-10-27 · 판정 · 아홉]** 서명 전 디코드에 들어오는 토큰의 길이 상한이 둘에만 있다 — php `JwtValidator::JWT_MAX_BYTES`(256000, PHP2Shell 대응) · .NET(Microsoft.IdentityModel 기본 256000, SDK 가 덮어쓰지 않음). 일곱은 재지 않았다 — php 프로브의 모양(넓은 `[0]` 헤더 · 깊이 500 중첩 배열 · 점만)으로 언어마다 서명 전 바이트당 할당을 재고, 아홉을 함께 맞출지 판정한다 · `php/src/JwtValidator.php`
+- [x] `inbound-token-cap-divergent` **[M/S · 신규 2026-10-27 · 닫힘 2026-10-27]** 아홉이 256,000 을 디코드·JWKS 전에 검사한다(사람 판정 「권장안」) — 1f 축 · security.md
+- [ ] `exchange-id-token-preparsed` **[L/S · 신규 2026-10-27 · java·kotlin·node·rust]** 코드 교환의 id_token 은 OIDC 라이브러리가 토큰 응답과 함께 먼저 푼다 — Nimbus `OIDCTokenResponseParser` · openid-client `authorizationCodeGrant` · openidconnect 역직렬화. 1e(1 MiB)가 묶고 IdP 가 보낸 값이다(실측: JVM 헤더에 몰린 ≈1 MB 응답이 ≈40 MB). 고치려면 응답 파서를 갈아야 한다 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:140`
 - [x] `secret-echo-form-encoded-rescan` **[M/S · 닫힘 2026-10-09 #741 #745 #746]** 샌 곳 넷(java·kotlin auth · JVM admin · python admin)을 가렸다. 남은 것은 `oauth-error-field-echo-unmasked`
 - [x] `dotnet-admin-bogus-charset-escape` **[M/S · 닫힘 2026-10-09 #740]** 풀지 못하는 charset 이 SDK 예외가 됐다. 메시지 삽입은 `error-message-surface-unspecified`
 - [ ] `wave4-hardening-dotnet` **[L/S · 신규 2026-10-05 · (3)(4) 닫힘 #765]** 키 회전 뒤 첫 토큰을 거부한다(기본 비차단 갱신) · 요청 본문의 짝 없는 서로게이트를 U+FFFD 로 보낸다 · `dotnet/src/Xzawed.Keycloak.Sdk/`

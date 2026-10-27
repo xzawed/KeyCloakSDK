@@ -18,6 +18,18 @@ import (
 // lose when they call the two-arg DefaultResourceRetriever constructor.
 const jwksMaxBytes = 51200
 
+// jwtMaxBytes bounds the length of a token handed to Validate — an access token, or the id_token ExchangeCode checks —
+// and is checked before anything else touches it: before go-jose splits or decodes it and before the JWKS is loaded.
+// jwt.ParseSigned decodes the protected header (unknown members into interface{}) up to three times before any key
+// is looked up, so a forged token made the validator allocate about 54 bytes per input byte (measured), and
+// net/http accepts a 1 MiB request header by default. 256,000 is Microsoft.IdentityModel's
+// DefaultMaximumTokenSizeInBytes and about 3.9 times the longest bearer Keycloak 26.6 accepts with default
+// settings (65,459 bytes), so no token that server accepts is refused. ⚠️ Do not borrow tokenResponseMaxBytes:
+// that cap bounds a body read, and this one bounds a decode that costs tens of bytes per input byte.
+//
+// ⚠️ A plain decimal literal on purpose — the nine SDKs share this value and a cross-language guard reads it.
+const jwtMaxBytes = 256000
+
 // Backoff for *failed* JWKS fetches — a different axis from minRefetch.
 //
 // minRefetch (30s) caps a flood of unresolved kids *after the cache is populated*. The two below
@@ -151,6 +163,11 @@ func (v *Validator) withAudience(audience string) *Validator {
 }
 
 func (v *Validator) Validate(ctx context.Context, token string) (*ValidatedToken, error) {
+	// Length first (jwtMaxBytes). len counts bytes; a genuine JWT is ASCII, so bytes, code points and UTF-16 units
+	// agree on it.
+	if len(token) > jwtMaxBytes {
+		return nil, &TokenValidationError{Msg: fmt.Sprintf("token exceeds %d bytes", jwtMaxBytes)}
+	}
 	// Algorithm pinning: only allowedAlgs accepted; unsigned/"none" rejected.
 	parsed, err := jwt.ParseSigned(token, v.opts.allowedAlgs)
 	if err != nil {

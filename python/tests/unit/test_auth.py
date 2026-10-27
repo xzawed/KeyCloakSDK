@@ -19,6 +19,7 @@ from keycloak import KeycloakOpenID
 from keycloak.exceptions import KeycloakAuthenticationError, KeycloakGetError
 
 from keycloak_sdk._internal.backoff import JwksFailureBackoff
+from keycloak_sdk._internal.jwt import JWT_MAX_BYTES
 from keycloak_sdk.auth import AuthClient
 from keycloak_sdk.config import KeycloakConfig
 from keycloak_sdk.exceptions import (
@@ -846,6 +847,45 @@ def test_validate_wraps_certs_transport_error(jwks):
 
     with pytest.raises(KeycloakTransportError):
         client.validate("irrelevant-token")
+
+
+# --- 받는 토큰의 길이 상한 — 콜드 캐시에서도 JWKS 를 가져오기 전에 거부한다 ------------
+# 검증기 자체의 T1-T3 은 `test_jwt.py` 다. 여기서는 파사드의 자리(`_load_jwks()` 보다 앞)를
+# 잰다 — 검증기 안의 같은 검사도 `exceeds` 를 말하므로, 자리를 가르는 것은 JWKS 요청 수다.
+
+
+def test_validate_rejects_a_token_over_the_cap_without_a_jwks_request(jwks):
+    """T1 — 콜드 캐시의 파사드. 상한 밖 쓰레기 하나가 JWKS 요청을 내지 않는다."""
+    client = _client(MagicMock(spec=KeycloakOpenID))
+
+    with pytest.raises(TokenValidationError, match="exceeds 256000 bytes"):
+        client.validate("a" * (JWT_MAX_BYTES - 1) + "..")
+
+    jwks.assert_not_called()
+    assert client._jwks_cache is None
+
+
+def test_validate_lets_a_token_at_the_cap_through_to_the_jwks_load_and_decoder(jwks):
+    """T2 — 상한 길이의 쓰레기는 파사드 문을 지나 JWKS 적재와 디코더에 닿는다(`>=` 가 아니다)."""
+    client = _client(MagicMock(spec=KeycloakOpenID))
+
+    with pytest.raises(TokenValidationError) as refused:
+        client.validate("a" * (JWT_MAX_BYTES - 2) + "..")
+
+    assert "exceeds" not in str(refused.value)
+    assert jwks.call_count == 1
+
+
+def test_exchange_code_rejects_an_id_token_over_the_cap_without_a_jwks_request(jwks):
+    """T1 — 코드 교환의 id_token 경로도 같은 문을 지난다(원인이 상한이고 JWKS 요청 0)."""
+    client, _ = _exchange_client_with_id_token("a" * (JWT_MAX_BYTES - 1) + "..", jwks)
+
+    with pytest.raises(KeycloakAuthError, match="invalid id_token") as refused:
+        client.exchange_code("code", "https://app/cb", "verifier", nonce="server-nonce")
+
+    assert type(refused.value.__cause__) is TokenValidationError
+    assert str(refused.value.__cause__) == "token exceeds 256000 bytes"
+    jwks.assert_not_called()
 
 
 # --- FIX I.2: JWKS 키 회전 복원력 — 서명 실패 시 JWKS fetch 재조회 + 1회 재시도 -----

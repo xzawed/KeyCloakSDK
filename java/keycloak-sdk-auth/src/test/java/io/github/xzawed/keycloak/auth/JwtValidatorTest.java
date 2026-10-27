@@ -520,4 +520,100 @@ class JwtValidatorTest {
     jwt.sign(new RSASSASigner(key));
     return jwt.serialize();
   }
+
+  // ── 받는 토큰의 길이 상한(JWT_MAX_BYTES) — 분해·디코드·JWKS 적재보다 먼저 거부한다 ──
+  // Nimbus 는 서명을 보기 전에 헤더(JWTParser)와 클레임(DefaultJWTProcessor)을 JSON 으로 푼다. 상한은 그 앞이다.
+
+  /**
+   * T1 — 상한 + 1 의 쓰레기는 상한으로 거부된다. 메시지의 「exceeds」 가 순서의 증거다: 디코드가 먼저였다면 형식 오류로
+   * 먼저 실패해 그 말이 없다. 진입점 셋(검증기 · AuthClient 파사드 · 코드 교환이 부르는 id_token 검증 requireValidNonce)을
+   * 모두 **콜드** 검증기로 부르고 JWKS 요청이 0 건임을 센다.
+   */
+  @Test void overCapToken_isRejectedBeforeDecoding_onEveryEntryPoint_withoutAJwksRequest() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    java.util.concurrent.atomic.AtomicInteger hits = new java.util.concurrent.atomic.AtomicInteger();
+    com.sun.net.httpserver.HttpServer server = jwksServer(
+        new JWKSet(key.toPublicJWK()).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8), hits);
+    try {
+      io.github.xzawed.keycloak.core.KeycloakConfig cfg = localConfig(server);
+      OidcMetadata md = OidcMetadata.forRealm(cfg);
+      String overCap = "a".repeat(JwtValidator.JWT_MAX_BYTES - 1) + "..";
+      assertEquals(JwtValidator.JWT_MAX_BYTES + 1, overCap.length());
+      JwtValidator validator = JwtValidator.forRealm(md, cfg, Set.of(JWSAlgorithm.RS256), "app");
+      AuthClient auth = new AuthClient(cfg, md);
+
+      assertCapRejection(assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+          () -> validator.validate(overCap)));
+      assertCapRejection(assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+          () -> auth.validate(overCap)));
+      io.github.xzawed.keycloak.core.exception.KeycloakAuthException exchange =
+          assertThrows(io.github.xzawed.keycloak.core.exception.KeycloakAuthException.class,
+              () -> auth.requireValidNonce(overCap, "n"));
+      assertCapRejection(assertInstanceOf(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
+          exchange.getCause()));
+      assertEquals(0, hits.get(), "상한을 넘은 토큰이 JWKS 를 불렀다 — 상한이 적재보다 뒤에 있다");
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  /** T2 — 상한과 같은 길이의 쓰레기는 상한이 아니라 디코더가 거부한다: 비교는 `>` 다(`>=` 가 아니다). */
+  @Test void tokenOfExactlyTheCap_isRejectedByTheDecoder_notByTheCap() {
+    String atCap = "a".repeat(JwtValidator.JWT_MAX_BYTES - 2) + "..";
+    assertEquals(JwtValidator.JWT_MAX_BYTES, atCap.length());
+    JwtValidator v = JwtValidator.withStaticJwks(new JWKSet(), "iss", "app",
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+
+    io.github.xzawed.keycloak.core.exception.TokenValidationException e = assertThrows(
+        io.github.xzawed.keycloak.core.exception.TokenValidationException.class, () -> v.validate(atCap));
+    assertFalse(e.getMessage().contains("exceeds"), "상한과 같은 길이를 상한이 거부했다: " + e.getMessage());
+    assertNotNull(e.getCause(), "디코더의 거부가 원인으로 달려 있어야 한다");
+  }
+
+  /**
+   * T3 — 정상 토큰은 상한까지 통과한다: 상한 바로 아래 [cap−8, cap] 와, Keycloak 26.6 이 기본 설정으로 받는 가장 긴
+   * Bearer 의 길이(65,459 B) 둘 다. 서명된 토큰에 패딩 클레임을 넣어 길이를 맞춘다.
+   */
+  @Test void genuineTokensUpToTheCap_validate() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String issuer = "https://kc.example.com/realms/r";
+    JwtValidator v = JwtValidator.withStaticJwks(new JWKSet(key.toPublicJWK()), issuer, "app",
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+
+    for (int max : new int[] {JwtValidator.JWT_MAX_BYTES, 65_459}) {
+      String token = paddedToken(key, issuer, max - 8, max);
+      assertTrue(token.length() >= max - 8 && token.length() <= max, "길이 " + token.length());
+      assertEquals(issuer, v.validate(token).getIssuer(), "길이 " + token.length() + " 의 정상 토큰");
+    }
+  }
+
+  // 상한 검사는 null 을 건드리지 않는다 — null 은 지금까지처럼 SDK 오류다(맨 NPE 가 §4 경계를 넘지 않는다).
+  @Test void nullToken_isStillAnSdkError_notABareNullPointerException() {
+    JwtValidator v = JwtValidator.withStaticJwks(new JWKSet(), "iss", "app",
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+    assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class, () -> v.validate(null));
+  }
+
+  private static void assertCapRejection(io.github.xzawed.keycloak.core.exception.TokenValidationException e) {
+    assertTrue(e.getMessage().contains("exceeds 256000 bytes"), "상한의 거부가 아니다: " + e.getMessage());
+  }
+
+  /** 서명된 정상 토큰을 패딩 클레임으로 [min, max] 길이에 맞춘다 — 패딩 한 글자는 토큰을 1–2 자 늘린다(base64url 3→4). */
+  private static String paddedToken(RSAKey key, String issuer, int min, int max) throws Exception {
+    int pad = Math.max(0, (max - 4 - signedPadded(key, issuer, 0).length()) * 3 / 4);
+    String token = signedPadded(key, issuer, pad);
+    while (token.length() > max) token = signedPadded(key, issuer, --pad);
+    while (token.length() < min) token = signedPadded(key, issuer, ++pad);
+    return token;
+  }
+
+  private static String signedPadded(RSAKey key, String issuer, int pad) throws Exception {
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+            .expirationTime(new Date(System.currentTimeMillis() + 60_000))
+            .claim("pad", "x".repeat(pad)).build());
+    jwt.sign(new RSASSASigner(key));
+    return jwt.serialize();
+  }
 }

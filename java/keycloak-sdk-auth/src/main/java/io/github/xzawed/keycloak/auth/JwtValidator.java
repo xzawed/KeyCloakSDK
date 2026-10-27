@@ -9,6 +9,13 @@ import io.github.xzawed.keycloak.core.exception.TokenValidationException;
 import java.time.Duration; import java.util.*;
 
 public final class JwtValidator {
+  // 받는 토큰의 길이 상한 — 넘으면 분해·base64/JSON 디코드·JWKS 적재보다 먼저 거부한다(아홉 언어가 함께 움직인다).
+  // Nimbus 는 서명을 보기 전에 헤더(JWTParser)와 클레임(DefaultJWTProcessor)을 JSON 으로 풀어, 위조 토큰이 거부되기 전에
+  // 입력 바이트당 최대 약 38 B 를 할당했다(2026-10-27 측정, 등록부 inbound-token-cap-divergent). 256000 은
+  // Microsoft.IdentityModel 의 DefaultMaximumTokenSizeInBytes 와 같고 Keycloak 26.6 이 기본 설정으로 받는 가장 긴
+  // Bearer(65,459 B)의 약 3.9 배라, 서버가 받는 토큰은 거부하지 않는다. Kotlin 자매(jwt.kt `JWT_MAX_BYTES`)와 같은 값이다.
+  // 단위는 String.length()(UTF-16 단위)다 — 정상 JWT 는 ASCII 라 바이트 수와 같다.
+  static final int JWT_MAX_BYTES = 256_000;
   private final ConfigurableJWTProcessor<SecurityContext> processor;   // issuer당 1회 구성(JWKSource 캐시)
   // withAudience 가 넘겨줄 것 — 특히 jwkSource 는 **같은 객체**여야 한다(JWKS 캐시·재조회 제한·콜드 캐시 창이 그 안에 있다).
   private final JWKSource<SecurityContext> jwkSource;
@@ -75,7 +82,12 @@ public final class JwtValidator {
   }
   // 반환 타입은 SDK 소유의 ValidatedToken (I.1): 이 SDK의 공개 API는 어떤 시그니처에서도
   // Nimbus 타입을 노출하지 않는다.
+  // 코드 교환의 id_token 검증(AuthClient.requireValidNonce → withAudience(..).validate)도 이 메서드라 상한 검사는 여기 하나다.
   public ValidatedToken validate(String accessToken) {
+    // 상한이 먼저다 — 분해·디코드·JWKS 적재 전에. try 밖이라 이 메시지가 그대로 나간다. null 은 지금까지처럼 아래로 간다.
+    if (accessToken != null && accessToken.length() > JWT_MAX_BYTES) {
+      throw new TokenValidationException("token exceeds " + JWT_MAX_BYTES + " bytes", null);
+    }
     try {
       // alg=none / 미서명 JWT를 Nimbus의 암묵적 기본 동작에 의존하지 않고 명시적으로 거부한다.
       com.nimbusds.jwt.JWT jwt = com.nimbusds.jwt.JWTParser.parse(accessToken);

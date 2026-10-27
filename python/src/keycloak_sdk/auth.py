@@ -23,7 +23,7 @@ from keycloak import KeycloakOpenID
 from ._internal.backoff import JwksFailureBackoff
 from ._internal.frames import scrub_frames
 from ._internal.jwks_fetch import fetch_jwks
-from ._internal.jwt import JwtValidator
+from ._internal.jwt import JwtValidator, check_token_size
 from ._internal.lower import auth_failure, is_lower_failure, summarize
 from ._internal.redirects import harden_openid
 from ._internal.retries import forbid_retries
@@ -263,7 +263,11 @@ class AuthClient:
         ⚠️ **JWKS 상태는 여기서 만들지 않는다** — 캐시·30초 강제 재조회 창·콜드 캐시 백오프는
         이 인스턴스의 `_load_jwks` 하나가 소유하고, 두 경로가 그것을 함께 쓴다. `JwtValidator` 는
         키를 들지 않는 규칙 묶음이라 매번 새로 만들어도 저장소가 갈라지지 않는다.
+
+        ⚠️ 길이 상한이 `_load_jwks()` **보다 앞**이다 — 뒤에 두면 콜드 캐시에서 상한 밖
+        쓰레기 토큰 하나가 JWKS 요청 하나가 된다(`check_token_size`).
         """
+        check_token_size(token)
         key_set = self._load_jwks()
         validator = JwtValidator(
             issuer=self._endpoints.issuer,

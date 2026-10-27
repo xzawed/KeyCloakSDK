@@ -14,14 +14,38 @@ from typing import Any
 from joserfc import jwt as _jwt
 from joserfc.errors import InvalidKeyIdError, MissingKeyError
 from joserfc.jwk import KeySet
+from joserfc.jws import JWSRegistry
 
 from ..exceptions import TokenKeyError, TokenSignatureError, TokenValidationError
 from ..tokens import ValidatedToken
+
+#: 받는 토큰의 길이 상한(아홉 언어 공통). Microsoft.IdentityModel 의
+#: `DefaultMaximumTokenSizeInBytes` 와 같은 수이고, Keycloak 26.6 기본값이 받는 가장 긴
+#: Bearer(65,459 B)의 약 3.9 배라 서버가 낸 토큰은 거부하지 않는다.
+JWT_MAX_BYTES = 256_000
+
+
+def check_token_size(token: str) -> None:
+    """상한을 넘는 토큰을 **어떤 일보다 먼저** 거부한다 — 나누기·디코드·JWKS 적재보다 앞이다.
+
+    joserfc 도 조각마다 상한을 두지만(헤더 512 · 페이로드 128,000 · 서명 1,024 B) 그 전에
+    토큰 전체를 `bytes` 로 옮기고 나눈다. 그리고 파사드는 그보다 먼저 JWKS 를 적재하므로,
+    콜드 캐시에서는 쓰레기 토큰 하나가 IdP 요청 하나였다. 그래서 파사드(`_validate_for`)와
+    `JwtValidator.validate` 가 둘 다 맨 앞에서 이것을 부른다.
+
+    `str`·`bytes` 가 아닌 값은 재지 않는다 — 지금처럼 디코더가 SDK 오류로 거부한다
+    (`len()` 의 raw `TypeError` 로 바꾸지 않는다).
+    """
+    # 단위는 `len()` — `str` 은 코드 포인트, `bytes` 는 바이트. 진짜 JWT 는 ASCII 라 둘이 같다.
+    if isinstance(token, (str, bytes)) and len(token) > JWT_MAX_BYTES:
+        raise TokenValidationError(f"token exceeds {JWT_MAX_BYTES} bytes")
 
 
 class JwtValidator:
     """joserfc 기반 자체 강화 JWT 검증기.
 
+    - 길이: `JWT_MAX_BYTES` 를 넘으면 디코드 전에 평범한 `TokenValidationError` 다
+      (서명 실패 하위 타입이 아니라 JWKS 재조회를 부르지 않는다).
     - 서명 검증 + 알고리즘 핀닝: `allowed_algs`에 없는 알고리즘(`none` 포함)·미서명
       토큰은 joserfc가 디코드 단계에서 거부한다.
     - issuer: 정확 일치(exact match).
@@ -50,10 +74,18 @@ class JwtValidator:
         self._audience = audience
         self._algs: list[str] = list(allowed_algs)
         self._skew = clock_skew
+        # ⚠️ 레지스트리를 넘기면 joserfc 는 `algorithms=` 를 보지 않는다 — 핀은 레지스트리가 든다.
+        self._registry = JWSRegistry(algorithms=self._algs)
+        # joserfc 의 페이로드 조각 상한(기본 128,000 B)을 위 상한으로 올린다. 그대로 두면 상한 안의
+        # 진짜 서명 토큰(실측: 255,993 자 · 페이로드 조각 255,598 B)이 `ExceededSizeError` 로
+        # 거부돼, 상한까지 받는 다른 여덟 언어와 받는 토큰이 갈린다. 조각은 토큰보다 길 수
+        # 없으니 길이 상한은 `check_token_size` 하나다.
+        self._registry.max_payload_length = JWT_MAX_BYTES
 
     def validate(self, token: str, key_set: KeySet) -> ValidatedToken:
+        check_token_size(token)
         try:
-            decoded = _jwt.decode(token, key_set, algorithms=self._algs)
+            decoded = _jwt.decode(token, key_set, registry=self._registry)
         except (InvalidKeyIdError, MissingKeyError) as exc:
             # 현재 JWKS로 서명 키(kid)를 해석 불가 — 키 회전 가능성(재조회 가치 있음).
             # 서명 위조(BadSignatureError)와 구분해, 위조 토큰이 certs() 재조회를

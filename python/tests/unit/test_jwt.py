@@ -18,7 +18,7 @@ import pytest
 from joserfc import jwt as jjwt
 from joserfc.jwk import KeySet, RSAKey
 
-from keycloak_sdk._internal.jwt import JwtValidator
+from keycloak_sdk._internal.jwt import JWT_MAX_BYTES, JwtValidator
 from keycloak_sdk.exceptions import TokenKeyError, TokenSignatureError, TokenValidationError
 
 ISSUER = "https://kc.example.com/realms/r"
@@ -336,3 +336,69 @@ def test_validated_token_claims_are_read_only():
     assert result.claims["sub"] == "u"
     with pytest.raises(TypeError):
         result.claims["sub"] = "attacker"  # 읽기전용 — 변이 시도는 TypeError
+
+
+# --- 받는 토큰의 길이 상한(inbound-token-cap) — 디코드보다 먼저 거부한다 ----------------
+
+
+def test_a_token_over_the_cap_is_rejected_before_it_is_decoded():
+    """T1 — 상한 + 1 길이의 쓰레기. 디코드가 먼저 돌면 서명/알고리즘 실패로 나와 `exceeds` 를 말하지
+    않는다(순서까지 고정한다). 서명 실패 하위 타입이 아니어야 파사드가 JWKS 를 재조회하지 않는다."""
+    over = "a" * (JWT_MAX_BYTES - 1) + ".."
+    assert len(over) == JWT_MAX_BYTES + 1
+
+    with pytest.raises(TokenValidationError, match="exceeds 256000 bytes") as refused:
+        JwtValidator(issuer=ISSUER, audience="app").validate(over, KeySet([_rsa_key()]))
+    assert type(refused.value) is TokenValidationError
+
+
+def test_a_token_at_the_cap_is_left_to_the_decoder():
+    """T2 — 상한 길이의 쓰레기는 상한이 아니라 디코더가 거부한다(`>` 이지 `>=` 가 아니다)."""
+    at_cap = "a" * (JWT_MAX_BYTES - 2) + ".."
+    assert len(at_cap) == JWT_MAX_BYTES
+
+    with pytest.raises(TokenSignatureError) as refused:
+        JwtValidator(issuer=ISSUER, audience="app").validate(at_cap, KeySet([_rsa_key()]))
+    assert "exceeds" not in str(refused.value)
+
+
+def _padded_token(key: RSAKey, length: int) -> str:
+    """`pad` 클레임을 덧대 길이가 [length - 8, length] 인 진짜 서명 토큰(역할이 많은 사용자)."""
+    claims = {"iss": ISSUER, "aud": "app", "sub": "user-1", "exp": int(time.time()) + 60}
+    n = (length - len(_sign(key, claims))) * 3 // 4
+    token = _sign(key, {**claims, "pad": "a" * n})
+    while len(token) > length:
+        n -= 1
+        token = _sign(key, {**claims, "pad": "a" * n})
+    assert len(token) > length - 8
+    return token
+
+
+@pytest.mark.parametrize(
+    "length",
+    [
+        pytest.param(65_459, id="longest bearer Keycloak 26.6 accepts by default"),
+        pytest.param(JWT_MAX_BYTES, id="the cap"),
+    ],
+)
+def test_a_signed_token_up_to_the_cap_still_validates(length):
+    """T3 — 상한은 정상 토큰을 거부하지 않는다. ⚠️ 상한 쪽은 joserfc 의 페이로드 조각 상한
+    (기본 128,000 B)을 올린 것까지 잰다 — 올리기 전에는 이 토큰이 `ExceededSizeError` 였다(실측)."""
+    key = _rsa_key()
+    token = _padded_token(key, length)
+
+    result = JwtValidator(issuer=ISSUER, audience="app").validate(token, KeySet([key]))
+
+    assert result.subject == "user-1"
+
+
+def test_the_cap_measures_str_and_bytes_and_leaves_other_values_to_the_decoder():
+    """상한은 `str`·`bytes` 를 잰다(joserfc 는 둘 다 받는다). 다른 값은 지금처럼 디코더가 SDK 오류로
+    거부한다 — `len()` 의 raw `TypeError` 가 공개 API 로 새지 않는다."""
+    validator = JwtValidator(issuer=ISSUER, audience="app")
+    over = b"a" * (JWT_MAX_BYTES - 1) + b".."
+
+    with pytest.raises(TokenValidationError, match="exceeds 256000 bytes"):
+        validator.validate(over, KeySet([_rsa_key()]))  # type: ignore[arg-type]
+    with pytest.raises(TokenSignatureError):
+        validator.validate(None, KeySet([_rsa_key()]))  # type: ignore[arg-type]

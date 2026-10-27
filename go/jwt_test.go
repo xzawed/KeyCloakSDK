@@ -707,3 +707,87 @@ func TestJWKSFailedFetchBackoffWindowHoldsItsMinimumAndDoubles(t *testing.T) {
 	probe(second.Add(200*time.Millisecond-ns), 2, "둘째 창이 첫 창의 두 배(0.2초 이상)가 아니다")
 	probe(second.Add(400*time.Millisecond-ns), 3, "둘째 창이 0.4초보다 길다")
 }
+
+// The inbound length cap (jwtMaxBytes): T1 pins its message and its place — first, before go-jose decodes anything
+// and before the JWKS is loaded — T2 its bound (">", not ">="), T3 that genuine tokens up to it still validate.
+
+// TestValidateRejectsTokenOverTheCapBeforeDecoding (T1): the input is garbage a decoder refuses as malformed, so the
+// cap's own message proves the length was looked at first; the validator is cold, so the refusal sent no request.
+func TestValidateRejectsTokenOverTheCapBeforeDecoding(t *testing.T) {
+	f := newJWTFixture(t)
+	over := strings.Repeat("a", jwtMaxBytes-1) + ".."
+	if len(over) != jwtMaxBytes+1 {
+		t.Fatalf("fixture: %d bytes, want %d", len(over), jwtMaxBytes+1)
+	}
+	_, err := f.validator(t, time.Minute).Validate(context.Background(), over)
+	var tve *TokenValidationError
+	if !errors.As(err, &tve) {
+		t.Fatalf("want *TokenValidationError, got %T: %v", err, err)
+	}
+	if !strings.Contains(err.Error(), "exceeds 256000 bytes") {
+		t.Fatalf("a token over the cap must be refused by the cap, before it is decoded: %v", err)
+	}
+	if n := atomic.LoadInt32(f.fetches); n != 0 {
+		t.Fatalf("a token refused by the cap must not reach the IdP, JWKS fetches = %d", n)
+	}
+}
+
+// TestValidateLeavesTokenAtTheCapToTheDecoder (T2): the same garbage at exactly the cap passes the length check and
+// is refused by the decoder instead.
+func TestValidateLeavesTokenAtTheCapToTheDecoder(t *testing.T) {
+	f := newJWTFixture(t)
+	at := strings.Repeat("a", jwtMaxBytes-2) + ".."
+	if len(at) != jwtMaxBytes {
+		t.Fatalf("fixture: %d bytes, want %d", len(at), jwtMaxBytes)
+	}
+	_, err := f.validator(t, time.Minute).Validate(context.Background(), at)
+	var tve *TokenValidationError
+	if !errors.As(err, &tve) {
+		t.Fatalf("want *TokenValidationError, got %T: %v", err, err)
+	}
+	if strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("a token of exactly %d bytes must reach the decoder, not the cap: %v", jwtMaxBytes, err)
+	}
+}
+
+// TestValidateAcceptsGenuineTokensUpToTheCap (T3): a genuine token just under the cap validates, and so does one as
+// long as the longest bearer Keycloak 26.6 accepts with default settings (65,459 bytes).
+func TestValidateAcceptsGenuineTokensUpToTheCap(t *testing.T) {
+	f := newJWTFixture(t)
+	v := f.validator(t, time.Minute)
+	for _, target := range []int{jwtMaxBytes, 65459} {
+		tok := f.signPadded(t, target)
+		if len(tok) > target || len(tok) < target-8 {
+			t.Fatalf("fixture: %d bytes, want [%d, %d]", len(tok), target-8, target)
+		}
+		if _, err := v.Validate(context.Background(), tok); err != nil {
+			t.Fatalf("a genuine %d-byte token must validate: %v", len(tok), err)
+		}
+	}
+}
+
+// signPadded signs a genuine token (the fixture's key, kid k1, valid claims) whose extra "pad" claim makes it between
+// target-8 and target bytes long.
+func (f *jwtFixture) signPadded(t *testing.T, target int) string {
+	t.Helper()
+	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: f.priv},
+		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", "k1"))
+	if err != nil {
+		t.Fatalf("signer: %v", err)
+	}
+	cl := claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute))
+	for pad := 0; ; {
+		tok, err := jwt.Signed(sig).Claims(cl).Claims(map[string]any{"pad": strings.Repeat("x", pad)}).Serialize()
+		if err != nil {
+			t.Fatalf("serialize: %v", err)
+		}
+		switch {
+		case len(tok) > target:
+			pad-- // one payload byte is one or two base64url characters, so this cannot step past the window
+		case len(tok) < target-8:
+			pad += (target - len(tok)) * 3 / 4 // base64url: four characters per three payload bytes
+		default:
+			return tok
+		}
+	}
+}

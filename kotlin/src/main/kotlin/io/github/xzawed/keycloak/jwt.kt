@@ -23,6 +23,14 @@ import java.net.MalformedURLException
 import java.net.URI
 import java.time.Duration
 
+// 받는 토큰의 길이 상한 — 넘으면 분해·base64/JSON 디코드·JWKS 적재보다 먼저 거부한다(아홉 언어가 함께 움직인다).
+// Nimbus 는 서명을 보기 전에 헤더(JWTParser)와 클레임(DefaultJWTProcessor)을 JSON 으로 풀어, 위조 토큰이 거부되기 전에
+// 입력 바이트당 최대 약 38 B 를 할당했다(2026-10-27 측정, 등록부 inbound-token-cap-divergent). 256000 은
+// Microsoft.IdentityModel 의 DefaultMaximumTokenSizeInBytes 와 같고 Keycloak 26.6 이 기본 설정으로 받는 가장 긴
+// Bearer(65,459 B)의 약 3.9 배라, 서버가 받는 토큰은 거부하지 않는다. Java 자매(`JwtValidator.JWT_MAX_BYTES`)와 같은 값이다.
+// 단위는 String.length(UTF-16 단위)다 — 정상 JWT 는 ASCII 라 바이트 수와 같다.
+internal const val JWT_MAX_BYTES: Int = 256_000
+
 // jwt.kt — JwtValidator: Java SDK의 JwtValidator(io.github.xzawed.keycloak.auth.JwtValidator)와 100%
 // 동형인 하드닝 불변식(§jwt)을 지킨다: RS256 alg 핀 · alg=none/미서명 명시 거부 · iss 정확일치
 // (exactMatchClaims엔 issuer만 — aud를 넣으면 다중값 정상 토큰이 오탐 거부된다) · aud 포함검사 ·
@@ -52,9 +60,14 @@ public class JwtValidator private constructor(
     /**
      * accessToken을 검증하고 SDK 소유 [ValidatedToken]을 반환한다 — 어떤 실패 경로에서도 Nimbus 타입은
      * 공개 API에 노출하지 않는다. JWKS 조회는 블로킹 I/O일 수 있어 [runInterruptible]로 감싼다.
+     * 코드 교환의 id_token 검증(`AuthClient.requireValidNonce` → [withAudience] 의 validate)도 이 함수라 상한 검사는 여기 하나다.
      */
-    public suspend fun validate(accessToken: String): ValidatedToken =
-        try {
+    public suspend fun validate(accessToken: String): ValidatedToken {
+        // 상한이 먼저다 — 분해·디코드·JWKS 적재 전에, IO 디스패처로 넘기기도 전에([JWT_MAX_BYTES]).
+        if (accessToken.length > JWT_MAX_BYTES) {
+            throw TokenValidationException("token exceeds $JWT_MAX_BYTES bytes")
+        }
+        return try {
             onIo {
                 // alg=none / 미서명 JWT를 Nimbus의 암묵적 기본 동작에 의존하지 않고 명시적으로 거부한다.
                 val jwt = JWTParser.parse(accessToken)
@@ -70,6 +83,7 @@ public class JwtValidator private constructor(
         } catch (e: Exception) {
             throw TokenValidationException("JWT validation failed", e)
         }
+    }
 
     // 기대 audience 만 바꾼 검증기. 코드 교환의 id_token 검증이 쓴다 — OIDC Core §2 · §3.1.3.7 대로 id_token 의
     // aud 는 client id 이고, `expectedAudience` 재정의는 액세스 토큰 전용이다. iss · alg 핀 · skew 는 그대로다.

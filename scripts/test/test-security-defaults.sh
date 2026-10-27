@@ -439,6 +439,88 @@ assert_eq "GREW" "$SD_TCP" \
   "[음성대조·토큰응답 상한] 식(<리터럴> * 2)이 된 선언에서 축이 안 울었다 — 앞 정수만 읽으면 값이 바뀌어도 핀과 같아 보인다"
 
 # ---------------------------------------------------------------------------
+# 1f) 들어오는 토큰의 **길이 상한** — 아홉 언어가 같은 리터럴 하나를 선언한다
+# ---------------------------------------------------------------------------
+#
+# 검증기에 넘어온 토큰이 이 길이를 넘으면 **어떤 분해·디코드·JWKS 적재보다 먼저** SDK 검증 오류로 거부한다.
+# 라이브러리가 서명 전에 디코드해, 상한이 없을 때 위조 토큰이 입력 바이트당 Rust ≈203(최대 상주) · PHP ≈167 ·
+# Go ≈54 · JVM ≈38 · Node ≈24 · Ruby ≈19 B 를 썼고 PHP 에서는 768 KiB 하나가 memory_limit=128M 의 치명 OOM
+# (PHP2Shell 의 트리거)이었다(등록부 `inbound-token-cap-divergent` 의 실측 2026-10-27 · #850).
+# ⚠️ 4절 소유자 축은 「그 줄에 값이 있는가」만 본다 — security.md 의 그 줄은 **값을 한 번만** 말해야 한다. 두 번
+# 말하던 첫 판에서 한쪽(262,144)만 바꾼 변이가 SILENT 였다(`scripts/probe.sh` 실측 2026-10-27).
+#
+# **왜 256000 인가.** Microsoft.IdentityModel 의 `DefaultMaximumTokenSizeInBytes`(.NET 레인이 원래 쓰던 값 —
+# 이제 SDK 가 명시한다)이고, Keycloak 26.6 기본이 받는 가장 긴 Bearer(65,459 B — 1e)의 ≈3.9 배라 그 서버가 받는
+# 토큰은 거부하지 않는다. ⚠️ 1e 의 1048576 을 빌리지 말 것 — 그 길이에서 PHP 는 넓은 배열 헤더 하나에 101 MB 였다.
+#
+# 1e 와 같은 규칙이다(아홉 전부 · 언어마다 핀과 직접 비교 · 주석 밖 맨 리터럴 선언 정확히 하나 — 추출 정규식
+# `SD_TC_DECL` 을 그대로 쓴다). 바꾸려면 아홉 선언 · `SD_JWT_CAP` · security.md 를 **한 커밋에서** 고친다.
+SD_JWT_CAP=256000
+sd_jwt_cap() { # $1=언어 → 주석 밖 맨 리터럴 선언의 값(정규화 전), 선언 하나당 한 줄
+  case "$1" in
+    go)     _jc_f='go/jwt.go' _jc_n='jwtMaxBytes' ;;
+    rust)   _jc_f='rust/src/jwt.rs' _jc_n='JWT_MAX_BYTES' ;;
+    python) _jc_f='python/src/keycloak_sdk/_internal/jwt.py' _jc_n='JWT_MAX_BYTES' ;;
+    dotnet) _jc_f='dotnet/src/Xzawed.Keycloak.Sdk/JwtValidator.cs' _jc_n='MaxJwtBytes' ;;
+    node)   _jc_f='node/src/jwt.ts' _jc_n='JWT_MAX_BYTES' ;;
+    ruby)   _jc_f='ruby/lib/keycloak_sdk/jwt_validator.rb' _jc_n='JWT_MAX_BYTES' ;;
+    php)    _jc_f='php/src/JwtValidator.php' _jc_n='JWT_MAX_BYTES' ;;
+    java)   _jc_f='java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java' \
+            _jc_n='JWT_MAX_BYTES' ;;
+    kotlin) _jc_f='kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt' _jc_n='JWT_MAX_BYTES' ;;
+    *)      return 0 ;;
+  esac
+  sd_code_lines "$ROOT/$_jc_f" \
+    | grep -E "(^|[^A-Za-z0-9_.])${_jc_n}${SD_TC_DECL}" \
+    | sed -E 's/.*=[[:space:]]*([0-9][0-9_]*)[[:space:]]*;?[[:space:]]*$/\1/' || true
+}
+sd_jwt_cap_axis() { # $1=언어 목록 — 지금 ROOT 를 읽는다. 선언을 읽은 언어 수를 SD_JC_SEEN 에 남긴다.
+  SD_JC_SEEN=0
+  for L in $1; do
+    _jc_vals="$(sd_jwt_cap "$L")"
+    _jc_cnt="$(printf '%s\n' "$_jc_vals" | grep -c . || true)"
+    assert_eq "1" "$_jc_cnt" \
+      "[토큰 길이 상한] $L 의 상한 선언이 주석 밖에 맨 리터럴로 정확히 하나가 아니다(${_jc_cnt} 개) — 지워졌거나 이름이 바뀌었거나, 식·꼬리 주석·여러 줄로 적혔거나, 같은 파일에 둘째 선언이 생겼다"
+    [ "$_jc_cnt" = 1 ] || continue
+    SD_JC_SEEN=$((SD_JC_SEEN + 1))
+    assert_eq "$SD_JWT_CAP" "$(printf '%s' "$_jc_vals" | tr -d '_')" \
+      "[토큰 길이 상한] $L 의 상한이 $SD_JWT_CAP 이 아니다 — 아홉이 한 번에 움직이는 값이다(바꾸려면 아홉 선언 · SD_JWT_CAP · security.md 를 한 커밋에서)"
+  done
+}
+sd_jwt_cap_axis "$SD_LANGS"
+assert_eq "9" "$SD_JC_SEEN" "[토큰 길이 상한] 상한 선언을 읽은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
+
+# 대조군 — 1e 와 같은 꼴로 축 **자신**을 태운다. php 의 라이브 선언(`public const`) 하나만 TMP 에 두고 목록을
+# `php` 하나로 준다 — sed 가 아무것도 안 바꿨으면 `NOT-LANDED` 다(「축이 침묵했다」로 읽지 않는다).
+sd_jwt_cap_probe() { # $1=sed 표현식(빈 값이면 라이브 사본 그대로) → SD_JCP: GREW | QUIET | NOT-LANDED
+  _jcp_f='php/src/JwtValidator.php'
+  _jcp_tmp="$(mktemp -d)"; mkdir -p "$_jcp_tmp/$(dirname "$_jcp_f")"
+  sed "$1" "$ROOT/$_jcp_f" > "$_jcp_tmp/$_jcp_f"
+  if [ -n "$1" ] && cmp -s "$ROOT/$_jcp_f" "$_jcp_tmp/$_jcp_f"; then
+    SD_JCP='NOT-LANDED'
+  else
+    _a_save; _jcp_root="$ROOT"; ROOT="$_jcp_tmp"
+    sd_jwt_cap_axis php >/dev/null 2>&1 || true
+    ROOT="$_jcp_root"
+    SD_JCP='QUIET'; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && SD_JCP='GREW'
+    _a_restore
+  fi
+  rm -rf "$_jcp_tmp"
+}
+sd_jwt_cap_probe ''
+assert_eq "QUIET" "$SD_JCP" \
+  "[양성대조·토큰 길이 상한] 라이브 php 선언의 사본에서 축이 실패했다 — 「늘 운다」와 구분되지 않는다"
+sd_jwt_cap_probe "s/\(JWT_MAX_BYTES = \)[0-9_]*/\1$((SD_JWT_CAP + 1))/"
+assert_eq "GREW" "$SD_JCP" \
+  "[음성대조·토큰 길이 상한] 값만 핀+1 로 바꾼 사본에서 축이 안 울었다 — 값 비교가 no-op 이거나 추출이 파일을 안 읽는다"
+sd_jwt_cap_probe 's/^\([[:space:]]*\)public const JWT_MAX_BYTES = /\1\/\/ public const JWT_MAX_BYTES = /'
+assert_eq "GREW" "$SD_JCP" \
+  "[음성대조·토큰 길이 상한] 선언이 주석으로만 남은 사본에서 축이 안 울었다 — 주석 속 사본을 선언으로 읽는다"
+sd_jwt_cap_probe 's/\(JWT_MAX_BYTES = [0-9_]*\)/\1 * 2/'
+assert_eq "GREW" "$SD_JCP" \
+  "[음성대조·토큰 길이 상한] 식(<리터럴> * 2)이 된 선언에서 축이 안 울었다 — 앞 정수만 읽으면 값이 바뀌어도 핀과 같아 보인다"
+
+# ---------------------------------------------------------------------------
 # 빈 키셋 거부 — 자체 JWKS 스토어를 가진 넷
 # ---------------------------------------------------------------------------
 # ⚠️ go 의 #380 픽스는 **두 절반**이었다 — 상태코드 거부와 `len(ks.Keys) == 0` 거부. 자매 SDK
@@ -1467,6 +1549,9 @@ sd_owner_axis ".claude/rules/security.md" 'is the same invariant and is likewise
 # 1e 의 상한도 security.md 가 선언한다 — 아홉 선언과 SD_TOKEN_CAP 만 옮기고 이 줄을 잊으면 여기서 운다.
 SD_TC_OWNER_RE='response bodies are capped at'
 sd_owner_axis ".claude/rules/security.md" "$SD_TC_OWNER_RE" "$SD_TOKEN_CAP"
+# 1f 의 상한도 같다 — 아홉 선언과 SD_JWT_CAP 만 옮기고 security.md 의 그 줄을 잊으면 여기서 운다.
+SD_JC_OWNER_RE='reject a token over'
+sd_owner_axis ".claude/rules/security.md" "$SD_JC_OWNER_RE" "$SD_JWT_CAP"
 
 # ⚠️ **소유자 축은 단언이 셋이고 셋 다 공허했다** — 실측(2026-09-14, `scripts/probe.sh --site`):
 # 존재 검사(`_exists=0`)·히트 하한(`-ge 0`)·값 비교(`_bad=""`) 를 각각 무력화하니 **셋 다 SILENT**.

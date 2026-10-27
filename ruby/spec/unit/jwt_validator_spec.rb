@@ -155,6 +155,60 @@ RSpec.describe KeycloakSdk::JwtValidator do
       .to raise_error(KeycloakSdk::TokenValidationError)
   end
 
+  # 받는 토큰의 길이 상한(inbound-token-cap) — 나누기·디코드·JWKS 적재보다 먼저 거부한다.
+  describe "bounded token input" do
+    let(:cap) { 256_000 } # `JWT_MAX_BYTES` 는 private_constant 다 — 공개 표면을 늘리지 않는다
+
+    # `pad` 클레임을 덧대 길이가 [length - 8, length] 인 진짜 서명 토큰(역할이 많은 사용자의 모양).
+    def padded(length)
+      n = (length - sign(base_claims).bytesize) * 3 / 4
+      n -= 1 while sign(base_claims("pad" => "a" * n)).bytesize > length
+      sign(base_claims("pad" => "a" * n))
+    end
+
+    # T1 — 디코드가 먼저 돌면 ruby-jwt 의 디코드 오류로 나와 `exceeds` 를 말하지 않는다(순서까지 고정한다).
+    it "rejects a token over the cap before decoding it" do
+      over = "#{'a' * (cap - 1)}.."
+      expect(over.bytesize).to eq(cap + 1)
+      expect { validator.validate(over) }
+        .to raise_error(KeycloakSdk::TokenValidationError, "JWT validation failed: token exceeds 256000 bytes")
+    end
+
+    # ⚠️ 요청 수는 **진짜 서명** 토큰으로 잰다 — 쓰레기는 상한이 없어도 ruby-jwt 가 헤더에서 거부해 키를 찾지
+    # 않으므로 「JWKS 요청 0」이 저절로 참이다. 이 토큰은 상한이 없으면 디코드되고 키를 찾고 통과한다.
+    it "rejects a signed token over the cap without a JWKS request (control: a normal one fetches)" do
+      over = padded(cap + 9)
+      expect(over.bytesize).to be > cap
+      expect { validator.validate(over) }
+        .to raise_error(KeycloakSdk::TokenValidationError, "JWT validation failed: token exceeds 256000 bytes")
+      expect(a_request(:get, jwks_url)).not_to have_been_made
+
+      validator.validate(sign(base_claims)) # 같은 콜드 저장소 — 계수기가 그 적재를 본다
+      expect(a_request(:get, jwks_url)).to have_been_made.once
+    end
+
+    # T2 — 상한 길이의 쓰레기는 상한이 아니라 디코더가 거부한다(`>` 이지 `>=` 가 아니다).
+    it "leaves a token at the cap to the decoder" do
+      at_cap = "#{'a' * (cap - 2)}.."
+      expect(at_cap.bytesize).to eq(cap)
+      expect { validator.validate(at_cap) }
+        .to raise_error(KeycloakSdk::TokenValidationError) { |e| expect(e.message).not_to include("exceeds") }
+    end
+
+    # T3 — 상한은 정상 토큰을 거부하지 않는다.
+    { "the longest bearer Keycloak 26.6 accepts by default" => 65_459, "the cap" => 256_000 }.each do |name, length|
+      it "still validates a signed token padded to #{name}" do
+        token = padded(length)
+        expect(token.bytesize).to be_between(length - 8, length)
+        expect(validator.validate(token).subject).to eq("user-1")
+      end
+    end
+
+    it "leaves a value that is not a String to ruby-jwt (an SDK error, not NoMethodError)" do
+      expect { validator.validate(nil) }.to raise_error(KeycloakSdk::TokenValidationError, /Nil JSON web token/)
+    end
+  end
+
   describe "constructor guards (defense-in-depth against silent verify_iss/verify_aud no-ops)" do
     it "raises ConfigError when issuer is nil" do
       expect do

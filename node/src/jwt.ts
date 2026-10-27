@@ -23,6 +23,15 @@ import type { ValidatedToken } from './tokens.js'
 export const JWKS_MAX_BYTES = 51_200
 
 /**
+ * 받는 토큰의 길이 상한(아홉 언어 공통). Microsoft.IdentityModel 의 `DefaultMaximumTokenSizeInBytes` 와 같은 수이고,
+ * Keycloak 26.6 기본값이 받는 가장 긴 Bearer(65,459 B)의 약 3.9 배라 서버가 낸 토큰은 거부하지 않는다.
+ *
+ * ⚠️ **jose 에는 이 상한이 없다**(6.2.12) — `jwtVerify` 는 서명을 보기 전에 토큰을 나누고 base64url·JSON 디코드하며,
+ * 키(원격 JWKS)는 그 뒤에 찾는다. ⚠️ **export 하지 않는다** — 공개 표면(방출 `.d.ts`)을 늘리지 않는다.
+ */
+const JWT_MAX_BYTES = 256_000
+
+/**
  * 상한을 건 JWKS fetch. `createRemoteJWKSet` 의 `[customFetch]` 이음매로 주입한다 —
  * **JWKS 전용**이라 토큰·introspect·logout 경로에는 영향이 없다.
  *
@@ -315,6 +324,11 @@ export class JwtValidator {
 
   async validate(token: string): Promise<ValidatedToken> {
     try {
+      // ⚠️ 길이 상한이 맨 앞이다 — jose 가 나누고 디코드하기 전, JWKS 를 찾기 전(`JWT_MAX_BYTES`). 단위는 UTF-16 코드
+      // 단위(`length`)다 — 진짜 JWT 는 ASCII 라 바이트 수와 같다. `try` 안이라 문자열이 아닌 값도 지금처럼 SDK 오류다.
+      if (token.length > JWT_MAX_BYTES) {
+        throw new Error(`token exceeds ${JWT_MAX_BYTES} bytes`)
+      }
       const { payload } = await jwtVerify(token, this.keys, {
         algorithms: this.opts.allowedAlgs, // alg 핀 — jose는 `alg:none`을 항상 거부
         issuer: this.opts.issuer, // iss 정확일치

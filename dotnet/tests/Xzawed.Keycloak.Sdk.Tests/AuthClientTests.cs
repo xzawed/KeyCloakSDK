@@ -478,6 +478,31 @@ public class AuthClientTests : IDisposable
         Assert.Equal(2, Hits(CertsPath));
     }
 
+    /// <summary>The id_token the exchange validates meets the inbound length cap (<c>JwtValidator.MaxJwtBytes</c>) too:
+    /// garbage one character over it is refused by the cap — a decoder would refuse it as malformed — and, on a client
+    /// built by <c>KeycloakClient.Create</c> whose key store is still cold, without a discovery or JWKS request.</summary>
+    [Fact]
+    public async Task ExchangeCode_refuses_an_over_cap_id_token_before_any_key_store_request()
+    {
+        var key = NewKey();
+        var cfg = OverrideConfig();
+        var issuer = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm).Issuer;
+        StubKeyStore(issuer, key);
+        StubToken(new string('a', JwtValidator.MaxJwtBytes - 1) + "..");
+
+        using var kc = KeycloakClient.Create(cfg);
+        var refused = await Assert.ThrowsAsync<KeycloakAuthException>(() => Exchange(kc.Auth));
+        Assert.Equal("id_token validation failed", refused.Message);
+        var validation = Assert.IsType<KeycloakTokenValidationException>(refused.InnerException);
+        Assert.Contains("exceeds 256000 bytes", validation.Message);
+        Assert.Equal(0, Hits(DiscoveryPath));
+        Assert.Equal(0, Hits(CertsPath));
+
+        // Control: the store is cold, not unreachable — a genuine access token on the same client loads it now.
+        await kc.Auth.ValidateAsync(SignClaims(Claims(issuer, "\"extra-api\""), key));
+        Assert.Equal(1, Hits(CertsPath));
+    }
+
     /// <summary>A5 (refetch gate). .NET refetches on a forged signature (<c>.claude/rules/dotnet.md</c>) — the forged
     /// id_token spends the ONE 30s window, so a forged access token right after it cannot open another.</summary>
     [Fact]
