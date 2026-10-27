@@ -18,6 +18,7 @@ from joserfc.jwk import ECKey, RSAKey
 from keycloak.exceptions import KeycloakAuthenticationError, KeycloakGetError
 
 from keycloak_sdk._internal.backoff import JwksFailureBackoff
+from keycloak_sdk._internal.jwt import JWT_MAX_BYTES
 from keycloak_sdk.aio.auth import AsyncAuthClient
 from keycloak_sdk.auth import AuthorizationUrl
 from keycloak_sdk.config import KeycloakConfig
@@ -663,6 +664,45 @@ async def test_validate_wraps_certs_transport_error(ajwks):
 
     with pytest.raises(KeycloakTransportError):
         await client.validate("irrelevant-token")
+
+
+# --- 받는 토큰의 길이 상한 — 콜드 캐시에서도 JWKS 를 가져오기 전에 거부한다(sync 동형) ---------
+
+
+async def test_validate_rejects_a_token_over_the_cap_without_a_jwks_request(ajwks):
+    """T1 — 콜드 캐시의 파사드. 상한 밖 쓰레기 하나가 JWKS 요청을 내지 않는다."""
+    client = _client(MagicMock())
+
+    with pytest.raises(TokenValidationError, match="exceeds 256000 bytes"):
+        await client.validate("a" * (JWT_MAX_BYTES - 1) + "..")
+
+    ajwks.assert_not_called()
+    assert client._jwks_cache is None
+
+
+async def test_validate_lets_a_token_at_the_cap_through_to_the_jwks_load_and_decoder(ajwks):
+    """T2 — 상한 길이의 쓰레기는 파사드 문을 지나 JWKS 적재와 디코더에 닿는다(`>=` 가 아니다)."""
+    client = _client(MagicMock())
+
+    with pytest.raises(TokenValidationError) as refused:
+        await client.validate("a" * (JWT_MAX_BYTES - 2) + "..")
+
+    assert "exceeds" not in str(refused.value)
+    assert ajwks.call_count == 1
+
+
+async def test_exchange_code_rejects_an_id_token_over_the_cap_without_a_jwks_request(ajwks):
+    """T1 — 코드 교환의 id_token 경로도 같은 문을 지난다(원인이 상한이고 JWKS 요청 0)."""
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    over = "a" * (JWT_MAX_BYTES - 1) + ".."
+    client = _client(_exchange_openid_with_id_token(key, over, ajwks))
+
+    with pytest.raises(KeycloakAuthError, match="invalid id_token") as refused:
+        await client.exchange_code("code", "https://app/cb", "verifier", nonce="server-nonce")
+
+    assert type(refused.value.__cause__) is TokenValidationError
+    assert str(refused.value.__cause__) == "token exceeds 256000 bytes"
+    ajwks.assert_not_called()
 
 
 # --- 보안: JWKS 강제 재조회 DoS 증폭 방지 + 자원 정리 (감사 후속) -------------------
