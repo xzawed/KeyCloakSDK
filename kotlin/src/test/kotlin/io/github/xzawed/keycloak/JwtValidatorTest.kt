@@ -4,6 +4,7 @@ import com.github.tomakehurst.wiremock.WireMockServer
 import com.github.tomakehurst.wiremock.client.WireMock.aResponse
 import com.github.tomakehurst.wiremock.client.WireMock.get
 import com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor
+import com.github.tomakehurst.wiremock.client.WireMock.post
 import com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig
 import com.nimbusds.jose.JWSAlgorithm
@@ -26,6 +27,8 @@ import java.util.Date
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -644,7 +647,103 @@ internal class JwtValidatorTest {
             ) { validator.validate(beyond) }
         }
 
+    // ── 받는 토큰의 길이 상한(JWT_MAX_BYTES) — 분해·디코드·JWKS 적재보다 먼저 거부한다 ──
+    // Nimbus 는 서명을 보기 전에 헤더(JWTParser)와 클레임(DefaultJWTProcessor)을 JSON 으로 푼다. 상한은 그 앞이다.
+
+    // T1 — 상한 + 1 의 쓰레기는 상한으로 거부된다. 메시지의 「exceeds」 가 순서의 증거다: 디코드가 먼저였다면 형식 오류로
+    // 먼저 실패해 그 말이 없다. 진입점 셋(검증기 · AuthClient 파사드 · 코드 교환의 id_token 검증)을 모두 **콜드** 검증기로
+    // 부르고 서버가 받은 요청을 센다 — 교환의 토큰 요청 하나뿐이고 JWKS 는 0 건이다.
+    // ⚠️ 교환의 id_token 만은 쓰레기일 수 없다 — Nimbus 의 토큰 응답 파서(`OIDCTokens.parse`)가 id_token 의 헤더를 먼저
+    // 풀어, 쓰레기는 상한에 닿기 전에 「Malformed auth response」 로 끝난다. 그래서 헤더만 온전한 상한 + 1 토큰을 싣는다.
+    @Test
+    fun `over-cap token is rejected before decoding on every entry point without a JWKS request`() =
+        runTest {
+            val server = WireMockServer(wireMockConfig().dynamicPort())
+            server.start()
+            try {
+                val config = KeycloakConfig(serverUrl = server.baseUrl(), realm = "r", clientId = audience)
+                val overCap = "a".repeat(JWT_MAX_BYTES - 1) + ".."
+                assertEquals(JWT_MAX_BYTES + 1, overCap.length)
+                val validator = JwtValidator.forRealm(OidcEndpoints.forRealm(config), config, audience)
+
+                assertCapRejection(assertFailsWith<TokenValidationException> { validator.validate(overCap) })
+                assertCapRejection(assertFailsWith<TokenValidationException> { AuthClient(config).validate(overCap) })
+
+                val header = Base64.getUrlEncoder().withoutPadding().encodeToString("""{"alg":"RS256","kid":"k1"}""".toByteArray())
+                val idToken = "$header.${"a".repeat(JWT_MAX_BYTES - header.length - 5)}.c2ln"
+                assertEquals(JWT_MAX_BYTES + 1, idToken.length)
+                server.stubFor(
+                    post(urlPathEqualTo(TOKEN_PATH)).willReturn(
+                        aResponse()
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("""{"access_token":"AT","token_type":"Bearer","expires_in":300,"id_token":"$idToken"}"""),
+                    ),
+                )
+                val exchange =
+                    assertFailsWith<KeycloakAuthException> {
+                        AuthClient(config).exchangeCode("code", "v".repeat(43), "https://app.example.com/cb", expectedNonce = "n")
+                    }
+                assertCapRejection(assertIs<TokenValidationException>(exchange.cause))
+
+                assertEquals(0, server.findAll(getRequestedFor(urlPathEqualTo(JWKS_PATH))).size, "상한을 넘은 토큰이 JWKS 를 불렀다")
+                assertEquals(1, server.allServeEvents.size, "요청은 교환의 토큰 요청 하나뿐이어야 한다")
+            } finally {
+                server.stop()
+            }
+        }
+
+    // T2 — 상한과 같은 길이의 쓰레기는 상한이 아니라 디코더가 거부한다: 비교는 `>` 다(`>=` 가 아니다).
+    @Test
+    fun `token of exactly the cap is rejected by the decoder, not by the cap`() =
+        runTest {
+            val atCap = "a".repeat(JWT_MAX_BYTES - 2) + ".."
+            assertEquals(JWT_MAX_BYTES, atCap.length)
+            val validator = JwtValidator.withStaticJwks(JWKSet(), issuer, audience)
+
+            val e = assertFailsWith<TokenValidationException> { validator.validate(atCap) }
+            assertFalse(e.message!!.contains("exceeds"), "상한과 같은 길이를 상한이 거부했다: ${e.message}")
+            assertNotNull(e.cause, "디코더의 거부가 원인으로 달려 있어야 한다")
+        }
+
+    // T3 — 정상 토큰은 상한까지 통과한다: 상한 바로 아래 [cap−8, cap] 와, Keycloak 26.6 이 기본 설정으로 받는 가장 긴
+    // Bearer 의 길이(65,459 B) 둘 다. 서명된 토큰에 패딩 클레임을 넣어 길이를 맞춘다.
+    @Test
+    fun `genuine tokens up to the cap validate`() =
+        runTest {
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, audience)
+
+            for (max in listOf(JWT_MAX_BYTES, 65_459)) {
+                val token = paddedToken(key, max - 8, max)
+                assertTrue(token.length in (max - 8)..max, "길이 ${token.length}")
+                assertEquals(issuer, validator.validate(token).issuer, "길이 ${token.length} 의 정상 토큰")
+            }
+        }
+
+    private fun assertCapRejection(e: TokenValidationException) {
+        assertTrue(e.message!!.contains("exceeds 256000 bytes"), "상한의 거부가 아니다: ${e.message}")
+    }
+
+    // 서명된 정상 토큰을 패딩 클레임으로 [min, max] 길이에 맞춘다 — 패딩 한 글자는 토큰을 1–2 자 늘린다(base64url 3→4).
+    private fun paddedToken(
+        key: RSAKey,
+        min: Int,
+        max: Int,
+    ): String {
+        fun build(pad: Int) = signedRs256(key, JWTClaimsSet.Builder(claims()).claim("pad", "x".repeat(pad)).build())
+        var pad = maxOf(0, (max - 4 - build(0).length) * 3 / 4)
+        var token = build(pad)
+        while (token.length > max) {
+            token = build(--pad)
+        }
+        while (token.length < min) {
+            token = build(++pad)
+        }
+        return token
+    }
+
     private companion object {
         const val JWKS_PATH = "/realms/r/protocol/openid-connect/certs"
+        const val TOKEN_PATH = "/realms/r/protocol/openid-connect/token"
     }
 }
