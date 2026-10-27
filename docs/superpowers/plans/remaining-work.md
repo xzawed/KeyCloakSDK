@@ -101,7 +101,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `278`(2026-10-27 기준 열림 144 · 닫힘 134)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `278`(2026-10-27 기준 열림 143 · 닫힘 135)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -131,7 +131,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. `go-cancel-identity-lost-in-body`(취소 비용 측정의 곁가지).
+1. `python-aio-admin-build-blocks-loop`(README 거짓).
 2. `wave4-hardening-*` 의 남은 칸(#763–#772 가 일곱 언어의 일부를 닫았다) · `response-framing-unbounded` 의 node·python.
 3. `guard-detection-surface-hand-narrowed` [H/M](attest — KNOWN_GAPS 대조는 #773) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
 4. ⚠️ **손대기 전에 전제를 잰다** — 이번에도 뒤집혔다: jwks 후보(「신선한 캐시가 없으면 센다」)는 600 초 경계에서 규칙 (4) 를 깼고, 「낡은 캐시 + 장애」는 node 하나가 아니라 node·.NET 이었고, probe.sh 초안 정규식은 지어낸 줄로 골라 실제 출력 셋을 못 맞췄다.
@@ -530,7 +530,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 127건 (열림 76)
+## C. 품질 부채 — 127건 (열림 75)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -574,8 +574,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 <!-- python-admin-guard-send-time 실측(#708 검증 레그 두 차례): 401 재시도 중 다른 스레드의 토큰 쓰기·_keycloak_openid 교체 → 'Bearer ' · 소문자 'bearer ' · _s.headers 기본값 · _s 를 바꾼 연결 직접 호출(307 따라감) · 설치 안 된 copy.copy(conn) 직접 호출 · wrapt.ObjectProxy(admin) 는 생성 때만 무장. 같은 부류: 주입한 openid 의 연결을 바꾸면 auth 레인이 리다이렉트를 따라 client_secret 을 넘긴다(sync). 이음매 후보: _s.send / async_s 의 송신 시점 검사(병합된 헤더, 대소문자 무시). -->
 - [x] `jvm-chunked-trailers-unbounded` **[H/M · 닫힘 2026-10-09 #756 #761]** JVM 둘의 운송이 응답 틀을 상한 안에서 읽는다
 - [x] `close-drain-time-unbounded` **[M/M · 신규 2026-10-05 · 닫힘 2026-10-27 #756 #761 #769 #833 #848]** 끝없는 본문의 `close()`·취소 — 일곱의 닫기는 재스캔 · 취소 API 가 있는 넷은 곧 돌아온다(실측 · kotlin 은 `response-read-deadline-divergent`)
-- [ ] `go-cancel-identity-lost-in-body` **[M/M · 신규 2026-10-27]** 본문을 읽다 온 취소·기한이 그랜트·admin 에서 `errors.Is` 정체를 잃는다 · `go/tokencap.go:138`
-<!-- go-cancel-identity-lost-in-body(2026-10-27 실측 · 표는 #848 의 커밋 메시지): 본문 중간에서 멈춘 IdP 앞의 호출자 기한 300 ms · SDK 타임아웃 5 s — ClientCredentialsToken·Refresh 는 *AuthError · 사슬 [*keycloak.responseFreeError] · errors.Is(context.DeadlineExceeded)·net.Error 거짓: x/oauth2 v0.37.0 internal/token.go:266 이 본문 읽기 오류를 %v 로 납작하게 하고(요청 오류는 259–261 이 그대로) scrubCause 가 withheld 로 감싼다. admin Users.Get 은 *TransportError · 사슬 [*gocloak.APIError] · 거짓: gocloak v13.9.0 client.go:106-110(malformed_response_cause_test.go:454 가 admin 로그인을 같은 이유로 뺐다). Introspect·Validate 는 참. 약속: cause.go:45-47(tokenprovider.go:125 는 공유 비행의 대기에 대한 같은 약속). 시험(TestScrubKeepsBelowHTTPErrorIdentity)은 미리 취소한 ctx 만 잰다 — 그랜트·admin 자원 읽기 도중의 취소를 재는 시험은 없다. 타입은 계약대로다(README v1.2.3 노트 · causeWantKind). ExchangeCode 는 같은 길(미측정). 수정 후보: cappedBody 가 본문 읽기 오류를 withTokenCap 의 칸에 남겨 grantFailed 가 Cause 로 · admin 은 ctx 칸(gocloak client.go:56 SetContext)을 운송이 채우고 toSDKError 가 읽는다. 부류: 다른 셋의 호출자 취소는 호출자의 오류 그대로 온다(.NET TaskCanceledException · rust 는 future 를 버려 SDK 오류가 없다 · python aio TimeoutError). SDK 타임아웃의 정체는 .NET 만 사슬에 남는다(TimeoutException) — rust 는 Transport(String) · python aio 는 미측정. -->
+- [x] `go-cancel-identity-lost-in-body` **[M/M · 신규·닫힘 2026-10-27 #849]** 교환 도중의 기한이 그랜트·admin 에서 `errors.Is` 정체를 잃었다
 - [ ] `python-aio-admin-build-blocks-loop` **[M/S · 신규 2026-10-27]** aio admin 첫 접근이 TLS 컨텍스트 둘을 동기로 만들어 루프를 ≈0.4 s 막는다 — README 는 「never blocks」 · `python/README.md:54`
 <!-- python-aio-admin-build-blocks-loop 실측(2026-10-27 · Windows 11 · Python 3.13.11 · OpenSSL 3.0.18 · httpx 0.28.1 · certifi cacert.pem 234,354 B · 네트워크 없음 · 표는 #848 의 커밋 메시지): kc.admin.users 첫 접근 391–413 ms(10 회) · 그동안 5 ms 틱의 최대 간격 408 ms. cProfile: httpx.AsyncClient 생성 둘 — aio/admin/__init__.py:53 의 KeycloakAdmin 과 arm_admin(_internal/admin_guard.py:392)이 끌어내는 내부 OpenID 연결 — 이 각각 load_verify_locations(certifi) ≈197 ms. 단독: create_default_context(cafile=certifi) 197–207 ms · 시스템 저장소 17–19 ms · httpx.AsyncClient(verify=True) 196–237 ms. 호출마다의 토큰은 a_get_token 이라 막지 않는다. create() 의 auth 클라이언트 · 리눅스 값은 미측정. 수정 후보: SDK 의 httpx 클라이언트가 TLS 컨텍스트 하나를 나눠 쓴다(python-keycloak 이 verify 를 어디로 넘기는지부터 잰다) · 또는 README 를 「I/O 는 막지 않는다 · 생성은 동기」로 고치고 시작 때 kc.admin 을 만들라고 적는다. 발견: 취소 비용 python 레그(L4 셋업이 300 ms 타이머를 넘었다). -->
 - [x] `admin-response-body-unbounded` **[M/M · 신규 2026-10-25 · 닫힘 2026-10-27 #846]** admin 이 오류 본문을 다 읽는다

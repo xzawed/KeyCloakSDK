@@ -117,12 +117,14 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 
 	tp := NewClientCredentialsTokenProvider(func(ctx context.Context) (*TokenSet, error) {
 		// The token response is capped (tokencap.go). gocloak flattens the cap's Read error into its message, and
-		// loginError keeps that message, so the flag is not needed here.
+		// loginError keeps that message, so the flag is not needed here. It flattens a deadline's error too, which the
+		// transport keeps in below (cause.go).
 		ctx, _ = withTokenCap(ctx)
+		ctx, below := withBelowHTTP(ctx)
 		jwt, err := gc.LoginClient(ctx, cfg.ClientID, cfg.ClientSecret, cfg.Realm)
 		if err != nil {
 			// Not toSDKError: gocloak flattened the token response's error body into the message (cause.go).
-			return nil, loginError(err)
+			return nil, loginError(err, below)
 		}
 		// gocloak reports a non-2xx it can still unmarshal as success — a 3xx surfaced by
 		// noFollowRedirect, or any body without an access_token, yields a zero-value JWT and a
@@ -171,18 +173,20 @@ func (a *AdminClient) token(ctx context.Context) (string, error) {
 	return tok, nil
 }
 
-// call runs a gocloak call and converts its error to the SDK taxonomy.
-func call[T any](fn func() (T, error)) (T, error) {
-	v, err := fn()
+// call runs a gocloak call and converts its error to the SDK taxonomy. fn gets ctx with the slot in which the transport
+// keeps the error gocloak flattens (cause.go) — so it must pass on the ctx it is given, not the caller's.
+func call[T any](ctx context.Context, fn func(context.Context) (T, error)) (T, error) {
+	ctx, below := withBelowHTTP(ctx)
+	v, err := fn(ctx)
 	if err != nil {
-		return v, toSDKError(err)
+		return v, toSDKError(err, below)
 	}
 	return v, nil
 }
 
 // run is call for gocloak calls that return only an error.
-func run(fn func() error) error {
-	_, err := call(func() (struct{}, error) { return struct{}{}, fn() })
+func run(ctx context.Context, fn func(context.Context) error) error {
+	_, err := call(ctx, func(ctx context.Context) (struct{}, error) { return struct{}{}, fn(ctx) })
 	return err
 }
 
@@ -191,11 +195,17 @@ func run(fn func() error) error {
 // Code 0 when there was no HTTP response. So an APIError with a real HTTP status
 // (>0) becomes *AdminError (matching the sentinels via Is), while a Code-0 error
 // or any non-APIError becomes *TransportError (matching Java/Python/Node, where
-// network failures map to a transport-level error).
-func toSDKError(err error) error {
+// network failures map to a transport-level error). gocloak's Message is text, so a
+// deadline's error is lost in it; the transport kept it in below (cause.go), and the
+// cause joins it to err — errors.Is(err, context.DeadlineExceeded) holds, and the
+// APIError stays reachable with errors.As as before.
+func toSDKError(err error, below *belowHTTPSlot) error {
 	var apiErr *gocloak.APIError
 	if errors.As(err, &apiErr) && apiErr.Code != 0 {
 		return &AdminError{StatusCode: apiErr.Code, Msg: apiErr.Message, Cause: err}
+	}
+	if lost := below.lost(err); lost != nil {
+		return &TransportError{Msg: err.Error(), Cause: errors.Join(err, lost)}
 	}
 	return &TransportError{Msg: err.Error(), Cause: err}
 }
