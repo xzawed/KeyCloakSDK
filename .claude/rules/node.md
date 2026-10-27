@@ -5,7 +5,12 @@ paths:
   - "harness/install/consume/node*"
   - ".github/workflows/node-*.yml"
 ---
-<!-- doc-budget: max-bytes=6749 -->
+<!-- doc-budget: max-bytes=7023 -->
+<!-- 6749 → 7023 (2026-10-27, +274B). 규약 (1) — 증가분이 **그 주장을 다시 재는 명령**을 사 온다.
+     admin 파사드가 admin-client 메서드를 부르지 않고 같은 요청을 직접 보내게 됐다(`src/admin/http.ts`)
+     — 그 경계와, 그것이 같은 요청인지 다시 재는 시험 명령을 한 줄로 남긴다. 교환이다 — 거짓 둘을
+     지웠다: 커버리지 「`src/admin/*.ts` 리소스 여섯 · 여덟 항목」(이제 둘) · 핀 「`~26.7.0`」(핀은
+     `package.json` 이 소유한다 — 숫자를 옮겨 적지 않는다). -->
 <!-- 6761 → 6749 (2026-10-09, −12B). **인하** — 「Only the `cooldown=0` control fails」 는 거짓이었다.
      `cooldownDuration: 0` 을 지우거나 개명하면 jose 가 자기 기본 30 초로 돌아가고, 창 0 을 쓰는
      시험 **둘**(대조군 · 빈 키셋)이 함께 떨어진다 — `npx vitest run test/unit` 346 중 2 실패, 두 변이
@@ -40,7 +45,7 @@ cd node && npm run build       # tsc → dist/
 
 - ⚠️ **On Windows `prettier --check` names the whole clean tree** — that is CRLF, not formatting. Normalise only what you changed to LF and re-check those; committed blobs stay LF (`.gitattributes`), so CI never sees it.
 - A single test: `npx vitest run test/unit/<name>.test.ts`
-- Coverage omits `src/index.ts`, `src/auth.ts` and the six `src/admin/*.ts` resource files — **eight** entries, and the SSOT is `node/vitest.config.ts` (a hand list, deliberately not a glob, so a new file lands on the *measured* side). ⚠️ **`src/transport.ts` and `src/admin/call.ts` are measured, not omitted** — do not add them back; the config says so in-line and this line used to claim the opposite (audit 2026-09-22). Re-read the list rather than transcribing it: `sed -n '/exclude:/,/]/p' node/vitest.config.ts`.
+- Coverage omits only `src/index.ts` and `src/auth.ts`; the SSOT is `node/vitest.config.ts` (a hand list, deliberately not a glob, so a new file lands on the *measured* side). ⚠️ **`src/transport.ts` and all of `src/admin/` are measured** — do not add them back; the config says why. Re-read the list rather than transcribing it: `sed -n '/exclude:/,/]/p' node/vitest.config.ts`.
 - Release check: `npm run build && npm pack --dry-run`. ⚠️ Even with `files:["dist"]`, npm **always** includes `package.json`, `README` and `LICENSE`, so without `node/README.md` and `node/LICENSE` the npmjs.com landing page ships empty. Write every README link as an absolute URL (relative links break on the registry page).
 - Releasing goes `node-v*` tag → npm **Trusted Publishing** (OIDC + provenance, no stored token). The tag ↔ `package.json` consistency guard and the integration E2E are both in `needs:`.
 - The package `@xzawed/keycloak-sdk` is ESM-only (`"type":"module"`) and ships `.d.ts`.
@@ -52,7 +57,8 @@ cd node && npm run build       # tsc → dist/
 ## admin
 
 - ⚠️ **To re-authenticate on expiry, wire the SDK provider in with `registerTokenProvider` — do not call `kc.auth()`.** The admin-client's built-in TokenManager only attempts a refresh_token grant on expiry and has no client_credentials re-auth fallback, so delegating to it makes every admin call a permanent 500 once the first token expires (~4.5 min). **Of all nine languages, node is the only one carrying this weakness** (the JVM ones have a re-auth fallback; go, dotnet, rust and ruby have their own caching provider; python and php re-authenticate inside the underlying library). To reproduce: lower the realm's `accessTokenLifespan`, make an admin call, wait 45 seconds, call again.
-- **The admin-client pin `~26.7.0` is a product of its history.** A `decodeToken(undefined).split()` crash regression in 26.7.0 pushed it down to `~26.6.4`; then the integration tests demonstrated that the wiring above cuts that path off at the root, and it moved forward again. **Look at the wiring before reverting to the narrower pin.**
+- ⚠️ **Resource methods send their own requests (`src/admin/http.ts`) — do not route them back through `kc.<resource>.<method>()`**, which reads every non-2xx body whole and the 2xx body of every write. After an admin-client bump run `npx vitest run test/unit/admin-response-body.test.ts`: it diffs each call's wire and result against the old delegation on `raw()`, which still reads error bodies whole.
+- **The admin-client pin in `package.json` is a product of its history.** A `decodeToken(undefined).split()` crash regression in 26.7.0 pushed it down to `~26.6.4`; then the integration tests demonstrated that the wiring above cuts that path off at the root, and it moved forward again. **Look at the wiring before reverting to a narrower pin.**
 - ⚠️ **The `findOne` family returns `null` on a 404** (the declared type says `undefined`) — treat both `null` and `undefined` as absence. Checking `=== undefined` alone lets a lookup-after-delete leak through as a bug.
 
 ## auth · JWT

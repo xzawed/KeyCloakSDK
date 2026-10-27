@@ -1,35 +1,38 @@
-import type KcAdminClient from '@keycloak/keycloak-admin-client'
 import type RealmRepresentation from '@keycloak/keycloak-admin-client/lib/defs/realmRepresentation.js'
 import { call, requireFound } from './call.js'
+import { type AdminHttp, adminPath, create, omit, orEmpty, read, readOne, write } from './http.js'
 
 /**
  * 렐름 생성/조회/삭제 파사드. `RealmsResource`는 realm 스코프가 아니라 렐름 이름을 인자로
- * 받는다(생성 payload의 `realm` 필드가 대상 렐름 이름). 공식 admin-client의 `realms`
- * 리소스를 감싸며 {@link call}로 경계 변환한다.
+ * 받는다(생성 payload의 `realm` 필드가 대상 렐름 이름). 공식 admin-client의 `realms` 리소스가
+ * 보내는 것과 같은 요청을 직접 보내며(`http.ts`) {@link call}로 경계 변환한다.
  */
 export class RealmsResource {
   /**
    * @internal `AdminClient`가 조립한다 — 소비자 생성 경로가 아니다. `@internal` + `stripInternal`로
-   * 방출 `.d.ts`에서 지워, 하위 `KcAdminClient` 타입이 공개 표면에 오르지 않게 한다(§4).
+   * 방출 `.d.ts`에서 지워, 내부 전송 타입이 공개 표면에 오르지 않게 한다(§4).
    */
-  constructor(private readonly kc: KcAdminClient) {}
+  constructor(private readonly http: AdminHttp) {}
 
-  /** 새 렐름을 생성한다. `representation.realm`이 새 렐름의 이름이다. */
+  /**
+   * 새 렐름을 생성한다. `representation.realm`이 새 렐름의 이름이다. 응답의 `Location` 은 admin-client 처럼 요구하되
+   * 돌려주지 않는다.
+   */
   async create(representation: RealmRepresentation): Promise<void> {
-    await call(() => this.kc.realms.create(representation))
+    await call(() => create(this.http, adminPath(''), omit(orEmpty(representation) as object, [])))
   }
 
   /** 렐름 이름으로 조회한다. 없으면 `KeycloakNotFoundError`. */
   async get(realmName: string): Promise<RealmRepresentation> {
     return requireFound(
-      await call(() => this.kc.realms.findOne({ realm: realmName })),
+      await call(() => readOne<RealmRepresentation>(this.http, adminPath(realmName))),
       `Realm not found: ${realmName}`,
     )
   }
 
   /** 호출자가 볼 수 있는 렐름 전부. 서비스 계정은 보통 자기 렐름만 본다 — 전체를 가정하지 말 것. */
   async list(): Promise<RealmRepresentation[]> {
-    return call(() => this.kc.realms.find())
+    return call(() => read<RealmRepresentation[]>(this.http, adminPath('')))
   }
 
   /**
@@ -39,10 +42,10 @@ export class RealmsResource {
    * 덮어쓰면 rename이 조용한 no-op이 된다.
    */
   async update(realmName: string, representation: RealmRepresentation): Promise<void> {
-    await call(() => this.kc.realms.update({ realm: realmName }, representation))
+    await call(() => write(this.http, 'PUT', adminPath(realmName), orEmpty(representation)))
   }
 
   async delete(realmName: string): Promise<void> {
-    await call(() => this.kc.realms.del({ realm: realmName }))
+    await call(() => write(this.http, 'DELETE', adminPath(realmName), {}))
   }
 }

@@ -21,12 +21,12 @@ export default defineConfig({
       // 측정되지 않아 **세 변이가 전부 `SILENT`** 였다(실측 2026-09-15, `scripts/probe.sh`):
       // `statusOf` 의 숫자 검사 제거 · `messageOf` 의 `?? error` 폴백 제거 · 기본 문구 변경.
       // `test/unit/admin-call.test.ts` 가 전수를 치고, 이 제외가 없어야 그 커버가 게이트에 들어온다.
-      // 나머지 `src/admin/*.ts` 는 admin-client 위임이라 그대로 둔다.
+      // ⚠️ **`src/admin/*.ts` 의 리소스 다섯과 `index.ts` 도 2026-10-27 에 제외에서 뺐다.** 「admin-client
+      // 위임」이 제외의 이유였는데, 파사드는 이제 요청을 직접 짓는다(`http.ts`) — 경로·쿼리·본문을 고르는
+      // 것이 그 파일들이다. `admin.test.ts`(fetch 스텁)와 `admin-response-body.test.ts`(루프백 서버)가 친다.
       // ⚠️ 글롭이 아니라 **손 목록**인 것은 의도다 — 새 파일은 목록에 없어 **측정되는** 쪽으로
       // 빠진다(글롭이면 조용히 제외된다). 측정이 시끄럽고 제외가 조용하니 이 방향이 옳다.
-      exclude: ['src/index.ts', 'src/auth.ts', 'src/admin/clients.ts', 'src/admin/groups.ts',
-        'src/admin/realms.ts', 'src/admin/roles.ts', 'src/admin/users.ts',
-        'src/admin/index.ts'],
+      exclude: ['src/index.ts', 'src/auth.ts'],
       // text: 로컬 콘솔 요약, lcov: SonarCloud(sonar.javascript.lcov.reportPaths=node/coverage/lcov.info)
       reporter: ['text', 'lcov'],
       thresholds: { lines: 90, branches: 85, functions: 90, statements: 90 },

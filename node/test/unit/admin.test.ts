@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// @keycloak/keycloak-admin-client는 네트워크 경계 — 목킹해 타임아웃 주입/위임/예외변환을 격리 검증한다.
+// @keycloak/keycloak-admin-client 는 `raw()` 의 탈출구로만 남았다 — 목킹해 생성 인자·토큰 배선을 격리 검증한다.
+// 파사드의 요청은 전역 `fetch` 로 직접 나가므로(`src/admin/http.ts`) 그 자리를 스텁으로 갈아 요청을 본다.
+// 와이어 그대로의 대조(머리 순서 · 본문 바이트)와 본문 상한은 `admin-response-body.test.ts` 가 진짜 서버로 잰다.
 const h = vi.hoisted(() => {
   const kc = {
     baseUrl: '',
@@ -32,6 +34,7 @@ vi.mock('@keycloak/keycloak-admin-client', () => ({ default: h.ctor }))
 
 import { AdminClient } from '../../src/admin/index.js'
 import { defineConfig } from '../../src/config.js'
+import { TOKEN_RESPONSE_MAX_BYTES } from '../../src/token-response-cap.js'
 import {
   KeycloakNotFoundError,
   KeycloakConflictError,
@@ -49,24 +52,43 @@ const cfg = defineConfig({
   readTimeoutMs: 12345,
 })
 
+const BASE = 'https://kc.example.com/admin/realms'
+
 // admin은 core의 TokenProvider 인터페이스로 토큰을 주입받는다(파사드가 캐싱 provider를 배선).
 // 여기서는 provider를 목킹해 admin의 등록/초기획득/경계변환 배선을 격리 검증한다.
 const provider = { getAccessToken: vi.fn() }
 
-/** NetworkError(admin-client) 형태의 에러를 만든다. */
-function networkError(status: number, errorMessage = 'boom'): Error {
-  const err = new Error(errorMessage) as Error & {
-    response: { status: number }
-    responseData: { errorMessage: string }
+const fetchMock = vi.fn<typeof fetch>()
+
+/** 다음 fetch 하나의 응답을 정한다 — 본문이 문자열이 아니면 JSON 으로 싣는다. */
+function reply(status: number, body?: unknown, headers?: Record<string, string>): void {
+  const payload = body === undefined ? null : typeof body === 'string' ? body : JSON.stringify(body)
+  fetchMock.mockResolvedValueOnce(new Response(payload, { status, headers }))
+}
+
+/** 마지막 fetch 의 요청 — URL · 메서드 · 본문 · 머리 · 옵션. */
+function sent(): {
+  url: string
+  method?: string
+  body: unknown
+  headers: Headers
+  init?: RequestInit
+} {
+  const last = fetchMock.mock.calls.at(-1)
+  if (last === undefined) throw new Error('fetch was not called')
+  const [input, init] = last
+  return {
+    url: String(input),
+    method: init?.method,
+    body: init?.body,
+    headers: new Headers(init?.headers),
+    init,
   }
-  err.response = { status }
-  err.responseData = { errorMessage }
-  return err
 }
 
 beforeEach(() => {
   // resetAllMocks: 호출 기록 + 구현 모두 초기화(테스트 간 mockRejectedValue 오염 방지).
-  // 이후 ctor/auth 기본 구현을 재확립한다.
+  // 이후 ctor/auth/fetch 기본 구현을 재확립한다.
   vi.resetAllMocks()
   h.ctor.mockImplementation(function (config: Record<string, unknown>) {
     Object.assign(h.kc, config)
@@ -74,6 +96,12 @@ beforeEach(() => {
   })
   h.kc.auth.mockResolvedValue(undefined)
   provider.getAccessToken.mockResolvedValue('access-token')
+  fetchMock.mockImplementation(() => Promise.resolve(new Response(null, { status: 204 })))
+  vi.stubGlobal('fetch', fetchMock)
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 describe('AdminClient.create — 생성/인증/타임아웃 주입', () => {
@@ -85,7 +113,7 @@ describe('AdminClient.create — 생성/인증/타임아웃 주입', () => {
       timeout: 12345, // ms — admin-client가 AbortSignal.timeout(ms)로 적용(무한대기 방지)
       // SSRF 하드닝 — admin REST가 3xx를 따라가면 **Authorization 헤더를 리다이렉트 대상까지
       // 들고 가고**(실측) 호출은 성공으로 resolve된다. 이 옵션은 admin-client가 모든 리소스
-      // fetch에 전달한다. 여기서 함께 고정하지 않으면 생성자 옵션 리팩터에서 조용히 사라진다.
+      // fetch에 전달한다(`raw()` 의 요청). 여기서 함께 고정하지 않으면 생성자 옵션 리팩터에서 조용히 사라진다.
       requestOptions: { redirect: 'manual' },
     })
     // 만료 시 재인증하는 SDK provider를 등록하고, 크래시·refresh-only 만료버그의 원인인 kc.auth()는
@@ -118,31 +146,119 @@ describe('AdminClient.create — 생성/인증/타임아웃 주입', () => {
   })
 })
 
+describe('파사드의 요청 — admin-client 메서드를 거치지 않는다', () => {
+  it('요청마다 Bearer · 리다이렉트 금지 · 읽기 기한을 싣는다', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    provider.getAccessToken.mockResolvedValue('fresh-token')
+    await admin.users.update('u-1', { firstName: 'B' })
+    const { headers, init } = sent()
+    expect(headers.get('authorization')).toBe('Bearer fresh-token')
+    expect(headers.get('accept')).toBe('application/json, text/plain, */*')
+    expect(headers.get('content-type')).toBe('application/json')
+    expect(init?.redirect).toBe('manual')
+    expect(init?.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('본문 없는 요청(GET)에는 content-type 을 싣지 않는다', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    reply(200, [])
+    await admin.realms.list()
+    expect(sent().headers.has('content-type')).toBe(false)
+    expect(sent().body).toBeUndefined()
+  })
+
+  it('읽기 기한이 0 이면(손으로 지은 설정) 기한을 싣지 않는다 — admin-client 와 같다', async () => {
+    const admin = await AdminClient.create({ ...cfg, readTimeoutMs: 0 }, provider)
+    expect(h.ctor).toHaveBeenCalledWith(expect.objectContaining({ timeout: 0 }))
+    await admin.users.delete('u-1')
+    expect(sent().init?.signal).toBeUndefined()
+  })
+
+  it('본문 취소가 실패해도 결과는 그대로다 — 쓰기의 2xx · 상한보다 길다고 알린 오류 본문', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    const stubborn = (status: number, length: string): Response =>
+      new Response(
+        new ReadableStream({
+          cancel() {
+            throw new Error('cancel failed')
+          },
+        }),
+        { status, headers: { 'content-length': length } },
+      )
+    fetchMock.mockResolvedValueOnce(stubborn(200, '10'))
+    await expect(admin.users.update('u-1', {})).resolves.toBeUndefined()
+    fetchMock.mockResolvedValueOnce(stubborn(404, '2000000'))
+    await expect(admin.users.delete('u-1')).rejects.toBeInstanceOf(KeycloakNotFoundError)
+  })
+
+  /**
+   * 오류 본문은 상한 + 1 바이트(넘는지 보는 한 바이트)까지만 꺼낸다 — 조각이 커도. 길이를 알리지 않은 바이트 스트림이
+   * 64 KiB 조각을 내면, 청하는 길이를 정하는 BYOB 읽기는 상한 + 1 에서 멈추고 기본 리더는 조각 하나만큼 넘는다. 루프백
+   * 시험은 서버가 쓴 양만 보고 우리가 꺼낸 양은 못 보므로 여기서 센다.
+   */
+  it('오류 본문은 상한 + 1 바이트까지만 꺼낸다 — 길이를 알리지 않은 큰 조각이어도', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    const piece = 65_536
+    let delivered = 0
+    const endless = new ReadableStream({
+      type: 'bytes',
+      pull(controller) {
+        const request = controller.byobRequest
+        if (request?.view) {
+          const n = Math.min(request.view.byteLength, piece)
+          new Uint8Array(request.view.buffer, request.view.byteOffset, n).fill(0x20)
+          delivered += n
+          request.respond(n)
+        } else {
+          controller.enqueue(new Uint8Array(piece).fill(0x20))
+          delivered += piece
+        }
+      },
+    })
+    fetchMock.mockResolvedValueOnce(new Response(endless, { status: 404 }))
+    await expect(admin.users.update('u-1', {})).rejects.toBeInstanceOf(KeycloakNotFoundError)
+    expect(delivered).toBeGreaterThan(TOKEN_RESPONSE_MAX_BYTES)
+    expect(delivered).toBeLessThanOrEqual(TOKEN_RESPONSE_MAX_BYTES + 1)
+  })
+
+  it('다섯 리소스 어느 것도 admin-client 메서드를 부르지 않는다', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    await admin.users.delete('u')
+    await admin.clients.delete('c')
+    await admin.realms.delete('r')
+    await admin.roles.delete('n')
+    await admin.groups.delete('g')
+    for (const resource of [h.kc.users, h.kc.clients, h.kc.realms, h.kc.roles, h.kc.groups])
+      for (const method of Object.values(resource)) expect(method).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+  })
+})
+
 describe('예외 경계 변환 (HTTP 상태 → SDK 예외)', () => {
   it('404 → KeycloakNotFoundError', async () => {
     const admin = await AdminClient.create(cfg, provider)
-    h.kc.users.update.mockRejectedValue(networkError(404))
+    reply(404, { errorMessage: 'boom' })
     await expect(admin.users.update('id', {})).rejects.toBeInstanceOf(KeycloakNotFoundError)
   })
   it('409 → KeycloakConflictError', async () => {
     const admin = await AdminClient.create(cfg, provider)
-    h.kc.users.create.mockRejectedValue(networkError(409))
+    reply(409, { errorMessage: 'boom' })
     await expect(admin.users.create({})).rejects.toBeInstanceOf(KeycloakConflictError)
   })
   it('403 → KeycloakForbiddenError', async () => {
     const admin = await AdminClient.create(cfg, provider)
-    h.kc.users.del.mockRejectedValue(networkError(403))
+    reply(403, { errorMessage: 'boom' })
     await expect(admin.users.delete('id')).rejects.toBeInstanceOf(KeycloakForbiddenError)
   })
   it('그 외 상태 → KeycloakAdminError', async () => {
     const admin = await AdminClient.create(cfg, provider)
-    h.kc.users.find.mockRejectedValue(networkError(500))
+    reply(500, { errorMessage: 'boom' })
     await expect(admin.users.search()).rejects.toBeInstanceOf(KeycloakAdminError)
   })
   it('상태 없는 프로그래밍 오류(cause 없는 TypeError)는 그대로 전파한다', async () => {
     const admin = await AdminClient.create(cfg, provider)
     const raw = new TypeError('bug')
-    h.kc.users.find.mockRejectedValue(raw)
+    fetchMock.mockRejectedValueOnce(raw)
     await expect(admin.users.search()).rejects.toBe(raw)
   })
   it('전송 실패(undici fetch failed = cause 있는 TypeError)는 KeycloakTransportError로 변환한다', async () => {
@@ -152,99 +268,136 @@ describe('예외 경계 변환 (HTTP 상태 → SDK 예외)', () => {
         code: 'ECONNREFUSED',
       }),
     })
-    h.kc.users.find.mockRejectedValue(fetchFailed)
+    fetchMock.mockRejectedValueOnce(fetchFailed)
     await expect(admin.users.search()).rejects.toBeInstanceOf(KeycloakTransportError)
   })
   it('타임아웃(AbortError)은 KeycloakTransportError로 변환한다', async () => {
     const admin = await AdminClient.create(cfg, provider)
     const timeout = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
-    h.kc.users.find.mockRejectedValue(timeout)
+    fetchMock.mockRejectedValueOnce(timeout)
     await expect(admin.users.search()).rejects.toBeInstanceOf(KeycloakTransportError)
   })
 })
 
-describe('UsersResource 위임', () => {
-  it('create는 신규 id를 반환하고 realm으로 스코프한다', async () => {
+describe('UsersResource', () => {
+  it('create는 realm 의 컬렉션에 POST 하고 Location 의 마지막 조각을 id 로 돌려준다', async () => {
     const admin = await AdminClient.create(cfg, provider)
-    h.kc.users.create.mockResolvedValue({ id: 'u-1' })
-    const id = await admin.users.create({ username: 'bob' })
-    expect(id).toBe('u-1')
-    expect(h.kc.users.create).toHaveBeenCalledWith({ username: 'bob', realm: 'demo' })
-  })
-  it('get은 findOne에 위임하고, 없으면 KeycloakNotFoundError', async () => {
-    const admin = await AdminClient.create(cfg, provider)
-    h.kc.users.findOne.mockResolvedValue({ id: 'u-1', username: 'bob' })
-    expect(await admin.users.get('u-1')).toEqual({ id: 'u-1', username: 'bob' })
-    // admin-client는 404에서 null을 반환한다(선언 타입은 undefined) — 둘 다 NotFound로 처리해야 한다.
-    h.kc.users.findOne.mockResolvedValue(null)
-    await expect(admin.users.get('missing')).rejects.toBeInstanceOf(KeycloakNotFoundError)
-  })
-  it('search는 find에 username/first/max를 전달한다', async () => {
-    const admin = await AdminClient.create(cfg, provider)
-    h.kc.users.find.mockResolvedValue([{ id: 'u-1' }])
-    await admin.users.search('bob', 5, 10)
-    expect(h.kc.users.find).toHaveBeenCalledWith({
-      realm: 'demo',
-      username: 'bob',
-      first: 5,
-      max: 10,
+    reply(201, undefined, { location: `${BASE}/demo/users/u-1` })
+    expect(await admin.users.create({ username: 'bob' })).toBe('u-1')
+    expect(sent()).toMatchObject({
+      url: `${BASE}/demo/users/`,
+      method: 'POST',
+      body: '{"username":"bob"}',
     })
   })
-  it('update/delete는 id+realm으로 위임한다', async () => {
+  it('get은 id 로 GET 하고, 404 면 KeycloakNotFoundError', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    reply(200, { id: 'u-1', username: 'bob' })
+    expect(await admin.users.get('u-1')).toEqual({ id: 'u-1', username: 'bob' })
+    expect(sent()).toMatchObject({ url: `${BASE}/demo/users/u-1`, method: 'GET' })
+    reply(404, { error: 'User not found' })
+    await expect(admin.users.get('missing')).rejects.toThrow('User not found: missing')
+    reply(404, { error: 'User not found' })
+    await expect(admin.users.get('missing')).rejects.toBeInstanceOf(KeycloakNotFoundError)
+  })
+  it('search는 username/first/max 를 쿼리로 보낸다 — 없는 username 은 뺀다', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    reply(200, [{ id: 'u-1' }])
+    expect(await admin.users.search('bob', 5, 10)).toEqual([{ id: 'u-1' }])
+    expect(sent().url).toBe(`${BASE}/demo/users/?username=bob&first=5&max=10`)
+    reply(200, [])
+    await admin.users.search()
+    expect(sent().url).toBe(`${BASE}/demo/users/?first=0&max=100`)
+  })
+  it('update/delete는 id 로 주소를 잡는다 — update 는 본문 그대로, delete 는 빈 객체', async () => {
     const admin = await AdminClient.create(cfg, provider)
     await admin.users.update('u-1', { firstName: 'B' })
-    expect(h.kc.users.update).toHaveBeenCalledWith({ id: 'u-1', realm: 'demo' }, { firstName: 'B' })
+    expect(sent()).toMatchObject({
+      url: `${BASE}/demo/users/u-1`,
+      method: 'PUT',
+      body: '{"firstName":"B"}',
+    })
     await admin.users.delete('u-1')
-    expect(h.kc.users.del).toHaveBeenCalledWith({ id: 'u-1', realm: 'demo' })
+    expect(sent()).toMatchObject({ url: `${BASE}/demo/users/u-1`, method: 'DELETE', body: '{}' })
   })
 })
 
-describe('ClientsResource 위임', () => {
+describe('ClientsResource', () => {
   it('create→id, findByClientId, get(없으면 NotFound), update, delete', async () => {
     const admin = await AdminClient.create(cfg, provider)
-    h.kc.clients.create.mockResolvedValue({ id: 'c-1' })
+    reply(201, undefined, { location: `${BASE}/demo/clients/c-1` })
     expect(await admin.clients.create({ clientId: 'app' })).toBe('c-1')
-    h.kc.clients.find.mockResolvedValue([{ id: 'c-1', clientId: 'app' }])
+    expect(sent()).toMatchObject({ url: `${BASE}/demo/clients/`, body: '{"clientId":"app"}' })
+    reply(200, [{ id: 'c-1', clientId: 'app' }])
     expect(await admin.clients.findByClientId('app')).toHaveLength(1)
-    expect(h.kc.clients.find).toHaveBeenCalledWith({ realm: 'demo', clientId: 'app' })
-    h.kc.clients.findOne.mockResolvedValue(undefined)
-    await expect(admin.clients.get('missing')).rejects.toBeInstanceOf(KeycloakNotFoundError)
+    expect(sent().url).toBe(`${BASE}/demo/clients/?clientId=app`)
+    reply(404, {})
+    await expect(admin.clients.get('missing')).rejects.toThrow('Client not found: missing')
     await admin.clients.update('c-1', { name: 'x' })
-    expect(h.kc.clients.update).toHaveBeenCalledWith({ id: 'c-1', realm: 'demo' }, { name: 'x' })
+    expect(sent()).toMatchObject({
+      url: `${BASE}/demo/clients/c-1`,
+      method: 'PUT',
+      body: '{"name":"x"}',
+    })
     await admin.clients.delete('c-1')
-    expect(h.kc.clients.del).toHaveBeenCalledWith({ id: 'c-1', realm: 'demo' })
+    expect(sent()).toMatchObject({ url: `${BASE}/demo/clients/c-1`, method: 'DELETE' })
   })
 })
 
-describe('RealmsResource 위임', () => {
-  it('create는 payload를 그대로, get/delete는 realm 이름으로 위임한다', async () => {
+describe('RealmsResource', () => {
+  it('create는 payload를 그대로, get/delete는 realm 이름으로 주소를 잡는다', async () => {
     const admin = await AdminClient.create(cfg, provider)
+    reply(201, undefined, { location: `${BASE}/new-realm` })
     await admin.realms.create({ realm: 'new-realm', enabled: true })
-    expect(h.kc.realms.create).toHaveBeenCalledWith({ realm: 'new-realm', enabled: true })
-    h.kc.realms.findOne.mockResolvedValue({ realm: 'new-realm' })
+    expect(sent()).toMatchObject({
+      url: `${BASE}/`,
+      method: 'POST',
+      body: '{"realm":"new-realm","enabled":true}',
+    })
+    reply(200, { realm: 'new-realm' })
     expect(await admin.realms.get('new-realm')).toEqual({ realm: 'new-realm' })
-    expect(h.kc.realms.findOne).toHaveBeenCalledWith({ realm: 'new-realm' })
-    h.kc.realms.findOne.mockResolvedValue(null)
-    await expect(admin.realms.get('nope')).rejects.toBeInstanceOf(KeycloakNotFoundError)
+    expect(sent().url).toBe(`${BASE}/new-realm`)
+    reply(404, {})
+    await expect(admin.realms.get('nope')).rejects.toThrow('Realm not found: nope')
     await admin.realms.delete('new-realm')
-    expect(h.kc.realms.del).toHaveBeenCalledWith({ realm: 'new-realm' })
+    expect(sent()).toMatchObject({ url: `${BASE}/new-realm`, method: 'DELETE' })
+  })
+
+  // ⚠️ 경로(현재 이름)와 body(새 이름)를 **분리**해 넘겨야 rename이 된다.
+  it('list는 렐름 컬렉션, update는 현재 이름으로 주소를 잡고 body는 그대로 넘긴다(rename 가능)', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    reply(200, [{ realm: 'demo' }, { realm: 'other' }])
+    expect(await admin.realms.list()).toHaveLength(2)
+    expect(sent()).toMatchObject({ url: `${BASE}/`, method: 'GET' })
+    await admin.realms.update('demo', { realm: 'demo-renamed', displayName: 'D' })
+    expect(sent()).toMatchObject({
+      url: `${BASE}/demo`,
+      method: 'PUT',
+      body: '{"realm":"demo-renamed","displayName":"D"}',
+    })
   })
 })
 
-describe('RolesResource 위임 (API 편차: findOneByName/delByName)', () => {
-  it('create, get(name)→findOneByName, list→find, delete→delByName', async () => {
+describe('RolesResource (API 편차: 이름으로 주소를 잡는다)', () => {
+  it('create, get(name), list, delete(name)', async () => {
     const admin = await AdminClient.create(cfg, provider)
+    reply(201, undefined, { location: `${BASE}/demo/roles/admin` })
     await admin.roles.create({ name: 'admin' })
-    expect(h.kc.roles.create).toHaveBeenCalledWith({ name: 'admin', realm: 'demo' })
-    h.kc.roles.findOneByName.mockResolvedValue({ name: 'admin' })
+    expect(sent()).toMatchObject({
+      url: `${BASE}/demo/roles`,
+      method: 'POST',
+      body: '{"name":"admin"}',
+    })
+    reply(200, { name: 'admin' })
     expect(await admin.roles.get('admin')).toEqual({ name: 'admin' })
-    expect(h.kc.roles.findOneByName).toHaveBeenCalledWith({ name: 'admin', realm: 'demo' })
-    h.kc.roles.findOneByName.mockResolvedValue(undefined)
-    await expect(admin.roles.get('nope')).rejects.toBeInstanceOf(KeycloakNotFoundError)
-    h.kc.roles.find.mockResolvedValue([{ name: 'admin' }])
+    expect(sent().url).toBe(`${BASE}/demo/roles/admin`)
+    reply(404, {})
+    await expect(admin.roles.get('nope')).rejects.toThrow('Role not found: nope')
+    reply(200, [{ name: 'admin' }])
     expect(await admin.roles.list()).toHaveLength(1)
+    expect(sent().url).toBe(`${BASE}/demo/roles`)
     await admin.roles.delete('admin')
-    expect(h.kc.roles.delByName).toHaveBeenCalledWith({ name: 'admin', realm: 'demo' })
+    expect(sent()).toMatchObject({ url: `${BASE}/demo/roles/admin`, method: 'DELETE' })
   })
 
   // ⚠️ 경로(현재 이름)와 body(새 이름)를 **분리**해 넘겨야 rename이 된다.
@@ -252,52 +405,39 @@ describe('RolesResource 위임 (API 편차: findOneByName/delByName)', () => {
   it('update는 현재 이름으로 주소를 잡고 body는 그대로 넘긴다(rename 가능)', async () => {
     const admin = await AdminClient.create(cfg, provider)
     await admin.roles.update('admin', { name: 'admin-renamed', description: 'x' })
-    expect(h.kc.roles.updateByName).toHaveBeenCalledWith(
-      { name: 'admin', realm: 'demo' },
-      { name: 'admin-renamed', description: 'x' },
-    )
+    expect(sent()).toMatchObject({
+      url: `${BASE}/demo/roles/admin`,
+      method: 'PUT',
+      body: '{"name":"admin-renamed","description":"x"}',
+    })
   })
 })
 
-describe('GroupsResource 위임', () => {
+describe('GroupsResource', () => {
   it('create→id, get(없으면 NotFound), list(first/max), delete', async () => {
     const admin = await AdminClient.create(cfg, provider)
-    h.kc.groups.create.mockResolvedValue({ id: 'g-1' })
+    reply(201, undefined, { location: `${BASE}/demo/groups/g-1` })
     expect(await admin.groups.create({ name: 'team' })).toBe('g-1')
-    expect(h.kc.groups.create).toHaveBeenCalledWith({ name: 'team', realm: 'demo' })
-    h.kc.groups.findOne.mockResolvedValue({ id: 'g-1', name: 'team' })
+    expect(sent()).toMatchObject({ url: `${BASE}/demo/groups/`, body: '{"name":"team"}' })
+    reply(200, { id: 'g-1', name: 'team' })
     expect(await admin.groups.get('g-1')).toEqual({ id: 'g-1', name: 'team' })
-    h.kc.groups.findOne.mockResolvedValue(null)
-    await expect(admin.groups.get('nope')).rejects.toBeInstanceOf(KeycloakNotFoundError)
-    h.kc.groups.find.mockResolvedValue([{ id: 'g-1' }])
+    reply(404, {})
+    await expect(admin.groups.get('nope')).rejects.toThrow('Group not found: nope')
+    reply(200, [{ id: 'g-1' }])
     await admin.groups.list(2, 20)
-    expect(h.kc.groups.find).toHaveBeenCalledWith({ realm: 'demo', first: 2, max: 20 })
+    expect(sent().url).toBe(`${BASE}/demo/groups/?first=2&max=20`)
     await admin.groups.delete('g-1')
-    expect(h.kc.groups.del).toHaveBeenCalledWith({ id: 'g-1', realm: 'demo' })
+    expect(sent()).toMatchObject({ url: `${BASE}/demo/groups/g-1`, method: 'DELETE' })
   })
 
   it('update는 id로 주소를 잡고 body는 그대로 넘긴다(rename 가능)', async () => {
     const admin = await AdminClient.create(cfg, provider)
     await admin.groups.update('g-1', { name: 'team-renamed' })
-    expect(h.kc.groups.update).toHaveBeenCalledWith(
-      { id: 'g-1', realm: 'demo' },
-      { name: 'team-renamed' },
-    )
-  })
-})
-
-describe('RealmsResource — list/update', () => {
-  it('list→find, update는 현재 이름으로 주소를 잡고 body는 그대로 넘긴다(rename 가능)', async () => {
-    const admin = await AdminClient.create(cfg, provider)
-    h.kc.realms.find.mockResolvedValue([{ realm: 'demo' }, { realm: 'other' }])
-    expect(await admin.realms.list()).toHaveLength(2)
-    expect(h.kc.realms.find).toHaveBeenCalledWith()
-
-    await admin.realms.update('demo', { realm: 'demo-renamed', displayName: 'D' })
-    expect(h.kc.realms.update).toHaveBeenCalledWith(
-      { realm: 'demo' },
-      { realm: 'demo-renamed', displayName: 'D' },
-    )
+    expect(sent()).toMatchObject({
+      url: `${BASE}/demo/groups/g-1`,
+      method: 'PUT',
+      body: '{"name":"team-renamed"}',
+    })
   })
 })
 

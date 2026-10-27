@@ -38,9 +38,9 @@ export function sendableBearer(token: string): string {
 }
 
 /**
- * admin-client 호출을 실행하고, 실패를 SDK 예외로 경계 변환한다(§4 계약).
- * admin-client는 HTTP 상태 실패를 `NetworkError`(`.response.status`/`.responseData`)로 던지고,
- * 전송 계층 실패(연결거부/DNS/TLS/타임아웃)는 raw fetch 오류(undici `TypeError: fetch failed` +
+ * admin 요청을 실행하고, 실패를 SDK 예외로 경계 변환한다(§4 계약).
+ * 파사드의 요청(`http.ts`)은 HTTP 상태 실패를 admin-client 의 `NetworkError` 와 같은 모양(`.response.status`/
+ * `.responseData`)으로 던지고, 전송 계층 실패(연결거부/DNS/TLS/타임아웃)는 raw fetch 오류(undici `TypeError: fetch failed` +
  * `cause`, 또는 타임아웃 `AbortError`)로 던진다 — 둘 다 하위 타입을 공개 API로 누출시키지 않는다.
  *
  * HTTP 상태가 있으면 상태별 SDK 예외로, 전송 실패면 KeycloakTransportError로 변환한다.
