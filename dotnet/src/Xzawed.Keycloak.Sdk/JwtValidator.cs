@@ -20,7 +20,17 @@ public sealed class JwtValidatorOptions
 /// exact issuer, audience membership, required expiry, bounded clock skew, DoS-safe rate-limited JWKS.</summary>
 public sealed class JwtValidator
 {
-    private static readonly JsonWebTokenHandler Handler = new() { MapInboundClaims = false };
+    /// <summary>The longest token either validation path accepts — an access token or the id_token of a code exchange.
+    /// It is checked before anything else touches the token: before IdentityModel reads it and before discovery or the
+    /// JWKS is loaded. 256,000 is IdentityModel's <c>TokenValidationParameters.DefaultMaximumTokenSizeInBytes</c>, which
+    /// this lane already enforced without naming it; it is about 3.9 times the longest bearer Keycloak 26.6 accepts with
+    /// default settings (65,459 bytes), so no token that server accepts is refused. The SDK checks it itself, with its
+    /// own message, and sets the handler's limit to the same value so the two cannot drift apart.</summary>
+    /// <remarks>⚠️ A plain decimal literal on purpose — the nine SDKs share this value and a cross-language guard reads
+    /// this line.</remarks>
+    internal const int MaxJwtBytes = 256000;
+
+    private static readonly JsonWebTokenHandler Handler = new() { MapInboundClaims = false, MaximumTokenSizeInBytes = MaxJwtBytes };
     private readonly TokenValidationParameters _tvp;
 
     /// <summary>Production: JWKS via ConfigurationManager (OIDC discovery), rate-limited refresh.</summary>
@@ -137,6 +147,10 @@ public sealed class JwtValidator
         // a cancelled call starts nothing, then stop WAITING when it fires — the work itself runs on: a configuration fetch
         // it began is on CancellationToken.None and still fills the cache, so cancelling never wastes the refetch window.
         ct.ThrowIfCancellationRequested();
+        // Length before anything touches the token (MaxJwtBytes). Length counts UTF-16 units; a genuine JWT is ASCII, so
+        // units, code points and bytes agree on it.
+        if (token is { Length: > MaxJwtBytes })
+            throw new KeycloakTokenValidationException($"token exceeds {MaxJwtBytes} bytes");
         var result = await ResultAsync(token, tvp).WaitAsync(ct).ConfigureAwait(false);
         // ⚠️ IdentityModel hides PII in its own message but nests a JSON parse error that quotes the decoded header or
         // payload — the constructor scrubs that chain (ErrorCause); the message is taken the same way.
