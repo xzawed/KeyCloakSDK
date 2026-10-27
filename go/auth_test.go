@@ -498,6 +498,19 @@ func TestExchangeCodeIDTokenChecksUnchangedUnderAnOverride(t *testing.T) {
 	}
 }
 
+// TestExchangeCodeRefusesOverCapIDTokenBeforeAnyWork pins the inbound length cap (jwtMaxBytes) on the id_token the
+// exchange validates: it is refused by the cap before anything decodes it — the garbage would otherwise fail as
+// malformed — and, on a client built by New that has not loaded its key set yet, without a JWKS request.
+func TestExchangeCodeRefusesOverCapIDTokenBeforeAnyWork(t *testing.T) {
+	p := newAudIdP(t)
+	c := p.client(t)
+	err := p.exchange(c, strings.Repeat("a", jwtMaxBytes-1)+"..", "n")
+	requireIDTokenRefused(t, err, "token exceeds 256000 bytes", "over-cap id_token")
+	if n := p.certs.Load(); n != 0 {
+		t.Fatalf("an id_token refused by the cap must not reach the IdP: /certs=%d, want 0", n)
+	}
+}
+
 // TestExchangeCodeAndValidateShareOneKeyStore pins A5: the id_token check has no key store of its own. The JWKS
 // cache, the forced-refetch window (JwksMinRefetch) and the cold-cache failure backoff are the SAME state for
 // the exchange and for Validate — a second store would double the cold load on the IdP and let one path fetch
