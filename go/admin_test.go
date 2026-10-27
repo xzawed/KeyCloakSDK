@@ -26,7 +26,7 @@ func TestNewAdminClientRequiresSecret(t *testing.T) {
 func TestToSDKError(t *testing.T) {
 	// *gocloak.APIError → *AdminError, matching sentinels.
 	for status, sentinel := range map[int]error{404: ErrNotFound, 409: ErrConflict, 403: ErrForbidden} {
-		err := toSDKError(&gocloak.APIError{Code: status, Message: "x"})
+		err := toSDKError(&gocloak.APIError{Code: status, Message: "x"}, nil)
 		if !errors.Is(err, sentinel) {
 			t.Errorf("status %d must match its sentinel", status)
 		}
@@ -37,11 +37,11 @@ func TestToSDKError(t *testing.T) {
 	}
 	// non-APIError → *TransportError.
 	var te *TransportError
-	if !errors.As(toSDKError(errors.New("boom")), &te) {
+	if !errors.As(toSDKError(errors.New("boom"), nil), &te) {
 		t.Fatal("non-API error must become *TransportError")
 	}
 	// gocloak wraps network failures in *APIError with Code 0 → *TransportError, not AdminError.
-	err := toSDKError(&gocloak.APIError{Code: 0, Message: "dial tcp: connection refused"})
+	err := toSDKError(&gocloak.APIError{Code: 0, Message: "dial tcp: connection refused"}, nil)
 	var te2 *TransportError
 	if !errors.As(err, &te2) {
 		t.Fatalf("Code-0 APIError (no HTTP response) must become *TransportError, got %T", err)
@@ -53,14 +53,14 @@ func TestToSDKError(t *testing.T) {
 }
 
 func TestCallRunWrapErrors(t *testing.T) {
-	_, err := call(func() (int, error) { return 0, &gocloak.APIError{Code: 404} })
+	_, err := call(context.Background(), func(context.Context) (int, error) { return 0, &gocloak.APIError{Code: 404} })
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatal("call must convert APIError via toSDKError")
 	}
-	if err := run(func() error { return &gocloak.APIError{Code: 409} }); !errors.Is(err, ErrConflict) {
+	if err := run(context.Background(), func(context.Context) error { return &gocloak.APIError{Code: 409} }); !errors.Is(err, ErrConflict) {
 		t.Fatal("run must convert APIError via toSDKError")
 	}
-	if _, err := call(func() (int, error) { return 5, nil }); err != nil {
+	if _, err := call(context.Background(), func(context.Context) (int, error) { return 5, nil }); err != nil {
 		t.Fatal("call must pass through success")
 	}
 }

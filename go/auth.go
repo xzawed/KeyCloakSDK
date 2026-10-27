@@ -45,11 +45,13 @@ func newAuthClient(cfg Config, v *Validator) *AuthClient {
 	}
 }
 
-// oauthCtx is the context every grant hands to x/oauth2: the SDK's HTTP client, and the token-response cap
-// (tokencap.go). The flag reports whether the cap refused the response.
-func (a *AuthClient) oauthCtx(ctx context.Context) (context.Context, *atomic.Bool) {
+// oauthCtx is the context every grant hands to x/oauth2: the SDK's HTTP client, the token-response cap (tokencap.go)
+// and the slot that keeps an error x/oauth2 would flatten (cause.go). The flag reports whether the cap refused the
+// response.
+func (a *AuthClient) oauthCtx(ctx context.Context) (context.Context, *atomic.Bool, *belowHTTPSlot) {
 	ctx, capped := withTokenCap(ctx)
-	return context.WithValue(ctx, oauth2.HTTPClient, a.client), capped
+	ctx, below := withBelowHTTP(ctx)
+	return context.WithValue(ctx, oauth2.HTTPClient, a.client), capped, below
 }
 
 func (a *AuthClient) scope() string {
@@ -92,10 +94,10 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 		ClientID: a.cfg.ClientID, ClientSecret: a.cfg.ClientSecret,
 		TokenURL: a.ep.token, Scopes: a.cfg.Scopes, AuthStyle: oauth2.AuthStyleInParams,
 	}
-	octx, capped := a.oauthCtx(ctx)
+	octx, capped, below := a.oauthCtx(ctx)
 	tok, err := cc.Token(octx)
 	if err != nil {
-		return nil, grantFailed("client credentials grant failed", err, capped)
+		return nil, grantFailed("client credentials grant failed", err, capped, below)
 	}
 	return tokenSetFromToken(tok), nil
 }
@@ -111,10 +113,10 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 // validation failure all fail closed. An empty expectedNonce skips id_token
 // validation (custom no-nonce flows).
 func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVerifier, expectedNonce string) (*TokenSet, error) {
-	octx, capped := a.oauthCtx(ctx)
+	octx, capped, below := a.oauthCtx(ctx)
 	tok, err := a.codeConfig(redirectURI).Exchange(octx, code, oauth2.VerifierOption(codeVerifier))
 	if err != nil {
-		return nil, grantFailed("authorization code exchange failed", err, capped)
+		return nil, grantFailed("authorization code exchange failed", err, capped, below)
 	}
 	ts := tokenSetFromToken(tok)
 	if expectedNonce != "" {
@@ -145,11 +147,11 @@ func (a *AuthClient) verifyNonce(ctx context.Context, idToken, expectedNonce str
 
 // Refresh obtains a new access token from a refresh token.
 func (a *AuthClient) Refresh(ctx context.Context, refreshToken string) (*TokenSet, error) {
-	octx, capped := a.oauthCtx(ctx)
+	octx, capped, below := a.oauthCtx(ctx)
 	src := a.codeConfig("").TokenSource(octx, &oauth2.Token{RefreshToken: refreshToken})
 	tok, err := src.Token()
 	if err != nil {
-		return nil, grantFailed("token refresh failed", err, capped)
+		return nil, grantFailed("token refresh failed", err, capped, below)
 	}
 	return tokenSetFromToken(tok), nil
 }

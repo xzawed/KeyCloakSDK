@@ -15,7 +15,9 @@ func (r *GroupsResource) Create(ctx context.Context, group gocloak.Group) (strin
 	if err != nil {
 		return "", err
 	}
-	return call(func() (string, error) { return r.a.gc.CreateGroup(withoutBody(ctx), tok, r.a.realm, group) })
+	return call(ctx, func(ctx context.Context) (string, error) {
+		return r.a.gc.CreateGroup(withoutBody(ctx), tok, r.a.realm, group)
+	})
 }
 
 // Get returns a group by id; ErrNotFound if absent.
@@ -24,7 +26,7 @@ func (r *GroupsResource) Get(ctx context.Context, id string) (*gocloak.Group, er
 	if err != nil {
 		return nil, err
 	}
-	return call(func() (*gocloak.Group, error) { return r.a.gc.GetGroup(ctx, tok, r.a.realm, id) })
+	return call(ctx, func(ctx context.Context) (*gocloak.Group, error) { return r.a.gc.GetGroup(ctx, tok, r.a.realm, id) })
 }
 
 // List returns top-level groups with pagination.
@@ -34,7 +36,9 @@ func (r *GroupsResource) List(ctx context.Context, first, max int) ([]*gocloak.G
 		return nil, err
 	}
 	params := gocloak.GetGroupsParams{First: &first, Max: &max}
-	return call(func() ([]*gocloak.Group, error) { return r.a.gc.GetGroups(ctx, tok, r.a.realm, params) })
+	return call(ctx, func(ctx context.Context) ([]*gocloak.Group, error) {
+		return r.a.gc.GetGroups(ctx, tok, r.a.realm, params)
+	})
 }
 
 // Update replaces the group identified by id (rename by giving the new name in group.Name).
@@ -48,7 +52,7 @@ func (r *GroupsResource) Update(ctx context.Context, id string, group gocloak.Gr
 		return err
 	}
 	group.ID = &id
-	return run(func() error { return r.a.gc.UpdateGroup(withoutBody(ctx), tok, r.a.realm, group) })
+	return run(ctx, func(ctx context.Context) error { return r.a.gc.UpdateGroup(withoutBody(ctx), tok, r.a.realm, group) })
 }
 
 // Delete removes a group by id.
@@ -57,5 +61,5 @@ func (r *GroupsResource) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	return run(func() error { return r.a.gc.DeleteGroup(withoutBody(ctx), tok, r.a.realm, id) })
+	return run(ctx, func(ctx context.Context) error { return r.a.gc.DeleteGroup(withoutBody(ctx), tok, r.a.realm, id) })
 }

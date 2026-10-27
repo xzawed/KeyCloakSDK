@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/Nerzal/gocloak/v13"
 	"golang.org/x/oauth2"
@@ -155,6 +157,63 @@ func scrubWire(err error) error {
 	return withheld(err)
 }
 
+// belowHTTPKey marks the context of an SDK call whose lower library turns the transport's error into text: the grants
+// (x/oauth2 formats a token body's Read error with %v), the admin lane's login and its facade calls (gocloak folds every
+// request error into APIError.Message). Without it a deadline that ends the exchange after the headers — the caller's, or
+// the SDK's read timeout — loses errors.Is(err, context.DeadlineExceeded), which scrubCause above promises. Measured
+// 2026-10-27: false for the three grants mid-body and for every admin call, true for Introspect and Validate, which keep
+// the error themselves.
+type belowHTTPKey int
+
+// belowHTTPSlot keeps the first such error a request of the marked call meets, for the SDK error to carry as its cause.
+type belowHTTPSlot struct{ err atomic.Pointer[error] }
+
+// withBelowHTTP marks ctx and returns its slot.
+func withBelowHTTP(ctx context.Context) (context.Context, *belowHTTPSlot) {
+	s := new(belowHTTPSlot)
+	return context.WithValue(ctx, belowHTTPKey(0), s), s
+}
+
+// belowHTTPSlotOf is the slot ctx carries, or nil.
+func belowHTTPSlotOf(ctx context.Context) *belowHTTPSlot {
+	s, _ := ctx.Value(belowHTTPKey(0)).(*belowHTTPSlot)
+	return s
+}
+
+// keep records err (already scrubbed) when it ended a request of the marked call. ⚠️ A request whose context is done, or
+// whose deadline has passed, records the context's error, not err: net/http enforces Client.Timeout on a transport it does
+// not know (this one) with a context deadline **and** a Request.Cancel timer for the same instant, so the error the read
+// sees is "context deadline exceeded" or the plain string "net/http: request canceled", by whichever timer fires first —
+// and when Request.Cancel wins, ctx.Err() can still be nil for a moment (measured: with a ctx.Err() check alone, 3 of the
+// 190 read-timeout cases in ten runs of cancel_identity_test.go lost the identity). Otherwise only an error from beneath
+// HTTP is kept — anything else is withheld text that names no condition. io.EOF is the normal end.
+func (s *belowHTTPSlot) keep(ctx context.Context, err error) {
+	if s == nil || err == nil || errors.Is(err, io.EOF) {
+		return
+	}
+	if cerr := ctx.Err(); cerr != nil {
+		err = cerr
+	} else if dl, ok := ctx.Deadline(); ok && !time.Now().Before(dl) {
+		err = context.DeadlineExceeded
+	} else if !belowHTTP(err) {
+		return
+	}
+	s.err.CompareAndSwap(nil, &err)
+}
+
+// lost is the kept error when err — what the lower library returned — no longer carries it, and nil otherwise (nothing
+// was kept, or err still answers errors.Is for it: a request refused before any response reaches x/oauth2 as *url.Error).
+func (s *belowHTTPSlot) lost(err error) error {
+	if s == nil {
+		return nil
+	}
+	p := s.err.Load()
+	if p == nil || errors.Is(err, *p) {
+		return nil
+	}
+	return *p
+}
+
 // wireScrubTransport keeps bytes the server sent out of transport errors. net/http quotes what it could
 // not parse — a reply that is not HTTP (`malformed HTTP response "<line>"`), a bad header or chunked
 // trailer line (`malformed MIME header: missing colon: "<line>"`) — and that text reached callers
@@ -165,11 +224,15 @@ func scrubWire(err error) error {
 type wireScrubTransport struct{ base http.RoundTripper }
 
 func (t wireScrubTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	ctx := req.Context()
+	slot := belowHTTPSlotOf(ctx)
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
-		return resp, scrubWire(err)
+		err = scrubWire(err)
+		slot.keep(ctx, err)
+		return resp, err
 	}
-	resp.Body = capTokenResponse(req.Context(), decodedGzip(resp, wireScrubBody{resp.Body}))
+	resp.Body = capTokenResponse(ctx, decodedGzip(resp, wireScrubBody{ReadCloser: resp.Body, ctx: ctx, slot: slot}))
 	return resp, nil
 }
 
@@ -180,12 +243,19 @@ func (t wireScrubTransport) CloseIdleConnections() {
 	}
 }
 
-type wireScrubBody struct{ io.ReadCloser }
+// wireScrubBody scrubs the body's Read errors and keeps the one that ended a marked call's request in its slot (keep).
+type wireScrubBody struct {
+	io.ReadCloser
+	ctx  context.Context
+	slot *belowHTTPSlot
+}
 
 // Read returns io.EOF itself (belowHTTP), so callers comparing err == io.EOF still see the end.
 func (b wireScrubBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
-	return n, scrubWire(err)
+	err = scrubWire(err)
+	b.slot.keep(b.ctx, err)
+	return n, err
 }
 
 // loginError is toSDKError for the admin lane's token request — the same classification (a status
@@ -193,8 +263,9 @@ func (b wireScrubBody) Read(p []byte) (int, error) {
 // failed token response into APIError.Message as "<status line>: <error>: <errorMessage>:
 // <error_description>", so the parts cannot be told apart; the message is rebuilt from the status code
 // and the first code-shaped part. On a refused redirect net/http names the redirect target, which the
-// IdP chose — it is dropped the same way.
-func loginError(err error) error {
+// IdP chose — it is dropped the same way. Without a status, the cause is the error the transport kept in below when gocloak
+// dropped it (a deadline that ended the exchange), so errors.Is still finds it.
+func loginError(err error, below *belowHTTPSlot) error {
 	typ := fmt.Sprintf("%T", err)
 	var apiErr *gocloak.APIError
 	if errors.As(err, &apiErr) && apiErr.Code != 0 {
@@ -214,6 +285,9 @@ func loginError(err error) error {
 	if refused := ": " + errBackChannelRedirect.Error(); strings.HasSuffix(msg, refused) {
 		head, _, _ := strings.Cut(msg, ": ")
 		msg = head + refused + " (redirect target withheld)"
+	}
+	if lost := below.lost(err); lost != nil {
+		return &TransportError{Msg: msg, Cause: lost}
 	}
 	return &TransportError{Msg: msg, Cause: &responseFreeError{typ: typ, msg: msg}}
 }

@@ -16,7 +16,9 @@ func (r *ClientsResource) Create(ctx context.Context, client gocloak.Client) (st
 	if err != nil {
 		return "", err
 	}
-	return call(func() (string, error) { return r.a.gc.CreateClient(withoutBody(ctx), tok, r.a.realm, client) })
+	return call(ctx, func(ctx context.Context) (string, error) {
+		return r.a.gc.CreateClient(withoutBody(ctx), tok, r.a.realm, client)
+	})
 }
 
 // Get returns a client by internal id (UUID); ErrNotFound if absent.
@@ -25,7 +27,7 @@ func (r *ClientsResource) Get(ctx context.Context, id string) (*gocloak.Client, 
 	if err != nil {
 		return nil, err
 	}
-	return call(func() (*gocloak.Client, error) { return r.a.gc.GetClient(ctx, tok, r.a.realm, id) })
+	return call(ctx, func(ctx context.Context) (*gocloak.Client, error) { return r.a.gc.GetClient(ctx, tok, r.a.realm, id) })
 }
 
 // FindByClientID finds clients by the human-assigned clientId (0..N).
@@ -35,7 +37,9 @@ func (r *ClientsResource) FindByClientID(ctx context.Context, clientID string) (
 		return nil, err
 	}
 	params := gocloak.GetClientsParams{ClientID: &clientID}
-	return call(func() ([]*gocloak.Client, error) { return r.a.gc.GetClients(ctx, tok, r.a.realm, params) })
+	return call(ctx, func(ctx context.Context) ([]*gocloak.Client, error) {
+		return r.a.gc.GetClients(ctx, tok, r.a.realm, params)
+	})
 }
 
 // Update updates the client identified by internal id.
@@ -45,7 +49,7 @@ func (r *ClientsResource) Update(ctx context.Context, id string, client gocloak.
 		return err
 	}
 	client.ID = &id
-	return run(func() error { return r.a.gc.UpdateClient(withoutBody(ctx), tok, r.a.realm, client) })
+	return run(ctx, func(ctx context.Context) error { return r.a.gc.UpdateClient(withoutBody(ctx), tok, r.a.realm, client) })
 }
 
 // Delete removes a client by internal id.
@@ -54,5 +58,5 @@ func (r *ClientsResource) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	return run(func() error { return r.a.gc.DeleteClient(withoutBody(ctx), tok, r.a.realm, id) })
+	return run(ctx, func(ctx context.Context) error { return r.a.gc.DeleteClient(withoutBody(ctx), tok, r.a.realm, id) })
 }

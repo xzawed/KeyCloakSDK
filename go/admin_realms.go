@@ -17,7 +17,7 @@ func (r *RealmsResource) Create(ctx context.Context, realm gocloak.RealmRepresen
 	if err != nil {
 		return err
 	}
-	_, err = call(func() (string, error) { return r.a.gc.CreateRealm(withoutBody(ctx), tok, realm) })
+	_, err = call(ctx, func(ctx context.Context) (string, error) { return r.a.gc.CreateRealm(withoutBody(ctx), tok, realm) })
 	return err
 }
 
@@ -27,7 +27,9 @@ func (r *RealmsResource) Get(ctx context.Context, realmName string) (*gocloak.Re
 	if err != nil {
 		return nil, err
 	}
-	return call(func() (*gocloak.RealmRepresentation, error) { return r.a.gc.GetRealm(ctx, tok, realmName) })
+	return call(ctx, func(ctx context.Context) (*gocloak.RealmRepresentation, error) {
+		return r.a.gc.GetRealm(ctx, tok, realmName)
+	})
 }
 
 // List returns every realm the caller can see. A service account normally sees
@@ -37,7 +39,7 @@ func (r *RealmsResource) List(ctx context.Context) ([]*gocloak.RealmRepresentati
 	if err != nil {
 		return nil, err
 	}
-	return call(func() ([]*gocloak.RealmRepresentation, error) { return r.a.gc.GetRealms(ctx, tok) })
+	return call(ctx, func(ctx context.Context) ([]*gocloak.RealmRepresentation, error) { return r.a.gc.GetRealms(ctx, tok) })
 }
 
 // Update replaces the realm addressed by its CURRENT name; rename by giving the
@@ -56,7 +58,7 @@ func (r *RealmsResource) Update(ctx context.Context, realmName string, realm goc
 	if err != nil {
 		return err
 	}
-	return run(func() error {
+	return run(ctx, func(ctx context.Context) error {
 		resp, err := r.a.gc.GetRequestWithBearerAuth(withoutBody(ctx), tok).
 			SetBody(realm).
 			Put(r.a.baseURL + "/admin/realms/" + url.PathEscape(realmName))
@@ -80,5 +82,5 @@ func (r *RealmsResource) Delete(ctx context.Context, realmName string) error {
 	if err != nil {
 		return err
 	}
-	return run(func() error { return r.a.gc.DeleteRealm(withoutBody(ctx), tok, realmName) })
+	return run(ctx, func(ctx context.Context) error { return r.a.gc.DeleteRealm(withoutBody(ctx), tok, realmName) })
 }

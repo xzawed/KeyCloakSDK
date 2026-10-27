@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/url"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/Nerzal/gocloak/v13"
 )
 
 // 소비자는 errors.Is(err, context.DeadlineExceeded) 로 「시간이 다 됐다」를 가른다 — cause.go 의 scrubCause 주석이 그것을 약속한다.
@@ -140,8 +144,70 @@ func TestAdminDeadlineDuringTheExchange_keepsItsIdentity(t *testing.T) {
 					start := time.Now()
 					err := op.do(ctx, a)
 					ciCheck(t, op.name, err, "*keycloak.TransportError", time.Since(start))
+					// 원인은 기한의 오류를 gocloak 의 오류에 **붙인다** — 고치기 전처럼 *gocloak.APIError 에도 닿는다.
+					var apiErr *gocloak.APIError
+					if !errors.As(err, &apiErr) {
+						t.Errorf("%s: errors.As(err, &*gocloak.APIError) 가 거짓이다 — 원인에서 gocloak 의 오류가 빠졌다: %v", op.name, err)
+					}
 				})
 			}
+		}
+	}
+}
+
+// ciAfterDeadline 은 기한이 지났는데 Err() 가 아직 nil 인 ctx 다 — net/http 의 Client.Timeout 이 Request.Cancel 로 읽기를
+// 끊은 찰나, ctx 의 타이머가 아직 표시하기 전과 같다(keep 의 주석). 표준 ctx 로는 만들 수 없어 직접 만든다.
+type ciAfterDeadline struct{ context.Context }
+
+func (ciAfterDeadline) Deadline() (time.Time, bool) { return time.Now().Add(-time.Millisecond), true }
+
+// TestBelowHTTPSlot_keepsTheConditionThatEndedTheRead — keep 의 판정 넷을 경쟁 없이 잰다(통합 칸으로는 경쟁이라 190 칸 중
+// 3 칸에서만 드러났다).
+func TestBelowHTTPSlot_keepsTheConditionThatEndedTheRead(t *testing.T) {
+	canceledText := errors.New("net/http: request canceled") // 정화 뒤에도 남는 net/http 의 맨 문자열 오류
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, c := range []struct {
+		name string
+		ctx  context.Context
+		err  error
+		want error // nil 이면 남기지 않는다
+	}{
+		{"기한이 지났는데 Err() 가 아직 nil", ciAfterDeadline{context.Background()}, canceledText, context.DeadlineExceeded},
+		{"취소된 ctx 는 ctx 의 오류", cancelled, canceledText, context.Canceled},
+		{"살아 있는 ctx 의 belowHTTP 오류", context.Background(), io.ErrUnexpectedEOF, io.ErrUnexpectedEOF},
+		{"살아 있는 ctx 의 정화된 글", context.Background(), canceledText, nil},
+		{"정상 끝 io.EOF", cancelled, io.EOF, nil},
+	} {
+		var s belowHTTPSlot
+		s.keep(c.ctx, c.err)
+		got := s.lost(errors.New("flattened by the lower library"))
+		if !errors.Is(got, c.want) || (c.want == nil) != (got == nil) {
+			t.Errorf("%s: 남긴 것 %v, 바란 것 %v", c.name, got, c.want)
+		}
+	}
+	var none *belowHTTPSlot // 칸 없는 요청(인증 레인의 introspect 따위)
+	none.keep(cancelled, canceledText)
+	if none.lost(canceledText) != nil {
+		t.Error("칸 없는 요청이 무언가를 남겼다")
+	}
+}
+
+// TestRefusedBeforeAnyResponse_keepsItsCause — 응답 전에 거부된 그랜트의 원인은 고치기 전 그대로 *url.Error 다(x/oauth2 가
+// 그 오류를 납작하게 만들지 않으므로 칸은 끼어들지 않는다 — lost 의 errors.Is 검사).
+func TestRefusedBeforeAnyResponse_keepsItsCause(t *testing.T) {
+	down, err := New(Config{ServerURL: "http://127.0.0.1:1", Realm: "r", ClientID: "c", ClientSecret: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range []string{callCC, callExchange, callRefresh} {
+		err := causeRun(context.Background(), down, call)
+		var ae *AuthError
+		if !errors.As(err, &ae) {
+			t.Fatalf("%s: *keycloak.AuthError 여야 하는데 %T 다", call, err)
+		}
+		if _, ok := ae.Cause.(*url.Error); !ok {
+			t.Errorf("%s: 원인이 *url.Error 여야 하는데 %T 다", call, ae.Cause)
 		}
 	}
 }

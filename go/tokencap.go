@@ -133,11 +133,15 @@ func (b *cappedBody) lookPast() error {
 	return b.end
 }
 
-// grantFailed is the *AuthError a grant method returns when x/oauth2 fails. capped is the flag from oauthCtx: when
-// the cap refused the token response, the message names the cap rather than a withheld lower-library detail.
-func grantFailed(msg string, err error, capped *atomic.Bool) *AuthError {
+// grantFailed is the *AuthError a grant method returns when x/oauth2 fails. capped and below are from oauthCtx: when
+// the cap refused the token response, the message names the cap rather than a withheld lower-library detail; when a
+// deadline ended the body read, x/oauth2 has flattened its error with %v and the cause is the one the transport kept.
+func grantFailed(msg string, err error, capped *atomic.Bool, below *belowHTTPSlot) *AuthError {
 	if capped.Load() {
 		return &AuthError{Msg: msg + ": " + errTokenResponseTooLarge.Error(), Cause: errTokenResponseTooLarge}
+	}
+	if lost := below.lost(err); lost != nil {
+		return &AuthError{Msg: msg, Cause: lost}
 	}
 	return &AuthError{Msg: msg, OAuthError: oauthError(err), Cause: scrubCause(err)}
 }
