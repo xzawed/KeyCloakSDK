@@ -24,5 +24,6 @@ module KeycloakSdk
         Http.settling(context.is_a?(Hash) && context[UNREAD] == true) { @app.call(env) }
       end
     end
+    private_constant :SettleBody
   end
 end
