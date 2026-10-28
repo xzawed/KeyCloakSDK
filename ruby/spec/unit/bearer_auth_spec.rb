@@ -117,4 +117,75 @@ RSpec.describe KeycloakSdk::Admin::BearerAuth do
         .with { |r| r.headers["Authorization"].b == "Bearer #{token}".b }).to have_been_made.once
     end
   end
+
+  # 검사는 String 만의 것이 아니다 — 주입한 provider 는 무엇이든 돌려줄 수 있고 헤더에 실리는 것은 그 값의 글이다.
+  # `is_a?(String)` 일 때만 검사하던 때 CR 든 Symbol 은 파사드에서 TransportError, `raw` 에서 Bearer 를 통째로 인용한
+  # raw ArgumentError 였다(실측). String 경로와 같은 AuthError 다.
+  { "a Symbol" => :to_sym.to_proc, "an object whose to_s is the token" => UnsendableTokenSpec::Texty.method(:new) }
+    .each do |kind, wrap|
+    { "the facade" => ->(a) { a.users.list }, "raw" => ->(a) { a.raw.get("admin/realms/r/users") } }.each do |via, call|
+      it "refuses #{kind} holding CR and LF through #{via} with the String path's error, and does not quote it" do
+        token = wrap.call("hSY7k-bearer-canary-a#{13.chr}#{10.chr}b")
+        expect { call.call(admin(token)) }.to raise_error(KeycloakSdk::AuthError) { |e|
+          expect(e.message).to eq(crlf)
+          expect(spec.quoted?(e, token.to_s)).to be(false)
+        }
+        expect(users).not_to have_been_requested
+      end
+    end
+  end
+
+  # 나머지 검사도 같다 — NUL 든 Symbol 은 그대로, 끝 공백 든 Symbol 은 그 공백이 지워진 채 나갔다(실측).
+  { "NUL in the middle" => ["hNL7k-bearer-canary-a#{0.chr}b", :control],
+    "a trailing space" => ["hWS7k-bearer-canary-ab ", :edge] }.each do |name, (text, message)|
+    it "refuses a Symbol holding #{name} with the String path's error, without sending it" do
+      expect { admin(text.to_sym).users.list }.to raise_error(KeycloakSdk::AuthError, public_send(message))
+      expect(users).not_to have_been_requested
+    end
+  end
+
+  it "refuses a Symbol one byte past the header field limit with the String path's error, without sending it" do
+    limit = Net::HTTPHeader::MAX_FIELD_LENGTH - "Bearer ".bytesize
+    expect { admin(("A" * (limit + 1)).to_sym).users.list }.to raise_error(KeycloakSdk::AuthError) { |e|
+      expect(e.message).to eq("admin request not sent: the access token (#{limit + 1} bytes) does not fit an " \
+                              "HTTP header field (#{Net::HTTPHeader::MAX_FIELD_LENGTH} bytes with \"Bearer \")")
+    }
+    expect(users).not_to have_been_requested
+  end
+
+  it "refuses an object whose to_s is not valid UTF-8 with the String path's error, without sending it" do
+    expect { admin(UnsendableTokenSpec::Texty.new(UnsendableTokenSpec::BAD)).users.list }
+      .to raise_error(KeycloakSdk::AuthError) { |e|
+        expect(e.message).to eq("admin request not sent: the access token is not valid UTF-8")
+        expect(spec.quoted?(e, UnsendableTokenSpec::BAD)).to be(false)
+      }
+    expect(users).not_to have_been_requested
+  end
+
+  # 빈 토큰은 「Authorization: Bearer」로 나갔다 — net-http 가 "Bearer " 의 끝 공백을 `strip` 한다(실측). nil 의 글도 "" 다.
+  { "nil" => nil, "an empty String" => "", "an empty Symbol" => :"" }.each do |name, token|
+    it "refuses #{name} without sending Authorization: Bearer" do
+      expect { admin(token).users.list }
+        .to raise_error(KeycloakSdk::AuthError, "admin request not sent: the access token is empty")
+      expect(users).not_to have_been_requested
+    end
+  end
+
+  # 대조군 — 같은 검사를 지나는 String 이 아닌 값은 예전처럼 그 글 그대로 나간다(String 이 아니라고 거부하지 않는다).
+  { "a Symbol" => :"hDX7k-bearer-ab", "an Integer" => 12_345,
+    "an object whose to_s is the token" => UnsendableTokenSpec::Texty.new("hDX7k-bearer-ab") }.each do |name, token|
+    it "sends #{name} as its text, unchanged" do
+      expect(admin(token).users.list).to eq([])
+      expect(a_request(:get, UnsendableTokenSpec::USERS)
+        .with(headers: { "Authorization" => "Bearer #{token}" })).to have_been_made.once
+    end
+  end
+
+  # 검사한 글이 보낸 글이다 — provider 의 값은 글로 한 번만 바뀐다(다시 바꾸면 둘째 글은 검사를 받지 않고 나간다).
+  it "checks the very text it sends, turning the provider's value into text once" do
+    token = UnsendableTokenSpec::Flip.new(["hFL7k-bearer-ab", "hFL7k-bearer-a#{13.chr}b"])
+    expect(admin(token).users.list).to eq([])
+    expect(a_request(:get, UnsendableTokenSpec::USERS)
+      .with(headers: { "Authorization" => "Bearer hFL7k-bearer-ab" })).to have_been_made.once
+  end
 end

@@ -17,6 +17,14 @@ module UnsendableTokenSpec
 
   # 주어진 문자열을 그대로 돌려주는 provider(TokenProvider 덕 인터페이스).
   Fixed = Struct.new(:access_token)
+  # String 이 아닌 토큰 — `to_s` 가 주어진 글이다(소비자가 주입한 provider 는 무엇이든 돌려줄 수 있다).
+  Texty = Struct.new(:text) do
+    def to_s = text
+  end
+  # 부를 때마다 다음 글을 내는 `to_s` — 검사한 글과 보낸 글이 같은지(글로 한 번만 바꾸는지) 본다.
+  Flip = Struct.new(:texts) do
+    def to_s = texts.shift
+  end
 
   module_function
 
