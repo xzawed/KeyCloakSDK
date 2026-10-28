@@ -1654,6 +1654,21 @@ raw_doc $((_raw + 301))
 _out="$(node "$GUARD" "$TMP" 2>&1 || true)"
 assert_not_contains "$_out" "B 가 max-raw-bytes" "저장소 밖 픽스처는 원본 여유를 보지 않는다"
 
+# (k) 앵커는 문서당 하나다 — 첫 매치만 쓰이므로, 앞에 놓인 사본(예시·펜스)이 키 없이 서면 진짜 앵커의 8f 가
+#     통째로 꺼진다(독립 레그 지목 2026-10-28). 사본이 하나라도 있으면 실패하고, 하나뿐이면 묻지 않는다.
+raw_repo -
+{ printf '# raw fixture\n```\n<!-- doc-budget: max-bytes=999999 -->\n```\n'
+  printf '<!-- doc-budget: max-bytes=100000 max-raw-bytes=005000 -->\n\n본문.\n'; } > "$TMP/raw.md"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "raw.md: doc-budget 앵커가 2개다" "앵커 사본을 지목한다"
+raw_doc 5000
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_not_contains "$_out" "앵커가" "앵커 하나는 묻지 않는다"
+# (l) 키도 앵커당 하나다 — 둘이면 첫 값만 쓰여 뒤의 값이 거짓말이 된다.
+printf '# raw fixture\n<!-- doc-budget: max-bytes=100000 max-raw-bytes=005000 max-raw-bytes=009000 -->\n\n본문.\n' > "$TMP/raw.md"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "raw.md: doc-budget 앵커에 max-raw-bytes 가 2번 있다" "키 중복을 지목한다"
+
 # ---- 검사 8c 경고: 전역 트립와이어의 90% 에 닿은 문서는 미리 알린다 ----
 # 실패(100%)만 있던 시절에는 원장이 82% 가 될 때까지 아무 신호가 없었다(2026-10-28 실측).
 # 8c 는 .md 가 30 개 미만이면 「순회가 깨졌다」로 일찍 돌아가므로 픽스처에 30 개를 깐다.

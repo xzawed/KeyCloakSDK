@@ -1733,7 +1733,22 @@ function checkDocBudget() {
     const text = readFileSync(f, 'utf8')
     const m = /<!--\s*doc-budget:([^>]*?)-->/.exec(text)
     if (!m) continue
+    // ⚠️ 앵커는 문서당 하나, 키는 앵커당 하나다 — 첫 매치만 쓰이므로 앞에 놓인 사본(예시·펜스 속)이 진짜 앵커를
+    // 가리고, 키 없는 사본이 앞서면 8f 의 삭제·인상 대조가 통째로 꺼진다(독립 레그 지목 2026-10-28 · 실측: 그때
+    // 이 저장소에 앵커가 둘인 문서는 0 개였다). 예시를 적어야 하면 `<!--` 를 빼고 `doc-budget:` 만 쓴다.
+    const anchorCount = (text.match(/<!--\s*doc-budget:/g) || []).length
+    if (anchorCount > 1) {
+      errors.push(`${rel}: doc-budget 앵커가 ${anchorCount}개다 — 첫 매치만 쓰이므로 나머지가 진짜 앵커를 가린다. 하나만 남겨라(예시는 \`<!--\` 를 빼고 적는다)`)
+      continue
+    }
     const spec = m[1]
+    const dupKey = ['max-bytes', 'max-lines', 'max-raw-bytes'].find(
+      (k) => (spec.match(new RegExp(`(?:^|\\s)${k}=`, 'g')) || []).length > 1,
+    )
+    if (dupKey) {
+      errors.push(`${rel}: doc-budget 앵커에 ${dupKey} 가 ${(spec.match(new RegExp(`(?:^|\\s)${dupKey}=`, 'g')) || []).length}번 있다 — 첫 값만 쓰여 뒤의 값이 거짓말이 된다`)
+      continue
+    }
     const mb = /max-bytes=(\d+)/.exec(spec)
     const ml = /max-lines=(\d+)/.exec(spec)
     // ⚠️ 앵커는 있는데 max-bytes가 없으면 실패다. 오타 하나(`maxbytes=`)로 래칫이 조용히
@@ -1776,7 +1791,8 @@ function checkDocBudget() {
     if (maxRaw !== null && raw > maxRaw) {
       errors.push(
         `${rel}: 원본 ${raw}B > max-raw-bytes ${maxRaw}B (초과 ${raw - maxRaw}B · 그중 블록 주석 ${raw - actual}B) — ` +
-          `이 문서는 주석도 센다. 열린 항목의 긴 메모·경위는 PR 본문·커밋으로 보내고 그 포인터만 남겨라`,
+          `이 문서는 주석도 센다. 열린 항목의 긴 메모·경위는 PR 본문·커밋으로 보내고 그 포인터만 남겨라 ` +
+          `(새 문서로 옮기지 말 것 — 새 문서는 기준이 없어 어떤 래칫도 그 인상을 못 본다)`,
       )
     }
     if (maxRaw !== null && existsSync(join(ROOT, 'scripts/check-docs.mjs')) && maxRaw - raw > BUDGET_SLACK_CAP) {

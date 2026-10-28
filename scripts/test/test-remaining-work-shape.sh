@@ -160,6 +160,13 @@ assert_eq "ok" "$(ok_if "$([ "$_subsecs" -gt 0 ] && printf 0 || printf 1)" "$_su
 assert_eq "" "$_subbad" \
   "[등록부] 소절 헤더의 수가 그 소절의 실제 체크박스와 다르다 — 헤더를 고치거나, 헤더에서 수를 빼라"
 
+# 원본 래칫(check-docs 검사 8f)은 사람 판정이다(2026-10-28: 「등록부에만 건다」). 8f 의 키 삭제 대조는 `main` 에 키가
+# 있어야 돈다 — 키를 처음 거는 PR 에서는 아무도 안 보고(변이로 실측: 키를 빼도 check-docs 는 초록이었다), 그 뒤에도
+# 판정 자체를 단언하는 곳이 없으면 기준을 함께 바꾸는 변경이 그것을 지운다. 그래서 등록부의 사실로 여기서 단언한다.
+_rawkey="$(grep -cE '^<!-- doc-budget: .*max-raw-bytes=[0-9]+' "$F" || true)"
+assert_eq "1" "$_rawkey" \
+  "[등록부] doc-budget 앵커에 max-raw-bytes 가 없다 — 원본 래칫은 사람 판정(2026-10-28)이다. 풀려면 이 단언을 고치는 diff 가 그 판정이다"
+
 # 아카이브 안내가 살아 있는가 — 이관한 곳을 가리키는 줄이 지워지면 다음 세션이 서사를 못 찾는다.
 _ptr="$(grep -c 'archive/docs-history-2026-09' "$F" || true)"
 assert_eq "ok" "$(ok_if "$([ "$_ptr" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
