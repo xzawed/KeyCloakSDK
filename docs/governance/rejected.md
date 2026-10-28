@@ -1,5 +1,7 @@
 # 기각 레지스트리
-<!-- doc-budget: max-bytes=13580 -->
+<!-- doc-budget: max-bytes=13867 -->
+<!-- 13580 → 13867 (2026-10-29, +287B = 새 기각 **1건**: `SONAR_TOKEN` 의 Dependabot 시크릿 복제 — 사람 위임
+     판정). 2026-09-11 과 같은 규약이다 — 행과 함께 올렸고 여유는 다시 0 이다. -->
 <!-- 13285 → 13580 (2026-09-11, +295B = 새 기각 **1건**: KGP 2.4.20). 규약대로 행과 함께
      올렸고 **여유는 다시 0** 이다 — 다음 행도 반드시 이 숫자를 건드리게 하기 위해서다.
      ⚠️ **초안은 +654B 였고 검사 8b 가 막았다(무심사 상한 300B).** 깎은 것은 근거의 산문
@@ -82,6 +84,7 @@
 | examples 모듈에 `<skipPublishing>` | publish mojo 가 `aggregator=false`·`phase=deploy` 이고 examples 가 `<modules>` 의 **마지막**이라 번들 publish 자체가 그 모듈에서 일어난다 — 거기서 스킵하면 번들 전체가 안 나갈 개연성이 있다. 부모의 `<excludeArtifacts>` 로 갔다(#357, 실제 번들로 검증: 제거 20파일 · 복원 0파일) | publish mojo 가 `aggregator=true` 가 되거나 examples 가 `<modules>` 의 마지막이 아니게 될 때 |
 | php-semver V154 면제 | 「클래스명 대소문자가 바뀌었다」는 `implements` 절 추가만으로 나오는 오탐이나(최소 A/B 로 재현), 도구가 그것을 **PATCH** 로 내므로 MAJOR 만 보는 게이트에 애초에 닿지 않는다. 닿지 않는 면제는 시험되지 않는 코드다 | 리포트에서 V154 가 **MAJOR** 로 나오는 것이 실측될 때 — `grep -cE '^\| MAJOR .*V154' <리포트>` 가 0 이 아니면 그때 술어(선언 토큰 동일성)를 넣는다. 그전까지는 fail-closed 가 옳다 |
 | `with:` 시크릿에 빈값 검사 | 규칙 8 은 **셸** 테스트(`[ -z "$X" ]`)인데 kebab-case `with:` 입력은 환경에 없다 — 그 이름으로 검사를 붙이면 main 에서 실패한다. 세 자리(`gpg-private-key`·`app-id`·`private-key`) 전부 같은 잡에 env 형제가 있어 규칙 8 이 이미 본다. 위험 부류도 다르다(빈 `with:` 는 조용한 스킵이 아니라 불투명한 실패) | `with:` 시크릿을 **env 형제 없이** 받는 자리가 생길 때 |
+| `SONAR_TOKEN` 을 Dependabot 시크릿에 복제 | Dependabot PR 은 매니페스트·잠금 파일만 바꿔 스캔이 얻는 것이 없고 토큰 접근만 넓힌다(2026-10-29 판정) | `gh run list -w sonarcloud.yml -b main -s failure` 에 Dependabot 병합 커밋이 보일 때 |
 
 <!-- GitHub Release 대칭화 행의 「23태그 중 15개」재판정 (2026-08-28 · 2026-09-22 재측정):
      `git ls-remote --tags origin | grep -v '\^{}' | grep -vc archive/` → 37 ·
