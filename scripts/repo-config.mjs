@@ -8,7 +8,7 @@
 // 적용·대조한다 — check-docs·doctor와 같은 원칙(원천을 하나 두고 기계가 대조).
 //
 // 사용:
-//   node scripts/repo-config.mjs check     # 라이브 설정이 커밋된 정의와 같은지 대조(기본)
+//   node scripts/repo-config.mjs check     # 라이브 설정(룰셋·보안 기능·워크플로 상태)이 커밋된 정의와 같은지 대조(기본)
 //   node scripts/repo-config.mjs apply     # 커밋된 정의를 GitHub에 적용(관리자 권한 필요)
 //   node scripts/repo-config.mjs pull      # 라이브 설정을 파일로 내려받음(최초 도입·수동변경 흡수)
 //   ... --repo <owner/name>                # 기본값은 gh가 인식한 현재 저장소
@@ -232,6 +232,51 @@ function mirrorDrift(want) {
   return d
 }
 
+// ── Actions 워크플로 상태 ────────────────────────────────────────────────────
+// 워크플로의 활성 상태도 서버 상태다. 브랜치에서 한 번 돈 워크플로는 그 파일이 지워져도 목록에
+// `active` 로 남고(2026-10-28 실측: probe-vuln-alerts·sonar-diagnose — 그 브랜치를 다시 밀면 다시
+// 돈다), 커밋된 워크플로가 웹 UI 에서 꺼지거나 무활동으로 `disabled_inactivity` 가 되면 정기
+// 감사가 실패도 없이 멈춘다. CI 는 어느 쪽도 볼 수 없다 — 꺼진 워크플로는 빨강을 내지 않는다.
+// `dynamic/…`(Dependabot·CodeQL default setup)은 GitHub 이 관리하므로 뺀다.
+export function workflowDrift(live, committed) {
+  const out = []
+  if (!committed.length) out.push('workflow: 커밋된 워크플로가 0 개다 — 대조가 공허하다')
+  const files = new Set(committed)
+  const seen = new Set()
+  for (const w of live) {
+    if (!w.path.startsWith('.github/workflows/')) continue
+    seen.add(w.path)
+    if (files.has(w.path)) {
+      if (w.state !== 'active') out.push(`${w.path}: 커밋돼 있는데 ${w.state} 다 — 돌지 않는다(\`gh workflow enable ${w.id}\`)`)
+    } else if (w.state === 'active') {
+      out.push(`${w.path} (id ${w.id}): 파일 없이 active 다 — 지운 브랜치의 유령이다(\`gh workflow disable ${w.id}\`)`)
+    }
+  }
+  for (const f of committed) if (!seen.has(f)) out.push(`${f}: 커밋돼 있는데 라이브 목록에 없다`)
+  return out
+}
+
+function checkWorkflows(repo) {
+  const r = gh(['api', '--paginate', `repos/${repo}/actions/workflows`, '--jq', '.workflows[] | {id, path, state}'])
+  if (!r.ok) {
+    console.log('::error::Actions 워크플로 목록을 조회하지 못했다.')
+    console.log(r.out)
+    die(2, '')
+  }
+  const live = r.out.split('\n').filter(Boolean).map((l) => JSON.parse(l))
+  const g = spawnSync('git', ['-C', ROOT, 'ls-files', '.github/workflows'], { encoding: 'utf8', windowsHide: true })
+  if (g.status !== 0) die(2, `git ls-files 실패\n${g.stderr || g.error?.message || ''}`)
+  const committed = g.stdout.split('\n').filter((f) => /\.ya?ml$/.test(f))
+  const d = workflowDrift(live, committed)
+  if (d.length === 0) {
+    console.log(`ok   Actions 워크플로 ${committed.length}개 — 커밋된 파일과 라이브 상태 일치`)
+    return 0
+  }
+  console.log('::error::Actions 워크플로 상태가 커밋된 파일과 다르다')
+  for (const x of d) console.log(`  - ${x}`)
+  return 1
+}
+
 function checkSecurity(repo, cmd) {
   const file = '.github/security-config.json'
   let want
@@ -340,6 +385,7 @@ function main() {
   // ⚠️ `apply`는 하지 않는다. 보안 기능을 켜고 끄는 것은 스크립트가 아니라 사람의 판정이고,
   //    특히 push protection은 기여자의 push 동작을 바꾼다.
   drift += checkSecurity(repo, cmd)
+  drift += checkWorkflows(repo)
 
   if (cmd === 'check' && drift) {
     console.log(`\n${drift}건 불일치. **룰셋** 은 \`node scripts/repo-config.mjs apply\` 로 적용하고,`)
@@ -349,6 +395,7 @@ function main() {
     // "적용 완료"를 읽은 뒤 아무것도 바뀌지 않은 채 끝난다.
     console.log('보안 기능(secret scanning · CodeQL · private vulnerability reporting)은 `apply` 대상이 아니다 —')
     console.log('사람이 판정해 GitHub 설정에서 켜거나, `gh api -X PUT repos/<o>/<r>/private-vulnerability-reporting` 처럼 직접 바꾼다.')
+    console.log('Actions 워크플로 상태도 `apply` 대상이 아니다 — 위 목록의 `gh workflow disable|enable <id>` 로 고친다.')
     process.exit(1)
   }
   console.log(cmd === 'apply' ? '\n적용 완료.' : '\n설정 일치.')

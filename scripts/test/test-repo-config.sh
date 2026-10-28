@@ -302,4 +302,38 @@ assert_eq "" "$(cd "$DIR/.." && node -e "
     process.stdout.write(JSON.stringify(want)===JSON.stringify(have)?'':want+' != '+have);});")" \
   '커밋된 미러 정의 이름 집합 = security-config.json 의 rulesets 목록'
 
+# ---- Actions 워크플로 상태 (workflowDrift) ----
+# ⚠️ 워크플로의 활성 상태도 서버 상태다. 실제 결함의 모양(2026-10-28 실측): 지운 브랜치에서
+# 돌았던 `probe-vuln-alerts.yml`·`sonar-diagnose.yml` 이 파일 없이 `active` 로 남아 있었다.
+# 반대쪽 — 커밋된 워크플로가 꺼지면(`disabled_inactivity`·`disabled_manually`) 정기 감사가 실패도
+# 없이 멈춘다. 둘 다 CI 가 볼 수 없다. 축을 섞지 않고, 검출은 어느 판정이 울렸는지로 본다.
+WFD="import('./repo-config.mjs').then(({workflowDrift})=>{"
+LIVEW="[{id:1,path:'.github/workflows/a.yml',state:'active'},{id:9,path:'dynamic/github-code-scanning/codeql',state:'active'}]"
+assert_eq "0" "$(cd "$DIR/.." && node -e "
+  $WFD process.stdout.write(String(workflowDrift($LIVEW,['.github/workflows/a.yml']).length));});")" \
+  'workflowDrift 가 일치를 오탐하지 않는다(dynamic/ 는 GitHub 이 관리해 뺀다)'
+assert_contains "$(cd "$DIR/.." && node -e "
+  $WFD process.stdout.write(workflowDrift([...$LIVEW,{id:2,path:'.github/workflows/ghost.yml',state:'active'}],['.github/workflows/a.yml']).join('|'));});")" \
+  'ghost.yml (id 2): 파일 없이 active' \
+  '파일 없이 active 인 워크플로를 잡는다(지운 브랜치의 유령)'
+assert_eq "0" "$(cd "$DIR/.." && node -e "
+  $WFD process.stdout.write(String(workflowDrift([...$LIVEW,{id:2,path:'.github/workflows/ghost.yml',state:'disabled_manually'}],['.github/workflows/a.yml']).length));});")" \
+  '꺼 둔 유령은 드리프트가 아니다(고친 상태다)'
+assert_contains "$(cd "$DIR/.." && node -e "
+  $WFD process.stdout.write(workflowDrift([{id:1,path:'.github/workflows/a.yml',state:'disabled_inactivity'}],['.github/workflows/a.yml']).join('|'));});")" \
+  'a.yml: 커밋돼 있는데 disabled_inactivity' \
+  '커밋된 워크플로가 꺼진 것을 잡는다(정기 감사가 실패 없이 멈춘다)'
+assert_contains "$(cd "$DIR/.." && node -e "
+  $WFD process.stdout.write(workflowDrift([],['.github/workflows/a.yml']).join('|'));});")" \
+  'a.yml: 커밋돼 있는데 라이브 목록에 없다' \
+  '라이브 목록이 비면 조용히 통과하지 않는다'
+assert_contains "$(cd "$DIR/.." && node -e "
+  $WFD process.stdout.write(workflowDrift($LIVEW,[]).join('|'));});")" \
+  '커밋된 워크플로가 0 개다' \
+  '커밋 목록이 비면 fail-closed 다(대조가 공허해진다)'
+# 배선 — 판정 함수가 맞아도 main() 이 부르지 않으면 `check` 는 워크플로를 안 본다. 라이브 대조는
+# 네트워크라 여기서 못 돌므로 모양으로 고정한다(주석 처리한 줄은 세지 않는다 — 맨 부분 문자열 금지).
+assert_eq "1" "$(sed -n '/^function main()/,/^}/p' "$CFG" | grep -cE '^[[:space:]]*drift \+= checkWorkflows\(repo\)')" \
+  'check 가 워크플로 상태를 대조한다(main 배선)'
+
 assert_report
