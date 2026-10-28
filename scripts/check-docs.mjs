@@ -1666,6 +1666,16 @@ for (const [src, map] of depSources) {
 // ⚠️ **오라클은 트리가 아니라 `main`** 이다(#415 와 같은 부류) — 트리끼리 비교하면 인상이
 // 보이지 않는다. 기준을 못 잡으면 **스킵이 아니라 실패**다(공허 방지).
 const BUDGET_RAISE_CAP = 300
+// ── 검사 8e — 래칫을 **내리는 것** ─────────────────────────────────────────────
+// 위 검사 8 의 머리 주석이 「줄일 때마다 사람이 숫자를 함께 내린다」를 규칙으로 적었지만 그것은
+// 산문이었다. 줄인 몫이 상한에 남으면 다음 변경이 그 자리를 **무심사로 다시 채운다** — 8b 는
+// 인상만 보므로 그 재성장은 어디서도 안 보인다. 실측(2026-10-28): 예산 31 개 중 30 개는 여유가
+// 이미 ≤ 300B 였고(손으로 지켜졌다) 하나만 557B 였다 — 새 정책이 아니라 관행을 기계로 옮긴다.
+// 상한은 인상 상한과 같은 300B 다: 문서는 예산에서 위로도 아래로도 300B 넘게 벗어나지 않는다.
+// (독립 레그의 반대 — 「줄 때 내리면 다음 정당한 추가가 인상이 된다」 — 는 그 인상이 ≤ 300B 면
+//  기록 한 줄로 지나간다는 것으로 답한다. 300B 안의 여유는 남겨 둘 수 있다.)
+// ⚠️ **이 저장소에서만 돈다**(8c 와 같은 조건). 자가테스트 픽스처는 큰 예산에 한 줄 본문을 쓴다.
+const BUDGET_SLACK_CAP = 300
 
 let budgetBaselineRef = undefined
 function baselineRef() {
@@ -1738,6 +1748,14 @@ function checkDocBudget() {
           `${rel}: 적재 ${lines}줄 > doc-budget max-lines=${maxLines} (초과 ${lines - maxLines}줄 · raw ${countLines(text)}줄) — 공식 권고는 200줄이다`,
         )
       }
+    }
+
+    // 검사 8e — 줄인 몫이 상한에 남지 않는다(근거: BUDGET_SLACK_CAP 머리 주석).
+    if (existsSync(join(ROOT, 'scripts/check-docs.mjs')) && max - actual > BUDGET_SLACK_CAP) {
+      errors.push(
+        `${rel}: 적재 ${actual}B 가 doc-budget ${max}B 보다 ${max - actual}B 작다(여유 상한 ${BUDGET_SLACK_CAP}B) — ` +
+          `줄였다면 앵커를 함께 내려라(max-bytes=${actual}). 줄인 몫이 상한에 남으면 다음 변경이 그 자리를 무심사로 다시 채운다`,
+      )
     }
 
     // 검사 8b — 인상 자체를 본다.
@@ -1819,6 +1837,12 @@ function checkBudgetCoverage() {
       // 한 일이다), 그래도 안 되면 이 상수를 같은 PR 에서 올린다 — 그 diff 가 사람 판정이다.
       errors.push(
         `${rel}: ${raw}B > 전역 상한 ${DOC_TRIPWIRE_BYTES}B — 예산 부류와 무관하게 이 크기는 허용하지 않는다(이 수는 remaining-work.md 가 실제로 도달했던 사고 크기다). 길은 둘 — 완료된 서사를 이력/아카이브 태그로 이관하거나(#526 참조), 그래도 안 들어가면 같은 PR 에서 DOC_TRIPWIRE_BYTES 를 올려라(그 diff 가 사람 판정이다)`,
+      )
+    } else if (raw * 10 >= DOC_TRIPWIRE_BYTES * 9) {
+      // 90% 경고 — 실패만 있던 시절에는 CHANGELOG 가 82% 가 될 때까지 아무 신호가 없었다(2026-10-28).
+      // 경고라 막지 않는다. 나가는 길은 위 실패 문구와 같다.
+      warnings.push(
+        `${rel}: ${raw}B 가 전역 상한 ${DOC_TRIPWIRE_BYTES}B 의 ${Math.floor((raw * 100) / DOC_TRIPWIRE_BYTES)}% 다 — 넘으면 실패한다. 완료된 서사를 이력/아카이브로 옮길 계획을 지금 세워라`,
       )
     }
     if (BUDGET_EXEMPT_LEDGER.has(rel) || BUDGET_EXEMPT_PKG_README.test(rel)) {

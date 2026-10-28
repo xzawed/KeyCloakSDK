@@ -588,8 +588,3 @@ yank·unlist 는 해결이 아니라 악화입니다(정식이 사라지면 RC �
 - **(Java·Kotlin) `jwksMinRefetch`가 Nimbus 캐시 TTL 이상이면 이제 `KeycloakConfigException`이다.** 예전에는 `IllegalStateException`이 공개 API로 샜다(§4 위반). 경위: [`.claude/rules/java.md`](.claude/rules/java.md).
 - **(Java) jackson-databind `2.21.2` → `2.21.4`.** CVE 6건 해소. 후속 핀 이력은 CLAUDE.md 의존성 표. (2026-07-03)
 - **(Java) Jackson default/polymorphic typing 도입을 CI `invariant` 잡이 막는다.** 위 무위험 판정의 전제. (2026-07-03)
-
----
-
-<!-- 릴리스 시: [Unreleased] 아래에 `## [x.y.z] - YYYY-MM-DD` 섹션을 만들고 해당 항목을 이동한다.
-     태그: Java `v*` · Python `py-v*` · Node `node-v*` · Go `go/v*` · C#/.NET `dotnet-v*` · PHP `php-v*` · Rust `rust-v*` · Ruby `ruby-v*`. -->
