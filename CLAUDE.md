@@ -1,5 +1,8 @@
 # CLAUDE.md
-<!-- doc-budget: max-bytes=25095 max-lines=308 -->
+<!-- doc-budget: max-bytes=25101 max-lines=308 -->
+<!-- 25095 → 25101 (2026-10-29, +6B). 규약 (1) — 교환이다. 지운 거짓: PHP 표의 guzzle `^7.9`·psr7 `^2.7`(composer.json
+     하한이 올랐다). 같은 두 칸이 kind=dep 대조를 받는 새 값이고 +6B 는 버전 문자열 길이뿐이다. 같은 커밋이 더한 `ext-curl` 은
+     행이 못 된다 — `tableAt` 이 셀의 `*` 를 지워 「문서= 실제=*」로 운다(실측) — 그래서 `undocumented` 가 하나 오른다. -->
 <!-- 25046 → 25095 (2026-10-28). 규약 (2) — 사람 판정(「원본 래칫은 등록부에만」)이 문서 규칙 한 줄을 바꿨다.
      「블록 주석은 계상되지 않는다」가 등록부에서는 거짓이 되므로(검사 8f 가 원본을 센다) 그 괄호에 예외를 붙였다. -->
 <!-- 24992 → 25046 (2026-10-28). 규약 (1) — 문서 규칙 표의 「왜 그렇게 됐는가 → CHANGELOG」 행이 반쯤
@@ -279,15 +282,15 @@ dev(테스트 csproj — **앵커 있음**):
 
 **PHP 확정 의존성(composer.json, 정확 핀/범위 지정)**:
 
-<!-- doc-guard: kind=dep source=php/composer.json min=6 undocumented=10 -->
+<!-- doc-guard: kind=dep source=php/composer.json min=6 undocumented=11 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | Admin | `fschmtt/keycloak-rest-api-client-php` | **0.44.0** |
 | 인증(OAuth2) | `league/oauth2-client` | `^2.8` |
 | 인증(OAuth2, Keycloak 프로바이더) | `stevenmaguire/oauth2-keycloak` | `^6.1` |
 | JWT(강화 검증) | `firebase/php-jwt` | `^7.1` |
-| HTTP(PSR-18) | `guzzlehttp/guzzle` | `^7.9` |
-| HTTP(PSR-17) | `guzzlehttp/psr7` | `^2.7` |
+| HTTP(PSR-18) | `guzzlehttp/guzzle` | `^7.15.2` |
+| HTTP(PSR-17) | `guzzlehttp/psr7` | `^2.12.3` |
 
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
