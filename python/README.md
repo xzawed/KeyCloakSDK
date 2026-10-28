@@ -53,21 +53,21 @@ with KeycloakClient.create(config) as kc:
 
 ### Async
 
-`keycloak_sdk.aio` is a complete async mirror — same method names (the sync `close()` is `aclose()` here), value types, and exceptions — so it never blocks the event loop (FastAPI and friends):
+`keycloak_sdk.aio` is a complete async mirror — same method names (the sync `close()` is `aclose()` here), value types, and exceptions — and every network call is awaited, so requests do not block the event loop (FastAPI and friends). Construction does block it: `AsyncKeycloakClient.create(config)` and the first access to `kc.admin` build their HTTP clients and load the TLS trust store on the calling thread, which takes a noticeable fraction of a second on Windows. Create one client when the application starts and reuse it:
 
 ```python
 from keycloak_sdk import KeycloakConfig
 from keycloak_sdk.aio import AsyncKeycloakClient
 
 
-async def handler(config: KeycloakConfig) -> None:
+async def run(config: KeycloakConfig) -> None:
     async with AsyncKeycloakClient.create(config) as kc:
         token = await kc.auth.client_credentials_token()
         validated = await kc.auth.validate(token.access_token)
         users = await kc.admin.users.search(first=0, max=20)
 ```
 
-Only `authorization_url` stays synchronous — it assembles a URL and needs no network.
+Among the client's methods, only `authorization_url` stays synchronous — it assembles a URL and needs no network.
 
 ## Security defaults
 
