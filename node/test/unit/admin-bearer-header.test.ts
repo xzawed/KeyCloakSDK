@@ -1,5 +1,5 @@
 /**
- * admin 의 Bearer 가 HTTP 헤더에 실릴 수 없을 때 — §4(하위·런타임 예외가 공개 API 로 새지 않는다)와 보안 기본선
+ * admin 이 보낼 수 없는 Bearer — §4(하위·런타임 예외가 공개 API 로 새지 않는다)와 보안 기본선
  * (오류의 메시지·원인 사슬·스택에 토큰이 없다). 진짜 admin-client 를 프로세스 안 가짜 IdP(`fake-idp.ts`)에 붙인다.
  *
  * 수정 전(실측 2026-10-05, header-case.mjs): 토큰 엔드포인트가 준 access token 에 LF·CR·NUL 이 있으면 모든 admin
@@ -8,24 +8,29 @@
  * U+FFFD)면 raw `TypeError: Cannot convert argument to a ByteString …` 였다. 요청은 나가지 않았다(admin 0 건).
  * `call()` 은 원인 없는 `TypeError` 를 전송 오류가 아니라 보고 그대로 다시 던졌다.
  *
- * 고친 자리: admin-client 가 헤더를 짓기 직전의 SDK 쪽 마지막 자리 — `AdminClient.create` 가 등록하는 토큰
- * 공급자(요청마다)와 생성 때의 토큰 확보. 같은 플랫폼 `Headers` 로 먼저 물어 실을 수 없으면 토큰을 담지 않은
- * `KeycloakAuthError` 로 거부한다. 거르는 것은 **플랫폼이 거부하는 것과 정확히 같다** — 플랫폼이 실어 보내는 값
- * (U+00E9 같은 Latin-1, 끝의 공백·LF 는 플랫폼이 다듬어 보낸다)은 지금처럼 보낸다. 값은 고쳐 쓰지 않는다.
+ * 지금(결정 2026-10-29, 등록부 `bearer-token-grammar-divergent` — 아홉 언어 같은 규칙): `sendableBearer`
+ * (`src/token-provider.ts`)가 앞뒤의 SP·HTAB·CR·LF 만 떼고, 남은 값이 RFC 6750 `b64token` 이 아니면 토큰을 담지
+ * 않은 `KeycloakAuthError` 로 요청 없이 거부한다. 지나는 자리 — 파사드의 요청(`http.ts`) · `AdminClient.create` 가
+ * `raw()` 에 등록하는 공급자(요청마다) · 생성 때의 토큰 확보 · 공개 provider 의 캐시. 플랫폼이 실어 보내던 Latin-1·
+ * 안쪽 공백도 이제 거부하고, 끝 개행은 undici 가 아니라 SDK 가 떼어 보낸다(뗀 값을 보낸다).
  */
 import { inspect } from 'node:util'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { SignJWT } from 'jose'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   AdminClient,
+  AuthClient,
+  ClientCredentialsTokenProvider,
   defineConfig,
   KeycloakAuthError,
   KeycloakClient,
   KeycloakError,
+  TokenSet,
+  type TokenProvider,
 } from '../../src/index.js'
 import { startFakeIdp, tokenResponse, type FakeIdp } from './fake-idp.js'
 
-const REFUSED =
-  'admin access token cannot be sent: an HTTP header cannot carry it (it holds CR, LF, NUL or a character above U+00FF)'
+const REFUSED = 'admin access token cannot be sent: it is not an RFC 6750 bearer token (b64token)'
 
 let idp: FakeIdp
 
@@ -84,6 +89,166 @@ const UNSENDABLE: ReadonlyArray<readonly [label: string, jsonLiteral: string]> =
   ['짝 없는 서로게이트 U+D800', '"SECRETabc\\ud800def"'],
   ['U+FFFD(잘못된 UTF-8 이 풀린 값)', '"SECRETabc\\ufffddef"'],
 ]
+
+/**
+ * 아홉 언어 같은 표(결정 2026-10-29, 등록부 `bearer-token-grammar-divergent`) — 앞뒤의 SP·HTAB·CR·LF 넷만 떼고,
+ * 남은 값이 RFC 6750 `b64token`(`^[A-Za-z0-9\-._~+/]+=*$`)이면 **뗀 값**을 Bearer 로 보내고, 아니면 요청 없이
+ * `KeycloakAuthError` 다. 경로 다섯 — 파사드 · `raw()` · 생성 때의 토큰 확보 · 공개 provider(소비자 소스) · SDK
+ * provider(AuthClient · 가짜 IdP). 마지막 둘은 거부한 토큰을 캐시하지 않는다.
+ */
+const JWS = await new SignJWT({ sub: 'u1' })
+  .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+  .sign(new TextEncoder().encode('bearer-grammar-test-key-0123456789'))
+
+/** [id, 입력, 서버가 받는 Bearer 값(거부면 `null`), 오류 메시지에 없어야 할 글자(없으면 `''`)] */
+const GRAMMAR: ReadonlyArray<
+  readonly [id: string, token: string, sent: string | null, canary: string]
+> = [
+  ['plain', 'abc.DEF-ghi_jkl~mno+pqr/stu', 'abc.DEF-ghi_jkl~mno+pqr/stu', ''],
+  ['pad', 'abc==', 'abc==', ''],
+  ['jwt', JWS, JWS, ''],
+  ['lf', 'abc\n', 'abc', ''],
+  ['crlf', 'abc\r\n', 'abc', ''],
+  ['lead-tab', ' \tabc\t ', 'abc', ''],
+  ['inner-sp', 'a bc', null, 'a bc'],
+  ['inner-tab', 'a\tbc', null, 'a\tbc'],
+  ['inner-crlf', 'a\r\nX-Evil: 1', null, 'X-Evil'],
+  ['mid-pad', 'a=bc', null, 'a=bc'],
+  ['empty', '', null, ''],
+  ['blank', ' \t\r\n', null, ''],
+  ['latin1', 'abc\u{e9}', null, 'abc'],
+  ['above-ff', 'abc\u{100}', null, 'abc'],
+  ['c1', 'abc\u0085', null, 'abc'],
+  ['nul', 'abc\u0000', null, 'abc'],
+  ['del', 'abc\u007f', null, 'abc'],
+  ['nbsp', 'abc\u{a0}', null, 'abc'],
+  ['ideographic', '\u{3000}abc', null, 'abc'],
+  ['vt', 'abc\u000b', null, 'abc'],
+  // node 의 덤 — UTF-16 문자열이라 짝 없는 서로게이트가 들어온다.
+  ['lone-surrogate', 'abc\ud800', null, 'abc'],
+]
+
+const SENT = GRAMMAR.filter(([, , sent]) => sent !== null)
+const REJECTED = GRAMMAR.filter(([, , sent]) => sent === null)
+
+type Settled = { readonly ok: true } | { readonly ok: false; readonly err: unknown }
+
+function settle(p: Promise<unknown>): Promise<Settled> {
+  return p.then(
+    () => ({ ok: true }) as const,
+    (err: unknown) => ({ ok: false, err }) as const,
+  )
+}
+
+/** 거부 — SDK 의 그 오류(원인 없음)이고, 메시지에 토큰의 글자가 없다. */
+function expectRefused(s: Settled, canary: string): void {
+  expect(s.ok, '보내지 말고 거부해야 한다').toBe(false)
+  if (s.ok) return
+  expect(s.err).toBeInstanceOf(KeycloakAuthError)
+  const e = s.err as Error
+  expect(e.message).toMatch(/^admin access token cannot be sent: /)
+  expect(e.cause).toBeUndefined()
+  if (canary !== '') expect(e.message).not.toContain(canary)
+}
+
+function grammarConfig(): ReturnType<typeof defineConfig> {
+  return defineConfig({ serverUrl: idp.origin, realm: 'r', clientId: 'c', clientSecret: 's' })
+}
+
+/** 생성은 쓸 수 있는 토큰으로 하고, 그 뒤 소비자 provider 가 표의 값을 준다. */
+async function adminThenServing(token: string): Promise<AdminClient> {
+  let current = 'first'
+  const provider: TokenProvider = { getAccessToken: () => Promise.resolve(current) }
+  const admin = await AdminClient.create(grammarConfig(), provider)
+  current = token
+  return admin
+}
+
+describe('bearer 문법 — 아홉 언어 같은 표(b64token · 앞뒤 SP·HTAB·CR·LF 만 뗀다)', () => {
+  for (const [route, call] of [
+    ['파사드(admin.realms.list)', (a: AdminClient) => a.realms.list()],
+    ['raw()(admin.raw().realms.find)', (a: AdminClient) => a.raw().realms.find()],
+  ] as const) {
+    it.each(SENT)(`%s — ${route} 가 뗀 값을 보낸다`, async (_id, token, sent) => {
+      const admin = await adminThenServing(token)
+      const before = idp.counts.admin
+      await call(admin)
+      expect(idp.counts.admin).toBe(before + 1)
+      expect(idp.last.adminAuthorization).toBe(`Bearer ${sent}`)
+    })
+
+    it.each(REJECTED)(`%s — ${route} 가 요청 없이 거부한다`, async (_id, token, _sent, canary) => {
+      const admin = await adminThenServing(token)
+      const before = idp.counts.admin
+      expectRefused(await settle(call(admin)), canary)
+      expect(idp.counts.admin).toBe(before)
+    })
+  }
+
+  it.each(GRAMMAR)(
+    '%s — 생성 때의 토큰 확보(AdminClient.create)',
+    async (_id, token, sent, canary) => {
+      const before = idp.counts.admin
+      const s = await settle(
+        AdminClient.create(grammarConfig(), { getAccessToken: () => Promise.resolve(token) }),
+      )
+      if (sent === null) expectRefused(s, canary)
+      else expect(s.ok).toBe(true)
+      expect(idp.counts.admin).toBe(before)
+    },
+  )
+
+  it.each(GRAMMAR)(
+    '%s — 공개 provider(소비자 TokenSource)는 뗀 값을 캐시하고, 거부한 값은 캐시하지 않는다',
+    async (_id, token, sent, canary) => {
+      const now = Math.floor(Date.now() / 1000)
+      const source = {
+        clientCredentialsToken: vi.fn(() =>
+          Promise.resolve(new TokenSet(token, 'Bearer', 300, now + 300)),
+        ),
+      }
+      const provider = new ClientCredentialsTokenProvider(source)
+      if (sent === null) {
+        expectRefused(await settle(provider.getAccessToken()), canary)
+        expectRefused(await settle(provider.getAccessToken()), canary)
+        expect(source.clientCredentialsToken).toHaveBeenCalledTimes(2)
+      } else {
+        expect(await provider.getAccessToken()).toBe(sent)
+        expect(await provider.getAccessToken()).toBe(sent)
+        expect(source.clientCredentialsToken).toHaveBeenCalledTimes(1)
+      }
+    },
+  )
+
+  // IdP 가 준 빈 문자열은 매퍼(`tokenSetFromResponse`)가 먼저 거부한다 — 문구가 달라 형만 본다.
+  it.each(GRAMMAR)(
+    '%s — SDK provider(AuthClient · 가짜 IdP)는 거부한 값을 캐시하지 않는다(IdP 에 다시 묻는다)',
+    async (_id, token, sent, canary) => {
+      serveToken(JSON.stringify(token))
+      const auth = new AuthClient(grammarConfig())
+      const provider = new ClientCredentialsTokenProvider(auth)
+      const before = idp.counts.token
+      try {
+        if (sent === null) {
+          for (let i = 0; i < 2; i += 1) {
+            const s = await settle(provider.getAccessToken())
+            expect(s.ok).toBe(false)
+            if (s.ok) return
+            expect(s.err).toBeInstanceOf(KeycloakAuthError)
+            if (canary !== '') expect((s.err as Error).message).not.toContain(canary)
+          }
+          expect(idp.counts.token - before).toBe(2)
+        } else {
+          expect(await provider.getAccessToken()).toBe(sent)
+          expect(await provider.getAccessToken()).toBe(sent)
+          expect(idp.counts.token - before).toBe(1)
+        }
+      } finally {
+        await auth.close()
+      }
+    },
+  )
+})
 
 describe('admin — 헤더에 실을 수 없는 Bearer 는 토큰 없는 SDK 오류', () => {
   it.each(UNSENDABLE)(
@@ -144,10 +309,11 @@ describe('admin — 헤더에 실을 수 없는 Bearer 는 토큰 없는 SDK 오
 })
 
 /**
- * 거르는 것은 플랫폼이 거부하는 것과 정확히 같다 — 그 밖은 지금처럼 보낸다(값을 고쳐 쓰지 않고, 막지도 않는다).
+ * `b64token` 인 Bearer 는 그대로 나간다 — 앞뒤의 SP·HTAB·CR·LF 만 SDK 가 뗀다. U+00E9(Latin-1)는 예전에 그 바이트로
+ * 나갔지만 이제 거부한다(위 표의 `latin1` 행).
  * ⚠️ 이 대조군을 지우지 말 것 — 위 시험들은 「Bearer 를 전부 거부한다」로도 통과한다.
  */
-describe('대조군 — 플랫폼이 실어 보내는 Bearer 는 그대로 나간다', () => {
+describe('대조군 — b64token 인 Bearer 는 (앞뒤만 떼어) 그대로 나간다', () => {
   const sent = async (literal: string): Promise<string | undefined> => {
     serveToken(literal)
     const before = idp.counts.admin
@@ -161,13 +327,7 @@ describe('대조군 — 플랫폼이 실어 보내는 Bearer 는 그대로 나�
     expect(await sent(JSON.stringify(token))).toBe(`Bearer ${token}`)
   })
 
-  it('U+00E9(Latin-1) — 플랫폼은 그 바이트로 보낸다', async () => {
-    expect(Buffer.from((await sent('"abc\\u00e9def"')) ?? '', 'latin1').toString('hex')).toBe(
-      Buffer.from('Bearer abcédef', 'latin1').toString('hex'),
-    )
-  })
-
-  it('끝의 공백·LF — 플랫폼이 다듬어 보낸다(지금과 같다)', async () => {
+  it('끝의 공백·LF — SDK 가 떼어 보낸다(서버가 받는 값은 undici 가 다듬던 때와 같다)', async () => {
     expect(await sent('"abcdef "')).toBe('Bearer abcdef')
     expect(await sent('"abcdef\\n"')).toBe('Bearer abcdef')
   })
