@@ -319,6 +319,7 @@ internal class TokenResponseCapTest {
                 expectOverCap("${lane.name} ${huge shr 20} MiB", lane, r, wrong)
                 if (allocated >= limit) wrong += "${lane.name}: ${huge shr 20} MiB 본문 하나에 $allocated 바이트를 할당했다(한도 $limit)"
                 if (!answered) wrong += "${lane.name}: 서버가 응답을 끝내지 않았다"
+                // 전제: SDK 가 읽은 ~1 MiB + 끊기 전 커널 큐에 든 바이트 < 본문 — 실측 REFRESH 서버 최대 7.0 MB(리눅스 rmem·wmem 최대 6–128 MiB·초기 16 MiB·2 CPU)
                 if (!clientLeftEarly || written.get() >= huge) wrong += "${lane.name}: SDK 가 본문을 끝까지 읽었다 — 서버가 ${written.get()} 바이트를 썼다"
             }
             println("[TokenResponseCapTest 거대한 본문]\n  " + table.joinToString("\n  "))
