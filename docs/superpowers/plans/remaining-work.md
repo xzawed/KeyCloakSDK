@@ -1,5 +1,5 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=174781 max-raw-bytes=212831 -->
+<!-- doc-budget: max-bytes=174781 max-raw-bytes=211533 -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -38,7 +38,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `284`(2026-10-29 기준 열림 139 · 닫힘 145)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `284`(2026-10-29 기준 열림 138 · 닫힘 146)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -342,7 +342,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 132건 (열림 74)
+## C. 품질 부채 — 132건 (열림 73)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -429,8 +429,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 <!-- wave4-hardening-php(2026-10-05 php 구현·검증 레그): (1) Guzzle CurlHandler(curl 8.21.0/OpenSSL 3.0.21, Windows)가 Authorization 「Bearer 」+307,190 B 는 보내고 +307,200 B 는 그 헤더 없이 보낸다(서버 authLen 0) — 새 상한 안의 ~300 KiB–1 MiB bearer 가 로컬 실패 대신 401 이 된다. 누출·raw 예외 없음, 다른 libcurl 은 미측정. (2) ClientCredentialsTokenProvider 의 전송은 무상한 — PSR-18 sendRequest 에 요청별 옵션이 없다(가짜 IdP 「written」 33,555,507 · zend 피크 5,916,224, 메모리만 묶인다). 코드·CHANGELOG 에 적혀 있다. (3)(4) 닫힘 #767 — JwksStore 는 상한+1 까지만 가져오고 끝이 아닌 빈 읽기에서 실패한다(앞부분 판정은 Grok 레그가 깼다: 한 번 막힌 60,000 B 문서가 수락됐다) · 상한 시험이 curl·stream 처리기 둘 다로 돈다(91 → 178 칸). 토큰 판독기 닫힘 #772 — TokenResponseCap::read 도 멈춤에서 실패한다(내부 운반체 ResponseStalled 를 부르는 자리마다 새 SDK 오류로 — league·Guzzle 프레임 인자가 실려 나가지 않게, 여섯 공개 호출 + admin 미들웨어). 남은 것: 두 판독기는 탐색 불가 본문을 현재 위치부터 읽어, 주입 전송의 미들웨어가 일부 읽은 본문은 꼬리로 판정된다(Grok 레그, 수정 전부터) · admin 경로의 읽기 오류는 KeycloakAdminError 「admin request failed unexpectedly」(SDK 클라이언트로는 안 난다) · stream 처리기의 gzip 은 읽기 하나를 통째로 풀어 7–8 MB(cc 토큰 프로바이더 최대 20.7 MB). 실패한 토큰 응답의 분류는 league 레인 TransportError · ClientCredentialsTokenProvider AuthError 로 갈린 채다(상한은 다 TransportError). raw() 트레이스 인자의 시크릿은 php-exception-trace-third-party-args. -->
 - [ ] `wave4-hardening-java` **[L/S · 신규 2026-10-05 · JVM 공통 bearer 닫힘 #769 · (1) 닫힘 #833 · (2)(3)(4)(6) 닫힘 #875 · 판정 2026-10-29]** JVM 공통 몫은 bearer 판정이 닫는다 · 스레드 생성 실패(Error)는 「그대로」 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java`
 <!-- wave4-hardening-java(2026-10-05 java 구현·검증·bounds 레그): (5) JWKS 조회 스레드 생성 실패(OutOfMemoryError: unable to create native thread)는 JwtValidator 가 Exception 만 잡아 변환되지 않는다(미측정). 닫힌 칸의 경위는 #833 · #875 본문 — #875 의 m9(JWKS 읽기마다 8 KiB 버퍼)는 새 조회 스레드 할당 단언만 잡는다: #769 레그의 「그 한계가 잡을 변이는 기존 메시지 단언이 이미 잡는다」는 그 변이에 틀렸다. JVM 공통 — HttpCore 4.4.16 이 admin bearer 를 조용히 고쳐 보냈다(CR·LF·VT·FF → 공백 · 그 밖의 C0·DEL → ?, BasicLineFormatter·ByteArrayBuffer) — #769 가 그 제어 문자를 토큰 응답에서 거부한다(캐시 안 함). C1·U+0100 위는 여전히 ? 로 나간다(bearer-token-grammar-divergent) · auth 레인은 짝 없는 서로게이트·잘못된 UTF-8 을 U+FFFD 로 TokenSet·IntrospectionResult 에 싣고 admin 은 거부한다 · admin 토큰 400 과 응답 없는 전송 실패의 원인 사슬에 jakarta ProcessingException 이 그대로 남는다(토큰 인용은 없다) · java.md·kotlin.md 에 「auth 레인에서 Nimbus HTTPRequest.send() 를 부르지 말 것」 함정이 없다(예산 — 코드 주석과 시험만 안다). -->
-- [ ] `wave4-hardening-kotlin` **[L/S · 신규 2026-10-05 · (3) 닫힘 #878 · 판정 2026-10-29]** 짧은 §5.2 꼴이 산문까지 가리는 것은 받아들여 시험으로 적는다 · %3F 는 「그대로」 · JVM 공통은 `wave4-hardening-java` · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/masking.kt`
-<!-- wave4-hardening-kotlin(2026-10-05 kotlin 구현·검증·bounds 레그): (1) 보낸 값의 §5.2 지운 꼴·UTF-8 「?」 꼴이 짧거나 산문 단어와 같으면 산문까지 가린다 — refresh 토큰 「Bad」+CR → 「Token refresh failed: *** refresh_token: *** (rejected)」, 「é한e」 → 「Bad r***fr***sh_tok***n: *** (r***j***ct***d)」. 실패 쪽이고 JWT 에는 안 닿는다(JWT 는 §5.2 안 글자뿐). 수용해 kotlin.md 에 적거나 길이·비율 문턱(짧은 꼴의 누출을 다시 연다) — 판정. (2) URLEncoder 의 UTF-8 대체로 refresh·introspect 값의 짝 없는 서로게이트가 %3F 로 나간다(물결 전부터 — bearer-token-grammar-divergent). (3) 닫힘 #878 — 경위는 그 PR 본문(REFRESH 「끝까지 안 읽었다」는 #761 뒤 abort 라 KeepAliveStream 전제가 없다). 그 메서드만 돌린 「a huge body …」 가 Windows Gradle·Kover 에서 8 MiB 한도를 넘는 것(#878, 클래스 단위는 통과)은 첫 거부 경로의 계측 비용 — #761 의 「거부를 한 번 지나간 뒤 잰다」 부류다. 잘리거나 다시 인코딩된 되울림은 error-description-foreign-token-residue. -->
+- [x] `wave4-hardening-kotlin` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #878]** 짧은 §5.2 꼴이 산문도 가리는 것은 받아들였고(판정) `MaskingTest` 가 고정한다 · %3F 는 「그대로」
 - [x] `python-admin-error-body-strict-decode` **[M/S · 신규·닫힘 2026-10-05 #719]** UTF-8 아닌 admin 오류 본문이 raw `UnicodeDecodeError` 였고 그 `__context__` 가 본문을 실었다(§4)
 - [x] `kotlin-echo-mask-misses-filtered-form` **[M/S · 신규·닫힘 2026-10-05 #718]** Nimbus 가 §5.2 밖 글자를 지운 뒤라 되울린 토큰·시크릿의 그 꼴을 못 가렸다
 - [x] `kotlin-echo-mask-misses-form-encoded-secret` **[M/S · 신규·닫힘 2026-10-05 #718]** Basic 의 폼 인코딩 시크릿 되울림을 못 가렸다 — 부류는 `secret-echo-form-encoded-rescan`
