@@ -50,13 +50,13 @@ public sealed class UnsupportedCharsetResponseTests : IDisposable
 
     public void Dispose() => _idp.Dispose();
 
-    private delegate Task<object?> AdminCall(AdminClient admin);
+    internal delegate Task<object?> AdminCall(AdminClient admin);
 
     /// <summary>Every admin call, by the boundary it goes through: typed reads (<c>CallTypedAsync</c>) and writes
     /// (<c>WriteTypedAsync</c>), typed creates (<c>CreateReturningIdAsync</c>), raw reads (<c>GetJsonAsync</c>), raw writes
     /// (<c>WriteRawAsync</c>) and the raw create. <c>Reads</c>: the call decodes a 2xx body. <c>List</c>: its 2xx body is a JSON
-    /// array.</summary>
-    private static readonly (string Name, bool Reads, bool List, AdminCall Run)[] Calls =
+    /// array. Also used by <c>TokenProviderFailureTests</c>.</summary>
+    internal static readonly (string Name, bool Reads, bool List, AdminCall Run)[] Calls =
     {
         ("typed Realms.GetAsync", true, false, async a => await a.Realms.GetAsync("r")),
         ("typed Users.GetAsync", true, false, async a => await a.Users.GetAsync("1")),

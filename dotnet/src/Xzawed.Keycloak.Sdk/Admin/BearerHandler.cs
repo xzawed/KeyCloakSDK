@@ -14,7 +14,17 @@ internal sealed class BearerHandler : DelegatingHandler
     {
         // Before the token provider runs: an admin request it sends meanwhile is its own, not this write's.
         var unread = AdminResponseBody.TakeUnread();
-        var token = await _tokenProvider.GetAccessTokenAsync(ct).ConfigureAwait(false);
+        string token;
+        try
+        {
+            token = await _tokenProvider.GetAccessTokenAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // The provider's failure is its own: the call ends in it unchanged, as the warm-up in AdminClient.CreateAsync does.
+            AdminClient.ObserveTokenProviderFailure();
+            throw;
+        }
         // Of the control characters, .NET refuses only CR and LF (below). NUL, DEL and the other C0 controls went out on the
         // wire as they came, and only the server stopped them — Keycloak 26.6 answers each with 400 (measured: BearerHeaderCaseTests).
         if (HoldsUnsendableControl(token))
