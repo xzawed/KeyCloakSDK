@@ -344,13 +344,21 @@ internal class AdminTokenResponseTest {
         if (hits.isNotEmpty()) wrong += "$label: 쓸 수 없는 토큰으로 admin 요청이 나갔다 — $hits"
         if (grants().size != 1) wrong += "$label: 토큰 요청이 정확히 한 번이 아니다 — ${grants()}"
         if (thrown == null) return row
-        // §4 — 원인 사슬에 하위 라이브러리 인스턴스가 없고(응답을 읽다 난 사슬은 RedactedCause 사본이다), 응답을 인용하지 않는다.
+        expectNoForeignCause(label, thrown, wrong)
+        if (ATR_RT_CANARY.take(10) in thrown.stackTraceToString()) wrong += "$label: 오류가 응답의 refresh_token 을 찍었다"
+        return row
+    }
+
+    // §4 — 원인 사슬에 하위 라이브러리 인스턴스가 없다(응답을 읽다 난 사슬은 RedactedCause 사본이다 — java.*·SDK 타입만).
+    private fun expectNoForeignCause(
+        label: String,
+        thrown: Throwable,
+        wrong: MutableList<String>,
+    ) {
         generateSequence(thrown.cause) { it.cause }.take(16).forEach { c ->
             val n = c.javaClass.name
             if (!n.startsWith("java.") && !n.startsWith("io.github.xzawed.")) wrong += "$label: 원인 사슬에 하위 타입이 샜다 — $n"
         }
-        if (ATR_RT_CANARY.take(10) in thrown.stackTraceToString()) wrong += "$label: 오류가 응답의 refresh_token 을 찍었다"
-        return row
     }
 
     // 내용 코딩(Content-Encoding)이 붙은 토큰 응답도 **결합이 읽는 바이트**로 판정한다(Java 동형). 소비자가 RESTEasy 의 gzip
@@ -517,7 +525,9 @@ internal class AdminTokenResponseTest {
         }
 
     // 갱신 오류(400)의 복구 — 상한 안의 400 은 예전 그대로 TokenManager 가 BadRequestException 을 받아 client_credentials 로 다시
-    // 부여한다. 상한을 넘는 400 은 그 본문을 읽지 않고 거부하므로 복구 없이 실패한다(그 IdP 는 이미 상한을 넘는 본문을 보냈다).
+    // 부여한다. 상한을 넘는 400 은 그 본문을 읽지 않고 거부하므로 복구 없이 실패한다(그 IdP 는 이미 상한을 넘는 본문을 보냈다). 그
+    // 실패의 원인 사슬도 client_credentials 의 상한+1 행(callExpectingRejection)처럼 java.*·SDK 타입뿐이다(§4) — 갱신은 TokenManager 의
+    // 다른 호출 자리(refreshToken)라 그 행이 이 사슬을 대신 보지 못한다.
     @Test
     fun `refresh error above the cap fails instead of being recovered`() =
         runTest {
@@ -537,6 +547,11 @@ internal class AdminTokenResponseTest {
                 admin.users().get("x")
                 val e = assertFailsWith<KeycloakTransportException> { admin.users().get("x") }
                 assertEquals("Admin request failed", e.message)
+                val chain = generateSequence(e.cause) { it.cause }.take(16).map { it.toString() }.toList()
+                println("[AdminTokenResponseTest 갱신 400 = 상한+1] 사슬 $chain")
+                val wrong = mutableListOf<String>()
+                expectNoForeignCause("갱신 400 = 상한+1", e, wrong)
+                assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
             }
             assertEquals(listOf("client_credentials", "refresh_token"), grants(), "상한을 넘는 400 을 BadRequestException 으로 복구했다")
             assertEquals(listOf("GET /admin/realms/r/users/x · Bearer AT-1"), adminHits())

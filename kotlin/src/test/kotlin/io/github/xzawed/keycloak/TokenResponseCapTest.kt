@@ -35,6 +35,9 @@ private const val TRC_KEYCLOAK_MAX_BEARER = 65_459
 private const val TRC_OIDC = "/realms/r/protocol/openid-connect"
 private const val TRC_SPACE = ' '.code.toByte()
 
+// 할당을 재는 작은 본문 — Java `aSmallBodyAllocatesFarBelowTheCap` 와 같은 2 KiB.
+private const val TRC_SMALL = 2048
+
 // ⚠️ 서버는 모든 레인에서 전속력으로 쓴다 — 잰 할당에는 거부한 뒤 연결을 닫는 비용까지 든다. auth 레인은 상한을 넘으면 연결을
 // 끊는다(남은 본문을 읽지 않는다 — BoundedTransport). 예전 운송(HttpURLConnection)은 닫을 때 소켓에 이미 와 있는 청크 바이트를
 // 읽어 풀었고(ChunkedInputStream.hurry) 할당이 그 양의 제곱으로 자라서(실측 2026-10-05 · JDK 21 · Docker Linux: 빠른 서버로는 청크
@@ -172,10 +175,14 @@ internal class TokenResponseCapTest {
             else -> """{"access_token":"$value","token_type":"Bearer","expires_in":300}"""
         }.toByteArray()
 
-    // 레인 호출 하나 — 성공이면 결과의 값을(logout 은 "returned"), 실패면 그 예외를 돌려준다. 취소는 그대로 던진다.
-    private suspend fun call(lane: Lane): Result<String> =
+    // 레인 호출 하나 — 성공이면 결과의 값을(logout 은 "returned"), 실패면 그 예외를 돌려준다. 취소는 그대로 던진다. client 를 주면
+    // 그것으로 부른다(클라이언트 조립을 잰 구간 밖에 두려고).
+    private suspend fun call(
+        lane: Lane,
+        client: AuthClient? = null,
+    ): Result<String> =
         try {
-            val auth = auth()
+            val auth = client ?: auth()
             Result.success(
                 when (lane) {
                     Lane.CLIENT_CREDENTIALS -> auth.clientCredentialsToken().accessToken
@@ -312,9 +319,35 @@ internal class TokenResponseCapTest {
                 expectOverCap("${lane.name} ${huge shr 20} MiB", lane, r, wrong)
                 if (allocated >= limit) wrong += "${lane.name}: ${huge shr 20} MiB 본문 하나에 $allocated 바이트를 할당했다(한도 $limit)"
                 if (!answered) wrong += "${lane.name}: 서버가 응답을 끝내지 않았다"
+                // 전제: SDK 가 읽은 ~1 MiB + 끊기 전 커널 큐에 든 바이트 < 본문 — 실측 REFRESH 서버 최대 7.0 MB(리눅스 rmem·wmem 최대 6–128 MiB·초기 16 MiB·2 CPU)
                 if (!clientLeftEarly || written.get() >= huge) wrong += "${lane.name}: SDK 가 본문을 끝까지 읽었다 — 서버가 ${written.get()} 바이트를 썼다"
             }
             println("[TokenResponseCapTest 거대한 본문]\n  " + table.joinToString("\n  "))
+            assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
+        }
+
+    // 작은 본문(2 KiB, 길이 틀)의 판정은 상한 가까이 할당하지 않는다 — 상한만 한 버퍼를 미리 잡지 않는다(Java
+    // `aSmallBodyAllocatesFarBelowTheCap` 동형 · 한도 상한의 1/4). 거대한 본문의 한도(상한의 8 배)는 미리 잡은 1 MiB 를 못 본다.
+    // 읽기는 Dispatchers.IO 스레드라 모든 스레드를 잰다. 레인마다 먼저 한 번 불러 데우고, 클라이언트는 잰 구간 밖에서 짓는다.
+    @Test
+    fun `a small body allocates far below the cap`() =
+        runTest {
+            val wrong = mutableListOf<String>()
+            val table = mutableListOf<String>()
+            val limit = TRC_CAP / 4
+            for (lane in Lane.entries) {
+                val head = okBody(lane, "good-value")
+                reply = Reply(200, head, (TRC_SMALL - head.size).toLong())
+                call(lane) // 데우기
+                val client = auth()
+                val before = trcAllocatedAllThreads()
+                val r = call(lane, client)
+                val allocated = trcAllocatedAllThreads() - before
+                table += "${lane.name.padEnd(18)} ${reply.size} 바이트 → ${describe(r)} · 할당 $allocated"
+                if (r.getOrNull() != (if (lane == Lane.LOGOUT) "returned" else "good-value")) wrong += "${lane.name}: ${describe(r)}"
+                if (allocated >= limit) wrong += "${lane.name}: ${reply.size} 바이트 본문의 호출이 $allocated 바이트를 할당했다(한도 $limit)"
+            }
+            println("[TokenResponseCapTest 작은 본문 할당]\n  " + table.joinToString("\n  "))
             assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
         }
 
