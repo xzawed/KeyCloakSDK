@@ -60,6 +60,18 @@ internal class MaskingTest {
         assertEquals("prose stays", maskSent("prose stays", listOf("Ā\n")))
     }
 
+    // 지운 꼴이 짧거나 산문 낱말과 같으면 산문도 가린다 — 받아들인 동작이다(판정 2026-10-29, 등록부 `wave4-hardening-kotlin`
+    // (1)). 실패 쪽 문구뿐이고 JWT 는 §5.2 안의 글자뿐이라 닿지 않는다. 길이·비율 문턱을 두면 이 「Bad」·「e」 같은 짧은 꼴이
+    // 다시 샌다 — 문턱이 필요해지면 이 시험을 고치기 전에 그 판정부터 다시 연다.
+    @Test
+    fun `maskSent also masks prose matching a short filtered form - accepted`() {
+        assertEquals(
+            "Token refresh failed: *** refresh_token: *** (rejected)",
+            maskSent("Token refresh failed: Bad refresh_token: Bad (rejected)", listOf("Bad\r")),
+        )
+        assertEquals("Bad r***fr***sh_tok***n: *** (r***j***ct***d)", maskSent("Bad refresh_token: e (rejected)", listOf("é한e")))
+    }
+
     // 폼 인코딩된 꼴 — SDK 는 grant 값을 본문에, 클라이언트 시크릿을 Basic 의 비밀번호 칸에 그 꼴로 싣는다(RFC 6749 §2.3.1). 폼
     // 디코딩 없이 되울리는 IdP 앞에서는 그 꼴이 돌아온다 — 어느 보낸 값이든(grant 입력값만이 아니라) 가린다.
     @Test
