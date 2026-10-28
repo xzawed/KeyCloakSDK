@@ -302,4 +302,60 @@ assert_eq "" "$(cd "$DIR/.." && node -e "
     process.stdout.write(JSON.stringify(want)===JSON.stringify(have)?'':want+' != '+have);});")" \
   '커밋된 미러 정의 이름 집합 = security-config.json 의 rulesets 목록'
 
+# ---- Actions 워크플로 상태 (workflowDrift) ----
+# ⚠️ 워크플로의 활성 상태도 서버 상태다. 실제 결함의 모양(2026-10-28 실측): 지운 브랜치에서
+# 돌았던 `probe-vuln-alerts.yml`·`sonar-diagnose.yml` 이 파일 없이 `active` 로 남아 있었다.
+# 반대쪽 — 커밋된 워크플로가 꺼지면(`disabled_inactivity`·`disabled_manually`) 정기 감사가 실패도
+# 없이 멈춘다. 둘 다 CI 가 볼 수 없다. 축을 섞지 않고, 검출은 어느 판정이 울렸는지로 본다.
+WFD="import('./repo-config.mjs').then(({workflowDrift})=>{"
+LIVEW="[{id:1,path:'.github/workflows/a.yml',state:'active'},{id:9,path:'dynamic/github-code-scanning/codeql',state:'active'}]"
+assert_eq "0" "$(cd "$DIR/.." && node -e "
+  $WFD process.stdout.write(String(workflowDrift($LIVEW,['.github/workflows/a.yml']).length));});")" \
+  'workflowDrift 가 일치를 오탐하지 않는다(dynamic/ 는 GitHub 이 관리해 뺀다)'
+assert_contains "$(cd "$DIR/.." && node -e "
+  $WFD process.stdout.write(workflowDrift([...$LIVEW,{id:2,path:'.github/workflows/ghost.yml',state:'active'}],['.github/workflows/a.yml']).join('|'));});")" \
+  'ghost.yml (id 2): 파일 없이 active' \
+  '파일 없이 active 인 워크플로를 잡는다(지운 브랜치의 유령)'
+assert_eq "0" "$(cd "$DIR/.." && node -e "
+  $WFD process.stdout.write(String(workflowDrift([...$LIVEW,{id:2,path:'.github/workflows/ghost.yml',state:'disabled_manually'}],['.github/workflows/a.yml']).length));});")" \
+  '꺼 둔 유령은 드리프트가 아니다(고친 상태다)'
+assert_contains "$(cd "$DIR/.." && node -e "
+  $WFD process.stdout.write(workflowDrift([{id:1,path:'.github/workflows/a.yml',state:'disabled_inactivity'}],['.github/workflows/a.yml']).join('|'));});")" \
+  'a.yml: 커밋돼 있는데 disabled_inactivity' \
+  '커밋된 워크플로가 꺼진 것을 잡는다(정기 감사가 실패 없이 멈춘다)'
+assert_contains "$(cd "$DIR/.." && node -e "
+  $WFD process.stdout.write(workflowDrift([],['.github/workflows/a.yml']).join('|'));});")" \
+  'a.yml: 커밋돼 있는데 라이브 목록에 없다' \
+  '라이브 목록이 비면 조용히 통과하지 않는다'
+assert_contains "$(cd "$DIR/.." && node -e "
+  $WFD process.stdout.write(workflowDrift($LIVEW,[]).join('|'));});")" \
+  '커밋된 워크플로가 0 개다' \
+  '커밋 목록이 비면 fail-closed 다(대조가 공허해진다)'
+# 포크 — `disabled_fork` 는 포크의 기본값이다. 드리프트로 내면 포크에서 돌린 check 가 전부 빨갛다(Grok 레그 지적).
+assert_eq "0" "$(cd "$DIR/.." && node -e "
+  $WFD process.stdout.write(String(workflowDrift([{id:1,path:'.github/workflows/a.yml',state:'disabled_fork'}],['.github/workflows/a.yml']).length));});")" \
+  'disabled_fork 는 드리프트가 아니다(포크의 기본값)'
+# 확장자는 대소문자를 가리지 않는다 — 가리면 커밋된 `b.YML` 이 꺼져도 목록에서 빠진다(Grok 레그 지적).
+assert_eq ".github/workflows/a.yml|.github/workflows/b.YML|.github/workflows/c.yaml" "$(cd "$DIR/.." && node -e "
+  import('./repo-config.mjs').then(({workflowFiles})=>{
+    process.stdout.write(workflowFiles('.github/workflows/a.yml\n.github/workflows/b.YML\n.github/workflows/c.yaml\n.github/workflows/README.md\n').join('|'));});")" \
+  'workflowFiles 가 .yml·.YML·.yaml 을 고르고 다른 파일은 뺀다'
+# 배선 —판정 함수가 맞아도 main() 이 부르지 않으면 `check` 는 워크플로를 안 본다. 라이브 대조는
+# 네트워크라 여기서 못 돌므로 모양으로 고정한다(주석 처리한 줄은 세지 않는다 — 맨 부분 문자열 금지).
+assert_eq "1" "$(sed -n '/^function main()/,/^}/p' "$CFG" | grep -cE '^[[:space:]]*drift \+= checkWorkflows\(repo\)')" \
+  'check 가 워크플로 상태를 대조한다(main 배선)'
+# 호출부 — checkWorkflows 가 판정을 종료코드로 옮기는가. gh 만 가짜로 끼우고 커밋 목록은 실물이다.
+WFC="import('./repo-config.mjs').then(async ({checkWorkflows})=>{
+  const {execFileSync}=await import('node:child_process');
+  const files=execFileSync('git',['-C','..','ls-files','.github/workflows'],{encoding:'utf8'}).split('\n').filter(f=>/\.ya?ml\$/.test(f));
+  const live=(extra)=>()=>({ok:true,out:[...files.map((p,i)=>JSON.stringify({id:i,path:p,state:'active'})),...extra].join('\n')});"
+assert_contains "$(cd "$DIR/.." && node -e "
+  $WFC process.stdout.write('RC='+checkWorkflows('o/r',live([])));});")" \
+  'RC=0' \
+  'checkWorkflows 가 일치를 0 으로 돌려준다(실물 커밋 목록)'
+assert_contains "$(cd "$DIR/.." && node -e "
+  $WFC process.stdout.write('RC='+checkWorkflows('o/r',live([JSON.stringify({id:99,path:'.github/workflows/ghost.yml',state:'active'})])));});")" \
+  'RC=1' \
+  'checkWorkflows 가 유령을 1 로 돌려준다(드리프트가 종료코드에 닿는다)'
+
 assert_report
