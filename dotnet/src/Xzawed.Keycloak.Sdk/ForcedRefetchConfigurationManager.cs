@@ -20,8 +20,9 @@ namespace Xzawed.Keycloak;
 /// in flight waits for that one; on <see cref="CancellationToken.None"/> under the HTTP client's own timeouts, so a caller
 /// that cancels stops waiting and the refetch still lands; through the retriever every other fetch uses, so the failure
 /// backoff and the empty-key-set check hold. Only a validation that asked waits — one whose key resolves never does.</para>
-/// <para>IdentityModel's manager cannot be handed a configuration, so a refetched one is served in place of the cached one
-/// it supersedes, until that manager installs one of its own.</para>
+/// <para>IdentityModel's manager cannot be handed a configuration, so a refetched one is served in place of the configuration
+/// the refetch was decided against — and only while that manager still serves that one. Whatever it installs next, while the
+/// refetch is still in flight too, is served as it is (measured: <c>ForcedRefetchConfigurationManagerTests</c>).</para>
 /// </remarks>
 internal sealed class ForcedRefetchConfigurationManager : BaseConfigurationManager
 {
@@ -40,7 +41,8 @@ internal sealed class ForcedRefetchConfigurationManager : BaseConfigurationManag
     private Task? _running;
     private BaseConfiguration? _cached;
 
-    /// <summary>A refetched configuration and the cached one it is served in place of — published whole, never changed.</summary>
+    /// <summary>A refetched configuration and the one the refetch was decided against, which it is served in place of —
+    /// published whole, never changed.</summary>
     private StrongBox<(BaseConfiguration Over, BaseConfiguration Fresh)>? _served;
 
     /// <param name="inner">Serves the cached configuration: the cold load and the 12-hour refresh.</param>
@@ -70,6 +72,7 @@ internal sealed class ForcedRefetchConfigurationManager : BaseConfigurationManag
         if (Volatile.Read(ref _cached) is null)
             return; // nothing served yet, so nothing to supersede: the cold load is the fetch, and it spends no window
         TaskCompletionSource? decided = null;
+        BaseConfiguration? decidedAgainst = null;
         Task refetch;
         lock (_gate)
         {
@@ -79,22 +82,25 @@ internal sealed class ForcedRefetchConfigurationManager : BaseConfigurationManag
                 if (_decided is { } last && now - last < RefreshInterval)
                     return; // the window is closed and nothing is in flight: the cached configuration answers
                 _decided = now;
+                // What the refetch will be served in place of. Read now, not when it lands: a configuration the wrapped manager
+                // installs meanwhile is at least as new as the refetch, and must not be shadowed by it.
+                decidedAgainst = Volatile.Read(ref _cached);
                 decided = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 _running = decided.Task;
             }
             refetch = _running;
         }
         if (decided is not null)
-            _ = Task.Run(() => RefetchAsync(decided), CancellationToken.None);
+            _ = Task.Run(() => RefetchAsync(decided, decidedAgainst!), CancellationToken.None); // non-null: checked above
         _asked.Value = refetch;
     }
 
-    private async Task RefetchAsync(TaskCompletionSource done)
+    private async Task RefetchAsync(TaskCompletionSource done, BaseConfiguration decidedAgainst)
     {
         try
         {
             var fresh = await _fetch().ConfigureAwait(false);
-            Volatile.Write(ref _served, new((Volatile.Read(ref _cached)!, fresh))); // set before any refetch was decided
+            Volatile.Write(ref _served, new((decidedAgainst, fresh)));
         }
         catch (Exception)
         {
