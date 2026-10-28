@@ -1580,7 +1580,7 @@ warn_fix() { # <bytes of big.md>
 warn_fix 235930
 _out="$(node "$GUARD" "$TMP" 2>&1 || true)"
 assert_contains "$_out" "::warning::big.md: 235930B 가 전역 상한" "90% 에 닿으면 경고한다"
-assert_not_contains "$_out" "::error::big.md:" "경고 구간은 실패가 아니다"
+assert_not_contains "$_out" "::error::big.md: 235930B" "경고 구간은 실패가 아니다(앵커 없음 오류는 8c 의 정상 출력이다)"
 # 대조군 — 90% 바로 아래(235,929B)는 조용하다.
 warn_fix 235929
 _out="$(node "$GUARD" "$TMP" 2>&1 || true)"
