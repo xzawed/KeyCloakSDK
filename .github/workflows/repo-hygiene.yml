@@ -95,6 +95,8 @@ jobs:
           node-version: '22'
       - name: 가드 자가테스트(변이 3종이 전부 잡히는지)
         run: sh scripts/test/test-check-docs.sh
+      - name: CHANGELOG 원장 자가테스트(검사 8d · 회전)
+        run: sh scripts/test/test-changelog-ledger.sh
 
       # ⚠️ 잔여작업 등록부가 **다시 이력 저장소가 되지 않게** 한다. 예산 없이 256,624 B 까지
       # 자랐고 그중 닫힌 70 건의 하위 서사가 65,347 B 였다(2026-09-22 에 아카이브 태그로 이관).
