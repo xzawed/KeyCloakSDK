@@ -5,6 +5,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join, resolve, relative, dirname } from 'node:path'
+import * as ledger from './lib/changelog-ledger.mjs'
 
 // .superpowers는 gitignore된 작업 스크래치(실제 문서가 아님). .venv/venv/site-packages는
 // 파이썬 가상환경(+ 그 안의 vendored 서드파티 패키지)이라 실제 문서가 아니다 — 이게 없으면
@@ -1244,7 +1245,7 @@ function checkCardinality() {
     if (rel.startsWith('docs/superpowers/')) continue // 진행 계획·이력 문서는 당시 기준이 맞다
     if (rel === 'docs/governance/history.md') continue // 픽스처용 — 운영 트리엔 없음
     if (/^docs\/governance\/verification-log.*\.md$/.test(rel)) continue // 픽스처용 — 운영 트리엔 없음
-    if (rel === 'CHANGELOG.md') continue // 위와 동일 — 항목마다 날짜가 붙은 append-only 이력
+    if (rel === 'CHANGELOG.md' || ledger.VOLUME_RE.test(rel)) continue // 위와 동일 — 항목마다 날짜가 붙은 append-only 이력(월별 보관본 포함)
     // 위와 동일 — docs/README.md 는 **이력 문서들의 색인**이라, 각 줄이 대상 문서의 제목을
     // 인용한다. 제목 자체가 "하네스 5개 언어 확장 설계"처럼 당시 기수를 담고 있고(그게 그 문서의
     // 실제 H1이다) 지도가 그것을 다르게 적으면 오히려 거짓이 된다.
@@ -1796,8 +1797,10 @@ function checkDocBudget() {
 // ⚠️ **숫자 하한(「N개 이상이 예산을 가진다」)은 쓰지 않는다** — 마커를 지우는 PR 이 같은
 // diff 에서 N 도 내리면 그만이라 공허하다. 대신 **분류 규칙 자체**를 단언한다: 추적되는
 // 비픽스처 `.md` 는 전부 예산을 가지며, 예외는 두 **부류**뿐이다.
-//   (1) 부속 원장 — `CHANGELOG.md`. 릴리스마다 자라는 것이 정상이라 예산을 걸면 매 릴리스가
-//       상한을 올리고, 그러면 리뷰가 고무도장이 된다.
+//   (1) 부속 원장 — `CHANGELOG.md` 와 그 월별 보관본 `changelog/<YYYY-MM>.md`. 릴리스마다 자라는
+//       것이 정상이라 예산을 걸면 매 릴리스가 상한을 올리고, 그러면 리뷰가 고무도장이 된다.
+//       ⚠️ 예외는 「크기를 안 본다」가 아니다 — 원장은 검사 8d 가 따로 묶는다(루트 상한 · 보관본
+//       형식 · main 대비 보존). 나가는 길이 상한 인상이 아니라 **회전**이라 고무도장이 생기지 않는다.
 //   (2) 레지스트리에 **게시되는** 언어 패키지 README(`<lang>/README.md`). 이 아홉의 위험은
 //       크기가 아니라 **서로/코드와 어긋나는 것**이라 바이트 상한이 맞는 계측기가 아니다.
 // ⚠️ 예외는 경로 열거가 아니라 **부류**다. `**/README.md` 로 쓰면 `docs/README.md` 와 harness
@@ -1805,8 +1808,9 @@ function checkDocBudget() {
 const BUDGET_EXEMPT_LEDGER = new Set(['CHANGELOG.md'])
 const BUDGET_EXEMPT_PKG_README = /^(java|python|node|go|dotnet|php|rust|ruby|kotlin)\/README\.md$/
 // ⚠️ 부류와 무관한 **전역 트립와이어**. 예외 부류도 무한히 자라서는 안 된다. 값은 타이트한
-// 상한이 아니라 **실제 사고 크기**다 — `remaining-work.md` 가 도달했던 256 KB. 정상적인
-// CHANGELOG 나 패키지 README 는 여기 닿지 않는다(실측 2026-09-22: CHANGELOG 27,309 B = 10.4%).
+// 상한이 아니라 **실제 사고 크기**다 — `remaining-work.md` 가 도달했던 256 KB. ⚠️ 「정상적인
+// CHANGELOG 는 여기 닿지 않는다」(2026-09-22: 27,309 B = 10.4%)는 **틀렸다** — 항목이 길어지자 한 달
+// 만에 214,445 B(82%)가 됐다(2026-10-28). 그래서 원장은 이제 검사 8d 의 루트 상한이 묶는다.
 // ⚠️ **이것이 예산보다 세다** — 래칫이 승인한 `max-bytes` 라도 이 수를 넘으면 실패한다.
 // 두 기제가 조용히 어긋나지 않도록 아래에서 `max-bytes > 이 수` 자체를 실패로 잡는다
 // (현재 최대 예산 192,335 B 라 여유는 69,809 B 뿐이다 — 래칫이 먼저 여기 닿는다).
@@ -1845,7 +1849,7 @@ function checkBudgetCoverage() {
         `${rel}: ${raw}B 가 전역 상한 ${DOC_TRIPWIRE_BYTES}B 의 ${Math.floor((raw * 100) / DOC_TRIPWIRE_BYTES)}% 다 — 넘으면 실패한다. 완료된 서사를 이력/아카이브로 옮길 계획을 지금 세워라`,
       )
     }
-    if (BUDGET_EXEMPT_LEDGER.has(rel) || BUDGET_EXEMPT_PKG_README.test(rel)) {
+    if (BUDGET_EXEMPT_LEDGER.has(rel) || ledger.VOLUME_RE.test(rel) || BUDGET_EXEMPT_PKG_README.test(rel)) {
       exempt++
       continue
     }
@@ -1866,6 +1870,193 @@ function checkBudgetCoverage() {
   // 예외 **부류**가 비면 규칙이 무의미해진 것이다(부류를 지우고 통과하는 길을 막는다).
   if (exempt === 0) {
     errors.push(`검사 8c: 예외 부류에 해당하는 문서가 하나도 없다 — 부류 정의가 낡았나?`)
+  }
+}
+
+// 검사 8d — CHANGELOG 원장. 8c 가 원장을 예산에서 뺀 이유(「릴리스마다 올리면 고무도장」)는 옳았지만
+// 그 자리에 아무 상한도 없어서, 항목이 길어지자 한 달 만에 27 KB → 214 KB 가 됐다(2026-10-28).
+// 원장은 이제 **루트 상한 + 월별 보관본**으로 산다(파서·상수: scripts/lib/changelog-ledger.mjs).
+// 나가는 길은 회전(`node scripts/changelog-rotate.mjs`)뿐이고, 상한을 올리는 분기는 없다.
+//   구조 — 제목 종류 · 최신순 · 보관본 머리와 달 · 날짜 하나는 한 곳 · 제목 유일 · 색인 줄 = 실제 보관본
+//   크기 — 루트 ≤ ROOT_MAX_BYTES (날짜가 하나뿐이면 예외 — 날짜는 쪼개지 않는다)
+//   항목 — `[Unreleased]` 와 기준에 없던 새 절의 항목 하나 ≤ BULLET_MAX_BYTES
+//   보존 — 기준의 절은 사라지지 않는다 · 보관본은 고치지 않는다 · 옮기면서 고치지 않는다 · 새 절은 루트에만
+// ⚠️ **보존의 기준은 main 의 끝이 아니라 `HEAD` 와 main 의 merge-base** 다. 끝과 비교하면 main 이
+// 새 절을 얻은 뒤 낡은 브랜치에서 돌릴 때 「절이 사라졌다」는 거짓 빨강이 난다. PR CI 는 병합 커밋을
+// 체크아웃하므로 merge-base 가 곧 main 의 끝이다. 저장소 안인데 기준을 못 잡으면 스킵이 아니라 실패다.
+// ⚠️ 원장 꼴(`## [Unreleased]`)이 없는 CHANGELOG 픽스처(검사 6 의 회귀)는 8d 대상이 아니다 — 단,
+// 이 저장소 자신에서는 그 제목이 사라지는 것 자체가 실패다(지우는 것으로 8d 를 끌 수 없다).
+function checkLedger() {
+  const R = ledger.ROOT_FILE
+  const rootPath = join(ROOT, R)
+  const selfTree = existsSync(join(ROOT, 'scripts/check-docs.mjs'))
+  const E = (m) => errors.push(`검사 8d: ${m}`)
+  // ⚠️ 저장소 자신에서 원장이 없으면 실패다 — 「파일이 없으면 대상 아님」은 원장을 통째로 지우는
+  // 것으로 8d 를 끄는 길이었다(독립 레그 주장 → 재현 RED, 2026-10-28).
+  if (!existsSync(rootPath)) {
+    if (selfTree) E(`원장(${R})이 없다 — 이 저장소의 원장은 지우지 않는다`)
+    return
+  }
+  // 줄 끝을 LF 로 맞춰 읽는다. 이 저장소는 `*.md eol=lf` 라 CRLF 가 생기지 않지만, 체크아웃 설정
+  // 하나로 보관본 머리·보존 대조가 거짓 빨강이 되는 구조였다(재현 RED). git 의 blob 은 원래 LF 다.
+  const readLF = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
+  const rootText = readLF(rootPath)
+  const root = ledger.parseLedgerFile(rootText)
+  if (!root.unreleased.length && !selfTree) return
+  if (root.unreleased.length !== 1) E(`${R}: \`## [Unreleased]\` 가 ${root.unreleased.length}개다 — 원장은 정확히 하나를 가진다`)
+  for (const b of root.unknown) E(`${R}: 「${b.heading}」 — 원장의 ## 제목은 \`[Unreleased]\` 와 \`[<판>] - <YYYY-MM-DD> …\` 뿐이다`)
+
+  const vols = []
+  const dir = join(ROOT, ledger.VOLUME_DIR)
+  if (existsSync(dir)) {
+    for (const f of readdirSync(dir).sort()) {
+      const rel = `${ledger.VOLUME_DIR}/${f}`
+      const m = ledger.VOLUME_RE.exec(rel)
+      if (!m) {
+        E(`${rel}: ${ledger.VOLUME_DIR}/ 에는 월별 보관본(<YYYY-MM>.md)만 둔다`)
+        continue
+      }
+      const v = ledger.parseLedgerFile(readLF(join(ROOT, rel)))
+      if (v.head !== ledger.volumeHead(m[1]))
+        E(`${rel}: 머리가 생성된 형식과 다르다 — 보관본에는 옮겨 온 절 말고 아무것도 쓰지 않는다(만드는 것은 \`node scripts/changelog-rotate.mjs\`)`)
+      for (const b of [...v.unreleased, ...v.unknown]) E(`${rel}: 「${b.heading}」 — 보관본에는 릴리스 절만 있다`)
+      for (const b of v.releases) if (b.month !== m[1]) E(`${rel}: 「${b.heading}」 은 ${b.month} 의 절이다 — 보관본은 그 달의 절만 담는다`)
+      vols.push({ rel, month: m[1], releases: v.releases })
+    }
+  }
+  const newestFirst = (list, where) => {
+    for (let i = 1; i < list.length; i++) {
+      if (list[i].date > list[i - 1].date) {
+        E(`${where}: 「${list[i].heading}」 이 앞 절보다 새 날짜다 — 원장은 최신순이다`)
+        return
+      }
+    }
+  }
+  newestFirst(root.releases, R)
+  for (const v of vols) newestFirst(v.releases, v.rel)
+  const rootOldest = root.releases.length ? root.releases[root.releases.length - 1].date : null
+  if (rootOldest) {
+    for (const v of vols) {
+      const hit = v.releases.find((b) => b.date >= rootOldest)
+      if (hit) E(`${v.rel}: 「${hit.heading}」 이 루트의 가장 오래된 날짜(${rootOldest})보다 오래되지 않았다 — 날짜 하나는 한 곳에만 산다`)
+    }
+  }
+  const seen = new Map()
+  for (const [where, list] of [[R, root.releases], ...vols.map((v) => [v.rel, v.releases])]) {
+    for (const b of list) {
+      if (seen.has(b.heading)) E(`「${b.heading}」 이 ${seen.get(b.heading)} 와 ${where} 에 둘 다 있다 — 절 하나는 한 곳에만 산다`)
+      else seen.set(b.heading, where)
+    }
+  }
+  const months = vols.map((v) => v.month).sort().reverse()
+  const idx = root.head.split(/(?<=\n)/).filter((l) => l.startsWith(ledger.INDEX_PREFIX))
+  if (months.length && (idx.length !== 1 || idx[0] !== ledger.indexLine(months)))
+    E(`${R}: 보관본 색인 줄이 실제 보관본과 다르다 — 기대: ${ledger.indexLine(months).trim()}`)
+  if (!months.length && idx.length) E(`${R}: 보관본이 없는데 색인 줄이 있다`)
+
+  const rootBytes = ledger.bytes(rootText)
+  if (rootBytes > ledger.ROOT_MAX_BYTES && new Set(root.releases.map((b) => b.date)).size > 1)
+    E(
+      `${R}: ${rootBytes}B > 원장 루트 상한 ${ledger.ROOT_MAX_BYTES}B — \`node scripts/changelog-rotate.mjs\` 로 가장 오래된 날짜의 절을 ` +
+        `${ledger.VOLUME_DIR}/<YYYY-MM>.md 로 옮겨라(내용은 그대로 옮겨지고, 이 상한을 올리는 길은 없다)`,
+    )
+  // 회전은 날짜 절만 옮긴다 — 머리말과 [Unreleased] 만으로 넘치면 날짜가 없어도·하나여도 실패다. 「날짜 하나뿐이면
+  // 예외」가 날짜 0 개(=[Unreleased] 만 있는 루트)까지 통과시켰다(독립 레그 2 차 → 재현 RED).
+  const fixedBytes = ledger.bytes(root.head + root.unreleased.map((b) => b.text).join(''))
+  if (fixedBytes > ledger.ROOT_MAX_BYTES)
+    E(`${R}: 머리말과 [Unreleased] 만으로 ${fixedBytes}B > 원장 루트 상한 ${ledger.ROOT_MAX_BYTES}B — 회전으로 줄일 수 없다(회전은 날짜 절만 옮긴다). 릴리스해 항목을 날짜 절로 내리거나 줄여라`)
+
+  // 항목은 목록 항목·문단·제목 줄 전부다(`itemsOf`). `exempt` 는 기준의 [Unreleased] 에 글자 그대로 있던
+  // 항목이다 — 이미 들어와 있던 글이 무관한 PR 도, 그 글을 날짜 절로 옮기는 범프도 막지 않게 한다(독립 레그
+  // 1·2 차 → 재현 RED). 고치면 새 글이다.
+  const capBullets = (b, exempt = new Set()) => {
+    for (const item of ledger.itemsOf(b.text)) {
+      if (exempt.has(item)) continue
+      const n = ledger.bytes(item)
+      if (n > ledger.BULLET_MAX_BYTES)
+        E(
+          `${R} 「${b.heading}」: 항목 ${n}B > ${ledger.BULLET_MAX_BYTES}B — 「${item.slice(0, 48).trim()}…」. ` +
+            `측정·메커니즘은 PR 본문으로 보내고, 항목에는 무엇이 바뀌었고 누가 영향받는지와 PR 링크만 적는다`,
+        )
+    }
+  }
+  // 기준(merge-base) — 보존 · 차분 상한 · 절 성장 제한이 함께 쓴다. 기준을 못 읽어도 [Unreleased]
+  // 상한은 돈다(그때는 면제 집합이 비어 전부 센다) — 호출이 한 곳이라 분기마다 빠뜨릴 수 없다.
+  let baseParsed = null
+  const ref = inGitRepo() ? baselineRef() : null
+  if (!ref) {
+    if (selfTree && inGitRepo()) E('main 기준을 못 잡아 원장 보존 검사가 공허하다(체크아웃이 main 을 가져왔는지 확인할 것)')
+  } else {
+    let base = ref
+    try {
+      base = gitOut(['merge-base', 'HEAD', ref]).trim() || ref
+    } catch {
+      /* HEAD 가 없는 저장소 — main 끝과 비교한다 */
+    }
+    // 기준의 루트·보관본 목록·각 보관본을 **한 번에** 읽는다 — 어느 하나라도 실패하면 같은 오류로 닫는다.
+    // 목록 읽기만 따로 삼키면 보관본이 하나도 없는 것처럼 보여 보관본 삭제가 조용히 지나갔다(독립 레그 3 차).
+    try {
+      const files = gitOut(['ls-tree', '-r', '--name-only', base, '--', ledger.VOLUME_DIR]).split('\n').filter((f) => ledger.VOLUME_RE.test(f))
+      baseParsed = {
+        base,
+        ...ledger.parseLedgerFile(gitOut(['show', `${base}:${R}`])),
+        volumes: files.map((f) => ledger.parseLedgerFile(gitOut(['show', `${base}:${f}`]))),
+      }
+    } catch {
+      // ⚠️ 저장소 자신에서는 「기준에 원장이 없다」를 새 원장으로 넘기지 않는다 — 읽기 실패와 부재가 같은
+      // 분기로 가서 보존 검사가 조용히 꺼졌다(독립 레그 주장 → 재현 RED). 이 저장소에는 늘 원장이 있었다.
+      if (selfTree) E(`기준(main)에서 원장을 읽지 못했다(${base}:${R} 또는 그 보관본) — 「새 원장」으로 넘기지 않는다(체크아웃이 main 의 이력을 가져왔는지 확인할 것)`)
+    }
+  }
+  const baseUnrel = new Set((baseParsed?.unreleased ?? []).flatMap((b) => ledger.itemsOf(b.text)))
+  for (const b of root.unreleased) capBullets(b, baseUnrel)
+  if (!baseParsed) return
+  const base = baseParsed.base
+  // ⚠️ 보관본 절은 **원문 그대로** 견준다 — 정규화(`fromVolume`)해서 견주면 `](../x)` → `](x)` 처럼 링크를
+  // 깨는 고침이 같아 보였다(독립 레그 2 차 → 재현 RED). 옮기기는 회전기가 만들 꼴(`toVolume`)과 견준다.
+  const baseRoot = new Map(baseParsed.releases.map((b) => [b.heading, b.text]))
+  const baseVol = new Map()
+  let baseCount = baseParsed.releases.length
+  for (const v of baseParsed.volumes) {
+    for (const b of v.releases) {
+      baseVol.set(b.heading, b.text)
+      baseCount++
+    }
+  }
+  // 기준에 같은 제목이 둘이면 Map 이 하나를 잃어 보존 대조가 그 절을 못 본다 — 실패로 닫는다(독립 레그 2 차).
+  if (new Set([...baseRoot.keys(), ...baseVol.keys()]).size !== baseCount)
+    E(`기준에 같은 제목이 둘 이상 있다(${base}) — 보존 대조가 그중 하나를 잃는다. 기준의 원장부터 고쳐라`)
+  const treeRoot = new Map(root.releases.map((b) => [b.heading, b.text]))
+  const treeVol = new Map()
+  for (const v of vols) for (const b of v.releases) treeVol.set(b.heading, b.text)
+  for (const [h, t] of baseVol) {
+    if (!treeVol.has(h)) E(`기준의 보관본 절 「${h}」 이 보관본에서 사라졌다 — 보관본은 지우지도 되돌리지도 않는다`)
+    else if (treeVol.get(h) !== t)
+      E(`보관본 절 「${h}」 이 기준과 다르다 — 보관본은 고치지 않는다(바로잡을 것이 있으면 그 사실을 [Unreleased] 의 새 항목으로 쓴다)`)
+  }
+  for (const [h, t] of baseRoot) {
+    if (treeRoot.has(h)) continue
+    if (!treeVol.has(h))
+      E(`기준의 절 「${h}」 이 사라졌다 — 원장은 지우지 않는다(옮기려면 \`node scripts/changelog-rotate.mjs\`). 제목만 고쳤어도 같다 — 나간 절의 제목은 보존 대조의 신원이라 바꾸지 않는다`)
+    else if (treeVol.get(h) !== ledger.toVolume(t)) E(`「${h}」 을 보관본으로 옮기면서 내용이 바뀌었다 — 옮기기와 고치기를 한 변경에 섞지 않는다`)
+  }
+  for (const h of treeVol.keys()) {
+    if (!baseVol.has(h) && !baseRoot.has(h)) E(`「${h}」 은 기준에 없던 절인데 보관본에 있다 — 새 절은 루트에만 들어간다`)
+  }
+  // 머리말에 긴 글을 덧붙여 상한을 피하지 못한다 — 색인 줄(회전이 바꾼다)을 뺀 머리말의 성장을 잰다(PM 2 차 패스).
+  const noIndex = (head) => head.split(/(?<=\n)/).filter((l) => !l.startsWith(ledger.INDEX_PREFIX)).join('')
+  const headGrew = ledger.bytes(noIndex(root.head)) - ledger.bytes(noIndex(baseParsed.head))
+  if (headGrew > ledger.BULLET_MAX_BYTES)
+    E(`${R}: 머리말이 기준보다 ${headGrew}B 자랐다 — 머리말에는 원장 글을 쓰지 않는다(새 항목은 [Unreleased] 로, 한 변경에 ${ledger.BULLET_MAX_BYTES}B 까지)`)
+  for (const b of root.releases) {
+    if (!baseRoot.has(b.heading) && !baseVol.has(b.heading)) capBullets(b, baseUnrel)
+    // 이미 나간 절에 긴 새 글을 덧붙여 항목 상한을 피하지 못하게 한다(독립 레그 주장 → 재현 RED). 오탈자
+    // 수정처럼 크기가 그대로인 고침은 지나가야 하므로 항목 대조가 아니라 **절의 성장**을 잰다.
+    else if (baseRoot.has(b.heading)) {
+      const grew = ledger.bytes(b.text) - ledger.bytes(baseRoot.get(b.heading))
+      if (grew > ledger.BULLET_MAX_BYTES)
+        E(`「${b.heading}」 이 기준보다 ${grew}B 자랐다 — 이미 나간 절에는 새 글을 덧붙이지 않는다(새 항목은 [Unreleased] 로, 한 변경에 ${ledger.BULLET_MAX_BYTES}B 까지)`)
+    }
   }
 }
 
@@ -2118,6 +2309,7 @@ checkMatrixClaims()
 checkCardinality()
 checkDocBudget()
 checkBudgetCoverage()
+checkLedger()
 checkDocsMap()
 
 // 검사 7 — fact/anchor 최저치(floor, --min-facts/--min-anchors로 opt-in). 앵커 주석 하나를
