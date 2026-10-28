@@ -26,11 +26,9 @@ require_relative "keycloak_sdk/client"
 module KeycloakSdk
 end
 
-# ⚠️ rack-oauth2 HTTP 타임아웃은 프로세스 전역(Rack::OAuth2.http_config)이라 per-client 미세제어가
-# 불가하다. 과거엔 require 시점에 하드코딩 10초로 박아 (a) 단순 require만으로 전역 상태를 변조하고
-# (b) Config 타임아웃을 무시했다. 이제는 AuthClient#initialize에서 Config의 connect/read 타임아웃으로
-# 설정한다(auth_client.rb) — require 부작용 제거 + config 반영. 전역이라는 근본 한계는 남지만
-# "SDK auth를 실제로 쓸 때"로 스코프가 좁혀진다(require 시점 아님).
-# ⚠️ SDK 자신의 토큰 요청은 이 전역 연결을 타지 않는다 — 그랜트는 SDK 커넥션(`Http.build`, 클라이언트마다 Config
-# 타임아웃)으로 직접 보낸다(응답 상한 때문). rack-oauth2 의 HTTP 연결을 쓰는 SDK 경로는 이제 없다(인가 URL 조립은 네트워크가 없다).
+# ⚠️ rack-oauth2 의 HTTP 설정(`Rack::OAuth2.http_config`)은 프로세스 전역이고 먼저 건 쪽이 이긴다 — SDK 는 그것을
+# 걸지 않는다. require 때도(과거엔 하드코딩 10초로 전역을 변조했다), AuthClient 생성 때도(걸면 호스트 앱이 나중에 건
+# 블록이 조용히 버려진다). SDK 의 요청은 그 연결을 타지 않는다 — 그랜트·introspection·logout·JWKS·admin 은 전부 SDK
+# 커넥션(`Http.build`, 클라이언트마다 Config 타임아웃)으로 나가고 인가 URL 조립은 네트워크가 없다
+# (`spec/unit/host_http_config_spec.rb`).
 require "rack/oauth2"

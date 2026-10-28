@@ -229,22 +229,24 @@ RSpec.describe KeycloakSdk::AuthClient do
     end
   end
 
-  describe "rack-oauth2 timeout configuration" do
-    it "configures rack-oauth2 timeouts from Config on construction (not a require-time hardcode)" do
-      # http_config를 캡처해 블록을 직접 검증한다 — 전역 Rack::OAuth2.http_client에 의존하면
-      # 테스트 순서/Faraday 버전에 취약(전역 상태). 블록에 가짜 conn을 넘겨 config 값 반영을 확인.
-      captured = nil
-      allow(Rack::OAuth2).to receive(:http_config) { |&blk| captured = blk }
+  # rack-oauth2 의 HTTP 설정은 프로세스 전역이고 먼저 건 쪽이 이긴다(`@@http_config ||= block`) — SDK 가 걸면 호스트
+  # 앱이 나중에 건 블록이 조용히 버려진다. SDK 의 요청은 그 연결을 타지 않으므로(`host_http_config_spec.rb`) 걸지 않는다.
+  describe "rack-oauth2's process-global http_config" do
+    before { Rack::OAuth2.reset_http_config! }
+    after { Rack::OAuth2.reset_http_config! }
+
+    it "is left to the host: a block set after constructing the client is the one rack-oauth2 uses",
+       :aggregate_failures do
       described_class.new(
         config: KeycloakSdk::Config.new(server_url: "https://kc", realm: "r", client_id: "c",
                                         connect_timeout: 3, read_timeout: 7),
         http: http, jwt_validator: jwt_validator
       )
-      options = Struct.new(:open_timeout, :timeout).new
-      conn = Struct.new(:options).new(options)
-      captured.call(conn)
-      expect(options.open_timeout).to eq(3)
-      expect(options.timeout).to eq(7)
+      host_ran = []
+      Rack::OAuth2.http_config { |conn| host_ran << (conn.options.timeout = 42) }
+      conn = Rack::OAuth2.http_client
+      expect(host_ran).to eq([42])
+      expect([conn.options.open_timeout, conn.options.timeout]).to eq([nil, 42]) # Config 의 3·7 이 아니다
     end
   end
 end
