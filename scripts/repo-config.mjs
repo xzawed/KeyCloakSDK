@@ -256,8 +256,10 @@ export function workflowDrift(live, committed) {
   return out
 }
 
-function checkWorkflows(repo) {
-  const r = gh(['api', '--paginate', `repos/${repo}/actions/workflows`, '--jq', '.workflows[] | {id, path, state}'])
+// `run` 은 자가테스트가 가짜 gh 를 끼우는 자리다 — 판정이 맞아도 이 함수가 그 결과를 종료코드로
+// 옮기지 않으면 `check` 는 초록이다(변이로 실측: 이 자리 없이는 `return 0` 이 살았다).
+export function checkWorkflows(repo, run = gh) {
+  const r = run(['api', '--paginate', `repos/${repo}/actions/workflows`, '--jq', '.workflows[] | {id, path, state}'])
   if (!r.ok) {
     console.log('::error::Actions 워크플로 목록을 조회하지 못했다.')
     console.log(r.out)

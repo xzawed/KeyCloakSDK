@@ -335,5 +335,18 @@ assert_contains "$(cd "$DIR/.." && node -e "
 # 네트워크라 여기서 못 돌므로 모양으로 고정한다(주석 처리한 줄은 세지 않는다 — 맨 부분 문자열 금지).
 assert_eq "1" "$(sed -n '/^function main()/,/^}/p' "$CFG" | grep -cE '^[[:space:]]*drift \+= checkWorkflows\(repo\)')" \
   'check 가 워크플로 상태를 대조한다(main 배선)'
+# 호출부 — checkWorkflows 가 판정을 종료코드로 옮기는가. gh 만 가짜로 끼우고 커밋 목록은 실물이다.
+WFC="import('./repo-config.mjs').then(async ({checkWorkflows})=>{
+  const {execFileSync}=await import('node:child_process');
+  const files=execFileSync('git',['-C','..','ls-files','.github/workflows'],{encoding:'utf8'}).split('\n').filter(f=>/\.ya?ml\$/.test(f));
+  const live=(extra)=>()=>({ok:true,out:[...files.map((p,i)=>JSON.stringify({id:i,path:p,state:'active'})),...extra].join('\n')});"
+assert_contains "$(cd "$DIR/.." && node -e "
+  $WFC process.stdout.write('RC='+checkWorkflows('o/r',live([])));});")" \
+  'RC=0' \
+  'checkWorkflows 가 일치를 0 으로 돌려준다(실물 커밋 목록)'
+assert_contains "$(cd "$DIR/.." && node -e "
+  $WFC process.stdout.write('RC='+checkWorkflows('o/r',live([JSON.stringify({id:99,path:'.github/workflows/ghost.yml',state:'active'})])));});")" \
+  'RC=1' \
+  'checkWorkflows 가 유령을 1 로 돌려준다(드리프트가 종료코드에 닿는다)'
 
 assert_report
