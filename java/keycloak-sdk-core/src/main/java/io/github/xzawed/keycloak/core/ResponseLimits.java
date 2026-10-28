@@ -11,7 +11,8 @@ public final class ResponseLimits {
    * 토큰 엔드포인트(client_credentials·refresh_token·authorization_code 그랜트 — auth 레인과 admin 레인의 자기 토큰 부여)·
    * introspection·logout 응답 본문을 이 바이트 수까지만 받아들인다 — 오류 상태의 본문도 같다. 넘으면 그 호출은 나머지를 요청하지
    * 않고 {@link io.github.xzawed.keycloak.core.exception.KeycloakTransportException} 으로 실패한다. 내용 코딩을 푸는 전송(admin 의
-   * RESTEasy gzip 해제)에서는 푼 바이트를 센다. ⚠️ 이 값이 묶는 것은 SDK 가 요청하고 쥐는 <b>본문</b> 바이트(이 값+1 까지)다 —
+   * RESTEasy gzip 해제)에서 푼 바이트를 세는 것은 결합이 읽는 2xx 본문뿐이다 — 오류 상태의 본문은 받은(내용 코딩된) 바이트로 센다(풀기
+   * 전에 재는 응답 필터 — {@code TokenResponseGuard}). ⚠️ 이 값이 묶는 것은 SDK 가 요청하고 쥐는 <b>본문</b> 바이트(이 값+1 까지)다 —
    * 응답의 틀(헤더·청크 크기 줄·트레일러)은 {@link #MAX_LINE_LENGTH}·{@link #MAX_HEADER_COUNT} 가 묶는다.
    *
    * <p>Keycloak 26.6 기본 설정(start-dev 로 실측 2026-10-03)이 받아들이는 가장 긴 Bearer(65,459 바이트 — 한 바이트 더 길면 HTTP
