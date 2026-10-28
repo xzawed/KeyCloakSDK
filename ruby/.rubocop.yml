@@ -26,8 +26,10 @@ Metrics/AbcSize:
 # 상한 — rack-oauth2 는 자기 연결로 본문을 통째로 읽는다). 클라이언트 인증·rack-oauth2 의 응답 규칙이 이 클래스로 왔다.
 # 140 → 144 (2026-10-22): introspect·logout 경계가 Faraday 밖 예외도 감싸며 SDK 오류를 그대로 통과시키는 두 줄씩
 # (net-http 0.10 의 응답 헤더 검증 ArgumentError 가 raw 로 샜다 — `spec/unit/net_http_header_validation_spec.rb`).
+# 144 → 142 (2026-10-29): `Rack::OAuth2.http_config` 를 걸던 메서드를 지워 AuthClient 가 137 이다 — 이제 가장 긴
+# 클래스는 `spec/support/body_server.rb`(142)라 거기까지만 내린다.
 Metrics/ClassLength:
-  Max: 144
+  Max: 142
 # 키워드 인자는 이름이 곧 문서화라 위치 인자 목록과 달리 가독성을 해치지 않는다
 # (예: Config#initialize의 8개 키워드 인자).
 Metrics/ParameterLists:
