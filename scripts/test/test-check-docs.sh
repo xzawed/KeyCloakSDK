@@ -1557,7 +1557,9 @@ assert_ok test -n "$_loaded"
 slack_fix $((_loaded + 301))
 _out="$(node "$GUARD" "$TMP" 2>&1 || true)"
 assert_contains "$_out" "slack.md: 적재 ${_loaded}B 가 doc-budget" "여유 301B 를 8e 가 지목한다"
-assert_contains "$_out" "max-bytes=${_loaded}" "내릴 값(현재 적재)을 인쇄한다"
+# ⚠️ 닫는 괄호까지 본다 — `max-bytes=33` 은 옛 예산 `max-bytes=334` 의 부분 문자열이라, 괄호가 없으면
+#    「옛 값을 인쇄한다」는 변이가 이 단언을 그대로 통과했다(probe.sh SILENT, 2026-10-28).
+assert_contains "$_out" "max-bytes=${_loaded})" "내릴 값(현재 적재)을 인쇄한다"
 
 # (b) 경계 — 정확히 300B 는 통과한다(상한이 실제로 300 임을 고정한다).
 slack_fix $((_loaded + 300))

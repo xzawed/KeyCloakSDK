@@ -1,9 +1,10 @@
 # Deployment Guide (DEPLOY)
-<!-- doc-budget: max-bytes=75972 -->
-<!-- 79700 → 75972 (2026-10-28): 역할이 끝난 이력 산문을 뺐다 — 0.1.0 회차의 증명 기록(실행 번호·
+<!-- doc-budget: max-bytes=76133 -->
+<!-- 79700 → 76133 (2026-10-28): 역할이 끝난 이력 산문을 뺐다 — 0.1.0 회차의 증명 기록(실행 번호·
      투명성 로그·바깥 설치)과 §7 의 Rust·npm 사건 문단(교훈은 §5 표와 §2-B 에 이미 있다), §0 의 옛 권고
      순서 인용. 남긴 것: 규칙 한 줄(메커니즘은 그것을 실행한 run 이 증명한다)과 원문 포인터
-     `git show eeea378:DEPLOY.md`. 검사 8e 가 이 인하를 강제했다. -->
+     `git show eeea378:DEPLOY.md`. 들어온 것: §4 step 1 의 CHANGELOG 한 문장(+161B) — 그 사실은 CHANGELOG
+     끝의 낡은 주석에만 있었고(Kotlin 태그 누락), 주석은 같은 커밋에서 지웠다. 검사 8e 가 이 인하를 강제했다. -->
 <!-- 79510 → 79700 (2026-09-09, +190B · 상한 300B 안이므로 사람 판정 아님). 조건 (1) 교환:
      같은 PR 이 「`release-readiness.sh <lang>` 을 치라」는 **거짓 안내를 지우고**, 그 주장을
      다시 재는 가드를 붙였다(`test-deploy-md.sh` 가 `--version` 없는 호출을 거부한다).
@@ -407,7 +408,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 ## §4. Release Procedure Summary
 
 0. **Decide the version** — for a language's *first* release, make it a release candidate (§7), not `0.1.0`. After 1.0 the number is SemVer against the **published** API surface, which is what step 9's baselines measure: *removed* is **major**, additions-only is **minor**, nothing visible is **patch**. ⚠️ **Two of the seven gated lanes see less, so there the call is human**: node's api-extractor diff reads only lines that *disappeared*, so a **new required field** on an input interface passes as additive though it breaks callers; ruby's `yard diff` looks for deletions (`^D `) alone, so a changed signature is invisible.
-1. **Version bump** (if the language is subject to manual bump — see the §1 table) — commit. The tag↔version guard will reject a mismatch, so this must land before the tag.
+1. **Version bump** (if the language is subject to manual bump — see the §1 table) — commit. The tag↔version guard will reject a mismatch, so this must land before the tag. The same commit moves that language's `CHANGELOG.md` `[Unreleased]` bullets into a new `## [<ver>] - <YYYY-MM-DD> (<Langs>)` section right under `[Unreleased]`.
 
    ⚠️ **The same commit must also move that language's README banner and its `df_published_version`.** Each `<lang>/README.md` ships inside the package and *becomes the registry landing page*, and its banner states a **version** — so **every** release moves it, not only a newly added language. Fixing it afterwards costs a new version, because registries pin the README per version; this repo has paid that three times (`0.1.1` #318 · `0.2.1` a7629ef · `1.0.0` #343). `test-publication-claims.sh` now asserts banner ↔ `df_published_version` for all nine, so the SSOT moves in this same commit. Two things to correct:
    - the banner — state the version being released (for an RC, that it *is* published);
