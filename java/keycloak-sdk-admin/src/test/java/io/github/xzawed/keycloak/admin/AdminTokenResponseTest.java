@@ -30,6 +30,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
+import java.util.zip.Deflater;
 import java.util.zip.GZIPOutputStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -243,6 +244,23 @@ class AdminTokenResponseTest {
       z.write(plain);
     }
     return out.toByteArray();
+  }
+
+  /** 압축하지 않은 gzip(저장 블록) — 선 위의 바이트가 푼 바이트보다 많다(gzip 머리·꼬리와 블록마다의 머리). */
+  private static byte[] gzipStored(byte[] plain) throws IOException {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    try (GZIPOutputStream z = new StoredGzipOutputStream(out)) {
+      z.write(plain);
+    }
+    return out.toByteArray();
+  }
+
+  /** 저장 블록만 쓰는 gzip — 압축 수준은 {@code DeflaterOutputStream} 의 protected {@code def} 라 하위 클래스에서만 바꾼다. */
+  private static final class StoredGzipOutputStream extends GZIPOutputStream {
+    StoredGzipOutputStream(ByteArrayOutputStream out) throws IOException {
+      super(out);
+      def.setLevel(Deflater.NO_COMPRESSION);
+    }
   }
 
   /** JSON 뒤를 JSON 공백으로 채워 정확히 {@code size} 바이트로 — 결합에게는 같은 값이다. */
@@ -743,5 +761,68 @@ class AdminTokenResponseTest {
     }
     assertEquals(List.of("client_credentials", "refresh_token"), grants(), "상한+1: 다시 부여하지 않는다");
     assertEquals(List.of("GET /admin/realms/r/users/x · Bearer AT-1"), adminHits(), "상한+1: admin 요청이 더 나가면 안 된다");
+  }
+
+  /**
+   * 오류 상태의 토큰 응답 본문은 <b>받은</b>(내용 코딩된) 바이트로 상한을 잰다 — {@code resteasy.allowGzip=true} 에서도. 그 상한은 응답
+   * 필터가 gzip 해제(ReaderInterceptor) 앞에서 재고, RESTEasy 는 오류 본문을 풀지 않고 받은 그대로 버퍼에 담는다(쥐는 바이트가 상한에
+   * 묶여 메모리 위험은 없다). 결합이 읽는 2xx 는 푼 바이트로 잰다({@link #tokenResponseAboveTheCap_isRejectedLikeAnUnusableToken}) —
+   * 두 기준이 다른 답을 내는 경계 두 행을 오늘 그대로 고정한다(기준을 바꾸는 것이 보이는 결정이 되게): (a) 풀면 상한+1 이지만 선 위로는
+   * 작은 gzip 400 은 상한 안이라 TokenManager 의 복구 경로(client_credentials 재부여)로 간다. (b) 풀면 정확히 상한이지만 압축하지
+   * 않은(저장 블록) gzip 400 은 선 위로 상한을 넘어 거부된다 — 복구 경로를 잃고 admin 요청 없이 {@link KeycloakTransportException} 이다.
+   * 상한은 리터럴로 고정한다.
+   */
+  @Test void tokenErrorStatus_gzip_isCappedOnTheBytesReceived() throws IOException {
+    int cap = 1_048_576;
+    List<String> table = new ArrayList<>();
+    List<String> wrong = new ArrayList<>();
+    String first = tokenBody("\"AT-1\"", ",\"refresh_token\":\"RT-1\",\"refresh_expires_in\":300")
+        .replace("\"expires_in\":300", "\"expires_in\":1");
+    String error = "{\"error\":\"invalid_grant\",\"error_description\":\"" + RT_CANARY + "\"}";
+    byte[] decodesAboveTheCap = gzip(padTo(error, cap + 1));
+    byte[] storedAtTheCap = gzipStored(padTo(error, cap));
+    // 전제 — 두 행은 두 기준(푼 바이트 · 받은 바이트)이 서로 다른 답을 내는 자리다
+    assertTrue(decodesAboveTheCap.length <= cap, () -> "(a) 선 위 " + decodesAboveTheCap.length + " 바이트 — 상한 안이어야 한다");
+    assertTrue(storedAtTheCap.length > cap, () -> "(b) 선 위 " + storedAtTheCap.length + " 바이트 — 상한을 넘어야 한다");
+    System.setProperty("resteasy.allowGzip", "true");
+    try {
+      reset(new Reply(200, first), new Reply(400, decodesAboveTheCap, "gzip"), new Reply(200, tokenBody("\"AT-3\"", "")));
+      List<Throwable> thrown = new ArrayList<>();
+      try (AdminClient admin = admin()) {
+        for (int call = 0; call < 2; call++) thrown.add(outcome(() -> admin.users().get("x")));
+      }
+      String label = "(a) gzip 400 푼 " + (cap + 1) + " · 선 위 " + decodesAboveTheCap.length;
+      table.add(label + " → " + thrown.stream().map(t -> t == null ? "성공" : t.getClass().getSimpleName()).toList()
+          + " · grants " + grants() + " · admin " + adminHits());
+      if (thrown.stream().anyMatch(Objects::nonNull)) wrong.add(label + ": 복구 경로로 성공해야 한다 — " + thrown);
+      if (!grants().equals(List.of("client_credentials", "refresh_token", "client_credentials"))) {
+        wrong.add(label + ": 복구 경로(재부여)가 아니다 — grants " + grants());
+      }
+      if (!adminHits().equals(List.of("GET /admin/realms/r/users/x · Bearer AT-1", "GET /admin/realms/r/users/x · Bearer AT-3"))) {
+        wrong.add(label + ": admin " + adminHits());
+      }
+
+      reset(new Reply(200, first), new Reply(400, storedAtTheCap, "gzip"), new Reply(200, tokenBody("\"AT-3\"", "")));
+      thrown.clear();
+      try (AdminClient admin = admin()) {
+        for (int call = 0; call < 2; call++) thrown.add(outcome(() -> admin.users().get("x")));
+      }
+      label = "(b) gzip 400 푼 " + cap + " · 선 위 " + storedAtTheCap.length;
+      table.add(label + " → " + thrown.stream().map(t -> t == null ? "성공" : t.getClass().getSimpleName()).toList()
+          + " · grants " + grants() + " · admin " + adminHits());
+      Throwable refused = thrown.get(1);
+      if (thrown.get(0) != null) wrong.add(label + ": 첫 호출(AT-1)은 성공해야 한다 — " + thrown.get(0));
+      if (!(refused instanceof KeycloakTransportException) || !"admin transport failure".equals(refused.getMessage())) {
+        wrong.add(label + ": 갱신 400 을 거부해야 한다(KeycloakTransportException) — " + refused);
+      } else if (trace(refused).contains(RT_CANARY.substring(0, 10))) {
+        wrong.add(label + ": 거부가 응답을 인용했다");
+      }
+      if (!grants().equals(List.of("client_credentials", "refresh_token"))) wrong.add(label + ": 다시 부여했다 — grants " + grants());
+      if (!adminHits().equals(List.of("GET /admin/realms/r/users/x · Bearer AT-1"))) wrong.add(label + ": admin " + adminHits());
+    } finally {
+      System.clearProperty("resteasy.allowGzip");
+    }
+    System.out.println("[AdminTokenResponseTest gzip 오류 본문 상한 " + cap + "]\n  " + String.join("\n  ", table));
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
   }
 }

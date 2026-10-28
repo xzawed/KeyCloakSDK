@@ -20,8 +20,12 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
@@ -62,8 +66,12 @@ class TokenResponseCapTest {
   private static final String OIDC = "/realms/" + REALM + "/protocol/openid-connect";
   private static final URI CB = URI.create("https://app.example/cb");
   private static final String VERIFIER = "ZcapVERIFIER-0123456789abcdefghijklmnopqrstuvwxyz";
-  /** 16·32 MiB 본문을 거부하는 호출 하나가 호출 스레드에서 할당해도 되는 상한 — 상한의 네 배. */
-  private static final long ALLOCATION_BOUND = 4L * CAP;
+  /**
+   * 16·32 MiB 본문을 거부하는 호출 하나가 호출 스레드에서 할당해도 되는 상한 — 상한+1 의 세 배. 상한+1 바이트를 읽는
+   * {@code readNBytes(int)} 가 읽은 조각과 그것을 이은 배열로 두 배를 잡고(실측 레인마다 2.13–2.26 MB), 남은 한 배가 호출의 나머지
+   * 몫이다. 상한+1 의 사본을 하나 더 만들면 이 한도를 넘는다(네 배는 그것을 통과시켰다 — 사본 하나 ≈ 3.2 MB).
+   */
+  private static final long ALLOCATION_BOUND = 3L * (CAP + 1);
 
   /** 레인과 그 레인이 상한을 넘었을 때의 메시지. */
   enum Lane {
@@ -81,12 +89,22 @@ class TokenResponseCapTest {
     }
   }
 
-  /** 응답 하나 — {@code head} 뒤를 JSON 공백으로 채워 정확히 {@code size} 바이트(0 이면 {@code head} 그대로). */
-  private record Reply(int status, String head, long size, boolean chunked) {
+  /**
+   * 응답 하나 — {@code head} 뒤를 JSON 공백으로 채워 정확히 {@code size} 바이트(0 이면 {@code head} 그대로). {@code answered} 는 서버가
+   * 이 응답을 끝냈을 때(끊긴 쓰기를 알아챘거나 끝까지 썼을 때) 채워진다 — 응답마다 따로라 앞 교환의 늦은 끝이 섞이지 않는다.
+   */
+  private record Reply(int status, String head, long size, boolean chunked, CompletableFuture<Served> answered) {
+    Reply(int status, String head, long size, boolean chunked) {
+      this(status, head, size, chunked, new CompletableFuture<>());
+    }
+
     long length() {
       return size > 0 ? size : head.getBytes(StandardCharsets.UTF_8).length;
     }
   }
+
+  /** 서버가 응답 하나를 끝낸 결과 — 쓴 본문 바이트와, 클라이언트가 끝까지 받지 않고 떠났는가(쓰기가 실패했다). */
+  private record Served(long written, boolean clientLeftEarly) {}
 
   private HttpServer server;
   private ExecutorService handlers;
@@ -118,34 +136,59 @@ class TokenResponseCapTest {
       adminBearerLength = authorization == null ? -1 : authorization.length() - "Bearer ".length();
       send(ex, new Reply(200, "[]", 0, false));
     } else if (path.equals(OIDC + "/token")) {
-      send(ex, tokenReply.get());
+      answer(ex, tokenReply.get());
     } else if (path.equals(OIDC + "/token/introspect")) {
-      send(ex, introspectReply.get());
+      answer(ex, introspectReply.get());
     } else if (path.equals(OIDC + "/logout")) {
-      send(ex, logoutReply.get());
+      answer(ex, logoutReply.get());
     } else {
       send(ex, new Reply(404, "{}", 0, false));
     }
   }
 
-  /** 본문을 64 KiB 씩 전속력으로 흘려 보낸다 — 32 MiB 를 메모리에 만들지 않는다. 클라이언트가 상한에서 끊으면 쓰기가 실패한다(기대한 결말). */
-  private static void send(HttpExchange ex, Reply r) throws IOException {
+  /** 레인 엔드포인트의 응답 — 보내고, 서버가 그것을 끝낸 결과를 그 응답에 단다. */
+  private static void answer(HttpExchange ex, Reply r) throws IOException {
+    r.answered().complete(send(ex, r));
+  }
+
+  /**
+   * 본문을 64 KiB 씩 전속력으로 흘려 보낸다 — 32 MiB 를 메모리에 만들지 않는다. 클라이언트가 상한에서 끊으면 쓰기가 실패한다(기대한 결말).
+   * 쓴 본문 바이트와 그 실패를 돌려준다.
+   */
+  private static Served send(HttpExchange ex, Reply r) throws IOException {
     byte[] head = r.head().getBytes(StandardCharsets.UTF_8);
     ex.getResponseHeaders().add("Content-Type", "application/json");
     ex.sendResponseHeaders(r.status(), r.chunked() ? 0 : r.length());
     byte[] spaces = new byte[64 * 1024];
     Arrays.fill(spaces, (byte) ' ');
+    long written = 0;
+    boolean clientLeftEarly = false;
     try (OutputStream os = ex.getResponseBody()) {
       os.write(head);
+      written += head.length;
       for (long left = r.length() - head.length; left > 0; ) {
         int k = (int) Math.min(left, spaces.length);
         os.write(spaces, 0, k);
+        written += k;
         left -= k;
       }
     } catch (IOException clientWentAway) {
-      // 클라이언트가 상한에서 연결을 끊었다
+      clientLeftEarly = true; // 클라이언트가 상한에서 연결을 끊었다
     } finally {
       ex.close();
+    }
+    return new Served(written, clientLeftEarly);
+  }
+
+  /** 잰 호출이 부른 레인 엔드포인트의 응답을 서버가 끝낼 때까지 기다린다(끊긴 쓰기를 알아채거나 끝까지 쓸 때까지) — 못 끝내면 null. */
+  private static Served awaitServed(CompletableFuture<Served> f) {
+    try {
+      return f.get(10, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return null;
+    } catch (ExecutionException | TimeoutException e) {
+      return null;
     }
   }
 
@@ -155,17 +198,22 @@ class TokenResponseCapTest {
         .connectTimeout(Duration.ofSeconds(5)).readTimeout(Duration.ofSeconds(20)).build();
   }
 
-  /** 레인의 엔드포인트가 낼 성공 응답 — 토큰 레인은 {@code token} 을 access_token 에, introspect 는 username 에 싣는다. */
-  private void replyOk(Lane lane, String token, long size, boolean chunked) {
+  /** 레인의 엔드포인트가 낼 성공 응답 — 토큰 레인은 {@code token} 을 access_token 에, introspect 는 username 에 싣는다. 건 응답을 돌려준다. */
+  private Reply replyOk(Lane lane, String token, long size, boolean chunked) {
+    Reply r = switch (lane) {
+      case INTROSPECT -> new Reply(200, "{\"active\":true,\"username\":\"" + token + "\",\"client_id\":\"app\"}", size, chunked);
+      case LOGOUT -> new Reply(200, "{}", size, chunked);
+      default -> new Reply(200, "{\"access_token\":\"" + token + "\",\"token_type\":\"Bearer\","
+          + "\"expires_in\":300,\"refresh_token\":\"" + RT_CANARY + "\"}", size, chunked);
+    };
     switch (lane) {
-      case INTROSPECT -> introspectReply.set(new Reply(200,
-          "{\"active\":true,\"username\":\"" + token + "\",\"client_id\":\"app\"}", size, chunked));
-      case LOGOUT -> logoutReply.set(new Reply(200, "{}", size, chunked));
-      default -> tokenReply.set(new Reply(200, "{\"access_token\":\"" + token + "\",\"token_type\":\"Bearer\","
-          + "\"expires_in\":300,\"refresh_token\":\"" + RT_CANARY + "\"}", size, chunked));
+      case INTROSPECT -> introspectReply.set(r);
+      case LOGOUT -> logoutReply.set(r);
+      default -> tokenReply.set(r);
     }
     adminHits.set(0);
     adminBearerLength = -1;
+    return r;
   }
 
   /** 레인의 엔드포인트가 낼 OAuth 오류(400) — 본문을 {@code size} 바이트로 채운다. */
@@ -289,7 +337,9 @@ class TokenResponseCapTest {
 
   /**
    * (3) 16·32 MiB 본문은 실패하고, 호출 스레드의 할당은 상한 근처에서 멈춘다(수정 전 auth 레인은 약 235 MB) — 거부한 뒤
-   * 연결을 닫는 비용까지 든다(서버는 전속력 — 클래스 설명).
+   * 연결을 닫는 비용까지 든다(서버는 전속력 — 클래스 설명). 그 본문을 끝까지 읽지도 않는다 — 서버의 쓰기가 본문 끝에 닿기 전에
+   * 실패한다(청크·Content-Length 둘 다). 닫으며 나머지를 고정 버퍼로 비우는 운송은 할당을 늘리지 않으므로(HttpCore 의
+   * {@code ContentLengthInputStream.close}) 할당 한도만으로는 보이지 않는다.
    */
   @ParameterizedTest
   @EnumSource(Lane.class)
@@ -301,11 +351,18 @@ class TokenResponseCapTest {
     for (long[] c : cases) {
       boolean chunked = c[1] == 1;
       String label = (c[0] >> 20) + " MiB " + (chunked ? "chunked" : "content-length");
-      replyOk(lane, "AT-huge", c[0], chunked);
+      Reply huge = replyOk(lane, "AT-huge", c[0], chunked);
       Measured m = measured(lane);
-      System.out.println("[TokenResponseCapTest] " + lane + " " + label + " → allocated " + m.allocated() + " bytes");
+      Served s = awaitServed(huge.answered());
+      System.out.println("[TokenResponseCapTest] " + lane + " " + label + " → allocated " + m.allocated() + " bytes · server wrote "
+          + (s == null ? "?" : s.written() + (s.clientLeftEarly() ? " (client left)" : " (to the end)")));
       expectOverCap(lane, label, m.thrown(), wrong);
       if (m.allocated() > ALLOCATION_BOUND) wrong.add(lane + " " + label + ": 할당 " + m.allocated() + " > " + ALLOCATION_BOUND);
+      if (s == null) {
+        wrong.add(lane + " " + label + ": 서버가 응답을 끝내지 않았다");
+      } else if (!s.clientLeftEarly() || s.written() >= c[0]) {
+        wrong.add(lane + " " + label + ": 본문을 끝까지 읽었다 — 서버가 " + s.written() + " 바이트를 썼다");
+      }
     }
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
   }

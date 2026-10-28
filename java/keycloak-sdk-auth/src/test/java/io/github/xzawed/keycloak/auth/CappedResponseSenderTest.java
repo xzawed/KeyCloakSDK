@@ -13,6 +13,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -22,9 +23,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -41,6 +44,11 @@ class CappedResponseSenderTest {
   private HttpServer server;
   private final AtomicReference<Reply> reply = new AtomicReference<>();
   private final AtomicInteger redirectTargetHits = new AtomicInteger();
+  /** 서버가 받은 요청 — 받은 차례대로. */
+  private final List<Received> received = new CopyOnWriteArrayList<>();
+
+  /** 서버가 받은 요청 하나 — 메서드 · Content-Type · 본문(바이트 그대로 ISO-8859-1 로 옮긴 문자열). */
+  private record Received(String method, String contentType, String body) {}
 
   /**
    * {@code body} 가 null 이면 본문 없음(-1). {@code location} 이 있으면 그 헤더를 단다. {@code stallMs} 만큼 늦게 답한다. 같음·해시는
@@ -83,7 +91,8 @@ class CappedResponseSenderTest {
   }
 
   private void handle(HttpExchange ex) throws IOException {
-    ex.getRequestBody().readAllBytes();
+    received.add(new Received(ex.getRequestMethod(), ex.getRequestHeaders().getFirst("Content-Type"),
+        new String(ex.getRequestBody().readAllBytes(), StandardCharsets.ISO_8859_1)));
     Reply r = reply.get();
     if (r.stallMs() > 0) {
       try {
@@ -138,7 +147,8 @@ class CappedResponseSenderTest {
   /**
    * (1) 상한 안의 응답은 Nimbus {@code send()} 와 같다 — 상태·메시지·Content-Type·Location·본문 문자열. 줄 끝(CRLF·CR·LF)은
    * Nimbus 처럼 {@code line.separator} 로 바뀌고 마지막 줄 뒤에도 붙으며, 잘못된 UTF-8 은 같은 대체 문자가 되고, 빈 본문·본문 없는
-   * 오류 상태는 둘 다 본문이 없다. 오류 상태(400)는 오류 스트림에서, 3xx 는 따라가지 않고 그대로 읽는다.
+   * 오류 상태는 둘 다 본문이 없다. 오류 상태(400)는 오류 스트림에서, 3xx 는 따라가지 않고 그대로 읽는다. 대조는 요청 쪽도 본다 —
+   * 서버가 받은 메서드·Content-Type·본문이 둘 다 같다(응답만 보면 요청 본문을 싣지 않는 송신도 같은 응답을 받아 통과한다).
    */
   @Test void withinTheCap_theResponseIsWhatNimbusSendBuilds() throws IOException {
     List<Reply> replies = List.of(
@@ -154,9 +164,13 @@ class CappedResponseSenderTest {
     List<String> wrong = new ArrayList<>();
     for (Reply r : replies) {
       reply.set(r);
+      received.clear();
       HTTPResponse stock = post(10_000).send();
       HTTPResponse capped = CappedResponseSender.send(post(10_000), "token");
       String label = r.status() + " " + (r.body() == null ? "(no body)" : r.body().length + " bytes");
+      if (received.size() != 2 || !received.get(0).equals(received.get(1))) {
+        wrong.add(label + ": 서버가 받은 요청이 다르다 — " + received);
+      }
       if (stock.getStatusCode() != capped.getStatusCode()) wrong.add(label + ": status " + capped.getStatusCode());
       if (!java.util.Objects.equals(stock.getStatusMessage(), capped.getStatusMessage())) wrong.add(label + ": message");
       if (!java.util.Objects.equals(stock.getHeaderValue("Content-Type"), capped.getHeaderValue("Content-Type"))) {
@@ -187,16 +201,25 @@ class CappedResponseSenderTest {
     assertEquals(get.send().getBody(), capped.getBody());
   }
 
-  /** (2) 상한+1 이면 성공 상태든 오류 상태든 본문을 인용하지 않는 {@link CappedResponseSender.TooLarge} 다. */
+  /**
+   * (2) 상한+1 이면 어느 상태든(2xx·3xx·4xx·5xx) 본문을 인용하지 않는 {@link CappedResponseSender.TooLarge} 다 — 상한은 상태를 가리지
+   * 않는다(200·400 만 재면 상태에 따라 다르게 읽는 송신이 통과한다).
+   */
   @Test void oneByteAboveTheCap_isTooLarge_forSuccessAndErrorStatuses() throws IOException {
-    for (int status : new int[] {200, 400}) {
-      byte[] body = padded(CAP + 1);
-      reply.set(new Reply(status, body));
-      IOException e = assertThrows(IOException.class, () -> CappedResponseSender.send(post(10_000), "introspection"));
-      assertInstanceOf(CappedResponseSender.TooLarge.class, e);
-      assertEquals("introspection response exceeds 1048576 bytes", e.getMessage());
-      assertNull(e.getCause());
+    List<String> wrong = new ArrayList<>();
+    for (int status : new int[] {200, 201, 302, 400, 401, 403, 404, 500, 502, 503}) {
+      reply.set(new Reply(status, padded(CAP + 1)));
+      try {
+        HTTPResponse accepted = CappedResponseSender.send(post(10_000), "introspection");
+        wrong.add(status + ": 상한+1 본문을 받아들였다 — 본문 " + length(accepted.getBody()) + " 자");
+      } catch (IOException e) {
+        if (!(e instanceof CappedResponseSender.TooLarge) || !"introspection response exceeds 1048576 bytes".equals(e.getMessage())
+            || e.getCause() != null) {
+          wrong.add(status + ": TooLarge(introspection response exceeds 1048576 bytes) 가 아니다 — " + e);
+        }
+      }
     }
+    assertTrue(wrong.isEmpty(), () -> String.join("\n", wrong));
   }
 
   /** 연결조차 못 하면(상태 -1) Nimbus 처럼 그 IOException 을 그대로 던진다. */
@@ -265,6 +288,57 @@ class CappedResponseSenderTest {
     assertNull(CappedResponseSender.readWithinCap(endless));
     assertEquals(CAP + 1L, endless.served, "넘침을 알아챌 한 바이트까지 읽어야 한다");
     assertArrayEquals(new byte[0], CappedResponseSender.readWithinCap(new ByteArrayInputStream(new byte[0])));
+  }
+
+  /**
+   * 쥐는 메모리는 읽은 바이트를 따라간다 — 상한 안의 중간 크기 본문(256 KiB)을 읽는 동안 이 스레드가 할당한 바이트가 그 본문의 세
+   * 배 안이다. {@code readNBytes(int)} 는 읽은 조각(합 = 본문)과 그것을 이은 배열(= 본문)을 잡는다 — 두 배다. 상한만 한 버퍼를 미리
+   * 잡으면 1 MiB 가 더해져 다섯 배를 넘는다 — 작은 본문만 따로 읽고 그 너머는 상한만 한 버퍼에 읽는 꼴도 그렇다(2 KiB 본문의 시험
+   * {@code TokenResponseCapTest.aSmallBodyAllocatesFarBelowTheCap} 은 그 꼴을 보지 못한다). 먼저 한 번 읽어 데운다.
+   */
+  @Test void readWithinCap_allocatesInProportionToAMidSizeBody() throws IOException {
+    com.sun.management.ThreadMXBean threads = allocationCounter();
+    int size = 256 * 1024;
+    CappedResponseSender.readWithinCap(new SizedBody(size)); // 데우기
+    long before = threads.getCurrentThreadAllocatedBytes();
+    byte[] body = CappedResponseSender.readWithinCap(new SizedBody(size));
+    long allocated = threads.getCurrentThreadAllocatedBytes() - before;
+    long limit = 3L * size;
+    System.out.println("[CappedResponseSenderTest 할당] " + size + " 바이트 본문 → " + allocated + " 바이트 (한도 " + limit + ")");
+    assertNotNull(body, "상한 안의 본문을 넘침으로 읽었다");
+    assertEquals(size, body.length);
+    assertTrue(allocated < limit, () -> size + " 바이트 본문 하나를 읽으며 " + allocated + " 바이트를 할당했다");
+  }
+
+  /** HotSpot 의 스레드 할당 계수기 — 없는 JVM 에서는 할당 시험을 건너뛴다. */
+  private static com.sun.management.ThreadMXBean allocationCounter() {
+    java.lang.management.ThreadMXBean bean = ManagementFactory.getThreadMXBean();
+    Assumptions.assumeTrue(bean instanceof com.sun.management.ThreadMXBean t && t.isThreadAllocatedMemorySupported()
+        && t.isThreadAllocatedMemoryEnabled(), "스레드 할당 계수기가 없는 JVM");
+    return (com.sun.management.ThreadMXBean) bean;
+  }
+
+  /** 정해진 크기의 본문(JSON 공백) — 배경 배열 없이 만들어 시험 자신의 할당을 재지 않는다. */
+  private static final class SizedBody extends InputStream {
+    private final long size;
+    private long pos;
+
+    SizedBody(long size) {
+      this.size = size;
+    }
+
+    @Override public int read() {
+      throw new AssertionError("한 바이트씩 읽지 않는다");
+    }
+
+    @Override public int read(byte[] b, int off, int len) {
+      if (len == 0) return 0;
+      if (pos >= size) return -1;
+      int n = (int) Math.min(len, size - pos);
+      Arrays.fill(b, off, off + n, (byte) ' ');
+      pos += n;
+      return n;
+    }
   }
 
   /** 끝없는 본문 — {@code limit} 바이트 너머를 요청하기만 해도 시험을 깬다(실제 소켓이라면 그만큼 읽혔을 것이다). */

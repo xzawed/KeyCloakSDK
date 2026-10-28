@@ -13,6 +13,7 @@ import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -21,7 +22,12 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -37,7 +43,8 @@ import org.junit.jupiter.api.Test;
  *
  * <p>⚠️ 닫기 시험({@code anEndless…})의 차이는 <b>리눅스에서만</b> 보인다 — JDK 의 닫기는 소켓에 이미 쌓인 바이트를 읽는데, Windows
  * 루프백의 수신 버퍼는 작아 그 양이 1 MB 아래였다(TokenResponseCapTest 클래스 설명의 실측). 그래서 이 시험의 적색은 Docker
- * 리눅스에서 잰다(커밋 메시지). 할당은 호출 스레드의 몫이다 — 예열 뒤에 잰다.
+ * 리눅스에서 잰다(커밋 메시지). 할당은 호출 스레드의 몫이고 JWKS 레인은 조회 스레드의 몫을 더한다({@code FetchThreadWatch}) —
+ * 예열 뒤에 잰다.
  *
  * <p>응답 인용 검사는 원인 사슬 전체({@code printStackTrace})에 표식이 없어야 하고, 사슬에 하위 운송의 타입
  * ({@code org.apache.http.*})이 없어야 한다(§4 — 호출부가 원인을 그대로 단다).
@@ -55,6 +62,15 @@ class ResponseFramingBoundsTest {
    * 해석하므로 상한의 수십 배가 정상이다(실측 HttpCore ≈ 37 MB) — 닫기가 비우던 때는 리눅스에서 32–153 GB 였다.
    */
   private static final long ENDLESS_BODY_BOUND = 96L * CAP;
+  /**
+   * JWKS 레인이 응답의 틀을 거부하는 호출 하나의 할당 한도 — 운송의 틀 한도가 담게 두는 줄(헤더 100 개 × 8,192 바이트)을 두 배씩
+   * 자라는 UTF-16 버퍼에 담은 만큼(×2 ×2). auth 레인의 한도(상한 1 MiB 의 16 배)는 JWKS 의 본문 상한(51,200)이 묶는 레인에 너무 크다 —
+   * 줄 한도가 빠져도(1 MiB 트레일러 한 줄을 다 담고 틀 예산 409,600 에서 거부한다 — 실측 6.3 MB) 통과한다. 실측(JDK 21): 32 MiB
+   * 트레일러 거부 ≈ 0.9 MB · 1 MiB 트레일러 한 줄 ≈ 56 KB.
+   */
+  private static final long JWKS_FRAMING_BOUND = 4L * 100 * 8192;
+  /** JWKS 레인이 1 바이트 청크로 끝없이 오는 본문을 상한(51,200)에서 거부하는 호출 하나의 할당 한도 — auth 레인과 같은 셈(상한의 96 배, 실측 ≈ 2.6 MB). */
+  private static final long JWKS_ENDLESS_BODY_BOUND = 96L * 51_200;
 
   // ───────────── 응답 ─────────────
 
@@ -171,12 +187,16 @@ class ResponseFramingBoundsTest {
 
   // ───────────── 서버 ─────────────
 
-  /** 원시 HTTP 서버 — 요청 머리와 Content-Length 본문을 읽고 응답을 쓴다. 쓴 바이트를 센다. */
+  /**
+   * 원시 HTTP 서버 — 요청 머리와 Content-Length 본문을 읽고 응답을 쓴다. 쓴 바이트를 센다. {@link #gate} 가 있으면 답하기 전에 그
+   * 감시자가 JWKS 조회 스레드를 찾을 때까지 기다린다(그동안 조회 스레드는 응답을 기다리며 살아 있다).
+   */
   private static final class RawServer implements AutoCloseable {
     final ServerSocket socket;
     final Reply reply;
     final AtomicLong written = new AtomicLong();
     volatile boolean stop;
+    final AtomicReference<FetchThreadWatch> gate = new AtomicReference<>();
 
     RawServer(Reply reply) throws IOException {
       this.reply = reply;
@@ -197,6 +217,8 @@ class ResponseFramingBoundsTest {
           InputStream in = s.getInputStream();
           int contentLength = readRequestHead(in);
           in.readNBytes(contentLength);
+          FetchThreadWatch watch = gate.get();
+          if (watch != null) watch.awaitFound(); // 못 찾으면 그대로 답한다 — 잰 쪽(allocated)이 거부한다
           OutputStream out = new OutputStream() {
             final OutputStream sink = s.getOutputStream();
 
@@ -216,6 +238,9 @@ class ResponseFramingBoundsTest {
           while (in.read() >= 0) { /* 클라이언트가 닫을 때까지 */ }
         } catch (IOException clientLeft) {
           // 클라이언트가 떠났다 — 끝없는 응답의 정상 결말이다
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          return;
         }
       }
     }
@@ -241,6 +266,67 @@ class ResponseFramingBoundsTest {
     }
   }
 
+  /**
+   * JWKS 조회 스레드의 할당. JWKS 레인은 SDK 의 「keycloak-sdk-jwks-fetch」 스레드에서 읽으므로
+   * ({@code NoRedirectResourceRetriever.fetchToCompletion}) 호출 스레드의 계수기는 그 할당을 보지 못한다. 감시자는 무장한 뒤 처음
+   * 시작한 그 이름의 스레드를 찾아, 그 스레드가 살아 있는 동안 계수기({@code getThreadAllocatedBytes(id)})를 쉬지 않고 읽어 마지막 값을
+   * 쥔다 — 끝난 스레드는 -1 이다. 서버는 감시자가 그 스레드를 찾은 뒤에 답하므로({@link RawServer#gate}) 조회가 감시보다 먼저 끝나 재지
+   * 못하는 일이 없다. 마지막 읽기 뒤 스레드가 끝날 때까지의 꼬리는 빠진다 — 덜 재는 쪽이다(실측: 같은 응답을 호출 스레드에서
+   * {@code fetch()} 로 잰 값과 1 % 안).
+   */
+  private static final class FetchThreadWatch {
+    private static final String NAME = "keycloak-sdk-jwks-fetch";
+    private final com.sun.management.ThreadMXBean threads;
+    private final Set<Long> known = new HashSet<>();
+    private final CountDownLatch found = new CountDownLatch(1);
+    private final Thread watcher;
+    private volatile boolean stop;
+    private volatile long last = -1;
+
+    FetchThreadWatch(com.sun.management.ThreadMXBean threads) {
+      this.threads = threads;
+      for (long id : threads.getAllThreadIds()) known.add(id); // 이미 있던 스레드(앞 조회의 것 포함)는 보지 않는다
+      watcher = new Thread(this::watch, "jwks-fetch-allocation-watch");
+      watcher.setDaemon(true);
+      watcher.start();
+    }
+
+    private void watch() {
+      long id = find();
+      if (id < 0) return;
+      last = threads.getThreadAllocatedBytes(id); // 서버가 아직 답하지 않았다 — 조회 스레드는 살아 있다
+      found.countDown();
+      for (long bytes = last; bytes >= 0; bytes = threads.getThreadAllocatedBytes(id)) last = bytes;
+    }
+
+    private long find() {
+      while (!stop) {
+        for (long id : threads.getAllThreadIds()) {
+          if (!known.add(id)) continue;
+          ThreadInfo info = threads.getThreadInfo(id);
+          if (info != null && NAME.equals(info.getThreadName())) return id;
+        }
+        Thread.onSpinWait();
+      }
+      return -1;
+    }
+
+    /** 서버의 문 — 감시자가 조회 스레드를 찾을 때까지 기다린다. */
+    boolean awaitFound() throws InterruptedException {
+      return found.await(10, TimeUnit.SECONDS);
+    }
+
+    /** 조회 스레드가 끝난 뒤 그 스레드의 할당 — 찾지 못했거나 끝나지 않았으면 시험을 깬다(재지 못한 할당을 0 으로 읽지 않는다). */
+    long allocated() throws InterruptedException {
+      boolean seen = found.await(10, TimeUnit.SECONDS);
+      stop = true;
+      watcher.join(30_000);
+      assertTrue(seen && last >= 0, "JWKS 조회 스레드를 찾지 못했다 — 그 할당을 재지 못했다");
+      assertFalse(watcher.isAlive(), "JWKS 조회 스레드가 끝나지 않았다");
+      return last;
+    }
+  }
+
   // ───────────── 레인 ─────────────
 
   private static HTTPRequest tokenRequest(int port) throws IOException {
@@ -257,7 +343,7 @@ class ResponseFramingBoundsTest {
     return URI.create("http://127.0.0.1:" + port + "/certs").toURL();
   }
 
-  /** 레인 호출의 결과 — 던진 것(없으면 null)·호출 스레드의 할당·벽시계 시간. */
+  /** 레인 호출의 결과 — 던진 것(없으면 null)·할당(호출 스레드 — JWKS 레인은 조회 스레드를 더한다)·벽시계 시간. */
   private record Outcome(Throwable thrown, long allocated, long millis) {
     String describe() {
       return (thrown == null ? "accepted" : thrown.getClass().getName() + ": " + thrown.getMessage())
@@ -273,11 +359,16 @@ class ResponseFramingBoundsTest {
   private static final Call AUTH = port -> CappedResponseSender.send(tokenRequest(port), "token");
   private static final Call JWKS_LANE = port -> new NoRedirectResourceRetriever(5_000, 20_000).retrieveResource(certs(port));
 
-  /** {@code reply} 를 내는 서버에 레인을 한 번 부르고 잰다 — 같은 레인을 작은 정상 응답으로 먼저 예열한다. */
+  /**
+   * {@code reply} 를 내는 서버에 레인을 한 번 부르고 잰다 — 같은 레인을 작은 정상 응답으로 먼저 예열한다. JWKS 레인의 할당은 호출
+   * 스레드와 조회 스레드({@link FetchThreadWatch})의 합이다.
+   */
   private static Outcome measure(Call lane, Reply reply) throws Exception {
     warm(lane);
     com.sun.management.ThreadMXBean threads = allocationCounter();
     try (RawServer server = new RawServer(reply)) {
+      FetchThreadWatch fetch = lane == JWKS_LANE ? new FetchThreadWatch(threads) : null;
+      server.gate.set(fetch);
       long before = threads.getCurrentThreadAllocatedBytes();
       long start = System.nanoTime();
       Throwable thrown = null;
@@ -286,7 +377,10 @@ class ResponseFramingBoundsTest {
       } catch (Throwable t) {
         thrown = t;
       }
-      return new Outcome(thrown, threads.getCurrentThreadAllocatedBytes() - before, (System.nanoTime() - start) / 1_000_000);
+      long millis = (System.nanoTime() - start) / 1_000_000;
+      long allocated = threads.getCurrentThreadAllocatedBytes() - before;
+      if (fetch != null) allocated += fetch.allocated();
+      return new Outcome(thrown, allocated, millis);
     }
   }
 
@@ -338,6 +432,7 @@ class ResponseFramingBoundsTest {
     Outcome o = measure(JWKS_LANE, manyTrailers(JWKS, 32L << 20));
     System.out.println("[ResponseFramingBoundsTest] jwks 32 MiB 트레일러 → " + o.describe());
     expectRejectedWithoutQuoting("jwks 32 MiB 트레일러", o.thrown());
+    assertTrue(o.allocated() < JWKS_FRAMING_BOUND, () -> "jwks 32 MiB 트레일러: " + o.describe());
   }
 
   @Test void jwks_oneHugeTrailerLine_isRejectedPromptly() throws Exception {
@@ -345,6 +440,7 @@ class ResponseFramingBoundsTest {
     System.out.println("[ResponseFramingBoundsTest] jwks 1 MiB 트레일러 한 줄 → " + o.describe());
     expectRejectedWithoutQuoting("jwks 1 MiB 트레일러 한 줄", o.thrown());
     assertTrue(o.millis() < 3_000, () -> "jwks 1 MiB 트레일러 한 줄: " + o.describe());
+    assertTrue(o.allocated() < JWKS_FRAMING_BOUND, () -> "jwks 1 MiB 트레일러 한 줄: " + o.describe());
   }
 
   // ───────────── 헤더 줄·청크 확장 (운송의 줄 한도) ─────────────
@@ -382,6 +478,7 @@ class ResponseFramingBoundsTest {
     assertInstanceOf(IOException.class, o.thrown(), o::describe);
     assertEquals("Exceeded configured input limit of 51200 bytes", o.thrown().getMessage());
     assertTrue(o.millis() < 5_000, () -> "jwks 끝없는 1 바이트 청크: " + o.describe());
+    assertTrue(o.allocated() < JWKS_ENDLESS_BODY_BOUND, () -> "jwks 끝없는 1 바이트 청크: " + o.describe());
   }
 
   /** 짧은 청크 본문 뒤 1 바이트 청크를 끝없이 — 크기 줄마다 0 을 {@code zeros} 개 채운다(「0000…01」, 값은 1). */
