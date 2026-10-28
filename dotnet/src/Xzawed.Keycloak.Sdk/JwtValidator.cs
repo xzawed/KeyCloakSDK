@@ -74,21 +74,29 @@ public sealed class JwtValidator
         {
             MinimumNumberOfKeys = 1,
         };
-        var inner = new ConfigurationManager<OpenIdConnectConfiguration>(
-            $"{issuer}/.well-known/openid-configuration",
-            // Every fetch passes through here — cold load, stale refresh, bad-signature refresh — so a failed one is
-            // backed off here. The manager hides a failed refresh once a configuration is cached.
-            new BackoffConfigurationRetriever(new OpenIdConnectConfigurationRetriever(), keysRequired, now, jitter),
-            docRetriever,
-            keysRequired)
+        var metadataAddress = $"{issuer}/.well-known/openid-configuration";
+        // Every fetch passes through here — cold load, stale refresh, forced refetch — so a failed one is backed off here.
+        // The manager hides a failed refresh once a configuration is cached.
+        var retriever = new BackoffConfigurationRetriever(new OpenIdConnectConfigurationRetriever(), keysRequired, now, jitter);
+        var inner = new ConfigurationManager<OpenIdConnectConfiguration>(metadataAddress, retriever, docRetriever, keysRequired)
         {
             AutomaticRefreshInterval = TimeSpan.FromHours(12),
+            // Gates no refetch here (RequestRefresh never reaches this manager, see below). Kept for IdentityModel's
+            // blocking mode — a host's AppContext switch — which paces a failed refresh with it.
             RefreshInterval = TimeSpan.FromSeconds(opts.RefreshIntervalSeconds),
             ConfigurationEventHandler = configurationEvents,
         };
-        // RefreshInterval above only caps refreshes once a configuration is cached. A cold cache
-        // against a failing IdP reaches it at all — measured 20 validations → 40 requests.
-        _tvp.ConfigurationManager = new BackoffConfigurationManager(inner, now, jitter);
+        // The refetch a validation asks for — an unresolved kid, a bad signature — runs in the SDK, and that validation
+        // waits for it: IdentityModel's manager ran it in the background, after the call that asked had already failed.
+        // Its window is the same interval. A cold cache against a failing IdP is backed off separately (BackoffConfigurationManager)
+        // — measured 20 validations → 40 requests.
+        _tvp.ConfigurationManager = new ForcedRefetchConfigurationManager(
+            new BackoffConfigurationManager(inner, now, jitter),
+            async () => await retriever.GetConfigurationAsync(metadataAddress, docRetriever, CancellationToken.None).ConfigureAwait(false),
+            now)
+        {
+            RefreshInterval = TimeSpan.FromSeconds(opts.RefreshIntervalSeconds),
+        };
     }
 
     internal JwtValidator(TokenValidationParameters tvp) => _tvp = tvp;

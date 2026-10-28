@@ -5,8 +5,9 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 namespace Xzawed.Keycloak;
 
 /// <summary>
-/// Applies the <see cref="FailureBackoff"/> to every discovery/JWKS fetch the configuration manager makes: the cold load,
-/// the background refresh of a stale configuration, and the refresh a bad signature requests.
+/// Applies the <see cref="FailureBackoff"/> to every discovery/JWKS fetch: the cold load and the background refresh of a stale
+/// configuration (IdentityModel's manager), and the refetch an unresolved key or a bad signature asks for
+/// (<see cref="ForcedRefetchConfigurationManager"/>).
 /// </summary>
 /// <remarks>
 /// <para>

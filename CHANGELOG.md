@@ -10,6 +10,7 @@
 
 ### Fixed
 - **(Python)** README 가 `keycloak_sdk.aio` 는 이벤트 루프를 막지 않는다고 적었습니다 — 요청은 전부 await 하지만, `AsyncKeycloakClient.create(config)` 와 첫 `kc.admin` 접근은 호출 스레드에서 HTTP 클라이언트를 만들고 TLS 신뢰 저장소를 읽습니다(Windows 에서는 1 초에 가까울 수 있습니다). README 를 고쳤습니다 — 클라이언트는 앱이 시작할 때 한 번 만들어 재사용하세요. 동작은 바뀌지 않았습니다.
+- **(.NET)** IdP 가 서명 키를 회전하면 새 `kid` 의 첫 토큰을 IDX10503 으로 거부하고 다음 토큰부터 받았습니다(실측) — 키를 못 찾은 Microsoft.IdentityModel 핸들러가 `RequestRefresh()` 를 부르면 그 매니저는 재조회를 배경(`Task.Run`)에 띄우고 곧장 돌아와, 핸들러가 같은 설정을 다시 받아 재시도하지 않았기 때문입니다. 이제 그 재조회는 SDK 가 돌리고, 요청한 검증이 같은 호출 안에서 기다려 새 키로 다시 검증합니다(재조회 한 번). 30 초 창(결정할 때 찍고 실패도 창을 씁니다)·단일 비행·호출자가 취소해도 끝까지 가는 재조회·실패 백오프·last-known-good 은 그대로이고, 키가 풀리는 토큰은 기다리지 않습니다. 프로세스 전역 AppContext 스위치는 건드리지 않습니다.
 
 ### Security
 - **(Ruby)** admin 이 String 이 아닌 access token 에는 헤더 검사를 걸지 않았습니다 — 소비자 `TokenProvider` 가 CR·LF 를 담은 Symbol 을 돌려주면 `raw` 커넥션은 Bearer 전체를 인용한 raw `ArgumentError` 를, 파사드는 `TransportError`(`admin transport error: ArgumentError`)를 냈고, NUL·끝 공백을 담은 Symbol 은 그대로·공백이 지워진 채 나갔으며, `nil`·`""` 은 `Authorization: Bearer` 로 나갔습니다(실측). 이제 String 이 아닌 값도 헤더에 실릴 그 글로 같은 검사를 받아 String 과 같은 `AuthError` 이고, 빈 토큰은 요청 없이 `admin request not sent: the access token is empty` 입니다. 검사를 지나는 Symbol·숫자는 지금처럼 그 글로 나가고, SDK 의 `ClientCredentialsTokenProvider` 는 늘 비지 않은 String 이라 달라지지 않습니다. 공개 API 변경은 0 입니다.
