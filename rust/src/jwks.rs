@@ -1025,4 +1025,78 @@ mod tests {
             "the paused clock must not move — #2 is inside the window"
         );
     }
+
+    // ── 떼어 낸 강제 재조회는 그것을 띄운 런타임과 함께 끝난다 — `AuthClient::validate` rustdoc 의 문장 ──────────
+    //
+    // 그 문장의 앞 절반(호출이 취소돼도 끝까지 간다)은 위 `forced_refetch_cancelled_*` 가 본다. 뒤 절반(런타임이 먼저
+    // 내려가면 함께 끝나 창 안의 새 키가 `unknown kid (refetch rate-limited)` 로 거부된다)은 런타임이 둘이어야 보여
+    // `#[test]` 가 런타임을 손수 만든다 — 그 문장이 경고하는 동기 래퍼(호출마다 런타임을 만들고 끊는다)의 모양 그대로다.
+    // ⚠️ 멈춘 시계를 쓰지 않는다 — 런타임마다 시계가 따로다. 창은 실시간 30초이고 시험은 그 안에 끝난다.
+
+    /// 강제 재조회 응답이 `delay` 늦는 IdP 에 호출마다 새 런타임으로 콜드 로드 → k2 조회를 하고, IdP 가 그 요청을 받는
+    /// 순간 호출을 끊는다(future 를 버린다). `outlive` 면 그 런타임이 떼어 낸 fetch 가 게이트를 놓을 때까지(= 끝날
+    /// 때까지) 산다. → (끊기 전에 fetch 가 끝났는가, 또 새 런타임의 k2 조회, IdP 가 받은 `/certs` 요청 수).
+    fn cut_forced_refetch_then_retry(delay: Duration, outlive: bool) -> (bool, Result<Jwk>, usize) {
+        let runtime = || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime")
+        };
+        let host = runtime();
+        let server = host.block_on(rotating_idp(
+            ResponseTemplate::new(200)
+                .set_body_json(jwks_json("k2"))
+                .set_delay(delay),
+        ));
+        let store = JwksStore::new(format!("{}/certs", server.uri()), timerless_http(), 30);
+        runtime().block_on(store.get_key("k1")).expect("cold load");
+        let landed_first = runtime().block_on(async {
+            let landed_first = tokio::select! {
+                r = store.get_key("k2") => {
+                    r.expect("a forced fetch that landed must return k2");
+                    true
+                }
+                () = until_certs_hits(&server, 2) => false,
+            };
+            if outlive {
+                // 떼어 낸 fetch 는 게이트 가드를 쥐고 끝까지 간다 — 그것을 놓을 때까지 이 런타임이 산다.
+                drop(store.gate.lock().await);
+            }
+            landed_first
+        }); // ← 그 호출의 런타임이 여기서 내려간다
+        let retried = runtime().block_on(store.get_key("k2"));
+        (landed_first, retried, host.block_on(certs_hits(&server)))
+    }
+
+    /// 런타임이 먼저 내려가면 떼어 낸 fetch 도 함께 끝난다 — 창은 결정할 때 찍혔으므로 창 안의 다음 조회는 IdP 에 가지
+    /// 않고 거부된다. 응답은 끊기 한참 뒤에 오지만 기다리지 않는다(시험 시간에 안 든다).
+    #[test]
+    fn forced_refetch_ends_with_the_runtime_that_spawned_it() {
+        let (landed_first, retried, hits) =
+            cut_forced_refetch_then_retry(Duration::from_secs(10), false);
+        assert!(
+            !landed_first,
+            "the forced fetch landed before the cut — the scenario did not happen"
+        );
+        match retried {
+            Err(KeycloakError::TokenValidation(m)) => {
+                assert_eq!(m, "unknown kid (refetch rate-limited)")
+            }
+            other => panic!(
+                "a fetch whose runtime shut down must leave the window spent and k2 unknown, got {other:?}"
+            ),
+        }
+        assert_eq!(hits, 2, "the refused retry must not reach the IdP");
+    }
+
+    /// 대조 — 같은 IdP · 같은 끊기에서 런타임만 fetch 가 끝날 때까지 산다. k2 가 캐시에 남아 다음 런타임의 조회가 IdP 에
+    /// 가지 않고 받는다 — 위 거부가 런타임의 수명 탓이지 런타임을 건넌 탓이 아님을 가른다.
+    #[test]
+    fn forced_refetch_lands_for_the_next_runtime_when_its_runtime_outlives_it() {
+        let (_, retried, hits) = cut_forced_refetch_then_retry(Duration::from_millis(300), true);
+        let jwk = retried.expect("the fetch landed while its runtime lived — k2 must be cached");
+        assert_eq!(jwk.common.key_id.as_deref(), Some("k2"));
+        assert_eq!(hits, 2, "exactly one /certs request for the window");
+    }
 }
