@@ -94,14 +94,13 @@ type jwksFlight struct {
 }
 
 // wait blocks until the fetch has finished or ctx is done. A caller that stops waiting gets its own
-// context's error; the fetch carries on for the others and for the cache.
+// context's error — unless the fetch has finished by then, whose outcome wins (awaitShared); the fetch carries on
+// for the others and for the cache.
 func (f *jwksFlight) wait(ctx context.Context) error {
-	select {
-	case <-f.done:
-		return f.err
-	case <-ctx.Done():
-		return ctx.Err()
+	if _, err := awaitShared(ctx, f.done); err != nil {
+		return err
 	}
+	return f.err
 }
 
 // backoffRemaining reports how long the caller must wait before another fetch is allowed.

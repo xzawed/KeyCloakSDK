@@ -18,6 +18,7 @@ import (
 
 	jose "github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+	"golang.org/x/sync/singleflight"
 )
 
 // 공유 비행(single-flight)이 첫 호출자의 ctx 를 잡는 부류(등록부 jwks-forced-refetch-window-burned).
@@ -817,5 +818,188 @@ func TestJWKSMissRechecksTheCacheBeforeDeciding(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// ── 동점: 결과와 호출자의 ctx.Done() 이 함께 준비됐다 ───────────────────────────────────────────────
+//
+// 공유 비행을 기다리는 세 자리 — Client.Admin · clientCredentialsProvider.Token · jwksFlight.wait — 는 결과와
+// ctx.Done() 을 함께 기다린다. 맨 select 는 둘이 함께 준비되면 무작위로 고른다(수정 전 코드에서 이 시험들: 자리마다
+// 200 회 중 결과 97–107, 나머지는 전부 Canceled — 2026-10-29). 정책(2026-10-29): **준비된 결과가 이긴다** — 캐시
+// 적중이 이미 ctx 를 보지 않고 값을 돌려준다. ctx 의 오류는 결과가 아직 없을 때만 간다(awaitShared). 아래 셋은
+// 자리마다 동점을 tieRounds 번 세우고 매번 결과를 단언한다.
+
+// tieRounds — 수정 전 코드에서 한 회를 결과가 이길 확률은 1/2 이라, 200 회를 모두 이길 확률은 2^-200 이다.
+const tieRounds = 200
+
+// tieCtx 는 호출자가 공유 결과를 기다리기 시작하는 바로 그 자리에서 끝나는 ctx 다. select 는 채널 피연산자를 소스
+// 순서로 한 번씩 평가한 뒤에 고른다 — 결과 채널, 그다음 ctx.Done(). 그래서 Done() 안에서 ready 로 결과가 준비됐음을
+// 확인하고 취소하면, select 가 고를 때 두 갈래가 다 준비돼 있다: 매 회 동점이 선다(잠을 재지 않는다). 그 앞의
+// 이른 ctx.Err()(이미 포기한 호출자는 아무것도 시작하지 않는다)는 아직 nil 을 본다.
+type tieCtx struct {
+	context.Context
+	cancel context.CancelFunc
+	ready  func()
+	once   sync.Once
+	waited atomic.Bool
+}
+
+func newTieCtx(ready func()) *tieCtx {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &tieCtx{Context: ctx, cancel: cancel, ready: ready}
+}
+
+func (c *tieCtx) Done() <-chan struct{} {
+	c.once.Do(func() {
+		c.ready()
+		c.cancel()
+		c.waited.Store(true)
+	})
+	return c.Context.Done()
+}
+
+// requireTie 는 그 회에 동점이 실제로 섰는지 본다 — 호출자가 Done() 으로 기다리지 않았거나 ctx 가 안 끝났다면 그
+// 회의 결과는 아무것도 재지 않았다(공허).
+func requireTie(t *testing.T, ctx *tieCtx, round int) {
+	t.Helper()
+	if !ctx.waited.Load() || ctx.Err() == nil {
+		t.Fatalf("round %d: the caller never waited with its ctx done and the result ready — no tie was set up", round)
+	}
+}
+
+// tieTally 는 동점 tieRounds 회를 결과 · context.Canceled · 그 밖으로 나눠 센다 — 진 회가 전부 취소였는지가 보인다.
+type tieTally struct {
+	won, canceled, other int
+	firstLoss            error
+}
+
+func (s *tieTally) add(won bool, err error) {
+	switch {
+	case won:
+		s.won++
+		return
+	case errors.Is(err, context.Canceled):
+		s.canceled++
+	default:
+		s.other++
+	}
+	if s.firstLoss == nil {
+		s.firstLoss = err
+		if err == nil {
+			s.firstLoss = errors.New("no error, but not the flight's result")
+		}
+	}
+}
+
+func (s *tieTally) require(t *testing.T, what string) {
+	t.Helper()
+	if s.won != tieRounds {
+		t.Fatalf("%s lost the tie to the caller's done ctx — of %d rounds: result %d · context.Canceled %d · other %d (first loss: %v)",
+			what, tieRounds, s.won, s.canceled, s.other, s.firstLoss)
+	}
+	t.Logf("of %d ties: result %d · context.Canceled %d · other %d", tieRounds, s.won, s.canceled, s.other)
+}
+
+// flightDelivered 는 g 의 key 비행을 이미 기다리던 호출자가 모두 결과를 받은 뒤에 돌아온다. singleflight 는 결과를
+// 자기 잠금 아래에서, 합류한 순서대로 건네고 같은 잠금 안에서 키를 지운다(x/sync v0.24.0 singleflight.go doCall).
+// 그래서 그 비행에 합류한 탐침은 앞선 호출자들 다음에 받고, 키를 못 찾은 탐침은 — 이미 건넨 뒤다 — 아무것도
+// 건드리지 않는 자기 비행을 돌고 끝난다.
+func flightDelivered(g *singleflight.Group, key string) {
+	<-g.DoChan(key, func() (any, error) { return nil, nil })
+}
+
+// TestTokenProviderFinishedRefreshWinsTheTie — clientCredentialsProvider.Token: 갱신이 끝났고 바로 그때 호출자의 ctx
+// 도 끝났다면 호출자는 갱신의 결과를 받는다. 토큰이면 토큰, 소스가 실패했으면 그 오류다 — 어느 쪽도 abandoned 가
+// 아니다.
+func TestTokenProviderFinishedRefreshWinsTheTie(t *testing.T) {
+	idpDown := errors.New("idp down")
+	for _, tc := range []struct {
+		name string
+		ts   *TokenSet
+		err  error
+	}{
+		{"the token", &TokenSet{AccessToken: "AT", ExpiresIn: 300}, nil},
+		{"the source's error", nil, idpDown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var tally tieTally
+			for round := range tieRounds {
+				tp := NewClientCredentialsTokenProvider(func(context.Context) (*TokenSet, error) {
+					return tc.ts, tc.err
+				}, 30).(*clientCredentialsProvider)
+				ctx := newTieCtx(func() { flightDelivered(&tp.group, "token") })
+				tok, err := tp.Token(ctx)
+				requireTie(t, ctx, round)
+				won := err == nil && tok == "AT"
+				if tc.err != nil {
+					won = tok == "" && errors.Is(err, idpDown)
+				}
+				tally.add(won, err)
+			}
+			tally.require(t, "a refresh that had finished")
+		})
+	}
+}
+
+// TestAdminFinishedCreationWinsTheTie — Client.Admin: 생성이 끝났고 바로 그때 호출자의 ctx 도 끝났다면 호출자는 그
+// admin 클라이언트를 받는다 — 그것은 이미 c.admin 에 캐시돼 있고, 다음 호출은 ctx 를 보지 않고 그것을 받는다.
+func TestAdminFinishedCreationWinsTheTie(t *testing.T) {
+	p := newFlightIdP(t)
+	var tally tieTally
+	for round := range tieRounds {
+		func() {
+			c, err := New(Config{ServerURL: p.srv.URL, Realm: "r", ClientID: "c", ClientSecret: "cs-in"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = c.Close() }()
+			ctx := newTieCtx(func() { flightDelivered(&c.group, "admin") })
+			a, err := c.Admin(ctx)
+			requireTie(t, ctx, round)
+			c.mu.Lock()
+			cached := c.admin
+			c.mu.Unlock()
+			tally.add(err == nil && a != nil && a == cached, err)
+		}()
+	}
+	tally.require(t, "an admin client that had been created")
+	if n := p.tokens.Load(); n != tieRounds {
+		t.Fatalf("token requests=%d, want %d — one login per client; the probe never creates one", n, tieRounds)
+	}
+}
+
+// TestJWKSFinishedFetchWinsTheTie — jwksFlight.wait(공개 경로 Validate 로): 키를 가져오는 조회가 끝났고 바로 그때
+// 호출자의 ctx 도 끝났다면 검증은 그 조회가 가져온 키로 이어진다 — 캐시 적중이 ctx 를 보지 않고 키를 내는 것과
+// 같다. 회마다 새 Client(콜드 캐시)라 그 조회는 호출자 자신이 시작한 적재다. IdP 가 그것을 붙잡아 두므로 ready 가
+// 집는 비행은 아직 안 끝난, 호출자가 기다리는 바로 그것이다 — 풀어 주고 끝나기를 기다린다.
+func TestJWKSFinishedFetchWinsTheTie(t *testing.T) {
+	p := newFlightIdP(t)
+	tok := p.token(t, p.k1, "k1")
+	var tally tieTally
+	for round := range tieRounds {
+		func() {
+			c, err := New(Config{ServerURL: p.srv.URL, Realm: "r", ClientID: "c", ClientSecret: "cs-in"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = c.Close() }()
+			v, release := c.Auth.val, p.hold(t)
+			ctx := newTieCtx(func() {
+				v.mu.Lock()
+				f := v.flight
+				v.mu.Unlock()
+				release()
+				if f != nil { // nil 이면 조회가 붙잡힌 IdP 의 응답 없이 이미 끝났다(실패) — 그 오류가 아래 단언에 걸린다
+					<-f.done
+				}
+			})
+			vt, err := c.Auth.Validate(ctx, tok)
+			requireTie(t, ctx, round)
+			tally.add(err == nil && vt != nil && vt.Subject == "u1", err)
+		}()
+	}
+	tally.require(t, "a JWKS fetch that had finished")
+	if n := p.certs.Load(); n != tieRounds {
+		t.Fatalf("/certs=%d, want %d — one cold load per client", n, tieRounds)
 	}
 }
