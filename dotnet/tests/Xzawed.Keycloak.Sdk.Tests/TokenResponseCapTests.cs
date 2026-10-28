@@ -279,7 +279,9 @@ public sealed class TokenResponseCapAllocationTests
 /// </summary>
 internal sealed class CapIdp : IDisposable
 {
-    internal sealed record Req(string Method, string Path, string? Authorization, string Body);
+    /// <param name="RawAuthorization">The Authorization line after its colon, verbatim — <paramref name="Authorization"/> is
+    /// trimmed, which hides a leading or trailing SP or HTAB the client sent.</param>
+    internal sealed record Req(string Method, string Path, string? Authorization, string Body, string? RawAuthorization = null);
 
     /// <summary>A response: <paramref name="Head"/> followed by JSON whitespace up to <paramref name="TotalBytes"/> (0 = the
     /// head alone).</summary>
@@ -366,7 +368,9 @@ internal sealed class CapIdp : IDisposable
             buf.Write(chunk, 0, n);
         }
         var body = Encoding.UTF8.GetString(buf.GetBuffer(), bodyStart, length);
-        return new Req(requestLine[0], requestLine[1].Split('?')[0], headers.GetValueOrDefault("Authorization"), body);
+        var rawAuthorization = head.Skip(1).Select(l => l.Split(':', 2))
+            .FirstOrDefault(kv => kv.Length == 2 && kv[0].Trim().Equals("Authorization", StringComparison.OrdinalIgnoreCase))?[1];
+        return new Req(requestLine[0], requestLine[1].Split('?')[0], headers.GetValueOrDefault("Authorization"), body, rawAuthorization);
     }
 
     private static int IndexOfHeaderEnd(MemoryStream buf)
