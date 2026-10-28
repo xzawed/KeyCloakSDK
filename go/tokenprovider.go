@@ -59,7 +59,8 @@ func (p *clientCredentialsProvider) GoString() string { return p.String() }
 
 // NewClientCredentialsTokenProvider caches a token and refreshes it before
 // expiry, collapsing concurrent refreshes via single-flight. A caller whose ctx
-// ends while it waits returns at once; the refresh goes on for the others (see TokenSource).
+// ends while it waits returns at once — with the refresh's result if that is already there, else with the
+// context's error — and the refresh goes on for the others (see TokenSource).
 func NewClientCredentialsTokenProvider(src TokenSource, skewSec int64) TokenProvider {
 	return &clientCredentialsProvider{src: src, skewSec: skewSec, timeout: tokenRefreshTimeout}
 }
@@ -94,15 +95,14 @@ func (p *clientCredentialsProvider) Token(ctx context.Context) (string, error) {
 		p.mu.Unlock()
 		return ts.AccessToken, nil
 	})
-	select {
-	case r := <-ch:
-		if r.Err != nil {
-			return "", r.Err
-		}
-		return r.Val.(string), nil
-	case <-ctx.Done():
-		return "", abandoned(ctx.Err())
+	r, err := awaitShared(ctx, ch)
+	if err != nil {
+		return "", abandoned(err)
 	}
+	if r.Err != nil {
+		return "", r.Err
+	}
+	return r.Val.(string), nil
 }
 
 // bearerSendable reports whether net/http sends "Bearer "+token as a header value. It transcribes the check the
@@ -120,9 +120,29 @@ func bearerSendable(token string) bool {
 	return true
 }
 
+// awaitShared waits for a shared flight's result on ch, or for ctx to end. When both are ready Go's select picks
+// either at random, so the ctx branch looks at ch once more without blocking: a result that is already there wins —
+// the caller gets it as it would from the cache, which never looks at ctx — and ctx's error comes back only while
+// there is none. The flight goes on for the others either way. Every wait on a shared flight goes through here
+// (Client.Admin, clientCredentialsProvider.Token, jwksFlight.wait); the *WinsTheTie tests force the tie at each.
+func awaitShared[T any](ctx context.Context, ch <-chan T) (T, error) {
+	select {
+	case r := <-ch:
+		return r, nil
+	case <-ctx.Done():
+		select {
+		case r := <-ch:
+			return r, nil
+		default:
+			var zero T
+			return zero, ctx.Err()
+		}
+	}
+}
+
 // abandoned is what a caller gets when its ctx ends while it waits on a shared token fetch or admin client
-// creation: the admin lane's transport error for a request that did not complete, wrapping the context's
-// error so that errors.Is(err, context.Canceled) and errors.Is(err, context.DeadlineExceeded) hold.
+// creation that has not finished (awaitShared): the admin lane's transport error for a request that did not complete,
+// wrapping the context's error so that errors.Is(err, context.Canceled) and errors.Is(err, context.DeadlineExceeded) hold.
 func abandoned(ctxErr error) error {
 	return &TransportError{Msg: "could not get token: " + ctxErr.Error(), Cause: ctxErr}
 }

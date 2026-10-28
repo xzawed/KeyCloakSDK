@@ -83,15 +83,14 @@ func (c *Client) Admin(ctx context.Context) (*AdminClient, error) {
 		c.mu.Unlock()
 		return created, nil
 	})
-	select {
-	case r := <-ch:
-		if r.Err != nil {
-			return nil, r.Err
-		}
-		return r.Val.(*AdminClient), nil
-	case <-ctx.Done():
-		return nil, abandoned(ctx.Err())
+	r, err := awaitShared(ctx, ch)
+	if err != nil {
+		return nil, abandoned(err)
 	}
+	if r.Err != nil {
+		return nil, r.Err
+	}
+	return r.Val.(*AdminClient), nil
 }
 
 // Close releases created sub-resources — admin only if it was created, auth always.
