@@ -311,12 +311,13 @@ class RawBeforeMaxLength:
 
 @dataclass
 class TokenIdp:
-    """토큰·introspect 엔드포인트와 admin `GET /admin/realms` 를 내는 실 HTTP 서버(realm `r`).
+    """토큰·introspect·logout 과 admin `GET /admin/realms` 를 내는 실 HTTP 서버(realm `r`).
 
     ⚠️ **목으로는 토큰 응답 상한을 잴 수 없다** — 상한은 HTTP 전송에서 걸린다(`JwksServer` 와 같은
     이유). ⚠️ **거대 본문은 유효한 JSON + 공백이다** — 쓰레기 바이트로 부풀리면 상한이 없어도 JSON
     파싱이 실패해 「거부됐다」가 거짓 초록이 된다. 본문은 `head` 뒤에 공백을 덧대 정확히 `size`
-    바이트다(거대 본문도 64 KiB 버퍼 하나를 잘라 보낸다).
+    바이트다(거대 본문도 64 KiB 버퍼 하나를 잘라 보낸다). logout 도 같은 본문을 낸다 — 성공(204)은
+    `status = 204`·`head = b""` 로 둔다.
     """
 
     url: str
@@ -324,15 +325,26 @@ class TokenIdp:
     size: int | None = None  # 본문 전체 바이트. None 이면 head 그대로
     status: int = 200
     chunked: bool = False  # Content-Length 없이 보낸다 — 헤더만 믿는 상한을 걸러내는 대조군
+    #: 길이도 청크도 없이 보내고 연결을 닫아 끝낸다 — 클라이언트가 청한 읽기 크기가 그대로 전송의
+    #: 읽기가 되는 유일한 틀이다(길이가 있으면 http.client 가 남은 길이로 자르고, 청크는 청크 크기로
+    #: 읽는다).
+    close_delimited: bool = False
     gzip_body: bytes | None = None  # 미리 압축한 본문(`Content-Encoding: gzip`) — 압축폭탄
     hits: list[str] = field(default_factory=list)
     bearer_len: int | None = None  # admin REST 요청이 실어 온 Authorization 값의 길이
     introspected_len: int | None = None  # introspect 요청 폼의 token 길이
-    accept_encoding: str | None = None  # 마지막 토큰 엔드포인트 요청의 Accept-Encoding
+    accept_encoding: str | None = None  # 마지막 토큰·logout 엔드포인트 요청의 Accept-Encoding
 
     def serve_gzip(self, head: bytes, total: int) -> None:
         """`head` + 공백 `total` 바이트를 gzip 으로 보낸다(`gzip_padded`)."""
         self.gzip_body = gzip_padded(head, total)
+
+
+#: `TokenIdp` 가 본문(`head`·`size`·`status`…)으로 답하는 POST 경로 — 그 밖은 404.
+_TOKEN_IDP_POSTS = (
+    "/realms/r/protocol/openid-connect/token",  # 토큰·introspect(`/token/introspect`)
+    "/realms/r/protocol/openid-connect/logout",
+)
 
 
 def _make_token_handler(box: dict[str, TokenIdp]) -> type[BaseHTTPRequestHandler]:
@@ -364,7 +376,7 @@ def _make_token_handler(box: dict[str, TokenIdp]) -> type[BaseHTTPRequestHandler
             length = int(self.headers.get("Content-Length") or 0)
             form = self.rfile.read(length) if length else b""
             idp.hits.append(self.path)
-            if not self.path.startswith("/realms/r/protocol/openid-connect/token"):
+            if not self.path.startswith(_TOKEN_IDP_POSTS):
                 self._small(404, b'{"error":"not_found"}')
                 return
             idp.accept_encoding = self.headers.get("Accept-Encoding")
@@ -385,6 +397,9 @@ def _make_token_handler(box: dict[str, TokenIdp]) -> type[BaseHTTPRequestHandler
                 pieces = _padded(idp.head, total)
             if idp.chunked:
                 self.send_header("Transfer-Encoding", "chunked")
+            elif idp.close_delimited:
+                # 본문의 끝 = 연결 닫힘 — 이 헤더가 처리기에게 응답 뒤에 연결을 닫게 한다.
+                self.send_header("Connection", "close")
             else:
                 self.send_header("Content-Length", str(total))
             self.end_headers()
