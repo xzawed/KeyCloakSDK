@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -5,6 +6,7 @@ using System.Text;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Xzawed.Keycloak.Sdk.Tests;
 
@@ -28,6 +30,11 @@ public sealed class JwksKeyRotationTests : IDisposable
 {
     private const string Issuer = "http://idp.test/realms/r";
     private static readonly TimeSpan Hang = TimeSpan.FromSeconds(10);
+
+    /// <summary>How long a validation that must not wait on a held refetch may take before the test calls it waiting. The gate
+    /// stays shut until after it, so a validation that did wait never finishes inside any bound — this one only has to be far
+    /// above a validation's own cost (measured 2026-10-29: 0.8–4.7 ms in thirty runs).</summary>
+    private static readonly TimeSpan NoWait = TimeSpan.FromSeconds(2);
     private static readonly JwtValidatorOptions Options = new() { Issuer = Issuer, Audiences = new[] { "c" } };
 
     /// <summary>The forced-refetch window — the options' default, not a number of this file's own.</summary>
@@ -39,9 +46,11 @@ public sealed class JwksKeyRotationTests : IDisposable
     private readonly Idp _idp;
     private readonly HttpClient _http;
     private readonly FakeClock _clock = new();
+    private readonly ITestOutputHelper _out;
 
-    public JwksKeyRotationTests()
+    public JwksKeyRotationTests(ITestOutputHelper output)
     {
+        _out = output;
         _idp = new Idp(KeySet(_a));
         _http = new HttpClient(_idp);
     }
@@ -138,6 +147,104 @@ public sealed class JwksKeyRotationTests : IDisposable
         Assert.Equal("waits", (await waiting.WaitAsync(Hang)).Subject);
     }
 
+    // ── What a validation that asked for a refetch leaves behind on its caller's async flow: nothing. The wait is carried by an
+    // AsyncLocal that RequestRefresh sets inside IdentityModel's own async method, whose end discards it (independent review
+    // claimed it outlives that method and reaches the next validation, 2026-10-29). Each test calls the first validation
+    // directly in the test method — through no helper whose own async boundary would hide a leak — while the JWKS gate holds
+    // the refetch it asked for, then validates a token whose key is cached: that one must finish with the gate still shut. The
+    // bound only turns a leak into a failure instead of a hang. ──
+
+    /// <summary>(A) The first validation is cancelled while its refetch is held; the next one in the same method does not wait.</summary>
+    /// <remarks>Cancelled once its refetch is at the IdP, not on a timer: a 100 ms timer armed before the token was signed
+    /// fired before the call began in one run in four — the first signature with a fresh <c>RSA.Create(2048)</c> key generates
+    /// it, measured 41–341 ms here — so no refetch was ever asked for and the test timed out waiting for one.</remarks>
+    [Fact]
+    public async Task A_cancelled_validation_leaves_no_wait_behind_for_the_next_one_in_the_same_method()
+    {
+        var v = Validator();
+        Assert.True(await AcceptsAsync(v, Token(_a, "warm")));
+        var unknown = UnknownKid();
+        _idp.HoldCerts();
+        using var cts = new CancellationTokenSource();
+
+        var first = v.ValidateAsync(unknown, cts.Token);
+        await _idp.CertsArrived.WaitAsync(Hang);
+        cts.Cancel();
+        var cancelled = false;
+        try
+        {
+            await first;
+        }
+        catch (OperationCanceledException)
+        {
+            cancelled = true;
+        }
+        Assert.True(cancelled, "the first validation must end cancelled while its refetch is held");
+
+        await ValidatesWithTheRefetchStillHeldAsync(v, () => v.ValidateAsync(Token(_a, "next")));
+    }
+
+    /// <summary>(B) The same, with the next validation started by <see cref="Task.Run(Func{Task})"/> after the first returned.</summary>
+    [Fact]
+    public async Task A_cancelled_validation_leaves_no_wait_behind_for_a_Task_Run_started_after_it()
+    {
+        var v = Validator();
+        Assert.True(await AcceptsAsync(v, Token(_a, "warm")));
+        var unknown = UnknownKid();
+        _idp.HoldCerts();
+        using var cts = new CancellationTokenSource();
+
+        var first = v.ValidateAsync(unknown, cts.Token);
+        await _idp.CertsArrived.WaitAsync(Hang);
+        cts.Cancel();
+        var cancelled = false;
+        try
+        {
+            await first;
+        }
+        catch (OperationCanceledException)
+        {
+            cancelled = true;
+        }
+        Assert.True(cancelled, "the first validation must end cancelled while its refetch is held");
+
+        await ValidatesWithTheRefetchStillHeldAsync(v, () => Task.Run(() => v.ValidateAsync(Token(_a, "next"))));
+    }
+
+    /// <summary>(C) The first validation is still waiting on its held refetch — not cancelled — when the next one runs in the
+    /// same method; the refetch is released only after the next one has finished.</summary>
+    [Fact]
+    public async Task A_pending_validation_leaves_no_wait_behind_for_the_next_one_in_the_same_method()
+    {
+        var v = Validator();
+        Assert.True(await AcceptsAsync(v, Token(_a, "warm")));
+        _idp.HoldCerts();
+
+        var pending = v.ValidateAsync(UnknownKid());
+        await _idp.CertsArrived.WaitAsync(Hang);
+
+        await ValidatesWithTheRefetchStillHeldAsync(v, () => v.ValidateAsync(Token(_a, "next")));
+        await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => pending.WaitAsync(Hang)); // its kid is in no key set
+        Assert.Equal(2, _idp.Certs);
+    }
+
+    /// <summary>Runs <paramref name="next"/> — a token whose key is cached — with the JWKS gate still shut: it validates, the
+    /// gate is still shut when it has, and no second refetch was decided (the cold load and the held one: two). Then opens
+    /// the gate.</summary>
+    private async Task ValidatesWithTheRefetchStillHeldAsync(JwtValidator v, Func<Task<ValidatedToken>> next)
+    {
+        var watch = Stopwatch.StartNew();
+        var outcome = await Record.ExceptionAsync(async () => Assert.Equal("next", (await next().WaitAsync(NoWait)).Subject));
+        watch.Stop();
+        _out.WriteLine($"next validation: {watch.Elapsed.TotalMilliseconds:F1} ms, refetch held: {!_idp.CertsReleased}");
+        Assert.True(outcome is null, $"the next validation waited on the held refetch or failed: {outcome?.GetType().Name}: {outcome?.Message}");
+        Assert.False(_idp.CertsReleased);
+        Assert.Equal(2, _idp.Certs);
+        _idp.ReleaseCerts();
+        Assert.Equal("after", (await v.ValidateAsync(Token(_a, "after")).WaitAsync(Hang)).Subject);
+        Assert.Equal(2, _idp.Certs);
+    }
+
     /// <summary>A refetch that fails spends the window as one that succeeds would (<c>.claude/rules/security.md</c>), and
     /// the cached keys keep validating meanwhile. The rotated-in key is picked up by the first refetch the next window
     /// allows.</summary>
@@ -217,11 +324,14 @@ public sealed class JwksKeyRotationTests : IDisposable
         $$"""{"iss":"{{Issuer}}","sub":"{{sub}}","aud":"c","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""",
         new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
 
+    /// <summary>A well-formed token under a random kid the IdP never published.</summary>
+    private string UnknownKid() => Token(new RsaSecurityKey(_attacker) { KeyId = Guid.NewGuid().ToString("N") }, "attacker");
+
     /// <summary>Well-formed tokens under random kids the IdP never published; each one is refused.</summary>
     private async Task RejectsUnknownKidsAsync(JwtValidator v, int count)
     {
         for (var i = 0; i < count; i++)
-            Assert.False(await AcceptsAsync(v, Token(new RsaSecurityKey(_attacker) { KeyId = Guid.NewGuid().ToString("N") }, "attacker")));
+            Assert.False(await AcceptsAsync(v, UnknownKid()));
     }
 
     private static async Task<bool> AcceptsAsync(JwtValidator v, string token)
@@ -280,6 +390,9 @@ public sealed class JwksKeyRotationTests : IDisposable
 
         /// <summary>Completes when a JWKS request arrives after <see cref="HoldCerts"/>.</summary>
         public Task CertsArrived => _arrived.Task;
+
+        /// <summary>Whether held JWKS requests may go on (always, until <see cref="HoldCerts"/>).</summary>
+        public bool CertsReleased => _held.Task.IsCompleted;
 
         /// <summary>JWKS requests wait until <see cref="ReleaseCerts"/>.</summary>
         public void HoldCerts()
