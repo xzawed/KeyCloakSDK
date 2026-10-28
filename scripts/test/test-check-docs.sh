@@ -1538,6 +1538,54 @@ assert_contains "$_out" "검사 8b 가 통째로 공허하다" "기준 부재를
 rm -rf "$TMP/.git"
 assert_ok node "$GUARD" "$TMP"
 
+# ---- 검사 8e: 래칫을 **내리는 것** — 줄인 몫이 상한에 남지 않는다 ----
+# 8 의 머리 주석이 「줄일 때마다 사람이 숫자를 함께 내린다」를 규칙으로 적었지만 산문이었다.
+# ⚠️ 이 저장소에서만 돈다(8c 와 같은 조건 — 가드 자신이 그 트리에 있는가). 위 회귀 13·8b 의
+#    픽스처는 큰 예산에 한 줄 본문을 쓰므로, 조건이 없으면 전부 여유 위반이 된다.
+#    그래서 이 픽스처에서는 8c 의 오류가 함께 나온다 — 판정은 종료코드가 아니라 8e 문구로 한다.
+slack_fix() { # <max-bytes> [in-repo?]
+  rm -rf "$TMP"; mkdir -p "$TMP"
+  [ "${2:-yes}" = yes ] && { mkdir -p "$TMP/scripts"; : > "$TMP/scripts/check-docs.mjs"; }
+  printf '# slack fixture\n<!-- doc-budget: max-bytes=%s -->\n\n본문 한 줄.\n' "$1" > "$TMP/slack.md"
+}
+# 적재 크기는 가드 자신에게 묻는다 — 손으로 세면 주석 제거 규칙을 테스트가 다시 구현하게 된다.
+slack_fix 1
+_loaded="$(node "$GUARD" "$TMP" 2>&1 | sed -n 's/.*slack\.md: 적재 \([0-9][0-9]*\)B > doc-budget 1B.*/\1/p' | head -1)"
+assert_ok test -n "$_loaded"
+
+# (a) 여유 301B → 실패를 지목하고, 내릴 값을 그대로 인쇄한다.
+slack_fix $((_loaded + 301))
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "slack.md: 적재 ${_loaded}B 가 doc-budget" "여유 301B 를 8e 가 지목한다"
+assert_contains "$_out" "max-bytes=${_loaded}" "내릴 값(현재 적재)을 인쇄한다"
+
+# (b) 경계 — 정확히 300B 는 통과한다(상한이 실제로 300 임을 고정한다).
+slack_fix $((_loaded + 300))
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_not_contains "$_out" "여유 상한" "여유 300B 는 8e 가 묻지 않는다"
+
+# (c) 대조군 — 저장소가 아니면 8e 는 돌지 않는다(그래야 (a)가 「8e 라서」 실패한 것이다).
+slack_fix $((_loaded + 301)) no
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_not_contains "$_out" "여유 상한" "저장소 밖 픽스처는 8e 대상이 아니다"
+
+# ---- 검사 8c 경고: 전역 트립와이어의 90% 에 닿은 문서는 미리 알린다 ----
+# 실패(100%)만 있던 시절에는 원장이 82% 가 될 때까지 아무 신호가 없었다(2026-10-28 실측).
+# 8c 는 .md 가 30 개 미만이면 「순회가 깨졌다」로 일찍 돌아가므로 픽스처에 30 개를 깐다.
+warn_fix() { # <bytes of big.md>
+  rm -rf "$TMP"; mkdir -p "$TMP/scripts" "$TMP/pad"; : > "$TMP/scripts/check-docs.mjs"
+  _i=0; while [ "$_i" -lt 30 ]; do printf '# p%s\n' "$_i" > "$TMP/pad/p$_i.md"; _i=$((_i + 1)); done
+  head -c "$1" /dev/zero | tr '\0' 'x' > "$TMP/big.md"
+}
+warn_fix 235930
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "::warning::big.md: 235930B 가 전역 상한" "90% 에 닿으면 경고한다"
+assert_not_contains "$_out" "::error::big.md:" "경고 구간은 실패가 아니다"
+# 대조군 — 90% 바로 아래(235,929B)는 조용하다.
+warn_fix 235929
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_not_contains "$_out" "big.md: 235929B 가 전역 상한" "90% 미만은 경고하지 않는다"
+
 # ---- 검사 11 — 선언된 파생 계수 (kind=count) ----
 # 겨누는 것: 열거하면 답이 나오는 수를 문서가 말할 때, 그 수가 열거와 갈리는가.
 # ⚠️ 실측 배경 — 기각 체크리스트가 7 → 8 이 됐는데 원천만 갱신되고 원격 사본 둘이
