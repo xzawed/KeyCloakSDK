@@ -134,10 +134,12 @@ class TokenResponseGuardTest {
    * 본문은 상한까지만 읽는다. 상한 안이면 같은 바이트를 그대로 넘기고(쓸 수 없는 토큰 모양이어도 — 오류 본문이다) 판정 표시를 달지
    * 않는다. 상한을 넘으면 상한+1 바이트까지만 읽고 스트림을 닫은 뒤 응답을 인용하지 않는 거부를 던진다. 엔티티 스트림이 없으면 아무것도
    * 하지 않는다. 수정 전에는 RESTEasy 가 오류 본문을 통째로 버퍼에 담았다(32 MiB → 약 107 MB 할당 — {@code TokenResponseCapTest}).
+   * 2xx 가 아닌 상태는 모두 같다 — 3xx·5xx 도(4xx 만 재면 상태 묶음에 따라 다르게 읽는 가드가 통과한다).
    */
   @Test void tokenErrorStatus_isHandedOnWithinTheCap_andRejectedAboveIt() throws IOException {
     TokenResponseGuard guard = new TokenResponseGuard();
-    for (Response.Status status : List.of(Response.Status.BAD_REQUEST, Response.Status.UNAUTHORIZED)) {
+    for (Response.Status status : List.of(Response.Status.BAD_REQUEST, Response.Status.UNAUTHORIZED, Response.Status.FOUND,
+        Response.Status.INTERNAL_SERVER_ERROR, Response.Status.SERVICE_UNAVAILABLE)) {
       byte[] atCap = padded(CAP);
       byte[] number = NUMBER.getBytes(StandardCharsets.UTF_8);
       for (byte[] body : List.of(number, atCap)) {
@@ -440,6 +442,28 @@ class TokenResponseGuardTest {
     System.out.println("[TokenResponseGuardTest 할당] " + small.length + " 바이트 본문 통과 → " + allocated + " 바이트 (한도 " + limit + ")");
     assertNull(rejected, "쓸 수 있는 작은 본문을 거부했다");
     assertTrue(allocated < limit, () -> small.length + " 바이트 본문 하나를 판정하며 " + allocated + " 바이트를 할당했다");
+  }
+
+  /**
+   * 중간 크기 본문도 읽은 만큼만 할당한다 — 쓸 수 있는 256 KiB 토큰 응답(토큰 + JSON 공백) 하나를 판정하며 이 스레드가 할당한 바이트가
+   * 그 본문의 세 배 안이다. {@code readNBytes(int)} 의 조각과 그것을 이은 배열이 두 배이고, 스트리밍 파서는 공백을 건너뛰며 쥐지
+   * 않는다. 상한만 한 버퍼를 미리 잡으면 1 MiB 가 더해져 다섯 배를 넘는다 — 작은 본문만 따로 읽고 그 너머는 상한만 한 버퍼에 읽는 꼴도
+   * 그렇다(2 KiB 본문의 시험은 그 꼴을 보지 못한다). 먼저 한 번 판정해 데운다.
+   */
+  @Test void judgingAMidSizeBody_allocatesInProportionToIt() throws IOException {
+    com.sun.management.ThreadMXBean threads = allocationCounter();
+    int size = 256 * 1024;
+    TokenResponseGuard guard = new TokenResponseGuard();
+    ClientRequestContext req = request("POST", TOKEN);
+    judge(guard, req, response(Response.Status.OK, new SizedBody(size))); // 데우기
+    ClientResponseContext res = response(Response.Status.OK, new SizedBody(size));
+    long before = threads.getCurrentThreadAllocatedBytes();
+    IOException rejected = judge(guard, req, res);
+    long allocated = threads.getCurrentThreadAllocatedBytes() - before;
+    long limit = 3L * size;
+    System.out.println("[TokenResponseGuardTest 할당] " + size + " 바이트 본문 통과 → " + allocated + " 바이트 (한도 " + limit + ")");
+    assertNull(rejected, "쓸 수 있는 중간 크기 본문을 거부했다");
+    assertTrue(allocated < limit, () -> size + " 바이트 본문 하나를 판정하며 " + allocated + " 바이트를 할당했다");
   }
 
   /** HotSpot 의 스레드 할당 계수기 — 없는 JVM 에서는 할당 시험을 건너뛴다. */
