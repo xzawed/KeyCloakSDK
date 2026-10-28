@@ -1695,15 +1695,26 @@ function baselineRef() {
   }
   return budgetBaselineRef
 }
+// 그 ref 의 앵커. `null` = 그 ref 에 파일이 없다(새 문서). 키가 없으면 그 칸이 `null` 이다.
 function budgetAt(ref, rel) {
   try {
     const m = /<!--\s*doc-budget:([^>]*?)-->/.exec(gitOut(['show', `${ref}:${rel}`]))
     const mb = m && /max-bytes=(\d+)/.exec(m[1])
-    return mb ? Number(mb[1]) : null
+    const mr = m && RAW_KEY.exec(m[1])
+    return { max: mb ? Number(mb[1]) : null, raw: mr ? Number(mr[1]) : null }
   } catch {
     return null // 그 ref 에 파일이 없다 = 새 문서
   }
 }
+// ── 검사 8f — **원본** 래칫(옵트인 `max-raw-bytes=R`) ─────────────────────────────
+// 검사 8 은 일부러 적재분만 잰다(블록 주석은 주입되지 않는다 — 위 8 머리 주석). 그래서 예산이
+// 묶은 산문은 **주석으로 옮겨 붙는다** — 실측(2026-10-28, 등록부): 2026-09-22 분할 뒤 36 일 동안
+// 적재 192,335 → 193,467B(거의 그대로)인데 블록 주석 633 → 60,409B 였고, 원본은 전역 트립와이어의
+// 96.8 % 까지 갔다. 주석이 많은 문서에만 원본에도 같은 세 규칙을 건다 — 초과 실패 · `main` 대비 인상은
+// 기록 + 300B 이내(8b) · 줄인 몫은 300B 안으로 내린다(8e, 이 저장소에서만). 키를 지우는 것은 무한
+// 인상이라 `main` 에 있던 키가 사라지면 실패다(지우려면 이 검사를 고치는 diff 가 사람 판정이다).
+// 어느 문서에 거는가는 **사람 판정**이다(2026-10-28: 등록부에만) — 그래서 옵트인이다.
+const RAW_KEY = /(?:^|\s)max-raw-bytes=(\d+)/
 // 앵커 주석의 인상 기록. `24,159 → 24,380` · `19400 → **19700**` 둘 다 받는다.
 function raiseIsLogged(text, from, to) {
   const n = (s) => Number(String(s).replace(/[^\d]/g, ''))
@@ -1759,10 +1770,50 @@ function checkDocBudget() {
       )
     }
 
+    // 검사 8f — 원본 래칫(근거: RAW_KEY 머리 주석). 초과와 여유는 트리만 보고, 인상·삭제는 아래에서 기준과 본다.
+    const mr = RAW_KEY.exec(spec)
+    const maxRaw = mr ? Number(mr[1]) : null
+    if (maxRaw !== null && raw > maxRaw) {
+      errors.push(
+        `${rel}: 원본 ${raw}B > max-raw-bytes ${maxRaw}B (초과 ${raw - maxRaw}B · 그중 블록 주석 ${raw - actual}B) — ` +
+          `이 문서는 주석도 센다. 열린 항목의 긴 메모·경위는 PR 본문·커밋으로 보내고 그 포인터만 남겨라`,
+      )
+    }
+    if (maxRaw !== null && existsSync(join(ROOT, 'scripts/check-docs.mjs')) && maxRaw - raw > BUDGET_SLACK_CAP) {
+      errors.push(
+        `${rel}: 원본 ${raw}B 가 max-raw-bytes ${maxRaw}B 보다 ${maxRaw - raw}B 작다(여유 상한 ${BUDGET_SLACK_CAP}B) — ` +
+          `줄였다면 앵커를 함께 내려라(max-raw-bytes=${raw}). 줄인 몫이 상한에 남으면 다음 변경이 그 자리를 무심사로 다시 채운다`,
+      )
+    }
+
     // 검사 8b — 인상 자체를 본다.
     anchors8b++
     if (!ref) continue
-    const was = budgetAt(ref, rel)
+    const at = budgetAt(ref, rel)
+    if (at !== null && at.raw !== null) {
+      if (maxRaw === null) {
+        errors.push(
+          `${rel}: 기준(${ref})의 max-raw-bytes=${at.raw} 가 앵커에서 사라졌다 — 원본 래칫을 지우는 것은 무한 인상이다. ` +
+            `정말 풀어야 한다면 check-docs.mjs 의 검사 8f 를 고치는 diff 가 사람 판정이고 리뷰에서 보인다`,
+        )
+      } else if (maxRaw > at.raw) {
+        const rdelta = maxRaw - at.raw
+        if (!raiseIsLogged(text, at.raw, maxRaw)) {
+          errors.push(
+            `${rel}: max-raw-bytes 를 ${at.raw} → ${maxRaw} (+${rdelta}B) 로 올렸는데 앵커 주석에 그 기록이 없다 — ` +
+              `인상은 교환이어야 하고, 무엇과 바꿨는지가 남아야 한다(\`${at.raw} → ${maxRaw}\` 를 담은 주석)`,
+          )
+        }
+        if (rdelta > BUDGET_RAISE_CAP) {
+          errors.push(
+            `${rel}: max-raw-bytes 인상 +${rdelta}B 가 무심사 상한 ${BUDGET_RAISE_CAP}B 를 넘는다 — ` +
+              `주석으로 옮긴 경위 산문을 PR 본문·커밋으로 보내라(판정 방법은 깎지 말 것). 그래도 안 들어가면 ` +
+              `BUDGET_RAISE_CAP 을 같은 PR 에서 올려라 — 그 diff 가 사람 판정이다`,
+          )
+        }
+      }
+    }
+    const was = at === null ? null : at.max
     if (was === null) continue // 그 ref 에 없던 새 문서 — 인상이 아니다
     baselineHits++
     if (max <= was) continue // 유지·인하는 조이는 방향이라 묻지 않는다

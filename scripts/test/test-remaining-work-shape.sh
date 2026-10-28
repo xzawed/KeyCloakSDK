@@ -119,9 +119,57 @@ assert_eq "4" "$_secs" \
 assert_eq "" "$_bad" \
   "[등록부] 절 헤더의 수가 그 절의 실제 체크박스와 다르다 — 헤더를 고치거나, 헤더에서 수를 빼라"
 
+# ── 소절(`###`) 헤더도 같은 규칙이다 ─────────────────────────────────────────
+# ⚠️ 실측 2026-10-28: 끝에 수를 적은 소절 열다섯 중 셋이 틀렸다(15 → 실제 38 · 10 → 14 · 6 → 25) — 위 단언이
+# `## A–D` 만 봐서 아무도 안 셌다. 같은 규칙(헤더가 자기 소절을 센다 · 기대 상수 없음)을 건다. 끝이 「— N」인
+# `###` 만 본다 — 수를 적지 않은 소절은 주장이 없으니 볼 것도 없다. 소절은 다음 헤딩(어느 깊이든)에서 끝난다.
+_sub_of() {
+  awk '
+  { sub(/\r$/, "") }
+  function flush(){ if (cur != "") { if (sn != n) bad = bad sprintf("%s: 적힘 %d vs 실제 %d\n", cur, sn, n); secs++ }; cur = "" }
+  /^#{1,6} / {
+    flush()
+    if ($0 ~ /^### / && match($0, /— *[0-9]+ *$/)) { t = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", t); sn = t + 0; n = 0; cur = $0 }
+    next
+  }
+  cur != "" && /^- \[[ x]\] / { n++ }
+  END { flush(); printf "%d\n%s", secs, bad }
+  ' "$1"
+}
+# 규칙 자신의 고정 사례 — 「찾은 소절 수:틀린 소절 수」.
+_fx="$(mktemp -d)"
+printf '%s\n' '### 가 — 2' '- [ ] `a`' '- [x] `b`' > "$_fx/ok.md"
+printf '%s\n' '### 가 — 3' '- [ ] `a`' '- [x] `b`' > "$_fx/wrong.md"
+printf '%s\n' '### 가' '- [ ] `a`' > "$_fx/nonum.md"
+printf '%s\n' '### 가 — 1' '- [ ] `a`' '## 나' '- [ ] `b`' > "$_fx/ends-at-h2.md"
+printf '%s\n' '### 가 — 1' '- [ ] `a`' '### 나 — 2' '- [ ] `b`' '- [x] `c`' > "$_fx/two-subs.md"
+printf '### 가 — 1\r\n- [ ] `a`\r\n' > "$_fx/crlf.md"
+for _case in ok:1:0 wrong:1:1 nonum:0:0 ends-at-h2:1:0 two-subs:2:0 crlf:1:0; do
+  _name="${_case%%:*}"; _rest="${_case#*:}"
+  _s="$(_sub_of "$_fx/$_name.md")"
+  _n="$(printf '%s' "$_s" | head -1)"; _b="$(printf '%s' "$_s" | tail -n +2 | grep -c . || true)"
+  assert_eq "$_rest" "$_n:$_b" "[소절 규칙] 사례 $_name: 찾은 소절:틀린 소절"
+done
+rm -rf "$_fx"
+
+_sub="$(_sub_of "$F")"
+_subsecs="$(printf '%s' "$_sub" | head -1)"
+_subbad="$(printf '%s' "$_sub" | tail -n +2)"
+assert_eq "ok" "$(ok_if "$([ "$_subsecs" -gt 0 ] && printf 0 || printf 1)" "$_subsecs")" \
+  "[등록부] 끝에 수를 적은 \`###\` 소절을 하나도 못 찾았다 — 소절 제목 규칙이 바뀌었나? (0 개를 세고 통과시키지 않는다)"
+assert_eq "" "$_subbad" \
+  "[등록부] 소절 헤더의 수가 그 소절의 실제 체크박스와 다르다 — 헤더를 고치거나, 헤더에서 수를 빼라"
+
 # 아카이브 안내가 살아 있는가 — 이관한 곳을 가리키는 줄이 지워지면 다음 세션이 서사를 못 찾는다.
 _ptr="$(grep -c 'archive/docs-history-2026-09' "$F" || true)"
 assert_eq "ok" "$(ok_if "$([ "$_ptr" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
   "[등록부] 이관 대상 태그(archive/docs-history-2026-09)를 가리키는 줄이 사라졌다"
+# 2026-10-28 이관분은 태그가 아니라 `main` 커밋을 가리킨다(`docs/README.md` 규칙: main 이력에 있으면 태그를 새로
+# 만들지 않는다). 그 sha 가 해석되는지는 check-docs 검사 10c 가 본다 — 여기는 포인터가 있는지만 본다.
+# ⚠️ **머리말 안내(H1 ~ 첫 `##`) 안에서만 찾는다** — 본문의 항목들이 같은 꼴의 포인터를 이미 셋 갖고 있어
+# 파일 전체를 grep 하면 안내 줄을 지워도 통과했다(실측 2026-10-28: 이 단언의 첫 판이 main 에서 초록이었다).
+_ptr2="$(awk '/^# /{p=1; next} p && /^## /{exit} p' "$F" | grep -cE 'git show [0-9a-f]{7,40}:docs/superpowers/plans/remaining-work\.md' || true)"
+assert_eq "ok" "$(ok_if "$([ "$_ptr2" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
+  "[등록부] 머리말 안내에 2026-10-28 이관분을 가리키는 \`git show <sha>:docs/superpowers/plans/remaining-work.md\` 줄이 없다"
 
 assert_report

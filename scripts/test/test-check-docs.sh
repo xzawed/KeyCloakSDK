@@ -1571,6 +1571,89 @@ slack_fix $((_loaded + 301)) no
 _out="$(node "$GUARD" "$TMP" 2>&1 || true)"
 assert_not_contains "$_out" "여유 상한" "저장소 밖 픽스처는 8e 대상이 아니다"
 
+# ---- 검사 8f: 원본 래칫(옵트인 `max-raw-bytes`) — 주석도 센다 ----
+# 8 은 적재분만 재서 예산이 묶은 산문이 블록 주석으로 옮겨 붙었다(등록부: 36 일에 주석 633 → 60,409B).
+# 옵트인한 문서에는 원본에도 같은 규칙 — 초과 실패 · main 대비 인상은 기록 + 300B 이내 · 키 삭제 실패 · 여유 ≤ 300B.
+# ⚠️ 키 값은 여섯 자리로 채운다 — 앵커 줄도 원본에 들어가므로, 자릿수가 바뀌면 사례마다 원본 크기가 달라져
+#    아래에서 한 번 잰 크기(`_raw`)가 경계 사례에서 거짓이 된다(8e 의 적재분은 앵커가 주석이라 이 문제가 없다).
+raw_doc() { # <max-raw-bytes 또는 -> [로그줄]
+  { if [ "$1" = - ]; then printf '# raw fixture\n<!-- doc-budget: max-bytes=100000 -->\n'
+    else printf '# raw fixture\n<!-- doc-budget: max-bytes=100000 max-raw-bytes=%06d -->\n' "$1"; fi
+    [ $# -ge 2 ] && printf '<!-- %s -->\n' "$2"
+    printf '<!--\n주석 본문은 적재되지 않지만 원본에는 들어간다.\n-->\n\n본문.\n'; } > "$TMP/raw.md"
+}
+raw_repo() { # <기준 max-raw-bytes 또는 -> — 기준 커밋이 있는 main 픽스처
+  rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+  raw_doc "$1"
+  git init -q -b main "$TMP" >/dev/null 2>&1
+  git -C "$TMP" add -A >/dev/null 2>&1
+  git -C "$TMP" -c user.email=t@example.invalid -c user.name=t commit -qm base >/dev/null 2>&1
+}
+# 원본 크기는 가드 자신에게 묻는다(1 바이트 상한을 걸면 실제 크기를 인쇄한다).
+raw_repo 1
+_raw="$(node "$GUARD" "$TMP" 2>&1 | sed -n 's/.*raw\.md: 원본 \([0-9][0-9]*\)B > max-raw-bytes 1B.*/\1/p' | head -1)"
+assert_ok test -n "$_raw"
+raw_repo 5000
+
+# (a) 상한 안 · 변화 없음 → 통과.
+assert_ok node "$GUARD" "$TMP"
+
+# (b) 원본 초과 → 실패. 주석 바이트까지 세었는지가 이 사례의 요점이다(적재분은 상한 한참 아래다).
+raw_doc $((_raw - 1))
+assert_fails node "$GUARD" "$TMP"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "raw.md: 원본 ${_raw}B > max-raw-bytes $((_raw - 1))B" "원본 초과를 8f 가 지목한다"
+
+# (c) 경계 — 원본 == 상한이면 통과한다.
+raw_doc "$_raw"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_not_contains "$_out" "max-raw-bytes ${_raw}B (초과" "원본 == 상한은 초과가 아니다"
+
+# (d) main 대비 인상 + 기록 없음 → 실패. (e) 기록 있음 → 통과(대조군). 기록의 줄도 원본에 들어가므로 상한을 넉넉히.
+raw_doc 5100
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "max-raw-bytes 를 5000 → 5100 (+100B) 로 올렸는데 앵커 주석에 그 기록이 없다" "원본 인상을 기록 부재로 지목한다"
+raw_doc 5100 '5000 → 5100 (교환 기록)'
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_not_contains "$_out" "max-raw-bytes 를 5000" "기록된 원본 인상은 통과한다"
+
+# (f) 인상 301B — 기록이 있어도 상한을 넘는다. (g) 정확히 300B 는 통과한다.
+raw_doc 5301 '5000 → 5301 (교환 기록)'
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "max-raw-bytes 인상 +301B 가 무심사 상한 300B 를 넘는다" "원본 인상 상한을 지목한다"
+raw_doc 5300 '5000 → 5300 (교환 기록)'
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_not_contains "$_out" "max-raw-bytes 인상" "원본 인상 300B 는 상한 안이다"
+
+# (h) 기준에 있던 키를 지우면 실패한다 — 지우는 것은 무한 인상이다.
+raw_doc -
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "max-raw-bytes=5000 가 앵커에서 사라졌다" "원본 래칫 삭제를 지목한다"
+
+# (i) 대조군 — 기준에 키가 없던 문서가 키를 새로 거는 것은 인상이 아니다.
+raw_repo -
+raw_doc 5000
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_not_contains "$_out" "max-raw-bytes 를" "처음 거는 키는 인상이 아니다"
+assert_not_contains "$_out" "앵커에서 사라졌다" "처음 거는 키는 삭제가 아니다"
+
+# (j) 여유 — 이 저장소(가드 자신이 있는 트리)에서만 본다. 301B 는 실패하고 내릴 값을 닫는 괄호까지 인쇄한다
+#     (`max-raw-bytes=33` 은 `=334` 의 부분 문자열이다 — 8e 에서 SILENT 를 낸 그 부류).
+raw_repo -
+raw_doc $((_raw + 301))
+mkdir -p "$TMP/scripts"; : > "$TMP/scripts/check-docs.mjs"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "raw.md: 원본 ${_raw}B 가 max-raw-bytes $((_raw + 301))B 보다 301B 작다" "원본 여유 301B 를 8f 가 지목한다"
+assert_contains "$_out" "max-raw-bytes=${_raw})" "내릴 값(현재 원본)을 인쇄한다"
+# ⚠️ 아래 둘은 8f 문구로만 판정한다 — 이 픽스처는 큰 적재 예산이라 8e 의 「여유 상한」도 함께 나온다.
+raw_doc $((_raw + 300))
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_not_contains "$_out" "B 가 max-raw-bytes" "원본 여유 300B 는 묻지 않는다"
+rm -f "$TMP/scripts/check-docs.mjs"
+raw_doc $((_raw + 301))
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_not_contains "$_out" "B 가 max-raw-bytes" "저장소 밖 픽스처는 원본 여유를 보지 않는다"
+
 # ---- 검사 8c 경고: 전역 트립와이어의 90% 에 닿은 문서는 미리 알린다 ----
 # 실패(100%)만 있던 시절에는 원장이 82% 가 될 때까지 아무 신호가 없었다(2026-10-28 실측).
 # 8c 는 .md 가 30 개 미만이면 「순회가 깨졌다」로 일찍 돌아가므로 픽스처에 30 개를 깐다.
