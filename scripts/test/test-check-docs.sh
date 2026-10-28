@@ -1668,6 +1668,22 @@ assert_not_contains "$_out" "앵커가" "앵커 하나는 묻지 않는다"
 printf '# raw fixture\n<!-- doc-budget: max-bytes=100000 max-raw-bytes=005000 max-raw-bytes=009000 -->\n\n본문.\n' > "$TMP/raw.md"
 _out="$(node "$GUARD" "$TMP" 2>&1 || true)"
 assert_contains "$_out" "raw.md: doc-budget 앵커에 max-raw-bytes 가 2번 있다" "키 중복을 지목한다"
+# (m) 공백 없이 붙인 중복도 중복이다(2 차 레그 지목) — `max-raw-bytes=100,max-raw-bytes=99999`.
+printf '# raw fixture\n<!-- doc-budget: max-bytes=100000 max-raw-bytes=005000,max-raw-bytes=099999 -->\n\n본문.\n' > "$TMP/raw.md"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "raw.md: doc-budget 앵커에 max-raw-bytes 가 2번 있다" "붙여 쓴 키 중복을 지목한다"
+# (n) 키를 적었는데 읽을 수 없으면 실패다 — 쉼표(인상 기록이 받아 주는 표기)나 `=` 앞의 공백이면 키가 조용히 무시되어
+#     처음 거는 문서에서는 8f 가 통째로 안 돌았다(2 차 레그 지목 · 오타 하나로 래칫이 사라지는 부류).
+for _bad in 'max-raw-bytes=12,400' 'max-raw-bytes =12400'; do
+  printf '# raw fixture\n<!-- doc-budget: max-bytes=100000 %s -->\n\n본문.\n' "$_bad" > "$TMP/raw.md"
+  _out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+  assert_contains "$_out" "raw.md: doc-budget 앵커의 max-raw-bytes 를 읽지 못했다" "읽지 못한 키를 지목한다: $_bad"
+done
+# (o) 앵커를 읽지 못하면 실패다 — 앵커 주석 안의 `>` 하나가 정규식을 끊어 그 문서의 예산 검사가 통째로 사라졌다
+#     (2 차 레그 지목 · 실측: 초과 2,006B 인 문서가 무보고, `>` 만 뺀 대조군은 지목됐다 — 적재 예산에도 있던 구멍이다).
+printf '# raw fixture\n<!-- doc-budget: max-bytes=10 note: raw>loaded -->\n\n본문이 상한보다 길다.\n' > "$TMP/raw.md"
+_out="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$_out" "raw.md: doc-budget 앵커를 읽지 못했다" "읽지 못한 앵커를 지목한다"
 
 # ---- 검사 8c 경고: 전역 트립와이어의 90% 에 닿은 문서는 미리 알린다 ----
 # 실패(100%)만 있던 시절에는 원장이 82% 가 될 때까지 아무 신호가 없었다(2026-10-28 실측).

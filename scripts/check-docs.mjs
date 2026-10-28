@@ -1731,22 +1731,37 @@ function checkDocBudget() {
   for (const f of walk(ROOT)) {
     const rel = relative(ROOT, f).replace(/\\/g, '/')
     const text = readFileSync(f, 'utf8')
-    const m = /<!--\s*doc-budget:([^>]*?)-->/.exec(text)
-    if (!m) continue
     // ⚠️ 앵커는 문서당 하나, 키는 앵커당 하나다 — 첫 매치만 쓰이므로 앞에 놓인 사본(예시·펜스 속)이 진짜 앵커를
     // 가리고, 키 없는 사본이 앞서면 8f 의 삭제·인상 대조가 통째로 꺼진다(독립 레그 지목 2026-10-28 · 실측: 그때
     // 이 저장소에 앵커가 둘인 문서는 0 개였다). 예시를 적어야 하면 `<!--` 를 빼고 `doc-budget:` 만 쓴다.
     const anchorCount = (text.match(/<!--\s*doc-budget:/g) || []).length
+    if (anchorCount === 0) continue
     if (anchorCount > 1) {
       errors.push(`${rel}: doc-budget 앵커가 ${anchorCount}개다 — 첫 매치만 쓰이므로 나머지가 진짜 앵커를 가린다. 하나만 남겨라(예시는 \`<!--\` 를 빼고 적는다)`)
       continue
     }
+    // ⚠️ 읽지 못한 앵커는 실패다 — 주석 안의 `>` 하나가 아래 정규식을 끊어 그 문서의 예산 검사가 통째로 사라졌다
+    // (2 차 레그 지목 · 실측: 초과 2,006B 인 문서가 무보고, `>` 만 뺀 대조군은 지목됐다 — 적재 예산에도 있던 구멍이다).
+    const m = /<!--\s*doc-budget:([^>]*?)-->/.exec(text)
+    if (!m) {
+      errors.push(`${rel}: doc-budget 앵커를 읽지 못했다 — 주석 안에 \`>\` 가 있거나 \`-->\` 로 닫히지 않았다. 이대로면 이 문서의 예산 검사가 통째로 사라진다`)
+      continue
+    }
     const spec = m[1]
-    const dupKey = ['max-bytes', 'max-lines', 'max-raw-bytes'].find(
-      (k) => (spec.match(new RegExp(`(?:^|\\s)${k}=`, 'g')) || []).length > 1,
-    )
-    if (dupKey) {
-      errors.push(`${rel}: doc-budget 앵커에 ${dupKey} 가 ${(spec.match(new RegExp(`(?:^|\\s)${dupKey}=`, 'g')) || []).length}번 있다 — 첫 값만 쓰여 뒤의 값이 거짓말이 된다`)
+    // 키도 하나씩, 그리고 읽을 수 있는 꼴(`키=숫자`)이어야 한다 — `max-raw-bytes=12,400` · `max-raw-bytes =12400` 은 키를
+    // 조용히 지워 처음 거는 문서에서 8f 를 통째로 껐다(2 차 레그 지목). 쉼표는 인상 기록이 받아 주는 표기라 옮겨 쓰기 쉽다.
+    const badKey = ['max-bytes', 'max-lines', 'max-raw-bytes']
+      .map((k) => {
+        const n = spec.split(k).length - 1
+        if (n > 1) return `${rel}: doc-budget 앵커에 ${k} 가 ${n}번 있다 — 첫 값만 쓰여 뒤의 값이 거짓말이 된다`
+        if (n === 1 && !new RegExp(`(?:^|\\s)${k}=\\d+(?=\\s|$)`).test(spec)) {
+          return `${rel}: doc-budget 앵커의 ${k} 를 읽지 못했다 — \`${k}=<숫자>\` 로 쓴다(쉼표·공백 없이)`
+        }
+        return null
+      })
+      .find(Boolean)
+    if (badKey) {
+      errors.push(badKey)
       continue
     }
     const mb = /max-bytes=(\d+)/.exec(spec)
