@@ -249,14 +249,18 @@ class AdminTokenResponseTest {
   /** 압축하지 않은 gzip(저장 블록) — 선 위의 바이트가 푼 바이트보다 많다(gzip 머리·꼬리와 블록마다의 머리). */
   private static byte[] gzipStored(byte[] plain) throws IOException {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
-    try (GZIPOutputStream z = new GZIPOutputStream(out) {
-      {
-        def.setLevel(Deflater.NO_COMPRESSION);
-      }
-    }) {
+    try (GZIPOutputStream z = new StoredGzipOutputStream(out)) {
       z.write(plain);
     }
     return out.toByteArray();
+  }
+
+  /** 저장 블록만 쓰는 gzip — 압축 수준은 {@code DeflaterOutputStream} 의 protected {@code def} 라 하위 클래스에서만 바꾼다. */
+  private static final class StoredGzipOutputStream extends GZIPOutputStream {
+    StoredGzipOutputStream(ByteArrayOutputStream out) throws IOException {
+      super(out);
+      def.setLevel(Deflater.NO_COMPRESSION);
+    }
   }
 
   /** JSON 뒤를 JSON 공백으로 채워 정확히 {@code size} 바이트로 — 결합에게는 같은 값이다. */

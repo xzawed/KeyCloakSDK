@@ -27,6 +27,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -195,7 +196,7 @@ class ResponseFramingBoundsTest {
     final Reply reply;
     final AtomicLong written = new AtomicLong();
     volatile boolean stop;
-    volatile FetchThreadWatch gate;
+    final AtomicReference<FetchThreadWatch> gate = new AtomicReference<>();
 
     RawServer(Reply reply) throws IOException {
       this.reply = reply;
@@ -216,7 +217,7 @@ class ResponseFramingBoundsTest {
           InputStream in = s.getInputStream();
           int contentLength = readRequestHead(in);
           in.readNBytes(contentLength);
-          FetchThreadWatch watch = gate;
+          FetchThreadWatch watch = gate.get();
           if (watch != null) watch.awaitFound(); // 못 찾으면 그대로 답한다 — 잰 쪽(allocated)이 거부한다
           OutputStream out = new OutputStream() {
             final OutputStream sink = s.getOutputStream();
@@ -367,7 +368,7 @@ class ResponseFramingBoundsTest {
     com.sun.management.ThreadMXBean threads = allocationCounter();
     try (RawServer server = new RawServer(reply)) {
       FetchThreadWatch fetch = lane == JWKS_LANE ? new FetchThreadWatch(threads) : null;
-      server.gate = fetch;
+      server.gate.set(fetch);
       long before = threads.getCurrentThreadAllocatedBytes();
       long start = System.nanoTime();
       Throwable thrown = null;
