@@ -8,6 +8,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **(Python)** README 가 `keycloak_sdk.aio` 는 이벤트 루프를 막지 않는다고 적었습니다 — 요청은 전부 await 하지만, `AsyncKeycloakClient.create(config)` 와 첫 `kc.admin` 접근은 호출 스레드에서 HTTP 클라이언트를 만들고 TLS 신뢰 저장소를 읽습니다(Windows 에서는 1 초에 가까울 수 있습니다). README 를 고쳤습니다 — 클라이언트는 앱이 시작할 때 한 번 만들어 재사용하세요. 동작은 바뀌지 않았습니다.
+
 ## [1.4.0] - 2026-10-27 (Ruby)
 
 **2026-10-27 여섯째 릴리스 물결 — 여덟 언어가 여섯 번호로 올라갑니다.** 다섯째 물결(아래 `[1.4.1] - 2026-10-23 (PHP)` 절의 머리말)과 `[1.3.2] - 2026-10-23 (Ruby)` 뒤에 착지한 여덟 언어의 수정을 아래 여섯 절에 싣습니다(그 사이의 `[1.5.0] - 2026-10-27 (PHP)` 는 PHP 만 냈고, 받는 토큰의 길이 상한 여덟 항목만 그 뒤에 착지했습니다) — admin 이 결과를 얻은 뒤에도 응답 본문을 끝까지 읽던 것(여덟 언어 — 이제 오류 본문은 1,048,576 바이트(토큰 응답 상한)까지만 읽고, 쓰기의 2xx 본문은 끝까지 읽지 않습니다. Rust 는 오류 본문만 해당합니다), 받는 토큰을 디코드·JWKS 요청보다 먼저 256,000 바이트에서 거부하는 상한(여덟 언어 — .NET 은 기대 오던 Microsoft.IdentityModel 기본값을 SDK 가 직접 소유해 상한 밖 토큰의 메시지만 바뀝니다), 교환 도중의 기한·취소가 오류에서 `errors.Is` 정체를 잃던 것(Go)입니다. 공개 API 가 늘어난 것은 Ruby 하나라 Ruby `1.4.0` 만 minor 이고(`Http` 의 모듈 함수 둘 `Http.settling` · `Http.read_error_body` — 아래 `[1.3.0] - 2026-10-05 (Ruby)` 의 `Http.read_capped` 와 같은 부류입니다), 나머지는 patch 입니다 — Go `1.2.4`, Java `1.2.3`, Rust `1.1.4`, Kotlin `1.0.7`, Python · .NET · Node `1.0.6`(아래 절들). PHP 의 항목은 이 여섯 절에 없습니다. 실제로 어디까지 게시됐는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh` 의 `df_published_version` 이 소유합니다.
