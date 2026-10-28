@@ -13,11 +13,12 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// stream of unknown kids still costs at most one refetch per window (registry <c>wave4-hardening-dotnet</c> (1)).
 /// </summary>
 /// <remarks>
-/// <para>Measured before the fix (2026-10-28, IdentityModel 8.23.0, this file): the first token under the rotated-in key was
-/// rejected with IDX10503 and the next one accepted. On an unresolved kid IdentityModel's handler calls
-/// <c>RequestRefresh</c>, then retries only if <c>GetBaseConfigurationAsync</c> hands back a different configuration — and
-/// its manager runs the requested refresh in the background (<c>Task.Run</c>), so the call that asked for it still saw the
-/// old keys.</para>
+/// <para>Measured before the fix (2026-10-29, IdentityModel 8.23.0): the first test here failed on the first token under the
+/// rotated-in key — IDX10503 (<c>SecurityTokenSignatureKeyNotFoundException</c>) — and a scratch probe through the public
+/// constructor saw the next one, 300 ms later, accepted with no further request. On an unresolved kid IdentityModel's
+/// handler calls <c>RequestRefresh</c>, then retries only if <c>GetBaseConfigurationAsync</c> hands back a different
+/// configuration — and its manager runs the requested refresh in the background (<c>Task.Run</c>), so the call that asked
+/// for it still saw the old keys.</para>
 /// <para>The IdP is in process and counts its requests. The refetch window and the failure backoff both run on the SDK's
 /// clock seam, which stands still unless a test moves it, so "one per window" is exact, not a timing guess. A refetch is a
 /// discovery request and a JWKS request, as every IdentityModel fetch is.</para>
