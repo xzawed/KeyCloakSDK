@@ -249,6 +249,23 @@ pub fn variants(base: &str) -> Vec<Variant> {
                 ("G_AT", "G-ACCESS-CANARY-5F9H".into()),
             ],
         },
+        // (h) 쓸 수 있는 응답 뒤에 바이트가 더 붙는다 — oauth2 는 값 하나만 읽고 `end()` 를 안 불러 그 꼬리를 버렸다.
+        // `active` 도 실어 introspect 레인도 같은 본문으로 꼬리에 닿는다. 꼬리 자신도 카나리아다(거부 문구가 인용하는가).
+        Variant {
+            realm: "h1-trailing-bytes",
+            status: 200,
+            content_type: "application/json".into(),
+            body: format!(
+                "{}H1-TAIL-CANARY-4W8E",
+                json!({"access_token": "H1-ACCESS-CANARY-6P3D", "token_type": "Bearer",
+                    "expires_in": 300, "refresh_token": "H1-REFRESH-CANARY-2N7K", "active": true})
+            ),
+            canaries: vec![
+                ("H1_AT", "H1-ACCESS-CANARY-6P3D".into()),
+                ("H1_RT", "H1-REFRESH-CANARY-2N7K".into()),
+                ("H1_TAIL", "H1-TAIL-CANARY-4W8E".into()),
+            ],
+        },
     ]
 }
 
@@ -273,6 +290,9 @@ pub const EXPECTED: &[(&str, [&str; 9])] = &[
     ("e3-error-code-token",    ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
     ("f1-active-not-bool",     ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Auth",      "Admin(401)"]),
     ("g-content-type-echo",    ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "ok",        "ok"]),
+    // 꼬리 바이트는 이 표의 다른 행과 달리 수정이 분류를 바꾼 행이다 — 전에는 cc·refresh·exch(None)·introspect·TP 가 ok,
+    // exch(Some)·exch(redir) 가 Auth(id_token 없음)였다(`tests/token_response_trailing_bytes.rs`).
+    ("h1-trailing-bytes",      ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
 ];
 
 /// 찍는 경로 넷.
