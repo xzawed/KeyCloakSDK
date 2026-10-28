@@ -779,13 +779,13 @@ internal class AdminTokenResponseTest {
             assertEquals(listOf("GET /admin/realms/r/users/x · Bearer AT-1", "POST /admin/realms/r/users · Bearer AT-1"), adminHits())
         }
 
-    // HTTP 필드 값이 싣지 못하는 문자(RFC 9110 §5.5 — CR·LF·NUL·HTAB 밖의 C0·DEL)를 담은 access_token 은 쓸 수 없는 토큰이다(Java
-    // 동형): admin 요청을 하나도 보내지 않고, 캐시하지도 않는다(두 번째 호출이 다시 부여한다). 오류는 토큰을 인용하지 않는다. 수정 전
-    // HttpCore 는 그 Bearer 를 조용히 고쳐 보냈다 — CR·LF·VT·FF 는 공백으로, NUL·그 밖의 C0·DEL 은 ? 로. 대조: HTAB·SP·U+00E9·U+0100·
-    // U+0085·~ 는 지금처럼 보낸다 — 그 밖의 판정은 아홉 언어가 함께 정할 일이다(등록부 bearer-token-grammar-divergent). 서버가 해석한
-    // 값은 표로 찍는다 — 선 위 바이트가 아니다(com.sun HttpServer 는 HTAB 을 공백으로 읽는다).
+    // 그대로 보낼 수 있는 bearer(RFC 6750 b64token — TokenResponseGuard.sendableAsIs)가 아닌 access_token 은 쓸 수 없는 토큰이다(Java
+    // 동형): admin 요청을 하나도 보내지 않고, 캐시하지도 않는다(두 번째 호출이 다시 부여한다). 오류는 토큰을 인용하지 않는다. HTTP 필드
+    // 값이 싣지 못하는 문자(RFC 9110 §5.5 — HTAB 밖의 C0·DEL)를 수정 전 HttpCore 는 조용히 고쳐 보냈다 — CR·LF·VT·FF 는 공백으로, NUL·그
+    // 밖의 C0·DEL 은 ? 로. HTAB·SP·U+00E9·U+0100·U+0085 는 그 뒤에도 보냈다 — 아홉 언어 공통 규칙(등록부 bearer-token-grammar-divergent,
+    // 2026-10-29)이 그것도 거부한다(정본 표는 BearerTokenGrammarTest). 대조: ~ 는 b64token 의 글자라 보낸다.
     @Test
-    fun `an access_token no HTTP header can carry is neither sent nor cached`() =
+    fun `an access_token that is no bearer as-is is neither sent nor cached`() =
         runTest {
             val table = mutableListOf<String>()
             val wrong = mutableListOf<String>()
@@ -796,6 +796,7 @@ internal class AdminTokenResponseTest {
                 refused += "${c}tok-end"
                 refused += "tok-end$c"
             }
+            refused += listOf("tok-\t-end", "tok- -end", "tok-é-end", "tok-Ā-end", "tok-\u0085-end")
             for (token in refused) {
                 reset(Reply(200, atrTokenBody(atrJsonString(token), ",\"refresh_token\":\"$ATR_RT_CANARY\"")))
                 val thrown = admin().use { admin -> List(2) { atrOutcome { admin.users().get("x") } } }
@@ -814,7 +815,7 @@ internal class AdminTokenResponseTest {
                     wrong += "$label: 토큰을 캐시했다(두 번째 호출이 다시 부여하지 않았다) — grants ${grants()}"
                 }
             }
-            for (token in listOf("tok-\t-end", "tok- -end", "tok-é-end", "tok-Ā-end", "tok-\u0085-end", "tok-~-end")) {
+            for (token in listOf("tok-~-end")) {
                 reset(Reply(200, atrTokenBody(atrJsonString(token))))
                 val thrown = admin().use { admin -> List(2) { atrOutcome { admin.users().get("x") } } }
                 val label = "대조 access_token ${atrPrintable(token)}"
@@ -824,7 +825,7 @@ internal class AdminTokenResponseTest {
                 if (adminHits().size != 2) wrong += "$label: admin 요청 두 건이어야 한다 — ${atrPrintable(adminHits().toString())}"
                 if (grants() != listOf("client_credentials")) wrong += "$label: 토큰은 캐시돼야 한다 — grants ${grants()}"
             }
-            println("[AdminTokenResponseTest 헤더가 싣지 못하는 access_token]\n  " + table.joinToString("\n  "))
+            println("[AdminTokenResponseTest 그대로 보낼 수 없는 access_token]\n  " + table.joinToString("\n  "))
             assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
         }
 
