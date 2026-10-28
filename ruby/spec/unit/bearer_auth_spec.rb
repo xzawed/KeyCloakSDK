@@ -181,6 +181,15 @@ RSpec.describe KeycloakSdk::Admin::BearerAuth do
     end
   end
 
+  # `to_s` 가 String 이 아니어도 예전 헤더 그대로다 — 보간은 그것을 Ruby 의 기본 글(`#<Class:0x…>`)로 바꿨다. `to_s` 를
+  # 그대로 쓰면 그 값이 검사에서 raw 예외가 된다. 거부는 새 정책이라 하지 않는다.
+  it "sends an object whose to_s is not a String as Ruby's default text, as before" do
+    expect(admin(UnsendableTokenSpec::Texty.new(nil)).users.list).to eq([])
+    sent = /\ABearer #<UnsendableTokenSpec::Texty:0x\h+>\z/
+    expect(a_request(:get, UnsendableTokenSpec::USERS).with { |r| r.headers["Authorization"].match?(sent) })
+      .to have_been_made.once
+  end
+
   # 검사한 글이 보낸 글이다 — provider 의 값은 글로 한 번만 바뀐다(다시 바꾸면 둘째 글은 검사를 받지 않고 나간다).
   it "checks the very text it sends, turning the provider's value into text once" do
     token = UnsendableTokenSpec::Flip.new(["hFL7k-bearer-ab", "hFL7k-bearer-a#{13.chr}b"])
