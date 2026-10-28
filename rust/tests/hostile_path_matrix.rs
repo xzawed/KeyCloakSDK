@@ -28,7 +28,7 @@
 //!        `hostile_token_response.rs` 의 `drive` 가 부르는 SDK 이름이 전부 표에 있는가, 보안 기본값 가드의
 //!        rust 행위 앵커(`rust/…rs|fn x(`)가 전부 표의 앵커인가.
 //!   (W3a) TOKEN_GRANT·CODE_EXCHANGE 행마다 형식이 틀린 토큰 응답 변형 — 변형 집합은 새로 만들지 않는다:
-//!        `hostile_variants`(#623 의 열넷)와 `src/token_provider.rs` 의 비문자열 access_token 넷. 기존 시험이
+//!        `hostile_variants`(#623 의 열넷 + 꼬리 바이트 `h1`)와 `src/token_provider.rs` 의 비문자열 access_token 넷. 기존 시험이
 //!        토큰 열 **전부**에서 실패로 단언한 것만 단언하고, 나머지는 측정만 한다(새 계약을 만들지 않는다).
 //!        칸마다: 패닉 없음 · 오류 · SDK 오류 타입 · 카나리아가 `{}`·`{:?}`·`{:#?}`·`source()` 사슬 어디에도
 //!        없음 · 토큰 엔드포인트에 닿음(≥ 1, 그러나 정상 응답 대조보다 많지 않음) · 그 응답 **뒤로** 요청 없음.

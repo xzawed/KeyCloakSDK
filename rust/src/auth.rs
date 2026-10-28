@@ -84,9 +84,26 @@ impl<'c> AsyncHttpClient<'c> for CappedHttp<'_> {
                         self.what
                     ))
                 })?;
+            // ⚠️ **본문은 JSON 값 하나다** — oauth2 5.0 은 값 하나만 읽고 `end()` 를 부르지 않아(`endpoint.rs` 의
+            // `endpoint_response`·`check_response_status`) `{…}garbage` 를 받았다. admin provider·JWKS·admin 파사드는
+            // `from_slice` 라 거부한다 — 그 답에 맞춘다. 상태와 무관하다(오류 본문도). 분류는 다른 형식 오류와 같다.
+            if trails_json_value(&body) {
+                return Err(HttpClientError::Other(UNPARSABLE_RESPONSE.into()));
+            }
             builder.body(body).map_err(HttpClientError::Http)
         })
     }
+}
+
+/// 형식이 틀린 토큰·introspection 응답의 SDK 문구 — oauth2 의 `Parse` 와 `CappedHttp` 의 꼬리 거부가 함께 쓴다.
+const UNPARSABLE_RESPONSE: &str = "token request failed: Failed to parse server response";
+
+/// JSON 값 하나 **뒤에** JSON 공백(SP·HTAB·LF·CR) 아닌 바이트가 있는가 — `serde_json::from_slice` 가 거부하는 모양
+/// (`Deserializer::end`). 첫 값부터 안 풀리면 `false` 다 — 그 본문은 oauth2 가 지금처럼 거부한다(빈 본문의 문구 포함).
+/// `IgnoredAny` 라 값을 만들지 않는다 — 중첩 한 단계에 1 바이트인 스택만 본문 상한 안에서 자란다.
+fn trails_json_value(body: &[u8]) -> bool {
+    let mut de = serde_json::Deserializer::from_slice(body);
+    <serde::de::IgnoredAny as serde::Deserialize>::deserialize(&mut de).is_ok() && de.end().is_err()
 }
 
 fn now_secs() -> u64 {
@@ -454,12 +471,11 @@ fn map_token_err(
             // 코드 자리에 코드 아닌 값(되울린 토큰)이 오면 그것도 싣지 않는다(`oauth_error_code`).
             oauth_error: oauth_error_code(resp.error().as_ref()),
         },
-        // `Other` 는 `CappedHttp` 만 만든다 — 상한 초과의 고정 문구(admin 레인과 같다)라 그대로 옮긴다.
+        // `Other` 는 `CappedHttp` 만 만든다 — 고정 문구 둘(상한 초과 — admin 레인과 같다 · 값 뒤 바이트 — 아래 `Parse` 와
+        // 같다)이라 그대로 옮긴다.
         RTE::Request(HttpClientError::Other(msg)) => KeycloakError::Transport(msg),
         RTE::Request(re) => KeycloakError::Transport(format!("token request: {re}")),
-        RTE::Parse(..) => {
-            KeycloakError::Transport("token request failed: Failed to parse server response".into())
-        }
+        RTE::Parse(..) => KeycloakError::Transport(UNPARSABLE_RESPONSE.into()),
         RTE::Other(msg) => KeycloakError::Transport(format!(
             "token request failed: Other error: {}",
             other_message(&msg)
