@@ -8,6 +8,9 @@
 
 ## [Unreleased]
 
+### Changed
+- **(PHP)** `composer.json` 이 `ext-curl` 을 요구하고 하한을 `guzzlehttp/guzzle ^7.15.2` · `guzzlehttp/psr7 ^2.12.3` 으로 올립니다 — curl 이 없으면 Guzzle 이 PHP stream 처리기로 내려가 응답 헤더 한 줄을 길이 제한 없이 읽었고(16 MiB 한 줄에 +57 MB, 손잡이가 없다), psr7 2.11 아래는 상한에서 전송을 멈추지 못해 큰 오류 본문을 끝까지 받았습니다. 두 하한은 권고 GHSA-v5mv-p594-2x33 · GHSA-f7vp-7xgx-4w4r(Guzzle)과 GHSA-c2w2-prh8-qm98(psr7)도 닫습니다. ⚠️ curl 확장이 없는 환경에서는 설치가 거부됩니다(Composer 는 확장을 설치 때 확인합니다).
+
 ### Fixed
 - **(Go)** 공유 비행(첫 `Client.Admin` · client_credentials 토큰 · JWKS 조회)의 결과와 호출자 ctx 의 취소가 함께 준비되면 둘 중 하나를 무작위로 돌려줬습니다(동점 200 회에 `context.Canceled` 93–103 회) — 이제 준비된 결과가 이깁니다(캐시 적중이 이미 그렇다). 결과가 아직 없으면 전처럼 ctx 오류입니다.
 - **(Python)** README 가 `keycloak_sdk.aio` 는 이벤트 루프를 막지 않는다고 적었습니다 — 요청은 전부 await 하지만, `AsyncKeycloakClient.create(config)` 와 첫 `kc.admin` 접근은 호출 스레드에서 HTTP 클라이언트를 만들고 TLS 신뢰 저장소를 읽습니다(Windows 에서는 1 초에 가까울 수 있습니다). README 를 고쳤습니다 — 클라이언트는 앱이 시작할 때 한 번 만들어 재사용하세요. 동작은 바뀌지 않았습니다.
