@@ -48,7 +48,6 @@ class TokenResponseGuardTest {
     for (String json : List.of(
         "{\"access_token\":\"AT\",\"token_type\":\"Bearer\",\"expires_in\":300}",
         "{\"access_token\":\"12345\"}",                         // 따옴표 친 숫자는 진짜 문자열이다
-        "{\"access_token\":\" \"}",                             // 계약은 「비어 있지 않음」 — 공백 판정은 IdP 몫(Go 와 같다)
         "{\"x\":{\"access_token\":1},\"y\":[1,{\"a\":[2]}],\"access_token\":\"AT\"}", // 중첩은 결합되지 않는다
         "{\"access_token\":\"A\",\"access_token\":\"B\"}",       // 중복이어도 전부 문자열이면 된다
         "{\"access\\u005ftoken\":\"AT\"}",                      // 이스케이프된 키도 같은 이름이다
@@ -65,6 +64,7 @@ class TokenResponseGuardTest {
         "{\"access_token\":true}", "{\"access_token\":false}", "{\"access_token\":null}",
         "{\"access_token\":\"\"}", "{\"access_token\":{\"v\":\"x\"}}", "{\"access_token\":[]}",
         "{\"access_token\":[\"x\"]}",
+        "{\"access_token\":\" \"}",                             // b64token 이 아니다(아홉 언어 공통 규칙 — BearerTokenGrammarTest)
         "{\"token_type\":\"Bearer\",\"expires_in\":300}", "{}",                       // 누락
         "{\"x\":{\"access_token\":\"AT\"}}",                                           // 중첩만 있다 — 누락이다
         "{\"access_token\":\"AT\",\"access_token\":12345}",                           // 결합은 마지막 값(숫자)을 쓴다

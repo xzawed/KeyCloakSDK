@@ -592,14 +592,14 @@ class AdminTokenResponseTest {
   }
 
   /**
-   * HTTP 필드 값이 싣지 못하는 문자(RFC 9110 §5.5 — CR·LF·NUL·HTAB 밖의 C0·DEL)를 담은 access_token 은 쓸 수 없는 토큰이다: admin
-   * 요청을 하나도 보내지 않고, 캐시하지도 않는다(두 번째 호출이 다시 부여한다). 오류는 토큰을 인용하지 않는다. 수정 전 HttpCore 는 그
-   * Bearer 를 조용히 고쳐 보냈다 — CR·LF·VT·FF 는 공백으로, NUL·그 밖의 C0·DEL 은 {@code ?} 로(실측 2026-10-09: 모든 행에서 admin 요청이
-   * 나갔고 토큰은 캐시됐다). 대조: HTAB·SP·U+00E9·U+0100·U+0085·{@code ~} 는 지금처럼 보낸다 — 그 밖의 판정은 아홉 언어가 함께 정할
-   * 일이다(등록부 bearer-token-grammar-divergent). 서버가 해석한 값은 표로 찍는다 — 선 위 바이트가 아니다(com.sun HttpServer 는 HTAB 을
-   * 공백으로 읽는다). 원시 소켓으로 잰 선 위 바이트(2026-10-09): HTAB 0x09 · SP 0x20 · U+00E9 0xE9 · U+0100·U+0085 {@code ?}.
+   * 그대로 보낼 수 있는 bearer(RFC 6750 b64token — {@link TokenResponseGuard#sendableAsIs})가 아닌 access_token 은 쓸 수 없는
+   * 토큰이다: admin 요청을 하나도 보내지 않고, 캐시하지도 않는다(두 번째 호출이 다시 부여한다). 오류는 토큰을 인용하지 않는다. HTTP 필드
+   * 값이 싣지 못하는 문자(RFC 9110 §5.5 — HTAB 밖의 C0·DEL)를 수정 전 HttpCore 는 조용히 고쳐 보냈다 — CR·LF·VT·FF 는 공백으로, NUL·그
+   * 밖의 C0·DEL 은 {@code ?} 로(실측 2026-10-09: 모든 행에서 admin 요청이 나갔고 토큰은 캐시됐다). HTAB·SP·U+00E9·U+0100·U+0085 는 그
+   * 뒤에도 보냈다(선 위 0x09 · 0x20 · 0xE9 · {@code ?} · {@code ?}) — 아홉 언어 공통 규칙(등록부 bearer-token-grammar-divergent,
+   * 2026-10-29)이 그것도 거부한다(정본 표는 {@link BearerTokenGrammarTest}). 대조: {@code ~} 는 b64token 의 글자라 보낸다.
    */
-  @Test void anAccessTokenNoHttpHeaderCanCarry_isNeitherSentNorCached() {
+  @Test void anAccessTokenThatIsNoBearerAsIs_isNeitherSentNorCached() {
     List<String> table = new ArrayList<>();
     List<String> wrong = new ArrayList<>();
     List<String> refused = new ArrayList<>();
@@ -611,6 +611,7 @@ class AdminTokenResponseTest {
       refused.add(c + "tok-end");
       refused.add("tok-end" + c);
     }
+    refused.addAll(List.of("tok-\t-end", "tok- -end", "tok-é-end", "tok-Ā-end", "tok-\u0085-end"));
     for (String token : refused) {
       reset(new Reply(200, tokenBody(jsonString(token), ",\"refresh_token\":\"" + RT_CANARY + "\"")));
       List<Throwable> thrown = new ArrayList<>();
@@ -632,7 +633,7 @@ class AdminTokenResponseTest {
         wrong.add(label + ": 토큰을 캐시했다(두 번째 호출이 다시 부여하지 않았다) — grants " + grants());
       }
     }
-    for (String token : List.of("tok-\t-end", "tok- -end", "tok-é-end", "tok-Ā-end", "tok-\u0085-end", "tok-~-end")) {
+    for (String token : List.of("tok-~-end")) {
       reset(new Reply(200, tokenBody(jsonString(token), "")));
       List<Throwable> thrown = new ArrayList<>();
       try (AdminClient admin = admin()) {
@@ -645,7 +646,7 @@ class AdminTokenResponseTest {
       if (adminHits().size() != 2) wrong.add(label + ": admin 요청 두 건이어야 한다 — " + printable(adminHits().toString()));
       if (!grants().equals(List.of("client_credentials"))) wrong.add(label + ": 토큰은 캐시돼야 한다 — grants " + grants());
     }
-    System.out.println("[AdminTokenResponseTest 헤더가 싣지 못하는 access_token]\n  " + String.join("\n  ", table));
+    System.out.println("[AdminTokenResponseTest 그대로 보낼 수 없는 access_token]\n  " + String.join("\n  ", table));
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
   }
 
