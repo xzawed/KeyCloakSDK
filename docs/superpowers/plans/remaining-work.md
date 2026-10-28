@@ -72,7 +72,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 2. `guard-detection-surface-hand-narrowed` [H/M](attest — KNOWN_GAPS 대조는 #773) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
 3. ⚠️ **손대기 전에 전제를 잰다** — 이번에도 뒤집혔다: jwks 후보(「신선한 캐시가 없으면 센다」)는 600 초 경계에서 규칙 (4) 를 깼고, 「낡은 캐시 + 장애」는 node 하나가 아니라 node·.NET 이었고, probe.sh 초안 정규식은 지어낸 줄로 골라 실제 출력 셋을 못 맞췄다.
 
-**판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다. 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유하고, PM·Grok 대조는 판정 기록 PR 본문에 있다. 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3` · rust·node `raw()` 오류 본문은 상한 없음을 문서로 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
+**판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3` · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
 
 **함정** — 전부 그대로 유효하다. (a)–(i) 는 한 줄 요약이다(원문: (a)–(f) 는 2026-10-28 이관분의 「세션 회고」 절 끝(2026-09-05·06), (g)–(i) 와 더한 날은 git log).
 
