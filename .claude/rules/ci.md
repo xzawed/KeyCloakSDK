@@ -10,7 +10,9 @@ paths:
      (`gh run view … --log | grep 'Release Count'`). Central Portal 의 월간 게시 상한은 계정 상태라
      로컬 게이트가 못 보고, 그 수를 말해 주는 곳은 업로드 로그 한 줄뿐이다. 담은 넷이 전부 수행
      방법이다 — (1) 상한이 있다는 사실, (2) 실측 근거(로그 줄과 날짜), (3) 물결마다 둘을 쓴다는
-     산수, (4) 다시 재는 명령. 필요한 만큼만 올렸다(적재 9964 → 10253). -->
+     산수, (4) 다시 재는 명령. 필요한 만큼만 올렸다(적재 9964 → 10253).
+     2026-10-28: 그 줄을 실측으로 교환했다(바이트 증가 없음) — 「막는다」가 10 월 8 번째 게시에서
+     반증됐고, 행동을 바꾸지 않게 된 (3) 산수는 뺐다. 경위는 그 커밋에 있다. -->
 <!-- 9720 → 9985 (2026-09-02): 래칫 조건 (1) — 증가분이 **기계 검증을 사 온다**. 이 절의 규약이
      「가드가 강제하는데 아무 데도 안 적힌 불변식을 한 줄씩」이고, 이번 줄이 가리키는
      `test-selftest-hygiene.sh` 규칙 5 는 **이 PR 에서 새로 생긴 검사**다(그전에는 아무도 안 봤다).
@@ -56,7 +58,7 @@ The definitions are `.github/rulesets/*.json` (the committed JSON is the SSOT); 
 
 - ⚠️ **An unset deployment secret is a failure, not a skip.** A run that publishes nothing and finishes green is indistinguishable from a successful one, and quietly leaves the tag and Release with an empty registry. Same reason we avoid `dotnet nuget push --skip-duplicate` (it disguises an already-burned version as success).
 - ⚠️ **That guard only works on an env-mapped value inside the step** — a job-level `if:` cannot read secrets.
-- ⚠️ **The Central Portal caps the org's published releases per month** — java 1.2.3's upload logged `Release Count publishing limit (6 of 7 used)` (2026-10-27); each wave spends two (java, kotlin). Before JVM tags: `gh run view <last release.yml run> --log | grep 'Release Count'`.
+- ⚠️ **Central's monthly Release Count limit has only warned — measured through the 8th.** At `(6 of 7 used)` java 1.2.3 and kotlin 1.0.7 still went LIVE (October 2026's 7th and 8th by repo1 `Last-Modified`). Count: `gh run view <last release.yml run> --log | grep 'Release Count'`.
 
 ## Dependabot
 
