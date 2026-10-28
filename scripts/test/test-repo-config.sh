@@ -331,7 +331,16 @@ assert_contains "$(cd "$DIR/.." && node -e "
   $WFD process.stdout.write(workflowDrift($LIVEW,[]).join('|'));});")" \
   '커밋된 워크플로가 0 개다' \
   '커밋 목록이 비면 fail-closed 다(대조가 공허해진다)'
-# 배선 — 판정 함수가 맞아도 main() 이 부르지 않으면 `check` 는 워크플로를 안 본다. 라이브 대조는
+# 포크 — `disabled_fork` 는 포크의 기본값이다. 드리프트로 내면 포크에서 돌린 check 가 전부 빨갛다(Grok 레그 지적).
+assert_eq "0" "$(cd "$DIR/.." && node -e "
+  $WFD process.stdout.write(String(workflowDrift([{id:1,path:'.github/workflows/a.yml',state:'disabled_fork'}],['.github/workflows/a.yml']).length));});")" \
+  'disabled_fork 는 드리프트가 아니다(포크의 기본값)'
+# 확장자는 대소문자를 가리지 않는다 — 가리면 커밋된 `b.YML` 이 꺼져도 목록에서 빠진다(Grok 레그 지적).
+assert_eq ".github/workflows/a.yml|.github/workflows/b.YML|.github/workflows/c.yaml" "$(cd "$DIR/.." && node -e "
+  import('./repo-config.mjs').then(({workflowFiles})=>{
+    process.stdout.write(workflowFiles('.github/workflows/a.yml\n.github/workflows/b.YML\n.github/workflows/c.yaml\n.github/workflows/README.md\n').join('|'));});")" \
+  'workflowFiles 가 .yml·.YML·.yaml 을 고르고 다른 파일은 뺀다'
+# 배선 —판정 함수가 맞아도 main() 이 부르지 않으면 `check` 는 워크플로를 안 본다. 라이브 대조는
 # 네트워크라 여기서 못 돌므로 모양으로 고정한다(주석 처리한 줄은 세지 않는다 — 맨 부분 문자열 금지).
 assert_eq "1" "$(sed -n '/^function main()/,/^}/p' "$CFG" | grep -cE '^[[:space:]]*drift \+= checkWorkflows\(repo\)')" \
   'check 가 워크플로 상태를 대조한다(main 배선)'

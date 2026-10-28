@@ -237,7 +237,8 @@ function mirrorDrift(want) {
 // `active` 로 남고(2026-10-28 실측: probe-vuln-alerts·sonar-diagnose — 그 브랜치를 다시 밀면 다시
 // 돈다), 커밋된 워크플로가 웹 UI 에서 꺼지거나 무활동으로 `disabled_inactivity` 가 되면 정기
 // 감사가 실패도 없이 멈춘다. CI 는 어느 쪽도 볼 수 없다 — 꺼진 워크플로는 빨강을 내지 않는다.
-// `dynamic/…`(Dependabot·CodeQL default setup)은 GitHub 이 관리하므로 뺀다.
+// `dynamic/…`(Dependabot·CodeQL default setup)은 GitHub 이 관리하므로 뺀다. `disabled_fork` 는 포크의
+// 기본값이라 커밋된 정의가 요구할 수 있는 상태가 아니다(포크에서 돌리면 전부 드리프트가 된다).
 export function workflowDrift(live, committed) {
   const out = []
   if (!committed.length) out.push('workflow: 커밋된 워크플로가 0 개다 — 대조가 공허하다')
@@ -247,13 +248,19 @@ export function workflowDrift(live, committed) {
     if (!w.path.startsWith('.github/workflows/')) continue
     seen.add(w.path)
     if (files.has(w.path)) {
-      if (w.state !== 'active') out.push(`${w.path}: 커밋돼 있는데 ${w.state} 다 — 돌지 않는다(\`gh workflow enable ${w.id}\`)`)
+      if (w.state !== 'active' && w.state !== 'disabled_fork') out.push(`${w.path}: 커밋돼 있는데 ${w.state} 다 — 돌지 않는다(\`gh workflow enable ${w.id}\`)`)
     } else if (w.state === 'active') {
       out.push(`${w.path} (id ${w.id}): 파일 없이 active 다 — 지운 브랜치의 유령이다(\`gh workflow disable ${w.id}\`)`)
     }
   }
   for (const f of committed) if (!seen.has(f)) out.push(`${f}: 커밋돼 있는데 라이브 목록에 없다`)
   return out
+}
+
+// `git ls-files .github/workflows` 출력 → 워크플로 파일. 확장자는 대소문자를 가리지 않는다 — 가리면
+// 커밋된 `ci.YML` 이 꺼져도 목록에서 빠져 보이지 않는다(Grok 레그 지적).
+export function workflowFiles(lsFiles) {
+  return lsFiles.split('\n').map((f) => f.trim()).filter((f) => /\.ya?ml$/i.test(f))
 }
 
 // `run` 은 자가테스트가 가짜 gh 를 끼우는 자리다 — 판정이 맞아도 이 함수가 그 결과를 종료코드로
@@ -268,7 +275,7 @@ export function checkWorkflows(repo, run = gh) {
   const live = r.out.split('\n').filter(Boolean).map((l) => JSON.parse(l))
   const g = spawnSync('git', ['-C', ROOT, 'ls-files', '.github/workflows'], { encoding: 'utf8', windowsHide: true })
   if (g.status !== 0) die(2, `git ls-files 실패\n${g.stderr || g.error?.message || ''}`)
-  const committed = g.stdout.split('\n').filter((f) => /\.ya?ml$/.test(f))
+  const committed = workflowFiles(g.stdout)
   const d = workflowDrift(live, committed)
   if (d.length === 0) {
     console.log(`ok   Actions 워크플로 ${committed.length}개 — 커밋된 파일과 라이브 상태 일치`)
