@@ -58,6 +58,7 @@ internal sealed class BackoffConfigurationManager : BaseConfigurationManager
         }
     }
 
+    // Not reached from JwtValidator: ForcedRefetchConfigurationManager, in front of this one, runs the requested refetch itself.
     public override void RequestRefresh() => _inner.RequestRefresh();
 
     /// <summary>A fetch a backoff refused never reached the IdP, so it is not a failure to count. The manager wraps what

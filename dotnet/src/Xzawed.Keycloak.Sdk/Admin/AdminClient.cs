@@ -65,26 +65,38 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
 
     // ---- boundary helpers ----
 
-    /// <summary>The status of the admin response on the current typed call — set by <see cref="BearerHandler"/>.</summary>
+    /// <summary>What <see cref="BearerHandler"/> saw on the current typed call: the status of the admin response, and whether
+    /// the token provider threw before any request went out.</summary>
     /// <remarks>The typed client decodes the body itself, an error body too (for its message). When it cannot — invalid
     /// UTF-8, an unpaired surrogate escape — it throws <see cref="JsonException"/>, which carries no status; that escaped
     /// the SDK raw (measured: <c>UndecodableResponseTests</c>). The status lets a 404 whose body is undecodable stay a
-    /// <see cref="KeycloakNotFoundException"/>. One box per call, flowing down the call's own async context.</remarks>
-    private static readonly AsyncLocal<StrongBox<int>?> TypedCallStatus = new();
+    /// <see cref="KeycloakNotFoundException"/>. One box per call, flowing down the call's own async context.
+    /// ⚠️ A token provider that parses its own token response throws System.Text.Json's <see cref="JsonException"/> before
+    /// any response too. That failure is the provider's, and the call ends in it unchanged — as the warm-up in
+    /// <see cref="CreateAsync"/>, every raw call and the typed creates always did; the typed arms called it a request body
+    /// that could not be encoded (measured: <c>TokenProviderFailureTests</c>).</remarks>
+    private static readonly AsyncLocal<StrongBox<(int Status, bool TokenProviderFailed)>?> TypedCallState = new();
 
     internal static void Observe(HttpStatusCode status)
     {
-        if (TypedCallStatus.Value is { } box)
-            box.Value = (int)status;
+        if (TypedCallState.Value is { } call)
+            call.Value.Status = (int)status;
+    }
+
+    /// <summary>The token provider threw; what reaches the typed call's boundary is its failure.</summary>
+    internal static void ObserveTokenProviderFailure()
+    {
+        if (TypedCallState.Value is { } call)
+            call.Value.TokenProviderFailed = true;
     }
 
     internal async Task<T> CallTypedAsync<T>(Func<IKeycloakClient, Task<T>> fn)
     {
-        var status = TypedCallStatus.Value = new StrongBox<int>();
+        var call = TypedCallState.Value = new();
         try { return await fn(_typed).ConfigureAwait(false); }
         catch (KeycloakHttpClientException ex) { throw KeycloakErrorMapping.MapHttpError(ex.StatusCode, ex.Response?.ErrorDescription ?? ex.HttpResponse ?? ex.Message, ex); }
-        catch (JsonException ex) { throw Undecodable(status.Value, ex); }
-        catch (Exception ex) when (status.Value != 0 && IsUnsupportedCharset(ex)) { throw Undecodable(status.Value, ErrorCause.WithholdAll(ex)); }
+        catch (JsonException ex) when (!call.Value.TokenProviderFailed) { throw Undecodable(call.Value.Status, ex); }
+        catch (Exception ex) when (call.Value.Status != 0 && IsUnsupportedCharset(ex)) { throw Undecodable(call.Value.Status, ErrorCause.WithholdAll(ex)); }
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
         catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException) { throw new KeycloakTransportException("admin request timed out", ex); }
     }
@@ -93,20 +105,21 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
     internal async Task WriteTypedAsync(Func<IKeycloakClient, Task> fn)
     {
         AdminResponseBody.LeaveUnread();
-        var status = TypedCallStatus.Value = new StrongBox<int>();
+        var call = TypedCallState.Value = new();
         try { await fn(_typed).ConfigureAwait(false); }
         catch (KeycloakHttpClientException ex) { throw KeycloakErrorMapping.MapHttpError(ex.StatusCode, ex.Response?.ErrorDescription ?? ex.HttpResponse ?? ex.Message, ex); }
-        catch (JsonException ex) { throw Undecodable(status.Value, ex); }
-        catch (Exception ex) when (status.Value != 0 && IsUnsupportedCharset(ex)) { throw Undecodable(status.Value, ErrorCause.WithholdAll(ex)); }
+        catch (JsonException ex) when (!call.Value.TokenProviderFailed) { throw Undecodable(call.Value.Status, ex); }
+        catch (Exception ex) when (call.Value.Status != 0 && IsUnsupportedCharset(ex)) { throw Undecodable(call.Value.Status, ErrorCause.WithholdAll(ex)); }
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
         catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException) { throw new KeycloakTransportException("admin request timed out", ex); }
     }
 
     /// <summary>The SDK error for a body the typed client could not decode — malformed JSON, or a charset .NET does not
     /// support — under its own status when that was an error response, as <see cref="GetJsonAsync{T}"/> reports a success
-    /// body otherwise; or, for a JSON failure with no response seen, the request body. <see cref="BearerHandler"/> already
-    /// turns a body the serializer refuses into that same error where it is written, inside the transport
-    /// (<c>UnencodableRequestBodyTests</c>); the arm keeps the answer the same for one that surfaces here instead.</summary>
+    /// body otherwise; or, for a JSON failure with no response seen that the token provider did not throw, the request body.
+    /// <see cref="BearerHandler"/> already turns a body the serializer refuses into that same error where it is written,
+    /// inside the transport (<c>UnencodableRequestBodyTests</c>); the arm keeps the answer the same for one that surfaces
+    /// here instead.</summary>
     private static KeycloakException Undecodable(int status, Exception ex) => status switch
     {
         0 => new KeycloakTransportException(UnencodableBody, ex),

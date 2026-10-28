@@ -6,7 +6,11 @@ paths:
   - "harness/install/consume/dotnet/**"
   - ".github/workflows/dotnet-*.yml"
 ---
-<!-- doc-budget: max-bytes=7135 -->
+<!-- doc-budget: max-bytes=7323 -->
+<!-- 7135 → 7323 (2026-10-29): 래칫 조건 (1) — 교환이다. 「it cannot be turned off short of abandoning ConfigurationManager」는
+     거짓이 됐다: 강제 재조회는 이제 SDK 가 돌린다(ForcedRefetchConfigurationManager — IdentityModel 의 매니저는 그것을 배경에서
+     돌려 요청한 첫 토큰이 IDX10503 으로 거부됐다). 그 절을 지우고 참인 이유(RequestRefresh 는 이유를 싣지 않는다)와, 다시 재는
+     시험(JwksKeyRotationTests)을 가리키는 함정 한 문장으로 바꿨다. 압축으로 먼저 지불했다(초안 +206B → +188B). -->
 <!-- 7064 → 7135 (2026-10-05): 래칫 조건 (1) — 교환이다. 「The Duende.IdentityModel extension methods do not throw
      (check resp.IsError) … read the error code from resp.Json["error"]」는 거짓이었다: IntrospectTokenAsync 는 던지고
      (InitializeAsync), IsError·AccessToken 같은 getter 는 짝 없는 서로게이트 이스케이프에서 InvalidOperationException 을
@@ -53,7 +57,7 @@ cd dotnet && dotnet pack src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c R
 ## Library gotchas
 
 - ⚠️ **`JsonWebTokenHandler.ValidateTokenAsync` does not throw on failure** — checking `result.IsValid` is mandatory. Its defaults are not safe either: `ValidAlgorithms` is `null` (everything allowed), so pin `["RS256"]`; `ClockSkew` 5 minutes → 30 seconds; `RequireExpirationTime=true`. **Test trap**: `CreateToken` injects `exp` automatically, so a no-exp test needs `SetDefaultTimesOnTokenCreation=false`.
-- ⚠️ **A forged signature triggers a JWKS refetch — of all nine languages, .NET is the only one where that happens.** `Microsoft.IdentityModel` reads a signature failure as a key-rotation signal, calls `RequestRefresh()` and retries, and it cannot be turned off short of abandoning `ConfigurationManager`. The only thing limiting the actual damage is `RefreshIntervalSeconds` (30 seconds) — measured: 6 forgeries → 1 extra fetch. **Do not change the test to "0 times"** — that would assert something this SDK does not do.
+- ⚠️ **A forged signature triggers a JWKS refetch — of all nine languages, .NET is the only one where that happens.** `Microsoft.IdentityModel` reads a signature failure as a key-rotation signal, calls `RequestRefresh()` and retries; the call names no reason, so it cannot be turned off without giving up rotation refresh. The SDK runs that refetch (`ForcedRefetchConfigurationManager`): `ConfigurationManager` ran it in the background and the token that asked failed (`JwksKeyRotationTests`). The only thing limiting the actual damage is `RefreshIntervalSeconds` (30 seconds) — measured: 6 forgeries → 1 extra fetch. **Do not change the test to "0 times"** — that would assert something this SDK does not do.
 - ⚠️ **An expiring `HttpClient.Timeout` raises `TaskCanceledException`, not `HttpRequestException`** — catch and convert it at the boundary with `catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)`.
 - ⚠️ **Duende reports errors in the response, not by throwing — but its getters decode lazily**: `IsError`, `AccessToken`… and `IntrospectTokenAsync` throw `InvalidOperationException` on an unpaired surrogate escape; read via `AuthClient.TryDecode` (`UndecodableResponseTests`). A 401 is `ErrorType=Http`. No PKCE (generate it); logout is a manual POST.
 - ⚠️ **A `record`'s generated `ToString()` exposes every token and secret** — `TokenSet` and `KeycloakConfig` mask them with a `ToString()` override plus a `JsonConverter<T>`. **But Serilog's `{@}` destructuring reads the raw properties directly and bypasses the masking, so never write those two types with `{@}`.**
