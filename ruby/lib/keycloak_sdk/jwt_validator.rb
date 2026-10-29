@@ -3,21 +3,22 @@
 require "jwt"
 
 module KeycloakSdk
-  # 자체강화 JWT 검증기. ruby-jwt의 안전하지 않은 기본값을 전부 오버라이드한다:
-  # RS256 핀(none/confusion 구조적 거부)·iss 정확·aud 포함·exp 필수·nbf·클록스큐.
-  # 키는 DoS-safe JwksStore로 조회한다(위조 서명은 재조회 미유발). 헤더 alg는 검증 알고리즘 선택에 미사용.
+  # Self-hardened JWT validator. It overrides every unsafe ruby-jwt default:
+  # RS256 pin (none/confusion rejected structurally) · exact iss · aud membership · exp required · nbf · clock skew.
+  # Keys are looked up through the DoS-safe JwksStore (a forged signature triggers no refetch). The header alg is
+  # not used to choose the verification algorithm.
   class JwtValidator
     # 받는 토큰의 길이 상한(아홉 언어 공통). Microsoft.IdentityModel 의 `DefaultMaximumTokenSizeInBytes` 와 같은 수이고,
     # Keycloak 26.6 기본값이 받는 가장 긴 Bearer(65,459 B)의 약 3.9 배라 서버가 낸 토큰은 거부하지 않는다.
     JWT_MAX_BYTES = 256_000
     private_constant :JWT_MAX_BYTES
 
-    # ⚠️ `clock_skew` 기본값을 여기 숫자로 적지 말 것 — `Config`가 유일한 정의 자리다(Task D1과
-    # 같은 부류). 이 클래스도 public이라 소비자가 직접 생성할 수 있고, 두 자리가 갈리면 그
-    # 경로에서만 만료된 토큰이 더 오래 통과한다.
+    # ⚠️ Do not write the `clock_skew` default here as a number — `Config` is its single definition site (the same
+    # class of issue as Task D1). This class is public too, so a consumer can construct it directly, and if the two
+    # sites diverge, expired tokens pass for longer on that path only.
     def initialize(issuer:, audience:, jwks_store:, algorithms: ["RS256"], clock_skew: Config::DEFAULT_CLOCK_SKEW)
-      # ruby-jwt의 verify_iss/verify_aud 빌더는 값이 nil이면 조용히 no-op이 되어
-      # verify_iss:true/verify_aud:true를 켜도 검사를 건너뛴다 — fail-closed로 방어.
+      # ruby-jwt's verify_iss/verify_aud builders silently become no-ops when the value is nil, so the checks are
+      # skipped even with verify_iss:true/verify_aud:true turned on — guarded fail-closed.
       raise ConfigError, "issuer is required" if issuer.nil? || issuer.to_s.strip.empty?
       raise ConfigError, "audience is required" if audience.nil? || audience.to_s.strip.empty?
 
@@ -28,20 +29,21 @@ module KeycloakSdk
       @clock_skew = clock_skew
     end
 
-    # 기대 aud는 config.expected_audience(설정 시) — 미설정이면 종전대로 client_id.
+    # The expected aud is config.expected_audience (when set) — when unset, client_id as before.
     def self.from_config(config:, jwks_store:)
       new(issuer: OidcEndpoints.from_config(config).issuer,
           audience: config.expected_audience || config.client_id, jwks_store: jwks_store,
           algorithms: config.signature_algorithms, clock_skew: config.clock_skew)
     end
 
-    # `audience:` 는 이 호출만의 기대 aud 다(기본 = 생성 시 값). 코드 교환이 id_token 을 client_id 로 검사할 때
-    # 쓴다 — 키 저장소(캐시 · 재조회 제한 · 백오프)는 그대로 이 인스턴스의 것 하나다.
-    # ⚠️ nil·공백은 생성자와 같이 ConfigError — ruby-jwt 는 `aud: nil` 이면 aud 검사를 건너뛴다.
+    # `audience:` is the expected aud for this call only (default = the value given at construction). The code
+    # exchange uses it to check the id_token against client_id — the key store (cache · refetch limit · backoff)
+    # stays this instance's single one.
+    # ⚠️ nil or blank is a ConfigError, as in the constructor — with `aud: nil`, ruby-jwt skips the aud check.
     def validate(token, audience: @audience)
-      reject_oversized!(token) # ⚠️ 맨 앞이다 — 나누기·디코드·JWKS 적재보다 먼저(아래 메서드)
+      reject_oversized!(token) # ⚠️ it comes first — before splitting · decoding · the JWKS load (method below)
       raise ConfigError, "audience is required" if audience.nil? || audience.to_s.strip.empty?
-      # ⚠️ ruby-jwt 는 맨 먼저 토큰을 `split` 하고, 잘못된 UTF-8 이면 그것이 raw ArgumentError 다(실측).
+      # ⚠️ ruby-jwt `split`s the token first of all, and with invalid UTF-8 that is a raw ArgumentError (measured).
       if token.is_a?(String) && !token.valid_encoding?
         raise TokenValidationError, "JWT validation failed: token is not valid UTF-8"
       end
@@ -49,8 +51,8 @@ module KeycloakSdk
       payload, = JWT.decode(token, nil, true, decode_options(audience))
       to_validated(payload)
     rescue JWT::DecodeError => e
-      # ruby-jwt 메시지는 입력을 인용하지 않는다. 그 **원인**은 인용한다 — 조각이 JSON 이 아니면 JSON::ParserError 가
-      # 디코드한 토큰 조각을 싣는다(실측) — 그래서 사슬은 `RedactedCause` 로 끊는다.
+      # ruby-jwt's messages do not quote the input. Their **cause** does — when a segment is not JSON, the
+      # JSON::ParserError carries the decoded token segment (measured) — so the chain is cut with `RedactedCause`.
       raise TokenValidationError, "JWT validation failed: #{e.message}", cause: RedactedCause.new(e)
     end
 

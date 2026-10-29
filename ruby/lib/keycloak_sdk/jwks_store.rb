@@ -4,40 +4,45 @@ require "faraday"
 require "json" # ⚠️ `on_data` 를 쓰면 json 미들웨어가 돌지 않아 여기서 직접 파싱한다
 
 module KeycloakSdk
-  # DoS-safe JWKS 스토어. Mutex 캐시 + rate-limit + single-flight.
-  # 위조 서명(알려진 kid)은 캐시 반환만 하고 재조회를 유발하지 않는다.
-  # 수명(`JWKS_MAX_AGE_SECONDS`) 안에서는 미해결 kid(force:true)만 재조회하며, rate-limit gate는 재조회 결정 시점에 stamp한다
-  # (성공 아님 — IdP 장애창에서 위조 kid 폭주에도 재조회를 상한한다). Go/Rust/Python 동형.
+  # DoS-safe JWKS store. Mutex cache + rate-limit + single-flight.
+  # A forged signature (known kid) only gets the cache back and triggers no refetch.
+  # Within the lifetime (`JWKS_MAX_AGE_SECONDS`) only an unresolved kid (force:true) triggers a refetch, and the
+  # rate-limit gate stamps at the moment the refetch is decided
+  # (not on success — this caps refetches even under a flood of forged kids in an IdP outage window).
+  # Isomorphic with Go/Rust/Python.
   class JwksStore
-    # 성공한 적재로 얻은 키 집합의 수명(초) — 그 적재가 **끝난** 때부터 단조 시계로 잰다. 다 지나면 캐시는 콜드와 같다:
-    # 다음 조회가 같은 단일 비행·같은 실패 백오프로 다시 받고, 실패하면 그 오류로 끝난다. ⚠️ 낡은 집합으로 돌아가지 않는다 —
-    # IdP 장애 중에도(닿지 않는 JWKS 와 거둔 키를 SDK 는 가를 수 없다). 성공한 강제 재조회도 수명을 다시 시작한다. 아홉 언어 공통.
+    # Lifetime (seconds) of a key set obtained by a successful load — measured on the monotonic clock from when that
+    # load **finished**. Once it has fully elapsed the cache is the same as cold: the next lookup fetches again with
+    # the same single flight · the same failure backoff, and if that fails it ends with that error. ⚠️ It does not
+    # fall back to the stale set — not even during an IdP outage (the SDK cannot tell an unreachable JWKS from
+    # withdrawn keys). A successful forced refetch also restarts the lifetime. Common to all nine languages.
     JWKS_MAX_AGE_SECONDS = 300
 
-    # ⚠️ **실패한 fetch 의 백오프 — `min_refetch` 와 다른 축이다.**
-    # `min_refetch`(30초)는 *캐시가 찬 뒤* 미해결 kid 홍수를 막는다. 아래 둘은 **캐시가 비어
-    # 있고 fetch 가 계속 실패할 때**를 막는다. 그 자리에는 게이트가 없어서, 측정상 20회 검증이
-    # IdP 요청 20건을 그대로 냈다(2026-09-04 · 7개 언어 동일).
+    # ⚠️ **Backoff for a failed fetch — a different axis from `min_refetch`.**
+    # `min_refetch` (30 seconds) holds back a flood of unresolved kids *once the cache is filled*. The two below
+    # hold back **the case where the cache is empty and the fetch keeps failing**. There was no gate there, so
+    # measured, 20 validations sent 20 IdP requests straight through (2026-09-04 · the same in 7 languages).
     #
-    # ⚠️ **여기에 `min_refetch`(30초)를 재사용하면 안 된다** — 일시적 503 한 번이 「30초간 어떤
-    # 토큰도 검증 불가」가 된다. 그래서 짧게 시작해 지수적으로 늘리고 상한을 둔다.
+    # ⚠️ **Do not reuse `min_refetch` (30 seconds) here** — a single transient 503 would become "no token can be
+    # validated for 30 seconds". So it starts short, grows exponentially and has a cap.
     #
-    # ⚠️ **sleep 하지 않는다.** 라이브러리가 호출자의 스레드를 붙잡으면 안 되므로, 백오프 창
-    # 안에서는 **IdP 를 때리지 않고 즉시 실패**시킨다(negative cache). 재시도 정책은 소비자 몫이다.
-    FAILURE_BACKOFF_BASE = 0.2 # 초 — 첫 실패 후 대기
+    # ⚠️ **No sleep.** A library must not hold on to the caller's thread, so inside the backoff window it **fails
+    # immediately without hitting the IdP** (negative cache). The retry policy is up to the consumer.
+    FAILURE_BACKOFF_BASE = 0.2 # seconds — wait after the first failure
     FAILURE_BACKOFF_CAP  = 5.0 # 초 — 지수 증가의 상한
 
-    # ⚠️ **본문을 통째로 읽기 전에 상한을 건다.** 예전에는 `resp.body`(json 미들웨어가 이미
-    # 파싱한 값)를 그대로 받아 서버가 보내는 만큼 다 받았다 — 손상된 IdP 하나가 검증 경로를
-    # 메모리로 죽일 수 있었다. 51200 은 Nimbus `RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT` 이고
-    # go(`jwksMaxBytes`)·rust(`JWKS_MAX_BYTES`)·java·kotlin 이 같은 수를 쓴다.
-    # ⚠️ `Content-Length` 로만 판정하면 그 헤더가 없거나 거짓인 응답을 놓친다 — 청크를 받으며
-    # 누적치가 상한을 넘는 순간 읽기를 끊는다(`on_data` 안에서 raise 하면 어댑터가 중단한다).
+    # ⚠️ **The cap applies before the body is read whole.** It used to take `resp.body` (the value the json
+    # middleware had already parsed) as is and received as much as the server sent — a single compromised IdP could
+    # have killed the validation path through memory. 51200 is Nimbus's `RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT`, and
+    # go (`jwksMaxBytes`) · rust (`JWKS_MAX_BYTES`) · java · kotlin use the same number.
+    # ⚠️ Judging by `Content-Length` alone misses a response whose header is absent or false — the read is cut off
+    # the moment the running total passes the cap while chunks arrive (raising inside `on_data` makes the adapter
+    # abort).
     JWKS_MAX_BYTES = 51_200
 
-    # ⚠️ 기본값을 여기 숫자로 적지 말 것 — `Config`가 유일한 정의 자리다. 이 클래스는 평범한
-    # public 클래스라 소비자가 파사드를 거치지 않고 직접 생성할 수 있고, 예전에는 그 경로가
-    # 문서의 30초가 아니라 10초를 받아 IdP를 3배 자주 때렸다(2026-08-13 Task D1).
+    # ⚠️ Do not write the default here as a number — `Config` is its single definition site. This class is an
+    # ordinary public class, so a consumer can construct it directly without going through the facade, and that path
+    # used to get 10 seconds instead of the documented 30 and hit the IdP 3 times as often (2026-08-13 Task D1).
     def initialize(jwks_url:, http:, min_refetch: Config::DEFAULT_JWKS_MIN_REFETCH)
       @jwks_url = jwks_url
       @http = http
@@ -45,29 +50,31 @@ module KeycloakSdk
       @mutex = Mutex.new
       @cache = nil        # {"keys" => [...]}
       @last_refetch = nil # monotonic seconds
-      @fetched_at = nil   # monotonic seconds — @cache 를 가져온 적재가 끝난 시각(수명의 기준)
-      @last_failure = nil # monotonic seconds — 마지막 fetch 실패 시각
-      @failures = 0       # 연속 실패 횟수(성공 시 0으로 되돌린다)
-      # 마지막 실패가 연 창의 길이(초). jitter 를 그 실패를 기록할 때 한 번 뽑아 여기 고정한다.
+      @fetched_at = nil   # monotonic seconds — when the load that brought in @cache finished (the lifetime's origin)
+      @last_failure = nil # monotonic seconds — time of the last fetch failure
+      @failures = 0       # consecutive failure count (reset to 0 on success)
+      # Length (seconds) of the window the last failure opened. jitter is drawn once, when that failure is recorded,
+      # and fixed here.
       @backoff_window = 0.0
     end
 
-    # ruby-jwt jwks: 로더가 호출. force=true는 미해결 kid 재조회 요청.
+    # Called by the ruby-jwt jwks: loader. force=true requests a refetch for an unresolved kid.
     def key_set(force: false)
       @mutex.synchronize do
-        cache = live_cache # 수명이 지난 집합은 nil — 아래 전부가 콜드 캐시와 똑같이 흐른다
+        cache = live_cache # nil for a set past its lifetime — everything below flows exactly as with a cold cache
         return cache if cache && !force
         return cache if force && !refetch_allowed?
 
-        # ⚠️ 백오프 검사는 fetch **직전**이자 30초 게이트 **이후**다. 콜드 캐시에서는 위 두 return
-        # 이 모두 통과하므로, 이 줄이 없으면 매 검증이 IdP 로 나간다(그게 원래 결함이다).
+        # ⚠️ The backoff check comes **right before** the fetch and **after** the 30-second gate. On a cold cache both
+        # returns above fall through, so without this line every validation goes out to the IdP (that was the
+        # original defect).
         if backing_off?
           raise TransportError,
                 "JWKS fetch backing off after #{@failures} consecutive failures " \
                 "(retry in #{backoff_remaining.round(2)}s)"
         end
 
-        @last_refetch = monotonic if force # 결정 시점 stamp(cold load는 예산 미소모)
+        @last_refetch = monotonic if force # stamp at decision time (a cold load spends no budget)
         @cache = fetch_recording_failure
       end
     end
