@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import gzip
 import json
 import socket
 import ssl
@@ -604,6 +605,25 @@ async def test_a_healthy_chunked_response_under_the_cap_is_not_cut(lane: str) ->
     _report("sync", lane, "healthy chunked", err, elapsed)
     assert err is None, f"{err!r} after {elapsed:.2f} s"
     _assert_served(lane, result)
+
+
+def _gzip_tail_trickle(status: bytes, body: bytes) -> list[Piece]:
+    """gzip 본문의 마지막 `TAIL` 바이트(deflate 끝 + CRC·길이 꼬리)를 흘린다 — 풀어도 나올 것이
+    없는 바이트라 urllib3 `read1` 이 호출 하나 안에서 소켓을 계속 읽는다."""
+    packed = gzip.compress(body)
+    head = _head(status, _sized(len(packed)), b"Content-Encoding: gzip\r\n")
+    return [(0.0, head + packed[:-TAIL]), *_drip(packed[-TAIL:])]
+
+
+async def test_a_compressed_admin_body_trickled_past_its_output_fails_at_the_deadline() -> None:
+    """admin 성공 본문은 urllib3 가 푼다(`read1(decode_content=True)`) — 풀린 것이 없으면 그
+    호출 안에서 다시 읽는다. 등록부의 「gzip 성공 본문이 빈 값으로 풀리는 동안 urllib3 가 계속
+    읽는 길(미측정)」이다. 원문 읽기마다 보는 마감이 그 안에서도 선다."""
+    with _idp() as idp:
+        _serve(idp, "admin", _gzip_tail_trickle)
+        result, err, elapsed = await _call("sync", "admin", idp.url)
+    _report("sync", "admin", "gzip tail", err, elapsed)
+    _assert_late(err, result, elapsed)
 
 
 async def test_a_large_admin_list_is_read_whole() -> None:
