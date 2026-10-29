@@ -37,6 +37,7 @@ import pytest
 from httpcore._backends.anyio import AnyIOStream
 from joserfc import jwt as jjwt
 from joserfc.jwk import RSAKey
+from keycloak.connection import ConnectionManager
 
 from keycloak_sdk.aio.client import AsyncKeycloakClient
 from keycloak_sdk.client import KeycloakClient
@@ -282,13 +283,28 @@ def test_trailer_lines_past_the_wire_budget_fail_the_request(
     assert str(len(TRAILERS)) not in str(err) and "aaaa" not in str(err), str(err)
 
 
-def test_control_an_admin_success_body_has_no_wire_budget(read_bytes: list[int]) -> None:
+def test_control_an_admin_success_body_has_no_wire_budget(
+    read_bytes: list[int], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """admin 의 성공 본문은 바이트로 묶지 않는다(목록은 정당하게 크다) — 같은 F3a 를 끝까지 읽고
     받아들인다. 그 시간은 마감이, 할당은 http.client 의 줄 한도가 묶는다."""
+    # 진단: SDK 경계(`lower.py`)는 하위 예외의 사슬을 일부러 떼므로, 대조군이 실패하면
+    # python-keycloak 이 감싸기 직전의 원래 예외를 여기서 잡아 메시지에 싣는다.
+    lower: list[BaseException] = []
+    plain = ConnectionManager.raw_get
+
+    def spied(self: ConnectionManager, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return plain(self, *args, **kwargs)
+        except Exception as exc:
+            lower.append(exc)
+            raise
+
+    monkeypatch.setattr(ConnectionManager, "raw_get", spied)
     with _idp(USER, b"200 OK") as idp:
         result, err, elapsed = _call_sync("admin", idp.url)
     _report("sync", "admin success", err, read_bytes[0], elapsed)
-    assert err is None, _why(err)
+    assert err is None, f"{_why(err)} | lower: {_why(lower[0]) if lower else '-'}"
     assert result == {"id": "x", "username": "alice"}
     assert read_bytes[0] > len(TRAILERS), read_bytes[0]
 
