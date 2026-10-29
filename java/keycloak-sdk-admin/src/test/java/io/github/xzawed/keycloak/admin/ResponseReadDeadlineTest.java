@@ -84,8 +84,27 @@ class ResponseReadDeadlineTest {
 
   // ───────────── 응답 ─────────────
 
-  /** 응답의 한 조각 — 쓰기 전에 {@code delayMillis} 를 쉰다. */
-  private record Piece(long delayMillis, byte[] bytes) {}
+  /**
+   * 응답의 한 조각 — 쓰기 전에 {@code delayMillis} 를 쉰다. record 가 아닌 까닭: 배열 성분의 record 는 equals·hashCode·toString 이
+   * 배열 내용이 아니라 identity 를 본다(Sonar java:S6218) — 이 조각은 비교하지 않으므로 값 의미를 약속하지 않는 클래스로 둔다.
+   */
+  private static final class Piece {
+    private final long delayMillis;
+    private final byte[] bytes;
+
+    Piece(long delayMillis, byte[] bytes) {
+      this.delayMillis = delayMillis;
+      this.bytes = bytes;
+    }
+
+    long delayMillis() {
+      return delayMillis;
+    }
+
+    byte[] bytes() {
+      return bytes;
+    }
+  }
 
   private static byte[] head(int contentLength) {
     return latin1("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + contentLength + "\r\n\r\n");
@@ -357,18 +376,20 @@ class ResponseReadDeadlineTest {
           "마감은 요청을 보낸 때부터다");
       exchange.setAttribute(HttpCoreContext.HTTP_REQ_SENT, Boolean.TRUE);
       Thread.sleep(150);
-      SlowStream before = new SlowStream(0, 'x');
-      SocketTimeoutException e = assertThrows(SocketTimeoutException.class,
-          () -> read(new AdminEngine.Settled(before, exchange, Long.MAX_VALUE), array), "보낸 뒤의 표시가 마감을 옮겼다");
-      assertEquals(0, before.reads, "마감 뒤에는 읽기를 시작하지 않는다");
-      assertEquals(AdminEngine.LATE + "100 ms of sending the request", e.getMessage());
+      try (SlowStream before = new SlowStream(0, 'x')) {
+        SocketTimeoutException e = assertThrows(SocketTimeoutException.class,
+            () -> read(new AdminEngine.Settled(before, exchange, Long.MAX_VALUE), array), "보낸 뒤의 표시가 마감을 옮겼다");
+        assertEquals(0, before.reads, "마감 뒤에는 읽기를 시작하지 않는다");
+        assertEquals(AdminEngine.LATE + "100 ms of sending the request", e.getMessage());
+      }
 
       AdminEngine.Exchange late = new AdminEngine.Exchange(new HttpGet("http://127.0.0.1:1/"), 100);
       late.setAttribute(HttpCoreContext.HTTP_REQ_SENT, Boolean.FALSE);
-      SlowStream end = new SlowStream(200, -1);
-      assertThrows(SocketTimeoutException.class, () -> read(new AdminEngine.Settled(end, late, Long.MAX_VALUE), array),
-          "마감을 넘겨 온 끝을 받아들였다");
-      assertEquals(1, end.reads);
+      try (SlowStream end = new SlowStream(200, -1)) {
+        assertThrows(SocketTimeoutException.class, () -> read(new AdminEngine.Settled(end, late, Long.MAX_VALUE), array),
+            "마감을 넘겨 온 끝을 받아들였다");
+        assertEquals(1, end.reads);
+      }
     }
   }
 

@@ -60,7 +60,9 @@ class PacedServer
 
   # 요청 하나를 읽고 그 경로(쿼리 앞)를 돌려준다 — 연결이 끝났으면 nil.
   def read_request(sock)
-    line = sock.gets("\r\n") or return
+    line = sock.gets("\r\n")
+    return unless line
+
     length = 0
     while (header = sock.gets("\r\n")) && header != "\r\n"
       name, value = header.split(":", 2)

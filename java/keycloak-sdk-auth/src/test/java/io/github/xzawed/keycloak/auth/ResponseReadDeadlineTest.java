@@ -37,6 +37,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
@@ -144,8 +145,27 @@ class ResponseReadDeadlineTest {
 
   // ───────────── 응답 ─────────────
 
-  /** 응답의 한 조각 — 쓰기 전에 {@code delayMillis} 를 쉰다. */
-  private record Piece(long delayMillis, byte[] bytes) {}
+  /**
+   * 응답의 한 조각 — 쓰기 전에 {@code delayMillis} 를 쉰다. record 가 아닌 까닭: 배열 성분의 record 는 equals·hashCode·toString 이
+   * 배열 내용이 아니라 identity 를 본다(Sonar java:S6218) — 이 조각은 비교하지 않으므로 값 의미를 약속하지 않는 클래스로 둔다.
+   */
+  private static final class Piece {
+    private final long delayMillis;
+    private final byte[] bytes;
+
+    Piece(long delayMillis, byte[] bytes) {
+      this.delayMillis = delayMillis;
+      this.bytes = bytes;
+    }
+
+    long delayMillis() {
+      return delayMillis;
+    }
+
+    byte[] bytes() {
+      return bytes;
+    }
+  }
 
   private static byte[] head(int contentLength) {
     return latin1("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + contentLength + "\r\n\r\n");
@@ -233,7 +253,7 @@ class ResponseReadDeadlineTest {
   private static final class PacedServer implements AutoCloseable {
     final ServerSocket socket;
     final Function<String, List<Piece>> reply;
-    volatile Runnable beforeLast;
+    final AtomicReference<Runnable> beforeLast = new AtomicReference<>();
 
     PacedServer(SSLContext tls, Function<String, List<Piece>> reply) throws IOException {
       this.reply = reply;
@@ -282,7 +302,8 @@ class ResponseReadDeadlineTest {
         for (int i = 0; i < pieces.size(); i++) {
           Piece piece = pieces.get(i);
           if (piece.delayMillis() > 0) Thread.sleep(piece.delayMillis());
-          if (i == pieces.size() - 1 && beforeLast != null) beforeLast.run();
+          Runnable last = beforeLast.get();
+          if (i == pieces.size() - 1 && last != null) last.run();
           out.write(piece.bytes());
           out.flush();
         }
@@ -659,7 +680,7 @@ class ResponseReadDeadlineTest {
             new Piece(0, concat(head(TOKEN_BODY.length), Arrays.copyOf(TOKEN_BODY, TOKEN_BODY.length - TRICKLED))),
             new Piece(300, Arrays.copyOfRange(TOKEN_BODY, TOKEN_BODY.length - TRICKLED, TOKEN_BODY.length))));
          TrickleRelay relay = new TrickleRelay(server.port())) {
-      server.beforeLast = relay::trickle;
+      server.beforeLast.set(relay::trickle);
       HTTPRequest req = new HTTPRequest(HTTPRequest.Method.POST,
           URI.create("https://127.0.0.1:" + relay.port() + REALM_PATH + "/token").toURL());
       req.setBody("grant_type=client_credentials");
