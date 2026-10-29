@@ -9,7 +9,7 @@ import { ClientCredentialsTokenProvider } from './token-provider.js'
  * ({@link AdminClient}) is created lazily, at the first call to {@link admin}, so that a public/PKCE client
  * without a clientSecret can still use the SDK through {@link auth} alone.
  *
- * Used as `await using client = KeycloakClient.create(...)`, {@link close} is called when the scope is exited
+ * With `await using client = KeycloakClient.create(...)`, {@link close} is called when the scope is exited
  * ({@link AsyncDisposable}). {@link close} releases admin's resources only if admin was actually created, and
  * always releases the auth session (symmetry, no leaks).
  */

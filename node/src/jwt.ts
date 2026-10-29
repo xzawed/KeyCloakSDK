@@ -259,7 +259,7 @@ export interface JwtValidatorOptions {
  * check (multiple aud accepted) · exp/nbf ± clock skew · DoS-safe JWKS refetch (key set lifetime 300 seconds —
  * within it, a refetch only on an unresolved kid + cooldown rate-limit).
  *
- * The key source is injected (tests use a local JWKS; real use, the remote JWKS of `forJwksUri`).
+ * The key source is injected (a local JWKS in tests, the remote JWKS of `forJwksUri` in real use).
  */
 export class JwtValidator {
   /**

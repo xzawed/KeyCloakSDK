@@ -2,9 +2,9 @@ import { sendableBearer, type TokenProvider } from '../token-provider.js'
 import { readCapped, TOKEN_RESPONSE_MAX_BYTES } from '../token-response-cap.js'
 
 /**
- * Where the facade's requests go — `AdminClient.create` builds it once and the five resources share it. The same
- * values that were given to the admin-client of `raw()` (server address · read deadline · token provider).
- * `raw().setConfig()` does not change it.
+ * Where the facade's requests go — `AdminClient.create` builds it once and the five resources share it. It holds
+ * the same values that were given to the admin-client of `raw()` (server address · read deadline · token
+ * provider). `raw().setConfig()` does not change it.
  */
 export interface AdminHttp {
   readonly serverUrl: string
