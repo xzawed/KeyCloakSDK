@@ -14,6 +14,10 @@ introspect 가 함께 쓰고(`redirects.py` 의 `harden_openid` 참조), **역�
 ⚠️ **여기서 나가는 오류는 전부 SDK 타입이다(§4).** `_wrap`/`_awrap` 은 상류
 `keycloak.exceptions.KeycloakError` **하나만** 번역하므로, 직접 HTTP 를 부르는 이 모듈이
 `requests`/`httpx` 예외를 스스로 번역하지 않으면 소비자에게 하위 타입이 그대로 샌다.
+
+**언제까지 읽는가.** 요청을 보낸 때부터 `timeout` 안에(`deadline.py`) — 강제 재조회도
+같다. 그 마감은 SDK 자신의 HTTP 타임아웃이라, 호출자가 취소해도 끝까지 가는 aio
+재조회(`AsyncAuthClient._load_jwks`)도 그 안에서 끝난다.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ import zlib
 from typing import Any
 
 from ..exceptions import KeycloakTransportError
+from .deadline import deadline, reader, seconds, within
 from .token_cap import _inflater
 
 # Nimbus `JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT`. 아홉 언어가 **함께 움직이는** 값이라
@@ -97,6 +102,7 @@ def fetch_jwks(session: Any, url: str, *, timeout: Any, verify: Any, cert: Any) 
     세션을 그대로 쓰므로 `harden_openid` 의 리다이렉트 거부 훅과 재시도 없는 어댑터
     (`retries.py`)가 그대로 걸린다 — 실패한 조회는 다시 보내지 않고 백오프가 센다.
     """
+    check = deadline(seconds(timeout))
     try:
         response = session.get(
             url,
@@ -115,8 +121,9 @@ def fetch_jwks(session: Any, url: str, *, timeout: Any, verify: Any, cert: Any) 
         # `iter_content` 는 urllib3 에 풀기를 맡기는데, 2.6.0 미만 urllib3 는 원문 한 조각을
         # 상한 없이 통째로 푼다(실측 2.5.0: `identity` 를 무시한 16 MiB gzip 폭탄에 한 번의
         # decompress 가 8,004,884 바이트, 피크 22 MB). 원문을 상한까지 받고 `_inflate` 가
-        # 상한 안에서 푼다.
-        while chunk := response.raw.read(_CHUNK, decode_content=False):
+        # 상한 안에서 푼다. 와 있는 만큼 읽고 읽기마다 앞뒤로 마감을 본다(`deadline.reader`).
+        read = reader(response, check)
+        while chunk := read(_CHUNK, decode_content=False):
             body += chunk
             # ⚠️ 다 읽고 나서 길이를 재면 이미 메모리를 내준 뒤다. `Content-Length` 로만
             # 판정해도 안 된다 — 그 헤더는 없을 수도(chunked) 거짓일 수도 있다.
@@ -143,7 +150,8 @@ async def afetch_jwks(client: Any, url: str, *, timeout: Any) -> dict[str, Any]:
     얹혀 있다 — 여기서는 그것을 **명시**한다. 인스턴스에 `True` 가 설정돼 있어도 이 요청은
     따라가지 않는다. (행동 고정: `tests/unit/aio/test_redirects_async.py`)
     """
-    try:
+
+    async def exchange() -> tuple[bytes, int, str]:
         async with client.stream(
             "GET",
             url,
@@ -162,11 +170,15 @@ async def afetch_jwks(client: Any, url: str, *, timeout: Any) -> dict[str, Any]:
                 body += chunk
                 if len(body) > JWKS_MAX_BYTES:
                     raise _TooBig
-            status = response.status_code
             encoding = response.headers.get("content-encoding", "").strip().lower()
+            return bytes(body), response.status_code, encoding
+
+    try:
+        # 교환 전체(연결부터 본문 끝까지)를 요청 타임아웃 안에(`deadline.py`).
+        body, status, encoding = await within(seconds(timeout), exchange())
     except _TooBig as exc:
         raise _too_big() from exc
     except Exception as exc:
         raise KeycloakTransportError(f"JWKS fetch failed: {exc}") from exc
 
-    return _decode(_inflate(bytes(body), encoding), status)
+    return _decode(_inflate(body, encoding), status)
