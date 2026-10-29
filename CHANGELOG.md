@@ -11,6 +11,7 @@
 ### Changed
 - **(PHP)** `composer.json` 이 `ext-curl` 을 요구하고 하한을 `guzzlehttp/guzzle ^7.15.2` · `guzzlehttp/psr7 ^2.12.3` 으로 올립니다 — curl 이 없으면 Guzzle 이 PHP stream 처리기로 내려가 응답 헤더 한 줄을 길이 제한 없이 읽었고(16 MiB 한 줄에 +57 MB, 손잡이가 없다), psr7 2.11 아래는 상한에서 전송을 멈추지 못해 큰 오류 본문을 끝까지 받았습니다. 두 하한은 권고 GHSA-v5mv-p594-2x33 · GHSA-f7vp-7xgx-4w4r(Guzzle)과 GHSA-c2w2-prh8-qm98(psr7)도 닫습니다. ⚠️ curl 확장이 없는 환경에서는 설치가 거부됩니다(Composer 는 확장을 설치 때 확인합니다).
 - **(Java · Kotlin · Python · Ruby)** ⚠️ admin 응답은 목록과 `raw()` 의 성공 본문까지 설정한 타임아웃 안에 **다** 와야 합니다(아래 Security 의 응답 기한) — 지금까지는 읽기마다만 걸려 느린 링크의 큰 목록도 끝까지 받았지만, 이제 그 경우는 타임아웃 오류입니다. 큰 목록을 느린 링크로 받는다면 타임아웃을 늘리십시오. Go·Rust·Node·PHP·.NET admin 은 이미 그랬습니다.
+- **(Rust)** docs.rs 에 그려지는 문서 주석(공개 항목 · 모듈 문서)을 영문으로 옮겼습니다 — 지금까지는 한글이었습니다. 코드는 그대로이고(바뀐 줄 전부가 `///`·`//!`), `cargo doc --no-deps` 산출물의 한글은 22 파일 → 0 입니다.
 
 ### Fixed
 - **(Go)** 공유 비행(첫 `Client.Admin` · client_credentials 토큰 · JWKS 조회)의 결과와 호출자 ctx 의 취소가 함께 준비되면 둘 중 하나를 무작위로 돌려줬습니다(동점 200 회에 `context.Canceled` 93–103 회) — 이제 준비된 결과가 이깁니다(캐시 적중이 이미 그렇다). 결과가 아직 없으면 전처럼 ctx 오류입니다.
