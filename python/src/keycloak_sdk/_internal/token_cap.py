@@ -37,6 +37,9 @@ decode_content=False)`·aio `aiter_raw`)을 받아 여기서 풀고, 그렇게 �
 ⚠️ **admin REST 세션에는 걸지 않는다** — 사용자 목록은 정당하게 크다(그 세션의 오류
 본문 상한과 쓰지 않는 본문은 `admin_body.py` 가 맡는다). admin 은 자체 그랜트의
 세션(중첩 `KeycloakOpenID`)에만 걸고, 그 설치는 `admin_guard.py` 가 요청마다 다시 본다.
+
+**언제까지 읽는가.** 요청을 보낸 때부터 그 요청의 타임아웃 안에 — sync 는 읽기마다
+마감을 보고, aio 는 교환 전체를 마감으로 묶는다(`deadline.py`).
 """
 
 from __future__ import annotations
@@ -49,6 +52,7 @@ import httpx
 import requests
 
 from ..exceptions import KeycloakConfigError
+from .deadline import deadline, reader, request_seconds, seconds, within
 
 #: 토큰·introspection 응답 본문의 상한 — 푼 뒤 바이트. Keycloak 26.6 이 기본 설정으로 받는
 #: 가장 긴 bearer(65,459 바이트, 실측 2026-10-03)의 16 배라 서버가 받는 토큰은 거부하지 않는다.
@@ -101,14 +105,13 @@ def _keep(body: bytearray, inflate: _Inflate, data: bytes, kind: str) -> None:
         raise _too_large(kind)
 
 
-def _read(response: requests.Response, kind: str) -> bytes:
-    """원문을 cap+1 까지만 청해 읽고(`decode_content=False` — urllib3 에 풀기를 맡기지 않는다)
-    여기서 상한 안에서 푼다."""
+def _read(response: requests.Response, kind: str, check: Callable[[], None]) -> bytes:
+    """원문을 와 있는 만큼 cap+1 까지만 청해 읽고(`decode_content=False` — urllib3 에 풀기를 맡기지
+    않는다) 여기서 상한 안에서 푼다. 읽기마다 앞뒤로 마감(`check`)을 본다."""
     inflate = _inflater(response.headers.get("content-encoding", "").split(","), kind)
+    read = reader(response, check)
     body = bytearray()
-    while data := response.raw.read(
-        min(_CHUNK, TOKEN_RESPONSE_MAX_BYTES + 1 - len(body)), decode_content=False
-    ):
+    while data := read(min(_CHUNK, TOKEN_RESPONSE_MAX_BYTES + 1 - len(body)), decode_content=False):
         _keep(body, inflate, data, kind)
     return bytes(body)
 
@@ -120,10 +123,11 @@ def capped_send(send: _SyncSend) -> _SyncSend:
     def capped(request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:
         if kwargs.get("stream"):
             return send(request, **kwargs)
+        check = deadline(seconds(kwargs.get("timeout")))
         request.headers["Accept-Encoding"] = _ACCEPT_ENCODING
         response = send(request, **{**kwargs, "stream": True})
         try:
-            body = _read(response, _kind(request.path_url))
+            body = _read(response, _kind(request.path_url), check)
         except BaseException:
             response.close()  # 남은 본문을 읽지 않고 연결째 버린다
             raise
@@ -203,15 +207,19 @@ def acapped_send(send: _AsyncSend) -> Callable[..., Coroutine[Any, Any, httpx.Re
         if stream:
             return await send(request, stream=True, **kwargs)
         request.headers["Accept-Encoding"] = _ACCEPT_ENCODING
-        response = await send(request, stream=True, **kwargs)
-        try:
-            body = await _aread(response, _kind(request.url.path))
-        except BaseException:
-            await response.aclose()
-            raise
-        # httpx 가 `aread()` 에서 하는 일 그대로다(푼 본문을 두고 `Content-Encoding` 은 남긴다).
-        response._content = body
-        return response
+
+        async def exchange() -> httpx.Response:
+            response = await send(request, stream=True, **kwargs)
+            try:
+                body = await _aread(response, _kind(request.url.path))
+            except BaseException:
+                await response.aclose()
+                raise
+            # httpx 가 `aread()` 에서 하는 일 그대로다(푼 본문을 두고 `Content-Encoding` 은 남긴다).
+            response._content = body
+            return response
+
+        return await within(request_seconds(request), exchange(), request)
 
     return capped
 

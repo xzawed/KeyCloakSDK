@@ -10,7 +10,12 @@ paths:
   - "rust/**"
   - "ruby/**"
 ---
-<!-- doc-budget: max-bytes=6633 -->
+<!-- doc-budget: max-bytes=6807 -->
+<!-- 6633 → 6807 (2026-10-29): 래칫 조건 (1) — 증가분이 **그 주장을 다시 재는 명령**을 사 온다. 새 「Response read deadline」
+     줄은 다섯 레인(java·kotlin·python·ruby·.NET JWKS)의 `ResponseReadDeadline*` 흘리기 시험(수정 전 RED 7 s → 1.4 s ·
+     대조군 멈춤·정상)이 재고, 남은 칸은 등록부 항목이 소유한다(판정 2026-10-29 사람 위임 「권장안」). **교환** — 이 변경으로
+     거짓이 된 문장은 없어, 한 언어 사실의 포인터 「Rust needed one more thing — cold load outside the single-flight lock」
+     (원천은 `rust.md` 74행 · 이 파일 머리가 `<lang>.md` 로 보내라는 부류)를 지웠다. -->
 <!-- 6348 → 6633 (2026-10-29): 래칫 조건 (1) — 증가분이 **기계 검증을 사 온다.** 새 「JWKS key-set lifetime」 줄의 300 은
      `test-security-defaults.sh` 1h 축(아홉 선언 · 대조군 넷)과 4절 소유자 축이 대조한다 — 아홉이 함께 움직이는 새 값이다
      (판정 2026-10-29 사람 위임 「권장안」 — 등록부 `jwks-cache-lifetime-divergent`). **교환** — 같은 커밋이 거짓 하나와 사본
@@ -77,8 +82,6 @@ Only what the nine must move **together** lives here — changing one language a
 
 **The fix, in all seven** (reference: `ruby/lib/keycloak_sdk/jwks_store.rb`): back off *failed* fetches — 0.2s doubling to a 5s cap, jitter ×[0.5, 1.0) — and inside the window fail immediately **without touching the IdP**. Four rules, each measured: (1) ⚠️ **never reuse the 30s here** — one transient 503 would mean "no token validates for 30s", worse than the defect; (2) ⚠️ **never sleep** — pacing retries is the consumer's job, not a library's; (3) ⚠️ **success resets the counter**, or a long-lived process stays pinned at the cap; (4) ⚠️ **a warm-cache unresolved-kid rejection is not a fetch failure** — counting it lets a forged-kid flood raise the backoff and block legitimate tokens (node: `JWKSNoMatchingKey` and `remote.fresh` never count).
 
-⚠️ **Rust needed one more thing** — its cold load also sat outside the single-flight lock (`.claude/rules/rust.md`).
-
 ⚠️ **`.NET` refetches on a bad signature too — the other eight do not.** `Microsoft.IdentityModel` reads a *recoverable* signature failure as a key-rotation signal and calls `RequestRefresh()` (an `aud`/`exp` rejection does not); disabling it means giving up genuine rotation refresh. The same 30-second interval is what bounds it. Detail and the "do not assert zero refetches" rule: `.claude/rules/dotnet.md`; consumer wording: `SECURITY.md` and `dotnet/README.md`.
 
 ⚠️ **The interval is consumer-configurable in eight languages, not nine.** `.NET` exposes it on `JwtValidatorOptions` but not on `KeycloakConfig`, so a consumer going through the facade gets the 30-second default and cannot change it.
@@ -102,6 +105,10 @@ Change either one **in all nine at once**. The guard is `scripts/test/test-secur
 ## Admin bearer grammar
 
 ⚠️ **All nine trim SP·HTAB·CR·LF at both ends and send only a non-empty RFC 6750 `b64token`, else no request**; no provider caches a refused token, and java·kotlin·php refuse at grant one that needs trimming. Guard: axis 1g.
+
+## Response read deadline
+
+⚠️ **A response the SDK reads must arrive in full within the configured timeout, counted from send** — a per-read timeout alone lets a trickle hold one call for ≈ cap × timeout. Tests: `ResponseReadDeadline*`; gaps: registry `response-read-deadline-divergent`.
 
 ## Secret memory hygiene — it has a boundary (do not oversell it)
 

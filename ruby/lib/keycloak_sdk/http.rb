@@ -219,9 +219,39 @@ module KeycloakSdk
       end
     end
 
+    # ⚠️ **응답은 요청을 보낸 때부터 읽기 타임아웃 안에 다 읽는다**(response-read-deadline-divergent). net-protocol 의 읽기
+    # 타임아웃은 기다림 **하나**를 묶을 뿐이라, 바이트를 그보다 조금 짧은 간격으로 흘리는 서버 앞에서 응답 하나가 흘린 바이트
+    # 마다 간격 하나씩 걸렸다(수정 전 실측 2026-10-29 · 읽기 타임아웃 1 초 · 마지막 10 바이트를 0.7 초마다: 토큰·JWKS·admin 이 7,069–7,128 ms
+    # 뒤 성공 · TLS 본문 레코드의 바이트를 흘리면 22,929 ms 뒤 성공 — `response_read_deadline_spec`). `begin_transport` 가
+    # 요청마다 마감을 걸고(`kcsdk_arm_deadline!`) 이 소켓의 읽기 시도마다 본다 — 넘었으면 net-protocol 이 읽기 타임아웃에 내는
+    # 것과 같은 `Net::ReadTimeout` 이다(Faraday 의 TimeoutError → 경계의 TransportError · 메시지는 소켓뿐). 상태 줄·헤더·틀·
+    # 본문이 다 이 읽기로 오고, 최악은 마감 + 읽기 타임아웃 하나다. 스레드·타이머를 두지 않는다.
+    # ⚠️ **`rbuf_fill` 입구가 아니라 `read_nonblock` 이다** — `rbuf_fill` 은 `:wait_readable` 마다 기다렸다 다시 읽고, TLS 는
+    # 레코드가 다 올 때까지 읽을 것이 없어 채우기 하나 안에서 기다림이 이어진다(입구에서만 보면 위 TLS 가 그대로다).
+    # 닫힌 소켓은 보지 않는다 — 끊은 뒤의 읽기는 원판대로 IOError 다(`read_error_body` 가 그것만 삼킨다).
+    module ReadDeadline
+      def kcsdk_arm_deadline!(seconds)
+        @kcsdk_deadline = seconds && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + seconds)
+      end
+
+      # 시그니처는 상류(`IO`·`OpenSSL::Buffering`)와 같다 — `ConnectFraming` 과 같은 까닭.
+      def read_nonblock(len, buf = nil, exception: true)
+        raise Net::ReadTimeout, to_io if kcsdk_past_deadline?
+
+        super
+      end
+
+      private
+
+      def kcsdk_past_deadline?
+        !@kcsdk_deadline.nil? && !closed? && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= @kcsdk_deadline
+      end
+    end
+
     # `Net::HTTP` 인스턴스의 싱글턴에 **prepend** 해 소켓이 만들어지는 자리(`on_connect`, `connect` 끝)에서 그 소켓에만
-    # `BoundedReads` 를 건다. `begin_transport` 는 요청마다 틀 예산을 0 으로 되돌린다 — keep-alive 로 연결을 재사용해도
-    # 다음 응답은 새 예산을 받는다(한 요청의 1xx 중간 응답들은 같은 예산을 나눠 쓴다 — 그래야 1xx 홍수도 묶인다).
+    # `BoundedReads`(와 그 IO 에 `ReadDeadline`)를 건다. `begin_transport` 는 요청마다 틀 예산을 0 으로 되돌리고 읽기 마감을
+    # 건다 — keep-alive 로 연결을 재사용해도 다음 응답은 새 예산·새 마감을 받는다(한 요청의 1xx 중간 응답들은 같은 예산을
+    # 나눠 쓴다 — 그래야 1xx 홍수도 묶인다).
     # ⚠️ **`Net::HTTP` 를 하위 클래스로 두지 않는다.** 그 하위 클래스 인스턴스가 Faraday 스택에 남으면 공개 표면 가드의
     # 객체 걷기(`facade_dump_spec`·`hostile_path_matrix_spec`)가 그 세 시험을 끝내지 못했다(실측: 90–150 초 timeout 에
     # 죽었다 — 이 설계로 바꾼 뒤 같은 셋은 14 초). 원인은 가드 코드를 읽은 추정이다 — SDK 네임스페이스로 보고 그 상속 공개
@@ -234,11 +264,13 @@ module KeycloakSdk
         super
         @socket.extend(BoundedReads)
         @socket.kcsdk_reset_framing!
+        @socket.io.extend(ReadDeadline)
       end
 
       def begin_transport(req)
         super
         @socket.kcsdk_reset_framing! if @socket.respond_to?(:kcsdk_reset_framing!)
+        @socket.io.kcsdk_arm_deadline!(read_timeout) if @socket.io.respond_to?(:kcsdk_arm_deadline!)
       end
 
       # ── 프록시 CONNECT(`ConnectFraming`) — `connect` 가 소켓을 여는 두 자리. 상한은 CONNECT 응답을 나르는 소켓에만 걸고
@@ -312,7 +344,7 @@ module KeycloakSdk
     BOUND_CONNECTION = lambda do |http|
       http.singleton_class.prepend(BoundedTransport)
     end
-    private_constant :BoundedReads, :ConnectFraming, :BoundedTransport, :BOUND_CONNECTION
+    private_constant :BoundedReads, :ConnectFraming, :ReadDeadline, :BoundedTransport, :BOUND_CONNECTION
 
     module_function
 

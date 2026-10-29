@@ -251,17 +251,21 @@ def test_a_compressed_body_counts_inflated_bytes(size: int, accepted: bool, toke
 def test_reads_never_ask_for_more_than_one_byte_past_the_cap(
     token_idp: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """읽기 크기를 SDK 가 정하는 자리(urllib3 `read(amt)`)에서는 받은 것 + 요청한 것이 cap+1 을 넘지
-    않는다 — 마지막 읽기는 그 1 바이트만 청한다."""
+    """읽기 크기를 SDK 가 정하는 자리(urllib3 `read1(amt)` — 와 있는 만큼, 옛 판은 `read(amt)`)
+    에서는 받은 것 + 요청한 것이 cap+1 을 넘지 않는다 — 마지막 읽기는 그 1 바이트만 청한다."""
     reads: list[tuple[int | None, int]] = []
-    real = urllib3.response.HTTPResponse.read
 
-    def spy(self: Any, amt: int | None = None, *args: Any, **kwargs: Any) -> bytes:
-        data = real(self, amt, *args, **kwargs)
-        reads.append((amt, len(data)))
-        return data
+    def spying(real: Any) -> Any:
+        def spy(self: Any, amt: int | None = None, *args: Any, **kwargs: Any) -> bytes:
+            data: bytes = real(self, amt, *args, **kwargs)
+            reads.append((amt, len(data)))
+            return data
 
-    monkeypatch.setattr(urllib3.response.HTTPResponse, "read", spy)
+        return spy
+
+    for name in ("read", "read1"):
+        real = getattr(urllib3.response.HTTPResponse, name)
+        monkeypatch.setattr(urllib3.response.HTTPResponse, name, spying(real))
     token_idp.head, token_idp.size, token_idp.chunked = _head("cc", "G" * 40), HUGE, True
 
     with _client(token_idp) as kc, pytest.raises(KeycloakAuthError):

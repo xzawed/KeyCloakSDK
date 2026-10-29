@@ -10,6 +10,7 @@
 
 ### Changed
 - **(PHP)** `composer.json` 이 `ext-curl` 을 요구하고 하한을 `guzzlehttp/guzzle ^7.15.2` · `guzzlehttp/psr7 ^2.12.3` 으로 올립니다 — curl 이 없으면 Guzzle 이 PHP stream 처리기로 내려가 응답 헤더 한 줄을 길이 제한 없이 읽었고(16 MiB 한 줄에 +57 MB, 손잡이가 없다), psr7 2.11 아래는 상한에서 전송을 멈추지 못해 큰 오류 본문을 끝까지 받았습니다. 두 하한은 권고 GHSA-v5mv-p594-2x33 · GHSA-f7vp-7xgx-4w4r(Guzzle)과 GHSA-c2w2-prh8-qm98(psr7)도 닫습니다. ⚠️ curl 확장이 없는 환경에서는 설치가 거부됩니다(Composer 는 확장을 설치 때 확인합니다).
+- **(Java · Kotlin · Python · Ruby)** ⚠️ admin 응답은 목록과 `raw()` 의 성공 본문까지 설정한 타임아웃 안에 **다** 와야 합니다(아래 Security 의 응답 기한) — 지금까지는 읽기마다만 걸려 느린 링크의 큰 목록도 끝까지 받았지만, 이제 그 경우는 타임아웃 오류입니다. 큰 목록을 느린 링크로 받는다면 타임아웃을 늘리십시오. Go·Rust·Node·PHP·.NET admin 은 이미 그랬습니다.
 
 ### Fixed
 - **(Go)** 공유 비행(첫 `Client.Admin` · client_credentials 토큰 · JWKS 조회)의 결과와 호출자 ctx 의 취소가 함께 준비되면 둘 중 하나를 무작위로 돌려줬습니다(동점 200 회에 `context.Canceled` 93–103 회) — 이제 준비된 결과가 이깁니다(캐시 적중이 이미 그렇다). 결과가 아직 없으면 전처럼 ctx 오류입니다.
@@ -35,6 +36,7 @@
 - **(.NET)** 낡은 설정으로 받던 두 길을 막았습니다 — `ConfigurationManager` 는 갱신 간격이 지나도 쥔 설정을 돌려주고 뒤에서 새로 받으며 실패는 로그만 남겼고, 처리기는 적재 실패(IDX10500)를 last-known-good 설정으로 다시 검증했습니다(그 수명은 마지막 수락부터 1 시간). 이제 SDK 가 다시 받을 때 매니저를 새로 지어 콜드 적재로 받고 last-known-good 은 껐습니다 — 회전으로 IdP 가 뺀 키의 토큰을 더는 받지 않습니다.
 - **(Java · Kotlin)** Nimbus 의 기본 TTL 300 초와 꺼진 outage tolerance 를 SDK 가 명시합니다(동작은 같습니다). refresh-ahead 는 남깁니다 — 만료 30 초 전의 검증이 뒤에서 한 번 갱신하고, 그 갱신이 실패해도 수명은 늘지 않습니다.
 - **(Ruby)** admin 이 String 이 아닌 access token 에는 헤더 검사를 걸지 않았습니다 — 소비자 `TokenProvider` 가 CR·LF 를 담은 Symbol 을 돌려주면 `raw` 커넥션은 Bearer 전체를 인용한 raw `ArgumentError` 를, 파사드는 `TransportError`(`admin transport error: ArgumentError`)를 냈고, NUL·끝 공백을 담은 Symbol 은 그대로·공백이 지워진 채 나갔으며, `nil`·`""` 은 `Authorization: Bearer` 로 나갔습니다(실측). 이제 String 이 아닌 값도 헤더에 실릴 그 글로 같은 검사를 받아 String 과 같은 `AuthError` 이고, 빈 토큰은 요청 없이 `admin request not sent: the access token is empty` 입니다. 검사를 지나는 Symbol·숫자는 지금처럼 그 글로 나가고, SDK 의 `ClientCredentialsTokenProvider` 는 늘 비지 않은 String 이라 달라지지 않습니다. 공개 API 변경은 0 입니다.
+- **(Java · Kotlin · Python · Ruby · .NET)** SDK 가 직접 읽는 응답(토큰·introspection·디스커버리·JWKS·admin)을 요청을 보낸 때부터 설정한 타임아웃 안에 **전부** 읽습니다 — 지금까지는 읽기마다만 걸려(.NET 의 디스커버리·JWKS 본문은 그것도 없이) 바이트를 읽기 타임아웃보다 조금 짧게 흘리는 서버가 호출 하나를 ≈ 상한 × 읽기 타임아웃 동안 붙잡았습니다(1 초 설정에 7 초 · JVM 은 흘린 TLS 레코드 하나로 33.6 초). 이제 그 레인의 기존 타임아웃 오류로 끝납니다(기한 + 읽기 하나 안 · python aio 와 .NET JWKS 는 기한 정확히). 남은 칸: python sync 와 JVM admin 의 헤더·청크 틀은 아직 읽기마다입니다.
 
 ## [1.4.0] - 2026-10-27 (Ruby)
 

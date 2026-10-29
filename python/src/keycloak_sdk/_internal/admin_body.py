@@ -26,7 +26,7 @@ requests 가 `r.content` 로, aio 는 httpx `send` 가 `aread()` 로 본문 전�
 
 요청의 `Accept-Encoding` 은 `token_cap` 처럼 `gzip, deflate` 로 둔다 — 여기서 상한 안에
 풀 수 있는 것만 청한다. ⚠️ `stream=True` 로 온 요청(호출자가 스스로 읽는다)은 손대지
-않는다.
+않는다. 셋 다 요청을 보낸 때부터 그 요청의 타임아웃 안에 읽는다(`deadline.py`).
 """
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ from typing import Any
 import httpx
 import requests
 
+from .deadline import deadline, reader, request_seconds, seconds, within
 from .token_cap import (
     _ACCEPT_ENCODING,
     _CHUNK,
@@ -94,17 +95,17 @@ def _cut(body: bytearray, inflate: _Inflate, data: bytes) -> bool:
     return len(body) > ADMIN_ERROR_BODY_MAX_BYTES
 
 
-def _read_error(response: requests.Response) -> tuple[bytes, bool]:
+def _read_error(response: requests.Response, check: Callable[[], None]) -> tuple[bytes, bool]:
     """오류 본문을 원문으로 상한 + 1 까지 읽어 푼다 — (본문, 연결을 버리나). 압축 스트림이
     끝나면 거기서 멈춘다: 그 뒤의 꼬리는 읽지 않고 연결을 버린다 — 안 그러면 상한과 무관하게
     꼬리를 끝까지 읽었고(gzip 멤버 뒤 2 MiB), 멤버 뒤 멈춘 서버 앞에서는 다 받은 오류가 읽기
     타임아웃 끝에 `KeycloakTransportError` 가 됐다(실측 — main 도 같았다).
 
-    ⚠️ 와 있는 만큼만 받는다(urllib3 의 `read1`) — `read(amt)` 는 청크 본문에서 `amt` 를 다
-    채울 때까지 다음 청크를 기다려, 멤버가 이미 와 있어도 멈춘 서버 앞에서 끝을 보지 못했다
-    (실측). `read1` 이 없는 옛 urllib3 는 `read` 로 받는다 — 그 판에서는 그 경우가 기다린다."""
+    ⚠️ 와 있는 만큼만 받는다(`deadline.reader` — urllib3 의 `read1`) — `read(amt)` 는 청크
+    본문에서 `amt` 를 다 채울 때까지 다음 청크를 기다려, 멤버가 이미 와 있어도 멈춘 서버 앞에서
+    끝을 보지 못했다(실측). 읽기마다 앞뒤로 마감(`check`)을 본다."""
     inflate, ended = _error_decoder(response.headers.get("content-encoding", "").split(","))
-    read = getattr(response.raw, "read1", None) or response.raw.read
+    read = reader(response, check)
     body = bytearray()
     while data := read(
         min(_CHUNK, ADMIN_ERROR_BODY_MAX_BYTES + 1 - len(body)), decode_content=False
@@ -122,11 +123,12 @@ def bounded_send(send: _SyncSend) -> _SyncSend:
     def bounded(request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:
         if kwargs.get("stream"):
             return send(request, **kwargs)
+        check = deadline(seconds(kwargs.get("timeout")))
         request.headers["Accept-Encoding"] = _ACCEPT_ENCODING
         response = send(request, **{**kwargs, "stream": True})
         try:
             if response.status_code >= 300:
-                body, drop = _read_error(response)
+                body, drop = _read_error(response, check)
                 if drop:
                     response.close()  # 나머지를 읽지 않고 연결째 버린다
             elif _NO_BODY.get() and not _ended(
@@ -135,7 +137,7 @@ def bounded_send(send: _SyncSend) -> _SyncSend:
                 response.close()  # 쓰지 않는 본문 — 읽지 않고 연결째 버린다
                 body = b""
             else:
-                return _loaded(response)
+                body = _loaded(response, check)
         except BaseException:
             response.close()
             raise
@@ -147,10 +149,14 @@ def bounded_send(send: _SyncSend) -> _SyncSend:
     return bounded
 
 
-def _loaded(response: requests.Response) -> requests.Response:
-    """끝까지 읽는다(하위 디코더 그대로) — `stream` 없이 보냈을 때와 같다."""
-    response.content  # noqa: B018 — 읽기 자체가 목적이다
-    return response
+def _loaded(response: requests.Response, check: Callable[[], None]) -> bytes:
+    """끝까지 읽는다 — 하위 디코더 그대로(`stream` 없이 보냈을 때와 같다), 와 있는 만큼씩
+    읽기마다 앞뒤로 마감(`check`)을 본다. 성공 본문에는 상한이 없다(목록은 정당하게 크다)."""
+    read = reader(response, check)
+    body = bytearray()
+    while data := read(_CHUNK, decode_content=True):
+        body += data
+    return bytes(body)
 
 
 async def _aread_error(response: httpx.Response) -> bytes:
@@ -176,23 +182,27 @@ def abounded_send(send: _AsyncSend) -> Callable[..., Coroutine[Any, Any, httpx.R
         if stream:
             return await send(request, stream=True, **kwargs)
         request.headers["Accept-Encoding"] = _ACCEPT_ENCODING
-        response = await send(request, stream=True, **kwargs)
-        try:
-            if response.status_code >= 300:
-                body = await _aread_error(response)
-            elif _NO_BODY.get() and not _ended(
-                response.status_code, response.headers.get("content-length")
-            ):
-                body = b""  # 쓰지 않는 본문 — 아래 닫기가 읽지 않고 연결째 버린다
-            else:
-                await response.aread()
-                return response
-        except BaseException:
+
+        async def exchange() -> httpx.Response:
+            response = await send(request, stream=True, **kwargs)
+            try:
+                if response.status_code >= 300:
+                    body = await _aread_error(response)
+                elif _NO_BODY.get() and not _ended(
+                    response.status_code, response.headers.get("content-length")
+                ):
+                    body = b""  # 쓰지 않는 본문 — 아래 닫기가 읽지 않고 연결째 버린다
+                else:
+                    await response.aread()
+                    return response
+            except BaseException:
+                await response.aclose()
+                raise
+            # 끝까지 읽었으면 연결을 풀에 돌려주고, 아니면(상한을 넘음 · 읽지 않음) 연결째 버린다.
             await response.aclose()
-            raise
-        # 끝까지 읽었으면 연결을 풀에 돌려주고, 아니면(상한을 넘음 · 읽지 않음) 연결째 버린다.
-        await response.aclose()
-        response._content = body
-        return response
+            response._content = body
+            return response
+
+        return await within(request_seconds(request), exchange(), request)
 
     return bounded

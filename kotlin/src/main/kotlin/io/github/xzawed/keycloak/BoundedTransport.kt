@@ -82,7 +82,14 @@ import javax.net.ssl.SSLSocketFactory
  * 바이트가 없으면 읽기 타임아웃만큼 한 번 더 읽어 기다린다 — 끊기 전에 그 타임아웃을 0 으로 둔다([quiet]) · (8) 다시 쓰려는 연결에 아무도
  * 묻지 않은 바이트가 와 있으면(앞 응답 뒤에 서버가 더 보냈다) 그 연결을 버린다 — 다음 요청이 그것을 제 응답으로 읽는다(HttpURLConnection
  * 은 응답마다 새 버퍼로 읽어 버퍼에 남은 것을 버렸다). TLS 에서 늦게 도착해 아직 풀리지 않은 바이트는 보이지 않는다 — 같은 서버가 같은
- * 연결로 보낸 것이다.
+ * 연결로 보낸 것이다 · (9) 응답은 요청을 보낸 때부터 읽기 타임아웃 안에 다 읽는다([deadlined]).
+ *
+ * ⚠️ **(9) 의 자리는 본문 스트림이 아니라 소켓이다.** 읽기 타임아웃은 읽기 하나를 묶을 뿐이라, 바이트를 그보다 조금 짧은 간격으로 흘리는
+ * 서버 앞에서 응답 하나가 흘린 바이트마다 간격 하나씩 걸렸다(실측 `ResponseReadDeadlineTest` — 읽기 타임아웃 1 초에 마지막 10 바이트를
+ * 0.7 초마다: 토큰·JWKS 7,171–7,941 ms 뒤 수락 · TLS 레코드 하나를 흘리면 33,634 ms). 본문 읽기 하나 안에도 청크 크기 줄 · 트레일러 ·
+ * TLS 레코드 하나를 기다리는 고리가 있고 머리는 본문 앞이라, 마감은 교환의 소켓 읽기마다 본다 — TLS 면 JSSE 가 레코드를 읽는 그 아래의
+ * 평문 소켓이다. 스레드·타이머를 두지 않는다: 실행기가 요청을 보낼 때 그 스레드에 마감을 걸고([arm]) 교환의 끝이 지운다. 최악은 마감 +
+ * 읽기 타임아웃 하나다. 코루틴 취소가 끊지 못하는 소켓 읽기([onIo])도 이 마감이 끝낸다.
  *
  * **풀**([POOL]): HttpURLConnection 의 keep-alive 캐시처럼 프로세스에 하나다. 클라이언트마다 풀을 두면 호출마다 클라이언트를 만드는
  * 소비자에게 소켓이 클라이언트 수만큼 쌓인다(AuthClient.close 는 아무것도 닫지 않는다 — 소유하는 풀이 없다). 경로(호스트·포트·프록시)마다
@@ -136,6 +143,9 @@ internal object BoundedTransport {
     /** 연결을 기다리던 스레드가 인터럽트됐다(코루틴 취소 — [onIo] 가 CancellationException 으로 바꾼다). */
     const val INTERRUPTED: String = "Interrupted while waiting for a pooled connection"
 
+    /** 마감에 아직 오는 응답의 실패 — 읽기 타임아웃과 같은 타입([SocketTimeoutException])이고 응답을 인용하지 않는다([due]). */
+    const val LATE: String = RESPONSE_LATE
+
     /** HttpURLConnection 의 기본 User-Agent — 그 클래스처럼 초기화 때 한 번 읽는다. */
     val USER_AGENT: String = userAgent(System.getProperty("http.agent"), System.getProperty("java.version"))
 
@@ -161,6 +171,13 @@ internal object BoundedTransport {
 
     /** 연결의 속성 — 다시 쓰려는 연결에 아무도 묻지 않은 바이트가 와 있다([CONNECTIONS]). */
     const val UNSOLICITED: String = "$NAME.unsolicited"
+
+    /**
+     * 이 스레드가 지금 하는 교환의 마감 — `[System.nanoTime() 의 마감, 그 길이(ms)]`. 요청을 보낼 때 실행기가 걸고([arm]) 교환의 끝이
+     * 지운다([disarm]). 교환 하나는 처음부터 끝까지 한 스레드에서 돈다(auth 는 [onIo] 의 IO 스레드, JWKS 는 조회 스레드) — 소켓은 풀에서
+     * 교환을 건너 살므로 마감은 소켓이 아니라 그 스레드에 둔다.
+     */
+    private val DEADLINE = ThreadLocal<LongArray>()
 
     /** HttpURLConnection 이 요청 머리에서 조용히 버리는 이름(소문자) — `sun.net.http.allowRestrictedHeaders` 기본. */
     private val RESTRICTED: Set<String> =
@@ -316,6 +333,7 @@ internal object BoundedTransport {
         } catch (e: IOException) {
             throw shield(e)
         } finally {
+            disarm()
             cut(request, context)
         }
     }
@@ -371,6 +389,36 @@ internal object BoundedTransport {
         connection: HttpClientConnection,
         budget: Long,
     ): InputStream = WireBoundedStream(body, connection, budget)
+
+    /**
+     * 이 스레드의 교환에 지금부터 [readTimeoutMillis] 의 마감을 건다 — 실행기가 요청을 보내기 직전에 부른다. 0 은 「끝없이」(읽기 타임아웃이
+     * 없다)라 마감도 두지 않는다.
+     */
+    fun arm(readTimeoutMillis: Int) {
+        if (readTimeoutMillis > 0) {
+            val millis = readTimeoutMillis.toLong()
+            DEADLINE.set(longArrayOf(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis), millis))
+        } else {
+            DEADLINE.remove()
+        }
+    }
+
+    /** 이 스레드의 마감을 지운다 — 교환의 끝. 그 뒤 이 스레드의 소켓 읽기(다음 교환이 연결을 빌리며 엿보는 1 ms 읽기 등)는 마감을 보지 않는다. */
+    fun disarm() {
+        DEADLINE.remove()
+    }
+
+    /**
+     * 소켓의 입력 스트림 — 읽기 앞뒤로 이 스레드의 마감([arm])을 본다: 마감 뒤에 읽기를 시작하지 않고, 마감 뒤에 끝난 읽기의 결과를 쓰지
+     * 않는다(그 바이트로 응답을 끝내지 않는다). 상태 줄·헤더·청크 틀·트레일러·본문·TLS 레코드가 모두 이 읽기로 온다. 읽기 하나는 지금처럼
+     * 읽기 타임아웃이 묶으므로 최악은 마감 + 읽기 타임아웃 하나다. 마감이 없는 스레드의 읽기는 그대로다.
+     */
+    fun deadlined(socket: InputStream): InputStream = DeadlinedStream(socket)
+
+    /** 마감이 지났으면 읽기 타임아웃과 같은 타입으로 — 메시지는 마감의 길이뿐이다(응답을 인용하지 않는다). */
+    private fun due(deadline: LongArray) {
+        if (System.nanoTime() - deadline[0] >= 0) throw SocketTimeoutException(LATE + deadline[1] + " ms of sending the request")
+    }
 
     /**
      * 하위 운송의 예외를 응답을 인용하지 않는 것으로 — JDK 의 예외(타임아웃·연결 거부·TLS·DNS)와 SDK 의 것은 그대로 두고, HttpClient 가 JDK
@@ -496,7 +544,7 @@ internal object BoundedTransport {
         private val STRICT: HostnameVerifier = DefaultHostnameVerifier()
         private val BRACKETED = Regex("^\\[(.*)]$")
 
-        override fun createSocket(context: HttpContext?): Socket = Socket() // JDK 의 기본 소켓 구현 — socksProxyHost 를 따른다
+        override fun createSocket(context: HttpContext?): Socket = DeadlineSocket() // JDK 의 기본 소켓 구현 — socksProxyHost 를 따른다
 
         override fun connectSocket(
             connectTimeout: Int,
@@ -594,9 +642,9 @@ internal object BoundedTransport {
         }
     }
 
-    /** 평문 소켓 — 맺은 뒤 교환의 읽기 타임아웃을 건다(프록시의 CONNECT 응답도 그 아래에서 읽는다). */
+    /** 평문 소켓 — 맺은 뒤 교환의 읽기 타임아웃을 건다(프록시의 CONNECT 응답도 그 아래에서 읽는다). 읽기마다 마감을 본다([DeadlineSocket]). */
     private object PlainSockets : ConnectionSocketFactory {
-        override fun createSocket(context: HttpContext?): Socket = Socket()
+        override fun createSocket(context: HttpContext?): Socket = DeadlineSocket()
 
         override fun connectSocket(
             connectTimeout: Int,
@@ -656,7 +704,8 @@ internal object BoundedTransport {
     /**
      * 1xx 를 세고, 거절된 CONNECT 를 IOException 으로 바꾸고, 본문에 틀 예산을 걸고([wireBounded]), 실패한 시도가 응답 바이트를 받았는지
      * 적는 실행기 — 상태가 없어 모든 교환이 함께 쓴다. 응답을 받다 실패하면 HttpCore 가 곧 연결을 닫으므로 그 전에 읽기 타임아웃을 0 으로
-     * 둔다([quiet] — 요청을 쓰다 실패한 연결은 이미 죽어 JSSE 가 기다릴 것이 없다).
+     * 둔다([quiet] — 요청을 쓰다 실패한 연결은 이미 죽어 JSSE 가 기다릴 것이 없다). 요청을 보내기 직전에 그 응답의 마감을 건다([arm] — 연결을
+     * 빌리고 맺은 뒤다. 다시 보내기·프록시의 CONNECT 는 제 요청을 보낼 때 다시 건다).
      */
     private class BoundedExecutor : HttpRequestExecutor() {
         override fun execute(
@@ -664,6 +713,7 @@ internal object BoundedTransport {
             conn: HttpClientConnection,
             context: HttpContext,
         ): HttpResponse {
+            arm(readTimeout(context))
             val before = conn.metrics.receivedBytesCount
             val response =
                 try {
@@ -754,6 +804,39 @@ internal object BoundedTransport {
         }
 
         override fun cancel(): Boolean = lease.cancel()
+    }
+
+    /**
+     * 교환의 소켓 — JDK 의 기본 소켓(그래서 `socksProxyHost` 를 따른다 — HttpURLConnection 과 같다)이되 그 입력 스트림이 읽기마다 마감을
+     * 본다([deadlined]). TLS 는 이 위에 겹친다 — JSSE 는 레코드를 이 소켓의 스트림에서 읽는다(`BaseSSLSocketImpl.getInputStream`).
+     */
+    private class DeadlineSocket : Socket() {
+        override fun getInputStream(): InputStream = deadlined(super.getInputStream())
+    }
+
+    /** [deadlined] 의 스트림. */
+    private class DeadlinedStream(
+        socket: InputStream,
+    ) : FilterInputStream(socket) {
+        override fun read(): Int {
+            val deadline = DEADLINE.get() ?: return super.read()
+            due(deadline)
+            val b = super.read()
+            due(deadline)
+            return b
+        }
+
+        override fun read(
+            buffer: ByteArray,
+            offset: Int,
+            length: Int,
+        ): Int {
+            val deadline = DEADLINE.get() ?: return super.read(buffer, offset, length)
+            due(deadline)
+            val n = super.read(buffer, offset, length)
+            due(deadline)
+            return n
+        }
     }
 
     /** [wireBounded] 의 스트림. */

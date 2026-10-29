@@ -1,4 +1,8 @@
-<!-- doc-budget: max-bytes=22684 -->
+<!-- doc-budget: max-bytes=22882 -->
+<!-- 22684 → 22882 (2026-10-29, +198B). 규약 (1) — 새 언어가 지켜야 할 규칙이 하나 늘었다(판정 2026-10-29 — 응답 전체를
+     설정한 타임아웃 안에, `.claude/rules/security.md` 「Response read deadline」). **교환** — 79행 「admin timeout injection
+     — config 타임아웃이 실제 클라이언트에 넘어가는가」를 그 줄로 바꿨다: 흘리기 시험이 그것까지 잰다(넘어가지 않으면 기한 근처에서
+     실패하지 않는다). 읽기마다 타임아웃만 넘기는 언어는 옛 점검을 통과하고 새 규칙을 어긴다 — 다섯 레인이 그랬다. -->
 <!-- 22520 → 22684 (2026-10-29, +164B). 규약 (1) — 새 언어가 지켜야 할 JWKS 규칙이 하나 늘었다(판정 2026-10-29 — 키 집합
      300 초 수명, 가드 1h 가 아홉 선언을 대조한다). 54행의 요구와 74행의 시험 점검표가 그것을 빠뜨리면 열 번째 언어가
      수명 없이 들어온다 — 두 줄에 한 마디씩 더했다. -->
@@ -76,7 +80,7 @@ Nail down the security properties implemented in Stage 2 **so that CI prevents r
 - [ ] **Masking (fully opaque)** — tokens/secrets must never appear in logs, `toString`/`repr`, or exception messages. Masking is a **fully opaque `***` with no prefix exposure**. Enforce with unit tests (the plaintext does not appear in the string representation).
 - [ ] **TLS verification on by default** — no no-op config options (an option that is stored but not wired to the transport is misleading — remove it). Keep verification on by default.
 - [ ] **DoS-safe JWKS** — pin Stage 2 jwt's refetch rate-limit and conditional refetch with unit tests (a forged signature does not trigger a refetch; only an unresolved kid refetches; the minimum interval is honored; a 300-second-old key set is refetched and a failed refetch rejects).
-- [ ] **admin timeout injection** — verify that config timeouts are actually passed to the real HTTP client.
+- [ ] **Response deadline** — every response the SDK reads (token, introspection, discovery, JWKS, admin) completes within the configured timeout, counted from send. Pin it with a trickle test: bytes spaced just under the read timeout must fail near the deadline — a per-read timeout alone does not pass.
 - [ ] **No default typing** — statically typed languages run in strict mode (e.g. `mypy --strict`, warnings escalated). CI rejects implicit any/loose types.
 - [ ] **Linter security ruleset** — make the language's security lint (bandit/`ruff S`, gosec, ESLint security, etc.) a **mandatory step in that language's CI workflow** (not a ruleset-level required check — see the gate note below).
 
