@@ -114,6 +114,9 @@ public sealed class HostilePathMatrixTests
 
     private readonly ITestOutputHelper _out;
 
+    /// <summary>attest 의 w1 — <see cref="CheckHand"/> 가 보안 기본값 가드까지 실제로 대조했는가(저장소 밖에서 건너뛴 실행은 증명이 아니다).</summary>
+    private bool _w1Compared;
+
     public HostilePathMatrixTests(ITestOutputHelper output) => _out = output;
 
     [Fact]
@@ -202,6 +205,35 @@ public sealed class HostilePathMatrixTests
             _out.WriteLine(s);
         _out.WriteLine("계급별: " + string.Join(" · ", ClassOrder.Select(c => $"{c} {counts.GetValueOrDefault(c)}")));
         Assert.True(fails.Count == 0, $"적대 경로 행렬 실패 {fails.Count}건:\n" + string.Join("\n", fails));
+        // attest — **모든 단언 뒤**(위 Assert.True 가 실패하면 여기 오지 않는다). 대조는 scripts/check-hp-attest.mjs.
+        Attest(rows.Count, counts, cells.Count, _w1Compared);
+    }
+
+    /// <summary>
+    /// 이 행렬이 <b>이 실행에서 실제로 돌았다</b>는 증명을 <c>$HP_ATTEST_DIR/dotnet.json</c> 에 쓴다 — CI 는 단위 테스트 단계 바로
+    /// 뒤에서 같은 nonce(<c>HP_ATTEST_NONCE</c>)로 <c>scripts/check-hp-attest.mjs</c> 가 읽는다. 레인이 초록이라는 것은 행렬이
+    /// 돌았다는 증거가 아니다(<c>--filter</c> · 건너뛴 W1). <c>HP_ATTEST_DIR</c> 이 없으면(로컬) 아무것도 하지 않는다. ⚠️ 부르는 쪽은
+    /// <b>모든 단언 뒤</b>에만 부른다 — 실패한 행렬은 파일을 남기지 않는다. <c>knownGaps</c> 는 <see cref="KnownGaps"/> <b>값</b>의
+    /// 등록부 id(<c>id: 이유</c> 의 앞마디)다 — 정적 대조(check-known-gaps.mjs)가 못 보는 계산된 id 까지 런타임 값으로 낸다.
+    /// </summary>
+    private static void Attest(int rows, Dictionary<string, int> counts, int w3, bool w1)
+    {
+        var dir = Environment.GetEnvironmentVariable("HP_ATTEST_DIR");
+        if (string.IsNullOrEmpty(dir))
+            return;
+        var body = new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            ["lang"] = "dotnet",
+            ["nonce"] = Environment.GetEnvironmentVariable("HP_ATTEST_NONCE") ?? "",
+            ["rows"] = rows,
+            ["classes"] = ClassOrder.ToDictionary(c => c, c => counts.GetValueOrDefault(c), StringComparer.Ordinal),
+            ["w3"] = w3,
+            ["w1"] = w1,
+            ["knownGaps"] = KnownGaps.Values.Select(v => v.Split(':', 2)[0].Trim())
+                .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),
+        };
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "dotnet.json"), JsonSerializer.Serialize(body));
     }
 
     // ── 선언 집합 ──────────────────────────────────────────────────────────────────────────────
@@ -1159,6 +1191,7 @@ public sealed class HostilePathMatrixTests
                 _out.WriteLine("W1: 저장소 밖에서 돌아 보안 기본값 가드 대조는 건너뛴다");
             return why;
         }
+        _w1Compared = true;
         var found = ScriptAnchor.Matches(File.ReadAllText(script)).Select(m => $"{m.Groups[1].Value}|{m.Groups[2].Value}").Distinct().ToList();
         _out.WriteLine($"W1 손 목록 {HandTargets.Length} 항목 · 앵커 {anchors.Count} — 앵커 본문의 요청 내는 공개 호출 {nCalls} · " +
                        $"보안 기본값 가드의 dotnet 행위 앵커 {found.Count} 와 대조");
