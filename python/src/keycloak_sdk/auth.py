@@ -1,8 +1,9 @@
-"""AuthClient — python-keycloak `KeycloakOpenID`를 감싼 인증(OIDC) 파사드.
+"""AuthClient — the authentication (OIDC) facade wrapping python-keycloak's `KeycloakOpenID`.
 
-공개 API에 `keycloak.exceptions.*`(python-keycloak) 타입을 노출하지 않는다 — 경계
-(`_wrap`)에서 SDK 예외로 변환한다. 네트워크 경계라 커버리지 게이트에서 제외된다
-(pyproject `[tool.coverage.run].omit`); `test_auth.py`가 목 기반으로 행동을 증명한다.
+`keycloak.exceptions.*` (python-keycloak) types are not exposed in the public API — they are
+converted to SDK exceptions at the boundary (`_wrap`). Being a network boundary, it is excluded
+from the coverage gate (pyproject `[tool.coverage.run].omit`); `test_auth.py` proves the
+behavior with mocks.
 """
 
 from __future__ import annotations
@@ -46,8 +47,8 @@ T = TypeVar("T")
 
 @dataclass(frozen=True)
 class AuthorizationUrl:
-    """PKCE 인가 코드 흐름 시작에 필요한 값 묶음. `code_verifier`는 `exchange_code`에
-    전달할 때까지 호출자(세션)가 보관해야 한다 — SDK는 상태를 갖지 않는다."""
+    """The bundle of values needed to start a PKCE authorization-code flow. The caller (session)
+    must keep `code_verifier` until it is passed to `exchange_code` — the SDK holds no state."""
 
     url: str
     code_verifier: str
@@ -76,7 +77,8 @@ def _generate_pkce_pair() -> tuple[str, str]:
 
 
 class AuthClient:
-    """`KeycloakOpenID` 래핑. `openid`는 테스트 주입용(미지정 시 config로부터 생성)."""
+    """Wraps `KeycloakOpenID`. `openid` is for test injection (when omitted, it is built from
+    config)."""
 
     # ⚠️ 비밀을 다루는 공개 진입점은 전부 `@scrub_frames` 다 — 실패할 때 프레임 로컬(토큰 응답·
     # 인자로 받은 토큰·code·verifier, 하위 생성자가 받은 client secret)이 traceback 으로 오류
@@ -144,10 +146,10 @@ class AuthClient:
 
     @scrub_frames
     def client_credentials_token(self) -> TokenSet:
-        """`client_credentials` grant로 서비스 계정 토큰을 발급받는다.
+        """Issues a service-account token with the `client_credentials` grant.
 
-        `config.scopes`를 명시적으로 전달한다 — 미전달 시 python-keycloak이
-        `"openid"`로 고정하므로, 설정된 추가 스코프(예: 커스텀 audience)가 무시된다.
+        `config.scopes` is passed explicitly — when it is not passed, python-keycloak pins the
+        scope to `"openid"`, so configured extra scopes (e.g. a custom audience) are ignored.
         """
         response = self._wrap(
             lambda: self._openid.token(
@@ -159,17 +161,20 @@ class AuthClient:
 
     @scrub_frames
     def authorization_url(self, redirect_uri: str) -> AuthorizationUrl:
-        """PKCE(S256) 인가 코드 흐름의 시작 URL을 만든다.
+        """Builds the start URL of a PKCE (S256) authorization-code flow.
 
-        `code_verifier`는 이후 `exchange_code`에 전달돼야 하므로 호출자가 세션에
-        보관한다(SDK는 무상태). `state`/`nonce`는 CSRF/재생 공격 방어용 난수.
+        `code_verifier` has to be passed to `exchange_code` later, so the caller keeps it in the
+        session (the SDK is stateless). `state`/`nonce` are random values that defend against
+        CSRF/replay attacks.
 
-        ⚠️ **`openid.auth_url()`에 위임하지 않는다 — 그 헬퍼는 퍼센트 인코딩을 하지 않는다.**
-        python-keycloak 7.1.1의 `auth_url`은 `URL_AUTH.format(...)` 한 줄이라 값을 그대로
-        이어 붙인다(그 함수를 직접 실행해 확인). 그래서 `redirect_uri` 안의 `&`가 뒤따르는
-        값을 **최상위 쿼리 파라미터로 주입**했고 공백도 원문으로 남아 URL이 못 쓰게 됐다.
-        덤으로 그 경로는 `well_known()` discovery 왕복을 한 번 더 탔다. 여기서는 `aio`
-        미러와 **동형으로** `OidcEndpoints`에서 직접 조립한다 — 네트워크가 필요 없다.
+        ⚠️ **It does not delegate to `openid.auth_url()` — that helper does no percent-encoding.**
+        python-keycloak 7.1.1's `auth_url` is a single `URL_AUTH.format(...)` line, so it
+        concatenates the values as they are (confirmed by running that function directly). As a
+        result, the value following a `&` inside `redirect_uri` was **injected as a top-level
+        query parameter**, and spaces also stayed raw, so the URL became unusable. On top of
+        that, that path took one more `well_known()` discovery round trip. Here the URL is
+        assembled directly from `OidcEndpoints`, **isomorphic with** the `aio` mirror — no
+        network is needed.
         """
         code_verifier, code_challenge = _generate_pkce_pair()
         state = secrets.token_urlsafe(16)
@@ -193,13 +198,15 @@ class AuthClient:
     def exchange_code(
         self, code: str, redirect_uri: str, code_verifier: str, nonce: str | None = None
     ) -> TokenSet:
-        """인가 코드 + PKCE verifier를 토큰으로 교환한다(`authorization_code` grant).
+        """Exchanges an authorization code + PKCE verifier for tokens (`authorization_code` grant).
 
-        `nonce`가 주어지면(authorization_url 이 돌려준 값) 응답 id_token을 강화
-        `JwtValidator`로 서명·iss·aud·exp까지 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce
-        재생 방지. 불일치·부재·검증실패는 모두 거부(fail-closed). 생략 시 id_token 검증을 건너뛴다.
-        id_token 의 `aud` 는 `expected_audience` 가 아니라 **`client_id`** 로 잰다(OIDC Core
-        §2·§3.1.3.7) — `expected_audience` 는 `validate()` 가 보는 액세스 토큰 전용이다.
+        When `nonce` is given (the value authorization_url returned), the response's id_token is
+        validated with the hardened `JwtValidator` through signature · iss · aud · exp, and then
+        its nonce claim is compared — OIDC nonce replay protection. Mismatch, absence and
+        validation failure are all rejected (fail-closed). When it is omitted, id_token
+        validation is skipped. The id_token's `aud` is checked against **`client_id`**, not
+        `expected_audience` (OIDC Core §2·§3.1.3.7) — `expected_audience` is only for the access
+        token that `validate()` checks.
         """
         response = self._wrap(
             lambda: self._openid.token(
@@ -228,35 +235,39 @@ class AuthClient:
 
     @scrub_frames
     def refresh(self, refresh_token: str) -> TokenSet:
-        """`refresh_token` grant로 접근 토큰을 갱신한다."""
+        """Renews the access token with the `refresh_token` grant."""
         response = self._wrap(lambda: self._openid.refresh_token(refresh_token))
         return TokenSet.from_response(response, issued_at=time.time())
 
     @scrub_frames
     def logout(self, refresh_token: str) -> None:
-        """세션을 무효화한다(refresh token revoke)."""
+        """Invalidates the session (refresh token revoke)."""
         self._wrap(lambda: self._openid.logout(refresh_token))
 
     @scrub_frames
     def introspect(self, token: str) -> IntrospectionResult:
-        """RFC 7662 토큰 인트로스펙션. 비활성 토큰은 `active` 외 필드가 생략될 수 있다."""
+        """RFC 7662 token introspection. For an inactive token, fields other than `active` may
+        be omitted."""
         response = self._wrap(lambda: self._openid.introspect(token))
         return _introspection_result(response)
 
     @scrub_frames
     def validate(self, access_token: str) -> ValidatedToken:
-        """realm JWKS로 서명을 검증하고 issuer/audience/exp/nbf를 강제한다(`JwtValidator`).
+        """Verifies the signature against the realm JWKS and enforces issuer/audience/exp/nbf
+        (`JwtValidator`).
 
-        JWKS는 첫 호출 시 로드해 인스턴스에 캐시한다 — 받은 지 300초(`JWKS_MAX_AGE_SECONDS`)
-        안의 호출은 네트워크 왕복 없이 그 `KeySet`을 재사용하고, 그 뒤 호출은 다시 가져온다.
-        그 fetch 가 실패하면 검증도 실패한다 — 낡은 키로 물러서지 않는다.
+        The JWKS is loaded on the first call and cached on the instance — calls within 300
+        seconds (`JWKS_MAX_AGE_SECONDS`) of receiving it reuse that `KeySet` without a network
+        round trip, and later calls fetch it again. If that fetch fails, validation fails too —
+        it does not fall back to stale keys.
 
-        키 회전 복원력: 서명 키(kid)를 캐시된 JWKS에서 해석하지 못하면
-        (`TokenKeyError`) 캐시를 무효화하고 `certs()`를 한 번 재조회해 재시도한다.
-        **단순 서명 위조(`TokenSignatureError`)는 재조회하지 않는다** — 재조회해도
-        소용없고 위조 토큰마다 `certs()`가 발생하는 미인증 DoS 증폭이 되기 때문이다.
-        재조회 자체도 `_jwks_min_refetch` 간격으로 rate-limit되어 kid 변조 공격에 상한이
-        있다. 클레임 실패(`TokenValidationError`)도 재조회를 트리거하지 않는다.
+        Key-rotation resilience: if the signing key (kid) cannot be resolved in the cached JWKS
+        (`TokenKeyError`), the cache is invalidated, `certs()` is refetched once, and the
+        validation is retried. **A plain forged signature (`TokenSignatureError`) is not
+        refetched** — a refetch would not help, and it would become an unauthenticated DoS
+        amplification in which every forged token triggers `certs()`. The refetch itself is also
+        rate-limited to the `_jwks_min_refetch` interval, so kid-tampering attacks have an upper
+        bound. A claim failure (`TokenValidationError`) does not trigger a refetch either.
         """
         # `expected_audience`가 설정되면 그 값을, 아니면 client_id를 기대한다(기존 동작).
         return self._validate_for(
@@ -353,11 +364,11 @@ class AuthClient:
         )
 
     def close(self) -> None:
-        """하위 `KeycloakOpenID`의 requests 세션을 닫는다.
+        """Closes the requests session of the underlying `KeycloakOpenID`.
 
-        python-keycloak은 sync용 공개 close를 제공하지 않으므로 내부 세션
-        (`connection._s`)을 방어적으로(getattr 가드) 닫는다 — 미해제 시 커넥션 풀이
-        GC 파이널라이저까지 잔존한다.
+        python-keycloak offers no public close for sync use, so the internal session
+        (`connection._s`) is closed defensively (getattr guards) — if it is not released, the
+        connection pool lingers until the GC finalizer.
         """
         conn = getattr(self._openid, "connection", None)
         session = getattr(conn, "_s", None) if conn is not None else None
