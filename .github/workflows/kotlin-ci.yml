@@ -176,8 +176,25 @@ jobs:
           # ⚠️ Kotlin `internal` 멤버는 바이트코드에서 `이름$io_github_xzawed_keycloak_sdk_kotlin` 꼴의 public 이라 japicmp 가
           # 공개 메서드로 본다 — 소비자 API 가 아니다(실측 2026-10-29: internal companion 의 `fieldValueSafe` 삭제가 「REMOVED
           # METHOD」로 울었다). 그 꼴의 멤버만 뺀다. 대조(같은 날 · japicmp 0.26.1): 공개 클래스 `TokenSet` 을 지운 JAR 은 이
-          # 제외를 걸고도 rc 1. ⚠️ internal **클래스**(이름이 망글되지 않는다)의 변경은 여전히 잡힌다 — 남은 오탐 부류다.
+          # 제외를 걸고도 rc 1.
+          # ⚠️ internal **클래스**도 바이트코드에서 public 이고 이름이 망글되지 않는다(실측 2026-10-29: 응답 기한이 internal
+          # `AdminEngine`·`AdminEngine.Exchange` 의 생성자를 바꾸자 「CONSTRUCTOR_REMOVED」로 울었다). 그래서 **소스의 최상위
+          # `internal` 클래스 선언에서 파생해** 그 클래스와 그 안의 클래스(`$*` — 실효 가시성이 internal 이하)를 뺀다 — 손 목록이
+          # 아니다. 대조(같은 날 · 0.26.1): 위 변경은 rc 0 · 공개 `TokenSet` 을 지운 JAR 은 rc 1 · 하나도 못 찾으면 공허라 실패.
+          # 남은 오탐: 공개 클래스 안의 internal 클래스 · 최상위 internal 함수(`*Kt` 파사드). ⚠️ public → internal 로 좁히는 것은
+          # 바이트코드가 그대로라 이 제외와 무관하게 japicmp 가 못 본다(소스 전용 파괴 — 리뷰가 막는다).
+          ex='*#*$io_github_xzawed_keycloak_sdk_kotlin(*)'
+          n=0
+          while IFS= read -r f; do
+            pkg=$(sed -n 's/^package \([A-Za-z0-9_.]*\).*/\1/p' "$f" | head -1)
+            for c in $(grep -oE '^internal +((data|sealed|abstract|open|enum|annotation|value|inline|fun) +)*(class|interface|object) +[A-Za-z0-9_]+' "$f" | awk '{print $NF}'); do
+              ex="$ex;$pkg.$c;$pkg.$c\$*"
+              n=$((n + 1))
+            done
+          done < <(git ls-files 'src/main/kotlin/*.kt')
+          [ "$n" -gt 0 ] || { echo "::error::최상위 internal 클래스를 하나도 못 찾았다 — 파생이 공허하다"; exit 1; }
+          echo "최상위 internal 클래스 $n 개를 뺀다: $ex"
           java -jar "$RUNNER_TEMP/japicmp.jar" \
             -o "$RUNNER_TEMP/base.jar" -n "$new" \
             --only-modified --ignore-missing-classes --error-on-binary-incompatibility \
-            --exclude '*#*$io_github_xzawed_keycloak_sdk_kotlin(*)'
+            --exclude "$ex"
