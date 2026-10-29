@@ -3,16 +3,16 @@
 require "erb"
 
 module KeycloakSdk
-  # Keycloak realm의 OIDC 엔드포인트를 규약대로 조립한다(네트워크 없음).
+  # Assembles a Keycloak realm's OIDC endpoints by convention (no network).
   class OidcEndpoints
     attr_reader :issuer, :authorization, :token, :introspection, :end_session, :jwks
 
     def initialize(server_url, realm)
-      # issuer는 토큰 iss 클레임과 그대로 비교하므로 realm을 인코딩하지 않는다.
+      # The issuer is compared as is with the token's iss claim, so the realm is not encoded.
       @issuer = "#{server_url}/realms/#{realm}"
-      # 엔드포인트의 realm은 경로 세그먼트 하나다. "my realm"을 그대로 두면
-      # client_credentials_token / create_authorization_request가 URI::InvalidURIError를
-      # SDK 밖으로 흘린다(자매 SDK는 이 세그먼트를 퍼센트 인코딩한다).
+      # In the endpoints the realm is a single path segment. Left as is, "my realm" makes
+      # client_credentials_token / create_authorization_request leak a URI::InvalidURIError
+      # out of the SDK (the sibling SDKs percent-encode this segment).
       oidc = "#{server_url}/realms/#{escape_realm_segment(realm)}/protocol/openid-connect"
       @authorization = "#{oidc}/auth"
       @token = "#{oidc}/token"

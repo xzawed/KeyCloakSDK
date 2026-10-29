@@ -4,7 +4,8 @@ require "erb"
 
 module KeycloakSdk
   module Admin
-    # 리소스 공용: 요청 실행 + 오류 경계 변환 + Location 헤더 id 추출 + 경로 세그먼트 이스케이프.
+    # Shared by the resources: request execution + error conversion at the boundary + id extraction from the
+    # Location header + path segment escaping.
     module Call
       private
 

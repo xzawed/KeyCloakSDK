@@ -2,7 +2,7 @@
 
 module KeycloakSdk
   module Admin
-    # top-level — name 키.
+    # top-level — keyed by name.
     class Realms
       include Call
 
@@ -10,7 +10,7 @@ module KeycloakSdk
         @conn = conn
       end
 
-      # POST /admin/realms — master realm 전용(realm SA는 403). 반환: realm 이름.
+      # POST /admin/realms — master realm only (a realm SA gets 403). Returns: the realm name.
       def create(representation)
         request { @conn.post("admin/realms", representation, &SettleBody::MARK) }
         representation[:realm] || representation["realm"]

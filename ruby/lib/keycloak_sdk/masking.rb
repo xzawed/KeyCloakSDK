@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module KeycloakSdk
-  # 완전 불투명 마스킹(접두 노출 없음).
+  # Fully opaque masking (no prefix exposed).
   module Masking
     module_function
 
