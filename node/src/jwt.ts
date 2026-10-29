@@ -32,6 +32,14 @@ export const JWKS_MAX_BYTES = 51_200
 const JWT_MAX_BYTES = 256_000
 
 /**
+ * 성공한 조회가 받은 JWKS 키셋의 수명(초, 아홉 언어 공통). jose 의 `cacheMaxAge`(ms)로 건다 — jose 는 조회가 끝날 때
+ * 나이를 찍고, 이 나이에 이르면 다음 `getKey` 첫머리에서 콜드 캐시처럼 다시 받는다. 그 조회는 아래 실패 백오프에
+ * 걸리고, 실패하면 검증이 실패한다(jose 는 갱신이 실패하면 옛 키셋을 부르지 않는다 — 낡은 키로 물러서지 않는다).
+ * 강제 재조회의 성공도 나이를 다시 센다. ⚠️ 나이는 벽시계다 — jose 의 `isFreshFor` 가 `Date.now()` 를 읽는다.
+ */
+const JWKS_MAX_AGE_SECONDS = 300
+
+/**
  * 상한을 건 JWKS fetch. `createRemoteJWKSet` 의 `[customFetch]` 이음매로 주입한다 —
  * **JWKS 전용**이라 토큰·introspect·logout 경로에는 영향이 없다.
  *
@@ -146,7 +154,7 @@ function remoteJwksWithRefetchWindow(
   let lastAttempt = Number.NEGATIVE_INFINITY
   const remote = createRemoteJWKSet(new URL(jwksUri), {
     cooldownDuration: 0,
-    cacheMaxAge: 600_000,
+    cacheMaxAge: JWKS_MAX_AGE_SECONDS * 1000,
     [customFetch]: async (url, options) => {
       const forced = remote.jwks() !== undefined && remote.fresh
       if (forced && now() - lastAttempt < windowMs) {
@@ -180,15 +188,13 @@ function withFetchFailureBackoff(remote: RemoteJWKSet, seams: BackoffSeams = {})
   const jitter =
     seams.jitter ?? (() => 0.5 + Number(process.hrtime.bigint() % 1_000_000n) / 2_000_000)
   let failures = 0
-  let lastFailure: number | null = null
+  // 창이 끝나는 시각(`now()` 의 눈금). jitter 는 실패를 **기록할 때** 한 번 뽑는다 — 검사마다 뽑으면 같은 실패의 창 끝이
+  // 검사마다 움직여, 한 순간에 한 검사는 거부하고 다음 검사는 IdP 로 나갔다(`jwt-jwks-max-age.test.ts` 의 jitter 시험).
+  let retryAt: number | null = null
   // 마지막으로 센 실패. jose 는 동시 적재를 한 fetch 로 합치고 그 거부 사유(**같은 객체**)를 대기자 모두에게 던진다.
   let lastCounted: unknown
 
-  const delayMs = () =>
-    Math.min(FAILURE_BACKOFF_BASE_MS * 2 ** (Math.max(failures, 1) - 1), FAILURE_BACKOFF_CAP_MS) *
-    jitter()
-  const remainingMs = () =>
-    lastFailure === null ? 0 : Math.max(0, delayMs() - (now() - lastFailure))
+  const remainingMs = () => (retryAt === null ? 0 : Math.max(0, retryAt - now()))
 
   return async (protectedHeader, token) => {
     const remaining = remainingMs()
@@ -201,7 +207,7 @@ function withFetchFailureBackoff(remote: RemoteJWKSet, seams: BackoffSeams = {})
     try {
       const key = await remote(protectedHeader, token)
       failures = 0
-      lastFailure = null
+      retryAt = null
       return key
     } catch (e) {
       // ⚠️ 진입부 게이트를 `!remote.fresh` 로 **좁히지 말 것**. 결과는 같아 보이지만(좁혀도 22/22) 신선한 캐시의 호출이
@@ -210,14 +216,14 @@ function withFetchFailureBackoff(remote: RemoteJWKSet, seams: BackoffSeams = {})
       if (remote.fresh) {
         // 신선한 캐시로 끝났다 = 마지막 적재는 성공했다. 여기서 던진 것은 미해결 kid 이거나 신선한 캐시의 강제 재조회
         // 실패라 세지 않고(규칙 (4)), 성공이 카운터를 되돌린다(규칙 (3) — 참조 구현 ruby 도 kid 와 무관하게 fetch
-        // 성공에서 되돌린다). 안 되돌리면 회복 갱신을 위조 kid 가 일으켰을 때 다음 장애의 첫 창이 길어지고(실측
-        // 0.2 → 0.4 초), jitter 가 검사마다 다시 뽑혀 신선한 캐시의 k1 까지 남은 창에 막혔다.
+        // 성공에서 되돌린다). 안 되돌리면 회복 갱신을 위조 kid 가 일으켰을 때 다음 장애의 첫 창이 길어진다(실측
+        // 0.2 → 0.4 초).
         failures = 0
-        lastFailure = null
+        retryAt = null
       } else if (!(e instanceof joseErrors.JWKSNoMatchingKey) && e !== lastCounted) {
         // ⚠️ **신선한 캐시 없이(콜드 · `cacheMaxAge` 뒤) fetch 가 실패했다 — 그것만 센다.**
         // - `JWKSNoMatchingKey` 는 kid 거부이거나 30 초 창이 IdP 없이 거부한 것이지 fetch 실패가 아니다(규칙 (4)).
-        //   「신선한 캐시가 없다」만 보면 창의 거부가, 그 결정과 이 catch 사이에 캐시가 600 초를 넘긴 것만으로
+        //   「신선한 캐시가 없다」만 보면 창의 거부가, 그 결정과 이 catch 사이에 캐시가 수명을 넘긴 것만으로
         //   세어진다 — 실측: 정상 IdP 에서 k1 이 'backing off' 로 거부, /certs 그대로.
         // - 신선할 때 정한 강제 재조회라도 응답을 기다리는 사이 캐시가 낡고 실패했으면 센다 — 안 세면 다음 검증이
         //   또 나간다(창 전에 두 건).
@@ -225,7 +231,9 @@ function withFetchFailureBackoff(remote: RemoteJWKSet, seams: BackoffSeams = {})
         //   정상 IdP 의 k1 거부). 참조 구현 ruby 는 mutex 로 fetch 마다 한 번 센다.
         lastCounted = e
         failures += 1
-        lastFailure = now()
+        retryAt =
+          now() +
+          Math.min(FAILURE_BACKOFF_BASE_MS * 2 ** (failures - 1), FAILURE_BACKOFF_CAP_MS) * jitter()
       }
       throw e
     }
@@ -247,7 +255,7 @@ export interface JwtValidatorOptions {
 /**
  * 자체 강화 JWT 검증기. 라이브러리 기본값을 신뢰하지 않는다:
  * 알고리즘 핀(헤더 alg 불신, `none` 거부) · issuer 정확일치 · audience 포함검사(다중 aud 수용) ·
- * exp/nbf ± 클록 스큐 · JWKS 재조회 DoS-safe(kid 미해결 시에만 재조회 + 쿨다운 rate-limit).
+ * exp/nbf ± 클록 스큐 · JWKS 재조회 DoS-safe(키셋 수명 300 초 — 그 안에서는 kid 미해결 시에만 재조회 + 쿨다운 rate-limit).
  *
  * 키 소스는 주입형이다(테스트는 로컬 JWKS, 실사용은 `forJwksUri`의 원격 JWKS).
  */
@@ -278,8 +286,9 @@ export class JwtValidator {
   }
 
   /**
-   * 원격 JWKS URI로 검증기를 만든다. `createRemoteJWKSet`은 kid 미해결 시에만 재조회하고, 그 재조회를
-   * `jwksMinRefetchSeconds` 창으로 rate-limit 한다 → 서명 위조로 인한 미인증 DoS 증폭을 차단한다.
+   * 원격 JWKS URI로 검증기를 만든다. 받은 키셋은 300 초 쓰고(그 뒤는 콜드처럼 다시 받고, 실패하면 거부한다), 그 안에서는
+   * kid 미해결 시에만 재조회하며 그 재조회를 `jwksMinRefetchSeconds` 창으로 rate-limit 한다 → 서명 위조로 인한 미인증
+   * DoS 증폭을 차단한다.
    *
    * ⚠️ 그 창은 **캐시가 찬 뒤에만** 걸린다 — 콜드·낡은(`cacheMaxAge` 뒤) 캐시 + IdP 장애는 실패 백오프가 막는다
    * (측정 20 → 1 · 10 → 1).
