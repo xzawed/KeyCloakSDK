@@ -1,4 +1,4 @@
-//! 값 타입 — 시크릿 필드는 수동 Debug로 마스킹.
+//! Value types — secret fields are masked by a manual Debug impl.
 #[derive(Clone)]
 pub struct TokenSet {
     pub access_token: String,
@@ -11,9 +11,10 @@ pub struct TokenSet {
 }
 
 impl TokenSet {
-    /// expires_at(절대 epoch) 기준 만료(스큐 적용). expires_at가 미상이면 보수적으로 true로 본다
-    /// (Go/Python/Node/C#/Kotlin 동형) — 만료 불명 토큰을 provider가 영구 캐시해 만료 후 admin이
-    /// 영구 실패하는 것을 막는다(Keycloak 표준 흐름은 항상 expires_in을 주므로 실경로엔 무영향).
+    /// Expiry against expires_at (absolute epoch), with the skew applied. An unknown expires_at is conservatively treated
+    /// as true (isomorphic with Go/Python/Node/C#/Kotlin) — this stops a provider from caching a token of unknown expiry
+    /// forever, which would make admin fail permanently once that token expires (Keycloak's standard flows always send
+    /// expires_in, so the real paths are unaffected).
     pub fn is_expired(&self, now: u64, skew: u64) -> bool {
         match self.expires_at {
             Some(at) => now + skew >= at,
@@ -40,7 +41,8 @@ pub struct ValidatedToken {
     pub issuer: String,
     pub expires_at: Option<u64>,
     pub issued_at: Option<u64>,
-    /// 검증된 전체 클레임 맵(자매 SDK의 ValidatedToken.claims 동형) — nonce 등 표준 외 클레임 접근용.
+    /// The full map of validated claims (isomorphic with the sibling SDKs' ValidatedToken.claims) — for accessing
+    /// non-standard claims such as nonce.
     pub claims: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
@@ -56,7 +58,7 @@ pub struct AuthorizationRequest {
     pub url: String,
     pub state: String,
     pub code_verifier: String,
-    /// OIDC nonce — 콜백까지 보관했다가 exchange_code(expected_nonce)로 넘겨 id_token 재생을 막는다.
+    /// OIDC nonce — keep it until the callback, then pass it to exchange_code(expected_nonce) to block id_token replay.
     pub nonce: String,
 }
 

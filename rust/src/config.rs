@@ -1,4 +1,4 @@
-//! 불변 설정. client_secret은 수동 Debug로 마스킹(derive는 노출).
+//! Immutable configuration. client_secret is masked by a manual Debug impl (a derive would expose it).
 use crate::error::{KeycloakError, Result};
 use std::time::Duration;
 
@@ -9,26 +9,29 @@ pub struct KeycloakConfig {
     pub client_id: String,
     pub client_secret: Option<String>,
     pub scopes: Vec<String>,
-    /// JWT 서명 검증 허용 알고리즘 핀(기본 ["RS256"]). ES256/PS256 realm용으로 설정 가능 —
-    /// 하드코딩하면 그런 realm의 정상 토큰이 전부 거부된다. 빈/미지원 값은 JwtValidator에서 거부.
+    /// Pin of the algorithms allowed for JWT signature verification (default ["RS256"]). Configurable for ES256/PS256
+    /// realms — hardcoding it would reject every legitimate token from such a realm. An empty or unsupported value is
+    /// rejected in JwtValidator.
     pub signature_algorithms: Vec<String>,
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
     pub clock_skew: u64,
-    /// 미해결 kid(키 회전)로 인한 JWKS 재조회의 최소 간격(초, 기본 30) — DoS 증폭 상한.
-    /// 위조 kid를 연속 주입해도 이 간격보다 자주 IdP를 때리지 못한다.
+    /// Minimum interval, in seconds (default 30), between JWKS refetches caused by an unresolved kid (key rotation) — the
+    /// DoS amplification cap.
+    /// Even forged kids injected back to back cannot hit the IdP more often than this interval allows.
     pub jwks_min_refetch_secs: u64,
-    /// `validate()`가 토큰 `aud`에서 찾을 값. `None`이면 `client_id`를 기대한다(기존 동작).
-    /// 기본 realm은 client-credentials 토큰 `aud`에 client_id를 넣지 않으므로(audience 매퍼를
-    /// 추가해야 들어간다), 리소스 서버처럼 API 이름이 aud면 여기에 그 값을 설정한다.
-    /// `exchange_code`의 id_token 검사에는 걸리지 않는다 — id_token `aud` 는 늘 `client_id` 로
-    /// 본다(OIDC Core §3.1.3.7).
+    /// The value `validate()` looks for in the token's `aud`. `None` expects `client_id` (the existing behavior).
+    /// A stock realm does not put client_id in a client-credentials token's `aud` (it gets there only once an audience
+    /// mapper is added), so when the aud is an API name, as for a resource server, set that value here.
+    /// It does not apply to `exchange_code`'s id_token check — the id_token's `aud` is always checked against
+    /// `client_id` (OIDC Core §3.1.3.7).
     pub expected_audience: Option<String>,
     pub redirect_uri: Option<String>,
 }
 
 impl KeycloakConfig {
-    /// 필수값 검증 + server_url 후행 슬래시 제거. 기본값: scopes=["openid"], connect 5s, read 30s, skew 30s.
+    /// Validates the required values + strips server_url's trailing slash. Defaults: scopes=["openid"], connect 5s,
+    /// read 30s, skew 30s.
     pub fn new(
         server_url: impl Into<String>,
         realm: impl Into<String>,
@@ -72,20 +75,21 @@ impl KeycloakConfig {
         self.redirect_uri = Some(uri.into());
         self
     }
-    /// JWT 서명 검증 알고리즘 핀을 설정한다(ES256/PS256 realm 등). 비었거나 미지원 알고리즘이면
-    /// JwtValidator 구성 시점(KeycloakClient::new)에 `KeycloakError::Config`로 거부된다.
+    /// Sets the JWT signature-verification algorithm pin (ES256/PS256 realms, etc.). An empty list or an unsupported
+    /// algorithm is rejected with `KeycloakError::Config` when the JwtValidator is built (KeycloakClient::new).
     #[must_use]
     pub fn with_signature_algorithms(mut self, algs: Vec<String>) -> Self {
         self.signature_algorithms = algs;
         self
     }
-    /// 미해결 kid로 인한 JWKS 재조회의 최소 간격(초)을 설정한다(DoS 증폭 상한, 기본 30).
+    /// Sets the minimum interval, in seconds (default 30), between JWKS refetches caused by an unresolved kid (DoS
+    /// amplification cap).
     #[must_use]
     pub fn with_jwks_min_refetch_secs(mut self, secs: u64) -> Self {
         self.jwks_min_refetch_secs = secs;
         self
     }
-    /// `validate()`가 토큰 `aud`에서 기대할 값을 설정한다(미설정이면 `client_id`).
+    /// Sets the value `validate()` expects in the token's `aud` (`client_id` when unset).
     #[must_use]
     pub fn with_expected_audience(mut self, audience: impl Into<String>) -> Self {
         self.expected_audience = Some(audience.into());

@@ -1,4 +1,4 @@
-//! TokenProvider — §4 동형 async 추상화. admin은 이 trait로만 토큰을 받는다.
+//! TokenProvider — the §4-isomorphic async abstraction. admin receives tokens only through this trait.
 use crate::config::KeycloakConfig;
 use crate::error::{KeycloakError, Result, oauth_error_code};
 use crate::jwks::{TOKEN_RESPONSE_MAX_BYTES, read_capped};
