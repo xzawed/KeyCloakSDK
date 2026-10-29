@@ -45,7 +45,7 @@ public class AuthClient internal constructor(
     private val endpoints: OidcEndpoints,
     injectedValidator: JwtValidator?,
 ) : AutoCloseable {
-    /** 운영 진입점 — realm의 OIDC 엔드포인트 규약으로 endpoints를 조립한다(네트워크 없음). */
+    /** Production entry point — assembles endpoints from the realm's OIDC endpoint conventions (no network). */
     public constructor(config: KeycloakConfig) : this(config, OidcEndpoints.forRealm(config), null)
 
     // validate()가 쓰는 지연 생성 JwtValidator(aud = config.expectedAudience). exchangeCode()의 nonce 검증은
@@ -62,9 +62,10 @@ public class AuthClient internal constructor(
     private val logoutSender = CappedResponseSender("logout response")
 
     /**
-     * PKCE(S256) 인가 코드 흐름의 시작 URL을 만든다(non-suspend·네트워크 없음). S256 code_challenge 계산은
-     * Nimbus `AuthenticationRequest.Builder.codeChallenge(CodeVerifier, S256)`에 위임한다(Java `AuthClient`
-     * 동형 — 직접 SHA-256 계산 불필요). `config.scopes`가 비어 있으면 Java와 동일하게 `openid`로 대체한다.
+     * Builds the start URL of a PKCE (S256) authorization-code flow (non-suspend, no network). Computing the S256
+     * code_challenge is delegated to Nimbus `AuthenticationRequest.Builder.codeChallenge(CodeVerifier, S256)`
+     * (isomorphic with Java `AuthClient` — no need to compute SHA-256 directly). When `config.scopes` is empty, it is
+     * replaced with `openid`, the same as Java.
      */
     public fun createAuthorizationRequest(redirectUri: String): AuthorizationRequest {
         val redirect = redirectUri(redirectUri)
@@ -109,7 +110,10 @@ public class AuthClient internal constructor(
         return AuthorizationRequest(built.toURI().toString(), codeVerifier.value, state.value, nonce.value)
     }
 
-    /** `client_credentials` 그랜트로 서비스계정 토큰을 발급한다. `config.scopes`를 명시 전달한다(부록 §auth exactConfig). */
+    /**
+     * Issues a service-account token with the `client_credentials` grant. `config.scopes` is passed explicitly
+     * (appendix §auth exactConfig).
+     */
     public suspend fun clientCredentialsToken(): TokenSet {
         val issuedAt = Instant.now().epochSecond
         val req = buildClientCredentialsRequest()
@@ -117,15 +121,16 @@ public class AuthClient internal constructor(
     }
 
     /**
-     * 인가 코드 + PKCE verifier를 토큰으로 교환한다(`authorization_code` 그랜트). 기밀 클라이언트
-     * (clientSecret 설정됨)는 ClientSecretBasic, 퍼블릭 클라이언트는 client_id만 본문에 포함한다(Java 동형).
+     * Exchanges an authorization code + PKCE verifier for tokens (`authorization_code` grant). A confidential client
+     * (clientSecret set) uses ClientSecretBasic; a public client puts only client_id in the body (isomorphic with Java).
      *
-     * `createAuthorizationRequest`가 돌려준 `nonce`를 [expectedNonce]로 넘기면, 응답 id_token을 realm
-     * JWKS로 서명·iss·aud·exp까지 강화 검증한 뒤(§jwt 재사용) nonce 클레임까지 대조한다 — Node SDK가 겪은
-     * HIGH 결함(nonce를 threading하지 않으면 id_token이 사실상 무검증으로 통과)을 원천 차단한다.
-     * id_token의 `aud`는 OIDC Core §3.1.3.7 대로 `clientId`로 본다 — `expectedAudience`는 [validate]의
-     * 액세스 토큰 전용이라, 재정의해도 이 교환에는 걸리지 않는다.
-     * `expectedNonce`를 생략하면(커스텀 무-nonce 흐름) id_token 검증을 건너뛴다.
+     * When the `nonce` returned by `createAuthorizationRequest` is passed as [expectedNonce], the response id_token
+     * gets the hardened validation against the realm JWKS — signature, iss, aud and exp (reusing §jwt) — and then its
+     * nonce claim is compared as well. This blocks at the source the HIGH defect the Node SDK went through (without
+     * threading the nonce, the id_token passes effectively unvalidated).
+     * The id_token's `aud` is checked against `clientId`, per OIDC Core §3.1.3.7 — `expectedAudience` is only for
+     * [validate]'s access tokens, so overriding it does not apply to this exchange.
+     * Omitting `expectedNonce` (a custom flow without a nonce) skips id_token validation.
      */
     public suspend fun exchangeCode(
         code: String,
@@ -150,14 +155,14 @@ public class AuthClient internal constructor(
         return tokenSet
     }
 
-    /** `refresh_token` 그랜트로 액세스 토큰을 갱신한다. */
+    /** Renews the access token with the `refresh_token` grant. */
     public suspend fun refresh(refreshToken: String): TokenSet {
         val issuedAt = Instant.now().epochSecond
         val req = buildRefreshRequest(refreshToken)
         return mapTokenResponse(authSend(req), issuedAt, "Token refresh failed", sentSecrets(req, refreshToken))
     }
 
-    /** RFC 7662 토큰 introspection. 비활성 토큰은 active 외 클레임이 생략될 수 있다. */
+    /** RFC 7662 token introspection. For an inactive token, claims other than active may be omitted. */
     public suspend fun introspect(token: String): IntrospectionResult {
         val req = buildIntrospectionRequest(token)
         val resp =
@@ -180,7 +185,7 @@ public class AuthClient internal constructor(
         return IntrospectionResult(success.isActive, success.username, success.clientID?.value)
     }
 
-    /** 세션을 무효화한다(백채널 로그아웃 — refresh_token revoke). */
+    /** Invalidates the session (back-channel logout — refresh_token revoke). */
     public suspend fun logout(refreshToken: String) {
         val resp =
             try {
@@ -197,13 +202,17 @@ public class AuthClient internal constructor(
         }
     }
 
-    /** realm JWKS로 서명을 검증하고 issuer/audience(= `expectedAudience`)/exp/nbf를 강제한다(강화 [JwtValidator], §jwt 재사용). */
+    /**
+     * Verifies the signature against the realm JWKS and enforces issuer/audience (= `expectedAudience`)/exp/nbf
+     * (hardened [JwtValidator], reusing §jwt).
+     */
     public suspend fun validate(accessToken: String): ValidatedToken = ensureValidator().validate(accessToken)
 
     /**
-     * auth 자원을 정리한다. auth·JWKS 운송의 연결 풀은 프로세스에 하나라([BoundedTransport] — HttpURLConnection 의 keep-alive 캐시처럼)
-     * AuthClient가 소유하는 커넥션 풀이 없어 no-op이지만, [KeycloakClient] close 프로토콜과의 대칭을 위해
-     * `AutoCloseable`을 구현한다(Node `AuthClient.close()` 동형). 쉬는 연결은 수명(5 초)이 지나면 다음 호출이 닫는다.
+     * Releases auth resources. The auth/JWKS transport has one connection pool per process ([BoundedTransport] — like
+     * HttpURLConnection's keep-alive cache), so AuthClient owns no connection pool and this is a no-op, but it
+     * implements `AutoCloseable` for symmetry with the [KeycloakClient] close protocol (isomorphic with Node
+     * `AuthClient.close()`). An idle connection is closed by the next call once its lifetime (5 seconds) has passed.
      */
     override fun close() {
         // 의도적 no-op: 소유하는 커넥션 풀/자원이 없다(위 KDoc 참조). AutoCloseable만 대칭을 위해 구현.

@@ -12,7 +12,7 @@ import org.keycloak.representations.idm.ClientRepresentation
 public class ClientsResource internal constructor(
     private val delegate: org.keycloak.admin.client.resource.ClientsResource,
 ) {
-    /** 클라이언트 생성 후 응답 Location 헤더에서 신규 클라이언트 id를 추출해 반환한다. */
+    /** Creates a client, then extracts the new client's id from the response's Location header and returns it. */
     public suspend fun create(representation: ClientRepresentation): String =
         adminCall {
             val response = delegate.create(representation)
@@ -35,9 +35,10 @@ public class ClientsResource internal constructor(
     }
 
     /**
-     * admin-client의 `delegate.delete(id)`는 [jakarta.ws.rs.core.Response]를 반환하는 JAX-RS 프록시
-     * 메서드라 4xx/5xx 응답에서도 예외를 던지지 않는다(void 반환 메서드만 자동 throw한다). 상태 코드를
-     * 직접 검사해 실패 시 [WebApplicationException]을 던져 [adminCall] 경계에서 SDK 예외로 변환한다.
+     * admin-client's `delegate.delete(id)` is a JAX-RS proxy method that returns a [jakarta.ws.rs.core.Response], so it
+     * does not throw even on a 4xx/5xx response (only void-returning methods throw automatically). The status code is
+     * checked directly, and on failure a [WebApplicationException] is thrown, which the [adminCall] boundary converts to
+     * an SDK exception.
      */
     public suspend fun delete(id: String) {
         adminCall {

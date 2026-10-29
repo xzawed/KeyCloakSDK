@@ -21,16 +21,16 @@ public class KeycloakClient internal constructor(
     public val auth: AuthClient,
     private val adminLazy: Lazy<AdminClient>,
 ) : AutoCloseable {
-    /** 관리(admin) API 파사드. 최초 접근 시 지연 생성된다(`kotlin.Lazy` 기본 스레드-세이프). */
+    /** Admin API facade. Created lazily on first access (`kotlin.Lazy`, thread-safe by default). */
     public val admin: AdminClient get() = adminLazy.value
 
     /** 테스트 전용 관측 시임 — admin lazy가 이미 실현됐는지 여부. 운영 코드 경로에서는 사용하지 않는다. */
     internal fun isAdminInitialized(): Boolean = adminLazy.isInitialized()
 
     /**
-     * auth와(접근된 적이 있다면) admin 자원을 정리한다. **admin을 강제로 초기화하지 않는다** — 한 번도
-     * 접근하지 않은 admin을 close()가 실현시키면, 인증 흐름만 쓰는 소비자에게 불필요한 KeycloakBuilder
-     * 자원 생성(및 그 자체의 close 비용)을 강요하게 된다.
+     * Releases the auth resources and (if it has ever been accessed) the admin resources. **It does not force admin
+     * to initialize** — if close() realized an admin that was never accessed, it would force a consumer that uses
+     * only the authentication flow into an unnecessary KeycloakBuilder resource creation (and its own close cost).
      */
     override fun close() {
         auth.close()
@@ -40,7 +40,7 @@ public class KeycloakClient internal constructor(
     }
 
     public companion object {
-        /** 운영 진입점 — auth를 즉시 생성하고 admin은 최초 접근까지 지연한다. */
+        /** Production entry point — creates auth eagerly and defers admin until first access. */
         public fun create(config: KeycloakConfig): KeycloakClient = KeycloakClient(config, AuthClient(config), lazy { AdminClient(config) })
     }
 }

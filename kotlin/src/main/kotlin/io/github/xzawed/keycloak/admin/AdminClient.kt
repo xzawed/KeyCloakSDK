@@ -63,28 +63,28 @@ public class AdminClient internal constructor(
     private val keycloak: Keycloak,
 ) : AutoCloseable {
     /**
-     * 운영 진입점. `config`의 connect/read 타임아웃을 admin-client의 JAX-RS 클라이언트
-     * (`resteasyClient`)에 반드시 주입한다 — 미주입 시 admin 호출이 무한 대기해 호출 스레드를
-     * 무한 점유한다(스레드풀 고갈 DoS, 부록 게차 상속).
+     * Production entry point. Always injects `config`'s connect/read timeouts into admin-client's JAX-RS client
+     * (`resteasyClient`) — without them, an admin call waits indefinitely and holds the calling thread
+     * indefinitely (thread-pool exhaustion DoS, a gotcha inherited from the appendix).
      */
     public constructor(config: KeycloakConfig) : this(config, buildKeycloak(config))
 
-    /** 파사드가 감싸지 않은 엔드포인트를 위한 탈출구(§4 문서화된 은닉성 예외 — 하위 [Keycloak] 노출). */
+    /** Escape hatch for endpoints the facade does not wrap (§4 documented hiding exception — exposes the underlying [Keycloak]). */
     public fun raw(): Keycloak = keycloak
 
-    /** 사용자 CRUD 파사드(Java `UsersResource` 동형). */
+    /** User CRUD facade (isomorphic with Java `UsersResource`). */
     public fun users(): UsersResource = UsersResource(keycloak.realm(config.realm).users())
 
-    /** 클라이언트 CRUD 파사드(Java `ClientsResource` 동형). */
+    /** Client CRUD facade (isomorphic with Java `ClientsResource`). */
     public fun clients(): ClientsResource = ClientsResource(keycloak.realm(config.realm).clients())
 
-    /** 렐름 조회/생성/삭제 파사드(Java `RealmsResource` 동형 — realm 스코프 없이 최상위 API). */
+    /** Realm lookup/create/delete facade (isomorphic with Java `RealmsResource` — a top-level API with no realm scope). */
     public fun realms(): RealmsResource = RealmsResource(keycloak.realms())
 
-    /** 역할(role) CRUD 파사드(Java `RolesResource` 동형). */
+    /** Role CRUD facade (isomorphic with Java `RolesResource`). */
     public fun roles(): RolesResource = RolesResource(keycloak.realm(config.realm).roles())
 
-    /** 그룹 CRUD 파사드(Java `GroupsResource` 동형). */
+    /** Group CRUD facade (isomorphic with Java `GroupsResource`). */
     public fun groups(): GroupsResource = GroupsResource(keycloak.realm(config.realm).groups())
 
     override fun close() {

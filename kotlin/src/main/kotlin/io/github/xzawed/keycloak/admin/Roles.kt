@@ -19,9 +19,9 @@ public class RolesResource internal constructor(
     public suspend fun list(): List<RoleRepresentation> = adminCall { delegate.list() }
 
     /**
-     * 현재 이름으로 주소를 잡아 롤을 갱신한다. representation.name에 새 이름을 주면 rename이다.
+     * Updates the role, addressed by its current name. Giving a new name in representation.name makes it a rename.
      *
-     * ⚠️ 경로(name)와 body(representation)를 합치지 말 것 — 합치면 rename이 조용한 no-op이 된다.
+     * ⚠️ Do not merge the path (name) and the body (representation) — merging them turns a rename into a silent no-op.
      */
     public suspend fun update(
         name: String,

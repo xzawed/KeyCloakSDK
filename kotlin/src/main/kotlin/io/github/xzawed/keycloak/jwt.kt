@@ -65,9 +65,10 @@ public class JwtValidator private constructor(
         }
 
     /**
-     * accessToken을 검증하고 SDK 소유 [ValidatedToken]을 반환한다 — 어떤 실패 경로에서도 Nimbus 타입은
-     * 공개 API에 노출하지 않는다. JWKS 조회는 블로킹 I/O일 수 있어 [runInterruptible]로 감싼다.
-     * 코드 교환의 id_token 검증(`AuthClient.requireValidNonce` → [withAudience] 의 validate)도 이 함수라 상한 검사는 여기 하나다.
+     * Validates accessToken and returns the SDK-owned [ValidatedToken] — no failure path exposes a Nimbus type in the
+     * public API. A JWKS fetch can be blocking I/O, so it is wrapped in [runInterruptible].
+     * The code exchange's id_token validation (`AuthClient.requireValidNonce` → [withAudience]'s validate) is this
+     * function too, so the cap check is here and only here.
      */
     public suspend fun validate(accessToken: String): ValidatedToken {
         // 상한이 먼저다 — 분해·디코드·JWKS 적재 전에, IO 디스패처로 넘기기도 전에([JWT_MAX_BYTES]).
@@ -102,7 +103,7 @@ public class JwtValidator private constructor(
     internal fun jwkSource(): JWKSource<SecurityContext> = jwkSource
 
     public companion object {
-        /** 실 JWKS 엔드포인트를 지연 조회하는 운영용 팩토리(non-suspend — 조회는 첫 [validate] 호출 시점). */
+        /** Production factory that queries the real JWKS endpoint lazily (non-suspend — the query happens at the first [validate] call). */
         public fun forRealm(
             endpoints: OidcEndpoints,
             config: KeycloakConfig,
