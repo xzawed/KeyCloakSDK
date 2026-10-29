@@ -1,21 +1,30 @@
 """단위 테스트 공유 픽스처 — 백채널 리다이렉트 덫 서버(sync/async 공용)·JWKS 서버·토큰 응답 서버·
-하위 오류 생성기, 그리고 새 클라이언트를 많이 만드는 테스트의 TLS 문맥 재사용(`fast_tls`)."""
+하위 오류 생성기, 새 클라이언트를 많이 만드는 테스트의 TLS 문맥 재사용(`fast_tls`), 그리고 TLS 가짜
+IdP 의 자체 서명 인증서(`tls_cert` · `server_tls`)."""
 
 from __future__ import annotations
 
+import datetime
 import gzip
 import importlib
+import ipaddress
 import json
+import ssl
 import threading
 import zlib
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from urllib.parse import parse_qs
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 CLIENT_SECRET = "s3cret-must-not-leak"
 REFRESH_TOKEN = "refresh-must-not-leak"
@@ -128,6 +137,69 @@ def fast_tls(monkeypatch: pytest.MonkeyPatch) -> None:
         return original(verify=verify, cert=cert, trust_env=trust_env)
 
     monkeypatch.setattr(transport, "create_ssl_context", cached)
+
+
+@pytest.fixture(scope="session")
+def tls_cert(tmp_path_factory: pytest.TempPathFactory) -> tuple[str, str]:
+    """127.0.0.1 의 자체 서명 인증서(파이썬 3.13 의 `VERIFY_X509_STRICT` 를 통과하는 꼴) — (인증서,
+    키) 경로. SDK 는 `verify=True` 라 시험이 `REQUESTS_CA_BUNDLE` 로 이 인증서를 믿게 한다."""
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])
+    ski = x509.SubjectKeyIdentifier.from_public_key(key.public_key())
+    now = datetime.datetime.now(datetime.timezone.utc)
+    usage = dict.fromkeys(
+        (
+            "content_commitment",
+            "key_encipherment",
+            "data_encipherment",
+            "key_agreement",
+            "crl_sign",
+            "encipher_only",
+            "decipher_only",
+        ),
+        False,
+    )
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .add_extension(
+            x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]),
+            critical=False,
+        )
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .add_extension(
+            x509.KeyUsage(digital_signature=True, key_cert_sign=True, **usage), critical=True
+        )
+        .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+        .add_extension(ski, critical=False)
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(ski), critical=False
+        )
+        .sign(key, hashes.SHA256())
+    )
+    tmp: Path = tmp_path_factory.mktemp("tls")
+    cert_path, key_path = tmp / "cert.pem", tmp / "key.pem"
+    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    return str(cert_path), str(key_path)
+
+
+def server_tls(tls_cert: tuple[str, str]) -> ssl.SSLContext:
+    """`tls_cert` 로 서버 쪽 TLS 문맥."""
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(*tls_cert)
+    return context
 
 
 @pytest.fixture
