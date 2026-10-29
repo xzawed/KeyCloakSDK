@@ -28,8 +28,8 @@ pub use tokens::{AuthorizationRequest, IntrospectionResult, TokenSet, ValidatedT
 // 이게 없으면 소비자가 `keycloak`/`reqwest`를 자기 Cargo.toml에 버전까지 맞춰 직접 추가해야만
 // admin 파사드를 호출할 수 있다(공개 퀵스타트가 그대로는 컴파일되지 않는다).
 
-/// admin 파사드가 데이터 모델로 그대로 노출하는 representation 타입(`keycloak::types` 미러).
-/// admin.rs의 공개 시그니처에 나타나는 5종 전부다.
+/// The representation types that the admin facade exposes, unchanged, as its data model (a mirror of `keycloak::types`).
+/// These are all five that appear in admin.rs's public signatures.
 pub mod types {
     pub use keycloak::types::{
         ClientRepresentation, GroupRepresentation, RealmRepresentation, RoleRepresentation,

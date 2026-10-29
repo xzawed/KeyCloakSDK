@@ -1,4 +1,4 @@
-//! OIDC 엔드포인트 조립(네트워크 없음).
+//! OIDC endpoint assembly (no network).
 use crate::config::KeycloakConfig;
 
 pub struct OidcEndpoints {

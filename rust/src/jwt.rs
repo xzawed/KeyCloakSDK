@@ -1,4 +1,5 @@
-//! 자체강화 JWT 검증: RS256 핀(헤더 alg 미신뢰)·none 구조적 거부·iss 정확·aud 포함·exp 필수·nbf·스큐·DoS-safe JWKS.
+//! Self-hardened JWT validation: RS256 pin (header alg not trusted) · none structurally rejected · exact iss · aud
+//! containment · exp required · nbf · skew · DoS-safe JWKS.
 use crate::config::KeycloakConfig;
 use crate::error::{KeycloakError, Result};
 use crate::jwks::JwksStore;
@@ -36,8 +37,9 @@ pub struct JwtValidator {
 }
 
 impl JwtValidator {
-    /// config의 서명 알고리즘 이름을 jsonwebtoken `Algorithm`으로 파싱해 핀을 구성한다.
-    /// 빈 집합(alg 핀 무력화)이나 미지원 알고리즘 이름은 `KeycloakError::Config`로 거부한다.
+    /// Builds the pin by parsing the config's signature-algorithm names into jsonwebtoken `Algorithm`s.
+    /// An empty set (which would disable the alg pin) or an unsupported algorithm name is rejected with
+    /// `KeycloakError::Config`.
     pub fn new(
         config: &KeycloakConfig,
         endpoints: &OidcEndpoints,
@@ -68,7 +70,7 @@ impl JwtValidator {
         })
     }
 
-    /// access 토큰 검증 — 기대 aud 는 `expected_audience`(미설정이면 `client_id`)다.
+    /// Validates an access token — the expected aud is `expected_audience` (`client_id` when unset).
     pub async fn validate(&self, token: &str) -> Result<ValidatedToken> {
         self.validate_for_audience(token, &self.audience).await
     }

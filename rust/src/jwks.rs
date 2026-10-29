@@ -1,4 +1,5 @@
-//! DoS-safe JWKS: kid 캐시(키셋 수명 300초), 그 안에서는 미해결 kid만 재조회, rate-limit + single-flight.
+//! DoS-safe JWKS: kid cache (key-set lifetime 300 seconds), within which only an unresolved kid triggers a refetch,
+//! rate-limit + single-flight.
 use crate::error::{KeycloakError, Result};
 use jsonwebtoken::jwk::{Jwk, JwkSet};
 use std::sync::Arc;
@@ -227,8 +228,8 @@ impl JwksStore {
             .map(|c| &c.set)
     }
 
-    /// kid로 JWK 조회. 신선한 캐시 히트=네트워크 0 · 수명을 다한 캐시는 콜드처럼 다시 받는다 · 미해결 kid만
-    /// rate-limited 재조회.
+    /// Looks up a JWK by kid. A fresh cache hit = zero network · an expired cache is fetched again as if cold · only an
+    /// unresolved kid gets a rate-limited refetch.
     pub async fn get_key(&self, kid: &str) -> Result<Jwk> {
         let hit = Self::lookup(
             Self::fresh_set(&*self.source.cache.read().await, Instant::now()),

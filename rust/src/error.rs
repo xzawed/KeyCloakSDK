@@ -1,4 +1,4 @@
-//! SDK 오류 계급 — 하위 crate 오류는 경계에서 이 enum으로 변환된다.
+//! SDK error hierarchy — errors from the underlying crates are converted into this enum at the boundary.
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, KeycloakError>;
@@ -11,9 +11,9 @@ pub enum KeycloakError {
     #[error("authentication error: {message}")]
     Auth {
         message: String,
-        /// RFC 6749 §5.2 의 `error` **코드만**(예: `invalid_grant`) — 코드 모양이 아니면 `None`.
-        /// ⚠️ `error_description`·`error_uri` 는 서버의 자유 서술이라 받은 토큰을 되울릴 수 있어 싣지
-        /// 않는다(`tests/hostile_token_response.rs`).
+        /// The RFC 6749 §5.2 `error` **code only** (e.g. `invalid_grant`) — `None` when it is not code-shaped.
+        /// ⚠️ `error_description` and `error_uri` are not carried: they are the server's free-form prose and can echo
+        /// back a token it received (`tests/hostile_token_response.rs`).
         oauth_error: Option<String>,
     },
     #[error("transport error: {0}")]
@@ -37,7 +37,7 @@ pub enum AdminError {
 }
 
 impl KeycloakError {
-    /// HTTP 상태코드(u16)를 admin 오류로 매핑(모든 admin 경계 변환의 단일 지점).
+    /// Maps an HTTP status code (u16) to an admin error (the single point for every admin boundary conversion).
     pub fn from_admin_status(status: u16) -> Self {
         let inner = match status {
             404 => AdminError::NotFound,

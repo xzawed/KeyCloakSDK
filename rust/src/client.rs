@@ -1,4 +1,4 @@
-//! 통합 진입점 — 공유 reqwest 1개(SSRF·타임아웃·TLS)를 auth·jwks·admin에 주입.
+//! Unified entry point — injects one shared reqwest client (SSRF, timeouts, TLS) into auth, jwks and admin.
 use crate::admin::AdminClient;
 use crate::auth::AuthClient;
 use crate::config::KeycloakConfig;

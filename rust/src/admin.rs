@@ -1,17 +1,21 @@
-//! AdminClient — admin REST 파사드. 요청은 SDK 가 보내고, `keycloak` crate 에서는 representation 타입만 빌린다.
+//! AdminClient — the admin REST facade. The SDK sends the requests itself and borrows only the representation types
+//! from the `keycloak` crate.
 //!
-//! ⚠️ **파사드는 crate 의 생성 메서드를 부르지 않는다** — 그 메서드는 2xx 가 아니면 `error_check` 에서 본문을 통째로
-//! `text()` 로 읽는다(64 MiB 오류 본문 하나에 서버가 끝까지 쓰고 할당이 그 몇 배로 는다 — 실측은
-//! `tests/admin_response_body.rs`). 파사드의 오류는 상태로만 고르므로 그 본문은 쓰이지 않는다. 그래서 crate 와 **같은
-//! 요청**(경로 조각 인코딩 [`p`] · 쿼리와 그 순서 · Bearer · JSON 본문)을 직접 보내고, 오류 본문은 상한까지만 비운다
-//! ([`reject`]). 같은 요청인지는 그 파일의 `the_facade_sends_what_the_crate_sends` 가 `raw()` 의 crate 메서드와 와이어로
-//! 대조한다 — crate 를 올리면 거기부터 본다.
+//! ⚠️ **The facade does not call the crate's generated methods** — on a non-2xx response those read the whole body
+//! with `text()` in `error_check` (a single 64 MiB error body makes the server write all of it and allocation grows to
+//! several times that — measured in `tests/admin_response_body.rs`). The facade picks its errors by status alone, so
+//! that body is never used. Hence the facade itself sends **the same request** as the crate (path-segment encoding [`p`] ·
+//! the query and its order · Bearer · JSON body) and drains an error body only up to the cap ([`reject`]). That it is
+//! the same request is checked on the wire by that file's `the_facade_sends_what_the_crate_sends` against `raw()`'s
+//! crate methods — when upgrading the crate, start there.
 //!
-//! `admin`은 `auth`를 직접 알지 못한다 — 유일한 접착제는 `TokenProvider`다. 하위 오류(`reqwest::Error`)는 경계에서
-//! 우리 `KeycloakError`로 바뀌어 공개 API로 누출되지 않는다. `raw()`가 반환하는 `&KeycloakAdmin`과 representation
-//! 타입은 문서화된 은닉성 예외(모든 SDK에서 admin representation은 leaked-by-design)다. ⚠️ `raw()` 는 crate 그대로라
-//! 그 오류 본문은 **여전히 끝까지 읽힌다** — reqwest 0.12 에는 응답을 가로챌 자리가 없다.
-//! 커버리지 omit(네트워크 경계) — CRUD는 Task 11 통합테스트로, 요청 모양은 아래 단위테스트와 `tests/admin_response_body.rs` 로 검증.
+//! `admin` does not know `auth` directly — the only glue is `TokenProvider`. Underlying errors (`reqwest::Error`) become
+//! our `KeycloakError` at the boundary and do not leak into the public API. The `&KeycloakAdmin` that `raw()` returns
+//! and the representation types are documented hiding exceptions (in every SDK the admin representations are
+//! leaked-by-design). ⚠️ `raw()` is the crate as-is, so its error bodies **are still read to the end** — reqwest 0.12
+//! has no place to intercept the response.
+//! Coverage omit (network boundary) — CRUD is verified by the Task 11 integration test, and the request shape by the
+//! unit tests below and `tests/admin_response_body.rs`.
 use crate::config::KeycloakConfig;
 use crate::error::{AdminError, KeycloakError, Result};
 use crate::jwks::TOKEN_RESPONSE_MAX_BYTES;
@@ -26,9 +30,11 @@ use keycloak::{KeycloakAdmin, KeycloakError as KcError, KeycloakTokenSupplier};
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
 
-/// 우리 `TokenProvider` → keycloak crate의 `KeycloakTokenSupplier`(`#[async_trait]`) 어댑터 — `raw()` 의 crate 가 쓴다.
-/// admin↔auth의 유일한 접착제(admin은 AuthClient를 직접 참조하지 않는다). 파사드는 `TokenProvider` 를 직접 부른다.
-/// crate 에 주는 것은 `sendable_bearer` 가 돌려준 값이다 — 보낼 수 없는 토큰이면 crate 가 요청을 짓기 전에 실패한다.
+/// Adapter from our `TokenProvider` to the keycloak crate's `KeycloakTokenSupplier` (`#[async_trait]`) — used by the
+/// crate behind `raw()`.
+/// The only admin↔auth glue (admin does not reference AuthClient directly). The facade calls `TokenProvider` directly.
+/// What the crate is given is the value `sendable_bearer` returned — an unsendable token fails before the crate builds
+/// the request.
 pub struct SdkTokenSupplier {
     inner: Arc<dyn TokenProvider>,
 }
@@ -126,8 +132,8 @@ async fn reject(mut resp: reqwest::Response) -> KeycloakError {
 }
 
 impl AdminClient {
-    /// 공유 `http`(TLS·타임아웃·SSRF 정책이 주입된)와 `TokenProvider`로 파사드를 만들고, 같은 둘로 `raw()` 의
-    /// `KeycloakAdmin`을 조립한다.
+    /// Builds the facade from the shared `http` (with the TLS, timeout and SSRF policies injected) and the
+    /// `TokenProvider`, and assembles `raw()`'s `KeycloakAdmin` from the same two.
     pub fn new(
         config: &KeycloakConfig,
         http: reqwest::Client,
@@ -180,33 +186,34 @@ impl AdminClient {
     }
 
     // ── Users ──
-    /// 사용자 생성. 생성된 id는 응답 `Location` 헤더의 마지막 조각 — 없으면 `None`. 응답 본문은 읽지 않는다.
+    /// Creates a user. The created id is the last segment of the response's `Location` header — `None` when absent. The
+    /// response body is not read.
     pub async fn create_user(&self, user: UserRepresentation) -> Result<Option<String>> {
         let url = format!("{}/users", self.realm_url());
         let resp = self.send(self.http.post(url).json(&user)).await?;
         Ok(created_id(&resp))
     }
-    /// id로 사용자 단건 조회(부재 시 404→`AdminError::NotFound`).
+    /// Gets a single user by id (404→`AdminError::NotFound` when absent).
     pub async fn get_user(&self, user_id: &str) -> Result<UserRepresentation> {
         let url = format!("{}/users/{}", self.realm_url(), p(user_id));
         self.fetch(self.http.get(url)).await
     }
-    /// 사용자 검색(부분일치 — Keycloak 기본 매칭). **페이지 경계는 호출자가 정한다.**
+    /// Searches users (substring match — Keycloak's default matching). **The caller sets the page bounds.**
     ///
-    /// - `username`: `None`이면 필터 없이 realm 전체를 페이지 단위로 훑는다(= users.list).
-    ///   `Some(u)`는 username에 `u`가 **포함된** 사용자를 찾는다(정확일치는 [`Self::find_user_by_username`]).
-    /// - `first`: 0-based 페이지 오프셋. Keycloak은 음수를 "오프셋 없음"으로 무시한다.
-    /// - `max`: 이 페이지의 최대 건수. **음수(`-1`)는 "서버 측 상한 없음"** 이다.
+    /// - `username`: `None` walks the whole realm page by page with no filter (= users.list).
+    ///   `Some(u)` finds users whose username **contains** `u` (for an exact match, [`Self::find_user_by_username`]).
+    /// - `first`: 0-based page offset. Keycloak ignores a negative value, treating it as "no offset".
+    /// - `max`: the maximum number of results on this page. **A negative value (`-1`) means "no server-side cap"**.
     ///
-    /// ⚠️ `max`에 `Option`을 두지 않은 것은 의도다 — Keycloak은 `max`가 없으면
-    /// `Constants.DEFAULT_MAX_RESULTS`(**100**)를 조용히 적용한다. 생략을 허용하면 "상한이 없다"고
-    /// 읽히는 호출이 실제로는 100에서 잘린다. 상한은 항상 호출부에 **보이는** 값이어야 한다.
+    /// ⚠️ `max` is deliberately not an `Option` — when `max` is absent, Keycloak silently applies
+    /// `Constants.DEFAULT_MAX_RESULTS` (**100**). If it could be omitted, a call that reads as "no cap" would actually
+    /// be truncated at 100. The cap must always be a value **visible** at the call site.
     ///
-    /// ⚠️ 반환 길이가 `max`와 같다면 **다음 페이지가 있을 수 있다**(총건수는 이 응답에 없다).
-    /// 끝까지 훑으려면 `first`를 `max`씩 늘리며 길이 < `max`가 될 때까지 반복한다.
+    /// ⚠️ If the returned length equals `max`, **there may be a next page** (the total count is not in this response).
+    /// To walk to the end, keep increasing `first` by `max` until the length is < `max`.
     ///
-    /// 쿼리는 crate 의 `realm_users_get` 과 같은 순서로 싣는다(`exact`·`first`·`max`·`username` — 쓰지 않는 것은
-    /// 싣지 않는다). `exact` 미전송 = Keycloak 기본(부분일치).
+    /// The query is sent in the same order as the crate's `realm_users_get` (`exact`·`first`·`max`·`username` — the
+    /// unused ones are not sent). `exact` not sent = Keycloak's default (substring match).
     pub async fn search_users(
         &self,
         username: Option<&str>,
@@ -223,12 +230,13 @@ impl AdminClient {
         }
         self.fetch(req).await
     }
-    /// username **정확일치** 단건 조회(`exact=true`). 없으면 `Ok(None)`.
+    /// Gets a single user by **exact** username match (`exact=true`). `Ok(None)` when there is none.
     ///
-    /// 페이지네이션 인자가 없는 것은 잘림이 **구조적으로 불가능**하기 때문이다 — Keycloak은 realm 안에서
-    /// username 유일성을 강제하므로 `exact=true` 결과는 0건 아니면 1건이다. 그래도 `max=2`를 요청한다:
-    /// `max=1`이면 "1건 반환"이 정말 1건인지 잘린 것인지 구분할 수 없다. 2건이 오면 그 불변식이 깨진
-    /// 것이므로 첫 건을 조용히 고르지 않고 [`AdminError::Conflict`]로 표면화한다.
+    /// There are no pagination arguments because truncation is **structurally impossible** — Keycloak enforces
+    /// username uniqueness within a realm, so an `exact=true` result is either 0 or 1 entries. It still asks for
+    /// `max=2`: with `max=1`, one returned result could be exactly 1 or a truncated list, and the two cannot be told
+    /// apart. If 2 arrive, that invariant is broken, so instead of silently picking the first one it surfaces
+    /// [`AdminError::Conflict`].
     pub async fn find_user_by_username(
         &self,
         username: &str,
@@ -246,15 +254,15 @@ impl AdminClient {
         }
         Ok(found.into_iter().next())
     }
-    /// id로 사용자 갱신. `user`는 **부분(sparse) representation**이어도 된다.
+    /// Updates a user by id. `user` may be a **partial (sparse) representation**.
     ///
-    /// ⚠️ 경로(`user_id`)와 body(`user`)는 별개다 — 합치지 말 것(아래 `update_realm` 참고).
+    /// ⚠️ The path (`user_id`) and the body (`user`) are separate — do not merge them (see `update_realm` below).
     pub async fn update_user(&self, user_id: &str, user: UserRepresentation) -> Result<()> {
         let url = format!("{}/users/{}", self.realm_url(), p(user_id));
         self.send(self.http.put(url).json(&user)).await?;
         Ok(())
     }
-    /// id로 사용자 삭제.
+    /// Deletes a user by id.
     pub async fn delete_user(&self, user_id: &str) -> Result<()> {
         let url = format!("{}/users/{}", self.realm_url(), p(user_id));
         self.send(self.http.delete(url)).await?;
@@ -262,22 +270,22 @@ impl AdminClient {
     }
 
     // ── Clients ──
-    /// 클라이언트 생성. 생성된 uuid는 응답 `Location` 헤더의 마지막 조각 — 없으면 `None`.
+    /// Creates a client. The created uuid is the last segment of the response's `Location` header — `None` when absent.
     pub async fn create_client(&self, client: ClientRepresentation) -> Result<Option<String>> {
         let url = format!("{}/clients", self.realm_url());
         let resp = self.send(self.http.post(url).json(&client)).await?;
         Ok(created_id(&resp))
     }
-    /// uuid로 클라이언트 단건 조회(부재 시 404→`AdminError::NotFound`).
+    /// Gets a single client by uuid (404→`AdminError::NotFound` when absent).
     pub async fn get_client(&self, client_uuid: &str) -> Result<ClientRepresentation> {
         let url = format!("{}/clients/{}", self.realm_url(), p(client_uuid));
         self.fetch(self.http.get(url)).await
     }
-    /// 클라이언트 목록. **페이지 경계는 호출자가 정한다**([`Self::search_users`]와 같은 이유로
-    /// `max`는 `Option`이 아니다 — 상한은 항상 호출부에 보이는 값이어야 한다).
+    /// Lists clients. **The caller sets the page bounds** (`max` is not an `Option` for the same reason as in
+    /// [`Self::search_users`] — the cap must always be a value visible at the call site).
     ///
-    /// 반환 길이가 `max`와 같다면 다음 페이지가 있을 수 있다(총건수는 응답에 없다).
-    /// `clientId` 필터는 싣지 않는다(clientId 정확일치 단건은 `raw()`로).
+    /// If the returned length equals `max`, there may be a next page (the total count is not in the response).
+    /// No `clientId` filter is sent (for a single exact clientId match, use `raw()`).
     pub async fn list_clients(&self, first: i32, max: i32) -> Result<Vec<ClientRepresentation>> {
         let req = self
             .http
@@ -286,9 +294,9 @@ impl AdminClient {
             .query(&[("max", max)]);
         self.fetch(req).await
     }
-    /// uuid로 주소를 잡아 클라이언트를 갱신한다. `client.client_id`에 새 값을 주면 rename이다.
+    /// Updates a client, addressed by uuid. A new value in `client.client_id` is a rename.
     ///
-    /// ⚠️ 경로(`client_uuid`)와 body(`client`)는 별개다.
+    /// ⚠️ The path (`client_uuid`) and the body (`client`) are separate.
     pub async fn update_client(
         &self,
         client_uuid: &str,
@@ -298,7 +306,7 @@ impl AdminClient {
         self.send(self.http.put(url).json(&client)).await?;
         Ok(())
     }
-    /// uuid로 클라이언트 삭제.
+    /// Deletes a client by uuid.
     pub async fn delete_client(&self, client_uuid: &str) -> Result<()> {
         let url = format!("{}/clients/{}", self.realm_url(), p(client_uuid));
         self.send(self.http.delete(url)).await?;
@@ -306,40 +314,41 @@ impl AdminClient {
     }
 
     // ── Realms ──
-    /// 설정된 realm의 최상위 representation 조회(중첩 User/Client 미포함).
+    /// Gets the configured realm's top-level representation (nested Users/Clients not included).
     pub async fn get_realm(&self) -> Result<RealmRepresentation> {
         self.fetch(self.http.get(self.realm_url())).await
     }
-    /// 신규 realm 생성(`POST /admin/realms`).
-    /// ⚠️ 이 연산은 **master-realm 권한**을 요구한다 — realm 서비스계정으로는 403(Forbidden)이다.
-    /// (realm-scoped 연산이 아니라 전역 부트스트랩 권한이므로 모든 Keycloak에서 master 전용.)
-    /// 타입드 메서드는 런타임 권한과 무관하게 파사드에 존재한다.
+    /// Creates a new realm (`POST /admin/realms`).
+    /// ⚠️ This operation requires **master-realm permissions** — with a realm service account it is 403 (Forbidden).
+    /// (It is a global bootstrap permission, not a realm-scoped operation, so it is master-only on every Keycloak.)
+    /// The typed method exists on the facade regardless of runtime permissions.
     pub async fn create_realm(&self, realm: RealmRepresentation) -> Result<()> {
         let url = format!("{}/admin/realms", self.url);
         self.send(self.http.post(url).json(&realm)).await?;
         Ok(())
     }
-    /// 호출한 서비스 계정이 볼 수 있는 realm 목록(`GET /admin/realms` — realm-scoped가 아닌 전역).
-    /// 보통 자기 realm 하나만 돌아온다. 페이지네이션 파라미터는 이 엔드포인트에 없다.
+    /// Lists the realms the calling service account can see (`GET /admin/realms` — global, not realm-scoped).
+    /// Usually only its own realm comes back. This endpoint has no pagination parameters.
     pub async fn list_realms(&self) -> Result<Vec<RealmRepresentation>> {
         self.fetch(self.http.get(format!("{}/admin/realms", self.url)))
             .await
     }
-    /// **현재 이름**으로 주소를 잡아 realm을 갱신한다(`PUT /admin/realms/{name}`).
-    /// `realm.realm`에 새 이름을 주면 rename이다.
+    /// Updates a realm, addressed by its **current name** (`PUT /admin/realms/{name}`).
+    /// A new name in `realm.realm` is a rename.
     ///
-    /// ⚠️ **경로(`name`)와 body(`realm`)를 합치지 말 것.** Keycloak의 rename은
-    /// "현재 주소에 새 값을 PUT"이므로, 경로를 representation에서 만들면 rename 요청이
-    /// 새 이름을 가리켜 **조용한 no-op**이 된다(응답은 2xx인데 아무것도 안 바뀐다).
-    /// 자매 Go SDK는 gocloak이 정확히 그렇게 동작해 이 한 자리만 raw REST로 우회해야 했다 —
-    /// 여기선 경로를 `name` 으로, body 를 `realm` 으로 따로 만든다(crate 의 `realm_put(realm, body)` 와 같다).
+    /// ⚠️ **Do not merge the path (`name`) and the body (`realm`).** A Keycloak rename is
+    /// "PUT the new value at the current address", so building the path from the representation points the rename
+    /// request at the new name and makes it a **silent no-op** (the response is 2xx, yet nothing changes).
+    /// In the sibling Go SDK, gocloak behaves exactly that way, so that SDK had to route this one spot around it with raw
+    /// REST — here the path is built from `name` and the body from `realm`, separately (as the crate's
+    /// `realm_put(realm, body)` does).
     pub async fn update_realm(&self, name: &str, realm: RealmRepresentation) -> Result<()> {
         let url = format!("{}/admin/realms/{}", self.url, p(name));
         self.send(self.http.put(url).json(&realm)).await?;
         Ok(())
     }
-    /// realm 삭제(`DELETE /admin/realms/{realm}`).
-    /// ⚠️ `create_realm`과 동일하게 **master-realm 권한**을 요구한다(realm 서비스계정 403).
+    /// Deletes a realm (`DELETE /admin/realms/{realm}`).
+    /// ⚠️ Like `create_realm`, this requires **master-realm permissions** (403 with a realm service account).
     pub async fn delete_realm(&self, name: &str) -> Result<()> {
         let url = format!("{}/admin/realms/{}", self.url, p(name));
         self.send(self.http.delete(url)).await?;
@@ -347,18 +356,18 @@ impl AdminClient {
     }
 
     // ── Roles (realm-level) ──
-    /// realm 롤 생성.
+    /// Creates a realm role.
     pub async fn create_role(&self, role: RoleRepresentation) -> Result<()> {
         let url = format!("{}/roles", self.realm_url());
         self.send(self.http.post(url).json(&role)).await?;
         Ok(())
     }
-    /// name으로 realm 롤 단건 조회(부재 시 404→`AdminError::NotFound`).
+    /// Gets a single realm role by name (404→`AdminError::NotFound` when absent).
     pub async fn get_role(&self, name: &str) -> Result<RoleRepresentation> {
         let url = format!("{}/roles/{}", self.realm_url(), p(name));
         self.fetch(self.http.get(url)).await
     }
-    /// realm 롤 목록. 페이지 경계는 호출자가 정한다([`Self::list_clients`]와 같은 계약).
+    /// Lists realm roles. The caller sets the page bounds (the same contract as [`Self::list_clients`]).
     pub async fn list_roles(&self, first: i32, max: i32) -> Result<Vec<RoleRepresentation>> {
         let req = self
             .http
@@ -367,15 +376,15 @@ impl AdminClient {
             .query(&[("max", max)]);
         self.fetch(req).await
     }
-    /// **현재 이름**으로 주소를 잡아 realm 롤을 갱신한다. `role.name`에 새 이름을 주면 rename이다.
+    /// Updates a realm role, addressed by its **current name**. A new name in `role.name` is a rename.
     ///
-    /// ⚠️ 경로(`name`)와 body(`role`)를 합치지 말 것 — 사유는 [`Self::update_realm`].
+    /// ⚠️ Do not merge the path (`name`) and the body (`role`) — see [`Self::update_realm`] for why.
     pub async fn update_role(&self, name: &str, role: RoleRepresentation) -> Result<()> {
         let url = format!("{}/roles/{}", self.realm_url(), p(name));
         self.send(self.http.put(url).json(&role)).await?;
         Ok(())
     }
-    /// name으로 realm 롤 삭제.
+    /// Deletes a realm role by name.
     pub async fn delete_role(&self, name: &str) -> Result<()> {
         let url = format!("{}/roles/{}", self.realm_url(), p(name));
         self.send(self.http.delete(url)).await?;
@@ -383,18 +392,18 @@ impl AdminClient {
     }
 
     // ── Groups ──
-    /// 그룹 생성. 생성된 id는 응답 `Location` 헤더의 마지막 조각 — 없으면 `None`.
+    /// Creates a group. The created id is the last segment of the response's `Location` header — `None` when absent.
     pub async fn create_group(&self, group: GroupRepresentation) -> Result<Option<String>> {
         let url = format!("{}/groups", self.realm_url());
         let resp = self.send(self.http.post(url).json(&group)).await?;
         Ok(created_id(&resp))
     }
-    /// id로 그룹 단건 조회(부재 시 404→`AdminError::NotFound`).
+    /// Gets a single group by id (404→`AdminError::NotFound` when absent).
     pub async fn get_group(&self, id: &str) -> Result<GroupRepresentation> {
         let url = format!("{}/groups/{}", self.realm_url(), p(id));
         self.fetch(self.http.get(url)).await
     }
-    /// 그룹 목록(최상위). 페이지 경계는 호출자가 정한다([`Self::list_clients`]와 같은 계약).
+    /// Lists groups (top level). The caller sets the page bounds (the same contract as [`Self::list_clients`]).
     pub async fn list_groups(&self, first: i32, max: i32) -> Result<Vec<GroupRepresentation>> {
         let req = self
             .http
@@ -403,23 +412,25 @@ impl AdminClient {
             .query(&[("max", max)]);
         self.fetch(req).await
     }
-    /// id로 주소를 잡아 그룹을 갱신한다. `group.name`에 새 이름을 주면 rename이다.
+    /// Updates a group, addressed by id. A new name in `group.name` is a rename.
     ///
-    /// ⚠️ 경로(`id`)와 body(`group`)를 합치지 말 것 — 사유는 [`Self::update_realm`].
+    /// ⚠️ Do not merge the path (`id`) and the body (`group`) — see [`Self::update_realm`] for why.
     pub async fn update_group(&self, id: &str, group: GroupRepresentation) -> Result<()> {
         let url = format!("{}/groups/{}", self.realm_url(), p(id));
         self.send(self.http.put(url).json(&group)).await?;
         Ok(())
     }
-    /// id로 그룹 삭제.
+    /// Deletes a group by id.
     pub async fn delete_group(&self, id: &str) -> Result<()> {
         let url = format!("{}/groups/{}", self.realm_url(), p(id));
         self.send(self.http.delete(url)).await?;
         Ok(())
     }
 
-    /// 탈출구 — 내부 `KeycloakAdmin`(모든 생성 메서드·representation 접근). 문서화된 은닉성 예외.
-    /// ⚠️ crate 그대로다 — 그 메서드는 2xx 가 아닌 응답의 본문을 끝까지 읽어 `RawKeycloakError` 에 싣는다(상한 없음).
+    /// Escape hatch — the inner `KeycloakAdmin` (every generated method, representation access). A documented hiding
+    /// exception.
+    /// ⚠️ It is the crate as-is — its methods read the body of a non-2xx response to the end and carry it in
+    /// `RawKeycloakError` (no cap).
     pub fn raw(&self) -> &KeycloakAdmin<SdkTokenSupplier> {
         &self.admin
     }
