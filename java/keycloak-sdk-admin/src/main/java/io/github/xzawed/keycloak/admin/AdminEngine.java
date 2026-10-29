@@ -5,10 +5,13 @@ import jakarta.ws.rs.client.Invocation;
 import jakarta.ws.rs.core.Response;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.SocketTimeoutException;
+import java.util.concurrent.TimeUnit;
 import org.apache.http.HttpConnection;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.protocol.HttpContext;
+import org.apache.http.protocol.HttpCoreContext;
 import org.jboss.resteasy.client.jaxrs.engines.ApacheHttpClient43Engine;
 import org.jboss.resteasy.client.jaxrs.engines.HttpContextProvider;
 import org.jboss.resteasy.client.jaxrs.internal.ClientInvocation;
@@ -33,6 +36,12 @@ import org.jboss.resteasy.client.jaxrs.internal.ClientResponseContextImpl;
  * 리다이렉트)을 옮긴다. HttpClient 를 닫는 것은 그 엔진의 몫이다({@link #close}). 손잡이가 쥘 문맥은 RESTEasy 가 교환마다 묻는
  * {@code HttpContextProvider}(이 엔진 자신 — {@link #getContext})로 건넨다 — {@link #loadHttpMethod} 가 만든 것을 같은 스레드의 바로
  * 다음 물음({@code invoke} 안, {@code httpClient.execute} 직전)이 가져간다.
+ *
+ * <p>응답은 요청을 보낸 때부터 읽기 타임아웃 안에 다 읽는다 — {@link Settled} 가 읽기마다 앞뒤로 그 교환의 마감을 본다({@link Exchange#due}).
+ * 읽기 타임아웃은 읽기 하나를 묶을 뿐이라 바이트를 그보다 조금 짧은 간격으로 흘리는 서버 앞에서 응답 하나가 흘린 바이트마다 간격 하나씩
+ * 걸렸다(실측 {@code ResponseReadDeadlineTest}). 토큰 부여(가드의 상한 읽기)·자원의 성공 본문(결합)·오류 본문이 모두 그 스트림을 지난다 —
+ * {@code raw()} 의 응답도. ⚠️ 엔진의 스트림이라 응답 머리와, 읽기 하나 안의 틀(청크 크기 줄·트레일러)·TLS 레코드는 보지 못한다 — 그 소켓은
+ * RESTEasy 가 지은 풀의 것이다(그 자리는 읽기마다의 타임아웃이 묶는다 — 같은 시험 머리의 실측).
  */
 @SuppressWarnings("removal") // RESTEasy 6.2 의 기본 엔진 그 자체를 잇는다(AdminClient.buildTimeoutClient 설명)
 final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextProvider {
@@ -45,12 +54,17 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
   static final int ERROR_BODY_CAP = ResponseLimits.MAX_TOKEN_RESPONSE_BYTES;
   /** 닫을 때 끝인지 엿보는 읽기의 소켓 기다림 — 0 은 「끝없이」라 가장 짧은 양수다. */
   static final int PEEK_MILLIS = 1;
+  /** 마감에 아직 오는 응답의 실패 — 읽기 타임아웃과 같은 타입({@link SocketTimeoutException})이고 응답을 인용하지 않는다. */
+  static final String LATE = "Read timed out: the response was not fully read within ";
   private static final ThreadLocal<HttpClientContext> NEXT_CONTEXT = new ThreadLocal<>();
   private final ApacheHttpClient43Engine owner;
+  /** 교환의 마감 길이 — 설정의 읽기 타임아웃(빌더가 엔진에 건 것과 같은 값). */
+  private final int readTimeoutMillis;
 
-  AdminEngine(ApacheHttpClient43Engine owner) {
+  AdminEngine(ApacheHttpClient43Engine owner, int readTimeoutMillis) {
     super(owner.getHttpClient(), false);
     this.owner = owner;
+    this.readTimeoutMillis = readTimeoutMillis;
     setResponseBufferSize(owner.getResponseBufferSize());
     setHostnameVerifier(owner.getHostnameVerifier());
     setSslContext(owner.getSslContext());
@@ -62,9 +76,9 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
   @Override
   protected void loadHttpMethod(ClientInvocation request, HttpRequestBase httpMethod) throws Exception {
     super.loadHttpMethod(request, httpMethod);
-    HttpClientContext context = HttpClientContext.create();
-    request.getMutableProperties().put(EXCHANGE, new Exchange(httpMethod, context));
-    NEXT_CONTEXT.set(context);
+    Exchange exchange = new Exchange(httpMethod, readTimeoutMillis);
+    request.getMutableProperties().put(EXCHANGE, exchange);
+    NEXT_CONTEXT.set(exchange);
   }
 
   /** {@link #loadHttpMethod} 가 둔 문맥을 가져가고 지운다 — RESTEasy 가 같은 교환에서 곧바로 묻는다. */
@@ -104,14 +118,35 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
     }
   }
 
-  /** 교환 하나의 끊기 손잡이 — 그 요청과, 실행이 연결을 적는 문맥. */
-  static final class Exchange {
+  /**
+   * 교환 하나의 끊기 손잡이이자 그 교환의 문맥(실행이 연결을 적는다) — 그 요청과, 요청을 보낸 때부터의 마감. 보낸 때는 HttpCore 가 요청 머리를
+   * 쓰기 직전에 이 문맥에 다는 표시({@code http.request_sent} = 거짓 — {@code HttpRequestExecutor.doSendRequest})로 안다 — 연결을 빌리고 맺은
+   * 뒤다(다시 보내기도 제 요청을 보낼 때 다시 단다).
+   */
+  static final class Exchange extends HttpClientContext {
     private final HttpRequestBase request;
-    private final HttpClientContext context;
+    private final long readTimeoutNanos;
+    private final int readTimeoutMillis;
+    /** 요청을 보낸 때(System.nanoTime) — 보내기 전에는 손잡이를 만든 때다. */
+    private volatile long sentAt = System.nanoTime();
 
-    Exchange(HttpRequestBase request, HttpClientContext context) {
+    Exchange(HttpRequestBase request, int readTimeoutMillis) {
       this.request = request;
-      this.context = context;
+      this.readTimeoutMillis = readTimeoutMillis;
+      this.readTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(readTimeoutMillis);
+    }
+
+    @Override
+    public void setAttribute(String id, Object obj) {
+      if (HttpCoreContext.HTTP_REQ_SENT.equals(id) && Boolean.FALSE.equals(obj)) sentAt = System.nanoTime();
+      super.setAttribute(id, obj);
+    }
+
+    /** 마감이 지났으면 읽기 타임아웃과 같은 타입으로 — 메시지는 마감의 길이뿐이다(응답을 인용하지 않는다). */
+    void due() throws SocketTimeoutException {
+      if (System.nanoTime() - sentAt - readTimeoutNanos >= 0) {
+        throw new SocketTimeoutException(LATE + readTimeoutMillis + " ms of sending the request");
+      }
     }
 
     /**
@@ -140,7 +175,7 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
     }
 
     private void readTimeout(int millis) {
-      HttpConnection connection = context.getConnection();
+      HttpConnection connection = getConnection();
       if (connection != null) {
         try {
           connection.setSocketTimeout(millis);
@@ -157,7 +192,9 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
    * 남은 것만 지나간다. {@code limit} 바이트를 내주면 끝난 것처럼 -1 을 돌려준다(오류 본문의 상한 — 진짜 끝이 아니므로 닫을 때 엿본다 ·
    * {@code raw()} 로 오류 응답의 스트림을 읽어도 같은 길이에서 끝난다). 길이 0 의 읽기는 스트림에 넘기지 않는다 — HttpCore 의 빈 버퍼는
    * 그것도 소켓에서 기다린다({@code TokenResponseGuard.capPlusOne} 와 같은 처방). ⚠️ 엿보기는 한 번이다 — 남은 것이 한 바이트뿐이거나 청크의
-   * 끝 표시가 1 ms 뒤에 오면 끊는다. 잃는 것은 그 연결의 재사용뿐이다(Keycloak 의 201·204 는 본문이 없어 끝을 바로 본다).
+   * 끝 표시가 1 ms 뒤에 오면 끊는다. 잃는 것은 그 연결의 재사용뿐이다(Keycloak 의 201·204 는 본문이 없어 끝을 바로 본다). 읽기마다 앞뒤로
+   * 그 교환의 마감을 본다({@link Exchange#due}) — 마감 뒤에 읽기를 시작하지 않고, 마감 뒤에 끝난 읽기의 결과를 내주지 않는다(닫기는 지금처럼
+   * 엿보고 끊는다).
    */
   static final class Settled extends InputStream {
     private final InputStream in;
@@ -175,12 +212,14 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
     @Override
     public int read() throws IOException {
       if (left == 0) return -1;
+      exchange.due();
       int b = in.read();
       if (b < 0) {
         eof = true;
       } else {
         left--;
       }
+      exchange.due();
       return b;
     }
 
@@ -188,12 +227,14 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
     public int read(byte[] b, int off, int len) throws IOException {
       if (len == 0) return 0;
       if (left == 0) return -1;
+      exchange.due();
       int n = in.read(b, off, (int) Math.min(len, left));
       if (n < 0) {
         eof = true;
       } else {
         left -= n;
       }
+      exchange.due();
       return n;
     }
 

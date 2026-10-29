@@ -37,7 +37,6 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManagerFactory;
 import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.protocol.HttpClientContext;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -68,7 +67,7 @@ import org.keycloak.representations.idm.UserRepresentation;
  * <p>⚠️ 미디어 타입이 있는 JSON 성공 본문(get·search)은 이 계약 밖이다 — 결합(Jackson)이 값 뒤의 공백까지 EOF 로 읽는다
  * ({@code FAIL_ON_TRAILING_TOKENS} — 실측 스택 {@code ObjectReader._verifyNoTrailingTokens}). 그 공백은 JSON 텍스트이고 성공 본문에는
  * 상한을 걸지 않는다({@link ResponseLimits#MAX_TOKEN_RESPONSE_BYTES} 의 설명) — 그 본문 중간에 멈춘 서버는 읽기마다의 타임아웃
- * 몫이다(등록부 {@code response-read-deadline-divergent}).
+ * 몫이고, 흘리는 서버는 요청을 보낸 때부터의 마감 몫이다({@code ResponseReadDeadlineTest}).
  */
 class AdminResourceResponseCutTest {
   private static final int CAP = ResponseLimits.MAX_TOKEN_RESPONSE_BYTES;
@@ -539,7 +538,7 @@ class AdminResourceResponseCutTest {
         return 1;
       }
     };
-    AdminEngine.Exchange exchange = new AdminEngine.Exchange(new HttpGet("http://127.0.0.1:1/"), HttpClientContext.create());
+    AdminEngine.Exchange exchange = new AdminEngine.Exchange(new HttpGet("http://127.0.0.1:1/"), 60_000);
     try (AdminEngine.Settled settled = new AdminEngine.Settled(refusesZero, exchange, Long.MAX_VALUE)) {
       assertEquals(0, settled.read(new byte[1], 0, 0));
       assertEquals(1, settled.read(new byte[1], 0, 1));
