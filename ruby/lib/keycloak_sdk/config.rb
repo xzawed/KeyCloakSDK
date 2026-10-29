@@ -11,8 +11,9 @@ module KeycloakSdk
     #
     # ⚠️ Do not restate this number anywhere else. It used to be written **twice** — 30.0 here and 10.0 in
     # `JwksStore#initialize`. `JwksStore` is an ordinary public class, so a consumer who constructed it directly
-    # (without going through the facade) got 10 seconds instead of the 30 the docs state and hit **the IdP 3 times as
-    # often**. The Korean README had copied that 10.0 as is, too (2026-08-12 docs audit → 2026-08-13 Task D1).
+    # (without going through the facade) got 10 seconds instead of the 30 seconds the docs state and hit **the IdP
+    # 3 times as often**. The Korean README had copied that 10.0 as is, too (2026-08-12 docs audit → 2026-08-13
+    # Task D1).
     DEFAULT_JWKS_MIN_REFETCH = 30.0
 
     # The default clock-skew tolerance (seconds) for JWT `exp`/`nbf` validation. This too is an invariant shared by
