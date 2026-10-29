@@ -44,13 +44,13 @@ module BearerGrammarSpec
     "mid-pad" => Row.new("a=bc", nil),
     "empty" => Row.new("", nil),
     "blank" => Row.new(" \t\r\n", nil),
-    "latin1" => Row.new("abcé", nil),
-    "above-ff" => Row.new("abcĀ", nil),
+    "latin1" => Row.new("abc\xC3\xA9", nil),
+    "above-ff" => Row.new("abc\xC4\x80", nil),
     "c1" => Row.new("abc\u0085", nil),
     "nul" => Row.new("abc\u0000", nil),
     "del" => Row.new("abc\u007f", nil),
-    "nbsp" => Row.new("abc ", nil),
-    "ideographic" => Row.new("　abc", nil),
+    "nbsp" => Row.new("abc\xC2\xA0", nil),
+    "ideographic" => Row.new("\xE3\x80\x80abc", nil),
     "vt" => Row.new("abc\v", nil),
     # Byte strings: a byte no UTF-8 string has.
     "invalid-utf8" => Row.new(BAD_BYTE, nil)
