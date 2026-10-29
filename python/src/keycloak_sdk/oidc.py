@@ -1,4 +1,4 @@
-"""OIDC 엔드포인트."""
+"""OIDC endpoints."""
 
 from __future__ import annotations
 

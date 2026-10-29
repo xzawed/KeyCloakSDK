@@ -1,4 +1,4 @@
-"""토큰 값 타입."""
+"""Token value types."""
 
 from __future__ import annotations
 
