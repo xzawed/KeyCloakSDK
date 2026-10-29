@@ -750,6 +750,8 @@ func (c *pauseCtx) Err() error {
 // 강제 재조회를 하나 더 띄우고 창을 찍어(/certs 2) 첫 키 회전이 「(refetch rate-limited)」로 거부됐고 — 첫 적재는
 // 창을 쓰지 않는다는 불변식이 깨졌다 — 창 안에서는 그 창의 조회가 **가져온** 키를 가진 토큰이 거부됐다. 세운 자리
 // 없이 공개 API 로만 재도 닿는다(실측: 회전 40 번에 1 번, k2 토큰 하나가 거부됨). 결정은 잠금 아래에서 캐시를 다시 본다.
+// ⚠️ 이 시험이 세우는 멈춤 자리는 resolveKey 의 ctx.Err() 다 — 그 검사가 lookup 앞으로 가면 시험 절반이 공허해진다
+// (등록부 wave4-hardening-go 의 레그 메모에서 옮김).
 func TestJWKSMissRechecksTheCacheBeforeDeciding(t *testing.T) {
 	for _, warmFirst := range []bool{false, true} {
 		name := "cold load"
