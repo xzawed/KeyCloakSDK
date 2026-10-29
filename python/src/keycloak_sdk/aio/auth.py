@@ -50,8 +50,8 @@ T = TypeVar("T")
 class AsyncAuthClient:
     """The async authentication facade wrapping the `a_*` methods of `KeycloakOpenID`.
 
-    `openid` is for test injection (when omitted, it is built from config). It has the same
-    method names · value types · exceptions as sync `AuthClient`, except that only
+    `openid` is for test injection (when omitted, it is built from config). This client has the
+    same method names · value types · exceptions as sync `AuthClient`, except that only
     `authorization_url` needs no network and so remains a synchronous method (the rest are
     `async def`).
     """
