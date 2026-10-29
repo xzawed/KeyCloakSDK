@@ -1,9 +1,9 @@
-//! AuthClient — openidconnect(auth flows) 래핑 + introspect/logout 손수. 커버리지 omit(네트워크 경계).
+//! AuthClient — wraps openidconnect (auth flows) + introspect/logout by hand. Coverage omit (network boundary).
 //!
-//! `openidconnect` 4.0의 `CoreClient`는 6개의 엔드포인트 typestate 파라미터를 갖는다. 여기서는
-//! auth/introspection/token 을 명시적으로 세팅해 exchange 빌더(`exchange_*`·`introspect`)가
-//! `?` 없이 호출 가능한(infallible) 구체 타입 `KcOidcClient`를 얻는다. id_token은 openidconnect의
-//! 자체 검증기 대신 강화된 `JwtValidator`로 검증하므로 `JsonWebKeySet`은 비워 둔다.
+//! `openidconnect` 4.0's `CoreClient` has six endpoint typestate parameters. Here
+//! auth/introspection/token are set explicitly so that the exchange builders (`exchange_*`·`introspect`)
+//! get a concrete type, `KcOidcClient`, that is callable without `?` (infallible). The id_token is validated by the
+//! hardened `JwtValidator` instead of openidconnect's own validator, so the `JsonWebKeySet` is left empty.
 use crate::config::KeycloakConfig;
 use crate::error::{KeycloakError, Result, oauth_error_code};
 use crate::jwks::{TOKEN_RESPONSE_MAX_BYTES, read_capped};
@@ -114,8 +114,8 @@ fn now_secs() -> u64 {
 }
 
 impl AuthClient {
-    /// openidconnect 클라이언트를 조립한다. URL 파싱 실패는 `KeycloakError::Config`로 변환.
-    /// 공유 `http`(TLS·타임아웃·SSRF 정책이 주입된)는 그대로 사용하고 자체 클라이언트를 만들지 않는다.
+    /// Assembles the openidconnect client. A URL parse failure is converted to `KeycloakError::Config`.
+    /// The shared `http` (with the TLS, timeout and SSRF policies injected) is used as-is; no client of its own is built.
     pub fn new(
         config: KeycloakConfig,
         endpoints: OidcEndpoints,
@@ -167,23 +167,24 @@ impl AuthClient {
         })
     }
 
-    /// Authorization Code + PKCE(S256) 요청 조립. CSRF state·PKCE verifier를 호출자에게 돌려준다.
-    /// state 검증(콜백 대조)은 무상태이므로 호출자 책임(다른 SDK와 동형).
+    /// Assembles an Authorization Code + PKCE (S256) request. Returns the CSRF state and the PKCE verifier to the caller.
+    /// Verifying the state (matching it at the callback) is the caller's responsibility, since this is stateless
+    /// (isomorphic with the other SDKs).
     ///
-    /// `redirect_uri`는 config 값을 쓴다 — 콜백이 여럿인 앱은
-    /// [`Self::create_authorization_request_with_redirect`]를 쓴다.
+    /// `redirect_uri` is taken from the config — an app with several callbacks uses
+    /// [`Self::create_authorization_request_with_redirect`].
     pub fn create_authorization_request(&self) -> AuthorizationRequest {
         self.authorization_request(None)
     }
 
-    /// 이 요청에만 쓸 콜백 URL을 받는 판. 콜백이 여럿인 앱(멀티테넌트·환경별)이 클라이언트
-    /// 하나로 그것을 섬기기 위한 자리이고, 나머지 여덟 SDK와 동형이다.
+    /// The variant that takes a callback URL for this request only. It is there so that an app with several callbacks
+    /// (multi-tenant, per environment) can serve them with one client, and it is isomorphic with the other eight SDKs.
     ///
-    /// ⚠️ **같은 값을 [`Self::exchange_code_with_redirect`]에 넘겨야 한다** — OAuth는 토큰
-    /// 교환의 `redirect_uri`가 인가 때 쓴 값과 같기를 요구한다(RFC 6749 §4.1.3).
+    /// ⚠️ **The same value must be passed to [`Self::exchange_code_with_redirect`]** — OAuth requires the token
+    /// exchange's `redirect_uri` to equal the value used at authorization (RFC 6749 §4.1.3).
     ///
-    /// ⚠️ 잘못된 URL은 `KeycloakError::Config`다 — §4대로 하위 타입(`RedirectUrl`)과 그
-    /// 파싱 오류는 파사드 밖으로 새지 않는다.
+    /// ⚠️ An invalid URL is `KeycloakError::Config` — per §4, the underlying type (`RedirectUrl`) and its
+    /// parse error do not leak out of the facade.
     pub fn create_authorization_request_with_redirect(
         &self,
         redirect_uri: &str,
@@ -225,12 +226,13 @@ impl AuthClient {
         }
     }
 
-    /// Authorization Code → 토큰 교환. PKCE verifier를 반드시 전달(S256 증명).
+    /// Authorization Code → token exchange. The PKCE verifier must be passed (S256 proof).
     ///
-    /// `expected_nonce`가 `Some`이면(create_authorization_request가 돌려준 nonce) 응답 id_token을
-    /// 강화 `JwtValidator`로 서명·iss·aud·exp까지 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce
-    /// 재생 방지. 불일치·부재·검증실패는 모두 거부(fail-closed). `None`이면 id_token 검증을 건너뛴다.
-    /// id_token 의 `aud` 는 `client_id` 로 본다 — `expected_audience` 는 [`Self::validate`] 에만 걸린다.
+    /// When `expected_nonce` is `Some` (the nonce create_authorization_request returned), the response's id_token is
+    /// verified with the hardened `JwtValidator` (signature, iss, aud and exp) and then its nonce claim is compared — OIDC
+    /// nonce replay protection. A mismatch, an absence or a failed verification are all rejected (fail-closed). `None`
+    /// skips id_token validation.
+    /// The id_token's `aud` is checked against `client_id` — `expected_audience` applies only to [`Self::validate`].
     pub async fn exchange_code(
         &self,
         code: &str,
@@ -241,11 +243,11 @@ impl AuthClient {
             .await
     }
 
-    /// 인가 때 쓴 콜백 URL을 그대로 넘기는 판 — [`Self::create_authorization_request_with_redirect`]
-    /// 와 짝이다.
+    /// The variant that passes on the callback URL used at authorization as-is — the counterpart of
+    /// [`Self::create_authorization_request_with_redirect`].
     ///
-    /// ⚠️ **짝을 맞춰야 한다.** OAuth는 토큰 교환의 `redirect_uri`가 인가 때 쓴 값과 같기를
-    /// 요구하고(RFC 6749 §4.1.3), 다르면 Keycloak이 `invalid_grant`로 거부한다.
+    /// ⚠️ **The pair must match.** OAuth requires the token exchange's `redirect_uri` to equal the value used at
+    /// authorization (RFC 6749 §4.1.3), and when they differ Keycloak rejects it with `invalid_grant`.
     pub async fn exchange_code_with_redirect(
         &self,
         code: &str,
@@ -335,8 +337,9 @@ impl AuthClient {
         }
     }
 
-    /// Client Credentials 흐름(admin 접착·서비스 계정). config.scopes를 요청에 반영한다
-    /// (누락 시 커스텀 스코프가 무시돼 언더스코프 토큰 발급 — authz-url·token_provider와 동형).
+    /// Client Credentials flow (admin glue, service accounts). Puts config.scopes on the request
+    /// (without that, custom scopes would be ignored and an under-scoped token issued — isomorphic with authz-url and
+    /// token_provider).
     pub async fn client_credentials_token(&self) -> Result<TokenSet> {
         let resp = self
             .oidc
@@ -348,7 +351,7 @@ impl AuthClient {
         to_token_set(&resp)
     }
 
-    /// Refresh Token → 새 토큰 셋.
+    /// Refresh Token → a new token set.
     pub async fn refresh(&self, refresh_token: &str) -> Result<TokenSet> {
         let rt = RefreshToken::new(refresh_token.to_string());
         let resp = self
@@ -360,16 +363,19 @@ impl AuthClient {
         to_token_set(&resp)
     }
 
-    /// access_token 검증을 강화된 `JwtValidator`에 위임(RS256 핀·iss·aud·exp·nbf·스큐·DoS-safe JWKS).
+    /// Delegates access_token validation to the hardened `JwtValidator` (RS256 pin · iss · aud · exp · nbf · skew ·
+    /// DoS-safe JWKS).
     ///
-    /// ⚠️ 강제 JWKS 재조회(모르는 kid)는 이 호출이 취소돼도 끝까지 가지만 그것을 띄운 tokio 런타임이 먼저 내려가면 함께
-    /// 끝나, 창(`jwks_min_refetch_secs`)이 지날 때까지 새 키의 토큰이 `unknown kid (refetch rate-limited)` 로 거부된다 —
-    /// 호출마다 런타임을 만들어 시간 초과로 끊는 동기 래퍼는 런타임을 재사용하라.
+    /// ⚠️ A forced JWKS refetch (unknown kid) runs to completion even if this call is cancelled, but it ends together with
+    /// the tokio runtime that spawned it if that runtime shuts down first, and tokens signed with the new key are then
+    /// rejected with `unknown kid (refetch rate-limited)` until the window (`jwks_min_refetch_secs`) passes — a sync
+    /// wrapper that builds a runtime per call and cuts it off on a timeout should reuse the runtime.
     pub async fn validate(&self, access_token: &str) -> Result<ValidatedToken> {
         self.validator.validate(access_token).await
     }
 
-    /// RFC7662 introspection. openidconnect 빌더가 응답을 파싱 → `IntrospectionResult`로 경계 변환.
+    /// RFC7662 introspection. The openidconnect builder parses the response → converted at the boundary to
+    /// `IntrospectionResult`.
     pub async fn introspect(&self, token: &str) -> Result<IntrospectionResult> {
         let at = AccessToken::new(token.to_string());
         let resp = self
@@ -385,16 +391,17 @@ impl AuthClient {
         })
     }
 
-    /// 백채널 로그아웃(refresh_token 무효화). openidconnect에 빌더가 없어 공유 http로 손수 POST.
+    /// Back-channel logout (invalidates the refresh_token). openidconnect has no builder for it, so this is a hand-written
+    /// POST over the shared http.
     ///
-    /// ⚠️ **상태코드를 반드시 본다.** `reqwest`의 `send()`는 **전송 실패에만** `Err`를 주고
-    /// 400/401/404 는 `Ok(Response)` 로 돌려준다 — 그래서 `send().await?; Ok(())` 로 쓰면
-    /// 세션이 그대로 살아있는데 호출자는 로그아웃이 성공했다고 믿는다. 자매 여덟 언어는
-    /// 전부 비-2xx 를 오류로 표면화한다(Node·.NET·Ruby·PHP·Go 실측). 여기만 그러지 않았다.
+    /// ⚠️ **The status code is always checked.** `reqwest`'s `send()` returns `Err` **only on a transport failure** and
+    /// hands back 400/401/404 as `Ok(Response)` — so written as `send().await?; Ok(())`, the caller believes the logout
+    /// succeeded while the session is still alive. The eight sibling languages all surface a non-2xx as an error
+    /// (measured on Node, .NET, Ruby, PHP and Go). Only this one did not.
     ///
-    /// ⚠️ **어떤 상태코드도 특별대우하지 않는다.** 404 는 대개 end-session 경로/realm 오설정이라
-    /// 삼키면 오설정이 영원히 안 보이고, 400("이미 무효화된 refresh_token")을 통과시키면 같은
-    /// 분류의 진짜 클라이언트 오류까지 함께 통과한다.
+    /// ⚠️ **No status code gets special treatment.** A 404 is usually a misconfigured end-session path or realm, so
+    /// swallowing it would keep the misconfiguration invisible forever, and letting a 400 ("refresh_token already
+    /// invalidated") through would also let through genuine client errors of the same class.
     pub async fn logout(&self, refresh_token: &str) -> Result<()> {
         // ⚠️ 공개 클라이언트에는 `client_secret` 를 **싣지 않는다**(빈 값도 아니다) — go 의
         // `if a.cfg.ClientSecret != ""` · .NET 의 `if (_cfg.ClientSecret is { } secret)` 와 동형.
