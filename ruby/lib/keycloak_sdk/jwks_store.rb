@@ -6,9 +6,14 @@ require "json" # ⚠️ `on_data` 를 쓰면 json 미들웨어가 돌지 않아 
 module KeycloakSdk
   # DoS-safe JWKS 스토어. Mutex 캐시 + rate-limit + single-flight.
   # 위조 서명(알려진 kid)은 캐시 반환만 하고 재조회를 유발하지 않는다.
-  # 미해결 kid(force:true)만 재조회하며, rate-limit gate는 재조회 결정 시점에 stamp한다
+  # 수명(`JWKS_MAX_AGE_SECONDS`) 안에서는 미해결 kid(force:true)만 재조회하며, rate-limit gate는 재조회 결정 시점에 stamp한다
   # (성공 아님 — IdP 장애창에서 위조 kid 폭주에도 재조회를 상한한다). Go/Rust/Python 동형.
   class JwksStore
+    # 성공한 적재로 얻은 키 집합의 수명(초) — 그 적재가 **끝난** 때부터 단조 시계로 잰다. 다 지나면 캐시는 콜드와 같다:
+    # 다음 조회가 같은 단일 비행·같은 실패 백오프로 다시 받고, 실패하면 그 오류로 끝난다. ⚠️ 낡은 집합으로 돌아가지 않는다 —
+    # IdP 장애 중에도(닿지 않는 JWKS 와 거둔 키를 SDK 는 가를 수 없다). 성공한 강제 재조회도 수명을 다시 시작한다. 아홉 언어 공통.
+    JWKS_MAX_AGE_SECONDS = 300
+
     # ⚠️ **실패한 fetch 의 백오프 — `min_refetch` 와 다른 축이다.**
     # `min_refetch`(30초)는 *캐시가 찬 뒤* 미해결 kid 홍수를 막는다. 아래 둘은 **캐시가 비어
     # 있고 fetch 가 계속 실패할 때**를 막는다. 그 자리에는 게이트가 없어서, 측정상 20회 검증이
@@ -40,15 +45,19 @@ module KeycloakSdk
       @mutex = Mutex.new
       @cache = nil        # {"keys" => [...]}
       @last_refetch = nil # monotonic seconds
+      @fetched_at = nil   # monotonic seconds — @cache 를 가져온 적재가 끝난 시각(수명의 기준)
       @last_failure = nil # monotonic seconds — 마지막 fetch 실패 시각
       @failures = 0       # 연속 실패 횟수(성공 시 0으로 되돌린다)
+      # 마지막 실패가 연 창의 길이(초). jitter 를 그 실패를 기록할 때 한 번 뽑아 여기 고정한다.
+      @backoff_window = 0.0
     end
 
     # ruby-jwt jwks: 로더가 호출. force=true는 미해결 kid 재조회 요청.
     def key_set(force: false)
       @mutex.synchronize do
-        return @cache if @cache && !force
-        return @cache if force && !refetch_allowed?
+        cache = live_cache # 수명이 지난 집합은 nil — 아래 전부가 콜드 캐시와 똑같이 흐른다
+        return cache if cache && !force
+        return cache if force && !refetch_allowed?
 
         # ⚠️ 백오프 검사는 fetch **직전**이자 30초 게이트 **이후**다. 콜드 캐시에서는 위 두 return
         # 이 모두 통과하므로, 이 줄이 없으면 매 검증이 IdP 로 나간다(그게 원래 결함이다).
@@ -65,6 +74,11 @@ module KeycloakSdk
 
     private
 
+    # 수명 안의 집합, 아니면 nil. 수명 판정은 이 한 자리다.
+    def live_cache
+      @cache if @cache && (monotonic - @fetched_at) < JWKS_MAX_AGE_SECONDS
+    end
+
     def refetch_allowed?
       @last_refetch.nil? || (monotonic - @last_refetch) >= @min_refetch
     end
@@ -76,11 +90,12 @@ module KeycloakSdk
     def backoff_remaining
       return 0.0 if @last_failure.nil?
 
-      backoff_delay - (monotonic - @last_failure)
+      @backoff_window - (monotonic - @last_failure)
     end
 
     # 지수 백오프 + jitter. jitter 는 [0.5, 1.0) 배수 — 여러 인스턴스가 같은 순간에 복구를
-    # 시도해 IdP 를 다시 무너뜨리는 것(thundering herd)을 흩는다.
+    # 시도해 IdP 를 다시 무너뜨리는 것(thundering herd)을 흩는다. ⚠️ 실패를 기록할 때 한 번만 부른다 — 검사마다 부르면
+    # 같은 실패가 같은 순간에 한 번은 거부하고 한 번은 IdP 로 내보낸다(창이 0.5× 쪽으로 줄어 장애 중 요청이 최대 두 배).
     #
     # ⚠️ **PRNG API 를 쓰지 않고 나노초 시계에서 뽑는다.** 이 값은 비밀이 아니지만, 보안 민감
     # 코드에서 약한 PRNG 를 호출하면 정적분석이 정당하게 막는다(실측: sonar S2245 · gosec G404).
@@ -96,12 +111,14 @@ module KeycloakSdk
 
     def fetch_recording_failure
       body = fetch
+      @fetched_at = monotonic # 수명은 적재가 끝난 이 시각부터다
       @failures = 0
       @last_failure = nil
       body
     rescue StandardError
       @failures += 1
       @last_failure = monotonic
+      @backoff_window = backoff_delay
       raise
     end
 
