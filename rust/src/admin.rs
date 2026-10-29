@@ -4,7 +4,7 @@
 //! ⚠️ **The facade does not call the crate's generated methods** — on a non-2xx response those read the whole body
 //! with `text()` in `error_check` (a single 64 MiB error body makes the server write all of it and allocation grows to
 //! several times that — measured in `tests/admin_response_body.rs`). The facade picks its errors by status alone, so
-//! that body is never used. So the facade itself sends **the same request** as the crate (path-segment encoding [`p`] ·
+//! that body is never used. Hence the facade itself sends **the same request** as the crate (path-segment encoding [`p`] ·
 //! the query and its order · Bearer · JSON body) and drains an error body only up to the cap ([`reject`]). That it is
 //! the same request is checked on the wire by that file's `the_facade_sends_what_the_crate_sends` against `raw()`'s
 //! crate methods — when upgrading the crate, start there.
@@ -234,8 +234,8 @@ impl AdminClient {
     ///
     /// There are no pagination arguments because truncation is **structurally impossible** — Keycloak enforces
     /// username uniqueness within a realm, so an `exact=true` result is either 0 or 1 entries. It still asks for
-    /// `max=2`: with `max=1`, "1 result returned" cannot tell whether there really is 1 or the result was truncated. If 2
-    /// arrive, that invariant is broken, so instead of silently picking the first one it surfaces
+    /// `max=2`: with `max=1`, one returned result could be exactly 1 or a truncated list, and the two cannot be told
+    /// apart. If 2 arrive, that invariant is broken, so instead of silently picking the first one it surfaces
     /// [`AdminError::Conflict`].
     pub async fn find_user_by_username(
         &self,

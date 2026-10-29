@@ -11,10 +11,10 @@ pub struct TokenSet {
 }
 
 impl TokenSet {
-    /// Expiry against expires_at (absolute epoch), with the skew applied. An unknown expires_at is conservatively treated
-    /// as true (isomorphic with Go/Python/Node/C#/Kotlin) — this stops a provider from caching a token of unknown expiry
-    /// forever, which would make admin fail permanently once that token expires (Keycloak's standard flows always send
-    /// expires_in, so the real paths are unaffected).
+    /// Expiry judged against expires_at (absolute epoch), with the skew applied. An unknown expires_at is conservatively
+    /// treated as true (isomorphic with Go/Python/Node/C#/Kotlin) — this stops a provider from caching a token of
+    /// unknown expiry forever, which would make admin fail permanently once that token expires (Keycloak's standard
+    /// flows always send expires_in, so the real paths are unaffected).
     pub fn is_expired(&self, now: u64, skew: u64) -> bool {
         match self.expires_at {
             Some(at) => now + skew >= at,
