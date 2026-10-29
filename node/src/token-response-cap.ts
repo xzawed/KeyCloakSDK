@@ -58,7 +58,7 @@ export function responseTooLarge(error: unknown): ResponseTooLargeError | undefi
  *
  * ⚠️ **It reads with a BYOB reader** — we decide the length requested, so the read stops at exactly cap+1 bytes
  * and nothing beyond that is requested (bytes received + the length requested this time ≤ cap+1). The default
- * reader (the JWKS loop) reads past the cap by up to one chunk (measured: with a 1 MiB cap it stopped at 1,113,791
+ * reader (the JWKS loop) reads one chunk past the cap (measured: with a 1 MiB cap it stopped at 1,113,791
  * bytes). The buffer doubles as it is filled, so a small response does not get a cap-sized buffer.
  *
  * A body that is not a byte stream (the default-stream body of a consumer who swapped in a different global

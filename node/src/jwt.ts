@@ -17,8 +17,8 @@ import type { ValidatedToken } from './tokens.js'
  * ⚠️ **jose has no cap.** Measured (2026-09-11 · jose 6.2.12 ·
  * `node_modules/jose/dist/webapi/jwks/remote.js:10-26`): all `fetchJwks` does is `GET` → check status 200 →
  * `response.json()`. There is no `Content-Length` check, no maximum-bytes option, no streaming that cuts the read
- * off — the only cutoff is time (`AbortSignal.timeout`, default 5 seconds). So a single compromised IdP could kill
- * the validation path through memory.
+ * off — the only cutoff is time (`AbortSignal.timeout`, default 5 seconds). So a single compromised IdP could have
+ * killed the validation path through memory.
  */
 export const JWKS_MAX_BYTES = 51_200
 

@@ -108,8 +108,8 @@ export class AdminClient {
    *
    * ⚠️ This path is admin-client as is, so it reads the body of a non-2xx response to its end, with no cap, into
    * `NetworkError.responseData`, and reads a write's 2xx body to its end too (unlike the facade — registry
-   * `admin-response-body-unbounded`). That spot is pinned by the "left in place" test in
-   * `test/unit/admin-response-body.test.ts`. An address or request options changed with `setConfig()` apply only
+   * `admin-response-body-unbounded`). That spot is pinned in `test/unit/admin-response-body.test.ts` by the
+   * `raw()` test marked ⚠️ there. An address or request options changed with `setConfig()` apply only
    * to this path.
    */
   raw(): KcAdminClient {
