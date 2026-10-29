@@ -1,6 +1,6 @@
 /**
- * SDK 예외 계급. 하위 라이브러리(openid-client/@keycloak/*)의 에러는 항상 경계에서
- * 이 타입들로 변환되어 공개 API로 새지 않는다(§4 계약).
+ * SDK exception hierarchy. Errors from the underlying libraries (openid-client/@keycloak/*) are always
+ * converted to these types at the boundary and never leak into the public API (§4 contract).
  */
 export class KeycloakError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -33,24 +33,24 @@ function scrubCause(cause: unknown, depth = 0): Error | undefined {
   return copy
 }
 
-/** 설정 검증 실패(필수값 누락 등). */
+/** Configuration validation failure (a missing required value, etc.). */
 export class KeycloakConfigError extends KeycloakError {}
-/** 인증(OIDC/OAuth2) 흐름 실패. */
+/** Authentication (OIDC/OAuth2) flow failure. */
 export class KeycloakAuthError extends KeycloakError {}
-/** JWT 서명·만료·issuer·audience 검증 실패. */
+/** JWT signature/expiry/issuer/audience validation failure. */
 export class KeycloakTokenValidationError extends KeycloakError {}
-/** 관리(Admin) 작업 실패(일반). */
+/** Admin operation failure (general). */
 export class KeycloakAdminError extends KeycloakError {}
-/** 리소스 없음(HTTP 404). */
+/** Resource not found (HTTP 404). */
 export class KeycloakNotFoundError extends KeycloakAdminError {}
-/** 충돌(HTTP 409). */
+/** Conflict (HTTP 409). */
 export class KeycloakConflictError extends KeycloakAdminError {}
-/** 권한 없음(HTTP 403). */
+/** No permission (HTTP 403). */
 export class KeycloakForbiddenError extends KeycloakAdminError {}
-/** 네트워크·전송 계층 실패. */
+/** Network/transport-layer failure. */
 export class KeycloakTransportError extends KeycloakError {}
 
-/** HTTP 상태 코드를 SDK 예외로 매핑한다. */
+/** Maps an HTTP status code to an SDK exception. */
 export function mapHttpError(status: number, message: string, cause?: unknown): KeycloakError {
   switch (status) {
     case 404:

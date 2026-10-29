@@ -10,12 +10,14 @@ function isEdge(code: number): boolean {
 }
 
 /**
- * admin 이 Bearer 로 보낼 값 — 아홉 언어가 같은 규칙이다(등록부 `bearer-token-grammar-divergent`). 앞뒤의
- * SP·HTAB·CR·LF 만 떼고(파일에서 읽은 토큰의 끝 개행), 남은 값이 비지 않은 `b64token` 이면 **뗀 값**을 돌려주고,
- * 아니면 토큰을 담지 않은 {@link KeycloakAuthError} 를 원인 없이 던진다 — 그 요청은 나가지 않는다. 보내는 자리(파사드
- * `admin/http.ts` · `raw()` 에 등록한 공급자 · 생성 때의 토큰 확보)와 캐시하는 자리({@link ClientCredentialsTokenProvider})가
- * 이 함수 하나를 쓴다. 떼기는 선형 스캔이다(`config.ts` 의 `stripTrailingSlashes` 와 같은 이유). 길이는 보지 않는다 —
- * 요청 헤더 한도는 서버가 정한다(Keycloak 26.6 은 65,459 바이트 Bearer 를 받는다).
+ * The value admin sends as the Bearer — the same rule in all nine languages (registry
+ * `bearer-token-grammar-divergent`). It strips only SP, HTAB, CR and LF from both ends (the trailing newline of a
+ * token read from a file); if what remains is a non-empty `b64token` it returns the **stripped value**, otherwise
+ * it throws a {@link KeycloakAuthError} that carries no token, with no cause — that request is not sent. The places
+ * that send (the facade's `admin/http.ts` · the provider registered on `raw()` · the token acquisition at
+ * creation) and the place that caches ({@link ClientCredentialsTokenProvider}) all use this one function. The
+ * stripping is a linear scan (for the same reason as `stripTrailingSlashes` in `config.ts`). Length is not checked
+ * — the request-header limit is the server's to set (Keycloak 26.6 accepts a 65,459-byte Bearer).
  */
 export function sendableBearer(token: string): string {
   const text = String(token)
@@ -32,21 +34,21 @@ export function sendableBearer(token: string): string {
   return trimmed
 }
 
-/** admin이 소비하는 액세스 토큰의 공급 인터페이스(auth와 admin을 잇는 유일한 접착제). */
+/** Supplier interface for the access tokens admin consumes (the only glue between auth and admin). */
 export interface TokenProvider {
   getAccessToken(): Promise<string>
 }
 
-/** client-credentials 토큰을 발급할 수 있는 소스(AuthClient가 구현). */
+/** A source that can issue client-credentials tokens (implemented by AuthClient). */
 export interface TokenSource {
   clientCredentialsToken(): Promise<TokenSet>
 }
 
 /**
- * client-credentials로 토큰을 자동 획득·캐시·갱신하는 기본 TokenProvider.
- * 만료 전이면 캐시를 재사용하고, 동시 요청은 단일 발급(single-flight)으로 합친다.
- * 캐시하는 것은 {@link sendableBearer} 가 돌려준 값이다 — 그 검사를 못 지나는 토큰은 캐시하지 않고
- * `KeycloakAuthError` 로 실패하므로 다음 호출이 소스에 다시 묻는다.
+ * The default TokenProvider: obtains, caches and renews tokens automatically with client-credentials.
+ * Before expiry it reuses the cache, and concurrent requests are collapsed into a single issuance (single-flight).
+ * What it caches is the value {@link sendableBearer} returned — a token that fails that check is not cached and
+ * the call fails with `KeycloakAuthError`, so the next call asks the source again.
  */
 export class ClientCredentialsTokenProvider implements TokenProvider {
   #cached?: { token: string; expiresAt: number }

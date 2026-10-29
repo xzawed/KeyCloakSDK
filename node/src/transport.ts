@@ -19,17 +19,19 @@ const TRANSPORT_CODES = new Set([
 ])
 
 /**
- * 전송 계층 실패(연결거부/DNS/TLS/타임아웃) 여부. Node fetch(undici)는 네트워크 실패를
- * `TypeError`(message "fetch failed", `cause`에 시스템 오류)로, 타임아웃(AbortController)을
- * `AbortError`/`TimeoutError`로 던진다. cause 없는 순수 `TypeError`(프로그래밍 버그)는 전송 오류가 아니다.
+ * Whether this is a transport-layer failure (connection refused/DNS/TLS/timeout). Node fetch (undici) throws a
+ * network failure as a `TypeError` (message "fetch failed", the system error in `cause`), and a timeout
+ * (AbortController) as `AbortError`/`TimeoutError`. A bare `TypeError` with no cause (a programming bug) is not a
+ * transport error.
  *
- * auth(discovery)·admin(호출) 두 네트워크 경계가 공유하는 순수 분류 헬퍼다 — 경계별 중복을 없애고
- * 전송/인증(또는 상태) 분류를 일관되게 유지한다.
+ * A pure classification helper shared by the two network boundaries, auth (discovery) and admin (calls) — it
+ * removes per-boundary duplication and keeps the transport/auth (or status) classification consistent.
  *
- * ⚠️ **네트워크를 타지 않으므로 커버리지 게이트에서 빼지 말 것**(2026-09-10 에 제외에서 뺐다).
- * 예전 주석은 「실동작은 auth/admin 경계 테스트가 검증한다」였으나 거짓이었다 — 그 테스트가 치는
- * 팔은 `AbortError`·`ECONNREFUSED` 둘뿐이고, 제외 때문에 나머지가 측정되지도 않아 **TLS 만료 코드를
- * 지워도 전부 초록**이었다. 전수는 `test/unit/transport.test.ts` 가 친다.
+ * ⚠️ **It does not touch the network, so do not exclude it from the coverage gate** (it was taken out of the
+ * exclusions on 2026-09-10). The old comment said "the auth/admin boundary tests verify the real behavior", which
+ * was false — the arms those tests hit are only `AbortError` and `ECONNREFUSED`, and because of the exclusion the
+ * rest were not even measured, so **deleting the TLS-expiry codes still left everything green**.
+ * `test/unit/transport.test.ts` exercises all of them.
  */
 export function isTransportError(err: unknown): boolean {
   if (typeof err !== 'object' || err === null) return false
