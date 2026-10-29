@@ -4,7 +4,8 @@ namespace Xzawed.Keycloak;
 
 /// <summary>
 /// Wraps a <see cref="BaseConfigurationManager"/> with the <see cref="FailureBackoff"/> on <b>failed</b> discovery/JWKS
-/// fetches — the cold load.
+/// fetches — the cold load, and so the reload once a key set has expired, which starts over cold
+/// (<see cref="ColdStartConfigurationManager"/>).
 /// </summary>
 /// <remarks>
 /// <para>

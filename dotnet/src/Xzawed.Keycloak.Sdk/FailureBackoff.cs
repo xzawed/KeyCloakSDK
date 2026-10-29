@@ -27,6 +27,10 @@ internal sealed class FailureBackoff
     private int _failures;
     private DateTimeOffset? _lastFailure;
 
+    /// <summary>The window the last failure opened, its jitter drawn once when that failure was recorded. Drawn on every
+    /// check instead, one failure refused and let a fetch through at the same instant — the window shrank towards 0.5×.</summary>
+    private TimeSpan _window;
+
     /// <param name="now">Clock seam — tests must be able to cross the window without sleeping.</param>
     /// <param name="jitter">Jitter seam; defaults to [0.5, 1.0), which spreads instances that
     /// failed at the same instant so their recovery does not knock the IdP over again.</param>
@@ -73,6 +77,7 @@ internal sealed class FailureBackoff
         {
             _failures++;
             _lastFailure = _now();
+            _window = Delay();
         }
     }
 
@@ -81,7 +86,7 @@ internal sealed class FailureBackoff
     {
         if (_lastFailure is not { } last)
             return TimeSpan.Zero;
-        var remaining = Delay() - (now - last);
+        var remaining = _window - (now - last);
         return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 

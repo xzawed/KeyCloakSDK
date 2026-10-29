@@ -22,6 +22,7 @@ from keycloak import KeycloakOpenID
 
 from ._internal.backoff import JwksFailureBackoff
 from ._internal.frames import scrub_frames
+from ._internal.jwks_cache import JwksKeyCache
 from ._internal.jwks_fetch import fetch_jwks
 from ._internal.jwt import JwtValidator, check_token_size
 from ._internal.lower import auth_failure, is_lower_failure, summarize
@@ -110,7 +111,7 @@ class AuthClient:
         # 처리됐을지 모르는 요청(그랜트·introspect·logout)을 저절로 다시 보내지 않는다 —
         # python-keycloak 의 어댑터는 POST 까지 다시 보낸다(`_internal/retries.py`).
         forbid_retries(self._openid)
-        self._jwks_cache: KeySet | None = None
+        self._jwks_keys = JwksKeyCache()  # 읽는 길은 `fresh()` 하나다(`_internal/jwks_cache.py`)
         self._jwks_lock = threading.Lock()
         self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)
         # 강제 재조회 최소 간격(초) — DoS 증폭 상한
@@ -242,8 +243,9 @@ class AuthClient:
     def validate(self, access_token: str) -> ValidatedToken:
         """realm JWKS로 서명을 검증하고 issuer/audience/exp/nbf를 강제한다(`JwtValidator`).
 
-        JWKS는 첫 호출 시 `openid.certs()`로 로드해 인스턴스에 캐시한다 — 이후 호출은
-        네트워크 왕복 없이 캐시된 `KeySet`을 재사용한다.
+        JWKS는 첫 호출 시 로드해 인스턴스에 캐시한다 — 받은 지 300초(`JWKS_MAX_AGE_SECONDS`)
+        안의 호출은 네트워크 왕복 없이 그 `KeySet`을 재사용하고, 그 뒤 호출은 다시 가져온다.
+        그 fetch 가 실패하면 검증도 실패한다 — 낡은 키로 물러서지 않는다.
 
         키 회전 복원력: 서명 키(kid)를 캐시된 JWKS에서 해석하지 못하면
         (`TokenKeyError`) 캐시를 무효화하고 `certs()`를 한 번 재조회해 재시도한다.
@@ -282,19 +284,21 @@ class AuthClient:
             return validator.validate(token, key_set)
 
     def _load_jwks(self, *, force: bool = False) -> KeySet:
-        if not force and self._jwks_cache is not None:
-            return self._jwks_cache
+        cached = self._jwks_keys.fresh()
+        if not force and cached is not None:
+            return cached
         with self._jwks_lock:
             # Double-check: 다른 스레드가 락 대기 중 이미 (재)로드했을 수 있다.
-            if not force and self._jwks_cache is not None:
-                return self._jwks_cache
-            if force and self._jwks_cache is not None:
+            cached = self._jwks_keys.fresh()
+            if not force and cached is not None:
+                return cached
+            if force and cached is not None:
                 # rate-limit: 최근 강제 재조회 직후면 재사용 — kid를 무작위로 바꾼
                 # 위조 토큰이 certs()를 폭주시키는 것을 막는다(정상 회전은 간격 경과
                 # 후 복원). 최초 강제 재조회는 항상 허용(_jwks_forced_at=-inf).
                 now = time.monotonic()
                 if now - self._jwks_forced_at < self._jwks_min_refetch:
-                    return self._jwks_cache
+                    return cached
                 self._jwks_forced_at = now
             # ⚠️ 백오프 검사는 fetch **직전**이자 30초 게이트 **이후**다. 콜드 캐시에서는 위
             # 분기가 통째로 건너뛰어지므로, 이 줄이 없으면 매 검증이 IdP 로 나간다(원래 결함).
@@ -316,7 +320,7 @@ class AuthClient:
                 # IdP가 기형 JWKS를 주는 것은 가정이 아니다 — 프록시 오구성·부분 배포·중간자가
                 # 모두 이 모양이 된다.
                 try:
-                    self._jwks_cache = KeySet.import_key_set(cast(KeySetSerialization, certs))
+                    key_set = KeySet.import_key_set(cast(KeySetSerialization, certs))
                 except Exception as exc:
                     raise TokenValidationError(
                         f"malformed JWKS from the identity provider: {exc}"
@@ -324,8 +328,9 @@ class AuthClient:
             except Exception:
                 self._jwks_backoff.record_failure()
                 raise
+            self._jwks_keys.store(key_set)
             self._jwks_backoff.record_success()
-        return self._jwks_cache
+        return key_set
 
     def _fetch_jwks(self) -> dict[str, Any]:
         """하드닝된 세션으로 JWKS 를 상한 안에서 가져온다.

@@ -593,7 +593,7 @@ def test_exchange_and_validate_share_one_jwks_store(jwks):
 
     client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
     assert jwks.call_count == 1
-    assert client._jwks_cache is not None  # 교환이 채운 것이 **이** 저장소다
+    assert client._jwks_keys.fresh() is not None  # 교환이 채운 것이 **이** 저장소다
     client.validate(access)
     assert jwks.call_count == 1
 
@@ -862,7 +862,7 @@ def test_validate_rejects_a_token_over_the_cap_without_a_jwks_request(jwks):
         client.validate("a" * (JWT_MAX_BYTES - 1) + "..")
 
     jwks.assert_not_called()
-    assert client._jwks_cache is None
+    assert client._jwks_keys.fresh() is None
 
 
 def test_validate_lets_a_token_at_the_cap_through_to_the_jwks_load_and_decoder(jwks):

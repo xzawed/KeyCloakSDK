@@ -1,5 +1,5 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=174781 max-raw-bytes=205170 -->
+<!-- doc-budget: max-bytes=174781 max-raw-bytes=202107 -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -38,7 +38,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `284`(2026-10-29 기준 열림 134 · 닫힘 150)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `284`(2026-10-29 기준 열림 131 · 닫힘 153)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -342,7 +342,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 132건 (열림 69)
+## C. 품질 부채 — 132건 (열림 66)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -400,15 +400,12 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `ruby-admin-error-status-lost-on-bad-json` **[M/S · 신규 2026-10-22 · 닫힘 2026-10-23 #810]** admin 의 오류 상태가 JSON 이라면서 JSON 아닌 본문에서도 상태 클래스를 지킨다 — json 미들웨어의 해석 실패를 응답 상태로 되짚는다(.NET 과 같다)
 - [x] `ruby-framing-proxy-connect-unbounded` **[M/M · 신규 2026-10-22 · 닫힘 2026-10-23 #813]** CONNECT 응답을 나르는 소켓(평문 프록시의 TCP · TLS 프록시면 첫 `ssl_socket_connect`)에도 줄 8,192 · 블록 65,536 — net-http `>= 0.9` 하한 · `ruby/lib/keycloak_sdk/http.rb`
 - [x] `jwks-stale-cache-outage-unbounded` **[M/S · 닫힘 2026-10-09 #743 #744]** node·.NET 에 실패 백오프. 남은 판정은 `jwks-cache-lifetime-divergent`
-- [ ] `jwks-cache-lifetime-divergent` **[M/S · 신규 2026-10-09 · 아홉 · 판정 2026-10-29]** JWKS 캐시 수명과 「낡은 캐시 + IdP 장애」의 수락이 언어마다 다르다 — 정상 토큰을 장애 중에 node·JVM 은 거부, .NET 은 수락, 다섯은 영원히 신선 · `.claude/rules/security.md`
-<!-- jwks-cache-lifetime-divergent 실측(2026-10-09 · 아홉 언어 측정 레그 둘 + PM 재실행 · 가짜 IdP · k1 과 위조 kid 를 번갈아 검증 10 회 · 캐시를 낡게 만든 뒤 /certs 503): node 수명 600 s(jwt.ts cacheMaxAge) → /certs +10 · k1 0/5 (#743 뒤 창마다 1) · .NET 12 h + 지터(AutomaticRefreshInterval) → discovery·/certs 각 +10 · k1 5/5 — 낡은 설정으로 받는다 (#744 뒤 창마다 1) · java·kotlin Nimbus 기본 TTL 300 s · refresh-ahead · outage tolerance 꺼짐 → /certs 2(rate limit) · k1 0/5 · python·go·rust·php·ruby 수명 없음(적재 뒤에는 kid miss 의 강제 재조회 때만 다시 받는다) → 낡지 않는다(+1 · 5/5). 정할 것 둘 — (1) 장애 중에 낡은 키로 계속 받는가(가용성 ↔ 회전·폐기된 키 신뢰 연장 · Nimbus 는 outageTolerant 가 그 손잡이) · (2) 수명을 맞추는가(수명 없는 다섯은 빠진 키를 새 kid 토큰이 올 때까지 쥔다). 다시 재는 명령은 #743·#744 의 시험과 측정 레그의 하네스(커밋 안 함)다. · 판정 2026-10-29(사람 위임 「권장안」): 마지막 성공 적재 300 초 뒤의 키 집합은 콜드 캐시와 같다 — 다음 검증이 같은 단일 비행·실패 백오프로 다시 받고, 실패하면 거부한다(낡은 키 폴백 없음, 아홉 동시). PM 첫 안(장애 중 낡은 키 수락 · 600 초)은 Grok 안으로 바꿨다 — 닿지 않는 JWKS 와 빠진 키를 SDK 가 가를 수 없고, Keycloak 기본 access token 수명(300 초) 아래에서 수락이 버는 가용성은 그 수명만큼이다. 300 초는 JVM(Nimbus 기본)이 이미 쓰는 값이다. -->
+- [x] `jwks-cache-lifetime-divergent` **[M/S · 신규 2026-10-09 · 닫힘 2026-10-29 · 판정 「300 초 · 실패면 거부」]** 아홉의 키 집합이 300 초 뒤 콜드 캐시가 된다 — 가드 1h · security.md
 - [x] `python-sync-post-retried` **[M/S · 신규·닫힘 2026-10-09 #747]** sync 세션은 어떤 요청도 저절로 다시 보내지 않는다(13 종 2 → 1)
 - [ ] `oauth-error-field-echo-unmasked` **[L/S · 신규 2026-10-09 · python·go·java·kotlin (+재스캔)]** IdP 가 시크릿·토큰을 `error_description` 이 아니라 OAuth `error` 에 되울리면 공개 오류 속성에 그대로 남는다 · `python/src/keycloak_sdk/_internal/lower.py`
 <!-- oauth-error-field-echo-unmasked(2026-10-09 #741 구현 레그 재스캔): python KeycloakAuthError.error(lower.py:118-120)는 JSON error 값을 그대로 싣는다 — sync·aio client_credentials 에서 vars(e) == {'error': 'sec+ret%2F%2B%3D~0005%C3%A9'}, refresh 는 호출자의 refresh token. 문법 검사(NQSCHAR)로는 못 막는다 — 폼 인코딩 꼴이 문법 안이다. go 는 같은 자리(oauthError)에 #764 가 문법 검사를 걸었지만 바로 그 이유로 이 항목은 남는다. JVM 둘(secret-echo 구현 레그 재스캔)도 getError()·oauthError 가 IdP 의 error 코드를 그대로 넘긴다. 나머지 다섯(node·rust·.NET·php·ruby)은 미측정. -->
-- [ ] `backoff-jitter-redrawn-per-check` **[L/S · 신규 2026-10-09 · 백오프를 가진 언어 전부]** 실패 백오프의 지터를 검사마다 다시 뽑아 창이 0.5× 쪽으로 줄어든다(장애 중 IdP 요청이 설계의 최대 두 배) · `ruby/lib/keycloak_sdk/jwks_store.rb`
-<!-- backoff-jitter-redrawn-per-check(2026-10-09 #743 Grok 레그 둘 + node 구현 레그): delayMs() 가 remainingMs() 안에서 jitter() 를 부른다 — 190 ms 에 0.99 를 뽑으면 거부, 191 ms 에 0.5 를 뽑으면 IdP 로 나간다. 참조 구현 ruby 가 같은 관용이라 node 만 고치면 언어 간 드리프트 — 실패 때 한 번 뽑아 고정하는 것으로 아홉이 함께 옮긴다(security.md 백오프 절). 언어별 실측은 아직. -->
-- [ ] `backoff-counts-caller-cancellation` **[L/S · 신규 2026-10-09 · .NET (+재스캔) · 판정 2026-10-29 「센다」]** 호출자가 취소한 콜드 적재가 fetch 실패로 세어져, 정상 IdP 에서도 그 창 동안 검증이 거부된다 · `dotnet/src/Xzawed.Keycloak.Sdk/FailureBackoff.cs`
-<!-- backoff-counts-caller-cancellation(2026-10-09 #744 Grok 레그 · PM 코드 판독): main 의 BackoffConfigurationManager 는 catch (Exception e) when (e is not KeycloakTransportException) 로 취소까지 셌고, #744 의 리트리버도 catch-all 이다 — 회귀 아님. 미측정. 정할 것: 취소를 실패로 셀 것인가 — 세지 않으면 취소 폭풍이 IdP 로 그대로 나가고(security.md 의 「취소에 도장을 되돌리지 않는다」와 같은 축), 세면 정상 IdP 에서 최대 한 창(≤ 5 s) 거부. 다른 여섯 언어의 판정은 재스캔. · 판정 2026-10-29 「센다」(취소 폭풍을 IdP 로 흘리지 않는다 — 도장 규칙과 같은 축) — 고정 시험은 JWKS 300 초 PR 이 싣는다. -->
+- [x] `backoff-jitter-redrawn-per-check` **[L/S · 신규 2026-10-09 · 닫힘 2026-10-29]** 일곱이 지터를 실패할 때 한 번 뽑는다 — 같이 찾은 python 지수 넘침(약 1,025 번 연속 실패 뒤 `OverflowError`)도 닫았다
+- [x] `backoff-counts-caller-cancellation` **[L/S · 신규 2026-10-09 · 닫힘 2026-10-29 · 판정 「센다」]** 공개 API 로는 닿지 않는다(처리기가 `CancellationToken.None` 으로 설정을 묻는다) — 게이트·리트리버의 고정 시험 둘이 「센다」를 지킨다
 - [x] `token-provider-outage-refetch-per-call` **[L/S · 신규 2026-10-09 · 닫힘 2026-10-29 · 판정 「그대로」]** 만료 뒤 장애에서 호출마다 그랜트 — 앱의 호출만 닿고 위조 입력으로 못 부풀린다
 - [x] `bearer-token-grammar-divergent` **[L/S · 신규 2026-10-09 · 닫힘 2026-10-29 · 판정 「다듬고 b64token」]** 아홉이 앞뒤 SP·HTAB·CR·LF 를 떼고 `b64token` 만 보낸다 — 가드 1g · security.md
 - [x] `inbound-token-cap-divergent` **[M/S · 신규 2026-10-27 · 닫힘 2026-10-27]** 아홉이 256,000 을 디코드·JWKS 전에 검사한다(사람 판정 「권장안」) — 1f 축 · security.md

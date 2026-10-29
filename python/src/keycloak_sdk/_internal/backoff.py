@@ -37,6 +37,7 @@ class JwksFailureBackoff:
         self._jitter = jitter if jitter is not None else _default_jitter
         self._failures = 0
         self._last_failure: float | None = None
+        self._window = 0.0
 
     @property
     def failures(self) -> int:
@@ -46,20 +47,22 @@ class JwksFailureBackoff:
         """백오프 잔여 초. 0 이면 fetch 를 허용한다."""
         if self._last_failure is None:
             return 0.0
-        return max(0.0, self._delay() - (self._clock() - self._last_failure))
+        return max(0.0, self._window - (self._clock() - self._last_failure))
 
     def record_failure(self) -> None:
         self._failures += 1
         self._last_failure = self._clock()
+        # ⚠️ jitter 는 **여기서 한 번** 뽑는다 — 검사(`remaining`)마다 뽑으면 같은 실패가
+        # 같은 순간에 거부와 통과를 오가고 창의 끝이 검사마다 움직인다
+        # (등록부 `backoff-jitter-redrawn-per-check`).
+        # ⚠️ 지수를 자른다 — 상한은 6번째 실패에 닿고, 안 자르면 1,025번째에 float 가 넘친다.
+        raw = BASE_SECONDS * 2 ** min(self._failures - 1, 16)
+        self._window = min(raw, CAP_SECONDS) * self._jitter()
 
     def record_success(self) -> None:
         # ⚠️ 성공이 카운터를 되돌리지 않으면 오래 산 프로세스에서 백오프가 상한에 눌러붙는다.
         self._failures = 0
         self._last_failure = None
-
-    def _delay(self) -> float:
-        raw: float = BASE_SECONDS * (2 ** (max(self._failures, 1) - 1))
-        return min(raw, CAP_SECONDS) * self._jitter()
 
 
 def _default_jitter() -> float:

@@ -644,6 +644,79 @@ done
 # 대조군 — 목록이 비면 어서션이 0건 실행되고 조용히 통과한다.
 assert_eq "8" "$sd_empty_seen" "[빈 키셋] 거부+테스트를 함께 가진 언어 수가 8이 아니다 — 추출 표가 낡았나?"
 
+# ---------------------------------------------------------------------------
+# 1h) JWKS 키 집합의 **수명** — 아홉 언어가 같은 리터럴 하나를 선언한다
+# ---------------------------------------------------------------------------
+#
+# 판정 2026-10-29(사람 위임 「권장안」 — 등록부 `jwks-cache-lifetime-divergent`): 성공한 적재로 얻은 키 집합은 300 초가
+# 지나면 콜드 캐시와 같다 — 다음 검증이 콜드 적재 길(같은 단일 비행 · 같은 실패 백오프)로 다시 받고, 실패하면 거부한다
+# (낡은 키 폴백 없음). 닿지 않는 JWKS 와 IdP 가 뺀 키를 SDK 는 가를 수 없다. 300 은 Nimbus 기본 TTL 이라 JVM 둘은 그대로였다.
+# 1f 와 같은 규칙이다(아홉 전부 · 주석 밖 맨 리터럴 선언 정확히 하나 · `SD_TC_DECL` 그대로). 단위는 **초** — 언어마다 ms·
+# Duration 은 이 상수에서 파생한다. 바꾸려면 아홉 선언 · `SD_JWKS_MAX_AGE` · security.md 를 **한 커밋에서** 고친다.
+SD_JWKS_MAX_AGE=300
+sd_jwks_max_age() { # $1=언어 → 주석 밖 맨 리터럴 선언의 값, 선언 하나당 한 줄
+  case "$1" in
+    go)     _jm_f='go/jwt.go' _jm_n='jwksMaxAgeSeconds' ;;
+    rust)   _jm_f='rust/src/jwks.rs' _jm_n='JWKS_MAX_AGE_SECONDS' ;;
+    python) _jm_f='python/src/keycloak_sdk/_internal/jwks_cache.py' _jm_n='JWKS_MAX_AGE_SECONDS' ;;
+    dotnet) _jm_f='dotnet/src/Xzawed.Keycloak.Sdk/KeySetLifetime.cs' _jm_n='JwksMaxAgeSeconds' ;;
+    node)   _jm_f='node/src/jwt.ts' _jm_n='JWKS_MAX_AGE_SECONDS' ;;
+    ruby)   _jm_f='ruby/lib/keycloak_sdk/jwks_store.rb' _jm_n='JWKS_MAX_AGE_SECONDS' ;;
+    php)    _jm_f='php/src/Jwks/JwksStore.php' _jm_n='JWKS_MAX_AGE_SECONDS' ;;
+    java)   _jm_f='java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java' \
+            _jm_n='JWKS_MAX_AGE_SECONDS' ;;
+    kotlin) _jm_f='kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt' _jm_n='JWKS_MAX_AGE_SECONDS' ;;
+    *)      return 0 ;;
+  esac
+  sd_code_lines "$ROOT/$_jm_f" \
+    | grep -E "(^|[^A-Za-z0-9_.])${_jm_n}${SD_TC_DECL}" \
+    | sed -E 's/.*=[[:space:]]*([0-9][0-9_]*)[[:space:]]*;?[[:space:]]*$/\1/' || true
+}
+sd_jwks_max_age_axis() { # $1=언어 목록 — 지금 ROOT 를 읽는다. 선언을 읽은 언어 수를 SD_JM_SEEN 에 남긴다.
+  SD_JM_SEEN=0
+  for L in $1; do
+    _jm_vals="$(sd_jwks_max_age "$L")"
+    _jm_cnt="$(printf '%s\n' "$_jm_vals" | grep -c . || true)"
+    assert_eq "1" "$_jm_cnt" \
+      "[JWKS 수명] $L 의 수명 선언이 주석 밖에 맨 리터럴로 정확히 하나가 아니다(${_jm_cnt} 개) — 지워졌거나 이름이 바뀌었거나 식이 됐다"
+    [ "$_jm_cnt" = 1 ] || continue
+    SD_JM_SEEN=$((SD_JM_SEEN + 1))
+    assert_eq "$SD_JWKS_MAX_AGE" "$(printf '%s' "$_jm_vals" | tr -d '_')" \
+      "[JWKS 수명] $L 의 수명이 $SD_JWKS_MAX_AGE 초가 아니다 — 아홉이 한 번에 움직이는 값이다(아홉 선언 · SD_JWKS_MAX_AGE · security.md 를 한 커밋에서)"
+  done
+}
+sd_jwks_max_age_axis "$SD_LANGS"
+assert_eq "9" "$SD_JM_SEEN" "[JWKS 수명] 수명 선언을 읽은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
+
+# 대조군 — 1f 와 같은 꼴. php 의 라이브 선언(`private const`) 하나만 TMP 에 두고 목록을 `php` 하나로 준다.
+sd_jwks_max_age_probe() { # $1=sed 표현식(빈 값이면 라이브 사본 그대로) → SD_JMP: GREW | QUIET | NOT-LANDED
+  _jmp_f='php/src/Jwks/JwksStore.php'
+  _jmp_tmp="$(mktemp -d)"; mkdir -p "$_jmp_tmp/$(dirname "$_jmp_f")"
+  sed "$1" "$ROOT/$_jmp_f" > "$_jmp_tmp/$_jmp_f"
+  if [ -n "$1" ] && cmp -s "$ROOT/$_jmp_f" "$_jmp_tmp/$_jmp_f"; then
+    SD_JMP='NOT-LANDED'
+  else
+    _a_save; _jmp_root="$ROOT"; ROOT="$_jmp_tmp"
+    sd_jwks_max_age_axis php >/dev/null 2>&1 || true
+    ROOT="$_jmp_root"
+    SD_JMP='QUIET'; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && SD_JMP='GREW'
+    _a_restore
+  fi
+  rm -rf "$_jmp_tmp"
+}
+sd_jwks_max_age_probe ''
+assert_eq "QUIET" "$SD_JMP" \
+  "[양성대조·JWKS 수명] 라이브 php 선언의 사본에서 축이 실패했다 — 「늘 운다」와 구분되지 않는다"
+sd_jwks_max_age_probe "s/\(JWKS_MAX_AGE_SECONDS = \)[0-9_]*/\1$((SD_JWKS_MAX_AGE + 1))/"
+assert_eq "GREW" "$SD_JMP" \
+  "[음성대조·JWKS 수명] 값만 핀+1 로 바꾼 사본에서 축이 안 울었다 — 값 비교가 no-op 이거나 추출이 파일을 안 읽는다"
+sd_jwks_max_age_probe 's/^\([[:space:]]*\)private const JWKS_MAX_AGE_SECONDS = /\1\/\/ private const JWKS_MAX_AGE_SECONDS = /'
+assert_eq "GREW" "$SD_JMP" \
+  "[음성대조·JWKS 수명] 선언이 주석으로만 남은 사본에서 축이 안 울었다 — 주석 속 사본을 선언으로 읽는다"
+sd_jwks_max_age_probe 's/\(JWKS_MAX_AGE_SECONDS = [0-9_]*\)/\1 * 2/'
+assert_eq "GREW" "$SD_JMP" \
+  "[음성대조·JWKS 수명] 식(<리터럴> * 2)이 된 선언에서 축이 안 울었다 — 앞 정수만 읽으면 값이 바뀌어도 핀과 같아 보인다"
+
 # ⚠️ **둘째 정의 자리는 이제 손 표가 아니라 파생이 본다 — 아래 3절.** 여기 있던
 # `sd_skew_secondary`(dotnet·python 두 줄짜리 표)는 **중복이 되어 지웠다**(2026-09-16):
 # 3절의 파생이 같은 두 자리를 값으로 잡는다(실측 — 손 표를 죽이고 python 을 60 으로 바꿔도
@@ -1617,6 +1690,9 @@ sd_owner_axis ".claude/rules/security.md" "$SD_TC_OWNER_RE" "$SD_TOKEN_CAP"
 # 1f 의 상한도 같다 — 아홉 선언과 SD_JWT_CAP 만 옮기고 security.md 의 그 줄을 잊으면 여기서 운다.
 SD_JC_OWNER_RE='reject a token over'
 sd_owner_axis ".claude/rules/security.md" "$SD_JC_OWNER_RE" "$SD_JWT_CAP"
+# 1h 의 수명도 같다 — 아홉 선언과 SD_JWKS_MAX_AGE 만 옮기고 security.md 의 그 줄을 잊으면 여기서 운다.
+SD_JM_OWNER_RE='A key set expires'
+sd_owner_axis ".claude/rules/security.md" "$SD_JM_OWNER_RE" "$SD_JWKS_MAX_AGE"
 
 # ⚠️ **소유자 축은 단언이 셋이고 셋 다 공허했다** — 실측(2026-09-14, `scripts/probe.sh --site`):
 # 존재 검사(`_exists=0`)·히트 하한(`-ge 0`)·값 비교(`_bad=""`) 를 각각 무력화하니 **셋 다 SILENT**.

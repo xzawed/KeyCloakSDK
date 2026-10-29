@@ -101,7 +101,7 @@ impl JwtValidator {
             .as_deref()
             .ok_or_else(|| KeycloakError::TokenValidation("missing kid".into()))?;
 
-        // (2) JWKS에서 kid로 키 → DecodingKey (미해결 kid만 DoS-safe 재조회).
+        // (2) JWKS에서 kid로 키 → DecodingKey (키셋 수명 300초 · 그 안에서는 미해결 kid만 DoS-safe 재조회).
         let jwk = self.jwks.get_key(kid).await?;
         let key = DecodingKey::from_jwk(&jwk)
             .map_err(|_| KeycloakError::TokenValidation("invalid JWKS key".into()))?;

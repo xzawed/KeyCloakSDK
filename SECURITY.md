@@ -1,4 +1,7 @@
-<!-- doc-budget: max-bytes=11211 -->
+<!-- doc-budget: max-bytes=11282 -->
+<!-- 11211 → 11282 (2026-10-29, +71B). 규약 (1) — 교환: 「eight languages refetch only on an unresolved key id」 가 JWKS
+     키 집합 300 초 수명(판정 2026-10-29 — 가드 1h) 뒤로 무조건 문장으로는 거짓이 되어 고쳤다. -->
+
 <!-- 10916 → 11211 (2026-10-27). 규약 (1) — 「Two documented scope exceptions」가 cargo audit 의 두 번째
      Rust 예외(RUSTSEC-2026-0387)로 거짓이 되어 「Three」로 바꾸고, 새 항목에 그 주장을 다시 재는 명령
      (`cargo tree -i crypto-bigint`)을 둔다 — 그 명령이 고친 판을 보이면 예외를 지운다. -->
@@ -34,9 +37,10 @@ This project is a multi-language SDK for Keycloak covering authentication
 not limited to:
 
 - **JWT validation** — algorithm pinning, `iss`/`aud`/`exp`/`nbf` enforcement,
-  DoS-safe JWKS refetch (rate-limited on all nine; eight languages refetch only
-  on an unresolved key id — .NET also refetches on a bad signature, bounded by
-  the same interval). All nine implement hardened, self-verified validation.
+  DoS-safe JWKS refetch (a key set lives 300 seconds on all nine; before that,
+  refetch is rate-limited on all nine and eight languages refetch only on an
+  unresolved key id — .NET also refetches on a bad signature, bounded by the
+  same interval). All nine implement hardened, self-verified validation.
 - **OIDC flows** — PKCE (S256) on all nine. nonce/`id_token` replay protection
   on all nine: the authorization request always issues a nonce and `exchange*`
   fully validates the `id_token` (signature · `iss` · `aud` · `exp`) against it

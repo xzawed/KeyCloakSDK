@@ -200,23 +200,43 @@ RSpec.describe KeycloakSdk::JwksStore do
     end
 
     # 회귀 — 위 예제의 「두 배」 단언이 두 배 상실을 **jitter 와 무관하게** 잡는가. jitter 는 나노초 시계에서
-    # 뽑히니(`jitter`) 그 호출을 양 끝 값으로 고정한다 — 두 배를 잃은 둘째 창은 첫 창과 같으므로 실패 1 회 뒤
-    # jitter 최대에서, 두 배가 된 창은 실패 2 회 뒤 jitter 최소에서 본다. 둘이 탐침의 양쪽에 있어야 한다.
+    # 실패를 기록할 때 뽑히니(`backoff_delay`) 그 호출을 양 끝 값으로 고정한다 — 두 배를 잃은 둘째 창은 첫 창과 같으므로
+    # 실패 1 을 jitter 최대로, 두 배가 된 창은 실패 2 를 jitter 최소로 기록한다. 둘이 탐침의 양쪽에 있어야 한다.
+    # ⚠️ `draw` 는 그 실패를 **내는 호출 앞에** 둔다 — 검사는 뽑지 않는다(위 「한 번 뽑는다」 예제).
     it "둘째 창 탐침은 jitter 의 양 끝에서도 두 배를 잃은 창과 두 배가 된 창을 가른다" do
       stub_request(:get, jwks_url).to_return(status: 500, body: "err")
       now = 1000.0
-      draw = 0
+      draw = 999_999 # jitter 최대 — 두 배를 잃은 창(= 첫 창)이 가장 길 때
       allow(Process).to receive(:clock_gettime).and_call_original
       allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC) { now }
       allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC, :nanosecond) { draw }
 
       expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /HTTP 500/) # 실패 1
-      draw = 999_999 # jitter 최대 — 두 배를 잃은 창(= 첫 창)이 가장 길 때
-      now += second_window_probe
-      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /HTTP 500/) # 그 창도 끝났다(실패 2)
       draw = 0 # jitter 최소 — 두 배가 된 창이 가장 짧을 때
       now += second_window_probe
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /HTTP 500/) # 그 창도 끝났다(실패 2)
+      now += second_window_probe
       expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /backing off/)
+    end
+
+    # jitter 는 실패를 기록할 때 **한 번** 뽑는다. 검사마다 다시 뽑으면 같은 실패가 0.15 초에 한 번은 거부하고 한 번은
+    # IdP 로 내보냈다(창 [0.1, 0.2) 안의 같은 순간) — 장애 중 요청이 설계의 최대 두 배가 된다. 뽑기는 양 끝을 번갈아 낸다.
+    it "jitter 는 실패할 때 한 번 뽑는다 — 같은 순간의 검사는 같은 답이고 창의 끝은 검사 사이에 움직이지 않는다" do
+      stub = stub_request(:get, jwks_url).to_return(status: 500, body: "err")
+      now = 1000.0
+      draws = [999_999, 0].cycle # jitter ≈1.0 · 0.5
+      allow(Process).to receive(:clock_gettime).and_call_original
+      allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC) { now }
+      allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC, :nanosecond) { draws.next }
+
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /HTTP 500/) # 실패 1
+      now += 0.15
+      remaining = Array.new(6) { store.send(:backoff_remaining) }
+      expect(remaining.uniq.size).to eq(1)
+      4.times { expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /backing off/) }
+      now += 0.01
+      expect(store.send(:backoff_remaining)).to be_within(1e-9).of(remaining.first - 0.01)
+      expect(stub).to have_been_requested.once
     end
 
     # ⚠️ 대조군 둘째 — 성공이 실패 카운터를 되돌리지 않으면 오래 산 프로세스에서 백오프가

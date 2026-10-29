@@ -292,26 +292,22 @@ public sealed class JwksKeyRotationTests : IDisposable
         Assert.Equal(2, _idp.Certs);
     }
 
-    /// <summary>Control: last-known-good is untouched. The IdP swaps A out for B; a token under the removed key still
-    /// validates through the configuration that last validated one (IdentityModel's LKG, an hour by default) — before and
-    /// after the fix. With LKG off the same token is refused, so it is LKG that accepted it, not a cache still holding A.</summary>
+    /// <summary>Last-known-good is off: the IdP swaps A out for B, and once the refetch B's first token asked for has replaced
+    /// the key set, a token under the removed key is refused — as in the other eight SDKs. IdentityModel's LKG lifetime runs
+    /// from the last token a configuration validated, on the wall clock (an hour by default), so it cannot honour the key
+    /// set's 300-second lifetime: it would serve A after any failed reload (<c>JwksStaleCacheOutageTests</c> T3).</summary>
+    /// <remarks>Flipped from "a token under the removed key still validates through the last-known-good configuration".</remarks>
     [Fact]
-    public async Task Control_a_token_under_a_removed_key_validates_through_the_last_known_good_configuration()
+    public async Task A_token_under_a_removed_key_is_refused_once_a_refetch_replaced_the_key_set()
     {
         var v = Validator();
         Assert.True(await AcceptsAsync(v, Token(_a, "a")));
         _idp.Jwks = KeySet(_b);
+        Assert.True(await AcceptsAsync(v, Token(_b, "b"))); // its unknown kid refetches in the call
 
-        var deadline = DateTime.UtcNow + Hang;
-        while (!await AcceptsAsync(v, Token(_b, "b"))) // before the fix the first one fails and the background refresh lands later
-        {
-            Assert.True(DateTime.UtcNow < deadline, "the rotated-in key was never picked up");
-            await Task.Delay(20);
-        }
-
-        Assert.True(await AcceptsAsync(v, Token(_a, "removed")));
-        ManagerOf(v).UseLastKnownGoodConfiguration = false;
-        Assert.False(await AcceptsAsync(v, Token(_a, "removed, no LKG")));
+        Assert.False(await AcceptsAsync(v, Token(_a, "removed")));
+        Assert.False(ManagerOf(v).UseLastKnownGoodConfiguration);
+        Assert.Equal(2, _idp.Certs);
     }
 
     private JwtValidator Validator() => new(Issuer, Options, _http, _clock.Read, () => 1.0);

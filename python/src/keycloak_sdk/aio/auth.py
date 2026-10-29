@@ -23,6 +23,7 @@ from keycloak import KeycloakOpenID
 
 from .._internal.backoff import JwksFailureBackoff
 from .._internal.frames import ascrub_frames, scrub_frames
+from .._internal.jwks_cache import JwksKeyCache
 from .._internal.jwks_fetch import afetch_jwks
 from .._internal.jwt import JwtValidator, check_token_size
 from .._internal.lower import auth_failure, is_lower_failure, summarize
@@ -85,7 +86,7 @@ class AsyncAuthClient:
         # httpx 는 요청을 다시 보내지 않는다 — 쓰이지 않는 sync 세션의 재시도도 끈다(위와 같은
         # 심층방어, `_internal/retries.py`).
         forbid_retries(self._openid)
-        self._jwks_cache: KeySet | None = None
+        self._jwks_keys = JwksKeyCache()  # 읽는 길은 `fresh()` 하나다(sync 동형)
         # 진행 중인 JWKS fetch — 호출자가 아니라 이 인스턴스가 소유한다(`_load_jwks`).
         self._jwks_fetch: asyncio.Task[KeySet] | None = None
         self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)
@@ -207,7 +208,7 @@ class AsyncAuthClient:
     async def validate(self, access_token: str) -> ValidatedToken:
         """realm JWKS로 서명을 검증하고 issuer/audience/exp/nbf를 강제한다(sync `JwtValidator`).
 
-        JWKS는 첫 호출 시 `openid.a_certs()`로 로드해 인스턴스에 캐시한다. 키 회전
+        JWKS는 첫 호출 시 로드해 인스턴스에 캐시한다(받은 지 300초까지 — sync 동형). 키 회전
         복원력은 sync `AuthClient.validate`와 동일하다 — 서명 키(kid) 미해결
         (`TokenKeyError`)에 한해 캐시를 무효화하고 `a_certs()`를 한 번 재조회해
         재시도한다. 단순 서명 위조(`TokenSignatureError`)는 재조회하지 않으며(DoS 증폭
@@ -254,16 +255,17 @@ class AsyncAuthClient:
         자물쇠가 없는 이유: 판정에서 태스크를 만들기까지 `await` 가 없어 다른 코루틴이 끼지 못한다.
         단일 비행(single-flight)은 진행 중인 태스크가 맡는다.
         """
-        if not force and self._jwks_cache is not None:
-            return self._jwks_cache
+        cached = self._jwks_keys.fresh()
+        if not force and cached is not None:
+            return cached
         fetch = self._jwks_fetch
         if fetch is None or fetch.done():
-            if force and self._jwks_cache is not None:
+            if force and cached is not None:
                 # rate-limit: 최근 강제 재조회 직후면 재사용 — kid 변조 위조 토큰의
                 # 재조회 폭주 차단(정상 회전은 간격 경과 후 복원).
                 now = time.monotonic()
                 if now - self._jwks_forced_at < self._jwks_min_refetch:
-                    return self._jwks_cache
+                    return cached
                 self._jwks_forced_at = now
             # ⚠️ sync 미러와 동일 — 백오프 검사는 fetch **직전**이자 30초 게이트 **이후**다.
             # 콜드 캐시에서는 위 분기가 통째로 건너뛰어지므로, 이 줄이 없으면 매 검증이 IdP 로
@@ -298,7 +300,7 @@ class AsyncAuthClient:
         except Exception:
             self._jwks_backoff.record_failure()
             raise
-        self._jwks_cache = key_set
+        self._jwks_keys.store(key_set)
         self._jwks_backoff.record_success()
         return key_set
 

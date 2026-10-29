@@ -30,10 +30,19 @@ const jwksMaxBytes = 51200
 // ⚠️ A plain decimal literal on purpose — the nine SDKs share this value and a cross-language guard reads it.
 const jwtMaxBytes = 256000
 
+// jwksMaxAgeSeconds is how long a key set obtained by a successful JWKS fetch is used, counted from the moment that
+// fetch completed on the gate clock (opts.now — time.Now, monotonic). Once that age is reached the cache is treated
+// exactly like a cold one: the next lookup misses, and fetchFor starts the cold load — the same flight, the same
+// failure backoff, no forced-refetch window. If that fetch fails the validation fails: the expired keys are never used
+// again, not even during an IdP outage. A successful forced refetch replaces the set and restarts the age too.
+//
+// ⚠️ A plain decimal literal on purpose — the nine SDKs share this value and a cross-language guard reads it.
+const jwksMaxAgeSeconds = 300
+
 // Backoff for *failed* JWKS fetches — a different axis from minRefetch.
 //
 // minRefetch (30s) caps a flood of unresolved kids *after the cache is populated*. The two below
-// cap the case where the cache is **empty and the fetch keeps failing**: nothing gated that path,
+// cap the case where the cache is **empty (or expired) and the fetch keeps failing**: nothing gated that path,
 // and 20 lookups produced 20 outbound requests (measured 2026-09-04, identical in 7 languages).
 //
 // Do NOT reuse minRefetch here — one transient 503 would then mean "no token validates for 30
@@ -58,13 +67,16 @@ type validatorOptions struct {
 	// forced-refetch (minRefetch) tests can cross their windows deterministically instead of
 	// sleeping — this repo already tracks wall-clock-dependent tests as a defect class.
 	now func() time.Time
+	// jitter is the failure backoff's jitter source, a factor in [0.5, 1.0) — a seam for tests. Nil means clockJitter.
+	jitter func() float64
 }
 
 // Validator performs hardened JWT verification: it does not trust library
 // defaults. Algorithm pinning (header alg not trusted, "none" rejected), exact
 // issuer match, audience membership (multi-valued aud accepted), exp/nbf with
-// clock skew, and DoS-safe JWKS refetch (a forged signature never triggers a
-// refetch; only an unresolved kid does, rate-limited).
+// clock skew, and DoS-safe JWKS refetch (a fetched key set is used for 300
+// seconds; within them a forged signature never triggers a refetch, only an
+// unresolved kid does, rate-limited).
 type Validator struct {
 	opts validatorOptions
 	*jwksState
@@ -76,10 +88,12 @@ type Validator struct {
 type jwksState struct {
 	mu          sync.Mutex
 	jwks        *jose.JSONWebKeySet
-	forcedAt    time.Time   // when the last *forced* refetch (rotation) started; zero until the first one
-	failures    int         // consecutive fetch failures; reset to 0 on success
-	lastFailure time.Time   // when the last fetch failed; zero when healthy
-	flight      *jwksFlight // the fetch in progress, which concurrent misses wait on; nil when none is
+	loadedAt    time.Time     // when the fetch that obtained jwks completed; jwks is used until jwksMaxAgeSeconds after it
+	forcedAt    time.Time     // when the last *forced* refetch (rotation) started; zero until the first one
+	failures    int           // consecutive fetch failures; reset to 0 on success
+	lastFailure time.Time     // when the last fetch failed; zero when healthy
+	backoff     time.Duration // the window that failure opened — its jitter drawn once, when it was recorded
+	flight      *jwksFlight   // the fetch in progress, which concurrent misses wait on; nil when none is
 }
 
 // jwksFlight is one JWKS fetch in progress. No caller owns it: it runs detached from every caller's
@@ -109,7 +123,7 @@ func (v *Validator) backoffRemaining(now time.Time) time.Duration {
 	if v.lastFailure.IsZero() {
 		return 0
 	}
-	if r := v.backoffDelay() - now.Sub(v.lastFailure); r > 0 {
+	if r := v.backoff - now.Sub(v.lastFailure); r > 0 {
 		return r
 	}
 	return 0
@@ -118,6 +132,10 @@ func (v *Validator) backoffRemaining(now time.Time) time.Duration {
 // backoffDelay grows exponentially and is capped, with jitter in [0.5, 1.0). The jitter spreads
 // instances that failed at the same instant so their recovery attempts do not knock the IdP over
 // again (thundering herd). Callers hold v.mu.
+//
+// runFetch calls it once, when it records a failure, and keeps the window in v.backoff. Drawn on every check instead,
+// the window's end moved between checks, so one failure refused a lookup and let the next one at the same instant
+// through to the IdP (measured — TestJWKSBackoffJitterIsDrawnOnceWhenTheFailureIsRecorded).
 //
 // The jitter source is wall-clock nanoseconds rather than math/rand: this value spreads a herd, it
 // is not a secret, and gosec rightly rejects math/rand (G404) in a security-sensitive package. The
@@ -134,8 +152,12 @@ func (v *Validator) backoffDelay() time.Duration {
 	if d > jwksFailureBackoffCap || d <= 0 {
 		d = jwksFailureBackoffCap
 	}
-	jitter := 0.5 + float64(time.Now().UnixNano()%1_000_000)/2_000_000.0
-	return time.Duration(float64(d) * jitter)
+	return time.Duration(float64(d) * v.opts.jitter())
+}
+
+// clockJitter is the default jitter source: a factor in [0.5, 1.0) taken from wall-clock nanoseconds (see backoffDelay).
+func clockJitter() float64 {
+	return 0.5 + float64(time.Now().UnixNano()%1_000_000)/2_000_000.0
 }
 
 func newValidator(opts validatorOptions) *Validator {
@@ -144,6 +166,9 @@ func newValidator(opts validatorOptions) *Validator {
 	}
 	if opts.now == nil {
 		opts.now = time.Now
+	}
+	if opts.jitter == nil {
+		opts.jitter = clockJitter
 	}
 	if opts.minRefetch == 0 {
 		opts.minRefetch = time.Duration(defaultJwksMinRefetchSecs) * time.Second
@@ -220,6 +245,9 @@ func (v *Validator) Validate(ctx context.Context, token string) (*ValidatedToken
 
 // resolveKey returns the verification key for kid from the cached JWKS.
 //
+// A cached set is used for jwksMaxAgeSeconds after the fetch that obtained it; from then on the lookup misses as on
+// a cold cache, whatever the kid, and the cold-load fetch replaces the set (or the validation fails).
+//
 // DoS-safety: a forged signature carries a cached (valid) kid, so it resolves
 // from cache and fails at signature verification — never a refetch. Only an
 // unresolved kid (key rotation) triggers a refetch, and forced refetches are
@@ -252,8 +280,9 @@ func (v *Validator) resolveKey(ctx context.Context, kid string) (any, error) {
 
 // fetchFor decides, under one lock, which fetch serves a cache miss for kid. A fetch in flight is joined — its
 // result may carry the kid, and joining costs the IdP nothing, whichever window started it. Otherwise a cold
-// cache starts the initial load, which does not stamp the window, and a warm one starts a forced refetch unless
-// the window is still open, in which case the miss is refused without touching the IdP.
+// cache — or one past jwksMaxAgeSeconds, which is treated exactly as cold — starts the initial load, which does not
+// stamp the window, and a warm one starts a forced refetch unless the window is still open, in which case the miss
+// is refused without touching the IdP.
 //
 // The window is stamped only by the forced refetch that starts in it. A miss that joins a fetch, or that the
 // failure backoff refuses, leaves the window as it was: stamping first spent a window on no request of its own,
@@ -269,16 +298,17 @@ func (v *Validator) resolveKey(ctx context.Context, kid string) (any, error) {
 func (v *Validator) fetchFor(ctx context.Context, kid string) (*jwksFlight, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	if v.jwks != nil && len(v.jwks.Key(kid)) > 0 {
+	// One reading of the clock seam serves the age, the window, the backoff and the stamp. With the default (time.Now)
+	// it carries a monotonic reading, so Sub is monotonic exactly as time.Since was.
+	now := v.opts.now()
+	fresh := v.freshLocked(now)
+	if fresh && len(v.jwks.Key(kid)) > 0 {
 		return nil, nil
 	}
 	if v.flight != nil {
 		return v.flight, nil
 	}
-	// One reading of the clock seam serves the window, the backoff and the stamp. With the default (time.Now)
-	// it carries a monotonic reading, so Sub is monotonic exactly as time.Since was.
-	now := v.opts.now()
-	if v.jwks == nil {
+	if !fresh {
 		return v.startFetchLocked(ctx, now)
 	}
 	// Cached JWKS lacks the kid → possible rotation → forced refetch, rate-limited.
@@ -295,8 +325,8 @@ func (v *Validator) fetchFor(ctx context.Context, kid string) (*jwksFlight, erro
 // startFetchLocked starts a fetch unless the failure backoff forbids it. Callers hold v.mu and have found no
 // fetch in flight.
 //
-// The backoff sits *before* the request and *after* the 30s forced-refetch gate. On a cold cache that gate
-// is skipped entirely, so without this every lookup goes out to the IdP — that is the original defect.
+// The backoff sits *before* the request and *after* the 30s forced-refetch gate. On a cold (or expired) cache that
+// gate is skipped entirely, so without this every lookup goes out to the IdP — that is the original defect.
 func (v *Validator) startFetchLocked(ctx context.Context, now time.Time) (*jwksFlight, error) {
 	if r := v.backoffRemaining(now); r > 0 {
 		return nil, &TransportError{Msg: fmt.Sprintf(
@@ -316,9 +346,11 @@ func (v *Validator) runFetch(ctx context.Context, f *jwksFlight) {
 	if err != nil {
 		v.failures++
 		v.lastFailure = v.opts.now()
+		v.backoff = v.backoffDelay()
 	} else {
 		v.failures = 0
 		v.lastFailure = time.Time{}
+		v.backoff = 0
 	}
 	v.flight = nil
 	v.mu.Unlock()
@@ -329,13 +361,19 @@ func (v *Validator) runFetch(ctx context.Context, f *jwksFlight) {
 func (v *Validator) lookup(kid string) any {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	if v.jwks == nil {
+	if !v.freshLocked(v.opts.now()) {
 		return nil
 	}
 	if keys := v.jwks.Key(kid); len(keys) > 0 {
 		return keys[0].Key
 	}
 	return nil
+}
+
+// freshLocked reports whether the cached key set may be used at now: there is one, younger than jwksMaxAgeSeconds.
+// Callers hold v.mu.
+func (v *Validator) freshLocked(now time.Time) bool {
+	return v.jwks != nil && now.Sub(v.loadedAt) < jwksMaxAgeSeconds*time.Second
 }
 
 func (v *Validator) fetch(ctx context.Context) error {
@@ -372,7 +410,7 @@ func (v *Validator) fetch(ctx context.Context) error {
 		return &TransportError{Msg: "JWKS response contains no keys"}
 	}
 	v.mu.Lock()
-	v.jwks = &ks
+	v.jwks, v.loadedAt = &ks, v.opts.now()
 	v.mu.Unlock()
 	return nil
 }

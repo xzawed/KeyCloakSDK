@@ -1,4 +1,4 @@
-//! DoS-safe JWKS: kid 캐시, 미해결 kid만 재조회, rate-limit + single-flight.
+//! DoS-safe JWKS: kid 캐시(키셋 수명 300초), 그 안에서는 미해결 kid만 재조회, rate-limit + single-flight.
 use crate::error::{KeycloakError, Result};
 use jsonwebtoken::jwk::{Jwk, JwkSet};
 use std::sync::Arc;
@@ -7,9 +7,16 @@ use tokio::time::Instant; // ⚠️ std 가 아니라 tokio 시계다 — `start
 // 결정적으로 넘길 수 있어야 한다(실시간 sleep 없이).
 use tokio::sync::{Mutex, RwLock};
 
+/// 성공한 조회가 받은 키셋의 수명(초, 아홉 언어 공통) — 그 조회가 끝난 때(`tokio::time::Instant`, 단조)부터 센다.
+/// 그 나이에 이르면 캐시는 콜드와 **똑같다**: `get_key` 가 같은 게이트 잠금(single-flight) 아래 같은 실패 백오프로
+/// 다시 받고, 30초 강제 재조회 창은 보지도 찍지도 않는다. 그 조회가 실패하면 조회가 실패한다 — 나이가 찬 키는
+/// IdP 장애 중에도 다시 쓰지 않는다. 강제 재조회의 성공도 키셋을 바꾸고 나이를 다시 센다.
+/// ⚠️ 교차언어 가드가 이 값을 뽑는다 — 식이 아니라 맨 십진 리터럴로 둔다.
+const JWKS_MAX_AGE_SECONDS: u64 = 300;
+
 /// ⚠️ **실패한 fetch 의 백오프 — `min_refetch` 와 다른 축이다.**
-/// `min_refetch`(30초)는 *캐시가 찬 뒤* 미해결 kid 홍수를 막는다. 아래 둘은 **캐시가 비어 있고
-/// fetch 가 계속 실패할 때**를 막는다. 그 자리에는 게이트가 없어서, 측정상 20회 조회가 IdP 요청
+/// `min_refetch`(30초)는 *캐시가 찬 뒤* 미해결 kid 홍수를 막는다. 아래 둘은 **캐시가 비어 있고(또는 수명을
+/// 다했고) fetch 가 계속 실패할 때**를 막는다. 그 자리에는 게이트가 없어서, 측정상 20회 조회가 IdP 요청
 /// 20건을 그대로 냈다(2026-09-04 · 7개 언어 동일).
 ///
 /// ⚠️ **여기에 `min_refetch`(30초)를 재사용하면 안 된다** — 일시적 503 한 번이 「30초간 어떤
@@ -62,6 +69,7 @@ struct Gate {
     last_refetch: Option<Instant>, // 마지막 *강제* 재조회 결정 시각
     failures: u32,                 // 연속 fetch 실패 횟수(성공 시 0)
     last_failure: Option<Instant>, // 마지막 fetch 실패 시각
+    backoff: Duration,             // 그 실패가 연 창 — jitter 는 실패를 기록할 때 한 번 뽑았다
 }
 
 impl Gate {
@@ -70,8 +78,23 @@ impl Gate {
         let Some(last) = self.last_failure else {
             return Duration::ZERO;
         };
-        self.backoff_delay()
+        self.backoff
             .saturating_sub(now.saturating_duration_since(last))
+    }
+
+    /// fetch 실패 하나를 기록하고 그 창을 **지금** 정한다 — jitter 는 여기서 한 번 뽑는다. 검사마다 뽑으면 창의 끝이
+    /// 검사마다 움직여, 같은 순간에 한 검사는 거부하고 다음 검사는 IdP 로 나갔다
+    /// (`backoff_jitter_is_drawn_once_when_the_failure_is_recorded`).
+    fn record_failure(&mut self, now: Instant, jitter: f64) {
+        self.failures = self.failures.saturating_add(1);
+        self.last_failure = Some(now);
+        self.backoff = self.backoff_delay(jitter);
+    }
+
+    fn record_success(&mut self) {
+        self.failures = 0;
+        self.last_failure = None;
+        self.backoff = Duration::ZERO;
     }
 
     /// 지수 백오프 + jitter([0.5, 1.0] 배수). jitter 는 여러 인스턴스가 같은 순간에 복구를
@@ -79,17 +102,17 @@ impl Gate {
     ///
     /// ⚠️ jitter 원천이 `rand` 가 아니라 벽시계 나노초인 것은 의도다 — 런타임 의존을 하나
     /// 늘리지 않으려는 것이고, 이 값은 암호용이 아니라 **분산용**이라 그 강도로 충분하다.
-    fn backoff_delay(&self) -> Duration {
+    fn backoff_delay(&self, jitter: f64) -> Duration {
         let shift = self.failures.max(1) - 1;
         let raw = FAILURE_BACKOFF_BASE
             .saturating_mul(1u32.checked_shl(shift.min(31)).unwrap_or(u32::MAX))
             .min(FAILURE_BACKOFF_CAP);
-        raw.mul_f64(jitter())
+        raw.mul_f64(jitter)
     }
 }
 
-/// [0.5, 1.0) 배수.
-fn jitter() -> f64 {
+/// [0.5, 1.0) 배수 — 기본 jitter 원천(`JwksStore::jitter`).
+fn clock_jitter() -> f64 {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.subsec_nanos())
@@ -101,13 +124,20 @@ pub struct JwksStore {
     source: Arc<Source>,
     gate: Arc<Mutex<Gate>>, // single-flight + rate-limit + 실패 백오프 — 떼어 낸 fetch 가 소유 가드를 쥔다
     min_refetch: u64,
+    jitter: fn() -> f64, // 실패 백오프의 jitter 원천 — 시험 이음매(기본 `clock_jitter`)
 }
 
 /// 떼어 낸 fetch 태스크가 들고 가는 것 — 호출자가 사라져도 이것만으로 끝까지 돌아 캐시를 채운다.
 struct Source {
     jwks_uri: String,
     http: reqwest::Client,
-    cache: RwLock<Option<Arc<JwkSet>>>,
+    cache: RwLock<Option<Cached>>,
+}
+
+/// 캐시된 키셋과 그것을 받은 조회가 끝난 시각 — 그로부터 `JWKS_MAX_AGE_SECONDS` 동안만 쓴다.
+struct Cached {
+    set: Arc<JwkSet>,
+    loaded_at: Instant,
 }
 
 impl JwksStore {
@@ -120,6 +150,7 @@ impl JwksStore {
             }),
             gate: Arc::new(Mutex::new(Gate::default())),
             min_refetch: min_refetch_secs,
+            jitter: clock_jitter,
         }
     }
 }
@@ -172,7 +203,10 @@ impl Source {
             ));
         }
         let arc = Arc::new(set);
-        *self.cache.write().await = Some(arc.clone());
+        *self.cache.write().await = Some(Cached {
+            set: arc.clone(),
+            loaded_at: Instant::now(),
+        });
         Ok(arc)
     }
 }
@@ -182,9 +216,25 @@ impl JwksStore {
         set.and_then(|s| s.find(kid)).cloned()
     }
 
-    /// kid로 JWK 조회. 캐시 히트=네트워크 0. 미해결 kid만 rate-limited 재조회.
+    /// 아직 쓸 수 있는 캐시의 키셋 — 비었거나 `JWKS_MAX_AGE_SECONDS` 를 다했으면 `None`(콜드와 똑같다).
+    fn fresh_set(cache: &Option<Cached>, now: Instant) -> Option<&Arc<JwkSet>> {
+        cache
+            .as_ref()
+            .filter(|c| {
+                now.saturating_duration_since(c.loaded_at)
+                    < Duration::from_secs(JWKS_MAX_AGE_SECONDS)
+            })
+            .map(|c| &c.set)
+    }
+
+    /// kid로 JWK 조회. 신선한 캐시 히트=네트워크 0 · 수명을 다한 캐시는 콜드처럼 다시 받는다 · 미해결 kid만
+    /// rate-limited 재조회.
     pub async fn get_key(&self, kid: &str) -> Result<Jwk> {
-        if let Some(jwk) = Self::lookup(self.source.cache.read().await.as_ref(), kid) {
+        let hit = Self::lookup(
+            Self::fresh_set(&*self.source.cache.read().await, Instant::now()),
+            kid,
+        );
+        if let Some(jwk) = hit {
             return Ok(jwk);
         }
         // ⚠️ gate 획득이 **콜드 로드와 강제 재조회 양쪽의** single-flight 지점이다. 예전에는
@@ -194,11 +244,13 @@ impl JwksStore {
         let mut gate = self.gate.clone().lock_owned().await;
         let cold = {
             let c = self.source.cache.read().await;
+            let fresh = Self::fresh_set(&c, Instant::now());
             // gate 획득 후 재확인(다른 태스크가 방금 채웠을 수 있음)
-            if let Some(jwk) = Self::lookup(c.as_ref(), kid) {
+            if let Some(jwk) = Self::lookup(fresh, kid) {
                 return Ok(jwk);
             }
-            c.is_none()
+            // ⚠️ 수명을 다한 키셋은 콜드와 **똑같다** — 이 잠금 · 아래 백오프를 같이 타고 30초 창은 건너뛴다.
+            fresh.is_none()
         };
 
         if !cold {
@@ -217,7 +269,7 @@ impl JwksStore {
             gate.last_refetch = Some(Instant::now());
         }
 
-        // ⚠️ 백오프 검사는 fetch **직전**이자 30초 게이트 **이후**다. 콜드 캐시에서는 위 분기가
+        // ⚠️ 백오프 검사는 fetch **직전**이자 30초 게이트 **이후**다. 콜드(또는 수명을 다한) 캐시에서는 위 분기가
         // 통째로 건너뛰어지므로, 이 줄이 없으면 매 조회가 IdP 로 나간다(그게 원래 결함이다).
         let remaining = gate.backoff_remaining(Instant::now());
         if !remaining.is_zero() {
@@ -234,17 +286,12 @@ impl JwksStore {
         // 핸들을 버려도 태스크는 취소되지 않는다. ⚠️ 취소 시 stamp 를 되돌리지 말 것 — 취소된 위조 kid 검증마다 IdP
         // 요청이 하나씩 나간다. ⚠️ 저수준 주입에 타임아웃 없는 클라이언트를 주면 멈춘 IdP 가 게이트를 그만큼 쥔다.
         let source = self.source.clone();
+        let jitter = self.jitter;
         let fetch = tokio::spawn(async move {
             let fetched = source.fetch().await;
             match &fetched {
-                Ok(_) => {
-                    gate.failures = 0;
-                    gate.last_failure = None;
-                }
-                Err(_) => {
-                    gate.failures = gate.failures.saturating_add(1);
-                    gate.last_failure = Some(Instant::now());
-                }
+                Ok(_) => gate.record_success(),
+                Err(_) => gate.record_failure(Instant::now(), jitter()),
             }
             fetched
         });
@@ -551,32 +598,28 @@ mod tests {
 
     /// 회귀 — 위 시험의 「두 배가 아니다」 단언이 두 배 상실을 **jitter 와 무관하게** 잡는가. 두 배를 잃은
     /// 둘째 창은 첫 창과 같으므로 실패 1 회의 게이트로, 두 배가 된 창은 실패 2 회의 게이트로 본다. jitter 는
-    /// 벽시계 나노초의 1ms 주기에서 뽑히니, 진짜 `backoff_remaining` 을 1ms 보다 훨씬 오래 걸릴 만큼 불러
-    /// 주기 전체를 훑는다 — 통과는 jitter 값에 기대지 않고(모든 값에서 성립해야 한다), 탐침이 헐거우면
-    /// 어느 판에서든 깨진다.
+    /// 실패를 기록할 때 `clock_jitter` 가 벽시계 나노초의 1ms 주기에서 한 번 뽑으니(0.5 + k/2_000_000, k < 10⁶),
+    /// 그 원천이 낼 수 있는 값 백만 개를 전부 넣어 본다 — 통과는 jitter 값에 기대지 않고(모든 값에서 성립해야
+    /// 한다), 탐침이 헐거우면 어느 값에서든 깨진다.
     #[test]
     fn doubling_probe_splits_undoubled_from_doubled_window_at_every_jitter() {
         let t0 = Instant::now();
         let at = t0 + SECOND_WINDOW_PROBE;
-        let undoubled = Gate {
-            failures: 1,
-            last_failure: Some(t0),
-            ..Gate::default()
-        };
-        let doubled = Gate {
-            failures: 2,
-            last_failure: Some(t0),
-            ..Gate::default()
-        };
-        for _ in 0..200_000 {
+        for k in 0..1_000_000u32 {
+            let jitter = 0.5 + f64::from(k) / 2_000_000.0;
+            let mut undoubled = Gate::default();
+            undoubled.record_failure(t0, jitter);
+            let mut doubled = Gate::default();
+            doubled.record_failure(t0, jitter);
+            doubled.record_failure(t0, jitter);
             let left = undoubled.backoff_remaining(at);
             assert!(
                 left.is_zero(),
-                "두 배를 잃은 창이 탐침 {SECOND_WINDOW_PROBE:?} 을 {left:?} 넘는다 — 이 jitter 에서는 두 배 상실이 산다"
+                "두 배를 잃은 창이 탐침 {SECOND_WINDOW_PROBE:?} 을 {left:?} 넘는다 — jitter {jitter} 에서는 두 배 상실이 산다"
             );
             assert!(
                 !doubled.backoff_remaining(at).is_zero(),
-                "두 배가 된 창이 탐침 {SECOND_WINDOW_PROBE:?} 전에 끝났다 — 둘째 창이 0.2초보다 짧다"
+                "두 배가 된 창이 탐침 {SECOND_WINDOW_PROBE:?} 전에 끝났다 — jitter {jitter} 에서 둘째 창이 0.2초보다 짧다"
             );
         }
     }
@@ -1098,5 +1141,267 @@ mod tests {
         let jwk = retried.expect("the fetch landed while its runtime lived — k2 must be cached");
         assert_eq!(jwk.common.key_id.as_deref(), Some("k2"));
         assert_eq!(hits, 2, "exactly one /certs request for the window");
+    }
+
+    // ── 키셋의 수명 300 초 (jwks-cache-lifetime-divergent, 판정 2026-10-29) ──────────────────────────────────────
+    //
+    // 성공한 조회가 받은 키셋은 그 조회가 끝난 때부터 300 초만 쓴다. 그 나이에 이르면 캐시는 콜드와 똑같다: 같은 게이트
+    // 잠금(single-flight) 아래 같은 실패 백오프로 다시 받고, 실패하면 조회가 실패한다 — 낡은 키로 물러서지 않는다.
+    // 시각은 리터럴로 적는다 — 상수에서 끌어 쓰면 상수가 바뀔 때 이 시험도 함께 움직인다. 클라이언트는 `timerless_http`
+    // 다 — 풀 정리 타이머가 있으면 멈춘 시계가 I/O 를 기다리는 동안 자동 전진해 적재 시각이 밀린다.
+
+    fn jwks_of(kids: &[&str]) -> serde_json::Value {
+        let keys: Vec<_> = kids
+            .iter()
+            .map(|kid| {
+                serde_json::json!({ "kty":"RSA","kid":kid,"use":"sig","alg":"RS256","n":"sXchg","e":"AQAB" })
+            })
+            .collect();
+        serde_json::json!({ "keys": keys })
+    }
+
+    fn serving(kids: &[&str]) -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(jwks_of(kids))
+    }
+
+    /// 시험이 응답을 바꿔 낼 수 있는 /certs — 키셋 교체 · 장애 · 회복.
+    #[derive(Clone)]
+    struct Switchable(Arc<std::sync::Mutex<ResponseTemplate>>);
+
+    impl wiremock::Respond for Switchable {
+        fn respond(&self, _: &wiremock::Request) -> ResponseTemplate {
+            self.0.lock().expect("responder").clone()
+        }
+    }
+
+    impl Switchable {
+        fn set(&self, next: ResponseTemplate) {
+            *self.0.lock().expect("responder") = next;
+        }
+    }
+
+    async fn switchable_idp(first: ResponseTemplate) -> (MockServer, Switchable) {
+        let server = MockServer::start().await;
+        let idp = Switchable(Arc::new(std::sync::Mutex::new(first)));
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(idp.clone())
+            .mount(&server)
+            .await;
+        (server, idp)
+    }
+
+    /// 적재 한 번으로 캐시를 채운다 — 멈춘 시계는 그사이 움직이지 않으므로 돌려준 시각이 그 적재가 끝난 시각이다.
+    async fn warm(store: &JwksStore, server: &MockServer) -> Instant {
+        let t0 = Instant::now();
+        store.get_key("k1").await.expect("warm load");
+        assert_eq!(Instant::now(), t0, "the load moved the paused clock");
+        assert_eq!(certs_hits(server).await, 1);
+        t0
+    }
+
+    /// T1 정상 만료 — 299 초에는 조회 없이 답하고, 301 초에는 정확히 한 번 조회하고 답한다(방금 받은 키셋의 나이는 0).
+    #[tokio::test(start_paused = true)]
+    async fn key_set_is_used_for_300_seconds_then_fetched_again() {
+        let (server, _idp) = switchable_idp(serving(&["k1"])).await;
+        let store = JwksStore::new(format!("{}/certs", server.uri()), timerless_http(), 30);
+        let t0 = warm(&store, &server).await;
+        tokio::time::advance(Duration::from_secs(299)).await;
+        store.get_key("k1").await.expect("299 s");
+        assert_eq!(
+            certs_hits(&server).await,
+            1,
+            "299 s — the cached set still answers"
+        );
+        tokio::time::advance(Duration::from_secs(2)).await;
+        store.get_key("k1").await.expect("301 s");
+        assert_eq!(
+            certs_hits(&server).await,
+            2,
+            "301 s — the set has expired and is fetched once"
+        );
+        store.get_key("k1").await.expect("right after");
+        assert_eq!(certs_hits(&server).await, 2, "the set just fetched is new");
+        assert_eq!(
+            Instant::now(),
+            t0 + Duration::from_secs(301),
+            "the paused clock moved by itself"
+        );
+    }
+
+    /// T2 만료 뒤 장애 — 301 초의 조회는 한 번 나가 503 으로 실패하고(캐시된 kid 라도 — 낡은 키로 물러서지 않는다),
+    /// 백오프 창 안은 IdP 없이 실패하며, IdP 가 회복하고 창이 지나면 한 번 나가 답한다. 창의 탐침은 jitter 와 무관하다 —
+    /// 첫 창은 0.2초 × [0.5, 1.0) = [100ms, 200ms) 다.
+    #[tokio::test(start_paused = true)]
+    async fn expired_key_set_is_not_used_during_an_outage() {
+        let (server, idp) = switchable_idp(serving(&["k1"])).await;
+        let store = JwksStore::new(format!("{}/certs", server.uri()), timerless_http(), 30);
+        warm(&store, &server).await;
+        idp.set(ResponseTemplate::new(503));
+        tokio::time::advance(Duration::from_secs(301)).await;
+        match store.get_key("k1").await {
+            Err(KeycloakError::Transport(m)) => assert!(m.contains("HTTP 503"), "{m}"),
+            other => panic!("301 s, IdP down — the expired set must not answer, got {other:?}"),
+        }
+        assert_eq!(certs_hits(&server).await, 2);
+        for _ in 0..5 {
+            assert!(
+                backing_off(&store.get_key("k1").await),
+                "inside the backoff window"
+            );
+        }
+        tokio::time::advance(Duration::from_nanos(99_999_999)).await;
+        assert!(
+            backing_off(&store.get_key("k1").await),
+            "still inside the shortest first window"
+        );
+        assert_eq!(certs_hits(&server).await, 2);
+        idp.set(serving(&["k1"]));
+        tokio::time::advance(Duration::from_nanos(100_000_001)).await; // 실패로부터 0.2초 — 어느 jitter 의 창도 지났다
+        store
+            .get_key("k1")
+            .await
+            .expect("IdP recovered and the window has passed");
+        assert_eq!(certs_hits(&server).await, 3);
+    }
+
+    /// T3 지운 키 — k1·k2 로 적재, IdP 가 이제 k2 만 낸다: 299 초에는 캐시가 답하고(대조), 301 초에 k1 은 재조회 뒤
+    /// 모르는 kid 로 실패하며 k2 는 그 키셋에서 답한다.
+    #[tokio::test(start_paused = true)]
+    async fn key_removed_from_the_set_is_rejected_once_the_set_expires() {
+        let (server, idp) = switchable_idp(serving(&["k1", "k2"])).await;
+        let store = JwksStore::new(format!("{}/certs", server.uri()), timerless_http(), 30);
+        warm(&store, &server).await;
+        idp.set(serving(&["k2"]));
+        tokio::time::advance(Duration::from_secs(299)).await;
+        store
+            .get_key("k1")
+            .await
+            .expect("299 s — control: within its age the cached set answers");
+        assert_eq!(certs_hits(&server).await, 1);
+        tokio::time::advance(Duration::from_secs(2)).await;
+        match store.get_key("k1").await {
+            Err(KeycloakError::TokenValidation(m)) => assert_eq!(m, "unknown kid"),
+            other => panic!("301 s — refetched, k1 is gone: got {other:?}"),
+        }
+        assert_eq!(certs_hits(&server).await, 2);
+        store
+            .get_key("k2")
+            .await
+            .expect("k2 answers from the set just fetched");
+        assert_eq!(certs_hits(&server).await, 2);
+    }
+
+    /// T4 — 100 초의 미해결 kid 강제 재조회(회전한 k2)가 성공하면 키셋을 바꾸고 나이를 다시 센다: 350 초(그
+    /// 재조회로부터 250 초)에는 조회가 없고, 401 초(301 초)에는 한 번 있다.
+    #[tokio::test(start_paused = true)]
+    async fn forced_refetch_restarts_the_age() {
+        let (server, idp) = switchable_idp(serving(&["k1"])).await;
+        let store = JwksStore::new(format!("{}/certs", server.uri()), timerless_http(), 30);
+        warm(&store, &server).await;
+        idp.set(serving(&["k1", "k2"]));
+        tokio::time::advance(Duration::from_secs(100)).await;
+        store
+            .get_key("k2")
+            .await
+            .expect("100 s — an unknown kid forces a refetch");
+        assert_eq!(certs_hits(&server).await, 2);
+        tokio::time::advance(Duration::from_secs(250)).await;
+        store.get_key("k1").await.expect("350 s");
+        assert_eq!(
+            certs_hits(&server).await,
+            2,
+            "350 s — 250 s after the refetch, no fetch"
+        );
+        tokio::time::advance(Duration::from_secs(51)).await;
+        store.get_key("k1").await.expect("401 s");
+        assert_eq!(
+            certs_hits(&server).await,
+            3,
+            "401 s — 301 s after the refetch, the restarted age has run out"
+        );
+    }
+
+    /// 나이가 찬 키셋의 재적재도 콜드 적재와 **같은 게이트 잠금** 아래다 — 동시 조회 20 이 요청 하나로 접힌다
+    /// (`concurrent_cold_start_collapses_to_one_fetch` 의 짝). 잠금 밖에서 다시 받으면 여기서 21 이 된다.
+    #[tokio::test(start_paused = true)]
+    async fn concurrent_lookups_on_an_expired_set_collapse_to_one_fetch() {
+        let (server, _idp) = switchable_idp(serving(&["k1"])).await;
+        let store = Arc::new(JwksStore::new(
+            format!("{}/certs", server.uri()),
+            timerless_http(),
+            30,
+        ));
+        warm(&store, &server).await;
+        tokio::time::advance(Duration::from_secs(301)).await;
+        let lookups: Vec<_> = (0..20)
+            .map(|_| {
+                let s = store.clone();
+                tokio::spawn(async move { s.get_key("k1").await.is_ok() })
+            })
+            .collect();
+        for h in lookups {
+            assert!(h.await.unwrap(), "every concurrent lookup must resolve k1");
+        }
+        assert_eq!(
+            certs_hits(&server).await,
+            2,
+            "20 concurrent lookups on an expired set must collapse to one fetch"
+        );
+    }
+
+    /// 실패 백오프의 jitter 는 실패를 **기록할 때** 한 번 뽑는다(등록부 backoff-jitter-redrawn-per-check) — 실패 하나 뒤
+    /// 같은 순간의 거듭된 검사는 같은 답이고, 창의 끝은 검사 사이에 움직이지 않는다. 이음매는 뽑을 때마다 0.95 와 0.5 를
+    /// 번갈아 낸다: 한 번 뽑으면 첫 창은 0.2초 × 0.95 = 190ms 다. 검사마다 뽑으면 둘째 검사가 0.5(창 100ms)를 받아
+    /// 150ms 에 IdP 로 나가고, 같은 실패가 한 번은 거부하고 한 번은 통과시킨다.
+    #[tokio::test(start_paused = true)]
+    async fn backoff_jitter_is_drawn_once_when_the_failure_is_recorded() {
+        static DRAWS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        fn alternating() -> f64 {
+            if DRAWS
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                .is_multiple_of(2)
+            {
+                0.95
+            } else {
+                0.5
+            }
+        }
+        let server = failing_server().await;
+        let mut store = JwksStore::new(format!("{}/certs", server.uri()), timerless_http(), 30);
+        store.jitter = alternating;
+
+        assert!(store.get_key("k1").await.is_err()); // 실패 1(콜드 캐시)
+        tokio::time::advance(Duration::from_millis(150)).await;
+        let in_window = "JWKS fetch backing off after 1 consecutive failures (retry in 0.04s)";
+        for i in 0..6 {
+            match store.get_key("k1").await {
+                Err(KeycloakError::Transport(m)) => {
+                    assert_eq!(m, in_window, "check {i} at the same instant")
+                }
+                other => panic!("check {i} at the same instant: got {other:?}"),
+            }
+        }
+        assert_eq!(
+            certs_hits(&server).await,
+            1,
+            "checks inside the window reached the IdP"
+        );
+        tokio::time::advance(Duration::from_nanos(39_999_999)).await; // 실패로부터 190ms − 1ns
+        assert!(
+            backing_off(&store.get_key("k1").await),
+            "1ns before the window's end the check must still refuse (the end did not move earlier)"
+        );
+        tokio::time::advance(Duration::from_nanos(1)).await; // 190ms
+        assert!(
+            !backing_off(&store.get_key("k1").await),
+            "at the window's end the fetch must go (the end did not move later)"
+        );
+        assert_eq!(certs_hits(&server).await, 2);
+        assert_eq!(
+            DRAWS.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "once per recorded failure, never per check"
+        );
     }
 }

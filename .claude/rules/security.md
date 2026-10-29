@@ -10,7 +10,12 @@ paths:
   - "rust/**"
   - "ruby/**"
 ---
-<!-- doc-budget: max-bytes=6348 -->
+<!-- doc-budget: max-bytes=6633 -->
+<!-- 6348 → 6633 (2026-10-29): 래칫 조건 (1) — 증가분이 **기계 검증을 사 온다.** 새 「JWKS key-set lifetime」 줄의 300 은
+     `test-security-defaults.sh` 1h 축(아홉 선언 · 대조군 넷)과 4절 소유자 축이 대조한다 — 아홉이 함께 움직이는 새 값이다
+     (판정 2026-10-29 사람 위임 「권장안」 — 등록부 `jwks-cache-lifetime-divergent`). **교환** — 같은 커밋이 거짓 하나와 사본
+     하나를 지웠다: 66행의 「WARM-cache only … needs a populated cache」(만료된 집합도 콜드 길이다 — 이제 「fresh-cache」)와
+     80행의 「per-language ceiling — Nimbus cache TTL」(그 TTL 이 이제 이 300 이라 새 줄 한 문장으로 들어갔다). -->
 <!-- 6141 → 6348 (2026-10-29): 래칫 조건 (1) — 증가분이 **기계 검증을 사 온다.** 새 「Admin bearer grammar」 줄은
      `test-security-defaults.sh` 1g 축(양성·음성 대조)이 아홉 시험표가 같은 정본 행 스물을 갖는지로 대조한다 — 아홉이
      함께 움직이는 새 규칙이라 이 파일이 자리다(판정 2026-10-29 사람 위임 「권장안」 — 등록부 `bearer-token-grammar-divergent`).
@@ -68,7 +73,7 @@ Only what the nine must move **together** lives here — changing one language a
 
 ⚠️ **Stamp the forced-refetch window when the fetch is decided, not when it succeeds** — a success-only stamp leaves it open through an outage. So a 503 spends the window too, and a stamped fetch must run to completion under the SDK's own HTTP timeouts, whatever the caller cancels; **never roll the stamp back on cancellation** (python: each cancelled forged-kid validation then cost an IdP request — 10 vs 1).
 
-⚠️ **Every count above is WARM-cache only — the 30s gate never sees the initial load**, because it sits on the *forced* (unresolved-kid) path, which needs a populated cache. Probe (2026-09-04 · cold cache · JWKS 503 · 20 validations · IdP requests) **before → after**: rust·go·python·php·node·ruby all **20→1**; **dotnet 40→2** (two requests per validation there, so one window costs two). Healthy controls (20 forced) stayed 1-4. ⚠️ **java·kotlin were already at 2 and were not changed** (2026-09-06): Nimbus rate-limits the *source*, so it covers the cold load the other seven missed. `JwksColdCacheOutageTest` pins both lanes — control interval 0 → **20**.
+⚠️ **Every count above is fresh-cache only — the 30s gate never sees the initial load or a reload after the key set expires**, because it sits on the *forced* (unresolved-kid) path, which needs a fresh cache. Probe (2026-09-04 · cold cache · JWKS 503 · 20 validations · IdP requests) **before → after**: rust·go·python·php·node·ruby all **20→1**; **dotnet 40→2** (two requests per validation there, so one window costs two). Healthy controls (20 forced) stayed 1-4. ⚠️ **java·kotlin were already at 2 and were not changed** (2026-09-06): Nimbus rate-limits the *source*, so it covers the cold load the other seven missed. `JwksColdCacheOutageTest` pins both lanes — control interval 0 → **20**.
 
 **The fix, in all seven** (reference: `ruby/lib/keycloak_sdk/jwks_store.rb`): back off *failed* fetches — 0.2s doubling to a 5s cap, jitter ×[0.5, 1.0) — and inside the window fail immediately **without touching the IdP**. Four rules, each measured: (1) ⚠️ **never reuse the 30s here** — one transient 503 would mean "no token validates for 30s", worse than the defect; (2) ⚠️ **never sleep** — pacing retries is the consumer's job, not a library's; (3) ⚠️ **success resets the counter**, or a long-lived process stays pinned at the cap; (4) ⚠️ **a warm-cache unresolved-kid rejection is not a fetch failure** — counting it lets a forged-kid flood raise the backoff and block legitimate tokens (node: `JWKSNoMatchingKey` and `remote.fresh` never count).
 
@@ -82,7 +87,9 @@ Only what the nine must move **together** lives here — changing one language a
 
 Change either one **in all nine at once**. The guard is `scripts/test/test-security-defaults.sh`, which inspects the code, the docs and the secondary definition sites.
 
-⚠️ These values also have a **per-language ceiling** — on Java and Kotlin they must stay below the Nimbus cache TTL (`.claude/rules/java.md` · `kotlin.md`).
+## JWKS key-set lifetime
+
+⚠️ **A key set expires 300 seconds after its fetch, in all nine; an expired set is a cold cache** — the next validation refetches on the cold-load path (same single flight and backoff) and a failed refetch rejects, no stale fallback: an unreachable JWKS and a removed key look the same. On Java and Kotlin it is the Nimbus TTL, so the 30s values must stay below it. Guard: axis 1h.
 
 ## Token-response cap
 

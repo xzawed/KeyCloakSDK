@@ -31,11 +31,18 @@ import java.time.Duration
 // 단위는 String.length(UTF-16 단위)다 — 정상 JWT 는 ASCII 라 바이트 수와 같다.
 internal const val JWT_MAX_BYTES: Int = 256_000
 
+// JWKS 키 집합의 수명(초) — 아홉 언어가 함께 움직인다(등록부 jwks-cache-lifetime-divergent, 판정 2026-10-29). 이 나이에
+// 닿은 집합은 콜드 캐시처럼 다시 가져오고, 그 조회가 실패하면 검증이 실패한다 — 낡은 집합으로 물러서지 않는다(outage
+// tolerance 를 명시적으로 끈다). Nimbus 캐시 TTL 로 넣는다(remoteJwkSource). ⚠️ Nimbus 는 그 나이를 조회가 끝난 때가
+// 아니라 그 조회를 부른 검증이 **시작한** 때부터(그만큼 짧다), monotonic 이 아니라 벽시계(System.currentTimeMillis)로
+// 센다 — 시계를 뒤로 돌리면 그만큼 길어진다(JwksMaxAgeTest 머리 주석). Java 자매(`JwtValidator.JWKS_MAX_AGE_SECONDS`)와 같다.
+internal const val JWKS_MAX_AGE_SECONDS: Int = 300
+
 // jwt.kt — JwtValidator: Java SDK의 JwtValidator(io.github.xzawed.keycloak.auth.JwtValidator)와 100%
 // 동형인 하드닝 불변식(§jwt)을 지킨다: RS256 alg 핀 · alg=none/미서명 명시 거부 · iss 정확일치
 // (exactMatchClaims엔 issuer만 — aud를 넣으면 다중값 정상 토큰이 오탐 거부된다) · aud 포함검사 ·
-// exp 필수 · 클록스큐 · DoS-safe JWKS(JWKSourceBuilder 기본값 = cache+refreshAhead+rateLimited 활성 —
-// retrying/outageTolerant는 기본 비활성. 위조 서명은 재조회 유발 안 함·미해결 kid만 rate-limited 재조회).
+// exp 필수 · 클록스큐 · DoS-safe JWKS(cache TTL = JWKS_MAX_AGE_SECONDS · refreshAhead · rateLimited —
+// outageTolerant 는 명시적으로 끈다 · retrying 은 기본 비활성. 위조 서명은 재조회 유발 안 함·미해결 kid만 rate-limited 재조회).
 // ⚠️ 생성자 인자 목록을 바꾸지 말 것 — 게시본의 합성 public 생성자(끝에 DefaultConstructorMarker)가 이 모양이다.
 public class JwtValidator private constructor(
     private val jwkSource: JWKSource<SecurityContext>,
@@ -91,6 +98,9 @@ public class JwtValidator private constructor(
     // 갈려 IdP 요청 상한이 두 배가 된다(`IdTokenAudienceJwksTest`). 조회도 suspension point 도 없다.
     internal fun withAudience(audience: String): JwtValidator = JwtValidator(jwkSource, issuer, audience, allowedAlgs, skew)
 
+    // 이 검증기의 키 원천 — 시험이 forRealm 이 만든 체인을 꺼내 가짜 시계로 돌린다(JwksMaxAgeTest).
+    internal fun jwkSource(): JWKSource<SecurityContext> = jwkSource
+
     public companion object {
         /** 실 JWKS 엔드포인트를 지연 조회하는 운영용 팩토리(non-suspend — 조회는 첫 [validate] 호출 시점). */
         public fun forRealm(
@@ -116,30 +126,48 @@ public class JwtValidator private constructor(
                 } catch (e: MalformedURLException) {
                     throw TokenValidationException("Invalid JWKS URI", e)
                 }
-            // JWKSourceBuilder 기본값 중 DoS 방지에 실제로 기여하는 것은 cache + rateLimited(둘 다 기본
-            // true)뿐이다 — 위조 kid를 연속 주입해도 JWKS 재조회가 무제한으로 증폭되지 않는다.
-            // retrying/outageTolerant는 기본 false(비활성)이므로 이 체인에 포함되지 않는다. rateLimited
-            // 간격은 config로 설정 가능하게 한다(기본 30초 = Nimbus DEFAULT_RATE_LIMIT_MIN_INTERVAL 동형).
-            // ⚠️ Nimbus는 rate-limit 간격이 캐시 TTL(기본 5분) 이상이면 build()에서
+            // rateLimited 간격은 config로 설정 가능하게 한다(기본 30초 = Nimbus DEFAULT_RATE_LIMIT_MIN_INTERVAL 동형) —
+            // 위조 kid를 연속 주입해도 JWKS 재조회가 무제한으로 증폭되지 않는다.
+            // ⚠️ Nimbus는 rate-limit 간격이 캐시 TTL(JWKS_MAX_AGE_SECONDS) 이상이면 build()에서
             // IllegalStateException을 던진다(캐시가 만료돼도 rate-limit이 재조회를 막아 JWKS를 영영
             // 갱신할 수 없는 구성이므로 정당한 거부다). 그대로 두면 이 foreign 예외가 공개 API로
             // 새어나가므로(§4 위반) 경계에서 sealed KeycloakException 계급으로 바꾼다 — Java 동형.
             val source: JWKSource<SecurityContext> =
                 try {
-                    JWKSourceBuilder
-                        .create<SecurityContext>(jwksUrl, retriever)
-                        .rateLimited(config.jwksMinRefetch.toMillis())
-                        .build()
+                    remoteJwkSource(jwksUrl, retriever, config.jwksMinRefetch)
                 } catch (e: IllegalStateException) {
                     throw KeycloakConfigException(
                         "jwksMinRefetch (${config.jwksMinRefetch.toSeconds()}s) must be shorter than " +
-                            "the JWKS cache time-to-live " +
-                            "(${JWKSourceBuilder.DEFAULT_CACHE_TIME_TO_LIVE / 1000}s)",
+                            "the JWKS cache time-to-live (${JWKS_MAX_AGE_SECONDS}s)",
                         e,
                     )
                 }
             return JwtValidator(source, endpoints.issuer, audience, allowedAlgs, config.clockSkew)
         }
+
+        // forRealm 의 JWKS 체인(Java `JwtValidator.remoteJwkSource` 동형). 캐시 TTL 은 JWKS_MAX_AGE_SECONDS · outage
+        // tolerance 는 끈다(켜면 장애 중 낡은 집합을 돌려준다). refresh-ahead(기본 켜짐 — TTL 의 마지막 30초에 온 검증이
+        // 백그라운드로 미리 가져온다)는 그대로다: 나이를 줄일 뿐 늘리지 않는다. retrying 은 기본 비활성.
+        private fun remoteJwkSource(
+            jwksUrl: java.net.URL,
+            retriever: com.nimbusds.jose.util.ResourceRetriever,
+            minRefetch: Duration,
+        ): JWKSource<SecurityContext> =
+            JWKSourceBuilder
+                .create<SecurityContext>(jwksUrl, retriever)
+                .cache(JWKS_MAX_AGE_SECONDS * 1000L, JWKSourceBuilder.DEFAULT_CACHE_REFRESH_TIMEOUT)
+                .outageTolerant(false)
+                .rateLimited(minRefetch.toMillis())
+                .build()
+
+        /** 테스트 전용: 주어진 키 원천으로 검증기를 만든다(Java `JwtValidator.withJwkSource` 동형). */
+        internal fun withJwkSource(
+            jwkSource: JWKSource<SecurityContext>,
+            issuer: String,
+            audience: String,
+            allowedAlgs: Set<JWSAlgorithm>,
+            skew: Duration,
+        ): JwtValidator = JwtValidator(jwkSource, issuer, audience, allowedAlgs, skew)
 
         /** 테스트 전용: 네트워크 없이 정적 JWKS를 주입한다(Java `JwtValidator.withStaticJwks` 동형). */
         internal fun withStaticJwks(

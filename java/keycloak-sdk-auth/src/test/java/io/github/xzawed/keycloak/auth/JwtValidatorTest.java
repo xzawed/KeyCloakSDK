@@ -343,7 +343,7 @@ class JwtValidatorTest {
       String base = "http://127.0.0.1:" + server.getAddress().getPort();
       int attempts = 8;
 
-      // ⚠️ 간격은 Nimbus 캐시 TTL(기본 5분)보다 작아야 한다 — 그 이상이면 JWKSourceBuilder가
+      // ⚠️ 간격은 캐시 TTL(JwtValidator.JWKS_MAX_AGE_SECONDS)보다 작아야 한다 — 그 이상이면 JWKSourceBuilder가
       // IllegalStateException을 던진다(아래 jwksMinRefetch_atOrAboveCacheTtl_isRejectedAsConfigError 참고).
       int limited = countJwksHitsForUnknownKids(base, java.time.Duration.ofMinutes(2), attempts, hits, key);
       int unlimited = countJwksHitsForUnknownKids(base, java.time.Duration.ZERO, attempts, hits, key);
@@ -360,7 +360,7 @@ class JwtValidatorTest {
   }
 
   /**
-   * jwksMinRefetch가 Nimbus 캐시 TTL(5분) 이상이면 SDK 설정 오류로 거부된다.
+   * jwksMinRefetch가 캐시 TTL(JwtValidator.JWKS_MAX_AGE_SECONDS, 300초) 이상이면 SDK 설정 오류로 거부된다.
    * 이 경계는 위 rate-limit 테스트를 쓰다 발견했다 — 고치기 전에는 Nimbus의 `IllegalStateException`이
    * `forRealm`에서 그대로 새어나와, 공개 API에 하위 라이브러리 예외가 노출됐다(§4 위반).
    * 구성 자체를 거부하는 것은 정당하다: 캐시가 만료돼도 rate-limit이 재조회를 막으면 JWKS를

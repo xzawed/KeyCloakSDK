@@ -115,6 +115,24 @@ public sealed class ValidationCancellationTests : IDisposable
         Assert.Equal("u1", (await call.WaitAsync(Hang)).Subject);
     }
 
+    /// <summary>Control for the cancellation pin (<c>BackoffConfigurationManagerTests</c>: a cancelled cold load counts as a
+    /// failed fetch): a validation cancelled while its cold load waits on the IdP does not cancel that load — it lands, and the
+    /// next validation is answered from it with no request of its own and no backoff window in its way.</summary>
+    [Fact]
+    public async Task Control_a_validation_cancelled_during_its_cold_load_leaves_no_window_behind()
+    {
+        var v = Validator();
+        using var cts = new CancellationTokenSource();
+        var call = v.ValidateAsync(Token(), cts.Token);
+        await _idp.DiscoveryArrived.WaitAsync(Hang);
+        cts.Cancel();
+        Assert.IsAssignableFrom<OperationCanceledException>(await Ended(call));
+
+        _idp.Release();
+        Assert.Equal("u1", (await v.ValidateAsync(Token()).WaitAsync(Hang)).Subject);
+        Assert.Equal(2, _idp.Requests); // the cancelled call's discovery and JWKS fetch, and nothing since
+    }
+
     /// <summary>The exception the call ended with — failing the test if it is still running after <see cref="Hang"/>.</summary>
     private static async Task<Exception> Ended(Task call)
     {

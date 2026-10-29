@@ -438,15 +438,15 @@ describe('웜 캐시 + IdP 장애 — 위조 kid 의 강제 재조회도 창마�
     expect(certs).toBe(3)
   })
 
-  // ⚠️ 만료(cacheMaxAge 600 초) 갱신은 강제 재조회 창에 걸지 않는다. jose 는 만료된 캐시를 갱신하지 못하면 캐시된
+  // ⚠️ 만료(cacheMaxAge 300 초) 갱신은 강제 재조회 창에 걸지 않는다. jose 는 만료된 캐시를 갱신하지 못하면 캐시된
   // kid 도 거부하므로, 걸면 직전의 위조 kid 시도 하나 때문에 정상 토큰까지 30 초 막힌다.
   it('만료된 캐시의 갱신은 창에 걸리지 않는다 — 직전에 실패한 강제 재조회가 있어도 정상 토큰이 통과한다', async () => {
     const { v, t0 } = await warm()
-    vi.setSystemTime(t0 + 595_000)
+    vi.setSystemTime(t0 + 295_000)
     status = 503
     await expect(v.validate(await forgedKid('late'))).rejects.toThrow()
     expect(certs).toBe(2)
-    vi.setSystemTime(t0 + 601_000) // 마지막 성공(t0)으로부터 cacheMaxAge 를 넘었다 — 그 시도로부터는 6 초
+    vi.setSystemTime(t0 + 301_000) // 마지막 성공(t0)으로부터 cacheMaxAge 를 넘었다 — 그 시도로부터는 6 초
     status = 200
     await expect(v.validate(await legit())).resolves.toMatchObject({ subject: 'u' })
     expect(certs).toBe(3)
@@ -468,13 +468,13 @@ describe('웜 캐시 + IdP 장애 — 위조 kid 의 강제 재조회도 창마�
   })
 })
 
-// ⚠️ 여기부터가 **낡은 캐시 + IdP 장애** 축이다. jose 는 `cacheMaxAge`(600 초)가 지난 캐시를 `local` 로 둔 채
+// ⚠️ 여기부터가 **낡은 캐시 + IdP 장애** 축이다. jose 는 `cacheMaxAge`(300 초)가 지난 캐시를 `local` 로 둔 채
 // `getKey` 첫머리에서 갱신하고(`remote.js:66`), 그 갱신이 실패하면 캐시된 kid 까지 거부한다. 실패 백오프가 캐시가
 // **비어 있을 때만** 셌으므로(`remote.jwks() === undefined`) 낡은 캐시의 갱신 실패는 세지 않았다 — 실측(2026-10-05):
 // 601 초 · /certs 503 · 검증 10 회(k1 다섯 · 위조 다섯) → /certs 1 → 11.
 //
-// ⚠️ 수락 정책은 이 축의 몫이 아니다 — 장애 중 낡은 캐시의 키로 서명된 토큰을 받아 줄지(serve stale)는 아홉이 함께
-// 정할 판정이다. 지금처럼 거부한다(아래 단언이 그것도 잠근다).
+// ⚠️ 수락 정책은 아홉 공통 판정이다(2026-10-29) — 장애 중 낡은 캐시의 키로 서명된 토큰은 받지 않는다(serve stale 없음 —
+// 아래 단언이 그것도 잠근다). 수명 자체는 `jwt-jwks-max-age.test.ts` 가 본다.
 describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 백오프한다', () => {
   let srv: Server
   let uri: string
@@ -577,7 +577,7 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
 
   it('갱신 실패 한 번이 창을 연다 — 검증 10 회(k1·위조 번갈아)에 /certs 한 건, 나머지는 IdP 없이 즉시 거부', async () => {
     const { v, t0 } = await warm()
-    vi.setSystemTime(t0 + 601_000) // 마지막 성공(t0)으로부터 cacheMaxAge(600 초)를 넘었다
+    vi.setSystemTime(t0 + 301_000) // 마지막 성공(t0)으로부터 cacheMaxAge(300 초)를 넘었다
     status = 503
     const seen: string[] = []
     for (let i = 0; i < 10; i += 1) {
@@ -595,7 +595,7 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
   // 그것을 실패로 세면(규칙 (4)) 뒤따르는 k1 이 창에 막힌다.
   it('대조군 — IdP 가 정상이면 낡은 캐시는 갱신되고 정상 토큰이 통과한다(갱신을 위조 kid 가 일으켜도)', async () => {
     const { v, t0 } = await warm()
-    vi.setSystemTime(t0 + 601_000)
+    vi.setSystemTime(t0 + 301_000)
     const seen: string[] = []
     for (let i = 0; i < 10; i += 1) {
       seen.push(await outcome(v, i % 2 === 0 ? await forgedKid(`forged-${i}`) : await legit()))
@@ -620,7 +620,7 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
   })
 
   // ⚠️ 대조군(규칙 (4), 경계) — 실패를 「끝났을 때 신선한 캐시가 없다」만으로 세면, 30 초 창이 IdP 없이 거부한
-  // 위조 kid(그때는 신선한 캐시)가 그 결정과 catch 사이에 캐시가 600 초를 넘긴 것만으로 세어진다. 밀리초가 그 사이에
+  // 위조 kid(그때는 신선한 캐시)가 그 결정과 catch 사이에 캐시가 300 초를 넘긴 것만으로 세어진다. 밀리초가 그 사이에
   // 넘어가는 것을 `now` 이음매(창의 결정이 부른다)로 재현한다 — 그 판(PM 후보 그대로)에서는 정상 IdP 의 k1 이
   // 'backoff' 로 거부되고 /certs 는 2 그대로였다(갱신 시도조차 없었다).
   it('대조군(규칙 (4), 경계) — 창이 IdP 없이 거부한 위조 kid 는 그사이 캐시가 낡아도 실패로 세지 않는다', async () => {
@@ -634,17 +634,17 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
       return t
     }
     const { v, t0 } = await warm({ now, jitter: () => 1 })
-    vi.setSystemTime(t0 + 590_000)
+    vi.setSystemTime(t0 + 290_000)
     status = 503
-    // 실패한 강제 재조회 — 30 초 창을 찍지만 jose 의 캐시 시각(t0)은 그대로다. 성공했다면 경계가 1190 초로 밀린다.
+    // 실패한 강제 재조회 — 30 초 창을 찍지만 jose 의 캐시 시각(t0)은 그대로다. 성공했다면 경계가 590 초로 밀린다.
     expect(await outcome(v, await forgedKid('blip'))).toBe('rejected')
     expect(certs).toBe(2)
     status = 200
-    vi.setSystemTime(t0 + 599_999) // 캐시는 아직 신선하고, 창은 닫혔다(590 초에 찍힘)
+    vi.setSystemTime(t0 + 299_999) // 캐시는 아직 신선하고, 창은 닫혔다(290 초에 찍힘)
     tick = 1
     expect(await outcome(v, await forgedKid('edge'))).toBe('rejected') // IdP 없이 창이 거부
     expect(certs).toBe(2)
-    expect(Date.now()).toBe(t0 + 600_000) // 이음매가 실제로 밀리초를 넘겼다 — 그사이 캐시가 낡았다
+    expect(Date.now()).toBe(t0 + 300_000) // 이음매가 실제로 밀리초를 넘겼다 — 그사이 캐시가 낡았다
     expect(await outcome(v, await legit())).toBe('ok') // 정상 IdP — 갱신하고 통과한다
     expect(certs).toBe(3)
   })
@@ -653,7 +653,7 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
   // 장애가 이어지면 창이 두 배가 된다(0.2 → 0.4 초).
   it('대조군 — 창 안에서는 IdP 로 안 나가고, 창이 지나면 정확히 한 번 나간다(장애가 이어지면 창이 두 배)', async () => {
     const { v, t0 } = await warm({ jitter: () => 1 })
-    const t1 = t0 + 601_000
+    const t1 = t0 + 301_000
     vi.setSystemTime(t1)
     status = 503
     expect(await outcome(v, await legit())).toBe('rejected') // 실패 1 — 창 0.2 초
@@ -673,11 +673,11 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
     expect(certs).toBe(4)
   })
 
-  // ⚠️ 대조군 — 규칙 (3). 낡은 캐시는 성공한 뒤에도 600 초마다 다시 낡으므로 카운터가 남으면 다음 장애가 처음부터
+  // ⚠️ 대조군 — 규칙 (3). 낡은 캐시는 성공한 뒤에도 300 초마다 다시 낡으므로 카운터가 남으면 다음 장애가 처음부터
   // 긴 창으로 시작한다(상한 5 초에 붙은 채).
   it('대조군 — 성공하면 카운터가 돌아간다: 회복 뒤 다시 낡아 실패하면 창은 처음(0.2 초)부터다', async () => {
     const { v, t0 } = await warm({ jitter: () => 1 })
-    let t = t0 + 601_000
+    let t = t0 + 301_000
     vi.setSystemTime(t)
     status = 503
     expect(await outcome(v, await legit())).toBe('rejected') // 실패 1 — 창 0.2 초
@@ -692,7 +692,7 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
     status = 200
     expect(await outcome(v, await legit())).toBe('ok') // 회복 — 갱신 성공
     expect(certs).toBe(5)
-    vi.setSystemTime((t += 601_000)) // 그 성공으로부터 다시 cacheMaxAge 를 넘었다
+    vi.setSystemTime((t += 301_000)) // 그 성공으로부터 다시 cacheMaxAge 를 넘었다
     status = 503
     expect(await outcome(v, await legit())).toBe('rejected') // 리셋됐다면 실패 1 — 창 0.2 초
     expect(certs).toBe(6)
@@ -702,11 +702,11 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
   })
 
   // ⚠️ 대조군 — 규칙 (3) 의 「성공」은 **적재의** 성공이다. 회복 갱신을 위조 kid 가 일으키면 그 검증은 kid 를 못 찾아
-  // 던지지만 적재는 성공했다. 거기서 카운터가 안 돌아가면 다음 장애의 첫 창이 길어지고(0.2 → 0.4 초), jitter 가
-  // 검사마다 다시 뽑히는 탓에 신선한 캐시의 k1 까지 남은 창에 막힐 수 있다(참조 구현 ruby 는 fetch 성공에서 되돌린다).
+  // 던지지만 적재는 성공했다. 거기서 카운터가 안 돌아가면 다음 장애의 첫 창이 길어진다(0.2 → 0.4 초 — 참조 구현
+  // ruby 는 fetch 성공에서 되돌린다).
   it('대조군 — 회복 갱신을 위조 kid 가 일으켜도 카운터가 돌아간다', async () => {
     const { v, t0 } = await warm({ jitter: () => 1 })
-    let t = t0 + 601_000
+    let t = t0 + 301_000
     vi.setSystemTime(t)
     status = 503
     expect(await outcome(v, await legit())).toBe('rejected') // 실패 1 — 창 0.2 초
@@ -714,7 +714,7 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
     status = 200
     expect(await outcome(v, await forgedKid('recovery'))).toBe('rejected') // 갱신은 성공, kid 가 없다
     expect(certs).toBe(3)
-    vi.setSystemTime((t += 601_000)) // 그 갱신으로부터 다시 cacheMaxAge 를 넘었다
+    vi.setSystemTime((t += 301_000)) // 그 갱신으로부터 다시 cacheMaxAge 를 넘었다
     status = 503
     expect(await outcome(v, await legit())).toBe('rejected') // 되돌아갔다면 실패 1 — 창 0.2 초
     expect(certs).toBe(4)
@@ -727,7 +727,7 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
   // 대기자마다 세면 503 한 번이 곧바로 상한(5 초) 창이 된다(참조 구현 ruby 는 mutex 로 fetch 마다 한 번 센다).
   it('대조군 — 동시 검증 열이 한 fetch 의 실패를 나눠 받아도 한 번만 센다', async () => {
     const { v, t0 } = await warm({ jitter: () => 1 })
-    const t = t0 + 601_000
+    const t = t0 + 301_000
     vi.setSystemTime(t)
     status = 503
     const tokens = await Promise.all(Array.from({ length: 10 }, () => legit()))
@@ -740,17 +740,17 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
     expect(certs).toBe(3)
   })
 
-  // 신선할 때 정한 강제 재조회가 응답을 기다리는 사이 캐시가 600 초를 넘기고 실패해도 그것은 fetch 실패다 — 세지
+  // 신선할 때 정한 강제 재조회가 응답을 기다리는 사이 캐시가 300 초를 넘기고 실패해도 그것은 fetch 실패다 — 세지
   // 않으면 다음 검증이 또 IdP 로 나간다(백오프 창 전에 두 건).
-  it('신선할 때 나간 강제 재조회가 600 초를 넘겨 실패해도 센다 — 다음 검증은 IdP 로 안 나간다', async () => {
+  it('신선할 때 나간 강제 재조회가 300 초를 넘겨 실패해도 센다 — 다음 검증은 IdP 로 안 나간다', async () => {
     const { v, t0 } = await warm({ jitter: () => 1 })
-    vi.setSystemTime(t0 + 599_990) // 신선하고, 30 초 창은 열려 있다(마지막 시도 t0)
+    vi.setSystemTime(t0 + 299_990) // 신선하고, 30 초 창은 열려 있다(마지막 시도 t0)
     status = 503
-    jumpTo = t0 + 600_010 // 응답을 기다리는 사이 캐시가 낡는다
+    jumpTo = t0 + 300_010 // 응답을 기다리는 사이 캐시가 낡는다
     expect(await outcome(v, await forgedKid('in-flight'))).toBe('rejected')
     expect(certs).toBe(2)
-    expect(Date.now()).toBe(t0 + 600_010) // 서버가 실제로 시계를 넘겼다
-    vi.setSystemTime(t0 + 600_020)
+    expect(Date.now()).toBe(t0 + 300_010) // 서버가 실제로 시계를 넘겼다
+    vi.setSystemTime(t0 + 300_020)
     expect(await outcome(v, await legit())).toBe('backoff') // IdP 없이 즉시 거부
     expect(certs).toBe(2)
   })

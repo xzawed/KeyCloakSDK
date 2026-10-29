@@ -569,7 +569,7 @@ internal class JwtValidatorTest {
             }
         }
 
-    // jwksMinRefetch가 Nimbus 캐시 TTL(기본 5분) 이상이면 SDK 설정 오류로 거부된다.
+    // jwksMinRefetch가 캐시 TTL(JWKS_MAX_AGE_SECONDS, 300초) 이상이면 SDK 설정 오류로 거부된다.
     // 고치기 전에는 Nimbus의 IllegalStateException이 forRealm에서 그대로 새어나와 공개 API에
     // 하위 라이브러리 예외가 노출됐다(§4 위반). Java SDK와 같은 경계에서 같은 계급으로 변환한다.
     @Test
