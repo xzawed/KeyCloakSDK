@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import time
 import traceback
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, replace
@@ -14,12 +15,37 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 import pytest
+import requests
 from testcontainers.keycloak import KeycloakContainer
 
 from keycloak_sdk import KeycloakClient, KeycloakConfig
 from keycloak_sdk.auth import AuthorizationUrl
 
 _REALM_IMPORT_FILE = Path(__file__).parent / "it-realm-realm.json"
+
+#: 준비 탐침이 404 를 다시 묻는 한도(초) — Keycloak 기동은 CI 에서 수십 초다.
+_READINESS_SECONDS = 180.0
+
+
+class _Keycloak(KeycloakContainer):  # type: ignore[misc]
+    """⚠️ testcontainers 의 준비 탐침은 관리 포트(9000)가 연결 오류면 주 포트(8080)의
+    `/health/ready` 로 넘어가는데, Keycloak 25+ 의 주 포트에는 health 가 없어 404 이고 그 404 는
+    다시 묻지 않는다(`raise_for_status` — 데코레이터는 ConnectionError·ReadTimeout 만 재시도한다).
+    기동 중 주 포트가 관리 포트보다 먼저 열리면 세션 전체가 setup 오류로 끝났다(CI 실측
+    2026-10-29: 31 개가 그 URL 의 404 · 같은 코드로 실패 잡만 다시 돌리니 통과). 404 면 관리
+    포트가 열릴 때까지 다시 묻는다."""
+
+    def _readiness_probe(self) -> None:
+        deadline = time.monotonic() + _READINESS_SECONDS
+        while True:
+            try:
+                super()._readiness_probe()
+                return
+            except requests.exceptions.HTTPError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(1)
+
 
 # 인가 코드 흐름용 — realm JSON 의 `it-web`(RS256)·`it-web-hs256`(id_token 을 HS256 서명)과 짝.
 # ⚠️ `it-web` 의 audience 매퍼는 introspect 용이다 — `aud` 가 없는 접근 토큰을 Keycloak 26.6 은
@@ -99,7 +125,7 @@ def strip_nonce(request: AuthorizationUrl) -> AuthorizationUrl:
 def keycloak_url() -> Iterator[str]:
     """`it-realm`을 임포트한 Keycloak 26.6 컨테이너를 세션 동안 1회 기동하고
     base auth-server URL(예: `http://localhost:32819`)을 반환한다."""
-    container = KeycloakContainer("quay.io/keycloak/keycloak:26.6").with_realm_import_file(
+    container = _Keycloak("quay.io/keycloak/keycloak:26.6").with_realm_import_file(
         str(_REALM_IMPORT_FILE)
     )
     with container as started:
