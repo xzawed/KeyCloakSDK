@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "fileutils"
 require "json"
 require "jwt"
 require "openssl"
@@ -829,7 +830,7 @@ module HostilePathMatrixSpec
 
   # 칸마다 pass · GAP · FAIL · 측정(m:rej/m:ACC)을 정하고 판정표·요약을 만든다.
   class Judge
-    attr_reader :fails
+    attr_reader :fails, :cells
 
     def initialize(cells)
       @cells = cells
@@ -963,8 +964,10 @@ module HostilePathMatrixSpec
 
     module_function
 
+    # (실패 사유, 보안 기본값 가드 대조까지 **실제로 돌았는가**) — 뒤의 것이 attest 의 w1 이다(저장소 밖에서 건너뛴 실행은
+    # 증명이 아니다).
     def problems(by_label, targets)
-      TARGETS.flat_map { |t| row_problems(by_label[t.label], t, targets) + anchor_problems(t) } + completeness
+      completeness(TARGETS.flat_map { |t| row_problems(by_label[t.label], t, targets) + anchor_problems(t) })
     end
 
     def row_problems(row, target, targets)
@@ -998,16 +1001,17 @@ module HostilePathMatrixSpec
       ["W1 #{target.label}: 공개 입구가 #{call} 에 닿지 않는다 — 앵커(#{file}|#{what})의 대상과 이어지지 않는다"]
     end
 
-    # CALLS 가 부르는 공개 호출 전부가 표에 있고, 보안 기본값 가드의 Ruby 행위 앵커가 전부 표의 앵커다.
-    def completeness
+    # CALLS 가 부르는 공개 호출 전부가 표에 있고, 보안 기본값 가드의 Ruby 행위 앵커가 전부 표의 앵커다. 앞서 모은 행·앵커
+    # 사유(earlier)를 받아 (사유 전부, 가드 대조까지 돌았는가)를 낸다.
+    def completeness(earlier)
       anchors = TARGETS.map(&:anchor)
       calls = HostileTokenResponseSpec::CALLS.keys.map { |k| "#{HOSTILE}|CALLS[#{k}]" }
-      why = (calls - anchors).map { |a| "W1 #{a} 가 Hand::TARGETS 에 없다" }
-      return why + script_missing unless File.file?(SCRIPT)
+      why = earlier + (calls - anchors).map { |a| "W1 #{a} 가 Hand::TARGETS 에 없다" }
+      return [why + script_missing, false] unless File.file?(SCRIPT)
 
       found = script_anchors
       why << "W1 test-security-defaults.sh 에서 Ruby 행위 앵커를 하나도 못 읽었다 — 적는 모양이 바뀌었나?" if found.empty?
-      why + (found - anchors).map { |a| "W1 보안 기본값 가드의 Ruby 앵커 #{a} 가 Hand::TARGETS 에 없다" }
+      [why + (found - anchors).map { |a| "W1 보안 기본값 가드의 Ruby 앵커 #{a} 가 Hand::TARGETS 에 없다" }, true]
     end
 
     # 가드가 없을 때 — 저장소 체크아웃이면 실패, 저장소 밖(ruby/ 만 마운트한 하네스 컨테이너)이면 건너뛴다(go·node 등과 같다).
@@ -1064,8 +1068,9 @@ module HostilePathMatrixSpec
       targets = w3_targets(rows)
       hostile = Hostile.new(engine)
       cells = hostile.run_a(targets["a"]) + hostile.run_b(targets["b"]) + hostile.run_c(targets["c"])
+      hand, compared = Hand.problems(rows.to_h { |r| [r.label, r] }, targets)
       Result.new(rows: rows, declared: declared, cells: cells, log: hostile.log,
-                 late: nonce_drops(rows), hand: Hand.problems(rows.to_h { |r| [r.label, r] }, targets))
+                 late: nonce_drops(rows), hand: hand, w1_compared: compared)
     end
 
     private
@@ -1103,16 +1108,32 @@ module HostilePathMatrixSpec
 
   # 단언할 거리와 찍을 표.
   class Result
-    attr_reader :rows, :judge, :late, :hand
+    attr_reader :rows, :judge, :late, :hand, :w1_compared
 
-    def initialize(rows:, declared:, cells:, log:, late:, hand:)
+    def initialize(rows:, declared:, cells:, log:, late:, hand:, w1_compared:)
       @rows = rows
       @declared = declared
       @judge = Judge.new(cells)
       @log = log
       @late = late
       @hand = hand
+      @w1_compared = w1_compared
       $stdout.puts(text) if ENV.fetch("HP_MATRIX_VERBOSE", nil) == "1"
+    end
+
+    # 이 행렬이 **이 실행에서 실제로 돌았다**는 증명을 `$HP_ATTEST_DIR/ruby.json` 에 쓴다 — CI 는 단위 테스트 단계 바로
+    # 뒤에서 같은 nonce(`HP_ATTEST_NONCE`)로 `scripts/check-hp-attest.mjs` 가 읽는다. 레인이 초록이라는 것은 행렬이 돌았다는
+    # 증거가 아니다(`-e` 필터 · 건너뛴 W1). `HP_ATTEST_DIR` 이 없으면(로컬) 아무것도 하지 않는다. ⚠️ 부르는 쪽(describe 의
+    # after(:context))이 **예제가 전부 통과했을 때만** 부른다. knownGaps 는 KNOWN_GAPS **값**의 등록부 id(`id: 이유` 의 앞마디)다.
+    def attest
+      dir = ENV.fetch("HP_ATTEST_DIR", "")
+      return if dir.empty?
+
+      gaps = KNOWN_GAPS.values.map { |v| v.split(":", 2).first.to_s.strip }.uniq.sort
+      body = { lang: "ruby", nonce: ENV.fetch("HP_ATTEST_NONCE", ""), rows: @rows.size, classes: counts,
+               w3: @judge.cells.size, w1: @w1_compared, knownGaps: gaps }
+      FileUtils.mkdir_p(dir)
+      File.write(File.join(dir, "ruby.json"), JSON.generate(body))
     end
 
     def counts = CLASSES.to_h { |c| [c, @rows.count { |r| r.cls == c }] }
@@ -1157,6 +1178,15 @@ end
 RSpec.describe KeycloakSdk do
   describe "hostile path matrix" do
     let(:result) { HostilePathMatrixSpec.result }
+
+    # attest — 이 describe 의 예제가 **전부 통과**했을 때만 쓴다(하나라도 실패·건너뜀·`-e` 필터로 빠지면 쓰지 않는다).
+    # ⚠️ 예제 목록을 손으로 적지 않고 RSpec 이 쥔 결과를 읽는다 — 새 예제가 이 조건 밖으로 새지 않게. 이 훅은 상태를 만들지
+    # 않고 결과만 읽으므로 BeforeAfterAll 이 겨누는 「예제 사이로 새는 상태」가 없다.
+    after(:context) do # rubocop:disable RSpec/BeforeAfterAll
+      examples = self.class.descendants.flat_map(&:examples)
+      passed = examples.any? && examples.all? { |e| e.execution_result.status == :passed }
+      HostilePathMatrixSpec.result.attest if passed
+    end
 
     it "classifies every derived public call path — no unexempted UNDETERMINED, no stale exemption" do
       expect(result.undetermined).to eq([]), "#{result.undetermined.join("\n")}\n#{result.summary}"
