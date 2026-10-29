@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
 module KeycloakSdk
-  # OAuth 토큰 응답의 불변 값타입. access/refresh/id 토큰은 inspect에서 마스킹.
+  # Immutable value type of an OAuth token response. The access/refresh/id tokens are masked in inspect.
   TokenSet = Data.define(:access_token, :token_type, :expires_in, :refresh_token,
                          :id_token, :scope, :expires_at) do
-    # ⚠️ **검증은 팩토리가 아니라 생성자에 있다.** `from_response` 에만 두면 `AuthClient`
-    # 가 `TokenSet.new` 을 직접 부르는 경로(`auth_client.rb` 의 `to_token_set`)가 그것을
-    # 통째로 우회한다 — 독립 레그가 그 구멍을 지목했다. 생성자는 어떤 경로도 지나므로
-    # 여기 두면 우회가 불가능하다.
+    # ⚠️ **The validation lives in the constructor, not the factory.** Put only in `from_response`, it would be
+    # bypassed entirely by the path where `AuthClient` calls `TokenSet.new` directly (`to_token_set` in
+    # `auth_client.rb`) — an independent leg pointed out that hole. Every path goes through the constructor, so
+    # placing it here makes a bypass impossible.
     def initialize(access_token:, **rest)
       unless access_token.is_a?(String) && !access_token.empty?
         raise AuthError, "token response has no usable access_token"
@@ -17,12 +17,13 @@ module KeycloakSdk
     end
 
     def self.from_response(body, received_at: Time.now.to_f)
-      # 배열 본문은 `Array#[]` 의 TypeError 로 경계를 뚫었다 — 객체가 아니면 SDK 오류다.
+      # An array body broke through the boundary as a TypeError from `Array#[]` — a body that is not an object is
+      # an SDK error.
       raise AuthError, "token response is not a JSON object" unless body.is_a?(Hash)
 
-      # ⚠️ **존재 검사는 타입 검사가 아니다.** 예전에는 값을 그대로 담아 숫자·해시·nil 이
-      # `access_token` 이 됐고, 소비자는 그것을 Bearer 로 실어 보내 매번 401 을 받았다
-      # (조용한 반복 실패). `expires_in` 의 문자열 허용은 **의도된 것**이라 건드리지 않는다.
+      # ⚠️ **A presence check is not a type check.** The value used to be stored as is, so a number, a hash or nil
+      # became the `access_token`, and the consumer sent it as the Bearer and got a 401 every time
+      # (a silent, repeated failure). Accepting a string `expires_in` is **intended**, so it is left alone.
       access_token = body["access_token"]
       unless access_token.is_a?(String) && !access_token.empty?
         raise AuthError, "token response has no usable access_token"
@@ -31,7 +32,7 @@ module KeycloakSdk
       expires_in = begin
         body["expires_in"] && Integer(body["expires_in"])
       rescue ArgumentError, TypeError, RangeError # RangeError: JSON 1e400 = Infinity → FloatDomainError
-        # `cause: nil` — ArgumentError 는 그 값을 인용한다(`invalid value for Integer(): "…"`).
+        # `cause: nil` — ArgumentError quotes the value (`invalid value for Integer(): "…"`).
         raise AuthError, "token response has an unusable expires_in", cause: nil
       end
       new(
@@ -45,10 +46,10 @@ module KeycloakSdk
       )
     end
 
-    # ⚠️ **만료 시각을 모르면 "만료됨"이다**(fail-safe — 자매 여덟과 동형, Java 의 M.6).
-    # `false`(=아직 살아있다)를 돌려주면 만료 시각 미상인 토큰이 **영원히 유효**해진다.
-    # `expires_at` 이 nil 인 경우는 서버가 `expires_in` 을 안 보냈을 때뿐이라 정상 경로가
-    # 아니고, 그때 취할 안전한 쪽은 "재발급"이다.
+    # ⚠️ **An unknown expiry time means "expired"** (fail-safe — isomorphic with the eight siblings, Java's M.6).
+    # Returning `false` (= still alive) would make a token whose expiry time is unknown **valid forever**.
+    # `expires_at` is nil only when the server did not send `expires_in`, so it is not the normal path, and the
+    # safe side to take then is "reissue".
     def expired?(skew: 0, now: Time.now.to_f)
       return true if expires_at.nil?
 
@@ -62,20 +63,21 @@ module KeycloakSdk
     end
     alias_method :to_s, :inspect
 
-    # ⚠️ `pp`/`pretty_inspect` 는 `inspect` 와 같은 계급의 **표시 경로**인데, `Data` 타입은 PP 가
-    # 멤버를 직접 찍어 위 `inspect` 를 **건너뛴다**(실측: access_token 원문이 나왔다). 일반
-    # 클래스인 `Config` 는 PP 가 `inspect` 로 폴백해 안전하다 — 그래서 `Data` 만 이 훅이 필요하다.
+    # ⚠️ `pp`/`pretty_inspect` is a **display path** of the same rank as `inspect`, but for a `Data` type PP prints
+    # the members directly and **skips** the `inspect` above (measured: the raw access_token came out). For `Config`,
+    # an ordinary class, PP falls back to `inspect`, so it is safe — that is why only `Data` needs this hook.
     def pretty_print(pp)
       pp.text(inspect)
     end
   end
 
-  # 검증된 access token의 관심 클레임.
+  # The claims of interest of a validated access token.
   ValidatedToken = Data.define(:subject, :audience, :issuer, :expires_at, :issued_at, :claims)
 
-  # RFC 7662 introspection 결과.
+  # RFC 7662 introspection result.
   IntrospectionResult = Data.define(:active, :username, :client_id, :claims) do
-    # 객체가 아닌 본문은 SDK 오류다 — 배열은 TypeError 로 경계를 뚫었고, 문자열은 `claims` 가 문자열인 결과가 됐다.
+    # A body that is not an object is an SDK error — an array broke through the boundary as a TypeError, and a string
+    # became a result whose `claims` was a string.
     def self.from_response(body)
       raise AuthError, "introspection response is not a JSON object" unless body.is_a?(Hash)
 
@@ -88,8 +90,9 @@ module KeycloakSdk
     end
   end
 
-  # authorization-code 흐름 시작 값(PKCE code_verifier 포함·inspect 마스킹).
-  # nonce는 인가 URL에 실리는 재생 방지 값이라 비밀이 아니다(state와 동급 — code_verifier만 마스킹).
+  # The values that start an authorization-code flow (PKCE code_verifier included · masked in inspect).
+  # The nonce is a replay-protection value carried in the authorization URL, so it is not a secret (on a par with
+  # state — only code_verifier is masked).
   AuthorizationRequest = Data.define(:url, :state, :code_verifier, :nonce) do
     def inspect
       "#<KeycloakSdk::AuthorizationRequest url=#{url.inspect} state=#{state.inspect} " \
@@ -97,9 +100,9 @@ module KeycloakSdk
     end
     alias_method :to_s, :inspect
 
-    # ⚠️ `pp`/`pretty_inspect` 는 `inspect` 와 같은 계급의 **표시 경로**인데, `Data` 타입은 PP 가
-    # 멤버를 직접 찍어 위 `inspect` 를 **건너뛴다**(실측: access_token 원문이 나왔다). 일반
-    # 클래스인 `Config` 는 PP 가 `inspect` 로 폴백해 안전하다 — 그래서 `Data` 만 이 훅이 필요하다.
+    # ⚠️ `pp`/`pretty_inspect` is a **display path** of the same rank as `inspect`, but for a `Data` type PP prints
+    # the members directly and **skips** the `inspect` above (measured: the raw access_token came out). For `Config`,
+    # an ordinary class, PP falls back to `inspect`, so it is safe — that is why only `Data` needs this hook.
     def pretty_print(pp)
       pp.text(inspect)
     end

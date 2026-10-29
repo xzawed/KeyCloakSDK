@@ -7,16 +7,19 @@ require "base64"
 require "uri"
 
 module KeycloakSdk
-  # 인증 파사드. 인가 URL(PKCE)은 rack-oauth2 로 만들고, 세 그랜트·introspection(RFC7662)·logout 은 SDK 의 Faraday
-  # 커넥션으로 직접 보낸다 — 토큰 응답 본문을 상한까지만 읽어야 하는데 rack-oauth2 는 자기 커넥션으로 통째로 읽는다.
-  # ⚠️ 그래서 `Rack::OAuth2.http_config` 는 걸지 않는다 — 전역이고 먼저 건 쪽이 이겨(`@@http_config ||= block`) SDK 에는
-  # 쓸모없이 호스트 앱이 나중에 건 블록만 버린다(`auth_client_spec` 의 「is left to the host」).
-  # TokenProvider를 구현하지만(직접 사용용), admin은 캐싱 ClientCredentialsTokenProvider를 별도로 쓴다(§4).
+  # Authentication facade. The authorization URL (PKCE) is built with rack-oauth2, while the three grants ·
+  # introspection (RFC7662) · logout are sent directly on the SDK's Faraday connection — the token response body has
+  # to be read only up to the cap, but rack-oauth2 reads it whole on its own connection.
+  # ⚠️ That is why `Rack::OAuth2.http_config` is not set — it is global and whoever sets it first wins
+  # (`@@http_config ||= block`), so for the SDK it would be useless and would only discard the block the host app
+  # sets later ("is left to the host" in `auth_client_spec`).
+  # It implements TokenProvider (for direct use), but admin uses a separate caching ClientCredentialsTokenProvider (§4).
   class AuthClient
     include TokenProvider
 
-    # 메시지에 실어도 되는 OAuth 오류 코드 모양 — RFC 6749·OIDC 등록 코드와 Keycloak 코드는 전부 이 모양이고,
-    # 토큰·시크릿(JWT·base64·hex·UUID)은 대문자·숫자·점·하이픈 때문에 걸러진다.
+    # The shape of an OAuth error code that may go into a message — RFC 6749 · OIDC registered codes and Keycloak's
+    # codes all have this shape, while tokens and secrets (JWT · base64 · hex · UUID) are filtered out by their
+    # uppercase letters, digits, dots and hyphens.
     OAUTH_CODE = /\A[a-z_]{1,64}\z/
 
     def initialize(config:, http:, jwt_validator:)
@@ -41,10 +44,11 @@ module KeycloakSdk
       AuthorizationRequest.new(url: url.to_s, state: state, code_verifier: verifier, nonce: nonce)
     end
 
-    # `expected_nonce`가 주어지면(create_authorization_request가 항상 돌려주는 nonce) 응답 id_token을
-    # realm JWKS로 서명·iss·aud(client_id)·exp까지 강화 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce 재생
-    # 방지. 불일치·부재·검증실패는 모두 거부(fail-closed). 생략 시 id_token 검증을 건너뛴다
-    # (여덟 언어 공통 — exchange에서 nonce를 필수로 만들지 않는다).
+    # When `expected_nonce` is given (the nonce create_authorization_request always returns), the response's id_token
+    # goes through hardened validation against the realm JWKS — signature · iss · aud (client_id) · exp — before its
+    # nonce claim is compared: OIDC nonce replay protection. Mismatch, absence and validation failure are all
+    # rejected (fail-closed). When omitted, id_token validation is skipped
+    # (common to the eight languages — exchange does not make the nonce mandatory).
     def exchange_code(code:, code_verifier:, redirect_uri:, expected_nonce: nil)
       token_set = token_request("authorization_code exchange",
                                 { grant_type: "authorization_code", code: code, redirect_uri: redirect_uri,
@@ -61,7 +65,7 @@ module KeycloakSdk
       token_request("client-credentials", { grant_type: "client_credentials", scope: @config.scopes.join(" ") })
     end
 
-    # TokenProvider 계약(직접 사용용). admin은 캐싱 provider를 별도로 쓴다.
+    # TokenProvider contract (for direct use). admin uses a separate caching provider.
     def access_token
       client_credentials_token.access_token
     end
@@ -76,14 +80,16 @@ module KeycloakSdk
       IntrospectionResult.from_response(resp.body)
     rescue Error
       raise
-    rescue StandardError => e # Faraday 밖 예외도 — net-http 0.10 의 응답 헤더 검증은 ArgumentError 다(어댑터 목록 밖)
+    rescue StandardError => e # non-Faraday exceptions too — net-http 0.10's response header validation
+      # raises ArgumentError (outside the adapter's list)
       raise TransportError, "introspection transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
     end
 
-    # 본문은 쓰지 않지만 읽는다 — `TOKEN_RESPONSE_MAX_BYTES` 까지만(넘으면 상태와 무관하게 TransportError).
-    # 해석은 커넥션의 json 미들웨어가 하던 그대로 남긴다: JSON 이라면서 JSON 이 아닌 본문은 지금처럼 TransportError 다.
-    # UTF-8 검사는 걸지 않는다(`check_utf8: false`) — 값을 쓰지 않아 지킬 것이 없고, 걸면 400 이 오류 본문의 바이트에
-    # 따라 AuthError 에서 TransportError 로 바뀐다(hostile_token_response_spec 의 u2). 해석은 상태 검사보다 먼저다.
+    # The body is not used, but it is read — only up to `TOKEN_RESPONSE_MAX_BYTES` (past that, TransportError
+    # regardless of status). Parsing stays exactly as the connection's json middleware did it: a body that claims to be
+    # JSON but is not is a TransportError, as now. No UTF-8 check is applied (`check_utf8: false`) — no value is used,
+    # so there is nothing to protect, and with the check a 400 would turn from AuthError into TransportError depending
+    # on the bytes of the error body (u2 in hostile_token_response_spec). Parsing comes before the status check.
     def logout(refresh_token:)
       form = form!("logout", client_id: @config.client_id, client_secret: @config.client_secret,
                              refresh_token: refresh_token)
@@ -94,7 +100,7 @@ module KeycloakSdk
       nil
     rescue Error
       raise
-    rescue StandardError => e # introspect 와 같다(Faraday 밖 예외도 감싼다)
+    rescue StandardError => e # same as introspect (wraps non-Faraday exceptions too)
       raise TransportError, "logout transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
     end
 
