@@ -9,6 +9,8 @@ require "uri"
 module KeycloakSdk
   # 인증 파사드. 인가 URL(PKCE)은 rack-oauth2 로 만들고, 세 그랜트·introspection(RFC7662)·logout 은 SDK 의 Faraday
   # 커넥션으로 직접 보낸다 — 토큰 응답 본문을 상한까지만 읽어야 하는데 rack-oauth2 는 자기 커넥션으로 통째로 읽는다.
+  # ⚠️ 그래서 `Rack::OAuth2.http_config` 는 걸지 않는다 — 전역이고 먼저 건 쪽이 이겨(`@@http_config ||= block`) SDK 에는
+  # 쓸모없이 호스트 앱이 나중에 건 블록만 버린다(`auth_client_spec` 의 「is left to the host」).
   # TokenProvider를 구현하지만(직접 사용용), admin은 캐싱 ClientCredentialsTokenProvider를 별도로 쓴다(§4).
   class AuthClient
     include TokenProvider
@@ -22,7 +24,6 @@ module KeycloakSdk
       @http = http
       @jwt_validator = jwt_validator
       @endpoints = OidcEndpoints.from_config(config)
-      configure_rack_oauth2_timeouts(config)
     end
 
     def create_authorization_request(redirect_uri:, scopes: nil, state: SecureRandom.urlsafe_base64(24),
@@ -102,18 +103,6 @@ module KeycloakSdk
     end
 
     private
-
-    # rack-oauth2의 프로세스 전역 HTTP 타임아웃을 Config로 설정한다(require 시점 하드코딩 대신).
-    # 타임아웃은 Faraday::Connection이 아니라 그 #options(Faraday::RequestOptions)에 있다
-    # (Connection에 open_timeout=/timeout= 세터가 없어 NoMethodError — 게차 참조).
-    # ⚠️ SDK 의 토큰 요청은 이제 rack-oauth2 의 연결을 타지 않는다(그랜트는 `token_request` 가 직접 보낸다) — 이 등록이
-    # 닿는 것은 같은 프로세스의 다른 rack-oauth2 사용자뿐이다. 등록은 first-wins(`@@http_config ||= block`)다.
-    def configure_rack_oauth2_timeouts(config)
-      Rack::OAuth2.http_config do |conn|
-        conn.options.open_timeout = config.connect_timeout
-        conn.options.timeout = config.read_timeout
-      end
-    end
 
     # id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다.
     # aud 는 `expected_audience` 재정의가 아니라 **client_id** 다(OIDC Core §2·§3.1.3.7) — 재정의는 액세스 토큰의 것.

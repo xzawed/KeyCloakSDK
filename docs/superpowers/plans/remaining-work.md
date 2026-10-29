@@ -1,5 +1,5 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=174781 max-raw-bytes=214102 -->
+<!-- doc-budget: max-bytes=174781 max-raw-bytes=212831 -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -38,7 +38,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `284`(2026-10-29 기준 열림 140 · 닫힘 144)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `284`(2026-10-29 기준 열림 139 · 닫힘 145)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -342,7 +342,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 132건 (열림 75)
+## C. 품질 부채 — 132건 (열림 74)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -424,8 +424,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `wave4-hardening-python` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #770 #879 · (1)(4) 판정 「그대로」]** 생성 때만 거는 auth 상한은 비공개 속성으로만 풀리고, 짝 없는 서로게이트는 IdP 가 준 값 그대로다
 - [ ] `wave4-hardening-node` **[L/S · 신규 2026-10-05 · (4) 닫힘 #768 #772 · (3) 전제 거짓 · 판정 2026-10-29]** bearer 끝 공백 다듬기를 SDK 가 소유한다(bearer 와 함께) · 폼 본문 U+FFFD 는 「그대로」 · `node/src/`
 <!-- wave4-hardening-node(2026-10-05 node 구현·검증 레그): (1) introspect·refresh·logout 이 U+D800 을 담은 토큰을 efbfbd 로 보낸다(URLSearchParams 의 USVString 변환) — IdP 는 다른 토큰으로 거부한다. (2) undici 가 admin bearer 끝의 공백·탭·CR·LF 를 다듬는다(끝이 공백인 것·개행인 것 둘 다 길이 19) — 파일 끝 개행 호환으로 유지하고 대조 시험으로 고정했다. 거부할지는 판정. (3) 전제 거짓(#768 재측정) — 그 시험은 :99·:122·:141 에서 이미 cause 없음을 본다(#721 에 함께 들어왔다 — 등록부는 머지 전 파일을 쟀다). (4) 닫힘 #768 — node.md 와 jwt-jwks.test.ts 머리 주석을 「창 0 을 쓰는 시험 둘(대조군 · 빈 키셋)」으로. 남아 있던 둘(config.ts:27 공개 TSDoc · 같은 머리 주석 :8-9 의 타입체크 문장 — 개명은 TS2561·TS2353 으로 잡히고 지우기·런타임 무시는 못 잡는다)은 #772 가 고쳤다. 규칙 후보: openid-client 의 customFetch 심볼은 jose 의 것이 아니다(상한은 앞의 것에 걸린다) · jose cooldown 은 성공에만 찍혀 SDK 가 창을 소유하고 cooldownDuration 은 0 이어야 한다. 직렬화 못 하는 admin 본문의 raw TypeError 는 node-nonsdk-error-escapes. -->
-- [ ] `wave4-hardening-ruby` **[L/S · 신규 2026-10-05 · (2) 닫힘 #763 #874 · 판정 2026-10-29 「걸지 않는다」]** `AuthClient#initialize` 가 먼저 이기는 `Rack::OAuth2.http_config` 를 걸어 호스트 블록을 막는다 · `ruby/lib/keycloak_sdk/`
-<!-- wave4-hardening-ruby(2026-10-05 ruby 구현·검증 레그): (1) @@http_config ||= block 이라 먼저 건 쪽이 이긴다 — SDK 가 먼저면 나중 호스트 블록이 조용히 버려진다(「sdk_first: open=1 read=1 host_block_ran=false」). #722 뒤 SDK 그랜트는 자기 커넥션으로 나가 그 호출은 SDK 에 쓸모가 없다 — 지울지는 판정(시험 「configures rack-oauth2 timeouts from Config on construction」 이 고정한다). (2) 닫힘 #763 · #874 — 경위는 그 PR 본문. 남은 것: false·true 같은 값은 여전히 「Bearer false」 로 나가고, ASCII 밖 거부도 없다(둘 다 bearer-token-grammar-divergent). (3) CHANGELOG [Unreleased] ruby 줄 「gzip 으로 답하는 서버는 … TransportError 로 실패합니다」는 JSON 이 아닌 Content-Type 이면 AuthError 다(그랜트 'unusable token response (NoMethodError)' 등, 실패 쪽 — 검증 레그). (4) admin REST 의 잘못된 UTF-8 은 결정대로 그대로 돌려준다 — 짝 없는 서로게이트 이스케이프는 json 3.0.2 에서 TransportError, 2.21.2 에서 통과(둘 다 예외는 안 샌다). 헤더 줄·청크 확장·트레일러는 response-framing-unbounded. -->
+- [x] `wave4-hardening-ruby` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #763 #874]** 전역 `Rack::OAuth2.http_config` 를 걸지 않는다(판정) — ASCII 밖 bearer 는 bearer 판정이 닫는다
 - [ ] `wave4-hardening-php` **[L/S · 신규 2026-10-05 · (3)(4) 닫힘 #767 · 토큰 판독기 멈춤 닫힘 #772]** curl 이 ~300 KiB 넘는 요청 헤더를 버려 admin 요청이 인증 없이 나간다 · 주입 PSR-18 의 전송은 무상한 · `php/src/`
 <!-- wave4-hardening-php(2026-10-05 php 구현·검증 레그): (1) Guzzle CurlHandler(curl 8.21.0/OpenSSL 3.0.21, Windows)가 Authorization 「Bearer 」+307,190 B 는 보내고 +307,200 B 는 그 헤더 없이 보낸다(서버 authLen 0) — 새 상한 안의 ~300 KiB–1 MiB bearer 가 로컬 실패 대신 401 이 된다. 누출·raw 예외 없음, 다른 libcurl 은 미측정. (2) ClientCredentialsTokenProvider 의 전송은 무상한 — PSR-18 sendRequest 에 요청별 옵션이 없다(가짜 IdP 「written」 33,555,507 · zend 피크 5,916,224, 메모리만 묶인다). 코드·CHANGELOG 에 적혀 있다. (3)(4) 닫힘 #767 — JwksStore 는 상한+1 까지만 가져오고 끝이 아닌 빈 읽기에서 실패한다(앞부분 판정은 Grok 레그가 깼다: 한 번 막힌 60,000 B 문서가 수락됐다) · 상한 시험이 curl·stream 처리기 둘 다로 돈다(91 → 178 칸). 토큰 판독기 닫힘 #772 — TokenResponseCap::read 도 멈춤에서 실패한다(내부 운반체 ResponseStalled 를 부르는 자리마다 새 SDK 오류로 — league·Guzzle 프레임 인자가 실려 나가지 않게, 여섯 공개 호출 + admin 미들웨어). 남은 것: 두 판독기는 탐색 불가 본문을 현재 위치부터 읽어, 주입 전송의 미들웨어가 일부 읽은 본문은 꼬리로 판정된다(Grok 레그, 수정 전부터) · admin 경로의 읽기 오류는 KeycloakAdminError 「admin request failed unexpectedly」(SDK 클라이언트로는 안 난다) · stream 처리기의 gzip 은 읽기 하나를 통째로 풀어 7–8 MB(cc 토큰 프로바이더 최대 20.7 MB). 실패한 토큰 응답의 분류는 league 레인 TransportError · ClientCredentialsTokenProvider AuthError 로 갈린 채다(상한은 다 TransportError). raw() 트레이스 인자의 시크릿은 php-exception-trace-third-party-args. -->
 - [ ] `wave4-hardening-java` **[L/S · 신규 2026-10-05 · JVM 공통 bearer 닫힘 #769 · (1) 닫힘 #833 · (2)(3)(4)(6) 닫힘 #875 · 판정 2026-10-29]** JVM 공통 몫은 bearer 판정이 닫는다 · 스레드 생성 실패(Error)는 「그대로」 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java`
