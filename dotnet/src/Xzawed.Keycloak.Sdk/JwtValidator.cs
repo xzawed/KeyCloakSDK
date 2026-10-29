@@ -38,7 +38,8 @@ public sealed class JwtValidator
     /// <param name="opts">Hardened validation options.</param>
     /// <param name="http">The client discovery and the JWKS are fetched with. They are read through a 51,200-byte cap
     /// whatever client is passed; every other limit — timeouts, redirects, <see cref="HttpClient.MaxResponseContentBufferSize"/>,
-    /// how much of a refused document its handler drains to reuse the connection — is this client's own.
+    /// how much of a refused document its handler drains to reuse the connection — is this client's own. Its
+    /// <see cref="HttpClient.Timeout"/> bounds each whole document, body included, from when the request is sent.
     /// <c>KeycloakClient.Create</c> passes the client it builds.</param>
     public JwtValidator(string issuer, JwtValidatorOptions opts, HttpClient http)
         : this(issuer, opts, http, null, null) { }

@@ -38,6 +38,17 @@ namespace Xzawed.Keycloak;
 /// And the read is streamed: judging by <c>Content-Length</c> alone misses a response that omits
 /// the header or lies about it.
 /// </para>
+/// <para>
+/// ⚠️ <b>The whole document within the client's timeout, from when the request is sent.</b> With
+/// <c>ResponseHeadersRead</c>, <c>HttpClient.Timeout</c> ends when the headers arrive, and the body had no bound at all:
+/// IdentityModel asks on <c>CancellationToken.None</c>, and so does the SDK's own refetch (measured: a document trickled
+/// over 7 s was accepted, a stalled one held until the server closed — <c>ResponseReadDeadlineTests</c>). The body read
+/// takes the rest of a <c>CancelAfter(HttpClient.Timeout)</c> armed as the request is sent, and its expiry raises what that
+/// timeout raises for late headers (<see cref="TaskCanceledException"/> over a <see cref="TimeoutException"/>). The deadline
+/// is the fetch's own: a caller's token is linked into it, never the reverse, so a refetch on
+/// <see cref="CancellationToken.None"/> still runs to completion under the SDK's timeout whatever its caller cancels
+/// (<c>.claude/rules/security.md</c>). A client without a timeout gets no deadline.
+/// </para>
 /// </remarks>
 internal sealed class BoundedDocumentRetriever : IDocumentRetriever
 {
@@ -68,13 +79,39 @@ internal sealed class BoundedDocumentRetriever : IDocumentRetriever
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Get, address);
+        // The deadline: the client's own timeout, armed as the request is sent and carried into the body read (below).
+        var timeout = _http.Timeout;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        if (timeout != Timeout.InfiniteTimeSpan)
+        {
+            deadline.CancelAfter(timeout);
+        }
+
         // ResponseHeadersRead is load-bearing: the default buffers the whole body before returning,
-        // which is precisely what the cap exists to prevent.
+        // which is precisely what the cap exists to prevent. The headers are under HttpClient.Timeout, as before.
         using var response = await _http
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel)
             .ConfigureAwait(false);
 
-        var body = await ReadBoundedAsync(response, cancel).ConfigureAwait(false);
+        string body;
+        try
+        {
+            body = await ReadBoundedAsync(response, deadline.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException e)
+        {
+            // The caller's own cancellation stays the caller's: the type the read raised before the deadline existed, the
+            // caller's token on it, no timeout under it.
+            if (cancel.IsCancellationRequested)
+            {
+                throw new TaskCanceledException(e.Message, e, cancel);
+            }
+
+            // The deadline: what HttpClient.Timeout raises for late headers, so whoever converts one converts the other.
+            throw new TaskCanceledException(
+                $"The request was canceled: the response was not fully read within the configured HttpClient.Timeout of {timeout.TotalSeconds} seconds.",
+                new TimeoutException("The response body was still arriving when the client's timeout elapsed."));
+        }
 
         if (!response.IsSuccessStatusCode)
         {
