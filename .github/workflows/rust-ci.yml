@@ -1,9 +1,9 @@
 name: rust-ci
 on:
   push:
-    paths: ['rust/**', '.github/workflows/rust-ci.yml']
+    paths: ['rust/**', '.github/workflows/rust-ci.yml', 'scripts/check-hp-attest.mjs']
   pull_request:
-    paths: ['rust/**', '.github/workflows/rust-ci.yml']
+    paths: ['rust/**', '.github/workflows/rust-ci.yml', 'scripts/check-hp-attest.mjs']
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   # ⚠️ 이 레인은 `stable` 레그가 floating clippy 를 무는 것이 **의도**다(governance/rejected.md) —
   # 주간 실행이 그 조기경보를 실제로 울리게 하는 자리이기도 하다.
@@ -42,7 +42,17 @@ jobs:
       - run: cargo build --locked --all-targets
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --all-targets -- -D warnings
+      # attest — 적대 경로 행렬은 마지막 assert! 뒤에만 $HP_ATTEST_DIR/rust.json 을 쓴다(근거: ci.yml 의 같은 단계).
       - run: cargo test --locked
+        env:
+          HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
+          HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
+      - name: 적대 경로 행렬 attest — 이 실행에서 돌았는가(scripts/check-hp-attest.mjs)
+        working-directory: .
+        env:
+          HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
+          HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
+        run: node scripts/check-hp-attest.mjs "$HP_ATTEST_DIR" --nonce "$HP_ATTEST_NONCE" --lang rust
 
   coverage:
     name: Coverage gate (logic modules ≥90% lines)

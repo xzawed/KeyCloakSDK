@@ -82,6 +82,7 @@ import functools
 import importlib
 import inspect
 import json
+import os
 import pkgutil
 import pydoc
 import re
@@ -1582,7 +1583,9 @@ def _check_hand_row(
 
 def _check_hand(
     src: _Source, by_label: Mapping[str, _Row], tgt: Mapping[str, list[str]]
-) -> list[str]:
+) -> tuple[list[str], bool]:
+    """(실패 사유, 보안 기본값 가드 대조까지 **실제로 돌았는가**) — 뒤의 것이 attest 의 `w1` 이다
+    (저장소 밖에서 건너뛴 실행은 증명이 아니다)."""
     hand = _hand_table()
     anchors = {h.anchor for h in hand}
     why = [w for h in hand for w in _check_hand_row(h, src, by_label.get(h.label), tgt)]
@@ -1598,7 +1601,8 @@ def _check_hand(
     # 보안 기본값 가드의 python 행위 앵커는 전부 표의 앵커다 — 가드에 앵커가 늘면 여기가 운다.
     root = _PYTHON_DIR.parent
     script = root / "scripts" / "test" / "test-security-defaults.sh"
-    if script.is_file():
+    compared = script.is_file()
+    if compared:
         found = _SCRIPT_ANCHOR.findall(script.read_text(encoding="utf-8"))
         print(
             f"\nW1 손 목록 {len(hand)} 항목 · 앵커 {len(anchors)} — 손 테스트 호출 표의 공개 "
@@ -1615,7 +1619,7 @@ def _check_hand(
         why.append(f"W1 저장소 체크아웃인데 보안 기본값 가드를 못 읽었다: {script}")
     else:
         print("W1: 저장소 밖에서 돌아 보안 기본값 가드 대조는 건너뛴다")
-    return why
+    return why, compared
 
 
 # --- 테스트 ---------------------------------------------------------------------------------
@@ -1671,6 +1675,32 @@ def _undetermined(rows: list[_Row], by_label: Mapping[str, _Row]) -> list[str]:
     return out
 
 
+def _attest(rows: list[_Row], counts: Mapping[str, int], cells: list[_Cell], w1: bool) -> None:
+    """이 행렬이 **이 실행에서 실제로 돌았다**는 증명을 `$HP_ATTEST_DIR/python.json` 에 쓴다 —
+    CI 는 단위 테스트 단계 바로 뒤에서 같은 nonce(`HP_ATTEST_NONCE`)로
+    `scripts/check-hp-attest.mjs` 가 읽는다. 레인이 초록이라는 것은 행렬이 돌았다는 증거가
+    아니다(`-k` 필터 · 건너뛴 W1).
+
+    ⚠️ conftest 훅이 아니라 **이 테스트 안에서**, 모든 단언 뒤에 부른다 — `-k` 로 이 테스트를 건너뛴
+    실행은 파일을 남기지 않아야 하고, 실패한 행렬도 그렇다. `HP_ATTEST_DIR` 이 없으면(로컬) 아무것도
+    안 한다. `knownGaps` 는 `_KNOWN_GAPS` **값**의 등록부 id(`id: 이유` 의 앞마디)다."""
+    out = os.environ.get("HP_ATTEST_DIR", "")
+    if not out:
+        return
+    body = {
+        "lang": "python",
+        "nonce": os.environ.get("HP_ATTEST_NONCE", ""),
+        "rows": len(rows),
+        "classes": {c: counts[c] for c in _CLASSES},
+        "w3": len(cells),
+        "w1": w1,
+        "knownGaps": sorted({v.split(":", 1)[0].strip() for v in _KNOWN_GAPS.values()}),
+    }
+    path = Path(out)
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "python.json").write_text(json.dumps(body), encoding="utf-8")
+
+
 def test_hostile_path_matrix(fast_tls: None, one_loop: None) -> None:
     key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig", "alg": "RS256"})
     src = _source()
@@ -1701,7 +1731,8 @@ def test_hostile_path_matrix(fast_tls: None, one_loop: None) -> None:
     fails, summaries = _judge(cells)
 
     # W1 — 손 목록 포함. 실패 사유는 판정표 뒤에 모아 찍는다.
-    fails += late + late_b + _check_hand(src, by_label, tgt)
+    hand, w1_compared = _check_hand(src, by_label, tgt)
+    fails += late + late_b + hand
     print()
     for f in fails:
         print(f"FAIL {f}")
@@ -1709,3 +1740,6 @@ def test_hostile_path_matrix(fast_tls: None, one_loop: None) -> None:
     for s in summaries:
         print(s)
     assert not fails, f"적대 경로 행렬 실패 {len(fails)}:\n" + "\n".join(fails)
+    # attest — **모든 단언 뒤**(위 assert 가 실패하면 여기 오지 않는다).
+    # 대조는 scripts/check-hp-attest.mjs.
+    _attest(rows, counts, cells, w1_compared)

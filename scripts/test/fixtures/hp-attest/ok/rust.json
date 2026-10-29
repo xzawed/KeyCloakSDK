@@ -1,0 +1,9 @@
+{
+  "lang": "rust",
+  "nonce": "4242.1.build.0",
+  "rows": 9,
+  "classes": { "CODE_EXCHANGE": 1, "TOKEN_GRANT": 4, "JWKS_FETCH": 2, "OTHER": 1, "NONE": 1, "UNDETERMINED": 0 },
+  "w3": 31,
+  "w1": true,
+  "knownGaps": ["open-gap-one", "H9-open-gap-0.44-two"]
+}

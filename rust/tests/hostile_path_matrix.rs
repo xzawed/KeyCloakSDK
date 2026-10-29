@@ -1956,15 +1956,18 @@ fn method_name(label: &str) -> &str {
     label.rsplit("::").next().unwrap_or(label)
 }
 
+/// 실패 사유와, 보안 기본값 가드 대조까지 **실제로 돌았는지**를 낸다(뒤의 것이 attest 의 `w1` 이다 — 저장소 밖에서
+/// 건너뛴 실행은 증명이 아니다).
 fn check_hand(
     sc: &Scan,
     decl: &BTreeMap<String, FnDecl>,
     rows: &BTreeMap<String, Row>,
     tgt: &BTreeMap<&str, Vec<String>>,
     report: &mut Vec<String>,
-) -> Vec<String> {
+) -> (Vec<String>, bool) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut why = Vec::new();
+    let mut compared = false;
     let mut anchors = BTreeSet::new();
     let mut drive_calls = BTreeSet::new();
     for h in HAND {
@@ -2057,6 +2060,7 @@ fn check_hand(
     let script_path = root.join("../scripts/test/test-security-defaults.sh");
     match std::fs::read_to_string(&script_path) {
         Ok(script) => {
+            compared = true;
             let found = script_anchors(&script);
             report.push(format!(
                 "W1 손 목록 {} 항목 · 앵커 {} — drive 의 SDK 호출 {n_drive} · 보안 기본값 가드의 rust 행위 앵커 {} 와 대조",
@@ -2083,7 +2087,52 @@ fn check_hand(
         )),
         Err(_) => report.push("W1: 저장소 밖에서 돌아 보안 기본값 가드 대조는 건너뛴다".into()),
     }
-    why
+    (why, compared)
+}
+
+/// 이 행렬이 **이 실행에서 실제로 돌았다**는 증명을 `$HP_ATTEST_DIR/rust.json` 에 쓴다 — CI 는 단위 테스트 단계 바로 뒤에서
+/// 같은 nonce(`HP_ATTEST_NONCE`)로 `scripts/check-hp-attest.mjs` 가 읽는다. 레인이 초록이라는 것은 행렬이 돌았다는 증거가
+/// 아니다(필터 · 건너뛴 W1). `HP_ATTEST_DIR` 이 없으면(로컬) 아무것도 하지 않는다. ⚠️ 부르는 쪽은 **모든 단언 뒤**에만
+/// 부른다 — 실패한 행렬은 파일을 남기지 않는다. `knownGaps` 는 `KNOWN_GAPS` **값**의 등록부 id(`id: 이유` 의 앞마디)다.
+fn attest(rows: usize, counts: &BTreeMap<&str, usize>, w3: usize, w1: bool) {
+    let Some(dir) = std::env::var_os("HP_ATTEST_DIR").filter(|d| !d.is_empty()) else {
+        return;
+    };
+    let classes: serde_json::Map<String, Value> = [
+        CODE_EXCHANGE,
+        TOKEN_GRANT,
+        JWKS_FETCH,
+        OTHER,
+        NONE,
+        UNDETERMINED,
+    ]
+    .iter()
+    .map(|c| (c.to_string(), json!(counts.get(c).copied().unwrap_or(0))))
+    .collect();
+    // ⚠️ `let gaps = KNOWN_GAPS` 다음 줄에 `.iter()` 를 잇는 모양으로 쓰지 말 것 — check-known-gaps.mjs 는 줄 끝의
+    // `= KNOWN_GAPS` 를 별칭(빈 선언을 다른 이름으로 채우는 자리)으로 읽어 이 행렬을 판정 불가로 떨어뜨린다(실측).
+    let mut gaps = BTreeSet::new();
+    for (_, why) in KNOWN_GAPS {
+        gaps.insert(why.split(':').next().unwrap_or("").trim());
+    }
+    let body = json!({
+        "lang": "rust",
+        "nonce": std::env::var("HP_ATTEST_NONCE").unwrap_or_default(),
+        "rows": rows,
+        "classes": classes,
+        "w3": w3,
+        "w1": w1,
+        "knownGaps": gaps,
+    });
+    let dir = Path::new(&dir);
+    std::fs::create_dir_all(dir)
+        .and_then(|()| std::fs::write(dir.join("rust.json"), body.to_string()))
+        .unwrap_or_else(|e| {
+            panic!(
+                "attest 를 쓰지 못했다(HP_ATTEST_DIR={}): {e}",
+                dir.display()
+            )
+        });
 }
 
 // ── 시험 ─────────────────────────────────────────────────────────────────────────────────
@@ -2290,7 +2339,8 @@ async fn hostile_path_matrix() {
     let summary = judge(&slots, &mut report, &mut fails);
 
     // W1 — 손 목록 포함.
-    late.extend(check_hand(&sc, &decl, &rows, &tgt, &mut report));
+    let (hand, w1_compared) = check_hand(&sc, &decl, &rows, &tgt, &mut report);
+    late.extend(hand);
     fails.extend(late);
 
     for line in &report {
@@ -2311,6 +2361,8 @@ async fn hostile_path_matrix() {
         fails.join("\n"),
         summary.join("\n")
     );
+    // attest — **모든 단언 뒤**(위 assert! 가 실패하면 여기 오지 않는다). 대조는 scripts/check-hp-attest.mjs.
+    attest(rows.len(), &counts, slots.len(), w1_compared);
 }
 
 /// `outcome!` 대조군 — 결과를 **타입**으로 가르는가. SDK 오류 · 다른 오류(가 생기면 W3 가 SDK 오류 타입이

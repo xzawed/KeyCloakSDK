@@ -1,9 +1,9 @@
 name: kotlin-ci
 on:
   push:
-    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml']
+    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs']
   pull_request:
-    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml']
+    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs']
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:
@@ -26,7 +26,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
       # 단위테스트 100개 + 커버리지 게이트(로직 모듈 라인≥90/브랜치≥85 — 네트워크 경계
       # AuthClient/admin.*/KeycloakClient omit) + ktlint(무경고). Docker 불필요(integrationTest는 별도 잡).
+      # attest — 적대 경로 행렬은 모든 단언이 통과한 뒤에만 $HP_ATTEST_DIR/kotlin.json 을 쓴다(근거: ci.yml 의 같은 단계).
       - run: ./gradlew build test koverVerify ktlintCheck
+        env:
+          HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
+          HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
+      - name: 적대 경로 행렬 attest — 이 실행에서 돌았는가(scripts/check-hp-attest.mjs)
+        working-directory: ${{ github.workspace }}
+        env:
+          HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
+          HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
+        run: node scripts/check-hp-attest.mjs "$HP_ATTEST_DIR" --nonce "$HP_ATTEST_NONCE" --lang kotlin
       # ⚠️ kotlin 은 `jvmToolchain(21)` 로 **빌드**하고 `jvmTarget=17` + `-Xjdk-release=17` 로
       # **방출**한다. 그 두 줄 중 하나만 지워도 빌드는 성공하고 major 65 가 나간다 — 툴체인이
       # 바이트코드 타깃까지 21 로 끌고 가기 때문이다. CI 는 JDK 21 에서 도니 그 사고를 못 본다.

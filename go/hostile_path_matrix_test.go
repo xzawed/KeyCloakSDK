@@ -661,8 +661,54 @@ func TestHostilePathMatrix(t *testing.T) {
 	hpJudge(t, cells)
 
 	// W1 — 손 목록 포함. 표의 실패 사유는 판정표 뒤에 모아 찍는다(프로브 꼬리에 보이게).
-	for _, why := range append(late, hpCheckHand(t, byLabel, tgt)...) {
+	hand, w1Compared := hpCheckHand(t, byLabel, tgt)
+	for _, why := range append(late, hand...) {
 		t.Error(why)
+	}
+	// attest — **모든 단언 뒤**에만 쓴다(실패한 행렬은 파일을 남기지 않는다). 대조는 scripts/check-hp-attest.mjs.
+	hpAttest(t, len(rows), counts, len(cells), w1Compared)
+}
+
+// hpAttest 는 이 행렬이 **이 실행에서 실제로 돌았다**는 증명을 $HP_ATTEST_DIR/go.json 에 쓴다 — CI 는 단위 테스트 단계 바로
+// 뒤에서 같은 nonce(HP_ATTEST_NONCE)로 그것을 읽는다. 레인이 초록이라는 것은 행렬이 돌았다는 증거가 아니다(`(cached)` 재생 ·
+// `-run` 필터). HP_ATTEST_DIR 이 없으면(로컬) 아무것도 하지 않는다. ⚠️ t.Failed() 면 쓰지 않는다 — 위 단언 중 하나라도 실패했다.
+// w1 은 손 목록 대조가 보안 기본값 가드까지 읽었을 때만 참이다(저장소 밖에서 건너뛴 실행은 증명이 아니다). knownGaps 는
+// hpKnownGaps **값**의 등록부 id(`id: 이유` 의 앞마디) — 정적 대조(check-known-gaps.mjs)가 못 보는 계산된 id 까지 런타임 값으로 낸다.
+func hpAttest(t *testing.T, rows int, counts map[string]int, w3 int, w1 bool) {
+	t.Helper()
+	dir := os.Getenv("HP_ATTEST_DIR")
+	if dir == "" || t.Failed() {
+		return
+	}
+	classes := map[string]int{}
+	for _, c := range []string{hpCodeExchange, hpTokenGrant, hpJWKSFetch, hpOther, hpNone, hpUndetermined} {
+		classes[c] = counts[c]
+	}
+	gaps := []string{}
+	for _, v := range hpKnownGaps {
+		id, _, _ := strings.Cut(v, ":")
+		if id = strings.TrimSpace(id); !slices.Contains(gaps, id) {
+			gaps = append(gaps, id)
+		}
+	}
+	sort.Strings(gaps)
+	body, err := json.Marshal(struct {
+		Lang      string         `json:"lang"`
+		Nonce     string         `json:"nonce"`
+		Rows      int            `json:"rows"`
+		Classes   map[string]int `json:"classes"`
+		W3        int            `json:"w3"`
+		W1        bool           `json:"w1"`
+		KnownGaps []string       `json:"knownGaps"`
+	}{"go", os.Getenv("HP_ATTEST_NONCE"), rows, classes, w3, w1, gaps})
+	if err == nil {
+		err = os.MkdirAll(dir, 0o750)
+	}
+	if err == nil {
+		err = os.WriteFile(filepath.Join(dir, "go.json"), body, 0o600)
+	}
+	if err != nil {
+		t.Fatalf("attest 를 쓰지 못했다(HP_ATTEST_DIR=%s): %v", dir, err)
 	}
 }
 
@@ -690,9 +736,9 @@ var hpHandTargets = []struct{ label, class, axis, anchor, call string }{
 // 보안 기본값 가드가 Go 행위 앵커를 적는 모양(`go/<파일>|func <이름>(`) — nonce·백오프·토큰 타입 세 축이 이 모양이다.
 var hpScriptAnchorRE = regexp.MustCompile(`go/([A-Za-z0-9_]+_test\.go)\|func ([A-Za-z0-9_]+)\(`)
 
-func hpCheckHand(t *testing.T, byLabel map[string]hpRow, tgt map[string][]string) []string {
+// hpCheckHand 는 실패 사유와, 보안 기본값 가드 대조까지 **실제로 돌았는지**를 낸다(뒤의 것이 attest 의 w1 이다).
+func hpCheckHand(t *testing.T, byLabel map[string]hpRow, tgt map[string][]string) (why []string, compared bool) {
 	t.Helper()
-	var why []string
 	anchors := map[string]bool{}
 	causeRunCalls := map[string]bool{}
 	for _, h := range hpHandTargets {
@@ -744,6 +790,7 @@ func hpCheckHand(t *testing.T, byLabel map[string]hpRow, tgt map[string][]string
 	script, err := os.ReadFile(filepath.Join("..", "scripts", "test", "test-security-defaults.sh"))
 	switch {
 	case err == nil:
+		compared = true
 		found := hpScriptAnchorRE.FindAllStringSubmatch(string(script), -1)
 		t.Logf("W1 손 목록 %d 항목 · 앵커 %d — causeRun 공개 호출 %d · 보안 기본값 가드의 Go 행위 앵커 %d 와 대조",
 			len(hpHandTargets), len(anchors), nCause, len(found))
@@ -760,7 +807,7 @@ func hpCheckHand(t *testing.T, byLabel map[string]hpRow, tgt map[string][]string
 	default:
 		t.Logf("W1: 저장소 밖(모듈 캐시)에서 돌아 보안 기본값 가드 대조는 건너뛴다")
 	}
-	return why
+	return why, compared
 }
 
 func hpInCheckout() bool {

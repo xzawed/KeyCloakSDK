@@ -9,6 +9,7 @@ import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
+import com.nimbusds.jose.util.JSONObjectUtils;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
@@ -542,6 +543,8 @@ class HostilePathMatrixTest {
   /** 라벨 → 수신자 타입(대개 선언 클래스, 제3자에게서 물려받은 메서드면 그것을 물려받은 SDK 공개 타입). */
   private final Map<String, Class<?>> recvTypes = new HashMap<>();
   private int inheritedRows;
+  /** attest 의 w1 — {@link #checkHand} 가 보안 기본값 가드까지 실제로 대조했는가(저장소 밖에서 건너뛴 실행은 증명이 아니다). */
+  private boolean w1Compared;
   private final Map<Class<?>, Integer> builderOf = new LinkedHashMap<>();
   private final Map<Class<?>, List<Executable>> producerCache = new HashMap<>();
 
@@ -913,6 +916,34 @@ class HostilePathMatrixTest {
     for (String f : fails) log("FAIL " + f);
     logSummaries(counts, cells);
     assertTrue(fails.isEmpty(), () -> fails.size() + " 건:\n" + String.join("\n", fails));
+    // attest — **모든 단언 뒤**(위 assertTrue 가 실패하면 여기 오지 않는다). 대조는 scripts/check-hp-attest.mjs.
+    attest(rows.size(), counts, cells.size(), w1Compared);
+  }
+
+  /**
+   * 이 행렬이 <b>이 실행에서 실제로 돌았다</b>는 증명을 {@code $HP_ATTEST_DIR/java.json} 에 쓴다 — CI 는 단위 테스트 단계 바로
+   * 뒤에서 같은 nonce({@code HP_ATTEST_NONCE})로 {@code scripts/check-hp-attest.mjs} 가 읽는다. 레인이 초록이라는 것은 행렬이
+   * 돌았다는 증거가 아니다(필터 · 건너뛴 W1). {@code HP_ATTEST_DIR} 이 없으면(로컬) 아무것도 하지 않는다. ⚠️ 부르는 쪽은
+   * <b>모든 단언 뒤</b>에만 부른다 — 실패한 행렬은 파일을 남기지 않는다. {@code knownGaps} 는 {@link #KNOWN_GAPS} <b>값</b>의
+   * 등록부 id({@code id: 이유} 의 앞마디)다 — 정적 대조(check-known-gaps.mjs)가 못 보는 계산된 id 까지 런타임 값으로 낸다.
+   */
+  private static void attest(int rows, Map<String, Integer> counts, int w3, boolean w1) throws IOException {
+    String dir = System.getenv("HP_ATTEST_DIR");
+    if (dir == null || dir.isEmpty()) return;
+    Map<String, Object> classes = new LinkedHashMap<>();
+    for (String c : CLASSES) classes.put(c, counts.getOrDefault(c, 0));
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("lang", "java");
+    body.put("nonce", Optional.ofNullable(System.getenv("HP_ATTEST_NONCE")).orElse(""));
+    body.put("rows", rows);
+    body.put("classes", classes);
+    body.put("w3", w3);
+    body.put("w1", w1);
+    body.put("knownGaps", List.copyOf(KNOWN_GAPS.values().stream()
+        .map(v -> v.split(":", 2)[0].strip()).collect(Collectors.toCollection(TreeSet::new))));
+    Path out = Path.of(dir);
+    Files.createDirectories(out);
+    Files.writeString(out.resolve("java.json"), JSONObjectUtils.toJSONString(body));
   }
 
   /** {@link FacadeDumpTest} 의 뿌리·걷기가 닿는 SDK 타입 — 그 테스트의 가짜 IdP 위에서, 카나리아 검사 없이. */
@@ -1272,6 +1303,7 @@ class HostilePathMatrixTest {
       }
       return why;
     }
+    w1Compared = true;
     Matcher m = SCRIPT_ANCHOR.matcher(Files.readString(script));
     int found = 0;
     while (m.find()) {
