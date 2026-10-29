@@ -19,8 +19,9 @@ namespace Xzawed.Keycloak;
 /// started it.
 /// </para>
 /// <para>
-/// Inside the window the fetch is refused without touching the IdP. The manager treats that like any failed refresh: it
-/// keeps serving the stale configuration, so tokens it can verify keep validating.
+/// Inside the window the fetch is refused without touching the IdP — and refused like any failed fetch: the configuration
+/// already served keeps answering only until its lifetime ends (<see cref="KeySetLifetime"/>); after that, nothing does.
+/// Every fetch that succeeds is stamped here, where it completes — the lifetime starts then.
 /// </para>
 /// <para>
 /// A configuration the validator rejects — a 200 with <c>{"keys":[]}</c> — is a failed fetch too: the manager runs the
@@ -32,20 +33,24 @@ internal sealed class BackoffConfigurationRetriever : IConfigurationRetriever<Op
     private readonly IConfigurationRetriever<OpenIdConnectConfiguration> _inner;
     private readonly IConfigurationValidator<OpenIdConnectConfiguration> _validator;
     private readonly FailureBackoff _backoff;
+    private readonly KeySetLifetime? _lifetime;
 
     /// <param name="inner">The retriever that actually fetches.</param>
     /// <param name="validator">The check the manager applies before installing a configuration.</param>
     /// <param name="now">Clock seam (tests only).</param>
     /// <param name="jitter">Jitter seam (tests only).</param>
+    /// <param name="lifetime">Where a fetched key set's lifetime starts; <c>null</c> only in tests that do not need it.</param>
     internal BackoffConfigurationRetriever(
         IConfigurationRetriever<OpenIdConnectConfiguration> inner,
         IConfigurationValidator<OpenIdConnectConfiguration> validator,
         Func<DateTimeOffset>? now = null,
-        Func<double>? jitter = null)
+        Func<double>? jitter = null,
+        KeySetLifetime? lifetime = null)
     {
         _inner = inner;
         _validator = validator;
         _backoff = new FailureBackoff(now, jitter);
+        _lifetime = lifetime;
     }
 
     public async Task<OpenIdConnectConfiguration> GetConfigurationAsync(
@@ -67,6 +72,7 @@ internal sealed class BackoffConfigurationRetriever : IConfigurationRetriever<Op
             throw;
         }
 
+        _lifetime?.Fetched(config);
         _backoff.Succeeded();
         return config;
     }

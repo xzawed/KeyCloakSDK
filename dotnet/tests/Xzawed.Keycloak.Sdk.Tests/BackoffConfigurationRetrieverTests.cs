@@ -51,6 +51,25 @@ public sealed class BackoffConfigurationRetrieverTests
         Assert.Equal(2, _idp.Requests);
     }
 
+    /// <summary>The cancellation decision at the gate every fetch passes (the cold-load gate's twin is in
+    /// <c>BackoffConfigurationManagerTests</c>): a fetch its caller cancelled counts as failed, and the next one inside the
+    /// window is refused without touching the IdP.</summary>
+    [Fact]
+    public async Task A_fetch_its_caller_cancelled_counts_as_a_failed_fetch()
+    {
+        _idp.WaitForCancellation = true;
+        using var cts = new CancellationTokenSource();
+        var fetch = _retriever.GetConfigurationAsync(Discovery, _idp, cts.Token);
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fetch);
+        Assert.Equal(1, _idp.Requests);
+
+        _idp.WaitForCancellation = false;
+        var refused = await Assert.ThrowsAsync<KeycloakTransportException>(FetchAsync);
+        Assert.Contains("backing off after 1 consecutive failures", refused.Message, StringComparison.Ordinal);
+        Assert.Equal(1, _idp.Requests);
+    }
+
     /// <summary>A 200 with no keys is a failed fetch: the manager would refuse to install it and fetch again next call.</summary>
     [Fact]
     public async Task A_configuration_the_validator_rejects_is_a_failed_fetch()
@@ -129,18 +148,23 @@ public sealed class BackoffConfigurationRetrieverTests
 
         public bool Down { get; set; }
 
+        /// <summary>Requests wait until their token is cancelled.</summary>
+        public bool WaitForCancellation { get; set; }
+
         public string Jwks { get; set; } = KeySet();
 
         public int Requests => Volatile.Read(ref _requests);
 
-        public Task<string> GetDocumentAsync(string address, CancellationToken cancel)
+        public async Task<string> GetDocumentAsync(string address, CancellationToken cancel)
         {
             Interlocked.Increment(ref _requests);
+            if (WaitForCancellation)
+                await Task.Delay(Timeout.Infinite, cancel);
             if (Down)
                 throw new IOException($"Unable to fetch '{address}': HTTP 503.");
-            return Task.FromResult(address == Discovery
+            return address == Discovery
                 ? """{"issuer":"http://idp.test/realms/r","jwks_uri":"http://idp.test/realms/r/protocol/openid-connect/certs"}"""
-                : Jwks);
+                : Jwks;
         }
 
         private static string KeySet()

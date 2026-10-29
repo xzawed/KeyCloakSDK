@@ -1,6 +1,5 @@
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
-using Microsoft.IdentityModel.Protocols.Configuration;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 
@@ -33,7 +32,8 @@ public sealed class JwtValidator
     private static readonly JsonWebTokenHandler Handler = new() { MapInboundClaims = false, MaximumTokenSizeInBytes = MaxJwtBytes };
     private readonly TokenValidationParameters _tvp;
 
-    /// <summary>Production: JWKS via ConfigurationManager (OIDC discovery), rate-limited refresh.</summary>
+    /// <summary>Production: JWKS via OIDC discovery; a key set is used for 300 seconds from the fetch that brought it and
+    /// never after — the next validation fetches again and fails if that fetch fails; rate-limited refetch.</summary>
     /// <param name="issuer">Realm issuer URL; discovery hangs off it.</param>
     /// <param name="opts">Hardened validation options.</param>
     /// <param name="http">The client discovery and the JWKS are fetched with. They are read through a 51,200-byte cap
@@ -46,18 +46,14 @@ public sealed class JwtValidator
     /// <param name="issuer">Realm issuer URL; discovery hangs off it.</param>
     /// <param name="opts">Hardened validation options.</param>
     /// <param name="http">Shared client (redirect-blocking, SSRF-hardened).</param>
-    /// <param name="now">Clock seam (tests only).</param>
+    /// <param name="now">Clock seam (tests only): the key set's lifetime, the failure backoff and the refetch window.</param>
     /// <param name="jitter">Jitter seam (tests only).</param>
-    /// <param name="configurationEvents">Tests only; <c>null</c> in production. IdentityModel's public hook for handing
-    /// the manager a configuration with its retrieval time — the one way to give a test a configuration that is already
-    /// past the 12-hour refresh without waiting 12 hours or reflecting on the manager's internal clock.</param>
     internal JwtValidator(
         string issuer,
         JwtValidatorOptions opts,
         HttpClient http,
         Func<DateTimeOffset>? now,
-        Func<double>? jitter,
-        IConfigurationEventHandler<OpenIdConnectConfiguration>? configurationEvents = null)
+        Func<double>? jitter)
     {
         _tvp = BuildParameters(issuer, opts);
         // ⚠️ Not HttpDocumentRetriever: it imposes no byte cap. The shared client's
@@ -75,27 +71,38 @@ public sealed class JwtValidator
             MinimumNumberOfKeys = 1,
         };
         var metadataAddress = $"{issuer}/.well-known/openid-configuration";
-        // Every fetch passes through here — cold load, stale refresh, forced refetch — so a failed one is backed off here.
-        // The manager hides a failed refresh once a configuration is cached.
-        var retriever = new BackoffConfigurationRetriever(new OpenIdConnectConfigurationRetriever(), keysRequired, now, jitter);
-        var inner = new ConfigurationManager<OpenIdConnectConfiguration>(metadataAddress, retriever, docRetriever, keysRequired)
-        {
-            AutomaticRefreshInterval = TimeSpan.FromHours(12),
-            // Gates no refetch here (RequestRefresh never reaches this manager, see below). Kept for IdentityModel's
-            // blocking mode — a host's AppContext switch — which paces a failed refresh with it.
-            RefreshInterval = TimeSpan.FromSeconds(opts.RefreshIntervalSeconds),
-            ConfigurationEventHandler = configurationEvents,
-        };
+        // A key set is used for KeySetLifetime.JwksMaxAgeSeconds from the fetch that brought it, then never again.
+        var lifetime = new KeySetLifetime(now);
+        // Every fetch passes through here — cold load, reload, forced refetch — so a failed one is backed off here, and a
+        // successful one starts its key set's lifetime here. The manager hides a failed refresh once a configuration is cached.
+        var retriever = new BackoffConfigurationRetriever(new OpenIdConnectConfigurationRetriever(), keysRequired, now, jitter, lifetime);
+        // The reload once a key set has expired is a cold load — on a new IdentityModel manager, the only cold one.
+        var coldStart = new ColdStartConfigurationManager(
+            () => new ConfigurationManager<OpenIdConnectConfiguration>(metadataAddress, retriever, docRetriever, keysRequired)
+            {
+                // Not the lifetime (KeySetLifetime): past this the manager serves what it holds while refreshing in the background.
+                // A manager is started over once the key set served is JwksMaxAgeSeconds old, so this only comes due while forced
+                // refetches keep serving newer sets over its own.
+                AutomaticRefreshInterval = TimeSpan.FromHours(12),
+                // Gates no refetch here (RequestRefresh never reaches this manager, see below). Kept for IdentityModel's
+                // blocking mode — a host's AppContext switch — which paces a failed refresh with it.
+                RefreshInterval = TimeSpan.FromSeconds(opts.RefreshIntervalSeconds),
+            },
+            lifetime);
         // The refetch a validation asks for — an unresolved kid, a bad signature — runs in the SDK, and that validation
         // waits for it: IdentityModel's manager ran it in the background, after the call that asked had already failed.
         // Its window is the same interval. A cold cache against a failing IdP is backed off separately (BackoffConfigurationManager)
         // — measured 20 validations → 40 requests.
         _tvp.ConfigurationManager = new ForcedRefetchConfigurationManager(
-            new BackoffConfigurationManager(inner, now, jitter),
+            new BackoffConfigurationManager(coldStart, now, jitter),
             async () => await retriever.GetConfigurationAsync(metadataAddress, docRetriever, CancellationToken.None).ConfigureAwait(false),
-            now)
+            now,
+            coldStart)
         {
             RefreshInterval = TimeSpan.FromSeconds(opts.RefreshIntervalSeconds),
+            // Off: after a failed fetch the handler falls back to last-known-good, whose lifetime counts from the last token a
+            // configuration validated, on the wall clock (an hour by default) — it would serve keys past their lifetime.
+            UseLastKnownGoodConfiguration = false,
         };
     }
 
@@ -132,7 +139,7 @@ public sealed class JwtValidator
 
     /// <summary>A copy of the parameters that differs only in the audience.</summary>
     /// <remarks>⚠️ <c>Clone()</c> keeps the key source by reference, and that is what keeps ONE key store: the copy
-    /// holds the same <c>ConfigurationManager</c> (JWKS cache, 30s refresh gate, cold-cache backoff, last-known-good) and
+    /// holds the same <c>ConfigurationManager</c> (JWKS cache and its lifetime, 30s refresh gate, cold-cache backoff) and
     /// the same <c>IssuerSigningKey</c>. Never build a second validator from the options for this — it would fetch and
     /// cache the JWKS on its own. (The audience list, by contrast, is copied — measured on 8.23.0 — so setting it here
     /// cannot retarget access-token validation.) <c>ValidAudience</c> is cleared because IdentityModel accepts it in

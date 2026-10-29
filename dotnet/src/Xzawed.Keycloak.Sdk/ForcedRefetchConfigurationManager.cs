@@ -6,8 +6,9 @@ namespace Xzawed.Keycloak;
 /// <summary>
 /// Runs the refetch IdentityModel's handler asks for (<see cref="RequestRefresh"/>) when a token fails against the cached
 /// configuration in a way a newer one could fix — its key is not there, or its signature or issuer does not match — and
-/// hands the result to the validation that asked, inside the same call. The cold load and the 12-hour refresh stay with
-/// the manager it wraps.
+/// hands the result to the validation that asked, inside the same call. The cold load stays with the manager it wraps, and
+/// so does the reload once the served key set has reached its lifetime (<see cref="KeySetLifetime"/>): that set is never
+/// served again — the wrapped manager starts over cold.
 /// </summary>
 /// <remarks>
 /// <para>⚠️ <b>Why the SDK runs it.</b> IdentityModel's manager starts a requested refresh with <c>Task.Run</c> and returns;
@@ -29,6 +30,7 @@ internal sealed class ForcedRefetchConfigurationManager : BaseConfigurationManag
     private readonly BaseConfigurationManager _inner;
     private readonly Func<Task<BaseConfiguration>> _fetch;
     private readonly Func<DateTimeOffset> _now;
+    private readonly ColdStartConfigurationManager? _coldStart;
 
     /// <summary>The refetch this validation asked for. The handler calls <see cref="RequestRefresh"/> and then
     /// <see cref="GetBaseConfigurationAsync"/> back to back inside one async method, so what the first sets reaches the
@@ -45,27 +47,40 @@ internal sealed class ForcedRefetchConfigurationManager : BaseConfigurationManag
     /// published whole, never changed.</summary>
     private StrongBox<(BaseConfiguration Over, BaseConfiguration Fresh)>? _served;
 
-    /// <param name="inner">Serves the cached configuration: the cold load and the 12-hour refresh.</param>
+    /// <param name="inner">Serves the cached configuration: the cold load, and the reload once a key set has expired.</param>
     /// <param name="fetch">One discovery and JWKS fetch, through the retriever <paramref name="inner"/> uses.</param>
     /// <param name="now">Clock seam — tests must be able to cross the window without waiting for it.</param>
+    /// <param name="coldStart">The cold-load manager under <paramref name="inner"/>, started over once the served key set
+    /// has expired; <c>null</c> only in tests that do not cross a lifetime.</param>
     internal ForcedRefetchConfigurationManager(
         BaseConfigurationManager inner,
         Func<Task<BaseConfiguration>> fetch,
-        Func<DateTimeOffset>? now = null)
+        Func<DateTimeOffset>? now = null,
+        ColdStartConfigurationManager? coldStart = null)
     {
         _inner = inner;
         _fetch = fetch;
         _now = now ?? (() => DateTimeOffset.UtcNow);
+        _coldStart = coldStart;
     }
 
     public override async Task<BaseConfiguration> GetBaseConfigurationAsync(CancellationToken cancel)
     {
         if (_asked.Value is { } refetch)
             await refetch.WaitAsync(cancel).ConfigureAwait(false); // never faults — RefetchAsync catches
+        // A key set at its age is never served again — not after a failed reload either: the cold-load manager starts over,
+        // and its cold load answers or fails this validation. Judged on what was served last, before the wrapped manager is
+        // asked again, so an expired one never gets the chance to refresh in the background instead.
+        if (_coldStart is { } coldStart && Volatile.Read(ref _cached) is { } last)
+            coldStart.StartOverIfExpired(last, ServedFor(last));
         var cached = await _inner.GetBaseConfigurationAsync(cancel).ConfigureAwait(false);
         Volatile.Write(ref _cached, cached);
-        return Volatile.Read(ref _served) is { Value: var served } && ReferenceEquals(served.Over, cached) ? served.Fresh : cached;
+        return ServedFor(cached);
     }
+
+    /// <summary>What is served while the wrapped manager serves <paramref name="cached"/>: a refetch decided against it, or it.</summary>
+    private BaseConfiguration ServedFor(BaseConfiguration cached) =>
+        Volatile.Read(ref _served) is { Value: var served } && ReferenceEquals(served.Over, cached) ? served.Fresh : cached;
 
     public override void RequestRefresh()
     {
@@ -104,8 +119,7 @@ internal sealed class ForcedRefetchConfigurationManager : BaseConfigurationManag
         }
         catch (Exception)
         {
-            // Counted by the retriever's failure backoff. The cached configuration keeps answering, as it did after a failed
-            // refresh in IdentityModel's manager.
+            // Counted by the retriever's failure backoff. The cached configuration keeps answering — until its lifetime ends.
         }
         finally
         {
