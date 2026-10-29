@@ -60,19 +60,19 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-10-29 · #834–#880 반영)
+### 다음 세션 진입점 (2026-10-29 · #881–#900 반영)
 
-**지금 상태** — 물결 6(2026-10-27/28): 아홉 전부 **LIVE**, 게시 바이트 = 태그 · 기준선 = 게시판(#863·#865). 월간 상한 경고(6/7)는 7·8 번째 게시를 막지 않았다(`ci.md`). 태그 위임은 물결마다 다시 묻는다. 열린 PR 은 Dependabot 뿐이어야 한다. 래퍼 9.8 의 되살릴 조건은 #682·#788.
+**지금 상태** — 물결 6(2026-10-27/28): 아홉 전부 **LIVE**, 게시 바이트 = 태그 · 기준선 = 게시판(#863·#865). 월간 상한 경고(6/7)는 7·8 번째 게시를 막지 않았다(`ci.md`). 태그 위임은 물결마다 다시 묻는다. 열린 PR 은 Dependabot 뿐이어야 한다. 래퍼 9.8 의 되살릴 조건은 #682·#788. ⚠️ `[Unreleased]` 에 아홉 다 변화가 있다 — 물결은 사람 몫.
 
 열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유한다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. 2026-10-29 판정의 수행(`grep -n '판정 2026-10-29'` 과 아래 「항목 없는 셋」) · 그다음 `response-framing-unbounded` 의 node·python · `wave4-hardening-php` 의 남은 칸.
+1. 2026-10-29 판정의 수행은 끝났다(#882–#898). 남은 칸은 각 항목이 적는다 — `response-read-deadline-divergent` · `korean-api-docs-in-published-packages` · `wave4-hardening-php` · `response-framing-unbounded`(node 는 상류 보고 — 사람 몫).
 2. `guard-detection-surface-hand-narrowed` [H/M](손 표 축 — 되살릴 조건) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
-3. ⚠️ **손대기 전에 전제를 잰다** — 이번에도 뒤집혔다: jwks 후보(「신선한 캐시가 없으면 센다」)는 600 초 경계에서 규칙 (4) 를 깼고, 「낡은 캐시 + 장애」는 node 하나가 아니라 node·.NET 이었고, probe.sh 초안 정규식은 지어낸 줄로 골라 실제 출력 셋을 못 맞췄다.
+3. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다).
 
-**판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
+**판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 · 라운드 2 #892 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
 
 **함정** — 전부 그대로 유효하다. (a)–(i) 는 한 줄 요약이다(원문: (a)–(f) 는 2026-10-28 이관분의 「세션 회고」 절 끝(2026-09-05·06), (g)–(i) 와 더한 날은 git log).
 
