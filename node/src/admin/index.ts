@@ -17,20 +17,25 @@ export { RolesResource } from './roles.js'
 export { GroupsResource } from './groups.js'
 
 /**
- * 관리(Admin) API 파사드 진입점. 리소스 접근자({@link users}/{@link clients}/{@link realms}/{@link roles}/{@link groups})와
- * 탈출구 {@link raw}(공식 `@keycloak/keycloak-admin-client`)를 노출한다.
+ * Entry point of the Admin API facade. Exposes the resource accessors
+ * ({@link users}/{@link clients}/{@link realms}/{@link roles}/{@link groups}) and the escape hatch {@link raw}
+ * (the official `@keycloak/keycloak-admin-client`).
  *
- * ⚠️ 파사드의 다섯 리소스는 admin-client 메서드를 부르지 않는다 — admin-client 가 보내는 것과 같은 요청을 직접 보낸다
- * (`http.ts`). admin-client 26.8 은 2xx 가 아닌 응답의 본문을 통째로 읽고(`fetchWithError`) 쓰기의 2xx 본문도 끝까지
- * 읽는데(`parseResponse`), 파사드는 오류 본문을 1 MiB 까지만 비우고 쓰기의 2xx 본문은 읽지 않는다. 같은 요청인지는
- * `test/unit/admin-response-body.test.ts` 가 고치기 전 위임 코드와 와이어로 대조한다 — admin-client 를 올릴 때마다 돌 것.
+ * ⚠️ The facade's five resources do not call admin-client methods — they send, themselves, the same requests
+ * admin-client sends (`http.ts`). admin-client 26.8 reads the body of a non-2xx response whole (`fetchWithError`)
+ * and reads a write's 2xx body to its end too (`parseResponse`), whereas the facade drains an error body only up to
+ * 1 MiB and does not read a write's 2xx body. That they are the same requests is checked on the wire by
+ * `test/unit/admin-response-body.test.ts` against the delegating code from before the fix — run it on every
+ * admin-client bump.
  *
- * 결합 규칙: admin은 auth 모듈에 의존하지 않는다 — core의 {@link TokenProvider} 인터페이스(유일 접착제)로
- * 토큰을 주입받는다. 파사드가 캐싱 client-credentials provider를 주입하고, 그 provider가 만료 시
- * client_credentials로 재인증한다(admin-client 내장 TokenManager에 위임하지 않는다 — 그 경로는 만료 시
- * refresh_token만 시도해 client-credentials에서 영구 실패하기 때문).
+ * Coupling rule: admin does not depend on the auth module — it receives tokens through core's
+ * {@link TokenProvider} interface (the only glue). The facade injects a caching client-credentials provider, and
+ * that provider re-authenticates with client_credentials on expiry (it does not delegate to admin-client's
+ * built-in TokenManager — on expiry that path only tries refresh_token, so it fails permanently under
+ * client-credentials).
  *
- * 생성 인자·토큰 배선은 `admin.test.ts`가 admin-client 를 목킹해, 실호출은 통합테스트가 검증한다.
+ * `admin.test.ts` verifies the constructor arguments and the token wiring with admin-client mocked; the
+ * integration tests verify the real calls.
  */
 export class AdminClient {
   readonly users: UsersResource
@@ -50,17 +55,17 @@ export class AdminClient {
   }
 
   /**
-   * admin-client를 생성하고 `tokenProvider`를 등록한 뒤 초기 토큰을 확보한다. `config`의 read
-   * 타임아웃을 주입해 admin 호출이 무한 대기하지 않게 한다(미주입=스레드 고갈 DoS). clientSecret이
-   * 없으면 네트워크 접근 전에 {@link KeycloakConfigError}로 실패한다.
+   * Creates the admin-client, registers `tokenProvider` and then obtains the initial token. It injects the read
+   * timeout of `config` so admin calls never wait forever (not injected = thread-exhaustion DoS). Without a
+   * clientSecret it fails with {@link KeycloakConfigError} before any network access.
    *
-   * admin-client의 내장 TokenManager 대신 SDK의 캐싱 {@link TokenProvider}를 등록한다. 내장
-   * TokenManager는 액세스 토큰이 만료되면 refresh_token 그랜트만 시도하는데(`#refreshAccessToken`),
-   * client_credentials 그랜트는 refresh_token을 발급하지 않으므로 **최초 토큰 만료 후 모든 admin
-   * 호출이 "Cannot refresh token"으로 영구 실패**한다(장수명 서버에 치명적). SDK provider는 만료를
-   * 감지해 client_credentials로 재인증한다. 또한 `kc.auth()`를 호출하지 않으므로 admin-client
-   * 26.7.x가 client_credentials 응답의 부재한 refresh_token을 `decodeToken(undefined)`로 파싱하다
-   * 크래시하는 경로도 원천 회피한다.
+   * It registers the SDK's caching {@link TokenProvider} instead of admin-client's built-in TokenManager. When the
+   * access token expires, the built-in TokenManager only tries the refresh_token grant (`#refreshAccessToken`), and
+   * the client_credentials grant issues no refresh_token, so **after the first token expires, every admin call
+   * fails permanently with "Cannot refresh token"** (fatal for a long-lived server). The SDK provider detects
+   * expiry and re-authenticates with client_credentials. And because it never calls `kc.auth()`, it also avoids at
+   * the root the path where admin-client 26.7.x crashes parsing the absent refresh_token of a client_credentials
+   * response with `decodeToken(undefined)`.
    */
   static async create(config: KeycloakConfig, tokenProvider: TokenProvider): Promise<AdminClient> {
     if (config.clientSecret === undefined) {
@@ -99,20 +104,21 @@ export class AdminClient {
   }
 
   /**
-   * 파사드가 감싸지 않은 엔드포인트에 접근하기 위한 탈출구 — 공식 admin-client 그 자체다.
+   * The escape hatch for endpoints the facade does not wrap — the official admin-client itself.
    *
-   * ⚠️ 이 경로는 admin-client 그대로라 2xx 가 아닌 응답의 본문을 상한 없이 끝까지 읽어 `NetworkError.responseData` 에
-   * 싣고, 쓰기의 2xx 본문도 끝까지 읽는다(파사드와 다르다 — 등록부 `admin-response-body-unbounded`). 그 자리는
-   * `test/unit/admin-response-body.test.ts` 의 「남긴 자리」 시험이 고정한다. `setConfig()` 로 바꾼 주소·요청 옵션은 이
-   * 경로에만 걸린다.
+   * ⚠️ This path is admin-client as is, so it reads the body of a non-2xx response to its end, with no cap, into
+   * `NetworkError.responseData`, and reads a write's 2xx body to its end too (unlike the facade — registry
+   * `admin-response-body-unbounded`). That spot is pinned by the "left in place" test in
+   * `test/unit/admin-response-body.test.ts`. An address or request options changed with `setConfig()` apply only
+   * to this path.
    */
   raw(): KcAdminClient {
     return this.#kc
   }
 
   /**
-   * 자원 정리 훅. 파사드와 admin-client 는 전역 `fetch` 기반이라 보유 연결이 없어 현재 no-op이지만,
-   * {@link KeycloakClient} close 프로토콜과 대칭을 이루기 위해 유지한다.
+   * Resource-cleanup hook. The facade and admin-client are built on the global `fetch` and hold no connections, so
+   * this is currently a no-op, but it is kept for symmetry with the {@link KeycloakClient} close protocol.
    */
   async close(): Promise<void> {
     return undefined
