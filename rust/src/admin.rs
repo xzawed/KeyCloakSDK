@@ -15,7 +15,7 @@
 use crate::config::KeycloakConfig;
 use crate::error::{AdminError, KeycloakError, Result};
 use crate::jwks::TOKEN_RESPONSE_MAX_BYTES;
-use crate::token_provider::TokenProvider;
+use crate::token_provider::{TokenProvider, sendable_bearer};
 use async_trait::async_trait;
 use keycloak::prelude::reqwest;
 use keycloak::types::{
@@ -28,6 +28,7 @@ use std::sync::Arc;
 
 /// 우리 `TokenProvider` → keycloak crate의 `KeycloakTokenSupplier`(`#[async_trait]`) 어댑터 — `raw()` 의 crate 가 쓴다.
 /// admin↔auth의 유일한 접착제(admin은 AuthClient를 직접 참조하지 않는다). 파사드는 `TokenProvider` 를 직접 부른다.
+/// crate 에 주는 것은 `sendable_bearer` 가 돌려준 값이다 — 보낼 수 없는 토큰이면 crate 가 요청을 짓기 전에 실패한다.
 pub struct SdkTokenSupplier {
     inner: Arc<dyn TokenProvider>,
 }
@@ -37,15 +38,25 @@ impl KeycloakTokenSupplier for SdkTokenSupplier {
     async fn get(&self, _url: &str) -> std::result::Result<String, KcError> {
         // 우리 오류를 keycloak::KeycloakError로 변환(어댑터 경계, 우리→그들).
         // 토큰 획득 실패는 인증 문제이므로 401 HttpFailure로 표면화(파사드도 같은 401 이다 — `AdminClient::send`).
-        self.inner
-            .access_token()
-            .await
-            .map_err(|e| KcError::HttpFailure {
-                status: 401,
-                body: None,
-                text: format!("token supplier: {e}"),
-            })
+        // 보낼 수 없는 Bearer 도 같은 모양이다 — crate 의 헤더 검사가 내던 `ReqwestFailure` 는 공개 생성자가 없다.
+        let failure = |e: KeycloakError| KcError::HttpFailure {
+            status: 401,
+            body: None,
+            text: format!("token supplier: {e}"),
+        };
+        let token = self.inner.access_token().await.map_err(failure)?;
+        sendable_bearer(&token)
+            .map(str::to_string)
+            .ok_or_else(|| failure(unsendable()))
     }
+}
+
+/// 보낼 수 없는 Bearer — 요청을 짓기 전에 거부한다([`sendable_bearer`]). 파사드의 오류는 전에 reqwest 의 헤더 검사가
+/// CR·LF·NUL·DEL·VT 에서 내던 것과 같은 `Transport`(`admin request: …`)이고, 토큰을 담지 않는다.
+fn unsendable() -> KeycloakError {
+    KeycloakError::Transport(
+        "admin request: access token is not an RFC 6750 bearer token (b64token)".into(),
+    )
 }
 
 pub struct AdminClient {
@@ -145,14 +156,16 @@ impl AdminClient {
 
     /// 보낸다 — 토큰 → Bearer → 전송. 2xx 면 본문을 **읽지 않은** 응답을, 아니면 상태로 고른 오류([`reject`])를 낸다.
     /// 토큰을 못 얻으면 요청을 보내지 않고 `Admin(Other { status: 401 })` 이다 — crate 를 거치던 때와 같다
-    /// (`tests/token_response_cap.rs` 의 `rejected_over_cap`).
+    /// (`tests/token_response_cap.rs` 의 `rejected_over_cap`). Bearer 는 [`sendable_bearer`] 가 돌려준 값이고, 보낼 수
+    /// 없는 토큰이면 요청 없이 [`unsendable`] 이다(`tests/bearer_grammar.rs`).
     async fn send(&self, req: reqwest::RequestBuilder) -> Result<reqwest::Response> {
         let token = self
             .token_provider
             .access_token()
             .await
             .map_err(|_| KeycloakError::from_admin_status(401))?;
-        let resp = req.bearer_auth(token).send().await.map_err(transport)?;
+        let bearer = sendable_bearer(&token).ok_or_else(unsendable)?;
+        let resp = req.bearer_auth(bearer).send().await.map_err(transport)?;
         if resp.status().is_success() {
             Ok(resp)
         } else {

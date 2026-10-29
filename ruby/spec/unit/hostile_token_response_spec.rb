@@ -188,10 +188,11 @@ module HostileTokenResponseSpec
                 reply: raw_json(200, '{"access_token":"uAT6k-nested-canary","token_type":"Bearer","expires_in":300,',
                                 '"active":true,"realm_access":{"roles":["r', ff, '"]}}'),
                 expect: expect_all(TOKEN + ["auth.introspect"], transport) },
-      # ── 헤더에 실을 수 없는 Bearer(wave 4 헤더 사례 탐침) — 토큰 응답은 멀쩡한 JSON 이다. net-http 는 CR·LF 면
-      # 헤더 값을 **통째로 인용한** raw ArgumentError(= Bearer 누출)를, 65,536 바이트를 넘으면 raw ArgumentError 를
-      # 요청 전에 내고, 끝의 NUL·공백·탭은 `strip` 으로 말없이 지운 채 보낸다(실측). NUL·그 밖의 C0·DEL·앞뒤 공백도
-      # 헤더 값에 올 수 없다 — 다 요청 전에 AuthError 다. U+00FF 위 문자는 고쳐 쓰지 않고 그대로 보낸다(서버가 판정).
+      # ── 헤더에 실을 수 없는 Bearer(wave 4 헤더 사례 탐침)와 bearer 문법(bearer-token-grammar-divergent) — 토큰 응답은
+      # 멀쩡한 JSON 이다. net-http 는 CR·LF 면 헤더 값을 **통째로 인용한** raw ArgumentError(= Bearer 누출)를, 65,536 바이트를
+      # 넘으면 raw ArgumentError 를 요청 전에 내고, 끝의 NUL·공백·탭은 `strip` 으로 말없이 지운 채 보냈다(실측). 이제 SDK 가
+      # 앞뒤 SP·HTAB·CR·LF 를 다듬어 보내고(k7·k8·k9), 다듬은 것이 b64token 이 아니면(NUL·DEL·가운데 CR·LF · ASCII 밖) 그랜트가
+      # 캐시 전에 AuthError 로 거부한다. 65,530 바이트는 b64token 이라 그랜트를 지나고 BearerAuth 의 길이 검사가 거부한다(k3).
       "k1" => { note: "200 JSON — access_token 에 LF(admin 이 헤더로 보낼 수 없다)",
                 reply: json(200, access_token: "kLF7k-lf-bearer-canary\nx", token_type: "Bearer", expires_in: 300),
                 admin: admin_ok, expect: { "admin.users.get(token via provider)" => auth } },
@@ -210,26 +211,26 @@ module HostileTokenResponseSpec
                 reply: json(200, access_token: "kNE7k-nul-end-bearer-canary#{0.chr}", token_type: "Bearer",
                                  expires_in: 300),
                 admin: admin_ok, expect: { "admin.users.get(token via provider)" => auth } },
-      "k7" => { note: "200 JSON — access_token 끝에 공백(net-http 가 지운 채 보냈다)",
+      "k7" => { note: "200 JSON — access_token 끝에 공백(SDK 가 다듬어 보낸다)",
                 reply: json(200, access_token: "kSP7k-space-end-bearer-canary ", token_type: "Bearer",
                                  expires_in: 300),
-                admin: admin_ok, expect: { "admin.users.get(token via provider)" => auth } },
-      "k8" => { note: "200 JSON — access_token 끝에 탭(net-http 가 지운 채 보냈다)",
+                admin: admin_ok, expect: { "admin.users.get(token via provider)" => NilClass } },
+      "k8" => { note: "200 JSON — access_token 끝에 탭(SDK 가 다듬어 보낸다)",
                 reply: json(200, access_token: "kTB7k-tab-end-bearer-canary\t", token_type: "Bearer",
                                  expires_in: 300),
-                admin: admin_ok, expect: { "admin.users.get(token via provider)" => auth } },
-      "k9" => { note: "200 JSON — access_token 앞에 공백(net-http 는 그대로 — 받는 쪽이 접는다)",
+                admin: admin_ok, expect: { "admin.users.get(token via provider)" => NilClass } },
+      "k9" => { note: "200 JSON — access_token 앞에 공백(SDK 가 다듬어 보낸다)",
                 reply: json(200, access_token: " kLS7k-space-start-bearer-canary", token_type: "Bearer",
                                  expires_in: 300),
-                admin: admin_ok, expect: { "admin.users.get(token via provider)" => auth } },
+                admin: admin_ok, expect: { "admin.users.get(token via provider)" => NilClass } },
       "k10" => { note: "200 JSON — access_token 가운데에 DEL(net-http 는 그대로 보냈다)",
                  reply: json(200, access_token: "kDL7k-del-bearer-canary#{0x7F.chr}x", token_type: "Bearer",
                                   expires_in: 300),
                  admin: admin_ok, expect: { "admin.users.get(token via provider)" => auth } },
-      "k5" => { note: "200 JSON — access_token 에 U+0100(막지 않는다 — UTF-8 그대로 보낸다)",
+      "k5" => { note: "200 JSON — access_token 에 U+0100(ASCII 밖 — 예전에는 UTF-8 그대로 보냈다)",
                 reply: json(200, access_token: "kHI7k-high-bearer-canary#{[0x100].pack('U')}x", token_type: "Bearer",
                                  expires_in: 300),
-                admin: admin_ok, expect: { "admin.users.get(token via provider)" => NilClass } }
+                admin: admin_ok, expect: { "admin.users.get(token via provider)" => auth } }
     }.freeze
   end
 

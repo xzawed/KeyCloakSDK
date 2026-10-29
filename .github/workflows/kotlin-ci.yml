@@ -163,6 +163,11 @@ jobs:
           new=$(ls build/libs/keycloak-sdk-kotlin-*.jar | grep -vE -- '-(sources|javadoc)\.jar$' | head -1)
           echo "현재 JAR: $new"
           [ -n "$new" ] || { echo "::error::현재 JAR 을 찾지 못했다"; exit 1; }
+          # ⚠️ Kotlin `internal` 멤버는 바이트코드에서 `이름$io_github_xzawed_keycloak_sdk_kotlin` 꼴의 public 이라 japicmp 가
+          # 공개 메서드로 본다 — 소비자 API 가 아니다(실측 2026-10-29: internal companion 의 `fieldValueSafe` 삭제가 「REMOVED
+          # METHOD」로 울었다). 그 꼴의 멤버만 뺀다. 대조(같은 날 · japicmp 0.26.1): 공개 클래스 `TokenSet` 을 지운 JAR 은 이
+          # 제외를 걸고도 rc 1. ⚠️ internal **클래스**(이름이 망글되지 않는다)의 변경은 여전히 잡힌다 — 남은 오탐 부류다.
           java -jar "$RUNNER_TEMP/japicmp.jar" \
             -o "$RUNNER_TEMP/base.jar" -n "$new" \
-            --only-modified --ignore-missing-classes --error-on-binary-incompatibility
+            --only-modified --ignore-missing-classes --error-on-binary-incompatibility \
+            --exclude '*#*$io_github_xzawed_keycloak_sdk_kotlin(*)'

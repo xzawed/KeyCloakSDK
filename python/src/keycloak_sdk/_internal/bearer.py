@@ -1,69 +1,39 @@
-"""admin 이 보낼 `Authorization: Bearer <토큰>` 을 그 레인의 HTTP 전송이 실을 수 있는가.
+"""admin 이 보낼 `Authorization: Bearer <토큰>` 의 문법 — 아홉 언어 공통 규칙(등록부
+`bearer-token-grammar-divergent`, 2026-10-29 판정).
 
-⚠️ python-keycloak 의 토큰 세터는 `"Bearer " + access_token` 을 헤더에 그대로 싣는다. 헤더가 실을
-수 없는 토큰이면 sync 는 requests·http.client 가, aio 는 httpx·h11 이 **보내는 순간** 거부하고,
-python-keycloak 의 `raw_*` 가 그 예외를 `KeycloakConnectionError("Can't connect to server")` 로 감싸
-경계에서 `KeycloakTransportError` 가 됐다 — 요청은 나가지 않았는데 연결 실패로 보고됐다. 전송이
-거르지 않는 제어 문자는 그대로 나갔다 — sync 는 NUL·SOH·BS·VT·FF·US·DEL 을, aio 는 SOH·BS·US·DEL
-을 실은 Authorization 을 보냈다(실측 대표 열, 등록부 `wave4-hardening-python` (2)(3)).
+**규칙(`sendable`).** 토큰의 앞뒤에서 SP·HTAB·CR·LF **만** 떼고(NBSP·U+3000·VT·FF
+같은 다른 공백은 떼지 않는다 — 인자 없는 `str.strip()` 은 유니코드 공백을 떼므로 쓰지
+않는다), 남은 것이 비어 있지 않은 RFC 6750 `b64token`(ASCII `[A-Za-z0-9\\-._~+/]+=*` —
+`=` 는 끝의 채움으로만)이면 그것을 보낸다. 아니면 보내지 않는다. sync·aio 가 같은
+판정이다 — 예전에는 그 레인의 전송이 헤더로 실을 수 있는가가 기준이라 sync(requests)는
+Latin-1·끝 SP 를 그대로 보내고 aio(httpx·h11)는 거부했다(실측
+`tests/unit/test_admin_bearer_header.py`).
 
-**거부하는 것.** (1) RFC 9110 §5.5 가 필드 값에서 빼는 것 — NUL·CR·LF 를 포함한 C0 제어 문자(HTAB
-제외)와 DEL. .NET·Go·Ruby 가 같은 집합을 거부한다. (2) 그 레인의 전송이 헤더 값으로 **싣지 못하는**
-것 — sync 는 http.client 가 latin-1 로 인코딩하므로 U+00FF 위(짝 없는 서로게이트 포함), aio 는
-httpx 가 ASCII 로 인코딩하므로 U+007F 위, 그리고 h11 이 값 끝의 SP·HTAB 을 거부한다. (2) 는 원래도
-나가지 않던 것이다 — 바뀌는 것은 오류의 타입과 메시지뿐이다.
-
-**거부하지 않는 것.** 전송이 바이트 그대로 싣는 것 — HTAB·SP(가운데·앞), 그리고 sync 의
-U+0080..U+00FF·끝 SP·HTAB. 판정은 서버다(언어 횡단 판정 `bearer-token-grammar-divergent`). 두
-집합은 시험이 RFC 와 **전송에 물어서** 고정한다(`tests/unit/test_admin_bearer_header.py` — 전송
-오라클이 python-keycloak 의 `ConnectionManager` 로 같은 헤더를 실제로 보낸다).
-
-**어디서.** 받는 자리(`admin_grant.py` 의 그랜트 래퍼 — 토큰 세터 앞이라 거부한 토큰은 캐시되지
-않고 다음 호출이 다시 그랜트한다)와 보내는 자리(`admin_guard.py` 의 갱신 뒤 검사 — 주입·토큰
-세터로 실린 bearer, 그리고 한 레인이 받은 토큰을 다른 레인으로 보내는 `raw`). 레인은 그 그랜트·
-요청이 sync 메서드인가 `a_*` 인가다. 타입은 쓸 수 없는 access_token 의 선례(`tokens.
-_usable_access_token`)와 같은 `KeycloakAuthError` 이고, 메시지는 토큰을 인용하지 않는다 — 문자의
-부류만 말한다.
+**어디서.** 받는 자리(`admin_grant.py` 의 그랜트 래퍼 — 토큰 세터 앞이다. 거부한 토큰은
+캐시되지 않고 다음 호출이 다시 그랜트하며, 받아들인 토큰은 다듬은 값으로 세터에 넘긴다:
+python-keycloak 의 401 재시도는 보내는 자리를 거치지 않고 세터가 실은 값을 다시 보낸다)와
+보내는 자리(`admin_guard.py` 의 갱신 뒤 검사 — 그랜트를 거치지 않고 실린 bearer, 곧
+주입·토큰 세터의 것을 다듬은 값으로 바꿔 싣거나 거부한다). 타입은 쓸 수 없는 access_token
+의 선례(`tokens._usable_access_token`)와 같은 `KeycloakAuthError` 이고, 메시지는 토큰을
+인용하지 않는다 — 규칙만 말한다.
 """
 
 from __future__ import annotations
 
-from typing import Literal
+import re
 
-Lane = Literal["sync", "aio"]
+_RULE = "after trimming SP, HTAB, CR and LF it must be a non-empty RFC 6750 b64token"
+#: 받는 자리·보내는 자리의 거부 메시지.
+GRANTED = f"admin token grant returned an access token that is not a bearer token ({_RULE})"
+SENDING = f"admin request not sent: the access token is not a bearer token ({_RULE})"
 
-#: 받는 자리·보내는 자리의 메시지. `{}` 에 아래 이유 하나가 들어간다.
-GRANTED = "admin token grant returned an access token an HTTP header cannot carry ({})"
-SENDING = "admin request not sent: an HTTP header cannot carry the access token ({})"
-
-_CONTROL = "it holds CR, LF, NUL, DEL or another control character other than HTAB"
-#: 레인 → (전송이 헤더 값으로 인코딩하는 가장 큰 문자, 넘었을 때의 이유).
-_CEILING: dict[str, tuple[str, str]] = {
-    "sync": (
-        "\xff",
-        "it holds a character above U+00FF, which the sync admin client cannot encode in a header",
-    ),
-    "aio": (
-        "\x7f",
-        "it holds a non-ASCII character, which the async admin client cannot encode in a header",
-    ),
-}
-_TRAILING = (
-    "it ends with a space or tab, which the async admin client cannot send at the end of a header"
-)
+#: 앞뒤에서 떼는 글자 — 이 넷뿐이다.
+_TRIM = " \t\r\n"
+#: RFC 6750 §2.1 `b64token`. ⚠️ `fullmatch` 로 본다 — `$` 는 끝의 개행 앞에서도 맞는다.
+_B64TOKEN = re.compile(r"[A-Za-z0-9\-._~+/]+=*")
 
 
-def _control(ch: str) -> bool:
-    return (ch < " " and ch != "\t") or ch == "\x7f"
-
-
-def unsendable(token: str, lane: Lane) -> str | None:
-    """`Bearer <token>` 을 `lane` 의 전송이 헤더로 실을 수 없는 이유 — 실을 수 있으면 `None`."""
-    if any(_control(ch) for ch in token):
-        return _CONTROL
-    ceiling, reason = _CEILING[lane]
-    if any(ch > ceiling for ch in token):
-        return reason
-    if lane == "aio" and token.endswith((" ", "\t")):
-        return _TRAILING
-    return None
+def sendable(token: str) -> str | None:
+    """`Bearer ` 뒤에 실을 값 — 규칙에 맞으면 다듬은 토큰, 아니면 `None`."""
+    trimmed = token.strip(_TRIM)
+    return trimmed if _B64TOKEN.fullmatch(trimmed) else None

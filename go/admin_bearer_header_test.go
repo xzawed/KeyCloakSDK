@@ -15,7 +15,8 @@ import (
 	"github.com/Nerzal/gocloak/v13"
 )
 
-// An access token an HTTP header cannot carry (wave4-hardening-go (3)).
+// An access token an HTTP header cannot carry (wave4-hardening-go (3)), and the bytes the bearer grammar refuses
+// besides (bearer-token-grammar-divergent).
 //
 // net/http refuses a control character other than HTAB — CR, LF and NUL among them — and DEL in a header value, before
 // anything is sent. Before this file existed the SDK cached such a token from its own token request and every admin
@@ -26,13 +27,21 @@ import (
 // when any TokenProvider hands one to an admin request. .NET, node and ruby refuse it before sending (wave 4); node and
 // ruby with their auth error, which is the one chosen here.
 //
-// ⚠️ The set of refused bytes is asked of the transport, not transcribed here (bearerRefusedByTransport) — the tests
-// below fail if the SDK refuses a byte net/http would carry, or carries one it would refuse.
+// The grammar refuses more than the transport does (sendableBearer): in the middle of a token it takes only the
+// b64token alphabet, so HTAB, a space and a byte past ASCII — which net/http carries — are refused too. The tests below
+// run each class of byte through the flows; bearer_sendable_test.go keeps the grammar inside the transport's rule
+// (bearerRefusedByTransport asks the transport, not a transcription), and bearer_grammar_test.go has the grammar's rows.
 
 const (
-	unsendableLoginMsg = "keycloak: auth: client-credentials login returned an access token an HTTP header cannot carry (it holds a control character such as CR, LF or NUL)"
-	unsendableSendMsg  = "keycloak: auth: admin request not sent: an HTTP header cannot carry the access token (it holds a control character such as CR, LF or NUL)"
+	unsendableGrantMsg = "keycloak: auth: token source returned an access token that is not an RFC 6750 bearer token (b64token)"
+	unsendableSendMsg  = "keycloak: auth: admin request not sent: the access token is not an RFC 6750 bearer token (b64token)"
 )
+
+// b64tokenByte reports whether b may stand in the middle of a bearer token — the b64token alphabet without its
+// trailing "=" padding. The flows below refuse every other byte.
+func b64tokenByte(b byte) bool {
+	return 'A' <= b && b <= 'Z' || 'a' <= b && b <= 'z' || '0' <= b && b <= '9' || strings.IndexByte("-._~+/", b) >= 0
+}
 
 // bearerRow is the token of row b: one byte between two halves no header rule touches.
 func bearerRow(b byte) string { return "tok-" + string([]byte{b}) + "-end" }
@@ -82,10 +91,11 @@ func bearerRefusedByTransport(t *testing.T) [256]bool {
 	return refused
 }
 
-// The rows the facade flows run: each class of byte the transport refuses (NUL, SOH, LF, CR, US, DEL) and each class it
-// carries next to them (HTAB, space, a letter, '~'), so an SDK rule that is too narrow or too wide fails a flow. Every
-// byte is compared with the transport once, by bearer_sendable_test.go. A flow per byte opened a client per row — the
-// test servers accepted 359 connections per run, against 23 with these rows (counted with http.Server.ConnState).
+// The rows the facade flows run: each class of byte the transport refuses (NUL, SOH, LF, CR, US, DEL), the two it
+// carries that the grammar refuses (HTAB, space) and two the grammar takes (a letter, '~'), so an SDK rule that is too
+// narrow or too wide fails a flow. Every byte is compared with the transport once, by bearer_sendable_test.go. A flow per
+// byte opened a client per row — the test servers accepted 359 connections per run, against 23 with these rows (counted
+// with http.Server.ConnState).
 var bearerFlowBytes = []byte{0x00, 0x01, '\t', '\n', '\r', 0x1f, ' ', 'a', '~', 0x7f}
 
 // tokenGrant is one token response of a fake IdP.
@@ -167,13 +177,13 @@ func requireUnsendable(t *testing.T, label string, err error, want string) {
 }
 
 // The SDK's own token request — the case the item names. (JSON cannot carry a raw byte past ASCII: encoding/json decodes
-// it to U+FFFD, which the transport carries. The injected path below covers those bytes.)
+// it to U+FFFD, which the grammar refuses like any byte past ASCII. The injected path below covers the raw bytes.)
 func TestAdminLoginRefusesAnAccessTokenAHeaderCannotCarry(t *testing.T) {
-	refused := bearerRefusedByTransport(t)
 	ctx := context.Background()
 	for _, b := range bearerFlowBytes {
 		tok := bearerRow(b)
 		label := fmt.Sprintf("byte %#02x", b)
+		refused := !b64tokenByte(b)
 		p := newBearerIdP(t, tokenGrant{tok, 300})
 		c, err := New(Config{ServerURL: p.srv.URL, Realm: "r", ClientID: "c", ClientSecret: "s"})
 		if err != nil {
@@ -181,20 +191,20 @@ func TestAdminLoginRefusesAnAccessTokenAHeaderCannotCarry(t *testing.T) {
 		}
 		a, err := c.Admin(ctx)
 		switch {
-		case refused[b]:
-			requireUnsendable(t, label+" · Client.Admin", err, unsendableLoginMsg)
+		case refused:
+			requireUnsendable(t, label+" · Client.Admin", err, unsendableGrantMsg)
 		case err != nil:
-			t.Errorf("%s: Client.Admin failed on a token the transport carries: %v", label, err)
+			t.Errorf("%s: Client.Admin failed on a bearer token: %v", label, err)
 		default:
 			if err := a.Groups.Delete(ctx, "gid"); err != nil {
-				t.Errorf("%s: Groups.Delete failed on a token the transport carries: %v", label, err)
+				t.Errorf("%s: Groups.Delete failed on a bearer token: %v", label, err)
 			}
 			if got, want := p.lastAuth(), "Bearer "+tok; got != want {
 				t.Errorf("%s: the admin server received Authorization %q, want %q", label, got, want)
 			}
 		}
-		if refused[b] && p.adminHits.Load() != 0 {
-			t.Errorf("%s: %d admin requests reached the server with a token a header cannot carry", label, p.adminHits.Load())
+		if refused && p.adminHits.Load() != 0 {
+			t.Errorf("%s: %d admin requests reached the server with a token that is not a bearer token", label, p.adminHits.Load())
 		}
 		_ = c.Close()
 	}
@@ -215,7 +225,7 @@ func TestAdminDoesNotCacheAnAccessTokenAHeaderCannotCarry(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: Client.Admin on a usable first token: %v", label, err)
 		}
-		requireUnsendable(t, label+" · the refresh that returned it", a.Groups.Delete(ctx, "gid"), unsendableLoginMsg)
+		requireUnsendable(t, label+" · the refresh that returned it", a.Groups.Delete(ctx, "gid"), unsendableGrantMsg)
 		if n := p.adminHits.Load(); n != 0 {
 			t.Errorf("%s: %d admin requests reached the server with the unusable token", label, n)
 		}
@@ -248,16 +258,16 @@ func (f *flipToken) Token(context.Context) (string, error) {
 // A consumer's TokenProvider hands the token to the same header, so the same refusal applies — at construction (the
 // eager token) and on every facade call, including Realms.Update's hand-rolled request. Raw bytes past ASCII too.
 func TestAdminRequestRefusesAnInjectedTokenAHeaderCannotCarry(t *testing.T) {
-	refused := bearerRefusedByTransport(t)
 	p := newBearerIdP(t, tokenGrant{"unused", 300})
 	cfg := Config{ServerURL: p.srv.URL, Realm: "r", ClientID: "c"}
 	for _, b := range append(append([]byte{}, bearerFlowBytes...), 0x80, 0xff) {
 		label := fmt.Sprintf("byte %#02x", b)
+		refused := !b64tokenByte(b)
 		before := p.adminHits.Load()
-		injectedAtConstruction(t, label, cfg, bearerRow(b), refused[b])
-		injectedOnCalls(t, label, p, cfg, b, refused[b])
-		if refused[b] && p.adminHits.Load() != before {
-			t.Errorf("%s: %d admin requests reached the server with a token a header cannot carry", label, p.adminHits.Load()-before)
+		injectedAtConstruction(t, label, cfg, bearerRow(b), refused)
+		injectedOnCalls(t, label, p, cfg, b, refused)
+		if refused && p.adminHits.Load() != before {
+			t.Errorf("%s: %d admin requests reached the server with a token that is not a bearer token", label, p.adminHits.Load()-before)
 		}
 	}
 }
@@ -270,7 +280,7 @@ func injectedAtConstruction(t *testing.T, label string, cfg Config, tok string, 
 	case refused:
 		requireUnsendable(t, label+" · NewAdminClient", err, unsendableSendMsg)
 	case err != nil:
-		t.Errorf("%s: NewAdminClient failed on a token the transport carries: %v", label, err)
+		t.Errorf("%s: NewAdminClient failed on a bearer token: %v", label, err)
 	default:
 		_ = a.Close()
 	}
@@ -291,7 +301,7 @@ func injectedOnCalls(t *testing.T, label string, p *bearerIdP, cfg Config, b byt
 	case refused:
 		requireUnsendable(t, label+" · Groups.Delete", err, unsendableSendMsg)
 	case err != nil:
-		t.Errorf("%s: Groups.Delete failed on a token the transport carries: %v", label, err)
+		t.Errorf("%s: Groups.Delete failed on a bearer token: %v", label, err)
 	case p.lastAuth() != "Bearer "+tok:
 		t.Errorf("%s: the admin server received Authorization %q, want %q", label, p.lastAuth(), "Bearer "+tok)
 	}

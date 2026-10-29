@@ -3,8 +3,9 @@ using System.Text.Json;
 
 namespace Xzawed.Keycloak.Admin;
 
-/// <summary>Attaches a fresh bearer token from the token provider on every admin request, and settles how much of each
-/// response body is read (<see cref="AdminResponseBody"/>).</summary>
+/// <summary>Attaches a fresh bearer token from the token provider on every admin request — under the bearer grammar
+/// (<see cref="BearerToken.Sendable"/>) — and settles how much of each response body is read
+/// (<see cref="AdminResponseBody"/>).</summary>
 internal sealed class BearerHandler : DelegatingHandler
 {
     private readonly ITokenProvider _tokenProvider;
@@ -25,21 +26,12 @@ internal sealed class BearerHandler : DelegatingHandler
             AdminClient.ObserveTokenProviderFailure();
             throw;
         }
-        // Of the control characters, .NET refuses only CR and LF (below). NUL, DEL and the other C0 controls went out on the
-        // wire as they came, and only the server stopped them — Keycloak 26.6 answers each with 400 (measured: BearerHeaderCaseTests).
-        if (HoldsUnsendableControl(token))
-            throw new KeycloakTransportException(UnsendableControlMessage);
-        try
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        }
-        catch (FormatException ex)
-        {
-            // .NET refuses a CR or LF in a header value right here, before anything is sent — it escaped every admin call
-            // raw (measured: BearerHeaderCaseTests). Its message quotes no part of the token. A character past ASCII is
-            // refused later, by the transport, as HttpRequestException — already "admin request failed".
-            throw new KeycloakTransportException("admin request failed: the access token holds a CR or LF, which an HTTP header cannot carry", ex);
-        }
+        // The one bearer grammar, on every admin path — typed, raw REST and Raw — before anything is sent. Left to itself .NET
+        // refuses only CR and LF (FormatException): NUL and DEL went out (BearerHeaderCaseTests), and so did SP, HTAB, "="
+        // mid-token and an empty token, while a character past ASCII reached Raw as a raw HttpRequestException
+        // (BearerTokenGrammarTests).
+        var bearer = BearerToken.Sendable(token) ?? throw new KeycloakTransportException(BearerToken.SendRefused);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
         HttpResponseMessage response;
         try
         {
@@ -54,24 +46,6 @@ internal sealed class BearerHandler : DelegatingHandler
         }
         AdminClient.Observe(response.StatusCode);
         return await AdminResponseBody.SettleAsync(response, unread, ct).ConfigureAwait(false);
-    }
-
-    private const string UnsendableControlMessage =
-        "admin request failed: the access token holds a NUL, DEL or other control character, which an HTTP header cannot carry";
-
-    /// <summary>Whether <paramref name="token"/> holds a character RFC 9110 §5.5 keeps out of a field value — a C0 control
-    /// other than HTAB, or DEL — besides CR and LF, which <see cref="AuthenticationHeaderValue"/> refuses itself. HTAB (and
-    /// SP) may travel in a field value; Keycloak reads them as part of the token and answers 401.</summary>
-    private static bool HoldsUnsendableControl(string token)
-    {
-        // AsSpan, not the string: a consumer provider that returns null gets an empty span, and its request goes out with a
-        // bare "Bearer" as it did before this check (BearerHeaderCaseTests).
-        foreach (var c in token.AsSpan())
-        {
-            if (c is (< ' ' and not '\t' and not '\r' and not '\n') or '\u007F')
-                return true;
-        }
-        return false;
     }
 
     /// <summary>An exception System.Text.Json threw — inside the transport that is only ever the request body being written.</summary>

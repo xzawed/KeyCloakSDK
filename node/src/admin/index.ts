@@ -1,8 +1,8 @@
 import KcAdminClient from '@keycloak/keycloak-admin-client'
 import type { KeycloakConfig } from '../config.js'
 import { KeycloakConfigError } from '../errors.js'
-import type { TokenProvider } from '../token-provider.js'
-import { call, sendableBearer } from './call.js'
+import { sendableBearer, type TokenProvider } from '../token-provider.js'
+import { call } from './call.js'
 import { ClientsResource } from './clients.js'
 import { GroupsResource } from './groups.js'
 import type { AdminHttp } from './http.js'
@@ -78,15 +78,16 @@ export class AdminClient {
       requestOptions: { redirect: 'manual' },
     })
     // `raw()` 의 요청마다 admin-client는 이 provider에서 액세스 토큰을 얻는다(만료 시 provider가 재인증).
-    // ⚠️ admin-client 가 그 토큰으로 헤더를 짓기 **직전**의 SDK 쪽 마지막 자리라 여기서 Bearer 로 실을 수 있는지
-    // 묻는다(`sendableBearer`) — 못 실으면 undici 의 raw `TypeError` 가 토큰을 통째로 인용했다. 파사드의 요청은
-    // `http.ts` 가 같은 검사를 한다.
+    // ⚠️ admin-client 가 그 토큰으로 헤더를 짓기 **직전**의 SDK 쪽 마지막 자리라 여기서 보낼 값으로 바꾼다
+    // (`sendableBearer` — 앞뒤를 떼고, `b64token` 이 아니면 거부). 거르지 않으면 Latin-1 · 안쪽 공백은 그대로
+    // 나가고, CR·LF·NUL 은 raw `TypeError` 가 토큰을 통째로 인용했고(2026-10-05), DEL·VT 는 raw
+    // `TypeError: fetch failed` 였다(2026-10-29). 파사드의 요청은 `http.ts` 가 같은 함수를 지난다.
     kc.registerTokenProvider({
       getAccessToken: async () => sendableBearer(await tokenProvider.getAccessToken()),
     })
     // 초기 자격증명 검증(fail-fast) + provider 캐시 워밍. call()로 감싸 401·전송 실패가 raw fetch
     // 오류로 누출되지 않고 SDK 예외(KeycloakAdminError/KeycloakTransportError)로 변환되도록(§4 경계).
-    // 실을 수 없는 Bearer 도 여기서 거부한다 — 첫 요청까지 미루지 않는다.
+    // 보낼 수 없는 Bearer 도 여기서 거부한다 — 첫 요청까지 미루지 않는다.
     await call(async () => sendableBearer(await tokenProvider.getAccessToken()))
     // 파사드의 목적지 — admin-client 에 준 것과 같은 값. `raw().setConfig()` 는 이것을 바꾸지 않는다.
     const http: AdminHttp = {

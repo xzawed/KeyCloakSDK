@@ -13,6 +13,22 @@ pub trait TokenProvider: Send + Sync {
     async fn access_token(&self) -> Result<String>;
 }
 
+/// RFC 6750 §2.1 `b64token` 의 한 글자 — ASCII 영숫자와 `-._~+/`(`=` 는 끝의 덧대기로만 따로 본다).
+fn is_b64token_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'+' | b'/')
+}
+
+/// admin 이 Bearer 로 보낼 값 — 아홉 언어가 같은 규칙이다(등록부 `bearer-token-grammar-divergent`). 앞뒤의
+/// SP·HTAB·CR·LF 만 떼고(파일에서 읽은 토큰의 끝 개행), 남은 값이 비지 않은 `b64token`(`^[A-Za-z0-9\-._~+/]+=*$`)이면
+/// 그 **뗀 값**을, 아니면 `None` 을 돌려준다. ⚠️ `str::trim` 은 유니코드 공백까지 떼므로 쓰지 않는다. 보내는 자리(파사드
+/// `AdminClient::send` · `raw()` 의 `SdkTokenSupplier`)와 캐시하는 자리([`ClientCredentialsTokenProvider`])가 이 함수
+/// 하나를 쓴다 — 오류는 자리마다 그 레인의 것이다.
+pub(crate) fn sendable_bearer(token: &str) -> Option<&str> {
+    let trimmed = token.trim_matches([' ', '\t', '\r', '\n']);
+    let body = trimmed.trim_end_matches('=');
+    (!body.is_empty() && body.bytes().all(is_b64token_char)).then_some(trimmed)
+}
+
 pub struct ClientCredentialsTokenProvider {
     config: KeycloakConfig,
     token_url: String,
@@ -84,10 +100,12 @@ impl ClientCredentialsTokenProvider {
         // 이 숫자·객체·null 이어도 통과했고, 아래 `as_str().unwrap_or_default()` 가 그것을
         // **빈 문자열**로 만들어 호출자에게 성공을 돌려줬다. 그 빈 토큰은 `expires_at` 까지
         // 캐시되므로 그 창 내내 admin 호출마다 401 이 난다.
+        // 캐시하기 전에 보낼 수 있는 값인지도 본다([`sendable_bearer`] — 빈 값도 여기서 걸린다). 못 보내는 토큰은
+        // 캐시하지 않고 이 레인의 `Auth` 로 실패하므로 다음 호출이 IdP 에 다시 묻는다. 캐시하는 것은 뗀 값이다.
         let access_token = body
             .get("access_token")
             .and_then(serde_json::Value::as_str)
-            .filter(|s| !s.is_empty());
+            .and_then(sendable_bearer);
         let Some(access_token) = access_token.filter(|_| status.is_success()) else {
             // 코드 모양일 때만 옮긴다 — `auth.rs` 의 `map_token_err` 와 같은 계약(`oauth_error_code`).
             let oauth = body
@@ -242,6 +260,25 @@ mod tests {
                 Err(KeycloakError::Auth { .. }) => {}
                 other => panic!("expected Auth error for access_token={bad}, got {other:?}"),
             }
+        }
+    }
+
+    /// `=` 는 끝의 덧대기로만 — 정규식 대신 끝의 `=` 를 떼고 나머지를 바이트로 보므로, 그 경계를 따로 고정한다.
+    /// 아홉 언어 같은 표 전체는 `tests/bearer_grammar.rs` 가 공개 경로 넷으로 돌린다.
+    #[test]
+    fn sendable_bearer_allows_padding_only_at_the_end() {
+        for (token, want) in [
+            ("a", Some("a")),
+            ("abc==", Some("abc==")),
+            ("\r\n abc= \t", Some("abc=")),
+            ("=", None),
+            ("==", None),
+            (" == ", None),
+            ("=abc", None),
+            ("abc=d=", None),
+            ("abc\u{c}", None),
+        ] {
+            assert_eq!(sendable_bearer(token), want, "{token:?}");
         }
     }
 

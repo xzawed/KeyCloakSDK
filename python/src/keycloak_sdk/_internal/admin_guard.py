@@ -22,7 +22,8 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
    그랜트 응답 본문의 크기 상한(`token_cap.py`), REST 세션 둘(`_s`·`async_s`)의 `send` — 응답 본문의
    끝(`admin_body.py` — 오류 본문은 상한까지, 파사드 쓰기의 2xx 는 읽지 않는다), 그리고 연결의
    `_refresh_if_required`·`a__refresh_if_required` — 그 **뒤**에서 보낼 헤더의 bearer 를 본다(빈
-   것, 그리고 그 레인의 헤더가 실을 수 없는 것 — `bearer.py`).
+   것은 거부, 그 밖은 bearer 규칙대로 — 맞지 않으면 거부, 다듬어야 하면 다듬은 값으로 바꿔 싣는다,
+   `bearer.py`).
    마지막이 주입·토큰 세터로 **그랜트를 거치지 않고** 실린 bearer 를 잡는다. `raw_*` 는 그 갱신
    직후 보내고, 401 재시도는 방금 그랜트(검사됨)가 실은 토큰으로만 보낸다. 그 밖에 두 sync 세션의
    어댑터마다 `max_retries` 를 재시도 없는 정책으로 둔다(`retries.py`) — 어댑터 수만큼의 자리다.
@@ -59,7 +60,7 @@ from ..exceptions import KeycloakAuthError, KeycloakConfigError
 from ..tokens import _usable_access_token
 from .admin_body import abounded_send, bounded_send
 from .admin_grant import _ASYNC_GRANTS, _SYNC_GRANTS, _achecked, _checked
-from .bearer import SENDING, Lane, unsendable
+from .bearer import SENDING, sendable
 from .redirects import _refuse_redirects, _require, _unsupported
 from .retries import NO_RETRY, retrying_adapters
 from .token_cap import acapped_send, capped_send
@@ -102,30 +103,36 @@ _UNREAD = "read an unbounded admin error response, or a response body it never u
 _Hook = tuple[Any, str, Any, str]
 
 
-def _unsendable_bearer(conn: Any, lane: Lane) -> str | None:
-    """보낼 헤더의 bearer 를 `lane` 의 헤더가 실을 수 없는 이유(`bearer.py`) — 빈 bearer 는 auth
-    레인과 같은 오류를 여기서 던진다."""
+def _settle_bearer(conn: Any) -> bool:
+    """보낼 헤더의 bearer 를 규칙(`bearer.py`)대로 둔다 — 다듬어야 하면 다듬은 값으로 바꿔 싣고,
+    맞지 않으면 참(거부)이다. bearer 가 아닌 헤더는 보지 않는다. 빈 bearer 는 auth 레인과 같은
+    오류를 여기서 던진다."""
     value = (conn.headers or {}).get("Authorization")
     if not (isinstance(value, str) and value.startswith(_BEARER)):
-        return None
-    return unsendable(_usable_access_token({"access_token": value[len(_BEARER) :]}), lane)
+        return False
+    token = _usable_access_token({"access_token": value[len(_BEARER) :]})
+    bearer = sendable(token)
+    if bearer is None:
+        return True
+    if bearer != token:
+        conn.add_param_headers("Authorization", _BEARER + bearer)
+    return False
 
 
-def _require_usable_bearer(conn: Any, lane: Lane) -> None:
-    """보낼 헤더의 bearer 가 쓸 수 있고 `lane` 의 헤더가 실을 수 있는가 — 아니면
+def _require_usable_bearer(conn: Any) -> None:
+    """보낼 헤더의 bearer 가 쓸 수 있고 bearer 규칙에 맞는가(다듬어 싣는 것 포함) — 아니면
     `KeycloakAuthError`.
 
     거부는 헤더 값을 쥐지 않은 이 프레임에서 던진다 — 탈출구 `raw` 의 traceback 은 python-keycloak
     프레임을 지나 소비자에게 그대로 가고, 오류 수집기는 프레임 로컬을 찍는다."""
-    reason = _unsendable_bearer(conn, lane)
-    if reason is not None:
-        raise KeycloakAuthError(SENDING.format(reason))
+    if _settle_bearer(conn):
+        raise KeycloakAuthError(SENDING)
 
 
 def _bearer_checked(conn: Any, refresh: Callable[..., Any]) -> Callable[..., Any]:
     def checked(*args: Any, **kwargs: Any) -> Any:
         result = refresh(*args, **kwargs)
-        _require_usable_bearer(conn, "sync")
+        _require_usable_bearer(conn)
         return result
 
     return checked
@@ -136,7 +143,7 @@ def _abearer_checked(
 ) -> Callable[..., Coroutine[Any, Any, Any]]:
     async def checked(*args: Any, **kwargs: Any) -> Any:
         result = await refresh(*args, **kwargs)
-        _require_usable_bearer(conn, "aio")
+        _require_usable_bearer(conn)
         return result
 
     return checked

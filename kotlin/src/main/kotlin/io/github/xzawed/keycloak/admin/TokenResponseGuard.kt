@@ -19,8 +19,8 @@ import java.io.InputStream
 import java.net.URI
 
 /**
- * admin 레인의 토큰 응답 검사(Java `TokenResponseGuard` 동형) — 토큰 엔드포인트의 성공 응답이 **HTTP 필드 값이 실을 수 있는 비어 있지
- * 않은 JSON 문자열** `access_token` 을 싣지 않으면([fieldValueSafe]) 그 응답을 거부한다.
+ * admin 레인의 토큰 응답 검사(Java `TokenResponseGuard` 동형) — 토큰 엔드포인트의 성공 응답이 **그대로 보낼 수 있는 bearer 인 JSON
+ * 문자열** `access_token` 을 싣지 않으면([sendableAsIs]) 그 응답을 거부한다.
  *
  * 왜 여기인가: admin 은 토큰을 자체 소유하고(§4) keycloak-admin-client 내장 TokenManager 가 토큰 응답을 Jackson 으로
  * `AccessTokenResponse` 에 결합한다. Jackson 의 스칼라 강제변환이 숫자·불리언을 문자열로 바꾸고 빈 문자열은 그대로 둬서,
@@ -173,8 +173,8 @@ internal class TokenResponseGuard :
         }
 
         /**
-         * 최상위가 JSON 객체이고 그 `access_token` 이 하나 이상이며 전부 HTTP 필드 값이 실을 수 있는([fieldValueSafe]) 비어 있지 않은
-         * 문자열이다. 형식이 틀리면 false.
+         * 최상위가 JSON 객체이고 그 `access_token` 이 하나 이상이며 전부 그대로 보낼 수 있는 bearer([sendableAsIs])인 문자열이다. 형식이
+         * 틀리면 false.
          */
         internal fun carriesUsableAccessToken(body: ByteArray): Boolean {
             try {
@@ -186,7 +186,7 @@ internal class TokenResponseGuard :
                         val value = p.nextToken()
                         when {
                             !accessToken -> p.skipChildren()
-                            value != JsonToken.VALUE_STRING || p.textLength == 0 || !fieldValueSafe(p.text) -> return false
+                            value != JsonToken.VALUE_STRING || !sendableAsIs(p.text) -> return false
                             else -> found = true
                         }
                     }
@@ -198,14 +198,19 @@ internal class TokenResponseGuard :
         }
 
         /**
-         * HTTP 필드 값이 실을 수 있는 문자열인가(Java 동형) — RFC 9110 §5.5 가 필드 값에서 빼는 CR·LF·NUL·HTAB 밖의 C0 와 DEL 이 없다.
-         * 그런 access_token 은 쓸 수 없는 토큰이다 — 캐시되지 않고(다음 호출이 다시 부여한다) admin 요청은 나가지 않는다. 수정 전
-         * HttpCore 는 그 Bearer 를 조용히 고쳐 보냈다(CR·LF·VT·FF → 공백 · 그 밖의 C0·DEL → `?` — `BasicLineFormatter`·`ByteArrayBuffer`,
-         * 실측 `AdminTokenResponseTest`). TokenManager 의 토큰은 모두 이 응답에서 오므로(부여·갱신 — 다른 길로 넣는 setter 가 없다) 보낼
-         * 때 다시 보지 않는다. ⚠️ HTAB·SP·ASCII 밖(HttpCore 가 U+0100 위와 C1 을 `?` 로 보낸다)은 여기서 판정하지 않는다 — 아홉 언어가
-         * 함께 정할 일이다(등록부 `bearer-token-grammar-divergent`).
+         * 그대로 보낼 수 있는 bearer 인가(Java 동형) — 아홉 언어 공통 규칙(등록부 `bearer-token-grammar-divergent`, 2026-10-29)의
+         * **받는 자리 갈래**: 비어 있지 않은 RFC 6750 `b64token`(`[A-Za-z0-9\-._~+/]+=*`, ASCII — `=` 는 끝의 채움으로만)이다. 규칙은
+         * 앞뒤의 SP·HTAB·CR·LF 를 떼고 남은 것을 보내지만, 여기서는 그 값을 보낼 수 없다 — admin 요청의 헤더는 keycloak-admin-client 의
+         * `BearerAuthFilter` 가 TokenManager 에 결합된 값으로 직접 단다. 그래서 다듬어야 하는 토큰도 거부한다(b64token 에 그 넷이 없어
+         * 「다듬은 꼴과 같고 b64token 이다」가 곧 이 검사다 — IdP 는 그런 토큰을 내지 않는다). 거부한 access_token 은 캐시되지 않고(다음
+         * 호출이 다시 부여한다) admin 요청은 나가지 않는다. 수정 전에는 HTAB 밖의 C0 와 DEL 만 거부해 SP·HTAB·Latin-1 은 그대로, C1·U+00FF
+         * 위·짝 없는 서로게이트는 HttpCore 가 `?` 로 바꿔 보냈다(실측 `BearerTokenGrammarTest`). TokenManager 의 토큰은 모두 이 응답에서
+         * 오므로(부여·갱신 — 다른 길로 넣는 setter 가 없다) 보낼 때 다시 보지 않는다.
          */
-        internal fun fieldValueSafe(value: String): Boolean = value.none { (it < ' ' && it != '\t') || it == '\u007f' }
+        internal fun sendableAsIs(token: String): Boolean = B64TOKEN.matches(token)
+
+        // RFC 6750 b64token — [sendableAsIs]. Regex.matches 는 입력 전체를 본다.
+        private val B64TOKEN = Regex("[A-Za-z0-9\\-._~+/]+=*")
     }
 }
 

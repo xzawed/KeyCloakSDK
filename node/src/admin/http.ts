@@ -1,6 +1,5 @@
-import type { TokenProvider } from '../token-provider.js'
+import { sendableBearer, type TokenProvider } from '../token-provider.js'
 import { readCapped, TOKEN_RESPONSE_MAX_BYTES } from '../token-response-cap.js'
-import { sendableBearer } from './call.js'
 
 /**
  * 파사드 요청의 목적지 — `AdminClient.create` 가 한 번 짓고 다섯 리소스가 나눠 쓴다. `raw()` 의 admin-client 에 준 것과
@@ -66,8 +65,8 @@ function search(query: ReadonlyArray<readonly [string, unknown]>): string {
  * `joinPath` 처럼 이어 `pathname` 에 넣는다 — 점 조각도 URL 이 같게 정규화한다), 리다이렉트는 따르지 않고 기한은
  * 요청마다다. 같은지는 `test/unit/admin-response-body.test.ts` 가 와이어로 대조한다.
  *
- * 토큰을 먼저 얻는다 — admin-client 도 주소를 짓기 전에 얻는다. 헤더에 실을 수 없는 Bearer 는 요청 전에 거부한다
- * ({@link sendableBearer}).
+ * 토큰을 먼저 얻는다 — admin-client 도 주소를 짓기 전에 얻는다. Bearer 는 {@link sendableBearer} 가 돌려준 값이다
+ * (앞뒤 SP·HTAB·CR·LF 를 뗀 값 · `b64token` 이 아니면 요청 전에 거부).
  */
 async function send(
   http: AdminHttp,

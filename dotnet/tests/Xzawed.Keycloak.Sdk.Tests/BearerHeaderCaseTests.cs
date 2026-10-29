@@ -27,14 +27,17 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// which RFC 9110 §5.5 lets a field value carry — with 401, as for any bad token.</para>
 /// <para>Node measured the opposite on the leak axis — its raw <c>TypeError</c> quoted the whole bearer — which is why
 /// every rendering is searched here, not only the type.</para>
+/// <para>Since the bearer grammar (<see cref="BearerTokenGrammarTests"/>, 2026-10-29) every such token but the long one is
+/// refused before anything is sent, with one message whatever the character: by the SDK's own admin at the grant
+/// (<see cref="KeycloakAuthException"/> from <c>AdminAsync</c>, not cached), by an admin on a consumer provider on the call
+/// (<see cref="KeycloakTransportException"/>). HTAB and SP inside a token are refused too — that grammar, not the header,
+/// decides.</para>
 /// </remarks>
 [Trait("Category", "Unit")]
 public sealed class BearerHeaderCaseTests : IDisposable
 {
     private const string Oidc = "/realms/r/protocol/openid-connect";
     private const string Secret = "HC-SECRET-canary-7f3a";
-    private const string LineBreakMessage = "admin request failed: the access token holds a CR or LF, which an HTTP header cannot carry";
-    private const string ControlMessage = "admin request failed: the access token holds a NUL, DEL or other control character, which an HTTP header cannot carry";
 
     private readonly WireMockServer _idp = WireMockServer.Start();
     private readonly ITestOutputHelper _out;
@@ -80,19 +83,24 @@ public sealed class BearerHeaderCaseTests : IDisposable
         var cfg = new KeycloakConfig { ServerUrl = _idp.Urls[0], Realm = "r", ClientId = "c", ClientSecret = Secret };
         await using var kc = KeycloakClient.Create(cfg);
         Assert.Equal(at, (await kc.Auth.ClientCredentialsTokenAsync()).AccessToken); // the token is handed out as it came
-        var admin = await kc.AdminAsync();
         await using var consumerBuilt = await AdminClient.CreateAsync(cfg.Normalized(), new Fixed(at));
 
+        // The SDK's own admin takes the token at the grant — one outside the bearer grammar fails the build there.
+        AdminClient? admin = null;
         var outcomes = new List<(string Call, Exception? Error)>
         {
-            ("admin Realms.ListAsync (raw)", await Record.ExceptionAsync(() => admin.Realms.ListAsync())),
-            ("admin Users.SearchAsync (typed)", await Record.ExceptionAsync(() => admin.Users.SearchAsync(null))),
-            ("consumer-provider admin Realms.ListAsync", await Record.ExceptionAsync(() => consumerBuilt.Realms.ListAsync())),
-            ("IntrospectAsync(at)", await Record.ExceptionAsync(() => kc.Auth.IntrospectAsync(at))),
-            ("RefreshAsync(rt)", await Record.ExceptionAsync(() => kc.Auth.RefreshAsync(rt))),
-            ("LogoutAsync(rt)", await Record.ExceptionAsync(() => kc.Auth.LogoutAsync(rt))),
-            ("ValidateAsync(at)", await Record.ExceptionAsync(() => kc.Auth.ValidateAsync(at))),
+            ("admin AdminAsync (SDK provider)", await Record.ExceptionAsync(async () => admin = await kc.AdminAsync())),
         };
+        if (admin is not null)
+        {
+            outcomes.Add(("admin Realms.ListAsync (raw)", await Record.ExceptionAsync(() => admin.Realms.ListAsync())));
+            outcomes.Add(("admin Users.SearchAsync (typed)", await Record.ExceptionAsync(() => admin.Users.SearchAsync(null))));
+        }
+        outcomes.Add(("consumer-provider admin Realms.ListAsync", await Record.ExceptionAsync(() => consumerBuilt.Realms.ListAsync())));
+        outcomes.Add(("IntrospectAsync(at)", await Record.ExceptionAsync(() => kc.Auth.IntrospectAsync(at))));
+        outcomes.Add(("RefreshAsync(rt)", await Record.ExceptionAsync(() => kc.Auth.RefreshAsync(rt))));
+        outcomes.Add(("LogoutAsync(rt)", await Record.ExceptionAsync(() => kc.Auth.LogoutAsync(rt))));
+        outcomes.Add(("ValidateAsync(at)", await Record.ExceptionAsync(() => kc.Auth.ValidateAsync(at))));
 
         var needles = v == "long"
             ? new[] { at, rt, Secret, at[..16], rt[..16] }
@@ -117,13 +125,17 @@ public sealed class BearerHeaderCaseTests : IDisposable
             if (outcomes.Single(o => o.Call == call).Error is { } e)
                 wrong.Add($"{call}: failed ({e.GetType().Name}: {e.Message}) — the token travels in the form body");
         }
-        // CR or LF: refused before anything is sent, with a message that says why.
-        if (ch.Contains('\r') || ch.Contains('\n'))
+        // Every variant but the long one is outside the bearer grammar: refused before anything is sent, with a message
+        // that says why — at the grant for the SDK's own admin, on the call for a consumer provider.
+        if (v != "long")
         {
             foreach (var (call, error) in outcomes.Where(o => o.Call.Contains("admin", StringComparison.Ordinal)))
             {
-                if (error is not KeycloakTransportException || error.Message != LineBreakMessage)
-                    wrong.Add($"{call}: {error?.GetType().Name ?? "no exception"} \"{error?.Message}\" — want KeycloakTransportException \"{LineBreakMessage}\"");
+                var (type, message) = call.Contains("AdminAsync", StringComparison.Ordinal)
+                    ? (typeof(KeycloakAuthException), BearerTokenGrammarTests.GrantRefused)
+                    : (typeof(KeycloakTransportException), BearerTokenGrammarTests.SendRefused);
+                if (error?.GetType() != type || error.Message != message)
+                    wrong.Add($"{call}: {error?.GetType().Name ?? "no exception"} \"{error?.Message}\" — want {type.Name} \"{message}\"");
             }
             Assert.DoesNotContain(_idp.LogEntries, e => e.RequestMessage?.Path?.StartsWith("/admin/", StringComparison.Ordinal) == true);
         }
@@ -135,9 +147,10 @@ public sealed class BearerHeaderCaseTests : IDisposable
         Enumerable.Range(0, 0x20).Where(c => c is not 0x09 and not 0x0A and not 0x0D).Append(0x7F).Select(c => new object[] { c });
 
     /// <summary>NUL, DEL or another such control character in the bearer is refused before anything is sent, on every admin
-    /// path — raw REST and the typed client on the SDK's own token (the token endpoint handed it out), and an admin built
-    /// on a consumer <see cref="ITokenProvider"/>. The IdP is a raw socket, so a request Kestrel would refuse unlogged
-    /// is still counted.</summary>
+    /// path — at the grant for the SDK's own admin (the token endpoint handed it out), and on raw REST and the typed client
+    /// for an admin built on a consumer <see cref="ITokenProvider"/>. The IdP is a raw socket, so a request Kestrel would
+    /// refuse unlogged is still counted. (HTAB and SP inside a token, and a null one, are rows of
+    /// <see cref="BearerTokenGrammarTests"/>.)</summary>
     [Theory]
     [MemberData(nameof(FieldValueControls))]
     public async Task A_token_holding_NUL_DEL_or_another_control_character_is_refused_before_it_is_sent(int codeUnit)
@@ -149,54 +162,22 @@ public sealed class BearerHeaderCaseTests : IDisposable
         var cfg = new KeycloakConfig { ServerUrl = idp.Url, Realm = "r", ClientId = "c", ClientSecret = Secret };
         await using var kc = KeycloakClient.Create(cfg);
         Assert.Equal(at, (await kc.Auth.ClientCredentialsTokenAsync()).AccessToken); // the token is handed out as it came
-        var admin = await kc.AdminAsync();
         await using var consumerBuilt = await AdminClient.CreateAsync(cfg.Normalized(), new Fixed(at));
 
+        var grant = await Record.ExceptionAsync(() => kc.AdminAsync());
         var outcomes = new (string Call, Exception? Error)[]
         {
-            ("admin Realms.ListAsync (raw)", await Record.ExceptionAsync(() => admin.Realms.ListAsync())),
-            ("admin Users.SearchAsync (typed)", await Record.ExceptionAsync(() => admin.Users.SearchAsync(null))),
-            ("consumer-provider admin Realms.ListAsync", await Record.ExceptionAsync(() => consumerBuilt.Realms.ListAsync())),
+            ("consumer-provider admin Realms.ListAsync (raw)", await Record.ExceptionAsync(() => consumerBuilt.Realms.ListAsync())),
+            ("consumer-provider admin Users.SearchAsync (typed)", await Record.ExceptionAsync(() => consumerBuilt.Users.SearchAsync(null))),
         };
 
-        var wrong = outcomes.Where(o => o.Error is not KeycloakTransportException { Message: ControlMessage })
-            .Select(o => $"{o.Call}: {o.Error?.GetType().Name ?? "no exception"} \"{o.Error?.Message}\"").ToList();
+        var wrong = outcomes.Where(o => o.Error is not KeycloakTransportException { Message: BearerTokenGrammarTests.SendRefused })
+            .Select(o => $"{o.Call}: {o.Error?.GetType().Name ?? "no exception"} \"{o.Error?.Message}\" — want KeycloakTransportException").ToList();
+        if (grant is not KeycloakAuthException { Message: BearerTokenGrammarTests.GrantRefused })
+            wrong.Add($"admin AdminAsync (SDK provider): {grant?.GetType().Name ?? "no exception"} \"{grant?.Message}\" — want KeycloakAuthException");
         var sent = idp.Seen.Count(r => r.Path.StartsWith("/admin/", StringComparison.Ordinal));
         Assert.True(wrong.Count == 0 && sent == 0,
-            $"U+{codeUnit:X4}: {sent} admin request(s) reached the server; want KeycloakTransportException \"{ControlMessage}\" before sending\n"
-            + string.Join("\n", wrong));
-    }
-
-    /// <summary>The control: HTAB and SP may travel in a field value (RFC 9110 §5.5) — Keycloak 26.6 reads them as part of the
-    /// token and answers 401 — so they go out as they came. Refusing them would be a token-grammar rule (RFC 6750's
-    /// <c>b64token</c>), not a header one.</summary>
-    [Theory]
-    [InlineData(0x09)]
-    [InlineData(0x20)]
-    public async Task A_tab_or_a_space_in_the_token_goes_out_as_it_came(int codeUnit)
-    {
-        var at = $"HCAT-head{C(codeUnit)}tail-HCend";
-        using var idp = new CapIdp(_ => CapIdp.Resp.Json(200, "[]"));
-        var cfg = new KeycloakConfig { ServerUrl = idp.Url, Realm = "r", ClientId = "c", ClientSecret = Secret };
-        await using var admin = await AdminClient.CreateAsync(cfg.Normalized(), new Fixed(at));
-
-        await admin.Realms.ListAsync();
-
-        Assert.Equal($"Bearer {at}", Assert.Single(idp.Seen).Authorization);
-    }
-
-    /// <summary>The control for the check itself: a consumer provider that returns <c>null</c> despite the contract still
-    /// sends its request with a bare scheme, as it did before the check — no raw exception out of the SDK.</summary>
-    [Fact]
-    public async Task A_null_token_from_a_consumer_provider_still_goes_out_with_a_bare_scheme()
-    {
-        using var idp = new CapIdp(_ => CapIdp.Resp.Json(200, "[]"));
-        var cfg = new KeycloakConfig { ServerUrl = idp.Url, Realm = "r", ClientId = "c", ClientSecret = Secret };
-        await using var admin = await AdminClient.CreateAsync(cfg.Normalized(), new Fixed(null!));
-
-        await admin.Realms.ListAsync();
-
-        Assert.Equal("Bearer", Assert.Single(idp.Seen).Authorization);
+            $"U+{codeUnit:X4}: {sent} admin request(s) reached the server; want each refused before sending\n" + string.Join("\n", wrong));
     }
 
     /// <summary>Every text a logger may print for an exception: <c>ToString()</c> (message, cause chain, stack), each

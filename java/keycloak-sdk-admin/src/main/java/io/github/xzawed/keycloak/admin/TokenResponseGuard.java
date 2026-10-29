@@ -16,10 +16,11 @@ import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.util.regex.Pattern;
 
 /**
- * admin 레인의 토큰 응답 검사 — 토큰 엔드포인트의 성공 응답이 <b>HTTP 필드 값이 실을 수 있는 비어 있지 않은 JSON 문자열</b>
- * {@code access_token} 을 싣지 않으면({@link #fieldValueSafe}) 그 응답을 거부한다.
+ * admin 레인의 토큰 응답 검사 — 토큰 엔드포인트의 성공 응답이 <b>그대로 보낼 수 있는 bearer 인 JSON 문자열</b>
+ * {@code access_token} 을 싣지 않으면({@link #sendableAsIs}) 그 응답을 거부한다.
  *
  * <p>왜 여기인가: admin 은 토큰을 자체 소유하고(§4) keycloak-admin-client 내장 TokenManager 가 토큰 응답을 Jackson 으로
  * {@code AccessTokenResponse} 에 결합한다. Jackson 의 스칼라 강제변환이 숫자·불리언을 문자열로 바꾸고 빈 문자열은 그대로
@@ -74,6 +75,8 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   static final String TOO_LARGE = "token endpoint response exceeds " + ResponseLimits.MAX_TOKEN_RESPONSE_BYTES + " bytes";
   private static final String ACCESS_TOKEN = "access_token";
   private static final JsonFactory JSON = new JsonFactory();
+  /** RFC 6750 {@code b64token} — {@link #sendableAsIs}. {@code matches()} 는 문자열 전체를 본다. */
+  private static final Pattern B64TOKEN = Pattern.compile("[A-Za-z0-9\\-._~+/]+=*");
 
   /** 이 가드의 범위 — 토큰 엔드포인트로의 POST. 엔진({@link AdminEngine#invoke})도 같은 범위를 오류 본문의 상한에서 뺀다. */
   static boolean inScope(String method, URI uri) {
@@ -169,8 +172,8 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   }
 
   /**
-   * 최상위가 JSON 객체이고 그 {@code access_token} 이 하나 이상이며 전부 HTTP 필드 값이 실을 수 있는({@link #fieldValueSafe}) 비어
-   * 있지 않은 문자열이다. 형식이 틀리면 false.
+   * 최상위가 JSON 객체이고 그 {@code access_token} 이 하나 이상이며 전부 그대로 보낼 수 있는 bearer({@link #sendableAsIs})인
+   * 문자열이다. 형식이 틀리면 false.
    */
   static boolean carriesUsableAccessToken(byte[] body) {
     try (JsonParser p = JSON.createParser(body)) {
@@ -181,7 +184,7 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
         JsonToken value = p.nextToken();
         if (!accessToken) {
           p.skipChildren();
-        } else if (value != JsonToken.VALUE_STRING || p.getTextLength() == 0 || !fieldValueSafe(p.getText())) {
+        } else if (value != JsonToken.VALUE_STRING || !sendableAsIs(p.getText())) {
           return false;
         } else {
           found = true;
@@ -194,18 +197,16 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   }
 
   /**
-   * HTTP 필드 값이 실을 수 있는 문자열인가 — RFC 9110 §5.5 가 필드 값에서 빼는 CR·LF·NUL·HTAB 밖의 C0 와 DEL 이 없다. 그런
-   * access_token 은 쓸 수 없는 토큰이다 — 캐시되지 않고(다음 호출이 다시 부여한다) admin 요청은 나가지 않는다. 수정 전 HttpCore 는 그
-   * Bearer 를 조용히 고쳐 보냈다(CR·LF·VT·FF → 공백 · 그 밖의 C0·DEL → {@code ?} — {@code BasicLineFormatter}·{@code ByteArrayBuffer},
-   * 실측 {@code AdminTokenResponseTest}). TokenManager 의 토큰은 모두 이 응답에서 오므로(부여·갱신 — 다른 길로 넣는 setter 가 없다) 보낼
-   * 때 다시 보지 않는다. ⚠️ HTAB·SP·ASCII 밖(HttpCore 가 U+0100 위와 C1 을 {@code ?} 로 보낸다)은 여기서 판정하지 않는다 — 아홉 언어가
-   * 함께 정할 일이다(등록부 {@code bearer-token-grammar-divergent}).
+   * 그대로 보낼 수 있는 bearer 인가 — 아홉 언어 공통 규칙(등록부 {@code bearer-token-grammar-divergent}, 2026-10-29)의 <b>받는 자리
+   * 갈래</b>: 비어 있지 않은 RFC 6750 {@code b64token}({@code [A-Za-z0-9\-._~+/]+=*}, ASCII — {@code =} 는 끝의 채움으로만)이다.
+   * 규칙은 앞뒤의 SP·HTAB·CR·LF 를 떼고 남은 것을 보내지만, 여기서는 그 값을 보낼 수 없다 — admin 요청의 헤더는 keycloak-admin-client 의
+   * {@code BearerAuthFilter} 가 TokenManager 에 결합된 값으로 직접 단다. 그래서 다듬어야 하는 토큰도 거부한다(b64token 에 그 넷이 없어
+   * 「다듬은 꼴과 같고 b64token 이다」가 곧 이 검사다 — IdP 는 그런 토큰을 내지 않는다). 거부한 access_token 은 캐시되지 않고(다음
+   * 호출이 다시 부여한다) admin 요청은 나가지 않는다. 수정 전에는 HTAB 밖의 C0 와 DEL 만 거부해 SP·HTAB·Latin-1 은 그대로, C1·U+00FF
+   * 위·짝 없는 서로게이트는 HttpCore 가 {@code ?} 로 바꿔 보냈다(실측 {@code BearerTokenGrammarTest}). TokenManager 의 토큰은 모두 이
+   * 응답에서 오므로(부여·갱신 — 다른 길로 넣는 setter 가 없다) 보낼 때 다시 보지 않는다.
    */
-  static boolean fieldValueSafe(String value) {
-    for (int i = 0; i < value.length(); i++) {
-      char c = value.charAt(i);
-      if ((c < 0x20 && c != '\t') || c == 0x7f) return false;
-    }
-    return true;
+  static boolean sendableAsIs(String token) {
+    return B64TOKEN.matcher(token).matches();
   }
 }
