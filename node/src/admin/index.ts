@@ -21,7 +21,7 @@ export { GroupsResource } from './groups.js'
  * ({@link users}/{@link clients}/{@link realms}/{@link roles}/{@link groups}) and the escape hatch {@link raw}
  * (the official `@keycloak/keycloak-admin-client`).
  *
- * ⚠️ The facade's five resources do not call admin-client methods — they send, themselves, the same requests
+ * ⚠️ The facade's five resources do not call admin-client methods — they themselves send the same requests
  * admin-client sends (`http.ts`). admin-client 26.8 reads the body of a non-2xx response whole (`fetchWithError`)
  * and reads a write's 2xx body to its end too (`parseResponse`), whereas the facade drains an error body only up to
  * 1 MiB and does not read a write's 2xx body. That they are the same requests is checked on the wire by

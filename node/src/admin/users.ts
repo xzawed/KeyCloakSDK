@@ -3,10 +3,10 @@ import { call, requireFound } from './call.js'
 import { type AdminHttp, adminPath, create, omit, orEmpty, read, readOne, write } from './http.js'
 
 /**
- * 사용자 CRUD 파사드. 공식 admin-client의 `users` 리소스가 보내는 것과 같은 요청을 직접 보내며(`http.ts` — 오류 본문은
- * 상한까지만, 쓰기의 2xx 본문은 읽지 않는다) 모든 호출을 {@link call}로 경계 변환한다. 모델 타입은 admin-client의
- * {@link UserRepresentation}을 그대로 노출한다(안정적 Keycloak 타입 재사용 — 문서화된 은닉성 예외, Java admin 파사드와
- * 동형).
+ * User CRUD facade. It itself sends the same requests the official admin-client's `users` resource sends
+ * (`http.ts` — error bodies only up to the cap, and a write's 2xx body is not read), and converts every call at the
+ * boundary with {@link call}. The model type is admin-client's {@link UserRepresentation}, exposed as is (reuse of
+ * a stable Keycloak type — a documented hiding exception, isomorphic with the Java admin facade).
  */
 export class UsersResource {
   /**
@@ -18,7 +18,7 @@ export class UsersResource {
     private readonly realm: string,
   ) {}
 
-  /** 사용자를 생성하고 신규 사용자 id를 반환한다. */
+  /** Creates a user and returns the new user's id. */
   async create(representation: UserRepresentation): Promise<string> {
     return call(() =>
       create(
@@ -29,7 +29,7 @@ export class UsersResource {
     )
   }
 
-  /** id로 사용자를 조회한다. 없으면 `KeycloakNotFoundError`(null/undefined를 반환하지 않는다). */
+  /** Looks up a user by id. `KeycloakNotFoundError` if absent (it does not return null/undefined). */
   async get(id: string): Promise<UserRepresentation> {
     return requireFound(
       await call(() => readOne<UserRepresentation>(this.http, adminPath(this.realm, 'users', id))),
@@ -37,7 +37,7 @@ export class UsersResource {
     )
   }
 
-  /** username(선택)으로 사용자를 검색한다(페이지네이션 first/max). */
+  /** Searches users by an optional username (pagination first/max). */
   async search(username?: string, first = 0, max = 100): Promise<UserRepresentation[]> {
     return call(() =>
       read<UserRepresentation[]>(this.http, adminPath(this.realm, 'users', ''), [

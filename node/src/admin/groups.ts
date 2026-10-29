@@ -3,8 +3,8 @@ import { call, requireFound } from './call.js'
 import { type AdminHttp, adminPath, create, omit, orEmpty, read, readOne, write } from './http.js'
 
 /**
- * 그룹 CRUD 파사드. 공식 admin-client의 `groups` 리소스가 보내는 것과 같은 요청을 직접 보내며(`http.ts`)
- * {@link call}로 경계 변환한다.
+ * Group CRUD facade. It itself sends the same requests the official admin-client's `groups` resource sends
+ * (`http.ts`), and converts at the boundary with {@link call}.
  */
 export class GroupsResource {
   /**
@@ -16,7 +16,7 @@ export class GroupsResource {
     private readonly realm: string,
   ) {}
 
-  /** 그룹을 생성하고 신규 그룹 id를 반환한다. */
+  /** Creates a group and returns the new group's id. */
   async create(representation: GroupRepresentation): Promise<string> {
     return call(() =>
       create(
@@ -27,7 +27,7 @@ export class GroupsResource {
     )
   }
 
-  /** id로 그룹을 조회한다. 없으면 `KeycloakNotFoundError`. */
+  /** Looks up a group by id. `KeycloakNotFoundError` if absent. */
   async get(id: string): Promise<GroupRepresentation> {
     return requireFound(
       await call(() =>
@@ -37,7 +37,7 @@ export class GroupsResource {
     )
   }
 
-  /** 최상위 그룹을 나열한다(페이지네이션 first/max). */
+  /** Lists the top-level groups (pagination first/max). */
   async list(first = 0, max = 100): Promise<GroupRepresentation[]> {
     return call(() =>
       read<GroupRepresentation[]>(this.http, adminPath(this.realm, 'groups', ''), [
@@ -48,9 +48,9 @@ export class GroupsResource {
   }
 
   /**
-   * id로 주소를 잡아 그룹을 갱신한다. `representation.name`에 새 이름을 주면 rename이다.
+   * Updates a group, addressed by id. A new name in `representation.name` is a rename.
    *
-   * ⚠️ 경로(`id`)와 body(`representation`)를 **합치지 말 것**.
+   * ⚠️ **Do not merge** the path (`id`) and the body (`representation`).
    */
   async update(id: string, representation: GroupRepresentation): Promise<void> {
     await call(() =>
