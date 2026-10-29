@@ -1,5 +1,5 @@
-"""`UsersResource` — 사용자 CRUD. `KeycloakAdmin`을 감싸고 `_translate.call`로
-python-keycloak 예외를 SDK 예외로 변환한다."""
+"""`UsersResource` — user CRUD. Wraps `KeycloakAdmin` and converts python-keycloak
+exceptions to SDK exceptions with `_translate.call`."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from ._translate import call, write_call
 
 
 class UsersResource:
-    """사용자 관리. `admin`은 `AdminClient.raw`(또는 테스트 목)로 주입된다."""
+    """User management. `admin` is injected as `AdminClient.raw` (or a test mock)."""
 
     def __init__(self, admin: KeycloakAdmin) -> None:
         self._admin = admin
@@ -20,8 +20,8 @@ class UsersResource:
         return write_call(lambda: self._admin.create_user(rep))
 
     def get(self, user_id: str) -> dict[str, Any] | None:
-        """`user_id`로 사용자를 조회한다. 존재하지 않으면 `KeycloakNotFoundError`가
-        전파된다(None을 반환하지 않음)."""
+        """Looks up a user by `user_id`. If it does not exist, `KeycloakNotFoundError`
+        propagates (None is not returned)."""
         return call(lambda: self._admin.get_user(user_id))
 
     def search(

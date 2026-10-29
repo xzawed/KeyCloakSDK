@@ -1,14 +1,15 @@
-"""AdminClient — python-keycloak `KeycloakAdmin`을 감싼 관리(admin) 파사드.
+"""AdminClient — the administration (admin) facade wrapping python-keycloak's `KeycloakAdmin`.
 
-`KeycloakAdmin` 생성은 지연(lazy) 수행된다 — client-credentials grant로 인증하므로
-`config.client_secret`이 필요하고, 실제 필요 시점(첫 `raw`/리소스 접근)까지 생성을
-미뤄 시크릿 없는 설정으로도 `AdminClient` 자체는 구성할 수 있게 한다(공개 client는
-auth만 쓰고 admin은 안 쓰는 경우를 지원). 네트워크 경계라 커버리지 게이트에서
-제외된다(pyproject `[tool.coverage.run].omit`); 리소스 파사드(4.2~4.4)가 로직을
-담당하고 목 기반으로 단위 검증된다.
+`KeycloakAdmin` is created lazily — it authenticates with the client-credentials grant, so it
+needs `config.client_secret`, and its creation is deferred until the point where it is actually
+needed (the first `raw`/resource access) so that `AdminClient` itself can be constructed even
+with a secretless configuration (supporting the case where a public client uses only auth and
+not admin). Being a network boundary, it is excluded from the coverage gate (pyproject
+`[tool.coverage.run].omit`); the resource facades (4.2 through 4.4) carry the logic and are
+unit-verified with mocks.
 
-리소스 접근자(`users`/`clients`/`realms`/`roles`/`groups`)는 WBS 4.2~4.4에서
-단계적으로 추가된다.
+The resource accessors (`users`/`clients`/`realms`/`roles`/`groups`) are added step by step in
+WBS 4.2 through 4.4.
 """
 
 from __future__ import annotations
@@ -27,7 +28,8 @@ from .users import UsersResource
 
 
 class AdminClient:
-    """`KeycloakAdmin` 래핑. `admin`은 테스트 주입용(미지정 시 첫 사용 시점에 생성)."""
+    """Wraps `KeycloakAdmin`. `admin` is for test injection (when omitted, it is created on
+    first use)."""
 
     def __init__(self, config: KeycloakConfig, admin: KeycloakAdmin | None = None) -> None:
         self._config = config
@@ -38,7 +40,8 @@ class AdminClient:
     @property
     @scrub_frames  # 생성 실패 시 `KeycloakAdmin` 프레임이 client secret 을 쥔다(`_internal/frames`)
     def raw(self) -> KeycloakAdmin:
-        """내부 `KeycloakAdmin` 인스턴스(탈출구). 미생성 상태면 지금 생성한다."""
+        """The inner `KeycloakAdmin` instance (escape hatch). If it has not been created yet, it
+        is created now."""
         if self._admin is None:
             if self._config.client_secret is None:
                 raise KeycloakConfigError(
@@ -86,34 +89,37 @@ class AdminClient:
         return GroupsResource(self.raw)
 
     def close(self) -> None:
-        """하위 `KeycloakAdmin`의 sync `requests.Session`을 **둘 다** 닫는다.
+        """Closes **both** sync `requests.Session`s of the underlying `KeycloakAdmin`.
 
-        ⚠️ 예전에는 `return None`(no-op)이었다. 그런데 aio 미러(`aio/admin/__init__.py`의
-        `aclose()`)는 같은 자리에서 실제로 닫고 있었다 — **sync/aio 비대칭**이고, 그 비대칭을
-        `test_close_is_noop`이 「의도」로 고정하고 있었다.
+        ⚠️ This used to be `return None` (a no-op). Yet the aio mirror (`aclose()` in
+        `aio/admin/__init__.py`) was actually closing at the same spot — a **sync/aio
+        asymmetry**, and `test_close_is_noop` was pinning that asymmetry as "intended".
 
-        `ConnectionManager`에는 공개 `close()`가 없다 — `aclose()`(async `httpx` 전용)와
-        `__del__`뿐이라, sync 세션은 **GC 될 때까지** 열려 있었다. 장기 서비스에서는 그
-        시점이 보장되지 않는다.
+        `ConnectionManager` has no public `close()` — there are only `aclose()` (async `httpx`
+        only) and `__del__`, so the sync session stayed open **until it was GC'd**. In a
+        long-running service that moment is not guaranteed.
 
-        ⚠️ 매니저가 **둘**이다(`_internal/admin_guard.py` 가 리다이렉트 하드닝에서 다루는 그
-        구조):
+        ⚠️ There are **two** managers (the structure `_internal/admin_guard.py` deals with in
+        redirect hardening):
 
-        1. `connection._s` — admin REST 호출.
-        2. `connection.keycloak_openid.connection._s` — admin 자신의 client-credentials
-           토큰 그랜트.
+        1. `connection._s` — the admin REST calls.
+        2. `connection.keycloak_openid.connection._s` — admin's own client-credentials
+           token grant.
 
-        `raw` 미생성이면 `self._admin`이 None이라 no-op이다(굳이 생성하지 않는다 — aio
-        `aclose()`와 같은 계약). 중첩 정리가 실패해도 바깥 정리는 `finally`로 반드시
-        수행한다: 둘 중 하나가 깨졌다고 나머지 FD까지 함께 잃는 것이 최악이다. 실패 자체는
-        숨기지 않는다(조용한 누수보다 시끄러운 실패가 낫다).
+        If `raw` was never created, `self._admin` is None, so this is a no-op (it does not go out
+        of its way to create one — the same contract as aio `aclose()`). Even if the nested
+        cleanup fails, the outer cleanup is always performed via `finally`: losing the other FD
+        as well just because one of the two broke is the worst case. The failure itself is not
+        hidden (a loud failure is better than a silent leak).
 
-        ⚠️ **`async_s`는 여기서 닫지 못한다 — 과대광고하지 말 것.** sync `ConnectionManager`도
-        `httpx.AsyncClient`를 함께 만들지만 그것을 닫으려면 `await`가 필요하다. sync 경로에서
-        회수 가능한 자원은 `requests.Session`이고, 이 훅이 닫는 것은 그것뿐이다.
+        ⚠️ **`async_s` cannot be closed here — do not oversell this.** The sync
+        `ConnectionManager` also creates an `httpx.AsyncClient`, but closing it requires
+        `await`. The resource that can be reclaimed on the sync path is the `requests.Session`,
+        and that is all this hook closes.
 
-        연결은 **무장하지 않고** 읽는다(`unarmed_connection`) — 정리는 요청을 보내지 않으므로,
-        보호할 수 없게 바뀐 연결이라도 닫는 것까지 막지 않는다.
+        The connection is read **without arming it** (`unarmed_connection`) — cleanup sends no
+        request, so even a connection that has changed so that it can no longer be protected is
+        not prevented from being closed.
         """
         conn = unarmed_connection(self._admin)
         if conn is None:
