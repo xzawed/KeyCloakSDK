@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Xzawed\Keycloak\Internal;
 
 /**
- * A token, introspection or logout response body gave an empty read before it signalled its end (EOF) — the carrier that
+ * A token, introspection or logout response body gave an empty read before it signaled its end (EOF) — the carrier that
  * brings `TokenResponseCap::read`'s verdict to the SDK boundary. @internal
  *
  * ⚠️ It does not go out to the public API — every place that calls the reader catches and converts it. introspect · logout

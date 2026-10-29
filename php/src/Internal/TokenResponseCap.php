@@ -28,7 +28,7 @@ use Psr\Http\Message\StreamInterface;
  * curl passes decompressed bytes in chunks of at most 16,384 bytes (CURL_MAX_WRITE_SIZE), so what is received before the
  * cut is up to the one chunk that passes cap+1 (the sink stores only up to cap+1 bytes of that chunk). (2) The **reader**
  * (`read()`) — it reads that body once, at most up to cap+1 bytes; it is null if it went over, and it fails if it stalls
- * before signalling its end (`ResponseStalled`). Only the reader decides — the paths that do not use the sink (PSR-18
+ * before signaling its end (`ResponseStalled`). Only the reader decides — the paths that do not use the sink (PSR-18
  * `sendRequest()`, a handler the consumer passed in) also go through here.
  *
  * ⚠️ Why not switch to `'stream' => true`: Guzzle then sends the request with PHP's stream handler instead of curl — the
