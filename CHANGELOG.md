@@ -14,6 +14,7 @@
 - **(Rust)** docs.rs 에 그려지는 문서 주석(공개 항목 · 모듈 문서)과 README 가 링크하는 `examples/quickstart.rs` 의 주석을 영문으로 옮겼습니다 — 지금까지는 한글이었습니다. 코드는 그대로이고(바뀐 줄 전부가 주석), `cargo doc --no-deps` 산출물의 한글은 22 파일 → 0 입니다.
 - **(Node)** 방출되는 `.d.ts` 의 문서 주석(IDE 호버에 뜨는 것)과 README 가 링크하는 `examples/quickstart.ts` 의 주석을 영문으로 옮겼습니다 — 지금까지는 한글이었습니다. 코드와 공개 API 리포트는 그대로이고(api-extractor 리포트가 main 과 같다), `.d.ts` 의 한글은 19 파일 → 0 입니다.
 - **(Ruby)** YARD 가 그리는 문서 주석(공개 API · 공개 메서드의 소스 보기 안 주석 포함)을 영문으로 옮겼습니다 — 지금까지는 한글이었습니다. 코드는 그대로이고(주석을 뗀 코드와 Ripper 토큰이 같다), `yard doc` 산출물의 한글은 26 파일 → 0 입니다.
+- **(PHP)** IDE 호버에 뜨는 docblock(클래스와 public·protected 멤버)과 README 가 링크하는 `examples/quickstart.php` 의 주석을 영문으로 옮겼습니다 — 지금까지는 한글이었습니다. 코드와 PHPDoc 태그·타입은 그대로이고(phpstan 의 PhpDocParser 로 태그 70 · 타입 65 를 대조), 공개 선언 docblock 덤프의 한글은 343 줄 → 0 입니다.
 
 ### Fixed
 - **(Go)** 공유 비행(첫 `Client.Admin` · client_credentials 토큰 · JWKS 조회)의 결과와 호출자 ctx 의 취소가 함께 준비되면 둘 중 하나를 무작위로 돌려줬습니다(동점 200 회에 `context.Canceled` 93–103 회) — 이제 준비된 결과가 이깁니다(캐시 적중이 이미 그렇다). 결과가 아직 없으면 전처럼 ctx 오류입니다.
