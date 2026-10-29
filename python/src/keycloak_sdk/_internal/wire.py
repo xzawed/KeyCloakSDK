@@ -5,8 +5,9 @@
 읽는다 — 그것을 흘리는 서버 앞에서는 그 호출이 끝난 뒤에야 실패했다(수정 전 실측
 2026-10-29 · 읽기 타임아웃 1 초 · 마지막 10 바이트를 0.7 초마다: 7,066~7,129 ms —
 `tests/unit/test_response_read_deadline.py`). 그리고 http.client 는 줄 하나를 65,536
-에서 끊지만 트레일러 **줄 수**는 세지 않는다 — 4 KiB 줄 4,096 개(16 MiB)를 끝까지
-읽었다(등록부 `response-framing-unbounded` F3a).
+에서 끊지만 트레일러 **줄 수**는 판에 따라 세지 않는다 — 4 KiB 줄 4,096 개(16 MiB)를 끝까지
+읽었다(등록부 `response-framing-unbounded` F3a · 최근 CPython 보안 패치 판은 100 개에서 끊는다 —
+판에 기대지 않고 아래 예산이 묶는다).
 
 **어디에 거는가.** 응답의 읽기는 전부 http.client 응답의 버퍼(`sock.makefile("rb")`)
 아래 원문 `readinto` 한 자리를 지난다 — 상태 줄·헤더·1xx·청크 크기 줄·트레일러·본문·

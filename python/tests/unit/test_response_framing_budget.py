@@ -26,6 +26,8 @@ JWKS 116,737 — admin 오류 레인은 앞선 그랜트 응답 144 바이트를
 from __future__ import annotations
 
 import contextlib
+import http.client
+import io
 import json
 import socket
 import threading
@@ -52,6 +54,34 @@ TOKEN_BUDGET = 1_048_576 + FRAMING
 JWKS_BUDGET = 51_200 + FRAMING
 #: F3a — 4 KiB 트레일러 줄 4,096 개(줄 하나는 http.client 의 줄 한도 65,536 안이다).
 LINES, LINE = 4096, 4096
+
+
+def _http_client_limits_trailer_count() -> bool:
+    """이 CPython 의 http.client 가 트레일러 **줄 수**를 묶는가 — 판 번호가 아니라 동작으로 묻는다.
+
+    최근 보안 패치 판(CI 실측 2026-10-29: 3.10.22 · 3.11.17 · 3.12.15 · 3.13.17 · 3.14.9)은 100 개를
+    넘으면 `HTTPException("got more than 100 trailers")` 이고, 그 전 판(로컬 3.13.11 · WSL 3.12.3)은
+    끝까지 읽는다. 그 판에서는 F3a 를 SDK 예산보다 먼저 http.client 가 끊는다."""
+    raw = (
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n"
+        + b"X-T: y\r\n" * 101
+        + b"\r\n"
+    )
+
+    class _Wire:
+        def makefile(self, *_args: Any, **_kwargs: Any) -> io.BytesIO:
+            return io.BytesIO(raw)
+
+    response = http.client.HTTPResponse(_Wire())  # type: ignore[arg-type]
+    response.begin()
+    try:
+        response.read()
+    except http.client.HTTPException:
+        return True
+    return False
+
+
+HTTP_CLIENT_LIMITS_TRAILERS = _http_client_limits_trailer_count()
 ACCESS_TOKEN = "AT-framing"
 KEY = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
 OC = "/realms/r/protocol/openid-connect"
@@ -286,10 +316,13 @@ def test_trailer_lines_past_the_wire_budget_fail_the_request(
 def test_control_an_admin_success_body_has_no_wire_budget(
     read_bytes: list[int], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """admin 의 성공 본문은 바이트로 묶지 않는다(목록은 정당하게 크다) — 같은 F3a 를 끝까지 읽고
-    받아들인다. 그 시간은 마감이, 할당은 http.client 의 줄 한도가 묶는다."""
-    # 진단: SDK 경계(`lower.py`)는 하위 예외의 사슬을 일부러 떼므로, 대조군이 실패하면
-    # python-keycloak 이 감싸기 직전의 원래 예외를 여기서 잡아 메시지에 싣는다.
+    """admin 의 성공 본문은 바이트로 묶지 않는다(목록은 정당하게 크다) — 같은 F3a 를 SDK 예산이
+    끊지 않는다. 트레일러 수를 묶지 않는 CPython 에서는 끝까지 읽고 받아들이고, 묶는 판에서는
+    http.client 가 100 개째에서 끊는다(`HTTP_CLIENT_LIMITS_TRAILERS`) — 어느 쪽이든 끊은 것이 SDK
+    예산이 아니다. 큰 목록을 끝까지 받는 대조는
+    `test_response_read_deadline.py::test_a_large_admin_list_is_read_whole` 이다."""
+    # SDK 경계(`lower.py`)는 하위 예외의 사슬을 일부러 떼므로, python-keycloak 이 감싸기 직전의
+    # 원래 예외를 여기서 잡는다 — 누가 끊었는지는 그것이 말한다.
     lower: list[BaseException] = []
     plain = ConnectionManager.raw_get
 
@@ -304,7 +337,14 @@ def test_control_an_admin_success_body_has_no_wire_budget(
     with _idp(USER, b"200 OK") as idp:
         result, err, elapsed = _call_sync("admin", idp.url)
     _report("sync", "admin success", err, read_bytes[0], elapsed)
-    assert err is None, f"{_why(err)} | lower: {_why(lower[0]) if lower else '-'}"
+    why = f"{_why(err)} | lower: {_why(lower[0]) if lower else '-'}"
+    if HTTP_CLIENT_LIMITS_TRAILERS:
+        assert isinstance(err, KeycloakTransportError), why
+        assert "got more than 100 trailers" in why, why  # 끊은 것은 http.client 다
+        assert "on the wire" not in why, why  # SDK 예산의 문구가 아니다
+        assert read_bytes[0] < TOKEN_BUDGET, read_bytes[0]
+        return
+    assert err is None, why
     assert result == {"id": "x", "username": "alice"}
     assert read_bytes[0] > len(TRAILERS), read_bytes[0]
 
