@@ -1,4 +1,7 @@
-<!-- doc-budget: max-bytes=13527 -->
+<!-- doc-budget: max-bytes=13568 -->
+<!-- 13527 → 13568 (2026-10-29, +41B). 규약 (1) — 교환: README.md 와 같은 자리(「미해결 kid에만」이 300 초 수명 뒤로
+     무조건 문장으로는 거짓 — 가드 1h). -->
+
 <!-- 13513 → 13527 (2026-09-26). 규약 (1) — README.md 와 같은 교환이다. 함대가 세 갈래로
      갈려 두 갈래 요약 문장이 거짓이 되고, 새 문장의 버전 집합은 `test-publication-claims.sh`
      축 2 가 SSOT 와 대조한다. 언어 넷을 「나머지」로 접어 증가분을 줄였다(한글은 3B/자). -->
@@ -143,7 +146,8 @@ pip install -e KeyCloakSDK/python
 
 ## 기본이 안전한 설계
 
-아홉 개 SDK 모두 **같은 클레임 검사 규칙**(알고리즘 핀닝, `iss` 정확일치, `aud` 포함검사, `exp` 필수, 클록 스큐 제한)을 탑재합니다 — 하위 라이브러리 기본값이 아닙니다. JWKS 재조회 rate-limit은 아홉 공통이고, **「미해결 kid에만」은 여덟 언어**입니다. .NET은 `Microsoft.IdentityModel`의 `ConfigurationManager`가 서명 실패도 키 회전으로 보아 재조회하므로, rate-limit이 증폭 상한입니다 — [dotnet/README.md](dotnet/README.md).
+아홉 개 SDK 모두 **같은 클레임 검사 규칙**(알고리즘 핀닝, `iss` 정확일치, `aud` 포함검사, `exp` 필수, 클록 스큐 제한)을 탑재합니다 — 하위 라이브러리 기본값이 아닙니다.
+JWKS 키 집합 수명 300초는 아홉 공통이고, 그 안에서 JWKS 재조회 rate-limit은 아홉 공통, **「미해결 kid에만」은 여덟 언어**입니다. .NET은 `Microsoft.IdentityModel`의 `ConfigurationManager`가 서명 실패도 키 회전으로 보아 재조회하므로, rate-limit이 증폭 상한입니다 — [dotnet/README.md](dotnet/README.md).
 
 토큰·시크릿은 로그·직렬화에서 마스킹되고, TLS 검증은 기본 활성입니다. 인증 경로의 파사드 뒤에는 SDK 타입만 둡니다. admin representation과 `raw()`는 문서화된 예외입니다([Admin capability matrix](docs/reference/admin-capability.md#admin-capability-matrix)).
 

@@ -1,4 +1,8 @@
-<!-- doc-budget: max-bytes=22520 -->
+<!-- doc-budget: max-bytes=22684 -->
+<!-- 22520 → 22684 (2026-10-29, +164B). 규약 (1) — 새 언어가 지켜야 할 JWKS 규칙이 하나 늘었다(판정 2026-10-29 — 키 집합
+     300 초 수명, 가드 1h 가 아홉 선언을 대조한다). 54행의 요구와 74행의 시험 점검표가 그것을 빠뜨리면 열 번째 언어가
+     수명 없이 들어온다 — 두 줄에 한 마디씩 더했다. -->
+
 <!-- 22305 → 22520 (2026-09-22, +215B). 규약 (1) — **거짓 계약을 참으로** 바꾼다. 체크리스트가
      「close() 는 admin 뿐 아니라 auth 세션도 정리해야 한다」를 필수 계약으로 걸어 놨는데,
      Java 의 `AuthClient` 에는 닫을 세션이 **없고**(java/README.md 가 그렇게 적는다) Node 는
@@ -51,7 +55,7 @@ Build up **layers isomorphic** to Java's `core`/`auth`/`admin`/`keycloak-sdk` an
   - **Exact issuer match** (`==`).
   - **Audience membership check** — if `aud` is a string, equality; if a list, membership (accept multiple audiences).
   - **exp/nbf + clock skew** (default 30s).
-  - **DoS-safe JWKS refetch** — signature forgery does not trigger a certs refetch; only an unresolved kid triggers a refetch; and the refetch itself is rate-limited to a minimum interval. Block the unauthenticated DoS amplification of hitting the IdP on every forged Bearer.
+  - **DoS-safe JWKS refetch** — signature forgery does not trigger a certs refetch; only an unresolved kid triggers a refetch; and the refetch itself is rate-limited to a minimum interval. A key set expires 300 s after its fetch; then it is a cold cache and a failed refetch rejects. Block the unauthenticated DoS amplification of hitting the IdP on every forged Bearer.
 - [ ] **admin (facade + raw())** — a resource facade wrapping the foundation admin client (`users`/`clients`/`realms`/`roles`/`groups`). Expose the underlying client via the **`raw()` escape hatch** (for advanced users). Admin calls **must inject config's timeouts** (not injecting them = unbounded waits and thread-exhaustion DoS).
 - [ ] **client (unified entry point)** — initialize `auth` **eagerly** and `admin` **lazily** (a public client can use `auth` alone without a secret). Provide `close()`/`aclose()` via a context manager/`AutoCloseable` — releasing **whatever that language's stack actually holds**, and say in the README which half is real. ⚠️ Not every language holds anything: Java's `AuthClient` has no closeable session, and Node's two halves are both no-ops (the sub-libraries are `fetch`-based). Claiming otherwise is the defect `0.2.1` had to ship a release to fix.
 
@@ -71,7 +75,7 @@ Nail down the security properties implemented in Stage 2 **so that CI prevents r
 
 - [ ] **Masking (fully opaque)** — tokens/secrets must never appear in logs, `toString`/`repr`, or exception messages. Masking is a **fully opaque `***` with no prefix exposure**. Enforce with unit tests (the plaintext does not appear in the string representation).
 - [ ] **TLS verification on by default** — no no-op config options (an option that is stored but not wired to the transport is misleading — remove it). Keep verification on by default.
-- [ ] **DoS-safe JWKS** — pin Stage 2 jwt's refetch rate-limit and conditional refetch with unit tests (a forged signature does not trigger a refetch; only an unresolved kid refetches; the minimum interval is honored).
+- [ ] **DoS-safe JWKS** — pin Stage 2 jwt's refetch rate-limit and conditional refetch with unit tests (a forged signature does not trigger a refetch; only an unresolved kid refetches; the minimum interval is honored; a 300-second-old key set is refetched and a failed refetch rejects).
 - [ ] **admin timeout injection** — verify that config timeouts are actually passed to the real HTTP client.
 - [ ] **No default typing** — statically typed languages run in strict mode (e.g. `mypy --strict`, warnings escalated). CI rejects implicit any/loose types.
 - [ ] **Linter security ruleset** — make the language's security lint (bandit/`ruff S`, gosec, ESLint security, etc.) a **mandatory step in that language's CI workflow** (not a ruleset-level required check — see the gate note below).

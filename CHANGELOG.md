@@ -29,6 +29,11 @@
 - **(PHP)** admin 레인은 하위 라이브러리가 Bearer 를 직접 지으므로 그랜트 응답의 access token 이 다듬을 것 없는 `b64token` 일 때만 받습니다(`KeycloakAdminError`, 상태 없음) — sodium 이 없는 PHP 에서는 JWT 안쪽 공백·탭을 그대로 보냈고 `raw()` 의 psr7 예외가 Bearer 전체를 인용했습니다. 독립 `ClientCredentialsTokenProvider` 는 앞뒤를 떼고 받습니다.
 - **(Rust)** 파사드(`Transport`) · `raw()`(토큰 공급자의 `HttpFailure` 401) · provider(`Auth`)가 같은 판정입니다 — 지금까지는 U+00FF 위 글자를 날 UTF-8 헤더 바이트로, 안쪽 공백·Latin-1 을 그대로 보냈습니다.
 - **(Ruby)** `BearerAuth`(파사드 · `raw`)와 SDK provider 가 같은 판정입니다(`AuthError`) — 지금까지는 앞뒤 공백·탭을 거부했고(이제 뗍니다) 안쪽 공백·ASCII 밖은 그대로 보냈습니다.
+- **(전 언어)** JWKS 키 집합은 그것을 받은 적재가 끝나고 300 초 뒤에 만료되고, 만료된 집합은 콜드 캐시와 같습니다 — 다음 검증이 콜드 적재 길(같은 단일 비행 · 같은 실패 백오프)로 다시 받고, 실패하면 거부합니다(낡은 키로 받지 않습니다). 지금까지는 수명이 언어마다 달랐고(node 600 초 · JVM 300 초 · .NET 12 시간 · python·go·rust·php·ruby 는 없음), 수명 없는 다섯은 IdP 가 뺀 키를 새 kid 토큰이 올 때까지, .NET 은 장애 중에도 계속 받았습니다. ⚠️ JWKS 에 300 초 넘게 닿지 못하면 검증이 실패합니다 — 의도된 판정입니다(닿지 않는 JWKS 와 IdP 가 뺀 키를 SDK 는 가를 수 없습니다).
+- **(Python · Go · Rust · PHP · Node · Ruby · .NET)** 실패 백오프의 지터(×[0.5, 1.0))를 검사할 때마다 다시 뽑아, 같은 실패 하나가 190 ms 에는 거부하고 191 ms 에는 IdP 로 나갈 수 있었습니다 — 이제 실패할 때 한 번 뽑아 고정합니다.
+- **(Python)** 실패 백오프의 지수에 상한이 없어, 연속 실패가 약 1,025 번을 넘으면 `OverflowError` 로 JWKS 를 다시는 받지 못했습니다(IdP 가 돌아와도 — 1,100 번에서 재현) — 지수를 16 에서 묶었습니다.
+- **(.NET)** 낡은 설정으로 받던 두 길을 막았습니다 — `ConfigurationManager` 는 갱신 간격이 지나도 쥔 설정을 돌려주고 뒤에서 새로 받으며 실패는 로그만 남겼고, 처리기는 적재 실패(IDX10500)를 last-known-good 설정으로 다시 검증했습니다(그 수명은 마지막 수락부터 1 시간). 이제 SDK 가 다시 받을 때 매니저를 새로 지어 콜드 적재로 받고 last-known-good 은 껐습니다 — 회전으로 IdP 가 뺀 키의 토큰을 더는 받지 않습니다.
+- **(Java · Kotlin)** Nimbus 의 기본 TTL 300 초와 꺼진 outage tolerance 를 SDK 가 명시합니다(동작은 같습니다). refresh-ahead 는 남깁니다 — 만료 30 초 전의 검증이 뒤에서 한 번 갱신하고, 그 갱신이 실패해도 수명은 늘지 않습니다.
 - **(Ruby)** admin 이 String 이 아닌 access token 에는 헤더 검사를 걸지 않았습니다 — 소비자 `TokenProvider` 가 CR·LF 를 담은 Symbol 을 돌려주면 `raw` 커넥션은 Bearer 전체를 인용한 raw `ArgumentError` 를, 파사드는 `TransportError`(`admin transport error: ArgumentError`)를 냈고, NUL·끝 공백을 담은 Symbol 은 그대로·공백이 지워진 채 나갔으며, `nil`·`""` 은 `Authorization: Bearer` 로 나갔습니다(실측). 이제 String 이 아닌 값도 헤더에 실릴 그 글로 같은 검사를 받아 String 과 같은 `AuthError` 이고, 빈 토큰은 요청 없이 `admin request not sent: the access token is empty` 입니다. 검사를 지나는 Symbol·숫자는 지금처럼 그 글로 나가고, SDK 의 `ClientCredentialsTokenProvider` 는 늘 비지 않은 String 이라 달라지지 않습니다. 공개 API 변경은 0 입니다.
 
 ## [1.4.0] - 2026-10-27 (Ruby)

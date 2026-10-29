@@ -1,4 +1,7 @@
-<!-- doc-budget: max-bytes=12497 -->
+<!-- doc-budget: max-bytes=12549 -->
+<!-- 12497 → 12549 (2026-10-29, +52B). 규약 (1) — 교환: 「JWKS refetch … only on an unresolved key id」 가 JWKS 키 집합
+     300 초 수명(판정 2026-10-29 — 가드 1h 가 아홉 선언을 대조한다) 뒤로 무조건 문장으로는 거짓이 되어 그 자리를 고쳤다. -->
+
 <!-- 12492 → 12497 (2026-09-26). 규약 (1) — 함대가 **세 갈래**로 갈렸다. 두 갈래를 말하던 요약
      문장은 이 릴리스 범프로 거짓이 되고, 새 문장의 버전 집합은 `test-publication-claims.sh`
      축 2 가 SSOT(`df_published_version`)와 대조한다. 압축을 먼저 했다 — 언어 넷을 「the rest」
@@ -146,7 +149,8 @@ pip install -e KeyCloakSDK/python
 
 ## Hardened by default
 
-All nine ship **the same claim-check rules** (algorithm pinning, exact `iss`, `aud` containment, mandatory `exp`, bounded clock skew) — not the underlying library defaults. JWKS refetch is rate-limited on all nine; **“only on an unresolved key id” is eight languages**. .NET’s `Microsoft.IdentityModel` `ConfigurationManager` also refetches on a bad signature, so the rate-limit is the amplification cap — see [dotnet/README.md](dotnet/README.md).
+All nine ship **the same claim-check rules** (algorithm pinning, exact `iss`, `aud` containment, mandatory `exp`, bounded clock skew) — not the underlying library defaults.
+A JWKS key set lives 300 seconds on all nine; before that, JWKS refetch is rate-limited on all nine and **“only on an unresolved key id” is eight languages**. .NET’s `Microsoft.IdentityModel` `ConfigurationManager` also refetches on a bad signature, so the rate-limit is the amplification cap — see [dotnet/README.md](dotnet/README.md).
 
 Secrets and tokens are masked in logs and serialization, and TLS verification is on by default. Auth-path types stay behind the facade; admin representations and `raw()` are documented exceptions ([Admin capability matrix](docs/reference/admin-capability.md#admin-capability-matrix)).
 
