@@ -5,13 +5,13 @@ require "socket"
 require "timeout"
 
 module KeycloakSdk
-  # 모든 SDK 오류의 루트.
+  # The root of all SDK errors.
   class Error < StandardError; end
 
-  # 설정 검증 실패.
+  # Configuration validation failure.
   class ConfigError < Error; end
 
-  # 인증/토큰 발급 실패(OAuth 오류 코드 보존).
+  # Authentication/token issuance failure (keeps the OAuth error code).
   class AuthError < Error
     attr_reader :oauth_error
 
@@ -21,13 +21,13 @@ module KeycloakSdk
     end
   end
 
-  # 네트워크 전송 실패(타임아웃/연결거부/DNS).
+  # Network transport failure (timeout/connection refused/DNS).
   class TransportError < Error; end
 
-  # JWT 검증 실패.
+  # JWT validation failure.
   class TokenValidationError < Error; end
 
-  # Admin REST 오류(HTTP status 보존).
+  # Admin REST error (keeps the HTTP status).
   class AdminError < Error
     attr_reader :status
 
@@ -36,7 +36,7 @@ module KeycloakSdk
       @status = status
     end
 
-    # status → 적절한 하위 예외 인스턴스.
+    # status → an instance of the matching subclass exception.
     def self.from_status(status, message)
       case status
       when 404 then NotFoundError.new(message, status: status)
@@ -51,21 +51,26 @@ module KeycloakSdk
   class ConflictError < AdminError; end
   class ForbiddenError < AdminError; end
 
-  # SDK 오류의 `cause` 에 원본 하위 예외 대신 다는 사본 — **클래스 이름 사슬과 백트레이스만** 옮긴다.
-  # 경계는 `raise …, cause: RedactedCause.new(e)` 로 단다(`KeycloakSdk::Error` 가 아니다 — 원인 자리에만 있다).
+  # The copy attached as an SDK error's `cause` in place of the original underlying exception — it carries over **only
+  # the class-name chain and the backtrace**. The boundary attaches it with `raise …, cause: RedactedCause.new(e)`
+  # (it is not a `KeycloakSdk::Error` — it sits only in the cause slot).
   #
-  # ⚠️ Ruby 는 `rescue` 안의 `raise` 가 처리 중인 예외를 `cause` 에 **자동으로** 달고, `full_message`(잡히지 않은
-  # 예외·로거)가 그 사슬의 메시지를 찍는다. 하위 예외는 응답을 싣는다 — JSON 파서는 본문 앞 32 바이트를,
-  # rack-oauth2 는 `error_description`(JSON 이 아닌 오류면 본문 전체)을, Net::HTTP 는 깨진 상태 줄을 메시지에 싣고,
-  # `Faraday::ParsingError#inspect` 는 **요청** 본문·헤더(클라이언트 시크릿·refresh 토큰·베어러)까지 찍었다. Ruby 3.2 의
-  # `NoMethodError` 는 수신자(응답 본문)를 인용했다(실측 2026-09-26 · `spec/unit/hostile_token_response_spec.rb`).
-  # 원본 객체를 공개 API 로 내보내지 않는 것은 §4 도 요구한다.
+  # ⚠️ In Ruby, a `raise` inside `rescue` attaches the exception being handled as `cause` **automatically**, and
+  # `full_message` (uncaught exceptions · loggers) prints the messages of that chain. Underlying exceptions carry the
+  # response — the JSON parser puts the first 32 bytes of the body in its message, rack-oauth2 the
+  # `error_description` (the whole body for a non-JSON error), Net::HTTP the broken status line, and
+  # `Faraday::ParsingError#inspect` printed even the **request** body and headers (client secret · refresh token ·
+  # bearer). Ruby 3.2's `NoMethodError` quoted the receiver (the response body) (measured 2026-09-26 ·
+  # `spec/unit/hostile_token_response_spec.rb`). §4 also requires that the original objects are not exposed through
+  # the public API.
   class RedactedCause < StandardError
-    # 메시지를 SDK 메시지로 옮겨도 되는 하위 원인 — 응답을 인용할 수 없는 소켓·타임아웃·TLS 실패뿐이다.
-    # ⚠️ `Faraday::ConnectionFailed` 를 통째로 넣지 않는다 — `Net::HTTPBadResponse`(깨진 상태 줄 dump)도 그것으로 온다.
+    # The underlying causes whose message may be carried into the SDK message — only socket · timeout · TLS
+    # failures, which cannot quote the response.
+    # ⚠️ `Faraday::ConnectionFailed` is not added wholesale — `Net::HTTPBadResponse` (a dump of the broken status
+    # line) also arrives as one.
     QUOTE_FREE = [SystemCallError, SocketError, IOError, Timeout::Error, OpenSSL::SSL::SSLError].freeze
 
-    # 원본과 그 `cause` 들의 클래스 이름(바깥부터).
+    # The class names of the original and its `cause`s (outermost first).
     attr_reader :lower_classes
 
     def initialize(error)
@@ -79,7 +84,8 @@ module KeycloakSdk
       set_backtrace(error.backtrace) if error.backtrace
     end
 
-    # SDK 메시지에 실을 하위 오류 설명 — 인용할 수 없는 연결 실패면 그 메시지, 아니면 클래스 이름뿐.
+    # The description of an underlying error to carry in an SDK message — the message itself for a connection
+    # failure that cannot quote the response, otherwise only the class name.
     def self.describe(error)
       origin = error.respond_to?(:wrapped_exception) && error.wrapped_exception ? error.wrapped_exception : error
       QUOTE_FREE.any? { |k| origin.is_a?(k) } ? error.message : error.class.name

@@ -2,8 +2,8 @@
 
 module KeycloakSdk
   module Admin
-    # Admin REST 파사드. gem 없이 Faraday로 직접 래핑하고, bearer는 주입된 TokenProvider에서 소싱한다.
-    # representation은 plain hash로 통과한다(문서화된 은닉성 예외).
+    # Admin REST facade. It wraps the API directly with Faraday, without a gem, and sources the bearer from the
+    # injected TokenProvider. Representations pass through as plain hashes (a documented hiding exception).
     class AdminClient
       def initialize(config:, token_provider:)
         @config = config
@@ -30,12 +30,13 @@ module KeycloakSdk
         Groups.new(@conn, @config.realm)
       end
 
-      # 탈출구: 내부 Faraday 커넥션(base = {server_url}/, bearer 자동).
+      # Escape hatch: the internal Faraday connection (base = {server_url}/, bearer attached automatically).
       def raw
         @conn
       end
 
-      # 자원 정리: 내부 Faraday 커넥션을 닫는다(§4 close 계약 — KeycloakClient#close가 위임).
+      # Releases resources: closes the internal Faraday connection (§4 close contract — KeycloakClient#close
+      # delegates to it).
       def close
         @conn.close if @conn.respond_to?(:close)
       end

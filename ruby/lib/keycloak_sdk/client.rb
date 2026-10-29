@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module KeycloakSdk
-  # 통합 진입점. auth는 즉시 조립, admin은 지연 조립(전용 캐싱 TokenProvider 주입 — §4).
+  # Unified entry point. auth is assembled eagerly, admin lazily (a dedicated caching TokenProvider is injected — §4).
   class KeycloakClient
     attr_reader :auth
 
@@ -30,7 +30,7 @@ module KeycloakSdk
     end
 
     def close
-      @admin&.close # 지연 생성된 admin의 Faraday 커넥션도 정리(§4 close 계약 — 이전엔 누락)
+      @admin&.close # also closes the lazily built admin's Faraday connection (§4 close contract — previously missed)
       [@form_http, @jwks_http].each { |h| h.close if h.respond_to?(:close) }
       nil
     end

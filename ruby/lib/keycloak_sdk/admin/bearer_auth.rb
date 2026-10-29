@@ -5,7 +5,7 @@ require "net/http"
 
 module KeycloakSdk
   module Admin
-    # 매 요청마다 TokenProvider에서 bearer 토큰을 소싱해 Authorization 헤더를 설정한다.
+    # Sources a bearer token from the TokenProvider on every request and sets the Authorization header.
     class BearerAuth < Faraday::Middleware
       def initialize(app, token_provider)
         super(app)

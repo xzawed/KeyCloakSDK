@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
 module KeycloakSdk
-  # 덕 인터페이스: 구현체는 #access_token → String 을 응답한다.
-  # admin은 이 인터페이스로만 토큰을 받는다(auth 비의존, §4 결합 규칙).
-  # admin 은 그 값의 앞뒤 SP·HTAB·CR·LF 를 다듬어 보내고, 다듬은 것이 RFC 6750 bearer 토큰이 아니면 요청 전에 거부한다(`BearerGrammar`).
+  # Duck interface: an implementation responds to #access_token → String.
+  # admin receives tokens only through this interface (no dependency on auth, §4 coupling rule).
+  # admin strips leading and trailing SP · HTAB · CR · LF from that value before sending it, and if what is left is not
+  # an RFC 6750 bearer token it rejects it before the request (`BearerGrammar`).
   module TokenProvider
   end
 
@@ -24,8 +25,9 @@ module KeycloakSdk
   end
   private_constant :BearerGrammar
 
-  # client-credentials 그랜트로 토큰을 발급하고 만료 전까지 캐시한다(Mutex single-flight).
-  # admin 파사드가 소비하는 캐싱 provider(무캐시 AuthClient 직접 주입 금지 — §4 캐시 불변식).
+  # Issues a token with the client-credentials grant and caches it until it expires (Mutex single-flight).
+  # The caching provider the admin facade consumes (never inject the uncached AuthClient directly — §4 cache
+  # invariant).
   class ClientCredentialsTokenProvider
     include TokenProvider
 
@@ -38,11 +40,12 @@ module KeycloakSdk
       @expires_at = 0.0
     end
 
-    # ⚠️ 기본 `inspect` 는 인스턴스 변수를 전부 찍는데, 이 클래스는 **원시 액세스 토큰 문자열**을
-    # `@cached` 에 들고 있다(`ts.access_token` — TokenSet 이 아니라서 `TokenSet#inspect` 가 안 탄다).
-    # 실측(2026-09-12): 재정의 전 `p provider` 가 `@cached="AT-CENSUS-TOKEN-…"` 를 원문으로 찍었다.
-    # `Config`·`TokenSet` 은 재정의가 있는데 이 타입만 없어 생긴 **형제 간 불일치**였다.
-    # ⚠️ 캐시 유무는 남긴다 — 빈 캐시에 `***` 를 찍으면 「토큰이 있다」는 거짓 신호가 된다.
+    # ⚠️ The default `inspect` prints every instance variable, and this class holds the **raw access token string**
+    # in `@cached` (`ts.access_token` — not a TokenSet, so `TokenSet#inspect` does not kick in).
+    # Measured (2026-09-12): before the override, `p provider` printed `@cached="AT-CENSUS-TOKEN-…"` verbatim.
+    # It was a **mismatch between siblings**: `Config` · `TokenSet` have an override and only this type lacked one.
+    # ⚠️ Whether a token is cached stays visible — printing `***` for an empty cache would be a false signal that
+    # "there is a token".
     def inspect
       "#<KeycloakSdk::ClientCredentialsTokenProvider config=#{@config.inspect} " \
         "cached=#{@cached ? '"***"' : 'nil'} expires_at=#{@expires_at.inspect}>"
@@ -55,7 +58,8 @@ module KeycloakSdk
         return @cached if @cached && now < @expires_at
 
         ts = request_token
-        # 캐시 전에 묻는다 — admin 요청마다 거부될 토큰을 만료까지 들고 있지 않는다(다음 호출은 IdP 에 다시 묻는다).
+        # Checked before caching — a token that every admin request would reject is not held until it expires (the
+        # next call asks the IdP again).
         token = BearerGrammar.sendable(ts.access_token)
         unless token
           raise AuthError, "token response has no usable access_token: it is not an RFC 6750 bearer token (b64token)"

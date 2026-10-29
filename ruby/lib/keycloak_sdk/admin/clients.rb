@@ -19,7 +19,7 @@ module KeycloakSdk
         request { @conn.get("admin/realms/#{esc(@realm)}/clients/#{esc(id)}") }.body
       end
 
-      # client_id로 조회: 목록 + 필터(admin은 내부 uuid 키).
+      # Lookup by client_id: list + filter (admin keys on the internal uuid).
       def list(**params)
         request { @conn.get("admin/realms/#{esc(@realm)}/clients", params) }.body
       end
