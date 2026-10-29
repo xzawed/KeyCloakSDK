@@ -22,8 +22,6 @@ retry whitelist"). urllib3 는 요청을 보낸 뒤 난 연결 오류(끊김·RS
 from __future__ import annotations
 
 import contextlib
-import datetime
-import ipaddress
 import json
 import socket
 import ssl
@@ -31,15 +29,10 @@ import struct
 import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from keycloak import KeycloakAdmin, KeycloakOpenID, KeycloakOpenIDConnection
 from keycloak.connection import ConnectionManager
 from keycloak.exceptions import KeycloakError
@@ -52,6 +45,7 @@ from keycloak_sdk.aio import AsyncKeycloakClient
 from keycloak_sdk.auth import AuthClient
 from keycloak_sdk.exceptions import KeycloakConfigError, KeycloakSdkError, KeycloakTransportError
 from keycloak_sdk.oidc import OidcEndpoints
+from tests.unit.conftest import server_tls
 
 #: 경우마다 새 클라이언트(httpx.AsyncClient 셋까지)를 만든다 — TLS 문맥만 재사용한다(conftest).
 pytestmark = pytest.mark.usefixtures("fast_tls")
@@ -323,67 +317,7 @@ async def test_a_get_is_not_retried_either(lane: str, kind: str, brk: str) -> No
 
 
 # --- TLS 위에서는 허용 목록이 아니라 `total` 이 막는다 -------------------------------------------
-
-
-@pytest.fixture(scope="module")
-def tls_cert(tmp_path_factory: pytest.TempPathFactory) -> tuple[str, str]:
-    """127.0.0.1 의 자체 서명 인증서(파이썬 3.13 의 `VERIFY_X509_STRICT` 를 통과하는 꼴)."""
-    key = ec.generate_private_key(ec.SECP256R1())
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])
-    ski = x509.SubjectKeyIdentifier.from_public_key(key.public_key())
-    now = datetime.datetime.now(datetime.timezone.utc)
-    usage = dict.fromkeys(
-        (
-            "content_commitment",
-            "key_encipherment",
-            "data_encipherment",
-            "key_agreement",
-            "crl_sign",
-            "encipher_only",
-            "decipher_only",
-        ),
-        False,
-    )
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(name)
-        .issuer_name(name)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - datetime.timedelta(days=1))
-        .not_valid_after(now + datetime.timedelta(days=1))
-        .add_extension(
-            x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]),
-            critical=False,
-        )
-        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
-        .add_extension(
-            x509.KeyUsage(digital_signature=True, key_cert_sign=True, **usage), critical=True
-        )
-        .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
-        .add_extension(ski, critical=False)
-        .add_extension(
-            x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(ski), critical=False
-        )
-        .sign(key, hashes.SHA256())
-    )
-    tmp: Path = tmp_path_factory.mktemp("tls")
-    cert_path, key_path = tmp / "cert.pem", tmp / "key.pem"
-    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
-    key_path.write_bytes(
-        key.private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.PKCS8,
-            serialization.NoEncryption(),
-        )
-    )
-    return str(cert_path), str(key_path)
-
-
-def _server_tls(tls_cert: tuple[str, str]) -> ssl.SSLContext:
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(*tls_cert)
-    return context
+# 인증서(`tls_cert`)와 서버 문맥(`server_tls`)은 conftest 에 있다 — 응답 기한 시험도 쓴다.
 
 
 @pytest.mark.parametrize("kind", UNSAFE)
@@ -394,7 +328,7 @@ async def test_over_tls_a_broken_record_after_the_request_is_not_retried_either(
     urllib3 는 「연결」도 「읽기」도 아닌 「그 밖」 오류로 보고 **메서드와 무관하게** 다시 보낸다 —
     아래 대조군. 막는 것은 `total=0` 이다. sync 만 잰다(httpx 는 다시 보내지 않는다)."""
     monkeypatch.setenv("REQUESTS_CA_BUNDLE", tls_cert[0])  # SDK 는 verify=True — 이 CA 를 믿게
-    with _breaking_idp(_server_tls(tls_cert)) as idp:
+    with _breaking_idp(server_tls(tls_cert)) as idp:
         idp.target, idp.brk = TARGETS[kind], "corrupt TLS record"
         err = await _attempt("sync", kind, idp)
 
@@ -412,7 +346,7 @@ def test_control_over_tls_a_post_off_the_allowlist_is_still_sent_twice(
 ) -> None:
     """그래서 `NO_RETRY` 는 허용 목록이 아니라 `Retry(0, read=False)` 다 — 이 대조군이 1 을 세면
     TLS 고장이 재시도를 부르지 않는 환경이라 위 판정이 공허하다."""
-    with _breaking_idp(_server_tls(tls_cert)) as idp:
+    with _breaking_idp(server_tls(tls_cert)) as idp:
         idp.target, idp.brk = ("POST", f"{_OC}/token"), "corrupt TLS record"
         openid = KeycloakOpenID(
             server_url=idp.url, realm_name="r", client_id="c", verify=tls_cert[0], timeout=1

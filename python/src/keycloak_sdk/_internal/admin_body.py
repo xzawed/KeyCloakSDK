@@ -27,6 +27,12 @@ requests 가 `r.content` 로, aio 는 httpx `send` 가 `aread()` 로 본문 전�
 요청의 `Accept-Encoding` 은 `token_cap` 처럼 `gzip, deflate` 로 둔다 — 여기서 상한 안에
 풀 수 있는 것만 청한다. ⚠️ `stream=True` 로 온 요청(호출자가 스스로 읽는다)은 손대지
 않는다. 셋 다 요청을 보낸 때부터 그 요청의 타임아웃 안에 읽는다(`deadline.py`).
+
+sync 는 응답이 소켓에서 읽히는 바이트도 묶는다(`wire.py`) — 오류 본문 상한 + 틀 몫을
+요청 전에 걸고, 상태가 「상한 없는 성공 본문」이면 그 예산을 푼다(`exchange` 의
+`lift`). 그래서 머리 블록·1xx 는 어느 응답이든 묶이고, 오류 응답의 청크 틀·트레일러는
+그 본문 상한 곁에서 묶인다. 성공 본문은 바이트로 묶지 않는다 — 목록은 정당하게 크고,
+틀만 따로 세어도 같은 바이트를 본문으로 보내면 그만이다.
 """
 
 from __future__ import annotations
@@ -39,7 +45,7 @@ from typing import Any
 import httpx
 import requests
 
-from .deadline import deadline, reader, request_seconds, seconds, within
+from .deadline import reader, request_seconds, seconds, within
 from .token_cap import (
     _ACCEPT_ENCODING,
     _CHUNK,
@@ -48,9 +54,13 @@ from .token_cap import (
     _decoder,
     _Ended,
 )
+from .wire import FRAMING_ALLOWANCE_BYTES, exchange
 
 #: 오류 본문의 상한 — 토큰 응답 상한을 빌린다(python-keycloak 은 오류 본문을 메시지로만 쓴다).
 ADMIN_ERROR_BODY_MAX_BYTES = TOKEN_RESPONSE_MAX_BYTES
+#: sync 응답 하나가 소켓에서 읽혀도 되는 바이트 — 상태를 보기 전과 오류 응답(`wire.py`). 상한 없는
+#: 성공 본문이면 풀린다.
+_WIRE_BUDGET = ADMIN_ERROR_BODY_MAX_BYTES + FRAMING_ALLOWANCE_BYTES
 
 #: 파사드의 쓰기 호출이 성공 본문을 읽지 않음을 표시한다 — `no_body` 만 건다. ⚠️ 응답
 #: 모양(201 · PUT 의 답)으로 가르지 않는다: `raw` 로 부르는 python-keycloak 메서드가 그
@@ -123,24 +133,25 @@ def bounded_send(send: _SyncSend) -> _SyncSend:
     def bounded(request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:
         if kwargs.get("stream"):
             return send(request, **kwargs)
-        check = deadline(seconds(kwargs.get("timeout")))
         request.headers["Accept-Encoding"] = _ACCEPT_ENCODING
-        response = send(request, **{**kwargs, "stream": True})
-        try:
-            if response.status_code >= 300:
-                body, drop = _read_error(response, check)
-                if drop:
-                    response.close()  # 나머지를 읽지 않고 연결째 버린다
-            elif _NO_BODY.get() and not _ended(
-                response.status_code, response.headers.get("content-length")
-            ):
-                response.close()  # 쓰지 않는 본문 — 읽지 않고 연결째 버린다
-                body = b""
-            else:
-                body = _loaded(response, check)
-        except BaseException:
-            response.close()
-            raise
+        with exchange(seconds(kwargs.get("timeout")), _WIRE_BUDGET) as (check, lift):
+            response = send(request, **{**kwargs, "stream": True})
+            try:
+                if response.status_code >= 300:
+                    body, drop = _read_error(response, check)
+                    if drop:
+                        response.close()  # 나머지를 읽지 않고 연결째 버린다
+                elif _NO_BODY.get() and not _ended(
+                    response.status_code, response.headers.get("content-length")
+                ):
+                    response.close()  # 쓰지 않는 본문 — 읽지 않고 연결째 버린다
+                    body = b""
+                else:
+                    lift()  # 성공 본문에는 바이트 상한이 없다(목록은 정당하게 크다)
+                    body = _loaded(response, check)
+            except BaseException:
+                response.close()
+                raise
         # requests 가 `content` 에서 하는 일 그대로다 — 읽은 본문을 응답에 둔다.
         response._content = body
         response._content_consumed = True

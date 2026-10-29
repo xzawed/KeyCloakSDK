@@ -15,6 +15,7 @@
 - **(Node)** 방출되는 `.d.ts` 의 문서 주석(IDE 호버에 뜨는 것)과 README 가 링크하는 `examples/quickstart.ts` 의 주석을 영문으로 옮겼습니다 — 지금까지는 한글이었습니다. 코드와 공개 API 리포트는 그대로이고(api-extractor 리포트가 main 과 같다), `.d.ts` 의 한글은 19 파일 → 0 입니다.
 - **(Ruby)** YARD 가 그리는 문서 주석(공개 API · 공개 메서드의 소스 보기 안 주석 포함)을 영문으로 옮겼습니다 — 지금까지는 한글이었습니다. 코드는 그대로이고(주석을 뗀 코드와 Ripper 토큰이 같다), `yard doc` 산출물의 한글은 26 파일 → 0 입니다.
 - **(PHP)** IDE 호버에 뜨는 docblock(클래스와 public·protected 멤버)과 README 가 링크하는 `examples/quickstart.php` 의 주석을 영문으로 옮겼습니다 — 지금까지는 한글이었습니다. 코드와 PHPDoc 태그·타입은 그대로이고(phpstan 의 PhpDocParser 로 태그 70 · 타입 65 를 대조), 공개 선언 docblock 덤프의 한글은 343 줄 → 0 입니다.
+- **(Python)** ⚠️ sync 응답은 응답마다 바이트 예산(본문 상한 + 65,536 B — 토큰·introspection·logout·admin 오류 1,114,112 · JWKS 116,736 · admin 성공 본문은 없음)을 넘으면 `KeycloakTransportError` 입니다 — 지금까지는 16 MiB 트레일러(트레일러 수를 묶지 않는 CPython 판에서)와 gzip 토큰 본문 뒤의 꼬리를 받았고, 틀이 큰 admin 오류 응답은 `KeycloakNotFoundError` 등으로 나왔습니다. JWKS 오류 메시지에 `HTTP response exceeds 116736 bytes on the wire` 가 실릴 수 있습니다.
 
 ### Fixed
 - **(Go)** 공유 비행(첫 `Client.Admin` · client_credentials 토큰 · JWKS 조회)의 결과와 호출자 ctx 의 취소가 함께 준비되면 둘 중 하나를 무작위로 돌려줬습니다(동점 200 회에 `context.Canceled` 93–103 회) — 이제 준비된 결과가 이깁니다(캐시 적중이 이미 그렇다). 결과가 아직 없으면 전처럼 ctx 오류입니다.
@@ -40,7 +41,8 @@
 - **(.NET)** 낡은 설정으로 받던 두 길을 막았습니다 — `ConfigurationManager` 는 갱신 간격이 지나도 쥔 설정을 돌려주고 뒤에서 새로 받으며 실패는 로그만 남겼고, 처리기는 적재 실패(IDX10500)를 last-known-good 설정으로 다시 검증했습니다(그 수명은 마지막 수락부터 1 시간). 이제 SDK 가 다시 받을 때 매니저를 새로 지어 콜드 적재로 받고 last-known-good 은 껐습니다 — 회전으로 IdP 가 뺀 키의 토큰을 더는 받지 않습니다.
 - **(Java · Kotlin)** Nimbus 의 기본 TTL 300 초와 꺼진 outage tolerance 를 SDK 가 명시합니다(동작은 같습니다). refresh-ahead 는 남깁니다 — 만료 30 초 전의 검증이 뒤에서 한 번 갱신하고, 그 갱신이 실패해도 수명은 늘지 않습니다.
 - **(Ruby)** admin 이 String 이 아닌 access token 에는 헤더 검사를 걸지 않았습니다 — 소비자 `TokenProvider` 가 CR·LF 를 담은 Symbol 을 돌려주면 `raw` 커넥션은 Bearer 전체를 인용한 raw `ArgumentError` 를, 파사드는 `TransportError`(`admin transport error: ArgumentError`)를 냈고, NUL·끝 공백을 담은 Symbol 은 그대로·공백이 지워진 채 나갔으며, `nil`·`""` 은 `Authorization: Bearer` 로 나갔습니다(실측). 이제 String 이 아닌 값도 헤더에 실릴 그 글로 같은 검사를 받아 String 과 같은 `AuthError` 이고, 빈 토큰은 요청 없이 `admin request not sent: the access token is empty` 입니다. 검사를 지나는 Symbol·숫자는 지금처럼 그 글로 나가고, SDK 의 `ClientCredentialsTokenProvider` 는 늘 비지 않은 String 이라 달라지지 않습니다. 공개 API 변경은 0 입니다.
-- **(Java · Kotlin · Python · Ruby · .NET)** SDK 가 직접 읽는 응답(토큰·introspection·디스커버리·JWKS·admin)을 요청을 보낸 때부터 설정한 타임아웃 안에 **전부** 읽습니다 — 지금까지는 읽기마다만 걸려(.NET 의 디스커버리·JWKS 본문은 그것도 없이) 바이트를 읽기 타임아웃보다 조금 짧게 흘리는 서버가 호출 하나를 ≈ 상한 × 읽기 타임아웃 동안 붙잡았습니다(1 초 설정에 7 초 · JVM 은 흘린 TLS 레코드 하나로 33.6 초). 이제 그 레인의 기존 타임아웃 오류로 끝납니다(기한 + 읽기 하나 안 · python aio 와 .NET JWKS 는 기한 정확히). 남은 칸: python sync 와 JVM admin 의 헤더·청크 틀은 아직 읽기마다입니다.
+- **(Java · Kotlin · Python · Ruby · .NET)** SDK 가 직접 읽는 응답(토큰·introspection·디스커버리·JWKS·admin)을 요청을 보낸 때부터 설정한 타임아웃 안에 **전부** 읽습니다 — 지금까지는 읽기마다만 걸려(.NET 의 디스커버리·JWKS 본문은 그것도 없이) 바이트를 읽기 타임아웃보다 조금 짧게 흘리는 서버가 호출 하나를 ≈ 상한 × 읽기 타임아웃 동안 붙잡았습니다(1 초 설정에 7 초 · JVM 은 흘린 TLS 레코드 하나로 33.6 초). 이제 그 레인의 기존 타임아웃 오류로 끝납니다(기한 + 읽기 하나 안 · python aio 와 .NET JWKS 는 기한 정확히). 남은 칸: JVM admin 의 헤더·청크 틀은 아직 읽기마다입니다.
+- **(Python)** sync 레인은 상태 줄·헤더·청크 크기 줄·트레일러·TLS 레코드까지 소켓의 원문 읽기마다 기한을 봅니다 — 위 줄의 본문 기한만으로는 그것들을 흘리는 서버가 http.client 한 호출 안에서 7 초를 붙잡았습니다(1 초 설정). 이제 약 1.0 초에 같은 `KeycloakTransportError` 로 끝납니다. 남은 칸: HTTPS 프록시(TLS 안의 TLS).
 
 ## [1.4.0] - 2026-10-27 (Ruby)
 
