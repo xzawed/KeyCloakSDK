@@ -5,9 +5,10 @@ require "faraday/net_http"
 require "json"
 
 module KeycloakSdk
-  # 공유 Faraday 커넥션 팩토리. 타임아웃을 config에서 주입하고,
-  # follow_redirects 미들웨어를 절대 장착하지 않는다(SSRF 하드닝 — Faraday는 기본 미추종).
-  # 상한을 건 본문 읽기(`read_capped`)도 여기 있다 — 토큰·introspection·logout·JWKS 레인이 같은 기제를 쓴다.
+  # Shared Faraday connection factory. It injects the timeouts from config and
+  # never installs the follow_redirects middleware (SSRF hardening — Faraday does not follow by default).
+  # The capped body read (`read_capped`) lives here too — the token · introspection · logout · JWKS lanes use the same
+  # mechanism.
   module Http
     # ⚠️ **응답 **틀**(상태 줄·헤더 줄·청크 크기/확장 줄·트레일러)의 상한.** `read_capped` 의 1 MiB 는 `on_data` 로 오는
     # **본문 바이트**만 본다 — net-http(net-protocol 의 `BufferedIO`)는 그 앞뒤로 틀을 한도 없이 읽는다(헤더·트레일러는
@@ -32,11 +33,13 @@ module KeycloakSdk
     FRAMING_TOTAL_MSG = "HTTP response framing exceeds #{MAX_FRAMING_BYTES} bytes".freeze
     # ⚠️ 공개 API 가 아니다 — 교차언어 내부 값이다(Go 의 responseHeaderMaxBytes 도 비노출). 시험은 const_get 으로 본다.
     private_constant :MAX_FRAMING_LINE_BYTES, :MAX_FRAMING_BYTES, :FRAMING_LINE_MSG, :FRAMING_TOTAL_MSG
-    # 토큰 엔드포인트(세 그랜트 · admin 레인의 자기 토큰)·introspection·logout 응답 본문의 상한(바이트).
-    # 1 MiB 는 Keycloak 26.6 이 기본 설정으로 받는 가장 긴 Bearer(65,459 바이트 — 하나 더 길면 HTTP 431)의
-    # 16 배라 서버가 받는 토큰은 거부하지 않고, 끝없는 본문은 여기서 멈춘다.
-    # ⚠️ JWKS 의 51,200 을 빌려 쓰지 말 것 — 서비스 계정 토큰은 관리하는 realm 수만큼 자란다.
-    # ⚠️ 맨 십진 리터럴이어야 한다 — 아홉 SDK 가 같은 값을 쓰고 교차언어 가드가 이 줄을 읽는다.
+    # Byte cap on the response bodies of the token endpoint (three grants · the admin lane's own token), introspection
+    # and logout. 1 MiB is 16 times the longest Bearer that Keycloak 26.6 accepts with its default settings
+    # (65,459 bytes — one more and it is HTTP 431), so no token the server accepts is refused, and an endless body
+    # stops here.
+    # ⚠️ Do not borrow the JWKS's 51,200 — a service-account token grows with the number of realms it manages.
+    # ⚠️ It must be a bare decimal literal — the nine SDKs use the same value and a cross-language guard reads this
+    # line.
     TOKEN_RESPONSE_MAX_BYTES = 1_048_576
 
     # ⚠️ **SDK 가 직접 읽는 요청은 인코딩 없는 본문을 청한다.** Accept-Encoding 이 없으면 net-http 가 gzip 을 청하고
@@ -358,13 +361,17 @@ module KeycloakSdk
       end
     end
 
-    # 요청 하나를 보내고 본문을 `max_bytes` 까지만 읽는다 — **상태와 무관하게**(오류 응답의 거대 본문도 같다).
-    # 돌려주는 응답의 `body` 는 읽은 바이트(BINARY 문자열)다. 넘으면 그 즉시 `TransportError` 이고 연결은 닫힌다.
+    # Sends one request and reads the body only up to `max_bytes` — **regardless of status** (the same goes for a
+    # huge body on an error response). The `body` of the returned response is the bytes read (a BINARY string). Past
+    # the cap it is a `TransportError` at once, and the connection is closed.
     #
-    # ⚠️ 판정은 청크를 **붙이기 전에** 한다 — 버퍼는 상한을 넘지 않고, 넘는 청크는 복사하지 않는다. 읽는 크기는
-    # SDK 가 정하지 못한다: net-http 가 소켓에서 16 KiB(`Net::BufferedIO::BUFSIZE`)씩 읽어 넘기므로 판정 순간
-    # 손에 든 것은 많아야 상한 + 청크 하나(16,384 바이트)다. 버퍼는 읽은 만큼만 자란다(미리 상한만큼 잡지 않는다).
-    # ⚠️ `Content-Length` 만 보면 그 헤더가 없거나 거짓인 응답을 놓친다 — 누적치로 판정한다.
+    # ⚠️ The check is made **before appending** a chunk — the buffer never exceeds the cap, and a chunk that would
+    # cross it is not copied. The read size is not the SDK's to choose: net-http reads 16 KiB
+    # (`Net::BufferedIO::BUFSIZE`) at a time from the socket and hands it over, so at the moment of the check what is
+    # in hand is at most the cap + one chunk (16,384 bytes). The buffer grows only as much as is read (it is not
+    # allocated to the cap up front).
+    # ⚠️ Looking only at `Content-Length` misses a response whose header is absent or false — the check uses the
+    # running total.
     def read_capped(conn, method, url, max_bytes:, what:, body: nil, headers: {})
       buf = String.new(encoding: Encoding::BINARY)
       resp = conn.run_request(method, url, body, IDENTITY.merge(headers)) do |req|
@@ -379,7 +386,8 @@ module KeycloakSdk
       resp
     end
 
-    # admin 요청 하나의 전송 동안 그 응답의 본문을 정하게 한다(`SETTLE`) — `unread` 면 파사드 쓰기라 2xx 본문을 읽지 않는다.
+    # For the duration of one admin request's transport, has that response's body settled (`SETTLE`) — with `unread`
+    # it is a facade write, so a 2xx body is not read.
     def settling(unread)
       previous = Thread.current[SETTLE]
       Thread.current[SETTLE] = { unread: unread }
@@ -388,11 +396,13 @@ module KeycloakSdk
       Thread.current[SETTLE] = previous
     end
 
-    # 300 이상의 본문을 `TOKEN_RESPONSE_MAX_BYTES` 까지만 쥔다 — 상한을 넘기는 조각이 오면 읽기를 멈추고 상한에서 자른다
-    # (거부하지 않는다: 상태가 이미 오류를 정했다). net-http 가 16 KiB 씩 넘기므로 손에 드는 것은 많아야 상한 + 청크 하나다.
-    # ⚠️ 끊기 전에 블록(소켓 닫기)을 부른다 — net-http 의 청크 읽기는 `ensure` 에서 그 청크의 CRLF 를 읽으려 해, 청크
-    # 한가운데서 멈춘 서버 앞에서는 끊은 뒤에도 읽기 타임아웃까지 기다렸다(상태를 잃고 TransportError). 닫힌 소켓의 그
-    # 읽기가 내는 IOError 는 끊은 뒤의 것만 삼킨다.
+    # Holds a body of status 300 or above only up to `TOKEN_RESPONSE_MAX_BYTES` — when a piece that crosses the cap
+    # arrives, it stops reading and truncates at the cap (it does not reject: the status has already decided the
+    # error). net-http hands over 16 KiB at a time, so what is in hand is at most the cap + one chunk.
+    # ⚠️ It calls the block (closing the socket) before cutting off — net-http's chunked read tries to read that
+    # chunk's CRLF in `ensure`, so against a server that stalled mid-chunk it waited until the read timeout even after
+    # the cut (losing the status, as a TransportError). Of the IOErrors that read raises on the closed socket, only
+    # the ones after the cut are swallowed.
     def read_error_body(res)
       buf = String.new(encoding: Encoding::BINARY)
       cut = false
@@ -413,10 +423,12 @@ module KeycloakSdk
       cut ? buf.byteslice(0, TOKEN_RESPONSE_MAX_BYTES) : buf
     end
 
-    # `read_capped` 의 본문을 커넥션의 json 미들웨어가 하던 그대로 해석한다(응답을 돌려준다).
-    # ⚠️ 해석한 값의 문자열이 잘못된 UTF-8 이면 해석 실패다(Faraday::ParsingError ← JSON::ParserError — 짝 없는
-    # 서로게이트 이스케이프에서 json 3 이 내는 것과 같은 모양). 고쳐 쓰지 않는다 — 그 값은 SDK 를 지나며 raw 예외가 된다.
-    # `check_utf8: false` 는 해석한 값을 하나도 쓰지 않는 호출(logout)의 것이다 — 미들웨어의 판정만 남는다.
+    # Parses a `read_capped` body exactly as the connection's json middleware did (returns the response).
+    # ⚠️ A string in the parsed value that is invalid UTF-8 is a parse failure (Faraday::ParsingError ←
+    # JSON::ParserError — the same shape json 3 raises for an unpaired surrogate escape). It is not rewritten — such
+    # a value turns into a raw exception as it passes through the SDK.
+    # `check_utf8: false` is for the call that uses none of the parsed value (logout) — only the middleware's verdict
+    # remains.
     def decode_json(resp, check_utf8: true)
       JSON_RESPONSE.on_complete(resp.env)
       return resp if !check_utf8 || utf8?(resp.body)
@@ -424,15 +436,17 @@ module KeycloakSdk
       begin
         raise JSON::ParserError, UNDECODABLE
       rescue JSON::ParserError => e
-        raise Faraday::ParsingError.new(e, resp) # 원인 사슬도 json 3 의 실패와 같다(ParsingError <- ParserError)
+        raise Faraday::ParsingError.new(e, resp) # cause chain also like json 3's failure (ParsingError <- ParserError)
       end
     end
 
-    # 해석한 JSON 값(키 포함)의 문자열이 전부 올바른 인코딩인가. 해석하지 않은 본문(BINARY)은 언제나 참이다.
-    # ⚠️ **json 버전으로 막을 수 없다** — 잠긴 json 3.0.2 도 날 잘못된 UTF-8 바이트(0xFF)는 그대로 받아 잘못된
-    # 문자열을 내고, json 2.9–2.21 은 짝 없는 **낮은** 서로게이트 이스케이프(\udc00)까지 그렇게 푼다(둘 다 실측).
-    # 그 문자열이 지나는 자리마다 raw 예외다 — OAuth 코드 대조(`match?`)의 ArgumentError, admin 헤더의
-    # Encoding::CompatibilityError(net-http `strip`), ruby-jwt base64 의 ArgumentError.
+    # Whether every string in a parsed JSON value (keys included) is validly encoded. An unparsed body (BINARY) is
+    # always true.
+    # ⚠️ **The json version cannot prevent it** — even the locked json 3.0.2 takes raw invalid UTF-8 bytes (0xFF) as
+    # is and yields an invalid string, and json 2.9–2.21 decodes even an unpaired **low** surrogate escape (\udc00)
+    # that way (both measured). Every place such a string passes is a raw exception — the ArgumentError of the OAuth
+    # code match (`match?`), the Encoding::CompatibilityError of the admin header (net-http `strip`), the
+    # ArgumentError of ruby-jwt's base64.
     def utf8?(value)
       case value
       when String then value.valid_encoding?
