@@ -3,9 +3,9 @@ import { call, requireFound } from './call.js'
 import { type AdminHttp, adminPath, create, omit, orEmpty, read, readOne, write } from './http.js'
 
 /**
- * 렐름 생성/조회/삭제 파사드. `RealmsResource`는 realm 스코프가 아니라 렐름 이름을 인자로
- * 받는다(생성 payload의 `realm` 필드가 대상 렐름 이름). 공식 admin-client의 `realms` 리소스가
- * 보내는 것과 같은 요청을 직접 보내며(`http.ts`) {@link call}로 경계 변환한다.
+ * Realm create/get/delete facade. `RealmsResource` is not realm-scoped; it takes the realm name as an argument
+ * (the `realm` field of the create payload is the target realm's name). It itself sends the same requests the
+ * official admin-client's `realms` resource sends (`http.ts`), and converts at the boundary with {@link call}.
  */
 export class RealmsResource {
   /**
@@ -15,14 +15,14 @@ export class RealmsResource {
   constructor(private readonly http: AdminHttp) {}
 
   /**
-   * 새 렐름을 생성한다. `representation.realm`이 새 렐름의 이름이다. 응답의 `Location` 은 admin-client 처럼 요구하되
-   * 돌려주지 않는다.
+   * Creates a new realm. `representation.realm` is the new realm's name. Like admin-client, it requires the
+   * response's `Location` but does not return it.
    */
   async create(representation: RealmRepresentation): Promise<void> {
     await call(() => create(this.http, adminPath(''), omit(orEmpty(representation) as object, [])))
   }
 
-  /** 렐름 이름으로 조회한다. 없으면 `KeycloakNotFoundError`. */
+  /** Looks up a realm by name. `KeycloakNotFoundError` if absent. */
   async get(realmName: string): Promise<RealmRepresentation> {
     return requireFound(
       await call(() => readOne<RealmRepresentation>(this.http, adminPath(realmName))),
@@ -30,16 +30,16 @@ export class RealmsResource {
     )
   }
 
-  /** 호출자가 볼 수 있는 렐름 전부. 서비스 계정은 보통 자기 렐름만 본다 — 전체를 가정하지 말 것. */
+  /** Every realm the caller can see. A service account usually sees only its own realm — do not assume all of them. */
   async list(): Promise<RealmRepresentation[]> {
     return call(() => read<RealmRepresentation[]>(this.http, adminPath('')))
   }
 
   /**
-   * 현재 이름으로 주소를 잡아 렐름을 갱신한다. `representation.realm`에 새 이름을 주면 rename이다.
+   * Updates a realm, addressed by its current name. A new name in `representation.realm` is a rename.
    *
-   * ⚠️ 경로(`realmName`)와 body(`representation`)를 **합치지 말 것** — 경로 인자를 body의 이름으로
-   * 덮어쓰면 rename이 조용한 no-op이 된다.
+   * ⚠️ **Do not merge** the path (`realmName`) and the body (`representation`) — overwriting the path argument
+   * with the body's name turns a rename into a silent no-op.
    */
   async update(realmName: string, representation: RealmRepresentation): Promise<void> {
     await call(() => write(this.http, 'PUT', adminPath(realmName), orEmpty(representation)))

@@ -11,14 +11,14 @@ import { KeycloakTokenValidationError, KeycloakTransportError } from './errors.j
 import type { ValidatedToken } from './tokens.js'
 
 /**
- * JWKS 응답 본문의 바이트 상한. 51200 은 Nimbus `JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT` 이고
- * go(`jwksMaxBytes`)·rust·php·ruby 가 같은 수를 쓴다.
+ * Byte cap on the JWKS response body. 51200 is Nimbus's `JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT`, and
+ * go (`jwksMaxBytes`), rust, php and ruby use the same number.
  *
- * ⚠️ **jose 에는 상한이 없다.** 실측(2026-09-11 · jose 6.2.12 ·
- * `node_modules/jose/dist/webapi/jwks/remote.js:10-26`): `fetchJwks` 는 `GET` → status 200
- * 확인 → `response.json()` 이 전부다. `Content-Length` 검사도, 최대 바이트 옵션도, 읽기를
- * 끊는 스트리밍도 없다 — 유일한 중단은 시간(`AbortSignal.timeout`, 기본 5초)이다. 즉 손상된
- * IdP 하나가 검증 경로를 메모리로 죽일 수 있었다.
+ * ⚠️ **jose has no cap.** Measured (2026-09-11 · jose 6.2.12 ·
+ * `node_modules/jose/dist/webapi/jwks/remote.js:10-26`): all `fetchJwks` does is `GET` → check status 200 →
+ * `response.json()`. There is no `Content-Length` check, no maximum-bytes option, no streaming that cuts the read
+ * off — the only cutoff is time (`AbortSignal.timeout`, default 5 seconds). So a single compromised IdP could have
+ * killed the validation path through memory.
  */
 export const JWKS_MAX_BYTES = 51_200
 
@@ -246,25 +246,28 @@ export interface JwtValidatorOptions {
   readonly allowedAlgs: string[]
   readonly clockSkewSeconds: number
   /**
-   * 미해결 kid로 인한 JWKS 재조회의 최소 간격(초, 기본 30). 조회를 **시도할 때** 찍으므로 IdP 장애 중에도 창마다
-   * 한 번이다(jose 의 `cooldownDuration` 은 성공에만 찍혀 쓰지 않는다 — 0 으로 둔다).
+   * Minimum interval (seconds, default 30) between JWKS refetches caused by an unresolved kid. It is stamped **when
+   * a fetch is attempted**, so it is once per window even during an IdP outage (jose's `cooldownDuration` is
+   * stamped only on success, so it is not used — it is set to 0).
    */
   readonly jwksMinRefetchSeconds: number
 }
 
 /**
- * 자체 강화 JWT 검증기. 라이브러리 기본값을 신뢰하지 않는다:
- * 알고리즘 핀(헤더 alg 불신, `none` 거부) · issuer 정확일치 · audience 포함검사(다중 aud 수용) ·
- * exp/nbf ± 클록 스큐 · JWKS 재조회 DoS-safe(키셋 수명 300 초 — 그 안에서는 kid 미해결 시에만 재조회 + 쿨다운 rate-limit).
+ * Self-hardened JWT validator. It does not trust library defaults:
+ * algorithm pinning (the header alg is not trusted, `none` is rejected) · exact issuer match · audience membership
+ * check (multiple aud accepted) · exp/nbf ± clock skew · DoS-safe JWKS refetch (key set lifetime 300 seconds —
+ * within it, a refetch only on an unresolved kid + cooldown rate-limit).
  *
- * 키 소스는 주입형이다(테스트는 로컬 JWKS, 실사용은 `forJwksUri`의 원격 JWKS).
+ * The key source is injected (a local JWKS in tests, the remote JWKS of `forJwksUri` in real use).
  */
 export class JwtValidator {
   /**
-   * 생성은 {@link JwtValidator.forJwksUri}로 한다. `private`인 이유는 취향이 아니라 §4다 —
-   * 이 생성자가 public이면 jose의 `JWTVerifyGetKey`가 방출 `.d.ts`에 올라 하위 라이브러리 타입이
-   * 공개 API로 샌다. `private`면 tsc가 선언에서 파라미터를 지워 그 import가 함께 사라진다
-   * (같은 파일의 `forJwksUri`는 계속 호출할 수 있다 — Java `JwtValidator`·Go `newValidator`와 동형).
+   * Construct with {@link JwtValidator.forJwksUri}. It is `private` not as a matter of taste but because of §4 —
+   * if this constructor were public, jose's `JWTVerifyGetKey` would land in the emitted `.d.ts` and an underlying
+   * library type would leak into the public API. When it is `private`, tsc drops the parameters from the
+   * declaration and that import disappears with them (`forJwksUri` in the same file can still call it —
+   * isomorphic with Java `JwtValidator` and Go `newValidator`).
    */
   private constructor(
     private readonly keys: JWTVerifyGetKey,
@@ -286,12 +289,13 @@ export class JwtValidator {
   }
 
   /**
-   * 원격 JWKS URI로 검증기를 만든다. 받은 키셋은 300 초 쓰고(그 뒤는 콜드처럼 다시 받고, 실패하면 거부한다), 그 안에서는
-   * kid 미해결 시에만 재조회하며 그 재조회를 `jwksMinRefetchSeconds` 창으로 rate-limit 한다 → 서명 위조로 인한 미인증
-   * DoS 증폭을 차단한다.
+   * Builds a validator from a remote JWKS URI. It uses a fetched key set for 300 seconds (after that it fetches
+   * again as on a cold cache, and rejects if that fails); within that time it refetches only on an unresolved kid
+   * and rate-limits that refetch with the `jwksMinRefetchSeconds` window → this blocks unauthenticated DoS
+   * amplification through forged signatures.
    *
-   * ⚠️ 그 창은 **캐시가 찬 뒤에만** 걸린다 — 콜드·낡은(`cacheMaxAge` 뒤) 캐시 + IdP 장애는 실패 백오프가 막는다
-   * (측정 20 → 1 · 10 → 1).
+   * ⚠️ That window applies **only once the cache is filled** — a cold or stale (past `cacheMaxAge`) cache plus an
+   * IdP outage is held back by the failure backoff (measured 20 → 1 · 10 → 1).
    */
   static forJwksUri(jwksUri: string, opts: JwtValidatorOptions): JwtValidator {
     return JwtValidator.forJwksUriWithSeams(jwksUri, opts, {})

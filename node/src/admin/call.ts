@@ -2,13 +2,14 @@ import { KeycloakNotFoundError, KeycloakTransportError, mapHttpError } from '../
 import { isTransportError } from '../transport.js'
 
 /**
- * admin 요청을 실행하고, 실패를 SDK 예외로 경계 변환한다(§4 계약).
- * 파사드의 요청(`http.ts`)은 HTTP 상태 실패를 admin-client 의 `NetworkError` 와 같은 모양(`.response.status`/
- * `.responseData`)으로 던지고, 전송 계층 실패(연결거부/DNS/TLS/타임아웃)는 raw fetch 오류(undici `TypeError: fetch failed` +
- * `cause`, 또는 타임아웃 `AbortError`)로 던진다 — 둘 다 하위 타입을 공개 API로 누출시키지 않는다.
+ * Runs an admin request and converts a failure to an SDK exception at the boundary (§4 contract).
+ * The facade's requests (`http.ts`) throw an HTTP status failure in the same shape as admin-client's
+ * `NetworkError` (`.response.status`/`.responseData`), and a transport-layer failure (connection
+ * refused/DNS/TLS/timeout) as a raw fetch error (undici `TypeError: fetch failed` + `cause`, or a timeout
+ * `AbortError`) — neither one leaks an underlying type into the public API.
  *
- * HTTP 상태가 있으면 상태별 SDK 예외로, 전송 실패면 KeycloakTransportError로 변환한다.
- * 그 외(전송이 아닌 프로그래밍 오류)는 그대로 재전파한다.
+ * With an HTTP status it converts to the SDK exception for that status; a transport failure becomes
+ * KeycloakTransportError. Anything else (a programming error, not a transport one) is rethrown as is.
  */
 export async function call<T>(fn: () => Promise<T>): Promise<T> {
   try {
@@ -26,8 +27,9 @@ export async function call<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * admin-client의 `findOne`/`findOneByName`류는 404에서 `null`(또는 `undefined`)을 반환한다
- * (선언 타입은 `undefined`지만 런타임은 `null`) — 부재를 SDK {@link KeycloakNotFoundError}로 통일한다.
+ * admin-client's `findOne`/`findOneByName` family returns `null` (or `undefined`) on a 404
+ * (the declared type says `undefined`, but at runtime it is `null`) — this unifies absence as the SDK's
+ * {@link KeycloakNotFoundError}.
  */
 export function requireFound<T>(value: T | null | undefined, message: string): T {
   if (value === null || value === undefined) {

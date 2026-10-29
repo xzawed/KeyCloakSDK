@@ -3,25 +3,25 @@ import { mask } from './masking.js'
 const INSPECT = Symbol.for('nodejs.util.inspect.custom')
 
 /**
- * 토큰 엔드포인트 응답을 감싼 불변 값 타입. `accessToken`/`refreshToken`은 로그·직렬화에서
- * 마스킹된다. Java/Python SDK와 동형: `idToken`(OIDC), `expiresAt`(절대 만료·epoch 초),
- * `isExpired`를 포함한다.
+ * Immutable value type wrapping a token-endpoint response. `accessToken`/`refreshToken` are masked in logs and
+ * serialization. Isomorphic with the Java/Python SDKs: it includes `idToken` (OIDC), `expiresAt` (absolute
+ * expiry, epoch seconds) and `isExpired`.
  */
 export class TokenSet {
   constructor(
     readonly accessToken: string,
     readonly tokenType: string,
-    /** 상대 만료(초). 응답의 `expires_in`. */
+    /** Relative expiry (seconds). The response's `expires_in`. */
     readonly expiresIn: number,
-    /** 절대 만료 시각(epoch **초** — JWT `exp`/Python `expires_at`과 동형). 미상이면 undefined. */
+    /** Absolute expiry time (epoch **seconds** — isomorphic with JWT `exp`/Python `expires_at`). undefined if unknown. */
     readonly expiresAt: number | undefined,
     readonly refreshToken?: string,
-    /** OIDC `id_token`(authorization_code/refresh 흐름). client-credentials에는 없다. */
+    /** OIDC `id_token` (authorization_code/refresh flows). Absent for client-credentials. */
     readonly idToken?: string,
     readonly scope?: string,
   ) {}
 
-  /** `nowSeconds`/`skewSeconds`(epoch 초) 기준 만료 여부. `expiresAt` 미상이면 보수적으로 true. */
+  /** Whether it is expired as of `nowSeconds`/`skewSeconds` (epoch seconds). Conservatively true if `expiresAt` is unknown. */
   isExpired(nowSeconds: number, skewSeconds: number): boolean {
     if (this.expiresAt === undefined) {
       return true
@@ -50,8 +50,9 @@ export class TokenSet {
 }
 
 /**
- * OIDC 토큰 응답(snake_case)을 `TokenSet`으로 매핑한다. `issuedAtSeconds`(기본 현재 시각)로부터
- * 절대 만료 `expiresAt`(epoch 초)을 계산한다 — Python `TokenSet.from_response(data, issued_at)`와 동형.
+ * Maps an OIDC token response (snake_case) to a `TokenSet`. Computes the absolute expiry `expiresAt` (epoch
+ * seconds) from `issuedAtSeconds` (default: the current time) — isomorphic with Python
+ * `TokenSet.from_response(data, issued_at)`.
  */
 export function tokenSetFromResponse(
   json: Record<string, unknown>,
@@ -76,23 +77,23 @@ export function tokenSetFromResponse(
 }
 
 /**
- * 강화 검증을 통과한 액세스 토큰의 신뢰 가능한 클레임. Java/Python SDK와 동형:
- * `expiresAt`(`exp`)·`issuedAt`(`iat`)을 epoch 초로 노출한다(원본 클레임은 `claims`에도 있음).
+ * Trusted claims of an access token that passed hardened validation. Isomorphic with the Java/Python SDKs:
+ * exposes `expiresAt` (`exp`) and `issuedAt` (`iat`) in epoch seconds (the original claims are also in `claims`).
  */
 export interface ValidatedToken {
   readonly subject: string
   readonly audience: readonly string[]
   readonly issuer: string
-  /** `exp` 클레임(epoch 초). 없으면 undefined. */
+  /** The `exp` claim (epoch seconds). undefined when absent. */
   readonly expiresAt: number | undefined
-  /** `iat` 클레임(epoch 초). 없으면 undefined. */
+  /** The `iat` claim (epoch seconds). undefined when absent. */
   readonly issuedAt: number | undefined
   readonly claims: Readonly<Record<string, unknown>>
 }
 
 /**
- * 토큰 introspection 결과. Java/Python SDK와 동형으로 `username`/`clientId`를 노출하고,
- * Node는 추가로 전체 `claims`도 노출한다(상위집합).
+ * Token introspection result. Isomorphic with the Java/Python SDKs, it exposes `username`/`clientId`, and Node
+ * additionally exposes the full `claims` too (a superset).
  */
 export interface IntrospectionResult {
   readonly active: boolean

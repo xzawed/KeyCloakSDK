@@ -3,8 +3,9 @@ import { call, requireFound } from './call.js'
 import { type AdminHttp, adminPath, create, omit, orEmpty, read, readOne, write } from './http.js'
 
 /**
- * 렐름 역할(role) CRUD 파사드. 공식 admin-client의 `roles` 리소스가 보내는 것과 같은 요청을 직접 보내며(`http.ts`)
- * {@link call}로 경계 변환한다. ⚠️ API 편차: 역할은 이름으로 조회/삭제한다(admin-client 의 `findOneByName`/`delByName` 경로).
+ * Realm role CRUD facade. It itself sends the same requests the official admin-client's `roles` resource sends
+ * (`http.ts`), and converts at the boundary with {@link call}. ⚠️ API deviation: roles are looked up/deleted by
+ * name (admin-client's `findOneByName`/`delByName` paths).
  */
 export class RolesResource {
   /**
@@ -28,7 +29,7 @@ export class RolesResource {
     )
   }
 
-  /** 역할 이름으로 조회한다. 없으면 `KeycloakNotFoundError`. */
+  /** Looks up a role by name. `KeycloakNotFoundError` if absent. */
   async get(name: string): Promise<RoleRepresentation> {
     return requireFound(
       await call(() =>
@@ -43,9 +44,9 @@ export class RolesResource {
   }
 
   /**
-   * 현재 이름으로 주소를 잡아 역할을 갱신한다. `representation.name`에 새 이름을 주면 rename이다.
+   * Updates a role, addressed by its current name. A new name in `representation.name` is a rename.
    *
-   * ⚠️ 경로(`name`)와 body(`representation`)를 **합치지 말 것**.
+   * ⚠️ **Do not merge** the path (`name`) and the body (`representation`).
    */
   async update(name: string, representation: RoleRepresentation): Promise<void> {
     await call(() =>

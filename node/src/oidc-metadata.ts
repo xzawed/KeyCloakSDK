@@ -1,6 +1,6 @@
 import type { KeycloakConfig } from './config.js'
 
-/** Keycloak realm의 OIDC 엔드포인트 URL 집합. */
+/** The set of OIDC endpoint URLs of a Keycloak realm. */
 export interface OidcEndpoints {
   readonly issuer: string
   readonly token: string
@@ -10,7 +10,7 @@ export interface OidcEndpoints {
   readonly jwks: string
 }
 
-/** `{serverUrl}/realms/{realm}` 규약으로 엔드포인트를 조립한다(네트워크 호출 없음). */
+/** Assembles the endpoints by the `{serverUrl}/realms/{realm}` convention (no network call). */
 export function oidcEndpoints(config: Pick<KeycloakConfig, 'serverUrl' | 'realm'>): OidcEndpoints {
   const issuer = `${config.serverUrl}/realms/${config.realm}`
   const base = `${issuer}/protocol/openid-connect`

@@ -2,8 +2,9 @@ import { sendableBearer, type TokenProvider } from '../token-provider.js'
 import { readCapped, TOKEN_RESPONSE_MAX_BYTES } from '../token-response-cap.js'
 
 /**
- * 파사드 요청의 목적지 — `AdminClient.create` 가 한 번 짓고 다섯 리소스가 나눠 쓴다. `raw()` 의 admin-client 에 준 것과
- * 같은 값이다(서버 주소 · 읽기 기한 · 토큰 공급자). `raw().setConfig()` 는 이것을 바꾸지 않는다.
+ * Where the facade's requests go — `AdminClient.create` builds it once and the five resources share it. It holds
+ * the same values that were given to the admin-client of `raw()` (server address · read deadline · token
+ * provider). `raw().setConfig()` does not change it.
  */
 export interface AdminHttp {
   readonly serverUrl: string
@@ -12,9 +13,10 @@ export interface AdminHttp {
 }
 
 /**
- * 경로 조각 하나 — url-template 3.1.1 의 단순 확장(`{id}`)과 같다: 예약되지 않은 문자(A–Z a–z 0–9 `-` `.` `_` `~`) 밖을
- * 전부 퍼센트 인코딩한다(`encodeURIComponent` 가 남기는 `!'()*` 까지). 빈 문자열과 JS 호출자의 `null`·`undefined` 는
- * 빈 조각이고, 짝 없는 서로게이트는 `URIError` 다 — admin-client 와 같다.
+ * One path segment — the same as url-template 3.1.1's simple expansion (`{id}`): everything outside the
+ * unreserved characters (A–Z a–z 0–9 `-` `.` `_` `~`) is percent-encoded (including the `!'()*` that
+ * `encodeURIComponent` leaves). An empty string and a JS caller's `null`/`undefined` are an empty segment, and an
+ * unpaired surrogate is a `URIError` — the same as admin-client.
  */
 export function segment(value: string): string {
   const v: unknown = value
@@ -26,24 +28,25 @@ export function segment(value: string): string {
 }
 
 /**
- * `/admin/realms/…` 경로 — 조각마다 {@link segment}. 마지막 조각이 `''` 면 끝이 `/` 다(admin-client 의 컬렉션 경로가
- * 그렇다 — `POST /users/`).
+ * An `/admin/realms/…` path — {@link segment} for each segment. When the last segment is `''` the path ends in `/`
+ * (admin-client's collection paths do — `POST /users/`).
  */
 export function adminPath(...segments: readonly string[]): string {
   return `/admin/realms/${segments.map(segment).join('/')}`
 }
 
 /**
- * admin-client 의 `omit` — 자기 열거 문자열 키만 남긴 새 객체(`keys` 는 뺀다). 생성 payload 를 이렇게 옮긴다: 옛 파사드가
- * `{ ...rep, realm }` 으로 넘기면 admin-client 가 URL 인자 `realm` 을 뺐다.
+ * admin-client's `omit` — a new object keeping only the own enumerable string keys (minus `keys`). Create payloads
+ * are carried over this way: when the old facade passed `{ ...rep, realm }`, admin-client took out the URL
+ * argument `realm`.
  */
 export function omit(value: object, keys: readonly string[]): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)))
 }
 
 /**
- * admin-client 의 기본 인자(`payload = {}`) — JS 호출자가 `undefined` 를 넘기면 `{}` 를 보낸다. `null` 은 그대로
- * (`'null'`)다.
+ * admin-client's default argument (`payload = {}`) — when a JS caller passes `undefined`, `{}` is sent. `null`
+ * stays as is (`'null'`).
  */
 export function orEmpty(value: unknown): unknown {
   return value === undefined ? {} : value
@@ -160,7 +163,7 @@ async function successBody(res: Response): Promise<unknown> {
   return parse(await res.text())
 }
 
-/** GET — 2xx 면 본문을 해석해 돌려준다. */
+/** GET — on a 2xx, parses the body and returns it. */
 export async function read<T>(
   http: AdminHttp,
   path: string,
@@ -172,8 +175,8 @@ export async function read<T>(
 }
 
 /**
- * GET 하나 — 404 면 `null` 이다(admin-client 의 `catchNotFound`). 그 404 의 본문도 상한까지만 비운다. 호출자가
- * {@link requireFound} 로 부재를 `KeycloakNotFoundError` 로 바꾼다.
+ * A single GET — a 404 gives `null` (admin-client's `catchNotFound`). That 404's body is also drained only up to
+ * the cap. The caller turns the absence into `KeycloakNotFoundError` with {@link requireFound}.
  */
 export async function readOne<T>(http: AdminHttp, path: string): Promise<T | null> {
   const res = await send(http, 'GET', path)
@@ -185,7 +188,7 @@ export async function readOne<T>(http: AdminHttp, path: string): Promise<T | nul
   return (await successBody(res)) as T
 }
 
-/** 갱신·삭제 — 2xx 본문은 읽지 않는다. admin-client 처럼 DELETE 도 JSON 본문(`{}`)을 싣는다. */
+/** Update/delete — the 2xx body is not read. Like admin-client, DELETE also carries a JSON body (`{}`). */
 export async function write(
   http: AdminHttp,
   method: 'PUT' | 'DELETE',
@@ -198,8 +201,9 @@ export async function write(
 }
 
 /**
- * 생성 — 2xx 본문은 읽지 않고 `Location` 의 마지막 조각을 돌려준다. `Location` 이 없거나 마지막 조각이 비면
- * admin-client 와 같은 `Error` 다(같은 메시지 — SDK 오류로 감싸지 않는 것도 그때와 같다).
+ * Create — the 2xx body is not read; the last segment of `Location` is returned. A missing `Location` or an empty
+ * last segment is the same `Error` as admin-client's (the same message — and, as then, it is not wrapped in an
+ * SDK error).
  */
 export async function create(http: AdminHttp, path: string, body: unknown): Promise<string> {
   const res = await send(http, 'POST', path, [], body)

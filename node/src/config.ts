@@ -3,7 +3,7 @@ import { mask } from './masking.js'
 
 const INSPECT = Symbol.for('nodejs.util.inspect.custom')
 
-/** 불변 설정. `defineConfig`로만 생성한다. */
+/** Immutable configuration. Created only through `defineConfig`. */
 export interface KeycloakConfig {
   readonly serverUrl: string
   readonly realm: string
@@ -11,33 +11,35 @@ export interface KeycloakConfig {
   readonly clientSecret?: string
   readonly scopes: readonly string[]
   /**
-   * ⚠️ Node의 fetch/undici 스택(openid-client·admin-client)은 요청당 단일 총 타임아웃
-   * ({@link readTimeoutMs})만 표현할 수 있어, 별도의 "연결(connect) 타임아웃"을 강제하지 못한다
-   * (커스텀 undici dispatcher 주입이 필요하나 하위 라이브러리가 이를 노출하지 않음). 이 필드는
-   * 언어 간 config 대칭을 위해 유지되나 fetch 경로에는 별도로 배선되지 않는다(문서화된 한계 —
-   * sync/blocking-HTTP 언어인 Java·Go·PHP 등과 달리). 실효 타임아웃은 readTimeoutMs다.
+   * ⚠️ Node's fetch/undici stack (openid-client, admin-client) can express only a single total timeout per request
+   * ({@link readTimeoutMs}), so it cannot enforce a separate "connect timeout" (that would take injecting a custom
+   * undici dispatcher, which the underlying libraries do not expose). This field is kept for cross-language config
+   * symmetry but is not wired separately into the fetch path (a documented limitation — unlike sync/blocking-HTTP
+   * languages such as Java, Go and PHP). The effective timeout is readTimeoutMs.
    */
   readonly connectTimeoutMs: number
   readonly readTimeoutMs: number
   readonly clockSkewSeconds: number
-  /** JWT 서명 검증 시 허용할 알고리즘 핀(기본 ['RS256']). ES256/PS256 realm을 위해 설정 가능. */
+  /** Algorithm pin accepted when verifying JWT signatures (default ['RS256']). Configurable for ES256/PS256 realms. */
   readonly signatureAlgorithms: readonly string[]
   /**
-   * 미해결 kid(키 회전)로 인한 JWKS 재조회의 최소 간격(초, 기본 30) — DoS 증폭 상한. 위조 kid를
-   * 연속 주입해도 이 간격보다 자주 IdP를 때리지 못한다. 창은 SDK 의 JWKS 조회가 직접 걸고 조회를
-   * **시도할 때** 찍으므로 IdP 장애 중에도 창마다 한 번이다(jose 의 `cooldownDuration` 은 성공에만
-   * 찍혀 쓰지 않는다 — 0 으로 둔다). 0이면 매 미해결 kid마다 재조회를 허용한다(비권장).
+   * Minimum interval (seconds, default 30) between JWKS refetches caused by an unresolved kid (key rotation) — the
+   * DoS amplification bound. Even forged kids injected back to back cannot hit the IdP more often than this
+   * interval. The SDK's JWKS fetch sets the window itself and stamps it **when a fetch is attempted**, so it is once
+   * per window even during an IdP outage (jose's `cooldownDuration` is stamped only on success, so it is not used —
+   * it is set to 0). 0 allows a refetch for every unresolved kid (not recommended).
    */
   readonly jwksMinRefetchSeconds: number
   /**
-   * `validate()`가 토큰 `aud`에서 찾을 값. 미지정이면 {@link clientId}를 기대한다(기존 동작).
-   * 기본 realm은 client-credentials 토큰 `aud`에 client_id를 넣지 않으므로(audience 매퍼를
-   * 추가해야 들어간다), 리소스 서버처럼 API 이름이 aud인 경우 여기에 그 값을 설정한다.
+   * The value `validate()` looks for in the token's `aud`. When unset, {@link clientId} is expected (the existing
+   * behavior). A stock realm does not put the client_id in a client-credentials token's `aud` (it only gets there
+   * once an audience mapper is added), so when the API name is the aud, as for a resource server, set that value
+   * here.
    */
   readonly expectedAudience?: string
 }
 
-/** `defineConfig` 입력(선택값은 기본값으로 채워진다). */
+/** Input to `defineConfig` (optional values are filled with defaults). */
 export interface KeycloakConfigInput {
   serverUrl: string
   realm: string

@@ -3,8 +3,9 @@ import { call, requireFound } from './call.js'
 import { type AdminHttp, adminPath, create, omit, orEmpty, read, readOne, write } from './http.js'
 
 /**
- * 클라이언트 CRUD 파사드. 공식 admin-client의 `clients` 리소스가 보내는 것과 같은 요청을 직접 보내며(`http.ts`)
- * {@link call}로 경계 변환한다. `id`는 클라이언트의 내부 UUID, `clientId`는 사람이 지정한 식별자다.
+ * Client CRUD facade. It itself sends the same requests the official admin-client's `clients` resource sends
+ * (`http.ts`), and converts at the boundary with {@link call}. `id` is the client's internal UUID; `clientId` is
+ * the human-assigned identifier.
  */
 export class ClientsResource {
   /**
@@ -16,7 +17,7 @@ export class ClientsResource {
     private readonly realm: string,
   ) {}
 
-  /** 클라이언트를 생성하고 신규 클라이언트 내부 id(UUID)를 반환한다. */
+  /** Creates a client and returns the new client's internal id (UUID). */
   async create(representation: ClientRepresentation): Promise<string> {
     return call(() =>
       create(
@@ -27,7 +28,7 @@ export class ClientsResource {
     )
   }
 
-  /** 내부 id(UUID)로 클라이언트를 조회한다. 없으면 `KeycloakNotFoundError`. */
+  /** Looks up a client by internal id (UUID). `KeycloakNotFoundError` if absent. */
   async get(id: string): Promise<ClientRepresentation> {
     return requireFound(
       await call(() =>
@@ -37,7 +38,7 @@ export class ClientsResource {
     )
   }
 
-  /** 사람이 지정한 `clientId`로 클라이언트를 검색한다(0..N개). */
+  /** Searches clients by the human-assigned `clientId` (0..N results). */
   async findByClientId(clientId: string): Promise<ClientRepresentation[]> {
     return call(() =>
       read<ClientRepresentation[]>(this.http, adminPath(this.realm, 'clients', ''), [

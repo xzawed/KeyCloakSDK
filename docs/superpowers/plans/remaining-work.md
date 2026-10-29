@@ -632,9 +632,9 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ✅ 위 계수가 **하한**이었던 이유는 아래 `critic-2026-09-22-round2` 가 소유한다(완전성 비평 6 각도, 2026-09-22).
 - [x] `critic-2026-09-22-round2` **[H/L · 신규 2026-09-22 · 닫힘 2026-10-27]** 24 생존 중 21 닫힘(#529–#538) · 2 반증 · 남은 1 건은 `korean-api-docs-in-published-packages` 로 분리 — 열린 것이 없다
 - [ ] `korean-api-docs-in-published-packages` **[M/H · 신규 2026-09-22 · 판정 2026-10-29 「번역 — 언어당 PR」]** 게시된 SDK 안의 **소비자에게 렌더링되는 문서 주석**이 한글이다 — docs.rs 가 그리고, IDE 호버에 뜨고, PyPI·RubyGems 페이지가 싣는 텍스트다 · `rust/src` 외 6
-  - **실측**(2026-09-22, `git grep -P '[\x{AC00}-\x{D7A3}]'` · 문서 주석 문법만): rust 231 · python 298 · node 186 · ruby 158 · php 149 · go 122 · kotlin 70 = **7 언어 1,214 줄**. **java·dotnet 은 이미 0.** ⚠️ 구현 주석까지 세면 2,296 줄이지만 소비자에게 안 보이므로 대상이 아니다. ⚠️ plain `grep -P` 는 이 범위를 못 써 거짓 0 을 낸다 — 반드시 `git grep -P`.
-  - **왜 별건인가**: 게시 소스 7 개를 건드려 언어별 테스트와 착지 게이트를 전부 통과해야 하고, 공개 표면이라 되돌리기 어렵다. 번역 품질은 기계로 못 재므로 **언어당 PR 하나**가 리뷰 가능한 최소 단위다.
-  - **착수 순서**: 노출이 가장 직접적인 rust(docs.rs)·node(`.d.ts` 호버) = 417 줄 먼저, 그다음 python·php·ruby·go·kotlin. **판정 2026-10-29: 번역한다** — 버린 선택지는 「규칙에 게시 주석 한글 예외를 명시」였다.
+  - **판정 기준 = 산출물의 한글 0**(`git grep --no-index -P '[\x{AC00}-\x{D7A3}]'` — ⚠️ plain `grep -P` 는 거짓 0): rust `cargo doc` HTML 22 파일 → 0(#890) · node `.d.ts` 19 → 0(#891). 대상은 그려지는 것과 README 가 링크하는 quickstart 예제(구현 주석·비공개·시험은 아님) · 남은 다섯은 PR 마다 그 렌더러로. ⚠️ 2b 축 히트를 전후로 잴 것(줄바꿈이 「default 30」을 넘기면 빠진다).
+  - ⏳ **런타임 오류 문구는 별건**(동작 — 소비자의 문자열 대조가 바뀐다): node `JWT 검증 실패: …`(시험 넷이 단언) 확인 · 다른 언어는 거친 대조가 시험·독스트링과 섞여 소비자에게 닿는 것부터 잰다.
+  - **착수 순서**: rust·node 먼저, 그다음 python·php·ruby·go·kotlin. **판정 2026-10-29: 번역한다 — 언어당 PR**(공개 표면이고 번역 품질은 기계로 못 잰다) — 버린 선택지는 「규칙에 게시 주석 한글 예외를 명시」였다.
 - [x] `remaining-work-split-to-archive-tag` **[H/M · 신규 2026-09-22 · 닫힘 2026-10-28]** #526 이 실행했다(닫힌 70 건의 서사 → 태그 · 예산 앵커 · 되살릴 조건 이관은 명령 형태가 0 건이라 no-op). 설계의 「닫힘 = 0」만은 「소유 줄 == 닫힘 수」로 바뀌었고(`test-remaining-work-shape.sh` 머리 주석), 뒤이은 이관은 머리말의 포인터가 가리킨다.
 - [x] `changelog-unreleased-never-written` **[M/S · 신규 2026-09-22 · 닫힘 2026-10-27]** 착지 장치 `scripts/test/test-changelog-landing.sh` 가 섰고 `[Unreleased]` 가 착지마다 자란다 — 150 건은 역채우지 않았다
 - [x] `jwks-empty-keyset-node` **[M/M · 신규 2026-09-22 · 닫힘 2026-09-24]** 「구조 변경뿐」이라는 전제가 틀렸다 — 기각된 두 길(getKey 래핑·별도 프리플라이트) 밖에 셋째가 있었다: 이미 배선된 `[customFetch]` 래퍼는 jose 가 파싱할 **바로 그 응답**을 보고, jose reload 는 fetch 가 던지면 옛 캐시를 남긴다(`jose/dist/webapi/jwks/remote.js` `.then` 안에서만 대입). jose 원격 집합을 그대로 상속한다 · `jwt-jwks.test.ts` 수정 전 RED → GREEN · 변이 CAUGHT
