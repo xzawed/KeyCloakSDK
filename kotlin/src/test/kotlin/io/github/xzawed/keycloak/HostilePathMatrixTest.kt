@@ -15,6 +15,7 @@ import com.nimbusds.jose.crypto.RSASSASigner
 import com.nimbusds.jose.jwk.JWKSet
 import com.nimbusds.jose.jwk.RSAKey
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator
+import com.nimbusds.jose.util.JSONObjectUtils
 import com.nimbusds.jwt.JWTClaimsSet
 import com.nimbusds.jwt.PlainJWT
 import com.nimbusds.jwt.SignedJWT
@@ -277,12 +278,49 @@ private suspend fun hpMatrix(
 
     // W1 — 손 목록 포함. 표의 실패 사유는 판정표 뒤에 모아 찍는다(변이 프로브는 출력 꼬리만 보여 준다).
     problems += late
-    problems += hpCheckHand(byLabel, methods, tgt)
+    val (hand, w1Compared) = hpCheckHand(byLabel, methods, tgt)
+    problems += hand
 
     for (p in problems) println("HP-FAIL $p")
     // 요약은 실패 줄 **뒤에** 찍는다.
     summaries.forEach(::println)
     assertTrue(problems.isEmpty(), "적대 경로 행렬 실패 ${problems.size}건:\n" + problems.joinToString("\n"))
+    // attest — **모든 단언 뒤**(위 assertTrue 가 실패하면 여기 오지 않는다). 대조는 scripts/check-hp-attest.mjs.
+    hpAttest(rows.size, counts, cells.size, w1Compared)
+}
+
+// 이 행렬이 **이 실행에서 실제로 돌았다**는 증명을 `$HP_ATTEST_DIR/kotlin.json` 에 쓴다 — CI 는 단위 테스트 단계 바로 뒤에서
+// 같은 nonce(`HP_ATTEST_NONCE`)로 `scripts/check-hp-attest.mjs` 가 읽는다. 레인이 초록이라는 것은 행렬이 돌았다는 증거가 아니다
+// (Gradle 의 UP-TO-DATE 재생 · `--tests` 필터 · 건너뛴 W1). `HP_ATTEST_DIR` 이 없으면(로컬) 아무것도 하지 않는다. ⚠️ 부르는 쪽은
+// **모든 단언 뒤**에만 부른다 — 실패한 행렬은 파일을 남기지 않는다. `knownGaps` 는 HP_KNOWN_GAPS **값**의 등록부 id(`id: 이유` 의
+// 앞마디)다 — 정적 대조(check-known-gaps.mjs)가 못 보는 계산된 id 까지 런타임 값으로 낸다.
+private fun hpAttest(
+    rows: Int,
+    counts: Map<String, Int>,
+    w3: Int,
+    w1: Boolean,
+) {
+    val dir = System.getenv("HP_ATTEST_DIR").orEmpty()
+    if (dir.isEmpty()) return
+    val classes =
+        listOf(HP_CODE_EXCHANGE, HP_TOKEN_GRANT, HP_JWKS_FETCH, HP_OTHER, HP_NONE, HP_UNDETERMINED).associateWith { counts[it] ?: 0 }
+    val body =
+        linkedMapOf<String, Any>(
+            "lang" to "kotlin",
+            "nonce" to System.getenv("HP_ATTEST_NONCE").orEmpty(),
+            "rows" to rows,
+            "classes" to classes,
+            "w3" to w3,
+            "w1" to w1,
+            "knownGaps" to
+                HP_KNOWN_GAPS.values
+                    .map { it.substringBefore(':').trim() }
+                    .toSortedSet()
+                    .toList(),
+        )
+    val out = Paths.get(dir)
+    Files.createDirectories(out)
+    Files.writeString(out.resolve("kotlin.json"), JSONObjectUtils.toJSONString(body))
 }
 
 // ---- 가짜 IdP ----
@@ -1463,14 +1501,16 @@ private val HP_SCRIPT_ANCHOR_RES =
 private fun hpTestSourceDir(): Path =
     Paths.get(System.getProperty("user.dir"), "src", "test", "kotlin", "io", "github", "xzawed", "keycloak")
 
+// (실패 사유, 보안 기본값 가드 대조까지 **실제로 돌았는가**) — 뒤의 것이 attest 의 w1 이다(저장소 밖에서 건너뛴 실행은 증명이 아니다).
 private fun hpCheckHand(
     byLabel: Map<String, HpRow>,
     methods: Map<String, HpMethod>,
     tgt: Map<String, List<String>>,
-): List<String> {
+): Pair<List<String>, Boolean> {
     val why = mutableListOf<String>()
+    var compared = false
     val dir = hpTestSourceDir()
-    if (!Files.isDirectory(dir)) return listOf("W1 테스트 소스 디렉터리가 없다($dir) — 앵커 대조가 공허하다")
+    if (!Files.isDirectory(dir)) return listOf("W1 테스트 소스 디렉터리가 없다($dir) — 앵커 대조가 공허하다") to false
     val anchors = HP_HAND_TARGETS.map { it.anchor }.toSet()
     for (h in HP_HAND_TARGETS) {
         val r = byLabel[h.label]
@@ -1504,6 +1544,7 @@ private fun hpCheckHand(
     val script = repo.resolve("scripts/test/test-security-defaults.sh")
     when {
         Files.isRegularFile(script) -> {
+            compared = true
             // 셸 주석 줄은 벗긴다 — 주석 속 사본이 앵커로 읽히지 않게(함정 (o)).
             val text = Files.readAllLines(script).filterNot { it.trimStart().startsWith("#") }.joinToString("\n")
             val found =
@@ -1520,7 +1561,7 @@ private fun hpCheckHand(
         Files.exists(repo.resolve(".git")) -> why += "W1 저장소 체크아웃인데 보안 기본값 가드를 못 읽었다: $script"
         else -> println("W1: 저장소 밖에서 돌아 보안 기본값 가드 대조는 건너뛴다")
     }
-    return why
+    return why to compared
 }
 
 // Kotlin 소스에서 코드만 남긴다 — 주석·문자열·문자 리터럴의 내용을 공백으로 바꾼다(길이·줄 보존). 백틱 식별자는 남긴다.
