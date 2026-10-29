@@ -47,7 +47,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { format, inspect } from 'node:util'
@@ -1815,13 +1815,15 @@ function resolveAnchor(anchor: string): { calls: Set<string> } | string {
   return { calls }
 }
 
+/** 실패 사유와, 보안 기본값 가드 대조까지 **실제로 돌았는지**(attest 의 `w1` — 저장소 밖에서 건너뛴 실행은 증명이 아니다). */
 function checkHand(
   src: Source,
   byLabel: Map<string, ClassRow>,
   tgt: Record<'a' | 'b' | 'c', string[]>,
   publicNames: ReadonlySet<string>,
-): string[] {
+): { why: string[]; compared: boolean } {
   const why: string[] = []
+  let compared = false
   const anchors = new Set(HAND.map((h) => h.anchor))
   for (const h of HAND) {
     const r = byLabel.get(h.label)
@@ -1859,6 +1861,7 @@ function checkHand(
   }
   // 보안 기본값 가드의 node 행위 앵커는 전부 표의 앵커다 — 그 가드에 node 앵커가 늘면 여기가 운다.
   if (existsSync(SCRIPT)) {
+    compared = true
     const found = [...readFileSync(SCRIPT, 'utf8').matchAll(SCRIPT_ANCHOR_RE)].map(
       (m) => `${m[1] ?? m[3]}|${m[2] ?? m[4]}`,
     )
@@ -1878,7 +1881,31 @@ function checkHand(
   } else {
     console.log('[hp] W1: 저장소 밖에서 돌아 보안 기본값 가드 대조는 건너뛴다')
   }
-  return why
+  return { why, compared }
+}
+
+/**
+ * attest — 이 행렬이 **이 실행에서 실제로 돌았다**는 증명을 `$HP_ATTEST_DIR/node.json` 에 쓴다. CI 는 단위 테스트 단계 바로
+ * 뒤에서 같은 nonce(`HP_ATTEST_NONCE`)로 `scripts/check-hp-attest.mjs` 가 읽는다 — 레인이 초록이라는 것은 행렬이 돌았다는
+ * 증거가 아니다(`-t` 필터 · 건너뛴 W1). `HP_ATTEST_DIR` 이 없으면(로컬) 아무것도 하지 않는다. `knownGaps` 는 `KNOWN_GAPS`
+ * **값**의 등록부 id(`id: 이유` 의 앞마디)다. ⚠️ 부르는 쪽(describe 의 afterAll)이 **모든 테스트가 통과했을 때만** 부른다.
+ */
+function attest(w3: number, w1: boolean): void {
+  const dir = process.env.HP_ATTEST_DIR ?? ''
+  if (dir === '') return
+  const body = {
+    lang: 'node',
+    nonce: process.env.HP_ATTEST_NONCE ?? '',
+    rows: rows.length,
+    classes: Object.fromEntries(CLASSES.map((c) => [c, rows.filter((r) => r.cls === c).length])),
+    w3,
+    w1,
+    knownGaps: [
+      ...new Set(Object.values(KNOWN_GAPS).map((v) => (v.split(':', 1)[0] ?? '').trim())),
+    ].sort(),
+  }
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'node.json'), JSON.stringify(body))
 }
 
 // ---- 테스트 ----
@@ -1894,6 +1921,9 @@ let sdk: ReadonlyArray<ClassCtor>
 let nonceParams: Map<string, number[]>
 const tgt: Record<'a' | 'b' | 'c', string[]> = { a: [], b: [], c: [] }
 const late: string[] = [] // W3 대상 파생에서 난 실패 — W1 과 함께 단언한다
+// attest 에 실을 실행 수 — W3 칸 수(세 축의 합)와 W1 이 보안 기본값 가드까지 대조했는가.
+let w3Cells = 0
+let w1Compared = false
 
 beforeAll(async () => {
   const pair = await generateKeyPair('RS256')
@@ -1977,6 +2007,14 @@ afterAll(async () => {
 })
 
 describe('적대 경로 행렬 — 공개 호출 경로를 파생해 요청으로 가른다', () => {
+  // attest — 이 describe 의 테스트가 **전부 통과**했을 때만 쓴다. 하나라도 실패·건너뜀(`-t` 필터 포함)이면 쓰지 않는다.
+  // ⚠️ 목록을 손으로 적지 않고 vitest 가 넘기는 suite 의 결과를 읽는다 — 새 `it` 가 이 조건 밖으로 새지 않게.
+  // 첫 인자는 vitest 5 가 구조 분해 꼴을 요구하는 문맥이다(쓰지 않는다 — 둘째 인자가 suite 다).
+  afterAll(({}, suite) => {
+    if (suite.tasks.length > 0 && suite.tasks.every((t) => t.result?.state === 'pass'))
+      attest(w3Cells, w1Compared)
+  })
+
   it('(1) UNDETERMINED 가 없다 — 면제는 이유와 함께, 낡은 면제는 실패', () => {
     const problems: string[] = []
     for (const r of rows) {
@@ -2038,7 +2076,9 @@ describe('적대 경로 행렬 — 공개 호출 경로를 파생해 요청으�
 
   it('(W1) 손으로 고른 테스트의 대상이 전부 행이고 기대 계급이다', () => {
     const publicNames = new Set(rows.map((r) => r.row.name))
-    const problems = [...late, ...checkHand(src, byLabel, tgt, publicNames)]
+    const hand = checkHand(src, byLabel, tgt, publicNames)
+    w1Compared = hand.compared
+    const problems = [...late, ...hand.why]
     // W3a 변형의 출처 테스트도 살아 있어야 한다 — 단언하는 테스트가 없으면 그 변형은 계약이 아니다.
     for (const v of tokenVariants()) {
       if (v.from === '') continue
@@ -2056,6 +2096,7 @@ describe('적대 경로 행렬 — 공개 호출 경로를 파생해 요청으�
       nonceParams,
       sdk,
     )
+    w3Cells += cells.length
     const fails = judge('a', cells)
     expect(fails, fails.join('\n')).toEqual([])
   }, 300_000)
@@ -2068,6 +2109,7 @@ describe('적대 경로 행렬 — 공개 호출 경로를 파생해 요청으�
       builderOf,
       sdk,
     )
+    w3Cells += cells.length
     const fails = judge('b', cells)
     expect(fails, fails.join('\n')).toEqual([])
   }, 120_000)
@@ -2079,6 +2121,7 @@ describe('적대 경로 행렬 — 공개 호출 경로를 파생해 요청으�
       builderOf,
       sdk,
     )
+    w3Cells += cells.length
     const fails = judge('c', cells)
     expect(fails, fails.join('\n')).toEqual([])
   }, 120_000)
