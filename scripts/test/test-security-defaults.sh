@@ -521,6 +521,71 @@ assert_eq "GREW" "$SD_JCP" \
   "[음성대조·토큰 길이 상한] 식(<리터럴> * 2)이 된 선언에서 축이 안 울었다 — 앞 정수만 읽으면 값이 바뀌어도 핀과 같아 보인다"
 
 # ---------------------------------------------------------------------------
+# 1g) admin Bearer 문법 — 아홉 시험표가 같은 정본 행 스물을 가진다
+# ---------------------------------------------------------------------------
+#
+# 판정 2026-10-29(사람 위임 「권장안」 — 등록부 `bearer-token-grammar-divergent`): admin 요청 전에 앞뒤 SP·HTAB·CR·LF 를
+# 떼고, 남은 값이 비지 않은 RFC 6750 `b64token` 이 아니면 보내지 않는다 — SDK 와 공개 provider 는 그런 토큰을 캐시하지
+# 않는다. 행동은 언어마다 시험표가 단언한다. 이 축은 아홉 표가 **같은 정본 행 id 스물**을 다 갖는지만 본다 — 한 표에서
+# 행 하나가 빠지면 그 언어만 규칙이 갈라져도 초록이다. 하위 라이브러리가 Bearer 를 직접 짓는 셋(java·kotlin·php)은 다듬을
+# 행을 그랜트 때 거부한다 — 그 갈래는 각 표의 머리 주석이 적는다.
+SD_BEARER_IDS='plain pad jwt lf crlf lead-tab inner-sp inner-tab inner-crlf mid-pad empty blank latin1 above-ff c1 nul del nbsp ideographic vt'
+sd_bearer_table() { # $1=언어 → 그 언어의 정본 시험표 경로(모르는 언어는 빈 값 — 축이 그 언어를 실패로 센다)
+  case "$1" in
+    java)   printf '%s' 'java/keycloak-sdk-admin/src/test/java/io/github/xzawed/keycloak/admin/BearerTokenGrammarTest.java' ;;
+    kotlin) printf '%s' 'kotlin/src/test/kotlin/io/github/xzawed/keycloak/admin/BearerTokenGrammarTest.kt' ;;
+    python) printf '%s' 'python/tests/unit/test_admin_bearer_header.py' ;;
+    node)   printf '%s' 'node/test/unit/admin-bearer-header.test.ts' ;;
+    go)     printf '%s' 'go/bearer_grammar_test.go' ;;
+    dotnet) printf '%s' 'dotnet/tests/Xzawed.Keycloak.Sdk.Tests/BearerTokenGrammarTests.cs' ;;
+    php)    printf '%s' 'php/tests/Unit/Admin/AdminBearerGrammarTest.php' ;;
+    rust)   printf '%s' 'rust/tests/bearer_grammar.rs' ;;
+    ruby)   printf '%s' 'ruby/spec/unit/bearer_grammar_spec.rb' ;;
+    *)      return 0 ;;
+  esac
+}
+sd_bearer_axis() { # $1=언어 목록 — 지금 ROOT 를 읽는다. 스무 행을 다 가진 표 수를 SD_BT_SEEN 에 남긴다.
+  SD_BT_SEEN=0
+  for L in $1; do
+    _bt_f="$(sd_bearer_table "$L")"
+    _bt_miss=''
+    for _bt_id in $SD_BEARER_IDS; do
+      if [ -z "$_bt_f" ] || ! grep -q -- "[\"']${_bt_id}[\"']" "$ROOT/$_bt_f" 2>/dev/null; then
+        _bt_miss="$_bt_miss $_bt_id"
+      fi
+    done
+    assert_eq "" "$_bt_miss" \
+      "[bearer 문법] $L 의 시험표(${_bt_f:-경로 없음})에 정본 행이 없다:$_bt_miss — 아홉이 같은 표를 가져야 한다"
+    [ -z "$_bt_miss" ] && SD_BT_SEEN=$((SD_BT_SEEN + 1))
+  done
+}
+sd_bearer_axis "$SD_LANGS"
+assert_eq "9" "$SD_BT_SEEN" "[bearer 문법] 정본 행 스물을 다 가진 시험표 수가 9가 아니다 — 경로 표가 낡았나?"
+
+# 대조군 — 1f 와 같은 꼴. go 의 라이브 표 하나만 TMP 에 두고 목록을 `go` 하나로 준다.
+sd_bearer_probe() { # $1=sed 표현식(빈 값이면 라이브 사본 그대로) → SD_BTP: GREW | QUIET | NOT-LANDED
+  _btp_f="$(sd_bearer_table go)"
+  _btp_tmp="$(mktemp -d)"; mkdir -p "$_btp_tmp/$(dirname "$_btp_f")"
+  sed "$1" "$ROOT/$_btp_f" > "$_btp_tmp/$_btp_f"
+  if [ -n "$1" ] && cmp -s "$ROOT/$_btp_f" "$_btp_tmp/$_btp_f"; then
+    SD_BTP='NOT-LANDED'
+  else
+    _a_save; _btp_root="$ROOT"; ROOT="$_btp_tmp"
+    sd_bearer_axis go >/dev/null 2>&1 || true
+    ROOT="$_btp_root"
+    SD_BTP='QUIET'; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && SD_BTP='GREW'
+    _a_restore
+  fi
+  rm -rf "$_btp_tmp"
+}
+sd_bearer_probe ''
+assert_eq "QUIET" "$SD_BTP" \
+  "[양성대조·bearer 문법] 라이브 go 표의 사본에서 축이 실패했다 — 「늘 운다」와 구분되지 않는다"
+sd_bearer_probe '/{"nbsp", /d'
+assert_eq "GREW" "$SD_BTP" \
+  "[음성대조·bearer 문법] nbsp 행을 지운 사본에서 축이 안 울었다 — 행 대조가 no-op 이거나 파일을 안 읽는다"
+
+# ---------------------------------------------------------------------------
 # 빈 키셋 거부 — 자체 JWKS 스토어를 가진 넷
 # ---------------------------------------------------------------------------
 # ⚠️ go 의 #380 픽스는 **두 절반**이었다 — 상태코드 거부와 `len(ks.Keys) == 0` 거부. 자매 SDK

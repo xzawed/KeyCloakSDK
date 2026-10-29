@@ -10,7 +10,12 @@ paths:
   - "rust/**"
   - "ruby/**"
 ---
-<!-- doc-budget: max-bytes=6141 -->
+<!-- doc-budget: max-bytes=6348 -->
+<!-- 6141 → 6348 (2026-10-29): 래칫 조건 (1) — 증가분이 **기계 검증을 사 온다.** 새 「Admin bearer grammar」 줄은
+     `test-security-defaults.sh` 1g 축(양성·음성 대조)이 아홉 시험표가 같은 정본 행 스물을 갖는지로 대조한다 — 아홉이
+     함께 움직이는 새 규칙이라 이 파일이 자리다(판정 2026-10-29 사람 위임 「권장안」 — 등록부 `bearer-token-grammar-divergent`).
+     **교환** — 이 변경으로 거짓이 된 문장은 이 파일에 없어, 58행의 경위 머리(「Dropping 60s was a trade, not a
+     tightening:」)를 덜어 순증을 줄였다. 판정(30s 의 맞교환)은 남았다. -->
 <!-- 5902 → 6141 (2026-10-27): 래칫 조건 (1) — 증가분이 **기계 검증을 사 온다.** 새 「Inbound token cap」 줄은
      두 번 대조된다 — 아홉 선언이 256000 인가(`test-security-defaults.sh` 1f 축, 대조군 넷)와 이 줄의 수가
      `SD_JWT_CAP` 인가(같은 파일 4절 소유자 축). 아홉이 함께 움직여야 하는 새 값이라 이 파일이 자리다(사람 판정
@@ -55,7 +60,7 @@ Only what the nine must move **together** lives here — changing one language a
 
 ⚠️ **The JWKS minimum refetch interval defaults to 30 seconds in all nine languages.** 30s equals Nimbus's `DEFAULT_RATE_LIMIT_MIN_INTERVAL`, which makes it **the only candidate with an external justification**.
 
-⚠️ **Dropping 60s was a trade, not a tightening:** 30s halves the key-rotation recovery window but doubles how often the rate limit reopens — **twice the DoS amplification**.
+⚠️ **30s halves the key-rotation recovery window but doubles how often the rate limit reopens — twice the DoS amplification.**
 
 ⚠️ **The ceiling is not "one refetch per window" everywhere.** The six that gate it themselves (python · go · rust · php · ruby · node) allow exactly one. **Java and Kotlin allow two** — Nimbus's `RateLimitedJWKSetSource` opens each window with one request already credited. To reproduce: tighten each SDK's own rate-limit test to `<= 1` and it reports `실제 2` for a flood of 8 unresolved key ids. The JVM consumer docs must say "no more than two".
 
@@ -86,6 +91,10 @@ Change either one **in all nine at once**. The guard is `scripts/test/test-secur
 ## Inbound token cap
 
 ⚠️ **Validators reject a token over 256,000 bytes in all nine, before any decode or JWKS load** — the libraries decode before the signature (up to ≈203 B per input byte, measured 2026-10-27); the value is Microsoft.IdentityModel's default. Move all nine at once; guard: axis 1f.
+
+## Admin bearer grammar
+
+⚠️ **All nine trim SP·HTAB·CR·LF at both ends and send only a non-empty RFC 6750 `b64token`, else no request**; no provider caches a refused token, and java·kotlin·php refuse at grant one that needs trimming. Guard: axis 1g.
 
 ## Secret memory hygiene — it has a boundary (do not oversell it)
 
