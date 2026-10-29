@@ -38,8 +38,11 @@ decode_content=False)`·aio `aiter_raw`)을 받아 여기서 풀고, 그렇게 �
 본문 상한과 쓰지 않는 본문은 `admin_body.py` 가 맡는다). admin 은 자체 그랜트의
 세션(중첩 `KeycloakOpenID`)에만 걸고, 그 설치는 `admin_guard.py` 가 요청마다 다시 본다.
 
-**언제까지 읽는가.** 요청을 보낸 때부터 그 요청의 타임아웃 안에 — sync 는 읽기마다
-마감을 보고, aio 는 교환 전체를 마감으로 묶는다(`deadline.py`).
+**언제까지, 얼마나 읽는가.** 요청을 보낸 때부터 그 요청의 타임아웃 안에 — sync 는 소켓의 원문
+읽기마다 마감을 보고, aio 는 교환 전체를 마감으로 묶는다(`deadline.py`). sync 는 그 응답이 소켓에서
+읽히는 바이트도 묶는다 — 이 상한 + 틀 몫(`wire.FRAMING_ALLOWANCE_BYTES` — 상태 줄·헤더·청크 틀·
+트레일러)이다(`wire.py`). 본문 상한은 푼 본문만 세므로, 그것만으로는 4 KiB 트레일러 줄 4,096 개(16
+MiB)를 끝까지 읽었다(등록부 `response-framing-unbounded` F3a).
 """
 
 from __future__ import annotations
@@ -52,13 +55,16 @@ import httpx
 import requests
 
 from ..exceptions import KeycloakConfigError
-from .deadline import deadline, reader, request_seconds, seconds, within
+from .deadline import reader, request_seconds, seconds, within
+from .wire import FRAMING_ALLOWANCE_BYTES, exchange
 
 #: 토큰·introspection 응답 본문의 상한 — 푼 뒤 바이트. Keycloak 26.6 이 기본 설정으로 받는
 #: 가장 긴 bearer(65,459 바이트, 실측 2026-10-03)의 16 배라 서버가 받는 토큰은 거부하지 않는다.
 #: ⚠️ 아홉 언어가 함께 움직이는 값이고 교차 언어 가드가 이 리터럴을 읽는다 — 식(`1 << 20`)으로
 #: 바꾸지 말 것.
 TOKEN_RESPONSE_MAX_BYTES = 1_048_576
+#: sync 응답 하나가 소켓에서 읽혀도 되는 바이트 — 본문 상한 + 틀 몫(`wire.py`).
+_WIRE_BUDGET = TOKEN_RESPONSE_MAX_BYTES + FRAMING_ALLOWANCE_BYTES
 
 #: sync 한 번 읽기의 상한. ~2 KiB 응답에 상한 크기 버퍼를 잡지 않게 작게 둔다.
 _CHUNK = 16_384
@@ -123,14 +129,14 @@ def capped_send(send: _SyncSend) -> _SyncSend:
     def capped(request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:
         if kwargs.get("stream"):
             return send(request, **kwargs)
-        check = deadline(seconds(kwargs.get("timeout")))
         request.headers["Accept-Encoding"] = _ACCEPT_ENCODING
-        response = send(request, **{**kwargs, "stream": True})
-        try:
-            body = _read(response, _kind(request.path_url), check)
-        except BaseException:
-            response.close()  # 남은 본문을 읽지 않고 연결째 버린다
-            raise
+        with exchange(seconds(kwargs.get("timeout")), _WIRE_BUDGET) as (check, _lift):
+            response = send(request, **{**kwargs, "stream": True})
+            try:
+                body = _read(response, _kind(request.path_url), check)
+            except BaseException:
+                response.close()  # 남은 본문을 읽지 않고 연결째 버린다
+                raise
         # requests 가 `content` 에서 하는 일 그대로다 — 다 읽은 본문을 응답에 둔다.
         response._content = body
         response._content_consumed = True

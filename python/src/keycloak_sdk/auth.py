@@ -30,6 +30,7 @@ from ._internal.redirects import harden_openid
 from ._internal.retries import forbid_retries
 from ._internal.secrets import mask
 from ._internal.token_cap import cap_openid
+from ._internal.wire import bound_reads
 from .config import KeycloakConfig
 from .exceptions import (
     KeycloakAuthError,
@@ -111,6 +112,9 @@ class AuthClient:
         # 처리됐을지 모르는 요청(그랜트·introspect·logout)을 저절로 다시 보내지 않는다 —
         # python-keycloak 의 어댑터는 POST 까지 다시 보낸다(`_internal/retries.py`).
         forbid_retries(self._openid)
+        # 응답은 요청 타임아웃 안에, 본문 상한 + 틀 몫까지만 소켓에서 읽는다 — 머리·청크 틀·
+        # 트레일러까지 원문 읽기마다 본다(`_internal/wire.py`).
+        bound_reads(self._openid)
         self._jwks_keys = JwksKeyCache()  # 읽는 길은 `fresh()` 하나다(`_internal/jwks_cache.py`)
         self._jwks_lock = threading.Lock()
         self._jwks_forced_at = float("-inf")  # 마지막 강제 재조회 시각(monotonic)

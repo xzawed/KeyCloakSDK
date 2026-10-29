@@ -26,7 +26,9 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
    `bearer.py`).
    마지막이 주입·토큰 세터로 **그랜트를 거치지 않고** 실린 bearer 를 잡는다. `raw_*` 는 그 갱신
    직후 보내고, 401 재시도는 방금 그랜트(검사됨)가 실은 토큰으로만 보낸다. 그 밖에 두 sync 세션의
-   어댑터마다 `max_retries` 를 재시도 없는 정책으로 둔다(`retries.py`) — 어댑터 수만큼의 자리다.
+   어댑터마다 `max_retries` 를 재시도 없는 정책으로 두고(`retries.py`), HTTPAdapter 마다 풀
+   관리자의 `connection_from_pool_key`·`proxy_manager_for`(와 이미 있는 프록시 관리자)를 응답
+   읽기의 마감·예산 훅으로 감싼다(`wire.py`) — 어댑터 수만큼의 자리다.
 3. 설치는 전부이거나 아무것도 아니다 — 먼저 다 계획(검증)하고, 걸다가 하나라도 실패하면 건
    것을 되돌린 뒤 `KeycloakConfigError` 로 거부한다. 그래프를 읽다 난 실패는 무엇을 던졌든
    그 거부이고, 훅은 되돌림과 같은 통로(인스턴스 `__dict__`)로 쓰며, 설치 도중의 재진입은
@@ -64,6 +66,7 @@ from .bearer import SENDING, sendable
 from .redirects import _refuse_redirects, _require, _unsupported
 from .retries import NO_RETRY, retrying_adapters
 from .token_cap import acapped_send, capped_send
+from .wire import read_hooks
 
 #: 훅을 거는 일은 한 번에 하나 — 되돌림이 다른 스레드가 막 건 훅을 지우지 않게 한다.
 _LOCK = threading.RLock()
@@ -97,6 +100,7 @@ _SUPPORT = (
 _UNUSABLE = "send an unusable access token to the admin API"
 _UNBOUNDED = "read an unbounded token grant response into memory"
 _UNREAD = "read an unbounded admin error response, or a response body it never uses, into memory"
+_LATE = "keep an admin request waiting on a trickled response past its timeout"
 
 #: (걸 객체, 속성 이름, 걸 값, 메시지에 쓸 자리). 클래스로 두지 않는다 — 공개 뿌리에서 닿지
 #: 않는 SDK 선언은 `test_facade_dump.py` 가 면제를 요구한다.
@@ -202,6 +206,13 @@ def _plan_retries(hooks: list[_Hook], session: Any, where: str) -> None:
         hooks.append((adapter, "max_retries", NO_RETRY, f"{where}.adapters[{prefix!r}]"))
 
 
+def _plan_reads(hooks: list[_Hook], session: Any, what: str, where: str) -> None:
+    """세션의 HTTPAdapter 마다 응답 읽기의 마감·예산 훅(`wire.py`) — 소비자가 나중에 `mount` 한
+    것도, `init_poolmanager` 로 새로 생긴 풀 관리자도."""
+    for target, name, wrap, at in read_hooks(session, where):
+        _plan_wrap(hooks, target, name, what, f"{at}.{name}", wrap, _LATE)
+
+
 def _plan_wrap(
     hooks: list[_Hook],
     target: Any,
@@ -230,11 +241,14 @@ def _plan(conn: Any) -> list[_Hook]:
     rest_session = _require(conn, "_s", what=rest)
     _plan_redirects(hooks, rest_session, rest, "connection._s")
     _plan_retries(hooks, rest_session, "connection._s")
+    _plan_reads(hooks, rest_session, "admin response read", "connection._s")
     nested = _require(conn, "keycloak_openid", what=grant)
     nested_conn = _require(nested, "connection", what=grant)
     nested_session = _require(nested_conn, "_s", what=grant)
-    _plan_redirects(hooks, nested_session, grant, "connection.keycloak_openid.connection._s")
-    _plan_retries(hooks, nested_session, "connection.keycloak_openid.connection._s")
+    granted = "connection.keycloak_openid.connection._s"
+    _plan_redirects(hooks, nested_session, grant, granted)
+    _plan_retries(hooks, nested_session, granted)
+    _plan_reads(hooks, nested_session, "token grant response read", granted)
     # 그랜트 응답 본문의 크기 상한(`token_cap.py`) — 그랜트 세션 둘에만 건다. REST 세션
     # (`connection._s`)의 응답(사용자 목록 등)은 정당하게 크다.
     size, at = "token grant response size", "connection.keycloak_openid.connection"

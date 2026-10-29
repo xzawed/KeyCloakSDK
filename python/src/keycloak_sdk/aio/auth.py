@@ -30,6 +30,7 @@ from .._internal.lower import auth_failure, is_lower_failure, summarize
 from .._internal.redirects import harden_openid
 from .._internal.retries import forbid_retries
 from .._internal.token_cap import cap_openid
+from .._internal.wire import bound_reads
 from ..auth import AuthorizationUrl, _generate_pkce_pair
 from ..config import KeycloakConfig
 from ..exceptions import (
@@ -86,6 +87,9 @@ class AsyncAuthClient:
         # httpx 는 요청을 다시 보내지 않는다 — 쓰이지 않는 sync 세션의 재시도도 끈다(위와 같은
         # 심층방어, `_internal/retries.py`).
         forbid_retries(self._openid)
+        # 쓰이지 않는 sync 세션의 응답 읽기에도 마감과 바이트 예산을 건다(같은 심층방어 —
+        # `_internal/wire.py`). aio 의 마감은 교환 전체의 `asyncio.wait_for` 다(`deadline.within`).
+        bound_reads(self._openid)
         self._jwks_keys = JwksKeyCache()  # 읽는 길은 `fresh()` 하나다(sync 동형)
         # 진행 중인 JWKS fetch — 호출자가 아니라 이 인스턴스가 소유한다(`_load_jwks`).
         self._jwks_fetch: asyncio.Task[KeySet] | None = None
