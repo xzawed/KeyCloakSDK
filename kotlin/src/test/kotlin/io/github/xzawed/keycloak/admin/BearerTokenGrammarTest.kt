@@ -89,8 +89,8 @@ private fun btgRows(): List<BtgRow> =
         BtgRow("c1", "abc\u0085", BtgWant.REJECT, "abc"),
         BtgRow("nul", "abc\u0000", BtgWant.REJECT, "abc"),
         BtgRow("del", "abc\u007f", BtgWant.REJECT, "abc"),
-        BtgRow("nbsp", "abc ", BtgWant.REJECT, "abc"),
-        BtgRow("ideographic", "　abc", BtgWant.REJECT, "abc"),
+        BtgRow("nbsp", "abc" + Char(0x00A0), BtgWant.REJECT, "abc"),
+        BtgRow("ideographic", Char(0x3000) + "abc", BtgWant.REJECT, "abc"),
         BtgRow("vt", "abc\u000b", BtgWant.REJECT, "abc"),
         BtgRow("lone-surrogate", "abc\ud800", BtgWant.REJECT, "abc"),
     )

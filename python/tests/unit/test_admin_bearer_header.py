@@ -117,7 +117,7 @@ _TABLE: dict[str, tuple[str, str | None, str | None]] = {
     "nul": ("abc\x00", None, "abc"),
     "del": ("abc\x7f", None, "abc"),
     "nbsp": ("abc\xa0", None, "abc"),
-    "ideographic": ("　abc", None, "abc"),
+    "ideographic": (chr(0x3000) + "abc", None, "abc"),
     "vt": ("abc\x0b", None, "abc"),
     "lone-surrogate": ("abc\ud800", None, "abc"),
 }

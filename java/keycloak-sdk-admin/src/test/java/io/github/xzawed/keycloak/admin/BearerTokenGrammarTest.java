@@ -77,8 +77,8 @@ class BearerTokenGrammarTest {
         new Row("c1", "abc\u0085", Want.REJECT, "abc"),
         new Row("nul", "abc\u0000", Want.REJECT, "abc"),
         new Row("del", "abc\u007f", Want.REJECT, "abc"),
-        new Row("nbsp", "abc ", Want.REJECT, "abc"),
-        new Row("ideographic", "　abc", Want.REJECT, "abc"),
+        new Row("nbsp", "abc" + (char) 0x00A0, Want.REJECT, "abc"),
+        new Row("ideographic", (char) 0x3000 + "abc", Want.REJECT, "abc"),
         new Row("vt", "abc\u000b", Want.REJECT, "abc"),
         new Row("lone-surrogate", "abc\ud800", Want.REJECT, "abc"));
   }

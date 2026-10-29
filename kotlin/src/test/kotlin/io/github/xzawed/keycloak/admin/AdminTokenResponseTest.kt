@@ -71,7 +71,7 @@ private fun atrJsonString(s: String): String =
 private fun atrPrintable(s: String): String =
     buildString {
         for (c in s) {
-            if (c < ' ' || (c >= '\u007f' && c < ' ') || c > 'ÿ') append("\\u%04X".format(c.code)) else append(c)
+            if (c < ' ' || (c >= '\u007f' && c.code < 0xA0) || c.code > 0xFF) append("\\u%04X".format(c.code)) else append(c)
         }
     }
 
