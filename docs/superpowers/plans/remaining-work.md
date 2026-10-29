@@ -69,7 +69,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
 1. 2026-10-29 판정의 수행(`grep -n '판정 2026-10-29'` 과 아래 「항목 없는 셋」) · 그다음 `response-framing-unbounded` 의 node·python · `wave4-hardening-php` 의 남은 칸.
-2. `guard-detection-surface-hand-narrowed` [H/M](attest — KNOWN_GAPS 대조는 #773) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
+2. `guard-detection-surface-hand-narrowed` [H/M](손 표 축 — 되살릴 조건) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
 3. ⚠️ **손대기 전에 전제를 잰다** — 이번에도 뒤집혔다: jwks 후보(「신선한 캐시가 없으면 센다」)는 600 초 경계에서 규칙 (4) 를 깼고, 「낡은 캐시 + 장애」는 node 하나가 아니라 node·.NET 이었고, probe.sh 초안 정규식은 지어낸 줄로 골라 실제 출력 셋을 못 맞췄다.
 
 **판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
@@ -291,8 +291,8 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
     - **여덟 언어 이식 완료(2026-09-27).** #654–#661 이고, java #658 만 병합 대기다. 언어마다 Grok 레그를 거쳤고 필수 변이 여섯은 전부 CAUGHT 였다.
       - KNOWN_GAPS 가 SDK 결함 셋을 드러냈다(#685–#688 이 닫음): `php-admin-token-error-unsanitized` · `jvm-admin-token-response-type-unchecked` · `python-admin-grant-accepts-empty-access-token`.
       - dotnet 의 로컬 고부하 일시 실패는 CI 로 가렸다(8 회 연속 초록).
-    - **다음 걸음.** skip 표지를 닫는 attest 파일(실행 ID nonce, 비-required 단계) — KNOWN_GAPS 대조는 #773, attest 설계·측정은 그 PR 본문. 판정 2026-10-29: 구현.
-<!-- known-gaps 대조(#773): scripts/check-known-gaps.mjs · 실제 트리는 비-required known-gaps-join 잡, 픽스처 자가테스트는 doc-facts. attest 측정: 최신 main 로그에 행렬이 돈 것이 보이는 레인은 java·node·rust 셋뿐이고 go 는 (cached) 재생이 있었다 · 레인 paths: 어디에도 W1 이 읽는 test-security-defaults.sh·등록부가 없다. 남은 틈: 리터럴 접두가 아닌 id(맵 키 · 앞에 낱말 · 포맷·이어 붙임)는 같은 파일에 다른 id 가 있으면 조용히 놓치고, 빈 목록을 넘겨받은 함수가 계산한 id 로 채우면 조용하다 — 둘 다 런타임 attest 만 닫는다. 맵 키 꼴 id 는 node :271 'content-type': 오탐 때문에 기각(PHP 밖 언어가 id 키 묶음을 쓰면 선언문 안으로 좁혀 되살린다). -->
+    - ✅ **attest(판정 2026-10-29 · 측정은 PR 본문).** 행렬이 모든 단언 뒤에만 `<lang>.json` 을 쓰고 레인이 같은 nonce 로 `scripts/check-hp-attest.mjs` 를 돌린다(비-required) — 필터로 빠지면 1.
+<!-- known-gaps 대조(#773): scripts/check-known-gaps.mjs · 실제 트리는 비-required known-gaps-join 잡, 픽스처 자가테스트는 doc-facts. 정적 대조의 남은 틈 둘(리터럴 접두가 아닌 id · 넘겨받은 함수가 채운 목록)은 attest 의 knownGaps(런타임 값)가 닫는다. 남은 것: 레인 paths: 에 W1 이 읽는 test-security-defaults.sh·등록부가 없다 · 레인에서 attest 단계를 지워도 아무것도 울지 않는다(배선 대조 없음). 맵 키 꼴 id 는 node :271 'content-type': 오탐 때문에 기각(PHP 밖 언어가 id 키 묶음을 쓰면 선언문 안으로 좁혀 되살린다). -->
     - **Go 재는 명령.** `go -C go test -run TestHostilePathMatrix -v ./...` — 판정표와 요약이 찍힌다. 변이는 모두 `CAUGHT` 였다: nonce 비교 삭제 · 백오프 우회 · 빈 access_token 검사 삭제 · 캐시 선가열 · 적대 응답을 정상으로 교체 · 검사 없는 새 grant 메서드 · 서명 검증 생략 · 원인 스크럽 우회 · nonce 클레임 누락 허용.
     - ⚠️ **잴 때 함정 둘.**
       - 문자열 인자는 가짜 IdP 키로 **서명한 JWS** 여야 한다. 평문이면 `Validate` 가 요청 전에 실패해 `JWKS_FETCH` 가 빈다.
