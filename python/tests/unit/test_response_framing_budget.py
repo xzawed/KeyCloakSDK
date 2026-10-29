@@ -252,6 +252,18 @@ def _report(sdk: str, lane: str, err: BaseException | None, read: int, elapsed: 
     print(f"[WireBudget] {sdk} {lane} F3a -> {name} | read {read} B | {elapsed * 1000:.0f} ms")
 
 
+def _why(err: BaseException | None) -> str:
+    """실패의 원인 사슬 전부(`__cause__`·`__context__`) — python-keycloak 은 `get` 에서 난 예외를
+    무엇이든 「Can't connect to server」로 감싸므로, 대조군이 실패하면 그 아래를 봐야 한다."""
+    chain: list[str] = []
+    seen: set[int] = set()
+    while err is not None and id(err) not in seen:
+        seen.add(id(err))
+        chain.append(f"{type(err).__module__}.{type(err).__qualname__}: {err}")
+        err = err.__cause__ or err.__context__
+    return " <- ".join(chain)
+
+
 @pytest.mark.parametrize("lane", list(LANES))
 def test_trailer_lines_past_the_wire_budget_fail_the_request(
     lane: str, read_bytes: list[int]
@@ -276,7 +288,7 @@ def test_control_an_admin_success_body_has_no_wire_budget(read_bytes: list[int])
     with _idp(USER, b"200 OK") as idp:
         result, err, elapsed = _call_sync("admin", idp.url)
     _report("sync", "admin success", err, read_bytes[0], elapsed)
-    assert err is None, repr(err)
+    assert err is None, _why(err)
     assert result == {"id": "x", "username": "alice"}
     assert read_bytes[0] > len(TRAILERS), read_bytes[0]
 

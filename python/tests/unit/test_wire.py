@@ -21,6 +21,7 @@ from typing import Any
 
 import pytest
 import requests
+import urllib3
 from keycloak import KeycloakOpenID
 from requests.adapters import BaseAdapter
 
@@ -443,6 +444,10 @@ def test_a_trickled_connect_response_is_metered_too() -> None:
 #: `readline()` 으로 길이 제한 없이 읽는다(urllib3 2.7.0 `_update_chunk_length`).
 _EXTENSION = 16 << 20
 
+#: urllib3 2.8.0 부터는 그 크기 줄을 urllib3 가 스스로 65,536 에서 끊는다(CVE-2026-97689 의 수정 —
+#: `response.py` `_MAX_CHUNK_LINE_LENGTH`). 대조군은 판에 따라 다른 것을 본다(아래 시험).
+_URLLIB3_BOUNDS_CHUNK_LINE = tuple(int(p) for p in urllib3.__version__.split(".")[:2]) >= (2, 8)
+
 
 def _extended() -> list[tuple[float, bytes]]:
     head = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2;x="
@@ -470,7 +475,8 @@ def test_urllib3s_own_chunk_parser_is_bounded_by_the_wire_budget(
 ) -> None:
     """urllib3 의 `read_chunked` 는 크기 줄을 길이 제한 없이 버퍼에 담는다 — 예산이 걸린
     교환에서는 예산 + 1 바이트를 읽은 자리에서 끊는다(파서가 무엇이든 원문 읽기는 이 모듈을
-    지난다). 대조군(예산 없는 세션): 16 MiB 줄을 끝까지 읽는다. 읽은 바이트는 계량
+    지난다). 대조군(예산 없는 세션): urllib3 2.8.0 아래에서는 16 MiB 줄을 끝까지 읽고, 그
+    위에서는 urllib3 가 스스로 끊는다(`_URLLIB3_BOUNDS_CHUNK_LINE`). 읽은 바이트는 계량
     아래(`SocketIO.readinto`)에서 센다 — 서버는 `recv` 로 읽어 그 셈에 들지 않는다."""
     budget = 1_048_576 + FRAMING_ALLOWANCE_BYTES
     seen = [0]
@@ -497,5 +503,10 @@ def test_urllib3s_own_chunk_parser_is_bounded_by_the_wire_budget(
     print(f"[Wire] urllib3 read_chunked hooked={hooked} read {seen[0]} B")
     if hooked:
         assert error is not None and seen[0] <= budget + 1, seen[0]
+    elif _URLLIB3_BOUNDS_CHUNK_LINE:
+        # 2.8.0 이상: 예산 없는 세션에서도 urllib3 가 끊는다 — 끊은 것이 예산이 아니라
+        # urllib3 다(예산보다 적게 읽고 urllib3 의 ProtocolError). 판정은 위의 hooked 칸이다.
+        cut_by_urllib3 = isinstance(error, urllib3.exceptions.ProtocolError)
+        assert cut_by_urllib3 and seen[0] < budget, (error, seen[0])
     else:
         assert error is None and body == b"{}" and seen[0] > _EXTENSION
