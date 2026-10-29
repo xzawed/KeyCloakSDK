@@ -160,6 +160,13 @@ jobs:
         # 빨개지는 것은 그 셋을 고친 PR 뿐이다. 실제 트리 대조는 아래 비-required `known-gaps-join` 잡이다.
         run: sh scripts/test/test-check-known-gaps.sh
 
+      - name: 적대 경로 행렬 attest 대조 가드 자가테스트(FAIL 사유마다 1 · 못 읽으면 2 · 픽스처만)
+        # 아홉 레인이 단위 테스트 단계 바로 뒤에 돌리는 `check-hp-attest.mjs`(행렬이 그 실행에서 실제로 돌았다는 attest
+        # 파일 대조)의 자가테스트다. ⚠️ required 안에 두어도 안전한 이유는 위 known-gaps 와 같다: 커밋된 픽스처
+        # (`scripts/test/fixtures/hp-attest/`)만 읽고 실제 행렬·실제 등록부·레인 산출물은 읽지 않는다. 실제 attest 대조는
+        # 레인의 비-required 단계다(그 레인의 `paths:` 뒤라 이 가드만 고친 PR 에서는 돌지 않는다 — 그래서 여기서 판정을 잰다).
+        run: sh scripts/test/test-check-hp-attest.sh
+
       - name: JVM 바이트코드 하한 가드 자가테스트(위반을 실제로 잡는지 · 0개를 훑고 통과하지 않는지)
         # 두 JVM 레인은 JDK 21 로 빌드하고 17 을 방출한다. 그 설정 한 줄이 빠지면 빌드는 성공하고
         # CI(21에서 돈다)도 초록인데 major 65 가 나가서 JDK 17 소비자만 죽는다 — 산출물을 직접

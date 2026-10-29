@@ -1,0 +1,9 @@
+{
+  "lang": "go",
+  "nonce": "4242.1.build.0",
+  "rows": 0,
+  "classes": { "CODE_EXCHANGE": 0, "TOKEN_GRANT": 0, "JWKS_FETCH": 0, "OTHER": 0, "NONE": 0, "UNDETERMINED": 0 },
+  "w3": 40,
+  "w1": true,
+  "knownGaps": []
+}

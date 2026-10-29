@@ -602,6 +602,23 @@ export function parseRegistry(text) {
   return { byId, open, closed }
 }
 
+// 등록부 판독기는 하나다 — `check-hp-attest.mjs`(행렬이 **런타임에** 가진 known-gap id 대조)도 이것을 부른다.
+// 사본을 두면 두 판독기가 체크박스 문법을 따로 배우고, 한쪽만 고쳐진 날 같은 id 가 두 가드에서 다르게 읽힌다.
+export function readRegistry(root) {
+  const p = join(root, REGISTRY)
+  if (!existsSync(p)) throw new Fatal('등록부 파일이 없다')
+  return parseRegistry(readFileSync(p, 'utf8'))
+}
+
+// id 하나의 등록부 상태 — open · closed · unknown(체크박스 표기를 모른다) · unregistered · duplicate(둘 이상 — 열림/닫힘을
+// 가를 수 없다). 판정(drift 인지 판정 불가인지)은 부르는 쪽이 정한다.
+export function registryState(reg, id) {
+  const hits = reg.byId.get(id)
+  if (!hits) return { state: 'unregistered' }
+  if (hits.length > 1) return { state: 'duplicate', lines: hits.map((h) => h.line) }
+  return { state: hits[0].state, line: hits[0].line }
+}
+
 // ── 트리 ───────────────────────────────────────────────────────────────────────────────
 // 언어 집합은 손으로 적지 않는다 — 이 저장소의 파생 규칙(`df_tree_langs`)을 대상 트리에 적용한다.
 function deriveLangs(root) {
@@ -632,9 +649,7 @@ function main() {
 
   let reg = null
   try {
-    const p = join(root, REGISTRY)
-    if (!existsSync(p)) throw new Fatal('등록부 파일이 없다')
-    reg = parseRegistry(readFileSync(p, 'utf8'))
+    reg = readRegistry(root)
   } catch (e) {
     if (!(e instanceof Fatal)) throw e
     fails.push(['-', REGISTRY, e.message])
@@ -656,14 +671,14 @@ function main() {
       for (const r of g.refs) {
         nRefs++
         if (!reg) continue
-        const hits = reg.byId.get(r.id)
+        const s = registryState(reg, r.id)
         const where = `${rel}:${r.line}`
-        if (!hits) drifts.push(`UNREGISTERED ${lang} ${where} ${r.id} — 등록부에 그런 항목이 없다`)
-        else if (hits.length > 1)
-          fails.push([lang, where, `id ${r.id} 가 등록부에 ${hits.length}번 있다(줄 ${hits.map((h) => h.line).join(', ')}) — 열림/닫힘을 가를 수 없다`])
-        else if (hits[0].state === 'unknown') fails.push([lang, where, `id ${r.id} 의 등록부 상태 표기를 모른다(줄 ${hits[0].line})`])
-        else if (hits[0].state === 'closed') drifts.push(`CLOSED ${lang} ${where} ${r.id} — 등록부 ${hits[0].line}행에서 닫혔는데 틈으로 남아 있다`)
-        else console.log(`OPEN ${lang} ${where} ${r.id} — 등록부 ${hits[0].line}행`)
+        if (s.state === 'unregistered') drifts.push(`UNREGISTERED ${lang} ${where} ${r.id} — 등록부에 그런 항목이 없다`)
+        else if (s.state === 'duplicate')
+          fails.push([lang, where, `id ${r.id} 가 등록부에 ${s.lines.length}번 있다(줄 ${s.lines.join(', ')}) — 열림/닫힘을 가를 수 없다`])
+        else if (s.state === 'unknown') fails.push([lang, where, `id ${r.id} 의 등록부 상태 표기를 모른다(줄 ${s.line})`])
+        else if (s.state === 'closed') drifts.push(`CLOSED ${lang} ${where} ${r.id} — 등록부 ${s.line}행에서 닫혔는데 틈으로 남아 있다`)
+        else console.log(`OPEN ${lang} ${where} ${r.id} — 등록부 ${s.line}행`)
       }
     } catch (e) {
       if (!(e instanceof Fatal) && !(e instanceof LexError) && !e.status) throw e
