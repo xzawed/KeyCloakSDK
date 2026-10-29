@@ -13,7 +13,7 @@ import org.keycloak.representations.idm.GroupRepresentation
 public class GroupsResource internal constructor(
     private val delegate: org.keycloak.admin.client.resource.GroupsResource,
 ) {
-    /** 그룹 생성 후 응답 Location 헤더에서 신규 그룹 id를 추출해 반환한다. */
+    /** Creates a group, then extracts the new group's id from the response's Location header and returns it. */
     public suspend fun create(representation: GroupRepresentation): String =
         adminCall {
             val response = delegate.add(representation)
@@ -32,9 +32,9 @@ public class GroupsResource internal constructor(
     ): List<GroupRepresentation> = adminCall { delegate.groups(first, max) }
 
     /**
-     * id로 주소를 잡아 그룹을 갱신한다. representation.name에 새 이름을 주면 rename이다.
+     * Updates the group, addressed by id. Giving a new name in representation.name makes it a rename.
      *
-     * ⚠️ 경로(id)와 body(representation)를 합치지 말 것 — 합치면 rename이 조용한 no-op이 된다.
+     * ⚠️ Do not merge the path (id) and the body (representation) — merging them turns a rename into a silent no-op.
      */
     public suspend fun update(
         id: String,
