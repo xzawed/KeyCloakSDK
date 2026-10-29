@@ -98,6 +98,11 @@ func (p *clientCredentialsProvider) Token(ctx context.Context) (string, error) {
 		if err != nil {
 			return nil, err
 		}
+		// A source that breaks its contract with (nil, nil) must not crash the process: DoChan re-panics a panicking
+		// function on a fresh goroutine, where no caller can recover it.
+		if ts == nil {
+			return nil, &AuthError{Msg: "token source returned no token"}
+		}
 		// Asked before caching, so an unusable token is not served until it expires: every admin call would refuse it.
 		tok, ok := sendableBearer(ts.AccessToken)
 		if !ok {
