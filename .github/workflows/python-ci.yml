@@ -2,8 +2,8 @@ name: Python CI
 on:
   # `scripts/integration-coverage.*` — integration 잡의 리포트가 그 둘로 돈다. 리포트 로직·핀만 고친 PR 에서도
   # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다).
-  push: { branches: [main], paths: ['python/**', '.github/workflows/python-ci.yml', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
-  pull_request: { branches: [main], paths: ['python/**', '.github/workflows/python-ci.yml', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
+  push: { branches: [main], paths: ['python/**', '.github/workflows/python-ci.yml', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'scripts/check-hp-attest.mjs'] }
+  pull_request: { branches: [main], paths: ['python/**', '.github/workflows/python-ci.yml', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'scripts/check-hp-attest.mjs'] }
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:
