@@ -182,7 +182,7 @@ def test_jwks_is_not_poisoned_by_a_redirect(trap: Trap) -> None:
         client.validate("not.a.real.token")
 
     assert trap.hits == []
-    assert client._jwks_cache is None, "공격자 JWKS가 캐시됐다"
+    assert client._jwks_keys.fresh() is None, "공격자 JWKS가 캐시됐다"
 
 
 def test_logout_would_have_reported_success(trap: Trap) -> None:

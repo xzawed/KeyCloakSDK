@@ -401,7 +401,7 @@ async def test_exchange_and_validate_share_one_jwks_store(ajwks):
 
     await client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
     assert ajwks.call_count == 1
-    assert client._jwks_cache is not None  # 교환이 채운 것이 **이** 저장소다
+    assert client._jwks_keys.fresh() is not None  # 교환이 채운 것이 **이** 저장소다
     await client.validate(access)
     assert ajwks.call_count == 1
 
@@ -677,7 +677,7 @@ async def test_validate_rejects_a_token_over_the_cap_without_a_jwks_request(ajwk
         await client.validate("a" * (JWT_MAX_BYTES - 1) + "..")
 
     ajwks.assert_not_called()
-    assert client._jwks_cache is None
+    assert client._jwks_keys.fresh() is None
 
 
 async def test_validate_lets_a_token_at_the_cap_through_to_the_jwks_load_and_decoder(ajwks):

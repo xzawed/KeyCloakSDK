@@ -88,6 +88,6 @@ async def test_async_jwks_is_not_poisoned_by_a_redirect(trap: Trap) -> None:
         await client.validate("not.a.real.token")
 
     assert trap.hits == [], "SDK 가 리다이렉트 대상으로 요청을 보냈다"
-    assert client._jwks_cache is None, "공격자 JWKS 가 캐시됐다"
+    assert client._jwks_keys.fresh() is None, "공격자 JWKS 가 캐시됐다"
     assert "307" in str(exc_info.value)
     await client.aclose()
