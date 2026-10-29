@@ -2109,10 +2109,12 @@ fn attest(rows: usize, counts: &BTreeMap<&str, usize>, w3: usize, w1: bool) {
     .iter()
     .map(|c| (c.to_string(), json!(counts.get(c).copied().unwrap_or(0))))
     .collect();
-    let gaps: BTreeSet<&str> = KNOWN_GAPS
-        .iter()
-        .map(|(_, v)| v.split(':').next().unwrap_or("").trim())
-        .collect();
+    // ⚠️ `let gaps = KNOWN_GAPS` 다음 줄에 `.iter()` 를 잇는 모양으로 쓰지 말 것 — check-known-gaps.mjs 는 줄 끝의
+    // `= KNOWN_GAPS` 를 별칭(빈 선언을 다른 이름으로 채우는 자리)으로 읽어 이 행렬을 판정 불가로 떨어뜨린다(실측).
+    let mut gaps = BTreeSet::new();
+    for (_, why) in KNOWN_GAPS {
+        gaps.insert(why.split(':').next().unwrap_or("").trim());
+    }
     let body = json!({
         "lang": "rust",
         "nonce": std::env::var("HP_ATTEST_NONCE").unwrap_or_default(),
