@@ -30,26 +30,30 @@ func (t *TokenSet) IsExpired(nowSec, skewSec int64) bool {
 	return nowSec+skewSec >= t.ExpiresAt
 }
 
-// ⚠️ **값 리시버여야 한다.** 포인터 리시버로 달면 `TokenSet` 값은 fmt.Stringer 를 만족하지
-// 않아 `fmt.Printf("%v", ts)` 가 필드를 그대로 찍는다 — 실측(수정 전): 값은 access/refresh
-// 토큰을 원문으로 냈고 포인터만 마스킹됐다. 값 리시버면 값과 포인터가 **둘 다** 마스킹된다.
+// ⚠️ **This must be a value receiver.** With a pointer receiver a `TokenSet` value does not satisfy
+// fmt.Stringer, so `fmt.Printf("%v", ts)` prints the fields as they are — measured (before the fix):
+// the value printed the access/refresh tokens verbatim and only the pointer was masked. With a value
+// receiver the value and the pointer are **both** masked.
 func (t TokenSet) String() string {
 	return fmt.Sprintf("TokenSet{TokenType:%q, ExpiresIn:%d, AccessToken:%s, RefreshToken:%s}",
 		t.TokenType, t.ExpiresIn, mask(t.AccessToken), mask(t.RefreshToken))
 }
 
-// GoString 은 `%#v` 의 훅이다(`GoStringer`). ⚠️ `%#v` 는 `Stringer` 를 **쓰지 않고** Go 문법
-// 표현을 만들어 필드를 직접 찍으므로, 위 `String()` 의 마스킹이 닿지 않는다(실측 2026-09-12).
-// ⚠️ 이 훅은 `%#v` **만** 바꾼다 — `%v`·`%+v`·`%s` 는 그대로 `String()` 을 탄다(대조군이 고정).
-// ⚠️ `json.Marshal` 은 별개 경로이고 여기서 막지 않는다(왕복이라 `***` 저장이 더 나쁘다).
+// GoString is the `%#v` hook (`GoStringer`). ⚠️ `%#v` does **not use** `Stringer`; it builds a
+// Go-syntax representation and prints the fields directly, so the masking in `String()` above does not
+// reach it (measured 2026-09-12). ⚠️ This hook changes **only** `%#v` — `%v`/`%+v`/`%s` still go
+// through `String()` (a control test pins this). ⚠️ `json.Marshal` is a separate path and is not
+// blocked here (it round-trips, so storing `***` is worse).
 func (t TokenSet) GoString() string { return t.String() }
 
-// LogValue 는 `log/slog` 의 마스킹 훅이다. JSONHandler 는 Stringer 를 타지 않고 리플렉션으로
-// 필드를 직렬화하므로 String() 만으로는 구조화 로그가 원문을 낸다(실측 확인).
+// LogValue is the `log/slog` masking hook. JSONHandler does not go through Stringer and serializes
+// the fields by reflection, so with String() alone a structured log writes them verbatim (confirmed
+// by measurement).
 //
-// ⚠️ 여기에 `MarshalJSON` 을 다는 것은 **틀린 선택이다.** 그러면 소비자가 TokenSet 을 세션·캐시에
-// 직렬화해 왕복시킬 때 마스킹된 값이 저장된다 — .NET 이 자기 converter 의 Read 를 throw 로
-// 막아야 했던 이유가 그것이다. LogValuer 는 로깅 경로만 바꾸고 왕복을 깨지 않는다.
+// ⚠️ Adding `MarshalJSON` here is **the wrong choice.** Then, when a consumer serializes a TokenSet
+// into a session or cache and round-trips it, the masked values are stored — that is why .NET had to
+// block its own converter's Read with a throw. LogValuer changes only the logging path and does not
+// break the round trip.
 func (t TokenSet) LogValue() slog.Value { return slog.StringValue(t.String()) }
 
 // tokenSetFromToken maps an x/oauth2 token (+ extras) to a TokenSet.
@@ -108,20 +112,22 @@ type AuthorizationRequest struct {
 	Nonce        string
 }
 
-// ⚠️ 이 타입에는 오래 String() 이 없었다 — 그래서 `fmt.Printf("%v", req)` 가 PKCE CodeVerifier 를
-// 원문으로 찍었고, CreateAuthorizationRequest 는 **값**을 돌려주므로 그것이 소비자가 손에 쥐는
-// 바로 그 값이다. CodeVerifier 는 코드 교환의 소유 증명 비밀이라, 인가 코드를 훔친 공격자가
-// 로그에서 이 값을 얻으면 흐름을 완성한다.
-// URL/State/Nonce 는 가리지 않는다 — Rust 의 Debug impl 과 동형이다(거기서도 code_verifier 만 가린다).
+// ⚠️ For a long time this type had no String() — so `fmt.Printf("%v", req)` printed the PKCE
+// CodeVerifier verbatim, and since CreateAuthorizationRequest returns a **value**, that is the very
+// value the consumer holds. CodeVerifier is the proof-of-possession secret of the code exchange, so an
+// attacker who stole the authorization code completes the flow if they obtain this value from a log.
+// URL/State/Nonce are not masked — isomorphic with Rust's Debug impl (only code_verifier is masked
+// there too).
 func (a AuthorizationRequest) String() string {
 	return fmt.Sprintf("AuthorizationRequest{URL:%q, State:%q, Nonce:%q, CodeVerifier:%s}",
 		a.URL, a.State, a.Nonce, mask(a.CodeVerifier))
 }
 
-// GoString 은 `%#v` 의 훅이다(`GoStringer`). ⚠️ `%#v` 는 `Stringer` 를 **쓰지 않고** Go 문법
-// 표현을 만들어 필드를 직접 찍으므로, 위 `String()` 의 마스킹이 닿지 않는다(실측 2026-09-12).
-// ⚠️ 이 훅은 `%#v` **만** 바꾼다 — `%v`·`%+v`·`%s` 는 그대로 `String()` 을 탄다(대조군이 고정).
-// ⚠️ `json.Marshal` 은 별개 경로이고 여기서 막지 않는다(왕복이라 `***` 저장이 더 나쁘다).
+// GoString is the `%#v` hook (`GoStringer`). ⚠️ `%#v` does **not use** `Stringer`; it builds a
+// Go-syntax representation and prints the fields directly, so the masking in `String()` above does not
+// reach it (measured 2026-09-12). ⚠️ This hook changes **only** `%#v` — `%v`/`%+v`/`%s` still go
+// through `String()` (a control test pins this). ⚠️ `json.Marshal` is a separate path and is not
+// blocked here (it round-trips, so storing `***` is worse).
 func (a AuthorizationRequest) GoString() string { return a.String() }
 
 func (a AuthorizationRequest) LogValue() slog.Value { return slog.StringValue(a.String()) }
