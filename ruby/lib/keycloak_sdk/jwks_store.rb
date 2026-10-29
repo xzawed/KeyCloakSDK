@@ -15,13 +15,13 @@ module KeycloakSdk
     # load **finished**. Once it has fully elapsed the cache is the same as cold: the next lookup fetches again with
     # the same single flight · the same failure backoff, and if that fails it ends with that error. ⚠️ It does not
     # fall back to the stale set — not even during an IdP outage (the SDK cannot tell an unreachable JWKS from
-    # withdrawn keys). A successful forced refetch also restarts the lifetime. Common to all nine languages.
+    # withdrawn keys). A successful forced refetch also restarts the lifetime. Common to the nine languages.
     JWKS_MAX_AGE_SECONDS = 300
 
     # ⚠️ **Backoff for a failed fetch — a different axis from `min_refetch`.**
     # `min_refetch` (30 seconds) holds back a flood of unresolved kids *once the cache is filled*. The two below
     # hold back **the case where the cache is empty and the fetch keeps failing**. There was no gate there, so
-    # measured, 20 validations sent 20 IdP requests straight through (2026-09-04 · the same in 7 languages).
+    # as measured, 20 validations sent 20 IdP requests straight through (2026-09-04 · the same in 7 languages).
     #
     # ⚠️ **Do not reuse `min_refetch` (30 seconds) here** — a single transient 503 would become "no token can be
     # validated for 30 seconds". So it starts short, grows exponentially and has a cap.

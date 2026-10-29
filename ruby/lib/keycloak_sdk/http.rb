@@ -386,7 +386,7 @@ module KeycloakSdk
       resp
     end
 
-    # For the duration of one admin request's transport, has that response's body settled (`SETTLE`) — with `unread`
+    # During the transport of one admin request, lets that response's body be settled (`SETTLE`) — with `unread`
     # it is a facade write, so a 2xx body is not read.
     def settling(unread)
       previous = Thread.current[SETTLE]

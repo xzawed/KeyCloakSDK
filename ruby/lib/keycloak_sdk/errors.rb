@@ -53,7 +53,7 @@ module KeycloakSdk
 
   # The copy attached as an SDK error's `cause` in place of the original underlying exception — it carries over **only
   # the class-name chain and the backtrace**. The boundary attaches it with `raise …, cause: RedactedCause.new(e)`
-  # (it is not a `KeycloakSdk::Error` — it only ever sits in the cause slot).
+  # (it is not a `KeycloakSdk::Error` — it sits only in the cause slot).
   #
   # ⚠️ In Ruby, a `raise` inside `rescue` attaches the exception being handled as `cause` **automatically**, and
   # `full_message` (uncaught exceptions · loggers) prints the messages of that chain. Underlying exceptions carry the

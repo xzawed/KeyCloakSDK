@@ -9,7 +9,7 @@ module KeycloakSdk
     # amplification cap, and the nine languages are aligned on the same value —
     # `scripts/test/test-security-defaults.sh` checks the nine languages' code and the consumer docs together.
     #
-    # ⚠️ Do not write this number anywhere else again. It used to be written **twice** — 30.0 here and 10.0 in
+    # ⚠️ Do not restate this number anywhere else. It used to be written **twice** — 30.0 here and 10.0 in
     # `JwksStore#initialize`. `JwksStore` is an ordinary public class, so a consumer who constructed it directly
     # (without going through the facade) got 10 seconds instead of the 30 the docs state and hit **the IdP 3 times as
     # often**. The Korean README had copied that 10.0 as is, too (2026-08-12 docs audit → 2026-08-13 Task D1).
