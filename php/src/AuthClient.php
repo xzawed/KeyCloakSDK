@@ -89,7 +89,7 @@ final class AuthClient
      * When `$expectedNonce` is given (the nonce createAuthorizationRequest() returned), the response's id_token is
      * validated with JwtValidator through signature · iss · aud · exp, and then its nonce claim is compared — OIDC nonce
      * replay protection. The id_token's aud is checked against `clientId` (OIDC Core §3.1.3.7) — `expectedAudience`
-     * applies only to validate()'s access token. A mismatch, an absence or a validation failure is always rejected
+     * applies only to validate()'s access token. A mismatch, an absence and a validation failure are all rejected
      * (fail-closed). With null, id_token validation is skipped (a pattern common to eight languages — it is not made
      * mandatory).
      */

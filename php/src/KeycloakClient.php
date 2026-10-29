@@ -11,7 +11,7 @@ use Xzawed\Keycloak\Http\HttpOptions;
 use Xzawed\Keycloak\Jwks\JwksStore;
 
 /**
- * Unified entry point: auth is assembled at once (no network); admin is created lazily on the first admin() call
+ * Unified entry point: auth is assembled eagerly (no network); admin is created lazily on the first admin() call
  * (needs the secret) and cached.
  *
  * Network-boundary module — omitted from the coverage gate (phpunit.xml). The full flow is verified by the Task 11

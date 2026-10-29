@@ -29,7 +29,7 @@ use Xzawed\Keycloak\Internal\TokenResponseCap;
  * at the boundary.
  *
  * ⚠️ The underlying exception is attached not as the original but as a `SanitizedCause` copy, and the message is built here
- * (the same rule as `AuthClient` — the rationale is `SanitizedCause`'s docblock). With the original attached, when admin's
+ * (the same rule as `AuthClient` — the rationale is in `SanitizedCause`'s docblock). With the original attached, when admin's
  * token grant (fschmtt performs it) or an admin request failed, the response-body summary in Guzzle's message and the
  * arguments of the underlying frames — the token response body, the `client_secret` form, the `Bearer` header, the
  * representation sent — were printed through `getMessage()` · `(string)$e` · `var_dump` · `print_r` (measured 2026-10-02).
@@ -37,8 +37,8 @@ use Xzawed\Keycloak\Internal\TokenResponseCap;
  * it has the `OAuthErrorCode` shape). The input the facade sends (representations, search criteria) is hidden by each
  * resource method with `#[\SensitiveParameter]` — identifiers that go into the path remain, as in the cause's URL.
  *
- * ⚠️ fschmtt 0.44 wraps **every** failure of the version detection it performs before each resource access while it does
- * not yet know the version (`GET /admin/serverinfo` — the first admin token grant happens there) in a
+ * ⚠️ fschmtt 0.44 wraps **every** failure of the version detection it runs first on each resource access made before the
+ * version is known (`GET /admin/serverinfo` — the first admin token grant happens there) in a
  * `VersionDetectionException` and attaches it as the cause (`Keycloak::fetchVersion`). While wrapped, a token-grant 401,
  * a transport failure and a cap rejection fell through to the bottom net (#750: "admin request failed unexpectedly",
  * status null). So the cause is taken out and thrown down the same ladder again —

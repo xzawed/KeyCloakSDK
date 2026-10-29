@@ -33,8 +33,8 @@ final class ClientCredentialsTokenProvider implements TokenProvider
     /**
      * ⚠️ The dump family reads the properties directly, so the cached `TokenSet` and the nested `KeycloakConfig` get
      * printed as they are (measured 2026-09-12: `var_dump($provider)` printed the access token and `clientSecret`
-     * **both verbatim**). ⚠️ **Whether there is a cache is kept** — printing `***` for an empty cache would be a false
-     * signal that "a token is held".
+     * **both verbatim**). ⚠️ **The presence or absence of the cache is kept** — printing `***` for an empty cache would
+     * be a false signal that "a token is held".
      *
      * @return array<string, mixed>
      */
