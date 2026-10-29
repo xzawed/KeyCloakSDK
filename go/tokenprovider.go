@@ -2,6 +2,8 @@ package keycloak
 
 import (
 	"context"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -10,6 +12,9 @@ import (
 
 // TokenProvider supplies access tokens to the admin facade — the only glue
 // between auth and admin. Consumers may inject a custom implementation.
+//
+// The admin facade trims SP, HTAB, CR and LF from both ends of the token it gets and sends the rest only when it is an
+// RFC 6750 bearer token (b64token); any other token fails the admin call with *AuthError before a request is made.
 type TokenProvider interface {
 	Token(ctx context.Context) (string, error)
 }
@@ -61,6 +66,10 @@ func (p *clientCredentialsProvider) GoString() string { return p.String() }
 // expiry, collapsing concurrent refreshes via single-flight. A caller whose ctx
 // ends while it waits returns at once — with the refresh's result if that is already there, else with the
 // context's error — and the refresh goes on for the others (see TokenSource).
+//
+// It caches what the admin facade would send (see TokenProvider): the source's token with SP, HTAB, CR and LF trimmed
+// from its ends. A token that is not then an RFC 6750 bearer token is not cached — the refresh fails with *AuthError and
+// the next call asks the source again.
 func NewClientCredentialsTokenProvider(src TokenSource, skewSec int64) TokenProvider {
 	return &clientCredentialsProvider{src: src, skewSec: skewSec, timeout: tokenRefreshTimeout}
 }
@@ -89,11 +98,16 @@ func (p *clientCredentialsProvider) Token(ctx context.Context) (string, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Asked before caching, so an unusable token is not served until it expires: every admin call would refuse it.
+		tok, ok := sendableBearer(ts.AccessToken)
+		if !ok {
+			return nil, &AuthError{Msg: "token source returned an access token that is not an RFC 6750 bearer token (b64token)"}
+		}
 		p.mu.Lock()
-		p.token = ts.AccessToken
+		p.token = tok
 		p.expireAt = time.Now().Unix() + max64(0, ts.ExpiresIn-p.skewSec)
 		p.mu.Unlock()
-		return ts.AccessToken, nil
+		return tok, nil
 	})
 	r, err := awaitShared(ctx, ch)
 	if err != nil {
@@ -105,19 +119,25 @@ func (p *clientCredentialsProvider) Token(ctx context.Context) (string, error) {
 	return r.Val.(string), nil
 }
 
-// bearerSendable reports whether net/http sends "Bearer "+token as a header value. It transcribes the check the
-// transport makes before anything is sent (httpguts.ValidHeaderFieldValue): no control character other than HTAB — CR,
-// LF and NUL among them — and no DEL; a byte past ASCII is carried as it is. A token that fails it never reaches the
-// server, and the transport's refusal used to come back from every admin call as an opaque *TransportError whose
-// withheld detail blamed the IdP's response (measured: admin_bearer_header_test.go). bearer_sendable_test.go checks
-// this transcription against the transport byte by byte.
-func bearerSendable(token string) bool {
-	for i := 0; i < len(token); i++ {
-		if c := token[i]; (c < 0x20 && c != '\t') || c == 0x7f {
-			return false
-		}
+// b64token is RFC 6750's bearer token: ALPHA, DIGIT, "-", ".", "_", "~", "+" and "/", then "=" padding only at the end.
+// ASCII only. In Go's syntax "$" is the end of the text, not of a line.
+var b64token = regexp.MustCompile(`^[A-Za-z0-9._~+/-]+=*$`)
+
+// sendableBearer is the bearer token grammar of all nine SDKs (registry bearer-token-grammar-divergent): SP, HTAB, CR
+// and LF are trimmed from both ends — nothing else is, not NBSP, U+3000, VT or FF — and what is left must be a non-empty
+// b64token. It returns the value "Bearer " is followed by, and whether there is one. AdminClient.token asks it before any
+// admin request is built, and clientCredentialsProvider.Token before it caches a token.
+//
+// It is narrower than the transport's rule (httpguts.ValidHeaderFieldValue), never wider. Before it, the admin lane sent
+// HTAB, SP and bytes past ASCII as they were, net/http trimmed a trailing SP or HTAB, and an empty token went out with no
+// Authorization header at all — resty drops a blank one (IsStringEmpty) — measured by bearer_grammar_test.go's rows.
+// bearer_sendable_test.go keeps every accepted byte inside the transport's rule — a token net/http refuses used to come
+// back from every admin call as an opaque *TransportError (admin_bearer_header_test.go).
+func sendableBearer(token string) (string, bool) {
+	if t := strings.Trim(token, " \t\r\n"); b64token.MatchString(t) {
+		return t, true
 	}
-	return true
+	return "", false
 }
 
 // awaitShared waits for a shared flight's result on ch, or for ctx to end. When both are ready Go's select picks

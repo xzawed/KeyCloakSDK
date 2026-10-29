@@ -2,15 +2,26 @@ package keycloak
 
 import "testing"
 
-// The SDK transcribes the transport's header rule (bearerSendable, tokenprovider.go). This keeps the transcription equal
-// to the transport for every byte, so a Go release that changes the rule fails here instead of reopening the opaque
-// error — or a token the transport would carry being refused. One transport, one server: the oracle opens one
-// connection, not one per byte (admin_bearer_header_test.go).
-func TestBearerSendableMatchesTheTransport(t *testing.T) {
+// The SDK's bearer grammar (sendableBearer, tokenprovider.go) is narrower than the transport's header rule, never wider:
+// a token it accepts is one net/http carries, so no admin call can fail inside the transport with the opaque error
+// admin_bearer_header_test.go measured. Every byte is compared with the transport once — one transport, one server: the
+// oracle opens one connection, not one per byte (admin_bearer_header_test.go). The grammar's own rows are
+// bearer_grammar_test.go's.
+func TestSendableBearerIsNoWiderThanTheTransport(t *testing.T) {
 	refused := bearerRefusedByTransport(t)
+	accepted := 0
 	for b := 0; b < 256; b++ {
-		if sendable := bearerSendable(bearerRow(byte(b))); sendable == refused[b] {
-			t.Errorf("byte %#02x: bearerSendable = %v, but the transport refused it = %v", b, sendable, refused[b])
+		_, ok := sendableBearer(bearerRow(byte(b)))
+		if ok {
+			accepted++
 		}
+		if ok && refused[b] {
+			t.Errorf("byte %#02x: sendableBearer accepts it, but the transport refuses it", b)
+		}
+	}
+	// The b64token alphabet: 26 + 26 + 10 letters and digits, and "-", ".", "_", "~", "+", "/". "=" is padding, so it is
+	// refused in the middle of a token.
+	if accepted != 68 {
+		t.Errorf("sendableBearer accepted %d bytes in the middle of a token, want the 68 of the b64token alphabet", accepted)
 	}
 }

@@ -102,7 +102,7 @@ func NewAdminClient(ctx context.Context, cfg Config, tp TokenProvider) (*AdminCl
 	gc, tr := newAdminTransport(cfg)
 	a := assembleAdmin(gc, tr, cfg, tp)
 	// Eager authentication — same contract as the default path: a provider that cannot mint a token
-	// (or mints one no header can carry) fails at construction, not at the first admin call.
+	// (or mints one that is not a bearer token — AdminClient.token) fails at construction, not at the first admin call.
 	if _, err := a.token(ctx); err != nil {
 		return nil, err
 	}
@@ -133,10 +133,7 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 		if jwt == nil || jwt.AccessToken == "" {
 			return nil, &AuthError{Msg: "client-credentials login returned no access token"}
 		}
-		// Refused here so the provider never caches it: net/http would refuse it on every admin call (bearerSendable).
-		if !bearerSendable(jwt.AccessToken) {
-			return nil, &AuthError{Msg: "client-credentials login returned an access token an HTTP header cannot carry (it holds a control character such as CR, LF or NUL)"}
-		}
+		// The provider trims the token and refuses one that is not a bearer token before caching it (sendableBearer).
 		return &TokenSet{AccessToken: jwt.AccessToken, ExpiresIn: int64(jwt.ExpiresIn)}, nil
 	}, cfg.ClockSkew)
 
@@ -159,18 +156,19 @@ func (a *AdminClient) Close() error {
 	return nil
 }
 
-// token is the bearer of every facade call and of the eager authentication. A token an HTTP header cannot carry is
-// refused before any request is built — the SDK's own provider never returns one (its login refuses it, above), a
-// consumer's can.
+// token is the bearer of every facade call, of Realms.Update's hand-rolled request and of the eager authentication: the
+// provider's token trimmed, or a refusal before any request is built when it is not a bearer token (sendableBearer). The
+// SDK's own provider never returns one it refuses (it refuses it before caching it), a consumer's can.
 func (a *AdminClient) token(ctx context.Context) (string, error) {
 	tok, err := a.tp.Token(ctx)
 	if err != nil {
 		return "", err
 	}
-	if !bearerSendable(tok) {
-		return "", &AuthError{Msg: "admin request not sent: an HTTP header cannot carry the access token (it holds a control character such as CR, LF or NUL)"}
+	bearer, ok := sendableBearer(tok)
+	if !ok {
+		return "", &AuthError{Msg: "admin request not sent: the access token is not an RFC 6750 bearer token (b64token)"}
 	}
-	return tok, nil
+	return bearer, nil
 }
 
 // call runs a gocloak call and converts its error to the SDK taxonomy. fn gets ctx with the slot in which the transport
