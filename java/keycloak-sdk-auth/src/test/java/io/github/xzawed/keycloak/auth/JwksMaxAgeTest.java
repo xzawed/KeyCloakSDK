@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -272,7 +273,7 @@ class JwksMaxAgeTest {
   private static final class Idp implements AutoCloseable {
     final AtomicInteger hits = new AtomicInteger();
     volatile int status = 200;
-    private volatile byte[] body;
+    private final AtomicReference<byte[]> body = new AtomicReference<>();
     private final com.sun.net.httpserver.HttpServer server;
 
     Idp(RSAKey... keys) throws Exception {
@@ -285,7 +286,7 @@ class JwksMaxAgeTest {
           ex.close();
           return;
         }
-        byte[] b = body;
+        byte[] b = body.get();
         ex.getResponseHeaders().add("Content-Type", "application/json");
         ex.sendResponseHeaders(200, b.length);
         try (java.io.OutputStream os = ex.getResponseBody()) {
@@ -298,7 +299,7 @@ class JwksMaxAgeTest {
     void serve(RSAKey... keys) {
       List<JWK> pub = new ArrayList<>();
       for (RSAKey k : keys) pub.add(k.toPublicJWK());
-      body = new JWKSet(pub).toString().getBytes(StandardCharsets.UTF_8);
+      body.set(new JWKSet(pub).toString().getBytes(StandardCharsets.UTF_8));
     }
 
     String baseUrl() {

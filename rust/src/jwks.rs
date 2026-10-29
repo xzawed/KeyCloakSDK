@@ -1358,7 +1358,10 @@ mod tests {
     async fn backoff_jitter_is_drawn_once_when_the_failure_is_recorded() {
         static DRAWS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         fn alternating() -> f64 {
-            if DRAWS.fetch_add(1, std::sync::atomic::Ordering::SeqCst) % 2 == 0 {
+            if DRAWS
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                .is_multiple_of(2)
+            {
                 0.95
             } else {
                 0.5
