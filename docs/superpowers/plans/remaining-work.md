@@ -1,5 +1,5 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=174781 max-raw-bytes=200642 -->
+<!-- doc-budget: max-bytes=174781 max-raw-bytes=199954 -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -419,7 +419,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `wave4-hardening-python` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #770 #879 · (1)(4) 판정 「그대로」]** 생성 때만 거는 auth 상한은 비공개 속성으로만 풀리고, 짝 없는 서로게이트는 IdP 가 준 값 그대로다
 - [x] `wave4-hardening-node` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #768 #772]** bearer 끝 공백 다듬기를 SDK 가 맡는다(bearer 판정) · 폼 본문 U+FFFD 는 「그대로」
 - [x] `wave4-hardening-ruby` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #763 #874]** 전역 `Rack::OAuth2.http_config` 를 걸지 않는다(판정) — ASCII 밖 bearer 는 bearer 판정이 닫는다
-- [ ] `wave4-hardening-php` **[L/S · 신규 2026-10-05 · (3)(4) 닫힘 #767 · 토큰 판독기 멈춤 닫힘 #772 · 라운드 2(2026-10-29) 다섯 칸 받아들임]** 남은 칸 — 비-JSON 토큰 응답이 league 길 `TransportError` · cc provider `AuthError` · `php/src/`
+- [ ] `wave4-hardening-php` **[L/S · 신규 2026-10-05 · (3)(4) 닫힘 #767 · 토큰 판독기 멈춤 닫힘 #772 · 라운드 2(2026-10-29) 다섯 칸 수락]** 남은 칸 — 비-JSON 토큰 응답이 league `TransportError` · cc provider `AuthError` · `php/src/`
 <!-- wave4-hardening-php 판정 2026-10-29 라운드 2(PM 판정 먼저 · Grok 판정 레그 대조, 다섯 중 넷 일치 — 칸별 이유와 Grok 의 반대는 그 PR 본문). 받아들임: (1) curl 8.21.0(Windows)이 +307,200 B Bearer 헤더를 버린다(→ 401 · 누출 없음) — 기본 Keycloak 은 65,459 B 위를 431 로 막는다 · 되살릴 조건: 지원 플랫폼 libcurl 이 그 아래에서 버린다는 측정. (2) 주입 PSR-18 전송 무상한(메모리는 상한까지). (3) 탐색 불가 본문을 현재 위치부터 읽음(주입 미들웨어). (4) 주입 전송 읽기 오류의 일반 문구. (5) stream 처리기 gzip 7–8 MB — ext-curl 필수라 주입 때만(뒤집히면 이 칸도). 남은 칸(6): 비-JSON 토큰 응답(503 HTML 등)을 AuthClient(league)는 TransportError, ClientCredentialsTokenProvider 는 AuthError('client-credentials failed')로 부른다(OAuth 오류 JSON · access_token 없음은 둘 다 AuthError · 상한은 둘 다 TransportError · introspection 비-JSON 은 AuthError · JwksStore 는 TransportError). 다음 걸음: 아홉 언어의 같은 다섯 응답 분류표. raw() 트레이스 인자의 시크릿은 php-exception-trace-third-party-args. -->
 - [x] `wave4-hardening-java` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #769 #833 #875]** JVM 공통 bearer 는 판정이 닫았고 조회 스레드 생성 실패(Error)는 「그대로」 — admin 원인 사슬의 jakarta 타입은 `nimbus-type-on-public-surface` 로
 - [x] `wave4-hardening-kotlin` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #878]** 짧은 §5.2 꼴이 산문도 가리는 것은 받아들였고(판정) `MaskingTest` 가 고정한다 · %3F 는 「그대로」
