@@ -53,13 +53,25 @@ jobs:
       - name: gosec (보안 린터)
         run: go run github.com/securego/gosec/v2/cmd/gosec@v2.27.1 -quiet ./...
       - name: Unit tests + 커버리지 게이트 (로직 ≥90, 네트워크 경계 omit)
+        # attest — 적대 경로 행렬은 모든 단언이 통과한 뒤에만 $HP_ATTEST_DIR/go.json 을 쓴다(근거: ci.yml 의 같은 단계).
+        # ⚠️ `-count=1` 은 지우지 말 것 — setup-go 가 되살린 테스트 캐시가 `(cached)` 로 통과를 **재생**하면 행렬은 돌지도
+        # attest 를 쓰지도 않는다(#773 실측: main 로그의 go 레인이 그랬다). 다음 단계가 그것을 FAIL 로 드러낸다.
+        env:
+          HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
+          HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
         run: |
-          go test ./... -coverprofile=cover.out
+          go test -count=1 ./... -coverprofile=cover.out
           # 네트워크 경계(auth/admin/client)는 통합테스트로 검증 → 커버리지 게이트에서 제외
           grep -vE '/(auth|admin|admin_users|admin_clients|admin_realms|admin_roles|admin_groups|client)\.go:' cover.out > cover.logic.out
           pct=$(go tool cover -func=cover.logic.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
           echo "logic coverage: ${pct}%"
           awk -v p="$pct" 'BEGIN { exit (p+0 < 90) }' || { echo "::error::logic coverage ${pct}% < 90%"; exit 1; }
+      - name: 적대 경로 행렬 attest — 이 실행에서 돌았는가(scripts/check-hp-attest.mjs)
+        working-directory: .
+        env:
+          HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
+          HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
+        run: node scripts/check-hp-attest.mjs "$HP_ATTEST_DIR" --nonce "$HP_ATTEST_NONCE" --lang go
 
   # SECURITY.md가 약속하는 "언어별 의존성 취약점 감사"의 Go 구현(cargo audit·npm audit·composer
   # audit·bundler-audit·pip-audit와 같은 하드 게이트). govulncheck는 vuln.go.dev의 Go 취약점 DB를

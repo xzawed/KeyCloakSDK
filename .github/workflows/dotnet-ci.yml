@@ -50,12 +50,21 @@ jobs:
       # 제외 필터는 dotnet/coverlet.runsettings로 옮겼다(문법 동일, 측정 수치 무변경을 실측 확인:
       # 두 방식 모두 lines 175/181 · branches 45/50).
       - name: Unit tests + coverage
+        # attest — 적대 경로 행렬은 마지막 Assert 뒤에만 $HP_ATTEST_DIR/dotnet.json 을 쓴다(근거: ci.yml 의 같은 단계).
+        env:
+          HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
+          HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
         run: >
           dotnet test dotnet/Keycloak.Sdk.sln --no-build -c Release
           --filter "Category!=Integration"
           --collect:"XPlat Code Coverage"
           --settings dotnet/coverlet.runsettings
           --results-directory ${{ runner.temp }}/coverage
+      - name: 적대 경로 행렬 attest — 이 실행에서 돌았는가(scripts/check-hp-attest.mjs)
+        env:
+          HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
+          HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
+        run: node scripts/check-hp-attest.mjs "$HP_ATTEST_DIR" --nonce "$HP_ATTEST_NONCE" --lang dotnet
       # 임계값 비교 **전에** 측정이 실제로 일어났는지부터 판정한다 — 분모는 있는데 히트가 0인 실행은
       # 커버리지 하락이 아니라 측정 실패이고, 그 둘을 다른 문구로 보고해야 사람이 헛수고하지 않는다.
       - name: Coverage gate

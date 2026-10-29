@@ -34,7 +34,18 @@ jobs:
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with: { distribution: 'temurin', java-version: '${{ matrix.java }}', cache: 'maven' }
       - name: Build & unit test (커버리지 게이트 90/85 포함)
+        # attest — 적대 경로 행렬은 모든 단언이 통과한 뒤에만 $HP_ATTEST_DIR/java.json 을 쓴다(nonce 는 이 잡·이 레그의 것).
+        env:
+          HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
+          HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
         run: mvn -B -f java/pom.xml verify -DskipITs=true
+      # ⚠️ 초록 단계는 「행렬이 돌았다」의 증거가 아니다 — 필터·skip·캐시 재생으로 행렬이 빠져도 초록이다(#773 실측: 로그에서
+      # 행렬이 보이는 레인은 아홉 중 셋). 그래서 행렬이 쓴 attest 를 같은 nonce 로 읽는다. 비-required 다(이 잡 자체가 그렇다).
+      - name: 적대 경로 행렬 attest — 이 실행에서 돌았는가(scripts/check-hp-attest.mjs)
+        env:
+          HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
+          HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
+        run: node scripts/check-hp-attest.mjs "$HP_ATTEST_DIR" --nonce "$HP_ATTEST_NONCE" --lang java
       # ⚠️ 소비자 하한(JDK 17)이 **실제로 방출됐는지**를 바이트코드로 확인한다. `release` 설정이
       # 빠져도 빌드는 성공하고 CI 도 초록인데 major 65 짜리 jar 가 나가서 **JDK 17 소비자만** 죽는다.
       # CI 가 21·25 에서도 도는 한 그 사고는 CI 에 보이지 않으므로 산출물을 직접 본다.
