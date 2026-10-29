@@ -1,4 +1,4 @@
-"""불변 설정."""
+"""Immutable configuration."""
 
 from __future__ import annotations
 

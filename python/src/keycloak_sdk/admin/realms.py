@@ -1,5 +1,5 @@
-"""`RealmsResource` — realm CRUD. `KeycloakAdmin`을 감싸고 `_translate.call`로
-python-keycloak 예외를 SDK 예외로 변환한다."""
+"""`RealmsResource` — realm CRUD. Wraps `KeycloakAdmin` and converts python-keycloak
+exceptions to SDK exceptions with `_translate.call`."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from ._translate import call, write_call
 
 
 class RealmsResource:
-    """realm 관리. `admin`은 `AdminClient.raw`(또는 테스트 목)로 주입된다."""
+    """Realm management. `admin` is injected as `AdminClient.raw` (or a test mock)."""
 
     def __init__(self, admin: KeycloakAdmin) -> None:
         self._admin = admin
@@ -20,19 +20,20 @@ class RealmsResource:
         write_call(lambda: self._admin.create_realm(rep))
 
     def get(self, realm_name: str) -> dict[str, Any] | None:
-        """realm 이름으로 조회한다. 존재하지 않으면 `KeycloakNotFoundError`가
-        전파된다(None을 반환하지 않음)."""
+        """Looks up a realm by name. If it does not exist, `KeycloakNotFoundError` propagates
+        (None is not returned)."""
         return call(lambda: self._admin.get_realm(realm_name))
 
     def list(self) -> list[dict[str, Any]]:
-        """호출자가 볼 수 있는 realm 전부. 서비스 계정은 보통 자기 realm만 본다."""
+        """Every realm the caller can see. A service account usually sees only its own realm."""
         return call(lambda: self._admin.get_realms())
 
     def update(self, realm_name: str, rep: dict[str, Any]) -> None:
-        """현재 이름으로 주소를 잡아 갱신한다. `rep["realm"]`에 새 이름을 주면 rename이다.
+        """Updates the realm, addressed by its current name. A new name in `rep["realm"]` is a
+        rename.
 
-        경로(`realm_name`)와 body(`rep`)를 합치지 말 것 — 합치면 rename이 조용한
-        no-op이 된다.
+        Do not merge the path (`realm_name`) and the body (`rep`) — merging them turns the
+        rename into a silent no-op.
         """
         write_call(lambda: self._admin.update_realm(realm_name, rep))
 

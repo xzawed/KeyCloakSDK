@@ -1,12 +1,12 @@
-"""QuickStart — `keycloak-sdk` 최소 사용 예제.
+"""QuickStart — a minimal usage example of `keycloak-sdk`.
 
-이 파일은 정적으로 임포트/타입체크만 되는 것을 목표로 한다(실제 Keycloak 서버 없이도
-`python -c "import ast; ast.parse(...)"`와 `mypy`가 통과해야 한다). 네트워크 호출이
-필요한 로직은 `main()`에 있고 `if __name__ == "__main__":` 가드 뒤에서만 실행되므로,
-모듈을 임포트하는 것만으로는 아무 요청도 나가지 않는다.
+This file aims only to be importable/type-checkable statically (even without a real Keycloak
+server, `python -c "import ast; ast.parse(...)"` and `mypy` must pass). The logic that needs
+network calls is in `main()` and runs only behind the `if __name__ == "__main__":` guard, so
+merely importing the module sends no request.
 
-실행하려면 실제 Keycloak 서버 정보로 아래 `KeycloakConfig` 값을 채우고
-`python examples/quickstart.py`를 실행한다(서비스 계정에 필요한 권한 role 필요).
+To run it, fill in the `KeycloakConfig` values below with a real Keycloak server's details and
+run `python examples/quickstart.py` (the service account needs the required permission roles).
 """
 
 from __future__ import annotations
@@ -19,18 +19,19 @@ def main() -> None:
         server_url="https://keycloak.example.com",
         realm="my-realm",
         client_id="my-client",
-        client_secret="my-client-secret",  # 실제 값은 환경변수/시크릿 매니저에서 로드할 것
+        client_secret="my-client-secret",  # load the real value from env vars/a secret manager
     )
 
-    # KeycloakClient.create()는 auth(AuthClient)를 즉시 조립한다. admin은 최초
-    # `.admin` 접근 시 지연 생성된다(client_secret 필요 — client-credentials grant).
+    # KeycloakClient.create() assembles auth (AuthClient) eagerly. admin is created lazily on the
+    # first `.admin` access (needs client_secret — client-credentials grant).
     with KeycloakClient.create(config) as kc:
-        # 1) client-credentials 토큰 발급 — 토큰 원문은 절대 로그에 남기지 않는다.
-        #    `mask()`는 접두 노출 없이 "***"(값이 있을 때)만 돌려준다 — 존재 여부만 드러낸다.
+        # 1) Get a client-credentials token — never write the raw token to a log.
+        #    `mask()` returns only "***" (when there is a value), exposing no prefix — it reveals
+        #    only whether the value exists.
         token = kc.auth.client_credentials_token()
         print(f"access_token={mask(token.access_token)} token_type={token.token_type}")
 
-        # 2) 관리 API로 사용자 목록 조회(admin이 이 시점에 지연 생성된다).
+        # 2) List users through the admin API (admin is created lazily at this point).
         users = kc.admin.users.search(first=0, max=10)
         print(f"users={[u.get('username') for u in users]}")
 

@@ -1,18 +1,18 @@
-"""SDK 예외 계층. 공개 API에 python-keycloak 예외 타입을 노출하지 않는다."""
+"""SDK exception hierarchy. python-keycloak exception types are not exposed in the public API."""
 
 from __future__ import annotations
 
 
 class KeycloakSdkError(Exception):
-    """모든 SDK 예외의 기반."""
+    """The base of all SDK exceptions."""
 
 
 class KeycloakConfigError(KeycloakSdkError):
-    """잘못된 설정."""
+    """Invalid configuration."""
 
 
 class KeycloakAuthError(KeycloakSdkError):
-    """인증/토큰 교환 실패. OAuth error 코드 보존."""
+    """Authentication/token exchange failure. Keeps the OAuth error code."""
 
     def __init__(self, message: str, error: str | None = None) -> None:
         super().__init__(message)
@@ -20,35 +20,38 @@ class KeycloakAuthError(KeycloakSdkError):
 
 
 class TokenValidationError(KeycloakSdkError):
-    """JWT 서명·클레임 검증 실패."""
+    """JWT signature/claim validation failure."""
 
 
 class TokenSignatureError(TokenValidationError):
-    """서명/알고리즘 검증 실패(클레임 실패와 구분되는 상위 타입).
+    """Signature/algorithm validation failure (a parent type distinct from claim failures).
 
-    서명 불일치·미허용 알고리즘·미서명(`none`) 등 **재조회해도 소용없는** 실패를
-    가리킨다. 키(kid) 해석 실패만 별도로 하위 타입 `TokenKeyError`로 나뉜다."""
+    It denotes failures that **a refetch would not help**, such as a signature mismatch · a
+    disallowed algorithm · unsigned (`none`). Only a key (kid) resolution failure is split off
+    separately, into the subtype `TokenKeyError`."""
 
 
 class TokenKeyError(TokenSignatureError):
-    """서명 키(kid)를 현재 JWKS에서 해석하지 못함 — 키 회전 가능성.
+    """The signing key (kid) could not be resolved in the current JWKS — possibly a key rotation.
 
-    `TokenSignatureError`의 하위 타입이라 서명 실패를 포괄로 잡던 기존 소비자는 그대로
-    동작한다. `AuthClient`는 **이 타입에 한해서만** JWKS를 재조회·재시도한다 — 단순
-    서명 위조(`BadSignatureError` → `TokenSignatureError`)는 재조회해도 소용없고, 위조
-    토큰마다 `certs()`를 유발하는 미인증 DoS 증폭이 되므로 재조회하지 않는다. 재조회
-    자체도 최소 간격으로 rate-limit되어 kid 변조 공격에 대한 상한이 있다."""
+    It is a subtype of `TokenSignatureError`, so existing consumers that caught signature
+    failures as a whole keep working as before. `AuthClient` refetches the JWKS and retries
+    **only for this type** — a plain forged signature (`BadSignatureError` →
+    `TokenSignatureError`) is not refetched, because a refetch would not help and it would
+    become an unauthenticated DoS amplification that triggers `certs()` for every forged token.
+    The refetch itself is also rate-limited to a minimum interval, so kid-tampering attacks
+    have an upper bound."""
 
 
 class KeycloakTransportError(KeycloakSdkError):
-    """네트워크/전송 오류."""
+    """Network/transport error."""
 
 
 class KeycloakAdminError(KeycloakSdkError):
-    """관리 API 오류. HTTP status + Keycloak error 본문 보존.
+    """Admin API error. Keeps the HTTP status + the Keycloak error body.
 
-    단 admin 자체 토큰 그랜트가 실패한 것이면 `keycloak_error` 는 `None` 이다 — 토큰 엔드포인트의
-    오류 본문은 보낸 client secret·refresh token 을 되울릴 수 있다."""
+    However, if what failed was admin's own token grant, `keycloak_error` is `None` — the token
+    endpoint's error body can echo back the client secret · refresh token that were sent."""
 
     def __init__(self, status_code: int, keycloak_error: str | None = None) -> None:
         super().__init__(f"Keycloak admin error (HTTP {status_code})")

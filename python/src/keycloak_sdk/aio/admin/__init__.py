@@ -1,13 +1,13 @@
-"""AsyncAdminClient — python-keycloak `KeycloakAdmin`의 `a_*` 메서드를 감싼 관리(admin)
-비동기 파사드.
+"""AsyncAdminClient — the async administration (admin) facade wrapping the `a_*` methods of
+python-keycloak's `KeycloakAdmin`.
 
-`KeycloakAdmin` 생성은 지연(lazy) 수행된다 — sync `AdminClient`와 동일한 이유: client
-credentials grant로 인증하므로 `config.client_secret`이 필요하고, 실제 필요 시점(첫
-`raw`/리소스 접근)까지 생성을 미뤄 시크릿 없는 설정으로도 `AsyncAdminClient` 자체는
-구성할 수 있게 한다(공개 client는 auth만 쓰고 admin은 안 쓰는 경우를 지원). 네트워크
-경계라 커버리지 게이트에서 제외된다(pyproject `[tool.coverage.run].omit`); 리소스
-파사드(`users`/`clients`/`realms`/`roles`/`groups`)가 로직을 담당하고 목 기반으로
-단위 검증된다.
+`KeycloakAdmin` is created lazily — for the same reason as sync `AdminClient`: it authenticates
+with the client credentials grant, so it needs `config.client_secret`, and its creation is
+deferred until the point where it is actually needed (the first `raw`/resource access) so that
+`AsyncAdminClient` itself can be constructed even with a secretless configuration (supporting
+the case where a public client uses only auth and not admin). Being a network boundary, it is
+excluded from the coverage gate (pyproject `[tool.coverage.run].omit`); the resource facades
+(`users`/`clients`/`realms`/`roles`/`groups`) carry the logic and are unit-verified with mocks.
 """
 
 from __future__ import annotations
@@ -28,11 +28,11 @@ __all__ = ["AsyncAdminClient"]
 
 
 class AsyncAdminClient:
-    """`KeycloakAdmin`의 `a_*` 메서드를 감싼 async 관리 파사드.
+    """The async admin facade wrapping the `a_*` methods of `KeycloakAdmin`.
 
-    `admin`은 테스트 주입용(미지정 시 첫 사용 시점에 생성). sync `AdminClient`와
-    동일한 배선(`raw`/리소스 프로퍼티)에 더해, async 수명주기 대칭을 위한
-    `aclose()`를 제공한다.
+    `admin` is for test injection (when omitted, it is created on first use). On top of the
+    same wiring as sync `AdminClient` (`raw`/resource properties), it provides `aclose()` for
+    async lifecycle symmetry.
     """
 
     def __init__(self, config: KeycloakConfig, admin: KeycloakAdmin | None = None) -> None:
@@ -44,7 +44,8 @@ class AsyncAdminClient:
     @property
     @scrub_frames  # sync 미러와 같다 — 생성 실패 프레임이 client secret 을 쥔다
     def raw(self) -> KeycloakAdmin:
-        """내부 `KeycloakAdmin` 인스턴스(탈출구). 미생성 상태면 지금 생성한다."""
+        """The inner `KeycloakAdmin` instance (escape hatch). If it has not been created yet, it
+        is created now."""
         if self._admin is None:
             if self._config.client_secret is None:
                 raise KeycloakConfigError(
@@ -87,29 +88,35 @@ class AsyncAdminClient:
         return AsyncGroupsResource(self.raw)
 
     async def aclose(self) -> None:
-        """하위 `KeycloakAdmin`의 async httpx 클라이언트(및 sync 세션)를 **둘 다** 닫는다.
+        """Closes **both** async httpx clients (and the sync sessions) of the underlying
+        `KeycloakAdmin`.
 
-        `KeycloakAdmin`에는 `aclose`가 없다 — 실제 자원인 `httpx.AsyncClient`는
-        `ConnectionManager`에 있고 그 `aclose()`가 정리한다(async auth 미러와 동형).
+        `KeycloakAdmin` has no `aclose` — the actual resource, `httpx.AsyncClient`, lives in the
+        `ConnectionManager`, and its `aclose()` cleans it up (isomorphic with the async auth
+        mirror).
 
-        ⚠️ 그 ConnectionManager가 **둘**이다(`_internal/admin_guard.py` 가 리다이렉트 하드닝에서
-        이미 다루는 바로 그 구조):
+        ⚠️ There are **two** of those ConnectionManagers (the very structure
+        `_internal/admin_guard.py` already deals with in redirect hardening):
 
-        1. `connection` — admin REST 호출.
-        2. `connection.keycloak_openid.connection` — admin 자신의 client-credentials
-           토큰 그랜트. **지연 프로퍼티**라 첫 admin 호출 때 생겨서 눈에 잘 띄지 않는다.
+        1. `connection` — the admin REST calls.
+        2. `connection.keycloak_openid.connection` — admin's own client-credentials
+           token grant. It is a **lazy property**, created on the first admin call, so it is
+           easy to miss.
 
-        1번만 닫으면 2번의 httpx.AsyncClient가 열린 채 남아 "unclosed transport" /
-        "unclosed socket" ResourceWarning이 뜨고 admin을 쓰는 클라이언트마다 FD가 하나씩
-        샌다(장기 서비스에서 EMFILE). 게시된 0.1.0rc1을 실 Keycloak에 대해 돌려 실측했다 —
-        auth 전용 클라이언트는 깨끗했고 admin을 건드린 경우만 샜다.
+        Closing only the first one leaves the second one's httpx.AsyncClient open, so an
+        "unclosed transport" / "unclosed socket" ResourceWarning is emitted and one FD leaks
+        per client that uses admin (EMFILE in a long-running service). This was measured by
+        running the published 0.1.0rc1 against a real Keycloak — auth-only clients were clean,
+        and only the ones that touched admin leaked.
 
-        `raw` 미생성이면 `self._admin`이 None이라 no-op이다(굳이 생성하지 않음).
-        중첩 정리가 실패해도 바깥 정리는 `finally`로 반드시 수행한다 — 둘 중 하나가
-        깨졌다고 나머지 FD까지 함께 잃는 것이 최악이다. 실패 자체는 숨기지 않는다
-        (예외는 그대로 전파된다 — 조용한 누수보다 시끄러운 실패가 낫다).
+        If `raw` was never created, `self._admin` is None, so this is a no-op (it does not go out
+        of its way to create one). Even if the nested cleanup fails, the outer cleanup is always
+        performed via `finally` — losing the other FD as well just because one of the two broke
+        is the worst case. The failure itself is not hidden (the exception propagates as is — a
+        loud failure is better than a silent leak).
 
-        연결은 **무장하지 않고** 읽는다 — sync `close()` 와 같은 이유(`unarmed_connection`).
+        The connection is read **without arming it** — for the same reason as sync `close()`
+        (`unarmed_connection`).
         """
         conn = unarmed_connection(self._admin)
         if conn is None:

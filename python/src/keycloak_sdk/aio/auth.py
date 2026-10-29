@@ -1,12 +1,14 @@
-"""AsyncAuthClient — python-keycloak `KeycloakOpenID`의 `a_*` 비동기 메서드 래핑.
+"""AsyncAuthClient — wraps the `a_*` async methods of python-keycloak's `KeycloakOpenID`.
 
-sync `keycloak_sdk.auth.AuthClient`의 async 미러다. 값 타입(`TokenSet`/`ValidatedToken`/
-`IntrospectionResult`)·`AuthorizationUrl`·PKCE 생성(`_generate_pkce_pair`)·예외·
-`JwtValidator`(sync 검증 로직)는 sync `keycloak_sdk`에서 그대로 재사용한다(중복 금지).
+The async mirror of sync `keycloak_sdk.auth.AuthClient`. The value types
+(`TokenSet`/`ValidatedToken`/`IntrospectionResult`) · `AuthorizationUrl` · PKCE generation
+(`_generate_pkce_pair`) · exceptions · `JwtValidator` (the sync validation logic) are reused as
+they are from sync `keycloak_sdk` (no duplication).
 
-공개 API에 `keycloak.exceptions.*`(python-keycloak) 타입을 노출하지 않는다 — 경계
-(`_awrap`)에서 SDK 예외로 변환한다. 네트워크 경계라 커버리지 게이트에서 제외된다
-(pyproject `[tool.coverage.run].omit`); `test_auth.py`가 목 기반으로 행동을 증명한다.
+`keycloak.exceptions.*` (python-keycloak) types are not exposed in the public API — they are
+converted to SDK exceptions at the boundary (`_awrap`). Being a network boundary, it is excluded
+from the coverage gate (pyproject `[tool.coverage.run].omit`); `test_auth.py` proves the
+behavior with mocks.
 """
 
 from __future__ import annotations
@@ -46,11 +48,12 @@ T = TypeVar("T")
 
 
 class AsyncAuthClient:
-    """`KeycloakOpenID`의 `a_*` 메서드를 감싼 async 인증 파사드.
+    """The async authentication facade wrapping the `a_*` methods of `KeycloakOpenID`.
 
-    `openid`는 테스트 주입용(미지정 시 config로부터 생성). sync `AuthClient`와 동일한
-    메서드명·값타입·예외를 갖되, `authorization_url`만 네트워크가 필요 없어 동기
-    메서드로 남아 있다(나머지는 `async def`).
+    `openid` is for test injection (when omitted, it is built from config). This client has the
+    same method names · value types · exceptions as sync `AuthClient`, except that only
+    `authorization_url` needs no network and so remains a synchronous method (the rest are
+    `async def`).
     """
 
     # ⚠️ sync 미러와 같다 — 비밀을 다루는 공개 진입점은 전부 `@scrub_frames`/`@ascrub_frames` 다
@@ -116,14 +119,14 @@ class AsyncAuthClient:
 
     @scrub_frames
     def authorization_url(self, redirect_uri: str) -> AuthorizationUrl:
-        """PKCE(S256) 인가 코드 흐름의 시작 URL을 만든다.
+        """Builds the start URL of a PKCE (S256) authorization-code flow.
 
-        sync는 `openid.auth_url()`을 쓰지만, python-keycloak의 `auth_url`/`a_auth_url`
-        모두 첫 호출 시 `well_known()`(서버 discovery 문서)을 지연 로드할 수 있다
-        (`a_auth_url`은 정상적으로 await하므로 이벤트 루프를 블로킹하지는 않는다 — 문제는
-        불필요한 discovery 네트워크 왕복 1회가 추가된다는 점이다). 이 메서드는 네트워크
-        없이 `OidcEndpoints`에서 URL을 직접 조립해 그 왕복을 없앤다 — 그래서 sync와 달리
-        `async def`가 아니다.
+        sync uses `openid.auth_url()`, but python-keycloak's `auth_url`/`a_auth_url` can both
+        lazily load `well_known()` (the server's discovery document) on the first call
+        (`a_auth_url` awaits properly, so it does not block the event loop — the problem is that
+        one unnecessary discovery network round trip is added). This method assembles the URL
+        directly from `OidcEndpoints` without a network, removing that round trip — which is
+        why, unlike sync, it is not `async def`.
         """
         code_verifier, code_challenge = _generate_pkce_pair()
         state = secrets.token_urlsafe(16)
@@ -145,7 +148,7 @@ class AsyncAuthClient:
 
     @ascrub_frames
     async def client_credentials_token(self) -> TokenSet:
-        """`client_credentials` grant로 서비스 계정 토큰을 발급받는다."""
+        """Issues a service-account token with the `client_credentials` grant."""
         response = await self._awrap(
             self._openid.a_token(
                 grant_type="client_credentials",
@@ -158,13 +161,15 @@ class AsyncAuthClient:
     async def exchange_code(
         self, code: str, redirect_uri: str, code_verifier: str, nonce: str | None = None
     ) -> TokenSet:
-        """인가 코드 + PKCE verifier를 토큰으로 교환한다(`authorization_code` grant).
+        """Exchanges an authorization code + PKCE verifier for tokens (`authorization_code` grant).
 
-        `nonce`가 주어지면(authorization_url 이 돌려준 값) 응답 id_token을 강화
-        `JwtValidator`로 서명·iss·aud·exp까지 검증한 뒤 nonce 클레임을 대조한다 — OIDC nonce
-        재생 방지(sync `AuthClient.exchange_code` 동형). 불일치·부재·검증실패는 거부(fail-closed).
-        id_token 의 `aud` 는 `expected_audience` 가 아니라 **`client_id`** 로 잰다(OIDC Core
-        §2·§3.1.3.7) — `expected_audience` 는 `validate()` 가 보는 액세스 토큰 전용이다.
+        When `nonce` is given (the value authorization_url returned), the response's id_token is
+        validated with the hardened `JwtValidator` through signature · iss · aud · exp, and then
+        its nonce claim is compared — OIDC nonce replay protection (isomorphic with sync
+        `AuthClient.exchange_code`). Mismatch, absence and validation failure are rejected
+        (fail-closed). The id_token's `aud` is checked against **`client_id`**, not
+        `expected_audience` (OIDC Core §2·§3.1.3.7) — `expected_audience` is only for the access
+        token that `validate()` checks.
         """
         response = await self._awrap(
             self._openid.a_token(
@@ -193,31 +198,35 @@ class AsyncAuthClient:
 
     @ascrub_frames
     async def refresh(self, refresh_token: str) -> TokenSet:
-        """`refresh_token` grant로 접근 토큰을 갱신한다."""
+        """Renews the access token with the `refresh_token` grant."""
         response = await self._awrap(self._openid.a_refresh_token(refresh_token))
         return TokenSet.from_response(response, issued_at=time.time())
 
     @ascrub_frames
     async def logout(self, refresh_token: str) -> None:
-        """세션을 무효화한다(refresh token revoke)."""
+        """Invalidates the session (refresh token revoke)."""
         await self._awrap(self._openid.a_logout(refresh_token))
 
     @ascrub_frames
     async def introspect(self, token: str) -> IntrospectionResult:
-        """RFC 7662 토큰 인트로스펙션. 비활성 토큰은 `active` 외 필드가 생략될 수 있다."""
+        """RFC 7662 token introspection. For an inactive token, fields other than `active` may
+        be omitted."""
         response = await self._awrap(self._openid.a_introspect(token))
         return _introspection_result(response)
 
     @ascrub_frames
     async def validate(self, access_token: str) -> ValidatedToken:
-        """realm JWKS로 서명을 검증하고 issuer/audience/exp/nbf를 강제한다(sync `JwtValidator`).
+        """Verifies the signature against the realm JWKS and enforces issuer/audience/exp/nbf
+        (sync `JwtValidator`).
 
-        JWKS는 첫 호출 시 로드해 인스턴스에 캐시한다(받은 지 300초까지 — sync 동형). 키 회전
-        복원력은 sync `AuthClient.validate`와 동일하다 — 서명 키(kid) 미해결
-        (`TokenKeyError`)에 한해 캐시를 무효화하고 `a_certs()`를 한 번 재조회해
-        재시도한다. 단순 서명 위조(`TokenSignatureError`)는 재조회하지 않으며(DoS 증폭
-        차단), 재조회는 `_jwks_min_refetch` 간격으로 rate-limit된다. 이 호출을 취소해도(시간
-        초과 포함) 이미 시작한 재조회는 끝까지 가서 캐시를 채운다(`_load_jwks`).
+        The JWKS is loaded on the first call and cached on the instance (until 300 seconds after
+        it was received — isomorphic with sync). Key-rotation resilience is the same as sync
+        `AuthClient.validate` — only for an unresolved signing key (kid) (`TokenKeyError`) is the
+        cache invalidated, `a_certs()` refetched once, and the validation retried. A plain forged
+        signature (`TokenSignatureError`) is not refetched (blocking DoS amplification), and the
+        refetch is rate-limited to the `_jwks_min_refetch` interval. Even if this call is
+        cancelled (timeouts included), a refetch that has already started runs to completion and
+        fills the cache (`_load_jwks`).
         """
         # `expected_audience`가 설정되면 그 값을, 아니면 client_id를 기대한다(sync 동형).
         return await self._validate_for(
@@ -331,11 +340,12 @@ class AsyncAuthClient:
         )
 
     async def aclose(self) -> None:
-        """하위 `KeycloakOpenID`의 async httpx 클라이언트(및 sync 세션)를 닫는다.
+        """Closes the async httpx client (and the sync session) of the underlying `KeycloakOpenID`.
 
-        python-keycloak `ConnectionManager.aclose()`가 `httpx.AsyncClient`와 requests
-        세션을 함께 정리한다 — 미해제 시 async 소켓/FD가 누수돼 장기 서비스에서
-        EMFILE에 이를 수 있다. 내부 구조 변경에도 안전하도록 가드한다.
+        python-keycloak's `ConnectionManager.aclose()` cleans up the `httpx.AsyncClient` and the
+        requests session together — if they are not released, async sockets/FDs leak and a
+        long-running service can reach EMFILE. It is guarded so that it stays safe even if the
+        internal structure changes.
         """
         conn = getattr(self._openid, "connection", None)
         aclose = getattr(conn, "aclose", None) if conn is not None else None

@@ -1,5 +1,5 @@
-"""`RolesResource` — realm 역할 CRUD. `KeycloakAdmin`을 감싸고 `_translate.call`로
-python-keycloak 예외를 SDK 예외로 변환한다."""
+"""`RolesResource` — realm role CRUD. Wraps `KeycloakAdmin` and converts python-keycloak
+exceptions to SDK exceptions with `_translate.call`."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from ._translate import call, write_call
 
 
 class RolesResource:
-    """realm 역할 관리. `admin`은 `AdminClient.raw`(또는 테스트 목)로 주입된다."""
+    """Realm role management. `admin` is injected as `AdminClient.raw` (or a test mock)."""
 
     def __init__(self, admin: KeycloakAdmin) -> None:
         self._admin = admin
@@ -20,17 +20,18 @@ class RolesResource:
         write_call(lambda: self._admin.create_realm_role(rep))
 
     def get(self, name: str) -> dict[str, Any] | None:
-        """역할 이름으로 조회한다. 존재하지 않으면 `KeycloakNotFoundError`가
-        전파된다(None을 반환하지 않음)."""
+        """Looks up a role by name. If it does not exist, `KeycloakNotFoundError` propagates
+        (None is not returned)."""
         return call(lambda: self._admin.get_realm_role(name))
 
     def list(self) -> list[dict[str, Any]]:
         return call(lambda: self._admin.get_realm_roles())
 
     def update(self, name: str, rep: dict[str, Any]) -> None:
-        """현재 이름으로 주소를 잡아 갱신한다. `rep["name"]`에 새 이름을 주면 rename이다.
+        """Updates the role, addressed by its current name. A new name in `rep["name"]` is a
+        rename.
 
-        경로(`name`)와 body(`rep`)를 합치지 말 것.
+        Do not merge the path (`name`) and the body (`rep`).
         """
         write_call(lambda: self._admin.update_realm_role(name, rep))
 

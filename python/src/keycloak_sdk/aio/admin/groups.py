@@ -1,5 +1,6 @@
-"""`AsyncGroupsResource` — 그룹 CRUD(async). `KeycloakAdmin`의 `a_*` 메서드를 감싸고
-`acall`로 python-keycloak 예외를 SDK 예외로 변환한다. sync `GroupsResource`의 async 미러."""
+"""`AsyncGroupsResource` — group CRUD (async). Wraps the `a_*` methods of `KeycloakAdmin` and
+converts python-keycloak exceptions to SDK exceptions with `acall`. The async mirror of sync
+`GroupsResource`."""
 
 from __future__ import annotations
 
@@ -11,7 +12,8 @@ from ._translate import acall, awrite_call
 
 
 class AsyncGroupsResource:
-    """그룹 관리(async). `admin`은 `AsyncAdminClient.raw`(또는 테스트 목)로 주입된다."""
+    """Group management (async). `admin` is injected as `AsyncAdminClient.raw` (or a test
+    mock)."""
 
     def __init__(self, admin: KeycloakAdmin) -> None:
         self._admin = admin
@@ -24,15 +26,15 @@ class AsyncGroupsResource:
         return cast(str, await awrite_call(self._admin.a_create_group(rep)))
 
     async def get(self, group_id: str) -> dict[str, Any] | None:
-        """`group_id`로 그룹을 조회한다. 존재하지 않으면 `KeycloakNotFoundError`가
-        전파된다(None을 반환하지 않음)."""
+        """Looks up a group by `group_id`. If it does not exist, `KeycloakNotFoundError`
+        propagates (None is not returned)."""
         return await acall(self._admin.a_get_group(group_id))
 
     async def list(self, first: int = 0, max: int = 100) -> list[dict[str, Any]]:
         return await acall(self._admin.a_get_groups({"first": first, "max": max}))
 
     async def update(self, group_id: str, rep: dict[str, Any]) -> None:
-        """id로 주소를 잡아 갱신한다(경로/body 분리 — rename 가능)."""
+        """Updates the group, addressed by id (path/body kept separate — rename possible)."""
         await awrite_call(self._admin.a_update_group(group_id, rep))
 
     async def delete(self, group_id: str) -> None:

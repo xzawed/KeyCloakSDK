@@ -1,5 +1,5 @@
-"""`GroupsResource` — 그룹 CRUD. `KeycloakAdmin`을 감싸고 `_translate.call`로
-python-keycloak 예외를 SDK 예외로 변환한다."""
+"""`GroupsResource` — group CRUD. Wraps `KeycloakAdmin` and converts python-keycloak
+exceptions to SDK exceptions with `_translate.call`."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from ._translate import call, write_call
 
 
 class GroupsResource:
-    """그룹 관리. `admin`은 `AdminClient.raw`(또는 테스트 목)로 주입된다."""
+    """Group management. `admin` is injected as `AdminClient.raw` (or a test mock)."""
 
     def __init__(self, admin: KeycloakAdmin) -> None:
         self._admin = admin
@@ -24,17 +24,17 @@ class GroupsResource:
         return cast(str, write_call(lambda: self._admin.create_group(rep)))
 
     def get(self, group_id: str) -> dict[str, Any] | None:
-        """`group_id`로 그룹을 조회한다. 존재하지 않으면 `KeycloakNotFoundError`가
-        전파된다(None을 반환하지 않음)."""
+        """Looks up a group by `group_id`. If it does not exist, `KeycloakNotFoundError`
+        propagates (None is not returned)."""
         return call(lambda: self._admin.get_group(group_id))
 
     def list(self, first: int = 0, max: int = 100) -> list[dict[str, Any]]:
         return call(lambda: self._admin.get_groups({"first": first, "max": max}))
 
     def update(self, group_id: str, rep: dict[str, Any]) -> None:
-        """id로 주소를 잡아 갱신한다. `rep["name"]`에 새 이름을 주면 rename이다.
+        """Updates the group, addressed by id. A new name in `rep["name"]` is a rename.
 
-        경로(`group_id`)와 body(`rep`)를 합치지 말 것.
+        Do not merge the path (`group_id`) and the body (`rep`).
         """
         write_call(lambda: self._admin.update_group(group_id, rep))
 

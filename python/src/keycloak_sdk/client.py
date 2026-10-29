@@ -1,13 +1,14 @@
-"""KeycloakClient — auth(즉시) + admin(지연) 통합 진입점(파사드).
+"""KeycloakClient — unified entry point (facade): auth (eager) + admin (lazy).
 
-`admin`은 client-credentials grant로 인증하므로 궁극적으로 `config.client_secret`이
-필요하다(실제 필요 시점은 `AdminClient.raw`의 최초 접근 — WBS 4.1). `KeycloakClient.admin`
-프로퍼티는 그 자체로는 `AdminClient` 인스턴스 구성만 지연시킨다 — 구성 자체는 저렴하고
-secret 검증을 트리거하지 않으므로, 시크릿 없는 public client 설정으로도 `auth`만 쓰는
-사용을 지원한다(admin에 실제 접근하기 전까지는 에러가 나지 않는다).
+`admin` authenticates with the client-credentials grant, so it ultimately needs
+`config.client_secret` (the point where it is actually needed is the first access to
+`AdminClient.raw` — WBS 4.1). The `KeycloakClient.admin` property by itself only defers
+constructing the `AdminClient` instance — constructing it is cheap and does not trigger secret
+validation, so auth-only use is supported even with a secretless public-client configuration
+(no error occurs until admin is actually accessed).
 
-컨텍스트 매니저(`with KeycloakClient.create(config) as kc:`)로 사용하면 `__exit__`이
-`close()`를 호출한다 — `admin`이 실제로 생성된 경우에만 정리 훅을 위임한다.
+When it is used as a context manager (`with KeycloakClient.create(config) as kc:`), `__exit__`
+calls `close()` — the cleanup hook is delegated to `admin` only if `admin` was actually created.
 """
 
 from __future__ import annotations
@@ -22,7 +23,8 @@ from .oidc import OidcEndpoints
 
 
 class KeycloakClient:
-    """auth(즉시) + admin(지연) 통합 파사드. `create()`로 생성, 컨텍스트 매니저 지원."""
+    """Unified facade: auth (eager) + admin (lazy). Created with `create()`; usable as a context
+    manager."""
 
     def __init__(
         self,
@@ -36,9 +38,9 @@ class KeycloakClient:
 
     @classmethod
     def create(cls, config: KeycloakConfig) -> KeycloakClient:
-        """`config`로부터 `OidcEndpoints`+`AuthClient`를 즉시 조립한다.
+        """Assembles `OidcEndpoints` + `AuthClient` from `config` eagerly.
 
-        `admin`은 `.admin` 최초 접근 시까지 생성을 미룬다(지연 프로퍼티).
+        Creating `admin` is deferred until `.admin` is first accessed (lazy property).
         """
         endpoints = OidcEndpoints.for_realm(config)
         auth = AuthClient(config, endpoints)
@@ -54,12 +56,12 @@ class KeycloakClient:
 
     @property
     def auth(self) -> AuthClient:
-        """즉시 생성된 `AuthClient`. secret 없이도 항상 사용 가능하다."""
+        """The eagerly created `AuthClient`. Always usable, even without a secret."""
         return self._auth
 
     @property
     def admin(self) -> AdminClient:
-        """지연 생성된 `AdminClient`. 최초 접근 시 구성하고 이후 캐시를 재사용한다."""
+        """The lazily created `AdminClient`. Built on first access, then reused from the cache."""
         if self._admin is None:
             if self._config is None:
                 raise KeycloakConfigError(
@@ -69,12 +71,14 @@ class KeycloakClient:
         return self._admin
 
     def close(self) -> None:
-        """생성된 하위 자원을 정리한다 — auth 세션은 항상, admin은 생성된 경우에만.
+        """Releases the underlying resources that were created — the auth session always, admin
+        only if it was created.
 
-        `auth`는 `create()`에서 항상 생성되므로 requests 세션을 닫는다(미해제 시
-        커넥션 풀 누수). `admin`이 한 번도 접근되지 않았다면 admin 정리는 건너뛴다 —
-        `close()` 호출 자체가 불필요한 admin 생성/네트워크 연결을 유발해서는 안 된다.
-        `AdminClient`에 `close()`가 없어도(향후 구현 변경) 안전하도록 가드한다.
+        `auth` is always created in `create()`, so its requests session is closed (if it is not
+        released, the connection pool leaks). If `admin` was never accessed, the admin cleanup is
+        skipped — calling `close()` must not itself cause an unnecessary admin creation/network
+        connection. It is guarded so that it stays safe even if `AdminClient` has no `close()`
+        (a future implementation change).
         """
         self._auth.close()
         if self._admin is not None:
