@@ -45,14 +45,15 @@ func (r *RealmsResource) List(ctx context.Context) ([]*gocloak.RealmRepresentati
 // Update replaces the realm addressed by its CURRENT name; rename by giving the
 // new name in realm.Realm.
 //
-// ⚠️ **아홉 언어 중 이 메서드만 gocloak을 거치지 않는다.** gocloak의 UpdateRealm은 경로를
-// body의 `.Realm`에서 만들기 때문에(`Put(getAdminRealmURL(PString(realm.Realm)))`) 경로와
-// body를 분리할 수 없고, 그래서 **rename을 표현할 수 없다** — Ruby·.NET·PHP는 전부
-// `PUT /admin/realms/{현재이름}` + body 그대로라 rename이 된다. §4 동형을 지키려고 여기만
-// raw PUT을 쓴다(.NET이 타입드 클라이언트의 빈칸을 raw REST로 메우는 것과 같은 관용).
+// ⚠️ **Of the nine languages, only this method does not go through gocloak.** gocloak's UpdateRealm
+// builds the path from the body's `.Realm` (`Put(getAdminRealmURL(PString(realm.Realm)))`), so path
+// and body cannot be separated, and therefore **a rename cannot be expressed** — Ruby, .NET and PHP
+// all use `PUT /admin/realms/{current name}` + the body as-is, so a rename works. To hold the §4
+// isomorphism, this is the only place that uses a raw PUT (the same idiom as .NET filling the gaps in
+// its typed client with raw REST).
 //
-// 오류는 `*gocloak.APIError`로 되싸서 `toSDKError`가 다른 메서드와 **동일하게** 분류하게 한다
-// — 새 오류 계급을 만들지 않는다.
+// The error is re-wrapped as `*gocloak.APIError` so that `toSDKError` classifies it **identically** to
+// the other methods — it creates no new error class.
 func (r *RealmsResource) Update(ctx context.Context, realmName string, realm gocloak.RealmRepresentation) error {
 	tok, err := r.a.token(ctx)
 	if err != nil {
