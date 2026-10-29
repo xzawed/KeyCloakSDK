@@ -43,6 +43,13 @@ internal const val RESPONSE_MAX_LINE_LENGTH: Int = 8192
 /** 응답 헤더 하나의 절(머리 또는 트레일러)에 들 수 있는 최대 필드 수 — [RESPONSE_MAX_LINE_LENGTH] 와 함께 건다(Java `ResponseLimits.MAX_HEADER_COUNT`). */
 internal const val RESPONSE_MAX_HEADER_COUNT: Int = 100
 
+/**
+ * SDK 가 스스로 읽는 응답을 요청을 보낸 때부터 읽기 타임아웃 안에 다 읽지 못했다 — 그 실패([java.net.SocketTimeoutException], 읽기
+ * 타임아웃과 같은 타입)의 메시지 머리. 뒤에 마감의 길이만 붙는다(응답을 인용하지 않는다). auth 레인([BoundedTransport])과 admin 레인
+ * (`AdminEngine`)이 함께 쓴다 — Java 의 같은 메시지와 같다.
+ */
+internal const val RESPONSE_LATE: String = "Read timed out: the response was not fully read within "
+
 /** 상한을 넘는 응답 — 메시지는 무엇이 상한을 넘었는지만 말한다(응답을 인용하지 않는다). */
 internal class ResponseTooLargeException(
     what: String,

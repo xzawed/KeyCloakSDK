@@ -4,6 +4,7 @@ import io.github.xzawed.keycloak.KeycloakAdminException
 import io.github.xzawed.keycloak.KeycloakConfig
 import io.github.xzawed.keycloak.KeycloakConfigException
 import io.github.xzawed.keycloak.KeycloakTransportException
+import io.github.xzawed.keycloak.RESPONSE_LATE
 import io.github.xzawed.keycloak.RESPONSE_MAX_HEADER_COUNT
 import io.github.xzawed.keycloak.RESPONSE_MAX_LINE_LENGTH
 import io.github.xzawed.keycloak.RedactedCause
@@ -31,6 +32,7 @@ import org.apache.http.config.MessageConstraints
 import org.apache.http.conn.HttpClientConnectionManager
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager
 import org.apache.http.protocol.HttpContext
+import org.apache.http.protocol.HttpCoreContext
 import org.jboss.resteasy.client.jaxrs.ClientHttpEngine
 import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder
 import org.jboss.resteasy.client.jaxrs.engines.HttpContextProvider
@@ -44,6 +46,7 @@ import org.keycloak.admin.client.KeycloakBuilder
 import org.keycloak.admin.client.spi.StreamMessageBodyReader
 import java.io.IOException
 import java.io.InputStream
+import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
@@ -140,7 +143,7 @@ public class AdminClient internal constructor(
                     .newBuilder()
                     .connectTimeout(config.connectTimeout.toMillis(), TimeUnit.MILLISECONDS)
                     .readTimeout(config.readTimeout.toMillis(), TimeUnit.MILLISECONDS) as ResteasyClientBuilder
-            builder.httpEngine(BoundedEngineBuilder().resteasyClientBuilder(builder).build())
+            builder.httpEngine(BoundedEngineBuilder(config.readTimeout.toMillis().toInt()).resteasyClientBuilder(builder).build())
             return builder
                 .register(JacksonProvider::class.java, 100)
                 .register(StreamMessageBodyReader::class.java)
@@ -159,10 +162,12 @@ public class AdminClient internal constructor(
  * RESTEasy 의 기본 엔진 빌더 그대로에 응답 틀의 한도만 더한다([AdminClient.buildTimeoutClient]). 그 클래스는 RESTEasy 6.2 에서 제거 예정으로
  * 표시돼 있지만 RESTEasy 자신이 기본 엔진을 그것으로 짓는다 — 제거되면 여기가 컴파일되지 않아 다시 볼 자리를 알린다. 지은 엔진은
  * [AdminEngine] 이 감싼다 — 교환마다 읽지 않고 끊을 손잡이를 달아, 가드가 거부한 응답과 결과를 얻은 자원 응답의 나머지를 HttpCore 가
- * 비우지 않게 하고 오류 본문은 상한까지만 쥔다.
+ * 비우지 않게 하고 오류 본문은 상한까지만 쥐며, 응답을 요청을 보낸 때부터 [readTimeoutMillis](설정의 읽기 타임아웃) 안에 다 읽는다.
  */
 @Suppress("DEPRECATION")
-private class BoundedEngineBuilder : org.jboss.resteasy.client.jaxrs.engines.ClientHttpEngineBuilder43() {
+private class BoundedEngineBuilder(
+    private val readTimeoutMillis: Int,
+) : org.jboss.resteasy.client.jaxrs.engines.ClientHttpEngineBuilder43() {
     override fun createEngine(
         cm: HttpClientConnectionManager?,
         rcBuilder: RequestConfig.Builder?,
@@ -175,7 +180,7 @@ private class BoundedEngineBuilder : org.jboss.resteasy.client.jaxrs.engines.Cli
         (cm as PoolingHttpClientConnectionManager).defaultConnectionConfig = ADMIN_BOUNDED_HEAD
         // RESTEasy 는 ApacheHttpClient43Engine 을 짓는다 — 다른 것이 오면 여기서 터져 조용히 끊기를 잃지 않는다
         val built = super.createEngine(cm, rcBuilder, defaultProxy, responseBufferSize, verifier, theContext)
-        return AdminEngine(built as org.jboss.resteasy.client.jaxrs.engines.ApacheHttpClient43Engine)
+        return AdminEngine(built as org.jboss.resteasy.client.jaxrs.engines.ApacheHttpClient43Engine, readTimeoutMillis)
     }
 }
 
@@ -197,10 +202,17 @@ private class BoundedEngineBuilder : org.jboss.resteasy.client.jaxrs.engines.Cli
  * ⚠️ 엔진을 새로 짓지 않는다 — [owner] 의 HttpClient 를 넘겨받고 설정 넷(응답 버퍼 · 검증기 · TLS 근원 · 리다이렉트)을 옮긴다. HttpClient
  * 를 닫는 것은 [owner] 의 몫이다([close]). 손잡이가 쥘 문맥은 RESTEasy 가 교환마다 묻는 `HttpContextProvider`(이 엔진 자신 —
  * [getContext])로 건넨다 — [loadHttpMethod] 가 만든 것을 같은 스레드의 바로 다음 물음(`invoke` 안, `httpClient.execute` 직전)이 가져간다.
+ *
+ * 응답은 요청을 보낸 때부터 읽기 타임아웃([readTimeoutMillis]) 안에 다 읽는다 — [Settled] 가 읽기마다 앞뒤로 그 교환의 마감을 본다
+ * ([Exchange.due]). 읽기 타임아웃은 읽기 하나를 묶을 뿐이라 바이트를 그보다 조금 짧은 간격으로 흘리는 서버 앞에서 응답 하나가 흘린 바이트마다
+ * 간격 하나씩 걸렸다(실측 `admin.ResponseReadDeadlineTest`). 토큰 부여(가드의 상한 읽기)·자원의 성공 본문(결합)·오류 본문이 모두 그 스트림을
+ * 지난다 — `raw()` 의 응답도. ⚠️ 엔진의 스트림이라 응답 머리와, 읽기 하나 안의 틀(청크 크기 줄·트레일러)·TLS 레코드는 보지 못한다 — 그
+ * 소켓은 RESTEasy 가 지은 풀의 것이다(그 자리는 읽기마다의 타임아웃이 묶는다 — Java 커밋 메시지의 실측).
  */
 @Suppress("DEPRECATION")
 internal class AdminEngine(
     private val owner: org.jboss.resteasy.client.jaxrs.engines.ApacheHttpClient43Engine,
+    private val readTimeoutMillis: Int,
 ) : org.jboss.resteasy.client.jaxrs.engines.ApacheHttpClient43Engine(owner.httpClient, false),
     HttpContextProvider {
     init {
@@ -217,9 +229,9 @@ internal class AdminEngine(
         httpMethod: HttpRequestBase,
     ) {
         super.loadHttpMethod(request, httpMethod)
-        val context = HttpClientContext.create()
-        request.mutableProperties[EXCHANGE] = Exchange(httpMethod, context)
-        NEXT_CONTEXT.set(context)
+        val exchange = Exchange(httpMethod, readTimeoutMillis)
+        request.mutableProperties[EXCHANGE] = exchange
+        NEXT_CONTEXT.set(exchange)
     }
 
     // [loadHttpMethod] 가 둔 문맥을 가져가고 지운다 — RESTEasy 가 같은 교환에서 곧바로 묻는다.
@@ -260,11 +272,36 @@ internal class AdminEngine(
         }
     }
 
-    /** 교환 하나의 끊기 손잡이 — 그 요청과, 실행이 연결을 적는 문맥. */
+    /**
+     * 교환 하나의 끊기 손잡이이자 그 교환의 문맥(실행이 연결을 적는다) — 그 요청과, 요청을 보낸 때부터의 마감. 보낸 때는 HttpCore 가 요청 머리를
+     * 쓰기 직전에 이 문맥에 다는 표시(`http.request_sent` = 거짓 — `HttpRequestExecutor.doSendRequest`)로 안다 — 연결을 빌리고 맺은 뒤다(다시
+     * 보내기도 제 요청을 보낼 때 다시 단다).
+     */
     internal class Exchange(
         private val request: HttpRequestBase,
-        private val context: HttpClientContext,
-    ) {
+        private val readTimeoutMillis: Int,
+    ) : HttpClientContext() {
+        private val readTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(readTimeoutMillis.toLong())
+
+        /** 요청을 보낸 때(System.nanoTime) — 보내기 전에는 손잡이를 만든 때다. */
+        @Volatile
+        private var sentAt = System.nanoTime()
+
+        override fun setAttribute(
+            id: String?,
+            obj: Any?,
+        ) {
+            if (id == HttpCoreContext.HTTP_REQ_SENT && obj == false) sentAt = System.nanoTime()
+            super.setAttribute(id, obj)
+        }
+
+        /** 마감이 지났으면 읽기 타임아웃과 같은 타입으로 — 메시지는 마감의 길이뿐이다(응답을 인용하지 않는다). */
+        fun due() {
+            if (System.nanoTime() - sentAt - readTimeoutNanos >= 0) {
+                throw SocketTimeoutException("$RESPONSE_LATE$readTimeoutMillis ms of sending the request")
+            }
+        }
+
         /**
          * 읽지 않고 끊는다 — 연결의 읽기 타임아웃을 0 으로 두고(JSSE 는 TLS 1.3 을 닫을 때 받은 바이트가 없으면 읽기 타임아웃만큼 한 번 더
          * 읽어 기다린다 — 타임아웃이 0 이면 읽지 않는다) 요청을 중단한다. 본문을 EOF 까지 읽어 이미 풀로 돌아간 연결은 건드리지 않는다 —
@@ -291,10 +328,10 @@ internal class AdminEngine(
         }
 
         private fun readTimeout(millis: Int) {
-            val connection = context.connection
-            if (connection != null) {
+            val current = connection
+            if (current != null) {
                 try {
-                    connection.socketTimeout = millis
+                    current.socketTimeout = millis
                 } catch (returned: RuntimeException) {
                     // 이미 풀로 돌아갔다 — 이 교환의 것이 아니다
                 }
@@ -308,7 +345,8 @@ internal class AdminEngine(
      * 소켓에 닿지 못하고 버퍼에 남은 것만 지나간다. [left] 바이트를 내주면 끝난 것처럼 -1 을 돌려준다(오류 본문의 상한 — 진짜 끝이 아니므로
      * 닫을 때 엿본다 · `raw()` 로 오류 응답의 스트림을 읽어도 같은 길이에서 끝난다). 길이 0 의 읽기는 스트림에 넘기지 않는다 — HttpCore 의 빈
      * 버퍼는 그것도 소켓에서 기다린다. ⚠️ 엿보기는 한 번이다 — 남은 것이 한 바이트뿐이거나 청크의 끝 표시가 1 ms 뒤에 오면 끊는다. 잃는 것은
-     * 그 연결의 재사용뿐이다(Keycloak 의 201·204 는 본문이 없어 끝을 바로 본다).
+     * 그 연결의 재사용뿐이다(Keycloak 의 201·204 는 본문이 없어 끝을 바로 본다). 읽기마다 앞뒤로 그 교환의 마감을 본다([Exchange.due]) — 마감
+     * 뒤에 읽기를 시작하지 않고, 마감 뒤에 끝난 읽기의 결과를 내주지 않는다(닫기는 지금처럼 엿보고 끊는다).
      */
     internal class Settled(
         private val input: InputStream,
@@ -320,8 +358,10 @@ internal class AdminEngine(
 
         override fun read(): Int {
             if (left == 0L) return -1
+            exchange.due()
             val b = input.read()
             if (b < 0) eof = true else left--
+            exchange.due()
             return b
         }
 
@@ -332,8 +372,10 @@ internal class AdminEngine(
         ): Int {
             if (len == 0) return 0
             if (left == 0L) return -1
+            exchange.due()
             val n = input.read(b, off, minOf(len.toLong(), left).toInt())
             if (n < 0) eof = true else left -= n
+            exchange.due()
             return n
         }
 

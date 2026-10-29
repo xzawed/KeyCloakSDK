@@ -6,7 +6,6 @@ import io.github.xzawed.keycloak.TOKEN_RESPONSE_MAX_BYTES
 import io.github.xzawed.keycloak.TransportTestTls
 import kotlinx.coroutines.runBlocking
 import org.apache.http.client.methods.HttpGet
-import org.apache.http.client.protocol.HttpClientContext
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
@@ -58,7 +57,7 @@ import kotlin.test.assertTrue
 // ⚠️ 미디어 타입이 있는 JSON 성공 본문(get·search)은 이 계약 밖이다 — 결합(Jackson)이 값 뒤의 공백까지 EOF 로 읽는다
 // (`FAIL_ON_TRAILING_TOKENS` — 실측 스택 `ObjectReader._verifyNoTrailingTokens`). 그 공백은 JSON 텍스트이고 성공 본문에는
 // 상한을 걸지 않는다(`TOKEN_RESPONSE_MAX_BYTES` 의 설명) — 그 본문 중간에 멈춘 서버는 읽기마다의 타임아웃
-// 몫이다(등록부 `response-read-deadline-divergent`).
+// 몫이고, 흘리는 서버는 요청을 보낸 때부터의 마감 몫이다(`ResponseReadDeadlineTest`).
 private const val ARR_REALM = "r"
 private const val ARR_TOKEN_PATH = "/realms/$ARR_REALM/protocol/openid-connect/token"
 private val ARR_TOKEN =
@@ -586,7 +585,7 @@ internal class AdminResourceResponseCutTest {
                     return 1
                 }
             }
-        val exchange = AdminEngine.Exchange(HttpGet("http://127.0.0.1:1/"), HttpClientContext.create())
+        val exchange = AdminEngine.Exchange(HttpGet("http://127.0.0.1:1/"), 60_000)
         val settled = AdminEngine.Settled(refusesZero, exchange, Long.MAX_VALUE)
         assertEquals(0, settled.read(ByteArray(1), 0, 0))
         assertEquals(1, settled.read(ByteArray(1), 0, 1))
