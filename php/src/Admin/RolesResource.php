@@ -48,7 +48,7 @@ final class RolesResource
      *
      * ⚠️ **It does not use fschmtt `Roles::update`** — that one builds the path from `$role->getName()`, so
      * the path and the body come from one value, and therefore a rename cannot be expressed. The 8 sister languages
-     * all take two arguments (name, representation), so §4 isomorphism also favors this side. For the background and the
+     * all take two arguments (name, representation), so under §4 isomorphism, too, this side is right. For the background and the
      * replacement path, see {@see RenamableRoles}.
      */
     public function update(string $name, #[\SensitiveParameter] Role $role): void

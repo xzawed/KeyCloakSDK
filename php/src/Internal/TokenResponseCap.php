@@ -27,7 +27,7 @@ use Psr\Http\Message\StreamInterface;
  * `AdminResponseBody`'s docblock) — not just memory but the **transfer** ends near the cap.
  * curl passes decompressed bytes in chunks of at most 16,384 bytes (CURL_MAX_WRITE_SIZE), so what is received before the
  * cut is up to the one chunk that passes cap+1 (the sink stores only up to cap+1 bytes of that chunk). (2) The **reader**
- * (`read()`) — it reads that body once, at most up to cap+1 bytes; it is null if it went over, and it fails if it stalls
+ * (`read()`) — it reads that body once, at most up to cap+1 bytes; it returns null if the body went over, and it fails if it stalls
  * before signaling its end (`ResponseStalled`). Only the reader decides — the paths that do not use the sink (PSR-18
  * `sendRequest()`, a handler the consumer passed in) also go through here.
  *
@@ -158,7 +158,7 @@ final class TokenResponseCap
      * it into a `KeycloakTransportError` without a cause.
      *
      * ⚠️ It goes at the **innermost** position of the stack (`push`) — it has to receive the response before http_errors so
-     * that a 4xx error body also passes the cap, and that middleware and `Admin\ErrorTranslation` see a rewindable body.
+     * that a 4xx error body also goes through the cap, and that middleware and `Admin\ErrorTranslation` see a rewindable body.
      *
      * @param \Closure(RequestInterface): bool $isTokenRequest
      * @return \Closure(callable(RequestInterface, array<string, mixed>): PromiseInterface): (\Closure(RequestInterface, array<string, mixed>): PromiseInterface)

@@ -35,7 +35,7 @@ use Xzawed\Keycloak\Internal\TokenResponseCap;
  * representation sent — were printed through `getMessage()` · `(string)$e` · `var_dump` · `print_r` (measured 2026-10-02).
  * What is kept: the type · the HTTP status (`getStatusCode()`) · the OAuth `error` code of a token-grant error (only when
  * it has the `OAuthErrorCode` shape). The input the facade sends (representations, search criteria) is hidden by each
- * resource method with `#[\SensitiveParameter]` — identifiers that go into the path remain, as in the cause's URL.
+ * resource method with `#[\SensitiveParameter]` — identifiers that go into the path remain visible, as the cause's URL does.
  *
  * ⚠️ fschmtt 0.44 wraps **every** failure of the version detection it runs first on each resource access made before the
  * version is known (`GET /admin/serverinfo` — the first admin token grant happens there) in a
@@ -51,8 +51,8 @@ final class ErrorTranslation
     /**
      * Where fschmtt gets the admin token — the tail after `{base}/realms/{realm}`. ⚠️ The tail alone cannot tell them apart —
      * an identifier that goes into the path can make an admin REST path end with this too (fschmtt does not encode path
-     * values). What tells them apart is the Bearer (`failed()`). The token response cap in `AdminClient` picks out the token
-     * grant by the same rule.
+     * values). What tells them apart is the Bearer (`failed()`). The token response cap in `AdminClient` also picks out the
+     * token grant by the same rule.
      */
     public const TOKEN_PATH = '/protocol/openid-connect/token';
 
