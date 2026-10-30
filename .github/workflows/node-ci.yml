@@ -4,8 +4,8 @@ on:
   # 돌리는 **유일한 자리**인데, 목록에 없으면 그 가드를 고치는 PR 에서 체크가 **생성조차 되지
   # 않는다**(`paths:` 는 잡을 스킵하는 것이 아니라 체크를 안 만든다 — #368 과 같은 부류).
   # 저장소의 열세 개 `scripts/*.{mjs,sh}` 중 자기 변경에 안 도는 자리가 여기 하나였다(실측).
-  push: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml', 'scripts/check-node-public-surface.mjs', 'scripts/check-hp-attest.mjs'] }
-  pull_request: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml', 'scripts/check-node-public-surface.mjs', 'scripts/check-hp-attest.mjs'] }
+  push: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml', 'scripts/check-node-public-surface.mjs', 'scripts/check-hp-attest.mjs', 'scripts/check-rendered-docs-hangul.mjs'] }
+  pull_request: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml', 'scripts/check-node-public-surface.mjs', 'scripts/check-hp-attest.mjs', 'scripts/check-rendered-docs-hangul.mjs'] }
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:
@@ -56,6 +56,9 @@ jobs:
         # ⚠️ 소스가 아니라 **방출된 .d.ts** 를 본다. 소비자가 보는 것이 그것이고, tsc 가 무엇을
         # 지우는지는 선언을 봐야 안다. 그래서 build 뒤에 돈다(가드는 dist 가 없으면 실패한다).
         run: npm run build && node ../scripts/check-node-public-surface.mjs ..
+      # 그려지는 문서(IDE 호버에 뜨는 방출 `.d.ts` 의 JSDoc)에 한글 0 — 등록부 korean-api-docs-in-published-packages.
+      - name: 그려지는 문서(방출 .d.ts) 한글 0
+        run: node ../scripts/check-rendered-docs-hangul.mjs dist --ext=.d.ts --min-files=10
       - name: npm audit (프로덕션 의존성 취약점 — high 이상)
         run: npm audit --audit-level=high --omit=dev
 

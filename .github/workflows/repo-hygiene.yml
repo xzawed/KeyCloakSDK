@@ -327,6 +327,11 @@ jobs:
       - name: Node 공개 타입 표면 가드 자가테스트(§4(b) 예외 범위 · dist 부재 공허성)
         run: sh scripts/test/test-check-node-public-surface.sh
 
+      # ⚠️ 그려지는 문서 한글 계수기의 자가테스트. 계수기 자체는 레인 CI 가 만든 산출물을 봐야 해서 레인에
+      # 배선돼 있고(문서 생성 뒤), 이 자가테스트는 TMP 픽스처만 쓴다 — 양성 · 음성 · 공허(산출물 부재) · 필터.
+      - name: 그려지는 문서 한글 계수기 자가테스트(양성 · 음성 · 산출물 부재 공허성)
+        run: sh scripts/test/test-check-rendered-docs-hangul.sh
+
       # ⚠️ 출처 게이트를 **실행해** 판정한다(계획서 Task B0). 자매 가드
       # `test-harness-registries.sh`는 같은 스크립트를 정적으로 렉싱하는데, 그 방식으로 7종
       # 우회를 닫은 뒤에도 적대적 재리뷰가 4종을 더 찾았다 — 정적으로 임의 POSIX 셸의 의미를
