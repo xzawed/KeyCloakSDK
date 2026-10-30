@@ -773,7 +773,9 @@ describe('받는 토큰의 길이 상한 — 콜드 원격 검증기', () => {
     expect(over.length).toBeGreaterThan(256_000)
 
     hits = 0
-    await expect(v.validate(over)).rejects.toThrow('JWT 검증 실패: token exceeds 256000 bytes')
+    await expect(v.validate(over)).rejects.toThrow(
+      'JWT validation failed: token exceeds 256000 bytes',
+    )
     expect(hits).toBe(0)
 
     await expect(v.validate(await forgedToken())).rejects.toThrow()

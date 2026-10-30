@@ -49,7 +49,7 @@ class AsyncAdminClient:
         if self._admin is None:
             if self._config.client_secret is None:
                 raise KeycloakConfigError(
-                    "admin API 접근에는 client_secret이 필요합니다(client-credentials grant)"
+                    "admin API access requires client_secret (client-credentials grant)"
                 )
             admin = KeycloakAdmin(
                 server_url=self._config.server_url,

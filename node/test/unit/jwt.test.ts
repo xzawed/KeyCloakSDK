@@ -234,7 +234,7 @@ describe('JwtValidator (강화 검증)', () => {
       expect(over.length).toBe(CAP + 1)
       const refused = JwtValidator.forKeySource(keys, OPTS).validate(over)
       await expect(refused).rejects.toBeInstanceOf(KeycloakTokenValidationError)
-      await expect(refused).rejects.toThrow('JWT 검증 실패: token exceeds 256000 bytes')
+      await expect(refused).rejects.toThrow('JWT validation failed: token exceeds 256000 bytes')
     })
 
     it('T2 — 상한 길이의 쓰레기는 상한이 아니라 jose 가 거부한다(`>` 이지 `>=` 가 아니다)', async () => {
@@ -266,7 +266,7 @@ describe('JwtValidator (강화 검증)', () => {
         KeycloakTokenValidationError,
       )
       await expect(v.validate(new Uint8Array(CAP + 1) as unknown as string)).rejects.toThrow(
-        'JWT 검증 실패: token exceeds 256000 bytes',
+        'JWT validation failed: token exceeds 256000 bytes',
       )
     })
   })

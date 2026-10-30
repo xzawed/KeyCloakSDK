@@ -359,7 +359,9 @@ export class JwtValidator {
         claims: payload as Record<string, unknown>,
       }
     } catch (e) {
-      throw new KeycloakTokenValidationError(`JWT 검증 실패: ${(e as Error).message}`, { cause: e })
+      throw new KeycloakTokenValidationError(`JWT validation failed: ${(e as Error).message}`, {
+        cause: e,
+      })
     }
   }
 }

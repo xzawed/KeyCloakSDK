@@ -279,7 +279,9 @@ describe('exchangeCode — 받는 토큰의 길이 상한(진짜 openid-client)'
     const refused = await refusal(exchange())
     expect(refused).toBeInstanceOf(KeycloakAuthError)
     expect(refused.message).toBe('Authorization code exchange failed: invalid id_token')
-    expect((refused.cause as Error).message).toBe('JWT 검증 실패: token exceeds 256000 bytes')
+    expect((refused.cause as Error).message).toBe(
+      'JWT validation failed: token exceeds 256000 bytes',
+    )
     expect(idp.certsHits).toBe(0)
   })
 

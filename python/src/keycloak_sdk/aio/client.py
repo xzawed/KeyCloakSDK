@@ -71,7 +71,7 @@ class AsyncKeycloakClient:
         if self._admin is None:
             if self._config is None:
                 raise KeycloakConfigError(
-                    "admin 접근에는 config가 필요합니다(AsyncKeycloakClient.create(config) 사용)"
+                    "admin access requires config (use AsyncKeycloakClient.create(config))"
                 )
             self._admin = AsyncAdminClient(self._config)
         return self._admin
