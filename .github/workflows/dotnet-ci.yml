@@ -1,9 +1,9 @@
 name: dotnet-ci
 on:
   push:
-    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs']
+    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-rendered-docs-hangul.mjs']
   pull_request:
-    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs']
+    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-rendered-docs-hangul.mjs']
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:
@@ -37,6 +37,15 @@ jobs:
         run: dotnet restore dotnet/Keycloak.Sdk.sln
       - name: Build (warnaserror)
         run: dotnet build dotnet/Keycloak.Sdk.sln --no-restore -c Release
+      # 그려지는 문서(패키지에 실려 IDE 호버에 뜨는 XML 문서 파일 — Directory.Build.props 의 GenerateDocumentationFile)에
+      # 한글 0 — 등록부 korean-api-docs-in-published-packages. TFM 마다 하나씩 모은다(파일이 없으면 cp 가 실패한다).
+      - name: 그려지는 문서(XML 문서 파일) 한글 0
+        run: |
+          mkdir -p "$RUNNER_TEMP/xmldoc"
+          for f in dotnet/src/Xzawed.Keycloak.Sdk/bin/Release/*/Xzawed.Keycloak.Sdk.xml; do
+            cp "$f" "$RUNNER_TEMP/xmldoc/$(basename "$(dirname "$f")").xml"
+          done
+          node scripts/check-rendered-docs-hangul.mjs "$RUNNER_TEMP/xmldoc" --ext=.xml --min-files=1
       - name: Format check
         run: dotnet format dotnet/Keycloak.Sdk.sln --verify-no-changes
       # ⚠️ 커버리지는 coverlet **컬렉터**로 수집한다(msbuild 통합 `/p:CollectCoverage`가 아니다).

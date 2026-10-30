@@ -1,9 +1,9 @@
 name: kotlin-ci
 on:
   push:
-    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs']
+    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-rendered-docs-hangul.mjs']
   pull_request:
-    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs']
+    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-rendered-docs-hangul.mjs']
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:
@@ -44,6 +44,12 @@ jobs:
       - name: 바이트코드 하한 (JDK 17 = major 61)
         working-directory: ${{ github.workspace }}
         run: node scripts/check-jvm-bytecode-floor.mjs kotlin/build/classes/kotlin/main --max-major=61 --min-classes=40
+      # 그려지는 문서(Dokka — 게시되는 -javadoc.jar 의 원천)에 한글 0 — 등록부 korean-api-docs-in-published-packages.
+      # 폰트 같은 바이너리는 계수기가 건너뛴다(NUL 판정) — 확장자로 거르지 않아 html·js·json 이 모두 들어온다.
+      - name: 그려지는 문서(Dokka) 한글 0
+        run: |
+          ./gradlew dokkaGeneratePublicationHtml
+          node ../scripts/check-rendered-docs-hangul.mjs build/dokka/html --min-files=100
 
   integration:
     name: Integration (testcontainers, 실제 Keycloak 26.6)
