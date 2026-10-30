@@ -148,6 +148,7 @@ function remoteJwksWithRefetchWindow(
   jwksUri: string,
   minRefetchSeconds: number,
   seams: BackoffSeams,
+  readTimeoutMs: number | undefined,
 ): RemoteJWKSet {
   const now = seams.now ?? (() => Date.now())
   const windowMs = minRefetchSeconds * 1000
@@ -155,6 +156,10 @@ function remoteJwksWithRefetchWindow(
   const remote = createRemoteJWKSet(new URL(jwksUri), {
     cooldownDuration: 0,
     cacheMaxAge: JWKS_MAX_AGE_SECONDS * 1000,
+    // 보낸 때부터 응답 전체의 기한 — jose 가 이 signal 로 fetch 를 끊고, `fetchJwksBounded` 는 본문도 같은
+    // signal 아래에서 읽는다. 없으면 설정과 무관하게 jose 자신의 5 초다(`response-read-deadline.test.ts`).
+    // ⚠️ 올림한다 — 설정은 소수를 받지만 jose 는 정수가 아니면 생성 때 raw TypeError 를 던진다.
+    ...(readTimeoutMs === undefined ? {} : { timeoutDuration: Math.ceil(readTimeoutMs) }),
     [customFetch]: async (url, options) => {
       const forced = remote.jwks() !== undefined && remote.fresh
       if (forced && now() - lastAttempt < windowMs) {
@@ -251,6 +256,12 @@ export interface JwtValidatorOptions {
    * stamped only on success, so it is not used — it is set to 0).
    */
   readonly jwksMinRefetchSeconds: number
+  /**
+   * Deadline (ms) for each JWKS response in full, counted from send. `AuthClient` passes the configuration's
+   * `readTimeoutMs`; when absent, jose's own default (5,000 ms) applies.
+   * @internal
+   */
+  readonly readTimeoutMs?: number
 }
 
 /**
@@ -315,7 +326,12 @@ export class JwtValidator {
     opts: JwtValidatorOptions,
     seams: BackoffSeams,
   ): JwtValidator {
-    const remote = remoteJwksWithRefetchWindow(jwksUri, opts.jwksMinRefetchSeconds, seams)
+    const remote = remoteJwksWithRefetchWindow(
+      jwksUri,
+      opts.jwksMinRefetchSeconds,
+      seams,
+      opts.readTimeoutMs,
+    )
     return new JwtValidator(withFetchFailureBackoff(remote, seams), opts)
   }
 

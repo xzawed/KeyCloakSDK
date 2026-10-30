@@ -47,6 +47,7 @@
 - **(Ruby)** admin 이 String 이 아닌 access token 에는 헤더 검사를 걸지 않았습니다 — 소비자 `TokenProvider` 가 CR·LF 를 담은 Symbol 을 돌려주면 `raw` 커넥션은 Bearer 전체를 인용한 raw `ArgumentError` 를, 파사드는 `TransportError`(`admin transport error: ArgumentError`)를 냈고, NUL·끝 공백을 담은 Symbol 은 그대로·공백이 지워진 채 나갔으며, `nil`·`""` 은 `Authorization: Bearer` 로 나갔습니다(실측). 이제 String 이 아닌 값도 헤더에 실릴 그 글로 같은 검사를 받아 String 과 같은 `AuthError` 이고, 빈 토큰은 요청 없이 `admin request not sent: the access token is empty` 입니다. 검사를 지나는 Symbol·숫자는 지금처럼 그 글로 나가고, SDK 의 `ClientCredentialsTokenProvider` 는 늘 비지 않은 String 이라 달라지지 않습니다. 공개 API 변경은 0 입니다.
 - **(Java · Kotlin · Python · Ruby · .NET)** SDK 가 직접 읽는 응답(토큰·introspection·디스커버리·JWKS·admin)을 요청을 보낸 때부터 설정한 타임아웃 안에 **전부** 읽습니다 — 지금까지는 읽기마다만 걸려(.NET 의 디스커버리·JWKS 본문은 그것도 없이) 바이트를 읽기 타임아웃보다 조금 짧게 흘리는 서버가 호출 하나를 ≈ 상한 × 읽기 타임아웃 동안 붙잡았습니다(1 초 설정에 7 초 · JVM 은 흘린 TLS 레코드 하나로 33.6 초). 이제 그 레인의 기존 타임아웃 오류로 끝납니다(기한 + 읽기 하나 안 · python aio 와 .NET JWKS 는 기한 정확히). 남은 칸: JVM admin 의 헤더·청크 틀은 아직 읽기마다입니다.
 - **(Python)** sync 레인은 상태 줄·헤더·청크 크기 줄·트레일러·TLS 레코드까지 소켓의 원문 읽기마다 기한을 봅니다 — 위 줄의 본문 기한만으로는 그것들을 흘리는 서버가 http.client 한 호출 안에서 7 초를 붙잡았습니다(1 초 설정). 이제 약 1.0 초에 같은 `KeycloakTransportError` 로 끝납니다. 남은 칸: HTTPS 프록시(TLS 안의 TLS).
+- **(Node)** `AuthClient` 가 만드는 검증기는 JWKS 응답을 보낸 때부터 설정한 `readTimeoutMs` 안에 **전부** 읽습니다 — 지금까지는 설정과 무관하게 jose 자신의 5 초여서, 흘리거나 멈춘 JWKS 가 1 초 설정에서도 검증 하나를 5 초 붙잡았고 5 초보다 느린 IdP 는 설정이 그보다 길어도 거부됐습니다. 이제 1 초 설정에서 약 1.04 초에 실패하고(흘리기·멈춤 둘 다), 5.5 초 늦은 IdP 는 8 초 설정에서 받습니다. 설정 없이 만든 단독 `JwtValidator.forJwksUri` 는 지금처럼 jose 의 5 초입니다.
 
 ## [1.4.0] - 2026-10-27 (Ruby)
 

@@ -118,6 +118,7 @@ export class AuthClient {
         allowedAlgs: [...cfg.signatureAlgorithms],
         clockSkewSeconds: cfg.clockSkewSeconds,
         jwksMinRefetchSeconds: cfg.jwksMinRefetchSeconds,
+        readTimeoutMs: cfg.readTimeoutMs,
       })
   }
 
