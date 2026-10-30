@@ -130,7 +130,7 @@ jobs:
     defaults: { run: { working-directory: python } }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with: { python-version: '3.12' }
       - run: 'python -m pip install --only-binary :all: -e ".[dev]"'
       - name: pip-audit (의존성 취약점 감사)
@@ -244,7 +244,7 @@ jobs:
         working-directory: ruby
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ruby/setup-ruby@824c0e29fdfc7d689c191c27acc969d2d04b7dd8 # v1
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1
         with:
           ruby-version: '3.4' # CI 매트릭스 상단 — 감사는 Gemfile.lock 기준이라 매트릭스 불필요
           bundler-cache: true
@@ -285,7 +285,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with: { python-version: '3.12' }
       # ⚠️ 이 파일은 SDK 를 담지 않는다 — Dockerfile 이 `pip install /sdk` 로 따로 넣는다. 즉 이
       # 잡이 덮는 것은 하네스 웹서버 표면(fastapi·uvicorn·httpx)뿐이고 SDK 표면은 위 python 잡이

@@ -66,7 +66,7 @@ jobs:
 
       # Python(pytest-cov → Cobertura XML)
       - name: Set up Python 3.12
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
       - name: Generate Python coverage XML
@@ -100,7 +100,7 @@ jobs:
       # JSON은 절대경로를 담고 SonarQube가 baseDir 하위로 해석하므로 경로 정규화 불필요(lcov와 차이).
       # ⚠️ 절대경로라 두 잡의 워크스페이스 경로가 같아야 한다 — 같은 ubuntu-latest 호스티드 러너면 같다.
       - name: Set up Ruby 3.4
-        uses: ruby/setup-ruby@824c0e29fdfc7d689c191c27acc969d2d04b7dd8 # v1
+        uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
