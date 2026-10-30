@@ -297,4 +297,22 @@ _dfn_tmp="$(mktemp -d)"
 }
 rm -rf "$_dfn_tmp"
 
+# ⚠️ **이름 축 — 파생은 이름을 해석하지 않는다.** 이름을 `grep -E` 패턴·pathspec 에 넣는 파생은
+# `c++`·`x(y`·`k[1]` 디렉터리를 **조용히 뺀다** — 그러면 위 뿌리 대조가 열 번째 언어를 양쪽에서 함께 잃고
+# 초록이다. `n(x` 는 매니페스트가 없다.
+_dfn_tmp="$(mktemp -d)"
+_dfn_rc=0
+(
+  cd "$_dfn_tmp" \
+    && git init -q -b main . >/dev/null 2>&1 \
+    && mkdir -p alpha 'c++' 'x(y' 'k[1]' 'n(x' \
+    && : > alpha/pom.xml && : > 'c++/package.json' && : > 'x(y/go.mod' && : > 'k[1]/Cargo.toml' \
+    && : > 'n(x/README.md' \
+    && git add -A >/dev/null 2>&1
+) || _dfn_rc=$?
+assert_eq "0" "$_dfn_rc" "[이름 축] 픽스처 저장소를 만들지 못했다 — 건너뛰면 아래 단언이 공허하다"
+assert_eq "alpha c++ k[1] x(y " "$(df_tree_langs "$_dfn_tmp")" \
+  "[이름 축] 정규식·glob 문자를 담은 이름의 언어 디렉터리가 빠졌다 — 파생이 이름을 해석한다"
+rm -rf "$_dfn_tmp"
+
 assert_report

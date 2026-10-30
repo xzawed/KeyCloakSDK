@@ -56,4 +56,24 @@ OUT="$(MLU_ROOT="$EMPTY" MLU_GUARD='scripts/test/guard.sh' sh "$SCRIPT" 2>&1)" &
 assert_eq "1" "$rc" "대조한 커밋이 0 건이면 공허로 실패해야 한다(0 을 통과로 내면 안 된다)"
 assert_contains "$OUT" "공허" "공허가 이유로 나와야 한다"
 
+# ⚠️ (d) 이름 축 — 파생이 이름을 해석하면(`grep -E` 패턴·pathspec) `c++`·`x(y`·`k[1]` 언어가 파생에서
+# 빠져 **일치하는 이력이 불일치(=거짓 오탐)로 보고된다.** `n(x` 는 매니페스트가 없다.
+NAMES="$TMP/names"
+mkdir -p "$NAMES/scripts/test" && cd "$NAMES"
+git init -q -b main . && git config user.email t@t && git config user.name t
+mkdir -p alpha 'c++' 'x(y' 'k[1]' 'n(x'
+printf '[package]\n' > alpha/Cargo.toml
+printf '{}\n' > 'c++/package.json'
+printf 'module x\n' > 'x(y/go.mod'
+printf '{}\n' > 'k[1]/composer.json'
+printf 'x\n' > 'n(x/README.md'
+cat > scripts/test/guard.sh <<'INNER'
+SD_MANIFEST='pom\.xml|pyproject\.toml|package\.json|go\.mod|composer\.json|Cargo\.toml|build\.gradle\.kts|[^/]+\.gemspec|[^/]+\.sln'
+SD_LANGS='alpha c++ x(y k[1]'
+INNER
+git add -A && git commit -qm "이름이 해석될 수 있는 언어들 — 손 목록은 트리와 같다"
+OUT="$(MLU_ROOT="$NAMES" MLU_GUARD='scripts/test/guard.sh' sh "$SCRIPT" 2>&1)" && rc=0 || rc=$?
+assert_eq "0" "$rc" "[이름 축] 일치하는 이력이 불일치로 보고됐다 — 파생이 이름을 해석한다: $OUT"
+assert_contains "$OUT" "불일치(=오탐) 0" "[이름 축] 일치하는 이력에서는 0 이 나와야 한다"
+
 assert_report

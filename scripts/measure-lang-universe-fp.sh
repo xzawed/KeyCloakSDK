@@ -27,10 +27,8 @@ LIMIT="${1:-}"
 MANIFEST="$(sed -n "s/^SD_MANIFEST='\(.*\)'\$/\1/p" "$GUARD" | head -1)"
 [ -n "$MANIFEST" ] || { echo "::error::$GUARD 에서 SD_MANIFEST 를 못 읽었다 — 추출 실패도 실패다" >&2; exit 1; }
 
-tree_langs() { # $1=commit
-  git ls-tree -d --name-only "$1" | while read -r d; do
-    if git ls-tree --name-only "$1" "$d/" | grep -qE "^$d/($MANIFEST)\$"; then printf '%s\n' "$d"; fi
-  done | sort | tr '\n' ' '
+tree_langs() { # $1=commit — 이름은 패턴·pathspec 에 넣지 않는다(축과 같은 관용 · 자가테스트 (d))
+  git ls-tree -r --name-only "$1" | grep -E "^[^/]+/($MANIFEST)\$" | sed 's#/.*##' | sort -u | tr '\n' ' '
 }
 
 if [ -n "$LIMIT" ]; then

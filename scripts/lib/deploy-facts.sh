@@ -26,13 +26,12 @@ DF_MANIFEST='(pom[.]xml|pyproject[.]toml|package[.]json|go[.]mod|composer[.]json
 # 언어를 놓친다(실측: `git add -N` 한 열 번째 언어를 못 봤다). 자매 가드
 # `test-security-defaults.sh` 의 언어집합 축과 같은 관용이어야 둘이 같은 순간에 말한다.
 # 작업 트리 나열(`ls`)은 쓰지 않는다 — `bin/`·`build/` 같은 미추적을 집는다.
+# ⚠️ 이름은 패턴·pathspec 에 넣지 않는다 — 깊이 1 의 매니페스트 경로만 골라 이름을 잘라 낸다. 넣으면
+# `c++`·`x(y`·`k[1]` 이 조용히 빠진다(`test-deploy-facts.sh` 이름 축). git 이 인용하는 이름(비 ASCII·`"`·`\`)은 못 잡는다.
 df_tree_langs() { # $1=저장소 루트(생략하면 현재 디렉터리)
   _dfu_root="${1:-.}"
   ( cd "$_dfu_root" && git ls-files ) 2>/dev/null \
-    | sed -n 's#^\([^/]*\)/.*#\1#p' | sort -u | while read -r _dfu_d; do
-    if ( cd "$_dfu_root" && git ls-files "$_dfu_d/" ) 2>/dev/null \
-      | grep -qE "^$_dfu_d/$DF_MANIFEST"; then printf '%s\n' "$_dfu_d"; fi
-  done | sort | tr '\n' ' '
+    | grep -E "^[^/]+/$DF_MANIFEST" | sed 's#/.*##' | sort -u | tr '\n' ' '
 }
 
 # 첫 게시(RC 포함)를 실제로 마친 언어. **문서가 게시 현황을 말할 때의 유일 원천이다.**
