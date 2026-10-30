@@ -113,11 +113,10 @@ SD_LANGS='java python node go dotnet php rust ruby kotlin'
 # (`website/package.json` 류). 그 PR 이 같은 커밋에서 `SD_LANGS` 를 늘리면 된다.
 # ⚠️ 잔여 **거짓음성**도 적어 둔다 — 매니페스트가 이 목록에 없는 언어(Swift `Package.swift` ·
 # Elixir `mix.exs`)는 못 잡는다. 목록을 늘리는 것이 그 언어를 들이는 작업의 일부다.
+# git 이 인용해 내보내는 이름(비 ASCII·`"`·`\`)의 언어도 못 잡는다.
 SD_MANIFEST='pom\.xml|pyproject\.toml|package\.json|go\.mod|composer\.json|Cargo\.toml|build\.gradle\.kts|[^/]+\.gemspec|[^/]+\.sln'
-sd_tree_langs() {
-  ( cd "$ROOT" && git ls-files ) | sed -n 's#^\([^/]*\)/.*#\1#p' | sort -u | while read -r d; do
-    if ( cd "$ROOT" && git ls-files "$d/" ) | grep -qE "^$d/($SD_MANIFEST)\$"; then printf '%s\n' "$d"; fi
-  done | sort | tr '\n' ' '
+sd_tree_langs() { # 이름은 패턴·pathspec 에 넣지 않는다 — df_tree_langs 와 같은 관용(아래 이름 축)
+  ( cd "$ROOT" && git ls-files ) | grep -E "^[^/]+/($SD_MANIFEST)\$" | sed 's#/.*##' | sort -u | tr '\n' ' '
 }
 sd_sorted() { printf '%s' "$1" | tr ' ' '\n' | sed '/^$/d' | sort | tr '\n' ' '; }
 
@@ -153,6 +152,24 @@ sd_universe_negative_control() {
     "[음성대조·언어집합] 언어가 다른 트리에서도 같은 답을 낸다 — 파생이 트리를 안 읽는다(no-op)"
 }
 sd_universe_negative_control
+# ⚠️ **이름 축** — 이름을 `grep -E` 패턴·pathspec 에 넣는 파생은 `c++`·`x(y`·`k[1]` 디렉터리를
+# **조용히 빼서** 위 대조가 열 번째 언어를 양쪽에서 함께 잃는다(df_tree_langs 와 같은 축).
+sd_universe_name_axis() {
+  _un_tmp="$(mktemp -d)"
+  _un_rc=0
+  ( cd "$_un_tmp" \
+    && git init -q -b main . >/dev/null 2>&1 \
+    && mkdir -p alpha 'c++' 'x(y' 'k[1]' 'n(x' \
+    && : > alpha/pom.xml && : > 'c++/package.json' && : > 'x(y/go.mod' && : > 'k[1]/Cargo.toml' \
+    && : > 'n(x/README.md' \
+    && git add -A >/dev/null 2>&1 ) || _un_rc=$?
+  _un_got="$(ROOT="$_un_tmp" sd_tree_langs)"
+  rm -rf "$_un_tmp"
+  assert_eq "0" "$_un_rc" "[이름축·언어집합] 픽스처 저장소를 만들지 못했다 — 건너뛰면 아래 단언이 공허하다"
+  assert_eq "alpha c++ k[1] x(y " "$_un_got" \
+    "[이름축·언어집합] 정규식·glob 문자를 담은 이름의 언어 디렉터리가 빠졌다 — 파생이 이름을 해석한다"
+}
+sd_universe_name_axis
 sd_subset_of_langs() { # $1=라벨 $2=목록
   _ss_bad=''
   for _l in $2; do
