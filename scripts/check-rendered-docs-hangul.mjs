@@ -65,6 +65,12 @@ walk(root)
 
 // ⚠️ NUL 바이트가 있는 파일은 바이너리로 보고 건너뛴다(git 과 같은 판정) — 폰트를 UTF-8 로 읽으면 우연히 한글
 // 범위의 글자가 나온다(실측: Dokka 의 `ui-kit/fonts/*.woff*` 가 167 줄의 거짓 한글). 건너뛴 수는 요약에 찍는다.
+// ⚠️ HTML 수치 문자 참조(`&#xAC00;` · `&#44032;`)도 푼 뒤 센다 — 브라우저는 그것을 한글로 그린다(Grok 적대 레그).
+const codePoint = (n) => (Number.isInteger(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : '')
+const decodeRefs = (line) =>
+  line
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => codePoint(parseInt(h, 16)))
+    .replace(/&#([0-9]+);/g, (_, d) => codePoint(Number(d)))
 const hits = []
 let text = 0
 let binary = 0
@@ -79,7 +85,7 @@ for (const [path, rel] of files) {
     .toString('utf8')
     .split('\n')
     .forEach((line, i) => {
-      if (HANGUL.test(line)) hits.push(`${rel}:${i + 1}: ${line.trim().slice(0, 160)}`)
+      if (HANGUL.test(decodeRefs(line))) hits.push(`${rel}:${i + 1}: ${line.trim().slice(0, 160)}`)
     })
 }
 

@@ -48,6 +48,15 @@ assert_contains "$(cat "$TMP/out")" "건너뛴 바이너리 1" "[바이너리] �
 printf '\352\260\200\n' > "$TMP/bin/text.txt"
 assert_eq "1" "$(run "$TMP/bin")" "[바이너리 대조] NUL 없는 같은 바이트는 텍스트로 잡혀야 한다"
 
+# ── 문자 참조 — 브라우저가 한글로 그리는 `&#xAC00;` · `&#44032;` 도 센다(영문 참조는 아니다) ──
+mkdir -p "$TMP/ref"
+printf '<p>&#xAC00;</p>\n' > "$TMP/ref/hex.html"
+assert_eq "1" "$(run "$TMP/ref")" "[문자 참조] 16진 참조로 쓴 한글도 잡아야 한다"
+printf '<p>&#65;&#x42;&#99999999;</p>\n' > "$TMP/ref/hex.html"
+assert_eq "0" "$(run "$TMP/ref")" "[문자 참조 대조] 영문·범위 밖 참조는 한글이 아니다"
+printf '<p>&#44032;</p>\n' > "$TMP/ref/dec.html"
+assert_eq "1" "$(run "$TMP/ref")" "[문자 참조] 10진 참조로 쓴 한글도 잡아야 한다"
+
 # ── 오타 — 모르는 옵션은 필터를 조용히 끄는 대신 2 ──
 assert_eq "2" "$(run "$TMP/en" --exts=.html)" "[오타] 모르는 옵션은 2 여야 한다"
 
