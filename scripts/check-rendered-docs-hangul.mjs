@@ -63,17 +63,28 @@ const walk = (dir) => {
 }
 walk(root)
 
+// ⚠️ NUL 바이트가 있는 파일은 바이너리로 보고 건너뛴다(git 과 같은 판정) — 폰트를 UTF-8 로 읽으면 우연히 한글
+// 범위의 글자가 나온다(실측: Dokka 의 `ui-kit/fonts/*.woff*` 가 167 줄의 거짓 한글). 건너뛴 수는 요약에 찍는다.
 const hits = []
+let text = 0
+let binary = 0
 for (const [path, rel] of files) {
-  readFileSync(path, 'utf8')
+  const buf = readFileSync(path)
+  if (buf.includes(0)) {
+    binary += 1
+    continue
+  }
+  text += 1
+  buf
+    .toString('utf8')
     .split('\n')
     .forEach((line, i) => {
       if (HANGUL.test(line)) hits.push(`${rel}:${i + 1}: ${line.trim().slice(0, 160)}`)
     })
 }
 
-console.log(`rendered docs: ${files.length} 파일 · 한글 줄 ${hits.length} (${root})`)
-if (files.length < minFiles) fail(2, `읽은 파일 ${files.length} 개 < --min-files=${minFiles} — 산출물이 비었거나 필터가 틀렸다`)
+console.log(`rendered docs: ${text} 파일 · 한글 줄 ${hits.length} · 건너뛴 바이너리 ${binary} (${root})`)
+if (text < minFiles) fail(2, `읽은 텍스트 파일 ${text} 개 < --min-files=${minFiles} — 산출물이 비었거나 필터가 틀렸다`)
 if (hits.length) {
   for (const h of hits.slice(0, MAX_SHOWN)) console.error(`::error::그려지는 문서에 한글 — ${h}`)
   if (hits.length > MAX_SHOWN) console.error(`::error::… 외 ${hits.length - MAX_SHOWN} 줄`)

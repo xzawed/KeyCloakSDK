@@ -39,6 +39,15 @@ assert_eq "1" "$(run "$TMP/mix")" "[필터 대조] 필터 없이는 b.js · src/
 assert_eq "1" "$(run "$TMP/mix" --ext=.html)" "[필터] --skip 없이는 src/c.html 이 잡혀야 한다"
 assert_eq "0" "$(run "$TMP/mix" --ext=.html --skip=src/)" "[필터] --ext=.html --skip=src/ 이면 a.html 만 읽는다"
 
+# ── 바이너리 — NUL 이 있는 파일은 건너뛴다(폰트를 UTF-8 로 읽으면 한글 범위 글자가 나온다) ──
+mkdir -p "$TMP/bin"
+printf 'ok\n' > "$TMP/bin/a.html"
+printf '\000\352\260\200\n' > "$TMP/bin/font.woff"
+assert_eq "0" "$(run "$TMP/bin")" "[바이너리] NUL 이 있는 파일의 한글 범위 바이트는 세지 않는다"
+assert_contains "$(cat "$TMP/out")" "건너뛴 바이너리 1" "[바이너리] 건너뛴 수를 찍어야 한다"
+printf '\352\260\200\n' > "$TMP/bin/text.txt"
+assert_eq "1" "$(run "$TMP/bin")" "[바이너리 대조] NUL 없는 같은 바이트는 텍스트로 잡혀야 한다"
+
 # ── 오타 — 모르는 옵션은 필터를 조용히 끄는 대신 2 ──
 assert_eq "2" "$(run "$TMP/en" --exts=.html)" "[오타] 모르는 옵션은 2 여야 한다"
 
