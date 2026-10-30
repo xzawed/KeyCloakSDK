@@ -1,9 +1,9 @@
 name: ruby-ci
 on:
   push:
-    paths: ['ruby/**', '.github/workflows/ruby-ci.yml', 'scripts/check-hp-attest.mjs']
+    paths: ['ruby/**', '.github/workflows/ruby-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-rendered-docs-hangul.mjs']
   pull_request:
-    paths: ['ruby/**', '.github/workflows/ruby-ci.yml', 'scripts/check-hp-attest.mjs']
+    paths: ['ruby/**', '.github/workflows/ruby-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-rendered-docs-hangul.mjs']
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   # ⚠️ 이 레인이 이 장치가 생긴 이유다 — rubocop 1.90.0 파손이 08-24~08-28 나흘간 안 보였고,
   # 태그 푸시가 아니었으면 릴리스 때 처음 드러났을 것이다.
@@ -160,3 +160,10 @@ jobs:
             exit 1
           fi
           echo "OK: 삭제된 공개 객체 없음"
+      # 그려지는 문서(YARD HTML — 「View source」로 공개 메서드 본문의 줄 끝 주석까지)에 한글 0 —
+      # 등록부 korean-api-docs-in-published-packages. `--no-save` 는 위 단계의 `.yardoc` 을 덮지 않는다.
+      - name: 그려지는 문서(yard doc) 한글 0
+        working-directory: ruby
+        run: |
+          yard doc --no-progress --no-save -q -o "$RUNNER_TEMP/yard-html" lib
+          node ../scripts/check-rendered-docs-hangul.mjs "$RUNNER_TEMP/yard-html" --ext=.html --min-files=10

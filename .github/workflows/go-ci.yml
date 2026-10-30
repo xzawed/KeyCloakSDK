@@ -2,8 +2,8 @@ name: Go CI
 on:
   # `scripts/integration-coverage.*` — integration 잡의 리포트가 그 둘로 돈다. 리포트 로직·핀만 고친 PR 에서도
   # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다).
-  push: { branches: [main], paths: ['go/**', '.github/workflows/go-ci.yml', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'scripts/check-hp-attest.mjs'] }
-  pull_request: { branches: [main], paths: ['go/**', '.github/workflows/go-ci.yml', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'scripts/check-hp-attest.mjs'] }
+  push: { branches: [main], paths: ['go/**', '.github/workflows/go-ci.yml', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'scripts/check-hp-attest.mjs', 'scripts/check-rendered-docs-hangul.mjs'] }
+  pull_request: { branches: [main], paths: ['go/**', '.github/workflows/go-ci.yml', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'scripts/check-hp-attest.mjs', 'scripts/check-rendered-docs-hangul.mjs'] }
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:
@@ -72,6 +72,12 @@ jobs:
           HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
           HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
         run: node scripts/check-hp-attest.mjs "$HP_ATTEST_DIR" --nonce "$HP_ATTEST_NONCE" --lang go
+      # 그려지는 문서(pkg.go.dev 가 그리는 `go doc -all`)에 한글 0 — 등록부 korean-api-docs-in-published-packages.
+      - name: 그려지는 문서(go doc -all) 한글 0
+        run: |
+          mkdir -p "$RUNNER_TEMP/godoc"
+          go doc -all . > "$RUNNER_TEMP/godoc/keycloak.txt"
+          node ../scripts/check-rendered-docs-hangul.mjs "$RUNNER_TEMP/godoc" --min-files=1
 
   # SECURITY.md가 약속하는 "언어별 의존성 취약점 감사"의 Go 구현(cargo audit·npm audit·composer
   # audit·bundler-audit·pip-audit와 같은 하드 게이트). govulncheck는 vuln.go.dev의 Go 취약점 DB를
