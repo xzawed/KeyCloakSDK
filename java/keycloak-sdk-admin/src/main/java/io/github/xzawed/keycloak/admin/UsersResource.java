@@ -6,14 +6,15 @@ import org.keycloak.admin.client.CreatedResponseUtil;
 import org.keycloak.representations.idm.UserRepresentation;
 
 /**
- * {@code users()} 리소스 파사드(WBS 4.3). 공식 admin-client의
- * {@link org.keycloak.admin.client.resource.UsersResource}를 감싸며 모든 호출을
- * {@link AdminExceptions#call}/{@link AdminExceptions#run}으로 경계 변환한다.
- * 모델 타입은 admin-client의 {@link UserRepresentation}을 그대로 사용한다(관용 파사드).
+ * {@code users()} resource facade (WBS 4.3). Wraps the official admin-client's
+ * {@link org.keycloak.admin.client.resource.UsersResource} and converts every call at the boundary through
+ * {@link AdminExceptions#call}/{@link AdminExceptions#run}.
+ * The model type is admin-client's {@link UserRepresentation}, used as-is (idiomatic facade).
  *
- * <p>{@link #get(String)}은 대상이 없으면 {@code Optional.empty()}로 삼키지 않고
- * {@link io.github.xzawed.keycloak.core.exception.KeycloakNotFoundException}을 그대로 전파한다 —
- * {@code Optional}은 예외 없이 값이 부재할 수 있는 경우를 위한 반환 타입이며, 이 리소스에는 그런 경로가 없다.
+ * <p>When the target does not exist, {@link #get(String)} does not swallow that into {@code Optional.empty()}; it
+ * propagates {@link io.github.xzawed.keycloak.core.exception.KeycloakNotFoundException} as-is —
+ * {@code Optional} is the return type for cases where a value may be absent without an exception, and this
+ * resource has no such path.
  */
 public final class UsersResource {
 
@@ -23,7 +24,7 @@ public final class UsersResource {
     this.delegate = delegate;
   }
 
-  /** 사용자 생성 후 응답 {@code Location} 헤더에서 신규 사용자 id를 추출해 반환한다. */
+  /** Creates a user, then extracts the new user's id from the response {@code Location} header and returns it. */
   public String create(UserRepresentation representation) {
     return AdminExceptions.call(() -> {
       try (jakarta.ws.rs.core.Response r = delegate.create(representation)) {
@@ -45,10 +46,11 @@ public final class UsersResource {
   }
 
   /**
-   * admin-client의 {@code delegate.delete(id)}는 {@link jakarta.ws.rs.core.Response}를 반환하는
-   * JAX-RS 프록시 메서드라 4xx/5xx 응답에서도 예외를 던지지 않는다({@code void} 반환 메서드만 자동으로
-   * throw한다). 따라서 상태 코드를 직접 검사해 실패 시 {@link jakarta.ws.rs.WebApplicationException}을
-   * 던져 {@link AdminExceptions} 경계를 통해 SDK 예외로 변환한다.
+   * admin-client's {@code delegate.delete(id)} is a JAX-RS proxy method that returns a
+   * {@link jakarta.ws.rs.core.Response}, so it does not throw even on a 4xx/5xx response (only
+   * {@code void}-returning methods throw automatically). The status code is therefore checked directly, and on
+   * failure a {@link jakarta.ws.rs.WebApplicationException} is thrown, which the {@link AdminExceptions} boundary
+   * converts to an SDK exception.
    */
   public void delete(String id) {
     AdminExceptions.run(() -> {

@@ -6,15 +6,15 @@ import org.keycloak.admin.client.CreatedResponseUtil;
 import org.keycloak.representations.idm.GroupRepresentation;
 
 /**
- * {@code groups()} 리소스 파사드(WBS 4.7). 공식 admin-client의
- * {@link org.keycloak.admin.client.resource.GroupsResource}를 감싸며 모든 호출을
- * {@link AdminExceptions#call}/{@link AdminExceptions#run}으로 경계 변환한다.
+ * {@code groups()} resource facade (WBS 4.7). Wraps the official admin-client's
+ * {@link org.keycloak.admin.client.resource.GroupsResource} and converts every call at the boundary through
+ * {@link AdminExceptions#call}/{@link AdminExceptions#run}.
  *
- * <p>⚠️ API 편차: 생성 메서드명은 {@code create}가 아니라 {@code add(GroupRepresentation)}이고,
- * 단일 그룹 접근자는 {@code get}이 아니라 {@code group(String)}이다({@code delete}도 직접 존재하지
- * 않아 {@code group(id).remove()}로 위임). {@link #get(String)}은 {@link UsersResource#get(String)}과
- * 동일한 정책을 따른다: 대상이 없으면
- * {@link io.github.xzawed.keycloak.core.exception.KeycloakNotFoundException}을 전파한다.
+ * <p>⚠️ API deviation: the creation method is named {@code add(GroupRepresentation)}, not {@code create}, and
+ * the single-group accessor is {@code group(String)}, not {@code get} ({@code delete} does not exist directly
+ * either, so it delegates to {@code group(id).remove()}). {@link #get(String)} follows the same policy as
+ * {@link UsersResource#get(String)}: if the target does not exist, it propagates
+ * {@link io.github.xzawed.keycloak.core.exception.KeycloakNotFoundException}.
  */
 public final class GroupsResource {
 
@@ -24,7 +24,7 @@ public final class GroupsResource {
     this.delegate = delegate;
   }
 
-  /** 그룹 생성 후 응답 {@code Location} 헤더에서 신규 그룹 id를 추출해 반환한다. */
+  /** Creates a group, then extracts the new group's id from the response {@code Location} header and returns it. */
   public String create(GroupRepresentation representation) {
     return AdminExceptions.call(() -> {
       try (jakarta.ws.rs.core.Response r = delegate.add(representation)) {
@@ -42,9 +42,9 @@ public final class GroupsResource {
   }
 
   /**
-   * id로 주소를 잡아 그룹을 갱신한다. {@code representation.name}에 새 이름을 주면 rename이다.
+   * Updates the group, addressed by id. Giving a new name in {@code representation.name} makes it a rename.
    *
-   * <p>⚠️ 경로({@code id})와 body({@code representation})를 합치지 말 것.
+   * <p>⚠️ Do not merge the path ({@code id}) and the body ({@code representation}).
    */
   public void update(String id, GroupRepresentation representation) {
     AdminExceptions.run(() -> delegate.group(id).update(representation));

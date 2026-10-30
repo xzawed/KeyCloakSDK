@@ -8,12 +8,13 @@ import java.util.List;
 import org.keycloak.representations.idm.UserRepresentation;
 
 /**
- * QuickStart 예제 (WBS 7.3). {@link KeycloakClient#create(KeycloakConfig)}로 SDK를 조립하고,
- * client-credentials 그랜트로 토큰을 발급한 뒤 {@link Secrets#mask(String)}로 마스킹해서만
- * 출력하며(원문 토큰은 절대 로그에 남기지 않음), 렐름의 사용자 목록을 조회한다.
+ * QuickStart example (WBS 7.3). Assembles the SDK with {@link KeycloakClient#create(KeycloakConfig)},
+ * obtains a token with the client-credentials grant and prints it only masked with {@link Secrets#mask(String)}
+ * (the raw token is never written to a log), then lists the realm's users.
  *
- * <p>실제 Keycloak 서버가 필요하므로 이 클래스는 배포되지 않으며 컴파일만 검증한다
- * (모듈 POM의 {@code maven.deploy.skip=true}). 실행하려면 아래 환경변수를 실제 값으로 설정한다:
+ * <p>Because it needs a real Keycloak server, this class is not deployed — the parent POM's
+ * {@code <excludeArtifacts>} keeps this module out of the Central bundle — and only its compilation is
+ * verified. To run it, set the environment variables below to real values:
  *
  * <pre>{@code
  * KEYCLOAK_URL=https://kc.example.com \
@@ -36,11 +37,11 @@ public final class QuickStart {
         .build();
 
     try (KeycloakClient client = KeycloakClient.create(config)) {
-      // 1) client-credentials 토큰 발급. 원문은 절대 출력하지 않고 Secrets.mask로 마스킹한다.
+      // 1) Obtain a client-credentials token. Never print the raw value; mask it with Secrets.mask.
       TokenSet tokens = client.auth().clientCredentialsToken();
       System.out.println("Access token: " + Secrets.mask(tokens.getAccessToken()));
 
-      // 2) 관리 API로 사용자 목록 조회 (최대 20명).
+      // 2) List users through the admin API (up to 20).
       List<UserRepresentation> users = client.admin().users().search(null, 0, 20);
       System.out.println("Users in realm '" + config.getRealm() + "':");
       users.forEach(u -> System.out.println(" - " + u.getUsername()));

@@ -29,14 +29,14 @@ import org.keycloak.admin.client.KeycloakBuilder;
 import org.keycloak.admin.client.spi.StreamMessageBodyReader;
 
 /**
- * 관리(admin) API 파사드 진입점. 공식 {@link Keycloak} admin-client를 감싸며 수명주기를
- * 소유한다({@link AutoCloseable}). 리소스 접근자 {@code users()/clients()/realms()/roles()/groups()}
- * (WBS 4.3~4.7)를 통해 각 리소스 파사드를 노출한다.
+ * Entry point of the administration (admin) API facade. Wraps the official {@link Keycloak} admin-client and
+ * owns its lifecycle ({@link AutoCloseable}). Exposes each resource facade through the resource accessors
+ * {@code users()/clients()/realms()/roles()/groups()} (WBS 4.3~4.7).
  *
- * <p>결합 규칙: 기본 생성자({@link #AdminClient(KeycloakConfig)})는 auth 모듈에 의존하지 않는다.
- * 이전에 존재하던 {@code TokenProvider} 기반 고급 생성자는 커스텀 RESTEasy
- * {@code ClientRequestFilter} 클라이언트를 admin-client 내부 라이브러리와 함께 등록하려 하면서
- * 라이브러리 충돌을 일으켜 MVP 범위에서 제거했다(사용자 결정, Phase 4a).
+ * <p>Coupling rule: the default constructor ({@link #AdminClient(KeycloakConfig)}) does not depend on the auth
+ * module. The advanced constructor based on {@code TokenProvider} that used to exist was removed from the MVP
+ * scope: trying to register a custom RESTEasy {@code ClientRequestFilter} client together with admin-client's
+ * internal library caused a library conflict (user decision, Phase 4a).
  */
 public final class AdminClient implements AutoCloseable {
 
@@ -57,8 +57,8 @@ public final class AdminClient implements AutoCloseable {
   }
 
   /**
-   * 기본 생성자 — Keycloak admin-client 내장 client-credentials 그랜트를 사용한다. 반환된
-   * {@link Keycloak}의 내부 TokenManager가 토큰을 자동으로 획득·갱신한다.
+   * Default constructor — uses the Keycloak admin-client's built-in client-credentials grant. The internal
+   * TokenManager of the returned {@link Keycloak} obtains and refreshes tokens automatically.
    */
   public AdminClient(KeycloakConfig config) {
     this(config, KeycloakBuilder.builder()
@@ -150,32 +150,32 @@ public final class AdminClient implements AutoCloseable {
     return new AdminClient(config, injected);
   }
 
-  /** 파사드가 감싸지 않은 엔드포인트에 접근하기 위한 탈출구(WBS 4.8). */
+  /** Escape hatch for reaching endpoints the facade does not wrap (WBS 4.8). */
   public Keycloak raw() {
     return keycloak;
   }
 
-  /** 사용자 CRUD 파사드(WBS 4.3). */
+  /** User CRUD facade (WBS 4.3). */
   public UsersResource users() {
     return new UsersResource(raw().realm(config.getRealm()).users());
   }
 
-  /** 클라이언트 CRUD 파사드(WBS 4.4). */
+  /** Client CRUD facade (WBS 4.4). */
   public ClientsResource clients() {
     return new ClientsResource(raw().realm(config.getRealm()).clients());
   }
 
-  /** 렐름 조회/생성/삭제 파사드(WBS 4.5). */
+  /** Realm lookup/create/delete facade (WBS 4.5). */
   public RealmsResource realms() {
     return new RealmsResource(raw().realms());
   }
 
-  /** 역할(role) CRUD 파사드(WBS 4.6). */
+  /** Role CRUD facade (WBS 4.6). */
   public RolesResource roles() {
     return new RolesResource(raw().realm(config.getRealm()).roles());
   }
 
-  /** 그룹 CRUD 파사드(WBS 4.7). */
+  /** Group CRUD facade (WBS 4.7). */
   public GroupsResource groups() {
     return new GroupsResource(raw().realm(config.getRealm()).groups());
   }

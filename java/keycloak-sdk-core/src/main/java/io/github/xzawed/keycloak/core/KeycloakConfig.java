@@ -27,18 +27,25 @@ public final class KeycloakConfig {
   public char[] getClientSecret() { return clientSecret == null ? null : clientSecret.clone(); }
   public List<String> getScopes() { return scopes; }
   /**
-   * JWT `aud` 포함검사에 기대할 값 — 미설정이면 clientId(기존 동작). 기본 realm은 client-credentials
-   * 토큰의 aud에 client id를 넣지 않으므로(그러려면 audience 프로토콜 매퍼가 필요) 리소스 서버 이름 등
-   * 실제로 발급되는 audience로 재정의할 수 있다. 액세스 토큰(`validate`)의 기대값이다 — `exchangeCode`가 nonce와 함께
-   * 검증하는 id_token의 aud는 이 값과 무관하게 clientId로 검사한다(OIDC Core §3.1.3.7).
+   * The value the JWT `aud` containment check expects — clientId if unset (the existing behavior). The default
+   * realm does not put the client id in the aud of client-credentials tokens (that needs an audience protocol
+   * mapper), so this can be overridden with the audience actually issued, such as a resource server name. It is
+   * the expected value for access tokens (`validate`) — the aud of the id_token that `exchangeCode` verifies along
+   * with the nonce is checked against clientId regardless of this value (OIDC Core §3.1.3.7).
    */
   public String getExpectedAudience() { return expectedAudience == null ? clientId : expectedAudience; }
-  /** JWT 서명 검증 시 허용할 알고리즘 핀(기본 ["RS256"]). ES256/PS256 realm을 위해 설정 가능. */
+  /**
+   * Pinned algorithms allowed when verifying JWT signatures (default ["RS256"]). Configurable for ES256/PS256
+   * realms.
+   */
   public List<String> getSignatureAlgorithms() { return signatureAlgorithms; }
   public Duration getConnectTimeout() { return connectTimeout; }
   public Duration getReadTimeout() { return readTimeout; }
   public Duration getClockSkew() { return clockSkew; }
-  /** 미해결 kid(키 회전)로 인한 JWKS 재조회의 최소 간격(기본 30초) — DoS 증폭 상한. */
+  /**
+   * Minimum interval (default 30 seconds) between JWKS refetches caused by an unresolved kid (key rotation) — the
+   * DoS amplification cap.
+   */
   public Duration getJwksMinRefetch() { return jwksMinRefetch; }
 
   public static Builder builder() { return new Builder(); }
