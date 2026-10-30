@@ -6,12 +6,12 @@ import org.keycloak.admin.client.CreatedResponseUtil;
 import org.keycloak.representations.idm.ClientRepresentation;
 
 /**
- * {@code clients()} 리소스 파사드(WBS 4.4). 공식 admin-client의
- * {@link org.keycloak.admin.client.resource.ClientsResource}를 감싸며 모든 호출을
- * {@link AdminExceptions#call}/{@link AdminExceptions#run}으로 경계 변환한다.
+ * {@code clients()} resource facade (WBS 4.4). Wraps the official admin-client's
+ * {@link org.keycloak.admin.client.resource.ClientsResource} and converts every call at the boundary through
+ * {@link AdminExceptions#call}/{@link AdminExceptions#run}.
  *
- * <p>{@link #get(String)}은 {@link UsersResource#get(String)}과 동일한 정책을 따른다:
- * 대상이 없으면 {@link io.github.xzawed.keycloak.core.exception.KeycloakNotFoundException}을 전파한다.
+ * <p>{@link #get(String)} follows the same policy as {@link UsersResource#get(String)}: if the target does not
+ * exist, it propagates {@link io.github.xzawed.keycloak.core.exception.KeycloakNotFoundException}.
  */
 public final class ClientsResource {
 
@@ -21,7 +21,7 @@ public final class ClientsResource {
     this.delegate = delegate;
   }
 
-  /** 클라이언트 생성 후 응답 {@code Location} 헤더에서 신규 클라이언트 id를 추출해 반환한다. */
+  /** Creates a client, then extracts the new client's id from the response {@code Location} header and returns it. */
   public String create(ClientRepresentation representation) {
     return AdminExceptions.call(() -> {
       try (jakarta.ws.rs.core.Response r = delegate.create(representation)) {
@@ -43,10 +43,11 @@ public final class ClientsResource {
   }
 
   /**
-   * admin-client의 {@code delegate.delete(id)}는 {@link jakarta.ws.rs.core.Response}를 반환하는
-   * JAX-RS 프록시 메서드라 4xx/5xx 응답에서도 예외를 던지지 않는다({@code void} 반환 메서드만 자동으로
-   * throw한다). 따라서 상태 코드를 직접 검사해 실패 시 {@link jakarta.ws.rs.WebApplicationException}을
-   * 던져 {@link AdminExceptions} 경계를 통해 SDK 예외로 변환한다.
+   * admin-client's {@code delegate.delete(id)} is a JAX-RS proxy method that returns a
+   * {@link jakarta.ws.rs.core.Response}, so it does not throw even on a 4xx/5xx response (only
+   * {@code void}-returning methods throw automatically). The status code is therefore checked directly, and on
+   * failure a {@link jakarta.ws.rs.WebApplicationException} is thrown, which the {@link AdminExceptions} boundary
+   * converts to an SDK exception.
    */
   public void delete(String id) {
     AdminExceptions.run(() -> {

@@ -5,13 +5,13 @@ import java.util.Optional;
 import org.keycloak.representations.idm.RoleRepresentation;
 
 /**
- * {@code roles()} 리소스 파사드(WBS 4.6). 공식 admin-client의
- * {@link org.keycloak.admin.client.resource.RolesResource}를 감싸며 모든 호출을
- * {@link AdminExceptions#call}/{@link AdminExceptions#run}으로 경계 변환한다.
+ * {@code roles()} resource facade (WBS 4.6). Wraps the official admin-client's
+ * {@link org.keycloak.admin.client.resource.RolesResource} and converts every call at the boundary through
+ * {@link AdminExceptions#call}/{@link AdminExceptions#run}.
  *
- * <p>⚠️ API 편차: 삭제 메서드명은 {@code delete}가 아니라 {@code deleteRole(String)}이다.
- * {@link #get(String)}은 {@link UsersResource#get(String)}과 동일한 정책을 따른다: 대상이 없으면
- * {@link io.github.xzawed.keycloak.core.exception.KeycloakNotFoundException}을 전파한다.
+ * <p>⚠️ API deviation: the deletion method is named {@code deleteRole(String)}, not {@code delete}.
+ * {@link #get(String)} follows the same policy as {@link UsersResource#get(String)}: if the target does not
+ * exist, it propagates {@link io.github.xzawed.keycloak.core.exception.KeycloakNotFoundException}.
  */
 public final class RolesResource {
 
@@ -34,10 +34,10 @@ public final class RolesResource {
   }
 
   /**
-   * 현재 이름으로 주소를 잡아 역할을 갱신한다. {@code representation.name}에 새 이름을 주면
-   * rename이다.
+   * Updates the role, addressed by its current name. Giving a new name in {@code representation.name} makes it
+   * a rename.
    *
-   * <p>⚠️ 경로({@code name})와 body({@code representation})를 합치지 말 것.
+   * <p>⚠️ Do not merge the path ({@code name}) and the body ({@code representation}).
    */
   public void update(String name, RoleRepresentation representation) {
     AdminExceptions.run(() -> delegate.get(name).update(representation));

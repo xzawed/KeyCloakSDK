@@ -1,7 +1,7 @@
 name: CI
 on:
-  push: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml', 'scripts/check-hp-attest.mjs'] }
-  pull_request: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml', 'scripts/check-hp-attest.mjs'] }
+  push: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-rendered-docs-hangul.mjs'] }
+  pull_request: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-rendered-docs-hangul.mjs'] }
   # 주간 레인 건강검진. ⚠️ `schedule` 은 `paths` 를 타지 않는다(실측: harness 스케줄이 6일 연속
   # 돌았는데 그 경로가 바뀐 날은 2일뿐) — **그것이 목적이다.** 겨누는 것은 의존성 드리프트가
   # 아니라(락·핀이 이미 막는다) 러너 이미지·액션 같은 **환경** 드리프트다. 상세: .claude/rules/ci.md
@@ -141,3 +141,16 @@ jobs:
         run: |
           set -euo pipefail
           unzip -Z1 java/target/central-publishing/central-bundle.zip | node scripts/check-central-bundle.mjs - --root=.
+      # 그려지는 문서(Central 에 올라가는 이 번들의 -javadoc.jar)에 한글 0 — 등록부 korean-api-docs-in-published-packages.
+      # 번들에 javadoc 이 하나도 없으면 계수기가 읽은 파일 0 으로 실패한다(exit 2).
+      - name: 그려지는 문서(번들의 -javadoc.jar) 한글 0
+        run: |
+          set -euo pipefail
+          D="$RUNNER_TEMP/javadoc"
+          mkdir -p "$D/jars" "$D/html"
+          unzip -q -o java/target/central-publishing/central-bundle.zip '*-javadoc.jar' -d "$D/jars"
+          for j in $(find "$D/jars" -name '*-javadoc.jar' | sort); do
+            n="$(basename "$j" .jar)"
+            mkdir -p "$D/html/$n" && unzip -q -o "$j" -d "$D/html/$n"
+          done
+          node scripts/check-rendered-docs-hangul.mjs "$D/html" --ext=.html --min-files=50

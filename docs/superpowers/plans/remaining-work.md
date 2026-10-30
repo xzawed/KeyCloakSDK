@@ -1,5 +1,5 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=174781 max-raw-bytes=199954 -->
+<!-- doc-budget: max-bytes=173995 max-raw-bytes=199140 -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -38,7 +38,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `284`(2026-10-29 기준 열림 131 · 닫힘 153)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `284`(2026-10-30 기준 열림 130 · 닫힘 154)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -60,7 +60,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-10-29 · #881–#900 반영)
+### 다음 세션 진입점 (2026-10-30 · #901–#913 반영)
 
 **지금 상태** — 물결 6(2026-10-27/28): 아홉 전부 **LIVE**, 게시 바이트 = 태그 · 기준선 = 게시판(#863·#865). 월간 상한 경고(6/7)는 7·8 번째 게시를 막지 않았다(`ci.md`). 태그 위임은 물결마다 다시 묻는다. 열린 PR 은 Dependabot 뿐이어야 한다. 래퍼 9.8 의 되살릴 조건은 #682·#788. ⚠️ `[Unreleased]` 에 아홉 다 변화가 있다 — 물결은 사람 몫.
 
@@ -68,9 +68,9 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. 2026-10-29 판정의 수행은 끝났다(#882–#898). 남은 칸은 각 항목이 적는다 — `response-read-deadline-divergent` · `korean-api-docs-in-published-packages` · `wave4-hardening-php` · `response-framing-unbounded`(node 는 상류 보고 — 사람 몫).
+1. 2026-10-29 판정의 남은 칸은 각 항목이 적는다 — `wave4-hardening-php`(다음 걸음: 아홉 언어 분류표) · `response-read-deadline-divergent`(JVM admin 틀 · python TLS 안의 TLS) · `response-framing-unbounded`(node 는 상류 보고 — 사람 몫).
 2. `guard-detection-surface-hand-narrowed` [H/M](손 표 축 — 되살릴 조건) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
-3. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다).
+3. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
 **판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 · 라운드 2 #892 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
 
@@ -532,7 +532,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 88건 (열림 51)
+## D. 원장 밖 — 88건 (열림 50)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -631,10 +631,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - **열린 medium 31 · low 12**: 언어별 drift 가 다수이고 **아홉 전부에서 최소 1 건**이 나왔다(범위 1–6). 대표: getting-started 의 「coverage gate」 주장이 go·rust·dotnet 세 곳에서 거짓(그 명령은 커버리지를 재지도 게이트하지도 않는다) · `php/composer.json:41` 의 `cs`/`cs:fix` 가 `--allow-risky=yes` 누락으로 **항상 실패** · `.claude/rules/{dotnet,ruby,php,rust}.md` 의 전사된 실측값이 낡아 다음 세션을 틀린 판단으로 이끈다 · PHP·Ruby 의 기본 `readTimeout` 이 10 초로 나머지 일곱(30 초)과 갈린다.
   - ✅ 위 계수가 **하한**이었던 이유는 아래 `critic-2026-09-22-round2` 가 소유한다(완전성 비평 6 각도, 2026-09-22).
 - [x] `critic-2026-09-22-round2` **[H/L · 신규 2026-09-22 · 닫힘 2026-10-27]** 24 생존 중 21 닫힘(#529–#538) · 2 반증 · 남은 1 건은 `korean-api-docs-in-published-packages` 로 분리 — 열린 것이 없다
-- [ ] `korean-api-docs-in-published-packages` **[M/H · 신규 2026-09-22 · 판정 2026-10-29 「번역 — 언어당 PR」 · 번역 끝 #890–#898]** 그려지는 문서 주석은 아홉 다 영문이다 — 남은 것: 다시 들어오지 않게 하는 CI 가드 · `rust/src` 외 6
-  - **판정 기준 = 산출물의 한글 0**(`git grep --no-index -P '[\x{AC00}-\x{D7A3}]'` — ⚠️ plain `grep -P` 는 거짓 0): rust `cargo doc` HTML · node `.d.ts` · ruby `yard doc` · php 공개 docblock 덤프 · go `go doc -all` · kotlin Dokka · python 공개 표면 pydoc(수와 덤프 스크립트는 각 PR 본문).
-  - ⏳ **가드가 없다** — 위 오라클을 레인 CI 에 걸지 않으면 한글 문서 주석이 다시 들어온다(지금은 사람만 본다). ⚠️ pydoc 은 독스트링 없는 공개 def 위의 `#` 주석을 그린다(`inspect.getcomments`).
-  - ✅ **런타임 오류 문구**(2026-10-30) — node 1 · python 4 를 영문으로, 재유입은 두 레인 `runtime-strings-english` 시험이 잡는다. 나머지 일곱 0(rust 는 `#[cfg(test)]` 안뿐). 버린 선택지: 「규칙에 게시 주석 한글 예외를 명시」.
+- [x] `korean-api-docs-in-published-packages` **[M/H · 신규 2026-09-22 · 닫힘 2026-10-30 · #890–#898 · #908 · #911 · #912 · #913]** 그려지는 문서와 런타임 문구가 아홉 다 영문이다 — 레인마다 산출물 한글 0 가드(`check-rendered-docs-hangul.mjs` · python·php 는 단위 시험). java 는 첫 판정에서 빠져 따로 옮겼다
 - [x] `remaining-work-split-to-archive-tag` **[H/M · 신규 2026-09-22 · 닫힘 2026-10-28]** #526 이 실행했다(닫힌 70 건의 서사 → 태그 · 예산 앵커 · 되살릴 조건 이관은 명령 형태가 0 건이라 no-op). 설계의 「닫힘 = 0」만은 「소유 줄 == 닫힘 수」로 바뀌었고(`test-remaining-work-shape.sh` 머리 주석), 뒤이은 이관은 머리말의 포인터가 가리킨다.
 - [x] `changelog-unreleased-never-written` **[M/S · 신규 2026-09-22 · 닫힘 2026-10-27]** 착지 장치 `scripts/test/test-changelog-landing.sh` 가 섰고 `[Unreleased]` 가 착지마다 자란다 — 150 건은 역채우지 않았다
 - [x] `jwks-empty-keyset-node` **[M/M · 신규 2026-09-22 · 닫힘 2026-09-24]** 「구조 변경뿐」이라는 전제가 틀렸다 — 기각된 두 길(getKey 래핑·별도 프리플라이트) 밖에 셋째가 있었다: 이미 배선된 `[customFetch]` 래퍼는 jose 가 파싱할 **바로 그 응답**을 보고, jose reload 는 fetch 가 던지면 옛 캐시를 남긴다(`jose/dist/webapi/jwks/remote.js` `.then` 안에서만 대입). jose 원격 집합을 그대로 상속한다 · `jwt-jwks.test.ts` 수정 전 RED → GREEN · 변이 CAUGHT
