@@ -127,4 +127,11 @@ describe('JWKS response read deadline — the configured readTimeoutMs, not jose
     mode = 'healthy'
     expect((await timed(1_000)).error).toBeUndefined()
   })
+
+  it('a fractional readTimeoutMs still builds a client — jose takes whole milliseconds only', async () => {
+    // The configuration accepts any finite value > 0; jose's `createRemoteJWKSet` throws a raw TypeError at
+    // construction for a non-integer `timeoutDuration` (measured on the first cut of this change).
+    mode = 'healthy'
+    expect((await timed(1_500.5)).error).toBeUndefined()
+  })
 })
