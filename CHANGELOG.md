@@ -18,8 +18,9 @@
 - **(Python)** ⚠️ sync 응답은 응답마다 바이트 예산(본문 상한 + 65,536 B — 토큰·introspection·logout·admin 오류 1,114,112 · JWKS 116,736 · admin 성공 본문은 없음)을 넘으면 `KeycloakTransportError` 입니다 — 지금까지는 16 MiB 트레일러(트레일러 수를 묶지 않는 CPython 판에서)와 gzip 토큰 본문 뒤의 꼬리를 받았고, 틀이 큰 admin 오류 응답은 `KeycloakNotFoundError` 등으로 나왔습니다. JWKS 오류 메시지에 `HTTP response exceeds 116736 bytes on the wire` 가 실릴 수 있습니다.
 - **(Go)** pkg.go.dev 에 그려지는 문서 주석(마스킹 훅 여섯 · admin `Update` 셋의 ⚠️ 주석)을 영문으로 옮겼습니다 — 나머지는 이미 영문이었습니다. 코드는 그대로이고(`go/scanner` 로 주석을 뺀 토큰열이 같다), `go doc -all` 의 한글은 38 줄 → 0 입니다.
 - **(Kotlin)** Dokka 가 그리는 문서 주석(게시되는 `-javadoc.jar` 포함)과 README 가 링크하는 `examples/quickstart.kt` 의 주석을 영문으로 옮겼습니다 — 지금까지는 한글이었습니다. 코드는 그대로이고(`javap -c` 역어셈블이 main 과 같다), Dokka HTML 의 한글은 41 파일 → 0 입니다.
-- **(Python)** `help()`·IDE 호버에 뜨는 공개 API 의 독스트링(`keycloak_sdk`·`keycloak_sdk.aio` 의 `__all__` 에서 닿는 것)과 README 가 링크하는 예제 둘의 주석을 영문으로 옮겼습니다 — 지금까지는 한글이었습니다. 코드는 그대로이고(독스트링을 자리표시로 바꾼 AST 가 24 파일 모두 같다), 공개 표면 pydoc 의 한글은 358 줄 → 0 입니다. 이로써 아홉 SDK 의 그려지는 문서가 모두 영문입니다.
+- **(Python)** `help()`·IDE 호버에 뜨는 공개 API 의 독스트링(`keycloak_sdk`·`keycloak_sdk.aio` 의 `__all__` 에서 닿는 것)과 README 가 링크하는 예제 둘의 주석을 영문으로 옮겼습니다 — 지금까지는 한글이었습니다. 코드는 그대로이고(독스트링을 자리표시로 바꾼 AST 가 24 파일 모두 같다), 공개 표면 pydoc 의 한글은 358 줄 → 0 입니다.
 - **(Node · Python)** ⚠️ 한글이던 런타임 오류 메시지 다섯을 영문으로 옮겼습니다 — node `KeycloakTokenValidationError` 의 `JWT 검증 실패: …` 는 `JWT validation failed: …`, python `KeycloakConfigError` 넷은 `admin API access requires client_secret (client-credentials grant)` · `admin access requires config (use KeycloakClient.create(config))`(aio 도 같은 꼴)입니다. 예외 타입과 원인 사슬은 그대로이고, 메시지 문자열을 대조하던 코드만 영향을 받습니다. 소비자에게 닿는 한글 문구는 이것이 전부였습니다 — 나머지 일곱은 0 입니다.
+- **(Java)** Maven Central 에 게시되는 `-javadoc.jar` 의 문서 주석(공개 API)과 README 가 링크하는 `QuickStart.java` 의 주석을 영문으로 옮겼습니다 — 다른 언어를 옮길 때 java 만 빠져 지금까지 한글이었습니다. 코드는 그대로이고(`javap -v -p` 가 main 빌드와 같다 — 59 클래스), javadoc jar 의 한글은 221 줄 → 0 입니다. 이로써 아홉 SDK 의 그려지는 문서가 모두 영문입니다.
 
 ### Fixed
 - **(Go)** 공유 비행(첫 `Client.Admin` · client_credentials 토큰 · JWKS 조회)의 결과와 호출자 ctx 의 취소가 함께 준비되면 둘 중 하나를 무작위로 돌려줬습니다(동점 200 회에 `context.Canceled` 93–103 회) — 이제 준비된 결과가 이깁니다(캐시 적중이 이미 그렇다). 결과가 아직 없으면 전처럼 ctx 오류입니다.
