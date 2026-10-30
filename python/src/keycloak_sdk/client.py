@@ -65,7 +65,7 @@ class KeycloakClient:
         if self._admin is None:
             if self._config is None:
                 raise KeycloakConfigError(
-                    "admin 접근에는 config가 필요합니다(KeycloakClient.create(config) 사용)"
+                    "admin access requires config (use KeycloakClient.create(config))"
                 )
             self._admin = AdminClient(self._config)
         return self._admin
