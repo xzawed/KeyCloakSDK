@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import socket
 import tracemalloc
@@ -211,6 +212,63 @@ def test_a_huge_body_is_refused_holding_only_what_was_read(
 
     _assert_refused(lane, token_idp, excinfo.value)
     assert peak < _BOUNDED_PEAK, f"16 MiB body: peak {peak} bytes"
+
+
+def _reading_far_ahead(monkeypatch: pytest.MonkeyPatch) -> None:
+    """3.14 의 응답 버퍼 앞에 한참 앞선 서버 — `makefile()` 이 크기를 받지 않으면 131,072 바이트
+    버퍼(3.14 의 `io.DEFAULT_BUFFER_SIZE`, 3.13 까지 8,192)이고, 응답의 원문 읽기 하나는 청한 만큼을
+    다 받는다. 채우기는 클라이언트 응답(http.client)에만 건다 — 서버의 요청 읽기에 걸면 멈춘다."""
+    real_makefile = socket.socket.makefile
+
+    def makefile(
+        self: socket.socket, mode: str = "r", buffering: int | None = None, **kwargs: Any
+    ) -> Any:
+        if buffering is None or buffering < 0:
+            buffering = 131_072
+        return real_makefile(self, mode, buffering, **kwargs)
+
+    real_init = http.client.HTTPResponse.__init__
+
+    def init(self: http.client.HTTPResponse, *args: Any, **kwargs: Any) -> None:
+        real_init(self, *args, **kwargs)
+        read = self.fp.raw.readinto
+
+        def filled(buffer: Any) -> int:
+            view, got = memoryview(buffer), 0
+            while got < len(view) and (n := read(view[got:])):
+                got += n
+            return got
+
+        self.fp.raw.readinto = filled
+
+    monkeypatch.setattr(socket.socket, "makefile", makefile)
+    monkeypatch.setattr(http.client.HTTPResponse, "__init__", init)
+
+
+@pytest.mark.parametrize("chunked", [False, True], ids=["content-length", "chunked"])
+@pytest.mark.parametrize("lane", LANES)
+def test_the_body_cap_wins_over_buffer_read_ahead(
+    lane: str, chunked: bool, token_idp: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """상한 너머 본문의 판정은 본문 상한이다 — 응답 버퍼가 얼마나 미리 읽든. 소켓의 바이트
+    예산(본문 상한 + 틀 몫 65,536 — `_internal/wire.py`)은 버퍼가 미리 받은 바이트도 센다. 3.14 의
+    버퍼가 청크 경계에서 한 번에 차면 본문이 상한에 닿기 전에 예산이 끊었고, 경계는 그것을
+    「Can't connect to server」 전송 오류로 냈다(위 16 MiB 시험이 CI 3.14.9 청크 레인에서 간헐
+    실패).
+
+    타이밍에 맡기지 않는다 — 3.14 버퍼에 늘 꽉 차는 읽기(`_reading_far_ahead`)를 두고, 첫 조각을
+    상한 512 바이트 아래까지 늘려 버퍼가 빈 청크 경계가 상한 바로 아래에 오게 한다. 수정 전에는
+    청크 다섯 레인이 판과 무관하게 전송 오류였다. 길이 레인은 대조군이다 — 머리 뒤로는 `read1` 이
+    버퍼를 거치지 않아 미리 읽지 않는다."""
+    _reading_far_ahead(monkeypatch)
+    head = _head(lane, "M" * 40)
+    token_idp.head = head + b" " * (CAP - 512 - len(head))  # 한 조각 — 청크 하나로 나간다
+    token_idp.size, token_idp.chunked = HUGE, chunked
+
+    with _client(token_idp) as kc, pytest.raises(Exception) as excinfo:
+        _call(lane, kc, "M" * 40)
+
+    _assert_refused(lane, token_idp, excinfo.value)
 
 
 @pytest.mark.parametrize("lane", ["cc", "admin"])

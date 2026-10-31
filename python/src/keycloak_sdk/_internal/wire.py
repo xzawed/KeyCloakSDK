@@ -23,7 +23,8 @@
 변수에 걸고, 그 안에서 만들어진 응답이 그것을 붙든다. 원문 읽기마다: 마감이 지났으면
 읽지 않는다 · 읽기 하나를 남은 시간으로 묶는다(소켓 타임아웃을 `min(읽기 타임아웃,
 남은 시간)` 으로 두고 끝나면 되돌린다) · 마감 뒤에 끝난 읽기의 바이트는 쓰지 않는다 ·
-받은 바이트를 예산에 올린다(읽기 하나는 예산 + 1 바이트를 넘게 청하지 않는다). 그래서
+받은 바이트를 예산에 올린다(읽기 하나는 남은 예산 + 1 바이트도, 8 KiB 도 넘게 청하지 않는다
+— 아래 ⚠️). 그래서
 최악은 마감이다(스레드 깨움만큼 늦을 뿐) — 스레드·타이머를 두지 않는다. TLS 레코드
 하나를 한 바이트씩 흘려도 같다: CPython 의 `_ssl` 읽기는 소켓 타임아웃을 호출
 **하나의 총량**으로 쓴다(레코드가 찰 때까지의 기다림 전부 — 실측, ruby·JVM 과 다르다).
@@ -39,6 +40,16 @@
 상태를 본 뒤 예산을 푼다(`exchange` 의 `lift`) — 그 본문은 바이트로 묶지 않는 것이
 정책이라, 틀만 따로 세어도 같은 바이트를 본문으로 보내면 그만이다(시간은 마감이,
 할당은 http.client 의 줄 한도가 묶는다).
+
+⚠️ **예산이 걸린 동안 원문 읽기 하나는 8 KiB(`_READ_AHEAD_BYTES`)까지만 청한다.** 이 자리는
+버퍼 아래라 http.client 가 아직 쓰지 않은 바이트 — 버퍼가 미리 받은 몫 — 도 센다. 3.14 의 버퍼는
+131,072 바이트(`io.DEFAULT_BUFFER_SIZE` — 3.13 까지 8,192)라 청크 경계의 채우기 하나가 틀 몫보다
+많이 미리 받았고, 서버가 앞서 있으면 상한 너머 토큰 응답이 본문 상한보다 이 예산에 먼저 걸려
+전송 오류(「Can't connect to server」)로 보고됐다(CI 3.14.9 청크 레인 간헐 실패). 8 KiB 면 미리
+받은 몫이 틀 몫 안에 남아, 머리·청크 틀이 나머지 56 KiB 안인 상한 너머 본문은 판과 무관하게
+본문 상한이 먼저 판정한다
+(`tests/unit/test_token_response_cap.py::test_the_body_cap_wins_over_buffer_read_ahead`). 예산이
+풀린 본문(`lift`)의 읽기는 묶지 않는다.
 
 ⚠️ HTTPAdapter 가 아닌 어댑터(소비자가 `mount` 한 전송)는 건너뛴다 — 그 소켓은 이
 SDK 가 볼 수 없다(`retries.py` 와 같은 규칙). 그때도 본문 고리의 마감(`exchange` 의
@@ -69,6 +80,10 @@ from .deadline import _late
 #: 이하(Go 실측)이고, KiB 단위 청크(nginx 4~8 KiB)는 1 MiB 본문에 2 KiB 남짓의 틀을
 #: 싣는다.
 FRAMING_ALLOWANCE_BYTES = 65_536
+
+#: 예산이 걸린 동안 원문 읽기 하나가 청하는 바이트의 상한 — 3.13 까지의 응답 버퍼 크기
+#: (`io.DEFAULT_BUFFER_SIZE`)다. 버퍼가 미리 받는 몫을 틀 몫 안에 둔다(머리말 ⚠️).
+_READ_AHEAD_BYTES = 8_192
 
 #: 이 모듈이 건 래퍼의 표지 — 같은 자리를 두 번 감싸지 않는다.
 _MARK = "__kcsdk_wire__"
@@ -114,7 +129,7 @@ def exchange(
         return remaining
 
     def room() -> int | None:
-        return None if cap is None else cap - used + 1
+        return None if cap is None else min(cap - used + 1, _READ_AHEAD_BYTES)
 
     def charge(received: int) -> None:
         nonlocal used
@@ -139,8 +154,8 @@ def exchange(
 
 
 def _metered(read: _Read, sock: Any, meter: _Meter) -> _Read:
-    """응답 버퍼 아래의 원문 읽기 하나 — 앞뒤로 계량을 보고, 읽기를 남은 시간과 남은
-    예산으로 묶는다."""
+    """응답 버퍼 아래의 원문 읽기 하나 — 앞뒤로 계량을 보고, 읽기를 남은 시간과 `room`(남은
+    예산 + 1 · 8 KiB)으로 묶는다."""
     left, room, charge = meter
 
     def readinto(buffer: Any) -> int | None:
