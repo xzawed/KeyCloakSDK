@@ -304,4 +304,11 @@ RSpec.describe KeycloakSdk::JwksStore do
       expect(store.key_set["keys"].first["kid"]).to eq("k9")
     end
   end
+
+  # 키셋 수명(300 초)은 아홉 언어가 함께 움직이는 내부 값이다 — 나머지 여덟 언어에서도 비공개다(go 소문자 · .NET·kotlin
+  # internal · php private · java package-private …). 공개로 두면 상수 하나가 계약이 되어 릴리스가 minor, 나중에 지우면 major 다.
+  it "keeps the key-set lifetime private (not public API)" do
+    expect(described_class.constants).not_to include(:JWKS_MAX_AGE_SECONDS)
+    expect { described_class::JWKS_MAX_AGE_SECONDS }.to raise_error(NameError, /private constant/)
+  end
 end
