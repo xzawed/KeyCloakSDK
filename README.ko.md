@@ -40,7 +40,7 @@
 
 > 여기서 "다국어/polyglot"은 **프로그래밍 언어**를 뜻하며, 자연어 현지화(i18n)와는 무관합니다.
 >
-> ⚠️ **아홉 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다** — PHP `1.5.0`, Ruby `1.4.0`, Go `1.2.4`, Java `1.2.3`, Rust `1.1.4`, Kotlin `1.0.7`, Python · .NET · Node `1.0.6`입니다. 같은 보증을 함께 갖췄기에 1.0에 함께 도달했습니다 — 공개 API를 깨려면 **major**가 필요하고, CI가 각 레인의 API를 **직전 게시본**과 대조해 그것을 강제합니다. **함대로 움직이지 않습니다**: 소비자에게 보이는 변경이 있은 언어만 번호가 올라갑니다. 모든 배포는 사람 승인 게이트입니다. 설치 명령은 [설치](#설치)에, 붙일 임시 서버는 [지금 바로 써보기](#지금-바로-써보기)에 있습니다.
+> ⚠️ **아홉 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다** — PHP `1.5.1`, Ruby `1.4.1`, Go `1.2.5`, Java `1.2.4`, Rust `1.1.5`, Kotlin `1.0.8`, Python · .NET · Node `1.0.7`입니다. 같은 보증을 함께 갖췄기에 1.0에 함께 도달했습니다 — 공개 API를 깨려면 **major**가 필요하고, CI가 각 레인의 API를 **직전 게시본**과 대조해 그것을 강제합니다. **함대로 움직이지 않습니다**: 소비자에게 보이는 변경이 있은 언어만 번호가 올라갑니다. 모든 배포는 사람 승인 게이트입니다. 설치 명령은 [설치](#설치)에, 붙일 임시 서버는 [지금 바로 써보기](#지금-바로-써보기)에 있습니다.
 
 ---
 
@@ -83,7 +83,7 @@ with KeycloakClient.create(config) as kc:
 ```bash
 pip install keycloak-sdk                              # Python
 npm install @xzawed/keycloak-sdk                      # Node
-go get github.com/xzawed/KeyCloakSDK/go@v1.2.4        # Go
+go get github.com/xzawed/KeyCloakSDK/go@v1.2.5        # Go
 dotnet add package Xzawed.Keycloak.Sdk                # C# / .NET
 composer require xzawed/keycloak-sdk                  # PHP
 cargo add keycloak-sdk                                # Rust
@@ -93,8 +93,8 @@ gem install keycloak-sdk                              # Ruby
 JVM은 빌드 파일에 좌표를 추가합니다:
 
 ```
-io.github.xzawed:keycloak-sdk:1.2.3                   # Java   (Maven Central)
-io.github.xzawed:keycloak-sdk-kotlin:1.0.7            # Kotlin (Maven Central)
+io.github.xzawed:keycloak-sdk:1.2.4                   # Java   (Maven Central)
+io.github.xzawed:keycloak-sdk-kotlin:1.0.8            # Kotlin (Maven Central)
 ```
 
 빌드 도구별 전체 스니펫(Maven XML · Gradle Kotlin DSL · `Gemfile` · `Cargo.toml`)은 [시작 가이드](docs/guides/getting-started.md)에 있습니다.
