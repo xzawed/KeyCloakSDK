@@ -17,6 +17,7 @@ module KeycloakSdk
     # fall back to the stale set — not even during an IdP outage (the SDK cannot tell an unreachable JWKS from
     # withdrawn keys). A successful forced refetch also restarts the lifetime. Common to the nine languages.
     JWKS_MAX_AGE_SECONDS = 300
+    private_constant :JWKS_MAX_AGE_SECONDS
 
     # ⚠️ **Backoff for a failed fetch — a different axis from `min_refetch`.**
     # `min_refetch` (30 seconds) holds back a flood of unresolved kids *once the cache is filled*. The two below
