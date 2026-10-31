@@ -186,6 +186,26 @@ def test_a_read_never_asks_for_more_than_the_budget_has_room_for() -> None:
     assert seen == [4, 2], "둘째 읽기는 남은 예산 + 1 바이트만 청한다"
 
 
+def test_a_budgeted_read_asks_for_8_kib_however_large_the_buffer() -> None:
+    # 3.14 의 응답 버퍼는 원문 읽기 하나로 131,072 바이트를 청한다(`io.DEFAULT_BUFFER_SIZE` —
+    # 3.13 까지 8,192). 서버가 앞서 있으면 그만큼이 와서 http.client 가 쓰기 전에 예산에 오르고,
+    # 그 몫이 틀 몫(65,536)보다 크다. 예산이 걸린 동안은 8 KiB 만 청한다 — 풀리면(`lift`) 그대로다.
+    sock, seen = _Sock(1.0), []
+
+    def read(buffer: Any) -> int:
+        seen.append(len(buffer))
+        return len(buffer)  # 서버가 한참 앞서 있다 — 청한 만큼 다 온다
+
+    with exchange(60, 1_048_576 + FRAMING_ALLOWANCE_BYTES) as (_check, lift):
+        readinto = _metered(sock, read)
+        assert readinto(bytearray(131_072)) == 8_192
+        lift()
+        assert readinto(bytearray(131_072)) == 131_072
+    with exchange(60, None):
+        assert _metered(sock, read)(bytearray(131_072)) == 131_072
+    assert seen == [8_192, 131_072, 131_072]
+
+
 def test_a_non_blocking_read_that_got_nothing_charges_nothing() -> None:
     with exchange(60, 0):
         assert _metered(_Sock(1.0), lambda _b: None)(bytearray(8)) is None
