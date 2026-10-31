@@ -9,7 +9,7 @@
 ## [Unreleased]
 
 ### Changed
-- **(PHP)** `composer.json` 이 `ext-curl` 을 요구하고 하한을 `guzzlehttp/guzzle ^7.15.2` · `guzzlehttp/psr7 ^2.12.3` 으로 올립니다 — curl 이 없으면 Guzzle 이 PHP stream 처리기로 내려가 응답 헤더 한 줄을 길이 제한 없이 읽었고(16 MiB 한 줄에 +57 MB, 손잡이가 없다), psr7 2.11 아래는 상한에서 전송을 멈추지 못해 큰 오류 본문을 끝까지 받았습니다. 두 하한은 권고 GHSA-v5mv-p594-2x33 · GHSA-f7vp-7xgx-4w4r(Guzzle)과 GHSA-c2w2-prh8-qm98(psr7)도 닫습니다. ⚠️ curl 확장이 없는 환경에서는 설치가 거부됩니다(Composer 는 확장을 설치 때 확인합니다).
+- **(PHP)** `composer.json` 이 `ext-curl` 을 요구하고 하한을 `guzzlehttp/guzzle ^7.15.2` · `guzzlehttp/psr7 ^2.12.3` 으로 올립니다 — curl 이 없으면 Guzzle 이 PHP stream 처리기로 내려가 응답 헤더 한 줄을 길이 제한 없이 읽었고(16 MiB 한 줄에 +57 MB, 손잡이가 없다), psr7 2.11 아래는 상한에서 전송을 멈추지 못해 큰 오류 본문을 끝까지 받았습니다. 두 하한은 권고 GHSA-v5mv-p594-2x33 · GHSA-f7vp-7xgx-4w4r(Guzzle)과 GHSA-c2w2-prh8-qm98(psr7)도 닫습니다. ⚠️ curl 확장이 없으면 Composer 는 이 판을 고르지 않습니다 — 제약 없는 `composer require` 는 경고(`Cannot use … latest version … requires ext-curl`)만 내고 직전 판을 설치하며(종료 코드 0), 이 판을 지정한 제약과 이 판이 든 lock 의 `composer install` 은 거부됩니다(Composer 는 확장을 설치 때 확인합니다).
 - **(Java · Kotlin · Python · Ruby)** ⚠️ admin 응답은 목록과 `raw()` 의 성공 본문까지 설정한 타임아웃 안에 **다** 와야 합니다(아래 Security 의 응답 기한) — 지금까지는 읽기마다만 걸려 느린 링크의 큰 목록도 끝까지 받았지만, 이제 그 경우는 타임아웃 오류입니다. 큰 목록을 느린 링크로 받는다면 타임아웃을 늘리십시오. Go·Rust·Node·PHP·.NET admin 은 이미 그랬습니다.
 - **(Rust)** docs.rs 에 그려지는 문서 주석(공개 항목 · 모듈 문서)과 README 가 링크하는 `examples/quickstart.rs` 의 주석을 영문으로 옮겼습니다 — 지금까지는 한글이었습니다. 코드는 그대로이고(바뀐 줄 전부가 주석), `cargo doc --no-deps` 산출물의 한글은 22 파일 → 0 입니다.
 - **(Node)** 방출되는 `.d.ts` 의 문서 주석(IDE 호버에 뜨는 것)과 README 가 링크하는 `examples/quickstart.ts` 의 주석을 영문으로 옮겼습니다 — 지금까지는 한글이었습니다. 코드와 공개 API 리포트는 그대로이고(api-extractor 리포트가 main 과 같다), `.d.ts` 의 한글은 19 파일 → 0 입니다.
