@@ -60,9 +60,9 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-10-31 · #914–#927 반영)
+### 다음 세션 진입점 (2026-11-01 · #914–#929 반영)
 
-**지금 상태** — 물결 7(2026-10-31): 여섯 **LIVE**(node·dotnet·python·go·rust·ruby — 바이트 = 태그, 기준선 #924·#927). 사람 몫 — php: `PHP_SPLIT_TOKEN` 무효로 미러 push 실패(미러 불변, 교체 뒤 split 잡만 재실행) · java·kotlin: Portal Publish(뒤에 attest·floor·기준선). 태그 위임은 물결마다 다시 묻는다. 열린 PR 은 Dependabot 뿐. 래퍼 9.8 은 #682·#788.
+**지금 상태** — 물결 7(2026-10-31 · 11-01): 아홉 전부 **LIVE**, 게시 바이트 = 태그 · 기준선 = 게시판(#924·#927·#929). php 는 `PHP_SPLIT_TOKEN` 만료로 한 번 막혔다 — 만료 전에 교체한다. security-audit(11-01) 빨강 둘은 dev 전용 의존(ruby `addressable` · node `minimatch`). 태그 위임은 물결마다 다시 묻는다. 열린 PR 은 Dependabot 뿐. 래퍼 9.8 은 #682·#788.
 
 열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유한다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
 
