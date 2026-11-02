@@ -1,6 +1,6 @@
 {
   "go": {
-    "floor": { "metric": "statements", "percent": 75 },
+    "floor": { "metric": "statements", "percent": 76.1 },
     "pinned": [
       "go/admin.go",
       "go/admin_clients.go",
@@ -25,7 +25,7 @@
     }
   },
   "python": {
-    "floor": { "metric": "bodies", "percent": 85 },
+    "floor": { "metric": "bodies", "percent": 88.4 },
     "pinned": [
       "python/src/keycloak_sdk/admin/__init__.py",
       "python/src/keycloak_sdk/aio/admin/__init__.py",
