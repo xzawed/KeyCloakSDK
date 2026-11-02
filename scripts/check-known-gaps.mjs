@@ -621,7 +621,8 @@ export function registryState(reg, id) {
 
 // ── 트리 ───────────────────────────────────────────────────────────────────────────────
 // 언어 집합은 손으로 적지 않는다 — 이 저장소의 파생 규칙(`df_tree_langs`)을 대상 트리에 적용한다.
-function deriveLangs(root) {
+// `check-hp-attest-wiring.mjs` 도 이것을 쓴다(사본을 두지 않는다).
+export function deriveLangs(root) {
   const out = execFileSync('sh', ['-c', '. scripts/lib/deploy-facts.sh && df_tree_langs "$1"', 'sh', root.replace(/\\/g, '/')], {
     cwd: REPO,
     encoding: 'utf8',
