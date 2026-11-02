@@ -8,8 +8,18 @@
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-11-03 (PHP)
+
+**2026-11-03 여덟째 릴리스 물결 — PHP 와 Kotlin 이 patch 로 올라갑니다.** 일곱째 물결(아래 `[1.5.1] - 2026-10-31 (PHP)` 절 머리말) 뒤에 착지한 소비자 가시 변경을 아래 두 절에 싣습니다 — PHP `AuthClient` 의 토큰 응답 분류와 Kotlin POM 의 JDK 하한 문구입니다. 나머지 일곱 언어는 마지막 태그 뒤 소비자에게 보이는 변경이 없습니다.
+
+번호는 PHP `1.5.2`, Kotlin `1.0.9` 입니다. 동작이 바뀌는 항목(⚠️)이 있어도 번호는 게시된 공개 API 표면으로 정하고(DEPLOY.md §4 step 0), 두 언어 모두 그 표면이 그대로라 patch 입니다 — PHP 의 새 클래스 `Internal\TokenResponseUnusable` 은 `@internal` 입니다. 실제로 어디까지 게시됐는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh` 의 `df_published_version` 이 소유합니다.
+
 ### Changed
 - **(PHP)** ⚠️ `AuthClient` 의 토큰 그랜트(`clientCredentialsToken` · `refresh` · `exchangeCode`)가 토큰 엔드포인트의 **JSON 이 아닌 응답**(503 HTML 페이지 · 200 의 비-JSON 본문 등)과 **`access_token` 이 없는 JSON 응답**을 `KeycloakTransportError` 가 아니라 `KeycloakAuthError` 로 던집니다 — 같은 응답을 `ClientCredentialsTokenProvider` 는 원래 `KeycloakAuthError` 로 던졌고, `KeycloakTransportError` 는 네트워크 실패만 뜻합니다. 그 응답을 transport 로 잡아 재시도하던 코드는 auth 쪽을 보십시오. 메시지는 그대로이고, 상한 초과(`KeycloakTransportError`)와 OAuth 오류 응답(`KeycloakAuthError`)은 바뀌지 않았습니다.
+
+## [1.0.9] - 2026-11-03 (Kotlin)
+
+**Kotlin 의 patch 입니다**(같은 물결의 나머지는 위 `[1.5.2] - 2026-11-03 (PHP)` 절의 머리말). 공개 API 변경은 **0** 이고, 아래 항목의 「다음 Kotlin 릴리스」가 이 `1.0.9` 입니다.
 
 ### Fixed
 - **(Kotlin)** Maven Central 의 POM `<description>` 이 하한을 「Kotlin 2.2+ / JDK 21+」로 적고 있었습니다 — JDK 하한은 `1.0.1` 부터 **17** 입니다(`jvmTarget = JVM_17` · `-Xjdk-release=17`, README 와 같다). `1.0.1`–`1.0.8` 의 게시 POM 이 그 문구이고, 다음 Kotlin 릴리스부터 「JDK 17+」로 나갑니다. 코드와 바이트코드는 그대로입니다.

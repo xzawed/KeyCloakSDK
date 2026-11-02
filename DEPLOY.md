@@ -330,7 +330,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   ```
 - Deployment check: confirm GitHub Actions `kotlin-release.yml` (vanniktech `publishToMavenCentral`, Central Portal staging) succeeded → **a human manually Publishes** in the [Central Portal](https://central.sonatype.com) Deployments (same two steps as Java). A green run now also means all four secrets were present (§2-A step 5).
 - ⚠️ **Consumer floor**: the build pins `languageVersion`/`apiVersion` to `KOTLIN_2_2`, so the published jar carries `@Metadata(mv=[2,2,0])` and consumers need **Kotlin 2.2+** — not the 2.4 that builds it. Say so in the release notes; raising this floor later cuts consumers off.
-- Install: `io.github.xzawed:keycloak-sdk-kotlin:1.0.8`
+- Install: `io.github.xzawed:keycloak-sdk-kotlin:1.0.9`
 
 ### 8. Go
 

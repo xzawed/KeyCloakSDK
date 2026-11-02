@@ -40,10 +40,10 @@ Each SDK's own SemVer is decoupled from the Keycloak server and underlying libra
 | Node `1.0.7` | 26.6.x (integration tests: actual **26.6**) | `@keycloak/keycloak-admin-client` **26.8.1** · `openid-client` **6.8.8** · `jose` **6.2.13** · Node 22+ |
 | Go `1.2.5` | 26.6.x (integration tests: actual **26.6**) | `Nerzal/gocloak/v13` **13.9.0** · `golang.org/x/oauth2` **0.37.0** · `go-jose/v4` **4.1.6** · Go 1.26+ |
 | C#/.NET `1.0.7` | 26.6.x (integration tests: actual **26.6**) | `Keycloak.AuthServices.Sdk` **2.7.0** · `Duende.IdentityModel` **8.1.0** · `Microsoft.IdentityModel.JsonWebTokens` **8.23.0** · .NET 8+ |
-| PHP `1.5.1` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `fschmtt/keycloak-rest-api-client-php` **0.44.0** · `league/oauth2-client` **^2.8** · `stevenmaguire/oauth2-keycloak` **^6.1** · `firebase/php-jwt` **^7.1** · PHP 8.3+ |
+| PHP `1.5.2` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `fschmtt/keycloak-rest-api-client-php` **0.44.0** · `league/oauth2-client` **^2.8** · `stevenmaguire/oauth2-keycloak` **^6.1** · `firebase/php-jwt` **^7.1** · PHP 8.3+ |
 | Rust `1.1.5` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak` **~26.6.2** (`reqwest12` feature) · `openidconnect` **4.0.1** · `jsonwebtoken` **11.0.0** · Rust 1.88+ (edition 2024) |
 | Ruby `1.4.1` | 26.6.x (integration tests: actual **26.6**, docker CLI shell-out) | `rack-oauth2` **~>2.3** · `faraday` **~>2.0** · `jwt` (ruby-jwt) **~>3.2** · Ruby 3.2+ |
-| Kotlin `1.0.8` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak-admin-client` **26.0.12** · `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.10** (same JVM stack as Java) · Kotlin 2.2+ consumers (built with 2.4.21, metadata pinned to 2.2) · JDK 17+ |
+| Kotlin `1.0.9` | 26.6.x (integration tests: actual **26.6**, Testcontainers) | `keycloak-admin-client` **26.0.12** · `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.10** (same JVM stack as Java) · Kotlin 2.2+ consumers (built with 2.4.21, metadata pinned to 2.2) · JDK 17+ |
 
 > Note on the server column: all nine pin the **same** image tag, `quay.io/keycloak/keycloak:26.6` — there is no per-language branch, and this column used to claim one (`26.6.4` for Java and Python). `26.6` is a floating minor, so what a run pulls is whatever it resolved to that day; measured 2026-09-06, that container reports **Keycloak 26.6.4**. Write the pinned tag here, not a resolution — a resolution is a snapshot nobody can reproduce later.
 >
