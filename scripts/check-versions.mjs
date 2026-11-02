@@ -562,6 +562,65 @@ for (const [lang, p, re] of manifests) {
           `(하한을 올리면 그만큼 소비자를 잘라내므로 릴리스 노트에도 적는다). 근거: .claude/rules/kotlin.md`,
       )
     }
+
+    // ── POM `<description>` 의 하한 문구 ↔ 위 Kotlin 하한 · JVM 하한 ──
+    // Central 은 README 를 렌더링하지 않아 이 문자열이 아티팩트 페이지가 하한을 말하는 유일한
+    // 자리다(pom 블록 주석). 그런데 아무 가드도 읽지 않았다 — 1.0.1 이 JDK 하한을 21 → 17 로
+    // 내린 뒤에도 1.0.1–1.0.8 의 POM 이 「JDK 21+」로 나갔다(repo1 .pom 실측).
+    // JDK 하한은 check-docs.mjs 의 RUNTIME 과 같은 추출기(`JvmTarget.JVM_N`)로 읽고, jvmTarget 이
+    // 없으면 툴체인이 바이트코드 타깃이므로 그 값이다(check-docs.mjs 의 PUBLISHED_FALLBACK 과 같은
+    // 규칙). `-Xjdk-release` 와의 짝은 check-jvm-api-surface-pins.mjs 가 소유한다 — 여기서 다시
+    // 보지 않는다(같은 조건을 두 곳에서 보면 변이검증이 공허해진다).
+    // ⚠️ 주석 줄은 빼고 읽는다 — 첫 매치가 주석 속 사본(`// JvmTarget.JVM_11` · 주석 처리된
+    // `description.set(`)을 잡으면 진짜 선언이 아닌 값과 대조한다(Grok 레그 지목 · 실제 트리
+    // probe 셋 SILENT). 표기 규약은 `Kotlin X.Y+` · `JDK N+` 이고, 다른 표기는 읽지 못함으로 실패한다.
+    const code = bgkText
+      .split('\n')
+      .filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l))
+      .join('\n')
+    // ⚠️ 조각 사이의 `+` 는 필수다 — 선택(`\s*\+?\s*`)이면 공백을 두 `\s*` 에 나누는 길이 갈려 지수
+    // 백트래킹이 난다(CodeQL js/redos · 실측: `\t""` 22 번 반복에 2.5 s). Kotlin 도 `+` 없이 잇지 못한다.
+    const descCall = /^[ \t]*description\.set\(\s*("(?:[^"\\\n]|\\.)*"(?:\s*\+\s*"(?:[^"\\\n]|\\.)*")*)\s*(?:,\s*)?\)/m.exec(code)
+    if (!descCall) {
+      harnessErrors.push(
+        `${bgk} 에서 POM description(\`description.set("…" + …)\`)을 읽지 못했다 — ` +
+          `하한 문구 대조가 공허해진다`,
+      )
+    } else {
+      const desc = [...descCall[1].matchAll(/"((?:[^"\\\n]|\\.)*)"/g)].map((m) => m[1]).join('')
+      const kFloor = /\bKotlin (\d+)\.(\d+)\+/.exec(desc)
+      const jFloor = /\bJDK (\d+)\+/.exec(desc)
+      // `jvmTarget.set(…)` 이 있으면 그 값(`JVM_N` · `fromTarget("N")`)이고, 없을 때만 툴체인이
+      // 바이트코드 타깃이다. 선언이 있는데 못 읽으면 툴체인으로 넘어가지 않는다(빌드 JDK 를 하한으로 읽는다).
+      const jtAt = code.search(/\bjvmTarget\.set\(/)
+      const jtArg = jtAt < 0 ? null : code.slice(jtAt, jtAt + 160)
+      const jdk =
+        jtArg === null
+          ? /^[ \t]*jvmToolchain\((\d+)\)/m.exec(code)?.[1]
+          : (/^jvmTarget\.set\(\s*[\w.]*JvmTarget\.JVM_(?:1_)?(\d+)\s*\)/.exec(jtArg) ??
+              /^jvmTarget\.set\(\s*[\w.]*JvmTarget\.fromTarget\(\s*"(?:1\.)?(\d+)"\s*\)\s*\)/.exec(jtArg))?.[1]
+      if (!kFloor || !jFloor) {
+        harnessErrors.push(
+          `${bgk} 의 POM description 에서 하한 문구(\`Kotlin X.Y+\` · \`JDK N+\`)를 읽지 못했다 — ` +
+            `Central 아티팩트 페이지가 하한을 말하는 유일한 자리다`,
+        )
+      } else {
+        if (kv.length === 2 && (kFloor[1] !== kv[0][2] || kFloor[2] !== kv[0][3])) {
+          harnessErrors.push(
+            `${bgk} 의 POM description 의 Kotlin 하한이 「Kotlin ${kFloor[1]}.${kFloor[2]}+」인데 ` +
+              `languageVersion·apiVersion 은 KOTLIN_${kv[0][2]}_${kv[0][3]} 다 — 하한과 함께 옮길 것`,
+          )
+        }
+        if (!jdk) {
+          harnessErrors.push(`${bgk} 에서 JVM 하한(\`JvmTarget.JVM_N\` · 없으면 \`jvmToolchain(N)\`)을 읽지 못했다`)
+        } else if (jFloor[1] !== jdk) {
+          harnessErrors.push(
+            `${bgk} 의 POM description 의 JDK 하한이 「JDK ${jFloor[1]}+」인데 바이트코드 하한은 ${jdk} 다 — ` +
+              `하한과 함께 옮길 것(게시본은 다음 릴리스에서 바뀐다)`,
+          )
+        }
+      }
+    }
   }
 }
 

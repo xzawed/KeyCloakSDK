@@ -360,11 +360,86 @@ assert_fails node "$GUARD" "$TMP"
 OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
 assert_contains "$OUT" "자동주입" "명시 선언이 사라진 것을 지목해야 한다"
 
+# ---- POM description 의 하한 문구 — Central 아티팩트 페이지가 하한을 말하는 유일한 자리 ----
+# 1.0.1 이 JDK 하한을 21 → 17 로 내렸는데 1.0.1–1.0.8 의 POM 이 「JDK 21+」로 나갔다 — 그
+# 문자열을 아무 가드도 읽지 않았다(등록부 kotlin-pom-description-jdk-floor).
+
+# 변이 10 — description 의 JDK 만 낡게 둔다(그 사고의 모양).
+cp -r "$FIX/." "$TMP/"
+sed -i 's|JDK 17+|JDK 21+|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "POM description 의 JDK 하한" "description 의 JDK 하한 불일치를 지목해야 한다"
+
+# 변이 11 — description 의 Kotlin 하한만 올린다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|Kotlin 2\.2+|Kotlin 2.4+|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "POM description 의 Kotlin 하한" "description 의 Kotlin 하한 불일치를 지목해야 한다"
+
+# 변이 12 — jvmTarget 을 지운다. 그러면 툴체인(21)이 바이트코드 타깃이고 하한도 21 이다 —
+# description 의 17+ 는 거짓이 된다(check-docs.mjs 의 PUBLISHED_FALLBACK 과 같은 규칙).
+cp -r "$FIX/." "$TMP/"
+sed -i '/jvmTarget\.set/d' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+
+# 변이 13 — 하한 문구를 지운다. 읽지 못한 것을 통과로 넘기면 이 검사는 공허해진다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|Requires Kotlin 2\.2+ / JDK 17+\. ||' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "하한 문구" "하한 문구가 사라진 것을 지목해야 한다"
+
+# 변이 14 — description 을 다른 모양(속성 대입)으로 바꿔 추출이 0 이 되게 한다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|description\.set(|description = (|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+
+# 변이 15–17 — 첫 매치가 **주석 속 사본**이나 다른 표기를 잡는 모양(Grok 레그 지목, 실제 트리
+# probe 셋 다 SILENT 였다). 15: 앞선 주석의 `JvmTarget.JVM_11` 에 description 을 맞춘다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|^    jvmToolchain(21)$|    // 예: JvmTarget.JVM_11\n    jvmToolchain(21)|; s|JDK 17+|JDK 11+|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+
+# 16: `JvmTarget.fromTarget("11")` 은 `JVM_` 토큰이 없다 — 툴체인(21)으로 넘어가면 「JDK 21+」가 통과한다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|JvmTarget\.JVM_17)|JvmTarget.fromTarget("11"))|; s|JDK 17+|JDK 21+|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+
+# 17: 주석 처리된 description.set 이 진짜 호출 앞에 있다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|^        description\.set($|        // description.set("Requires Kotlin 2.2+ / JDK 17+.")\n        description.set(|; s|JDK 17+\. Fixture|JDK 21+. Fixture|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+
+# 오탐 방지 — `fromTarget("17")` 표기는 JVM_17 과 같은 하한이다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|JvmTarget\.JVM_17)|JvmTarget.fromTarget("17"))|' "$BGK"
+assert_ok node "$GUARD" "$TMP"
+
+# 변이 18 — ReDoS 회귀(CodeQL js/redos). `description.set(""` 뒤에 `\t""` 를 2000 번 잇고 닫지 않는다 —
+# 조각 사이 `+` 가 선택이던 판은 22 번에 2.5 s 로 지수로 늘었다. 지금 판은 읽지 못함(rc=1)으로 곧 끝나야 하고,
+# 시간 초과(rc=124)면 그 모양이 돌아온 것이다.
+cp -r "$FIX/." "$TMP/"
+_pay=$(printf '\t""%.0s' $(seq 1 2000))
+awk -v p="$_pay" '/^        description\.set\($/ { print "        description.set(\"\"" p "X"; skip=1; next }
+  skip && /^        \)$/ { skip=0; next } !skip' "$BGK" > "$BGK.redos" && mv "$BGK.redos" "$BGK"
+_rc=0; timeout 20 node "$GUARD" "$TMP" > /dev/null 2>&1 || _rc=$?
+assert_eq "1" "$_rc" "POM description 추출이 지수 백트래킹 없이 끝나야 한다(124 = 시간 초과)"
+
 # 오탐 방지 — 셋을 **함께** 올리면 통과해야 한다(정상적인 하한 상향의 모양).
 # 이 대조군이 없으면 이 가드는 "하한을 영원히 올리지 마라"가 된다.
+# ⚠️ 2026-11-02: 「함께」에 POM description 의 `Kotlin X.Y+` 가 더해졌다.
 cp -r "$FIX/." "$TMP/"
 sed -i 's|KotlinVersion.KOTLIN_2_2|KotlinVersion.KOTLIN_2_4|g' "$BGK"
 sed -i 's|kotlin-stdlib:2\.2\.21|kotlin-stdlib:2.4.10|' "$BGK"
+sed -i 's|Kotlin 2\.2+|Kotlin 2.4+|' "$BGK"
+assert_ok node "$GUARD" "$TMP"
+
+# 오탐 방지 — JDK 하한을 description 과 **함께** 올리면 통과해야 한다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|JvmTarget\.JVM_17|JvmTarget.JVM_21|' "$BGK"
+sed -i 's|JDK 17+|JDK 21+|' "$BGK"
 assert_ok node "$GUARD" "$TMP"
 
 # 오탐 방지 — 정상적인 KGP 범프의 모양이면 통과해야 한다. 이 대조군이 없으면 이 가드는

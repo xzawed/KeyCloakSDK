@@ -8,6 +8,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **(Kotlin)** Maven Central 의 POM `<description>` 이 하한을 「Kotlin 2.2+ / JDK 21+」로 적고 있었습니다 — JDK 하한은 `1.0.1` 부터 **17** 입니다(`jvmTarget = JVM_17` · `-Xjdk-release=17`, README 와 같다). `1.0.1`–`1.0.8` 의 게시 POM 이 그 문구이고, 다음 Kotlin 릴리스부터 「JDK 17+」로 나갑니다. 코드와 바이트코드는 그대로입니다.
+
 ## [1.5.1] - 2026-10-31 (PHP)
 
 **2026-10-31 일곱째 릴리스 물결 — 아홉 언어가 일곱 번호로 올라가고, 아홉 모두 patch 입니다.** 여섯째 물결(보관본 `changelog/2026-10.md` 의 `[1.4.0] - 2026-10-27 (Ruby)` 절 머리말) 뒤에 착지한 수정을 아래 일곱 절에 싣습니다 — admin Bearer 를 아홉 언어가 같은 문법으로 판정하는 것, JWKS 키 집합을 300 초 뒤 콜드 캐시로 다시 받는 것(아홉 언어), SDK 가 읽는 응답을 설정한 타임아웃 안에 전부 읽는 것(Java · Kotlin · Python · Ruby · .NET — Node 는 JWKS), 그려지는 문서의 영문화(여덟 언어 — 이로써 아홉 SDK 모두)와 언어별 수정입니다.

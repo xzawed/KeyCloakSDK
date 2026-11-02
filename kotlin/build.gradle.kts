@@ -259,7 +259,8 @@ mavenPublishing {
         name.set("Keycloak SDK (Kotlin)")
         // ⚠️ Maven Central은 README를 렌더링하지 않는다 — 이 한 줄과 위 `name`이 아티팩트 페이지의
         // **전부**다. 소비자가 좌표만 보고 판단할 수 있도록 (1) 무엇을 덮는지(auth+admin+JWT),
-        // (2) 어떤 관용인지(suspend), (3) 무엇을 감싸는지, (4) 소비자 하한(Kotlin 2.2+/JDK 21+)까지 담는다.
+        // (2) 어떤 관용인지(suspend), (3) 무엇을 감싸는지, (4) 소비자 하한(Kotlin 2.2+/JDK 17+)까지 담는다.
+        // ⚠️ 하한 문구는 위 KOTLIN_2_2 · JvmTarget 과 대조된다(scripts/check-versions.mjs).
         // 하한을 여기 적어두는 이유: 잘못 맞추면 "compiled with an incompatible version of Kotlin"으로
         // 컴파일 자체가 실패하는데, 그 사실을 알려줄 다른 지면이 Central에는 없다(게차 참고).
         // ⚠️ POM `<description>`으로 나가므로 반드시 한 줄로 유지할 것.
@@ -267,7 +268,7 @@ mavenPublishing {
             "Keycloak SDK for Kotlin — coroutine-first (suspend) OIDC/OAuth2 authentication with " +
                 "hardened JWT validation, plus the Admin REST API, behind one facade. Wraps the same JVM " +
                 "stack as the sibling Java SDK (keycloak-admin-client, oauth2-oidc-sdk, nimbus-jose-jwt). " +
-                "Requires Kotlin 2.2+ / JDK 21+. The Kotlin implementation of a nine-language polyglot " +
+                "Requires Kotlin 2.2+ / JDK 17+. The Kotlin implementation of a nine-language polyglot " +
                 "Keycloak SDK (Java, Python, Node, Go, C#, PHP, Rust, Ruby, Kotlin).",
         )
         inceptionYear.set("2026")
