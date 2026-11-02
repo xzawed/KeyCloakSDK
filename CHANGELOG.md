@@ -8,6 +8,9 @@
 
 ## [Unreleased]
 
+### Changed
+- **(PHP)** ⚠️ `AuthClient` 의 토큰 그랜트(`clientCredentialsToken` · `refresh` · `exchangeCode`)가 토큰 엔드포인트의 **JSON 이 아닌 응답**(503 HTML 페이지 · 200 의 비-JSON 본문 등)과 **`access_token` 이 없는 JSON 응답**을 `KeycloakTransportError` 가 아니라 `KeycloakAuthError` 로 던집니다 — 같은 응답을 `ClientCredentialsTokenProvider` 는 원래 `KeycloakAuthError` 로 던졌고, `KeycloakTransportError` 는 네트워크 실패만 뜻합니다. 그 응답을 transport 로 잡아 재시도하던 코드는 auth 쪽을 보십시오. 메시지는 그대로이고, 상한 초과(`KeycloakTransportError`)와 OAuth 오류 응답(`KeycloakAuthError`)은 바뀌지 않았습니다.
+
 ### Fixed
 - **(Kotlin)** Maven Central 의 POM `<description>` 이 하한을 「Kotlin 2.2+ / JDK 21+」로 적고 있었습니다 — JDK 하한은 `1.0.1` 부터 **17** 입니다(`jvmTarget = JVM_17` · `-Xjdk-release=17`, README 와 같다). `1.0.1`–`1.0.8` 의 게시 POM 이 그 문구이고, 다음 Kotlin 릴리스부터 「JDK 17+」로 나갑니다. 코드와 바이트코드는 그대로입니다.
 
