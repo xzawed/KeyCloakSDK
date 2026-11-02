@@ -1,9 +1,12 @@
 #!/usr/bin/env node
-// integration-coverage.mjs — 통합 실행만의 「네트워크 경계」 커버리지 리포트. **보고 모드(하한 없음)** · 파일럿 go · python.
+// integration-coverage.mjs — 통합 실행만의 「네트워크 경계」 커버리지 리포트. 파일럿 go · python — **하한 무장(2026-11-02)**.
 //
 // 왜: 아홉 언어가 「경계는 통합으로 검증한다」며 그 파일을 단위 커버리지 게이트에서 빼는데, 통합 실행에서
 // 커버리지를 재는 언어가 0 이었다(등록부 `integration-coverage-never-measured`). 이 스크립트가 그 3 걸음째다 —
-// 레인 통합 잡에 리포트를 붙인다. 하한(4 걸음째)은 CI 관측 세 번 뒤에 사람이 정한다. **낮은 수치는 실패가 아니다.**
+// 레인 통합 잡에 리포트를 붙인다. 하한(4 걸음째)은 `integration-coverage.json` 의 `floor` 다(값은 거기에만 둔다) — CI 관측
+// 셋 뒤 무장했다. 지표는 go 문장 · python 함수 몸통(lines 는 import 때 도는 줄로 부푼다 — 아래). 값은 관측값을 소수 한
+// 자리로 내린 것이라 여유가 없다 — 여유는 다음 변경이 무심사로 채운다(문서 예산 검사 8e 와 같은 이유). 내리려면 그
+// JSON 의 diff 가 판정이다. 하한이 없는 언어는 보고 모드 그대로다(**낮은 수치는 실패가 아니다**).
 //
 // 등록부가 붙인 세 조건:
 //  · 리포트할 파일 집합은 단위 omit SSOT 에서 **파생**한다 — 측정 트리의 `scripts/coverage-boundary.mjs list --json`.
@@ -26,16 +29,17 @@
 // ⚠️ go 의 미실행 함수는 소스를 직접 읽어 판정한다 — `go tool cover -func` 은 수신자 타입을 안 내고(같은 파일의
 // `String` 둘을 못 가른다) 패키지 수준 함수 리터럴의 문장을 합계에서 뺀다(실측: 픽스처 9/20 vs 9/19).
 //
-// 종료코드 — 셋을 가른다. 「낮은 수치」는 어디에도 없다:
-//   0 OK     리포트가 섰고, 미실행 함수가 전부 열린 항목 소유다
-//   1 DRIFT  소유 문제(소유자 없음 · 열린 항목이 아님 · 낡은 항목) — 수치는 유효하다. CI 는 경고로만 본다(보고 모드)
+// 종료코드 — 넷을 가른다. 「낮은 수치」는 하한이 무장된 언어에서만 실패다(3):
+//   0 OK     리포트가 섰고, 하한 이상이며, 미실행 함수가 전부 열린 항목 소유다
+//   1 DRIFT  소유 문제(소유자 없음 · 열린 항목이 아님 · 낡은 항목) — 수치는 유효하다. CI 는 경고로만 본다
 //   2 FAIL   무결성 실패 — 파생 실패·빈 파생·핀과 다름·데이터 없음·데이터에서 경계 파일 빠짐·아무것도 안 돈 실행·
-//            함수 영역 회계 불일치·못 읽는 입력. **이때는 수치를 내지 않는다**(인용될 숫자를 만들지 않는다).
+//            함수 영역 회계 불일치·못 읽는 입력·잘못 적은 하한. **이때는 수치를 내지 않는다**(인용될 숫자를 만들지 않는다).
+//   3 BELOW  하한 아래 — 수치는 유효하다. CI 는 실패로 본다. 비교는 정수식(covered × 100 < percent × 분모)이고 같으면 통과다.
 //
 // 사용:
 //   node scripts/integration-coverage.mjs <go|python> [--out DIR]                 로컬 — 통합 테스트(Docker) 후 리포트
 //   node scripts/integration-coverage.mjs run    <go|python> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
-//   node scripts/integration-coverage.mjs report <go|python> [ROOT] [--out DIR]   CI 리포트 스텝(보고 모드)
+//   node scripts/integration-coverage.mjs report <go|python> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
 //   node scripts/integration-coverage.mjs check  [ROOT]                            파생 ↔ 핀 ↔ 소유자(데이터·Docker 불필요)
 // python 인터프리터는 `KCSDK_PY` → `python/.venv` → PATH 의 `python` 순이다. DIR 기본값은 OS 임시 디렉터리 아래다.
 import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
@@ -48,6 +52,8 @@ const PINS = 'scripts/integration-coverage.json'
 const REGISTRY = 'docs/superpowers/plans/remaining-work.md'
 const BOUNDARY = 'scripts/coverage-boundary.mjs'
 const LANGS = ['go', 'python']
+// 하한 지표 — go 의 문장은 전부 함수 몸통이고, python 은 lines(import 때 도는 줄 포함)와 bodies(함수 안 문장)가 갈린다.
+const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'] }
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
@@ -181,8 +187,23 @@ function pinFor(l) {
     fail(l, `${PINS}: ${l}.owners must map "<file>:<function>" to a registry id`)
     return null
   }
-  return { pinned: e.pinned, owners }
+  // 하한 — 없으면 보고 모드. 잘못 적은 하한을 무시하면 하한이 꺼진 줄 모르므로 무결성 실패다.
+  let floor = null
+  if (e.floor !== undefined) {
+    const f = e.floor
+    if (typeof f !== 'object' || f === null || Array.isArray(f) || !FLOOR_METRICS[l].includes(f.metric)) {
+      fail(l, `${PINS}: ${l}.floor.metric must be one of ${FLOOR_METRICS[l].join(' · ')}`)
+      return null
+    }
+    if (typeof f.percent !== 'number' || !(f.percent > 0 && f.percent <= 100)) {
+      fail(l, `${PINS}: ${l}.floor.percent must be a number in (0, 100]`)
+      return null
+    }
+    floor = { metric: f.metric, percent: f.percent }
+  }
+  return { pinned: e.pinned, owners, floor }
 }
+const floorText = (pin) => (pin?.floor ? `floor ${pin.floor.metric} ≥ ${pin.floor.percent}%` : null)
 // 파생 = 핀. 다르면 어느 쪽에만 있는지 이름으로 댄다.
 function matchesPin(l, d, pin) {
   const D = new Set(d.files)
@@ -454,7 +475,7 @@ function report(l) {
         else if (reg && !reg.open.has(x.owner)) drift(l, `${key} is owned by ${x.owner}, which is not an open item of ${REGISTRY}`)
       }
       for (const key of Object.keys(pin.owners)) if (!neverKeys.has(key)) drift(l, `stale owner ${key} — the integration run executes it now (or it no longer exists); drop the entry`)
-      printReport(l, d, data, tot)
+      printReport(l, d, data, tot, pin)
     }
   }
   emitFindings(l)
@@ -465,23 +486,30 @@ function report(l) {
     return 2
   }
   const t = data.files.reduce((a, f) => ({ stmts: a.stmts + f.stmts, covered: a.covered + f.covered }), { stmts: 0, covered: 0 })
+  const b = data.files.reduce((a, f) => ({ stmts: a.stmts + (f.bodies?.stmts ?? 0), covered: a.covered + (f.bodies?.covered ?? 0) }), { stmts: 0, covered: 0 })
   let head = `${t.covered}/${t.stmts} statements (${pct(t.covered, t.stmts)})`
-  if (l === 'python') {
-    const b = data.files.reduce((a, f) => ({ stmts: a.stmts + f.bodies.stmts, covered: a.covered + f.bodies.covered }), { stmts: 0, covered: 0 })
-    head = `lines ${t.covered}/${t.stmts} (${pct(t.covered, t.stmts)}) · bodies ${b.covered}/${b.stmts} (${pct(b.covered, b.stmts)})`
-  }
+  if (l === 'python') head = `lines ${t.covered}/${t.stmts} (${pct(t.covered, t.stmts)}) · bodies ${b.covered}/${b.stmts} (${pct(b.covered, b.stmts)})`
   const n = data.never.length
   const fns = n ? `${n} never-executed function${n > 1 ? 's' : ''}` : 'no never-executed functions'
+  const owned = n && !nd ? ', all owned by open registry items' : ''
+  const problems = nd ? ` · ${nd} ownership problem${nd > 1 ? 's' : ''}` : ''
+  const fl = floorText(pin) ? ` · ${floorText(pin)}` : ''
+  // 하한 — 분모가 0 이면 위 「아무것도 안 돈 실행」이 이미 FAIL 이다. 정수식으로 비교한다(같으면 통과).
+  const m = pin.floor && { statements: t, lines: t, bodies: b }[pin.floor.metric]
+  if (m && m.covered * 100 < pin.floor.percent * m.stmts) {
+    console.log(`integration-coverage [${l}]: BELOW — ${head}${fl} · ${fns}${owned}${problems}`)
+    return 3
+  }
   if (nd) {
-    console.log(`integration-coverage [${l}]: DRIFT — ${head} · ${fns} · ${nd} ownership problem${nd > 1 ? 's' : ''} (report mode — not a gate)`)
+    console.log(`integration-coverage [${l}]: DRIFT — ${head}${fl} · ${fns}${problems} (ownership is a warning, not a gate)`)
     return 1
   }
-  console.log(`integration-coverage [${l}]: OK — ${head} · ${fns}${n ? ', all owned by open registry items' : ''}`)
+  console.log(`integration-coverage [${l}]: OK — ${head}${fl} · ${fns}${owned}`)
   return 0
 }
-function printReport(l, d, data, tot) {
+function printReport(l, d, data, tot, pin) {
   const stmt = (k) => `${k} stmt${k > 1 ? 's' : ''}`
-  console.log(`[${l}] integration-only coverage — report mode, no floor`)
+  console.log(`[${l}] integration-only coverage — ${floorText(pin) ?? 'report mode, no floor'}`)
   console.log(`  boundary: ${d.files.length} files derived from ${d.site} (${d.label}) — equal to the pin in ${PINS}`)
   console.log(`  data: ${data.path.replace(/\\/g, '/')}`)
   if (l === 'go') {
@@ -526,6 +554,7 @@ function check() {
       if (reg && !reg.open.has(id)) drift(l, `${key} is owned by ${id}, which is not an open item of ${REGISTRY}`)
     }
     console.log(`[${l}] owners: ${Object.keys(pin.owners).length} entries (${sortU(Object.values(pin.owners)).join(' · ') || 'none'})`)
+    console.log(`[${l}] ${floorText(pin)?.replace(/^floor /, 'floor: ') ?? 'floor: none (report mode)'}`)
   }
   for (const f of findings) console.log(`${f.kind} [${f.lang ?? '-'}] ${f.msg}`)
   const nf = findings.filter((f) => f.kind === 'FAIL').length

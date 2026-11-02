@@ -60,16 +60,16 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-11-02 · #914–#931 반영)
+### 다음 세션 진입점 (2026-11-02 · #914–#936 반영)
 
-**지금 상태** — 물결 7(2026-10-31 · 11-01): 아홉 전부 **LIVE**, 게시 바이트 = 태그 · 기준선 = 게시판(#924·#927·#929). php 는 `PHP_SPLIT_TOKEN` 만료로 한 번 막혔다 — 만료 전에 교체한다. node `minimatch` 경보 #55 는 dismissed(dev 전용) — 다시 열 조건은 dismiss 주석. 태그 위임은 물결마다 다시 묻는다. 열린 PR 은 Dependabot 뿐. 래퍼 9.8 은 #682·#788.
+**지금 상태** — 물결 7(2026-10-31 · 11-01): 아홉 전부 **LIVE**, 게시 바이트 = 태그 · 기준선 = 게시판(#924·#927·#929). php 는 `PHP_SPLIT_TOKEN` 만료로 한 번 막혔다 — 만료 전에 교체한다. `[Unreleased]` 에 php(#935) · kotlin(#933) — 다음 물결. 태그 위임은 물결마다 다시 묻는다. 열린 PR 은 Dependabot 뿐. 래퍼 9.8 은 #682·#788.
 
 열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유한다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
 1. 2026-10-29 판정의 남은 칸은 각 항목이 적는다 — `response-read-deadline-divergent`(JVM admin 틀 · python TLS 안의 TLS) · `response-framing-unbounded`(node 는 상류 보고 — 사람 몫).
-2. `guard-detection-surface-hand-narrowed` [H/M](손 표 축 — 되살릴 조건) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
+2. `guard-detection-surface-hand-narrowed` [H/M](손 표 축 — 되살릴 조건) · `integration-coverage-never-measured` [H/L](go·python 하한 #936 → 나머지 일곱) · `token-response-class-divergent` [L/M] · #935.
 3. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
 **판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 · 라운드 2 #892 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
@@ -602,9 +602,9 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
        - include 는 단위 omit 설정에서 파생한다 — 사본을 더하지 않는다.
        - 리포트의 파일 집합을 고정한다 — 파생이 너무 적게 고르면 %가 오른다. 실측: coverlet `<Include>` 를 그대로 뒤집으면 중첩 async 타입이 빠져 211/312 가 된다.
        - 통합 미실행 함수 목록을 둔다. 항목마다 열린 등록부 id 를 소유자로 단다.
-       - ⏳ go·python 파일럿 #774(보고 모드). 일곱으로 넓힐 함정·판정은 그 PR 본문.
-         <!-- integration-coverage 파일럿(#774) 재측정 — 등록부 기준선 그대로 재현: go 2ab5f72^ 200/311 = 64.3% → 2ab5f72 238/311 = 76.5% → 지금 251/330 = 76.1%(경계 문장이 늘었다) · python 3fc0f1e^ 236/349 = 67.6% → 3fc0f1e 320/349 = 91.7% → 지금 367/395 = 92.9%(import 만으로 160 줄 = 40.5% — 함수 본문 207/235 = 88.1% 를 따로 낸다). 판정(파일럿 기본값): 핀은 읽을 수 있는 목록(드리프트 가드) · 소유 문제는 경고 · 하한 지표(python 줄 vs 함수 본문)와 -run TestE2E 앵커는 4 걸음째 · 규칙 문서 포인터는 go.md·python.md·ci.md 예산이 0·26·11 B 라 없음. 일곱으로 넓힐 때: 데이터가 한 번도 적재 안 된 파일도 담아야 하고, 함수 이름의 믿을 원천, 적재 시점 코드(JVM static init · Ruby/PHP require)를 「아무것도 안 돈 실행」 판정에서 빼야 한다. -->
-    4. CI 관측 세 번 뒤에만 하한을 무장한다.
+       - ⏳ go·python 파일럿 #774. 일곱으로 넓힐 함정·판정은 그 PR 본문.
+         <!-- integration-coverage 파일럿(#774) 재측정 — 등록부 기준선 그대로 재현: go 2ab5f72^ 200/311 = 64.3% → 2ab5f72 238/311 = 76.5% → 지금 251/330 = 76.1%(경계 문장이 늘었다) · python 3fc0f1e^ 236/349 = 67.6% → 3fc0f1e 320/349 = 91.7% → 지금 367/395 = 92.9%(import 만으로 160 줄 = 40.5% — 함수 본문 207/235 = 88.1% 를 따로 낸다). 판정(파일럿 기본값): 핀은 읽을 수 있는 목록(드리프트 가드) · 소유 문제는 경고 · -run TestE2E 앵커는 4 걸음째 · 규칙 문서 포인터는 go.md·python.md·ci.md 예산이 0·26·11 B 라 없음. 일곱으로 넓힐 때: 데이터가 한 번도 적재 안 된 파일도 담아야 하고, 함수 이름의 믿을 원천, 적재 시점 코드(JVM static init · Ruby/PHP require)를 「아무것도 안 돈 실행」 판정에서 빼야 한다. -->
+    4. CI 관측 세 번 뒤에만 하한을 무장한다 — ✅ go·python(#936). 남은 것: 일곱의 3·4 걸음.
   - ⚠️ **리포트 구성의 함정.** java 는 `prepare-agent-integration` 으로 IT 전용 exec 를 떼야 한다 — 단위와 IT 가 같은 파일에 합쳐진다. kotlin 은 `integrationTest` 계측을 끄고 있다(`build.gradle.kts`). rust 브랜치는 stable 에서 못 잰다.
 - [ ] `integration-admin-surface-uneven` **[H/M · 계수 정정 2026-09-09]** 9개 통합 스위트가 덮는 admin 표면이 제각각이다 — **clients.update 는 2/9**, realms.create/delete 는 4/9, PHP 는 roles·groups·realms 를 하나도 안 부른다
   - ⚠️ **1/9 이 아니라 2/9**(php·rust). 두 자리 다 등록부 작성보다 앞선다(`59c7916` #190 · `dc9efd7` #240) — 즉 **처음부터 틀린 계수**였다. 함께 잰 것: `users.update` 7/9(java·python 빠짐) · `clients.create` 6/9 · `roles.update`·`groups.update` 각 7/9(php·ruby 빠짐).
