@@ -360,11 +360,55 @@ assert_fails node "$GUARD" "$TMP"
 OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
 assert_contains "$OUT" "자동주입" "명시 선언이 사라진 것을 지목해야 한다"
 
+# ---- POM description 의 하한 문구 — Central 아티팩트 페이지가 하한을 말하는 유일한 자리 ----
+# 1.0.1 이 JDK 하한을 21 → 17 로 내렸는데 1.0.1–1.0.8 의 POM 이 「JDK 21+」로 나갔다 — 그
+# 문자열을 아무 가드도 읽지 않았다(등록부 kotlin-pom-description-jdk-floor).
+
+# 변이 10 — description 의 JDK 만 낡게 둔다(그 사고의 모양).
+cp -r "$FIX/." "$TMP/"
+sed -i 's|JDK 17+|JDK 21+|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "POM description 의 JDK 하한" "description 의 JDK 하한 불일치를 지목해야 한다"
+
+# 변이 11 — description 의 Kotlin 하한만 올린다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|Kotlin 2\.2+|Kotlin 2.4+|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "POM description 의 Kotlin 하한" "description 의 Kotlin 하한 불일치를 지목해야 한다"
+
+# 변이 12 — jvmTarget 을 지운다. 그러면 툴체인(21)이 바이트코드 타깃이고 하한도 21 이다 —
+# description 의 17+ 는 거짓이 된다(check-docs.mjs 의 PUBLISHED_FALLBACK 과 같은 규칙).
+cp -r "$FIX/." "$TMP/"
+sed -i '/jvmTarget\.set/d' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+
+# 변이 13 — 하한 문구를 지운다. 읽지 못한 것을 통과로 넘기면 이 검사는 공허해진다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|Requires Kotlin 2\.2+ / JDK 17+\. ||' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "하한 문구" "하한 문구가 사라진 것을 지목해야 한다"
+
+# 변이 14 — description 을 다른 모양(속성 대입)으로 바꿔 추출이 0 이 되게 한다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|description\.set(|description = (|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+
 # 오탐 방지 — 셋을 **함께** 올리면 통과해야 한다(정상적인 하한 상향의 모양).
 # 이 대조군이 없으면 이 가드는 "하한을 영원히 올리지 마라"가 된다.
+# ⚠️ 2026-11-02: 「함께」에 POM description 의 `Kotlin X.Y+` 가 더해졌다.
 cp -r "$FIX/." "$TMP/"
 sed -i 's|KotlinVersion.KOTLIN_2_2|KotlinVersion.KOTLIN_2_4|g' "$BGK"
 sed -i 's|kotlin-stdlib:2\.2\.21|kotlin-stdlib:2.4.10|' "$BGK"
+sed -i 's|Kotlin 2\.2+|Kotlin 2.4+|' "$BGK"
+assert_ok node "$GUARD" "$TMP"
+
+# 오탐 방지 — JDK 하한을 description 과 **함께** 올리면 통과해야 한다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|JvmTarget\.JVM_17|JvmTarget.JVM_21|' "$BGK"
+sed -i 's|JDK 17+|JDK 21+|' "$BGK"
 assert_ok node "$GUARD" "$TMP"
 
 # 오탐 방지 — 정상적인 KGP 범프의 모양이면 통과해야 한다. 이 대조군이 없으면 이 가드는

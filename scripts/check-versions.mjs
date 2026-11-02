@@ -562,6 +562,48 @@ for (const [lang, p, re] of manifests) {
           `(하한을 올리면 그만큼 소비자를 잘라내므로 릴리스 노트에도 적는다). 근거: .claude/rules/kotlin.md`,
       )
     }
+
+    // ── POM `<description>` 의 하한 문구 ↔ 위 Kotlin 하한 · JVM 하한 ──
+    // Central 은 README 를 렌더링하지 않아 이 문자열이 아티팩트 페이지가 하한을 말하는 유일한
+    // 자리다(pom 블록 주석). 그런데 아무 가드도 읽지 않았다 — 1.0.1 이 JDK 하한을 21 → 17 로
+    // 내린 뒤에도 1.0.1–1.0.8 의 POM 이 「JDK 21+」로 나갔다(repo1 .pom 실측).
+    // JDK 하한은 check-docs.mjs 의 RUNTIME 과 같은 추출기(`JvmTarget.JVM_N`)로 읽고, jvmTarget 이
+    // 없으면 툴체인이 바이트코드 타깃이므로 그 값이다(check-docs.mjs 의 PUBLISHED_FALLBACK 과 같은
+    // 규칙). `-Xjdk-release` 와의 짝은 check-jvm-api-surface-pins.mjs 가 소유한다 — 여기서 다시
+    // 보지 않는다(같은 조건을 두 곳에서 보면 변이검증이 공허해진다).
+    const descCall = /description\.set\(\s*((?:"(?:[^"\\\n]|\\.)*"\s*\+?\s*)+),?\s*\)/.exec(bgkText)
+    if (!descCall) {
+      harnessErrors.push(
+        `${bgk} 에서 POM description(\`description.set("…" + …)\`)을 읽지 못했다 — ` +
+          `하한 문구 대조가 공허해진다`,
+      )
+    } else {
+      const desc = [...descCall[1].matchAll(/"((?:[^"\\\n]|\\.)*)"/g)].map((m) => m[1]).join('')
+      const kFloor = /\bKotlin (\d+)\.(\d+)\+/.exec(desc)
+      const jFloor = /\bJDK (\d+)\+/.exec(desc)
+      const jdk = (/JvmTarget\.JVM_(\d+)/.exec(bgkText) ?? /jvmToolchain\((\d+)\)/.exec(bgkText))?.[1]
+      if (!kFloor || !jFloor) {
+        harnessErrors.push(
+          `${bgk} 의 POM description 에서 하한 문구(\`Kotlin X.Y+\` · \`JDK N+\`)를 읽지 못했다 — ` +
+            `Central 아티팩트 페이지가 하한을 말하는 유일한 자리다`,
+        )
+      } else {
+        if (kv.length === 2 && (kFloor[1] !== kv[0][2] || kFloor[2] !== kv[0][3])) {
+          harnessErrors.push(
+            `${bgk} 의 POM description 의 Kotlin 하한이 「Kotlin ${kFloor[1]}.${kFloor[2]}+」인데 ` +
+              `languageVersion·apiVersion 은 KOTLIN_${kv[0][2]}_${kv[0][3]} 다 — 하한과 함께 옮길 것`,
+          )
+        }
+        if (!jdk) {
+          harnessErrors.push(`${bgk} 에서 JVM 하한(\`JvmTarget.JVM_N\` · 없으면 \`jvmToolchain(N)\`)을 읽지 못했다`)
+        } else if (jFloor[1] !== jdk) {
+          harnessErrors.push(
+            `${bgk} 의 POM description 의 JDK 하한이 「JDK ${jFloor[1]}+」인데 바이트코드 하한은 ${jdk} 다 — ` +
+              `하한과 함께 옮길 것(게시본은 다음 릴리스에서 바뀐다)`,
+          )
+        }
+      }
+    }
   }
 }
 
