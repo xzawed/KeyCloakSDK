@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — 보고 모드 파일럿(go · python).
+# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — 파일럿(go · python)의 무결성 판정과 하한.
 #
 # ⚠️ **커밋된 픽스처만 쓴다** — Docker 도 Go·Python 툴체인도 필요 없다. 실제 Keycloak 에 대고 도는 것은
 # 레인 CI 의 integration 잡이다. 여기서 재는 것은 리포트의 **무결성 판정** 셋이다:
@@ -169,7 +169,7 @@ run report go "$T" --out "$D"
 assert_eq 2 "$RC" "[go] 같은 블록의 문장 수가 다르면 exit 2"
 assert_contains "$OUT" "FAIL [go] go/admin.go:33.37,36.2 appears with 2 and 3 statements" "[go] 모순 블록을 댄다"
 
-# ── (2) 음성: 소유자(보고 모드 — exit 1, 게이트가 아니다) ─────────────────────────────────────
+# ── (2) 음성: 소유자(exit 1 — 경고, 게이트가 아니다) ─────────────────────────────────────────
 fresh
 sed -i '/"go\/admin.go:AdminClient.Close"/d' "$T/scripts/integration-coverage.json"
 run report go "$T" --out "$D"
@@ -273,5 +273,60 @@ fresh
 run report rust "$T" --out "$D"
 assert_eq 2 "$RC" "파일럿이 안 재는 언어는 usage(exit 2)"
 assert_contains "$OUT" "this pilot measures go · python" "usage 문구"
+
+# ── (4) 하한(4 걸음째 — 2026-11-02 무장) ─────────────────────────────────────────────────────────
+# 픽스처 핀에는 하한이 없다(위 단언들은 하한 없는 리포트다). 여기서만 주입한다.
+# 픽스처 수치: go 10/22 = 45.45% · python lines 21/28 = 75.00% · bodies 8/13 = 61.54%.
+floor() { # <lang> <metric> <percent>
+  sed -i "s|^  \"$1\": {\$|  \"$1\": {\n    \"floor\": { \"metric\": \"$2\", \"percent\": $3 },|" "$T/scripts/integration-coverage.json"
+  assert_contains "$(cat "$T/scripts/integration-coverage.json")" "\"metric\": \"$2\", \"percent\": $3" "(하한 주입이 착지했는지 먼저 본다)"
+}
+fresh; floor go statements 45
+run report go "$T" --out "$D"
+assert_eq 0 "$RC" "[floor] go 45.45% ≥ 45 — 출력: $OUT"
+assert_line "$OUT" "integration-coverage [go]: OK — 10/22 statements (45.5%) · floor statements ≥ 45% · 4 never-executed functions, all owned by open registry items" "[floor] 통과 요약에 하한을 함께 적는다"
+assert_contains "$OUT" "[go] integration-only coverage — floor statements ≥ 45%" "[floor] 머리줄"
+
+fresh; floor go statements 46
+run report go "$T" --out "$D"
+assert_eq 3 "$RC" "[floor] go 45.45% < 46 은 BELOW(exit 3) — 출력: $OUT"
+assert_line "$OUT" "integration-coverage [go]: BELOW — 10/22 statements (45.5%) · floor statements ≥ 46% · 4 never-executed functions, all owned by open registry items" "[floor] BELOW 요약"
+
+# 같은 값은 통과다(≥) — 75% 를 정확히 가진 lines 로. 비교는 정수식이다(부동소수 반올림으로 갈리지 않는다).
+fresh; floor python lines 75
+run report python "$T" --out "$D"
+assert_eq 0 "$RC" "[floor] python lines 75.00% ≥ 75 — 출력: $OUT"
+fresh; floor python lines 75.01
+run report python "$T" --out "$D"
+assert_eq 3 "$RC" "[floor] python lines 75.00% < 75.01 — 출력: $OUT"
+
+# 지표가 판정을 가른다 — bodies 61.54% 는 62 아래, 같은 실행의 lines 75% 는 위다.
+fresh; floor python bodies 62
+run report python "$T" --out "$D"
+assert_eq 3 "$RC" "[floor] python bodies 61.54% < 62 — lines 가 아니라 bodies 로 잰다 — 출력: $OUT"
+assert_contains "$OUT" "floor bodies ≥ 62%" "[floor] python 하한 지표 표기"
+
+# 잘못 적은 하한은 무결성 실패(exit 2) — 조용히 무시하면 하한이 꺼진 줄 모른다.
+fresh; floor go bodies 40
+run check "$T"
+assert_eq 2 "$RC" "[floor] go 에 bodies 는 없다 — 출력: $OUT"
+assert_contains "$OUT" "go.floor.metric" "[floor] 지표 오류를 지목한다"
+fresh; floor python bodies 0
+run check "$T"
+assert_eq 2 "$RC" "[floor] 0% 하한은 하한이 아니다 — 출력: $OUT"
+fresh; floor python bodies 101
+run check "$T"
+assert_eq 2 "$RC" "[floor] 100% 초과 — 출력: $OUT"
+fresh; floor go statements 40
+run check "$T"
+assert_eq 0 "$RC" "[floor] 올바른 하한은 check 를 통과한다 — 출력: $OUT"
+assert_line "$OUT" "[go] floor: statements ≥ 40%" "[floor] check 가 하한을 보여 준다"
+
+# 소유 문제와 하한 미달이 겹치면 게이트(3)가 경고(1)를 이긴다 — 경고는 그대로 찍는다.
+fresh; floor go statements 46
+sed -i '/AdminClient.Close/d' "$T/scripts/integration-coverage.json"
+run report go "$T" --out "$D"
+assert_eq 3 "$RC" "[floor] DRIFT + BELOW 는 3 — 출력: $OUT"
+assert_contains "$OUT" "unowned never-executed function go/admin.go:AdminClient.Close" "[floor] 소유 문제도 함께 찍는다"
 
 assert_report
