@@ -1,5 +1,5 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=173489 max-raw-bytes=198626 -->
+<!-- doc-budget: max-bytes=173489 max-raw-bytes=197354 -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -38,7 +38,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `284`(2026-10-30 기준 열림 130 · 닫힘 154)인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `285`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -68,7 +68,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. 2026-10-29 판정의 남은 칸은 각 항목이 적는다 — `wave4-hardening-php`(다음 걸음: 아홉 언어 분류표) · `response-read-deadline-divergent`(JVM admin 틀 · python TLS 안의 TLS) · `response-framing-unbounded`(node 는 상류 보고 — 사람 몫).
+1. 2026-10-29 판정의 남은 칸은 각 항목이 적는다 — `response-read-deadline-divergent`(JVM admin 틀 · python TLS 안의 TLS) · `response-framing-unbounded`(node 는 상류 보고 — 사람 몫).
 2. `guard-detection-surface-hand-narrowed` [H/M](손 표 축 — 되살릴 조건) · `integration-coverage-never-measured` [H/L](go·python 파일럿 #774 의 CI 관측 셋 → 나머지 일곱).
 3. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
@@ -342,11 +342,11 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 132건 (열림 65)
+## C. 품질 부채 — 133건 (열림 65)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 70
+### 9언어 소스 — 71
 
 - [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청과 교환의 `redirect_uri` 를 호출당 받지 못했다 — §4 판정 「표기가 아니라 능력의 차이이니 API 를 맞춘다」로 둘 다 가산적으로 맞췄다. 사후 서사는 `git show 8d7316c:docs/superpowers/plans/remaining-work.md` 522행
 
@@ -419,8 +419,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `wave4-hardening-python` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #770 #879 · (1)(4) 판정 「그대로」]** 생성 때만 거는 auth 상한은 비공개 속성으로만 풀리고, 짝 없는 서로게이트는 IdP 가 준 값 그대로다
 - [x] `wave4-hardening-node` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #768 #772]** bearer 끝 공백 다듬기를 SDK 가 맡는다(bearer 판정) · 폼 본문 U+FFFD 는 「그대로」
 - [x] `wave4-hardening-ruby` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #763 #874]** 전역 `Rack::OAuth2.http_config` 를 걸지 않는다(판정) — ASCII 밖 bearer 는 bearer 판정이 닫는다
-- [ ] `wave4-hardening-php` **[L/S · 신규 2026-10-05 · (3)(4) 닫힘 #767 · 토큰 판독기 멈춤 닫힘 #772 · 라운드 2(2026-10-29) 다섯 칸 수락]** 남은 칸 — 비-JSON 토큰 응답이 league `TransportError` · cc provider `AuthError` · `php/src/`
-<!-- wave4-hardening-php 판정 2026-10-29 라운드 2(PM 판정 먼저 · Grok 판정 레그 대조, 다섯 중 넷 일치 — 칸별 이유와 Grok 의 반대는 그 PR 본문). 받아들임: (1) curl 8.21.0(Windows)이 +307,200 B Bearer 헤더를 버린다(→ 401 · 누출 없음) — 기본 Keycloak 은 65,459 B 위를 431 로 막는다 · 되살릴 조건: 지원 플랫폼 libcurl 이 그 아래에서 버린다는 측정. (2) 주입 PSR-18 전송 무상한(메모리는 상한까지). (3) 탐색 불가 본문을 현재 위치부터 읽음(주입 미들웨어). (4) 주입 전송 읽기 오류의 일반 문구. (5) stream 처리기 gzip 7–8 MB — ext-curl 필수라 주입 때만(뒤집히면 이 칸도). 남은 칸(6): 비-JSON 토큰 응답(503 HTML 등)을 AuthClient(league)는 TransportError, ClientCredentialsTokenProvider 는 AuthError('client-credentials failed')로 부른다(OAuth 오류 JSON · access_token 없음은 둘 다 AuthError · 상한은 둘 다 TransportError · introspection 비-JSON 은 AuthError · JwksStore 는 TransportError). 다음 걸음: 아홉 언어의 같은 다섯 응답 분류표. raw() 트레이스 인자의 시크릿은 php-exception-trace-third-party-args. -->
+- [x] `wave4-hardening-php` **[L/S · 닫힘 2026-11-02 #935]** 칸(6) → auth. (1)–(5)의 되살릴 조건은 #892 본문
+- [ ] `token-response-class-divergent` **[L/M · 신규 2026-11-02]** 깨진 토큰 응답의 오류 계급이 갈린다 — rust R4 · go admin provider · 언어 사이 R2·R5·R6. 표는 #935 본문
 - [x] `wave4-hardening-java` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #769 #833 #875]** JVM 공통 bearer 는 판정이 닫았고 조회 스레드 생성 실패(Error)는 「그대로」 — admin 원인 사슬의 jakarta 타입은 `nimbus-type-on-public-surface` 로
 - [x] `wave4-hardening-kotlin` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #878]** 짧은 §5.2 꼴이 산문도 가리는 것은 받아들였고(판정) `MaskingTest` 가 고정한다 · %3F 는 「그대로」
 - [x] `python-admin-error-body-strict-decode` **[M/S · 신규·닫힘 2026-10-05 #719]** UTF-8 아닌 admin 오류 본문이 raw `UnicodeDecodeError` 였고 그 `__context__` 가 본문을 실었다(§4)
