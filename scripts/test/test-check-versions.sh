@@ -417,6 +417,16 @@ cp -r "$FIX/." "$TMP/"
 sed -i 's|JvmTarget\.JVM_17)|JvmTarget.fromTarget("17"))|' "$BGK"
 assert_ok node "$GUARD" "$TMP"
 
+# 변이 18 — ReDoS 회귀(CodeQL js/redos). `description.set(""` 뒤에 `\t""` 를 2000 번 잇고 닫지 않는다 —
+# 조각 사이 `+` 가 선택이던 판은 22 번에 2.5 s 로 지수로 늘었다. 지금 판은 읽지 못함(rc=1)으로 곧 끝나야 하고,
+# 시간 초과(rc=124)면 그 모양이 돌아온 것이다.
+cp -r "$FIX/." "$TMP/"
+_pay=$(printf '\t""%.0s' $(seq 1 2000))
+awk -v p="$_pay" '/^        description\.set\($/ { print "        description.set(\"\"" p "X"; skip=1; next }
+  skip && /^        \)$/ { skip=0; next } !skip' "$BGK" > "$BGK.redos" && mv "$BGK.redos" "$BGK"
+_rc=0; timeout 20 node "$GUARD" "$TMP" > /dev/null 2>&1 || _rc=$?
+assert_eq "1" "$_rc" "POM description 추출이 지수 백트래킹 없이 끝나야 한다(124 = 시간 초과)"
+
 # 오탐 방지 — 셋을 **함께** 올리면 통과해야 한다(정상적인 하한 상향의 모양).
 # 이 대조군이 없으면 이 가드는 "하한을 영원히 올리지 마라"가 된다.
 # ⚠️ 2026-11-02: 「함께」에 POM description 의 `Kotlin X.Y+` 가 더해졌다.

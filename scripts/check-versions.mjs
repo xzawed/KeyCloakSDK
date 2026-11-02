@@ -578,7 +578,9 @@ for (const [lang, p, re] of manifests) {
       .split('\n')
       .filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l))
       .join('\n')
-    const descCall = /^[ \t]*description\.set\(\s*((?:"(?:[^"\\\n]|\\.)*"\s*\+?\s*)+),?\s*\)/m.exec(code)
+    // ⚠️ 조각 사이의 `+` 는 필수다 — 선택(`\s*\+?\s*`)이면 공백을 두 `\s*` 에 나누는 길이 갈려 지수
+    // 백트래킹이 난다(CodeQL js/redos · 실측: `\t""` 22 번 반복에 2.5 s). Kotlin 도 `+` 없이 잇지 못한다.
+    const descCall = /^[ \t]*description\.set\(\s*("(?:[^"\\\n]|\\.)*"(?:\s*\+\s*"(?:[^"\\\n]|\\.)*")*)\s*(?:,\s*)?\)/m.exec(code)
     if (!descCall) {
       harnessErrors.push(
         `${bgk} 에서 POM description(\`description.set("…" + …)\`)을 읽지 못했다 — ` +
