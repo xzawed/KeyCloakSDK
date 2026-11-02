@@ -144,6 +144,28 @@ assert_contains "$OUT" "lang-a: attest" "[lang-typo] 원래 언어의 단계가 
 fork new-lang; printf '[package]\n' | put "$CASE/lang-c/Cargo.toml"; run
 expect new-lang 1 "lang-c: attest"
 
+# Grok 레그가 낸 모양 — 종료코드를 바꾸는 꼬리·앞 명령, 마지막이 아닌 attest, 항목 줄 첫 키의 `if:`, 트리거 필터.
+fork or-true; sed -i 's/--lang lang-a$/--lang lang-a || true/' "$(wa or-true)"; run
+expect or-true 1 "셸 연산자"
+
+fork negated; sed -i 's/run: node scripts/run: ! node scripts/' "$(wa negated)"; run
+expect negated 1 "줄 머리"
+
+fork not-last; sed -i 's/--lang lang-b$/--lang lang-b\n          echo done/' "$(wb not-last)"; run
+expect not-last 1 "마지막 명령"
+
+fork item-if; sed -i 's/^      - name: attest$/      - if: false\n        name: attest/' "$(wa item-if)"; run
+expect item-if 1 "attest 단계에 \`if:\`"
+
+fork pr-types; sed -i "s|^  pull_request: {.*\$|  pull_request: { types: [labeled] }|" "$(wa pr-types)"; run
+expect pr-types 1 "types"
+
+fork pr-branches; sed -i "/^  pull_request:/s|branches: \[main\]|branches: [develop]|" "$(wa pr-branches)"; run
+expect pr-branches 1 "main"
+
+fork push-tags; sed -i "s|^  push: {.*\$|  push: { tags: ['v*'] }|" "$(wa push-tags)"; run
+expect push-tags 1 "태그"
+
 # ═══ (b) 음성 — 정당한 표기 ══════════════════════════════════════════════════════════
 # 통과를 기대하는 변이는 빗나가도 통과한다 — 각 변이가 착지했는지 먼저 단언한다.
 fork broad-glob; sed -i "s|'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh'|'scripts/**'|g" "$(wa broad-glob)"
@@ -158,6 +180,14 @@ fork compact-seq; sed -i 's/^      - \(.*\)'"'"'$/    - \1'"'"'/' "$(wb compact-
 assert_eq "3" "$(grep -c "^    - '" "$(wb compact-seq)")" "[compact-seq] 변이가 착지하지 않았다"
 run; expect compact-seq 0 "ok    lang-b"
 
+fork pr-types-ok; sed -i "s|^  pull_request: {.*\$|  pull_request: { types: [opened, synchronize, reopened, labeled] }|" "$(wa pr-types-ok)"
+assert_eq "1" "$(grep -c 'types: \[opened' "$(wa pr-types-ok)")" "[pr-types-ok] 변이가 착지하지 않았다"
+run; expect pr-types-ok 0 "ok    lang-a"
+
+fork glob-branch; sed -i "/^  pull_request:/s|branches: \[main\]|branches: ['ma*']|" "$(wa glob-branch)"
+assert_eq "1" "$(grep -c "branches: \['ma\*'\]" "$(wa glob-branch)")" "[glob-branch] 변이가 착지하지 않았다"
+run; expect glob-branch 0 "ok    lang-a"
+
 # ═══ (c) 공허 — 판정 불가 ══════════════════════════════════════════════════════════════
 fork flow-on; sed -i '/^on:$/,/^  workflow_dispatch:$/d' "$(wa flow-on)"; sed -i '1a on: { push: { branches: [main] }, pull_request: { branches: [main] } }' "$(wa flow-on)"; run
 expect flow-on 2 "플로우 매핑"
@@ -167,6 +197,12 @@ expect paths-ignore 2 "paths-ignore"
 
 fork var-lang; sed -i 's/--lang lang-a$/--lang "$L"/' "$(wa var-lang)"; run
 expect var-lang 2 "변수"
+
+fork dup-paths; sed -i "s|^    paths: \['lang-b/\*\*', |    paths: ['README.md']\n    paths: ['lang-b/**', |" "$(wb dup-paths)"; run
+expect dup-paths 2 "두 번"
+
+fork branches-ignore; sed -i "s|^  pull_request: {.*\$|  pull_request: { branches-ignore: [develop] }|" "$(wa branches-ignore)"; run
+expect branches-ignore 2 "branches-ignore"
 
 CASE="$TMP/no-langs"; mkdir -p "$CASE"; git -C "$CASE" init -q; lane_flow "$CASE" lang-a; run
 expect no-langs 2 "파생된 언어가 0 개"

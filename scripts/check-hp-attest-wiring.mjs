@@ -11,8 +11,11 @@
 // 모델 — 언어 집합은 트리에서 파생한다(`check-known-gaps.mjs` 의 `deriveLangs` = `df_tree_langs`). 언어마다:
 //  (1) `.github/workflows/*.yml|yaml` 의 주석 아닌 줄에서 `node … scripts/check-hp-attest.mjs … --lang <언어>` 를 도는
 //      단계가 하나 이상 있다.
-//  (2) 그 단계와 그 잡에 `if:` · `continue-on-error:` 키가 없다 — 조건부 attest 는 증명이 아니다.
+//  (2) 그 단계와 그 잡에 `if:` · `continue-on-error:` 키가 없다 — 조건부 attest 는 증명이 아니다. 그리고 단계의 종료코드가
+//      곧 attest 의 것이다: 줄 머리에서 시작하고(앞 명령 · `!` 없음) 그 줄에 셸 연산자가 없고 그 run 의 마지막 명령이다.
 //  (3) 그 워크플로의 `push` · `pull_request` 트리거가 `<언어>/**` 와 `SHARED` 를 받는다(`paths:` 가 없으면 전부 받는다).
+//      `branches` 가 있으면 main 을, `pull_request.types` 가 있으면 opened · synchronize · reopened 를 담고, push 가 태그에만
+//      걸리지 않는다 — 경로만 보면 PR 에서 아예 안 도는 트리거가 「받는다」로 읽힌다(Grok 레그).
 //  그리고 attest 가 부르는 언어가 파생 집합 밖이면(철자 · 지운 언어) FAIL 이다.
 // ⚠️ 등록부는 SHARED 가 아니다. attest 는 known gap id 가 있을 때만 등록부를 읽고(오늘 아홉 다 빈 목록 —
 //    `check-known-gaps.mjs` 실측), 리터럴 id 는 모든 PR 의 `known-gaps-join` 이 열림/닫힘을 대조하며, 리터럴 없는 비지
@@ -31,6 +34,8 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const SHARED = ['scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh']
 const TRIGGERS = ['push', 'pull_request']
 const GUARD_KEYS = ['if', 'continue-on-error']
+// `pull_request` 의 기본 활동 — `types:` 를 적으면 이 셋을 다 담아야 PR 을 열고 밀 때 레인이 돈다.
+const PR_TYPES = ['opened', 'synchronize', 'reopened']
 
 export class Unreadable extends Error {}
 
@@ -62,8 +67,11 @@ const globRe = (p) =>
   )
 export const covers = (pats, file) => pats.some((p) => globRe(p).test(file))
 
-// `on:` 의 한 트리거가 받는 경로 패턴. null = 그 트리거가 없다 · ['**'] = 경로로 거르지 않는다.
-export function triggerPaths(lines, trig) {
+// `on:` 의 한 트리거 — {paths, types, branches, tags}. null = 그 트리거가 없다. `paths` 가 없으면 ['**'](경로로 거르지
+// 않는다), 다른 셋은 없으면 null. ⚠️ 경로만 보면 `types: [labeled]` · `branches: [develop]` 처럼 PR 에서 아예 안 도는
+// 트리거가 「받는다」로 읽힌다(Grok 레그). 같은 키가 두 번이거나 `*-ignore` 면 어느 것이 쓰이는지 대조하지 않는다(판정 불가).
+const UNFILTERED = { paths: ['**'], types: null, branches: null, tags: null }
+export function triggerSpec(lines, trig) {
   const body = lines.map(stripComment)
   const onIdx = body.findIndex((l) => /^['"]?on['"]?\s*:/.test(l))
   if (onIdx < 0) throw new Unreadable('최상위 `on:` 이 없다')
@@ -71,9 +79,9 @@ export function triggerPaths(lines, trig) {
   if (v.startsWith('{')) throw new Unreadable('`on:` 이 플로우 매핑이다 — 블록 표기로 적을 것')
   if (v.startsWith('[')) {
     if (!v.endsWith(']')) throw new Unreadable('`on:` 이 한 줄에서 닫히지 않는 플로우 시퀀스다')
-    return v.slice(1, -1).split(',').map(unq).includes(trig) ? ['**'] : null
+    return v.slice(1, -1).split(',').map(unq).includes(trig) ? UNFILTERED : null
   }
-  if (v !== '') return unq(v) === trig ? ['**'] : null
+  if (v !== '') return unq(v) === trig ? UNFILTERED : null
   let kid = null
   let at = -1
   const seq = []
@@ -95,7 +103,7 @@ export function triggerPaths(lines, trig) {
       break
     }
   }
-  if (seq.length) return seq.includes(trig) ? ['**'] : null
+  if (seq.length) return seq.includes(trig) ? UNFILTERED : null
   if (at < 0) return null
   const head = (KEY.exec(body[at].trim())?.[2] ?? '').trim()
   const tail = []
@@ -105,27 +113,29 @@ export function triggerPaths(lines, trig) {
     tail.push(body[k])
   }
   const text = [head, ...tail].join('\n')
-  if (/(^|[\s{,])paths-ignore\s*:/.test(text)) throw new Unreadable(`\`${trig}\` 의 paths-ignore 는 대조하지 않는다`)
-  let pats
-  const flow = /(^|[\s{,])paths\s*:\s*\[([^\]\n]*)\]/.exec(text)
-  if (flow) pats = flow[2].split(',').map(unq).filter(Boolean)
-  else if (/(^|[\s{,])paths\s*:\s*\[/.test(text)) throw new Unreadable(`\`${trig}.paths\` 플로우 시퀀스가 한 줄에서 닫히지 않는다`)
-  else {
-    const pi = tail.findIndex((l) => /^\s*paths\s*:\s*$/.test(l))
-    if (pi < 0) {
-      if (/(^|[\s{,])paths\s*:/.test(text)) throw new Unreadable(`\`${trig}.paths\` 를 읽지 못했다`)
-      return ['**']
-    }
-    pats = []
+  for (const bad of ['paths-ignore', 'branches-ignore', 'tags-ignore'])
+    if (new RegExp(`(^|[\\s{,])${bad}\\s*:`).test(text)) throw new Unreadable(`\`${trig}\` 의 ${bad} 는 대조하지 않는다`)
+  const list = (key) => {
+    const n = text.match(new RegExp(`(^|[\\s{,])${key}\\s*:`, 'g'))?.length ?? 0
+    if (n === 0) return null
+    if (n > 1) throw new Unreadable(`\`${trig}.${key}\` 가 두 번 적혔다 — 어느 쪽이 쓰이는지 대조하지 않는다`)
+    const flow = new RegExp(`(^|[\\s{,])${key}\\s*:\\s*\\[([^\\]\\n]*)\\]`).exec(text)
+    if (flow) return flow[2].split(',').map(unq).filter(Boolean)
+    if (new RegExp(`(^|[\\s{,])${key}\\s*:\\s*\\[`).test(text)) throw new Unreadable(`\`${trig}.${key}\` 플로우 시퀀스가 한 줄에서 닫히지 않는다`)
+    const pi = tail.findIndex((l) => new RegExp(`^\\s*${key}\\s*:\\s*$`).test(l))
+    if (pi < 0) throw new Unreadable(`\`${trig}.${key}\` 를 읽지 못했다`)
+    const out = []
     for (let k = pi + 1; k < tail.length; k++) {
       const item = /^\s*-\s+(.+)$/.exec(tail[k])
       if (!item || indentOf(tail[k]) < indentOf(tail[pi])) break
-      pats.push(unq(item[1]))
+      out.push(unq(item[1]))
     }
-    if (pats.length === 0) throw new Unreadable(`\`${trig}.paths\` 에서 항목을 하나도 읽지 못했다`)
+    if (out.length === 0) throw new Unreadable(`\`${trig}.${key}\` 에서 항목을 하나도 읽지 못했다`)
+    return out
   }
-  if (pats.some((p) => p.startsWith('!'))) throw new Unreadable(`\`${trig}.paths\` 의 부정 패턴은 순서 의미를 대조하지 않는다`)
-  return pats
+  const paths = list('paths') ?? ['**']
+  if (paths.some((p) => p.startsWith('!'))) throw new Unreadable(`\`${trig}.paths\` 의 부정 패턴은 순서 의미를 대조하지 않는다`)
+  return { paths, types: list('types'), branches: list('branches'), tags: list('tags') }
 }
 
 // attest 를 부르는 단계들 — {line, langs, stepKeys, job, jobKeys}.
@@ -176,7 +186,28 @@ export function attestSteps(lines) {
       const m = indentOf(body[j]) === ji + 2 && KEY.exec(body[j].trim())
       if (m) jobKeys.push(unq(m[1]))
     }
-    out.push({ line: k + 1, langs: lang[2].split(','), stepKeys, job: unq(KEY.exec(body[jl].trim())[1]), jobKeys })
+    // 종료코드 — 단계의 종료코드가 곧 attest 의 것이어야 한다(`|| true` 가 실패를 삼킨다 — Grok 레그). 그래서 attest 는
+    // 줄 머리에서 시작하고(앞 명령 · `!` 없음), 그 줄에 셸 연산자가 없고, 블록 스칼라라면 그 run 의 마지막 명령이다.
+    const problems = []
+    const cmd = body[k].trim().replace(/^-\s+/, '').replace(/^run\s*:\s*/, '')
+    if (!/^node\s/.test(cmd)) problems.push('attest 명령이 줄 머리에서 시작하지 않는다(앞 명령 · `!`)')
+    if (/[;&|]/.test(cmd.replace(/"[^"]*"|'[^']*'/g, ''))) problems.push('attest 줄에 셸 연산자(; & |)가 있다 — 단계의 종료코드가 바뀐다')
+    if (!/^(-\s+)?run\s*:/.test(body[k].trim())) {
+      let r = -1
+      for (let j = k - 1; j >= s; j--) {
+        if (/^\s*(-\s+)?run\s*:\s*[|>]/.test(body[j])) {
+          r = j
+          break
+        }
+      }
+      if (r < 0) throw new Unreadable(`${k + 1}행: attest 호출이 어느 \`run:\` 블록에 있는지 읽지 못했다`)
+      for (let j = k + 1; j < body.length; j++) {
+        if (body[j].trim() === '') continue
+        if (indentOf(body[j]) > indentOf(body[r])) problems.push('attest 가 그 run 의 마지막 명령이 아니다 — 단계의 종료코드가 뒤 명령의 것이 된다')
+        break
+      }
+    }
+    out.push({ line: k + 1, langs: lang[2].split(','), stepKeys, job: unq(KEY.exec(body[jl].trim())[1]), jobKeys, problems })
   }
   return out
 }
@@ -207,7 +238,7 @@ function main() {
     const trig = {}
     try {
       steps = attestSteps(lines)
-      if (steps.length) for (const t of TRIGGERS) trig[t] = triggerPaths(lines, t)
+      if (steps.length) for (const t of TRIGGERS) trig[t] = triggerSpec(lines, t)
     } catch (e) {
       if (!(e instanceof Unreadable)) throw e
       unusable.push(`${f}: ${e.message}`)
@@ -225,15 +256,22 @@ function main() {
           if (st.stepKeys.includes(k)) fails.add(`${f}:${st.line} ${lang} attest 단계에 \`${k}:\` — 조건부 attest 는 증명이 아니다`)
           if (st.jobKeys.includes(k)) fails.add(`${f}:${st.line} ${lang} attest 를 담은 잡 \`${st.job}\` 에 \`${k}:\` — 조건부 attest 는 증명이 아니다`)
         }
+        for (const p of st.problems) fails.add(`${f}:${st.line} ${lang} ${p}`)
         for (const t of TRIGGERS) {
-          const pats = trig[t]
-          if (pats === null) {
+          const spec = trig[t]
+          if (spec === null) {
             fails.add(`${f}: \`${t}\` 트리거가 없다 — ${lang} 레인이 그 사건에서 attest 를 돌지 않는다`)
             continue
           }
-          if (!covers(pats, `${lang}/x`)) fails.add(`${f}: \`${t}.paths\` 가 \`${lang}/**\` 를 받지 않는다`)
+          if (!covers(spec.paths, `${lang}/x`)) fails.add(`${f}: \`${t}.paths\` 가 \`${lang}/**\` 를 받지 않는다`)
           for (const s of SHARED)
-            if (!covers(pats, s)) fails.add(`${f}: \`${t}.paths\` 가 ${s} 를 받지 않는다 — 그 파일만 바꾼 PR 에서 ${lang} 레인이 생기지 않는다`)
+            if (!covers(spec.paths, s)) fails.add(`${f}: \`${t}.paths\` 가 ${s} 를 받지 않는다 — 그 파일만 바꾼 PR 에서 ${lang} 레인이 생기지 않는다`)
+          if (spec.branches && !covers(spec.branches, 'main'))
+            fails.add(`${f}: \`${t}.branches\` 가 main 을 받지 않는다 — main 으로 가는 변경에서 ${lang} 레인이 돌지 않는다`)
+          if (t === 'push' && spec.tags && !spec.branches) fails.add(`${f}: \`push\` 가 태그에만 걸린다 — 브랜치 push 에서 ${lang} 레인이 돌지 않는다`)
+          if (t === 'pull_request' && spec.types)
+            for (const need of PR_TYPES)
+              if (!spec.types.includes(need)) fails.add(`${f}: \`pull_request.types\` 에 ${need} 가 없다 — 그 사건에서 ${lang} 레인이 돌지 않는다`)
         }
       }
     }
