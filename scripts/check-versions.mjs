@@ -571,7 +571,14 @@ for (const [lang, p, re] of manifests) {
     // 없으면 툴체인이 바이트코드 타깃이므로 그 값이다(check-docs.mjs 의 PUBLISHED_FALLBACK 과 같은
     // 규칙). `-Xjdk-release` 와의 짝은 check-jvm-api-surface-pins.mjs 가 소유한다 — 여기서 다시
     // 보지 않는다(같은 조건을 두 곳에서 보면 변이검증이 공허해진다).
-    const descCall = /description\.set\(\s*((?:"(?:[^"\\\n]|\\.)*"\s*\+?\s*)+),?\s*\)/.exec(bgkText)
+    // ⚠️ 주석 줄은 빼고 읽는다 — 첫 매치가 주석 속 사본(`// JvmTarget.JVM_11` · 주석 처리된
+    // `description.set(`)을 잡으면 진짜 선언이 아닌 값과 대조한다(Grok 레그 지목 · 실제 트리
+    // probe 셋 SILENT). 표기 규약은 `Kotlin X.Y+` · `JDK N+` 이고, 다른 표기는 읽지 못함으로 실패한다.
+    const code = bgkText
+      .split('\n')
+      .filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l))
+      .join('\n')
+    const descCall = /^[ \t]*description\.set\(\s*((?:"(?:[^"\\\n]|\\.)*"\s*\+?\s*)+),?\s*\)/m.exec(code)
     if (!descCall) {
       harnessErrors.push(
         `${bgk} 에서 POM description(\`description.set("…" + …)\`)을 읽지 못했다 — ` +
@@ -581,7 +588,15 @@ for (const [lang, p, re] of manifests) {
       const desc = [...descCall[1].matchAll(/"((?:[^"\\\n]|\\.)*)"/g)].map((m) => m[1]).join('')
       const kFloor = /\bKotlin (\d+)\.(\d+)\+/.exec(desc)
       const jFloor = /\bJDK (\d+)\+/.exec(desc)
-      const jdk = (/JvmTarget\.JVM_(\d+)/.exec(bgkText) ?? /jvmToolchain\((\d+)\)/.exec(bgkText))?.[1]
+      // `jvmTarget.set(…)` 이 있으면 그 값(`JVM_N` · `fromTarget("N")`)이고, 없을 때만 툴체인이
+      // 바이트코드 타깃이다. 선언이 있는데 못 읽으면 툴체인으로 넘어가지 않는다(빌드 JDK 를 하한으로 읽는다).
+      const jtAt = code.search(/\bjvmTarget\.set\(/)
+      const jtArg = jtAt < 0 ? null : code.slice(jtAt, jtAt + 160)
+      const jdk =
+        jtArg === null
+          ? /^[ \t]*jvmToolchain\((\d+)\)/m.exec(code)?.[1]
+          : (/^jvmTarget\.set\(\s*[\w.]*JvmTarget\.JVM_(?:1_)?(\d+)\s*\)/.exec(jtArg) ??
+              /^jvmTarget\.set\(\s*[\w.]*JvmTarget\.fromTarget\(\s*"(?:1\.)?(\d+)"\s*\)\s*\)/.exec(jtArg))?.[1]
       if (!kFloor || !jFloor) {
         harnessErrors.push(
           `${bgk} 의 POM description 에서 하한 문구(\`Kotlin X.Y+\` · \`JDK N+\`)를 읽지 못했다 — ` +

@@ -396,6 +396,27 @@ cp -r "$FIX/." "$TMP/"
 sed -i 's|description\.set(|description = (|' "$BGK"
 assert_fails node "$GUARD" "$TMP"
 
+# 변이 15–17 — 첫 매치가 **주석 속 사본**이나 다른 표기를 잡는 모양(Grok 레그 지목, 실제 트리
+# probe 셋 다 SILENT 였다). 15: 앞선 주석의 `JvmTarget.JVM_11` 에 description 을 맞춘다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|^    jvmToolchain(21)$|    // 예: JvmTarget.JVM_11\n    jvmToolchain(21)|; s|JDK 17+|JDK 11+|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+
+# 16: `JvmTarget.fromTarget("11")` 은 `JVM_` 토큰이 없다 — 툴체인(21)으로 넘어가면 「JDK 21+」가 통과한다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|JvmTarget\.JVM_17)|JvmTarget.fromTarget("11"))|; s|JDK 17+|JDK 21+|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+
+# 17: 주석 처리된 description.set 이 진짜 호출 앞에 있다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|^        description\.set($|        // description.set("Requires Kotlin 2.2+ / JDK 17+.")\n        description.set(|; s|JDK 17+\. Fixture|JDK 21+. Fixture|' "$BGK"
+assert_fails node "$GUARD" "$TMP"
+
+# 오탐 방지 — `fromTarget("17")` 표기는 JVM_17 과 같은 하한이다.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|JvmTarget\.JVM_17)|JvmTarget.fromTarget("17"))|' "$BGK"
+assert_ok node "$GUARD" "$TMP"
+
 # 오탐 방지 — 셋을 **함께** 올리면 통과해야 한다(정상적인 하한 상향의 모양).
 # 이 대조군이 없으면 이 가드는 "하한을 영원히 올리지 마라"가 된다.
 # ⚠️ 2026-11-02: 「함께」에 POM description 의 `Kotlin X.Y+` 가 더해졌다.
