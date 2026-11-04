@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// integration-coverage.mjs — 통합 실행만의 「네트워크 경계」 커버리지 리포트. 파일럿 go · python — **하한 무장(2026-11-02)**.
+// integration-coverage.mjs — 통합 실행만의 「네트워크 경계」 커버리지 리포트. go · python 은 **하한 무장(2026-11-02)**,
+// node 는 보고 모드(3 걸음째 — 하한은 CI 관측 셋 뒤).
 //
 // 왜: 아홉 언어가 「경계는 통합으로 검증한다」며 그 파일을 단위 커버리지 게이트에서 빼는데, 통합 실행에서
 // 커버리지를 재는 언어가 0 이었다(등록부 `integration-coverage-never-measured`). 이 스크립트가 그 3 걸음째다 —
@@ -28,6 +29,12 @@
 // go 의 문장은 전부 함수(리터럴) 몸통이다.
 // ⚠️ go 의 미실행 함수는 소스를 직접 읽어 판정한다 — `go tool cover -func` 은 수신자 타입을 안 내고(같은 파일의
 // `String` 둘을 못 가른다) 패키지 수준 함수 리터럴의 문장을 합계에서 뺀다(실측: 픽스처 9/20 vs 9/19).
+// ⚠️ node 도 이름을 소스에서 읽는다 — vitest(v8)의 istanbul `fnMap` 이름은 클래스를 안 붙이고(두 클래스의 `constructor`
+// 가 `constructor`·`constructor_2`), 익명·private 메서드를 **순번** `(anonymous_N)` 으로 낸다(실측 2026-11-05: `#masked` 가
+// `(anonymous_1)`) — 위에 함수 하나가 늘면 소유자 키가 바뀐다. 그래서 prettier 가 보장하는 모양(최상위 선언은 열 0,
+// 클래스 멤버는 열 2, 여러 줄 몸통은 같은 들여쓰기의 `}` 줄로 닫힌다)으로 이름 범위를 잡고 문장을 그 범위에 붙인다 —
+// 콜백 같은 중첩 함수는 감싼 멤버에 접힌다(go 의 함수 리터럴과 같다). `typescript` 컴파일러에 기대지 않는다 — 자가테스트
+// (doc-facts)에는 node_modules 가 없다.
 //
 // 종료코드 — 넷을 가른다. 「낮은 수치」는 하한이 무장된 언어에서만 실패다(3):
 //   0 OK     리포트가 섰고, 하한 이상이며, 미실행 함수가 전부 열린 항목 소유다
@@ -37,11 +44,12 @@
 //   3 BELOW  하한 아래 — 수치는 유효하다. CI 는 실패로 본다. 비교는 정수식(covered × 100 < percent × 분모)이고 같으면 통과다.
 //
 // 사용:
-//   node scripts/integration-coverage.mjs <go|python> [--out DIR]                 로컬 — 통합 테스트(Docker) 후 리포트
-//   node scripts/integration-coverage.mjs run    <go|python> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
-//   node scripts/integration-coverage.mjs report <go|python> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
-//   node scripts/integration-coverage.mjs check  [ROOT]                            파생 ↔ 핀 ↔ 소유자(데이터·Docker 불필요)
-// python 인터프리터는 `KCSDK_PY` → `python/.venv` → PATH 의 `python` 순이다. DIR 기본값은 OS 임시 디렉터리 아래다.
+//   node scripts/integration-coverage.mjs <go|python|node> [--out DIR]                 로컬 — 통합 테스트(Docker) 후 리포트
+//   node scripts/integration-coverage.mjs run    <go|python|node> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
+//   node scripts/integration-coverage.mjs report <go|python|node> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
+//   node scripts/integration-coverage.mjs check  [ROOT]                                 파생 ↔ 핀 ↔ 소유자(데이터·Docker 불필요)
+// python 인터프리터는 `KCSDK_PY` → `python/.venv` → PATH 의 `python` 순이다. node 는 `node/node_modules` 의 vitest 를
+// 이 node 로 직접 띄운다(npm 을 거치지 않는다 — 윈도의 `npm.cmd` 는 셸 없이 못 띄운다). DIR 기본값은 OS 임시 디렉터리 아래다.
 import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { join, dirname, resolve, posix } from 'node:path'
@@ -51,15 +59,16 @@ import { tmpdir } from 'node:os'
 const PINS = 'scripts/integration-coverage.json'
 const REGISTRY = 'docs/superpowers/plans/remaining-work.md'
 const BOUNDARY = 'scripts/coverage-boundary.mjs'
-const LANGS = ['go', 'python']
+const LANGS = ['go', 'python', 'node']
 // 하한 지표 — go 의 문장은 전부 함수 몸통이고, python 은 lines(import 때 도는 줄 포함)와 bodies(함수 안 문장)가 갈린다.
-const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'] }
+// node 는 istanbul 문장이다(모듈 수준 문장은 import 때 돌지만 경계 파일은 거의 전부 클래스 멤버다 — 표가 따로 보인다).
+const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'], node: ['statements'] }
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
   if (msg) console.error(msg)
-  console.error('usage: node scripts/integration-coverage.mjs <go|python> [--out DIR]')
-  console.error('       node scripts/integration-coverage.mjs run|report <go|python> [ROOT] [--out DIR]')
+  console.error('usage: node scripts/integration-coverage.mjs <go|python|node> [--out DIR]')
+  console.error('       node scripts/integration-coverage.mjs run|report <go|python|node> [ROOT] [--out DIR]')
   console.error('       node scripts/integration-coverage.mjs check [ROOT]')
   process.exit(2)
 }
@@ -441,6 +450,216 @@ function pyReport(d) {
   return { path, files, never }
 }
 
+// ── node: vitest(v8) 의 istanbul JSON + 소스의 이름 범위 ──────────────────────────────────
+// 주석·문자열·템플릿 리터럴의 글자를 공백으로 지운다(줄 번호 보존). 템플릿의 `${…}` 안은 코드다 — 그 안의 문자열·템플릿도
+// 같은 규칙으로 지운다(중첩은 `${` 마다 중괄호 깊이를 하나 쌓는다). 정규식 리터럴은 가리지 않는다 — 판정은 줄 머리와
+// 한 줄 멤버의 중괄호 수뿐이고, 어긋나면 끝을 못 찾아 FAIL 이다(조용히 틀리지 않는다).
+function blankTs(src) {
+  let res = ''
+  const subs = [] // 열린 `${…}` 마다 그 안의 중괄호 깊이
+  let inTemplate = false
+  for (let i = 0; i < src.length; ) {
+    const c = src[i]
+    if (inTemplate) {
+      if (c === '\\') {
+        res += src.slice(i, i + 2).replace(/[^\n]/g, ' ')
+        i += 2
+      } else if (c === '`') {
+        res += ' '
+        i++
+        inTemplate = false
+      } else if (src.startsWith('${', i)) {
+        res += '  '
+        i += 2
+        subs.push(0)
+        inTemplate = false
+      } else {
+        res += c === '\n' ? '\n' : ' '
+        i++
+      }
+      continue
+    }
+    let j
+    if (src.startsWith('//', i)) {
+      j = src.indexOf('\n', i)
+      if (j < 0) j = src.length
+    } else if (src.startsWith('/*', i)) {
+      j = src.indexOf('*/', i + 2)
+      j = j < 0 ? src.length : j + 2
+    } else if (c === '"' || c === "'") {
+      j = i + 1
+      while (j < src.length && src[j] !== c && src[j] !== '\n') j += src[j] === '\\' ? 2 : 1
+      j = Math.min(src.length, j + 1)
+    } else if (c === '`') {
+      res += ' '
+      i++
+      inTemplate = true
+      continue
+    } else {
+      if (subs.length && c === '{') subs[subs.length - 1]++
+      else if (subs.length && c === '}') {
+        if (subs[subs.length - 1] === 0) {
+          subs.pop()
+          res += ' '
+          i++
+          inTemplate = true
+          continue
+        }
+        subs[subs.length - 1]--
+      }
+      res += src[i++]
+      continue
+    }
+    res += src.slice(i, j).replace(/[^\n]/g, ' ')
+    i = j
+  }
+  return res
+}
+// 이름 범위 — 열 0 의 함수 선언 · 함수를 받는 const/let · 클래스의 열 2 멤버(메서드 · 생성자 · 접근자 · 화살표 함수
+// 속성). interface·type·객체 리터럴의 멤버는 함수가 아니라 세지 않는다. 최상위 범위는 머리 줄부터 다음 최상위 머리 줄
+// 직전까지다(열 0 의 `}`·`)`·`]` 는 머리가 아니다 — 닫는 줄은 앞 범위의 것). 멤버 범위는 머리 줄부터, 한 줄이면 그 줄, 아니면
+// 열 2 에서 `}` 로 시작하는 첫 줄까지다(`}` · `})` · `};`). 그 줄이 다음 멤버 전에 없으면 몸통 없는 선언(오버로드 · abstract ·
+// 함수 타입 속성)이라 범위가 아니다 — 중괄호 없는 한 줄 화살표만 그 줄이 범위다. 멤버 이름은 `클래스.멤버`(접근자는
+// `클래스.get x` — 짝인 setter 와 갈린다).
+const TS_MODS = '(?:(?:public|private|protected|static|readonly|override|abstract|declare|async)\\s+)*'
+const TS_TOP_FN = /^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\*?\s*([A-Za-z_$][\w$]*)/
+const TS_TOP_CLASS = /^(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/
+const TS_TOP_CONST = /^(?:export\s+)?(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*(?:async\s+)?(?:function\b|\([^)]*\)\s*(?::[^=]*)?=>|\(\s*$|[A-Za-z_$][\w$]*\s*=>)/
+const TS_MEMBER = new RegExp(`^ {2}${TS_MODS}(?:(get|set)\\s+)?(?:\\*\\s*)?(#?[A-Za-z_$][\\w$]*|\\[[^\\]]+\\])\\s*(?:<[^>]*>)?\\s*\\(`)
+const TS_PROP_FN = new RegExp(`^ {2}${TS_MODS}(#?[A-Za-z_$][\\w$]*)\\s*(?:[?!]?\\s*:[^=]*)?=\\s*(?:async\\s+)?(?:\\([^)]*\\)|\\(\\s*$|[A-Za-z_$][\\w$]*)\\s*(?::[^=]*)?(?:=>|$)`)
+function nodeFuncs(file) {
+  const L = blankTs(readFileSync(join(root, file), 'utf8').replace(/\r\n/g, '\n')).split('\n')
+  const count = (k, ch) => L[k].split(ch).length - 1
+  const oneLine = (k) => count(k, '{') > 0 && count(k, '{') === count(k, '}')
+  // 중괄호 없이 그 줄에서 끝나는 화살표(`x = (a) => a + 1`) — 줄 끝이 여는 글자나 `=>` 가 아니다.
+  const exprArrow = (k) => /=>/.test(L[k]) && count(k, '{') === 0 && !/(?:[{([]|=>)\s*$/.test(L[k])
+  const isTopHead = (x) => /^[^\s})\]]/.test(L[x])
+  const nextTop = (k) => {
+    for (let x = k + 1; x < L.length; x++) if (isTopHead(x)) return x
+    return L.length
+  }
+  const lastFilled = (from, before) => {
+    let e = before - 1
+    while (e > from && !L[e].trim()) e--
+    return e
+  }
+  const memberClose = (x, limit) => {
+    for (let y = x + 1; y < limit; y++) if (/^ {2}\}/.test(L[y])) return y
+    return -1
+  }
+  const funcs = []
+  // kind: 'decl'(함수 선언 · 메서드 · 생성자 · 접근자) 또는 'value'(함수를 값으로 받는 const · 속성 — 머리 줄의 대입 문장은
+  // 함수가 아니다, nodeReport).
+  const add = (name, start, end, kind) => {
+    if (funcs.some((f) => f.name === name)) {
+      fail('node', `${file}: two functions are both named ${name} — the never-executed list cannot tell them apart`)
+      return false
+    }
+    funcs.push({ name, start: start + 1, end: end + 1, kind, stmts: 0, covered: 0 })
+    return true
+  }
+  for (let k = 0; k < L.length; k++) {
+    if (!isTopHead(k)) continue
+    const top = nextTop(k)
+    const cls = L[k].match(TS_TOP_CLASS)
+    if (cls) {
+      const heads = []
+      for (let x = k + 1; x < top; x++) {
+        const m = L[x].match(TS_MEMBER)
+        const p = m ? null : L[x].match(TS_PROP_FN)
+        if (m) heads.push({ x, name: `${m[1] ? `${m[1]} ` : ''}${m[2]}`, kind: 'decl' })
+        else if (p) heads.push({ x, name: p[1], kind: 'value' })
+      }
+      for (let h = 0; h < heads.length; h++) {
+        const { x, name, kind } = heads[h]
+        const limit = h + 1 < heads.length ? heads[h + 1].x : top
+        const end = oneLine(x) || exprArrow(x) ? x : memberClose(x, limit)
+        if (end < 0) continue // 몸통 없는 선언(오버로드 · abstract · 함수 타입 속성)
+        if (!add(`${cls[1]}.${name}`, x, end, kind)) return null
+      }
+    } else {
+      const fn = L[k].match(TS_TOP_FN)
+      const val = fn ? null : L[k].match(TS_TOP_CONST)
+      if ((fn || val) && !add((fn ?? val)[1], k, lastFilled(k, top), fn ? 'decl' : 'value')) return null
+    }
+    k = top - 1
+  }
+  return funcs
+}
+function nodeReport(d) {
+  const path = join(out, 'node', 'coverage-final.json')
+  if (!existsSync(path)) {
+    fail('node', `no coverage data at ${path.replace(/\\/g, '/')} — run the integration suite first (node scripts/integration-coverage.mjs run node)`)
+    return null
+  }
+  let j
+  try {
+    j = JSON.parse(readFileSync(path, 'utf8'))
+  } catch {
+    fail('node', `${path.replace(/\\/g, '/')} is not JSON`)
+    return null
+  }
+  if (!j || typeof j !== 'object' || Array.isArray(j)) {
+    fail('node', `${path.replace(/\\/g, '/')} is not an istanbul coverage map (an object keyed by file)`)
+    return null
+  }
+  const byPath = new Map()
+  for (const [k, v] of Object.entries(j)) byPath.set(toRepoPath(k, d.dir), v)
+  const files = []
+  const never = []
+  for (const f of sortU(d.files)) {
+    const v = byPath.get(f)
+    if (!v) {
+      fail('node', `${f} is not in the coverage data — a boundary file the run never instrumented would silently leave the denominator`)
+      continue
+    }
+    if (typeof v.statementMap !== 'object' || v.statementMap === null || typeof v.s !== 'object' || v.s === null) {
+      fail('node', `${f}: the entry has no statementMap and s — not an istanbul file coverage`)
+      continue
+    }
+    if (!existsSync(join(root, f))) {
+      fail('node', `${f} is in the data but not in the tree — the data belongs to another checkout`)
+      continue
+    }
+    const funcs = nodeFuncs(f)
+    if (!funcs) continue
+    // 'value' 범위(`const f = (…) => …` · 속성 `f = (…) => …`)의 머리 줄에는 대입 문장이 따로 있다 — 그것은 import 나 생성 때
+    // 돌므로 함수의 것이 아니다(실측: `inc` 의 선언 41:13 은 1, 본문 41:42 는 0 — 줄로만 붙이면 한 번도 안 불린 `inc` 가
+    // 미실행 목록에서 빠졌다). 그래서 그 줄에서 fnMap 이 잡은 함수 본문(`loc.start`)보다 앞에서 시작하는 문장은 바깥이다.
+    // 'decl'(메서드 · 생성자)은 줄로 붙인다 — 생성자의 매개변수 속성(`constructor(readonly name)`)은 몸통 앞이지만 그 생성자의 것이다.
+    const bodyAt = new Map()
+    for (const fn of Object.values(v.fnMap ?? {})) {
+      const decl = fn?.decl?.start?.line
+      const at = fn?.loc?.start
+      if (typeof decl === 'number' && typeof at?.line === 'number' && !bodyAt.has(decl)) bodyAt.set(decl, at)
+    }
+    const outside = { stmts: 0, covered: 0 }
+    let stmts = 0
+    let covered = 0
+    for (const [id, loc] of Object.entries(v.statementMap)) {
+      const line = loc?.start?.line
+      const col = loc?.start?.column
+      const c = v.s[id]
+      if (typeof line !== 'number' || typeof col !== 'number' || typeof c !== 'number') {
+        fail('node', `${f}: statement ${id} has no start position or count`)
+        return null
+      }
+      stmts++
+      if (c > 0) covered++
+      let fn = funcs.find((x) => line >= x.start && line <= x.end) ?? outside
+      if (fn !== outside && fn.kind === 'value' && line === fn.start) {
+        const body = bodyAt.get(fn.start)
+        if (body && (line < body.line || col < body.column)) fn = outside
+      }
+      fn.stmts++
+      if (c > 0) fn.covered++
+    }
+    files.push({ file: f, stmts, covered, outside })
+    for (const fn of funcs) if (fn.stmts > 0 && fn.covered === 0) never.push({ file: f, line: fn.start, name: fn.name, stmts: fn.stmts })
+  }
+  return { path, files, never }
+}
+
 // ── report ───────────────────────────────────────────────────────────────────────────────
 function emitFindings(l) {
   for (const f of findings) if (f.lang === l || f.lang === null) console.log(`${f.kind} [${f.lang ?? '-'}] ${f.msg}`)
@@ -450,7 +669,7 @@ function report(l) {
   const pin = pinFor(l)
   const reg = loadRegistry()
   if (d && pin) matchesPin(l, d, pin)
-  const data = fails(l) ? null : l === 'go' ? goReport(d) : pyReport(d)
+  const data = fails(l) ? null : l === 'go' ? goReport(d) : l === 'node' ? nodeReport(d) : pyReport(d)
   if (data && !fails(l)) {
     const tot = data.files.reduce((a, f) => ({ stmts: a.stmts + f.stmts, covered: a.covered + f.covered }), { stmts: 0, covered: 0 })
     // 아무 경계 문장도 안 돈 실행은 「낮은 수치」가 아니라 측정 실패다(테스트가 경계를 한 줄도 안 지나고 통과할 수 없다).
@@ -512,9 +731,11 @@ function printReport(l, d, data, tot, pin) {
   console.log(`[${l}] integration-only coverage — ${floorText(pin) ?? 'report mode, no floor'}`)
   console.log(`  boundary: ${d.files.length} files derived from ${d.site} (${d.label}) — equal to the pin in ${PINS}`)
   console.log(`  data: ${data.path.replace(/\\/g, '/')}`)
-  if (l === 'go') {
+  if (l === 'go' || l === 'node') {
+    // 어느 이름 범위에도 속하지 않는 문장 — go 의 패키지 수준 함수 리터럴, node 의 모듈·클래스 수준 문장.
+    const level = l === 'go' ? 'package-level' : 'module-level'
     for (const f of data.files) {
-      const pkg = f.outside.stmts ? ` (package-level ${f.outside.covered}/${f.outside.stmts})` : ''
+      const pkg = f.outside.stmts ? ` (${level} ${f.outside.covered}/${f.outside.stmts})` : ''
       console.log(`  ${f.file} ${f.covered}/${f.stmts} ${pct(f.covered, f.stmts)}${pkg}`)
     }
     console.log(`  total ${tot.covered}/${tot.stmts} ${pct(tot.covered, tot.stmts)}`)
@@ -603,6 +824,29 @@ function run(l) {
     return spawnStep('go', ['test', '-tags=integration', '-run', 'TestE2E', '-count=1', `-coverprofile=${prof}`, './...'], cwd)
   }
   const common = commonDir(d.files)
+  if (l === 'node') {
+    const vitest = join(cwd, 'node_modules', 'vitest', 'vitest.mjs')
+    if (!existsSync(vitest)) {
+      fail(l, `${d.dir}/node_modules/vitest is missing — install the lane's dependencies first (npm ci)`)
+      emitFindings(l)
+      return 2
+    }
+    if (!common.startsWith(`${d.dir}/`)) {
+      fail(l, `the derived files share no directory under ${d.dir}/ — cannot choose a coverage include`)
+      emitFindings(l)
+      return 2
+    }
+    const dir = join(out, 'node')
+    rmSync(dir, { recursive: true, force: true })
+    // include 는 경계 파일들의 공통 디렉터리 전부다 — v8 은 include 에 맞는 파일을 한 번도 import 안 됐어도 0% 로 싣는다
+    // (실측: 20 파일 전부). 이름으로 좁히지 않는다(python 의 `source` 와 같은 이유).
+    return spawnStep(
+      process.execPath,
+      [vitest, 'run', '--config', 'vitest.integration.config.ts', '--coverage.enabled', '--coverage.provider=v8',
+        `--coverage.include=${common.slice(d.dir.length + 1)}/**/*.ts`, '--coverage.reporter=json', `--coverage.reportsDirectory=${dir}`],
+      cwd,
+    )
+  }
   if (!common.startsWith(`${d.dir}/`)) {
     fail(l, `the derived files share no directory under ${d.dir}/ — cannot choose a coverage source`)
     emitFindings(l)

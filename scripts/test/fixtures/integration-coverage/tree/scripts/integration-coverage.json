@@ -24,5 +24,22 @@
       "python/src/keycloak_sdk/auth.py:AuthClient.logout": "open-admin",
       "python/src/keycloak_sdk/auth.py:AuthorizationUrl.__repr__": "open-masking"
     }
+  },
+  "node": {
+    "pinned": [
+      "node/src/auth.ts",
+      "node/src/index.ts"
+    ],
+    "owners": {
+      "node/src/auth.ts:Client.cb": "open-admin",
+      "node/src/auth.ts:Client.close": "open-admin",
+      "node/src/auth.ts:Client.longSignature": "open-admin",
+      "node/src/auth.ts:Client.overload": "open-admin",
+      "node/src/auth.ts:Client.set count": "open-admin",
+      "node/src/auth.ts:Masked.[SYM]": "open-masking",
+      "node/src/auth.ts:Masked.describe": "open-masking",
+      "node/src/auth.ts:Masked.toString": "open-masking",
+      "node/src/auth.ts:inc": "open-admin"
+    }
   }
 }

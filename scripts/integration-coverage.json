@@ -37,5 +37,17 @@
       "python/src/keycloak_sdk/aio/admin/__init__.py:AsyncAdminClient.clients": "integration-admin-surface-uneven",
       "python/src/keycloak_sdk/auth.py:AuthorizationUrl.__repr__": "coverage-omit-hides-security-paths"
     }
+  },
+  "node": {
+    "pinned": [
+      "node/src/auth.ts",
+      "node/src/index.ts"
+    ],
+    "owners": {
+      "node/src/auth.ts:MaskedAuthorizationRequest.#masked": "coverage-omit-hides-security-paths",
+      "node/src/auth.ts:MaskedAuthorizationRequest.[AR_INSPECT]": "coverage-omit-hides-security-paths",
+      "node/src/auth.ts:MaskedAuthorizationRequest.toJSON": "coverage-omit-hides-security-paths",
+      "node/src/auth.ts:MaskedAuthorizationRequest.toString": "coverage-omit-hides-security-paths"
+    }
   }
 }
