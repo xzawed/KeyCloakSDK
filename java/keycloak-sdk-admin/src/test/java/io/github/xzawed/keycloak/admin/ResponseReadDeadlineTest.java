@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
 import io.github.xzawed.keycloak.core.ResponseLimits;
 import io.github.xzawed.keycloak.core.exception.KeycloakTransportException;
+import jakarta.ws.rs.client.Client;
+import jakarta.ws.rs.core.Response;
 import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -24,6 +26,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -578,6 +584,51 @@ class ResponseReadDeadlineTest {
     assertNull(o.thrown(), () -> "건강한 호출이 실패했다 — " + o.describe());
     Thread.sleep(READ_TIMEOUT_MILLIS + 200L);
     assertEquals('x', AdminSockets.deadlined(new SlowStream(0, 'x')).read(), "교환이 끝난 스레드에 마감이 남았다");
+  }
+
+  /**
+   * 닫지 않은 응답도 보낸 스레드에 마감을 남기지 않는다 — 남으면 그 스레드의 다음 admin 호출이 새 연결의 TLS 핸드셰이크에서 곧바로 실패했다
+   * (독립 검토의 실측: 열어 둠 46 ms · 다른 스레드에서 닫음 8 ms). 이 레인의 JAX-RS 클라이언트로 응답을 받고 읽지도 닫지도 않은 채 마감을 넘긴다.
+   */
+  @Test
+  @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void aResponseLeftOpen_leavesNoDeadlineOnTheSendingThread() throws Exception {
+    try (PacedServer server = new PacedServer(path -> whole(USER_BODY))) {
+      Client client = AdminClient.buildTimeoutClient(config(server.url()));
+      try {
+        Response open = client.target(server.url() + USER_PATH).request().get();
+        Thread.sleep(READ_TIMEOUT_MILLIS + 200L);
+        assertEquals('x', AdminSockets.deadlined(new SlowStream(0, 'x')).read(), "닫지 않은 응답이 보낸 스레드에 마감을 남겼다");
+        open.close();
+      } finally {
+        client.close();
+      }
+    }
+  }
+
+  /**
+   * 본문을 다른 스레드에서 읽어도 같은 마감이다 — 엔진의 스트림이 읽는 스레드에 읽기마다 그 교환의 마감을 건다. 머리는 곧바로 오고 청크 크기 줄을
+   * 흘린다(읽기 하나 안 — 엔티티 스트림의 앞뒤로는 못 본다). 보낸 때부터 {@link #BOUND_MILLIS} 안에 실패해야 한다.
+   */
+  @Test
+  @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void aBodyReadOnAnotherThread_stillMeetsTheDeadline() throws Exception {
+    try (PacedServer server = new PacedServer(path -> Framing.CHUNK_SIZE_LINE.pieces(USER_BODY))) {
+      Client client = AdminClient.buildTimeoutClient(config(server.url()));
+      ExecutorService other = Executors.newSingleThreadExecutor();
+      try {
+        long start = System.nanoTime();
+        Response response = client.target(server.url() + USER_PATH).request().get();
+        Future<String> body = other.submit(() -> response.readEntity(String.class));
+        ExecutionException e = assertThrows(ExecutionException.class, body::get, "다른 스레드의 읽기가 흘린 틀을 받아들였다");
+        long millis = (System.nanoTime() - start) / 1_000_000;
+        assertTrue(chain(e.getCause()).contains(SocketTimeoutException.class.getName()), () -> trace(e.getCause()));
+        assertTrue(millis < BOUND_MILLIS, () -> "다른 스레드의 읽기가 " + BOUND_MILLIS + " ms 안에 실패해야 한다 — " + millis + " ms");
+      } finally {
+        other.shutdownNow();
+        client.close();
+      }
+    }
   }
 
   /**

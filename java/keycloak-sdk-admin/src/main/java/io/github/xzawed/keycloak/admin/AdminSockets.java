@@ -26,8 +26,9 @@ import org.apache.http.protocol.HttpContext;
  * 머리 7.5 초 · 청크 7.1 초 · 트레일러 7.1 초 · TLS 레코드 33.6 초가 걸렸다(실측 2026-10-29 · {@code ResponseReadDeadlineTest}). 그 소켓은
  * RESTEasy 가 지은 풀의 것이라, 같은 크기·수명·소켓 설정의 풀을 이 소켓으로 다시 짓는다({@link #pool}).
  *
- * <p>마감은 소켓이 아니라 스레드에 둔다 — 소켓은 풀에서 교환을 건너 산다. 교환 하나는 요청을 보낸 스레드에서 끝까지 읽힌다(RESTEasy 의
- * 동기 호출) — 소비자가 {@code raw()} 의 응답을 다른 스레드에서 읽으면 그 읽기는 이 마감 밖이고, 엔진의 스트림과 읽기 타임아웃이 묶는다.
+ * <p>마감은 소켓이 아니라 스레드에 둔다 — 소켓은 풀에서 교환을 건너 산다. 그리고 <b>읽는 동안에만</b> 둔다({@link #arm}) — 머리는 요청을
+ * 보낸 스레드가 엔진의 호출 안에서 읽고, 본문은 그것을 읽는 스레드가 읽기마다 다시 건다(소비자가 {@code raw()} 의 응답을 다른 스레드에서
+ * 읽어도 같은 마감이다). 어떤 스레드에도 교환의 마감이 남지 않는다.
  */
 final class AdminSockets {
   /** 이 스레드가 지금 하는 교환의 마감 — {@code {System.nanoTime() 의 마감, 그 길이(ms)}}. 보낼 때 걸고({@link #arm}) 끝이 지운다. */
@@ -45,18 +46,39 @@ final class AdminSockets {
   }
 
   /**
-   * 이 스레드의 교환에 마감을 건다 — {@code sentAtNanos} 부터 {@code readTimeoutMillis}. 0 은 「끝없이」(읽기 타임아웃이 없다)라 마감도 두지
-   * 않는다. 엔진의 교환이 요청 머리를 쓰기 직전에 부른다({@link AdminEngine.Exchange}).
+   * 이 스레드에 교환의 마감을 건다 — {@code sentAtNanos} 부터 {@code readTimeoutMillis}. 0 은 「끝없이」(읽기 타임아웃이 없다)라 마감도 두지
+   * 않는다. 앞서 걸려 있던 것을 돌려준다 — 건 쪽이 끝에서 {@link #restore} 로 되돌린다.
+   *
+   * <p>⚠️ 마감은 <b>읽는 동안에만</b> 스레드에 둔다 — 머리는 엔진의 호출 안({@link AdminEngine#invoke} 가 끝에서 되돌린다), 본문은 엔진의
+   * 스트림의 읽기·닫기 하나마다(그 스트림이 읽는 스레드에서 다시 건다). 교환 하나에 걸어 두고 스트림이 닫힐 때 지우던 첫 판은, 응답을 닫지
+   * 않거나 다른 스레드에서 닫으면 보낸 스레드에 지난 마감을 남겼다 — 그 스레드의 다음 admin 호출이 새 연결의 TLS 핸드셰이크에서 곧바로
+   * 실패했다(독립 검토의 실측: 열어 둠 46 ms · 다른 스레드에서 닫음 8 ms).
    */
-  static void arm(long sentAtNanos, int readTimeoutMillis) {
+  static long[] arm(long sentAtNanos, int readTimeoutMillis) {
+    long[] previous = DEADLINE.get();
     if (readTimeoutMillis > 0) {
       DEADLINE.set(new long[] {sentAtNanos + TimeUnit.MILLISECONDS.toNanos(readTimeoutMillis), readTimeoutMillis});
     } else {
       DEADLINE.remove();
     }
+    return previous;
   }
 
-  /** 이 스레드의 마감을 지운다 — 교환의 끝. 그 뒤 이 스레드의 소켓 읽기(다음 교환이 연결을 빌리며 엿보는 읽기 등)는 마감을 보지 않는다. */
+  /** 지금 이 스레드에 걸린 마감(없으면 null) — 걸기 전의 것을 쥐어 두었다가 {@link #restore} 로 되돌린다. */
+  static long[] current() {
+    return DEADLINE.get();
+  }
+
+  /** 앞서 걸려 있던 마감으로 되돌린다({@code null} 이면 지운다). */
+  static void restore(long[] previous) {
+    if (previous == null) {
+      DEADLINE.remove();
+    } else {
+      DEADLINE.set(previous);
+    }
+  }
+
+  /** 이 스레드의 마감을 지운다. */
   static void disarm() {
     DEADLINE.remove();
   }

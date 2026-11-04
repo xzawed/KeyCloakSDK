@@ -41,7 +41,8 @@ import org.jboss.resteasy.client.jaxrs.internal.ClientResponseContextImpl;
  * 읽기 타임아웃은 읽기 하나를 묶을 뿐이라 바이트를 그보다 조금 짧은 간격으로 흘리는 서버 앞에서 응답 하나가 흘린 바이트마다 간격 하나씩
  * 걸렸다(실측 {@code ResponseReadDeadlineTest}). 토큰 부여(가드의 상한 읽기)·자원의 성공 본문(결합)·오류 본문이 모두 그 스트림을 지난다 —
  * {@code raw()} 의 응답도. 엔진의 스트림은 읽기 하나의 앞뒤만 보므로 응답 머리와, 읽기 하나 안의 틀(청크 크기 줄·트레일러)·TLS 레코드는
- * 같은 마감을 그 교환의 소켓 읽기마다 본다({@link AdminSockets} — {@link Exchange} 가 보낼 때 걸고 교환의 끝이 지운다).
+ * 같은 마감을 그 교환의 소켓 읽기마다 본다({@link AdminSockets}). 그 마감은 읽는 동안에만 스레드에 둔다 — 머리는 {@link Exchange} 가 보낼 때
+ * 걸고 {@link #invoke} 가 끝에서 되돌리며, 본문은 {@link Settled} 가 읽기·닫기 하나마다 읽는 스레드에 걸었다가 되돌린다.
  */
 @SuppressWarnings("removal") // RESTEasy 6.2 의 기본 엔진 그 자체를 잇는다(AdminClient.buildTimeoutClient 설명)
 final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextProvider {
@@ -98,7 +99,7 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
   @Override
   public Response invoke(Invocation inv) {
     ClientInvocation request = (ClientInvocation) inv;
-    boolean bodyLeft = false;
+    long[] before = AdminSockets.current();
     try {
       Response response = super.invoke(inv);
       ClientResponseContextImpl entity = new ClientResponseContextImpl((ClientResponse) response);
@@ -107,12 +108,12 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
         long limit = response.getStatus() < 300 || TokenResponseGuard.inScope(request.getMethod(), request.getUri())
             ? Long.MAX_VALUE : ERROR_BODY_CAP;
         entity.setEntityStream(new Settled(in, (Exchange) request.getMutableProperties().get(EXCHANGE), limit));
-        bodyLeft = true;
       }
       return response;
     } finally {
-      // 본문이 남았으면 교환은 그 스트림이 닫힐 때 끝난다({@link Settled#close}) — 아니면 여기서 끝났다(실패 · 본문 없음)
-      if (!bodyLeft) AdminSockets.disarm();
+      // 이 스레드의 마감은 머리를 읽는 동안뿐이다 — 본문은 그것을 읽는 스레드가 읽기마다 다시 건다({@link Settled}). 남기면 이 스레드의
+      // 다음 교환(새 연결의 TLS 핸드셰이크)이 지난 마감에 곧바로 실패한다
+      AdminSockets.restore(before);
     }
   }
 
@@ -143,7 +144,10 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
       this.readTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(readTimeoutMillis);
     }
 
-    /** 보낸 때를 적고, 이 스레드의 소켓 읽기에도 같은 마감을 건다({@link AdminSockets#arm} — 머리 · 틀 · TLS 레코드가 그 읽기로 온다). */
+    /**
+     * 보낸 때를 적고, 이 스레드의 소켓 읽기에도 같은 마감을 건다({@link AdminSockets#arm} — 머리가 그 읽기로 온다). 되돌리는 것은 엔진의 호출
+     * 끝이다({@link AdminEngine#invoke}).
+     */
     @Override
     public void setAttribute(String id, Object obj) {
       if (HttpCoreContext.HTTP_REQ_SENT.equals(id) && Boolean.FALSE.equals(obj)) {
@@ -151,6 +155,11 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
         AdminSockets.arm(sentAt, readTimeoutMillis);
       }
       super.setAttribute(id, obj);
+    }
+
+    /** 이 교환의 마감을 지금 스레드에 건다 — 앞서 걸려 있던 것을 돌려준다(본문의 읽기·닫기 하나마다 · {@link AdminSockets#restore}). */
+    long[] armHere() {
+      return AdminSockets.arm(sentAt, readTimeoutMillis);
     }
 
     /** 마감이 지났으면 읽기 타임아웃과 같은 타입으로 — 메시지는 마감의 길이뿐이다(응답을 인용하지 않는다). */
@@ -224,7 +233,13 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
     public int read() throws IOException {
       if (left == 0) return -1;
       exchange.due();
-      int b = in.read();
+      long[] previous = exchange.armHere(); // 그 아래의 틀·TLS 레코드 읽기도 같은 마감 — 이 읽기 동안만, 읽는 스레드에
+      int b;
+      try {
+        b = in.read();
+      } finally {
+        AdminSockets.restore(previous);
+      }
       if (b < 0) {
         eof = true;
       } else {
@@ -239,7 +254,13 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
       if (len == 0) return 0;
       if (left == 0) return -1;
       exchange.due();
-      int n = in.read(b, off, (int) Math.min(len, left));
+      long[] previous = exchange.armHere();
+      int n;
+      try {
+        n = in.read(b, off, (int) Math.min(len, left));
+      } finally {
+        AdminSockets.restore(previous);
+      }
       if (n < 0) {
         eof = true;
       } else {
@@ -249,11 +270,12 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
       return n;
     }
 
-    /** 교환의 끝 — 그래서 이 스레드의 소켓 마감도 여기서 지운다({@link AdminSockets#disarm}). */
+    /** 닫기도 읽기처럼 이 교환의 마감을 닫는 동안만 건다(끝을 엿보는 읽기가 그 아래를 지난다). */
     @Override
     public void close() throws IOException {
       if (closed) return;
       closed = true;
+      long[] previous = exchange.armHere();
       try {
         if (eof || exchange.endsNow(in)) {
           in.close();
@@ -269,7 +291,7 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
           // (TokenResponseGuard.closeQuietly 와 같은 처방).
         }
       } finally {
-        AdminSockets.disarm();
+        AdminSockets.restore(previous);
       }
     }
   }

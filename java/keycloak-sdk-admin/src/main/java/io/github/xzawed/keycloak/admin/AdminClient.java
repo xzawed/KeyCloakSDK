@@ -134,8 +134,10 @@ public final class AdminClient implements AutoCloseable {
                                               HttpHost proxy, int responseBufferSize, HostnameVerifier verifier,
                                               SSLContext tls) {
         // 풀 크기가 0 보다 크면 RESTEasy 는 풀을 짓는다(기본 50) — 다른 것이 오면 여기서 터져 조용히 한도를 잃지 않는다
+        boolean customTls = builder.getTrustStore() != null || builder.getKeyStore() != null
+            || builder.isTrustManagerDisabled() || !builder.getSniHostNames().isEmpty();
         PoolingHttpClientConnectionManager pool = deadlinedPool((PoolingHttpClientConnectionManager) connections, tls,
-            verifier, builder.getConnectionTTL(TimeUnit.MILLISECONDS));
+            verifier, builder.getConnectionTTL(TimeUnit.MILLISECONDS), customTls);
         pool.setDefaultConnectionConfig(BOUNDED_HEAD);
         // RESTEasy 는 ApacheHttpClient43Engine 을 짓는다 — 다른 것이 오면 여기서 터져 조용히 끊기를 잃지 않는다
         return new AdminEngine((ApacheHttpClient43Engine) super.createEngine(pool, requests, proxy,
@@ -157,11 +159,15 @@ public final class AdminClient implements AutoCloseable {
    * {@link SSLContext#getDefault()}(이 SDK 는 TLS 를 따로 설정하지 않는다).
    *
    * <p>⚠️ 컨테이너가 {@link ClientConfigProvider} 를 두면(WildFly Elytron 등) RESTEasy 는 그 공급자의 SSL 소켓을 쓴다 — 그 정책을
-   * 바꾸지 않도록 RESTEasy 의 풀을 그대로 둔다(그때 마감은 엔진의 스트림만 본다 · 머리 · 틀은 읽기 타임아웃이 묶는다).
+   * 바꾸지 않도록 RESTEasy 의 풀을 그대로 둔다(그때 마감은 엔진의 스트림만 본다 · 머리 · 틀은 읽기 타임아웃이 묶는다). 빌더에 TLS 를 따로
+   * 건 경우({@code customTls} — 신뢰·키 저장소 · 신뢰 끄기 · SNI)도 같다: 이 풀이 아는 것은 RESTEasy 의 기본 분기뿐이라 다시 지으면 그 설정을
+   * 조용히 잃는다(지금 이 SDK 는 그중 아무것도 걸지 않는다).
    */
   static PoolingHttpClientConnectionManager deadlinedPool(PoolingHttpClientConnectionManager built, SSLContext tls,
-                                                          HostnameVerifier verifier, long ttlMillis) {
-    if (PriorityServiceLoader.load(ClientConfigProvider.class, providerLoader()).first().isPresent()) return built;
+                                                          HostnameVerifier verifier, long ttlMillis, boolean customTls) {
+    if (customTls || PriorityServiceLoader.load(ClientConfigProvider.class, providerLoader()).first().isPresent()) {
+      return built;
+    }
     SSLContext context;
     try {
       context = tls != null ? tls : SSLContext.getDefault();
