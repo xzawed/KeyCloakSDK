@@ -87,4 +87,37 @@ function hidden() {
   }
 }
 
+export class Pair {
+  #closed = false
+  readonly meta = {
+    kind: 'pair',
+  }
+
+  constructor(
+    readonly left: number,
+    readonly right: number,
+  ) {}
+
+  static from(text: string): Pair {
+    const [a, b] = text.split(',')
+    return new Pair(Number(a), Number(b))
+  }
+
+  from(text: string): Pair {
+    return Pair.from(text)
+  }
+
+  [Symbol.for('pair.inspect')](): string {
+    return `Pair(${this.left}, ${this.right})`
+  }
+
+  apply<T extends (a: number) => number>(fn: T): number {
+    return fn(this.left) + fn(this.right)
+  }
+
+  closed(): boolean {
+    return this.#closed
+  }
+}
+
 export { banner, Masked }

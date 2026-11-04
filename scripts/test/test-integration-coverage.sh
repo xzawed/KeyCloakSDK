@@ -68,7 +68,7 @@ assert_eq 0 "$RC" "건강한 픽스처의 check 는 exit 0 — 출력: $OUT"
 assert_line "$OUT" "[go] pin OK — 3 files equal the derivation from .github/workflows/go-ci.yml:10 (grep -vE on cover.out)" "[check] go 핀 = 파생"
 assert_line "$OUT" "[python] pin OK — 3 files equal the derivation from python/pyproject.toml:8 ([tool.coverage] omit)" "[check] python 핀 = 파생"
 assert_line "$OUT" "[node] pin OK — 2 files equal the derivation from node/vitest.config.ts:9 (vitest coverage.exclude)" "[check] node 핀 = 파생"
-assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 files pinned · 17 owner entries, all open" "[check] 요약"
+assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 files pinned · 20 owner entries, all open" "[check] 요약"
 
 run report go "$T" --out "$D"
 assert_eq 0 "$RC" "[go] 건강한 리포트는 exit 0 — 출력: $OUT"
@@ -101,12 +101,15 @@ assert_line "$OUT" "integration-coverage [python]: OK — lines 21/28 (75.0%) ·
 # node — 이름은 소스(prettier 모양)에서 읽는다. v8 의 fnMap 이름은 `(anonymous_1)` · `count_2` · `SYM` 이다(실측) — 그것을
 # 쓰면 아래 이름이 나오지 않는다. 각 줄이 재는 것: 클래스 한정 · private · 계산된 이름 · getter/setter 갈림 · 한 줄 멤버
 # (문자열 속 `{` 를 세지 않는다) · 템플릿 속 `  }`·열 0 `function` · 블록 주석 속 열 0 `function` · 오버로드(몸통 없는 선언은
-# 범위가 아니다) · 여러 줄 시그니처 · 'value' 범위의 대입 문장은 함수가 아니다(`inc` · `cb` — 모듈 수준 5/6 에 든다).
+# 범위가 아니다) · 여러 줄 시그니처 · 'value' 범위의 대입 문장은 함수가 아니다(`inc` · `cb`) · `Pair` 의 다섯(#953 독립 레그):
+# `) {}` 로 닫는 매개변수 속성 생성자 · `static from` 과 `from` · 문자열이 든 계산된 이름(원문으로) · 값이 식별자뿐인 필드
+# (`#closed = false`)는 함수가 아니다 · 중첩 `=>` 제네릭 머리. 모듈 수준 7/8 = 대입 둘 + 필드 둘 + 위의 셋 — 생성자·`apply` 를
+# 놓치거나 `#closed` 를 함수로 읽으면 이 수가 바뀐다.
 run report node "$T" --out "$D"
 assert_eq 0 "$RC" "[node] 건강한 리포트는 exit 0 — 출력: $OUT"
-assert_line "$OUT" "  node/src/auth.ts 14/24 58.3% (module-level 5/6)" "[node] auth.ts — 대입 문장 둘(inc · cb)은 모듈·클래스 수준이다"
+assert_line "$OUT" "  node/src/auth.ts 21/34 61.8% (module-level 7/8)" "[node] auth.ts — 대입·필드 문장은 모듈·클래스 수준, 생성자·제네릭 멤버는 범위다"
 assert_line "$OUT" "  node/src/index.ts 0/0 n/a" "[node] 재수출만 있는 경계 파일은 0/0 으로 든다(데이터에는 있다)"
-assert_line "$OUT" "  total 14/24 58.3%" "[node] 합계는 경계 파일만(other.ts 제외)"
+assert_line "$OUT" "  total 21/34 61.8%" "[node] 합계는 경계 파일만(other.ts 제외)"
 assert_line "$OUT" "  NEVER node/src/auth.ts:26 Masked.describe · 1 stmt · owner open-masking" "[node] 템플릿 속 줄이 멤버를 닫지 않는다"
 assert_line "$OUT" "  NEVER node/src/auth.ts:33 Masked.toString · 1 stmt · owner open-masking" "[node] 문자열 속 { 가 든 한 줄 멤버"
 assert_line "$OUT" "  NEVER node/src/auth.ts:35 Masked.[SYM] · 1 stmt · owner open-masking" "[node] 계산된 이름"
@@ -116,10 +119,13 @@ assert_line "$OUT" "  NEVER node/src/auth.ts:58 Client.set count · 1 stmt · ow
 assert_line "$OUT" "  NEVER node/src/auth.ts:71 Client.overload · 1 stmt · owner open-admin" "[node] 오버로드의 구현만 범위다"
 assert_line "$OUT" "  NEVER node/src/auth.ts:75 Client.longSignature · 1 stmt · owner open-admin" "[node] 여러 줄 시그니처"
 assert_line "$OUT" "  NEVER node/src/auth.ts:85 Client.close · 1 stmt · owner open-admin" "[node] 블록 주석 속 열 0 function 뒤의 멤버"
-for _x in other.ts fake hidden NotAClass helper twice Client.run "get count" Masked.render "#secret" constructor; do
-  assert_not_contains "$OUT" "$_x" "[node] 실행된 함수 · 경계 밖 · 주석·문자열 속 이름은 목록에 없다: $_x"
+assert_line "$OUT" "  NEVER node/src/auth.ts:106 Pair.from · 1 stmt · owner open-admin" "[node] 인스턴스 from — static from 과 갈린다"
+assert_line "$OUT" "  NEVER node/src/auth.ts:110 Pair.[Symbol.for('pair.inspect')] · 1 stmt · owner open-masking" "[node] 계산된 이름은 원문 그대로(문자열이 지워지지 않는다)"
+assert_line "$OUT" "  NEVER node/src/auth.ts:118 Pair.closed · 1 stmt · owner open-admin" "[node] 필드 뒤의 메서드"
+for _x in other.ts fake hidden NotAClass helper twice Client.run "get count" Masked.render "#secret" constructor "static from" Pair.apply "#closed"; do
+  assert_not_contains "$OUT" "$_x" "[node] 실행된 함수 · 경계 밖 · 주석·문자열 속 이름 · 필드는 목록에 없다: $_x"
 done
-assert_line "$OUT" "integration-coverage [node]: OK — 14/24 statements (58.3%) · 9 never-executed functions, all owned by open registry items" "[node] 요약"
+assert_line "$OUT" "integration-coverage [node]: OK — 21/34 statements (61.8%) · 12 never-executed functions, all owned by open registry items" "[node] 요약"
 
 # Linux 의 coverage.py 는 키를 `/` 로 쓴다 — Windows 에서 만든 `\` 키와 같은 리포트여야 한다.
 fresh
@@ -226,6 +232,13 @@ assert_contains "$(cat "$T/node/src/auth.ts")" "  async close(" "(변이가 착�
 run report node "$T" --out "$D"
 assert_eq 2 "$RC" "[node] 같은 이름의 함수가 둘이면 exit 2"
 assert_contains "$OUT" "FAIL [node] node/src/auth.ts: two functions are both named Client.close" "[node] 겹친 이름을 댄다"
+# 정규식 속 백틱이 템플릿을 열어 파일 끝까지 지운다 — 조용히 「미실행 0」이 되지 않고 FAIL 이다(#953 독립 레그 실측).
+fresh
+sed -i '2a const TICK = /`/' "$T/node/src/auth.ts"
+assert_contains "$(sed -n '3p' "$T/node/src/auth.ts")" 'const TICK = /`/' "(변이가 착지했는지 먼저 본다)"
+run report node "$T" --out "$D"
+assert_eq 2 "$RC" "[node] 끝나지 않는 템플릿은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" 'FAIL [node] node/src/auth.ts: a template literal or ${…} runs to the end of the file' "[node] 이름 범위를 못 읽는다고 댄다"
 # 소유자 없는 미실행 함수(exit 1 — 경고).
 fresh
 sed -i '/"node\/src\/auth.ts:Client.cb"/d' "$T/scripts/integration-coverage.json"
@@ -297,7 +310,7 @@ fresh
 node_data "$FIX/data/node-zero.json"
 run report node "$T" --out "$D"
 assert_eq 2 "$RC" "[node] 경계 문장을 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
-assert_contains "$OUT" "FAIL [node] the run executed 0 of 24 boundary statements — a measurement failure, not a low number" "[node] 측정 실패 문구"
+assert_contains "$OUT" "FAIL [node] the run executed 0 of 34 boundary statements — a measurement failure, not a low number" "[node] 측정 실패 문구"
 assert_not_contains "$OUT" "0.0%" "[node] 측정 실패에서 0% 를 내지 않는다"
 # 빈 파생 + 빈 핀 — 집합은 같으므로(∅ = ∅) 빈 집합 판정만이 잡는다. 파생 도구를 가짜로 바꿔 그 갈래만 태운다.
 # ⚠️ 두 언어 다 「있되 비었다」여야 한다 — 한 언어를 빼 두면 check 의 exit 2 가 그 「없는 파생」에서 와서 빈 집합
@@ -401,13 +414,13 @@ run check "$T"
 assert_eq 0 "$RC" "[floor] 올바른 하한은 check 를 통과한다 — 출력: $OUT"
 assert_line "$OUT" "[go] floor: statements ≥ 40%" "[floor] check 가 하한을 보여 준다"
 
-# node 도 같은 하한 판정을 탄다(지표는 statements — 픽스처 14/24 = 58.33%).
-fresh; floor node statements 58
+# node 도 같은 하한 판정을 탄다(지표는 statements — 픽스처 21/34 = 61.76%).
+fresh; floor node statements 61.76
 run report node "$T" --out "$D"
-assert_eq 0 "$RC" "[floor] node 58.33% ≥ 58 — 출력: $OUT"
-fresh; floor node statements 58.34
+assert_eq 0 "$RC" "[floor] node 61.76% ≥ 61.76 — 출력: $OUT"
+fresh; floor node statements 61.77
 run report node "$T" --out "$D"
-assert_eq 3 "$RC" "[floor] node 58.33% < 58.34 — 출력: $OUT"
+assert_eq 3 "$RC" "[floor] node 61.76% < 61.77 — 출력: $OUT"
 fresh; floor node bodies 50
 run check "$T"
 assert_eq 2 "$RC" "[floor] node 에 bodies 는 없다 — 출력: $OUT"

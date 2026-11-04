@@ -39,6 +39,9 @@
       "node/src/auth.ts:Masked.[SYM]": "open-masking",
       "node/src/auth.ts:Masked.describe": "open-masking",
       "node/src/auth.ts:Masked.toString": "open-masking",
+      "node/src/auth.ts:Pair.[Symbol.for('pair.inspect')]": "open-masking",
+      "node/src/auth.ts:Pair.closed": "open-admin",
+      "node/src/auth.ts:Pair.from": "open-admin",
       "node/src/auth.ts:inc": "open-admin"
     }
   }

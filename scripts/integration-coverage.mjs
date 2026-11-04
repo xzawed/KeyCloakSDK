@@ -452,8 +452,9 @@ function pyReport(d) {
 
 // ── node: vitest(v8) 의 istanbul JSON + 소스의 이름 범위 ──────────────────────────────────
 // 주석·문자열·템플릿 리터럴의 글자를 공백으로 지운다(줄 번호 보존). 템플릿의 `${…}` 안은 코드다 — 그 안의 문자열·템플릿도
-// 같은 규칙으로 지운다(중첩은 `${` 마다 중괄호 깊이를 하나 쌓는다). 정규식 리터럴은 가리지 않는다 — 판정은 줄 머리와
-// 한 줄 멤버의 중괄호 수뿐이고, 어긋나면 끝을 못 찾아 FAIL 이다(조용히 틀리지 않는다).
+// 같은 규칙으로 지운다(중첩은 `${` 마다 중괄호 깊이를 하나 쌓는다). 정규식 리터럴은 가리지 않는다 — 그 안의 백틱은 템플릿을
+// 열어 파일 끝까지 지운다. 그래서 파일이 열린 템플릿·`${…}` 안에서 끝나면 nodeFuncs 가 FAIL 한다(실측: 정규식 `` /`/ `` 하나로
+// 세 함수가 지워진 채 「OK · 미실행 0」이었다 — #953 독립 레그). 따옴표는 줄 끝에서 닫혀 한 줄만 어긋난다.
 function blankTs(src) {
   let res = ''
   const subs = [] // 열린 `${…}` 마다 그 안의 중괄호 깊이
@@ -513,7 +514,7 @@ function blankTs(src) {
     res += src.slice(i, j).replace(/[^\n]/g, ' ')
     i = j
   }
-  return res
+  return { text: res, open: inTemplate || subs.length > 0 }
 }
 // 이름 범위 — 열 0 의 함수 선언 · 함수를 받는 const/let · 클래스의 열 2 멤버(메서드 · 생성자 · 접근자 · 화살표 함수
 // 속성). interface·type·객체 리터럴의 멤버는 함수가 아니라 세지 않는다. 최상위 범위는 머리 줄부터 다음 최상위 머리 줄
@@ -525,10 +526,21 @@ const TS_MODS = '(?:(?:public|private|protected|static|readonly|override|abstrac
 const TS_TOP_FN = /^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\*?\s*([A-Za-z_$][\w$]*)/
 const TS_TOP_CLASS = /^(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/
 const TS_TOP_CONST = /^(?:export\s+)?(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*(?:async\s+)?(?:function\b|\([^)]*\)\s*(?::[^=]*)?=>|\(\s*$|[A-Za-z_$][\w$]*\s*=>)/
-const TS_MEMBER = new RegExp(`^ {2}${TS_MODS}(?:(get|set)\\s+)?(?:\\*\\s*)?(#?[A-Za-z_$][\\w$]*|\\[[^\\]]+\\])\\s*(?:<[^>]*>)?\\s*\\(`)
-const TS_PROP_FN = new RegExp(`^ {2}${TS_MODS}(#?[A-Za-z_$][\\w$]*)\\s*(?:[?!]?\\s*:[^=]*)?=\\s*(?:async\\s+)?(?:\\([^)]*\\)|\\(\\s*$|[A-Za-z_$][\\w$]*)\\s*(?::[^=]*)?(?:=>|$)`)
+// 그룹: 1 수식어(static 이면 이름에 붙인다 — `static from()` 과 `from()` 이 갈린다) · 2 get/set · 3 이름. 제네릭은 `>`·`=>` 를
+// 품을 수 있어(`<T extends Record<string, unknown>>` · `<T extends (a: string) => void>`) 탐욕 `<.*>` 로 받고 `(` 까지 되돌아간다.
+// `d` — 계산된 이름(`[Symbol.for('x')]`)은 지우기 전 원문의 같은 자리에서 읽는다(지운 글자로는 이름이 불안정하다).
+const TS_MEMBER = new RegExp(`^ {2}(${TS_MODS})(?:(get|set)\\s+)?(?:\\*\\s*)?(#?[A-Za-z_$][\\w$]*|\\[[^\\]]+\\])\\s*(?:<.*>)?\\s*\\(`, 'd')
+// 화살표·함수식을 받는 속성만 — 값이 식별자뿐인 필드(`#closed = false`)는 함수가 아니다(그 분기가 가짜 범위를 만들었다).
+const TS_PROP_FN = new RegExp(`^ {2}(${TS_MODS})(#?[A-Za-z_$][\\w$]*)\\s*(?:[?!]?\\s*:[^=]*)?=\\s*(?:async\\s+)?(?:function\\b|\\([^)]*\\)\\s*(?::[^=]*)?=>|\\(\\s*$|<.*>\\s*\\(|[A-Za-z_$][\\w$]*\\s*=>)`)
 function nodeFuncs(file) {
-  const L = blankTs(readFileSync(join(root, file), 'utf8').replace(/\r\n/g, '\n')).split('\n')
+  const raw = readFileSync(join(root, file), 'utf8').replace(/\r\n/g, '\n')
+  const blanked = blankTs(raw)
+  if (blanked.open) {
+    fail('node', `${file}: a template literal or \${…} runs to the end of the file — the name ranges cannot be read (a regex literal with a backtick?)`)
+    return null
+  }
+  const L = blanked.text.split('\n')
+  const R = raw.split('\n')
   const count = (k, ch) => L[k].split(ch).length - 1
   const oneLine = (k) => count(k, '{') > 0 && count(k, '{') === count(k, '}')
   // 중괄호 없이 그 줄에서 끝나는 화살표(`x = (a) => a + 1`) — 줄 끝이 여는 글자나 `=>` 가 아니다.
@@ -543,8 +555,10 @@ function nodeFuncs(file) {
     while (e > from && !L[e].trim()) e--
     return e
   }
+  // 멤버의 닫는 줄 — 열 2 의 `}`, 또는 여러 줄 시그니처를 닫으며 그 줄에서 몸통도 닫는 `) {}` · `): void {}`(실측: 실제
+  // auth.ts 의 매개변수 속성 생성자가 `  ) {}` 로 닫혀 「몸통 없는 선언」으로 빠졌고 그 문장이 모듈 수준에 섞였다 — #953 독립 레그).
   const memberClose = (x, limit) => {
-    for (let y = x + 1; y < limit; y++) if (/^ {2}\}/.test(L[y])) return y
+    for (let y = x + 1; y < limit; y++) if (/^ {2}\}/.test(L[y]) || (/^ {2}\)/.test(L[y]) && oneLine(y))) return y
     return -1
   }
   const funcs = []
@@ -564,11 +578,15 @@ function nodeFuncs(file) {
     const cls = L[k].match(TS_TOP_CLASS)
     if (cls) {
       const heads = []
+      const isStatic = (mods) => /(?:^|\s)static\s/.test(` ${mods}`)
       for (let x = k + 1; x < top; x++) {
-        const m = L[x].match(TS_MEMBER)
+        const m = TS_MEMBER.exec(L[x])
         const p = m ? null : L[x].match(TS_PROP_FN)
-        if (m) heads.push({ x, name: `${m[1] ? `${m[1]} ` : ''}${m[2]}`, kind: 'decl' })
-        else if (p) heads.push({ x, name: p[1], kind: 'value' })
+        if (m) {
+          const [s, e] = m.indices[3]
+          const name = m[3].startsWith('[') ? R[x].slice(s, e) : m[3]
+          heads.push({ x, name: `${isStatic(m[1]) ? 'static ' : ''}${m[2] ? `${m[2]} ` : ''}${name}`, kind: 'decl' })
+        } else if (p) heads.push({ x, name: `${isStatic(p[1]) ? 'static ' : ''}${p[2]}`, kind: 'value' })
       }
       for (let h = 0; h < heads.length; h++) {
         const { x, name, kind } = heads[h]
