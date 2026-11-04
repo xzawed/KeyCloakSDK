@@ -2,6 +2,7 @@ name: repo-hygiene
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 # 최소권한: 세 잡 모두 워킹트리를 읽고 검사만 한다(쓰기 없음). repo-config 잡이 쓰는

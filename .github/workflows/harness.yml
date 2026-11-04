@@ -1,6 +1,7 @@
 name: harness
 on:
   push:
+    branches: [main]
     paths: ['harness/**', 'go/**', '.github/workflows/harness.yml']
   pull_request:
     paths: ['harness/**', 'go/**', '.github/workflows/harness.yml']

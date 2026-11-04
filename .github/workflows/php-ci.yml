@@ -1,6 +1,7 @@
 name: php-ci
 on:
   push:
+    branches: [main]
     paths: ['php/**', '.github/workflows/php-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh']
   pull_request:
     paths: ['php/**', '.github/workflows/php-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh']

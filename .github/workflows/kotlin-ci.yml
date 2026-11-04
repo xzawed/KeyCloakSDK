@@ -1,6 +1,7 @@
 name: kotlin-ci
 on:
   push:
+    branches: [main]
     paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs']
   pull_request:
     paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs']

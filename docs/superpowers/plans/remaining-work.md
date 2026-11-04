@@ -346,7 +346,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 133건 (열림 64)
+## C. 품질 부채 — 133건 (열림 63)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -488,7 +488,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `repo-config-apply-exit0-on-security-drift` **[M/S]** repo-config.mjs apply가 보안 설정 드리프트를 알리고도 exit 0으로 끝난다 · `scripts/repo-config.mjs:288`
 - [ ] `rust-token-in-argv` **[L/S]** rust publish가 env로도 넘긴 토큰을 --token으로 argv에 한 번 더 싣는다 · `.github/workflows/rust-release.yml:138`
 - [x] `w1-shared-script-drift-weekly-only` **[L/S · 신규 2026-10-01 · 닫힘 2026-11-02 #934]** 아홉 레인 push·pull_request paths 에 test-security-defaults.sh, php 행렬도 저장소 밖 건너뜀을 찍는다 — `check-hp-attest-wiring.mjs` 가 지킨다
-- [ ] `push-trigger-branches-asymmetry` **[L/S · 재측정 2026-11-04]** push 에 `branches` 가 없는 워크플로 일곱 — `paths` 만 있는 여섯(언어 CI 다섯 dotnet·kotlin·php·ruby·rust + `harness.yml`)과 맨 `push:` 인 `repo-hygiene.yml` — PR 브랜치·태그·아카이브 ref 에서도 돈다: push 300 중 main 밖이 여섯은 221–230 · repo-hygiene 191(11-04 · `gh run list --workflow <f> --event push --limit 300 --json headBranch`) · YAML 파서로(함정 (b)) · `.github/workflows/dotnet-ci.yml:3`
+- [x] `push-trigger-branches-asymmetry` **[L/S · 닫힘 2026-11-04]** push 에 `branches` 가 없던 일곱(언어 CI 다섯 · `harness.yml` · `repo-hygiene.yml` — push 300 중 main 밖 191–230)에 `branches: [main]` — PR 은 `pull_request` 로만 돌고 태그·아카이브 ref 에서는 안 돈다 · 재기: `gh run list --workflow <f> --event push --json headBranch` 에 main 밖이 새로 안 생긴다
 - [x] `sonarcloud-dependabot-skip-keys-on-actor` **[M/S · 신규 2026-10-22 · 닫힘 2026-10-23 #801]** 건너뛰기가 PR 작성자도 본다 — actor 로만 거를 때 사람이 커밋을 얹은 Dependabot PR 실행 일곱(2026-10-08~21)이 미검토 범프와 `SONAR_TOKEN` 을 한 잡에서 돌렸다. 가드는 `check-ci-permissions.mjs` 규칙 11
 - [x] `java-release-bundle-never-built-before-tag` **[H/S · 신규·닫힘 2026-10-23 #825]** 릴리스 번들을 태그 전에 만드는 잡이 없어 러너 Maven 3.10.0 × central-publishing 0.11.0 의 장부 번들을 v1.2.0·v1.2.1 두 번호를 태운 뒤에야 알았다 — `ci.yml` release-bundle + `scripts/check-central-bundle.mjs`
 - [x] `sonarcloud-human-pr-carries-unreviewed-bump` **[M/M · 신규·닫힘 2026-10-23 · 사람 판정 「잡 분리」]** 사람이 연 PR 이 bump 를 실으면 미검토 패키지가 `SONAR_TOKEN` 과 한 잡에서 돌았다 — `sonarcloud.yml` 을 `coverage`(시크릿 없음)·`scan`(산출물만)으로 나눴고 규칙 12 가 고정한다(#832).
