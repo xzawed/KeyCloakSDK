@@ -1,5 +1,5 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=173588 max-raw-bytes=197627 -->
+<!-- doc-budget: max-bytes=173845 max-raw-bytes=194766 -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -7,7 +7,8 @@
      max-raw-bytes 는 사람 판정이다(2026-10-28, 「등록부에만 건다」) — 분할(2026-09-22) 뒤 36 일 동안 적재는 거의
      그대로인데 블록 주석이 633 → 60,409B 로 늘었다. 이제 주석도 센다(검사 8f). 열린 항목의 긴 착수 메모와 경위는
      PR 본문으로 보내고 포인터만 남긴다.
-     173489 → 173588 · 197354 → 197627(2026-11-03 #944): 「놓쳤다」를 다시 재는 명령을 샀다 — 낡은 「다음 릴리스」 둘을 지운 교환. -->
+     173489 → 173588 · 197354 → 197627(2026-11-03 #944): 「놓쳤다」를 다시 재는 명령을 샀다 — 낡은 「다음 릴리스」 둘을 지운 교환.
+     173588 → 173845(2026-11-04): 다시 재는 법 (mm) 을 샀다 — 거짓 「node 청크 확장 무상한」을 지운 교환. -->
 # 잔여작업 등록부 — 2026-09-03 전수 감사 후속
 
 **이 문서가 답하는 것 하나** — 「감사가 남긴 것 중 무엇이 아직 열려 있고, 각각을 **어떤 명령으로** 닫았다고 말할 수 있는가」.
@@ -69,7 +70,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. 2026-10-29 판정의 남은 칸은 각 항목이 적는다 — `response-read-deadline-divergent`(JVM admin 틀 · python TLS 안의 TLS) · `response-framing-unbounded`(node 는 상류 보고 — 사람 몫).
+1. 2026-10-29 판정의 남은 칸은 각 항목이 적는다 — `response-read-deadline-divergent`(JVM admin 틀 · python TLS 안의 TLS).
 2. `guard-detection-surface-hand-narrowed` [H/M](손 표 축 — 되살릴 조건) · `integration-coverage-never-measured` [H/L](go·python 하한 #936 → 나머지 일곱) · `token-response-class-divergent` [L/M] · #935.
 3. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
@@ -114,6 +115,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - (jj) **아홉 언어 공동 축의 보안 항목은 하나라도 「미측정」이면 닫지 않는다** — 먼저 아홉을 다 재고 이음매별로 항목을 쪼갠 뒤 착수한다(「우리 소스에 선언이 없다」로 잘라냈던 언어를 다시 재니 2/2 가 실제 구멍이었다).
 - (kk) **규칙을 새로 쓰기 전에 도구가 거부하게 할 수 없는지 본다** — 존재를 요구하는 규칙(빠진 것이 빈 칸으로 보이는 것)은 구속하고 정확성을 요구하는 규칙은 구속하지 않았다(2026-09-13: 회고가 「어긴 것」으로 적은 다섯 중 넷이 바로 재발했다). 이미 있는데 어긴 규칙을 또 쓰지 않는다. 도구가 닫은 것은 변이 미착지(`probe.sh --site`) 하나이고, 동어반복 초록 · 싼 첫 명령 · 인터프리터 왕복은 규칙으로만 남아 있다.
 - (ll) **소비자가 틀릴 수 있는데 HEAD 는 맞다면, 오라클은 트리가 아니라 태그·레지스트리다**(#415 · `check-docs.mjs` 의 `kind=runtime` 두 번째 오라클 주석) — 다른 주장에도 건다. 그때 적은 후보: 게시된 공개 API 표면 · 게시 매니페스트의 의존성 하한 · 릴리스 바이너리에 컴파일된 기능 · 배포 아티팩트의 라이선스 · 「vX 에 포함됨」류 CHANGELOG 결속.
+- (mm) **가짜 서버는 별도 프로세스로 띄우고 최대치는 `process.resourceUsage().maxRSS` 로 잰다** — 같은 프로세스 서버의 버퍼 탓에 undici 청크 확장이 「무상한」으로 보였다(2026-11-04). 서버는 curl 과 보낸 바이트 수로 먼저 잰다(백프레셔 재개 버그가 끝없는 확장을 보냈다) · node 표본은 `external` 만 · 사례마다 새 포트.
 
 ## 읽는 법
 
@@ -343,7 +345,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 133건 (열림 65)
+## C. 품질 부채 — 133건 (열림 64)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -394,8 +396,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 <!-- go-admin-3xx-read-as-success 실측(2026-10-25 · main 0a4cfee · 루프백 · NewAdminClient + 정적 토큰): 300 · 302(Location 없음) · 399 + JSON 본문 — 파사드 25 호출(다섯 리소스의 Create·Get·목록·Update·Delete) 중 24 가 오류 없이 돌아온다: Users.Get 은 빈 *User, Search 는 0 건, Create 는 id "", Update·Delete 는 nil. Realms.Update 만 오류다(raw PUT 이 2xx 를 명시한다). 기전: gocloak checkForError 는 resty IsError()(> 399)만 오류로 보고, resty 는 2xx 만 결과로 해석한다 — 3xx 는 둘 다 아니라 영값과 nil 이다. net/http 는 Location 없는 3xx 를 따라가지 않으므로 errOnRedirect 도 닿지 않는다. #380 은 같은 구멍을 토큰 요청(LoginClient — AccessToken == "" 검사)과 Realms.Update 의 raw PUT(2xx 명시)에서 막았다 — gocloak 의 판정을 쓰는 나머지 파사드는 그대로다. 발견: admin-response-body-unbounded go 수정 중 300 행을 쓰다가. 나머지 여덟 언어는 미측정 — 다음 걸음은 부류 재스캔(같은 다섯 리소스 × 300·302 무 Location·399). python 한 칸(2026-10-26, admin-response-body python 시험의 300 행): users.get 300 → KeycloakAdminError 300 — python-keycloak 의 expected_codes 가 막는다(다른 호출 미측정). dotnet 한 칸(2026-10-26, 그 시험의 300 행): typed·raw 다섯 호출 다 KeycloakAdminException 300(다른 호출·302·399 미측정). ruby 한 칸(같은 날, 그 시험의 300 행): 네 호출 다 AdminError 300(미측정은 같다). php 한 칸(같은 날, 그 시험의 302 행): users.get 302(Location 없음) → 성공(User) — http_errors 는 400 이상만 오류로 본다. 상한보다 긴 3xx JSON 이 잘리면 KeycloakAdminError(상태 null). rust 한 칸(2026-10-27, admin-response-body rust 시험의 302 행): 다섯 호출(단건·목록·update·create·delete) 다 Admin(Other(302)) — 파사드도 crate 도 2xx 만 성공으로 본다(300·399 미측정). node 한 칸(2026-10-27, admin-response-body node 시험의 300·302·399 행): 다섯 호출(단건·목록·update·create·delete) 다 KeycloakAdminError(HTTP 3xx) — `redirect: 'manual'` 의 3xx 는 `!ok` 다. 고치기 전 admin-client 경로도 같았다(#846 의 RED 실행). · 재스캔 때 먼저 볼 셋(닫힌 admin-response-body-unbounded 의 주석에서 옮김 — go 의 첫 설계를 깬 것): Raw() 의 하위 메서드가 201·PUT 본문을 결합하는가 · 잘린 오류 본문이 분류를 바꾸는가 · 호출자가 청한 압축을 상한 위에서 누가 푸는가. 본문 크기 칸(T1·T2·A1–A3)의 정의는 #834 의 PR 본문. -->
 - [ ] `response-read-deadline-divergent` **[M/S · 신규 2026-10-09 · 판정 2026-10-29 · 본문은 아홉 다 2026-10-29]** 응답 전체를 설정한 타임아웃 안에 — 남은 칸: JVM admin 의 헤더·청크 틀(읽기마다) · `.claude/rules/security.md`
 <!-- response-read-deadline-divergent 남은 칸(2026-10-29 레그 측정 · 읽기 1 s · 마지막 10 B 를 700 ms 마다 · 수정 전 측정은 이 줄의 git 이력): python sync 는 소켓 원문 읽기마다로 닫혔다(wire.py · 7.1 → 1.0 s). 남은 python 칸: HTTPS 프록시(TLS 안의 TLS)·pyOpenSSL 은 읽기 하나가 바깥 소켓을 여러 번 돌아 기한을 넘길 수 있다(늦은 바이트는 거부 · 코드 판독 ssltransport.py:266). JVM admin — 헤더 7,527 · 청크 7,089 · 트레일러 7,102 · TLS 레코드 33,643 ms(프로브 — 수정 전에는 받았고 이제 그 뒤 실패), 소켓이 RESTEasy 풀 것이라 엔진을 다시 짓지 않으면 못 닫는다. JVM admin 의 멈춤은 TLS 1.3 닫기가 한 번 더 읽는다(2 s 설정에 평문 2,039 · TLS 4,064 ms — 기한 실패는 피한다: TLS 흘리기 2,853 ms). node JWKS 닫힘(2026-10-30) — AuthClient 가 readTimeoutMs 를 jose timeoutDuration 으로 건다(설정 1 s → 1.04 s) · 설정 없는 단독 forJwksUri 는 jose 5 s. python 3.10·3.11 — asyncio.wait_for 가 교환이 끝나는 순간 도착한 호출자 취소를 삼킬 수 있다(CPython 결함 — 3.12 부터 wait_for 는 asyncio.timeout 위 · 재현 시험 없음). 판정 2026-10-29 의 기각 안: 감시자가 연결을 끊는 정확한 기한 — 요청마다 타이머·풀 반환·누수 위험을 네 런타임에 들이고 버는 것이 정확성 하나. 재는 법: 각 레인의 ResponseReadDeadline 시험 · 프로브는 PR 본문. -->
-- [ ] `response-framing-unbounded` **[M/M · 신규 2026-10-05 · 아홉 측정 2026-10-09 · ruby 닫힘 #760]** 헤더 줄·청크 크기 줄·트레일러는 본문 상한 밖이다 — 남은 것은 node(undici 청크 확장 — 라운드 2: 상류 보고, 사람 몫) · python 트레일러는 바이트 예산이 닫았다. go 는 #742, JVM 은 #756·#761, php 는 ext-curl 요구(2026-10-29 판정) · `node/src/`
-<!-- response-framing-unbounded 실측(2026-10-09 · 아홉 언어 측정 레그 둘 · 가짜 IdP 원시 TCP · cc 그랜트 · 각 16 MiB · F1 헤더 한 줄 · F2 청크 확장 · F3a 4 KiB 트레일러 줄 4096 개 · F3b 트레일러 한 줄 · 대조군 F4·F4c 는 전 레인 수락·할당 ≤ 0.3 MB · 양성 대조 ruby F1 +66.7–67.2 MB 로 2026-10-05 값 재현): ruby — F1 수락 +67 MB · F2 수락 +50 MB · F3a 수락 +32–46 MB · F3b 수락 +50 MB(auth·admin 같다 — net-http 의 readuntil/readline 에 한도가 없다) · php curl 처리기(기본) — F1 거부(cURL 100) · F2 수락(평탄) · F3 거부 / stream 처리기(ext-curl 이 없을 때 — 2026-10-29 부터 composer.json 이 요구한다) — F1 수락 +56.6 MB · F2·F3 수락(평탄) · python sync(requests) — F1·F2·F3b 거부(LineTooLong 65536) · F3a 수락(할당 0.04 MB 지만 16.78 MB 를 끝까지 읽는다 — 트레일러 줄 수에 한도가 없다) · aio(httpx/h11) 넷 다 거부 · node(undici 6.21.2) — F1·F3a·F3b 거부(HEADERS_OVERFLOW) · F2 수락 +16.8 MB(SDK 밖 실험: 64 MiB 확장 → arrayBuffers +74 MB · RSS +104 MB, GC 뒤 0) · go — F1 은 거부하지만 10 MiB 를 읽고 73.3 MB 를 할당했다 → #742(64 KiB) · F2·F3 작게 거부 · rust(hyper 1.11) 넷 다 작게 거부 · .NET 넷 다 거부(헤더·트레일러 64 KiB) · JVM — F1 은 jdk.http.maxHeaderSize 393,216 에서, F2 는 2,050 에서 거부하고 트레일러는 위 항목. 남은 넷의 수정 후보 — ruby: SDK 전용 Net::HTTP 하위 클래스의 BufferedIO 줄 상한(net-http 판에 기댄다) · php: stream 처리기에는 헤더 크기 손잡이가 없다 → ext-curl 을 요구하거나 문서로 · node: undici 상류(SDK 밖) · python: 시간·대역뿐이라 L. 측정 하네스는 커밋 안 함(세션 스크래치패드 xmeas1·xmeas2). · 2026-10-09 #760: ruby 는 SDK 가 연 소켓에만 거는 줄 8,192 · 틀 65,536 예산으로 닫혔다(net_http 어댑터 · 할당 1 MB 아래). · 2026-10-09 #767 레그(현 main 재측정): php stream 처리기 F1 수락 +57.2 MB · F2·F3 수락 1.0 MB / curl F1·F3 거부 · F2 수락 0.9 MB. 손잡이가 없다 — PHP 8.3 http_fopen_wrapper.c:1037 이 헤더 줄을 길이 제한 없이 읽고, Guzzle progress 는 헤더 뒤에 켜진다(F3b 는 1.6 MB 에서 끊었지만 F1 은 그대로), on_headers 는 57.2 MB 를 잡은 뒤다. 선택지: (a) composer.json 이 ext-curl 을 요구 — 소비자 하한이 오른다(기각 체크리스트 8, 릴리스 또는 등록 후속), gzip×stream 할당(7–8 MB)도 없앤다 · (c) 문서. 판정 2026-10-29 「(a)」(재측정은 그 PR 본문). · node 칸을 잴 때의 프로브 함정 둘(2026-10-27 · 닫힌 admin-response-body-unbounded 의 주석에서 옮김): 메모리는 `heapUsed + external` 로 잰다 — `external` 이 `arrayBuffers`(Buffer)를 이미 담아, 더하면 두 번 센다(#846 이 그 판의 전제 수를 버리고 다시 쟀다) · 사례마다 새 포트를 쓴다 — 같은 포트를 다시 쓰면 다음 디스커버리가 실패했다(전역 undici 풀이 클라이언트를 넘어 연결을 다시 쓰는지 · 하네스가 붙든 소켓을 끊은 탓인지 미판정). -->
+- [x] `response-framing-unbounded` **[M/M · 신규 2026-10-05 · 닫힘 2026-11-04]** 아홉이 응답 틀을 묶인 메모리로 읽는다 — ruby #760 · go #742 · JVM #756·#761 · python #893 · php ext-curl. node 는 전제 거짓 — 1 GiB 청크 확장에도 최대 RSS 88 MB(기준 53, 함정 (mm)) · 상류 보고 안 함
 - [x] `ruby-framing-hook-breaks-on-net-protocol-0-4` **[H/S · 닫힘 2026-10-22 #797 · 미게시]** 훅이 `limit:` 를 원판(0.3.0+)의 뜻으로 받는다(SDK 상한이 먼저) · 핀은 두 모양과 설치된 원판과의 대조 · 레인 CI 에 `latest-runtime-deps`(런타임 그룹을 새로 푼다 — 소비자 시야) · `ruby/lib/keycloak_sdk/http.rb`
 - [x] `ruby-boundary-non-faraday-exception-leak` **[H/S · 닫힘 2026-10-22 #798 · 게시본 1.3.0 포함]** introspect · logout · admin(REST 와 자기 토큰) 경계도 세 그랜트처럼 SDK 밖 예외를 감싼다(`rescue Error; raise` 뒤 `rescue StandardError` → `TransportError` + `RedactedCause`) — net-http 0.10.0 의 응답 헤더 검증 `ArgumentError` 가 raw 로, 헤더 이름을 인용한 채 샜다 · `ruby/lib/keycloak_sdk/auth_client.rb`
 - [x] `ruby-admin-error-status-lost-on-bad-json` **[M/S · 신규 2026-10-22 · 닫힘 2026-10-23 #810]** admin 의 오류 상태가 JSON 이라면서 JSON 아닌 본문에서도 상태 클래스를 지킨다 — json 미들웨어의 해석 실패를 응답 상태로 되짚는다(.NET 과 같다)
