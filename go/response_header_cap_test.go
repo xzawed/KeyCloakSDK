@@ -266,9 +266,9 @@ func (p *hdrIdP) serve(conn net.Conn) {
 }
 
 // hdrLane 은 응답 머리 상한이 걸리는 공개 호출 하나다. path 는 그 호출이 머리를 받는 엔드포인트, want 는 머리가
-// 상한을 넘을 때 그 호출이 돌려주는 SDK 오류 타입 — 수정 전 트리가 16 MiB 머리에 이미 돌려주던 타입이다(이 수정은
-// 분류를 바꾸지 않는다: 세 그랜트는 x/oauth2 실패를 감싼 *AuthError, Introspect·Logout 은 postForm 의
-// *TransportError, admin 레인은 gocloak 의 Code 0 이라 *TransportError, JWKS 는 Validate 의 *TokenValidationError).
+// 상한을 넘을 때 그 호출이 돌려주는 SDK 오류 타입이다 — 응답이 다 오지 않았으니 인증 레인은 전부 *TransportError
+// (세 그랜트는 #935 판정 전 x/oauth2 실패를 감싼 *AuthError 였다 — token_response_class_test.go), JWKS 는 Validate 의
+// *TokenValidationError.
 type hdrLane struct {
 	name string
 	path string
@@ -277,7 +277,7 @@ type hdrLane struct {
 }
 
 func hdrGrantLane(name string, grant func(ctx context.Context, c *Client) (*TokenSet, error)) hdrLane {
-	return hdrLane{name: name, path: hdrOIDC + "/token", want: "*keycloak.AuthError",
+	return hdrLane{name: name, path: hdrOIDC + "/token", want: "*keycloak.TransportError",
 		run: func(t *testing.T, ctx context.Context, _ *hdrIdP, c *Client) error {
 			ts, err := grant(ctx, c)
 			if err == nil && ts.AccessToken != hdrAccessToken {

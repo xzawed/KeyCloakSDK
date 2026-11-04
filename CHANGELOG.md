@@ -8,6 +8,9 @@
 
 ## [Unreleased]
 
+### Changed
+- **(Go)** ⚠️ 토큰·인트로스펙션·admin 로그인 요청의 오류 계급을 「응답이 끝까지 왔는가」로 가릅니다. 다 오지 않은 응답(네트워크 실패 · 타임아웃 · 끊긴 본문 · 깨진 HTTP 틀 · 1,048,576 바이트 상한 초과 · 응답 머리 상한 초과)은 세 그랜트도 `*AuthError` 가 아니라 `*TransportError` 이고, `Introspect`·`Logout` 의 상한 초과도 그렇습니다. admin 자기 그랜트는 끝까지 온 응답이면 상태와 무관하게 `*AuthError` 입니다 — `*AdminError` 였던 탓에 토큰 엔드포인트의 404·403·409 가 `ErrNotFound`·`ErrForbidden`·`ErrConflict` 로 읽혀, 토큰을 다시 받지 못한 `Users.Delete` 가 admin 요청 없이 「이미 없음」으로 보였습니다. 그 상태로 재시도를 가르던 코드는 상태가 이제 메시지에만 있습니다. `v1.2.3` 노트의 「머리 상한 초과는 세 그랜트에서 `*AuthError`」는 이제 `*TransportError` 입니다.
+
 ### Fixed
 - **(PHP)** 릴리스 노트의 세 문장을 바로잡습니다(코드는 그대로입니다). `[1.5.0]` 의 「256,000 바이트를 넘는 `id_token` 을 돌려주는 IdP 앞에서는 `exchangeCode()` 가 이제 `TokenValidationError` 입니다」는 틀렸습니다 — nonce 를 준 `exchangeCode()` 는 `1.0.0` 부터 id_token 검증 실패를 `KeycloakAuthError`(`getPrevious()` 가 `TokenValidationError`)로 던지고, nonce 가 없으면 id_token 을 검증하지 않습니다. `[1.5.2]` 의 「메시지는 그대로이고」는 `access_token` 이 없는 JSON 에서 틀렸고, 「`KeycloakTransportError` 는 네트워크 실패만 뜻합니다」도 틀렸습니다(숫자가 아닌 `expires_in` 은 여전히 그것입니다) — 그 절을 고쳤습니다. 그리고 `php/README.md` 에 `1.0.0` 이후 동작 변경을 모은 「Upgrading from `1.0.0`」 절을 더했습니다.
 

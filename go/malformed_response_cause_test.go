@@ -426,13 +426,11 @@ func causeCheckStale(t *testing.T, observed map[string]bool) {
 	}
 }
 
-// causeWantKind 는 정화 전에 잰 분류다 — x/oauth2 레인은 전부 AuthError, admin 로그인은 HTTP 상태가 있으면
-// AdminError·없으면 TransportError, postForm 레인은 HTTP 틀이 깨지면 TransportError·아니면 AuthError.
-func causeWantKind(v causeVariant, call string) string {
-	switch {
-	case call == callAdmin && v.resp.raw == "" && v.resp.status >= 400:
-		return "*keycloak.AdminError"
-	case call == callAdmin, v.resp.raw != "" && (call == callIntrospect || call == callLogout):
+// causeWantKind 는 #935 판정의 분류다 — HTTP 틀이 깨진 응답(raw)은 다 오지 않았으니 모든 레인이 TransportError, 끝까지 온
+// 응답은 모든 레인이 AuthError. 예전에는 x/oauth2 레인이 전부 AuthError, admin 로그인이 상태가 있으면 AdminError·없으면
+// TransportError 였다(token_response_class_test.go 가 계급표를, TestAdminTokenFailureNeverMatchesAdminSentinels 가 그 까닭을 쥔다).
+func causeWantKind(v causeVariant, _ string) string {
+	if v.resp.raw != "" {
 		return "*keycloak.TransportError"
 	}
 	return "*keycloak.AuthError"

@@ -603,8 +603,9 @@ func TestAdminErrorBodyAtTheCap_isCarriedWhole(t *testing.T) {
 }
 
 // 대조 — admin 토큰 요청의 오류 본문은 토큰 상한이 거부한다: 401 + 상한 + 1 바이트는 상한을 말하는 *TransportError, 정확히 상한이면 본문의
-// 오류 코드까지 읽은 401 *AdminError 다. 그 본문은 오류 본문 상한과 토큰 상한을 함께 지나는데, 둘이 같고 토큰 상한이 상한에 닿는 읽기 안에서
-// 한 바이트 너머를 보기 때문에 거부가 살아 있다 — 오류 본문 상한을 토큰 상한보다 낮추면 거부가 절단으로 바뀌어 이 시험이 운다.
+// 오류 코드까지 읽은 401 의 *AuthError 다(#935 판정 전에는 *AdminError — 토큰 실패가 admin 센티널로 읽혔다, token_response_class_test.go).
+// 그 본문은 오류 본문 상한과 토큰 상한을 함께 지나는데, 둘이 같고 토큰 상한이 상한에 닿는 읽기 안에서 한 바이트 너머를 보기 때문에 거부가
+// 살아 있다 — 오류 본문 상한을 토큰 상한보다 낮추면 거부가 절단으로 바뀌어 이 시험이 운다.
 func TestAdminTokenErrorBodyPastTheCap_isRefusedByTheTokenCap(t *testing.T) {
 	for _, total := range []int{rbCap, rbCap + 1} {
 		s := newRBServer(t, nil, func(string, string) rbReply {
@@ -619,13 +620,13 @@ func TestAdminTokenErrorBodyPastTheCap_isRefusedByTheTokenCap(t *testing.T) {
 		t.Logf("[AdminResponseBody] admin 토큰 요청 401 %d B → %T %v", total, err, err)
 		refused := err != nil && strings.Contains(err.Error(), "exceeds 1048576 bytes")
 		var transportErr *TransportError
-		var adminErr *AdminError
+		var authErr *AuthError
 		if total > rbCap && (!refused || !errors.As(err, &transportErr)) {
 			t.Fatalf("상한을 넘는 오류 본문을 토큰 상한이 거부하지 않았다: %T %v", err, err)
 		}
-		if total == rbCap && (refused || !errors.As(err, &adminErr) || adminErr.StatusCode != http.StatusUnauthorized ||
+		if total == rbCap && (refused || !errors.As(err, &authErr) || !strings.Contains(err.Error(), "HTTP 401") ||
 			!strings.Contains(err.Error(), "invalid_client")) {
-			t.Fatalf("상한 안의 오류 본문 → 본문을 읽은 401 *AdminError 가 아니다: %T %v", err, err)
+			t.Fatalf("상한 안의 오류 본문 → 본문을 읽은 401 의 *AuthError 가 아니다: %T %v", err, err)
 		}
 	}
 }

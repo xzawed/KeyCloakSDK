@@ -88,7 +88,7 @@ func main() {
 
 A stock realm does **not** put the client id in a client-credentials token's `aud`, so step 2 fails until the audience matches: either add an *Audience* protocol mapper to the client in Keycloak, or set `Config.ExpectedAudience` to the value your tokens actually carry (the API/resource name, when the token is audienced at a resource server).
 
-Errors are values, not panics: match outcomes with `errors.Is` against `ErrNotFound` / `ErrConflict` / `ErrForbidden`, or reach the concrete `*AuthError`, `*AdminError`, `*TokenValidationError`, `*TransportError` with `errors.As`.
+Errors are values, not panics: match outcomes with `errors.Is` against `ErrNotFound` / `ErrConflict` / `ErrForbidden`, or reach the concrete `*AuthError`, `*AdminError`, `*TokenValidationError`, `*TransportError` with `errors.As`. On the token, introspection and admin-login requests, `*TransportError` means the request was not sent or the response did not arrive in full (network failure, timeout, a body cut short, a response over the size cap), and a response that arrived but is not usable is `*AuthError` — whatever its HTTP status, so a token endpoint's 404 never matches `ErrNotFound`.
 
 ## Security defaults
 

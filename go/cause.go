@@ -166,7 +166,29 @@ func scrubWire(err error) error {
 type belowHTTPKey int
 
 // belowHTTPSlot keeps the first such error a request of the marked call meets, for the SDK error to carry as its cause.
-type belowHTTPSlot struct{ err atomic.Pointer[error] }
+// It also records whether the call's last request got its response in full (arrived · cut), which is what decides the
+// error class: a response that arrived but is unusable is *AuthError, one that did not arrive is *TransportError (#935).
+type belowHTTPSlot struct {
+	err atomic.Pointer[error]
+	// arrived: the last request got a response (status line and headers). cut: a Read of that response's body ended in an
+	// error that is not io.EOF — the transport, a deadline, broken framing, the size cap, a gzip body that does not decode.
+	arrived, cut atomic.Bool
+}
+
+// began starts the arrival record of a new request — the class follows the call's last request.
+func (s *belowHTTPSlot) began() {
+	if s != nil {
+		s.arrived.Store(false)
+		s.cut.Store(false)
+	}
+}
+
+// fullyArrived reports whether the marked call's last request got a response whose body was not cut short. ⚠️ Not "the
+// slot is empty": the slot keeps only errors from beneath HTTP and the context's, so broken chunked framing leaves it empty,
+// and a connection closed before any response leaves it empty too — arrival is recorded positively instead.
+func (s *belowHTTPSlot) fullyArrived() bool {
+	return s != nil && s.arrived.Load() && !s.cut.Load()
+}
 
 // withBelowHTTP marks ctx and returns its slot.
 func withBelowHTTP(ctx context.Context) (context.Context, *belowHTTPSlot) {
@@ -226,6 +248,7 @@ type wireScrubTransport struct{ base http.RoundTripper }
 func (t wireScrubTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
 	slot := belowHTTPSlotOf(ctx)
+	slot.began()
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
 		err = scrubWire(err)
@@ -233,7 +256,26 @@ func (t wireScrubTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		return resp, err
 	}
 	resp.Body = capTokenResponse(ctx, decodedGzip(resp, wireScrubBody{ReadCloser: resp.Body, ctx: ctx, slot: slot}))
+	if slot != nil {
+		slot.arrived.Store(true)
+		resp.Body = arrivalBody{ReadCloser: resp.Body, slot: slot}
+	}
 	return resp, nil
+}
+
+// arrivalBody is the outermost body of a marked call's response: a Read error that is not io.EOF means the response did
+// not arrive in full, whichever layer ended it (the transport, the size cap, the gzip decoder) — see belowHTTPSlot.cut.
+type arrivalBody struct {
+	io.ReadCloser
+	slot *belowHTTPSlot
+}
+
+func (b arrivalBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) && b.slot != nil {
+		b.slot.cut.Store(true)
+	}
+	return n, err
 }
 
 // CloseIdleConnections lets http.Client.CloseIdleConnections reach the pooled transport (Close relies on it).
@@ -258,18 +300,22 @@ func (b wireScrubBody) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// loginError is toSDKError for the admin lane's token request — the same classification (a status
-// becomes *AdminError, none becomes *TransportError) without the IdP's words. gocloak flattens a
-// failed token response into APIError.Message as "<status line>: <error>: <errorMessage>:
-// <error_description>", so the parts cannot be told apart; the message is rebuilt from the status code
-// and the first code-shaped part. On a refused redirect net/http names the redirect target, which the
+// loginError is the error of the admin lane's token request, without the IdP's words. A response that arrived in full is
+// *AuthError whatever its status, and one that did not (none came, its body was cut short or ended by a deadline, or it
+// went over the cap) is *TransportError — the grant lane's classes (grantFailed, #935). ⚠️ **Never *AdminError**: its Is
+// matches a token endpoint's 404 · 403 · 409 against ErrNotFound · ErrForbidden · ErrConflict, so a failed token refresh
+// read as "the user is gone" with no admin request sent (measured 2026-11-05 — TestAdminTokenFailureNeverMatchesAdminSentinels;
+// it was *AdminError for a status and *TransportError without one, a refused redirect included). gocloak flattens a failed
+// token response into APIError.Message as "<status line>: <error>: <errorMessage>: <error_description>", so the parts cannot
+// be told apart; the message is rebuilt from the status code and the first code-shaped part — in Msg only, never in
+// OAuthError, because which part it is cannot be told. On a refused redirect net/http names the redirect target, which the
 // IdP chose — it is dropped the same way. Without a status, the cause is the error the transport kept in below when gocloak
 // dropped it (a deadline that ended the exchange), so errors.Is still finds it.
-func loginError(err error, below *belowHTTPSlot) error {
+func loginError(err error, capped *atomic.Bool, below *belowHTTPSlot) error {
 	typ := fmt.Sprintf("%T", err)
 	var apiErr *gocloak.APIError
-	if errors.As(err, &apiErr) && apiErr.Code != 0 {
-		msg := strconv.Itoa(apiErr.Code) + " " + http.StatusText(apiErr.Code)
+	if errors.As(err, &apiErr) && apiErr.Code != 0 && !capped.Load() {
+		msg := "client-credentials login failed: HTTP " + strconv.Itoa(apiErr.Code) + " " + http.StatusText(apiErr.Code)
 		if parts := strings.Split(apiErr.Message, ": "); len(parts) > 1 {
 			for _, p := range parts[1:] {
 				if oauthCodeShaped(p) {
@@ -278,8 +324,7 @@ func loginError(err error, below *belowHTTPSlot) error {
 				}
 			}
 		}
-		return &AdminError{StatusCode: apiErr.Code, Msg: msg,
-			Cause: &responseFreeError{typ: typ, msg: msg + " (response body withheld)"}}
+		return &AuthError{Msg: msg, Cause: &responseFreeError{typ: typ, msg: msg + " (response body withheld)"}}
 	}
 	msg := err.Error()
 	if refused := ": " + errBackChannelRedirect.Error(); strings.HasSuffix(msg, refused) {
@@ -288,6 +333,10 @@ func loginError(err error, below *belowHTTPSlot) error {
 	}
 	if lost := below.lost(err); lost != nil {
 		return &TransportError{Msg: msg, Cause: lost}
+	}
+	// No status, but the response came in full — a 2xx that is not the token JSON, or a redirect this lane refuses.
+	if !capped.Load() && below.fullyArrived() {
+		return &AuthError{Msg: msg, Cause: &responseFreeError{typ: typ, msg: msg}}
 	}
 	return &TransportError{Msg: msg, Cause: &responseFreeError{typ: typ, msg: msg}}
 }
