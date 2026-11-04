@@ -4,8 +4,10 @@ on:
   # 돌리는 **유일한 자리**인데, 목록에 없으면 그 가드를 고치는 PR 에서 체크가 **생성조차 되지
   # 않는다**(`paths:` 는 잡을 스킵하는 것이 아니라 체크를 안 만든다 — #368 과 같은 부류).
   # 저장소의 열세 개 `scripts/*.{mjs,sh}` 중 자기 변경에 안 도는 자리가 여기 하나였다(실측).
-  push: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml', 'scripts/check-node-public-surface.mjs', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs'] }
-  pull_request: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml', 'scripts/check-node-public-surface.mjs', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs'] }
+  # `scripts/integration-coverage.*` — integration 잡의 리포트가 그 둘로 돈다. 리포트 로직·핀만 고친 PR 에서도
+  # 이 레인이 실제 Keycloak 에 대고 돌아야 한다(go-ci · python-ci 와 같다).
+  push: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml', 'scripts/check-node-public-surface.mjs', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
+  pull_request: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml', 'scripts/check-node-public-surface.mjs', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:
@@ -74,8 +76,23 @@ jobs:
           cache: npm
           cache-dependency-path: node/package-lock.json
       - run: npm ci
-      - name: Integration E2E (Docker, 실제 Keycloak 26.6)
-        run: npm run test:it
+      # 같은 통합 E2E(`vitest.integration.config.ts`)에 v8 커버리지만 더한다. 명령은 `scripts/integration-coverage.mjs`
+      # 의 run 이 소유한다 — 로컬(`node scripts/integration-coverage.mjs node`)과 CI 가 같은 명령을 쓰게 여기 다시 적지
+      # 않는다. 종료코드는 테스트의 것이다.
+      - name: Integration E2E (Docker, 실제 Keycloak 26.6) + 경계 커버리지 수집
+        working-directory: .
+        run: node scripts/integration-coverage.mjs run node --out "$RUNNER_TEMP/integration-coverage"
+      # ⚠️ 보고 모드 — 낮은 수치로는 실패하지 않는다. 하한은 CI 관측 세 번 뒤에 건다(등록부
+      # `integration-coverage-never-measured` 4 걸음째). exit 2(파생 실패 · 핀과 다름 · 데이터에서 경계 파일
+      # 빠짐 · 아무것도 안 돈 실행 · 이름 범위를 못 읽음)만 잡을 실패시킨다. exit 1(미실행 함수의 소유 문제)은 경고다.
+      - name: 통합 전용 경계 커버리지 — 보고 모드(scripts/integration-coverage.json 에 floor 없음)
+        working-directory: .
+        run: |
+          rc=0
+          node scripts/integration-coverage.mjs report node --out "$RUNNER_TEMP/integration-coverage" || rc=$?
+          if [ "$rc" -eq 1 ]; then echo "::warning::통합 미실행 함수의 소유 문제 — 위 DRIFT 줄(경고 — 게이트가 아니다)"; fi
+          if [ "$rc" -eq 3 ]; then echo "::error::통합 전용 경계 커버리지가 하한 아래 — 위 BELOW 줄"; fi
+          [ "$rc" -le 1 ]
 
   api-compat:
     name: api-extractor (공개 API 파괴적 변경)

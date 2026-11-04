@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
-# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — 파일럿(go · python)의 무결성 판정과 하한.
+# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — go · python · node 의 무결성 판정과 하한.
 #
-# ⚠️ **커밋된 픽스처만 쓴다** — Docker 도 Go·Python 툴체인도 필요 없다. 실제 Keycloak 에 대고 도는 것은
+# ⚠️ **커밋된 픽스처만 쓴다** — Docker 도 Go·Python·node 툴체인(node_modules)도 필요 없다. 실제 Keycloak 에 대고 도는 것은
 # 레인 CI 의 integration 잡이다. 여기서 재는 것은 리포트의 **무결성 판정** 셋이다:
 #   (1) 양성 — 건강한 픽스처에서 파일별·합계 수치와 미실행 함수 목록이 **정확히** 나온다.
 #   (2) 음성 — 파생이 좁아지거나(그러면 %가 오른다), 핀과 갈리거나, 데이터에서 파일이 빠지거나,
@@ -16,8 +16,13 @@
 #   data/python-include.json `[run] include = */keycloak_sdk/*`(source 없음) — 한 번도 import 안 된 aio/auth.py 가 빠진다
 #   data/python-zero.json  트리를 하나도 import 하지 않는 구동 — 전부 0
 #   data/python-import.json 경계 모듈을 import 만 하고 아무것도 안 부르는 구동 — 몸통 0, 모듈 수준 줄만 덮인다
-# 구동기는 「String·Close·Delete·AuthClient.String·hook 리터럴」과 「__repr__·logout·clients·aio 전체」를 일부러
-# 안 부른다. 숫자를 바꾸려면 구동기를 다시 써서 **도구로 재생성**할 것 — JSON 을 손으로 고치지 않는다.
+#   data/node.json         vitest 5.0.1 + @vitest/coverage-v8 의 `coverage-final.json`(2026-11-05) — `node/` 아래 임시 루트에
+#                          tree/node/src 사본 + 구동 테스트를 두고 `--coverage.include=src/**/*.ts --coverage.reporter=json`.
+#                          **생성 루트만 `@ROOT@` 로 바꿨다**(istanbul 키는 절대 경로다 — fresh 가 임시 트리 경로로 되돌린다)
+#   data/node-zero.json    같은 명령, 구동기가 경계 밖 other.ts 만 부른다 — auth.ts 전부 0
+# 구동기는 「String·Close·Delete·AuthClient.String·hook 리터럴」과 「__repr__·logout·clients·aio 전체」를, node 는
+# 「describe·toString·[SYM]·inc·cb·set count·overload·longSignature·close」를 일부러 안 부른다. 숫자를 바꾸려면
+# 구동기를 다시 써서 **도구로 재생성**할 것 — JSON 을 손으로 고치지 않는다.
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
@@ -35,9 +40,16 @@ fresh() {
   cp -r "$FIX/tree/." "$T/"
   cp "$DIR/../coverage-boundary.mjs" "$T/scripts/coverage-boundary.mjs"
   cp "$FIX/data/go.cover" "$FIX/data/python.json" "$D/"
+  node_data "$FIX/data/node.json"
   git -C "$T" init -q
   git -C "$T" config core.autocrlf false
   git -C "$T" add -A
+}
+# istanbul 키는 절대 경로다 — 픽스처의 `@ROOT@` 를 이 트리의 경로로(윈도는 `pwd -W` 의 `C:/…` 꼴이 node 가 보는 경로다).
+node_data() { # fixture-json
+  mkdir -p "$D/node"
+  _r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
+  sed "s#@ROOT@#$_r#g" "$1" > "$D/node/coverage-final.json"
 }
 run() {
   git -C "$T" add -A
@@ -55,7 +67,8 @@ run check "$T"
 assert_eq 0 "$RC" "건강한 픽스처의 check 는 exit 0 — 출력: $OUT"
 assert_line "$OUT" "[go] pin OK — 3 files equal the derivation from .github/workflows/go-ci.yml:10 (grep -vE on cover.out)" "[check] go 핀 = 파생"
 assert_line "$OUT" "[python] pin OK — 3 files equal the derivation from python/pyproject.toml:8 ([tool.coverage] omit)" "[check] python 핀 = 파생"
-assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 files pinned · 8 owner entries, all open" "[check] 요약"
+assert_line "$OUT" "[node] pin OK — 2 files equal the derivation from node/vitest.config.ts:9 (vitest coverage.exclude)" "[check] node 핀 = 파생"
+assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 files pinned · 20 owner entries, all open" "[check] 요약"
 
 run report go "$T" --out "$D"
 assert_eq 0 "$RC" "[go] 건강한 리포트는 exit 0 — 출력: $OUT"
@@ -85,6 +98,35 @@ assert_not_contains "$OUT" "helper" "[python] 실행된 함수·중첩 함수는
 assert_not_contains "$OUT" "config.py" "[python] 경계 밖 파일은 리포트에 없다"
 assert_line "$OUT" "integration-coverage [python]: OK — lines 21/28 (75.0%) · bodies 8/13 (61.5%) · 4 never-executed functions, all owned by open registry items" "[python] 요약"
 
+# node — 이름은 소스(prettier 모양)에서 읽는다. v8 의 fnMap 이름은 `(anonymous_1)` · `count_2` · `SYM` 이다(실측) — 그것을
+# 쓰면 아래 이름이 나오지 않는다. 각 줄이 재는 것: 클래스 한정 · private · 계산된 이름 · getter/setter 갈림 · 한 줄 멤버
+# (문자열 속 `{` 를 세지 않는다) · 템플릿 속 `  }`·열 0 `function` · 블록 주석 속 열 0 `function` · 오버로드(몸통 없는 선언은
+# 범위가 아니다) · 여러 줄 시그니처 · 'value' 범위의 대입 문장은 함수가 아니다(`inc` · `cb`) · `Pair` 의 다섯(#953 독립 레그):
+# `) {}` 로 닫는 매개변수 속성 생성자 · `static from` 과 `from` · 문자열이 든 계산된 이름(원문으로) · 값이 식별자뿐인 필드
+# (`#closed = false`)는 함수가 아니다 · 중첩 `=>` 제네릭 머리. 모듈 수준 7/8 = 대입 둘 + 필드 둘 + 위의 셋 — 생성자·`apply` 를
+# 놓치거나 `#closed` 를 함수로 읽으면 이 수가 바뀐다.
+run report node "$T" --out "$D"
+assert_eq 0 "$RC" "[node] 건강한 리포트는 exit 0 — 출력: $OUT"
+assert_line "$OUT" "  node/src/auth.ts 21/34 61.8% (module-level 7/8)" "[node] auth.ts — 대입·필드 문장은 모듈·클래스 수준, 생성자·제네릭 멤버는 범위다"
+assert_line "$OUT" "  node/src/index.ts 0/0 n/a" "[node] 재수출만 있는 경계 파일은 0/0 으로 든다(데이터에는 있다)"
+assert_line "$OUT" "  total 21/34 61.8%" "[node] 합계는 경계 파일만(other.ts 제외)"
+assert_line "$OUT" "  NEVER node/src/auth.ts:26 Masked.describe · 1 stmt · owner open-masking" "[node] 템플릿 속 줄이 멤버를 닫지 않는다"
+assert_line "$OUT" "  NEVER node/src/auth.ts:33 Masked.toString · 1 stmt · owner open-masking" "[node] 문자열 속 { 가 든 한 줄 멤버"
+assert_line "$OUT" "  NEVER node/src/auth.ts:35 Masked.[SYM] · 1 stmt · owner open-masking" "[node] 계산된 이름"
+assert_line "$OUT" "  NEVER node/src/auth.ts:48 inc · 1 stmt · owner open-admin" "[node] 한 줄 화살표 const — 선언은 돌았고 본문은 안 돌았다"
+assert_line "$OUT" "  NEVER node/src/auth.ts:52 Client.cb · 1 stmt · owner open-admin" "[node] 화살표 함수 속성"
+assert_line "$OUT" "  NEVER node/src/auth.ts:58 Client.set count · 1 stmt · owner open-admin" "[node] setter 는 getter 와 갈린다"
+assert_line "$OUT" "  NEVER node/src/auth.ts:71 Client.overload · 1 stmt · owner open-admin" "[node] 오버로드의 구현만 범위다"
+assert_line "$OUT" "  NEVER node/src/auth.ts:75 Client.longSignature · 1 stmt · owner open-admin" "[node] 여러 줄 시그니처"
+assert_line "$OUT" "  NEVER node/src/auth.ts:85 Client.close · 1 stmt · owner open-admin" "[node] 블록 주석 속 열 0 function 뒤의 멤버"
+assert_line "$OUT" "  NEVER node/src/auth.ts:106 Pair.from · 1 stmt · owner open-admin" "[node] 인스턴스 from — static from 과 갈린다"
+assert_line "$OUT" "  NEVER node/src/auth.ts:110 Pair.[Symbol.for('pair.inspect')] · 1 stmt · owner open-masking" "[node] 계산된 이름은 원문 그대로(문자열이 지워지지 않는다)"
+assert_line "$OUT" "  NEVER node/src/auth.ts:118 Pair.closed · 1 stmt · owner open-admin" "[node] 필드 뒤의 메서드"
+for _x in other.ts fake hidden NotAClass helper twice Client.run "get count" Masked.render "#secret" constructor "static from" Pair.apply "#closed"; do
+  assert_not_contains "$OUT" "$_x" "[node] 실행된 함수 · 경계 밖 · 주석·문자열 속 이름 · 필드는 목록에 없다: $_x"
+done
+assert_line "$OUT" "integration-coverage [node]: OK — 21/34 statements (61.8%) · 12 never-executed functions, all owned by open registry items" "[node] 요약"
+
 # Linux 의 coverage.py 는 키를 `/` 로 쓴다 — Windows 에서 만든 `\` 키와 같은 리포트여야 한다.
 fresh
 sed -i -f "$FIX/slashes.sed" "$D/python.json"
@@ -93,7 +135,7 @@ run report python "$T" --out "$D"
 assert_eq 0 "$RC" "[python] / 키도 같은 파일이다 — 출력: $OUT"
 assert_line "$OUT" "  total lines 21/28 75.0% · bodies 8/13 61.5%" "[python] / 키에서도 같은 합계"
 
-# 다른 언어의 파생 실패가 이 언어의 리포트를 막지 않는다(픽스처에는 일곱 언어가 없어 그쪽은 늘 FAIL 이다).
+# 다른 언어의 파생 실패가 이 언어의 리포트를 막지 않는다(픽스처에는 여섯 언어가 없어 그쪽은 늘 FAIL 이다).
 fresh
 sed -i 's#grep -vE .*#true#' "$T/.github/workflows/go-ci.yml"
 run report python "$T" --out "$D"
@@ -168,6 +210,47 @@ printf 'example.com/fixture/go/admin.go:33.37,36.2 3 1\n' >> "$D/go.cover"
 run report go "$T" --out "$D"
 assert_eq 2 "$RC" "[go] 같은 블록의 문장 수가 다르면 exit 2"
 assert_contains "$OUT" "FAIL [go] go/admin.go:33.37,36.2 appears with 2 and 3 statements" "[go] 모순 블록을 댄다"
+# node — 경계 파일 하나가 데이터에 없다(include 를 이름으로 좁히면 이렇게 된다 — 그래서 run 은 디렉터리로 준다).
+fresh
+sed -i 's#/node/src/index\.ts"#/node/src/index-gone.ts"#g' "$D/node/coverage-final.json"
+assert_contains "$(cat "$D/node/coverage-final.json")" 'index-gone.ts' "(변이가 착지했는지 먼저 본다)"
+run report node "$T" --out "$D"
+assert_eq 2 "$RC" "[node] 경계 파일이 데이터에 없으면 exit 2"
+assert_contains "$OUT" "FAIL [node] node/src/index.ts is not in the coverage data" "[node] 빠진 파일을 댄다"
+assert_not_contains "$OUT" "  total " "[node] 수치를 내지 않는다"
+# 핀에서 파일이 빠졌다.
+fresh
+sed -i '/^      "node\/src\/index.ts"$/d; s#^      "node/src/auth.ts",$#      "node/src/auth.ts"#' "$T/scripts/integration-coverage.json"
+assert_not_contains "$(cat "$T/scripts/integration-coverage.json")" '"node/src/index.ts"' "(변이가 착지했는지 먼저 본다)"
+run check "$T"
+assert_eq 2 "$RC" "[check] node 핀에서 파일이 빠지면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [node] the derived boundary differs from the pin in scripts/integration-coverage.json — derived, not pinned: node/src/index.ts" "[check] node 핀 밖 파일을 댄다"
+# 같은 클래스에 같은 이름이 둘 — 미실행 목록이 둘을 못 가른다.
+fresh
+sed -i 's#^  async longSignature($#  async close(#' "$T/node/src/auth.ts"
+assert_contains "$(cat "$T/node/src/auth.ts")" "  async close(" "(변이가 착지했는지 먼저 본다)"
+run report node "$T" --out "$D"
+assert_eq 2 "$RC" "[node] 같은 이름의 함수가 둘이면 exit 2"
+assert_contains "$OUT" "FAIL [node] node/src/auth.ts: two functions are both named Client.close" "[node] 겹친 이름을 댄다"
+# 정규식 속 백틱이 템플릿을 열어 파일 끝까지 지운다 — 조용히 「미실행 0」이 되지 않고 FAIL 이다(#953 독립 레그 실측).
+fresh
+sed -i '2a const TICK = /`/' "$T/node/src/auth.ts"
+assert_contains "$(sed -n '3p' "$T/node/src/auth.ts")" 'const TICK = /`/' "(변이가 착지했는지 먼저 본다)"
+run report node "$T" --out "$D"
+assert_eq 2 "$RC" "[node] 끝나지 않는 템플릿은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" 'FAIL [node] node/src/auth.ts: a template literal or ${…} runs to the end of the file' "[node] 이름 범위를 못 읽는다고 댄다"
+# 소유자 없는 미실행 함수(exit 1 — 경고).
+fresh
+sed -i '/"node\/src\/auth.ts:Client.cb"/d' "$T/scripts/integration-coverage.json"
+run report node "$T" --out "$D"
+assert_eq 1 "$RC" "[node] 소유자 없는 미실행 함수는 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [node] unowned never-executed function node/src/auth.ts:Client.cb" "[node] 소유자 없음"
+# 데이터가 없다.
+fresh
+rm "$D/node/coverage-final.json"
+run report node "$T" --out "$D"
+assert_eq 2 "$RC" "[node] 데이터가 없으면 exit 2"
+assert_contains "$OUT" "FAIL [node] no coverage data at" "[node] 데이터 없음"
 
 # ── (2) 음성: 소유자(exit 1 — 경고, 게이트가 아니다) ─────────────────────────────────────────
 fresh
@@ -222,15 +305,24 @@ run report python "$T" --out "$D"
 assert_eq 2 "$RC" "[python] import 만 된 실행(함수 몸통 0)은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [python] the run executed 0 of 13 boundary statements inside functions — a measurement failure, not a low number (import alone credits 15 module-level lines)" "[python] import 크레딧을 수치로 내지 않는다"
 assert_not_contains "$OUT" "53.6" "[python] import 크레딧뿐인 lines % 를 내지 않는다"
+# node — 구동기가 경계 밖만 불렀다(통합 테스트가 경계를 안 지나고 통과한 꼴).
+fresh
+node_data "$FIX/data/node-zero.json"
+run report node "$T" --out "$D"
+assert_eq 2 "$RC" "[node] 경계 문장을 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [node] the run executed 0 of 34 boundary statements — a measurement failure, not a low number" "[node] 측정 실패 문구"
+assert_not_contains "$OUT" "0.0%" "[node] 측정 실패에서 0% 를 내지 않는다"
 # 빈 파생 + 빈 핀 — 집합은 같으므로(∅ = ∅) 빈 집합 판정만이 잡는다. 파생 도구를 가짜로 바꿔 그 갈래만 태운다.
 # ⚠️ 두 언어 다 「있되 비었다」여야 한다 — 한 언어를 빼 두면 check 의 exit 2 가 그 「없는 파생」에서 와서 빈 집합
 # 갈래를 지워도 초록이었다(변이 실측: 빈 집합 통과 변이에 check 단언이 침묵했다).
 fresh
-printf '%s\n' 'const e = (d) => ({ dir: d, site: "fake:1", label: "fake", universe: 3, files: [] })' 'console.log(JSON.stringify({ langs: { go: e("go"), python: e("python") }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
-printf '%s\n' '{ "go": { "pinned": [], "owners": {} }, "python": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
+printf '%s\n' 'const e = (d) => ({ dir: d, site: "fake:1", label: "fake", universe: 3, files: [] })' 'console.log(JSON.stringify({ langs: { go: e("go"), python: e("python"), node: e("node") }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
+printf '%s\n' '{ "go": { "pinned": [], "owners": {} }, "python": { "pinned": [], "owners": {} }, "node": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
 run check "$T"
 assert_eq 2 "$RC" "[check] 빈 파생은 exit 2(빈 핀과 같아도) — 출력: $OUT"
 assert_contains "$OUT" "FAIL [python] the derived boundary is empty" "[check] python 도 빈 파생"
+assert_contains "$OUT" "FAIL [node] the derived boundary is empty" "[check] node 도 빈 파생"
+assert_not_contains "$OUT" "returned no derivation" "[check] 셋 다 있되 비었다 — 「없는 파생」이 빈 집합 갈래를 가리지 않는다"
 assert_not_contains "$OUT" "pin OK" "[check] 빈 집합끼리의 일치를 「핀 OK」로 찍지 않는다"
 run report go "$T" --out "$D"
 assert_eq 2 "$RC" "[go] 빈 파생은 exit 2"
@@ -321,6 +413,18 @@ fresh; floor go statements 40
 run check "$T"
 assert_eq 0 "$RC" "[floor] 올바른 하한은 check 를 통과한다 — 출력: $OUT"
 assert_line "$OUT" "[go] floor: statements ≥ 40%" "[floor] check 가 하한을 보여 준다"
+
+# node 도 같은 하한 판정을 탄다(지표는 statements — 픽스처 21/34 = 61.76%).
+fresh; floor node statements 61.76
+run report node "$T" --out "$D"
+assert_eq 0 "$RC" "[floor] node 61.76% ≥ 61.76 — 출력: $OUT"
+fresh; floor node statements 61.77
+run report node "$T" --out "$D"
+assert_eq 3 "$RC" "[floor] node 61.76% < 61.77 — 출력: $OUT"
+fresh; floor node bodies 50
+run check "$T"
+assert_eq 2 "$RC" "[floor] node 에 bodies 는 없다 — 출력: $OUT"
+assert_contains "$OUT" "node.floor.metric" "[floor] node 지표 오류를 지목한다"
 
 # 소유 문제와 하한 미달이 겹치면 게이트(3)가 경고(1)를 이긴다 — 경고는 그대로 찍는다.
 fresh; floor go statements 46
