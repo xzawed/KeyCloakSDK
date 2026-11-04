@@ -12,9 +12,10 @@
 //! ⚠️ 칸 하나를 바꾸면 등록부 `token-response-class-divergent` 의 아홉 언어 표도 함께 본다 — 계급은 언어 사이 계약이다.
 //! 2026-11-04 까지는 R1·R2·R4·R6·E 가 S1 에서 `Transport` 였고, S2 는 R4 만 `Auth` 였다(언어 안 분리).
 
+use keycloak_sdk::jwks::JwksStore;
 use keycloak_sdk::{
-    AdminError, AuthClient, ClientCredentialsTokenProvider, KeycloakClient, KeycloakConfig,
-    KeycloakError, TokenProvider, reqwest,
+    AdminError, AuthClient, ClientCredentialsTokenProvider, JwtValidator, KeycloakClient,
+    KeycloakConfig, KeycloakError, OidcEndpoints, TokenProvider, reqwest,
 };
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -219,4 +220,28 @@ async fn token_response_class_follows_the_nine_language_decision() {
         }
     }
     assert!(wrong.is_empty(), "계급표와 다른 칸:\n{}", wrong.join("\n"));
+}
+
+/// 저수준 `AuthClient::new` 에 리다이렉트를 따라가는 클라이언트를 주면 X1 이 openidconnect 경로에서도 reqwest 의 리다이렉트
+/// 실패가 된다 — `map_token_err` 의 `Reqwest` 갈래(공유 클라이언트는 3xx 를 그대로 받아 이 갈래에 안 닿는다).
+#[tokio::test]
+async fn injected_following_client_reports_a_redirect_loop_as_auth() {
+    let server = MockServer::start().await;
+    let row = rows()
+        .into_iter()
+        .find(|r| r.redirect_to_self)
+        .expect("X1 row");
+    mount(&server, &row).await;
+    let cfg = KeycloakConfig::new(server.uri(), row.realm, "it-client")
+        .expect("config")
+        .with_client_secret("s");
+    let endpoints = OidcEndpoints::new(&cfg);
+    let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+    let validator = JwtValidator::new(&cfg, &endpoints, jwks).expect("validator");
+    let auth = AuthClient::new(cfg, endpoints, reqwest::Client::new(), validator).expect("auth");
+    let cc = auth.client_credentials_token().await.map(|_| ());
+    let introspect = auth.introspect("at").await.map(|_| ());
+    assert_eq!([kind(&cc), kind(&introspect)], ["Auth", "Auth"]);
+    let hits = server.received_requests().await.expect("recording").len();
+    assert!(hits > 2, "따라가지 않았다 — 요청 {hits} 번");
 }
