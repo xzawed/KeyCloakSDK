@@ -335,7 +335,9 @@ class AuthClient:
                 # IdP가 기형 JWKS를 주는 것은 가정이 아니다 — 프록시 오구성·부분 배포·중간자가
                 # 모두 이 모양이 된다.
                 try:
-                    key_set = KeySet.import_key_set(cast(KeySetSerialization, certs))
+                    # ⚠️ 타입을 적어 둔다 — joserfc 1.8.0 에서 `import_key_set` 반환이
+                    # `Any` 라 mypy strict 가 `return key_set` 을 막았다(1.7.2 는 `KeySet`).
+                    key_set: KeySet = KeySet.import_key_set(cast(KeySetSerialization, certs))
                 except Exception as exc:
                     raise TokenValidationError(
                         f"malformed JWKS from the identity provider: {exc}"
