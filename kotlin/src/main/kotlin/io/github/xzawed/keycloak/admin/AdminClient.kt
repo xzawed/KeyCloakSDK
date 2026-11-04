@@ -39,6 +39,8 @@ import org.jboss.resteasy.client.jaxrs.engines.HttpContextProvider
 import org.jboss.resteasy.client.jaxrs.internal.ClientInvocation
 import org.jboss.resteasy.client.jaxrs.internal.ClientResponse
 import org.jboss.resteasy.client.jaxrs.internal.ClientResponseContextImpl
+import org.jboss.resteasy.client.jaxrs.spi.ClientConfigProvider
+import org.jboss.resteasy.spi.PriorityServiceLoader
 import org.keycloak.OAuth2Constants
 import org.keycloak.admin.client.JacksonProvider
 import org.keycloak.admin.client.Keycloak
@@ -143,7 +145,11 @@ public class AdminClient internal constructor(
                     .newBuilder()
                     .connectTimeout(config.connectTimeout.toMillis(), TimeUnit.MILLISECONDS)
                     .readTimeout(config.readTimeout.toMillis(), TimeUnit.MILLISECONDS) as ResteasyClientBuilder
-            builder.httpEngine(BoundedEngineBuilder(config.readTimeout.toMillis().toInt()).resteasyClientBuilder(builder).build())
+            builder.httpEngine(
+                BoundedEngineBuilder(config.readTimeout.toMillis().toInt(), builder.getConnectionTTL(TimeUnit.MILLISECONDS))
+                    .resteasyClientBuilder(builder)
+                    .build(),
+            )
             return builder
                 .register(JacksonProvider::class.java, 100)
                 .register(StreamMessageBodyReader::class.java)
@@ -167,6 +173,7 @@ public class AdminClient internal constructor(
 @Suppress("DEPRECATION")
 private class BoundedEngineBuilder(
     private val readTimeoutMillis: Int,
+    private val ttlMillis: Long,
 ) : org.jboss.resteasy.client.jaxrs.engines.ClientHttpEngineBuilder43() {
     override fun createEngine(
         cm: HttpClientConnectionManager?,
@@ -177,11 +184,34 @@ private class BoundedEngineBuilder(
         theContext: SSLContext?,
     ): ClientHttpEngine {
         // 풀 크기가 0 보다 크면 RESTEasy 는 풀을 짓는다(기본 50) — 다른 것이 오면 여기서 터져 조용히 한도를 잃지 않는다
-        (cm as PoolingHttpClientConnectionManager).defaultConnectionConfig = ADMIN_BOUNDED_HEAD
+        val pool = deadlinedPool(cm as PoolingHttpClientConnectionManager, theContext, verifier, ttlMillis)
+        pool.defaultConnectionConfig = ADMIN_BOUNDED_HEAD
         // RESTEasy 는 ApacheHttpClient43Engine 을 짓는다 — 다른 것이 오면 여기서 터져 조용히 끊기를 잃지 않는다
-        val built = super.createEngine(cm, rcBuilder, defaultProxy, responseBufferSize, verifier, theContext)
+        val built = super.createEngine(pool, rcBuilder, defaultProxy, responseBufferSize, verifier, theContext)
         return AdminEngine(built as org.jboss.resteasy.client.jaxrs.engines.ApacheHttpClient43Engine, readTimeoutMillis)
     }
+}
+
+/**
+ * RESTEasy 가 지은 풀을 이 레인의 소켓([AdminSockets] — 읽기마다 교환의 마감을 본다)을 쓰는 같은 설정의 풀로 바꾼다(Java
+ * `AdminClient.deadlinedPool` 동형). 응답 머리 · 틀 · TLS 레코드가 그 소켓 읽기로 오므로 마감이 거기까지 닿는다. TLS 근원은 RESTEasy 의 기본
+ * 분기와 같다 — 빌더에 준 것([tls]), 없으면 [SSLContext.getDefault](이 SDK 는 TLS 를 따로 설정하지 않는다).
+ *
+ * ⚠️ 컨테이너가 `ClientConfigProvider` 를 두면(WildFly Elytron 등) RESTEasy 는 그 공급자의 SSL 소켓을 쓴다 — 그 정책을 바꾸지 않도록
+ * RESTEasy 의 풀을 그대로 둔다(그때 마감은 엔진의 스트림만 본다 · 머리 · 틀은 읽기 타임아웃이 묶는다).
+ */
+private fun deadlinedPool(
+    built: PoolingHttpClientConnectionManager,
+    tls: SSLContext?,
+    verifier: HostnameVerifier?,
+    ttlMillis: Long,
+): PoolingHttpClientConnectionManager {
+    // RESTEasy 가 공급자를 찾는 그 클래스 로더 — 스레드의 문맥 로더, 없으면 그 타입의 로더
+    val loader = Thread.currentThread().contextClassLoader ?: ClientConfigProvider::class.java.classLoader
+    if (PriorityServiceLoader.load(ClientConfigProvider::class.java, loader).first().isPresent) return built
+    val pool = AdminSockets.pool(built, tls ?: SSLContext.getDefault(), verifier, ttlMillis)
+    built.shutdown() // 쓰이지 않은 채 버려지는 RESTEasy 의 풀 — 연결이 없으니 닫기만 한다
+    return pool
 }
 
 /**
@@ -249,19 +279,26 @@ internal class AdminEngine(
      */
     override fun invoke(inv: Invocation): Response {
         val request = inv as ClientInvocation
-        val response = super.invoke(inv)
-        val entity = ClientResponseContextImpl(response as ClientResponse)
-        val input = entity.entityStream
-        if (input != null) {
-            val limit =
-                if (response.status < 300 || TokenResponseGuard.guardsErrorBody(request.method, request.uri)) {
-                    Long.MAX_VALUE
-                } else {
-                    ERROR_BODY_CAP.toLong()
-                }
-            entity.entityStream = Settled(input, request.mutableProperties[EXCHANGE] as Exchange, limit)
+        var bodyLeft = false
+        try {
+            val response = super.invoke(inv)
+            val entity = ClientResponseContextImpl(response as ClientResponse)
+            val input = entity.entityStream
+            if (input != null) {
+                val limit =
+                    if (response.status < 300 || TokenResponseGuard.guardsErrorBody(request.method, request.uri)) {
+                        Long.MAX_VALUE
+                    } else {
+                        ERROR_BODY_CAP.toLong()
+                    }
+                entity.entityStream = Settled(input, request.mutableProperties[EXCHANGE] as Exchange, limit)
+                bodyLeft = true
+            }
+            return response
+        } finally {
+            // 본문이 남았으면 교환은 그 스트림이 닫힐 때 끝난다([Settled.close]) — 아니면 여기서 끝났다(실패 · 본문 없음)
+            if (!bodyLeft) AdminSockets.disarm()
         }
-        return response
     }
 
     override fun close() {
@@ -287,11 +324,15 @@ internal class AdminEngine(
         @Volatile
         private var sentAt = System.nanoTime()
 
+        /** 보낸 때를 적고, 이 스레드의 소켓 읽기에도 같은 마감을 건다([AdminSockets.arm] — 머리 · 틀 · TLS 레코드가 그 읽기로 온다). */
         override fun setAttribute(
             id: String?,
             obj: Any?,
         ) {
-            if (id == HttpCoreContext.HTTP_REQ_SENT && obj == false) sentAt = System.nanoTime()
+            if (id == HttpCoreContext.HTTP_REQ_SENT && obj == false) {
+                sentAt = System.nanoTime()
+                AdminSockets.arm(sentAt, readTimeoutMillis)
+            }
             super.setAttribute(id, obj)
         }
 
@@ -379,20 +420,25 @@ internal class AdminEngine(
             return n
         }
 
+        /** 교환의 끝 — 그래서 이 스레드의 소켓 마감도 여기서 지운다([AdminSockets.disarm]). */
         override fun close() {
             if (closed) return
             closed = true
-            if (eof || exchange.endsNow(input)) {
-                input.close()
-                return
-            }
-            exchange.cut()
             try {
-                input.close()
-            } catch (cutAlready: IOException) {
-                // 끊긴 연결의 닫기는 실패할 수 있다 — HttpCore 가 버퍼의 나머지를 읽은 뒤 TLS 소켓은 -1 을 돌려줘 「Premature end of
-                // Content-Length delimited message body」(ConnectionClosedException — HttpClient 가 거르는 SocketException 이 아니다)가 났고
-                // RESTEasy 가 그것을 ProcessingException 으로 내 결과를 얻은 호출이 전송 실패가 됐다(Java 실측, TLS 1.3 40/40). 버린다.
+                if (eof || exchange.endsNow(input)) {
+                    input.close()
+                    return
+                }
+                exchange.cut()
+                try {
+                    input.close()
+                } catch (cutAlready: IOException) {
+                    // 끊긴 연결의 닫기는 실패할 수 있다 — HttpCore 가 버퍼의 나머지를 읽은 뒤 TLS 소켓은 -1 을 돌려줘 「Premature end of
+                    // Content-Length delimited message body」(ConnectionClosedException — HttpClient 가 거르는 SocketException 이 아니다)가
+                    // 났고 RESTEasy 가 그것을 ProcessingException 으로 내 결과를 얻은 호출이 전송 실패가 됐다(Java 실측, TLS 1.3 40/40). 버린다.
+                }
+            } finally {
+                AdminSockets.disarm()
             }
         }
     }
