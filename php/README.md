@@ -88,7 +88,7 @@ Two scope limits worth knowing. The JWKS cache and its rate limit are per-`JwksS
 
 ## Upgrading from `1.0.0`
 
-**No public API was removed or changed incompatibly since `1.0.0`.** On every build CI compares the API with the previous release (see [Versioning and support](https://github.com/xzawed/KeyCloakSDK/blob/main/php/README.md#versioning-and-support)). What changed is **behaviour**, which that comparison cannot see. Below is every change from `1.1.0` to `1.5.2` that code written against `1.0.0` can notice without being edited. Each item names the release that brought it, so on a later `1.x` you can skip the ones at or below your version.
+**No public API was removed or changed incompatibly since `1.0.0`.** On every build CI compares the API with the previous release (see [Versioning and support](https://github.com/xzawed/KeyCloakSDK/blob/main/php/README.md#versioning-and-support)). What changed is **behaviour**, which that comparison cannot see. Below are the changes from `1.1.0` to `1.5.2` that code written against `1.0.0` can notice without being edited, collected from the release notes and the source diff between the tags (the [changelog](https://github.com/xzawed/KeyCloakSDK/blob/main/CHANGELOG.md) has the measurements). Each item names the release that brought it, so on a later `1.x` you can skip the ones at or below your version.
 
 **Return values**
 
