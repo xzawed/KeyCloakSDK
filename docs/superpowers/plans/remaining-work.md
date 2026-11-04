@@ -1,5 +1,5 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=174144 max-raw-bytes=195059 -->
+<!-- doc-budget: max-bytes=172800 max-raw-bytes=193715 -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -147,7 +147,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `java-rules-close-scope-ambiguous` **[L/S · 닫힘 2026-09-06 #423]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
-## B. 재검증 대상 — 52건 (열림 13)
+## B. 재검증 대상 — 52건 (열림 12)
 
 3렌즈 통과, 원장은 개별 재실행을 하지 않았다. 이번 인벤토리에서 전량 파일 확인 — 기각 권고 0건.
 
@@ -262,11 +262,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
   - ✅ **형제 타입(인가요청)은 #437 이 닫았다** — 축 1d 신설. 앵커는 훅 이름이 아니라 **마스킹 자체**(`***` 이거나 그 필드의 mask 호출)이고, java 는 훅이 **없어서 안전**하므로 「`record` 로 바뀌지 않았다」는 **음성 앵커**다. 같은 변이가 옛 스크립트에서 8/8 `SILENT` → 새 스크립트에서 9/9 `CAUGHT`. 세우자 rust 만 빨개졌고 그것이 진짜 결함이라 테스트를 썼다(`fn debug_masks_code_verifier`).
   - ⏸ **남은 것은 「파생 열거」다 — 보류(2026-09-06).** 표는 여전히 손으로 적혀 있고, **세 번째** 비밀 보유 값 타입이 생기면 침묵한다. 파생을 이 자리에 넣지 않은 이유는 `rules-command-reference-existence-guard` 와 같다 — 이 자가테스트는 required 체크 **`doc-facts`** 안에서 `paths:` 필터 없이 돌고 룰셋 `PRIMARY` 는 `bypass_actors: []` 라, **오탐 하나가 모든 PR 을 막는다**(실측: `git grep -n 'test-security-defaults' .github/` → `repo-hygiene.yml` 의 `doc-facts` 잡 한 곳).
   - **되살릴 조건**: 비밀 필드를 쥔 값 타입을 소스에서 파생하는 열거를 **required 밖**(nightly 등)에서 먼저 돌려 오탐 0 을 실측할 때. 후보 신호의 노이즈는 이미 쟀다 — 9언어 비테스트 소스에서 비밀 이름을 언급하는 파일은 **83개**(java 12·kotlin 9·python 12·node 8·go 7·dotnet 9·php 9·rust 9·ruby 8)이고 대부분 클라이언트·프로바이더라 **그대로는 쓸 수 없다**. 값 타입으로 좁히는 축이 먼저다.
-- [ ] `php-upgrade-note-omits-isexpired-flip` **[L/S · 신규 2026-09-06]** PHP 의 「0.1.0 에서 올리기」는 옳으나, **`1.0.0` 이후의 소비자 가시 동작 변경이 어디에도 없다** · `php/README.md:104`
-  - 실측: `TokenSet::isExpired()` 가 만료 시각 미상을 `false`(유효) → `true`(만료)로 뒤집은 커밋 `0fde597` 은 **`php-v1.0.0` 뒤**다. 그래서 :104 의 「Nothing else changed」는 거짓이 아니고(문장이 admin 식별자 넷으로 한정된다), 빠진 것은 **아직 없는 「1.0.0 에서 올리기」 절**이다. `json_encode` 마스킹 확대도 같은 창에 있다.
-  - **릴리스를 기다리지 않는다** — 1.1.0–1.5.2(`git tag --contains 0fde597 -l 'php-v*'`)가 다 놓쳤다(``git log --tags -S'Upgrading from `1.' -- php/README.md`` 0 건 · 대조 `0.1.0` 1 건). 절이 없으면 소비자는 API 표면이 같다는 이유로 이 변경을 못 본다(README 자신이 「게이트는 표면만 본다」고 적는 바로 그 경우다).
-  - 방법은 배치 1과 동일: 고정 스냅샷(`git worktree` · **커밋된 상태로**) · 구조화 인용 `(path,line,exact_quote)` · 인용 게이트 선실행 · **렌즈 하나 + 실행강제**(「X 가 소유한다」·「N 개가 전부」는 조회를 실행해 출력을 붙일 것) · 서브에이전트에 `git config` 금지 명시.
-  - 회수율 실측: 배치 1 은 10개 문서에서 **H 4건 포함 전건 지적**, 그중 최고가치는 **가드가 소비자에게 거짓을 집행하던 것**이었다(`jvm-17-floor-never-shipped`). 소비자 문서가 내부 규칙 파일보다 안전할 것이라는 사전 가정은 **틀렸다**.
+- [x] `php-upgrade-note-omits-isexpired-flip` **[L/S · 신규 2026-09-06 · 닫힘 2026-11-04]** `php/README.md` 에 「Upgrading from `1.0.0`」 — `php-v1.0.0..php-v1.5.2` 의 소비자 가시 변경을 태그 스냅샷·구조화 인용으로 셌다(CHANGELOG 밖 다섯 포함). 세면서 게시 문서의 거짓 둘(1.5.2 「메시지 그대로」 · 1.5.0 「`exchangeCode()` 가 `TokenValidationError`」)이 나와 `[Unreleased]` 로 바로잡았다
 - [x] `openid-scope-fallback-empty-only` **[M/S · 닫힘 2026-09-11]** `Scope.isEmpty()` 는 **원소 수**를 세므로 공백 원소 하나가 폴백을 건너뛰고 `IllegalArgumentException("The value must not be null or empty string")` 이 §4 경계를 넘었다. 도달 가능: `KeycloakConfig` 에 scope 값 검증이 **0건**이다. 생성 전에 공백 원소를 거르도록 Java·Kotlin 을 함께 고쳤다. 변이 3/3 `CAUGHT`(명명된 테스트 실패로 확인). ⚠️ **`scope = scope` 변이는 컴파일이 안 돼 `INVALID` 였다** — 「BUILD FAILED」를 「가드가 잡았다」로 읽으면 안 된다.
 - [ ] `boundary-exception-conversion-incomplete` **[M/M]** 경계 변환의 catch 목록이 하위 라이브러리가 실제로 던지는 예외 집합보다 좁다 · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/jwt.kt:91`
   - ⚠️ **범위 정정**: 원장은 「Kotlin·Ruby」 2개라 적었으나 **Java·Node·.NET 을 빠뜨렸다**. ⚠️ 그리고 **원장이 지목한 Ruby 줄은 clean 이다** — `ruby/lib/keycloak_sdk/jwt_validator.rb:36` 의 `rescue JWT::DecodeError` 는 이미 JWKError 를 잡는다(실측: 설치된 `jwt-3.2.0/lib/jwt/error.rb:53` 이 `class JWKError < DecodeError`). **고치기 전에 지목부터 다시 잡을 것** — 안 그러면 clean 한 자리를 건드린다.
