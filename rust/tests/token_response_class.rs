@@ -38,7 +38,7 @@ const CALLS: [&str; 8] = [
     "admin list_realms",
 ];
 
-/// (realm, `CALLS` 순서의 계급). 마지막 두 행은 닿지 않는 IdP(연결 거부)와 보내지 못한 요청이다.
+/// (realm, `CALLS` 순서의 계급). 마지막 세 행은 본문이 끊기는 IdP · 닿지 않는 IdP(연결 거부) · 보내지 못한 요청이다.
 #[rustfmt::skip]
 const EXPECTED: &[(&str, [&str; 8])] = &[
     //                             cc           refresh      exch         exch(redir)  AuthClient TP introspect   provider     admin
@@ -52,6 +52,7 @@ const EXPECTED: &[(&str, [&str; 8])] = &[
     ("e1-200-empty",              ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
     ("e2-502-empty",              ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
     ("x1-307-loop",               ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
+    ("t-truncated-body",          ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
     ("n-unreachable",             ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
     ("u-uri-too-long",            ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
 ];
@@ -128,6 +129,52 @@ async fn mount(server: &MockServer, row: &Row) {
     }
 }
 
+/// 머리는 온전하고 본문만 Content-Length 보다 짧게 끊는 가짜 IdP — 요청을 끝까지 읽은 뒤 답한다(보내기 실패와 섞이지 않게).
+/// ⚠️ reqwest 0.12 는 이 끊김을 `is_decode()` 로 싼다 — 그것으로 계급을 가르면 이 행이 `Auth` 가 된다(#951 에서 실제로 그랬다).
+fn truncating_idp() -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let base = format!("http://{}", listener.local_addr().expect("addr"));
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut s) = stream else { continue };
+            std::thread::spawn(move || {
+                use std::io::{Read, Write};
+                let (mut req, mut buf) = (Vec::new(), [0u8; 4096]);
+                let mut read_more = |req: &mut Vec<u8>| match s.read(&mut buf) {
+                    Ok(n) if n > 0 => {
+                        req.extend_from_slice(&buf[..n]);
+                        true
+                    }
+                    _ => false,
+                };
+                let body_at = loop {
+                    if let Some(i) = req.windows(4).position(|w| w == b"\r\n\r\n") {
+                        break i + 4;
+                    }
+                    if !read_more(&mut req) {
+                        return;
+                    }
+                };
+                let head = String::from_utf8_lossy(&req[..body_at]).to_ascii_lowercase();
+                let len = head
+                    .lines()
+                    .find_map(|l| l.strip_prefix("content-length:"))
+                    .and_then(|v| v.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                while req.len() < body_at + len {
+                    if !read_more(&mut req) {
+                        return;
+                    }
+                }
+                let _ = s.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\nConnection: close\r\n\r\n{\"access_token\"",
+                );
+            });
+        }
+    });
+    base
+}
+
 type Outcome = std::result::Result<(), KeycloakError>;
 
 /// 열마다 새 클라이언트다(provider 는 토큰을 캐시한다). 동시에 부른다 — 윈도에서 거부된 연결은 한 번에 수 초다.
@@ -190,6 +237,10 @@ async fn token_response_class_follows_the_nine_language_decision() {
             .with_client_secret("s");
         got.push((row.realm, drive(cfg).await));
     }
+    let cut = KeycloakConfig::new(truncating_idp(), "t", "it-client")
+        .expect("config")
+        .with_client_secret("s");
+    got.push(("t-truncated-body", drive(cut).await));
     let down = KeycloakConfig::new("http://127.0.0.1:1", "n", "it-client")
         .expect("config")
         .with_client_secret("s");
