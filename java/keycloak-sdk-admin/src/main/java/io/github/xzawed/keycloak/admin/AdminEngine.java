@@ -40,8 +40,8 @@ import org.jboss.resteasy.client.jaxrs.internal.ClientResponseContextImpl;
  * <p>응답은 요청을 보낸 때부터 읽기 타임아웃 안에 다 읽는다 — {@link Settled} 가 읽기마다 앞뒤로 그 교환의 마감을 본다({@link Exchange#due}).
  * 읽기 타임아웃은 읽기 하나를 묶을 뿐이라 바이트를 그보다 조금 짧은 간격으로 흘리는 서버 앞에서 응답 하나가 흘린 바이트마다 간격 하나씩
  * 걸렸다(실측 {@code ResponseReadDeadlineTest}). 토큰 부여(가드의 상한 읽기)·자원의 성공 본문(결합)·오류 본문이 모두 그 스트림을 지난다 —
- * {@code raw()} 의 응답도. ⚠️ 엔진의 스트림이라 응답 머리와, 읽기 하나 안의 틀(청크 크기 줄·트레일러)·TLS 레코드는 보지 못한다 — 그 소켓은
- * RESTEasy 가 지은 풀의 것이다(그 자리는 읽기마다의 타임아웃이 묶는다 — 같은 시험 머리의 실측).
+ * {@code raw()} 의 응답도. 엔진의 스트림은 읽기 하나의 앞뒤만 보므로 응답 머리와, 읽기 하나 안의 틀(청크 크기 줄·트레일러)·TLS 레코드는
+ * 같은 마감을 그 교환의 소켓 읽기마다 본다({@link AdminSockets} — {@link Exchange} 가 보낼 때 걸고 교환의 끝이 지운다).
  */
 @SuppressWarnings("removal") // RESTEasy 6.2 의 기본 엔진 그 자체를 잇는다(AdminClient.buildTimeoutClient 설명)
 final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextProvider {

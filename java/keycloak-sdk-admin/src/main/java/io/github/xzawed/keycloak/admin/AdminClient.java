@@ -120,7 +120,8 @@ public final class AdminClient implements AutoCloseable {
    * (실측 {@code AdminResponseFramingTest}). 그 클래스는 RESTEasy 6.2 에서 제거 예정으로 표시돼 있지만 RESTEasy 자신이 기본 엔진을
    * 그것으로 짓는다 — 제거되면 여기가 컴파일되지 않아 다시 볼 자리를 알린다. 지은 엔진은 {@link AdminEngine} 이 감싼다 — 교환마다
    * 읽지 않고 끊을 손잡이를 달아, 가드가 거부한 응답과 결과를 얻은 자원 응답의 나머지를 HttpCore 가 비우지 않게 하고 오류 본문은
-   * 상한까지만 쥐며, 응답을 요청을 보낸 때부터 읽기 타임아웃 안에 다 읽는다(읽기 타임아웃이 그 마감의 길이다).
+   * 상한까지만 쥐며, 응답을 요청을 보낸 때부터 읽기 타임아웃 안에 다 읽는다(읽기 타임아웃이 그 마감의 길이다). 풀은 같은 설정으로 다시
+   * 짓는다({@link #deadlinedPool}) — 그 소켓 읽기마다 마감을 봐야 응답 머리·틀·TLS 레코드까지 닿는다.
    */
   @SuppressWarnings("removal")
   static Client buildTimeoutClient(KeycloakConfig config) { // 패키지 전용 — 프로바이더 등록 회귀테스트 시임

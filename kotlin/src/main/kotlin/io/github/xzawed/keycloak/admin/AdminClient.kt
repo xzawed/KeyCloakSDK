@@ -165,7 +165,8 @@ public class AdminClient internal constructor(
 }
 
 /**
- * RESTEasy 의 기본 엔진 빌더 그대로에 응답 틀의 한도만 더한다([AdminClient.buildTimeoutClient]). 그 클래스는 RESTEasy 6.2 에서 제거 예정으로
+ * RESTEasy 의 기본 엔진 빌더 그대로에 응답 틀의 한도를 더하고, 풀을 같은 설정으로 이 레인의 소켓([AdminSockets] — 읽기마다 교환의 마감을
+ * 본다)을 쓰게 다시 짓는다([deadlinedPool]) — 그래야 응답 머리·틀·TLS 레코드까지 마감이 닿는다([AdminClient.buildTimeoutClient]). 그 클래스는 RESTEasy 6.2 에서 제거 예정으로
  * 표시돼 있지만 RESTEasy 자신이 기본 엔진을 그것으로 짓는다 — 제거되면 여기가 컴파일되지 않아 다시 볼 자리를 알린다. 지은 엔진은
  * [AdminEngine] 이 감싼다 — 교환마다 읽지 않고 끊을 손잡이를 달아, 가드가 거부한 응답과 결과를 얻은 자원 응답의 나머지를 HttpCore 가
  * 비우지 않게 하고 오류 본문은 상한까지만 쥐며, 응답을 요청을 보낸 때부터 [readTimeoutMillis](설정의 읽기 타임아웃) 안에 다 읽는다.
@@ -236,8 +237,8 @@ private fun deadlinedPool(
  * 응답은 요청을 보낸 때부터 읽기 타임아웃([readTimeoutMillis]) 안에 다 읽는다 — [Settled] 가 읽기마다 앞뒤로 그 교환의 마감을 본다
  * ([Exchange.due]). 읽기 타임아웃은 읽기 하나를 묶을 뿐이라 바이트를 그보다 조금 짧은 간격으로 흘리는 서버 앞에서 응답 하나가 흘린 바이트마다
  * 간격 하나씩 걸렸다(실측 `admin.ResponseReadDeadlineTest`). 토큰 부여(가드의 상한 읽기)·자원의 성공 본문(결합)·오류 본문이 모두 그 스트림을
- * 지난다 — `raw()` 의 응답도. ⚠️ 엔진의 스트림이라 응답 머리와, 읽기 하나 안의 틀(청크 크기 줄·트레일러)·TLS 레코드는 보지 못한다 — 그
- * 소켓은 RESTEasy 가 지은 풀의 것이다(그 자리는 읽기마다의 타임아웃이 묶는다 — Java 커밋 메시지의 실측).
+ * 지난다 — `raw()` 의 응답도. 엔진의 스트림은 읽기 하나의 앞뒤만 보므로 응답 머리와, 읽기 하나 안의 틀(청크 크기 줄·트레일러)·TLS 레코드는
+ * 같은 마감을 그 교환의 소켓 읽기마다 본다([AdminSockets] — [Exchange] 가 보낼 때 걸고 교환의 끝이 지운다).
  */
 @Suppress("DEPRECATION")
 internal class AdminEngine(
