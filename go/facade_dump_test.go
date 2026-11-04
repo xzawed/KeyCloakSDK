@@ -61,7 +61,10 @@ var dumpWalkExempt = map[string]string{
 	"wireScrubBody": "응답 본문(http.Response.Body)을 감싸 읽는 동안만 산다 — 파사드가 쥐지 않는다. " +
 		"필드는 원래 본문 · 그 요청의 ctx · belowHTTPSlot 뿐이고 본문 바이트를 쥐지 않는다(cause.go)",
 	"belowHTTPSlot": "SDK 호출 하나의 ctx 값으로만 산다(withBelowHTTP) — 파사드가 쥐지 않는다. 필드는 그 호출의 요청이 만난 " +
-		"첫 오류 하나뿐이다(정화된 전송 오류 또는 ctx 의 오류 — 응답 바이트를 인용하지 않는다 · cause.go)",
+		"첫 오류 하나(정화된 전송 오류 또는 ctx 의 오류 — 응답 바이트를 인용하지 않는다)와 도착 기록(sent · arrived · cut 불리언 셋 " +
+		"· 마지막 응답의 상태 코드 정수)뿐이다(cause.go)",
+	"arrivalBody": "표시된 SDK 호출의 응답 본문(http.Response.Body)을 가장 바깥에서 감싸 읽는 동안만 산다 — 파사드가 쥐지 않는다. " +
+		"필드는 감싼 본문 · belowHTTPSlot 뿐이고 본문 바이트를 쥐지 않는다(cause.go)",
 	"cappedBody": "토큰 응답 본문을 감싸 상한까지 읽는 동안만 산다 — 파사드가 쥐지 않는다. " +
 		"필드는 원래 본문·상한 판정 플래그·센 바이트 수·끝 오류뿐이고 본문 바이트를 쥐지 않는다(tokencap.go)",
 	"adminBodyTransport": "*http.Client.Transport·resty 안에만 산다(wireScrubTransport 를 감싼다) — 걷기는 외부 타입(http.Client) 안으로 " +
@@ -187,7 +190,7 @@ func dumpRoots(t *testing.T) ([]dumpRoot, []string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// TransportError 는 postForm 경로(introspect·logout)에서 난다 — client-credentials 는 oauth2 를 거쳐 AuthError 다.
+	// 닿지 않는 IdP 는 모든 인증 레인에서 TransportError 다(#935 — 그랜트도, 예전에는 AuthError 였다). 뿌리는 introspect 의 것을 쓴다.
 	_, transportErr := down.Auth.Introspect(ctx, dumpCanaryAccess)
 	_, cfgErr := New(Config{})
 	for name, e := range map[string]error{"auth": authErr, "validation": valErr, "admin": adminErr, "transport": transportErr, "config": cfgErr} {

@@ -105,11 +105,11 @@ func ciCheck(t *testing.T, what string, err error, wantType string, elapsed time
 	}
 }
 
-// TestDeadlineDuringTheExchange_keepsItsIdentity — 인증 레인 여섯(그랜트 셋 · admin 로그인 · introspect · logout). 타입은 레인의
-// 계약 그대로다(README v1.2.3 노트 · causeWantKind — 그랜트는 *AuthError, 나머지는 *TransportError).
+// TestDeadlineDuringTheExchange_keepsItsIdentity — 인증 레인 여섯(그랜트 셋 · admin 로그인 · introspect · logout). 응답이 다 오지
+// 않았으니 여섯 다 *TransportError 다(#935 · token_response_class_test.go — 그랜트는 예전에 *AuthError 였다, README v1.2.3 노트).
 func TestDeadlineDuringTheExchange_keepsItsIdentity(t *testing.T) {
 	want := map[string]string{
-		callCC: "*keycloak.AuthError", callExchange: "*keycloak.AuthError", callRefresh: "*keycloak.AuthError",
+		callCC: "*keycloak.TransportError", callExchange: "*keycloak.TransportError", callRefresh: "*keycloak.TransportError",
 		callAdmin: "*keycloak.TransportError", callIntrospect: "*keycloak.TransportError", callLogout: "*keycloak.TransportError",
 	}
 	for _, d := range ciDeadlines() {
@@ -224,8 +224,8 @@ func TestBelowHTTPSlot_keepsTheConditionThatEndedTheRead(t *testing.T) {
 	}
 }
 
-// TestRefusedBeforeAnyResponse_keepsItsCause — 응답 전에 거부된 그랜트의 원인은 고치기 전 그대로 *url.Error 다(x/oauth2 가
-// 그 오류를 납작하게 만들지 않으므로 칸은 끼어들지 않는다 — lost 의 errors.Is 검사).
+// TestRefusedBeforeAnyResponse_keepsItsCause — 응답 전에 거부된 그랜트는 *TransportError 이고(#935 — 예전에는 *AuthError) 그 원인은
+// 고치기 전 그대로 *url.Error 다(x/oauth2 가 그 오류를 납작하게 만들지 않으므로 칸은 끼어들지 않는다 — lost 의 errors.Is 검사).
 func TestRefusedBeforeAnyResponse_keepsItsCause(t *testing.T) {
 	down, err := New(Config{ServerURL: "http://127.0.0.1:1", Realm: "r", ClientID: "c", ClientSecret: "s"})
 	if err != nil {
@@ -233,12 +233,12 @@ func TestRefusedBeforeAnyResponse_keepsItsCause(t *testing.T) {
 	}
 	for _, call := range []string{callCC, callExchange, callRefresh} {
 		err := causeRun(context.Background(), down, call)
-		var ae *AuthError
-		if !errors.As(err, &ae) {
-			t.Fatalf("%s: *keycloak.AuthError 여야 하는데 %T 다", call, err)
+		var te *TransportError
+		if !errors.As(err, &te) {
+			t.Fatalf("%s: *keycloak.TransportError 여야 하는데 %T 다", call, err)
 		}
-		if _, ok := ae.Cause.(*url.Error); !ok {
-			t.Errorf("%s: 원인이 *url.Error 여야 하는데 %T 다", call, ae.Cause)
+		if _, ok := te.Cause.(*url.Error); !ok {
+			t.Errorf("%s: 원인이 *url.Error 여야 하는데 %T 다", call, te.Cause)
 		}
 	}
 }

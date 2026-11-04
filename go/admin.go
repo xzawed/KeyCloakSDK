@@ -116,15 +116,15 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 	gc, tr := newAdminTransport(cfg)
 
 	tp := NewClientCredentialsTokenProvider(func(ctx context.Context) (*TokenSet, error) {
-		// The token response is capped (tokencap.go). gocloak flattens the cap's Read error into its message, and
-		// loginError keeps that message, so the flag is not needed here. It flattens a deadline's error too, which the
-		// transport keeps in below (cause.go).
-		ctx, _ = withTokenCap(ctx)
+		// The token response is capped (tokencap.go). gocloak flattens the cap's Read error into its message, which
+		// loginError keeps; the flag decides the class (over the cap = not read in full). gocloak flattens a deadline's
+		// error too, which the transport keeps in below — and below records whether the response arrived (cause.go).
+		ctx, capped := withTokenCap(ctx)
 		ctx, below := withBelowHTTP(ctx)
 		jwt, err := gc.LoginClient(ctx, cfg.ClientID, cfg.ClientSecret, cfg.Realm)
 		if err != nil {
 			// Not toSDKError: gocloak flattened the token response's error body into the message (cause.go).
-			return nil, loginError(err, below)
+			return nil, loginError(err, capped, below)
 		}
 		// gocloak reports a non-2xx it can still unmarshal as success — a 3xx surfaced by
 		// noFollowRedirect, or any body without an access_token, yields a zero-value JWT and a

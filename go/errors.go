@@ -18,8 +18,10 @@ type ConfigError struct{ Msg string }
 
 func (e *ConfigError) Error() string { return "keycloak: " + e.Msg }
 
-// AuthError signals an authentication / token-exchange failure. OAuthError
-// preserves the OAuth2 "error" code when present and in the RFC 6749 §5.2 grammar
+// AuthError signals an authentication / token-exchange failure: the IdP refused, its token, introspection or admin
+// login response arrived in full but is not usable (an error status, a body that is not the expected JSON, no access
+// token, a redirect), or the grant was refused before any request (an empty refresh token). OAuthError preserves the
+// OAuth2 "error" code when present and in the RFC 6749 §5.2 grammar
 // (1*NQSCHAR — printable ASCII without '"' and '\'), unchanged; it is empty otherwise.
 type AuthError struct {
 	Msg        string
@@ -76,7 +78,10 @@ func (e *AdminError) Is(target error) bool {
 	return false
 }
 
-// TransportError signals a network/transport failure (no HTTP response).
+// TransportError signals that the request could not be sent (a network failure, a request URL that cannot be built from
+// the Config) or that its response did not arrive in full: a timeout, a body cut short, broken HTTP framing, or a token
+// response over the size cap. On the admin facade's resource
+// calls it is also any failure gocloak reports without an HTTP status (an undecodable resource body among them).
 type TransportError struct {
 	Msg   string
 	Cause error

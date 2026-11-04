@@ -173,15 +173,14 @@ func (p *capIdP) client(t *testing.T) *Client {
 // capLane 은 상한이 걸리는 공개 호출 하나다. run 은 그 호출의 오류를 돌려주고, 성공이면 토큰이 끝까지 갔는지 본다.
 type capLane struct {
 	name string
-	// over 는 상한을 넘는 본문에서 이 레인이 돌려줘야 하는 SDK 오류 타입이다 — 그 레인이 **이미** 실패한
-	// 응답에 쓰던 타입: 그랜트는 *AuthError, admin 토큰 요청은 2xx 본문을 못 읽을 때의 *TransportError,
-	// introspect·logout 은 거부한 응답의 *AuthError.
+	// over 는 상한을 넘는 본문에서 이 레인이 돌려줘야 하는 SDK 오류 타입이다 — 다 읽지 않은 응답이라 레인 넷 전부
+	// *TransportError(#935 판정 — 그랜트·introspect·logout 은 예전에 *AuthError 였다, token_response_class_test.go).
 	over string
 	run  func(t *testing.T, p *capIdP, c *Client, s capShape) error
 }
 
 func capGrantLane(name string, grant func(ctx context.Context, c *Client) (*TokenSet, error)) capLane {
-	return capLane{name: name, over: "*keycloak.AuthError", run: func(t *testing.T, _ *capIdP, c *Client, s capShape) error {
+	return capLane{name: name, over: "*keycloak.TransportError", run: func(t *testing.T, _ *capIdP, c *Client, s capShape) error {
 		ts, err := grant(context.Background(), c)
 		if err == nil && len(ts.AccessToken) != s.tokLen {
 			t.Fatalf("access_token %d bytes, want %d", len(ts.AccessToken), s.tokLen)
@@ -216,7 +215,7 @@ var capLanes = []capLane{
 		}
 		return nil
 	}},
-	{name: "Introspect", over: "*keycloak.AuthError", run: func(t *testing.T, p *capIdP, c *Client, s capShape) error {
+	{name: "Introspect", over: "*keycloak.TransportError", run: func(t *testing.T, p *capIdP, c *Client, s capShape) error {
 		tok := capJWT(s.tokLen)
 		res, err := c.Auth.Introspect(context.Background(), tok)
 		if err != nil {
@@ -230,7 +229,7 @@ var capLanes = []capLane{
 		}
 		return nil
 	}},
-	{name: "Logout", over: "*keycloak.AuthError", run: func(t *testing.T, p *capIdP, c *Client, s capShape) error {
+	{name: "Logout", over: "*keycloak.TransportError", run: func(t *testing.T, p *capIdP, c *Client, s capShape) error {
 		rt := capJWT(s.tokLen)
 		if err := c.Auth.Logout(context.Background(), rt); err != nil {
 			return err

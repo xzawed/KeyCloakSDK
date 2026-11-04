@@ -227,8 +227,10 @@ func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Val
 	if err != nil {
 		return nil, &TransportError{Msg: err.Error(), Cause: err}
 	}
+	// Over the cap the response was not read in full — the same class as a body cut short (#935; it used to be *AuthError).
 	if len(body) > tokenResponseMaxBytes {
-		return nil, &AuthError{Msg: fmt.Sprintf("response from %s exceeds %d bytes", endpoint, tokenResponseMaxBytes)}
+		return nil, &TransportError{Msg: fmt.Sprintf("response from %s exceeds %d bytes", endpoint, tokenResponseMaxBytes),
+			Cause: errTokenResponseTooLarge}
 	}
 	// Success is 2xx. `>= 400` alone read a 3xx as success, and the SDK deliberately does not follow
 	// redirects (noFollowRedirect surfaces the 3xx here), so that path was reachable: Logout returned
