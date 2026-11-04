@@ -35,12 +35,65 @@ final class AdminSockets {
   private static final ThreadLocal<long[]> DEADLINE = new ThreadLocal<>();
 
   /** 평문 — 맺는 것은 HttpClient 의 기본 그대로, 소켓만 이 레인의 것이다. */
-  static final ConnectionSocketFactory PLAIN = new PlainConnectionSocketFactory() {
+  static final ConnectionSocketFactory PLAIN = new PlainSockets();
+
+  // ⚠️ 아래 넷은 익명 클래스로 두지 않는다 — 풀이 쥐어 파사드에서 닿는 객체라, 파사드를 걷는 시험(HostilePathMatrixTest)이 그 타입을 산출물의
+  // 타입 전수와 견주는데 그 전수는 익명 클래스를 뺀다(실측: AdminSockets$1–$4 「산출물 전수에 없다」 — AdminEngine 이 람다를 두지 않는 까닭과 같다).
+
+  /** 평문 소켓 공장 — {@link #socket()} 을 맺는다. */
+  private static final class PlainSockets extends PlainConnectionSocketFactory {
     @Override
     public Socket createSocket(HttpContext context) {
       return socket();
     }
-  };
+  }
+
+  /** TLS 소켓 공장 — TLS 를 얹을 평문 소켓만 {@link #socket()} 이다. */
+  private static final class TlsSockets extends SSLConnectionSocketFactory {
+    TlsSockets(SSLContext context, HostnameVerifier verifier) {
+      super(context, verifier);
+    }
+
+    @Override
+    public Socket createSocket(HttpContext context) {
+      return socket();
+    }
+  }
+
+  /** 입력 스트림이 읽기마다 마감을 보는 소켓({@link #deadlined}). */
+  private static final class DeadlineSocket extends Socket {
+    @Override
+    public InputStream getInputStream() throws IOException {
+      return deadlined(super.getInputStream());
+    }
+  }
+
+  /** 읽기 앞뒤로 이 스레드의 마감을 보는 입력 스트림({@link #deadlined}). */
+  private static final class DeadlinedStream extends FilterInputStream {
+    DeadlinedStream(InputStream socket) {
+      super(socket);
+    }
+
+    @Override
+    public int read() throws IOException {
+      long[] deadline = DEADLINE.get();
+      if (deadline == null) return super.read();
+      due(deadline);
+      int b = super.read();
+      due(deadline);
+      return b;
+    }
+
+    @Override
+    public int read(byte[] buffer, int offset, int length) throws IOException {
+      long[] deadline = DEADLINE.get();
+      if (deadline == null) return super.read(buffer, offset, length);
+      due(deadline);
+      int n = super.read(buffer, offset, length);
+      due(deadline);
+      return n;
+    }
+  }
 
   private AdminSockets() {
   }
@@ -85,12 +138,7 @@ final class AdminSockets {
 
   /** TLS — 검증기·근원은 RESTEasy 가 고른 그대로, TLS 를 얹을 평문 소켓만 이 레인의 것이다. */
   static ConnectionSocketFactory tls(SSLContext context, HostnameVerifier verifier) {
-    return new SSLConnectionSocketFactory(context, verifier) {
-      @Override
-      public Socket createSocket(HttpContext ctx) {
-        return socket();
-      }
-    };
+    return new TlsSockets(context, verifier);
   }
 
   /**
@@ -115,12 +163,7 @@ final class AdminSockets {
 
   /** 이 레인의 소켓 — JDK 의 기본 소켓이되 그 입력 스트림이 읽기마다 마감을 본다({@link #deadlined}). */
   static Socket socket() {
-    return new Socket() {
-      @Override
-      public InputStream getInputStream() throws IOException {
-        return deadlined(super.getInputStream());
-      }
-    };
+    return new DeadlineSocket();
   }
 
   /**
@@ -129,27 +172,7 @@ final class AdminSockets {
    * 스레드의 읽기는 그대로다.
    */
   static InputStream deadlined(InputStream socket) {
-    return new FilterInputStream(socket) {
-      @Override
-      public int read() throws IOException {
-        long[] deadline = DEADLINE.get();
-        if (deadline == null) return super.read();
-        due(deadline);
-        int b = super.read();
-        due(deadline);
-        return b;
-      }
-
-      @Override
-      public int read(byte[] buffer, int offset, int length) throws IOException {
-        long[] deadline = DEADLINE.get();
-        if (deadline == null) return super.read(buffer, offset, length);
-        due(deadline);
-        int n = super.read(buffer, offset, length);
-        due(deadline);
-        return n;
-      }
-    };
+    return new DeadlinedStream(socket);
   }
 
   /** 마감이 지났으면 읽기 타임아웃과 같은 타입으로 — 메시지는 마감의 길이뿐이다(응답을 인용하지 않는다 · 엔진의 스트림과 같은 문구). */
