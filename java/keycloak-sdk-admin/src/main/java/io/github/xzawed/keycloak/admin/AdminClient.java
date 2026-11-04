@@ -8,6 +8,7 @@ import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.ClientBuilder;
 import jakarta.ws.rs.client.ClientResponseFilter;
 import jakarta.ws.rs.ext.ReaderInterceptor;
+import java.security.NoSuchAlgorithmException;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.HostnameVerifier;
@@ -22,6 +23,8 @@ import org.jboss.resteasy.client.jaxrs.ClientHttpEngine;
 import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder;
 import org.jboss.resteasy.client.jaxrs.engines.ApacheHttpClient43Engine;
 import org.jboss.resteasy.client.jaxrs.engines.ClientHttpEngineBuilder43;
+import org.jboss.resteasy.client.jaxrs.spi.ClientConfigProvider;
+import org.jboss.resteasy.spi.PriorityServiceLoader;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.JacksonProvider;
 import org.keycloak.admin.client.Keycloak;
@@ -117,7 +120,8 @@ public final class AdminClient implements AutoCloseable {
    * (실측 {@code AdminResponseFramingTest}). 그 클래스는 RESTEasy 6.2 에서 제거 예정으로 표시돼 있지만 RESTEasy 자신이 기본 엔진을
    * 그것으로 짓는다 — 제거되면 여기가 컴파일되지 않아 다시 볼 자리를 알린다. 지은 엔진은 {@link AdminEngine} 이 감싼다 — 교환마다
    * 읽지 않고 끊을 손잡이를 달아, 가드가 거부한 응답과 결과를 얻은 자원 응답의 나머지를 HttpCore 가 비우지 않게 하고 오류 본문은
-   * 상한까지만 쥐며, 응답을 요청을 보낸 때부터 읽기 타임아웃 안에 다 읽는다(읽기 타임아웃이 그 마감의 길이다).
+   * 상한까지만 쥐며, 응답을 요청을 보낸 때부터 읽기 타임아웃 안에 다 읽는다(읽기 타임아웃이 그 마감의 길이다). 풀은 같은 설정으로 다시
+   * 짓는다({@link #deadlinedPool}) — 그 소켓 읽기마다 마감을 봐야 응답 머리·틀·TLS 레코드까지 닿는다.
    */
   @SuppressWarnings("removal")
   static Client buildTimeoutClient(KeycloakConfig config) { // 패키지 전용 — 프로바이더 등록 회귀테스트 시임
@@ -130,9 +134,13 @@ public final class AdminClient implements AutoCloseable {
                                               HttpHost proxy, int responseBufferSize, HostnameVerifier verifier,
                                               SSLContext tls) {
         // 풀 크기가 0 보다 크면 RESTEasy 는 풀을 짓는다(기본 50) — 다른 것이 오면 여기서 터져 조용히 한도를 잃지 않는다
-        ((PoolingHttpClientConnectionManager) connections).setDefaultConnectionConfig(BOUNDED_HEAD);
+        boolean customTls = builder.getTrustStore() != null || builder.getKeyStore() != null
+            || builder.isTrustManagerDisabled() || !builder.getSniHostNames().isEmpty();
+        PoolingHttpClientConnectionManager pool = deadlinedPool((PoolingHttpClientConnectionManager) connections, tls,
+            verifier, builder.getConnectionTTL(TimeUnit.MILLISECONDS), customTls);
+        pool.setDefaultConnectionConfig(BOUNDED_HEAD);
         // RESTEasy 는 ApacheHttpClient43Engine 을 짓는다 — 다른 것이 오면 여기서 터져 조용히 끊기를 잃지 않는다
-        return new AdminEngine((ApacheHttpClient43Engine) super.createEngine(connections, requests, proxy,
+        return new AdminEngine((ApacheHttpClient43Engine) super.createEngine(pool, requests, proxy,
             responseBufferSize, verifier, tls), (int) config.getReadTimeout().toMillis());
       }
     }.resteasyClientBuilder(builder).build());
@@ -143,6 +151,38 @@ public final class AdminClient implements AutoCloseable {
             ClientResponseFilter.class, Priorities.USER,
             ReaderInterceptor.class, TokenResponseGuard.READ_PRIORITY))
         .build();
+  }
+
+  /**
+   * RESTEasy 가 지은 풀을 이 레인의 소켓({@link AdminSockets} — 읽기마다 교환의 마감을 본다)을 쓰는 같은 설정의 풀로 바꾼다. 응답 머리 · 틀 ·
+   * TLS 레코드가 그 소켓 읽기로 오므로 마감이 거기까지 닿는다. TLS 근원은 RESTEasy 의 기본 분기와 같다 — 빌더에 준 것({@code tls}), 없으면
+   * {@link SSLContext#getDefault()}(이 SDK 는 TLS 를 따로 설정하지 않는다).
+   *
+   * <p>⚠️ 컨테이너가 {@link ClientConfigProvider} 를 두면(WildFly Elytron 등) RESTEasy 는 그 공급자의 SSL 소켓을 쓴다 — 그 정책을
+   * 바꾸지 않도록 RESTEasy 의 풀을 그대로 둔다(그때 마감은 엔진의 스트림만 본다 · 머리 · 틀은 읽기 타임아웃이 묶는다). 빌더에 TLS 를 따로
+   * 건 경우({@code customTls} — 신뢰·키 저장소 · 신뢰 끄기 · SNI)도 같다: 이 풀이 아는 것은 RESTEasy 의 기본 분기뿐이라 다시 지으면 그 설정을
+   * 조용히 잃는다(지금 이 SDK 는 그중 아무것도 걸지 않는다).
+   */
+  static PoolingHttpClientConnectionManager deadlinedPool(PoolingHttpClientConnectionManager built, SSLContext tls,
+                                                          HostnameVerifier verifier, long ttlMillis, boolean customTls) {
+    if (customTls || PriorityServiceLoader.load(ClientConfigProvider.class, providerLoader()).first().isPresent()) {
+      return built;
+    }
+    SSLContext context;
+    try {
+      context = tls != null ? tls : SSLContext.getDefault();
+    } catch (NoSuchAlgorithmException e) {
+      throw new IllegalStateException("no default TLS context", e);
+    }
+    PoolingHttpClientConnectionManager pool = AdminSockets.pool(built, context, verifier, ttlMillis);
+    built.shutdown(); // 쓰이지 않은 채 버려지는 RESTEasy 의 풀 — 연결이 없으니 닫기만 한다
+    return pool;
+  }
+
+  /** RESTEasy 가 공급자를 찾는 그 클래스 로더 — 스레드의 문맥 로더, 없으면 그 타입의 로더. */
+  private static ClassLoader providerLoader() {
+    ClassLoader loader = Thread.currentThread().getContextClassLoader();
+    return loader != null ? loader : ClientConfigProvider.class.getClassLoader();
   }
 
   /** 패키지 전용 팩토리 — 주입된 {@link Keycloak}을 보관한다(테스트 주입 경로). */

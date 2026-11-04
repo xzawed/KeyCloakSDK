@@ -5,7 +5,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
 import io.github.xzawed.keycloak.core.ResponseLimits;
 import io.github.xzawed.keycloak.core.exception.KeycloakTransportException;
+import jakarta.ws.rs.client.Client;
+import jakarta.ws.rs.core.Response;
 import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -16,16 +19,28 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.security.KeyStore;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.TrustManagerFactory;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.protocol.HttpCoreContext;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -43,9 +58,9 @@ import org.junit.jupiter.params.provider.EnumSource;
  * 하나 1 초 + 여유 1 초(auth 의 같은 이름 시험과 같은 셈). 대조: 멈춤(머리와 몇 바이트
  * 뒤 침묵)은 지금처럼 읽기 타임아웃에 실패하고, 상한 바로 아래 본문을 네 조각으로 나눠 보내는 건강한 응답은 받아들여진다.
  *
- * <p>⚠️ 마감은 엔진의 엔티티 스트림({@code AdminEngine.Settled})에서 본다 — 응답 머리와, 읽기 하나 안의 틀(청크 크기 줄 · 트레일러)·TLS
- * 레코드는 그 밖이다(RESTEasy 가 지은 풀의 소켓이다). 그 자리는 지금처럼 읽기마다의 타임아웃이 묶는다 — 실측(2026-10-29, 저장소 밖 탐침,
- * 같은 조건): 머리 블록·청크 크기 줄·트레일러를 흘리면 7 초 넘게 걸린다(커밋 메시지).
+ * <p>(2) 응답의 틀(머리 블록 · 청크 크기 줄 · 트레일러)과 TLS 레코드를 흘려도 같은 마감에 실패한다 — 엔진의 엔티티 스트림({@code
+ * AdminEngine.Settled})은 읽기 하나의 앞뒤만 보므로, 마감은 그 교환의 소켓 읽기마다(TLS 면 JSSE 아래의 평문 소켓) 본다({@code AdminSockets}).
+ * 수정 전 측정은 이 시험을 수정 전 코드에 돌려 잰 것이다(커밋 메시지).
  */
 class ResponseReadDeadlineTest {
   private static final int READ_TIMEOUT_MILLIS = 1_000;
@@ -61,6 +76,37 @@ class ResponseReadDeadlineTest {
   private static final String USER_PATH = "/admin/realms/r/users/x";
   private static final byte[] TOKEN_BODY = utf8("{\"access_token\":\"good\",\"token_type\":\"Bearer\",\"expires_in\":300}");
   private static final byte[] USER_BODY = utf8("{\"id\":\"x\",\"username\":\"" + MARKER + "\"}");
+
+  @TempDir static Path dir;
+  /** 시험 키 저장소의 암호 — 실행마다 새로 만든다(저장소에 키도, 그 암호도 두지 않는다). */
+  private static final String STOREPASS = java.util.UUID.randomUUID().toString();
+  private static SSLContext serverTls;
+  private static SSLContext clientTls;
+
+  @BeforeAll static void keys() throws Exception {
+    Path file = dir.resolve("ip.p12");
+    Process p = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "keytool").toString(),
+        "-genkeypair", "-alias", "ip", "-keyalg", "EC", "-groupname", "secp256r1", "-validity", "2", "-dname", "CN=127.0.0.1",
+        "-ext", "SAN=ip:127.0.0.1", "-keystore", file.toString(), "-storetype", "PKCS12", "-storepass", STOREPASS,
+        "-keypass", STOREPASS).redirectErrorStream(true).start();
+    String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    assertTrue(p.waitFor(60, TimeUnit.SECONDS) && p.exitValue() == 0, () -> "keytool 실패: " + out);
+    KeyStore ks = KeyStore.getInstance("PKCS12");
+    try (InputStream in = new FileInputStream(file.toFile())) {
+      ks.load(in, STOREPASS.toCharArray());
+    }
+    KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+    kmf.init(ks, STOREPASS.toCharArray());
+    serverTls = SSLContext.getInstance("TLSv1.3");
+    serverTls.init(kmf.getKeyManagers(), null, null);
+    KeyStore trust = KeyStore.getInstance("PKCS12");
+    trust.load(null, null);
+    trust.setCertificateEntry("ip", ks.getCertificate("ip"));
+    TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+    tmf.init(trust);
+    clientTls = SSLContext.getInstance("TLSv1.3");
+    clientTls.init(null, tmf.getTrustManagers(), null);
+  }
 
   private static byte[] utf8(String s) {
     return s.getBytes(StandardCharsets.UTF_8);
@@ -140,6 +186,63 @@ class ResponseReadDeadlineTest {
     return pieces;
   }
 
+  private static final byte[] CHUNKED_HEAD =
+      latin1("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n");
+
+  /** {@code at} 의 바이트를 {@code gap} 마다 하나씩 — 앞의 조각에 이어. */
+  private static void trickle(List<Piece> pieces, byte[] at, long gap) {
+    for (byte b : at) pieces.add(new Piece(gap, new byte[] {b}));
+  }
+
+  /** 응답의 틀 중 흘리는 자리 — 흘리는 바이트는 모두 {@link #TRICKLED} 개다(auth 의 같은 이름 시험과 같은 모양). */
+  enum Framing {
+    /** 머리 블록 — 헤더 하나의 값 열 바이트. */
+    HEAD {
+      @Override List<Piece> pieces(byte[] body) {
+        List<Piece> pieces = new ArrayList<>();
+        pieces.add(new Piece(0, latin1("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Pace: ")));
+        trickle(pieces, latin1("0123456789"), GAP_MILLIS);
+        pieces.add(new Piece(0, concat(latin1("\r\nContent-Length: " + body.length + "\r\n\r\n"), body)));
+        return pieces;
+      }
+    },
+    /** 마지막 청크의 크기 줄(확장 포함) 열 바이트. */
+    CHUNK_SIZE_LINE {
+      @Override List<Piece> pieces(byte[] body) {
+        List<Piece> pieces = new ArrayList<>();
+        pieces.add(new Piece(0, concat(CHUNKED_HEAD, latin1(Integer.toHexString(body.length - 1) + "\r\n"),
+            Arrays.copyOf(body, body.length - 1), latin1("\r\n"))));
+        trickle(pieces, latin1("1;a=bcde\r\n"), GAP_MILLIS);
+        pieces.add(new Piece(0, concat(new byte[] {body[body.length - 1]}, latin1("\r\n0\r\n\r\n"))));
+        return pieces;
+      }
+    },
+    /** 마지막 청크 뒤 트레일러 한 줄 열 바이트. */
+    TRAILER {
+      @Override List<Piece> pieces(byte[] body) {
+        List<Piece> pieces = new ArrayList<>();
+        pieces.add(new Piece(0, concat(CHUNKED_HEAD, latin1(Integer.toHexString(body.length) + "\r\n"), body,
+            latin1("\r\n0\r\n"))));
+        trickle(pieces, latin1("X-T: 012\r\n"), GAP_MILLIS);
+        pieces.add(new Piece(0, latin1("\r\n")));
+        return pieces;
+      }
+    };
+
+    abstract List<Piece> pieces(byte[] body);
+
+    /** 대조 — 같은 자리(흘리기 직전)에서 멈춘다: 그 자리의 읽기 타임아웃이 내는 실패와 견준다(머리의 실패는 본문의 것과 사슬이 다르다). */
+    List<Piece> stalled(byte[] body) {
+      return List.of(pieces(body).get(0), new Piece(HOLD_MILLIS, new byte[0]));
+    }
+  }
+
+  /** TLS 레코드 둘 — 본문의 마지막 {@link #TRICKLED} 바이트는 300 ms 뒤 따로 쓴다(그 레코드를 중계가 흘린다). */
+  private static List<Piece> twoRecords(byte[] body) {
+    return List.of(new Piece(0, concat(head(body.length), Arrays.copyOf(body, body.length - TRICKLED))),
+        new Piece(300, Arrays.copyOfRange(body, body.length - TRICKLED, body.length)));
+  }
+
   // ───────────── 서버 ─────────────
 
   /**
@@ -149,17 +252,29 @@ class ResponseReadDeadlineTest {
   private static final class PacedServer implements AutoCloseable {
     final ServerSocket socket;
     final Function<String, List<Piece>> reply;
+    /** {@link #beforeLastPath} 의 응답의 마지막 조각을 쓰기 직전에 부른다(TLS 중계가 거기서부터 흘린다). */
+    final AtomicReference<Runnable> beforeLast = new AtomicReference<>();
+    volatile String beforeLastPath;
 
-    PacedServer(Function<String, List<Piece>> reply) throws IOException {
+    PacedServer(SSLContext tls, Function<String, List<Piece>> reply) throws IOException {
       this.reply = reply;
-      socket = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
+      socket = tls == null ? new ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+          : tls.getServerSocketFactory().createServerSocket(0, 50, InetAddress.getLoopbackAddress());
       Thread t = new Thread(this::serve, "admin-paced-server");
       t.setDaemon(true);
       t.start();
     }
 
+    PacedServer(Function<String, List<Piece>> reply) throws IOException {
+      this(null, reply);
+    }
+
+    int port() {
+      return socket.getLocalPort();
+    }
+
     String url() {
-      return "http://127.0.0.1:" + socket.getLocalPort();
+      return "http://127.0.0.1:" + port();
     }
 
     private void serve() {
@@ -179,11 +294,16 @@ class ResponseReadDeadlineTest {
     private void exchanges(Socket s) {
       try (s) {
         s.setSoTimeout((int) HOLD_MILLIS);
+        if (s instanceof SSLSocket tls) tls.startHandshake();
         InputStream in = s.getInputStream();
         OutputStream out = s.getOutputStream();
         for (String path = readRequest(in); path != null; path = readRequest(in)) {
-          for (Piece piece : reply.apply(path)) {
+          List<Piece> pieces = reply.apply(path);
+          for (int i = 0; i < pieces.size(); i++) {
+            Piece piece = pieces.get(i);
             if (piece.delayMillis() > 0) Thread.sleep(piece.delayMillis());
+            Runnable last = beforeLast.get();
+            if (i == pieces.size() - 1 && last != null && path.equals(beforeLastPath)) last.run();
             out.write(piece.bytes());
             out.flush();
           }
@@ -211,6 +331,80 @@ class ResponseReadDeadlineTest {
         }
       }
       return null;
+    }
+
+    @Override public void close() throws IOException {
+      socket.close();
+    }
+  }
+
+  /**
+   * TLS 앞의 TCP 중계 — 서버의 바이트를 곧바로 넘기다가 {@link #trickle} 뒤로는 한 바이트씩 {@link #GAP_MILLIS} 마다 넘긴다. 서버는 마지막
+   * 조각(TLS 레코드 하나)을 쓰기 직전에 그것을 부른다 — 그 앞의 레코드는 300 ms 전에 이미 넘어갔다(auth 의 같은 이름 중계와 같다).
+   */
+  private static final class TrickleRelay implements AutoCloseable {
+    final ServerSocket socket;
+    final int target;
+    volatile boolean trickling;
+
+    TrickleRelay(int target) throws IOException {
+      this.target = target;
+      socket = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
+      Thread t = new Thread(this::serve, "admin-trickle-relay");
+      t.setDaemon(true);
+      t.start();
+    }
+
+    void trickle() {
+      trickling = true;
+    }
+
+    private void serve() {
+      while (!socket.isClosed()) {
+        try {
+          Socket client = socket.accept();
+          Socket server = new Socket(InetAddress.getLoopbackAddress(), target);
+          pump(client, server, false);
+          pump(server, client, true);
+        } catch (IOException closed) {
+          return;
+        }
+      }
+    }
+
+    private void pump(Socket from, Socket to, boolean paced) {
+      Thread t = new Thread(() -> {
+        try (from; to) {
+          InputStream in = from.getInputStream();
+          OutputStream out = to.getOutputStream();
+          byte[] buffer = new byte[16 * 1024];
+          boolean first = true;
+          for (int n = in.read(buffer); n > 0; n = in.read(buffer)) {
+            if (!paced || !trickling) {
+              out.write(buffer, 0, n);
+              out.flush();
+              continue;
+            }
+            for (int i = 0; i < n; i++) {
+              // 첫 바이트는 곧바로 — 그 앞의 침묵(서버의 300 ms)에 간격을 더하면 읽기 타임아웃이 먼저 터진다
+              if (!first) Thread.sleep(GAP_MILLIS);
+              first = false;
+              out.write(buffer[i]);
+              out.flush();
+            }
+          }
+        } catch (IOException gone) {
+          // 한쪽이 닫았다 — 중계도 끝난다
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+        }
+      }, "admin-trickle-relay-pump");
+      t.setDaemon(true);
+      t.start();
+    }
+
+    int port() {
+      return socket.getLocalPort();
     }
 
     @Override public void close() throws IOException {
@@ -272,6 +466,56 @@ class ResponseReadDeadlineTest {
     }
   }
 
+  /**
+   * {@code lane} 의 응답만 TLS 레코드 둘({@link #twoRecords})로 내는 TLS 서버를 중계 너머에 두고 admin 호출 하나 — 중계는 그 응답의 마지막
+   * 레코드를 흘린다. 엔진은 시험 인증서를 믿는 기본 SSLContext 로 짓는다(RESTEasy 와 이 레인의 풀은 지을 때 그것을 읽는다) — 지은 뒤 되돌린다.
+   */
+  private static Outcome runTls(Lane lane) throws Exception {
+    try (PacedServer server = new PacedServer(serverTls, path -> {
+      if (path.equals(lane.path)) return twoRecords(lane.body);
+      if (path.equals(TOKEN_PATH)) return whole(TOKEN_BODY);
+      if (path.equals(USER_PATH)) return whole(USER_BODY);
+      return List.of(new Piece(0, latin1("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")));
+    }); TrickleRelay relay = new TrickleRelay(server.port())) {
+      server.beforeLastPath = lane.path;
+      server.beforeLast.set(relay::trickle);
+      AdminClient built;
+      SSLContext saved = SSLContext.getDefault();
+      SSLContext.setDefault(clientTls);
+      try {
+        built = new AdminClient(config("https://127.0.0.1:" + relay.port()));
+      } finally {
+        SSLContext.setDefault(saved);
+      }
+      try (AdminClient admin = built) {
+        return time(() -> admin.users().get("x").orElseThrow().getId());
+      }
+    }
+  }
+
+  /**
+   * 마감의 판정 — 같은 레인의 읽기 타임아웃(멈춤)과 같은 실패여야 한다: 같은 타입 · 같은 메시지 · 같은 원인 사슬(끝에
+   * {@link SocketTimeoutException}) · {@link #BOUND_MILLIS} 안 · 응답 바이트를 인용하지 않는다.
+   */
+  private static void expectDeadline(String label, Lane lane, Outcome o) throws Exception {
+    expectDeadline(label, lane, o, ResponseReadDeadlineTest::stalledBody);
+  }
+
+  /** {@code stalled} — 대조로 쓸 멈춤(실패가 나는 자리가 같아야 사슬이 같다). */
+  private static void expectDeadline(String label, Lane lane, Outcome o, Function<byte[], List<Piece>> stalled)
+      throws Exception {
+    Outcome stall = run(lane, stalled, lane.body);
+    System.out.println("[admin.ResponseReadDeadlineTest] " + label + " → " + o.describe());
+    assertNotNull(o.thrown(), () -> label + ": 마감 뒤에도 오는 응답을 받아들였다 — " + o.describe());
+    assertInstanceOf(KeycloakTransportException.class, o.thrown(), () -> label + ": 전송 실패여야 한다 — " + trace(o.thrown()));
+    assertTrue(o.millis() < BOUND_MILLIS, () -> label + ": " + BOUND_MILLIS + " ms 안에 실패해야 한다 — " + o.describe());
+    assertNotNull(stall.thrown(), () -> label + ": 대조(멈춤)가 실패하지 않았다 — " + stall.describe());
+    assertEquals(stall.thrown().getMessage(), o.thrown().getMessage(), label + ": 읽기 타임아웃과 같은 메시지여야 한다");
+    assertEquals(chain(stall.thrown()), chain(o.thrown()), () -> label + ": 읽기 타임아웃과 같은 원인 사슬이어야 한다 — " + trace(o.thrown()));
+    assertTrue(chain(o.thrown()).contains(SocketTimeoutException.class.getName()), () -> label + ": " + chain(o.thrown()));
+    assertFalse(trace(o.thrown()).contains(MARKER), () -> label + ": 실패가 응답 바이트를 인용했다 — " + trace(o.thrown()));
+  }
+
   private static String trace(Throwable t) {
     StringWriter out = new StringWriter();
     t.printStackTrace(new PrintWriter(out, true));
@@ -300,18 +544,124 @@ class ResponseReadDeadlineTest {
   @EnumSource(Lane.class)
   @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
   void aTrickledResponse_failsAtTheDeadline(Lane lane) throws Exception {
-    Outcome stall = run(lane, ResponseReadDeadlineTest::stalledBody, lane.body);
-    Outcome o = run(lane, ResponseReadDeadlineTest::trickledBody, lane.body);
-    String label = "admin " + lane + " 흘리기";
-    System.out.println("[admin.ResponseReadDeadlineTest] " + label + " → " + o.describe());
-    assertNotNull(o.thrown(), () -> label + ": 마감 뒤에도 오는 응답을 받아들였다 — " + o.describe());
-    assertInstanceOf(KeycloakTransportException.class, o.thrown(), () -> label + ": 전송 실패여야 한다 — " + trace(o.thrown()));
-    assertTrue(o.millis() < BOUND_MILLIS, () -> label + ": " + BOUND_MILLIS + " ms 안에 실패해야 한다 — " + o.describe());
-    assertNotNull(stall.thrown(), () -> label + ": 대조(멈춤)가 실패하지 않았다 — " + stall.describe());
-    assertEquals(stall.thrown().getMessage(), o.thrown().getMessage(), label + ": 읽기 타임아웃과 같은 메시지여야 한다");
-    assertEquals(chain(stall.thrown()), chain(o.thrown()), () -> label + ": 읽기 타임아웃과 같은 원인 사슬이어야 한다 — " + trace(o.thrown()));
-    assertTrue(chain(o.thrown()).contains(SocketTimeoutException.class.getName()), () -> label + ": " + chain(o.thrown()));
-    assertFalse(trace(o.thrown()).contains(MARKER), () -> label + ": 실패가 응답 바이트를 인용했다 — " + trace(o.thrown()));
+    expectDeadline("admin " + lane + " 흘리기", lane, run(lane, ResponseReadDeadlineTest::trickledBody, lane.body));
+  }
+
+  /**
+   * (2) 응답의 틀을 흘리는 서버 — 본문 앞(머리)이나 본문 읽기 하나 <b>안</b>(청크 크기 줄 · 트레일러)이어도 마감에 실패한다. 두 레인 모두. 수정
+   * 전 측정은 커밋 메시지.
+   */
+  @ParameterizedTest
+  @EnumSource(Framing.class)
+  @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void trickledFraming_failsAtTheDeadline(Framing framing) throws Exception {
+    for (Lane lane : Lane.values()) {
+      expectDeadline("admin " + lane + " 틀 " + framing, lane, run(lane, framing::pieces, lane.body), framing::stalled);
+    }
+  }
+
+  /**
+   * (2) TLS 레코드 하나를 흘리는 서버 — JSSE 는 레코드가 다 올 때까지 읽기 하나 안에서 기다린다(그 아래 평문 소켓의 읽기는 바이트마다 끝난다).
+   * 마감을 TLS 스트림의 읽기마다만 보면 이 칸이 그대로다 — 마감은 JSSE 아래의 평문 소켓에서 본다. 수정 전 측정은 커밋 메시지.
+   */
+  @ParameterizedTest
+  @EnumSource(Lane.class)
+  @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void aTrickledTlsRecord_failsAtTheDeadline(Lane lane) throws Exception {
+    expectDeadline("admin " + lane + " TLS 레코드", lane, runTls(lane));
+  }
+
+  /**
+   * 교환의 끝은 그 스레드의 소켓 마감을 지운다 — 남으면 그 스레드가 나중에 하는 소켓 읽기(다음 교환이 연결을 빌리며 엿보는 읽기)가 지난 교환의
+   * 마감에 걸린다. 건강한 admin 호출 하나(토큰 부여 + 자원) 뒤, 그 마감을 넘겨 시작한 읽기가 그대로다.
+   */
+  @Test
+  @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void anExchange_leavesNoDeadlineOnItsThread() throws Exception {
+    Outcome o = run(Lane.RESOURCE, ResponseReadDeadlineTest::whole, USER_BODY);
+    assertNull(o.thrown(), () -> "건강한 호출이 실패했다 — " + o.describe());
+    Thread.sleep(READ_TIMEOUT_MILLIS + 200L);
+    assertEquals('x', AdminSockets.deadlined(new SlowStream(0, 'x')).read(), "교환이 끝난 스레드에 마감이 남았다");
+  }
+
+  /**
+   * 닫지 않은 응답도 보낸 스레드에 마감을 남기지 않는다 — 남으면 그 스레드의 다음 admin 호출이 새 연결의 TLS 핸드셰이크에서 곧바로 실패했다
+   * (독립 검토의 실측: 열어 둠 46 ms · 다른 스레드에서 닫음 8 ms). 이 레인의 JAX-RS 클라이언트로 응답을 받고 읽지도 닫지도 않은 채 마감을 넘긴다.
+   */
+  @Test
+  @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void aResponseLeftOpen_leavesNoDeadlineOnTheSendingThread() throws Exception {
+    try (PacedServer server = new PacedServer(path -> whole(USER_BODY));
+         Client client = AdminClient.buildTimeoutClient(config(server.url()));
+         Response open = client.target(server.url() + USER_PATH).request().get()) {
+      // 본문을 읽지 않은 채 열어 둔 동안 마감을 넘긴다 — 닫는 것은 이 블록의 끝이다
+      Thread.sleep(READ_TIMEOUT_MILLIS + 200L);
+      try (SlowStream after = new SlowStream(0, 'x')) {
+        assertEquals('x', AdminSockets.deadlined(after).read(), "닫지 않은 응답이 보낸 스레드에 마감을 남겼다");
+      }
+      assertEquals(200, open.getStatus());
+    }
+  }
+
+  /**
+   * 본문을 다른 스레드에서 읽어도 같은 마감이다 — 엔진의 스트림이 읽는 스레드에 읽기마다 그 교환의 마감을 건다. 머리는 곧바로 오고 청크 크기 줄을
+   * 흘린다(읽기 하나 안 — 엔티티 스트림의 앞뒤로는 못 본다). 보낸 때부터 {@link #BOUND_MILLIS} 안에 실패해야 한다.
+   */
+  @Test
+  @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void aBodyReadOnAnotherThread_stillMeetsTheDeadline() throws Exception {
+    try (PacedServer server = new PacedServer(path -> Framing.CHUNK_SIZE_LINE.pieces(USER_BODY));
+         Client client = AdminClient.buildTimeoutClient(config(server.url()))) {
+      long start = System.nanoTime();
+      Response response = client.target(server.url() + USER_PATH).request().get();
+      FutureTask<String> body = new FutureTask<>(() -> response.readEntity(String.class));
+      Thread other = new Thread(body, "admin-deadline-other-reader");
+      other.setDaemon(true);
+      other.start();
+      ExecutionException e = assertThrows(ExecutionException.class, body::get, "다른 스레드의 읽기가 흘린 틀을 받아들였다");
+      long millis = (System.nanoTime() - start) / 1_000_000;
+      assertTrue(chain(e.getCause()).contains(SocketTimeoutException.class.getName()), () -> trace(e.getCause()));
+      assertTrue(millis < BOUND_MILLIS, () -> "다른 스레드의 읽기가 " + BOUND_MILLIS + " ms 안에 실패해야 한다 — " + millis + " ms");
+    }
+  }
+
+  /**
+   * 소켓의 마감 스트림({@code AdminSockets.deadlined}) — 마감이 없는 스레드의 읽기는 그대로다 · 마감 안의 읽기는 그대로다 · 마감 뒤에 시작하는
+   * 읽기는 읽지 않고 실패한다 · 마감 뒤에 끝난 읽기는 그 결과를 내주지 않는다 · 0 은 마감을 두지 않는다. 두 읽기 모두.
+   */
+  @Test
+  void theDeadlinedSocketStream_checksBeforeAndAfterEveryRead() throws Exception {
+    try {
+      for (boolean array : new boolean[] {false, true}) {
+        AdminSockets.disarm();
+        assertEquals(array ? 1 : 'x', read(AdminSockets.deadlined(new SlowStream(0, 'x')), array), "마감이 없는 스레드의 읽기는 그대로다");
+
+        AdminSockets.arm(System.nanoTime(), 10_000);
+        assertEquals(array ? 1 : 'x', read(AdminSockets.deadlined(new SlowStream(0, 'x')), array), "마감 안의 읽기는 그대로다");
+
+        AdminSockets.arm(System.nanoTime(), 50);
+        Thread.sleep(80);
+        try (SlowStream before = new SlowStream(0, 'x')) {
+          SocketTimeoutException e = assertThrows(SocketTimeoutException.class,
+              () -> read(AdminSockets.deadlined(before), array));
+          assertEquals(0, before.reads, "마감 뒤에는 읽기를 시작하지 않는다");
+          assertEquals(AdminEngine.LATE + "50 ms of sending the request", e.getMessage());
+        }
+
+        AdminSockets.arm(System.nanoTime(), 50);
+        try (SlowStream after = new SlowStream(120, 'x')) {
+          assertThrows(SocketTimeoutException.class, () -> read(AdminSockets.deadlined(after), array));
+          assertEquals(1, after.reads, "마감을 넘겨 끝난 읽기 — 읽었지만 그 결과를 내주지 않는다");
+        }
+
+        AdminSockets.arm(System.nanoTime(), 0);
+        Thread.sleep(20);
+        assertEquals(array ? 1 : 'x', read(AdminSockets.deadlined(new SlowStream(0, 'x')), array),
+            "읽기 타임아웃 0(끝없이)에는 마감도 없다");
+      }
+    } finally {
+      AdminSockets.disarm();
+    }
   }
 
   /** 대조 — 머리와 몇 바이트 뒤 침묵: 지금처럼 읽기 타임아웃 무렵에 전송 실패다. */
@@ -368,6 +718,14 @@ class ResponseReadDeadlineTest {
    */
   @Test
   void theEngineStream_checksTheDeadlineFromWhenTheRequestWasSent() throws Exception {
+    try {
+      engineStreamChecks();
+    } finally {
+      AdminSockets.disarm(); // 보낸 표시가 이 스레드의 소켓 마감도 건다 — 다음 시험에 남기지 않는다
+    }
+  }
+
+  private static void engineStreamChecks() throws Exception {
     for (boolean array : new boolean[] {false, true}) {
       AdminEngine.Exchange exchange = new AdminEngine.Exchange(new HttpGet("http://127.0.0.1:1/"), 100);
       Thread.sleep(150); // 손잡이를 만든 때부터 세면 마감이 지났다

@@ -40,8 +40,9 @@ import org.jboss.resteasy.client.jaxrs.internal.ClientResponseContextImpl;
  * <p>응답은 요청을 보낸 때부터 읽기 타임아웃 안에 다 읽는다 — {@link Settled} 가 읽기마다 앞뒤로 그 교환의 마감을 본다({@link Exchange#due}).
  * 읽기 타임아웃은 읽기 하나를 묶을 뿐이라 바이트를 그보다 조금 짧은 간격으로 흘리는 서버 앞에서 응답 하나가 흘린 바이트마다 간격 하나씩
  * 걸렸다(실측 {@code ResponseReadDeadlineTest}). 토큰 부여(가드의 상한 읽기)·자원의 성공 본문(결합)·오류 본문이 모두 그 스트림을 지난다 —
- * {@code raw()} 의 응답도. ⚠️ 엔진의 스트림이라 응답 머리와, 읽기 하나 안의 틀(청크 크기 줄·트레일러)·TLS 레코드는 보지 못한다 — 그 소켓은
- * RESTEasy 가 지은 풀의 것이다(그 자리는 읽기마다의 타임아웃이 묶는다 — 같은 시험 머리의 실측).
+ * {@code raw()} 의 응답도. 엔진의 스트림은 읽기 하나의 앞뒤만 보므로 응답 머리와, 읽기 하나 안의 틀(청크 크기 줄·트레일러)·TLS 레코드는
+ * 같은 마감을 그 교환의 소켓 읽기마다 본다({@link AdminSockets}). 그 마감은 읽는 동안에만 스레드에 둔다 — 머리는 {@link Exchange} 가 보낼 때
+ * 걸고 {@link #invoke} 가 끝에서 되돌리며, 본문은 {@link Settled} 가 읽기·닫기 하나마다 읽는 스레드에 걸었다가 되돌린다.
  */
 @SuppressWarnings("removal") // RESTEasy 6.2 의 기본 엔진 그 자체를 잇는다(AdminClient.buildTimeoutClient 설명)
 final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextProvider {
@@ -98,15 +99,22 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
   @Override
   public Response invoke(Invocation inv) {
     ClientInvocation request = (ClientInvocation) inv;
-    Response response = super.invoke(inv);
-    ClientResponseContextImpl entity = new ClientResponseContextImpl((ClientResponse) response);
-    InputStream in = entity.getEntityStream();
-    if (in != null) {
-      long limit = response.getStatus() < 300 || TokenResponseGuard.inScope(request.getMethod(), request.getUri())
-          ? Long.MAX_VALUE : ERROR_BODY_CAP;
-      entity.setEntityStream(new Settled(in, (Exchange) request.getMutableProperties().get(EXCHANGE), limit));
+    long[] before = AdminSockets.current();
+    try {
+      Response response = super.invoke(inv);
+      ClientResponseContextImpl entity = new ClientResponseContextImpl((ClientResponse) response);
+      InputStream in = entity.getEntityStream();
+      if (in != null) {
+        long limit = response.getStatus() < 300 || TokenResponseGuard.inScope(request.getMethod(), request.getUri())
+            ? Long.MAX_VALUE : ERROR_BODY_CAP;
+        entity.setEntityStream(new Settled(in, (Exchange) request.getMutableProperties().get(EXCHANGE), limit));
+      }
+      return response;
+    } finally {
+      // 이 스레드의 마감은 머리를 읽는 동안뿐이다 — 본문은 그것을 읽는 스레드가 읽기마다 다시 건다({@link Settled}). 남기면 이 스레드의
+      // 다음 교환(새 연결의 TLS 핸드셰이크)이 지난 마감에 곧바로 실패한다
+      AdminSockets.restore(before);
     }
-    return response;
   }
 
   @Override
@@ -136,10 +144,22 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
       this.readTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(readTimeoutMillis);
     }
 
+    /**
+     * 보낸 때를 적고, 이 스레드의 소켓 읽기에도 같은 마감을 건다({@link AdminSockets#arm} — 머리가 그 읽기로 온다). 되돌리는 것은 엔진의 호출
+     * 끝이다({@link AdminEngine#invoke}).
+     */
     @Override
     public void setAttribute(String id, Object obj) {
-      if (HttpCoreContext.HTTP_REQ_SENT.equals(id) && Boolean.FALSE.equals(obj)) sentAt = System.nanoTime();
+      if (HttpCoreContext.HTTP_REQ_SENT.equals(id) && Boolean.FALSE.equals(obj)) {
+        sentAt = System.nanoTime();
+        AdminSockets.arm(sentAt, readTimeoutMillis);
+      }
       super.setAttribute(id, obj);
+    }
+
+    /** 이 교환의 마감을 지금 스레드에 건다 — 앞서 걸려 있던 것을 돌려준다(본문의 읽기·닫기 하나마다 · {@link AdminSockets#restore}). */
+    long[] armHere() {
+      return AdminSockets.arm(sentAt, readTimeoutMillis);
     }
 
     /** 마감이 지났으면 읽기 타임아웃과 같은 타입으로 — 메시지는 마감의 길이뿐이다(응답을 인용하지 않는다). */
@@ -213,7 +233,13 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
     public int read() throws IOException {
       if (left == 0) return -1;
       exchange.due();
-      int b = in.read();
+      long[] previous = exchange.armHere(); // 그 아래의 틀·TLS 레코드 읽기도 같은 마감 — 이 읽기 동안만, 읽는 스레드에
+      int b;
+      try {
+        b = in.read();
+      } finally {
+        AdminSockets.restore(previous);
+      }
       if (b < 0) {
         eof = true;
       } else {
@@ -228,7 +254,13 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
       if (len == 0) return 0;
       if (left == 0) return -1;
       exchange.due();
-      int n = in.read(b, off, (int) Math.min(len, left));
+      long[] previous = exchange.armHere();
+      int n;
+      try {
+        n = in.read(b, off, (int) Math.min(len, left));
+      } finally {
+        AdminSockets.restore(previous);
+      }
       if (n < 0) {
         eof = true;
       } else {
@@ -238,22 +270,28 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
       return n;
     }
 
+    /** 닫기도 읽기처럼 이 교환의 마감을 닫는 동안만 건다(끝을 엿보는 읽기가 그 아래를 지난다). */
     @Override
     public void close() throws IOException {
       if (closed) return;
       closed = true;
-      if (eof || exchange.endsNow(in)) {
-        in.close();
-        return;
-      }
-      exchange.cut();
+      long[] previous = exchange.armHere();
       try {
-        in.close();
-      } catch (IOException cutAlready) {
-        // 끊긴 연결의 닫기는 실패할 수 있다 — HttpCore 가 버퍼의 나머지를 읽은 뒤 TLS 소켓은 -1 을 돌려줘 「Premature end of
-        // Content-Length delimited message body」(ConnectionClosedException — HttpClient 가 거르는 SocketException 이 아니다)가 났고
-        // RESTEasy 가 그것을 ProcessingException 으로 내 결과를 얻은 호출이 전송 실패가 됐다(실측, TLS 1.3 40/40). 버린다
-        // (TokenResponseGuard.closeQuietly 와 같은 처방).
+        if (eof || exchange.endsNow(in)) {
+          in.close();
+          return;
+        }
+        exchange.cut();
+        try {
+          in.close();
+        } catch (IOException cutAlready) {
+          // 끊긴 연결의 닫기는 실패할 수 있다 — HttpCore 가 버퍼의 나머지를 읽은 뒤 TLS 소켓은 -1 을 돌려줘 「Premature end of
+          // Content-Length delimited message body」(ConnectionClosedException — HttpClient 가 거르는 SocketException 이 아니다)가 났고
+          // RESTEasy 가 그것을 ProcessingException 으로 내 결과를 얻은 호출이 전송 실패가 됐다(실측, TLS 1.3 40/40). 버린다
+          // (TokenResponseGuard.closeQuietly 와 같은 처방).
+        }
+      } finally {
+        AdminSockets.restore(previous);
       }
     }
   }

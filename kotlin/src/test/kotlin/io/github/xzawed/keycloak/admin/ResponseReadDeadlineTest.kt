@@ -5,6 +5,7 @@ import io.github.xzawed.keycloak.KeycloakTransportException
 import io.github.xzawed.keycloak.RESPONSE_LATE
 import io.github.xzawed.keycloak.RedactedCause
 import io.github.xzawed.keycloak.TOKEN_RESPONSE_MAX_BYTES
+import io.github.xzawed.keycloak.TransportTestTls
 import kotlinx.coroutines.runBlocking
 import org.apache.http.client.methods.HttpGet
 import org.apache.http.protocol.HttpCoreContext
@@ -22,6 +23,11 @@ import java.net.Socket
 import java.net.SocketTimeoutException
 import java.nio.charset.StandardCharsets
 import java.time.Duration
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -43,11 +49,12 @@ import kotlin.test.assertTrue
 // 1 초 + 여유 1 초(auth 의 같은 이름 시험과 같은 셈). 대조: 멈춤(머리와 몇 바이트 뒤 침묵)은 지금처럼 읽기 타임아웃에 실패하고, 상한 바로
 // 아래 본문을 네 조각으로 나눠 보내는 건강한 응답은 받아들여진다.
 //
-// ⚠️ 마감은 엔진의 엔티티 스트림(`AdminEngine.Settled`)에서 본다 — 응답 머리와, 읽기 하나 안의 틀(청크 크기 줄 · 트레일러)·TLS 레코드는
-// 그 밖이다(RESTEasy 가 지은 풀의 소켓이다). 그 자리는 지금처럼 읽기마다의 타임아웃이 묶는다(Java 의 같은 시험 머리 · 커밋 메시지의 실측).
+// (2) 응답의 틀(머리 블록 · 청크 크기 줄 · 트레일러)과 TLS 레코드를 흘려도 같은 마감에 실패한다 — 엔진의 엔티티 스트림(`AdminEngine.Settled`)은
+// 읽기 하나의 앞뒤만 보므로, 마감은 그 교환의 소켓 읽기마다(TLS 면 JSSE 아래의 평문 소켓) 본다(`AdminSockets`). 수정 전 측정은 이 시험을 수정
+// 전 코드에 돌려 잰 것이다(커밋 메시지).
 internal class ResponseReadDeadlineTest {
-    /** 응답의 한 조각 — 쓰기 전에 [delayMillis] 를 쉰다. */
-    private class Piece(
+    /** 응답의 한 조각 — 쓰기 전에 [delayMillis] 를 쉰다(틀 열거 [Framing] 이 돌려주므로 감추지 않는다). */
+    class Piece(
         val delayMillis: Long,
         val bytes: ByteArray,
     )
@@ -68,15 +75,26 @@ internal class ResponseReadDeadlineTest {
      * 고른 조각을 차례로 쓴다(조각마다 쉬고 쓴다).
      */
     private class PacedServer(
+        tls: SSLContext? = null,
         private val reply: (String) -> List<Piece>,
     ) : AutoCloseable {
-        val socket = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+        val socket: ServerSocket =
+            tls?.serverSocketFactory?.createServerSocket(0, 50, InetAddress.getLoopbackAddress())
+                ?: ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+
+        /** [beforeLastPath] 의 응답의 마지막 조각을 쓰기 직전에 부른다(TLS 중계가 거기서부터 흘린다). */
+        val beforeLast = AtomicReference<Runnable?>()
+
+        @Volatile
+        var beforeLastPath: String? = null
 
         init {
             Thread(::serve, "admin-paced-server").apply { isDaemon = true }.start()
         }
 
-        val url: String get() = "http://127.0.0.1:${socket.localPort}"
+        val port: Int get() = socket.localPort
+
+        val url: String get() = "http://127.0.0.1:$port"
 
         private fun serve() {
             while (!socket.isClosed) {
@@ -94,12 +112,16 @@ internal class ResponseReadDeadlineTest {
             try {
                 s.use {
                     s.soTimeout = HOLD_MILLIS.toInt()
+                    if (s is SSLSocket) s.startHandshake()
                     val input = s.getInputStream()
                     val out = s.getOutputStream()
                     while (true) {
                         val path = readRequest(input) ?: break
-                        for (piece in reply(path)) {
+                        val pieces = reply(path)
+                        for ((i, piece) in pieces.withIndex()) {
                             if (piece.delayMillis > 0) Thread.sleep(piece.delayMillis)
+                            val last = beforeLast.get()
+                            if (i == pieces.size - 1 && last != null && path == beforeLastPath) last.run()
                             out.write(piece.bytes)
                             out.flush()
                         }
@@ -115,6 +137,128 @@ internal class ResponseReadDeadlineTest {
         override fun close() {
             socket.close()
         }
+    }
+
+    /**
+     * TLS 앞의 TCP 중계 — 서버의 바이트를 곧바로 넘기다가 [trickle] 뒤로는 한 바이트씩 [GAP_MILLIS] 마다 넘긴다. 서버는 마지막 조각(TLS 레코드
+     * 하나)을 쓰기 직전에 그것을 부른다 — 그 앞의 레코드는 300 ms 전에 이미 넘어갔다(Java 의 같은 이름 중계와 같다).
+     */
+    private class TrickleRelay(
+        private val target: Int,
+    ) : AutoCloseable {
+        val socket = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+
+        @Volatile
+        private var trickling = false
+
+        init {
+            Thread(::serve, "admin-trickle-relay").apply { isDaemon = true }.start()
+        }
+
+        val port: Int get() = socket.localPort
+
+        fun trickle() {
+            trickling = true
+        }
+
+        private fun serve() {
+            while (!socket.isClosed) {
+                try {
+                    val client = socket.accept()
+                    val server = Socket(InetAddress.getLoopbackAddress(), target)
+                    pump(client, server, false)
+                    pump(server, client, true)
+                } catch (closed: IOException) {
+                    return
+                }
+            }
+        }
+
+        private fun pump(
+            from: Socket,
+            to: Socket,
+            paced: Boolean,
+        ) {
+            Thread({
+                try {
+                    from.use {
+                        to.use {
+                            val input = from.getInputStream()
+                            val out = to.getOutputStream()
+                            val buffer = ByteArray(16 * 1024)
+                            var first = true
+                            while (true) {
+                                val n = input.read(buffer)
+                                if (n <= 0) break
+                                if (!paced || !trickling) {
+                                    out.write(buffer, 0, n)
+                                    out.flush()
+                                    continue
+                                }
+                                for (i in 0 until n) {
+                                    // 첫 바이트는 곧바로 — 그 앞의 침묵(서버의 300 ms)에 간격을 더하면 읽기 타임아웃이 먼저 터진다
+                                    if (!first) Thread.sleep(GAP_MILLIS)
+                                    first = false
+                                    out.write(buffer[i].toInt())
+                                    out.flush()
+                                }
+                            }
+                        }
+                    }
+                } catch (gone: IOException) {
+                    // 한쪽이 닫았다 — 중계도 끝난다
+                } catch (interrupted: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
+            }, "admin-trickle-relay-pump").apply { isDaemon = true }.start()
+        }
+
+        override fun close() {
+            socket.close()
+        }
+    }
+
+    /** 응답의 틀 중 흘리는 자리 — 흘리는 바이트는 모두 [TRICKLED] 개다(Java 의 같은 이름 시험과 같은 모양). */
+    enum class Framing {
+        /** 머리 블록 — 헤더 하나의 값 열 바이트. */
+        HEAD {
+            override fun pieces(body: ByteArray): List<Piece> =
+                listOf(Piece(0, latin1("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Pace: "))) +
+                    trickled(latin1("0123456789")) +
+                    Piece(0, concat(latin1("\r\nContent-Length: ${body.size}\r\n\r\n"), body))
+        },
+
+        /** 마지막 청크의 크기 줄(확장 포함) 열 바이트. */
+        CHUNK_SIZE_LINE {
+            override fun pieces(body: ByteArray): List<Piece> =
+                listOf(
+                    Piece(
+                        0,
+                        concat(
+                            CHUNKED_HEAD,
+                            latin1(Integer.toHexString(body.size - 1) + "\r\n"),
+                            body.copyOf(body.size - 1),
+                            latin1("\r\n"),
+                        ),
+                    ),
+                ) +
+                    trickled(latin1("1;a=bcde\r\n")) +
+                    Piece(0, concat(byteArrayOf(body[body.size - 1]), latin1("\r\n0\r\n\r\n")))
+        },
+
+        /** 마지막 청크 뒤 트레일러 한 줄 열 바이트. */
+        TRAILER {
+            override fun pieces(body: ByteArray): List<Piece> =
+                listOf(Piece(0, concat(CHUNKED_HEAD, latin1(Integer.toHexString(body.size) + "\r\n"), body, latin1("\r\n0\r\n")))) +
+                    trickled(latin1("X-T: 012\r\n")) +
+                    Piece(0, latin1("\r\n"))
+        },
+        ;
+
+        abstract fun pieces(body: ByteArray): List<Piece>
+
+        /** 대조 — 같은 자리(흘리기 직전)에서 멈춘다: 그 자리의 읽기 타임아웃이 내는 실패와 견준다(머리의 실패는 본문의 것과 사슬이 다르다). */
+        fun stalled(body: ByteArray): List<Piece> = listOf(pieces(body)[0], Piece(HOLD_MILLIS, ByteArray(0)))
     }
 
     /** 호출 하나 — 돌려준 값, 던진 것(없으면 null), 걸린 시간. */
@@ -165,6 +309,66 @@ internal class ResponseReadDeadlineTest {
             }
         }
 
+    /**
+     * [lane] 의 응답만 TLS 레코드 둘([twoRecords])로 내는 TLS 서버를 중계 너머에 두고 admin 호출 하나 — 중계는 그 응답의 마지막 레코드를 흘린다.
+     * 엔진은 시험 인증서를 믿는 기본 SSLContext 로 짓는다(RESTEasy 와 이 레인의 풀은 지을 때 그것을 읽는다) — 지은 뒤 되돌린다.
+     */
+    private fun runTls(lane: Lane): Outcome =
+        PacedServer(TransportTestTls.serverIp) { path ->
+            when (path) {
+                lane.path -> twoRecords(bodyOf(lane))
+                TOKEN_PATH -> whole(TOKEN_BODY)
+                USER_PATH -> whole(USER_BODY)
+                else -> listOf(Piece(0, latin1("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")))
+            }
+        }.use { server ->
+            TrickleRelay(server.port).use { relay ->
+                server.beforeLastPath = lane.path
+                server.beforeLast.set(Runnable { relay.trickle() })
+                val saved = SSLContext.getDefault()
+                SSLContext.setDefault(TransportTestTls.trustingContext)
+                val built =
+                    try {
+                        AdminClient(config("https://127.0.0.1:${relay.port}"))
+                    } finally {
+                        SSLContext.setDefault(saved)
+                    }
+                built.use { admin ->
+                    val start = System.nanoTime()
+                    var result: Any? = null
+                    var thrown: Throwable? = null
+                    try {
+                        result = runBlocking { admin.users().get("x").id }
+                    } catch (t: Throwable) {
+                        thrown = t
+                    }
+                    Outcome(result, thrown, (System.nanoTime() - start) / 1_000_000)
+                }
+            }
+        }
+
+    /**
+     * 마감의 판정 — 같은 레인의 읽기 타임아웃(멈춤 — 실패가 나는 자리가 같아야 사슬이 같다)과 같은 실패여야 한다: 같은 타입 · 같은 메시지 · 같은
+     * 원인 사슬(끝에 [SocketTimeoutException]) · [BOUND_MILLIS] 안 · 응답 바이트를 인용하지 않는다.
+     */
+    private fun expectDeadline(
+        label: String,
+        lane: Lane,
+        o: Outcome,
+        stalled: List<Piece> = stalledBody(bodyOf(lane)),
+    ) {
+        val stall = run(lane, stalled)
+        println("[admin.ResponseReadDeadlineTest] $label → ${o.describe()} (멈춤 대조 ${stall.describe()})")
+        val thrown = assertNotNull(o.thrown, "$label: 마감 뒤에도 오는 응답을 받아들였다 — ${o.describe()}")
+        assertIs<KeycloakTransportException>(thrown, "$label: 전송 실패여야 한다 — ${trace(thrown)}")
+        assertTrue(o.millis < BOUND_MILLIS, "$label: $BOUND_MILLIS ms 안에 실패해야 한다 — ${o.describe()}")
+        val stalledThrown = assertNotNull(stall.thrown, "$label: 대조(멈춤)가 실패하지 않았다 — ${stall.describe()}")
+        assertEquals(stalledThrown.message, thrown.message, "$label: 읽기 타임아웃과 같은 메시지여야 한다")
+        assertEquals(chain(stalledThrown), chain(thrown), "$label: 읽기 타임아웃과 같은 원인 사슬이어야 한다 — ${trace(thrown)}")
+        assertTrue(SocketTimeoutException::class.java.name in chain(thrown), "$label: ${chain(thrown)} — ${trace(thrown)}")
+        assertFalse(trace(thrown).contains(MARKER), "$label: 실패가 응답 바이트를 인용했다 — ${trace(thrown)}")
+    }
+
     private fun trace(t: Throwable): String {
         val out = StringWriter()
         t.printStackTrace(PrintWriter(out, true))
@@ -183,18 +387,138 @@ internal class ResponseReadDeadlineTest {
     @EnumSource(Lane::class)
     @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     fun `a trickled response fails at the deadline`(lane: Lane) {
-        val stall = run(lane, stalledBody(bodyOf(lane)))
-        val o = run(lane, trickledBody(bodyOf(lane)))
-        val label = "admin $lane 흘리기"
-        println("[admin.ResponseReadDeadlineTest] $label → ${o.describe()} (멈춤 대조 ${stall.describe()})")
-        val thrown = assertNotNull(o.thrown, "$label: 마감 뒤에도 오는 응답을 받아들였다 — ${o.describe()}")
-        assertIs<KeycloakTransportException>(thrown, "$label: 전송 실패여야 한다 — ${trace(thrown)}")
-        assertTrue(o.millis < BOUND_MILLIS, "$label: $BOUND_MILLIS ms 안에 실패해야 한다 — ${o.describe()}")
-        val stalled = assertNotNull(stall.thrown, "$label: 대조(멈춤)가 실패하지 않았다 — ${stall.describe()}")
-        assertEquals(stalled.message, thrown.message, "$label: 읽기 타임아웃과 같은 메시지여야 한다")
-        assertEquals(chain(stalled), chain(thrown), "$label: 읽기 타임아웃과 같은 원인 사슬이어야 한다 — ${trace(thrown)}")
-        assertTrue(SocketTimeoutException::class.java.name in chain(thrown), "$label: ${chain(thrown)} — ${trace(thrown)}")
-        assertFalse(trace(thrown).contains(MARKER), "$label: 실패가 응답 바이트를 인용했다 — ${trace(thrown)}")
+        expectDeadline("admin $lane 흘리기", lane, run(lane, trickledBody(bodyOf(lane))))
+    }
+
+    /**
+     * (2) 응답의 틀을 흘리는 서버 — 본문 앞(머리)이나 본문 읽기 하나 **안**(청크 크기 줄 · 트레일러)이어도 마감에 실패한다. 두 레인 모두. 대조는 같은
+     * 자리(흘리기 직전)에서 멈춘 응답이다. 수정 전 측정은 커밋 메시지.
+     */
+    @ParameterizedTest
+    @EnumSource(Framing::class)
+    @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `trickled framing fails at the deadline`(framing: Framing) {
+        for (lane in Lane.entries) {
+            val body = bodyOf(lane)
+            expectDeadline("admin $lane 틀 $framing", lane, run(lane, framing.pieces(body)), framing.stalled(body))
+        }
+    }
+
+    /**
+     * (2) TLS 레코드 하나를 흘리는 서버 — JSSE 는 레코드가 다 올 때까지 읽기 하나 안에서 기다린다(그 아래 평문 소켓의 읽기는 바이트마다 끝난다).
+     * 마감을 TLS 스트림의 읽기마다만 보면 이 칸이 그대로다 — 마감은 JSSE 아래의 평문 소켓에서 본다. 수정 전 측정은 커밋 메시지.
+     */
+    @ParameterizedTest
+    @EnumSource(Lane::class)
+    @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `a trickled TLS record fails at the deadline`(lane: Lane) {
+        expectDeadline("admin $lane TLS 레코드", lane, runTls(lane))
+    }
+
+    /**
+     * 교환의 끝은 그 스레드의 소켓 마감을 지운다 — 남으면 그 스레드가 나중에 하는 소켓 읽기(다음 교환이 연결을 빌리며 엿보는 읽기)가 지난 교환의
+     * 마감에 걸린다. 파사드는 IO 스레드에서 교환하므로, 이 레인의 JAX-RS 클라이언트로 이 스레드에서 직접 교환한 뒤 그 마감을 넘겨 시작한 읽기가
+     * 그대로인지 본다.
+     */
+    @Test
+    @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `an exchange leaves no deadline on its thread`() {
+        PacedServer { whole(USER_BODY) }.use { server ->
+            val client = AdminClient.buildTimeoutClient(config(server.url))
+            try {
+                client.target(server.url + USER_PATH).request().get().use { response ->
+                    assertEquals(200, response.status)
+                    response.readEntity(String::class.java)
+                }
+            } finally {
+                client.close()
+            }
+            Thread.sleep(READ_TIMEOUT_MILLIS + 200L)
+            assertEquals('x'.code, AdminSockets.deadlined(SlowStream(0, 'x'.code)).read(), "교환이 끝난 스레드에 마감이 남았다")
+        }
+    }
+
+    /**
+     * 닫지 않은 응답도 보낸 스레드에 마감을 남기지 않는다 — 남으면 그 스레드의 다음 admin 호출이 새 연결의 TLS 핸드셰이크에서 곧바로 실패했다
+     * (독립 검토의 Java 실측: 열어 둠 46 ms · 다른 스레드에서 닫음 8 ms). 이 레인의 JAX-RS 클라이언트로 응답을 받고 읽지도 닫지도 않은 채 마감을
+     * 넘긴다.
+     */
+    @Test
+    @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `a response left open leaves no deadline on the sending thread`() {
+        PacedServer { whole(USER_BODY) }.use { server ->
+            val client = AdminClient.buildTimeoutClient(config(server.url))
+            try {
+                val open = client.target(server.url + USER_PATH).request().get()
+                Thread.sleep(READ_TIMEOUT_MILLIS + 200L)
+                assertEquals('x'.code, AdminSockets.deadlined(SlowStream(0, 'x'.code)).read(), "닫지 않은 응답이 보낸 스레드에 마감을 남겼다")
+                open.close()
+            } finally {
+                client.close()
+            }
+        }
+    }
+
+    /**
+     * 본문을 다른 스레드에서 읽어도 같은 마감이다 — 엔진의 스트림이 읽는 스레드에 읽기마다 그 교환의 마감을 건다(코루틴이 다른 IO 워커에서 이어져
+     * 읽는 경우와 같다). 머리는 곧바로 오고 청크 크기 줄을 흘린다(읽기 하나 안). 보낸 때부터 [BOUND_MILLIS] 안에 실패해야 한다.
+     */
+    @Test
+    @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `a body read on another thread still meets the deadline`() {
+        PacedServer { Framing.CHUNK_SIZE_LINE.pieces(USER_BODY) }.use { server ->
+            val client = AdminClient.buildTimeoutClient(config(server.url))
+            val other = Executors.newSingleThreadExecutor()
+            try {
+                val start = System.nanoTime()
+                val response = client.target(server.url + USER_PATH).request().get()
+                val body = other.submit<String> { response.readEntity(String::class.java) }
+                val e = assertFailsWith<ExecutionException>("다른 스레드의 읽기가 흘린 틀을 받아들였다") { body.get() }
+                val millis = (System.nanoTime() - start) / 1_000_000
+                val cause = assertNotNull(e.cause)
+                assertTrue(SocketTimeoutException::class.java.name in chain(cause), trace(cause))
+                assertTrue(millis < BOUND_MILLIS, "다른 스레드의 읽기가 $BOUND_MILLIS ms 안에 실패해야 한다 — $millis ms")
+            } finally {
+                other.shutdownNow()
+                client.close()
+            }
+        }
+    }
+
+    /**
+     * 소켓의 마감 스트림([AdminSockets.deadlined]) — 마감이 없는 스레드의 읽기는 그대로다 · 마감 안의 읽기는 그대로다 · 마감 뒤에 시작하는 읽기는
+     * 읽지 않고 실패한다 · 마감 뒤에 끝난 읽기는 그 결과를 내주지 않는다 · 0 은 마감을 두지 않는다. 두 읽기 모두.
+     */
+    @Test
+    fun `the deadlined socket stream checks before and after every read`() {
+        try {
+            for (array in listOf(false, true)) {
+                val one = if (array) 1 else 'x'.code
+                AdminSockets.disarm()
+                assertEquals(one, read(AdminSockets.deadlined(SlowStream(0, 'x'.code)), array), "마감이 없는 스레드의 읽기는 그대로다")
+
+                AdminSockets.arm(System.nanoTime(), 10_000)
+                assertEquals(one, read(AdminSockets.deadlined(SlowStream(0, 'x'.code)), array), "마감 안의 읽기는 그대로다")
+
+                AdminSockets.arm(System.nanoTime(), 50)
+                Thread.sleep(80)
+                val before = SlowStream(0, 'x'.code)
+                val e = assertFailsWith<SocketTimeoutException> { read(AdminSockets.deadlined(before), array) }
+                assertEquals(0, before.reads, "마감 뒤에는 읽기를 시작하지 않는다")
+                assertEquals(RESPONSE_LATE + "50 ms of sending the request", e.message)
+
+                AdminSockets.arm(System.nanoTime(), 50)
+                val after = SlowStream(120, 'x'.code)
+                assertFailsWith<SocketTimeoutException> { read(AdminSockets.deadlined(after), array) }
+                assertEquals(1, after.reads, "마감을 넘겨 끝난 읽기 — 읽었지만 그 결과를 내주지 않는다")
+
+                AdminSockets.arm(System.nanoTime(), 0)
+                Thread.sleep(20)
+                assertEquals(one, read(AdminSockets.deadlined(SlowStream(0, 'x'.code)), array), "읽기 타임아웃 0(끝없이)에는 마감도 없다")
+            }
+        } finally {
+            AdminSockets.disarm()
+        }
     }
 
     /** 대조 — 머리와 몇 바이트 뒤 침묵: 지금처럼 읽기 타임아웃 무렵에 전송 실패다. */
@@ -246,6 +570,14 @@ internal class ResponseReadDeadlineTest {
      */
     @Test
     fun `the engine stream checks the deadline from when the request was sent`() {
+        try {
+            engineStreamChecks()
+        } finally {
+            AdminSockets.disarm() // 보낸 표시가 이 스레드의 소켓 마감도 건다 — 다음 시험에 남기지 않는다
+        }
+    }
+
+    private fun engineStreamChecks() {
         for (array in listOf(false, true)) {
             val exchange = AdminEngine.Exchange(HttpGet("http://127.0.0.1:1/"), 100)
             Thread.sleep(150) // 손잡이를 만든 때부터 세면 마감이 지났다
@@ -341,6 +673,19 @@ internal class ResponseReadDeadlineTest {
                 Piece(if (i == 0) 0 else HEALTHY_GAP_MILLIS, all.copyOfRange(from, to))
             }
         }
+
+        val CHUNKED_HEAD: ByteArray =
+            latin1("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n")
+
+        /** [at] 의 바이트를 [GAP_MILLIS] 마다 하나씩. */
+        fun trickled(at: ByteArray): List<Piece> = at.map { Piece(GAP_MILLIS, byteArrayOf(it)) }
+
+        /** TLS 레코드 둘 — 본문의 마지막 [TRICKLED] 바이트는 300 ms 뒤 따로 쓴다(그 레코드를 중계가 흘린다). */
+        fun twoRecords(body: ByteArray): List<Piece> =
+            listOf(
+                Piece(0, concat(head(body.size), body.copyOf(body.size - TRICKLED))),
+                Piece(300, body.copyOfRange(body.size - TRICKLED, body.size)),
+            )
 
         /** 요청 하나(머리와 Content-Length 본문)를 읽고 경로를 돌려준다 — 연결이 끝났으면 null. */
         fun readRequest(input: InputStream): String? {

@@ -11,6 +11,9 @@
 ### Fixed
 - **(PHP)** 릴리스 노트의 세 문장을 바로잡습니다(코드는 그대로입니다). `[1.5.0]` 의 「256,000 바이트를 넘는 `id_token` 을 돌려주는 IdP 앞에서는 `exchangeCode()` 가 이제 `TokenValidationError` 입니다」는 틀렸습니다 — nonce 를 준 `exchangeCode()` 는 `1.0.0` 부터 id_token 검증 실패를 `KeycloakAuthError`(`getPrevious()` 가 `TokenValidationError`)로 던지고, nonce 가 없으면 id_token 을 검증하지 않습니다. `[1.5.2]` 의 「메시지는 그대로이고」는 `access_token` 이 없는 JSON 에서 틀렸고, 「`KeycloakTransportError` 는 네트워크 실패만 뜻합니다」도 틀렸습니다(숫자가 아닌 `expires_in` 은 여전히 그것입니다) — 그 절을 고쳤습니다. 그리고 `php/README.md` 에 `1.0.0` 이후 동작 변경을 모은 「Upgrading from `1.0.0`」 절을 더했습니다.
 
+### Security
+- **(Java · Kotlin)** admin 레인도 응답 머리·청크 크기 줄·트레일러·TLS 레코드까지 요청을 보낸 때부터 읽기 타임아웃 안에 읽습니다 — 지금까지는 그 틀을 읽기마다만 묶어, 바이트를 읽기 타임아웃보다 조금 짧게 흘리는 서버가 1 초 설정에 7 초(틀)·33.5 초(TLS 레코드 하나) 호출을 붙잡았습니다. 이제 같은 `KeycloakTransportException` 으로 1.5 초 안에 끝납니다. ⚠️ 컨테이너가 RESTEasy `ClientConfigProvider` 를 두면(WildFly Elytron 등) 그 TLS 정책을 지키려 RESTEasy 의 풀을 그대로 쓰고, 그때 머리·틀은 지금처럼 읽기마다만 묶입니다.
+
 ## [1.5.2] - 2026-11-03 (PHP)
 
 **2026-11-03 여덟째 릴리스 물결 — PHP 와 Kotlin 이 patch 로 올라갑니다.** 일곱째 물결(아래 `[1.5.1] - 2026-10-31 (PHP)` 절 머리말) 뒤에 착지한 소비자 가시 변경을 아래 두 절에 싣습니다 — PHP `AuthClient` 의 토큰 응답 분류와 Kotlin POM 의 JDK 하한 문구입니다. 나머지 일곱 언어는 마지막 태그 뒤 소비자에게 보이는 변경이 없습니다.
