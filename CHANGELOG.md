@@ -9,7 +9,7 @@
 ## [Unreleased]
 
 ### Fixed
-- **(PHP)** 릴리스 노트 두 문장을 바로잡습니다(코드는 그대로입니다). `[1.5.0]` 의 「256,000 바이트를 넘는 `id_token` 앞에서 `exchangeCode()` 가 이제 `TokenValidationError`」는 틀렸습니다 — nonce 를 준 `exchangeCode()` 는 `1.0.0` 부터 id_token 검증 실패를 `KeycloakAuthError`(`getPrevious()` 가 `TokenValidationError`)로 던지고, nonce 가 없으면 id_token 을 검증하지 않습니다. `[1.5.2]` 의 「메시지는 그대로」도 `access_token` 이 없는 JSON 에서는 틀렸습니다(그 절을 고쳤습니다). 그리고 `php/README.md` 에 `1.0.0` 이후 동작 변경을 모은 「Upgrading from `1.0.0`」 절을 더했습니다.
+- **(PHP)** 릴리스 노트의 세 문장을 바로잡습니다(코드는 그대로입니다). `[1.5.0]` 의 「256,000 바이트를 넘는 `id_token` 을 돌려주는 IdP 앞에서는 `exchangeCode()` 가 이제 `TokenValidationError` 입니다」는 틀렸습니다 — nonce 를 준 `exchangeCode()` 는 `1.0.0` 부터 id_token 검증 실패를 `KeycloakAuthError`(`getPrevious()` 가 `TokenValidationError`)로 던지고, nonce 가 없으면 id_token 을 검증하지 않습니다. `[1.5.2]` 의 「메시지는 그대로이고」는 `access_token` 이 없는 JSON 에서 틀렸고, 「`KeycloakTransportError` 는 네트워크 실패만 뜻합니다」도 틀렸습니다(정수가 아닌 `expires_in` 은 여전히 그것입니다) — 그 절을 고쳤습니다. 그리고 `php/README.md` 에 `1.0.0` 이후 동작 변경을 모은 「Upgrading from `1.0.0`」 절을 더했습니다.
 
 ## [1.5.2] - 2026-11-03 (PHP)
 
@@ -18,7 +18,7 @@
 번호는 PHP `1.5.2`, Kotlin `1.0.9` 입니다. 동작이 바뀌는 항목(⚠️)이 있어도 번호는 게시된 공개 API 표면으로 정하고(DEPLOY.md §4 step 0), 두 언어 모두 그 표면이 그대로라 patch 입니다 — PHP 의 새 클래스 `Internal\TokenResponseUnusable` 은 `@internal` 입니다. 실제로 어디까지 게시됐는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh` 의 `df_published_version` 이 소유합니다.
 
 ### Changed
-- **(PHP)** ⚠️ `AuthClient` 의 토큰 그랜트(`clientCredentialsToken` · `refresh` · `exchangeCode`)가 토큰 엔드포인트의 **JSON 이 아닌 응답**(503 HTML 페이지 · 200 의 비-JSON 본문 등)과 **`access_token` 이 없는 JSON 응답**을 `KeycloakTransportError` 가 아니라 `KeycloakAuthError` 로 던집니다 — 같은 응답을 `ClientCredentialsTokenProvider` 는 원래 `KeycloakAuthError` 로 던졌고, `KeycloakTransportError` 는 네트워크 실패만 뜻합니다. 그 응답을 transport 로 잡아 재시도하던 코드는 auth 쪽을 보십시오. JSON 이 아닌 응답의 메시지는 그대로이고 `access_token` 이 없는 JSON 은 `token request failed` 가 `token response has no usable access_token` 이 됩니다(2026-11-04 정정 — 처음에는 「메시지는 그대로」라고 적었습니다). 상한 초과(`KeycloakTransportError`)와 OAuth 오류 응답(`KeycloakAuthError`)은 바뀌지 않았습니다.
+- **(PHP)** ⚠️ `AuthClient` 의 토큰 그랜트(`clientCredentialsToken` · `refresh` · `exchangeCode`)가 토큰 엔드포인트의 **JSON 이 아닌 응답**(503 HTML 페이지 · 200 의 비-JSON 본문 등)과 **`access_token` 이 없는 JSON 응답**을 `KeycloakTransportError` 가 아니라 `KeycloakAuthError` 로 던집니다 — 같은 응답을 `ClientCredentialsTokenProvider` 는 원래 `KeycloakAuthError` 로 던졌고, 그 응답을 transport 로 잡아 재시도하던 코드는 auth 쪽을 보십시오. JSON 이 아닌 응답의 메시지는 그대로이고 `access_token` 이 없는 JSON 은 `token request failed` 가 `token response has no usable access_token` 이 됩니다(2026-11-04 정정 — 처음에는 「메시지는 그대로」라고 적었습니다). 상한 초과(`KeycloakTransportError`)와 OAuth 오류 응답(`KeycloakAuthError`)은 바뀌지 않았습니다.
 
 ## [1.0.9] - 2026-11-03 (Kotlin)
 
