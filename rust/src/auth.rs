@@ -1291,6 +1291,32 @@ mod tests {
         );
     }
 
+    /// `Other` 의 계급 — 보내지 못한 요청(준비 실패)만 `Transport` 이고, oauth2 가 끝까지 온 응답에서 만드는
+    /// `Other`(빈 오류 본문 · 빈 본문 · 틀린 Content-Type)는 `Auth` 다. ⚠️ 준비 실패는 공개 API 로 닿지 않아
+    /// `tests/token_response_class.rs` 가 못 보는 갈래다 — 그래서 여기서 직접 부른다.
+    #[test]
+    fn map_token_err_other_is_transport_only_for_an_unsent_request() {
+        use openidconnect::RequestTokenError as RTE;
+        let class = |msg: &str| match map_token_err(RTE::Other(msg.into())) {
+            KeycloakError::Transport(_) => "Transport",
+            KeycloakError::Auth {
+                oauth_error: None, ..
+            } => "Auth",
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            class("failed to prepare request: builder error"),
+            "Transport"
+        );
+        for arrived in [
+            "server returned empty error response",
+            "server returned empty response body",
+            "unexpected response Content-Type: \"text/html\", should be `application/json`",
+        ] {
+            assert_eq!(class(arrived), "Auth", "{arrived}");
+        }
+    }
+
     #[tokio::test]
     async fn introspect_maps_active_response() {
         let server = MockServer::start().await;
