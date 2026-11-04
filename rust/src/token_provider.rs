@@ -1,6 +1,6 @@
 //! TokenProvider — the §4-isomorphic async abstraction. admin receives tokens only through this trait.
 use crate::config::KeycloakConfig;
-use crate::error::{KeycloakError, Result, oauth_error_code};
+use crate::error::{KeycloakError, Result, oauth_error_code, token_http_error};
 use crate::jwks::{TOKEN_RESPONSE_MAX_BYTES, read_capped};
 use crate::oidc::OidcEndpoints;
 use crate::tokens::TokenSet;
@@ -79,14 +79,14 @@ impl ClientCredentialsTokenProvider {
             .form(&params)
             .send()
             .await
-            .map_err(|e| KeycloakError::Transport(format!("token endpoint: {e}")))?;
+            .map_err(|e| token_http_error(&e, format!("token endpoint: {e}")))?;
         let status = resp.status();
         // ⚠️ 본문은 상한(auth 레인과 한 상수)까지만 읽는다 — `resp.json()` 은 통째로 모았다. 넘으면 admin 요청 없이
         // 실패한다(`SdkTokenSupplier` 가 401 로 옮긴다).
         let mut resp = resp;
         let body = read_capped(&mut resp, TOKEN_RESPONSE_MAX_BYTES)
             .await
-            .map_err(|e| KeycloakError::Transport(format!("token response: {e}")))?
+            .map_err(|e| token_http_error(&e, format!("token response: {e}")))?
             .ok_or_else(|| {
                 KeycloakError::Transport(format!(
                     "token response exceeds {TOKEN_RESPONSE_MAX_BYTES} bytes"

@@ -3,7 +3,9 @@
 //!
 //! 행 이름의 R 번호는 #935 의 표와 같다 — R1 503 HTML · R2 200 비-JSON · R3 400 OAuth 오류 JSON ·
 //! R4 200 JSON 에 `access_token` 없음 · R5 1,048,576 바이트 상한 초과 · R6 introspection 200 비-JSON(R2 행의
-//! `introspect` 칸). 빈 본문 둘(E1 200 · E2 502)과 대조군 둘(쓸 수 있는 응답 · 닿지 않는 IdP)을 더했다.
+//! `introspect` 칸). 빈 본문 둘(E1 200 · E2 502), 307 루프(X1 — 공유 클라이언트는 3xx 를 그대로 받고, 여기 provider 가
+//! 받은 `reqwest::Client::new()` 만 따라가다 한도에 걸린다)와 대조군 셋(쓸 수 있는 응답 · 닿지 않는 IdP · 70,000 자 realm 으로
+//! 보내지 못한 요청)을 더했다.
 //! 열은 공개 진입점 여덟이다 — `AuthClient` 의 토큰 호출 다섯(S1) · `introspect` · `ClientCredentialsTokenProvider`(S2)
 //! · admin 파사드(S5: 토큰을 못 얻으면 요청 없이 `Admin(Other { status: 401 })`).
 //!
@@ -35,7 +37,7 @@ const CALLS: [&str; 8] = [
     "admin list_realms",
 ];
 
-/// (realm, `CALLS` 순서의 계급). 마지막 행은 닿지 않는 IdP(연결 거부)다.
+/// (realm, `CALLS` 순서의 계급). 마지막 두 행은 닿지 않는 IdP(연결 거부)와 보내지 못한 요청이다.
 #[rustfmt::skip]
 const EXPECTED: &[(&str, [&str; 8])] = &[
     //                             cc           refresh      exch         exch(redir)  AuthClient TP introspect   provider     admin
@@ -48,7 +50,9 @@ const EXPECTED: &[(&str, [&str; 8])] = &[
     ("r5-over-cap",               ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
     ("e1-200-empty",              ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
     ("e2-502-empty",              ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
+    ("x1-307-loop",               ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
     ("n-unreachable",             ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
+    ("u-uri-too-long",            ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
 ];
 
 struct Row {
@@ -56,6 +60,8 @@ struct Row {
     status: u16,
     content_type: &'static str,
     body: String,
+    /// `Location` 을 그 realm 의 token 주소로 — 따라가는 클라이언트가 끝없이 돈다.
+    redirect_to_self: bool,
 }
 
 fn rows() -> Vec<Row> {
@@ -64,6 +70,7 @@ fn rows() -> Vec<Row> {
         status,
         content_type,
         body: body.into(),
+        redirect_to_self: false,
     };
     // 쓸 수 있는 응답 뒤에 JSON 공백을 붙여 상한을 한 바이트 넘긴다 — 상한 말고는 거부할 까닭이 없는 본문이다.
     let over_cap = format!("{USABLE}{}", " ".repeat(CAP + 1 - USABLE.len()));
@@ -97,13 +104,20 @@ fn rows() -> Vec<Row> {
         row("r5-over-cap", 200, "application/json", &over_cap),
         row("e1-200-empty", 200, "application/json", ""),
         row("e2-502-empty", 502, "text/html", ""),
+        Row {
+            redirect_to_self: true,
+            ..row("x1-307-loop", 307, "text/plain", "")
+        },
     ]
 }
 
 async fn mount(server: &MockServer, row: &Row) {
     let oidc = format!("/realms/{}/protocol/openid-connect", row.realm);
-    let resp = ResponseTemplate::new(row.status)
+    let mut resp = ResponseTemplate::new(row.status)
         .set_body_raw(row.body.clone().into_bytes(), row.content_type);
+    if row.redirect_to_self {
+        resp = resp.insert_header("Location", format!("{}{oidc}/token", server.uri()));
+    }
     for p in [format!("{oidc}/token"), format!("{oidc}/token/introspect")] {
         Mock::given(method("POST"))
             .and(path(p))
@@ -179,6 +193,11 @@ async fn token_response_class_follows_the_nine_language_decision() {
         .expect("config")
         .with_client_secret("s");
     got.push(("n-unreachable", drive(down).await));
+    // 설정은 받지만 요청으로 만들 수 없는 주소 — oauth2 는 「failed to prepare request: uri too long」, reqwest 는 빌더 오류다.
+    let unsent = KeycloakConfig::new(server.uri(), "r".repeat(70_000), "it-client")
+        .expect("config")
+        .with_client_secret("s");
+    got.push(("u-uri-too-long", drive(unsent).await));
 
     assert_eq!(got.len(), EXPECTED.len(), "행 수가 기대표와 다르다");
     let mut wrong = Vec::new();

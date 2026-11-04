@@ -5,7 +5,7 @@
 //! get a concrete type, `KcOidcClient`, that is callable without `?` (infallible). The id_token is validated by the
 //! hardened `JwtValidator` instead of openidconnect's own validator, so the `JsonWebKeySet` is left empty.
 use crate::config::KeycloakConfig;
-use crate::error::{KeycloakError, Result, oauth_error_code};
+use crate::error::{KeycloakError, Result, oauth_error_code, token_http_error};
 use crate::jwks::{TOKEN_RESPONSE_MAX_BYTES, read_capped};
 use crate::jwt::JwtValidator;
 use crate::oidc::OidcEndpoints;
@@ -461,7 +461,8 @@ fn to_token_set(resp: &CoreTokenResponse) -> Result<TokenSet> {
 }
 
 /// openidconnect `RequestTokenError` → `KeycloakError`. 서버 OAuth 오류와, **끝까지 온 쓸 수 없는 응답**(JSON 아님 · 틀린
-/// 타입 · `access_token` 없음 · 빈 오류 본문 · 틀린 Content-Type · 값 뒤 꼬리)은 `Auth` 다. `Transport` 는 응답이 다 오지 않은
+/// 타입 · `access_token` 없음 · 빈 오류 본문 · 틀린 Content-Type · 값 뒤 꼬리 · 해독 실패 · 따라가다 실패한 리다이렉트 —
+/// 뒤의 둘은 소비자가 켠 reqwest 기능·소비자가 준 클라이언트에서만 난다)은 `Auth` 다. `Transport` 는 응답이 다 오지 않은
 /// 것(네트워크 · 타임아웃 · 상한 초과)과 보내지 못한 요청뿐이다 — 아홉 언어 판정(#935: 「응답이 끝까지 왔고 쓸 토큰 응답이 아닌 것은
 /// auth」 · 등록부 `token-response-class-divergent`). 예전에는 형식 오류를 전부 `Transport` 로 냈고, 같은 응답을
 /// [`ClientCredentialsTokenProvider`](crate::ClientCredentialsTokenProvider) 는 `access_token` 이 없으면 `Auth` 로 냈다(언어 안 분리).
@@ -491,7 +492,14 @@ fn map_token_err(
             }
         }
         RTE::Request(HttpClientError::Other(msg)) => KeycloakError::Transport(msg),
-        RTE::Request(re) => KeycloakError::Transport(format!("token request: {re}")),
+        // reqwest 오류의 계급은 provider 와 한 함수다(`token_http_error` — 해독·리다이렉트 실패는 온 응답이라 `Auth`).
+        RTE::Request(re) => {
+            let message = format!("token request: {re}");
+            match &re {
+                HttpClientError::Reqwest(e) => token_http_error(e, message),
+                _ => KeycloakError::Transport(message),
+            }
+        }
         RTE::Parse(..) => KeycloakError::Auth {
             message: UNPARSABLE_RESPONSE.into(),
             oauth_error: None,
@@ -499,6 +507,8 @@ fn map_token_err(
         RTE::Other(msg) => {
             let message = format!("token request failed: Other error: {}", other_message(&msg));
             // 보내지도 못한 요청(준비 실패)만 전송이다 — 빈 오류 본문 · 틀린 Content-Type 은 끝까지 온 응답이다.
+            // ⚠️ oauth2 의 device flow(`devicecode.rs` 의 `compute_timeout`)는 접두 없이 보내기 전 `Other` 를 만든다 — 이
+            // SDK 는 그 흐름을 쓰지 않는다. 쓰게 되면 이 갈래를 다시 본다(#951 독립 레그).
             if msg.starts_with("failed to prepare request: ") {
                 KeycloakError::Transport(message)
             } else {
@@ -1292,8 +1302,8 @@ mod tests {
     }
 
     /// `Other` 의 계급 — 보내지 못한 요청(준비 실패)만 `Transport` 이고, oauth2 가 끝까지 온 응답에서 만드는
-    /// `Other`(빈 오류 본문 · 빈 본문 · 틀린 Content-Type)는 `Auth` 다. ⚠️ 준비 실패는 공개 API 로 닿지 않아
-    /// `tests/token_response_class.rs` 가 못 보는 갈래다 — 그래서 여기서 직접 부른다.
+    /// `Other`(빈 오류 본문 · 빈 본문 · 틀린 Content-Type)는 `Auth` 다. 공개 API 로는 준비 실패에 비정상 설정으로만 닿는다
+    /// (70,000 자 realm → `uri too long` — `tests/token_response_class.rs` 의 `u-uri-too-long` 행) — 문구 판정은 여기서 직접 잰다.
     #[test]
     fn map_token_err_other_is_transport_only_for_an_unsent_request() {
         use openidconnect::RequestTokenError as RTE;

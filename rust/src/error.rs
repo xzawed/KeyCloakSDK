@@ -61,6 +61,21 @@ pub(crate) fn oauth_error_code(raw: &str) -> Option<String> {
     code_shaped.then(|| raw.to_string())
 }
 
+/// 토큰·introspection 레인의 reqwest 오류 → 계급(auth 와 provider 두 경로 공용). 응답이 **끝까지 왔는데** reqwest 가 쓸 수
+/// 없다고 낸 것은 `Auth` 다 — 해독 실패(소비자 빌드가 켠 `gzip` 같은 기능 아래의 깨진 Content-Encoding)와 리다이렉트 실패
+/// (소비자가 준 클라이언트가 따라가다 한도·정책에 걸림). 나머지(연결 · 타임아웃 · 본문 도중 끊김 · 요청 생성)는 `Transport` 다.
+/// ⚠️ 본문이 도중에 끊긴 것은 해독기 안에서 나도 `is_decode()` 가 아니다 — reqwest 의 `decode_io` 가 본문 오류를 꺼내 준다.
+pub(crate) fn token_http_error(e: &reqwest::Error, message: String) -> KeycloakError {
+    if e.is_decode() || e.is_redirect() {
+        KeycloakError::Auth {
+            message,
+            oauth_error: None,
+        }
+    } else {
+        KeycloakError::Transport(message)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,6 +104,58 @@ mod tests {
         ] {
             assert_eq!(oauth_error_code(not_code), None, "{not_code:?}");
         }
+    }
+
+    /// 계급은 reqwest 가 실제로 낸 오류로 잰다 — 해독 실패(`json()` 의 Decode 계열)와 리다이렉트 한도는 `Auth`, 연결 거부는
+    /// `Transport`. ⚠️ gzip 해독 실패도 같은 Decode 계열이지만, 이 크레이트는 그 기능을 켜지 않아 여기서는 못 만든다.
+    #[tokio::test]
+    async fn token_http_error_classes_real_reqwest_errors() {
+        use wiremock::matchers::path;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        Mock::given(path("/not-json"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw("not json", "application/json"))
+            .mount(&server)
+            .await;
+        Mock::given(path("/loop"))
+            .respond_with(
+                ResponseTemplate::new(307)
+                    .insert_header("Location", format!("{}/loop", server.uri())),
+            )
+            .mount(&server)
+            .await;
+        let decode = reqwest::get(format!("{}/not-json", server.uri()))
+            .await
+            .expect("response")
+            .json::<serde_json::Value>()
+            .await
+            .expect_err("not json");
+        let redirect = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::limited(2))
+            .build()
+            .expect("client")
+            .get(format!("{}/loop", server.uri()))
+            .send()
+            .await
+            .expect_err("redirect loop");
+        let connect = reqwest::get("http://127.0.0.1:1")
+            .await
+            .expect_err("refused");
+        assert!(
+            decode.is_decode() && redirect.is_redirect() && connect.is_connect(),
+            "대조군이 의도한 갈래가 아니다"
+        );
+        let class = |e: &reqwest::Error| match token_http_error(e, String::new()) {
+            KeycloakError::Auth {
+                oauth_error: None, ..
+            } => "Auth",
+            KeycloakError::Transport(_) => "Transport",
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            [class(&decode), class(&redirect), class(&connect)],
+            ["Auth", "Auth", "Transport"]
+        );
     }
 
     #[test]
