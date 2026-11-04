@@ -153,6 +153,36 @@ func TestGrantFailingBeforeAnyRequestStaysAuth(t *testing.T) {
 	}
 }
 
+// TestUnbuildableRequestIsTransportOnEveryLane — Config 가 받는 realm 이라도 요청 URL 로 만들 수 없으면(「%zz」) 그 실패는
+// 모든 레인에서 *TransportError 다. 그랜트는 x/oauth2 의 http.NewRequest 가 전송층 전에 실패해 「보냄」이 없는데, 그것을
+// 빈 refresh token 과 같이 *AuthError 로 두면 같은 Config 에서 Introspect·Admin 과 갈린다(#952 셋째 레그가 찾았다).
+func TestUnbuildableRequestIsTransportOnEveryLane(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { hits.Add(1) }))
+	defer srv.Close()
+	cfg := Config{ServerURL: srv.URL, Realm: "%zz", ClientID: "c", ClientSecret: "s"}
+	c, err := New(cfg)
+	if err != nil {
+		t.Skipf("Config 가 이 realm 을 거부한다(그러면 이 시험의 전제가 사라진다): %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	ctx := context.Background()
+	_, cc := c.Auth.ClientCredentialsToken(ctx)
+	_, ex := c.Auth.ExchangeCode(ctx, "code", "https://app/cb", "verifier-0123456789-0123456789-0123456789", "")
+	_, rf := c.Auth.Refresh(ctx, "rt")
+	_, in := c.Auth.Introspect(ctx, "at")
+	_, ad := c.Admin(ctx)
+	_, inj := NewAdminClient(ctx, cfg, NewClientCredentialsTokenProvider(c.Auth.ClientCredentialsToken, 30))
+	for i, err := range []error{cc, ex, rf, in, ad, inj} {
+		if got := classKind(err); got != "Transport" {
+			t.Errorf("%s: %s 여야 하는데 %s — %v", classCalls[i], "Transport", got, err)
+		}
+	}
+	if hits.Load() != 0 {
+		t.Errorf("만들 수 없는 요청이 %d 번 나갔다", hits.Load())
+	}
+}
+
 // TestAdminLoginUnusableResponseNamesTheStatusNotTheBody — 상태 없이 실패한 admin 로그인의 온 응답은 슬롯의 상태를 밝히고 gocloak 의
 // 말은 옮기지 않는다: JSON 이라 적힌 503 HTML 은 gocloak 이 상태를 잃는다(Code 0), 맞지 않는 숫자는 디코더가 그 숫자를 인용한다.
 func TestAdminLoginUnusableResponseNamesTheStatusNotTheBody(t *testing.T) {
