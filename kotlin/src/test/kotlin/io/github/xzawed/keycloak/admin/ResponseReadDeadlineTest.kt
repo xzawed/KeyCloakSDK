@@ -232,7 +232,12 @@ internal class ResponseReadDeadlineTest {
                 listOf(
                     Piece(
                         0,
-                        concat(CHUNKED_HEAD, latin1(Integer.toHexString(body.size - 1) + "\r\n"), body.copyOf(body.size - 1), latin1("\r\n")),
+                        concat(
+                            CHUNKED_HEAD,
+                            latin1(Integer.toHexString(body.size - 1) + "\r\n"),
+                            body.copyOf(body.size - 1),
+                            latin1("\r\n"),
+                        ),
                     ),
                 ) +
                     trickled(latin1("1;a=bcde\r\n")) +
