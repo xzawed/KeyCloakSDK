@@ -1,5 +1,5 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=174141 max-raw-bytes=195056 -->
+<!-- doc-budget: max-bytes=174144 max-raw-bytes=195059 -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -8,7 +8,7 @@
      그대로인데 블록 주석이 633 → 60,409B 로 늘었다. 이제 주석도 센다(검사 8f). 열린 항목의 긴 착수 메모와 경위는
      PR 본문으로 보내고 포인터만 남긴다.
      173588 → 173845(2026-11-04): 다시 재는 법 (mm) 을 샀다 — 거짓 「node 청크 확장 무상한」을 지운 교환.
-     173845 → 174141 · 194766 → 195056(2026-11-04): 근거 줄을 단 함정 (nn) 을 샀다 — 거짓 「rc 가 0.1.0-rc.2 를 서빙」을 지운 교환. -->
+     173845 → 174144 · 194766 → 195059(2026-11-04): 근거 줄을 단 함정 (nn) 을 샀다 — 거짓 「rc 가 0.1.0-rc.2 를 서빙」을 지운 교환. -->
 # 잔여작업 등록부 — 2026-09-03 전수 감사 후속
 
 **이 문서가 답하는 것 하나** — 「감사가 남긴 것 중 무엇이 아직 열려 있고, 각각을 **어떤 명령으로** 닫았다고 말할 수 있는가」.
@@ -116,7 +116,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - (kk) **규칙을 새로 쓰기 전에 도구가 거부하게 할 수 없는지 본다** — 존재를 요구하는 규칙(빠진 것이 빈 칸으로 보이는 것)은 구속하고 정확성을 요구하는 규칙은 구속하지 않았다(2026-09-13: 회고가 「어긴 것」으로 적은 다섯 중 넷이 바로 재발했다). 이미 있는데 어긴 규칙을 또 쓰지 않는다. 도구가 닫은 것은 변이 미착지(`probe.sh --site`) 하나이고, 동어반복 초록 · 싼 첫 명령 · 인터프리터 왕복은 규칙으로만 남아 있다.
 - (ll) **소비자가 틀릴 수 있는데 HEAD 는 맞다면, 오라클은 트리가 아니라 태그·레지스트리다**(#415 · `check-docs.mjs` 의 `kind=runtime` 두 번째 오라클 주석) — 다른 주장에도 건다. 그때 적은 후보: 게시된 공개 API 표면 · 게시 매니페스트의 의존성 하한 · 릴리스 바이너리에 컴파일된 기능 · 배포 아티팩트의 라이선스 · 「vX 에 포함됨」류 CHANGELOG 결속.
 - (mm) **가짜 서버는 별도 프로세스로 띄우고 최대치는 `process.resourceUsage().maxRSS` 로 잰다** — 같은 프로세스 서버의 버퍼 탓에 undici 청크 확장이 「무상한」으로 보였다(2026-11-04). 서버는 curl 과 보낸 바이트 수로 먼저 잰다(백프레셔 재개 버그가 끝없는 확장을 보냈다) · node 표본은 `external` 만 · 사례마다 새 포트.
-- (nn) **TTY 없는 셸의 npm 2FA 쓰기는 웹 승인 없이 `EOTP` 다**(npm 10.9.3 `lib/utils/auth.js:10`) — `--require` 로 stdin·stdout `isTTY` 를 참으로 놓고 `--browser=false` 면 승인 주소를 찍고 기다린다(2026-11-04).
+- (nn) **TTY 없는 셸의 npm 2FA 쓰기는 실패한다**(`EOTP` · npm 10.9.3 `lib/utils/auth.js:10`) — `node --require <isTTY=true 파일> npm-cli.js … --browser=false` 면 승인 주소를 찍고 기다린다(보안 키, 2026-11-04).
 
 ## 읽는 법
 
@@ -650,7 +650,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `divergence-rehearsal-artifact` **[M/M]** 함대가 갈리는 릴리스에서 새로 써야 하는 분기 문장 8건에 초안이 없다 · `scripts/test/test-publication-claims.sh:704`
 - [ ] `keycloak-server-tag-ssot` **[M/L]** Keycloak 서버 태그가 18개 파일에 복제된 채 떠 있고, 호환성 표의 「actual 26.6.4」는 재현 불가한 스냅샷 · `docs/reference/compatibility.md:20`
 - [ ] `harness-consume-pin-unsupported` **[L/S]** 주간 OSV 감사가 지원 대상이 아닌 0.1.0 트리를 재고 있다 · `harness/install/consume/kotlin-app/build.gradle.kts:36`
-- [x] `npm-rc-dist-tag-residue` **[L/S · 닫힘 2026-11-04]** 지웠다(정식 게시는 `rc` 를 안 옮긴다) — `npm dist-tag ls @xzawed/keycloak-sdk` 에 `rc` 없음 · 함정 (nn)
+- [x] `npm-rc-dist-tag-residue` **[L/S · 닫힘 2026-11-04]** 지웠다 — 정식이 `rc` 를 안 옮겨 RC 뒤 정식마다 남는다 · `npm dist-tag ls @xzawed/keycloak-sdk` · 함정 (nn)
 - [x] `php-admin-client-0.44-upgrade` **[L/M · 닫힘 2026-10-09 #759]** 0.44 가 감싼 예외를 `ErrorTranslation` 이 벗긴다(#750 대체)
 - [x] `kotlin-pom-description-jdk-floor` **[M/S · 닫힘 2026-11-02 #933]** POM 이 「JDK 21+」였다(게시 1.0.1–1.0.8) — 17+ 로 고치고 `check-versions.mjs` 가 `KOTLIN_X_Y`·`JvmTarget` 과 대조한다
 
