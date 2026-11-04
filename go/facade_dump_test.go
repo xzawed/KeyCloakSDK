@@ -61,8 +61,8 @@ var dumpWalkExempt = map[string]string{
 	"wireScrubBody": "응답 본문(http.Response.Body)을 감싸 읽는 동안만 산다 — 파사드가 쥐지 않는다. " +
 		"필드는 원래 본문 · 그 요청의 ctx · belowHTTPSlot 뿐이고 본문 바이트를 쥐지 않는다(cause.go)",
 	"belowHTTPSlot": "SDK 호출 하나의 ctx 값으로만 산다(withBelowHTTP) — 파사드가 쥐지 않는다. 필드는 그 호출의 요청이 만난 " +
-		"첫 오류 하나(정화된 전송 오류 또는 ctx 의 오류 — 응답 바이트를 인용하지 않는다)와 마지막 요청의 도착 플래그 둘" +
-		"(arrived · cut — 불리언)뿐이다(cause.go)",
+		"첫 오류 하나(정화된 전송 오류 또는 ctx 의 오류 — 응답 바이트를 인용하지 않는다)와 도착 기록(sent · arrived · cut 불리언 셋 " +
+		"· 마지막 응답의 상태 코드 정수)뿐이다(cause.go)",
 	"arrivalBody": "표시된 SDK 호출의 응답 본문(http.Response.Body)을 가장 바깥에서 감싸 읽는 동안만 산다 — 파사드가 쥐지 않는다. " +
 		"필드는 감싼 본문 · belowHTTPSlot 뿐이고 본문 바이트를 쥐지 않는다(cause.go)",
 	"cappedBody": "토큰 응답 본문을 감싸 상한까지 읽는 동안만 산다 — 파사드가 쥐지 않는다. " +

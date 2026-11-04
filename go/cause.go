@@ -170,18 +170,28 @@ type belowHTTPKey int
 // error class: a response that arrived but is unusable is *AuthError, one that did not arrive is *TransportError (#935).
 type belowHTTPSlot struct {
 	err atomic.Pointer[error]
-	// arrived: the last request got a response (status line and headers). cut: a Read of that response's body ended in an
-	// error that is not io.EOF — the transport, a deadline, broken framing, the size cap, a gzip body that does not decode.
-	arrived, cut atomic.Bool
+	// sent: the call reached the transport at all — a failure without it (x/oauth2 refusing an empty refresh token) sent
+	// nothing, and stays *AuthError. arrived: the last request got a response (status line and headers). cut: a Read of
+	// that response's body ended in an error that is not io.EOF — the transport, a deadline, broken framing, the size cap,
+	// or a gzip body that does not decode. ⚠️ gzip is decoded by this stack (net/http or decodedGzip), so its failure is
+	// framing-like and counts as cut (*TransportError); deflate and br are not decoded and arrive as raw bytes that fail as
+	// JSON (*AuthError) — rust draws the same line (#951/#952 independent legs). status: the last response's code.
+	sent, arrived, cut atomic.Bool
+	status             atomic.Int64
 }
 
 // began starts the arrival record of a new request — the class follows the call's last request.
 func (s *belowHTTPSlot) began() {
 	if s != nil {
+		s.sent.Store(true)
 		s.arrived.Store(false)
 		s.cut.Store(false)
+		s.status.Store(0)
 	}
 }
+
+// wasSent reports whether any request of the marked call reached the transport.
+func (s *belowHTTPSlot) wasSent() bool { return s != nil && s.sent.Load() }
 
 // fullyArrived reports whether the marked call's last request got a response whose body was not cut short. ⚠️ Not "the
 // slot is empty": the slot keeps only errors from beneath HTTP and the context's, so broken chunked framing leaves it empty,
@@ -258,6 +268,7 @@ func (t wireScrubTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	resp.Body = capTokenResponse(ctx, decodedGzip(resp, wireScrubBody{ReadCloser: resp.Body, ctx: ctx, slot: slot}))
 	if slot != nil {
 		slot.arrived.Store(true)
+		slot.status.Store(int64(resp.StatusCode))
 		resp.Body = arrivalBody{ReadCloser: resp.Body, slot: slot}
 	}
 	return resp, nil
@@ -327,16 +338,28 @@ func loginError(err error, capped *atomic.Bool, below *belowHTTPSlot) error {
 		return &AuthError{Msg: msg, Cause: &responseFreeError{typ: typ, msg: msg + " (response body withheld)"}}
 	}
 	msg := err.Error()
-	if refused := ": " + errBackChannelRedirect.Error(); strings.HasSuffix(msg, refused) {
+	refused := ": " + errBackChannelRedirect.Error()
+	redirect := strings.HasSuffix(msg, refused)
+	if redirect {
 		head, _, _ := strings.Cut(msg, ": ")
 		msg = head + refused + " (redirect target withheld)"
 	}
 	if lost := below.lost(err); lost != nil {
 		return &TransportError{Msg: msg, Cause: lost}
 	}
-	// No status, but the response came in full — a 2xx that is not the token JSON, or a redirect this lane refuses.
+	// No status from gocloak, but the response came in full — a body that is not the token JSON (gocloak drops the status
+	// when resty cannot decode a JSON-labelled error body, so a 503 page labelled JSON lands here), or a redirect this lane
+	// refuses. The status is the slot's; gocloak's words are not kept — the decoder quotes a number it could not fit
+	// (measured: "cannot unmarshal number 98765432109876543210987654321 into Go struct field JWT.expires_in").
 	if !capped.Load() && below.fullyArrived() {
-		return &AuthError{Msg: msg, Cause: &responseFreeError{typ: typ, msg: msg}}
+		status := int(below.status.Load())
+		amsg := "client-credentials login failed: HTTP " + strconv.Itoa(status) + " " + http.StatusText(status)
+		if redirect {
+			amsg += refused + " (redirect target withheld)"
+		} else {
+			amsg += ": unusable token response (body withheld)"
+		}
+		return &AuthError{Msg: amsg, Cause: &responseFreeError{typ: typ, msg: amsg}}
 	}
 	return &TransportError{Msg: msg, Cause: &responseFreeError{typ: typ, msg: msg}}
 }

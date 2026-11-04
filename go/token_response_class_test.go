@@ -132,6 +132,60 @@ func TestTokenResponseClassFollowsTheNineLanguageDecision(t *testing.T) {
 	}
 }
 
+// TestGrantFailingBeforeAnyRequestStaysAuth — 요청을 하나도 보내지 않은 실패(x/oauth2 가 빈 refresh token 을 요청 전에 거부한다)는
+// 다 오지 않은 응답이 아니다 — 재시도해도 소용없으니 *AuthError 로 남는다(#952 독립 레그가 찾았다: 「보냄」 신호 없이는 *TransportError 였다).
+func TestGrantFailingBeforeAnyRequestStaysAuth(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(classUsable))
+	}))
+	defer srv.Close()
+	c, err := New(Config{ServerURL: srv.URL, Realm: "r", ClientID: "c", ClientSecret: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	_, err = c.Auth.Refresh(context.Background(), "")
+	if got := classKind(err); got != "Auth" || hits.Load() != 0 {
+		t.Errorf("Refresh(\"\"): %s 에 요청 %d 번 — *AuthError · 0 번이어야 한다: %v", got, hits.Load(), err)
+	}
+}
+
+// TestAdminLoginUnusableResponseNamesTheStatusNotTheBody — 상태 없이 실패한 admin 로그인의 온 응답은 슬롯의 상태를 밝히고 gocloak 의
+// 말은 옮기지 않는다: JSON 이라 적힌 503 HTML 은 gocloak 이 상태를 잃는다(Code 0), 맞지 않는 숫자는 디코더가 그 숫자를 인용한다.
+func TestAdminLoginUnusableResponseNamesTheStatusNotTheBody(t *testing.T) {
+	const bigNumber = "98765432109876543210987654321"
+	for _, tc := range []struct {
+		name, status, body, want string
+	}{
+		{"503 html labelled json", "503", "<html><body>Service Unavailable from upstream-proxy-7Q2K</body></html>", "HTTP 503"},
+		{"200 expires_in overflow", "200", `{"access_token":"tok","token_type":"Bearer","expires_in":` + bigNumber + `}`, "HTTP 200"},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			code := http.StatusOK
+			if tc.status == "503" {
+				code = http.StatusServiceUnavailable
+			}
+			w.WriteHeader(code)
+			_, _ = w.Write([]byte(tc.body))
+		}))
+		_, err := newAdminClient(context.Background(), Config{ServerURL: srv.URL, Realm: "r", ClientID: "c", ClientSecret: "s"})
+		srv.Close()
+		rendered := fmt.Sprintf("%v · %#v", err, err)
+		if classKind(err) != "Auth" || !strings.Contains(rendered, tc.want) {
+			t.Errorf("%s: *AuthError 에 %q 여야 한다 — %s", tc.name, tc.want, rendered)
+		}
+		for _, leak := range []string{bigNumber, "upstream-proxy-7Q2K", "invalid character"} {
+			if strings.Contains(rendered, leak) {
+				t.Errorf("%s: 응답에서 온 글자 %q 를 찍었다 — %s", tc.name, leak, rendered)
+			}
+		}
+	}
+}
+
 // TestAdminTokenFailureNeverMatchesAdminSentinels — admin 이 토큰을 다시 받으려다 토큰 엔드포인트가 404·403·409 를 내면,
 // 그 실패는 admin 자원의 상태가 아니다. *AdminError 로 내던 때(2026-11-05 실측)는 admin 요청을 **한 번도 보내지 않고**
 // errors.Is(err, ErrNotFound) 가 참이어서, 「있으면 지운다」는 성공으로 · 「없으면 만든다」는 생성으로 읽혔다.

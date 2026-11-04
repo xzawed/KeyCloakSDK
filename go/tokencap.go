@@ -136,9 +136,10 @@ func (b *cappedBody) lookPast() error {
 // grantFailed is the error a grant method returns when x/oauth2 fails. A response that did not arrive in full is
 // *TransportError — none came (refused, unreachable, a deadline before it), its body was cut short or ended by a deadline,
 // or it went over the cap — and one that arrived but is not a usable token response is *AuthError (#935; it used to be
-// *AuthError for all of them). capped and below are from oauthCtx: over the cap the message names the cap rather than a
-// withheld lower-library detail; when a deadline ended the body read, x/oauth2 has flattened its error with %v and the
-// cause is the one the transport kept.
+// *AuthError for all of them). A failure that sent no request at all (x/oauth2 refuses an empty refresh token before any
+// request) stays *AuthError: retrying it cannot help. capped and below are from oauthCtx: over the cap the message names the
+// cap rather than a withheld lower-library detail; when a deadline ended the body read, x/oauth2 has flattened its error
+// with %v and the cause is the one the transport kept.
 func grantFailed(msg string, err error, capped *atomic.Bool, below *belowHTTPSlot) error {
 	if capped.Load() {
 		return &TransportError{Msg: msg + ": " + errTokenResponseTooLarge.Error(), Cause: errTokenResponseTooLarge}
@@ -146,7 +147,7 @@ func grantFailed(msg string, err error, capped *atomic.Bool, below *belowHTTPSlo
 	if lost := below.lost(err); lost != nil {
 		return &TransportError{Msg: msg, Cause: lost}
 	}
-	if !below.fullyArrived() {
+	if below.wasSent() && !below.fullyArrived() {
 		return &TransportError{Msg: msg, Cause: scrubCause(err)}
 	}
 	return &AuthError{Msg: msg, OAuthError: oauthError(err), Cause: scrubCause(err)}
