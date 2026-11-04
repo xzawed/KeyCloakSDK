@@ -9,6 +9,7 @@
 ## [Unreleased]
 
 ### Changed
+- **(Rust)** ⚠️ 토큰·인트로스펙션 응답이 **끝까지 왔지만 쓸 수 없으면** `KeycloakError::Transport` 가 아니라 `KeycloakError::Auth` 입니다 — JSON 아님(503 HTML 포함) · 필드 타입이 틀린 JSON · `access_token`·`active` 없음 · 빈 본문 · JSON 아닌 Content-Type · 값 뒤 꼬리, 그리고 주입한 `reqwest::Client` 가 따라가다 실패한 리다이렉트. `AuthClient` 의 토큰 호출과 `introspect`, `ClientCredentialsTokenProvider` 가 그렇습니다(provider 는 `access_token` 없는 JSON 이 원래 `Auth`). 그 응답을 transport 로 잡아 재시도하던 코드는 auth 쪽을 보십시오. 안쪽 문구는 그대로이고 `Display` 접두가 `transport error:` 에서 `authentication error:` 로 바뀝니다. 다 오지 않은 응답(네트워크 · 타임아웃 · 1,048,576 바이트 상한 초과)과 보내지 못한 요청은 그대로 `Transport`, admin 파사드의 토큰 실패도 그대로 `Admin(Other { status: 401 })` 입니다.
 - **(Go)** ⚠️ 토큰·인트로스펙션·admin 로그인 요청의 오류 계급을 「응답이 끝까지 왔는가」로 가릅니다. 다 오지 않은 응답(네트워크 실패 · 타임아웃 · 끊긴 본문 · 깨진 HTTP 틀 · 1,048,576 바이트 상한 초과 · 응답 머리 상한 초과)은 세 그랜트도 `*AuthError` 가 아니라 `*TransportError` 이고, `Introspect`·`Logout` 의 상한 초과도 그렇습니다. admin 자기 그랜트는 끝까지 온 응답이면 상태와 무관하게 `*AuthError` 입니다 — `*AdminError` 였던 탓에 토큰 엔드포인트의 404·403·409 가 `ErrNotFound`·`ErrForbidden`·`ErrConflict` 로 읽혀, 토큰을 다시 받지 못한 `Users.Delete` 가 admin 요청 없이 「이미 없음」으로 보였습니다. 그 상태로 재시도를 가르던 코드는 상태가 이제 메시지에만 있습니다. `v1.2.3` 노트의 「머리 상한 초과는 세 그랜트에서 `*AuthError`」는 이제 `*TransportError` 입니다.
 
 ### Fixed
