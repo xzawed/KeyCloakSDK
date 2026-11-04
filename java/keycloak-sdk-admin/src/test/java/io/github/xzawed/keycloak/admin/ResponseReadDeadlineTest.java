@@ -27,9 +27,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -593,16 +591,15 @@ class ResponseReadDeadlineTest {
   @Test
   @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
   void aResponseLeftOpen_leavesNoDeadlineOnTheSendingThread() throws Exception {
-    try (PacedServer server = new PacedServer(path -> whole(USER_BODY))) {
-      Client client = AdminClient.buildTimeoutClient(config(server.url()));
-      try {
-        Response open = client.target(server.url() + USER_PATH).request().get();
-        Thread.sleep(READ_TIMEOUT_MILLIS + 200L);
-        assertEquals('x', AdminSockets.deadlined(new SlowStream(0, 'x')).read(), "닫지 않은 응답이 보낸 스레드에 마감을 남겼다");
-        open.close();
-      } finally {
-        client.close();
+    try (PacedServer server = new PacedServer(path -> whole(USER_BODY));
+         Client client = AdminClient.buildTimeoutClient(config(server.url()));
+         Response open = client.target(server.url() + USER_PATH).request().get()) {
+      // 본문을 읽지 않은 채 열어 둔 동안 마감을 넘긴다 — 닫는 것은 이 블록의 끝이다
+      Thread.sleep(READ_TIMEOUT_MILLIS + 200L);
+      try (SlowStream after = new SlowStream(0, 'x')) {
+        assertEquals('x', AdminSockets.deadlined(after).read(), "닫지 않은 응답이 보낸 스레드에 마감을 남겼다");
       }
+      assertEquals(200, open.getStatus());
     }
   }
 
@@ -613,21 +610,18 @@ class ResponseReadDeadlineTest {
   @Test
   @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
   void aBodyReadOnAnotherThread_stillMeetsTheDeadline() throws Exception {
-    try (PacedServer server = new PacedServer(path -> Framing.CHUNK_SIZE_LINE.pieces(USER_BODY))) {
-      Client client = AdminClient.buildTimeoutClient(config(server.url()));
-      ExecutorService other = Executors.newSingleThreadExecutor();
-      try {
-        long start = System.nanoTime();
-        Response response = client.target(server.url() + USER_PATH).request().get();
-        Future<String> body = other.submit(() -> response.readEntity(String.class));
-        ExecutionException e = assertThrows(ExecutionException.class, body::get, "다른 스레드의 읽기가 흘린 틀을 받아들였다");
-        long millis = (System.nanoTime() - start) / 1_000_000;
-        assertTrue(chain(e.getCause()).contains(SocketTimeoutException.class.getName()), () -> trace(e.getCause()));
-        assertTrue(millis < BOUND_MILLIS, () -> "다른 스레드의 읽기가 " + BOUND_MILLIS + " ms 안에 실패해야 한다 — " + millis + " ms");
-      } finally {
-        other.shutdownNow();
-        client.close();
-      }
+    try (PacedServer server = new PacedServer(path -> Framing.CHUNK_SIZE_LINE.pieces(USER_BODY));
+         Client client = AdminClient.buildTimeoutClient(config(server.url()))) {
+      long start = System.nanoTime();
+      Response response = client.target(server.url() + USER_PATH).request().get();
+      FutureTask<String> body = new FutureTask<>(() -> response.readEntity(String.class));
+      Thread other = new Thread(body, "admin-deadline-other-reader");
+      other.setDaemon(true);
+      other.start();
+      ExecutionException e = assertThrows(ExecutionException.class, body::get, "다른 스레드의 읽기가 흘린 틀을 받아들였다");
+      long millis = (System.nanoTime() - start) / 1_000_000;
+      assertTrue(chain(e.getCause()).contains(SocketTimeoutException.class.getName()), () -> trace(e.getCause()));
+      assertTrue(millis < BOUND_MILLIS, () -> "다른 스레드의 읽기가 " + BOUND_MILLIS + " ms 안에 실패해야 한다 — " + millis + " ms");
     }
   }
 
@@ -647,16 +641,18 @@ class ResponseReadDeadlineTest {
 
         AdminSockets.arm(System.nanoTime(), 50);
         Thread.sleep(80);
-        SlowStream before = new SlowStream(0, 'x');
-        SocketTimeoutException e = assertThrows(SocketTimeoutException.class,
-            () -> read(AdminSockets.deadlined(before), array));
-        assertEquals(0, before.reads, "마감 뒤에는 읽기를 시작하지 않는다");
-        assertEquals(AdminEngine.LATE + "50 ms of sending the request", e.getMessage());
+        try (SlowStream before = new SlowStream(0, 'x')) {
+          SocketTimeoutException e = assertThrows(SocketTimeoutException.class,
+              () -> read(AdminSockets.deadlined(before), array));
+          assertEquals(0, before.reads, "마감 뒤에는 읽기를 시작하지 않는다");
+          assertEquals(AdminEngine.LATE + "50 ms of sending the request", e.getMessage());
+        }
 
         AdminSockets.arm(System.nanoTime(), 50);
-        SlowStream after = new SlowStream(120, 'x');
-        assertThrows(SocketTimeoutException.class, () -> read(AdminSockets.deadlined(after), array));
-        assertEquals(1, after.reads, "마감을 넘겨 끝난 읽기 — 읽었지만 그 결과를 내주지 않는다");
+        try (SlowStream after = new SlowStream(120, 'x')) {
+          assertThrows(SocketTimeoutException.class, () -> read(AdminSockets.deadlined(after), array));
+          assertEquals(1, after.reads, "마감을 넘겨 끝난 읽기 — 읽었지만 그 결과를 내주지 않는다");
+        }
 
         AdminSockets.arm(System.nanoTime(), 0);
         Thread.sleep(20);

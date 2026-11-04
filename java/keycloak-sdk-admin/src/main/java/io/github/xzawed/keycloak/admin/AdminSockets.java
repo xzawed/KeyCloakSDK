@@ -93,6 +93,13 @@ final class AdminSockets {
       due(deadline);
       return n;
     }
+
+    /** 마감이 지났으면 읽기 타임아웃과 같은 타입으로 — 메시지는 마감의 길이뿐이다(응답을 인용하지 않는다 · 엔진의 스트림과 같은 문구). */
+    private static void due(long[] deadline) throws SocketTimeoutException {
+      if (System.nanoTime() - deadline[0] >= 0) {
+        throw new SocketTimeoutException(AdminEngine.LATE + deadline[1] + " ms of sending the request");
+      }
+    }
   }
 
   private AdminSockets() {
@@ -173,12 +180,5 @@ final class AdminSockets {
    */
   static InputStream deadlined(InputStream socket) {
     return new DeadlinedStream(socket);
-  }
-
-  /** 마감이 지났으면 읽기 타임아웃과 같은 타입으로 — 메시지는 마감의 길이뿐이다(응답을 인용하지 않는다 · 엔진의 스트림과 같은 문구). */
-  private static void due(long[] deadline) throws SocketTimeoutException {
-    if (System.nanoTime() - deadline[0] >= 0) {
-      throw new SocketTimeoutException(AdminEngine.LATE + deadline[1] + " ms of sending the request");
-    }
   }
 }
