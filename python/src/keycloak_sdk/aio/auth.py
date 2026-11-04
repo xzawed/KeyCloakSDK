@@ -305,7 +305,8 @@ class AsyncAuthClient:
             # `binascii.Error`를 던진다. 그대로 두면 `keycloak_sdk.exceptions`를 잡는
             # 소비자가 아무것도 잡지 못한다(§4 위반). 두 미러가 갈라지지 않도록 같이 고친다.
             try:
-                key_set = KeySet.import_key_set(certs_typed)
+                # ⚠️ sync 미러와 같다 — joserfc 1.8.0 에서 반환이 `Any` 로 읽혀 타입을 적어 둔다.
+                key_set: KeySet = KeySet.import_key_set(certs_typed)
             except Exception as exc:
                 raise TokenValidationError(
                     f"malformed JWKS from the identity provider: {exc}"
