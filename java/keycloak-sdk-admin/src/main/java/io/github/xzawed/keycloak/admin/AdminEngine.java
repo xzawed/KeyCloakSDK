@@ -98,15 +98,22 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
   @Override
   public Response invoke(Invocation inv) {
     ClientInvocation request = (ClientInvocation) inv;
-    Response response = super.invoke(inv);
-    ClientResponseContextImpl entity = new ClientResponseContextImpl((ClientResponse) response);
-    InputStream in = entity.getEntityStream();
-    if (in != null) {
-      long limit = response.getStatus() < 300 || TokenResponseGuard.inScope(request.getMethod(), request.getUri())
-          ? Long.MAX_VALUE : ERROR_BODY_CAP;
-      entity.setEntityStream(new Settled(in, (Exchange) request.getMutableProperties().get(EXCHANGE), limit));
+    boolean bodyLeft = false;
+    try {
+      Response response = super.invoke(inv);
+      ClientResponseContextImpl entity = new ClientResponseContextImpl((ClientResponse) response);
+      InputStream in = entity.getEntityStream();
+      if (in != null) {
+        long limit = response.getStatus() < 300 || TokenResponseGuard.inScope(request.getMethod(), request.getUri())
+            ? Long.MAX_VALUE : ERROR_BODY_CAP;
+        entity.setEntityStream(new Settled(in, (Exchange) request.getMutableProperties().get(EXCHANGE), limit));
+        bodyLeft = true;
+      }
+      return response;
+    } finally {
+      // 본문이 남았으면 교환은 그 스트림이 닫힐 때 끝난다({@link Settled#close}) — 아니면 여기서 끝났다(실패 · 본문 없음)
+      if (!bodyLeft) AdminSockets.disarm();
     }
-    return response;
   }
 
   @Override
@@ -136,9 +143,13 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
       this.readTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(readTimeoutMillis);
     }
 
+    /** 보낸 때를 적고, 이 스레드의 소켓 읽기에도 같은 마감을 건다({@link AdminSockets#arm} — 머리 · 틀 · TLS 레코드가 그 읽기로 온다). */
     @Override
     public void setAttribute(String id, Object obj) {
-      if (HttpCoreContext.HTTP_REQ_SENT.equals(id) && Boolean.FALSE.equals(obj)) sentAt = System.nanoTime();
+      if (HttpCoreContext.HTTP_REQ_SENT.equals(id) && Boolean.FALSE.equals(obj)) {
+        sentAt = System.nanoTime();
+        AdminSockets.arm(sentAt, readTimeoutMillis);
+      }
       super.setAttribute(id, obj);
     }
 
@@ -238,22 +249,27 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
       return n;
     }
 
+    /** 교환의 끝 — 그래서 이 스레드의 소켓 마감도 여기서 지운다({@link AdminSockets#disarm}). */
     @Override
     public void close() throws IOException {
       if (closed) return;
       closed = true;
-      if (eof || exchange.endsNow(in)) {
-        in.close();
-        return;
-      }
-      exchange.cut();
       try {
-        in.close();
-      } catch (IOException cutAlready) {
-        // 끊긴 연결의 닫기는 실패할 수 있다 — HttpCore 가 버퍼의 나머지를 읽은 뒤 TLS 소켓은 -1 을 돌려줘 「Premature end of
-        // Content-Length delimited message body」(ConnectionClosedException — HttpClient 가 거르는 SocketException 이 아니다)가 났고
-        // RESTEasy 가 그것을 ProcessingException 으로 내 결과를 얻은 호출이 전송 실패가 됐다(실측, TLS 1.3 40/40). 버린다
-        // (TokenResponseGuard.closeQuietly 와 같은 처방).
+        if (eof || exchange.endsNow(in)) {
+          in.close();
+          return;
+        }
+        exchange.cut();
+        try {
+          in.close();
+        } catch (IOException cutAlready) {
+          // 끊긴 연결의 닫기는 실패할 수 있다 — HttpCore 가 버퍼의 나머지를 읽은 뒤 TLS 소켓은 -1 을 돌려줘 「Premature end of
+          // Content-Length delimited message body」(ConnectionClosedException — HttpClient 가 거르는 SocketException 이 아니다)가 났고
+          // RESTEasy 가 그것을 ProcessingException 으로 내 결과를 얻은 호출이 전송 실패가 됐다(실측, TLS 1.3 40/40). 버린다
+          // (TokenResponseGuard.closeQuietly 와 같은 처방).
+        }
+      } finally {
+        AdminSockets.disarm();
       }
     }
   }

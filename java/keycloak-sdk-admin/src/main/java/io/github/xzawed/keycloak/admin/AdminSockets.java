@@ -1,0 +1,139 @@
+package io.github.xzawed.keycloak.admin;
+
+import java.io.FilterInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.util.concurrent.TimeUnit;
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.SSLContext;
+import org.apache.http.config.Registry;
+import org.apache.http.config.RegistryBuilder;
+import org.apache.http.conn.socket.ConnectionSocketFactory;
+import org.apache.http.conn.socket.PlainConnectionSocketFactory;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
+import org.apache.http.protocol.HttpContext;
+
+/**
+ * admin 레인의 소켓 — 읽기마다 이 스레드가 지금 하는 교환의 마감을 본다. 상태 줄·헤더·청크 크기 줄·트레일러·본문·TLS 레코드가 모두 이
+ * 읽기로 온다(TLS 는 이 위에 겹친다 — JSSE 는 레코드를 이 소켓의 스트림에서 읽는다). auth 레인의 {@code BoundedTransport.deadlined} 와 같은
+ * 규칙이다 — admin 은 auth 에 기대지 않으므로(§4) 같은 규칙을 이 레인에 따로 둔다.
+ *
+ * <p>왜: 엔진의 엔티티 스트림({@link AdminEngine.Settled})은 읽기 하나의 앞뒤에서만 마감을 본다. 그 밖인 응답 머리와, 읽기 하나 안의 틀(청크
+ * 크기 줄 · 트레일러)·TLS 레코드는 읽기마다의 타임아웃만 묶어 — 바이트를 그보다 조금 짧은 간격으로 흘리는 서버 앞에서 읽기 타임아웃 1 초에
+ * 머리 7.5 초 · 청크 7.1 초 · 트레일러 7.1 초 · TLS 레코드 33.6 초가 걸렸다(실측 2026-10-29 · {@code ResponseReadDeadlineTest}). 그 소켓은
+ * RESTEasy 가 지은 풀의 것이라, 같은 크기·수명·소켓 설정의 풀을 이 소켓으로 다시 짓는다({@link #pool}).
+ *
+ * <p>마감은 소켓이 아니라 스레드에 둔다 — 소켓은 풀에서 교환을 건너 산다. 교환 하나는 요청을 보낸 스레드에서 끝까지 읽힌다(RESTEasy 의
+ * 동기 호출) — 소비자가 {@code raw()} 의 응답을 다른 스레드에서 읽으면 그 읽기는 이 마감 밖이고, 엔진의 스트림과 읽기 타임아웃이 묶는다.
+ */
+final class AdminSockets {
+  /** 이 스레드가 지금 하는 교환의 마감 — {@code {System.nanoTime() 의 마감, 그 길이(ms)}}. 보낼 때 걸고({@link #arm}) 끝이 지운다. */
+  private static final ThreadLocal<long[]> DEADLINE = new ThreadLocal<>();
+
+  /** 평문 — 맺는 것은 HttpClient 의 기본 그대로, 소켓만 이 레인의 것이다. */
+  static final ConnectionSocketFactory PLAIN = new PlainConnectionSocketFactory() {
+    @Override
+    public Socket createSocket(HttpContext context) {
+      return socket();
+    }
+  };
+
+  private AdminSockets() {
+  }
+
+  /**
+   * 이 스레드의 교환에 마감을 건다 — {@code sentAtNanos} 부터 {@code readTimeoutMillis}. 0 은 「끝없이」(읽기 타임아웃이 없다)라 마감도 두지
+   * 않는다. 엔진의 교환이 요청 머리를 쓰기 직전에 부른다({@link AdminEngine.Exchange}).
+   */
+  static void arm(long sentAtNanos, int readTimeoutMillis) {
+    if (readTimeoutMillis > 0) {
+      DEADLINE.set(new long[] {sentAtNanos + TimeUnit.MILLISECONDS.toNanos(readTimeoutMillis), readTimeoutMillis});
+    } else {
+      DEADLINE.remove();
+    }
+  }
+
+  /** 이 스레드의 마감을 지운다 — 교환의 끝. 그 뒤 이 스레드의 소켓 읽기(다음 교환이 연결을 빌리며 엿보는 읽기 등)는 마감을 보지 않는다. */
+  static void disarm() {
+    DEADLINE.remove();
+  }
+
+  /** TLS — 검증기·근원은 RESTEasy 가 고른 그대로, TLS 를 얹을 평문 소켓만 이 레인의 것이다. */
+  static ConnectionSocketFactory tls(SSLContext context, HostnameVerifier verifier) {
+    return new SSLConnectionSocketFactory(context, verifier) {
+      @Override
+      public Socket createSocket(HttpContext ctx) {
+        return socket();
+      }
+    };
+  }
+
+  /**
+   * RESTEasy 가 지은 풀({@code built})과 같은 크기 · 경로당 크기 · 소켓 설정 · 쉰 뒤 검사 간격과, 빌더의 연결 수명({@code ttlMillis})으로 이
+   * 레인의 소켓을 쓰는 풀을 짓는다. TLS 근원은 RESTEasy 의 기본 분기와 같은 것({@code tls} — 빌더에 준 것이 없으면
+   * {@link SSLContext#getDefault()})이다. 지은 풀은 쓰이지 않으므로 닫는 것은 부르는 쪽이다.
+   */
+  static PoolingHttpClientConnectionManager pool(PoolingHttpClientConnectionManager built, SSLContext tls,
+                                                 HostnameVerifier verifier, long ttlMillis) {
+    Registry<ConnectionSocketFactory> sockets = RegistryBuilder.<ConnectionSocketFactory>create()
+        .register("http", PLAIN)
+        .register("https", tls(tls, verifier))
+        .build();
+    PoolingHttpClientConnectionManager pool =
+        new PoolingHttpClientConnectionManager(sockets, null, null, null, ttlMillis, TimeUnit.MILLISECONDS);
+    pool.setMaxTotal(built.getMaxTotal());
+    pool.setDefaultMaxPerRoute(built.getDefaultMaxPerRoute());
+    pool.setDefaultSocketConfig(built.getDefaultSocketConfig());
+    pool.setValidateAfterInactivity(built.getValidateAfterInactivity());
+    return pool;
+  }
+
+  /** 이 레인의 소켓 — JDK 의 기본 소켓이되 그 입력 스트림이 읽기마다 마감을 본다({@link #deadlined}). */
+  static Socket socket() {
+    return new Socket() {
+      @Override
+      public InputStream getInputStream() throws IOException {
+        return deadlined(super.getInputStream());
+      }
+    };
+  }
+
+  /**
+   * 소켓의 입력 스트림 — 읽기 앞뒤로 이 스레드의 마감({@link #arm})을 본다: 마감 뒤에 읽기를 시작하지 않고, 마감 뒤에 끝난 읽기의 결과를 쓰지
+   * 않는다(그 바이트로 응답을 끝내지 않는다). 읽기 하나는 지금처럼 읽기 타임아웃이 묶으므로 최악은 마감 + 읽기 타임아웃 하나다. 마감이 없는
+   * 스레드의 읽기는 그대로다.
+   */
+  static InputStream deadlined(InputStream socket) {
+    return new FilterInputStream(socket) {
+      @Override
+      public int read() throws IOException {
+        long[] deadline = DEADLINE.get();
+        if (deadline == null) return super.read();
+        due(deadline);
+        int b = super.read();
+        due(deadline);
+        return b;
+      }
+
+      @Override
+      public int read(byte[] buffer, int offset, int length) throws IOException {
+        long[] deadline = DEADLINE.get();
+        if (deadline == null) return super.read(buffer, offset, length);
+        due(deadline);
+        int n = super.read(buffer, offset, length);
+        due(deadline);
+        return n;
+      }
+    };
+  }
+
+  /** 마감이 지났으면 읽기 타임아웃과 같은 타입으로 — 메시지는 마감의 길이뿐이다(응답을 인용하지 않는다 · 엔진의 스트림과 같은 문구). */
+  private static void due(long[] deadline) throws SocketTimeoutException {
+    if (System.nanoTime() - deadline[0] >= 0) {
+      throw new SocketTimeoutException(AdminEngine.LATE + deadline[1] + " ms of sending the request");
+    }
+  }
+}
