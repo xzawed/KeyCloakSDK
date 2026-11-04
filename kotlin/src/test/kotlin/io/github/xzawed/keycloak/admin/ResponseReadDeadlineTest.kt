@@ -23,6 +23,8 @@ import java.net.Socket
 import java.net.SocketTimeoutException
 import java.nio.charset.StandardCharsets
 import java.time.Duration
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
@@ -433,6 +435,53 @@ internal class ResponseReadDeadlineTest {
             }
             Thread.sleep(READ_TIMEOUT_MILLIS + 200L)
             assertEquals('x'.code, AdminSockets.deadlined(SlowStream(0, 'x'.code)).read(), "교환이 끝난 스레드에 마감이 남았다")
+        }
+    }
+
+    /**
+     * 닫지 않은 응답도 보낸 스레드에 마감을 남기지 않는다 — 남으면 그 스레드의 다음 admin 호출이 새 연결의 TLS 핸드셰이크에서 곧바로 실패했다
+     * (독립 검토의 Java 실측: 열어 둠 46 ms · 다른 스레드에서 닫음 8 ms). 이 레인의 JAX-RS 클라이언트로 응답을 받고 읽지도 닫지도 않은 채 마감을
+     * 넘긴다.
+     */
+    @Test
+    @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `a response left open leaves no deadline on the sending thread`() {
+        PacedServer { whole(USER_BODY) }.use { server ->
+            val client = AdminClient.buildTimeoutClient(config(server.url))
+            try {
+                val open = client.target(server.url + USER_PATH).request().get()
+                Thread.sleep(READ_TIMEOUT_MILLIS + 200L)
+                assertEquals('x'.code, AdminSockets.deadlined(SlowStream(0, 'x'.code)).read(), "닫지 않은 응답이 보낸 스레드에 마감을 남겼다")
+                open.close()
+            } finally {
+                client.close()
+            }
+        }
+    }
+
+    /**
+     * 본문을 다른 스레드에서 읽어도 같은 마감이다 — 엔진의 스트림이 읽는 스레드에 읽기마다 그 교환의 마감을 건다(코루틴이 다른 IO 워커에서 이어져
+     * 읽는 경우와 같다). 머리는 곧바로 오고 청크 크기 줄을 흘린다(읽기 하나 안). 보낸 때부터 [BOUND_MILLIS] 안에 실패해야 한다.
+     */
+    @Test
+    @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `a body read on another thread still meets the deadline`() {
+        PacedServer { Framing.CHUNK_SIZE_LINE.pieces(USER_BODY) }.use { server ->
+            val client = AdminClient.buildTimeoutClient(config(server.url))
+            val other = Executors.newSingleThreadExecutor()
+            try {
+                val start = System.nanoTime()
+                val response = client.target(server.url + USER_PATH).request().get()
+                val body = other.submit<String> { response.readEntity(String::class.java) }
+                val e = assertFailsWith<ExecutionException>("다른 스레드의 읽기가 흘린 틀을 받아들였다") { body.get() }
+                val millis = (System.nanoTime() - start) / 1_000_000
+                val cause = assertNotNull(e.cause)
+                assertTrue(SocketTimeoutException::class.java.name in chain(cause), trace(cause))
+                assertTrue(millis < BOUND_MILLIS, "다른 스레드의 읽기가 $BOUND_MILLIS ms 안에 실패해야 한다 — $millis ms")
+            } finally {
+                other.shutdownNow()
+                client.close()
+            }
         }
     }
 
