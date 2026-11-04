@@ -270,29 +270,32 @@ pub fn variants(base: &str) -> Vec<Variant> {
 }
 
 /// (realm, 호출) → 기대 분류, `drive` 의 호출 순서대로. ⚠️ 변형이 호출을 **실제로 실패시켰는가**가
-/// 여기 걸린다 — 수정 전(원 소스)에서 잰 표이고, 수정은 이 분류를 하나도 바꾸지 않는다.
+/// 여기 걸린다 — 누출 수정(node #603 의 rust 판)은 이 분류를 하나도 바꾸지 않았고, 분류를 바꾼 것은 계급 판정이다(아래).
 /// `ok` 는 그 호출이 그 필드를 안 읽어(관대한 파싱) 성공하는 자리다 — 오류 뿌리가 아니다.
-/// ⚠️ openidconnect 경로에서 응답 파싱 실패는 `Transport` 다(`map_token_err` 의 기존 분류).
+/// ⚠️ **끝까지 온 쓸 수 없는 응답은 `Auth` 다** — JSON 아님 · 틀린 타입 · `access_token` 없음 · 틀린 Content-Type · 값 뒤 꼬리
+/// (아홉 언어 판정 #935 · 등록부 `token-response-class-divergent`). 그래서 이 표에는 `Transport` 칸이 없다 — 이 변형은 모두 끝까지
+/// 온다. 예전에는 openidconnect 경로의 형식 오류가 전부 `Transport` 였고 provider 는 `access_token` 이 없을 때만 `Auth` 였다(언어
+/// 안 분리). 오지 않은 응답(네트워크 · 타임아웃 · 상한 초과)의 `Transport` 는 `token_response_cap` 과 마감 시험이 본다.
 #[rustfmt::skip]
 pub const EXPECTED: &[(&str, [&str; 9])] = &[
     //                          cc           refresh      exch(None)   exch(Some)   exch(redir)  introspect   AuthClient TP  provider     admin
-    ("a-id-not-jwt",           ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "ok",        "ok"]),
-    ("a2-id-jwt-untrusted",    ["ok",        "ok",        "ok",        "Auth",      "Auth",      "Transport", "ok",        "ok",        "ok"]),
-    ("a3-id-kid-echo",         ["ok",        "ok",        "ok",        "Auth",      "Auth",      "Transport", "ok",        "ok",        "ok"]),
-    ("b-at-not-string",        ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Auth",      "Admin(401)"]),
-    ("c1-expires-in-string",   ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "ok",        "ok"]),
-    ("c2-token-type-number",   ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "ok",        "ok"]),
-    ("d1-short-body",          ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
-    ("d2-long-body",           ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
-    ("d3-error-body-not-json", ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
+    ("a-id-not-jwt",           ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "ok",        "ok"]),
+    ("a2-id-jwt-untrusted",    ["ok",        "ok",        "ok",        "Auth",      "Auth",      "Auth",      "ok",        "ok",        "ok"]),
+    ("a3-id-kid-echo",         ["ok",        "ok",        "ok",        "Auth",      "Auth",      "Auth",      "ok",        "ok",        "ok"]),
+    ("b-at-not-string",        ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
+    ("c1-expires-in-string",   ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "ok",        "ok"]),
+    ("c2-token-type-number",   ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "ok",        "ok"]),
+    ("d1-short-body",          ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
+    ("d2-long-body",           ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
+    ("d3-error-body-not-json", ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
     ("e1-error-description",   ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
     ("e2-error-uri",           ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
     ("e3-error-code-token",    ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("f1-active-not-bool",     ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Auth",      "Admin(401)"]),
-    ("g-content-type-echo",    ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "ok",        "ok"]),
-    // 꼬리 바이트는 이 표의 다른 행과 달리 수정이 분류를 바꾼 행이다 — 전에는 cc·refresh·exch(None)·introspect·TP 가 ok,
-    // exch(Some)·exch(redir) 가 Auth(id_token 없음)였다(`tests/token_response_trailing_bytes.rs`).
-    ("h1-trailing-bytes",      ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
+    ("f1-active-not-bool",     ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
+    ("g-content-type-echo",    ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "ok",        "ok"]),
+    // 꼬리 바이트 — 전에는 cc·refresh·exch(None)·introspect·TP 가 ok, exch(Some)·exch(redir) 가 Auth(id_token 없음)였다
+    // (`tests/token_response_trailing_bytes.rs`).
+    ("h1-trailing-bytes",      ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
 ];
 
 /// 찍는 경로 넷.

@@ -460,7 +460,11 @@ fn to_token_set(resp: &CoreTokenResponse) -> Result<TokenSet> {
     })
 }
 
-/// openidconnect `RequestTokenError` → `KeycloakError`. 서버 OAuth 오류는 `Auth`, 전송/파싱은 `Transport`.
+/// openidconnect `RequestTokenError` → `KeycloakError`. 서버 OAuth 오류와, **끝까지 온 쓸 수 없는 응답**(JSON 아님 · 틀린
+/// 타입 · `access_token` 없음 · 빈 오류 본문 · 틀린 Content-Type · 값 뒤 꼬리)은 `Auth` 다. `Transport` 는 응답이 다 오지 않은
+/// 것(네트워크 · 타임아웃 · 상한 초과)과 보내지 못한 요청뿐이다 — 아홉 언어 판정(#935: 「응답이 끝까지 왔고 쓸 토큰 응답이 아닌 것은
+/// auth」 · 등록부 `token-response-class-divergent`). 예전에는 형식 오류를 전부 `Transport` 로 냈고, 같은 응답을
+/// [`ClientCredentialsTokenProvider`](crate::ClientCredentialsTokenProvider) 는 `access_token` 이 없으면 `Auth` 로 냈다(언어 안 분리).
 ///
 /// ⚠️ **응답이 보낸 글자를 옮기지 않는다 — OAuth 오류 코드 하나만 옮긴다.** 예전에는 `oauth_error` 에
 /// `StandardErrorResponse` 의 `Display`(`error: error_description (see error_uri)`)를 통째로 실어, 받은
@@ -478,15 +482,32 @@ fn map_token_err(
             // 코드 자리에 코드 아닌 값(되울린 토큰)이 오면 그것도 싣지 않는다(`oauth_error_code`).
             oauth_error: oauth_error_code(resp.error().as_ref()),
         },
-        // `Other` 는 `CappedHttp` 만 만든다 — 고정 문구 둘(상한 초과 — admin 레인과 같다 · 값 뒤 바이트 — 아래 `Parse` 와
-        // 같다)이라 그대로 옮긴다.
+        // `Other` 는 `CappedHttp` 만 만든다 — 고정 문구 둘이라 그대로 옮긴다. 값 뒤 바이트는 끝까지 온 쓸 수 없는 응답이라
+        // 아래 `Parse` 와 같은 `Auth` 다. 상한 초과는 다 받지 않은 응답이라 `Transport` 다(admin 레인과 같다).
+        RTE::Request(HttpClientError::Other(msg)) if msg == UNPARSABLE_RESPONSE => {
+            KeycloakError::Auth {
+                message: msg,
+                oauth_error: None,
+            }
+        }
         RTE::Request(HttpClientError::Other(msg)) => KeycloakError::Transport(msg),
         RTE::Request(re) => KeycloakError::Transport(format!("token request: {re}")),
-        RTE::Parse(..) => KeycloakError::Transport(UNPARSABLE_RESPONSE.into()),
-        RTE::Other(msg) => KeycloakError::Transport(format!(
-            "token request failed: Other error: {}",
-            other_message(&msg)
-        )),
+        RTE::Parse(..) => KeycloakError::Auth {
+            message: UNPARSABLE_RESPONSE.into(),
+            oauth_error: None,
+        },
+        RTE::Other(msg) => {
+            let message = format!("token request failed: Other error: {}", other_message(&msg));
+            // 보내지도 못한 요청(준비 실패)만 전송이다 — 빈 오류 본문 · 틀린 Content-Type 은 끝까지 온 응답이다.
+            if msg.starts_with("failed to prepare request: ") {
+                KeycloakError::Transport(message)
+            } else {
+                KeycloakError::Auth {
+                    message,
+                    oauth_error: None,
+                }
+            }
+        }
     }
 }
 

@@ -92,10 +92,13 @@ impl ClientCredentialsTokenProvider {
                     "token response exceeds {TOKEN_RESPONSE_MAX_BYTES} bytes"
                 ))
             })?;
-        // 해석 실패 문구는 `resp.json()` 시절 그대로다 — serde 문구는 문자열 값을 인용할 수 있어 옮기지 않는다.
-        let body: serde_json::Value = serde_json::from_slice(&body).map_err(|_| {
-            KeycloakError::Transport("token response: error decoding response body".into())
-        })?;
+        // 해석 실패 문구는 `resp.json()` 시절 그대로다 — serde 문구는 문자열 값을 인용할 수 있어 옮기지 않는다. 끝까지 온 응답이
+        // JSON 이 아니면 쓸 수 없는 토큰 응답이라 `Auth` 다(`access_token` 이 없는 JSON 과 같은 계급 · `auth.rs` 의 `map_token_err`).
+        let body: serde_json::Value =
+            serde_json::from_slice(&body).map_err(|_| KeycloakError::Auth {
+                message: "token response: error decoding response body".into(),
+                oauth_error: None,
+            })?;
         // ⚠️ **존재 검사는 타입 검사가 아니다.** 예전에는 `is_none()` 만 봐서 `access_token`
         // 이 숫자·객체·null 이어도 통과했고, 아래 `as_str().unwrap_or_default()` 가 그것을
         // **빈 문자열**로 만들어 호출자에게 성공을 돌려줬다. 그 빈 토큰은 `expires_at` 까지
