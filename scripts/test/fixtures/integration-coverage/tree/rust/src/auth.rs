@@ -14,10 +14,10 @@ pub struct AuthClient {
     realm: String,
 }
 
-const BANNER: &str = r#"
-}
+const BANNER: &str = r##"
+"#}
 fn raw_fake() {
-"#;
+"##;
 
 impl AuthClient {
     pub fn new(realm: &str) -> Self {
