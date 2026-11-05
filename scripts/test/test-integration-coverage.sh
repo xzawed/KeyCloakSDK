@@ -473,7 +473,7 @@ assert_line "$OUT" "  NEVER rust/src/client.rs:100 never_polled · called, but i
 # 속성 매크로는 철자가 아니라 「내장이 아니다」로 가린다(독립 레그 4차: `#[::async_trait::async_trait]` · 별칭 `#[at]` 이 정규식을
 # 비켜 poll 한 메서드가 「안 돌았다」로 들었다). 대조군: 내장 속성만 남기면 면제가 풀려 poll 한 Polled 가 든다 — 데이터만으로는
 # 가를 수 없다는 증거다(돈 레코드 하나 · 몸통 줄 없음).
-for _attr in '#[::async_trait::async_trait]' '#[at]'; do
+for _attr in '#[::async_trait::async_trait]' '#[at]' '#[cfg_attr(not(feature = "plain"), async_trait::async_trait)]'; do
   fresh
   sed -i "80s/^#\[async_trait::async_trait\]\$/$_attr/" "$T/rust/src/admin.rs"
   assert_contains "$(sed -n '80p' "$T/rust/src/admin.rs")" "$_attr" "(변이가 착지했는지 먼저 본다)"
@@ -487,6 +487,13 @@ assert_contains "$(sed -n '80p' "$T/rust/src/admin.rs")" "#[allow(dead_code)]" "
 run report rust "$T" --out "$D"
 assert_eq 1 "$RC" "[rust] 내장 속성만이면 async 판정이 걸린다 — 출력: $OUT"
 assert_line "$OUT" "  NEVER rust/src/admin.rs:82 <Polled as Fetch>::fetch · called, but its async body never ran · owner NONE" "[rust] 대조군 — poll 했는데도 데이터는 「안 돌았다」로 읽힌다"
+# cfg_attr 는 안쪽 속성으로 가린다 — 안쪽이 내장뿐이면 면제가 아니다(cfg_attr 를 통째로 매크로로 읽지 않는다).
+fresh
+sed -i '80s/^#\[async_trait::async_trait\]$/#[cfg_attr(not(feature = "plain"), allow(dead_code))]/' "$T/rust/src/admin.rs"
+assert_contains "$(sed -n '80p' "$T/rust/src/admin.rs")" "allow(dead_code))]" "(변이가 착지했는지 먼저 본다)"
+run report rust "$T" --out "$D"
+assert_eq 1 "$RC" "[rust] cfg_attr 안이 내장뿐이면 async 판정이 걸린다 — 출력: $OUT"
+assert_contains "$OUT" "<Polled as Fetch>::fetch · called, but its async body never ran" "[rust] cfg_attr 대조군"
 # 같은 이름이 둘 — 미실행 목록이 둘을 못 가른다.
 fresh
 sed -i 's#^impl Wrapper<u16> {$#impl Wrapper<u8> {#' "$T/rust/src/auth.rs"

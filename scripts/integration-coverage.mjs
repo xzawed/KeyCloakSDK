@@ -791,6 +791,27 @@ const RS_BUILTIN_ATTRS = new Set(
     'automatically_derived no_mangle export_name link_section link_name used target_feature test ignore should_panic ' +
     'macro_export macro_use path coverage optimize naked instruction_set debugger_visualizer collapse_debuginfo unsafe').split(' '),
 )
+// 속성 하나(`#[…]`, 공백 접은 텍스트)가 속성 매크로인가. `cfg_attr(술어, 속성…)` 은 안쪽 속성들로 가린다 — 경로만 보면 내장이라
+// `#[cfg_attr(…, async_trait::async_trait)]` 이 매크로가 아닌 것으로 읽혔다(독립 레그 5차 실측: poll 한 메서드가 「안 돌았다」).
+function rsMacroAttr(text) {
+  const path = RS_ATTR_PATH.exec(text)?.[1].replace(/\s+/g, '').replace(/^::/, '')
+  if (!path) return false
+  if (path !== 'cfg_attr') return !RS_BUILTIN_ATTRS.has(path) && !/^(?:rustfmt|clippy|diagnostic)::/.test(path)
+  const inner = /^#!?\[\s*cfg_attr\s*\((.*)\)\s*\]$/.exec(text)?.[1] ?? ''
+  const parts = [] // 괄호 깊이 0 의 쉼표로 가른다 — 첫째는 술어다
+  let d = 0
+  let cur = ''
+  for (const c of inner) {
+    if (c === '(' || c === '[' || c === '{') d++
+    else if (c === ')' || c === ']' || c === '}') d--
+    if (c === ',' && d === 0) {
+      parts.push(cur)
+      cur = ''
+    } else cur += c
+  }
+  parts.push(cur)
+  return parts.slice(1).some((p) => p.trim() && rsMacroAttr(`#[${p.trim()}]`))
+}
 // `#[cfg(…)]` 술어를 `test` 가 꺼진 빌드에서 평가한다 — true · false · null(모름: target · feature …). 못 읽는 꼴도 null.
 function cfgEval(expr) {
   const toks = expr.match(/[\p{XID_Start}_]\p{XID_Continue}*|[(),=]/gu) ?? []
@@ -914,8 +935,7 @@ function rustFuncs(file) {
           const shown = a.shown.replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/,?\s+\)/g, ')').replace(/,\)/g, ')')
           cfgs.push({ value: cfgEval(m[1]), text: shown })
         }
-        const path = RS_ATTR_PATH.exec(text)?.[1].replace(/\s+/g, '').replace(/^::/, '')
-        if (path && !RS_BUILTIN_ATTRS.has(path) && !/^(?:rustfmt|clippy|diagnostic)::/.test(path)) rewritten = true
+        if (rsMacroAttr(text)) rewritten = true
       } else if (!(L[x].startsWith(`${pad} `) || L[x].startsWith(`${pad})`) || L[x].startsWith(`${pad}]`))) break
     }
     return { cfgs, rewritten }
