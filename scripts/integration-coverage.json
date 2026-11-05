@@ -49,5 +49,19 @@
       "node/src/auth.ts:MaskedAuthorizationRequest.toJSON": "coverage-omit-hides-security-paths",
       "node/src/auth.ts:MaskedAuthorizationRequest.toString": "coverage-omit-hides-security-paths"
     }
+  },
+  "rust": {
+    "pinned": [
+      "rust/src/admin.rs",
+      "rust/src/auth.rs",
+      "rust/src/client.rs"
+    ],
+    "owners": {
+      "rust/src/admin.rs:<SdkTokenSupplier as KeycloakTokenSupplier>::get": "facade-wiring-close-contract-unasserted",
+      "rust/src/admin.rs:transport": "coverage-omit-hides-security-paths",
+      "rust/src/admin.rs:unsendable": "coverage-omit-hides-security-paths",
+      "rust/src/auth.rs:<AuthClient as TokenProvider>::access_token": "facade-wiring-close-contract-unasserted",
+      "rust/src/auth.rs:other_message": "coverage-omit-hides-security-paths"
+    }
   }
 }

@@ -44,5 +44,25 @@
       "node/src/auth.ts:Pair.from": "open-admin",
       "node/src/auth.ts:inc": "open-admin"
     }
+  },
+  "rust": {
+    "pinned": [
+      "rust/src/admin.rs",
+      "rust/src/auth.rs",
+      "rust/src/client.rs"
+    ],
+    "owners": {
+      "rust/src/admin.rs:<AdminClient as Supplier>::supply": "open-admin",
+      "rust/src/admin.rs:AdminClient::delete_user": "open-admin",
+      "rust/src/admin.rs:transport": "open-admin",
+      "rust/src/auth.rs:<AuthClient as fmt::Display>::fmt": "open-masking",
+      "rust/src/auth.rs:<Wrapper<usize> as From<&'a [T]>>::from": "open-admin",
+      "rust/src/auth.rs:AuthClient::close": "open-admin",
+      "rust/src/auth.rs:AuthClient::describe": "open-masking",
+      "rust/src/auth.rs:AuthClient::noop": "open-admin",
+      "rust/src/auth.rs:Wrapper<u16>::get": "open-admin",
+      "rust/src/auth.rs:unused_helper": "open-admin",
+      "rust/src/client.rs:KeycloakClient::admin": "open-admin"
+    }
   }
 }

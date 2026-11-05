@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
-# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — go · python · node 의 무결성 판정과 하한.
+# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — go · python · node · rust 의 무결성 판정과 하한.
 #
-# ⚠️ **커밋된 픽스처만 쓴다** — Docker 도 Go·Python·node 툴체인(node_modules)도 필요 없다. 실제 Keycloak 에 대고 도는 것은
+# ⚠️ **커밋된 픽스처만 쓴다** — Docker 도 Go·Python·node·rust 툴체인도 필요 없다. 실제 Keycloak 에 대고 도는 것은
 # 레인 CI 의 integration 잡이다. 여기서 재는 것은 리포트의 **무결성 판정** 셋이다:
 #   (1) 양성 — 건강한 픽스처에서 파일별·합계 수치와 미실행 함수 목록이 **정확히** 나온다.
 #   (2) 음성 — 파생이 좁아지거나(그러면 %가 오른다), 핀과 갈리거나, 데이터에서 파일이 빠지거나,
@@ -20,9 +20,16 @@
 #                          tree/node/src 사본 + 구동 테스트를 두고 `--coverage.include=src/**/*.ts --coverage.reporter=json`.
 #                          **생성 루트만 `@ROOT@` 로 바꿨다**(istanbul 키는 절대 경로다 — fresh 가 임시 트리 경로로 되돌린다)
 #   data/node-zero.json    같은 명령, 구동기가 경계 밖 other.ts 만 부른다 — auth.ts 전부 0
+#   data/rust.lcov         cargo-llvm-cov 0.8.7(rustc 1.89.0)의 `--test drive --lcov`(2026-11-05) — 임시 크레이트에
+#                          tree/rust/src 사본 + 구동 테스트. **SF 의 생성 루트만 `@ROOT@\rust\` 로 바꿨다**(윈도의 `\` 그대로)
+#   data/rust-zero.lcov    같은 명령, 구동기가 경계 함수의 포인터만 잡고(링크는 되고) 아무것도 안 부른다 — 포인터가 없으면
+#                          경계 세 파일이 데이터에서 **통째로 빠진다**(참조 안 된 모듈의 오브젝트는 링크되지 않는다)
+#   data/rust-unit.lcov    `--lib --test drive` — 단위 테스트가 같은 빌드에서 돌아 `#[cfg(test)]` 함수의 레코드가 든다
 # 구동기는 「String·Close·Delete·AuthClient.String·hook 리터럴」과 「__repr__·logout·clients·aio 전체」를, node 는
-# 「describe·toString·[SYM]·inc·cb·set count·overload·longSignature·close」를 일부러 안 부른다. 숫자를 바꾸려면
-# 구동기를 다시 써서 **도구로 재생성**할 것 — JSON 을 손으로 고치지 않는다.
+# 「describe·toString·[SYM]·inc·cb·set count·overload·longSignature·close」를, rust 는 「transport·delete_user·supply·
+# describe·noop·close·Display::fmt·Wrapper<u16>::get·admin」을 일부러 안 부른다(rust 의 `unused_helper` · 제네릭 `From::from` 은
+# 아무도 참조하지 않아 데이터에 레코드가 없다). 숫자를 바꾸려면 구동기를 다시 써서 **도구로 재생성**할 것 — 데이터를
+# 손으로 고치지 않는다.
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
@@ -41,6 +48,7 @@ fresh() {
   cp "$DIR/../coverage-boundary.mjs" "$T/scripts/coverage-boundary.mjs"
   cp "$FIX/data/go.cover" "$FIX/data/python.json" "$D/"
   node_data "$FIX/data/node.json"
+  rust_data "$FIX/data/rust.lcov"
   git -C "$T" init -q
   git -C "$T" config core.autocrlf false
   git -C "$T" add -A
@@ -50,6 +58,11 @@ node_data() { # fixture-json
   mkdir -p "$D/node"
   _r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
   sed "s#@ROOT@#$_r#g" "$1" > "$D/node/coverage-final.json"
+}
+# lcov 의 SF 도 절대 경로다 — 같은 치환(뒤의 `\rust\src\…` 는 리포트가 `/` 로 읽는다).
+rust_data() { # fixture-lcov
+  _r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
+  sed "s#@ROOT@#$_r#g" "$1" > "$D/rust.lcov"
 }
 run() {
   git -C "$T" add -A
@@ -68,7 +81,8 @@ assert_eq 0 "$RC" "건강한 픽스처의 check 는 exit 0 — 출력: $OUT"
 assert_line "$OUT" "[go] pin OK — 3 files equal the derivation from .github/workflows/go-ci.yml:10 (grep -vE on cover.out)" "[check] go 핀 = 파생"
 assert_line "$OUT" "[python] pin OK — 3 files equal the derivation from python/pyproject.toml:8 ([tool.coverage] omit)" "[check] python 핀 = 파생"
 assert_line "$OUT" "[node] pin OK — 2 files equal the derivation from node/vitest.config.ts:9 (vitest coverage.exclude)" "[check] node 핀 = 파생"
-assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 files pinned · 20 owner entries, all open" "[check] 요약"
+assert_line "$OUT" "[rust] pin OK — 3 files equal the derivation from .github/workflows/rust-ci.yml:7 (cargo llvm-cov --ignore-filename-regex)" "[check] rust 핀 = 파생"
+assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 files pinned · 31 owner entries, all open" "[check] 요약"
 
 run report go "$T" --out "$D"
 assert_eq 0 "$RC" "[go] 건강한 리포트는 exit 0 — 출력: $OUT"
@@ -126,6 +140,49 @@ for _x in other.ts fake hidden NotAClass helper twice Client.run "get count" Mas
   assert_not_contains "$OUT" "$_x" "[node] 실행된 함수 · 경계 밖 · 주석·문자열 속 이름 · 필드는 목록에 없다: $_x"
 done
 assert_line "$OUT" "integration-coverage [node]: OK — 21/34 statements (61.8%) · 12 never-executed functions, all owned by open registry items" "[node] 요약"
+
+# rust — 이름은 소스(rustfmt 모양)에서 읽고 llvm-cov 의 함수 레코드(FN)와 양쪽으로 대조한다. 수치는 고유 줄(DA)이다 —
+# 같은 데이터의 LF 합 129 는 async fn 의 바깥 함수·몸통이 같은 줄을 두 번 센 것이다. 각 줄이 재는 것: 중첩 블록 주석 ·
+# 원시 문자열 · 여러 줄 문자열 속 `fn …{`·`    }` 가 항목을 열고 닫지 않는다 · 문자 리터럴 `'"'`·`'{'` 와 수명 `'a` ·
+# 빈 몸통 한 줄 fn · 같은 타입의 `Debug::fmt`/`Display::fmt` 와 `Wrapper<u8>`/`Wrapper<u16>` 이 갈린다 · 레코드 없는 함수
+# (아무도 참조 안 한 fn · 인스턴스화 안 된 제네릭)도 미실행이다 · 안 기다린 async fn 은 바깥 함수의 1 줄만 있다 ·
+# `#[cfg(test)]` 모듈은 읽지 않는다(그 안의 cfg 짝 `platform` 둘을 읽으면 이름이 겹쳐 FAIL 이다).
+run report rust "$T" --out "$D"
+assert_eq 0 "$RC" "[rust] 건강한 리포트는 exit 0 — 출력: $OUT"
+assert_line "$OUT" "  rust/src/admin.rs 33/39 84.6%" "[rust] admin.rs — 열 4 의 } 를 품은 최상위 fn · async 메서드 · 트레이트 impl 의 async fn"
+assert_line "$OUT" "  rust/src/auth.rs 51/69 73.9%" "[rust] auth.rs — 범위 밖 줄이 없다(module-level 이 안 찍힌다)"
+assert_line "$OUT" "  rust/src/client.rs 11/15 73.3%" "[rust] client.rs"
+assert_line "$OUT" "  total 95/123 77.2%" "[rust] 합계는 경계 파일만(config.rs · lib.rs 제외) — LF 합(129)이 아니라 고유 줄"
+assert_line "$OUT" "  NEVER rust/src/admin.rs:21 transport · 3 lines · owner open-admin" "[rust] 안 탄 오류 갈래에서만 불리는 최상위 fn"
+assert_line "$OUT" "  NEVER rust/src/admin.rs:54 AdminClient::delete_user · 1 line · owner open-admin" "[rust] 안 기다린 async fn — 몸통은 인스턴스화되지 않아 바깥 1 줄뿐"
+assert_line "$OUT" "  NEVER rust/src/admin.rs:64 <AdminClient as Supplier>::supply · 1 line · owner open-admin" "[rust] 트레이트 impl 의 async fn — <타입 as 트레이트>::"
+assert_line "$OUT" "  NEVER rust/src/auth.rs:42 AuthClient::describe · 7 lines · owner open-masking" "[rust] 여러 줄 문자열 속 \`    }\` 가 메서드를 닫지 않는다"
+assert_line "$OUT" "  NEVER rust/src/auth.rs:61 AuthClient::noop · 1 line · owner open-admin" "[rust] 빈 몸통 한 줄 fn"
+assert_line "$OUT" "  NEVER rust/src/auth.rs:63 AuthClient::close · 3 lines · owner open-admin" "[rust] 한 줄 fn 뒤의 메서드"
+assert_line "$OUT" "  NEVER rust/src/auth.rs:75 <AuthClient as fmt::Display>::fmt · 3 lines · owner open-masking" "[rust] Display::fmt 는 Debug::fmt 와 갈린다"
+assert_line "$OUT" "  NEVER rust/src/auth.rs:103 Wrapper<u16>::get · 3 lines · owner open-admin" "[rust] Wrapper<u16> 은 Wrapper<u8> 과 갈린다"
+assert_line "$OUT" "  NEVER rust/src/auth.rs:109 <Wrapper<usize> as From<&'a [T]>>::from · no record in the data · owner open-admin" "[rust] 인스턴스화 안 된 제네릭은 레코드가 없다 — 그래도 미실행이다"
+assert_line "$OUT" "  NEVER rust/src/auth.rs:129 unused_helper · no record in the data · owner open-admin" "[rust] 아무도 참조 안 한 fn 도 레코드가 없다"
+assert_line "$OUT" "  NEVER rust/src/client.rs:25 KeycloakClient::admin · 3 lines · owner open-admin" "[rust] client.rs"
+for _x in hidden doc_fake raw_fake string_fake tests:: platform exchange_rejects_empty AuthClient::new AuthClient::realm AuthClient::exchange AuthClient::apply "AuthClient::token ·" fmt::Debug token_twice token_now "Wrapper<u8>" " helper ·" inner:: nested_level encode AdminClient::send get_user search_users KeycloakClient::new KeycloakClient::auth config.rs lib.rs module-level; do
+  assert_not_contains "$OUT" "$_x" "[rust] 실행된 함수 · 경계 밖 · 주석·문자열 속 이름 · cfg(test) 는 목록에 없다: $_x"
+done
+assert_line "$OUT" "integration-coverage [rust]: OK — 95/123 lines (77.2%) · 11 never-executed functions, all owned by open registry items" "[rust] 요약"
+
+# Linux 의 llvm-cov 는 SF 를 `/` 로 쓴다 — 윈도에서 만든 `\` 와 같은 리포트여야 한다.
+fresh
+sed -i '/^SF:/s#\\#/#g' "$D/rust.lcov"
+assert_contains "$(cat "$D/rust.lcov")" "/rust/src/auth.rs" "(변이가 착지했는지 먼저 본다)"
+run report rust "$T" --out "$D"
+assert_eq 0 "$RC" "[rust] / 경로도 같은 파일이다 — 출력: $OUT"
+assert_line "$OUT" "  total 95/123 77.2%" "[rust] / 경로에서도 같은 합계"
+# 닫는 줄 뒤의 주석은 닫는 줄을 가리지 않는다(지운 뒤 줄 끝 공백을 걷는다).
+fresh
+sed -i '48s#^    }$#    } // end of describe#' "$T/rust/src/auth.rs"
+assert_contains "$(sed -n '48p' "$T/rust/src/auth.rs")" "} // end of describe" "(변이가 착지했는지 먼저 본다)"
+run report rust "$T" --out "$D"
+assert_eq 0 "$RC" "[rust] 닫는 줄 뒤 주석 — 출력: $OUT"
+assert_line "$OUT" "  NEVER rust/src/auth.rs:42 AuthClient::describe · 7 lines · owner open-masking" "[rust] 주석 달린 닫는 줄에서도 같은 범위"
 
 # Linux 의 coverage.py 는 키를 `/` 로 쓴다 — Windows 에서 만든 `\` 키와 같은 리포트여야 한다.
 fresh
@@ -251,6 +308,107 @@ rm "$D/node/coverage-final.json"
 run report node "$T" --out "$D"
 assert_eq 2 "$RC" "[node] 데이터가 없으면 exit 2"
 assert_contains "$OUT" "FAIL [node] no coverage data at" "[node] 데이터 없음"
+# rust — 경계 파일 하나가 데이터에 없다(그 모듈을 아무도 참조하지 않으면 오브젝트가 링크되지 않아 이렇게 된다).
+fresh
+sed -i '/^SF:.*client\.rs$/,/^end_of_record$/d' "$D/rust.lcov"
+assert_not_contains "$(cat "$D/rust.lcov")" "client.rs" "(변이가 착지했는지 먼저 본다)"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 경계 파일이 데이터에 없으면 exit 2"
+assert_contains "$OUT" "FAIL [rust] rust/src/client.rs is not in the coverage data" "[rust] 빠진 파일을 댄다"
+assert_not_contains "$OUT" "  total " "[rust] 수치를 내지 않는다"
+# 한 파일의 기록이 둘(두 보고서를 이어 붙인 꼴) — 어느 쪽이 맞는지 모른다.
+fresh
+sed -n '/^SF:.*client\.rs$/,/^end_of_record$/p' "$D/rust.lcov" > "$TMP/client.rec"
+{ printf '\n'; cat "$TMP/client.rec"; } >> "$D/rust.lcov"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 같은 파일의 기록이 둘이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] rust/src/client.rs has two records in" "[rust] 모순 데이터를 댄다"
+# ⚠️ llvm-cov 의 lcov 는 마지막 줄바꿈 없이 끝난다(픽스처도 그대로다) — `cat` 으로 이으면 `end_of_recordSF:…` 한 줄이 되고,
+# 그 줄을 건너뛰면 뒤 기록의 줄이 앞 파일의 것으로 섞인다. 못 읽는 줄이다.
+fresh
+sed -n '/^SF:.*client\.rs$/,/^end_of_record$/p' "$D/rust.lcov" > "$TMP/client.rec"
+cat "$TMP/client.rec" >> "$D/rust.lcov"
+assert_contains "$(cat "$D/rust.lcov")" "end_of_recordSF:" "(변이가 착지했는지 먼저 본다 — 줄바꿈 없는 끝)"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 줄바꿈 없이 이어 붙인 보고서는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] cannot read the lcov line: end_of_recordSF:" "[rust] 붙은 줄을 댄다"
+fresh
+sed -i '/^SF:.*client\.rs$/,/^end_of_record$/s/^DA:25,0$/DA:25,0\nDA:25,1/' "$D/rust.lcov"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 한 기록에서 같은 줄이 두 번이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] rust/src/client.rs: line 25 is counted twice in one record" "[rust] 겹친 줄을 댄다"
+# 데이터가 다른 체크아웃의 것이다 — 파일보다 긴 줄을 센다.
+fresh
+sed -i '/^SF:.*client\.rs$/,/^end_of_record$/s/^DA:27,0$/DA:400,0/' "$D/rust.lcov"
+assert_contains "$(cat "$D/rust.lcov")" "DA:400,0" "(변이가 착지했는지 먼저 본다)"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 파일 끝 뒤의 줄은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] rust/src/client.rs: the data counts line 400, past the end of the file (28 lines)" "[rust] 다른 체크아웃"
+fresh
+sed -i '/^SF:.*client\.rs$/a DA:oops' "$D/rust.lcov"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 못 읽는 lcov 줄은 exit 2"
+assert_contains "$OUT" "FAIL [rust] cannot read the lcov line: DA:oops" "[rust] 못 읽는 줄을 댄다"
+fresh
+printf 'TN:\n' > "$D/rust.lcov"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] SF 가 없는 파일은 exit 2"
+assert_contains "$OUT" "has no SF records — not an lcov report" "[rust] lcov 가 아니다"
+fresh
+rm "$D/rust.lcov"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 데이터가 없으면 exit 2"
+assert_contains "$OUT" "FAIL [rust] no coverage data at" "[rust] 데이터 없음"
+# 파서가 항목을 놓쳤다(rustfmt 가 아닌 들여쓰기) — 그 함수의 레코드가 어느 범위에도 없다. 조용히 모듈 수준에 섞이면
+# 미실행 목록에서 빠진다(node 독립 레그가 실측한 부류 — 생성자가 「몸통 없는 선언」으로 빠졌다).
+fresh
+sed -i 's#^    pub fn noop(&self) {}$#     pub fn noop(\&self) {}#' "$T/rust/src/auth.rs"
+assert_contains "$(sed -n '61p' "$T/rust/src/auth.rs")" "     pub fn noop" "(변이가 착지했는지 먼저 본다)"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 범위 밖 함수 레코드는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] rust/src/auth.rs:61: the data has a function (" "[rust] 놓친 자리를 댄다"
+assert_contains "$OUT" "starts outside every name range — the parser missed an item" "[rust] 파서가 놓쳤다고 댄다"
+# 범위가 닫는 줄을 지나쳐 다음 함수를 삼켰다 — 레코드는 범위 안이지만 그 범위와 같은 들여쓰기의 fn 머리에 있다.
+fresh
+sed -i '48s#^    }$#    }}#' "$T/rust/src/auth.rs"
+assert_contains "$(sed -n '48p' "$T/rust/src/auth.rs")" "    }}" "(변이가 착지했는지 먼저 본다)"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 다음 함수를 삼킨 범위는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] rust/src/auth.rs:50: the data has a function (" "[rust] 삼켜진 함수의 자리"
+assert_contains "$OUT" "that starts at a function head inside AuthClient::describe's range (42–55) — the range ran past its end" "[rust] 삼킨 범위를 댄다"
+# 단위 테스트가 같은 빌드에서 돌았다(`--lib --test drive`) — 통합 전용이 아니다. 실제 도구 출력이다.
+fresh
+rust_data "$FIX/data/rust-unit.lcov"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] cfg(test) 함수의 레코드가 있으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] rust/src/auth.rs:161: the data has a function inside a #[cfg(test)] item (" "[rust] cfg(test) 자리를 댄다"
+assert_contains "$OUT" "unit tests ran in this build, so the report would not be integration-only" "[rust] 통합 전용이 아니라고 댄다"
+# cfg(test) 를 건너뛰는 것이 하중을 진다 — 지우면 그 모듈의 cfg 짝 `platform` 둘이 같은 이름이 된다.
+fresh
+sed -i 's/^#\[cfg(test)\]$//' "$T/rust/src/auth.rs"
+assert_not_contains "$(cat "$T/rust/src/auth.rs")" "#[cfg(test)]" "(변이가 착지했는지 먼저 본다)"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] cfg(test) 모듈을 읽으면 겹친 이름으로 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] rust/src/auth.rs: two functions are both named tests::platform" "[rust] 겹친 이름을 댄다"
+# 같은 이름이 둘 — 미실행 목록이 둘을 못 가른다.
+fresh
+sed -i 's#^impl Wrapper<u16> {$#impl Wrapper<u8> {#' "$T/rust/src/auth.rs"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 같은 이름의 함수가 둘이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] rust/src/auth.rs: two functions are both named Wrapper<u8>::get" "[rust] 겹친 이름을 댄다"
+# 끝나지 않는 원시 문자열 — 이름 범위를 못 읽는다(조용히 「미실행 0」이 되지 않는다).
+fresh
+printf '%s\n' 'const OPEN: &str = r#"' >> "$T/rust/src/auth.rs"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 열린 원시 문자열은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] rust/src/auth.rs: a string or block comment runs to the end of the file" "[rust] 못 읽는다고 댄다"
+# 소유자 없는 미실행 함수(exit 1 — 경고). 레코드 없는 함수도 소유자가 있어야 한다.
+fresh
+sed -i '/"rust\/src\/auth.rs:unused_helper"/d' "$T/scripts/integration-coverage.json"
+run report rust "$T" --out "$D"
+assert_eq 1 "$RC" "[rust] 소유자 없는 미실행 함수는 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [rust] unowned never-executed function rust/src/auth.rs:unused_helper" "[rust] 소유자 없음"
+assert_line "$OUT" "  NEVER rust/src/auth.rs:129 unused_helper · no record in the data · owner NONE" "[rust] 목록에도 NONE 으로 남는다"
 
 # ── (2) 음성: 소유자(exit 1 — 경고, 게이트가 아니다) ─────────────────────────────────────────
 fresh
@@ -312,17 +470,25 @@ run report node "$T" --out "$D"
 assert_eq 2 "$RC" "[node] 경계 문장을 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [node] the run executed 0 of 34 boundary statements — a measurement failure, not a low number" "[node] 측정 실패 문구"
 assert_not_contains "$OUT" "0.0%" "[node] 측정 실패에서 0% 를 내지 않는다"
+# rust — 경계 모듈이 링크는 됐지만 아무것도 안 불렸다(링크조차 안 되면 위 「데이터에 없음」 FAIL 이다).
+fresh
+rust_data "$FIX/data/rust-zero.lcov"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 경계 줄을 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] the run executed 0 of 103 boundary lines — a measurement failure, not a low number" "[rust] 측정 실패 문구"
+assert_not_contains "$OUT" "0.0%" "[rust] 측정 실패에서 0% 를 내지 않는다"
 # 빈 파생 + 빈 핀 — 집합은 같으므로(∅ = ∅) 빈 집합 판정만이 잡는다. 파생 도구를 가짜로 바꿔 그 갈래만 태운다.
 # ⚠️ 두 언어 다 「있되 비었다」여야 한다 — 한 언어를 빼 두면 check 의 exit 2 가 그 「없는 파생」에서 와서 빈 집합
 # 갈래를 지워도 초록이었다(변이 실측: 빈 집합 통과 변이에 check 단언이 침묵했다).
 fresh
-printf '%s\n' 'const e = (d) => ({ dir: d, site: "fake:1", label: "fake", universe: 3, files: [] })' 'console.log(JSON.stringify({ langs: { go: e("go"), python: e("python"), node: e("node") }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
-printf '%s\n' '{ "go": { "pinned": [], "owners": {} }, "python": { "pinned": [], "owners": {} }, "node": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
+printf '%s\n' 'const e = (d) => ({ dir: d, site: "fake:1", label: "fake", universe: 3, files: [] })' 'console.log(JSON.stringify({ langs: { go: e("go"), python: e("python"), node: e("node"), rust: e("rust") }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
+printf '%s\n' '{ "go": { "pinned": [], "owners": {} }, "python": { "pinned": [], "owners": {} }, "node": { "pinned": [], "owners": {} }, "rust": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
 run check "$T"
 assert_eq 2 "$RC" "[check] 빈 파생은 exit 2(빈 핀과 같아도) — 출력: $OUT"
 assert_contains "$OUT" "FAIL [python] the derived boundary is empty" "[check] python 도 빈 파생"
 assert_contains "$OUT" "FAIL [node] the derived boundary is empty" "[check] node 도 빈 파생"
-assert_not_contains "$OUT" "returned no derivation" "[check] 셋 다 있되 비었다 — 「없는 파생」이 빈 집합 갈래를 가리지 않는다"
+assert_contains "$OUT" "FAIL [rust] the derived boundary is empty" "[check] rust 도 빈 파생"
+assert_not_contains "$OUT" "returned no derivation" "[check] 넷 다 있되 비었다 — 「없는 파생」이 빈 집합 갈래를 가리지 않는다"
 assert_not_contains "$OUT" "pin OK" "[check] 빈 집합끼리의 일치를 「핀 OK」로 찍지 않는다"
 run report go "$T" --out "$D"
 assert_eq 2 "$RC" "[go] 빈 파생은 exit 2"
@@ -346,10 +512,10 @@ run check "$T"
 assert_eq 2 "$RC" "핀 파일이 없으면 exit 2"
 assert_contains "$OUT" "FAIL [-] scripts/integration-coverage.json is missing or not JSON" "핀 파일 없음"
 fresh
-printf '%s\n' '{ "go": { "pinned": ["go/admin.go"], "owners": {} }, "rust": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
+printf '%s\n' '{ "go": { "pinned": ["go/admin.go"], "owners": {} }, "java": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
 run check "$T"
 assert_eq 2 "$RC" "파일럿이 안 재는 언어를 핀에 넣으면 exit 2"
-assert_contains "$OUT" "FAIL [-] scripts/integration-coverage.json names rust, which this pilot does not measure" "모르는 언어"
+assert_contains "$OUT" "FAIL [-] scripts/integration-coverage.json names java, which this pilot does not measure" "모르는 언어"
 assert_contains "$OUT" "FAIL [python] scripts/integration-coverage.json has no pin for python" "빠진 언어"
 fresh
 rm "$T/docs/superpowers/plans/remaining-work.md"
@@ -362,9 +528,9 @@ run check "$T"
 assert_eq 2 "$RC" "파생 도구가 없으면 exit 2"
 assert_contains "$OUT" "FAIL [-] scripts/coverage-boundary.mjs is missing" "파생 도구 없음"
 fresh
-run report rust "$T" --out "$D"
+run report java "$T" --out "$D"
 assert_eq 2 "$RC" "파일럿이 안 재는 언어는 usage(exit 2)"
-assert_contains "$OUT" "this pilot measures go · python" "usage 문구"
+assert_contains "$OUT" "this pilot measures go · python · node · rust — got java" "usage 문구"
 
 # ── (4) 하한(4 걸음째 — 2026-11-02 무장) ─────────────────────────────────────────────────────────
 # 픽스처 핀에는 하한이 없다(위 단언들은 하한 없는 리포트다). 여기서만 주입한다.
@@ -425,6 +591,19 @@ fresh; floor node bodies 50
 run check "$T"
 assert_eq 2 "$RC" "[floor] node 에 bodies 는 없다 — 출력: $OUT"
 assert_contains "$OUT" "node.floor.metric" "[floor] node 지표 오류를 지목한다"
+
+# rust 의 지표는 lines(고유 줄 — 픽스처 95/123 = 77.236%).
+fresh; floor rust lines 77.23
+run report rust "$T" --out "$D"
+assert_eq 0 "$RC" "[floor] rust 77.236% ≥ 77.23 — 출력: $OUT"
+assert_line "$OUT" "integration-coverage [rust]: OK — 95/123 lines (77.2%) · floor lines ≥ 77.23% · 11 never-executed functions, all owned by open registry items" "[floor] rust 통과 요약"
+fresh; floor rust lines 77.24
+run report rust "$T" --out "$D"
+assert_eq 3 "$RC" "[floor] rust 77.236% < 77.24 — 출력: $OUT"
+fresh; floor rust statements 50
+run check "$T"
+assert_eq 2 "$RC" "[floor] rust 에 statements 는 없다(지표는 lines) — 출력: $OUT"
+assert_contains "$OUT" "rust.floor.metric" "[floor] rust 지표 오류를 지목한다"
 
 # 소유 문제와 하한 미달이 겹치면 게이트(3)가 경고(1)를 이긴다 — 경고는 그대로 찍는다.
 fresh; floor go statements 46
