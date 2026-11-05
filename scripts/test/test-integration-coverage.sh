@@ -935,6 +935,16 @@ sed -i 's|"ruby":"3.4.10"|"ruby":"3.4.11"|' "$D/ruby.json"
 run report ruby "$T" --out "$D"
 assert_eq 2 "$RC" "[ruby] 기록 뒤 바뀐 덤프는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "is not the data \`run ruby\` recorded" "[ruby] 기록과 다른 데이터"
+# 기록 판정은 다른 판정 **뒤**에 둘 뿐 앞의 실패에 가려지지 않는다(php 와 같다) — 손으로 돌린 실행의 낡은 데이터면 두
+# 까닭이 함께 보여야 한 번에 고친다.
+fresh
+printf '# changed after the run\n' >> "$T/ruby/lib/kc/auth_client.rb"
+rm "$D/ruby.run.json"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 해시 불일치와 기록 없음이 겹치면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/auth_client.rb: the data was taken from other bytes" "[ruby] 겹친 결함 — 해시"
+assert_contains "$OUT" "no record that \`run ruby\` wrote this data" "[ruby] 겹친 결함 — 기록 판정도 낸다(php 와 같다)"
+assert_contains "$OUT" "FAIL — 2 integrity failures" "[ruby] 겹친 결함 — 둘을 센다"
 # 소유자 키는 「파일:짧은 이름」이다(인스턴스 `#` · 특이 `.`).
 fresh
 sed -i '/Client#flush/d' "$T/scripts/integration-coverage.json"

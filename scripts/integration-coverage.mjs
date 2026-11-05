@@ -1690,8 +1690,8 @@ function rubyReport(d) {
       if (m.count === 0) never.push({ file: f, line: m.sl, name: m.name, stmts: per[k].stmts, label: per[k].stmts ? undefined : 'empty body' })
     })
   }
-  if (fails('ruby')) return null
-  // run 기록 — php 와 같은 이유(손으로 돌린 실행 · 실패한 실행 · 다른 실행이 덮어쓴 데이터). 다른 판정 뒤에 둔다.
+  // run 기록 — php 와 같은 이유(손으로 돌린 실행 · 실패한 실행 · 다른 실행이 덮어쓴 데이터). 다른 판정 뒤에 둔다 — 데이터가
+  // 스스로 모순이면 그 문구가 먼저고, 앞의 실패가 있어도 기록 판정은 함께 낸다(php 와 같다 — 두 까닭이 한 번에 보인다).
   const runRec = RUBY_RUN()
   let rec = null
   try {
