@@ -634,6 +634,14 @@ assert_not_contains "$(grep 'name="helper"' "$D/php/AuthClient.php.xml")" 'execu
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] 횟수 없는 메서드는 0 으로 읽지 않는다(exit 2) — 출력: $OUT"
 assert_contains "$OUT" "FAIL [php] php/src/AuthClient.php: cannot read the counts of AuthClient::helper" "[php] 못 읽는 횟수"
+# 못 읽는 횟수를 0 으로 읽지 않는다 — 안 돈 메서드의 `executed="0"` 을 망가뜨리면, 0 으로 읽을 때 합 · 크기 판정을 다 지나
+# OK 가 된다(변이 q11 이 SILENT 였다: 위 단언은 `executed="1" > 0` 판정이 같은 문구로 먼저 잡아 이 갈래를 재지 못했다).
+fresh
+sed -i 's#\(<method name="logoutUrl" [^>]*\) executed="0"#\1 executed="none"#' "$D/php/AuthClient.php.xml"
+assert_contains "$(grep 'name="logoutUrl"' "$D/php/AuthClient.php.xml")" 'executed="none"' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 숫자가 아닌 횟수는 0 으로 읽지 않는다(exit 2) — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] php/src/AuthClient.php: cannot read the counts of AuthClient::logoutUrl" "[php] 숫자가 아닌 횟수"
 fresh
 sed -i 's#\(<method name="logoutUrl" [^>]*\) executable="2" executed="0"#\1 executable="2" executed="3"#' "$D/php/AuthClient.php.xml"
 assert_contains "$(grep 'name="logoutUrl"' "$D/php/AuthClient.php.xml")" 'executed="3"' "(변이가 착지했는지 먼저 본다)"
