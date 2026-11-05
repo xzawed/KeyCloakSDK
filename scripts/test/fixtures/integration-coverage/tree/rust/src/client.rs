@@ -95,3 +95,8 @@ pub fn family() -> &'static str {
 pub async fn warm_up() {
     // nothing to prepare in the fixture
 }
+
+// A future built and dropped where the library also keeps its own (zero-count) body record.
+pub async fn never_polled() -> u32 {
+    7
+}
