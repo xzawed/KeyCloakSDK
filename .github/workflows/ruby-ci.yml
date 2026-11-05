@@ -110,10 +110,10 @@ jobs:
       - name: Integration E2E (Docker, 실제 Keycloak 26.6) + 경계 커버리지 수집
         working-directory: .
         run: node scripts/integration-coverage.mjs run ruby --out "$RUNNER_TEMP/integration-coverage"
-      # ⚠️ 보고 모드 — 낮은 수치로는 실패하지 않는다. 하한은 CI 관측 셋 뒤에 건다(등록부 `integration-coverage-never-measured`
-      # 4 걸음째). exit 2(무결성 실패 — 무엇이 그런지는 `scripts/integration-coverage.mjs` 머리의 종료코드 표가 소유한다)가
-      # 잡을 실패시킨다. exit 1(소유 문제 — 같은 표)은 경고다.
-      - name: 통합 전용 경계 커버리지 — 보고 모드(scripts/integration-coverage.json 에 floor 없음)
+      # ⚠️ 하한 — 값은 `scripts/integration-coverage.json` 의 `floor` 에만 둔다(등록부 `integration-coverage-never-measured`
+      # 4 걸음째). exit 3(하한 아래)과 exit 2(무결성 실패 — 무엇이 그런지는 `scripts/integration-coverage.mjs` 머리의
+      # 종료코드 표가 소유한다)가 잡을 실패시킨다. exit 1(소유 문제 — 같은 표)은 경고다.
+      - name: 통합 전용 경계 커버리지 — 하한(scripts/integration-coverage.json 의 floor)
         working-directory: .
         run: |
           rc=0
