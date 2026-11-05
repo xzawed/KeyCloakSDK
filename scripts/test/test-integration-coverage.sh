@@ -639,6 +639,39 @@ assert_contains "$(cat "$D/php/Admin/AdminClient.php.xml")" '<method name="loose
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] 클래스·트레이트 밖의 메서드는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [php] php/src/Admin/AdminClient.php: the data has a method (loose) outside any class or trait" "[php] 모르는 컨테이너"
+# 데이터가 통합 스위트의 성공한 실행에서 났는가 — <tests> 는 경계 줄을 하나라도 돈 테스트와 결과다(경계를 안 지나는 ZeroIT 는
+# 실리지 않는다 — 그래서 「스위트의 클래스가 다 돌았나」는 재지 않는다). 기대 집합은 tree/php/phpunit.xml 의 통합 스위트로
+# 디스크에서 찾은 {DriveIT, ZeroIT} 다.
+fresh
+sed -i 's#\(<test name="DriveIT::testDrive" [^>]*\)status="success"#\1status="failure"#' "$D/php/index.xml"
+assert_contains "$(cat "$D/php/index.xml")" 'status="failure"' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 실패한 실행의 데이터는 exit 2(PHPUnit 은 실패해도 XML 을 쓴다) — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] 1 of 1 tests in the run did not succeed — the data of a failed run is partial: DriveIT::testDrive (failure)" "[php] 실패한 테스트"
+# 단위 스위트를 같은 설정으로 돌린 꼴(독립 레그 실측의 꼴) — 경계를 지난 단위 테스트가 목록에 든다.
+fresh
+sed -i 's#\(<test name="DriveIT::testDrive" [^>]*/>\)#\1\n      <test name="Fixture\\Keycloak\\Tests\\Unit\\ConfigTest::testRealm" size="unknown" status="success" time="0.001"/>#' "$D/php/index.xml"
+assert_contains "$(cat "$D/php/index.xml")" 'ConfigTest::testRealm' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 스위트 밖 테스트가 섞이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] the run included tests outside the integration suite (ConfigTest) — the report would not be integration-only" "[php] 스위트 밖"
+fresh
+sed -i '/<test name="DriveIT::testDrive"/d' "$D/php/index.xml"
+assert_not_contains "$(cat "$D/php/index.xml")" 'DriveIT::testDrive' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 줄은 돌았는데 테스트가 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "counts executed lines but lists no tests — the data contradicts itself" "[php] 모순"
+fresh
+sed -i '/<testsuite name="integration">/d' "$T/php/phpunit.xml"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 통합 스위트 정의가 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" 'php/phpunit.xml must define exactly one <testsuite name="integration"> (found 0)' "[php] 스위트 없음"
+fresh
+sed -i 's#\(<testsuite name="integration"><directory suffix="IT.php">tests/Integration</directory>\)#\1<exclude>tests/Integration/ZeroIT.php</exclude>#' "$T/php/phpunit.xml"
+assert_contains "$(cat "$T/php/phpunit.xml")" '<exclude>tests/Integration/ZeroIT.php</exclude>' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 모르는 고르기(<exclude>)는 exit 2 — 무엇이 스위트인지 모르면 가를 수 없다 — 출력: $OUT"
+assert_contains "$OUT" "selects tests with something other than <directory> and <file>" "[php] 모르는 고르기"
 fresh
 sed -i 's#<method name="realm" #<method name="__construct" #' "$D/php/AuthClient.php.xml"
 assert_contains "$(cat "$D/php/AuthClient.php.xml")" 'signature="realm(): string"' "(변이가 착지했는지 먼저 본다)"

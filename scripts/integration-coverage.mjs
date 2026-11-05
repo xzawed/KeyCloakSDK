@@ -75,10 +75,10 @@
 // 이 node 로 직접 띄운다(npm 을 거치지 않는다 — 윈도의 `npm.cmd` 는 셸 없이 못 띄운다). rust 는 PATH 의 `cargo` 에
 // `cargo-llvm-cov`(+ `llvm-tools-preview`)가 있어야 한다. php 는 PATH 의 `php` 에 커버리지 드라이버(pcov 또는 Xdebug —
 // `XDEBUG_MODE=coverage` 는 run 이 준다)와 `php/vendor`(composer install)가 있어야 한다. DIR 기본값은 OS 임시 디렉터리 아래다.
-import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync, readdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { join, dirname, resolve, posix } from 'node:path'
+import { join, dirname, resolve, posix, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 
@@ -1227,6 +1227,51 @@ function xmlTags(src) {
 const xmlCount = (v) => (/^\d+$/.test(v ?? '') ? Number(v) : NaN)
 // 짧은 이름 — `Xzawed\Keycloak\Admin\AdminClient` → `AdminClient`, 함수 `Fixture\…\adminHelper` → `adminHelper`.
 const phpShort = (n) => n.slice(n.lastIndexOf('\\') + 1)
+// 통합 스위트의 테스트 클래스 — 단위 설정 `<testsuite name="integration">` 의 `<directory>`(suffix · prefix — 기본 `Test.php`)
+// 와 `<file>` 로 디스크에서 찾은 파일 이름이다(PSR-4: 클래스 이름 = 파일 이름). 다른 고르기(`<exclude>` 등)는 이 리더가 모르므로
+// FAIL 이다 — 무엇이 스위트인지 모르면 데이터가 그 스위트의 것인지 가를 수 없다.
+function phpIntegrationClasses(d) {
+  const site = `${d.dir}/phpunit.xml`
+  if (!existsSync(join(root, site))) {
+    fail('php', `${site} is missing — the integration testsuite cannot be read`)
+    return null
+  }
+  const x = readFileSync(join(root, site), 'utf8').replace(/<!--[\s\S]*?-->/g, '')
+  const suites = [...x.matchAll(/<testsuite\s+name="integration"\s*>([\s\S]*?)<\/testsuite>/g)]
+  if (suites.length !== 1) {
+    fail('php', `${site} must define exactly one <testsuite name="integration"> (found ${suites.length}) — the report checks the data against it`)
+    return null
+  }
+  const body = suites[0][1]
+  const known = /<(directory|file)((?:\s+[\w-]+="[^"]*")*)\s*>\s*([^<]+?)\s*<\/\1>/g
+  if (body.replace(known, '').trim() !== '') {
+    fail('php', `${site}: the integration testsuite selects tests with something other than <directory> and <file> — this reader does not know which tests it runs`)
+    return null
+  }
+  const classes = new Set()
+  for (const m of body.matchAll(known)) {
+    const path = join(root, d.dir, m[3])
+    if (m[1] === 'file') {
+      classes.add(basename(m[3]).replace(/\.php$/, ''))
+      continue
+    }
+    if (!existsSync(path)) {
+      fail('php', `${site}: the integration testsuite directory ${m[3]} does not exist`)
+      return null
+    }
+    const suffix = m[2].match(/suffix="([^"]*)"/)?.[1] ?? 'Test.php'
+    const prefix = m[2].match(/prefix="([^"]*)"/)?.[1] ?? ''
+    for (const f of readdirSync(path, { recursive: true })) {
+      const b = basename(String(f))
+      if (b.endsWith(suffix) && b.startsWith(prefix) && b.endsWith('.php')) classes.add(b.slice(0, -4))
+    }
+  }
+  if (!classes.size) {
+    fail('php', `${site}: the integration testsuite finds no test files — a report over no tests is vacuous`)
+    return null
+  }
+  return classes
+}
 function phpReport(d) {
   const dir = join(out, 'php')
   const shown = dir.replace(/\\/g, '/')
@@ -1239,6 +1284,28 @@ function phpReport(d) {
   const project = tags.find((t) => !t.close && t.name === 'project')
   if (!tags.some((t) => !t.close && t.name === 'phpunit') || !project?.attrs.source) {
     fail('php', `${shown}/index.xml is not a PHPUnit code-coverage XML report (no <phpunit><project source>) — run writes --coverage-xml`)
+    return null
+  }
+  // 데이터가 통합 스위트의 성공한 실행에서 났는가 — index.xml 의 <tests> 는 경계 줄을 **하나라도 돈** 테스트와 그 결과다
+  // (php-code-coverage `CodeCoverage::append` 는 걸러 낸 줄 커버리지가 비면 테스트를 등록하기 전에 돌아간다 — 실측: 경계를
+  // 안 지나는 ZeroIT 는 실리지 않는다). 단위 테스트가 섞였거나(통합 전용이 아니다) 실패한 실행이면(PHPUnit 은 실패해도 XML 을
+  // 쓴다) 수치가 그 스위트의 것이 아니다 — 독립 레그 실측: 생성 설정에 `--testsuite unit --filter …`(단위 26 개)로 돌린 데이터를
+  // 이 리더가 수치로 냈다(소유 문제 exit 1 — CI 의 `[ "$rc" -le 1 ]` 를 지난다). ⚠️ 한계: 스위트의 일부 클래스만 거른 실행은 못
+  // 가른다 — 경계를 안 지나는 IT 클래스는 원래 안 실리므로 「다 돌았나」를 이 데이터로 재면 거짓 FAIL 이다. CI 의 run 은 거르지
+  // 않는다.
+  const suite = phpIntegrationClasses(d)
+  if (!suite) return null
+  const tests = tags.filter((t) => !t.close && t.name === 'test')
+  const bad = tests.filter((t) => t.attrs.status !== 'success')
+  if (bad.length) {
+    const eg = bad.slice(0, 3).map((t) => `${t.attrs.name} (${t.attrs.status ?? 'no status'})`).join(' · ')
+    fail('php', `${bad.length} of ${tests.length} tests in the run did not succeed — the data of a failed run is partial: ${eg}`)
+    return null
+  }
+  const ran = new Set(tests.map((t) => phpShort(String(t.attrs.name ?? '').split('::')[0])))
+  const foreign = [...ran].filter((c) => !suite.has(c)).sort()
+  if (foreign.length) {
+    fail('php', `the run included tests outside the integration suite (${foreign.join(' · ')}) — the report would not be integration-only`)
     return null
   }
   const driver = tags.find((t) => t.name === 'driver')?.attrs ?? {}
@@ -1347,6 +1414,11 @@ function phpReport(d) {
     }
     files.push({ file: f, stmts: exec, covered: done, outside: { stmts: 0, covered: 0 } })
     for (const u of units) if (u.exec > 0 && u.done === 0) never.push({ file: f, line: u.line, name: u.name, stmts: u.exec })
+  }
+  // 줄이 돌았는데 그 줄을 돈 테스트가 하나도 안 실렸다 — 위 판정(스위트 · 결과)을 건너뛴 데이터다.
+  if (!tests.length && files.some((f) => f.covered > 0)) {
+    fail('php', `${shown}/index.xml counts executed lines but lists no tests — the data contradicts itself`)
+    return null
   }
   const note = `driver ${driver.name ?? '?'} ${driver.version ?? '?'} · php-code-coverage ${build.coverage ?? '?'}`
   return { path: dir, note, files, never }
