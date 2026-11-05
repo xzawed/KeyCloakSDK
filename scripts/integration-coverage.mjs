@@ -1640,7 +1640,11 @@ function rubyReport(d) {
     const lap = ms.findIndex((m, k) => k > 0 && m.sl <= ms[k - 1].el)
     if (lap > 0) {
       const [a, b] = [ms[lap - 1], ms[lap]]
-      fail('ruby', `${f}: ${b.name} (${b.sl}–${b.el}) lies inside or across ${a.name} (${a.sl}–${a.el}) — a line cannot be given to one method`)
+      // `module_function` 은 인스턴스 메서드와 그 특이 사본을 **같은 범위**로 싣는다(독립 레그 실측: 경계 밖 masking.rb 의
+      // `Masking#mask` · `Masking.mask` 둘 다 8–10). 합치지 않는다(어느 쪽 호출인지 따로 센다) — 그 경우를 문구로 짚는다.
+      const twin = a.sl === b.sl && a.el === b.el && a.name.replace('.', '#') === b.name.replace('.', '#')
+      const why = twin ? ' (module_function? it records the instance method and its singleton copy on the same lines — this reader does not merge them)' : ''
+      fail('ruby', `${f}: ${b.name} (${b.sl}–${b.el}) lies inside or across ${a.name} (${a.sl}–${a.el}) — a line cannot be given to one method${why}`)
       continue
     }
     // 메서드 범위 = def 다음 줄부터 end 까지(def 줄은 정의할 때 — 적재 때 — 돈다). 한 줄 메서드는 그 줄이 정의이자 몸통이라

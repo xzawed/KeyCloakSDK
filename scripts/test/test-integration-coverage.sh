@@ -895,6 +895,15 @@ ruby_mark 0
 run report ruby "$T" --out "$D"
 assert_eq 2 "$RC" "[ruby] 겹친 범위는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/auth_client.rb: AuthClient#introspect (30–34) lies inside or across AuthClient.build (26–31) — a line cannot be given to one method" "[ruby] 겹친 범위"
+assert_not_contains "$OUT" "module_function?" "[ruby] 다른 이름의 겹침에 module_function 을 짚지 않는다"
+# module_function 꼴 — 같은 범위에 `#` 와 `.` 의 같은 이름(독립 레그 실측: 경계 밖 masking.rb). 합치지 않고 FAIL 하되 까닭을 짚는다.
+fresh
+sed -i 's|"name":"build","start":\[26,4\],"end":\[28,7\]|"name":"introspect","start":[30,4],"end":[34,7]|' "$D/ruby.json"
+ruby_mark 0
+assert_contains "$(cat "$D/ruby.json")" '"owner":"#<Class:Kc::AuthClient>","name":"introspect","start":[30,4]' "(변이가 착지했는지 먼저 본다)"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 같은 범위의 인스턴스 · 특이 쌍은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "lies inside or across AuthClient#introspect (30–34) — a line cannot be given to one method (module_function? it records the instance method and its singleton copy on the same lines — this reader does not merge them)" "[ruby] module_function 을 짚는다"
 fresh
 sed -i 's|"lines":\[null,null,1,null,1,1,null,1,1,|"lines":[null,null,1,null,1,0,null,1,1,|' "$D/ruby.json"
 ruby_mark 0
