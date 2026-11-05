@@ -114,5 +114,33 @@
       "php/src/AuthClient.php:AuthClient::logoutUrl": "auth-surface-parity-unguarded",
       "php/src/KeycloakClient.php:KeycloakClient::close": "facade-wiring-close-contract-unasserted"
     }
+  },
+  "ruby": {
+    "pinned": [
+      "ruby/lib/keycloak_sdk/admin/admin_client.rb",
+      "ruby/lib/keycloak_sdk/admin/bearer_auth.rb",
+      "ruby/lib/keycloak_sdk/admin/call.rb",
+      "ruby/lib/keycloak_sdk/admin/clients.rb",
+      "ruby/lib/keycloak_sdk/admin/groups.rb",
+      "ruby/lib/keycloak_sdk/admin/realms.rb",
+      "ruby/lib/keycloak_sdk/admin/roles.rb",
+      "ruby/lib/keycloak_sdk/admin/settle_body.rb",
+      "ruby/lib/keycloak_sdk/admin/users.rb",
+      "ruby/lib/keycloak_sdk/auth_client.rb",
+      "ruby/lib/keycloak_sdk/client.rb",
+      "ruby/lib/keycloak_sdk/version.rb"
+    ],
+    "owners": {
+      "ruby/lib/keycloak_sdk/admin/call.rb:Call#unparsable_error_status": "coverage-omit-hides-security-paths",
+      "ruby/lib/keycloak_sdk/admin/clients.rb:Clients#list": "integration-admin-surface-uneven",
+      "ruby/lib/keycloak_sdk/admin/clients.rb:Clients#update": "integration-admin-surface-uneven",
+      "ruby/lib/keycloak_sdk/admin/groups.rb:Groups#list": "integration-admin-surface-uneven",
+      "ruby/lib/keycloak_sdk/admin/groups.rb:Groups#update": "integration-admin-surface-uneven",
+      "ruby/lib/keycloak_sdk/admin/realms.rb:Realms#list": "integration-admin-surface-uneven",
+      "ruby/lib/keycloak_sdk/admin/realms.rb:Realms#update": "integration-admin-surface-uneven",
+      "ruby/lib/keycloak_sdk/admin/roles.rb:Roles#list": "integration-admin-surface-uneven",
+      "ruby/lib/keycloak_sdk/admin/roles.rb:Roles#update": "integration-admin-surface-uneven",
+      "ruby/lib/keycloak_sdk/auth_client.rb:AuthClient#access_token": "facade-wiring-close-contract-unasserted"
+    }
   }
 }

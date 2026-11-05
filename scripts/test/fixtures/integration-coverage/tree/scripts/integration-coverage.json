@@ -84,5 +84,19 @@
       "php/src/AuthClient.php:AuthClient::__debugInfo": "open-masking",
       "php/src/AuthClient.php:AuthClient::logoutUrl": "open-admin"
     }
+  },
+  "ruby": {
+    "pinned": [
+      "ruby/lib/kc/admin/client.rb",
+      "ruby/lib/kc/auth_client.rb",
+      "ruby/lib/kc/version.rb"
+    ],
+    "owners": {
+      "ruby/lib/kc/admin/client.rb:Client#close": "open-admin",
+      "ruby/lib/kc/admin/client.rb:Client#flush": "open-admin",
+      "ruby/lib/kc/auth_client.rb:AuthClient#introspect": "open-admin",
+      "ruby/lib/kc/auth_client.rb:AuthClient#logout_url": "open-admin",
+      "ruby/lib/kc/auth_client.rb:AuthClient.build": "open-masking"
+    }
   }
 }

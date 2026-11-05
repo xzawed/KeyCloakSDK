@@ -58,6 +58,16 @@
 // 이다(실측 — 익명 클래스는 따로 실리지 않는다). 단위 설정의 `<source><exclude>` 가 경계를 빼므로 run 은 그 설정 옆에
 // `<source>` 만 경계 파일로 바꾼 사본을 만들어 돌리고 지운다 — 상대 경로(bootstrap · 테스트 디렉터리)가 그대로 풀린다
 // (`--coverage-filter` 는 include 를 **더할** 뿐 exclude 를 못 이긴다 — PHPUnit 12 `Merger.php`).
+// ⚠️ ruby 는 이름 · 범위 · 실행 가능 줄 · **호출 횟수**를 VM 에서 받는다 — `Coverage.start(lines:, methods:)` 의 메서드 키
+// `[소유자, 이름, 시작 줄 · 열, 끝 줄 · 열]` 과 그 횟수다(미실행 = 횟수 0 — 줄로 추정하지 않는다). SimpleCov 의 JSON 은 쓸 수
+// 없다 — 경계를 `skip` 해 경계 파일이 없고 메서드도 안 싣는다. 그래서 run 이 부트 파일 둘을 `<out>/ruby-boot/` 에 쓴다:
+// start.rb 는 bundler/setup **보다 먼저** Coverage 를 켜고(SimpleCov 1.2.0 은 `Coverage.running?` 이면 제 start 를 건너뛴다 —
+// `simplecov.rb:120`), dump.rb 는 `rspec --require` 로 실려 스위트가 끝난 뒤(SimpleCov 의 at_exit 가 `Coverage.result` 로
+// 측정을 멈추기 전) 이 트리 lib 의 파일마다 sha1 · 줄 · 메서드와 예제 결과를 쓴다. ⚠️ `bundle exec` 를 거치지 않는다 — 윈도에서
+// 새 프로세스를 띄우며 RUBYOPT 맨 앞에 `-rbundler/setup` 을 붙여, gemspec 이 싣는 version.rb 가 측정 전에 실렸다(실측: 그
+// 프로세스의 RUBYOPT 순서 · pid). 순서를 명시한다: `ruby -r<start> -rbundler/setup -e 'load Gem.bin_path("rspec-core", "rspec")'`.
+// 적재 때 도는 클래스 · def 줄이 lines 를 부풀리므로(python 의 import 와 같다) bodies(메서드 범위 안 줄)를 함께 낸다. 메서드
+// 밖 줄은 적재 때 돌았어야 한다 — 0 이면 블록이나 람다의 몸통이라 어느 메서드에도 못 붙인다(FAIL).
 //
 // 종료코드 — 넷을 가른다. 「낮은 수치」는 하한이 무장된 언어에서만 실패다(3):
 //   0 OK     리포트가 섰고, 하한 이상이며, 미실행 함수가 전부 열린 항목 소유다
@@ -75,7 +85,7 @@
 //            가리킨다 — 다섯 레인의 사본이 다 그 리더의 fail() 보다 좁았다(실측 2026-11-06).
 //   3 BELOW  하한 아래 — 수치는 유효하다. CI 는 실패로 본다. 비교는 정수식(covered × 100 < percent × 분모)이고 같으면 통과다.
 //
-// 사용(LANG = go · python · node · rust · php):
+// 사용(LANG = go · python · node · rust · php · ruby):
 //   node scripts/integration-coverage.mjs <LANG> [--out DIR]                 로컬 — 통합 테스트(Docker) 후 리포트
 //   node scripts/integration-coverage.mjs run    <LANG> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
 //   node scripts/integration-coverage.mjs report <LANG> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
@@ -83,7 +93,8 @@
 // python 인터프리터는 `KCSDK_PY` → `python/.venv` → PATH 의 `python` 순이다. node 는 `node/node_modules` 의 vitest 를
 // 이 node 로 직접 띄운다(npm 을 거치지 않는다 — 윈도의 `npm.cmd` 는 셸 없이 못 띄운다). rust 는 PATH 의 `cargo` 에
 // `cargo-llvm-cov`(+ `llvm-tools-preview`)가 있어야 한다. php 는 PATH 의 `php` 에 커버리지 드라이버(pcov 또는 Xdebug —
-// `XDEBUG_MODE=coverage` 는 run 이 준다)와 `php/vendor`(composer install)가 있어야 한다. DIR 기본값은 OS 임시 디렉터리 아래다.
+// `XDEBUG_MODE=coverage` 는 run 이 준다)와 `php/vendor`(composer install)가 있어야 한다. ruby 는 PATH 의 `ruby` 와 설치된
+// 번들(bundle install — `BUNDLE_GEMFILE` 이 없으면 `ruby/Gemfile`)이 있어야 한다. DIR 기본값은 OS 임시 디렉터리 아래다.
 import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync, readdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
@@ -94,19 +105,23 @@ import { tmpdir } from 'node:os'
 const PINS = 'scripts/integration-coverage.json'
 const REGISTRY = 'docs/superpowers/plans/remaining-work.md'
 const BOUNDARY = 'scripts/coverage-boundary.mjs'
-const LANGS = ['go', 'python', 'node', 'rust', 'php']
+const LANGS = ['go', 'python', 'node', 'rust', 'php', 'ruby']
 // 하한 지표 — go 의 문장은 전부 함수 몸통이고, python 은 lines(import 때 도는 줄 포함)와 bodies(함수 안 문장)가 갈린다.
 // node 는 istanbul 문장이다(모듈 수준 문장은 import 때 돌지만 경계 파일은 거의 전부 클래스 멤버다 — 표가 따로 보인다).
 // rust 는 llvm-cov 의 고유 줄(DA)이다 — import 때 도는 코드가 없다. php 는 php-code-coverage 의 실행 가능 줄이다(정적 분석이
-// 정한다 — 파일을 싣는 것만으로는 줄이 안 덮인다).
-const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'], node: ['statements'], rust: ['lines'], php: ['lines'] }
-const LINE_LANGS = new Set(['rust', 'php'])
+// 정한다 — 파일을 싣는 것만으로는 줄이 안 덮인다). ruby 는 python 처럼 lines(require 때 도는 클래스 · def 줄 포함)와
+// bodies(메서드 범위 안 줄)가 갈린다.
+const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'], node: ['statements'], rust: ['lines'], php: ['lines'], ruby: ['lines', 'bodies'] }
+const LINE_LANGS = new Set(['rust', 'php', 'ruby'])
+// 함수 몸통을 따로 세는 언어 — 적재 때 도는 모듈 · 클래스 수준 줄이 lines 를 부풀린다(python 은 import · ruby 는 require).
+// 「아무것도 안 돈 실행」 판정도 몸통으로 한다.
+const BODY_LANGS = new Set(['python', 'ruby'])
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
   if (msg) console.error(msg)
-  console.error('usage: node scripts/integration-coverage.mjs <go|python|node|rust|php> [--out DIR]')
-  console.error('       node scripts/integration-coverage.mjs run|report <go|python|node|rust|php> [ROOT] [--out DIR]')
+  console.error(`usage: node scripts/integration-coverage.mjs <${LANGS.join('|')}> [--out DIR]`)
+  console.error(`       node scripts/integration-coverage.mjs run|report <${LANGS.join('|')}> [ROOT] [--out DIR]`)
   console.error('       node scripts/integration-coverage.mjs check [ROOT]')
   process.exit(2)
 }
@@ -1460,6 +1475,246 @@ function phpReport(d) {
   return { path: dir, note, files, never }
 }
 
+// ── ruby: run 이 쓰는 덤프(Ruby `Coverage` 의 lines · methods + 예제 결과 — 머리 주석) ───────────────
+const RUBY_FORMAT = 'kcsdk-ruby-coverage/1'
+const RUBY_DATA = () => join(out, 'ruby.json')
+const RUBY_RUN = () => join(out, 'ruby.run.json')
+// 부트 파일 — run 이 `<out>/ruby-boot/` 에 쓴다(저장소에 두지 않는다 · 픽스처도 이 run 으로 만든다).
+const RUBY_START = `# frozen_string_literal: true
+
+# Written by scripts/integration-coverage.mjs \`run ruby\`. Loaded BEFORE bundler/setup, so Coverage sees every lib file
+# (the gemspec require_relative's version.rb during bundler setup). No gem may load here: one activated outside the
+# bundle would clash with it.
+require "coverage"
+Coverage.start(lines: true, branches: true, methods: true)
+`
+const RUBY_DUMP = `# frozen_string_literal: true
+
+# Written by scripts/integration-coverage.mjs \`run ruby\`. Loaded by \`rspec --require\`: after the suite, before
+# SimpleCov's at_exit stops Coverage, it dumps this tree's lib files and the example results.
+require "json"
+require "digest"
+
+RSpec.configure do |config|
+  config.after(:suite) do
+    root = File.expand_path(ENV.fetch("KCSDK_ITCOV_ROOT"))
+    lib = "#{root}/lib/"
+    fold = Gem.win_platform? ? :downcase.to_proc : :itself.to_proc
+    files = {}
+    Coverage.peek_result.each do |path, cov|
+      abs = File.expand_path(path)
+      next unless fold.call(abs).start_with?(fold.call(lib))
+
+      methods = (cov[:methods] || {}).map do |(owner, name, sl, sc, el, ec), count|
+        { "owner" => owner.inspect, "name" => name.to_s, "start" => [sl, sc], "end" => [el, ec], "count" => count }
+      end
+      files[abs] = { "sha1" => Digest::SHA1.file(abs).hexdigest, "lines" => cov[:lines], "methods" => methods }
+    end
+    examples = RSpec.configuration.reporter.examples.map do |e|
+      { "id" => e.id, "file" => e.metadata[:file_path], "integration" => e.metadata[:integration] ? true : false,
+        "status" => e.execution_result.status.to_s }
+    end
+    File.write(ENV.fetch("KCSDK_ITCOV_OUT"),
+               JSON.generate({ "format" => "${RUBY_FORMAT}", "root" => root, "ruby" => RUBY_VERSION,
+                               "examples" => examples, "files" => files }))
+  end
+end
+`
+// VM 의 소유자 문자열(`Module#inspect`)에서 짧은 이름 — 인스턴스 메서드 `Clients#list` · 특이 메서드 `Http.get`.
+// 익명 클래스(`#<Class:0x…>`) 같은 다른 꼴은 이름을 못 단다(null → FAIL).
+function rubyName(owner, name) {
+  const short = (q) => q.slice(q.lastIndexOf(':') + 1)
+  const single = /^#<Class:([A-Z]\w*(?:::[A-Z]\w*)*)>$/.exec(owner)
+  if (single) return `${short(single[1])}.${name}`
+  if (/^[A-Z]\w*(?:::[A-Z]\w*)*$/.test(owner)) return `${short(owner)}#${name}`
+  return null
+}
+const isCount = (x) => Number.isInteger(x) && x >= 0
+function rubyReport(d) {
+  const path = RUBY_DATA()
+  const shown = path.replace(/\\/g, '/')
+  if (!existsSync(path)) {
+    fail('ruby', `no coverage data at ${shown} — run the integration suite first (node scripts/integration-coverage.mjs run ruby)`)
+    return null
+  }
+  const bytes = readFileSync(path)
+  let j
+  try {
+    j = JSON.parse(bytes.toString('utf8'))
+  } catch {
+    fail('ruby', `${shown} is not JSON`)
+    return null
+  }
+  if (j === null || typeof j !== 'object' || j.format !== RUBY_FORMAT || typeof j.root !== 'string' || !Array.isArray(j.examples) ||
+    typeof j.files !== 'object' || j.files === null || Array.isArray(j.files)) {
+    fail('ruby', `${shown} is not the dump \`run ruby\` writes (format ${RUBY_FORMAT})`)
+    return null
+  }
+  if (toRepoPath(j.root, d.dir) !== d.dir) {
+    fail('ruby', `the dump's root ${j.root.replace(/\\/g, '/')} is not ${d.dir}/ of this tree — the data belongs to another checkout`)
+    return null
+  }
+  // 예제 — 통합 스위트(`spec/integration` 의 `:integration`)만, 전부 통과. 덤프는 스위트가 끝난 뒤 쓰이므로 실패한 예제도 실린다.
+  const ex = j.examples
+  if (!ex.every((e) => e && typeof e.id === 'string' && typeof e.file === 'string' && typeof e.status === 'string')) {
+    fail('ruby', `${shown} has an example without id · file · status — not the dump this reader knows`)
+    return null
+  }
+  if (!ex.length) fail('ruby', 'the run recorded no examples — a report over no tests is vacuous')
+  const bad = ex.filter((e) => e.status !== 'passed')
+  if (bad.length) {
+    const eg = bad.slice(0, 3).map((e) => `${e.id} (${e.status})`).join(' · ')
+    fail('ruby', `${bad.length} of ${ex.length} examples in the run did not pass — the data of a failed run is partial: ${eg}`)
+  }
+  const foreign = ex.filter((e) => e.integration !== true || !posix.normalize(e.file.replace(/\\/g, '/')).startsWith('spec/integration/'))
+  if (foreign.length) {
+    const eg = sortU(foreign.map((e) => e.id)).slice(0, 3).join(' · ')
+    fail('ruby', `the run included examples outside the integration suite (${eg}) — the report would not be integration-only`)
+  }
+  const entries = new Map()
+  for (const [abs, v] of Object.entries(j.files)) {
+    const rel = toRepoPath(abs, d.dir)
+    if (!rel.startsWith(`${d.dir}/`)) {
+      fail('ruby', `the data has ${abs.replace(/\\/g, '/')}, outside this tree — the data belongs to another checkout`)
+      return null
+    }
+    if (entries.has(rel)) fail('ruby', `${rel} has two entries in ${shown} — the data contradicts itself`)
+    entries.set(rel, v)
+  }
+  for (const rel of entries.keys()) if (!existsSync(join(root, rel))) fail('ruby', `${rel} is in the data but not in the tree — the data belongs to another checkout`)
+  const files = []
+  const never = []
+  for (const f of d.files) {
+    const e = entries.get(f)
+    if (!e) {
+      fail('ruby', `${f} is not in the coverage data — a boundary file the run never loaded would silently leave the denominator`)
+      continue
+    }
+    if (typeof e !== 'object' || typeof e.sha1 !== 'string' || !Array.isArray(e.lines) || !Array.isArray(e.methods)) {
+      fail('ruby', `${f}: the entry has no sha1 · lines · methods — not the dump this reader knows`)
+      continue
+    }
+    const src = readFileSync(join(root, f))
+    const sha = createHash('sha1').update(src).digest('hex')
+    if (sha !== e.sha1) {
+      fail('ruby', `${f}: the data was taken from other bytes (sha1 ${e.sha1.slice(0, 12)}… in the data, ${sha.slice(0, 12)}… in the tree) — rerun the suite on this tree`)
+      continue
+    }
+    if (!e.lines.every((c) => c === null || isCount(c))) {
+      fail('ruby', `${f}: cannot read the line counts in ${shown}`)
+      continue
+    }
+    const ms = []
+    let broken = false
+    for (const m of e.methods) {
+      const ok = m && typeof m.owner === 'string' && typeof m.name === 'string' && Array.isArray(m.start) && Array.isArray(m.end) &&
+        m.start.length === 2 && m.end.length === 2 && [...m.start, ...m.end, m.count].every(isCount)
+      if (!ok) {
+        fail('ruby', `${f}: cannot read a method record (${m?.owner ?? '?'} ${m?.name ?? '?'}) in ${shown}`)
+        broken = true
+        break
+      }
+      const name = rubyName(m.owner, m.name)
+      if (!name) {
+        fail('ruby', `${f}:${m.start[0]}: cannot name the method ${m.name} of ${m.owner} — not an owner this reader knows (anonymous class?)`)
+        broken = true
+        break
+      }
+      const [sl] = m.start
+      const [el] = m.end
+      if (sl < 1 || el < sl || el > e.lines.length) {
+        fail('ruby', `${f}: ${name} spans lines ${sl}–${el}, outside the ${e.lines.length} lines the data counts — the data contradicts itself`)
+        broken = true
+        break
+      }
+      ms.push({ name, sl, el, count: m.count })
+    }
+    if (broken) continue
+    const seen = new Set()
+    const dup = ms.find((m) => (seen.has(m.name) ? true : (seen.add(m.name), false)))
+    if (dup) {
+      fail('ruby', `${f}: two methods are both named ${dup.name} — the owner keys would collide`)
+      continue
+    }
+    ms.sort((a, b) => a.sl - b.sl || b.el - a.el)
+    const lap = ms.findIndex((m, k) => k > 0 && m.sl <= ms[k - 1].el)
+    if (lap > 0) {
+      const [a, b] = [ms[lap - 1], ms[lap]]
+      // `module_function` 은 인스턴스 메서드와 그 특이 사본을 **같은 범위**로 싣는다(독립 레그 실측: 경계 밖 masking.rb 의
+      // `Masking#mask` · `Masking.mask` 둘 다 8–10). 합치지 않는다(어느 쪽 호출인지 따로 센다) — 그 경우를 문구로 짚는다.
+      const twin = a.sl === b.sl && a.el === b.el && a.name.replace('.', '#') === b.name.replace('.', '#')
+      const why = twin ? ' (module_function? it records the instance method and its singleton copy on the same lines — this reader does not merge them)' : ''
+      fail('ruby', `${f}: ${b.name} (${b.sl}–${b.el}) lies inside or across ${a.name} (${a.sl}–${a.el}) — a line cannot be given to one method${why}`)
+      continue
+    }
+    // 메서드 범위 = def 다음 줄부터 end 까지(def 줄은 정의할 때 — 적재 때 — 돈다). 한 줄 메서드는 그 줄이 정의이자 몸통이라
+    // 줄 횟수로는 못 가른다 — 호출 횟수로 센다.
+    const at = new Array(e.lines.length + 1).fill(-1)
+    ms.forEach((m, k) => {
+      if (m.sl === m.el) at[m.sl] = k
+      else for (let ln = m.sl + 1; ln <= m.el; ln++) at[ln] = k
+    })
+    const lines = { stmts: 0, covered: 0 }
+    const bodies = { stmts: 0, covered: 0 }
+    const per = ms.map(() => ({ stmts: 0, covered: 0 }))
+    let orphan = 0
+    e.lines.forEach((c, i) => {
+      if (c === null) return
+      const ln = i + 1
+      lines.stmts++
+      if (c > 0) lines.covered++
+      const k = at[ln]
+      if (k < 0) {
+        if (c === 0 && !orphan) orphan = ln
+        return
+      }
+      const hit = ms[k].sl === ms[k].el ? ms[k].count > 0 : c > 0
+      bodies.stmts++
+      per[k].stmts++
+      if (hit) {
+        bodies.covered++
+        per[k].covered++
+      }
+    })
+    if (orphan) {
+      fail('ruby', `${f}:${orphan}: a line outside every method never ran although the file was loaded — a block or lambda body no method can be credited with`)
+      continue
+    }
+    const contra = ms.find((m, k) => m.count === 0 && per[k].covered > 0)
+    if (contra) {
+      fail('ruby', `${f}: ${contra.name} was called 0 times but a line of its body ran — the data contradicts itself`)
+      continue
+    }
+    files.push({ file: f, stmts: lines.stmts, covered: lines.covered, bodies })
+    ms.forEach((m, k) => {
+      if (m.count === 0) never.push({ file: f, line: m.sl, name: m.name, stmts: per[k].stmts, label: per[k].stmts ? undefined : 'empty body' })
+    })
+  }
+  // run 기록 — php 와 같은 이유(손으로 돌린 실행 · 실패한 실행 · 다른 실행이 덮어쓴 데이터). 다른 판정 뒤에 둔다 — 데이터가
+  // 스스로 모순이면 그 문구가 먼저고, 앞의 실패가 있어도 기록 판정은 함께 낸다(php 와 같다 — 두 까닭이 한 번에 보인다).
+  const runRec = RUBY_RUN()
+  let rec = null
+  try {
+    rec = JSON.parse(readFileSync(runRec, 'utf8'))
+  } catch {
+    rec = null
+  }
+  if (!rec || rec.run !== 'ruby') {
+    fail('ruby', `no record that \`run ruby\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs run ruby) so the report can tell a complete, successful run`)
+    return null
+  }
+  if (rec.exit !== 0) {
+    fail('ruby', `the run that wrote this data exited ${rec.exit} — the data of a failed run is partial`)
+    return null
+  }
+  const dumpSha = createHash('sha1').update(bytes).digest('hex')
+  if (rec.dump_sha1 !== dumpSha) {
+    fail('ruby', `${shown} is not the data \`run ruby\` recorded (sha1 ${String(rec.dump_sha1).slice(0, 12)}… recorded, ${dumpSha.slice(0, 12)}… now) — another run wrote over it`)
+    return null
+  }
+  return { path, note: `ruby ${typeof j.ruby === 'string' ? j.ruby : '?'} · Coverage lines · methods`, files, never }
+}
+
 // ── report ───────────────────────────────────────────────────────────────────────────────
 function emitFindings(l) {
   for (const f of findings) if (f.lang === l || f.lang === null) console.log(`${f.kind} [${f.lang ?? '-'}] ${f.msg}`)
@@ -1469,21 +1724,22 @@ function report(l) {
   const pin = pinFor(l)
   const reg = loadRegistry()
   if (d && pin) matchesPin(l, d, pin)
-  const reader = { go: goReport, python: pyReport, node: nodeReport, rust: rustReport, php: phpReport }[l]
+  const reader = { go: goReport, python: pyReport, node: nodeReport, rust: rustReport, php: phpReport, ruby: rubyReport }[l]
   const data = fails(l) ? null : reader(d)
   if (data && !fails(l)) {
     const tot = data.files.reduce((a, f) => ({ stmts: a.stmts + f.stmts, covered: a.covered + f.covered }), { stmts: 0, covered: 0 })
     // 아무 경계 문장도 안 돈 실행은 「낮은 수치」가 아니라 측정 실패다(테스트가 경계를 한 줄도 안 지나고 통과할 수 없다).
     // ⚠️ python 은 **함수 몸통**으로 판정한다 — import 만으로 모듈·클래스 수준 줄이 덮인다. conftest 가 패키지를 import
     // 하므로 통합 테스트가 전부 skip 돼 pytest 가 exit 0 으로 끝나도 lines 는 0 이 아니다(실측: 실제 트리 import 만으로
-    // 160/395 = 40.5% · 몸통 0/235). lines 로 판정하면 그 실행이 「40.5%」로 보고된다.
-    const ran =
-      l === 'python'
-        ? data.files.reduce((a, f) => ({ stmts: a.stmts + f.bodies.stmts, covered: a.covered + f.bodies.covered }), { stmts: 0, covered: 0 })
-        : tot
+    // 160/395 = 40.5% · 몸통 0/235). lines 로 판정하면 그 실행이 「40.5%」로 보고된다. ruby 도 같다(require 가 클래스 · def 줄을 돈다).
+    const ran = BODY_LANGS.has(l)
+      ? data.files.reduce((a, f) => ({ stmts: a.stmts + f.bodies.stmts, covered: a.covered + f.bodies.covered }), { stmts: 0, covered: 0 })
+      : tot
     if (ran.covered === 0) {
-      const scope = l === 'python' ? 'boundary statements inside functions' : LINE_LANGS.has(l) ? 'boundary lines' : 'boundary statements'
-      const why = l === 'python' && tot.covered ? `import alone credits ${tot.covered} module-level lines` : 'did the integration tests run against this tree?'
+      const scope =
+        l === 'python' ? 'boundary statements inside functions' : l === 'ruby' ? 'boundary lines inside methods' : LINE_LANGS.has(l) ? 'boundary lines' : 'boundary statements'
+      const load = l === 'ruby' ? 'require' : 'import'
+      const why = BODY_LANGS.has(l) && tot.covered ? `${load} alone credits ${tot.covered} module-level lines` : 'did the integration tests run against this tree?'
       fail(l, `the run executed 0 of ${ran.stmts} ${scope} — a measurement failure, not a low number (${why})`)
     } else {
       const neverKeys = new Set()
@@ -1508,7 +1764,7 @@ function report(l) {
   const t = data.files.reduce((a, f) => ({ stmts: a.stmts + f.stmts, covered: a.covered + f.covered }), { stmts: 0, covered: 0 })
   const b = data.files.reduce((a, f) => ({ stmts: a.stmts + (f.bodies?.stmts ?? 0), covered: a.covered + (f.bodies?.covered ?? 0) }), { stmts: 0, covered: 0 })
   let head = `${t.covered}/${t.stmts} ${LINE_LANGS.has(l) ? 'lines' : 'statements'} (${pct(t.covered, t.stmts)})`
-  if (l === 'python') head = `lines ${t.covered}/${t.stmts} (${pct(t.covered, t.stmts)}) · bodies ${b.covered}/${b.stmts} (${pct(b.covered, b.stmts)})`
+  if (BODY_LANGS.has(l)) head = `lines ${t.covered}/${t.stmts} (${pct(t.covered, t.stmts)}) · bodies ${b.covered}/${b.stmts} (${pct(b.covered, b.stmts)})`
   const n = data.never.length
   const fns = n ? `${n} never-executed function${n > 1 ? 's' : ''}` : 'no never-executed functions'
   const owned = n && !nd ? ', all owned by open registry items' : ''
@@ -1533,7 +1789,7 @@ function printReport(l, d, data, tot, pin) {
   console.log(`[${l}] integration-only coverage — ${floorText(pin) ?? 'report mode, no floor'}`)
   console.log(`  boundary: ${d.files.length} files derived from ${d.site} (${d.label}) — equal to the pin in ${PINS}`)
   console.log(`  data: ${data.path.replace(/\\/g, '/')}${data.note ? ` (${data.note})` : ''}`)
-  if (l !== 'python') {
+  if (!BODY_LANGS.has(l)) {
     // 어느 이름 범위에도 속하지 않는 문장 — go 의 패키지 수준 함수 리터럴, node 의 모듈·클래스 수준 문장, rust 의 항목 밖 줄
     // (매크로가 펼친 코드가 항목 밖 자리를 가리킬 때 — 함수 레코드가 범위 밖이면 그 전에 FAIL 이다).
     const level = l === 'go' ? 'package-level' : 'module-level'
@@ -1550,12 +1806,22 @@ function printReport(l, d, data, tot, pin) {
       console.log(`  ${f.file} lines ${f.covered}/${f.stmts} ${pct(f.covered, f.stmts)} · bodies ${f.bodies.covered}/${f.bodies.stmts} ${pct(f.bodies.covered, f.bodies.stmts)}`)
     }
     console.log(`  total lines ${tot.covered}/${tot.stmts} ${pct(tot.covered, tot.stmts)} · bodies ${b.covered}/${b.stmts} ${pct(b.covered, b.stmts)}`)
-    console.log('  (bodies = statements inside functions; module- and class-level lines run at import, so "lines" also credits what the run merely imported)')
+    console.log(
+      l === 'ruby'
+        ? '  (bodies = lines inside methods; class-level and def lines run at require, so "lines" also credits what the run merely loaded)'
+        : '  (bodies = statements inside functions; module- and class-level lines run at import, so "lines" also credits what the run merely imported)',
+    )
   }
   // 표와 같은 순서(코드 단위) — localeCompare 는 `admin_users.go` 를 `admin.go` 앞에 둔다.
   const never = [...data.never].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))
   const what =
-    l === 'rust' ? 'none of its lines ran, its async body never ran, or the data has no record of it' : l === 'php' ? 'none of its lines ran' : 'none of its statements ran'
+    l === 'rust'
+      ? 'none of its lines ran, its async body never ran, or the data has no record of it'
+      : l === 'php'
+        ? 'none of its lines ran'
+        : l === 'ruby'
+          ? 'Ruby counted no call to it'
+          : 'none of its statements ran'
   console.log(`  never executed by the integration run — ${never.length} function${never.length === 1 ? '' : 's'} (${what}):`)
   for (const x of never) console.log(`  NEVER ${x.file}:${x.line} ${x.name} · ${x.label ?? stmt(x.stmts)} · owner ${x.owner}`)
 }
@@ -1681,6 +1947,37 @@ function run(l) {
     if (existsSync(index)) {
       const sha = createHash('sha1').update(readFileSync(index)).digest('hex')
       writeFileSync(PHP_RUN(), `${JSON.stringify({ run: 'php', exit: rc, index_sha1: sha })}\n`)
+    }
+    return rc
+  }
+  if (l === 'ruby') {
+    // 옛 데이터 · 기록 · 부트 파일을 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게).
+    const data = RUBY_DATA()
+    const boot = join(out, 'ruby-boot')
+    rmSync(data, { force: true })
+    rmSync(RUBY_RUN(), { force: true })
+    rmSync(boot, { recursive: true, force: true })
+    if (!process.env.BUNDLE_GEMFILE && !existsSync(join(cwd, 'Gemfile'))) {
+      fail(l, `${d.dir}/Gemfile is missing — the run needs the lane's bundle (bundle install)`)
+      emitFindings(l)
+      return 2
+    }
+    mkdirSync(boot, { recursive: true })
+    const start = join(boot, 'start.rb')
+    const dump = join(boot, 'dump.rb')
+    writeFileSync(start, RUBY_START)
+    writeFileSync(dump, RUBY_DUMP)
+    // 레인의 명령(`RUN_INTEGRATION=1 bundle exec rspec spec/integration --tag integration`)과 같은 스펙 · 태그 · 환경이다 —
+    // `bundle exec` 대신 순서를 명시한다(머리 주석: start → bundler/setup → 번들의 rspec).
+    const rc = spawnStep(
+      'ruby',
+      [`-r${start}`, '-rbundler/setup', '-e', 'load Gem.bin_path("rspec-core", "rspec")', '--', '--require', dump, 'spec/integration', '--tag', 'integration'],
+      cwd,
+      { ...process.env, RUN_INTEGRATION: '1', KCSDK_ITCOV_OUT: data, KCSDK_ITCOV_ROOT: cwd },
+    )
+    if (existsSync(data)) {
+      const sha = createHash('sha1').update(readFileSync(data)).digest('hex')
+      writeFileSync(RUBY_RUN(), `${JSON.stringify({ run: 'ruby', exit: rc, dump_sha1: sha })}\n`)
     }
     return rc
   }

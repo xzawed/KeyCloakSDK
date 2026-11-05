@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
-# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — go · python · node · rust · php 의 무결성 판정과 하한.
+# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — go · python · node · rust · php · ruby 의 무결성 판정과 하한.
 #
-# ⚠️ **커밋된 픽스처만 쓴다** — Docker 도 Go·Python·node·rust·php 툴체인도 필요 없다. 실제 Keycloak 에 대고 도는 것은
+# ⚠️ **커밋된 픽스처만 쓴다** — Docker 도 Go·Python·node·rust·php·ruby 툴체인도 필요 없다. 실제 Keycloak 에 대고 도는 것은
 # 레인 CI 의 integration 잡이다. 여기서 재는 것은 리포트의 **무결성 판정** 셋이다:
 #   (1) 양성 — 건강한 픽스처에서 파일별·합계 수치와 미실행 함수 목록이 **정확히** 나온다.
 #   (2) 음성 — 파생이 좁아지거나(그러면 %가 오른다), 핀과 갈리거나, 데이터에서 파일이 빠지거나,
@@ -31,6 +31,10 @@
 #                          루트에 tree/php 사본 + 구동 테스트, 설정은 도구의 run 이 만드는 꼴(`<source><include>` = 경계 두 파일).
 #                          **index.xml 의 `<project source>` 생성 루트만 `@ROOT@` 로 바꿨다**(파일 XML 은 상대 경로뿐이다)
 #   data/php-zero/         같은 명령, 구동기가 경계를 하나도 안 부른다 — 전부 0
+#   data/ruby.json         **도구의 `run ruby` 그대로**(ruby 3.4.10 · 2026-11-06) — 임시 루트에 tree 사본, 번들은 실제 레인의 것
+#                          (`BUNDLE_GEMFILE=ruby/Gemfile`). **덤프의 생성 루트만 `@ROOT@` 로 바꿨다**(root 와 파일 키는 절대 경로다)
+#   data/ruby-zero.json    같은 명령, 구동 스펙이 경계 밖 `Config` 만 만든다 — 메서드 몸통 전부 0
+# ruby 구동 스펙은 「logout_url · AuthClient.build · introspect · close · flush」를 안 부르고 `token` 의 nil 갈래를 안 탄다.
 # php 구동기는 「groups·adminHelper·logoutUrl·__debugInfo」를 안 부르고 `exchange` 의 throw 갈래를 안 탄다.
 # 구동기는 「String·Close·Delete·AuthClient.String·hook 리터럴」과 「__repr__·logout·clients·aio 전체」를, node 는
 # 「describe·toString·[SYM]·inc·cb·set count·overload·longSignature·close」를, rust 는 「transport·supply·describe·noop·close·
@@ -58,6 +62,7 @@ fresh() {
   node_data "$FIX/data/node.json"
   rust_data "$FIX/data/rust.lcov"
   php_data "$FIX/data/php"
+  ruby_data "$FIX/data/ruby.json"
   git -C "$T" init -q
   git -C "$T" config core.autocrlf false
   git -C "$T" add -A
@@ -86,6 +91,16 @@ php_data() { # fixture-dir
 php_mark() { # exit
   printf '{"run":"php","exit":%s,"index_sha1":"%s"}\n' "$1" "$(sha1sum "$D/php/index.xml" | cut -d' ' -f1)" > "$D/php.run.json"
 }
+# `run ruby` 의 덤프 — 루트와 파일 키가 절대 경로다(Ruby 의 `File.expand_path` — 윈도도 `C:/…`, `/` 구분). 같은 치환 뒤 기록을 쓴다.
+ruby_data() { # fixture-json
+  _r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
+  sed "s#@ROOT@#$_r#g" "$1" > "$D/ruby.json"
+  ruby_mark 0
+}
+# `run ruby` 의 기록(종료코드 · 지금 덤프의 sha1) — php_mark 와 같은 쓰임.
+ruby_mark() { # exit
+  printf '{"run":"ruby","exit":%s,"dump_sha1":"%s"}\n' "$1" "$(sha1sum "$D/ruby.json" | cut -d' ' -f1)" > "$D/ruby.run.json"
+}
 run() {
   git -C "$T" add -A
   OUT="$(node "$TOOL" "$@" 2>&1)" && RC=0 || RC=$?
@@ -105,7 +120,8 @@ assert_line "$OUT" "[python] pin OK — 3 files equal the derivation from python
 assert_line "$OUT" "[node] pin OK — 2 files equal the derivation from node/vitest.config.ts:9 (vitest coverage.exclude)" "[check] node 핀 = 파생"
 assert_line "$OUT" "[rust] pin OK — 3 files equal the derivation from .github/workflows/rust-ci.yml:7 (cargo llvm-cov --ignore-filename-regex)" "[check] rust 핀 = 파생"
 assert_line "$OUT" "[php] pin OK — 2 files equal the derivation from php/phpunit.xml:11 (phpunit <source><exclude>)" "[check] php 핀 = 파생"
-assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 · php 2 files pinned · 43 owner entries, all open" "[check] 요약"
+assert_line "$OUT" "[ruby] pin OK — 3 files equal the derivation from ruby/spec/spec_helper.rb:8 (SimpleCov skip)" "[check] ruby 핀 = 파생"
+assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 · php 2 · ruby 3 files pinned · 48 owner entries, all open" "[check] 요약"
 
 run report go "$T" --out "$D"
 assert_eq 0 "$RC" "[go] 건강한 리포트는 exit 0 — 출력: $OUT"
@@ -271,11 +287,33 @@ run report python "$T" --out "$D"
 assert_eq 0 "$RC" "[python] / 키도 같은 파일이다 — 출력: $OUT"
 assert_line "$OUT" "  total lines 21/28 75.0% · bodies 8/13 61.5%" "[python] / 키에서도 같은 합계"
 
-# 다른 언어의 파생 실패가 이 언어의 리포트를 막지 않는다(픽스처에는 여섯 언어가 없어 그쪽은 늘 FAIL 이다).
+# 다른 언어의 파생 실패가 이 언어의 리포트를 막지 않는다(픽스처에 없는 언어의 파생은 늘 FAIL 이다).
 fresh
 sed -i 's#grep -vE .*#true#' "$T/.github/workflows/go-ci.yml"
 run report python "$T" --out "$D"
 assert_eq 0 "$RC" "[python] go 의 파생 실패는 python 리포트와 무관하다 — 출력: $OUT"
+
+# ruby — 이름 · 범위 · 실행 가능 줄 · **호출 횟수**는 VM 이 낸다(`Coverage` 의 methods — 미실행 = 횟수 0). 덤프는 run 이 쓴
+# 부트 파일의 것이다(픽스처도 도구의 run 으로 만들었다 — 머리 주석). 적재 때 도는 클래스 · def 줄이 lines 를 부풀리므로
+# bodies 를 함께 낸다 — 한 줄 메서드(`logout_url`)는 정의 줄이 곧 몸통이라 호출 횟수로 센다(적재 때 1, 호출 0).
+fresh
+run report ruby "$T" --out "$D"
+assert_eq 0 "$RC" "[ruby] 건강한 리포트는 exit 0 — 출력: $OUT"
+assert_line "$OUT" "[ruby] integration-only coverage — report mode, no floor" "[ruby] 머리줄"
+assert_line "$OUT" "  boundary: 3 files derived from ruby/spec/spec_helper.rb:8 (SimpleCov skip) — equal to the pin in scripts/integration-coverage.json" "[ruby] 파생 출처"
+assert_contains "$OUT" "/ruby.json (ruby 3.4.10 · Coverage lines · methods)" "[ruby] 덤프와 그것을 낸 ruby 를 찍는다"
+assert_line "$OUT" "  ruby/lib/kc/admin/client.rb lines 9/9 100.0% · bodies 2/3 66.7%" "[ruby] admin/client.rb — 빈 몸통 · 한 줄 메서드"
+assert_line "$OUT" "  ruby/lib/kc/auth_client.rb lines 13/17 76.5% · bodies 4/9 44.4%" "[ruby] auth_client.rb — 람다 줄은 적재 때 돈다"
+assert_line "$OUT" "  ruby/lib/kc/version.rb lines 2/2 100.0% · bodies 0/0 n/a" "[ruby] 메서드 없는 파일도 데이터에 있다"
+assert_line "$OUT" "  total lines 24/28 85.7% · bodies 6/12 50.0%" "[ruby] 합계"
+assert_line "$OUT" "  never executed by the integration run — 5 functions (Ruby counted no call to it):" "[ruby] 미실행 머리줄"
+assert_line "$OUT" "  NEVER ruby/lib/kc/admin/client.rb:15 Client#close · 1 line · owner open-admin" "[ruby] 한 줄 메서드 — 적재 때 돈 줄을 호출로 세지 않는다"
+assert_line "$OUT" "  NEVER ruby/lib/kc/admin/client.rb:17 Client#flush · empty body · owner open-admin" "[ruby] 빈 몸통 — 실행 가능 줄 없이도 호출 횟수로 잡는다"
+assert_line "$OUT" "  NEVER ruby/lib/kc/auth_client.rb:20 AuthClient#logout_url · 1 line · owner open-admin" "[ruby] endless 메서드"
+assert_line "$OUT" "  NEVER ruby/lib/kc/auth_client.rb:26 AuthClient.build · 1 line · owner open-masking" "[ruby] 특이 메서드는 「.」"
+assert_line "$OUT" "  NEVER ruby/lib/kc/auth_client.rb:30 AuthClient#introspect · 2 lines · owner open-admin" "[ruby] 인스턴스 메서드는 「#」"
+assert_not_contains "$OUT" "AuthClient.parse ·" "[ruby] 부른 특이 메서드는 목록에 없다"
+assert_line "$OUT" "integration-coverage [ruby]: OK — lines 24/28 (85.7%) · bodies 6/12 (50.0%) · 5 never-executed functions, all owned by open registry items" "[ruby] 통과 요약"
 
 # ── (2) 음성: 파생 ↔ 핀 ───────────────────────────────────────────────────────────────────────
 # 파생이 좁아진다 — 이것이 등록부가 실측한 함정의 꼴이다(파일이 빠지면 %가 오른다).
@@ -726,6 +764,194 @@ assert_eq 1 "$RC" "[php] 소유자 없는 미실행 함수는 exit 1 — 출력:
 assert_contains "$OUT" "DRIFT [php] unowned never-executed function php/src/AuthClient.php:AuthClient::__debugInfo" "[php] 소유자 없음"
 assert_line "$OUT" "  NEVER php/src/AuthClient.php:70 AuthClient::__debugInfo · 1 line · owner NONE" "[php] 목록에도 NONE 으로 남는다"
 
+# ruby — 덤프의 무결성. VM 이 낸 이름 · 범위 · 횟수를 받되, 덤프가 이 트리 · 이 실행 · 이 바이트의 것인지와 스스로 맞는지를 본다.
+fresh
+rm "$D/ruby.json"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 덤프가 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] no coverage data at" "[ruby] 데이터 없음"
+fresh
+printf 'not json' > "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] JSON 이 아니면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/ruby.json is not JSON" "[ruby] JSON 아님"
+fresh
+sed -i 's|kcsdk-ruby-coverage/1|kcsdk-ruby-coverage/2|' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 다른 형식이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "is not the dump \`run ruby\` writes (format kcsdk-ruby-coverage/1)" "[ruby] 형식"
+fresh
+sed -i 's|"root":"[^"]*"|"root":"/elsewhere/ruby"|' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 다른 루트의 덤프는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] the dump's root /elsewhere/ruby is not ruby/ of this tree — the data belongs to another checkout" "[ruby] 다른 체크아웃의 루트"
+# 예제 — 통합 스위트만, 전부 통과(덤프는 스위트 뒤에 쓰이므로 실패한 예제도 실린다).
+fresh
+sed -i 's|"status":"passed"|"status":"failed"|' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 실패한 예제가 있으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] 1 of 1 examples in the run did not pass — the data of a failed run is partial: ./spec/integration/drive_spec.rb[1:1] (failed)" "[ruby] 실패한 예제"
+fresh
+sed -i 's|"integration":true|"integration":false|' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 통합 태그 없는 예제는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] the run included examples outside the integration suite (./spec/integration/drive_spec.rb[1:1]) — the report would not be integration-only" "[ruby] 태그 밖"
+fresh
+sed -i 's|"file":"./spec/integration/drive_spec.rb"|"file":"./spec/unit/drive_spec.rb"|' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] spec/integration 밖의 예제는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "outside the integration suite" "[ruby] 디렉터리 밖"
+fresh
+sed -i 's|"examples":\[{[^}]*}\]|"examples":[]|' "$D/ruby.json"
+ruby_mark 0
+assert_contains "$(cat "$D/ruby.json")" '"examples":[]' "(변이가 착지했는지 먼저 본다)"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 예제가 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] the run recorded no examples — a report over no tests is vacuous" "[ruby] 예제 없음"
+fresh
+sed -i 's|,"status":"passed"||' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] status 없는 예제는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "has an example without id · file · status — not the dump this reader knows" "[ruby] 모르는 예제"
+# 파일
+fresh
+sed -i 's|"[^"]*/ruby/lib/kc/version\.rb":{[^}]*},||' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 경계 파일이 덤프에 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/version.rb is not in the coverage data — a boundary file the run never loaded would silently leave the denominator" "[ruby] 덤프에 없는 경계 파일"
+fresh
+sed -i 's|/ruby/lib/kc\.rb"|/ruby/lib/kc_gone.rb"|' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 트리에 없는 파일이 덤프에 있으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc_gone.rb is in the data but not in the tree — the data belongs to another checkout" "[ruby] 트리에 없는 파일"
+fresh
+sed -i 's|"[^"]*/ruby/lib/kc\.rb"|"/elsewhere/ruby/lib/kc.rb"|' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 트리 밖 경로는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] the data has /elsewhere/ruby/lib/kc.rb, outside this tree — the data belongs to another checkout" "[ruby] 트리 밖"
+fresh
+sed -i 's|/ruby/lib/kc\.rb"|/ruby/lib/./kc/version.rb"|' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 같은 파일이 두 번이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/version.rb has two entries in" "[ruby] 겹친 항목"
+fresh
+printf '# changed after the run\n' >> "$T/ruby/lib/kc/auth_client.rb"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 다른 바이트에서 난 덤프는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/auth_client.rb: the data was taken from other bytes (sha1 420f81939737… in the data," "[ruby] 해시 불일치"
+fresh
+sed -i 's|"sha1":"420f819397379003fbb5ebe25d556d527d049801",||' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] sha1 없는 항목은 exit 2(대조를 건너뛰지 않는다) — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/auth_client.rb: the entry has no sha1 · lines · methods — not the dump this reader knows" "[ruby] sha1 없음"
+fresh
+sed -i 's|"lines":\[null,null,1,1,null\]|"lines":[null,null,1,"x",null]|' "$D/ruby.json"
+ruby_mark 0
+assert_contains "$(cat "$D/ruby.json")" '[null,null,1,"x",null]' "(변이가 착지했는지 먼저 본다)"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 숫자가 아닌 줄 횟수는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/version.rb: cannot read the line counts in" "[ruby] 못 읽는 줄 횟수"
+# 메서드
+fresh
+sed -i 's|"name":"token","start":\[12,4\],"end":\[18,7\],"count":2|"name":"token","start":[12,4],"end":[18,7],"count":-1|' "$D/ruby.json"
+ruby_mark 0
+assert_contains "$(cat "$D/ruby.json")" '"count":-1' "(변이가 착지했는지 먼저 본다)"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 못 읽는 메서드 레코드는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/auth_client.rb: cannot read a method record (Kc::AuthClient token) in" "[ruby] 못 읽는 메서드"
+fresh
+sed -i 's|"owner":"Kc::AuthClient","name":"introspect"|"owner":"#<Class:0x000055d5>","name":"introspect"|' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 이름을 못 다는 소유자는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/auth_client.rb:30: cannot name the method introspect of #<Class:0x000055d5> — not an owner this reader knows (anonymous class?)" "[ruby] 익명 소유자"
+fresh
+sed -i 's|"start":\[30,4\],"end":\[34,7\]|"start":[30,4],"end":[99,7]|' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 파일 밖까지 가는 범위는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/auth_client.rb: AuthClient#introspect spans lines 30–99, outside the 36 lines the data counts — the data contradicts itself" "[ruby] 범위 밖"
+fresh
+sed -i 's|"name":"build"|"name":"parse"|' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 이름이 겹치면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/auth_client.rb: two methods are both named AuthClient.parse — the owner keys would collide" "[ruby] 겹친 이름"
+fresh
+sed -i 's|"start":\[26,4\],"end":\[28,7\]|"start":[26,4],"end":[31,7]|' "$D/ruby.json"
+ruby_mark 0
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 겹친 범위는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/auth_client.rb: AuthClient#introspect (30–34) lies inside or across AuthClient.build (26–31) — a line cannot be given to one method" "[ruby] 겹친 범위"
+assert_not_contains "$OUT" "module_function?" "[ruby] 다른 이름의 겹침에 module_function 을 짚지 않는다"
+# module_function 꼴 — 같은 범위에 `#` 와 `.` 의 같은 이름(독립 레그 실측: 경계 밖 masking.rb). 합치지 않고 FAIL 하되 까닭을 짚는다.
+fresh
+sed -i 's|"name":"build","start":\[26,4\],"end":\[28,7\]|"name":"introspect","start":[30,4],"end":[34,7]|' "$D/ruby.json"
+ruby_mark 0
+assert_contains "$(cat "$D/ruby.json")" '"owner":"#<Class:Kc::AuthClient>","name":"introspect","start":[30,4]' "(변이가 착지했는지 먼저 본다)"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 같은 범위의 인스턴스 · 특이 쌍은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "lies inside or across AuthClient#introspect (30–34) — a line cannot be given to one method (module_function? it records the instance method and its singleton copy on the same lines — this reader does not merge them)" "[ruby] module_function 을 짚는다"
+fresh
+sed -i 's|"lines":\[null,null,1,null,1,1,null,1,1,|"lines":[null,null,1,null,1,0,null,1,1,|' "$D/ruby.json"
+ruby_mark 0
+assert_contains "$(cat "$D/ruby.json")" '"lines":[null,null,1,null,1,0,null,1,1,' "(변이가 착지했는지 먼저 본다)"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 메서드 밖인데 적재 때 안 돈 줄은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/auth_client.rb:6: a line outside every method never ran although the file was loaded — a block or lambda body no method can be credited with" "[ruby] 어느 메서드에도 못 붙는 줄"
+fresh
+sed -i 's|1,0,null,0,null,null,null\]|1,1,null,0,null,null,null]|' "$D/ruby.json"
+ruby_mark 0
+assert_contains "$(cat "$D/ruby.json")" '1,1,null,0,null,null,null]' "(변이가 착지했는지 먼저 본다)"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 호출 0 인데 몸통 줄이 돌면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/auth_client.rb: AuthClient#introspect was called 0 times but a line of its body ran — the data contradicts itself" "[ruby] 모순"
+# run 기록 — 이 덤프를 `run ruby` 가 썼고 그 실행이 성공했는가(php 와 같은 이유).
+fresh
+rm "$D/ruby.run.json"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] run 기록이 없으면 exit 2(손으로 돌린 실행) — 출력: $OUT"
+assert_contains "$OUT" "no record that \`run ruby\` wrote this data" "[ruby] 기록 없음"
+fresh
+ruby_mark 1
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 실패한 실행의 기록이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] the run that wrote this data exited 1 — the data of a failed run is partial" "[ruby] 실패 종료"
+assert_not_contains "$OUT" "OK —" "[ruby] 실패한 실행은 수치를 내지 않는다"
+fresh
+sed -i 's|"ruby":"3.4.10"|"ruby":"3.4.11"|' "$D/ruby.json"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 기록 뒤 바뀐 덤프는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "is not the data \`run ruby\` recorded" "[ruby] 기록과 다른 데이터"
+# 기록 판정은 다른 판정 **뒤**에 둘 뿐 앞의 실패에 가려지지 않는다(php 와 같다) — 손으로 돌린 실행의 낡은 데이터면 두
+# 까닭이 함께 보여야 한 번에 고친다.
+fresh
+printf '# changed after the run\n' >> "$T/ruby/lib/kc/auth_client.rb"
+rm "$D/ruby.run.json"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 해시 불일치와 기록 없음이 겹치면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] ruby/lib/kc/auth_client.rb: the data was taken from other bytes" "[ruby] 겹친 결함 — 해시"
+assert_contains "$OUT" "no record that \`run ruby\` wrote this data" "[ruby] 겹친 결함 — 기록 판정도 낸다(php 와 같다)"
+assert_contains "$OUT" "FAIL — 2 integrity failures" "[ruby] 겹친 결함 — 둘을 센다"
+# 소유자 키는 「파일:짧은 이름」이다(인스턴스 `#` · 특이 `.`).
+fresh
+sed -i '/Client#flush/d' "$T/scripts/integration-coverage.json"
+run report ruby "$T" --out "$D"
+assert_eq 1 "$RC" "[ruby] 소유자 없는 미실행 메서드는 exit 1(경고) — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [ruby] unowned never-executed function ruby/lib/kc/admin/client.rb:Client#flush" "[ruby] 소유자 키"
+
 # ── (2) 음성: 소유자(exit 1 — 경고, 게이트가 아니다) ─────────────────────────────────────────
 fresh
 sed -i '/"go\/admin.go:AdminClient.Close"/d' "$T/scripts/integration-coverage.json"
@@ -800,19 +1026,27 @@ run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] 경계 줄을 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [php] the run executed 0 of 22 boundary lines — a measurement failure, not a low number" "[php] 측정 실패 문구"
 assert_not_contains "$OUT" "0.0%" "[php] 측정 실패에서 0% 를 내지 않는다"
+# ruby — 구동 스펙이 경계를 하나도 안 불렀다. require 가 클래스 · def 줄을 돌아 lines 는 0 이 아니다 — 몸통으로 판정한다.
+fresh
+ruby_data "$FIX/data/ruby-zero.json"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 경계 메서드를 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] the run executed 0 of 12 boundary lines inside methods — a measurement failure, not a low number (require alone credits" "[ruby] require 크레딧을 수치로 내지 않는다"
+assert_not_contains "$OUT" "0.0%" "[ruby] 측정 실패에서 0% 를 내지 않는다"
 # 빈 파생 + 빈 핀 — 집합은 같으므로(∅ = ∅) 빈 집합 판정만이 잡는다. 파생 도구를 가짜로 바꿔 그 갈래만 태운다.
 # ⚠️ 두 언어 다 「있되 비었다」여야 한다 — 한 언어를 빼 두면 check 의 exit 2 가 그 「없는 파생」에서 와서 빈 집합
 # 갈래를 지워도 초록이었다(변이 실측: 빈 집합 통과 변이에 check 단언이 침묵했다).
 fresh
-printf '%s\n' 'const e = (d) => ({ dir: d, site: "fake:1", label: "fake", universe: 3, files: [] })' 'console.log(JSON.stringify({ langs: { go: e("go"), python: e("python"), node: e("node"), rust: e("rust"), php: e("php") }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
-printf '%s\n' '{ "go": { "pinned": [], "owners": {} }, "python": { "pinned": [], "owners": {} }, "node": { "pinned": [], "owners": {} }, "rust": { "pinned": [], "owners": {} }, "php": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
+printf '%s\n' 'const e = (d) => ({ dir: d, site: "fake:1", label: "fake", universe: 3, files: [] })' 'console.log(JSON.stringify({ langs: { go: e("go"), python: e("python"), node: e("node"), rust: e("rust"), php: e("php"), ruby: e("ruby") }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
+printf '%s\n' '{ "go": { "pinned": [], "owners": {} }, "python": { "pinned": [], "owners": {} }, "node": { "pinned": [], "owners": {} }, "rust": { "pinned": [], "owners": {} }, "php": { "pinned": [], "owners": {} }, "ruby": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
 run check "$T"
 assert_eq 2 "$RC" "[check] 빈 파생은 exit 2(빈 핀과 같아도) — 출력: $OUT"
 assert_contains "$OUT" "FAIL [python] the derived boundary is empty" "[check] python 도 빈 파생"
 assert_contains "$OUT" "FAIL [node] the derived boundary is empty" "[check] node 도 빈 파생"
 assert_contains "$OUT" "FAIL [rust] the derived boundary is empty" "[check] rust 도 빈 파생"
 assert_contains "$OUT" "FAIL [php] the derived boundary is empty" "[check] php 도 빈 파생"
-assert_not_contains "$OUT" "returned no derivation" "[check] 다섯 다 있되 비었다 — 「없는 파생」이 빈 집합 갈래를 가리지 않는다"
+assert_contains "$OUT" "FAIL [ruby] the derived boundary is empty" "[check] ruby 도 빈 파생"
+assert_not_contains "$OUT" "returned no derivation" "[check] 언어마다 있되 비었다 — 「없는 파생」이 빈 집합 갈래를 가리지 않는다"
 assert_not_contains "$OUT" "pin OK" "[check] 빈 집합끼리의 일치를 「핀 OK」로 찍지 않는다"
 run report go "$T" --out "$D"
 assert_eq 2 "$RC" "[go] 빈 파생은 exit 2"
@@ -854,7 +1088,7 @@ assert_contains "$OUT" "FAIL [-] scripts/coverage-boundary.mjs is missing" "파�
 fresh
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "파일럿이 안 재는 언어는 usage(exit 2)"
-assert_contains "$OUT" "this pilot measures go · python · node · rust · php — got java" "usage 문구"
+assert_contains "$OUT" "this pilot measures go · python · node · rust · php · ruby — got java" "usage 문구"
 
 # ── (4) 하한(4 걸음째 — 2026-11-02 무장) ─────────────────────────────────────────────────────────
 # 픽스처 핀에는 하한이 없다(위 단언들은 하한 없는 리포트다). 여기서만 주입한다.
@@ -941,6 +1175,24 @@ fresh; floor php statements 50
 run check "$T"
 assert_eq 2 "$RC" "[floor] php 에 statements 는 없다(지표는 lines) — 출력: $OUT"
 assert_contains "$OUT" "php.floor.metric" "[floor] php 지표 오류를 지목한다"
+# ruby 는 python 처럼 lines(픽스처 24/28 = 85.714%) · bodies(6/12 = 50%)를 갈라 건다.
+fresh; floor ruby bodies 50
+run report ruby "$T" --out "$D"
+assert_eq 0 "$RC" "[floor] ruby bodies 50% ≥ 50 — 출력: $OUT"
+assert_line "$OUT" "integration-coverage [ruby]: OK — lines 24/28 (85.7%) · bodies 6/12 (50.0%) · floor bodies ≥ 50% · 5 never-executed functions, all owned by open registry items" "[floor] ruby 통과 요약"
+fresh; floor ruby bodies 50.01
+run report ruby "$T" --out "$D"
+assert_eq 3 "$RC" "[floor] ruby bodies 50% < 50.01 — 출력: $OUT"
+fresh; floor ruby lines 85.71
+run report ruby "$T" --out "$D"
+assert_eq 0 "$RC" "[floor] ruby lines 85.714% ≥ 85.71 — 출력: $OUT"
+fresh; floor ruby lines 85.72
+run report ruby "$T" --out "$D"
+assert_eq 3 "$RC" "[floor] ruby lines 85.714% < 85.72 — 지표가 bodies 로 새지 않는다 — 출력: $OUT"
+fresh; floor ruby statements 50
+run check "$T"
+assert_eq 2 "$RC" "[floor] ruby 에 statements 는 없다(지표는 lines · bodies) — 출력: $OUT"
+assert_contains "$OUT" "ruby.floor.metric" "[floor] ruby 지표 오류를 지목한다"
 
 # 소유 문제와 하한 미달이 겹치면 게이트(3)가 경고(1)를 이긴다 — 경고는 그대로 찍는다.
 fresh; floor go statements 46
