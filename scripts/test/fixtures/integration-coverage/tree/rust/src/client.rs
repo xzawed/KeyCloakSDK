@@ -100,3 +100,12 @@ pub async fn warm_up() {
 pub async fn never_polled() -> u32 {
     7
 }
+
+// An unnamed const block holding items — its impl is read like any other.
+const _: () = {
+    impl KeycloakClient {
+        pub fn scoped(&self) -> u8 {
+            9
+        }
+    }
+};

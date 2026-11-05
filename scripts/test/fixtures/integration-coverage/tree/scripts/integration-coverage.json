@@ -63,6 +63,7 @@
       "rust/src/auth.rs:Wrapper<u16>::get": "open-admin",
       "rust/src/auth.rs:unused_helper": "open-admin",
       "rust/src/client.rs:KeycloakClient::admin": "open-admin",
+      "rust/src/client.rs:KeycloakClient::scoped": "open-admin",
       "rust/src/client.rs:family #[cfg(any(target_os = \"linux\", target_os = \"macos\", target_os = \"freebsd\", target_os = \"openbsd\"))]": "open-admin",
       "rust/src/client.rs:never_polled": "open-admin",
       "rust/src/client.rs:platform #[cfg(not(windows))]": "open-admin",

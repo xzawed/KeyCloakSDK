@@ -65,3 +65,28 @@ impl Supplier for AdminClient {
         self.base.clone()
     }
 }
+
+// `#[async_trait]` keeps no separate record for the async body: a polled method shows its body lines,
+// a dropped one only the head and closing lines (with the outer count).
+#[async_trait::async_trait]
+pub trait Fetch {
+    async fn fetch(&self) -> String;
+}
+
+pub struct Polled;
+
+pub struct Dropped;
+
+#[async_trait::async_trait]
+impl Fetch for Polled {
+    async fn fetch(&self) -> String {
+        "polled".to_string()
+    }
+}
+
+#[async_trait::async_trait]
+impl Fetch for Dropped {
+    async fn fetch(&self) -> String {
+        "dropped".to_string()
+    }
+}

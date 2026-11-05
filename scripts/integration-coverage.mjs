@@ -890,21 +890,25 @@ function rustFuncs(file) {
     }
     return null
   }
-  // 항목 위의 `#[cfg(…)]` 들 — 빈 줄 · 같은 들여쓰기의 `#` 줄 · 그보다 깊은 이어진 줄(접힌 속성의 몸 · 닫는 `))]`)을 건넌다.
-  const cfgsOf = (k, pad) => {
+  // 항목 위의 속성들(빈 줄 · 같은 들여쓰기의 `#` 줄 · 그보다 깊은 이어진 줄 — 접힌 속성의 몸 · 닫는 `))]` — 을 건넌다).
+  // cfgs — `#[cfg(…)]` 의 값과 이름 꼬리. boxed — `#[async_trait]`(그 멤버의 async 몸통은 데이터에 안 남는다, rustReport).
+  const attrsOf = (k, pad) => {
     const cfgs = []
+    let boxed = false
     for (let x = k - 1; x >= 0; x--) {
       if (!L[x]) continue
       if (L[x].startsWith(`${pad}#`)) {
         const a = attrAt(x, pad)
-        const m = a && /^#\[\s*cfg\s*\((.*)\)\s*\]$/.exec(a.text.replace(/\s+/g, ' '))
+        const text = a ? a.text.replace(/\s+/g, ' ') : ''
+        const m = /^#\[\s*cfg\s*\((.*)\)\s*\]$/.exec(text)
         if (m) {
           const shown = a.shown.replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/,?\s+\)/g, ')').replace(/,\)/g, ')')
           cfgs.push({ value: cfgEval(m[1]), text: shown })
         }
+        if (/^#\[\s*(?:async_trait\s*::\s*)?async_trait\b/.test(text)) boxed = true
       } else if (!(L[x].startsWith(`${pad} `) || L[x].startsWith(`${pad})`) || L[x].startsWith(`${pad}]`))) break
     }
-    return cfgs
+    return { cfgs, boxed }
   }
   const add = (entry) => {
     if (funcs.some((f) => f.name === entry.name)) {
@@ -926,8 +930,8 @@ function rustFuncs(file) {
       }
     return -1
   }
-  // suffix — 감싼 컨테이너(impl · mod)의 cfg(모름) 꼬리. 멤버 이름 뒤에 붙는다.
-  const walk = (from, to, ind, prefix, suffix) => {
+  // suffix — 감싼 컨테이너(impl · mod)의 cfg(모름) 꼬리. 멤버 이름 뒤에 붙는다. boxed — 감싼 impl · trait 가 `#[async_trait]`.
+  const walk = (from, to, ind, prefix, suffix, boxed) => {
     const pad = ' '.repeat(ind)
     for (let k = from; k < to && ok; k++) {
       const line = L[k]
@@ -940,7 +944,7 @@ function rustFuncs(file) {
       const val = fn || impl || tr || md ? null : RS_VALUE.exec(t)
       const mac = fn || impl || tr || md || val ? null : RS_MACRO.exec(t)
       if (!fn && !impl && !tr && !md && !val && !mac) continue
-      const cfgs = cfgsOf(k, pad)
+      const { cfgs, boxed: boxes } = attrsOf(k, pad)
       const testOnly = cfgs.some((c) => c.value === false)
       const tail = `${cfgs
         .filter((c) => c.value === null)
@@ -951,8 +955,9 @@ function rustFuncs(file) {
         const e = statementEnd(k, to)
         if (e < 0) return bad(k, `cannot find the end of the ${val[1]} item (a ";" outside brackets)`)
         // `const _` 는 이름이 없다 — 컴파일 때 단언(`const _: () = assert!(…)`)이 보통이라 한 파일에 여럿이어도 정당하다(독립
-        // 레그 실측: 범위로 두면 「같은 이름 둘」 FAIL). 범위가 아니므로 그 안에 레코드가 있으면 「범위 밖」 FAIL 로 드러난다.
+        // 레그 실측: 범위로 두면 「같은 이름 둘」 FAIL). 블록 값(`const _: () = { impl … }`)은 안쪽 항목을 그대로 읽는다(레그 3차).
         if (val[2] === '_') {
+          if (L[k].endsWith('{') && e > k) walk(k + 1, e, ind + 4, prefix, tail, boxed)
           k = e
           continue
         }
@@ -981,17 +986,18 @@ function rustFuncs(file) {
       if (testOnly) tests.push({ start: k + 1, end: end + 1 })
       else if (mac) macros.push({ name: mac[1], start: k + 1, end: end + 1 })
       else if (fn) {
-        const entry = { name: `${prefix}${fn[2]}${tail}`, start: k + 1, end: end + 1, ind, kind: 'fn', async: /\basync\s/.test(fn[1]) }
+        // async 판정(rustReport)은 몸통이 따로 남는 평범한 async fn 에만 건다 — `#[async_trait]` 멤버는 보통 fn 처럼 읽는다.
+        const entry = { name: `${prefix}${fn[2]}${tail}`, start: k + 1, end: end + 1, ind, kind: 'fn', async: /\basync\s/.test(fn[1]) && !boxed }
         if (!add(entry)) return
       } else if (end > h) {
         const p = md ? `${md[1]}::` : tr ? `${tr[1]}::` : rsImplPrefix(L.slice(k, h + 1).join(' '))
         if (p === null) return bad(k, 'cannot read the type this impl is for')
-        walk(h + 1, end, ind + 4, `${prefix}${p}`, tail)
+        walk(h + 1, end, ind + 4, `${prefix}${p}`, tail, md ? boxed : boxes)
       }
       k = end
     }
   }
-  walk(0, L.length, 0, '', '')
+  walk(0, L.length, 0, '', '', false)
   // 범위 안에서 그 함수와 같은 들여쓰기의 `fn` 머리 — 범위가 닫는 줄을 지나쳐 다음 함수를 삼켰다는 뜻이다.
   const swallows = (fn, line) => {
     const pad = ' '.repeat(fn.ind)
@@ -1066,9 +1072,11 @@ function rustReport(d) {
     if (!src) continue
     const rangeOf = (x) => src.funcs.find((fn) => x >= fn.start && x <= fn.end)
     const within = (list, x) => list.find((t) => x >= t.start && x <= t.end)
-    // 레코드의 호출 횟수(FNDA) — async 판정이 쓴다. 레코드가 있는데 횟수가 하나도 없으면 그 판정을 할 수 없다.
-    if (r.fns.length && !r.fnda.size) {
-      fail('rust', `${f}: the data has function records but no FNDA counts — whether an async body ran cannot be read`)
+    // 레코드의 호출 횟수(FNDA) — async 판정이 쓴다. 횟수 없는 레코드가 하나라도 있으면 그 판정을 할 수 없다(0 으로 읽으면
+    // 돈 몸통을 「안 돌았다」로 낸다). llvm-cov 는 FN 마다 FNDA 를 쓴다.
+    const uncounted = r.fns.find((rec) => !r.fnda.has(rec.name))
+    if (uncounted) {
+      fail('rust', `${f}:${uncounted.line}: the data has a function record (${uncounted.name}) without an FNDA count — whether an async body ran cannot be read`)
       continue
     }
     let broken = false
@@ -1126,9 +1134,11 @@ function rustReport(d) {
         if (fn.kind === 'fn') mine.push({ ...at, label: 'no record in the data' })
       } else if (fn.stmts > 0 && fn.covered === 0) mine.push(at)
       // 부른 async fn 은 퓨처만 만든다 — 몸통은 poll 될 때 도는 별도 레코드다. 범위 안에서 횟수 > 0 인 레코드가 바깥 함수 하나뿐이면
-      // 몸통은 안 돌았다(퓨처를 만들고 버렸다 — 독립 레그 실측: 바깥 `FNDA:1`). 줄로 재지 않는다 — 주석뿐인 몸통을 poll 하면 머리·닫는
-      // 줄에만 DA 가 있고, `#[async_trait]` 은 안 poll 해도 닫는 줄에 바깥 함수의 횟수가 실린다(둘 다 실측). 한계: 제네릭 async fn
-      // 을 두 타입으로 부르고 하나도 poll 안 하면 바깥 레코드 둘이 돌아 실행으로 읽힌다.
+      // 몸통은 안 돌았다(퓨처를 만들고 버렸다 — 독립 레그 실측: 바깥 `FNDA:1`). 줄로는 못 잰다 — 주석뿐인 몸통을 poll 하면 DA 는
+      // 머리·닫는 줄뿐이다(실측). ⚠️ `#[async_trait]` 멤버는 이 판정에서 뺀다(rustFuncs) — 그 몸통(async 블록)은 레코드도 DA 도 안
+      // 남는다(실측, async-trait 0.1.92 · rustc 1.89: poll 한 메서드도 버린 메서드도 머리·닫는 줄에 바깥 횟수뿐). 이 판정을 걸면
+      // 돈 메서드가 전부 「안 돌았다」가 된다(독립 레그 3차) — 그래서 보통 fn 처럼 「부르면 실행」이다. 한계 둘: async_trait 의
+      // 버린 퓨처 · 제네릭 · 기본 메서드 async fn 을 두 타입으로 부르고 하나도 poll 안 한 것은 실행으로 읽힌다(바깥 레코드 둘).
       else if (fn.async && fn.hit < 2) mine.push({ ...at, label: 'called, but its async body never ran' })
     }
     if (broken) continue
