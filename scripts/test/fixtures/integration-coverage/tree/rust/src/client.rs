@@ -101,11 +101,26 @@ pub async fn never_polled() -> u32 {
     7
 }
 
-// An unnamed const block holding items — its impl is read like any other.
+// An unnamed const block holding items — its impl is read like any other (the methods belong to the
+// type), and a free fn inside it is named `const _::…`, so it cannot collide with the outer fn below.
 const _: () = {
     impl KeycloakClient {
         pub fn scoped(&self) -> u8 {
-            9
+            block_local()
         }
     }
+
+    fn block_local() -> u8 {
+        9
+    }
+};
+
+pub fn block_local() -> u8 {
+    8
+}
+
+// A closure-valued unnamed const — its closure is code with a record of its own.
+const _: fn() -> u8 = || {
+    let seven = 7;
+    seven
 };

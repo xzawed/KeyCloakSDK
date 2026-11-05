@@ -784,6 +784,13 @@ const RS_TRAIT = new RegExp(String.raw`^${RS_VIS}(?:(?:unsafe|auto)\s+)*trait\s+
 const RS_MOD = new RegExp(String.raw`^${RS_VIS}mod\s+(${RS_ID})\s*\{$`, 'u')
 const RS_VALUE = new RegExp(String.raw`^${RS_VIS}(static|const)\s+(?:mut\s+)?(${RS_ID})\s*:`, 'u')
 const RS_MACRO = new RegExp(String.raw`^macro_rules!\s*(${RS_ID})\s*\{$`, 'u')
+// 속성의 경로(`#[a::b(…)]` → `a::b`) — 이 목록과 도구 속성(rustfmt:: · clippy:: · diagnostic::) 밖은 속성 매크로로 본다.
+const RS_ATTR_PATH = new RegExp(String.raw`^#!?\[\s*((?:::\s*)?${RS_ID}(?:\s*::\s*${RS_ID})*)`, 'u')
+const RS_BUILTIN_ATTRS = new Set(
+  ('cfg cfg_attr doc allow warn deny forbid expect must_use inline cold track_caller deprecated non_exhaustive repr derive ' +
+    'automatically_derived no_mangle export_name link_section link_name used target_feature test ignore should_panic ' +
+    'macro_export macro_use path coverage optimize naked instruction_set debugger_visualizer collapse_debuginfo unsafe').split(' '),
+)
 // `#[cfg(…)]` 술어를 `test` 가 꺼진 빌드에서 평가한다 — true · false · null(모름: target · feature …). 못 읽는 꼴도 null.
 function cfgEval(expr) {
   const toks = expr.match(/[\p{XID_Start}_]\p{XID_Continue}*|[(),=]/gu) ?? []
@@ -891,10 +898,12 @@ function rustFuncs(file) {
     return null
   }
   // 항목 위의 속성들(빈 줄 · 같은 들여쓰기의 `#` 줄 · 그보다 깊은 이어진 줄 — 접힌 속성의 몸 · 닫는 `))]` — 을 건넌다).
-  // cfgs — `#[cfg(…)]` 의 값과 이름 꼬리. boxed — `#[async_trait]`(그 멤버의 async 몸통은 데이터에 안 남는다, rustReport).
+  // cfgs — `#[cfg(…)]` 의 값과 이름 꼬리. rewritten — 속성 매크로가 있다(내장 · 도구 속성 밖의 경로). 속성 매크로는 몸통을 다시
+  // 쓸 수 있다 — `#[async_trait]` 은 async 몸통을 블록으로 옮겨 그 레코드가 사라진다(rustReport). 철자가 여럿이라(`::async_trait::
+  // async_trait` · `use … as at; #[at]` — 독립 레그 4차 실측) 이름이 아니라 「내장이 아니다」로 가른다.
   const attrsOf = (k, pad) => {
     const cfgs = []
-    let boxed = false
+    let rewritten = false
     for (let x = k - 1; x >= 0; x--) {
       if (!L[x]) continue
       if (L[x].startsWith(`${pad}#`)) {
@@ -905,10 +914,11 @@ function rustFuncs(file) {
           const shown = a.shown.replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/,?\s+\)/g, ')').replace(/,\)/g, ')')
           cfgs.push({ value: cfgEval(m[1]), text: shown })
         }
-        if (/^#\[\s*(?:async_trait\s*::\s*)?async_trait\b/.test(text)) boxed = true
+        const path = RS_ATTR_PATH.exec(text)?.[1].replace(/\s+/g, '').replace(/^::/, '')
+        if (path && !RS_BUILTIN_ATTRS.has(path) && !/^(?:rustfmt|clippy|diagnostic)::/.test(path)) rewritten = true
       } else if (!(L[x].startsWith(`${pad} `) || L[x].startsWith(`${pad})`) || L[x].startsWith(`${pad}]`))) break
     }
-    return { cfgs, boxed }
+    return { cfgs, rewritten }
   }
   const add = (entry) => {
     if (funcs.some((f) => f.name === entry.name)) {
@@ -930,8 +940,10 @@ function rustFuncs(file) {
       }
     return -1
   }
-  // suffix — 감싼 컨테이너(impl · mod)의 cfg(모름) 꼬리. 멤버 이름 뒤에 붙는다. boxed — 감싼 impl · trait 가 `#[async_trait]`.
-  const walk = (from, to, ind, prefix, suffix, boxed) => {
+  // ctx — prefix(자유 항목 이름 앞) · typePrefix(impl · trait 이름 앞 — `const _` 블록 안에서도 타입 경로는 그대로다) ·
+  // suffix(감싼 컨테이너의 cfg(모름) 꼬리 — 멤버 이름 뒤) · rewritten(감싼 impl · trait 에 속성 매크로).
+  let unnamed = 0
+  const walk = (from, to, ind, ctx) => {
     const pad = ' '.repeat(ind)
     for (let k = from; k < to && ok; k++) {
       const line = L[k]
@@ -944,25 +956,28 @@ function rustFuncs(file) {
       const val = fn || impl || tr || md ? null : RS_VALUE.exec(t)
       const mac = fn || impl || tr || md || val ? null : RS_MACRO.exec(t)
       if (!fn && !impl && !tr && !md && !val && !mac) continue
-      const { cfgs, boxed: boxes } = attrsOf(k, pad)
+      const { cfgs, rewritten: own } = attrsOf(k, pad)
       const testOnly = cfgs.some((c) => c.value === false)
       const tail = `${cfgs
         .filter((c) => c.value === null)
         .reverse()
         .map((c) => ` ${c.text}`)
-        .join('')}${suffix}`
+        .join('')}${ctx.suffix}`
       if (val) {
         const e = statementEnd(k, to)
         if (e < 0) return bad(k, `cannot find the end of the ${val[1]} item (a ";" outside brackets)`)
         // `const _` 는 이름이 없다 — 컴파일 때 단언(`const _: () = assert!(…)`)이 보통이라 한 파일에 여럿이어도 정당하다(독립
-        // 레그 실측: 범위로 두면 「같은 이름 둘」 FAIL). 블록 값(`const _: () = { impl … }`)은 안쪽 항목을 그대로 읽는다(레그 3차).
-        if (val[2] === '_') {
-          if (L[k].endsWith('{') && e > k) walk(k + 1, e, ind + 4, prefix, tail, boxed)
+        // 레그 실측: 이름으로 두면 「같은 이름 둘」 FAIL). 블록 값(`const _: () = { impl … }`)은 안쪽 항목을 읽는다(레그 3차) — 자유
+        // 항목은 `const _::` 로 가른다(바깥의 같은 이름 fn 과 겹치지 않게 — 레그 4차), impl 의 멤버는 타입에 속하니 타입 경로 그대로다.
+        // 블록이 아닌 값(클로저 · 단언)은 파일 안 순번 `const _#N` 의 범위다(클로저 값은 레코드를 낳는다 — 레그 4차).
+        if (val[2] === '_' && /=\s*\{$/.test(L[k]) && e > k) {
+          if (!testOnly) walk(k + 1, e, ind + 4, { ...ctx, prefix: `${ctx.prefix}const _::`, suffix: tail })
           k = e
           continue
         }
+        const name = val[2] === '_' ? `const ${ctx.prefix}_#${++unnamed}${tail}` : `${val[1]} ${ctx.prefix}${val[2]}${tail}`
         if (testOnly) tests.push({ start: k + 1, end: e + 1 })
-        else if (!add({ name: `${val[1]} ${prefix}${val[2]}${tail}`, start: k + 1, end: e + 1, ind, kind: 'value' })) return
+        else if (!add({ name, start: k + 1, end: e + 1, ind, kind: 'value' })) return
         k = e
         continue
       }
@@ -986,18 +1001,25 @@ function rustFuncs(file) {
       if (testOnly) tests.push({ start: k + 1, end: end + 1 })
       else if (mac) macros.push({ name: mac[1], start: k + 1, end: end + 1 })
       else if (fn) {
-        // async 판정(rustReport)은 몸통이 따로 남는 평범한 async fn 에만 건다 — `#[async_trait]` 멤버는 보통 fn 처럼 읽는다.
-        const entry = { name: `${prefix}${fn[2]}${tail}`, start: k + 1, end: end + 1, ind, kind: 'fn', async: /\basync\s/.test(fn[1]) && !boxed }
-        if (!add(entry)) return
+        // async 판정(rustReport)은 몸통이 따로 남는 평범한 async fn 에만 건다 — 자기나 감싼 impl · trait 에 속성 매크로가 있으면
+        // (`#[async_trait]` · `#[tracing::instrument]` …) 보통 fn 처럼 읽는다.
+        const isAsync = /\basync\s/.test(fn[1]) && !own && !ctx.rewritten
+        if (!add({ name: `${ctx.prefix}${fn[2]}${tail}`, start: k + 1, end: end + 1, ind, kind: 'fn', async: isAsync })) return
       } else if (end > h) {
-        const p = md ? `${md[1]}::` : tr ? `${tr[1]}::` : rsImplPrefix(L.slice(k, h + 1).join(' '))
-        if (p === null) return bad(k, 'cannot read the type this impl is for')
-        walk(h + 1, end, ind + 4, `${prefix}${p}`, tail, md ? boxed : boxes)
+        if (md) {
+          const p = `${md[1]}::`
+          walk(h + 1, end, ind + 4, { prefix: `${ctx.prefix}${p}`, typePrefix: `${ctx.typePrefix}${p}`, suffix: tail, rewritten: false })
+        } else {
+          const p = tr ? `${tr[1]}::` : rsImplPrefix(L.slice(k, h + 1).join(' '))
+          if (p === null) return bad(k, 'cannot read the type this impl is for')
+          const base = `${ctx.typePrefix}${p}`
+          walk(h + 1, end, ind + 4, { prefix: base, typePrefix: base, suffix: tail, rewritten: own })
+        }
       }
       k = end
     }
   }
-  walk(0, L.length, 0, '', '', false)
+  walk(0, L.length, 0, { prefix: '', typePrefix: '', suffix: '', rewritten: false })
   // 범위 안에서 그 함수와 같은 들여쓰기의 `fn` 머리 — 범위가 닫는 줄을 지나쳐 다음 함수를 삼켰다는 뜻이다.
   const swallows = (fn, line) => {
     const pad = ' '.repeat(fn.ind)
@@ -1135,10 +1157,11 @@ function rustReport(d) {
       } else if (fn.stmts > 0 && fn.covered === 0) mine.push(at)
       // 부른 async fn 은 퓨처만 만든다 — 몸통은 poll 될 때 도는 별도 레코드다. 범위 안에서 횟수 > 0 인 레코드가 바깥 함수 하나뿐이면
       // 몸통은 안 돌았다(퓨처를 만들고 버렸다 — 독립 레그 실측: 바깥 `FNDA:1`). 줄로는 못 잰다 — 주석뿐인 몸통을 poll 하면 DA 는
-      // 머리·닫는 줄뿐이다(실측). ⚠️ `#[async_trait]` 멤버는 이 판정에서 뺀다(rustFuncs) — 그 몸통(async 블록)은 레코드도 DA 도 안
-      // 남는다(실측, async-trait 0.1.92 · rustc 1.89: poll 한 메서드도 버린 메서드도 머리·닫는 줄에 바깥 횟수뿐). 이 판정을 걸면
-      // 돈 메서드가 전부 「안 돌았다」가 된다(독립 레그 3차) — 그래서 보통 fn 처럼 「부르면 실행」이다. 한계 둘: async_trait 의
-      // 버린 퓨처 · 제네릭 · 기본 메서드 async fn 을 두 타입으로 부르고 하나도 poll 안 한 것은 실행으로 읽힌다(바깥 레코드 둘).
+      // 머리·닫는 줄뿐이다(실측). ⚠️ 속성 매크로가 붙은 async fn(자기나 감싼 impl · trait 에 — rustFuncs)은 이 판정에서 뺀다 —
+      // `#[async_trait]` 의 몸통(async 블록)은 레코드도 DA 도 안 남는다(실측, async-trait 0.1.92 · rustc 1.89: poll 한 메서드도 버린
+      // 메서드도 머리·닫는 줄에 바깥 횟수뿐). 이 판정을 걸면 돈 메서드가 전부 「안 돌았다」가 된다(독립 레그 3차) — 그래서 보통 fn
+      // 처럼 「부르면 실행」이다. 한계 둘: 속성 매크로 async fn 의 버린 퓨처 · 제네릭 · 기본 메서드 async fn 을 두 타입으로 부르고
+      // 하나도 poll 안 한 것은 실행으로 읽힌다(바깥 레코드 둘).
       else if (fn.async && fn.hit < 2) mine.push({ ...at, label: 'called, but its async body never ran' })
     }
     if (broken) continue
