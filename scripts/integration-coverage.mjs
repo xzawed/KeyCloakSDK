@@ -39,11 +39,14 @@
 // 요약의 Lines 는 쓰지 않는다 — 함수 레코드마다 줄을 더해(async fn 은 바깥 함수와 몸통 둘이다) 고유 줄보다 크다(실측
 // 2026-11-05 실제 트리: admin.rs LF 279 · 고유 DA 246). 이름은 소스(rustfmt 모양)에서 읽고 도구의 함수 레코드(`FN`)와
 // **양쪽으로** 대조한다. 레코드가 어느 이름 범위에도 없으면 파서가 항목을 놓친 것이다(FAIL — 그 함수의 줄이 모듈 수준에
-// 섞이면 미실행 목록에서 조용히 빠진다). 이름 범위에 레코드가 없으면 그 함수는 이 실행의 데이터에 **없다** — 인스턴스화
-// 안 된 제네릭 · 참조 안 된 함수는 줄째 빠진다(분모에서도 — 실측: 픽스처의 `unused_helper` · 제네릭 `From::from`). 그래서
-// 미실행 목록에 `no record` 로 든다. 참조 안 된 모듈은 파일째 빠진다(→ 「데이터에 없음」 FAIL — 그 모듈의 오브젝트가 링크되지
-// 않는다). `#[cfg(test)]` 항목은 통합 빌드에 없으므로 읽지 않는다 — 그 안에 레코드가 있으면 단위 테스트가 같은 빌드에서 돈
-// 것이라(통합 전용이 아니다) FAIL 이다.
+// 섞이면 미실행 목록에서 조용히 빠진다). 이름 범위에 레코드가 없으면 그 함수는 이 실행의 데이터에 **없다** — 크레이트 밖에
+// 안 보이고 아무도 참조 안 한 fn · 인스턴스화 안 된 제네릭 · 한 번도 poll 안 된 async 몸통은 줄째 빠진다(분모에서도 — 실측:
+// 픽스처의 `unused_helper` · 제네릭 `From::from`. `pub` fn 은 모듈이 링크되면 0 회 레코드가 남는다). 그래서 미실행 목록에
+// `no record` 로 든다. 참조 안 된 모듈은 파일째 빠진다(→ 「데이터에 없음」 FAIL — 그 모듈의 오브젝트가 링크되지 않는다). 부른
+// async fn 의 몸통이 한 줄도 안 돌았으면(퓨처를 만들고 안 기다렸다) 그것도 미실행이다. `test` 없이는 컴파일되지 않는 항목
+// (`#[cfg(test)]` · `#[cfg(all(test, …))]`)은 통합 빌드에 없으므로 읽지 않는다 — 그 안에 레코드가 있으면 단위 테스트가 같은
+// 빌드에서 돈 것이라(통합 전용이 아니다) FAIL 이다. 레코드 없이 줄만 있는 범위(`--skip-functions` 로 낸 데이터) · 매크로가 만든
+// 함수(레코드가 `macro_rules!` 몸통을 가리킨다 — 줄을 나눠 써 안 돈 것을 못 가른다)도 FAIL 이다.
 //
 // 종료코드 — 넷을 가른다. 「낮은 수치」는 하한이 무장된 언어에서만 실패다(3):
 //   0 OK     리포트가 섰고, 하한 이상이며, 미실행 함수가 전부 열린 항목 소유다
@@ -755,14 +758,55 @@ function blankRust(src) {
 // 줄로 닫힌다(빈 몸통만 한 줄 `fn x() {}`). 머리의 끝은 `{` · `;` · `}` 로 끝나는 첫 줄이다(여러 줄 시그니처와 where 절의
 // 줄은 `(` · `,` 로 끝난다) — `;` 이면 몸통 없는 선언(트레이트의 필수 메서드 · extern fn · `mod x;`)이라 범위가 아니다.
 // `fn` 은 범위, `impl` · `trait` · 인라인 `mod` 는 네 칸 안쪽을 다시 읽는다. 함수 안의 클로저 · 중첩 fn · async 몸통은 감싼
-// 함수에 접힌다. 이름은 rust 의 경로 꼴이다 — `Type::m` · `<Type as Trait>::m`(머리 그대로, 공백만 접는다 — 같은 타입의
-// `Debug::fmt` 와 `Display::fmt`, `Wrapper<u8>::get` 과 `Wrapper<u16>::get` 이 갈린다) · `mod::f`.
+// 함수에 접힌다. `static` · `const` 도 범위다 — 값의 클로저(`LazyLock::new(|| …)`)가 그 줄에 함수 레코드를 낳는다(독립 레그
+// 실측: 범위가 아니면 「범위 밖 레코드」 FAIL). 이름은 rust 의 경로 꼴이다 — `Type::m` · `<Type as Trait>::m`(머리 그대로,
+// 공백만 접는다 — 같은 타입의 `Debug::fmt` 와 `Display::fmt`, `Wrapper<u8>::get` 과 `Wrapper<u16>::get` 이 갈린다) · `mod::f` ·
+// `static NAME`. `#[cfg(…)]` 는 `test` 가 꺼진 빌드(통합 테스트가 링크하는 라이브러리)로 평가한다 — 거짓이면(`test` ·
+// `all(test, …)`) 그 항목은 통합 빌드에 없으므로 읽지 않고, 모르면(`windows` · `feature = …`) 이름 뒤에 붙인다(플랫폼 쌍둥이가
+// 갈린다 — 이 실행에서 컴파일되지 않은 쪽은 `no record` 로 남는다). `macro_rules!` 몸통은 범위가 아니다 — 매크로가 만든
+// 함수의 레코드는 몸통을 가리키고 같은 줄을 나눠 쓰므로, 그중 안 돈 것을 줄로는 가를 수 없다(→ FAIL, rustReport).
+const RS_ID = String.raw`(?:r#)?[\p{XID_Start}_]\p{XID_Continue}*`
 const RS_VIS = String.raw`(?:pub(?:\s*\([^)]*\))?\s+)?`
-// 한정자 뒤의 `fn 이름` — `extern "C"` 의 ABI 문자열은 지운 뒤라 공백이다.
-const RS_FN = new RegExp(String.raw`^${RS_VIS}(?:(?:default|const|async|unsafe|safe|extern)\s+)*fn\s+((?:r#)?[A-Za-z_]\w*)`)
+// 한정자(그룹 1 — `async` 를 본다) 뒤의 `fn 이름`(그룹 2) — `extern "C"` 의 ABI 문자열은 지운 뒤라 공백이다.
+const RS_FN = new RegExp(String.raw`^(${RS_VIS}(?:(?:default|const|async|unsafe|safe|extern)\s+)*)fn\s+(${RS_ID})`, 'u')
 const RS_IMPL = /^(?:(?:default|unsafe)\s+)*impl\b/
-const RS_TRAIT = new RegExp(String.raw`^${RS_VIS}(?:(?:unsafe|auto)\s+)*trait\s+([A-Za-z_]\w*)`)
-const RS_MOD = new RegExp(String.raw`^${RS_VIS}mod\s+([A-Za-z_]\w*)\s*\{$`)
+const RS_TRAIT = new RegExp(String.raw`^${RS_VIS}(?:(?:unsafe|auto)\s+)*trait\s+(${RS_ID})`, 'u')
+const RS_MOD = new RegExp(String.raw`^${RS_VIS}mod\s+(${RS_ID})\s*\{$`, 'u')
+const RS_VALUE = new RegExp(String.raw`^${RS_VIS}(static|const)\s+(?:mut\s+)?(${RS_ID})\s*:`, 'u')
+const RS_MACRO = new RegExp(String.raw`^macro_rules!\s*(${RS_ID})\s*\{$`, 'u')
+// `#[cfg(…)]` 술어를 `test` 가 꺼진 빌드에서 평가한다 — true · false · null(모름: target · feature …). 못 읽는 꼴도 null.
+function cfgEval(expr) {
+  const toks = expr.match(/[\p{XID_Start}_]\p{XID_Continue}*|[(),=]/gu) ?? []
+  let i = 0
+  const pred = () => {
+    const t = toks[i++]
+    if (t === undefined || '(),='.includes(t)) throw new Error('shape')
+    if (toks[i] === '(' && (t === 'all' || t === 'any' || t === 'not')) {
+      i++
+      const vs = []
+      while (toks[i] !== ')') {
+        vs.push(pred())
+        if (toks[i] === ',') i++
+        else if (toks[i] !== ')') throw new Error('shape')
+      }
+      i++
+      if (t === 'not') return vs.length !== 1 || vs[0] === null ? null : !vs[0]
+      if (t === 'all') return vs.includes(false) ? false : vs.every((v) => v === true) ? true : null
+      return vs.includes(true) ? true : vs.every((v) => v === false) ? false : null
+    }
+    if (toks[i] === '=') {
+      i++ // `key = "value"` — 값(문자열)은 지운 뒤라 토큰이 없다
+      return null
+    }
+    return t === 'test' ? false : null
+  }
+  try {
+    const v = pred()
+    return i === toks.length ? v : null
+  } catch {
+    return null
+  }
+}
 // 글자마다 괄호 깊이(`<>` · `()` · `[]`) — `->` · `=>` 의 `>` 는 괄호가 아니다.
 function rsDepths(s) {
   const at = []
@@ -805,25 +849,51 @@ function rustFuncs(file) {
     return null
   }
   const L = blanked.text.split('\n').map((l) => l.replace(/\s+$/, ''))
+  const R = raw.split('\n')
   const funcs = []
-  const tests = [] // `#[cfg(test)]` 항목의 줄 범위 — 통합 빌드에는 없다
+  const tests = [] // `test` 없이는 컴파일되지 않는 항목의 줄 범위 — 통합 빌드에는 없다
+  const macros = [] // `macro_rules!` 몸통의 줄 범위
   let ok = true
   const bad = (k, msg) => {
     fail('rust', `${file}:${k + 1}: ${msg}`)
     ok = false
   }
   const count = (s, ch) => s.split(ch).length - 1
-  // 항목 위의 속성(빈 줄 · 같은 들여쓰기의 `#` 줄 · 그보다 깊은 이어진 줄).
-  const attrsOf = (k, pad) => {
-    const a = []
+  // 항목 위의 `#[cfg(…)]` 들 — 빈 줄 · 같은 들여쓰기의 `#` 줄 · 그보다 깊은 이어진 줄을 건넌다. 한 줄 속성만 평가한다
+  // (rustfmt 는 짧은 cfg 를 한 줄에 둔다) — 여러 줄 cfg 는 모름도 아니고 없음으로 남아, 그 항목은 읽힌다.
+  const cfgsOf = (k, pad) => {
+    const cfgs = []
     for (let x = k - 1; x >= 0; x--) {
       if (!L[x]) continue
-      if (L[x].startsWith(`${pad}#`)) a.push(L[x].trim())
-      else if (!(L[x].startsWith(`${pad} `) || L[x].startsWith(`${pad})`) || L[x].startsWith(`${pad}]`))) break
+      if (L[x].startsWith(`${pad}#`)) {
+        const m = /^#\[cfg\((.*)\)\]$/.exec(L[x].trim())
+        if (m) cfgs.push({ value: cfgEval(m[1]), text: R[x].trim().replace(/\s+/g, ' ') })
+      } else if (!(L[x].startsWith(`${pad} `) || L[x].startsWith(`${pad})`) || L[x].startsWith(`${pad}]`))) break
     }
-    return a
+    return cfgs
   }
-  const walk = (from, to, ind, prefix) => {
+  const add = (entry) => {
+    if (funcs.some((f) => f.name === entry.name)) {
+      fail('rust', `${file}: two functions are both named ${entry.name} — the never-executed list cannot tell them apart`)
+      ok = false
+      return false
+    }
+    funcs.push({ records: 0, stmts: 0, covered: 0, bodyCovered: 0, ...entry })
+    return true
+  }
+  // static · const 의 끝 — 괄호(`()` · `[]` · `{}`) 깊이 0 의 `;`(rustfmt 는 긴 값을 `=` 뒤에서 더 깊이 접는다).
+  const statementEnd = (k, to) => {
+    let d = 0
+    for (let y = k; y < to; y++)
+      for (const c of L[y]) {
+        if (c === '(' || c === '[' || c === '{') d++
+        else if (c === ')' || c === ']' || c === '}') d--
+        else if (c === ';' && d === 0) return y
+      }
+    return -1
+  }
+  // suffix — 감싼 컨테이너(impl · mod)의 cfg(모름) 꼬리. 멤버 이름 뒤에 붙는다.
+  const walk = (from, to, ind, prefix, suffix) => {
     const pad = ' '.repeat(ind)
     for (let k = from; k < to && ok; k++) {
       const line = L[k]
@@ -833,7 +903,24 @@ function rustFuncs(file) {
       const impl = !fn && RS_IMPL.test(t)
       const tr = fn || impl ? null : RS_TRAIT.exec(t)
       const md = fn || impl || tr ? null : RS_MOD.exec(t)
-      if (!fn && !impl && !tr && !md) continue
+      const val = fn || impl || tr || md ? null : RS_VALUE.exec(t)
+      const mac = fn || impl || tr || md || val ? null : RS_MACRO.exec(t)
+      if (!fn && !impl && !tr && !md && !val && !mac) continue
+      const cfgs = cfgsOf(k, pad)
+      const testOnly = cfgs.some((c) => c.value === false)
+      const tail = `${cfgs
+        .filter((c) => c.value === null)
+        .reverse()
+        .map((c) => ` ${c.text}`)
+        .join('')}${suffix}`
+      if (val) {
+        const e = statementEnd(k, to)
+        if (e < 0) return bad(k, `cannot find the end of the ${val[1]} item (a ";" outside brackets)`)
+        if (testOnly) tests.push({ start: k + 1, end: e + 1 })
+        else if (!add({ name: `${val[1]} ${prefix}${val[2]}${tail}`, start: k + 1, end: e + 1, ind, kind: 'value', headEnd: e + 1 })) return
+        k = e
+        continue
+      }
       let h = k
       while (h < to && !/[{;}]$/.test(L[h])) h++
       if (h >= to) return bad(k, 'cannot find the end of the item head')
@@ -851,31 +938,27 @@ function rustFuncs(file) {
           }
         if (end < 0) return bad(k, `cannot find the end of the item (rustfmt closes a body with "}" at the item's indent)`)
       } else if (count(L[h], '{') !== count(L[h], '}')) return bad(h, 'a one-line item whose braces do not pair')
-      if (attrsOf(k, pad).includes('#[cfg(test)]')) tests.push({ start: k + 1, end: end + 1 })
+      if (testOnly) tests.push({ start: k + 1, end: end + 1 })
+      else if (mac) macros.push({ name: mac[1], start: k + 1, end: end + 1 })
       else if (fn) {
-        const name = `${prefix}${fn[1]}`
-        if (funcs.some((f) => f.name === name)) {
-          fail('rust', `${file}: two functions are both named ${name} — the never-executed list cannot tell them apart`)
-          ok = false
-          return
-        }
-        funcs.push({ name, start: k + 1, end: end + 1, ind, records: 0, stmts: 0, covered: 0 })
+        const entry = { name: `${prefix}${fn[2]}${tail}`, start: k + 1, end: end + 1, ind, kind: 'fn', async: /\basync\s/.test(fn[1]), headEnd: h + 1 }
+        if (!add(entry)) return
       } else if (end > h) {
         const p = md ? `${md[1]}::` : tr ? `${tr[1]}::` : rsImplPrefix(L.slice(k, h + 1).join(' '))
         if (p === null) return bad(k, 'cannot read the type this impl is for')
-        walk(h + 1, end, ind + 4, `${prefix}${p}`)
+        walk(h + 1, end, ind + 4, `${prefix}${p}`, tail)
       }
       k = end
     }
   }
-  walk(0, L.length, 0, '')
+  walk(0, L.length, 0, '', '')
   // 범위 안에서 그 함수와 같은 들여쓰기의 `fn` 머리 — 범위가 닫는 줄을 지나쳐 다음 함수를 삼켰다는 뜻이다.
   const swallows = (fn, line) => {
     const pad = ' '.repeat(fn.ind)
     const t = L[line - 1] ?? ''
     return line !== fn.start && t.startsWith(pad) && t[fn.ind] !== ' ' && RS_FN.test(t.slice(fn.ind))
   }
-  return ok ? { funcs, tests, swallows, lines: L.length - (L.at(-1) === '' ? 1 : 0) } : null
+  return ok ? { funcs, tests, macros, swallows, lines: L.length - (L.at(-1) === '' ? 1 : 0) } : null
 }
 function rustReport(d) {
   const path = join(out, 'rust.lcov')
@@ -940,11 +1023,17 @@ function rustReport(d) {
     const src = rustFuncs(f)
     if (!src) continue
     const rangeOf = (x) => src.funcs.find((fn) => x >= fn.start && x <= fn.end)
-    const testAt = (x) => src.tests.find((t) => x >= t.start && x <= t.end)
+    const within = (list, x) => list.find((t) => x >= t.start && x <= t.end)
     let broken = false
     for (const rec of r.fns) {
-      if (testAt(rec.line)) {
-        fail('rust', `${f}:${rec.line}: the data has a function inside a #[cfg(test)] item (${rec.name}) — unit tests ran in this build, so the report would not be integration-only`)
+      if (within(src.tests, rec.line)) {
+        fail('rust', `${f}:${rec.line}: the data has a function inside an item compiled only with cfg(test) (${rec.name}) — unit tests ran in this build, so the report would not be integration-only`)
+        broken = true
+        break
+      }
+      const mac = within(src.macros, rec.line)
+      if (mac) {
+        fail('rust', `${f}:${rec.line}: the data has a function (${rec.name}) inside macro_rules! ${mac.name} — the functions a macro generates share its lines, so one that never ran cannot be told apart from one that did; keep boundary functions out of macro_rules`)
         broken = true
         break
       }
@@ -972,13 +1061,30 @@ function rustReport(d) {
       const fn = rangeOf(line) ?? outside
       fn.stmts++
       if (c > 0) fn.covered++
+      if (c > 0 && fn !== outside && line > fn.headEnd) fn.bodyCovered++
+    }
+    if (broken) continue
+    const mine = []
+    for (const fn of src.funcs) {
+      const at = { file: f, line: fn.start, name: fn.name, stmts: fn.stmts }
+      if (!fn.records) {
+        // 줄은 함수 레코드의 영역에서만 나온다 — 레코드 없이 줄이 있으면 데이터가 함수 레코드를 뺐다(`--skip-functions`).
+        if (fn.stmts) {
+          fail('rust', `${f}:${fn.start}: the data counts ${fn.stmts} line(s) inside ${fn.name} but has no function record there — a report without function records (cargo llvm-cov --skip-functions?) cannot name never-executed functions`)
+          broken = true
+          break
+        }
+        // 레코드가 없는 fn — 크레이트 밖에 안 보이고 아무도 참조 안 한 fn · 인스턴스화 안 된 제네릭 · 이 빌드에서 cfg 로 빠진 쌍둥이.
+        // static · const 는 코드가 없는 것이 보통이라(문자열 상수) 레코드가 없어도 목록에 올리지 않는다.
+        if (fn.kind === 'fn') mine.push({ ...at, label: 'no record in the data' })
+      } else if (fn.stmts > 0 && fn.covered === 0) mine.push(at)
+      // 부른 async fn 은 퓨처만 만든다 — 몸통은 poll 될 때 돈다. 여러 줄 몸통의 줄이 하나도 안 돌았으면 미실행이다(독립 레그 실측:
+      // 버린 퓨처의 바깥 함수는 `FNDA:1`, 몸통 줄은 데이터에 없다).
+      else if (fn.async && fn.headEnd < fn.end && fn.bodyCovered === 0) mine.push({ ...at, label: 'called, but its async body never ran' })
     }
     if (broken) continue
     files.push({ file: f, stmts, covered, outside })
-    for (const fn of src.funcs) {
-      if (!fn.records) never.push({ file: f, line: fn.start, name: fn.name, stmts: 0, noRecord: true })
-      else if (fn.stmts > 0 && fn.covered === 0) never.push({ file: f, line: fn.start, name: fn.name, stmts: fn.stmts })
-    }
+    never.push(...mine)
   }
   return { path, files, never }
 }
@@ -1077,9 +1183,9 @@ function printReport(l, d, data, tot, pin) {
   }
   // 표와 같은 순서(코드 단위) — localeCompare 는 `admin_users.go` 를 `admin.go` 앞에 둔다.
   const never = [...data.never].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))
-  const what = l === 'rust' ? 'none of its lines ran, or the data has no record of it' : 'none of its statements ran'
+  const what = l === 'rust' ? 'none of its lines ran, its async body never ran, or the data has no record of it' : 'none of its statements ran'
   console.log(`  never executed by the integration run — ${never.length} function${never.length === 1 ? '' : 's'} (${what}):`)
-  for (const x of never) console.log(`  NEVER ${x.file}:${x.line} ${x.name} · ${x.noRecord ? 'no record in the data' : stmt(x.stmts)} · owner ${x.owner}`)
+  for (const x of never) console.log(`  NEVER ${x.file}:${x.line} ${x.name} · ${x.label ?? stmt(x.stmts)} · owner ${x.owner}`)
 }
 
 // ── check — 데이터 없이: 파생 ↔ 핀 ↔ 소유자 ───────────────────────────────────────────────

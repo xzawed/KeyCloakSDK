@@ -62,7 +62,9 @@
       "rust/src/auth.rs:AuthClient::noop": "open-admin",
       "rust/src/auth.rs:Wrapper<u16>::get": "open-admin",
       "rust/src/auth.rs:unused_helper": "open-admin",
-      "rust/src/client.rs:KeycloakClient::admin": "open-admin"
+      "rust/src/client.rs:KeycloakClient::admin": "open-admin",
+      "rust/src/client.rs:platform #[cfg(not(windows))]": "open-admin",
+      "rust/src/client.rs:unused_count": "open-admin"
     }
   }
 }
