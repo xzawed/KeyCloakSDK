@@ -85,7 +85,7 @@
 //            가리킨다 — 다섯 레인의 사본이 다 그 리더의 fail() 보다 좁았다(실측 2026-11-06).
 //   3 BELOW  하한 아래 — 수치는 유효하다. CI 는 실패로 본다. 비교는 정수식(covered × 100 < percent × 분모)이고 같으면 통과다.
 //
-// 사용(LANG = go · python · node · rust · php · ruby):
+// 사용(LANG = go · python · node · rust · php · ruby · dotnet):
 //   node scripts/integration-coverage.mjs <LANG> [--out DIR]                 로컬 — 통합 테스트(Docker) 후 리포트
 //   node scripts/integration-coverage.mjs run    <LANG> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
 //   node scripts/integration-coverage.mjs report <LANG> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
@@ -94,8 +94,9 @@
 // 이 node 로 직접 띄운다(npm 을 거치지 않는다 — 윈도의 `npm.cmd` 는 셸 없이 못 띄운다). rust 는 PATH 의 `cargo` 에
 // `cargo-llvm-cov`(+ `llvm-tools-preview`)가 있어야 한다. php 는 PATH 의 `php` 에 커버리지 드라이버(pcov 또는 Xdebug —
 // `XDEBUG_MODE=coverage` 는 run 이 준다)와 `php/vendor`(composer install)가 있어야 한다. ruby 는 PATH 의 `ruby` 와 설치된
-// 번들(bundle install — `BUNDLE_GEMFILE` 이 없으면 `ruby/Gemfile`)이 있어야 한다. DIR 기본값은 OS 임시 디렉터리 아래다.
-import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync, readdirSync } from 'node:fs'
+// 번들(bundle install — `BUNDLE_GEMFILE` 이 없으면 `ruby/Gemfile`)이 있어야 한다. dotnet 은 PATH 의 `dotnet` 과, 테스트 프로젝트가
+// 참조하는 `coverlet.collector`(컬렉터가 거기서 온다)가 있어야 한다. DIR 기본값은 OS 임시 디렉터리 아래다.
+import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync, readdirSync, copyFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { join, dirname, resolve, posix, basename } from 'node:path'
@@ -105,14 +106,15 @@ import { tmpdir } from 'node:os'
 const PINS = 'scripts/integration-coverage.json'
 const REGISTRY = 'docs/superpowers/plans/remaining-work.md'
 const BOUNDARY = 'scripts/coverage-boundary.mjs'
-const LANGS = ['go', 'python', 'node', 'rust', 'php', 'ruby']
+const LANGS = ['go', 'python', 'node', 'rust', 'php', 'ruby', 'dotnet']
 // 하한 지표 — go 의 문장은 전부 함수 몸통이고, python 은 lines(import 때 도는 줄 포함)와 bodies(함수 안 문장)가 갈린다.
 // node 는 istanbul 문장이다(모듈 수준 문장은 import 때 돌지만 경계 파일은 거의 전부 클래스 멤버다 — 표가 따로 보인다).
 // rust 는 llvm-cov 의 고유 줄(DA)이다 — import 때 도는 코드가 없다. php 는 php-code-coverage 의 실행 가능 줄이다(정적 분석이
 // 정한다 — 파일을 싣는 것만으로는 줄이 안 덮인다). ruby 는 python 처럼 lines(require 때 도는 클래스 · def 줄 포함)와
-// bodies(메서드 범위 안 줄)가 갈린다.
-const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'], node: ['statements'], rust: ['lines'], php: ['lines'], ruby: ['lines', 'bodies'] }
-const LINE_LANGS = new Set(['rust', 'php', 'ruby'])
+// bodies(메서드 범위 안 줄)가 갈린다. dotnet 은 coverlet 의 줄(시퀀스 포인트가 있는 줄)이다 — 적재 때 도는 것은 정적 생성자
+// · 필드 초기화뿐이다.
+const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'], node: ['statements'], rust: ['lines'], php: ['lines'], ruby: ['lines', 'bodies'], dotnet: ['lines'] }
+const LINE_LANGS = new Set(['rust', 'php', 'ruby', 'dotnet'])
 // 함수 몸통을 따로 세는 언어 — 적재 때 도는 모듈 · 클래스 수준 줄이 lines 를 부풀린다(python 은 import · ruby 는 require).
 // 「아무것도 안 돈 실행」 판정도 몸통으로 한다.
 const BODY_LANGS = new Set(['python', 'ruby'])
@@ -1715,6 +1717,295 @@ function rubyReport(d) {
   return { path, note: `ruby ${typeof j.ruby === 'string' ? j.ruby : '?'} · Coverage lines · methods`, files, never }
 }
 
+// ── dotnet — coverlet 컬렉터의 고유 JSON ──────────────────────────────────────────────────
+const DOTNET_DATA = () => join(out, 'dotnet.json')
+const DOTNET_TRX = () => join(out, 'dotnet.trx')
+const DOTNET_RUN = () => join(out, 'dotnet.run.json')
+// run 이 쓰는 컬렉터 설정 — 형식만 json 이고 **거르지 않는다**(경계는 리포트가 파일 경로로 고른다). 단위 설정의 `<Exclude>` 를
+// 뒤집은 `<Include>` 는 컴파일러가 만든 중첩 타입(async 상태 기계 · 람다 클래스)을 떨어뜨린다 — 실측(2026-11-06, 실제 트리):
+// 경계 10 파일의 428 줄 중 바깥 타입의 것은 175 뿐이다(등록부가 짚은 211/312 와 같은 꼴).
+const DOTNET_SETTINGS = `<?xml version="1.0" encoding="utf-8" ?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>json</Format>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
+`
+// 컴파일러가 만든 이름 하나를 벗긴다 — `<M>d__N`(async · 이터레이터 상태 기계 — 제네릭 메서드면 `<M>d__N`1`) · `<<M>b__N_K>d`
+// (async 람다의 상태 기계) · `<M>b__N_K`(람다) · `<M>g__L|N_K`(로컬 함수) → 감싼 소스 멤버 M. 모르는 `<…>` 꼴이면 null.
+function csPeel(s) {
+  let x = s
+  for (;;) {
+    if (!x.startsWith('<')) return x
+    const m = /^<(.+)>(?:d__\d+(?:`\d+)?|d|b__\d+(?:_\d+)?|g__.+)$/.exec(x)
+    if (!m) return null
+    x = m[1]
+  }
+}
+// coverlet 의 클래스 · 메서드 하나 → { type, member, kind, params } — kind 는 plain(소스 메서드 그대로) · sm(상태 기계) ·
+// lambda(람다 · 로컬 함수). 이름을 못 붙이면 null.
+function dotnetFold(cls, sig) {
+  const sm = /^(.*?)::([^(]+)\((.*)\)$/.exec(sig)
+  if (!sm) return null
+  const [, , name, params] = sm
+  const segs = cls.split('/')
+  const user = []
+  let gen = null
+  for (const seg of segs) {
+    if (!seg.startsWith('<')) {
+      if (gen !== null) return null
+      user.push(seg)
+      continue
+    }
+    if (gen === null) gen = []
+    gen.push(seg)
+  }
+  if (!user.length) return null
+  const type = [user[0].slice(user[0].lastIndexOf('.') + 1), ...user.slice(1)].join('.')
+  const display = (m) => (m === '.ctor' ? '#ctor' : m === '.cctor' ? '#cctor' : m)
+  if (gen === null) {
+    // 바깥 타입의 메서드 — 이름이 생성 꼴이면 람다(this 만 잡는)나 로컬 함수다.
+    if (!name.startsWith('<')) return { type, member: display(name), kind: 'plain', params }
+    const m = csPeel(name)
+    return m === null ? null : { type, member: display(m), kind: 'lambda', params }
+  }
+  // 생성 타입 안 — 상태 기계면 그 이름이, 람다 캐시 · 클로저(`<>c` · `<>c__DisplayClassN_K`)면 메서드 이름이 멤버를 댄다.
+  const machine = gen.find((g) => !/^<>c(?:__DisplayClass\d+_\d+)?$/.test(g))
+  if (machine !== undefined) {
+    if (name !== 'MoveNext') return null
+    const m = csPeel(machine)
+    return m === null ? null : { type, member: display(m), kind: machine.endsWith('>d') ? 'lambda' : 'sm', params: null, machine }
+  }
+  if (!name.startsWith('<')) return null
+  const m = csPeel(name)
+  return m === null ? null : { type, member: display(m), kind: 'lambda', params }
+}
+// 통합 스위트의 기대 클래스 — trx 에는 범주가 없다. `[Trait("Category", "Integration")]` 을 단 테스트 소스의 클래스(네임스페이스째).
+function dotnetSuite(dir) {
+  const files = []
+  const walk = (p) => {
+    for (const e of readdirSync(p, { withFileTypes: true })) {
+      if (e.isDirectory()) {
+        if (!['bin', 'obj', '.git', 'node_modules'].includes(e.name)) walk(join(p, e.name))
+      } else if (e.name.endsWith('.cs')) files.push(join(p, e.name))
+    }
+  }
+  walk(dir)
+  const set = new Set()
+  for (const f of files) {
+    const src = readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ')
+    if (!/\[\s*Trait\s*\(\s*"Category"\s*,\s*"Integration"\s*\)\s*\]/.test(src)) continue
+    const ns = /(?:^|[;{}\s])namespace\s+([\w.]+)\s*[;{]/.exec(src)?.[1]
+    for (const m of src.matchAll(/\bclass\s+(\w+)/g)) set.add(ns ? `${ns}.${m[1]}` : m[1])
+  }
+  return set
+}
+// ⚠️ dotnet 은 줄 · 횟수를 coverlet 컬렉터의 고유 JSON(`모듈 → 문서(절대 경로) → 클래스 → 메서드(전체 시그니처) → Lines`)에서,
+// 이름을 컴파일러가 만든 이름에서 받는다. async · 이터레이터 메서드는 바깥 클래스에 **없고** 중첩 상태 기계 `T/<M>d__N` 의
+// `MoveNext` 가 몸통 줄을 든다(실측 — 킥오프 스텁은 실리지 않는다). 람다(`T/<>c` · `T/<>c__DisplayClassN_K` 의 `<M>b__…`) ·
+// 로컬 함수(`<M>g__…`) · async 람다(`<<M>b__N_K>d`)는 감싼 메서드 M 에 접는다(go 의 함수 리터럴 · node 의 콜백과 같다). 모르는
+// `<…>` 꼴은 FAIL 이다. 오버로드는 시그니처로 가르되, 상태 기계나 람다가 붙은 오버로드는 어느 쪽 것인지 못 가르므로 FAIL 이다.
+// ⚠️ coverlet 은 **줄** 단위로 잰다 — 한 줄의 횟수는 그 줄의 모든 코드의 합이고 그 줄은 메서드 하나 아래에만 실린다(실측:
+// 픽스처 `Joined` 32 행 = return 1 + 람다 2). 그래서 자기 줄이 없는 메서드(같은 줄의 auto-property setter · 같은 줄의 람다)는
+// 데이터에 따로 없다 — 그 줄의 다른 코드가 돌면 덮인 것으로 센다(미실행 목록에서 빠진다 — 줄 단위 계측의 한계). opencover 형식도
+// 같은 모델이다(열이 모두 1–2 · visited 가 모두 true — 실측).
+// 데이터에 소스 해시가 없다 — run 이 경계 파일의 sha1 을 실행 앞뒤로 재 기록에 싣고(같을 때만), report 가 트리의 바이트와 대조한다.
+// 문서 키는 절대 경로다 — CI 의 결정적 빌드(`ContinuousIntegrationBuild` — PDB 에는 `/_/`)에서도 컬렉터가 실제 경로로 되돌린다(실측).
+function dotnetReport(d) {
+  const path = DOTNET_DATA()
+  const shown = path.replace(/\\/g, '/')
+  if (!existsSync(path)) {
+    fail('dotnet', `no coverage data at ${shown} — run the integration suite first (node scripts/integration-coverage.mjs run dotnet)`)
+    return null
+  }
+  const bytes = readFileSync(path)
+  let j
+  try {
+    j = JSON.parse(bytes.toString('utf8'))
+  } catch {
+    fail('dotnet', `${shown} is not JSON`)
+    return null
+  }
+  const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
+  if (!isObj(j) || !Object.values(j).every(isObj)) {
+    fail('dotnet', `${shown} is not coverlet's JSON (module → document → class → method)`)
+    return null
+  }
+  // 문서 — 전부 이 트리 안이어야 한다(다른 체크아웃의 데이터가 아니다).
+  const docs = new Map()
+  for (const [mod, ds] of Object.entries(j)) {
+    for (const [abs, classes] of Object.entries(ds)) {
+      const rel = toRepoPath(abs, d.dir)
+      if (!rel.startsWith(`${d.dir}/`)) {
+        fail('dotnet', `the data has ${abs.replace(/\\/g, '/')} (${mod}), outside this tree — the data belongs to another checkout`)
+        return null
+      }
+      if (docs.has(rel)) fail('dotnet', `${rel} is in two modules of ${shown} (${docs.get(rel).mod} · ${mod}) — the data contradicts itself`)
+      docs.set(rel, { mod, classes })
+    }
+  }
+  for (const rel of docs.keys()) if (!existsSync(join(root, rel))) fail('dotnet', `${rel} is in the data but not in the tree — the data belongs to another checkout`)
+  // trx — 이 실행의 테스트 결과. 통합 스위트만 · 전부 통과.
+  const trxPath = DOTNET_TRX()
+  const trxShown = trxPath.replace(/\\/g, '/')
+  let trx = null
+  try {
+    trx = readFileSync(trxPath, 'utf8')
+  } catch {
+    trx = null
+  }
+  let note = 'coverlet json'
+  if (trx === null) fail('dotnet', `no test results at ${trxShown} — run the integration suite through the script (node scripts/integration-coverage.mjs run dotnet)`)
+  else {
+    const attr = (tag, a) => new RegExp(`\\b${a}="([^"]*)"`).exec(tag)?.[1]
+    // 테스트 어셈블리도 이 트리의 것이어야 한다(다른 체크아웃의 결과가 아니다).
+    for (const m of trx.matchAll(/<TestMethod\b[^>]*>/g)) {
+      const cb = attr(m[0], 'codeBase')
+      const rel = cb === undefined ? null : toRepoPath(cb, d.dir)
+      if (rel === null || !rel.startsWith(`${d.dir}/`)) {
+        fail('dotnet', `the test results ran ${cb === undefined ? 'an assembly with no codeBase' : cb.replace(/\\/g, '/')}, outside this tree — they belong to another checkout`)
+        break
+      }
+    }
+    const results = [...trx.matchAll(/<UnitTestResult\b[^>]*>/g)].map((m) => ({ id: attr(m[0], 'testId'), name: attr(m[0], 'testName'), outcome: attr(m[0], 'outcome') }))
+    const classOf = new Map()
+    for (const m of trx.matchAll(/<UnitTest\b([^>]*)>([\s\S]*?)<\/UnitTest>/g)) {
+      const id = attr(m[1], 'id')
+      const tm = /<TestMethod\b[^>]*>/.exec(m[2])
+      if (id && tm) classOf.set(id, attr(tm[0], 'className'))
+    }
+    if (!results.length) fail('dotnet', 'the run recorded no tests — a report over no tests is vacuous')
+    const bad = results.filter((r) => r.outcome !== 'Passed')
+    if (bad.length) {
+      const eg = bad.slice(0, 3).map((r) => `${r.name} (${r.outcome ?? '?'})`).join(' · ')
+      fail('dotnet', `${bad.length} of ${results.length} tests in the run did not pass — the data of a failed run is partial: ${eg}`)
+    }
+    const suite = dotnetSuite(join(root, d.dir))
+    const foreign = results.filter((r) => !suite.has(classOf.get(r.id)))
+    if (foreign.length) {
+      const eg = sortU(foreign.map((r) => r.name ?? '?')).slice(0, 3).join(' · ')
+      fail('dotnet', `the run included tests outside the integration suite (${eg}) — the report would not be integration-only (the suite = classes in sources carrying [Trait("Category", "Integration")])`)
+    }
+    const rt = /\(64-bit \.NET ([\d.]+)\)/.exec(trx)?.[1]
+    note = `.NET ${rt ?? '?'} · coverlet json · ${results.length} test${results.length === 1 ? '' : 's'}`
+  }
+  const files = []
+  const never = []
+  for (const f of d.files) {
+    const e = docs.get(f)
+    if (!e) {
+      fail('dotnet', `${f} is not in the coverage data — a boundary file the run never compiled into a measured module would silently leave the denominator`)
+      continue
+    }
+    if (!isObj(e.classes) || !Object.values(e.classes).every(isObj)) {
+      fail('dotnet', `${f}: the entry is not class → method in ${shown}`)
+      continue
+    }
+    const src = readFileSync(join(root, f), 'utf8')
+    const nlines = src.split('\n').length
+    const methods = new Map()
+    let broken = false
+    for (const [cls, ms] of Object.entries(e.classes)) {
+      for (const [sig, v] of Object.entries(ms)) {
+        const lines = v?.Lines
+        if (!isObj(lines) || !Object.entries(lines).every(([k, c]) => /^[1-9]\d*$/.test(k) && isCount(c))) {
+          fail('dotnet', `${f}: cannot read the line counts of ${sig} in ${shown}`)
+          broken = true
+          break
+        }
+        const fo = dotnetFold(cls, sig)
+        if (!fo) {
+          fail('dotnet', `${f}: cannot name ${cls}::${sig.replace(/^.*?::/, '')} — not a generated name this reader knows`)
+          broken = true
+          break
+        }
+        const key = `${fo.type}.${fo.member}`
+        const m = methods.get(key) ?? { plain: new Map(), machines: new Set(), lambdas: 0, lines: new Map() }
+        if (fo.kind === 'sm') m.machines.add(fo.machine)
+        else if (fo.kind === 'lambda') m.lambdas++
+        // 시그니처마다 따로 든다 — 오버로드면 그것으로 가른다(아래).
+        const own = fo.kind === 'plain' ? (m.plain.get(fo.params) ?? new Map()) : null
+        for (const [k, c] of Object.entries(lines)) {
+          const ln = Number(k)
+          if (ln > nlines) {
+            fail('dotnet', `${f}: ${key} counts line ${ln}, past the ${nlines} lines of the file — the data contradicts the tree`)
+            broken = true
+            break
+          }
+          m.lines.set(ln, (m.lines.get(ln) ?? 0) + c)
+          if (own) own.set(ln, (own.get(ln) ?? 0) + c)
+        }
+        if (broken) break
+        if (own) m.plain.set(fo.params, own)
+        methods.set(key, m)
+      }
+      if (broken) break
+    }
+    if (broken) continue
+    // 오버로드 — 몸통(시그니처 · 상태 기계)이 둘 이상이면 갈라야 한다. 상태 기계나 람다가 붙으면 어느 오버로드의 것인지 모른다.
+    const per = new Map()
+    let amb = null
+    for (const [key, m] of methods) {
+      if (m.plain.size + m.machines.size <= 1) per.set(key, m.lines)
+      else if (m.machines.size || m.lambdas) amb ??= key
+      else for (const [p, ls] of m.plain) per.set(`${key}(${p})`, ls)
+    }
+    if (amb) {
+      fail('dotnet', `${f}: ${amb} has overloads and a state machine or lambda folds into one of them — this reader cannot tell which`)
+      continue
+    }
+    const fileLines = new Map()
+    for (const [key, ls] of per) {
+      for (const [ln, c] of ls) fileLines.set(ln, (fileLines.get(ln) ?? 0) + c)
+      if (ls.size && [...ls.values()].every((c) => c === 0)) never.push({ file: f, line: Math.min(...ls.keys()), name: key, stmts: ls.size })
+    }
+    const covered = [...fileLines.values()].filter((c) => c > 0).length
+    // coverlet 은 메서드 밖 줄을 싣지 않는다(필드 초기화는 생성자 · 정적 생성자의 줄이다).
+    files.push({ file: f, stmts: fileLines.size, covered, outside: { stmts: 0, covered: 0 } })
+  }
+  // run 기록 — php · ruby 와 같은 이유. 다른 판정 뒤에 두되 앞의 실패가 있어도 낸다(두 까닭이 한 번에 보인다).
+  const runRec = DOTNET_RUN()
+  let rec = null
+  try {
+    rec = JSON.parse(readFileSync(runRec, 'utf8'))
+  } catch {
+    rec = null
+  }
+  const sha = (b) => createHash('sha1').update(b).digest('hex')
+  if (!rec || rec.run !== 'dotnet') {
+    fail('dotnet', `no record that \`run dotnet\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs run dotnet) so the report can tell a complete, successful run`)
+    return null
+  }
+  if (rec.exit !== 0) {
+    fail('dotnet', `the run that wrote this data exited ${rec.exit} — the data of a failed run is partial`)
+    return null
+  }
+  if (rec.data_sha1 !== sha(bytes)) {
+    fail('dotnet', `${shown} is not the data \`run dotnet\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
+    return null
+  }
+  if (trx !== null && rec.trx_sha1 !== sha(readFileSync(trxPath))) {
+    fail('dotnet', `${trxShown} is not the test result \`run dotnet\` recorded — another run wrote over it`)
+    return null
+  }
+  if (!isObj(rec.files)) {
+    fail('dotnet', 'the record has no boundary hashes — the boundary files changed while the suite ran, so the data may come from other bytes')
+    return null
+  }
+  for (const f of d.files) {
+    const now = existsSync(join(root, f)) ? sha(readFileSync(join(root, f))) : null
+    if (rec.files[f] !== now) fail('dotnet', `${f}: the data was taken from other bytes (sha1 ${String(rec.files[f]).slice(0, 12)}… recorded, ${String(now).slice(0, 12)}… in the tree) — rerun the suite on this tree`)
+  }
+  if (fails('dotnet')) return null
+  return { path, note, files, never }
+}
+
 // ── report ───────────────────────────────────────────────────────────────────────────────
 function emitFindings(l) {
   for (const f of findings) if (f.lang === l || f.lang === null) console.log(`${f.kind} [${f.lang ?? '-'}] ${f.msg}`)
@@ -1724,7 +2015,7 @@ function report(l) {
   const pin = pinFor(l)
   const reg = loadRegistry()
   if (d && pin) matchesPin(l, d, pin)
-  const reader = { go: goReport, python: pyReport, node: nodeReport, rust: rustReport, php: phpReport, ruby: rubyReport }[l]
+  const reader = { go: goReport, python: pyReport, node: nodeReport, rust: rustReport, php: phpReport, ruby: rubyReport, dotnet: dotnetReport }[l]
   const data = fails(l) ? null : reader(d)
   if (data && !fails(l)) {
     const tot = data.files.reduce((a, f) => ({ stmts: a.stmts + f.stmts, covered: a.covered + f.covered }), { stmts: 0, covered: 0 })
@@ -1817,7 +2108,7 @@ function printReport(l, d, data, tot, pin) {
   const what =
     l === 'rust'
       ? 'none of its lines ran, its async body never ran, or the data has no record of it'
-      : l === 'php'
+      : l === 'php' || l === 'dotnet'
         ? 'none of its lines ran'
         : l === 'ruby'
           ? 'Ruby counted no call to it'
@@ -1978,6 +2269,48 @@ function run(l) {
     if (existsSync(data)) {
       const sha = createHash('sha1').update(readFileSync(data)).digest('hex')
       writeFileSync(RUBY_RUN(), `${JSON.stringify({ run: 'ruby', exit: rc, dump_sha1: sha })}\n`)
+    }
+    return rc
+  }
+  if (l === 'dotnet') {
+    // 옛 데이터 · trx · 기록 · 결과 디렉터리를 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게).
+    const data = DOTNET_DATA()
+    const trx = DOTNET_TRX()
+    const results = join(out, 'dotnet-results')
+    const settings = join(out, 'dotnet.runsettings')
+    for (const f of [data, trx, DOTNET_RUN(), settings]) rmSync(f, { force: true })
+    rmSync(results, { recursive: true, force: true })
+    const stop = (msg) => {
+      fail(l, msg)
+      emitFindings(l)
+      return 2
+    }
+    const slns = readdirSync(cwd).filter((f) => f.endsWith('.sln')).sort()
+    if (slns.length !== 1) return stop(`${d.dir}/ must hold exactly one .sln — the lane tests one solution (found ${slns.length ? slns.join(' · ') : 'none'})`)
+    writeFileSync(settings, DOTNET_SETTINGS)
+    // 경계 파일의 바이트 — coverlet 의 데이터에는 소스 해시가 없다. 실행 앞뒤로 재서 같을 때만 기록에 싣는다(빌드가 그 바이트를
+    // 컴파일했다). report 가 그것을 트리의 바이트와 대조한다.
+    const shas = () => Object.fromEntries(d.files.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
+    const before = shas()
+    // 레인의 명령(`dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category=Integration"`)과 같은 해 · 구성 · 필터다.
+    const rc = spawnStep(
+      'dotnet',
+      ['test', slns[0], '-c', 'Release', '--filter', 'Category=Integration', '--collect:XPlat Code Coverage', '--settings', settings,
+        '--results-directory', results, '--logger', 'trx;LogFileName=dotnet.trx'],
+      cwd,
+    )
+    const after = shas()
+    // 첨부는 결과 디렉터리 바로 아래(실행마다 GUID)의 coverage.json 하나다 — trx 의 `In/<기계>/` 사본은 한 층 더 깊다.
+    const att = existsSync(results)
+      ? readdirSync(results, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => join(results, e.name, 'coverage.json')).filter((p) => existsSync(p))
+      : []
+    if (att.length > 1) return stop(`the run left ${att.length} coverage attachments — this reader knows one test project per solution`)
+    if (att.length === 1) {
+      copyFileSync(att[0], data)
+      if (existsSync(join(results, 'dotnet.trx'))) copyFileSync(join(results, 'dotnet.trx'), trx)
+      const sha = (p) => (existsSync(p) ? createHash('sha1').update(readFileSync(p)).digest('hex') : null)
+      const same = d.files.every((f) => before[f] !== null && before[f] === after[f])
+      writeFileSync(DOTNET_RUN(), `${JSON.stringify({ run: 'dotnet', exit: rc, data_sha1: sha(data), trx_sha1: sha(trx), files: same ? before : null })}\n`)
     }
     return rc
   }

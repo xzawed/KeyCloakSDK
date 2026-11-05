@@ -143,5 +143,31 @@
       "ruby/lib/keycloak_sdk/admin/roles.rb:Roles#update": "integration-admin-surface-uneven",
       "ruby/lib/keycloak_sdk/auth_client.rb:AuthClient#access_token": "facade-wiring-close-contract-unasserted"
     }
+  },
+  "dotnet": {
+    "pinned": [
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminResponseBody.cs",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/BearerHandler.cs",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/ClientsResource.cs",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/GroupsResource.cs",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/RealmsResource.cs",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/RolesResource.cs",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/UsersResource.cs",
+      "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs",
+      "dotnet/src/Xzawed.Keycloak.Sdk/KeycloakClient.cs"
+    ],
+    "owners": {
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.ErrorResponseAsync": "coverage-omit-hides-security-paths",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.IsEncodingLookup": "coverage-omit-hides-security-paths",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.IsUnsupportedCharset": "coverage-omit-hides-security-paths",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.ObserveTokenProviderFailure": "coverage-omit-hides-security-paths",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.Undecodable": "coverage-omit-hides-security-paths",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/BearerHandler.cs:BearerHandler.IsRefusedBody": "coverage-omit-hides-security-paths",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/ClientsResource.cs:ClientsResource.UpdateAsync": "integration-admin-surface-uneven",
+      "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.CanonicalReason": "coverage-omit-hides-security-paths",
+      "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.NoCodeReason": "coverage-omit-hides-security-paths",
+      "dotnet/src/Xzawed.Keycloak.Sdk/KeycloakClient.cs:KeycloakClient.Dispose": "facade-wiring-close-contract-unasserted"
+    }
   }
 }
