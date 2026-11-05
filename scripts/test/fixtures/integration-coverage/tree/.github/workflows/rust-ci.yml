@@ -1,0 +1,7 @@
+name: rust-ci
+on: { pull_request: { paths: ['rust/**'] } }
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - run: cargo llvm-cov --ignore-filename-regex '(^|[\\/])(auth|admin|client)\.rs$' --fail-under-lines 90

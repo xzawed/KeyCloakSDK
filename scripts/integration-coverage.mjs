@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // integration-coverage.mjs — 통합 실행만의 「네트워크 경계」 커버리지 리포트. go · python 은 **하한 무장(2026-11-02)**,
-// node 는 보고 모드(3 걸음째 — 하한은 CI 관측 셋 뒤).
+// node · rust 는 보고 모드(3 걸음째 — 하한은 CI 관측 셋 뒤).
 //
 // 왜: 아홉 언어가 「경계는 통합으로 검증한다」며 그 파일을 단위 커버리지 게이트에서 빼는데, 통합 실행에서
 // 커버리지를 재는 언어가 0 이었다(등록부 `integration-coverage-never-measured`). 이 스크립트가 그 3 걸음째다 —
@@ -35,6 +35,19 @@
 // 클래스 멤버는 열 2, 여러 줄 몸통은 같은 들여쓰기의 `}` 줄로 닫힌다)으로 이름 범위를 잡고 문장을 그 범위에 붙인다 —
 // 콜백 같은 중첩 함수는 감싼 멤버에 접힌다(go 의 함수 리터럴과 같다). `typescript` 컴파일러에 기대지 않는다 — 자가테스트
 // (doc-facts)에는 node_modules 가 없다.
+// ⚠️ rust 의 수치는 `cargo llvm-cov --lcov` 의 `DA`(줄마다 llvm-cov 자신이 낸 판정)다. 같은 기록의 `LF`·`LH` 와 텍스트
+// 요약의 Lines 는 쓰지 않는다 — 함수 레코드마다 줄을 더해(async fn 은 바깥 함수와 몸통 둘이다) 고유 줄보다 크다(실측
+// 2026-11-05 실제 트리: admin.rs LF 279 · 고유 DA 246). 이름은 소스(rustfmt 모양)에서 읽고 도구의 함수 레코드(`FN`)와
+// **양쪽으로** 대조한다. 레코드가 어느 이름 범위에도 없으면 파서가 항목을 놓친 것이다(FAIL — 그 함수의 줄이 모듈 수준에
+// 섞이면 미실행 목록에서 조용히 빠진다). 이름 범위에 레코드가 없으면 그 함수는 이 실행의 데이터에 **없다** — 크레이트 밖에
+// 안 보이고 아무도 참조 안 한 fn · 인스턴스화 안 된 제네릭 · 한 번도 poll 안 된 async 몸통은 줄째 빠진다(분모에서도 — 실측:
+// 픽스처의 `unused_helper` · 제네릭 `From::from`. `pub` fn 은 모듈이 링크되면 0 회 레코드가 남는다). 그래서 미실행 목록에
+// `no record` 로 든다. 참조 안 된 모듈은 파일째 빠진다(→ 「데이터에 없음」 FAIL — 그 모듈의 오브젝트가 링크되지 않는다). 부른
+// async fn 의 몸통 레코드가 한 번도 안 돌았으면(퓨처를 만들고 버렸다) 그것도 미실행이다 — 줄이 아니라 FNDA 로 잰다(rustReport).
+// `test` 없이는 컴파일되지 않는 항목(`#[cfg(test)]` · 접힌 `#[cfg(all(test, …))]` 도)은 통합 빌드에 없으므로 읽지 않는다 — 그
+// 안에 레코드가 있으면 단위 테스트가 같은 빌드에서 돈 것이라(통합 전용이 아니다) FAIL 이다. 레코드 없이 줄만 있는 범위
+// (`--skip-functions` 로 낸 데이터) · 매크로가 만든 함수(레코드가 `macro_rules!` 몸통을 가리킨다 — 줄을 나눠 써 안 돈 것을
+// 못 가른다)도 FAIL 이다. ⚠️ cfg 쌍둥이 중 「no record」 쪽은 플랫폼마다 다르다 — 소유자는 CI(리눅스) 실행을 기준으로 단다.
 //
 // 종료코드 — 넷을 가른다. 「낮은 수치」는 하한이 무장된 언어에서만 실패다(3):
 //   0 OK     리포트가 섰고, 하한 이상이며, 미실행 함수가 전부 열린 항목 소유다
@@ -43,13 +56,14 @@
 //            함수 영역 회계 불일치·못 읽는 입력·잘못 적은 하한. **이때는 수치를 내지 않는다**(인용될 숫자를 만들지 않는다).
 //   3 BELOW  하한 아래 — 수치는 유효하다. CI 는 실패로 본다. 비교는 정수식(covered × 100 < percent × 분모)이고 같으면 통과다.
 //
-// 사용:
-//   node scripts/integration-coverage.mjs <go|python|node> [--out DIR]                 로컬 — 통합 테스트(Docker) 후 리포트
-//   node scripts/integration-coverage.mjs run    <go|python|node> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
-//   node scripts/integration-coverage.mjs report <go|python|node> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
-//   node scripts/integration-coverage.mjs check  [ROOT]                                 파생 ↔ 핀 ↔ 소유자(데이터·Docker 불필요)
+// 사용(LANG = go · python · node · rust):
+//   node scripts/integration-coverage.mjs <LANG> [--out DIR]                 로컬 — 통합 테스트(Docker) 후 리포트
+//   node scripts/integration-coverage.mjs run    <LANG> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
+//   node scripts/integration-coverage.mjs report <LANG> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
+//   node scripts/integration-coverage.mjs check  [ROOT]                      파생 ↔ 핀 ↔ 소유자(데이터·Docker 불필요)
 // python 인터프리터는 `KCSDK_PY` → `python/.venv` → PATH 의 `python` 순이다. node 는 `node/node_modules` 의 vitest 를
-// 이 node 로 직접 띄운다(npm 을 거치지 않는다 — 윈도의 `npm.cmd` 는 셸 없이 못 띄운다). DIR 기본값은 OS 임시 디렉터리 아래다.
+// 이 node 로 직접 띄운다(npm 을 거치지 않는다 — 윈도의 `npm.cmd` 는 셸 없이 못 띄운다). rust 는 PATH 의 `cargo` 에
+// `cargo-llvm-cov`(+ `llvm-tools-preview`)가 있어야 한다. DIR 기본값은 OS 임시 디렉터리 아래다.
 import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { join, dirname, resolve, posix } from 'node:path'
@@ -59,16 +73,17 @@ import { tmpdir } from 'node:os'
 const PINS = 'scripts/integration-coverage.json'
 const REGISTRY = 'docs/superpowers/plans/remaining-work.md'
 const BOUNDARY = 'scripts/coverage-boundary.mjs'
-const LANGS = ['go', 'python', 'node']
+const LANGS = ['go', 'python', 'node', 'rust']
 // 하한 지표 — go 의 문장은 전부 함수 몸통이고, python 은 lines(import 때 도는 줄 포함)와 bodies(함수 안 문장)가 갈린다.
 // node 는 istanbul 문장이다(모듈 수준 문장은 import 때 돌지만 경계 파일은 거의 전부 클래스 멤버다 — 표가 따로 보인다).
-const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'], node: ['statements'] }
+// rust 는 llvm-cov 의 고유 줄(DA)이다 — import 때 도는 코드가 없다.
+const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'], node: ['statements'], rust: ['lines'] }
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
   if (msg) console.error(msg)
-  console.error('usage: node scripts/integration-coverage.mjs <go|python|node> [--out DIR]')
-  console.error('       node scripts/integration-coverage.mjs run|report <go|python|node> [ROOT] [--out DIR]')
+  console.error('usage: node scripts/integration-coverage.mjs <go|python|node|rust> [--out DIR]')
+  console.error('       node scripts/integration-coverage.mjs run|report <go|python|node|rust> [ROOT] [--out DIR]')
   console.error('       node scripts/integration-coverage.mjs check [ROOT]')
   process.exit(2)
 }
@@ -678,6 +693,504 @@ function nodeReport(d) {
   return { path, files, never }
 }
 
+// ── rust: cargo llvm-cov 의 lcov + 소스의 이름 범위 ───────────────────────────────────────────
+// 주석·문자열·문자 리터럴의 글자를 공백으로 지운다(줄 번호 보존). 블록 주석은 중첩되고(`/* /* */ */`), 문자열은 줄을 넘고,
+// 원시 문자열(`r#"…"#` · `br"…"`)은 같은 수의 `#` 로만 닫힌다(이스케이프 없음). `'` 는 문자 리터럴(`'"'` · `'\''` ·
+// `'\u{7f}'`)과 수명·라벨(`'a` · `'static` · `'outer:`)이 나눠 쓴다 — 닫는 `'` 가 한 글자 뒤에 있을 때만 리터럴이다(`'"'`
+// 를 수명으로 읽으면 그 `"` 가 문자열을 열어 다음 `"` 까지 코드를 지운다). 파일이 열린 문자열·주석 안에서 끝나면 FAIL 이다.
+// `kept` 는 같은 길이의 둘째 사본 — 주석만 지우고 리터럴은 남긴다(cfg 이름 꼬리의 `feature = "x"` 를 원문대로 쓰되, 줄 끝
+// 주석이 소유자 키에 들어가지 않게 한다 — 독립 레그 실측).
+function blankRust(src) {
+  let res = ''
+  let kept = ''
+  let open = false
+  const n = src.length
+  for (let i = 0; i < n; ) {
+    const c = src[i]
+    let j = -1
+    let comment = false
+    if (c === '/' && src[i + 1] === '/') {
+      comment = true
+      j = src.indexOf('\n', i)
+      if (j < 0) j = n
+    } else if (c === '/' && src[i + 1] === '*') {
+      comment = true
+      let depth = 1
+      j = i + 2
+      while (j < n && depth > 0) {
+        if (src[j] === '/' && src[j + 1] === '*') {
+          depth++
+          j += 2
+        } else if (src[j] === '*' && src[j + 1] === '/') {
+          depth--
+          j += 2
+        } else j++
+      }
+      if (depth > 0) open = true
+    } else if ((c === 'r' || c === 'b' || c === 'c') && !/\w/.test(src[i - 1] ?? '')) {
+      const m = /^[bc]?r(#*)"/.exec(src.slice(i, i + 300))
+      if (m) {
+        const close = `"${m[1]}`
+        const k = src.indexOf(close, i + m[0].length)
+        if (k < 0) {
+          open = true
+          j = n
+        } else j = k + close.length
+      }
+    } else if (c === '"') {
+      j = i + 1
+      while (j < n && src[j] !== '"') j += src[j] === '\\' ? 2 : 1
+      if (j >= n) open = true
+      j = Math.min(n, j + 1)
+    } else if (c === "'") {
+      if (src[i + 1] === '\\') {
+        j = i + 3 // 이스케이프된 글자(`\'` 의 `'` 포함)를 건너 닫는 `'` 를 찾는다
+        while (j < n && src[j] !== "'" && src[j] !== '\n') j++
+        j = Math.min(n, j + 1)
+      } else if (i + 1 < n && src[i + 1] !== '\n') {
+        const w = src.codePointAt(i + 1) > 0xffff ? 2 : 1
+        if (src[i + 1 + w] === "'") j = i + 2 + w
+      }
+    }
+    if (j < 0) {
+      res += src[i]
+      kept += src[i++]
+      continue
+    }
+    const blank = src.slice(i, j).replace(/[^\n]/g, ' ')
+    res += blank
+    kept += comment ? blank : src.slice(i, j)
+    i = j
+  }
+  return { text: res, kept, open }
+}
+// 이름 범위 — rustfmt 가 보장하는 모양: 항목은 감싼 것보다 네 칸 깊고, 여러 줄 몸통은 항목의 들여쓰기에서 `}` 한 글자
+// 줄로 닫힌다(빈 몸통만 한 줄 `fn x() {}`). 머리의 끝은 `{` · `;` · `}` 로 끝나는 첫 줄이다(여러 줄 시그니처와 where 절의
+// 줄은 `(` · `,` 로 끝난다) — `;` 이면 몸통 없는 선언(트레이트의 필수 메서드 · extern fn · `mod x;`)이라 범위가 아니다.
+// `fn` 은 범위, `impl` · `trait` · 인라인 `mod` 는 네 칸 안쪽을 다시 읽는다. 함수 안의 클로저 · 중첩 fn · async 몸통은 감싼
+// 함수에 접힌다. `static` · `const` 도 범위다 — 값의 클로저(`LazyLock::new(|| …)`)가 그 줄에 함수 레코드를 낳는다(독립 레그
+// 실측: 범위가 아니면 「범위 밖 레코드」 FAIL). 이름은 rust 의 경로 꼴이다 — `Type::m` · `<Type as Trait>::m`(머리 그대로,
+// 공백만 접는다 — 같은 타입의 `Debug::fmt` 와 `Display::fmt`, `Wrapper<u8>::get` 과 `Wrapper<u16>::get` 이 갈린다) · `mod::f` ·
+// `static NAME`. `#[cfg(…)]` 는 `test` 가 꺼진 빌드(통합 테스트가 링크하는 라이브러리)로 평가한다 — 거짓이면(`test` ·
+// `all(test, …)`) 그 항목은 통합 빌드에 없으므로 읽지 않고, 모르면(`windows` · `feature = …`) 이름 뒤에 붙인다(플랫폼 쌍둥이가
+// 갈린다 — 이 실행에서 컴파일되지 않은 쪽은 `no record` 로 남는다). `macro_rules!` 몸통은 범위가 아니다 — 매크로가 만든
+// 함수의 레코드는 몸통을 가리키고 같은 줄을 나눠 쓰므로, 그중 안 돈 것을 줄로는 가를 수 없다(→ FAIL, rustReport).
+const RS_ID = String.raw`(?:r#)?[\p{XID_Start}_]\p{XID_Continue}*`
+const RS_VIS = String.raw`(?:pub(?:\s*\([^)]*\))?\s+)?`
+// 한정자(그룹 1 — `async` 를 본다) 뒤의 `fn 이름`(그룹 2) — `extern "C"` 의 ABI 문자열은 지운 뒤라 공백이다.
+const RS_FN = new RegExp(String.raw`^(${RS_VIS}(?:(?:default|const|async|unsafe|safe|extern)\s+)*)fn\s+(${RS_ID})`, 'u')
+const RS_IMPL = /^(?:(?:default|unsafe)\s+)*impl\b/
+const RS_TRAIT = new RegExp(String.raw`^${RS_VIS}(?:(?:unsafe|auto)\s+)*trait\s+(${RS_ID})`, 'u')
+const RS_MOD = new RegExp(String.raw`^${RS_VIS}mod\s+(${RS_ID})\s*\{$`, 'u')
+const RS_VALUE = new RegExp(String.raw`^${RS_VIS}(static|const)\s+(?:mut\s+)?(${RS_ID})\s*:`, 'u')
+const RS_MACRO = new RegExp(String.raw`^macro_rules!\s*(${RS_ID})\s*\{$`, 'u')
+// 속성의 경로(`#[a::b(…)]` → `a::b`) — 이 목록과 도구 속성(rustfmt:: · clippy:: · diagnostic::) 밖은 속성 매크로로 본다.
+const RS_ATTR_PATH = new RegExp(String.raw`^#!?\[\s*((?:::\s*)?${RS_ID}(?:\s*::\s*${RS_ID})*)`, 'u')
+const RS_BUILTIN_ATTRS = new Set(
+  ('cfg cfg_attr doc allow warn deny forbid expect must_use inline cold track_caller deprecated non_exhaustive repr derive ' +
+    'automatically_derived no_mangle export_name link_section link_name used target_feature test ignore should_panic ' +
+    'macro_export macro_use path coverage optimize naked instruction_set debugger_visualizer collapse_debuginfo unsafe').split(' '),
+)
+// 속성 하나(`#[…]`, 공백 접은 텍스트)가 속성 매크로인가. `cfg_attr(술어, 속성…)` 은 안쪽 속성들로 가린다 — 경로만 보면 내장이라
+// `#[cfg_attr(…, async_trait::async_trait)]` 이 매크로가 아닌 것으로 읽혔다(독립 레그 5차 실측: poll 한 메서드가 「안 돌았다」).
+function rsMacroAttr(text) {
+  const path = RS_ATTR_PATH.exec(text)?.[1].replace(/\s+/g, '').replace(/^::/, '')
+  if (!path) return false
+  if (path !== 'cfg_attr') return !RS_BUILTIN_ATTRS.has(path) && !/^(?:rustfmt|clippy|diagnostic)::/.test(path)
+  const inner = /^#!?\[\s*cfg_attr\s*\((.*)\)\s*\]$/.exec(text)?.[1] ?? ''
+  const parts = [] // 괄호 깊이 0 의 쉼표로 가른다 — 첫째는 술어다
+  let d = 0
+  let cur = ''
+  for (const c of inner) {
+    if (c === '(' || c === '[' || c === '{') d++
+    else if (c === ')' || c === ']' || c === '}') d--
+    if (c === ',' && d === 0) {
+      parts.push(cur)
+      cur = ''
+    } else cur += c
+  }
+  parts.push(cur)
+  return parts.slice(1).some((p) => p.trim() && rsMacroAttr(`#[${p.trim()}]`))
+}
+// `#[cfg(…)]` 술어를 `test` 가 꺼진 빌드에서 평가한다 — true · false · null(모름: target · feature …). 못 읽는 꼴도 null.
+function cfgEval(expr) {
+  const toks = expr.match(/[\p{XID_Start}_]\p{XID_Continue}*|[(),=]/gu) ?? []
+  let i = 0
+  const pred = () => {
+    const t = toks[i++]
+    if (t === undefined || '(),='.includes(t)) throw new Error('shape')
+    if (toks[i] === '(' && (t === 'all' || t === 'any' || t === 'not')) {
+      i++
+      const vs = []
+      while (toks[i] !== ')') {
+        vs.push(pred())
+        if (toks[i] === ',') i++
+        else if (toks[i] !== ')') throw new Error('shape')
+      }
+      i++
+      if (t === 'not') return vs.length !== 1 || vs[0] === null ? null : !vs[0]
+      if (t === 'all') return vs.includes(false) ? false : vs.every((v) => v === true) ? true : null
+      return vs.includes(true) ? true : vs.every((v) => v === false) ? false : null
+    }
+    if (toks[i] === '=') {
+      i++ // `key = "value"` — 값(문자열)은 지운 뒤라 토큰이 없다
+      return null
+    }
+    return t === 'test' ? false : null
+  }
+  try {
+    const v = pred()
+    return i === toks.length ? v : null
+  } catch {
+    return null
+  }
+}
+// 글자마다 괄호 깊이(`<>` · `()` · `[]`) — `->` · `=>` 의 `>` 는 괄호가 아니다.
+function rsDepths(s) {
+  const at = []
+  let d = 0
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    const arrow = c === '>' && (s[i - 1] === '-' || s[i - 1] === '=')
+    if (!arrow && (c === '>' || c === ')' || c === ']')) d--
+    at.push(d)
+    if (c === '<' || c === '(' || c === '[') d++
+  }
+  return at
+}
+// impl 머리(지운 텍스트, 여러 줄이면 이은 것) → 멤버 이름의 접두. 읽지 못하면 null.
+function rsImplPrefix(head) {
+  let s = head.replace(/\s+/g, ' ').trim().replace(/\s*\{$/, '').replace(/^(?:(?:default|unsafe) )*impl ?/, '')
+  if (s.startsWith('<')) {
+    const at = rsDepths(s)
+    const k = at.findIndex((d, x) => x > 0 && d === 0 && s[x] === '>' && s[x - 1] !== '-' && s[x - 1] !== '=')
+    if (k < 0) return null
+    s = s.slice(k + 1).trim()
+  }
+  const firstAtTop = (re) => {
+    const at = rsDepths(s)
+    for (const m of s.matchAll(re)) if (at[m.index] === 0) return m.index
+    return -1
+  }
+  const w = firstAtTop(/\bwhere\b/g)
+  if (w >= 0) s = s.slice(0, w).trim()
+  if (!s) return null
+  const norm = (x) => x.trim().replace(/<\s+/g, '<').replace(/,?\s*>/g, '>').replace(/\s*::\s*/g, '::')
+  const f = firstAtTop(/ for /g)
+  return f >= 0 ? `<${norm(s.slice(f + 5))} as ${norm(s.slice(0, f))}>::` : `${norm(s)}::`
+}
+function rustFuncs(file) {
+  const raw = readFileSync(join(root, file), 'utf8').replace(/\r\n/g, '\n')
+  const blanked = blankRust(raw)
+  if (blanked.open) {
+    fail('rust', `${file}: a string or block comment runs to the end of the file — the name ranges cannot be read`)
+    return null
+  }
+  const L = blanked.text.split('\n').map((l) => l.replace(/\s+$/, ''))
+  const K = blanked.kept.split('\n') // 주석만 지운 사본 — L 과 글자 자리가 같다
+  const funcs = []
+  const tests = [] // `test` 없이는 컴파일되지 않는 항목의 줄 범위 — 통합 빌드에는 없다
+  const macros = [] // `macro_rules!` 몸통의 줄 범위
+  let ok = true
+  const bad = (k, msg) => {
+    fail('rust', `${file}:${k + 1}: ${msg}`)
+    ok = false
+  }
+  const count = (s, ch) => s.split(ch).length - 1
+  // 속성 하나 — `#[` 에서 짝 맞는 `]` 까지(rustfmt 는 긴 cfg 술어를 여러 줄로 접는다 — 독립 레그 실측: 한 줄만 읽으면 접힌
+  // `all(test, …)` 모듈의 단위 테스트 줄이 통합 커버리지로 셌다). 이름 꼬리(`shown`)는 같은 구간의 K — `]` 뒤 주석은 안 든다.
+  const attrAt = (x, pad) => {
+    let d = 0
+    const text = []
+    const shown = []
+    for (let y = x; y < L.length; y++) {
+      const from = y === x ? pad.length : 0
+      for (let c = from; c < L[y].length; c++) {
+        if (L[y][c] === '[') d++
+        else if (L[y][c] === ']' && --d === 0) {
+          text.push(L[y].slice(from, c + 1))
+          shown.push(K[y].slice(from, c + 1))
+          return { text: text.join(' '), shown: shown.join(' ') }
+        }
+      }
+      text.push(L[y].slice(from))
+      shown.push(K[y].slice(from))
+    }
+    return null
+  }
+  // 항목 위의 속성들(빈 줄 · 같은 들여쓰기의 `#` 줄 · 그보다 깊은 이어진 줄 — 접힌 속성의 몸 · 닫는 `))]` — 을 건넌다).
+  // cfgs — `#[cfg(…)]` 의 값과 이름 꼬리. rewritten — 속성 매크로가 있다(내장 · 도구 속성 밖의 경로). 속성 매크로는 몸통을 다시
+  // 쓸 수 있다 — `#[async_trait]` 은 async 몸통을 블록으로 옮겨 그 레코드가 사라진다(rustReport). 철자가 여럿이라(`::async_trait::
+  // async_trait` · `use … as at; #[at]` — 독립 레그 4차 실측) 이름이 아니라 「내장이 아니다」로 가른다.
+  const attrsOf = (k, pad) => {
+    const cfgs = []
+    let rewritten = false
+    for (let x = k - 1; x >= 0; x--) {
+      if (!L[x]) continue
+      if (L[x].startsWith(`${pad}#`)) {
+        const a = attrAt(x, pad)
+        const text = a ? a.text.replace(/\s+/g, ' ') : ''
+        const m = /^#\[\s*cfg\s*\((.*)\)\s*\]$/.exec(text)
+        if (m) {
+          const shown = a.shown.replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/,?\s+\)/g, ')').replace(/,\)/g, ')')
+          cfgs.push({ value: cfgEval(m[1]), text: shown })
+        }
+        if (rsMacroAttr(text)) rewritten = true
+      } else if (!(L[x].startsWith(`${pad} `) || L[x].startsWith(`${pad})`) || L[x].startsWith(`${pad}]`))) break
+    }
+    return { cfgs, rewritten }
+  }
+  const add = (entry) => {
+    if (funcs.some((f) => f.name === entry.name)) {
+      fail('rust', `${file}: two functions are both named ${entry.name} — the never-executed list cannot tell them apart`)
+      ok = false
+      return false
+    }
+    funcs.push({ records: 0, hit: 0, stmts: 0, covered: 0, ...entry })
+    return true
+  }
+  // static · const 의 끝 — 괄호(`()` · `[]` · `{}`) 깊이 0 의 `;`(rustfmt 는 긴 값을 `=` 뒤에서 더 깊이 접는다).
+  const statementEnd = (k, to) => {
+    let d = 0
+    for (let y = k; y < to; y++)
+      for (const c of L[y]) {
+        if (c === '(' || c === '[' || c === '{') d++
+        else if (c === ')' || c === ']' || c === '}') d--
+        else if (c === ';' && d === 0) return y
+      }
+    return -1
+  }
+  // ctx — prefix(자유 항목 이름 앞) · typePrefix(impl · trait 이름 앞 — `const _` 블록 안에서도 타입 경로는 그대로다) ·
+  // suffix(감싼 컨테이너의 cfg(모름) 꼬리 — 멤버 이름 뒤) · rewritten(감싼 impl · trait 에 속성 매크로).
+  let unnamed = 0
+  const walk = (from, to, ind, ctx) => {
+    const pad = ' '.repeat(ind)
+    for (let k = from; k < to && ok; k++) {
+      const line = L[k]
+      if (line.length <= ind || !line.startsWith(pad) || line[ind] === ' ') continue
+      const t = line.slice(ind)
+      const fn = RS_FN.exec(t)
+      const impl = !fn && RS_IMPL.test(t)
+      const tr = fn || impl ? null : RS_TRAIT.exec(t)
+      const md = fn || impl || tr ? null : RS_MOD.exec(t)
+      const val = fn || impl || tr || md ? null : RS_VALUE.exec(t)
+      const mac = fn || impl || tr || md || val ? null : RS_MACRO.exec(t)
+      if (!fn && !impl && !tr && !md && !val && !mac) continue
+      const { cfgs, rewritten: own } = attrsOf(k, pad)
+      const testOnly = cfgs.some((c) => c.value === false)
+      const tail = `${cfgs
+        .filter((c) => c.value === null)
+        .reverse()
+        .map((c) => ` ${c.text}`)
+        .join('')}${ctx.suffix}`
+      if (val) {
+        const e = statementEnd(k, to)
+        if (e < 0) return bad(k, `cannot find the end of the ${val[1]} item (a ";" outside brackets)`)
+        // `const _` 는 이름이 없다 — 컴파일 때 단언(`const _: () = assert!(…)`)이 보통이라 한 파일에 여럿이어도 정당하다(독립
+        // 레그 실측: 이름으로 두면 「같은 이름 둘」 FAIL). 블록 값(`const _: () = { impl … }`)은 안쪽 항목을 읽는다(레그 3차) — 자유
+        // 항목은 `const _::` 로 가른다(바깥의 같은 이름 fn 과 겹치지 않게 — 레그 4차), impl 의 멤버는 타입에 속하니 타입 경로 그대로다.
+        // 블록이 아닌 값(클로저 · 단언)은 파일 안 순번 `const _#N` 의 범위다(클로저 값은 레코드를 낳는다 — 레그 4차).
+        if (val[2] === '_' && /=\s*\{$/.test(L[k]) && e > k) {
+          if (!testOnly) walk(k + 1, e, ind + 4, { ...ctx, prefix: `${ctx.prefix}const _::`, suffix: tail })
+          k = e
+          continue
+        }
+        const name = val[2] === '_' ? `const ${ctx.prefix}_#${++unnamed}${tail}` : `${val[1]} ${ctx.prefix}${val[2]}${tail}`
+        if (testOnly) tests.push({ start: k + 1, end: e + 1 })
+        else if (!add({ name, start: k + 1, end: e + 1, ind, kind: 'value' })) return
+        k = e
+        continue
+      }
+      let h = k
+      while (h < to && !/[{;}]$/.test(L[h])) h++
+      if (h >= to) return bad(k, 'cannot find the end of the item head')
+      if (L[h].endsWith(';')) {
+        k = h
+        continue
+      }
+      let end = h
+      if (L[h].endsWith('{')) {
+        end = -1
+        for (let y = h + 1; y < to; y++)
+          if (L[y] === `${pad}}`) {
+            end = y
+            break
+          }
+        if (end < 0) return bad(k, `cannot find the end of the item (rustfmt closes a body with "}" at the item's indent)`)
+      } else if (count(L[h], '{') !== count(L[h], '}')) return bad(h, 'a one-line item whose braces do not pair')
+      if (testOnly) tests.push({ start: k + 1, end: end + 1 })
+      else if (mac) macros.push({ name: mac[1], start: k + 1, end: end + 1 })
+      else if (fn) {
+        // async 판정(rustReport)은 몸통이 따로 남는 평범한 async fn 에만 건다 — 자기나 감싼 impl · trait 에 속성 매크로가 있으면
+        // (`#[async_trait]` · `#[tracing::instrument]` …) 보통 fn 처럼 읽는다.
+        const isAsync = /\basync\s/.test(fn[1]) && !own && !ctx.rewritten
+        if (!add({ name: `${ctx.prefix}${fn[2]}${tail}`, start: k + 1, end: end + 1, ind, kind: 'fn', async: isAsync })) return
+      } else if (end > h) {
+        if (md) {
+          const p = `${md[1]}::`
+          walk(h + 1, end, ind + 4, { prefix: `${ctx.prefix}${p}`, typePrefix: `${ctx.typePrefix}${p}`, suffix: tail, rewritten: false })
+        } else {
+          const p = tr ? `${tr[1]}::` : rsImplPrefix(L.slice(k, h + 1).join(' '))
+          if (p === null) return bad(k, 'cannot read the type this impl is for')
+          const base = `${ctx.typePrefix}${p}`
+          walk(h + 1, end, ind + 4, { prefix: base, typePrefix: base, suffix: tail, rewritten: own })
+        }
+      }
+      k = end
+    }
+  }
+  walk(0, L.length, 0, { prefix: '', typePrefix: '', suffix: '', rewritten: false })
+  // 범위 안에서 그 함수와 같은 들여쓰기의 `fn` 머리 — 범위가 닫는 줄을 지나쳐 다음 함수를 삼켰다는 뜻이다.
+  const swallows = (fn, line) => {
+    const pad = ' '.repeat(fn.ind)
+    const t = L[line - 1] ?? ''
+    return line !== fn.start && t.startsWith(pad) && t[fn.ind] !== ' ' && RS_FN.test(t.slice(fn.ind))
+  }
+  return ok ? { funcs, tests, macros, swallows, lines: L.length - (L.at(-1) === '' ? 1 : 0) } : null
+}
+function rustReport(d) {
+  const path = join(out, 'rust.lcov')
+  const shown = path.replace(/\\/g, '/')
+  if (!existsSync(path)) {
+    fail('rust', `no coverage data at ${shown} — run the integration suite first (node scripts/integration-coverage.mjs run rust)`)
+    return null
+  }
+  const recs = new Map()
+  let cur = null
+  for (const l of readFileSync(path, 'utf8').replace(/\r\n/g, '\n').split('\n')) {
+    if (l === '') continue
+    if (l === 'end_of_record') {
+      cur = null
+      continue
+    }
+    // 기록의 줄은 전부 `TAG:` 꼴이다. ⚠️ llvm-cov 의 lcov 는 마지막 줄바꿈 없이 끝난다 — 두 보고서를 `cat` 으로 이으면
+    // `end_of_recordSF:…` 한 줄이 되어 뒤 기록의 줄이 앞 파일에 섞인다(실측). 그런 줄은 못 읽는 줄이다.
+    if (!/^[A-Z]+:/.test(l)) {
+      fail('rust', `cannot read the lcov line: ${l.slice(0, 160)}`)
+      return null
+    }
+    if (l.startsWith('SF:')) {
+      const f = toRepoPath(l.slice(3), d.dir)
+      if (recs.has(f)) {
+        fail('rust', `${f} has two records in ${shown} — the data contradicts itself`)
+        return null
+      }
+      cur = { file: f, da: new Map(), fns: [], fnda: new Map() }
+      recs.set(f, cur)
+      continue
+    }
+    if (!cur || !/^(?:DA|FN|FNDA):/.test(l)) continue
+    const da = /^DA:(\d+),(\d+)(?:,.*)?$/.exec(l)
+    const fnr = da ? null : /^FN:(\d+),(.+)$/.exec(l)
+    const fnda = da || fnr ? null : /^FNDA:(\d+),(.+)$/.exec(l)
+    if (!da && !fnr && !fnda) {
+      fail('rust', `cannot read the lcov line: ${l}`)
+      return null
+    }
+    if (fnda) cur.fnda.set(fnda[2], Number(fnda[1]))
+    else if (fnr) cur.fns.push({ line: Number(fnr[1]), name: fnr[2] })
+    else if (cur.da.has(Number(da[1]))) {
+      fail('rust', `${cur.file}: line ${da[1]} is counted twice in one record — the data contradicts itself`)
+      return null
+    } else cur.da.set(Number(da[1]), Number(da[2]))
+  }
+  if (!recs.size) {
+    fail('rust', `${shown} has no SF records — not an lcov report`)
+    return null
+  }
+  const files = []
+  const never = []
+  for (const f of sortU(d.files)) {
+    const r = recs.get(f)
+    if (!r) {
+      fail('rust', `${f} is not in the coverage data — a boundary file the run never linked would silently leave the denominator (an unreferenced module's object is not linked)`)
+      continue
+    }
+    if (!existsSync(join(root, f))) {
+      fail('rust', `${f} is in the data but not in the tree — the data belongs to another checkout`)
+      continue
+    }
+    const src = rustFuncs(f)
+    if (!src) continue
+    const rangeOf = (x) => src.funcs.find((fn) => x >= fn.start && x <= fn.end)
+    const within = (list, x) => list.find((t) => x >= t.start && x <= t.end)
+    // 레코드의 호출 횟수(FNDA) — async 판정이 쓴다. 횟수 없는 레코드가 하나라도 있으면 그 판정을 할 수 없다(0 으로 읽으면
+    // 돈 몸통을 「안 돌았다」로 낸다). llvm-cov 는 FN 마다 FNDA 를 쓴다.
+    const uncounted = r.fns.find((rec) => !r.fnda.has(rec.name))
+    if (uncounted) {
+      fail('rust', `${f}:${uncounted.line}: the data has a function record (${uncounted.name}) without an FNDA count — whether an async body ran cannot be read`)
+      continue
+    }
+    let broken = false
+    for (const rec of r.fns) {
+      if (within(src.tests, rec.line)) {
+        fail('rust', `${f}:${rec.line}: the data has a function inside an item compiled only with cfg(test) (${rec.name}) — unit tests ran in this build, so the report would not be integration-only`)
+        broken = true
+        break
+      }
+      const mac = within(src.macros, rec.line)
+      if (mac) {
+        fail('rust', `${f}:${rec.line}: the data has a function (${rec.name}) inside macro_rules! ${mac.name} — the functions a macro generates share its lines, so one that never ran cannot be told apart from one that did; keep boundary functions out of macro_rules`)
+        broken = true
+        break
+      }
+      const fn = rangeOf(rec.line)
+      if (!fn || src.swallows(fn, rec.line)) {
+        const where = fn ? `starts at a function head inside ${fn.name}'s range (${fn.start}–${fn.end}) — the range ran past its end` : 'starts outside every name range — the parser missed an item, or code runs at module level'
+        fail('rust', `${f}:${rec.line}: the data has a function (${rec.name}) that ${where}; the never-executed list cannot be trusted`)
+        broken = true
+        break
+      }
+      fn.records++
+      if ((r.fnda.get(rec.name) ?? 0) > 0) fn.hit++
+    }
+    if (broken) continue
+    const outside = { stmts: 0, covered: 0 }
+    let stmts = 0
+    let covered = 0
+    for (const [line, c] of r.da) {
+      if (line < 1 || line > src.lines) {
+        fail('rust', `${f}: the data counts line ${line}, past the end of the file (${src.lines} lines) — the data belongs to another checkout`)
+        broken = true
+        break
+      }
+      stmts++
+      if (c > 0) covered++
+      const fn = rangeOf(line) ?? outside
+      fn.stmts++
+      if (c > 0) fn.covered++
+    }
+    if (broken) continue
+    const mine = []
+    for (const fn of src.funcs) {
+      const at = { file: f, line: fn.start, name: fn.name, stmts: fn.stmts }
+      if (!fn.records) {
+        // 줄은 함수 레코드의 영역에서만 나온다 — 레코드 없이 줄이 있으면 데이터가 함수 레코드를 뺐다(`--skip-functions`).
+        if (fn.stmts) {
+          fail('rust', `${f}:${fn.start}: the data counts ${fn.stmts} line(s) inside ${fn.name} but has no function record there — a report without function records (cargo llvm-cov --skip-functions?) cannot name never-executed functions`)
+          broken = true
+          break
+        }
+        // 레코드가 없는 fn — 크레이트 밖에 안 보이고 아무도 참조 안 한 fn · 인스턴스화 안 된 제네릭 · 이 빌드에서 cfg 로 빠진 쌍둥이.
+        // static · const 는 코드가 없는 것이 보통이라(문자열 상수) 레코드가 없어도 목록에 올리지 않는다.
+        if (fn.kind === 'fn') mine.push({ ...at, label: 'no record in the data' })
+      } else if (fn.stmts > 0 && fn.covered === 0) mine.push(at)
+      // 부른 async fn 은 퓨처만 만든다 — 몸통은 poll 될 때 도는 별도 레코드다. 범위 안에서 횟수 > 0 인 레코드가 바깥 함수 하나뿐이면
+      // 몸통은 안 돌았다(퓨처를 만들고 버렸다 — 독립 레그 실측: 바깥 `FNDA:1`). 줄로는 못 잰다 — 주석뿐인 몸통을 poll 하면 DA 는
+      // 머리·닫는 줄뿐이다(실측). ⚠️ 속성 매크로가 붙은 async fn(자기나 감싼 impl · trait 에 — rustFuncs)은 이 판정에서 뺀다 —
+      // `#[async_trait]` 의 몸통(async 블록)은 레코드도 DA 도 안 남는다(실측, async-trait 0.1.92 · rustc 1.89: poll 한 메서드도 버린
+      // 메서드도 머리·닫는 줄에 바깥 횟수뿐). 이 판정을 걸면 돈 메서드가 전부 「안 돌았다」가 된다(독립 레그 3차) — 그래서 보통 fn
+      // 처럼 「부르면 실행」이다. 한계 둘: 속성 매크로 async fn 의 버린 퓨처 · 제네릭 · 기본 메서드 async fn 을 두 타입으로 부르고
+      // 하나도 poll 안 한 것은 실행으로 읽힌다(바깥 레코드 둘).
+      else if (fn.async && fn.hit < 2) mine.push({ ...at, label: 'called, but its async body never ran' })
+    }
+    if (broken) continue
+    files.push({ file: f, stmts, covered, outside })
+    never.push(...mine)
+  }
+  return { path, files, never }
+}
+
 // ── report ───────────────────────────────────────────────────────────────────────────────
 function emitFindings(l) {
   for (const f of findings) if (f.lang === l || f.lang === null) console.log(`${f.kind} [${f.lang ?? '-'}] ${f.msg}`)
@@ -687,7 +1200,8 @@ function report(l) {
   const pin = pinFor(l)
   const reg = loadRegistry()
   if (d && pin) matchesPin(l, d, pin)
-  const data = fails(l) ? null : l === 'go' ? goReport(d) : l === 'node' ? nodeReport(d) : pyReport(d)
+  const reader = { go: goReport, python: pyReport, node: nodeReport, rust: rustReport }[l]
+  const data = fails(l) ? null : reader(d)
   if (data && !fails(l)) {
     const tot = data.files.reduce((a, f) => ({ stmts: a.stmts + f.stmts, covered: a.covered + f.covered }), { stmts: 0, covered: 0 })
     // 아무 경계 문장도 안 돈 실행은 「낮은 수치」가 아니라 측정 실패다(테스트가 경계를 한 줄도 안 지나고 통과할 수 없다).
@@ -699,7 +1213,7 @@ function report(l) {
         ? data.files.reduce((a, f) => ({ stmts: a.stmts + f.bodies.stmts, covered: a.covered + f.bodies.covered }), { stmts: 0, covered: 0 })
         : tot
     if (ran.covered === 0) {
-      const scope = l === 'python' ? 'boundary statements inside functions' : 'boundary statements'
+      const scope = l === 'python' ? 'boundary statements inside functions' : l === 'rust' ? 'boundary lines' : 'boundary statements'
       const why = l === 'python' && tot.covered ? `import alone credits ${tot.covered} module-level lines` : 'did the integration tests run against this tree?'
       fail(l, `the run executed 0 of ${ran.stmts} ${scope} — a measurement failure, not a low number (${why})`)
     } else {
@@ -724,7 +1238,7 @@ function report(l) {
   }
   const t = data.files.reduce((a, f) => ({ stmts: a.stmts + f.stmts, covered: a.covered + f.covered }), { stmts: 0, covered: 0 })
   const b = data.files.reduce((a, f) => ({ stmts: a.stmts + (f.bodies?.stmts ?? 0), covered: a.covered + (f.bodies?.covered ?? 0) }), { stmts: 0, covered: 0 })
-  let head = `${t.covered}/${t.stmts} statements (${pct(t.covered, t.stmts)})`
+  let head = `${t.covered}/${t.stmts} ${l === 'rust' ? 'lines' : 'statements'} (${pct(t.covered, t.stmts)})`
   if (l === 'python') head = `lines ${t.covered}/${t.stmts} (${pct(t.covered, t.stmts)}) · bodies ${b.covered}/${b.stmts} (${pct(b.covered, b.stmts)})`
   const n = data.never.length
   const fns = n ? `${n} never-executed function${n > 1 ? 's' : ''}` : 'no never-executed functions'
@@ -745,12 +1259,14 @@ function report(l) {
   return 0
 }
 function printReport(l, d, data, tot, pin) {
-  const stmt = (k) => `${k} stmt${k > 1 ? 's' : ''}`
+  const unit = l === 'rust' ? 'line' : 'stmt'
+  const stmt = (k) => `${k} ${unit}${k > 1 ? 's' : ''}`
   console.log(`[${l}] integration-only coverage — ${floorText(pin) ?? 'report mode, no floor'}`)
   console.log(`  boundary: ${d.files.length} files derived from ${d.site} (${d.label}) — equal to the pin in ${PINS}`)
   console.log(`  data: ${data.path.replace(/\\/g, '/')}`)
-  if (l === 'go' || l === 'node') {
-    // 어느 이름 범위에도 속하지 않는 문장 — go 의 패키지 수준 함수 리터럴, node 의 모듈·클래스 수준 문장.
+  if (l !== 'python') {
+    // 어느 이름 범위에도 속하지 않는 문장 — go 의 패키지 수준 함수 리터럴, node 의 모듈·클래스 수준 문장, rust 의 항목 밖 줄
+    // (매크로가 펼친 코드가 항목 밖 자리를 가리킬 때 — 함수 레코드가 범위 밖이면 그 전에 FAIL 이다).
     const level = l === 'go' ? 'package-level' : 'module-level'
     for (const f of data.files) {
       const pkg = f.outside.stmts ? ` (${level} ${f.outside.covered}/${f.outside.stmts})` : ''
@@ -769,8 +1285,9 @@ function printReport(l, d, data, tot, pin) {
   }
   // 표와 같은 순서(코드 단위) — localeCompare 는 `admin_users.go` 를 `admin.go` 앞에 둔다.
   const never = [...data.never].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))
-  console.log(`  never executed by the integration run — ${never.length} function${never.length === 1 ? '' : 's'} (none of its statements ran):`)
-  for (const x of never) console.log(`  NEVER ${x.file}:${x.line} ${x.name} · ${stmt(x.stmts)} · owner ${x.owner}`)
+  const what = l === 'rust' ? 'none of its lines ran, its async body never ran, or the data has no record of it' : 'none of its statements ran'
+  console.log(`  never executed by the integration run — ${never.length} function${never.length === 1 ? '' : 's'} (${what}):`)
+  for (const x of never) console.log(`  NEVER ${x.file}:${x.line} ${x.name} · ${x.label ?? stmt(x.stmts)} · owner ${x.owner}`)
 }
 
 // ── check — 데이터 없이: 파생 ↔ 핀 ↔ 소유자 ───────────────────────────────────────────────
@@ -840,6 +1357,13 @@ function run(l) {
     const prof = join(out, 'go.cover')
     rmSync(prof, { force: true })
     return spawnStep('go', ['test', '-tags=integration', '-run', 'TestE2E', '-count=1', `-coverprofile=${prof}`, './...'], cwd)
+  }
+  if (l === 'rust') {
+    const lcov = join(out, 'rust.lcov')
+    rmSync(lcov, { force: true })
+    // 통합 대상 하나만 — 라이브러리가 cfg(test) 없이 링크된다(단위 테스트가 같은 빌드에서 돌면 리포트가 FAIL 한다).
+    // `--locked` 는 레인의 다른 빌드와 같은 이유다(커밋된 Cargo.lock 그대로).
+    return spawnStep('cargo', ['llvm-cov', '--locked', '--test', 'integration_test', '--lcov', '--output-path', lcov, '--', '--ignored'], cwd)
   }
   const common = commonDir(d.files)
   if (l === 'node') {
