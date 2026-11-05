@@ -1632,6 +1632,11 @@ function run(l) {
     // 한다 — include 를 더할 뿐이라 `<exclude>` 의 경계 파일이 그대로 빠진다(PHPUnit 12 Merger.php). 실행 뒤 지운다.
     const cfg = join(cwd, 'phpunit.xml')
     const phpunit = join(cwd, 'vendor', 'bin', 'phpunit')
+    // 옛 데이터와 그 기록은 **먼저** 지운다 — 아래에서 일찍 멈추면 지난 성공한 실행의 데이터 · 기록이 남아, 다음 report 가 낡은
+    // 수치를 OK 로 냈다(독립 레그 3차 실측: vendor/bin/phpunit 을 치운 run → rc 2 · 옛 기록 그대로 → report OK 141/235).
+    const xdir = join(out, 'php')
+    rmSync(xdir, { recursive: true, force: true })
+    rmSync(PHP_RUN(), { force: true })
     const stop = (msg) => {
       fail(l, msg)
       emitFindings(l)
@@ -1650,9 +1655,6 @@ function run(l) {
     const at = blocks[0].index
     const gen = join(cwd, '.integration-coverage.phpunit.xml')
     writeFileSync(gen, xml.slice(0, at) + source + xml.slice(at + blocks[0][0].length))
-    const xdir = join(out, 'php')
-    rmSync(xdir, { recursive: true, force: true })
-    rmSync(PHP_RUN(), { force: true })
     let rc
     try {
       // 같은 `--testsuite integration` 이다(레인의 명령). Xdebug 는 `XDEBUG_MODE=coverage` 없이는 아무것도 안 잰다 — pcov 는 무시한다.
