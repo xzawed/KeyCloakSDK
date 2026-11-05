@@ -39,6 +39,7 @@
     }
   },
   "node": {
+    "floor": { "metric": "statements", "percent": 86.5 },
     "pinned": [
       "node/src/auth.ts",
       "node/src/index.ts"
@@ -51,6 +52,7 @@
     }
   },
   "rust": {
+    "floor": { "metric": "lines", "percent": 88.6 },
     "pinned": [
       "rust/src/admin.rs",
       "rust/src/auth.rs",
