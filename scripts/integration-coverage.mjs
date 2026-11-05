@@ -1225,6 +1225,8 @@ function xmlTags(src) {
   return tags
 }
 const xmlCount = (v) => (/^\d+$/.test(v ?? '') ? Number(v) : NaN)
+// `run php` 의 기록(종료코드 · index.xml 의 sha1) — 데이터 디렉터리 옆에 둔다(그 디렉터리는 run 이 매번 지우고 PHPUnit 이 쓴다).
+const PHP_RUN = () => join(out, 'php.run.json')
 // 짧은 이름 — `Xzawed\Keycloak\Admin\AdminClient` → `AdminClient`, 함수 `Fixture\…\adminHelper` → `adminHelper`.
 const phpShort = (n) => n.slice(n.lastIndexOf('\\') + 1)
 // 통합 스위트의 테스트 클래스 — 단위 설정 `<testsuite name="integration">` 의 `<directory>`(suffix · prefix — 기본 `Test.php`)
@@ -1288,13 +1290,13 @@ function phpReport(d) {
     fail('php', `${shown}/index.xml is not a PHPUnit code-coverage XML report (no <phpunit><project source>) — run writes --coverage-xml`)
     return null
   }
-  // 데이터가 통합 스위트의 성공한 실행에서 났는가 — index.xml 의 <tests> 는 경계 줄을 **하나라도 돈** 테스트와 그 결과다
-  // (php-code-coverage `CodeCoverage::append` 는 걸러 낸 줄 커버리지가 비면 테스트를 등록하기 전에 돌아간다 — 실측: 경계를
-  // 안 지나는 ZeroIT 는 실리지 않는다). 단위 테스트가 섞였거나(통합 전용이 아니다) 실패한 실행이면(PHPUnit 은 실패해도 XML 을
-  // 쓴다) 수치가 그 스위트의 것이 아니다 — 독립 레그 실측: 생성 설정에 `--testsuite unit --filter …`(단위 26 개)로 돌린 데이터를
-  // 이 리더가 수치로 냈다(소유 문제 exit 1 — CI 의 `[ "$rc" -le 1 ]` 를 지난다). ⚠️ 한계: 스위트의 일부 클래스만 거른 실행은 못
-  // 가른다 — 경계를 안 지나는 IT 클래스는 원래 안 실리므로 「다 돌았나」를 이 데이터로 재면 거짓 FAIL 이다. CI 의 run 은 거르지
-  // 않는다.
+  // 데이터가 통합 스위트의 실행에서 났는가 — index.xml 의 <tests> 는 그 테스트 동안 경계 파일이 **실린**(컴파일된) 테스트와 그
+  // 결과다: php-code-coverage `CodeCoverage::append` 는 걸러 낸 파일 맵이 비면(`lineCoverage() === []`) 등록 전에 돌아가고,
+  // Xdebug 는 실린 파일의 안 돈 줄도 넘긴다(`XDEBUG_CC_UNUSED` — 독립 레그 2차 실측: `class_exists` 만 한 테스트도 실린다).
+  // 실측: 경계 파일을 안 싣는 ZeroIT 는 안 실린다. 단위 테스트가 섞였거나(통합 전용이 아니다) 실린 테스트가 실패했으면 FAIL —
+  // 독립 레그 1차 실측: 생성 설정에 `--testsuite unit --filter …`(단위 26 개)로 돌린 데이터를 이 리더가 수치로 냈다(소유 문제
+  // exit 1 — CI 의 `[ "$rc" -le 1 ]` 를 지난다). 경계에 닿기 전에 실패한 테스트 · 일부 클래스만 거른 실행은 이 목록으로 못
+  // 가른다 — 그것은 끝의 run 기록(종료코드 · index.xml 해시)이 막는다.
   const suite = phpIntegrationClasses(d)
   if (!suite) return null
   const tests = tags.filter((t) => !t.close && t.name === 'test')
@@ -1420,6 +1422,29 @@ function phpReport(d) {
   // 줄이 돌았는데 그 줄을 돈 테스트가 하나도 안 실렸다 — 위 판정(스위트 · 결과)을 건너뛴 데이터다.
   if (!tests.length && files.some((f) => f.covered > 0)) {
     fail('php', `${shown}/index.xml counts executed lines but lists no tests — the data contradicts itself`)
+    return null
+  }
+  // run 기록 — 이 데이터를 `run php`(거르지 않은 통합 스위트)가 썼고 그 실행이 성공했는가. 손으로 돌린 실행 · 거른 실행 ·
+  // 실패한 실행(경계에 닿기 전에 실패한 테스트는 위 목록에 안 실린다)의 데이터는 수치를 내지 않는다. 다른 판정 뒤에 둔다 —
+  // 데이터가 스스로 모순이면 그 문구가 먼저다.
+  const runRec = PHP_RUN()
+  let rec = null
+  try {
+    rec = JSON.parse(readFileSync(runRec, 'utf8'))
+  } catch {
+    rec = null
+  }
+  if (!rec || rec.run !== 'php') {
+    fail('php', `no record that \`run php\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs run php) so the report can tell a complete, successful run`)
+    return null
+  }
+  if (rec.exit !== 0) {
+    fail('php', `the run that wrote this data exited ${rec.exit} — the data of a failed run is partial (a test that fails before it reaches the boundary is not in the data at all)`)
+    return null
+  }
+  const indexSha = createHash('sha1').update(readFileSync(index)).digest('hex')
+  if (rec.index_sha1 !== indexSha) {
+    fail('php', `${shown}/index.xml is not the data \`run php\` recorded (sha1 ${String(rec.index_sha1).slice(0, 12)}… recorded, ${indexSha.slice(0, 12)}… now) — another run wrote over it`)
     return null
   }
   const note = `driver ${driver.name ?? '?'} ${driver.version ?? '?'} · php-code-coverage ${build.coverage ?? '?'}`
@@ -1627,15 +1652,26 @@ function run(l) {
     writeFileSync(gen, xml.slice(0, at) + source + xml.slice(at + blocks[0][0].length))
     const xdir = join(out, 'php')
     rmSync(xdir, { recursive: true, force: true })
+    rmSync(PHP_RUN(), { force: true })
+    let rc
     try {
       // 같은 `--testsuite integration` 이다(레인의 명령). Xdebug 는 `XDEBUG_MODE=coverage` 없이는 아무것도 안 잰다 — pcov 는 무시한다.
-      return spawnStep('php', [phpunit, '--configuration', gen, '--testsuite', 'integration', '--coverage-xml', xdir], cwd, {
+      rc = spawnStep('php', [phpunit, '--configuration', gen, '--testsuite', 'integration', '--coverage-xml', xdir], cwd, {
         ...process.env,
         XDEBUG_MODE: 'coverage',
       })
     } finally {
       rmSync(gen, { force: true })
     }
+    // 이 실행의 기록 — report 가 데이터를 이 실행에 묶는다(종료코드 · 그 index.xml 의 sha1). PHPUnit 은 실패한 실행에도 XML 을
+    // 쓰고, 경계에 닿기 전에 실패한 테스트(`setUpBeforeClass` 가 던진 클래스 전체)는 데이터의 <tests> 에 아예 안 실린다 — 독립
+    // 레그 2차 실측: 그런 실행을 따로 report 하면 77/235 · exit 1 로 지나갔다.
+    const index = join(xdir, 'index.xml')
+    if (existsSync(index)) {
+      const sha = createHash('sha1').update(readFileSync(index)).digest('hex')
+      writeFileSync(PHP_RUN(), `${JSON.stringify({ run: 'php', exit: rc, index_sha1: sha })}\n`)
+    }
+    return rc
   }
   const common = commonDir(d.files)
   if (l === 'node') {

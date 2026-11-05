@@ -79,6 +79,12 @@ php_data() { # fixture-dir
   rm -rf "$D/php"
   cp -r "$1" "$D/php"
   sed -i "s#@ROOT@#$_r#g" "$D/php/index.xml"
+  php_mark 0
+}
+# `run php` 의 기록(종료코드 · 지금 index.xml 의 sha1)을 쓴다 — run 이 쓰는 것과 같은 꼴. 데이터를 고친 뒤 OK 를 기대하는
+# 단언은 이것을 다시 불러야 한다(기록 뒤 바뀐 데이터는 FAIL 이다).
+php_mark() { # exit
+  printf '{"run":"php","exit":%s,"index_sha1":"%s"}\n' "$1" "$(sha1sum "$D/php/index.xml" | cut -d' ' -f1)" > "$D/php.run.json"
 }
 run() {
   git -C "$T" add -A
@@ -222,6 +228,7 @@ assert_line "$OUT" "integration-coverage [php]: OK — 16/22 lines (72.7%) · 4 
 fresh
 sed -i 's#\\php\\src"#/php/src"#' "$D/php/index.xml"
 assert_contains "$(cat "$D/php/index.xml")" '/php/src"' "(변이가 착지했는지 먼저 본다)"
+php_mark 0
 run report php "$T" --out "$D"
 assert_eq 0 "$RC" "[php] / 경로도 같은 트리다 — 출력: $OUT"
 assert_line "$OUT" "  total 16/22 72.7%" "[php] / 경로에서도 같은 합계"
@@ -666,6 +673,24 @@ sed -i '/<testsuite name="integration">/d' "$T/php/phpunit.xml"
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] 통합 스위트 정의가 없으면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" 'php/phpunit.xml must define exactly one <testsuite name="integration"> (found 0)' "[php] 스위트 없음"
+# run 기록 — 이 데이터를 `run php` 가 썼고 그 실행이 성공했는가(독립 레그 2차: 경계에 닿기 전에 실패한 테스트는 <tests> 에
+# 아예 안 실려, 실패한 실행을 따로 report 하면 77/235 · exit 1 로 지나갔다).
+fresh
+rm "$D/php.run.json"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] run 기록이 없으면 exit 2(손으로 돌린 실행) — 출력: $OUT"
+assert_contains "$OUT" "no record that \`run php\` wrote this data" "[php] 기록 없음"
+fresh
+php_mark 2
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 실패한 실행의 기록이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] the run that wrote this data exited 2 — the data of a failed run is partial" "[php] 실패 종료"
+assert_not_contains "$OUT" "  total " "[php] 실패한 실행은 수치를 내지 않는다"
+fresh
+printf '%s\n' '<!-- another run wrote over the data -->' >> "$D/php/index.xml"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 기록 뒤 바뀐 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "is not the data \`run php\` recorded" "[php] 기록과 다른 데이터"
 # suffix 를 안 적은 <directory> 는 PHPUnit 기본(`Test.php`)으로 고른다 — `*IT.php` 는 하나도 안 든다.
 fresh
 sed -i 's#<directory suffix="IT.php">tests/Integration</directory>#<directory>tests/Integration</directory>#' "$T/php/phpunit.xml"
