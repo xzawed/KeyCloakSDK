@@ -28,9 +28,10 @@
 #                          debug_assertions))]` 함수의 레코드가 든다
 # 구동기는 「String·Close·Delete·AuthClient.String·hook 리터럴」과 「__repr__·logout·clients·aio 전체」를, node 는
 # 「describe·toString·[SYM]·inc·cb·set count·overload·longSignature·close」를, rust 는 「transport·supply·describe·noop·close·
-# Display::fmt·Wrapper<u16>::get·admin·unused_count」를 일부러 안 부르고 `delete_user` 의 퓨처는 만들기만 하고 버린다(rust 의
-# `unused_helper` · 제네릭 `From::from` 은 아무도 참조하지 않아, `platform` 의 `not(windows)` 쌍둥이는 생성한 윈도에서 컴파일되지
-# 않아 데이터에 레코드가 없다). 숫자를 바꾸려면 구동기를 다시 써서 **도구로 재생성**할 것 — 데이터를 손으로 고치지 않는다.
+# Display::fmt·Wrapper<u16>::get·admin·unused_count」를 일부러 안 부르고 `delete_user` 의 퓨처는 만들기만 하고 버리며, 주석뿐인
+# async `warm_up` 은 poll 한다(rust 의 `unused_helper` · 제네릭 `From::from` 은 아무도 참조하지 않아, `platform` 의 `not(windows)` ·
+# `family` 의 `any(linux …)` 쌍둥이는 생성한 윈도에서 컴파일되지 않아 데이터에 레코드가 없다). 숫자를 바꾸려면 구동기를 다시 써서
+# **도구로 재생성**할 것 — 데이터를 손으로 고치지 않는다.
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
@@ -83,7 +84,7 @@ assert_line "$OUT" "[go] pin OK — 3 files equal the derivation from .github/wo
 assert_line "$OUT" "[python] pin OK — 3 files equal the derivation from python/pyproject.toml:8 ([tool.coverage] omit)" "[check] python 핀 = 파생"
 assert_line "$OUT" "[node] pin OK — 2 files equal the derivation from node/vitest.config.ts:9 (vitest coverage.exclude)" "[check] node 핀 = 파생"
 assert_line "$OUT" "[rust] pin OK — 3 files equal the derivation from .github/workflows/rust-ci.yml:7 (cargo llvm-cov --ignore-filename-regex)" "[check] rust 핀 = 파생"
-assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 files pinned · 33 owner entries, all open" "[check] 요약"
+assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 files pinned · 34 owner entries, all open" "[check] 요약"
 
 run report go "$T" --out "$D"
 assert_eq 0 "$RC" "[go] 건강한 리포트는 exit 0 — 출력: $OUT"
@@ -143,7 +144,7 @@ done
 assert_line "$OUT" "integration-coverage [node]: OK — 21/34 statements (61.8%) · 12 never-executed functions, all owned by open registry items" "[node] 요약"
 
 # rust — 이름은 소스(rustfmt 모양)에서 읽고 llvm-cov 의 함수 레코드(FN)와 양쪽으로 대조한다. 수치는 고유 줄(DA)이다 —
-# 같은 데이터의 LF 합 142 는 async fn 의 바깥 함수·몸통이 같은 줄을 두 번 센 것이다. 각 줄이 재는 것: 중첩 블록 주석 ·
+# 같은 데이터의 LF 합 148 은 async fn 의 바깥 함수·몸통이 같은 줄을 두 번 센 것이다. 각 줄이 재는 것: 중첩 블록 주석 ·
 # 원시 문자열 · 여러 줄 문자열 속 `fn …{`·`    }` 가 항목을 열고 닫지 않는다 · 문자 리터럴 `'"'`·`'{'` 와 수명 `'a` ·
 # 빈 몸통 한 줄 fn · 같은 타입의 `Debug::fmt`/`Display::fmt` 와 `Wrapper<u8>`/`Wrapper<u16>` 이 갈린다 · 레코드 없는 함수
 # (아무도 참조 안 한 fn · 인스턴스화 안 된 제네릭 · 이 빌드에서 cfg 로 빠진 쌍둥이)도 미실행이다 · 퓨처만 만들고 버린 async fn
@@ -153,8 +154,8 @@ run report rust "$T" --out "$D"
 assert_eq 0 "$RC" "[rust] 건강한 리포트는 exit 0 — 출력: $OUT"
 assert_line "$OUT" "  rust/src/admin.rs 34/39 87.2%" "[rust] admin.rs — 열 4 의 } 를 품은 최상위 fn · async 메서드 · 트레이트 impl 의 async fn"
 assert_line "$OUT" "  rust/src/auth.rs 51/69 73.9%" "[rust] auth.rs — 범위 밖 줄이 없다(module-level 이 안 찍힌다)"
-assert_line "$OUT" "  rust/src/client.rs 21/28 75.0%" "[rust] client.rs — static 클로저 줄은 그 static 의 범위다(모듈 수준이 아니다)"
-assert_line "$OUT" "  total 106/136 77.9%" "[rust] 합계는 경계 파일만(config.rs · lib.rs 제외) — LF 합(142)이 아니라 고유 줄"
+assert_line "$OUT" "  rust/src/client.rs 26/33 78.8%" "[rust] client.rs — static 클로저 줄은 그 static 의 범위다(모듈 수준이 아니다)"
+assert_line "$OUT" "  total 111/141 78.7%" "[rust] 합계는 경계 파일만(config.rs · lib.rs 제외) — LF 합(148)이 아니라 고유 줄"
 assert_line "$OUT" "  NEVER rust/src/admin.rs:21 transport · 3 lines · owner open-admin" "[rust] 안 탄 오류 갈래에서만 불리는 최상위 fn"
 assert_line "$OUT" "  NEVER rust/src/admin.rs:54 AdminClient::delete_user · called, but its async body never ran · owner open-admin" "[rust] 퓨처를 만들고 버린 async fn — 바깥 함수는 돌았고(FNDA 1) 몸통 줄은 데이터에 없다"
 assert_line "$OUT" "  NEVER rust/src/admin.rs:64 <AdminClient as Supplier>::supply · 1 line · owner open-admin" "[rust] 트레이트 impl 의 async fn — <타입 as 트레이트>::"
@@ -167,11 +168,12 @@ assert_line "$OUT" "  NEVER rust/src/auth.rs:109 <Wrapper<usize> as From<&'a [T]
 assert_line "$OUT" "  NEVER rust/src/auth.rs:129 unused_helper · no record in the data · owner open-admin" "[rust] 아무도 참조 안 한 fn 도 레코드가 없다"
 assert_line "$OUT" "  NEVER rust/src/client.rs:25 KeycloakClient::admin · 3 lines · owner open-admin" "[rust] client.rs"
 assert_line "$OUT" "  NEVER rust/src/client.rs:37 unused_count · 3 lines · owner open-admin" "[rust] pub fn 은 안 불려도 0 회 레코드가 남는다"
-assert_line "$OUT" "  NEVER rust/src/client.rs:47 platform #[cfg(not(windows))] · no record in the data · owner open-admin" "[rust] cfg 쌍둥이는 이름에 cfg 가 붙어 갈린다 — 컴파일 안 된 쪽은 레코드가 없다"
-for _x in hidden doc_fake raw_fake string_fake tests:: "platform #[cfg(windows)]" exchange_rejects_empty AuthClient::new AuthClient::realm AuthClient::exchange AuthClient::apply "AuthClient::token ·" fmt::Debug token_twice token_now "Wrapper<u8>" " helper ·" inner:: nested_level encode AdminClient::send get_user search_users KeycloakClient::new KeycloakClient::auth config.rs lib.rs module-level debug_tests "static GREETING" "static UNUSED" "const BANNER" größe; do
+assert_line "$OUT" "  NEVER rust/src/client.rs:47 platform #[cfg(not(windows))] · no record in the data · owner open-admin" "[rust] cfg 쌍둥이는 이름에 cfg 가 붙어 갈린다 — 컴파일 안 된 쪽은 레코드가 없다 · 속성 뒤 주석은 이름에 안 든다"
+assert_line "$OUT" "  NEVER rust/src/client.rs:81 family #[cfg(any(target_os = \"linux\", target_os = \"macos\", target_os = \"freebsd\", target_os = \"openbsd\"))] · no record in the data · owner open-admin" "[rust] rustfmt 가 접은 cfg 는 이어 읽어 한 줄 이름이 된다"
+for _x in hidden doc_fake raw_fake string_fake tests:: "platform #[cfg(windows)]" exchange_rejects_empty AuthClient::new AuthClient::realm AuthClient::exchange AuthClient::apply "AuthClient::token ·" fmt::Debug token_twice token_now "Wrapper<u8>" " helper ·" inner:: nested_level encode AdminClient::send get_user search_users KeycloakClient::new KeycloakClient::auth config.rs lib.rs module-level debug_tests "static GREETING" "static UNUSED" "const BANNER" größe "every other platform" "const _" warm_up "family #[cfg(not("; do
   assert_not_contains "$OUT" "$_x" "[rust] 실행된 함수 · 경계 밖 · 주석·문자열 속 이름 · cfg(test) · 코드 없는 상수는 목록에 없다: $_x"
 done
-assert_line "$OUT" "integration-coverage [rust]: OK — 106/136 lines (77.9%) · 13 never-executed functions, all owned by open registry items" "[rust] 요약"
+assert_line "$OUT" "integration-coverage [rust]: OK — 111/141 lines (78.7%) · 14 never-executed functions, all owned by open registry items" "[rust] 요약"
 
 # Linux 의 llvm-cov 는 SF 를 `/` 로 쓴다 — 윈도에서 만든 `\` 와 같은 리포트여야 한다.
 fresh
@@ -179,7 +181,7 @@ sed -i '/^SF:/s#\\#/#g' "$D/rust.lcov"
 assert_contains "$(cat "$D/rust.lcov")" "/rust/src/auth.rs" "(변이가 착지했는지 먼저 본다)"
 run report rust "$T" --out "$D"
 assert_eq 0 "$RC" "[rust] / 경로도 같은 파일이다 — 출력: $OUT"
-assert_line "$OUT" "  total 106/136 77.9%" "[rust] / 경로에서도 같은 합계"
+assert_line "$OUT" "  total 111/141 78.7%" "[rust] / 경로에서도 같은 합계"
 # static 의 클로저가 안 돌았다(데이터의 그 줄들을 0 으로) — 그 static 이 미실행으로 든다. 클로저 몸통의 `;` 는 static 을 끝내지
 # 않는다(괄호 깊이 0 의 `;` 만 끝이다 — 아니면 몸통 줄이 모듈 수준으로 샌다). 코드 없는 상수는 그래도 안 든다.
 fresh
@@ -362,7 +364,7 @@ sed -i '/^SF:.*client\.rs$/,/^end_of_record$/s/^DA:27,0$/DA:400,0/' "$D/rust.lco
 assert_contains "$(cat "$D/rust.lcov")" "DA:400,0" "(변이가 착지했는지 먼저 본다)"
 run report rust "$T" --out "$D"
 assert_eq 2 "$RC" "[rust] 파일 끝 뒤의 줄은 exit 2 — 출력: $OUT"
-assert_contains "$OUT" "FAIL [rust] rust/src/client.rs: the data counts line 400, past the end of the file (62 lines)" "[rust] 다른 체크아웃"
+assert_contains "$OUT" "FAIL [rust] rust/src/client.rs: the data counts line 400, past the end of the file (97 lines)" "[rust] 다른 체크아웃"
 fresh
 sed -i '/^SF:.*client\.rs$/a DA:oops' "$D/rust.lcov"
 run report rust "$T" --out "$D"
@@ -403,7 +405,7 @@ rust_data "$FIX/data/rust-unit.lcov"
 run report rust "$T" --out "$D"
 assert_eq 2 "$RC" "[rust] cfg(test) 함수의 레코드가 있으면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [rust] rust/src/auth.rs:161: the data has a function inside an item compiled only with cfg(test) (" "[rust] cfg(test) 자리를 댄다"
-assert_contains "$OUT" "FAIL [rust] rust/src/client.rs:58: the data has a function inside an item compiled only with cfg(test) (" "[rust] all(test, …) 자리도 댄다"
+assert_contains "$OUT" "FAIL [rust] rust/src/client.rs:66: the data has a function inside an item compiled only with cfg(test) (" "[rust] all(test, …) 자리도 댄다"
 assert_contains "$OUT" "unit tests ran in this build, so the report would not be integration-only" "[rust] 통합 전용이 아니라고 댄다"
 # cfg(test) 를 건너뛰는 것이 하중을 진다 — 지우면 그 모듈의 테스트 함수들이 레코드 없는 미실행으로 든다(cfg 쌍둥이
 # `platform` 둘은 cfg 가 이름에 붙어 겹치지 않는다).
@@ -424,11 +426,25 @@ assert_eq 2 "$RC" "[rust] macro_rules! 안의 함수 레코드는 exit 2 — 출
 assert_contains "$OUT" "FAIL [rust] rust/src/auth.rs:116: the data has a function (_RNvfake_macro_generated) inside macro_rules! twice" "[rust] 매크로를 댄다"
 # 함수 레코드 없이 낸 데이터(`cargo llvm-cov --skip-functions`) — 줄은 돌았는데 모든 함수가 「레코드 없음」이 된다(독립 레그 실측).
 fresh
-sed -i '/^FN:/d' "$D/rust.lcov"
+sed -i '/^FN:/d; /^FNDA:/d' "$D/rust.lcov"
 assert_not_contains "$(cat "$D/rust.lcov")" "FN:" "(변이가 착지했는지 먼저 본다)"
 run report rust "$T" --out "$D"
 assert_eq 2 "$RC" "[rust] 함수 레코드 없는 데이터는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "but has no function record there — a report without function records" "[rust] 레코드 없는 줄을 댄다"
+# 함수 레코드는 있는데 호출 횟수(FNDA)가 없다 — async 몸통이 돌았는지 못 읽는다.
+fresh
+sed -i '/^FNDA:/d' "$D/rust.lcov"
+run report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] FNDA 없는 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] rust/src/admin.rs: the data has function records but no FNDA counts" "[rust] FNDA 없음을 댄다"
+# `#[async_trait]` 꼴 — 안 poll 해도 닫는 줄에 바깥 함수의 횟수가 실린다(독립 레그 실측: DA:49,1 · DA:52,1). 줄로 재면
+# 「실행됨」이 된다 — 그래서 FNDA 로 잰다(범위 안에서 돈 레코드가 바깥 함수 하나뿐). 반대 꼴(주석뿐인 몸통을 poll — 머리·닫는
+# 줄에만 DA)은 건강한 픽스처의 `warm_up` 이 맡는다(목록에 없어야 한다).
+fresh
+sed -i '/^SF:.*admin\.rs$/,/^end_of_record$/s/^DA:54,1$/DA:54,1\nDA:56,1/' "$D/rust.lcov"
+assert_contains "$(cat "$D/rust.lcov")" "DA:56,1" "(변이가 착지했는지 먼저 본다)"
+run report rust "$T" --out "$D"
+assert_line "$OUT" "  NEVER rust/src/admin.rs:54 AdminClient::delete_user · called, but its async body never ran · owner open-admin" "[rust] 닫는 줄이 돌아도 몸통 레코드가 안 돌았으면 미실행"
 # 같은 이름이 둘 — 미실행 목록이 둘을 못 가른다.
 fresh
 sed -i 's#^impl Wrapper<u16> {$#impl Wrapper<u8> {#' "$T/rust/src/auth.rs"
@@ -514,7 +530,7 @@ fresh
 rust_data "$FIX/data/rust-zero.lcov"
 run report rust "$T" --out "$D"
 assert_eq 2 "$RC" "[rust] 경계 줄을 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
-assert_contains "$OUT" "FAIL [rust] the run executed 0 of 116 boundary lines — a measurement failure, not a low number" "[rust] 측정 실패 문구"
+assert_contains "$OUT" "FAIL [rust] the run executed 0 of 120 boundary lines — a measurement failure, not a low number" "[rust] 측정 실패 문구"
 assert_not_contains "$OUT" "0.0%" "[rust] 측정 실패에서 0% 를 내지 않는다"
 # 빈 파생 + 빈 핀 — 집합은 같으므로(∅ = ∅) 빈 집합 판정만이 잡는다. 파생 도구를 가짜로 바꿔 그 갈래만 태운다.
 # ⚠️ 두 언어 다 「있되 비었다」여야 한다 — 한 언어를 빼 두면 check 의 exit 2 가 그 「없는 파생」에서 와서 빈 집합
@@ -631,14 +647,14 @@ run check "$T"
 assert_eq 2 "$RC" "[floor] node 에 bodies 는 없다 — 출력: $OUT"
 assert_contains "$OUT" "node.floor.metric" "[floor] node 지표 오류를 지목한다"
 
-# rust 의 지표는 lines(고유 줄 — 픽스처 106/136 = 77.941%).
-fresh; floor rust lines 77.94
+# rust 의 지표는 lines(고유 줄 — 픽스처 111/141 = 78.723%).
+fresh; floor rust lines 78.72
 run report rust "$T" --out "$D"
-assert_eq 0 "$RC" "[floor] rust 77.941% ≥ 77.94 — 출력: $OUT"
-assert_line "$OUT" "integration-coverage [rust]: OK — 106/136 lines (77.9%) · floor lines ≥ 77.94% · 13 never-executed functions, all owned by open registry items" "[floor] rust 통과 요약"
-fresh; floor rust lines 77.95
+assert_eq 0 "$RC" "[floor] rust 78.723% ≥ 78.72 — 출력: $OUT"
+assert_line "$OUT" "integration-coverage [rust]: OK — 111/141 lines (78.7%) · floor lines ≥ 78.72% · 14 never-executed functions, all owned by open registry items" "[floor] rust 통과 요약"
+fresh; floor rust lines 78.73
 run report rust "$T" --out "$D"
-assert_eq 3 "$RC" "[floor] rust 77.941% < 77.95 — 출력: $OUT"
+assert_eq 3 "$RC" "[floor] rust 78.723% < 78.73 — 출력: $OUT"
 fresh; floor rust statements 50
 run check "$T"
 assert_eq 2 "$RC" "[floor] rust 에 statements 는 없다(지표는 lines) — 출력: $OUT"

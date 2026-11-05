@@ -43,10 +43,11 @@
 // 안 보이고 아무도 참조 안 한 fn · 인스턴스화 안 된 제네릭 · 한 번도 poll 안 된 async 몸통은 줄째 빠진다(분모에서도 — 실측:
 // 픽스처의 `unused_helper` · 제네릭 `From::from`. `pub` fn 은 모듈이 링크되면 0 회 레코드가 남는다). 그래서 미실행 목록에
 // `no record` 로 든다. 참조 안 된 모듈은 파일째 빠진다(→ 「데이터에 없음」 FAIL — 그 모듈의 오브젝트가 링크되지 않는다). 부른
-// async fn 의 몸통이 한 줄도 안 돌았으면(퓨처를 만들고 안 기다렸다) 그것도 미실행이다. `test` 없이는 컴파일되지 않는 항목
-// (`#[cfg(test)]` · `#[cfg(all(test, …))]`)은 통합 빌드에 없으므로 읽지 않는다 — 그 안에 레코드가 있으면 단위 테스트가 같은
-// 빌드에서 돈 것이라(통합 전용이 아니다) FAIL 이다. 레코드 없이 줄만 있는 범위(`--skip-functions` 로 낸 데이터) · 매크로가 만든
-// 함수(레코드가 `macro_rules!` 몸통을 가리킨다 — 줄을 나눠 써 안 돈 것을 못 가른다)도 FAIL 이다.
+// async fn 의 몸통 레코드가 한 번도 안 돌았으면(퓨처를 만들고 버렸다) 그것도 미실행이다 — 줄이 아니라 FNDA 로 잰다(rustReport).
+// `test` 없이는 컴파일되지 않는 항목(`#[cfg(test)]` · 접힌 `#[cfg(all(test, …))]` 도)은 통합 빌드에 없으므로 읽지 않는다 — 그
+// 안에 레코드가 있으면 단위 테스트가 같은 빌드에서 돈 것이라(통합 전용이 아니다) FAIL 이다. 레코드 없이 줄만 있는 범위
+// (`--skip-functions` 로 낸 데이터) · 매크로가 만든 함수(레코드가 `macro_rules!` 몸통을 가리킨다 — 줄을 나눠 써 안 돈 것을
+// 못 가른다)도 FAIL 이다. ⚠️ cfg 쌍둥이 중 「no record」 쪽은 플랫폼마다 다르다 — 소유자는 CI(리눅스) 실행을 기준으로 단다.
 //
 // 종료코드 — 넷을 가른다. 「낮은 수치」는 하한이 무장된 언어에서만 실패다(3):
 //   0 OK     리포트가 섰고, 하한 이상이며, 미실행 함수가 전부 열린 항목 소유다
@@ -697,17 +698,23 @@ function nodeReport(d) {
 // 원시 문자열(`r#"…"#` · `br"…"`)은 같은 수의 `#` 로만 닫힌다(이스케이프 없음). `'` 는 문자 리터럴(`'"'` · `'\''` ·
 // `'\u{7f}'`)과 수명·라벨(`'a` · `'static` · `'outer:`)이 나눠 쓴다 — 닫는 `'` 가 한 글자 뒤에 있을 때만 리터럴이다(`'"'`
 // 를 수명으로 읽으면 그 `"` 가 문자열을 열어 다음 `"` 까지 코드를 지운다). 파일이 열린 문자열·주석 안에서 끝나면 FAIL 이다.
+// `kept` 는 같은 길이의 둘째 사본 — 주석만 지우고 리터럴은 남긴다(cfg 이름 꼬리의 `feature = "x"` 를 원문대로 쓰되, 줄 끝
+// 주석이 소유자 키에 들어가지 않게 한다 — 독립 레그 실측).
 function blankRust(src) {
   let res = ''
+  let kept = ''
   let open = false
   const n = src.length
   for (let i = 0; i < n; ) {
     const c = src[i]
     let j = -1
+    let comment = false
     if (c === '/' && src[i + 1] === '/') {
+      comment = true
       j = src.indexOf('\n', i)
       if (j < 0) j = n
     } else if (c === '/' && src[i + 1] === '*') {
+      comment = true
       let depth = 1
       j = i + 2
       while (j < n && depth > 0) {
@@ -746,13 +753,16 @@ function blankRust(src) {
       }
     }
     if (j < 0) {
-      res += src[i++]
+      res += src[i]
+      kept += src[i++]
       continue
     }
-    res += src.slice(i, j).replace(/[^\n]/g, ' ')
+    const blank = src.slice(i, j).replace(/[^\n]/g, ' ')
+    res += blank
+    kept += comment ? blank : src.slice(i, j)
     i = j
   }
-  return { text: res, open }
+  return { text: res, kept, open }
 }
 // 이름 범위 — rustfmt 가 보장하는 모양: 항목은 감싼 것보다 네 칸 깊고, 여러 줄 몸통은 항목의 들여쓰기에서 `}` 한 글자
 // 줄로 닫힌다(빈 몸통만 한 줄 `fn x() {}`). 머리의 끝은 `{` · `;` · `}` 로 끝나는 첫 줄이다(여러 줄 시그니처와 where 절의
@@ -849,7 +859,7 @@ function rustFuncs(file) {
     return null
   }
   const L = blanked.text.split('\n').map((l) => l.replace(/\s+$/, ''))
-  const R = raw.split('\n')
+  const K = blanked.kept.split('\n') // 주석만 지운 사본 — L 과 글자 자리가 같다
   const funcs = []
   const tests = [] // `test` 없이는 컴파일되지 않는 항목의 줄 범위 — 통합 빌드에는 없다
   const macros = [] // `macro_rules!` 몸통의 줄 범위
@@ -859,15 +869,39 @@ function rustFuncs(file) {
     ok = false
   }
   const count = (s, ch) => s.split(ch).length - 1
-  // 항목 위의 `#[cfg(…)]` 들 — 빈 줄 · 같은 들여쓰기의 `#` 줄 · 그보다 깊은 이어진 줄을 건넌다. 한 줄 속성만 평가한다
-  // (rustfmt 는 짧은 cfg 를 한 줄에 둔다) — 여러 줄 cfg 는 모름도 아니고 없음으로 남아, 그 항목은 읽힌다.
+  // 속성 하나 — `#[` 에서 짝 맞는 `]` 까지(rustfmt 는 긴 cfg 술어를 여러 줄로 접는다 — 독립 레그 실측: 한 줄만 읽으면 접힌
+  // `all(test, …)` 모듈의 단위 테스트 줄이 통합 커버리지로 셌다). 이름 꼬리(`shown`)는 같은 구간의 K — `]` 뒤 주석은 안 든다.
+  const attrAt = (x, pad) => {
+    let d = 0
+    const text = []
+    const shown = []
+    for (let y = x; y < L.length; y++) {
+      const from = y === x ? pad.length : 0
+      for (let c = from; c < L[y].length; c++) {
+        if (L[y][c] === '[') d++
+        else if (L[y][c] === ']' && --d === 0) {
+          text.push(L[y].slice(from, c + 1))
+          shown.push(K[y].slice(from, c + 1))
+          return { text: text.join(' '), shown: shown.join(' ') }
+        }
+      }
+      text.push(L[y].slice(from))
+      shown.push(K[y].slice(from))
+    }
+    return null
+  }
+  // 항목 위의 `#[cfg(…)]` 들 — 빈 줄 · 같은 들여쓰기의 `#` 줄 · 그보다 깊은 이어진 줄(접힌 속성의 몸 · 닫는 `))]`)을 건넌다.
   const cfgsOf = (k, pad) => {
     const cfgs = []
     for (let x = k - 1; x >= 0; x--) {
       if (!L[x]) continue
       if (L[x].startsWith(`${pad}#`)) {
-        const m = /^#\[cfg\((.*)\)\]$/.exec(L[x].trim())
-        if (m) cfgs.push({ value: cfgEval(m[1]), text: R[x].trim().replace(/\s+/g, ' ') })
+        const a = attrAt(x, pad)
+        const m = a && /^#\[\s*cfg\s*\((.*)\)\s*\]$/.exec(a.text.replace(/\s+/g, ' '))
+        if (m) {
+          const shown = a.shown.replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/,?\s+\)/g, ')').replace(/,\)/g, ')')
+          cfgs.push({ value: cfgEval(m[1]), text: shown })
+        }
       } else if (!(L[x].startsWith(`${pad} `) || L[x].startsWith(`${pad})`) || L[x].startsWith(`${pad}]`))) break
     }
     return cfgs
@@ -878,7 +912,7 @@ function rustFuncs(file) {
       ok = false
       return false
     }
-    funcs.push({ records: 0, stmts: 0, covered: 0, bodyCovered: 0, ...entry })
+    funcs.push({ records: 0, hit: 0, stmts: 0, covered: 0, ...entry })
     return true
   }
   // static · const 의 끝 — 괄호(`()` · `[]` · `{}`) 깊이 0 의 `;`(rustfmt 는 긴 값을 `=` 뒤에서 더 깊이 접는다).
@@ -916,8 +950,14 @@ function rustFuncs(file) {
       if (val) {
         const e = statementEnd(k, to)
         if (e < 0) return bad(k, `cannot find the end of the ${val[1]} item (a ";" outside brackets)`)
+        // `const _` 는 이름이 없다 — 컴파일 때 단언(`const _: () = assert!(…)`)이 보통이라 한 파일에 여럿이어도 정당하다(독립
+        // 레그 실측: 범위로 두면 「같은 이름 둘」 FAIL). 범위가 아니므로 그 안에 레코드가 있으면 「범위 밖」 FAIL 로 드러난다.
+        if (val[2] === '_') {
+          k = e
+          continue
+        }
         if (testOnly) tests.push({ start: k + 1, end: e + 1 })
-        else if (!add({ name: `${val[1]} ${prefix}${val[2]}${tail}`, start: k + 1, end: e + 1, ind, kind: 'value', headEnd: e + 1 })) return
+        else if (!add({ name: `${val[1]} ${prefix}${val[2]}${tail}`, start: k + 1, end: e + 1, ind, kind: 'value' })) return
         k = e
         continue
       }
@@ -941,7 +981,7 @@ function rustFuncs(file) {
       if (testOnly) tests.push({ start: k + 1, end: end + 1 })
       else if (mac) macros.push({ name: mac[1], start: k + 1, end: end + 1 })
       else if (fn) {
-        const entry = { name: `${prefix}${fn[2]}${tail}`, start: k + 1, end: end + 1, ind, kind: 'fn', async: /\basync\s/.test(fn[1]), headEnd: h + 1 }
+        const entry = { name: `${prefix}${fn[2]}${tail}`, start: k + 1, end: end + 1, ind, kind: 'fn', async: /\basync\s/.test(fn[1]) }
         if (!add(entry)) return
       } else if (end > h) {
         const p = md ? `${md[1]}::` : tr ? `${tr[1]}::` : rsImplPrefix(L.slice(k, h + 1).join(' '))
@@ -987,18 +1027,20 @@ function rustReport(d) {
         fail('rust', `${f} has two records in ${shown} — the data contradicts itself`)
         return null
       }
-      cur = { file: f, da: new Map(), fns: [] }
+      cur = { file: f, da: new Map(), fns: [], fnda: new Map() }
       recs.set(f, cur)
       continue
     }
-    if (!cur || !/^(?:DA|FN):/.test(l)) continue
+    if (!cur || !/^(?:DA|FN|FNDA):/.test(l)) continue
     const da = /^DA:(\d+),(\d+)(?:,.*)?$/.exec(l)
     const fnr = da ? null : /^FN:(\d+),(.+)$/.exec(l)
-    if (!da && !fnr) {
+    const fnda = da || fnr ? null : /^FNDA:(\d+),(.+)$/.exec(l)
+    if (!da && !fnr && !fnda) {
       fail('rust', `cannot read the lcov line: ${l}`)
       return null
     }
-    if (fnr) cur.fns.push({ line: Number(fnr[1]), name: fnr[2] })
+    if (fnda) cur.fnda.set(fnda[2], Number(fnda[1]))
+    else if (fnr) cur.fns.push({ line: Number(fnr[1]), name: fnr[2] })
     else if (cur.da.has(Number(da[1]))) {
       fail('rust', `${cur.file}: line ${da[1]} is counted twice in one record — the data contradicts itself`)
       return null
@@ -1024,6 +1066,11 @@ function rustReport(d) {
     if (!src) continue
     const rangeOf = (x) => src.funcs.find((fn) => x >= fn.start && x <= fn.end)
     const within = (list, x) => list.find((t) => x >= t.start && x <= t.end)
+    // 레코드의 호출 횟수(FNDA) — async 판정이 쓴다. 레코드가 있는데 횟수가 하나도 없으면 그 판정을 할 수 없다.
+    if (r.fns.length && !r.fnda.size) {
+      fail('rust', `${f}: the data has function records but no FNDA counts — whether an async body ran cannot be read`)
+      continue
+    }
     let broken = false
     for (const rec of r.fns) {
       if (within(src.tests, rec.line)) {
@@ -1045,6 +1092,7 @@ function rustReport(d) {
         break
       }
       fn.records++
+      if ((r.fnda.get(rec.name) ?? 0) > 0) fn.hit++
     }
     if (broken) continue
     const outside = { stmts: 0, covered: 0 }
@@ -1061,7 +1109,6 @@ function rustReport(d) {
       const fn = rangeOf(line) ?? outside
       fn.stmts++
       if (c > 0) fn.covered++
-      if (c > 0 && fn !== outside && line > fn.headEnd) fn.bodyCovered++
     }
     if (broken) continue
     const mine = []
@@ -1078,9 +1125,11 @@ function rustReport(d) {
         // static · const 는 코드가 없는 것이 보통이라(문자열 상수) 레코드가 없어도 목록에 올리지 않는다.
         if (fn.kind === 'fn') mine.push({ ...at, label: 'no record in the data' })
       } else if (fn.stmts > 0 && fn.covered === 0) mine.push(at)
-      // 부른 async fn 은 퓨처만 만든다 — 몸통은 poll 될 때 돈다. 여러 줄 몸통의 줄이 하나도 안 돌았으면 미실행이다(독립 레그 실측:
-      // 버린 퓨처의 바깥 함수는 `FNDA:1`, 몸통 줄은 데이터에 없다).
-      else if (fn.async && fn.headEnd < fn.end && fn.bodyCovered === 0) mine.push({ ...at, label: 'called, but its async body never ran' })
+      // 부른 async fn 은 퓨처만 만든다 — 몸통은 poll 될 때 도는 별도 레코드다. 범위 안에서 횟수 > 0 인 레코드가 바깥 함수 하나뿐이면
+      // 몸통은 안 돌았다(퓨처를 만들고 버렸다 — 독립 레그 실측: 바깥 `FNDA:1`). 줄로 재지 않는다 — 주석뿐인 몸통을 poll 하면 머리·닫는
+      // 줄에만 DA 가 있고, `#[async_trait]` 은 안 poll 해도 닫는 줄에 바깥 함수의 횟수가 실린다(둘 다 실측). 한계: 제네릭 async fn
+      // 을 두 타입으로 부르고 하나도 poll 안 하면 바깥 레코드 둘이 돌아 실행으로 읽힌다.
+      else if (fn.async && fn.hit < 2) mine.push({ ...at, label: 'called, but its async body never ran' })
     }
     if (broken) continue
     files.push({ file: f, stmts, covered, outside })

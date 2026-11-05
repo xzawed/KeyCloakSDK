@@ -43,7 +43,7 @@ pub fn platform() -> &'static str {
     "windows"
 }
 
-#[cfg(not(windows))]
+#[cfg(not(windows))] // every other platform
 pub fn platform() -> &'static str {
     "other"
 }
@@ -52,11 +52,46 @@ pub fn größe() -> usize {
     GREETING.len()
 }
 
-#[cfg(all(test, debug_assertions))]
+#[cfg(all(
+    test,
+    debug_assertions,
+    any(
+        target_pointer_width = "64",
+        target_pointer_width = "32",
+        target_pointer_width = "16"
+    )
+))]
 mod debug_tests {
     #[test]
     fn admin_is_reachable() {
         let c = super::KeycloakClient::new("r").unwrap();
         assert!(std::ptr::eq(c.admin(), c.admin()));
     }
+}
+
+const _: () = assert!(u32::MAX > 0);
+const _: () = assert!(usize::MAX > 0);
+
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd"
+))]
+pub fn family() -> &'static str {
+    "unix-like"
+}
+
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd"
+)))]
+pub fn family() -> &'static str {
+    "other"
+}
+
+pub async fn warm_up() {
+    // nothing to prepare in the fixture
 }
