@@ -1713,16 +1713,16 @@
         },
         {
             "name": "symfony/serializer",
-            "version": "v7.4.22",
+            "version": "v7.4.23",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/serializer.git",
-                "reference": "e6c6739e8eb764ea7b6d9bea044bda599ec51122"
+                "reference": "9df8eb88c4d067d7aef1f3940075521769f34086"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/serializer/zipball/e6c6739e8eb764ea7b6d9bea044bda599ec51122",
-                "reference": "e6c6739e8eb764ea7b6d9bea044bda599ec51122",
+                "url": "https://api.github.com/repos/symfony/serializer/zipball/9df8eb88c4d067d7aef1f3940075521769f34086",
+                "reference": "9df8eb88c4d067d7aef1f3940075521769f34086",
                 "shasum": ""
             },
             "require": {
@@ -1793,7 +1793,7 @@
             "description": "Handles serializing and deserializing data structures, including object graphs, into array structures or other formats like XML and JSON.",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/serializer/tree/v7.4.22"
+                "source": "https://github.com/symfony/serializer/tree/v7.4.23"
             },
             "funding": [
                 {
@@ -1813,7 +1813,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-10-25T14:40:16+00:00"
+            "time": "2026-11-04T08:27:22+00:00"
         },
         {
             "name": "symfony/string",
@@ -7465,16 +7465,16 @@
         },
         {
             "name": "symfony/filesystem",
-            "version": "v7.4.21",
+            "version": "v7.4.23",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/filesystem.git",
-                "reference": "fd0e3462be6d32a0d130e8423e4940a7688162d8"
+                "reference": "53d609da66578dad5a39fe290e8f924ec8f05e93"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/filesystem/zipball/fd0e3462be6d32a0d130e8423e4940a7688162d8",
-                "reference": "fd0e3462be6d32a0d130e8423e4940a7688162d8",
+                "url": "https://api.github.com/repos/symfony/filesystem/zipball/53d609da66578dad5a39fe290e8f924ec8f05e93",
+                "reference": "53d609da66578dad5a39fe290e8f924ec8f05e93",
                 "shasum": ""
             },
             "require": {
@@ -7511,7 +7511,7 @@
             "description": "Provides basic utilities for the filesystem",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/filesystem/tree/v7.4.21"
+                "source": "https://github.com/symfony/filesystem/tree/v7.4.23"
             },
             "funding": [
                 {
@@ -7531,7 +7531,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-10-06T20:05:19+00:00"
+            "time": "2026-11-04T08:27:22+00:00"
         },
         {
             "name": "symfony/finder",
@@ -8134,16 +8134,16 @@
         },
         {
             "name": "symfony/validator",
-            "version": "v7.4.22",
+            "version": "v7.4.23",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/validator.git",
-                "reference": "b12ac8a9b90160e1a1935748191c6aae4149b577"
+                "reference": "0208748881024578b32edb7fad3d2cb01a88c364"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/validator/zipball/b12ac8a9b90160e1a1935748191c6aae4149b577",
-                "reference": "b12ac8a9b90160e1a1935748191c6aae4149b577",
+                "url": "https://api.github.com/repos/symfony/validator/zipball/0208748881024578b32edb7fad3d2cb01a88c364",
+                "reference": "0208748881024578b32edb7fad3d2cb01a88c364",
                 "shasum": ""
             },
             "require": {
@@ -8214,7 +8214,7 @@
             "description": "Provides tools to validate values",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/validator/tree/v7.4.22"
+                "source": "https://github.com/symfony/validator/tree/v7.4.23"
             },
             "funding": [
                 {
@@ -8234,20 +8234,20 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-10-27T13:52:57+00:00"
+            "time": "2026-11-04T08:27:22+00:00"
         },
         {
             "name": "symfony/yaml",
-            "version": "v7.4.22",
+            "version": "v7.4.23",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/yaml.git",
-                "reference": "1ed6afa13d48c579c51cbf32e38f50686313497b"
+                "reference": "1e601207ffe627a2e621faa9d661f1d32dcf1cec"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/yaml/zipball/1ed6afa13d48c579c51cbf32e38f50686313497b",
-                "reference": "1ed6afa13d48c579c51cbf32e38f50686313497b",
+                "url": "https://api.github.com/repos/symfony/yaml/zipball/1e601207ffe627a2e621faa9d661f1d32dcf1cec",
+                "reference": "1e601207ffe627a2e621faa9d661f1d32dcf1cec",
                 "shasum": ""
             },
             "require": {
@@ -8290,7 +8290,7 @@
             "description": "Loads and dumps YAML files",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/yaml/tree/v7.4.22"
+                "source": "https://github.com/symfony/yaml/tree/v7.4.23"
             },
             "funding": [
                 {
@@ -8310,7 +8310,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-10-18T14:39:27+00:00"
+            "time": "2026-11-04T08:27:22+00:00"
         },
         {
             "name": "testcontainers/testcontainers",
