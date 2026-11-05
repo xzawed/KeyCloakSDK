@@ -123,14 +123,14 @@ jobs:
         working-directory: .
         run: node scripts/integration-coverage.mjs run go --out "$RUNNER_TEMP/integration-coverage"
       # ⚠️ 하한 — 값은 `scripts/integration-coverage.json` 의 `floor` 에만 둔다(등록부 `integration-coverage-never-measured`
-      # 4 걸음째). exit 3(하한 아래)과 exit 2(파생 실패 · 핀과 다름 · 데이터에서 경계 파일 빠짐 · 아무것도 안 돈 실행)가
-      # 잡을 실패시킨다. exit 1(미실행 함수의 소유 문제)은 경고다.
+      # 4 걸음째). exit 3(하한 아래)과 exit 2(무결성 실패 — 무엇이 그런지는 `scripts/integration-coverage.mjs` 머리의
+      # 종료코드 표가 소유한다)가 잡을 실패시킨다. exit 1(소유 문제 — 같은 표)은 경고다.
       - name: 통합 전용 경계 커버리지 — 하한(scripts/integration-coverage.json 의 floor)
         working-directory: .
         run: |
           rc=0
           node scripts/integration-coverage.mjs report go --out "$RUNNER_TEMP/integration-coverage" || rc=$?
-          if [ "$rc" -eq 1 ]; then echo "::warning::통합 미실행 함수의 소유 문제 — 위 DRIFT 줄(경고 — 게이트가 아니다)"; fi
+          if [ "$rc" -eq 1 ]; then echo "::warning::통합 전용 커버리지의 소유 문제 — 위 DRIFT 줄(경고 — 게이트가 아니다)"; fi
           if [ "$rc" -eq 3 ]; then echo "::error::통합 전용 경계 커버리지가 하한 아래 — 위 BELOW 줄"; fi
           [ "$rc" -le 1 ]
 

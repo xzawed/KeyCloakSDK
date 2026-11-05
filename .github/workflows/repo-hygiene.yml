@@ -148,10 +148,10 @@ jobs:
         run: sh scripts/test/test-coverage-boundary.sh
 
       - name: 통합 전용 커버리지 리포트 자가테스트(파생 ↔ 핀 · 데이터 누락 · 공허 실행 · 소유자 — 픽스처만)
-        # go·python 레인 통합 잡의 리포트(`scripts/integration-coverage.mjs`)가 무결성을 지키는지 —
+        # 레인 통합 잡의 리포트(`scripts/integration-coverage.mjs` — 언어 목록은 그 머리가 소유한다)가 무결성을 지키는지 —
         # 파생이 좁아지면(%가 오른다) · 데이터에서 경계 파일이 빠지면 · 아무것도 안 돈 실행이면 exit 2 인지,
         # 하한(`integration-coverage.json` 의 floor) 아래면 exit 3 인지.
-        # 픽스처의 커버 데이터는 실제 도구(`go test -coverprofile` · coverage.py json)가 낸 것이라 Docker 가 필요 없다.
+        # 픽스처의 커버 데이터는 실제 도구가 낸 것이라(어느 도구의 어떤 명령인지는 자가테스트 머리가 소유한다) Docker 가 필요 없다.
         run: sh scripts/test/test-integration-coverage.sh
 
       - name: KNOWN_GAPS ↔ 등록부 대조 가드 자가테스트(아홉 문법 · 주석 속 id 거름 · 공허 실패 · 픽스처만)

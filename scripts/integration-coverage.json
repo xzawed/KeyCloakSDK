@@ -67,6 +67,7 @@
     }
   },
   "php": {
+    "floor": { "metric": "lines", "percent": 60.0 },
     "pinned": [
       "php/src/Admin/AdminClient.php",
       "php/src/Admin/ClientsResource.php",
