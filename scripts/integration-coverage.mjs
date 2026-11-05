@@ -49,6 +49,15 @@
 // 안에 레코드가 있으면 단위 테스트가 같은 빌드에서 돈 것이라(통합 전용이 아니다) FAIL 이다. 레코드 없이 줄만 있는 범위
 // (`--skip-functions` 로 낸 데이터) · 매크로가 만든 함수(레코드가 `macro_rules!` 몸통을 가리킨다 — 줄을 나눠 써 안 돈 것을
 // 못 가른다)도 FAIL 이다. ⚠️ cfg 쌍둥이 중 「no record」 쪽은 플랫폼마다 다르다 — 소유자는 CI(리눅스) 실행을 기준으로 단다.
+// ⚠️ php 는 이름 · 범위 · 실행 가능 줄을 **도구에서** 받는다 — php-code-coverage 는 nikic/php-parser 로 클래스 · 트레이트 ·
+// 함수와 실행 가능 줄을 정하고(정적 분석 — 파일을 싣기만 해서는 줄이 안 덮인다), 드라이버(pcov · Xdebug)는 돈 줄만 댄다.
+// 형식은 PHPUnit XML(`--coverage-xml`)이다: clover 는 메서드 줄이 시작 줄의 문장을 덮어쓰고(`isset($lines[$line])`)
+// 횟수가 덮은 **테스트 수**다 · cobertura 에는 선언 줄 · 파일별 줄 수 · 소스 해시가 없다(php-code-coverage 12.5.7 소스).
+// 도구를 액면가로 받지 않고 셋을 대조한다 — 파일 해시(sha1, 데이터가 이 트리의 그 바이트에서 났다) · index.xml 합 = 파일 XML
+// 합 · 메서드와 함수의 줄 합 = 파일 합(메서드 밖 줄은 어느 함수에도 못 붙인다). 익명 클래스와 클로저의 줄은 감싼 메서드의 것
+// 이다(실측 — 익명 클래스는 따로 실리지 않는다). 단위 설정의 `<source><exclude>` 가 경계를 빼므로 run 은 그 설정 옆에
+// `<source>` 만 경계 파일로 바꾼 사본을 만들어 돌리고 지운다 — 상대 경로(bootstrap · 테스트 디렉터리)가 그대로 풀린다
+// (`--coverage-filter` 는 include 를 **더할** 뿐 exclude 를 못 이긴다 — PHPUnit 12 `Merger.php`).
 //
 // 종료코드 — 넷을 가른다. 「낮은 수치」는 하한이 무장된 언어에서만 실패다(3):
 //   0 OK     리포트가 섰고, 하한 이상이며, 미실행 함수가 전부 열린 항목 소유다
@@ -57,15 +66,17 @@
 //            함수 영역 회계 불일치·못 읽는 입력·잘못 적은 하한. **이때는 수치를 내지 않는다**(인용될 숫자를 만들지 않는다).
 //   3 BELOW  하한 아래 — 수치는 유효하다. CI 는 실패로 본다. 비교는 정수식(covered × 100 < percent × 분모)이고 같으면 통과다.
 //
-// 사용(LANG = go · python · node · rust):
+// 사용(LANG = go · python · node · rust · php):
 //   node scripts/integration-coverage.mjs <LANG> [--out DIR]                 로컬 — 통합 테스트(Docker) 후 리포트
 //   node scripts/integration-coverage.mjs run    <LANG> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
 //   node scripts/integration-coverage.mjs report <LANG> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
 //   node scripts/integration-coverage.mjs check  [ROOT]                      파생 ↔ 핀 ↔ 소유자(데이터·Docker 불필요)
 // python 인터프리터는 `KCSDK_PY` → `python/.venv` → PATH 의 `python` 순이다. node 는 `node/node_modules` 의 vitest 를
 // 이 node 로 직접 띄운다(npm 을 거치지 않는다 — 윈도의 `npm.cmd` 는 셸 없이 못 띄운다). rust 는 PATH 의 `cargo` 에
-// `cargo-llvm-cov`(+ `llvm-tools-preview`)가 있어야 한다. DIR 기본값은 OS 임시 디렉터리 아래다.
+// `cargo-llvm-cov`(+ `llvm-tools-preview`)가 있어야 한다. php 는 PATH 의 `php` 에 커버리지 드라이버(pcov 또는 Xdebug —
+// `XDEBUG_MODE=coverage` 는 run 이 준다)와 `php/vendor`(composer install)가 있어야 한다. DIR 기본값은 OS 임시 디렉터리 아래다.
 import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { join, dirname, resolve, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -74,17 +85,19 @@ import { tmpdir } from 'node:os'
 const PINS = 'scripts/integration-coverage.json'
 const REGISTRY = 'docs/superpowers/plans/remaining-work.md'
 const BOUNDARY = 'scripts/coverage-boundary.mjs'
-const LANGS = ['go', 'python', 'node', 'rust']
+const LANGS = ['go', 'python', 'node', 'rust', 'php']
 // 하한 지표 — go 의 문장은 전부 함수 몸통이고, python 은 lines(import 때 도는 줄 포함)와 bodies(함수 안 문장)가 갈린다.
 // node 는 istanbul 문장이다(모듈 수준 문장은 import 때 돌지만 경계 파일은 거의 전부 클래스 멤버다 — 표가 따로 보인다).
-// rust 는 llvm-cov 의 고유 줄(DA)이다 — import 때 도는 코드가 없다.
-const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'], node: ['statements'], rust: ['lines'] }
+// rust 는 llvm-cov 의 고유 줄(DA)이다 — import 때 도는 코드가 없다. php 는 php-code-coverage 의 실행 가능 줄이다(정적 분석이
+// 정한다 — 파일을 싣는 것만으로는 줄이 안 덮인다).
+const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'], node: ['statements'], rust: ['lines'], php: ['lines'] }
+const LINE_LANGS = new Set(['rust', 'php'])
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
   if (msg) console.error(msg)
-  console.error('usage: node scripts/integration-coverage.mjs <go|python|node|rust> [--out DIR]')
-  console.error('       node scripts/integration-coverage.mjs run|report <go|python|node|rust> [ROOT] [--out DIR]')
+  console.error('usage: node scripts/integration-coverage.mjs <go|python|node|rust|php> [--out DIR]')
+  console.error('       node scripts/integration-coverage.mjs run|report <go|python|node|rust|php> [ROOT] [--out DIR]')
   console.error('       node scripts/integration-coverage.mjs check [ROOT]')
   process.exit(2)
 }
@@ -1192,6 +1205,153 @@ function rustReport(d) {
   return { path, files, never }
 }
 
+// ── php: PHPUnit XML 커버리지(`--coverage-xml` — index.xml + 파일마다 `<경로>.xml`) ──────────────────
+// 태그를 차례로 읽는다 — php-code-coverage 가 DOMDocument 로 쓴 기계의 XML 이다(속성은 큰따옴표). 주석 · 처리 지시 · DOCTYPE ·
+// CDATA 는 건너뛴다. 속성 값 속의 `>`(시그니처의 `=>`)는 따옴표 안이라 태그를 끊지 않는다.
+const XML_ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
+const xmlText = (s) =>
+  s.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);/g, (_, e) =>
+    e[0] === '#' ? String.fromCodePoint(e[1] === 'x' ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : XML_ENT[e],
+  )
+function xmlTags(src) {
+  const tags = []
+  const re = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<!\[CDATA\[[\s\S]*?\]\]>|<!DOCTYPE[^>]*>|<(\/?)([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)\s*(\/?)>/g
+  for (const m of src.matchAll(re)) {
+    if (!m[2]) continue
+    const attrs = {}
+    for (const a of m[3].matchAll(/([\w.:-]+)\s*=\s*"([^"]*)"/g)) attrs[a[1]] = xmlText(a[2])
+    tags.push({ close: m[1] === '/', name: m[2], attrs, empty: m[4] === '/' })
+  }
+  return tags
+}
+const xmlCount = (v) => (/^\d+$/.test(v ?? '') ? Number(v) : NaN)
+// 짧은 이름 — `Xzawed\Keycloak\Admin\AdminClient` → `AdminClient`, 함수 `Fixture\…\adminHelper` → `adminHelper`.
+const phpShort = (n) => n.slice(n.lastIndexOf('\\') + 1)
+function phpReport(d) {
+  const dir = join(out, 'php')
+  const shown = dir.replace(/\\/g, '/')
+  const index = join(dir, 'index.xml')
+  if (!existsSync(index)) {
+    fail('php', `no coverage data at ${shown}/index.xml — run the integration suite first (node scripts/integration-coverage.mjs run php)`)
+    return null
+  }
+  const tags = xmlTags(readFileSync(index, 'utf8'))
+  const project = tags.find((t) => !t.close && t.name === 'project')
+  if (!tags.some((t) => !t.close && t.name === 'phpunit') || !project?.attrs.source) {
+    fail('php', `${shown}/index.xml is not a PHPUnit code-coverage XML report (no <phpunit><project source>) — run writes --coverage-xml`)
+    return null
+  }
+  const driver = tags.find((t) => t.name === 'driver')?.attrs ?? {}
+  const build = tags.find((t) => t.name === 'build')?.attrs ?? {}
+  const src = project.attrs.source.replace(/\\/g, '/').replace(/\/+$/, '')
+  const srcRel = toRepoPath(src, d.dir)
+  if (/^([A-Za-z]:)?\//.test(srcRel)) {
+    fail('php', `the data's project source ${src} is outside this tree — the data belongs to another checkout`)
+    return null
+  }
+  // index 의 파일 — `href` 는 프로젝트 원천 아래 상대 경로 + `.xml` 이다. 합은 그 <file> 안의 첫 <lines>(<totals>)다.
+  const entries = new Map()
+  for (let i = 0; i < tags.length; i++) {
+    const t = tags[i]
+    if (t.close || t.name !== 'file') continue
+    const { href, hash } = t.attrs
+    let lines = null
+    for (let j = i + 1; j < tags.length && !(tags[j].close && tags[j].name === 'file'); j++)
+      if (tags[j].name === 'lines') {
+        lines = tags[j].attrs
+        break
+      }
+    if (!href?.endsWith('.xml') || !/^[0-9a-f]{40}$/.test(hash ?? '') || !lines) {
+      fail('php', `${shown}/index.xml has a <file> without href · sha1 hash · line totals (${href ?? '?'}) — not the report this reader knows`)
+      return null
+    }
+    const rel = posix.normalize(`${srcRel}/${href.slice(0, -4)}`)
+    if (entries.has(rel)) {
+      fail('php', `${rel} has two entries in ${shown}/index.xml — the data contradicts itself`)
+      return null
+    }
+    entries.set(rel, { href, hash, exec: xmlCount(lines.executable), done: xmlCount(lines.executed) })
+  }
+  const files = []
+  const never = []
+  for (const f of sortU(d.files)) {
+    const e = entries.get(f)
+    if (!e) {
+      fail('php', `${f} is not in the coverage data — a boundary file the run did not report would silently leave the denominator`)
+      continue
+    }
+    if (!existsSync(join(root, f))) {
+      fail('php', `${f} is in the data but not in the tree — the data belongs to another checkout`)
+      continue
+    }
+    // 데이터의 해시는 그 실행이 읽은 바이트의 sha1 이다 — 실행 뒤 소스가 바뀌었거나 다른 체크아웃의 데이터면 줄 번호가 어긋난다.
+    const sha = createHash('sha1').update(readFileSync(join(root, f))).digest('hex')
+    if (sha !== e.hash) {
+      fail('php', `${f}: the data was taken from other bytes (sha1 ${e.hash.slice(0, 12)}… in the data, ${sha.slice(0, 12)}… in the tree) — run and report on the same tree`)
+      continue
+    }
+    const fx = join(dir, ...e.href.split('/'))
+    if (!existsSync(fx)) {
+      fail('php', `cannot read ${shown}/${e.href} — index.xml names it for ${f}`)
+      continue
+    }
+    const ft = xmlTags(readFileSync(fx, 'utf8'))
+    const tot = ft.find((t) => t.name === 'lines')?.attrs ?? {}
+    const exec = xmlCount(tot.executable)
+    const done = xmlCount(tot.executed)
+    const base = e.href.slice(e.href.lastIndexOf('/') + 1)
+    if (Number.isNaN(exec) || Number.isNaN(done) || Number.isNaN(e.exec) || Number.isNaN(e.done)) {
+      fail('php', `${f}: cannot read the line totals in ${base} or index.xml`)
+      continue
+    }
+    if (exec !== e.exec || done !== e.done) {
+      fail('php', `${f}: index.xml says ${e.exec}/${e.done} executable/executed lines, ${base} says ${exec}/${done} — the data contradicts itself`)
+      continue
+    }
+    // 메서드(클래스 · 트레이트 안)와 함수. 메서드는 `짧은 클래스::이름`, 파일 수준 함수는 짧은 이름이다.
+    const units = []
+    let owner = null
+    let broken = false
+    for (const t of ft) {
+      if ((t.name === 'class' || t.name === 'trait') && !t.empty) owner = t.close ? null : phpShort(t.attrs.name ?? '')
+      else if (!t.close && (t.name === 'method' || t.name === 'function')) {
+        if (t.name === 'method' && !owner) {
+          fail('php', `${f}: the data has a method (${t.attrs.name}) outside any class or trait — not a container this reader knows`)
+          broken = true
+          break
+        }
+        const u = {
+          name: t.name === 'method' ? `${owner}::${t.attrs.name}` : phpShort(t.attrs.name ?? ''),
+          line: xmlCount(t.attrs.start),
+          exec: xmlCount(t.attrs.executable),
+          done: xmlCount(t.attrs.executed),
+        }
+        if ([u.line, u.exec, u.done].some(Number.isNaN) || u.done > u.exec) {
+          fail('php', `${f}: cannot read the counts of ${u.name} in ${base}`)
+          broken = true
+          break
+        }
+        units.push(u)
+      }
+    }
+    if (broken) continue
+    const dup = units.find((u, i) => units.findIndex((v) => v.name === u.name) !== i)
+    if (dup) {
+      fail('php', `${f}: two functions are both named ${dup.name} — the owner keys would collide`)
+      continue
+    }
+    const sum = units.reduce((a, u) => ({ exec: a.exec + u.exec, done: a.done + u.done }), { exec: 0, done: 0 })
+    if (sum.exec !== exec || sum.done !== done) {
+      fail('php', `${f}: its methods and functions account for ${sum.exec} of ${exec} executable lines (${sum.done} of ${done} executed) — lines outside any method cannot be attributed to a function`)
+      continue
+    }
+    files.push({ file: f, stmts: exec, covered: done, outside: { stmts: 0, covered: 0 } })
+    for (const u of units) if (u.exec > 0 && u.done === 0) never.push({ file: f, line: u.line, name: u.name, stmts: u.exec })
+  }
+  const note = `driver ${driver.name ?? '?'} ${driver.version ?? '?'} · php-code-coverage ${build.coverage ?? '?'}`
+  return { path: dir, note, files, never }
+}
+
 // ── report ───────────────────────────────────────────────────────────────────────────────
 function emitFindings(l) {
   for (const f of findings) if (f.lang === l || f.lang === null) console.log(`${f.kind} [${f.lang ?? '-'}] ${f.msg}`)
@@ -1201,7 +1361,7 @@ function report(l) {
   const pin = pinFor(l)
   const reg = loadRegistry()
   if (d && pin) matchesPin(l, d, pin)
-  const reader = { go: goReport, python: pyReport, node: nodeReport, rust: rustReport }[l]
+  const reader = { go: goReport, python: pyReport, node: nodeReport, rust: rustReport, php: phpReport }[l]
   const data = fails(l) ? null : reader(d)
   if (data && !fails(l)) {
     const tot = data.files.reduce((a, f) => ({ stmts: a.stmts + f.stmts, covered: a.covered + f.covered }), { stmts: 0, covered: 0 })
@@ -1214,7 +1374,7 @@ function report(l) {
         ? data.files.reduce((a, f) => ({ stmts: a.stmts + f.bodies.stmts, covered: a.covered + f.bodies.covered }), { stmts: 0, covered: 0 })
         : tot
     if (ran.covered === 0) {
-      const scope = l === 'python' ? 'boundary statements inside functions' : l === 'rust' ? 'boundary lines' : 'boundary statements'
+      const scope = l === 'python' ? 'boundary statements inside functions' : LINE_LANGS.has(l) ? 'boundary lines' : 'boundary statements'
       const why = l === 'python' && tot.covered ? `import alone credits ${tot.covered} module-level lines` : 'did the integration tests run against this tree?'
       fail(l, `the run executed 0 of ${ran.stmts} ${scope} — a measurement failure, not a low number (${why})`)
     } else {
@@ -1239,7 +1399,7 @@ function report(l) {
   }
   const t = data.files.reduce((a, f) => ({ stmts: a.stmts + f.stmts, covered: a.covered + f.covered }), { stmts: 0, covered: 0 })
   const b = data.files.reduce((a, f) => ({ stmts: a.stmts + (f.bodies?.stmts ?? 0), covered: a.covered + (f.bodies?.covered ?? 0) }), { stmts: 0, covered: 0 })
-  let head = `${t.covered}/${t.stmts} ${l === 'rust' ? 'lines' : 'statements'} (${pct(t.covered, t.stmts)})`
+  let head = `${t.covered}/${t.stmts} ${LINE_LANGS.has(l) ? 'lines' : 'statements'} (${pct(t.covered, t.stmts)})`
   if (l === 'python') head = `lines ${t.covered}/${t.stmts} (${pct(t.covered, t.stmts)}) · bodies ${b.covered}/${b.stmts} (${pct(b.covered, b.stmts)})`
   const n = data.never.length
   const fns = n ? `${n} never-executed function${n > 1 ? 's' : ''}` : 'no never-executed functions'
@@ -1260,11 +1420,11 @@ function report(l) {
   return 0
 }
 function printReport(l, d, data, tot, pin) {
-  const unit = l === 'rust' ? 'line' : 'stmt'
+  const unit = LINE_LANGS.has(l) ? 'line' : 'stmt'
   const stmt = (k) => `${k} ${unit}${k > 1 ? 's' : ''}`
   console.log(`[${l}] integration-only coverage — ${floorText(pin) ?? 'report mode, no floor'}`)
   console.log(`  boundary: ${d.files.length} files derived from ${d.site} (${d.label}) — equal to the pin in ${PINS}`)
-  console.log(`  data: ${data.path.replace(/\\/g, '/')}`)
+  console.log(`  data: ${data.path.replace(/\\/g, '/')}${data.note ? ` (${data.note})` : ''}`)
   if (l !== 'python') {
     // 어느 이름 범위에도 속하지 않는 문장 — go 의 패키지 수준 함수 리터럴, node 의 모듈·클래스 수준 문장, rust 의 항목 밖 줄
     // (매크로가 펼친 코드가 항목 밖 자리를 가리킬 때 — 함수 레코드가 범위 밖이면 그 전에 FAIL 이다).
@@ -1286,7 +1446,8 @@ function printReport(l, d, data, tot, pin) {
   }
   // 표와 같은 순서(코드 단위) — localeCompare 는 `admin_users.go` 를 `admin.go` 앞에 둔다.
   const never = [...data.never].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))
-  const what = l === 'rust' ? 'none of its lines ran, its async body never ran, or the data has no record of it' : 'none of its statements ran'
+  const what =
+    l === 'rust' ? 'none of its lines ran, its async body never ran, or the data has no record of it' : l === 'php' ? 'none of its lines ran' : 'none of its statements ran'
   console.log(`  never executed by the integration run — ${never.length} function${never.length === 1 ? '' : 's'} (${what}):`)
   for (const x of never) console.log(`  NEVER ${x.file}:${x.line} ${x.name} · ${x.label ?? stmt(x.stmts)} · owner ${x.owner}`)
 }
@@ -1365,6 +1526,42 @@ function run(l) {
     // 통합 대상 하나만 — 라이브러리가 cfg(test) 없이 링크된다(단위 테스트가 같은 빌드에서 돌면 리포트가 FAIL 한다).
     // `--locked` 는 레인의 다른 빌드와 같은 이유다(커밋된 Cargo.lock 그대로).
     return spawnStep('cargo', ['llvm-cov', '--locked', '--test', 'integration_test', '--lcov', '--output-path', lcov, '--', '--ignored'], cwd)
+  }
+  if (l === 'php') {
+    // 단위 설정의 `<source>` 만 경계 파일로 바꾼 사본을 **그 옆에** 만든다 — bootstrap · 테스트 디렉터리 · cacheDirectory 의
+    // 상대 경로가 같은 디렉터리를 기준으로 그대로 풀린다(테스트 스위트 정의를 옮겨 적지 않는다). `--coverage-filter` 로는 못
+    // 한다 — include 를 더할 뿐이라 `<exclude>` 의 경계 파일이 그대로 빠진다(PHPUnit 12 Merger.php). 실행 뒤 지운다.
+    const cfg = join(cwd, 'phpunit.xml')
+    const phpunit = join(cwd, 'vendor', 'bin', 'phpunit')
+    const stop = (msg) => {
+      fail(l, msg)
+      emitFindings(l)
+      return 2
+    }
+    if (!existsSync(cfg)) return stop(`${d.dir}/phpunit.xml is missing`)
+    if (!existsSync(phpunit)) return stop(`${d.dir}/vendor/bin/phpunit is missing — install the lane's dependencies first (composer install)`)
+    const xml = readFileSync(cfg, 'utf8')
+    // 주석을 같은 길이의 공백으로 지운 사본에서 `<source>` 를 찾고, 원문의 같은 자리를 바꾼다(주석 속 `</source>` 에 안 걸린다).
+    const blank = xml.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '))
+    const blocks = [...blank.matchAll(/<source[\s>][\s\S]*?<\/source>/g)]
+    if (blocks.length !== 1) return stop(`${d.dir}/phpunit.xml must have exactly one <source> (found ${blocks.length})`)
+    const rel = (p) => p.slice(d.dir.length + 1)
+    const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    const source = ['<source>', '    <include>', ...d.files.map((f) => `      <file>${esc(rel(f))}</file>`), '    </include>', '  </source>'].join('\n')
+    const at = blocks[0].index
+    const gen = join(cwd, '.integration-coverage.phpunit.xml')
+    writeFileSync(gen, xml.slice(0, at) + source + xml.slice(at + blocks[0][0].length))
+    const xdir = join(out, 'php')
+    rmSync(xdir, { recursive: true, force: true })
+    try {
+      // 같은 `--testsuite integration` 이다(레인의 명령). Xdebug 는 `XDEBUG_MODE=coverage` 없이는 아무것도 안 잰다 — pcov 는 무시한다.
+      return spawnStep('php', [phpunit, '--configuration', gen, '--testsuite', 'integration', '--coverage-xml', xdir], cwd, {
+        ...process.env,
+        XDEBUG_MODE: 'coverage',
+      })
+    } finally {
+      rmSync(gen, { force: true })
+    }
   }
   const common = commonDir(d.files)
   if (l === 'node') {

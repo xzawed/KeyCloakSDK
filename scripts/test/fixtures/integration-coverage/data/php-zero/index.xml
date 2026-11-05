@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<phpunit xmlns="https://schema.phpunit.de/coverage/1.0">
+  <build time="Thu Nov 5 9:27:44 UTC 2026" phpunit="12.5.33" coverage="12.5.7">
+    <runtime name="PHP" version="8.3.36" url="https://www.php.net/"/>
+    <driver name="xdebug" version="3.5.3"/>
+  </build>
+  <project source="@ROOT@\php\src">
+    <tests/>
+    <directory name="/">
+      <totals>
+        <lines total="117" comments="11" code="106" executable="22" executed="0" percent="0.00"/>
+        <methods count="12" tested="0" percent="0.00"/>
+        <functions count="1" tested="0" percent="0.00"/>
+        <classes count="2" tested="0" percent="0.00"/>
+        <traits count="1" tested="0" percent="0.00"/>
+      </totals>
+      <directory name="Admin">
+        <totals>
+          <lines total="42" comments="4" code="38" executable="5" executed="0" percent="0.00"/>
+          <methods count="4" tested="0" percent="0.00"/>
+          <functions count="1" tested="0" percent="0.00"/>
+          <classes count="1" tested="0" percent="0.00"/>
+          <traits count="1" tested="0" percent="0.00"/>
+        </totals>
+        <file name="AdminClient.php" href="Admin/AdminClient.php.xml" hash="a64b10a0b0d866b06c61cdf8644560503a083c06">
+          <totals>
+            <lines total="42" comments="4" code="38" executable="5" executed="0" percent="0.00"/>
+            <methods count="4" tested="0" percent="0.00"/>
+            <functions count="1" tested="0" percent="0.00"/>
+            <classes count="1" tested="0" percent="0.00"/>
+            <traits count="1" tested="0" percent="0.00"/>
+          </totals>
+        </file>
+      </directory>
+      <file name="AuthClient.php" href="AuthClient.php.xml" hash="cdd9b2f0f71af9144f80421d68e74b7ed719af44">
+        <totals>
+          <lines total="75" comments="7" code="68" executable="17" executed="0" percent="0.00"/>
+          <methods count="8" tested="0" percent="0.00"/>
+          <functions count="0" tested="0" percent="0"/>
+          <classes count="1" tested="0" percent="0.00"/>
+          <traits count="0" tested="0" percent="0"/>
+        </totals>
+      </file>
+    </directory>
+  </project>
+</phpunit>
