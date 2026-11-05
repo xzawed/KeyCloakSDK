@@ -116,6 +116,7 @@
     }
   },
   "ruby": {
+    "floor": { "metric": "bodies", "percent": 82.4 },
     "pinned": [
       "ruby/lib/keycloak_sdk/admin/admin_client.rb",
       "ruby/lib/keycloak_sdk/admin/bearer_auth.rb",
