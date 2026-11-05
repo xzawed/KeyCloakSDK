@@ -666,6 +666,13 @@ sed -i '/<testsuite name="integration">/d' "$T/php/phpunit.xml"
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] 통합 스위트 정의가 없으면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" 'php/phpunit.xml must define exactly one <testsuite name="integration"> (found 0)' "[php] 스위트 없음"
+# suffix 를 안 적은 <directory> 는 PHPUnit 기본(`Test.php`)으로 고른다 — `*IT.php` 는 하나도 안 든다.
+fresh
+sed -i 's#<directory suffix="IT.php">tests/Integration</directory>#<directory>tests/Integration</directory>#' "$T/php/phpunit.xml"
+assert_contains "$(cat "$T/php/phpunit.xml")" '<testsuite name="integration"><directory>tests/Integration</directory>' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 기본 suffix 로 고르면 IT 파일이 없다 — exit 2 — 출력: $OUT"
+assert_contains "$OUT" "the integration testsuite finds no test files — a report over no tests is vacuous" "[php] 빈 스위트"
 fresh
 sed -i 's#\(<testsuite name="integration"><directory suffix="IT.php">tests/Integration</directory>\)#\1<exclude>tests/Integration/ZeroIT.php</exclude>#' "$T/php/phpunit.xml"
 assert_contains "$(cat "$T/php/phpunit.xml")" '<exclude>tests/Integration/ZeroIT.php</exclude>' "(변이가 착지했는지 먼저 본다)"
