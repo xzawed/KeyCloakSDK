@@ -603,7 +603,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
        - 통합 미실행 함수 목록을 둔다. 항목마다 열린 등록부 id 를 소유자로 단다.
        - ⏳ go·python 파일럿 #774. 일곱으로 넓힐 함정·판정은 그 PR 본문.
          <!-- integration-coverage 파일럿(#774) 재측정 — 등록부 기준선 그대로 재현: go 2ab5f72^ 200/311 = 64.3% → 2ab5f72 238/311 = 76.5% → 지금 251/330 = 76.1%(경계 문장이 늘었다) · python 3fc0f1e^ 236/349 = 67.6% → 3fc0f1e 320/349 = 91.7% → 지금 367/395 = 92.9%(import 만으로 160 줄 = 40.5% — 함수 본문 207/235 = 88.1% 를 따로 낸다). 판정(파일럿 기본값): 핀은 읽을 수 있는 목록(드리프트 가드) · 소유 문제는 경고 · -run TestE2E 앵커는 4 걸음째 · 규칙 문서 포인터는 go.md·python.md·ci.md 예산이 0·26·11 B 라 없음. 일곱으로 넓힐 때: 데이터가 한 번도 적재 안 된 파일도 담아야 하고, 함수 이름의 믿을 원천, 적재 시점 코드(JVM static init · Ruby/PHP require)를 「아무것도 안 돈 실행」 판정에서 빼야 한다. -->
-    4. CI 관측 세 번(PR 실행 포함 · main ≥ 1) 뒤에만 하한을 무장한다 — ✅ go·python(#936) · node·rust(#956). 재는 명령 `node scripts/integration-coverage.mjs <lang>`. 남은 것: 다섯의 3·4 걸음.
+    4. CI 관측 세 번(PR 실행 포함 · main ≥ 1) 뒤에만 하한을 무장한다 — ✅ go·python(#936) · node·rust(#956) · php 는 3 걸음(#957). 재는 명령 `node scripts/integration-coverage.mjs <lang>`.
   - ⚠️ **리포트 구성의 함정.** java 는 `prepare-agent-integration` 으로 IT 전용 exec 를 떼야 한다 — 단위와 IT 가 같은 파일에 합쳐진다. kotlin 은 `integrationTest` 계측을 끄고 있다(`build.gradle.kts`). rust 브랜치는 stable 에서 못 잰다.
 - [ ] `integration-admin-surface-uneven` **[H/M · 계수 정정 2026-09-09]** 9개 통합 스위트가 덮는 admin 표면이 제각각이다 — **clients.update 는 2/9**, realms.create/delete 는 4/9, PHP 는 roles·groups·realms 를 하나도 안 부른다
   - ⚠️ **1/9 이 아니라 2/9**(php·rust). 두 자리 다 등록부 작성보다 앞선다(`59c7916` #190 · `dc9efd7` #240) — 즉 **처음부터 틀린 계수**였다. 함께 잰 것: `users.update` 7/9(java·python 빠짐) · `clients.create` 6/9 · `roles.update`·`groups.update` 각 7/9(php·ruby 빠짐).
