@@ -65,5 +65,53 @@
       "rust/src/auth.rs:<AuthClient as TokenProvider>::access_token": "facade-wiring-close-contract-unasserted",
       "rust/src/auth.rs:other_message": "coverage-omit-hides-security-paths"
     }
+  },
+  "php": {
+    "pinned": [
+      "php/src/Admin/AdminClient.php",
+      "php/src/Admin/ClientsResource.php",
+      "php/src/Admin/GroupsResource.php",
+      "php/src/Admin/RealmsResource.php",
+      "php/src/Admin/RenamableRoles.php",
+      "php/src/Admin/RolesResource.php",
+      "php/src/Admin/UsersResource.php",
+      "php/src/AuthClient.php",
+      "php/src/KeycloakClient.php"
+    ],
+    "owners": {
+      "php/src/Admin/AdminClient.php:AdminClient::__debugInfo": "coverage-omit-hides-security-paths",
+      "php/src/Admin/AdminClient.php:AdminClient::groups": "integration-admin-surface-uneven",
+      "php/src/Admin/AdminClient.php:AdminClient::realms": "integration-admin-surface-uneven",
+      "php/src/Admin/AdminClient.php:AdminClient::roles": "integration-admin-surface-uneven",
+      "php/src/Admin/ClientsResource.php:ClientsResource::__debugInfo": "coverage-omit-hides-security-paths",
+      "php/src/Admin/ClientsResource.php:ClientsResource::all": "integration-admin-surface-uneven",
+      "php/src/Admin/GroupsResource.php:GroupsResource::__construct": "integration-admin-surface-uneven",
+      "php/src/Admin/GroupsResource.php:GroupsResource::__debugInfo": "coverage-omit-hides-security-paths",
+      "php/src/Admin/GroupsResource.php:GroupsResource::all": "integration-admin-surface-uneven",
+      "php/src/Admin/GroupsResource.php:GroupsResource::create": "integration-admin-surface-uneven",
+      "php/src/Admin/GroupsResource.php:GroupsResource::delete": "integration-admin-surface-uneven",
+      "php/src/Admin/GroupsResource.php:GroupsResource::get": "integration-admin-surface-uneven",
+      "php/src/Admin/GroupsResource.php:GroupsResource::update": "integration-admin-surface-uneven",
+      "php/src/Admin/RealmsResource.php:RealmsResource::__construct": "integration-admin-surface-uneven",
+      "php/src/Admin/RealmsResource.php:RealmsResource::__debugInfo": "coverage-omit-hides-security-paths",
+      "php/src/Admin/RealmsResource.php:RealmsResource::all": "integration-admin-surface-uneven",
+      "php/src/Admin/RealmsResource.php:RealmsResource::delete": "integration-admin-surface-uneven",
+      "php/src/Admin/RealmsResource.php:RealmsResource::get": "integration-admin-surface-uneven",
+      "php/src/Admin/RealmsResource.php:RealmsResource::import": "integration-admin-surface-uneven",
+      "php/src/Admin/RealmsResource.php:RealmsResource::update": "integration-admin-surface-uneven",
+      "php/src/Admin/RenamableRoles.php:RenamableRoles::updateByName": "integration-admin-surface-uneven",
+      "php/src/Admin/RolesResource.php:RolesResource::__construct": "integration-admin-surface-uneven",
+      "php/src/Admin/RolesResource.php:RolesResource::__debugInfo": "coverage-omit-hides-security-paths",
+      "php/src/Admin/RolesResource.php:RolesResource::all": "integration-admin-surface-uneven",
+      "php/src/Admin/RolesResource.php:RolesResource::create": "integration-admin-surface-uneven",
+      "php/src/Admin/RolesResource.php:RolesResource::delete": "integration-admin-surface-uneven",
+      "php/src/Admin/RolesResource.php:RolesResource::get": "integration-admin-surface-uneven",
+      "php/src/Admin/RolesResource.php:RolesResource::update": "integration-admin-surface-uneven",
+      "php/src/Admin/UsersResource.php:UsersResource::__debugInfo": "coverage-omit-hides-security-paths",
+      "php/src/AuthClient.php:AuthClient::introspectionTooLarge": "coverage-omit-hides-security-paths",
+      "php/src/AuthClient.php:AuthClient::logoutTooLarge": "coverage-omit-hides-security-paths",
+      "php/src/AuthClient.php:AuthClient::logoutUrl": "auth-surface-parity-unguarded",
+      "php/src/KeycloakClient.php:KeycloakClient::close": "facade-wiring-close-contract-unasserted"
+    }
   }
 }

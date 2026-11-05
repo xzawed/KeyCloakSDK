@@ -72,5 +72,17 @@
       "rust/src/client.rs:platform #[cfg(not(windows))]": "open-admin",
       "rust/src/client.rs:unused_count": "open-admin"
     }
+  },
+  "php": {
+    "pinned": [
+      "php/src/Admin/AdminClient.php",
+      "php/src/AuthClient.php"
+    ],
+    "owners": {
+      "php/src/Admin/AdminClient.php:AdminClient::groups": "open-admin",
+      "php/src/Admin/AdminClient.php:adminHelper": "open-admin",
+      "php/src/AuthClient.php:AuthClient::__debugInfo": "open-masking",
+      "php/src/AuthClient.php:AuthClient::logoutUrl": "open-admin"
+    }
   }
 }

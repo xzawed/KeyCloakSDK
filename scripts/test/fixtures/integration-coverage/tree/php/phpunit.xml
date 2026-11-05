@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="vendor/autoload.php" colors="true" failOnWarning="true" failOnRisky="true">
+  <testsuites>
+    <testsuite name="unit"><directory>tests/Unit</directory></testsuite>
+    <testsuite name="integration"><directory suffix="IT.php">tests/Integration</directory></testsuite>
+  </testsuites>
+  <source>
+    <include><directory>src</directory></include>
+    <!-- network boundary: integration-tested, excluded from the unit coverage gate -->
+    <exclude>
+      <file>src/AuthClient.php</file>
+      <file>src/Admin/AdminClient.php</file>
+    </exclude>
+  </source>
+</phpunit>

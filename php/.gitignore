@@ -1,5 +1,7 @@
 /vendor/
 /.phpunit.cache/
 /.php-cs-fixer.cache
+# scripts/integration-coverage.mjs `run php` writes this next to phpunit.xml and deletes it after the run.
+/.integration-coverage.phpunit.xml
 # ⚠️ composer.lock is committed — unlocked, CI resolves dev tools fresh and a new phpstan rule breaks the lane.
 clover.xml

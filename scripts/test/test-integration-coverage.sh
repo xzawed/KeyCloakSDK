@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
-# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — go · python · node · rust 의 무결성 판정과 하한.
+# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — go · python · node · rust · php 의 무결성 판정과 하한.
 #
-# ⚠️ **커밋된 픽스처만 쓴다** — Docker 도 Go·Python·node·rust 툴체인도 필요 없다. 실제 Keycloak 에 대고 도는 것은
+# ⚠️ **커밋된 픽스처만 쓴다** — Docker 도 Go·Python·node·rust·php 툴체인도 필요 없다. 실제 Keycloak 에 대고 도는 것은
 # 레인 CI 의 integration 잡이다. 여기서 재는 것은 리포트의 **무결성 판정** 셋이다:
 #   (1) 양성 — 건강한 픽스처에서 파일별·합계 수치와 미실행 함수 목록이 **정확히** 나온다.
 #   (2) 음성 — 파생이 좁아지거나(그러면 %가 오른다), 핀과 갈리거나, 데이터에서 파일이 빠지거나,
@@ -27,6 +27,11 @@
 #                          경계 세 파일이 데이터에서 **통째로 빠진다**(참조 안 된 모듈의 오브젝트는 링크되지 않는다)
 #   data/rust-unit.lcov    `--lib --test drive` — 단위 테스트가 같은 빌드에서 돌아 `#[cfg(test)]` 와 `#[cfg(all(test,
 #                          debug_assertions))]` 함수의 레코드가 든다
+#   data/php/              PHPUnit 12.5.33 + php-code-coverage 12.5.7 + Xdebug 3.5.3 의 `--coverage-xml`(2026-11-05) — 임시
+#                          루트에 tree/php 사본 + 구동 테스트, 설정은 도구의 run 이 만드는 꼴(`<source><include>` = 경계 두 파일).
+#                          **index.xml 의 `<project source>` 생성 루트만 `@ROOT@` 로 바꿨다**(파일 XML 은 상대 경로뿐이다)
+#   data/php-zero/         같은 명령, 구동기가 경계를 하나도 안 부른다 — 전부 0
+# php 구동기는 「groups·adminHelper·logoutUrl·__debugInfo」를 안 부르고 `exchange` 의 throw 갈래를 안 탄다.
 # 구동기는 「String·Close·Delete·AuthClient.String·hook 리터럴」과 「__repr__·logout·clients·aio 전체」를, node 는
 # 「describe·toString·[SYM]·inc·cb·set count·overload·longSignature·close」를, rust 는 「transport·supply·describe·noop·close·
 # Display::fmt·Wrapper<u16>::get·admin·unused_count」를 일부러 안 부르고 `delete_user` · `never_polled` 의 퓨처는 만들기만 하고 버리며, 주석뿐인
@@ -52,6 +57,7 @@ fresh() {
   cp "$FIX/data/go.cover" "$FIX/data/python.json" "$D/"
   node_data "$FIX/data/node.json"
   rust_data "$FIX/data/rust.lcov"
+  php_data "$FIX/data/php"
   git -C "$T" init -q
   git -C "$T" config core.autocrlf false
   git -C "$T" add -A
@@ -66,6 +72,19 @@ node_data() { # fixture-json
 rust_data() { # fixture-lcov
   _r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
   sed "s#@ROOT@#$_r#g" "$1" > "$D/rust.lcov"
+}
+# PHPUnit 의 XML 커버리지는 디렉터리다 — 절대 경로는 index.xml 의 `<project source>` 하나다(같은 치환).
+php_data() { # fixture-dir
+  _r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
+  rm -rf "$D/php"
+  cp -r "$1" "$D/php"
+  sed -i "s#@ROOT@#$_r#g" "$D/php/index.xml"
+  php_mark 0
+}
+# `run php` 의 기록(종료코드 · 지금 index.xml 의 sha1)을 쓴다 — run 이 쓰는 것과 같은 꼴. 데이터를 고친 뒤 OK 를 기대하는
+# 단언은 이것을 다시 불러야 한다(기록 뒤 바뀐 데이터는 FAIL 이다).
+php_mark() { # exit
+  printf '{"run":"php","exit":%s,"index_sha1":"%s"}\n' "$1" "$(sha1sum "$D/php/index.xml" | cut -d' ' -f1)" > "$D/php.run.json"
 }
 run() {
   git -C "$T" add -A
@@ -85,7 +104,8 @@ assert_line "$OUT" "[go] pin OK — 3 files equal the derivation from .github/wo
 assert_line "$OUT" "[python] pin OK — 3 files equal the derivation from python/pyproject.toml:8 ([tool.coverage] omit)" "[check] python 핀 = 파생"
 assert_line "$OUT" "[node] pin OK — 2 files equal the derivation from node/vitest.config.ts:9 (vitest coverage.exclude)" "[check] node 핀 = 파생"
 assert_line "$OUT" "[rust] pin OK — 3 files equal the derivation from .github/workflows/rust-ci.yml:7 (cargo llvm-cov --ignore-filename-regex)" "[check] rust 핀 = 파생"
-assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 files pinned · 39 owner entries, all open" "[check] 요약"
+assert_line "$OUT" "[php] pin OK — 2 files equal the derivation from php/phpunit.xml:11 (phpunit <source><exclude>)" "[check] php 핀 = 파생"
+assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 · php 2 files pinned · 43 owner entries, all open" "[check] 요약"
 
 run report go "$T" --out "$D"
 assert_eq 0 "$RC" "[go] 건강한 리포트는 exit 0 — 출력: $OUT"
@@ -183,6 +203,35 @@ for _x in hidden doc_fake raw_fake string_fake tests:: "platform #[cfg(windows)]
   assert_not_contains "$OUT" "$_x" "[rust] 실행된 함수 · 경계 밖 · 주석·문자열 속 이름 · cfg(test) · 코드 없는 상수 · async_trait 멤버는 목록에 없다: $_x"
 done
 assert_line "$OUT" "integration-coverage [rust]: OK — 116/159 lines (73.0%) · 19 never-executed functions, all owned by open registry items" "[rust] 요약"
+
+# php — 이름 · 범위 · 실행 줄은 php-code-coverage(PHPUnit XML 형식)가 낸다: 그 파서(nikic/php-parser)가 잡은 클래스 · 트레이트
+# · 함수와 각각의 실행 가능 줄 수. 리포트가 대조하는 셋 — 파일 해시(데이터가 이 트리의 그 바이트에서 났다) · 메서드 합 = 파일
+# 합(메서드 밖 줄이 없다) · index.xml 합 = 파일 XML 합. 각 줄이 재는 것: 일부만 돈 메서드는 미실행이 아니다(`exchange`) ·
+# 클로저와 익명 클래스의 줄은 감싼 메서드의 것이다(`apply` · `withAnon` 은 돌았다 — 익명 클래스는 별도 클래스가 아니다, 실측) ·
+# 트레이트 메서드는 트레이트 이름으로(`Masked::masked` — 돌았다) · 파일 수준 함수는 짧은 이름으로(`adminHelper`) · 빈 몸통
+# 승격 생성자도 줄 하나(닫는 `}`) · 줄 번호는 선언 줄(`start`)이다.
+run report php "$T" --out "$D"
+assert_eq 0 "$RC" "[php] 건강한 리포트는 exit 0 — 출력: $OUT"
+assert_contains "$OUT" "(driver xdebug 3.5.3 · php-code-coverage 12.5.7)" "[php] 드라이버를 찍는다 — CI 는 pcov, 로컬은 Xdebug"
+assert_line "$OUT" "  php/src/Admin/AdminClient.php 3/5 60.0%" "[php] AdminClient.php — 클래스 · 트레이트 · 파일 함수"
+assert_line "$OUT" "  php/src/AuthClient.php 13/17 76.5%" "[php] AuthClient.php — 클로저 · 익명 클래스는 감싼 메서드의 줄"
+assert_line "$OUT" "  total 16/22 72.7%" "[php] 합계는 경계 파일만(Config.php 제외)"
+assert_line "$OUT" "  NEVER php/src/Admin/AdminClient.php:31 AdminClient::groups · 1 line · owner open-admin" "[php] 메서드 — 줄은 선언 줄"
+assert_line "$OUT" "  NEVER php/src/Admin/AdminClient.php:38 adminHelper · 1 line · owner open-admin" "[php] 파일 수준 함수는 짧은 이름"
+assert_line "$OUT" "  NEVER php/src/AuthClient.php:62 AuthClient::logoutUrl · 2 lines · owner open-admin" "[php] 두 줄 메서드"
+assert_line "$OUT" "  NEVER php/src/AuthClient.php:70 AuthClient::__debugInfo · 1 line · owner open-masking" "[php] __debugInfo"
+for _x in Config.php exchange apply withAnon hello Masked::masked "::__construct" "::users" "::realm" "::helper" module-level; do
+  assert_not_contains "$OUT" "$_x" "[php] 실행된 · 일부만 돈 · 익명 클래스 · 경계 밖은 목록에 없다: $_x"
+done
+assert_line "$OUT" "integration-coverage [php]: OK — 16/22 lines (72.7%) · 4 never-executed functions, all owned by open registry items" "[php] 요약"
+# Linux 의 PHPUnit 은 `<project source>` 를 `/` 로 쓴다 — 윈도에서 만든 `\` 와 같은 리포트여야 한다.
+fresh
+sed -i 's#\\php\\src"#/php/src"#' "$D/php/index.xml"
+assert_contains "$(cat "$D/php/index.xml")" '/php/src"' "(변이가 착지했는지 먼저 본다)"
+php_mark 0
+run report php "$T" --out "$D"
+assert_eq 0 "$RC" "[php] / 경로도 같은 트리다 — 출력: $OUT"
+assert_line "$OUT" "  total 16/22 72.7%" "[php] / 경로에서도 같은 합계"
 
 # Linux 의 llvm-cov 는 SF 를 `/` 로 쓴다 — 윈도에서 만든 `\` 와 같은 리포트여야 한다.
 fresh
@@ -514,6 +563,169 @@ assert_eq 1 "$RC" "[rust] 소유자 없는 미실행 함수는 exit 1 — 출력
 assert_contains "$OUT" "DRIFT [rust] unowned never-executed function rust/src/auth.rs:unused_helper" "[rust] 소유자 없음"
 assert_line "$OUT" "  NEVER rust/src/auth.rs:129 unused_helper · no record in the data · owner NONE" "[rust] 목록에도 NONE 으로 남는다"
 
+# php — 데이터의 무결성. 도구가 낸 이름 · 범위를 믿는 대신 세 가지를 대조한다(해시 · index ↔ 파일 XML · 메서드 합 = 파일 합).
+fresh
+rm -rf "$D/php"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 데이터가 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] no coverage data at" "[php] 데이터 없음"
+assert_contains "$OUT" "node scripts/integration-coverage.mjs run php" "[php] 무엇을 돌릴지 댄다"
+fresh
+printf '%s\n' '<?xml version="1.0"?>' '<coverage line-rate="1"/>' > "$D/php/index.xml"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] PHPUnit XML 이 아니면 exit 2(다른 형식을 통과로 읽지 않는다) — 출력: $OUT"
+assert_contains "$OUT" "is not a PHPUnit code-coverage XML report" "[php] 형식이 다르다"
+fresh
+sed -i 's#<project source="[^"]*"#<project source="/elsewhere/php/src"#' "$D/php/index.xml"
+assert_contains "$(cat "$D/php/index.xml")" '<project source="/elsewhere/php/src"' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 다른 체크아웃의 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] the data's project source /elsewhere/php/src is outside this tree — the data belongs to another checkout" "[php] 다른 체크아웃"
+fresh
+sed -i '/<file name="AuthClient.php"/,/<\/file>/d' "$D/php/index.xml"
+assert_not_contains "$(cat "$D/php/index.xml")" 'name="AuthClient.php"' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 데이터에서 경계 파일이 빠지면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] php/src/AuthClient.php is not in the coverage data" "[php] 빠진 파일을 댄다"
+assert_not_contains "$OUT" "  total " "[php] 빠진 파일이 있으면 수치를 내지 않는다"
+# 실행 뒤 소스가 바뀌었다 — 데이터의 해시(sha1)는 그 실행이 읽은 바이트의 것이다.
+fresh
+printf '%s\n' '// edited after the run' >> "$T/php/src/AuthClient.php"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 다른 바이트에서 난 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] php/src/AuthClient.php: the data was taken from other bytes (sha1 cdd9b2f0f71a" "[php] 해시 불일치"
+fresh
+rm "$D/php/Admin/AdminClient.php.xml"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] index.xml 이 댄 파일 XML 이 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "Admin/AdminClient.php.xml" "[php] 없는 파일 XML 을 댄다"
+fresh
+sed -i 's#executable="17" executed="13"#executable="18" executed="13"#' "$D/php/index.xml"
+assert_contains "$(cat "$D/php/index.xml")" 'executable="18" executed="13"' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] index.xml 과 파일 XML 의 합이 갈리면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] php/src/AuthClient.php: index.xml says 18/13 executable/executed lines, AuthClient.php.xml says 17/13 — the data contradicts itself" "[php] 두 합이 갈린다"
+# 메서드 밖에 실행 가능 줄이 있다(파일 합이 메서드 합보다 크다) — 그 줄은 어느 함수에도 못 붙인다.
+fresh
+sed -i 's#executable="17" executed="13"#executable="18" executed="13"#' "$D/php/index.xml" "$D/php/AuthClient.php.xml"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 메서드 밖 줄은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] php/src/AuthClient.php: its methods and functions account for 17 of 18 executable lines (13 of 13 executed) — lines outside any method cannot be attributed to a function" "[php] 메서드 합 ≠ 파일 합"
+fresh
+printf '%s\n' '<?xml version="1.0"?>' '<coverage><project source="/x/php/src"/></coverage>' > "$D/php/index.xml"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] <phpunit> 루트가 아닌 문서는 project source 가 있어도 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "is not a PHPUnit code-coverage XML report" "[php] 루트가 다르다"
+fresh
+sed -i 's# hash="a64b10a0b0d866b06c61cdf8644560503a083c06"##' "$D/php/index.xml"
+assert_not_contains "$(cat "$D/php/index.xml")" 'a64b10a0b0d866b06c61cdf8644560503a083c06' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 해시 없는 <file> 은 exit 2(대조를 건너뛰지 않는다) — 출력: $OUT"
+assert_contains "$OUT" "has a <file> without href · sha1 hash · line totals" "[php] 해시 없음"
+fresh
+sed -i '/<file name="AuthClient.php"/,/<\/file>/{/<\/file>/s#$#\n<file name="AuthClient.php" href="AuthClient.php.xml" hash="cdd9b2f0f71af9144f80421d68e74b7ed719af44"><totals><lines executable="17" executed="13"/></totals></file>#}' "$D/php/index.xml"
+assert_eq 2 "$(grep -c '<file name="AuthClient.php"' "$D/php/index.xml")" "(변이가 착지했는지 먼저 본다 — 완전한 항목이 둘)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] index 에 같은 파일이 두 번이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] php/src/AuthClient.php has two entries in" "[php] 겹친 항목"
+fresh
+sed -i 's#\(<method name="helper" [^>]*\) executable="1" executed="1"#\1 executed="1"#' "$D/php/AuthClient.php.xml"
+assert_not_contains "$(grep 'name="helper"' "$D/php/AuthClient.php.xml")" 'executable=' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 횟수 없는 메서드는 0 으로 읽지 않는다(exit 2) — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] php/src/AuthClient.php: cannot read the counts of AuthClient::helper" "[php] 못 읽는 횟수"
+# 못 읽는 횟수를 0 으로 읽지 않는다 — 안 돈 메서드의 `executed="0"` 을 망가뜨리면, 0 으로 읽을 때 합 · 크기 판정을 다 지나
+# OK 가 된다(변이 q11 이 SILENT 였다: 위 단언은 `executed="1" > 0` 판정이 같은 문구로 먼저 잡아 이 갈래를 재지 못했다).
+fresh
+sed -i 's#\(<method name="logoutUrl" [^>]*\) executed="0"#\1 executed="none"#' "$D/php/AuthClient.php.xml"
+assert_contains "$(grep 'name="logoutUrl"' "$D/php/AuthClient.php.xml")" 'executed="none"' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 숫자가 아닌 횟수는 0 으로 읽지 않는다(exit 2) — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] php/src/AuthClient.php: cannot read the counts of AuthClient::logoutUrl" "[php] 숫자가 아닌 횟수"
+fresh
+sed -i 's#\(<method name="logoutUrl" [^>]*\) executable="2" executed="0"#\1 executable="2" executed="3"#' "$D/php/AuthClient.php.xml"
+assert_contains "$(grep 'name="logoutUrl"' "$D/php/AuthClient.php.xml")" 'executed="3"' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 실행이 실행 가능보다 많으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] php/src/AuthClient.php: cannot read the counts of AuthClient::logoutUrl" "[php] 모순된 횟수"
+fresh
+sed -i 's#^\(\s*\)<function name="Fixture#\1<method name="loose" signature="loose()" start="1" end="1" crap="1" executable="0" executed="0" coverage="0"/>\n\1<function name="Fixture#' "$D/php/Admin/AdminClient.php.xml"
+assert_contains "$(cat "$D/php/Admin/AdminClient.php.xml")" '<method name="loose"' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 클래스·트레이트 밖의 메서드는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] php/src/Admin/AdminClient.php: the data has a method (loose) outside any class or trait" "[php] 모르는 컨테이너"
+# 데이터가 통합 스위트의 성공한 실행에서 났는가 — <tests> 는 경계 줄을 하나라도 돈 테스트와 결과다(경계를 안 지나는 ZeroIT 는
+# 실리지 않는다 — 그래서 「스위트의 클래스가 다 돌았나」는 재지 않는다). 기대 집합은 tree/php/phpunit.xml 의 통합 스위트로
+# 디스크에서 찾은 {DriveIT, ZeroIT} 다.
+fresh
+sed -i 's#\(<test name="DriveIT::testDrive" [^>]*\)status="success"#\1status="failure"#' "$D/php/index.xml"
+assert_contains "$(cat "$D/php/index.xml")" 'status="failure"' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 실패한 실행의 데이터는 exit 2(PHPUnit 은 실패해도 XML 을 쓴다) — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] 1 of 1 tests in the run did not succeed — the data of a failed run is partial: DriveIT::testDrive (failure)" "[php] 실패한 테스트"
+# 단위 스위트를 같은 설정으로 돌린 꼴(독립 레그 실측의 꼴) — 경계를 지난 단위 테스트가 목록에 든다.
+fresh
+sed -i 's#\(<test name="DriveIT::testDrive" [^>]*/>\)#\1\n      <test name="Fixture\\Keycloak\\Tests\\Unit\\ConfigTest::testRealm" size="unknown" status="success" time="0.001"/>#' "$D/php/index.xml"
+assert_contains "$(cat "$D/php/index.xml")" 'ConfigTest::testRealm' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 스위트 밖 테스트가 섞이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] the run included tests outside the integration suite (ConfigTest) — the report would not be integration-only" "[php] 스위트 밖"
+fresh
+sed -i '/<test name="DriveIT::testDrive"/d' "$D/php/index.xml"
+assert_not_contains "$(cat "$D/php/index.xml")" 'DriveIT::testDrive' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 줄은 돌았는데 테스트가 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "counts executed lines but lists no tests — the data contradicts itself" "[php] 모순"
+fresh
+sed -i '/<testsuite name="integration">/d' "$T/php/phpunit.xml"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 통합 스위트 정의가 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" 'php/phpunit.xml must define exactly one <testsuite name="integration"> (found 0)' "[php] 스위트 없음"
+# run 기록 — 이 데이터를 `run php` 가 썼고 그 실행이 성공했는가(독립 레그 2차: 경계에 닿기 전에 실패한 테스트는 <tests> 에
+# 아예 안 실려, 실패한 실행을 따로 report 하면 77/235 · exit 1 로 지나갔다).
+fresh
+rm "$D/php.run.json"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] run 기록이 없으면 exit 2(손으로 돌린 실행) — 출력: $OUT"
+assert_contains "$OUT" "no record that \`run php\` wrote this data" "[php] 기록 없음"
+fresh
+php_mark 2
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 실패한 실행의 기록이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] the run that wrote this data exited 2 — the data of a failed run is partial" "[php] 실패 종료"
+assert_not_contains "$OUT" "  total " "[php] 실패한 실행은 수치를 내지 않는다"
+fresh
+printf '%s\n' '<!-- another run wrote over the data -->' >> "$D/php/index.xml"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 기록 뒤 바뀐 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "is not the data \`run php\` recorded" "[php] 기록과 다른 데이터"
+# suffix 를 안 적은 <directory> 는 PHPUnit 기본(`Test.php`)으로 고른다 — `*IT.php` 는 하나도 안 든다.
+fresh
+sed -i 's#<directory suffix="IT.php">tests/Integration</directory>#<directory>tests/Integration</directory>#' "$T/php/phpunit.xml"
+assert_contains "$(cat "$T/php/phpunit.xml")" '<testsuite name="integration"><directory>tests/Integration</directory>' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 기본 suffix 로 고르면 IT 파일이 없다 — exit 2 — 출력: $OUT"
+assert_contains "$OUT" "the integration testsuite finds no test files — a report over no tests is vacuous" "[php] 빈 스위트"
+fresh
+sed -i 's#\(<testsuite name="integration"><directory suffix="IT.php">tests/Integration</directory>\)#\1<exclude>tests/Integration/ZeroIT.php</exclude>#' "$T/php/phpunit.xml"
+assert_contains "$(cat "$T/php/phpunit.xml")" '<exclude>tests/Integration/ZeroIT.php</exclude>' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 모르는 고르기(<exclude>)는 exit 2 — 무엇이 스위트인지 모르면 가를 수 없다 — 출력: $OUT"
+assert_contains "$OUT" "selects tests with something other than <directory> and <file>" "[php] 모르는 고르기"
+fresh
+sed -i 's#<method name="realm" #<method name="__construct" #' "$D/php/AuthClient.php.xml"
+assert_contains "$(cat "$D/php/AuthClient.php.xml")" 'signature="realm(): string"' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 이름이 겹치면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] php/src/AuthClient.php: two functions are both named AuthClient::__construct" "[php] 겹친 이름"
+fresh
+sed -i '/"php\/src\/AuthClient.php:AuthClient::__debugInfo"/d' "$T/scripts/integration-coverage.json"
+assert_not_contains "$(cat "$T/scripts/integration-coverage.json")" 'AuthClient::__debugInfo' "(변이가 착지했는지 먼저 본다 — 마지막이 아닌 항목이라 JSON 이 그대로 맞다)"
+run report php "$T" --out "$D"
+assert_eq 1 "$RC" "[php] 소유자 없는 미실행 함수는 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [php] unowned never-executed function php/src/AuthClient.php:AuthClient::__debugInfo" "[php] 소유자 없음"
+assert_line "$OUT" "  NEVER php/src/AuthClient.php:70 AuthClient::__debugInfo · 1 line · owner NONE" "[php] 목록에도 NONE 으로 남는다"
+
 # ── (2) 음성: 소유자(exit 1 — 경고, 게이트가 아니다) ─────────────────────────────────────────
 fresh
 sed -i '/"go\/admin.go:AdminClient.Close"/d' "$T/scripts/integration-coverage.json"
@@ -581,18 +793,26 @@ run report rust "$T" --out "$D"
 assert_eq 2 "$RC" "[rust] 경계 줄을 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [rust] the run executed 0 of 138 boundary lines — a measurement failure, not a low number" "[rust] 측정 실패 문구"
 assert_not_contains "$OUT" "0.0%" "[rust] 측정 실패에서 0% 를 내지 않는다"
+# php — 구동기가 경계를 하나도 안 불렀다. 파일을 싣는 것만으로는 줄이 안 덮인다(실행 가능 줄은 정적 분석이 정한다).
+fresh
+php_data "$FIX/data/php-zero"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 경계 줄을 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [php] the run executed 0 of 22 boundary lines — a measurement failure, not a low number" "[php] 측정 실패 문구"
+assert_not_contains "$OUT" "0.0%" "[php] 측정 실패에서 0% 를 내지 않는다"
 # 빈 파생 + 빈 핀 — 집합은 같으므로(∅ = ∅) 빈 집합 판정만이 잡는다. 파생 도구를 가짜로 바꿔 그 갈래만 태운다.
 # ⚠️ 두 언어 다 「있되 비었다」여야 한다 — 한 언어를 빼 두면 check 의 exit 2 가 그 「없는 파생」에서 와서 빈 집합
 # 갈래를 지워도 초록이었다(변이 실측: 빈 집합 통과 변이에 check 단언이 침묵했다).
 fresh
-printf '%s\n' 'const e = (d) => ({ dir: d, site: "fake:1", label: "fake", universe: 3, files: [] })' 'console.log(JSON.stringify({ langs: { go: e("go"), python: e("python"), node: e("node"), rust: e("rust") }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
-printf '%s\n' '{ "go": { "pinned": [], "owners": {} }, "python": { "pinned": [], "owners": {} }, "node": { "pinned": [], "owners": {} }, "rust": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
+printf '%s\n' 'const e = (d) => ({ dir: d, site: "fake:1", label: "fake", universe: 3, files: [] })' 'console.log(JSON.stringify({ langs: { go: e("go"), python: e("python"), node: e("node"), rust: e("rust"), php: e("php") }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
+printf '%s\n' '{ "go": { "pinned": [], "owners": {} }, "python": { "pinned": [], "owners": {} }, "node": { "pinned": [], "owners": {} }, "rust": { "pinned": [], "owners": {} }, "php": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
 run check "$T"
 assert_eq 2 "$RC" "[check] 빈 파생은 exit 2(빈 핀과 같아도) — 출력: $OUT"
 assert_contains "$OUT" "FAIL [python] the derived boundary is empty" "[check] python 도 빈 파생"
 assert_contains "$OUT" "FAIL [node] the derived boundary is empty" "[check] node 도 빈 파생"
 assert_contains "$OUT" "FAIL [rust] the derived boundary is empty" "[check] rust 도 빈 파생"
-assert_not_contains "$OUT" "returned no derivation" "[check] 넷 다 있되 비었다 — 「없는 파생」이 빈 집합 갈래를 가리지 않는다"
+assert_contains "$OUT" "FAIL [php] the derived boundary is empty" "[check] php 도 빈 파생"
+assert_not_contains "$OUT" "returned no derivation" "[check] 다섯 다 있되 비었다 — 「없는 파생」이 빈 집합 갈래를 가리지 않는다"
 assert_not_contains "$OUT" "pin OK" "[check] 빈 집합끼리의 일치를 「핀 OK」로 찍지 않는다"
 run report go "$T" --out "$D"
 assert_eq 2 "$RC" "[go] 빈 파생은 exit 2"
@@ -634,7 +854,7 @@ assert_contains "$OUT" "FAIL [-] scripts/coverage-boundary.mjs is missing" "파�
 fresh
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "파일럿이 안 재는 언어는 usage(exit 2)"
-assert_contains "$OUT" "this pilot measures go · python · node · rust — got java" "usage 문구"
+assert_contains "$OUT" "this pilot measures go · python · node · rust · php — got java" "usage 문구"
 
 # ── (4) 하한(4 걸음째 — 2026-11-02 무장) ─────────────────────────────────────────────────────────
 # 픽스처 핀에는 하한이 없다(위 단언들은 하한 없는 리포트다). 여기서만 주입한다.
@@ -708,6 +928,19 @@ fresh; floor rust statements 50
 run check "$T"
 assert_eq 2 "$RC" "[floor] rust 에 statements 는 없다(지표는 lines) — 출력: $OUT"
 assert_contains "$OUT" "rust.floor.metric" "[floor] rust 지표 오류를 지목한다"
+
+# php 의 지표도 lines(php-code-coverage 의 실행 가능 줄 — 픽스처 16/22 = 72.727%).
+fresh; floor php lines 72.72
+run report php "$T" --out "$D"
+assert_eq 0 "$RC" "[floor] php 72.727% ≥ 72.72 — 출력: $OUT"
+assert_line "$OUT" "integration-coverage [php]: OK — 16/22 lines (72.7%) · floor lines ≥ 72.72% · 4 never-executed functions, all owned by open registry items" "[floor] php 통과 요약"
+fresh; floor php lines 72.73
+run report php "$T" --out "$D"
+assert_eq 3 "$RC" "[floor] php 72.727% < 72.73 — 출력: $OUT"
+fresh; floor php statements 50
+run check "$T"
+assert_eq 2 "$RC" "[floor] php 에 statements 는 없다(지표는 lines) — 출력: $OUT"
+assert_contains "$OUT" "php.floor.metric" "[floor] php 지표 오류를 지목한다"
 
 # 소유 문제와 하한 미달이 겹치면 게이트(3)가 경고(1)를 이긴다 — 경고는 그대로 찍는다.
 fresh; floor go statements 46
