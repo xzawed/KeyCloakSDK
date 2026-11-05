@@ -1236,7 +1236,9 @@ function phpIntegrationClasses(d) {
     fail('php', `${site} is missing — the integration testsuite cannot be read`)
     return null
   }
-  const x = readFileSync(join(root, site), 'utf8').replace(/<!--[\s\S]*?-->/g, '')
+  // 주석은 같은 길이의 공백으로 덮는다 — 지우면(`''`) 겹친 꼴(`<!<!---->--`)이 한 번 지운 뒤 `<!--` 로 남는다(CodeQL
+  // js/incomplete-multi-character-sanitization — 이 PR 의 첫 판이 그 경보를 냈다).
+  const x = readFileSync(join(root, site), 'utf8').replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '))
   const suites = [...x.matchAll(/<testsuite\s+name="integration"\s*>([\s\S]*?)<\/testsuite>/g)]
   if (suites.length !== 1) {
     fail('php', `${site} must define exactly one <testsuite name="integration"> (found ${suites.length}) — the report checks the data against it`)
