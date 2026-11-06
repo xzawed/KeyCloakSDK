@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
-# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — go · python · node · rust · php · ruby 의 무결성 판정과 하한.
+# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — go · python · node · rust · php · ruby · dotnet 의 무결성 판정과 하한.
 #
-# ⚠️ **커밋된 픽스처만 쓴다** — Docker 도 Go·Python·node·rust·php·ruby 툴체인도 필요 없다. 실제 Keycloak 에 대고 도는 것은
+# ⚠️ **커밋된 픽스처만 쓴다** — Docker 도 Go·Python·node·rust·php·ruby·dotnet 툴체인도 필요 없다. 실제 Keycloak 에 대고 도는 것은
 # 레인 CI 의 integration 잡이다. 여기서 재는 것은 리포트의 **무결성 판정** 셋이다:
 #   (1) 양성 — 건강한 픽스처에서 파일별·합계 수치와 미실행 함수 목록이 **정확히** 나온다.
 #   (2) 음성 — 파생이 좁아지거나(그러면 %가 오른다), 핀과 갈리거나, 데이터에서 파일이 빠지거나,
@@ -34,7 +34,15 @@
 #   data/ruby.json         **도구의 `run ruby` 그대로**(ruby 3.4.10 · 2026-11-06) — 임시 루트에 tree 사본, 번들은 실제 레인의 것
 #                          (`BUNDLE_GEMFILE=ruby/Gemfile`). **덤프의 생성 루트만 `@ROOT@` 로 바꿨다**(root 와 파일 키는 절대 경로다)
 #   data/ruby-zero.json    같은 명령, 구동 스펙이 경계 밖 `Config` 만 만든다 — 메서드 몸통 전부 0
+#   data/dotnet.json       **도구의 `run dotnet` 그대로**(.NET SDK 10.0.102 → net8.0 · coverlet.collector 10.1.0 · 2026-11-06) — 임시
+#                          루트에 tree 사본. 문서 키는 절대 경로다 — **생성 루트만 `@ROOT@` 로 바꿨다**(JSON 의 `\\` 그대로)
+#   data/dotnet.trx        같은 실행의 trx — 생성 루트(`@ROOT@` · 소문자 `@root@`)와 기계 · 사용자 이름(HOST · USER)만 바꿨다
+#                          (치환마다 되돌린 바이트가 원본과 같다)
+#   data/dotnet-zero.*     같은 명령, 구동 테스트가 경계 밖 `Config` 만 만든다 — 경계 줄 전부 0
 # ruby 구동 스펙은 「logout_url · AuthClient.build · introspect · close · flush」를 안 부르고 `token` 의 nil 갈래를 안 탄다.
+# dotnet 구동 테스트는 「두 번째 생성자 · Describe(int) · LogoutAsync · Build · Unused · Later · Lower · NamesAsync · Retries 의
+# setter · Close · Dispose · Defaults · DeleteAsync」를 안 부르고 `TokenAsync` 의 빈 code 갈래 · `RetryAsync` 의 fail 갈래(그 안의
+# async 람다)를 안 탄다(`UnitTests` 는 Trait 이 없는 통합 밖 테스트다 — 레인의 필터가 거른다).
 # php 구동기는 「groups·adminHelper·logoutUrl·__debugInfo」를 안 부르고 `exchange` 의 throw 갈래를 안 탄다.
 # 구동기는 「String·Close·Delete·AuthClient.String·hook 리터럴」과 「__repr__·logout·clients·aio 전체」를, node 는
 # 「describe·toString·[SYM]·inc·cb·set count·overload·longSignature·close」를, rust 는 「transport·supply·describe·noop·close·
@@ -63,6 +71,7 @@ fresh() {
   rust_data "$FIX/data/rust.lcov"
   php_data "$FIX/data/php"
   ruby_data "$FIX/data/ruby.json"
+  dotnet_data "$FIX/data/dotnet.json" "$FIX/data/dotnet.trx"
   git -C "$T" init -q
   git -C "$T" config core.autocrlf false
   git -C "$T" add -A
@@ -101,6 +110,19 @@ ruby_data() { # fixture-json
 ruby_mark() { # exit
   printf '{"run":"ruby","exit":%s,"dump_sha1":"%s"}\n' "$1" "$(sha1sum "$D/ruby.json" | cut -d' ' -f1)" > "$D/ruby.run.json"
 }
+# `run dotnet` 의 데이터(coverlet JSON — 문서 키가 절대 경로)와 trx(테스트 어셈블리 경로가 절대 경로) — 같은 치환 뒤 기록을 쓴다.
+dotnet_data() { # fixture-json fixture-trx
+  _r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
+  sed "s#@ROOT@#$_r#g" "$1" > "$D/dotnet.json"
+  sed "s#@ROOT@#$_r#g; s#@root@#$_r#g" "$2" > "$D/dotnet.trx"
+  dotnet_mark 0
+}
+# `run dotnet` 의 기록(종료코드 · 데이터와 trx 의 sha1 · 경계 파일의 sha1 — coverlet 데이터에는 해시가 없다) — php_mark 와 같은 쓰임.
+dotnet_mark() { # exit
+  printf '{"run":"dotnet","exit":%s,"data_sha1":"%s","trx_sha1":"%s","files":{"dotnet/src/Kc/Admin/Client.cs":"%s","dotnet/src/Kc/AuthClient.cs":"%s"}}\n' "$1" \
+    "$(sha1sum "$D/dotnet.json" | cut -d' ' -f1)" "$(sha1sum "$D/dotnet.trx" | cut -d' ' -f1)" \
+    "$(sha1sum "$T/dotnet/src/Kc/Admin/Client.cs" | cut -d' ' -f1)" "$(sha1sum "$T/dotnet/src/Kc/AuthClient.cs" | cut -d' ' -f1)" > "$D/dotnet.run.json"
+}
 run() {
   git -C "$T" add -A
   OUT="$(node "$TOOL" "$@" 2>&1)" && RC=0 || RC=$?
@@ -121,7 +143,8 @@ assert_line "$OUT" "[node] pin OK — 2 files equal the derivation from node/vit
 assert_line "$OUT" "[rust] pin OK — 3 files equal the derivation from .github/workflows/rust-ci.yml:7 (cargo llvm-cov --ignore-filename-regex)" "[check] rust 핀 = 파생"
 assert_line "$OUT" "[php] pin OK — 2 files equal the derivation from php/phpunit.xml:11 (phpunit <source><exclude>)" "[check] php 핀 = 파생"
 assert_line "$OUT" "[ruby] pin OK — 3 files equal the derivation from ruby/spec/spec_helper.rb:8 (SimpleCov skip)" "[check] ruby 핀 = 파생"
-assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 · php 2 · ruby 3 files pinned · 48 owner entries, all open" "[check] 요약"
+assert_line "$OUT" "[dotnet] pin OK — 2 files equal the derivation from dotnet/coverlet.runsettings:9 (coverlet <Exclude>)" "[check] dotnet 핀 = 파생"
+assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 · php 2 · ruby 3 · dotnet 2 files pinned · 61 owner entries, all open" "[check] 요약"
 
 run report go "$T" --out "$D"
 assert_eq 0 "$RC" "[go] 건강한 리포트는 exit 0 — 출력: $OUT"
@@ -314,6 +337,41 @@ assert_line "$OUT" "  NEVER ruby/lib/kc/auth_client.rb:26 AuthClient.build · 1 
 assert_line "$OUT" "  NEVER ruby/lib/kc/auth_client.rb:30 AuthClient#introspect · 2 lines · owner open-admin" "[ruby] 인스턴스 메서드는 「#」"
 assert_not_contains "$OUT" "AuthClient.parse ·" "[ruby] 부른 특이 메서드는 목록에 없다"
 assert_line "$OUT" "integration-coverage [ruby]: OK — lines 24/28 (85.7%) · bodies 6/12 (50.0%) · 5 never-executed functions, all owned by open registry items" "[ruby] 통과 요약"
+
+# dotnet — 줄 · 횟수는 coverlet 컬렉터의 고유 JSON 이, 이름은 컴파일러가 만든 이름이 낸다. async · 이터레이터 메서드는 중첩 상태
+# 기계(제네릭 메서드면 항수가 붙는다)의 MoveNext 에만 줄이 있고, 람다 · 로컬 함수 · async 람다는 감싼 메서드에 접힌다. 오버로드는
+# 시그니처로 가른다. 한 줄의 횟수는 그 줄의 모든 코드의 합이다(같은 줄의 람다 · auto-property setter 는 따로 안 실린다). 클로저
+# 클래스의 람다(`Prefixed` 의 여러 줄 람다)는 coverlet 이 감싼 메서드 아래 싣는다. 생성자는 `#ctor` · 정적 생성자는 `#cctor`.
+fresh
+run report dotnet "$T" --out "$D"
+assert_eq 0 "$RC" "[dotnet] 건강한 리포트는 exit 0 — 출력: $OUT"
+assert_line "$OUT" "[dotnet] integration-only coverage — report mode, no floor" "[dotnet] 머리줄"
+assert_line "$OUT" "  boundary: 2 files derived from dotnet/coverlet.runsettings:9 (coverlet <Exclude>) — equal to the pin in scripts/integration-coverage.json" "[dotnet] 파생 출처"
+assert_contains "$OUT" "/dotnet.json (.NET 8.0.23 · coverlet json · 1 test)" "[dotnet] 데이터 · 런타임 · 테스트 수를 찍는다"
+assert_line "$OUT" "  dotnet/src/Kc/Admin/Client.cs 5/10 50.0%" "[dotnet] Admin/Client.cs — 중첩 타입 · 빈 몸통 · 정적 초기화"
+assert_line "$OUT" "  dotnet/src/Kc/AuthClient.cs 40/74 54.1%" "[dotnet] AuthClient.cs — 상태 기계 · 람다 · 로컬 함수의 줄이 든다"
+assert_line "$OUT" "  total 45/84 53.6%" "[dotnet] 합계는 경계 파일만(Config.cs 제외)"
+assert_line "$OUT" "  never executed by the integration run — 13 functions (none of its lines ran):" "[dotnet] 미실행 머리줄"
+assert_line "$OUT" "  NEVER dotnet/src/Kc/Admin/Client.cs:11 Client.Close · 1 line · owner open-admin" "[dotnet] 빈 몸통도 닫는 중괄호 줄이 있다"
+assert_line "$OUT" "  NEVER dotnet/src/Kc/Admin/Client.cs:13 Client.Dispose · 1 line · owner open-admin" "[dotnet] 식 본문 메서드"
+assert_line "$OUT" "  NEVER dotnet/src/Kc/Admin/Client.cs:17 Client.Defaults.#cctor · 1 line · owner open-admin" "[dotnet] 정적 생성자는 「#cctor」 — 필드 초기화 줄"
+assert_line "$OUT" "  NEVER dotnet/src/Kc/Admin/Client.cs:19 Client.Defaults.First · 1 line · owner open-admin" "[dotnet] 정적 중첩 타입의 메서드"
+assert_line "$OUT" "  NEVER dotnet/src/Kc/Admin/Client.cs:30 Client.UsersResource.DeleteAsync · 1 line · owner open-admin" "[dotnet] 중첩 사용자 타입은 「.」으로 잇는다 — async 아닌 Task 반환"
+assert_line "$OUT" "  NEVER dotnet/src/Kc/AuthClient.cs:14 AuthClient.#ctor(System.String,System.String) · 2 lines · owner open-masking" "[dotnet] 생성자 오버로드는 「#ctor」 + 시그니처"
+assert_line "$OUT" "  NEVER dotnet/src/Kc/AuthClient.cs:60 AuthClient.Describe(System.Int32) · 1 line · owner open-admin" "[dotnet] 오버로드는 시그니처로 가른다"
+assert_line "$OUT" "  NEVER dotnet/src/Kc/AuthClient.cs:86 AuthClient.LogoutAsync · 2 lines · owner open-admin" "[dotnet] async 메서드 — 상태 기계의 줄"
+assert_line "$OUT" "  NEVER dotnet/src/Kc/AuthClient.cs:89 AuthClient.Build · 1 line · owner open-masking" "[dotnet] 정적 메서드"
+assert_line "$OUT" "  NEVER dotnet/src/Kc/AuthClient.cs:93 AuthClient.Unused · 2 lines · owner open-admin" "[dotnet] 로컬 함수의 줄은 감싼 메서드의 것이다"
+assert_line "$OUT" "  NEVER dotnet/src/Kc/AuthClient.cs:100 AuthClient.Later · 5 lines · owner open-admin" "[dotnet] 동기 메서드가 돌려주는 async 람다 — coverlet 이 그 줄을 감싼 메서드 아래 싣는다(상태 기계는 빈 줄)"
+assert_line "$OUT" "  NEVER dotnet/src/Kc/AuthClient.cs:109 AuthClient.Lower · 6 lines · owner open-admin" "[dotnet] 동기 메서드의 람다 줄은 coverlet 이 그 메서드 아래 싣는다"
+assert_line "$OUT" "  NEVER dotnet/src/Kc/AuthClient.cs:119 AuthClient.NamesAsync · 8 lines · owner open-admin" "[dotnet] async 메서드의 람다는 람다 캐시에 따로 실린다 — 감싼 메서드에 접는다"
+assert_not_contains "$OUT" "Describe() ·" "[dotnet] 부른 오버로드는 목록에 없다"
+assert_not_contains "$OUT" "#ctor(Kc.Config)" "[dotnet] 부른 생성자 오버로드는 목록에 없다"
+assert_not_contains "$OUT" "EchoAsync" "[dotnet] 부른 제네릭 async 메서드는 목록에 없다"
+assert_not_contains "$OUT" "Prefixed" "[dotnet] 클로저 람다의 줄은 감싼 메서드의 것이다 — 부른 메서드는 목록에 없다"
+assert_not_contains "$OUT" "MoveNext" "[dotnet] 상태 기계의 이름을 내지 않는다"
+assert_not_contains "$OUT" "RetryAsync" "[dotnet] 돈 메서드 안의 안 돈 async 람다(상태 기계의 줄 전부 0)는 두 겹을 벗겨 그 메서드에 접는다 — 목록에 없다"
+assert_line "$OUT" "integration-coverage [dotnet]: OK — 45/84 lines (53.6%) · 13 never-executed functions, all owned by open registry items" "[dotnet] 통과 요약"
 
 # ── (2) 음성: 파생 ↔ 핀 ───────────────────────────────────────────────────────────────────────
 # 파생이 좁아진다 — 이것이 등록부가 실측한 함정의 꼴이다(파일이 빠지면 %가 오른다).
@@ -952,6 +1010,311 @@ run report ruby "$T" --out "$D"
 assert_eq 1 "$RC" "[ruby] 소유자 없는 미실행 메서드는 exit 1(경고) — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [ruby] unowned never-executed function ruby/lib/kc/admin/client.rb:Client#flush" "[ruby] 소유자 키"
 
+# dotnet — coverlet 데이터 · trx · 기록의 무결성. 줄 · 횟수 · 이름을 받되, 데이터가 이 트리 · 이 실행 · 이 바이트의 것인지와
+# 스스로 맞는지를 본다.
+fresh
+rm "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 데이터가 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] no coverage data at" "[dotnet] 데이터 없음"
+fresh
+printf 'not json\n' > "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] JSON 이 아니면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/dotnet.json is not JSON" "[dotnet] JSON 아님"
+fresh
+printf '{"Kc.dll": []}\n' > "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] coverlet 의 꼴이 아니면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "is not coverlet's JSON (module → document → class → method)" "[dotnet] 꼴"
+# 같은 판정의 앞 항 — 루트가 객체가 아니다(위는 루트가 객체이고 모듈 값만 배열이다 — 독립 레그 5차 지적).
+fresh
+printf '[]\n' > "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 객체 아닌 루트는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "is not coverlet's JSON (module → document → class → method)" "[dotnet] 루트 꼴"
+fresh
+_r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
+sed -i "s#$_r#/elsewhere/checkout#g" "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 다른 체크아웃의 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "outside this tree — the data belongs to another checkout" "[dotnet] 다른 체크아웃의 문서"
+fresh
+_r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
+printf '{"A.dll": {"%s/dotnet/src/Kc/AuthClient.cs": {}}, "B.dll": {"%s/dotnet/src/Kc/AuthClient.cs": {}}}\n' "$_r" "$_r" > "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 두 모듈에 같은 문서가 있으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] dotnet/src/Kc/AuthClient.cs is in two modules of" "[dotnet] 두 모듈"
+fresh
+sed -i 's#Config\.cs": {#Gone.cs": {#' "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 트리에 없는 문서가 데이터에 있으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] dotnet/src/Kc/Gone.cs is in the data but not in the tree" "[dotnet] 트리에 없는 문서"
+fresh
+sed -i 's#AuthClient\.cs": {#AuthClientOld.cs": {#' "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 데이터에 없는 경계 파일은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] dotnet/src/Kc/AuthClient.cs is not in the coverage data" "[dotnet] 데이터에 없는 경계 파일"
+fresh
+_r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
+printf '{"Kc.dll": {"%s/dotnet/src/Kc/AuthClient.cs": [], "%s/dotnet/src/Kc/Admin/Client.cs": {}}}\n' "$_r" "$_r" > "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 클래스 → 메서드가 아닌 항목은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] dotnet/src/Kc/AuthClient.cs: the entry is not class → method" "[dotnet] 항목 꼴"
+# 같은 판정의 뒤 항 — 문서 값은 객체인데 클래스 값이 아니다(위는 문서 값이 배열이라 이 항에 안 닿는다). 고친 데이터는 그것만으로
+# 기록 대조가 FAIL 하므로 기록을 다시 써서 exit 2 가 이 결함에서만 오게 한다(아래 「다시 쓴다」 음성도 같다).
+fresh
+_r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
+printf '{"Kc.dll": {"%s/dotnet/src/Kc/AuthClient.cs": {"Kc.AuthClient": []}, "%s/dotnet/src/Kc/Admin/Client.cs": {}}}\n' "$_r" "$_r" > "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 메서드 맵이 아닌 클래스는 exit 2(기록을 다시 쓴다) — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] dotnet/src/Kc/AuthClient.cs: the entry is not class → method" "[dotnet] 클래스 값 꼴"
+fresh
+sed -i 's#"60": 0#"60": -1#' "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 음수 횟수는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot read the line counts of System.String Kc.AuthClient::Describe(System.Int32)" "[dotnet] 못 읽는 횟수"
+fresh
+sed -i 's#"60": 0#"0": 0#' "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 0 번 줄은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot read the line counts of System.String Kc.AuthClient::Describe(System.Int32)" "[dotnet] 줄 번호는 1 부터"
+# 같은 판정의 앞 항 — Lines 가 객체가 아니다(위 둘은 객체 안의 키 · 값만 틀렸다). 빈 배열이면 every 가 참이라 빈 메서드로 지나간다.
+fresh
+sed -i '/Kc.AuthClient::Build(Kc.Config)/,/"Lines"/s#"Lines": {#"Lines": [], "Was": {#' "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 객체 아닌 Lines 는 exit 2(기록을 다시 쓴다) — 출력: $OUT"
+assert_contains "$OUT" "cannot read the line counts of Kc.AuthClient Kc.AuthClient::Build(Kc.Config)" "[dotnet] Lines 꼴"
+fresh
+sed -i 's#"60": 0#"9999": 0#' "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 파일 밖 줄은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.Describe counts line 9999, past the" "[dotnet] 파일 밖 줄"
+fresh
+sed -i 's#<GetAsync>d__0#<GetAsync>x__0#' "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 모르는 생성 이름은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name Kc.Admin.Client/UsersResource/<GetAsync>x__0::MoveNext() — not a generated name this reader knows" "[dotnet] 모르는 꼴"
+# 모르는 생성 꼴은 자리마다 따로 FAIL 이다 — 위는 상태 기계 자리다. 바깥 타입의 메서드 자리 · 람다 캐시의 메서드 자리도 같다(그
+# 판정을 지우면 그 줄이 이름 null 인 가짜 멤버로 접힌다 — 기록을 다시 쓴다).
+fresh
+sed -i 's#<Count>g__Twice|14_0#<Count>q__Twice|14_0#' "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 바깥 타입의 모르는 생성 이름은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name Kc.AuthClient::<Count>q__Twice|14_0(System.Int32) — not a generated name this reader knows" "[dotnet] 바깥 타입 자리의 모르는 꼴"
+fresh
+sed -i 's#<>c::<NamesAsync>b__25_0(#<>c::<NamesAsync>q__25_0(#' "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 람다 캐시의 모르는 생성 이름은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name Kc.AuthClient/<>c::<NamesAsync>q__25_0(System.String) — not a generated name this reader knows" "[dotnet] 람다 캐시 자리의 모르는 꼴"
+fresh
+sed -i 's#<LogoutAsync>d__20#<Describe>d__20#g' "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 상태 기계가 붙은 오버로드는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.Describe has overloads and a state machine or lambda folds into one of them" "[dotnet] 못 가르는 오버로드"
+# 몸통은 시그니처와 상태 기계를 함께 센다 — 위는 동기 오버로드가 이미 둘이라 상태 기계를 안 세도 걸린다(변이 n19 SILENT). 아래
+# 셋이 조건의 나머지 항을 하나씩 지난다: 상태 기계 둘 · 시그니처 하나와 상태 기계 하나 · 상태 기계 없이 람다(기록을 다시 쓴다).
+fresh
+sed -i 's#<LogoutAsync>d__20#<TokenAsync>d__20#g' "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] async 오버로드 둘(상태 기계 둘)은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.TokenAsync has overloads and a state machine or lambda folds into one of them" "[dotnet] 상태 기계 둘인 오버로드"
+fresh
+sed -i 's#<LogoutAsync>d__20#<Build>d__20#g' "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 동기 오버로드 하나와 async 오버로드 하나는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.Build has overloads and a state machine or lambda folds into one of them" "[dotnet] 시그니처 하나 · 상태 기계 하나인 오버로드"
+fresh
+sed -i 's#<Count>g__Twice|14_0#<Describe>g__Twice|14_0#' "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 로컬 함수가 붙은 동기 오버로드는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.Describe has overloads and a state machine or lambda folds into one of them" "[dotnet] 람다가 붙은 오버로드"
+# 빈 Lines 만 남은 이름 — coverlet 은 async 람다의 줄을 감싼 메서드 아래 싣고 그 상태 기계를 빈 Lines 로 낸다(Later). 그것만 남은
+# 이름은 미실행이 아니고 보탤 줄도 없다(기록을 다시 쓴다).
+fresh
+sed -i 's#<<Later>b__23_0>d#<<Ghost>b__23_0>d#g' "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 0 "$RC" "[dotnet] 빈 Lines 만 남은 이름은 exit 0 — 출력: $OUT"
+assert_line "$OUT" "integration-coverage [dotnet]: OK — 45/84 lines (53.6%) · 13 never-executed functions, all owned by open registry items" "[dotnet] 줄 없는 이름은 미실행 목록에 안 든다"
+assert_not_contains "$OUT" "Ghost" "[dotnet] 줄 없는 이름은 내지 않는다"
+fresh
+sed -i 's#<GetAsync>d__0::MoveNext()#<GetAsync>d__0::SetStateMachine()#' "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 상태 기계의 MoveNext 아닌 메서드는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name Kc.Admin.Client/UsersResource/<GetAsync>d__0::SetStateMachine()" "[dotnet] 상태 기계는 MoveNext 만 안다"
+fresh
+sed -i 's#<TokenAsync>d__10#<TokenAsync>d__10/Inner#g' "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 생성 타입 안의 사용자 타입은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name Kc.AuthClient/<TokenAsync>d__10/Inner::MoveNext()" "[dotnet] 생성 세그먼트 뒤 사용자 세그먼트"
+fresh
+sed -i 's#Kc.Admin.Client/UsersResource/<GetAsync>d__0#<GetAsync>d__0#g' "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 사용자 타입이 없는 클래스는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name <GetAsync>d__0::MoveNext()" "[dotnet] 사용자 세그먼트 없음"
+fresh
+sed -i 's#Kc.AuthClient::Describe(System.Int32)#Kc.AuthClient:Describe(System.Int32)#' "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 못 읽는 시그니처는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name Kc.AuthClient::System.String Kc.AuthClient:Describe(System.Int32)" "[dotnet] 시그니처에 「::」 가 없다"
+fresh
+sed -i 's#Kc.AuthClient/<>c/<<SumAsync>#Kc.AuthClient/<>c__DisplayClass5_0/<<SumAsync>#g' "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 클로저 클래스 꼴은 exit 2(coverlet 이 안 내는 꼴 — 접지 않는다) — 출력: $OUT"
+assert_contains "$OUT" "cannot name Kc.AuthClient/<>c__DisplayClass5_0/<<SumAsync>b__18_0>d::MoveNext()" "[dotnet] 모르는 클로저 꼴"
+fresh
+sed -i 's#<>c::<NamesAsync>b__25_0(#<>c::NamesAsync(#' "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 람다 캐시 안의 생성 이름 아닌 메서드는 exit 2(접지 않는다) — 출력: $OUT"
+assert_contains "$OUT" "cannot name Kc.AuthClient/<>c::NamesAsync(System.String) — not a generated name this reader knows" "[dotnet] 람다 캐시의 모르는 꼴"
+# 파생과 디스크가 갈렸다(파생 도구가 읽은 뒤 지워진 파일) — 가짜 파생 도구로 그 상태만 만든다.
+fresh
+printf '%s\n' 'console.log(JSON.stringify({ langs: { dotnet: { dir: "dotnet", site: "fake:1", label: "fake", universe: 3, files: ["dotnet/src/Kc/Admin/Client.cs", "dotnet/src/Kc/AuthClient.cs"] } }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
+rm "$T/dotnet/src/Kc/Admin/Client.cs"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 파생에 있되 디스크에 없는 경계 파일은 exit 2(예외가 아니다) — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] dotnet/src/Kc/Admin/Client.cs is derived but missing on disk — the data cannot be checked against it" "[dotnet] 디스크에 없는 경계 파일"
+# trx — 이 실행의 테스트 결과(범주가 없다 — 기대 집합은 Trait 을 단 소스의 클래스).
+fresh
+rm "$D/dotnet.trx"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] trx 가 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] no test results at" "[dotnet] trx 없음"
+fresh
+sed -i 's#outcome="Passed"#outcome="Failed"#' "$D/dotnet.trx"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 실패한 테스트가 있으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] 1 of 1 tests in the run did not pass — the data of a failed run is partial: Kc.Tests.Integration.DriveTests.Drive (Failed)" "[dotnet] 실패한 테스트"
+fresh
+sed -i '/<UnitTestResult /d' "$D/dotnet.trx"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 테스트가 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] the run recorded no tests — a report over no tests is vacuous" "[dotnet] 테스트 없음"
+fresh
+sed -i 's#className="Kc.Tests.Integration.DriveTests"#className="Kc.Tests.UnitTests"#' "$D/dotnet.trx"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 스위트 밖 테스트는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] the run included tests outside the integration suite (Kc.Tests.Integration.DriveTests.Drive)" "[dotnet] 스위트 밖"
+# 결과를 정의에 잇는 id · 정의의 TestMethod 가 없는 trx — 이을 수 없는 결과는 스위트 밖이다(독립 레그 5차 지적: 어느 음성도 이 둘을
+# 따로 안 지났다). id 없는 정의가 있어도 id 없는 결과를 거기 잇지 않는다(기록을 다시 쓴다).
+fresh
+sed -i 's# testId="995e07f8-c482-520f-2c06-7d7bfea06a94"##; s# id="995e07f8-c482-520f-2c06-7d7bfea06a94">#>#' "$D/dotnet.trx"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] id 없는 결과 · 정의는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] the run included tests outside the integration suite (Kc.Tests.Integration.DriveTests.Drive)" "[dotnet] id 없는 결과는 잇지 않는다"
+fresh
+sed -i '/<TestMethod /d' "$D/dotnet.trx"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] TestMethod 없는 정의는 exit 2(예외가 아니다) — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] the run included tests outside the integration suite (Kc.Tests.Integration.DriveTests.Drive)" "[dotnet] TestMethod 없는 정의"
+fresh
+sed -i 's#\[Trait("Category", "Integration")\]##' "$T/dotnet/tests/Kc.Tests/integration/DriveTests.cs"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] Trait 을 뗀 클래스는 스위트가 아니다 — 출력: $OUT"
+assert_contains "$OUT" "the run included tests outside the integration suite" "[dotnet] 기대 집합은 소스의 Trait 이 정한다"
+fresh
+_r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
+sed -i "s#codeBase=\"$_r#codeBase=\"/elsewhere/checkout#" "$D/dotnet.trx"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 다른 체크아웃의 테스트 결과는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "outside this tree — they belong to another checkout" "[dotnet] 다른 체크아웃의 trx"
+fresh
+sed -i 's# codeBase="[^"]*"##' "$D/dotnet.trx"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 테스트 어셈블리 경로가 없는 trx 는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "the test results ran an assembly with no codeBase, outside this tree" "[dotnet] codeBase 없음"
+# 기대 집합은 특성이 **붙은** 클래스다 — 같은 파일의 다른 클래스 · 메서드에 붙은 특성은 아니다(독립 레그 지적: 파일 단위로 고르면
+# 특성 없는 테스트가 섞인 실행이 통과했다).
+fresh
+printf '\npublic class Other\n{\n}\n' >> "$T/dotnet/tests/Kc.Tests/integration/DriveTests.cs"
+sed -i 's#className="Kc.Tests.Integration.DriveTests"#className="Kc.Tests.Integration.Other"#' "$D/dotnet.trx"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 특성 파일의 다른 클래스는 스위트가 아니다 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] the run included tests outside the integration suite (Kc.Tests.Integration.DriveTests.Drive)" "[dotnet] 같은 파일의 다른 클래스"
+fresh
+sed -i 's#^\[Collection("kc")\]#[Collection("kc")]\n[Shape(typeof(int[]))]#' "$T/dotnet/tests/Kc.Tests/integration/DriveTests.cs"
+run report dotnet "$T" --out "$D"
+assert_eq 0 "$RC" "[dotnet] 사이의 특성 인자에 「]」 가 있어도 클래스 특성이다 — 출력: $OUT"
+assert_contains "$(cat "$T/dotnet/tests/Kc.Tests/integration/DriveTests.cs")" "[Shape(typeof(int[]))]" "(특성 주입이 착지했는지 먼저 본다)"
+fresh
+sed -i 's#^public sealed class DriveTests#public sealed record class DriveTests#' "$T/dotnet/tests/Kc.Tests/integration/DriveTests.cs"
+run report dotnet "$T" --out "$D"
+assert_eq 0 "$RC" "[dotnet] record class 도 클래스 특성이다 — 출력: $OUT"
+assert_contains "$(cat "$T/dotnet/tests/Kc.Tests/integration/DriveTests.cs")" "public sealed record class DriveTests" "(한정자 주입이 착지했는지 먼저 본다)"
+fresh
+sed -i 's#^public sealed class DriveTests#public sealed record DriveTests#' "$T/dotnet/tests/Kc.Tests/integration/DriveTests.cs"
+run report dotnet "$T" --out "$D"
+assert_eq 0 "$RC" "[dotnet] class 낱말 없는 record 도 클래스 특성이다 — 출력: $OUT"
+assert_contains "$(cat "$T/dotnet/tests/Kc.Tests/integration/DriveTests.cs")" "public sealed record DriveTests" "(선언 낱말 주입이 착지했는지 먼저 본다)"
+fresh
+sed -i 's#    public async Task Logout()#    [Trait("Category", "Integration")]\n    public async Task Logout()#' "$T/dotnet/tests/Kc.Tests/UnitTests.cs"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 메서드에 붙은 특성은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] dotnet/tests/Kc.Tests/UnitTests.cs has a [Trait(\"Category\", \"Integration\")] that is not on a class declaration" "[dotnet] 클래스에 안 붙은 특성"
+# run 기록 — 이 데이터를 `run dotnet` 이 썼고 그 실행이 성공했는가 · 경계 파일이 그 실행의 바이트인가(php · ruby 와 같은 이유).
+fresh
+rm "$D/dotnet.run.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] run 기록이 없으면 exit 2(손으로 돌린 실행) — 출력: $OUT"
+assert_contains "$OUT" "no record that \`run dotnet\` wrote this data" "[dotnet] 기록 없음"
+fresh
+sed -i 's#"run":"dotnet"#"run":"ruby"#' "$D/dotnet.run.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 다른 레인이 쓴 꼴의 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "no record that \`run dotnet\` wrote this data" "[dotnet] 다른 레인의 기록"
+fresh
+dotnet_mark 1
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 실패한 실행의 기록이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] the run that wrote this data exited 1 — the data of a failed run is partial" "[dotnet] 실패 종료"
+assert_not_contains "$OUT" "OK —" "[dotnet] 실패한 실행은 수치를 내지 않는다"
+fresh
+sed -i 's#"60": 0#"60": 0 #' "$D/dotnet.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 기록 뒤 바뀐 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "is not the data \`run dotnet\` recorded" "[dotnet] 기록과 다른 데이터"
+fresh
+sed -i 's#computerName="HOST"#computerName="HOST2"#' "$D/dotnet.trx"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 기록 뒤 바뀐 trx 는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "is not the test result \`run dotnet\` recorded" "[dotnet] 기록과 다른 trx"
+fresh
+sed -i 's#"files":{.*}}$#"files":null}#' "$D/dotnet.run.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 경계 해시 없는 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "the record has no boundary hashes — the boundary files changed while the suite ran" "[dotnet] 실행 중 바뀐 경계"
+fresh
+printf '// changed after the run\n' >> "$T/dotnet/src/Kc/AuthClient.cs"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 다른 바이트에서 난 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] dotnet/src/Kc/AuthClient.cs: the data was taken from other bytes" "[dotnet] 해시 불일치"
+# 겹친 결함 — 기록 판정은 다른 판정 뒤에 둘 뿐 그것에 가려지지 않는다(php · ruby 와 같다).
+fresh
+sed -i 's#Config\.cs": {#Gone.cs": {#' "$D/dotnet.json"
+rm "$D/dotnet.run.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 트리에 없는 문서와 기록 없음이 겹치면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "is in the data but not in the tree" "[dotnet] 겹친 결함 — 데이터"
+assert_contains "$OUT" "no record that \`run dotnet\` wrote this data" "[dotnet] 겹친 결함 — 기록 판정도 낸다"
+assert_contains "$OUT" "FAIL — 2 integrity failures" "[dotnet] 겹친 결함 — 둘을 센다"
+# 소유자 키는 「파일:타입.멤버」다(중첩 타입은 「.」으로 잇는다 · 오버로드는 시그니처를 붙인다).
+fresh
+sed -i '/Client.UsersResource.DeleteAsync/d' "$T/scripts/integration-coverage.json"
+run report dotnet "$T" --out "$D"
+assert_eq 1 "$RC" "[dotnet] 소유자 없는 미실행 함수는 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [dotnet] unowned never-executed function dotnet/src/Kc/Admin/Client.cs:Client.UsersResource.DeleteAsync" "[dotnet] 소유자 키"
+
 # ── (2) 음성: 소유자(exit 1 — 경고, 게이트가 아니다) ─────────────────────────────────────────
 fresh
 sed -i '/"go\/admin.go:AdminClient.Close"/d' "$T/scripts/integration-coverage.json"
@@ -1033,12 +1396,19 @@ run report ruby "$T" --out "$D"
 assert_eq 2 "$RC" "[ruby] 경계 메서드를 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [ruby] the run executed 0 of 12 boundary lines inside methods — a measurement failure, not a low number (require alone credits" "[ruby] require 크레딧을 수치로 내지 않는다"
 assert_not_contains "$OUT" "0.0%" "[ruby] 측정 실패에서 0% 를 내지 않는다"
+# dotnet — 구동 테스트가 경계를 하나도 안 불렀다(경계 밖 Config 만). coverlet 은 계측한 모듈의 메서드를 0 회로도 싣는다.
+fresh
+dotnet_data "$FIX/data/dotnet-zero.json" "$FIX/data/dotnet-zero.trx"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 경계 줄을 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] the run executed 0 of 84 boundary lines — a measurement failure, not a low number" "[dotnet] 측정 실패 문구"
+assert_not_contains "$OUT" "0.0%" "[dotnet] 측정 실패에서 0% 를 내지 않는다"
 # 빈 파생 + 빈 핀 — 집합은 같으므로(∅ = ∅) 빈 집합 판정만이 잡는다. 파생 도구를 가짜로 바꿔 그 갈래만 태운다.
 # ⚠️ 두 언어 다 「있되 비었다」여야 한다 — 한 언어를 빼 두면 check 의 exit 2 가 그 「없는 파생」에서 와서 빈 집합
 # 갈래를 지워도 초록이었다(변이 실측: 빈 집합 통과 변이에 check 단언이 침묵했다).
 fresh
-printf '%s\n' 'const e = (d) => ({ dir: d, site: "fake:1", label: "fake", universe: 3, files: [] })' 'console.log(JSON.stringify({ langs: { go: e("go"), python: e("python"), node: e("node"), rust: e("rust"), php: e("php"), ruby: e("ruby") }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
-printf '%s\n' '{ "go": { "pinned": [], "owners": {} }, "python": { "pinned": [], "owners": {} }, "node": { "pinned": [], "owners": {} }, "rust": { "pinned": [], "owners": {} }, "php": { "pinned": [], "owners": {} }, "ruby": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
+printf '%s\n' 'const e = (d) => ({ dir: d, site: "fake:1", label: "fake", universe: 3, files: [] })' 'console.log(JSON.stringify({ langs: { go: e("go"), python: e("python"), node: e("node"), rust: e("rust"), php: e("php"), ruby: e("ruby"), dotnet: e("dotnet") }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
+printf '%s\n' '{ "go": { "pinned": [], "owners": {} }, "python": { "pinned": [], "owners": {} }, "node": { "pinned": [], "owners": {} }, "rust": { "pinned": [], "owners": {} }, "php": { "pinned": [], "owners": {} }, "ruby": { "pinned": [], "owners": {} }, "dotnet": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
 run check "$T"
 assert_eq 2 "$RC" "[check] 빈 파생은 exit 2(빈 핀과 같아도) — 출력: $OUT"
 assert_contains "$OUT" "FAIL [python] the derived boundary is empty" "[check] python 도 빈 파생"
@@ -1046,6 +1416,7 @@ assert_contains "$OUT" "FAIL [node] the derived boundary is empty" "[check] node
 assert_contains "$OUT" "FAIL [rust] the derived boundary is empty" "[check] rust 도 빈 파생"
 assert_contains "$OUT" "FAIL [php] the derived boundary is empty" "[check] php 도 빈 파생"
 assert_contains "$OUT" "FAIL [ruby] the derived boundary is empty" "[check] ruby 도 빈 파생"
+assert_contains "$OUT" "FAIL [dotnet] the derived boundary is empty" "[check] dotnet 도 빈 파생"
 assert_not_contains "$OUT" "returned no derivation" "[check] 언어마다 있되 비었다 — 「없는 파생」이 빈 집합 갈래를 가리지 않는다"
 assert_not_contains "$OUT" "pin OK" "[check] 빈 집합끼리의 일치를 「핀 OK」로 찍지 않는다"
 run report go "$T" --out "$D"
@@ -1088,7 +1459,7 @@ assert_contains "$OUT" "FAIL [-] scripts/coverage-boundary.mjs is missing" "파�
 fresh
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "파일럿이 안 재는 언어는 usage(exit 2)"
-assert_contains "$OUT" "this pilot measures go · python · node · rust · php · ruby — got java" "usage 문구"
+assert_contains "$OUT" "this pilot measures go · python · node · rust · php · ruby · dotnet — got java" "usage 문구"
 
 # ── (4) 하한(4 걸음째 — 2026-11-02 무장) ─────────────────────────────────────────────────────────
 # 픽스처 핀에는 하한이 없다(위 단언들은 하한 없는 리포트다). 여기서만 주입한다.
@@ -1193,6 +1564,18 @@ fresh; floor ruby statements 50
 run check "$T"
 assert_eq 2 "$RC" "[floor] ruby 에 statements 는 없다(지표는 lines · bodies) — 출력: $OUT"
 assert_contains "$OUT" "ruby.floor.metric" "[floor] ruby 지표 오류를 지목한다"
+# dotnet 은 줄(픽스처 45/84 = 53.571%)이다.
+fresh; floor dotnet lines 53.5
+run report dotnet "$T" --out "$D"
+assert_eq 0 "$RC" "[floor] dotnet lines 53.571% ≥ 53.5 — 출력: $OUT"
+assert_line "$OUT" "integration-coverage [dotnet]: OK — 45/84 lines (53.6%) · floor lines ≥ 53.5% · 13 never-executed functions, all owned by open registry items" "[floor] dotnet 통과 요약"
+fresh; floor dotnet lines 53.58
+run report dotnet "$T" --out "$D"
+assert_eq 3 "$RC" "[floor] dotnet lines 53.571% < 53.58 — 출력: $OUT"
+fresh; floor dotnet bodies 50
+run check "$T"
+assert_eq 2 "$RC" "[floor] dotnet 에 bodies 는 없다(지표는 lines) — 출력: $OUT"
+assert_contains "$OUT" "dotnet.floor.metric" "[floor] dotnet 지표 오류를 지목한다"
 
 # 소유 문제와 하한 미달이 겹치면 게이트(3)가 경고(1)를 이긴다 — 경고는 그대로 찍는다.
 fresh; floor go statements 46

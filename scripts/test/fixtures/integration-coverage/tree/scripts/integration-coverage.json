@@ -98,5 +98,26 @@
       "ruby/lib/kc/auth_client.rb:AuthClient#logout_url": "open-admin",
       "ruby/lib/kc/auth_client.rb:AuthClient.build": "open-masking"
     }
+  },
+  "dotnet": {
+    "pinned": [
+      "dotnet/src/Kc/Admin/Client.cs",
+      "dotnet/src/Kc/AuthClient.cs"
+    ],
+    "owners": {
+      "dotnet/src/Kc/Admin/Client.cs:Client.Close": "open-admin",
+      "dotnet/src/Kc/Admin/Client.cs:Client.Defaults.#cctor": "open-admin",
+      "dotnet/src/Kc/Admin/Client.cs:Client.Defaults.First": "open-admin",
+      "dotnet/src/Kc/Admin/Client.cs:Client.Dispose": "open-admin",
+      "dotnet/src/Kc/Admin/Client.cs:Client.UsersResource.DeleteAsync": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.#ctor(System.String,System.String)": "open-masking",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.Build": "open-masking",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.Describe(System.Int32)": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.Later": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.LogoutAsync": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.Lower": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.NamesAsync": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.Unused": "open-admin"
+    }
   }
 }
