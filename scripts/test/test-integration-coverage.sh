@@ -1027,6 +1027,13 @@ printf '{"Kc.dll": []}\n' > "$D/dotnet.json"
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] coverlet 의 꼴이 아니면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "is not coverlet's JSON (module → document → class → method)" "[dotnet] 꼴"
+# 같은 판정의 앞 항 — 루트가 객체가 아니다(위는 루트가 객체이고 모듈 값만 배열이다 — 독립 레그 5차 지적).
+fresh
+printf '[]\n' > "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 객체 아닌 루트는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "is not coverlet's JSON (module → document → class → method)" "[dotnet] 루트 꼴"
 fresh
 _r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
 sed -i "s#$_r#/elsewhere/checkout#g" "$D/dotnet.json"
@@ -1091,6 +1098,20 @@ sed -i 's#<GetAsync>d__0#<GetAsync>x__0#' "$D/dotnet.json"
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 모르는 생성 이름은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot name Kc.Admin.Client/UsersResource/<GetAsync>x__0::MoveNext() — not a generated name this reader knows" "[dotnet] 모르는 꼴"
+# 모르는 생성 꼴은 자리마다 따로 FAIL 이다 — 위는 상태 기계 자리다. 바깥 타입의 메서드 자리 · 람다 캐시의 메서드 자리도 같다(그
+# 판정을 지우면 그 줄이 이름 null 인 가짜 멤버로 접힌다 — 기록을 다시 쓴다).
+fresh
+sed -i 's#<Count>g__Twice|14_0#<Count>q__Twice|14_0#' "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 바깥 타입의 모르는 생성 이름은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name Kc.AuthClient::<Count>q__Twice|14_0(System.Int32) — not a generated name this reader knows" "[dotnet] 바깥 타입 자리의 모르는 꼴"
+fresh
+sed -i 's#<>c::<NamesAsync>b__25_0(#<>c::<NamesAsync>q__25_0(#' "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 람다 캐시의 모르는 생성 이름은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name Kc.AuthClient/<>c::<NamesAsync>q__25_0(System.String) — not a generated name this reader knows" "[dotnet] 람다 캐시 자리의 모르는 꼴"
 fresh
 sed -i 's#<LogoutAsync>d__20#<Describe>d__20#g' "$D/dotnet.json"
 run report dotnet "$T" --out "$D"
@@ -1183,6 +1204,20 @@ sed -i 's#className="Kc.Tests.Integration.DriveTests"#className="Kc.Tests.UnitTe
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 스위트 밖 테스트는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [dotnet] the run included tests outside the integration suite (Kc.Tests.Integration.DriveTests.Drive)" "[dotnet] 스위트 밖"
+# 결과를 정의에 잇는 id · 정의의 TestMethod 가 없는 trx — 이을 수 없는 결과는 스위트 밖이다(독립 레그 5차 지적: 어느 음성도 이 둘을
+# 따로 안 지났다). id 없는 정의가 있어도 id 없는 결과를 거기 잇지 않는다(기록을 다시 쓴다).
+fresh
+sed -i 's# testId="995e07f8-c482-520f-2c06-7d7bfea06a94"##; s# id="995e07f8-c482-520f-2c06-7d7bfea06a94">#>#' "$D/dotnet.trx"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] id 없는 결과 · 정의는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] the run included tests outside the integration suite (Kc.Tests.Integration.DriveTests.Drive)" "[dotnet] id 없는 결과는 잇지 않는다"
+fresh
+sed -i '/<TestMethod /d' "$D/dotnet.trx"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] TestMethod 없는 정의는 exit 2(예외가 아니다) — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] the run included tests outside the integration suite (Kc.Tests.Integration.DriveTests.Drive)" "[dotnet] TestMethod 없는 정의"
 fresh
 sed -i 's#\[Trait("Category", "Integration")\]##' "$T/dotnet/tests/Kc.Tests/integration/DriveTests.cs"
 run report dotnet "$T" --out "$D"
