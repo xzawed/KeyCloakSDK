@@ -87,7 +87,7 @@
 //            가리킨다 — 다섯 레인의 사본이 다 그 리더의 fail() 보다 좁았다(실측 2026-11-06).
 //   3 BELOW  하한 아래 — 수치는 유효하다. CI 는 실패로 본다. 비교는 정수식(covered × 100 < percent × 분모)이고 같으면 통과다.
 //
-// 사용(LANG = go · python · node · rust · php · ruby · dotnet):
+// 사용(LANG = go · python · node · rust · php · ruby · dotnet · java):
 //   node scripts/integration-coverage.mjs <LANG> [--out DIR]                 로컬 — 통합 테스트(Docker) 후 리포트
 //   node scripts/integration-coverage.mjs run    <LANG> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
 //   node scripts/integration-coverage.mjs report <LANG> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
@@ -97,7 +97,9 @@
 // `cargo-llvm-cov`(+ `llvm-tools-preview`)가 있어야 한다. php 는 PATH 의 `php` 에 커버리지 드라이버(pcov 또는 Xdebug —
 // `XDEBUG_MODE=coverage` 는 run 이 준다)와 `php/vendor`(composer install)가 있어야 한다. ruby 는 PATH 의 `ruby` 와 설치된
 // 번들(bundle install — `BUNDLE_GEMFILE` 이 없으면 `ruby/Gemfile`)이 있어야 한다. dotnet 은 PATH 의 `dotnet` 과, 테스트 프로젝트가
-// 참조하는 `coverlet.collector`(컬렉터가 거기서 온다)가 있어야 한다. DIR 기본값은 OS 임시 디렉터리 아래다.
+// 참조하는 `coverlet.collector`(컬렉터가 거기서 온다)가 있어야 한다. java 는 PATH 의 `mvn`(윈도는 `mvn.cmd` — 셸로 띄운다)과
+// `JAVA_HOME`(없으면 PATH)의 `java` · `javap` 이 있어야 하고, run 이 JaCoCo CLI(레인 pom 의 판)를 Maven 으로 받는다.
+// DIR 기본값은 OS 임시 디렉터리 아래다.
 import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync, readdirSync, copyFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
@@ -108,18 +110,19 @@ import { tmpdir } from 'node:os'
 const PINS = 'scripts/integration-coverage.json'
 const REGISTRY = 'docs/superpowers/plans/remaining-work.md'
 const BOUNDARY = 'scripts/coverage-boundary.mjs'
-const LANGS = ['go', 'python', 'node', 'rust', 'php', 'ruby', 'dotnet']
+const LANGS = ['go', 'python', 'node', 'rust', 'php', 'ruby', 'dotnet', 'java']
 // 하한 지표 — go 의 문장은 전부 함수 몸통이고, python 은 lines(import 때 도는 줄 포함)와 bodies(함수 안 문장)가 갈린다.
 // node 는 istanbul 문장이다(모듈 수준 문장은 import 때 돌지만 경계 파일은 거의 전부 클래스 멤버다 — 표가 따로 보인다).
 // rust 는 llvm-cov 의 고유 줄(DA)이다 — import 때 도는 코드가 없다. php 는 php-code-coverage 의 실행 가능 줄이다(정적 분석이
 // 정한다 — 파일을 싣는 것만으로는 줄이 안 덮인다). ruby 는 python 처럼 lines(require 때 도는 클래스 · def 줄 포함)와
 // bodies(메서드 범위 안 줄)가 갈린다. dotnet 은 coverlet 의 줄(시퀀스 포인트가 있는 줄)이다 — 적재 때 도는 것은 정적 생성자
-// · 필드 초기화뿐이다.
-const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'], node: ['statements'], rust: ['lines'], php: ['lines'], ruby: ['lines', 'bodies'], dotnet: ['lines'] }
-const LINE_LANGS = new Set(['rust', 'php', 'ruby', 'dotnet'])
-// 함수 몸통을 따로 세는 언어 — 적재 때 도는 모듈 · 클래스 수준 줄이 lines 를 부풀린다(python 은 import · ruby 는 require).
-// 「아무것도 안 돈 실행」 판정도 몸통으로 한다.
-const BODY_LANGS = new Set(['python', 'ruby'])
+// · 필드 초기화뿐이다. java 는 JaCoCo 의 줄이고, ruby 처럼 bodies(정적 초기화 `<clinit>` 만 가진 줄을 뺀 것)가 갈린다 — 클래스가
+// 실리기만 해도 정적 초기화는 돈다.
+const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'], node: ['statements'], rust: ['lines'], php: ['lines'], ruby: ['lines', 'bodies'], dotnet: ['lines'], java: ['lines', 'bodies'] }
+const LINE_LANGS = new Set(['rust', 'php', 'ruby', 'dotnet', 'java'])
+// 함수 몸통을 따로 세는 언어 — 적재 때 도는 모듈 · 클래스 수준 줄이 lines 를 부풀린다(python 은 import · ruby 는 require · java 는
+// 클래스 적재의 정적 초기화). 「아무것도 안 돈 실행」 판정도 몸통으로 한다.
+const BODY_LANGS = new Set(['python', 'ruby', 'java'])
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
@@ -2024,6 +2027,411 @@ function dotnetReport(d) {
   return { path, note, files, never }
 }
 
+// ── java ─────────────────────────────────────────────────────────────────────────────────
+// ⚠️ java 는 줄 · 횟수를 JaCoCo 에서 받는다 — failsafe IT 만 돈 실행의 exec 를 JaCoCo CLI 가 XML 로 쓴다(pom 의 `report` 골은
+// 플러그인 단위 `<excludes>` = 경계를 리포트에서 빼므로 못 쓴다 · 에이전트 계측은 그 파일 꼴 패턴에 안 걸린다 — 실측). 이름과
+// 메서드마다의 줄은 클래스 파일에서 받는다(javap — LineNumberTable · EnclosingMethod): XML 에는 메서드의 첫 줄과 줄 수뿐이다.
+// 람다(`lambda$m$N` — `static` · `new` 는 정적 초기화 · 생성자)는 감싼 메서드에, 익명 · 지역 클래스(`T$1` · `T$1Local`)의 메서드는
+// javap 가 댄 감싼 메서드에 접는다. 오버로드는 서술자로 가르고, 람다는 LineNumberTable 의 줄 범위가 가른다(어느 오버로드에도 안
+// 들거나 둘에 들면 FAIL). 모르는 `$` · `<…>` 꼴은 FAIL 이다(fail-closed).
+// ⚠️ 줄은 소스 파일 단위 합집합이다(`<sourcefile><line>`) — 바깥 클래스와 익명 클래스가 한 줄을 함께 가질 수 있어 클래스별 합은 그
+// 줄을 두 번 센다(실측: AdminClient.java 61 = 54 + 8 − 1). 정적 초기화(`<clinit>`)만 가진 줄은 클래스가 실릴 때 돈다 —
+// 「아무것도 안 돈 실행」 판정과 bodies 는 그 줄을 뺀다(python · ruby 와 같은 까닭 — 등록부의 함정: JVM static init).
+const JAVA_DATA = () => join(out, 'java.xml')
+const JAVA_NAMES = () => join(out, 'java.names.json')
+const JAVA_RUN = () => join(out, 'java.run.json')
+const JAVA_EXEC = () => join(out, 'java.exec')
+// `javap -l -p -v <클래스 파일…>` 의 출력 → { 내부 이름: { source, enclosing: { class, method, desc } | null, methods: [{ name, desc, lines }] } }.
+// `this_class` 는 상수 풀보다 앞이라 그 주석(내부 이름)을 읽고, EnclosingMethod 는 상수 풀(Class · NameAndType)로 푼다.
+function javapFacts(text) {
+  const facts = {}
+  let cur = null
+  let meth = null
+  let inLnt = false
+  let inBody = false
+  const finish = () => {
+    if (!cur?.name) return
+    let enclosing = null
+    if (cur.encRef) {
+      const c = cur.pool.get(cur.encRef[0])
+      const nt = cur.encRef[1] === '0' ? null : cur.pool.get(cur.encRef[1])
+      const nd = nt?.note && /^"?([^":]+)"?:(\S+)$/.exec(nt.note)
+      enclosing = { class: c?.kind === 'Class' ? (c.note ?? null) : null, method: nd ? nd[1] : null, desc: nd ? nd[2] : null }
+    }
+    facts[cur.name] = { source: cur.source, enclosing, methods: cur.methods }
+  }
+  for (const raw of text.split(/\r?\n/)) {
+    if (raw.startsWith('Classfile ')) {
+      finish()
+      cur = { name: null, source: null, encRef: null, pool: new Map(), methods: [] }
+      meth = null
+      inLnt = false
+      inBody = false
+      continue
+    }
+    if (!cur) continue
+    let m
+    if ((m = /^\s+#(\d+) = (\w+)\s+\S+(?:\s+\/\/\s*(.*?))?\s*$/.exec(raw))) {
+      cur.pool.set(m[1], { kind: m[2], note: m[3] ?? null })
+      continue
+    }
+    // 상수 풀의 다른 줄(공백이 든 Utf8 등) — 멤버 머리로 읽지 않는다.
+    if (/^\s+#\d+ = /.test(raw)) continue
+    // 멤버 구역은 첫 칸의 `{` … `}` 다 — 그 밖의 두 칸 줄(InnerClasses · BootstrapMethods 항목)은 멤버가 아니다.
+    if (raw === '{') {
+      inBody = true
+      continue
+    }
+    if (raw === '}') {
+      inBody = false
+      meth = null
+      inLnt = false
+      continue
+    }
+    if ((m = /^\s+this_class: #\d+\s+\/\/\s*(\S+)\s*$/.exec(raw))) {
+      cur.name = m[1]
+      continue
+    }
+    if ((m = /^SourceFile: "(.+)"$/.exec(raw))) {
+      cur.source = m[1]
+      continue
+    }
+    if ((m = /^EnclosingMethod: #(\d+)\.#(\d+)/.exec(raw))) {
+      cur.encRef = [m[1], m[2]]
+      continue
+    }
+    // 멤버 머리 — 구역 안의 두 칸 들여쓰기. 메서드는 `(` 가 있고 `;` 로 끝난다(필드는 아니다). 생성자는 점 표기 전체 이름이다.
+    if (inBody && /^  \S/.test(raw)) {
+      const h = raw.slice(2)
+      inLnt = false
+      meth = null
+      if (h === 'static {};') meth = { name: '<clinit>', desc: '()V', lines: [] }
+      else {
+        const p = h.indexOf('(')
+        if (p > 0 && h.endsWith(';')) {
+          const id = /([\w$.<>]+)$/.exec(h.slice(0, p))?.[1] ?? ''
+          meth = { name: id.includes('.') ? '<init>' : id, desc: null, lines: [] }
+        }
+      }
+      if (meth) cur.methods.push(meth)
+      continue
+    }
+    if (meth && (m = /^    descriptor: (\S+)\s*$/.exec(raw))) {
+      meth.desc = m[1]
+      continue
+    }
+    if (meth && /^      LineNumberTable:\s*$/.test(raw)) {
+      inLnt = true
+      continue
+    }
+    if (inLnt && (m = /^        line (\d+): \d+\s*$/.exec(raw))) {
+      meth.lines.push(Number(m[1]))
+      continue
+    }
+    inLnt = false
+  }
+  finish()
+  for (const c of Object.values(facts)) for (const x of c.methods) x.lines = [...new Set(x.lines)].sort((a, b) => a - b)
+  return facts
+}
+// 서술자의 매개변수 → 읽을 수 있는 목록(`(Ljava/lang/String;I[B)V` → `String, int, byte[]`). 오버로드 이름에만 쓴다.
+function javaParams(desc) {
+  const body = /^\(([^)]*)\)/.exec(desc ?? '')?.[1]
+  if (body === undefined) return null
+  const prim = { B: 'byte', C: 'char', D: 'double', F: 'float', I: 'int', J: 'long', S: 'short', Z: 'boolean' }
+  const out = []
+  for (let i = 0; i < body.length; ) {
+    let dims = 0
+    while (body[i] === '[') {
+      dims++
+      i++
+    }
+    let t
+    if (body[i] === 'L') {
+      const e = body.indexOf(';', i)
+      if (e < 0) return null
+      t = body.slice(i + 1, e)
+      t = t.slice(t.lastIndexOf('/') + 1).replace(/\$/g, '.')
+      i = e + 1
+    } else if (prim[body[i]]) t = prim[body[i++]]
+    else return null
+    out.push(t + '[]'.repeat(dims))
+  }
+  return out.join(', ')
+}
+// JaCoCo 의 메서드 하나(클래스 내부 이름 · 이름 · 서술자) → { type, member, kind, desc, via } — kind 는 plain(소스 메서드 그대로 ·
+// 생성자) · static(정적 초기화) · lambda(람다 · 익명/지역 클래스의 메서드). 이름을 못 붙이면 null. 익명 · 지역 클래스는 javap 의
+// EnclosingMethod 를 따라 바깥으로 올라간다(그 클래스가 또 익명이면 한 번 더).
+function javaFold(cname, name, desc, facts, depth = 0) {
+  const slash = cname.lastIndexOf('/')
+  const segs = cname.slice(slash + 1).split('$')
+  if (segs.some((s) => s === '')) return null
+  const local = segs.findIndex((s, i) => i > 0 && /^\d/.test(s))
+  if (local > 0) {
+    const enc = facts[cname]?.enclosing
+    if (!enc || typeof enc.class !== 'string' || depth > 8) return null
+    // 필드 초기화 · 초기화 블록 안의 익명 클래스 — 감싼 메서드가 없다(정적인지 인스턴스인지 서술자로 못 가른다).
+    if (enc.method === null) return null
+    const up = javaFold(enc.class, enc.method, enc.desc, facts, depth + 1)
+    return up && { ...up, kind: up.kind === 'static' ? 'static' : 'lambda', via: cname }
+  }
+  const type = segs.join('.')
+  if (name === '<clinit>') return { type, member: '<clinit>', kind: 'static', desc }
+  if (name === '<init>') return { type, member: '<init>', kind: 'plain', desc }
+  const lm = /^lambda\$(.+)\$\d+$/.exec(name)
+  if (lm) {
+    const host = lm[1] === 'static' ? '<clinit>' : lm[1] === 'new' ? '<init>' : lm[1]
+    if (host.includes('$')) return null
+    return { type, member: host, kind: host === '<clinit>' ? 'static' : 'lambda', desc: null, lambdaDesc: desc }
+  }
+  if (name.includes('$') || name.startsWith('<')) return null
+  return { type, member: name, kind: 'plain', desc }
+}
+function javaReport(d) {
+  const path = JAVA_DATA()
+  const shown = path.replace(/\\/g, '/')
+  const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
+  const sha = (b) => createHash('sha1').update(b).digest('hex')
+  if (!existsSync(path)) {
+    fail('java', `no coverage data at ${shown} — run the integration suite first (node scripts/integration-coverage.mjs run java)`)
+    return null
+  }
+  const bytes = readFileSync(path)
+  const src = bytes.toString('utf8')
+  if (!/^\s*<\?xml[^>]*\?>\s*<!DOCTYPE report PUBLIC "-\/\/JACOCO\/\/DTD Report 1\.1\/\/EN"/.test(src)) {
+    fail('java', `${shown} is not a JaCoCo XML report (no JaCoCo report DOCTYPE) — run writes it with the JaCoCo CLI`)
+    return null
+  }
+  const tags = xmlTags(src)
+  const sessions = tags.filter((t) => !t.close && t.name === 'sessioninfo')
+  if (!sessions.length) {
+    fail('java', `${shown} records no session — the agent wrote no execution data`)
+    return null
+  }
+  // 패키지 → { classes[{ name, source, methods[{ name, desc, line, missed, covered }] }], sources: 파일 이름 → Map(줄 → { mi, ci }) }
+  const pkgs = new Map()
+  let pkg = null
+  let cls = null
+  let meth = null
+  let sf = null
+  for (const t of tags) {
+    if (t.close) {
+      if (t.name === 'package') pkg = null
+      else if (t.name === 'class') cls = null
+      else if (t.name === 'method') meth = null
+      else if (t.name === 'sourcefile') sf = null
+      continue
+    }
+    if (t.name === 'package') {
+      pkg = pkgs.get(t.attrs.name) ?? { classes: [], sources: new Map() }
+      pkgs.set(t.attrs.name, pkg)
+    } else if (!pkg) continue
+    else if (t.name === 'class') {
+      cls = { name: t.attrs.name, source: t.attrs.sourcefilename, methods: [] }
+      pkg.classes.push(cls)
+      if (t.empty) cls = null
+    } else if (t.name === 'method' && cls) {
+      meth = { name: t.attrs.name, desc: t.attrs.desc, line: t.attrs.line, missed: 0, covered: 0 }
+      cls.methods.push(meth)
+      if (t.empty) meth = null
+    } else if (t.name === 'counter' && meth && t.attrs.type === 'LINE') {
+      meth.missed = xmlCount(t.attrs.missed)
+      meth.covered = xmlCount(t.attrs.covered)
+    } else if (t.name === 'sourcefile') {
+      sf = new Map()
+      pkg.sources.set(t.attrs.name, sf)
+      if (t.empty) sf = null
+    } else if (t.name === 'line' && sf) sf.set(t.attrs.nr, { mi: t.attrs.mi, ci: t.attrs.ci })
+  }
+  const namesPath = JAVA_NAMES()
+  const namesShown = namesPath.replace(/\\/g, '/')
+  let namesBytes = null
+  let facts = null
+  try {
+    namesBytes = readFileSync(namesPath)
+    facts = JSON.parse(namesBytes.toString('utf8'))?.classes
+  } catch {
+    facts = null
+  }
+  if (!isObj(facts) || !Object.values(facts).every((c) => isObj(c) && Array.isArray(c.methods) && c.methods.every((x) => isObj(x) && typeof x.name === 'string' && Array.isArray(x.lines) && x.lines.every((n) => Number.isInteger(n) && n > 0)))) {
+    fail('java', `no class facts at ${namesShown} — run java writes them with javap (line tables · enclosing methods of nested classes)`)
+    return null
+  }
+  const files = []
+  const never = []
+  for (const f of d.files) {
+    const fm = /^[^/]+\/[^/]+\/src\/main\/java\/(.+)\/([^/]+\.java)$/.exec(f)
+    if (!fm) {
+      fail('java', `${f} is not under <module>/src/main/java/<package>/ — this reader knows packaged sources only`)
+      continue
+    }
+    const [, pk, file] = fm
+    const lines = pkgs.get(pk)?.sources.get(file)
+    if (!lines) {
+      fail('java', `${f} is not in the coverage data — a boundary file whose classes the report never analyzed would silently leave the denominator`)
+      continue
+    }
+    if (!existsSync(join(root, f))) {
+      fail('java', `${f} is derived but missing on disk — the data cannot be checked against it`)
+      continue
+    }
+    const nlines = readFileSync(join(root, f), 'utf8').split('\n').length
+    const inPkg = (n) => n.startsWith(`${pk}/`) && !n.slice(pk.length + 1).includes('/')
+    const xmlClasses = pkgs.get(pk).classes.filter((c) => c.source === file)
+    const factNames = Object.keys(facts).filter((n) => inPkg(n) && facts[n].source === file)
+    const xmlNames = xmlClasses.map((c) => c.name)
+    const onlyXml = sortU(xmlNames.filter((n) => !factNames.includes(n)))
+    const onlyFacts = sortU(factNames.filter((n) => !xmlNames.includes(n)))
+    if (onlyXml.length || onlyFacts.length) {
+      fail('java', `${f}: the class facts and the data name different classes (${[...onlyXml.map((n) => `data only: ${n}`), ...onlyFacts.map((n) => `facts only: ${n}`)].join(' · ')}) — run java writes both from one build`)
+      continue
+    }
+    let broken = false
+    // 메서드마다 — 데이터(첫 줄 · 줄 수)와 클래스 파일의 LineNumberTable 이 같은 메서드인지 대조하고 이름을 접는다.
+    const parts = []
+    for (const c of xmlClasses) {
+      for (const x of c.methods) {
+        const fx = facts[c.name].methods.find((y) => y.name === x.name && y.desc === x.desc)
+        if (!fx || !isCount(x.missed) || !isCount(x.covered) || (fx.lines.length ? String(fx.lines[0]) !== x.line : x.line !== undefined)) {
+          fail('java', `${f}: ${c.name}.${x.name}${x.desc} — the data and the class facts disagree (first line ${x.line ?? 'none'} vs ${fx?.lines[0] ?? 'no method'}) — run java writes both from one build`)
+          broken = true
+          break
+        }
+        const fo = javaFold(c.name, x.name, x.desc, facts)
+        if (!fo) {
+          fail('java', `${f}: cannot name ${c.name}.${x.name}${x.desc} — not a generated name this reader knows`)
+          broken = true
+          break
+        }
+        parts.push({ ...fo, cls: c.name, name: x.name, lines: fx.lines, covered: x.covered })
+      }
+      if (broken) break
+    }
+    if (broken) continue
+    // 오버로드 — plain 서술자가 둘 이상인 멤버. 람다는 줄 범위로 그 오버로드에 붙인다(정확히 하나의 범위에 들어야 한다).
+    const byMember = new Map()
+    for (const p of parts) {
+      const k = `${p.type}.${p.member}`
+      const g = byMember.get(k) ?? []
+      g.push(p)
+      byMember.set(k, g)
+    }
+    const fns = new Map()
+    let amb = null
+    for (const [k, g] of byMember) {
+      const plains = g.filter((p) => p.kind === 'plain')
+      const descs = sortU(plains.map((p) => p.desc))
+      if (descs.length <= 1) {
+        fns.set(k, g)
+        continue
+      }
+      const range = (ls) => [ls[0], ls[ls.length - 1]]
+      for (const p of g) {
+        let dsc = p.desc
+        if (p.kind !== 'plain' && !p.via) {
+          const hits = plains.filter((q) => q.lines.length && p.lines.length && p.lines.every((n) => n >= range(q.lines)[0] && n <= range(q.lines)[1]))
+          if (hits.length !== 1) {
+            amb ??= k
+            continue
+          }
+          dsc = hits[0].desc
+        }
+        const key = `${k}(${javaParams(dsc) ?? dsc})`
+        fns.set(key, [...(fns.get(key) ?? []), p])
+      }
+    }
+    if (amb) {
+      fail('java', `${f}: ${amb} has overloads and a lambda whose lines fall in none or several of them — this reader cannot tell which`)
+      continue
+    }
+    // 줄 — 소스 파일 단위. 데이터의 줄은 1..파일 길이 · 어느 메서드의 LineNumberTable 에 든다(아니면 데이터가 다른 빌드의 것이다).
+    const owned = new Map()
+    for (const c of factNames) for (const x of facts[c].methods) for (const n of x.lines) owned.set(n, (owned.get(n) ?? 0) | (x.name === '<clinit>' ? 1 : 2))
+    // 몸통 줄이 덮였는가는 줄의 횟수만으로 못 가른다 — 정적 람다(`F = s -> …`)의 줄은 정적 초기화와 람다가 함께 갖는다: 실릴 때
+    // 정적 초기화가 그 줄을 돌면 람다가 한 번도 안 불려도 그 줄이 덮인다(실측: 픽스처 0 실행의 UPPER 줄). 그래서 그 줄을 가진
+    // 정적 초기화 밖의 메서드 가운데 JaCoCo 가 돈 것으로 센 것(메서드의 LINE covered > 0)이 있어야 몸통으로 덮인 것이다.
+    const ran = new Set(parts.filter((p) => p.name !== '<clinit>' && p.covered > 0).flatMap((p) => p.lines))
+    let stmts = 0
+    let covered = 0
+    const bodies = { stmts: 0, covered: 0 }
+    for (const [nr, v] of lines) {
+      const n = Number(nr)
+      const mi = xmlCount(v.mi)
+      const ci = xmlCount(v.ci)
+      if (!/^[1-9]\d*$/.test(nr ?? '') || !isCount(mi) || !isCount(ci)) {
+        fail('java', `${f}: cannot read line ${nr ?? '?'} of ${file} in ${shown}`)
+        broken = true
+        break
+      }
+      if (n > nlines) {
+        fail('java', `${f}: the data counts line ${n}, past the ${nlines} lines of the file — the data contradicts the tree`)
+        broken = true
+        break
+      }
+      if (!owned.has(n)) {
+        fail('java', `${f}: the data counts line ${n}, which no method of the class facts owns — the data and the class files come from different builds`)
+        broken = true
+        break
+      }
+      stmts++
+      if (ci > 0) covered++
+      if (owned.get(n) & 2) {
+        bodies.stmts++
+        if (ci > 0 && ran.has(n)) bodies.covered++
+      }
+    }
+    if (broken) continue
+    for (const [key, ps] of fns) {
+      if (ps.every((p) => p.kind === 'static')) continue
+      const ls = new Set(ps.flatMap((p) => p.lines).filter((n) => lines.has(String(n))))
+      if (ls.size && ps.every((p) => p.covered === 0)) never.push({ file: f, line: Math.min(...ls), name: key, stmts: ls.size })
+    }
+    files.push({ file: f, stmts, covered, bodies, outside: { stmts: 0, covered: 0 } })
+  }
+  // run 기록 — dotnet 과 같은 이유. 다른 판정 뒤에 두되 앞의 실패가 있어도 낸다(두 까닭이 한 번에 보인다).
+  const runRec = JAVA_RUN()
+  let rec = null
+  try {
+    rec = JSON.parse(readFileSync(runRec, 'utf8'))
+  } catch {
+    rec = null
+  }
+  if (!rec || rec.run !== 'java') {
+    fail('java', `no record that \`run java\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs run java) so the report can tell a passing run from a failed one`)
+    return null
+  }
+  if (rec.exit !== 0) {
+    fail('java', `the run that wrote this data exited ${rec.exit} — the data of a failed run is partial`)
+    return null
+  }
+  if (rec.data_sha1 !== sha(bytes)) {
+    fail('java', `${shown} is not the data \`run java\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
+    return null
+  }
+  if (rec.names_sha1 !== sha(namesBytes)) {
+    fail('java', `${namesShown} is not the class facts \`run java\` recorded — another run wrote over it`)
+    return null
+  }
+  const t = rec.tests
+  if (!isObj(t) || !isCount(t.completed) || !isCount(t.failures) || !isCount(t.errors) || !isCount(rec.unit)) {
+    fail('java', 'the record has no test counts — run java reads them from failsafe-summary.xml and the surefire reports')
+    return null
+  }
+  if (t.completed === 0) fail('java', 'the run recorded no integration tests — a report over no tests is vacuous')
+  if (t.failures + t.errors) fail('java', `${t.failures + t.errors} of ${t.completed} integration tests failed — the data of a failed run is partial`)
+  if (rec.unit) fail('java', `the run included ${rec.unit} unit test report${rec.unit > 1 ? 's' : ''} — the report would not be integration-only (run skips surefire: -Dtest=NONE)`)
+  if (!isObj(rec.files)) {
+    fail('java', 'the record has no boundary hashes — the boundary files changed while the suite ran, so the data may come from other bytes')
+    return null
+  }
+  for (const f of d.files) {
+    const now = existsSync(join(root, f)) ? sha(readFileSync(join(root, f))) : null
+    if (rec.files[f] !== now) fail('java', `${f}: the data was taken from other bytes (sha1 ${String(rec.files[f]).slice(0, 12)}… recorded, ${String(now).slice(0, 12)}… in the tree) — rerun the suite on this tree`)
+  }
+  const note = `JaCoCo ${typeof rec.jacoco === 'string' ? rec.jacoco : '?'} · ${sessions.length} session${sessions.length === 1 ? '' : 's'} · ${t.completed} integration test${t.completed === 1 ? '' : 's'}`
+  return { path, note, files, never }
+}
+
 // ── report ───────────────────────────────────────────────────────────────────────────────
 function emitFindings(l) {
   for (const f of findings) if (f.lang === l || f.lang === null) console.log(`${f.kind} [${f.lang ?? '-'}] ${f.msg}`)
@@ -2033,7 +2441,7 @@ function report(l) {
   const pin = pinFor(l)
   const reg = loadRegistry()
   if (d && pin) matchesPin(l, d, pin)
-  const reader = { go: goReport, python: pyReport, node: nodeReport, rust: rustReport, php: phpReport, ruby: rubyReport, dotnet: dotnetReport }[l]
+  const reader = { go: goReport, python: pyReport, node: nodeReport, rust: rustReport, php: phpReport, ruby: rubyReport, dotnet: dotnetReport, java: javaReport }[l]
   const data = fails(l) ? null : reader(d)
   if (data && !fails(l)) {
     const tot = data.files.reduce((a, f) => ({ stmts: a.stmts + f.stmts, covered: a.covered + f.covered }), { stmts: 0, covered: 0 })
@@ -2046,9 +2454,18 @@ function report(l) {
       : tot
     if (ran.covered === 0) {
       const scope =
-        l === 'python' ? 'boundary statements inside functions' : l === 'ruby' ? 'boundary lines inside methods' : LINE_LANGS.has(l) ? 'boundary lines' : 'boundary statements'
-      const load = l === 'ruby' ? 'require' : 'import'
-      const why = BODY_LANGS.has(l) && tot.covered ? `${load} alone credits ${tot.covered} module-level lines` : 'did the integration tests run against this tree?'
+        l === 'python'
+          ? 'boundary statements inside functions'
+          : l === 'ruby'
+            ? 'boundary lines inside methods'
+            : l === 'java'
+              ? 'boundary lines outside static initializers'
+              : LINE_LANGS.has(l)
+                ? 'boundary lines'
+                : 'boundary statements'
+      const load = l === 'ruby' ? 'require' : l === 'java' ? 'class loading' : 'import'
+      const level = l === 'java' ? 'static-initializer' : 'module-level'
+      const why = BODY_LANGS.has(l) && tot.covered ? `${load} alone credits ${tot.covered} ${level} lines` : 'did the integration tests run against this tree?'
       fail(l, `the run executed 0 of ${ran.stmts} ${scope} — a measurement failure, not a low number (${why})`)
     } else {
       const neverKeys = new Set()
@@ -2118,7 +2535,9 @@ function printReport(l, d, data, tot, pin) {
     console.log(
       l === 'ruby'
         ? '  (bodies = lines inside methods; class-level and def lines run at require, so "lines" also credits what the run merely loaded)'
-        : '  (bodies = statements inside functions; module- and class-level lines run at import, so "lines" also credits what the run merely imported)',
+        : l === 'java'
+          ? '  (bodies = lines outside static initializers; a class runs its static initializer when it loads, so "lines" also credits what the run merely loaded)'
+          : '  (bodies = statements inside functions; module- and class-level lines run at import, so "lines" also credits what the run merely imported)',
     )
   }
   // 표와 같은 순서(코드 단위) — localeCompare 는 `admin_users.go` 를 `admin.go` 앞에 둔다.
@@ -2126,7 +2545,7 @@ function printReport(l, d, data, tot, pin) {
   const what =
     l === 'rust'
       ? 'none of its lines ran, its async body never ran, or the data has no record of it'
-      : l === 'php' || l === 'dotnet'
+      : l === 'php' || l === 'dotnet' || l === 'java'
         ? 'none of its lines ran'
         : l === 'ruby'
           ? 'Ruby counted no call to it'
@@ -2181,6 +2600,23 @@ function spawnStep(file, args, cwd, env = process.env) {
     return 2
   }
   return r.status
+}
+// mvn — 리눅스 · 맥은 PATH 의 `mvn`. 윈도는 `mvn.cmd` 라 셸 없이 못 띄운다(npm.cmd 와 같다 — 위 사용 주석) — cmd 로 띄우되, 인자는
+// 이 스크립트가 만든 플래그 · 경로뿐이니 따옴표로 감싸고 cmd 가 다르게 읽는 글자(`"` · `%` · `!` · 줄바꿈)가 든 인자는 받지 않는다.
+function spawnMaven(args, cwd) {
+  if (process.platform !== 'win32') return spawnStep('mvn', args, cwd)
+  const bad = args.find((a) => /["%!\r\n]/.test(a))
+  if (bad !== undefined) {
+    console.log(`FAIL [${lang}] cannot hand ${bad} to mvn.cmd through cmd.exe`)
+    return 2
+  }
+  console.log(`$ mvn ${args.join(' ')}   (in ${cwd.replace(/\\/g, '/')})`)
+  const r = spawnSync(['mvn', ...args.map((a) => (/[\s&|<>^()]/.test(a) ? `"${a}"` : a))].join(' '), { cwd, stdio: 'inherit', shell: true })
+  if (r.error) {
+    console.log(`FAIL [${lang}] could not start mvn: ${r.error.message}`)
+    return 2
+  }
+  return r.status ?? 2
 }
 // 파생 파일들의 공통 디렉터리(언어 디렉터리 기준). coverage.py `source` 를 **디렉터리로** 주면 한 번도 import 안 된
 // 파일도 0% 로 보고된다 — 이름(`include`)으로 주면 사라진다(위 머리 주석의 실측).
@@ -2288,6 +2724,78 @@ function run(l) {
       const sha = createHash('sha1').update(readFileSync(data)).digest('hex')
       writeFileSync(RUBY_RUN(), `${JSON.stringify({ run: 'ruby', exit: rc, dump_sha1: sha })}\n`)
     }
+    return rc
+  }
+  if (l === 'java') {
+    // 옛 데이터 · exec · 클래스 사실 · 기록 · CLI 를 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게).
+    const data = JAVA_DATA()
+    const exec = JAVA_EXEC()
+    const names = JAVA_NAMES()
+    const cli = join(out, 'java-cli')
+    for (const f of [data, exec, names, JAVA_RUN()]) rmSync(f, { force: true })
+    rmSync(cli, { recursive: true, force: true })
+    const stop = (msg) => {
+      fail(l, msg)
+      emitFindings(l)
+      return 2
+    }
+    const pomPath = join(cwd, 'pom.xml')
+    if (!existsSync(pomPath)) return stop(`${d.dir}/pom.xml is missing — the lane builds one reactor`)
+    // 리포트의 JaCoCo 는 에이전트와 같은 판이어야 한다 — 판은 레인의 pom 이 댄다(플러그인 설정은 거기 하나다 — coverage-boundary).
+    const pomX = readFileSync(pomPath, 'utf8').replace(/<!--[\s\S]*?-->/g, '')
+    const vers = [...pomX.matchAll(/<plugin>([\s\S]*?)<\/plugin>/g)]
+      .map((m) => m[1])
+      .filter((b) => /<artifactId>\s*jacoco-maven-plugin\s*<\/artifactId>/.test(b))
+      .map((b) => /<version>\s*([^<\s]+)\s*<\/version>/.exec(b)?.[1])
+    if (vers.length !== 1 || !/^\d+(?:\.\d+)+$/.test(vers[0] ?? '')) return stop(`${d.dir}/pom.xml must pin one jacoco-maven-plugin <version> — the report's JaCoCo has to match the agent (found ${vers.length})`)
+    const ver = vers[0]
+    const shas = () => Object.fromEntries(d.files.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
+    const before = shas()
+    // 레인의 명령(`mvn -B -f java/pom.xml verify`)과 같은 리액터 · 골이다. 더하는 것: `clean`(지난 실행의 클래스 · 테스트 보고가 남지
+    // 않게) · 단위 테스트 끄기(`-Dtest=NONE` — surefire 와 failsafe 가 같은 에이전트 인자를 써 단위와 IT 가 한 exec 에 합쳐진다 — 실측) ·
+    // exec 를 <out> 으로(`-Djacoco.destFile` — 모듈의 report · check 는 그 모듈에 데이터가 없어 건너뛴다).
+    const rc = spawnMaven(['-B', '-f', 'pom.xml', 'clean', 'verify', '-Dtest=NONE', '-Dsurefire.failIfNoSpecifiedTests=false', `-Djacoco.destFile=${exec}`], cwd)
+    const after = shas()
+    if (!existsSync(exec)) return rc
+    const rcCli = spawnMaven(['-B', '-q', 'dependency:copy', `-Dartifact=org.jacoco:org.jacoco.cli:${ver}:jar:nodeps`, `-DoutputDirectory=${cli}`], cwd)
+    const jar = join(cli, `org.jacoco.cli-${ver}-nodeps.jar`)
+    if (rcCli !== 0 || !existsSync(jar)) return stop(`could not fetch the JaCoCo CLI ${ver} (org.jacoco:org.jacoco.cli:${ver}:jar:nodeps) — the report has to use the agent's version`)
+    const jbin = (t) => (process.env.JAVA_HOME ? join(process.env.JAVA_HOME, 'bin', t) : t)
+    // 경계 파일이 든 모듈의 클래스 디렉터리만 분석한다(exec 에는 의존 라이브러리 · 테스트 러너의 클래스도 든다).
+    const classDirs = sortU(d.files.map((f) => f.split('/')[1])).map((m) => join(cwd, m, 'target', 'classes'))
+    const gone = classDirs.filter((c) => !existsSync(c))
+    if (gone.length) return stop(`the build left no classes at ${gone.map((c) => c.replace(/\\/g, '/')).join(' · ')} — the report analyzes the boundary modules' class files`)
+    const rcRep = spawnStep(jbin('java'), ['-jar', jar, 'report', exec, ...classDirs.flatMap((c) => ['--classfiles', c]), '--xml', data], cwd)
+    if (rcRep !== 0 || !existsSync(data)) return stop(`the JaCoCo CLI wrote no XML report (exit ${rcRep})`)
+    // 클래스 파일의 사실 — 경계 파일의 패키지 디렉터리의 클래스 파일 전부(같은 소스 파일의 중첩 · 익명 · 최상위 보조 타입은 리포트가
+    // SourceFile 로 고른다).
+    const classFiles = []
+    for (const f of d.files) {
+      const fm = /^[^/]+\/([^/]+)\/src\/main\/java\/(.+)\/[^/]+\.java$/.exec(f)
+      if (!fm) continue
+      const dir = join(cwd, fm[1], 'target', 'classes', ...fm[2].split('/'))
+      if (existsSync(dir)) for (const e of readdirSync(dir)) if (e.endsWith('.class')) classFiles.push(join(dir, e))
+    }
+    console.log(`$ javap -l -p -v <${sortU(classFiles).length} class files of the boundary packages>`)
+    const jp = spawnSync(jbin('javap'), ['-l', '-p', '-v', ...sortU(classFiles)], { cwd, encoding: 'utf8', maxBuffer: 256 << 20 })
+    if (jp.error || jp.status !== 0) return stop(`javap failed (${jp.error?.message ?? `exit ${jp.status}`}) — the report needs the class files' line tables`)
+    writeFileSync(names, `${JSON.stringify({ classes: javapFacts(jp.stdout) })}\n`)
+    // 테스트 — failsafe 의 요약(모듈마다)을 합치고, surefire 의 보고가 없는지 센다(단위 테스트는 돌지 않았어야 한다).
+    const tests = { completed: 0, failures: 0, errors: 0, skipped: 0 }
+    let unit = 0
+    for (const e of readdirSync(cwd, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue
+      const sum = join(cwd, e.name, 'target', 'failsafe-reports', 'failsafe-summary.xml')
+      if (existsSync(sum)) {
+        const x = readFileSync(sum, 'utf8')
+        for (const k of Object.keys(tests)) tests[k] += Number(new RegExp(`<${k}>(\\d+)</${k}>`).exec(x)?.[1] ?? NaN)
+      }
+      const rep = join(cwd, e.name, 'target', 'surefire-reports')
+      if (existsSync(rep)) unit += readdirSync(rep).filter((n) => /^TEST-.*\.xml$/.test(n)).length
+    }
+    const sha = (p) => createHash('sha1').update(readFileSync(p)).digest('hex')
+    const same = d.files.every((f) => before[f] !== null && before[f] === after[f])
+    writeFileSync(JAVA_RUN(), `${JSON.stringify({ run: 'java', exit: rc, jacoco: ver, data_sha1: sha(data), names_sha1: sha(names), exec_sha1: sha(exec), tests, unit, files: same ? before : null })}\n`)
     return rc
   }
   if (l === 'dotnet') {
