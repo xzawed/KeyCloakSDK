@@ -80,9 +80,59 @@
           },
           "Branches": []
         },
+        "System.Int32 Kc.AuthClient::Unused(System.Int32)": {
+          "Lines": {
+            "93": 0
+          },
+          "Branches": []
+        },
+        "System.Func`1<System.Threading.Tasks.Task`1<System.Int32>> Kc.AuthClient::Later()": {
+          "Lines": {
+            "100": 0,
+            "101": 0,
+            "102": 0,
+            "103": 0,
+            "104": 0
+          },
+          "Branches": [
+            {
+              "Line": 100,
+              "Offset": 6,
+              "EndOffset": 8,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 100,
+              "Offset": 6,
+              "EndOffset": 31,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            }
+          ]
+        },
+        "System.String[] Kc.AuthClient::Lower()": {
+          "Lines": {
+            "109": 0,
+            "110": 0,
+            "111": 0,
+            "112": 0,
+            "113": 0,
+            "114": 0
+          },
+          "Branches": []
+        },
         "System.Int32 Kc.AuthClient::<Count>g__Twice|14_0(System.Int32)": {
           "Lines": {
             "55": 1
+          },
+          "Branches": []
+        },
+        "System.Int32 Kc.AuthClient::<Unused>g__Helper|22_0(System.Int32)": {
+          "Lines": {
+            "95": 0
           },
           "Branches": []
         },
@@ -104,6 +154,14 @@
         "System.Void Kc.AuthClient::.cctor()": {
           "Lines": {
             "5": 1
+          },
+          "Branches": []
+        }
+      },
+      "Kc.AuthClient/<>c": {
+        "System.String Kc.AuthClient/<>c::<NamesAsync>b__25_0(System.String)": {
+          "Lines": {
+            "123": 0
           },
           "Branches": []
         }
@@ -181,6 +239,37 @@
           "Branches": []
         }
       },
+      "Kc.AuthClient/<NamesAsync>d__25": {
+        "System.Void Kc.AuthClient/<NamesAsync>d__25::MoveNext()": {
+          "Lines": {
+            "119": 0,
+            "120": 0,
+            "121": 0,
+            "122": 0,
+            "124": 0,
+            "125": 0,
+            "126": 0
+          },
+          "Branches": [
+            {
+              "Line": 119,
+              "Offset": 31,
+              "EndOffset": 33,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 119,
+              "Offset": 31,
+              "EndOffset": 96,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            }
+          ]
+        }
+      },
       "Kc.AuthClient/<SumAsync>d__18": {
         "System.Void Kc.AuthClient/<SumAsync>d__18::MoveNext()": {
           "Lines": {
@@ -233,6 +322,29 @@
               "Path": 1,
               "Ordinal": 3,
               "Hits": 1
+            }
+          ]
+        }
+      },
+      "Kc.AuthClient/<>c/<<Later>b__23_0>d": {
+        "System.Void Kc.AuthClient/<>c/<<Later>b__23_0>d::MoveNext()": {
+          "Lines": {},
+          "Branches": [
+            {
+              "Line": 102,
+              "Offset": 31,
+              "EndOffset": 33,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 102,
+              "Offset": 31,
+              "EndOffset": 93,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
             }
           ]
         }

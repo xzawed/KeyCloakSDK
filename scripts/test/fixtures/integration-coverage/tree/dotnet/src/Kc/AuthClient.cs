@@ -87,4 +87,41 @@ public sealed class AuthClient
     }
 
     public static AuthClient Build(Config config) => new(config);
+
+    public int Unused(int n)
+    {
+        return Helper(n);
+
+        static int Helper(int x) => x + 1;
+    }
+
+    public Func<Task<int>> Later()
+    {
+        return async () =>
+        {
+            await Task.Yield();
+            return 1;
+        };
+    }
+
+    public string[] Lower()
+    {
+        return Scopes
+            .Select(s =>
+            {
+                return s.ToLowerInvariant();
+            })
+            .ToArray();
+    }
+
+    public async Task<string[]> NamesAsync()
+    {
+        await Task.Yield();
+        return Scopes
+            .Select(s =>
+            {
+                return s.ToUpperInvariant();
+            })
+            .ToArray();
+    }
 }

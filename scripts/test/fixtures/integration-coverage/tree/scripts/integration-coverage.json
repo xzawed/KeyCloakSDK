@@ -113,7 +113,11 @@
       "dotnet/src/Kc/AuthClient.cs:AuthClient.#ctor(System.String,System.String)": "open-masking",
       "dotnet/src/Kc/AuthClient.cs:AuthClient.Build": "open-masking",
       "dotnet/src/Kc/AuthClient.cs:AuthClient.Describe(System.Int32)": "open-admin",
-      "dotnet/src/Kc/AuthClient.cs:AuthClient.LogoutAsync": "open-admin"
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.Later": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.LogoutAsync": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.Lower": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.NamesAsync": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.Unused": "open-admin"
     }
   }
 }

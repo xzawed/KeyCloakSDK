@@ -1808,7 +1808,8 @@ function dotnetSuite(dir) {
     const src = readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ')
     const ns = /(?:^|[;{}\s])namespace\s+([\w.]+)\s*[;{]/.exec(src)?.[1]
     for (const m of src.matchAll(/\[\s*Trait\s*\(\s*"Category"\s*,\s*"Integration"\s*\)\s*\]/g)) {
-      const decl = /^(?:\s*\[[^\]]*\])*\s*(?:(?:public|internal|private|protected|sealed|static|partial|abstract|file)\s+)*class\s+(\w+)/.exec(src.slice(m.index + m[0].length))
+      // 사이의 특성은 괄호 한 겹까지 받는다(`[Foo(typeof(int[]))]` — 독립 레그 2차 지적: `]` 에서 끊겨 진짜 특성이 stray 가 됐다).
+      const decl = /^(?:\s*\[(?:[^[\]]|\[[^[\]]*\])*\])*\s*(?:(?:public|internal|private|protected|sealed|static|partial|abstract|unsafe|new|file|record)\s+)*class\s+(\w+)/.exec(src.slice(m.index + m[0].length))
       if (!decl) stray.push(f)
       else set.add(ns ? `${ns}.${decl[1]}` : decl[1])
     }
@@ -1900,7 +1901,7 @@ function dotnetReport(d) {
     const foreign = results.filter((r) => !suite.has(classOf.get(r.id)))
     if (foreign.length) {
       const eg = sortU(foreign.map((r) => r.name ?? '?')).slice(0, 3).join(' · ')
-      fail('dotnet', `the run included tests outside the integration suite (${eg}) — the report would not be integration-only (the suite = classes in sources carrying [Trait("Category", "Integration")])`)
+      fail('dotnet', `the run included tests outside the integration suite (${eg}) — the report would not be integration-only (the suite = classes whose declaration carries [Trait("Category", "Integration")])`)
     }
     const rt = /\(64-bit \.NET ([\d.]+)\)/.exec(trx)?.[1]
     note = `.NET ${rt ?? '?'} · coverlet json · ${results.length} test${results.length === 1 ? '' : 's'}`
