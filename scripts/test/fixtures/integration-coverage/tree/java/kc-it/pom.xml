@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>kc.fixture</groupId>
+    <artifactId>kc-parent</artifactId>
+    <version>0.0.0</version>
+  </parent>
+  <artifactId>kc-it</artifactId>
+  <dependencies>
+    <dependency>
+      <groupId>kc.fixture</groupId><artifactId>kc-auth</artifactId><version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <!-- *IT 는 integration-test · verify 에서 돈다(실제 트리의 keycloak-sdk 모듈과 같은 꼴). -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

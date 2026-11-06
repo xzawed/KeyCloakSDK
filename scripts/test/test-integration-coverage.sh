@@ -39,10 +39,15 @@
 #   data/dotnet.trx        같은 실행의 trx — 생성 루트(`@ROOT@` · 소문자 `@root@`)와 기계 · 사용자 이름(HOST · USER)만 바꿨다
 #                          (치환마다 되돌린 바이트가 원본과 같다)
 #   data/dotnet-zero.*     같은 명령, 구동 테스트가 경계 밖 `Config` 만 만든다 — 경계 줄 전부 0
+#   data/java.xml          **도구의 `run java` 그대로**(JDK 21.0.8 · Maven 3.9.9 · JaCoCo 0.8.16 · 2026-11-07) — 임시 루트에 tree 사본.
+#                          경로는 없다 — 세션 id 의 기계 이름만 `HOST-00000000` 으로 바꿨다
+#   data/java.names.json   같은 실행의 클래스 사실(javap 의 LineNumberTable · EnclosingMethod) — 그대로(0 실행과 바이트가 같다)
+#   data/java-zero.xml     같은 명령, `KC_FIXTURE_ZERO=1` 로 구동 테스트가 경계 클래스를 싣기만 한다 — 정적 초기화만 돈다
 # ruby 구동 스펙은 「logout_url · AuthClient.build · introspect · close · flush」를 안 부르고 `token` 의 nil 갈래를 안 탄다.
 # dotnet 구동 테스트는 「두 번째 생성자 · Describe(int) · LogoutAsync · Build · Unused · Later · Lower · NamesAsync · Retries 의
 # setter · Close · Dispose · Defaults · DeleteAsync」를 안 부르고 `TokenAsync` 의 빈 code 갈래 · `RetryAsync` 의 fail 갈래(그 안의
 # async 람다)를 안 탄다(`UnitTests` 는 Trait 이 없는 통합 밖 테스트다 — 레인의 필터가 거른다).
+# java 구동 테스트(`DriveIT`)는 「token(String, int) · unused · QuickStart 전체」를 안 부르고 정적 람다 `UPPER` 는 `names` 를 거쳐 부른다.
 # php 구동기는 「groups·adminHelper·logoutUrl·__debugInfo」를 안 부르고 `exchange` 의 throw 갈래를 안 탄다.
 # 구동기는 「String·Close·Delete·AuthClient.String·hook 리터럴」과 「__repr__·logout·clients·aio 전체」를, node 는
 # 「describe·toString·[SYM]·inc·cb·set count·overload·longSignature·close」를, rust 는 「transport·supply·describe·noop·close·
@@ -72,6 +77,7 @@ fresh() {
   php_data "$FIX/data/php"
   ruby_data "$FIX/data/ruby.json"
   dotnet_data "$FIX/data/dotnet.json" "$FIX/data/dotnet.trx"
+  java_data "$FIX/data/java.xml"
   git -C "$T" init -q
   git -C "$T" config core.autocrlf false
   git -C "$T" add -A
@@ -123,6 +129,18 @@ dotnet_mark() { # exit
     "$(sha1sum "$D/dotnet.json" | cut -d' ' -f1)" "$(sha1sum "$D/dotnet.trx" | cut -d' ' -f1)" \
     "$(sha1sum "$T/dotnet/src/Kc/Admin/Client.cs" | cut -d' ' -f1)" "$(sha1sum "$T/dotnet/src/Kc/AuthClient.cs" | cut -d' ' -f1)" > "$D/dotnet.run.json"
 }
+# `run java` 의 데이터(JaCoCo XML — 경로가 없다)와 클래스 사실(javap 가 읽은 LineNumberTable · EnclosingMethod) — 기록을 쓴다.
+java_data() { # fixture-xml
+  cp "$1" "$D/java.xml"
+  cp "$FIX/data/java.names.json" "$D/java.names.json"
+  java_mark 0
+}
+# `run java` 의 기록(종료코드 · 데이터와 클래스 사실의 sha1 · failsafe 의 테스트 수 · surefire 보고 수 · 경계 파일의 sha1) — php_mark 와 같은 쓰임.
+java_mark() { # exit
+  printf '{"run":"java","exit":%s,"jacoco":"0.8.16","data_sha1":"%s","names_sha1":"%s","tests":{"completed":1,"failures":0,"errors":0,"skipped":0},"unit":0,"files":{"java/kc-auth/src/main/java/kc/auth/AuthClient.java":"%s","java/kc-examples/src/main/java/kc/examples/QuickStart.java":"%s"}}\n' "$1" \
+    "$(sha1sum "$D/java.xml" | cut -d' ' -f1)" "$(sha1sum "$D/java.names.json" | cut -d' ' -f1)" \
+    "$(sha1sum "$T/java/kc-auth/src/main/java/kc/auth/AuthClient.java" | cut -d' ' -f1)" "$(sha1sum "$T/java/kc-examples/src/main/java/kc/examples/QuickStart.java" | cut -d' ' -f1)" > "$D/java.run.json"
+}
 run() {
   git -C "$T" add -A
   OUT="$(node "$TOOL" "$@" 2>&1)" && RC=0 || RC=$?
@@ -144,7 +162,7 @@ assert_line "$OUT" "[rust] pin OK — 3 files equal the derivation from .github/
 assert_line "$OUT" "[php] pin OK — 2 files equal the derivation from php/phpunit.xml:11 (phpunit <source><exclude>)" "[check] php 핀 = 파생"
 assert_line "$OUT" "[ruby] pin OK — 3 files equal the derivation from ruby/spec/spec_helper.rb:8 (SimpleCov skip)" "[check] ruby 핀 = 파생"
 assert_line "$OUT" "[dotnet] pin OK — 2 files equal the derivation from dotnet/coverlet.runsettings:9 (coverlet <Exclude>)" "[check] dotnet 핀 = 파생"
-assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 · php 2 · ruby 3 · dotnet 2 files pinned · 61 owner entries, all open" "[check] 요약"
+assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 · php 2 · ruby 3 · dotnet 2 · java 2 files pinned · 65 owner entries, all open" "[check] 요약"
 
 run report go "$T" --out "$D"
 assert_eq 0 "$RC" "[go] 건강한 리포트는 exit 0 — 출력: $OUT"
@@ -372,8 +390,31 @@ assert_not_contains "$OUT" "Prefixed" "[dotnet] 클로저 람다의 줄은 감�
 assert_not_contains "$OUT" "MoveNext" "[dotnet] 상태 기계의 이름을 내지 않는다"
 assert_not_contains "$OUT" "RetryAsync" "[dotnet] 돈 메서드 안의 안 돈 async 람다(상태 기계의 줄 전부 0)는 두 겹을 벗겨 그 메서드에 접는다 — 목록에 없다"
 assert_line "$OUT" "integration-coverage [dotnet]: OK — 45/84 lines (53.6%) · 13 never-executed functions, all owned by open registry items" "[dotnet] 통과 요약"
+# java — 줄 · 횟수는 JaCoCo(IT 만 돈 실행의 exec → CLI 의 XML)가, 이름과 메서드마다의 줄은 클래스 파일(javap 의 LineNumberTable ·
+# EnclosingMethod)이 낸다. 람다는 감싼 메서드에(오버로드면 줄 범위로), 익명 클래스는 EnclosingMethod 로 접는다. 정적 초기화(<clinit>)만
+# 가진 줄은 bodies 에서 뺀다(정적 람다의 줄은 람다 몸통이기도 하다 — 몸통으로 센다).
+fresh
+run report java "$T" --out "$D"
+assert_eq 0 "$RC" "[java] 건강한 리포트는 exit 0 — 출력: $OUT"
+assert_line "$OUT" "[java] integration-only coverage — report mode, no floor" "[java] 머리줄"
+assert_line "$OUT" "  boundary: 2 files derived from java/pom.xml:52 (jacoco <excludes>) — equal to the pin in scripts/integration-coverage.json" "[java] 파생 출처"
+assert_contains "$OUT" "/java.xml (JaCoCo 0.8.16 · 1 session · 1 integration test)" "[java] 데이터 · JaCoCo 판 · 세션 · 테스트 수를 찍는다"
+assert_line "$OUT" "  java/kc-auth/src/main/java/kc/auth/AuthClient.java lines 18/20 90.0% · bodies 17/19 89.5%" "[java] AuthClient.java — 정적 초기화만 가진 줄(REALM) 하나가 bodies 에서 빠진다"
+assert_line "$OUT" "  java/kc-examples/src/main/java/kc/examples/QuickStart.java lines 0/4 0.0% · bodies 0/4 0.0%" "[java] jacoco.skip 모듈의 파일도 든다(파생의 forced)"
+assert_line "$OUT" "  total lines 18/24 75.0% · bodies 17/23 73.9%" "[java] 합계는 경계 파일만(Config.java 제외)"
+assert_line "$OUT" "  never executed by the integration run — 4 functions (none of its lines ran):" "[java] 미실행 머리줄"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:36 AuthClient.token(String, int) · 1 line · owner open-admin" "[java] 오버로드는 서술자로 가른다 — 그 람다는 줄 범위로 그 오버로드에 붙는다"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:53 AuthClient.unused · 1 line · owner open-admin" "[java] 안 부른 메서드"
+assert_line "$OUT" "  NEVER java/kc-examples/src/main/java/kc/examples/QuickStart.java:8 QuickStart.main · 2 lines · owner open-masking" "[java] 예제의 main"
+assert_line "$OUT" "  NEVER java/kc-examples/src/main/java/kc/examples/QuickStart.java:12 QuickStart.env · 2 lines · owner open-masking" "[java] 예제의 패키지 전용 메서드"
+assert_not_contains "$OUT" "token(String) ·" "[java] 부른 오버로드는 목록에 없다"
+assert_not_contains "$OUT" "lambda\$" "[java] 람다의 이름을 내지 않는다"
+assert_not_contains "$OUT" "AuthClient\$1" "[java] 익명 클래스는 감싼 메서드(sorted)에 접힌다 — 이름을 내지 않는다"
+assert_not_contains "$OUT" "<clinit>" "[java] 정적 초기화는 미실행 목록에 들지 않는다"
+assert_not_contains "$OUT" "Config" "[java] 경계 밖 파일은 리포트에 없다"
+assert_line "$OUT" "integration-coverage [java]: OK — lines 18/24 (75.0%) · bodies 17/23 (73.9%) · 4 never-executed functions, all owned by open registry items" "[java] 통과 요약"
 
-# ── (2) 음성: 파생 ↔ 핀 ───────────────────────────────────────────────────────────────────────
+# ── (2) 음성: 파생 ↔ 핀───────────────────────────────────────────────────────────────────────
 # 파생이 좁아진다 — 이것이 등록부가 실측한 함정의 꼴이다(파일이 빠지면 %가 오른다).
 fresh
 sed -i 's#(auth|admin|admin_users)#(auth|admin)#' "$T/.github/workflows/go-ci.yml"
@@ -1361,8 +1402,172 @@ sed -i '/Client.UsersResource.DeleteAsync/d' "$T/scripts/integration-coverage.js
 run report dotnet "$T" --out "$D"
 assert_eq 1 "$RC" "[dotnet] 소유자 없는 미실행 함수는 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [dotnet] unowned never-executed function dotnet/src/Kc/Admin/Client.cs:Client.UsersResource.DeleteAsync" "[dotnet] 소유자 키"
+# java — JaCoCo XML · 클래스 사실(javap) · 기록의 무결성. 줄 · 횟수 · 이름을 받되, 데이터와 클래스 사실이 이 트리 · 한 빌드 · 이 실행의
+# 것인지와 스스로 맞는지를 본다. 기록을 겨누지 않는 음성은 고친 뒤 기록을 다시 쓴다(java_mark 0 — 기록 판정이 exit 2 를 떠받치지 않게).
+fresh
+rm "$D/java.xml"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 데이터가 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [java] no coverage data at" "[java] 데이터 없음"
+fresh
+printf '<report name="x"/>\n' > "$D/java.xml"
+java_mark 0
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] JaCoCo XML 이 아니면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/java.xml is not a JaCoCo XML report (no JaCoCo report DOCTYPE)" "[java] 형식이 다르다"
+fresh
+sed -i 's#<sessioninfo [^>]*/>##' "$D/java.xml"
+java_mark 0
+assert_not_contains "$(cat "$D/java.xml")" '<sessioninfo' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 세션 없는 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/java.xml records no session — the agent wrote no execution data" "[java] 세션 없음"
+fresh
+sed -i 's#<sourcefile name="AuthClient.java">#<sourcefile name="AuthClientOld.java">#' "$D/java.xml"
+java_mark 0
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 데이터에서 경계 파일이 빠지면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [java] java/kc-auth/src/main/java/kc/auth/AuthClient.java is not in the coverage data" "[java] 빠진 경계 파일"
+fresh
+rm "$D/java.names.json"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 클래스 사실이 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/java.names.json — run java writes them with javap (line tables · enclosing methods of nested classes)" "[java] 클래스 사실 없음"
+fresh
+sed -i 's#"lines":\[45\]#"lines":["45"]#' "$D/java.names.json"
+java_mark 0
+assert_contains "$(cat "$D/java.names.json")" '"lines":["45"]' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 정수 아닌 줄의 클래스 사실은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [java] no class facts at" "[java] 클래스 사실의 꼴"
+fresh
+sed -i 's#"kc/auth/AuthClient\$Token":#"kc/auth/AuthClient\$Tokens":#' "$D/java.names.json"
+java_mark 0
+assert_contains "$(cat "$D/java.names.json")" '"kc/auth/AuthClient$Tokens":' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 클래스 사실과 데이터가 다른 클래스를 대면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "the class facts and the data name different classes (data only: kc/auth/AuthClient\$Token · facts only: kc/auth/AuthClient\$Tokens)" "[java] 클래스 집합이 갈린다"
+fresh
+sed -i 's#<method name="unused" desc="()Ljava/lang/String;" line="53">#<method name="unused" desc="()Ljava/lang/String;" line="52">#' "$D/java.xml"
+java_mark 0
+assert_contains "$(cat "$D/java.xml")" '<method name="unused" desc="()Ljava/lang/String;" line="52">' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 데이터와 클래스 사실의 첫 줄이 갈리면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "kc/auth/AuthClient.unused()Ljava/lang/String; — the data and the class facts disagree (first line 52 vs 53)" "[java] 첫 줄이 갈린다"
+fresh
+sed -i 's#name="unused"#name="access$000"#' "$D/java.xml"
+sed -i 's#"name":"unused"#"name":"access$000"#' "$D/java.names.json"
+java_mark 0
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 모르는 생성 이름은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient.access\$000()Ljava/lang/String; — not a generated name this reader knows" "[java] 모르는 생성 이름"
+fresh
+sed -i 's#"enclosing":{"class":"kc/auth/AuthClient","method":"sorted","desc":"(Ljava/util/List;)Ljava/util/List;"}#"enclosing":null#' "$D/java.names.json"
+java_mark 0
+assert_contains "$(cat "$D/java.names.json")" '"kc/auth/AuthClient$1":{"source":"AuthClient.java","enclosing":null' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 감싼 메서드가 없는 익명 클래스는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient\$1." "[java] 익명 클래스를 접지 못한다"
+fresh
+sed -i 's#<method name="lambda$token$3" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="36">#<method name="lambda$token$3" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="40">#' "$D/java.xml"
+sed -i 's#"name":"lambda$token$3","desc":"(Ljava/lang/String;I)Ljava/lang/String;","lines":\[36\]#"name":"lambda$token$3","desc":"(Ljava/lang/String;I)Ljava/lang/String;","lines":[40]#' "$D/java.names.json"
+java_mark 0
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 어느 오버로드의 줄 범위에도 안 드는 람다는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.token has overloads and a lambda whose lines fall in none or several of them" "[java] 람다를 못 붙이는 오버로드"
+fresh
+sed -i 's#<line nr="53" mi="5" ci="0" mb="0" cb="0"/>#<line nr="9999" mi="5" ci="0" mb="0" cb="0"/>#' "$D/java.xml"
+java_mark 0
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 파일 밖 줄은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "the data counts line 9999, past the 73 lines of the file" "[java] 파일 밖 줄"
+fresh
+sed -i 's#<line nr="53" mi="5" ci="0" mb="0" cb="0"/>#<line nr="54" mi="5" ci="0" mb="0" cb="0"/>#' "$D/java.xml"
+java_mark 0
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 어느 메서드도 안 가진 줄은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "the data counts line 54, which no method of the class facts owns" "[java] 메서드 밖 줄"
+fresh
+sed -i 's#<line nr="53" mi="5" ci="0" mb="0" cb="0"/>#<line nr="53" mi="5" ci="x" mb="0" cb="0"/>#' "$D/java.xml"
+java_mark 0
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 숫자가 아닌 줄 횟수는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot read line 53 of AuthClient.java" "[java] 못 읽는 줄"
+# run 기록 — 이 데이터를 `run java` 가 썼고 그 실행이 성공했는가 · 그 실행이 IT 만 돌았는가 · 경계 파일이 그 실행의 바이트인가.
+fresh
+rm "$D/java.run.json"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] run 기록이 없으면 exit 2(손으로 돌린 실행) — 출력: $OUT"
+assert_contains "$OUT" "no record that \`run java\` wrote this data" "[java] 기록 없음"
+fresh
+sed -i 's#"run":"java"#"run":"php"#' "$D/java.run.json"
+assert_contains "$(cat "$D/java.run.json")" '"run":"php"' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 다른 레인이 쓴 꼴의 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "no record that \`run java\` wrote this data" "[java] 다른 레인의 기록"
+fresh
+java_mark 1
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 실패한 실행의 기록이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [java] the run that wrote this data exited 1 — the data of a failed run is partial" "[java] 실패 종료"
+assert_not_contains "$OUT" "OK —" "[java] 실패한 실행은 수치를 내지 않는다"
+fresh
+sed -i 's#<sessioninfo id="HOST-00000000"#<sessioninfo id="HOST-00000001"#' "$D/java.xml"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 기록 뒤 바뀐 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/java.xml is not the data \`run java\` recorded" "[java] 기록과 다른 데이터"
+fresh
+sed -i 's#"lines":\[45\]#"lines":[45,45]#' "$D/java.names.json"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 기록 뒤 바뀐 클래스 사실은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/java.names.json is not the class facts \`run java\` recorded" "[java] 기록과 다른 클래스 사실"
+fresh
+sed -i 's#"tests":{[^}]*},##' "$D/java.run.json"
+assert_not_contains "$(cat "$D/java.run.json")" '"tests"' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 테스트 수 없는 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "the record has no test counts" "[java] 테스트 수 없음"
+fresh
+sed -i 's#"completed":1#"completed":0#' "$D/java.run.json"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 통합 테스트가 0 이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [java] the run recorded no integration tests — a report over no tests is vacuous" "[java] 테스트 없음"
+fresh
+sed -i 's#"failures":0#"failures":1#' "$D/java.run.json"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 실패한 통합 테스트가 있으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [java] 1 of 1 integration tests failed — the data of a failed run is partial" "[java] 실패한 테스트"
+fresh
+sed -i 's#"unit":0#"unit":2#' "$D/java.run.json"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 단위 테스트가 섞인 실행은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [java] the run included 2 unit test reports — the report would not be integration-only" "[java] 단위 테스트가 섞였다"
+fresh
+sed -i 's#"files":{.*}}$#"files":null}#' "$D/java.run.json"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 경계 해시 없는 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "the record has no boundary hashes — the boundary files changed while the suite ran" "[java] 실행 중 바뀐 경계"
+fresh
+printf '// changed after the run\n' >> "$T/java/kc-auth/src/main/java/kc/auth/AuthClient.java"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 다른 바이트에서 난 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [java] java/kc-auth/src/main/java/kc/auth/AuthClient.java: the data was taken from other bytes" "[java] 해시 불일치"
+# 겹친 결함 — 기록 판정은 다른 판정 뒤에 둘 뿐 그것에 가려지지 않는다(dotnet 과 같다).
+fresh
+sed -i 's#<line nr="53" mi="5" ci="0" mb="0" cb="0"/>#<line nr="54" mi="5" ci="0" mb="0" cb="0"/>#' "$D/java.xml"
+rm "$D/java.run.json"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 데이터 결함과 기록 없음이 겹치면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "which no method of the class facts owns" "[java] 겹친 결함 — 데이터"
+assert_contains "$OUT" "no record that \`run java\` wrote this data" "[java] 겹친 결함 — 기록 판정도 낸다"
+assert_contains "$OUT" "FAIL — 2 integrity failures" "[java] 겹친 결함 — 둘을 센다"
+fresh
+sed -i '/AuthClient.java:AuthClient.unused/d' "$T/scripts/integration-coverage.json"
+run report java "$T" --out "$D"
+assert_eq 1 "$RC" "[java] 소유자 없는 미실행 함수는 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [java] unowned never-executed function java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.unused" "[java] 소유자 키"
 
-# ── (2) 음성: 소유자(exit 1 — 경고, 게이트가 아니다) ─────────────────────────────────────────
+# ── (2) 음성: 소유자(exit 1 — 경고, 게이트가 아니다)─────────────────────────────────────────
 fresh
 sed -i '/"go\/admin.go:AdminClient.Close"/d' "$T/scripts/integration-coverage.json"
 run report go "$T" --out "$D"
@@ -1450,12 +1655,20 @@ run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 경계 줄을 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [dotnet] the run executed 0 of 84 boundary lines — a measurement failure, not a low number" "[dotnet] 측정 실패 문구"
 assert_not_contains "$OUT" "0.0%" "[dotnet] 측정 실패에서 0% 를 내지 않는다"
+# java — 구동 테스트가 경계 클래스를 싣기만 했다(KC_FIXTURE_ZERO=1 — 정적 초기화만 돈다). lines 는 0 이 아니지만 몸통은 0 이다 — 정적
+# 람다(UPPER)의 줄도 실릴 때 덮이지만 람다가 안 불렸으니 몸통으로는 안 덮였다(메서드의 LINE covered 로 가른다).
+fresh
+java_data "$FIX/data/java-zero.xml"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 경계 클래스를 싣기만 한 실행은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [java] the run executed 0 of 23 boundary lines outside static initializers — a measurement failure, not a low number (class loading alone credits 2 static-initializer lines)" "[java] 정적 초기화만 돈 실행"
+assert_not_contains "$OUT" "OK —" "[java] 측정 실패에서 수치를 내지 않는다"
 # 빈 파생 + 빈 핀 — 집합은 같으므로(∅ = ∅) 빈 집합 판정만이 잡는다. 파생 도구를 가짜로 바꿔 그 갈래만 태운다.
 # ⚠️ 두 언어 다 「있되 비었다」여야 한다 — 한 언어를 빼 두면 check 의 exit 2 가 그 「없는 파생」에서 와서 빈 집합
 # 갈래를 지워도 초록이었다(변이 실측: 빈 집합 통과 변이에 check 단언이 침묵했다).
 fresh
-printf '%s\n' 'const e = (d) => ({ dir: d, site: "fake:1", label: "fake", universe: 3, files: [] })' 'console.log(JSON.stringify({ langs: { go: e("go"), python: e("python"), node: e("node"), rust: e("rust"), php: e("php"), ruby: e("ruby"), dotnet: e("dotnet") }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
-printf '%s\n' '{ "go": { "pinned": [], "owners": {} }, "python": { "pinned": [], "owners": {} }, "node": { "pinned": [], "owners": {} }, "rust": { "pinned": [], "owners": {} }, "php": { "pinned": [], "owners": {} }, "ruby": { "pinned": [], "owners": {} }, "dotnet": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
+printf '%s\n' 'const e = (d) => ({ dir: d, site: "fake:1", label: "fake", universe: 3, files: [] })' 'console.log(JSON.stringify({ langs: { go: e("go"), python: e("python"), node: e("node"), rust: e("rust"), php: e("php"), ruby: e("ruby"), dotnet: e("dotnet"), java: e("java") }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
+printf '%s\n' '{ "go": { "pinned": [], "owners": {} }, "python": { "pinned": [], "owners": {} }, "node": { "pinned": [], "owners": {} }, "rust": { "pinned": [], "owners": {} }, "php": { "pinned": [], "owners": {} }, "ruby": { "pinned": [], "owners": {} }, "dotnet": { "pinned": [], "owners": {} }, "java": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
 run check "$T"
 assert_eq 2 "$RC" "[check] 빈 파생은 exit 2(빈 핀과 같아도) — 출력: $OUT"
 assert_contains "$OUT" "FAIL [python] the derived boundary is empty" "[check] python 도 빈 파생"
@@ -1464,6 +1677,7 @@ assert_contains "$OUT" "FAIL [rust] the derived boundary is empty" "[check] rust
 assert_contains "$OUT" "FAIL [php] the derived boundary is empty" "[check] php 도 빈 파생"
 assert_contains "$OUT" "FAIL [ruby] the derived boundary is empty" "[check] ruby 도 빈 파생"
 assert_contains "$OUT" "FAIL [dotnet] the derived boundary is empty" "[check] dotnet 도 빈 파생"
+assert_contains "$OUT" "FAIL [java] the derived boundary is empty" "[check] java 도 빈 파생"
 assert_not_contains "$OUT" "returned no derivation" "[check] 언어마다 있되 비었다 — 「없는 파생」이 빈 집합 갈래를 가리지 않는다"
 assert_not_contains "$OUT" "pin OK" "[check] 빈 집합끼리의 일치를 「핀 OK」로 찍지 않는다"
 run report go "$T" --out "$D"
@@ -1488,10 +1702,10 @@ run check "$T"
 assert_eq 2 "$RC" "핀 파일이 없으면 exit 2"
 assert_contains "$OUT" "FAIL [-] scripts/integration-coverage.json is missing or not JSON" "핀 파일 없음"
 fresh
-printf '%s\n' '{ "go": { "pinned": ["go/admin.go"], "owners": {} }, "java": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
+printf '%s\n' '{ "go": { "pinned": ["go/admin.go"], "owners": {} }, "kotlin": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
 run check "$T"
 assert_eq 2 "$RC" "파일럿이 안 재는 언어를 핀에 넣으면 exit 2"
-assert_contains "$OUT" "FAIL [-] scripts/integration-coverage.json names java, which this pilot does not measure" "모르는 언어"
+assert_contains "$OUT" "FAIL [-] scripts/integration-coverage.json names kotlin, which this pilot does not measure" "모르는 언어"
 assert_contains "$OUT" "FAIL [python] scripts/integration-coverage.json has no pin for python" "빠진 언어"
 fresh
 rm "$T/docs/superpowers/plans/remaining-work.md"
@@ -1504,9 +1718,9 @@ run check "$T"
 assert_eq 2 "$RC" "파생 도구가 없으면 exit 2"
 assert_contains "$OUT" "FAIL [-] scripts/coverage-boundary.mjs is missing" "파생 도구 없음"
 fresh
-run report java "$T" --out "$D"
+run report kotlin "$T" --out "$D"
 assert_eq 2 "$RC" "파일럿이 안 재는 언어는 usage(exit 2)"
-assert_contains "$OUT" "this pilot measures go · python · node · rust · php · ruby · dotnet — got java" "usage 문구"
+assert_contains "$OUT" "this pilot measures go · python · node · rust · php · ruby · dotnet · java — got kotlin" "usage 문구"
 
 # ── (4) 하한(4 걸음째 — 2026-11-02 무장) ─────────────────────────────────────────────────────────
 # 픽스처 핀에는 하한이 없다(위 단언들은 하한 없는 리포트다). 여기서만 주입한다.
@@ -1623,6 +1837,21 @@ fresh; floor dotnet bodies 50
 run check "$T"
 assert_eq 2 "$RC" "[floor] dotnet 에 bodies 는 없다(지표는 lines) — 출력: $OUT"
 assert_contains "$OUT" "dotnet.floor.metric" "[floor] dotnet 지표 오류를 지목한다"
+# java 는 lines(픽스처 18/24 = 75.0%) · bodies(17/23 = 73.913%)다.
+fresh; floor java bodies 73.9
+run report java "$T" --out "$D"
+assert_eq 0 "$RC" "[floor] java bodies 73.913% ≥ 73.9 — 출력: $OUT"
+assert_line "$OUT" "integration-coverage [java]: OK — lines 18/24 (75.0%) · bodies 17/23 (73.9%) · floor bodies ≥ 73.9% · 4 never-executed functions, all owned by open registry items" "[floor] java 통과 요약"
+fresh; floor java bodies 73.92
+run report java "$T" --out "$D"
+assert_eq 3 "$RC" "[floor] java bodies 73.913% < 73.92 — 출력: $OUT"
+fresh; floor java lines 75.01
+run report java "$T" --out "$D"
+assert_eq 3 "$RC" "[floor] java lines 75.0% < 75.01 — 출력: $OUT"
+fresh; floor java statements 50
+run check "$T"
+assert_eq 2 "$RC" "[floor] java 에 statements 는 없다(지표는 lines · bodies) — 출력: $OUT"
+assert_contains "$OUT" "java.floor.metric" "[floor] java 지표 오류를 지목한다"
 
 # 소유 문제와 하한 미달이 겹치면 게이트(3)가 경고(1)를 이긴다 — 경고는 그대로 찍는다.
 fresh; floor go statements 46
