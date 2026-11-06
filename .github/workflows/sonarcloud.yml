@@ -37,7 +37,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
       - name: Generate Kotlin Kover XML coverage
         working-directory: kotlin
         run: ./gradlew koverXmlReport
@@ -100,7 +100,7 @@ jobs:
       # JSON은 절대경로를 담고 SonarQube가 baseDir 하위로 해석하므로 경로 정규화 불필요(lcov와 차이).
       # ⚠️ 절대경로라 두 잡의 워크스페이스 경로가 같아야 한다 — 같은 ubuntu-latest 호스티드 러너면 같다.
       - name: Set up Ruby 3.4
-        uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
@@ -270,7 +270,7 @@ jobs:
       # 스캐너 스스로 `enablePreview: false`라고 찍는다 — 즉 후자는 타입을 못 푼 데서 온 오탐이라는 가설이다.
       # 스캐너는 JRE 를 스스로 받는다(로그 「JRE provisioning」 — Java 21) — 이 잡에 setup-java 가 없는 이유다.
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8
+        uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8
         with:
           args: -Dsonar.qualitygate.wait=true -Dsonar.java.libraries=${{ env.SONAR_JAVA_LIBS }}
         env:

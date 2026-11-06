@@ -29,7 +29,7 @@ jobs:
     name: build + test (.NET SDK ${{ matrix.dotnet }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
         with:
           # net8.0 타깃을 빌드·실행하려면 8.0 런타임이 필요하다 — SDK 10 만 깔면 테스트 호스트가
           # `Microsoft.NETCore.App 8.0` 을 못 찾아 죽는다(조사 중 실측된 실패 모드).
@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
         with:
           dotnet-version: '8.0.x'
       # 같은 해 · 구성 · 필터(`--filter "Category=Integration"`)에 경계 커버리지만 더한다. 명령(거르지 않는 json 컬렉터 설정 · trx ·
