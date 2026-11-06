@@ -18,6 +18,7 @@ class DriveIT {
     assertEquals(List.of("A", "B"), c.names(List.of("a", "b")));
     assertEquals("http://kc/u", c.token("u"));
     assertEquals(List.of("b", "a"), c.sorted(List.of("a", "b")));
-    assertEquals("t", new AuthClient.Token("t").value());
+    assertEquals("t/token", new AuthClient.Token("t").value());
+    assertEquals(AuthClient.Mode.MASKED, AuthClient.Mode.valueOf("MASKED"));
   }
 }

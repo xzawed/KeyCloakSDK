@@ -162,7 +162,7 @@ assert_line "$OUT" "[rust] pin OK — 3 files equal the derivation from .github/
 assert_line "$OUT" "[php] pin OK — 2 files equal the derivation from php/phpunit.xml:11 (phpunit <source><exclude>)" "[check] php 핀 = 파생"
 assert_line "$OUT" "[ruby] pin OK — 3 files equal the derivation from ruby/spec/spec_helper.rb:8 (SimpleCov skip)" "[check] ruby 핀 = 파생"
 assert_line "$OUT" "[dotnet] pin OK — 2 files equal the derivation from dotnet/coverlet.runsettings:9 (coverlet <Exclude>)" "[check] dotnet 핀 = 파생"
-assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 · php 2 · ruby 3 · dotnet 2 · java 2 files pinned · 65 owner entries, all open" "[check] 요약"
+assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 · php 2 · ruby 3 · dotnet 2 · java 2 files pinned · 66 owner entries, all open" "[check] 요약"
 
 run report go "$T" --out "$D"
 assert_eq 0 "$RC" "[go] 건강한 리포트는 exit 0 — 출력: $OUT"
@@ -399,12 +399,14 @@ assert_eq 0 "$RC" "[java] 건강한 리포트는 exit 0 — 출력: $OUT"
 assert_line "$OUT" "[java] integration-only coverage — report mode, no floor" "[java] 머리줄"
 assert_line "$OUT" "  boundary: 2 files derived from java/pom.xml:52 (jacoco <excludes>) — equal to the pin in scripts/integration-coverage.json" "[java] 파생 출처"
 assert_contains "$OUT" "/java.xml (JaCoCo 0.8.16 · 1 session · 1 integration test)" "[java] 데이터 · JaCoCo 판 · 세션 · 테스트 수를 찍는다"
-assert_line "$OUT" "  java/kc-auth/src/main/java/kc/auth/AuthClient.java lines 18/20 90.0% · bodies 17/19 89.5%" "[java] AuthClient.java — 정적 초기화만 가진 줄(REALM) 하나가 bodies 에서 빠진다"
+assert_line "$OUT" "  java/kc-auth/src/main/java/kc/auth/AuthClient.java lines 22/27 81.5% · bodies 18/23 78.3%" "[java] AuthClient.java — 정적 초기화만 가진 줄(REALM · enum Mode 의 선언 · 상수) 넷이 bodies 에서 빠진다"
 assert_line "$OUT" "  java/kc-examples/src/main/java/kc/examples/QuickStart.java lines 0/4 0.0% · bodies 0/4 0.0%" "[java] jacoco.skip 모듈의 파일도 든다(파생의 forced)"
-assert_line "$OUT" "  total lines 18/24 75.0% · bodies 17/23 73.9%" "[java] 합계는 경계 파일만(Config.java 제외)"
-assert_line "$OUT" "  never executed by the integration run — 4 functions (none of its lines ran):" "[java] 미실행 머리줄"
+assert_line "$OUT" "  total lines 22/31 71.0% · bodies 18/27 66.7%" "[java] 합계는 경계 파일만(Config.java 제외)"
+assert_line "$OUT" "  never executed by the integration run — 5 functions (none of its lines ran):" "[java] 미실행 머리줄"
 assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:36 AuthClient.token(String, int) · 1 line · owner open-admin" "[java] 오버로드는 서술자로 가른다 — 그 람다는 줄 범위로 그 오버로드에 붙는다"
 assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:53 AuthClient.unused · 1 line · owner open-admin" "[java] 안 부른 메서드"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:62 AuthClient.Token.<init>(char) · 4 lines · owner open-admin" "[java] 두 생성자가 함께 가진 필드 람다가 돌아도 안 부른 생성자는 미실행이다(독립 레그 1차)"
+assert_not_contains "$OUT" "Mode" "[java] enum 의 생성 메서드(values · valueOf · \$values)는 JaCoCo 가 거른다 — 정적 초기화뿐이라 목록에 없다"
 assert_line "$OUT" "  NEVER java/kc-examples/src/main/java/kc/examples/QuickStart.java:8 QuickStart.main · 2 lines · owner open-masking" "[java] 예제의 main"
 assert_line "$OUT" "  NEVER java/kc-examples/src/main/java/kc/examples/QuickStart.java:12 QuickStart.env · 2 lines · owner open-masking" "[java] 예제의 패키지 전용 메서드"
 assert_not_contains "$OUT" "token(String) ·" "[java] 부른 오버로드는 목록에 없다"
@@ -412,7 +414,7 @@ assert_not_contains "$OUT" "lambda\$" "[java] 람다의 이름을 내지 않는�
 assert_not_contains "$OUT" "AuthClient\$1" "[java] 익명 클래스는 감싼 메서드(sorted)에 접힌다 — 이름을 내지 않는다"
 assert_not_contains "$OUT" "<clinit>" "[java] 정적 초기화는 미실행 목록에 들지 않는다"
 assert_not_contains "$OUT" "Config" "[java] 경계 밖 파일은 리포트에 없다"
-assert_line "$OUT" "integration-coverage [java]: OK — lines 18/24 (75.0%) · bodies 17/23 (73.9%) · 4 never-executed functions, all owned by open registry items" "[java] 통과 요약"
+assert_line "$OUT" "integration-coverage [java]: OK — lines 22/31 (71.0%) · bodies 18/27 (66.7%) · 5 never-executed functions, all owned by open registry items" "[java] 통과 요약"
 
 # ── (2) 음성: 파생 ↔ 핀───────────────────────────────────────────────────────────────────────
 # 파생이 좁아진다 — 이것이 등록부가 실측한 함정의 꼴이다(파일이 빠지면 %가 오른다).
@@ -1475,12 +1477,23 @@ java_mark 0
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 어느 오버로드의 줄 범위에도 안 드는 람다는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "AuthClient.token has overloads and a lambda whose lines fall in none or several of them" "[java] 람다를 못 붙이는 오버로드"
+# 짧은 매개변수 이름이 겹치는 오버로드(`token(java.lang.String)` · `token(kc.other.String)`) — 한 키로 합치면 안 돈 쪽이 사라진다(독립
+# 레그 1차 지적). 그 멤버는 서술자 전체로 쓴다.
+fresh
+sed -i 's#<method name="token" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="36">#<method name="token" desc="(Lkc/other/String;)Ljava/lang/String;" line="36">#' "$D/java.xml"
+sed -i 's#"name":"token","desc":"(Ljava/lang/String;I)Ljava/lang/String;"#"name":"token","desc":"(Lkc/other/String;)Ljava/lang/String;"#' "$D/java.names.json"
+java_mark 0
+assert_contains "$(cat "$D/java.names.json")" '"desc":"(Lkc/other/String;)Ljava/lang/String;"' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 1 "$RC" "[java] 짧은 이름이 겹치는 오버로드는 서술자 전체 키로 — 그 키에 소유자가 없어 exit 1 — 출력: $OUT"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:36 AuthClient.token(Lkc/other/String;)Ljava/lang/String; · 1 line · owner NONE" "[java] 짧은 이름이 겹치는 오버로드는 서술자 전체로 쓴다"
+assert_not_contains "$OUT" "AuthClient.token(String) ·" "[java] 겹친 짧은 이름으로 한 함수로 합치지 않는다"
 fresh
 sed -i 's#<line nr="53" mi="5" ci="0" mb="0" cb="0"/>#<line nr="9999" mi="5" ci="0" mb="0" cb="0"/>#' "$D/java.xml"
 java_mark 0
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 파일 밖 줄은 exit 2 — 출력: $OUT"
-assert_contains "$OUT" "the data counts line 9999, past the 73 lines of the file" "[java] 파일 밖 줄"
+assert_contains "$OUT" "the data counts line 9999, past the 85 lines of the file" "[java] 파일 밖 줄"
 fresh
 sed -i 's#<line nr="53" mi="5" ci="0" mb="0" cb="0"/>#<line nr="54" mi="5" ci="0" mb="0" cb="0"/>#' "$D/java.xml"
 java_mark 0
@@ -1661,7 +1674,7 @@ fresh
 java_data "$FIX/data/java-zero.xml"
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 경계 클래스를 싣기만 한 실행은 exit 2 — 출력: $OUT"
-assert_contains "$OUT" "FAIL [java] the run executed 0 of 23 boundary lines outside static initializers — a measurement failure, not a low number (class loading alone credits 2 static-initializer lines)" "[java] 정적 초기화만 돈 실행"
+assert_contains "$OUT" "FAIL [java] the run executed 0 of 27 boundary lines outside static initializers — a measurement failure, not a low number (class loading alone credits 2 static-initializer lines)" "[java] 정적 초기화만 돈 실행"
 assert_not_contains "$OUT" "OK —" "[java] 측정 실패에서 수치를 내지 않는다"
 # 빈 파생 + 빈 핀 — 집합은 같으므로(∅ = ∅) 빈 집합 판정만이 잡는다. 파생 도구를 가짜로 바꿔 그 갈래만 태운다.
 # ⚠️ 두 언어 다 「있되 비었다」여야 한다 — 한 언어를 빼 두면 check 의 exit 2 가 그 「없는 파생」에서 와서 빈 집합
@@ -1837,17 +1850,17 @@ fresh; floor dotnet bodies 50
 run check "$T"
 assert_eq 2 "$RC" "[floor] dotnet 에 bodies 는 없다(지표는 lines) — 출력: $OUT"
 assert_contains "$OUT" "dotnet.floor.metric" "[floor] dotnet 지표 오류를 지목한다"
-# java 는 lines(픽스처 18/24 = 75.0%) · bodies(17/23 = 73.913%)다.
-fresh; floor java bodies 73.9
+# java 는 lines(픽스처 22/31 = 70.968%) · bodies(18/27 = 66.667%)다.
+fresh; floor java bodies 66.6
 run report java "$T" --out "$D"
-assert_eq 0 "$RC" "[floor] java bodies 73.913% ≥ 73.9 — 출력: $OUT"
-assert_line "$OUT" "integration-coverage [java]: OK — lines 18/24 (75.0%) · bodies 17/23 (73.9%) · floor bodies ≥ 73.9% · 4 never-executed functions, all owned by open registry items" "[floor] java 통과 요약"
-fresh; floor java bodies 73.92
+assert_eq 0 "$RC" "[floor] java bodies 66.667% ≥ 66.6 — 출력: $OUT"
+assert_line "$OUT" "integration-coverage [java]: OK — lines 22/31 (71.0%) · bodies 18/27 (66.7%) · floor bodies ≥ 66.6% · 5 never-executed functions, all owned by open registry items" "[floor] java 통과 요약"
+fresh; floor java bodies 66.67
 run report java "$T" --out "$D"
-assert_eq 3 "$RC" "[floor] java bodies 73.913% < 73.92 — 출력: $OUT"
-fresh; floor java lines 75.01
+assert_eq 3 "$RC" "[floor] java bodies 66.667% < 66.67 — 출력: $OUT"
+fresh; floor java lines 70.97
 run report java "$T" --out "$D"
-assert_eq 3 "$RC" "[floor] java lines 75.0% < 75.01 — 출력: $OUT"
+assert_eq 3 "$RC" "[floor] java lines 70.968% < 70.97 — 찍힌 71.0% 가 아니라 식이 가른다 — 출력: $OUT"
 fresh; floor java statements 50
 run check "$T"
 assert_eq 2 "$RC" "[floor] java 에 statements 는 없다(지표는 lines · bodies) — 출력: $OUT"

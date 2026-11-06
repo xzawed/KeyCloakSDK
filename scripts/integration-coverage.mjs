@@ -2326,18 +2326,30 @@ function javaReport(d) {
         continue
       }
       const range = (ls) => [ls[0], ls[ls.length - 1]]
+      // 매개변수는 짧은 이름으로 쓴다 — 두 오버로드가 짧은 이름으로 겹치면(`foo(a.T)` · `foo(b.T)` — 독립 레그 1차 지적) 그 멤버는
+      // 서술자 전체로 쓴다(겹친 키는 한 함수로 합쳐져 안 돈 쪽이 목록에서 사라진다).
+      const label = new Map(descs.map((x) => [x, javaParams(x) ?? x]))
+      const clash = new Set(label.values()).size !== label.size
+      const keyOf = (x) => (clash ? `${k}${x}` : `${k}(${label.get(x)})`)
+      const put = (key, p) => fns.set(key, [...(fns.get(key) ?? []), p])
       for (const p of g) {
         let dsc = p.desc
         if (p.kind !== 'plain' && !p.via) {
           const hits = plains.filter((q) => q.lines.length && p.lines.length && p.lines.every((n) => n >= range(q.lines)[0] && n <= range(q.lines)[1]))
+          // 인스턴스 필드를 초기화하는 람다(`lambda$new$N`) — javac 는 필드 초기화를 `this(…)` 를 안 부르는 생성자마다 끼워 넣는다:
+          // 그 줄이 생성자 여럿의 범위에 든다. 그 생성자 모두의 것이다(독립 레그 1차 지적 — 그 꼴이 FAIL 했다).
+          if (p.member === '<init>' && hits.length > 1) {
+            // 함께 가진 람다가 돌았다는 것은 **어느** 생성자가 돌았다는 뜻일 뿐이다 — 미실행 판정의 근거로 쓰지 않는다(아래 `shared`).
+            for (const h of hits) put(keyOf(h.desc), { ...p, shared: true })
+            continue
+          }
           if (hits.length !== 1) {
             amb ??= k
             continue
           }
           dsc = hits[0].desc
         }
-        const key = `${k}(${javaParams(dsc) ?? dsc})`
-        fns.set(key, [...(fns.get(key) ?? []), p])
+        put(keyOf(dsc), p)
       }
     }
     if (amb) {
@@ -2345,8 +2357,11 @@ function javaReport(d) {
       continue
     }
     // 줄 — 소스 파일 단위. 데이터의 줄은 1..파일 길이 · 어느 메서드의 LineNumberTable 에 든다(아니면 데이터가 다른 빌드의 것이다).
+    // 줄의 주인은 데이터에 실린 메서드만이다 — JaCoCo 가 거른 메서드(enum 의 values() · valueOf() · 합성 $values() · 브리지)는 javap
+    // 사실에는 있어도 그 명령이 줄 수에 안 든다(실측: 픽스처 Mode 의 선언 줄을 정적 초기화와 values() · valueOf() 가 함께 가졌다 —
+    // 사실 전체로 세면 그 줄이 몸통이 됐다).
     const owned = new Map()
-    for (const c of factNames) for (const x of facts[c].methods) for (const n of x.lines) owned.set(n, (owned.get(n) ?? 0) | (x.name === '<clinit>' ? 1 : 2))
+    for (const p of parts) for (const n of p.lines) owned.set(n, (owned.get(n) ?? 0) | (p.name === '<clinit>' ? 1 : 2))
     // 몸통 줄이 덮였는가는 줄의 횟수만으로 못 가른다 — 정적 람다(`F = s -> …`)의 줄은 정적 초기화와 람다가 함께 갖는다: 실릴 때
     // 정적 초기화가 그 줄을 돌면 람다가 한 번도 안 불려도 그 줄이 덮인다(실측: 픽스처 0 실행의 UPPER 줄). 그래서 그 줄을 가진
     // 정적 초기화 밖의 메서드 가운데 JaCoCo 가 돈 것으로 센 것(메서드의 LINE covered > 0)이 있어야 몸통으로 덮인 것이다.
@@ -2384,7 +2399,8 @@ function javaReport(d) {
     for (const [key, ps] of fns) {
       if (ps.every((p) => p.kind === 'static')) continue
       const ls = new Set(ps.flatMap((p) => p.lines).filter((n) => lines.has(String(n))))
-      if (ls.size && ps.every((p) => p.covered === 0)) never.push({ file: f, line: Math.min(...ls), name: key, stmts: ls.size })
+      const own = ps.filter((p) => !p.shared)
+      if (ls.size && own.length && own.every((p) => p.covered === 0)) never.push({ file: f, line: Math.min(...ls), name: key, stmts: ls.size })
     }
     files.push({ file: f, stmts, covered, bodies, outside: { stmts: 0, covered: 0 } })
   }
@@ -2776,10 +2792,16 @@ function run(l) {
       const dir = join(cwd, fm[1], 'target', 'classes', ...fm[2].split('/'))
       if (existsSync(dir)) for (const e of readdirSync(dir)) if (e.endsWith('.class')) classFiles.push(join(dir, e))
     }
-    console.log(`$ javap -l -p -v <${sortU(classFiles).length} class files of the boundary packages>`)
-    const jp = spawnSync(jbin('javap'), ['-l', '-p', '-v', ...sortU(classFiles)], { cwd, encoding: 'utf8', maxBuffer: 256 << 20 })
-    if (jp.error || jp.status !== 0) return stop(`javap failed (${jp.error?.message ?? `exit ${jp.status}`}) — the report needs the class files' line tables`)
-    writeFileSync(names, `${JSON.stringify({ classes: javapFacts(jp.stdout) })}\n`)
+    // 64 개씩 — 한 번에 넘기면 윈도의 명령줄 길이(32,767 자)에 걸릴 수 있다(독립 레그 1차 지적).
+    const all = sortU(classFiles)
+    console.log(`$ javap -l -p -v <${all.length} class files of the boundary packages>`)
+    let text = ''
+    for (let i = 0; i < all.length; i += 64) {
+      const jp = spawnSync(jbin('javap'), ['-l', '-p', '-v', ...all.slice(i, i + 64)], { cwd, encoding: 'utf8', maxBuffer: 256 << 20 })
+      if (jp.error || jp.status !== 0) return stop(`javap failed (${jp.error?.message ?? `exit ${jp.status}`}) — the report needs the class files' line tables`)
+      text += jp.stdout
+    }
+    writeFileSync(names, `${JSON.stringify({ classes: javapFacts(text) })}\n`)
     // 테스트 — failsafe 의 요약(모듈마다)을 합치고, surefire 의 보고가 없는지 센다(단위 테스트는 돌지 않았어야 한다).
     const tests = { completed: 0, failures: 0, errors: 0, skipped: 0 }
     let unit = 0

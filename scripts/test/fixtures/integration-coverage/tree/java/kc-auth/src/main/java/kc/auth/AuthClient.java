@@ -57,16 +57,28 @@ public final class AuthClient {
     return s.get();
   }
 
-  /** A named member class — its own scope. */
+  /** A named member class — its own scope; its field lambda sits in both constructors (javac copies field initializers). */
   public static final class Token {
+    private final Supplier<String> label = () -> "token";
     private final String value;
 
     public Token(String value) {
       this.value = value;
     }
 
-    public String value() {
-      return value;
+    /** Never runs — the field lambda belongs to it as well. */
+    public Token(char c) {
+      this.value = String.valueOf(c);
     }
+
+    public String value() {
+      return value + "/" + label.get();
+    }
+  }
+
+  /** A nested enum — javac adds $values() · values() · valueOf(); JaCoCo's filters decide which reach the data. */
+  public enum Mode {
+    PLAIN,
+    MASKED
   }
 }
