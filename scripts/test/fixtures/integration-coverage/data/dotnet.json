@@ -166,6 +166,33 @@
           "Branches": []
         }
       },
+      "Kc.AuthClient/<>c/<<RetryAsync>b__26_0>d": {
+        "System.Void Kc.AuthClient/<>c/<<RetryAsync>b__26_0>d::MoveNext()": {
+          "Lines": {
+            "135": 0,
+            "136": 0,
+            "137": 0
+          },
+          "Branches": [
+            {
+              "Line": 135,
+              "Offset": 31,
+              "EndOffset": 33,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 135,
+              "Offset": 31,
+              "EndOffset": 93,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            }
+          ]
+        }
+      },
       "Kc.AuthClient/<>c/<<SumAsync>b__18_0>d": {
         "System.Void Kc.AuthClient/<>c/<<SumAsync>b__18_0>d::MoveNext()": {
           "Lines": {
@@ -266,6 +293,53 @@
               "Path": 1,
               "Ordinal": 1,
               "Hits": 0
+            }
+          ]
+        }
+      },
+      "Kc.AuthClient/<RetryAsync>d__26": {
+        "System.Void Kc.AuthClient/<RetryAsync>d__26::MoveNext()": {
+          "Lines": {
+            "130": 1,
+            "131": 1,
+            "133": 0,
+            "134": 0,
+            "138": 0,
+            "140": 1,
+            "141": 1
+          },
+          "Branches": [
+            {
+              "Line": 130,
+              "Offset": 38,
+              "EndOffset": 40,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 1
+            },
+            {
+              "Line": 130,
+              "Offset": 38,
+              "EndOffset": 103,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 1
+            },
+            {
+              "Line": 131,
+              "Offset": 116,
+              "EndOffset": 118,
+              "Path": 0,
+              "Ordinal": 2,
+              "Hits": 0
+            },
+            {
+              "Line": 131,
+              "Offset": 116,
+              "EndOffset": 242,
+              "Path": 1,
+              "Ordinal": 3,
+              "Hits": 1
             }
           ]
         }

@@ -1,20 +1,20 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<TestRun id="8d966fbe-a016-4ef5-8e8c-e62d8bcbbfd7" name="USER@HOST 2026-11-06 09:29:05" runUser="HOST\USER" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
-  <Times creation="2026-11-06T09:29:05.6591113+09:00" queuing="2026-11-06T09:29:05.6591115+09:00" start="2026-11-06T09:29:04.4768541+09:00" finish="2026-11-06T09:29:05.6625649+09:00" />
-  <TestSettings name="default" id="a42a08ec-482d-4c77-8415-48c7f67bab82">
-    <Deployment runDeploymentRoot="USER_HOST_2026-11-06_09_29_05" />
+<TestRun id="d78b66d2-4302-4b1d-81c0-86978b8e1a3b" name="USER@HOST 2026-11-06 14:22:10" runUser="HOST\USER" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-06T14:22:10.2476701+09:00" queuing="2026-11-06T14:22:10.2476702+09:00" start="2026-11-06T14:22:08.1865578+09:00" finish="2026-11-06T14:22:10.2515640+09:00" />
+  <TestSettings name="default" id="f8fbe736-6e35-476c-9377-6d9bc0055810">
+    <Deployment runDeploymentRoot="USER_HOST_2026-11-06_14_22_10" />
   </TestSettings>
   <Results>
-    <UnitTestResult executionId="0eba5c83-f1bb-4a23-9086-1abcdbc4cd88" testId="995e07f8-c482-520f-2c06-7d7bfea06a94" testName="Kc.Tests.Integration.DriveTests.Drive" computerName="HOST" duration="00:00:00.0149962" startTime="2026-11-06T09:29:05.5000676+09:00" endTime="2026-11-06T09:29:05.5120875+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0eba5c83-f1bb-4a23-9086-1abcdbc4cd88" />
+    <UnitTestResult executionId="42b3432d-b460-4317-8c0d-a41ea9fa0b37" testId="995e07f8-c482-520f-2c06-7d7bfea06a94" testName="Kc.Tests.Integration.DriveTests.Drive" computerName="HOST" duration="00:00:00.3304304" startTime="2026-11-06T14:22:09.7756343+09:00" endTime="2026-11-06T14:22:10.1028207+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="42b3432d-b460-4317-8c0d-a41ea9fa0b37" />
   </Results>
   <TestDefinitions>
     <UnitTest name="Kc.Tests.Integration.DriveTests.Drive" storage="@root@\dotnet\tests\kc.tests\bin\release\net8.0\kc.tests.dll" id="995e07f8-c482-520f-2c06-7d7bfea06a94">
-      <Execution id="0eba5c83-f1bb-4a23-9086-1abcdbc4cd88" />
+      <Execution id="42b3432d-b460-4317-8c0d-a41ea9fa0b37" />
       <TestMethod codeBase="@ROOT@\dotnet\tests\Kc.Tests\bin\Release\net8.0\Kc.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Kc.Tests.Integration.DriveTests" name="Drive" />
     </UnitTest>
   </TestDefinitions>
   <TestEntries>
-    <TestEntry testId="995e07f8-c482-520f-2c06-7d7bfea06a94" executionId="0eba5c83-f1bb-4a23-9086-1abcdbc4cd88" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="995e07f8-c482-520f-2c06-7d7bfea06a94" executionId="42b3432d-b460-4317-8c0d-a41ea9fa0b37" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
   </TestEntries>
   <TestLists>
     <TestList name="목록에 없는 결과" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
@@ -24,10 +24,10 @@
     <Counters total="1" executed="1" passed="1" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
     <Output>
       <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v4.0.1+0f7d528729 (64-bit .NET 8.0.23)&#xD;
-[xUnit.net 00:00:00.07]   Discovering: Kc.Tests&#xD;
-[xUnit.net 00:00:00.12]   Discovered:  Kc.Tests&#xD;
-[xUnit.net 00:00:00.14]   Starting:    Kc.Tests&#xD;
-[xUnit.net 00:00:00.19]   Finished:    Kc.Tests&#xD;
+[xUnit.net 00:00:00.38]   Discovering: Kc.Tests&#xD;
+[xUnit.net 00:00:00.42]   Discovered:  Kc.Tests&#xD;
+[xUnit.net 00:00:00.45]   Starting:    Kc.Tests&#xD;
+[xUnit.net 00:00:00.80]   Finished:    Kc.Tests&#xD;
 </StdOut>
     </Output>
     <CollectorDataEntries>

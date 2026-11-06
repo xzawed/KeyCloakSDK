@@ -124,4 +124,19 @@ public sealed class AuthClient
             })
             .ToArray();
     }
+
+    public async Task<int> RetryAsync(bool fail)
+    {
+        await Task.Yield();
+        if (fail)
+        {
+            Func<Task<int>> fallback = async () =>
+            {
+                await Task.Yield();
+                return 0;
+            };
+            return await fallback();
+        }
+        return 1;
+    }
 }
