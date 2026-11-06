@@ -71,7 +71,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
 1. 2026-10-29 판정의 남은 칸은 각 항목이 적는다 — `response-read-deadline-divergent`(python TLS 안의 TLS).
-2. `guard-detection-surface-hand-narrowed` [H/M](손 표 축 — 되살릴 조건) · `integration-coverage-never-measured` [H/L](하한 여섯 #936·#956·#959·#962 → 나머지 셋) · `token-response-class-divergent` [L/M] · #935.
+2. `guard-detection-surface-hand-narrowed` [H/M](손 표 축 — 되살릴 조건) · `integration-coverage-never-measured` [H/L](하한 일곱 → 나머지 둘) · `token-response-class-divergent` [L/M] · #935.
 3. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
 **판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 · 라운드 2 #892 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
@@ -589,7 +589,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `realm-copies-unguarded` **[L/S · 신규 2026-09-27]** 통합 렐름 사본 아홉을 대조하는 가드가 없다. 지금은 우연히 둘로 수렴해 있다 — 일곱이 `3e76565`, java·kotlin 이 `191515a` 다. 코드 교환 이식이 클라이언트 둘을 손으로 아홉 곳에 복사했다. 다시 재는 명령: `git ls-files '*it-realm-realm.json' | xargs -n1 git hash-object`. JVM 짝이 공개 클라이언트 하나를 더 가진 것은 의도다 — 가드는 「두 집합, 그 차이만」을 고정하면 된다.
 
 - [x] `integration-code-exchange-never-run` **[H/M · 신규·닫힘 2026-09-27 #640–#648]** 코드 교환이 이제 **9/9 통합에서 실제 Keycloak 에 대고 돈다**. 수단은 브라우저 없는 로그인이다(인가 URL GET → `kc-form-login` POST, 쿠키 직접 되싣기 → `Location` 의 code·state). 정상 흐름(교환 → refresh → introspect → logout)과 거부 넷(nonce 불일치 · nonce 없음 · 재사용 코드 · JWKS 밖 키)을 돈다. **node 에서 id_token 서명 미검증 결함이 나와 고쳤다**(#648 → node `1.0.2`). 다시 재는 명령: `grep -rliE 'exchange_?code|ExchangeCode' <각 통합 디렉터리>` → 언어마다 ≥ 1. 옮길 때의 함정(Secure 쿠키 · audience 매퍼 · 위조 RS256 은 단위 층)은 각 헬퍼 머리 주석이 소유한다.
-- [ ] `integration-coverage-never-measured` **[H/L]** 9개 언어가 "경계는 통합으로 검증"이라 적고 omit했지만, 통합 실행에서 커버리지를 재는 언어가 0개다 · `.github/workflows/ci.yml:49`
+- [ ] `integration-coverage-never-measured` **[H/L]** 9개 언어가 "경계는 통합으로 검증"이라 적고 omit했지만, 통합 실행에서 커버리지를 재는 언어가 0개였다 · `.github/workflows/ci.yml:49`
   - ✅ **전제 실측(2026-09-27, 9/9, Docker).** 통합 실행에서 커버리지를 **리포트**하는 언어는 0 이다.
     - java 는 failsafe 가 `jacoco.exec` 에 적기는 하지만, 그 데이터를 읽는 리포트가 없다. IT 가 다른 모듈에서 돌고, 경계 클래스는 exclude 돼 있다.
     - 통합만의 경계 라인 %: java 59.7 · kotlin 68.8 · go 64.3(문장) · python 67.6 · node 54.4 · dotnet 61.9 · ruby 81.6 · php 34.0 · rust 80.2.
@@ -603,7 +603,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
        - 통합 미실행 함수 목록을 둔다. 항목마다 열린 등록부 id 를 소유자로 단다.
        - ⏳ go·python 파일럿 #774. 일곱으로 넓힐 함정·판정은 그 PR 본문.
          <!-- integration-coverage 파일럿(#774) 재측정 — 등록부 기준선 그대로 재현: go 2ab5f72^ 200/311 = 64.3% → 2ab5f72 238/311 = 76.5% → 지금 251/330 = 76.1%(경계 문장이 늘었다) · python 3fc0f1e^ 236/349 = 67.6% → 3fc0f1e 320/349 = 91.7% → 지금 367/395 = 92.9%(import 만으로 160 줄 = 40.5% — 함수 본문 207/235 = 88.1% 를 따로 낸다). 판정(파일럿 기본값): 핀은 읽을 수 있는 목록(드리프트 가드) · 소유 문제는 경고 · -run TestE2E 앵커는 4 걸음째 · 규칙 문서 포인터는 go.md·python.md·ci.md 예산이 0·26·11 B 라 없음. 일곱으로 넓힐 때: 데이터가 한 번도 적재 안 된 파일도 담아야 하고, 함수 이름의 믿을 원천, 적재 시점 코드(JVM static init · Ruby/PHP require)를 「아무것도 안 돈 실행」 판정에서 빼야 한다. -->
-    4. CI 관측 세 번(PR 실행 포함 · main ≥ 1) 뒤에만 하한을 무장한다 — ✅ go·python(#936) · node·rust(#956) · php·ruby(#959·#962). 재는 명령 `node scripts/integration-coverage.mjs <lang>`.
+    4. CI 관측 세 번(PR 실행 포함 · main ≥ 1) 뒤에만 하한을 무장한다 — ✅ go·python(#936) · node·rust(#956) · php·ruby(#959·#962) · dotnet(#973). 재는 명령 `node scripts/integration-coverage.mjs <lang>`.
   - ⚠️ **리포트 구성의 함정.** java 는 `prepare-agent-integration` 으로 IT 전용 exec 를 떼야 한다 — 단위와 IT 가 같은 파일에 합쳐진다. kotlin 은 `integrationTest` 계측을 끄고 있다(`build.gradle.kts`). rust 브랜치는 stable 에서 못 잰다.
 - [ ] `integration-admin-surface-uneven` **[H/M · 계수 정정 2026-09-09]** 9개 통합 스위트가 덮는 admin 표면이 제각각이다 — **clients.update 는 2/9**, realms.create/delete 는 4/9, PHP 는 roles·groups·realms 를 하나도 안 부른다
   - ⚠️ **1/9 이 아니라 2/9**(php·rust). 두 자리 다 등록부 작성보다 앞선다(`59c7916` #190 · `dc9efd7` #240) — 즉 **처음부터 틀린 계수**였다. 함께 잰 것: `users.update` 7/9(java·python 빠짐) · `clients.create` 6/9 · `roles.update`·`groups.update` 각 7/9(php·ruby 빠짐).
