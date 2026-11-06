@@ -668,17 +668,20 @@ assert_contains "$OUT" "FAIL [php] no coverage data at" "[php] 데이터 없음"
 assert_contains "$OUT" "node scripts/integration-coverage.mjs run php" "[php] 무엇을 돌릴지 댄다"
 fresh
 printf '%s\n' '<?xml version="1.0"?>' '<coverage line-rate="1"/>' > "$D/php/index.xml"
+php_mark 0
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] PHPUnit XML 이 아니면 exit 2(다른 형식을 통과로 읽지 않는다) — 출력: $OUT"
 assert_contains "$OUT" "is not a PHPUnit code-coverage XML report" "[php] 형식이 다르다"
 fresh
 sed -i 's#<project source="[^"]*"#<project source="/elsewhere/php/src"#' "$D/php/index.xml"
+php_mark 0
 assert_contains "$(cat "$D/php/index.xml")" '<project source="/elsewhere/php/src"' "(변이가 착지했는지 먼저 본다)"
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] 다른 체크아웃의 데이터는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [php] the data's project source /elsewhere/php/src is outside this tree — the data belongs to another checkout" "[php] 다른 체크아웃"
 fresh
 sed -i '/<file name="AuthClient.php"/,/<\/file>/d' "$D/php/index.xml"
+php_mark 0
 assert_not_contains "$(cat "$D/php/index.xml")" 'name="AuthClient.php"' "(변이가 착지했는지 먼저 본다)"
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] 데이터에서 경계 파일이 빠지면 exit 2 — 출력: $OUT"
@@ -697,6 +700,7 @@ assert_eq 2 "$RC" "[php] index.xml 이 댄 파일 XML 이 없으면 exit 2 — �
 assert_contains "$OUT" "Admin/AdminClient.php.xml" "[php] 없는 파일 XML 을 댄다"
 fresh
 sed -i 's#executable="17" executed="13"#executable="18" executed="13"#' "$D/php/index.xml"
+php_mark 0
 assert_contains "$(cat "$D/php/index.xml")" 'executable="18" executed="13"' "(변이가 착지했는지 먼저 본다)"
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] index.xml 과 파일 XML 의 합이 갈리면 exit 2 — 출력: $OUT"
@@ -704,22 +708,26 @@ assert_contains "$OUT" "FAIL [php] php/src/AuthClient.php: index.xml says 18/13 
 # 메서드 밖에 실행 가능 줄이 있다(파일 합이 메서드 합보다 크다) — 그 줄은 어느 함수에도 못 붙인다.
 fresh
 sed -i 's#executable="17" executed="13"#executable="18" executed="13"#' "$D/php/index.xml" "$D/php/AuthClient.php.xml"
+php_mark 0
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] 메서드 밖 줄은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [php] php/src/AuthClient.php: its methods and functions account for 17 of 18 executable lines (13 of 13 executed) — lines outside any method cannot be attributed to a function" "[php] 메서드 합 ≠ 파일 합"
 fresh
 printf '%s\n' '<?xml version="1.0"?>' '<coverage><project source="/x/php/src"/></coverage>' > "$D/php/index.xml"
+php_mark 0
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] <phpunit> 루트가 아닌 문서는 project source 가 있어도 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "is not a PHPUnit code-coverage XML report" "[php] 루트가 다르다"
 fresh
 sed -i 's# hash="a64b10a0b0d866b06c61cdf8644560503a083c06"##' "$D/php/index.xml"
+php_mark 0
 assert_not_contains "$(cat "$D/php/index.xml")" 'a64b10a0b0d866b06c61cdf8644560503a083c06' "(변이가 착지했는지 먼저 본다)"
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] 해시 없는 <file> 은 exit 2(대조를 건너뛰지 않는다) — 출력: $OUT"
 assert_contains "$OUT" "has a <file> without href · sha1 hash · line totals" "[php] 해시 없음"
 fresh
 sed -i '/<file name="AuthClient.php"/,/<\/file>/{/<\/file>/s#$#\n<file name="AuthClient.php" href="AuthClient.php.xml" hash="cdd9b2f0f71af9144f80421d68e74b7ed719af44"><totals><lines executable="17" executed="13"/></totals></file>#}' "$D/php/index.xml"
+php_mark 0
 assert_eq 2 "$(grep -c '<file name="AuthClient.php"' "$D/php/index.xml")" "(변이가 착지했는지 먼저 본다 — 완전한 항목이 둘)"
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] index 에 같은 파일이 두 번이면 exit 2 — 출력: $OUT"
@@ -755,6 +763,7 @@ assert_contains "$OUT" "FAIL [php] php/src/Admin/AdminClient.php: the data has a
 # 디스크에서 찾은 {DriveIT, ZeroIT} 다.
 fresh
 sed -i 's#\(<test name="DriveIT::testDrive" [^>]*\)status="success"#\1status="failure"#' "$D/php/index.xml"
+php_mark 0
 assert_contains "$(cat "$D/php/index.xml")" 'status="failure"' "(변이가 착지했는지 먼저 본다)"
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] 실패한 실행의 데이터는 exit 2(PHPUnit 은 실패해도 XML 을 쓴다) — 출력: $OUT"
@@ -762,12 +771,14 @@ assert_contains "$OUT" "FAIL [php] 1 of 1 tests in the run did not succeed — t
 # 단위 스위트를 같은 설정으로 돌린 꼴(독립 레그 실측의 꼴) — 경계를 지난 단위 테스트가 목록에 든다.
 fresh
 sed -i 's#\(<test name="DriveIT::testDrive" [^>]*/>\)#\1\n      <test name="Fixture\\Keycloak\\Tests\\Unit\\ConfigTest::testRealm" size="unknown" status="success" time="0.001"/>#' "$D/php/index.xml"
+php_mark 0
 assert_contains "$(cat "$D/php/index.xml")" 'ConfigTest::testRealm' "(변이가 착지했는지 먼저 본다)"
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] 스위트 밖 테스트가 섞이면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [php] the run included tests outside the integration suite (ConfigTest) — the report would not be integration-only" "[php] 스위트 밖"
 fresh
 sed -i '/<test name="DriveIT::testDrive"/d' "$D/php/index.xml"
+php_mark 0
 assert_not_contains "$(cat "$D/php/index.xml")" 'DriveIT::testDrive' "(변이가 착지했는지 먼저 본다)"
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] 줄은 돌았는데 테스트가 없으면 exit 2 — 출력: $OUT"
@@ -784,6 +795,12 @@ rm "$D/php.run.json"
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] run 기록이 없으면 exit 2(손으로 돌린 실행) — 출력: $OUT"
 assert_contains "$OUT" "no record that \`run php\` wrote this data" "[php] 기록 없음"
+fresh
+sed -i 's#"run":"php"#"run":"ruby"#' "$D/php.run.json"
+assert_contains "$(cat "$D/php.run.json")" '"run":"ruby"' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 다른 레인이 쓴 꼴의 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "no record that \`run php\` wrote this data" "[php] 다른 레인의 기록"
 fresh
 php_mark 2
 run report php "$T" --out "$D"
@@ -983,6 +1000,12 @@ run report ruby "$T" --out "$D"
 assert_eq 2 "$RC" "[ruby] run 기록이 없으면 exit 2(손으로 돌린 실행) — 출력: $OUT"
 assert_contains "$OUT" "no record that \`run ruby\` wrote this data" "[ruby] 기록 없음"
 fresh
+sed -i 's#"run":"ruby"#"run":"php"#' "$D/ruby.run.json"
+assert_contains "$(cat "$D/ruby.run.json")" '"run":"php"' "(변이가 착지했는지 먼저 본다)"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 다른 레인이 쓴 꼴의 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "no record that \`run ruby\` wrote this data" "[ruby] 다른 레인의 기록"
+fresh
 ruby_mark 1
 run report ruby "$T" --out "$D"
 assert_eq 2 "$RC" "[ruby] 실패한 실행의 기록이면 exit 2 — 출력: $OUT"
@@ -1019,11 +1042,13 @@ assert_eq 2 "$RC" "[dotnet] 데이터가 없으면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [dotnet] no coverage data at" "[dotnet] 데이터 없음"
 fresh
 printf 'not json\n' > "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] JSON 이 아니면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "/dotnet.json is not JSON" "[dotnet] JSON 아님"
 fresh
 printf '{"Kc.dll": []}\n' > "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] coverlet 의 꼴이 아니면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "is not coverlet's JSON (module → document → class → method)" "[dotnet] 꼴"
@@ -1037,28 +1062,33 @@ assert_contains "$OUT" "is not coverlet's JSON (module → document → class �
 fresh
 _r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
 sed -i "s#$_r#/elsewhere/checkout#g" "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 다른 체크아웃의 데이터는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "outside this tree — the data belongs to another checkout" "[dotnet] 다른 체크아웃의 문서"
 fresh
 _r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
 printf '{"A.dll": {"%s/dotnet/src/Kc/AuthClient.cs": {}}, "B.dll": {"%s/dotnet/src/Kc/AuthClient.cs": {}}}\n' "$_r" "$_r" > "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 두 모듈에 같은 문서가 있으면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [dotnet] dotnet/src/Kc/AuthClient.cs is in two modules of" "[dotnet] 두 모듈"
 fresh
 sed -i 's#Config\.cs": {#Gone.cs": {#' "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 트리에 없는 문서가 데이터에 있으면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [dotnet] dotnet/src/Kc/Gone.cs is in the data but not in the tree" "[dotnet] 트리에 없는 문서"
 fresh
 sed -i 's#AuthClient\.cs": {#AuthClientOld.cs": {#' "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 데이터에 없는 경계 파일은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [dotnet] dotnet/src/Kc/AuthClient.cs is not in the coverage data" "[dotnet] 데이터에 없는 경계 파일"
 fresh
 _r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
 printf '{"Kc.dll": {"%s/dotnet/src/Kc/AuthClient.cs": [], "%s/dotnet/src/Kc/Admin/Client.cs": {}}}\n' "$_r" "$_r" > "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 클래스 → 메서드가 아닌 항목은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [dotnet] dotnet/src/Kc/AuthClient.cs: the entry is not class → method" "[dotnet] 항목 꼴"
@@ -1073,11 +1103,13 @@ assert_eq 2 "$RC" "[dotnet] 메서드 맵이 아닌 클래스는 exit 2(기록�
 assert_contains "$OUT" "FAIL [dotnet] dotnet/src/Kc/AuthClient.cs: the entry is not class → method" "[dotnet] 클래스 값 꼴"
 fresh
 sed -i 's#"60": 0#"60": -1#' "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 음수 횟수는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot read the line counts of System.String Kc.AuthClient::Describe(System.Int32)" "[dotnet] 못 읽는 횟수"
 fresh
 sed -i 's#"60": 0#"0": 0#' "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 0 번 줄은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot read the line counts of System.String Kc.AuthClient::Describe(System.Int32)" "[dotnet] 줄 번호는 1 부터"
@@ -1090,11 +1122,13 @@ assert_eq 2 "$RC" "[dotnet] 객체 아닌 Lines 는 exit 2(기록을 다시 쓴�
 assert_contains "$OUT" "cannot read the line counts of Kc.AuthClient Kc.AuthClient::Build(Kc.Config)" "[dotnet] Lines 꼴"
 fresh
 sed -i 's#"60": 0#"9999": 0#' "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 파일 밖 줄은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "AuthClient.Describe counts line 9999, past the" "[dotnet] 파일 밖 줄"
 fresh
 sed -i 's#<GetAsync>d__0#<GetAsync>x__0#' "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 모르는 생성 이름은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot name Kc.Admin.Client/UsersResource/<GetAsync>x__0::MoveNext() — not a generated name this reader knows" "[dotnet] 모르는 꼴"
@@ -1114,6 +1148,7 @@ assert_eq 2 "$RC" "[dotnet] 람다 캐시의 모르는 생성 이름은 exit 2 �
 assert_contains "$OUT" "cannot name Kc.AuthClient/<>c::<NamesAsync>q__25_0(System.String) — not a generated name this reader knows" "[dotnet] 람다 캐시 자리의 모르는 꼴"
 fresh
 sed -i 's#<LogoutAsync>d__20#<Describe>d__20#g' "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 상태 기계가 붙은 오버로드는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "AuthClient.Describe has overloads and a state machine or lambda folds into one of them" "[dotnet] 못 가르는 오버로드"
@@ -1148,31 +1183,37 @@ assert_line "$OUT" "integration-coverage [dotnet]: OK — 45/84 lines (53.6%) ·
 assert_not_contains "$OUT" "Ghost" "[dotnet] 줄 없는 이름은 내지 않는다"
 fresh
 sed -i 's#<GetAsync>d__0::MoveNext()#<GetAsync>d__0::SetStateMachine()#' "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 상태 기계의 MoveNext 아닌 메서드는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot name Kc.Admin.Client/UsersResource/<GetAsync>d__0::SetStateMachine()" "[dotnet] 상태 기계는 MoveNext 만 안다"
 fresh
 sed -i 's#<TokenAsync>d__10#<TokenAsync>d__10/Inner#g' "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 생성 타입 안의 사용자 타입은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot name Kc.AuthClient/<TokenAsync>d__10/Inner::MoveNext()" "[dotnet] 생성 세그먼트 뒤 사용자 세그먼트"
 fresh
 sed -i 's#Kc.Admin.Client/UsersResource/<GetAsync>d__0#<GetAsync>d__0#g' "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 사용자 타입이 없는 클래스는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot name <GetAsync>d__0::MoveNext()" "[dotnet] 사용자 세그먼트 없음"
 fresh
 sed -i 's#Kc.AuthClient::Describe(System.Int32)#Kc.AuthClient:Describe(System.Int32)#' "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 못 읽는 시그니처는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot name Kc.AuthClient::System.String Kc.AuthClient:Describe(System.Int32)" "[dotnet] 시그니처에 「::」 가 없다"
 fresh
 sed -i 's#Kc.AuthClient/<>c/<<SumAsync>#Kc.AuthClient/<>c__DisplayClass5_0/<<SumAsync>#g' "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 클로저 클래스 꼴은 exit 2(coverlet 이 안 내는 꼴 — 접지 않는다) — 출력: $OUT"
 assert_contains "$OUT" "cannot name Kc.AuthClient/<>c__DisplayClass5_0/<<SumAsync>b__18_0>d::MoveNext()" "[dotnet] 모르는 클로저 꼴"
 fresh
 sed -i 's#<>c::<NamesAsync>b__25_0(#<>c::NamesAsync(#' "$D/dotnet.json"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 람다 캐시 안의 생성 이름 아닌 메서드는 exit 2(접지 않는다) — 출력: $OUT"
 assert_contains "$OUT" "cannot name Kc.AuthClient/<>c::NamesAsync(System.String) — not a generated name this reader knows" "[dotnet] 람다 캐시의 모르는 꼴"
@@ -1191,16 +1232,19 @@ assert_eq 2 "$RC" "[dotnet] trx 가 없으면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [dotnet] no test results at" "[dotnet] trx 없음"
 fresh
 sed -i 's#outcome="Passed"#outcome="Failed"#' "$D/dotnet.trx"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 실패한 테스트가 있으면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [dotnet] 1 of 1 tests in the run did not pass — the data of a failed run is partial: Kc.Tests.Integration.DriveTests.Drive (Failed)" "[dotnet] 실패한 테스트"
 fresh
 sed -i '/<UnitTestResult /d' "$D/dotnet.trx"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 테스트가 없으면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [dotnet] the run recorded no tests — a report over no tests is vacuous" "[dotnet] 테스트 없음"
 fresh
 sed -i 's#className="Kc.Tests.Integration.DriveTests"#className="Kc.Tests.UnitTests"#' "$D/dotnet.trx"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 스위트 밖 테스트는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [dotnet] the run included tests outside the integration suite (Kc.Tests.Integration.DriveTests.Drive)" "[dotnet] 스위트 밖"
@@ -1226,11 +1270,13 @@ assert_contains "$OUT" "the run included tests outside the integration suite" "[
 fresh
 _r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
 sed -i "s#codeBase=\"$_r#codeBase=\"/elsewhere/checkout#" "$D/dotnet.trx"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 다른 체크아웃의 테스트 결과는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "outside this tree — they belong to another checkout" "[dotnet] 다른 체크아웃의 trx"
 fresh
 sed -i 's# codeBase="[^"]*"##' "$D/dotnet.trx"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 테스트 어셈블리 경로가 없는 trx 는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "the test results ran an assembly with no codeBase, outside this tree" "[dotnet] codeBase 없음"
@@ -1239,6 +1285,7 @@ assert_contains "$OUT" "the test results ran an assembly with no codeBase, outsi
 fresh
 printf '\npublic class Other\n{\n}\n' >> "$T/dotnet/tests/Kc.Tests/integration/DriveTests.cs"
 sed -i 's#className="Kc.Tests.Integration.DriveTests"#className="Kc.Tests.Integration.Other"#' "$D/dotnet.trx"
+dotnet_mark 0
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 특성 파일의 다른 클래스는 스위트가 아니다 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [dotnet] the run included tests outside the integration suite (Kc.Tests.Integration.DriveTests.Drive)" "[dotnet] 같은 파일의 다른 클래스"
