@@ -2018,7 +2018,6 @@ function dotnetReport(d) {
     const now = existsSync(join(root, f)) ? sha(readFileSync(join(root, f))) : null
     if (rec.files[f] !== now) fail('dotnet', `${f}: the data was taken from other bytes (sha1 ${String(rec.files[f]).slice(0, 12)}… recorded, ${String(now).slice(0, 12)}… in the tree) — rerun the suite on this tree`)
   }
-  if (fails('dotnet')) return null
   return { path, note, files, never }
 }
 
