@@ -785,6 +785,12 @@ run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] run 기록이 없으면 exit 2(손으로 돌린 실행) — 출력: $OUT"
 assert_contains "$OUT" "no record that \`run php\` wrote this data" "[php] 기록 없음"
 fresh
+sed -i 's#"run":"php"#"run":"ruby"#' "$D/php.run.json"
+assert_contains "$(cat "$D/php.run.json")" '"run":"ruby"' "(변이가 착지했는지 먼저 본다)"
+run report php "$T" --out "$D"
+assert_eq 2 "$RC" "[php] 다른 레인이 쓴 꼴의 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "no record that \`run php\` wrote this data" "[php] 다른 레인의 기록"
+fresh
 php_mark 2
 run report php "$T" --out "$D"
 assert_eq 2 "$RC" "[php] 실패한 실행의 기록이면 exit 2 — 출력: $OUT"
@@ -982,6 +988,12 @@ rm "$D/ruby.run.json"
 run report ruby "$T" --out "$D"
 assert_eq 2 "$RC" "[ruby] run 기록이 없으면 exit 2(손으로 돌린 실행) — 출력: $OUT"
 assert_contains "$OUT" "no record that \`run ruby\` wrote this data" "[ruby] 기록 없음"
+fresh
+sed -i 's#"run":"ruby"#"run":"php"#' "$D/ruby.run.json"
+assert_contains "$(cat "$D/ruby.run.json")" '"run":"php"' "(변이가 착지했는지 먼저 본다)"
+run report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 다른 레인이 쓴 꼴의 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "no record that \`run ruby\` wrote this data" "[ruby] 다른 레인의 기록"
 fresh
 ruby_mark 1
 run report ruby "$T" --out "$D"
