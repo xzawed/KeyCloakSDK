@@ -1809,7 +1809,8 @@ function dotnetSuite(dir) {
     const ns = /(?:^|[;{}\s])namespace\s+([\w.]+)\s*[;{]/.exec(src)?.[1]
     for (const m of src.matchAll(/\[\s*Trait\s*\(\s*"Category"\s*,\s*"Integration"\s*\)\s*\]/g)) {
       // 사이의 특성은 괄호 한 겹까지 받는다(`[Foo(typeof(int[]))]` — 독립 레그 2차 지적: `]` 에서 끊겨 진짜 특성이 stray 가 됐다).
-      const decl = /^(?:\s*\[(?:[^[\]]|\[[^[\]]*\])*\])*\s*(?:(?:public|internal|private|protected|sealed|static|partial|abstract|unsafe|new|file|record)\s+)*class\s+(\w+)/.exec(src.slice(m.index + m[0].length))
+      // record 는 한정자로도(`record class X`) 선언 낱말로도(`record X` — 레그 3차 지적) 온다.
+      const decl = /^(?:\s*\[(?:[^[\]]|\[[^[\]]*\])*\])*\s*(?:(?:public|internal|private|protected|sealed|static|partial|abstract|unsafe|new|file|record)\s+)*(?:class|record)\s+(\w+)/.exec(src.slice(m.index + m[0].length))
       if (!decl) stray.push(f)
       else set.add(ns ? `${ns}.${decl[1]}` : decl[1])
     }

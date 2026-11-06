@@ -1167,6 +1167,11 @@ run report dotnet "$T" --out "$D"
 assert_eq 0 "$RC" "[dotnet] record class 도 클래스 특성이다 — 출력: $OUT"
 assert_contains "$(cat "$T/dotnet/tests/Kc.Tests/integration/DriveTests.cs")" "public sealed record class DriveTests" "(한정자 주입이 착지했는지 먼저 본다)"
 fresh
+sed -i 's#^public sealed class DriveTests#public sealed record DriveTests#' "$T/dotnet/tests/Kc.Tests/integration/DriveTests.cs"
+run report dotnet "$T" --out "$D"
+assert_eq 0 "$RC" "[dotnet] class 낱말 없는 record 도 클래스 특성이다 — 출력: $OUT"
+assert_contains "$(cat "$T/dotnet/tests/Kc.Tests/integration/DriveTests.cs")" "public sealed record DriveTests" "(선언 낱말 주입이 착지했는지 먼저 본다)"
+fresh
 sed -i 's#    public async Task Logout()#    [Trait("Category", "Integration")]\n    public async Task Logout()#' "$T/dotnet/tests/Kc.Tests/UnitTests.cs"
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 메서드에 붙은 특성은 exit 2 — 출력: $OUT"
