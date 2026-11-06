@@ -1775,8 +1775,10 @@ function dotnetFold(cls, sig) {
     const m = csPeel(name)
     return m === null ? null : { type, member: display(m), kind: 'lambda', params }
   }
-  // 생성 타입 안 — 상태 기계면 그 이름이, 람다 캐시 · 클로저(`<>c` · `<>c__DisplayClassN_K`)면 메서드 이름이 멤버를 댄다.
-  const machine = gen.find((g) => !/^<>c(?:__DisplayClass\d+_\d+)?$/.test(g))
+  // 생성 타입 안 — 상태 기계면 그 이름이, 람다 캐시(`<>c`)면 메서드 이름이 멤버를 댄다. 클로저 클래스(`<>c__DisplayClassN_K`)는
+  // 데이터에 따로 안 나온다 — coverlet 이 그 람다의 줄을 감싼 메서드 아래 싣는다(실측: 픽스처 `Prefixed`). 그 꼴이 나오면 모르는
+  // 꼴이다(상태 기계로 읽혀 MoveNext 가 아니면 FAIL).
+  const machine = gen.find((g) => g !== '<>c')
   if (machine !== undefined) {
     if (name !== 'MoveNext') return null
     const m = csPeel(machine)
@@ -1786,7 +1788,10 @@ function dotnetFold(cls, sig) {
   const m = csPeel(name)
   return m === null ? null : { type, member: display(m), kind: 'lambda', params }
 }
-// 통합 스위트의 기대 클래스 — trx 에는 범주가 없다. `[Trait("Category", "Integration")]` 을 단 테스트 소스의 클래스(네임스페이스째).
+// 통합 스위트의 기대 클래스 — trx 에는 범주가 없다. **클래스 선언에 붙은** `[Trait("Category", "Integration")]`(사이에 다른 특성 ·
+// 한정자가 올 수 있다)이 고른 클래스다(네임스페이스째). 같은 파일의 다른 클래스는 기대 집합이 아니다. 메서드에 붙은 것처럼 클래스에
+// 안 붙은 그 특성은 이 리더가 모르는 꼴이다 — 그 파일들을 `stray` 로 돌려준다(FAIL — 독립 레그 지적: 파일 단위로 고르면 특성 없는
+// 테스트가 섞인 실행이 통과했다).
 function dotnetSuite(dir) {
   const files = []
   const walk = (p) => {
@@ -1798,18 +1803,22 @@ function dotnetSuite(dir) {
   }
   walk(dir)
   const set = new Set()
+  const stray = []
   for (const f of files) {
     const src = readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ')
-    if (!/\[\s*Trait\s*\(\s*"Category"\s*,\s*"Integration"\s*\)\s*\]/.test(src)) continue
     const ns = /(?:^|[;{}\s])namespace\s+([\w.]+)\s*[;{]/.exec(src)?.[1]
-    for (const m of src.matchAll(/\bclass\s+(\w+)/g)) set.add(ns ? `${ns}.${m[1]}` : m[1])
+    for (const m of src.matchAll(/\[\s*Trait\s*\(\s*"Category"\s*,\s*"Integration"\s*\)\s*\]/g)) {
+      const decl = /^(?:\s*\[[^\]]*\])*\s*(?:(?:public|internal|private|protected|sealed|static|partial|abstract|file)\s+)*class\s+(\w+)/.exec(src.slice(m.index + m[0].length))
+      if (!decl) stray.push(f)
+      else set.add(ns ? `${ns}.${decl[1]}` : decl[1])
+    }
   }
-  return set
+  return { set, stray }
 }
 // ⚠️ dotnet 은 줄 · 횟수를 coverlet 컬렉터의 고유 JSON(`모듈 → 문서(절대 경로) → 클래스 → 메서드(전체 시그니처) → Lines`)에서,
 // 이름을 컴파일러가 만든 이름에서 받는다. async · 이터레이터 메서드는 바깥 클래스에 **없고** 중첩 상태 기계 `T/<M>d__N` 의
-// `MoveNext` 가 몸통 줄을 든다(실측 — 킥오프 스텁은 실리지 않는다). 람다(`T/<>c` · `T/<>c__DisplayClassN_K` 의 `<M>b__…`) ·
-// 로컬 함수(`<M>g__…`) · async 람다(`<<M>b__N_K>d`)는 감싼 메서드 M 에 접는다(go 의 함수 리터럴 · node 의 콜백과 같다). 모르는
+// `MoveNext` 가 몸통 줄을 든다(실측 — 킥오프 스텁은 실리지 않는다). 람다(`T/<>c` 의 `<M>b__…` — 클로저 클래스의 람다는 coverlet 이
+// 감싼 메서드 아래 싣는다) · 로컬 함수(`<M>g__…`) · async 람다(`<<M>b__N_K>d`)는 감싼 메서드 M 에 접는다(go 의 함수 리터럴 · node 의 콜백과 같다). 모르는
 // `<…>` 꼴은 FAIL 이다. 오버로드는 시그니처로 가르되, 상태 기계나 람다가 붙은 오버로드는 어느 쪽 것인지 못 가르므로 FAIL 이다.
 // ⚠️ coverlet 은 **줄** 단위로 잰다 — 한 줄의 횟수는 그 줄의 모든 코드의 합이고 그 줄은 메서드 하나 아래에만 실린다(실측:
 // 픽스처 `Joined` 32 행 = return 1 + 람다 2). 그래서 자기 줄이 없는 메서드(같은 줄의 auto-property setter · 같은 줄의 람다)는
@@ -1886,7 +1895,8 @@ function dotnetReport(d) {
       const eg = bad.slice(0, 3).map((r) => `${r.name} (${r.outcome ?? '?'})`).join(' · ')
       fail('dotnet', `${bad.length} of ${results.length} tests in the run did not pass — the data of a failed run is partial: ${eg}`)
     }
-    const suite = dotnetSuite(join(root, d.dir))
+    const { set: suite, stray } = dotnetSuite(join(root, d.dir))
+    for (const f of sortU(stray)) fail('dotnet', `${toRepoPath(f, d.dir)} has a [Trait("Category", "Integration")] that is not on a class declaration — this reader reads the suite from class-level traits only`)
     const foreign = results.filter((r) => !suite.has(classOf.get(r.id)))
     if (foreign.length) {
       const eg = sortU(foreign.map((r) => r.name ?? '?')).slice(0, 3).join(' · ')
@@ -1905,6 +1915,11 @@ function dotnetReport(d) {
     }
     if (!isObj(e.classes) || !Object.values(e.classes).every(isObj)) {
       fail('dotnet', `${f}: the entry is not class → method in ${shown}`)
+      continue
+    }
+    // 파생과 디스크가 갈렸다(파생 도구가 읽은 뒤 지워진 파일) — 독립 레그 지적: 여기서 예외로 죽었다.
+    if (!existsSync(join(root, f))) {
+      fail('dotnet', `${f} is derived but missing on disk — the data cannot be checked against it`)
       continue
     }
     const src = readFileSync(join(root, f), 'utf8')

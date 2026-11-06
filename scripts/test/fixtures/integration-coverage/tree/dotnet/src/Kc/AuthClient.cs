@@ -10,6 +10,11 @@ public sealed class AuthClient
         _config = config;
     }
 
+    public AuthClient(string serverUrl, string realm)
+        : this(new Config(serverUrl, realm))
+    {
+    }
+
     public string Issuer => _config.Issuer;
 
     public int Retries { get; set; } = 3;
@@ -30,6 +35,17 @@ public sealed class AuthClient
     {
         var prefix = _config.Realm;
         return string.Join(sep, Scopes.Select(s => prefix + s));
+    }
+
+    public string[] Prefixed(string prefix)
+    {
+        return Scopes
+            .Select(s =>
+            {
+                var head = prefix.Trim();
+                return head + s;
+            })
+            .ToArray();
     }
 
     public int Count(int n)

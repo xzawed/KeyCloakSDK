@@ -3,8 +3,8 @@ using Xunit;
 
 namespace Kc.Tests.Integration;
 
-// 구동기 — Describe(int) · LogoutAsync · Build · Retries 의 setter · Close · Dispose · DeleteAsync 는 일부러 안 부르고
-// TokenAsync 의 빈 code 갈래를 안 탄다.
+// 구동기 — 두 번째 생성자 · Describe(int) · LogoutAsync · Build · Retries 의 setter · Close · Dispose · Defaults ·
+// DeleteAsync 는 일부러 안 부르고 TokenAsync 의 빈 code 갈래를 안 탄다.
 [Trait("Category", "Integration")]
 public class DriveTests
 {
@@ -17,6 +17,7 @@ public class DriveTests
         Assert.Equal("demo:abc", await auth.TokenAsync("abc"));
         Assert.Equal(2, auth.Upper().Length);
         Assert.Equal("demoopenid-demoprofile", auth.Joined("-"));
+        Assert.Equal(["xopenid", "xprofile"], auth.Prefixed(" x "));
         Assert.Equal(5, auth.Count(2));
         Assert.Equal("auth", auth.Describe());
         Assert.Equal(3, auth.Items().Sum());

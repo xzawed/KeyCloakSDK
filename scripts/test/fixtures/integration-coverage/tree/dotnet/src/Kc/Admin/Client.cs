@@ -12,6 +12,13 @@ public sealed class Client : IDisposable
 
     public void Dispose() => Close();
 
+    public static class Defaults
+    {
+        public static readonly string[] Names = ["admin"];
+
+        public static string First() => Names[0];
+    }
+
     public sealed class UsersResource
     {
         public async Task<string> GetAsync(string id)
