@@ -1055,6 +1055,15 @@ printf '{"Kc.dll": {"%s/dotnet/src/Kc/AuthClient.cs": [], "%s/dotnet/src/Kc/Admi
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 클래스 → 메서드가 아닌 항목은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [dotnet] dotnet/src/Kc/AuthClient.cs: the entry is not class → method" "[dotnet] 항목 꼴"
+# 같은 판정의 뒤 항 — 문서 값은 객체인데 클래스 값이 아니다(위는 문서 값이 배열이라 이 항에 안 닿는다). 고친 데이터는 그것만으로
+# 기록 대조가 FAIL 하므로 기록을 다시 써서 exit 2 가 이 결함에서만 오게 한다(아래 「다시 쓴다」 음성도 같다).
+fresh
+_r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
+printf '{"Kc.dll": {"%s/dotnet/src/Kc/AuthClient.cs": {"Kc.AuthClient": []}, "%s/dotnet/src/Kc/Admin/Client.cs": {}}}\n' "$_r" "$_r" > "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 메서드 맵이 아닌 클래스는 exit 2(기록을 다시 쓴다) — 출력: $OUT"
+assert_contains "$OUT" "FAIL [dotnet] dotnet/src/Kc/AuthClient.cs: the entry is not class → method" "[dotnet] 클래스 값 꼴"
 fresh
 sed -i 's#"60": 0#"60": -1#' "$D/dotnet.json"
 run report dotnet "$T" --out "$D"
@@ -1065,6 +1074,13 @@ sed -i 's#"60": 0#"0": 0#' "$D/dotnet.json"
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 0 번 줄은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot read the line counts of System.String Kc.AuthClient::Describe(System.Int32)" "[dotnet] 줄 번호는 1 부터"
+# 같은 판정의 앞 항 — Lines 가 객체가 아니다(위 둘은 객체 안의 키 · 값만 틀렸다). 빈 배열이면 every 가 참이라 빈 메서드로 지나간다.
+fresh
+sed -i '/Kc.AuthClient::Build(Kc.Config)/,/"Lines"/s#"Lines": {#"Lines": [], "Was": {#' "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 객체 아닌 Lines 는 exit 2(기록을 다시 쓴다) — 출력: $OUT"
+assert_contains "$OUT" "cannot read the line counts of Kc.AuthClient Kc.AuthClient::Build(Kc.Config)" "[dotnet] Lines 꼴"
 fresh
 sed -i 's#"60": 0#"9999": 0#' "$D/dotnet.json"
 run report dotnet "$T" --out "$D"
@@ -1080,6 +1096,35 @@ sed -i 's#<LogoutAsync>d__20#<Describe>d__20#g' "$D/dotnet.json"
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] 상태 기계가 붙은 오버로드는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "AuthClient.Describe has overloads and a state machine or lambda folds into one of them" "[dotnet] 못 가르는 오버로드"
+# 몸통은 시그니처와 상태 기계를 함께 센다 — 위는 동기 오버로드가 이미 둘이라 상태 기계를 안 세도 걸린다(변이 n19 SILENT). 아래
+# 셋이 조건의 나머지 항을 하나씩 지난다: 상태 기계 둘 · 시그니처 하나와 상태 기계 하나 · 상태 기계 없이 람다(기록을 다시 쓴다).
+fresh
+sed -i 's#<LogoutAsync>d__20#<TokenAsync>d__20#g' "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] async 오버로드 둘(상태 기계 둘)은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.TokenAsync has overloads and a state machine or lambda folds into one of them" "[dotnet] 상태 기계 둘인 오버로드"
+fresh
+sed -i 's#<LogoutAsync>d__20#<Build>d__20#g' "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 동기 오버로드 하나와 async 오버로드 하나는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.Build has overloads and a state machine or lambda folds into one of them" "[dotnet] 시그니처 하나 · 상태 기계 하나인 오버로드"
+fresh
+sed -i 's#<Count>g__Twice|14_0#<Describe>g__Twice|14_0#' "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 로컬 함수가 붙은 동기 오버로드는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.Describe has overloads and a state machine or lambda folds into one of them" "[dotnet] 람다가 붙은 오버로드"
+# 빈 Lines 만 남은 이름 — coverlet 은 async 람다의 줄을 감싼 메서드 아래 싣고 그 상태 기계를 빈 Lines 로 낸다(Later). 그것만 남은
+# 이름은 미실행이 아니고 보탤 줄도 없다(기록을 다시 쓴다).
+fresh
+sed -i 's#<<Later>b__23_0>d#<<Ghost>b__23_0>d#g' "$D/dotnet.json"
+dotnet_mark 0
+run report dotnet "$T" --out "$D"
+assert_eq 0 "$RC" "[dotnet] 빈 Lines 만 남은 이름은 exit 0 — 출력: $OUT"
+assert_line "$OUT" "integration-coverage [dotnet]: OK — 45/84 lines (53.6%) · 13 never-executed functions, all owned by open registry items" "[dotnet] 줄 없는 이름은 미실행 목록에 안 든다"
+assert_not_contains "$OUT" "Ghost" "[dotnet] 줄 없는 이름은 내지 않는다"
 fresh
 sed -i 's#<GetAsync>d__0::MoveNext()#<GetAsync>d__0::SetStateMachine()#' "$D/dotnet.json"
 run report dotnet "$T" --out "$D"
@@ -1188,6 +1233,11 @@ rm "$D/dotnet.run.json"
 run report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[dotnet] run 기록이 없으면 exit 2(손으로 돌린 실행) — 출력: $OUT"
 assert_contains "$OUT" "no record that \`run dotnet\` wrote this data" "[dotnet] 기록 없음"
+fresh
+sed -i 's#"run":"dotnet"#"run":"ruby"#' "$D/dotnet.run.json"
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[dotnet] 다른 레인이 쓴 꼴의 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "no record that \`run dotnet\` wrote this data" "[dotnet] 다른 레인의 기록"
 fresh
 dotnet_mark 1
 run report dotnet "$T" --out "$D"
