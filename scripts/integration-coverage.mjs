@@ -2031,6 +2031,8 @@ function dotnetReport(d) {
 // ⚠️ java 는 줄 · 횟수를 JaCoCo 에서 받는다 — failsafe IT 만 돈 실행의 exec 를 JaCoCo CLI 가 XML 로 쓴다(pom 의 `report` 골은
 // 플러그인 단위 `<excludes>` = 경계를 리포트에서 빼므로 못 쓴다 · 에이전트 계측은 그 파일 꼴 패턴에 안 걸린다 — 실측). 이름과
 // 메서드마다의 줄은 클래스 파일에서 받는다(javap — LineNumberTable · EnclosingMethod): XML 에는 메서드의 첫 줄과 줄 수뿐이다.
+// run 은 javap 의 출력을 **그대로** 두고 리포트가 읽어 푼다 — 푼 사실을 따로 두면 그 파서는 run 에서만 돈다(자가테스트는 데이터를
+// 주고 report 만 부른다 — 파서의 판정을 하나도 못 지난다).
 // 람다(`lambda$m$N` — `static` · `new` 는 정적 초기화 · 생성자)는 감싼 메서드에, 익명 · 지역 클래스(`T$1` · `T$1Local`)의 메서드는
 // javap 가 댄 감싼 메서드에 접는다. 오버로드는 서술자로 가르고, 람다는 LineNumberTable 의 줄 범위가 가른다(어느 오버로드에도 안
 // 들거나 둘에 들면 FAIL). 모르는 `$` · `<…>` 꼴은 FAIL 이다(fail-closed).
@@ -2038,7 +2040,7 @@ function dotnetReport(d) {
 // 줄을 두 번 센다(실측: AdminClient.java 61 = 54 + 8 − 1). 정적 초기화(`<clinit>`)만 가진 줄은 클래스가 실릴 때 돈다 —
 // 「아무것도 안 돈 실행」 판정과 bodies 는 그 줄을 뺀다(python · ruby 와 같은 까닭 — 등록부의 함정: JVM static init).
 const JAVA_DATA = () => join(out, 'java.xml')
-const JAVA_NAMES = () => join(out, 'java.names.json')
+const JAVA_JAVAP = () => join(out, 'java.javap.txt')
 const JAVA_RUN = () => join(out, 'java.run.json')
 const JAVA_EXEC = () => join(out, 'java.exec')
 // `javap -l -p -v <클래스 파일…>` 의 출력 → { 내부 이름: { source, enclosing: { class, method, desc } | null, methods: [{ name, desc, lines }] } }.
@@ -2243,18 +2245,18 @@ function javaReport(d) {
       if (t.empty) sf = null
     } else if (t.name === 'line' && sf) sf.set(t.attrs.nr, { mi: t.attrs.mi, ci: t.attrs.ci })
   }
-  const namesPath = JAVA_NAMES()
-  const namesShown = namesPath.replace(/\\/g, '/')
-  let namesBytes = null
-  let facts = null
+  // 클래스 사실 — javap 의 출력을 푼다. 풀린 것이 데이터와 맞는지는 아래 대조(클래스 집합 · 메서드의 첫 줄 · 줄의 주인)가 본다.
+  const javapPath = JAVA_JAVAP()
+  const javapShown = javapPath.replace(/\\/g, '/')
+  let javapBytes = null
   try {
-    namesBytes = readFileSync(namesPath)
-    facts = JSON.parse(namesBytes.toString('utf8'))?.classes
+    javapBytes = readFileSync(javapPath)
   } catch {
-    facts = null
+    javapBytes = null
   }
-  if (!isObj(facts) || !Object.values(facts).every((c) => isObj(c) && Array.isArray(c.methods) && c.methods.every((x) => isObj(x) && typeof x.name === 'string' && Array.isArray(x.lines) && x.lines.every((n) => Number.isInteger(n) && n > 0)))) {
-    fail('java', `no class facts at ${namesShown} — run java writes them with javap (line tables · enclosing methods of nested classes)`)
+  const facts = javapBytes && javapFacts(javapBytes.toString('utf8'))
+  if (!facts || !Object.keys(facts).length) {
+    fail('java', `no class facts at ${javapShown} — run java writes javap's output there (line tables · enclosing methods of nested classes)`)
     return null
   }
   const files = []
@@ -2325,7 +2327,12 @@ function javaReport(d) {
         fns.set(k, g)
         continue
       }
-      const range = (ls) => [ls[0], ls[ls.length - 1]]
+      // 람다가 든 몸통 — 줄 범위로 가른다(람다 몸통의 줄은 감싼 메서드의 LineNumberTable 에 없다). 범위는 오버로드 여럿이 함께 가진
+      // 줄을 빼고 잡는다: javac 는 필드 초기화 · 초기화 블록을 `this(…)` 를 안 부르는 생성자마다 끼워 넣어, 그 줄이 한 생성자의 범위를
+      // 다른 생성자의 몸통까지 늘린다(독립 레그 2차 지적 — 픽스처 Token(char) 의 62–72 가 Token(String) 의 몸통 65–67 을 덮었다).
+      const seen = new Map()
+      for (const q of plains) for (const n of q.lines) seen.set(n, (seen.get(n) ?? 0) + 1)
+      const inside = (ls, p) => ls.length > 0 && p.lines.length > 0 && p.lines.every((n) => n >= ls[0] && n <= ls[ls.length - 1])
       // 매개변수는 짧은 이름으로 쓴다 — 두 오버로드가 짧은 이름으로 겹치면(`foo(a.T)` · `foo(b.T)` — 독립 레그 1차 지적) 그 멤버는
       // 서술자 전체로 쓴다(겹친 키는 한 함수로 합쳐져 안 돈 쪽이 목록에서 사라진다).
       const label = new Map(descs.map((x) => [x, javaParams(x) ?? x]))
@@ -2335,13 +2342,16 @@ function javaReport(d) {
       for (const p of g) {
         let dsc = p.desc
         if (p.kind !== 'plain' && !p.via) {
-          const hits = plains.filter((q) => q.lines.length && p.lines.length && p.lines.every((n) => n >= range(q.lines)[0] && n <= range(q.lines)[1]))
-          // 인스턴스 필드를 초기화하는 람다(`lambda$new$N`) — javac 는 필드 초기화를 `this(…)` 를 안 부르는 생성자마다 끼워 넣는다:
-          // 그 줄이 생성자 여럿의 범위에 든다. 그 생성자 모두의 것이다(독립 레그 1차 지적 — 그 꼴이 FAIL 했다).
-          if (p.member === '<init>' && hits.length > 1) {
-            // 함께 가진 람다가 돌았다는 것은 **어느** 생성자가 돌았다는 뜻일 뿐이다 — 미실행 판정의 근거로 쓰지 않는다(아래 `shared`).
-            for (const h of hits) put(keyOf(h.desc), { ...p, shared: true })
-            continue
+          const hits = plains.filter((q) => inside(q.lines.filter((n) => seen.get(n) === 1), p))
+          // 어느 몸통에도 안 드는 생성자 람다(`lambda$new$N`)는 필드 초기화 · 초기화 블록의 것이다 — 그 초기화를 끼워 넣은 생성자(함께
+          // 가진 줄까지 넣은 범위가 그 람다를 덮는 생성자) 모두의 것이다(독립 레그 1차 지적 — 그 꼴이 FAIL 했다).
+          if (p.member === '<init>' && !hits.length) {
+            const runs = plains.filter((q) => inside(q.lines, p))
+            if (runs.length) {
+              // 함께 가진 람다가 돌았다는 것은 **어느** 생성자가 돌았다는 뜻일 뿐이다 — 미실행 판정의 근거로 쓰지 않는다(아래 `shared`).
+              for (const h of runs) put(keyOf(h.desc), { ...p, shared: true })
+              continue
+            }
           }
           if (hits.length !== 1) {
             amb ??= k
@@ -2424,8 +2434,8 @@ function javaReport(d) {
     fail('java', `${shown} is not the data \`run java\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
     return null
   }
-  if (rec.names_sha1 !== sha(namesBytes)) {
-    fail('java', `${namesShown} is not the class facts \`run java\` recorded — another run wrote over it`)
+  if (rec.javap_sha1 !== sha(javapBytes)) {
+    fail('java', `${javapShown} is not the javap output \`run java\` recorded — another run wrote over it`)
     return null
   }
   const t = rec.tests
@@ -2743,12 +2753,12 @@ function run(l) {
     return rc
   }
   if (l === 'java') {
-    // 옛 데이터 · exec · 클래스 사실 · 기록 · CLI 를 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게).
+    // 옛 데이터 · exec · javap 출력 · 기록 · CLI 를 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게).
     const data = JAVA_DATA()
     const exec = JAVA_EXEC()
-    const names = JAVA_NAMES()
+    const javap = JAVA_JAVAP()
     const cli = join(out, 'java-cli')
-    for (const f of [data, exec, names, JAVA_RUN()]) rmSync(f, { force: true })
+    for (const f of [data, exec, javap, JAVA_RUN()]) rmSync(f, { force: true })
     rmSync(cli, { recursive: true, force: true })
     const stop = (msg) => {
       fail(l, msg)
@@ -2801,7 +2811,7 @@ function run(l) {
       if (jp.error || jp.status !== 0) return stop(`javap failed (${jp.error?.message ?? `exit ${jp.status}`}) — the report needs the class files' line tables`)
       text += jp.stdout
     }
-    writeFileSync(names, `${JSON.stringify({ classes: javapFacts(text) })}\n`)
+    writeFileSync(javap, text)
     // 테스트 — failsafe 의 요약(모듈마다)을 합치고, surefire 의 보고가 없는지 센다(단위 테스트는 돌지 않았어야 한다).
     const tests = { completed: 0, failures: 0, errors: 0, skipped: 0 }
     let unit = 0
@@ -2817,7 +2827,7 @@ function run(l) {
     }
     const sha = (p) => createHash('sha1').update(readFileSync(p)).digest('hex')
     const same = d.files.every((f) => before[f] !== null && before[f] === after[f])
-    writeFileSync(JAVA_RUN(), `${JSON.stringify({ run: 'java', exit: rc, jacoco: ver, data_sha1: sha(data), names_sha1: sha(names), exec_sha1: sha(exec), tests, unit, files: same ? before : null })}\n`)
+    writeFileSync(JAVA_RUN(), `${JSON.stringify({ run: 'java', exit: rc, jacoco: ver, data_sha1: sha(data), javap_sha1: sha(javap), exec_sha1: sha(exec), tests, unit, files: same ? before : null })}\n`)
     return rc
   }
   if (l === 'dotnet') {

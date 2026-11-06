@@ -41,7 +41,8 @@
 #   data/dotnet-zero.*     같은 명령, 구동 테스트가 경계 밖 `Config` 만 만든다 — 경계 줄 전부 0
 #   data/java.xml          **도구의 `run java` 그대로**(JDK 21.0.8 · Maven 3.9.9 · JaCoCo 0.8.16 · 2026-11-07) — 임시 루트에 tree 사본.
 #                          경로는 없다 — 세션 id 의 기계 이름만 `HOST-00000000` 으로 바꿨다
-#   data/java.names.json   같은 실행의 클래스 사실(javap 의 LineNumberTable · EnclosingMethod) — 그대로(0 실행과 바이트가 같다)
+#   data/java.javap.txt    같은 빌드의 `javap -l -p -v` 출력(run java 가 남긴 것) — 줄끝을 LF 로, `Classfile` 의 생성 루트를 지워
+#                          `java/` 부터로만 바꿨다(0 실행과 클래스 사실이 같다 — 실측: 그 둘에서 푼 사실이 바이트째 같았다)
 #   data/java-zero.xml     같은 명령, `KC_FIXTURE_ZERO=1` 로 구동 테스트가 경계 클래스를 싣기만 한다 — 정적 초기화만 돈다
 # ruby 구동 스펙은 「logout_url · AuthClient.build · introspect · close · flush」를 안 부르고 `token` 의 nil 갈래를 안 탄다.
 # dotnet 구동 테스트는 「두 번째 생성자 · Describe(int) · LogoutAsync · Build · Unused · Later · Lower · NamesAsync · Retries 의
@@ -129,16 +130,16 @@ dotnet_mark() { # exit
     "$(sha1sum "$D/dotnet.json" | cut -d' ' -f1)" "$(sha1sum "$D/dotnet.trx" | cut -d' ' -f1)" \
     "$(sha1sum "$T/dotnet/src/Kc/Admin/Client.cs" | cut -d' ' -f1)" "$(sha1sum "$T/dotnet/src/Kc/AuthClient.cs" | cut -d' ' -f1)" > "$D/dotnet.run.json"
 }
-# `run java` 의 데이터(JaCoCo XML — 경로가 없다)와 클래스 사실(javap 가 읽은 LineNumberTable · EnclosingMethod) — 기록을 쓴다.
+# `run java` 의 데이터(JaCoCo XML — 경로가 없다)와 javap 의 출력(리포트가 LineNumberTable · EnclosingMethod 를 푼다) — 기록을 쓴다.
 java_data() { # fixture-xml
   cp "$1" "$D/java.xml"
-  cp "$FIX/data/java.names.json" "$D/java.names.json"
+  cp "$FIX/data/java.javap.txt" "$D/java.javap.txt"
   java_mark 0
 }
-# `run java` 의 기록(종료코드 · 데이터와 클래스 사실의 sha1 · failsafe 의 테스트 수 · surefire 보고 수 · 경계 파일의 sha1) — php_mark 와 같은 쓰임.
+# `run java` 의 기록(종료코드 · 데이터와 javap 출력의 sha1 · failsafe 의 테스트 수 · surefire 보고 수 · 경계 파일의 sha1) — php_mark 와 같은 쓰임.
 java_mark() { # exit
-  printf '{"run":"java","exit":%s,"jacoco":"0.8.16","data_sha1":"%s","names_sha1":"%s","tests":{"completed":1,"failures":0,"errors":0,"skipped":0},"unit":0,"files":{"java/kc-auth/src/main/java/kc/auth/AuthClient.java":"%s","java/kc-examples/src/main/java/kc/examples/QuickStart.java":"%s"}}\n' "$1" \
-    "$(sha1sum "$D/java.xml" | cut -d' ' -f1)" "$(sha1sum "$D/java.names.json" | cut -d' ' -f1)" \
+  printf '{"run":"java","exit":%s,"jacoco":"0.8.16","data_sha1":"%s","javap_sha1":"%s","tests":{"completed":1,"failures":0,"errors":0,"skipped":0},"unit":0,"files":{"java/kc-auth/src/main/java/kc/auth/AuthClient.java":"%s","java/kc-examples/src/main/java/kc/examples/QuickStart.java":"%s"}}\n' "$1" \
+    "$(sha1sum "$D/java.xml" | cut -d' ' -f1)" "$(sha1sum "$D/java.javap.txt" | cut -d' ' -f1)" \
     "$(sha1sum "$T/java/kc-auth/src/main/java/kc/auth/AuthClient.java" | cut -d' ' -f1)" "$(sha1sum "$T/java/kc-examples/src/main/java/kc/examples/QuickStart.java" | cut -d' ' -f1)" > "$D/java.run.json"
 }
 run() {
@@ -1431,21 +1432,20 @@ run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 데이터에서 경계 파일이 빠지면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [java] java/kc-auth/src/main/java/kc/auth/AuthClient.java is not in the coverage data" "[java] 빠진 경계 파일"
 fresh
-rm "$D/java.names.json"
+rm "$D/java.javap.txt"
 run report java "$T" --out "$D"
-assert_eq 2 "$RC" "[java] 클래스 사실이 없으면 exit 2 — 출력: $OUT"
-assert_contains "$OUT" "/java.names.json — run java writes them with javap (line tables · enclosing methods of nested classes)" "[java] 클래스 사실 없음"
+assert_eq 2 "$RC" "[java] javap 출력이 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/java.javap.txt — run java writes javap's output there (line tables · enclosing methods of nested classes)" "[java] 클래스 사실 없음"
 fresh
-sed -i 's#"lines":\[45\]#"lines":["45"]#' "$D/java.names.json"
+printf 'Error: class not found: kc.auth.AuthClient\n' > "$D/java.javap.txt"
 java_mark 0
-assert_contains "$(cat "$D/java.names.json")" '"lines":["45"]' "(변이가 착지했는지 먼저 본다)"
 run report java "$T" --out "$D"
-assert_eq 2 "$RC" "[java] 정수 아닌 줄의 클래스 사실은 exit 2 — 출력: $OUT"
-assert_contains "$OUT" "FAIL [java] no class facts at" "[java] 클래스 사실의 꼴"
+assert_eq 2 "$RC" "[java] 클래스를 하나도 안 담은 javap 출력은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [java] no class facts at" "[java] 클래스 없는 javap 출력"
 fresh
-sed -i 's#"kc/auth/AuthClient\$Token":#"kc/auth/AuthClient\$Tokens":#' "$D/java.names.json"
+sed -i 's|^\(  this_class: #[0-9]* *// kc/auth/AuthClient\)\$Token$|\1$Tokens|' "$D/java.javap.txt"
 java_mark 0
-assert_contains "$(cat "$D/java.names.json")" '"kc/auth/AuthClient$Tokens":' "(변이가 착지했는지 먼저 본다)"
+assert_contains "$(cat "$D/java.javap.txt")" '// kc/auth/AuthClient$Tokens' "(변이가 착지했는지 먼저 본다)"
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 클래스 사실과 데이터가 다른 클래스를 대면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "the class facts and the data name different classes (data only: kc/auth/AuthClient\$Token · facts only: kc/auth/AuthClient\$Tokens)" "[java] 클래스 집합이 갈린다"
@@ -1458,32 +1458,54 @@ assert_eq 2 "$RC" "[java] 데이터와 클래스 사실의 첫 줄이 갈리면 
 assert_contains "$OUT" "kc/auth/AuthClient.unused()Ljava/lang/String; — the data and the class facts disagree (first line 52 vs 53)" "[java] 첫 줄이 갈린다"
 fresh
 sed -i 's#name="unused"#name="access$000"#' "$D/java.xml"
-sed -i 's#"name":"unused"#"name":"access$000"#' "$D/java.names.json"
+sed -i 's#^  public java.lang.String unused();$#  public java.lang.String access$000();#' "$D/java.javap.txt"
 java_mark 0
+assert_contains "$(cat "$D/java.javap.txt")" '  public java.lang.String access$000();' "(변이가 착지했는지 먼저 본다)"
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 모르는 생성 이름은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot name kc/auth/AuthClient.access\$000()Ljava/lang/String; — not a generated name this reader knows" "[java] 모르는 생성 이름"
 fresh
-sed -i 's#"enclosing":{"class":"kc/auth/AuthClient","method":"sorted","desc":"(Ljava/util/List;)Ljava/util/List;"}#"enclosing":null#' "$D/java.names.json"
+# 필드 초기화 · 초기화 블록 안의 익명 클래스는 EnclosingMethod 의 메서드 색인이 0 이다(JVMS 4.7.7) — 감싼 메서드가 없다.
+sed -i 's|^EnclosingMethod: #41\.#43 |EnclosingMethod: #41.#0  |' "$D/java.javap.txt"
 java_mark 0
-assert_contains "$(cat "$D/java.names.json")" '"kc/auth/AuthClient$1":{"source":"AuthClient.java","enclosing":null' "(변이가 착지했는지 먼저 본다)"
+assert_contains "$(cat "$D/java.javap.txt")" 'EnclosingMethod: #41.#0 ' "(변이가 착지했는지 먼저 본다)"
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 감싼 메서드가 없는 익명 클래스는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot name kc/auth/AuthClient\$1." "[java] 익명 클래스를 접지 못한다"
 fresh
 sed -i 's#<method name="lambda$token$3" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="36">#<method name="lambda$token$3" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="40">#' "$D/java.xml"
-sed -i 's#"name":"lambda$token$3","desc":"(Ljava/lang/String;I)Ljava/lang/String;","lines":\[36\]#"name":"lambda$token$3","desc":"(Ljava/lang/String;I)Ljava/lang/String;","lines":[40]#' "$D/java.names.json"
+sed -i '/^  private java.lang.String lambda\$token\$3(java.lang.String, int);$/,/^        line [0-9]*: / s/^        line 36: 0$/        line 40: 0/' "$D/java.javap.txt"
 java_mark 0
+assert_contains "$(sed -n '/lambda\$token\$3(java.lang.String, int);$/,/^        line /p' "$D/java.javap.txt")" '        line 40: 0' "(변이가 착지했는지 먼저 본다)"
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 어느 오버로드의 줄 범위에도 안 드는 람다는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "AuthClient.token has overloads and a lambda whose lines fall in none or several of them" "[java] 람다를 못 붙이는 오버로드"
+# 생성자 몸통 안의 람다 — 두 생성자가 함께 가진 필드 초기화 줄(62)을 빼고 범위를 잡아야 Token(String) 의 몸통(65–67)이 Token(char) 의
+# 범위(62–72)에 안 든다(독립 레그 2차 지적 — 그 줄을 넣고 재면 그 람다가 「함께 가진 람다」가 되어 Token(char) 의 줄로도 셌다).
+fresh
+sed -i 's#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="62">#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="66">#' "$D/java.xml"
+sed -i '/^  private static java.lang.String lambda\$new\$0();$/,/^        line [0-9]*: / s/^        line 62: 0$/        line 66: 0/' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(sed -n '/lambda\$new\$0();$/,/^        line /p' "$D/java.javap.txt")" '        line 66: 0' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 0 "$RC" "[java] 한 생성자의 몸통 안 람다는 그 생성자의 것 — exit 0 — 출력: $OUT"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:62 AuthClient.Token.<init>(char) · 4 lines · owner open-admin" "[java] 다른 생성자의 몸통 안 람다는 안 부른 생성자의 줄이 아니다"
+# 어느 생성자의 범위에도 안 드는 생성자 람다 — 필드 초기화의 것도 아니다(그 줄을 가진 생성자가 없다).
+fresh
+sed -i 's#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="62">#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="75">#' "$D/java.xml"
+sed -i '/^  private static java.lang.String lambda\$new\$0();$/,/^        line [0-9]*: / s/^        line 62: 0$/        line 75: 0/' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(sed -n '/lambda\$new\$0();$/,/^        line /p' "$D/java.javap.txt")" '        line 75: 0' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 어느 생성자의 범위에도 안 드는 생성자 람다는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.Token.<init> has overloads and a lambda whose lines fall in none or several of them" "[java] 생성자에 못 붙이는 람다"
 # 짧은 매개변수 이름이 겹치는 오버로드(`token(java.lang.String)` · `token(kc.other.String)`) — 한 키로 합치면 안 돈 쪽이 사라진다(독립
 # 레그 1차 지적). 그 멤버는 서술자 전체로 쓴다.
 fresh
 sed -i 's#<method name="token" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="36">#<method name="token" desc="(Lkc/other/String;)Ljava/lang/String;" line="36">#' "$D/java.xml"
-sed -i 's#"name":"token","desc":"(Ljava/lang/String;I)Ljava/lang/String;"#"name":"token","desc":"(Lkc/other/String;)Ljava/lang/String;"#' "$D/java.names.json"
+sed -i '/^  public java.lang.String token(java.lang.String, int);$/,/^    descriptor: / s|^    descriptor: (Ljava/lang/String;I)Ljava/lang/String;$|    descriptor: (Lkc/other/String;)Ljava/lang/String;|' "$D/java.javap.txt"
 java_mark 0
-assert_contains "$(cat "$D/java.names.json")" '"desc":"(Lkc/other/String;)Ljava/lang/String;"' "(변이가 착지했는지 먼저 본다)"
+assert_contains "$(cat "$D/java.javap.txt")" '    descriptor: (Lkc/other/String;)Ljava/lang/String;' "(변이가 착지했는지 먼저 본다)"
 run report java "$T" --out "$D"
 assert_eq 1 "$RC" "[java] 짧은 이름이 겹치는 오버로드는 서술자 전체 키로 — 그 키에 소유자가 없어 exit 1 — 출력: $OUT"
 assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:36 AuthClient.token(Lkc/other/String;)Ljava/lang/String; · 1 line · owner NONE" "[java] 짧은 이름이 겹치는 오버로드는 서술자 전체로 쓴다"
@@ -1530,10 +1552,11 @@ run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 기록 뒤 바뀐 데이터는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "/java.xml is not the data \`run java\` recorded" "[java] 기록과 다른 데이터"
 fresh
-sed -i 's#"lines":\[45\]#"lines":[45,45]#' "$D/java.names.json"
+sed -i 's#^  Last modified #  Last  modified #' "$D/java.javap.txt"
+assert_contains "$(cat "$D/java.javap.txt")" '  Last  modified ' "(변이가 착지했는지 먼저 본다)"
 run report java "$T" --out "$D"
-assert_eq 2 "$RC" "[java] 기록 뒤 바뀐 클래스 사실은 exit 2 — 출력: $OUT"
-assert_contains "$OUT" "/java.names.json is not the class facts \`run java\` recorded" "[java] 기록과 다른 클래스 사실"
+assert_eq 2 "$RC" "[java] 기록 뒤 바뀐 javap 출력은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/java.javap.txt is not the javap output \`run java\` recorded" "[java] 기록과 다른 javap 출력"
 fresh
 sed -i 's#"tests":{[^}]*},##' "$D/java.run.json"
 assert_not_contains "$(cat "$D/java.run.json")" '"tests"' "(변이가 착지했는지 먼저 본다)"
