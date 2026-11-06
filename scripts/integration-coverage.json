@@ -145,6 +145,7 @@
     }
   },
   "dotnet": {
+    "floor": { "metric": "lines", "percent": 76.6 },
     "pinned": [
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs",
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminResponseBody.cs",
