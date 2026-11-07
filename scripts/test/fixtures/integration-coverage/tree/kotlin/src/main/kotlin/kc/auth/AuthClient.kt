@@ -141,3 +141,96 @@ class AuthClientApiImpl : AuthClientApi
 object AuthClientIdle {
     private val f: () -> Int = { 1 }
 }
+
+// ── 아래는 독립 레그 2 가 컴파일해 보인 꼴이다 — 접기가 자기에게 돌아오거나, EnclosingMethod 가 틀리거나, 이름이 같은 남을 부른다 ──
+
+fun <T> later(f: () -> T): T = f()
+
+/** 접기가 자기에게 돌아오는 로컬 함수 — 기본 인자(`withDefault$inner` ↔ `$default`) · 서로 부르기 · 자기 람다가 다시 부르기. */
+class AuthClientLocals {
+    fun withDefault(): Int {
+        fun inner(x: Int = 5): Int = x * 2
+        return inner()
+    }
+
+    fun withMutual(n: Int): Int {
+        fun a(k: Int): Int {
+            fun b(j: Int): Int = if (j <= 0) 0 else a(j - 1)
+            return b(k)
+        }
+        return a(n)
+    }
+
+    fun withCallback(n: Int): Int {
+        fun r(k: Int): Int = if (k <= 0) 0 else later { r(k - 1) }
+        return r(n)
+    }
+}
+
+/** 본 생성자 없는 클래스의 속성 초기화 객체 — 생성자마다 그 코드가 들어 둘이 함께 만든다(어느 하나의 실행 근거가 아니다).
+ *  구동은 둘째 생성자만 부른다. */
+class AuthClientError : RuntimeException {
+    private val hook: Runnable =
+        object : Runnable {
+            override fun run() {}
+        }
+
+    constructor(m: String) : super(m)
+    constructor(m: String, c: Throwable) : super(m, c)
+}
+
+/** 첫 생성자가 둘째에 맡긴다 — 속성 초기화 객체의 EnclosingMethod 는 첫 생성자를 대지만 만드는 것은 둘째다. 구동은 둘째만. */
+class AuthClientMixed {
+    private val r: Runnable =
+        object : Runnable {
+            override fun run() {}
+        }
+
+    constructor(s: String) : this(s.length)
+    constructor(x: Int) {
+        check(x >= 0)
+    }
+}
+
+/** 컴패니언 `@JvmStatic` — 바깥 정적 다리는 컴패니언의 것을 부를 뿐이다(kotlin 호출은 컴패니언으로 가 다리는 안 돈다). */
+class AuthClientStatic private constructor() {
+    companion object {
+        @JvmStatic
+        fun stat(x: Int): Int = x + 1
+    }
+}
+
+/** 기본값이 다른 클래스를 만드는 기본 인자 생성자(`ArrayList.<init>` 도 부른다) · 이름이 같은 남의 메서드(`List.size`)를 부르는 다리. */
+class AuthClientBag(
+    private val xs: MutableList<String> = ArrayList(),
+) {
+    fun size(
+        ys: List<Int> = emptyList(),
+        n: Int = ys.size,
+    ): Int = n + xs.size
+}
+
+/** 정적 초기화의 suspend 람다(그 클래스의 `create()` 가 자기를 다시 `new` 한다) · 싱글턴 fun interface 변환(INSTANCE 로만 쓰인다). */
+object AuthClientHooks {
+    val onStart: suspend () -> Int = { 1 }
+    val token: AuthClientTokenSource = AuthClientTokenSource { "t" }
+}
+
+fun interface AuthClientTokenSource {
+    suspend fun token(): String
+}
+
+fun takeInt(f: (Int) -> Int): Int = f(1)
+
+/** 함수 참조로 쓰인 로컬 함수(합성 접근자 `access$withLocalRef$twice` 를 거쳐 불린다) · 초기화 블록의 로컬 함수(`_init_$warm`). */
+class AuthClientRefs {
+    init {
+        fun warm(): Int = 1
+        check(warm() == 1)
+    }
+
+    fun withLocalRef(): Int {
+        fun twice(x: Int): Int = x * 2
+        return takeInt(::twice)
+    }
+}

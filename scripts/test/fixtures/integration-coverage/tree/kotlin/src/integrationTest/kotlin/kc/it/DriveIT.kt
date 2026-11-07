@@ -2,8 +2,15 @@ package kc.it
 
 import kc.auth.AuthClient
 import kc.auth.AuthClientApiImpl
+import kc.auth.AuthClientBag
 import kc.auth.AuthClientDefaults
+import kc.auth.AuthClientError
+import kc.auth.AuthClientHooks
 import kc.auth.AuthClientLoader
+import kc.auth.AuthClientLocals
+import kc.auth.AuthClientMixed
+import kc.auth.AuthClientRefs
+import kc.auth.AuthClientStatic
 import kc.auth.AuthClientStatus
 import kc.auth.ClientId
 import kc.auth.Config
@@ -35,5 +42,16 @@ class DriveIT {
         check(runBlocking { AuthClientLoader().load(1) } == 1)
         check(byId(ClientId("i")) == "i")
         check(AuthClientApiImpl().ping() == 1)
+        val l = AuthClientLocals()
+        check(l.withDefault() == 10)
+        check(l.withMutual(2) == 0)
+        check(l.withCallback(2) == 0)
+        check(AuthClientError("m", RuntimeException()).message == "m")
+        check(AuthClientMixed(1).toString().isNotEmpty())
+        check(AuthClientStatic.stat(1) == 2)
+        check(AuthClientBag().size() == 0)
+        check(runBlocking { AuthClientHooks.onStart() } == 1)
+        check(runBlocking { AuthClientHooks.token.token() } == "t")
+        check(AuthClientRefs().withLocalRef() == 2)
     }
 }

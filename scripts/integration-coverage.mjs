@@ -2174,13 +2174,17 @@ function javapFacts(text) {
       meth.desc = m[1]
       continue
     }
-    // 코드 — `N: invoke… #K // Method owner.name:desc` · `N: new #K // class X` · `N: invokedynamic #K, 0 // InvokeDynamic #B:…`.
-    if (meth && (m = /^\s+\d+: (invoke\w+|new)\s+#\d+.*?\/\/ (.+?)\s*$/.exec(raw))) {
+    // 코드 — `N: invoke… #K // Method owner.name:desc` · `N: new #K // class X` · `N: invokedynamic #K, 0 // InvokeDynamic #B:…` ·
+    // `N: getstatic #K // Field X.INSTANCE:…`(싱글턴 클래스는 제 정적 초기화에서 만들고 쓰는 쪽은 INSTANCE 를 읽는다 — 그 자리가
+    // 만드는 자리다, 독립 레그 2 실측: 컴패니언 init 의 suspend fun interface 변환).
+    if (meth && (m = /^\s+\d+: (invoke\w+|new|getstatic)\s+#\d+.*?\/\/ (.+?)\s*$/.exec(raw))) {
       let k
       if (m[1] === 'invokedynamic') {
         if ((k = /^InvokeDynamic #(\d+):/.exec(m[2]))) meth.indy.push(k[1])
       } else if (m[1] === 'new') {
         if ((k = /^class (\S+)$/.exec(m[2]))) meth.news.push(k[1])
+      } else if (m[1] === 'getstatic') {
+        if ((k = /^Field ([^.\s]+)\.INSTANCE:/.exec(m[2]))) meth.news.push(k[1])
       } else if ((k = /^(?:Interface)?Method (\S+)$/.exec(m[2]))) {
         const r = jvmRef(k[1], cur.name)
         if (r) meth.calls.push(r)
@@ -2195,6 +2199,8 @@ function javapFacts(text) {
       meth.lines.push(Number(m[1]))
       continue
     }
+    // 메서드의 `@JvmStatic` 표지(RuntimeVisibleAnnotations 항목) — 컴패니언 `@JvmStatic` 의 바깥 정적 다리를 가른다(ktFold).
+    if (meth && /^\s+kotlin\.jvm\.JvmStatic\s*$/.test(raw)) meth.jvmStatic = true
     inLnt = false
   }
   finish()
@@ -2292,54 +2298,94 @@ function ktIndex(facts) {
   KT_INDEX.set(facts, ix)
   return ix
 }
-function ktFold(cname, name, desc, facts, kt, depth = 0) {
+// 접기가 자기에게 돌아온 자리 — 정보가 없다(실패가 아니다): 기본 인자 로컬 함수(`outer$inner` ↔ `outer$inner$default`) · 서로
+// 부르는 로컬 함수 · 자기가 만든 람다가 다시 부르는 로컬 함수는 서로를 부른다(독립 레그 2 실측). 그 자리를 빼고 남은 자리로 접는다.
+const KT_CYCLE = Symbol('cycle')
+function ktFold(cname, name, desc, facts, kt, seen = new Set()) {
   const c = facts[cname]
-  if (!c || depth > 8) return null
+  const self = `${cname}.${name}:${desc}`
+  if (seen.has(self)) return KT_CYCLE
+  if (!c || seen.size > 16) return null
   const segs = cname.slice(cname.lastIndexOf('/') + 1).split('$')
   if (segs.some((s) => s === '')) return null
   const ix = ktIndex(facts)
-  const self = `${cname}.${name}:${desc}`
-  // 여러 자리(만드는 · 부르는 · `new` 하는 메서드)를 접어 하나여야 한다.
+  const next = new Set(seen).add(self)
+  const fold = (cls, n, d) => ktFold(cls, n, d, facts, kt, next)
+  // 여러 자리(만드는 · 부르는 · `new` 하는 메서드)를 접어 하나여야 한다. 같은 클래스의 생성자 여럿이면(본 생성자 없는 클래스의
+  // 속성 초기화 — 생성자마다 그 코드가 든다, 독립 레그 2 실측) 그 생성자들이 함께 가진다(shared — 어느 하나의 실행 근거가 아니다).
   const one = (sites) => {
-    const ups = sites.map(([cls, m]) => ktFold(cls, m.name, m.desc, facts, kt, depth + 1))
-    if (!ups.length || ups.some((u) => !u)) return null
-    const key = (u) => `${u.kind === 'static'} ${u.type} ${u.member} ${u.desc}`
-    return ups.every((u) => key(u) === key(ups[0])) ? ups[0] : null
+    const all = sites.map(([cls, m]) => fold(cls, m.name, m.desc))
+    const ups = all.filter((u) => u !== KT_CYCLE)
+    if (!ups.length) return all.length ? KT_CYCLE : null
+    if (ups.some((u) => !u)) return null
+    const key = (u) => `${u.kind === 'static'} ${u.type} ${u.member} ${u.desc} ${u.shared ?? ''}`
+    if (ups.every((u) => key(u) === key(ups[0]))) return ups[0]
+    if (ups.every((u) => u.kind === 'plain' && u.member === '<init>' && u.type === ups[0].type && !u.shared)) {
+      return { type: ups[0].type, member: '<init>', kind: 'plain', desc: null, shared: sortU(ups.map((u) => u.desc)) }
+    }
+    return null
   }
-  const nest = (up, via) => up && { type: up.type, member: up.member, kind: up.kind === 'static' ? 'static' : 'lambda', desc: up.desc, via }
+  const nest = (up, via) => (up === KT_CYCLE ? up : up && { type: up.type, member: up.member, kind: up.kind === 'static' ? 'static' : 'lambda', desc: up.desc, shared: up.shared, via })
+  // 그 클래스를 `new` 하는 자리 — 자기 안의 자리는 뺀다(suspend 람다의 `create()` 는 제 클래스를 다시 만든다 — 실측).
+  const builders = () => (ix.built.get(cname) ?? []).filter(([cls]) => cls !== cname)
+  // 부르는 자리 — 자기 자신과 자기 안의 클래스(suspend 의 이어받기 클래스는 그 함수를 다시 부른다 — 실측)는 뺀다.
+  const inside = (cls) => facts[cls]?.enclosing?.class === cname && facts[cls].enclosing.method === name && facts[cls].enclosing.desc === desc
+  const callers = () => (ix.called.get(self) ?? []).filter(([cls, m]) => !(cls === cname && m.name === name && m.desc === desc) && !inside(cls))
+  // 부르는 쪽으로 접는 것은 로컬 함수 꼴(`<감싼 함수>$<이름>` · `fn$suspendImpl`)뿐이다 — 이름이 접힌 멤버의 이름으로 시작하지 않으면
+  // (모듈 이름이 틀려 접미가 안 벗겨진 `internal` 함수가 그 호출자로 접히는 꼴 — 자가테스트가 잡았다) 접지 않는다. 함수 참조
+  // (`::twice`)가 거치는 합성 접근자 `access$…` 는 그 앞을 떼고 보고, 초기화 블록의 로컬 함수는 `_init_$…` 다(실측 — 레그 2 데이터).
+  const host = (up) => {
+    if (up === KT_CYCLE || !up) return up
+    const root = up.member === '<init>' || up.member === '<clinit>' ? '_init_' : up.member
+    return name.replace(/^access\$/, '').startsWith(`${root}$`) ? up : null
+  }
   if (c.enclosing) {
+    // 익명 · 로컬 클래스 — EnclosingMethod 는 그것을 감싼 함수다(어휘 — 인라인 함수의 객체는 인라인된 호출부에서도 `new` 된다).
+    // 단 생성자 · 클래스 수준(속성 초기화 · init 블록)이면 처음 선언된 생성자를 대거나(그것이 안 만들어도) 비어 있다(독립 레그 2
+    // 실측) — 그때는 그 클래스를 만드는 메서드로 접는다.
     const enc = c.enclosing
     if (typeof enc.class !== 'string') return null
-    if (enc.method !== null) return nest(ktFold(enc.class, enc.method, enc.desc, facts, kt, depth + 1), cname)
-    return nest(one(ix.built.get(cname) ?? []), cname)
+    if (enc.method !== null && enc.method !== '<init>') return nest(fold(enc.class, enc.method, enc.desc), cname)
+    return nest(one(builders()), cname)
   }
   const type = segs.join('.')
   if (name === '<clinit>') return { type, member: '<clinit>', kind: 'static', desc }
   const own = c.methods.find((x) => x.name === name && x.desc === desc)
   if (!own) return null
-  // 이 메서드가 부르는 것 가운데 이름이 `to` 인 하나(자기 자신은 뺀다).
-  const callee = (to) => {
-    const rs = [...new Set(own.calls)].filter((r) => r !== self && /^[^.]+\.([^:]+):/.exec(r)?.[1] === to)
+  // 이 메서드가 부르는 것 가운데 `owner` 의 `to` 하나(같은 이름의 다른 클래스 메서드 — `List.size` · 기본값이 만드는 `ArrayList.<init>`
+  // — 는 대상이 아니다, 독립 레그 2 실측).
+  const callee = (owner, to) => {
+    const rs = [...new Set(own.calls)].filter((r) => r !== self && r.startsWith(`${owner}.${to}:`))
     return rs.length === 1 ? /^([^.]+)\.([^:]+):(.*)$/.exec(rs[0]) : null
+  }
+  // 다리의 접기 — 대상이 자기에게 돌아오면(로컬 함수의 다리) 다리를 부르는 쪽으로 접는다.
+  const bridge = (r) => {
+    if (!r) return null
+    const t = fold(r[1], r[2], r[3])
+    return nest(t === KT_CYCLE ? host(one(callers())) : t, 'default')
   }
   if (name === '<init>') {
     if (!desc.endsWith('ILkotlin/jvm/internal/DefaultConstructorMarker;)V')) return { type, member: '<init>', kind: 'plain', desc }
-    const r = callee('<init>')
-    return r && r[1] === cname ? nest(ktFold(cname, '<init>', r[3], facts, kt, depth + 1), 'default') : null
+    return bridge(callee(cname, '<init>'))
   }
   if (/\$lambda\$\d+(?:\$\d+)*$/.test(name)) return nest(one(ix.made.get(self) ?? []), name)
   const dm = /^(.+)\$default$/.exec(name)
-  if (dm) {
-    // `Iface$DefaultImpls.g$default` 는 인터페이스의 같은 이름 다리를 부른다(호환 다리 — 실측) — 그 다리를 따라간다.
-    const r = callee(dm[1]) ?? callee(name)
-    return r && nest(ktFold(r[1], r[2], r[3], facts, kt, depth + 1), 'default')
+  // `Iface$DefaultImpls.g$default` 는 인터페이스의 같은 이름 다리를 부른다(호환 다리 — 실측) — 그 다리를 따라간다.
+  if (dm) return bridge(callee(cname, dm[1]) ?? (cname.endsWith('$DefaultImpls') ? callee(cname.slice(0, -'$DefaultImpls'.length), name) : null))
+  // 컴패니언 `@JvmStatic` 의 바깥 정적 다리 — 표지가 있고 중첩 클래스(컴패니언)의 같은 이름 하나를 부른다: 그 멤버다(kotlin 호출은
+  // 컴패니언으로 가 다리는 안 돈다 — 따로 두면 실행된 함수가 미실행에 뜬다, 독립 레그 2 실측).
+  if (own.jvmStatic) {
+    const to = [...new Set(own.calls)].filter((r) => r.startsWith(`${cname}$`) && /^[^.]+\.([^:]+):/.exec(r)?.[1] === name)
+    if (to.length === 1) {
+      const p = /^([^.]+)\.([^:]+):(.*)$/.exec(to[0])
+      const t = fold(p[1], p[2], p[3])
+      return t === KT_CYCLE ? null : nest(t, 'jvmstatic')
+    }
   }
   const bare = name.endsWith(`$${kt.mangle}`) ? name.slice(0, -kt.mangle.length - 1) : name
   if (!bare.includes('$') && !bare.startsWith('<')) return { type, member: bare, kind: 'plain', desc }
-  // 부르는 메서드 — 자기 자신과 자기 안의 클래스(suspend 의 이어받기 클래스는 그 함수를 다시 부른다 — 실측)는 뺀다.
-  const inside = (cls) => facts[cls]?.enclosing?.class === cname && facts[cls].enclosing.method === name && facts[cls].enclosing.desc === desc
-  const up = one((ix.called.get(self) ?? []).filter(([cls, m]) => !(cls === cname && m === own) && !inside(cls)))
-  if (/\$suspendImpl$/.test(name)) return up && up.kind === 'plain' ? up : null
+  const up = host(one(callers()))
+  if (/\$suspendImpl$/.test(name)) return up === KT_CYCLE || !up || up.kind !== 'plain' || up.shared ? null : up
   return nest(up, name)
 }
 function jvmReport(l, d) {
@@ -2482,7 +2528,7 @@ function jvmReport(l, d) {
           break
         }
         const fo = kt ? ktFold(c.name, x.name, x.desc, facts, kt) : javaFold(c.name, x.name, x.desc, facts)
-        if (!fo) {
+        if (!fo || fo === KT_CYCLE) {
           fail(l, `${f}: cannot name ${c.name}.${x.name}${x.desc} — ${kt ? 'the class files show no single method that creates, calls or encloses it' : 'not a generated name this reader knows'}`)
           broken = true
           break
@@ -2528,6 +2574,12 @@ function jvmReport(l, d) {
       const put = (key, p) => fns.set(key, [...(fns.get(key) ?? []), p])
       for (const p of g) {
         let dsc = p.desc
+        // kotlin — 생성자 여럿이 함께 만든 부분(ktFold 의 shared 목록): 그 생성자마다 싣되 실행 근거로 안 센다(java 의 (가) 와 같다).
+        if (Array.isArray(p.shared)) {
+          if (p.shared.every((x) => label.has(x))) for (const x of p.shared) put(keyOf(x), { ...p, shared: true })
+          else amb ??= { k, by: 'desc' }
+          continue
+        }
         if (p.kind !== 'plain' && !p.via) {
           // 람다를 만든 오버로드 — 람다 몸통은 그것을 만든 줄 뒤에 온다. (가) 함께 가진 줄에만 있는 람다: 생성자면 필드 초기화 ·
           // 초기화 블록의 것이라 그 줄을 다 가진 생성자들(둘 이상)이 함께 가진다(한 생성자의 범위가 그 줄을 덮어도 몸통이 아니다 —
