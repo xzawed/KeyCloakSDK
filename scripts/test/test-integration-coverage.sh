@@ -1606,6 +1606,93 @@ java_mark 0
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 숫자가 아닌 줄 횟수는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot read line 53 of AuthClient.java" "[java] 못 읽는 줄"
+# 파생과 디스크가 갈렸다(파생 도구가 읽은 뒤 지워진 파일) — 가짜 파생 도구로 그 상태만 만든다(dotnet 과 같다).
+fresh
+printf '%s\n' 'console.log(JSON.stringify({ langs: { java: { dir: "java", site: "fake:1", label: "fake", universe: 3, files: ["java/kc-auth/src/main/java/kc/auth/AuthClient.java", "java/kc-examples/src/main/java/kc/examples/QuickStart.java"] } }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
+rm "$T/java/kc-auth/src/main/java/kc/auth/AuthClient.java"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 파생에 있되 디스크에 없는 경계 파일은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [java] java/kc-auth/src/main/java/kc/auth/AuthClient.java is derived but missing on disk — the data cannot be checked against it" "[java] 디스크에 없는 경계 파일"
+# 메서드의 LINE 횟수가 수가 아니다.
+fresh
+sed -i 's#line="24"><counter type="INSTRUCTION" missed="0" covered="10"/><counter type="LINE" missed="0" covered="3"/>#line="24"><counter type="INSTRUCTION" missed="0" covered="10"/><counter type="LINE" missed="0" covered="x"/>#' "$D/java.xml"
+java_mark 0
+assert_contains "$(cat "$D/java.xml")" '<counter type="LINE" missed="0" covered="x"/>' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 못 읽는 메서드 LINE 횟수는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "kc/auth/AuthClient.names(Ljava/util/List;)Ljava/util/List; — the data and the class facts disagree" "[java] 메서드 횟수의 꼴"
+# 데이터에 줄이 하나도 없는 함수(unused 의 53 을 데이터에서 뺐다)는 「한 줄도 안 돌았다」를 말할 수 없다 — 목록에 안 든다(그래서 그
+# 소유자는 낡은 항목이 된다).
+fresh
+sed -i 's#<line nr="53" mi="5" ci="0" mb="0" cb="0"/>##' "$D/java.xml"
+java_mark 0
+assert_not_contains "$(cat "$D/java.xml")" '<line nr="53" ' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 1 "$RC" "[java] 데이터에 줄이 없는 함수의 소유자는 낡은 항목 — exit 1 — 출력: $OUT"
+assert_not_contains "$OUT" "AuthClient.unused ·" "[java] 줄 없는 함수는 미실행 목록에 없다"
+assert_contains "$OUT" "DRIFT [java] stale owner java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.unused" "[java] 그 소유자는 낡았다"
+# 빈 마디가 든 클래스 이름(`AuthClient$$1`) — 접지 않는다.
+fresh
+sed -i 's#<class name="kc/auth/AuthClient$1" sourcefilename="AuthClient.java">#<class name="kc/auth/AuthClient$$1" sourcefilename="AuthClient.java">#' "$D/java.xml"
+sed -i 's|^\(  this_class: #[0-9]* *// kc/auth/AuthClient\)\$1$|\1$$1|' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(cat "$D/java.javap.txt")" '// kc/auth/AuthClient$$1' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 빈 마디가 든 클래스 이름은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient\$\$1." "[java] 빈 마디"
+# EnclosingMethod 의 클래스 색인이 Class 가 아니다(NameAndType #43) — 감싼 클래스를 못 푼다.
+fresh
+sed -i 's|^EnclosingMethod: #41\.#43 |EnclosingMethod: #43.#43 |' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(cat "$D/java.javap.txt")" 'EnclosingMethod: #43.#43 ' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 감싼 클래스를 못 푸는 익명 클래스는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient\$1." "[java] 감싼 클래스 없음"
+# EnclosingMethod 가 제 클래스를 가리킨다(#2 — 고리) — 따라 오르기를 멈춘다.
+fresh
+sed -i 's|^EnclosingMethod: #41\.#43 |EnclosingMethod: #2.#43  |' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(cat "$D/java.javap.txt")" 'EnclosingMethod: #2.#43 ' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 감싼 클래스가 고리를 이루면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient\$1." "[java] 고리"
+# 오버로드된 메서드 안의 익명 클래스 — EnclosingMethod 의 서술자로 그 오버로드에 접는다(줄로 가르면 가장 가까운 앞 줄 36 의
+# token(String, int) 에 붙어 안 부른 그 오버로드가 목록에서 빠진다). 줄표의 EnclosingMethod 를 token(String) 으로 바꿨다.
+fresh
+sed -i 's|^  #43 = NameAndType        #44:#45        // sorted:(Ljava/util/List;)Ljava/util/List;$|&\n  #90 = NameAndType        #44:#45        // token:(Ljava/lang/String;)Ljava/lang/String;|; s|^EnclosingMethod: #41\.#43 |EnclosingMethod: #41.#90 |' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(cat "$D/java.javap.txt")" 'EnclosingMethod: #41.#90 ' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 0 "$RC" "[java] 오버로드 안 익명 클래스는 서술자로 접힌다 — exit 0 — 출력: $OUT"
+assert_line "$OUT" "  never executed by the integration run — 5 functions (none of its lines ran):" "[java] 익명 클래스가 다른 오버로드를 목록에서 안 뺀다"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:36 AuthClient.token(String, int) · 1 line · owner open-admin" "[java] 안 부른 오버로드는 그대로 목록에 있다"
+# 안 부른 정적 람다 — 정적 초기화에 접혀 목록에 없고, 실릴 때 돈 그 줄(정적 초기화와 함께 가진 줄)은 몸통으로 안 덮였다.
+fresh
+sed -i 's#<method name="lambda$static$0" desc="(Ljava/lang/String;)Ljava/lang/String;" line="14"><counter type="INSTRUCTION" missed="0" covered="3"/><counter type="LINE" missed="0" covered="1"/>#<method name="lambda$static$0" desc="(Ljava/lang/String;)Ljava/lang/String;" line="14"><counter type="INSTRUCTION" missed="3" covered="0"/><counter type="LINE" missed="1" covered="0"/>#; s#<line nr="14" mi="0" ci="6" mb="0" cb="0"/>#<line nr="14" mi="3" ci="3" mb="0" cb="0"/>#' "$D/java.xml"
+java_mark 0
+assert_contains "$(cat "$D/java.xml")" '<line nr="14" mi="3" ci="3" mb="0" cb="0"/>' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 0 "$RC" "[java] 안 부른 정적 람다는 정적 초기화에 접힌다 — exit 0 — 출력: $OUT"
+assert_line "$OUT" "  java/kc-auth/src/main/java/kc/auth/AuthClient.java lines 22/27 81.5% · bodies 17/23 73.9%" "[java] 실릴 때 돈 정적 람다의 줄은 몸통으로 안 덮였다"
+assert_line "$OUT" "  never executed by the integration run — 5 functions (none of its lines ran):" "[java] 정적 람다가 목록에 따로 들지 않는다"
+# 이름에 `$` 가 든 메서드의 람다(`lambda$na$mes$1`) — 감싼 메서드를 이름으로 못 가른다.
+fresh
+sed -i 's#<method name="lambda$names$1" desc="(Ljava/util/List;Ljava/lang/String;)V" line="25">#<method name="lambda$na$mes$1" desc="(Ljava/util/List;Ljava/lang/String;)V" line="25">#' "$D/java.xml"
+sed -i 's#^  private static void lambda\$names\$1(java.util.List, java.lang.String);$#  private static void lambda$na$mes$1(java.util.List, java.lang.String);#' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(cat "$D/java.javap.txt")" '  private static void lambda$na$mes$1(java.util.List, java.lang.String);' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 이름에 \$ 가 든 메서드의 람다는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient.lambda\$na\$mes\$1(Ljava/util/List;Ljava/lang/String;)V" "[java] 감싼 메서드를 못 가르는 람다"
+# 배열 · 중첩 타입 매개변수의 오버로드 이름 — `[]` 를 붙이고 `$` 를 `.` 으로 쓴다.
+fresh
+sed -i 's#<method name="token" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="36">#<method name="token" desc="(Ljava/lang/String;[Lkc/auth/AuthClient$Mode;)Ljava/lang/String;" line="36">#' "$D/java.xml"
+sed -i '/^  public java.lang.String token(java.lang.String, int);$/,/^    descriptor: / s|^    descriptor: (Ljava/lang/String;I)Ljava/lang/String;$|    descriptor: (Ljava/lang/String;[Lkc/auth/AuthClient$Mode;)Ljava/lang/String;|' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(cat "$D/java.javap.txt")" '    descriptor: (Ljava/lang/String;[Lkc/auth/AuthClient$Mode;)Ljava/lang/String;' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 1 "$RC" "[java] 이름이 바뀐 오버로드는 소유자가 없어 exit 1 — 출력: $OUT"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:36 AuthClient.token(String, AuthClient.Mode[]) · 1 line · owner NONE" "[java] 배열은 [] · 중첩 타입은 점"
 # run 기록 — 이 데이터를 `run java` 가 썼고 그 실행이 성공했는가 · 그 실행이 IT 만 돌았는가 · 경계 파일이 그 실행의 바이트인가.
 fresh
 rm "$D/java.run.json"
@@ -1651,6 +1738,18 @@ sed -i 's#"failures":0#"failures":1#' "$D/java.run.json"
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 실패한 통합 테스트가 있으면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [java] 1 of 1 integration tests failed — the data of a failed run is partial" "[java] 실패한 테스트"
+# 오류(errors — 단언 밖 예외)로 끝난 테스트도 실패다(failsafe 는 둘을 따로 센다).
+fresh
+sed -i 's#"errors":0#"errors":1#' "$D/java.run.json"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 오류로 끝난 통합 테스트가 있으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [java] 1 of 1 integration tests failed — the data of a failed run is partial" "[java] 오류도 실패다"
+# 단위 보고 수가 수가 아닌 기록 — 꼴부터 본다(`"0"` 은 참이라 「단위가 섞였다」로 새면 까닭이 틀린다).
+fresh
+sed -i 's#"unit":0#"unit":"0"#' "$D/java.run.json"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 단위 보고 수가 수가 아닌 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [java] the record has no test counts" "[java] 단위 보고 수의 꼴"
 fresh
 sed -i 's#"unit":0#"unit":2#' "$D/java.run.json"
 run report java "$T" --out "$D"
