@@ -2802,7 +2802,9 @@ function run(l) {
     const pomPath = join(cwd, 'pom.xml')
     if (!existsSync(pomPath)) return stop(`${d.dir}/pom.xml is missing — the lane builds one reactor`)
     // 리포트의 JaCoCo 는 에이전트와 같은 판이어야 한다 — 판은 레인의 pom 이 댄다(플러그인 설정은 거기 하나다 — coverage-boundary).
-    const pomX = readFileSync(pomPath, 'utf8').replace(/<!--[\s\S]*?-->/g, '')
+    // 주석은 같은 길이의 공백으로 지운다(지워 붙이면 새 `<!--` 가 생길 수 있다 — CodeQL js/incomplete-multi-character-sanitization ·
+    // php 의 두 자리와 같다).
+    const pomX = readFileSync(pomPath, 'utf8').replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '))
     const vers = [...pomX.matchAll(/<plugin>([\s\S]*?)<\/plugin>/g)]
       .map((m) => m[1])
       .filter((b) => /<artifactId>\s*jacoco-maven-plugin\s*<\/artifactId>/.test(b))
