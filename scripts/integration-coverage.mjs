@@ -110,19 +110,21 @@ import { tmpdir } from 'node:os'
 const PINS = 'scripts/integration-coverage.json'
 const REGISTRY = 'docs/superpowers/plans/remaining-work.md'
 const BOUNDARY = 'scripts/coverage-boundary.mjs'
-const LANGS = ['go', 'python', 'node', 'rust', 'php', 'ruby', 'dotnet', 'java']
+const LANGS = ['go', 'python', 'node', 'rust', 'php', 'ruby', 'dotnet', 'java', 'kotlin']
 // 하한 지표 — go 의 문장은 전부 함수 몸통이고, python 은 lines(import 때 도는 줄 포함)와 bodies(함수 안 문장)가 갈린다.
 // node 는 istanbul 문장이다(모듈 수준 문장은 import 때 돌지만 경계 파일은 거의 전부 클래스 멤버다 — 표가 따로 보인다).
 // rust 는 llvm-cov 의 고유 줄(DA)이다 — import 때 도는 코드가 없다. php 는 php-code-coverage 의 실행 가능 줄이다(정적 분석이
 // 정한다 — 파일을 싣는 것만으로는 줄이 안 덮인다). ruby 는 python 처럼 lines(require 때 도는 클래스 · def 줄 포함)와
 // bodies(메서드 범위 안 줄)가 갈린다. dotnet 은 coverlet 의 줄(시퀀스 포인트가 있는 줄)이다 — 적재 때 도는 것은 정적 생성자
 // · 필드 초기화뿐이다. java 는 JaCoCo 의 줄이고, ruby 처럼 bodies(정적 초기화 `<clinit>` 만 가진 줄을 뺀 것)가 갈린다 — 클래스가
-// 실리기만 해도 정적 초기화는 돈다.
-const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'], node: ['statements'], rust: ['lines'], php: ['lines'], ruby: ['lines', 'bodies'], dotnet: ['lines'], java: ['lines', 'bodies'] }
-const LINE_LANGS = new Set(['rust', 'php', 'ruby', 'dotnet', 'java'])
-// 함수 몸통을 따로 세는 언어 — 적재 때 도는 모듈 · 클래스 수준 줄이 lines 를 부풀린다(python 은 import · ruby 는 require · java 는
-// 클래스 적재의 정적 초기화). 「아무것도 안 돈 실행」 판정도 몸통으로 한다.
-const BODY_LANGS = new Set(['python', 'ruby', 'java'])
+// 실리기만 해도 정적 초기화는 돈다. kotlin 은 java 와 같은 리더다(JaCoCo · javap — Companion · 파일 파사드의 정적 초기화도 같다).
+const FLOOR_METRICS = { go: ['statements'], python: ['lines', 'bodies'], node: ['statements'], rust: ['lines'], php: ['lines'], ruby: ['lines', 'bodies'], dotnet: ['lines'], java: ['lines', 'bodies'], kotlin: ['lines', 'bodies'] }
+const LINE_LANGS = new Set(['rust', 'php', 'ruby', 'dotnet', 'java', 'kotlin'])
+// 함수 몸통을 따로 세는 언어 — 적재 때 도는 모듈 · 클래스 수준 줄이 lines 를 부풀린다(python 은 import · ruby 는 require · java ·
+// kotlin 은 클래스 적재의 정적 초기화). 「아무것도 안 돈 실행」 판정도 몸통으로 한다.
+const BODY_LANGS = new Set(['python', 'ruby', 'java', 'kotlin'])
+// JaCoCo · javap 를 읽는 언어(같은 리더 — 이름 접기의 언어별 꼴만 다르다).
+const JVM_LANGS = new Set(['java', 'kotlin'])
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
@@ -2035,14 +2037,39 @@ function dotnetReport(d) {
 // 주고 report 만 부른다 — 파서의 판정을 하나도 못 지난다).
 // 람다(`lambda$m$N` — `static` · `new` 는 정적 초기화 · 생성자)는 감싼 메서드에, 익명 · 지역 클래스(`T$1` · `T$1Local`)의 메서드는
 // javap 가 댄 감싼 메서드에 접는다. 오버로드는 서술자로 가르고, 람다는 LineNumberTable 로 그것을 만든 오버로드를 찾는다(못 가르면
-// FAIL — javaReport). 모르는 `$` · `<…>` 꼴은 FAIL 이다(fail-closed).
+// FAIL — jvmReport). 모르는 `$` · `<…>` 꼴은 FAIL 이다(fail-closed).
 // ⚠️ 줄은 소스 파일 단위 합집합이다(`<sourcefile><line>`) — 바깥 클래스와 익명 클래스가 한 줄을 함께 가질 수 있어 클래스별 합은 그
 // 줄을 두 번 센다(실측: AdminClient.java 61 = 54 + 8 − 1). 정적 초기화(`<clinit>`)만 가진 줄은 클래스가 실릴 때 돈다 —
 // 「아무것도 안 돈 실행」 판정과 bodies 는 그 줄을 뺀다(python · ruby 와 같은 까닭 — 등록부의 함정: JVM static init).
-const JAVA_DATA = () => join(out, 'java.xml')
-const JAVA_JAVAP = () => join(out, 'java.javap.txt')
-const JAVA_RUN = () => join(out, 'java.run.json')
-const JAVA_EXEC = () => join(out, 'java.exec')
+// ⚠️ kotlin 도 이 리더다 — 클래스 파일 · JaCoCo 는 같고 이름 접기에 kotlin 의 꼴이 더해진다(jvmFold): `internal` 멤버의 모듈
+// 이름 접미(`name$<모듈>` — 모듈 이름의 식별자 밖 글자는 `_` · 실측 `applyTimeouts$io_github_xzawed_keycloak_sdk_kotlin`) · 기본
+// 인자 다리 `fn$default` · 람다 `fn$lambda$N`(속성 초기화의 람다는 그 속성 이름 — `CONNECTION$lambda$0`). suspend 함수의 이어받기
+// 클래스(`AuthClient$authSend$1`)는 줄표가 없어 JaCoCo 가 빈 클래스로 싣는다(실측 — 사실과 데이터 둘 다에 있다).
+// run kotlin 의 Gradle 초기화 스크립트 — 빌드 파일을 안 바꾸고 `integrationTest` 에만 JaCoCo 에이전트를 붙인다(Kover 는 그 태스크를
+// 일부러 계측하지 않는다 — build.gradle.kts 의 disabledForTestTasks). 에이전트와 CLI 는 Gradle 이 그 빌드의 저장소에서 받는다(kotlin
+// 레인은 Maven 을 안 쓴다). kotlin 의 `$` 보간이 JS 에 안 먹히게 문자열 배열로 쓴다.
+const KOTLIN_INIT = [
+  '// integration-coverage.mjs (run kotlin) — attaches a JaCoCo agent to integrationTest only; the build files stay as they are.',
+  'allprojects {',
+  '    val ver = findProperty("kcsdkItcovJacoco") as String? ?: return@allprojects',
+  '    val agent = configurations.detachedConfiguration(dependencies.create("org.jacoco:org.jacoco.agent:$ver:runtime"))',
+  '    val cli = configurations.detachedConfiguration(dependencies.create("org.jacoco:org.jacoco.cli:$ver:nodeps"))',
+  '    tasks.withType<Test>().matching { it.name == "integrationTest" }.configureEach {',
+  '        val exec = findProperty("kcsdkItcovExec") as String',
+  '        doFirst { jvmArgs("-javaagent:" + agent.singleFile.absolutePath + "=destfile=" + exec) }',
+  '        outputs.upToDateWhen { false }',
+  '    }',
+  '    tasks.register<Copy>("kcsdkItcovCli") {',
+  '        from(cli)',
+  '        into(findProperty("kcsdkItcovCli") as String)',
+  '    }',
+  '}',
+  '',
+].join('\n')
+const JVM_DATA = (l) => join(out, `${l}.xml`)
+const JVM_JAVAP = (l) => join(out, `${l}.javap.txt`)
+const JVM_RUN = (l) => join(out, `${l}.run.json`)
+const JVM_EXEC = (l) => join(out, `${l}.exec`)
 // `javap -l -p -v <클래스 파일…>` 의 출력 → { 내부 이름: { source, enclosing: { class, method, desc } | null, methods: [{ name, desc, lines }] } }.
 // `this_class` 는 상수 풀보다 앞이라 그 주석(내부 이름)을 읽고, EnclosingMethod 는 상수 풀(Class · NameAndType)로 푼다.
 function javapFacts(text) {
@@ -2136,7 +2163,7 @@ function javapFacts(text) {
   for (const c of Object.values(facts)) {
     for (const x of c.methods) {
       // 첫 · 끝 항목(javap 가 낸 차례 = 바이트코드 차례) — 생성자의 몸통은 그 둘 사이다: 첫 항목은 super · this 호출, 끝은 닫는
-      // 중괄호의 return 이고, 필드 초기화의 줄은 그 사이 바이트코드에 끼어도 몸통 밖이다(javaReport).
+      // 중괄호의 return 이고, 필드 초기화의 줄은 그 사이 바이트코드에 끼어도 몸통 밖이다(jvmReport).
       x.ends = x.lines.length ? [x.lines[0], x.lines[x.lines.length - 1]] : null
       x.lines = [...new Set(x.lines)].sort((a, b) => a - b)
     }
@@ -2171,22 +2198,52 @@ function javaParams(desc) {
 // JaCoCo 의 메서드 하나(클래스 내부 이름 · 이름 · 서술자) → { type, member, kind, desc, via } — kind 는 plain(소스 메서드 그대로 ·
 // 생성자) · static(정적 초기화) · lambda(람다 · 익명/지역 클래스의 메서드). 이름을 못 붙이면 null. 익명 · 지역 클래스는 javap 의
 // EnclosingMethod 를 따라 바깥으로 올라간다(그 클래스가 또 익명이면 한 번 더).
-function javaFold(cname, name, desc, facts, depth = 0) {
+// kt = kotlin 일 때만 { mangle: `internal` 의 모듈 접미 } — java 는 null.
+function jvmFold(cname, name, desc, facts, kt = null, depth = 0) {
   const slash = cname.lastIndexOf('/')
   const segs = cname.slice(slash + 1).split('$')
   if (segs.some((s) => s === '')) return null
   const local = segs.findIndex((s, i) => i > 0 && /^\d/.test(s))
+  const bare = (n) => (kt && n.endsWith(`$${kt.mangle}`) ? n.slice(0, -kt.mangle.length - 1) : n)
   if (local > 0) {
     const enc = facts[cname]?.enclosing
     if (!enc || typeof enc.class !== 'string' || depth > 8) return null
-    // 필드 초기화 · 초기화 블록 안의 익명 클래스 — 감싼 메서드가 없다(정적인지 인스턴스인지 서술자로 못 가른다).
-    if (enc.method === null) return null
-    const up = javaFold(enc.class, enc.method, enc.desc, facts, depth + 1)
+    // 필드 초기화 · 초기화 블록 안의 익명 클래스 — 감싼 메서드가 없다(정적인지 인스턴스인지 서술자로 못 가른다). kotlin 은 그
+    // 자리를 이름에 남긴다(`AdminSockets$PLAIN$1` — 속성 PLAIN 의 초기화): 그 속성의 것으로 둔다(속성 초기화의 람다
+    // `CONNECTION$lambda$0` 와 같다 — 실측). java 의 `Outer$1` 은 그 자리가 없어 FAIL 이다.
+    if (enc.method === null) {
+      if (!kt || local < 2 || /^\d/.test(segs[local - 1]) || segs[local - 1].startsWith('<')) return null
+      return { type: segs.slice(0, local - 1).join('.'), member: bare(segs[local - 1]), kind: 'lambda', desc: null, via: cname }
+    }
+    const up = jvmFold(enc.class, enc.method, enc.desc, facts, kt, depth + 1)
     return up && { ...up, kind: up.kind === 'static' ? 'static' : 'lambda', via: cname }
   }
   const type = segs.join('.')
   if (name === '<clinit>') return { type, member: '<clinit>', kind: 'static', desc }
   if (name === '<init>') return { type, member: '<init>', kind: 'plain', desc }
+  if (kt) {
+    const plainName = (n) => !n.includes('$') && !n.startsWith('<')
+    // 람다 `fn$lambda$N` — 람다 안의 람다는 `$lambda$M` 이 더 붙는다. 감싼 것은 fn(속성 초기화면 그 속성).
+    const km = /^(.+?)((?:\$lambda\$\d+)+)$/.exec(name)
+    if (km) {
+      const host = bare(km[1])
+      return plainName(host) ? { type, member: host, kind: 'lambda', desc: null, lambdaDesc: desc } : null
+    }
+    // 기본 인자 다리 `fn$default`(`internal` 이면 `fn$<모듈>$default`) — fn 을 부른다. 오버로드면 서술자로 그 fn 에 붙인다:
+    // 다리의 매개변수 = (인스턴스면 받는 쪽) + fn 의 매개변수 + 기본값 표지 int(32 개마다 하나) + 표지 Object. 표지 int 는
+    // 하나만 뗀다 — fn 의 끝 매개변수도 int 일 수 있다(32 개 넘는 fn 은 서술자가 안 맞아 귀속에서 FAIL 한다).
+    const dm = /^(.+)\$default$/.exec(name)
+    if (dm) {
+      const host = bare(dm[1])
+      if (!plainName(host)) return null
+      const params = /^\(([^)]*)\)(.*)$/.exec(desc ?? '')
+      if (!params) return null
+      let body = params[1].replace(/ILjava\/lang\/Object;$/, '')
+      if (body.startsWith(`L${cname};`)) body = body.slice(cname.length + 2)
+      return { type, member: host, kind: 'lambda', desc: `(${body})${params[2]}`, via: 'default' }
+    }
+    name = bare(name)
+  }
   const lm = /^lambda\$(.+)\$\d+$/.exec(name)
   if (lm) {
     const host = lm[1] === 'static' ? '<clinit>' : lm[1] === 'new' ? '<init>' : lm[1]
@@ -2196,25 +2253,25 @@ function javaFold(cname, name, desc, facts, depth = 0) {
   if (name.includes('$') || name.startsWith('<')) return null
   return { type, member: name, kind: 'plain', desc }
 }
-function javaReport(d) {
-  const path = JAVA_DATA()
+function jvmReport(l, d) {
+  const path = JVM_DATA(l)
   const shown = path.replace(/\\/g, '/')
   const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
   const sha = (b) => createHash('sha1').update(b).digest('hex')
   if (!existsSync(path)) {
-    fail('java', `no coverage data at ${shown} — run the integration suite first (node scripts/integration-coverage.mjs run java)`)
+    fail(l, `no coverage data at ${shown} — run the integration suite first (node scripts/integration-coverage.mjs run ${l})`)
     return null
   }
   const bytes = readFileSync(path)
   const src = bytes.toString('utf8')
   if (!/^\s*<\?xml[^>]*\?>\s*<!DOCTYPE report PUBLIC "-\/\/JACOCO\/\/DTD Report 1\.1\/\/EN"/.test(src)) {
-    fail('java', `${shown} is not a JaCoCo XML report (no JaCoCo report DOCTYPE) — run writes it with the JaCoCo CLI`)
+    fail(l, `${shown} is not a JaCoCo XML report (no JaCoCo report DOCTYPE) — run writes it with the JaCoCo CLI`)
     return null
   }
   const tags = xmlTags(src)
   const sessions = tags.filter((t) => !t.close && t.name === 'sessioninfo')
   if (!sessions.length) {
-    fail('java', `${shown} records no session — the agent wrote no execution data`)
+    fail(l, `${shown} records no session — the agent wrote no execution data`)
     return null
   }
   // 패키지 → { classes[{ name, source, methods[{ name, desc, line, missed, covered }] }], sources: 파일 이름 → Map(줄 → { mi, ci }) }
@@ -2253,7 +2310,7 @@ function javaReport(d) {
     } else if (t.name === 'line' && sf) sf.set(t.attrs.nr, { mi: t.attrs.mi, ci: t.attrs.ci })
   }
   // 클래스 사실 — javap 의 출력을 푼다. 풀린 것이 데이터와 맞는지는 아래 대조(클래스 집합 · 메서드의 첫 줄 · 줄의 주인)가 본다.
-  const javapPath = JAVA_JAVAP()
+  const javapPath = JVM_JAVAP(l)
   const javapShown = javapPath.replace(/\\/g, '/')
   let javapBytes = null
   try {
@@ -2263,25 +2320,41 @@ function javaReport(d) {
   }
   const facts = javapBytes && javapFacts(javapBytes.toString('utf8'))
   if (!facts || !Object.keys(facts).length) {
-    fail('java', `no class facts at ${javapShown} — run java writes javap's output there (line tables · enclosing methods of nested classes)`)
+    fail(l, `no class facts at ${javapShown} — run ${l} writes javap's output there (line tables · enclosing methods of nested classes)`)
     return null
+  }
+  // kotlin — `internal` 멤버 이름의 모듈 접미는 run 이 기록에 남긴 모듈 이름(`META-INF/<모듈>.kotlin_module`)에서 온다.
+  let kt = null
+  if (l === 'kotlin') {
+    let rec0 = null
+    try {
+      rec0 = JSON.parse(readFileSync(JVM_RUN(l), 'utf8'))
+    } catch {
+      rec0 = null
+    }
+    if (typeof rec0?.module !== 'string' || !/^[\w.-]+$/.test(rec0.module)) {
+      fail(l, `no Kotlin module name in ${JVM_RUN(l).replace(/\\/g, '/')} — run kotlin records it from build/classes/kotlin/main/META-INF/*.kotlin_module (internal members carry it as a name suffix)`)
+      return null
+    }
+    kt = { mangle: rec0.module.replace(/[^A-Za-z0-9_]/g, '_') }
   }
   const files = []
   const never = []
   for (const f of d.files) {
-    const fm = /^[^/]+\/[^/]+\/src\/main\/java\/(.+)\/([^/]+\.java)$/.exec(f)
+    // java 는 모듈마다 디렉터리(`<lane>/<module>/src/main/java`), kotlin 은 레인이 한 모듈이다(`kotlin/src/main/kotlin`).
+    const fm = (l === 'kotlin' ? /^[^/]+\/src\/main\/kotlin\/(.+)\/([^/]+\.kt)$/ : /^[^/]+\/[^/]+\/src\/main\/java\/(.+)\/([^/]+\.java)$/).exec(f)
     if (!fm) {
-      fail('java', `${f} is not under <module>/src/main/java/<package>/ — this reader knows packaged sources only`)
+      fail(l, `${f} is not under ${l === 'kotlin' ? 'kotlin/src/main/kotlin' : '<module>/src/main/java'}/<package>/ — this reader knows packaged sources only`)
       continue
     }
     const [, pk, file] = fm
     const lines = pkgs.get(pk)?.sources.get(file)
     if (!lines) {
-      fail('java', `${f} is not in the coverage data — a boundary file whose classes the report never analyzed would silently leave the denominator`)
+      fail(l, `${f} is not in the coverage data — a boundary file whose classes the report never analyzed would silently leave the denominator`)
       continue
     }
     if (!existsSync(join(root, f))) {
-      fail('java', `${f} is derived but missing on disk — the data cannot be checked against it`)
+      fail(l, `${f} is derived but missing on disk — the data cannot be checked against it`)
       continue
     }
     const nlines = readFileSync(join(root, f), 'utf8').split('\n').length
@@ -2292,7 +2365,7 @@ function javaReport(d) {
     const onlyXml = sortU(xmlNames.filter((n) => !factNames.includes(n)))
     const onlyFacts = sortU(factNames.filter((n) => !xmlNames.includes(n)))
     if (onlyXml.length || onlyFacts.length) {
-      fail('java', `${f}: the class facts and the data name different classes (${[...onlyXml.map((n) => `data only: ${n}`), ...onlyFacts.map((n) => `facts only: ${n}`)].join(' · ')}) — run java writes both from one build`)
+      fail(l, `${f}: the class facts and the data name different classes (${[...onlyXml.map((n) => `data only: ${n}`), ...onlyFacts.map((n) => `facts only: ${n}`)].join(' · ')}) — run ${l} writes both from one build`)
       continue
     }
     let broken = false
@@ -2301,14 +2374,18 @@ function javaReport(d) {
     for (const c of xmlClasses) {
       for (const x of c.methods) {
         const fx = facts[c.name].methods.find((y) => y.name === x.name && y.desc === x.desc)
-        if (!fx || !isCount(x.missed) || !isCount(x.covered) || (fx.lines.length ? String(fx.lines[0]) !== x.line : x.line !== undefined)) {
-          fail('java', `${f}: ${c.name}.${x.name}${x.desc} — the data and the class facts disagree (first line ${x.line ?? 'none'} vs ${fx?.lines[0] ?? 'no method'}) — run java writes both from one build`)
+        // 첫 줄 — java 는 줄표의 가장 앞 줄이다. kotlin 의 suspend 함수는 상태 기계의 분기가 선언 줄에 붙고 JaCoCo 가 그 분기를
+        // 걸러, 데이터의 첫 줄이 줄표의 가장 앞 줄보다 뒤일 수 있다(실측: clientCredentialsToken 줄표 {117, 118, 119, 120} · 데이터
+        // 118) — 그 메서드의 줄이기만 하면 된다.
+        const firstOk = fx && (fx.lines.length ? (kt ? fx.lines.includes(Number(x.line)) : String(fx.lines[0]) === x.line) : x.line === undefined)
+        if (!fx || !isCount(x.missed) || !isCount(x.covered) || !firstOk) {
+          fail(l, `${f}: ${c.name}.${x.name}${x.desc} — the data and the class facts disagree (first line ${x.line ?? 'none'} vs ${fx?.lines[0] ?? 'no method'}) — run ${l} writes both from one build`)
           broken = true
           break
         }
-        const fo = javaFold(c.name, x.name, x.desc, facts)
+        const fo = jvmFold(c.name, x.name, x.desc, facts, kt)
         if (!fo) {
-          fail('java', `${f}: cannot name ${c.name}.${x.name}${x.desc} — not a generated name this reader knows`)
+          fail(l, `${f}: cannot name ${c.name}.${x.name}${x.desc} — not a generated name this reader knows`)
           broken = true
           break
         }
@@ -2393,11 +2470,17 @@ function javaReport(d) {
             }
           }
         }
+        // 서술자로 붙는 것(익명 클래스의 감싼 메서드 · kotlin 기본 인자 다리)은 그 서술자가 오버로드 하나여야 한다 — 람다 안의 익명
+        // 클래스(감싼 것이 람다라 서술자가 없다) · 매개변수 32 개 넘는 다리는 못 가른다(FAIL — 없는 키에 조용히 붙지 않는다).
+        if (!label.has(dsc)) {
+          amb ??= k
+          continue
+        }
         put(keyOf(dsc), p)
       }
     }
     if (amb) {
-      fail('java', `${f}: ${amb} has overloads and a lambda whose lines fall in none or several of them — this reader cannot tell which`)
+      fail(l, `${f}: ${amb} has overloads and a lambda whose lines fall in none or several of them — this reader cannot tell which`)
       continue
     }
     // 줄 — 소스 파일 단위. 데이터의 줄은 1..파일 길이 · 어느 메서드의 LineNumberTable 에 든다(아니면 데이터가 다른 빌드의 것이다).
@@ -2418,17 +2501,17 @@ function javaReport(d) {
       const mi = xmlCount(v.mi)
       const ci = xmlCount(v.ci)
       if (!/^[1-9]\d*$/.test(nr ?? '') || !isCount(mi) || !isCount(ci)) {
-        fail('java', `${f}: cannot read line ${nr ?? '?'} of ${file} in ${shown}`)
+        fail(l, `${f}: cannot read line ${nr ?? '?'} of ${file} in ${shown}`)
         broken = true
         break
       }
       if (n > nlines) {
-        fail('java', `${f}: the data counts line ${n}, past the ${nlines} lines of the file — the data contradicts the tree`)
+        fail(l, `${f}: the data counts line ${n}, past the ${nlines} lines of the file — the data contradicts the tree`)
         broken = true
         break
       }
       if (!owned.has(n)) {
-        fail('java', `${f}: the data counts line ${n}, which no method of the class facts owns — the data and the class files come from different builds`)
+        fail(l, `${f}: the data counts line ${n}, which no method of the class facts owns — the data and the class files come from different builds`)
         broken = true
         break
       }
@@ -2449,44 +2532,44 @@ function javaReport(d) {
     files.push({ file: f, stmts, covered, bodies, outside: { stmts: 0, covered: 0 } })
   }
   // run 기록 — dotnet 과 같은 이유. 다른 판정 뒤에 두되 앞의 실패가 있어도 낸다(두 까닭이 한 번에 보인다).
-  const runRec = JAVA_RUN()
+  const runRec = JVM_RUN(l)
   let rec = null
   try {
     rec = JSON.parse(readFileSync(runRec, 'utf8'))
   } catch {
     rec = null
   }
-  if (!rec || rec.run !== 'java') {
-    fail('java', `no record that \`run java\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs run java) so the report can tell a passing run from a failed one`)
+  if (!rec || rec.run !== l) {
+    fail(l, `no record that \`run ${l}\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs run ${l}) so the report can tell a passing run from a failed one`)
     return null
   }
   if (rec.exit !== 0) {
-    fail('java', `the run that wrote this data exited ${rec.exit} — the data of a failed run is partial`)
+    fail(l, `the run that wrote this data exited ${rec.exit} — the data of a failed run is partial`)
     return null
   }
   if (rec.data_sha1 !== sha(bytes)) {
-    fail('java', `${shown} is not the data \`run java\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
+    fail(l, `${shown} is not the data \`run ${l}\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
     return null
   }
   if (rec.javap_sha1 !== sha(javapBytes)) {
-    fail('java', `${javapShown} is not the javap output \`run java\` recorded — another run wrote over it`)
+    fail(l, `${javapShown} is not the javap output \`run ${l}\` recorded — another run wrote over it`)
     return null
   }
   const t = rec.tests
   if (!isObj(t) || !isCount(t.completed) || !isCount(t.failures) || !isCount(t.errors) || !isCount(rec.unit)) {
-    fail('java', 'the record has no test counts — run java reads them from failsafe-summary.xml and the surefire reports')
+    fail(l, `the record has no test counts — run ${l} reads them from ${l === 'kotlin' ? 'the JUnit XML of integrationTest and test' : 'failsafe-summary.xml and the surefire reports'}`)
     return null
   }
-  if (t.completed === 0) fail('java', 'the run recorded no integration tests — a report over no tests is vacuous')
-  if (t.failures + t.errors) fail('java', `${t.failures + t.errors} of ${t.completed} integration tests failed — the data of a failed run is partial`)
-  if (rec.unit) fail('java', `the run included ${rec.unit} unit test report${rec.unit > 1 ? 's' : ''} — the report would not be integration-only (run skips surefire: -Dtest=NONE)`)
+  if (t.completed === 0) fail(l, 'the run recorded no integration tests — a report over no tests is vacuous')
+  if (t.failures + t.errors) fail(l, `${t.failures + t.errors} of ${t.completed} integration tests failed — the data of a failed run is partial`)
+  if (rec.unit) fail(l, `the run included ${rec.unit} unit test report${rec.unit > 1 ? 's' : ''} — the report would not be integration-only (${l === 'kotlin' ? 'run runs integrationTest only' : 'run skips surefire: -Dtest=NONE'})`)
   if (!isObj(rec.files)) {
-    fail('java', 'the record has no boundary hashes — the boundary files changed while the suite ran, so the data may come from other bytes')
+    fail(l, 'the record has no boundary hashes — the boundary files changed while the suite ran, so the data may come from other bytes')
     return null
   }
   for (const f of d.files) {
     const now = existsSync(join(root, f)) ? sha(readFileSync(join(root, f))) : null
-    if (rec.files[f] !== now) fail('java', `${f}: the data was taken from other bytes (sha1 ${String(rec.files[f]).slice(0, 12)}… recorded, ${String(now).slice(0, 12)}… in the tree) — rerun the suite on this tree`)
+    if (rec.files[f] !== now) fail(l, `${f}: the data was taken from other bytes (sha1 ${String(rec.files[f]).slice(0, 12)}… recorded, ${String(now).slice(0, 12)}… in the tree) — rerun the suite on this tree`)
   }
   const note = `JaCoCo ${typeof rec.jacoco === 'string' ? rec.jacoco : '?'} · ${sessions.length} session${sessions.length === 1 ? '' : 's'} · ${t.completed} integration test${t.completed === 1 ? '' : 's'}`
   return { path, note, files, never }
@@ -2501,7 +2584,7 @@ function report(l) {
   const pin = pinFor(l)
   const reg = loadRegistry()
   if (d && pin) matchesPin(l, d, pin)
-  const reader = { go: goReport, python: pyReport, node: nodeReport, rust: rustReport, php: phpReport, ruby: rubyReport, dotnet: dotnetReport, java: javaReport }[l]
+  const reader = { go: goReport, python: pyReport, node: nodeReport, rust: rustReport, php: phpReport, ruby: rubyReport, dotnet: dotnetReport, java: (x) => jvmReport('java', x), kotlin: (x) => jvmReport('kotlin', x) }[l]
   const data = fails(l) ? null : reader(d)
   if (data && !fails(l)) {
     const tot = data.files.reduce((a, f) => ({ stmts: a.stmts + f.stmts, covered: a.covered + f.covered }), { stmts: 0, covered: 0 })
@@ -2518,13 +2601,13 @@ function report(l) {
           ? 'boundary statements inside functions'
           : l === 'ruby'
             ? 'boundary lines inside methods'
-            : l === 'java'
+            : JVM_LANGS.has(l)
               ? 'boundary lines outside static initializers'
               : LINE_LANGS.has(l)
                 ? 'boundary lines'
                 : 'boundary statements'
-      const load = l === 'ruby' ? 'require' : l === 'java' ? 'class loading' : 'import'
-      const level = l === 'java' ? 'static-initializer' : 'module-level'
+      const load = l === 'ruby' ? 'require' : JVM_LANGS.has(l) ? 'class loading' : 'import'
+      const level = JVM_LANGS.has(l) ? 'static-initializer' : 'module-level'
       const why = BODY_LANGS.has(l) && tot.covered ? `${load} alone credits ${tot.covered} ${level} lines` : 'did the integration tests run against this tree?'
       fail(l, `the run executed 0 of ${ran.stmts} ${scope} — a measurement failure, not a low number (${why})`)
     } else {
@@ -2595,7 +2678,7 @@ function printReport(l, d, data, tot, pin) {
     console.log(
       l === 'ruby'
         ? '  (bodies = lines inside methods; class-level and def lines run at require, so "lines" also credits what the run merely loaded)'
-        : l === 'java'
+        : JVM_LANGS.has(l)
           ? '  (bodies = lines outside static initializers; a class runs its static initializer when it loads, so "lines" also credits what the run merely loaded)'
           : '  (bodies = statements inside functions; module- and class-level lines run at import, so "lines" also credits what the run merely imported)',
     )
@@ -2605,7 +2688,7 @@ function printReport(l, d, data, tot, pin) {
   const what =
     l === 'rust'
       ? 'none of its lines ran, its async body never ran, or the data has no record of it'
-      : l === 'php' || l === 'dotnet' || l === 'java'
+      : l === 'php' || l === 'dotnet' || JVM_LANGS.has(l)
         ? 'none of its lines ran'
         : l === 'ruby'
           ? 'Ruby counted no call to it'
@@ -2674,6 +2757,23 @@ function spawnMaven(args, cwd) {
   const r = spawnSync(['mvn', ...args.map((a) => (/[\s&|<>^()]/.test(a) ? `"${a}"` : a))].join(' '), { cwd, stdio: 'inherit', shell: true })
   if (r.error) {
     console.log(`FAIL [${lang}] could not start mvn: ${r.error.message}`)
+    return 2
+  }
+  return r.status ?? 2
+}
+// Gradle 래퍼 — 윈도의 `gradlew.bat` 은 mvn.cmd 처럼 셸 없이 못 띄운다(spawnMaven 과 같은 따옴표 규칙).
+function spawnGradle(args, cwd) {
+  if (process.platform !== 'win32') return spawnStep('./gradlew', args, cwd)
+  const bad = args.find((a) => /["%!\r\n]/.test(a))
+  if (bad !== undefined) {
+    console.log(`FAIL [${lang}] cannot hand ${bad} to gradlew.bat through cmd.exe`)
+    return 2
+  }
+  console.log(`$ gradlew ${args.join(' ')}   (in ${cwd.replace(/\\/g, '/')})`)
+  // 전체 경로로 — cmd.exe 는 현재 디렉터리의 실행 파일을 경로 없이 찾지 않을 수 있다(실측: 이 기계에서 「인식되지 않는 명령」).
+  const r = spawnSync([`"${join(cwd, 'gradlew.bat')}"`, ...args.map((a) => (/[\s&|<>^()]/.test(a) ? `"${a}"` : a))].join(' '), { cwd, stdio: 'inherit', shell: true })
+  if (r.error) {
+    console.log(`FAIL [${lang}] could not start gradlew.bat: ${r.error.message}`)
     return 2
   }
   return r.status ?? 2
@@ -2788,11 +2888,11 @@ function run(l) {
   }
   if (l === 'java') {
     // 옛 데이터 · exec · javap 출력 · 기록 · CLI 를 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게).
-    const data = JAVA_DATA()
-    const exec = JAVA_EXEC()
-    const javap = JAVA_JAVAP()
+    const data = JVM_DATA(l)
+    const exec = JVM_EXEC(l)
+    const javap = JVM_JAVAP(l)
     const cli = join(out, 'java-cli')
-    for (const f of [data, exec, javap, JAVA_RUN()]) rmSync(f, { force: true })
+    for (const f of [data, exec, javap, JVM_RUN(l)]) rmSync(f, { force: true })
     rmSync(cli, { recursive: true, force: true })
     const stop = (msg) => {
       fail(l, msg)
@@ -2863,7 +2963,90 @@ function run(l) {
     }
     const sha = (p) => createHash('sha1').update(readFileSync(p)).digest('hex')
     const same = d.files.every((f) => before[f] !== null && before[f] === after[f])
-    writeFileSync(JAVA_RUN(), `${JSON.stringify({ run: 'java', exit: rc, jacoco: ver, data_sha1: sha(data), javap_sha1: sha(javap), exec_sha1: sha(exec), tests, unit, files: same ? before : null })}\n`)
+    writeFileSync(JVM_RUN(l), `${JSON.stringify({ run: 'java', exit: rc, jacoco: ver, data_sha1: sha(data), javap_sha1: sha(javap), exec_sha1: sha(exec), tests, unit, files: same ? before : null })}\n`)
+    return rc
+  }
+  if (l === 'kotlin') {
+    // 옛 데이터 · exec · javap 출력 · 기록 · CLI · 초기화 스크립트를 먼저 지운다(java 와 같은 이유).
+    const data = JVM_DATA(l)
+    const exec = JVM_EXEC(l)
+    const javap = JVM_JAVAP(l)
+    const cli = join(out, 'kotlin-cli')
+    const init = join(out, 'kotlin.itcov.init.gradle.kts')
+    for (const f of [data, exec, javap, JVM_RUN(l), init]) rmSync(f, { force: true })
+    rmSync(cli, { recursive: true, force: true })
+    const stop = (msg) => {
+      fail(l, msg)
+      emitFindings(l)
+      return 2
+    }
+    if (!existsSync(join(cwd, process.platform === 'win32' ? 'gradlew.bat' : 'gradlew'))) return stop(`${d.dir}/gradlew is missing — the lane runs its Gradle wrapper`)
+    // JaCoCo 판 — kotlin 빌드는 Kover 를 쓰고 JaCoCo 판을 안 갖는다. 저장소의 JVM JaCoCo 판은 java 레인의 pom 하나다(거기서
+    // 올린다) — 판을 여기 다시 적지 않는다.
+    const pomPath = join(root, 'java', 'pom.xml')
+    if (!existsSync(pomPath)) return stop('java/pom.xml is missing — the JaCoCo version of the JVM lanes lives there')
+    const pomX = readFileSync(pomPath, 'utf8').replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '))
+    const vers = [...pomX.matchAll(/<plugin>([\s\S]*?)<\/plugin>/g)]
+      .map((m) => m[1])
+      .filter((b) => /<artifactId>\s*jacoco-maven-plugin\s*<\/artifactId>/.test(b))
+      .map((b) => /<version>\s*([^<\s]+)\s*<\/version>/.exec(b)?.[1])
+    if (vers.length !== 1 || !/^\d+(?:\.\d+)+$/.test(vers[0] ?? '')) return stop(`java/pom.xml must pin one jacoco-maven-plugin <version> — the JVM lanes share it (found ${vers.length})`)
+    const ver = vers[0]
+    writeFileSync(init, KOTLIN_INIT)
+    const shas = () => Object.fromEntries(d.files.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
+    const before = shas()
+    // 레인의 명령(`./gradlew integrationTest`)과 같은 태스크다. 더하는 것: `clean`(지난 실행의 클래스 · 테스트 결과가 남지 않게 —
+    // 단위 결과가 남으면 「단위가 섞였다」로 못 가른다) · 초기화 스크립트 · CLI 받기.
+    const rc = spawnGradle(['-I', init, `-PkcsdkItcovJacoco=${ver}`, `-PkcsdkItcovExec=${exec}`, `-PkcsdkItcovCli=${cli}`, 'clean', 'integrationTest', 'kcsdkItcovCli'], cwd)
+    const after = shas()
+    if (!existsSync(exec)) return rc
+    const jar = join(cli, `org.jacoco.cli-${ver}-nodeps.jar`)
+    if (!existsSync(jar)) return stop(`could not fetch the JaCoCo CLI ${ver} (org.jacoco:org.jacoco.cli:${ver}:nodeps) — the report has to use the agent's version`)
+    const jbin = (t) => (process.env.JAVA_HOME ? join(process.env.JAVA_HOME, 'bin', t) : t)
+    const classDir = join(cwd, 'build', 'classes', 'kotlin', 'main')
+    if (!existsSync(classDir)) return stop(`the build left no classes at ${classDir.replace(/\\/g, '/')} — the report analyzes the lane's class files`)
+    const rcRep = spawnStep(jbin('java'), ['-jar', jar, 'report', exec, '--classfiles', classDir, '--xml', data], cwd)
+    if (rcRep !== 0 || !existsSync(data)) return stop(`the JaCoCo CLI wrote no XML report (exit ${rcRep})`)
+    // 모듈 이름 — `internal` 멤버 이름의 접미가 이것이다(META-INF/<모듈>.kotlin_module 하나).
+    const metaDir = join(classDir, 'META-INF')
+    const mods = existsSync(metaDir) ? readdirSync(metaDir).filter((n) => n.endsWith('.kotlin_module')) : []
+    if (mods.length !== 1) return stop(`the build has ${mods.length} META-INF/*.kotlin_module files — the report needs the one module name (internal members carry it as a name suffix)`)
+    const module = mods[0].slice(0, -'.kotlin_module'.length)
+    // 클래스 파일의 사실 — 경계 파일의 패키지 디렉터리의 클래스 파일 전부(java 와 같다 — 리포트가 SourceFile 로 고른다).
+    const classFiles = []
+    for (const f of d.files) {
+      const fm = /^[^/]+\/src\/main\/kotlin\/(.+)\/[^/]+\.kt$/.exec(f)
+      if (!fm) continue
+      const dir = join(classDir, ...fm[1].split('/'))
+      if (existsSync(dir)) for (const e of readdirSync(dir)) if (e.endsWith('.class')) classFiles.push(join(dir, e))
+    }
+    const all = sortU(classFiles)
+    console.log(`$ javap -l -p -v <${all.length} class files of the boundary packages>`)
+    let text = ''
+    for (let i = 0; i < all.length; i += 64) {
+      const jp = spawnSync(jbin('javap'), ['-l', '-p', '-v', ...all.slice(i, i + 64)], { cwd, encoding: 'utf8', maxBuffer: 256 << 20 })
+      if (jp.error || jp.status !== 0) return stop(`javap failed (${jp.error?.message ?? `exit ${jp.status}`}) — the report needs the class files' line tables`)
+      text += jp.stdout
+    }
+    writeFileSync(javap, text)
+    // 테스트 — integrationTest 의 JUnit XML 을 합치고, 단위(test)의 결과가 없는지 센다(clean 뒤라 이 실행이 쓴 것만 있다).
+    const tests = { completed: 0, failures: 0, errors: 0, skipped: 0 }
+    const itDir = join(cwd, 'build', 'test-results', 'integrationTest')
+    if (existsSync(itDir)) {
+      for (const n of readdirSync(itDir).filter((x) => /^TEST-.*\.xml$/.test(x))) {
+        const head = /<testsuite\b[^>]*>/.exec(readFileSync(join(itDir, n), 'utf8'))?.[0] ?? ''
+        const attr = (k) => Number(new RegExp(`\\b${k}="(\\d+)"`).exec(head)?.[1] ?? NaN)
+        tests.completed += attr('tests')
+        tests.failures += attr('failures')
+        tests.errors += attr('errors')
+        tests.skipped += attr('skipped')
+      }
+    }
+    const unitDir = join(cwd, 'build', 'test-results', 'test')
+    const unit = existsSync(unitDir) ? readdirSync(unitDir).filter((x) => /^TEST-.*\.xml$/.test(x)).length : 0
+    const sha = (p) => createHash('sha1').update(readFileSync(p)).digest('hex')
+    const same = d.files.every((f) => before[f] !== null && before[f] === after[f])
+    writeFileSync(JVM_RUN(l), `${JSON.stringify({ run: 'kotlin', exit: rc, jacoco: ver, module, data_sha1: sha(data), javap_sha1: sha(javap), exec_sha1: sha(exec), tests, unit, files: same ? before : null })}\n`)
     return rc
   }
   if (l === 'dotnet') {
