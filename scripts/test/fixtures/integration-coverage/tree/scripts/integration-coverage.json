@@ -132,5 +132,19 @@
       "java/kc-examples/src/main/java/kc/examples/QuickStart.java:QuickStart.env": "open-masking",
       "java/kc-examples/src/main/java/kc/examples/QuickStart.java:QuickStart.main": "open-masking"
     }
+  },
+  "kotlin": {
+    "pinned": [
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt",
+      "kotlin/src/main/kotlin/kc/examples/QuickStart.kt"
+    ],
+    "owners": {
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.Companion.getREALM": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.greet": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.token(String, int)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.unused": "open-admin",
+      "kotlin/src/main/kotlin/kc/examples/QuickStart.kt:QuickStartKt.env": "open-masking",
+      "kotlin/src/main/kotlin/kc/examples/QuickStart.kt:QuickStartKt.main": "open-masking"
+    }
   }
 }

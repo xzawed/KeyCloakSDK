@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // integration-coverage.mjs — 통합 실행만의 「네트워크 경계」 커버리지 리포트. go · python(2026-11-02) · node · rust
-// (2026-11-05) · php · ruby(2026-11-06) · dotnet · java(2026-11-07)는 **하한 무장**. 새로 붙는 언어는 보고 모드에서 시작한다(3
-// 걸음째 — 하한은 CI 관측 셋 뒤).
+// (2026-11-05) · php · ruby(2026-11-06) · dotnet · java(2026-11-07)는 **하한 무장**, kotlin(2026-11-07)은 보고 모드다. 새로 붙는
+// 언어는 보고 모드에서 시작한다(3 걸음째 — 하한은 CI 관측 셋 뒤).
 //
 // 왜: 아홉 언어가 「경계는 통합으로 검증한다」며 그 파일을 단위 커버리지 게이트에서 빼는데, 통합 실행에서
 // 커버리지를 재는 언어가 0 이었다(등록부 `integration-coverage-never-measured`). 이 스크립트가 그 3 걸음째다 —
@@ -87,7 +87,7 @@
 //            가리킨다 — 다섯 레인의 사본이 다 그 리더의 fail() 보다 좁았다(실측 2026-11-06).
 //   3 BELOW  하한 아래 — 수치는 유효하다. CI 는 실패로 본다. 비교는 정수식(covered × 100 < percent × 분모)이고 같으면 통과다.
 //
-// 사용(LANG = go · python · node · rust · php · ruby · dotnet · java):
+// 사용(LANG = go · python · node · rust · php · ruby · dotnet · java · kotlin):
 //   node scripts/integration-coverage.mjs <LANG> [--out DIR]                 로컬 — 통합 테스트(Docker) 후 리포트
 //   node scripts/integration-coverage.mjs run    <LANG> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
 //   node scripts/integration-coverage.mjs report <LANG> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
@@ -98,7 +98,9 @@
 // `XDEBUG_MODE=coverage` 는 run 이 준다)와 `php/vendor`(composer install)가 있어야 한다. ruby 는 PATH 의 `ruby` 와 설치된
 // 번들(bundle install — `BUNDLE_GEMFILE` 이 없으면 `ruby/Gemfile`)이 있어야 한다. dotnet 은 PATH 의 `dotnet` 과, 테스트 프로젝트가
 // 참조하는 `coverlet.collector`(컬렉터가 거기서 온다)가 있어야 한다. java 는 PATH 의 `mvn`(윈도는 `mvn.cmd` — 셸로 띄운다)과
-// `JAVA_HOME`(없으면 PATH)의 `java` · `javap` 이 있어야 하고, run 이 JaCoCo CLI(레인 pom 의 판)를 Maven 으로 받는다.
+// `JAVA_HOME`(없으면 PATH)의 `java` · `javap` 이 있어야 하고, run 이 JaCoCo CLI(레인 pom 의 판)를 Maven 으로 받는다. kotlin 은
+// 레인의 Gradle 래퍼(`kotlin/gradlew`)와 같은 `java` · `javap` 이 있어야 하고, run 이 JaCoCo 에이전트 · CLI(판은 java 레인
+// pom 의 것 — kotlin 빌드는 Kover 라 JaCoCo 판을 안 갖는다)를 초기화 스크립트로 받는다(빌드 파일은 안 고친다).
 // DIR 기본값은 OS 임시 디렉터리 아래다.
 import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync, readdirSync, copyFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -2212,7 +2214,7 @@ function jvmFold(cname, name, desc, facts, kt = null, depth = 0) {
     // 자리를 이름에 남긴다(`AdminSockets$PLAIN$1` — 속성 PLAIN 의 초기화): 그 속성의 것으로 둔다(속성 초기화의 람다
     // `CONNECTION$lambda$0` 와 같다 — 실측). java 의 `Outer$1` 은 그 자리가 없어 FAIL 이다.
     if (enc.method === null) {
-      if (!kt || local < 2 || /^\d/.test(segs[local - 1]) || segs[local - 1].startsWith('<')) return null
+      if (!kt || local < 2) return null
       return { type: segs.slice(0, local - 1).join('.'), member: bare(segs[local - 1]), kind: 'lambda', desc: null, via: cname }
     }
     const up = jvmFold(enc.class, enc.method, enc.desc, facts, kt, depth + 1)
@@ -2223,11 +2225,13 @@ function jvmFold(cname, name, desc, facts, kt = null, depth = 0) {
   if (name === '<init>') return { type, member: '<init>', kind: 'plain', desc }
   if (kt) {
     const plainName = (n) => !n.includes('$') && !n.startsWith('<')
-    // 람다 `fn$lambda$N` — 람다 안의 람다는 `$lambda$M` 이 더 붙는다. 감싼 것은 fn(속성 초기화면 그 속성).
+    // 람다 `fn$lambda$N` — 람다 안의 람다는 `$lambda$M` 이 더 붙는다. 감싼 것은 fn(속성 초기화면 그 속성 — 인스턴스 속성도
+    // `greet$lambda$0` 다). 초기화 블록의 람다는 `_init_$lambda$N` 이다(kotlinc 가 `<init>` 을 그렇게 쓴다 — 실측 2.4.21): 생성자에
+    // 접는다(java 의 `lambda$new$N` 과 같다).
     const km = /^(.+?)((?:\$lambda\$\d+)+)$/.exec(name)
     if (km) {
-      const host = bare(km[1])
-      return plainName(host) ? { type, member: host, kind: 'lambda', desc: null, lambdaDesc: desc } : null
+      const host = km[1] === '_init_' ? '<init>' : bare(km[1])
+      return host === '<init>' || plainName(host) ? { type, member: host, kind: 'lambda', desc: null, lambdaDesc: desc } : null
     }
     // 기본 인자 다리 `fn$default`(`internal` 이면 `fn$<모듈>$default`) — fn 을 부른다. 오버로드면 서술자로 그 fn 에 붙인다:
     // 다리의 매개변수 = (인스턴스면 받는 쪽) + fn 의 매개변수 + 기본값 표지 int(32 개마다 하나) + 표지 Object. 표지 int 는
@@ -2235,12 +2239,11 @@ function jvmFold(cname, name, desc, facts, kt = null, depth = 0) {
     const dm = /^(.+)\$default$/.exec(name)
     if (dm) {
       const host = bare(dm[1])
-      if (!plainName(host)) return null
-      const params = /^\(([^)]*)\)(.*)$/.exec(desc ?? '')
-      if (!params) return null
-      let body = params[1].replace(/ILjava\/lang\/Object;$/, '')
-      if (body.startsWith(`L${cname};`)) body = body.slice(cname.length + 2)
-      return { type, member: host, kind: 'lambda', desc: `(${body})${params[2]}`, via: 'default' }
+      // 표지(int · Object)가 없는 서술자는 다리가 아니다 — 이름만 `$default` 로 끝난다(FAIL).
+      const pm = /^\((.*)ILjava\/lang\/Object;\)(.*)$/.exec(desc)
+      if (!plainName(host) || !pm) return null
+      const body = pm[1].startsWith(`L${cname};`) ? pm[1].slice(cname.length + 2) : pm[1]
+      return { type, member: host, kind: 'lambda', desc: `(${body})${pm[2]}`, via: 'default' }
     }
     name = bare(name)
   }
@@ -2258,6 +2261,9 @@ function jvmReport(l, d) {
   const shown = path.replace(/\\/g, '/')
   const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
   const sha = (b) => createHash('sha1').update(b).digest('hex')
+  const runRec = JVM_RUN(l)
+  const noRecord = () =>
+    fail(l, `no record that \`run ${l}\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs run ${l}) so the report can tell a passing run from a failed one`)
   if (!existsSync(path)) {
     fail(l, `no coverage data at ${shown} — run the integration suite first (node scripts/integration-coverage.mjs run ${l})`)
     return null
@@ -2323,17 +2329,23 @@ function jvmReport(l, d) {
     fail(l, `no class facts at ${javapShown} — run ${l} writes javap's output there (line tables · enclosing methods of nested classes)`)
     return null
   }
-  // kotlin — `internal` 멤버 이름의 모듈 접미는 run 이 기록에 남긴 모듈 이름(`META-INF/<모듈>.kotlin_module`)에서 온다.
+  // kotlin — `internal` 멤버 이름의 모듈 접미는 run 이 기록에 남긴 모듈 이름(`META-INF/<모듈>.kotlin_module`)에서 온다. 그래서
+  // kotlin 은 기록이 없으면(다른 레인의 것이어도) 데이터를 못 읽는다 — 아래 기록 판정과 같은 까닭으로 여기서 멈춘다(java 는 데이터
+  // 판정과 기록 판정을 함께 낸다).
   let kt = null
   if (l === 'kotlin') {
     let rec0 = null
     try {
-      rec0 = JSON.parse(readFileSync(JVM_RUN(l), 'utf8'))
+      rec0 = JSON.parse(readFileSync(runRec, 'utf8'))
     } catch {
       rec0 = null
     }
-    if (typeof rec0?.module !== 'string' || !/^[\w.-]+$/.test(rec0.module)) {
-      fail(l, `no Kotlin module name in ${JVM_RUN(l).replace(/\\/g, '/')} — run kotlin records it from build/classes/kotlin/main/META-INF/*.kotlin_module (internal members carry it as a name suffix)`)
+    if (!isObj(rec0) || rec0.run !== l) {
+      noRecord()
+      return null
+    }
+    if (typeof rec0.module !== 'string' || !/^[\w.-]+$/.test(rec0.module)) {
+      fail(l, `no Kotlin module name in ${runRec.replace(/\\/g, '/')} — run kotlin records it from build/classes/kotlin/main/META-INF/*.kotlin_module (internal members carry it as a name suffix)`)
       return null
     }
     kt = { mangle: rec0.module.replace(/[^A-Za-z0-9_]/g, '_') }
@@ -2443,7 +2455,7 @@ function jvmReport(l, d) {
           if (onShared) {
             const runs = plains.filter((q) => p.lines.every((n) => q.lines.includes(n)))
             if (p.member !== '<init>' || runs.length < 2) {
-              amb ??= k
+              amb ??= { k, by: 'lines' }
               continue
             }
             // 함께 가진 람다가 돌았다는 것은 **어느** 생성자가 돌았다는 뜻일 뿐이다 — 미실행 판정의 근거로 쓰지 않는다(아래 `shared`).
@@ -2465,7 +2477,7 @@ function jvmReport(l, d) {
               for (const h of runs) put(keyOf(h.desc), { ...p, shared: true })
               continue
             } else {
-              amb ??= k
+              amb ??= { k, by: 'lines' }
               continue
             }
           }
@@ -2473,14 +2485,15 @@ function jvmReport(l, d) {
         // 서술자로 붙는 것(익명 클래스의 감싼 메서드 · kotlin 기본 인자 다리)은 그 서술자가 오버로드 하나여야 한다 — 람다 안의 익명
         // 클래스(감싼 것이 람다라 서술자가 없다) · 매개변수 32 개 넘는 다리는 못 가른다(FAIL — 없는 키에 조용히 붙지 않는다).
         if (!label.has(dsc)) {
-          amb ??= k
+          amb ??= { k, by: 'desc' }
           continue
         }
         put(keyOf(dsc), p)
       }
     }
     if (amb) {
-      fail(l, `${f}: ${amb} has overloads and a lambda whose lines fall in none or several of them — this reader cannot tell which`)
+      const what = amb.by === 'lines' ? 'a lambda whose lines fall in none or several of them' : 'a nested class or default-argument bridge whose descriptor is none of theirs'
+      fail(l, `${f}: ${amb.k} has overloads and ${what} — this reader cannot tell which`)
       continue
     }
     // 줄 — 소스 파일 단위. 데이터의 줄은 1..파일 길이 · 어느 메서드의 LineNumberTable 에 든다(아니면 데이터가 다른 빌드의 것이다).
@@ -2532,7 +2545,6 @@ function jvmReport(l, d) {
     files.push({ file: f, stmts, covered, bodies, outside: { stmts: 0, covered: 0 } })
   }
   // run 기록 — dotnet 과 같은 이유. 다른 판정 뒤에 두되 앞의 실패가 있어도 낸다(두 까닭이 한 번에 보인다).
-  const runRec = JVM_RUN(l)
   let rec = null
   try {
     rec = JSON.parse(readFileSync(runRec, 'utf8'))
@@ -2540,7 +2552,7 @@ function jvmReport(l, d) {
     rec = null
   }
   if (!rec || rec.run !== l) {
-    fail(l, `no record that \`run ${l}\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs run ${l}) so the report can tell a passing run from a failed one`)
+    noRecord()
     return null
   }
   if (rec.exit !== 0) {
