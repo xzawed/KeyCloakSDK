@@ -1499,6 +1499,29 @@ assert_contains "$(sed -n '/lambda\$new\$0();$/,/^        line /p' "$D/java.java
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 어느 생성자의 범위에도 안 드는 생성자 람다는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "AuthClient.Token.<init> has overloads and a lambda whose lines fall in none or several of them" "[java] 생성자에 못 붙이는 람다"
+# 몸통 밖 생성자 람다가 초기화를 끼워 넣은 생성자 **일부**의 범위에만 든다(68 — Token(char) 의 62–72 에만) — 어느 초기화의 것인지
+# 모른다(독립 레그 3차 지적 — Token(char) 하나의 「함께 가진 람다」가 됐다).
+fresh
+sed -i 's#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="62">#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="68">#' "$D/java.xml"
+sed -i '/^  private static java.lang.String lambda\$new\$0();$/,/^        line [0-9]*: / s/^        line 62: 0$/        line 68: 0/' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(sed -n '/lambda\$new\$0();$/,/^        line /p' "$D/java.javap.txt")" '        line 68: 0' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 초기화를 끼워 넣은 생성자 일부에만 드는 생성자 람다는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.Token.<init> has overloads and a lambda whose lines fall in none or several of them" "[java] 초기화 일부에만 드는 람다"
+# 함께 가진 줄(62 — 필드 초기화) 위의 람다는 한 생성자의 범위가 그 줄을 덮어도 그 생성자의 것이 아니다. 줄표는 손으로 만든 것이다 —
+# Token(String) 에 60 줄을 더해 범위가 62 를 덮게 했다(javac 는 몸통이 필드 선언 줄을 감싸는 줄표를 못 낸다 — 리더는 줄표만 본다).
+# Token(char) 가 돌아 필드 람다를 만들었고 Token(String) 은 안 돌았다 — 그 람다는 Token(String) 을 목록에서 빼는 근거가 아니다.
+fresh
+sed -i 's#<method name="&lt;init&gt;" desc="(Ljava/lang/String;)V" line="62"><counter type="INSTRUCTION" missed="0" covered="9"/><counter type="LINE" missed="0" covered="4"/>#<method name="\&lt;init\&gt;" desc="(Ljava/lang/String;)V" line="60"><counter type="INSTRUCTION" missed="9" covered="0"/><counter type="LINE" missed="4" covered="0"/>#; s#<method name="&lt;init&gt;" desc="(C)V" line="62"><counter type="INSTRUCTION" missed="10" covered="0"/><counter type="LINE" missed="4" covered="0"/>#<method name="\&lt;init\&gt;" desc="(C)V" line="62"><counter type="INSTRUCTION" missed="0" covered="10"/><counter type="LINE" missed="0" covered="4"/>#' "$D/java.xml"
+sed -i '/^  public kc.auth.AuthClient\$Token(java.lang.String);$/,/^      LineNumberTable:$/ s/^      LineNumberTable:$/&\n        line 60: 0/' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(cat "$D/java.xml")" '<method name="&lt;init&gt;" desc="(C)V" line="62"><counter type="INSTRUCTION" missed="0" covered="10"/>' "(변이가 착지했는지 먼저 본다)"
+assert_contains "$(sed -n '/^  public kc.auth.AuthClient\$Token(java.lang.String);$/,/^        line 65/p' "$D/java.javap.txt")" '        line 60: 0' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 1 "$RC" "[java] 안 돈 생성자는 소유자가 없어 exit 1 — 출력: $OUT"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:62 AuthClient.Token.<init>(String) · 4 lines · owner NONE" "[java] 함께 가진 줄 위의 람다는 범위가 덮은 생성자의 것이 아니다"
+assert_not_contains "$OUT" "Token.<init>(char) ·" "[java] 돈 생성자는 목록에 없다"
 # 짧은 매개변수 이름이 겹치는 오버로드(`token(java.lang.String)` · `token(kc.other.String)`) — 한 키로 합치면 안 돈 쪽이 사라진다(독립
 # 레그 1차 지적). 그 멤버는 서술자 전체로 쓴다.
 fresh
