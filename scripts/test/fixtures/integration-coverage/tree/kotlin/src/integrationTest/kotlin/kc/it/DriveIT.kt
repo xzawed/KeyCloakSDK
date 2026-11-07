@@ -6,12 +6,15 @@ import kc.auth.AuthClientBag
 import kc.auth.AuthClientDefaults
 import kc.auth.AuthClientError
 import kc.auth.AuthClientHooks
+import kc.auth.AuthClientInline
 import kc.auth.AuthClientLoader
+import kc.auth.AuthClientLoaders
 import kc.auth.AuthClientLocals
 import kc.auth.AuthClientMixed
 import kc.auth.AuthClientRefs
 import kc.auth.AuthClientStatic
 import kc.auth.AuthClientStatus
+import kc.auth.AuthClientSusp
 import kc.auth.ClientId
 import kc.auth.Config
 import kc.auth.byId
@@ -53,5 +56,8 @@ class DriveIT {
         check(runBlocking { AuthClientHooks.onStart() } == 1)
         check(runBlocking { AuthClientHooks.token.token() } == "t")
         check(AuthClientRefs().withLocalRef() == 2)
+        check(AuthClientInline().useWrap() == 3)
+        check(runBlocking { AuthClientLoaders().load(1) } == 1)
+        check(AuthClientSusp("x").toString().isNotEmpty())
     }
 }

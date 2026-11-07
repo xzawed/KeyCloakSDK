@@ -2326,11 +2326,12 @@ function ktFold(cname, name, desc, facts, kt, seen = new Set()) {
     return null
   }
   const nest = (up, via) => (up === KT_CYCLE ? up : up && { type: up.type, member: up.member, kind: up.kind === 'static' ? 'static' : 'lambda', desc: up.desc, shared: up.shared, via })
-  // 그 클래스를 `new` 하는 자리 — 자기 안의 자리는 뺀다(suspend 람다의 `create()` 는 제 클래스를 다시 만든다 — 실측).
+  // 그 클래스를 만드는 자리 — 자기 안의 자리는 뺀다: suspend 람다의 `create()` 는 제 클래스를 다시 만드는데, 그 자리의 접기는 바깥
+  // 자리들을 다시 모은 것이라(생성자 여럿이면 「함께 가진」 꼴) 바깥 자리와 갈린다(실측 — 레그 2 의 NoPrimarySusp$h$1).
   const builders = () => (ix.built.get(cname) ?? []).filter(([cls]) => cls !== cname)
-  // 부르는 자리 — 자기 자신과 자기 안의 클래스(suspend 의 이어받기 클래스는 그 함수를 다시 부른다 — 실측)는 뺀다.
-  const inside = (cls) => facts[cls]?.enclosing?.class === cname && facts[cls].enclosing.method === name && facts[cls].enclosing.desc === desc
-  const callers = () => (ix.called.get(self) ?? []).filter(([cls, m]) => !(cls === cname && m.name === name && m.desc === desc) && !inside(cls))
+  // 그 메서드를 부르는 자리 — 자기 자신(재귀) · 자기 안의 이어받기 클래스(suspend 는 그 함수를 다시 부른다)는 접기가 자기에게 돌아와
+  // KT_CYCLE 로 빠진다.
+  const callers = () => ix.called.get(self) ?? []
   // 부르는 쪽으로 접는 것은 로컬 함수 꼴(`<감싼 함수>$<이름>` · `fn$suspendImpl`)뿐이다 — 이름이 접힌 멤버의 이름으로 시작하지 않으면
   // (모듈 이름이 틀려 접미가 안 벗겨진 `internal` 함수가 그 호출자로 접히는 꼴 — 자가테스트가 잡았다) 접지 않는다. 함수 참조
   // (`::twice`)가 거치는 합성 접근자 `access$…` 는 그 앞을 떼고 보고, 초기화 블록의 로컬 함수는 `_init_$…` 다(실측 — 레그 2 데이터).
@@ -2378,8 +2379,7 @@ function ktFold(cname, name, desc, facts, kt, seen = new Set()) {
     const to = [...new Set(own.calls)].filter((r) => r.startsWith(`${cname}$`) && /^[^.]+\.([^:]+):/.exec(r)?.[1] === name)
     if (to.length === 1) {
       const p = /^([^.]+)\.([^:]+):(.*)$/.exec(to[0])
-      const t = fold(p[1], p[2], p[3])
-      return t === KT_CYCLE ? null : nest(t, 'jvmstatic')
+      return nest(fold(p[1], p[2], p[3]), 'jvmstatic')
     }
   }
   const bare = name.endsWith(`$${kt.mangle}`) ? name.slice(0, -kt.mangle.length - 1) : name

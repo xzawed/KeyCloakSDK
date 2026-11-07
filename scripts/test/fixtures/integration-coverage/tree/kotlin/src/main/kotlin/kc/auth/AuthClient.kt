@@ -234,3 +234,38 @@ class AuthClientRefs {
         return takeInt(::twice)
     }
 }
+
+/** 인라인 함수 안의 람다 클래스(`AuthClientInline$wrap$1`) — 인라인된 호출부(useWrap)에서도 `new` 된다(자리가 갈린다): EnclosingMethod
+ *  (어휘)로 그 인라인 함수에 접는다. */
+class AuthClientInline {
+    inline fun wrap(noinline f: () -> Int): Int = later { f() + 1 }
+
+    fun useWrap(): Int = wrap { 2 }
+}
+
+/** 오버로드된 open suspend fun — 몸통 `load$suspendImpl` 둘이 저마다 그 오버로드다(JaCoCo 는 fun 을 안 싣는다). 구동은 load(Int) 만. */
+open class AuthClientLoaders {
+    open suspend fun load(n: Int): Int {
+        delay(1)
+        return n
+    }
+
+    open suspend fun load(s: String): Int {
+        delay(1)
+        return s.length
+    }
+}
+
+/** 본 생성자 없는 클래스의 suspend 람다 속성 — 생성자 둘이 함께 만들고, 그 람다 클래스의 `create()` 도 제 클래스를 만든다(자기 안의
+ *  자리는 뺀다). 구동은 둘째 생성자만. */
+class AuthClientSusp {
+    private val h: suspend () -> Int = { 1 }
+
+    constructor(n: Int) {
+        check(n >= 0)
+    }
+
+    constructor(s: String) {
+        check(s.isNotEmpty())
+    }
+}

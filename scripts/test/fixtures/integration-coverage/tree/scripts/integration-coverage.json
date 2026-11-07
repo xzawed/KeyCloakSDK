@@ -146,7 +146,9 @@
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.withLocalClass": "open-admin",
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientDefaults.pick(int)": "open-admin",
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientError.<init>(String)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientLoaders.load(String, Continuation)": "open-admin",
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientMixed.<init>(String)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientSusp.<init>(int)": "open-admin",
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientStatus.<init>": "open-admin",
       "kotlin/src/main/kotlin/kc/examples/QuickStart.kt:QuickStartKt.env": "open-masking",
       "kotlin/src/main/kotlin/kc/examples/QuickStart.kt:QuickStartKt.main": "open-masking"
