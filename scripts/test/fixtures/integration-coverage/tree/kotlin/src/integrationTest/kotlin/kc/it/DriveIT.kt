@@ -1,6 +1,9 @@
 package kc.it
 
 import kc.auth.AuthClient
+import kc.auth.AuthClientDefaults
+import kc.auth.AuthClientLoader
+import kc.auth.AuthClientStatus
 import kc.auth.Config
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
@@ -21,5 +24,11 @@ class DriveIT {
         check(c.label().isNotEmpty())
         check(c.sorted(listOf("b", "a")) == listOf("a", "b"))
         check(AuthClient.UPPER("x") == "X")
+        check(c.nested() == "b")
+        check(c.withLocal() == "lb")
+        check(c.join(listOf(1, 2)) == "3")
+        check(AuthClientStatus.ok() == 200)
+        check(AuthClientDefaults.pick(null) == 0)
+        check(runBlocking { AuthClientLoader().load(1) } == 1)
     }
 }

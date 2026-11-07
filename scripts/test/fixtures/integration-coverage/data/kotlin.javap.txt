@@ -511,9 +511,134 @@ RuntimeVisibleAnnotations:
       d1=["\u0000\u001b\n\u0000\n\u0002\u0018\u0002\n\u0002\u0010\u000e\n\u0002\u0018\u0002\n\u0000\n\u0002\u0010\b\n\u0002\b\u0003*\u0001\u0000\b\n\u0018\u00002\u0012\u0012\u0004\u0012\u00020\u00020\u0001j\b\u0012\u0004\u0012\u00020\u0002`\u0003J\u0018\u0010\u0004\u001a\u00020\u00052\u0006\u0010\u0006\u001a\u00020\u00022\u0006\u0010\u0007\u001a\u00020\u0002H\u0016��\u0006\b"]
       d2=["kc/auth/AuthClient$sorted$1","Ljava/util/Comparator;","","Lkotlin/Comparator;","compare","","a","b","kc-kotlin"]
     )
+Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClient$withLocalClass$Local.class
+  Last modified 2026. 11. 7.; size 905 bytes
+  SHA-256 checksum 18b84c8f9a146cb178216702d8368e7df23dfe219bd9a960a48d5bd6df3e35d8
+  Compiled from "AuthClient.kt"
+public final class kc.auth.AuthClient$withLocalClass$Local
+  minor version: 0
+  major version: 65
+  flags: (0x0031) ACC_PUBLIC, ACC_FINAL, ACC_SUPER
+  this_class: #2                          // kc/auth/AuthClient$withLocalClass$Local
+  super_class: #4                         // java/lang/Object
+  interfaces: 0, fields: 1, methods: 3, attributes: 4
+Constant pool:
+   #1 = Utf8               kc/auth/AuthClient$withLocalClass$Local
+   #2 = Class              #1             // kc/auth/AuthClient$withLocalClass$Local
+   #3 = Utf8               java/lang/Object
+   #4 = Class              #3             // java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               (I)V
+   #7 = Utf8               ()V
+   #8 = NameAndType        #5:#7          // "<init>":()V
+   #9 = Methodref          #4.#8          // java/lang/Object."<init>":()V
+  #10 = Utf8               n
+  #11 = Utf8               I
+  #12 = NameAndType        #10:#11        // n:I
+  #13 = Fieldref           #2.#12         // kc/auth/AuthClient$withLocalClass$Local.n:I
+  #14 = Utf8               this
+  #15 = Utf8               Lkc/auth/AuthClient$withLocalClass$Local;
+  #16 = Utf8               getN
+  #17 = Utf8               ()I
+  #18 = Utf8               twice
+  #19 = Utf8               Lkotlin/Metadata;
+  #20 = Utf8               mv
+  #21 = Integer            2
+  #22 = Integer            4
+  #23 = Integer            0
+  #24 = Utf8               k
+  #25 = Integer            1
+  #26 = Utf8               xi
+  #27 = Integer            48
+  #28 = Utf8               d1
+  #29 = Utf8               \u0000\u0013\n\u0000\n\u0002\u0010\u0000\n\u0000\n\u0002\u0010\b\n\u0002\b\u0006*\u0001\u0000\b\n\u0018\u00002\u00020\u0001B\u000f\u0012\u0006\u0010\u0002\u001a\u00020\u0003?\u0006\u0004\b\u0004\u0010\u0005J\u0006\u0010\b\u001a\u00020\u0003R\u0011\u0010\u0002\u001a\u00020\u0003?\u0006\b\n\u0000\u001a\u0004\b\u0006\u0010\u0007��\u0006\t
+  #30 = Utf8               d2
+  #31 = Utf8
+  #32 = Utf8               kc-kotlin
+  #33 = Utf8               kc/auth/AuthClient
+  #34 = Class              #33            // kc/auth/AuthClient
+  #35 = Utf8               withLocalClass
+  #36 = NameAndType        #35:#17        // withLocalClass:()I
+  #37 = Utf8               Local
+  #38 = Utf8               AuthClient.kt
+  #39 = Utf8               Code
+  #40 = Utf8               LineNumberTable
+  #41 = Utf8               LocalVariableTable
+  #42 = Utf8               InnerClasses
+  #43 = Utf8               EnclosingMethod
+  #44 = Utf8               SourceFile
+  #45 = Utf8               RuntimeVisibleAnnotations
+{
+  private final int n;
+    descriptor: I
+    flags: (0x0012) ACC_PRIVATE, ACC_FINAL
+
+  public kc.auth.AuthClient$withLocalClass$Local(int);
+    descriptor: (I)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: invokespecial #9                  // Method java/lang/Object."<init>":()V
+         4: aload_0
+         5: iload_1
+         6: putfield      #13                 // Field n:I
+         9: return
+      LineNumberTable:
+        line 78: 0
+        line 79: 4
+        line 78: 9
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      10     0  this   Lkc/auth/AuthClient$withLocalClass$Local;
+            0      10     1     n   I
+
+  public final int getN();
+    descriptor: ()I
+    flags: (0x0011) ACC_PUBLIC, ACC_FINAL
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #13                 // Field n:I
+         4: ireturn
+      LineNumberTable:
+        line 79: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lkc/auth/AuthClient$withLocalClass$Local;
+
+  public final int twice();
+    descriptor: ()I
+    flags: (0x0011) ACC_PUBLIC, ACC_FINAL
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #13                 // Field n:I
+         4: iconst_2
+         5: imul
+         6: ireturn
+      LineNumberTable:
+        line 81: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       7     0  this   Lkc/auth/AuthClient$withLocalClass$Local;
+}
+InnerClasses:
+  public static final #37= #2;            // Local=class kc/auth/AuthClient$withLocalClass$Local
+EnclosingMethod: #34.#36                // kc.auth.AuthClient.withLocalClass
+SourceFile: "AuthClient.kt"
+RuntimeVisibleAnnotations:
+  0: #19(#20=[I#21,I#22,I#23],#24=I#25,#26=I#27,#28=[s#29],#30=[s#1,s#31,s#10,s#31,s#5,s#6,s#16,s#17,s#18,s#32])
+    kotlin.Metadata(
+      mv=[2,4,0]
+      k=1
+      xi=48
+      d1=["\u0000\u0013\n\u0000\n\u0002\u0010\u0000\n\u0000\n\u0002\u0010\b\n\u0002\b\u0006*\u0001\u0000\b\n\u0018\u00002\u00020\u0001B\u000f\u0012\u0006\u0010\u0002\u001a\u00020\u0003?\u0006\u0004\b\u0004\u0010\u0005J\u0006\u0010\b\u001a\u00020\u0003R\u0011\u0010\u0002\u001a\u00020\u0003?\u0006\b\n\u0000\u001a\u0004\b\u0006\u0010\u0007��\u0006\t"]
+      d2=["kc/auth/AuthClient$withLocalClass$Local","","n","","<init>","(I)V","getN","()I","twice","kc-kotlin"]
+    )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClient.class
-  Last modified 2026. 11. 7.; size 9142 bytes
-  SHA-256 checksum 08f85e1b13a568c0d9a96532b784b65568e5687916115b4b1c992d6e92c71252
+  Last modified 2026. 11. 7.; size 11305 bytes
+  SHA-256 checksum 320fb2a370334932e23d7e6c446b611a8ed9119679b1f4fdb37510c0d018c8c3
   Compiled from "AuthClient.kt"
 public final class kc.auth.AuthClient
   minor version: 0
@@ -521,7 +646,7 @@ public final class kc.auth.AuthClient
   flags: (0x0031) ACC_PUBLIC, ACC_FINAL, ACC_SUPER
   this_class: #2                          // kc/auth/AuthClient
   super_class: #4                         // java/lang/Object
-  interfaces: 0, fields: 6, methods: 20, attributes: 6
+  interfaces: 0, fields: 6, methods: 31, attributes: 6
 Constant pool:
     #1 = Utf8               kc/auth/AuthClient
     #2 = Class              #1            // kc/auth/AuthClient
@@ -777,98 +902,167 @@ Constant pool:
   #252 = NameAndType        #38:#22       // invoke:()Ljava/lang/Object;
   #253 = InterfaceMethodref #251.#252     // kotlin/jvm/functions/Function0.invoke:()Ljava/lang/Object;
   #254 = Utf8               s
-  #255 = Utf8               this$0
-  #256 = Utf8               $user
-  #257 = Utf8               \u0001\u0001\u0001
-  #258 = String             #257          // \u0001\u0001\u0001
-  #259 = Utf8               (Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
-  #260 = NameAndType        #207:#259     // makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
-  #261 = InvokeDynamic      #5:#260       // #5:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
-  #262 = Utf8               $ttl
-  #263 = Utf8               hi \u0001
-  #264 = String             #263          // hi \u0001
-  #265 = NameAndType        #207:#118     // makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
-  #266 = InvokeDynamic      #6:#265       // #6:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
-  #267 = InterfaceMethodref #242.#201     // java/lang/CharSequence.length:()I
-  #268 = Utf8               UPPER$lambda$0
-  #269 = String             #106          // it
-  #270 = Utf8               java/util/Locale
-  #271 = Class              #270          // java/util/Locale
-  #272 = Utf8               ROOT
-  #273 = Utf8               Ljava/util/Locale;
-  #274 = NameAndType        #272:#273     // ROOT:Ljava/util/Locale;
-  #275 = Fieldref           #271.#274     // java/util/Locale.ROOT:Ljava/util/Locale;
-  #276 = Utf8               toUpperCase
-  #277 = Utf8               (Ljava/util/Locale;)Ljava/lang/String;
-  #278 = NameAndType        #276:#277     // toUpperCase:(Ljava/util/Locale;)Ljava/lang/String;
-  #279 = Methodref          #93.#278      // java/lang/String.toUpperCase:(Ljava/util/Locale;)Ljava/lang/String;
-  #280 = Utf8               toUpperCase(...)
-  #281 = String             #280          // toUpperCase(...)
-  #282 = Utf8               checkNotNullExpressionValue
-  #283 = NameAndType        #282:#13      // checkNotNullExpressionValue:(Ljava/lang/Object;Ljava/lang/String;)V
-  #284 = Methodref          #11.#283      // kotlin/jvm/internal/Intrinsics.checkNotNullExpressionValue:(Ljava/lang/Object;Ljava/lang/String;)V
-  #285 = Utf8               access$getREALM$cp
-  #286 = Utf8               REALM
-  #287 = NameAndType        #286:#19      // REALM:Ljava/lang/String;
-  #288 = Fieldref           #2.#287       // kc/auth/AuthClient.REALM:Ljava/lang/String;
-  #289 = Utf8               access$getUPPER$cp
-  #290 = Utf8               ()Lkotlin/jvm/functions/Function1;
-  #291 = Utf8               UPPER
-  #292 = Utf8               Lkotlin/jvm/functions/Function1;
-  #293 = NameAndType        #291:#292     // UPPER:Lkotlin/jvm/functions/Function1;
-  #294 = Fieldref           #2.#293       // kc/auth/AuthClient.UPPER:Lkotlin/jvm/functions/Function1;
-  #295 = Utf8               <clinit>
-  #296 = Utf8               kc/auth/AuthClient$Companion
-  #297 = Class              #296          // kc/auth/AuthClient$Companion
-  #298 = Utf8               (Lkotlin/jvm/internal/DefaultConstructorMarker;)V
-  #299 = NameAndType        #5:#298       // "<init>":(Lkotlin/jvm/internal/DefaultConstructorMarker;)V
-  #300 = Methodref          #297.#299     // kc/auth/AuthClient$Companion."<init>":(Lkotlin/jvm/internal/DefaultConstructorMarker;)V
-  #301 = Utf8               Companion
-  #302 = Utf8               Lkc/auth/AuthClient$Companion;
-  #303 = NameAndType        #301:#302     // Companion:Lkc/auth/AuthClient$Companion;
-  #304 = Fieldref           #2.#303       // kc/auth/AuthClient.Companion:Lkc/auth/AuthClient$Companion;
-  #305 = Utf8               (Ljava/lang/Object;)Ljava/lang/Object;
-  #306 = MethodType         #305          //  (Ljava/lang/Object;)Ljava/lang/Object;
-  #307 = NameAndType        #268:#118     // UPPER$lambda$0:(Ljava/lang/String;)Ljava/lang/String;
-  #308 = Methodref          #2.#307       // kc/auth/AuthClient.UPPER$lambda$0:(Ljava/lang/String;)Ljava/lang/String;
-  #309 = MethodHandle       6:#308        // REF_invokeStatic kc/auth/AuthClient.UPPER$lambda$0:(Ljava/lang/String;)Ljava/lang/String;
-  #310 = MethodType         #118          //  (Ljava/lang/String;)Ljava/lang/String;
-  #311 = NameAndType        #38:#290      // invoke:()Lkotlin/jvm/functions/Function1;
-  #312 = InvokeDynamic      #7:#311       // #7:invoke:()Lkotlin/jvm/functions/Function1;
-  #313 = Utf8               Lkotlin/jvm/functions/Function0<Ljava/lang/String;>;
-  #314 = Utf8               Lkotlin/jvm/functions/Function0<Ljava/lang/Boolean;>;
-  #315 = Utf8               Lkotlin/jvm/functions/Function1<Ljava/lang/String;Ljava/lang/String;>;
-  #316 = Utf8               Lkotlin/Metadata;
-  #317 = Utf8               mv
-  #318 = Integer            2
-  #319 = Integer            4
-  #320 = Integer            0
-  #321 = Utf8               k
-  #322 = Integer            1
-  #323 = Utf8               xi
-  #324 = Integer            48
-  #325 = Utf8               d1
-  #326 = Utf8               \u00002\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0000\n\u0002\u0010\u000e\n\u0002\b\u0003\n\u0002\u0010 \n\u0002\b\u0004\n\u0002\u0010\b\n\u0002\b\r\n\u0002\u0018\u0002\n\u0002\b\u0002\n\u0002\u0010\u000b\n\u0002\b\u0002\u0018\u0000 \u001e2\u00020\u0001:\u0001\u001eB\u000f\u0012\u0006\u0010\u0002\u001a\u00020\u0003?\u0006\u0004\b\u0004\u0010\u0005J\u001a\u0010\u0006\u001a\b\u0012\u0004\u0012\u00020\u00030\u00072\f\u0010\b\u001a\b\u0012\u0004\u0012\u00020\u00030\u0007J\u000e\u0010\t\u001a\u00020\u00032\u0006\u0010\n\u001a\u00020\u0003J\u0016\u0010\t\u001a\u00020\u00032\u0006\u0010\n\u001a\u00020\u00032\u0006\u0010\u000b\u001a\u00020\fJ\u0016\u0010\r\u001a\u00020\u00032\u0006\u0010\n\u001a\u00020\u0003H\u0086@?\u0006\u0002\u0010\u000eJ\u001f\u0010\u000f\u001a\u00020\u00032\u0006\u0010\u0010\u001a\u00020\u00032\b\b\u0002\u0010\u0011\u001a\u00020\u0003H\u0000?\u0006\u0002\b\u0012J\u0010\u0010\u0013\u001a\u00020\u00032\b\b\u0002\u0010\u0014\u001a\u00020\u0003J\u001a\u0010\u0015\u001a\b\u0012\u0004\u0012\u00020\u00030\u00072\f\u0010\u0016\u001a\b\u0012\u0004\u0012\u00020\u00030\u0007J\u0006\u0010\u0017\u001a\u00020\u0003J\u0016\u0010\u0018\u001a\u00020\u00032\f\u0010\u0019\u001a\b\u0012\u0004\u0012\u00020\u00030\u001aH\u0002R\u000e\u0010\u0002\u001a\u00020\u0003X\u0082\u0004?\u0006\u0002\n\u0000R\u0014\u0010\u001b\u001a\b\u0012\u0004\u0012\u00020\u00030\u001aX\u0082\u0004?\u0006\u0002\n\u0000R\u0014\u0010\u001c\u001a\b\u0012\u0004\u0012\u00020\u001d0\u001aX\u0082\u0004?\u0006\u0002\n\u0000��\u0006\u001f
-  #327 = Utf8               d2
-  #328 = Utf8
-  #329 = Utf8               mask
-  #330 = Utf8               Lkotlin/Function0;
-  #331 = Utf8               kc-kotlin
-  #332 = Utf8               AuthClient.kt
-  #333 = Utf8               Lkotlin/jvm/internal/SourceDebugExtension;
-  #334 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n*L\n1#1,65:1\n1745#2:66\n1820#2,3:67\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n*L\n17#1:66\n17#1:67,3\n*E\n
-  #335 = Utf8               RuntimeInvisibleAnnotations
-  #336 = Utf8               Signature
-  #337 = Utf8               Code
-  #338 = Utf8               LineNumberTable
-  #339 = Utf8               LocalVariableTable
-  #340 = Utf8               RuntimeInvisibleParameterAnnotations
-  #341 = Utf8               StackMapTable
-  #342 = Utf8               InnerClasses
-  #343 = Utf8               SourceFile
-  #344 = Utf8               SourceDebugExtension
-  #345 = Utf8               RuntimeVisibleAnnotations
-  #346 = Utf8               BootstrapMethods
+  #255 = Utf8               nested
+  #256 = Utf8               nested$lambda$0
+  #257 = NameAndType        #256:#25      // nested$lambda$0:(Lkc/auth/AuthClient;)Ljava/lang/String;
+  #258 = Methodref          #2.#257       // kc/auth/AuthClient.nested$lambda$0:(Lkc/auth/AuthClient;)Ljava/lang/String;
+  #259 = MethodHandle       6:#258        // REF_invokeStatic kc/auth/AuthClient.nested$lambda$0:(Lkc/auth/AuthClient;)Ljava/lang/String;
+  #260 = InvokeDynamic      #5:#40        // #5:invoke:(Lkc/auth/AuthClient;)Lkotlin/jvm/functions/Function0;
+  #261 = Utf8               withLocal
+  #262 = Utf8               l
+  #263 = String             #262          // l
+  #264 = Utf8               withLocal$inner
+  #265 = NameAndType        #264:#122     // withLocal$inner:(Lkc/auth/AuthClient;Ljava/lang/String;)Ljava/lang/String;
+  #266 = Methodref          #2.#265       // kc/auth/AuthClient.withLocal$inner:(Lkc/auth/AuthClient;Ljava/lang/String;)Ljava/lang/String;
+  #267 = Utf8               withLocalClass
+  #268 = Utf8               kc/auth/AuthClient$withLocalClass$Local
+  #269 = Class              #268          // kc/auth/AuthClient$withLocalClass$Local
+  #270 = Methodref          #269.#75      // kc/auth/AuthClient$withLocalClass$Local."<init>":(I)V
+  #271 = Utf8               twice
+  #272 = NameAndType        #271:#200     // twice:()I
+  #273 = Methodref          #269.#272     // kc/auth/AuthClient$withLocalClass$Local.twice:()I
+  #274 = Utf8               join
+  #275 = Utf8               (Ljava/util/List;)Ljava/lang/String;
+  #276 = Utf8               (Ljava/util/List<Ljava/lang/String;>;)Ljava/lang/String;
+  #277 = Utf8               xs
+  #278 = String             #277          // xs
+  #279 = Utf8               join$lambda$0
+  #280 = NameAndType        #279:#275     // join$lambda$0:(Ljava/util/List;)Ljava/lang/String;
+  #281 = Methodref          #2.#280       // kc/auth/AuthClient.join$lambda$0:(Ljava/util/List;)Ljava/lang/String;
+  #282 = MethodHandle       6:#281        // REF_invokeStatic kc/auth/AuthClient.join$lambda$0:(Ljava/util/List;)Ljava/lang/String;
+  #283 = Utf8               (Ljava/util/List;)Lkotlin/jvm/functions/Function0;
+  #284 = NameAndType        #38:#283      // invoke:(Ljava/util/List;)Lkotlin/jvm/functions/Function0;
+  #285 = InvokeDynamic      #6:#284       // #6:invoke:(Ljava/util/List;)Lkotlin/jvm/functions/Function0;
+  #286 = Utf8               joinInts
+  #287 = Utf8               (Ljava/util/List<Ljava/lang/Integer;>;)Ljava/lang/String;
+  #288 = Utf8               Lkotlin/jvm/JvmName;
+  #289 = Utf8               name
+  #290 = Utf8               join$lambda$1
+  #291 = NameAndType        #290:#275     // join$lambda$1:(Ljava/util/List;)Ljava/lang/String;
+  #292 = Methodref          #2.#291       // kc/auth/AuthClient.join$lambda$1:(Ljava/util/List;)Ljava/lang/String;
+  #293 = MethodHandle       6:#292        // REF_invokeStatic kc/auth/AuthClient.join$lambda$1:(Ljava/util/List;)Ljava/lang/String;
+  #294 = InvokeDynamic      #7:#284       // #7:invoke:(Ljava/util/List;)Lkotlin/jvm/functions/Function0;
+  #295 = Utf8               withLocal$inner$lambda$0
+  #296 = Utf8               (Ljava/lang/String;Lkc/auth/AuthClient;)Ljava/lang/String;
+  #297 = NameAndType        #295:#296     // withLocal$inner$lambda$0:(Ljava/lang/String;Lkc/auth/AuthClient;)Ljava/lang/String;
+  #298 = Methodref          #2.#297       // kc/auth/AuthClient.withLocal$inner$lambda$0:(Ljava/lang/String;Lkc/auth/AuthClient;)Ljava/lang/String;
+  #299 = MethodHandle       6:#298        // REF_invokeStatic kc/auth/AuthClient.withLocal$inner$lambda$0:(Ljava/lang/String;Lkc/auth/AuthClient;)Ljava/lang/String;
+  #300 = Utf8               (Ljava/lang/String;Lkc/auth/AuthClient;)Lkotlin/jvm/functions/Function0;
+  #301 = NameAndType        #38:#300      // invoke:(Ljava/lang/String;Lkc/auth/AuthClient;)Lkotlin/jvm/functions/Function0;
+  #302 = InvokeDynamic      #8:#301       // #8:invoke:(Ljava/lang/String;Lkc/auth/AuthClient;)Lkotlin/jvm/functions/Function0;
+  #303 = Utf8               this$0
+  #304 = Utf8               x
+  #305 = Utf8               $user
+  #306 = Utf8               \u0001\u0001\u0001
+  #307 = String             #306          // \u0001\u0001\u0001
+  #308 = Utf8               (Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
+  #309 = NameAndType        #207:#308     // makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
+  #310 = InvokeDynamic      #9:#309       // #9:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
+  #311 = Utf8               $ttl
+  #312 = Utf8               hi \u0001
+  #313 = String             #312          // hi \u0001
+  #314 = NameAndType        #207:#118     // makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+  #315 = InvokeDynamic      #10:#314      // #10:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+  #316 = InterfaceMethodref #242.#201     // java/lang/CharSequence.length:()I
+  #317 = Utf8               nested$lambda$0$0
+  #318 = NameAndType        #317:#25      // nested$lambda$0$0:(Lkc/auth/AuthClient;)Ljava/lang/String;
+  #319 = Methodref          #2.#318       // kc/auth/AuthClient.nested$lambda$0$0:(Lkc/auth/AuthClient;)Ljava/lang/String;
+  #320 = MethodHandle       6:#319        // REF_invokeStatic kc/auth/AuthClient.nested$lambda$0$0:(Lkc/auth/AuthClient;)Ljava/lang/String;
+  #321 = InvokeDynamic      #11:#40       // #11:invoke:(Lkc/auth/AuthClient;)Lkotlin/jvm/functions/Function0;
+  #322 = Utf8               joinToString$default
+  #323 = Utf8               (Ljava/lang/Iterable;Ljava/lang/CharSequence;Ljava/lang/CharSequence;Ljava/lang/CharSequence;ILjava/lang/CharSequence;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ljava/lang/String;
+  #324 = NameAndType        #322:#323     // joinToString$default:(Ljava/lang/Iterable;Ljava/lang/CharSequence;Ljava/lang/CharSequence;Ljava/lang/CharSequence;ILjava/lang/CharSequence;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ljava/lang/String;
+  #325 = Methodref          #69.#324      // kotlin/collections/CollectionsKt.joinToString$default:(Ljava/lang/Iterable;Ljava/lang/CharSequence;Ljava/lang/CharSequence;Ljava/lang/CharSequence;ILjava/lang/CharSequence;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ljava/lang/String;
+  #326 = Utf8               $xs
+  #327 = Utf8               sumOfInt
+  #328 = Utf8               (Ljava/lang/Iterable;)I
+  #329 = NameAndType        #327:#328     // sumOfInt:(Ljava/lang/Iterable;)I
+  #330 = Methodref          #69.#329      // kotlin/collections/CollectionsKt.sumOfInt:(Ljava/lang/Iterable;)I
+  #331 = Utf8               valueOf
+  #332 = Utf8               (I)Ljava/lang/String;
+  #333 = NameAndType        #331:#332     // valueOf:(I)Ljava/lang/String;
+  #334 = Methodref          #93.#333      // java/lang/String.valueOf:(I)Ljava/lang/String;
+  #335 = Utf8               UPPER$lambda$0
+  #336 = String             #106          // it
+  #337 = Utf8               java/util/Locale
+  #338 = Class              #337          // java/util/Locale
+  #339 = Utf8               ROOT
+  #340 = Utf8               Ljava/util/Locale;
+  #341 = NameAndType        #339:#340     // ROOT:Ljava/util/Locale;
+  #342 = Fieldref           #338.#341     // java/util/Locale.ROOT:Ljava/util/Locale;
+  #343 = Utf8               toUpperCase
+  #344 = Utf8               (Ljava/util/Locale;)Ljava/lang/String;
+  #345 = NameAndType        #343:#344     // toUpperCase:(Ljava/util/Locale;)Ljava/lang/String;
+  #346 = Methodref          #93.#345      // java/lang/String.toUpperCase:(Ljava/util/Locale;)Ljava/lang/String;
+  #347 = Utf8               toUpperCase(...)
+  #348 = String             #347          // toUpperCase(...)
+  #349 = Utf8               checkNotNullExpressionValue
+  #350 = NameAndType        #349:#13      // checkNotNullExpressionValue:(Ljava/lang/Object;Ljava/lang/String;)V
+  #351 = Methodref          #11.#350      // kotlin/jvm/internal/Intrinsics.checkNotNullExpressionValue:(Ljava/lang/Object;Ljava/lang/String;)V
+  #352 = Utf8               $x
+  #353 = Utf8               access$getREALM$cp
+  #354 = Utf8               REALM
+  #355 = NameAndType        #354:#19      // REALM:Ljava/lang/String;
+  #356 = Fieldref           #2.#355       // kc/auth/AuthClient.REALM:Ljava/lang/String;
+  #357 = Utf8               access$getUPPER$cp
+  #358 = Utf8               ()Lkotlin/jvm/functions/Function1;
+  #359 = Utf8               UPPER
+  #360 = Utf8               Lkotlin/jvm/functions/Function1;
+  #361 = NameAndType        #359:#360     // UPPER:Lkotlin/jvm/functions/Function1;
+  #362 = Fieldref           #2.#361       // kc/auth/AuthClient.UPPER:Lkotlin/jvm/functions/Function1;
+  #363 = Utf8               <clinit>
+  #364 = Utf8               kc/auth/AuthClient$Companion
+  #365 = Class              #364          // kc/auth/AuthClient$Companion
+  #366 = Utf8               (Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+  #367 = NameAndType        #5:#366       // "<init>":(Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+  #368 = Methodref          #365.#367     // kc/auth/AuthClient$Companion."<init>":(Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+  #369 = Utf8               Companion
+  #370 = Utf8               Lkc/auth/AuthClient$Companion;
+  #371 = NameAndType        #369:#370     // Companion:Lkc/auth/AuthClient$Companion;
+  #372 = Fieldref           #2.#371       // kc/auth/AuthClient.Companion:Lkc/auth/AuthClient$Companion;
+  #373 = Utf8               (Ljava/lang/Object;)Ljava/lang/Object;
+  #374 = MethodType         #373          //  (Ljava/lang/Object;)Ljava/lang/Object;
+  #375 = NameAndType        #335:#118     // UPPER$lambda$0:(Ljava/lang/String;)Ljava/lang/String;
+  #376 = Methodref          #2.#375       // kc/auth/AuthClient.UPPER$lambda$0:(Ljava/lang/String;)Ljava/lang/String;
+  #377 = MethodHandle       6:#376        // REF_invokeStatic kc/auth/AuthClient.UPPER$lambda$0:(Ljava/lang/String;)Ljava/lang/String;
+  #378 = MethodType         #118          //  (Ljava/lang/String;)Ljava/lang/String;
+  #379 = NameAndType        #38:#358      // invoke:()Lkotlin/jvm/functions/Function1;
+  #380 = InvokeDynamic      #12:#379      // #12:invoke:()Lkotlin/jvm/functions/Function1;
+  #381 = Utf8               Lkotlin/jvm/functions/Function0<Ljava/lang/String;>;
+  #382 = Utf8               Lkotlin/jvm/functions/Function0<Ljava/lang/Boolean;>;
+  #383 = Utf8               Lkotlin/jvm/functions/Function1<Ljava/lang/String;Ljava/lang/String;>;
+  #384 = Utf8               Lkotlin/Metadata;
+  #385 = Utf8               mv
+  #386 = Integer            2
+  #387 = Integer            4
+  #388 = Integer            0
+  #389 = Utf8               k
+  #390 = Integer            1
+  #391 = Utf8               xi
+  #392 = Integer            48
+  #393 = Utf8               d1
+  #394 = Utf8               \u0000:\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0000\n\u0002\u0010\u000e\n\u0002\b\u0003\n\u0002\u0010 \n\u0002\b\u0004\n\u0002\u0010\b\n\u0002\b\r\n\u0002\u0018\u0002\n\u0002\b\u0002\n\u0002\u0010\u000b\n\u0002\b\u0006\n\u0002\u0018\u0002\n\u0002\b\u0003\u0018\u0000 &2\u00020\u0001:\u0001&B\u000f\u0012\u0006\u0010\u0002\u001a\u00020\u0003?\u0006\u0004\b\u0004\u0010\u0005J\u001a\u0010\u0006\u001a\b\u0012\u0004\u0012\u00020\u00030\u00072\f\u0010\b\u001a\b\u0012\u0004\u0012\u00020\u00030\u0007J\u000e\u0010\t\u001a\u00020\u00032\u0006\u0010\n\u001a\u00020\u0003J\u0016\u0010\t\u001a\u00020\u00032\u0006\u0010\n\u001a\u00020\u00032\u0006\u0010\u000b\u001a\u00020\fJ\u0016\u0010\r\u001a\u00020\u00032\u0006\u0010\n\u001a\u00020\u0003H\u0086@?\u0006\u0002\u0010\u000eJ\u001f\u0010\u000f\u001a\u00020\u00032\u0006\u0010\u0010\u001a\u00020\u00032\b\b\u0002\u0010\u0011\u001a\u00020\u0003H\u0000?\u0006\u0002\b\u0012J\u0010\u0010\u0013\u001a\u00020\u00032\b\b\u0002\u0010\u0014\u001a\u00020\u0003J\u001a\u0010\u0015\u001a\b\u0012\u0004\u0012\u00020\u00030\u00072\f\u0010\u0016\u001a\b\u0012\u0004\u0012\u00020\u00030\u0007J\u0006\u0010\u0017\u001a\u00020\u0003J\u0016\u0010\u0018\u001a\u00020\u00032\f\u0010\u0019\u001a\b\u0012\u0004\u0012\u00020\u00030\u001aH\u0002J\u0006\u0010\u001e\u001a\u00020\u0003J\u0006\u0010\u001f\u001a\u00020\u0003J\u0006\u0010 \u001a\u00020\fJ\u0014\u0010!\u001a\u00020\u00032\f\u0010\"\u001a\b\u0012\u0004\u0012\u00020\u00030\u0007J)\u0010!\u001a\u00020\u00032\f\u0010\"\u001a\b\u0012\u0004\u0012\u00020\f0\u0007H\u0007b\f\b$\u0012\b\b%\u0012\u0004\b\b(#?\u0006\u0002\b#R\u000e\u0010\u0002\u001a\u00020\u0003X\u0082\u0004?\u0006\u0002\n\u0000R\u0014\u0010\u001b\u001a\b\u0012\u0004\u0012\u00020\u00030\u001aX\u0082\u0004?\u0006\u0002\n\u0000R\u0014\u0010\u001c\u001a\b\u0012\u0004\u0012\u00020\u001d0\u001aX\u0082\u0004?\u0006\u0002\n\u0000��\u0006\'
+  #395 = Utf8               d2
+  #396 = Utf8
+  #397 = Utf8               mask
+  #398 = Utf8               Lkotlin/Function0;
+  #399 = Utf8               kc-kotlin
+  #400 = Utf8               Local
+  #401 = Utf8               AuthClient.kt
+  #402 = Utf8               Lkotlin/jvm/internal/SourceDebugExtension;
+  #403 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n*L\n1#1,129:1\n1745#2:130\n1820#2,3:131\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n*L\n17#1:130\n17#1:131,3\n*E\n
+  #404 = Utf8               RuntimeInvisibleAnnotations
+  #405 = Utf8               Signature
+  #406 = Utf8               Code
+  #407 = Utf8               LineNumberTable
+  #408 = Utf8               LocalVariableTable
+  #409 = Utf8               RuntimeInvisibleParameterAnnotations
+  #410 = Utf8               StackMapTable
+  #411 = Utf8               InnerClasses
+  #412 = Utf8               SourceFile
+  #413 = Utf8               SourceDebugExtension
+  #414 = Utf8               RuntimeVisibleAnnotations
+  #415 = Utf8               BootstrapMethods
 {
   public static final kc.auth.AuthClient$Companion Companion;
     descriptor: Lkc/auth/AuthClient$Companion;
@@ -887,7 +1081,7 @@ Constant pool:
   private final kotlin.jvm.functions.Function0<java.lang.String> greet;
     descriptor: Lkotlin/jvm/functions/Function0;
     flags: (0x0012) ACC_PRIVATE, ACC_FINAL
-    Signature: #313                         // Lkotlin/jvm/functions/Function0<Ljava/lang/String;>;
+    Signature: #381                         // Lkotlin/jvm/functions/Function0<Ljava/lang/String;>;
     RuntimeInvisibleAnnotations:
       0: #7()
         org.jetbrains.annotations.NotNull
@@ -895,7 +1089,7 @@ Constant pool:
   private final kotlin.jvm.functions.Function0<java.lang.Boolean> ready;
     descriptor: Lkotlin/jvm/functions/Function0;
     flags: (0x0012) ACC_PRIVATE, ACC_FINAL
-    Signature: #314                         // Lkotlin/jvm/functions/Function0<Ljava/lang/Boolean;>;
+    Signature: #382                         // Lkotlin/jvm/functions/Function0<Ljava/lang/Boolean;>;
     RuntimeInvisibleAnnotations:
       0: #7()
         org.jetbrains.annotations.NotNull
@@ -910,7 +1104,7 @@ Constant pool:
   private static final kotlin.jvm.functions.Function1<java.lang.String, java.lang.String> UPPER;
     descriptor: Lkotlin/jvm/functions/Function1;
     flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL
-    Signature: #315                         // Lkotlin/jvm/functions/Function1<Ljava/lang/String;Ljava/lang/String;>;
+    Signature: #383                         // Lkotlin/jvm/functions/Function1<Ljava/lang/String;Ljava/lang/String;>;
     RuntimeInvisibleAnnotations:
       0: #7()
         org.jetbrains.annotations.NotNull
@@ -1019,13 +1213,13 @@ Constant pool:
         frame_type = 53 /* same */
       LineNumberTable:
         line 17: 6
-        line 66: 13
-        line 67: 37
-        line 68: 65
+        line 130: 13
+        line 131: 37
+        line 132: 65
         line 17: 79
-        line 68: 91
-        line 69: 100
-        line 66: 105
+        line 132: 91
+        line 133: 100
+        line 130: 105
         line 17: 106
       LocalVariableTable:
         Start  Length  Slot  Name   Signature
@@ -1392,6 +1586,138 @@ Constant pool:
             0      10     1     s   Lkotlin/jvm/functions/Function0;
     Signature: #249                         // (Lkotlin/jvm/functions/Function0<Ljava/lang/String;>;)Ljava/lang/String;
 
+  public final java.lang.String nested();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0011) ACC_PUBLIC, ACC_FINAL
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: aload_0
+         2: invokedynamic #260,  0            // InvokeDynamic #5:invoke:(Lkc/auth/AuthClient;)Lkotlin/jvm/functions/Function0;
+         7: invokespecial #132                // Method describe:(Lkotlin/jvm/functions/Function0;)Ljava/lang/String;
+        10: areturn
+      LineNumberTable:
+        line 68: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      11     0  this   Lkc/auth/AuthClient;
+    RuntimeInvisibleAnnotations:
+      0: #7()
+        org.jetbrains.annotations.NotNull
+
+  public final java.lang.String withLocal();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0011) ACC_PUBLIC, ACC_FINAL
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: ldc_w         #263                // String l
+         4: invokestatic  #266                // Method withLocal$inner:(Lkc/auth/AuthClient;Ljava/lang/String;)Ljava/lang/String;
+         7: areturn
+      LineNumberTable:
+        line 73: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       8     0  this   Lkc/auth/AuthClient;
+    RuntimeInvisibleAnnotations:
+      0: #7()
+        org.jetbrains.annotations.NotNull
+
+  public final int withLocalClass();
+    descriptor: ()I
+    flags: (0x0011) ACC_PUBLIC, ACC_FINAL
+    Code:
+      stack=3, locals=1, args_size=1
+         0: new           #269                // class kc/auth/AuthClient$withLocalClass$Local
+         3: dup
+         4: iconst_3
+         5: invokespecial #270                // Method kc/auth/AuthClient$withLocalClass$Local."<init>":(I)V
+         8: invokevirtual #273                // Method kc/auth/AuthClient$withLocalClass$Local.twice:()I
+        11: ireturn
+      LineNumberTable:
+        line 83: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      12     0  this   Lkc/auth/AuthClient;
+
+  public final java.lang.String join(java.util.List<java.lang.String>);
+    descriptor: (Ljava/util/List;)Ljava/lang/String;
+    flags: (0x0011) ACC_PUBLIC, ACC_FINAL
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_1
+         1: ldc_w         #278                // String xs
+         4: invokestatic  #15                 // Method kotlin/jvm/internal/Intrinsics.checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
+         7: aload_0
+         8: aload_1
+         9: invokedynamic #285,  0            // InvokeDynamic #6:invoke:(Ljava/util/List;)Lkotlin/jvm/functions/Function0;
+        14: invokespecial #132                // Method describe:(Lkotlin/jvm/functions/Function0;)Ljava/lang/String;
+        17: areturn
+      LineNumberTable:
+        line 87: 7
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      18     0  this   Lkc/auth/AuthClient;
+            0      18     1    xs   Ljava/util/List;
+    Signature: #276                         // (Ljava/util/List<Ljava/lang/String;>;)Ljava/lang/String;
+    RuntimeInvisibleAnnotations:
+      0: #7()
+        org.jetbrains.annotations.NotNull
+    RuntimeInvisibleParameterAnnotations:
+      parameter 0:
+        0: #7()
+          org.jetbrains.annotations.NotNull
+
+  public final java.lang.String joinInts(java.util.List<java.lang.Integer>);
+    descriptor: (Ljava/util/List;)Ljava/lang/String;
+    flags: (0x0011) ACC_PUBLIC, ACC_FINAL
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_1
+         1: ldc_w         #278                // String xs
+         4: invokestatic  #15                 // Method kotlin/jvm/internal/Intrinsics.checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
+         7: aload_0
+         8: aload_1
+         9: invokedynamic #294,  0            // InvokeDynamic #7:invoke:(Ljava/util/List;)Lkotlin/jvm/functions/Function0;
+        14: invokespecial #132                // Method describe:(Lkotlin/jvm/functions/Function0;)Ljava/lang/String;
+        17: areturn
+      LineNumberTable:
+        line 90: 7
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      18     0  this   Lkc/auth/AuthClient;
+            0      18     1    xs   Ljava/util/List;
+    Signature: #287                         // (Ljava/util/List<Ljava/lang/Integer;>;)Ljava/lang/String;
+    RuntimeInvisibleAnnotations:
+      0: #288(#289=s#286)
+        kotlin.jvm.JvmName(
+          name="joinInts"
+        )
+      1: #7()
+        org.jetbrains.annotations.NotNull
+    RuntimeInvisibleParameterAnnotations:
+      parameter 0:
+        0: #7()
+          org.jetbrains.annotations.NotNull
+
+  private static final java.lang.String withLocal$inner(kc.auth.AuthClient, java.lang.String);
+    descriptor: (Lkc/auth/AuthClient;Ljava/lang/String;)Ljava/lang/String;
+    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL
+    Code:
+      stack=3, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: aload_0
+         3: invokedynamic #302,  0            // InvokeDynamic #8:invoke:(Ljava/lang/String;Lkc/auth/AuthClient;)Lkotlin/jvm/functions/Function0;
+         8: invokespecial #132                // Method describe:(Lkotlin/jvm/functions/Function0;)Ljava/lang/String;
+        11: areturn
+      LineNumberTable:
+        line 72: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      12     0 this$0   Lkc/auth/AuthClient;
+            0      12     1     x   Ljava/lang/String;
+
   private static final java.lang.String token$lambda$0(kc.auth.AuthClient, java.lang.String);
     descriptor: (Lkc/auth/AuthClient;Ljava/lang/String;)Ljava/lang/String;
     flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL
@@ -1418,7 +1744,7 @@ Constant pool:
          1: getfield      #21                 // Field base:Ljava/lang/String;
          4: aload_1
          5: iload_2
-         6: invokedynamic #261,  0            // InvokeDynamic #5:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
+         6: invokedynamic #310,  0            // InvokeDynamic #9:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
         11: areturn
       LineNumberTable:
         line 25: 0
@@ -1435,7 +1761,7 @@ Constant pool:
       stack=1, locals=1, args_size=1
          0: aload_0
          1: getfield      #21                 // Field base:Ljava/lang/String;
-         4: invokedynamic #266,  0            // InvokeDynamic #6:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+         4: invokedynamic #315,  0            // InvokeDynamic #10:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
          9: areturn
       LineNumberTable:
         line 56: 0
@@ -1451,7 +1777,7 @@ Constant pool:
          0: aload_0
          1: getfield      #21                 // Field base:Ljava/lang/String;
          4: checkcast     #242                // class java/lang/CharSequence
-         7: invokeinterface #267,  1          // InterfaceMethod java/lang/CharSequence.length:()I
+         7: invokeinterface #316,  1          // InterfaceMethod java/lang/CharSequence.length:()I
         12: ifle          19
         15: iconst_1
         16: goto          20
@@ -1468,20 +1794,89 @@ Constant pool:
         Start  Length  Slot  Name   Signature
             0      21     0 this$0   Lkc/auth/AuthClient;
 
+  private static final java.lang.String nested$lambda$0$0(kc.auth.AuthClient);
+    descriptor: (Lkc/auth/AuthClient;)Ljava/lang/String;
+    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #21                 // Field base:Ljava/lang/String;
+         4: areturn
+      LineNumberTable:
+        line 68: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0 this$0   Lkc/auth/AuthClient;
+
+  private static final java.lang.String nested$lambda$0(kc.auth.AuthClient);
+    descriptor: (Lkc/auth/AuthClient;)Ljava/lang/String;
+    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: aload_0
+         2: invokedynamic #321,  0            // InvokeDynamic #11:invoke:(Lkc/auth/AuthClient;)Lkotlin/jvm/functions/Function0;
+         7: invokespecial #132                // Method describe:(Lkotlin/jvm/functions/Function0;)Ljava/lang/String;
+        10: areturn
+      LineNumberTable:
+        line 68: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      11     0 this$0   Lkc/auth/AuthClient;
+
+  private static final java.lang.String join$lambda$0(java.util.List);
+    descriptor: (Ljava/util/List;)Ljava/lang/String;
+    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL
+    Code:
+      stack=9, locals=1, args_size=1
+         0: aload_0
+         1: checkcast     #65                 // class java/lang/Iterable
+         4: aconst_null
+         5: aconst_null
+         6: aconst_null
+         7: iconst_0
+         8: aconst_null
+         9: aconst_null
+        10: bipush        63
+        12: aconst_null
+        13: invokestatic  #325                // Method kotlin/collections/CollectionsKt.joinToString$default:(Ljava/lang/Iterable;Ljava/lang/CharSequence;Ljava/lang/CharSequence;Ljava/lang/CharSequence;ILjava/lang/CharSequence;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ljava/lang/String;
+        16: areturn
+      LineNumberTable:
+        line 87: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      17     0   $xs   Ljava/util/List;
+
+  private static final java.lang.String join$lambda$1(java.util.List);
+    descriptor: (Ljava/util/List;)Ljava/lang/String;
+    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: checkcast     #65                 // class java/lang/Iterable
+         4: invokestatic  #330                // Method kotlin/collections/CollectionsKt.sumOfInt:(Ljava/lang/Iterable;)I
+         7: invokestatic  #334                // Method java/lang/String.valueOf:(I)Ljava/lang/String;
+        10: areturn
+      LineNumberTable:
+        line 90: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      11     0   $xs   Ljava/util/List;
+
   private static final java.lang.String UPPER$lambda$0(java.lang.String);
     descriptor: (Ljava/lang/String;)Ljava/lang/String;
     flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL
     Code:
       stack=3, locals=1, args_size=1
          0: aload_0
-         1: ldc_w         #269                // String it
+         1: ldc_w         #336                // String it
          4: invokestatic  #15                 // Method kotlin/jvm/internal/Intrinsics.checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
          7: aload_0
-         8: getstatic     #275                // Field java/util/Locale.ROOT:Ljava/util/Locale;
-        11: invokevirtual #279                // Method java/lang/String.toUpperCase:(Ljava/util/Locale;)Ljava/lang/String;
+         8: getstatic     #342                // Field java/util/Locale.ROOT:Ljava/util/Locale;
+        11: invokevirtual #346                // Method java/lang/String.toUpperCase:(Ljava/util/Locale;)Ljava/lang/String;
         14: dup
-        15: ldc_w         #281                // String toUpperCase(...)
-        18: invokestatic  #284                // Method kotlin/jvm/internal/Intrinsics.checkNotNullExpressionValue:(Ljava/lang/Object;Ljava/lang/String;)V
+        15: ldc_w         #348                // String toUpperCase(...)
+        18: invokestatic  #351                // Method kotlin/jvm/internal/Intrinsics.checkNotNullExpressionValue:(Ljava/lang/Object;Ljava/lang/String;)V
         21: areturn
       LineNumberTable:
         line 12: 7
@@ -1490,12 +1885,29 @@ Constant pool:
         Start  Length  Slot  Name   Signature
             0      22     0    it   Ljava/lang/String;
 
+  private static final java.lang.String withLocal$inner$lambda$0(java.lang.String, kc.auth.AuthClient);
+    descriptor: (Ljava/lang/String;Lkc/auth/AuthClient;)Ljava/lang/String;
+    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: getfield      #21                 // Field base:Ljava/lang/String;
+         5: invokedynamic #221,  0            // InvokeDynamic #4:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+        10: areturn
+      LineNumberTable:
+        line 72: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      11     0    $x   Ljava/lang/String;
+            0      11     1 this$0   Lkc/auth/AuthClient;
+
   public static final java.lang.String access$getREALM$cp();
     descriptor: ()Ljava/lang/String;
     flags: (0x1019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL, ACC_SYNTHETIC
     Code:
       stack=1, locals=0, args_size=0
-         0: getstatic     #288                // Field REALM:Ljava/lang/String;
+         0: getstatic     #356                // Field REALM:Ljava/lang/String;
          3: areturn
       LineNumberTable:
         line 6: 0
@@ -1505,7 +1917,7 @@ Constant pool:
     flags: (0x1019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL, ACC_SYNTHETIC
     Code:
       stack=1, locals=0, args_size=0
-         0: getstatic     #294                // Field UPPER:Lkotlin/jvm/functions/Function1;
+         0: getstatic     #362                // Field UPPER:Lkotlin/jvm/functions/Function1;
          3: areturn
       LineNumberTable:
         line 6: 0
@@ -1515,20 +1927,20 @@ Constant pool:
     flags: (0x0008) ACC_STATIC
     Code:
       stack=3, locals=0, args_size=0
-         0: new           #297                // class kc/auth/AuthClient$Companion
+         0: new           #365                // class kc/auth/AuthClient$Companion
          3: dup
          4: aconst_null
-         5: invokespecial #300                // Method kc/auth/AuthClient$Companion."<init>":(Lkotlin/jvm/internal/DefaultConstructorMarker;)V
-         8: putstatic     #304                // Field Companion:Lkc/auth/AuthClient$Companion;
+         5: invokespecial #368                // Method kc/auth/AuthClient$Companion."<init>":(Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+         8: putstatic     #372                // Field Companion:Lkc/auth/AuthClient$Companion;
         11: ldc           #225                // String kc
-        13: getstatic     #275                // Field java/util/Locale.ROOT:Ljava/util/Locale;
-        16: invokevirtual #279                // Method java/lang/String.toUpperCase:(Ljava/util/Locale;)Ljava/lang/String;
+        13: getstatic     #342                // Field java/util/Locale.ROOT:Ljava/util/Locale;
+        16: invokevirtual #346                // Method java/lang/String.toUpperCase:(Ljava/util/Locale;)Ljava/lang/String;
         19: dup
-        20: ldc_w         #281                // String toUpperCase(...)
-        23: invokestatic  #284                // Method kotlin/jvm/internal/Intrinsics.checkNotNullExpressionValue:(Ljava/lang/Object;Ljava/lang/String;)V
-        26: putstatic     #288                // Field REALM:Ljava/lang/String;
-        29: invokedynamic #312,  0            // InvokeDynamic #7:invoke:()Lkotlin/jvm/functions/Function1;
-        34: putstatic     #294                // Field UPPER:Lkotlin/jvm/functions/Function1;
+        20: ldc_w         #348                // String toUpperCase(...)
+        23: invokestatic  #351                // Method kotlin/jvm/internal/Intrinsics.checkNotNullExpressionValue:(Ljava/lang/Object;Ljava/lang/String;)V
+        26: putstatic     #356                // Field REALM:Ljava/lang/String;
+        29: invokedynamic #380,  0            // InvokeDynamic #12:invoke:()Lkotlin/jvm/functions/Function1;
+        34: putstatic     #362                // Field UPPER:Lkotlin/jvm/functions/Function1;
         37: return
       LineNumberTable:
         line 9: 11
@@ -1536,9 +1948,10 @@ Constant pool:
         line 12: 29
 }
 InnerClasses:
-  public static final #301= #297 of #2;   // Companion=class kc/auth/AuthClient$Companion of class kc/auth/AuthClient
+  public static final #369= #365 of #2;   // Companion=class kc/auth/AuthClient$Companion of class kc/auth/AuthClient
   static final #148;                      // class kc/auth/AuthClient$fetch$1
   public static final #232;               // class kc/auth/AuthClient$sorted$1
+  public static final #400= #269;         // Local=class kc/auth/AuthClient$withLocalClass$Local
 SourceFile: "AuthClient.kt"
 SourceDebugExtension:
   SMAP
@@ -1551,30 +1964,30 @@ SourceDebugExtension:
   + 2 _Collections.kt
   kotlin/collections/CollectionsKt___CollectionsKt
   *L
-  1#1,65:1
-  1745#2:66
-  1820#2,3:67
+  1#1,129:1
+  1745#2:130
+  1820#2,3:131
   *S KotlinDebug
   *F
   + 1 AuthClient.kt
   kc/auth/AuthClient
   *L
-  17#1:66
-  17#1:67,3
+  17#1:130
+  17#1:131,3
   *E
 RuntimeVisibleAnnotations:
-  0: #316(#317=[I#318,I#319,I#320],#321=I#322,#323=I#324,#325=[s#326],#327=[s#58,s#328,s#8,s#328,s#5,s#6,s#59,s#328,s#62,s#117,s#119,s#142,s#328,s#143,s#144,s#329,s#195,s#197,s#193,s#149,s#218,s#228,s#229,s#240,s#129,s#254,s#330,s#42,s#54,s#328,s#301,s#331])
+  0: #384(#385=[I#386,I#387,I#388],#389=I#390,#391=I#392,#393=[s#394],#395=[s#58,s#396,s#8,s#396,s#5,s#6,s#59,s#396,s#62,s#117,s#119,s#142,s#396,s#143,s#144,s#397,s#195,s#197,s#193,s#149,s#218,s#228,s#229,s#240,s#129,s#254,s#398,s#42,s#54,s#396,s#255,s#261,s#267,s#274,s#277,s#286,s#288,s#289,s#369,s#399])
     kotlin.Metadata(
       mv=[2,4,0]
       k=1
       xi=48
-      d1=["\u00002\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0000\n\u0002\u0010\u000e\n\u0002\b\u0003\n\u0002\u0010 \n\u0002\b\u0004\n\u0002\u0010\b\n\u0002\b\r\n\u0002\u0018\u0002\n\u0002\b\u0002\n\u0002\u0010\u000b\n\u0002\b\u0002\u0018\u0000 \u001e2\u00020\u0001:\u0001\u001eB\u000f\u0012\u0006\u0010\u0002\u001a\u00020\u0003?\u0006\u0004\b\u0004\u0010\u0005J\u001a\u0010\u0006\u001a\b\u0012\u0004\u0012\u00020\u00030\u00072\f\u0010\b\u001a\b\u0012\u0004\u0012\u00020\u00030\u0007J\u000e\u0010\t\u001a\u00020\u00032\u0006\u0010\n\u001a\u00020\u0003J\u0016\u0010\t\u001a\u00020\u00032\u0006\u0010\n\u001a\u00020\u00032\u0006\u0010\u000b\u001a\u00020\fJ\u0016\u0010\r\u001a\u00020\u00032\u0006\u0010\n\u001a\u00020\u0003H\u0086@?\u0006\u0002\u0010\u000eJ\u001f\u0010\u000f\u001a\u00020\u00032\u0006\u0010\u0010\u001a\u00020\u00032\b\b\u0002\u0010\u0011\u001a\u00020\u0003H\u0000?\u0006\u0002\b\u0012J\u0010\u0010\u0013\u001a\u00020\u00032\b\b\u0002\u0010\u0014\u001a\u00020\u0003J\u001a\u0010\u0015\u001a\b\u0012\u0004\u0012\u00020\u00030\u00072\f\u0010\u0016\u001a\b\u0012\u0004\u0012\u00020\u00030\u0007J\u0006\u0010\u0017\u001a\u00020\u0003J\u0016\u0010\u0018\u001a\u00020\u00032\f\u0010\u0019\u001a\b\u0012\u0004\u0012\u00020\u00030\u001aH\u0002R\u000e\u0010\u0002\u001a\u00020\u0003X\u0082\u0004?\u0006\u0002\n\u0000R\u0014\u0010\u001b\u001a\b\u0012\u0004\u0012\u00020\u00030\u001aX\u0082\u0004?\u0006\u0002\n\u0000R\u0014\u0010\u001c\u001a\b\u0012\u0004\u0012\u00020\u001d0\u001aX\u0082\u0004?\u0006\u0002\n\u0000��\u0006\u001f"]
-      d2=["Lkc/auth/AuthClient;","","base","","<init>","(Ljava/lang/String;)V","names","","users","token","user","ttl","","fetch","(Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;","mask","value","stars","mask$kc_kotlin","label","prefix","sorted","items","unused","describe","s","Lkotlin/Function0;","greet","ready","","Companion","kc-kotlin"]
+      d1=["\u0000:\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0000\n\u0002\u0010\u000e\n\u0002\b\u0003\n\u0002\u0010 \n\u0002\b\u0004\n\u0002\u0010\b\n\u0002\b\r\n\u0002\u0018\u0002\n\u0002\b\u0002\n\u0002\u0010\u000b\n\u0002\b\u0006\n\u0002\u0018\u0002\n\u0002\b\u0003\u0018\u0000 &2\u00020\u0001:\u0001&B\u000f\u0012\u0006\u0010\u0002\u001a\u00020\u0003?\u0006\u0004\b\u0004\u0010\u0005J\u001a\u0010\u0006\u001a\b\u0012\u0004\u0012\u00020\u00030\u00072\f\u0010\b\u001a\b\u0012\u0004\u0012\u00020\u00030\u0007J\u000e\u0010\t\u001a\u00020\u00032\u0006\u0010\n\u001a\u00020\u0003J\u0016\u0010\t\u001a\u00020\u00032\u0006\u0010\n\u001a\u00020\u00032\u0006\u0010\u000b\u001a\u00020\fJ\u0016\u0010\r\u001a\u00020\u00032\u0006\u0010\n\u001a\u00020\u0003H\u0086@?\u0006\u0002\u0010\u000eJ\u001f\u0010\u000f\u001a\u00020\u00032\u0006\u0010\u0010\u001a\u00020\u00032\b\b\u0002\u0010\u0011\u001a\u00020\u0003H\u0000?\u0006\u0002\b\u0012J\u0010\u0010\u0013\u001a\u00020\u00032\b\b\u0002\u0010\u0014\u001a\u00020\u0003J\u001a\u0010\u0015\u001a\b\u0012\u0004\u0012\u00020\u00030\u00072\f\u0010\u0016\u001a\b\u0012\u0004\u0012\u00020\u00030\u0007J\u0006\u0010\u0017\u001a\u00020\u0003J\u0016\u0010\u0018\u001a\u00020\u00032\f\u0010\u0019\u001a\b\u0012\u0004\u0012\u00020\u00030\u001aH\u0002J\u0006\u0010\u001e\u001a\u00020\u0003J\u0006\u0010\u001f\u001a\u00020\u0003J\u0006\u0010 \u001a\u00020\fJ\u0014\u0010!\u001a\u00020\u00032\f\u0010\"\u001a\b\u0012\u0004\u0012\u00020\u00030\u0007J)\u0010!\u001a\u00020\u00032\f\u0010\"\u001a\b\u0012\u0004\u0012\u00020\f0\u0007H\u0007b\f\b$\u0012\b\b%\u0012\u0004\b\b(#?\u0006\u0002\b#R\u000e\u0010\u0002\u001a\u00020\u0003X\u0082\u0004?\u0006\u0002\n\u0000R\u0014\u0010\u001b\u001a\b\u0012\u0004\u0012\u00020\u00030\u001aX\u0082\u0004?\u0006\u0002\n\u0000R\u0014\u0010\u001c\u001a\b\u0012\u0004\u0012\u00020\u001d0\u001aX\u0082\u0004?\u0006\u0002\n\u0000��\u0006\'"]
+      d2=["Lkc/auth/AuthClient;","","base","","<init>","(Ljava/lang/String;)V","names","","users","token","user","ttl","","fetch","(Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;","mask","value","stars","mask$kc_kotlin","label","prefix","sorted","items","unused","describe","s","Lkotlin/Function0;","greet","ready","","nested","withLocal","withLocalClass","join","xs","joinInts","Lkotlin/jvm/JvmName;","name","Companion","kc-kotlin"]
     )
 RuntimeInvisibleAnnotations:
-  0: #333(#195=[s#334])
+  0: #402(#195=[s#403])
     kotlin.jvm.internal.SourceDebugExtension(
-      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n*L\n1#1,65:1\n1745#2:66\n1820#2,3:67\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n*L\n17#1:66\n17#1:67,3\n*E\n"]
+      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n*L\n1#1,129:1\n1745#2:130\n1820#2,3:131\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n*L\n17#1:130\n17#1:131,3\n*E\n"]
     )
 BootstrapMethods:
   0: #37 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
@@ -1600,17 +2013,1144 @@ BootstrapMethods:
   4: #211 REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
     Method arguments:
       #204 \u0001\u0001
-  5: #211 REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  5: #37 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
     Method arguments:
-      #258 \u0001\u0001\u0001
-  6: #211 REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+      #23 ()Ljava/lang/Object;
+      #259 REF_invokeStatic kc/auth/AuthClient.nested$lambda$0:(Lkc/auth/AuthClient;)Ljava/lang/String;
+      #30 ()Ljava/lang/String;
+  6: #37 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
     Method arguments:
-      #264 hi \u0001
+      #23 ()Ljava/lang/Object;
+      #282 REF_invokeStatic kc/auth/AuthClient.join$lambda$0:(Ljava/util/List;)Ljava/lang/String;
+      #30 ()Ljava/lang/String;
   7: #37 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
     Method arguments:
-      #306 (Ljava/lang/Object;)Ljava/lang/Object;
-      #309 REF_invokeStatic kc/auth/AuthClient.UPPER$lambda$0:(Ljava/lang/String;)Ljava/lang/String;
-      #310 (Ljava/lang/String;)Ljava/lang/String;
+      #23 ()Ljava/lang/Object;
+      #293 REF_invokeStatic kc/auth/AuthClient.join$lambda$1:(Ljava/util/List;)Ljava/lang/String;
+      #30 ()Ljava/lang/String;
+  8: #37 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #23 ()Ljava/lang/Object;
+      #299 REF_invokeStatic kc/auth/AuthClient.withLocal$inner$lambda$0:(Ljava/lang/String;Lkc/auth/AuthClient;)Ljava/lang/String;
+      #30 ()Ljava/lang/String;
+  9: #211 REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #307 \u0001\u0001\u0001
+  10: #211 REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #313 hi \u0001
+  11: #37 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #23 ()Ljava/lang/Object;
+      #320 REF_invokeStatic kc/auth/AuthClient.nested$lambda$0$0:(Lkc/auth/AuthClient;)Ljava/lang/String;
+      #30 ()Ljava/lang/String;
+  12: #37 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #374 (Ljava/lang/Object;)Ljava/lang/Object;
+      #377 REF_invokeStatic kc/auth/AuthClient.UPPER$lambda$0:(Ljava/lang/String;)Ljava/lang/String;
+      #378 (Ljava/lang/String;)Ljava/lang/String;
+Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientDefaults.class
+  Last modified 2026. 11. 7.; size 1282 bytes
+  SHA-256 checksum 7b630111ecb6b0cc89a9f4d5142d7460d6a1e571dfbc3cd51fc20d8912731883
+  Compiled from "AuthClient.kt"
+public final class kc.auth.AuthClientDefaults
+  minor version: 0
+  major version: 65
+  flags: (0x0031) ACC_PUBLIC, ACC_FINAL, ACC_SUPER
+  this_class: #2                          // kc/auth/AuthClientDefaults
+  super_class: #4                         // java/lang/Object
+  interfaces: 0, fields: 1, methods: 5, attributes: 2
+Constant pool:
+   #1 = Utf8               kc/auth/AuthClientDefaults
+   #2 = Class              #1             // kc/auth/AuthClientDefaults
+   #3 = Utf8               java/lang/Object
+   #4 = Class              #3             // java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = NameAndType        #5:#6          // "<init>":()V
+   #8 = Methodref          #4.#7          // java/lang/Object."<init>":()V
+   #9 = Utf8               this
+  #10 = Utf8               Lkc/auth/AuthClientDefaults;
+  #11 = Utf8               pick
+  #12 = Utf8               (Lkc/auth/AuthClientDefaults;I)I
+  #13 = Utf8               Lkotlin/jvm/JvmStatic;
+  #14 = Utf8               Lorg/jetbrains/annotations/Nullable;
+  #15 = Utf8               o
+  #16 = Utf8               n
+  #17 = Utf8               I
+  #18 = Utf8               pick$default
+  #19 = Utf8               (Lkc/auth/AuthClientDefaults;IILjava/lang/Object;)I
+  #20 = NameAndType        #11:#12        // pick:(Lkc/auth/AuthClientDefaults;I)I
+  #21 = Methodref          #2.#20         // kc/auth/AuthClientDefaults.pick:(Lkc/auth/AuthClientDefaults;I)I
+  #22 = Utf8               (I)I
+  #23 = Utf8               <clinit>
+  #24 = Methodref          #2.#7          // kc/auth/AuthClientDefaults."<init>":()V
+  #25 = Utf8               INSTANCE
+  #26 = NameAndType        #25:#10        // INSTANCE:Lkc/auth/AuthClientDefaults;
+  #27 = Fieldref           #2.#26         // kc/auth/AuthClientDefaults.INSTANCE:Lkc/auth/AuthClientDefaults;
+  #28 = Utf8               Lorg/jetbrains/annotations/NotNull;
+  #29 = Utf8               Lkotlin/Metadata;
+  #30 = Utf8               mv
+  #31 = Integer            2
+  #32 = Integer            4
+  #33 = Integer            0
+  #34 = Utf8               k
+  #35 = Integer            1
+  #36 = Utf8               xi
+  #37 = Integer            48
+  #38 = Utf8               d1
+  #39 = Utf8               \u0000\u001a\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0002\b\u0003\n\u0002\u0010\b\n\u0002\b\u0002\n\u0002\u0018\u0002\n\u0000\b��\u0002\u0018\u00002\u00020\u0001B\t\b\u0002?\u0006\u0004\b\u0002\u0010\u0003J \u0010\u0004\u001a\u00020\u00052\b\u0010\u0006\u001a\u0004\u0018\u00010\u00002\b\b\u0002\u0010\u0007\u001a\u00020\u0005H\u0007b\u0002\b\bJ\u0014\u0010\u0004\u001a\u00020\u00052\u0006\u0010\u0007\u001a\u00020\u0005H\u0007b\u0002\b\b��\u0006\t
+  #40 = Utf8               d2
+  #41 = Utf8
+  #42 = Utf8               kc-kotlin
+  #43 = Utf8               AuthClient.kt
+  #44 = Utf8               RuntimeInvisibleAnnotations
+  #45 = Utf8               Code
+  #46 = Utf8               LineNumberTable
+  #47 = Utf8               LocalVariableTable
+  #48 = Utf8               StackMapTable
+  #49 = Utf8               RuntimeVisibleAnnotations
+  #50 = Utf8               RuntimeInvisibleParameterAnnotations
+  #51 = Utf8               SourceFile
+{
+  public static final kc.auth.AuthClientDefaults INSTANCE;
+    descriptor: Lkc/auth/AuthClientDefaults;
+    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL
+    RuntimeInvisibleAnnotations:
+      0: #28()
+        org.jetbrains.annotations.NotNull
+
+  private kc.auth.AuthClientDefaults();
+    descriptor: ()V
+    flags: (0x0002) ACC_PRIVATE
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #8                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 109: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lkc/auth/AuthClientDefaults;
+
+  public static final int pick(kc.auth.AuthClientDefaults, int);
+    descriptor: (Lkc/auth/AuthClientDefaults;I)I
+    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL
+    Code:
+      stack=2, locals=2, args_size=2
+         0: iload_1
+         1: aload_0
+         2: ifnonnull     9
+         5: iconst_0
+         6: goto          10
+         9: iconst_1
+        10: iadd
+        11: ireturn
+      StackMapTable: number_of_entries = 2
+        frame_type = 73 /* same_locals_1_stack_item */
+          stack = [ int ]
+        frame_type = 255 /* full_frame */
+          offset_delta = 0
+          locals = [ class kc/auth/AuthClientDefaults, int ]
+          stack = [ int, int ]
+      LineNumberTable:
+        line 114: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      12     0     o   Lkc/auth/AuthClientDefaults;
+            0      12     1     n   I
+    RuntimeVisibleAnnotations:
+      0: #13()
+        kotlin.jvm.JvmStatic
+    RuntimeInvisibleParameterAnnotations:
+      parameter 0:
+        0: #14()
+          org.jetbrains.annotations.Nullable
+      parameter 1:
+
+  public static int pick$default(kc.auth.AuthClientDefaults, int, int, java.lang.Object);
+    descriptor: (Lkc/auth/AuthClientDefaults;IILjava/lang/Object;)I
+    flags: (0x1009) ACC_PUBLIC, ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=2, locals=4, args_size=4
+         0: iload_2
+         1: iconst_2
+         2: iand
+         3: ifeq          8
+         6: iconst_0
+         7: istore_1
+         8: aload_0
+         9: iload_1
+        10: invokestatic  #21                 // Method pick:(Lkc/auth/AuthClientDefaults;I)I
+        13: ireturn
+      StackMapTable: number_of_entries = 1
+        frame_type = 8 /* same */
+      LineNumberTable:
+        line 111: 0
+        line 113: 6
+        line 111: 8
+
+  public static final int pick(int);
+    descriptor: (I)I
+    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL
+    Code:
+      stack=1, locals=1, args_size=1
+         0: iload_0
+         1: ireturn
+      LineNumberTable:
+        line 117: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       2     0     n   I
+    RuntimeVisibleAnnotations:
+      0: #13()
+        kotlin.jvm.JvmStatic
+
+  static {};
+    descriptor: ()V
+    flags: (0x0008) ACC_STATIC
+    Code:
+      stack=2, locals=0, args_size=0
+         0: new           #2                  // class kc/auth/AuthClientDefaults
+         3: dup
+         4: invokespecial #24                 // Method "<init>":()V
+         7: putstatic     #27                 // Field INSTANCE:Lkc/auth/AuthClientDefaults;
+        10: return
+}
+SourceFile: "AuthClient.kt"
+RuntimeVisibleAnnotations:
+  0: #29(#30=[I#31,I#32,I#33],#34=I#35,#36=I#37,#38=[s#39],#40=[s#10,s#41,s#5,s#6,s#11,s#41,s#15,s#16,s#13,s#42])
+    kotlin.Metadata(
+      mv=[2,4,0]
+      k=1
+      xi=48
+      d1=["\u0000\u001a\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0002\b\u0003\n\u0002\u0010\b\n\u0002\b\u0002\n\u0002\u0018\u0002\n\u0000\b��\u0002\u0018\u00002\u00020\u0001B\t\b\u0002?\u0006\u0004\b\u0002\u0010\u0003J \u0010\u0004\u001a\u00020\u00052\b\u0010\u0006\u001a\u0004\u0018\u00010\u00002\b\b\u0002\u0010\u0007\u001a\u00020\u0005H\u0007b\u0002\b\bJ\u0014\u0010\u0004\u001a\u00020\u00052\u0006\u0010\u0007\u001a\u00020\u0005H\u0007b\u0002\b\b��\u0006\t"]
+      d2=["Lkc/auth/AuthClientDefaults;","","<init>","()V","pick","","o","n","Lkotlin/jvm/JvmStatic;","kc-kotlin"]
+    )
+Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientKt.class
+  Last modified 2026. 11. 7.; size 1022 bytes
+  SHA-256 checksum 3fb52fc068fe409592d2f1f02033565e686bbd42bcdd10e20c47deec818fd7ad
+  Compiled from "AuthClient.kt"
+public final class kc.auth.AuthClientKt
+  minor version: 0
+  major version: 65
+  flags: (0x0031) ACC_PUBLIC, ACC_FINAL, ACC_SUPER
+  this_class: #2                          // kc/auth/AuthClientKt
+  super_class: #4                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 1, attributes: 2
+Constant pool:
+   #1 = Utf8               kc/auth/AuthClientKt
+   #2 = Class              #1             // kc/auth/AuthClientKt
+   #3 = Utf8               java/lang/Object
+   #4 = Class              #3             // java/lang/Object
+   #5 = Utf8               describeStatic
+   #6 = Utf8               (Lkotlin/jvm/functions/Function0;)Ljava/lang/String;
+   #7 = Utf8               (Lkotlin/jvm/functions/Function0<Ljava/lang/String;>;)Ljava/lang/String;
+   #8 = Utf8               Lorg/jetbrains/annotations/NotNull;
+   #9 = Utf8               s
+  #10 = String             #9             // s
+  #11 = Utf8               kotlin/jvm/internal/Intrinsics
+  #12 = Class              #11            // kotlin/jvm/internal/Intrinsics
+  #13 = Utf8               checkNotNullParameter
+  #14 = Utf8               (Ljava/lang/Object;Ljava/lang/String;)V
+  #15 = NameAndType        #13:#14        // checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
+  #16 = Methodref          #12.#15        // kotlin/jvm/internal/Intrinsics.checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
+  #17 = Utf8               kotlin/jvm/functions/Function0
+  #18 = Class              #17            // kotlin/jvm/functions/Function0
+  #19 = Utf8               invoke
+  #20 = Utf8               ()Ljava/lang/Object;
+  #21 = NameAndType        #19:#20        // invoke:()Ljava/lang/Object;
+  #22 = InterfaceMethodref #18.#21        // kotlin/jvm/functions/Function0.invoke:()Ljava/lang/Object;
+  #23 = Utf8               java/lang/String
+  #24 = Class              #23            // java/lang/String
+  #25 = Utf8               Lkotlin/jvm/functions/Function0;
+  #26 = Utf8               Lkotlin/Metadata;
+  #27 = Utf8               mv
+  #28 = Integer            2
+  #29 = Integer            4
+  #30 = Integer            0
+  #31 = Utf8               k
+  #32 = Utf8               xi
+  #33 = Integer            48
+  #34 = Utf8               d1
+  #35 = Utf8               \u0000\u000e\n\u0000\n\u0002\u0010\u000e\n\u0000\n\u0002\u0018\u0002\n\u0000\u001a\u0014\u0010\u0000\u001a\u00020\u00012\f\u0010\u0002\u001a\b\u0012\u0004\u0012\u00020\u00010\u0003��\u0006\u0004
+  #36 = Utf8               d2
+  #37 = Utf8
+  #38 = Utf8               Lkotlin/Function0;
+  #39 = Utf8               kc-kotlin
+  #40 = Utf8               AuthClient.kt
+  #41 = Utf8               Code
+  #42 = Utf8               LineNumberTable
+  #43 = Utf8               LocalVariableTable
+  #44 = Utf8               Signature
+  #45 = Utf8               RuntimeInvisibleAnnotations
+  #46 = Utf8               RuntimeInvisibleParameterAnnotations
+  #47 = Utf8               SourceFile
+  #48 = Utf8               RuntimeVisibleAnnotations
+{
+  public static final java.lang.String describeStatic(kotlin.jvm.functions.Function0<java.lang.String>);
+    descriptor: (Lkotlin/jvm/functions/Function0;)Ljava/lang/String;
+    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: ldc           #10                 // String s
+         3: invokestatic  #16                 // Method kotlin/jvm/internal/Intrinsics.checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
+         6: aload_0
+         7: invokeinterface #22,  1           // InterfaceMethod kotlin/jvm/functions/Function0.invoke:()Ljava/lang/Object;
+        12: checkcast     #24                 // class java/lang/String
+        15: areturn
+      LineNumberTable:
+        line 128: 6
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      16     0     s   Lkotlin/jvm/functions/Function0;
+    Signature: #7                           // (Lkotlin/jvm/functions/Function0<Ljava/lang/String;>;)Ljava/lang/String;
+    RuntimeInvisibleAnnotations:
+      0: #8()
+        org.jetbrains.annotations.NotNull
+    RuntimeInvisibleParameterAnnotations:
+      parameter 0:
+        0: #8()
+          org.jetbrains.annotations.NotNull
+}
+SourceFile: "AuthClient.kt"
+RuntimeVisibleAnnotations:
+  0: #26(#27=[I#28,I#29,I#30],#31=I#28,#32=I#33,#34=[s#35],#36=[s#5,s#37,s#9,s#38,s#39])
+    kotlin.Metadata(
+      mv=[2,4,0]
+      k=2
+      xi=48
+      d1=["\u0000\u000e\n\u0000\n\u0002\u0010\u000e\n\u0000\n\u0002\u0018\u0002\n\u0000\u001a\u0014\u0010\u0000\u001a\u00020\u00012\f\u0010\u0002\u001a\b\u0012\u0004\u0012\u00020\u00010\u0003��\u0006\u0004"]
+      d2=["describeStatic","","s","Lkotlin/Function0;","kc-kotlin"]
+    )
+Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientLoader$load$1.class
+  Last modified 2026. 11. 7.; size 1638 bytes
+  SHA-256 checksum 31f0a68cc96762b40dfc94ac79177bf3a214079247c84a8cfed89ee75b801fd1
+  Compiled from "AuthClient.kt"
+final class kc.auth.AuthClientLoader$load$1 extends kotlin.coroutines.jvm.internal.ContinuationImpl
+  minor version: 0
+  major version: 65
+  flags: (0x0030) ACC_FINAL, ACC_SUPER
+  this_class: #2                          // kc/auth/AuthClientLoader$load$1
+  super_class: #4                         // kotlin/coroutines/jvm/internal/ContinuationImpl
+  interfaces: 0, fields: 5, methods: 2, attributes: 4
+Constant pool:
+   #1 = Utf8               kc/auth/AuthClientLoader$load$1
+   #2 = Class              #1             // kc/auth/AuthClientLoader$load$1
+   #3 = Utf8               kotlin/coroutines/jvm/internal/ContinuationImpl
+   #4 = Class              #3             // kotlin/coroutines/jvm/internal/ContinuationImpl
+   #5 = Utf8               L$0
+   #6 = Utf8               Ljava/lang/Object;
+   #7 = Utf8               I$0
+   #8 = Utf8               I
+   #9 = Utf8               Lkotlin/coroutines/jvm/internal/DebugMetadata;
+  #10 = Utf8               f
+  #11 = Utf8               AuthClient.kt
+  #12 = Utf8               l
+  #13 = Integer            123
+  #14 = Utf8               nl
+  #15 = Integer            124
+  #16 = Utf8               i
+  #17 = Integer            0
+  #18 = Utf8               s
+  #19 = Utf8               n
+  #20 = Utf8               $this
+  #21 = Utf8               m
+  #22 = Utf8               load$suspendImpl
+  #23 = Utf8               c
+  #24 = Utf8               kc.auth.AuthClientLoader
+  #25 = Utf8               v
+  #26 = Integer            2
+  #27 = Utf8               <init>
+  #28 = Utf8               (Lkc/auth/AuthClientLoader;Lkotlin/coroutines/Continuation;)V
+  #29 = Utf8               (Lkc/auth/AuthClientLoader;Lkotlin/coroutines/Continuation<-Lkc/auth/AuthClientLoader$load$1;>;)V
+  #30 = Utf8               this$0
+  #31 = Utf8               Lkc/auth/AuthClientLoader;
+  #32 = NameAndType        #30:#31        // this$0:Lkc/auth/AuthClientLoader;
+  #33 = Fieldref           #2.#32         // kc/auth/AuthClientLoader$load$1.this$0:Lkc/auth/AuthClientLoader;
+  #34 = Utf8               (Lkotlin/coroutines/Continuation;)V
+  #35 = NameAndType        #27:#34        // "<init>":(Lkotlin/coroutines/Continuation;)V
+  #36 = Methodref          #4.#35         // kotlin/coroutines/jvm/internal/ContinuationImpl."<init>":(Lkotlin/coroutines/Continuation;)V
+  #37 = Utf8               this
+  #38 = Utf8               Lkc/auth/AuthClientLoader$load$1;
+  #39 = Utf8               $completion
+  #40 = Utf8               Lkotlin/coroutines/Continuation;
+  #41 = Utf8               invokeSuspend
+  #42 = Utf8               (Ljava/lang/Object;)Ljava/lang/Object;
+  #43 = Utf8               Lorg/jetbrains/annotations/Nullable;
+  #44 = Utf8               Lorg/jetbrains/annotations/NotNull;
+  #45 = Utf8               result
+  #46 = NameAndType        #45:#6         // result:Ljava/lang/Object;
+  #47 = Fieldref           #2.#46         // kc/auth/AuthClientLoader$load$1.result:Ljava/lang/Object;
+  #48 = Utf8               label
+  #49 = NameAndType        #48:#8         // label:I
+  #50 = Fieldref           #2.#49         // kc/auth/AuthClientLoader$load$1.label:I
+  #51 = Integer            -2147483648
+  #52 = Utf8               kotlin/coroutines/Continuation
+  #53 = Class              #52            // kotlin/coroutines/Continuation
+  #54 = Utf8               kc/auth/AuthClientLoader
+  #55 = Class              #54            // kc/auth/AuthClientLoader
+  #56 = Utf8               (Lkc/auth/AuthClientLoader;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+  #57 = NameAndType        #22:#56        // load$suspendImpl:(Lkc/auth/AuthClientLoader;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+  #58 = Methodref          #55.#57        // kc/auth/AuthClientLoader.load$suspendImpl:(Lkc/auth/AuthClientLoader;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+  #59 = Utf8               $result
+  #60 = Utf8               Lkotlin/Metadata;
+  #61 = Utf8               mv
+  #62 = Integer            4
+  #63 = Utf8               k
+  #64 = Integer            3
+  #65 = Utf8               xi
+  #66 = Integer            560
+  #67 = Utf8               Code
+  #68 = Utf8               LocalVariableTable
+  #69 = Utf8               Signature
+  #70 = Utf8               RuntimeInvisibleAnnotations
+  #71 = Utf8               RuntimeInvisibleParameterAnnotations
+  #72 = Utf8               InnerClasses
+  #73 = Utf8               EnclosingMethod
+  #74 = Utf8               SourceFile
+  #75 = Utf8               RuntimeVisibleAnnotations
+{
+  java.lang.Object L$0;
+    descriptor: Ljava/lang/Object;
+    flags: (0x0000)
+
+  int I$0;
+    descriptor: I
+    flags: (0x0000)
+
+  java.lang.Object result;
+    descriptor: Ljava/lang/Object;
+    flags: (0x1000) ACC_SYNTHETIC
+
+  final kc.auth.AuthClientLoader this$0;
+    descriptor: Lkc/auth/AuthClientLoader;
+    flags: (0x1010) ACC_FINAL, ACC_SYNTHETIC
+
+  int label;
+    descriptor: I
+    flags: (0x0000)
+
+  kc.auth.AuthClientLoader$load$1(kc.auth.AuthClientLoader, kotlin.coroutines.Continuation<? super kc.auth.AuthClientLoader$load$1>);
+    descriptor: (Lkc/auth/AuthClientLoader;Lkotlin/coroutines/Continuation;)V
+    flags: (0x0000)
+    Code:
+      stack=2, locals=3, args_size=3
+         0: aload_0
+         1: aload_1
+         2: putfield      #33                 // Field this$0:Lkc/auth/AuthClientLoader;
+         5: aload_0
+         6: aload_2
+         7: invokespecial #36                 // Method kotlin/coroutines/jvm/internal/ContinuationImpl."<init>":(Lkotlin/coroutines/Continuation;)V
+        10: return
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      11     0  this   Lkc/auth/AuthClientLoader$load$1;
+            0      11     1 this$0   Lkc/auth/AuthClientLoader;
+            0      11     2 $completion   Lkotlin/coroutines/Continuation;
+    Signature: #29                          // (Lkc/auth/AuthClientLoader;Lkotlin/coroutines/Continuation<-Lkc/auth/AuthClientLoader$load$1;>;)V
+
+  public final java.lang.Object invokeSuspend(java.lang.Object);
+    descriptor: (Ljava/lang/Object;)Ljava/lang/Object;
+    flags: (0x0011) ACC_PUBLIC, ACC_FINAL
+    Code:
+      stack=3, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: putfield      #47                 // Field result:Ljava/lang/Object;
+         5: aload_0
+         6: aload_0
+         7: getfield      #50                 // Field label:I
+        10: ldc           #51                 // int -2147483648
+        12: ior
+        13: putfield      #50                 // Field label:I
+        16: aload_0
+        17: getfield      #33                 // Field this$0:Lkc/auth/AuthClientLoader;
+        20: iconst_0
+        21: aload_0
+        22: checkcast     #53                 // class kotlin/coroutines/Continuation
+        25: invokestatic  #58                 // Method kc/auth/AuthClientLoader.load$suspendImpl:(Lkc/auth/AuthClientLoader;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+        28: areturn
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      29     0  this   Lkc/auth/AuthClientLoader$load$1;
+            0      29     1 $result   Ljava/lang/Object;
+    RuntimeInvisibleAnnotations:
+      0: #43()
+        org.jetbrains.annotations.Nullable
+    RuntimeInvisibleParameterAnnotations:
+      parameter 0:
+        0: #44()
+          org.jetbrains.annotations.NotNull
+}
+InnerClasses:
+  static final #2;                        // class kc/auth/AuthClientLoader$load$1
+EnclosingMethod: #55.#57                // kc.auth.AuthClientLoader.load$suspendImpl
+SourceFile: "AuthClient.kt"
+RuntimeVisibleAnnotations:
+  0: #9(#10=s#11,#12=[I#13],#14=[I#15],#16=[I#17,I#17],#18=[s#5,s#7],#19=[s#20,s#19],#21=s#22,#23=s#24,#25=I#26)
+    kotlin.coroutines.jvm.internal.DebugMetadata(
+      f="AuthClient.kt"
+      l=[123]
+      nl=[124]
+      i=[0,0]
+      s=["L$0","I$0"]
+      n=["$this","n"]
+      m="load$suspendImpl"
+      c="kc.auth.AuthClientLoader"
+      v=2
+    )
+  1: #60(#61=[I#26,I#62,I#17],#63=I#64,#65=I#66)
+    kotlin.Metadata(
+      mv=[2,4,0]
+      k=3
+      xi=560
+    )
+Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientLoader.class
+  Last modified 2026. 11. 7.; size 2491 bytes
+  SHA-256 checksum 1e781ab307754596175c447ac6e3da62ea3cc6f3d255a84d1e37144c8e78e386
+  Compiled from "AuthClient.kt"
+public class kc.auth.AuthClientLoader
+  minor version: 0
+  major version: 65
+  flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+  this_class: #2                          // kc/auth/AuthClientLoader
+  super_class: #4                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 3, attributes: 3
+Constant pool:
+    #1 = Utf8               kc/auth/AuthClientLoader
+    #2 = Class              #1            // kc/auth/AuthClientLoader
+    #3 = Utf8               java/lang/Object
+    #4 = Class              #3            // java/lang/Object
+    #5 = Utf8               <init>
+    #6 = Utf8               ()V
+    #7 = NameAndType        #5:#6         // "<init>":()V
+    #8 = Methodref          #4.#7         // java/lang/Object."<init>":()V
+    #9 = Utf8               this
+   #10 = Utf8               Lkc/auth/AuthClientLoader;
+   #11 = Utf8               load
+   #12 = Utf8               (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+   #13 = Utf8               (ILkotlin/coroutines/Continuation<-Ljava/lang/Integer;>;)Ljava/lang/Object;
+   #14 = Utf8               Lorg/jetbrains/annotations/Nullable;
+   #15 = Utf8               Lorg/jetbrains/annotations/NotNull;
+   #16 = Utf8               load$suspendImpl
+   #17 = Utf8               (Lkc/auth/AuthClientLoader;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+   #18 = NameAndType        #16:#17       // load$suspendImpl:(Lkc/auth/AuthClientLoader;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+   #19 = Methodref          #2.#18        // kc/auth/AuthClientLoader.load$suspendImpl:(Lkc/auth/AuthClientLoader;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+   #20 = Utf8               n
+   #21 = Utf8               I
+   #22 = Utf8               $completion
+   #23 = Utf8               Lkotlin/coroutines/Continuation;
+   #24 = Utf8               (Lkc/auth/AuthClientLoader;ILkotlin/coroutines/Continuation<-Ljava/lang/Integer;>;)Ljava/lang/Object;
+   #25 = Utf8               kc/auth/AuthClientLoader$load$1
+   #26 = Class              #25           // kc/auth/AuthClientLoader$load$1
+   #27 = Utf8               label
+   #28 = NameAndType        #27:#21       // label:I
+   #29 = Fieldref           #26.#28       // kc/auth/AuthClientLoader$load$1.label:I
+   #30 = Integer            -2147483648
+   #31 = Utf8               (Lkc/auth/AuthClientLoader;Lkotlin/coroutines/Continuation;)V
+   #32 = NameAndType        #5:#31        // "<init>":(Lkc/auth/AuthClientLoader;Lkotlin/coroutines/Continuation;)V
+   #33 = Methodref          #26.#32       // kc/auth/AuthClientLoader$load$1."<init>":(Lkc/auth/AuthClientLoader;Lkotlin/coroutines/Continuation;)V
+   #34 = Utf8               result
+   #35 = Utf8               Ljava/lang/Object;
+   #36 = NameAndType        #34:#35       // result:Ljava/lang/Object;
+   #37 = Fieldref           #26.#36       // kc/auth/AuthClientLoader$load$1.result:Ljava/lang/Object;
+   #38 = Utf8               kotlin/coroutines/intrinsics/IntrinsicsKt
+   #39 = Class              #38           // kotlin/coroutines/intrinsics/IntrinsicsKt
+   #40 = Utf8               getCOROUTINE_SUSPENDED
+   #41 = Utf8               ()Ljava/lang/Object;
+   #42 = NameAndType        #40:#41       // getCOROUTINE_SUSPENDED:()Ljava/lang/Object;
+   #43 = Methodref          #39.#42       // kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED:()Ljava/lang/Object;
+   #44 = Utf8               kotlin/ResultKt
+   #45 = Class              #44           // kotlin/ResultKt
+   #46 = Utf8               throwOnFailure
+   #47 = Utf8               (Ljava/lang/Object;)V
+   #48 = NameAndType        #46:#47       // throwOnFailure:(Ljava/lang/Object;)V
+   #49 = Methodref          #45.#48       // kotlin/ResultKt.throwOnFailure:(Ljava/lang/Object;)V
+   #50 = Utf8               kotlin/coroutines/jvm/internal/SpillingKt
+   #51 = Class              #50           // kotlin/coroutines/jvm/internal/SpillingKt
+   #52 = Utf8               nullOutSpilledVariable
+   #53 = Utf8               (Ljava/lang/Object;)Ljava/lang/Object;
+   #54 = NameAndType        #52:#53       // nullOutSpilledVariable:(Ljava/lang/Object;)Ljava/lang/Object;
+   #55 = Methodref          #51.#54       // kotlin/coroutines/jvm/internal/SpillingKt.nullOutSpilledVariable:(Ljava/lang/Object;)Ljava/lang/Object;
+   #56 = Utf8               L$0
+   #57 = NameAndType        #56:#35       // L$0:Ljava/lang/Object;
+   #58 = Fieldref           #26.#57       // kc/auth/AuthClientLoader$load$1.L$0:Ljava/lang/Object;
+   #59 = Utf8               I$0
+   #60 = NameAndType        #59:#21       // I$0:I
+   #61 = Fieldref           #26.#60       // kc/auth/AuthClientLoader$load$1.I$0:I
+   #62 = Utf8               kotlinx/coroutines/DelayKt
+   #63 = Class              #62           // kotlinx/coroutines/DelayKt
+   #64 = Utf8               delay
+   #65 = Utf8               (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+   #66 = NameAndType        #64:#65       // delay:(JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+   #67 = Methodref          #63.#66       // kotlinx/coroutines/DelayKt.delay:(JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+   #68 = Utf8               kotlin/coroutines/jvm/internal/Boxing
+   #69 = Class              #68           // kotlin/coroutines/jvm/internal/Boxing
+   #70 = Utf8               boxInt
+   #71 = Utf8               (I)Ljava/lang/Integer;
+   #72 = NameAndType        #70:#71       // boxInt:(I)Ljava/lang/Integer;
+   #73 = Methodref          #69.#72       // kotlin/coroutines/jvm/internal/Boxing.boxInt:(I)Ljava/lang/Integer;
+   #74 = Utf8               java/lang/IllegalStateException
+   #75 = Class              #74           // java/lang/IllegalStateException
+   #76 = Utf8               call to \'resume\' before \'invoke\' with coroutine
+   #77 = String             #76           // call to \'resume\' before \'invoke\' with coroutine
+   #78 = Utf8               (Ljava/lang/String;)V
+   #79 = NameAndType        #5:#78        // "<init>":(Ljava/lang/String;)V
+   #80 = Methodref          #75.#79       // java/lang/IllegalStateException."<init>":(Ljava/lang/String;)V
+   #81 = Utf8               $this
+   #82 = Utf8               $continuation
+   #83 = Utf8               $result
+   #84 = Utf8               kotlin/coroutines/Continuation
+   #85 = Class              #84           // kotlin/coroutines/Continuation
+   #86 = Utf8               Lkotlin/Metadata;
+   #87 = Utf8               mv
+   #88 = Integer            2
+   #89 = Integer            4
+   #90 = Integer            0
+   #91 = Utf8               k
+   #92 = Integer            1
+   #93 = Utf8               xi
+   #94 = Integer            48
+   #95 = Utf8               d1
+   #96 = Utf8               \u0000\u0014\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0002\b\u0003\n\u0002\u0010\b\n\u0002\b\u0003\b\u0016\u0018\u00002\u00020\u0001B\u0007?\u0006\u0004\b\u0002\u0010\u0003J\u0016\u0010\u0004\u001a\u00020\u00052\u0006\u0010\u0006\u001a\u00020\u0005H\u0096@?\u0006\u0002\u0010\u0007��\u0006\b
+   #97 = Utf8               d2
+   #98 = Utf8
+   #99 = Utf8               kc-kotlin
+  #100 = Utf8               AuthClient.kt
+  #101 = Utf8               Code
+  #102 = Utf8               LineNumberTable
+  #103 = Utf8               LocalVariableTable
+  #104 = Utf8               Signature
+  #105 = Utf8               RuntimeInvisibleAnnotations
+  #106 = Utf8               RuntimeInvisibleParameterAnnotations
+  #107 = Utf8               StackMapTable
+  #108 = Utf8               InnerClasses
+  #109 = Utf8               SourceFile
+  #110 = Utf8               RuntimeVisibleAnnotations
+{
+  public kc.auth.AuthClientLoader();
+    descriptor: ()V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #8                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 121: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lkc/auth/AuthClientLoader;
+
+  public java.lang.Object load(int, kotlin.coroutines.Continuation<? super java.lang.Integer>);
+    descriptor: (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=3, locals=3, args_size=3
+         0: aload_0
+         1: iload_1
+         2: aload_2
+         3: invokestatic  #19                 // Method load$suspendImpl:(Lkc/auth/AuthClientLoader;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+         6: areturn
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       7     0  this   Lkc/auth/AuthClientLoader;
+            0       7     1     n   I
+            0       7     2 $completion   Lkotlin/coroutines/Continuation;
+    Signature: #13                          // (ILkotlin/coroutines/Continuation<-Ljava/lang/Integer;>;)Ljava/lang/Object;
+    RuntimeInvisibleAnnotations:
+      0: #14()
+        org.jetbrains.annotations.Nullable
+    RuntimeInvisibleParameterAnnotations:
+      parameter 0:
+      parameter 1:
+        0: #15()
+          org.jetbrains.annotations.NotNull
+
+  static java.lang.Object load$suspendImpl(kc.auth.AuthClientLoader, int, kotlin.coroutines.Continuation<? super java.lang.Integer>);
+    descriptor: (Lkc/auth/AuthClientLoader;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+    flags: (0x1008) ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=5, locals=6, args_size=3
+         0: aload_2
+         1: instanceof    #26                 // class kc/auth/AuthClientLoader$load$1
+         4: ifeq          39
+         7: aload_2
+         8: checkcast     #26                 // class kc/auth/AuthClientLoader$load$1
+        11: astore        4
+        13: aload         4
+        15: getfield      #29                 // Field kc/auth/AuthClientLoader$load$1.label:I
+        18: ldc           #30                 // int -2147483648
+        20: iand
+        21: ifeq          39
+        24: aload         4
+        26: dup
+        27: getfield      #29                 // Field kc/auth/AuthClientLoader$load$1.label:I
+        30: ldc           #30                 // int -2147483648
+        32: isub
+        33: putfield      #29                 // Field kc/auth/AuthClientLoader$load$1.label:I
+        36: goto          50
+        39: new           #26                 // class kc/auth/AuthClientLoader$load$1
+        42: dup
+        43: aload_0
+        44: aload_2
+        45: invokespecial #33                 // Method kc/auth/AuthClientLoader$load$1."<init>":(Lkc/auth/AuthClientLoader;Lkotlin/coroutines/Continuation;)V
+        48: astore        4
+        50: aload         4
+        52: getfield      #37                 // Field kc/auth/AuthClientLoader$load$1.result:Ljava/lang/Object;
+        55: astore_3
+        56: invokestatic  #43                 // Method kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED:()Ljava/lang/Object;
+        59: astore        5
+        61: aload         4
+        63: getfield      #29                 // Field kc/auth/AuthClientLoader$load$1.label:I
+        66: tableswitch   { // 0 to 1
+                       0: 88
+                       1: 128
+                 default: 154
+            }
+        88: aload_3
+        89: invokestatic  #49                 // Method kotlin/ResultKt.throwOnFailure:(Ljava/lang/Object;)V
+        92: lconst_1
+        93: aload         4
+        95: aload         4
+        97: aload_0
+        98: invokestatic  #55                 // Method kotlin/coroutines/jvm/internal/SpillingKt.nullOutSpilledVariable:(Ljava/lang/Object;)Ljava/lang/Object;
+       101: putfield      #58                 // Field kc/auth/AuthClientLoader$load$1.L$0:Ljava/lang/Object;
+       104: aload         4
+       106: iload_1
+       107: putfield      #61                 // Field kc/auth/AuthClientLoader$load$1.I$0:I
+       110: aload         4
+       112: iconst_1
+       113: putfield      #29                 // Field kc/auth/AuthClientLoader$load$1.label:I
+       116: invokestatic  #67                 // Method kotlinx/coroutines/DelayKt.delay:(JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+       119: dup
+       120: aload         5
+       122: if_acmpne     148
+       125: aload         5
+       127: areturn
+       128: aload         4
+       130: getfield      #61                 // Field kc/auth/AuthClientLoader$load$1.I$0:I
+       133: istore_1
+       134: aload         4
+       136: getfield      #58                 // Field kc/auth/AuthClientLoader$load$1.L$0:Ljava/lang/Object;
+       139: checkcast     #2                  // class kc/auth/AuthClientLoader
+       142: astore_0
+       143: aload_3
+       144: invokestatic  #49                 // Method kotlin/ResultKt.throwOnFailure:(Ljava/lang/Object;)V
+       147: aload_3
+       148: pop
+       149: iload_1
+       150: invokestatic  #73                 // Method kotlin/coroutines/jvm/internal/Boxing.boxInt:(I)Ljava/lang/Integer;
+       153: areturn
+       154: new           #75                 // class java/lang/IllegalStateException
+       157: dup
+       158: ldc           #77                 // String call to \'resume\' before \'invoke\' with coroutine
+       160: invokespecial #80                 // Method java/lang/IllegalStateException."<init>":(Ljava/lang/String;)V
+       163: athrow
+      StackMapTable: number_of_entries = 6
+        frame_type = 39 /* same */
+        frame_type = 253 /* append */
+          offset_delta = 10
+          locals = [ top, class kc/auth/AuthClientLoader$load$1 ]
+        frame_type = 255 /* full_frame */
+          offset_delta = 37
+          locals = [ class kc/auth/AuthClientLoader, int, class kotlin/coroutines/Continuation, class java/lang/Object, class kc/auth/AuthClientLoader$load$1, class java/lang/Object ]
+          stack = []
+        frame_type = 39 /* same */
+        frame_type = 83 /* same_locals_1_stack_item */
+          stack = [ class java/lang/Object ]
+        frame_type = 5 /* same */
+      LineNumberTable:
+        line 122: 59
+        line 123: 92
+        line 122: 125
+        line 124: 148
+        line 122: 154
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0     164     0 $this   Lkc/auth/AuthClientLoader;
+            0     164     1     n   I
+            0     164     2 $completion   Lkotlin/coroutines/Continuation;
+           50     104     4 $continuation   Lkotlin/coroutines/Continuation;
+           56      98     3 $result   Ljava/lang/Object;
+    Signature: #24                          // (Lkc/auth/AuthClientLoader;ILkotlin/coroutines/Continuation<-Ljava/lang/Integer;>;)Ljava/lang/Object;
+}
+InnerClasses:
+  static final #26;                       // class kc/auth/AuthClientLoader$load$1
+SourceFile: "AuthClient.kt"
+RuntimeVisibleAnnotations:
+  0: #86(#87=[I#88,I#89,I#90],#91=I#92,#93=I#94,#95=[s#96],#97=[s#10,s#98,s#5,s#6,s#11,s#98,s#20,s#12,s#99])
+    kotlin.Metadata(
+      mv=[2,4,0]
+      k=1
+      xi=48
+      d1=["\u0000\u0014\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0002\b\u0003\n\u0002\u0010\b\n\u0002\b\u0003\b\u0016\u0018\u00002\u00020\u0001B\u0007?\u0006\u0004\b\u0002\u0010\u0003J\u0016\u0010\u0004\u001a\u00020\u00052\u0006\u0010\u0006\u001a\u00020\u0005H\u0096@?\u0006\u0002\u0010\u0007��\u0006\b"]
+      d2=["Lkc/auth/AuthClientLoader;","","<init>","()V","load","","n","(ILkotlin/coroutines/Continuation;)Ljava/lang/Object;","kc-kotlin"]
+    )
+Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientStatus$Companion.class
+  Last modified 2026. 11. 7.; size 875 bytes
+  SHA-256 checksum fcd99e6023404cefec6ec5a09d197f4ef42163f88f1c0ef849b5ddd0cbae039f
+  Compiled from "AuthClient.kt"
+public final class kc.auth.AuthClientStatus$Companion
+  minor version: 0
+  major version: 65
+  flags: (0x0031) ACC_PUBLIC, ACC_FINAL, ACC_SUPER
+  this_class: #2                          // kc/auth/AuthClientStatus$Companion
+  super_class: #4                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 3, attributes: 3
+Constant pool:
+   #1 = Utf8               kc/auth/AuthClientStatus$Companion
+   #2 = Class              #1             // kc/auth/AuthClientStatus$Companion
+   #3 = Utf8               java/lang/Object
+   #4 = Class              #3             // java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = NameAndType        #5:#6          // "<init>":()V
+   #8 = Methodref          #4.#7          // java/lang/Object."<init>":()V
+   #9 = Utf8               this
+  #10 = Utf8               Lkc/auth/AuthClientStatus$Companion;
+  #11 = Utf8               ok
+  #12 = Utf8               ()I
+  #13 = Utf8               (Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+  #14 = Methodref          #2.#7          // kc/auth/AuthClientStatus$Companion."<init>":()V
+  #15 = Utf8               $constructor_marker
+  #16 = Utf8               Lkotlin/jvm/internal/DefaultConstructorMarker;
+  #17 = Utf8               Lkotlin/Metadata;
+  #18 = Utf8               mv
+  #19 = Integer            2
+  #20 = Integer            4
+  #21 = Integer            0
+  #22 = Utf8               k
+  #23 = Integer            1
+  #24 = Utf8               xi
+  #25 = Integer            48
+  #26 = Utf8               d1
+  #27 = Utf8               \u0000\u0012\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0002\b\u0003\n\u0002\u0010\b\n\u0000\b\u0086\u0003\u0018\u00002\u00020\u0001B\t\b\u0002?\u0006\u0004\b\u0002\u0010\u0003J\u0006\u0010\u0004\u001a\u00020\u0005��\u0006\u0006
+  #28 = Utf8               d2
+  #29 = Utf8
+  #30 = Utf8               kc-kotlin
+  #31 = Utf8               kc/auth/AuthClientStatus
+  #32 = Class              #31            // kc/auth/AuthClientStatus
+  #33 = Utf8               Companion
+  #34 = Utf8               AuthClient.kt
+  #35 = Utf8               Code
+  #36 = Utf8               LineNumberTable
+  #37 = Utf8               LocalVariableTable
+  #38 = Utf8               InnerClasses
+  #39 = Utf8               SourceFile
+  #40 = Utf8               RuntimeVisibleAnnotations
+{
+  private kc.auth.AuthClientStatus$Companion();
+    descriptor: ()V
+    flags: (0x0002) ACC_PRIVATE
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #8                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 99: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lkc/auth/AuthClientStatus$Companion;
+
+  public final int ok();
+    descriptor: ()I
+    flags: (0x0011) ACC_PUBLIC, ACC_FINAL
+    Code:
+      stack=1, locals=1, args_size=1
+         0: sipush        200
+         3: ireturn
+      LineNumberTable:
+        line 104: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       4     0  this   Lkc/auth/AuthClientStatus$Companion;
+
+  public kc.auth.AuthClientStatus$Companion(kotlin.jvm.internal.DefaultConstructorMarker);
+    descriptor: (Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+    flags: (0x1001) ACC_PUBLIC, ACC_SYNTHETIC
+    Code:
+      stack=1, locals=2, args_size=2
+         0: aload_0
+         1: invokespecial #14                 // Method "<init>":()V
+         4: return
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lkc/auth/AuthClientStatus$Companion;
+            0       5     1 $constructor_marker   Lkotlin/jvm/internal/DefaultConstructorMarker;
+}
+InnerClasses:
+  public static final #33= #2 of #32;     // Companion=class kc/auth/AuthClientStatus$Companion of class kc/auth/AuthClientStatus
+SourceFile: "AuthClient.kt"
+RuntimeVisibleAnnotations:
+  0: #17(#18=[I#19,I#20,I#21],#22=I#23,#24=I#25,#26=[s#27],#28=[s#10,s#29,s#5,s#6,s#11,s#29,s#30])
+    kotlin.Metadata(
+      mv=[2,4,0]
+      k=1
+      xi=48
+      d1=["\u0000\u0012\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0002\b\u0003\n\u0002\u0010\b\n\u0000\b\u0086\u0003\u0018\u00002\u00020\u0001B\t\b\u0002?\u0006\u0004\b\u0002\u0010\u0003J\u0006\u0010\u0004\u001a\u00020\u0005��\u0006\u0006"]
+      d2=["Lkc/auth/AuthClientStatus$Companion;","","<init>","()V","ok","","kc-kotlin"]
+    )
+Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientStatus.class
+  Last modified 2026. 11. 7.; size 2384 bytes
+  SHA-256 checksum f89f09ad98f7593072511b814d0fc1cad7c104d241de224d2518cae2c2188a8b
+  Compiled from "AuthClient.kt"
+public final class kc.auth.AuthClientStatus
+  minor version: 0
+  major version: 65
+  flags: (0x0031) ACC_PUBLIC, ACC_FINAL, ACC_SUPER
+  this_class: #2                          // kc/auth/AuthClientStatus
+  super_class: #4                         // java/lang/Object
+  interfaces: 0, fields: 3, methods: 5, attributes: 4
+Constant pool:
+    #1 = Utf8               kc/auth/AuthClientStatus
+    #2 = Class              #1            // kc/auth/AuthClientStatus
+    #3 = Utf8               java/lang/Object
+    #4 = Class              #3            // java/lang/Object
+    #5 = Utf8               <init>
+    #6 = Utf8               (ILkotlin/jvm/functions/Function0;)V
+    #7 = Utf8               (ILkotlin/jvm/functions/Function0<Ljava/lang/String;>;)V
+    #8 = Utf8               Lorg/jetbrains/annotations/NotNull;
+    #9 = Utf8               hook
+   #10 = String             #9            // hook
+   #11 = Utf8               kotlin/jvm/internal/Intrinsics
+   #12 = Class              #11           // kotlin/jvm/internal/Intrinsics
+   #13 = Utf8               checkNotNullParameter
+   #14 = Utf8               (Ljava/lang/Object;Ljava/lang/String;)V
+   #15 = NameAndType        #13:#14       // checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
+   #16 = Methodref          #12.#15       // kotlin/jvm/internal/Intrinsics.checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
+   #17 = Utf8               ()V
+   #18 = NameAndType        #5:#17        // "<init>":()V
+   #19 = Methodref          #4.#18        // java/lang/Object."<init>":()V
+   #20 = Utf8               code
+   #21 = Utf8               I
+   #22 = NameAndType        #20:#21       // code:I
+   #23 = Fieldref           #2.#22        // kc/auth/AuthClientStatus.code:I
+   #24 = Utf8               Lkotlin/jvm/functions/Function0;
+   #25 = NameAndType        #9:#24        // hook:Lkotlin/jvm/functions/Function0;
+   #26 = Fieldref           #2.#25        // kc/auth/AuthClientStatus.hook:Lkotlin/jvm/functions/Function0;
+   #27 = Utf8               this
+   #28 = Utf8               Lkc/auth/AuthClientStatus;
+   #29 = Utf8               (ILkotlin/jvm/functions/Function0;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+   #30 = Utf8               ()Ljava/lang/Object;
+   #31 = MethodType         #30           //  ()Ljava/lang/Object;
+   #32 = Utf8               _init_$lambda$0
+   #33 = Utf8               ()Ljava/lang/String;
+   #34 = NameAndType        #32:#33       // _init_$lambda$0:()Ljava/lang/String;
+   #35 = Methodref          #2.#34        // kc/auth/AuthClientStatus._init_$lambda$0:()Ljava/lang/String;
+   #36 = MethodHandle       6:#35         // REF_invokeStatic kc/auth/AuthClientStatus._init_$lambda$0:()Ljava/lang/String;
+   #37 = MethodType         #33           //  ()Ljava/lang/String;
+   #38 = Utf8               java/lang/invoke/LambdaMetafactory
+   #39 = Class              #38           // java/lang/invoke/LambdaMetafactory
+   #40 = Utf8               metafactory
+   #41 = Utf8               (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+   #42 = NameAndType        #40:#41       // metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+   #43 = Methodref          #39.#42       // java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+   #44 = MethodHandle       6:#43         // REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+   #45 = Utf8               invoke
+   #46 = Utf8               ()Lkotlin/jvm/functions/Function0;
+   #47 = NameAndType        #45:#46       // invoke:()Lkotlin/jvm/functions/Function0;
+   #48 = InvokeDynamic      #0:#47        // #0:invoke:()Lkotlin/jvm/functions/Function0;
+   #49 = NameAndType        #5:#6         // "<init>":(ILkotlin/jvm/functions/Function0;)V
+   #50 = Methodref          #2.#49        // kc/auth/AuthClientStatus."<init>":(ILkotlin/jvm/functions/Function0;)V
+   #51 = Utf8               ok
+   #52 = String             #51           // ok
+   #53 = Utf8               _init_$lambda$1
+   #54 = Utf8               boot
+   #55 = String             #54           // boot
+   #56 = Utf8               <clinit>
+   #57 = Utf8               kc/auth/AuthClientStatus$Companion
+   #58 = Class              #57           // kc/auth/AuthClientStatus$Companion
+   #59 = Utf8               (Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+   #60 = NameAndType        #5:#59        // "<init>":(Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+   #61 = Methodref          #58.#60       // kc/auth/AuthClientStatus$Companion."<init>":(Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+   #62 = Utf8               Companion
+   #63 = Utf8               Lkc/auth/AuthClientStatus$Companion;
+   #64 = NameAndType        #62:#63       // Companion:Lkc/auth/AuthClientStatus$Companion;
+   #65 = Fieldref           #2.#64        // kc/auth/AuthClientStatus.Companion:Lkc/auth/AuthClientStatus$Companion;
+   #66 = NameAndType        #53:#33       // _init_$lambda$1:()Ljava/lang/String;
+   #67 = Methodref          #2.#66        // kc/auth/AuthClientStatus._init_$lambda$1:()Ljava/lang/String;
+   #68 = MethodHandle       6:#67         // REF_invokeStatic kc/auth/AuthClientStatus._init_$lambda$1:()Ljava/lang/String;
+   #69 = InvokeDynamic      #1:#47        // #1:invoke:()Lkotlin/jvm/functions/Function0;
+   #70 = Utf8               kc/auth/AuthClientKt
+   #71 = Class              #70           // kc/auth/AuthClientKt
+   #72 = Utf8               describeStatic
+   #73 = Utf8               (Lkotlin/jvm/functions/Function0;)Ljava/lang/String;
+   #74 = NameAndType        #72:#73       // describeStatic:(Lkotlin/jvm/functions/Function0;)Ljava/lang/String;
+   #75 = Methodref          #71.#74       // kc/auth/AuthClientKt.describeStatic:(Lkotlin/jvm/functions/Function0;)Ljava/lang/String;
+   #76 = Utf8               Lkotlin/jvm/functions/Function0<Ljava/lang/String;>;
+   #77 = Utf8               Lkotlin/Metadata;
+   #78 = Utf8               mv
+   #79 = Integer            2
+   #80 = Integer            4
+   #81 = Integer            0
+   #82 = Utf8               k
+   #83 = Integer            1
+   #84 = Utf8               xi
+   #85 = Integer            48
+   #86 = Utf8               d1
+   #87 = Utf8               \u0000\u001c\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0000\n\u0002\u0010\b\n\u0000\n\u0002\u0018\u0002\n\u0002\u0010\u000e\n\u0002\b\u0004\u0018\u0000 \t2\u00020\u0001:\u0001\tB\u001f\u0012\u0006\u0010\u0002\u001a\u00020\u0003\u0012\u000e\b\u0002\u0010\u0004\u001a\b\u0012\u0004\u0012\u00020\u00060\u0005?\u0006\u0004\b\u0007\u0010\bR\u000e\u0010\u0002\u001a\u00020\u0003X\u0082\u0004?\u0006\u0002\n\u0000R\u0014\u0010\u0004\u001a\b\u0012\u0004\u0012\u00020\u00060\u0005X\u0082\u0004?\u0006\u0002\n\u0000��\u0006\n
+   #88 = Utf8               d2
+   #89 = Utf8
+   #90 = Utf8               Lkotlin/Function0;
+   #91 = Utf8               kc-kotlin
+   #92 = Utf8               AuthClient.kt
+   #93 = Utf8               RuntimeInvisibleAnnotations
+   #94 = Utf8               Signature
+   #95 = Utf8               Code
+   #96 = Utf8               LineNumberTable
+   #97 = Utf8               LocalVariableTable
+   #98 = Utf8               RuntimeInvisibleParameterAnnotations
+   #99 = Utf8               StackMapTable
+  #100 = Utf8               InnerClasses
+  #101 = Utf8               SourceFile
+  #102 = Utf8               RuntimeVisibleAnnotations
+  #103 = Utf8               BootstrapMethods
+{
+  public static final kc.auth.AuthClientStatus$Companion Companion;
+    descriptor: Lkc/auth/AuthClientStatus$Companion;
+    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL
+    RuntimeInvisibleAnnotations:
+      0: #8()
+        org.jetbrains.annotations.NotNull
+
+  private final int code;
+    descriptor: I
+    flags: (0x0012) ACC_PRIVATE, ACC_FINAL
+
+  private final kotlin.jvm.functions.Function0<java.lang.String> hook;
+    descriptor: Lkotlin/jvm/functions/Function0;
+    flags: (0x0012) ACC_PRIVATE, ACC_FINAL
+    Signature: #76                          // Lkotlin/jvm/functions/Function0<Ljava/lang/String;>;
+    RuntimeInvisibleAnnotations:
+      0: #8()
+        org.jetbrains.annotations.NotNull
+
+  public kc.auth.AuthClientStatus(int, kotlin.jvm.functions.Function0<java.lang.String>);
+    descriptor: (ILkotlin/jvm/functions/Function0;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=3, args_size=3
+         0: aload_2
+         1: ldc           #10                 // String hook
+         3: invokestatic  #16                 // Method kotlin/jvm/internal/Intrinsics.checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
+         6: aload_0
+         7: invokespecial #19                 // Method java/lang/Object."<init>":()V
+        10: aload_0
+        11: iload_1
+        12: putfield      #23                 // Field code:I
+        15: aload_0
+        16: aload_2
+        17: putfield      #26                 // Field hook:Lkotlin/jvm/functions/Function0;
+        20: return
+      LineNumberTable:
+        line 95: 6
+        line 96: 10
+        line 97: 15
+        line 95: 20
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      21     0  this   Lkc/auth/AuthClientStatus;
+            0      21     1  code   I
+            0      21     2  hook   Lkotlin/jvm/functions/Function0;
+    Signature: #7                           // (ILkotlin/jvm/functions/Function0<Ljava/lang/String;>;)V
+    RuntimeInvisibleParameterAnnotations:
+      parameter 0:
+      parameter 1:
+        0: #8()
+          org.jetbrains.annotations.NotNull
+
+  public kc.auth.AuthClientStatus(int, kotlin.jvm.functions.Function0, int, kotlin.jvm.internal.DefaultConstructorMarker);
+    descriptor: (ILkotlin/jvm/functions/Function0;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    flags: (0x1001) ACC_PUBLIC, ACC_SYNTHETIC
+    Code:
+      stack=3, locals=5, args_size=5
+         0: iload_3
+         1: iconst_2
+         2: iand
+         3: ifeq          12
+         6: invokedynamic #48,  0             // InvokeDynamic #0:invoke:()Lkotlin/jvm/functions/Function0;
+        11: astore_2
+        12: aload_0
+        13: iload_1
+        14: aload_2
+        15: invokespecial #50                 // Method "<init>":(ILkotlin/jvm/functions/Function0;)V
+        18: return
+      StackMapTable: number_of_entries = 1
+        frame_type = 12 /* same */
+      LineNumberTable:
+        line 95: 0
+        line 97: 6
+        line 95: 12
+        line 98: 18
+
+  private static final java.lang.String _init_$lambda$0();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL
+    Code:
+      stack=1, locals=0, args_size=0
+         0: ldc           #52                 // String ok
+         2: areturn
+      LineNumberTable:
+        line 97: 0
+
+  private static final java.lang.String _init_$lambda$1();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL
+    Code:
+      stack=1, locals=0, args_size=0
+         0: ldc           #55                 // String boot
+         2: areturn
+      LineNumberTable:
+        line 101: 0
+
+  static {};
+    descriptor: ()V
+    flags: (0x0008) ACC_STATIC
+    Code:
+      stack=3, locals=0, args_size=0
+         0: new           #58                 // class kc/auth/AuthClientStatus$Companion
+         3: dup
+         4: aconst_null
+         5: invokespecial #61                 // Method kc/auth/AuthClientStatus$Companion."<init>":(Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+         8: putstatic     #65                 // Field Companion:Lkc/auth/AuthClientStatus$Companion;
+        11: nop
+        12: invokedynamic #69,  0             // InvokeDynamic #1:invoke:()Lkotlin/jvm/functions/Function0;
+        17: invokestatic  #75                 // Method kc/auth/AuthClientKt.describeStatic:(Lkotlin/jvm/functions/Function0;)Ljava/lang/String;
+        20: pop
+        21: return
+      LineNumberTable:
+        line 100: 11
+        line 101: 12
+        line 102: 21
+}
+InnerClasses:
+  public static final #62= #58 of #2;     // Companion=class kc/auth/AuthClientStatus$Companion of class kc/auth/AuthClientStatus
+SourceFile: "AuthClient.kt"
+RuntimeVisibleAnnotations:
+  0: #77(#78=[I#79,I#80,I#81],#82=I#83,#84=I#85,#86=[s#87],#88=[s#28,s#89,s#20,s#89,s#9,s#90,s#89,s#5,s#6,s#62,s#91])
+    kotlin.Metadata(
+      mv=[2,4,0]
+      k=1
+      xi=48
+      d1=["\u0000\u001c\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0000\n\u0002\u0010\b\n\u0000\n\u0002\u0018\u0002\n\u0002\u0010\u000e\n\u0002\b\u0004\u0018\u0000 \t2\u00020\u0001:\u0001\tB\u001f\u0012\u0006\u0010\u0002\u001a\u00020\u0003\u0012\u000e\b\u0002\u0010\u0004\u001a\b\u0012\u0004\u0012\u00020\u00060\u0005?\u0006\u0004\b\u0007\u0010\bR\u000e\u0010\u0002\u001a\u00020\u0003X\u0082\u0004?\u0006\u0002\n\u0000R\u0014\u0010\u0004\u001a\b\u0012\u0004\u0012\u00020\u00060\u0005X\u0082\u0004?\u0006\u0002\n\u0000��\u0006\n"]
+      d2=["Lkc/auth/AuthClientStatus;","","code","","hook","Lkotlin/Function0;","","<init>","(ILkotlin/jvm/functions/Function0;)V","Companion","kc-kotlin"]
+    )
+BootstrapMethods:
+  0: #44 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #31 ()Ljava/lang/Object;
+      #36 REF_invokeStatic kc/auth/AuthClientStatus._init_$lambda$0:()Ljava/lang/String;
+      #37 ()Ljava/lang/String;
+  1: #44 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #31 ()Ljava/lang/Object;
+      #68 REF_invokeStatic kc/auth/AuthClientStatus._init_$lambda$1:()Ljava/lang/String;
+      #37 ()Ljava/lang/String;
 Classfile kotlin/build/classes/kotlin/main/kc/auth/Config.class
   Last modified 2026. 11. 7.; size 772 bytes
   SHA-256 checksum 72212d8c618dd5e6c471f6a2810b7d4d64b94dafc8dd425d299daf0d795e239e

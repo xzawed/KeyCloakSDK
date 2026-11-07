@@ -2043,9 +2043,9 @@ function dotnetReport(d) {
 // ⚠️ 줄은 소스 파일 단위 합집합이다(`<sourcefile><line>`) — 바깥 클래스와 익명 클래스가 한 줄을 함께 가질 수 있어 클래스별 합은 그
 // 줄을 두 번 센다(실측: AdminClient.java 61 = 54 + 8 − 1). 정적 초기화(`<clinit>`)만 가진 줄은 클래스가 실릴 때 돈다 —
 // 「아무것도 안 돈 실행」 판정과 bodies 는 그 줄을 뺀다(python · ruby 와 같은 까닭 — 등록부의 함정: JVM static init).
-// ⚠️ kotlin 도 이 리더다 — 클래스 파일 · JaCoCo 는 같고 이름 접기에 kotlin 의 꼴이 더해진다(jvmFold): `internal` 멤버의 모듈
-// 이름 접미(`name$<모듈>` — 모듈 이름의 식별자 밖 글자는 `_` · 실측 `applyTimeouts$io_github_xzawed_keycloak_sdk_kotlin`) · 기본
-// 인자 다리 `fn$default` · 람다 `fn$lambda$N`(속성 초기화의 람다는 그 속성 이름 — `CONNECTION$lambda$0`). suspend 함수의 이어받기
+// ⚠️ kotlin 도 이 리더다 — 클래스 파일 · JaCoCo 는 같고 접기만 다르다(ktFold — 합성 메서드는 이름이 아니라 코드로 접는다:
+// 람다는 만드는 메서드, 다리는 부르는 대상, 로컬 함수는 부르는 메서드). `internal` 멤버는 모듈 이름 접미를 벗긴다(`name$<모듈>` —
+// 모듈 이름의 식별자 밖 글자는 `_` · 실측 `applyTimeouts$io_github_xzawed_keycloak_sdk_kotlin`). suspend 함수의 이어받기
 // 클래스(`AuthClient$authSend$1`)는 줄표가 없어 JaCoCo 가 빈 클래스로 싣는다(실측 — 사실과 데이터 둘 다에 있다).
 // run kotlin 의 Gradle 초기화 스크립트 — 빌드 파일을 안 바꾸고 `integrationTest` 에만 JaCoCo 에이전트를 붙인다(Kover 는 그 태스크를
 // 일부러 계측하지 않는다 — build.gradle.kts 의 disabledForTestTasks). 에이전트와 CLI 는 Gradle 이 그 빌드의 저장소에서 받는다(kotlin
@@ -2072,14 +2072,17 @@ const JVM_DATA = (l) => join(out, `${l}.xml`)
 const JVM_JAVAP = (l) => join(out, `${l}.javap.txt`)
 const JVM_RUN = (l) => join(out, `${l}.run.json`)
 const JVM_EXEC = (l) => join(out, `${l}.exec`)
-// `javap -l -p -v <클래스 파일…>` 의 출력 → { 내부 이름: { source, enclosing: { class, method, desc } | null, methods: [{ name, desc, lines }] } }.
-// `this_class` 는 상수 풀보다 앞이라 그 주석(내부 이름)을 읽고, EnclosingMethod 는 상수 풀(Class · NameAndType)로 푼다.
+// `javap -l -p -v <클래스 파일…>` 의 출력 → { 내부 이름: { source, enclosing: { class, method, desc } | null, methods: [{ name, desc,
+// lines, calls, news, lambdas }] } }. `this_class` 는 상수 풀보다 앞이라 그 주석(내부 이름)을 읽고, EnclosingMethod 는 상수 풀(Class ·
+// NameAndType)로 푼다. 코드에서는 부르는 메서드(`invoke*` 의 주석 — `owner.name:desc`) · 만드는 클래스(`new`) · 만드는 람다 몸통
+// (`invokedynamic` → BootstrapMethods 의 LambdaMetafactory 구현 핸들)을 읽는다 — kotlin 의 접기가 쓴다(ktFold).
 function javapFacts(text) {
   const facts = {}
   let cur = null
   let meth = null
   let inLnt = false
   let inBody = false
+  let bsm = null
   const finish = () => {
     if (!cur?.name) return
     let enclosing = null
@@ -2089,19 +2092,38 @@ function javapFacts(text) {
       const nd = nt?.note && /^"?([^":]+)"?:(\S+)$/.exec(nt.note)
       enclosing = { class: c?.kind === 'Class' ? (c.note ?? null) : null, method: nd ? nd[1] : null, desc: nd ? nd[2] : null }
     }
+    // 람다 몸통 — LambdaMetafactory 부트스트랩의 구현 핸들뿐이다(문자열 연결 같은 다른 부트스트랩은 메서드를 안 만든다).
+    for (const x of cur.methods) x.lambdas = x.indy.map((i) => cur.bootstraps.get(i)).filter((h) => h !== undefined)
     facts[cur.name] = { source: cur.source, enclosing, methods: cur.methods }
   }
   for (const raw of text.split(/\r?\n/)) {
     if (raw.startsWith('Classfile ')) {
       finish()
-      cur = { name: null, source: null, encRef: null, pool: new Map(), methods: [] }
+      cur = { name: null, source: null, encRef: null, pool: new Map(), methods: [], bootstraps: new Map() }
       meth = null
       inLnt = false
       inBody = false
+      bsm = null
       continue
     }
     if (!cur) continue
     let m
+    // BootstrapMethods — 클래스 몸통 뒤의 첫 칸 구역(항목은 두 칸 · 인자는 여섯 칸). 다음 첫 칸 줄에서 끝난다.
+    if (raw === 'BootstrapMethods:') {
+      bsm = { index: null, lambda: false }
+      continue
+    }
+    if (bsm && /^\S/.test(raw)) bsm = null
+    if (bsm) {
+      if ((m = /^  (\d+): #\d+ REF_\w+ (\S+)/.exec(raw))) bsm = { index: m[1], lambda: /^java\/lang\/invoke\/LambdaMetafactory\.(?:metafactory|altMetafactory):/.test(m[2]) }
+      else if (bsm.lambda && (m = /^      #\d+ REF_\w+ (\S+)\s*$/.exec(raw))) {
+        // 첫 메서드 핸들 인자가 구현 메서드다(그 뒤의 인자는 메서드 타입 · altMetafactory 의 표지).
+        const h = jvmRef(m[1], cur.name)
+        if (h) cur.bootstraps.set(bsm.index, h)
+        bsm = { index: bsm.index, lambda: false }
+      }
+      continue
+    }
     if ((m = /^\s+#(\d+) = (\w+)\s+\S+(?:\s+\/\/\s*(.*?))?\s*$/.exec(raw))) {
       cur.pool.set(m[1], { kind: m[2], note: m[3] ?? null })
       continue
@@ -2136,12 +2158,13 @@ function javapFacts(text) {
       const h = raw.slice(2)
       inLnt = false
       meth = null
-      if (h === 'static {};') meth = { name: '<clinit>', desc: '()V', lines: [] }
+      if (h === 'static {};') meth = { name: '<clinit>', desc: '()V', lines: [], calls: [], news: [], indy: [] }
       else {
         const p = h.indexOf('(')
         if (p > 0 && h.endsWith(';')) {
-          const id = /([\w$.<>]+)$/.exec(h.slice(0, p))?.[1] ?? ''
-          meth = { name: id.includes('.') ? '<init>' : id, desc: null, lines: [] }
+          // 이름에는 `-` 도 든다 — kotlin 의 값 클래스 매개변수 맹글(`f-imocxh4` — 실측, 독립 레그).
+          const id = /([\w$.<>-]+)$/.exec(h.slice(0, p))?.[1] ?? ''
+          meth = { name: id.includes('.') ? '<init>' : id, desc: null, lines: [], calls: [], news: [], indy: [] }
         }
       }
       if (meth) cur.methods.push(meth)
@@ -2149,6 +2172,19 @@ function javapFacts(text) {
     }
     if (meth && (m = /^    descriptor: (\S+)\s*$/.exec(raw))) {
       meth.desc = m[1]
+      continue
+    }
+    // 코드 — `N: invoke… #K // Method owner.name:desc` · `N: new #K // class X` · `N: invokedynamic #K, 0 // InvokeDynamic #B:…`.
+    if (meth && (m = /^\s+\d+: (invoke\w+|new)\s+#\d+.*?\/\/ (.+?)\s*$/.exec(raw))) {
+      let k
+      if (m[1] === 'invokedynamic') {
+        if ((k = /^InvokeDynamic #(\d+):/.exec(m[2]))) meth.indy.push(k[1])
+      } else if (m[1] === 'new') {
+        if ((k = /^class (\S+)$/.exec(m[2]))) meth.news.push(k[1])
+      } else if ((k = /^(?:Interface)?Method (\S+)$/.exec(m[2]))) {
+        const r = jvmRef(k[1], cur.name)
+        if (r) meth.calls.push(r)
+      }
       continue
     }
     if (meth && /^      LineNumberTable:\s*$/.test(raw)) {
@@ -2197,56 +2233,30 @@ function javaParams(desc) {
   }
   return out.join(', ')
 }
+// javap 가 주석으로 낸 메서드 참조(`owner.name:desc` — 같은 클래스면 `name:desc`, 생성자는 `"<init>"`) → `owner.name:desc`.
+function jvmRef(ref, self) {
+  const m = /^(?:([^".:]+)\.)?"?([^".:]+)"?:(\(.*)$/.exec(ref)
+  return m ? `${m[1] ?? self}.${m[2]}:${m[3]}` : null
+}
 // JaCoCo 의 메서드 하나(클래스 내부 이름 · 이름 · 서술자) → { type, member, kind, desc, via } — kind 는 plain(소스 메서드 그대로 ·
 // 생성자) · static(정적 초기화) · lambda(람다 · 익명/지역 클래스의 메서드). 이름을 못 붙이면 null. 익명 · 지역 클래스는 javap 의
 // EnclosingMethod 를 따라 바깥으로 올라간다(그 클래스가 또 익명이면 한 번 더).
-// kt = kotlin 일 때만 { mangle: `internal` 의 모듈 접미 } — java 는 null.
-function jvmFold(cname, name, desc, facts, kt = null, depth = 0) {
+function javaFold(cname, name, desc, facts, depth = 0) {
   const slash = cname.lastIndexOf('/')
   const segs = cname.slice(slash + 1).split('$')
   if (segs.some((s) => s === '')) return null
   const local = segs.findIndex((s, i) => i > 0 && /^\d/.test(s))
-  const bare = (n) => (kt && n.endsWith(`$${kt.mangle}`) ? n.slice(0, -kt.mangle.length - 1) : n)
   if (local > 0) {
     const enc = facts[cname]?.enclosing
     if (!enc || typeof enc.class !== 'string' || depth > 8) return null
-    // 필드 초기화 · 초기화 블록 안의 익명 클래스 — 감싼 메서드가 없다(정적인지 인스턴스인지 서술자로 못 가른다). kotlin 은 그
-    // 자리를 이름에 남긴다(`AdminSockets$PLAIN$1` — 속성 PLAIN 의 초기화): 그 속성의 것으로 둔다(속성 초기화의 람다
-    // `CONNECTION$lambda$0` 와 같다 — 실측). java 의 `Outer$1` 은 그 자리가 없어 FAIL 이다.
-    if (enc.method === null) {
-      if (!kt || local < 2) return null
-      return { type: segs.slice(0, local - 1).join('.'), member: bare(segs[local - 1]), kind: 'lambda', desc: null, via: cname }
-    }
-    const up = jvmFold(enc.class, enc.method, enc.desc, facts, kt, depth + 1)
+    // 필드 초기화 · 초기화 블록 안의 익명 클래스 — 감싼 메서드가 없다(정적인지 인스턴스인지 서술자로 못 가른다).
+    if (enc.method === null) return null
+    const up = javaFold(enc.class, enc.method, enc.desc, facts, depth + 1)
     return up && { ...up, kind: up.kind === 'static' ? 'static' : 'lambda', via: cname }
   }
   const type = segs.join('.')
   if (name === '<clinit>') return { type, member: '<clinit>', kind: 'static', desc }
   if (name === '<init>') return { type, member: '<init>', kind: 'plain', desc }
-  if (kt) {
-    const plainName = (n) => !n.includes('$') && !n.startsWith('<')
-    // 람다 `fn$lambda$N` — 람다 안의 람다는 `$lambda$M` 이 더 붙는다. 감싼 것은 fn(속성 초기화면 그 속성 — 인스턴스 속성도
-    // `greet$lambda$0` 다). 초기화 블록의 람다는 `_init_$lambda$N` 이다(kotlinc 가 `<init>` 을 그렇게 쓴다 — 실측 2.4.21): 생성자에
-    // 접는다(java 의 `lambda$new$N` 과 같다).
-    const km = /^(.+?)((?:\$lambda\$\d+)+)$/.exec(name)
-    if (km) {
-      const host = km[1] === '_init_' ? '<init>' : bare(km[1])
-      return host === '<init>' || plainName(host) ? { type, member: host, kind: 'lambda', desc: null, lambdaDesc: desc } : null
-    }
-    // 기본 인자 다리 `fn$default`(`internal` 이면 `fn$<모듈>$default`) — fn 을 부른다. 오버로드면 서술자로 그 fn 에 붙인다:
-    // 다리의 매개변수 = (인스턴스면 받는 쪽) + fn 의 매개변수 + 기본값 표지 int(32 개마다 하나) + 표지 Object. 표지 int 는
-    // 하나만 뗀다 — fn 의 끝 매개변수도 int 일 수 있다(32 개 넘는 fn 은 서술자가 안 맞아 귀속에서 FAIL 한다).
-    const dm = /^(.+)\$default$/.exec(name)
-    if (dm) {
-      const host = bare(dm[1])
-      // 표지(int · Object)가 없는 서술자는 다리가 아니다 — 이름만 `$default` 로 끝난다(FAIL).
-      const pm = /^\((.*)ILjava\/lang\/Object;\)(.*)$/.exec(desc)
-      if (!plainName(host) || !pm) return null
-      const body = pm[1].startsWith(`L${cname};`) ? pm[1].slice(cname.length + 2) : pm[1]
-      return { type, member: host, kind: 'lambda', desc: `(${body})${pm[2]}`, via: 'default' }
-    }
-    name = bare(name)
-  }
   const lm = /^lambda\$(.+)\$\d+$/.exec(name)
   if (lm) {
     const host = lm[1] === 'static' ? '<clinit>' : lm[1] === 'new' ? '<init>' : lm[1]
@@ -2255,6 +2265,82 @@ function jvmFold(cname, name, desc, facts, kt = null, depth = 0) {
   }
   if (name.includes('$') || name.startsWith('<')) return null
   return { type, member: name, kind: 'plain', desc }
+}
+// kotlin 의 접기 — 합성 메서드는 이름이 아니라 **클래스 파일의 코드**로 접는다. kotlinc 의 이름은 감싼 것을 다 말하지 않는다
+// (실측 2.4.21 — 독립 레그가 컴파일해 보였다): `@JvmName("joinInts")` 함수의 람다는 원래 이름 `join$lambda$1` 이다 · 컴패니언 ·
+// object · enum 항목의 `_init_$lambda$N` 은 정적 초기화가 만든다 · 람다 안의 람다는 `…$lambda$0$0` 이다 · object 의 `@JvmStatic`
+// 다리는 받는 쪽이 없다 · 로컬 클래스는 이름에 숫자가 없다. 그래서:
+//   람다(`…$lambda$N…`)                  → 그것을 만드는 invokedynamic(LambdaMetafactory 의 구현 핸들)이 든 메서드
+//   기본 인자 다리(`…$default`) · 기본 인자 생성자(`<init>(…, int, DefaultConstructorMarker)`) → 그것이 부르는 같은 이름의 하나
+//   그 밖의 `$` 든 이름(로컬 함수 `outer$inner` · open suspend fun 의 몸통 `fn$suspendImpl`) → 그것을 부르는 메서드
+//   익명 · 로컬 클래스(EnclosingMethod 가 있다)  → 그 메서드(없으면 — 속성 초기화 · init 블록 — 그 클래스를 `new` 하는 메서드)
+// 그 메서드가 여럿이면 모두 같은 멤버 · 서술자로 접혀야 한다. 못 찾거나 갈리면 null(FAIL). `internal` 은 모듈 접미를 벗긴다
+// (kt.mangle). `$suspendImpl` 은 그 fun 자체로 둔다(plain — 그 fun 은 부르기만 해 JaCoCo 가 안 싣는다, 실측).
+const KT_INDEX = new WeakMap()
+function ktIndex(facts) {
+  let ix = KT_INDEX.get(facts)
+  if (ix) return ix
+  ix = { made: new Map(), called: new Map(), built: new Map() }
+  const add = (map, k, site) => map.set(k, [...(map.get(k) ?? []), site])
+  for (const [cls, c] of Object.entries(facts)) {
+    for (const m of c.methods) {
+      for (const h of new Set(m.lambdas)) add(ix.made, h, [cls, m])
+      for (const r of new Set(m.calls)) add(ix.called, r, [cls, m])
+      for (const n of new Set(m.news)) add(ix.built, n, [cls, m])
+    }
+  }
+  KT_INDEX.set(facts, ix)
+  return ix
+}
+function ktFold(cname, name, desc, facts, kt, depth = 0) {
+  const c = facts[cname]
+  if (!c || depth > 8) return null
+  const segs = cname.slice(cname.lastIndexOf('/') + 1).split('$')
+  if (segs.some((s) => s === '')) return null
+  const ix = ktIndex(facts)
+  const self = `${cname}.${name}:${desc}`
+  // 여러 자리(만드는 · 부르는 · `new` 하는 메서드)를 접어 하나여야 한다.
+  const one = (sites) => {
+    const ups = sites.map(([cls, m]) => ktFold(cls, m.name, m.desc, facts, kt, depth + 1))
+    if (!ups.length || ups.some((u) => !u)) return null
+    const key = (u) => `${u.kind === 'static'} ${u.type} ${u.member} ${u.desc}`
+    return ups.every((u) => key(u) === key(ups[0])) ? ups[0] : null
+  }
+  const nest = (up, via) => up && { type: up.type, member: up.member, kind: up.kind === 'static' ? 'static' : 'lambda', desc: up.desc, via }
+  if (c.enclosing) {
+    const enc = c.enclosing
+    if (typeof enc.class !== 'string') return null
+    if (enc.method !== null) return nest(ktFold(enc.class, enc.method, enc.desc, facts, kt, depth + 1), cname)
+    return nest(one(ix.built.get(cname) ?? []), cname)
+  }
+  const type = segs.join('.')
+  if (name === '<clinit>') return { type, member: '<clinit>', kind: 'static', desc }
+  const own = c.methods.find((x) => x.name === name && x.desc === desc)
+  if (!own) return null
+  // 이 메서드가 부르는 것 가운데 이름이 `to` 인 하나(자기 자신은 뺀다).
+  const callee = (to) => {
+    const rs = [...new Set(own.calls)].filter((r) => r !== self && /^[^.]+\.([^:]+):/.exec(r)?.[1] === to)
+    return rs.length === 1 ? /^([^.]+)\.([^:]+):(.*)$/.exec(rs[0]) : null
+  }
+  if (name === '<init>') {
+    if (!desc.endsWith('ILkotlin/jvm/internal/DefaultConstructorMarker;)V')) return { type, member: '<init>', kind: 'plain', desc }
+    const r = callee('<init>')
+    return r && r[1] === cname ? nest(ktFold(cname, '<init>', r[3], facts, kt, depth + 1), 'default') : null
+  }
+  if (/\$lambda\$\d+(?:\$\d+)*$/.test(name)) return nest(one(ix.made.get(self) ?? []), name)
+  const dm = /^(.+)\$default$/.exec(name)
+  if (dm) {
+    // `Iface$DefaultImpls.g$default` 는 인터페이스의 같은 이름 다리를 부른다(호환 다리 — 실측) — 그 다리를 따라간다.
+    const r = callee(dm[1]) ?? callee(name)
+    return r && nest(ktFold(r[1], r[2], r[3], facts, kt, depth + 1), 'default')
+  }
+  const bare = name.endsWith(`$${kt.mangle}`) ? name.slice(0, -kt.mangle.length - 1) : name
+  if (!bare.includes('$') && !bare.startsWith('<')) return { type, member: bare, kind: 'plain', desc }
+  // 부르는 메서드 — 자기 자신과 자기 안의 클래스(suspend 의 이어받기 클래스는 그 함수를 다시 부른다 — 실측)는 뺀다.
+  const inside = (cls) => facts[cls]?.enclosing?.class === cname && facts[cls].enclosing.method === name && facts[cls].enclosing.desc === desc
+  const up = one((ix.called.get(self) ?? []).filter(([cls, m]) => !(cls === cname && m === own) && !inside(cls)))
+  if (/\$suspendImpl$/.test(name)) return up && up.kind === 'plain' ? up : null
+  return nest(up, name)
 }
 function jvmReport(l, d) {
   const path = JVM_DATA(l)
@@ -2395,9 +2481,9 @@ function jvmReport(l, d) {
           broken = true
           break
         }
-        const fo = jvmFold(c.name, x.name, x.desc, facts, kt)
+        const fo = kt ? ktFold(c.name, x.name, x.desc, facts, kt) : javaFold(c.name, x.name, x.desc, facts)
         if (!fo) {
-          fail(l, `${f}: cannot name ${c.name}.${x.name}${x.desc} — not a generated name this reader knows`)
+          fail(l, `${f}: cannot name ${c.name}.${x.name}${x.desc} — ${kt ? 'the class files show no single method that creates, calls or encloses it' : 'not a generated name this reader knows'}`)
           broken = true
           break
         }
@@ -2482,8 +2568,9 @@ function jvmReport(l, d) {
             }
           }
         }
-        // 서술자로 붙는 것(익명 클래스의 감싼 메서드 · kotlin 기본 인자 다리)은 그 서술자가 오버로드 하나여야 한다 — 람다 안의 익명
-        // 클래스(감싼 것이 람다라 서술자가 없다) · 매개변수 32 개 넘는 다리는 못 가른다(FAIL — 없는 키에 조용히 붙지 않는다).
+        // 서술자로 붙는 것(익명 클래스의 감싼 메서드 · kotlin 의 접힌 부분 전부)은 그 서술자가 오버로드 하나여야 한다 — java 의 람다
+        // 안 익명 클래스(감싼 것이 람다라 서술자가 없다) · kotlin 에서 접힌 곳이 데이터에 없는 메서드(JaCoCo 가 거른 것)면 못 가른다
+        // (FAIL — 없는 키에 조용히 붙지 않는다).
         if (!label.has(dsc)) {
           amb ??= { k, by: 'desc' }
           continue
@@ -2492,7 +2579,7 @@ function jvmReport(l, d) {
       }
     }
     if (amb) {
-      const what = amb.by === 'lines' ? 'a lambda whose lines fall in none or several of them' : 'a nested class or default-argument bridge whose descriptor is none of theirs'
+      const what = amb.by === 'lines' ? 'a lambda whose lines fall in none or several of them' : 'a part attached by a descriptor (enclosing, creating or called method) that is none of theirs'
       fail(l, `${f}: ${amb.k} has overloads and ${what} — this reader cannot tell which`)
       continue
     }

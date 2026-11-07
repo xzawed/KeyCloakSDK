@@ -140,9 +140,12 @@
     ],
     "owners": {
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.Companion.getREALM": "open-admin",
-      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.greet": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.join": "open-admin",
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.token(String, int)": "open-admin",
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.unused": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.withLocalClass": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientDefaults.pick(int)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientStatus.<init>": "open-admin",
       "kotlin/src/main/kotlin/kc/examples/QuickStart.kt:QuickStartKt.env": "open-masking",
       "kotlin/src/main/kotlin/kc/examples/QuickStart.kt:QuickStartKt.main": "open-masking"
     }

@@ -61,4 +61,68 @@ class AuthClient(private val base: String) {
     init {
         ready = { base.isNotEmpty() }
     }
+
+    // ── 아래는 이름으로 못 접는 꼴이다(kotlin 2.4.21 실측) — 리더는 클래스 파일의 코드로 접는다 ──
+
+    /** 람다 안의 람다 — 안쪽 이름은 `nested$lambda$0$0` 이다(만드는 것은 바깥 람다). */
+    fun nested(): String = describe { describe { base } }
+
+    /** 로컬 함수(`withLocal$inner`)와 그 안의 람다 — 부르는 메서드 · 만드는 메서드로 접는다. */
+    fun withLocal(): String {
+        fun inner(x: String): String = describe { x + base }
+        return inner("l")
+    }
+
+    /** 로컬 클래스 — 이름에 숫자가 없다(`AuthClient$withLocalClass$Local`). 부르지 않는다. */
+    fun withLocalClass(): Int {
+        class Local(
+            val n: Int,
+        ) {
+            fun twice(): Int = n * 2
+        }
+        return Local(3).twice()
+    }
+
+    /** `@JvmName` 오버로드 — 두 람다는 `join$lambda$N` 이지만 둘째를 만드는 것은 `joinInts` 다. 구동은 joinInts 만 부른다. */
+    fun join(xs: List<String>): String = describe { xs.joinToString() }
+
+    @JvmName("joinInts")
+    fun join(xs: List<Int>): String = describe { xs.sum().toString() }
 }
+
+/** 기본 인자 생성자(`<init>(…, int, DefaultConstructorMarker)`) · 그 기본값의 람다(`_init_$lambda$N` — 그 생성자가 만든다) ·
+ *  컴패니언 init 의 람다(같은 이름 꼴 — 정적 초기화가 만든다). 구동은 컴패니언만 부른다(생성자는 안 돈다). */
+class AuthClientStatus(
+    private val code: Int,
+    private val hook: () -> String = { "ok" },
+) {
+    companion object {
+        init {
+            describeStatic { "boot" }
+        }
+
+        fun ok(): Int = 200
+    }
+}
+
+/** object 의 `@JvmStatic` 다리는 받는 쪽이 없다 — 첫 매개변수가 그 object 타입이어도 매개변수다. 구동은 다리만 부른다. */
+object AuthClientDefaults {
+    @JvmStatic
+    fun pick(
+        o: AuthClientDefaults?,
+        n: Int = 0,
+    ): Int = n + (if (o == null) 0 else 1)
+
+    @JvmStatic
+    fun pick(n: Int): Int = n
+}
+
+/** open suspend fun — 몸통은 `load$suspendImpl` 이다(JaCoCo 는 그것만 싣는다). */
+open class AuthClientLoader {
+    open suspend fun load(n: Int): Int {
+        delay(1)
+        return n
+    }
+}
+
+fun describeStatic(s: () -> String): String = s()
