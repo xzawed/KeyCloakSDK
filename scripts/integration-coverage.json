@@ -172,6 +172,7 @@
     }
   },
   "java": {
+    "floor": { "metric": "bodies", "percent": 70.6 },
     "pinned": [
       "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/AdminClient.java",
       "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java",
