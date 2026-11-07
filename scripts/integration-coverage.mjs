@@ -2335,8 +2335,6 @@ function javaReport(d) {
       const span = (ls) => (ls.length ? [ls[0], ls[ls.length - 1]] : null)
       const within = (s, n) => s !== null && n >= s[0] && n <= s[1]
       const body = new Map(plains.map((q) => [q, span(q.lines.filter((n) => seen.get(n) === 1))]))
-      // 초기화를 끼워 넣은 생성자 — 함께 가진 줄이 있는 생성자다(그 줄이 필드 초기화 · 초기화 블록이다).
-      const inits = plains.filter((q) => q.lines.some((n) => seen.get(n) > 1))
       // 매개변수는 짧은 이름으로 쓴다 — 두 오버로드가 짧은 이름으로 겹치면(`foo(a.T)` · `foo(b.T)` — 독립 레그 1차 지적) 그 멤버는
       // 서술자 전체로 쓴다(겹친 키는 한 함수로 합쳐져 안 돈 쪽이 목록에서 사라진다).
       const label = new Map(descs.map((x) => [x, javaParams(x) ?? x]))
@@ -2351,16 +2349,20 @@ function javaReport(d) {
           const onShared = p.lines.length > 0 && p.lines.every((n) => seen.get(n) > 1)
           const hits = onShared || !p.lines.length ? [] : plains.filter((q) => p.lines.every((n) => within(body.get(q), n)))
           // 어느 몸통에도 안 드는 생성자 람다(`lambda$new$N`)는 필드 초기화 · 초기화 블록의 것이다(독립 레그 1차 지적 — 그 꼴이 FAIL
-          // 했다). (가) 함께 가진 줄 위의 람다는 그 줄을 다 가진 생성자들(둘 이상)의 것이다. (나) 몸통 밖 여러 줄 람다는 한 줄도 몸통
-          // 범위에 안 들고, 초기화를 끼워 넣은 생성자 **모두**의 범위가 덮을 때만 그들의 것이다 — 일부만 덮거나 몸통에 든 줄이 있으면
-          // 어느 것인지 모른다(독립 레그 3 · 4차 지적).
+          // 했다). 그 초기화의 줄은 함께 가진 줄이고, 그 줄을 가진 생성자들(둘 이상)의 것이다: (가) 함께 가진 줄 위의 람다는 그 줄들이다.
+          // (나) 여러 줄 람다의 몸통은 그 필드 줄 바로 뒤에 온다 — 람다의 첫 줄에서 가장 가까운 앞의 함께 가진 줄이고, 그 줄에서 람다의
+          // 끝 줄까지 어느 몸통 범위도 걸치지 않아야 한다(걸치면 어느 것인지 모른다 — FAIL). 필드가 두 생성자 사이에 있어도 그렇다 — 위
+          // 생성자의 범위는 필드 줄에서 끝나 람다 몸통에 안 닿는다(독립 레그 3 · 4 · 5차 지적).
           if (p.member === '<init>' && !hits.length) {
-            const runs = onShared
-              ? plains.filter((q) => p.lines.every((n) => q.lines.includes(n)))
-              : p.lines.some((n) => plains.some((q) => within(body.get(q), n)))
-                ? []
-                : plains.filter((q) => p.lines.every((n) => within(span(q.lines), n)))
-            if (onShared ? runs.length > 1 : runs.length > 0 && runs.length === inits.length && runs.every((q) => inits.includes(q))) {
+            let made = onShared ? p.lines : null
+            if (!onShared && p.lines.length) {
+              const lo = Math.min(...p.lines)
+              const hi = Math.max(...p.lines)
+              const f = Math.max(0, ...[...seen].filter(([n, c]) => c > 1 && n <= lo).map(([n]) => n))
+              if (f > 0 && plains.every((q) => body.get(q) === null || body.get(q)[1] < f || body.get(q)[0] > hi)) made = [f]
+            }
+            const runs = made ? plains.filter((q) => made.every((n) => q.lines.includes(n))) : []
+            if (runs.length > 1) {
               // 함께 가진 람다가 돌았다는 것은 **어느** 생성자가 돌았다는 뜻일 뿐이다 — 미실행 판정의 근거로 쓰지 않는다(아래 `shared`).
               for (const h of runs) put(keyOf(h.desc), { ...p, shared: true })
               continue

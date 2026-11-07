@@ -1542,6 +1542,19 @@ run report java "$T" --out "$D"
 assert_eq 1 "$RC" "[java] 안 부른 셋째 생성자는 소유자가 없어 exit 1 — 출력: $OUT"
 assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:65 AuthClient.Token.<init>(int) · 1 line · owner NONE" "[java] 한 줄에서 시작하는 생성자"
 assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:62 AuthClient.Token.<init>(char) · 4 lines · owner open-admin" "[java] 필드 람다는 그 줄을 가진 생성자들의 것이다"
+# 두 생성자 사이의 필드와 그 여러 줄 람다(필드 줄 68 · 람다 몸통 69 — javac 가 내는 꼴: `T(String s) {…}` · `final Supplier<String> x =
+# () -> {` · `return …;` · `};` · `T(char c) {…}`). 위 생성자의 범위는 필드 줄에서 끝나 람다 몸통에 안 닿는다 — 필드 줄을 가진 두
+# 생성자의 것이다(독립 레그 5차 지적 — FAIL 했다). 줄표는 픽스처의 62 를 68 로 · 람다를 69 로 옮겨 만들었다.
+fresh
+sed -i 's#<method name="&lt;init&gt;" desc="(Ljava/lang/String;)V" line="62">#<method name="\&lt;init\&gt;" desc="(Ljava/lang/String;)V" line="65">#; s#<method name="&lt;init&gt;" desc="(C)V" line="62">#<method name="\&lt;init\&gt;" desc="(C)V" line="68">#; s#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="62">#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="69">#; s#<line nr="62" mi="3" ci="5" mb="0" cb="0"/>#<line nr="68" mi="3" ci="5" mb="0" cb="0"/>#' "$D/java.xml"
+sed -i '/^  public kc.auth.AuthClient\$Token(java.lang.String);$/,/^      LocalVariableTable:$/ s/^        line 62: 4$/        line 68: 4/; /^  public kc.auth.AuthClient\$Token(char);$/,/^      LocalVariableTable:$/ s/^        line 62: 4$/        line 68: 4/; /^  private static java.lang.String lambda\$new\$0();$/,/^        line [0-9]*: / s/^        line 62: 0$/        line 69: 0/' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(cat "$D/java.xml")" '<line nr="68" mi="3" ci="5" mb="0" cb="0"/>' "(변이가 착지했는지 먼저 본다)"
+assert_eq 0 "$(grep -c '^        line 62: ' "$D/java.javap.txt")" "(변이가 착지했는지 먼저 본다 — 62 가 줄표에서 다 빠졌다)"
+assert_eq 2 "$(grep -c '^        line 68: 4$' "$D/java.javap.txt")" "(변이가 착지했는지 먼저 본다 — 두 생성자의 68)"
+run report java "$T" --out "$D"
+assert_eq 0 "$RC" "[java] 두 생성자 사이 필드의 여러 줄 람다는 두 생성자의 것 — exit 0 — 출력: $OUT"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:68 AuthClient.Token.<init>(char) · 4 lines · owner open-admin" "[java] 필드 줄을 가진 생성자들의 것이다"
 # 짧은 매개변수 이름이 겹치는 오버로드(`token(java.lang.String)` · `token(kc.other.String)`) — 한 키로 합치면 안 돈 쪽이 사라진다(독립
 # 레그 1차 지적). 그 멤버는 서술자 전체로 쓴다.
 fresh
