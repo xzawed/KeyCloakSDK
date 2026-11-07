@@ -2034,8 +2034,8 @@ function dotnetReport(d) {
 // run 은 javap 의 출력을 **그대로** 두고 리포트가 읽어 푼다 — 푼 사실을 따로 두면 그 파서는 run 에서만 돈다(자가테스트는 데이터를
 // 주고 report 만 부른다 — 파서의 판정을 하나도 못 지난다).
 // 람다(`lambda$m$N` — `static` · `new` 는 정적 초기화 · 생성자)는 감싼 메서드에, 익명 · 지역 클래스(`T$1` · `T$1Local`)의 메서드는
-// javap 가 댄 감싼 메서드에 접는다. 오버로드는 서술자로 가르고, 람다는 LineNumberTable 의 줄 범위가 가른다(어느 오버로드에도 안
-// 들거나 둘에 들면 FAIL). 모르는 `$` · `<…>` 꼴은 FAIL 이다(fail-closed).
+// javap 가 댄 감싼 메서드에 접는다. 오버로드는 서술자로 가르고, 람다는 LineNumberTable 로 그것을 만든 오버로드를 찾는다(못 가르면
+// FAIL — javaReport). 모르는 `$` · `<…>` 꼴은 FAIL 이다(fail-closed).
 // ⚠️ 줄은 소스 파일 단위 합집합이다(`<sourcefile><line>`) — 바깥 클래스와 익명 클래스가 한 줄을 함께 가질 수 있어 클래스별 합은 그
 // 줄을 두 번 센다(실측: AdminClient.java 61 = 54 + 8 − 1). 정적 초기화(`<clinit>`)만 가진 줄은 클래스가 실릴 때 돈다 —
 // 「아무것도 안 돈 실행」 판정과 bodies 는 그 줄을 뺀다(python · ruby 와 같은 까닭 — 등록부의 함정: JVM static init).
@@ -2310,7 +2310,7 @@ function javaReport(d) {
       if (broken) break
     }
     if (broken) continue
-    // 오버로드 — plain 서술자가 둘 이상인 멤버. 람다는 줄 범위로 그 오버로드에 붙인다(정확히 하나의 범위에 들어야 한다).
+    // 오버로드 — plain 서술자가 둘 이상인 멤버. 람다는 그것을 만든 오버로드에 붙인다(LineNumberTable 로 찾는다 — 아래).
     const byMember = new Map()
     for (const p of parts) {
       const k = `${p.type}.${p.member}`
@@ -2344,35 +2344,44 @@ function javaReport(d) {
       for (const p of g) {
         let dsc = p.desc
         if (p.kind !== 'plain' && !p.via) {
-          // 함께 가진 줄에만 있는 람다는 그 초기화의 것이다 — 몸통 범위로 가르지 않는다(한 생성자의 범위가 그 줄을 덮어도 그 줄은
-          // 몸통이 아니다 — 독립 레그 3차 지적).
+          // 람다를 만든 오버로드 — 람다 몸통은 그것을 만든 줄 뒤에 온다. (가) 함께 가진 줄에만 있는 람다: 생성자면 필드 초기화 ·
+          // 초기화 블록의 것이라 그 줄을 다 가진 생성자들(둘 이상)이 함께 가진다(한 생성자의 범위가 그 줄을 덮어도 몸통이 아니다 —
+          // 독립 레그 3차 지적). 메서드면 한 줄에 선언된 오버로드라 못 가른다. (나) 한 몸통 범위에 다 드는 람다: 그 오버로드의 것.
+          // (다) 어느 몸통 범위에도 다 안 드는 람다: 람다의 첫 줄에서 가장 가까운 앞의 줄을 가진 오버로드가 만들었다 — 그 줄에서 람다의
+          // 끝 줄까지 어느 몸통 범위도 걸치지 않아야 한다(걸치면 못 가른다 — FAIL). 값을 돌려주는 메서드는 마지막 문장의 여러 줄 람다가
+          // 그 메서드의 LineNumberTable 범위 밖에 놓인다(실측 javac 21: `token(String, int)` {7} · 그 람다 {8, 9} — 범위만 보면 FAIL
+          // 했다). 생성자의 필드 람다는 그 줄이 필드 줄이고 — 두 생성자 사이의 필드도(독립 레그 5차 지적) · `this(…)` 를 안 부르는
+          // 생성자가 하나뿐인 필드도 — 그 줄을 가진 생성자들의 것이다(둘 이상이면 함께 가진다). 그 밖은 FAIL(독립 레그 1 · 3 · 4차 지적).
           const onShared = p.lines.length > 0 && p.lines.every((n) => seen.get(n) > 1)
-          const hits = onShared || !p.lines.length ? [] : plains.filter((q) => p.lines.every((n) => within(body.get(q), n)))
-          // 어느 몸통에도 안 드는 생성자 람다(`lambda$new$N`)는 필드 초기화 · 초기화 블록의 것이다(독립 레그 1차 지적 — 그 꼴이 FAIL
-          // 했다). 그 초기화의 줄은 함께 가진 줄이고, 그 줄을 가진 생성자들(둘 이상)의 것이다: (가) 함께 가진 줄 위의 람다는 그 줄들이다.
-          // (나) 여러 줄 람다의 몸통은 그 필드 줄 바로 뒤에 온다 — 람다의 첫 줄에서 가장 가까운 앞의 함께 가진 줄이고, 그 줄에서 람다의
-          // 끝 줄까지 어느 몸통 범위도 걸치지 않아야 한다(걸치면 어느 것인지 모른다 — FAIL). 필드가 두 생성자 사이에 있어도 그렇다 — 위
-          // 생성자의 범위는 필드 줄에서 끝나 람다 몸통에 안 닿는다(독립 레그 3 · 4 · 5차 지적).
-          if (p.member === '<init>' && !hits.length) {
-            let made = onShared ? p.lines : null
-            if (!onShared && p.lines.length) {
+          if (onShared) {
+            const runs = plains.filter((q) => p.lines.every((n) => q.lines.includes(n)))
+            if (p.member !== '<init>' || runs.length < 2) {
+              amb ??= k
+              continue
+            }
+            // 함께 가진 람다가 돌았다는 것은 **어느** 생성자가 돌았다는 뜻일 뿐이다 — 미실행 판정의 근거로 쓰지 않는다(아래 `shared`).
+            for (const h of runs) put(keyOf(h.desc), { ...p, shared: true })
+            continue
+          }
+          const hits = p.lines.length ? plains.filter((q) => p.lines.every((n) => within(body.get(q), n))) : []
+          if (hits.length === 1) dsc = hits[0].desc
+          else {
+            let runs = []
+            if (!hits.length && p.lines.length) {
               const lo = Math.min(...p.lines)
               const hi = Math.max(...p.lines)
-              const f = Math.max(0, ...[...seen].filter(([n, c]) => c > 1 && n <= lo).map(([n]) => n))
-              if (f > 0 && plains.every((q) => body.get(q) === null || body.get(q)[1] < f || body.get(q)[0] > hi)) made = [f]
+              const f = Math.max(0, ...plains.flatMap((q) => q.lines).filter((n) => n <= lo))
+              if (f > 0 && plains.every((q) => body.get(q) === null || body.get(q)[1] <= f || body.get(q)[0] > hi)) runs = plains.filter((q) => q.lines.includes(f))
             }
-            const runs = made ? plains.filter((q) => made.every((n) => q.lines.includes(n))) : []
-            if (runs.length > 1) {
-              // 함께 가진 람다가 돌았다는 것은 **어느** 생성자가 돌았다는 뜻일 뿐이다 — 미실행 판정의 근거로 쓰지 않는다(아래 `shared`).
+            if (runs.length === 1) dsc = runs[0].desc
+            else if (runs.length > 1 && p.member === '<init>') {
               for (const h of runs) put(keyOf(h.desc), { ...p, shared: true })
+              continue
+            } else {
+              amb ??= k
               continue
             }
           }
-          if (hits.length !== 1) {
-            amb ??= k
-            continue
-          }
-          dsc = hits[0].desc
         }
         put(keyOf(dsc), p)
       }

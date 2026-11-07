@@ -1472,13 +1472,24 @@ assert_contains "$(cat "$D/java.javap.txt")" 'EnclosingMethod: #41.#0 ' "(변이
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 감싼 메서드가 없는 익명 클래스는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot name kc/auth/AuthClient\$1." "[java] 익명 클래스를 접지 못한다"
+# 값을 돌려주는 오버로드의 마지막 문장에 든 여러 줄 람다 — 그 몸통 줄은 메서드의 LineNumberTable 범위 밖이다(실측 javac 21:
+# `token(String, int)` {7} · 그 람다 {8, 9}). 람다의 첫 줄에서 가장 가까운 앞의 줄(36)을 가진 오버로드가 만들었다 — 범위만 보면 FAIL 했다.
 fresh
-sed -i 's#<method name="lambda$token$3" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="36">#<method name="lambda$token$3" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="40">#' "$D/java.xml"
-sed -i '/^  private java.lang.String lambda\$token\$3(java.lang.String, int);$/,/^        line [0-9]*: / s/^        line 36: 0$/        line 40: 0/' "$D/java.javap.txt"
+sed -i 's#<method name="lambda$token$3" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="36">#<method name="lambda$token$3" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="37">#' "$D/java.xml"
+sed -i '/^  private java.lang.String lambda\$token\$3(java.lang.String, int);$/,/^        line [0-9]*: / s/^        line 36: 0$/        line 37: 0\n        line 38: 6/' "$D/java.javap.txt"
 java_mark 0
-assert_contains "$(sed -n '/lambda\$token\$3(java.lang.String, int);$/,/^        line /p' "$D/java.javap.txt")" '        line 40: 0' "(변이가 착지했는지 먼저 본다)"
+assert_contains "$(sed -n '/lambda\$token\$3(java.lang.String, int);$/,/^      LocalVariableTable/p' "$D/java.javap.txt")" '        line 38: 6' "(변이가 착지했는지 먼저 본다)"
 run report java "$T" --out "$D"
-assert_eq 2 "$RC" "[java] 어느 오버로드의 줄 범위에도 안 드는 람다는 exit 2 — 출력: $OUT"
+assert_eq 0 "$RC" "[java] 오버로드의 범위 밖 여러 줄 람다는 그것을 만든 오버로드의 것 — exit 0 — 출력: $OUT"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:36 AuthClient.token(String, int) · 1 line · owner open-admin" "[java] 가장 가까운 앞의 줄을 가진 오버로드"
+# 람다의 줄이 다른 오버로드의 몸통에 걸친다({35, 37} — 앞의 줄 31 은 token(String) 의 것인데 사이에 token(String, int) 의 36 이 있다) — 못 가른다.
+fresh
+sed -i 's#<method name="lambda$token$3" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="36">#<method name="lambda$token$3" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="35">#' "$D/java.xml"
+sed -i '/^  private java.lang.String lambda\$token\$3(java.lang.String, int);$/,/^        line [0-9]*: / s/^        line 36: 0$/        line 35: 0\n        line 37: 6/' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(sed -n '/lambda\$token\$3(java.lang.String, int);$/,/^      LocalVariableTable/p' "$D/java.javap.txt")" '        line 37: 6' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 다른 오버로드의 몸통에 걸친 람다는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "AuthClient.token has overloads and a lambda whose lines fall in none or several of them" "[java] 람다를 못 붙이는 오버로드"
 # 생성자 몸통 안의 람다 — 두 생성자가 함께 가진 필드 초기화 줄(62)을 빼고 범위를 잡아야 Token(String) 의 몸통(65–67)이 Token(char) 의
 # 범위(62–72)에 안 든다(독립 레그 2차 지적 — 그 줄을 넣고 재면 그 람다가 「함께 가진 람다」가 되어 Token(char) 의 줄로도 셌다).
@@ -1490,25 +1501,25 @@ assert_contains "$(sed -n '/lambda\$new\$0();$/,/^        line /p' "$D/java.java
 run report java "$T" --out "$D"
 assert_eq 0 "$RC" "[java] 한 생성자의 몸통 안 람다는 그 생성자의 것 — exit 0 — 출력: $OUT"
 assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:62 AuthClient.Token.<init>(char) · 4 lines · owner open-admin" "[java] 다른 생성자의 몸통 안 람다는 안 부른 생성자의 줄이 아니다"
-# 어느 생성자의 범위에도 안 드는 생성자 람다 — 필드 초기화의 것도 아니다(그 줄을 가진 생성자가 없다).
+# 모든 생성자의 줄보다 앞의 생성자 람다(50) — 그것을 만든 줄이 없다.
 fresh
-sed -i 's#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="62">#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="75">#' "$D/java.xml"
-sed -i '/^  private static java.lang.String lambda\$new\$0();$/,/^        line [0-9]*: / s/^        line 62: 0$/        line 75: 0/' "$D/java.javap.txt"
+sed -i 's#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="62">#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="50">#' "$D/java.xml"
+sed -i '/^  private static java.lang.String lambda\$new\$0();$/,/^        line [0-9]*: / s/^        line 62: 0$/        line 50: 0/' "$D/java.javap.txt"
 java_mark 0
-assert_contains "$(sed -n '/lambda\$new\$0();$/,/^        line /p' "$D/java.javap.txt")" '        line 75: 0' "(변이가 착지했는지 먼저 본다)"
+assert_contains "$(sed -n '/lambda\$new\$0();$/,/^        line /p' "$D/java.javap.txt")" '        line 50: 0' "(변이가 착지했는지 먼저 본다)"
 run report java "$T" --out "$D"
-assert_eq 2 "$RC" "[java] 어느 생성자의 범위에도 안 드는 생성자 람다는 exit 2 — 출력: $OUT"
+assert_eq 2 "$RC" "[java] 만든 줄이 없는 생성자 람다는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "AuthClient.Token.<init> has overloads and a lambda whose lines fall in none or several of them" "[java] 생성자에 못 붙이는 람다"
-# 몸통 밖 생성자 람다가 초기화를 끼워 넣은 생성자 **일부**의 범위에만 든다(68 — Token(char) 의 62–72 에만) — 어느 초기화의 것인지
-# 모른다(독립 레그 3차 지적 — Token(char) 하나의 「함께 가진 람다」가 됐다).
+# 생성자 람다의 줄이 다음 생성자의 몸통에 걸친다({68, 71} — 앞의 줄 67 은 Token(String) 의 것인데 71 은 Token(char) 의 몸통이다)
+# — 못 가른다(독립 레그 3차 지적의 꼴 — 몸통 밖 람다를 한 생성자에 조용히 붙였다).
 fresh
 sed -i 's#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="62">#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="68">#' "$D/java.xml"
-sed -i '/^  private static java.lang.String lambda\$new\$0();$/,/^        line [0-9]*: / s/^        line 62: 0$/        line 68: 0/' "$D/java.javap.txt"
+sed -i '/^  private static java.lang.String lambda\$new\$0();$/,/^        line [0-9]*: / s/^        line 62: 0$/        line 68: 0\n        line 71: 1/' "$D/java.javap.txt"
 java_mark 0
-assert_contains "$(sed -n '/lambda\$new\$0();$/,/^        line /p' "$D/java.javap.txt")" '        line 68: 0' "(변이가 착지했는지 먼저 본다)"
+assert_contains "$(sed -n '/lambda\$new\$0();$/,/^}/p' "$D/java.javap.txt")" '        line 71: 1' "(변이가 착지했는지 먼저 본다)"
 run report java "$T" --out "$D"
-assert_eq 2 "$RC" "[java] 초기화를 끼워 넣은 생성자 일부에만 드는 생성자 람다는 exit 2 — 출력: $OUT"
-assert_contains "$OUT" "AuthClient.Token.<init> has overloads and a lambda whose lines fall in none or several of them" "[java] 초기화 일부에만 드는 람다"
+assert_eq 2 "$RC" "[java] 다음 생성자의 몸통에 걸친 생성자 람다는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.Token.<init> has overloads and a lambda whose lines fall in none or several of them" "[java] 몸통에 걸친 람다"
 # 함께 가진 줄(62 — 필드 초기화) 위의 람다는 한 생성자의 범위가 그 줄을 덮어도 그 생성자의 것이 아니다. 줄표는 손으로 만든 것이다 —
 # Token(String) 에 60 줄을 더해 범위가 62 를 덮게 했다(javac 는 몸통이 필드 선언 줄을 감싸는 줄표를 못 낸다 — 리더는 줄표만 본다).
 # Token(char) 가 돌아 필드 람다를 만들었고 Token(String) 은 안 돌았다 — 그 람다는 Token(String) 을 목록에서 빼는 근거가 아니다.
@@ -1555,6 +1566,17 @@ assert_eq 2 "$(grep -c '^        line 68: 4$' "$D/java.javap.txt")" "(변이가 
 run report java "$T" --out "$D"
 assert_eq 0 "$RC" "[java] 두 생성자 사이 필드의 여러 줄 람다는 두 생성자의 것 — exit 0 — 출력: $OUT"
 assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:68 AuthClient.Token.<init>(char) · 4 lines · owner open-admin" "[java] 필드 줄을 가진 생성자들의 것이다"
+# `this(…)` 를 안 부르는 생성자가 하나뿐일 때의 필드(필드 줄 68 이 Token(String) 의 줄표에만 있다 — Token(char) 는 `this(…)` 로 맡겨
+# 필드 줄이 없다) 아래의 여러 줄 람다(69) — 필드 줄을 가진 그 생성자 하나의 것이다(4f84f539 는 함께 가진 줄이 없어 FAIL 했다).
+fresh
+sed -i 's#<method name="&lt;init&gt;" desc="(Ljava/lang/String;)V" line="62">#<method name="\&lt;init\&gt;" desc="(Ljava/lang/String;)V" line="65">#; s#<method name="&lt;init&gt;" desc="(C)V" line="62">#<method name="\&lt;init\&gt;" desc="(C)V" line="70">#; s#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="62">#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="69">#; s#<line nr="62" mi="3" ci="5" mb="0" cb="0"/>#<line nr="68" mi="3" ci="5" mb="0" cb="0"/>#' "$D/java.xml"
+sed -i '/^  public kc.auth.AuthClient\$Token(java.lang.String);$/,/^      LocalVariableTable:$/ s/^        line 62: 4$/        line 68: 4/; /^  public kc.auth.AuthClient\$Token(char);$/,/^      LocalVariableTable:$/ { /^        line 62: 4$/d }; /^  private static java.lang.String lambda\$new\$0();$/,/^        line [0-9]*: / s/^        line 62: 0$/        line 69: 0/' "$D/java.javap.txt"
+java_mark 0
+assert_eq 0 "$(grep -c '^        line 62: ' "$D/java.javap.txt")" "(변이가 착지했는지 먼저 본다 — 62 가 줄표에서 다 빠졌다)"
+assert_eq 1 "$(grep -c '^        line 68: 4$' "$D/java.javap.txt")" "(변이가 착지했는지 먼저 본다 — 필드 줄은 Token(String) 에만)"
+run report java "$T" --out "$D"
+assert_eq 0 "$RC" "[java] 초기화를 끼워 넣는 생성자가 하나뿐인 필드의 여러 줄 람다는 그 생성자의 것 — exit 0 — 출력: $OUT"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:70 AuthClient.Token.<init>(char) · 3 lines · owner open-admin" "[java] this(…) 로 맡기는 생성자는 필드 람다를 안 가진다"
 # 짧은 매개변수 이름이 겹치는 오버로드(`token(java.lang.String)` · `token(kc.other.String)`) — 한 키로 합치면 안 돈 쪽이 사라진다(독립
 # 레그 1차 지적). 그 멤버는 서술자 전체로 쓴다.
 fresh
