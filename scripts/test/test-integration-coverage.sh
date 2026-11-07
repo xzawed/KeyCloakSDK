@@ -1491,6 +1491,43 @@ assert_contains "$(sed -n '/lambda\$token\$3(java.lang.String, int);$/,/^      L
 run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 다른 오버로드의 몸통에 걸친 람다는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "AuthClient.token has overloads and a lambda whose lines fall in none or several of them" "[java] 람다를 못 붙이는 오버로드"
+# 람다를 만든 줄에서 시작하는 여러 줄 람다({36, 38} — `return describe(() -> base +` · … · `ttl);`) — 그 첫 줄 자체가 만든 줄이다(그 줄을
+# 빼고 앞 줄을 찾으면 31 의 token(String) 으로 가서 사이의 36 에 걸려 FAIL 한다).
+fresh
+sed -i '/^  private java.lang.String lambda\$token\$3(java.lang.String, int);$/,/^        line [0-9]*: / s/^        line 36: 0$/        line 36: 0\n        line 38: 6/' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(sed -n '/lambda\$token\$3(java.lang.String, int);$/,/^      LocalVariableTable/p' "$D/java.javap.txt")" '        line 38: 6' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 0 "$RC" "[java] 만든 줄에서 시작하는 여러 줄 람다는 그 오버로드의 것 — exit 0 — 출력: $OUT"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:36 AuthClient.token(String, int) · 1 line · owner open-admin" "[java] 만든 줄이 람다의 첫 줄이다"
+# 람다가 오버로드의 줄표 사이에 든다(token(String, int) {35, 37} · 람다 {36}) — 그 오버로드의 것이다. 데이터의 36 은 그 람다만 가져,
+# 다른 오버로드에 붙이면 안 부른 이 오버로드의 줄이 데이터에서 사라진다(목록에서 빠진다).
+fresh
+sed -i 's#<method name="token" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="36">#<method name="token" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="35">#' "$D/java.xml"
+sed -i '/^  public java.lang.String token(java.lang.String, int);$/,/^      LocalVariableTable:$/ s/^        line 36: 0$/        line 35: 0\n        line 37: 11/' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(sed -n '/^  public java.lang.String token(java.lang.String, int);$/,/^      LocalVariableTable:$/p' "$D/java.javap.txt")" '        line 37: 11' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 0 "$RC" "[java] 줄표 사이에 든 람다는 그 오버로드의 것 — exit 0 — 출력: $OUT"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:36 AuthClient.token(String, int) · 1 line · owner open-admin" "[java] 몸통 범위로 그 오버로드에 붙는다"
+# 한 줄에 선언된 두 메서드 오버로드와 그 줄의 람다(token(String, int) 의 줄표에 31 을 더했다 — `String a(int x) { return f(() -> x); }
+# String a(String s) { return f(() -> s); }`) — 어느 오버로드가 만들었는지 못 가른다(생성자의 필드 람다와 다르다).
+fresh
+sed -i 's#<method name="token" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="36">#<method name="token" desc="(Ljava/lang/String;I)Ljava/lang/String;" line="31">#' "$D/java.xml"
+sed -i '/^  public java.lang.String token(java.lang.String, int);$/,/^      LocalVariableTable:$/ s/^        line 36: 0$/        line 31: 0\n        line 36: 3/' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(sed -n '/^  public java.lang.String token(java.lang.String, int);$/,/^      LocalVariableTable:$/p' "$D/java.javap.txt")" '        line 31: 0' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 한 줄의 메서드 오버로드가 함께 가진 줄 위의 람다는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.token has overloads and a lambda whose lines fall in none or several of them" "[java] 메서드 오버로드의 함께 가진 줄"
+# 한 메서드의 줄표에 같은 줄이 두 번(javac 는 `a(); b();` 같은 한 줄에 항목을 여럿 낸다) — 오버로드 여럿이 함께 가진 줄이 아니다.
+fresh
+sed -i '/^  public java.lang.String token(java.lang.String, int);$/,/^      LocalVariableTable:$/ s/^        line 36: 0$/        line 36: 0\n        line 36: 3/' "$D/java.javap.txt"
+java_mark 0
+assert_eq 2 "$(sed -n '/^  public java.lang.String token(java.lang.String, int);$/,/^      LocalVariableTable:$/p' "$D/java.javap.txt" | grep -c '^        line 36: ')" "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 0 "$RC" "[java] 한 메서드 안에서 거듭된 줄은 함께 가진 줄이 아니다 — exit 0 — 출력: $OUT"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:36 AuthClient.token(String, int) · 1 line · owner open-admin" "[java] 거듭된 줄"
 # 생성자 몸통 안의 람다 — 두 생성자가 함께 가진 필드 초기화 줄(62)을 빼고 범위를 잡아야 Token(String) 의 몸통(65–67)이 Token(char) 의
 # 범위(62–72)에 안 든다(독립 레그 2차 지적 — 그 줄을 넣고 재면 그 람다가 「함께 가진 람다」가 되어 Token(char) 의 줄로도 셌다).
 fresh
@@ -1704,6 +1741,23 @@ assert_contains "$(cat "$D/java.javap.txt")" '    descriptor: (Ljava/lang/String
 run report java "$T" --out "$D"
 assert_eq 1 "$RC" "[java] 이름이 바뀐 오버로드는 소유자가 없어 exit 1 — 출력: $OUT"
 assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:36 AuthClient.token(String, AuthClient.Mode[]) · 1 line · owner NONE" "[java] 배열은 [] · 중첩 타입은 점"
+# 데이터가 클래스 사실에 없는 메서드를 댄다(unused 의 서술자를 데이터에서만 바꿨다) — 못 맞춘다(FAIL — 예외로 죽지 않는다).
+fresh
+sed -i 's#<method name="unused" desc="()Ljava/lang/String;" line="53">#<method name="unused" desc="()V" line="53">#' "$D/java.xml"
+java_mark 0
+assert_contains "$(cat "$D/java.xml")" '<method name="unused" desc="()V" line="53">' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 클래스 사실에 없는 데이터의 메서드는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "kc/auth/AuthClient.unused()V — the data and the class facts disagree (first line 53 vs no method)" "[java] 사실에 없는 메서드"
+# 한 번도 안 실린 클래스(enum Mode)의 정적 초기화는 미실행 목록에 들지 않는다 — 실리지 않은 것은 「안 부른 함수」가 아니다.
+fresh
+sed -i 's#<method name="&lt;clinit&gt;" desc="()V" line="80"><counter type="INSTRUCTION" missed="0" covered="15"/><counter type="LINE" missed="0" covered="3"/>#<method name="\&lt;clinit\&gt;" desc="()V" line="80"><counter type="INSTRUCTION" missed="15" covered="0"/><counter type="LINE" missed="3" covered="0"/>#; s#<line nr="80" mi="0" ci="3" mb="0" cb="0"/>#<line nr="80" mi="3" ci="0" mb="0" cb="0"/>#; s#<line nr="81" mi="0" ci="6" mb="0" cb="0"/>#<line nr="81" mi="6" ci="0" mb="0" cb="0"/>#; s#<line nr="82" mi="0" ci="6" mb="0" cb="0"/>#<line nr="82" mi="6" ci="0" mb="0" cb="0"/>#' "$D/java.xml"
+java_mark 0
+assert_contains "$(cat "$D/java.xml")" '<line nr="82" mi="6" ci="0" mb="0" cb="0"/>' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 0 "$RC" "[java] 안 실린 클래스의 정적 초기화는 미실행이 아니다 — exit 0 — 출력: $OUT"
+assert_not_contains "$OUT" "Mode" "[java] 안 실린 enum 의 정적 초기화가 목록에 없다"
+assert_line "$OUT" "  never executed by the integration run — 5 functions (none of its lines ran):" "[java] 미실행 수는 그대로"
 # run 기록 — 이 데이터를 `run java` 가 썼고 그 실행이 성공했는가 · 그 실행이 IT 만 돌았는가 · 경계 파일이 그 실행의 바이트인가.
 fresh
 rm "$D/java.run.json"
