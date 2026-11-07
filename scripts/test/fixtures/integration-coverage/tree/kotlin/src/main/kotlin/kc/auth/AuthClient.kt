@@ -269,3 +269,102 @@ class AuthClientSusp {
         check(s.isNotEmpty())
     }
 }
+
+// ── 아래는 독립 레그 3 이 컴파일해 보인 꼴이다 ──
+
+/** 진짜 `@JvmStatic` 메서드가 중첩 클래스의 같은 이름을 부른다 — 다리가 아니다(부르는 쪽 메서드에 표지가 없다). 구동은 Parser 만. */
+object AuthClientTokens {
+    class Parser {
+        fun parse(s: String): Int = s.length
+    }
+
+    @JvmStatic
+    fun parse(s: String): Int = Parser().parse(s)
+}
+
+/** 컴패니언 `@JvmStatic val` — 바깥 정적 게터의 표지는 컴패니언의 `getP$annotations` 에 있다. 구동은 컴패니언으로 읽는다(다리는 안
+ *  돈다). */
+class AuthClientProps private constructor() {
+    companion object {
+        @JvmStatic
+        val p: Int get() = later { 7 }
+    }
+}
+
+/** 게터 안의 로컬 함수(`_get_x_$loc` — 접두가 JVM 이름 getX 와 다르다) · Java SAM 참조의 어댑터(`useOp$loc$0` — invokedynamic 의
+ *  구현인 private static 메서드). */
+class AuthClientShapes {
+    val x: Int
+        get() {
+            fun loc(): Int = 4
+            return loc()
+        }
+
+    fun useOp(): Int {
+        fun loc(v: Int): Int = v + 1
+        return applyOp(::loc)
+    }
+}
+
+fun applyOp(op: java.util.function.IntUnaryOperator): Int = op.applyAsInt(1)
+
+// ── 아래는 `@JvmStatic` 다리 판별의 조건마다 하나씩이다 — 진짜 `@JvmStatic` 이 표지 있는 같은 이름을 부르지만 다리가 아니다 ──
+
+/** 중첩 object 의 `@JvmStatic` 을 부른다 — 받는 쪽이 정적 메서드다(컴패니언의 다리가 부르는 것은 인스턴스 메서드다). 구동은 Inner 만. */
+object AuthClientNest {
+    object Inner {
+        @JvmStatic
+        fun f(x: Int): Int = x + 1
+    }
+
+    @JvmStatic
+    fun f(x: Int): Int = Inner.f(x)
+}
+
+/** 중첩 클래스 컴패니언의 `@JvmStatic` 을 부른다 — 받는 쪽은 표지 있는 인스턴스 메서드지만 바로 아래 클래스가 아니다
+ *  (`AuthClientRelay$Target$Companion` — 그 컴패니언의 다리는 `Target` 에 있다). 구동은 Target 만. */
+object AuthClientRelay {
+    class Target private constructor() {
+        companion object {
+            @JvmStatic
+            fun f(x: Int): Int = x * 2
+        }
+    }
+
+    @JvmStatic
+    fun f(x: Int): Int = Target.f(x)
+}
+
+// ── 아래는 Java SAM 참조의 구현 판별이다 — 최상위 함수의 참조를 만들기만 하고 부르지 않는다 ──
+
+private fun privTwice(x: Int): Int = x * 2
+
+fun pubTwice(x: Int): Int = x * 3
+
+fun keepOp(op: java.util.function.IntUnaryOperator): java.util.function.IntUnaryOperator = op
+
+/** 참조된 함수(private 이면 private static)는 안 돌았다 — invokedynamic 의 구현이어도 그 함수다. 구동은 makeOps 만. */
+fun makeOps(): Int {
+    keepOp(::privTwice)
+    keepOp(::pubTwice)
+    return 2
+}
+
+/** 컴패니언 `@JvmStatic var` — 표지는 게터 이름의 `$annotations`(`getV$annotations` · `isOn$annotations`)에만 있어 세터 다리는 게터로
+ *  가른다 · 세터만 `@set:JvmStatic`(표지는 세터에) · `@JvmOverloads`(만든 오버로드에도 표지). 구동은 컴패니언으로만(다리는 안 돈다). */
+class AuthClientVars private constructor() {
+    companion object {
+        @JvmStatic
+        var v: Int = 0
+
+        @JvmStatic
+        var isOn: Boolean = false
+
+        var w: Int = 0
+            @JvmStatic set
+
+        @JvmStatic
+        @JvmOverloads
+        fun over(a: Int, b: Int = 2): Int = a + b
+    }
+}

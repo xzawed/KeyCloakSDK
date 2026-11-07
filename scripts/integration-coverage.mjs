@@ -2174,6 +2174,13 @@ function javapFacts(text) {
       meth.desc = m[1]
       continue
     }
+    // 접근 플래그 — ktFold 가 가른다: 로컬 함수 · 람다 · SAM 참조 어댑터는 private static 이고, 컴패니언 `@JvmStatic` 다리가 부르는
+    // 쪽은 인스턴스 메서드다(object 의 `@JvmStatic` 은 정적 메서드다).
+    if (meth && (m = /^    flags: \(0x[0-9a-f]+\) (.*)$/.exec(raw))) {
+      meth.static = /\bACC_STATIC\b/.test(m[1])
+      meth.private = /\bACC_PRIVATE\b/.test(m[1])
+      continue
+    }
     // 코드 — `N: invoke… #K // Method owner.name:desc` · `N: new #K // class X` · `N: invokedynamic #K, 0 // InvokeDynamic #B:…` ·
     // `N: getstatic #K // Field X.INSTANCE:…`(싱글턴 클래스는 제 정적 초기화에서 만들고 쓰는 쪽은 INSTANCE 를 읽는다 — 그 자리가
     // 만드는 자리다, 독립 레그 2 실측: 컴패니언 init 의 suspend fun interface 변환).
@@ -2276,11 +2283,12 @@ function javaFold(cname, name, desc, facts, depth = 0) {
 // (실측 2.4.21 — 독립 레그가 컴파일해 보였다): `@JvmName("joinInts")` 함수의 람다는 원래 이름 `join$lambda$1` 이다 · 컴패니언 ·
 // object · enum 항목의 `_init_$lambda$N` 은 정적 초기화가 만든다 · 람다 안의 람다는 `…$lambda$0$0` 이다 · object 의 `@JvmStatic`
 // 다리는 받는 쪽이 없다 · 로컬 클래스는 이름에 숫자가 없다. 그래서:
-//   람다(`…$lambda$N…`)                  → 그것을 만드는 invokedynamic(LambdaMetafactory 의 구현 핸들)이 든 메서드
+//   람다(`…$lambda$N…` · invokedynamic 의 구현인 private static — SAM 참조 어댑터) → 그것을 만드는 invokedynamic 이 든 메서드
 //   기본 인자 다리(`…$default`) · 기본 인자 생성자(`<init>(…, int, DefaultConstructorMarker)`) → 그것이 부르는 같은 이름의 하나
-//   그 밖의 `$` 든 이름(로컬 함수 `outer$inner` · open suspend fun 의 몸통 `fn$suspendImpl`) → 그것을 부르는 메서드
-//   익명 · 로컬 클래스(EnclosingMethod 가 있다)  → 그 메서드(없으면 — 속성 초기화 · init 블록 — 그 클래스를 `new` 하는 메서드)
-// 그 메서드가 여럿이면 모두 같은 멤버 · 서술자로 접혀야 한다. 못 찾거나 갈리면 null(FAIL). `internal` 은 모듈 접미를 벗긴다
+//   컴패니언 `@JvmStatic` 바깥 다리 → 그것이 부르는 바로 아래 컴패니언의 같은 이름 · 서술자 인스턴스 멤버(표지가 있을 때만 — 속성은 게터의 표지)
+//   로컬 함수(private static `outer$inner`) · 합성 접근자 `access$…` · open suspend fun 의 몸통 `fn$suspendImpl` → 그것을 부르는 메서드
+//   익명 · 로컬 클래스(EnclosingMethod 가 있다)  → 그 메서드(생성자이거나 없으면 — 속성 초기화 · init 블록 — 그 클래스를 `new` 하는 메서드)
+// 그 밖의 `$` 든 이름은 모른다(null — FAIL). 그 메서드가 여럿이면 모두 같은 멤버 · 서술자로 접혀야 한다. 못 찾거나 갈리면 null(FAIL). `internal` 은 모듈 접미를 벗긴다
 // (kt.mangle). `$suspendImpl` 은 그 fun 자체로 둔다(plain — 그 fun 은 부르기만 해 JaCoCo 가 안 싣는다, 실측).
 const KT_INDEX = new WeakMap()
 function ktIndex(facts) {
@@ -2332,14 +2340,6 @@ function ktFold(cname, name, desc, facts, kt, seen = new Set()) {
   // 그 메서드를 부르는 자리 — 자기 자신(재귀) · 자기 안의 이어받기 클래스(suspend 는 그 함수를 다시 부른다)는 접기가 자기에게 돌아와
   // KT_CYCLE 로 빠진다.
   const callers = () => ix.called.get(self) ?? []
-  // 부르는 쪽으로 접는 것은 로컬 함수 꼴(`<감싼 함수>$<이름>` · `fn$suspendImpl`)뿐이다 — 이름이 접힌 멤버의 이름으로 시작하지 않으면
-  // (모듈 이름이 틀려 접미가 안 벗겨진 `internal` 함수가 그 호출자로 접히는 꼴 — 자가테스트가 잡았다) 접지 않는다. 함수 참조
-  // (`::twice`)가 거치는 합성 접근자 `access$…` 는 그 앞을 떼고 보고, 초기화 블록의 로컬 함수는 `_init_$…` 다(실측 — 레그 2 데이터).
-  const host = (up) => {
-    if (up === KT_CYCLE || !up) return up
-    const root = up.member === '<init>' || up.member === '<clinit>' ? '_init_' : up.member
-    return name.replace(/^access\$/, '').startsWith(`${root}$`) ? up : null
-  }
   if (c.enclosing) {
     // 익명 · 로컬 클래스 — EnclosingMethod 는 그것을 감싼 함수다(어휘 — 인라인 함수의 객체는 인라인된 호출부에서도 `new` 된다).
     // 단 생성자 · 클래스 수준(속성 초기화 · init 블록)이면 처음 선언된 생성자를 대거나(그것이 안 만들어도) 비어 있다(독립 레그 2
@@ -2363,29 +2363,49 @@ function ktFold(cname, name, desc, facts, kt, seen = new Set()) {
   const bridge = (r) => {
     if (!r) return null
     const t = fold(r[1], r[2], r[3])
-    return nest(t === KT_CYCLE ? host(one(callers())) : t, 'default')
+    return nest(t === KT_CYCLE ? one(callers()) : t, 'default')
   }
   if (name === '<init>') {
     if (!desc.endsWith('ILkotlin/jvm/internal/DefaultConstructorMarker;)V')) return { type, member: '<init>', kind: 'plain', desc }
     return bridge(callee(cname, '<init>'))
   }
-  if (/\$lambda\$\d+(?:\$\d+)*$/.test(name)) return nest(one(ix.made.get(self) ?? []), name)
+  // 람다 몸통 — `…$lambda$N…` 이거나, invokedynamic 의 구현 핸들인 private static 메서드(Java SAM 참조의 어댑터 — 로컬 함수의 참조는
+  // `outer$loc$0`(독립 레그 3 실측) · 최상위 함수의 참조는 `makeOps$privTwice`(실측 — 참조된 함수 자체는 구현이 아니다))다: 그것을
+  // 만드는 메서드로 접는다. private static 이 아닌 구현(그 함수 자체가 핸들인 꼴)은 접지 않는다 — 접으면 안 돈 함수가 숨는다.
+  if (/\$lambda\$\d+(?:\$\d+)*$/.test(name) || (own.private && own.static && ix.made.has(self))) return nest(one(ix.made.get(self) ?? []), name)
   const dm = /^(.+)\$default$/.exec(name)
   // `Iface$DefaultImpls.g$default` 는 인터페이스의 같은 이름 다리를 부른다(호환 다리 — 실측) — 그 다리를 따라간다.
   if (dm) return bridge(callee(cname, dm[1]) ?? (cname.endsWith('$DefaultImpls') ? callee(cname.slice(0, -'$DefaultImpls'.length), name) : null))
-  // 컴패니언 `@JvmStatic` 의 바깥 정적 다리 — 표지가 있고 중첩 클래스(컴패니언)의 같은 이름 하나를 부른다: 그 멤버다(kotlin 호출은
-  // 컴패니언으로 가 다리는 안 돈다 — 따로 두면 실행된 함수가 미실행에 뜬다, 독립 레그 2 실측).
-  if (own.jvmStatic) {
-    const to = [...new Set(own.calls)].filter((r) => r.startsWith(`${cname}$`) && /^[^.]+\.([^:]+):/.exec(r)?.[1] === name)
+  // 컴패니언 `@JvmStatic` 의 바깥 정적 다리 — 정적 메서드가 바로 아래 중첩 클래스(`<이 클래스>$<이름>`)의 같은 이름 · 서술자
+  // **인스턴스** 메서드 하나를 부르고 그것에 `@JvmStatic` 표지가 있다(함수 · `@set:JvmStatic` · `@JvmOverloads` 가 만든 오버로드 — 실측):
+  // 그 멤버다(kotlin 호출은 컴패니언으로 가 다리는 안 돈다 — 따로 두면 실행된 함수가 미실행에 뜬다, 독립 레그 2 실측). 속성의 표지는
+  // 게터 이름의 `<게터>$annotations` 에만 있다(실측 — `getV$annotations` · `isOn$annotations`; 게터 · 세터에는 없다): 게터 다리는 자기
+  // 이름의 것을, 세터 다리 `setX` 는 그 클래스의 인스턴스 게터 `getX` · `isX` 의 것을 본다. 표지 있는 인스턴스 메서드 · 인스턴스 게터는
+  // 컴패니언에만 있고(object 의 `@JvmStatic` 은 정적이다) 바로 아래 컴패니언은 이 클래스의 것이라, 이 클래스의 정적 메서드가 그것을 같은
+  // 이름 · 서술자로 부르면 그 다리다(한 클래스에 같은 이름 · 서술자는 하나다). 조건마다 반례가 있다 — 받는 쪽 표지(`AuthClientTokens`
+  // — 레그 3 실측) · 정적인 받는 쪽(`AuthClientNest`) · 바로 아래가 아닌 컴패니언(`AuthClientRelay`) · 인스턴스인 부르는 쪽 · 정적인 게터
+  // (뒤 둘은 플래그만 바꾼 음성).
+  if (own.static) {
+    const to = [...new Set(own.calls)].filter((r) => r.endsWith(`.${name}:${desc}`) && r.slice(0, r.lastIndexOf('$', r.indexOf('.'))) === cname)
     if (to.length === 1) {
-      const p = /^([^.]+)\.([^:]+):(.*)$/.exec(to[0])
-      return nest(fold(p[1], p[2], p[3]), 'jvmstatic')
+      const o = to[0].slice(0, to[0].indexOf('.'))
+      const ms = facts[o]?.methods ?? []
+      const m = ms.find((x) => x.name === name && x.desc === desc)
+      const getters = /^set./.test(name) ? [`get${name.slice(3)}`, `is${name.slice(3)}`] : [name]
+      const prop = (g) => ms.some((x) => x.name === g && !x.static) && ms.some((x) => x.jvmStatic && x.name === `${g}$annotations`)
+      if (m && !m.static && (m.jvmStatic || getters.some(prop))) return nest(fold(o, name, desc), 'jvmstatic')
     }
   }
   const bare = name.endsWith(`$${kt.mangle}`) ? name.slice(0, -kt.mangle.length - 1) : name
   if (!bare.includes('$') && !bare.startsWith('<')) return { type, member: bare, kind: 'plain', desc }
-  const up = host(one(callers()))
-  if (/\$suspendImpl$/.test(name)) return up === KT_CYCLE || !up || up.kind !== 'plain' || up.shared ? null : up
+  // 부르는 쪽으로 접는 것은 로컬 함수(private static — kotlinc 가 `<감싼 함수>$<이름>` 으로 낸다; 게터 · `@JvmName` · 값 클래스 함수
+  // 안이면 접두가 JVM 이름과 다르다 — 레그 3 실측) · 합성 접근자 `access$…`(함수 참조가 거친다) · open suspend fun 의 몸통
+  // `$suspendImpl` 뿐이다. 그 밖의 `$` 든 이름(모듈 이름이 틀려 접미가 안 벗겨진 public `internal` 함수 등)은 모른다 — 호출자로
+  // 접으면 조용히 틀린다(자가테스트가 잡았다).
+  const suspendImpl = /\$suspendImpl$/.test(name)
+  if (!(own.private && own.static) && !name.startsWith('access$') && !suspendImpl) return null
+  const up = one(callers())
+  if (suspendImpl) return up === KT_CYCLE || !up || up.kind !== 'plain' || up.shared ? null : up
   return nest(up, name)
 }
 function jvmReport(l, d) {

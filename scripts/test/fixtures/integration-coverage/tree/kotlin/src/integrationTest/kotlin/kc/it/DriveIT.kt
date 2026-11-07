@@ -11,13 +11,20 @@ import kc.auth.AuthClientLoader
 import kc.auth.AuthClientLoaders
 import kc.auth.AuthClientLocals
 import kc.auth.AuthClientMixed
+import kc.auth.AuthClientNest
+import kc.auth.AuthClientProps
 import kc.auth.AuthClientRefs
+import kc.auth.AuthClientRelay
+import kc.auth.AuthClientShapes
 import kc.auth.AuthClientStatic
 import kc.auth.AuthClientStatus
 import kc.auth.AuthClientSusp
+import kc.auth.AuthClientTokens
+import kc.auth.AuthClientVars
 import kc.auth.ClientId
 import kc.auth.Config
 import kc.auth.byId
+import kc.auth.makeOps
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 
@@ -59,5 +66,20 @@ class DriveIT {
         check(AuthClientInline().useWrap() == 3)
         check(runBlocking { AuthClientLoaders().load(1) } == 1)
         check(AuthClientSusp("x").toString().isNotEmpty())
+        check(AuthClientTokens.Parser().parse("ab") == 2)
+        check(AuthClientProps.p == 7)
+        val sh = AuthClientShapes()
+        check(sh.x == 4)
+        check(sh.useOp() == 2)
+        check(AuthClientNest.Inner.f(1) == 2)
+        check(AuthClientRelay.Target.f(1) == 2)
+        check(makeOps() == 2)
+        AuthClientVars.v = 3
+        check(AuthClientVars.v == 3)
+        AuthClientVars.isOn = true
+        check(AuthClientVars.isOn)
+        AuthClientVars.w = 4
+        check(AuthClientVars.w == 4)
+        check(AuthClientVars.over(1) == 3)
     }
 }
