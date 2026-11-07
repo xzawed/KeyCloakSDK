@@ -55,9 +55,9 @@
 # async 람다)를 안 탄다(`UnitTests` 는 Trait 이 없는 통합 밖 테스트다 — 레인의 필터가 거른다).
 # java 구동 테스트(`DriveIT`)는 「token(String, int) · unused · QuickStart 전체」를 안 부르고 정적 람다 `UPPER` 는 `names` 를 거쳐 부른다.
 # kotlin 구동 테스트(`DriveIT`)는 「token(String, Int) · unused · Companion 의 REALM 읽기 · 속성 greet 와 초기화 블록 ready 의 람다 ·
-# withLocalClass · join(List<String>) · AuthClientStatus 의 생성자 · AuthClientDefaults.pick(Int) · QuickStart 전체」를 안 부르고,
-# internal `mask` 와 `pick(AuthClientDefaults?, Int)` 는 기본 인자 다리로 · `join(List<Int>)` 는 JVM 이름 joinInts 로 · 컴패니언
-# init 은 `AuthClientStatus.ok()` 로 부른다.
+# withLocalClass · join(List<String>) · AuthClientStatus 의 생성자 · AuthClientDefaults.pick(Int) · AuthClientIdle · QuickStart
+# 전체」를 안 부르고, internal `mask` · `pick(AuthClientDefaults?, Int)` · `ping()` 은 기본 인자 다리로 · `join(List<Int>)` 는 JVM
+# 이름 joinInts 로 · 컴패니언 init 은 `AuthClientStatus.ok()` 로 부른다.
 # php 구동기는 「groups·adminHelper·logoutUrl·__debugInfo」를 안 부르고 `exchange` 의 throw 갈래를 안 탄다.
 # 구동기는 「String·Close·Delete·AuthClient.String·hook 리터럴」과 「__repr__·logout·clients·aio 전체」를, node 는
 # 「describe·toString·[SYM]·inc·cb·set count·overload·longSignature·close」를, rust 는 「transport·supply·describe·noop·close·
@@ -447,18 +447,20 @@ assert_line "$OUT" "integration-coverage [java]: OK — lines 22/31 (71.0%) · b
 # 블록의 람다(`_init_$lambda$0`) · 람다 안의 람다(`nested$lambda$0$0`) · 로컬 함수(`withLocal$inner`)와 그 람다 · 로컬 클래스
 # (`AuthClient$withLocalClass$Local` — 이름에 숫자가 없다) · `@JvmName("joinInts")` 쪽 람다(`join$lambda$1` — 만드는 것은 joinInts) ·
 # 기본 인자 생성자와 그 기본값 람다 · 컴패니언 init 람다(둘 다 `_init_$lambda$N` — 만드는 것이 생성자 · 정적 초기화로 갈린다) ·
-# object 의 `@JvmStatic` 다리(받는 쪽이 없다 — `pick(AuthClientDefaults, int)` 의 것) · `load$suspendImpl` · suspend 의 이어받기
-# 클래스(줄이 없다) · 파일 파사드(`QuickStartKt` · `AuthClientKt`). suspend 함수의 데이터 첫 줄(29)은 줄표의 가장 앞 줄(28)이 아니다
-# (JaCoCo 가 선언 줄의 상태 기계 분기를 거른다) — 그 메서드의 줄이기만 하면 된다.
+# object 의 `@JvmStatic` 다리(받는 쪽이 없다 — `pick(AuthClientDefaults, int)` 의 것) · `load$suspendImpl` · 인터페이스 다리
+# (`AuthClientApi$DefaultImpls.ping$default` 는 인터페이스의 같은 이름 다리를 부른다) · 값 클래스 맹글(`byId-tzrl3XM` — 이름에 `-`) ·
+# 안 실린 object 의 정적 초기화와 그 람다(`AuthClientIdle`) · suspend 의 이어받기 클래스(줄이 없다) · 파일 파사드(`QuickStartKt` ·
+# `AuthClientKt`). suspend 함수의 데이터 첫 줄(29)은 줄표의 가장 앞 줄(28)이 아니다(JaCoCo 가 선언 줄의 상태 기계 분기를 거른다) —
+# 그 메서드의 줄이기만 하면 된다.
 fresh
 run report kotlin "$T" --out "$D"
 assert_eq 0 "$RC" "[kotlin] 건강한 리포트는 exit 0 — 출력: $OUT"
 assert_line "$OUT" "[kotlin] integration-only coverage — report mode, no floor" "[kotlin] 머리줄"
 assert_line "$OUT" "  boundary: 2 files derived from kotlin/build.gradle.kts:46 (kover excludes.classes) — equal to the pin in scripts/integration-coverage.json" "[kotlin] 파생 출처"
 assert_contains "$OUT" "/kotlin.xml (JaCoCo 0.8.16 · 1 session · 1 integration test)" "[kotlin] 데이터 · JaCoCo 판 · 세션 · 테스트 수를 찍는다"
-assert_line "$OUT" "  kotlin/src/main/kotlin/kc/auth/AuthClient.kt lines 34/46 73.9% · bodies 31/44 70.5%" "[kotlin] AuthClient.kt — 정적 초기화만 돈 줄(REALM 등)은 몸통으로 안 덮였다"
+assert_line "$OUT" "  kotlin/src/main/kotlin/kc/auth/AuthClient.kt lines 37/50 74.0% · bodies 34/48 70.8%" "[kotlin] AuthClient.kt — 정적 초기화만 돈 줄(REALM 등)은 몸통으로 안 덮였다"
 assert_line "$OUT" "  kotlin/src/main/kotlin/kc/examples/QuickStart.kt lines 0/3 0.0% · bodies 0/3 0.0%" "[kotlin] 최상위 함수의 파일"
-assert_line "$OUT" "  total lines 34/49 69.4% · bodies 31/47 66.0%" "[kotlin] 합계는 경계 파일만(Config.kt 제외)"
+assert_line "$OUT" "  total lines 37/53 69.8% · bodies 34/51 66.7%" "[kotlin] 합계는 경계 파일만(Config.kt 제외)"
 assert_line "$OUT" "  never executed by the integration run — 9 functions (none of its lines ran):" "[kotlin] 미실행 머리줄"
 assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:9 AuthClient.Companion.getREALM · 1 line · owner open-admin" "[kotlin] 안 읽은 Companion 속성의 getter — 그 줄을 정적 초기화가 돌아도 미실행이다"
 assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:25 AuthClient.token(String, int) · 1 line · owner open-admin" "[kotlin] 오버로드는 서술자로 가른다 — 그 람다는 만든 오버로드에 붙는다"
@@ -475,6 +477,9 @@ assert_not_contains "$OUT" "AuthClient.mask" "[kotlin] 다리(mask\$kc_kotlin\$d
 assert_not_contains "$OUT" "AuthClient.nested" "[kotlin] 람다 안의 람다(nested\$lambda\$0\$0)는 바깥 람다를 거쳐 nested 에 접힌다"
 assert_not_contains "$OUT" "AuthClient.withLocal ·" "[kotlin] 로컬 함수와 그 람다는 부른 · 만든 메서드에 접힌다"
 assert_not_contains "$OUT" "AuthClientLoader" "[kotlin] load\$suspendImpl 은 open suspend fun load 다(돌았다)"
+assert_not_contains "$OUT" "AuthClientApi" "[kotlin] DefaultImpls 다리(안 돌았다)는 인터페이스의 ping 에 접힌다(돌았다)"
+assert_not_contains "$OUT" "AuthClientIdle" "[kotlin] 안 실린 object 의 정적 초기화 · 그 람다는 미실행 목록에 들지 않는다"
+assert_not_contains "$OUT" "byId" "[kotlin] 값 클래스 맹글 이름(byId-tzrl3XM)의 함수와 그 람다(byId_tzrl3XM\$lambda\$0)는 돌았다"
 assert_not_contains "$OUT" "\$kc_kotlin" "[kotlin] internal 의 모듈 접미를 내지 않는다"
 assert_not_contains "$OUT" "\$default" "[kotlin] 기본 인자 다리는 그 함수에 접힌다"
 assert_not_contains "$OUT" "lambda\$" "[kotlin] 람다의 이름을 내지 않는다"
@@ -483,7 +488,7 @@ assert_not_contains "$OUT" "token(String) ·" "[kotlin] 부른 오버로드는 �
 assert_not_contains "$OUT" "AuthClient.fetch" "[kotlin] 부른 suspend 함수는 목록에 없다"
 assert_not_contains "$OUT" "<clinit>" "[kotlin] 정적 초기화는 미실행 목록에 들지 않는다"
 assert_not_contains "$OUT" "Config" "[kotlin] 경계 밖 파일은 리포트에 없다"
-assert_line "$OUT" "integration-coverage [kotlin]: OK — lines 34/49 (69.4%) · bodies 31/47 (66.0%) · 9 never-executed functions, all owned by open registry items" "[kotlin] 통과 요약"
+assert_line "$OUT" "integration-coverage [kotlin]: OK — lines 37/53 (69.8%) · bodies 34/51 (66.7%) · 9 never-executed functions, all owned by open registry items" "[kotlin] 통과 요약"
 
 # ── (2) 음성: 파생 ↔ 핀───────────────────────────────────────────────────────────────────────
 # 파생이 좁아진다 — 이것이 등록부가 실측한 함정의 꼴이다(파일이 빠지면 %가 오른다).
@@ -2040,6 +2045,24 @@ assert_eq 0 "$(grep -c ': new  *#[0-9]* .*// class kc/auth/AuthClient\$1$' "$D/k
 run report kotlin "$T" --out "$D"
 assert_eq 2 "$RC" "[kotlin] new 하는 메서드도 없는 익명 클래스는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot name kc/auth/AuthClient\$1.<init>()V" "[kotlin] 접을 곳 없음"
+# 빈 마디가 든 클래스 이름(`AuthClient$$Local`) — 접지 않는다(java 와 같다).
+fresh
+sed -i 's|AuthClient\$withLocalClass\$Local|AuthClient$$Local|g' "$D/kotlin.xml" "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(cat "$D/kotlin.javap.txt")" '// kc/auth/AuthClient$$Local' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 빈 마디가 든 클래스 이름은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient\$\$Local." "[kotlin] 빈 마디"
+# 이름에 `-` 가 든 메서드(값 클래스 맹글 `byId-tzrl3XM`)는 javap 머리에서 그대로 읽는다 — 양성이 그 이름을 지난다. 여기서는 그 함수를
+# 안 부른 실행(데이터의 횟수를 0 으로)이 그 이름 그대로 미실행 목록에 드는지 본다.
+fresh
+sed -i 's#<method name="byId-tzrl3XM" desc="(Ljava/lang/String;)Ljava/lang/String;" line="131"><counter type="INSTRUCTION" missed="0" covered="\([0-9]*\)"/><counter type="LINE" missed="0" covered="1"/>#<method name="byId-tzrl3XM" desc="(Ljava/lang/String;)Ljava/lang/String;" line="131"><counter type="INSTRUCTION" missed="\1" covered="0"/><counter type="LINE" missed="1" covered="0"/>#; s#<method name="byId_tzrl3XM\$lambda\$0" desc="(Ljava/lang/String;)Ljava/lang/String;" line="131"><counter type="INSTRUCTION" missed="0" covered="\([0-9]*\)"/><counter type="LINE" missed="0" covered="1"/>#<method name="byId_tzrl3XM$lambda$0" desc="(Ljava/lang/String;)Ljava/lang/String;" line="131"><counter type="INSTRUCTION" missed="\1" covered="0"/><counter type="LINE" missed="1" covered="0"/>#' "$D/kotlin.xml"
+kotlin_mark 0
+assert_contains "$(cat "$D/kotlin.xml")" '<method name="byId-tzrl3XM" desc="(Ljava/lang/String;)Ljava/lang/String;" line="131"><counter type="INSTRUCTION" missed="' "(변이가 착지했는지 먼저 본다)"
+assert_not_contains "$(cat "$D/kotlin.xml")" 'line="131"><counter type="INSTRUCTION" missed="0"' "(변이가 착지했는지 먼저 본다 — 둘 다 0 회)"
+run report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[kotlin] 소유자 없는 값 클래스 함수는 exit 1 — 출력: $OUT"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:131 AuthClientKt.byId-tzrl3XM · 1 line · owner NONE" "[kotlin] 맹글된 이름 그대로 — 람다(byId_tzrl3XM\$lambda\$0)도 그 함수의 것"
 # kotlin 기록의 문구 — 테스트 수는 JUnit XML 에서, 단위 테스트는 run 이 안 돌린다.
 fresh
 sed -i 's#"tests":{[^}]*},##' "$D/kotlin.run.json"
@@ -2164,7 +2187,7 @@ fresh
 kotlin_data "$FIX/data/kotlin-zero.xml"
 run report kotlin "$T" --out "$D"
 assert_eq 2 "$RC" "[kotlin] 경계 클래스를 싣기만 한 실행은 exit 2 — 출력: $OUT"
-assert_contains "$OUT" "FAIL [kotlin] the run executed 0 of 47 boundary lines outside static initializers — a measurement failure, not a low number (class loading alone credits 2 static-initializer lines)" "[kotlin] 정적 초기화만 돈 실행"
+assert_contains "$OUT" "FAIL [kotlin] the run executed 0 of 51 boundary lines outside static initializers — a measurement failure, not a low number (class loading alone credits 2 static-initializer lines)" "[kotlin] 정적 초기화만 돈 실행"
 assert_not_contains "$OUT" "OK —" "[kotlin] 측정 실패에서 수치를 내지 않는다"
 # 빈 파생 + 빈 핀 — 집합은 같으므로(∅ = ∅) 빈 집합 판정만이 잡는다. 파생 도구를 가짜로 바꿔 그 갈래만 태운다.
 # ⚠️ 두 언어 다 「있되 비었다」여야 한다 — 한 언어를 빼 두면 check 의 exit 2 가 그 「없는 파생」에서 와서 빈 집합
@@ -2356,20 +2379,20 @@ fresh; floor java statements 50
 run check "$T"
 assert_eq 2 "$RC" "[floor] java 에 statements 는 없다(지표는 lines · bodies) — 출력: $OUT"
 assert_contains "$OUT" "java.floor.metric" "[floor] java 지표 오류를 지목한다"
-# kotlin 도 lines(픽스처 34/49 = 69.388%) · bodies(31/47 = 65.957%)다.
-fresh; floor kotlin bodies 65.95
+# kotlin 도 lines(픽스처 37/53 = 69.811%) · bodies(34/51 = 66.667%)다.
+fresh; floor kotlin bodies 66.66
 run report kotlin "$T" --out "$D"
-assert_eq 0 "$RC" "[floor] kotlin bodies 65.957% ≥ 65.95 — 출력: $OUT"
-assert_line "$OUT" "integration-coverage [kotlin]: OK — lines 34/49 (69.4%) · bodies 31/47 (66.0%) · floor bodies ≥ 65.95% · 9 never-executed functions, all owned by open registry items" "[floor] kotlin 통과 요약"
-fresh; floor kotlin bodies 65.96
+assert_eq 0 "$RC" "[floor] kotlin bodies 66.667% ≥ 66.66 — 출력: $OUT"
+assert_line "$OUT" "integration-coverage [kotlin]: OK — lines 37/53 (69.8%) · bodies 34/51 (66.7%) · floor bodies ≥ 66.66% · 9 never-executed functions, all owned by open registry items" "[floor] kotlin 통과 요약"
+fresh; floor kotlin bodies 66.67
 run report kotlin "$T" --out "$D"
-assert_eq 3 "$RC" "[floor] kotlin bodies 65.957% < 65.96 — 출력: $OUT"
-fresh; floor kotlin lines 69.38
+assert_eq 3 "$RC" "[floor] kotlin bodies 66.667% < 66.67 — 찍힌 66.7% 가 아니라 식이 가른다 — 출력: $OUT"
+fresh; floor kotlin lines 69.81
 run report kotlin "$T" --out "$D"
-assert_eq 0 "$RC" "[floor] kotlin lines 69.388% ≥ 69.38 — 지표가 bodies(65.957%)로 새지 않는다 — 출력: $OUT"
-fresh; floor kotlin lines 69.39
+assert_eq 0 "$RC" "[floor] kotlin lines 69.811% ≥ 69.81 — 지표가 bodies(66.667%)로 새지 않는다 — 출력: $OUT"
+fresh; floor kotlin lines 69.82
 run report kotlin "$T" --out "$D"
-assert_eq 3 "$RC" "[floor] kotlin lines 69.388% < 69.39 — 찍힌 69.4% 가 아니라 식이 가른다 — 출력: $OUT"
+assert_eq 3 "$RC" "[floor] kotlin lines 69.811% < 69.82 — 출력: $OUT"
 fresh; floor kotlin statements 50
 run check "$T"
 assert_eq 2 "$RC" "[floor] kotlin 에 statements 는 없다(지표는 lines · bodies) — 출력: $OUT"

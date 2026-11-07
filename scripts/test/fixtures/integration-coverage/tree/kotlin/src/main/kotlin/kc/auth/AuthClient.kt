@@ -126,3 +126,18 @@ open class AuthClientLoader {
 }
 
 fun describeStatic(s: () -> String): String = s()
+
+/** 값 클래스 매개변수의 함수 — JVM 이름에 `-` 가 든다(`byId-<해시>` · 그 람다는 `byId_<해시>$lambda$0`). 값 클래스는 경계 밖(Config.kt). */
+fun byId(id: ClientId): String = describeStatic { id.v }
+
+/** 인터페이스의 기본 메서드와 기본 인자 — 다리 `ping$default` 가 인터페이스와 `DefaultImpls` 둘에 있다(뒤는 앞을 부른다). */
+interface AuthClientApi {
+    fun ping(n: Int = 1): Int = n
+}
+
+class AuthClientApiImpl : AuthClientApi
+
+/** 안 실리는 object — 정적 초기화와 그것이 만드는 람다는 미실행 목록에 들지 않는다. */
+object AuthClientIdle {
+    private val f: () -> Int = { 1 }
+}
