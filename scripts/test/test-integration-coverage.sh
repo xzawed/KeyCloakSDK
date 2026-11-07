@@ -1522,6 +1522,26 @@ run report java "$T" --out "$D"
 assert_eq 1 "$RC" "[java] 안 돈 생성자는 소유자가 없어 exit 1 — 출력: $OUT"
 assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:62 AuthClient.Token.<init>(String) · 4 lines · owner NONE" "[java] 함께 가진 줄 위의 람다는 범위가 덮은 생성자의 것이 아니다"
 assert_not_contains "$OUT" "Token.<init>(char) ·" "[java] 돈 생성자는 목록에 없다"
+# 몸통 밖 생성자 람다의 한 줄이 한 생성자의 몸통 범위에 든다({62, 66} — 66 은 Token(String) 의 몸통) — 어느 것인지 모른다(독립 레그
+# 4차 지적 — 두 생성자의 「함께 가진 람다」가 되어 Token(char) 의 줄로 66 을 셌다). 손으로 만든 줄표다.
+fresh
+sed -i '/^  private static java.lang.String lambda\$new\$0();$/,/^        line [0-9]*: / s/^        line 62: 0$/&\n        line 66: 1/' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(sed -n '/lambda\$new\$0();$/,/^      LocalVariableTable/p' "$D/java.javap.txt")" '        line 66: 1' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 몸통에 한 줄이 든 몸통 밖 생성자 람다는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.Token.<init> has overloads and a lambda whose lines fall in none or several of them" "[java] 몸통에 걸친 생성자 람다"
+# 한 줄에서 시작하는 두 생성자(Token(int) 의 줄표가 Token(String) 의 65 하나) — 그 줄도 「함께 가진 줄」이라 Token(int) 가 초기화를 끼워
+# 넣은 생성자로 보이지만, 필드 람다(62)는 그 줄을 가진 두 생성자의 것이다(독립 레그 4차 지적 — FAIL 했다). 손으로 만든 줄표다.
+fresh
+sed -i 's#<method name="value" desc="()Ljava/lang/String;" line="75">#<method name="\&lt;init\&gt;" desc="(I)V" line="65"><counter type="LINE" missed="1" covered="0"/></method>&#' "$D/java.xml"
+sed -i 's/^  public java.lang.String value();$/  public kc.auth.AuthClient$Token(int);\n    descriptor: (I)V\n      LineNumberTable:\n        line 65: 0\n\n&/' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(cat "$D/java.javap.txt")" '  public kc.auth.AuthClient$Token(int);' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 1 "$RC" "[java] 안 부른 셋째 생성자는 소유자가 없어 exit 1 — 출력: $OUT"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:65 AuthClient.Token.<init>(int) · 1 line · owner NONE" "[java] 한 줄에서 시작하는 생성자"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:62 AuthClient.Token.<init>(char) · 4 lines · owner open-admin" "[java] 필드 람다는 그 줄을 가진 생성자들의 것이다"
 # 짧은 매개변수 이름이 겹치는 오버로드(`token(java.lang.String)` · `token(kc.other.String)`) — 한 키로 합치면 안 돈 쪽이 사라진다(독립
 # 레그 1차 지적). 그 멤버는 서술자 전체로 쓴다.
 fresh
