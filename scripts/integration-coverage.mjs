@@ -2133,7 +2133,14 @@ function javapFacts(text) {
     inLnt = false
   }
   finish()
-  for (const c of Object.values(facts)) for (const x of c.methods) x.lines = [...new Set(x.lines)].sort((a, b) => a - b)
+  for (const c of Object.values(facts)) {
+    for (const x of c.methods) {
+      // 첫 · 끝 항목(javap 가 낸 차례 = 바이트코드 차례) — 생성자의 몸통은 그 둘 사이다: 첫 항목은 super · this 호출, 끝은 닫는
+      // 중괄호의 return 이고, 필드 초기화의 줄은 그 사이 바이트코드에 끼어도 몸통 밖이다(javaReport).
+      x.ends = x.lines.length ? [x.lines[0], x.lines[x.lines.length - 1]] : null
+      x.lines = [...new Set(x.lines)].sort((a, b) => a - b)
+    }
+  }
   return facts
 }
 // 서술자의 매개변수 → 읽을 수 있는 목록(`(Ljava/lang/String;I[B)V` → `String, int, byte[]`). 오버로드 이름에만 쓴다.
@@ -2305,7 +2312,7 @@ function javaReport(d) {
           broken = true
           break
         }
-        parts.push({ ...fo, cls: c.name, name: x.name, lines: fx.lines, covered: x.covered })
+        parts.push({ ...fo, cls: c.name, name: x.name, lines: fx.lines, ends: fx.ends, covered: x.covered })
       }
       if (broken) break
     }
@@ -2327,14 +2334,17 @@ function javaReport(d) {
         fns.set(k, g)
         continue
       }
-      // 람다가 든 몸통 — 줄 범위로 가른다(람다 몸통의 줄은 감싼 메서드의 LineNumberTable 에 없다). 범위는 오버로드 여럿이 함께 가진
-      // 줄을 빼고 잡는다: javac 는 필드 초기화 · 초기화 블록을 `this(…)` 를 안 부르는 생성자마다 끼워 넣어, 그 줄이 한 생성자의 범위를
-      // 다른 생성자의 몸통까지 늘린다(독립 레그 2차 지적 — 픽스처 Token(char) 의 62–72 가 Token(String) 의 몸통 65–67 을 덮었다).
+      // 람다가 든 몸통 — 줄 범위로 가른다(람다 몸통의 줄은 감싼 메서드의 LineNumberTable 에 없다). 생성자의 몸통은 바이트코드의 첫 ·
+      // 끝 줄(super · this 호출 · 닫는 중괄호) 사이다: javac 는 필드 초기화 · 초기화 블록을 `this(…)` 를 안 부르는 생성자마다 끼워
+      // 넣어, 그 줄로 범위를 잡으면 한 생성자의 범위가 다른 생성자의 몸통까지 늘어난다 — 여럿이 함께 가졌든(독립 레그 2차 지적 —
+      // 픽스처 Token(char) 의 62–72 가 Token(String) 의 몸통 65–67 을 덮었다) 하나만 가졌든(6차 지적 — `T(String) { this(1); … }` 위의
+      // 필드 줄이 `T(int)` 의 범위를 그 몸통까지 늘렸다). 메서드는 함께 가진 줄(한 줄에 선언된 오버로드)을 뺀 줄의 범위다.
       const seen = new Map()
       for (const q of plains) for (const n of q.lines) seen.set(n, (seen.get(n) ?? 0) + 1)
       const span = (ls) => (ls.length ? [ls[0], ls[ls.length - 1]] : null)
       const within = (s, n) => s !== null && n >= s[0] && n <= s[1]
-      const body = new Map(plains.map((q) => [q, span(q.lines.filter((n) => seen.get(n) === 1))]))
+      const ctor = g[0].member === '<init>'
+      const body = new Map(plains.map((q) => [q, ctor && q.ends ? [Math.min(...q.ends), Math.max(...q.ends)] : span(q.lines.filter((n) => seen.get(n) === 1))]))
       // 매개변수는 짧은 이름으로 쓴다 — 두 오버로드가 짧은 이름으로 겹치면(`foo(a.T)` · `foo(b.T)` — 독립 레그 1차 지적) 그 멤버는
       // 서술자 전체로 쓴다(겹친 키는 한 함수로 합쳐져 안 돈 쪽이 목록에서 사라진다).
       const label = new Map(descs.map((x) => [x, javaParams(x) ?? x]))

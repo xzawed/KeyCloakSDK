@@ -1577,6 +1577,17 @@ assert_eq 1 "$(grep -c '^        line 68: 4$' "$D/java.javap.txt")" "(변이가 
 run report java "$T" --out "$D"
 assert_eq 0 "$RC" "[java] 초기화를 끼워 넣는 생성자가 하나뿐인 필드의 여러 줄 람다는 그 생성자의 것 — exit 0 — 출력: $OUT"
 assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:70 AuthClient.Token.<init>(char) · 3 lines · owner open-admin" "[java] this(…) 로 맡기는 생성자는 필드 람다를 안 가진다"
+# `this(…)` 로 맡기는 생성자 몸통 안의 람다 — 필드 줄(62)을 혼자 가진 다른 생성자의 줄 범위(62–72)가 그 몸통을 덮어도, 생성자의
+# 몸통은 바이트코드의 첫 · 끝 줄 사이다(독립 레그 6차 지적 — javac 가 내는 꼴: `int n = 1;` · `T(String s) { this(1); Runnable r = () -> {…}; }`
+# · `T(int v) { n = v; }` — 두 범위에 들어 FAIL 했다). Token(String) 의 줄표에서 62 를 빼고 람다를 그 몸통(66)으로 옮겼다.
+fresh
+sed -i 's#<method name="&lt;init&gt;" desc="(Ljava/lang/String;)V" line="62">#<method name="\&lt;init\&gt;" desc="(Ljava/lang/String;)V" line="65">#; s#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="62">#<method name="lambda$new$0" desc="()Ljava/lang/String;" line="66">#' "$D/java.xml"
+sed -i '/^  public kc.auth.AuthClient\$Token(java.lang.String);$/,/^      LocalVariableTable:$/ { /^        line 62: 4$/d }; /^  private static java.lang.String lambda\$new\$0();$/,/^        line [0-9]*: / s/^        line 62: 0$/        line 66: 0/' "$D/java.javap.txt"
+java_mark 0
+assert_eq 1 "$(grep -c '^        line 62: ' "$D/java.javap.txt")" "(변이가 착지했는지 먼저 본다 — 62 는 Token(char) 에만)"
+run report java "$T" --out "$D"
+assert_eq 0 "$RC" "[java] 맡기는 생성자 몸통 안 람다는 그 생성자의 것 — exit 0 — 출력: $OUT"
+assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:62 AuthClient.Token.<init>(char) · 4 lines · owner open-admin" "[java] 혼자 가진 필드 줄은 그 생성자의 몸통 범위가 아니다"
 # 짧은 매개변수 이름이 겹치는 오버로드(`token(java.lang.String)` · `token(kc.other.String)`) — 한 키로 합치면 안 돈 쪽이 사라진다(독립
 # 레그 1차 지적). 그 멤버는 서술자 전체로 쓴다.
 fresh
