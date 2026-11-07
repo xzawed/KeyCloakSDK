@@ -119,5 +119,18 @@
       "dotnet/src/Kc/AuthClient.cs:AuthClient.NamesAsync": "open-admin",
       "dotnet/src/Kc/AuthClient.cs:AuthClient.Unused": "open-admin"
     }
+  },
+  "java": {
+    "pinned": [
+      "java/kc-auth/src/main/java/kc/auth/AuthClient.java",
+      "java/kc-examples/src/main/java/kc/examples/QuickStart.java"
+    ],
+    "owners": {
+      "java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.Token.<init>(char)": "open-admin",
+      "java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.token(String, int)": "open-admin",
+      "java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.unused": "open-admin",
+      "java/kc-examples/src/main/java/kc/examples/QuickStart.java:QuickStart.env": "open-masking",
+      "java/kc-examples/src/main/java/kc/examples/QuickStart.java:QuickStart.main": "open-masking"
+    }
   }
 }

@@ -170,5 +170,26 @@
       "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.NoCodeReason": "coverage-omit-hides-security-paths",
       "dotnet/src/Xzawed.Keycloak.Sdk/KeycloakClient.cs:KeycloakClient.Dispose": "facade-wiring-close-contract-unasserted"
     }
+  },
+  "java": {
+    "pinned": [
+      "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/AdminClient.java",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java",
+      "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java"
+    ],
+    "owners": {
+      "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/AdminClient.java:AdminClient.clients": "integration-admin-surface-uneven",
+      "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/AdminClient.java:AdminClient.withKeycloak": "facade-wiring-close-contract-unasserted",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.appendUtf8": "coverage-omit-hides-security-paths",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.digit": "coverage-omit-hides-security-paths",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.entityAt": "coverage-omit-hides-security-paths",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.hexByte": "coverage-omit-hides-security-paths",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.hexDigit": "coverage-omit-hides-security-paths",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.sharesWindow": "coverage-omit-hides-security-paths",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.transportFailure": "coverage-omit-hides-security-paths",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.unitAt": "coverage-omit-hides-security-paths",
+      "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java:QuickStart.env": "readme-quickstarts-ungated",
+      "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java:QuickStart.main": "readme-quickstarts-ungated"
+    }
   }
 }
