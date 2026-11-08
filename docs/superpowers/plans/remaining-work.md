@@ -7,8 +7,7 @@
      max-raw-bytes 는 사람 판정이다(2026-10-28, 「등록부에만 건다」) — 분할(2026-09-22) 뒤 36 일 동안 적재는 거의
      그대로인데 블록 주석이 633 → 60,409B 로 늘었다. 이제 주석도 센다(검사 8f). 열린 항목의 긴 착수 메모와 경위는
      PR 본문으로 보내고 포인터만 남긴다.
-     172887 → 172900(2026-11-05): rust 통합 커버리지 3 걸음을 다시 재는 명령을 샀다 — 거짓 「여섯의 3 걸음」을 지운 교환.
-     앞선 인상 기록 — (mm) #945 · (nn) #946 · node #953 — 은 git 으로 보냈다. -->
+     인상 기록 — (mm) #945 · (nn) #946 · node #953 · rust #955(그 재는 명령 줄은 #980 이 항목을 닫으며 지웠다) — 은 git 으로 보냈다. -->
 # 잔여작업 등록부 — 2026-09-03 전수 감사 후속
 
 **이 문서가 답하는 것 하나** — 「감사가 남긴 것 중 무엇이 아직 열려 있고, 각각을 **어떤 명령으로** 닫았다고 말할 수 있는가」.
@@ -589,7 +588,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `realm-copies-unguarded` **[L/S · 신규 2026-09-27]** 통합 렐름 사본 아홉을 대조하는 가드가 없다. 지금은 우연히 둘로 수렴해 있다 — 일곱이 `3e76565`, java·kotlin 이 `191515a` 다. 코드 교환 이식이 클라이언트 둘을 손으로 아홉 곳에 복사했다. 다시 재는 명령: `git ls-files '*it-realm-realm.json' | xargs -n1 git hash-object`. JVM 짝이 공개 클라이언트 하나를 더 가진 것은 의도다 — 가드는 「두 집합, 그 차이만」을 고정하면 된다.
 
 - [x] `integration-code-exchange-never-run` **[H/M · 신규·닫힘 2026-09-27 #640–#648]** 코드 교환이 이제 **9/9 통합에서 실제 Keycloak 에 대고 돈다**. 수단은 브라우저 없는 로그인이다(인가 URL GET → `kc-form-login` POST, 쿠키 직접 되싣기 → `Location` 의 code·state). 정상 흐름(교환 → refresh → introspect → logout)과 거부 넷(nonce 불일치 · nonce 없음 · 재사용 코드 · JWKS 밖 키)을 돈다. **node 에서 id_token 서명 미검증 결함이 나와 고쳤다**(#648 → node `1.0.2`). 다시 재는 명령: `grep -rliE 'exchange_?code|ExchangeCode' <각 통합 디렉터리>` → 언어마다 ≥ 1. 옮길 때의 함정(Secure 쿠키 · audience 매퍼 · 위조 RS256 은 단위 층)은 각 헬퍼 머리 주석이 소유한다.
-- [x] `integration-coverage-never-measured` **[H/L · 닫힘 2026-11-08 #980]** 아홉 레인이 통합 실행만의 경계 커버리지를 리포트하고(#774 go·python 파일럿 · #953 · #955 · #957 · #960 · #971 · #975 · #977 kotlin) 하한을 건다(#936 · #956 · #959 · #962 · #973 · #976 · #980). 값은 `scripts/integration-coverage.json` 의 `floor`, 세 조건 · 함정은 `scripts/integration-coverage.mjs` 머리 주석이 소유한다.
+- [x] `integration-coverage-never-measured` **[H/L · 닫힘 2026-11-08 #980]** 아홉 레인이 통합 실행만의 경계 커버리지를 리포트하고(#774 go·python 파일럿 · #953 · #955 · #957 · #960 · #971 · #975 · #977 kotlin) 하한을 건다(#936 · #956 · #959 · #962 · #973 · #976 · #980). 값은 `scripts/integration-coverage.json` 의 `floor`, 세 조건은 `scripts/integration-coverage.mjs` 머리 주석이 소유한다.
 - [ ] `integration-admin-surface-uneven` **[H/M · 계수 정정 2026-09-09]** 9개 통합 스위트가 덮는 admin 표면이 제각각이다 — **clients.update 는 2/9**, realms.create/delete 는 4/9, PHP 는 roles·groups·realms 를 하나도 안 부른다
   - ⚠️ **1/9 이 아니라 2/9**(php·rust). 두 자리 다 등록부 작성보다 앞선다(`59c7916` #190 · `dc9efd7` #240) — 즉 **처음부터 틀린 계수**였다. 함께 잰 것: `users.update` 7/9(java·python 빠짐) · `clients.create` 6/9 · `roles.update`·`groups.update` 각 7/9(php·ruby 빠짐).
   - ⚠️ **PR 크기가 아니다** — php 가 roles/groups/realms 를 **0/3 계열** 부르는 것을 「구현할지 건너뛸지」가 9×capability 결정이고, 그 위에 Docker E2E 가 붙는다. · `java/keycloak-sdk/src/test/java/io/github/xzawed/keycloak/AdminOpsIT.java:48`
