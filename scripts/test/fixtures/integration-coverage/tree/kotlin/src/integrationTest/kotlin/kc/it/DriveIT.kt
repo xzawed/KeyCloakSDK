@@ -5,6 +5,7 @@ import kc.auth.AuthClientApiImpl
 import kc.auth.AuthClientBag
 import kc.auth.AuthClientCfg
 import kc.auth.AuthClientCross
+import kc.auth.AuthClientDerived
 import kc.auth.AuthClientDefaults
 import kc.auth.AuthClientError
 import kc.auth.AuthClientHooks
@@ -22,6 +23,7 @@ import kc.auth.AuthClientOvd
 import kc.auth.AuthClientProps
 import kc.auth.AuthClientRefs
 import kc.auth.AuthClientRelay
+import kc.auth.AuthClientSealed
 import kc.auth.AuthClientShapes
 import kc.auth.AuthClientStatic
 import kc.auth.AuthClientStatus
@@ -98,5 +100,7 @@ class DriveIT {
         check(AuthClientWide().useWide() == 1)
         check(AuthClientObjPick.usePick() == 0)
         check(AuthClientObjPick2.pick(null) == 0)
+        check(AuthClientDerived().f() == 1)
+        check(AuthClientSealed.Leaf().n == 1)
     }
 }

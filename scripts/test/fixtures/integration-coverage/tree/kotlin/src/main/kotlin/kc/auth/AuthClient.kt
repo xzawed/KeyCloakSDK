@@ -456,7 +456,7 @@ object AuthClientObjPick {
     fun usePick(): Int = pick(null)
 }
 
-/** 같은 꼴의 보통 함수 — 다리는 지역 변수표가 없어 그것이 부르는 쪽이 가른다. 구동은 정적 쪽만. */
+/** 같은 꼴의 보통 함수 — 다리는 지역 변수표가 없어 그것이 끝에 부르는 쪽이 대상이다. 구동은 정적 쪽만. */
 object AuthClientObjPick2 {
     @JvmStatic
     fun pick(
@@ -465,4 +465,27 @@ object AuthClientObjPick2 {
     ): Int = n + (if (o == null) 0 else 1)
 
     fun pick(n: Int): Int = n
+}
+
+// ── 아래는 독립 레그 6 이 보인 꼴이다 ──
+
+/** 기본 인자의 open fun 을 재정의한다 — 다리 `f$default` 는 기본값을 계산하고 가상 호출로 재정의를 부른다: 그 다리가 돌아도 이 몸통은 안
+ *  돌았다(다리는 실행 근거가 아니다). 구동은 재정의 쪽만. */
+open class AuthClientBase {
+    open fun f(x: Int = 0): Int {
+        val y = x + 100
+        return y * 2
+    }
+}
+
+class AuthClientDerived : AuthClientBase() {
+    override fun f(x: Int): Int = x + 1
+}
+
+/** sealed 의 기본 인자 생성자 — 본 생성자가 private 라 합성 접근 생성자 `<init>(int, DefaultConstructorMarker)` 를 거친다(끝 매개변수가 int
+ *  라 기본 인자 생성자와 같은 꼴이다). 구동은 하위 클래스로. */
+sealed class AuthClientSealed(
+    val n: Int = 1,
+) {
+    class Leaf : AuthClientSealed()
 }
