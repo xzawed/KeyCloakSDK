@@ -552,3 +552,29 @@ interface AuthClientIface {
 class AuthClientIfaceImpl : AuthClientIface {
     override fun h(x: Int): Int = x + 1
 }
+
+// ── 아래는 독립 레그 8 이 보인 꼴이다 ──
+
+/** 기본값 식의 분기 하나가 안 돈 다리 — 다리는 돌았어도 그 분기의 줄(안 돌았다)은 그 함수의 안 돈 줄이다(다리 쪽 줄은 줄 단위로 가른다).
+ *  가운데 분기다 — kotlinc 는 `when` 의 값을 담는 명령을 마지막 분기 줄에 매겨 그 줄은 안 돈 분기여도 일부 돈다(실측). 구동은 재정의 쪽만. */
+open class AuthClientWhen {
+    open fun f(
+        k: Int = 1,
+        x: Int =
+            when (k) {
+                1 -> 10
+                2 -> k * 7
+                else -> 30
+            },
+    ): Int {
+        val y = x + 100
+        return y * 2
+    }
+}
+
+class AuthClientWhenSub : AuthClientWhen() {
+    override fun f(
+        k: Int,
+        x: Int,
+    ): Int = x
+}

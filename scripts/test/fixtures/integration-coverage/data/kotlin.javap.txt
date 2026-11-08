@@ -638,7 +638,7 @@ RuntimeVisibleAnnotations:
     )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClient.class
   Last modified 2026. 11. 8.; size 11305 bytes
-  SHA-256 checksum 9dd9e52d0b027393f1cd297be0d9f26ad402e9c032b6f29a9ec58d08c894b11d
+  SHA-256 checksum e12966b641417d96d14d517230efcb5b30ed62da5bedb0b100d95bbd88b2034a
   Compiled from "AuthClient.kt"
 public final class kc.auth.AuthClient
   minor version: 0
@@ -1050,7 +1050,7 @@ Constant pool:
   #400 = Utf8               Local
   #401 = Utf8               AuthClient.kt
   #402 = Utf8               Lkotlin/jvm/internal/SourceDebugExtension;
-  #403 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n*L\n1#1,555:1\n1745#2:556\n1820#2,3:557\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n*L\n17#1:556\n17#1:557,3\n*E\n
+  #403 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n*L\n1#1,581:1\n1745#2:582\n1820#2,3:583\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n*L\n17#1:582\n17#1:583,3\n*E\n
   #404 = Utf8               RuntimeInvisibleAnnotations
   #405 = Utf8               Signature
   #406 = Utf8               Code
@@ -1213,13 +1213,13 @@ Constant pool:
         frame_type = 53 /* same */
       LineNumberTable:
         line 17: 6
-        line 556: 13
-        line 557: 37
-        line 558: 65
+        line 582: 13
+        line 583: 37
+        line 584: 65
         line 17: 79
-        line 558: 91
-        line 559: 100
-        line 556: 105
+        line 584: 91
+        line 585: 100
+        line 582: 105
         line 17: 106
       LocalVariableTable:
         Start  Length  Slot  Name   Signature
@@ -1964,16 +1964,16 @@ SourceDebugExtension:
   + 2 _Collections.kt
   kotlin/collections/CollectionsKt___CollectionsKt
   *L
-  1#1,555:1
-  1745#2:556
-  1820#2,3:557
+  1#1,581:1
+  1745#2:582
+  1820#2,3:583
   *S KotlinDebug
   *F
   + 1 AuthClient.kt
   kc/auth/AuthClient
   *L
-  17#1:556
-  17#1:557,3
+  17#1:582
+  17#1:583,3
   *E
 RuntimeVisibleAnnotations:
   0: #384(#385=[I#386,I#387,I#388],#389=I#390,#391=I#392,#393=[s#394],#395=[s#58,s#396,s#8,s#396,s#5,s#6,s#59,s#396,s#62,s#117,s#119,s#142,s#396,s#143,s#144,s#397,s#195,s#197,s#193,s#149,s#218,s#228,s#229,s#240,s#129,s#254,s#398,s#42,s#54,s#396,s#255,s#261,s#267,s#274,s#277,s#286,s#288,s#289,s#369,s#399])
@@ -1987,7 +1987,7 @@ RuntimeVisibleAnnotations:
 RuntimeInvisibleAnnotations:
   0: #402(#195=[s#403])
     kotlin.jvm.internal.SourceDebugExtension(
-      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n*L\n1#1,555:1\n1745#2:556\n1820#2,3:557\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n*L\n17#1:556\n17#1:557,3\n*E\n"]
+      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n*L\n1#1,581:1\n1745#2:582\n1820#2,3:583\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClient\n*L\n17#1:582\n17#1:583,3\n*E\n"]
     )
 BootstrapMethods:
   0: #37 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
@@ -3396,7 +3396,7 @@ RuntimeVisibleAnnotations:
     )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientCross$useLocal$$inlined$wrapC$1.class
   Last modified 2026. 11. 8.; size 1541 bytes
-  SHA-256 checksum a9ec152856e740f81686622402029bfa0fd19bc3a75e77a25aadd44cad823237
+  SHA-256 checksum 4830121deae413dc57dbcce1ce34b01250764dcac9f18abb91d54467da088ec4
   Compiled from "AuthClient.kt"
 public final class kc.auth.AuthClientCross$useLocal$$inlined$wrapC$1 extends java.lang.Object implements kotlin.jvm.functions.Function0<java.lang.Integer>
   minor version: 0
@@ -3455,7 +3455,7 @@ Constant pool:
   #47 = Utf8               AuthClient.kt
   #48 = Utf8               Lkotlin/jvm/internal/SourceDebugExtension;
   #49 = Utf8               value
-  #50 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross$wrapC$1\n+ 2 AuthClient.kt\nkc/auth/AuthClientCross\n*L\n1#1,555:1\n415#2:556\n*E\n
+  #50 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross$wrapC$1\n+ 2 AuthClient.kt\nkc/auth/AuthClientCross\n*L\n1#1,581:1\n415#2:582\n*E\n
   #51 = Utf8               Code
   #52 = Utf8               LocalVariableTable
   #53 = Utf8               LineNumberTable
@@ -3493,7 +3493,7 @@ Constant pool:
         10: areturn
       LineNumberTable:
         line 411: 0
-        line 556: 2
+        line 582: 2
         line 411: 5
       LocalVariableTable:
         Start  Length  Slot  Name   Signature
@@ -3530,8 +3530,8 @@ SourceDebugExtension:
   + 2 AuthClient.kt
   kc/auth/AuthClientCross
   *L
-  1#1,555:1
-  415#2:556
+  1#1,581:1
+  415#2:582
   *E
 RuntimeVisibleAnnotations:
   0: #36(#37=[I#38,I#39,I#40],#41=I#42,#43=I#44)
@@ -3543,11 +3543,11 @@ RuntimeVisibleAnnotations:
 RuntimeInvisibleAnnotations:
   0: #48(#49=[s#50])
     kotlin.jvm.internal.SourceDebugExtension(
-      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross$wrapC$1\n+ 2 AuthClient.kt\nkc/auth/AuthClientCross\n*L\n1#1,555:1\n415#2:556\n*E\n"]
+      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross$wrapC$1\n+ 2 AuthClient.kt\nkc/auth/AuthClientCross\n*L\n1#1,581:1\n415#2:582\n*E\n"]
     )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientCross$wrapC$1.class
   Last modified 2026. 11. 8.; size 1595 bytes
-  SHA-256 checksum a34b776bd15b65694d27561ee16847fc073b60655ce15b42032124d8fc4b5312
+  SHA-256 checksum dcfecfa9db5eb954668353c671d095a9f310c6541e7acc3d403b0f8c35a1fedd
   Compiled from "AuthClient.kt"
 public final class kc.auth.AuthClientCross$wrapC$1 extends java.lang.Object implements kotlin.jvm.functions.Function0<java.lang.Integer>
   minor version: 0
@@ -3613,7 +3613,7 @@ Constant pool:
   #54 = Utf8               AuthClient.kt
   #55 = Utf8               Lkotlin/jvm/internal/SourceDebugExtension;
   #56 = Utf8               value
-  #57 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross$wrapC$1\n*L\n1#1,555:1\n*E\n
+  #57 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross$wrapC$1\n*L\n1#1,581:1\n*E\n
   #58 = Utf8               Signature
   #59 = Utf8               Code
   #60 = Utf8               LocalVariableTable
@@ -3695,7 +3695,7 @@ SourceDebugExtension:
   + 1 AuthClient.kt
   kc/auth/AuthClientCross$wrapC$1
   *L
-  1#1,555:1
+  1#1,581:1
   *E
 RuntimeVisibleAnnotations:
   0: #40(#41=[I#42,I#43,I#44],#45=I#46,#47=I#48)
@@ -3707,11 +3707,11 @@ RuntimeVisibleAnnotations:
 RuntimeInvisibleAnnotations:
   0: #55(#56=[s#57])
     kotlin.jvm.internal.SourceDebugExtension(
-      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross$wrapC$1\n*L\n1#1,555:1\n*E\n"]
+      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross$wrapC$1\n*L\n1#1,581:1\n*E\n"]
     )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientCross.class
   Last modified 2026. 11. 8.; size 2204 bytes
-  SHA-256 checksum 20ae557678a2bfc6a2fd4cd6427a9331379de1a6c4cf1ee3823271be1ddbdec7
+  SHA-256 checksum dc089a110b47ef7932c51c240dce1eca39d8ac03c002066fe0ac7ac7ad3fb195
   Compiled from "AuthClient.kt"
 public final class kc.auth.AuthClientCross
   minor version: 0
@@ -3792,7 +3792,7 @@ Constant pool:
   #69 = Utf8               AuthClient.kt
   #70 = Utf8               Lkotlin/jvm/internal/SourceDebugExtension;
   #71 = Utf8               value
-  #72 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross\n*L\n1#1,555:1\n411#1:556\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross\n*L\n415#1:556\n*E\n
+  #72 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross\n*L\n1#1,581:1\n411#1:582\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross\n*L\n415#1:582\n*E\n
   #73 = Utf8               Code
   #74 = Utf8               LineNumberTable
   #75 = Utf8               LocalVariableTable
@@ -3869,7 +3869,7 @@ Constant pool:
         23: ireturn
       LineNumberTable:
         line 415: 0
-        line 556: 4
+        line 582: 4
         line 415: 23
       LocalVariableTable:
         Start  Length  Slot  Name   Signature
@@ -3909,14 +3909,14 @@ SourceDebugExtension:
   + 1 AuthClient.kt
   kc/auth/AuthClientCross
   *L
-  1#1,555:1
-  411#1:556
+  1#1,581:1
+  411#1:582
   *S KotlinDebug
   *F
   + 1 AuthClient.kt
   kc/auth/AuthClientCross
   *L
-  415#1:556
+  415#1:582
   *E
 RuntimeVisibleAnnotations:
   0: #54(#55=[I#56,I#57,I#58],#59=I#60,#61=I#62,#63=[s#64],#65=[s#10,s#66,s#5,s#6,s#11,s#66,s#15,s#67,s#45,s#68])
@@ -3930,7 +3930,7 @@ RuntimeVisibleAnnotations:
 RuntimeInvisibleAnnotations:
   0: #70(#71=[s#72])
     kotlin.jvm.internal.SourceDebugExtension(
-      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross\n*L\n1#1,555:1\n411#1:556\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross\n*L\n415#1:556\n*E\n"]
+      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross\n*L\n1#1,581:1\n411#1:582\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientCross\n*L\n415#1:582\n*E\n"]
     )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientDefaults.class
   Last modified 2026. 11. 8.; size 1282 bytes
@@ -5543,7 +5543,7 @@ RuntimeVisibleAnnotations:
     )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientInline$wrap$1.class
   Last modified 2026. 11. 8.; size 1595 bytes
-  SHA-256 checksum fb6979185c255a258ee885689437ef886a71e9ea1a50a6aca1c31fa6c1462c97
+  SHA-256 checksum 61a5c4f70f659576a2310c62c9a085f9aa84716bf4c90265d080313f8f414d3d
   Compiled from "AuthClient.kt"
 public final class kc.auth.AuthClientInline$wrap$1 extends java.lang.Object implements kotlin.jvm.functions.Function0<java.lang.Integer>
   minor version: 0
@@ -5609,7 +5609,7 @@ Constant pool:
   #54 = Utf8               AuthClient.kt
   #55 = Utf8               Lkotlin/jvm/internal/SourceDebugExtension;
   #56 = Utf8               value
-  #57 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInline$wrap$1\n*L\n1#1,555:1\n*E\n
+  #57 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInline$wrap$1\n*L\n1#1,581:1\n*E\n
   #58 = Utf8               Signature
   #59 = Utf8               Code
   #60 = Utf8               LocalVariableTable
@@ -5691,7 +5691,7 @@ SourceDebugExtension:
   + 1 AuthClient.kt
   kc/auth/AuthClientInline$wrap$1
   *L
-  1#1,555:1
+  1#1,581:1
   *E
 RuntimeVisibleAnnotations:
   0: #40(#41=[I#42,I#43,I#44],#45=I#46,#47=I#48)
@@ -5703,11 +5703,11 @@ RuntimeVisibleAnnotations:
 RuntimeInvisibleAnnotations:
   0: #55(#56=[s#57])
     kotlin.jvm.internal.SourceDebugExtension(
-      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInline$wrap$1\n*L\n1#1,555:1\n*E\n"]
+      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInline$wrap$1\n*L\n1#1,581:1\n*E\n"]
     )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientInline.class
   Last modified 2026. 11. 8.; size 2536 bytes
-  SHA-256 checksum d522ac6df27889bd8a82affe0b567f82373a1c95ee2884504e79203e0a2fbb3b
+  SHA-256 checksum 25e332477bfcfef3422272edf4deef62b5a0da718395d07fc28d85dfc7e84cc9
   Compiled from "AuthClient.kt"
 public final class kc.auth.AuthClientInline
   minor version: 0
@@ -5801,7 +5801,7 @@ Constant pool:
   #82 = Utf8               AuthClient.kt
   #83 = Utf8               Lkotlin/jvm/internal/SourceDebugExtension;
   #84 = Utf8               value
-  #85 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInline\n*L\n1#1,555:1\n241#1:556\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInline\n*L\n243#1:556\n*E\n
+  #85 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInline\n*L\n1#1,581:1\n241#1:582\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInline\n*L\n243#1:582\n*E\n
   #86 = Utf8               Code
   #87 = Utf8               LineNumberTable
   #88 = Utf8               LocalVariableTable
@@ -5882,7 +5882,7 @@ Constant pool:
         30: ireturn
       LineNumberTable:
         line 243: 0
-        line 556: 10
+        line 582: 10
         line 243: 30
       LocalVariableTable:
         Start  Length  Slot  Name   Signature
@@ -5913,14 +5913,14 @@ SourceDebugExtension:
   + 1 AuthClient.kt
   kc/auth/AuthClientInline
   *L
-  1#1,555:1
-  241#1:556
+  1#1,581:1
+  241#1:582
   *S KotlinDebug
   *F
   + 1 AuthClient.kt
   kc/auth/AuthClientInline
   *L
-  243#1:556
+  243#1:582
   *E
 RuntimeVisibleAnnotations:
   0: #67(#68=[I#69,I#70,I#71],#72=I#73,#74=I#75,#76=[s#77],#78=[s#10,s#79,s#5,s#6,s#11,s#79,s#15,s#80,s#45,s#81])
@@ -5934,7 +5934,7 @@ RuntimeVisibleAnnotations:
 RuntimeInvisibleAnnotations:
   0: #83(#84=[s#85])
     kotlin.jvm.internal.SourceDebugExtension(
-      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInline\n*L\n1#1,555:1\n241#1:556\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInline\n*L\n243#1:556\n*E\n"]
+      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInline\n*L\n1#1,581:1\n241#1:582\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInline\n*L\n243#1:582\n*E\n"]
     )
 BootstrapMethods:
   0: #60 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
@@ -5944,7 +5944,7 @@ BootstrapMethods:
       #53 ()Ljava/lang/Integer;
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientInlines$dl$1.class
   Last modified 2026. 11. 8.; size 1410 bytes
-  SHA-256 checksum a34f884cfbc044c42dd59aea513524e0f34f5bdb1e40ff07ad0ffd5b2768e7da
+  SHA-256 checksum fd7cdc057ec39e1747d575e5eef91f864d987e2aefd0e05ea0a70bb423b399a7
   Compiled from "AuthClient.kt"
 public final class kc.auth.AuthClientInlines$dl$1 extends java.lang.Object implements kotlin.jvm.functions.Function0<java.lang.Integer>
   minor version: 0
@@ -6000,7 +6000,7 @@ Constant pool:
   #44 = Utf8               AuthClient.kt
   #45 = Utf8               Lkotlin/jvm/internal/SourceDebugExtension;
   #46 = Utf8               value
-  #47 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInlines$dl$1\n*L\n1#1,555:1\n*E\n
+  #47 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInlines$dl$1\n*L\n1#1,581:1\n*E\n
   #48 = Utf8               Code
   #49 = Utf8               LocalVariableTable
   #50 = Utf8               LineNumberTable
@@ -6081,7 +6081,7 @@ SourceDebugExtension:
   + 1 AuthClient.kt
   kc/auth/AuthClientInlines$dl$1
   *L
-  1#1,555:1
+  1#1,581:1
   *E
 RuntimeVisibleAnnotations:
   0: #30(#31=[I#32,I#33,I#34],#35=I#36,#37=I#38)
@@ -6093,11 +6093,11 @@ RuntimeVisibleAnnotations:
 RuntimeInvisibleAnnotations:
   0: #45(#46=[s#47])
     kotlin.jvm.internal.SourceDebugExtension(
-      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInlines$dl$1\n*L\n1#1,555:1\n*E\n"]
+      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInlines$dl$1\n*L\n1#1,581:1\n*E\n"]
     )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientInlines.class
   Last modified 2026. 11. 8.; size 4786 bytes
-  SHA-256 checksum f8cb942bd91b5de995026a906125567686e885d42edea3e8aede1c708e3b6a78
+  SHA-256 checksum 8dd8adf50de04bc0cbdf17112e07eb92e8b1857620ab77261c4bca0664e921c2
   Compiled from "AuthClient.kt"
 public final class kc.auth.AuthClientInlines
   minor version: 0
@@ -6219,7 +6219,7 @@ Constant pool:
   #110 = Utf8               AuthClient.kt
   #111 = Utf8               Lkotlin/jvm/internal/SourceDebugExtension;
   #112 = Utf8               value
-  #113 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInlines\n+ 2 fake.kt\nkotlin/jvm/internal/FakeKt\n+ 3 AuthClient.kt\nkc/auth/AuthClientInlines$dl$1\n*L\n1#1,555:1\n377#1,9:556\n387#1:567\n1#2:565\n385#3:566\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInlines\n*L\n389#1:556,9\n391#1:567\n389#1:566\n*E\n
+  #113 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInlines\n+ 2 fake.kt\nkotlin/jvm/internal/FakeKt\n+ 3 AuthClient.kt\nkc/auth/AuthClientInlines$dl$1\n*L\n1#1,581:1\n377#1,9:582\n387#1:593\n1#2:591\n385#3:592\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInlines\n*L\n389#1:582,9\n391#1:593\n389#1:592\n*E\n
   #114 = Utf8               Code
   #115 = Utf8               LineNumberTable
   #116 = Utf8               LocalVariableTable
@@ -6488,19 +6488,19 @@ Constant pool:
         32: ireturn
       LineNumberTable:
         line 389: 0
-        line 556: 2
-        line 557: 2
-        line 556: 4
-        line 560: 6
-        line 561: 7
+        line 582: 2
+        line 583: 2
+        line 582: 4
+        line 586: 6
+        line 587: 7
         line 389: 10
-        line 561: 11
+        line 587: 11
         line 389: 12
-        line 564: 14
-        line 564: 16
-        line 565: 17
-        line 566: 22
-        line 564: 30
+        line 590: 14
+        line 590: 16
+        line 591: 17
+        line 592: 22
+        line 590: 30
         line 389: 31
       LocalVariableTable:
         Start  Length  Slot  Name   Signature
@@ -6532,9 +6532,9 @@ Constant pool:
         15: areturn
       LineNumberTable:
         line 391: 0
-        line 567: 4
+        line 593: 4
         line 391: 10
-        line 567: 14
+        line 593: 14
         line 391: 15
       LocalVariableTable:
         Start  Length  Slot  Name   Signature
@@ -6569,19 +6569,19 @@ SourceDebugExtension:
   + 3 AuthClient.kt
   kc/auth/AuthClientInlines$dl$1
   *L
-  1#1,555:1
-  377#1,9:556
-  387#1:567
-  1#2:565
-  385#3:566
+  1#1,581:1
+  377#1,9:582
+  387#1:593
+  1#2:591
+  385#3:592
   *S KotlinDebug
   *F
   + 1 AuthClient.kt
   kc/auth/AuthClientInlines
   *L
-  389#1:556,9
-  391#1:567
-  389#1:566
+  389#1:582,9
+  391#1:593
+  389#1:592
   *E
 RuntimeVisibleAnnotations:
   0: #93(#94=[I#95,I#96,I#97],#98=I#99,#100=I#101,#102=[s#103],#104=[s#10,s#105,s#5,s#6,s#11,s#106,s#38,s#105,s#15,s#107,s#12,s#43,s#46,s#63,s#108,s#75,s#64,s#77,s#82,s#83,s#109])
@@ -6595,7 +6595,7 @@ RuntimeVisibleAnnotations:
 RuntimeInvisibleAnnotations:
   0: #111(#112=[s#113])
     kotlin.jvm.internal.SourceDebugExtension(
-      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInlines\n+ 2 fake.kt\nkotlin/jvm/internal/FakeKt\n+ 3 AuthClient.kt\nkc/auth/AuthClientInlines$dl$1\n*L\n1#1,555:1\n377#1,9:556\n387#1:567\n1#2:565\n385#3:566\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInlines\n*L\n389#1:556,9\n391#1:567\n389#1:566\n*E\n"]
+      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInlines\n+ 2 fake.kt\nkotlin/jvm/internal/FakeKt\n+ 3 AuthClient.kt\nkc/auth/AuthClientInlines$dl$1\n*L\n1#1,581:1\n377#1,9:582\n387#1:593\n1#2:591\n385#3:592\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientInlines\n*L\n389#1:582,9\n391#1:593\n389#1:592\n*E\n"]
     )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientKt.class
   Last modified 2026. 11. 8.; size 3682 bytes
@@ -8850,7 +8850,7 @@ BootstrapMethods:
       #44 ()Ljava/lang/Integer;
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientLog.class
   Last modified 2026. 11. 8.; size 2798 bytes
-  SHA-256 checksum cd115ee02f55fa3ca7b382f9482bce69ff0f71cd1daf2b1786c70c757a475302
+  SHA-256 checksum e8fe56d6fdef3643eff8ef756731c385445214118bd23a06a81cd53182be6fc0
   Compiled from "AuthClient.kt"
 public final class kc.auth.AuthClientLog
   minor version: 0
@@ -8940,7 +8940,7 @@ Constant pool:
   #78 = Utf8               AuthClient.kt
   #79 = Utf8               Lkotlin/jvm/internal/SourceDebugExtension;
   #80 = Utf8               value
-  #81 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientLog\n*L\n1#1,555:1\n428#1,4:556\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientLog\n*L\n433#1:556,4\n*E\n
+  #81 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientLog\n*L\n1#1,581:1\n428#1,4:582\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientLog\n*L\n433#1:582,4\n*E\n
   #82 = Utf8               Code
   #83 = Utf8               LineNumberTable
   #84 = Utf8               LocalVariableTable
@@ -9137,12 +9137,12 @@ Constant pool:
           stack = [ int ]
       LineNumberTable:
         line 433: 0
-        line 556: 2
-        line 557: 2
-        line 556: 4
-        line 559: 6
+        line 582: 2
+        line 583: 2
+        line 582: 4
+        line 585: 6
         line 433: 19
-        line 559: 24
+        line 585: 24
         line 433: 31
       LocalVariableTable:
         Start  Length  Slot  Name   Signature
@@ -9162,14 +9162,14 @@ SourceDebugExtension:
   + 1 AuthClient.kt
   kc/auth/AuthClientLog
   *L
-  1#1,555:1
-  428#1,4:556
+  1#1,581:1
+  428#1,4:582
   *S KotlinDebug
   *F
   + 1 AuthClient.kt
   kc/auth/AuthClientLog
   *L
-  433#1:556,4
+  433#1:582,4
   *E
 RuntimeVisibleAnnotations:
   0: #63(#64=[I#65,I#66,I#67],#68=I#69,#70=I#71,#72=[s#73],#74=[s#15,s#75,s#10,s#75,s#5,s#6,s#16,s#17,s#18,s#75,s#21,s#75,s#51,s#75,s#76,s#57,s#77])
@@ -9183,7 +9183,7 @@ RuntimeVisibleAnnotations:
 RuntimeInvisibleAnnotations:
   0: #79(#80=[s#81])
     kotlin.jvm.internal.SourceDebugExtension(
-      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientLog\n*L\n1#1,555:1\n428#1,4:556\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientLog\n*L\n433#1:556,4\n*E\n"]
+      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientLog\n*L\n1#1,581:1\n428#1,4:582\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientLog\n*L\n433#1:582,4\n*E\n"]
     )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientMixed$r$1.class
   Last modified 2026. 11. 8.; size 742 bytes
@@ -9692,7 +9692,7 @@ RuntimeVisibleAnnotations:
     )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientObjPick.class
   Last modified 2026. 11. 8.; size 2006 bytes
-  SHA-256 checksum 7e4a7f84988688da58c060dce45c6dd2b233893cd88fa7440401ed5f170ceeb4
+  SHA-256 checksum a46fc5767bbaefb10c108b75f15907fd4f010c5be1e3dc99f595ba7e60d64a3d
   Compiled from "AuthClient.kt"
 public final class kc.auth.AuthClientObjPick
   minor version: 0
@@ -9750,7 +9750,7 @@ Constant pool:
   #46 = Utf8               AuthClient.kt
   #47 = Utf8               Lkotlin/jvm/internal/SourceDebugExtension;
   #48 = Utf8               value
-  #49 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientObjPick\n*L\n1#1,555:1\n449#1,4:556\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientObjPick\n*L\n456#1:556,4\n*E\n
+  #49 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientObjPick\n*L\n1#1,581:1\n449#1,4:582\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientObjPick\n*L\n456#1:582,4\n*E\n
   #50 = Utf8               RuntimeInvisibleAnnotations
   #51 = Utf8               Code
   #52 = Utf8               LineNumberTable
@@ -9893,10 +9893,10 @@ Constant pool:
          9: ireturn
       LineNumberTable:
         line 456: 0
-        line 556: 2
-        line 558: 2
-        line 556: 4
-        line 559: 6
+        line 582: 2
+        line 584: 2
+        line 582: 4
+        line 585: 6
         line 456: 9
       LocalVariableTable:
         Start  Length  Slot  Name   Signature
@@ -9926,14 +9926,14 @@ SourceDebugExtension:
   + 1 AuthClient.kt
   kc/auth/AuthClientObjPick
   *L
-  1#1,555:1
-  449#1,4:556
+  1#1,581:1
+  449#1,4:582
   *S KotlinDebug
   *F
   + 1 AuthClient.kt
   kc/auth/AuthClientObjPick
   *L
-  456#1:556,4
+  456#1:582,4
   *E
 RuntimeVisibleAnnotations:
   0: #32(#33=[I#34,I#35,I#36],#37=I#38,#39=I#40,#41=[s#42],#43=[s#10,s#44,s#5,s#6,s#11,s#44,s#17,s#18,s#13,s#22,s#45])
@@ -9947,7 +9947,7 @@ RuntimeVisibleAnnotations:
 RuntimeInvisibleAnnotations:
   0: #47(#48=[s#49])
     kotlin.jvm.internal.SourceDebugExtension(
-      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientObjPick\n*L\n1#1,555:1\n449#1,4:556\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientObjPick\n*L\n456#1:556,4\n*E\n"]
+      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientObjPick\n*L\n1#1,581:1\n449#1,4:582\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientObjPick\n*L\n456#1:582,4\n*E\n"]
     )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientObjPick2.class
   Last modified 2026. 11. 8.; size 1274 bytes
@@ -14088,9 +14088,263 @@ RuntimeVisibleAnnotations:
       d1=["\u0000\f\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0002\b\u0004\u0018\u0000 \u00042\u00020\u0001:\u0001\u0004B\t\b\u0002?\u0006\u0004\b\u0002\u0010\u0003��\u0006\u0005"]
       d2=["Lkc/auth/AuthClientVars;","","<init>","()V","Companion","kc-kotlin"]
     )
+Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientWhen.class
+  Last modified 2026. 11. 8.; size 1074 bytes
+  SHA-256 checksum d68adb20170b67503967ff79cf1bad6269bf30987429097b90f4053687f48878
+  Compiled from "AuthClient.kt"
+public class kc.auth.AuthClientWhen
+  minor version: 0
+  major version: 65
+  flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+  this_class: #2                          // kc/auth/AuthClientWhen
+  super_class: #4                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 3, attributes: 2
+Constant pool:
+   #1 = Utf8               kc/auth/AuthClientWhen
+   #2 = Class              #1             // kc/auth/AuthClientWhen
+   #3 = Utf8               java/lang/Object
+   #4 = Class              #3             // java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = NameAndType        #5:#6          // "<init>":()V
+   #8 = Methodref          #4.#7          // java/lang/Object."<init>":()V
+   #9 = Utf8               this
+  #10 = Utf8               Lkc/auth/AuthClientWhen;
+  #11 = Utf8               f
+  #12 = Utf8               (II)I
+  #13 = Utf8               y
+  #14 = Utf8               I
+  #15 = Utf8               k
+  #16 = Utf8               x
+  #17 = Utf8               f$default
+  #18 = Utf8               (Lkc/auth/AuthClientWhen;IIILjava/lang/Object;)I
+  #19 = Utf8               java/lang/UnsupportedOperationException
+  #20 = Class              #19            // java/lang/UnsupportedOperationException
+  #21 = Utf8               Super calls with default arguments not supported in this target, function: f
+  #22 = String             #21            // Super calls with default arguments not supported in this target, function: f
+  #23 = Utf8               (Ljava/lang/String;)V
+  #24 = NameAndType        #5:#23         // "<init>":(Ljava/lang/String;)V
+  #25 = Methodref          #20.#24        // java/lang/UnsupportedOperationException."<init>":(Ljava/lang/String;)V
+  #26 = NameAndType        #11:#12        // f:(II)I
+  #27 = Methodref          #2.#26         // kc/auth/AuthClientWhen.f:(II)I
+  #28 = Utf8               Lkotlin/Metadata;
+  #29 = Utf8               mv
+  #30 = Integer            2
+  #31 = Integer            4
+  #32 = Integer            0
+  #33 = Integer            1
+  #34 = Utf8               xi
+  #35 = Integer            48
+  #36 = Utf8               d1
+  #37 = Utf8               \u0000\u0014\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0002\b\u0003\n\u0002\u0010\b\n\u0002\b\u0003\b\u0016\u0018\u00002\u00020\u0001B\u0007?\u0006\u0004\b\u0002\u0010\u0003J\u001c\u0010\u0004\u001a\u00020\u00052\b\b\u0002\u0010\u0006\u001a\u00020\u00052\b\b\u0002\u0010\u0007\u001a\u00020\u0005H\u0016��\u0006\b
+  #38 = Utf8               d2
+  #39 = Utf8
+  #40 = Utf8               kc-kotlin
+  #41 = Utf8               AuthClient.kt
+  #42 = Utf8               Code
+  #43 = Utf8               LineNumberTable
+  #44 = Utf8               LocalVariableTable
+  #45 = Utf8               StackMapTable
+  #46 = Utf8               SourceFile
+  #47 = Utf8               RuntimeVisibleAnnotations
+{
+  public kc.auth.AuthClientWhen();
+    descriptor: ()V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #8                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 560: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lkc/auth/AuthClientWhen;
+
+  public int f(int, int);
+    descriptor: (II)I
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=4, args_size=3
+         0: iload_2
+         1: bipush        100
+         3: iadd
+         4: istore_3
+         5: iload_3
+         6: iconst_2
+         7: imul
+         8: ireturn
+      LineNumberTable:
+        line 570: 0
+        line 571: 5
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            5       4     3     y   I
+            0       9     0  this   Lkc/auth/AuthClientWhen;
+            0       9     1     k   I
+            0       9     2     x   I
+
+  public static int f$default(kc.auth.AuthClientWhen, int, int, int, java.lang.Object);
+    descriptor: (Lkc/auth/AuthClientWhen;IIILjava/lang/Object;)I
+    flags: (0x1009) ACC_PUBLIC, ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=3, locals=5, args_size=5
+         0: aload         4
+         2: ifnull        15
+         5: new           #20                 // class java/lang/UnsupportedOperationException
+         8: dup
+         9: ldc           #22                 // String Super calls with default arguments not supported in this target, function: f
+        11: invokespecial #25                 // Method java/lang/UnsupportedOperationException."<init>":(Ljava/lang/String;)V
+        14: athrow
+        15: iload_3
+        16: iconst_1
+        17: iand
+        18: ifeq          23
+        21: iconst_1
+        22: istore_1
+        23: iload_3
+        24: iconst_2
+        25: iand
+        26: ifeq          67
+        29: iload_1
+        30: tableswitch   { // 1 to 2
+                       1: 52
+                       2: 57
+                 default: 64
+            }
+        52: bipush        10
+        54: goto          66
+        57: iload_1
+        58: bipush        7
+        60: imul
+        61: goto          66
+        64: bipush        30
+        66: istore_2
+        67: aload_0
+        68: iload_1
+        69: iload_2
+        70: invokevirtual #27                 // Method f:(II)I
+        73: ireturn
+      StackMapTable: number_of_entries = 7
+        frame_type = 15 /* same */
+        frame_type = 7 /* same */
+        frame_type = 28 /* same */
+        frame_type = 4 /* same */
+        frame_type = 6 /* same */
+        frame_type = 65 /* same_locals_1_stack_item */
+          stack = [ int ]
+        frame_type = 0 /* same */
+      LineNumberTable:
+        line 561: 0
+        line 562: 21
+        line 561: 23
+        line 564: 29
+        line 565: 52
+        line 566: 57
+        line 567: 64
+        line 561: 67
+}
+SourceFile: "AuthClient.kt"
+RuntimeVisibleAnnotations:
+  0: #28(#29=[I#30,I#31,I#32],#15=I#33,#34=I#35,#36=[s#37],#38=[s#10,s#39,s#5,s#6,s#11,s#39,s#15,s#16,s#40])
+    kotlin.Metadata(
+      mv=[2,4,0]
+      k=1
+      xi=48
+      d1=["\u0000\u0014\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0002\b\u0003\n\u0002\u0010\b\n\u0002\b\u0003\b\u0016\u0018\u00002\u00020\u0001B\u0007?\u0006\u0004\b\u0002\u0010\u0003J\u001c\u0010\u0004\u001a\u00020\u00052\b\b\u0002\u0010\u0006\u001a\u00020\u00052\b\b\u0002\u0010\u0007\u001a\u00020\u0005H\u0016��\u0006\b"]
+      d2=["Lkc/auth/AuthClientWhen;","","<init>","()V","f","","k","x","kc-kotlin"]
+    )
+Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientWhenSub.class
+  Last modified 2026. 11. 8.; size 675 bytes
+  SHA-256 checksum 0425fc4bf09060ddc028bc254369b5789083ff6e15a85cdb5213ce5db3b61eba
+  Compiled from "AuthClient.kt"
+public final class kc.auth.AuthClientWhenSub extends kc.auth.AuthClientWhen
+  minor version: 0
+  major version: 65
+  flags: (0x0031) ACC_PUBLIC, ACC_FINAL, ACC_SUPER
+  this_class: #2                          // kc/auth/AuthClientWhenSub
+  super_class: #4                         // kc/auth/AuthClientWhen
+  interfaces: 0, fields: 0, methods: 2, attributes: 2
+Constant pool:
+   #1 = Utf8               kc/auth/AuthClientWhenSub
+   #2 = Class              #1             // kc/auth/AuthClientWhenSub
+   #3 = Utf8               kc/auth/AuthClientWhen
+   #4 = Class              #3             // kc/auth/AuthClientWhen
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = NameAndType        #5:#6          // "<init>":()V
+   #8 = Methodref          #4.#7          // kc/auth/AuthClientWhen."<init>":()V
+   #9 = Utf8               this
+  #10 = Utf8               Lkc/auth/AuthClientWhenSub;
+  #11 = Utf8               f
+  #12 = Utf8               (II)I
+  #13 = Utf8               k
+  #14 = Utf8               I
+  #15 = Utf8               x
+  #16 = Utf8               Lkotlin/Metadata;
+  #17 = Utf8               mv
+  #18 = Integer            2
+  #19 = Integer            4
+  #20 = Integer            0
+  #21 = Integer            1
+  #22 = Utf8               xi
+  #23 = Integer            48
+  #24 = Utf8               d1
+  #25 = Utf8               \u0000\u0014\n\u0002\u0018\u0002\n\u0002\u0018\u0002\n\u0002\b\u0003\n\u0002\u0010\b\n\u0002\b\u0003\u0018\u00002\u00020\u0001B\u0007?\u0006\u0004\b\u0002\u0010\u0003J\u0018\u0010\u0004\u001a\u00020\u00052\u0006\u0010\u0006\u001a\u00020\u00052\u0006\u0010\u0007\u001a\u00020\u0005H\u0016��\u0006\b
+  #26 = Utf8               d2
+  #27 = Utf8               Lkc/auth/AuthClientWhen;
+  #28 = Utf8
+  #29 = Utf8               kc-kotlin
+  #30 = Utf8               AuthClient.kt
+  #31 = Utf8               Code
+  #32 = Utf8               LineNumberTable
+  #33 = Utf8               LocalVariableTable
+  #34 = Utf8               SourceFile
+  #35 = Utf8               RuntimeVisibleAnnotations
+{
+  public kc.auth.AuthClientWhenSub();
+    descriptor: ()V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #8                  // Method kc/auth/AuthClientWhen."<init>":()V
+         4: return
+      LineNumberTable:
+        line 575: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lkc/auth/AuthClientWhenSub;
+
+  public int f(int, int);
+    descriptor: (II)I
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=3, args_size=3
+         0: iload_2
+         1: ireturn
+      LineNumberTable:
+        line 579: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       2     0  this   Lkc/auth/AuthClientWhenSub;
+            0       2     1     k   I
+            0       2     2     x   I
+}
+SourceFile: "AuthClient.kt"
+RuntimeVisibleAnnotations:
+  0: #16(#17=[I#18,I#19,I#20],#13=I#21,#22=I#23,#24=[s#25],#26=[s#10,s#27,s#5,s#6,s#11,s#28,s#13,s#15,s#29])
+    kotlin.Metadata(
+      mv=[2,4,0]
+      k=1
+      xi=48
+      d1=["\u0000\u0014\n\u0002\u0018\u0002\n\u0002\u0018\u0002\n\u0002\b\u0003\n\u0002\u0010\b\n\u0002\b\u0003\u0018\u00002\u00020\u0001B\u0007?\u0006\u0004\b\u0002\u0010\u0003J\u0018\u0010\u0004\u001a\u00020\u00052\u0006\u0010\u0006\u001a\u00020\u00052\u0006\u0010\u0007\u001a\u00020\u0005H\u0016��\u0006\b"]
+      d2=["Lkc/auth/AuthClientWhenSub;","Lkc/auth/AuthClientWhen;","<init>","()V","f","","k","x","kc-kotlin"]
+    )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/AuthClientWide.class
   Last modified 2026. 11. 8.; size 5019 bytes
-  SHA-256 checksum 810cc674b3c11d9d8af78091adf8fadfc8adf3f39a5aa6f657dd238e58c034fa
+  SHA-256 checksum 7ea857c8bf20a389090a2349764d332d8ad01f4bab23d587ea772a6dc8a62f7e
   Compiled from "AuthClient.kt"
 public final class kc.auth.AuthClientWide
   minor version: 0
@@ -14255,7 +14509,7 @@ Constant pool:
   #153 = Utf8               AuthClient.kt
   #154 = Utf8               Lkotlin/jvm/internal/SourceDebugExtension;
   #155 = Utf8               value
-  #156 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientWide\n*L\n1#1,555:1\n440#1:556\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientWide\n*L\n438#1:556\n*E\n
+  #156 = Utf8               SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientWide\n*L\n1#1,581:1\n440#1:582\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientWide\n*L\n438#1:582\n*E\n
   #157 = Utf8               Code
   #158 = Utf8               LineNumberTable
   #159 = Utf8               LocalVariableTable
@@ -14360,8 +14614,8 @@ Constant pool:
        107: ireturn
       LineNumberTable:
         line 438: 0
-        line 556: 5
-        line 556: 102
+        line 582: 5
+        line 582: 102
         line 438: 107
       LocalVariableTable:
         Start  Length  Slot  Name   Signature
@@ -14796,14 +15050,14 @@ SourceDebugExtension:
   + 1 AuthClient.kt
   kc/auth/AuthClientWide
   *L
-  1#1,555:1
-  440#1:556
+  1#1,581:1
+  440#1:582
   *S KotlinDebug
   *F
   + 1 AuthClient.kt
   kc/auth/AuthClientWide
   *L
-  438#1:556
+  438#1:582
   *E
 RuntimeVisibleAnnotations:
   0: #139(#140=[I#141,I#142,I#143],#144=I#145,#146=I#147,#148=[s#149],#150=[s#10,s#151,s#5,s#6,s#11,s#151,s#49,s#51,s#52,s#53,s#54,s#55,s#56,s#57,s#58,s#59,s#60,s#61,s#62,s#63,s#64,s#65,s#66,s#67,s#68,s#69,s#70,s#71,s#72,s#73,s#74,s#75,s#76,s#77,s#78,s#79,s#80,s#81,s#82,s#83,s#105,s#106,s#107,s#108,s#109,s#110,s#111,s#112,s#113,s#114,s#115,s#116,s#117,s#118,s#119,s#120,s#121,s#122,s#123,s#124,s#125,s#126,s#127,s#128,s#129,s#130,s#131,s#132,s#133,s#134,s#135,s#136,s#137,s#138,s#152])
@@ -14817,7 +15071,7 @@ RuntimeVisibleAnnotations:
 RuntimeInvisibleAnnotations:
   0: #154(#155=[s#156])
     kotlin.jvm.internal.SourceDebugExtension(
-      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientWide\n*L\n1#1,555:1\n440#1:556\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientWide\n*L\n438#1:556\n*E\n"]
+      value=["SMAP\nAuthClient.kt\nKotlin\n*S Kotlin\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientWide\n*L\n1#1,581:1\n440#1:582\n*S KotlinDebug\n*F\n+ 1 AuthClient.kt\nkc/auth/AuthClientWide\n*L\n438#1:582\n*E\n"]
     )
 Classfile kotlin/build/classes/kotlin/main/kc/auth/ClientId.class
   Last modified 2026. 11. 8.; size 2578 bytes

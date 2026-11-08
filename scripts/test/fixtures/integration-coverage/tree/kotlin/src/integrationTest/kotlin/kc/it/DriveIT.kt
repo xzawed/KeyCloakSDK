@@ -34,6 +34,7 @@ import kc.auth.AuthClientStatus
 import kc.auth.AuthClientSusp
 import kc.auth.AuthClientTokens
 import kc.auth.AuthClientVars
+import kc.auth.AuthClientWhenSub
 import kc.auth.AuthClientWide
 import kc.auth.ClientId
 import kc.auth.Config
@@ -110,5 +111,6 @@ class DriveIT {
         check(AuthClientCmpSub().g() == 7)
         check(AuthClientSinkImpl().put(3) == 3)
         check(AuthClientIfaceImpl().h() == 4)
+        check(AuthClientWhenSub().f() == 10)
     }
 }
