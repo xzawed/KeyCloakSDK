@@ -33,7 +33,7 @@ jobs:
       matrix: { java: ['17', '21', '25'] }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with: { distribution: 'temurin', java-version: '${{ matrix.java }}', cache: 'maven' }
       - name: Build & unit test (커버리지 게이트 90/85 포함)
         # attest — 적대 경로 행렬은 모든 단언이 통과한 뒤에만 $HP_ATTEST_DIR/java.json 을 쓴다(nonce 는 이 잡·이 레그의 것).
@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest   # ubuntu 러너는 Docker 내장 → Testcontainers 동작
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
       # 같은 리액터 · 골(`mvn -B -f java/pom.xml verify`)에 통합 전용 경계 커버리지만 더한다. 단위 테스트는 여기서 끈다 — surefire 와
       # failsafe 가 같은 에이전트 인자를 써 단위와 IT 가 한 exec 에 합쳐진다(단위 테스트 · 커버리지 게이트는 build 잡이 돈다). 명령
@@ -95,7 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
       - name: 해석된 런타임 의존성 좌표 수집(리액터 전체)
         # `compile`을 함께 도는 이유: dependency:list 단독 실행은 리액터 형제 모듈이 아직
@@ -141,7 +141,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
       - name: Maven 판(러너 기본 — release.yml 과 같다)
         run: mvn -v

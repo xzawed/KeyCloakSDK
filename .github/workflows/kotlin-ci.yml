@@ -22,11 +22,11 @@ jobs:
         working-directory: kotlin
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
       # 단위테스트 100개 + 커버리지 게이트(로직 모듈 라인≥90/브랜치≥85 — 네트워크 경계
       # AuthClient/admin.*/KeycloakClient omit) + ktlint(무경고). Docker 불필요(integrationTest는 별도 잡).
       # attest — 적대 경로 행렬은 모든 단언이 통과한 뒤에만 $HP_ATTEST_DIR/kotlin.json 을 쓴다(근거: ci.yml 의 같은 단계).
@@ -63,11 +63,11 @@ jobs:
         working-directory: kotlin
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
       # 같은 태스크(`./gradlew integrationTest`)에 통합 전용 경계 커버리지만 더한다 — Kover 는 단위 `test` 만 계측하므로 JaCoCo
       # 에이전트를 integrationTest 에만 붙인다. 명령(`clean` · 초기화 스크립트 · JaCoCo CLI · javap)은 `scripts/integration-coverage.mjs`
       # 의 run 이 소유한다 — 로컬(`node scripts/integration-coverage.mjs kotlin`)과 CI 가 같은 명령을 쓰게 여기 다시 적지 않는다.
@@ -99,11 +99,11 @@ jobs:
         working-directory: kotlin
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
       - name: 해석된 런타임 의존성 좌표 수집(runtimeClasspath)
         # `dependencies` 리포트의 트리 출력을 파싱한다: `|    +--- g:a:v (*)` 꼴이며 (*)/(c)/(n)
         # 마커는 버리고, 버전 충돌 표기(`g:a:1.0 -> 1.2`)가 있으면 해석된 오른쪽 버전을 쓴다.
@@ -170,7 +170,7 @@ jobs:
     # `REMOVED METHOD` 로 exit 1 이다. 그래서 별도 exclude 가 필요 없다.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: 'temurin'
           java-version: '21'
