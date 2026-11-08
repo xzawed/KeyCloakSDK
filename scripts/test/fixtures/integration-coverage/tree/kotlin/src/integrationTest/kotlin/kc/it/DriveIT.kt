@@ -28,6 +28,7 @@ import kc.auth.AuthClientRefs
 import kc.auth.AuthClientRelay
 import kc.auth.AuthClientSealed
 import kc.auth.AuthClientShapes
+import kc.auth.AuthClientShared
 import kc.auth.AuthClientSinkImpl
 import kc.auth.AuthClientStatic
 import kc.auth.AuthClientStatus
@@ -112,5 +113,6 @@ class DriveIT {
         check(AuthClientSinkImpl().put(3) == 3)
         check(AuthClientIfaceImpl().h() == 4)
         check(AuthClientWhenSub().f() == 10)
+        check(AuthClientShared(1).toString().isNotEmpty())
     }
 }

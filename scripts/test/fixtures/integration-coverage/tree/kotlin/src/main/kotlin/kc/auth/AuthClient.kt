@@ -578,3 +578,22 @@ class AuthClientWhenSub : AuthClientWhen() {
         x: Int,
     ): Int = x
 }
+
+// ── 아래는 독립 레그 9 가 보인 꼴이다 ──
+
+/** 본 생성자 없는 클래스 — 속성 초기화의 람다는 두 생성자가 함께 만든다(shared). 생성 중에 그 람다가 불린다: 한 생성자만 돌아도 그
+ *  람다의 줄은 돌았다 — 안 돈 생성자의 안 돈 줄로 세지 않는다(줄 단위). 구동은 AuthClientShared(Int) 만. */
+class AuthClientShared {
+    private val f: () -> Int = {
+        41 + 1
+    }
+    private val v: Int = f()
+
+    constructor(a: Int) {
+        check(a + v > 0)
+    }
+
+    constructor(s: String) {
+        check(s.length + v > 0)
+    }
+}

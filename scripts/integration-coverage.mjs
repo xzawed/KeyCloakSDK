@@ -2783,12 +2783,16 @@ function jvmReport(l, d) {
       const body = own.filter((p) => !p.dflt)
       const ev = body.length ? body : own
       if (!ls.size || !ev.length || !ev.every((p) => p.covered === 0)) continue
-      // 목록의 줄 — 그 함수의 안 돈 줄이다. 다리 쪽 부분(dflt)의 줄은 줄 단위로 가른다: 그 줄의 명령이 하나도 안 돌았을 때만 센다
-      // (재정의된 함수의 다리는 돌았다 — 그 줄을 세면 「none of its lines ran」 이 거짓이 된다, 레그 7; 안 돈 DefaultImpls 다리가 같은 선언
-      // 줄을 가져도 그 줄은 돌았다. 돈 다리 안에서도 안 돈 기본값 분기의 줄은 센다 — 부분 단위로 빼면 그 줄이 사라졌다, 레그 8). 몸통 쪽
-      // 줄은 그대로다(메서드 단위의 판정 — 한 줄짜리 함수의 그 줄이 돈 다리와 같은 줄이어도 몸통의 그 줄 명령은 안 돌았다).
+      // 목록의 줄 — 그 함수의 안 돈 줄이다. 그 함수의 근거가 아닌 부분 — 다리 쪽(dflt) · 다른 생성자와 함께 가진 것(shared) — 의 줄은
+      // 줄 단위로 가른다: 그 줄의 명령이 하나도 안 돌았을 때만 센다. 재정의된 함수의 다리 · 다른 생성자가 만든 초기화 람다는 돌았다 —
+      // 그 줄을 세면 「none of its lines ran」 이 거짓이 된다(독립 레그 7 · 9; 안 돈 DefaultImpls 다리가 같은 선언 줄을 가져도 그 줄은
+      // 돌았다). 돈 다리 안에서도 명령이 하나도 안 돈 기본값 분기의 줄은 센다 — 부분 단위로 빼면 그 줄이 사라졌다(레그 8). 마지막 분기의
+      // 줄은 kotlinc 가 when · if 의 값을 담는 명령을 매겨 다른 분기가 지나가므로 그 분기가 안 돌았어도 일부 돈 줄이다(레그 9 실측 — JaCoCo
+      // 의 줄 계수와 같은 정의다). 제 부분의 줄은 그대로다(메서드 단위의 판정 — 한 줄짜리 함수의 그 줄이 돈 다리와 같은 줄이어도 몸통의
+      // 그 줄 명령은 안 돌았다).
       const idle = (n) => xmlCount(lines.get(String(n)).ci) === 0
-      const sh = new Set([...inData(ps.filter((p) => !p.dflt)), ...[...inData(ps.filter((p) => p.dflt))].filter(idle)])
+      const mine = (p) => !p.dflt && !p.shared
+      const sh = new Set([...inData(ps.filter(mine)), ...[...inData(ps.filter((p) => !mine(p)))].filter(idle)])
       const at = sh.size ? sh : ls
       never.push({ file: f, line: Math.min(...at), name: key, stmts: at.size })
     }
