@@ -2081,6 +2081,7 @@ function javapFacts(text) {
   let cur = null
   let meth = null
   let inLnt = false
+  let inLvt = false
   let inBody = false
   let bsm = null
   const finish = () => {
@@ -2102,6 +2103,7 @@ function javapFacts(text) {
       cur = { name: null, source: null, encRef: null, pool: new Map(), methods: [], bootstraps: new Map() }
       meth = null
       inLnt = false
+      inLvt = false
       inBody = false
       bsm = null
       continue
@@ -2139,6 +2141,7 @@ function javapFacts(text) {
       inBody = false
       meth = null
       inLnt = false
+      inLvt = false
       continue
     }
     if ((m = /^\s+this_class: #\d+\s+\/\/\s*(\S+)\s*$/.exec(raw))) {
@@ -2157,6 +2160,7 @@ function javapFacts(text) {
     if (inBody && /^  \S/.test(raw)) {
       const h = raw.slice(2)
       inLnt = false
+      inLvt = false
       meth = null
       if (h === 'static {};') meth = { name: '<clinit>', desc: '()V', lines: [], calls: [], news: [], indy: [] }
       else {
@@ -2206,6 +2210,17 @@ function javapFacts(text) {
       meth.lines.push(Number(m[1]))
       continue
     }
+    // 지역 변수표 — 슬롯 0 의 이름만 쓴다(기본 인자 다리의 받는 쪽 `$this` 를 가른다 — ktFold; 인라인 함수의 다리만 표를 가진다, 실측).
+    if (meth && /^      LocalVariableTable:\s*$/.test(raw)) {
+      inLvt = true
+      continue
+    }
+    if (inLvt && (m = /^\s+\d+\s+\d+\s+(\d+)\s+(\S+)\s+\S+\s*$/.exec(raw))) {
+      if (m[1] === '0') meth.slot0 ??= m[2]
+      continue
+    }
+    if (inLvt && /^\s+Start\s+Length\s+Slot\s+Name\s+Signature\s*$/.test(raw)) continue
+    inLvt = false
     // 메서드의 `@JvmStatic` 표지(RuntimeVisibleAnnotations 항목) — 컴패니언 `@JvmStatic` 의 바깥 정적 다리를 가른다(ktFold).
     if (meth && /^\s+kotlin\.jvm\.JvmStatic\s*$/.test(raw)) meth.jvmStatic = true
     inLnt = false
@@ -2284,7 +2299,7 @@ function javaFold(cname, name, desc, facts, depth = 0) {
 // object · enum 항목의 `_init_$lambda$N` 은 정적 초기화가 만든다 · 람다 안의 람다는 `…$lambda$0$0` 이다 · object 의 `@JvmStatic`
 // 다리는 받는 쪽이 없다 · 로컬 클래스는 이름에 숫자가 없다. 그래서:
 //   람다(`…$lambda$N…` · invokedynamic 의 구현인 private static — SAM 참조 어댑터) → 그것을 만드는 invokedynamic 이 든 메서드
-//   기본 인자 다리(`…$default`) · 기본 인자 생성자(`<init>(…, int, DefaultConstructorMarker)`) → 그것이 부르는 같은 이름의 하나(없거나 둘이면 다리 서술자에서 표지를 뗀 서술자의 것)
+//   기본 인자 다리(`…$default`) · 기본 인자 생성자(`<init>(…, int, DefaultConstructorMarker)`) → 다리 서술자에서 표지를 뗀 서술자의 같은 이름 메서드(DefaultImpls 는 인터페이스의 같은 이름 다리)
 //   suspend inline fun 의 사본 `f$$forInline` → 같은 서술자의 f
 //   컴패니언 `@JvmStatic` 바깥 다리 → 그것이 부르는 바로 아래 컴패니언의 같은 이름 · 서술자 인스턴스 멤버(표지가 있을 때만 — 속성은 게터의 표지)
 //   로컬 함수(private static `outer$inner`) · 합성 접근자 `access$…` · open suspend fun 의 몸통 `fn$suspendImpl` → 그것을 부르는 메서드
@@ -2362,18 +2377,28 @@ function ktFold(cname, name, desc, facts, kt, seen = new Set()) {
     const rs = [...new Set(own.calls)].filter((r) => r !== self && r.startsWith(`${owner}.${to}:`))
     return rs.length === 1 ? /^([^.]+)\.([^:]+):(.*)$/.exec(rs[0]) : null
   }
-  // 부르는 대상이 없거나 둘이면(인라인 함수의 다리는 몸통을 품어 대상을 안 부른다 · 기본값이 같은 이름의 오버로드 · 다른 생성자를
-  // 부른다 — 독립 레그 4 실측) 다리 서술자에서 표지(int 마스크 하나 · 끝의 Object 또는 DefaultConstructorMarker)를 뗀 서술자의 같은
-  // 이름 메서드가 같은 클래스에 하나 있을 때만 그것이다. 다리의 첫 매개변수가 이 클래스면 받는 쪽일 수 있다 — 떼고 찾은 것은
-  // 인스턴스여야, 안 떼고 찾은 것은 정적이어야 한다(object 의 `@JvmStatic pick(o: Self?, n: Int = 0)` 은 첫 매개변수가 그 object 다).
-  const derived = (to, marker, recv) => {
-    const m = new RegExp(`^\\((.*)I${marker}\\)(.+)$`).exec(desc)
-    if (!m) return null
-    const me = `L${cname};`
-    const want = [[`(${m[1]})${m[2]}`, true]]
-    if (recv && m[1].startsWith(me)) want.push([`(${m[1].slice(me.length)})${m[2]}`, false])
-    const hit = want.flatMap(([d, st]) => c.methods.filter((x) => x.name === to && x.desc === d && (!recv || Boolean(x.static) === st)))
-    return hit.length === 1 ? [null, cname, to, hit[0].desc] : null
+  // 다리의 대상 — 다리 서술자에서 표지를 뗀 서술자의 같은 이름 메서드다(kotlinc 의 규칙). 부르는 대상으로 고르지 않는다 — 인라인
+  // 함수의 다리는 몸통을 품어 대상을 안 부르고 그 몸통이 부른 다른 오버로드에 접혀 안 돈 함수가 숨었다(독립 레그 4 · 5 실측 — 지연
+  // 로그 `inline fun debug(t = null, msg: () -> String)` 의 다리가 debug(String) 을 숨겼다). 표지는 끝의 Object(생성자 · 값 클래스의
+  // `constructor-impl` 은 DefaultConstructorMarker)와 그 앞의 int 마스크 k 개다 — k = ceil(p / 32), p 는 대상 매개변수 수(33 개면 둘 — 레그 5 실측: 하나만 떼면
+  // 남은 마스크가 다른 오버로드에 맞았다). 첫 매개변수가 이 클래스면 받는 쪽일 수 있다: 뗀 것은 인스턴스, 안 뗀 것은 정적이어야 하고
+  // (object 의 `@JvmStatic pick(o: Self?, n: Int = 0)` — 레그 1), 둘 다 있으면 다리의 지역 변수표 슬롯 0 이 `$this` 인지(인라인 함수의
+  // 다리만 표를 가진다)로, 표가 없으면 다리가 부르는 쪽으로 가른다(레그 5 실측).
+  const target = (to, markers, recv) => {
+    const m = /^\((.*)\)(.+)$/.exec(desc)
+    const ps = m?.[1].match(/\[*(?:L[^;]+;|[BCDFIJSZ])/g) ?? []
+    if (!m || !markers.includes(ps.pop())) return null
+    const hits = []
+    for (const r of recv && ps[0] === `L${cname};` ? [0, 1] : [0]) {
+      const n = ps.length - r
+      const k = [1, 2, 3, 4, 5, 6, 7, 8].find((j) => n - j >= 1 && Math.ceil((n - j) / 32) === j)
+      if (!k || !ps.slice(ps.length - k).every((t) => t === 'I')) continue
+      const d = `(${ps.slice(r, ps.length - k).join('')})${m[2]}`
+      const x = c.methods.find((y) => y.name === to && y.desc === d && (!recv || Boolean(y.static) === (r === 0)))
+      if (x) hits.push([r, x])
+    }
+    const by = hits.length < 2 ? hits : own.slot0 !== undefined ? hits.filter(([r]) => (r === 1) === (own.slot0 === '$this')) : hits.filter(([, x]) => own.calls.includes(`${cname}.${to}:${x.desc}`))
+    return by.length === 1 ? [null, cname, to, by[0][1].desc] : null
   }
   // 다리의 접기 — 대상이 자기에게 돌아오면(로컬 함수의 다리) 다리를 부르는 쪽으로 접는다.
   const bridge = (r) => {
@@ -2383,7 +2408,7 @@ function ktFold(cname, name, desc, facts, kt, seen = new Set()) {
   }
   if (name === '<init>') {
     if (!desc.endsWith('ILkotlin/jvm/internal/DefaultConstructorMarker;)V')) return { type, member: '<init>', kind: 'plain', desc }
-    return bridge(callee(cname, '<init>') ?? derived('<init>', 'Lkotlin/jvm/internal/DefaultConstructorMarker;', false))
+    return bridge(target('<init>', ['Lkotlin/jvm/internal/DefaultConstructorMarker;'], false))
   }
   // 람다 몸통 — `…$lambda$N…` 이거나, invokedynamic 의 구현 핸들인 private static 메서드(Java SAM 참조의 어댑터 — 로컬 함수의 참조는
   // `outer$loc$0`(독립 레그 3 실측) · 최상위 함수의 참조는 `makeOps$privTwice`(실측 — 참조된 함수 자체는 구현이 아니다))다: 그것을
@@ -2394,11 +2419,10 @@ function ktFold(cname, name, desc, facts, kt, seen = new Set()) {
   const fi = /^(.+)\$\$forInline$/.exec(name)
   if (fi) return nest(fold(cname, fi[1], desc), name)
   const dm = /^(.+)\$default$/.exec(name)
-  // `Iface$DefaultImpls.g$default` 는 인터페이스의 같은 이름 다리를 부른다(호환 다리 — 실측) — 그 다리를 따라간다.
-  if (dm) {
-    const r = callee(cname, dm[1]) ?? (cname.endsWith('$DefaultImpls') ? callee(cname.slice(0, -'$DefaultImpls'.length), name) : null)
-    return bridge(r ?? derived(dm[1], 'Ljava/lang/Object;', true))
-  }
+  // `Iface$DefaultImpls.g$default` 는 인터페이스의 같은 이름 다리를 부른다(호환 다리 — 실측) — 그 다리를 따라간다(DefaultImpls 에는
+  // 같은 서술자의 정적 호환 메서드 `g(Iface, …)` 도 있다 — 그것은 대상이 아니다).
+  // 값 클래스의 `constructor-impl$default` 는 끝 표지가 DefaultConstructorMarker 다(레그 5 실측).
+  if (dm) return bridge((cname.endsWith('$DefaultImpls') ? callee(cname.slice(0, -'$DefaultImpls'.length), name) : null) ?? target(dm[1], ['Ljava/lang/Object;', 'Lkotlin/jvm/internal/DefaultConstructorMarker;'], true))
   // 컴패니언 `@JvmStatic` 의 바깥 정적 다리 — 정적 메서드가 바로 아래 중첩 클래스(`<이 클래스>$<이름>`)의 같은 이름 · 서술자
   // **인스턴스** 메서드 하나를 부르고 그것에 `@JvmStatic` 표지가 있다(함수 · `@set:JvmStatic` · `@JvmOverloads` 가 만든 오버로드 — 실측):
   // 그 멤버다(kotlin 호출은 컴패니언으로 가 다리는 안 돈다 — 따로 두면 실행된 함수가 미실행에 뜬다, 독립 레그 2 실측). 속성의 표지는

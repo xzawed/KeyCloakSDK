@@ -154,6 +154,10 @@
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientRelay.f": "open-admin",
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientKt.privTwice": "open-admin",
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientKt.pubTwice": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientLog.debug(String)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientWide.wide(int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientObjPick.pick(int)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientObjPick2.pick(int)": "open-admin",
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientStatus.<init>": "open-admin",
       "kotlin/src/main/kotlin/kc/examples/QuickStart.kt:QuickStartKt.env": "open-masking",
       "kotlin/src/main/kotlin/kc/examples/QuickStart.kt:QuickStartKt.main": "open-masking"

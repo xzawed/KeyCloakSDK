@@ -415,3 +415,54 @@ class AuthClientCross {
         return wrapC { loc() }
     }
 }
+
+// ── 아래는 독립 레그 5 가 보인 꼴이다 — 다리의 대상은 다리 서술자가 정한다(다리가 부르는 것이 아니다) ──
+
+/** 지연 로그 — 인라인 함수의 다리 `debug$default` 는 몸통이 부르는 debug(String) 을 부른다(대상이 아니다). 구동은 꺼진 로거의
+ *  람다 쪽만(useDebug — 인라인된 사본이 경계 클래스 안에서 돌아야 JaCoCo 가 인라인 함수와 그 다리에 친다) — debug(String) 은 안 돌았다. */
+class AuthClientLog(
+    val enabled: Boolean,
+) {
+    fun debug(msg: String): Int = msg.length
+
+    inline fun debug(
+        t: Throwable? = null,
+        msg: () -> String,
+    ): Int = if (enabled && t == null) debug(msg()) else 0
+
+    fun useDebug(): Int = debug { "x" }
+}
+
+/** 매개변수 33 — 다리의 int 마스크가 둘이다(하나만 떼면 남은 마스크가 34 개짜리 오버로드에 맞는다). 구동은 인라인 쪽만(useWide). */
+class AuthClientWide {
+    fun useWide(): Int = wide(a05 = 1)
+
+    inline fun wide(a00: Int = 0, a01: Int = 0, a02: Int = 0, a03: Int = 0, a04: Int = 0, a05: Int = 0, a06: Int = 0, a07: Int = 0, a08: Int = 0, a09: Int = 0, a10: Int = 0, a11: Int = 0, a12: Int = 0, a13: Int = 0, a14: Int = 0, a15: Int = 0, a16: Int = 0, a17: Int = 0, a18: Int = 0, a19: Int = 0, a20: Int = 0, a21: Int = 0, a22: Int = 0, a23: Int = 0, a24: Int = 0, a25: Int = 0, a26: Int = 0, a27: Int = 0, a28: Int = 0, a29: Int = 0, a30: Int = 0, a31: Int = 0, a32: Int = 0): Int = a05 + a32
+
+    fun wide(b00: Int, b01: Int, b02: Int, b03: Int, b04: Int, b05: Int, b06: Int, b07: Int, b08: Int, b09: Int, b10: Int, b11: Int, b12: Int, b13: Int, b14: Int, b15: Int, b16: Int, b17: Int, b18: Int, b19: Int, b20: Int, b21: Int, b22: Int, b23: Int, b24: Int, b25: Int, b26: Int, b27: Int, b28: Int, b29: Int, b30: Int, b31: Int, b32: Int, extra: Int): Int = b00 + extra
+}
+
+/** object 의 `@JvmStatic inline` 다리 — 받는 쪽 둘 다 맞는다(정적 pick(o, n) · 인스턴스 pick(n)): 인라인 함수의 다리는 지역 변수표를
+ *  가져 슬롯 0(`o`)이 가른다. 구동은 정적 쪽만(usePick) — 인스턴스 pick(n) 은 안 돌았다. */
+object AuthClientObjPick {
+    @JvmStatic
+    inline fun pick(
+        o: AuthClientObjPick?,
+        n: Int = 0,
+    ): Int = n + (if (o == null) 0 else 1)
+
+    fun pick(n: Int): Int = n
+
+    fun usePick(): Int = pick(null)
+}
+
+/** 같은 꼴의 보통 함수 — 다리는 지역 변수표가 없어 그것이 부르는 쪽이 가른다. 구동은 정적 쪽만. */
+object AuthClientObjPick2 {
+    @JvmStatic
+    fun pick(
+        o: AuthClientObjPick2?,
+        n: Int = 0,
+    ): Int = n + (if (o == null) 0 else 1)
+
+    fun pick(n: Int): Int = n
+}

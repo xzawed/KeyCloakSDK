@@ -11,10 +11,13 @@ import kc.auth.AuthClientHooks
 import kc.auth.AuthClientInline
 import kc.auth.AuthClientInlines
 import kc.auth.AuthClientLoader
+import kc.auth.AuthClientLog
 import kc.auth.AuthClientLoaders
 import kc.auth.AuthClientLocals
 import kc.auth.AuthClientMixed
 import kc.auth.AuthClientNest
+import kc.auth.AuthClientObjPick
+import kc.auth.AuthClientObjPick2
 import kc.auth.AuthClientOvd
 import kc.auth.AuthClientProps
 import kc.auth.AuthClientRefs
@@ -25,6 +28,7 @@ import kc.auth.AuthClientStatus
 import kc.auth.AuthClientSusp
 import kc.auth.AuthClientTokens
 import kc.auth.AuthClientVars
+import kc.auth.AuthClientWide
 import kc.auth.ClientId
 import kc.auth.Config
 import kc.auth.byId
@@ -90,5 +94,9 @@ class DriveIT {
         check(AuthClientOvd().pick() == 3)
         check(AuthClientCfg("x").parent?.name == "root")
         check(AuthClientCross().useLocal() == 6)
+        check(AuthClientLog(false).useDebug() == 0)
+        check(AuthClientWide().useWide() == 1)
+        check(AuthClientObjPick.usePick() == 0)
+        check(AuthClientObjPick2.pick(null) == 0)
     }
 }
