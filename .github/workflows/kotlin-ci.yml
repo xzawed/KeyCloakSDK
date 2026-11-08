@@ -1,12 +1,13 @@
 name: kotlin-ci
 on:
   # `scripts/integration-coverage.*` — integration 잡의 리포트가 그 둘로 돈다. 리포트 로직·핀만 고친 PR 에서도
-  # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다 — 통합 리포트를 붙인 다른 레인과 같다).
+  # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다 — 통합 리포트를 붙인 다른 레인과 같다). `java/pom.xml` — run kotlin 은
+  # JaCoCo 판을 그 pom 에서 읽는다: JaCoCo 를 올리는 PR 에서 kotlin 하한을 다시 재야 한다(하한은 여유가 없다).
   push:
     branches: [main]
-    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
+    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'java/pom.xml']
   pull_request:
-    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
+    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'java/pom.xml']
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:
@@ -75,10 +76,10 @@ jobs:
       - name: Integration E2E (Docker, 실제 Keycloak 26.6 — FullFlowIT) + 경계 커버리지 수집
         working-directory: .
         run: node scripts/integration-coverage.mjs run kotlin --out "$RUNNER_TEMP/integration-coverage"
-      # ⚠️ 보고 모드 — 낮은 수치로는 실패하지 않는다. 하한은 CI 관측 셋 뒤에 건다(등록부 `integration-coverage-never-measured`
-      # 4 걸음째). exit 2(무결성 실패 — 무엇이 그런지는 `scripts/integration-coverage.mjs` 머리의 종료코드 표가 소유한다)가
-      # 잡을 실패시킨다. exit 1(소유 문제 — 같은 표)은 경고다.
-      - name: 통합 전용 경계 커버리지 — 보고 모드(scripts/integration-coverage.json 에 floor 없음)
+      # ⚠️ 하한 — 값은 `scripts/integration-coverage.json` 의 `floor` 에만 둔다(등록부 `integration-coverage-never-measured`
+      # 4 걸음째). exit 3(하한 아래)과 exit 2(무결성 실패 — 무엇이 그런지는 `scripts/integration-coverage.mjs` 머리의
+      # 종료코드 표가 소유한다)가 잡을 실패시킨다. exit 1(소유 문제 — 같은 표)은 경고다.
+      - name: 통합 전용 경계 커버리지 — 하한(scripts/integration-coverage.json 의 floor)
         working-directory: .
         run: |
           rc=0

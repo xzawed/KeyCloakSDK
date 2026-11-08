@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // integration-coverage.mjs — 통합 실행만의 「네트워크 경계」 커버리지 리포트. go · python(2026-11-02) · node · rust
-// (2026-11-05) · php · ruby(2026-11-06) · dotnet · java(2026-11-07)는 **하한 무장**, kotlin(2026-11-07)은 보고 모드다. 새로 붙는
-// 언어는 보고 모드에서 시작한다(3 걸음째 — 하한은 CI 관측 셋 뒤).
+// (2026-11-05) · php · ruby(2026-11-06) · dotnet · java(2026-11-07) · kotlin(2026-11-08)은 **하한 무장**. 새로 붙는 언어는 보고
+// 모드에서 시작한다(3 걸음째 — 하한은 CI 관측 셋(PR 실행 포함 · main ≥ 1) 뒤).
 //
 // 왜: 아홉 언어가 「경계는 통합으로 검증한다」며 그 파일을 단위 커버리지 게이트에서 빼는데, 통합 실행에서
 // 커버리지를 재는 언어가 0 이었다(등록부 `integration-coverage-never-measured`). 이 스크립트가 그 3 걸음째다 —
 // 레인 통합 잡에 리포트를 붙인다. 하한(4 걸음째)은 `integration-coverage.json` 의 `floor` 다(값은 거기에만 둔다) — CI 관측
 // 셋 뒤 무장했다. 지표는 go 문장 · python 함수 몸통(lines 는 import 때 도는 줄로 부푼다 — 아래) · node 문장 · rust 줄
 // (lcov `DA` — 아래) · php 줄(PHPUnit XML — 아래) · ruby 메서드 몸통(python 과 같은 까닭 — 아래) · dotnet 줄(coverlet
-// JSON — 아래) · java 몸통(정적 초기화만 가진 줄을 뺀 JaCoCo 줄 — 아래). 값은 관측값을 소수 한 자리로 내린 것이라 여유가 없다 — 여유는 다음 변경이 무심사로 채운다(문서 예산
+// JSON — 아래) · java · kotlin 몸통(정적 초기화만 가진 줄을 뺀 JaCoCo 줄 — 아래). 값은 관측값을 소수 한 자리로 내린 것이라 여유가 없다 — 여유는 다음 변경이 무심사로 채운다(문서 예산
 // 검사 8e 와 같은 이유). 내리려면 그 JSON 의 diff 가 판정이다. 하한이 없는 언어는 보고 모드 그대로다(**낮은 수치는
 // 실패가 아니다**).
 //
@@ -16,7 +16,7 @@
 //  · 리포트할 파일 집합은 단위 omit SSOT 에서 **파생**한다 — 측정 트리의 `scripts/coverage-boundary.mjs list --json`.
 //    목록 사본을 측정에 쓰지 않는다.
 //  · 그 집합을 **고정**한다 — `scripts/integration-coverage.json` 의 `pinned` 와 다르면 FAIL. 파생이 너무 적게 고르면
-//    %가 오른다(등록부 실측: coverlet `<Include>` 를 뒤집자 중첩 async 타입이 빠져 211/312). 핀은 측정 대상이 아니라
+//    %가 오른다(실측 2026-09-27: coverlet `<Include>` 를 뒤집자 중첩 async 타입이 빠져 211/312). 핀은 측정 대상이 아니라
 //    **오라클**이다 — SSOT 를 바꾸는 PR 이 「리포트의 분모가 바뀐다」를 같은 diff 에서 보이게 한다.
 //  · 통합이 한 번도 실행하지 않는 함수 목록 — 항목마다 **열린** 등록부 id 가 소유자다(같은 JSON 의 `owners`).
 //
@@ -1732,7 +1732,7 @@ const DOTNET_TRX = () => join(out, 'dotnet.trx')
 const DOTNET_RUN = () => join(out, 'dotnet.run.json')
 // run 이 쓰는 컬렉터 설정 — 형식만 json 이고 **거르지 않는다**(경계는 리포트가 파일 경로로 고른다). 단위 설정의 `<Exclude>` 를
 // 뒤집은 `<Include>` 는 컴파일러가 만든 중첩 타입(async 상태 기계 · 람다 클래스)을 떨어뜨린다 — 실측(2026-11-06, 실제 트리):
-// 경계 10 파일의 428 줄 중 바깥 타입의 것은 175 뿐이다(등록부가 짚은 211/312 와 같은 꼴).
+// 경계 10 파일의 428 줄 중 바깥 타입의 것은 175 뿐이다(머리 주석의 211/312 와 같은 꼴).
 const DOTNET_SETTINGS = `<?xml version="1.0" encoding="utf-8" ?>
 <RunSettings>
   <DataCollectionRunSettings>
@@ -2042,7 +2042,7 @@ function dotnetReport(d) {
 // FAIL — jvmReport). 모르는 `$` · `<…>` 꼴은 FAIL 이다(fail-closed).
 // ⚠️ 줄은 소스 파일 단위 합집합이다(`<sourcefile><line>`) — 바깥 클래스와 익명 클래스가 한 줄을 함께 가질 수 있어 클래스별 합은 그
 // 줄을 두 번 센다(실측: AdminClient.java 61 = 54 + 8 − 1). 정적 초기화(`<clinit>`)만 가진 줄은 클래스가 실릴 때 돈다 —
-// 「아무것도 안 돈 실행」 판정과 bodies 는 그 줄을 뺀다(python · ruby 와 같은 까닭 — 등록부의 함정: JVM static init).
+// 「아무것도 안 돈 실행」 판정과 bodies 는 그 줄을 뺀다(python · ruby 와 같은 까닭 — JVM 의 static init, #774 가 짚은 함정).
 // ⚠️ kotlin 도 이 리더다 — 클래스 파일 · JaCoCo 는 같고 접기만 다르다(ktFold — 합성 메서드는 이름이 아니라 코드로 접는다:
 // 람다는 만드는 메서드, 다리는 부르는 대상, 로컬 함수는 부르는 메서드). `internal` 멤버는 모듈 이름 접미를 벗긴다(`name$<모듈>` —
 // 모듈 이름의 식별자 밖 글자는 `_` · 실측 `applyTimeouts$io_github_xzawed_keycloak_sdk_kotlin`). suspend 함수의 이어받기
