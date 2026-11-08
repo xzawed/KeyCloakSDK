@@ -368,3 +368,50 @@ class AuthClientVars private constructor() {
         fun over(a: Int, b: Int = 2): Int = a + b
     }
 }
+
+// ── 아래는 독립 레그 4 가 보인 거짓 FAIL 의 꼴이다 — 다리가 대상을 안 부르거나 둘을 부른다 · 인라인된 호출부의 클래스 ──
+
+/** 기본 인자 인라인 함수 — 다리 `retry$default` 는 몸통을 품어 retry 를 안 부른다(다리 서술자로 접는다) · 기본값 람다의 클래스
+ *  (`AuthClientInlines$dl$1`)는 그 다리가 감싼다 · suspend inline 의 사본 `runS$$forInline`. */
+class AuthClientInlines {
+    inline fun <T> retry(
+        times: Int = 3,
+        block: () -> T,
+    ): T {
+        check(times > 0)
+        return block()
+    }
+
+    inline fun dl(f: () -> Int = { 7 }): Int = f()
+
+    suspend inline fun runS(block: suspend () -> Int): Int = block()
+
+    fun useInlines(): Int = retry { 1 } + dl()
+
+    suspend fun useS(): Int = runS { 2 }
+}
+
+/** 기본값이 같은 이름의 오버로드를 부른다 — 다리 `pick$default` 가 pick(String) · pick(int) 둘을 부른다(서술자로 가른다). */
+class AuthClientOvd {
+    fun pick(s: String): Int = s.length
+
+    fun pick(n: Int = pick("abc")): Int = n
+}
+
+/** 기본값을 보조 생성자가 만든다 — 기본 인자 생성자가 `<init>()` · 본 생성자 둘을 부른다(서술자로 가른다). */
+class AuthClientCfg(
+    val name: String,
+    val parent: AuthClientCfg? = AuthClientCfg(),
+) {
+    constructor() : this("root", null)
+}
+
+/** crossinline 람다 안에서 부른 로컬 함수 — 호출자는 인라인된 호출부의 클래스 `AuthClientCross$useLocal$$inlined$wrapC$1` 이다. */
+class AuthClientCross {
+    inline fun wrapC(crossinline f: () -> Int): Int = later { f() + 1 }
+
+    fun useLocal(): Int {
+        fun loc(): Int = 5
+        return wrapC { loc() }
+    }
+}

@@ -3,15 +3,19 @@ package kc.it
 import kc.auth.AuthClient
 import kc.auth.AuthClientApiImpl
 import kc.auth.AuthClientBag
+import kc.auth.AuthClientCfg
+import kc.auth.AuthClientCross
 import kc.auth.AuthClientDefaults
 import kc.auth.AuthClientError
 import kc.auth.AuthClientHooks
 import kc.auth.AuthClientInline
+import kc.auth.AuthClientInlines
 import kc.auth.AuthClientLoader
 import kc.auth.AuthClientLoaders
 import kc.auth.AuthClientLocals
 import kc.auth.AuthClientMixed
 import kc.auth.AuthClientNest
+import kc.auth.AuthClientOvd
 import kc.auth.AuthClientProps
 import kc.auth.AuthClientRefs
 import kc.auth.AuthClientRelay
@@ -81,5 +85,10 @@ class DriveIT {
         AuthClientVars.w = 4
         check(AuthClientVars.w == 4)
         check(AuthClientVars.over(1) == 3)
+        check(AuthClientInlines().useInlines() == 8)
+        check(runBlocking { AuthClientInlines().useS() } == 2)
+        check(AuthClientOvd().pick() == 3)
+        check(AuthClientCfg("x").parent?.name == "root")
+        check(AuthClientCross().useLocal() == 6)
     }
 }
