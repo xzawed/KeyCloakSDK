@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
-# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — go · python · node · rust · php · ruby · dotnet 의 무결성 판정과 하한.
+# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — go · python · node · rust · php · ruby · dotnet · java · kotlin
+# 의 무결성 판정과 하한.
 #
-# ⚠️ **커밋된 픽스처만 쓴다** — Docker 도 Go·Python·node·rust·php·ruby·dotnet 툴체인도 필요 없다. 실제 Keycloak 에 대고 도는 것은
+# ⚠️ **커밋된 픽스처만 쓴다** — Docker 도 Go·Python·node·rust·php·ruby·dotnet·JDK·Gradle 툴체인도 필요 없다. 실제 Keycloak 에 대고 도는 것은
 # 레인 CI 의 integration 잡이다. 여기서 재는 것은 리포트의 **무결성 판정** 셋이다:
 #   (1) 양성 — 건강한 픽스처에서 파일별·합계 수치와 미실행 함수 목록이 **정확히** 나온다.
 #   (2) 음성 — 파생이 좁아지거나(그러면 %가 오른다), 핀과 갈리거나, 데이터에서 파일이 빠지거나,
@@ -44,11 +45,19 @@
 #   data/java.javap.txt    같은 빌드의 `javap -l -p -v` 출력(run java 가 남긴 것) — 줄끝을 LF 로, `Classfile` 의 생성 루트를 지워
 #                          `java/` 부터로만 바꿨다(0 실행과 클래스 사실이 같다 — 실측: 그 둘에서 푼 사실이 바이트째 같았다)
 #   data/java-zero.xml     같은 명령, `KC_FIXTURE_ZERO=1` 로 구동 테스트가 경계 클래스를 싣기만 한다 — 정적 초기화만 돈다
+#   data/kotlin.xml        **도구의 `run kotlin` 그대로**(JDK 21.0.8 · kotlin 2.4.21 · JaCoCo 0.8.16 · 2026-11-07) — 임시 루트에 tree 사본
+#                          (Gradle 래퍼는 생성 때만 실제 kotlin/ 에서 넣었다). 세션 id 의 기계 이름만 `HOST-00000000` 으로 바꿨다
+#   data/kotlin.javap.txt  같은 빌드의 `javap -l -p -v` 출력 — 줄끝을 LF 로, `Classfile` 의 생성 루트를 지워 `kotlin/` 부터로만 바꿨다
+#   data/kotlin-zero.xml   같은 명령, `KC_FIXTURE_ZERO=1` 로 구동 테스트가 경계 클래스를 싣기만 한다(javap 출력은 바이트째 같았다)
 # ruby 구동 스펙은 「logout_url · AuthClient.build · introspect · close · flush」를 안 부르고 `token` 의 nil 갈래를 안 탄다.
 # dotnet 구동 테스트는 「두 번째 생성자 · Describe(int) · LogoutAsync · Build · Unused · Later · Lower · NamesAsync · Retries 의
 # setter · Close · Dispose · Defaults · DeleteAsync」를 안 부르고 `TokenAsync` 의 빈 code 갈래 · `RetryAsync` 의 fail 갈래(그 안의
 # async 람다)를 안 탄다(`UnitTests` 는 Trait 이 없는 통합 밖 테스트다 — 레인의 필터가 거른다).
 # java 구동 테스트(`DriveIT`)는 「token(String, int) · unused · QuickStart 전체」를 안 부르고 정적 람다 `UPPER` 는 `names` 를 거쳐 부른다.
+# kotlin 구동 테스트(`DriveIT`)는 「token(String, Int) · unused · Companion 의 REALM 읽기 · 속성 greet 와 초기화 블록 ready 의 람다 ·
+# withLocalClass · join(List<String>) · AuthClientStatus 의 생성자 · AuthClientDefaults.pick(Int) · AuthClientIdle · QuickStart
+# 전체」를 안 부르고, internal `mask` · `pick(AuthClientDefaults?, Int)` · `ping()` 은 기본 인자 다리로 · `join(List<Int>)` 는 JVM
+# 이름 joinInts 로 · 컴패니언 init 은 `AuthClientStatus.ok()` 로 부른다.
 # php 구동기는 「groups·adminHelper·logoutUrl·__debugInfo」를 안 부르고 `exchange` 의 throw 갈래를 안 탄다.
 # 구동기는 「String·Close·Delete·AuthClient.String·hook 리터럴」과 「__repr__·logout·clients·aio 전체」를, node 는
 # 「describe·toString·[SYM]·inc·cb·set count·overload·longSignature·close」를, rust 는 「transport·supply·describe·noop·close·
@@ -79,6 +88,7 @@ fresh() {
   ruby_data "$FIX/data/ruby.json"
   dotnet_data "$FIX/data/dotnet.json" "$FIX/data/dotnet.trx"
   java_data "$FIX/data/java.xml"
+  kotlin_data "$FIX/data/kotlin.xml"
   git -C "$T" init -q
   git -C "$T" config core.autocrlf false
   git -C "$T" add -A
@@ -142,6 +152,18 @@ java_mark() { # exit
     "$(sha1sum "$D/java.xml" | cut -d' ' -f1)" "$(sha1sum "$D/java.javap.txt" | cut -d' ' -f1)" \
     "$(sha1sum "$T/java/kc-auth/src/main/java/kc/auth/AuthClient.java" | cut -d' ' -f1)" "$(sha1sum "$T/java/kc-examples/src/main/java/kc/examples/QuickStart.java" | cut -d' ' -f1)" > "$D/java.run.json"
 }
+# `run kotlin` 의 데이터(JaCoCo XML)와 javap 의 출력 — 기록을 쓴다(java 와 같은 리더).
+kotlin_data() { # fixture-xml
+  cp "$1" "$D/kotlin.xml"
+  cp "$FIX/data/kotlin.javap.txt" "$D/kotlin.javap.txt"
+  kotlin_mark 0
+}
+# `run kotlin` 의 기록 — java 의 것에 모듈 이름(META-INF/<모듈>.kotlin_module — `internal` 멤버 이름의 접미)이 더해진다.
+kotlin_mark() { # exit
+  printf '{"run":"kotlin","exit":%s,"jacoco":"0.8.16","module":"kc-kotlin","data_sha1":"%s","javap_sha1":"%s","tests":{"completed":1,"failures":0,"errors":0,"skipped":0},"unit":0,"files":{"kotlin/src/main/kotlin/kc/auth/AuthClient.kt":"%s","kotlin/src/main/kotlin/kc/examples/QuickStart.kt":"%s"}}\n' "$1" \
+    "$(sha1sum "$D/kotlin.xml" | cut -d' ' -f1)" "$(sha1sum "$D/kotlin.javap.txt" | cut -d' ' -f1)" \
+    "$(sha1sum "$T/kotlin/src/main/kotlin/kc/auth/AuthClient.kt" | cut -d' ' -f1)" "$(sha1sum "$T/kotlin/src/main/kotlin/kc/examples/QuickStart.kt" | cut -d' ' -f1)" > "$D/kotlin.run.json"
+}
 run() {
   git -C "$T" add -A
   OUT="$(node "$TOOL" "$@" 2>&1)" && RC=0 || RC=$?
@@ -163,7 +185,8 @@ assert_line "$OUT" "[rust] pin OK — 3 files equal the derivation from .github/
 assert_line "$OUT" "[php] pin OK — 2 files equal the derivation from php/phpunit.xml:11 (phpunit <source><exclude>)" "[check] php 핀 = 파생"
 assert_line "$OUT" "[ruby] pin OK — 3 files equal the derivation from ruby/spec/spec_helper.rb:8 (SimpleCov skip)" "[check] ruby 핀 = 파생"
 assert_line "$OUT" "[dotnet] pin OK — 2 files equal the derivation from dotnet/coverlet.runsettings:9 (coverlet <Exclude>)" "[check] dotnet 핀 = 파생"
-assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 · php 2 · ruby 3 · dotnet 2 · java 2 files pinned · 66 owner entries, all open" "[check] 요약"
+assert_line "$OUT" "[kotlin] pin OK — 2 files equal the derivation from kotlin/build.gradle.kts:46 (kover excludes.classes)" "[check] kotlin 핀 = 파생"
+assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 · php 2 · ruby 3 · dotnet 2 · java 2 · kotlin 2 files pinned · 94 owner entries, all open" "[check] 요약"
 
 run report go "$T" --out "$D"
 assert_eq 0 "$RC" "[go] 건강한 리포트는 exit 0 — 출력: $OUT"
@@ -416,6 +439,127 @@ assert_not_contains "$OUT" "AuthClient\$1" "[java] 익명 클래스는 감싼 �
 assert_not_contains "$OUT" "<clinit>" "[java] 정적 초기화는 미실행 목록에 들지 않는다"
 assert_not_contains "$OUT" "Config" "[java] 경계 밖 파일은 리포트에 없다"
 assert_line "$OUT" "integration-coverage [java]: OK — lines 22/31 (71.0%) · bodies 18/27 (66.7%) · 5 never-executed functions, all owned by open registry items" "[java] 통과 요약"
+# kotlin — java 와 같은 리더(JaCoCo XML + javap)이되, 합성 메서드는 이름이 아니라 클래스 파일의 코드로 접는다(ktFold): 람다(와
+# invokedynamic 의 구현인 private static — SAM 참조 어댑터)는 그것을 만드는 invokedynamic 이 든 메서드 · 기본 인자 다리와 기본 인자
+# 생성자는 그것이 부르는 같은 클래스의 대상 · 로컬 함수(private static) · 합성 접근자 `access$…` · `$suspendImpl` 은 그것을 부르는
+# 메서드 · 익명 · 로컬 클래스는 EnclosingMethod(생성자 · 클래스 수준이면 그 클래스를 `new` 하거나 INSTANCE 를 읽는 메서드 — 생성자
+# 여럿이면 그들이 함께 가진다) · 컴패니언 `@JvmStatic` 바깥 다리는 그것이 부르는 컴패니언 멤버(그 멤버에 표지가 있을 때만). 그 밖의
+# `$` 든 이름은 모른다(FAIL). 접기가 자기에게 돌아온 자리는 뺀다(기본 인자 · 서로 부르는 로컬 함수). 픽스처의 꼴(kotlinc 2.4.21 이 낸
+# 것 — 둘째 줄부터는 독립 레그 1 · 2 · 3 이 보인 꼴):
+# `internal` 의 모듈 접미(`mask$kc_kotlin` · 그 다리 `mask$kc_kotlin$default`) · 다리 `label$default` · 오버로드의 람다
+# (`token$lambda$0/1`) · 속성 초기화의 람다(Companion `UPPER$lambda$0` → 정적 초기화 · 인스턴스 `greet$lambda$0` → 생성자) · 초기화
+# 블록의 람다(`_init_$lambda$0`) · 람다 안의 람다(`nested$lambda$0$0`) · 로컬 함수(`withLocal$inner`)와 그 람다 · 로컬 클래스
+# (`AuthClient$withLocalClass$Local` — 이름에 숫자가 없다) · `@JvmName("joinInts")` 쪽 람다(`join$lambda$1` — 만드는 것은 joinInts) ·
+# 기본 인자 생성자와 그 기본값 람다 · 컴패니언 init 람다(둘 다 `_init_$lambda$N` — 만드는 것이 생성자 · 정적 초기화로 갈린다) ·
+# object 의 `@JvmStatic` 다리(받는 쪽이 없다 — `pick(AuthClientDefaults, int)` 의 것) · `load$suspendImpl` · 인터페이스 다리
+# (`AuthClientApi$DefaultImpls.ping$default` 는 인터페이스의 같은 이름 다리를 부른다) · 값 클래스 맹글(`byId-tzrl3XM` — 이름에 `-`) ·
+# 안 실린 object 의 정적 초기화와 그 람다(`AuthClientIdle`) · 기본 인자 · 서로 부르는 · 자기 람다가 다시 부르는 로컬 함수
+# (`AuthClientLocals`) · 본 생성자 없는 클래스의 속성 초기화 객체(`AuthClientError` — 두 생성자가 함께) · 첫 생성자가 맡기는 클래스
+# (`AuthClientMixed` — EnclosingMethod 는 첫 생성자) · 컴패니언 `@JvmStatic`(`AuthClientStatic`) · 기본값이 `ArrayList` 를 만드는 생성자와
+# `List.size` 를 부르는 다리(`AuthClientBag`) · 정적 초기화의 suspend 람다와 싱글턴 fun interface(`AuthClientHooks`) · 함수 참조로 쓰인
+# 로컬 함수(합성 접근자 `access$…` 를 거친다)와 init 블록의 로컬 함수 `_init_$warm`(`AuthClientRefs`) · 인라인 함수의 람다 클래스
+# (`AuthClientInline$wrap$1` — 인라인된 호출부에서도 `new` 된다: 어휘로 접는다) · 오버로드된 open suspend fun(`AuthClientLoaders`) ·
+# 생성자 둘이 함께 만드는 suspend 람다(`AuthClientSusp`) · 진짜 `@JvmStatic` 이 표지 있는 같은 이름을 부르지만 다리가 아닌 꼴 셋(받는 쪽에
+# 표지가 없다 `AuthClientTokens` · 받는 쪽이 정적이다 `AuthClientNest` · 바로 아래가 아닌 컴패니언이다 `AuthClientRelay`) · 컴패니언
+# `@JvmStatic val`(`AuthClientProps` — 표지는 `getP$annotations`) · 게터 안의 로컬 함수와 Java SAM 참조 어댑터(`AuthClientShapes` —
+# 둘 다 private static) · 최상위 함수의 Java SAM 참조(`makeOps` — 어댑터 `makeOps$privTwice` 만 만들고 참조된 함수는 안 돈다) ·
+# 컴패니언 `@JvmStatic var`(`AuthClientVars` — 세터 다리의 표지는 게터의 `getV$annotations` · `isOn$annotations` 에 있다 ·
+# `@set:JvmStatic` · `@JvmOverloads`) · 독립 레그 4 가 보인 다리 · 사본 · 인라인된 호출부(`AuthClientInlines` — 몸통을 품어 대상을 안
+# 부르는 기본 인자 인라인 함수의 다리 · 기본값 람다의 클래스 · suspend inline 의 `runS$$forInline` · `AuthClientOvd` — 기본값이 같은
+# 이름의 오버로드를 불러 대상이 둘인 다리 · `AuthClientCfg` — 기본값을 보조 생성자가 만드는 기본 인자 생성자 · `AuthClientCross` —
+# crossinline 람다 안의 로컬 함수, 그 호출자는 `…$useLocal$$inlined$wrapC$1`) · 독립 레그 5 가 보인 다리의 대상(`AuthClientLog` — 인라인
+# 함수의 다리가 몸통에서 다른 오버로드 debug(String) 을 부른다 · `AuthClientWide` — 매개변수 33 이라 마스크가 둘 · `AuthClientObjPick` ·
+# `ObjPick2` — 받는 쪽 둘 다 맞는다: 인라인 다리는 지역 변수표가, 보통 다리는 부르는 쪽이 가른다. 인라인 함수는 경계 클래스 안에서
+# 부른다 — 인라인된 사본이 경계 클래스에서 돌아야 JaCoCo 가 그 함수와 다리에 친다) · 독립 레그 6 이 보인 꼴(`AuthClientBase` — 재정의된
+# open fun 의 다리는 가상 호출로 재정의를 불러 그 몸통은 안 돈다 · `AuthClientSealed` — sealed 의 기본 인자 생성자가 합성 접근 생성자를
+# 거친다) · suspend 의 이어받기
+# 클래스(줄이 없다) · 파일 파사드(`QuickStartKt` · `AuthClientKt`). suspend 함수의 데이터 첫 줄(29)은 줄표의 가장 앞 줄(28)이 아니다
+# (JaCoCo 가 선언 줄의 상태 기계 분기를 거른다) — 그 메서드의 줄이기만 하면 된다.
+fresh
+run report kotlin "$T" --out "$D"
+assert_eq 0 "$RC" "[kotlin] 건강한 리포트는 exit 0 — 출력: $OUT"
+assert_line "$OUT" "[kotlin] integration-only coverage — report mode, no floor" "[kotlin] 머리줄"
+assert_line "$OUT" "  boundary: 2 files derived from kotlin/build.gradle.kts:46 (kover excludes.classes) — equal to the pin in scripts/integration-coverage.json" "[kotlin] 파생 출처"
+assert_contains "$OUT" "/kotlin.xml (JaCoCo 0.8.16 · 1 session · 1 integration test)" "[kotlin] 데이터 · JaCoCo 판 · 세션 · 테스트 수를 찍는다"
+assert_line "$OUT" "  kotlin/src/main/kotlin/kc/auth/AuthClient.kt lines 175/223 78.5% · bodies 172/221 77.8%" "[kotlin] AuthClient.kt — 정적 초기화만 돈 줄(REALM 등)은 몸통으로 안 덮였다"
+assert_line "$OUT" "  kotlin/src/main/kotlin/kc/examples/QuickStart.kt lines 0/3 0.0% · bodies 0/3 0.0%" "[kotlin] 최상위 함수의 파일"
+assert_line "$OUT" "  total lines 175/226 77.4% · bodies 172/224 76.8%" "[kotlin] 합계는 경계 파일만(Config.kt 제외)"
+assert_line "$OUT" "  never executed by the integration run — 28 functions (none of its lines ran):" "[kotlin] 미실행 머리줄"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:9 AuthClient.Companion.getREALM · 1 line · owner open-admin" "[kotlin] 안 읽은 Companion 속성의 getter — 그 줄을 정적 초기화가 돌아도 미실행이다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:25 AuthClient.token(String, int) · 1 line · owner open-admin" "[kotlin] 오버로드는 서술자로 가른다 — 그 람다는 만든 오버로드에 붙는다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:51 AuthClient.unused · 1 line · owner open-admin" "[kotlin] 안 부른 메서드"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:78 AuthClient.withLocalClass · 4 lines · owner open-admin" "[kotlin] 로컬 클래스(이름에 숫자 없음)의 줄은 감싼 메서드의 것이다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:87 AuthClient.join · 1 line · owner open-admin" "[kotlin] joinInts 만 돈 실행 — join\$lambda\$1 은 joinInts 의 것이라 join 은 미실행이다(이름으로 접으면 숨었다)"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:95 AuthClientStatus.<init> · 4 lines · owner open-admin" "[kotlin] 정적 초기화가 만든 컴패니언 init 람다는 안 돈 생성자를 실행된 것으로 만들지 않는다 — 기본 인자 생성자 · 기본값 람다는 그 생성자의 것"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:117 AuthClientDefaults.pick(int) · 1 line · owner open-admin" "[kotlin] @JvmStatic 다리는 그것이 부르는 pick(AuthClientDefaults, int) 의 것 — 안 부른 pick(int) 는 미실행이다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:174 AuthClientError.<init>(String) · 3 lines · owner open-admin" "[kotlin] 두 생성자가 함께 만든 초기화 객체는 안 돈 생성자의 실행 근거가 아니다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:189 AuthClientMixed.<init>(String) · 1 line · owner open-admin" "[kotlin] EnclosingMethod 는 첫 생성자지만 초기화 객체를 만드는 것은 둘째다 — 첫째는 미실행이다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:254 AuthClientLoaders.load(String, Continuation) · 2 lines · owner open-admin" "[kotlin] 오버로드된 open suspend fun — load\$suspendImpl 은 저마다 그 오버로드다(안 부른 쪽만 미실행)"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:262 AuthClientSusp.<init>(int) · 4 lines · owner open-admin" "[kotlin] 생성자 둘이 함께 만든 suspend 람다(create() 의 자기 자리는 뺀다)는 안 돈 생성자의 실행 근거가 아니다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:282 AuthClientTokens.parse · 1 line · owner open-admin" "[kotlin] 진짜 @JvmStatic 메서드(중첩 클래스의 같은 이름을 부른다)는 다리가 아니다 — 안 돌았으니 미실행(Parser.parse 는 돌았다)"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:321 AuthClientNest.f · 1 line · owner open-admin" "[kotlin] 표지 있는 정적 메서드(중첩 object 의 @JvmStatic)를 부르는 것은 다리가 아니다 — 다리가 부르는 것은 인스턴스 메서드다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:335 AuthClientRelay.f · 1 line · owner open-admin" "[kotlin] 바로 아래가 아닌 컴패니언(Target\$Companion)을 부르는 것은 다리가 아니다 — 그 다리는 Target 에 있다(접혔다)"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:340 AuthClientKt.privTwice · 1 line · owner open-admin" "[kotlin] SAM 참조된 private 최상위 함수 — invokedynamic 의 구현은 어댑터(makeOps\$privTwice)라 그 함수는 따로다(안 돌았다)"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:342 AuthClientKt.pubTwice · 1 line · owner open-admin" "[kotlin] SAM 참조된 public 최상위 함수도 같다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:426 AuthClientLog.debug(String) · 1 line · owner open-admin" "[kotlin] 인라인 함수의 다리(돌았다고 친다)는 몸통이 부르는 debug(String) 이 아니라 다리 서술자의 debug(Throwable, Function0) 의 것 — 안 돈 debug(String) 이 숨지 않는다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:442 AuthClientWide.wide(int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int) · 1 line · owner open-admin" "[kotlin] 마스크 둘(매개변수 33)을 다 떼야 다리의 대상이다 — 하나만 떼면 이 34 개짜리에 맞아 숨었다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:454 AuthClientObjPick.pick(int) · 1 line · owner open-admin" "[kotlin] 받는 쪽 둘 다 맞는 인라인 다리 — 지역 변수표 슬롯 0(o)이 정적 pick(o, n) 을 고른다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:467 AuthClientObjPick2.pick(int) · 1 line · owner open-admin" "[kotlin] 같은 꼴의 보통 다리 — 지역 변수표가 없어 다리가 끝에 부르는 정적 pick(o, n) 이 대상이다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:476 AuthClientBase.f · 2 lines · owner open-admin" "[kotlin] 재정의된 open fun — 다리(돌았다)는 가상 호출로 재정의를 불렀다: 다리는 그 몸통이 돌았다는 근거가 아니다(돈 다리의 선언 줄 475 는 세지 않는다)"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:499 AuthClientLater.f · 2 lines · owner open-admin" "[kotlin] 다리가 만든 기본값 람다(돌았다)도 근거가 아니다 — 재정의된 몸통은 안 돌았다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:516 AuthClientCmp.g · 3 lines · owner open-admin" "[kotlin] 다리가 감싼 익명 객체(만들었다)도 근거가 아니다 — 그 compare(안 돌았다)의 줄은 그 함수의 안 돈 줄이다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:547 AuthClientIface.h · 3 lines · owner open-admin" "[kotlin] 재정의된 인터페이스 기본 메서드 — 안 돈 DefaultImpls 다리의 선언 줄 546 은 돈 다리의 줄이라 세지 않는다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:566 AuthClientWhen.f · 3 lines · owner open-admin" "[kotlin] 돈 다리 안의 안 돈 기본값 분기 줄 566 은 센다 — 다리 쪽 줄은 줄 단위로 가른다(부분 단위로 빼면 570 부터 2 줄)"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:587 AuthClientShared.<init>(String) · 5 lines · owner open-admin" "[kotlin] 다른 생성자가 돌린 함께 가진 람다의 줄 588 은 안 돈 생성자의 줄로 세지 않는다 — 함께 가진 부분의 줄도 줄 단위(세면 6 줄)"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/examples/QuickStart.kt:7 QuickStartKt.main · 2 lines · owner open-masking" "[kotlin] 최상위 함수는 파일 파사드의 이름이다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/examples/QuickStart.kt:13 QuickStartKt.env · 1 line · owner open-masking" "[kotlin] internal 최상위 함수 — 모듈 접미를 벗긴 이름"
+assert_not_contains "$OUT" "_init_" "[kotlin] 초기화 블록의 람다는 만든 생성자 · 정적 초기화에 접힌다"
+assert_not_contains "$OUT" "AuthClient.greet" "[kotlin] 인스턴스 속성의 람다는 그것을 만든 생성자에 접힌다(생성자가 돌았다)"
+assert_not_contains "$OUT" "AuthClient.mask" "[kotlin] 다리(mask\$kc_kotlin\$default)로 부른 internal 함수는 목록에 없다"
+assert_not_contains "$OUT" "AuthClient.nested" "[kotlin] 람다 안의 람다(nested\$lambda\$0\$0)는 바깥 람다를 거쳐 nested 에 접힌다"
+assert_not_contains "$OUT" "AuthClient.withLocal ·" "[kotlin] 로컬 함수와 그 람다는 부른 · 만든 메서드에 접힌다"
+assert_not_contains "$OUT" "AuthClientLoader." "[kotlin] load\$suspendImpl 은 open suspend fun load 다(돌았다)"
+assert_not_contains "$OUT" "AuthClientApi" "[kotlin] DefaultImpls 다리(안 돌았다)는 인터페이스의 ping 에 접힌다(돌았다)"
+assert_not_contains "$OUT" "AuthClientIdle" "[kotlin] 안 실린 object 의 정적 초기화 · 그 람다는 미실행 목록에 들지 않는다"
+assert_not_contains "$OUT" "byId" "[kotlin] 값 클래스 맹글 이름(byId-tzrl3XM)의 함수와 그 람다(byId_tzrl3XM\$lambda\$0)는 돌았다"
+assert_not_contains "$OUT" "AuthClientLocals" "[kotlin] 접기가 자기에게 돌아오는 로컬 함수들(기본 인자 · 서로 부르기 · 람다가 다시 부르기)은 그 메서드에 접혔다(돌았다)"
+assert_not_contains "$OUT" "AuthClientStatic" "[kotlin] @JvmStatic 바깥 다리(안 돌았다)는 컴패니언의 stat 에 접힌다(돌았다)"
+assert_not_contains "$OUT" "AuthClientBag" "[kotlin] 기본 인자 생성자 · size\$default 는 같은 클래스의 대상에 접힌다"
+assert_not_contains "$OUT" "AuthClientHooks" "[kotlin] 정적 초기화의 suspend 람다 · 싱글턴 fun interface 는 그 object 의 정적 초기화에 접힌다"
+assert_not_contains "$OUT" "AuthClientRefs" "[kotlin] 함수 참조로 쓰인 로컬 함수(access\$ 를 거친다) · init 블록의 로컬 함수(_init_\$warm)는 그 메서드에 접혔다"
+assert_not_contains "$OUT" "AuthClientTokens.Parser" "[kotlin] 중첩 클래스의 parse 는 돌았다"
+assert_not_contains "$OUT" "AuthClientProps" "[kotlin] 컴패니언 @JvmStatic val 의 바깥 게터 다리(안 돌았다)는 컴패니언의 게터에 접힌다(돌았다)"
+assert_not_contains "$OUT" "AuthClientShapes" "[kotlin] 게터 안의 로컬 함수(_get_x_\$loc) · SAM 참조 어댑터(useOp\$loc\$0)는 그 메서드에 접혔다(돌았다)"
+assert_not_contains "$OUT" "AuthClientNest.Inner" "[kotlin] 중첩 object 의 f 는 돌았다"
+assert_not_contains "$OUT" "AuthClientRelay.Target" "[kotlin] Target 의 다리(안 돌았다)는 그 컴패니언의 f 에 접힌다(돌았다)"
+assert_not_contains "$OUT" "makeOps" "[kotlin] SAM 참조 어댑터(makeOps\$privTwice · makeOps\$pubTwice — 안 돌았다)는 그것을 만든 makeOps 에 접힌다(돌았다)"
+assert_not_contains "$OUT" "keepOp" "[kotlin] 부른 최상위 함수는 목록에 없다"
+assert_not_contains "$OUT" "AuthClientVars" "[kotlin] @JvmStatic var 의 바깥 게터 · 세터 다리 · @set:JvmStatic · @JvmOverloads 다리(안 돌았다)는 컴패니언의 멤버에 접힌다(돌았다)"
+assert_not_contains "$OUT" "AuthClientInlines" "[kotlin] 몸통을 품은 인라인 함수의 다리 · 기본값 람다의 클래스 · runS\$\$forInline 은 그 함수에 접힌다"
+assert_not_contains "$OUT" "AuthClientOvd" "[kotlin] 대상이 둘인 다리(pick\$default)는 다리 서술자의 pick(int) 에 접힌다"
+assert_not_contains "$OUT" "AuthClientCfg" "[kotlin] 기본값을 보조 생성자가 만드는 기본 인자 생성자는 본 생성자에 접힌다"
+assert_not_contains "$OUT" "AuthClientCross" "[kotlin] 인라인된 호출부(\$\$inlined\$)가 부른 로컬 함수는 그 호출부를 감싼 useLocal 에 접힌다"
+assert_not_contains "$OUT" "AuthClientLog.debug(Throwable" "[kotlin] 경계 클래스 안에서 인라인된 사본이 돈 인라인 함수 · 그 다리는 돈 것으로 친다(JaCoCo)"
+assert_not_contains "$OUT" "AuthClientWide.wide(int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int) ·" "[kotlin] 매개변수 33 의 인라인 함수는 돌았다"
+assert_not_contains "$OUT" "AuthClientObjPick.pick(AuthClientObjPick" "[kotlin] 정적 인라인 pick(o, n) 은 돌았다"
+assert_not_contains "$OUT" "AuthClientObjPick2.pick(AuthClientObjPick2" "[kotlin] 정적 pick(o, n) 은 돌았다"
+assert_not_contains "$OUT" "AuthClientDerived" "[kotlin] 재정의는 돌았다"
+assert_not_contains "$OUT" "AuthClientSealed" "[kotlin] sealed 의 기본 인자 생성자 · 합성 접근 생성자는 본 생성자에 접힌다(돌았다)"
+assert_not_contains "$OUT" "AuthClientSink" "[kotlin] 몸통 없는 추상 멤버 — 다리가 돈 것이 불린 근거다(안 불린 기본값 람다만으로 미실행이 아니다)"
+assert_not_contains "$OUT" "AuthClientLaterSub" "[kotlin] 재정의는 돌았다"
+assert_not_contains "$OUT" "AuthClientCmpSub" "[kotlin] 재정의는 돌았다"
+assert_not_contains "$OUT" "AuthClientIfaceImpl" "[kotlin] 재정의는 돌았다"
+assert_not_contains "$OUT" "AuthClientWhenSub" "[kotlin] 재정의는 돌았다"
+assert_not_contains "$OUT" "AuthClientShared.<init>(int)" "[kotlin] 돈 생성자는 목록에 없다"
+assert_not_contains "$OUT" "\$kc_kotlin" "[kotlin] internal 의 모듈 접미를 내지 않는다"
+assert_not_contains "$OUT" "\$default" "[kotlin] 기본 인자 다리는 그 함수에 접힌다"
+assert_not_contains "$OUT" "lambda\$" "[kotlin] 람다의 이름을 내지 않는다"
+assert_not_contains "$OUT" "AuthClient\$" "[kotlin] 익명 객체 · 로컬 클래스 · 이어받기 클래스의 이름을 내지 않는다"
+assert_not_contains "$OUT" "token(String) ·" "[kotlin] 부른 오버로드는 목록에 없다"
+assert_not_contains "$OUT" "AuthClient.fetch" "[kotlin] 부른 suspend 함수는 목록에 없다"
+assert_not_contains "$OUT" "<clinit>" "[kotlin] 정적 초기화는 미실행 목록에 들지 않는다"
+assert_not_contains "$OUT" "Config" "[kotlin] 경계 밖 파일은 리포트에 없다"
+assert_line "$OUT" "integration-coverage [kotlin]: OK — lines 175/226 (77.4%) · bodies 172/224 (76.8%) · 28 never-executed functions, all owned by open registry items" "[kotlin] 통과 요약"
 
 # ── (2) 음성: 파생 ↔ 핀───────────────────────────────────────────────────────────────────────
 # 파생이 좁아진다 — 이것이 등록부가 실측한 함정의 꼴이다(파일이 빠지면 %가 오른다).
@@ -1714,6 +1858,15 @@ run report java "$T" --out "$D"
 assert_eq 0 "$RC" "[java] 오버로드 안 익명 클래스는 서술자로 접힌다 — exit 0 — 출력: $OUT"
 assert_line "$OUT" "  never executed by the integration run — 5 functions (none of its lines ran):" "[java] 익명 클래스가 다른 오버로드를 목록에서 안 뺀다"
 assert_line "$OUT" "  NEVER java/kc-auth/src/main/java/kc/auth/AuthClient.java:36 AuthClient.token(String, int) · 1 line · owner open-admin" "[java] 안 부른 오버로드는 그대로 목록에 있다"
+# 오버로드된 메서드의 **람다 안** 익명 클래스 — 감싼 것이 람다라 서술자가 없다(EnclosingMethod 를 lambda$token$3 으로 바꿨다). 줄로
+# 짐작하지 않는다 — 까닭은 서술자다(람다의 줄이 아니다).
+fresh
+sed -i 's|^  #43 = NameAndType        #44:#45        // sorted:(Ljava/util/List;)Ljava/util/List;$|&\n  #90 = NameAndType        #44:#45        // lambda$token$3:(Ljava/lang/String;I)Ljava/lang/String;|; s|^EnclosingMethod: #41\.#43 |EnclosingMethod: #41.#90 |' "$D/java.javap.txt"
+java_mark 0
+assert_contains "$(cat "$D/java.javap.txt")" '// lambda$token$3:(Ljava/lang/String;I)Ljava/lang/String;' "(변이가 착지했는지 먼저 본다)"
+run report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 오버로드의 람다 안 익명 클래스는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.token has overloads and a part attached by a descriptor (enclosing, creating or called method) that is none of theirs" "[java] 서술자로 못 붙는 부분"
 # 안 부른 정적 람다 — 정적 초기화에 접혀 목록에 없고, 실릴 때 돈 그 줄(정적 초기화와 함께 가진 줄)은 몸통으로 안 덮였다.
 fresh
 sed -i 's#<method name="lambda$static$0" desc="(Ljava/lang/String;)Ljava/lang/String;" line="14"><counter type="INSTRUCTION" missed="0" covered="3"/><counter type="LINE" missed="0" covered="1"/>#<method name="lambda$static$0" desc="(Ljava/lang/String;)Ljava/lang/String;" line="14"><counter type="INSTRUCTION" missed="3" covered="0"/><counter type="LINE" missed="1" covered="0"/>#; s#<line nr="14" mi="0" ci="6" mb="0" cb="0"/>#<line nr="14" mi="3" ci="3" mb="0" cb="0"/>#' "$D/java.xml"
@@ -1844,6 +1997,315 @@ sed -i '/AuthClient.java:AuthClient.unused/d' "$T/scripts/integration-coverage.j
 run report java "$T" --out "$D"
 assert_eq 1 "$RC" "[java] 소유자 없는 미실행 함수는 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [java] unowned never-executed function java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.unused" "[java] 소유자 키"
+# kotlin — 리더는 java 의 것이다(위 java 음성이 그 판정을 잰다). 여기서는 kotlin 에만 있는 갈래를 잰다: 기록의 모듈 이름 ·
+# 코드로 접기(다리가 부르는 대상 · 람다를 만드는 메서드 · 로컬 함수를 부르는 메서드 · 익명 객체를 `new` 하는 메서드 — 못 찾거나
+# 갈리면 FAIL) · 첫 줄의 소속 규칙 · kotlin 기록의 문구.
+# 모듈 이름 — `internal` 의 접미를 벗기는 데 쓴다. 기록에 없거나 비었으면 데이터를 읽지 않는다.
+fresh
+sed -i 's#"module":"kc-kotlin",##' "$D/kotlin.run.json"
+assert_not_contains "$(cat "$D/kotlin.run.json")" '"module"' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 모듈 이름 없는 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [kotlin] no Kotlin module name in " "[kotlin] 모듈 이름 없음"
+fresh
+sed -i 's#"module":"kc-kotlin"#"module":""#' "$D/kotlin.run.json"
+assert_contains "$(cat "$D/kotlin.run.json")" '"module":""' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 빈 모듈 이름은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [kotlin] no Kotlin module name in " "[kotlin] 빈 모듈 이름"
+# 다른 모듈 이름 — `mask$kc_kotlin` 의 접미가 안 벗겨져 이름을 못 붙인다(조용히 다른 이름으로 접지 않는다).
+fresh
+sed -i 's#"module":"kc-kotlin"#"module":"kc-other"#' "$D/kotlin.run.json"
+assert_contains "$(cat "$D/kotlin.run.json")" '"module":"kc-other"' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 다른 모듈의 접미는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient.mask\$kc_kotlin(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;" "[kotlin] 안 벗겨진 접미"
+# 기록이 없거나 다른 레인의 것 — kotlin 은 모듈 이름 없이 데이터를 못 읽으므로 「기록 없음」만 낸다(java 는 데이터 판정도 함께 낸다).
+fresh
+rm "$D/kotlin.run.json"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] run 기록이 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "no record that \`run kotlin\` wrote this data" "[kotlin] 기록 없음 — 「모듈 이름 없음」이 아니다"
+assert_not_contains "$OUT" "no Kotlin module name" "[kotlin] 기록 없음을 모듈 이름 탓으로 대지 않는다"
+# java 가 쓴 꼴의 기록(모듈 이름이 없다) — 까닭은 「다른 레인의 기록」이지 「모듈 이름 없음」이 아니다.
+fresh
+sed -i 's#"run":"kotlin"#"run":"java"#; s#"module":"kc-kotlin",##' "$D/kotlin.run.json"
+assert_contains "$(cat "$D/kotlin.run.json")" '"run":"java"' "(변이가 착지했는지 먼저 본다)"
+assert_not_contains "$(cat "$D/kotlin.run.json")" '"module"' "(변이가 착지했는지 먼저 본다 — 모듈 이름)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 다른 레인이 쓴 꼴의 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "no record that \`run kotlin\` wrote this data" "[kotlin] 다른 레인의 기록"
+assert_not_contains "$OUT" "no Kotlin module name" "[kotlin] 다른 레인의 기록을 모듈 이름 탓으로 대지 않는다"
+# 첫 줄 — kotlin 은 줄표의 가장 앞 줄이 아니라 줄표에 드는지를 본다(양성의 fetch: 데이터 29 · 줄표 {28, 29, 30}). 줄표 밖이면 FAIL.
+fresh
+sed -i 's#<method name="fetch" desc="(Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;" line="29">#<method name="fetch" desc="(Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;" line="31">#' "$D/kotlin.xml"
+kotlin_mark 0
+assert_contains "$(cat "$D/kotlin.xml")" 'Lkotlin/coroutines/Continuation;)Ljava/lang/Object;" line="31">' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 줄표 밖의 첫 줄은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "kc/auth/AuthClient.fetch(Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object; — the data and the class facts disagree (first line 31 vs 28)" "[kotlin] 첫 줄 불일치"
+# 기본 인자 다리는 **그것이 끝에 부르는 같은 이름**의 것이다(인라인 함수의 다리는 지역 변수표의 매개변수로 — 양성의 AuthClientLog).
+# 그러나 그 함수가 돌았다는 근거는 아니다 — 다리는 기본값을 계산하고 가상 호출로 넘긴다(재정의된 open fun 은 몸통이 안 돈다 — 독립
+# 레그 6, 양성의 AuthClientBase). 다리를 token(String, int) 의 다리 `token$default(AuthClient, String, int, int, Object)` 로 바꾸면(그것을
+# 부르게도 했다) 그 다리는 token(String, int) 에 접히지만, 다리가 돌았어도(label() 을 불렀다) token(String, int) 는 미실행이고 돈 다리의
+# 줄(37)은 그 함수의 안 돈 줄로 세지 않는다(1 줄 — 세면 2 줄, 독립 레그 7).
+fresh
+sed -i 's#<method name="label\$default" desc="(Lkc/auth/AuthClient;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;"#<method name="token$default" desc="(Lkc/auth/AuthClient;Ljava/lang/String;IILjava/lang/Object;)Ljava/lang/String;"#' "$D/kotlin.xml"
+sed -i 's#^  public static java.lang.String label\$default(kc.auth.AuthClient, java.lang.String, int, java.lang.Object);$#  public static java.lang.String token$default(kc.auth.AuthClient, java.lang.String, int, int, java.lang.Object);#' "$D/kotlin.javap.txt"
+sed -i '/^  public static java.lang.String token\$default(/,/^      LineNumberTable:$/ s#^    descriptor: (Lkc/auth/AuthClient;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;$#    descriptor: (Lkc/auth/AuthClient;Ljava/lang/String;IILjava/lang/Object;)Ljava/lang/String;#' "$D/kotlin.javap.txt"
+sed -i '/^  public static java.lang.String token\$default(/,/^      LineNumberTable:$/ s#// Method label:(Ljava/lang/String;)Ljava/lang/String;$#// Method token:(Ljava/lang/String;I)Ljava/lang/String;#' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(sed -n '/^  public static java.lang.String token\$default(/,/^      LineNumberTable:$/p' "$D/kotlin.javap.txt")" '// Method token:(Ljava/lang/String;I)Ljava/lang/String;' "(변이가 착지했는지 먼저 본다)"
+assert_contains "$(sed -n '/^  public static java.lang.String token\$default(/,/^      LineNumberTable:$/p' "$D/kotlin.javap.txt")" '    descriptor: (Lkc/auth/AuthClient;Ljava/lang/String;IILjava/lang/Object;)Ljava/lang/String;' "(변이가 착지했는지 먼저 본다 — 서술자)"
+assert_contains "$(cat "$D/kotlin.xml")" '<method name="token$default" desc="(Lkc/auth/AuthClient;Ljava/lang/String;IILjava/lang/Object;)Ljava/lang/String;"' "(변이가 착지했는지 먼저 본다 — 데이터)"
+run report kotlin "$T" --out "$D"
+assert_eq 0 "$RC" "[kotlin] 다리는 그것이 부르는 오버로드의 실행 근거가 아니다 — exit 0 — 출력: $OUT"
+assert_line "$OUT" "  never executed by the integration run — 28 functions (none of its lines ran):" "[kotlin] 목록은 그대로"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:25 AuthClient.token(String, int) · 1 line · owner open-admin" "[kotlin] 다리는 그것이 부르는 오버로드에 접히되 그 오버로드는 그대로 미실행이다 — 돈 다리의 줄은 세지 않는다"
+# 몸통 없는 추상 멤버(AuthClientSink.put — 다리 둘 · 기본값 람다뿐)는 다리가 돈 것이 불린 근거다(양성 — 목록에 없다). 그 다리마저 안
+# 돌았으면(데이터의 인터페이스 쪽 put$default 를 미실행으로 바꿨다) 불리지 않은 멤버다 — 미실행에 뜬다(다리 쪽을 근거에서 다 빼면 숨는다).
+fresh
+sed -i 's#\(<method name="put\$default" desc="(Lkc/auth/AuthClientSink;ILkotlin/jvm/functions/Function0;ILjava/lang/Object;)I" line="530"><counter type="INSTRUCTION" \)missed="0" covered="10"/><counter type="LINE" missed="0" covered="2"/>#\1missed="10" covered="0"/><counter type="LINE" missed="2" covered="0"/>#' "$D/kotlin.xml"
+# 그 다리의 줄도 안 돈 것으로(줄 단위 — 다리 쪽 줄은 줄의 실행 수로 센다).
+sed -i 's#<line nr="530" mi="6" ci="8" #<line nr="530" mi="14" ci="0" #; s#<line nr="532" mi="2" ci="2" #<line nr="532" mi="4" ci="0" #' "$D/kotlin.xml"
+kotlin_mark 0
+assert_contains "$(cat "$D/kotlin.xml")" '<method name="put$default" desc="(Lkc/auth/AuthClientSink;ILkotlin/jvm/functions/Function0;ILjava/lang/Object;)I" line="530"><counter type="INSTRUCTION" missed="10" covered="0"/><counter type="LINE" missed="2" covered="0"/>' "(변이가 착지했는지 먼저 본다)"
+assert_contains "$(cat "$D/kotlin.xml")" '<line nr="530" mi="14" ci="0" ' "(변이가 착지했는지 먼저 본다 — 줄 530)"
+assert_contains "$(cat "$D/kotlin.xml")" '<line nr="532" mi="4" ci="0" ' "(변이가 착지했는지 먼저 본다 — 줄 532)"
+run report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[kotlin] 다리가 안 돈 추상 멤버는 미실행이다 — 소유자 없어 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.kt:530 AuthClientSink.put · 3 lines · owner NONE" "[kotlin] 몸통 없는 멤버는 다리 쪽 부분이 근거다"
+# 이름이 같은 대상을 안 부르는 인라인 아닌 다리(`blank$default` 가 label 을 부른다) — 접을 곳을 모른다(서술자로 짐작하지 않는다).
+fresh
+sed -i 's#<method name="label\$default" #<method name="blank$default" #' "$D/kotlin.xml"
+sed -i 's#^  public static java.lang.String label\$default(#  public static java.lang.String blank$default(#' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(cat "$D/kotlin.javap.txt")" '  public static java.lang.String blank$default(' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 대상을 안 부르고 그 대상도 없는 다리는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient.blank\$default(Lkc/auth/AuthClient;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String; — the class files show no single method that creates, calls or encloses it" "[kotlin] 부르는 대상 · 서술자의 대상 없는 다리"
+# `@file:JvmMultifileClass` — 파사드(kotlin 메타데이터 k=4)는 부분 클래스(k=5 · JVM 합성)로 넘기기만 하고 JaCoCo 는 합성 클래스의 메서드를
+# 안 싣는다(독립 레그 7 실측 — 그 파일의 줄이 데이터에 없어 분모가 조용히 줄고 함수마다 1 줄로 떴다): 셀 수 없는 꼴이라 FAIL 이다.
+# 파일 파사드 AuthClientKt 의 종류를 4 로 · 클래스 AuthClientBag 의 종류를 5 로 바꿨다.
+fresh
+sed -i '/^Classfile kotlin\/build\/classes\/kotlin\/main\/kc\/auth\/AuthClientKt\.class$/,/^Classfile / s/^      k=2$/      k=4/' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(sed -n '/^Classfile kotlin\/build\/classes\/kotlin\/main\/kc\/auth\/AuthClientKt\.class$/,/^Classfile /p' "$D/kotlin.javap.txt")" '      k=4' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 멀티파일 파사드는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [kotlin] kotlin/src/main/kotlin/kc/auth/AuthClient.kt: kc/auth/AuthClientKt — a @file:JvmMultifileClass facade only forwards to its synthetic part class, whose methods JaCoCo does not report: the file's lines are not in the data" "[kotlin] 멀티파일 파사드(k=4)"
+assert_not_contains "$OUT" "OK —" "[kotlin] 셀 수 없는 파일에서 수치를 내지 않는다"
+fresh
+sed -i '/^Classfile kotlin\/build\/classes\/kotlin\/main\/kc\/auth\/AuthClientBag\.class$/,/^Classfile / s/^      k=1$/      k=5/' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(sed -n '/^Classfile kotlin\/build\/classes\/kotlin\/main\/kc\/auth\/AuthClientBag\.class$/,/^Classfile /p' "$D/kotlin.javap.txt")" '      k=5' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 멀티파일 부분 클래스는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [kotlin] kotlin/src/main/kotlin/kc/auth/AuthClient.kt: kc/auth/AuthClientBag — a @file:JvmMultifileClass facade" "[kotlin] 멀티파일 부분(k=5)"
+# 종류는 kotlin.Metadata 의 k 만이다 — 같은 클래스의 다른 주석 요소 `k=5`(kotlin.Metadata 뒤에 넣었다)는 종류가 아니다.
+fresh
+sed -i '/^Classfile kotlin\/build\/classes\/kotlin\/main\/kc\/auth\/AuthClientBag\.class$/,/^Classfile / s/^    )$/    )\n    kc.auth.Marker(\n      k=5\n    )/' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_eq 1 "$(sed -n '/^Classfile kotlin\/build\/classes\/kotlin\/main\/kc\/auth\/AuthClientBag\.class$/,/^Classfile /p' "$D/kotlin.javap.txt" | grep -c '^      k=5$')" "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 0 "$RC" "[kotlin] 다른 주석의 k 요소는 종류가 아니다 — exit 0 — 출력: $OUT"
+# 람다는 그것을 만드는 invokedynamic 의 메서드다 — 그런 메서드가 없으면(이름을 바꿔 부트스트랩 핸들과 어긋나게 했다) 접지 않는다.
+fresh
+sed -i 's#<method name="token\$lambda\$0" #<method name="tok$en$lambda$0" #' "$D/kotlin.xml"
+sed -i 's#^  private static final java.lang.String token\$lambda\$0(kc.auth.AuthClient, java.lang.String);$#  private static final java.lang.String tok$en$lambda$0(kc.auth.AuthClient, java.lang.String);#' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(cat "$D/kotlin.javap.txt")" '  private static final java.lang.String tok$en$lambda$0(kc.auth.AuthClient, java.lang.String);' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 만드는 메서드가 없는 람다는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient.tok\$en\$lambda\$0(" "[kotlin] 만드는 메서드 없음"
+# 두 메서드가 같은 람다를 만들고 둘이 다른 멤버다(token(String) 의 invokedynamic 줄을 unused 에도 넣었다) — 한쪽을 고르지 않는다.
+fresh
+ind="$(sed -n '/^  public final java.lang.String token(java.lang.String);$/,/^      LineNumberTable:$/p' "$D/kotlin.javap.txt" | grep 'invokedynamic' | sed 's#^ *[0-9]*: #         0: #')"
+sed -i "/^  public final java.lang.String unused();\$/,/^      LineNumberTable:\$/ s|^\(      stack=.*\)\$|\1\n$ind|" "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_eq 1 "$(sed -n '/^  public final java.lang.String unused();$/,/^      LineNumberTable:$/p' "$D/kotlin.javap.txt" | grep -c 'invokedynamic')" "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 만드는 메서드 둘이 갈리는 람다는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient.token\$lambda\$0(Lkc/auth/AuthClient;Ljava/lang/String;)Ljava/lang/String; — the class files show no single method that creates, calls or encloses it" "[kotlin] 갈리는 만드는 메서드"
+# 로컬 함수는 그것을 부르는 메서드다 — 부르는 줄을 지우면 접을 곳이 없다.
+fresh
+sed -i '/^  public final java.lang.String withLocal();$/,/^      LineNumberTable:$/ { /invokestatic .*\/\/ Method withLocal\$inner:/d }' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_not_contains "$(cat "$D/kotlin.javap.txt")" 'Method withLocal$inner:' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 부르는 메서드가 없는 로컬 함수는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient.withLocal\$inner(Lkc/auth/AuthClient;Ljava/lang/String;)Ljava/lang/String;" "[kotlin] 부르는 메서드 없음"
+# 서로만 부르는 로컬 함수(withMutual 이 a 를 부르는 줄을 지웠다) — 순환을 빼면 남는 자리가 없다: 「정보 없음」은 「모른다」로 끝난다.
+fresh
+sed -i '/^  public final int withMutual(int);$/,/^      LineNumberTable:$/ { /invokestatic .*\/\/ Method withMutual\$a:(I)I$/d }' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_eq 0 "$(sed -n '/^  public final int withMutual(int);$/,/^      LineNumberTable:$/p' "$D/kotlin.javap.txt" | grep -c 'withMutual\$a')" "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 서로만 부르는 로컬 함수는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClientLocals.withMutual\$a\$b(I)I" "[kotlin] 순환뿐인 자리"
+# 감싼 메서드가 없는 익명 객체(EnclosingMethod 의 메서드 색인 0 — 속성 초기화 · init 블록의 꼴): 그것을 `new` 하는 메서드에 접는다.
+# 픽스처의 `AuthClient$sorted$1` 을 그 꼴로 바꿨다 — `new` 는 sorted 안이라 sorted 에 접히고 목록은 그대로다.
+fresh
+sed -i 's|AuthClient\$sorted\$1|AuthClient$PLAIN$1|g' "$D/kotlin.xml" "$D/kotlin.javap.txt"
+sed -i 's|^EnclosingMethod: #56\.#59 |EnclosingMethod: #56.#0  |' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(cat "$D/kotlin.javap.txt")" 'EnclosingMethod: #56.#0 ' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 0 "$RC" "[kotlin] 감싼 메서드 없는 익명 객체는 new 하는 메서드에 접힌다 — exit 0 — 출력: $OUT"
+assert_line "$OUT" "  never executed by the integration run — 28 functions (none of its lines ran):" "[kotlin] 목록은 그대로"
+assert_not_contains "$OUT" "PLAIN" "[kotlin] 익명 객체의 이름을 내지 않는다"
+# 컴패니언 `@JvmStatic` 바깥 다리의 판별은 **부르는 컴패니언 메서드**의 표지다(다리 쪽 표지만 보면 진짜 메서드가 중첩 클래스의 같은
+# 이름을 부를 때도 접혔다 — 양성의 AuthClientTokens.parse). 컴패니언의 stat 에서 표지를 지우면 다리는 따로 된 멤버로 뜬다(안 돌았다).
+fresh
+sed -i '/^  public final int stat(int);$/,/^$/ { /^ *kotlin\.jvm\.JvmStatic$/d }' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_not_contains "$(sed -n '/^  public final int stat(int);$/,/^$/p' "$D/kotlin.javap.txt")" 'kotlin.jvm.JvmStatic' "(변이가 착지했는지 먼저 본다 — 컴패니언의 stat 에서만 지웠다)"
+assert_contains "$(sed -n '/^  public static final int stat(int);$/,/^$/p' "$D/kotlin.javap.txt")" 'kotlin.jvm.JvmStatic' "(변이가 착지했는지 먼저 본다 — 다리의 표지는 남았다)"
+run report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[kotlin] 컴패니언 쪽 표지 없는 정적 다리는 따로 된 멤버다 — 소유자 없어 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "AuthClientStatic.stat · 1 line · owner NONE" "[kotlin] 컴패니언 메서드의 표지가 판별한다"
+# 컴패니언 `@JvmStatic val` 의 표지는 컴패니언의 `getP$annotations` 에 있다 — 지우면 바깥 게터 다리가 따로 된 멤버로 뜬다(안 돌았다).
+fresh
+sed -i '/^  public static void getP\$annotations();$/,/^$/ { /^ *kotlin\.jvm\.JvmStatic$/d }' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_not_contains "$(sed -n '/^  public static void getP\$annotations();$/,/^$/p' "$D/kotlin.javap.txt")" 'kotlin.jvm.JvmStatic' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[kotlin] 표지 보관 메서드 없는 속성 다리는 따로 된 멤버다 — 소유자 없어 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "AuthClientProps.getP · 1 line · owner NONE" "[kotlin] 속성의 표지는 \$annotations 에서 읽는다"
+# `@JvmStatic var` 의 세터 다리는 게터의 표지로 가른다 — 그러니 다리 쪽은 **정적**이어야 하고(인스턴스 setV 는 따로 된 멤버다 —
+# 표지 없는 받는 쪽을 인스턴스 메서드가 같은 이름으로 부르는 꼴) 게터는 **인스턴스**여야 한다(정적 게터의 표지는 object 의 속성이다).
+# 플래그만 바꿨다 — 각 경우 세터 다리는 따로 된 멤버로 뜬다(안 돌았다).
+fresh
+sed -i '/^  public static final void setV(int);$/,/^$/ s/^    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL$/    flags: (0x0011) ACC_PUBLIC, ACC_FINAL/' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(sed -n '/^  public static final void setV(int);$/,/^$/p' "$D/kotlin.javap.txt")" "    flags: (0x0011) ACC_PUBLIC, ACC_FINAL" "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[kotlin] 인스턴스인 부르는 쪽은 다리가 아니다 — 소유자 없어 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "AuthClientVars.setV · 1 line · owner NONE" "[kotlin] 인스턴스 setV"
+fresh
+sed -i '/^  public final int getV();$/,/^$/ s/^    flags: (0x0011) ACC_PUBLIC, ACC_FINAL$/    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL/' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(sed -n '/^  public final int getV();$/,/^$/p' "$D/kotlin.javap.txt")" "    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL" "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[kotlin] 정적인 게터의 표지로는 세터 다리를 접지 않는다 — 소유자 없어 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "AuthClientVars.setV · 1 line · owner NONE" "[kotlin] 정적 게터"
+# 받는 쪽의 표지는 그 서술자의 메서드에서 본다 — `@JvmOverloads` 의 두 오버로드 가운데 앞의 것(over(int, int))에서만 표지를 지우면
+# 그 다리만 따로 뜬다(다른 다리는 컴패니언에 접혀 바깥 클래스의 over 는 하나라 이름에 매개변수가 없다). 이름으로만 찾으면 뒤
+# 오버로드의 다리도 앞 것의 표지로 갈려 둘 다 뜬다(over(int, int) · over(int)).
+fresh
+sed -i '/^  public final int over(int, int);$/,/^$/ { /^ *kotlin\.jvm\.JvmStatic$/d }' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_not_contains "$(sed -n '/^  public final int over(int, int);$/,/^$/p' "$D/kotlin.javap.txt")" 'kotlin.jvm.JvmStatic' "(변이가 착지했는지 먼저 본다)"
+assert_contains "$(sed -n '/^  public final int over(int);$/,/^$/p' "$D/kotlin.javap.txt")" 'kotlin.jvm.JvmStatic' "(변이가 착지했는지 먼저 본다 — 뒤 오버로드의 표지는 남았다)"
+run report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[kotlin] 표지를 지운 오버로드의 다리는 따로 된 멤버다 — 소유자 없어 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "AuthClientVars.over · 1 line · owner NONE" "[kotlin] 표지 없는 오버로드의 다리"
+assert_not_contains "$OUT" "AuthClientVars.over(int) ·" "[kotlin] 표지 있는 오버로드의 다리는 그대로 접힌다"
+# 인라인 함수가 아닌 다리는 기본값을 다 계산하고 끝에 대상을 부른다 — 대상은 그 마지막 같은 이름 호출이다(서술자를 셈하지 않는다).
+# object 의 `@JvmStatic pick(o: AuthClientDefaults?, n: Int = 0)` 다리에서 그 호출을 지우면 접을 곳이 없다(FAIL — 서술자로 짐작하지
+# 않는다: 받는 쪽 · 마스크 수가 클래스 파일만으로는 갈리지 않는다, 독립 레그 6).
+fresh
+sed -i '/^  public static int pick\$default(kc.auth.AuthClientDefaults, int, int, java.lang.Object);$/,/^$/ { /invokestatic .*\/\/ Method pick:(Lkc\/auth\/AuthClientDefaults;I)I$/d }' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_not_contains "$(sed -n '/^  public static int pick\$default(kc.auth.AuthClientDefaults, int, int, java.lang.Object);$/,/^$/p' "$D/kotlin.javap.txt")" 'Method pick:' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 대상을 안 부르는 인라인 아닌 다리는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClientDefaults.pick\$default(Lkc/auth/AuthClientDefaults;IILjava/lang/Object;)I — the class files show no single method that creates, calls or encloses it" "[kotlin] 대상 호출 없는 다리"
+# invokedynamic 의 구현을 만드는 쪽으로 접는 것은 private static(kotlinc 가 낸 몸통 — 람다 · SAM 참조 어댑터)뿐이다. kotlinc 2.4.21 은
+# 참조된 함수 대신 늘 어댑터를 구현으로 낸다(실측 — 양성의 makeOps); public 이나 인스턴스인 구현은 참조된 함수 자체일 수 있어 접으면
+# 안 돈 함수가 숨는다 — 그 꼴은 이름에 `$` 가 든 모르는 메서드다(FAIL). 어댑터의 플래그만 바꿨다.
+fresh
+sed -i '/^  private static final int makeOps\$pubTwice(int);$/,/^$/ s/^    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL$/    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL/' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(sed -n '/^  private static final int makeOps\$pubTwice(int);$/,/^$/p' "$D/kotlin.javap.txt")" "    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL" "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] public 인 invokedynamic 구현은 접지 않는다 — exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClientKt.makeOps\$pubTwice(I)I — the class files show no single method that creates, calls or encloses it" "[kotlin] public 구현"
+fresh
+sed -i '/^  private static final int makeOps\$pubTwice(int);$/,/^$/ s/^    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL$/    flags: (0x0012) ACC_PRIVATE, ACC_FINAL/' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(sed -n '/^  private static final int makeOps\$pubTwice(int);$/,/^$/p' "$D/kotlin.javap.txt")" "    flags: (0x0012) ACC_PRIVATE, ACC_FINAL" "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 인스턴스인 invokedynamic 구현은 접지 않는다 — exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClientKt.makeOps\$pubTwice(I)I — the class files show no single method that creates, calls or encloses it" "[kotlin] 인스턴스 구현"
+# 부르는 쪽으로 접는 로컬 함수도 private static 뿐이다 — 인스턴스로 바꾼 withLocal$inner 는 부르는 메서드가 있어도 모르는 꼴이다(FAIL).
+fresh
+sed -i '/^  private static final java.lang.String withLocal\$inner(kc.auth.AuthClient, java.lang.String);$/,/^$/ s/^    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL$/    flags: (0x0012) ACC_PRIVATE, ACC_FINAL/' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(sed -n '/^  private static final java.lang.String withLocal\$inner(kc.auth.AuthClient, java.lang.String);$/,/^$/p' "$D/kotlin.javap.txt")" "    flags: (0x0012) ACC_PRIVATE, ACC_FINAL" "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 인스턴스인 로컬 함수 꼴은 접지 않는다 — exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient.withLocal\$inner(Lkc/auth/AuthClient;Ljava/lang/String;)Ljava/lang/String; — the class files show no single method that creates, calls or encloses it" "[kotlin] 인스턴스 로컬 함수"
+# public static 도 같다 — 이름에 `$` 가 든 public static(모듈 접미가 안 벗겨진 object · 컴패니언 `@JvmStatic internal` 의 꼴)을 부르는
+# 쪽으로 접으면 그 함수가 부른 쪽에 조용히 섞인다(파일 파사드의 internal 최상위 함수는 맹글되지 않아 픽스처에 그 꼴이 없다 — 실측).
+fresh
+sed -i '/^  private static final java.lang.String withLocal\$inner(kc.auth.AuthClient, java.lang.String);$/,/^$/ s/^    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL$/    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL/' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(sed -n '/^  private static final java.lang.String withLocal\$inner(kc.auth.AuthClient, java.lang.String);$/,/^$/p' "$D/kotlin.javap.txt")" "    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL" "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] public static 인 로컬 함수 꼴은 접지 않는다 — exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient.withLocal\$inner(Lkc/auth/AuthClient;Ljava/lang/String;)Ljava/lang/String; — the class files show no single method that creates, calls or encloses it" "[kotlin] public static 로컬 함수"
+# 그 객체를 `new` 하는 메서드도 없다 — 접을 곳이 없다.
+fresh
+sed -i 's|AuthClient\$sorted\$1|AuthClient$1|g' "$D/kotlin.xml" "$D/kotlin.javap.txt"
+sed -i 's|^EnclosingMethod: #56\.#59 |EnclosingMethod: #56.#0  |' "$D/kotlin.javap.txt"
+sed -i '/^ *[0-9]*: new .*\/\/ class kc\/auth\/AuthClient\$1$/d' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(cat "$D/kotlin.javap.txt")" 'EnclosingMethod: #56.#0 ' "(변이가 착지했는지 먼저 본다)"
+assert_eq 0 "$(grep -c ': new  *#[0-9]* .*// class kc/auth/AuthClient\$1$' "$D/kotlin.javap.txt")" "(변이가 착지했는지 먼저 본다 — new 줄)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] new 하는 메서드도 없는 익명 클래스는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient\$1.<init>()V" "[kotlin] 접을 곳 없음"
+# 빈 마디가 든 클래스 이름(`AuthClient$$Local` — EnclosingMethod 가 있어도) — 접지 않는다(java 와 같다). kotlinc 가 내는 빈 마디는
+# 인라인된 호출부의 `…$$inlined$…` 뿐이다(양성의 AuthClientCross).
+fresh
+sed -i 's|AuthClient\$withLocalClass\$Local|AuthClient$$Local|g' "$D/kotlin.xml" "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(cat "$D/kotlin.javap.txt")" '// kc/auth/AuthClient$$Local' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 빈 마디가 든 클래스 이름은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClient\$\$Local." "[kotlin] 빈 마디"
+# `…$$inlined$…` 도 EnclosingMethod 가 있을 때만 접는다 — 지우면 그 클래스가 부르는 로컬 함수를 접을 곳이 없다(FAIL — 빈 마디를 이름
+# 그대로 두면 엉뚱한 타입에 조용히 붙었다).
+fresh
+sed -i '/^EnclosingMethod: #9\.#46  *\/\/ kc\.auth\.AuthClientCross\.useLocal$/d' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_not_contains "$(cat "$D/kotlin.javap.txt")" '// kc.auth.AuthClientCross.useLocal' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] EnclosingMethod 없는 인라인 호출부 클래스는 접지 않는다 — exit 2 — 출력: $OUT"
+assert_contains "$OUT" "cannot name kc/auth/AuthClientCross.useLocal\$loc()I — the class files show no single method that creates, calls or encloses it" "[kotlin] 인라인 호출부의 EnclosingMethod"
+# 이름에 `-` 가 든 메서드(값 클래스 맹글 `byId-tzrl3XM`)는 javap 머리에서 그대로 읽는다 — 양성이 그 이름을 지난다. 여기서는 그 함수를
+# 안 부른 실행(데이터의 횟수를 0 으로)이 그 이름 그대로 미실행 목록에 드는지 본다.
+fresh
+sed -i 's#<method name="byId-tzrl3XM" desc="(Ljava/lang/String;)Ljava/lang/String;" line="131"><counter type="INSTRUCTION" missed="0" covered="\([0-9]*\)"/><counter type="LINE" missed="0" covered="1"/>#<method name="byId-tzrl3XM" desc="(Ljava/lang/String;)Ljava/lang/String;" line="131"><counter type="INSTRUCTION" missed="\1" covered="0"/><counter type="LINE" missed="1" covered="0"/>#; s#<method name="byId_tzrl3XM\$lambda\$0" desc="(Ljava/lang/String;)Ljava/lang/String;" line="131"><counter type="INSTRUCTION" missed="0" covered="\([0-9]*\)"/><counter type="LINE" missed="0" covered="1"/>#<method name="byId_tzrl3XM$lambda$0" desc="(Ljava/lang/String;)Ljava/lang/String;" line="131"><counter type="INSTRUCTION" missed="\1" covered="0"/><counter type="LINE" missed="1" covered="0"/>#' "$D/kotlin.xml"
+kotlin_mark 0
+assert_contains "$(cat "$D/kotlin.xml")" '<method name="byId-tzrl3XM" desc="(Ljava/lang/String;)Ljava/lang/String;" line="131"><counter type="INSTRUCTION" missed="' "(변이가 착지했는지 먼저 본다)"
+assert_not_contains "$(cat "$D/kotlin.xml")" 'line="131"><counter type="INSTRUCTION" missed="0"' "(변이가 착지했는지 먼저 본다 — 둘 다 0 회)"
+run report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[kotlin] 소유자 없는 값 클래스 함수는 exit 1 — 출력: $OUT"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:131 AuthClientKt.byId-tzrl3XM · 1 line · owner NONE" "[kotlin] 맹글된 이름 그대로 — 람다(byId_tzrl3XM\$lambda\$0)도 그 함수의 것"
+# kotlin 기록의 문구 — 테스트 수는 JUnit XML 에서, 단위 테스트는 run 이 안 돌린다.
+fresh
+sed -i 's#"tests":{[^}]*},##' "$D/kotlin.run.json"
+assert_not_contains "$(cat "$D/kotlin.run.json")" '"tests"' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 테스트 수 없는 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [kotlin] the record has no test counts — run kotlin reads them from the JUnit XML of integrationTest and test" "[kotlin] 테스트 수의 출처"
+fresh
+sed -i 's#"unit":0#"unit":1#' "$D/kotlin.run.json"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 단위 테스트가 섞인 실행은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [kotlin] the run included 1 unit test report — the report would not be integration-only (run runs integrationTest only)" "[kotlin] 단위 테스트가 섞였다"
+fresh
+printf '// changed after the run\n' >> "$T/kotlin/src/main/kotlin/kc/auth/AuthClient.kt"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 다른 바이트에서 난 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [kotlin] kotlin/src/main/kotlin/kc/auth/AuthClient.kt: the data was taken from other bytes" "[kotlin] 해시 불일치"
+fresh
+sed -i '/AuthClient.kt:AuthClient.unused/d' "$T/scripts/integration-coverage.json"
+run report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[kotlin] 소유자 없는 미실행 함수는 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [kotlin] unowned never-executed function kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.unused" "[kotlin] 소유자 키"
 
 # ── (2) 음성: 소유자(exit 1 — 경고, 게이트가 아니다)─────────────────────────────────────────
 fresh
@@ -1941,12 +2403,19 @@ run report java "$T" --out "$D"
 assert_eq 2 "$RC" "[java] 경계 클래스를 싣기만 한 실행은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [java] the run executed 0 of 27 boundary lines outside static initializers — a measurement failure, not a low number (class loading alone credits 2 static-initializer lines)" "[java] 정적 초기화만 돈 실행"
 assert_not_contains "$OUT" "OK —" "[java] 측정 실패에서 수치를 내지 않는다"
+# kotlin — 같은 꼴(KC_FIXTURE_ZERO=1 — AuthClient 만 싣는다). Companion 속성 REALM · UPPER 의 초기화가 바깥 클래스의 정적 초기화에서 돈다.
+fresh
+kotlin_data "$FIX/data/kotlin-zero.xml"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 경계 클래스를 싣기만 한 실행은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [kotlin] the run executed 0 of 224 boundary lines outside static initializers — a measurement failure, not a low number (class loading alone credits 2 static-initializer lines)" "[kotlin] 정적 초기화만 돈 실행"
+assert_not_contains "$OUT" "OK —" "[kotlin] 측정 실패에서 수치를 내지 않는다"
 # 빈 파생 + 빈 핀 — 집합은 같으므로(∅ = ∅) 빈 집합 판정만이 잡는다. 파생 도구를 가짜로 바꿔 그 갈래만 태운다.
 # ⚠️ 두 언어 다 「있되 비었다」여야 한다 — 한 언어를 빼 두면 check 의 exit 2 가 그 「없는 파생」에서 와서 빈 집합
 # 갈래를 지워도 초록이었다(변이 실측: 빈 집합 통과 변이에 check 단언이 침묵했다).
 fresh
-printf '%s\n' 'const e = (d) => ({ dir: d, site: "fake:1", label: "fake", universe: 3, files: [] })' 'console.log(JSON.stringify({ langs: { go: e("go"), python: e("python"), node: e("node"), rust: e("rust"), php: e("php"), ruby: e("ruby"), dotnet: e("dotnet"), java: e("java") }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
-printf '%s\n' '{ "go": { "pinned": [], "owners": {} }, "python": { "pinned": [], "owners": {} }, "node": { "pinned": [], "owners": {} }, "rust": { "pinned": [], "owners": {} }, "php": { "pinned": [], "owners": {} }, "ruby": { "pinned": [], "owners": {} }, "dotnet": { "pinned": [], "owners": {} }, "java": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
+printf '%s\n' 'const e = (d) => ({ dir: d, site: "fake:1", label: "fake", universe: 3, files: [] })' 'console.log(JSON.stringify({ langs: { go: e("go"), python: e("python"), node: e("node"), rust: e("rust"), php: e("php"), ruby: e("ruby"), dotnet: e("dotnet"), java: e("java"), kotlin: e("kotlin") }, findings: [] }))' > "$T/scripts/coverage-boundary.mjs"
+printf '%s\n' '{ "go": { "pinned": [], "owners": {} }, "python": { "pinned": [], "owners": {} }, "node": { "pinned": [], "owners": {} }, "rust": { "pinned": [], "owners": {} }, "php": { "pinned": [], "owners": {} }, "ruby": { "pinned": [], "owners": {} }, "dotnet": { "pinned": [], "owners": {} }, "java": { "pinned": [], "owners": {} }, "kotlin": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
 run check "$T"
 assert_eq 2 "$RC" "[check] 빈 파생은 exit 2(빈 핀과 같아도) — 출력: $OUT"
 assert_contains "$OUT" "FAIL [python] the derived boundary is empty" "[check] python 도 빈 파생"
@@ -1956,6 +2425,7 @@ assert_contains "$OUT" "FAIL [php] the derived boundary is empty" "[check] php �
 assert_contains "$OUT" "FAIL [ruby] the derived boundary is empty" "[check] ruby 도 빈 파생"
 assert_contains "$OUT" "FAIL [dotnet] the derived boundary is empty" "[check] dotnet 도 빈 파생"
 assert_contains "$OUT" "FAIL [java] the derived boundary is empty" "[check] java 도 빈 파생"
+assert_contains "$OUT" "FAIL [kotlin] the derived boundary is empty" "[check] kotlin 도 빈 파생"
 assert_not_contains "$OUT" "returned no derivation" "[check] 언어마다 있되 비었다 — 「없는 파생」이 빈 집합 갈래를 가리지 않는다"
 assert_not_contains "$OUT" "pin OK" "[check] 빈 집합끼리의 일치를 「핀 OK」로 찍지 않는다"
 run report go "$T" --out "$D"
@@ -1980,10 +2450,10 @@ run check "$T"
 assert_eq 2 "$RC" "핀 파일이 없으면 exit 2"
 assert_contains "$OUT" "FAIL [-] scripts/integration-coverage.json is missing or not JSON" "핀 파일 없음"
 fresh
-printf '%s\n' '{ "go": { "pinned": ["go/admin.go"], "owners": {} }, "kotlin": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
+printf '%s\n' '{ "go": { "pinned": ["go/admin.go"], "owners": {} }, "scala": { "pinned": [], "owners": {} } }' > "$T/scripts/integration-coverage.json"
 run check "$T"
 assert_eq 2 "$RC" "파일럿이 안 재는 언어를 핀에 넣으면 exit 2"
-assert_contains "$OUT" "FAIL [-] scripts/integration-coverage.json names kotlin, which this pilot does not measure" "모르는 언어"
+assert_contains "$OUT" "FAIL [-] scripts/integration-coverage.json names scala, which this pilot does not measure" "모르는 언어"
 assert_contains "$OUT" "FAIL [python] scripts/integration-coverage.json has no pin for python" "빠진 언어"
 fresh
 rm "$T/docs/superpowers/plans/remaining-work.md"
@@ -1996,9 +2466,9 @@ run check "$T"
 assert_eq 2 "$RC" "파생 도구가 없으면 exit 2"
 assert_contains "$OUT" "FAIL [-] scripts/coverage-boundary.mjs is missing" "파생 도구 없음"
 fresh
-run report kotlin "$T" --out "$D"
+run report scala "$T" --out "$D"
 assert_eq 2 "$RC" "파일럿이 안 재는 언어는 usage(exit 2)"
-assert_contains "$OUT" "this pilot measures go · python · node · rust · php · ruby · dotnet · java — got kotlin" "usage 문구"
+assert_contains "$OUT" "this pilot measures go · python · node · rust · php · ruby · dotnet · java · kotlin — got scala" "usage 문구"
 
 # ── (4) 하한(4 걸음째 — 2026-11-02 무장) ─────────────────────────────────────────────────────────
 # 픽스처 핀에는 하한이 없다(위 단언들은 하한 없는 리포트다). 여기서만 주입한다.
@@ -2130,6 +2600,24 @@ fresh; floor java statements 50
 run check "$T"
 assert_eq 2 "$RC" "[floor] java 에 statements 는 없다(지표는 lines · bodies) — 출력: $OUT"
 assert_contains "$OUT" "java.floor.metric" "[floor] java 지표 오류를 지목한다"
+# kotlin 도 lines(픽스처 175/226 = 77.434%) · bodies(172/224 = 76.786%)다.
+fresh; floor kotlin bodies 76.78
+run report kotlin "$T" --out "$D"
+assert_eq 0 "$RC" "[floor] kotlin bodies 76.786% ≥ 76.78 — 출력: $OUT"
+assert_line "$OUT" "integration-coverage [kotlin]: OK — lines 175/226 (77.4%) · bodies 172/224 (76.8%) · floor bodies ≥ 76.78% · 28 never-executed functions, all owned by open registry items" "[floor] kotlin 통과 요약"
+fresh; floor kotlin bodies 76.79
+run report kotlin "$T" --out "$D"
+assert_eq 3 "$RC" "[floor] kotlin bodies 76.786% < 76.79 — 출력: $OUT"
+fresh; floor kotlin lines 77.43
+run report kotlin "$T" --out "$D"
+assert_eq 0 "$RC" "[floor] kotlin lines 77.434% ≥ 77.43 — 지표가 bodies(76.786%)로 새지 않는다 — 출력: $OUT"
+fresh; floor kotlin lines 77.44
+run report kotlin "$T" --out "$D"
+assert_eq 3 "$RC" "[floor] kotlin lines 77.434% < 77.44 — 출력: $OUT"
+fresh; floor kotlin statements 50
+run check "$T"
+assert_eq 2 "$RC" "[floor] kotlin 에 statements 는 없다(지표는 lines · bodies) — 출력: $OUT"
+assert_contains "$OUT" "kotlin.floor.metric" "[floor] kotlin 지표 오류를 지목한다"
 
 # 소유 문제와 하한 미달이 겹치면 게이트(3)가 경고(1)를 이긴다 — 경고는 그대로 찍는다.
 fresh; floor go statements 46
