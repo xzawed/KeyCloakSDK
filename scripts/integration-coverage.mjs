@@ -2095,12 +2095,12 @@ function javapFacts(text) {
     }
     // 람다 몸통 — LambdaMetafactory 부트스트랩의 구현 핸들뿐이다(문자열 연결 같은 다른 부트스트랩은 메서드를 안 만든다).
     for (const x of cur.methods) x.lambdas = x.indy.map((i) => cur.bootstraps.get(i)).filter((h) => h !== undefined)
-    facts[cur.name] = { source: cur.source, enclosing, methods: cur.methods }
+    facts[cur.name] = { source: cur.source, enclosing, methods: cur.methods, kmeta: cur.kmeta }
   }
   for (const raw of text.split(/\r?\n/)) {
     if (raw.startsWith('Classfile ')) {
       finish()
-      cur = { name: null, source: null, encRef: null, pool: new Map(), methods: [], bootstraps: new Map() }
+      cur = { name: null, source: null, encRef: null, pool: new Map(), methods: [], bootstraps: new Map(), meta: false, kmeta: null }
       meth = null
       inLnt = false
       inLvt = false
@@ -2154,6 +2154,21 @@ function javapFacts(text) {
     }
     if ((m = /^EnclosingMethod: #(\d+)\.#(\d+)/.exec(raw))) {
       cur.encRef = [m[1], m[2]]
+      continue
+    }
+    // kotlin 메타데이터의 종류 `k=` — 클래스 몸통 뒤 RuntimeVisibleAnnotations 의 `kotlin.Metadata(` … `)`(네 칸 · 여섯 칸 — 실측
+    // javap 21; 메서드의 주석은 여덟 칸이다). 다른 주석의 `k` 요소는 종류가 아니다. 4 · 5 는 `@file:JvmMultifileClass` 의 파사드 ·
+    // 부분이다(jvmReport 가 FAIL 한다).
+    if (/^    kotlin\.Metadata\(\s*$/.test(raw)) {
+      cur.meta = true
+      continue
+    }
+    if (cur.meta && (m = /^      k=(\d+)\s*$/.exec(raw))) {
+      cur.kmeta = Number(m[1])
+      continue
+    }
+    if (cur.meta && /^    \)\s*$/.test(raw)) {
+      cur.meta = false
       continue
     }
     // 멤버 머리 — 구역 안의 두 칸 들여쓰기. 메서드는 `(` 가 있고 `;` 로 끝난다(필드는 아니다). 생성자는 점 표기 전체 이름이다.
@@ -2301,7 +2316,7 @@ function javaFold(cname, name, desc, facts, depth = 0) {
 // object · enum 항목의 `_init_$lambda$N` 은 정적 초기화가 만든다 · 람다 안의 람다는 `…$lambda$0$0` 이다 · object 의 `@JvmStatic`
 // 다리는 받는 쪽이 없다 · 로컬 클래스는 이름에 숫자가 없다. 그래서:
 //   람다(`…$lambda$N…` · invokedynamic 의 구현인 private static — SAM 참조 어댑터) → 그것을 만드는 invokedynamic 이 든 메서드
-//   기본 인자 다리(`…$default`) · 기본 인자 생성자(`<init>(…, int, DefaultConstructorMarker)`) → 그것이 마지막에 부르는 같은 이름(인라인 함수의 다리는 지역 변수표의 매개변수만큼의 서술자 · DefaultImpls 는 인터페이스의 같은 이름 다리) — 다리는 그 함수가 돌았다는 근거가 아니다(jvmReport)
+//   기본 인자 다리(`…$default`) · 기본 인자 생성자(`<init>(…, int, DefaultConstructorMarker)`) → 그것이 마지막에 부르는 같은 이름(인라인 함수의 다리는 지역 변수표의 매개변수만큼의 서술자 · DefaultImpls 는 인터페이스의 같은 이름 다리) — 다리와 다리가 만든 것(dflt)은 그 함수가 돌았다는 근거가 아니다(jvmReport)
 //   suspend inline fun 의 사본 `f$$forInline` → 같은 서술자의 f
 //   컴패니언 `@JvmStatic` 바깥 다리 → 그것이 부르는 바로 아래 컴패니언의 같은 이름 · 서술자 인스턴스 멤버(표지가 있을 때만 — 속성은 게터의 표지)
 //   로컬 함수(private static `outer$inner`) · 합성 접근자 `access$…` · open suspend fun 의 몸통 `fn$suspendImpl` → 그것을 부르는 메서드
@@ -2347,13 +2362,17 @@ function ktFold(cname, name, desc, facts, kt, seen = new Set()) {
     if (!ups.length) return all.length ? KT_CYCLE : null
     if (ups.some((u) => !u)) return null
     const key = (u) => `${u.kind === 'static'} ${u.type} ${u.member} ${u.desc} ${u.shared ?? ''}`
-    if (ups.every((u) => key(u) === key(ups[0]))) return ups[0]
+    // 한 자리라도 다리를 거쳤으면 다리의 것이다(dflt — 아래 nest): 근거가 아닌 쪽으로 기운다(근거로 세면 안 돈 몸통이 숨는다).
+    if (ups.every((u) => key(u) === key(ups[0]))) return ups.some((u) => u.dflt) ? { ...ups[0], dflt: true } : ups[0]
     if (ups.every((u) => u.kind === 'plain' && u.member === '<init>' && u.type === ups[0].type && !u.shared)) {
       return { type: ups[0].type, member: '<init>', kind: 'plain', desc: null, shared: sortU(ups.map((u) => u.desc)) }
     }
     return null
   }
-  const nest = (up, via) => (up === KT_CYCLE ? up : up && { type: up.type, member: up.member, kind: up.kind === 'static' ? 'static' : 'lambda', desc: up.desc, shared: up.shared, via })
+  // dflt — 기본 인자 다리를 거쳐 접혔다: 다리 자신과 다리가 만든 것(기본값 식의 람다 · 익명 객체 · suspend 람다 · 그 안의 로컬 함수)은
+  // 그 함수의 몸통이 돌았다는 근거가 아니다(jvmReport). via 는 마지막 걸음만 말하므로 표지는 따로 끝까지 싣는다 — via 로만 가르면
+  // 다리가 만든 람다가 몸통의 근거로 남아 재정의된 · 기본값이 던지는 함수의 안 돈 몸통이 숨었다(독립 레그 7 실측 — 여덟 꼴).
+  const nest = (up, via) => (up === KT_CYCLE ? up : up && { type: up.type, member: up.member, kind: up.kind === 'static' ? 'static' : 'lambda', desc: up.desc, shared: up.shared, via, dflt: Boolean(up.dflt) || via === 'default' })
   // 그 클래스를 만드는 자리 — 자기 안의 자리는 뺀다: suspend 람다의 `create()` 는 제 클래스를 다시 만드는데, 그 자리의 접기는 바깥
   // 자리들을 다시 모은 것이라(생성자 여럿이면 「함께 가진」 꼴) 바깥 자리와 갈린다(실측 — 레그 2 의 NoPrimarySusp$h$1).
   const builders = () => (ix.built.get(cname) ?? []).filter(([cls]) => cls !== cname)
@@ -2581,6 +2600,14 @@ function jvmReport(l, d) {
       fail(l, `${f}: the class facts and the data name different classes (${[...onlyXml.map((n) => `data only: ${n}`), ...onlyFacts.map((n) => `facts only: ${n}`)].join(' · ')}) — run ${l} writes both from one build`)
       continue
     }
+    // `@file:JvmMultifileClass` — 파사드(메타데이터 k=4)에는 첫 줄로 매긴 전달 메서드만 있고 코드는 부분 클래스(k=5 · JVM 합성)에 있는데,
+    // JaCoCo 는 합성 클래스의 메서드를 안 싣는다(실측 0.8.16 — 클래스 계수기만): 그 파일의 줄이 데이터에 없어 분모가 조용히 줄고
+    // 함수마다 1 줄로 뜬다(독립 레그 7 실측). 이 리더가 셀 수 없는 꼴이다.
+    const multi = kt ? factNames.filter((n) => facts[n].kmeta === 4 || facts[n].kmeta === 5) : []
+    if (multi.length) {
+      fail(l, `${f}: ${sortU(multi).join(' · ')} — a @file:JvmMultifileClass facade only forwards to its synthetic part class, whose methods JaCoCo does not report: the file's lines are not in the data`)
+      continue
+    }
     let broken = false
     // 메서드마다 — 데이터(첫 줄 · 줄 수)와 클래스 파일의 LineNumberTable 이 같은 메서드인지 대조하고 이름을 접는다.
     const parts = []
@@ -2746,14 +2773,23 @@ function jvmReport(l, d) {
     if (broken) continue
     for (const [key, ps] of fns) {
       if (ps.every((p) => p.kind === 'static')) continue
-      const ls = new Set(ps.flatMap((p) => p.lines).filter((n) => lines.has(String(n))))
+      const inData = (qs) => new Set(qs.flatMap((p) => p.lines).filter((n) => lines.has(String(n))))
+      const ls = inData(ps)
       const own = ps.filter((p) => !p.shared)
-      // kotlin 의 기본 인자 다리(ktFold 의 via 'default')는 그 함수가 돌았다는 근거가 아니다 — 다리는 기본값을 계산하고 가상 호출로
-      // 넘긴다: 재정의된 open fun · 인터페이스 기본 메서드의 다리는 재정의를 불러 그 몸통은 안 돈다(독립 레그 6 실측 — 다리의 줄이 몸통의
-      // 실행으로 셈해져 안 돈 몸통이 숨었다). 몸통 메서드가 데이터에 있으면 그것만 본다.
-      const body = own.filter((p) => p.via !== 'default')
+      // kotlin 의 기본 인자 다리와 다리가 만든 것(ktFold 의 dflt)은 그 함수가 돌았다는 근거가 아니다 — 다리는 기본값을 계산하고 가상
+      // 호출로 넘긴다: 재정의된 open fun · 인터페이스 기본 메서드의 다리는 재정의를 불러 그 몸통은 안 돈다(독립 레그 6 실측 — 다리의
+      // 줄이 몸통의 실행으로 셈해져 안 돈 몸통이 숨었다). 몸통 부분이 데이터에 있으면 그것만 본다 — 없으면(추상 멤버 — 다리와 기본값의
+      // 람다뿐이다, 레그 7) 다리가 돈 것이 그 함수가 불린 근거다.
+      const body = own.filter((p) => !p.dflt)
       const ev = body.length ? body : own
-      if (ls.size && ev.length && ev.every((p) => p.covered === 0)) never.push({ file: f, line: Math.min(...ls), name: key, stmts: ls.size })
+      if (!ls.size || !ev.length || !ev.every((p) => p.covered === 0)) continue
+      // 목록의 줄 — 그 함수의 안 돈 줄이다. 다리 쪽 부분(dflt)의 줄은 그 부분이 안 돌았고 돈 다리 쪽 부분의 줄도 아닐 때만 센다(재정의된
+      // 함수의 다리는 돌았다 — 그 줄을 세면 「none of its lines ran」 이 거짓이 된다, 레그 7; 안 돈 DefaultImpls 다리도 같은 선언 줄이다).
+      // 몸통 쪽 줄은 그대로다(메서드 단위의 판정 — 몸통의 그 줄 명령은 안 돌았다).
+      const ranD = inData(ps.filter((p) => p.dflt && p.covered > 0))
+      const sh = new Set([...inData(ps.filter((p) => !p.dflt)), ...[...inData(ps.filter((p) => p.dflt && p.covered === 0))].filter((n) => !ranD.has(n))])
+      const at = sh.size ? sh : ls
+      never.push({ file: f, line: Math.min(...at), name: key, stmts: at.size })
     }
     files.push({ file: f, stmts, covered, bodies, outside: { stmts: 0, covered: 0 } })
   }

@@ -159,6 +159,9 @@
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientObjPick.pick(int)": "open-admin",
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientObjPick2.pick(int)": "open-admin",
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientBase.f": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientLater.f": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientCmp.g": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientIface.h": "open-admin",
       "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientStatus.<init>": "open-admin",
       "kotlin/src/main/kotlin/kc/examples/QuickStart.kt:QuickStartKt.env": "open-masking",
       "kotlin/src/main/kotlin/kc/examples/QuickStart.kt:QuickStartKt.main": "open-masking"

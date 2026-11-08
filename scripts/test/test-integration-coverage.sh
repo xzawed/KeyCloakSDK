@@ -186,7 +186,7 @@ assert_line "$OUT" "[php] pin OK — 2 files equal the derivation from php/phpun
 assert_line "$OUT" "[ruby] pin OK — 3 files equal the derivation from ruby/spec/spec_helper.rb:8 (SimpleCov skip)" "[check] ruby 핀 = 파생"
 assert_line "$OUT" "[dotnet] pin OK — 2 files equal the derivation from dotnet/coverlet.runsettings:9 (coverlet <Exclude>)" "[check] dotnet 핀 = 파생"
 assert_line "$OUT" "[kotlin] pin OK — 2 files equal the derivation from kotlin/build.gradle.kts:46 (kover excludes.classes)" "[check] kotlin 핀 = 파생"
-assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 · php 2 · ruby 3 · dotnet 2 · java 2 · kotlin 2 files pinned · 89 owner entries, all open" "[check] 요약"
+assert_line "$OUT" "integration-coverage check: OK — go 3 · python 3 · node 2 · rust 3 · php 2 · ruby 3 · dotnet 2 · java 2 · kotlin 2 files pinned · 92 owner entries, all open" "[check] 요약"
 
 run report go "$T" --out "$D"
 assert_eq 0 "$RC" "[go] 건강한 리포트는 exit 0 — 출력: $OUT"
@@ -481,10 +481,10 @@ assert_eq 0 "$RC" "[kotlin] 건강한 리포트는 exit 0 — 출력: $OUT"
 assert_line "$OUT" "[kotlin] integration-only coverage — report mode, no floor" "[kotlin] 머리줄"
 assert_line "$OUT" "  boundary: 2 files derived from kotlin/build.gradle.kts:46 (kover excludes.classes) — equal to the pin in scripts/integration-coverage.json" "[kotlin] 파생 출처"
 assert_contains "$OUT" "/kotlin.xml (JaCoCo 0.8.16 · 1 session · 1 integration test)" "[kotlin] 데이터 · JaCoCo 판 · 세션 · 테스트 수를 찍는다"
-assert_line "$OUT" "  kotlin/src/main/kotlin/kc/auth/AuthClient.kt lines 145/178 81.5% · bodies 142/176 80.7%" "[kotlin] AuthClient.kt — 정적 초기화만 돈 줄(REALM 등)은 몸통으로 안 덮였다"
+assert_line "$OUT" "  kotlin/src/main/kotlin/kc/auth/AuthClient.kt lines 161/203 79.3% · bodies 158/201 78.6%" "[kotlin] AuthClient.kt — 정적 초기화만 돈 줄(REALM 등)은 몸통으로 안 덮였다"
 assert_line "$OUT" "  kotlin/src/main/kotlin/kc/examples/QuickStart.kt lines 0/3 0.0% · bodies 0/3 0.0%" "[kotlin] 최상위 함수의 파일"
-assert_line "$OUT" "  total lines 145/181 80.1% · bodies 142/179 79.3%" "[kotlin] 합계는 경계 파일만(Config.kt 제외)"
-assert_line "$OUT" "  never executed by the integration run — 23 functions (none of its lines ran):" "[kotlin] 미실행 머리줄"
+assert_line "$OUT" "  total lines 161/206 78.2% · bodies 158/204 77.5%" "[kotlin] 합계는 경계 파일만(Config.kt 제외)"
+assert_line "$OUT" "  never executed by the integration run — 26 functions (none of its lines ran):" "[kotlin] 미실행 머리줄"
 assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:9 AuthClient.Companion.getREALM · 1 line · owner open-admin" "[kotlin] 안 읽은 Companion 속성의 getter — 그 줄을 정적 초기화가 돌아도 미실행이다"
 assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:25 AuthClient.token(String, int) · 1 line · owner open-admin" "[kotlin] 오버로드는 서술자로 가른다 — 그 람다는 만든 오버로드에 붙는다"
 assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:51 AuthClient.unused · 1 line · owner open-admin" "[kotlin] 안 부른 메서드"
@@ -505,7 +505,10 @@ assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:426 Aut
 assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:442 AuthClientWide.wide(int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int) · 1 line · owner open-admin" "[kotlin] 마스크 둘(매개변수 33)을 다 떼야 다리의 대상이다 — 하나만 떼면 이 34 개짜리에 맞아 숨었다"
 assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:454 AuthClientObjPick.pick(int) · 1 line · owner open-admin" "[kotlin] 받는 쪽 둘 다 맞는 인라인 다리 — 지역 변수표 슬롯 0(o)이 정적 pick(o, n) 을 고른다"
 assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:467 AuthClientObjPick2.pick(int) · 1 line · owner open-admin" "[kotlin] 같은 꼴의 보통 다리 — 지역 변수표가 없어 다리가 끝에 부르는 정적 pick(o, n) 이 대상이다"
-assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:475 AuthClientBase.f · 3 lines · owner open-admin" "[kotlin] 재정의된 open fun — 다리(돌았다)는 가상 호출로 재정의를 불렀다: 다리는 그 몸통이 돌았다는 근거가 아니다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:476 AuthClientBase.f · 2 lines · owner open-admin" "[kotlin] 재정의된 open fun — 다리(돌았다)는 가상 호출로 재정의를 불렀다: 다리는 그 몸통이 돌았다는 근거가 아니다(돈 다리의 선언 줄 475 는 세지 않는다)"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:499 AuthClientLater.f · 2 lines · owner open-admin" "[kotlin] 다리가 만든 기본값 람다(돌았다)도 근거가 아니다 — 재정의된 몸통은 안 돌았다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:516 AuthClientCmp.g · 3 lines · owner open-admin" "[kotlin] 다리가 감싼 익명 객체(만들었다)도 근거가 아니다 — 그 compare(안 돌았다)의 줄은 그 함수의 안 돈 줄이다"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:547 AuthClientIface.h · 3 lines · owner open-admin" "[kotlin] 재정의된 인터페이스 기본 메서드 — 안 돈 DefaultImpls 다리의 선언 줄 546 은 돈 다리의 줄이라 세지 않는다"
 assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/examples/QuickStart.kt:7 QuickStartKt.main · 2 lines · owner open-masking" "[kotlin] 최상위 함수는 파일 파사드의 이름이다"
 assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/examples/QuickStart.kt:13 QuickStartKt.env · 1 line · owner open-masking" "[kotlin] internal 최상위 함수 — 모듈 접미를 벗긴 이름"
 assert_not_contains "$OUT" "_init_" "[kotlin] 초기화 블록의 람다는 만든 생성자 · 정적 초기화에 접힌다"
@@ -540,6 +543,10 @@ assert_not_contains "$OUT" "AuthClientObjPick.pick(AuthClientObjPick" "[kotlin] 
 assert_not_contains "$OUT" "AuthClientObjPick2.pick(AuthClientObjPick2" "[kotlin] 정적 pick(o, n) 은 돌았다"
 assert_not_contains "$OUT" "AuthClientDerived" "[kotlin] 재정의는 돌았다"
 assert_not_contains "$OUT" "AuthClientSealed" "[kotlin] sealed 의 기본 인자 생성자 · 합성 접근 생성자는 본 생성자에 접힌다(돌았다)"
+assert_not_contains "$OUT" "AuthClientSink" "[kotlin] 몸통 없는 추상 멤버 — 다리가 돈 것이 불린 근거다(안 불린 기본값 람다만으로 미실행이 아니다)"
+assert_not_contains "$OUT" "AuthClientLaterSub" "[kotlin] 재정의는 돌았다"
+assert_not_contains "$OUT" "AuthClientCmpSub" "[kotlin] 재정의는 돌았다"
+assert_not_contains "$OUT" "AuthClientIfaceImpl" "[kotlin] 재정의는 돌았다"
 assert_not_contains "$OUT" "\$kc_kotlin" "[kotlin] internal 의 모듈 접미를 내지 않는다"
 assert_not_contains "$OUT" "\$default" "[kotlin] 기본 인자 다리는 그 함수에 접힌다"
 assert_not_contains "$OUT" "lambda\$" "[kotlin] 람다의 이름을 내지 않는다"
@@ -548,7 +555,7 @@ assert_not_contains "$OUT" "token(String) ·" "[kotlin] 부른 오버로드는 �
 assert_not_contains "$OUT" "AuthClient.fetch" "[kotlin] 부른 suspend 함수는 목록에 없다"
 assert_not_contains "$OUT" "<clinit>" "[kotlin] 정적 초기화는 미실행 목록에 들지 않는다"
 assert_not_contains "$OUT" "Config" "[kotlin] 경계 밖 파일은 리포트에 없다"
-assert_line "$OUT" "integration-coverage [kotlin]: OK — lines 145/181 (80.1%) · bodies 142/179 (79.3%) · 23 never-executed functions, all owned by open registry items" "[kotlin] 통과 요약"
+assert_line "$OUT" "integration-coverage [kotlin]: OK — lines 161/206 (78.2%) · bodies 158/204 (77.5%) · 26 never-executed functions, all owned by open registry items" "[kotlin] 통과 요약"
 
 # ── (2) 음성: 파생 ↔ 핀───────────────────────────────────────────────────────────────────────
 # 파생이 좁아진다 — 이것이 등록부가 실측한 함정의 꼴이다(파일이 빠지면 %가 오른다).
@@ -2036,7 +2043,8 @@ assert_contains "$OUT" "kc/auth/AuthClient.fetch(Ljava/lang/String;Lkotlin/corou
 # 기본 인자 다리는 **그것이 끝에 부르는 같은 이름**의 것이다(인라인 함수의 다리는 지역 변수표의 매개변수로 — 양성의 AuthClientLog).
 # 그러나 그 함수가 돌았다는 근거는 아니다 — 다리는 기본값을 계산하고 가상 호출로 넘긴다(재정의된 open fun 은 몸통이 안 돈다 — 독립
 # 레그 6, 양성의 AuthClientBase). 다리를 token(String, int) 의 다리 `token$default(AuthClient, String, int, int, Object)` 로 바꾸면(그것을
-# 부르게도 했다) 그 줄은 token(String, int) 에 붙지만(2 줄), 다리가 돌았어도(label() 을 불렀다) token(String, int) 는 미실행이다.
+# 부르게도 했다) 그 다리는 token(String, int) 에 접히지만, 다리가 돌았어도(label() 을 불렀다) token(String, int) 는 미실행이고 돈 다리의
+# 줄(37)은 그 함수의 안 돈 줄로 세지 않는다(1 줄 — 세면 2 줄, 독립 레그 7).
 fresh
 sed -i 's#<method name="label\$default" desc="(Lkc/auth/AuthClient;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;"#<method name="token$default" desc="(Lkc/auth/AuthClient;Ljava/lang/String;IILjava/lang/Object;)Ljava/lang/String;"#' "$D/kotlin.xml"
 sed -i 's#^  public static java.lang.String label\$default(kc.auth.AuthClient, java.lang.String, int, java.lang.Object);$#  public static java.lang.String token$default(kc.auth.AuthClient, java.lang.String, int, int, java.lang.Object);#' "$D/kotlin.javap.txt"
@@ -2048,8 +2056,17 @@ assert_contains "$(sed -n '/^  public static java.lang.String token\$default(/,/
 assert_contains "$(cat "$D/kotlin.xml")" '<method name="token$default" desc="(Lkc/auth/AuthClient;Ljava/lang/String;IILjava/lang/Object;)Ljava/lang/String;"' "(변이가 착지했는지 먼저 본다 — 데이터)"
 run report kotlin "$T" --out "$D"
 assert_eq 0 "$RC" "[kotlin] 다리는 그것이 부르는 오버로드의 실행 근거가 아니다 — exit 0 — 출력: $OUT"
-assert_line "$OUT" "  never executed by the integration run — 23 functions (none of its lines ran):" "[kotlin] 목록은 그대로"
-assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:25 AuthClient.token(String, int) · 2 lines · owner open-admin" "[kotlin] 다리의 줄은 그것이 부르는 오버로드에 붙고 그 오버로드는 그대로 미실행이다"
+assert_line "$OUT" "  never executed by the integration run — 26 functions (none of its lines ran):" "[kotlin] 목록은 그대로"
+assert_line "$OUT" "  NEVER kotlin/src/main/kotlin/kc/auth/AuthClient.kt:25 AuthClient.token(String, int) · 1 line · owner open-admin" "[kotlin] 다리는 그것이 부르는 오버로드에 접히되 그 오버로드는 그대로 미실행이다 — 돈 다리의 줄은 세지 않는다"
+# 몸통 없는 추상 멤버(AuthClientSink.put — 다리 둘 · 기본값 람다뿐)는 다리가 돈 것이 불린 근거다(양성 — 목록에 없다). 그 다리마저 안
+# 돌았으면(데이터의 인터페이스 쪽 put$default 를 미실행으로 바꿨다) 불리지 않은 멤버다 — 미실행에 뜬다(다리 쪽을 근거에서 다 빼면 숨는다).
+fresh
+sed -i 's#\(<method name="put\$default" desc="(Lkc/auth/AuthClientSink;ILkotlin/jvm/functions/Function0;ILjava/lang/Object;)I" line="530"><counter type="INSTRUCTION" \)missed="0" covered="10"/><counter type="LINE" missed="0" covered="2"/>#\1missed="10" covered="0"/><counter type="LINE" missed="2" covered="0"/>#' "$D/kotlin.xml"
+kotlin_mark 0
+assert_contains "$(cat "$D/kotlin.xml")" '<method name="put$default" desc="(Lkc/auth/AuthClientSink;ILkotlin/jvm/functions/Function0;ILjava/lang/Object;)I" line="530"><counter type="INSTRUCTION" missed="10" covered="0"/><counter type="LINE" missed="2" covered="0"/>' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[kotlin] 다리가 안 돈 추상 멤버는 미실행이다 — 소유자 없어 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "AuthClient.kt:530 AuthClientSink.put · 3 lines · owner NONE" "[kotlin] 몸통 없는 멤버는 다리 쪽 부분이 근거다"
 # 이름이 같은 대상을 안 부르는 인라인 아닌 다리(`blank$default` 가 label 을 부른다) — 접을 곳을 모른다(서술자로 짐작하지 않는다).
 fresh
 sed -i 's#<method name="label\$default" #<method name="blank$default" #' "$D/kotlin.xml"
@@ -2059,6 +2076,31 @@ assert_contains "$(cat "$D/kotlin.javap.txt")" '  public static java.lang.String
 run report kotlin "$T" --out "$D"
 assert_eq 2 "$RC" "[kotlin] 대상을 안 부르고 그 대상도 없는 다리는 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "cannot name kc/auth/AuthClient.blank\$default(Lkc/auth/AuthClient;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String; — the class files show no single method that creates, calls or encloses it" "[kotlin] 부르는 대상 · 서술자의 대상 없는 다리"
+# `@file:JvmMultifileClass` — 파사드(kotlin 메타데이터 k=4)는 부분 클래스(k=5 · JVM 합성)로 넘기기만 하고 JaCoCo 는 합성 클래스의 메서드를
+# 안 싣는다(독립 레그 7 실측 — 그 파일의 줄이 데이터에 없어 분모가 조용히 줄고 함수마다 1 줄로 떴다): 셀 수 없는 꼴이라 FAIL 이다.
+# 파일 파사드 AuthClientKt 의 종류를 4 로 · 클래스 AuthClientBag 의 종류를 5 로 바꿨다.
+fresh
+sed -i '/^Classfile kotlin\/build\/classes\/kotlin\/main\/kc\/auth\/AuthClientKt\.class$/,/^Classfile / s/^      k=2$/      k=4/' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(sed -n '/^Classfile kotlin\/build\/classes\/kotlin\/main\/kc\/auth\/AuthClientKt\.class$/,/^Classfile /p' "$D/kotlin.javap.txt")" '      k=4' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 멀티파일 파사드는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [kotlin] kotlin/src/main/kotlin/kc/auth/AuthClient.kt: kc/auth/AuthClientKt — a @file:JvmMultifileClass facade only forwards to its synthetic part class, whose methods JaCoCo does not report: the file's lines are not in the data" "[kotlin] 멀티파일 파사드(k=4)"
+assert_not_contains "$OUT" "OK —" "[kotlin] 셀 수 없는 파일에서 수치를 내지 않는다"
+fresh
+sed -i '/^Classfile kotlin\/build\/classes\/kotlin\/main\/kc\/auth\/AuthClientBag\.class$/,/^Classfile / s/^      k=1$/      k=5/' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_contains "$(sed -n '/^Classfile kotlin\/build\/classes\/kotlin\/main\/kc\/auth\/AuthClientBag\.class$/,/^Classfile /p' "$D/kotlin.javap.txt")" '      k=5' "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[kotlin] 멀티파일 부분 클래스는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [kotlin] kotlin/src/main/kotlin/kc/auth/AuthClient.kt: kc/auth/AuthClientBag — a @file:JvmMultifileClass facade" "[kotlin] 멀티파일 부분(k=5)"
+# 종류는 kotlin.Metadata 의 k 만이다 — 같은 클래스의 다른 주석 요소 `k=5`(kotlin.Metadata 뒤에 넣었다)는 종류가 아니다.
+fresh
+sed -i '/^Classfile kotlin\/build\/classes\/kotlin\/main\/kc\/auth\/AuthClientBag\.class$/,/^Classfile / s/^    )$/    )\n    kc.auth.Marker(\n      k=5\n    )/' "$D/kotlin.javap.txt"
+kotlin_mark 0
+assert_eq 1 "$(sed -n '/^Classfile kotlin\/build\/classes\/kotlin\/main\/kc\/auth\/AuthClientBag\.class$/,/^Classfile /p' "$D/kotlin.javap.txt" | grep -c '^      k=5$')" "(변이가 착지했는지 먼저 본다)"
+run report kotlin "$T" --out "$D"
+assert_eq 0 "$RC" "[kotlin] 다른 주석의 k 요소는 종류가 아니다 — exit 0 — 출력: $OUT"
 # 람다는 그것을 만드는 invokedynamic 의 메서드다 — 그런 메서드가 없으면(이름을 바꿔 부트스트랩 핸들과 어긋나게 했다) 접지 않는다.
 fresh
 sed -i 's#<method name="token\$lambda\$0" #<method name="tok$en$lambda$0" #' "$D/kotlin.xml"
@@ -2102,7 +2144,7 @@ kotlin_mark 0
 assert_contains "$(cat "$D/kotlin.javap.txt")" 'EnclosingMethod: #56.#0 ' "(변이가 착지했는지 먼저 본다)"
 run report kotlin "$T" --out "$D"
 assert_eq 0 "$RC" "[kotlin] 감싼 메서드 없는 익명 객체는 new 하는 메서드에 접힌다 — exit 0 — 출력: $OUT"
-assert_line "$OUT" "  never executed by the integration run — 23 functions (none of its lines ran):" "[kotlin] 목록은 그대로"
+assert_line "$OUT" "  never executed by the integration run — 26 functions (none of its lines ran):" "[kotlin] 목록은 그대로"
 assert_not_contains "$OUT" "PLAIN" "[kotlin] 익명 객체의 이름을 내지 않는다"
 # 컴패니언 `@JvmStatic` 바깥 다리의 판별은 **부르는 컴패니언 메서드**의 표지다(다리 쪽 표지만 보면 진짜 메서드가 중첩 클래스의 같은
 # 이름을 부를 때도 접혔다 — 양성의 AuthClientTokens.parse). 컴패니언의 stat 에서 표지를 지우면 다리는 따로 된 멤버로 뜬다(안 돌았다).
@@ -2358,7 +2400,7 @@ fresh
 kotlin_data "$FIX/data/kotlin-zero.xml"
 run report kotlin "$T" --out "$D"
 assert_eq 2 "$RC" "[kotlin] 경계 클래스를 싣기만 한 실행은 exit 2 — 출력: $OUT"
-assert_contains "$OUT" "FAIL [kotlin] the run executed 0 of 179 boundary lines outside static initializers — a measurement failure, not a low number (class loading alone credits 2 static-initializer lines)" "[kotlin] 정적 초기화만 돈 실행"
+assert_contains "$OUT" "FAIL [kotlin] the run executed 0 of 204 boundary lines outside static initializers — a measurement failure, not a low number (class loading alone credits 2 static-initializer lines)" "[kotlin] 정적 초기화만 돈 실행"
 assert_not_contains "$OUT" "OK —" "[kotlin] 측정 실패에서 수치를 내지 않는다"
 # 빈 파생 + 빈 핀 — 집합은 같으므로(∅ = ∅) 빈 집합 판정만이 잡는다. 파생 도구를 가짜로 바꿔 그 갈래만 태운다.
 # ⚠️ 두 언어 다 「있되 비었다」여야 한다 — 한 언어를 빼 두면 check 의 exit 2 가 그 「없는 파생」에서 와서 빈 집합
@@ -2550,20 +2592,20 @@ fresh; floor java statements 50
 run check "$T"
 assert_eq 2 "$RC" "[floor] java 에 statements 는 없다(지표는 lines · bodies) — 출력: $OUT"
 assert_contains "$OUT" "java.floor.metric" "[floor] java 지표 오류를 지목한다"
-# kotlin 도 lines(픽스처 145/181 = 80.110%) · bodies(142/179 = 79.330%)다.
-fresh; floor kotlin bodies 79.32
+# kotlin 도 lines(픽스처 161/206 = 78.155%) · bodies(158/204 = 77.451%)다.
+fresh; floor kotlin bodies 77.45
 run report kotlin "$T" --out "$D"
-assert_eq 0 "$RC" "[floor] kotlin bodies 79.330% ≥ 79.32 — 출력: $OUT"
-assert_line "$OUT" "integration-coverage [kotlin]: OK — lines 145/181 (80.1%) · bodies 142/179 (79.3%) · floor bodies ≥ 79.32% · 23 never-executed functions, all owned by open registry items" "[floor] kotlin 통과 요약"
-fresh; floor kotlin bodies 79.34
+assert_eq 0 "$RC" "[floor] kotlin bodies 77.451% ≥ 77.45 — 출력: $OUT"
+assert_line "$OUT" "integration-coverage [kotlin]: OK — lines 161/206 (78.2%) · bodies 158/204 (77.5%) · floor bodies ≥ 77.45% · 26 never-executed functions, all owned by open registry items" "[floor] kotlin 통과 요약"
+fresh; floor kotlin bodies 77.46
 run report kotlin "$T" --out "$D"
-assert_eq 3 "$RC" "[floor] kotlin bodies 79.330% < 79.34 — 출력: $OUT"
-fresh; floor kotlin lines 80.11
+assert_eq 3 "$RC" "[floor] kotlin bodies 77.451% < 77.46 — 출력: $OUT"
+fresh; floor kotlin lines 78.15
 run report kotlin "$T" --out "$D"
-assert_eq 0 "$RC" "[floor] kotlin lines 80.110% ≥ 80.11 — 지표가 bodies(79.330%)로 새지 않는다 — 출력: $OUT"
-fresh; floor kotlin lines 80.12
+assert_eq 0 "$RC" "[floor] kotlin lines 78.155% ≥ 78.15 — 지표가 bodies(77.451%)로 새지 않는다 — 출력: $OUT"
+fresh; floor kotlin lines 78.16
 run report kotlin "$T" --out "$D"
-assert_eq 3 "$RC" "[floor] kotlin lines 80.110% < 80.12 — 출력: $OUT"
+assert_eq 3 "$RC" "[floor] kotlin lines 78.155% < 78.16 — 출력: $OUT"
 fresh; floor kotlin statements 50
 run check "$T"
 assert_eq 2 "$RC" "[floor] kotlin 에 statements 는 없다(지표는 lines · bodies) — 출력: $OUT"

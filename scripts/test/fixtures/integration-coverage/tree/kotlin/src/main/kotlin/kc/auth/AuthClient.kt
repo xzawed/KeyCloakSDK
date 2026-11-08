@@ -489,3 +489,66 @@ sealed class AuthClientSealed(
 ) {
     class Leaf : AuthClientSealed()
 }
+
+// ── 아래는 독립 레그 7 이 보인 꼴이다 ──
+
+/** 기본값 식이 람다를 만드는 open fun 을 재정의한다 — 그 람다(`f$lambda$0` — 다리가 만든다)가 돌아도 이 몸통은 안 돌았다(다리가 만든 것도
+ *  다리처럼 실행 근거가 아니다). 구동은 재정의 쪽만. */
+open class AuthClientLater {
+    open fun f(x: Int = later { 5 }): Int {
+        val y = x + 100
+        return y * 2
+    }
+}
+
+class AuthClientLaterSub : AuthClientLater() {
+    override fun f(x: Int): Int = x + 1
+}
+
+/** 기본값이 익명 객체인 open fun 을 재정의한다 — 그 객체(`g$1` — EnclosingMethod 가 다리다)를 만들어도 이 몸통은 안 돌았다. */
+open class AuthClientCmp {
+    open fun g(
+        c: Comparator<String> =
+            object : Comparator<String> {
+                override fun compare(
+                    a: String,
+                    b: String,
+                ): Int = a.length - b.length
+            },
+    ): Int {
+        val y = c.compare("a", "bb")
+        return y * 2
+    }
+}
+
+class AuthClientCmpSub : AuthClientCmp() {
+    override fun g(c: Comparator<String>): Int = 7
+}
+
+/** 기본값이 람다인 추상 멤버 — 몸통이 없어 다리와 그 람다뿐이다: 다리가 돈 것이 그 멤버가 불린 근거다(람다는 안 불렸다). */
+interface AuthClientSink {
+    fun put(
+        v: Int,
+        done: () -> Unit = {},
+    ): Int
+}
+
+class AuthClientSinkImpl : AuthClientSink {
+    override fun put(
+        v: Int,
+        done: () -> Unit,
+    ): Int = v
+}
+
+/** 기본값 식이 람다인 인터페이스 기본 메서드를 재정의한다 — 다리(`h$default` — 돌았다)와 그 람다는 근거가 아니다. 안 돈 DefaultImpls 다리의
+ *  줄(선언 줄)은 돈 다리의 줄이기도 해 그 함수의 안 돈 줄로 세지 않는다. 구동은 재정의 쪽만. */
+interface AuthClientIface {
+    fun h(x: Int = later { 3 }): Int {
+        val y = x * 10
+        return y + 1
+    }
+}
+
+class AuthClientIfaceImpl : AuthClientIface {
+    override fun h(x: Int): Int = x + 1
+}

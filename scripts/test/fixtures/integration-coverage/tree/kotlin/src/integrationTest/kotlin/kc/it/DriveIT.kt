@@ -4,13 +4,16 @@ import kc.auth.AuthClient
 import kc.auth.AuthClientApiImpl
 import kc.auth.AuthClientBag
 import kc.auth.AuthClientCfg
+import kc.auth.AuthClientCmpSub
 import kc.auth.AuthClientCross
 import kc.auth.AuthClientDerived
 import kc.auth.AuthClientDefaults
 import kc.auth.AuthClientError
 import kc.auth.AuthClientHooks
+import kc.auth.AuthClientIfaceImpl
 import kc.auth.AuthClientInline
 import kc.auth.AuthClientInlines
+import kc.auth.AuthClientLaterSub
 import kc.auth.AuthClientLoader
 import kc.auth.AuthClientLog
 import kc.auth.AuthClientLoaders
@@ -25,6 +28,7 @@ import kc.auth.AuthClientRefs
 import kc.auth.AuthClientRelay
 import kc.auth.AuthClientSealed
 import kc.auth.AuthClientShapes
+import kc.auth.AuthClientSinkImpl
 import kc.auth.AuthClientStatic
 import kc.auth.AuthClientStatus
 import kc.auth.AuthClientSusp
@@ -102,5 +106,9 @@ class DriveIT {
         check(AuthClientObjPick2.pick(null) == 0)
         check(AuthClientDerived().f() == 1)
         check(AuthClientSealed.Leaf().n == 1)
+        check(AuthClientLaterSub().f() == 6)
+        check(AuthClientCmpSub().g() == 7)
+        check(AuthClientSinkImpl().put(3) == 3)
+        check(AuthClientIfaceImpl().h() == 4)
     }
 }
