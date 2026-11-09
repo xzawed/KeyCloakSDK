@@ -17,6 +17,7 @@
 
 ### Security
 - **(Java · Kotlin)** admin 레인도 응답 머리·청크 크기 줄·트레일러·TLS 레코드까지 요청을 보낸 때부터 읽기 타임아웃 안에 읽습니다 — 지금까지는 그 틀을 읽기마다만 묶어, 바이트를 읽기 타임아웃보다 조금 짧게 흘리는 서버가 1 초 설정에 7 초(틀)·33.5 초(TLS 레코드 하나) 호출을 붙잡았습니다. 이제 같은 `KeycloakTransportException` 으로 1.5 초 안에 끝납니다. ⚠️ 컨테이너가 RESTEasy `ClientConfigProvider` 를 두면(WildFly Elytron 등) 그 TLS 정책을 지키려 RESTEasy 의 풀을 그대로 쓰고, 그때 머리·틀은 지금처럼 읽기마다만 묶입니다.
+- **(Java · Kotlin)** `com.nimbusds:oauth2-oidc-sdk` 를 11.38.2 에서 **11.39** 로 올립니다 — 상류가 `IDTokenValidator` · `LogoutTokenValidator` 에서 JWE `cty: JWT` 없는 암호화 토큰이 JWS 검증을 건너뛰던 것을 막았습니다(iss #5PWT). SDK 의 id_token 검증은 그 두 클래스를 쓰지 않고 서명된 JWT 만 받으므로(`JWTParser.parse` 뒤 `SignedJWT` 가 아니면 거부) 동작은 그대로입니다 — 그 클래스를 직접 쓰는 앱이 이 SDK 를 거쳐 받는 판이 올라갑니다.
 
 ## [1.5.2] - 2026-11-03 (PHP)
 
