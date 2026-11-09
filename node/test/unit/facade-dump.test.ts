@@ -103,8 +103,8 @@ beforeAll(async () => {
     'exchangeCode error': KeycloakAuthError,
     'validation error': KeycloakTokenValidationError,
     'discovery transport error': KeycloakTransportError,
-    'introspect transport error': KeycloakAuthError,
-    'logout transport error': KeycloakAuthError,
+    'introspect transport error': KeycloakTransportError,
+    'logout transport error': KeycloakTransportError,
     'config error': KeycloakConfigError,
   }
   for (const [name, err] of Object.entries(errors)) {
