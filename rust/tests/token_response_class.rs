@@ -7,7 +7,7 @@
 //! 받은 `reqwest::Client::new()` 만 따라가다 한도에 걸린다)와 대조군 셋(쓸 수 있는 응답 · 닿지 않는 IdP · 70,000 자 realm 으로
 //! 보내지 못한 요청)을 더했다.
 //! 열은 공개 진입점 여덟이다 — `AuthClient` 의 토큰 호출 다섯(S1) · `introspect` · `ClientCredentialsTokenProvider`(S2)
-//! · admin 파사드(S5: 토큰을 못 얻으면 요청 없이 공급자의 오류 그대로 — 판정 D4, 2026-11-11 까지는 무엇이든
+//! · admin 파사드(S5: 토큰을 못 얻으면 요청 없이 공급자의 오류 그대로 — 판정 D4. #1009 전에는 무엇이든
 //! `Admin(Other { status: 401 })` 이라 연결 실패까지 「401」이었다).
 //!
 //! ⚠️ 칸 하나를 바꾸면 등록부 `token-response-class-divergent` 의 아홉 언어 표도 함께 본다 — 계급은 언어 사이 계약이다.

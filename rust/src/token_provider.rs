@@ -82,7 +82,7 @@ impl ClientCredentialsTokenProvider {
             .map_err(|e| token_http_error(&e, format!("token endpoint: {e}")))?;
         let status = resp.status();
         // ⚠️ 본문은 상한(auth 레인과 한 상수)까지만 읽는다 — `resp.json()` 은 통째로 모았다. 넘으면 admin 요청 없이
-        // 실패한다(`SdkTokenSupplier` 가 401 로 옮긴다).
+        // 실패한다(파사드는 이 `Transport` 그대로, `raw()` 는 `SdkTokenSupplier` 가 401 로 옮긴다).
         let mut resp = resp;
         let body = read_capped(&mut resp, TOKEN_RESPONSE_MAX_BYTES)
             .await

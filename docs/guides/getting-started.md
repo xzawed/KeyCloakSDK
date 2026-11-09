@@ -564,7 +564,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-> Error handling: match admin failures on `KeycloakError::Admin(AdminError::NotFound | Conflict | Forbidden | Other { status })`, or classify them as `KeycloakError::Transport(_)` on a network failure. `admin().raw()` is the escape hatch to the underlying `keycloak::KeycloakAdmin` typed client.
+> Error handling: admin failures are `KeycloakError::Admin(AdminError::NotFound | Conflict | Forbidden | Other { status })`, `Transport(_)` on network failure, or `Auth { .. }` when the admin token is refused. `admin().raw()` is the escape hatch to the underlying `keycloak::KeycloakAdmin`.
 
 ## Ruby
 

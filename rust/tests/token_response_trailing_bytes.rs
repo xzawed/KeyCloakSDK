@@ -208,6 +208,9 @@ async fn json_whitespace_after_the_value_is_accepted_like_the_bare_body_on_every
             let (want, want_hits) = call(lane, &Reply::with_tail(status, "")).await;
             let sane = if status == 200 {
                 want.starts_with("Ok(")
+            } else if matches!(lane, Lane::Admin) {
+                // 공급자의 오류 **그대로**다 — 계급·코드뿐 아니라 메시지까지(접두를 붙이면 여기서 떨어진다).
+                want == call(Lane::Provider, &Reply::with_tail(status, "")).await.0
             } else {
                 want.starts_with("Err(Auth {")
                     && want.contains(r#"oauth_error: Some("invalid_grant")"#)
