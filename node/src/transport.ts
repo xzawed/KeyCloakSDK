@@ -46,3 +46,17 @@ export function isTransportError(err: unknown): boolean {
     (causeCode !== undefined && TRANSPORT_CODES.has(causeCode))
   )
 }
+
+/**
+ * {@link isTransportError} anywhere in the cause chain (at most 8 links, like `responseTooLarge`) — a library may wrap
+ * fetch's error in its own. The auth lane uses it to tell a response that never fully arrived (transport) from one
+ * that arrived but is unusable (auth).
+ */
+export function transportInChain(err: unknown): boolean {
+  let link: unknown = err
+  for (let depth = 0; depth < 8 && typeof link === 'object' && link !== null; depth += 1) {
+    if (isTransportError(link)) return true
+    link = (link as { cause?: unknown }).cause
+  }
+  return false
+}

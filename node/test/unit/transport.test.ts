@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isTransportError } from '../../src/transport.js'
+import { isTransportError, transportInChain } from '../../src/transport.js'
 
 // ⚠️ **이 파일이 없을 때 `TRANSPORT_CODES` 에서 `CERT_HAS_EXPIRED` 를 지워도 107 전부 통과했다**
 // (실측 2026-09-10, 변이 프로브 `SILENT`). 호출 자리 테스트(auth·admin 경계)가 이 분류기를
@@ -62,5 +62,39 @@ describe('isTransportError — 전송 실패 분류기', () => {
 
   it('code 가 문자열이 아니면 무시한다', () => {
     expect(isTransportError(Object.assign(new Error('e'), { code: 111 }))).toBe(false)
+  })
+})
+
+// auth 레인의 계급 판정 — 라이브러리가 fetch 의 오류를 제 오류로 감싸도 사슬 어딘가의 전송 오류를 본다
+// (`auth.ts` 의 `failure` · `auth-incomplete-response.test.ts`).
+describe('transportInChain — 원인 사슬의 전송 실패', () => {
+  const fetchFailed = new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } })
+
+  it('맨 앞이 전송 실패면 참', () => {
+    expect(transportInChain(fetchFailed)).toBe(true)
+  })
+
+  it('감싼 오류의 사슬 안쪽도 본다', () => {
+    const wrapped = new Error('something went wrong', {
+      cause: new Error('mid', { cause: fetchFailed }),
+    })
+    expect(transportInChain(wrapped)).toBe(true)
+  })
+
+  it('끝까지 온 응답의 해석 실패는 아니다', () => {
+    expect(
+      transportInChain(new Error('bad', { cause: new SyntaxError('Unexpected token <') })),
+    ).toBe(false)
+  })
+
+  it('여덟 고리 밖은 보지 않는다', () => {
+    let deep: Error = fetchFailed
+    for (let i = 0; i < 8; i += 1) deep = new Error(`wrap ${i}`, { cause: deep })
+    expect(transportInChain(deep)).toBe(false)
+    expect(transportInChain(deep.cause)).toBe(true)
+  })
+
+  it.each([null, undefined, 'fetch failed', 42])('객체가 아니면 아니다: %s', (v) => {
+    expect(transportInChain(v)).toBe(false)
   })
 })

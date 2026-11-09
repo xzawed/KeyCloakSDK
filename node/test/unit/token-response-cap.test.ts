@@ -6,14 +6,15 @@
  * client credentials · refresh · 코드 교환 · admin 의 자기 토큰 부여 · introspection — 이 전부 받아들였고
  * 프로세스 피크가 호출 하나에 +100~123 MB 늘었다(gzip 33 KB 도 같았다).
  *
- * 계약: 본문이 1,048,576 바이트(푼 뒤) 이하면 지금과 똑같고, 1,048,577 바이트 이상이면 그 호출의 기존 SDK 오류
- * (`KeycloakAuthError`)로 실패하며 메시지가 정확하다. admin 은 admin 요청을 보내지 않는다. Keycloak 26.6 이 기본
- * 설정으로 받아들이는 가장 긴 Bearer(65,459 바이트)는 모든 레인에서 통과한다.
+ * 계약: 본문이 1,048,576 바이트(푼 뒤) 이하면 지금과 똑같고, 1,048,577 바이트 이상이면 `KeycloakTransportError`
+ * (응답을 다 받지 않았다 — 등록부 `token-response-class-divergent`, 1.0.7 까지는 `KeycloakAuthError`)로 실패하며
+ * 메시지가 정확하다. admin 은 admin 요청을 보내지 않는다. Keycloak 26.6 이 기본 설정으로 받아들이는 가장 긴
+ * Bearer(65,459 바이트)는 모든 레인에서 통과한다.
  */
 import type { ReadableStreamReadResult } from 'node:stream/web'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { exportJWK, generateKeyPair, SignJWT, type CryptoKey } from 'jose'
-import { KeycloakAuthError, KeycloakClient } from '../../src/index.js'
+import { KeycloakTransportError, KeycloakClient } from '../../src/index.js'
 import {
   discoveryDocument,
   startFakeIdp,
@@ -184,13 +185,13 @@ describe.each(Object.entries(LANES))('%s', (_name, lane) => {
   )
 
   it.each<Transfer>(['chunked', 'cl', 'gzip'])(
-    '1,048,577 바이트(푼 뒤) 본문은 KeycloakAuthError 로 실패한다 — 메시지가 정확하다 (%s)',
+    '1,048,577 바이트(푼 뒤) 본문은 KeycloakTransportError 로 실패한다 — 메시지가 정확하다 (%s)',
     async (transfer) => {
       const token = bearerOf(KEYCLOAK_MAX_BEARER)
       await lane.arm(token, CAP + 1, transfer)
       const adminBefore = idp.counts.admin
       const refused = await refusal(lane.run(client(), token))
-      expect(refused).toBeInstanceOf(KeycloakAuthError)
+      expect(refused).toBeInstanceOf(KeycloakTransportError)
       expect(refused.message).toBe(`${lane.prefix}: ${EXCEEDS}`)
       if (lane.admin === true) expect(idp.counts.admin).toBe(adminBefore) // admin 요청은 나가지 않는다
     },
@@ -229,7 +230,7 @@ describe.each(Object.entries(LANES))('%s', (_name, lane) => {
       })
     } as never)
     const refused = await refusal(lane.run(client(), token))
-    expect(refused).toBeInstanceOf(KeycloakAuthError)
+    expect(refused).toBeInstanceOf(KeycloakTransportError)
     expect(refused.message).toBe(`${lane.prefix}: ${EXCEEDS}`)
     const readers = [...perReader.values()]
     // 판정한 응답은 정확히 cap+1 바이트를 받고 멈췄다 — 그 이상은 청하지도 않았다.
@@ -257,7 +258,7 @@ describe('원인 사슬', () => {
 })
 
 describe('admin — 만료 뒤 다시 받는 토큰도 상한 안에서 판정한다', () => {
-  it('재발급 응답이 상한을 넘으면 admin 요청 없이 KeycloakAuthError', async () => {
+  it('재발급 응답이 상한을 넘으면 admin 요청 없이 KeycloakTransportError', async () => {
     // expires_in 이 skew(30 초) 이하면 provider 캐시는 곧바로 만료다 — 다음 admin 호출이 토큰을 다시 받는다.
     idp.token = {
       head: JSON.stringify({ access_token: 'first', token_type: 'Bearer', expires_in: 10 }),
@@ -270,7 +271,7 @@ describe('admin — 만료 뒤 다시 받는 토큰도 상한 안에서 판정�
     }
     const before = idp.counts.admin
     const refused = await refusal(admin.realms.list())
-    expect(refused).toBeInstanceOf(KeycloakAuthError)
+    expect(refused).toBeInstanceOf(KeycloakTransportError)
     expect(refused.message).toBe(`Client credentials grant failed: ${EXCEEDS}`)
     expect(idp.counts.admin).toBe(before)
   })
@@ -291,7 +292,7 @@ describe('discovery 응답', () => {
     })
     idp.discovery = { head, total: CAP + 1, transfer: 'chunked' }
     const refused = await refusal(client().auth.clientCredentialsToken())
-    expect(refused).toBeInstanceOf(KeycloakAuthError)
+    expect(refused).toBeInstanceOf(KeycloakTransportError)
     expect(refused.message).toBe(`OIDC discovery failed: ${EXCEEDS}`)
   })
 })

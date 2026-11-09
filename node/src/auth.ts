@@ -6,7 +6,7 @@ import { JwtValidator } from './jwt.js'
 import { mask } from './masking.js'
 import { oidcEndpoints, type OidcEndpoints } from './oidc-metadata.js'
 import { fetchTokenEndpointBounded, responseTooLarge } from './token-response-cap.js'
-import { isTransportError } from './transport.js'
+import { isTransportError, transportInChain } from './transport.js'
 import {
   tokenSetFromResponse,
   type IntrospectionResult,
@@ -84,8 +84,23 @@ function reasonOf(e: unknown): string {
 }
 
 /**
+ * 그랜트·introspection·logout·discovery 실패의 계급 — 응답이 **끝까지 오지 않았으면**(네트워크 · 타임아웃 · 본문
+ * 상한 초과) `KeycloakTransportError`, 끝까지 왔지만 쓸 수 없으면 `KeycloakAuthError`(등록부
+ * `token-response-class-divergent` — 아홉 언어의 규칙, rust #951 · go #952). 문구는 계급과 무관하게 같다.
+ * 1.0.7 까지는 discovery 의 전송 실패 말고는 전부 auth 였다(`test/unit/auth-incomplete-response.test.ts`).
+ */
+function failure(message: string, e: unknown): KeycloakAuthError | KeycloakTransportError {
+  const reason = `${message}: ${reasonOf(e)}`
+  return responseTooLarge(e) !== undefined || transportInChain(e)
+    ? new KeycloakTransportError(reason, { cause: e })
+    : new KeycloakAuthError(reason, { cause: e })
+}
+
+/**
  * Authentication (OIDC/OAuth2) facade. It wraps openid-client v6's functional API without exposing the underlying
- * types in the public API — every failure is converted to {@link KeycloakAuthError} at the boundary (§4 contract).
+ * types in the public API — every failure is converted to an SDK error at the boundary (§4 contract):
+ * {@link KeycloakTransportError} when the response never fully arrived (a network failure, a timeout, a body over
+ * the 1,048,576-byte cap), {@link KeycloakAuthError} when it arrived but is unusable.
  *
  * Being a network boundary, it is excluded from the coverage gate (vitest exclude); the mapping/PKCE/exception
  * conversion logic is verified by `auth.test.ts` with openid-client mocked, and the real calls by the integration
@@ -244,7 +259,7 @@ export class AuthClient {
         claims: response as Record<string, unknown>,
       }
     } catch (e) {
-      throw new KeycloakAuthError(`Token introspection failed: ${reasonOf(e)}`, { cause: e })
+      throw failure('Token introspection failed', e)
     }
   }
 
@@ -277,7 +292,7 @@ export class AuthClient {
         redirect: 'manual',
       })
     } catch (e) {
-      throw new KeycloakAuthError(`Logout request error: ${(e as Error).message}`, { cause: e })
+      throw failure('Logout request error', e)
     }
     if (!response.ok) {
       throw new KeycloakAuthError(`Logout failed (HTTP ${response.status})`)
@@ -349,19 +364,19 @@ export class AuthClient {
       if (isTransportError(e)) {
         throw new KeycloakTransportError('OIDC discovery transport failure', { cause: e })
       }
-      throw new KeycloakAuthError(`OIDC discovery failed: ${reasonOf(e)}`, { cause: e })
+      throw failure('OIDC discovery failed', e)
     }
     this.#configuration = config
     return config
   }
 
-  /** 그랜트 함수를 실행하고 응답을 TokenSet으로 매핑하며, 실패를 KeycloakAuthError로 변환한다. */
+  /** 그랜트 함수를 실행하고 응답을 TokenSet으로 매핑하며, 실패를 SDK 예외로 변환한다({@link failure}). */
   async #grant(fn: () => Promise<GrantResponse>, message: string): Promise<TokenSet> {
     try {
       const response = await fn()
       return tokenSetFromResponse(response as unknown as Record<string, unknown>)
     } catch (e) {
-      throw new KeycloakAuthError(`${message}: ${reasonOf(e)}`, { cause: e })
+      throw failure(message, e)
     }
   }
 }
