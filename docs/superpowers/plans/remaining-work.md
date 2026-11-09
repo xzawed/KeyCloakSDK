@@ -1,5 +1,5 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=170971 max-raw-bytes=189435 -->
+<!-- doc-budget: max-bytes=170971 max-raw-bytes=188643 -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -7,8 +7,8 @@
      max-raw-bytes 는 사람 판정이다(2026-10-28, 「등록부에만 건다」) — 분할(2026-09-22) 뒤 36 일 동안 적재는 거의
      그대로인데 블록 주석이 633 → 60,409B 로 늘었다. 이제 주석도 센다(검사 8f). 열린 항목의 긴 착수 메모와 경위는
      PR 본문으로 보내고 포인터만 남긴다.
-     인상 기록 — (mm) #945 · (nn) #946 · node #953 · rust #955(그 재는 명령 줄은 #980 이 항목을 닫으며 지웠다) — 은 git 으로 보냈다. -->
-<!-- 170873 → 170971 · 189137 → 189435: 새 항목·SILENT↔09-07 중복 #995 -->
+     인상 기록 — (mm) #945 · (nn) #946 · node #953 · rust #955(그 재는 명령 줄은 #980 이 항목을 닫으며 지웠다) · #995 — 은 git 으로 보냈다. -->
+<!-- max-raw-bytes 189435 → 188643: ③ 마감(닫음 넷 · 새 셋) -->
 # 잔여작업 등록부 — 2026-09-03 전수 감사 후속
 
 **이 문서가 답하는 것 하나** — 「감사가 남긴 것 중 무엇이 아직 열려 있고, 각각을 **어떤 명령으로** 닫았다고 말할 수 있는가」.
@@ -40,7 +40,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `287`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `290`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -62,15 +62,15 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-11-09 · #914–#1001 반영)
+### 다음 세션 진입점 (2026-11-10 · #914–#1010 반영)
 
-**지금 상태** — 마지막 물결 8(2026-11-03): php 1.5.2 · kotlin 1.0.9 **LIVE**(기준선 #940·#942). `[Unreleased]` 는 여섯 언어 몫 — 태그 위임은 물결마다 다시 묻는다. `PHP_SPLIT_TOKEN` 은 만료 전에 교체한다. 열린 PR 은 Dependabot 뿐. 래퍼 9.8 은 #682·#788.
+**지금 상태** — 마지막 물결 8(2026-11-03): php 1.5.2 · kotlin 1.0.9 **LIVE**(기준선 #940·#942). `[Unreleased]` 는 아홉 언어 몫 — 태그 위임은 물결마다 다시 묻는다. `PHP_SPLIT_TOKEN` 은 만료 전에 교체한다. 열린 PR 은 Dependabot 뿐. 래퍼 9.8 은 #682·#788.
 
 열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유한다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. `token-response-class-divergent` [L/M] · `jwks-oct-key-usable-with-hs` [M/S] · `guard-detection-surface-hand-narrowed` [H/M].
+1. `jwks-oct-key-usable-with-hs` [M/S] · `guard-detection-surface-hand-narrowed` [H/M] · `token-error-code-secret-echo` · `token-response-class-residue` · `logout-2xx-html-false-success` [L/S].
 2. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
 **판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 · 라운드 2 #892 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
@@ -341,11 +341,11 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 135건 (열림 63)
+## C. 품질 부채 — 138건 (열림 64)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 73
+### 9언어 소스 — 76
 
 - [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청과 교환의 `redirect_uri` 를 호출당 받지 못했다 — §4 판정 「표기가 아니라 능력의 차이이니 API 를 맞춘다」로 둘 다 가산적으로 맞췄다. 사후 서사는 `git show 8d7316c:docs/superpowers/plans/remaining-work.md` 522행
 
@@ -359,8 +359,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `close-path-leaks` **[L/M]** 정리 경로가 자원을 놓친다 — 실패 시 중단·생성 중 누락·미소유 executor · `go/admin.go:66-68`
 - [ ] `node-nonsdk-error-escapes` **[L/S]** Node의 두 공개 경로가 SDK 예외 계층 밖의 오류를 던진다 · `node/src/admin/call.ts:13-26`
 <!-- node-nonsdk-error-escapes 2026-10-05(node 물결 4 구현 레그): admin 쓰기의 representation 을 JSON 으로 못 쓰면 raw TypeError 가 공개 API 로 나온다 — users.update·create(순환) 「Converting circular structure to JSON」, BigInt 속성 「Do not know how to serialize a BigInt」 · isSdkError false · admin 요청 0 · 토큰 인용 없음. call() 이 HTTP·전송 밖 오류를 그대로 던지는 것은 admin-call.test.ts 가 고정한 계약이다. .NET 은 #714 가 같은 부류를 KeycloakTransportException 으로 바꿨다. -->
-- [ ] `rust-admin-error-cause-flattened` **[L/M]** Rust에서 admin 토큰 실패의 원인이 가짜 401로 뭉개져 사라진다 · `rust/src/admin.rs:146-151`
-<!-- 2026-10-05(rust 물결 4 구현 레그): 새 토큰 응답 상한도 같은 길로 뭉개진다 — admin 레인 32 MiB → 「admin error: admin HTTP 401」, provider 를 직접 부르면 Transport("token response …"). 파사드의 `send` 가 토큰 오류를 버리고 401 로 낸다(#844 전에는 SdkTokenSupplier 가 HttpFailure{401, text} 로 싸고 map_admin 이 text 를 버렸다 — raw() 는 지금도 그렇다). 형제: rust-admin-unreachable-classified-admin. -->
+- [x] `rust-admin-error-cause-flattened` **[L/M · 닫힘 2026-11-10 #1009]** 파사드는 공급자의 오류 그대로 — `raw()` 는 crate 의 401
 - [ ] `error-message-surface-unspecified` **[L/M]** 오류 메시지 표면에 규약이 없다 — 서버 본문 원문 삽입과 한글 메시지. 토큰 제시자가 고른 `kid` 도 줄바꿈째 실린다(.NET IDX10503, 실측) · `dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:95-101`
 <!-- 2026-10-03 #710 재스캔(.NET): JwtValidator.cs:122/127 이 ErrorCause.MessageOf(IdentityModel 예외)로 메시지를 만든다 — kid "k\nINJ-FORGED-LINE" → Message·ToString 에 INJ. kid 는 IdP 가 아니라 토큰을 내민 쪽이 고른다(로그 위조). alg·iss·aud 의 LF 는 메시지에 안 닿았다. admin 타입 경로 AdminClient.cs:66/74 (ErrorDescription 원문, LF 그대로)·raw 경로 :98-100 (본문 통째) 도 실측. 다른 여덟 언어의 kid 인용은 미측정. 2026-10-05 물결 4 레그: .NET admin 오류 본문이 KeycloakAdminException 메시지에 원문으로 실려, 받은 bearer 를 되울리는 admin 서버면 그것을 찍는다(SendRawAsync·IdFromLocationAsync 의 MapHttpError, raw·타입드 401·404 16/16 LEAK=bearer, 6f23931 도 같음 — 보낸 bearer 를 가릴지 php 처럼 본문을 버릴지 판정). go AdminError.Msg 도 apiErr.Message 를 그대로 싣는다(admin.go:178, 카나리아 1 히트 — cause.go 는 토큰·introspection 레인만 정화). · 2026-10-09 (secret-echo JVM 구현 레그): java getKeycloakError() 가 admin 리소스 오류 본문을 그대로 돌려준다 — 그 요청은 Bearer 를 실었다(되울리면 남는다). -->
 - [ ] `config-validation-gaps` **[L/M]** 설정 진입점이 값을 검증하지 않고 잘못된 기본값으로 대체한다 · `node/src/config.ts:74-87`
@@ -420,7 +419,10 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `wave4-hardening-node` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #768 #772]** bearer 끝 공백 다듬기를 SDK 가 맡는다(bearer 판정) · 폼 본문 U+FFFD 는 「그대로」
 - [x] `wave4-hardening-ruby` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #763 #874]** 전역 `Rack::OAuth2.http_config` 를 걸지 않는다(판정) — ASCII 밖 bearer 는 bearer 판정이 닫는다
 - [x] `wave4-hardening-php` **[L/S · 닫힘 2026-11-02 #935]** 칸(6) → auth. (1)–(5)의 되살릴 조건은 #892 본문
-- [ ] `token-response-class-divergent` **[L/M · 신규 2026-11-02 · rust #951 · go #952 · node #993 · python #994 위임]** 깨진 토큰 응답의 오류 계급이 갈린다 — 남은 칸 dotnet R2·R6 · ruby R2 · S5(admin) · 안 잰 열(400 비-JSON·UTF-8·charset)은 아홉부터 잰다. 표는 #935 본문
+- [x] `token-response-class-divergent` **[L/M · 신규 2026-11-02 · 닫힘 2026-11-10 · #951 #952 #993 #994 #1003–#1010]** 끝까지 왔지만 못 쓰면 Auth, 다 오지 않으면 Transport — 판정 표는 #1003 본문
+- [ ] `token-response-class-residue` **[L/S · 신규 2026-11-10]** 남은 칸 — JVM S5 의 Content-Type 없는 2xx · 깨진 gzip(Transport) · UTF-16 수용, ruby S1 의 깨진 응답 머리(Auth) · utf-16 charset(Transport), 이스케이프 서로게이트 미측정 · #1007 · #1008 본문
+- [ ] `token-error-code-secret-echo` **[L/S · 신규 2026-11-10]** 코드 모양의 OAuth `error`(되울린 시크릿일 수 있다)를 S1 · S2 는 아홉 언어가, S5 는 node · ruby · rust · .NET 이 싣는다 — python 은 코드 모양만, JVM · PHP 는 안 싣는다 · #1009 본문
+- [ ] `logout-2xx-html-false-success` **[L/S · 신규 2026-11-10]** logout 은 204 인데 2xx 를 모두 성공으로 보는 여덟 언어는 200 HTML(프록시 로그인 페이지)도 성공이다
 - [x] `wave4-hardening-java` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #769 #833 #875]** JVM 공통 bearer 는 판정이 닫았고 조회 스레드 생성 실패(Error)는 「그대로」 — admin 원인 사슬의 jakarta 타입은 `nimbus-type-on-public-surface` 로
 - [x] `wave4-hardening-kotlin` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #878]** 짧은 §5.2 꼴이 산문도 가리는 것은 받아들였고(판정) `MaskingTest` 가 고정한다 · %3F 는 「그대로」
 - [x] `python-admin-error-body-strict-decode` **[M/S · 신규·닫힘 2026-10-05 #719]** UTF-8 아닌 admin 오류 본문이 raw `UnicodeDecodeError` 였고 그 `__context__` 가 본문을 실었다(§4)
@@ -532,7 +534,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 88건 (열림 45)
+## D. 원장 밖 — 88건 (열림 43)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -669,8 +671,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `error-cause-chain-carries-response-body-crosslang` **[M/M · 신규 2026-09-26 · 닫힘 2026-09-26 #617–#624]** 여덟 전부 샜다 — 먼저 쟀다(수정 전, 언어당 변형 17–40 · 누출 6–18): java·kotlin `Caused by:` 가 비-JSON 본문·토큰째, python 트레이스백·메시지, go `RetrieveError` 본문·`error_description`, .NET `ToString()` 내부 예외, php `getPrevious()` 원본과 트레이스 인자, rust `oauth_error` 의 `error_description`, ruby `full_message`·`Faraday::ParsingError#inspect`. 되울린 `error_description` 이 보낸 refresh·code·verifier·Basic 을 싣는 경로도 여럿. 각 경계에서 하위 원인을 타입 이름·프레임만 남긴 사본으로 · 보낸 비밀은 `***` · 코드 모양만 OAuth 오류로. 언어마다 변이 8–13 CAUGHT, Grok 레그(ruby 는 여섯째 시도) 주장 측정·채택. 워크플로 한 번(격리 워크트리 여덟)
 - [ ] `error-description-foreign-token-residue` **[L/S · 신규 2026-09-26]** 위 수정이 **설계상 남긴** 자리 일곱 — `KNOWN_LEAKS` 가 고정한다(낡으면 실패): java 셋(보내지 않은 20 자 미만 값·소문자만의 긴 값이 `error_description` 에 — 산문 식별자와 가를 수 없다), kotlin 둘(남의 토큰을 되울린 `error_description`), .NET 둘(서버가 OAuth `error` **코드 자리**에 토큰을 넣음 — 코드 모양이면 그대로 둔다). 모두 IdP 가 이미 가진 값이나 적대적 IdP 가 심은 값이다 — 더 좁히려면 오류 설명을 통째로 버리는 결정이 필요하다 · `*/…MalformedTokenResponse*`
 <!-- 2026-10-05(kotlin 물결 4 구현 레그, 소스 판독 — 미측정): java 는 보낸 시크릿과 10 자 창을 공유하는 런과 20 자 이상의 토큰 모양 런까지 가리고(AuthClient.java:346-420) kotlin 은 정확한 꼴(+ #718 의 되울림 꼴)만 가린다 — 잘리거나 다시 인코딩된 되울림은 kotlin 메시지에 남을 수 있다. -->
-- [ ] `rust-admin-unreachable-classified-admin` **[L/S · 신규 2026-09-26]** rust 에서 도달 불가 서버로의 admin 호출이 `Transport` 가 아니라 `Admin(Other{401})` 로 나온다 — 파사드의 `send` 가 토큰 획득 실패를 전부 `Admin(Other{401})` 로 낸다(`raw()` 는 `SdkTokenSupplier` 의 `HttpFailure{401}`). 걷기 테스트가 그 분류를 지금 그대로 단언한다(`rust/tests/facade_dump.rs` 「admin get_user unreachable」) — 고치면 그 단언도 함께 · `rust/src/admin.rs`
-- [ ] `java-admin-token-401-classified-transport` **[L/S · 신규 2026-09-26 · 재현 필요]** java 걷기 레그의 관측: 잘못된 realm 으로 admin 토큰 요청이 401 을 받으면 `KeycloakTransportException`("admin transport failure")으로 나온다 — RESTEasy 가 토큰 필터의 `NotAuthorizedException` 을 `ProcessingException` 으로 감싸 `AdminExceptions` 가 전송으로 매핑한다는 진단. 걷기 테스트는 기반 예외만 단언해 고정되지 않았다 · `java/keycloak-sdk-admin`
+- [x] `rust-admin-unreachable-classified-admin` **[L/S · 닫힘 2026-11-10 #1009]** `Transport` 다(`facade_dump.rs`)
+- [x] `java-admin-token-401-classified-transport` **[L/S · 닫힘 2026-11-10 #1008]** `KeycloakAuthException` 이다(실 Keycloak — `AdminOpsIT`)
 - [x] `token-type-library-behaviour-unpinned` **[M/S · 신규·닫힘 2026-09-25 #581]** go·java·kotlin 이 비문자열 `access_token` 거절을 라이브러리(x/oauth2 · Nimbus)에 맡기면서 그 행동을 고정한 테스트가 0 이었다 — go 는 전제부터 미측정(실측: 여섯 다 `*AuthError`). 셋 다 표 테스트로 고정, 파싱 실패를 삼키는 변이에 go·java CAUGHT(kotlin 미측정) · `go/auth_test.go`
 
 ---
