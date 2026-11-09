@@ -163,9 +163,12 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
    * API 가 된다). ⚠️ Jackson 의 바이트 파서는 겹침 꼴({@code C1 81} → {@code A})을 받아들인다 — 이 검사 없이는 auth 레인이 거부하는
    * 본문으로 admin 이 {@code Bearer goodA} 를 보냈다(독립 레그 실측 · {@code TokenResponseClassTest} S5). 잘못된 바이트를 대체하지
    * 않고 보고하는 디코더로 입력의 끝까지 잰다 — 고정 4 KiB 버퍼를 비우며 넘칠 때마다 잇는다(넘침에서 멈추면 첫 4096 글자 뒤를 보지
-   * 않는다 — {@code TokenResponseGuardTest}). 끝을 알리고 디코딩하므로 잘린 마지막 열도 보고된다. BOM 은 유효한 바이트다.
+   * 않는다 — {@code TokenResponseGuardTest}). 끝을 알리고 디코딩하므로 잘린 마지막 열도 보고된다. BOM 은 유효한 바이트다. ASCII
+   * 뿐인 본문(토큰 응답은 대개 그렇다)은 디코더도 버퍼도 잡지 않고 참이다 — 판정마다 8 KiB 를 더 잡으면 작은 토큰 응답 하나의 할당이
+   * 63,104 → 71,080 바이트였다(Kotlin {@code TokenResponseGuardTest} 의 한도 64 KiB, 실측).
    */
   static boolean isUtf8(byte[] body) {
+    if (isAscii(body)) return true;
     CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
         .onMalformedInput(CodingErrorAction.REPORT)
         .onUnmappableCharacter(CodingErrorAction.REPORT);
@@ -177,6 +180,13 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
       result = decoder.decode(in, out, true);
     } while (result.isOverflow());
     return !result.isError();
+  }
+
+  private static boolean isAscii(byte[] body) {
+    for (byte b : body) {
+      if (b < 0) return false;
+    }
+    return true;
   }
 
   /** 오류 상태의 본문 — 상한+1 바이트까지만 읽어 넘치면 거부, 아니면 읽은 바이트를 그대로 넘긴다(판정은 하지 않는다). */

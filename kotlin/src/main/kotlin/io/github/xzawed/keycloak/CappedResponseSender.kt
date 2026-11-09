@@ -71,8 +71,11 @@ internal class ResponseNotUtf8Exception(
  * 엄격한 UTF-8 인가 — 잘못된 바이트(끝에서 잘린 열 · 겹침 꼴 · 서로게이트 포함)를 대체하지 않고 보고하는 디코더로 잰다. 입력의 끝을 알리고
  * 디코딩하므로 잘린 마지막 열도 여기서 보고된다(UTF-8 디코더는 비울 상태가 없다). 디코딩한 글자는 버린다(고정 4 KiB 버퍼 — 본문만 한 글자
  * 배열을 따로 잡지 않는다). BOM 은 UTF-8 의 유효한 바이트다(지금처럼 파서가 판정한다). Java `CappedResponseSender.isUtf8` 동형.
+ * ASCII 뿐인 본문(토큰 응답은 대개 그렇다)은 디코더도 버퍼도 잡지 않고 참이다 — admin 가드가 판정마다 8 KiB 를 더 잡자 작은 토큰
+ * 응답 하나의 할당이 63,104 → 71,080 바이트로 한도(64 KiB · `TokenResponseGuardTest`)를 넘었다(실측).
  */
 internal fun isUtf8(body: ByteArray): Boolean {
+    if (body.all { it >= 0 }) return true
     val decoder =
         StandardCharsets.UTF_8
             .newDecoder()

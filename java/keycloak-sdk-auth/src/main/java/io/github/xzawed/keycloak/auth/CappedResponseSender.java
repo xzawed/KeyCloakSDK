@@ -162,9 +162,11 @@ final class CappedResponseSender {
   /**
    * 엄격한 UTF-8 인가 — 잘못된 바이트(끝에서 잘린 열 · 겹침 꼴 · 서로게이트 포함)를 대체하지 않고 보고하는 디코더로 잰다. 입력의 끝을
    * 알리고 디코딩하므로 잘린 마지막 열도 여기서 보고된다(UTF-8 디코더는 비울 상태가 없다). 디코딩한 글자는 버린다(고정 4 KiB 버퍼 —
-   * 본문만 한 글자 배열을 따로 잡지 않는다). BOM 은 UTF-8 의 유효한 바이트다(지금처럼 파서가 판정한다).
+   * 본문만 한 글자 배열을 따로 잡지 않는다). BOM 은 UTF-8 의 유효한 바이트다(지금처럼 파서가 판정한다). ASCII 뿐인 본문(토큰 응답은
+   * 대개 그렇다)은 디코더도 버퍼도 잡지 않고 참이다. admin 가드 {@code TokenResponseGuard.isUtf8} 이 쌍둥이다(두 모듈은 서로를 모른다).
    */
   static boolean isUtf8(byte[] body) {
+    if (isAscii(body)) return true;
     CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
         .onMalformedInput(CodingErrorAction.REPORT)
         .onUnmappableCharacter(CodingErrorAction.REPORT);
@@ -176,6 +178,13 @@ final class CappedResponseSender {
       result = decoder.decode(in, out, true);
     } while (result.isOverflow());
     return !result.isError();
+  }
+
+  private static boolean isAscii(byte[] body) {
+    for (byte b : body) {
+      if (b < 0) return false;
+    }
+    return true;
   }
 
   /** 상한을 넘는 응답 — 메시지는 무엇이 상한을 넘었는지만 말한다(응답을 인용하지 않는다). */
