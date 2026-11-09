@@ -61,8 +61,7 @@ public sealed class KeycloakClient : IAsyncDisposable, IDisposable
         try
         {
             if (_admin is { } fresh) return fresh;      // double-check under gate
-            // Auth.AdminGrant: Auth's client-credentials grant, but a failure carries no OAuth code (D4 — the body can echo the secret).
-            _adminTokenProvider ??= new ClientCredentialsTokenProvider(Auth.AdminGrant, _config.ClockSkewSeconds);
+            _adminTokenProvider ??= new ClientCredentialsTokenProvider(Auth, _config.ClockSkewSeconds);
             var admin = await AdminClient.CreateAsync(_config, _adminTokenProvider, ct).ConfigureAwait(false); // failure not cached
             _admin = admin;
             return admin;

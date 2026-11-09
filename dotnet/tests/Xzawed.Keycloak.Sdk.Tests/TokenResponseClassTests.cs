@@ -23,8 +23,10 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// Transport 였다(.NET 이 charset 을 지켜 본문 읽기가 실패했다). INTRO r4 의 <c>active</c> 없음은 「비활성」 성공이었다.</para>
 /// <para>판정 — D1: 2xx 본문은 UTF-8 이다(RFC 8259 §8.1). 원시 바이트로, 끝까지 온 뒤에만 본다(상한 초과 · 끊긴 본문은 그대로
 /// Transport). D2: <c>application/json</c> 의 charset 은 효과가 없다(§11). D3: <c>active</c> 는 REQUIRED boolean 이다(RFC 7662
-/// §2.2). D4: admin 자기 그랜트는 auth 레인과 같은 판정이되 OAuth 코드를 싣지 않는다 — 그 오류 본문은 보낸 <c>client_secret</c> 을
-/// 되울릴 수 있다. S5 의 기대는 S1 의 기대에서 코드만 뺀 것이다(손으로 따로 적지 않는다).</para>
+/// §2.2). D4: admin 의 토큰 실패는 끝까지 온 응답이면 상태와 무관하게 auth 레인과 같은 판정이다 — .NET 에서 admin ↔ auth 의
+/// 접착제는 <c>ITokenProvider</c> 뿐이라(CLAUDE.md §4), admin 호출은 provider 의 오류를 그대로 낸다. 그래서 S5 의 기대는 손으로
+/// 적지 않고 같은 응답에서 S2 가 낸 판정(형 · 메시지 · <c>OAuthError</c>)을 그대로 쓴다 — S5 에서만 무엇을 붙이거나 빼는 래퍼는
+/// 실패한다. 코드 모양 비밀의 되울림(OAuth <c>error</c> 자리)은 S1 · S2 와 함께 언어 공통 항목이 다룬다(PM 판정 2026-11-10).</para>
 /// </remarks>
 [Trait("Category", "Unit")]
 public sealed class TokenResponseClassTests
@@ -112,21 +114,33 @@ public sealed class TokenResponseClassTests
 
     private delegate Task<string> Run(KeycloakClient kc);
 
-    /// <summary>A lane: its failure prefix, whether it is the admin facade's own grant (D4), and what it hands back on success.</summary>
-    private sealed record Lane(string Name, string Prefix, bool AdminGrant, string Success, Run Run);
+    /// <summary>A lane whose expectation is written by hand: its failure prefix and what it hands back on success.</summary>
+    private sealed record Lane(string Name, string Prefix, string Success, Run Run);
+
+    private static readonly Lane S2 = new("S2 ClientCredentialsTokenProvider", "Client credentials grant failed", "AT-ok-token",
+        async kc => await new ClientCredentialsTokenProvider(kc.Auth).GetAccessTokenAsync());
 
     private static readonly Lane[] TokenLanes =
     {
-        new("S1 ClientCredentialsTokenAsync", "Client credentials grant failed", false, "AT-ok-token",
+        new("S1 ClientCredentialsTokenAsync", "Client credentials grant failed", "AT-ok-token",
             async kc => (await kc.Auth.ClientCredentialsTokenAsync()).AccessToken),
-        new("RefreshAsync", "Token refresh failed", false, "AT-ok-token", async kc => (await kc.Auth.RefreshAsync("rt-sent")).AccessToken),
-        new("ExchangeCodeAsync", "Authorization code exchange failed", false, "AT-ok-token",
+        new("RefreshAsync", "Token refresh failed", "AT-ok-token", async kc => (await kc.Auth.RefreshAsync("rt-sent")).AccessToken),
+        new("ExchangeCodeAsync", "Authorization code exchange failed", "AT-ok-token",
             async kc => (await kc.Auth.ExchangeCodeAsync("code", "https://app/cb", new string('v', 43))).AccessToken),
-        new("S2 ClientCredentialsTokenProvider", "Client credentials grant failed", false, "AT-ok-token",
-            async kc => await new ClientCredentialsTokenProvider(kc.Auth).GetAccessTokenAsync()),
-        new("S5 AdminAsync", "Client credentials grant failed", true, "u1",
-            async kc => (await (await kc.AdminAsync()).Users.GetAsync("u1")).Id ?? "null"),
+        S2,
     };
+
+    /// <summary>S5 — the admin facade's own token request, sent by the provider <c>KeycloakClient.AdminAsync</c> builds, then
+    /// one admin read. Its expectation is never written by hand: see <see cref="S5Verdict"/>.</summary>
+    private static async Task<(string? Result, Exception? Error)> S5Async(string url)
+    {
+        using var kc = Facade(url);
+        return await AttemptAsync(async () => (await (await kc.AdminAsync()).Users.GetAsync("u1")).Id ?? "null");
+    }
+
+    /// <summary>What S5 must give: what S2 gave for the same reply — the same type, message and <c>OAuthError</c> — or, when S2
+    /// got a token, the admin read's result.</summary>
+    private static string S5Verdict((string? Result, Exception? Error) s2) => s2.Error is null ? Ok("u1") : Verdict(s2);
 
     /// <summary>A body that arrived but is not JSON — "could not be parsed", because valid JSON nested past the parser's depth
     /// limit fails the same way.</summary>
@@ -138,12 +152,11 @@ public sealed class TokenResponseClassTests
 
     private static string Transport(string message) => $"Transport: {message}";
 
-    /// <summary>What a lane must give for a token-endpoint cell. S5 is S1 without the OAuth code (D4): a code-shaped
-    /// <c>error</c> can be the echoed client secret, so the admin grant names the status instead.</summary>
+    /// <summary>What a lane must give for a token-endpoint cell.</summary>
     private static string TokenVerdict(string cell, Lane lane)
     {
         var p = lane.Prefix;
-        string Coded(string reason, string code) => Auth($"{p}: {reason}", lane.AdminGrant ? reason : code);
+        string Coded(string reason, string code) => Auth($"{p}: {reason}", code);
         return cell switch
         {
             "ok" or "bom 200 UTF-8 BOM (control)" or "r10 200 unknown charset" or "r10q 200 unknown quoted charset" => Ok(lane.Success),
@@ -151,9 +164,7 @@ public sealed class TokenResponseClassTests
             "r2 200 HTML" or "r2j 200 HTML typed as JSON" or "r2d 200 JSON nested past the parser's depth" => Auth($"{p}: {NotJson} (HTTP 200)"),
             "r4 200 JSON without access_token" => Auth("token response missing access_token"),
             "r8 400 HTML" or "r8j 400 HTML typed as JSON" => Auth($"{p}: {NotJson} (HTTP 400)"),
-            "r8u 400 invalid UTF-8 in the error body" => lane.AdminGrant
-                ? Auth($"{p}: error response (HTTP 400)")
-                : Auth($"{p}: invalid_grant", "invalid_grant"),
+            "r8u 400 invalid UTF-8 in the error body" => Auth($"{p}: invalid_grant", "invalid_grant"),
             "r9 200 invalid UTF-8 inside the token" or "r9o 200 invalid UTF-8 outside the token" => Auth($"{p}: response is not valid UTF-8"),
             "401 invalid_client" => Coded("Unauthorized", "invalid_client"),
             "403 access_denied" => Coded("Forbidden", "access_denied"),
@@ -165,8 +176,8 @@ public sealed class TokenResponseClassTests
         };
     }
 
-    /// <summary>Every lane gets the class the decision gives the cell — and the admin lane sends no admin request unless its
-    /// grant succeeded.</summary>
+    /// <summary>Every lane gets the class the decision gives the cell; S5 gets exactly what S2 got for the same reply, and sends
+    /// its admin request only when the grant succeeded.</summary>
     [Theory]
     [MemberData(nameof(TokenCellNames))]
     public async Task A_token_endpoint_answer_gets_the_decided_class_on_every_lane(string cell)
@@ -178,16 +189,20 @@ public sealed class TokenResponseClassTests
             _ => A(404, Json, "{}"),
         });
         var wrong = new List<string>();
+        (string? Result, Exception? Error) s2 = default;
         foreach (var lane in TokenLanes)
         {
-            var admin = idp.AdminRequests().Count;
-            using (var kc = Facade(idp.Url))
-                Check(wrong, lane.Name, await AttemptAsync(() => lane.Run(kc)), TokenVerdict(cell, lane));
-            var sent = idp.AdminRequests().Skip(admin).ToList();
-            var granted = TokenVerdict(cell, lane).StartsWith("ok ", StringComparison.Ordinal);
-            if (lane.AdminGrant && !sent.SequenceEqual(granted ? new[] { $"GET {UserPath}" } : Array.Empty<string>()))
-                wrong.Add($"{lane.Name}: admin requests [{string.Join(", ", sent)}] — want {(granted ? "the one GET" : "none")}");
+            using var kc = Facade(idp.Url);
+            var outcome = await AttemptAsync(() => lane.Run(kc));
+            Check(wrong, lane.Name, outcome, TokenVerdict(cell, lane));
+            if (lane == S2)
+                s2 = outcome;
         }
+        var before = idp.AdminRequests().Count;
+        Check(wrong, "S5 AdminAsync", await S5Async(idp.Url), S5Verdict(s2));
+        var sent = idp.AdminRequests().Skip(before).ToList();
+        if (!sent.SequenceEqual(s2.Error is null ? new[] { $"GET {UserPath}" } : Array.Empty<string>()))
+            wrong.Add($"S5 AdminAsync: admin requests [{string.Join(", ", sent)}] — want {(s2.Error is null ? "the one GET" : "none")}");
         Assert.True(wrong.Count == 0, $"[{cell}]\n" + string.Join("\n", wrong));
     }
 
@@ -255,11 +270,16 @@ public sealed class TokenResponseClassTests
     {
         var url = ClosedPortUrl();
         var wrong = new List<string>();
+        (string? Result, Exception? Error) s2 = default;
         foreach (var lane in TokenLanes)
         {
             using var kc = Facade(url);
-            Check(wrong, lane.Name, await AttemptAsync(() => lane.Run(kc)), Transport($"{lane.Prefix} (transport)"));
+            var outcome = await AttemptAsync(() => lane.Run(kc));
+            Check(wrong, lane.Name, outcome, Transport($"{lane.Prefix} (transport)"));
+            if (lane == S2)
+                s2 = outcome;
         }
+        Check(wrong, "S5 AdminAsync", await S5Async(url), S5Verdict(s2));
         using (var kc = Facade(url))
         {
             Check(wrong, "IntrospectAsync", await AttemptAsync(async () => (await kc.Auth.IntrospectAsync("tok-sent")).Active.ToString()),
@@ -308,61 +328,44 @@ public sealed class TokenResponseClassTests
         Assert.True(wrong.Count == 0, $"[{name}]\n" + string.Join("\n", wrong));
     }
 
-    // ── D4: the admin grant carries no OAuth code ───────────────────────────────────────────────────────────────────
+    // ── S5 inside an admin call ─────────────────────────────────────────────────────────────────────────────────────
 
-    private const string CodeShapedSecret = "echoed_code_shaped_secret";
+    /// <summary>Cells for the refetch below — a code, the status deciding over invalid UTF-8, a body that is not JSON, one that
+    /// is not UTF-8, and one that did not arrive.</summary>
+    public static IEnumerable<object[]> RefetchCells =>
+        new[] { "401 invalid_client", "r8u 400 invalid UTF-8 in the error body", "r2 200 HTML", "r9 200 invalid UTF-8 inside the token", "t cut short" }
+            .Select(c => new object[] { c });
 
-    /// <summary>A client secret in the OAuth code grammar, echoed by the token endpoint as its <c>error</c>: the admin facade's
-    /// own grant names the status, and the secret reaches neither its message, its <c>OAuthError</c> nor its chain. The same
-    /// response through the auth lane still carries the code (its documented contract — <c>MalformedTokenResponseTests.KnownLeaks</c>),
-    /// which is what proves the echo reached the SDK.</summary>
+    /// <summary>The admin facade fetches its token again inside an admin call once the cached one lapses. That failure is the
+    /// provider's too: the admin call ends in exactly what S2 gives for the same reply — the same type, message and
+    /// <c>OAuthError</c> — and its admin request is not sent.</summary>
     [Theory]
-    [InlineData(400, "Client credentials grant failed: error response (HTTP 400)", null)]
-    [InlineData(200, "Client credentials grant failed: error response (HTTP 200)", null)]
-    [InlineData(401, "Client credentials grant failed: Unauthorized", "Unauthorized")]
-    [InlineData(404, "Client credentials grant failed: Not Found", "Not Found")]
-    public async Task The_admin_grant_carries_no_code_shaped_secret_the_token_endpoint_echoes(int status, string message, string? oauthError)
+    [MemberData(nameof(RefetchCells))]
+    public async Task An_admin_calls_own_token_refetch_ends_in_what_S2_gives_for_the_same_reply(string cell)
     {
-        using var idp = new ScriptedIdp((_, path) =>
-            path == $"{Oidc}/token" ? A(status, Json, $$"""{"error":"{{CodeShapedSecret}}"}""") : A(404, Json, "{}"));
-        using var kc = KeycloakClient.Create(new KeycloakConfig { ServerUrl = idp.Url, Realm = "r", ClientId = "c", ClientSecret = CodeShapedSecret });
-
-        var ex = Assert.IsType<KeycloakAuthException>(await Record.ExceptionAsync(() => kc.AdminAsync()));
-
-        Assert.Equal(message, ex.Message);
-        Assert.Equal(oauthError, ex.OAuthError);
-        Assert.DoesNotContain(CodeShapedSecret, ex.ToString(), StringComparison.Ordinal);
-        Assert.Empty(idp.AdminRequests());
-        var auth = await Assert.ThrowsAsync<KeycloakAuthException>(() => kc.Auth.ClientCredentialsTokenAsync());
-        Assert.Equal(CodeShapedSecret, auth.OAuthError);
-    }
-
-    /// <summary>The admin facade fetches its token again inside an admin call once the cached one lapses — that grant is its
-    /// own too, so its failure carries no code either, and the admin request is not sent.</summary>
-    [Fact]
-    public async Task The_admin_grants_refetch_carries_no_code_shaped_secret_either()
-    {
-        var refusing = 0;
+        var failing = 0;
         using var idp = new ScriptedIdp((_, path) => path switch
         {
             // expires_in 1 is inside the provider's 30 s skew, so every admin request fetches a new token.
-            $"{Oidc}/token" => Volatile.Read(ref refusing) == 1
-                ? A(400, Json, $$"""{"error":"{{CodeShapedSecret}}"}""")
+            $"{Oidc}/token" => Volatile.Read(ref failing) == 1
+                ? TokenCells[cell]
                 : A(200, Json, """{"access_token":"AT-ok-token","token_type":"Bearer","expires_in":1}"""),
             UserPath => A(200, Json, """{"id":"u1","username":"u"}"""),
             _ => A(404, Json, "{}"),
         });
-        using var kc = KeycloakClient.Create(new KeycloakConfig { ServerUrl = idp.Url, Realm = "r", ClientId = "c", ClientSecret = CodeShapedSecret });
+        using var kc = Facade(idp.Url);
         var admin = await kc.AdminAsync();
         Assert.Equal("u1", (await admin.Users.GetAsync("u1")).Id);
         var sent = idp.AdminRequests().Count;
 
-        Volatile.Write(ref refusing, 1);
-        var ex = Assert.IsType<KeycloakAuthException>(await Record.ExceptionAsync(() => admin.Users.GetAsync("u1")));
+        Volatile.Write(ref failing, 1);
+        var s5 = await AttemptAsync(async () => (await admin.Users.GetAsync("u1")).Id ?? "null");
+        var s2 = await AttemptAsync(() => new ClientCredentialsTokenProvider(kc.Auth).GetAccessTokenAsync());
 
-        Assert.Equal("Client credentials grant failed: error response (HTTP 400)", ex.Message);
-        Assert.Null(ex.OAuthError);
-        Assert.DoesNotContain(CodeShapedSecret, ex.ToString(), StringComparison.Ordinal);
+        Assert.NotNull(s2.Error); // the cell fails S2 — otherwise the comparison below proves nothing
+        var wrong = new List<string>();
+        Check(wrong, "S5 refetch", s5, S5Verdict(s2));
+        Assert.True(wrong.Count == 0, $"[{cell}]\n" + string.Join("\n", wrong));
         Assert.Equal(sent, idp.AdminRequests().Count);
     }
 

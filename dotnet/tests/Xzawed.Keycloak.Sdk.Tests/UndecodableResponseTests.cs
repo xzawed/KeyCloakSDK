@@ -83,11 +83,7 @@ public sealed class UndecodableResponseTests : IDisposable
         foreach (var (name, prefix, run) in TokenCalls)
         {
             using var kc = Facade();
-            // The admin facade's own grant carries no OAuth code and names the status instead — it never reads the error member
-            // (token-response-class-divergent D4, TokenResponseClassTests).
-            var (message, code) = status == 401 ? ($"{prefix}: Unauthorized", "Unauthorized")
-                : name == "AdminAsync" ? ($"{prefix}: error response (HTTP {status})", (string?)null)
-                : ($"{prefix}: {NotACode}", (string?)null);
+            var (message, code) = status == 401 ? ($"{prefix}: Unauthorized", "Unauthorized") : ($"{prefix}: {NotACode}", (string?)null);
             Expect(wrong, name, await Record.ExceptionAsync(() => run(kc)), message, code);
         }
         using (var kc = Facade())
