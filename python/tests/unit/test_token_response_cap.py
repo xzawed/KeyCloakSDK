@@ -169,9 +169,10 @@ def test_an_error_status_is_held_to_the_same_cap(
     error = excinfo.value
     if refused:
         _assert_refused(lane, token_idp, error)
-    else:  # admin 그랜트의 실패도 auth 레인과 같은 판정이다(D4)
+    else:  # admin 그랜트의 실패도 auth 레인과 같은 판정이다(D4) — OAuth 코드만 싣지 않는다
         assert type(error) is KeycloakAuthError, repr(error)
-        assert str(error) == "Keycloak request failed: HTTP 400 (invalid_grant)"
+        code = "" if lane == "admin" else " (invalid_grant)"
+        assert str(error) == f"Keycloak request failed: HTTP 400{code}"
 
 
 def test_a_logout_without_a_body_passes_through_the_capped_session(token_idp: Any) -> None:

@@ -54,6 +54,7 @@ from __future__ import annotations
 import math
 import weakref
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from datetime import datetime, timedelta
 from typing import Any
 
 from keycloak.exceptions import KeycloakError
@@ -92,14 +93,24 @@ def _carried(response: dict[str, Any]) -> dict[str, Any]:
 
 
 def _usable_expiry(response: Mapping[str, Any]) -> None:
-    """python-keycloak 의 세터가 `int(0.9 * value["expires_in"])` 로 쓰는 값 — 유한한 수여야
-    한다. 없으면 `KeyError`, 문자열·null 이면 `TypeError`, 무한대면 `OverflowError` 였다. 쓸
-    수 없는 값의 메시지는 auth 레인(`tokens._expires_at`)과 같다 — 단 auth 레인은 숫자 문자열과
-    없음도 받는다(그 소비자는 세터가 아니다)."""
+    """python-keycloak 의 세터가 `now + timedelta(seconds=int(0.9 * value["expires_in"]))` 로 쓰는
+    값 — 그 셈이 넘치지 않는 유한한 수여야 한다. 없으면 `KeyError`, 문자열·null 이면 `TypeError`,
+    무한대 · 날짜를 넘치는 수(`1e300` · `300000000000` · `-1e12`)면 `OverflowError` 였다(뒤의 것은
+    독립 레그가 찾음). 쓸 수 없는 값의 메시지는 auth 레인(`tokens._expires_at`)과 같다 — 단 auth
+    레인은 숫자 문자열과 없음도 받는다(그 소비자는 세터가 아니다)."""
     expires_in = response.get("expires_in")
     if expires_in is None:
         raise KeycloakAuthError("token response has no expires_in")
-    if not isinstance(expires_in, (int, float)) or not math.isfinite(expires_in):
+    usable = isinstance(expires_in, (int, float)) and math.isfinite(expires_in)
+    if usable:
+        try:
+            # 세터의 셈 그대로 — 비율(0.9)을 빼 보수적으로 잰다: x 가 넘치지 않으면 0.9x 도
+            # 넘치지 않는다.
+            datetime.now() + timedelta(seconds=int(expires_in))
+        except (OverflowError, ValueError):
+            usable = False
+    # ⚠️ 거부는 `except` **밖**이다 — 안에서 던지면 `OverflowError` 가 `__context__` 로 매달린다.
+    if not usable:
         raise KeycloakAuthError("token response has an invalid expires_in")
 
 

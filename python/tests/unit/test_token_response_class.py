@@ -30,7 +30,6 @@ from urllib.parse import urlsplit
 import pytest
 
 from keycloak_sdk import KeycloakClient, KeycloakConfig
-from keycloak_sdk._internal.lower import _OAUTH_ERROR_CODE
 from keycloak_sdk.aio import AsyncKeycloakClient
 from keycloak_sdk.exceptions import KeycloakAuthError, KeycloakNotFoundError
 
@@ -231,15 +230,12 @@ def _verdict(err: BaseException | None) -> _Verdict:
 
 
 def _as_admin_grant(err: BaseException | None) -> _Verdict:
-    """S1 의 판정을 admin 그랜트가 낼 모양으로 — 같은 형·같은 메시지이되 `error` 는 코드 모양일
-    때만 남는다(그랜트의 오류 본문은 폼의 `client_secret` 을 되울릴 수 있다 —
+    """S1 의 판정을 admin 그랜트가 낼 모양으로 — 같은 형·같은 메시지이되 OAuth 코드는 싣지 않는다
+    (그랜트의 오류 본문은 폼의 `client_secret` 을 `error` 자리에 되울릴 수 있다 —
     `lower.grant_failure`)."""
-    shaped = (
-        not isinstance(err, KeycloakAuthError)
-        or err.error is None
-        or _OAUTH_ERROR_CODE.fullmatch(err.error) is not None
-    )
-    return _verdict(err) if shaped else _auth(str(err))
+    if isinstance(err, KeycloakAuthError) and err.error is not None:
+        return _auth(str(err).removesuffix(f" ({err.error})"))
+    return _verdict(err)
 
 
 # --- S1 · S5 ------------------------------------------------------------------------------
@@ -297,6 +293,20 @@ EXPIRY_CELLS: dict[str, tuple[bytes, str]] = {
         b'{"access_token":"AT-ok-token","token_type":"Bearer","expires_in":Infinity}',
         _BAD_EXPIRY,
     ),
+    # 유한하지만 세터의 날짜 셈을 넘친다 — `OverflowError` 가 전송 오류로 옮겨졌다(독립 레그가
+    # 찾음).
+    "1e300": (
+        b'{"access_token":"AT-ok-token","token_type":"Bearer","expires_in":1e300}',
+        _BAD_EXPIRY,
+    ),
+    "beyond the calendar": (
+        b'{"access_token":"AT-ok-token","token_type":"Bearer","expires_in":300000000000}',
+        _BAD_EXPIRY,
+    ),
+    "far negative": (
+        b'{"access_token":"AT-ok-token","token_type":"Bearer","expires_in":-1e12}',
+        _BAD_EXPIRY,
+    ),
 }
 
 
@@ -345,3 +355,76 @@ async def test_introspection_verdict(cell: str, lane: str) -> None:
     if err is None:
         assert result.active is True
         assert result.username == "svc"
+
+
+# --- 되울린 비밀 · raw 의 원인 사슬 ------------------------------------------------------------
+
+_CODE_SHAPED_SECRET = "echoed_code_shaped_secret"
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_code_shaped_secret_echoed_as_the_grant_error_is_not_carried(lane: str) -> None:
+    """소문자뿐인 client secret 은 OAuth 코드 모양이다 — 그랜트가 그것을 `error` 자리에 되울리면
+    코드 모양 검사로는 거르지 못한다(독립 레그 실측: 메시지 · `args` · `error` 에 실렸다). 그랜트
+    실패는 OAuth 코드를 싣지 않는다."""
+    answer: _Answer = (400, _JSON, b'{"error":"' + _CODE_SHAPED_SECRET.encode() + b'"}')
+    with _fake_idp(answer) as idp:
+        cfg = KeycloakConfig(
+            server_url=idp.url, realm="r", client_id="c", client_secret=_CODE_SHAPED_SECRET
+        )
+        if lane == "sync":
+            with KeycloakClient.create(cfg) as kc:
+                _, err = await _attempt(lane, kc, lambda c: c.admin.users.get("u1"))
+        else:
+            async with AsyncKeycloakClient.create(cfg) as akc:
+                _, err = await _attempt(lane, akc, lambda c: c.admin.users.get("u1"))
+
+    assert isinstance(err, KeycloakAuthError)
+    assert str(err) == f"{_HTTP} 400"
+    for surface in (str(err), repr(err), repr(vars(err)), repr(err.args)):
+        assert _CODE_SHAPED_SECRET not in surface
+
+
+_RAW_CANARY = "CANARY-raw-body-9f3k"
+#: raw 탈출구로는 그랜트 래퍼 · 본문 검사의 거부가 경계를 거치지 않고 그대로 나온다.
+RAW_CELLS: dict[str, _Answer] = {
+    "200 HTML": (200, _HTML_TYPE, f"<html>{_RAW_CANARY}</html>".encode()),
+    "200 invalid UTF-8": (
+        200,
+        _JSON,
+        b'{"access_token":"' + _RAW_CANARY.encode() + b'\xff","expires_in":300}',
+    ),
+}
+
+
+def _chain(err: BaseException) -> list[BaseException]:
+    """`__cause__` · `__context__` 로 닿는 예외 전부 — 억제 여부와 무관하게."""
+    seen: list[BaseException] = []
+    todo = [err]
+    while todo:
+        current = todo.pop()
+        if any(current is s for s in seen):
+            continue
+        seen.append(current)
+        todo += [e for e in (current.__cause__, current.__context__) if e is not None]
+    return seen
+
+
+@pytest.mark.parametrize("lane", LANES)
+@pytest.mark.parametrize("cell", list(RAW_CELLS))
+async def test_raw_refusals_carry_no_body_in_their_chain(cell: str, lane: str) -> None:
+    """거부는 `except` **밖**에서 던진다 — 안에서 던지면 python-keycloak 의 본문 인용 `TypeError` 나
+    본문 바이트를 쥔 `UnicodeDecodeError` 가 `__context__` 로 매달려 raw 소비자의 사슬에 닿는다(독립
+    레그가 변이로 보임 — 경계를 지나는 파사드는 새로 만들어 가리지만 raw 는 그대로다)."""
+
+    def act(c: Any) -> Any:
+        return c.admin.raw.get_user("u1") if lane == "sync" else c.admin.raw.a_get_user("u1")
+
+    with _fake_idp(RAW_CELLS[cell]) as idp:
+        async with _client(lane, idp) as client:
+            _, err = await _attempt(lane, client, act)
+
+    assert err is not None
+    for link in _chain(err):
+        shown = f"{link!s} {link!r} {getattr(link, 'object', b'')!r}"
+        assert _RAW_CANARY not in shown, f"{type(link).__name__} 가 본문을 쥐었다"

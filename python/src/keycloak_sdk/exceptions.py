@@ -50,8 +50,9 @@ class KeycloakTransportError(KeycloakSdkError):
 class KeycloakAdminError(KeycloakSdkError):
     """Admin API error. Keeps the HTTP status + the Keycloak error body.
 
-    However, if what failed was admin's own token grant, `keycloak_error` is `None` — the token
-    endpoint's error body can echo back the client secret · refresh token that were sent."""
+    A failure of the admin client's own token grant is not this class — it is `KeycloakAuthError`,
+    as the same response is on the auth client, and it carries nothing from the token endpoint's
+    body, which can echo back the client secret and refresh token that were sent."""
 
     def __init__(self, status_code: int, keycloak_error: str | None = None) -> None:
         super().__init__(f"Keycloak admin error (HTTP {status_code})")
