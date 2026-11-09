@@ -14,7 +14,8 @@ require "objspace"
 #
 # 경로마다 응답 하나를 정한다: `route(path) { |request| [status, headers, head, pad, stop_after] }` — `head` 뒤에
 # JSON 공백 `pad` 바이트를 붙인다(같은 64 KiB 조각을 되풀어 써 서버 쪽 할당은 거의 없다). `stop_after` 를 주면 본문을
-# 그 바이트까지만 쓰고 멈춰 클라이언트가 닫을 때까지 연결을 붙든다(평문만). `framing:` 은 `:chunked`·`:length`,
+# 그 바이트까지만 쓰고 멈춰 클라이언트가 닫을 때까지 연결을 붙든다(평문만) — 여섯째 `close_after_stop` 이 참이면 붙들지
+# 않고 곧바로 닫는다(서버가 본문 중간에 끊은 응답). `framing:` 은 `:chunked`·`:length`,
 # `compress:` 는 `nil`(평문)·`:when_allowed`(요청이 gzip 을 받으면 gzip)·`:always`(요청과 무관하게 gzip).
 # `written` 은 요청마다 서버가 써 보낸 본문 바이트다(클라이언트가 끊으면 거기서 멈춘다).
 class BodyServer
@@ -22,7 +23,7 @@ class BodyServer
   HOLD_SECONDS = 30
 
   Request = Struct.new(:verb, :path, :headers, :body)
-  Reply = Struct.new(:status, :headers, :head, :pad, :stop_after)
+  Reply = Struct.new(:status, :headers, :head, :pad, :stop_after, :close_after_stop)
 
   def initialize(framing: :chunked, compress: nil)
     @framing = framing
@@ -155,7 +156,7 @@ class BodyServer
     stop = reply.stop_after
     if stop
       write_until(sock, head, reply.pad, stop)
-      return hold_until_closed(sock)
+      return reply.close_after_stop ? nil : hold_until_closed(sock) # 닫으면 serve 가 소켓을 닫는다 — 본문 중간의 EOF
     end
     piece(sock, head)
     self.class.each_pad(reply.pad) { |p| piece(sock, p) }

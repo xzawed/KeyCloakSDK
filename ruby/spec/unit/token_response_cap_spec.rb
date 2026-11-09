@@ -373,13 +373,15 @@ RSpec.describe KeycloakSdk::Http do
     end
 
     # identity 를 무시하고 gzip 을 보내는 서버 — net-http 는 풀지 않고(그 헤더를 SDK 가 보냈으므로) 본문은 JSON 이
-    # 아니다. 받아들이지 않고 SDK 오류로 닫힌다(실패 쪽으로).
+    # 아니다. 받아들이지 않고 SDK 오류로 닫힌다(실패 쪽으로). 그 응답은 끝까지 왔으므로 AuthError 다(등록부
+    # token-response-class-divergent — 전: TransportError).
     context "when the server compresses even though identity was asked for" do
       let(:body_server) { BodyServer.new(compress: :always) }
 
-      it "fails closed with the SDK's TransportError" do
+      it "fails closed with the SDK's AuthError" do
         serve("auth.client_credentials_token", pad: 0)
-        expect { kc.auth.client_credentials_token }.to raise_error(KeycloakSdk::TransportError)
+        expect { kc.auth.client_credentials_token }
+          .to raise_error(KeycloakSdk::AuthError, "token response is not valid JSON")
       end
     end
   end

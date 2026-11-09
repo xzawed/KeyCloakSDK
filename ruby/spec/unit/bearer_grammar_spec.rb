@@ -21,9 +21,10 @@ module BearerGrammarSpec
   SEND = "admin request not sent: the access token is not an RFC 6750 bearer token (b64token)"
   GRANT = "token response has no usable access_token: it is not an RFC 6750 bearer token (b64token)"
   # Answered before the grammar is asked, as before: TokenSet refuses an empty access_token, and the response decoder
-  # one that is not valid UTF-8 (`Http.decode_json`).
+  # one that is not valid UTF-8 (`TokenResponse` in http.rb). That response arrived in full, so its refusal is an
+  # AuthError (registry token-response-class-divergent D1 — it was a TransportError before).
   NO_TOKEN = "token response has no usable access_token"
-  UNDECODABLE = "token endpoint transport error: Faraday::ParsingError"
+  UNDECODABLE = "token response is not valid UTF-8"
   TOKEN_URL = "#{UnsendableTokenSpec::OIDC}/token".freeze
   # A real three-segment JWS — an RS256 signature over a claims set, from a key made for the test.
   JWS = JWT.encode({ sub: "x", aud: "c" }, OpenSSL::PKey::RSA.generate(2048), "RS256").freeze
@@ -88,7 +89,7 @@ module BearerGrammarSpec
   def grant_refusal(id)
     case id
     when "empty" then [KeycloakSdk::AuthError, NO_TOKEN]
-    when "invalid-utf8" then [KeycloakSdk::TransportError, UNDECODABLE]
+    when "invalid-utf8" then [KeycloakSdk::AuthError, UNDECODABLE]
     else [KeycloakSdk::AuthError, GRANT]
     end
   end
