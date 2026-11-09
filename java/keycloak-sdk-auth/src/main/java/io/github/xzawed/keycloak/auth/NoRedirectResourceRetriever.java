@@ -1,12 +1,17 @@
 package io.github.xzawed.keycloak.auth;
+import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.util.DefaultResourceRetriever;
+import com.nimbusds.jose.util.JSONObjectUtils;
 import com.nimbusds.jose.util.Resource;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
@@ -50,22 +55,58 @@ final class NoRedirectResourceRetriever extends DefaultResourceRetriever {
     super(connectTimeoutMs, readTimeoutMs, JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT);
   }
 
-  // 200 + {"keys":[]} 를 조회 실패로 돌린다 — Nimbus 캐시는 파싱에 성공한 집합이면 빈 것도 올려
-  // 좋은 키를 덮는다(JwksEmptyKeysetTest). 판정은 배열 길이가 아니라 Nimbus 가 **실제로 올릴
-  // 집합**의 크기다(같은 파서). 파싱 자체가 실패하면 판정을 Nimbus 에 그대로 맡긴다.
   @Override
   public Resource retrieveResource(URL url) throws IOException {
-    Resource res = fetchToCompletion(url);
-    JWKSet parsed;
+    return usableKeysOnly(fetchToCompletion(url));
+  }
+
+  /**
+   * Nimbus 에 넘길 키셋 — 읽을 수 있는 원소만 남긴다.
+   *
+   * <p>⚠️ <b>못 읽는 원소는 건너뛴다</b>(RFC 7517 §5). Nimbus 의 {@code JWKSet.parse} 는 모르는 kty 만 건너뛰고, 지원 밖 곡선(P-192)
+   * · 빠진 멤버 · JWK 가 아닌 원소 하나로 키셋 전체를 거부해 같은 키셋의 정상 키로 서명한 토큰까지 거부했다({@code
+   * JwksUnreadableKeyTest}). 그래서 원소를 하나씩 {@code JWK.parse} 하고 읽은 것만 넘긴다 — 전부 읽히면 응답을 그대로 넘긴다.
+   *
+   * <p>⚠️ <b>남은 집합이 비면 조회 실패다.</b> Nimbus 캐시는 파싱에 성공한 집합이면 빈 것도 올려 좋은 키를 덮는다({@code
+   * JwksEmptyKeysetTest}) — 빈 키셋과 전부 못 읽는 키셋이 같다. 문서 자체가 기형이면(JSON 아님 · {@code keys} 가 배열 아님)
+   * 판정을 지금처럼 Nimbus 에 맡긴다.
+   */
+  static Resource usableKeysOnly(Resource res) throws IOException {
+    List<Object> keys;
     try {
-      parsed = JWKSet.parse(res.getContent());
+      keys = JSONObjectUtils.getJSONArray(JSONObjectUtils.parse(res.getContent()), "keys");
     } catch (java.text.ParseException e) {
       return res;
     }
-    if (parsed.getKeys().isEmpty()) {
-      throw new IOException("JWKS response contains no keys");
+    if (keys == null) {
+      return res;
     }
-    return res;
+    List<JWK> usable = new ArrayList<>();
+    for (Object key : keys) {
+      JWK jwk = parseOrNull(key);
+      if (jwk != null) {
+        usable.add(jwk);
+      }
+    }
+    if (usable.isEmpty()) {
+      throw new IOException(keys.isEmpty() ? "JWKS response contains no keys"
+          : "JWKS response contains no usable keys (" + keys.size() + " unreadable)");
+    }
+    return usable.size() == keys.size() ? res : new Resource(new JWKSet(usable).toString(false), res.getContentType());
+  }
+
+  /** 원소 하나 — 객체가 아니거나 Nimbus 가 읽지 못하면 null(그 원소 하나의 문제다). */
+  private static JWK parseOrNull(Object key) {
+    if (!(key instanceof Map<?, ?> map)) {
+      return null;
+    }
+    Map<String, Object> json = new LinkedHashMap<>();
+    map.forEach((k, v) -> json.put(String.valueOf(k), v));
+    try {
+      return JWK.parse(json);
+    } catch (java.text.ParseException | RuntimeException e) {
+      return null;
+    }
   }
 
   /**

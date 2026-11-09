@@ -1,8 +1,10 @@
 package io.github.xzawed.keycloak
 
+import com.nimbusds.jose.jwk.JWK
 import com.nimbusds.jose.jwk.JWKSet
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder
 import com.nimbusds.jose.util.DefaultResourceRetriever
+import com.nimbusds.jose.util.JSONObjectUtils
 import com.nimbusds.jose.util.Resource
 import org.apache.http.client.methods.HttpGet
 import java.io.IOException
@@ -45,20 +47,7 @@ internal class NoRedirectResourceRetriever(
     connectTimeoutMs: Int,
     readTimeoutMs: Int,
 ) : DefaultResourceRetriever(connectTimeoutMs, readTimeoutMs, JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT) {
-    // 200 + {"keys":[]} 를 조회 실패로 돌린다 — Nimbus 캐시는 파싱에 성공한 집합이면 빈 것도 올려
-    // 좋은 키를 덮는다(JwksEmptyKeysetTest). 판정은 배열 길이가 아니라 Nimbus 가 **실제로 올릴
-    // 집합**의 크기다(같은 파서). 파싱 자체가 실패하면 판정을 Nimbus 에 그대로 맡긴다.
-    override fun retrieveResource(url: URL): Resource {
-        val res = fetchToCompletion(url)
-        val parsed =
-            try {
-                JWKSet.parse(res.content)
-            } catch (_: java.text.ParseException) {
-                return res
-            }
-        if (parsed.keys.isEmpty()) throw IOException("JWKS response contains no keys")
-        return res
-    }
+    override fun retrieveResource(url: URL): Resource = usableKeysOnly(fetchToCompletion(url))
 
     /**
      * 조회 하나 — Nimbus `DefaultResourceRetriever.retrieveResource` 가 HttpURLConnection 으로 하던 일을 [BoundedTransport] 로: GET · 이
@@ -132,5 +121,48 @@ internal class NoRedirectResourceRetriever(
                 is Error -> throw cause
                 else -> cause as IOException
             }
+
+        /**
+         * Nimbus 에 넘길 키셋 — 읽을 수 있는 원소만 남긴다. Java 자매(`NoRedirectResourceRetriever.usableKeysOnly`)와 같은 판정이다.
+         *
+         * ⚠️ **못 읽는 원소는 건너뛴다**(RFC 7517 §5). Nimbus 의 `JWKSet.parse` 는 모르는 kty 만 건너뛰고, 지원 밖 곡선(P-192) · 빠진
+         * 멤버 · JWK 가 아닌 원소 하나로 키셋 전체를 거부해 같은 키셋의 정상 키로 서명한 토큰까지 거부했다(`JwksUnreadableKeyTest`).
+         * 그래서 원소를 하나씩 `JWK.parse` 하고 읽은 것만 넘긴다 — 전부 읽히면 응답을 그대로 넘긴다.
+         *
+         * ⚠️ **남은 집합이 비면 조회 실패다.** Nimbus 캐시는 파싱에 성공한 집합이면 빈 것도 올려 좋은 키를 덮는다
+         * (`JwksEmptyKeysetTest`) — 빈 키셋과 전부 못 읽는 키셋이 같다. 문서 자체가 기형이면(JSON 아님 · `keys` 가 배열 아님)
+         * 판정을 지금처럼 Nimbus 에 맡긴다.
+         */
+        fun usableKeysOnly(res: Resource): Resource {
+            val keys =
+                try {
+                    JSONObjectUtils.getJSONArray(JSONObjectUtils.parse(res.content), "keys")
+                } catch (_: java.text.ParseException) {
+                    return res
+                } ?: return res
+            val usable = keys.mapNotNull(::parseOrNull)
+            if (usable.isEmpty()) {
+                throw IOException(
+                    if (keys.isEmpty()) {
+                        "JWKS response contains no keys"
+                    } else {
+                        "JWKS response contains no usable keys (${keys.size} unreadable)"
+                    },
+                )
+            }
+            return if (usable.size == keys.size) res else Resource(JWKSet(usable).toString(false), res.contentType)
+        }
+
+        /** 원소 하나 — 객체가 아니거나 Nimbus 가 읽지 못하면 null(그 원소 하나의 문제다). */
+        private fun parseOrNull(key: Any?): JWK? {
+            val map = key as? Map<*, *> ?: return null
+            return try {
+                JWK.parse(map.entries.associate { (k, v) -> k.toString() to v })
+            } catch (_: java.text.ParseException) {
+                null
+            } catch (_: RuntimeException) {
+                null
+            }
+        }
     }
 }
