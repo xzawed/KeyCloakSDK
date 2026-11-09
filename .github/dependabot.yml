@@ -89,10 +89,15 @@ updates:
     schedule: { interval: weekly }
     groups:
       # vitest 짝은 메이저까지 한 PR 로 온다 — 따로 오면 각자 상대의 peer(정확 버전)를 못 풀어
-      # 둘 다 `npm ci` 에서 ERESOLVE 로 빨갛다(#565·#566 실측). 먼저 매칭된 그룹이 이기므로
-      # 이 그룹은 `node-minor-patch` 보다 **위**에 있어야 한다.
+      # 둘 다 `npm ci` 에서 ERESOLVE 로 빨갛다(#565·#566 실측 · 5.1.0 의 #968·#969 재발).
+      # ⚠️ 두 그룹에 걸린 의존성은 먼저 적힌 그룹이 아니라 **점수가 높은 그룹**이 갖는다 — dependabot-core
+      # `updater/lib/dependabot/updater/pattern_specificity_calculator.rb`: 정확한 이름 1000 · 패턴 없는
+      # 그룹 500 · `@vitest/*` 94. 그래서 coverage-v8 은 다섯 번 내리 node-minor-patch 로 갔다(작업 로그
+      # 「Skipping @vitest/coverage-v8 for group 'vitest' - belongs to more specific group 'node-minor-patch'」,
+      # 실행 42130288944). 제외되면 점수가 0 이다 — 그래서 아래 exclude-patterns 가 짝을 이 그룹에 묶는다.
+      # 재는 법: npm 작업 로그(event=dynamic, `npm_and_yarn in /node`)에 그 Skipping 줄이 없어야 한다.
       vitest: { patterns: ['vitest', '@vitest/*'] }
-      node-minor-patch: { update-types: [minor, patch] }
+      node-minor-patch: { update-types: [minor, patch], exclude-patterns: ['vitest', '@vitest/*'] }
     ignore:
       # @types/node는 "최신 Node"가 아니라 package.json의 engines 하한을 따라간다. 하한을 올리는 것은
       # 소비자 가시적 결정이라(CI 매트릭스·하네스 이미지·문서가 함께 움직인다) 사람이 판단해야 하며,
