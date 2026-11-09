@@ -1,0 +1,521 @@
+{
+  "Kc.dll": {
+    "@ROOT@\\dotnet\\src\\Kc\\AuthClient.cs": {
+      "Kc.AuthClient": {
+        "System.String Kc.AuthClient::get_Issuer()": {
+          "Lines": {
+            "18": 0
+          },
+          "Branches": []
+        },
+        "System.Int32 Kc.AuthClient::get_Retries()": {
+          "Lines": {
+            "20": 0
+          },
+          "Branches": []
+        },
+        "System.String[] Kc.AuthClient::Upper()": {
+          "Lines": {
+            "32": 0
+          },
+          "Branches": []
+        },
+        "System.String Kc.AuthClient::Joined(System.String)": {
+          "Lines": {
+            "36": 0,
+            "37": 0
+          },
+          "Branches": []
+        },
+        "System.String[] Kc.AuthClient::Prefixed(System.String)": {
+          "Lines": {
+            "42": 0,
+            "43": 0,
+            "44": 0,
+            "45": 0,
+            "46": 0,
+            "47": 0,
+            "48": 0
+          },
+          "Branches": []
+        },
+        "System.Int32 Kc.AuthClient::Count(System.Int32)": {
+          "Lines": {
+            "53": 0
+          },
+          "Branches": []
+        },
+        "System.String Kc.AuthClient::Describe()": {
+          "Lines": {
+            "58": 0
+          },
+          "Branches": []
+        },
+        "System.String Kc.AuthClient::Describe(System.Int32)": {
+          "Lines": {
+            "60": 0
+          },
+          "Branches": [
+            {
+              "Line": 60,
+              "Offset": 2,
+              "EndOffset": 4,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 60,
+              "Offset": 2,
+              "EndOffset": 10,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            }
+          ]
+        },
+        "Kc.AuthClient Kc.AuthClient::Build(Kc.Config)": {
+          "Lines": {
+            "89": 0
+          },
+          "Branches": []
+        },
+        "System.Int32 Kc.AuthClient::Unused(System.Int32)": {
+          "Lines": {
+            "93": 0
+          },
+          "Branches": []
+        },
+        "System.Func`1<System.Threading.Tasks.Task`1<System.Int32>> Kc.AuthClient::Later()": {
+          "Lines": {
+            "100": 0,
+            "101": 0,
+            "102": 0,
+            "103": 0,
+            "104": 0
+          },
+          "Branches": [
+            {
+              "Line": 100,
+              "Offset": 6,
+              "EndOffset": 8,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 100,
+              "Offset": 6,
+              "EndOffset": 31,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            }
+          ]
+        },
+        "System.String[] Kc.AuthClient::Lower()": {
+          "Lines": {
+            "109": 0,
+            "110": 0,
+            "111": 0,
+            "112": 0,
+            "113": 0,
+            "114": 0
+          },
+          "Branches": []
+        },
+        "System.Int32 Kc.AuthClient::<Count>g__Twice|14_0(System.Int32)": {
+          "Lines": {
+            "55": 0
+          },
+          "Branches": []
+        },
+        "System.Int32 Kc.AuthClient::<Unused>g__Helper|22_0(System.Int32)": {
+          "Lines": {
+            "95": 0
+          },
+          "Branches": []
+        },
+        "System.Void Kc.AuthClient::.ctor(Kc.Config)": {
+          "Lines": {
+            "8": 0,
+            "10": 0,
+            "11": 0
+          },
+          "Branches": []
+        },
+        "System.Void Kc.AuthClient::.ctor(System.String,System.String)": {
+          "Lines": {
+            "14": 0,
+            "16": 0
+          },
+          "Branches": []
+        },
+        "System.Void Kc.AuthClient::.cctor()": {
+          "Lines": {
+            "5": 0
+          },
+          "Branches": []
+        }
+      },
+      "Kc.AuthClient/<>c": {
+        "System.String Kc.AuthClient/<>c::<NamesAsync>b__25_0(System.String)": {
+          "Lines": {
+            "123": 0
+          },
+          "Branches": []
+        }
+      },
+      "Kc.AuthClient/<>c/<<RetryAsync>b__26_0>d": {
+        "System.Void Kc.AuthClient/<>c/<<RetryAsync>b__26_0>d::MoveNext()": {
+          "Lines": {
+            "135": 0,
+            "136": 0,
+            "137": 0
+          },
+          "Branches": [
+            {
+              "Line": 135,
+              "Offset": 31,
+              "EndOffset": 33,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 135,
+              "Offset": 31,
+              "EndOffset": 93,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            }
+          ]
+        }
+      },
+      "Kc.AuthClient/<>c/<<SumAsync>b__18_0>d": {
+        "System.Void Kc.AuthClient/<>c/<<SumAsync>b__18_0>d::MoveNext()": {
+          "Lines": {
+            "72": 0,
+            "73": 0,
+            "74": 0
+          },
+          "Branches": [
+            {
+              "Line": 72,
+              "Offset": 31,
+              "EndOffset": 33,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 72,
+              "Offset": 31,
+              "EndOffset": 93,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            }
+          ]
+        }
+      },
+      "Kc.AuthClient/<EchoAsync>d__19`1": {
+        "System.Void Kc.AuthClient/<EchoAsync>d__19`1::MoveNext()": {
+          "Lines": {
+            "80": 0,
+            "81": 0,
+            "82": 0
+          },
+          "Branches": [
+            {
+              "Line": 80,
+              "Offset": 31,
+              "EndOffset": 33,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 80,
+              "Offset": 31,
+              "EndOffset": 93,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            }
+          ]
+        }
+      },
+      "Kc.AuthClient/<Items>d__17": {
+        "System.Boolean Kc.AuthClient/<Items>d__17::MoveNext()": {
+          "Lines": {
+            "64": 0,
+            "65": 0,
+            "66": 0
+          },
+          "Branches": []
+        }
+      },
+      "Kc.AuthClient/<LogoutAsync>d__20": {
+        "System.Void Kc.AuthClient/<LogoutAsync>d__20::MoveNext()": {
+          "Lines": {
+            "86": 0,
+            "87": 0
+          },
+          "Branches": []
+        }
+      },
+      "Kc.AuthClient/<NamesAsync>d__25": {
+        "System.Void Kc.AuthClient/<NamesAsync>d__25::MoveNext()": {
+          "Lines": {
+            "119": 0,
+            "120": 0,
+            "121": 0,
+            "122": 0,
+            "124": 0,
+            "125": 0,
+            "126": 0
+          },
+          "Branches": [
+            {
+              "Line": 119,
+              "Offset": 31,
+              "EndOffset": 33,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 119,
+              "Offset": 31,
+              "EndOffset": 96,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            }
+          ]
+        }
+      },
+      "Kc.AuthClient/<RetryAsync>d__26": {
+        "System.Void Kc.AuthClient/<RetryAsync>d__26::MoveNext()": {
+          "Lines": {
+            "130": 0,
+            "131": 0,
+            "133": 0,
+            "134": 0,
+            "138": 0,
+            "140": 0,
+            "141": 0
+          },
+          "Branches": [
+            {
+              "Line": 130,
+              "Offset": 38,
+              "EndOffset": 40,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 130,
+              "Offset": 38,
+              "EndOffset": 103,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            },
+            {
+              "Line": 131,
+              "Offset": 116,
+              "EndOffset": 118,
+              "Path": 0,
+              "Ordinal": 2,
+              "Hits": 0
+            },
+            {
+              "Line": 131,
+              "Offset": 116,
+              "EndOffset": 242,
+              "Path": 1,
+              "Ordinal": 3,
+              "Hits": 0
+            }
+          ]
+        }
+      },
+      "Kc.AuthClient/<SumAsync>d__18": {
+        "System.Void Kc.AuthClient/<SumAsync>d__18::MoveNext()": {
+          "Lines": {
+            "70": 0,
+            "71": 0,
+            "75": 0,
+            "76": 0
+          },
+          "Branches": []
+        }
+      },
+      "Kc.AuthClient/<TokenAsync>d__10": {
+        "System.Void Kc.AuthClient/<TokenAsync>d__10::MoveNext()": {
+          "Lines": {
+            "24": 0,
+            "25": 0,
+            "27": 0,
+            "29": 0,
+            "30": 0
+          },
+          "Branches": [
+            {
+              "Line": 24,
+              "Offset": 39,
+              "EndOffset": 41,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 24,
+              "Offset": 39,
+              "EndOffset": 104,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            },
+            {
+              "Line": 25,
+              "Offset": 122,
+              "EndOffset": 124,
+              "Path": 0,
+              "Ordinal": 2,
+              "Hits": 0
+            },
+            {
+              "Line": 25,
+              "Offset": 122,
+              "EndOffset": 132,
+              "Path": 1,
+              "Ordinal": 3,
+              "Hits": 0
+            }
+          ]
+        }
+      },
+      "Kc.AuthClient/<>c/<<Later>b__23_0>d": {
+        "System.Void Kc.AuthClient/<>c/<<Later>b__23_0>d::MoveNext()": {
+          "Lines": {},
+          "Branches": [
+            {
+              "Line": 102,
+              "Offset": 31,
+              "EndOffset": 33,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 102,
+              "Offset": 31,
+              "EndOffset": 93,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            }
+          ]
+        }
+      }
+    },
+    "@ROOT@\\dotnet\\src\\Kc\\Config.cs": {
+      "Kc.Config": {
+        "System.String Kc.Config::get_ServerUrl()": {
+          "Lines": {
+            "3": 3
+          },
+          "Branches": []
+        },
+        "System.String Kc.Config::get_Issuer()": {
+          "Lines": {
+            "5": 1
+          },
+          "Branches": []
+        }
+      }
+    },
+    "@ROOT@\\dotnet\\src\\Kc\\Admin\\Client.cs": {
+      "Kc.Admin.Client": {
+        "Kc.Admin.Client/UsersResource Kc.Admin.Client::get_Users()": {
+          "Lines": {
+            "7": 0
+          },
+          "Branches": []
+        },
+        "System.Void Kc.Admin.Client::Close()": {
+          "Lines": {
+            "11": 0
+          },
+          "Branches": []
+        },
+        "System.Void Kc.Admin.Client::Dispose()": {
+          "Lines": {
+            "13": 0
+          },
+          "Branches": []
+        },
+        "System.Void Kc.Admin.Client::.ctor()": {
+          "Lines": {
+            "5": 0
+          },
+          "Branches": []
+        }
+      },
+      "Kc.Admin.Client/Defaults": {
+        "System.String Kc.Admin.Client/Defaults::First()": {
+          "Lines": {
+            "19": 0
+          },
+          "Branches": []
+        },
+        "System.Void Kc.Admin.Client/Defaults::.cctor()": {
+          "Lines": {
+            "17": 0
+          },
+          "Branches": []
+        }
+      },
+      "Kc.Admin.Client/UsersResource": {
+        "System.Threading.Tasks.Task Kc.Admin.Client/UsersResource::DeleteAsync(System.String)": {
+          "Lines": {
+            "30": 0
+          },
+          "Branches": []
+        }
+      },
+      "Kc.Admin.Client/UsersResource/<GetAsync>d__0": {
+        "System.Void Kc.Admin.Client/UsersResource/<GetAsync>d__0::MoveNext()": {
+          "Lines": {
+            "26": 0,
+            "27": 0,
+            "28": 0
+          },
+          "Branches": [
+            {
+              "Line": 26,
+              "Offset": 31,
+              "EndOffset": 33,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 26,
+              "Offset": 31,
+              "EndOffset": 93,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,7 +1,9 @@
 name: CI
 on:
-  push: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs'] }
-  pull_request: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs'] }
+  # `scripts/integration-coverage.*` — integration 잡의 리포트가 그 둘로 돈다. 리포트 로직·핀만 고친 PR 에서도
+  # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다 — 통합 리포트를 붙인 다른 레인과 같다).
+  push: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
+  pull_request: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
   # 주간 레인 건강검진. ⚠️ `schedule` 은 `paths` 를 타지 않는다(실측: harness 스케줄이 6일 연속
   # 돌았는데 그 경로가 바뀐 날은 2일뿐) — **그것이 목적이다.** 겨누는 것은 의존성 드리프트가
   # 아니라(락·핀이 이미 막는다) 러너 이미지·액션 같은 **환경** 드리프트다. 상세: .claude/rules/ci.md
@@ -64,8 +66,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
-      - name: Full verify (단위 + 통합 IT)
-        run: mvn -B -f java/pom.xml verify
+      # 같은 리액터 · 골(`mvn -B -f java/pom.xml verify`)에 통합 전용 경계 커버리지만 더한다. 단위 테스트는 여기서 끈다 — surefire 와
+      # failsafe 가 같은 에이전트 인자를 써 단위와 IT 가 한 exec 에 합쳐진다(단위 테스트 · 커버리지 게이트는 build 잡이 돈다). 명령
+      # (`clean` · `-Dtest=NONE` · `-Djacoco.destFile` · JaCoCo CLI · javap)은 `scripts/integration-coverage.mjs` 의 run 이 소유한다 —
+      # 로컬(`node scripts/integration-coverage.mjs java`)과 CI 가 같은 명령을 쓰게 여기 다시 적지 않는다. 종료코드는 Maven 의 것이다.
+      - name: Integration IT (Testcontainers) + 경계 커버리지 수집
+        run: node scripts/integration-coverage.mjs run java --out "$RUNNER_TEMP/integration-coverage"
+      # ⚠️ 하한 — 값은 `scripts/integration-coverage.json` 의 `floor` 에만 둔다(등록부 `integration-coverage-never-measured`
+      # 4 걸음째). exit 3(하한 아래)과 exit 2(무결성 실패 — 무엇이 그런지는 `scripts/integration-coverage.mjs` 머리의
+      # 종료코드 표가 소유한다)가 잡을 실패시킨다. exit 1(소유 문제 — 같은 표)은 경고다.
+      - name: 통합 전용 경계 커버리지 — 하한(scripts/integration-coverage.json 의 floor)
+        run: |
+          rc=0
+          node scripts/integration-coverage.mjs report java --out "$RUNNER_TEMP/integration-coverage" || rc=$?
+          if [ "$rc" -eq 1 ]; then echo "::warning::통합 전용 커버리지의 소유 문제 — 위 DRIFT 줄(경고 — 게이트가 아니다)"; fi
+          if [ "$rc" -eq 3 ]; then echo "::error::통합 전용 경계 커버리지가 하한 아래 — 위 BELOW 줄"; fi
+          [ "$rc" -le 1 ]
 
   # SECURITY.md가 약속하는 "언어별 의존성 취약점 감사"의 Java 구현.
   #
