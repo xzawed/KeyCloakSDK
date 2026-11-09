@@ -98,6 +98,8 @@ fi
 # 마커가 아예 없으면(컨테이너가 중간에 죽은 경우) 실패로 간주한다 — fail-closed.
 TESTEXIT=$(printf '%s\n' "$OUT" | grep -oE '___TESTEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${TESTEXIT:-1}" = "0" ]; then TESTSPASSED=true; else TESTSPASSED=false; fi
+# 실패 단서 — 규약은 run-suite.sh 머리(___SUITE_LOG_*)가 소유한다.
+[ "$TESTSPASSED" = "true" ] || { echo "___SUITE_LOG_BEGIN"; printf '%s\n' "$OUT"; echo "___SUITE_LOG_END"; } >&2
 
 # ⚠️ ruby·rust와 같은 원칙: 측정 실패를 0으로 접지 않는다. 여기서는 두 가지를 구분해서 잡는다.
 # (1) 분모 자체가 없다 = 리포트를 못 찾았거나 아무것도 계측되지 않았다.

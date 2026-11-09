@@ -80,6 +80,8 @@ fi
 TESTEXIT=$(printf '%s\n' "$OUT" | grep -oE '___TESTEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 INSTALLEXIT=$(printf '%s\n' "$OUT" | grep -oE '___INSTALLEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${TESTEXIT:-1}" = "0" ] && [ "${INSTALLEXIT:-1}" = "0" ]; then TESTSPASSED=true; else TESTSPASSED=false; fi
+# 실패 단서 — 규약은 run-suite.sh 머리(___SUITE_LOG_*)가 소유한다.
+[ "$TESTSPASSED" = "true" ] || { echo "___SUITE_LOG_BEGIN"; printf '%s\n' "$OUT"; echo "___SUITE_LOG_END"; } >&2
 
 # 커버리지를 못 읽었으면 0을 보고하지 말고 시끄럽게 죽는다. "실측 0%"와 "읽지 못함"이 같은 값이면
 # 추출기가 깨져도 아무도 모른다(이 버그가 정확히 그랬다 — 통과하는 테스트가 잡아줄 수 없는 부류다).

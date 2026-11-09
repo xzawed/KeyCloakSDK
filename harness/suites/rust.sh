@@ -80,6 +80,8 @@ fi
 # 마커가 아예 없으면(컨테이너가 중간에 죽은 경우) 실패로 간주한다 — fail-closed.
 TESTEXIT=$(printf '%s\n' "$OUT" | grep -oE '___TESTEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${TESTEXIT:-1}" = "0" ]; then TESTSPASSED=true; else TESTSPASSED=false; fi
+# 실패 단서 — 규약은 run-suite.sh 머리(___SUITE_LOG_*)가 소유한다.
+[ "$TESTSPASSED" = "true" ] || { echo "___SUITE_LOG_BEGIN"; printf '%s\n' "$OUT"; echo "___SUITE_LOG_END"; } >&2
 
 # ⚠️ "린트가 실패했다"와 "린트를 실행하지 못했다"를 같은 값으로 접으면 안 된다 — 그 구분이 없어서
 # rust가 스코어카드에서 조용히 영구 감점돼 있었다(rust:alpine에 rustfmt·clippy 부재). 컴포넌트

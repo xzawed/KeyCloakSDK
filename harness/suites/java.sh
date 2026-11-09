@@ -56,6 +56,8 @@ SUMMARY_LINES=$(printf '%s\n' "$OUT" | grep -cE 'Tests run: [0-9]+, Failures: [0
 FAILCOUNT=$(printf '%s\n' "$OUT" | grep -E 'Tests run: [0-9]+, Failures: [0-9]+, Errors: [0-9]+, Skipped: [0-9]+$' \
   | grep -oE 'Failures: [0-9]+|Errors: [0-9]+' | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
 if [ "${SUMMARY_LINES:-0}" -gt 0 ] && [ "${FAILCOUNT:-1}" = "0" ]; then TESTSPASSED=true; else TESTSPASSED=false; fi
+# 실패 단서 — 규약은 run-suite.sh 머리(___SUITE_LOG_*)가 소유한다.
+[ "$TESTSPASSED" = "true" ] || { echo "___SUITE_LOG_BEGIN"; printf '%s\n' "$OUT"; echo "___SUITE_LOG_END"; } >&2
 
 INTEGRATION=0
 if [ "${SUITE_INTEGRATION:-0}" = "1" ]; then

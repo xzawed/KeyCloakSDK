@@ -68,6 +68,8 @@ if [ "${BUILDEXIT:-1}" = "0" ]; then LINTCLEAN=true; else LINTCLEAN=false; fi
 # 돌린 종료코드로 testsPassed를 판정한다. 마커가 없으면 실패로 간주한다 — fail-closed.
 TESTEXIT=$(printf '%s\n' "$OUT" | grep -oE '___TESTEXIT=[0-9]+' | tail -1 | cut -d= -f2)
 if [ "${TESTEXIT:-1}" = "0" ]; then TESTSPASSED=true; else TESTSPASSED=false; fi
+# 실패 단서 — 규약은 run-suite.sh 머리(___SUITE_LOG_*)가 소유한다.
+[ "$TESTSPASSED" = "true" ] || { echo "___SUITE_LOG_BEGIN"; printf '%s\n' "$OUT"; echo "___SUITE_LOG_END"; } >&2
 
 # 통합테스트(Testcontainers, 실제 Keycloak)는 Docker-in-Docker 필요 — best-effort opt-in.
 INTEGRATION=0
