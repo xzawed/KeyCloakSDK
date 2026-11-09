@@ -209,6 +209,25 @@ RSpec.describe KeycloakSdk::JwtValidator do
     end
   end
 
+  # ⚠️ **못 읽는 원소 하나가 키셋 전체를 버리면 안 된다**(RFC 7517 §5). ruby-jwt 의 `JWT::JWK::Set` 은 모르는 kty 만
+  # 건너뛰고, `n` 이 빠진 RSA · kty 없는 원소 · 숫자/null/배열 원소 하나로 키셋 전체를 `JWT::JWKError` 로 거부해 같은 키셋의
+  # 정상 키로 서명한 토큰까지 거부됐다(등록부 jwks-unsupported-key-rejects-set). 못 읽는 원소를 **앞**에 둔다.
+  describe "JWKS 의 못 읽는 원소" do
+    {
+      "n 이 빠진 RSA" => { "kty" => "RSA", "kid" => "missingn", "e" => "AQAB" },
+      "kty 없는 원소" => { "kid" => "nokty" },
+      "숫자 원소" => 1,
+      "null 원소" => nil,
+      "배열 원소" => []
+    }.each do |name, bad|
+      it "#{name} 은 건너뛰고 정상 키로 서명한 토큰이 통과한다" do
+        stub_request(:get, jwks_url).to_return(status: 200, body: { keys: [bad, jwk_hash] }.to_json,
+                                               headers: { "Content-Type" => "application/json" })
+        expect(validator.validate(sign(base_claims)).subject).to eq("user-1")
+      end
+    end
+  end
+
   describe "constructor guards (defense-in-depth against silent verify_iss/verify_aud no-ops)" do
     it "raises ConfigError when issuer is nil" do
       expect do
