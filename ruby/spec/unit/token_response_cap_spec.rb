@@ -148,7 +148,8 @@ RSpec.describe KeycloakSdk::Http do
     it "asks the JWKS endpoint for an unencoded body too" do
       stub = stub_request(:get, "#{server}#{TokenResponseCapSpec::JWKS}")
              .with(headers: { "Accept-Encoding" => "identity" })
-             .to_return(status: 200, headers: TokenResponseCapSpec::JSON_TYPE, body: { keys: [{ kid: "k" }] }.to_json)
+             .to_return(status: 200, headers: TokenResponseCapSpec::JSON_TYPE,
+                        body: { keys: [{ kty: "RSA", kid: "k", n: "AQAB", e: "AQAB" }] }.to_json) # 읽히는 키여야 한다
       KeycloakSdk::JwksStore.new(jwks_url: "#{server}#{TokenResponseCapSpec::JWKS}", http: Faraday.new).key_set
       expect(stub).to have_been_requested.once
     end

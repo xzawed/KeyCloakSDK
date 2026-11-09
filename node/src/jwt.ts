@@ -39,6 +39,11 @@ const JWT_MAX_BYTES = 256_000
  */
 const JWKS_MAX_AGE_SECONDS = 300
 
+/** jose 의 `isJwkSet`(`lib/validate.js`)이 원소로 받는 모양 — JSON 에서 온 값이므로 null · 배열이 아닌 객체면 된다. */
+function isJwkObject(key: unknown): boolean {
+  return typeof key === 'object' && key !== null && !Array.isArray(key)
+}
+
 /**
  * 상한을 건 JWKS fetch. `createRemoteJWKSet` 의 `[customFetch]` 이음매로 주입한다 —
  * **JWKS 전용**이라 토큰·introspect·logout 경로에는 영향이 없다.
@@ -64,7 +69,7 @@ const fetchJwksBounded: FetchImplementation = async (url, options) => {
     }
     chunks.push(value)
   }
-  const body = new Uint8Array(total)
+  let body = new Uint8Array(total)
   let offset = 0
   for (const chunk of chunks) {
     body.set(chunk, offset)
@@ -73,6 +78,11 @@ const fetchJwksBounded: FetchImplementation = async (url, options) => {
   // ⚠️ 200 `{"keys":[]}` 를 넘기면 jose 가 좋은 캐시를 빈 셋으로 덮는다. `reload` 는
   // `fetchJwks` 가 성공한 뒤 `.then` 안에서만 캐시를 대입하므로, 여기서 던지면 옛 키가
   // 남는다. JSON 파싱 실패는 던지지 않는다 — 그 판정은 jose 몫이다.
+  //
+  // ⚠️ JWK 가 아닌 원소(객체가 아닌 것)는 걸러 낸다(RFC 7517 §5 — 이해 못 하는 원소는 무시한다). jose 의
+  // `isJwkSet` 은 그런 원소 하나로 키셋 전체를 「malformed」로 거부해, 같은 키셋의 정상 키로 서명한 토큰까지
+  // 거부됐다. 지원 밖 kty · 곡선 · 기형 멤버는 jose 가 키를 고를 때만 보므로 그대로 둔다. 걸러서 남는 것이 없으면
+  // 빈 키셋과 같다.
   if (response.status === 200) {
     let parsed: unknown
     try {
@@ -81,8 +91,19 @@ const fetchJwksBounded: FetchImplementation = async (url, options) => {
       parsed = undefined
     }
     const keys = (parsed as { keys?: unknown } | null)?.keys
-    if (Array.isArray(keys) && keys.length === 0) {
-      throw new KeycloakTransportError('JWKS response contains no keys')
+    if (Array.isArray(keys)) {
+      if (keys.length === 0) {
+        throw new KeycloakTransportError('JWKS response contains no keys')
+      }
+      const usable = keys.filter(isJwkObject)
+      if (usable.length === 0) {
+        throw new KeycloakTransportError(
+          `JWKS response contains no usable keys (${keys.length} unreadable)`,
+        )
+      }
+      if (usable.length !== keys.length) {
+        body = new TextEncoder().encode(JSON.stringify({ ...(parsed as object), keys: usable }))
+      }
     }
   }
   // 상태·헤더를 보존해 되돌려 준다 — 비-200 판정은 jose 가 그대로 수행한다.

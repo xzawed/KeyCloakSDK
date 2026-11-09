@@ -2,6 +2,7 @@
 
 require "faraday"
 require "json" # ⚠️ `on_data` 를 쓰면 json 미들웨어가 돌지 않아 여기서 직접 파싱한다
+require "jwt" # 원소 하나를 키로 읽을 수 있는가 — 판정은 검증과 같은 ruby-jwt 가 한다(`readable_key?`)
 
 module KeycloakSdk
   # DoS-safe JWKS store. Mutex cache + rate-limit + single-flight.
@@ -163,12 +164,34 @@ module KeycloakSdk
     # realm 이고, 좋은 캐시를 그것으로 덮으면 방금 검증되던 토큰이 거부되며 refetch 게이트가
     # 복구까지 막는다. 그래서 쓰기 **전에** 거부한다.
     #
-    # ⚠️ 여기서 멈춘다 — `kty`·`n`·`e` 같은 필드 검증으로 번지면 JWKS 스키마 검사가 된다.
+    # ⚠️ **못 읽는 원소는 여기서 걸러 낸다**(RFC 7517 §5 — 이해 못 하는 원소는 무시한다). ruby-jwt 의 `JWT::JWK::Set` 은
+    # 모르는 kty 만 건너뛰고, `n` 이 빠진 RSA · kty 없는 원소 · 숫자/null/배열 원소 하나로 키셋 전체를 `JWT::JWKError` 로
+    # 거부해 같은 키셋의 정상 키로 서명한 토큰까지 거부됐다. 걸러서 남는 것이 없으면 빈 집합과 같다. ⚠️ 판정은 우리가
+    # `kty`·`n`·`e` 를 보는 스키마 검사가 아니다 — 검증과 같은 ruby-jwt 에 원소마다 묻는다.
     def validate_key_set!(body)
       raise TransportError, "JWKS response malformed" unless body.is_a?(Hash) && body["keys"].is_a?(Array)
-      raise TransportError, "JWKS response contains no keys" if body["keys"].empty?
 
-      body
+      keys = body["keys"]
+      raise TransportError, "JWKS response contains no keys" if keys.empty?
+
+      usable = keys.select { |key| readable_key?(key) }
+      raise TransportError, "JWKS response contains no usable keys (#{keys.size} unreadable)" if usable.empty?
+
+      usable.size == keys.size ? body : body.merge("keys" => usable)
+    end
+
+    # 원소 하나 — ruby-jwt 가 키로 읽는가. ⚠️ 해시가 아닌 원소는 묻지 않고 버린다 — ruby-jwt 는 문자열을 **그 값이 비밀인
+    # HMAC 키**로 만든다(`JWT::JWK::HMAC` 의 KTYS 에 String). JWK 는 JSON 객체다.
+    # ⚠️ **키 재료까지 읽는다**(`verify_key`). kid 가 있으면 ruby-jwt 는 n·e·x·y 를 검증 때까지 미뤄, 같은 kid 의 기형 키가
+    # 앞에 오면 검증이 날것의 `NoMethodError`·`OpenSSL::PKey::EC::Point::Error` 로 샜다(§4). ⚠️ `StandardError` 를 다 잡는다 —
+    # 그 둘은 `JWT::JWKError` 가 아니다.
+    def readable_key?(key)
+      return false unless key.is_a?(Hash)
+
+      JWT::JWK.new(key).verify_key
+      true
+    rescue StandardError
+      false
     end
 
     def monotonic

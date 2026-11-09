@@ -305,6 +305,32 @@ RSpec.describe KeycloakSdk::JwksStore do
     end
   end
 
+  # ⚠️ **못 읽는 원소는 캐시에 오르기 전에 걸러진다**(RFC 7517 §5 — 판정은 ruby-jwt 의 `JWT::JWK.new`). 해시가 아닌
+  # 원소는 ruby-jwt 에 묻지 않고 버린다 — ruby-jwt 는 문자열 원소를 **그 값이 비밀인 HMAC 키**로 만든다(`JWT::JWK::HMAC`
+  # 의 KTYS 에 String). 검증 경로의 효과는 `jwt_validator_spec.rb` 의 「JWKS 의 못 읽는 원소」가 잰다.
+  describe "못 읽는 원소 거르기(RFC 7517 §5)" do
+    let(:unusable) { [{ kty: "RSA", kid: "missingn", e: "AQAB" }, "not-a-jwk", 1, nil, [], { kid: "nokty" }] }
+
+    it "읽을 수 있는 키만 남긴다 — 문자열 원소는 HMAC 키가 되지 않는다" do
+      mixed = { keys: unusable + [{ kty: "RSA", kid: "k1", n: "AQAB", e: "AQAB" }] }.to_json
+      stub_request(:get, jwks_url).to_return(status: 200, body: mixed,
+                                             headers: { "Content-Type" => "application/json" })
+      expect(store.key_set["keys"]).to eq([{ "kty" => "RSA", "kid" => "k1", "n" => "AQAB", "e" => "AQAB" }])
+    end
+
+    it "쓸 수 있는 원소가 없으면 TransportError 이고 좋은 캐시를 덮지 않는다" do
+      stub_request(:get, jwks_url).to_return(
+        { status: 200, body: body, headers: { "Content-Type" => "application/json" } },
+        { status: 200, body: { keys: unusable }.to_json, headers: { "Content-Type" => "application/json" } }
+      )
+      expect(store.key_set["keys"].first["kid"]).to eq("k1") # 사전조건: 좋은 캐시
+
+      expect { store.key_set(force: true) }
+        .to raise_error(KeycloakSdk::TransportError, /no usable keys \(6 unreadable\)/)
+      expect(store.key_set["keys"].first["kid"]).to eq("k1")
+    end
+  end
+
   # 키셋 수명(300 초)은 아홉 언어가 함께 움직이는 내부 값이다 — 나머지 여덟 언어에서도 비공개다(go 소문자 · .NET·kotlin
   # internal · php private · java package-private …). 공개로 두면 상수 하나가 계약이 되어 릴리스가 minor, 나중에 지우면 major 다.
   it "keeps the key-set lifetime private (not public API)" do
