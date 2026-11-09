@@ -314,6 +314,29 @@ final class AdminBearerGrammarTest extends TestCase
         self::assertSame([], self::adminRequests(), 'admin 요청은 나가지 않는다 — 토큰 엔드포인트의 상태가 자원의 상태로 읽히면 안 된다');
     }
 
+    /**
+     * fschmtt 는 참인 refresh_token 만 푼다(`if ($tokens['refresh_token'])`) — 거짓인 값은 건너뛰고 그 부여를 쓴다. 미들웨어도 같은
+     * 조건이어야 한다: `!== null` 로 넓혀도 다른 시험이 다 통과했는데 그것은 쓸 수 있는 부여를 거부한다(독립 레그의 변이).
+     *
+     * @return array<string, array{string}> refresh_token 자리의 JSON 리터럴
+     */
+    public static function falsyRefreshTokens(): array
+    {
+        return ['empty string' => ['""'], 'string zero' => ['"0"'], 'null' => ['null'], 'false' => ['false'], 'zero' => ['0'], 'empty array' => ['[]']];
+    }
+
+    #[DataProvider('falsyRefreshTokens')]
+    public function testAFalsyRefreshTokenIsSkippedAsFschmttSkipsIt(string $literal): void
+    {
+        self::serveRaw(200, 'application/json', '{"access_token":"' . self::jwt() . '","token_type":"Bearer","expires_in":300,"refresh_token":' . $literal . '}');
+        $admin = KeycloakClient::create(self::config())->admin();
+        $e = self::thrown(static fn (): int => count($admin->users()->search()));
+
+        self::assertNull($e, self::describe($e));
+        self::assertSame(1, self::tokenRequests(), '부여는 한 번 — 받아들여 저장했다');
+        self::assertNotSame([], self::adminRequests(), 'admin 요청이 나갔다');
+    }
+
     /** 거부 종류의 메시지 — `grammar`(문법 밖) · `json`(JSON 아님) · 그 밖은 `jwt`(fschmtt 가 JWT 가 아니라 거부). */
     private static function refusal(string $expect): string
     {
