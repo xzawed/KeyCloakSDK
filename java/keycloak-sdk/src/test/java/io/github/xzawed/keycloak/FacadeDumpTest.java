@@ -31,6 +31,7 @@ import io.github.xzawed.keycloak.core.exception.KeycloakNotFoundException;
 import io.github.xzawed.keycloak.core.exception.KeycloakSdkException;
 import io.github.xzawed.keycloak.core.exception.KeycloakTransportException;
 import io.github.xzawed.keycloak.core.exception.TokenValidationException;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
@@ -121,7 +122,12 @@ class FacadeDumpTest {
       "io.github.xzawed.keycloak.auth.BoundedTransport$TlsKey",
       "auth·JWKS 운송의 프로세스 풀이 연결에 다는 상태 표식 — 정적 풀에만 산다(뿌리에서 닿지 않는다). TLS 근원(소켓 팩토리·"
           + "검증기)의 약한 참조와 정체 해시뿐이라 비밀을 쥐지 않고, 문자열 표현은 상수다"
-          + "(BoundedTransportTest.tlsKey_isTheIdentityOfTheFactoryAndTheVerifier)");
+          + "(BoundedTransportTest.tlsKey_isTheIdentityOfTheFactoryAndTheVerifier)",
+      "io.github.xzawed.keycloak.admin.TokenResponseGuard$Unusable",
+      "admin 자기 그랜트의 거부(끝까지 온 쓸 수 없는 2xx) — RESTEasy 가 ResponseProcessingException 으로 감싸고, 파사드가 내는"
+          + " SDK 예외의 원인 사슬은 WithheldCauses 가 타입 이름 사본으로 바꿔 원본이 SDK 뿌리에서 닿지 않는다(raw() 가 내는 하위"
+          + " 예외의 사슬에만 산다 — §4(b) 탈출구). 상태는 HTTP 상태 · 상수 메시지 · 결합 예외 원인뿐이고 문자열 표현은 클래스 이름과"
+          + " 상수다(TokenResponseGuardTest.unusableTokenResponse_isRejectedWithoutQuotingIt)");
 
   /**
    * 알려진 누출 — {@code "뿌리|카나리아"} 와 사유. ⚠️ 고쳐져 더 안 새면 **여기서 지워야 통과한다**(낡은 항목 검사).
@@ -265,6 +271,9 @@ class FacadeDumpTest {
     KeycloakClient huge = KeycloakClient.create(KeycloakConfig.builder()
         .serverUrl(idp.url()).realm("huge").clientId(CLIENT_ID).clientSecret(SECRET.toCharArray()).build());
     closers.add(huge);
+    KeycloakClient notUtf8 = KeycloakClient.create(KeycloakConfig.builder()
+        .serverUrl(idp.url()).realm("notutf8").clientId(CLIENT_ID).clientSecret(SECRET.toCharArray()).build());
+    closers.add(notUtf8);
 
     canaries.put("SECRET", SECRET);
     canaries.put("BASIC", basic);   // Basic 헤더 값 — 시크릿의 인코딩된 형태도 비밀이다.
@@ -312,12 +321,15 @@ class FacadeDumpTest {
     roots.put("admin transport error", assertThrows(KeycloakTransportException.class, () -> down.admin().users().get("x")));
     roots.put("auth error (200 non-JSON token body)",
         assertThrows(KeycloakAuthException.class, () -> garbled.auth().clientCredentialsToken()));
+    // 끝까지 온 쓸 수 없는 토큰 응답 — 인증 오류다(등록부 token-response-class-divergent, 전에는 전송 오류)
     roots.put("admin error (200 non-JSON token body)",
-        assertThrows(KeycloakTransportException.class, () -> garbled.admin().users().get("x")));
+        assertThrows(KeycloakAuthException.class, () -> garbled.admin().users().get("x")));
     roots.put("auth error (error_description echoes the refresh token)",
         assertThrows(KeycloakAuthException.class, () -> echo.auth().refresh(REFRESH)));
     roots.put("auth error (token response above the 1 MiB cap)",
         assertThrows(KeycloakTransportException.class, () -> huge.auth().clientCredentialsToken()));
+    roots.put("auth error (2xx token body that is not UTF-8)",
+        assertThrows(KeycloakAuthException.class, () -> notUtf8.auth().clientCredentialsToken()));
     roots.put("config error", assertThrows(KeycloakConfigException.class,
         () -> KeycloakConfig.builder().clientSecret(SECRET.toCharArray()).build()));
     return roots;
@@ -369,6 +381,14 @@ class FacadeDumpTest {
           // 상한(1,048,576 바이트)을 한 바이트 넘는 쓸 수 있는 토큰 응답 — 넘침 오류(원인 CappedResponseSender.TooLarge)를 얻는다
           String head = tokens.substring(0, tokens.length() - 1);
           reply(ex, 200, head + " ".repeat(1_048_577 - head.length() - 1) + "}");
+        } else if (path.equals("/realms/notutf8/protocol/openid-connect/token")) {
+          // access_token 안의 잘못된 UTF-8(0xFF 0xFE) — 끝까지 온 쓸 수 없는 응답(원인 CappedResponseSender.NotUtf8)을 얻는다
+          ByteArrayOutputStream body = new ByteArrayOutputStream();
+          body.writeBytes(("{\"access_token\":\"" + ACCESS).getBytes(StandardCharsets.UTF_8));
+          body.writeBytes(new byte[] {(byte) 0xFF, (byte) 0xFE});
+          body.writeBytes(("\",\"token_type\":\"Bearer\",\"expires_in\":300,\"refresh_token\":\"" + REFRESH + "\"}")
+              .getBytes(StandardCharsets.UTF_8));
+          replyBytes(ex, 200, body.toByteArray());
         } else if (path.equals("/admin/realms/r/users/missing")) {
           reply(ex, 404, "{\"error\":\"User not found\"}");
         } else if (path.equals("/admin/realms/r/users/forbidden")) {
@@ -394,7 +414,10 @@ class FacadeDumpTest {
         ex.close();
         return;
       }
-      byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+      replyBytes(ex, status, body.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static void replyBytes(HttpExchange ex, int status, byte[] bytes) throws IOException {
       ex.getResponseHeaders().add("Content-Type", "application/json");
       ex.sendResponseHeaders(status, bytes.length);
       try (OutputStream os = ex.getResponseBody()) {

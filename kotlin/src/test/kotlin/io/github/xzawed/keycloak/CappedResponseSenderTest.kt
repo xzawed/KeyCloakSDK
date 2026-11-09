@@ -201,6 +201,60 @@ internal class CappedResponseSenderTest {
         assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
     }
 
+    // strict(토큰·introspection) — 2xx 본문의 잘못된 UTF-8 은 본문을 인용하지 않는 ResponseNotUtf8Exception 이다(끝까지 온 응답을 쓸 수
+    // 없다 — 등록부 token-response-class-divergent · Java 동형). 잘못된 꼴은 대체 문자를 낳는 다섯이다 — 이음 바이트가 아닌 바이트 · UTF-8
+    // 에 없는 바이트 · 겹침 꼴 · 서로게이트 · 끝에서 잘린 열. 그 밖은 strict 가 아닌 송신과 같은 응답이다: 유효한 UTF-8 · BOM · 4 KiB
+    // 버퍼를 여러 번 채우는 글자 수 · 오류 상태의 잘못된 UTF-8(판정은 상태가 한다) · 빈 본문 · 204 · 302. 상한을 넘는 본문은 UTF-8 을
+    // 보기 전에 ResponseTooLargeException 이다(다 읽지 않았다).
+    @Test
+    fun `strict rejects an invalid UTF-8 success body and is the plain sender otherwise`() {
+        val wrong = mutableListOf<String>()
+        val malformed =
+            listOf(
+                byteArrayOf(0xC3.toByte(), 0x28),
+                byteArrayOf(0xFF.toByte(), 0xFE.toByte()),
+                byteArrayOf(0xC0.toByte(), 0xAF.toByte()),
+                byteArrayOf(0xED.toByte(), 0xA0.toByte(), 0x80.toByte()),
+            )
+        for (code in listOf(200, 201, 299)) {
+            status = code
+            val bodies =
+                malformed.map { "{\"access_token\":\"a".toByteArray() + it + "b\"}".toByteArray() } +
+                    listOf("{\"access_token\":\"ab\"}".toByteArray() + byteArrayOf(0xE2.toByte(), 0x82.toByte()))
+            for (bad in bodies) {
+                body = bad
+                val e = runCatching { request().send(CappedResponseSender("token response", strict = true)) }.exceptionOrNull()
+                if (e !is ResponseNotUtf8Exception || e.message != "token response is not valid UTF-8" || e.cause != null) {
+                    wrong += "$code ${bad.contentToString()}: ResponseNotUtf8Exception 이 아니다 — $e"
+                }
+            }
+        }
+        val same =
+            listOf(
+                200 to "{\"d\":\"한글 😀\"}".toByteArray(),
+                200 to byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + "{\"a\":1}".toByteArray(),
+                200 to "{\"x\":\"${"é".repeat(5_000)}\"}".toByteArray(),
+                400 to "{\"error\":\"invalid_grant\",\"error_description\":\"bad ".toByteArray() + byteArrayOf(0xFF.toByte()) +
+                    "\"}".toByteArray(),
+                503 to "<html>".toByteArray() + byteArrayOf(0xC3.toByte(), 0x28) + "</html>".toByteArray(),
+                200 to ByteArray(0),
+                204 to ByteArray(0),
+                302 to "moved\n".toByteArray(),
+            )
+        for ((code, payload) in same) {
+            status = code
+            body = payload
+            val plain = request().send(CappedResponseSender("token response"))
+            val strict = request().send(CappedResponseSender("token response", strict = true))
+            same(plain, strict)?.let { wrong += "$code ${payload.size} bytes: $it" }
+        }
+        status = 200
+        body = ByteArray(CRS_CAP) { ' '.code.toByte() } + byteArrayOf(0xFF.toByte())
+        val over = runCatching { request().send(CappedResponseSender("token response", strict = true)) }.exceptionOrNull()
+        if (over !is ResponseTooLargeException) wrong += "상한+1 의 잘못된 UTF-8: ResponseTooLargeException 이 아니다 — $over"
+        assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
+    }
+
     // 오류 상태의 갈래 — 본문 있는 4xx·본문 없는 5xx·성공이 Nimbus 의 send() 와 같은 HTTPResponse 다(POST·GET). 상태 줄을 받지 못한
     // 실패는 둘 다 IOException 이다 — 새 운송의 메시지는 응답과 무관한 상수이고, 새 연결의 실패라 다시 보내지 않는다(Nimbus 의 send()
     // 는 HttpURLConnection 이라 같은 실패에 POST 를 새 연결로 한 번 더 보냈다 — sun.net.http.retryPost). ⚠️ 예전 시험은 가짜

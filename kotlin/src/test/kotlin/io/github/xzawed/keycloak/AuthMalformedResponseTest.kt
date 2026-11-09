@@ -82,7 +82,8 @@ private fun form(v: String): String = URLEncoder.encode(v, StandardCharsets.UTF_
  * (「Invalid client or Invalid client credentials」). SDK 가 **그 요청에 실어 보낸** 비밀(클라이언트 시크릿·
  * Basic 자격·refresh/introspect 토큰·code·verifier — 원문과 폼 인코딩된 꼴)은 가린다(e2–e4·e7·e8·f6·f10). 보낸
  * 적 없는 값은 사유 문구와 구별할 수 없어 남는다(e1·f9). admin 은 사유를 메시지에 싣지 않는다(본문은 `keycloakError`
- * 필드 — 아래 두 번째 테스트). 폼 인코딩된 오류 본문은 Nimbus 가 읽지 않는다(e9 — 사유가 `null`).
+ * 필드 — 아래 두 번째 테스트 · 자기 토큰 그랜트의 실패는 상태만 싣는다). 폼 인코딩된 오류 본문은 Nimbus 가 읽지 않는다(e9 — 사유
+ * 대신 HTTP 상태가 실린다 — `TokenResponseClassTest`).
  */
 private const val MAL_FOREIGN =
     "IdP-authored error_description forwarded by design; a value the SDK never sent is indistinguishable from prose"
@@ -97,10 +98,10 @@ private enum class MalCall { CLIENT_CREDENTIALS, REFRESH, EXCHANGE, EXCHANGE_NON
 private val AUTH_TOKEN_CALLS = setOf(MalCall.CLIENT_CREDENTIALS, MalCall.REFRESH, MalCall.EXCHANGE, MalCall.EXCHANGE_NONCE)
 private val ALL_TOKEN_CALLS = AUTH_TOKEN_CALLS + MalCall.ADMIN
 
-// admin 의 토큰 단계 실패는 원래부터 전송 오류로 분류된다(RESTEasy 가 ProcessingException 으로 감싼다) — 분류는
-// 이 수정의 대상이 아니므로 그대로 고정한다.
-private fun expectedType(call: MalCall): Class<out KeycloakException> =
-    if (call == MalCall.ADMIN) KeycloakTransportException::class.java else KeycloakAuthException::class.java
+// 흐름 대조가 기대하는 타입 — 호출과 무관하게 인증 오류다. admin 의 토큰 단계 실패도 끝까지 온 응답이면 인증 오류다(등록부
+// token-response-class-divergent — 전에는 RESTEasy 가 ProcessingException 으로 감싼 그대로 전송 오류였다). 이 행렬의 변형은 전부
+// 끝까지 온 응답이다.
+private val MAL_EXPECTED_TYPE: Class<out KeycloakException> = KeycloakAuthException::class.java
 
 private data class MalVariant(
     val id: String,
@@ -122,7 +123,7 @@ private fun expectedPrefix(
     call: MalCall,
 ): String =
     when {
-        call == MalCall.ADMIN -> "Admin request failed"
+        call == MalCall.ADMIN -> "Admin token request failed: HTTP "
         failure == MalFailure.ID_TOKEN -> "Authorization code exchange failed: invalid id_token"
         failure == MalFailure.MALFORMED && call == MalCall.INTROSPECT -> "Malformed introspection response"
         failure == MalFailure.MALFORMED -> "Malformed auth response"
@@ -534,6 +535,9 @@ private suspend fun invoke(
 
 private fun chainOf(t: Throwable): List<Throwable> = generateSequence(t) { it.cause }.take(16).toList()
 
+// 가드가 끝까지 읽고 거부한 토큰 응답의 타입 — 가린 사슬에도 이름은 남는다.
+private const val MAL_UNUSABLE = "io.github.xzawed.keycloak.admin.UnusableTokenResponse"
+
 internal class AuthMalformedResponseTest {
     @Test
     fun `hostile token and introspect responses do not print tokens through SDK errors`() =
@@ -580,8 +584,8 @@ internal class AuthMalformedResponseTest {
                         val beyond = server.findAll(getRequestedFor(urlEqualTo(MAL_ADMIN_USER))).size
                         val prefix = expectedPrefix(v.failure, call)
                         val message = (outcome as? Throwable)?.message.orEmpty()
-                        if (outcome.javaClass != expectedType(call) || !message.startsWith(prefix) || reached == 0 || beyond > 0) {
-                            flow += "$case: 기대 ${expectedType(call).simpleName}('$prefix…') 실패가 아니다" +
+                        if (outcome.javaClass != MAL_EXPECTED_TYPE || !message.startsWith(prefix) || reached == 0 || beyond > 0) {
+                            flow += "$case: 기대 ${MAL_EXPECTED_TYPE.simpleName}('$prefix…') 실패가 아니다" +
                                 "(결과 ${outcome.javaClass.simpleName} '$message', IdP 요청 $reached, 그 너머 $beyond)"
                             continue
                         }
@@ -662,9 +666,9 @@ private fun assertDebugInfoKept(failures: Map<String, Throwable>) {
             "f1 introspect 200 short non-JSON body|INTROSPECT" to nimbusJson,
             "c3 token_type is an unknown string|REFRESH" to listOf("com.nimbusds.oauth2.sdk.ParseException"),
             // admin 의 토큰 응답은 결합 바로 앞(가장 안쪽 ReaderInterceptor)에서 TokenResponseGuard 가 거부한다 — 진단은 그 타입
-            // 이름과 프레임(아래)이다.
-            "d1 200 short non-JSON body|ADMIN" to listOf("jakarta.ws.rs.client.ResponseProcessingException", "java.io.IOException"),
-            "d4 200 JSON string body|ADMIN" to listOf("jakarta.ws.rs.client.ResponseProcessingException", "java.io.IOException"),
+            // 이름(끝까지 온 응답의 거부 — UnusableTokenResponse)과 프레임(아래)이다.
+            "d1 200 short non-JSON body|ADMIN" to listOf("jakarta.ws.rs.client.ResponseProcessingException", MAL_UNUSABLE),
+            "d4 200 JSON string body|ADMIN" to listOf("jakarta.ws.rs.client.ResponseProcessingException", MAL_UNUSABLE),
         )
     for ((case, types) in kept) {
         val e = at(case)
@@ -679,7 +683,7 @@ private fun assertDebugInfoKept(failures: Map<String, Throwable>) {
     }
     assertEquals("Malformed auth response", at("d1 200 short non-JSON body|EXCHANGE").message)
     assertEquals("Malformed introspection response", at("f2 introspect 200 long non-JSON body|INTROSPECT").message)
-    assertEquals("Admin request failed", at("d2 200 long non-JSON body|ADMIN").message)
+    assertEquals("Admin token request failed: HTTP 200 (unusable token response)", at("d2 200 long non-JSON body|ADMIN").message)
     val echoed = at("e3 400 error_description echoes the sent refresh token|REFRESH") as KeycloakAuthException
     assertEquals("Token refresh failed: Invalid refresh token: *** (client ***)", echoed.message)
     assertEquals("invalid_grant", echoed.oauthError)

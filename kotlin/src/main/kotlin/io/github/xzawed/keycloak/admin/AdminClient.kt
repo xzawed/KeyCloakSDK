@@ -1,6 +1,7 @@
 package io.github.xzawed.keycloak.admin
 
 import io.github.xzawed.keycloak.KeycloakAdminException
+import io.github.xzawed.keycloak.KeycloakAuthException
 import io.github.xzawed.keycloak.KeycloakConfig
 import io.github.xzawed.keycloak.KeycloakConfigException
 import io.github.xzawed.keycloak.KeycloakTransportException
@@ -515,18 +516,43 @@ internal suspend fun <T> adminCall(block: () -> T): T =
     } catch (e: WebApplicationException) {
         throw translateAdminException(e)
     } catch (e: ProcessingException) {
+        val grant = grantFailure(e)
+        if (grant != null) throw KeycloakAuthException(grant, c = RedactedCause.of(e))
         throw KeycloakTransportException("Admin request failed", transportCause(e))
     }
 
+// 원인 사슬을 따라가는 깊이 — 사슬은 순환할 수 있다(`initCause` 는 자기 자신만 막는다).
+private const val GRANT_CAUSE_DEPTH = 16
+
+/**
+ * admin 의 자기 토큰 그랜트가 **끝까지 온** 응답으로 실패했으면 그 메시지, 아니면 null(등록부 token-response-class-divergent · Java
+ * `AdminExceptions.grantFailure` 동형). 그랜트는 keycloak-admin-client 의 TokenManager 가 BearerAuthFilter(요청 필터) 안에서 하므로 그
+ * 실패는 [ProcessingException] 으로 온다 — 그 아래에 (1) [WebApplicationException] 이 있으면 토큰 엔드포인트의 오류 상태(RESTEasy 가 요청
+ * 필터의 예외를 감싼다 — 자원 요청의 오류는 감싸지 않고 그대로 온다: [translateAdminException]), (2) [UnusableTokenResponse] 가 있으면 쓸
+ * 수 없는 2xx 다. 둘 다 응답이 다 왔다 — 인증 오류다(전에는 전송 오류였다). 그 밖(연결 거부 · 타임아웃 · 상한 초과 · 깨진 틀)은 null —
+ * 전송 실패 그대로다. ⚠️ 메시지는 상태만 싣는다 — 토큰 엔드포인트의 오류 본문은 그 요청의 클라이언트 시크릿을 되울릴 수 있다
+ * (`AdminTokenEchoTest`). 원인 사슬은 늘 [RedactedCause] 로 단다(응답을 쥔 Response · 결합 예외가 그 안에 있다). 분류는 타입으로만 한다.
+ * 갱신 400 의 복구(TokenManager 가 `BadRequestException` 을 잡아 다시 부여한다)는 여기 오지 않는다 — 다시 부여도 실패해야 온다.
+ */
+internal fun grantFailure(e: ProcessingException): String? {
+    for (t in generateSequence(e.cause) { it.cause }.take(GRANT_CAUSE_DEPTH)) {
+        if (t is UnusableTokenResponse) return "Admin token request failed: HTTP ${t.status} (unusable token response)"
+        if (t is WebApplicationException) return "Admin token request failed: HTTP ${t.response?.status ?: 0}"
+    }
+    return null
+}
+
 // ⚠️ [ResponseProcessingException] 은 응답을 **받았으나** 읽지 못했다는 JAX-RS 의 표시다 — 그 아래 Jackson 예외가
-// 본문을 인용한다(「Unrecognized token '<본문>'」·JSON 문자열 값·expires_in 값). 내장 TokenManager 가 형식이
-// 틀린 토큰 응답을 받으면 여기로 온다(`AuthMalformedResponseTest`). 그 사슬은 [RedactedCause] 로 갈아 끼우고,
-// 응답이 없는 전송 실패(연결 거부·타임아웃·TLS)는 진단에 필요한 메시지를 그대로 둔다.
+// 본문을 인용한다(「Unrecognized token '<본문>'」·JSON 문자열 값·expires_in 값). admin 자원 응답의 결합 실패가 여기로 온다
+// (내장 TokenManager 의 토큰 응답 실패는 [grantFailure] 가 먼저 가려 인증 오류로 간다 — 그 원인 사슬도 [RedactedCause] 다,
+// `AuthMalformedResponseTest`). 그 사슬은 [RedactedCause] 로 갈아 끼우고, 응답이 없는 전송 실패(연결 거부·타임아웃·TLS)는 진단에
+// 필요한 메시지를 그대로 둔다.
 // ⚠️ 이 아래의 [WebApplicationException] 도 같다 — 메시지가 아니라 쥔 Response 가 응답을 낸다. 내장 TokenManager 가 BearerAuthFilter
 // 안에서 토큰 엔드포인트의 오류를 받으면 RESTEasy 는 그 본문을 bufferEntity 한 Response 를 NotAuthorizedException 등에 쥐여
 // ProcessingException 으로 감싸고, 그 Response 는 close() 뒤에도 readEntity(String) 가 본문을 그대로 돌려준다(버퍼된 엔티티는 닫힘 검사를
-// 건너뛴다 — 닫기로는 막지 못한다, 실측). 그 본문은 그 요청의 Basic 시크릿을 되울릴 수 있다(`AdminTokenEchoTest`). 자원 오류는 여기로
-// 오지 않는다 — [translateAdminException] 이 받아 본문을 keycloakError 로 싣는다(그대로).
+// 건너뛴다 — 닫기로는 막지 못한다, 실측). 그 본문은 그 요청의 Basic 시크릿을 되울릴 수 있다(`AdminTokenEchoTest`). 그 사슬은 이제
+// [grantFailure] 가 먼저 가려 인증 오류로 가고 원인은 [RedactedCause] 다 — 여기 남긴 이름은 방어선이다. 자원 오류는 여기로 오지 않는다 —
+// [translateAdminException] 이 받아 본문을 keycloakError 로 싣는다(그대로).
 // ⚠️ RESTEasy 의 HttpCore 틀 오류도 응답의 줄을 싣는다 — 「Invalid header: <줄>」·「Status line contains invalid status code: <줄>」(머리 —
 // ProtocolException, 곧 HttpException)·「Bad chunk header: <줄>」(본문 — MalformedChunkCodingException, 미디어 타입 없는 2xx 를 닫을 때
 // 났다). 실측 `AdminResponseFramingTest`. ⚠️ #833 뒤로 그 닫기는 한 바이트만 엿보고 실패를 삼킨다([AdminEngine.Settled]) — 이 이름만으로

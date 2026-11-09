@@ -2,6 +2,7 @@ package io.github.xzawed.keycloak.admin
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import io.github.xzawed.keycloak.KeycloakAuthException
 import io.github.xzawed.keycloak.KeycloakConfig
 import io.github.xzawed.keycloak.KeycloakTransportException
 import kotlinx.coroutines.CancellationException
@@ -34,9 +35,10 @@ import kotlin.test.assertTrue
 
 // admin 레인의 토큰 응답 계약(Java `AdminTokenResponseTest` 동형) — admin 은 토큰을 자체 소유하고(§4) keycloak-admin-client
 // 내장 TokenManager 가 그 응답을 Jackson 으로 읽는다. 계약: 쓸 수 없는 access_token(누락·null·숫자·불리언·빈 문자열·객체·
-// 배열)이면 **admin API 요청을 하나도 보내지 않고** KeycloakTransportException 으로 실패한다 — 오늘 null·객체·배열·누락이
-// 이미 그렇게 실패하던 타입이다. 쓸 수 있는 문자열 토큰은 그대로 동작하고, TokenManager 의 갱신(refresh_token 그랜트)도
-// 같은 검사를 받는다.
+// 배열)이면 **admin API 요청을 하나도 보내지 않고** KeycloakAuthException(「Admin token request failed: HTTP <상태> (unusable token
+// response)」)으로 실패한다 — 끝까지 온 응답이라 인증 오류다(등록부 token-response-class-divergent — 전에는 전송 오류였다). 상한을 넘어
+// 다 읽지 않은 응답은 KeycloakTransportException 그대로다. 쓸 수 있는 문자열 토큰은 그대로 동작하고, TokenManager 의 갱신
+// (refresh_token 그랜트)도 같은 검사를 받는다.
 //
 // ⚠️ 가짜 admin 엔드포인트는 **성공**(200 사용자)을 낸다 — 강제변환된 토큰으로 나간 요청이 404 로 우연히 실패해 결함이
 // 「실패했으니 됐다」로 가려지지 않게. 판정의 무게는 「admin 요청 0 건」이 진다(적대 행렬 W3a 와 같은 기준). 네트워크는
@@ -47,6 +49,20 @@ private const val ATR_MISSING = "(missing)"
 
 // 같은 응답에 실린 refresh_token — 거부 오류의 어느 표현에도 찍히면 안 된다.
 private const val ATR_RT_CANARY = "ZadminRT-0123456789abcdef"
+
+// 거부가 내는 것 — 끝까지 온 쓸 수 없는 응답은 인증 오류(그 상태를 싣는다), 상한을 넘어 다 읽지 않은 응답은 전송 오류다(등록부
+// token-response-class-divergent).
+private class AtrExpected(
+    val type: Class<out Throwable>,
+    val message: String,
+) {
+    companion object {
+        val OVER_CAP = AtrExpected(KeycloakTransportException::class.java, "Admin request failed")
+
+        fun unusable(status: Int) =
+            AtrExpected(KeycloakAuthException::class.java, "Admin token request failed: HTTP $status (unusable token response)")
+    }
+}
 
 private fun atrTokenBody(
     rawAccessToken: String,
@@ -297,7 +313,7 @@ internal class AdminTokenResponseTest {
     private fun grants(): List<String> = synchronized(lock) { grants.toList() }
 
     @Test
-    fun `unusable access_token sends no admin request and fails as transport`() =
+    fun `unusable access_token sends no admin request and fails as auth`() =
         runTest {
             val table = mutableListOf<String>()
             val wrong = mutableListOf<String>()
@@ -305,7 +321,7 @@ internal class AdminTokenResponseTest {
             val shapes = listOf("12345", "true", "\"\"", "null", """{"v":"x"}""", """["x"]""", ATR_MISSING, "\"AT\",\"access_token\":12345")
             for (raw in shapes) {
                 reset(Reply(200, atrTokenBody(raw, ",\"refresh_token\":\"$ATR_RT_CANARY\"")))
-                table += callExpectingRejection("access_token $raw", wrong)
+                table += callExpectingRejection("access_token $raw", wrong, AtrExpected.unusable(200))
             }
             println("[AdminTokenResponseTest]\n  " + table.joinToString("\n  "))
             assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
@@ -325,12 +341,12 @@ internal class AdminTokenResponseTest {
             e
         }
 
-    // admin 호출 하나를 내고 거부 계약을 잰다 — KeycloakTransportException("Admin request failed") · admin 요청 0 건 · 토큰 요청
-    // 정확히 1 건 · 원인 사슬에 java.*·SDK 밖 타입 없음(§4) · 응답의 refresh_token 미노출. 어긋남은 wrong 에 쌓고 표의 한 행을
-    // 돌려준다.
+    // admin 호출 하나를 내고 거부 계약을 잰다 — expected 의 타입·메시지 · admin 요청 0 건 · 토큰 요청 정확히 1 건 · 원인 사슬에
+    // java.*·SDK 밖 타입 없음(§4) · 응답의 refresh_token 미노출. 어긋남은 wrong 에 쌓고 표의 한 행을 돌려준다.
     private suspend fun callExpectingRejection(
         label: String,
         wrong: MutableList<String>,
+        expected: AtrExpected,
         client: () -> AdminClient = { admin() },
     ): String {
         val thrown = failureOf(client) { it.users().get("x") }
@@ -338,8 +354,9 @@ internal class AdminTokenResponseTest {
         val row =
             "${label.padEnd(24)} → ${thrown?.let { "${it.javaClass.simpleName}(${it.message})" } ?: "성공"} · " +
                 "grants ${grants()} · admin $hits"
-        if (thrown !is KeycloakTransportException || thrown.message != "Admin request failed") {
-            wrong += "$label: KeycloakTransportException(Admin request failed) 가 아니다 — ${thrown?.javaClass?.name ?: "성공"}"
+        if (!expected.type.isInstance(thrown) || thrown?.message != expected.message) {
+            wrong += "$label: ${expected.type.simpleName}(${expected.message}) 가 아니다 — " +
+                (thrown?.let { "${it.javaClass.name}(${it.message})" } ?: "성공")
         }
         if (hits.isNotEmpty()) wrong += "$label: 쓸 수 없는 토큰으로 admin 요청이 나갔다 — $hits"
         if (grants().size != 1) wrong += "$label: 토큰 요청이 정확히 한 번이 아니다 — ${grants()}"
@@ -381,7 +398,7 @@ internal class AdminTokenResponseTest {
                 if (adminHits() != good || grants() != listOf("client_credentials")) wrong += "gzip \"good\": ${grants()} ${adminHits()}"
 
                 reset(Reply(200, atrGzip(atrTokenBody("12345", canary)), "gzip"))
-                table += callExpectingRejection("gzip 12345", wrong)
+                table += callExpectingRejection("gzip 12345", wrong, AtrExpected.unusable(200))
 
                 // 갱신(refresh_token 그랜트) 응답도 같은 자리에서 판정한다 — 푼 바이트가 쓸 수 있으면 새 토큰으로 나아간다.
                 reset(Reply(200, ATR_REFRESHABLE), Reply(200, atrGzip(atrTokenBody("\"AT-2\"")), "gzip"))
@@ -397,7 +414,7 @@ internal class AdminTokenResponseTest {
             }
             // 해제기가 없는 코딩(br) — 결합은 원시 바이트(여기서는 평문 JSON)를 읽는다.
             reset(Reply(200, atrTokenBody("12345", canary).toByteArray(), "br"))
-            table += callExpectingRejection("br(평문) 12345", wrong)
+            table += callExpectingRejection("br(평문) 12345", wrong, AtrExpected.unusable(200))
             reset(Reply(200, atrTokenBody("\"good\"").toByteArray(), "br"))
             failureOf { it.users().get("x") }?.let { wrong += "br(평문) \"good\": 성공해야 한다 — $it" }
             table += "br(평문) \"good\" → admin ${adminHits()}"
@@ -408,7 +425,7 @@ internal class AdminTokenResponseTest {
             // 가 대신 막아 가려진다).
             for (status in listOf(200, 201)) {
                 reset(Reply(status, atrTokenBody("12345", canary).toByteArray(), typed = false))
-                table += callExpectingRejection("Content-Type 없음 $status 12345", wrong)
+                table += callExpectingRejection("Content-Type 없음 $status 12345", wrong, AtrExpected.unusable(status))
             }
             println("[AdminTokenResponseTest 내용 코딩]\n  " + table.joinToString("\n  "))
             assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
@@ -428,12 +445,12 @@ internal class AdminTokenResponseTest {
     }
 
     // 크기 상한(Java 동형) — 토큰 응답 본문이 가드의 상한(TokenResponseGuard.MAX_BODY_BYTES)을 넘으면 그 안의 토큰이 쓸 수
-    // 있어도 쓸 수 없는 토큰과 똑같이 거부한다 — KeycloakTransportException · admin 요청 0 건 · 토큰 요청 1 건. 상한 안의 쓸 수
-    // 있는 토큰은 평문·gzip 모두 그대로 동작한다. 판정은 결합이 읽는 바이트로 하므로 gzip 은 **푼** 크기로 잰다. 본문은 쓸 수
-    // 있는 토큰 뒤를 JSON 공백으로 채운 것이다 — 가드 없이 결합만 있으면 스트리밍으로 통과하는 모양이고, 본문을 통째로 버퍼링하던
-    // 가드는 힙보다 크면 OutOfMemoryError 를 냈다.
+    // 있어도 거부한다 — 다 읽지 않은 응답이라 KeycloakTransportException(쓸 수 없는 토큰의 인증 오류와 갈린다) · admin 요청 0 건 · 토큰
+    // 요청 1 건. 상한 안의 쓸 수 있는 토큰은 평문·gzip 모두 그대로 동작한다. 판정은 결합이 읽는 바이트로 하므로 gzip 은 **푼** 크기로
+    // 잰다. 본문은 쓸 수 있는 토큰 뒤를 JSON 공백으로 채운 것이다 — 가드 없이 결합만 있으면 스트리밍으로 통과하는 모양이고, 본문을
+    // 통째로 버퍼링하던 가드는 힙보다 크면 OutOfMemoryError 를 냈다.
     @Test
-    fun `token response above the cap is rejected like an unusable token`() =
+    fun `token response above the cap is rejected as transport`() =
         runTest {
             val cap = ATR_CAP
             val table = mutableListOf<String>()
@@ -442,17 +459,17 @@ internal class AdminTokenResponseTest {
             reset(Reply(200, atrPadTo(body, cap)))
             expectGood("평문 = 상한", wrong, table)
             reset(Reply(200, atrPadTo(body, cap + 1)))
-            table += callExpectingRejection("평문 = 상한+1", wrong)
+            table += callExpectingRejection("평문 = 상한+1", wrong, AtrExpected.OVER_CAP)
             for (status in listOf(200, 201)) {
                 reset(Reply(status, atrPadTo(body, cap + 1), typed = false))
-                table += callExpectingRejection("Content-Type 없음 $status = 상한+1", wrong)
+                table += callExpectingRejection("Content-Type 없음 $status = 상한+1", wrong, AtrExpected.OVER_CAP)
             }
             System.setProperty("resteasy.allowGzip", "true")
             try {
                 reset(Reply(200, atrGzip(atrPadTo(body, cap)), "gzip"))
                 expectGood("gzip 푼 크기 = 상한", wrong, table)
                 reset(Reply(200, atrGzip(atrPadTo(body, cap + 1)), "gzip"))
-                table += callExpectingRejection("gzip 푼 크기 = 상한+1", wrong)
+                table += callExpectingRejection("gzip 푼 크기 = 상한+1", wrong, AtrExpected.OVER_CAP)
             } finally {
                 System.clearProperty("resteasy.allowGzip")
             }
@@ -484,13 +501,14 @@ internal class AdminTokenResponseTest {
 
     // 오류 상태의 토큰 응답도 같은 상한이다 — 그 본문은 RESTEasy 가 예외에 담으려고 **통째로** 버퍼에 읽었다(extractResult 의
     // bufferEntity, 수정 전 실측: 400 + 32 MiB 에 admin 호출 하나가 154–210 MiB 할당). 상한 안의 오류는 예전 그대로 TokenManager 에
-    // 간다(이 레인의 실패 모양 — ProcessingException 에 싸인 BadRequestException 등, 아래 갱신 시험의 복구 경로). 상한을 넘으면 쓸 수
-    // 없는 토큰과 같은 거부다: KeycloakTransportException · admin 요청 0 건 · 걸러진 원인 사슬.
-    // ⚠️ 상한 안의 실패도 이제 **걸러진** 사슬이다 — 그 HTTP 오류가 버퍼된 본문을 쥔 Response 를 남겨, close() 뒤에도 readEntity 가 본문
+    // 간다(ProcessingException 에 싸인 BadRequestException 등, 아래 갱신 시험의 복구 경로) — 끝까지 온 응답이라 인증 오류이고 메시지는
+    // 상태만 싣는다(등록부 token-response-class-divergent — 전에는 전송 오류였다). 상한을 넘으면 다 읽지 않은 응답이다:
+    // KeycloakTransportException · admin 요청 0 건 · 걸러진 원인 사슬.
+    // ⚠️ 상한 안의 실패도 **걸러진** 사슬이다 — 그 HTTP 오류가 버퍼된 본문을 쥔 Response 를 남겨, close() 뒤에도 readEntity 가 본문
     // (되울린 Basic 시크릿 포함)을 돌려줬다(`AdminTokenEchoTest`). 그래서 날 사슬(「ProcessingException」 이 있다)을 고정하던 것을 걸러진
     // 모양으로 고정한다 — 타입 이름은 남고(ProcessingException · 상태의 HTTP 오류), Response 에 닿지 않고, 본문 바이트가 없다.
     @Test
-    fun `token error response above the cap is rejected like an unusable token`() =
+    fun `token error response is auth within the cap and transport above it`() =
         runTest {
             val table = mutableListOf<String>()
             val wrong = mutableListOf<String>()
@@ -507,8 +525,9 @@ internal class AdminTokenResponseTest {
                 val atCap = failureOf { it.users().get("x") }
                 val chain = generateSequence(atCap?.cause) { it.cause }.take(16).map { it.toString() }.toList()
                 table += "$status = 상한   → ${atCap?.let { "${it.javaClass.simpleName}(${it.message})" }} · 사슬 $chain · admin ${adminHits()}"
-                if (atCap !is KeycloakTransportException || atCap.message != "Admin request failed" || adminHits().isNotEmpty()) {
-                    wrong += "$status = 상한: 예전의 실패(Admin request failed · admin 0 건)가 아니다 — $atCap ${adminHits()}"
+                val auth = "Admin token request failed: HTTP $status"
+                if (atCap !is KeycloakAuthException || atCap.message != auth || adminHits().isNotEmpty()) {
+                    wrong += "$status = 상한: 인증 오류($auth · admin 0 건)가 아니다 — $atCap ${adminHits()}"
                 }
                 val trace = atCap?.stackTraceToString().orEmpty()
                 if ("jakarta.ws.rs.ProcessingException (message withheld)" !in trace || "$type (message withheld)" !in trace) {
@@ -518,7 +537,7 @@ internal class AdminTokenResponseTest {
                 if (handles.isNotEmpty()) wrong += "$status = 상한: 던진 예외에서 Response 에 닿는다 — $handles"
                 if ("bad client" in trace) wrong += "$status = 상한: 원인 사슬이 오류 본문을 찍었다"
                 reset(Reply(status, error, pad = (ATR_CAP + 1 - error.size).toLong()))
-                table += callExpectingRejection("$status = 상한+1", wrong)
+                table += callExpectingRejection("$status = 상한+1", wrong, AtrExpected.OVER_CAP)
             }
             println("[AdminTokenResponseTest 오류 본문 상한]\n  " + table.joinToString("\n  "))
             assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
@@ -619,7 +638,7 @@ internal class AdminTokenResponseTest {
         }
 
     // 거부한 뒤 연결을 놓다가 실패해도 거부는 그대로다(Java 동형) — 상한을 넘는 응답(쓸 수 있는 토큰 + 공백)의 나머지 전송이
-    // 깨져도(ReleaseFault) 결과는 쓸 수 없는 토큰과 같다: KeycloakTransportException · admin 요청 0 건 · 토큰 요청 1 건 · 걸러진
+    // 깨져도(ReleaseFault) 결과는 상한의 거부와 같다: KeycloakTransportException · admin 요청 0 건 · 토큰 요청 1 건 · 걸러진
     // 원인 사슬 · 응답 바이트 미노출. ⚠️ 미디어 타입이 없는 2xx 는 응답 필터에서 거부되고 RESTEasy(ClientInvocation.invoke)가 그
     // 응답을 try/catch 없이 닫는다 — 닫기가 HttpCore 로 나머지를 비우다 난 오류가 거부를 대신해 jakarta.ws.rs.ProcessingException·
     // org.apache.http.* 사슬로 나갔고(RedactedCause 로 걸러지지 않았다), 청크 크기 줄 오류는 「Bad chunk header: <그 줄>」 로 응답
@@ -635,11 +654,12 @@ internal class AdminTokenResponseTest {
                 for (fault in ReleaseFault.entries) {
                     for (status in listOf(200, 201)) {
                         raw.reply(fault, status, typed = false)
-                        table += callExpectingRejection("Content-Type 없음 $status · $fault", wrong, client)
+                        table += callExpectingRejection("Content-Type 없음 $status · $fault", wrong, AtrExpected.OVER_CAP, client)
                     }
                 }
                 raw.reply(ReleaseFault.BAD_CHUNK_HEADER, 200, typed = true)
-                table += callExpectingRejection("application/json 200 · ${ReleaseFault.BAD_CHUNK_HEADER}", wrong, client)
+                table +=
+                    callExpectingRejection("application/json 200 · ${ReleaseFault.BAD_CHUNK_HEADER}", wrong, AtrExpected.OVER_CAP, client)
             }
             println("[AdminTokenResponseTest 거부 뒤 연결 해제 실패]\n  " + table.joinToString("\n  "))
             assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
@@ -803,9 +823,10 @@ internal class AdminTokenResponseTest {
                 val label = "access_token ${atrPrintable(token)}"
                 table += "$label → ${thrown.map { it?.javaClass?.simpleName ?: "성공" }} · grants ${grants()} · " +
                     "admin ${atrPrintable(adminHits().toString())}"
+                val refusedToken = AtrExpected.unusable(200)
                 for (t in thrown) {
-                    if (t !is KeycloakTransportException || t.message != "Admin request failed") {
-                        wrong += "$label: KeycloakTransportException(Admin request failed) 가 아니다 — $t"
+                    if (t !is KeycloakAuthException || t.message != refusedToken.message) {
+                        wrong += "$label: KeycloakAuthException(${refusedToken.message}) 가 아니다 — $t"
                     } else if ("tok-" in t.stackTraceToString() || ATR_RT_CANARY.take(10) in t.stackTraceToString()) {
                         wrong += "$label: 오류가 응답을 인용했다"
                     }
@@ -848,8 +869,8 @@ internal class AdminTokenResponseTest {
             reset(Reply(200, ATR_REFRESHABLE), Reply(200, atrTokenBody("12345")))
             admin().use { admin ->
                 admin.users().get("x")
-                val e = assertFailsWith<KeycloakTransportException> { admin.users().get("x") }
-                assertEquals("Admin request failed", e.message)
+                val e = assertFailsWith<KeycloakAuthException> { admin.users().get("x") }
+                assertEquals("Admin token request failed: HTTP 200 (unusable token response)", e.message)
             }
             assertEquals(listOf("client_credentials", "refresh_token"), grants())
             assertEquals(listOf("GET /admin/realms/r/users/x · Bearer AT-1"), adminHits(), "갱신된 숫자 토큰으로 나아갔다")

@@ -10,7 +10,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
 import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.EnumSet;
 import java.util.List;
@@ -57,16 +62,28 @@ final class CappedResponseSender {
 
   /** {@code request.send()} 대신 — 같은 요청·같은 응답이되 본문은 상한까지만 읽는다. {@code what} 은 넘침 메시지의 주어다. */
   static HTTPResponse send(HTTPRequest request, String what) throws IOException {
-    return request.send(sameRequest -> receive(request, what));
+    return request.send(sameRequest -> receive(request, what, false));
   }
 
-  private static HTTPResponse receive(HTTPRequest request, String what) throws IOException {
+  /**
+   * {@link #send} 와 같되 <b>2xx 본문은 UTF-8 이어야 한다</b> — 아니면 {@link NotUtf8}(끝까지 온 응답을 쓸 수 없다 — 호출부가 그 레인의
+   * 인증 오류로 바꾼다). 토큰(세 그랜트)·introspection 이 이것을 지난다 — 그 2xx 본문은 JSON 이고 RFC 8259 §8.1 은 UTF-8 이다.
+   * ⚠️ Nimbus 와 같은 디코딩({@link #asNimbusReadsIt})은 잘못된 바이트를 U+FFFD 로 바꿔 <b>받아들였다</b> — IdP 가 내지 않은 토큰
+   * (ok · U+FFFD 둘 · vc)·바뀐 클레임이 성공으로 나갔다(실측 — {@code TokenResponseClassTest}). 오류 상태의 본문은 보지 않는다
+   * (판정은 상태가 한다 — 사유 문구는 지금처럼 읽는다). 선언된 charset 도 보지 않는다(RFC 8259 §11 — application/json 에는 효과가
+   * 없다). logout 은 본문을 쓰지 않으므로 {@link #send} 다. 유효한 UTF-8 은 지금과 같은 문자열이다.
+   */
+  static HTTPResponse sendStrict(HTTPRequest request, String what) throws IOException {
+    return request.send(sameRequest -> receive(request, what, true));
+  }
+
+  private static HTTPResponse receive(HTTPRequest request, String what, boolean strict) throws IOException {
     SSLSocketFactory tls = request.getSSLSocketFactory() != null
         ? request.getSSLSocketFactory() : HTTPRequest.getDefaultSSLSocketFactory();
     HostnameVerifier verifier = request.getHostnameVerifier() != null
         ? request.getHostnameVerifier() : HTTPRequest.getDefaultHostnameVerifier();
     return BoundedTransport.exchange(toApache(request), tls, verifier, request.getConnectTimeout(), request.getReadTimeout(),
-        ResponseLimits.MAX_TOKEN_RESPONSE_BYTES, (head, body) -> toNimbus(head, body, what));
+        ResponseLimits.MAX_TOKEN_RESPONSE_BYTES, (head, body) -> toNimbus(head, body, what, strict));
   }
 
   /**
@@ -103,10 +120,12 @@ final class CappedResponseSender {
     return out;
   }
 
-  private static HTTPResponse toNimbus(HttpResponse head, InputStream in, String what) throws IOException {
+  private static HTTPResponse toNimbus(HttpResponse head, InputStream in, String what, boolean strict) throws IOException {
     byte[] body = readWithinCap(in);
     if (body == null) throw new TooLarge(what);
-    HTTPResponse response = new HTTPResponse(head.getStatusLine().getStatusCode());
+    int status = head.getStatusLine().getStatusCode();
+    if (strict && status >= 200 && status < 300 && !isUtf8(body)) throw new NotUtf8(what);
+    HTTPResponse response = new HTTPResponse(status);
     response.setStatusMessage(head.getStatusLine().getReasonPhrase());
     for (Map.Entry<String, List<String>> header : BoundedTransport.grouped(head).entrySet()) {
       response.setHeader(header.getKey(), header.getValue().toArray(new String[0]));
@@ -140,12 +159,43 @@ final class CappedResponseSender {
     return text.length() == 0 ? null : text.toString();
   }
 
+  /**
+   * 엄격한 UTF-8 인가 — 잘못된 바이트(끝에서 잘린 열 · 겹침 꼴 · 서로게이트 포함)를 대체하지 않고 보고하는 디코더로 잰다. 입력의 끝을
+   * 알리고 디코딩하므로 잘린 마지막 열도 여기서 보고된다(UTF-8 디코더는 비울 상태가 없다). 디코딩한 글자는 버린다(고정 4 KiB 버퍼 —
+   * 본문만 한 글자 배열을 따로 잡지 않는다). BOM 은 UTF-8 의 유효한 바이트다(지금처럼 파서가 판정한다).
+   */
+  static boolean isUtf8(byte[] body) {
+    CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT);
+    ByteBuffer in = ByteBuffer.wrap(body);
+    CharBuffer out = CharBuffer.allocate(4096);
+    CoderResult result;
+    do {
+      out.clear(); // 넘침 — 디코딩한 글자는 쓰지 않는다
+      result = decoder.decode(in, out, true);
+    } while (result.isOverflow());
+    return !result.isError();
+  }
+
   /** 상한을 넘는 응답 — 메시지는 무엇이 상한을 넘었는지만 말한다(응답을 인용하지 않는다). */
   static final class TooLarge extends IOException {
     private static final long serialVersionUID = 1L;
 
     TooLarge(String what) {
       super(what + " response exceeds " + ResponseLimits.MAX_TOKEN_RESPONSE_BYTES + " bytes");
+    }
+  }
+
+  /**
+   * 끝까지 왔으나 2xx 본문이 UTF-8 이 아닌 응답({@link #sendStrict}) — 전송 실패가 아니다(그 레인의 인증 오류다). 메시지는 무엇이
+   * UTF-8 이 아닌지만 말한다(응답을 인용하지 않는다).
+   */
+  static final class NotUtf8 extends IOException {
+    private static final long serialVersionUID = 1L;
+
+    NotUtf8(String what) {
+      super(what + " response is not valid UTF-8");
     }
   }
 }

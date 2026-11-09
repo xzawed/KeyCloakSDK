@@ -3,6 +3,7 @@ package io.github.xzawed.keycloak.admin;
 import static org.junit.jupiter.api.Assertions.*;
 
 import io.github.xzawed.keycloak.core.KeycloakConfig;
+import io.github.xzawed.keycloak.core.exception.KeycloakAuthException;
 import io.github.xzawed.keycloak.core.exception.KeycloakTransportException;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
@@ -538,7 +539,8 @@ class AdminRejectedResponseCutTest {
       Outcome next = call(admin);
       String row = "상한 안의 거부 " + rejected.describe() + " · 다음 " + next.describe() + " · 연결 " + server.connections.get();
       System.out.println("[AdminRejectedResponseCutTest] " + row);
-      assertInstanceOf(KeycloakTransportException.class, rejected.thrown(), row);
+      // 끝까지 읽고 거부한 응답 — 인증 오류다(등록부 token-response-class-divergent · 상한을 넘은 거부는 위에서처럼 전송 오류)
+      assertInstanceOf(KeycloakAuthException.class, rejected.thrown(), row);
       assertNull(next.thrown(), row);
       assertEquals(1, server.connections.get(), () -> "EOF 까지 읽고 거부한 응답의 연결을 다시 쓰지 않았다 — " + row);
     }

@@ -2,8 +2,8 @@ package io.github.xzawed.keycloak.admin
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import io.github.xzawed.keycloak.KeycloakAuthException
 import io.github.xzawed.keycloak.KeycloakConfig
-import io.github.xzawed.keycloak.KeycloakTransportException
 import jakarta.ws.rs.WebApplicationException
 import jakarta.ws.rs.client.ResponseProcessingException
 import jakarta.ws.rs.core.Response
@@ -30,8 +30,9 @@ import kotlin.test.assertTrue
 // readEntity(String::class.java) 가 본문을 돌려준다(버퍼된 엔티티는 닫힘 검사를 건너뛴다 — 실측). 그래서 판정은 도달 가능성이다: 사슬
 // (원인·suppressed)의 어느 예외도 WebApplicationException·ResponseProcessingException 이 아니고, 어느 예외의 공개 메서드도 Response 를 돌려주지
 // 않는다 — readEntity 를 부를 대상이 없다. 진단은 남는다: 타입 이름(「jakarta.ws.rs.NotAuthorizedException (message withheld)」)과 분류
-// (KeycloakTransportException · 「Admin request failed」). admin-client 의 Basic 은 시크릿을 폼 인코딩하지 않는다 — 꼴 다섯은 서버가 받은
-// 자격에서 만든다. 네트워크는 루프백만.
+// (KeycloakAuthException · 「Admin token request failed: HTTP 401」 — 끝까지 온 응답이라 인증 오류다, 등록부 token-response-class-divergent ·
+// 상태만 싣고 본문은 싣지 않는다). admin-client 의 Basic 은 시크릿을 폼 인코딩하지 않는다 — 꼴 다섯은 서버가 받은 자격에서 만든다.
+// 네트워크는 루프백만.
 private const val AE_SECRET = "sec ret/+=~0005é"
 private val AE_VARIANTS = listOf("raw", "form", "pct", "b64", "userinfo")
 
@@ -161,8 +162,8 @@ internal class AdminTokenEchoTest {
                 table += "${label.padEnd(22)} echoed=${echoed.padEnd(44)} → ${thrown?.let {
                     "${it.javaClass.simpleName}(${it.message})"
                 } ?: "성공"} · handles=$handles · bodies=$bodies"
-                if (thrown !is KeycloakTransportException || thrown.message != "Admin request failed") {
-                    wrong += "$label: KeycloakTransportException(Admin request failed) 가 아니다 — $thrown"
+                if (thrown !is KeycloakAuthException || thrown.message != "Admin token request failed: HTTP 401") {
+                    wrong += "$label: KeycloakAuthException(Admin token request failed: HTTP 401) 가 아니다 — $thrown"
                     continue
                 }
                 if (handles.isNotEmpty()) wrong += "$label: 던진 예외에서 Response 에 닿는다 — $handles · readEntity → $bodies"

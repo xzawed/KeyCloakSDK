@@ -181,8 +181,10 @@ class TokenResponseGuardTest {
     ClientRequestContext req = request("POST", TOKEN);
     ClientResponseContext res = response(Response.Status.OK, bytes(NUMBER));
     when(res.getMediaType()).thenReturn(MediaType.APPLICATION_JSON_TYPE);
+    when(res.getStatus()).thenReturn(200);
     new TokenResponseGuard().filter(req, res);
     verify(req).setProperty(TokenResponseGuard.JUDGE_ENTITY, Boolean.TRUE);
+    verify(req).setProperty(TokenResponseGuard.STATUS, 200); // ReaderInterceptor 는 상태를 모른다 — 거부가 그것을 싣는다
     verify(res, never()).getEntityStream();
     verify(res, never()).setEntityStream(any());
   }
@@ -201,10 +203,13 @@ class TokenResponseGuardTest {
 
   @Test void unusableTokenResponse_isRejectedWithoutQuotingIt() {
     for (InputStream body : new InputStream[] {bytes(NUMBER), bytes("{\"access_token\":\"\"}"), null}) {
-      ClientResponseContext res = response(Response.Status.OK, body);
-      IOException e = assertThrows(IOException.class,
+      ClientResponseContext res = response(Response.Status.CREATED, body);
+      when(res.getStatus()).thenReturn(201);
+      // 끝까지 온 응답을 쓸 수 없다 — 그 타입(Unusable)이 계급을 정하고 상태를 싣는다(AdminExceptions 가 인증 오류로 바꾼다)
+      TokenResponseGuard.Unusable e = assertThrows(TokenResponseGuard.Unusable.class,
           () -> new TokenResponseGuard().filter(request("POST", TOKEN), res));
       assertEquals("token endpoint response carries no usable access_token", e.getMessage());
+      assertEquals(201, e.status());
       assertNull(e.getCause());
       verify(res, never()).setEntityStream(any());
     }
@@ -241,11 +246,35 @@ class TokenResponseGuardTest {
   @Test void reader_rejectsAnUnusableMarkedEntityWithoutQuotingIt() throws IOException {
     for (InputStream body : new InputStream[] {bytes(NUMBER), bytes("{\"access_token\":\"\"}"), null}) {
       ReaderInterceptorContext ctx = readContext(Boolean.TRUE, body);
-      IOException e = assertThrows(IOException.class, () -> new TokenResponseGuard().aroundReadFrom(ctx));
+      when(ctx.getProperty(TokenResponseGuard.STATUS)).thenReturn(200);
+      TokenResponseGuard.Unusable e = assertThrows(TokenResponseGuard.Unusable.class,
+          () -> new TokenResponseGuard().aroundReadFrom(ctx));
       assertEquals("token endpoint response carries no usable access_token", e.getMessage());
+      assertEquals(200, e.status());
       assertNull(e.getCause());
       verify(ctx, never()).proceed();
       verify(ctx, never()).setInputStream(any());
+    }
+  }
+
+  /**
+   * 통과한 바이트를 결합이 쓰지 못하면(Jackson 의 형식 오류 · 결합기 없음) {@link TokenResponseGuard.Unusable} 이다 — 본문은 이미 다
+   * 읽어 메모리에 있으므로 그 실패는 운송이 아니라 끝까지 온 응답의 것이다(등록부 token-response-class-divergent). 결합의 예외는
+   * 원인으로만 단다(메시지는 상수 — 결합의 메시지는 응답을 인용한다). 대조: 결합이 성공하면 그 값이 그대로 나간다(위 시험).
+   */
+  @Test void reader_turnsABindingFailureIntoUnusable() throws IOException {
+    String body = "{\"access_token\":\"AT\",\"expires_in\":\"soon\"}";
+    List<Exception> failures = List.of(new IOException("Cannot deserialize value of type `long` from String \"soon\""),
+        new jakarta.ws.rs.ProcessingException("RESTEASY003145: Unable to find a MessageBodyReader"));
+    for (Exception failure : failures) {
+      ReaderInterceptorContext ctx = readContext(Boolean.TRUE, bytes(body));
+      when(ctx.getProperty(TokenResponseGuard.STATUS)).thenReturn(200);
+      when(ctx.proceed()).thenThrow(failure);
+      TokenResponseGuard.Unusable e = assertThrows(TokenResponseGuard.Unusable.class,
+          () -> new TokenResponseGuard().aroundReadFrom(ctx));
+      assertEquals("token endpoint response does not bind as a token response", e.getMessage());
+      assertEquals(200, e.status());
+      assertSame(failure, e.getCause());
     }
   }
 
@@ -305,15 +334,18 @@ class TokenResponseGuardTest {
   }
 
   /**
-   * 상한을 넘는 본문은 쓸 수 있는 토큰이 들어 있어도 쓸 수 없는 토큰과 같은 상수 메시지로 거부하고, 그 판정을 위해 상한+1
-   * 바이트까지만 읽는다 — 두 진입점 모두(미디어 타입 없는 응답 필터 · 결합 직전 ReaderInterceptor).
+   * 상한을 넘는 본문은 쓸 수 있는 토큰이 들어 있어도 상한의 거부({@link TokenResponseGuard#TOO_LARGE} — 오류 상태의 상한과 같은
+   * 메시지)로 거부하고, 그 판정을 위해 상한+1 바이트까지만 읽는다 — 두 진입점 모두(미디어 타입 없는 응답 필터 · 결합 직전
+   * ReaderInterceptor). 다 읽지 않은 응답이라 {@link TokenResponseGuard.Unusable} 이 아니다 — 전송 실패 그대로다(등록부
+   * token-response-class-divergent — 쓸 수 없는 토큰은 인증 오류로 갈라졌다).
    */
   @Test void bodyAboveTheCap_isRejectedWithoutReadingPastCapPlusOne() throws IOException {
     EndlessBody raw = new EndlessBody(CAP + 1L);
     ClientResponseContext res = response(Response.Status.OK, raw);
     IOException filtered = assertThrows(IOException.class,
         () -> new TokenResponseGuard().filter(request("POST", TOKEN), res));
-    assertEquals("token endpoint response carries no usable access_token", filtered.getMessage());
+    assertEquals("token endpoint response exceeds 1048576 bytes", filtered.getMessage());
+    assertFalse(filtered instanceof TokenResponseGuard.Unusable, "다 읽지 않은 응답이다");
     assertNull(filtered.getCause());
     assertFalse(raw.overread);
     assertEquals(CAP + 1L, raw.served, "넘침을 알아챌 한 바이트까지 읽어야 한다");
@@ -322,7 +354,8 @@ class TokenResponseGuardTest {
     EndlessBody decoded = new EndlessBody(CAP + 1L);
     ReaderInterceptorContext ctx = readContext(Boolean.TRUE, decoded);
     IOException read = assertThrows(IOException.class, () -> new TokenResponseGuard().aroundReadFrom(ctx));
-    assertEquals("token endpoint response carries no usable access_token", read.getMessage());
+    assertEquals("token endpoint response exceeds 1048576 bytes", read.getMessage());
+    assertFalse(read instanceof TokenResponseGuard.Unusable, "다 읽지 않은 응답이다");
     assertNull(read.getCause());
     assertFalse(decoded.overread);
     assertEquals(CAP + 1L, decoded.served, "넘침을 알아챌 한 바이트까지 읽어야 한다");
@@ -340,7 +373,7 @@ class TokenResponseGuardTest {
     ClientResponseContext res = response(Response.Status.OK, raw);
     IOException filtered = assertThrows(IOException.class,
         () -> new TokenResponseGuard().filter(request("POST", TOKEN), res));
-    assertEquals("token endpoint response carries no usable access_token", filtered.getMessage());
+    assertEquals("token endpoint response exceeds 1048576 bytes", filtered.getMessage());
     assertNull(filtered.getCause());
     assertEquals(0, filtered.getSuppressed().length);
     assertEquals(1, raw.closes, "거부 전에 스트림을 한 번 닫아야 한다");
@@ -349,7 +382,7 @@ class TokenResponseGuardTest {
     FaultyCloseBody decoded = new FaultyCloseBody();
     ReaderInterceptorContext ctx = readContext(Boolean.TRUE, decoded);
     IOException read = assertThrows(IOException.class, () -> new TokenResponseGuard().aroundReadFrom(ctx));
-    assertEquals("token endpoint response carries no usable access_token", read.getMessage());
+    assertEquals("token endpoint response exceeds 1048576 bytes", read.getMessage());
     assertNull(read.getCause());
     assertEquals(0, read.getSuppressed().length);
     assertEquals(1, decoded.closes, "거부 전에 스트림을 한 번 닫아야 한다");
@@ -392,11 +425,11 @@ class TokenResponseGuardTest {
 
     ClientResponseContext over = response(Response.Status.OK, new ByteArrayInputStream(padded(CAP + 1)));
     IOException e = assertThrows(IOException.class, () -> new TokenResponseGuard().filter(request("POST", TOKEN), over));
-    assertEquals("token endpoint response carries no usable access_token", e.getMessage());
+    assertEquals("token endpoint response exceeds 1048576 bytes", e.getMessage());
     verify(over, never()).setEntityStream(any());
     ReaderInterceptorContext overRead = readContext(Boolean.TRUE, new ByteArrayInputStream(padded(CAP + 1)));
     e = assertThrows(IOException.class, () -> new TokenResponseGuard().aroundReadFrom(overRead));
-    assertEquals("token endpoint response carries no usable access_token", e.getMessage());
+    assertEquals("token endpoint response exceeds 1048576 bytes", e.getMessage());
     verify(overRead, never()).proceed();
   }
 

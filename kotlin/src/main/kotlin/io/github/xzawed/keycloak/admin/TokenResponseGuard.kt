@@ -48,13 +48,16 @@ import java.net.URI
  * 거부는 상수 메시지의 [IOException] 이다. 응답 필터에서 던지면 RESTEasy 가 `ResponseProcessingException` 으로, 엔티티
  * 읽기에서 던지면 `ProcessingException` 을 거쳐 `ResponseProcessingException` 으로 감싸고(그래서 TokenManager 갱신의
  * `BadRequestException` 복구에도 닿지 않는다 — 실측), 그것이 BearerAuthFilter(요청 필터) 밖으로 나가므로 admin 요청은
- * 보내지지 않고, [adminCall] 이 `KeycloakTransportException` 으로 바꾼다(원인 사슬은 [transportCause] 가 `RedactedCause` 로
- * 간다) — null·객체·배열·누락이 이미 실패하던 타입이다. 메시지는 상수다(응답을 인용하지 않는다).
+ * 보내지지 않는다. 메시지는 상수다(응답을 인용하지 않는다). ⚠️ **계급은 타입이 정한다**(등록부 token-response-class-divergent) — 끝까지
+ * 온 응답을 쓸 수 없으면 [UnusableTokenResponse](그 상태를 싣는다 — [adminCall] 이 `KeycloakAuthException` 으로 바꾸고 원인 사슬은
+ * `RedactedCause` 로 간다), 상한을 넘어 다 읽지 않은 응답은 `ResponseTooLargeException`(`KeycloakTransportException` 그대로)이다.
+ * 결합(Jackson)이 다 읽은 바이트를 쓰지 못한 실패도 [UnusableTokenResponse] 다([aroundReadFrom] — 그 바이트는 이미 메모리에 있다:
+ * expires_in 이 숫자가 아님 · 결합기가 없는 미디어 타입).
  *
  * ⚠️ **판정은 본문을 상한([TOKEN_RESPONSE_MAX_BYTES] — auth 레인과 같은 상수)까지만 읽고 쥔다.** 통째로 읽던 때는 힙보다 큰
  * 2xx 본문이 `OutOfMemoryError` 를 냈다 — RESTEasy 가 감싸 결과는 거부였어도 그 순간 JVM 전체가 메모리를 잃었고, JSON 공백으로
  * 부풀린 **쓸 수 있는** 토큰도 그랬다(가드 없는 결합은 그것을 스트리밍으로 통과시킨다). [readWithinCap] 으로 상한+1 바이트까지
- * 읽어 넘침을 알아채면 나머지는 읽지 않고 그 연결을 끊은 뒤(`release` — [AdminEngine]) 쓸 수 없는 토큰과 같은 거부를 던진다. 그
+ * 읽어 넘침을 알아채면 나머지는 읽지 않고 그 연결을 끊은 뒤(`release` — [AdminEngine]) 상한의 거부(`ResponseTooLargeException`)를 던진다. 그
  * 읽기(JDK 17·21 의 `InputStream.readNBytes` 기본 구현 — RESTEasy·HttpCore 의 스트림은 재정의하지 않는다)는 남은 길이 너머를 요청하지
  * 않고 **읽은 만큼만** 할당한다. ⚠️ 끊지 않고 닫기만 하면 HttpCore 가 나머지를 EOF 까지 비운다 — 받는 바이트에 상한이 없었고, 1 바이트
  * 청크면 청크 머리마다 문자열을 만들어 할당이 비운 양을 따라 자랐다(실측 `AdminRejectedResponseCutTest`).
@@ -82,15 +85,25 @@ internal class TokenResponseGuard :
         if (!token) return // 2xx logout 은 RESTEasy 의 void 추출기가 읽지 않고 닫는다
         if (response.mediaType != null) {
             request.setProperty(JUDGE_ENTITY, true) // 결합이 읽는 바이트(해제 뒤)는 aroundReadFrom 이 판정한다
+            request.setProperty(STATUS, response.status)
             return
         }
-        response.entityStream = usableOrReject(response.entityStream, exchange)
+        response.entityStream = usableOrReject(response.entityStream, exchange, response.status)
     }
 
+    // 결합 직전의 판정. 통과한 바이트로 결합을 부르고, 결합이 그것을 쓰지 못하면(Jackson 의 형식 오류 · 결합기 없음)
+    // [UnusableTokenResponse] 로 바꾼다 — 본문은 이미 다 읽어 메모리에 있으므로 그 실패는 운송이 아니라 끝까지 온 응답의 것이다.
     override fun aroundReadFrom(context: ReaderInterceptorContext): Any? {
         if (context.getProperty(JUDGE_ENTITY) != true) return context.proceed()
-        context.inputStream = usableOrReject(context.inputStream, context.getProperty(AdminEngine.EXCHANGE))
-        return context.proceed()
+        val status = context.getProperty(STATUS) as? Int ?: 0
+        context.inputStream = usableOrReject(context.inputStream, context.getProperty(AdminEngine.EXCHANGE), status)
+        return try {
+            context.proceed()
+        } catch (unbound: IOException) {
+            throw UnusableTokenResponse(status, UNBOUND, unbound)
+        } catch (unbound: RuntimeException) {
+            throw UnusableTokenResponse(status, UNBOUND, unbound)
+        }
     }
 
     internal companion object {
@@ -111,21 +124,33 @@ internal class TokenResponseGuard :
 
         // 응답 필터가 범위 안의 교환에 다는 요청 속성 — ReaderInterceptor 가 이것이 있는 엔티티만 판정한다.
         internal val JUDGE_ENTITY: String = TokenResponseGuard::class.java.name + ".judgeEntity"
+
+        // [JUDGE_ENTITY] 와 함께 다는 그 응답의 상태 — ReaderInterceptor 는 상태를 모른다([UnusableTokenResponse] 가 싣는다).
+        internal val STATUS: String = TokenResponseGuard::class.java.name + ".status"
         internal const val REJECTED = "token endpoint response carries no usable access_token"
+
+        // 다 읽은 본문을 결합(Jackson → AccessTokenResponse)이 쓰지 못했다 — 응답을 인용하지 않는다(결합의 예외는 원인으로만 단다).
+        internal const val UNBOUND = "token endpoint response does not bind as a token response"
 
         // 판정이 읽고 쥐는 본문의 상한은 [TOKEN_RESPONSE_MAX_BYTES](auth 레인과 같은 상수, 근거는 그 선언에) — 여기 다시 적지 않는다.
         private const val ACCESS_TOKEN = "access_token"
         private val JSON = JsonFactory()
 
-        // 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치거나 쓸 수 없으면 거부, 통과하면 읽은 바이트를 그대로 넘긴다.
+        // 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치면 상한의 거부(다 읽지 않았다 — 전송 실패), 쓸 수 없으면
+        // [UnusableTokenResponse], 통과하면 읽은 바이트를 그대로 넘긴다.
         private fun usableOrReject(
             input: InputStream?,
             exchange: Any?,
+            status: Int,
         ): ByteArrayInputStream {
             val body = if (input == null) ByteArray(0) else capPlusOne(input)
-            if (body == null || !carriesUsableAccessToken(body)) {
+            if (body == null) {
                 release(input, exchange)
-                throw IOException(REJECTED)
+                throw ResponseTooLargeException("token response")
+            }
+            if (!carriesUsableAccessToken(body)) {
+                release(input, exchange)
+                throw UnusableTokenResponse(status, REJECTED, null)
             }
             return ByteArrayInputStream(body)
         }
@@ -213,6 +238,17 @@ internal class TokenResponseGuard :
         private val B64TOKEN = Regex("[A-Za-z0-9\\-._~+/]+=*")
     }
 }
+
+/**
+ * 끝까지 온 토큰 응답을 쓸 수 없다(Java `TokenResponseGuard.Unusable` 동형) — 그 응답의 [status] 를 싣는다([adminCall] 이
+ * `KeycloakAuthException` 으로 바꾸고 상태를 메시지에 싣는다). 메시지는 상수다(응답을 인용하지 않는다). 결합의 실패면 그 예외를 원인으로
+ * 단다 — [adminCall] 은 원인 사슬을 `RedactedCause` 로만 단다.
+ */
+internal class UnusableTokenResponse(
+    val status: Int,
+    message: String,
+    cause: Throwable?,
+) : IOException(message, cause)
 
 /**
  * 길이 0 의 읽기는 감싼 스트림에 넘기지 않고 0 이다. JDK 의 `readNBytes` 는 다 채운 뒤 길이 0 으로 한 번 더 묻고, HttpCore 의 버퍼는 비었을

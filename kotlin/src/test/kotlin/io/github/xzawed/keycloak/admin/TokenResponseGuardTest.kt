@@ -28,6 +28,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 // TokenResponseGuard 단위(Java `TokenResponseGuardTest` 동형) — 무엇을 쓸 수 있는 access_token 으로 보는가(JSON 모양)와 어느
@@ -279,8 +280,10 @@ internal class TokenResponseGuardTest {
     fun `token response with a media type is marked for the reader, not read by the filter`() {
         val req = request("POST", TRG_TOKEN)
         val res = response(Response.Status.OK, bytes(TRG_NUMBER), MediaType.APPLICATION_JSON_TYPE)
+        every { res.status } returns 200
         TokenResponseGuard().filter(req, res)
         verify(exactly = 1) { req.setProperty(TokenResponseGuard.JUDGE_ENTITY, true) }
+        verify(exactly = 1) { req.setProperty(TokenResponseGuard.STATUS, 200) } // ReaderInterceptor 는 상태를 모른다 — 거부가 그것을 싣는다
         verify(exactly = 0) { res.entityStream }
         verify(exactly = 0) { res.entityStream = any() }
     }
@@ -301,9 +304,12 @@ internal class TokenResponseGuardTest {
     @Test
     fun `unusable token response is rejected without quoting it`() {
         for (body in listOf(bytes(TRG_NUMBER), bytes("""{"access_token":""}"""), null)) {
-            val res = response(Response.Status.OK, body)
-            val e = assertFailsWith<IOException> { TokenResponseGuard().filter(request("POST", TRG_TOKEN), res) }
+            val res = response(Response.Status.CREATED, body)
+            every { res.status } returns 201
+            // 끝까지 온 응답을 쓸 수 없다 — 그 타입(UnusableTokenResponse)이 계급을 정하고 상태를 싣는다(adminCall 이 인증 오류로 바꾼다)
+            val e = assertFailsWith<UnusableTokenResponse> { TokenResponseGuard().filter(request("POST", TRG_TOKEN), res) }
             assertEquals("token endpoint response carries no usable access_token", e.message)
+            assertEquals(201, e.status)
             assertNull(e.cause)
             verify(exactly = 0) { res.entityStream = any() }
         }
@@ -405,24 +411,51 @@ internal class TokenResponseGuardTest {
     fun `reader rejects an unusable marked entity without quoting it`() {
         for (body in listOf(bytes(TRG_NUMBER), bytes("""{"access_token":""}"""), null)) {
             val ctx = readContext(true, body)
-            val e = assertFailsWith<IOException> { TokenResponseGuard().aroundReadFrom(ctx) }
+            every { ctx.getProperty(TokenResponseGuard.STATUS) } returns 200
+            val e = assertFailsWith<UnusableTokenResponse> { TokenResponseGuard().aroundReadFrom(ctx) }
             assertEquals("token endpoint response carries no usable access_token", e.message)
+            assertEquals(200, e.status)
             assertNull(e.cause)
             verify(exactly = 0) { ctx.proceed() }
             verify(exactly = 0) { ctx.inputStream = any() }
         }
     }
 
+    // 통과한 바이트를 결합이 쓰지 못하면(Jackson 의 형식 오류 · 결합기 없음) UnusableTokenResponse 다 — 본문은 이미 다 읽어 메모리에
+    // 있으므로 그 실패는 운송이 아니라 끝까지 온 응답의 것이다(등록부 token-response-class-divergent · Java 동형). 결합의 예외는 원인으로만
+    // 단다(메시지는 상수 — 결합의 메시지는 응답을 인용한다). 대조: 결합이 성공하면 그 값이 그대로 나간다(위 시험).
+    @Test
+    fun `reader turns a binding failure into an unusable token response`() {
+        val body = """{"access_token":"AT","expires_in":"soon"}"""
+        val failures =
+            listOf(
+                IOException("Cannot deserialize value of type `long` from String \"soon\""),
+                jakarta.ws.rs.ProcessingException("RESTEASY003145: Unable to find a MessageBodyReader"),
+            )
+        for (failure in failures) {
+            val ctx = readContext(true, bytes(body))
+            every { ctx.getProperty(TokenResponseGuard.STATUS) } returns 200
+            every { ctx.proceed() } throws failure
+            val e = assertFailsWith<UnusableTokenResponse> { TokenResponseGuard().aroundReadFrom(ctx) }
+            assertEquals("token endpoint response does not bind as a token response", e.message)
+            assertEquals(200, e.status)
+            assertSame(failure, e.cause)
+        }
+    }
+
     // ───────────── 크기 상한 — 판정이 읽고 쥐는 바이트 ─────────────
 
-    // 상한을 넘는 본문은 쓸 수 있는 토큰이 들어 있어도 쓸 수 없는 토큰과 같은 상수 메시지로 거부하고, 그 판정을 위해 상한+1
-    // 바이트까지만 읽는다 — 두 진입점 모두(미디어 타입 없는 응답 필터 · 결합 직전 ReaderInterceptor).
+    // 상한을 넘는 본문은 쓸 수 있는 토큰이 들어 있어도 상한의 거부(ResponseTooLargeException — 오류 상태의 상한과 같은 메시지)로
+    // 거부하고, 그 판정을 위해 상한+1 바이트까지만 읽는다 — 두 진입점 모두(미디어 타입 없는 응답 필터 · 결합 직전 ReaderInterceptor).
+    // 다 읽지 않은 응답이라 UnusableTokenResponse 가 아니다 — 전송 실패 그대로다(등록부 token-response-class-divergent — 쓸 수 없는
+    // 토큰은 인증 오류로 갈라졌다).
     @Test
     fun `body above the cap is rejected without reading past cap plus one`() {
         val raw = TrgEndlessBody(TRG_CAP + 1L)
         val res = response(Response.Status.OK, raw)
         val filtered = assertFailsWith<IOException> { TokenResponseGuard().filter(request("POST", TRG_TOKEN), res) }
-        assertEquals("token endpoint response carries no usable access_token", filtered.message)
+        assertEquals("token response exceeds 1048576 bytes", filtered.message)
+        assertFalse(filtered is UnusableTokenResponse, "다 읽지 않은 응답이다")
         assertNull(filtered.cause)
         assertFalse(raw.overread)
         assertEquals(TRG_CAP + 1L, raw.served, "넘침을 알아챌 한 바이트까지 읽어야 한다")
@@ -431,7 +464,8 @@ internal class TokenResponseGuardTest {
         val decoded = TrgEndlessBody(TRG_CAP + 1L)
         val ctx = readContext(true, decoded)
         val read = assertFailsWith<IOException> { TokenResponseGuard().aroundReadFrom(ctx) }
-        assertEquals("token endpoint response carries no usable access_token", read.message)
+        assertEquals("token response exceeds 1048576 bytes", read.message)
+        assertFalse(read is UnusableTokenResponse, "다 읽지 않은 응답이다")
         assertNull(read.cause)
         assertFalse(decoded.overread)
         assertEquals(TRG_CAP + 1L, decoded.served, "넘침을 알아챌 한 바이트까지 읽어야 한다")
@@ -447,7 +481,7 @@ internal class TokenResponseGuardTest {
         val raw = TrgFaultyCloseBody()
         val res = response(Response.Status.OK, raw)
         val filtered = assertFailsWith<IOException> { TokenResponseGuard().filter(request("POST", TRG_TOKEN), res) }
-        assertEquals("token endpoint response carries no usable access_token", filtered.message)
+        assertEquals("token response exceeds 1048576 bytes", filtered.message)
         assertNull(filtered.cause)
         assertEquals(0, filtered.suppressed.size)
         assertEquals(1, raw.closes, "거부 전에 스트림을 한 번 닫아야 한다")
@@ -456,7 +490,7 @@ internal class TokenResponseGuardTest {
         val decoded = TrgFaultyCloseBody()
         val ctx = readContext(true, decoded)
         val read = assertFailsWith<IOException> { TokenResponseGuard().aroundReadFrom(ctx) }
-        assertEquals("token endpoint response carries no usable access_token", read.message)
+        assertEquals("token response exceeds 1048576 bytes", read.message)
         assertNull(read.cause)
         assertEquals(0, read.suppressed.size)
         assertEquals(1, decoded.closes, "거부 전에 스트림을 한 번 닫아야 한다")
@@ -481,11 +515,11 @@ internal class TokenResponseGuardTest {
 
         val over = response(Response.Status.OK, ByteArrayInputStream(trgPadded(TRG_CAP + 1)))
         val e = assertFailsWith<IOException> { TokenResponseGuard().filter(request("POST", TRG_TOKEN), over) }
-        assertEquals("token endpoint response carries no usable access_token", e.message)
+        assertEquals("token response exceeds 1048576 bytes", e.message)
         verify(exactly = 0) { over.entityStream = any() }
         val overRead = readContext(true, ByteArrayInputStream(trgPadded(TRG_CAP + 1)))
         val e2 = assertFailsWith<IOException> { TokenResponseGuard().aroundReadFrom(overRead) }
-        assertEquals("token endpoint response carries no usable access_token", e2.message)
+        assertEquals("token response exceeds 1048576 bytes", e2.message)
         verify(exactly = 0) { overRead.proceed() }
     }
 

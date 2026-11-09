@@ -1,5 +1,6 @@
 package io.github.xzawed.keycloak.admin
 
+import io.github.xzawed.keycloak.KeycloakAuthException
 import io.github.xzawed.keycloak.KeycloakConfig
 import io.github.xzawed.keycloak.KeycloakTransportException
 import io.github.xzawed.keycloak.TransportTestTls
@@ -528,7 +529,8 @@ internal class AdminRejectedResponseCutTest {
                 val next = arcCall(admin)
                 val row = "상한 안의 거부 ${rejected.describe()} · 다음 ${next.describe()} · 연결 ${server.connections.get()}"
                 println("[AdminRejectedResponseCutTest] $row")
-                assertIs<KeycloakTransportException>(rejected.thrown, row)
+                // 끝까지 읽고 거부한 응답 — 인증 오류다(등록부 token-response-class-divergent · 상한을 넘은 거부는 위에서처럼 전송 오류)
+                assertIs<KeycloakAuthException>(rejected.thrown, row)
                 assertNull(next.thrown, row)
                 assertEquals(1, server.connections.get(), "EOF 까지 읽고 거부한 응답의 연결을 다시 쓰지 않았다 — $row")
             }

@@ -110,6 +110,10 @@ private val DUMP_EXEMPT: Map<String, String> =
         "admin.BoundedEngineBuilder" to "AdminClient 를 지을 때만 쓰는 RESTEasy 엔진 빌더 — 엔진을 지은 뒤 버려진다(엔진이 이것을 쥐지 않는다)",
         "admin.NoEmptyReads" to
             "토큰 응답 가드가 본문을 상한+1 바이트까지 읽는 동안만 사는 스트림 감싸개 — 판정이 끝나면 버려진다. 상태는 감싼 스트림뿐이다",
+        "admin.UnusableTokenResponse" to
+            "admin 자기 그랜트의 거부(끝까지 온 쓸 수 없는 2xx) — RESTEasy 가 ResponseProcessingException 으로 감싸고, 파사드가 내는 SDK " +
+            "예외의 원인 사슬은 RedactedCause 사본이라 원본이 SDK 뿌리에서 닿지 않는다(raw() 가 내는 하위 예외의 사슬에만 산다 — §4(b) " +
+            "탈출구). 상태는 HTTP 상태 · 상수 메시지 · 결합 예외 원인뿐이다(TokenResponseGuardTest 의 거부 사례)",
     )
 
 /**
@@ -229,6 +233,15 @@ internal suspend fun dumpRoots(
     // 크기 상한(1,048,576 바이트)을 한 바이트 넘는 토큰 응답 — 카나리아 토큰을 싣고 JSON 공백으로 부풀렸다.
     val oversizedBody = """{"access_token":"$DUMP_ACCESS","token_type":"Bearer","expires_in":300}""".padEnd(1_048_577)
     server.stubFor(post(urlEqualTo("/realms/oversized/protocol/openid-connect/token")).willReturn(json(200, oversizedBody)))
+    // access_token 안의 잘못된 UTF-8(0xFF 0xFE) — 끝까지 온 쓸 수 없는 응답(원인 ResponseNotUtf8Exception)을 얻는다.
+    val notUtf8Body =
+        """{"access_token":"$DUMP_ACCESS""".toByteArray() + byteArrayOf(0xFF.toByte(), 0xFE.toByte()) +
+            """","token_type":"Bearer","expires_in":300,"refresh_token":"$DUMP_REFRESH"}""".toByteArray()
+    server.stubFor(
+        post(urlEqualTo("/realms/notutf8/protocol/openid-connect/token")).willReturn(
+            aResponse().withStatus(200).withHeader("Content-Type", "application/json").withBody(notUtf8Body),
+        ),
+    )
     server.stubFor(get(urlEqualTo("/admin/realms/r/users/missing")).willReturn(json(404, """{"error":"User not found"}""")))
     server.stubFor(post(urlEqualTo("/admin/realms/r/users")).willReturn(json(409, """{"errorMessage":"User exists"}""")))
     server.stubFor(get(urlEqualTo("/admin/realms/r/roles/forbidden")).willReturn(json(403, """{"error":"forbidden"}""")))
@@ -297,11 +310,15 @@ internal suspend fun dumpRoots(
     val malformed = KeycloakConfig(server.baseUrl(), "malformed", "c", DUMP_SECRET.toCharArray())
     val malformedAuth = assertFailsWith<KeycloakAuthException> { AuthClient(malformed).clientCredentialsToken() }
     val malformedAdminClient = AdminClient(malformed).also { closing += it }
-    val malformedAdmin = assertFailsWith<KeycloakTransportException> { malformedAdminClient.users().get("missing") }
+    // 끝까지 온 쓸 수 없는 토큰 응답 — 인증 오류다(등록부 token-response-class-divergent, 전에는 전송 오류)
+    val malformedAdmin = assertFailsWith<KeycloakAuthException> { malformedAdminClient.users().get("missing") }
     server.verify(2, postRequestedFor(urlEqualTo("/realms/malformed/protocol/openid-connect/token")))
     // 상한을 넘는 토큰 응답 — auth 레인이 나머지를 읽지 않고 거부한다(원인은 상한만 말하는 SDK 내부 예외).
     val oversized = KeycloakConfig(server.baseUrl(), "oversized", "c", DUMP_SECRET.toCharArray())
     val oversizedAuth = assertFailsWith<KeycloakTransportException> { AuthClient(oversized).clientCredentialsToken() }
+    // 2xx 본문이 UTF-8 이 아닌 토큰 응답 — 인증 오류다(원인은 무엇이 UTF-8 이 아닌지만 말하는 SDK 내부 예외).
+    val notUtf8 = KeycloakConfig(server.baseUrl(), "notutf8", "c", DUMP_SECRET.toCharArray())
+    val notUtf8Auth = assertFailsWith<KeycloakAuthException> { AuthClient(notUtf8).clientCredentialsToken() }
 
     val roots =
         listOf(
@@ -326,6 +343,7 @@ internal suspend fun dumpRoots(
             "malformed token response error" to malformedAuth,
             "admin malformed token response error" to malformedAdmin,
             "oversized token response error" to oversizedAuth,
+            "token response that is not UTF-8 error" to notUtf8Auth,
             "admin 404" to notFound,
             "admin 409" to conflict,
             "admin 403" to forbidden,
