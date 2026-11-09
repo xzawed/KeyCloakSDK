@@ -401,13 +401,29 @@ func (v *Validator) fetch(ctx context.Context) error {
 	if len(body) > jwksMaxBytes {
 		return &TransportError{Msg: fmt.Sprintf("JWKS response exceeds %d bytes", jwksMaxBytes)}
 	}
-	var ks jose.JSONWebKeySet
-	if err := json.Unmarshal(body, &ks); err != nil {
+	// Key by key: one key go-jose cannot read (Ed448, X25519, P-192, a 4097-bit modulus, an unknown kty) is
+	// ignored rather than failing the whole set (RFC 7517 §5). Unmarshalling the set in one go rejected every
+	// key with it, so a token signed by a supported key in the same set was refused.
+	var raw struct {
+		Keys []json.RawMessage `json:"keys"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
 		return err
 	}
-	// An empty set is never a legitimate answer, and installing it would blind the validator.
-	if len(ks.Keys) == 0 {
+	var ks jose.JSONWebKeySet
+	for _, r := range raw.Keys {
+		var k jose.JSONWebKey
+		if json.Unmarshal(r, &k) == nil {
+			ks.Keys = append(ks.Keys, k)
+		}
+	}
+	// An empty set is never a legitimate answer, and installing it would blind the validator — that holds for a
+	// set whose every key was skipped too.
+	if len(raw.Keys) == 0 {
 		return &TransportError{Msg: "JWKS response contains no keys"}
+	}
+	if len(ks.Keys) == 0 {
+		return &TransportError{Msg: fmt.Sprintf("JWKS response contains no usable keys (%d unreadable)", len(raw.Keys))}
 	}
 	v.mu.Lock()
 	v.jwks, v.loadedAt = &ks, v.opts.now()
