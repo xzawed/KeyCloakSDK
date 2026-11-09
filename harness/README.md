@@ -115,7 +115,7 @@ Generated artifacts (not committed, `report/.gitignore`) that `verify.sh`/`suite
 
 - `<lang>.conformance.json` — produced by conformance.mjs (§functional)
 - `<lang>.security.json` — produced by probe.mjs (§security)
-- `<lang>.suite.json` — the last-line JSON from `suites/<lang>.sh` (§coverage/quality). Coverage credit is given only when `ran && testsPassed === true`; otherwise the dimension scores 0 (fail-closed — a broken suite must not still earn full coverage marks). Falls back to `{"ran":false}` if `suites/<lang>.sh` is missing or violates the convention (a single last line of JSON).
+- `<lang>.suite.json` — the last-line JSON from `suites/<lang>.sh` (§coverage/quality — scored as above). Falls back to `{"ran":false}` if `suites/<lang>.sh` is missing or violates the convention (a single last line of JSON). On a test failure `<lang>.suite.raw` also keeps the captured run (`___SUITE_LOG_*`); `run-suite.sh` prints its failure lines to the job log.
 - `<lang>.error.json` — an isolated record written on app-build/startup failure (that language then skips conformance/security/k6 and may only reflect coverage/quality).
 
 ### Execution scope — CI first, local for smoke
