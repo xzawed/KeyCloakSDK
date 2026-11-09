@@ -66,6 +66,11 @@ public sealed class FacadeDumpTests
         ["Xzawed.Keycloak.AuthorizationRequestJsonConverter"] = "System.Text.Json 이 특성에서 만든다 — SDK 객체가 쥐지 않고 자기 필드가 없다",
         ["Xzawed.Keycloak.KeycloakConfigJsonConverter"] = "System.Text.Json 이 특성에서 만든다 — SDK 객체가 쥐지 않고 자기 필드가 없다",
         ["Xzawed.Keycloak.TokenSetJsonConverter"] = "System.Text.Json 이 특성에서 만든다 — SDK 객체가 쥐지 않고 자기 필드가 없다",
+        // 내부 신호(TokenResponseHandler.cs) — 2xx 토큰 · introspection 본문이 UTF-8 이 아니면 핸들러가 던지고 Duende 가
+        // ProtocolResponse.Exception 에 담으며, TokenResponseVerdict.Unread 가 그것을 원인으로 달지 않은 새 KeycloakAuthException 을
+        // 만든다 — 인스턴스는 공개 API 로 나오지 않는다(TokenResponseClassTests 가 그 오류의 ToString 을 잰다). 필드가 없고 메시지는
+        // 고정 문구다.
+        ["Xzawed.Keycloak.TokenResponseNotUtf8Exception"] = "내부 신호 — 인스턴스는 SDK 밖으로 나가지 않는다(Duende 가 쥐고 SDK 는 버린다) · 필드 없음 · 고정 문구",
     };
 
     /// <summary>
@@ -243,7 +248,9 @@ public sealed class FacadeDumpTests
             // 헤더가 JSON 이 아닌 id_token — IdentityModel 은 PII 를 가린 자기 메시지 밑에 디코드된 헤더를 인용하는 예외를 단다.
             ("auth error (id_token header not JSON)", typeof(KeycloakAuthException),
                 await FailureOf(() => junk.Auth.ExchangeCodeAsync("code", "https://app/cb", ar.CodeVerifier, ar.Nonce))),
-            ("transport error (200 form-encoded token body)", typeof(KeycloakTransportException),
+            // 끝까지 온 200 이 JSON 이 아니다 — 인증 실패다(token-response-class-divergent, 2026-11-10 — 예전에는 전송 실패였다).
+            // 원인 사슬의 파서 예외는 본문(살아 있는 토큰)을 인용하므로 메시지를 전부 뺀 채 남는다 — 이 뿌리가 그것을 걷는다.
+            ("auth error (200 form-encoded token body)", typeof(KeycloakAuthException),
                 await FailureOf(() => form.Auth.ClientCredentialsTokenAsync())),
             ("validation error (garbage)", typeof(KeycloakTokenValidationException), await FailureOf(() => kc.Auth.ValidateAsync(Garbage))),
             // 점이 있으면 IdentityModel 은 다른 경로(헤더 디코드 실패)로 간다 — 그 메시지가 세그먼트를 싣는지 따로 잰다.

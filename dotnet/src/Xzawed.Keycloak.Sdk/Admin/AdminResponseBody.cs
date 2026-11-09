@@ -43,13 +43,15 @@ internal static class AdminResponseBody
     }
 
     /// <summary>The response with as much of its body as the SDK reads: an error body cut at the cap, a marked write's 2xx body
-    /// none, any other body untouched.</summary>
+    /// none, any other body untouched — and a JSON body read as UTF-8 whatever <c>charset</c> it names
+    /// (<see cref="ResponseCharset.ReadJsonAsUtf8"/>: a JSON read answered with an unknown one was a 500 the server never sent).</summary>
     internal static async Task<HttpResponseMessage> SettleAsync(HttpResponseMessage response, bool unread, CancellationToken ct)
     {
         if ((int)response.StatusCode >= 300)
             Replace(response, await ReadErrorAsync(response, ct).ConfigureAwait(false));
         else if (unread)
             Replace(response, ArraySegment<byte>.Empty);
+        ResponseCharset.ReadJsonAsUtf8(response.Content.Headers);
         return response;
     }
 

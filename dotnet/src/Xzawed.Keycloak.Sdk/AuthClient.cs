@@ -29,6 +29,7 @@ public sealed class AuthClient : ITokenSource
     private readonly OidcEndpoints _ep;
     private readonly JwtValidator _validator;
     private readonly HttpClient _http;
+    private readonly HttpMessageInvoker _tokenEndpoint;   // every token and introspection request — TokenResponseHandler
 
     /// <param name="cfg">Normalized configuration.</param>
     /// <param name="ep">The realm's endpoints.</param>
@@ -41,6 +42,7 @@ public sealed class AuthClient : ITokenSource
     public AuthClient(KeycloakConfig cfg, OidcEndpoints ep, JwtValidator validator, HttpClient http)
     {
         _cfg = cfg; _ep = ep; _validator = validator; _http = http;
+        _tokenEndpoint = new HttpMessageInvoker(new TokenResponseHandler(http));
     }
 
     /// <summary>Starts a PKCE (S256) authorization-code flow. Synchronous — no network.</summary>
@@ -65,13 +67,19 @@ public sealed class AuthClient : ITokenSource
         return new AuthorizationRequest(url, codeVerifier, state, nonce);
     }
 
-    public async Task<TokenSet> ClientCredentialsTokenAsync(CancellationToken ct = default)
+    public Task<TokenSet> ClientCredentialsTokenAsync(CancellationToken ct = default) => ClientCredentialsAsync(carryCode: true, ct);
+
+    /// <summary>The token source of the admin facade <c>KeycloakClient.AdminAsync</c> builds — this client's grant, whose
+    /// failure carries no OAuth error code (<see cref="AdminGrantSource"/>).</summary>
+    internal ITokenSource AdminGrant => new AdminGrantSource(this);
+
+    private async Task<TokenSet> ClientCredentialsAsync(bool carryCode, CancellationToken ct)
     {
         var issuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         TokenResponse resp;
         try
         {
-            resp = await _http.RequestClientCredentialsTokenAsync(new ClientCredentialsTokenRequest
+            resp = await _tokenEndpoint.RequestClientCredentialsTokenAsync(new ClientCredentialsTokenRequest
             {
                 Address = _ep.Token,
                 ClientId = _cfg.ClientId,
@@ -83,7 +91,23 @@ public sealed class AuthClient : ITokenSource
         {
             throw new KeycloakTransportException("token request timed out", ex);
         }
-        return ToTokenSet(resp, "Client credentials grant failed", issuedAt);
+        return ToTokenSet(resp, "Client credentials grant failed", issuedAt, carryCode);
+    }
+
+    /// <summary>The client-credentials grant the admin facade sends for itself: the same request and the same verdict as
+    /// <see cref="ClientCredentialsTokenAsync"/> — a response that arrived is a <see cref="KeycloakAuthException"/> whatever its
+    /// status — but the failure carries no OAuth <c>error</c> code, in <see cref="KeycloakAuthException.OAuthError"/> or in the
+    /// message (registry <c>token-response-class-divergent</c>, decision D4).</summary>
+    /// <remarks>The grant's error body can echo the form it answers, client secret included, and a secret in the code grammar
+    /// cannot be told from a code. The auth lane keeps the code — the consumer asked for that grant; the admin call did not.
+    /// The status is named instead.</remarks>
+    private sealed class AdminGrantSource : ITokenSource
+    {
+        private readonly AuthClient _auth;
+
+        internal AdminGrantSource(AuthClient auth) => _auth = auth;
+
+        public Task<TokenSet> ClientCredentialsTokenAsync(CancellationToken ct = default) => _auth.ClientCredentialsAsync(carryCode: false, ct);
     }
 
     public async Task<TokenSet> ExchangeCodeAsync(string code, string redirectUri, string codeVerifier,
@@ -93,7 +117,7 @@ public sealed class AuthClient : ITokenSource
         TokenResponse resp;
         try
         {
-            resp = await _http.RequestAuthorizationCodeTokenAsync(new AuthorizationCodeTokenRequest
+            resp = await _tokenEndpoint.RequestAuthorizationCodeTokenAsync(new AuthorizationCodeTokenRequest
             {
                 Address = _ep.Token,
                 ClientId = _cfg.ClientId,
@@ -137,7 +161,7 @@ public sealed class AuthClient : ITokenSource
         TokenResponse resp;
         try
         {
-            resp = await _http.RequestRefreshTokenAsync(new RefreshTokenRequest
+            resp = await _tokenEndpoint.RequestRefreshTokenAsync(new RefreshTokenRequest
             {
                 Address = _ep.Token,
                 ClientId = _cfg.ClientId,
@@ -157,7 +181,7 @@ public sealed class AuthClient : ITokenSource
         TokenIntrospectionResponse resp;
         try
         {
-            resp = await _http.IntrospectTokenAsync(new TokenIntrospectionRequest
+            resp = await _tokenEndpoint.IntrospectTokenAsync(new TokenIntrospectionRequest
             {
                 Address = _ep.Introspection,
                 ClientId = _cfg.ClientId,
@@ -184,7 +208,9 @@ public sealed class AuthClient : ITokenSource
 
         var claims = resp.Claims.GroupBy(c => c.Type)
             .ToDictionary(g => g.Key, g => (object?)(g.Count() == 1 ? g.First().Value : g.Select(c => c.Value).ToArray()));
-        return new IntrospectionResult(resp.IsActive, resp.UserName, resp.ClientId, claims);
+        // active 는 REQUIRED boolean 이다(RFC 7662 §2.2) — Duende 의 IsActive 는 없거나 boolean 이 아니면 false 라, 깨진 응답이
+        // 「비활성」으로 읽혔다(판정 D3).
+        return new IntrospectionResult(TokenResponseVerdict.Active(resp.Json), resp.UserName, resp.ClientId, claims);
     }
 
     public async Task LogoutAsync(string refreshToken, CancellationToken ct = default)
@@ -231,9 +257,9 @@ public sealed class AuthClient : ITokenSource
     public Task<ValidatedToken> ValidateAsync(string accessToken, CancellationToken ct = default)
         => _validator.ValidateAsync(accessToken, ct);
 
-    private static TokenSet ToTokenSet(TokenResponse resp, string failureMessage, long issuedAtSeconds)
+    private static TokenSet ToTokenSet(TokenResponse resp, string failureMessage, long issuedAtSeconds, bool carryCode = true)
     {
-        ThrowIfError(resp, failureMessage, $"{failureMessage} (transport)");
+        ThrowIfError(resp, failureMessage, $"{failureMessage} (transport)", carryCode);
         // ⚠️ **존재 검사는 타입 검사가 아니다 — Duende 는 JSON 값을 강제변환한다.** 실측:
         // `access_token: 12345` → `"12345"`, `{"a":1}` → 그 문자열. 그래서 아래
         // `TokenSet.Create` 의 `IsNullOrEmpty` 검사를 통과하고, 소비자는 쓸 수 없는 토큰을
@@ -293,8 +319,9 @@ public sealed class AuthClient : ITokenSource
     /// <c>Error</c> is the server's reason phrase for an HTTP error and the raw JSON text of a non-string <c>error</c>
     /// member, and its <c>IsError</c> throws on a JSON root that is not an object (all three measured, with a token
     /// echoed in them: <c>MalformedTokenResponseTests</c>) and on an <c>error</c> holding an unpaired surrogate escape
-    /// (<c>UndecodableResponseTests</c>).</remarks>
-    private static void ThrowIfError(ProtocolResponse resp, string failureMessage, string transportMessage)
+    /// (<c>UndecodableResponseTests</c>). With <paramref name="carryCode"/> false (the admin facade's own grant —
+    /// <see cref="AdminGrantSource"/>) not even the code does: the message names the status instead.</remarks>
+    private static void ThrowIfError(ProtocolResponse resp, string failureMessage, string transportMessage, bool carryCode = true)
     {
         switch (resp.ErrorType)
         {
@@ -303,16 +330,14 @@ public sealed class AuthClient : ITokenSource
                 // handler's 64 KiB, which .NET reports with the same code (measured), so the message names neither alone.
                 throw new KeycloakTransportException($"{failureMessage}: response exceeds a size limit", tooLarge);
             case ResponseErrorType.Exception:
-                // 전송 실패(연결거부/DNS/TLS) — 그리고 도착한 응답을 Duende 가 못 읽은 경우(처음부터 이 분류다). 전송 실패는
-                // KeycloakTransportException 이어야 §4 경계에서 인증 실패와 구분된다. 원인 사슬은 생성자가 정화한다(ErrorCause).
-                // ⚠️ 응답이 도착했으면(HttpResponse 있음) 그 사슬의 어느 메시지든 응답을 인용할 수 있다 — JSON 파서는 본문을,
-                // Encoding 은 알 수 없는 charset 이름을 인용했다(실측, 후자는 Grok 레그). 그래서 메시지를 전부 뺀다.
-                throw new KeycloakTransportException(transportMessage,
-                    resp is { HttpResponse: not null, Exception: { } read } ? ErrorCause.WithholdAll(read) : resp.Exception);
+                // Duende 가 응답을 예외로 냈다 — 끝까지 온 응답(HttpResponse 있음 · TokenResponseHandler 가 보장한다)을 못 썼으면
+                // 인증 실패, 오지 않았으면(연결거부 · DNS · TLS · 끊긴 본문 · 깨진 틀) 전송 실패다(판정 2026-11-10 — 예전에는 둘 다
+                // 전송 실패였다). 도착한 응답의 사슬은 메시지를 전부 뺀다 — JSON 파서는 본문을 인용한다(TokenResponseVerdict.Unread).
+                throw TokenResponseVerdict.Unread(resp, failureMessage, transportMessage);
             case ResponseErrorType.Http:
                 // Keycloak 은 잘못된 클라이언트 자격증명에 401 을 준다 — OAuth 코드는 본문에서 읽는다.
                 var reason = CanonicalReason(resp.HttpStatusCode);
-                throw new KeycloakAuthException($"{failureMessage}: {reason}") { OAuthError = OAuthErrorOf(resp.Json) ?? reason };
+                throw new KeycloakAuthException($"{failureMessage}: {reason}") { OAuthError = (carryCode ? OAuthErrorOf(resp.Json) : null) ?? reason };
         }
         if (resp.Json is { ValueKind: not JsonValueKind.Object })
             throw new KeycloakAuthException($"{failureMessage}: response body is not a JSON object");
@@ -322,8 +347,9 @@ public sealed class AuthClient : ITokenSource
         if ((ErrorMember(resp.Json) is { ValueKind: JsonValueKind.String } error && !TryDecode(error, out _))
             || resp.IsError || OAuthErrorOf(resp.Json) is not null)
         {
-            var code = OAuthErrorOf(resp.Json);
-            throw new KeycloakAuthException($"{failureMessage}: {code ?? NoCodeReason(resp.Json)}") { OAuthError = code };
+            var code = carryCode ? OAuthErrorOf(resp.Json) : null;
+            var why = carryCode ? code ?? NoCodeReason(resp.Json) : $"error response (HTTP {(int)resp.HttpStatusCode})";
+            throw new KeycloakAuthException($"{failureMessage}: {why}") { OAuthError = code };
         }
     }
 

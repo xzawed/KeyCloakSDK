@@ -16,6 +16,10 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// reaches the error. Registry <c>dotnet-admin-bogus-charset-escape</c>.
 /// </summary>
 /// <remarks>
+/// <para>⚠️ That holds for a body <b>not labelled JSON</b>, which is what these tests answer with (<c>text/plain</c>). A JSON
+/// body's charset has no effect (RFC 8259 §11 — registry <c>token-response-class-divergent</c> D2, 2026-11-10): it is read as
+/// UTF-8 like any other JSON body (<see cref="A_JSON_body_reads_the_same_whatever_charset_it_names"/>). These tests answered
+/// with <c>application/json</c> until then, and pinned the 500 that D2 removed.</para>
 /// <para>.NET resolves the charset before it reads a byte. An unknown name — bare, quoted, or the empty <c>""</c> — makes
 /// <c>Encoding.GetEncoding</c> throw <c>ArgumentException</c>, quoting the name, and <c>HttpContent</c>'s string read and
 /// <c>System.Net.Http.Json</c> wrap it in <c>InvalidOperationException</c>. UTF-7 is disabled under every alias:
@@ -97,9 +101,13 @@ public sealed class UnsupportedCharsetResponseTests : IDisposable
             Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
                 .WithBody("""{"access_token":"usable-access","token_type":"Bearer","expires_in":300}"""));
 
-    /// <summary>Every admin request gets <paramref name="status"/>, a body holding the canary, the charset as given, and a
-    /// <c>Location</c> for the creates.</summary>
-    private void AnswerAdmin(int status, string charset, bool list)
+    /// <summary>Every admin request gets <paramref name="status"/>, a body holding the canary, the charset as given on a media
+    /// type that is not JSON (a JSON body's charset has no effect — see the class remarks), and a <c>Location</c> for the
+    /// creates.</summary>
+    private void AnswerAdmin(int status, string charset, bool list) => AnswerAdminAs(status, $"text/plain; charset={charset}", list);
+
+    /// <summary>As <see cref="AnswerAdmin"/>, under the whole <c>Content-Type</c> given.</summary>
+    private void AnswerAdminAs(int status, string contentType, bool list)
     {
         _idp.ResetMappings();
         AnswerToken();
@@ -108,9 +116,67 @@ public sealed class UnsupportedCharsetResponseTests : IDisposable
             : $$"""{"id":"1","name":"{{BodyCanary}}","error":"{{BodyCanary}}","errorMessage":"{{BodyCanary}}"}""";
         _idp.Given(Request.Create().WithPath(new WildcardMatcher("/admin/*")).UsingAnyMethod()).RespondWith(
             Response.Create().WithStatusCode(status)
-                .WithHeader("Content-Type", $"application/json; charset={charset}")
+                .WithHeader("Content-Type", contentType)
                 .WithHeader("Location", _idp.Urls[0] + "/admin/realms/r/things/new-id")
                 .WithBody(Encoding.UTF8.GetBytes(body)));
+    }
+
+    public static IEnumerable<object[]> JsonCharsetCases =>
+        from charset in new[] { "x-no-such-charset", "\"x-no-such-charset\"", "utf-7" }
+        from status in new[] { 200, 400, 404 }
+        select new object[] { charset, status };
+
+    /// <summary>Registry <c>token-response-class-divergent</c> D2 — a <c>charset</c> on <c>application/json</c> has no effect (RFC
+    /// 8259 §11), so every admin call reads a JSON body that names one exactly as it reads the same body without it: the same
+    /// result, or the same error under the same status.</summary>
+    /// <remarks>Measured before the fix (2026-11-10): after a good grant, a read answered 200 with
+    /// <c>application/json; charset=x-no-such-charset</c> failed as <c>KeycloakAdminException(500)</c> "admin response body could
+    /// not be decoded" — a 500 the server never sent — and an error status lost its message to the same words.</remarks>
+    [Theory]
+    [MemberData(nameof(JsonCharsetCases))]
+    public async Task A_JSON_body_reads_the_same_whatever_charset_it_names(string charset, int status)
+    {
+        var (kc, admin) = await AdminAsync();
+        using (kc)
+        {
+            var wrong = new List<string>();
+            foreach (var (name, _, list, run) in Calls)
+            {
+                AnswerAdminAs(status, "application/json", list);
+                var plain = await OutcomeAsync(() => run(admin));
+                AnswerAdminAs(status, $"application/json; charset={charset}", list);
+                var labelled = await OutcomeAsync(() => run(admin));
+                if (labelled != plain)
+                    wrong.Add($"{name}: {labelled} — want what the same body without a charset gives: {plain}");
+            }
+            Assert.True(wrong.Count == 0, $"[HTTP {status} · application/json; charset={charset}]\n" + string.Join("\n", wrong));
+        }
+    }
+
+    /// <summary>The JSON label decides — <c>application/json</c> or an <c>application/*+json</c> type, in any case — and nothing
+    /// else does: the same unknown charset on another type is still a body .NET cannot decode (the tests above).</summary>
+    [Theory]
+    [InlineData("application/problem+json", true)]
+    [InlineData("APPLICATION/JSON", true)]
+    [InlineData("application/xml", false)]
+    [InlineData("text/json", false)]
+    public async Task Only_a_JSON_label_makes_the_charset_irrelevant(string mediaType, bool readsAsJson)
+    {
+        var (kc, admin) = await AdminAsync();
+        using (kc)
+        {
+            AnswerAdminAs(200, $"{mediaType}; charset=x-no-such-charset", list: false);
+            var outcome = await OutcomeAsync(async () => await admin.Users.GetAsync("1"));
+            Assert.Equal(readsAsJson ? "ok" : "KeycloakAdminException(500) \"admin response body could not be decoded\"",
+                readsAsJson ? outcome[..2] : outcome);
+        }
+    }
+
+    /// <summary>A call's result as JSON, or its error by type, status and message.</summary>
+    private static async Task<string> OutcomeAsync(Func<Task<object?>> run)
+    {
+        try { return "ok " + System.Text.Json.JsonSerializer.Serialize(await run()); }
+        catch (Exception e) { return Describe(e); }
     }
 
     /// <summary>A 2xx body in a charset .NET will not decode: a call that reads it fails as an undecodable body does, on

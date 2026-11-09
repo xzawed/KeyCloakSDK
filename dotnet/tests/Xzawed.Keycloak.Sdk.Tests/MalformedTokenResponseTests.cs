@@ -39,7 +39,6 @@ public sealed class MalformedTokenResponseTests
 {
     private const string Oidc = "/realms/r/protocol/openid-connect";
     private static readonly Type Auth = typeof(KeycloakAuthException);
-    private static readonly Type Transport = typeof(KeycloakTransportException);
 
     /// <summary>
     /// 알려진 누출 — <c>"변형|경로"</c>(경로: <c>ToString()</c>·<c>Message</c>·<c>OAuthError</c>). ⚠️ 더 안 새면 <b>여기서
@@ -71,49 +70,53 @@ public sealed class MalformedTokenResponseTests
     /// <remarks>internal — HostilePathMatrixTests 가 변형 집합을 새로 만들지 않고 여기서 가져간다(토큰 호출에 단언된 것만).</remarks>
     internal static readonly Variant[] Variants =
     {
-        // (a) id_token 이 JWT 가 아니다 — 토큰 호출은 id_token 을 안 보므로 성공, nonce 교환만 실패한다.
+        // (a) id_token 이 JWT 가 아니다 — 토큰 호출은 id_token 을 안 보므로 성공, nonce 교환만 실패한다. introspect 는 이 본문에
+        // `active` 가 없어 KeycloakAuthException 이다(RFC 7662 §2.2 REQUIRED — 판정 D3, 2026-11-10; 예전에는 「비활성」 성공이었다).
         new("a id_token not a JWT", 200, "application/json",
             """{"access_token":"LK-A-AT-01-canary","token_type":"Bearer","expires_in":300,"refresh_token":"LK-A-RT-01-canary","id_token":"LK-A-ID-01-canary"}""",
-            new[] { "LK-A-AT-01-canary", "LK-A-RT-01-canary", "LK-A-ID-01-canary" }, null, null),
+            new[] { "LK-A-AT-01-canary", "LK-A-RT-01-canary", "LK-A-ID-01-canary" }, null, Auth),
         new("a2 id_token JWT-shaped garbage", 200, "application/json",
             """{"access_token":"LK-A2-AT-1-canary","token_type":"Bearer","expires_in":300,"refresh_token":"LK-A2-RT-1-canary","id_token":"LK-A2-ID-1-canary.LK-A2-PL-1-canary.LK-A2-SG-1-canary"}""",
-            new[] { "LK-A2-AT-1-canary", "LK-A2-RT-1-canary", "LK-A2-ID-1-canary", "LK-A2-PL-1-canary", "LK-A2-SG-1-canary" }, null, null),
+            new[] { "LK-A2-AT-1-canary", "LK-A2-RT-1-canary", "LK-A2-ID-1-canary", "LK-A2-PL-1-canary", "LK-A2-SG-1-canary" }, null, Auth),
         new("a3 id_token header decodes to non-JSON", 200, "application/json",
             $$"""{"access_token":"LK-A3-AT-1-canary","token_type":"Bearer","expires_in":300,"refresh_token":"LK-A3-RT-1-canary","id_token":"{{B64("tLK-A3-HDR-1-canary")}}.{{B64("tLK-A3-PAY-1-canary")}}.c2ln"}""",
-            new[] { "LK-A3-AT-1-canary", "LK-A3-RT-1-canary", "tLK-A3-HDR-1-canary", "tLK-A3-PAY-1-canary" }, null, null),
+            new[] { "LK-A3-AT-1-canary", "LK-A3-RT-1-canary", "tLK-A3-HDR-1-canary", "tLK-A3-PAY-1-canary" }, null, Auth),
         new("a4 id_token payload decodes to non-JSON", 200, "application/json",
             $$"""{"access_token":"LK-A4-AT-1-canary","token_type":"Bearer","expires_in":300,"refresh_token":"LK-A4-RT-1-canary","id_token":"{{B64("""{"alg":"RS256","kid":"k1"}""")}}.{{B64("fLK-A4-PAY-1-canary")}}.c2ln"}""",
-            new[] { "LK-A4-AT-1-canary", "LK-A4-RT-1-canary", "fLK-A4-PAY-1-canary" }, null, null),
-        // (b) access_token 이 문자열이 아니다 — refresh/id 토큰은 카나리아다.
+            new[] { "LK-A4-AT-1-canary", "LK-A4-RT-1-canary", "fLK-A4-PAY-1-canary" }, null, Auth),
+        // (b) access_token 이 문자열이 아니다 — refresh/id 토큰은 카나리아다. introspect 는 `active` 가 없어 실패한다(D3).
         new("b access_token number", 200, "application/json",
             """{"access_token":12345,"token_type":"Bearer","expires_in":300,"refresh_token":"LK-B-RT-01-canary","id_token":"LK-B-ID-01-canary"}""",
-            new[] { "LK-B-RT-01-canary", "LK-B-ID-01-canary" }, Auth, null),
+            new[] { "LK-B-RT-01-canary", "LK-B-ID-01-canary" }, Auth, Auth),
         new("b2 access_token object", 200, "application/json",
             """{"access_token":{"t":"LK-B2-AT-1-canary"},"token_type":"Bearer","expires_in":300,"refresh_token":"LK-B2-RT-1-canary"}""",
-            new[] { "LK-B2-AT-1-canary", "LK-B2-RT-1-canary" }, Auth, null),
+            new[] { "LK-B2-AT-1-canary", "LK-B2-RT-1-canary" }, Auth, Auth),
         // (c) expires_in·token_type 의 타입이 틀렸다 — ⚠️ .NET 은 이것을 **성공**으로 받는다(Duende 가 강제변환:
         // expires_in → 0 이라 ExpiresAt 미상 = 만료로 취급, token_type 5 → "5"). 누출 검사는 반환값의 표현에 건다.
+        // introspect 는 `active` 가 없어 실패한다(D3) — 그 오류에 같은 누출 검사가 걸린다.
         new("c expires_in string", 200, "application/json",
             """{"access_token":"LK-C-AT-01-canary","token_type":"Bearer","expires_in":"x","refresh_token":"LK-C-RT-01-canary"}""",
-            new[] { "LK-C-AT-01-canary", "LK-C-RT-01-canary" }, null, null),
+            new[] { "LK-C-AT-01-canary", "LK-C-RT-01-canary" }, null, Auth),
         new("c2 token_type number", 200, "application/json",
             """{"access_token":"LK-C2-AT-1-canary","token_type":5,"expires_in":300,"refresh_token":"LK-C2-RT-1-canary"}""",
-            new[] { "LK-C2-AT-1-canary", "LK-C2-RT-1-canary" }, null, null),
+            new[] { "LK-C2-AT-1-canary", "LK-C2-RT-1-canary" }, null, Auth),
         new("c3 expires_in object", 200, "application/json",
             """{"access_token":"LK-C3-AT-1-canary","token_type":"Bearer","expires_in":{"v":"LK-C3-EX-1-canary"},"refresh_token":"LK-C3-RT-1-canary"}""",
-            new[] { "LK-C3-AT-1-canary", "LK-C3-RT-1-canary", "LK-C3-EX-1-canary" }, null, null),
-        // (d) 200 인데 본문이 JSON 이 아니다 — 분류는 기존대로 전송 오류다(Duende 가 파싱 실패를 ErrorType.Exception 으로 낸다).
-        new("d non-JSON short", 200, "application/json", "LK-D-BODY-01", new[] { "LK-D-BODY-01" }, Transport, Transport),
-        new("d2 non-JSON long", 200, "application/json", Long("LK-D2-BODY-canary"), new[] { "LK-D2-BODY-canary" }, Transport, Transport),
-        new("d3 non-JSON t-literal short", 200, "application/json", "tLK-D3-BODY-can", new[] { "tLK-D3-BODY-can" }, Transport, Transport),
-        new("d3b non-JSON t-literal long", 200, "application/json", Long("tLK-D3B-BODY-canary"), new[] { "tLK-D3B-BODY-canary" }, Transport, Transport),
-        new("d3c non-JSON f-literal", 200, "application/json", "fLK-D3C-BODY-canary.eyJ.sig", new[] { "fLK-D3C-BODY-canary" }, Transport, Transport),
+            new[] { "LK-C3-AT-1-canary", "LK-C3-RT-1-canary", "LK-C3-EX-1-canary" }, null, Auth),
+        // (d) 200 인데 본문이 JSON 이 아니다 — 끝까지 온 응답이라 KeycloakAuthException 이다(판정 2026-11-10,
+        // token-response-class-divergent · TokenResponseClassTests). 예전에는 Duende 가 파싱 실패를 ErrorType.Exception 으로 내
+        // 전송 오류였다. 파서의 원인 사슬은 메시지를 전부 뺀 채 남는다 — 누출 검사가 그것을 잰다.
+        new("d non-JSON short", 200, "application/json", "LK-D-BODY-01", new[] { "LK-D-BODY-01" }, Auth, Auth),
+        new("d2 non-JSON long", 200, "application/json", Long("LK-D2-BODY-canary"), new[] { "LK-D2-BODY-canary" }, Auth, Auth),
+        new("d3 non-JSON t-literal short", 200, "application/json", "tLK-D3-BODY-can", new[] { "tLK-D3-BODY-can" }, Auth, Auth),
+        new("d3b non-JSON t-literal long", 200, "application/json", Long("tLK-D3B-BODY-canary"), new[] { "tLK-D3B-BODY-canary" }, Auth, Auth),
+        new("d3c non-JSON f-literal", 200, "application/json", "fLK-D3C-BODY-canary.eyJ.sig", new[] { "fLK-D3C-BODY-canary" }, Auth, Auth),
         new("d3d form-encoded body", 200, "application/x-www-form-urlencoded", "token_type=bearer&access_token=LK-D3D-AT-1-canary",
-            new[] { "LK-D3D-AT-1-canary" }, Transport, Transport),
-        new("d4 non-JSON n-literal", 200, "application/json", "nLK-D4-BODY-canary", new[] { "nLK-D4-BODY-canary" }, Transport, Transport),
-        new("d5 unterminated string", 200, "application/json", "\"LK-D5-BODY-canary", new[] { "LK-D5-BODY-canary" }, Transport, Transport),
-        new("d6 number prefix", 200, "application/json", "123LK-D6-BODY-canary", new[] { "123LK-D6-BODY-canary" }, Transport, Transport),
-        new("d9 html body", 200, "text/html", "<html>LK-D9-BODY-canary</html>", new[] { "LK-D9-BODY-canary" }, Transport, Transport),
+            new[] { "LK-D3D-AT-1-canary" }, Auth, Auth),
+        new("d4 non-JSON n-literal", 200, "application/json", "nLK-D4-BODY-canary", new[] { "nLK-D4-BODY-canary" }, Auth, Auth),
+        new("d5 unterminated string", 200, "application/json", "\"LK-D5-BODY-canary", new[] { "LK-D5-BODY-canary" }, Auth, Auth),
+        new("d6 number prefix", 200, "application/json", "123LK-D6-BODY-canary", new[] { "123LK-D6-BODY-canary" }, Auth, Auth),
+        new("d9 html body", 200, "text/html", "<html>LK-D9-BODY-canary</html>", new[] { "LK-D9-BODY-canary" }, Auth, Auth),
         // JSON 이지만 루트가 객체가 아니다 — 수정 전에는 InvalidOperationException 이 그대로 샜다(§4).
         new("d7 JSON string root", 200, "application/json", "\"LK-D7-BODY-canary\"", new[] { "LK-D7-BODY-canary" }, Auth, Auth),
         new("d8 JSON array root", 200, "application/json", """["LK-D8-BODY-canary"]""", new[] { "LK-D8-BODY-canary" }, Auth, Auth),
@@ -125,8 +128,9 @@ public sealed class MalformedTokenResponseTests
         new("e3 400 error object echo", 400, "application/json",
             """{"error":{"code":"invalid_grant","token":"LK-E3-ERR-1-canary"}}""", new[] { "LK-E3-ERR-1-canary" }, Auth, Auth),
         new("e4 400 error string echo", 400, "application/json", """{"error":"LK-E4-ERR-1-canary"}""", new[] { "LK-E4-ERR-1-canary" }, Auth, Auth),
-        new("e5 400 non-JSON echo", 400, "text/plain", "LK-E5-BODY-canary", new[] { "LK-E5-BODY-canary" }, Transport, Transport),
-        new("e5b 400 non-JSON t-literal echo", 400, "text/plain", "tLK-E5B-BODY-canary", new[] { "tLK-E5B-BODY-canary" }, Transport, Transport),
+        // 끝까지 온 400 — 상태가 판정한다(판정 2026-11-10). 예전에는 (d) 와 같은 까닭으로 전송 오류였다.
+        new("e5 400 non-JSON echo", 400, "text/plain", "LK-E5-BODY-canary", new[] { "LK-E5-BODY-canary" }, Auth, Auth),
+        new("e5b 400 non-JSON t-literal echo", 400, "text/plain", "tLK-E5B-BODY-canary", new[] { "tLK-E5B-BODY-canary" }, Auth, Auth),
         new("e6 401 non-JSON echo", 401, "text/plain", "LK-E6-BODY-canary", new[] { "LK-E6-BODY-canary" }, Auth, Auth),
         new("e7 500 JSON error echo", 500, "application/json",
             """{"error":"LK-E7-ERR-1-canary","error_description":"LK-E7-DSC-1-canary"}""", new[] { "LK-E7-ERR-1-canary", "LK-E7-DSC-1-canary" }, Auth, Auth),
@@ -138,9 +142,10 @@ public sealed class MalformedTokenResponseTests
             new[] { "LK-E10-ERR-1-canary" }, Auth, Auth),
         new("e11 401 error code + LF", 401, "application/json", """{"error":"LK-E11-ERR-1-canary\n"}""",
             new[] { "LK-E11-ERR-1-canary" }, Auth, Auth),
-        // (f) introspect 모양 — active 가 불리언이 아니면 Duende 가 비활성으로 읽는다(성공). 토큰 호출에는 access_token 이 없다.
+        // (f) introspect 모양 — active 가 불리언이 아니면 KeycloakAuthException 이다(판정 D3; Duende 는 비활성으로 읽어 예전에는
+        // 성공이었다). 토큰 호출에는 access_token 이 없다.
         new("f introspect active string", 200, "application/json", """{"active":"LK-F-ACT-01-canary","username":"svc"}""",
-            new[] { "LK-F-ACT-01-canary" }, Auth, null),
+            new[] { "LK-F-ACT-01-canary" }, Auth, Auth),
         // Grok 레그의 주장 — 빈 200 본문이면 Duende 의 TokenIntrospectionResponse 가 "Json is null" 을 던진다. 카나리아는
         // 없다(흐름 검사만 — SDK 타입으로 번역되는가).
         new("h empty 200 body", 200, "application/json", "", Array.Empty<string>(), Auth, Auth),
@@ -221,9 +226,11 @@ public sealed class MalformedTokenResponseTests
         typeof(KeycloakTransportException), typeof(KeycloakTransportException))]
     [InlineData("g4 reason phrase echo", "HTTP/1.1 401 Unauthorized LK-G4-REASON-canary\r\nContent-Length: 0\r\n\r\n", "LK-G4-REASON-canary",
         typeof(KeycloakAuthException), typeof(KeycloakAuthException))]
-    // Grok 레그의 주장 — 알 수 없는 charset 은 본문을 문자열로 읽을 때 Encoding.GetEncoding 이 그 이름을 인용한다.
+    // Grok 레그의 주장 — 알 수 없는 charset 은 본문을 문자열로 읽을 때 Encoding.GetEncoding 이 그 이름을 인용한다. 이제 SDK 가
+    // charset 을 무시하고 UTF-8 로 읽어(RFC 8259 §11 — 판정 D2, 2026-11-10) 그 조회가 없다: `{}` 는 끝까지 온 쓸 수 없는 본문이라
+    // 토큰 호출(access_token 없음)도 introspect(active 없음 — D3)도 KeycloakAuthException 이다. 예전에는 읽기 실패로 전송 오류였다.
     [InlineData("g5 unknown charset", "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=LK-G5-CHARSET-canary\r\nContent-Length: 2\r\n\r\n{}",
-        "LK-G5-CHARSET-canary", typeof(KeycloakTransportException), null)]
+        "LK-G5-CHARSET-canary", typeof(KeycloakAuthException), null)]
     public async Task Malformed_wire_response_errors_do_not_print_its_secrets(string name, string raw, string canary, Type expected, Type? logout)
     {
         using var listener = new RawServer(raw);

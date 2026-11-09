@@ -134,7 +134,8 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
 
     /// <summary>Whether <paramref name="ex"/> is .NET refusing the charset a response's <c>Content-Type</c> names — the body
     /// was never read. It escaped the admin calls that read a body raw, an unknown name quoted in its chain (measured:
-    /// <c>UnsupportedCharsetResponseTests</c>).</summary>
+    /// <c>UnsupportedCharsetResponseTests</c>). Only a body not labelled JSON gets here: a JSON body's charset has no effect
+    /// (<see cref="AdminResponseBody.SettleAsync"/>).</summary>
     /// <remarks>An unknown name makes <c>Encoding.GetEncoding</c> throw <see cref="ArgumentException"/>, quoting it, which
     /// <see cref="HttpContent"/>'s string read and System.Net.Http.Json wrap in <see cref="InvalidOperationException"/>;
     /// UTF-7, disabled under every alias, makes it throw <see cref="NotSupportedException"/>, which neither wraps (8.0 and
