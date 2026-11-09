@@ -230,8 +230,8 @@ dev(`devDependencies` — **앵커 있음**):
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | 타입 | `typescript` | ^6 |
-| 테스트 | `vitest` | ~5.0.1 |
-| 커버리지 | `@vitest/coverage-v8` | ~5.0.1 |
+| 테스트 | `vitest` | ~5.1.0 |
+| 커버리지 | `@vitest/coverage-v8` | ~5.1.0 |
 | 통합 테스트 | `testcontainers` | ^12 |
 | 린트 | `eslint` | ^10 |
 | 린트(TS) | `typescript-eslint` | ^8 |
