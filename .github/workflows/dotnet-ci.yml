@@ -4,9 +4,9 @@ on:
   # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다 — 통합 리포트를 붙인 다른 레인과 같다).
   push:
     branches: [main]
-    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
+    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
   pull_request:
-    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
+    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:
@@ -66,17 +66,22 @@ jobs:
         env:
           HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
           HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
+        # trx 는 아래 카나리아 단계가 읽는다(--results-directory 아래 canaries.trx).
         run: >
           dotnet test dotnet/Keycloak.Sdk.sln --no-build -c Release
           --filter "Category!=Integration"
           --collect:"XPlat Code Coverage"
           --settings dotnet/coverlet.runsettings
+          --logger "trx;LogFileName=canaries.trx"
           --results-directory ${{ runner.temp }}/coverage
       - name: 적대 경로 행렬 attest — 이 실행에서 돌았는가(scripts/check-hp-attest.mjs)
         env:
           HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
           HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
         run: node scripts/check-hp-attest.mjs "$HP_ATTEST_DIR" --nonce "$HP_ATTEST_NONCE" --lang dotnet
+      # 보안 카나리아가 이 실행에서 돌아 통과했는가(근거: ci.yml 의 같은 단계).
+      - name: 보안 카나리아 — 이 실행에서 돌아 통과했는가(scripts/check-canaries-ran.mjs)
+        run: node scripts/check-canaries-ran.mjs --lang dotnet --report "$RUNNER_TEMP/coverage/canaries.trx"
       # 임계값 비교 **전에** 측정이 실제로 일어났는지부터 판정한다 — 분모는 있는데 히트가 0인 실행은
       # 커버리지 하락이 아니라 측정 실패이고, 그 둘을 다른 문구로 보고해야 사람이 헛수고하지 않는다.
       - name: Coverage gate

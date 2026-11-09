@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="unit" tests="3" assertions="3" errors="0" failures="0" skipped="0" time="0.003">
+    <testsuite name="X\Tests\Unit\TokenTest" file="/home/runner/work/r/r/php/tests/Unit/TokenTest.php" tests="3" assertions="3" errors="0" failures="0" skipped="0" time="0.003">
+      <testcase name="testRejectsMismatchedNonce" file="/home/runner/work/r/r/php/tests/Unit/TokenTest.php" line="9" class="X\Tests\Unit\TokenTest" classname="X.Tests.Unit.TokenTest" assertions="1" time="0.001"/>
+      <testsuite name="X\Tests\Unit\TokenTest::testNonStringAccessTokenIsRejected" tests="2" assertions="2" errors="0" failures="0" skipped="0" time="0.002">
+        <testcase name="testNonStringAccessTokenIsRejected with data set &quot;int&quot;" file="/home/runner/work/r/r/php/tests/Unit/TokenTest.php" line="14" class="X\Tests\Unit\TokenTest" classname="X.Tests.Unit.TokenTest" assertions="1" time="0.001"/>
+        <testcase name="testNonStringAccessTokenIsRejected with data set &quot;null&quot;" file="/home/runner/work/r/r/php/tests/Unit/TokenTest.php" line="14" class="X\Tests\Unit\TokenTest" classname="X.Tests.Unit.TokenTest" assertions="1" time="0.001"/>
+      </testsuite>
+    </testsuite>
+  </testsuite>
+</testsuites>

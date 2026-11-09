@@ -2,8 +2,8 @@ name: CI
 on:
   # `scripts/integration-coverage.*` — integration 잡의 리포트가 그 둘로 돈다. 리포트 로직·핀만 고친 PR 에서도
   # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다 — 통합 리포트를 붙인 다른 레인과 같다).
-  push: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
-  pull_request: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
+  push: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
+  pull_request: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
   # 주간 레인 건강검진. ⚠️ `schedule` 은 `paths` 를 타지 않는다(실측: harness 스케줄이 6일 연속
   # 돌았는데 그 경로가 바뀐 날은 2일뿐) — **그것이 목적이다.** 겨누는 것은 의존성 드리프트가
   # 아니라(락·핀이 이미 막는다) 러너 이미지·액션 같은 **환경** 드리프트다. 상세: .claude/rules/ci.md
@@ -48,6 +48,10 @@ jobs:
           HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
           HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
         run: node scripts/check-hp-attest.mjs "$HP_ATTEST_DIR" --nonce "$HP_ATTEST_NONCE" --lang java
+      # 보안 기본값 가드의 행위 카나리아가 이 실행에서 돌아 통과했는가 — 가드는 선언만 본다(skip 표지·필터는 못 본다).
+      # 보고서는 surefire 가 모듈마다 쓰는 TEST-*.xml 이다(java/ 아래를 훑는다). 판정 규칙은 그 스크립트 머리 주석.
+      - name: 보안 카나리아 — 이 실행에서 돌아 통과했는가(scripts/check-canaries-ran.mjs)
+        run: node scripts/check-canaries-ran.mjs --lang java --report java
       # ⚠️ 소비자 하한(JDK 17)이 **실제로 방출됐는지**를 바이트코드로 확인한다. `release` 설정이
       # 빠져도 빌드는 성공하고 CI 도 초록인데 major 65 짜리 jar 가 나가서 **JDK 17 소비자만** 죽는다.
       # CI 가 21·25 에서도 도는 한 그 사고는 CI 에 보이지 않으므로 산출물을 직접 본다.

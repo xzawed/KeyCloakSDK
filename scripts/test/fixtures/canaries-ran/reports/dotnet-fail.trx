@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00000000-0000-0000-0000-000000000003" name="h 2026-11-09 08:00:00" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results>
+    <UnitTestResult executionId="a1" testId="b1" testName="X.Tests.AuthTests.Nonce_mismatch_throws" computerName="h" duration="00:00:00.0100000" startTime="2026-11-09T08:00:00.0000000+00:00" endTime="2026-11-09T08:00:00.0100000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a1" />
+    <UnitTestResult executionId="a2" testId="b2" testName="X.Tests.AuthTests.Rejects_non_string_access_token(raw: &quot;1&quot;)" computerName="h" duration="00:00:00.0010000" startTime="2026-11-09T08:00:00.0000000+00:00" endTime="2026-11-09T08:00:00.0010000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a2" />
+  </Results>
+</TestRun>

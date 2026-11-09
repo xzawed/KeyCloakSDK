@@ -1,0 +1,7 @@
+     Running unittests src\lib.rs (target\debug\deps\x-0123456789abcdef.exe)
+
+running 2 tests
+test auth::tests::rejects_mismatched_nonce ... ok
+test jwks::tests::backoff_bounds_cold_retries ... ignored
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
