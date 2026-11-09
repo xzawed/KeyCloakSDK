@@ -13,10 +13,16 @@
 //    조용히 비켜 가지 않게.
 //  · 카나리아 줄 → 그 줄이 선언한 테스트(RESOLVE) → 보고서 항목. 선언 이름(node·ruby 는 제목 리터럴)이 **카나리아 문자열의
 //    자리와 겹쳐야** 한다 — 아니면 같은 줄의 다른 테스트를 카나리아로 읽는다. go 만 본문 줄(표 행 · 단언 호출)을 받고 그
-//    줄을 감싼 최상위 `func Test…` 로 간다.
+//    줄을 감싼 최상위 `func Test…` 로 간다. 항목은 정확히 맞춘다: 클래스(JVM·.NET·python) · describe 경로(node) · 모듈 경로
+//    (rust) · 정의 줄(ruby `line_number`) · 파일(php).
 //  · 항목이 없으면 FAIL(이 실행에서 돌지 않았다 — 필터·제외·이름 바뀜), 건너뛰었거나 실패한 항목이 하나라도 있으면 FAIL.
-//    매개변수 테스트(항목 여럿)는 전부 통과해야 한다. go 는 최상위 항목이 있어야 하고 서브테스트도 본다.
+//    매개변수 테스트(항목 여럿)는 전부 통과해야 한다. go 는 최상위 항목이 있어야 하고, `t.Run(` 을 여는 테스트는 서브테스트도
+//    하나 이상 보고돼야 한다. 뒤집힌 테스트(`it.fails` · `#[should_panic]`)는 통과가 곧 단언 실패라 FAIL 이다.
 //  · 보고서 형식은 언어가 정한다(FORMAT) — JUnit XML · TRX · `go test -v` · libtest 출력 · RSpec JSON.
+// ⚠️ 못 보는 것(독립 레그 실측 · 기대 개수나 내용의 원천이 보고서 밖이다): 매개변수 행·서브테스트 **일부만** 빼는 필터
+//    (pytest `--deselect 'x[None]'` · go `-skip 'TestX/one'`) · 카나리아를 필터로 빼고 **다른 패키지(go)·같은 파일의 다른
+//    클래스(php)** 에 같은 이름을 둔 경우(그냥 skip 이면 두 항목이 다 잡혀 FAIL 이다) · 본문 바꿔치기(이름 재바인딩 · 단언
+//    삭제 — 실행 증명이 아니라 행위 테스트·변이의 몫이다).
 // 판정: 통과 0 · FAIL 1 · 판정 불가 2.
 //  ⚠️ 보고서가 **없는** 것은 2 가 아니라 1 이다 — 시험 단계가 보고서를 쓰지 않았다는 바로 그 사건이다(attest 와 같은 이유).
 //  판정 불가: 인자 · 가드의 표 함수를 못 찾음 · 호출 자리 수가 AXES 와 다름 · 카나리아 0 개 · 카나리아 줄이 0 개이거나 둘
@@ -90,18 +96,23 @@ export function fnDef(text, fn) {
 // 실행할 스크립트 — 표 함수 정의 + 행을 찍는 줄. 경로는 셸에 넘기지 않는다(정의는 여기서 떼어 stdin 으로 준다).
 function extractScript(defs, axes) {
   const lines = ['set -eu', 'L="$1"', ...defs]
+  // 표 함수마다 출력을 먼저 변수로 받고 종료코드를 본다 — `"$(f)"` 를 printf 의 인자로 쓰면 그 안의 실패가 set -e 에
+  // 걸리지 않아 행이 조용히 줄었다(독립 레그 실측: 표 함수가 정의 밖 헬퍼를 부르면 2 행 → 1 행 · rc 0).
+  const call = (fn, v) => `${v}="$(${fn} "$L")" || { printf 'FNFAIL %s\\n' ${sq(fn)} >&2; exit 4; }`
   for (const a of axes) {
     const ax = sq(a.axis)
     if (a.shape === 'file|canary')
-      lines.push(`printf '%s\\n' "$(${a.rows} "$L")" | while IFS= read -r r; do if [ -n "$r" ]; then printf '%s\\t%s\\n' ${ax} "$r"; fi; done`)
+      lines.push(call(a.rows, 'o'), `printf '%s\\n' "$o" | while IFS= read -r r; do if [ -n "$r" ]; then printf '%s\\t%s\\n' ${ax} "$r"; fi; done`)
     else if (a.shape === 'canary')
       lines.push(
-        `f="$(${a.file} "$L")"`,
-        `printf '%s\\n' "$(${a.rows} "$L")" | while IFS= read -r c; do if [ -n "$c" ]; then printf '%s\\t%s|%s\\n' ${ax} "$f" "$c"; fi; done`,
+        call(a.file, 'f'),
+        call(a.rows, 'o'),
+        `printf '%s\\n' "$o" | while IFS= read -r c; do if [ -n "$c" ]; then printf '%s\\t%s|%s\\n' ${ax} "$f" "$c"; fi; done`,
       )
     else if (a.shape === 'kind|file|canary')
       lines.push(
-        `printf '%s\\n' "$(${a.rows} "$L")" | while IFS='|' read -r k f c; do if [ "$k" = canary ]; then printf '%s\\t%s|%s\\n' ${ax} "$f" "$c"; fi; done`,
+        call(a.rows, 'o'),
+        `printf '%s\\n' "$o" | while IFS='|' read -r k f c; do if [ "$k" = canary ]; then printf '%s\\t%s|%s\\n' ${ax} "$f" "$c"; fi; done`,
       )
     else throw new Error(`모르는 행 모양 ${a.shape}`)
   }
@@ -131,7 +142,9 @@ export function canaries(root, lang, axes = AXES) {
   }
   const r = spawnSync('sh', ['-s', '--', lang], { input: extractScript(defs, axes), encoding: 'utf8' })
   if (r.error) throw new Unreadable(`sh 를 못 띄웠다: ${r.error.message}`)
-  if (r.status !== 0) throw new Unreadable(`표 함수를 실행하다 실패했다(rc ${r.status}): ${r.stderr.trim()}`)
+  // stderr 에 무엇이든 찍히면 믿지 않는다 — 함수 중간의 실패(정의 밖 헬퍼 · 없는 변수)는 마지막 명령이 성공하면 종료코드에 안 남는다.
+  if (r.status !== 0 || r.stderr.trim() !== '')
+    throw new Unreadable(`표 함수를 실행하다 실패했다(rc ${r.status}) — 정의 밖의 무엇(헬퍼 · 변수)에 기대나?: ${r.stderr.trim().slice(0, 400)}`)
   const out = []
   for (const line of r.stdout.split('\n')) {
     if (!line) continue
@@ -169,16 +182,19 @@ export function canaryLine(lang, lines, canary, file) {
   return at[0]
 }
 
-// 줄 위로 올라가며 들여쓰기가 더 얕은 클래스 선언을 모은다(바깥 → 안쪽 순서).
-function classChain(lines, from, re) {
+// 줄 위로 올라가며 들여쓰기가 더 얕은 선언(클래스 · describe · mod)을 모은다(바깥 → 안쪽 순서). `stop` 이 더 얕은 들여쓰기에서
+// 먼저 나오면 판정 불가다 — 함수 안에 놓인 테스트는 러너가 모으지 않거나 다른 이름으로 모은다(python: 독립 레그 실측 —
+// `make_cases()` 안의 def 를 바깥 클래스의 테스트로 읽었다).
+function classChain(lines, from, re, stop) {
   const chain = []
   let limit = indentOf(lines[from])
   for (let i = from - 1; i >= 0 && limit > 0; i--) {
+    if (lines[i].trim() === '' || indentOf(lines[i]) >= limit) continue
     const m = re.exec(lines[i])
-    if (m && indentOf(lines[i]) < limit) {
-      chain.unshift(m[m.length - 1])
+    if (m) {
+      chain.unshift(m.slice(1).find((x) => x !== undefined))
       limit = indentOf(lines[i])
-    }
+    } else if (stop && stop.test(lines[i])) throw new Unreadable(`${i + 1}행의 함수 안에 있다 — 러너가 그 테스트를 이 이름으로 모으지 않는다`)
   }
   return chain
 }
@@ -235,7 +251,12 @@ function titlePattern(title, interp) {
 const JAVA_CLASS = /^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|protected|private|static|final|abstract|sealed|non-sealed)\s+)*(?:class|interface|enum|record)\s+(\w+)/
 const KOTLIN_CLASS = /^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|internal|private|protected|open|abstract|sealed|data|inner|enum|annotation)\s+)*(?:class|object|interface)\s+(\w+)/
 const DOTNET_CLASS = /^\s*(?:\[[^\]]*\]\s*)*(?:(?:public|internal|private|protected|static|sealed|abstract|partial)\s+)*(?:class|record|struct)\s+(\w+)/
-const jvmMatch = (cls, n) => (e) => e.classname === cls && (e.name === n || e.name.startsWith(`${n}(`) || e.name.startsWith(`${n}[`))
+// 이름 그대로(surefire) · `()`(Gradle) · 매개변수 테스트 `(인자 타입)[n]` 만 받는다 — `startsWith(n + '(')` 였을 때
+// 괄호를 담은 kotlin 백틱 이름(`rejects x(legacy)`)이 카나리아 `rejects x` 로 읽혔다(독립 레그 실측).
+const jvmMatch = (cls, n) => (e) => e.classname === cls && e.name.startsWith(n) && /^(?:|\([^()]*\)(?:\[\d+\])?)$/.test(e.name.slice(n.length))
+// node — 테스트를 감싼 describe(suite) 제목들. vitest junit 의 이름은 `바깥 > 안 > 제목` 이다.
+const DESCRIBE = /^\s*(?:describe|suite)(?:\.\w+)*\(\s*(?:'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|`((?:\\.|[^`\\])*)`)/
+const NODE_INTERP = /%%|%[sdifjoOc#]|\$[A-Za-z_][\w.]*/
 
 // RESOLVE[lang](ctx) → { label, match(entry), top? } · ctx = { file, rel, lines, text, at, span }
 export const RESOLVE = {
@@ -251,28 +272,46 @@ export const RESOLVE = {
   },
   python(ctx) {
     const n = declAt(ctx, /^\s*(?:async\s+)?def\s+(\w+)\s*\(/, 'def')
-    const chain = classChain(ctx.lines, ctx.at, /^\s*class\s+(\w+)/)
+    const chain = classChain(ctx.lines, ctx.at, /^\s*class\s+(\w+)/, /^\s*(?:async\s+)?def\s/)
     const cls = [ctx.rel.replace(/\.py$/, '').split('/').join('.'), ...chain].join('.')
     return { label: `${ctx.rel}::${[...chain, n].join('::')}`, match: (e) => e.classname === cls && (e.name === n || e.name.startsWith(`${n}[`)) }
   },
   node(ctx) {
     const lit = titleAt(ctx, `'"\``, 'it/test 제목')
-    const re = new RegExp(`(?:^| > )${titlePattern(lit.body, /%%|%[sdifjoOc#]|\$[A-Za-z_][\w.]*/)}$`)
-    return { label: `${ctx.rel} › ${lit.body}`, match: (e) => e.classname === ctx.rel && re.test(e.name) }
+    // describe 경로까지 맞춘다 — 제목 끝만 보면 다른 describe 의 같은 제목(`test(…)` 로 쓰면 가드의 1 회 단언도 비킨다)이
+    // 빠진 카나리아 대신 통과로 읽혔다(독립 레그 실측).
+    const chain = classChain(ctx.lines, ctx.at, DESCRIBE).map((d) => titlePattern(d.replace(/\\(['"`\\])/g, '$1'), NODE_INTERP))
+    const re = new RegExp(`^${[...chain, titlePattern(lit.body, NODE_INTERP)].join(' > ')}$`)
+    // `it.fails` · `test.fails` 는 본문이 실패해야 통과한다 — 보고서의 통과가 곧 카나리아 단언의 실패다. 제목만 있는 줄
+    // (`it.each([...])(` 다음 줄)은 위로 올라가 가장 가까운 호출을 본다.
+    let inverted = false
+    for (let i = ctx.at; i >= Math.max(0, ctx.at - 20); i--) {
+      const call = /\b(?:it|test)((?:\.\w+)*)\s*\(/.exec(ctx.lines[i])
+      if (call) {
+        inverted = /\.fails\b/.test(call[1])
+        break
+      }
+    }
+    return { label: `${ctx.rel} › ${lit.body}`, inverted, match: (e) => e.classname === ctx.rel && re.test(e.name) }
   },
   go(ctx) {
     const { file, lines, at } = ctx
     let n
+    let i = at
     if (/^func\s/.test(lines[at])) n = declAt(ctx, /^func\s+(Test\w*)\s*\(/, 'func Test…')
     else {
       // 본문 줄(표 행 · 단언 호출) — 감싼 최상위 함수는 줄 머리 `func ` 다(gofmt). 그것이 Test 함수가 아니면 못 읽는다.
-      let i = at
       while (i >= 0 && !/^func\s/.test(lines[i])) i--
       const m = i >= 0 ? /^func\s+(Test\w*)\s*\(/.exec(lines[i]) : null
       if (!m) throw new Unreadable(`${file}:${at + 1}: 카나리아 줄을 감싼 최상위 함수가 Test 함수가 아니다(${i >= 0 ? lines[i].trim() : '없음'})`)
       n = m[1]
     }
-    return { label: `${file}:${at + 1} → ${n}`, top: n, match: (e) => e.name === n || e.name.startsWith(`${n}/`) }
+    // 서브테스트를 여는 테스트는 서브테스트가 하나라도 보고돼야 한다 — `-skip 'TestX/.'` 같은 필터는 부모의 PASS 만 남긴다
+    // (독립 레그 실측: 본문이 t.Fatal 인 서브테스트를 전부 빼자 rc 0). ⚠️ 일부만 빼는 필터는 못 본다(기대 개수가 보고서 밖이다).
+    let j = i + 1
+    while (j < lines.length && !/^}/.test(lines[j])) j++
+    const sub = lines.slice(i, j).some((l) => /\bt\.Run\(/.test(l))
+    return { label: `${file}:${at + 1} → ${n}`, top: n, sub, match: (e) => e.name === n || e.name.startsWith(`${n}/`) }
   },
   dotnet(ctx) {
     const n = declAt(ctx, /\b(?:void|Task(?:<[^>]*>)?)\s+(\w+)\s*\(/, '메서드(void|Task)')
@@ -292,25 +331,30 @@ export const RESOLVE = {
   rust(ctx) {
     const n = declAt(ctx, /\bfn\s+(\w+)\s*[(<]/, 'fn')
     const { rel, file } = ctx
-    let re
+    // 경로는 정확히 — 파일의 모듈 + 그 파일 안에서 감싼 `mod` 들 + 이름. `(?:\w+::)*` 였을 때 더 깊은 모듈의 같은 이름
+    // (`auth::tests::legacy::x`)이 카나리아로 읽혔다(독립 레그 실측).
+    const inner = classChain(ctx.lines, ctx.at, /^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*\{/)
+    let parts
     let bin
     if (rel.startsWith('src/')) {
-      const parts = rel.slice(4).replace(/\.rs$/, '').split('/')
+      parts = rel.slice(4).replace(/\.rs$/, '').split('/')
       if (parts.at(-1) === 'mod') parts.pop()
       if (parts.length === 1 && (parts[0] === 'lib' || parts[0] === 'main')) parts.pop()
-      re = new RegExp(`^${parts.map((p) => `${esc(p)}::`).join('')}(?:\\w+::)*${esc(n)}$`)
       bin = (b) => /^(?:unittests )?src\/(?:lib|main)\.rs$/.test(b)
     } else if (/^tests\/[^/]+\.rs$/.test(rel)) {
-      re = new RegExp(`^(?:\\w+::)*${esc(n)}$`)
+      parts = []
       bin = (b) => b === rel
     } else throw new Unreadable(`${file}: rust 카나리아는 src/ 또는 tests/*.rs 에 있어야 한다`)
-    return { label: `${rel} → ${n}`, match: (e) => bin(e.binary ?? '') && re.test(e.name) }
+    const path = [...parts, ...inner, n].join('::')
+    return { label: `${rel} → ${path}`, match: (e) => bin(e.binary ?? '') && e.name === path }
   },
   ruby(ctx) {
     const lit = titleAt(ctx, `'"`, 'it 제목')
-    const re = new RegExp(`^${titlePattern(lit.body, lit.q === '"' ? /#\{[^}]*\}/ : /(?!)/)}$`)
+    // 파일 + 정의 줄로 맞춘다 — RSpec JSON 의 line_number 는 그 예제를 만든 `it` 의 줄이다(루프로 만든 예제들도 같은 줄).
+    // 제목만 보면 `#{…}` 가 「아무 글자」라 같은 파일의 비슷한 제목(`… (legacy path)`)이 카나리아로 읽혔다(독립 레그 실측).
+    const line = ctx.at + 1
     const norm = (f) => f.replace(/\\/g, '/').replace(/^\.\//, '')
-    return { label: `${ctx.rel} › ${lit.body}`, match: (e) => typeof e.file === 'string' && norm(e.file) === ctx.rel && re.test(e.name) }
+    return { label: `${ctx.rel}:${line} › ${lit.body}`, match: (e) => typeof e.file === 'string' && norm(e.file) === ctx.rel && e.line === line }
   },
 }
 
@@ -378,26 +422,39 @@ export function stripXmlNoise(x) {
 // src 카나리아 아홉이 전부 「보고서에 없다」였다). 로컬 콘솔 출력엔 색이 없어 보이지 않던 차이다.
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
 
+// 여는 태그 — 따옴표 안의 `>` 는 태그 끝이 아니다(XML 은 속성값의 `>` 를 이스케이프하라고 요구하지 않는다). `[^>]*` 였을 때
+// `note="a/>b"` 를 단힌 태그로 읽어 건너뛴 카나리아를 통과로 냈다(독립 레그 실측). → [속성, 단힘 여부, 태그 끝 위치]
+function* openTags(x, name) {
+  const re = new RegExp(`<${name}\\b((?:[^>"']|"[^"]*"|'[^']*')*)>`, 'g')
+  for (const m of x.matchAll(re)) {
+    const selfClosing = m[1].endsWith('/')
+    yield { attrs: attrs(selfClosing ? m[1].slice(0, -1) : m[1]), selfClosing, end: m.index + m[0].length }
+  }
+}
+
 export const PARSE = {
   junit(text) {
     const x = stripXmlNoise(text)
     if (!/<testsuites?\b/.test(x)) throw new Unreadable('JUnit XML 이 아니다(<testsuite> 없음)')
     const out = []
-    for (const m of x.matchAll(/<testcase\b([^>]*?)(?:\/>|>([\s\S]*?)<\/testcase>)/g)) {
-      const a = attrs(m[1])
-      const body = m[2] ?? ''
+    for (const t of openTags(x, 'testcase')) {
+      let body = ''
+      if (!t.selfClosing) {
+        const close = x.indexOf('</testcase>', t.end)
+        body = close < 0 ? x.slice(t.end) : x.slice(t.end, close)
+      }
       const status = /<(failure|error)\b/.test(body) ? 'failed' : /<skipped\b/.test(body) ? 'skipped' : 'passed'
-      out.push({ classname: a.classname ?? '', name: a.name ?? '', file: a.file, status })
+      out.push({ classname: t.attrs.classname ?? '', name: t.attrs.name ?? '', file: t.attrs.file, status })
     }
     return out
   },
   trx(text) {
-    if (!/<TestRun\b/.test(text)) throw new Unreadable('TRX 가 아니다(<TestRun> 없음)')
+    const x = stripXmlNoise(text)
+    if (!/<TestRun\b/.test(x)) throw new Unreadable('TRX 가 아니다(<TestRun> 없음)')
     const out = []
-    for (const m of text.matchAll(/<UnitTestResult\b([^>]*?)\/?>/g)) {
-      const a = attrs(m[1])
-      const o = a.outcome ?? ''
-      out.push({ name: a.testName ?? '', status: o === 'Passed' ? 'passed' : o === 'NotExecuted' ? 'skipped' : 'failed' })
+    for (const t of openTags(x, 'UnitTestResult')) {
+      const o = t.attrs.outcome ?? ''
+      out.push({ name: t.attrs.testName ?? '', status: o === 'Passed' ? 'passed' : o === 'NotExecuted' ? 'skipped' : 'failed' })
     }
     return out
   },
@@ -416,8 +473,9 @@ export const PARSE = {
         binary = (run[1] ?? '') + run[2].replace(/\\/g, '/')
         continue
       }
-      const t = /^test (\S+) \.\.\. (ok|ignored|FAILED)\b/.exec(line)
-      if (t) out.push({ binary, name: t[1], status: t[2] === 'ok' ? 'passed' : t[2] === 'ignored' ? 'skipped' : 'failed' })
+      // `#[should_panic]` 은 본문이 패닉해야 통과한다 — 카나리아에 붙으면 통과가 곧 단언 실패다(`test x - should panic ... ok`).
+      const t = /^test (\S+)( - should panic)? \.\.\. (ok|ignored|FAILED)\b/.exec(line)
+      if (t) out.push({ binary, name: t[1], status: t[3] === 'ignored' ? 'skipped' : t[3] === 'FAILED' ? 'failed' : t[2] ? 'inverted' : 'passed' })
     }
     return out
   },
@@ -429,7 +487,12 @@ export const PARSE = {
       throw new Unreadable(`RSpec JSON 이 아니다(${e.message})`)
     }
     if (!j || !Array.isArray(j.examples)) throw new Unreadable('RSpec JSON 에 examples 배열이 없다')
-    return j.examples.map((x) => ({ file: x.file_path, name: x.description ?? '', status: x.status === 'passed' ? 'passed' : x.status === 'pending' ? 'skipped' : 'failed' }))
+    return j.examples.map((x) => ({
+      file: x.file_path,
+      line: x.line_number,
+      name: x.description ?? '',
+      status: x.status === 'passed' ? 'passed' : x.status === 'pending' ? 'skipped' : 'failed',
+    }))
   },
 }
 
@@ -482,11 +545,16 @@ export function loadReports(lang, paths) {
 // ─── 4. 판정 ─────────────────────────────────────────────────────────────────────────────────────────
 // → { ok, why }
 export function judge(t, entries) {
+  const INVERTED = '뒤집혔다(it.fails · should_panic) — 통과가 곧 카나리아 단언의 실패다'
+  if (t.inverted) return { ok: false, why: INVERTED }
   const hit = entries.filter(t.match)
   if (hit.length === 0) return { ok: false, why: '보고서에 없다 — 이 실행에서 돌지 않았다(필터 · 제외 · 이름 바뀜)' }
   if (t.top && !hit.some((e) => e.name === t.top)) return { ok: false, why: `최상위 ${t.top} 가 보고서에 없다(서브테스트만 있다)` }
+  if (t.sub && !hit.some((e) => e.name.startsWith(`${t.top}/`)))
+    return { ok: false, why: `서브테스트를 여는 테스트인데 서브테스트가 하나도 보고되지 않았다(필터 -run/-skip?)` }
   const skipped = hit.filter((e) => e.status === 'skipped').length
   const failed = hit.filter((e) => e.status === 'failed').length
+  if (hit.some((e) => e.status === 'inverted')) return { ok: false, why: INVERTED }
   if (skipped) return { ok: false, why: `건너뛰었다 — ${skipped}/${hit.length} 항목이 skip` }
   if (failed) return { ok: false, why: `실패했다 — ${failed}/${hit.length} 항목` }
   return { ok: true, why: `${hit.length} 통과` }

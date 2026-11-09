@@ -150,6 +150,38 @@ expect lang-swallows-flag 2 "--lang 에 값이 없다"
 run --lang python --report "$REP/python-pass.xml" extra
 expect extra-arg 2 "인자가 남는다"
 
+# ═══ 독립 레그(2026-11-09)가 실측으로 찾은 구멍 — 고치기 전 검사에서는 전부 0 이었다(should_panic 만 우연히 1) ═══════
+# 속성값 안의 `>` — XML 은 이스케이프를 요구하지 않는다. 태그를 거기서 끊으면 건너뛴 카나리아가 통과로 읽힌다.
+run --lang python --report "$REP/python-gt-attr.xml" --root "$REPO"
+expect leg-gt-attr 1 "test_rejects_mismatched_nonce — 건너뛰었다"
+# 다른 describe 의 같은 제목 — 카나리아가 빠졌는데 그 통과가 대신 읽혔다(describe 경로까지 맞춘다).
+run --lang node --report "$REP/node-decoy.xml" --root "$REPO"
+expect leg-node-describe 1 "nonce 가 틀리면 거부한다(이 설정에서 검사가 돈다) — 보고서에 없다"
+# 괄호를 담은 kotlin 백틱 이름 — `rejects mismatched nonce(legacy client)` 가 카나리아로 읽혔다.
+run --lang kotlin --report "$REP/kotlin-decoy.xml" --root "$REPO"
+expect leg-kotlin-paren 1 "rejects mismatched nonce — 보고서에 없다"
+# 서브테스트를 전부 뺀 필터(-skip 'TestX/.') — 부모의 PASS 만 남는다.
+run --lang go --report "$REP/go-subfiltered.txt" --root "$REPO"
+expect leg-go-subfiltered 1 "서브테스트가 하나도 보고되지 않았다"
+# 더 깊은 모듈의 같은 이름 — 경로를 정확히 맞춘다.
+run --lang rust --report "$REP/rust-decoy.txt" --root "$REPO"
+expect leg-rust-depth 1 "auth::tests::rejects_mismatched_nonce — 보고서에 없다"
+# should_panic — 통과가 곧 단언 실패다(예전엔 줄을 못 읽어 우연히 「보고서에 없다」였다).
+run --lang rust --report "$REP/rust-should-panic.txt" --root "$REPO"
+expect leg-rust-should-panic 1 "뒤집혔다"
+# 같은 파일의 비슷한 제목(`#{…}` 가 아무 글자) — 정의 줄로 맞춘다.
+run --lang ruby --report "$REP/ruby-decoy.json" --root "$REPO"
+expect leg-ruby-line 1 "보고서에 없다"
+# it.fails — 보고서의 통과가 곧 카나리아 단언의 실패다.
+run --lang node --report "$REP/node-pass.xml" --root "$FIX/repo-more"
+expect leg-node-fails 1 "뒤집혔다"
+# 함수 안의 def — pytest 가 모으지 않는데 바깥 클래스의 테스트로 읽혔다.
+run --lang python --list --root "$FIX/repo-more"
+expect leg-python-nested 2 "함수 안에 있다"
+# 표 함수가 정의 밖 헬퍼를 부른다 — 예전엔 그 행만 조용히 빠지고 rc 0 이었다.
+run --lang python --list --root "$FIX/repo-helper"
+expect leg-helper 2 "정의 밖의 무엇"
+
 # ═══ 계측기 자신 — 서로 다른 결함이 서로 다른 이유를 내는가 ═════════════════════════════════════════
 # 위 칸들이 전부 같은 문장으로 실패하면(예: 늘 「보고서에 없다」) 이 테스트는 입력을 보지 않는 검사를 초록으로 감싼다.
 run --lang python --report "$REP/python-skip.xml" --root "$REPO"
