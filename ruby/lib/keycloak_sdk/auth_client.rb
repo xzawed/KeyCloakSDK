@@ -70,7 +70,8 @@ module KeycloakSdk
       client_credentials_token.access_token
     end
 
-    # 끝까지 왔지만 못 읽는 응답은 AuthError 다(`TokenResponse` — 2xx 는 거기서, 오류 상태는 아래 상태 검사가).
+    # A response that arrived but cannot be read is an AuthError — a 2xx is judged by `TokenResponse`, an error status
+    # by the status check below.
     def introspect(token)
       form = form!("introspection", token: token, client_id: @config.client_id, client_secret: @config.client_secret)
       resp = TokenResponse.decode(Http.read_capped(@http, :post, @endpoints.introspection,
