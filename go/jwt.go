@@ -401,9 +401,11 @@ func (v *Validator) fetch(ctx context.Context) error {
 	if len(body) > jwksMaxBytes {
 		return &TransportError{Msg: fmt.Sprintf("JWKS response exceeds %d bytes", jwksMaxBytes)}
 	}
-	// Key by key: one key go-jose cannot read (Ed448, X25519, P-192, a 4097-bit modulus, an unknown kty) is
-	// ignored rather than failing the whole set (RFC 7517 §5). Unmarshalling the set in one go rejected every
-	// key with it, so a token signed by a supported key in the same set was refused.
+	// Key by key: any element go-jose refuses is ignored rather than failing the whole set (RFC 7517 §5) — an
+	// unsupported kty or curve (Ed448, X25519, P-192), a modulus over 4096 bits, a missing member, an x5c/x5t
+	// that does not match, an element that is not a JWK. Unmarshalling the set in one go rejected every key with
+	// it, so a token signed by a supported key in the same set was refused. ⚠️ A refused key is never used, even
+	// though go-jose fills it in before its x5u/x5t checks fail: only a nil error appends.
 	var raw struct {
 		Keys []json.RawMessage `json:"keys"`
 	}
@@ -411,11 +413,16 @@ func (v *Validator) fetch(ctx context.Context) error {
 		return err
 	}
 	var ks jose.JSONWebKeySet
+	var firstErr error
 	for _, r := range raw.Keys {
 		var k jose.JSONWebKey
-		if json.Unmarshal(r, &k) == nil {
-			ks.Keys = append(ks.Keys, k)
+		if err := json.Unmarshal(r, &k); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
+		ks.Keys = append(ks.Keys, k)
 	}
 	// An empty set is never a legitimate answer, and installing it would blind the validator — that holds for a
 	// set whose every key was skipped too.
@@ -423,7 +430,8 @@ func (v *Validator) fetch(ctx context.Context) error {
 		return &TransportError{Msg: "JWKS response contains no keys"}
 	}
 	if len(ks.Keys) == 0 {
-		return &TransportError{Msg: fmt.Sprintf("JWKS response contains no usable keys (%d unreadable)", len(raw.Keys))}
+		return &TransportError{Msg: fmt.Sprintf("JWKS response contains no usable keys (%d unreadable, first: %v)",
+			len(raw.Keys), firstErr), Cause: firstErr}
 	}
 	v.mu.Lock()
 	v.jwks, v.loadedAt = &ks, v.opts.now()
