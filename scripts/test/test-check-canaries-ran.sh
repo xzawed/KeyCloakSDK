@@ -182,6 +182,32 @@ expect leg-python-nested 2 "함수 안에 있다"
 run --lang python --list --root "$FIX/repo-helper"
 expect leg-helper 2 "정의 밖의 무엇"
 
+# ═══ 독립 레그 2 의 반례 — 건강한 실행의 거짓 FAIL · 남은 0 · 정할 수 없는 이름(옛 판 f3df9ef1 과 대조했다) ═════════
+# node: 닫힌 형제 describe 뒤의 it.each 제목은 건강하다(옛 판은 그 describe 를 감싼 것으로 읽어 FAIL) · 행 스물둘 위의
+# it.fails.each 와 제목에 `it (` 가 든 it.fails(…) 는 뒤집힘이다(옛 판은 20 줄 창·제목 속 글자 탓에 놓쳤다).
+run --lang node --report "$REP/node-r2.xml" --root "$FIX/repo-r2"
+expect r2-node 1 "통과 1 · FAIL 2"
+assert_contains "$OUT" "r2 healthy each: %s — 1 통과" "[r2-node] 닫힌 형제 describe 를 감싼 것으로 읽었다 — 출력: $OUT"
+assert_contains "$OUT" "r2 fails each: %s — 뒤집혔다" "[r2-node] 행 스물둘 위의 it.fails.each 를 놓쳤다 — 출력: $OUT"
+assert_contains "$OUT" "r2 fails it (call): number — 뒤집혔다" "[r2-node] 제목 속 \`it (\` 를 호출로 읽었다 — 출력: $OUT"
+# go: 주석 속 t.Run( 은 서브테스트가 아니다(건강) · tt.Run 으로 연 서브테스트를 전부 빼면 FAIL.
+run --lang go --report "$REP/go-r2.txt" --root "$FIX/repo-r2"
+expect r2-go 1 "통과 1 · FAIL 1"
+assert_contains "$OUT" "TestCommentOnly — 1 통과" "[r2-go] 주석 속 t.Run( 을 서브테스트로 읽었다 — 출력: $OUT"
+assert_contains "$OUT" "TestReceiverSubtests — 서브테스트를 여는" "[r2-go] tt.Run 으로 연 서브테스트를 못 봤다 — 출력: $OUT"
+# ruby: `it "x",` 다음 줄의 `do` — RSpec 의 line_number 는 그 do 줄이다(건강).
+run --lang ruby --report "$REP/ruby-r2.json" --root "$FIX/repo-r2"
+expect r2-ruby 0 "통과 1 · FAIL 0"
+# 이름을 정할 수 없는 모양은 추측하지 않고 판정 불가다.
+run --lang node --list --root "$FIX/repo-r2b"
+expect r2-node-describe 2 "describe 제목이 리터럴이 아니다"
+run --lang go --list --root "$FIX/repo-r2b"
+expect r2-go-table 2 "본문(5–5행) 밖이다"
+run --lang rust --list --root "$FIX/repo-r2b"
+expect r2-rust-path 2 "로 들인 모듈이다"
+run --lang kotlin --list --root "$FIX/repo-r2b"
+expect r2-kotlin-param 2 "표시 이름을 바꾸는 어노테이션"
+
 # ═══ 계측기 자신 — 서로 다른 결함이 서로 다른 이유를 내는가 ═════════════════════════════════════════
 # 위 칸들이 전부 같은 문장으로 실패하면(예: 늘 「보고서에 없다」) 이 테스트는 입력을 보지 않는 검사를 초록으로 감싼다.
 run --lang python --report "$REP/python-skip.xml" --root "$REPO"
