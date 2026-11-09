@@ -5,7 +5,11 @@ import { KeycloakAuthError, KeycloakTransportError } from './errors.js'
 import { JwtValidator } from './jwt.js'
 import { mask } from './masking.js'
 import { oidcEndpoints, type OidcEndpoints } from './oidc-metadata.js'
-import { fetchTokenEndpointBounded, responseTooLarge } from './token-response-cap.js'
+import {
+  fetchTokenEndpointBounded,
+  responseNotUtf8,
+  responseTooLarge,
+} from './token-response-cap.js'
 import { isTransportError, transportInChain } from './transport.js'
 import {
   tokenSetFromResponse,
@@ -76,11 +80,12 @@ function base64url(buffer: Buffer): string {
 }
 
 /**
- * 실패 메시지의 꼬리. 응답 본문이 상한을 넘었으면 그렇게 말한다 — openid-client 는 fetch 가 던진 상한 신호를
- * `ClientError('something went wrong')` 로 감싸므로 그 겉 메시지는 거짓에 가깝다(`token-response-cap.ts`).
+ * 실패 메시지의 꼬리. 응답 본문이 상한을 넘었거나 2xx 본문이 UTF-8 이 아니면 그렇게 말한다 — openid-client 는 fetch 가
+ * 던진 신호를 `ClientError('something went wrong')` 로 감싸므로 그 겉 메시지는 거짓에 가깝다(`token-response-cap.ts`).
+ * UTF-8 신호는 전송 계열이 아니라서 `failure` 가 auth 로 낸다 — 끝까지 왔지만 쓸 수 없는 응답이다.
  */
 function reasonOf(e: unknown): string {
-  return responseTooLarge(e)?.message ?? (e as Error).message
+  return responseTooLarge(e)?.message ?? responseNotUtf8(e)?.message ?? (e as Error).message
 }
 
 /**
