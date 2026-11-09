@@ -553,10 +553,11 @@ async fn fixture() -> Fixture {
         d_provider,
         KeycloakError::Transport(_)
     ));
+    // admin 은 토큰을 못 얻으면 공급자의 오류 그대로다 — 연결 실패는 `Transport`(전에는 `Admin(Other { status: 401 })`).
     errors.push(fail_as!(
         "admin get_user unreachable",
         d_admin,
-        KeycloakError::Admin(_)
+        KeycloakError::Transport(_)
     ));
 
     // ── ⚠️ 흐름 검사 — 카나리아가 실제로 뿌리에 흘렀는가. 안 흘렀으면 누출 검사는 없는 것을 찾으며 통과한다.

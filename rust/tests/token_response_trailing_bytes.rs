@@ -198,20 +198,19 @@ async fn bytes_after_the_json_value_fail_every_lane_like_a_truncated_body() {
 }
 
 /// 대조 — JSON 공백만 붙으면 레인마다 꼬리 없는 본문과 같은 결과다. 200 은 성공(admin 은 admin 요청 하나), 400 은 그
-/// 상태의 OAuth 오류(`oauth_error` 코드 그대로 · admin 은 401). 없으면 위 시험이 「꼬리가 있으면 늘 거부」와 구분되지 않는다.
+/// 상태의 OAuth 오류(`oauth_error` 코드 그대로 · admin 도 공급자의 그 오류 — 전에는 401). 없으면 위 시험이 「꼬리가
+/// 있으면 늘 거부」와 구분되지 않는다.
 #[tokio::test]
 async fn json_whitespace_after_the_value_is_accepted_like_the_bare_body_on_every_lane() {
     let mut wrong = Vec::new();
     for status in [200_u16, 400] {
         for lane in LANES {
             let (want, want_hits) = call(lane, &Reply::with_tail(status, "")).await;
-            let sane = match (status, lane) {
-                (200, _) => want.starts_with("Ok("),
-                (_, Lane::Admin) => want == "Err(Admin(Other { status: 401 }))",
-                _ => {
-                    want.starts_with("Err(Auth {")
-                        && want.contains(r#"oauth_error: Some("invalid_grant")"#)
-                }
+            let sane = if status == 200 {
+                want.starts_with("Ok(")
+            } else {
+                want.starts_with("Err(Auth {")
+                    && want.contains(r#"oauth_error: Some("invalid_grant")"#)
             };
             if !sane {
                 wrong.push(format!(

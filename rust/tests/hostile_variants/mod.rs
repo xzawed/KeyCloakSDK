@@ -276,26 +276,27 @@ pub fn variants(base: &str) -> Vec<Variant> {
 /// (아홉 언어 판정 #935 · 등록부 `token-response-class-divergent`). 그래서 이 표에는 `Transport` 칸이 없다 — 이 변형은 모두 끝까지
 /// 온다. 예전에는 openidconnect 경로의 형식 오류가 전부 `Transport` 였고 provider 는 `access_token` 이 없을 때만 `Auth` 였다(언어
 /// 안 분리). 오지 않은 응답(네트워크 · 타임아웃 · 상한 초과)의 `Transport` 는 `token_response_cap` 과 마감 시험이 본다.
+/// admin 열은 provider 열과 같다 — 파사드는 토큰을 못 얻으면 공급자의 오류 그대로다(D4 · 전에는 `Admin(401)`).
 #[rustfmt::skip]
 pub const EXPECTED: &[(&str, [&str; 9])] = &[
     //                          cc           refresh      exch(None)   exch(Some)   exch(redir)  introspect   AuthClient TP  provider     admin
     ("a-id-not-jwt",           ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "ok",        "ok"]),
     ("a2-id-jwt-untrusted",    ["ok",        "ok",        "ok",        "Auth",      "Auth",      "Auth",      "ok",        "ok",        "ok"]),
     ("a3-id-kid-echo",         ["ok",        "ok",        "ok",        "Auth",      "Auth",      "Auth",      "ok",        "ok",        "ok"]),
-    ("b-at-not-string",        ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
+    ("b-at-not-string",        ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
     ("c1-expires-in-string",   ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "ok",        "ok"]),
     ("c2-token-type-number",   ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "ok",        "ok"]),
-    ("d1-short-body",          ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("d2-long-body",           ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("d3-error-body-not-json", ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("e1-error-description",   ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("e2-error-uri",           ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("e3-error-code-token",    ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("f1-active-not-bool",     ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
+    ("d1-short-body",          ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
+    ("d2-long-body",           ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
+    ("d3-error-body-not-json", ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
+    ("e1-error-description",   ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
+    ("e2-error-uri",           ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
+    ("e3-error-code-token",    ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
+    ("f1-active-not-bool",     ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
     ("g-content-type-echo",    ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "ok",        "ok"]),
     // 꼬리 바이트 — 전에는 cc·refresh·exch(None)·introspect·TP 가 ok, exch(Some)·exch(redir) 가 Auth(id_token 없음)였다
     // (`tests/token_response_trailing_bytes.rs`).
-    ("h1-trailing-bytes",      ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
+    ("h1-trailing-bytes",      ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
 ];
 
 /// 찍는 경로 넷.

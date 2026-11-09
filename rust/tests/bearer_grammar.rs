@@ -12,8 +12,8 @@
 
 use async_trait::async_trait;
 use keycloak_sdk::{
-    AdminClient, AdminError, ClientCredentialsTokenProvider, KeycloakClient, KeycloakConfig,
-    KeycloakError, RawKeycloakError, TokenProvider, reqwest,
+    AdminClient, ClientCredentialsTokenProvider, KeycloakClient, KeycloakConfig, KeycloakError,
+    RawKeycloakError, TokenProvider, reqwest,
 };
 use std::sync::Arc;
 use wiremock::matchers::{method, path};
@@ -291,8 +291,8 @@ async fn sdk_provider_caches_the_trimmed_token_and_never_a_refused_one() {
     report("ClientCredentialsTokenProvider", &wrong);
 }
 
-/// 기본 경로 — `KeycloakClient` 의 캐싱 공급자가 먼저 거르므로, 거부한 토큰이면 파사드는 토큰 실패의 401
-/// (`Admin(Other { status: 401 })`), `raw()` 는 `HttpFailure { status: 401 }` 이고 admin 요청은 없다.
+/// 기본 경로 — `KeycloakClient` 의 캐싱 공급자가 먼저 거르므로, 거부한 토큰이면 파사드는 그 공급자의 오류 그대로
+/// (`Auth` — 위 시험의 `client-credentials failed`), `raw()` 는 `HttpFailure { status: 401 }` 이고 admin 요청은 없다.
 #[tokio::test]
 async fn default_client_sends_the_trimmed_b64token_or_refuses_without_a_request() {
     let mut wrong = Vec::new();
@@ -314,13 +314,11 @@ async fn default_client_sends_the_trimmed_b64token_or_refuses_without_a_request(
             }
             (
                 None,
-                Err(KeycloakError::Admin(AdminError::Other { status: 401 })),
+                Err(e @ KeycloakError::Auth { .. }),
                 Err(RawKeycloakError::HttpFailure { status: 401, .. }),
             ) => {
-                let n = received(&server, ADMIN_PATH).await.len();
-                if n != 0 {
-                    wrong.push(format!("{label}: {n} admin request(s) reached the server"));
-                }
+                let rendered = [e.to_string(), format!("{e:?}")];
+                check_refused(&mut wrong, &label, &server, &rendered, c.canary).await;
             }
             _ => {
                 let n = received(&server, ADMIN_PATH).await.len();

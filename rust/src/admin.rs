@@ -43,7 +43,8 @@ pub struct SdkTokenSupplier {
 impl KeycloakTokenSupplier for SdkTokenSupplier {
     async fn get(&self, _url: &str) -> std::result::Result<String, KcError> {
         // 우리 오류를 keycloak::KeycloakError로 변환(어댑터 경계, 우리→그들).
-        // 토큰 획득 실패는 인증 문제이므로 401 HttpFailure로 표면화(파사드도 같은 401 이다 — `AdminClient::send`).
+        // 토큰 획득 실패는 401 HttpFailure 로 표면화한다 — crate 의 오류 타입에는 우리 오류를 실을 자리가 없어 계급(Auth ·
+        // Transport)은 `text` 에만 남는다. 파사드는 다르다: 공급자의 오류 그대로다(`AdminClient::send`).
         // 보낼 수 없는 Bearer 도 같은 모양이다 — crate 의 헤더 검사가 내던 `ReqwestFailure` 는 공개 생성자가 없다.
         let failure = |e: KeycloakError| KcError::HttpFailure {
             status: 401,
@@ -161,15 +162,13 @@ impl AdminClient {
     }
 
     /// 보낸다 — 토큰 → Bearer → 전송. 2xx 면 본문을 **읽지 않은** 응답을, 아니면 상태로 고른 오류([`reject`])를 낸다.
-    /// 토큰을 못 얻으면 요청을 보내지 않고 `Admin(Other { status: 401 })` 이다 — crate 를 거치던 때와 같다
-    /// (`tests/token_response_cap.rs` 의 `rejected_over_cap`). Bearer 는 [`sendable_bearer`] 가 돌려준 값이고, 보낼 수
-    /// 없는 토큰이면 요청 없이 [`unsendable`] 이다(`tests/bearer_grammar.rs`).
+    /// 토큰을 못 얻으면 요청을 보내지 않고 **공급자의 오류 그대로**다 — 끝까지 온 토큰 응답의 실패는 `Auth`, 다 오지 않은
+    /// 것(상한 초과 · 연결 실패 · 끊긴 본문)은 `Transport`(auth 레인과 같은 판정 · 등록부 token-response-class-divergent
+    /// D4). 예전에는 무엇이든 `Admin(Other { status: 401 })` 이라 연결 실패까지 「401」로 읽혔다(`tests/token_response_class.rs`
+    /// 의 admin 열). Bearer 는 [`sendable_bearer`] 가 돌려준 값이고, 보낼 수 없는 토큰이면 요청 없이 [`unsendable`]
+    /// 이다(`tests/bearer_grammar.rs`).
     async fn send(&self, req: reqwest::RequestBuilder) -> Result<reqwest::Response> {
-        let token = self
-            .token_provider
-            .access_token()
-            .await
-            .map_err(|_| KeycloakError::from_admin_status(401))?;
+        let token = self.token_provider.access_token().await?;
         let bearer = sendable_bearer(&token).ok_or_else(unsendable)?;
         let resp = req.bearer_auth(bearer).send().await.map_err(transport)?;
         if resp.status().is_success() {
