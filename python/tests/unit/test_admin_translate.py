@@ -25,7 +25,6 @@ from keycloak_sdk._internal.token_cap import ResponseRefused
 from keycloak_sdk.admin._translate import call, translate
 from keycloak_sdk.exceptions import (
     KeycloakAdminError,
-    KeycloakAuthError,
     KeycloakConflictError,
     KeycloakForbiddenError,
     KeycloakNotFoundError,
@@ -201,18 +200,18 @@ def _refused_grant_body() -> KeycloakConnectionError:
     """admin 그랜트 세션이 상한을 넘는 본문을 거부했을 때 `raw_post` 가 만드는 오류 그대로다."""
     try:
         raise KeycloakConnectionError("Can't connect to server") from ResponseRefused(
-            "token response exceeds 1048576 bytes"
+            "token response exceeds 1048576 bytes", incomplete=True
         )
     except KeycloakConnectionError as exc:
         return exc
 
 
-def test_a_grant_body_over_the_cap_is_the_auth_lanes_refusal_not_a_transport_error() -> None:
-    with pytest.raises(KeycloakAuthError) as excinfo:
+def test_a_grant_body_over_the_cap_is_a_transport_error_like_the_auth_lane() -> None:
+    with pytest.raises(KeycloakTransportError) as excinfo:
         call(_raiser(_refused_grant_body()))
 
     error = excinfo.value
-    assert type(error) is KeycloakAuthError
+    assert type(error) is KeycloakTransportError
     assert str(error) == "token response exceeds 1048576 bytes"
     assert isinstance(error.__cause__, LowerLibraryError)
     assert error.__context__ is None

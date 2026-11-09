@@ -22,7 +22,7 @@ from keycloak.connection import ConnectionManager
 from keycloak_sdk._internal.lower import LowerLibraryError
 from keycloak_sdk.aio import AsyncKeycloakClient
 from keycloak_sdk.config import KeycloakConfig
-from keycloak_sdk.exceptions import KeycloakAdminError, KeycloakAuthError
+from keycloak_sdk.exceptions import KeycloakAdminError, KeycloakAuthError, KeycloakTransportError
 from keycloak_sdk.tokens import IntrospectionResult, TokenSet
 
 CAP = 1_048_576
@@ -98,9 +98,8 @@ def _assert_accepted(lane: str, idp: Any, result: object, token: str) -> None:
 def _assert_refused(lane: str, idp: Any, exc: BaseException) -> None:
     """sync 미러와 같다 — 원인은 `a_raw_post` 가 감싼 실패의 요약 하나뿐이고 `__context__` 는
     비어 있다(§4, `_internal/lower.py`)."""
-    assert type(exc) is KeycloakAuthError, f"{type(exc).__module__}.{type(exc).__qualname__}"
+    assert type(exc) is KeycloakTransportError, f"{type(exc).__module__}.{type(exc).__qualname__}"
     assert str(exc) == f"{_WHAT.get(lane, 'token response')} exceeds {CAP} bytes"
-    assert exc.error is None
     assert exc.__context__ is None, repr(exc.__context__)
     cause = exc.__cause__
     assert type(cause) is LowerLibraryError, repr(cause)

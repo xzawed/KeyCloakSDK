@@ -158,16 +158,30 @@ def _wrapped_by_python_keycloak(cause: BaseException) -> KeycloakConnectionError
         return exc
 
 
-def test_a_refused_body_is_the_auth_error_it_names_not_a_connection_failure() -> None:
-    signal = ResponseRefused("token response exceeds 1048576 bytes")
+def test_a_body_over_the_cap_is_a_transport_error_not_a_connection_failure() -> None:
+    # 다 읽지 않은 응답은 전송 쪽이다(등록부 token-response-class-divergent — 아홉 언어의
+    # 규칙). 1.0.7 까지는 `KeycloakAuthError` 였다. 메시지는 신호의 것 그대로다(「Can't
+    # connect to server」가 아니다).
+    signal = ResponseRefused("token response exceeds 1048576 bytes", incomplete=True)
+    lower = _wrapped_by_python_keycloak(signal)
+
+    for error in (refused_body(lower), auth_failure(lower)):
+        assert type(error) is KeycloakTransportError
+        assert str(error) == "token response exceeds 1048576 bytes"
+        assert error.__cause__ is None and error.__context__ is None  # 신호는 매달지 않는다
+    assert refused_body(lower) is not signal
+
+
+def test_a_refusal_of_a_response_that_arrived_stays_the_auth_error_it_names() -> None:
+    # 대조군 — 끝까지 온 응답을 쓰지 않는 거부(두 번 압축)는 auth 다.
+    signal = ResponseRefused("token response is compressed more than once (gzip, gzip)")
     lower = _wrapped_by_python_keycloak(signal)
 
     for error in (refused_body(lower), auth_failure(lower)):
         assert type(error) is KeycloakAuthError
-        assert str(error) == "token response exceeds 1048576 bytes"
+        assert str(error) == "token response is compressed more than once (gzip, gzip)"
         assert error.error is None
-        assert error.__cause__ is None and error.__context__ is None  # 신호는 매달지 않는다
-    assert refused_body(lower) is not signal
+        assert error.__cause__ is None and error.__context__ is None
 
 
 @pytest.mark.parametrize(

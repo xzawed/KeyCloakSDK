@@ -4,8 +4,9 @@
 지나지 않는다. 레인 다섯(cc·refresh·code·introspect·admin 자체 그랜트)마다:
 
 1. Keycloak 26.6 이 기본 설정으로 받는 가장 긴 bearer(65,459 바이트, 실측 2026-10-03)를 받는다.
-2. 정확히 1,048,576 바이트의 본문은 받고, 1,048,577 바이트는 SDK 의 실패한 토큰(introspection)
-   응답 타입 `KeycloakAuthError` 로 거부한다 — admin 은 REST 요청을 보내지 않는다. 판정은 크기다 —
+2. 정확히 1,048,576 바이트의 본문은 받고, 1,048,577 바이트는 `KeycloakTransportError`
+   (본문을 다 읽지 않았다 — 1.0.7 까지는 `KeycloakAuthError`)로 거부한다 — admin 은 REST
+   요청을 보내지 않는다. 판정은 크기다 —
    200 밖의 상태(400)도, 같은 세션으로 나가는 logout 도 같다. 거부의 사슬은 요약 하나뿐이다.
 3. 16 MiB 본문은 읽은 만큼만 메모리를 잡고 거부한다(tracemalloc 피크) — `Content-Length` 로 온
    것도 청크로 온 것도. gzip 폭탄도 같다 — 상한은 **푼 뒤** 바이트에 걸린다.
@@ -34,7 +35,7 @@ from keycloak.connection import ConnectionManager
 from keycloak_sdk._internal.lower import LowerLibraryError
 from keycloak_sdk.client import KeycloakClient
 from keycloak_sdk.config import KeycloakConfig
-from keycloak_sdk.exceptions import KeycloakAdminError, KeycloakAuthError
+from keycloak_sdk.exceptions import KeycloakAdminError, KeycloakAuthError, KeycloakTransportError
 from keycloak_sdk.tokens import IntrospectionResult, TokenSet
 
 CAP = 1_048_576
@@ -106,9 +107,8 @@ def _assert_refused(lane: str, idp: Any, exc: BaseException) -> None:
     곧 `client_secret`)을 지나와 그 `KeycloakConnectionError` 의 원인으로 잡힌다 — 경계는 그 실패의
     요약(`LowerLibraryError`) 하나만 원인으로 달고 `__context__` 는 비운다(§4 — 하위 타입이 사슬로
     닿지 않는다, `_internal/lower.py`)."""
-    assert type(exc) is KeycloakAuthError, f"{type(exc).__module__}.{type(exc).__qualname__}"
+    assert type(exc) is KeycloakTransportError, f"{type(exc).__module__}.{type(exc).__qualname__}"
     assert str(exc) == f"{_WHAT.get(lane, 'token response')} exceeds {CAP} bytes"
-    assert exc.error is None
     assert exc.__context__ is None, repr(exc.__context__)
     cause = exc.__cause__
     assert type(cause) is LowerLibraryError, repr(cause)
@@ -326,7 +326,7 @@ def test_reads_never_ask_for_more_than_one_byte_past_the_cap(
         monkeypatch.setattr(urllib3.response.HTTPResponse, name, spying(real))
     token_idp.head, token_idp.size, token_idp.chunked = _head("cc", "G" * 40), HUGE, True
 
-    with _client(token_idp) as kc, pytest.raises(KeycloakAuthError):
+    with _client(token_idp) as kc, pytest.raises(KeycloakTransportError):
         _call("cc", kc, "G" * 40)
 
     received = 0
