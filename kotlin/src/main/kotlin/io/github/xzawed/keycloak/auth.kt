@@ -4,6 +4,7 @@ import com.nimbusds.common.contenttype.ContentType
 import com.nimbusds.oauth2.sdk.AuthorizationCode
 import com.nimbusds.oauth2.sdk.AuthorizationCodeGrant
 import com.nimbusds.oauth2.sdk.ClientCredentialsGrant
+import com.nimbusds.oauth2.sdk.ErrorObject
 import com.nimbusds.oauth2.sdk.ParseException
 import com.nimbusds.oauth2.sdk.RefreshTokenGrant
 import com.nimbusds.oauth2.sdk.ResponseType
@@ -57,8 +58,9 @@ public class AuthClient internal constructor(
     private val validatorLock = Any()
 
     // 응답 본문을 상한까지만 읽는 송신기(상태 없음) — 토큰(세 그랜트)·introspection·logout. 이름은 넘친 본문의 메시지에 실린다.
-    private val tokenSender = CappedResponseSender("token response")
-    private val introspectionSender = CappedResponseSender("introspection response")
+    // 토큰·introspection 은 strict(2xx 본문은 UTF-8 — `TokenResponseClassTest`), 본문을 쓰지 않는 logout 은 아니다.
+    private val tokenSender = CappedResponseSender("token response", strict = true)
+    private val introspectionSender = CappedResponseSender("introspection response", strict = true)
     private val logoutSender = CappedResponseSender("logout response")
 
     /**
@@ -172,6 +174,9 @@ public class AuthClient internal constructor(
                 throw e
             } catch (e: ResponseTooLargeException) {
                 throw KeycloakTransportException("Introspection request failed: ${e.message}", e)
+            } catch (e: ResponseNotUtf8Exception) {
+                // 끝까지 왔으나 쓸 수 없는 응답 — 인증 오류다(등록부 token-response-class-divergent). 원인은 상수 메시지의 그 예외다.
+                throw KeycloakAuthException("Malformed introspection response: ${e.message}", c = e)
             } catch (e: IOException) {
                 throw KeycloakTransportException("Introspection request failed", e)
             } catch (e: ParseException) {
@@ -179,7 +184,7 @@ public class AuthClient internal constructor(
             }
         if (!resp.indicatesSuccess()) {
             val err = resp.toErrorResponse().errorObject
-            throw KeycloakAuthException("Introspection failed: ${maskSent(err.description, sentSecrets(req, token))}", err.code)
+            throw KeycloakAuthException("Introspection failed: ${reason(err, sentSecrets(req, token))}", err.code)
         }
         val success = resp.toSuccessResponse()
         return IntrospectionResult(success.isActive, success.username, success.clientID?.value)
@@ -272,6 +277,9 @@ public class AuthClient internal constructor(
             throw e
         } catch (e: ResponseTooLargeException) {
             throw KeycloakTransportException("Auth request failed: ${e.message}", e)
+        } catch (e: ResponseNotUtf8Exception) {
+            // 끝까지 왔으나 쓸 수 없는 응답 — 인증 오류다(등록부 token-response-class-divergent). 원인은 상수 메시지의 그 예외다.
+            throw KeycloakAuthException("Malformed auth response: ${e.message}", c = e)
         } catch (e: IOException) {
             throw KeycloakTransportException("Auth request failed", e)
         } catch (e: ParseException) {
@@ -286,10 +294,18 @@ public class AuthClient internal constructor(
     ): TokenSet {
         if (!resp.indicatesSuccess()) {
             val err = resp.toErrorResponse().errorObject
-            throw KeycloakAuthException("$failureMessage: ${maskSent(err.description, sent)}", err.code)
+            throw KeycloakAuthException("$failureMessage: ${reason(err, sent)}", err.code)
         }
         return toTokenSet(resp.toSuccessResponse().tokens, issuedAt)
     }
+
+    // 오류 응답의 사유 — IdP 의 error_description([maskSent] 가 가린 것), 없거나 비었으면(공백뿐 포함) 그 응답의 HTTP 상태. Nimbus
+    // `ErrorObject` 는 JSON 이 아닌 오류 본문(503·400 HTML)과 `error` 만 있는 본문에 설명을 두지 않아 메시지가 「… failed: null」 이었고,
+    // 빈 설명은 「… failed: 」 였다(`TokenResponseClassTest`). 상태는 응답을 인용하지 않는다. Java `AuthClient.reason` 동형.
+    private fun reason(
+        err: ErrorObject,
+        sent: List<String?>,
+    ): String = maskSent(err.description, sent)?.takeUnless { it.isBlank() } ?: "HTTP ${err.httpStatusCode}"
 
     // SDK 가 이 요청에 실어 보낸 비밀 — 클라이언트 시크릿, 그것을 담은 Basic 자격, 호출자의 grant 값. 오류 응답의
     // error_description 이 이것을 되울리면 [maskSent] 가 가린다(사유 문구 자체는 남는다). ⚠️ 값이 전송에서 바뀐 꼴(폼 인코딩 —

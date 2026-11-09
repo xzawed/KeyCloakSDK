@@ -381,26 +381,29 @@ class TokenResponseCapTest {
 
   /**
    * 오류 상태(400)의 본문도 같은 상한이다 — 상한이면 지금처럼 OAuth 오류로 실패하고(본문을 읽어 해석했다), 한 바이트 더면 전송
-   * 실패다. admin 레인의 토큰 부여 400 은 RESTEasy 가 본문을 통째로 버퍼에 담았다(수정 전 32 MiB → 약 107 MB 할당) — 그 레인은
-   * 상한 안팎이 같은 타입이라 할당으로 잰다(상한 안의 복구 경로는 {@code AdminTokenResponseTest} 가 잰다).
+   * 실패다. admin 레인의 토큰 부여 400 은 RESTEasy 가 본문을 통째로 버퍼에 담았다(수정 전 32 MiB → 약 107 MB 할당) — 그 레인도 상한
+   * 안이면 끝까지 온 응답이라 인증 오류(상태만 싣는다 — 등록부 token-response-class-divergent), 상한+1 이면 전송 실패다(상한 안의 갱신
+   * 400 의 복구 경로는 {@code AdminTokenResponseTest} 가 잰다).
    */
   @ParameterizedTest
   @EnumSource(Lane.class)
   void anErrorBodyIsCappedToo(Lane lane) {
     List<String> wrong = new ArrayList<>();
-    if (lane != Lane.ADMIN) {
-      replyError(lane, CAP, true);
-      Throwable atCap = outcome(() -> call(lane));
-      if (atCap instanceof KeycloakAuthException e) {
-        boolean parsed = lane == Lane.LOGOUT
-            ? "Logout failed (HTTP 400)".equals(e.getMessage()) : "invalid_grant".equals(e.getError());
-        if (!parsed) wrong.add(lane + " 400 = 상한: OAuth 오류를 해석하지 못했다 — " + e.getMessage() + " / " + e.getError());
-      } else {
-        wrong.add(lane + " 400 = 상한: KeycloakAuthException 이어야 한다 — " + atCap);
-      }
-      replyError(lane, CAP + 1L, true);
-      expectOverCap(lane, "400 = 상한+1", outcome(() -> call(lane)), wrong);
+    replyError(lane, CAP, true);
+    Throwable atCap = outcome(() -> call(lane));
+    if (atCap instanceof KeycloakAuthException e) {
+      boolean parsed = switch (lane) {
+        case LOGOUT -> "Logout failed (HTTP 400)".equals(e.getMessage());
+        case ADMIN -> "admin token request failed: HTTP 400".equals(e.getMessage());
+        default -> "invalid_grant".equals(e.getError());
+      };
+      if (!parsed) wrong.add(lane + " 400 = 상한: OAuth 오류를 해석하지 못했다 — " + e.getMessage() + " / " + e.getError());
+    } else {
+      wrong.add(lane + " 400 = 상한: KeycloakAuthException 이어야 한다 — " + atCap);
     }
+    if (adminHits.get() != 0) wrong.add(lane + " 400 = 상한: admin 요청이 나갔다");
+    replyError(lane, CAP + 1L, true);
+    expectOverCap(lane, "400 = 상한+1", outcome(() -> call(lane)), wrong);
     replyOk(lane, "AT-warm", 2048, false);
     call(lane);
     replyError(lane, 32L << 20, true);

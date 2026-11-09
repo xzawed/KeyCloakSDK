@@ -16,6 +16,12 @@ import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
 /**
@@ -45,14 +51,18 @@ import java.util.regex.Pattern;
  * <p>거부는 상수 메시지의 {@link IOException} 이다. 응답 필터에서 던지면 RESTEasy 가 {@code ResponseProcessingException} 으로,
  * 엔티티 읽기에서 던지면 {@code ProcessingException} 을 거쳐 {@code ResponseProcessingException} 으로 감싸고(그래서 TokenManager
  * 갱신의 {@code BadRequestException} 복구에도 닿지 않는다 — 실측), 그것이 BearerAuthFilter(요청 필터) 밖으로 나가므로 admin
- * 요청은 보내지지 않고, {@link AdminExceptions} 가 {@code KeycloakTransportException} 으로 바꾼다 — null·객체·배열·누락이
- * 이미 실패하던 타입이다. 메시지는 상수다(응답을 인용하지 않는다).
+ * 요청은 보내지지 않는다. 메시지는 상수다(응답을 인용하지 않는다). ⚠️ <b>계급은 타입이 정한다</b>(등록부
+ * token-response-class-divergent) — 끝까지 온 응답을 쓸 수 없으면 {@link Unusable}(그 상태를 싣는다 — {@link AdminExceptions} 가
+ * {@code KeycloakAuthException} 으로 바꾼다), 상한을 넘어 다 읽지 않은 응답은 {@link #TOO_LARGE} 의 맨 {@link IOException}(전송
+ * 실패 그대로)이다. 결합(Jackson)이 다 읽은 바이트를 쓰지 못한 실패도 {@link Unusable} 이다({@link #aroundReadFrom} — 그 바이트는
+ * 이미 메모리에 있다: expires_in 이 숫자가 아님 · 결합기가 없는 미디어 타입).
  *
  * <p>⚠️ <b>판정은 본문을 상한({@link ResponseLimits#MAX_TOKEN_RESPONSE_BYTES} — auth 레인과 함께 쓰는 값)까지만 읽고
  * 쥔다.</b> 통째로 읽던 때는 힙보다 큰 2xx 본문이
  * {@code OutOfMemoryError} 를 냈다 — RESTEasy 가 감싸 결과는 거부였어도 그 순간 JVM 전체가 메모리를 잃었고, JSON 공백으로
  * 부풀린 <b>쓸 수 있는</b> 토큰도 그랬다(가드 없는 결합은 그것을 스트리밍으로 통과시킨다). {@code readNBytes(상한+1)} 로 읽어
- * 넘침을 알아채면 나머지는 읽지 않고 그 연결을 끊은 뒤({@link #release} — {@link AdminEngine}) 쓸 수 없는 토큰과 같은 거부를 던진다.
+ * 넘침을 알아채면 나머지는 읽지 않고 그 연결을 끊은 뒤({@link #release} — {@link AdminEngine}) 상한의 거부({@link #TOO_LARGE})를
+ * 던진다.
  * 그 메서드(JDK 17·21 의 {@code InputStream} 기본 구현 — RESTEasy·HttpCore 의 스트림은 재정의하지 않는다)는 남은 길이 너머를
  * 요청하지 않고 JDK 기본 조각(17: 8 KiB · 21: 16 KiB)으로 <b>읽은 만큼만</b> 할당한다 — 작은 본문은 작은 배열이고, 넘치는 본문도
  * 상한의 약 두 배(읽은 조각 + 그것을 이은 배열)다. 상한만 한 버퍼를 미리 잡지 않는다(그러면 토큰 요청 하나하나가 상한을 할당한다).
@@ -70,8 +80,14 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   static final int READ_PRIORITY = Integer.MAX_VALUE;
   /** 응답 필터가 범위 안의 교환에 다는 요청 속성 — ReaderInterceptor 가 이것이 있는 엔티티만 판정한다. */
   static final String JUDGE_ENTITY = TokenResponseGuard.class.getName() + ".judgeEntity";
+  /** {@link #JUDGE_ENTITY} 와 함께 다는 그 응답의 상태 — ReaderInterceptor 는 상태를 모른다({@link Unusable} 이 싣는다). */
+  static final String STATUS = TokenResponseGuard.class.getName() + ".status";
   static final String REJECTED = "token endpoint response carries no usable access_token";
-  /** 오류 상태의 본문이 상한을 넘을 때의 거부 — 응답을 인용하지 않는다. */
+  /** 2xx 본문이 엄격한 UTF-8 이 아니다({@link #isUtf8}) — 끝까지 온 응답을 쓸 수 없다. 응답을 인용하지 않는다. */
+  static final String NOT_UTF8 = "token endpoint response is not valid UTF-8";
+  /** 다 읽은 본문을 결합(Jackson → AccessTokenResponse)이 쓰지 못했다 — 응답을 인용하지 않는다(결합의 예외는 원인으로만 단다). */
+  static final String UNBOUND = "token endpoint response does not bind as a token response";
+  /** 본문이 상한을 넘을 때의 거부(2xx · 오류 상태 모두) — 다 읽지 않은 응답이라 전송 실패다. 응답을 인용하지 않는다. */
   static final String TOO_LARGE = "token endpoint response exceeds " + ResponseLimits.MAX_TOKEN_RESPONSE_BYTES + " bytes";
   private static final String ACCESS_TOKEN = "access_token";
   private static final JsonFactory JSON = new JsonFactory();
@@ -97,28 +113,80 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
     }
     if (response.getMediaType() != null) {
       request.setProperty(JUDGE_ENTITY, Boolean.TRUE); // 결합이 읽는 바이트(해제 뒤)는 aroundReadFrom 이 판정한다
+      request.setProperty(STATUS, response.getStatus());
       return;
     }
-    response.setEntityStream(usableOrReject(response.getEntityStream(), exchange));
+    response.setEntityStream(usableOrReject(response.getEntityStream(), exchange, response.getStatus()));
   }
 
+  /**
+   * 결합 직전의 판정. 통과한 바이트로 결합을 부르고, 결합이 그것을 쓰지 못하면(Jackson 의 형식 오류 · 결합기 없음) {@link Unusable} 로
+   * 바꾼다 — 본문은 이미 다 읽어 메모리에 있으므로 그 실패는 운송이 아니라 끝까지 온 응답의 것이다.
+   */
   @Override
   public Object aroundReadFrom(ReaderInterceptorContext context) throws IOException {
     if (!Boolean.TRUE.equals(context.getProperty(JUDGE_ENTITY))) {
       return context.proceed();
     }
-    context.setInputStream(usableOrReject(context.getInputStream(), context.getProperty(AdminEngine.EXCHANGE)));
-    return context.proceed();
+    int status = context.getProperty(STATUS) instanceof Integer s ? s : 0;
+    context.setInputStream(usableOrReject(context.getInputStream(), context.getProperty(AdminEngine.EXCHANGE), status));
+    try {
+      return context.proceed();
+    } catch (IOException | RuntimeException unbound) {
+      throw new Unusable(status, UNBOUND, unbound);
+    }
   }
 
-  /** 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치거나 쓸 수 없으면 거부, 통과하면 읽은 바이트를 그대로 넘긴다. */
-  private static ByteArrayInputStream usableOrReject(InputStream in, Object exchange) throws IOException {
+  /**
+   * 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치면 상한의 거부(전송 실패), UTF-8 이 아니거나 쓸 수 없으면
+   * {@link Unusable}, 통과하면 읽은 바이트를 그대로 넘긴다.
+   */
+  private static ByteArrayInputStream usableOrReject(InputStream in, Object exchange, int status) throws IOException {
     byte[] body = in == null ? new byte[0] : capPlusOne(in);
-    if (body.length > ResponseLimits.MAX_TOKEN_RESPONSE_BYTES || !carriesUsableAccessToken(body)) {
+    if (body.length > ResponseLimits.MAX_TOKEN_RESPONSE_BYTES) {
       release(in, exchange);
-      throw new IOException(REJECTED);
+      throw new IOException(TOO_LARGE);
+    }
+    if (!isUtf8(body)) {
+      release(in, exchange);
+      throw new Unusable(status, NOT_UTF8, null);
+    }
+    if (!carriesUsableAccessToken(body)) {
+      release(in, exchange);
+      throw new Unusable(status, REJECTED, null);
     }
     return new ByteArrayInputStream(body);
+  }
+
+  /**
+   * 엄격한 UTF-8 인가 — auth 레인 {@code CappedResponseSender.isUtf8} 의 쌍둥이다(두 모듈은 서로를 모르고 — §4 — core 에 두면 공개
+   * API 가 된다). ⚠️ Jackson 의 바이트 파서는 겹침 꼴({@code C1 81} → {@code A})을 받아들인다 — 이 검사 없이는 auth 레인이 거부하는
+   * 본문으로 admin 이 {@code Bearer goodA} 를 보냈다(독립 레그 실측 · {@code TokenResponseClassTest} S5). 잘못된 바이트를 대체하지
+   * 않고 보고하는 디코더로 입력의 끝까지 잰다 — 고정 4 KiB 버퍼를 비우며 넘칠 때마다 잇는다(넘침에서 멈추면 첫 4096 글자 뒤를 보지
+   * 않는다 — {@code TokenResponseGuardTest}). 끝을 알리고 디코딩하므로 잘린 마지막 열도 보고된다. BOM 은 유효한 바이트다. ASCII
+   * 뿐인 본문(토큰 응답은 대개 그렇다)은 디코더도 버퍼도 잡지 않고 참이다 — 판정마다 8 KiB 를 더 잡으면 작은 토큰 응답 하나의 할당이
+   * 63,104 → 71,080 바이트였다(Kotlin {@code TokenResponseGuardTest} 의 한도 64 KiB, 실측).
+   */
+  static boolean isUtf8(byte[] body) {
+    if (isAscii(body)) return true;
+    CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT);
+    ByteBuffer in = ByteBuffer.wrap(body);
+    CharBuffer out = CharBuffer.allocate(4096);
+    CoderResult result;
+    do {
+      out.clear(); // 넘침 — 디코딩한 글자는 쓰지 않는다
+      result = decoder.decode(in, out, true);
+    } while (result.isOverflow());
+    return !result.isError();
+  }
+
+  private static boolean isAscii(byte[] body) {
+    for (byte b : body) {
+      if (b < 0) return false;
+    }
+    return true;
   }
 
   /** 오류 상태의 본문 — 상한+1 바이트까지만 읽어 넘치면 거부, 아니면 읽은 바이트를 그대로 넘긴다(판정은 하지 않는다). */
@@ -208,5 +276,24 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
    */
   static boolean sendableAsIs(String token) {
     return B64TOKEN.matcher(token).matches();
+  }
+
+  /**
+   * 끝까지 온 토큰 응답을 쓸 수 없다 — 그 응답의 상태를 싣는다({@link AdminExceptions} 가 {@code KeycloakAuthException} 으로 바꾸고
+   * 상태를 메시지에 싣는다). 메시지는 상수다(응답을 인용하지 않는다). 결합의 실패면 그 예외를 원인으로 단다 — 원인 사슬은 SDK
+   * 예외의 생성자가 거른다({@code WithheldCauses} — 응답 파서 · {@code ResponseProcessingException}).
+   */
+  static final class Unusable extends IOException {
+    private static final long serialVersionUID = 1L;
+    private final int status;
+
+    Unusable(int status, String message, Throwable cause) {
+      super(message, cause);
+      this.status = status;
+    }
+
+    int status() {
+      return status;
+    }
   }
 }

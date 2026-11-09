@@ -15,7 +15,11 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.net.URI
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
 import java.nio.charset.Charset
+import java.nio.charset.CoderResult
+import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
 /**
@@ -56,6 +60,38 @@ internal class ResponseTooLargeException(
 ) : IOException("$what exceeds $TOKEN_RESPONSE_MAX_BYTES bytes")
 
 /**
+ * 끝까지 왔으나 2xx 본문이 UTF-8 이 아닌 응답([CappedResponseSender] 의 strict) — 전송 실패가 아니다(그 레인의 인증 오류다, 등록부
+ * token-response-class-divergent). 메시지는 무엇이 UTF-8 이 아닌지만 말한다(응답을 인용하지 않는다). Java `CappedResponseSender.NotUtf8` 동형.
+ */
+internal class ResponseNotUtf8Exception(
+    what: String,
+) : IOException("$what is not valid UTF-8")
+
+/**
+ * 엄격한 UTF-8 인가 — 잘못된 바이트(끝에서 잘린 열 · 겹침 꼴 · 서로게이트 포함)를 대체하지 않고 보고하는 디코더로 잰다. 입력의 끝을 알리고
+ * 디코딩하므로 잘린 마지막 열도 여기서 보고된다(UTF-8 디코더는 비울 상태가 없다). 디코딩한 글자는 버린다(고정 4 KiB 버퍼 — 본문만 한 글자
+ * 배열을 따로 잡지 않는다). BOM 은 UTF-8 의 유효한 바이트다(지금처럼 파서가 판정한다). Java `CappedResponseSender.isUtf8` 동형.
+ * ASCII 뿐인 본문(토큰 응답은 대개 그렇다)은 디코더도 버퍼도 잡지 않고 참이다 — admin 가드가 판정마다 8 KiB 를 더 잡자 작은 토큰
+ * 응답 하나의 할당이 63,104 → 71,080 바이트로 한도(64 KiB · `TokenResponseGuardTest`)를 넘었다(실측).
+ */
+internal fun isUtf8(body: ByteArray): Boolean {
+    if (body.all { it >= 0 }) return true
+    val decoder =
+        StandardCharsets.UTF_8
+            .newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+    val input = ByteBuffer.wrap(body)
+    val out = CharBuffer.allocate(4096)
+    var result: CoderResult
+    do {
+        out.clear() // 넘침 — 디코딩한 글자는 쓰지 않는다
+        result = decoder.decode(input, out, true)
+    } while (result.isOverflow)
+    return !result.isError
+}
+
+/**
  * [input] 을 상한까지만 읽는다 — 넘침을 알아챌 한 바이트까지(상한+1) 읽어 넘치면 null, 아니면 읽은 바이트. `readNBytes(int)` 는
  * 남은 길이 너머를 요청하지 않고 JDK 기본 조각(17: 8 KiB · 21: 16 KiB)으로 **읽은 만큼만** 할당한다 — 작은 본문은 작은 배열이고,
  * 넘치는 본문도 상한의 약 두 배(읽은 조각 + 그것을 이은 배열)다. 상한만 한 버퍼를 미리 잡지 않는다(그러면 요청 하나하나가 상한을
@@ -88,9 +124,16 @@ internal fun readWithinCap(input: InputStream): ByteArray? {
  * 던지고, 호출부가 그 레인의 KeycloakTransportException 으로 바꾼다. SDK 가 요청하고 쥐는 것은 상한+1 바이트까지다([readWithinCap]).
  * 운송은 내용 코딩을 요청하지도 풀지도 않으므로 센 바이트가 받은 바이트다. 그 본문을 읽는 동안 연결에서 받는 틀(청크 머리·트레일러
  * 포함)은 상한의 8 배까지다(`BoundedTransport.wireBounded`).
+ *
+ * [strict] 이면 **2xx 본문은 UTF-8 이어야 한다** — 아니면 [ResponseNotUtf8Exception](끝까지 온 응답을 쓸 수 없다 — 호출부가 그 레인의 인증
+ * 오류로 바꾼다). 토큰(세 그랜트)·introspection 이 그렇다 — 그 2xx 본문은 JSON 이고 RFC 8259 §8.1 은 UTF-8 이다. ⚠️ Nimbus 와 같은
+ * 디코딩(`asNimbusReadsIt`)은 잘못된 바이트를 U+FFFD 로 바꿔 **받아들였다** — IdP 가 내지 않은 토큰·바뀐 클레임이 성공으로 나갔다(실측 —
+ * `TokenResponseClassTest`). 오류 상태의 본문은 보지 않는다(판정은 상태가 한다). 선언된 charset 도 보지 않는다(RFC 8259 §11). logout 은
+ * 본문을 쓰지 않으므로 strict 가 아니다. 유효한 UTF-8 은 지금과 같은 문자열이다.
  */
 internal class CappedResponseSender(
     private val what: String,
+    private val strict: Boolean = false,
 ) : HTTPRequestSender {
     override fun send(httpRequest: ReadOnlyHTTPRequest): ReadOnlyHTTPResponse {
         val request = httpRequest as HTTPRequest
@@ -111,7 +154,9 @@ internal class CappedResponseSender(
         body: InputStream,
     ): HTTPResponse {
         val bytes = readWithinCap(body) ?: throw ResponseTooLargeException(what)
-        val response = HTTPResponse(head.statusLine.statusCode)
+        val status = head.statusLine.statusCode
+        if (strict && status in 200..299 && !isUtf8(bytes)) throw ResponseNotUtf8Exception(what)
+        val response = HTTPResponse(status)
         response.statusMessage = head.statusLine.reasonPhrase
         for ((name, values) in BoundedTransport.grouped(head)) response.setHeader(name, *values.toTypedArray())
         val text = asNimbusReadsIt(bytes)

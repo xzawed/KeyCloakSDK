@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 import io.github.xzawed.keycloak.core.exception.*;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Response;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 
@@ -99,13 +100,15 @@ class AdminExceptionsTest {
   @Test void httpErrorUnderProcessingException_isWithheld_resourceErrorKeepsItsCause() {
     // admin 의 토큰 요청은 BearerAuthFilter 안에서 실패한다 — RESTEasy 가 그 HTTP 오류를 ProcessingException 으로 감싸고, 오류는
     // 본문을 버퍼에 담은 Response 를 쥔다(close 뒤에도 readEntity 가 본문을 돌려준다). 그 사슬은 타입 이름만 남긴 사본이 된다.
+    // 응답이 끝까지 왔으므로 인증 오류다(등록부 token-response-class-divergent — 전에는 전송 오류였다). 메시지는 상태만 싣는다.
     String canary = "CANARY-TOKEN-ENDPOINT-BODY";
     NotAuthorizedException tokenError =
         new NotAuthorizedException(Response.status(401).entity("{\"error_description\":\"" + canary + "\"}").build());
     tokenError.getResponse().bufferEntity();
-    KeycloakTransportException t = assertThrows(KeycloakTransportException.class,
+    KeycloakAuthException t = assertThrows(KeycloakAuthException.class,
         () -> AdminExceptions.call(() -> { throw new ProcessingException(tokenError); }));
-    assertEquals("admin transport failure", t.getMessage());
+    assertEquals("admin token request failed: HTTP 401", t.getMessage());
+    assertNull(t.getError(), "OAuth 오류 코드는 본문에서 읽지 않는다 — 그 본문은 시크릿을 되울릴 수 있다");
     for (Throwable c = t.getCause(); c != null; c = c.getCause()) {
       assertFalse(c instanceof WebApplicationException, "Response 를 쥔 원인이 남았다: " + c.getClass());
     }
@@ -119,6 +122,31 @@ class AdminExceptionsTest {
     KeycloakNotFoundException n = assertThrows(KeycloakNotFoundException.class,
         () -> AdminExceptions.call(() -> { throw resource; }));
     assertSame(resource, n.getCause());
+  }
+
+  @Test void grantFailures_areClassifiedByType_notByMessage() {
+    // 가드가 끝까지 읽고 쓸 수 없다고 판정한 2xx(Unusable) — RESTEasy 가 감싼 사슬 그대로 · 상태는 Unusable 이 싣는다
+    TokenResponseGuard.Unusable unusable =
+        new TokenResponseGuard.Unusable(201, TokenResponseGuard.REJECTED, null);
+    jakarta.ws.rs.client.ResponseProcessingException wrapped = new jakarta.ws.rs.client.ResponseProcessingException(
+        Response.status(201).build(), new ProcessingException(unusable));
+    KeycloakAuthException a = assertThrows(KeycloakAuthException.class,
+        () -> AdminExceptions.call(() -> { throw wrapped; }));
+    assertEquals("admin token request failed: HTTP 201 (unusable token response)", a.getMessage());
+    // 같은 메시지의 맨 IOException(상한 초과처럼 다 읽지 않은 응답의 꼴)은 전송 실패다 — 메시지는 분류하지 않는다
+    for (String message : List.of(TokenResponseGuard.REJECTED, TokenResponseGuard.TOO_LARGE)) {
+      ProcessingException plain = new ProcessingException(new java.io.IOException(message));
+      KeycloakTransportException t = assertThrows(KeycloakTransportException.class,
+          () -> AdminExceptions.call(() -> { throw plain; }));
+      assertEquals("admin transport failure", t.getMessage());
+    }
+    // 원인 사슬이 순환해도 끝난다(깊이로 끊는다) — 그 안에 판정할 것이 없으면 전송 실패다
+    java.io.IOException first = new java.io.IOException("a");
+    java.io.IOException second = new java.io.IOException("b", first);
+    first.initCause(second);
+    KeycloakTransportException cyclic = assertThrows(KeycloakTransportException.class,
+        () -> AdminExceptions.call(() -> { throw new ProcessingException(first); }));
+    assertEquals("admin transport failure", cyclic.getMessage());
   }
 
   // --- safeBody branches ----------------------------------------------------

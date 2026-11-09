@@ -3,7 +3,7 @@ package io.github.xzawed.keycloak.admin;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.xzawed.keycloak.core.KeycloakConfig;
-import io.github.xzawed.keycloak.core.exception.KeycloakTransportException;
+import io.github.xzawed.keycloak.core.exception.KeycloakAuthException;
 import jakarta.ws.rs.ProcessingException;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
@@ -124,6 +124,9 @@ class BearerTokenGrammarTest {
     return out.append('"').toString();
   }
 
+  /** 파사드가 거부한 토큰 응답의 메시지 — 상태만 싣는다(응답을 인용하지 않는다). */
+  private static final String REFUSED = "admin token request failed: HTTP 200 (unusable token response)";
+
   /** 갱신 길의 첫 응답 — expires_in 1 < TokenManager 최소 유효기간(30s) 이라 다음 호출이 refresh_token 으로 갱신한다. */
   private static final String REFRESHABLE =
       "{\"access_token\":\"AT-1\",\"token_type\":\"Bearer\",\"expires_in\":1,\"refresh_token\":\"RT-1\",\"refresh_expires_in\":300}";
@@ -139,7 +142,8 @@ class BearerTokenGrammarTest {
       wire.reset(tokenBody(row.token(), ""));
       List<Throwable> facade = twice(admin -> admin.users().get("x"));
       table.add(line(row, "facade", facade));
-      judge(row, "facade", facade, sent, KeycloakTransportException.class, "admin transport failure", wrong);
+      // 거부는 끝까지 온 응답을 쓸 수 없다는 것이다 — 인증 오류(등록부 token-response-class-divergent, 전에는 전송 오류)
+      judge(row, "facade", facade, sent, KeycloakAuthException.class, REFUSED, wrong);
       expect(row, "facade", wire.admin(), sent ? List.of(header, header) : List.of(), wrong);
       expect(row, "facade 그랜트", wire.grants(),
           sent ? List.of("client_credentials") : List.of("client_credentials", "client_credentials"), wrong);
@@ -156,7 +160,7 @@ class BearerTokenGrammarTest {
       List<Throwable> refresh = twice(admin -> admin.users().get("x"));
       table.add(line(row, "refresh", refresh));
       if (refresh.get(0) != null) wrong.add(row.id() + " refresh: 첫 호출(AT-1)은 성공해야 한다 — " + refresh.get(0));
-      judge(row, "refresh", refresh.subList(1, 2), sent, KeycloakTransportException.class, "admin transport failure", wrong);
+      judge(row, "refresh", refresh.subList(1, 2), sent, KeycloakAuthException.class, REFUSED, wrong);
       expect(row, "refresh", wire.admin(), sent ? List.of("Bearer AT-1", header) : List.of("Bearer AT-1"), wrong);
       expect(row, "refresh 그랜트", wire.grants(), List.of("client_credentials", "refresh_token"), wrong);
     }

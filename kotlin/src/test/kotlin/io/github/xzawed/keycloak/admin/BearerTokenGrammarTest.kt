@@ -1,7 +1,7 @@
 package io.github.xzawed.keycloak.admin
 
+import io.github.xzawed.keycloak.KeycloakAuthException
 import io.github.xzawed.keycloak.KeycloakConfig
-import io.github.xzawed.keycloak.KeycloakTransportException
 import jakarta.ws.rs.ProcessingException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
@@ -42,6 +42,9 @@ private const val BTG_TOKEN_PATH = "/realms/$BTG_REALM/protocol/openid-connect/t
 private const val BTG_LOGOUT_PATH = "/realms/$BTG_REALM/protocol/openid-connect/logout"
 private const val BTG_USER_PATH = "/admin/realms/$BTG_REALM/users/x"
 private const val BTG_USER = """{"id":"x","username":"alice"}"""
+
+// 파사드가 거부한 토큰 응답의 메시지 — 상태만 싣는다(응답을 인용하지 않는다).
+private const val BTG_REFUSED = "Admin token request failed: HTTP 200 (unusable token response)"
 
 // 갱신 길의 첫 응답 — expires_in 1 < TokenManager 최소 유효기간(30s) 이라 다음 호출이 refresh_token 으로 갱신한다.
 private const val BTG_REFRESHABLE =
@@ -168,7 +171,8 @@ internal class BearerTokenGrammarTest {
                 wire.reset(btgTokenBody(row.token))
                 val facade = twice { admin -> admin.users().get("x") }
                 table += line(row, "facade", facade)
-                judge(row, "facade", facade, sent, wrong) { it is KeycloakTransportException && it.message == "Admin request failed" }
+                // 거부는 끝까지 온 응답을 쓸 수 없다는 것이다 — 인증 오류(등록부 token-response-class-divergent, 전에는 전송 오류)
+                judge(row, "facade", facade, sent, wrong) { it is KeycloakAuthException && it.message == BTG_REFUSED }
                 expect(row, "facade", wire.admin(), if (sent) listOf(header, header) else listOf(), wrong)
                 expect(row, "facade 그랜트", wire.grants(), if (sent) listOf("client_credentials") else twoGrants, wrong)
                 // (b) raw() — 같은 BearerAuthFilter 를 지난다. 거부는 하위 라이브러리의 ProcessingException 그대로다(§4(b) 탈출구).
@@ -192,7 +196,7 @@ internal class BearerTokenGrammarTest {
                 table += line(row, "refresh", refresh)
                 if (refresh[0] != null) wrong += "${row.id} refresh: 첫 호출(AT-1)은 성공해야 한다 — ${refresh[0]}"
                 judge(row, "refresh", refresh.subList(1, 2), sent, wrong) {
-                    it is KeycloakTransportException && it.message == "Admin request failed"
+                    it is KeycloakAuthException && it.message == BTG_REFUSED
                 }
                 expect(row, "refresh", wire.admin(), if (sent) listOf("Bearer AT-1", header) else listOf("Bearer AT-1"), wrong)
                 expect(row, "refresh 그랜트", wire.grants(), listOf("client_credentials", "refresh_token"), wrong)

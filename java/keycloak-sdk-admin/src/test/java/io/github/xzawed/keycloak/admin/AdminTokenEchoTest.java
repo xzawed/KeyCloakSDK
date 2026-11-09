@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
-import io.github.xzawed.keycloak.core.exception.KeycloakTransportException;
+import io.github.xzawed.keycloak.core.exception.KeycloakAuthException;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.client.ResponseProcessingException;
 import jakarta.ws.rs.core.Response;
@@ -41,7 +41,8 @@ import org.junit.jupiter.api.Test;
  * 검사를 건너뛴다 — 실측). 그래서 판정은 문자열이 아니라 <b>도달 가능성</b>이다: 사슬(원인·suppressed)의 어느 예외도
  * {@link WebApplicationException}·{@link ResponseProcessingException} 이 아니고, 어느 예외의 공개 메서드도 {@link Response} 를 돌려주지
  * 않는다 — {@code readEntity} 를 부를 대상이 없다. 진단은 남는다: 타입 이름(「jakarta.ws.rs.NotAuthorizedException (message withheld」)과
- * 분류(KeycloakTransportException · 「admin transport failure」). admin-client 의 Basic 은 시크릿을 폼 인코딩하지 않는다 — 꼴 다섯
+ * 분류(KeycloakAuthException · 「admin token request failed: HTTP 401」 — 끝까지 온 응답이라 인증 오류다, 등록부
+ * token-response-class-divergent · 상태만 싣고 본문은 싣지 않는다). admin-client 의 Basic 은 시크릿을 폼 인코딩하지 않는다 — 꼴 다섯
  * (그대로·폼·RFC 3986·Basic 자격·userinfo)은 서버가 받은 자격에서 만든다. 네트워크는 루프백만.
  */
 class AdminTokenEchoTest {
@@ -156,8 +157,8 @@ class AdminTokenEchoTest {
       String label = "admin token · " + v;
       table.add(String.format("%-22s echoed=%-44s → %s · handles=%s · bodies=%s", label, echoed,
           thrown == null ? "성공" : thrown.getClass().getSimpleName() + "(" + thrown.getMessage() + ")", handles, bodies));
-      if (!(thrown instanceof KeycloakTransportException) || !"admin transport failure".equals(thrown.getMessage())) {
-        wrong.add(label + ": KeycloakTransportException(admin transport failure) 가 아니다 — " + thrown);
+      if (!(thrown instanceof KeycloakAuthException) || !"admin token request failed: HTTP 401".equals(thrown.getMessage())) {
+        wrong.add(label + ": KeycloakAuthException(admin token request failed: HTTP 401) 가 아니다 — " + thrown);
         continue;
       }
       if (!handles.isEmpty()) wrong.add(label + ": 던진 예외에서 Response 에 닿는다 — " + handles + " · readEntity → " + bodies);

@@ -1,6 +1,7 @@
 package io.github.xzawed.keycloak.admin
 
 import io.github.xzawed.keycloak.KeycloakAdminException
+import io.github.xzawed.keycloak.KeycloakAuthException
 import io.github.xzawed.keycloak.KeycloakTransportException
 import io.mockk.every
 import io.mockk.mockk
@@ -147,6 +148,38 @@ internal class AdminBoundaryTest {
                 assertTrue("Caused by: jakarta.ws.rs.client.ResponseProcessingException (message withheld)" in printed, printed)
                 assertTrue("Caused by: java.io.IOException (message withheld)" in printed, printed)
             }
+        }
+
+    // admin 자기 그랜트의 실패는 타입으로 가른다(등록부 token-response-class-divergent · Java AdminExceptionsTest 동형) — 요청 필터에서 온
+    // ProcessingException 아래의 HTTP 오류(토큰 엔드포인트의 오류 상태)와 UnusableTokenResponse(쓸 수 없는 2xx)는 끝까지 온 응답이라
+    // 인증 오류이고 메시지는 상태만 싣는다. 같은 메시지의 맨 IOException(상한 초과 꼴)은 전송 실패다 — 메시지는 분류하지 않는다.
+    @Test
+    fun `admin grant failures are classified by type, not by message`() =
+        runTest {
+            val tokenError = WebApplicationException("LEAKBODY bad client", 401)
+            val auth = assertFailsWith<KeycloakAuthException> { adminCall<Unit> { throw ProcessingException(tokenError) } }
+            assertEquals("Admin token request failed: HTTP 401", auth.message)
+            assertEquals(null, auth.oauthError, "OAuth 오류 코드는 본문에서 읽지 않는다 — 그 본문은 시크릿을 되울릴 수 있다")
+            val printed = auth.stackTraceToString()
+            assertFalse("LEAKBODY" in printed, printed)
+            assertTrue("Caused by: jakarta.ws.rs.WebApplicationException (message withheld)" in printed, printed)
+
+            val unusable = UnusableTokenResponse(201, TokenResponseGuard.REJECTED, null)
+            val wrapped = ResponseProcessingException(Response.status(201).build(), ProcessingException(unusable))
+            val rejected = assertFailsWith<KeycloakAuthException> { adminCall<Unit> { throw wrapped } }
+            assertEquals("Admin token request failed: HTTP 201 (unusable token response)", rejected.message)
+
+            for (message in listOf(TokenResponseGuard.REJECTED, "token response exceeds 1048576 bytes")) {
+                val plain = ProcessingException(java.io.IOException(message))
+                val t = assertFailsWith<KeycloakTransportException> { adminCall<Unit> { throw plain } }
+                assertEquals("Admin request failed", t.message)
+            }
+            // 원인 사슬이 순환해도 끝난다(깊이로 끊는다) — 그 안에 판정할 것이 없으면 전송 실패다
+            val first = java.io.IOException("a")
+            val second = java.io.IOException("b", first)
+            first.initCause(second)
+            val cyclic = assertFailsWith<KeycloakTransportException> { adminCall<Unit> { throw ProcessingException(first) } }
+            assertEquals("Admin request failed", cyclic.message)
         }
 
     @Test

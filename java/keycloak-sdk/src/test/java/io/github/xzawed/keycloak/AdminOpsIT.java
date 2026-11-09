@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import dasniko.testcontainers.keycloak.KeycloakContainer;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
+import io.github.xzawed.keycloak.core.exception.KeycloakAuthException;
 import io.github.xzawed.keycloak.core.exception.KeycloakNotFoundException;
 import java.util.List;
 import java.util.Optional;
@@ -58,6 +59,27 @@ class AdminOpsIT {
       client.admin().users().delete(id);
 
       assertThrows(KeycloakNotFoundException.class, () -> client.admin().users().get(id));
+    }
+  }
+
+  /**
+   * The admin facade's own token grant with a wrong client secret — the real server answers 401 — is an auth failure,
+   * neither a transport failure nor an admin class (registry token-response-class-divergent, D4). Before, it was
+   * {@code KeycloakTransportException}.
+   */
+  @Test
+  void aWrongClientSecret_failsTheAdminCallAsAnAuthFailure() {
+    KeycloakConfig wrong = KeycloakConfig.builder()
+        .serverUrl(KC.getAuthServerUrl())
+        .realm("it-realm")
+        .clientId("it-client")
+        .clientSecret("not-the-secret".toCharArray())
+        .scopes("openid")
+        .build();
+    try (KeycloakClient client = KeycloakClient.create(wrong)) {
+      KeycloakAuthException e =
+          assertThrows(KeycloakAuthException.class, () -> client.admin().users().search("x", 0, 1));
+      assertEquals("admin token request failed: HTTP 401", e.getMessage());
     }
   }
 

@@ -404,9 +404,13 @@ class MalformedIdpResponseTest {
     validateJwt = jwt.serialize();
   }
 
-  /** 흐름 검사가 기대하는 타입 — auth 는 인증 오류, admin 은 (분류를 바꾸지 않은 채) 전송 오류, validate 는 검증 오류. */
-  private static Class<? extends KeycloakSdkException> expected(String call) {
-    if (call.equals(ADMIN)) return KeycloakTransportException.class;
+  /**
+   * 흐름 검사가 기대하는 타입 — auth 는 인증 오류, validate 는 검증 오류. admin 은 어느 응답이 실패시켰는가로 갈린다: 토큰 엔드포인트가
+   * 끝까지 보낸 쓸 수 없는 응답이면 자기 그랜트의 인증 오류(등록부 token-response-class-divergent — 전에는 전송 오류였다), 토큰이 좋고
+   * admin 자원 응답을 결합하지 못한 것(g)이면 전송 오류 그대로다.
+   */
+  private static Class<? extends KeycloakSdkException> expected(Variant v, String call) {
+    if (call.equals(ADMIN)) return v.token() == TOKEN_OK ? KeycloakTransportException.class : KeycloakAuthException.class;
     if (call.equals(VALIDATE)) return TokenValidationException.class;
     return KeycloakAuthException.class;
   }
@@ -438,8 +442,8 @@ class MalformedIdpResponseTest {
         for (Map.Entry<String, Call> call : CALLS.entrySet()) {
           Throwable thrown = run(idp, v, call.getValue());
           boolean target = v.mustFail().contains(call.getKey());
-          if (target && !expected(call.getKey()).isInstance(thrown)) {
-            flow.add(v.id() + " [" + v.shape() + "] " + call.getKey() + ": " + expected(call.getKey()).getSimpleName()
+          if (target && !expected(v, call.getKey()).isInstance(thrown)) {
+            flow.add(v.id() + " [" + v.shape() + "] " + call.getKey() + ": " + expected(v, call.getKey()).getSimpleName()
                 + " 로 실패하지 않았다(" + (thrown == null ? "성공" : thrown.getClass().getName())
                 + ") — 변형이 그 경로에 안 닿는다");
           }
@@ -491,13 +495,14 @@ class MalformedIdpResponseTest {
       assertTrue(trace.contains("net.minidev.json.parser.ParseException (message withheld"), trace);
 
       // admin 의 토큰 응답은 결합 바로 앞(가장 안쪽 ReaderInterceptor)에서 TokenResponseGuard 가 거부한다 — 진단은 그
-      // 자리(프레임)와 타입 이름이다.
-      KeycloakTransportException admin = assertInstanceOf(KeycloakTransportException.class,
+      // 자리(프레임)와 타입 이름이다. 끝까지 온 응답이라 인증 오류이고 메시지는 상태만 싣는다(token-response-class-divergent).
+      KeycloakAuthException admin = assertInstanceOf(KeycloakAuthException.class,
           run(idp, idp.variants.get("d8"), CALLS.get(ADMIN)));
-      assertEquals("admin transport failure", admin.getMessage());
+      assertEquals("admin token request failed: HTTP 200 (unusable token response)", admin.getMessage());
       String adminTrace = render(admin).get("printStackTrace");
       assertTrue(adminTrace.contains("jakarta.ws.rs.client.ResponseProcessingException (message withheld"), adminTrace);
-      assertTrue(adminTrace.contains("java.io.IOException (message withheld"), adminTrace);
+      assertTrue(adminTrace.contains("io.github.xzawed.keycloak.admin.TokenResponseGuard$Unusable (message withheld"),
+          adminTrace);
       assertTrue(adminTrace.contains("at io.github.xzawed.keycloak.admin.TokenResponseGuard.aroundReadFrom("), adminTrace);
       // admin 자원 응답의 결합 실패는 여전히 Jackson 타입 이름을 남긴다 — 가드는 토큰 엔드포인트 응답만 본다.
       KeycloakTransportException resource = assertInstanceOf(KeycloakTransportException.class,
