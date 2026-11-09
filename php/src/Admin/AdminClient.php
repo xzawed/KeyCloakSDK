@@ -100,6 +100,7 @@ final class AdminClient
      */
     private static function isTokenGrant(RequestInterface $request): bool
     {
-        return ErrorTranslation::isTokenGrant($request);   // 판별은 한 곳 — 오류 번역이 같은 규칙으로 auth 계급을 고른다
+        // `ErrorTranslation::isTokenGrant` 와 같은 규칙이다 — 오류 번역이 그것으로 부여의 실패를 auth 계급으로 낸다.
+        return !$request->hasHeader('Authorization') && str_ends_with($request->getUri()->getPath(), ErrorTranslation::TOKEN_PATH);
     }
 }

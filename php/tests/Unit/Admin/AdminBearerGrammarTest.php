@@ -216,7 +216,8 @@ final class AdminBearerGrammarTest extends TestCase
         }
         foreach (['search' => $first, 'search again' => $second, 'roles update' => $rename] as $call => $e) {
             // 끝까지 온 쓸 수 없는 부여는 auth 계급이다 — admin 요청은 하나도 나가지 않았다(등록부 token-response-class-divergent).
-            self::assertSame(KeycloakAuthError::class, $e === null ? null : $e::class, "$id $call: " . self::describe($e));
+            // `KeycloakAuthError` 는 final 이라 instanceOf 가 정확한 클래스 검사다.
+            self::assertInstanceOf(KeycloakAuthError::class, $e, "$id $call: " . self::describe($e));
             self::assertSame(self::refusal($expect), $e->getMessage(), "$id $call");
             self::assertNull($e->oauthError, "$id $call");
             self::assertQuotesNoToken($id, $e, true);
@@ -247,7 +248,7 @@ final class AdminBearerGrammarTest extends TestCase
             '401 invalid_client' => [401, 'application/json', '{"error":"invalid_client"}', $head . '401 (invalid_client)', 'invalid_client'],
             '403 access_denied' => [403, 'application/json', '{"error":"access_denied"}', $head . '403 (access_denied)', 'access_denied'],
             '404 realm missing' => [404, 'application/json', '{"error":"Realm does not exist"}', $head . '404', null],
-            '409' => [409, 'application/json', '{"error":"conflict"}', $head . '409 (conflict)', 'conflict'],
+            '409 conflict' => [409, 'application/json', '{"error":"conflict"}', $head . '409 (conflict)', 'conflict'],
             '200 HTML' => [200, 'text/html', '<html>login</html>', self::GRANT_NOT_JSON, null],
             '200 HTML typed as JSON' => [200, 'application/json', '<html>login</html>', self::GRANT_NOT_JSON, null],
             '200 without access_token' => [200, 'application/json', '{"token_type":"Bearer","expires_in":300}', self::GRANT_NO_TOKEN, null],
@@ -272,7 +273,7 @@ final class AdminBearerGrammarTest extends TestCase
         $admin = KeycloakClient::create(self::config())->admin();
         $e = self::thrown(static fn (): int => count($admin->users()->search()));
 
-        self::assertSame(KeycloakAuthError::class, $e === null ? null : $e::class, self::describe($e));
+        self::assertInstanceOf(KeycloakAuthError::class, $e, self::describe($e));   // final — 정확한 클래스다
         self::assertSame($message, $e->getMessage());
         self::assertSame($code, $e->oauthError);
         self::assertSame(1, self::tokenRequests(), '부여는 한 번 나갔다');

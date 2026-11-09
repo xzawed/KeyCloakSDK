@@ -63,7 +63,7 @@ final class ErrorTranslation
     private const MAX_ERROR_BODY = 8192;
 
     /** fschmtt(lcobucci)가 부여의 access token 을 JWT 로 풀지 못했다 — Keycloak 의 access token 은 늘 JWT 다. */
-    public const GRANT_NOT_A_JWT = 'admin token request failed: the access token is not a JWT';
+    private const GRANT_NOT_A_JWT = 'admin token request failed: the access token is not a JWT';
 
     /**
      * ⚠️ `$fn` is a closure that captures the representation being sent (password, client secret) — it is an argument of
@@ -135,9 +135,9 @@ final class ErrorTranslation
     /**
      * admin 의 토큰 부여인가 — Bearer 없이 나가는 요청 하나뿐이다(fschmtt `Client::fetchTokens`). admin 요청은 전부 Bearer 를
      * 싣는다. 꼬리만 보면 `users()->get('x/protocol/openid-connect/token')` 이 admin 요청을 토큰 부여로 바꿨다. `AdminClient` 의
-     * 미들웨어도 이것으로 고른다.
+     * 미들웨어가 같은 규칙으로 고른다(공개하면 적대 경로 행렬이 인자를 합성하지 못해 한 줄을 두 곳에 둔다).
      */
-    public static function isTokenGrant(RequestInterface $request): bool
+    private static function isTokenGrant(RequestInterface $request): bool
     {
         return !$request->hasHeader('Authorization') && str_ends_with($request->getUri()->getPath(), self::TOKEN_PATH);
     }
@@ -153,8 +153,11 @@ final class ErrorTranslation
      * 코드 모양의 OAuth `error` 는 메시지와 `oauthError` 에. ⚠️ 상태로 형을 고르지 않는다 — 토큰 엔드포인트의 404 가
      * `KeycloakNotFoundError` 가 되어 토큰을 못 받은 `users()->delete()` 가 admin 요청 0 번에 「이미 없다」로 읽혔다(403 · 409 도 —
      * 실측 2026-11-10, go #952 와 같은 위험).
+     *
+     * ⚠️ `$e` 에 `#[\SensitiveParameter]` — 예외는 여기서 만들어져 이 프레임을 트레이스에 담는다. 원본 Guzzle 예외가 인자로 실리면
+     * `var_dump` · `print_r` 이 요청 폼의 `client_secret` 과 응답 본문을 찍었다(`AdminFacadeErrorLeakTest` 실측).
      */
-    private static function grantFailed(BadResponseException $e): KeycloakAuthError
+    private static function grantFailed(#[\SensitiveParameter] BadResponseException $e): KeycloakAuthError
     {
         try {
             // 감사한 하위 라이브러리(psr7)의 요약 — 시크·되감기를 맡고, 상한을 넘으면 꼬리표가 붙어 JSON 이 아니게 된다.

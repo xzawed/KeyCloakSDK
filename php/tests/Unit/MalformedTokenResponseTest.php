@@ -100,7 +100,9 @@ final class MalformedTokenResponseTest extends TestCase
         'f2 long non-JSON body' => ['introspect' => 'auth'],
         'f3 401 error_description echo' => ['introspect' => 'auth'],
         'f4 500 body echo' => ['introspect' => 'auth'],
-        'f5 200 JSON wrong types' => ['introspect' => 'ok'],
+        // `"active": "yes"` — 전에는 `(bool)` 캐스트로 활성이었다. RFC 7662 §2.2 의 boolean 이 아니면 깨진 응답이다(auth).
+        'f5 200 JSON wrong types' => ['introspect' => 'auth'],
+        'f6 200 JSON without active' => ['introspect' => 'auth'],
         'g 400 error_description echo' => ['logout' => 'auth'],
         't token endpoint unreachable' => ['clientCredentialsToken' => 'transport', 'refresh' => 'transport', 'exchangeCode' => 'transport', 'exchangeCode+nonce' => 'transport', 'provider.getToken' => 'transport'],
         't2 token handler RuntimeException' => ['clientCredentialsToken' => 'transport', 'refresh' => 'transport', 'exchangeCode' => 'transport', 'exchangeCode+nonce' => 'transport', 'provider.getToken' => 'transport'],
@@ -149,7 +151,7 @@ final class MalformedTokenResponseTest extends TestCase
      * SDK 가 **받아들이는** 변형 — 오류가 없으니 누출 검사 대상도 없다. 그 밖의 변형은 적어도 한 호출을 실패시켜야 한다
      * (전부 `ok` 인 표는 아무것도 재지 않으면서 초록이다). b3·c3 은 수정 전 `\TypeError` 였다(`TokenSet::fromArray` 와 같은 규칙).
      */
-    private const ACCEPTED = ['b3 refresh_token int', 'c2 token_type array', 'c3 expires_in float', 'f5 200 JSON wrong types'];
+    private const ACCEPTED = ['b3 refresh_token int', 'c2 token_type array', 'c3 expires_in float'];
 
     /** @var array<string, array{0:string,1:bool}> 이름 => [값, 앞 10 자도 찾는가] */
     private static array $canaries = [];
@@ -321,6 +323,10 @@ final class MalformedTokenResponseTest extends TestCase
             'f5 200 JSON wrong types' => ['ep' => 'introspect', 'status' => 200, 'type' => $json, 'body' => $enc([
                 'active' => 'yes', 'username' => ['LKf5USER-nested'], 'client_id' => 7,
             ]), 'canaries' => ['f5.USER' => ['LKf5USER-nested', true]]],
+            // `active` 가 없다 — 전에는 active=false 로 읽었다. REQUIRED 멤버가 빠진 깨진 응답이다(RFC 7662 §2.2 · auth).
+            'f6 200 JSON without active' => ['ep' => 'introspect', 'status' => 200, 'type' => $json, 'body' => $enc([
+                'sub' => 'LKf6SUB-no-active', 'username' => 'LKf6USER-no-active',
+            ]), 'canaries' => ['f6.USER' => ['LKf6USER-no-active', true]]],
             // logout(백채널 end_session)의 같은 모양.
             'g 400 error_description echo' => ['ep' => 'logout', 'status' => 400, 'type' => $json, 'body' => $enc([
                 'error' => 'invalid_grant', 'error_description' => 'LKg1ECHO-echoed-refresh-token',

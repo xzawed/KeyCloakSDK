@@ -11,7 +11,7 @@ use Fschmtt\Keycloak\Exception\SerializerException;
 use GuzzleHttp\Exception\{ClientException, ConnectException, RequestException, ServerException};
 use GuzzleHttp\Psr7\{FnStream, Request, Response};
 use Xzawed\Keycloak\Admin\ErrorTranslation;
-use Xzawed\Keycloak\Exception\{KeycloakNotFoundError, KeycloakConflictError, KeycloakForbiddenError, KeycloakAdminError, KeycloakConfigError, KeycloakTransportError, SanitizedCause};
+use Xzawed\Keycloak\Exception\{KeycloakNotFoundError, KeycloakConflictError, KeycloakForbiddenError, KeycloakAdminError, KeycloakAuthError, KeycloakConfigError, KeycloakTransportError, SanitizedCause};
 
 /**
  * 분기별 변환 — 타입·상태·메시지·원인의 모양. 보낸 비밀(client secret·Bearer·representation)이 트레이스 인자로 새지 않는지는
@@ -149,8 +149,15 @@ final class ErrorTranslationTest extends TestCase
             ? new ServerException('Guzzle message ' . $body, $req, $res)
             : new ClientException('Guzzle message ' . $body, $req, $res))));
 
-        self::assertInstanceOf(KeycloakAdminError::class, $e);
-        self::assertSame($status, $e->getStatusCode());
+        if ($method === 'POST') {
+            // admin 의 토큰 부여 — 끝까지 온 응답의 실패는 상태와 무관하게 auth 계급이다(등록부 token-response-class-divergent).
+            // 상태는 메시지에, 코드 모양의 OAuth `error` 는 메시지와 `oauthError` 에 같이 실린다.
+            self::assertSame(KeycloakAuthError::class, $e::class);
+            self::assertSame(preg_match('/ \(([a-z_]+)\)$/', $message, $m) === 1 ? $m[1] : null, $e->oauthError);
+        } else {
+            self::assertInstanceOf(KeycloakAdminError::class, $e);
+            self::assertSame($status, $e->getStatusCode());
+        }
         self::assertSame($message, $e->getMessage());
         $cause = $e->getPrevious();
         self::assertInstanceOf(SanitizedCause::class, $cause);
@@ -190,8 +197,9 @@ final class ErrorTranslationTest extends TestCase
         $res = new Response(400, [], $body);
         $e = self::thrownBy(fn () => ErrorTranslation::call(static fn () => throw new ClientException('x', new Request('POST', self::TOKEN_URL), $res)));
 
-        self::assertSame(KeycloakAdminError::class, $e::class);
+        self::assertSame(KeycloakAuthError::class, $e::class);   // 끝까지 온 부여 응답 — auth 계급(코드는 못 읽어 없다)
         self::assertSame('admin token request failed: HTTP 400', $e->getMessage());
+        self::assertNull($e->oauthError);
     }
 
     /**

@@ -37,8 +37,8 @@ if ($body === false) {
 }
 
 if (str_ends_with($path, '/protocol/openid-connect/token')) {
-    http_response_code(is_array($state) && is_int($state['status'] ?? null) ? $state['status'] : 200);
-    header('Content-Type: ' . (is_array($state) && is_string($state['type'] ?? null) ? $state['type'] : 'application/json'));
+    http_response_code(is_int($state['status'] ?? null) ? $state['status'] : 200);
+    header('Content-Type: ' . (is_string($state['type'] ?? null) ? $state['type'] : 'application/json'));
     echo $body;
 } elseif ($path === '/admin/serverinfo') {
     // fschmtt 는 첫 자원 접근 전에 서버 버전을 묻는다 — 토큰 부여가 거기서 난다.
